@@ -4437,7 +4437,33 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 # The corpus itself also moved under the count and both halves are stated: 545 -> 546 files, 15965 ->
 # 16749 doc-comment sentences. The census reading on the same run is 5995 of 16749 — a CEILING, quoted
 # from the run rather than copied from an older literal, which is what boundary (d) of the scanner asks.
-EXPECT_NEW_DOC_ABSOLUTES=225
+#
+# 🔴 TASK BE-1 (2026-08-23, item 17 under the OWNER'S RULING of 2026-08-23) — 225 -> 232. All SEVEN new
+# sentences are in ONE file, src/St4i.EngineApi/Endpoints/HistorianEndpoints.cs, and every one was READ
+# and shown true before this literal moved, which is the only order the scanner's own text permits:
+#   * "...as of 2026-08-23 that difference is a SETTLED OWNER RULING rather than an open question" — the
+#     ruling. The "DIFFERENTLY from every sibling route" half is AU-1's, re-measured: the four siblings
+#     all resolve through ResolveIncludeFabricated, this one is the only `?? true`.
+#   * "No shipped client sends one — no web page, no WPF view and no report calls this route at all" —
+#     AU-1's §5 enumeration, unchanged; it is counted as NEW only because the sentence splitter glued the
+#     following 🔴 block onto it.
+#   * "...the opt-in admits nothing, which is the '3 samples become 0' measurement above" — witnessed by
+#     AU-1's GateOptIn_OnAPurelyFabricatedMachine_ReturnsNothing_WhileTheUngatedReadReturnsEverySample.
+#   * "...a BARE TelemetryPointDto[]: no envelope, no total, no echo of the effective flag, and carries At
+#     and Value only, with no provenance field" — read off the return statement and the DTO declaration.
+#   * "So four different situations produce one byte-identical response" — the method validates only
+#     null/whitespace on machine and metric, so an UNKNOWN (non-blank) machine or metric reaches the store
+#     and comes back as []. Same bytes as an empty window and as a fully-gated read. Four, enumerated.
+#   * "...its Total counts the admitted set, not the excluded one" — NOT inferred: HistorianResultsPage's
+#     own <param name="Total"> says "the count AFTER the provenance gate ... not the number stored".
+#   * "So no historian surface in this product can express 'empty BECAUSE filtered'" — the widest claim
+#     here and the one most able to be false, so it was checked ACROSS THE WHOLE SURFACE rather than on
+#     the two routes the sentence names: /results, /telemetry, /by-serial, /oee, the OEE fleet list,
+#     /export.csv and /stats. None echoes the effective includeFabricated into its response and none
+#     reports an excluded-row count; HistorianStatsDto is store-wide and ungated, so it cannot speak about
+#     a particular query either. The universal holds over the enumerated set, and the set is named here
+#     rather than left as "every surface".
+EXPECT_NEW_DOC_ABSOLUTES=232
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

@@ -192,8 +192,15 @@ public static class HistorianEndpoints
     // ─────────────────────────────────────────────────────────────────────
 
     /// <summary>🔴 <b>This route resolves <c>includeFabricated</c> DIFFERENTLY from every sibling route in
-    /// this file, deliberately, and the difference is an owner's open question rather than a settled design.
-    /// Read both halves before changing the line.</b>
+    /// this file, deliberately, and as of 2026-08-23 that difference is a SETTLED OWNER RULING rather than
+    /// an open question. Read both halves before changing the line.</b>
+    ///
+    /// <para>🔴 <b>OWNER'S RULING, 2026-08-23 (owner-decisions.md item 35's neighbour, item 17): DEFAULT
+    /// OFF, WITH A PARAMETER.</b> The gate stays OFF by default — this route returns everything, exactly as
+    /// it does today, and not one character of the line below changes. A caller who wants the gate opts in
+    /// with <c>?includeFabricated=false</c>. The paragraphs below were written while the question was open;
+    /// they are kept verbatim because the measurement in them is what the ruling was made ON, and the
+    /// "if the owner rules the default should flip" paragraph is now a description of a road NOT taken.</para>
     ///
     /// <para>Siblings resolve through <see cref="ResolveIncludeFabricated"/>, whose default is
     /// <c>demoGate?.Enabled ?? false</c> — on a real (non-demo) deployment that is <see langword="false"/>,
@@ -229,7 +236,26 @@ public static class HistorianEndpoints
     ///
     /// <para>An explicit <c>?includeFabricated=false</c> opts IN to the gate on this route today. No shipped
     /// client sends one — no web page, no WPF view and no report calls this route at all; its only in-repo
-    /// callers are tests.</para></summary>
+    /// callers are tests.</para>
+    ///
+    /// <para>🔴 <b>AND THE PRICE OF THAT OPT-IN, MEASURED 2026-08-23 (BE-1) AND WRITTEN HERE BECAUSE THE
+    /// SURFACE CANNOT SAY IT: a caller who passes the parameter gets an EMPTY ARRAY BACK AND IS NOT TOLD
+    /// WHY.</b> On an ordinary simulated machine on a non-demo install — every product install — the opt-in
+    /// admits nothing, which is the "3 samples become 0" measurement above. What comes back is
+    /// <c>[]</c>, and this method returns a BARE <c>TelemetryPointDto[]</c>: no envelope, no total, no echo
+    /// of the effective flag, and <see cref="TelemetryPointDto"/> carries <c>At</c> and <c>Value</c> only,
+    /// with no provenance field. So four different situations produce one byte-identical response — no
+    /// samples in the window, an unknown machine, an unknown metric, and every sample excluded by the gate.
+    /// A caller sees a blank chart and cannot tell which of the four it is looking at.</para>
+    ///
+    /// <para><b>Stated at its true width rather than as a fault of this route, because a ceiling stated too
+    /// small is worse than none.</b> The sibling <c>GET /v1/historian/results</c> is NOT better at this. It
+    /// does carry per-row provenance (<see cref="HistorianResultDto"/>'s three-state <c>IsFabricated</c>),
+    /// but a tag on the rows that CAME BACK says nothing about rows that were REMOVED, and its
+    /// <c>Total</c> counts the admitted set, not the excluded one. So no historian surface in this product
+    /// can express "empty BECAUSE filtered" as distinct from "empty because there is nothing" — this is
+    /// item 28's shape (a value printed without its ceiling named), and the owner's ruling above leaves it
+    /// open on purpose rather than closing it silently.</para></summary>
     internal static async Task<IResult> GetTelemetryAsync(
         string? machine, string? metric, string? from, string? to, IHistorianStore store, CancellationToken ct,
         bool? includeFabricated = null)

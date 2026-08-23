@@ -343,7 +343,7 @@ P2/P3 items below have since landed — see the **Status** column and **§16** f
 | Phase | Adds | Protocol | Status |
 |---|---|---|---|
 | **P1 (this build)** | Simulator + EdgeCore + Normalizer + Live/Demo/Auto + Hot-folder AOI + MQTT + headless service seam + packaging | Hot-folder (doc 28), MQTT | Delivered |
-| P2 | Mapping UI + Sparkplug B + headless Device Manager | MQTT/Sparkplug B | **Sparkplug B: delivered** — a local UNS spine (always-on loopback MQTT broker + dual Sparkplug B/semantic-mirror publisher), see §16.1. Mapping UI + headless Device Manager: still future. |
+| P2 | Mapping UI + Sparkplug B + headless Device Manager | MQTT/Sparkplug B | **Sparkplug B: partially delivered** — a local UNS spine (always-on loopback MQTT broker + dual Sparkplug B/semantic-mirror publisher), see §16.1. **Not yet:** the spine publishes NBIRTH/NDEATH/DDATA only and emits **no DBIRTH/DDEATH**, so it is not a conformant Sparkplug node and a strict host sees its devices as unknown/STALE — an accepted debt with a stated ceiling (§16.1, §20.5, owner-decisions.md item 35). Mapping UI + headless Device Manager: still future. |
 | P3 | Modbus TCP/RTU + Serial drivers (screw/glue guns, small PLCs, RS-232/485) | Modbus, Serial | **Modbus TCP: partially delivered** — TCP polling, `UInt16`/`Int16` registers, one register per read, see §16.4; **read-AND-write since Đợt B** (§21) for a Holding register/command a map declares writable — a zero-argument coil pulse only, see §21.6. **Modbus RTU delivered in Đợt D** — both `rtu-gateway` (over a TCP serial device server) and `rtu-serial` (a directly-attached COM port), declared per multidrop **bus** in `connectors.json`; auto-DE RS-485 adapters only, and no frame has yet crossed the serial transport on real hardware (see §16.4's D-7c note). **Not yet:** 32-bit/float registers, register-block batching, a per-machine `MappingProfile` override for Modbus. |
 | P4 | OPC-UA + Siemens S7 / EtherNet-IP drivers | OPC-UA, S7, EtherNet/IP | **OPC-UA client: partially delivered** — the licensing spike that used to gate this is resolved (the OPC Foundation .NET stack relicensed MIT on 2025-12-04); a poller against ONE OPC-UA server, `SecurityMode=None` (anonymous or username/password), poll-only (no subscriptions), see §16.6; **read-AND-write since Đợt B** (§21) for a node/method a map declares writable, including typed `CallAsync` arguments. **Not yet:** Siemens S7 / EtherNet-IP drivers, Sign/SignAndEncrypt security modes, complex/structured-type node decoding. |
 | P5 | SECS/GEM + Zmotion (koffi FFI) + HA/buffering + security hardening + OTA config | SECS/GEM, Zmotion | Future. |
@@ -414,8 +414,10 @@ is still no automatic pre-expiry renewal** — see **§17.10** for the required 
 Site.
 
 *(VI: Vài mục P2/P3 phía trên ĐÃ giao trong Giai đoạn 2 (pass 1+2) — xem cột **Status** và **§16** để
-biết chi tiết đầy đủ (biến môi trường, endpoint, hành vi). Sparkplug B: ĐÃ GIAO qua UNS spine cục bộ
-(§16.1). Modbus TCP: GIAO MỘT PHẦN — đọc qua TCP, thanh ghi UInt16/Int16, mỗi lần đọc 1 thanh ghi
+biết chi tiết đầy đủ (biến môi trường, endpoint, hành vi). Sparkplug B: **GIAO MỘT PHẦN** qua UNS spine
+cục bộ (§16.1) — spine chỉ phát NBIRTH/NDEATH/DDATA, **KHÔNG phát DBIRTH/DDEATH**, nên nó **không phải
+một node Sparkplug tuân đặc tả** và một host nghiêm coi device của nó là không biết/STALE; đây là **món
+nợ ĐÃ NHẬN, có trần** (§16.1, §20.5, mục 35). Modbus TCP: GIAO MỘT PHẦN — đọc qua TCP, thanh ghi UInt16/Int16, mỗi lần đọc 1 thanh ghi
 (§16.4); **ĐỌC VÀ GHI từ Đợt B** (§21) cho thanh ghi Holding/lệnh map khai báo ghi được — chỉ xung coil
 không tham số, xem §21.6. Modbus RTU ĐÃ GIAO ở Đợt D (cả `rtu-gateway` lẫn `rtu-serial` — cổng COM cắm thẳng; chỉ adapter tự đảo chiều, và chưa có khung tin nào chạy trên phần cứng thật). CHƯA có 32-bit/float, đọc theo khối, hay MappingProfile
 riêng cho từng máy Modbus. OPC-UA: GIAO MỘT PHẦN — "licensing spike" trước đây từng chặn mục này đã được
@@ -2179,6 +2181,23 @@ path or `EdgePipeline.Committed`:
    ingest path already switches on) — the reading's own canonical JSON envelope, published with the
    MQTT retain flag set.
 
+🔴 **THIS SPINE IS NOT A CONFORMANT SPARKPLUG B NODE, AND THAT IS AN ACCEPTED DEBT RATHER THAN AN
+OVERSIGHT — recorded here 2026-08-23 (owner-decisions.md item 35).** Three Sparkplug message types leave
+this spine and the list above is all of them: **NBIRTH**, **NDEATH**, **DDATA**. It publishes **no
+DBIRTH and no DDEATH** — the publish path for both was removed on 2026-08-21 under the owner's item-23
+ruling, and `SparkplugMsgType` still declares the two members as vocabulary with no producer. Under the
+Sparkplug B specification a device that never sent a birth certificate is **not valid**: a strict host
+(Ignition, HiveMQ) treats it as unknown/STALE and will typically drop or refuse to register it, *while
+this spine keeps pushing DDATA on the device-level topic for exactly those devices*.
+
+**The ceiling on that statement, both halves.** What is broken is **spec conformance and host-side
+device discovery — not decodability**: `SparkplugPayload.EncodeMetric` writes both `Name` and `Alias` on
+every metric unconditionally, so a subscriber can decode this spine's DDATA in full without ever seeing
+a DBIRTH. And the other half, left as a hole rather than filled with a guess: **whether any real
+subscriber is affected has not been measured from this repository.** Closing the debt means putting a
+new message type on the wire for subscribers that have never received one, which is a change to the
+MQTT payload surface and needs an owner ruling; it is not scheduled here.
+
 Env vars (`UnsOptions.FromEnvironment`, read once at startup — unset/blank falls back to the default,
 an unparseable port is silently ignored rather than crashing):
 
@@ -2206,6 +2225,22 @@ NBIRTH lúc Start thật, NDEATH lúc Stop/Estop, DDATA mỗi reading đã commi
 `syn/{site}/{area}/{line}/{cell}/{equipment}/{aspect}` (aspect = result/telemetry/inspection). 6 biến
 môi trường `ST4I_UNS_*` đọc một lần lúc khởi động, giá trị sai định dạng bị bỏ qua thay vì crash. Lỗi
 bind cổng hay hàng đợi đầy đều chỉ log cảnh báo, KHÔNG BAO GIỜ làm crash host hay chậm vòng lặp commit.)*
+
+🔴 *(VI: **XƯƠNG SỐNG NÀY KHÔNG PHẢI MỘT NODE SPARKPLUG B TUÂN ĐẶC TẢ, và đó là một MÓN NỢ ĐÃ NHẬN chứ
+không phải một chỗ sót — ghi ngày 2026-08-23, mục 35 của `docs/owner-decisions.md`.** Đúng **BA** loại
+thông điệp Sparkplug rời xương sống này và danh sách trên là đủ cả ba: **NBIRTH**, **NDEATH**, **DDATA**.
+Nó **KHÔNG phát DBIRTH và KHÔNG phát DDEATH** — đường phát của cả hai đã bị gỡ ngày 2026-08-21 theo phán
+quyết mục 23 của chủ sở hữu, và `SparkplugMsgType` vẫn khai hai thành viên ấy như từ vựng **không có bộ
+sinh**. Theo đặc tả Sparkplug B, một device chưa từng gửi giấy khai sinh là **KHÔNG HỢP LỆ**: một host
+nghiêm (Ignition, HiveMQ) coi nó là không biết / STALE và thường bỏ hoặc từ chối đăng ký nó, *trong khi
+xương sống này vẫn đẩy DDATA trên topic mức device cho đúng những device ấy*.
+**Cái trần của câu trên, cả hai nửa.** Cái hỏng là **TUÂN THỦ ĐẶC TẢ và việc host khám phá device — KHÔNG
+phải khả năng giải mã**: `SparkplugPayload.EncodeMetric` ghi **cả `Name` lẫn `Alias`** trên mọi metric vô
+điều kiện, nên một subscriber giải mã được DDATA đầy đủ mà không cần DBIRTH nào. Và nửa còn lại, để
+NGUYÊN là một chỗ trống thay vì lấp bằng suy đoán: **có người đăng ký thật nào bị ảnh hưởng hay không thì
+CHƯA ĐO ĐƯỢC từ repo này.** Đóng món nợ đòi đặt một loại thông điệp MỚI lên dây cho những subscriber chưa
+từng nhận nó — tức đổi bề mặt payload MQTT — nên nó cần một phán quyết của chủ sở hữu; ở đây không lên
+lịch cho nó.)*
 
 ### 16.2 Policy layer + XC-R40 safety endpoint / Lớp Policy + endpoint an toàn XC-R40
 
@@ -4652,6 +4687,17 @@ KHÔNG PHẢI cảnh báo** — và luôn thu gọn; widget chỉ tự mở khi 
   mixed real+demo fleet (Demo mode alongside an onboarded real machine) — the standard "one real
   machine" product path (an empty or all-real roster) has no fabricated cycles to leak, so this never
   fires by accident. Recorded here as a known limitation, not fixed this batch.
+- 🔴 **The local UNS spine is a NON-CONFORMANT Sparkplug B node: it publishes NBIRTH, NDEATH and DDATA,
+  and deliberately publishes no DBIRTH/DDEATH.** The device-level birth certificate is the thing a strict
+  Sparkplug host (Ignition, HiveMQ) requires before it will register a device, and this spine never sends
+  one while still pushing DDATA on the device-level topic — so such a host sees those devices as
+  unknown/STALE. The publish path for both messages was removed on 2026-08-21 under the owner's item-23
+  ruling and the enum members remain as vocabulary with no producer. **This is an ACCEPTED DEBT with a
+  stated ceiling, not an omission** — see §16.1 for the full statement. Two halves of that ceiling belong
+  here too: decoding is *not* affected (every metric carries its `Name` inline beside its `Alias`, so a
+  subscriber reads DDATA in full without a DBIRTH), and **whether any real subscriber is affected has not
+  been measured from this repository**. Closing it puts a new message type on the wire, which is an owner
+  decision (owner-decisions.md item 35), not a fix this batch could take.
 
 *(VI: Ghi rõ ràng, không mềm hoá: **Điều khiển máy (ghi vào thiết bị) đã có — xem §21, không phải dòng
 này.** Dòng này từng viết "KHÔNG có đường ghi lệnh tới bất kỳ thiết bị nào" — đúng lúc viết mục này (Đợt
