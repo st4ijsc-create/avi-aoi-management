@@ -70,7 +70,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 39 | `"registers": null` / `"nodes": null` thoả `required` rồi ném `NullReferenceException` **trần** | 🔴 **CHỜ ANH** — mở 2026-08-22 (AZ-1), đo bởi AY-1 (mục 12 đợt 9), **xác nhận lại trên assembly đã dựng**. `required` được thoả bằng việc **KHOÁ CÓ MẶT**, nên một `null` tường minh bind qua nó và `map.Registers.Count` / `map.Nodes.Count` ném `NullReferenceException` với thông điệp `"Object reference not set to an instance of an object."` — **không nêu file, không nêu trường, không nêu máy**. Đối chứng đo cùng lần: khoá **VẮNG** cho `JsonException: … was missing required properties including: 'Registers'` / `'Nodes'`, tức đường tốt đã có sẵn và chỉ ca `null` tường minh rơi ra ngoài. **Đúng hình dạng mà `ModbusRegisterMap.FromJson` tự ghi là ĐÃ SỬA cho `commands`.** **Chiều ngược:** cả hai `FromJson` là *"parse ném thẳng"* theo thiết kế và `ModbusRtuConnectorFactory.TryCreate` **bọc mọi throw** thành một `error` chuỗi, nên hậu quả là **một thông điệp vô dụng cho vận hành viên**, không phải một tiến trình chết. **Không sửa mã.** Xem mục 39 🔴 **ĐÃ THI HÀNH 2026-08-23 (BD-1, base `889c72ab`), điều phối viên quyết theo uỷ quyền — **HAI ca đo RIÊNG**: `null` tường minh nay ném `InvalidOperationException` **nêu trường + mã máy**, còn khoá **VẮNG** **KHÔNG ĐỔI** (vẫn là `JsonException` của binder) — và việc nó không đổi là một kết quả **đo được** bằng cặp đối chứng, không phải một giả định. `FromJson` nhận **văn bản**, không nhận đường dẫn, nên **tên file do khung có đường dẫn nêu** (`Program.cs` đã bọc sẵn trong `{MapPath}`). Mục rời **Phần I → Phần III** |
 | 40 | Một dụng cụ TỰ KIỂM có thể mù đúng ở đường mặc định của chính nó, và cổng vẫn xanh | 🔴 **CHỜ ANH** — mở 2026-08-22 (BA-1). Khuyết tật tìm bởi AZ-1 (mục 12 đợt 10), điều phối viên xác nhận độc lập **hai lần**. `scripts/repo-scan.sh` — **dụng cụ dựng CHO mục 32** — mang **đúng khuyết tật của mục 32** ở đường mặc định của nó từ `cfcfae42` tới `89018893`: không pathspec ⇒ `SPECS=(".")` ⇒ `:(top).`, thứ git **không khớp gì**, nên nó in `result lines : 0 … a measurement, not an error` cho **mọi** pattern. Đo: `'class'` trả **0** với `:(top).`, **1804** với `:(top)`. 🔴 **Vì sao `--self-test` không thấy:** ba khẳng định của nó **đều truyền pathspec tường minh**, và cái duy nhất nói về mặc định là *bất biến theo cwd* — mà **mặc định hỏng ĐÚNG LÀ bất biến theo cwd: bất biến bằng 0**. Khuyết tật **thoả** phép kiểm. **BA-1 đã sửa cả ba dụng cụ** (mặc định `:(top)`; ca self-test KHÔNG-pathspec + từ chối MIỀN RỖNG, chứng minh đỏ-được bằng **ba cặp đối chứng chạy trọn rồi hoàn nguyên**; `C0` cho `check-owner-decisions.sh`; ba guard quần thể cho `scan-doc-negations.sh`). **Chiều ngược, và nó thu hẹp thiệt hại:** mặc định hỏng trả **0 vô điều kiện**, nên **không** khẳng định nào mang một con số KHÁC 0 có thể đã đi qua nó — quần thể `cfcfae42..HEAD` đã liệt kê rồi kiểm, và **hai** câu sai tìm được sai vì lý do KHÁC (tự tham chiếu, và một quần thể cũ), không phải vì khuyết tật này. **Cái CHỜ ANH là câu hỏi tầng hai:** cái gì cưỡng chế rằng một dụng cụ tự kiểm không mù đúng ở chỗ đối tượng của nó mù — mục 26/32/37 ở tầng **dụng cụ đo dụng cụ**. Xem mục 40 🔴 **ĐÃ THI HÀNH 2026-08-23 (BD-1, base `889c72ab`), điều phối viên quyết theo uỷ quyền — `G1` **GIỮ** (đo: trên `--since` nó thừa vì `G3` bắt cùng đầu vào; vùng phủ riêng là `--census`, gỡ nó ⇒ exit 0 trên corpus rỗng) và **tự dán nhãn "guard, KHÔNG phải nhân chứng"**; `C0` nay phân biệt được Phần II **TRỐNG** với **HỎNG** qua `C6` (đẳng thức khai-báo == phân-tích-được, vì `count > 0` sẽ sai hôm nay); thêm `G4` cho `BASE_SENT` — quần thể **thứ TƯ** chưa ai canh. 🔴 **Câu hỏi tầng hai được TRẢ LỜI: luật ấy KHÔNG CƯỠNG CHẾ ĐƯỢC** — nó là một tính chất độ phủ của shell và repo này không có dụng cụ đo độ phủ shell. Cái cưỡng chế được là **phép KHAI BÁO**, đặt ở chỗ nghẽn duy nhất `run_tooling_check`: mọi tooling check thành công phải in `POPULATION <nhãn> <số>` và mọi số phải > 0. **KHÔNG dựng dụng cụ tầng thứ ba** cho cặp đối chứng, lý do ghi ở thân mục. Mục rời **Phần I → Phần III** |
 | 41 | 🔴 **Nối một config store làm MÔ-MEN XOẮN báo ra lệch ~9 lần** — hai host trong cùng sản phẩm báo VẬT LÝ KHÁC NHAU cho cùng một descriptor | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1), đo lần đầu bởi BC-1 và xác nhận lại trên mã ở `9255ea98`. **Không uỷ quyền được**: nó đổi một con số ĐÃ ĐI RA NGOÀI trên `POST /api/v1/ingest/process-result`, cùng lớp mục 16 |
-| 42 | `weld_profile` và `dispense_program` được định nghĩa, kiểm miền, phục vụ qua REST — và **không bộ mô phỏng nào đọc**; hai trong bốn khoá mỗi bên **trùng TÊN** với một metric cùng máy phát ra | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1). **Không uỷ quyền được**: nối dây làm đổi giá trị metric đã báo cáo; gỡ vựng từ là gỡ một bề mặt REST công khai |
+| 42 | `weld_profile` và `dispense_program` được định nghĩa, kiểm miền, phục vụ qua REST — và **không bộ mô phỏng nào đọc**; hai khoá của DISPENSING **trùng chính xác TÊN** một metric cùng máy phát ra (ở WELDER là cùng đại lượng, khác cách viết — lời khai nguồn nói quá, đo lại trong mục) | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1). **Không uỷ quyền được**: nối dây làm đổi giá trị metric đã báo cáo; gỡ vựng từ là gỡ một bề mặt REST công khai |
 | 43 | Hai bộ mô phỏng có **phán quyết không thể sai**, và cả hai tính là TỐT cho OEE — `AssemblySim` chỉ đạt `Warn`, `LeakTestSim` cảnh báo vì rò **QUÁ ÍT** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1). **Không uỷ quyền được**: cùng loài mục 2 và mục 16 — sửa là dịch con số OEE đã báo cáo |
 | 44 | Hai tham số constructor **công khai** không chỗ gọi nào trong repo cấp — `LeakTestSim.maxLeakRatePa`, `FunctionalTestSim.targetPassRate` — và cái thứ nhất **không được kiểm miền** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1). **Không uỷ quyền được**: một trong ba hướng là **gỡ một tên công khai**, đúng thứ uỷ quyền loại trừ; cùng câu hỏi mục 25 |
 | 45 | `SimulatedEcosystem.Load` **ghi lại CẢ HAI file khi chỉ MỘT vắng** — và kể từ mục 30 nó đè lên một file `%ProgramData%` mà phép xoá ngừng-hoạt-động **cố ý GIỮ** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BG-1); AV-1 đo 2026-08-22, BF-1 đo lại là ĐẮT HƠN 2026-08-23. Theo tiền lệ mục 10 và 30, **một đường mất dữ liệu MỚI là của anh** |
@@ -718,10 +718,23 @@ số có min/max cứng, bước nhảy và số chữ số thập phân: `dispe
 constructor duy nhất trong họ không nhận `configStore`** — nên `ResolveEffectiveConfig` trả null
 suốt đời hai instance ấy và **không giá trị nào tới được một phép vẽ**.
 
-🔴 **Sắc hơn: hai trong bốn khoá mỗi bên TRÙNG TÊN với một metric mà chính bộ mô phỏng ấy phát ra** —
-`current`/`time` ở WELDER, `pressure`/`temperature` ở DISPENSING. Vận hành viên nâng `pressure`, thấy
-**bản ghi cấu hình đổi** và **metric `pressure` không đổi**. Đó không phải "chưa nối dây"; đó là một
-bề mặt **nói dối theo chiều khẳng định**.
+🔴 **Sắc hơn ở DISPENSING — và lời khai NGUỒN NÓI QUÁ ở WELDER; đo lại, không chép.** BC-1 §7.2 viết
+*“hai trong bốn khoá MỖI BÊN trùng TÊN với một metric cùng bộ mô phỏng phát ra”*. Đo trên mã ở
+`9255ea98`:
+
+* **DISPENSING — ĐÚNG, và trùng CHÍNH XÁC.** Khoá cấu hình `pressure`, `temperature`; khoá metric
+  `volume`, **`pressure`**, **`temperature`**. Hai khoá trùng từng ký tự. Vận hành viên nâng
+  `pressure`, thấy **bản ghi cấu hình đổi** và **metric `pressure` không đổi**. Đó không phải
+  *“chưa nối dây”*; đó là một bề mặt **nói dối theo chiều khẳng định**.
+* **WELDER — SAI theo chữ, ĐÚNG theo đại lượng.** Khoá cấu hình `current`, `time`; khoá metric
+  **`weld_current`**, **`weld_time`**. **Không ký tự nào trùng.** Chúng nêu **cùng hai đại lượng**
+  dưới hai cách viết, và doc của chính `WelderSim` nói đúng thế (*“name the very quantities
+  `NextCycle` draws”*) — nên **chính lớp ấy viết đúng trong khi báo cáo nguồn viết quá**. *Một cái
+  sai trong một báo cáo nguồn là một phát hiện, không phải một lỗi chính tả*, nên nó đứng trong mục
+  chứ không ở một chú thích.
+
+**Hệ quả hai chiều của chính phép đo lại này:** cái **bẫy cho vận hành viên** — sửa một khoá và thấy
+metric cùng tên đứng yên — chỉ sống ở **DISPENSING**; cái **khoảng trống dây nối** sống ở **cả hai**.
 
 **Ở đâu trong mã.** `src/St4i.EdgeCore/Config/MachineParameterSchema.cs` (hai khối `Registry`);
 `src/St4i.EdgeCore/Drivers/Simulators/SimulatorFactory.cs` (hai nhánh `"DISPENSING"`/`"WELDER"`);
@@ -10790,16 +10803,38 @@ check"*, và đó **đúng loài mục 32 và mục 40** — lần này áp lên
 
 Đợt 12 nêu tên **hai ứng viên gần nhất**, cả hai Lớp 2. **Cả hai được mở ra ở `9255ea98`:**
 
-* **`AssemblySim`'s constructor** — doc của nó nêu tên **`SimulatorBase`, `MachineConfigStore`,
-  `configKind`, `ResolveEffectiveConfig`, `CycleSecondsOverride`, `MachineDescriptor.CycleSeconds`,
-  `WelderSim`, `DispensingSim`, `MachineParameterSchema`**, cộng ba loại máy — **mười referent ngoài
-  chữ ký**, và một mệnh đề phân biệt ca này với hai ca khác.
-* **`OpcUaConnectorFactory.Kind`** — nêu tên **`DriverKinds.OpcUa`, `ModbusConnectorFactory.Kind`,
-  `OpcUaDriver`, `DriverKinds.Normalize`, `ConnectorRegistry.Register`** và **hai bài test** —
-  **bảy referent ngoài chữ ký**.
+🔴 **LIỆT KÊ TRƯỚC, CON SỐ VIẾT SAU — và bản nháp đầu của chính đoạn này vi phạm luật ấy hai lần;
+xem khối sửa ngay bên dưới.** Quy tắc đếm, phát biểu để người khác chạy lại được: *một referent là
+một định danh / đường dẫn / literal mà doc nêu tên và **không** xuất hiện trên dòng khai của chính
+thành viên ấy.*
+
+* **`AssemblySim`'s constructor** — dòng khai:
+  `public AssemblySim(MachineDescriptor d, int seed) : base(d, seed)`. Doc nêu tên: `configKind`,
+  `MachineConfigStore`, `SimulatorBase`, `ResolveEffectiveConfig`, `CycleSecondsOverride`,
+  `MachineDescriptor.CycleSeconds` (chỉ `CycleSeconds` tính, `MachineDescriptor` nằm trên dòng khai),
+  `WelderSim`, `DispensingSim`, `MachineParameterSchema`, `ASSEMBLY`, `LEAK_TEST`,
+  `FUNCTIONAL_TEST` ⇒ **mười hai**, cộng một mệnh đề phân biệt ca này với hai ca khác.
+* **`OpcUaConnectorFactory.Kind`** — dòng khai: `public string Kind => DriverKinds.OpcUa;`. Doc nêu
+  tên: `IConnectorFactory.Kind`, `IDeviceDriver.Kind`, `TryCreate`, `OpcUaDriver`,
+  `OpcUaConnectorFactoryTests.Kind_ReportsTheOpcUaBuiltInId`, `OpcUaDriverLoopbackTests`,
+  `ModbusConnectorFactory.Kind`, `DriverKinds.Normalize`, `ConnectorRegistry.Register` ⇒ **chín**.
+  `DriverKinds.OpcUa` **KHÔNG** tính: nó nằm trên dòng khai, và bỏ nó ra là điều quy tắc đòi.
 
 Nên **ngay cả hai thành viên gần "không có gì để nói" nhất cũng vượt xa mọi ngưỡng hợp lý**, với
-biên **bảy**. Đó là bằng chứng đợt 12 đoán trước là sẽ có, và nó xuất hiện.
+biên **chín** — cái nhỏ hơn trong hai. Đó là bằng chứng đợt 12 đoán trước là sẽ có, và nó xuất hiện.
+
+> 🔴 **HAI GẠCH ĐẦU DÒNG NGAY TRÊN — SỬA TẠI CHỖ 2026-08-23 (BG-1, vòng đo lại thứ hai), câu sai giữ
+> NGUYÊN VĂN.** Chúng đọc: *“… `MachineParameterSchema`**, cộng ba loại máy — **mười referent ngoài
+> chữ ký**”* và *“… **`DriverKinds.OpcUa`**, … và **hai bài test** — **bảy referent ngoài chữ ký**”*,
+> và kết ở *“với biên **bảy**”*. **Cả ba con số sai, và sai theo hai cơ chế khác nhau:**
+> (i) gạch đầu dòng thứ nhất **liệt kê chín định danh cộng ba loại máy rồi viết “mười”** — phép cộng
+> mâu thuẫn với chính phép liệt kê đứng cạnh nó, tức một con số viết mà không đếm phép liệt kê;
+> (ii) gạch đầu dòng thứ hai **đếm `DriverKinds.OpcUa` là “ngoài chữ ký” trong khi nó Ở TRONG chữ
+> ký**, và **bỏ sót bốn referent** (`IConnectorFactory.Kind`, `IDeviceDriver.Kind`, `TryCreate`, và
+> `OpcUaDriver` ở nửa đầu khối) vì tôi chỉ đọc **phần cuối** của khối chứ không mở cả khối.
+> **Hai con số đúng là mười hai và chín**, nên biên là **chín**, không phải bảy — 🔴 **phép sửa làm
+> lập luận RÚT MẠNH HƠN, không yếu hơn**, và điều đó không làm con số cũ bớt sai. Bắt được bằng cách
+> mở lại cả hai khối doc **sau khi** viết kết luận, §8.1(b), lần thứ ba trong nhiệm vụ này.
 
 ### Ngưỡng duy nhất ĐỎ ĐƯỢC trên cây này lại là một cái bẫy 7
 
