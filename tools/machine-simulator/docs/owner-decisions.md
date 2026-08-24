@@ -91,7 +91,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 60 | **Cổng KHÔNG BAO GIỜ đo `web/`** — 124 file nguồn và 28 spec ngoài mọi phép kiểm, và một bản sửa SẢN PHẨM vừa hạ cánh ở đó không có nhân chứng | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). **Hai bờ định giá.** *Bờ sửa:* nối `web/` vào cổng, giá là **một hệ sinh thái build thứ hai (Node/npm + một trình duyệt)** vào một cổng hôm nay **chỉ cần .NET**, cộng một trần 900 s thứ sáu và hai quần thể tiến trình mới trong cửa sổ đo toàn máy. *Bờ để nguyên:* mọi bản sửa trong `web/` **mãi mãi không có nhân chứng**. 🔴 **Nhãn 🔴 này KHÔNG chạm miễn trừ nào** — nó nói về việc **mua hạ tầng**, không về quyền — nên nó là nhãn dễ lật nhất trong mười một, và §49.5 cho phép lật. 🔴 **THI HÀNH MỘT PHẦN 2026-08-24 (BO-1) — nửa KHÔNG CHỜ AI đã ship, và nó không phải một phán quyết:** cổng nay **KHAI** ở chỗ verdict hiện ra — `web_domain_declaration` in trên **cả hai** nhánh `PASS`/`FAIL`, mọi con số **dẫn xuất lúc chạy**, dòng `PASS:` mang thêm `NOT MEASURED: web/`; cặp đối chứng chạy được ở `--web-domain-self-test`. Đó là **luật (3)** áp vào chính cổng, và luật (3) không cần ai phán. 🔴 **Câu *"phát hiện này chưa ai nêu"* của lời giao việc KHÔNG sống sót:** sự kiện đã được viết ở **ít nhất bốn chỗ** (hai lần trong chú thích `verify-suites.sh`, ô phán quyết mục 53, thân mục 57 vế 3) — cái thiếu chưa bao giờ là hiểu biết, mà là **cả bốn chỗ đều không ai IN RA**. Xem §60 |
 | 61 | **Một điểm HOÀN HẢO của `FunctionalTestSim` rơi ĐÚNG lên USL và trả `Warn`** — cùng loài mục 43, không nằm trong mục nào | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). Chạm **(a) payload MQTT**: `Verdict` ra dây ở trường `result` (`Normalizer.cs:122`). Margin **1,5 DẪN XUẤT**, không phải hằng số: `(100−90)×0,15`; `value=100` ⇒ `100 >= 98,5` ⇒ `Warn`. 🔴 **Con số ~42 % đúng nhưng lời khai DÁN một sự thật ĐIỂM lên một thống kê DẢI** (có điều kiện 42,07 %, không điều kiện 41,3 %). 🔴 **NÊU QUÁ DÈ DẶT ba lần:** **21,2 %** số lần rút bị **kẹp về đúng 100,0** rồi cảnh báo về chính con số phép kẹp tạo ra; dải `Fail` theo điểm là **3,8 σ**, gần như không với tới được; và **không một bài test nào ghim nó theo chiều nào** (`98.5`/`ScoreUsl` ⇒ 0 kết quả). **Không đổi một con số OEE nào** (mục 2: `Pass` và `Warn` cùng là hàng TỐT). 🔴 **Chờ CÙNG loại câu hỏi với mục 41 và 43** — *"dải nào?"* — đừng trả lời hộ. Xem §61 |
 | 62 | **`LeakTestSim` CÔNG BỐ một cặp giới hạn mà phán quyết của chính reading ấy KHÔNG dùng** — người suy lại nhận câu trả lời TRƯỚC-KHI-SỬA | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). Chạm **HAI** miễn trừ: **(a) payload MQTT** và **(b) hình dạng dây**. `:123` công bố **(0,0 ; 20,0)**, `:124` phán trên **(null ; 20,0)**; suy lại từ cặp công bố cho `Warn` ở chỗ máy phát `Pass`, trên **4,78 %** chu kỳ. 🔴 **Không phải phát hiện — đã KHAI ở `LeakTestSim.cs:108–114` và ĐÃ GHIM bởi `Item43_Guard_ThePublishedMetricStillDeclaresAFloorTheVerdictDoesNotUse`**; cái thiếu là một **mục**, đúng cơ chế mục 37. 🔴 **KHÔNG rộng hơn một sim:** đo cả năm — `AssemblySim`, `DispensingSim`, `FunctionalTestSim`, `ScrewdriveSim`, `WelderSim` **đều công bố đúng cặp chúng phán quyết trên**; `LeakTestSim` là **ca duy nhất**. Xem §62 |
-| 63 | **`ConnectorRegistry.Register` VẪN last-write-wins cho một id TƯỜNG MINH** — và một chỗ gọi sản xuất đã phải tự dựng một cái chốt NGOÀI khoá | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); không chạm ba miễn trừ; cùng khuôn mục 47 (*"biến đụng độ thành lỗi"*, 2026-08-23). Chốt của mục 47 gác **CHỈ** đường khoá **mặc định** (`keyWasDefaulted` `:227`); đường **id tường minh** rơi thẳng xuống `:275` `_entries[id] = …` **vô điều kiện**, và `:145–148` tự khai đúng thế. 🔴 **NÊU QUÁ DÈ DẶT:** `ModbusMultidropRegistration` **đã phải tự dựng** `OwnedBySomethingElse` (`:379`) chống lại chính hành vi này, và cái chốt ấy **ĐUA** — ảnh chụp lấy ở `:203`, `Register` gọi ở `:241`, tức kiểm-rồi-làm **NGOÀI `_registerGate`**. Biện pháp giảm nhẹ mà chú thích trỏ tới (`ResolveEntries`) **chỉ phủ đường `connectors.json`**. Xem §63 🔴 **ĐO LẠI 2026-08-24 (BP-1, base `d9d3aafc`) — TIỀN ĐỀ CỦA HƯỚNG SỬA BỊ BÁC, MỤC Ở LẠI PHẦN I.** Hai hình dạng đều được DỰNG và ĐỊNH GIÁ trên bộ test: (i) **ném** ⇒ `POST /v1/connectors` **500** ở đúng đường mà chú thích của chính nó gọi là *"ordinary idempotent-update path"*; (ii) **từ chối** theo đúng luật của `OwnedBySomethingElse` ⇒ **đỏ** `ConnectorEndpointsEnvSeedingSideEffectsTests.PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s`, một hành vi **nhiệm vụ B-6 cố ý dựng**. ⇒ **HAI chỗ gọi sản xuất muốn HAI câu trả lời NGƯỢC NHAU**, và thứ phân biệt chúng là **XUẤT XỨ** (Seeded/Operator) — dữ kiện registry **không giữ và không nên giữ**. **Cái chốt ngoài khoá KHÔNG thừa và KHÔNG THỂ làm cho thừa tại dòng ấy: nó là CHÍNH SÁCH theo chỗ gọi, không phải bất biến toàn cục thiếu chỗ đặt.** Đã trả: câu khai SAI về phạm vi `ResolveEntries` ở `:145–148` **RÚT nguyên văn** (đo: **năm** chỗ gọi truyền id tường minh, `ResolveEntries` không nằm trên đường nào), và cả hai phép đo ghi tại chỗ. **KHÔNG một dòng hành vi nào đổi.** Xem §63.5 🔴 **HƯỚNG THỨ BA ĐÃ SUY VÀ ĐỊNH GIÁ — BR-1, 2026-08-24: KHÔNG ĐI ĐƯỢC, và BA GIÁ nay ghi đủ.** Hướng ba = *cho registry GIỮ XUẤT XỨ để nó tự phân xử*. Luật suy ra **mạch lạc** (từ chối khi người đang giữ id là `Operator` phục vụ máy KHÁC; cho qua khi là `Seeded`) — và **giá thì không trả được**, đo chứ không đoán: *(i)* `ConnectorConfigSource` khai trong **`St4i.EngineApi`**, còn `ConnectorRegistry` ở **`St4i.EdgeCore`** (chỉ tham chiếu `St4i.Connector.Abstractions`) — **hai trong năm** chỗ gọi id tường minh nằm ở assembly **không gọi tên nổi kiểu ấy** (`ModbusMultidropRegistration` ở EdgeCore, `EdgeConnectors` ở EdgeService); *(ii)* vựng từ ấy có **đúng hai** thành viên, cả hai mô tả một sự kiện LƯU của `ConnectorConfigStore` — **ba trong năm** chỗ gọi không có giá trị nào để khai, nên hướng ba là *“phát minh thêm thành viên rồi quyết một ma trận ưu tiên”*, mà **không nguồn nào trong cây** phát biểu ma trận ấy; *(iii)* `Register` có **8** chỗ gọi sản xuất và **126** trong test — tham số bắt buộc phá cả **134**, tham số mặc định **tái lập đúng khuyết tật mở đầu chính mục này** (`keyWasDefaulted` gộp bốn trạng thái) ở một tham số thứ hai. 🔴 **VÀ NÓ KHÔNG QUYẾT ĐƯỢC CA CỦA CHÍNH MỤC 63:** §63.1/§63.3 nói về **hai** đăng ký dưới **một id do vận hành viên gõ** — xuất xứ **BẰNG NHAU hai bên**, nên một registry giữ xuất xứ vẫn không phân xử được, và last-write-wins sống nguyên trên đúng quần thể §63.3 gọi là **dễ xảy ra hơn**. Mục **Ở LẠI PHẦN I**, kệ ⚖️, kèm ghi chép *“ba hướng đã định giá”*. Xem §63.6 |
+| 63 | **`ConnectorRegistry.Register` VẪN last-write-wins cho một id TƯỜNG MINH** — và một chỗ gọi sản xuất đã phải tự dựng một cái chốt NGOÀI khoá | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); không chạm ba miễn trừ; cùng khuôn mục 47 (*"biến đụng độ thành lỗi"*, 2026-08-23). Chốt của mục 47 gác **CHỈ** đường khoá **mặc định** (`keyWasDefaulted` `:227`); đường **id tường minh** rơi thẳng xuống `:275` `_entries[id] = …` **vô điều kiện**, và `:145–148` tự khai đúng thế. 🔴 **NÊU QUÁ DÈ DẶT:** `ModbusMultidropRegistration` **đã phải tự dựng** `OwnedBySomethingElse` (`:379`) chống lại chính hành vi này, và cái chốt ấy **ĐUA** — ảnh chụp lấy ở `:203`, `Register` gọi ở `:241`, tức kiểm-rồi-làm **NGOÀI `_registerGate`**. Biện pháp giảm nhẹ mà chú thích trỏ tới (`ResolveEntries`) **chỉ phủ đường `connectors.json`**. Xem §63 🔴 **ĐO LẠI 2026-08-24 (BP-1, base `d9d3aafc`) — TIỀN ĐỀ CỦA HƯỚNG SỬA BỊ BÁC, MỤC Ở LẠI PHẦN I.** Hai hình dạng đều được DỰNG và ĐỊNH GIÁ trên bộ test: (i) **ném** ⇒ `POST /v1/connectors` **500** ở đúng đường mà chú thích của chính nó gọi là *"ordinary idempotent-update path"*; (ii) **từ chối** theo đúng luật của `OwnedBySomethingElse` ⇒ **đỏ** `ConnectorEndpointsEnvSeedingSideEffectsTests.PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s`, một hành vi **nhiệm vụ B-6 cố ý dựng**. ⇒ **HAI chỗ gọi sản xuất muốn HAI câu trả lời NGƯỢC NHAU**, và thứ phân biệt chúng là **XUẤT XỨ** (Seeded/Operator) — dữ kiện registry **không giữ và không nên giữ**. **Cái chốt ngoài khoá KHÔNG thừa và KHÔNG THỂ làm cho thừa tại dòng ấy: nó là CHÍNH SÁCH theo chỗ gọi, không phải bất biến toàn cục thiếu chỗ đặt.** Đã trả: câu khai SAI về phạm vi `ResolveEntries` ở `:145–148` **RÚT nguyên văn** (đo: **năm** chỗ gọi truyền id tường minh, `ResolveEntries` không nằm trên đường nào), và cả hai phép đo ghi tại chỗ. **KHÔNG một dòng hành vi nào đổi.** Xem §63.5 🔴 **HƯỚNG THỨ BA ĐÃ SUY VÀ ĐỊNH GIÁ — BR-1, 2026-08-24: KHÔNG ĐI ĐƯỢC, và BA GIÁ nay ghi đủ.** Hướng ba = *cho registry GIỮ XUẤT XỨ để nó tự phân xử*. Luật suy ra **mạch lạc** (từ chối khi người đang giữ id là `Operator` phục vụ máy KHÁC; cho qua khi là `Seeded`) — và **giá thì không trả được**, đo chứ không đoán: *(i)* `ConnectorConfigSource` khai trong **`St4i.EngineApi`**, còn `ConnectorRegistry` ở **`St4i.EdgeCore`** (chỉ tham chiếu `St4i.Connector.Abstractions`) — **hai trong năm** chỗ gọi id tường minh nằm ở assembly **không gọi tên nổi kiểu ấy** (`ModbusMultidropRegistration` ở EdgeCore, `EdgeConnectors` ở EdgeService); *(ii)* vựng từ ấy có **đúng hai** thành viên, cả hai mô tả một sự kiện LƯU của `ConnectorConfigStore` — **ba trong năm** chỗ gọi không có giá trị nào để khai, nên hướng ba là *“phát minh thêm thành viên rồi quyết một ma trận ưu tiên”*, mà **không nguồn nào trong cây** phát biểu ma trận ấy; *(iii)* `Register` có **8** chỗ gọi sản xuất và **126** trong test — tham số bắt buộc phá cả **134**, tham số mặc định **tái lập đúng khuyết tật mở đầu chính mục này** (`keyWasDefaulted` gộp bốn trạng thái) ở một tham số thứ hai. 🔴 **VÀ NÓ KHÔNG QUYẾT ĐƯỢC CA CỦA CHÍNH MỤC 63:** §63.1/§63.3 nói về **hai** đăng ký dưới **một id do vận hành viên gõ** — xuất xứ **BẰNG NHAU hai bên**, nên một registry giữ xuất xứ vẫn không phân xử được, và last-write-wins sống nguyên trên đúng quần thể §63.3 gọi là **dễ xảy ra hơn**. Mục **Ở LẠI PHẦN I**, kệ ⚖️, kèm ghi chép *“ba hướng đã định giá”*. Xem §63.6 ⚖️ **PHÁN QUYẾT CỦA ĐIỀU PHỐI VIÊN — 2026-08-24 (BS-1), base `48980288`: MỤC CHUYỂN SANG KỆ `chờ-chủ-sở-hữu`, VÀ KHÔNG MỘT DÒNG HÀNH VI NÀO ĐỔI.** Ba hướng nay **đều đã được định giá và không hướng nào đi được**, nên cái còn lại **là một quyết định, không phải một việc** — đúng hình dạng mục 41 và mục 43. **Ba giá, đặt ngay ở đây vì đây là chỗ anh đọc:** *(1) NÉM* ⇒ mọi lần **SỬA** một connector thành **500** ở chỗ **200** là kết cục được hỗ trợ (`ConnectorEndpoints.cs:369`, đường mà chú thích của chính nó gọi là *“the ordinary idempotent-update path”*); *(2) TỪ CHỐI* theo luật `OwnedBySomethingElse` ⇒ **đỏ** `ConnectorEndpointsEnvSeedingSideEffectsTests.PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s`, một hành vi **nhiệm vụ B-6 cố ý dựng**; *(3) REGISTRY GIỮ XUẤT XỨ* ⇒ **2/5** chỗ gọi id tường minh nằm ở assembly **không gọi tên nổi kiểu ấy** · vựng từ **không có giá trị nào cho 3/5** · **134** chỗ gọi và một tham số mặc định **tái lập chính `keyWasDefaulted`** · **và nó không quyết được ca `Operator`×`Operator` của chính mục 63**. 🔴 **Vì sao là câu của ANH chứ không của điều phối viên:** §63.5 tự kết bằng đúng chữ **CÁI CÒN CHỜ ANH** trong khi trường máy xếp mục ở `chờ-điều-phối-viên` — §63.6.5 nêu tên chỗ ấy và **cố ý không tự quyết** — và **tiền lệ cùng khuôn là mục 47, do CHỦ SỞ HỮU phán ngày 2026-08-23**. Câu phải trả lời, một câu: **có chấp nhận giá 1 hay giá 2 không.** Cả hai **không chạm ba miễn trừ**; cái chặn là **giá**, và giá là thứ điều phối viên **đo được chứ không trả được**. Mục **Ở LẠI PHẦN I**. Xem §63.7 |
 | 64 | **`SimulatedEcosystem` không kiểm toàn vẹn chéo** — và trạng thái mà bản sửa mục 45 mở ra KHÔNG phải trạng thái mã của nó nêu tên | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); backend Demo, `:442` tự khai *"never puts anything on the wire"*. Không phép kiểm nào bắc qua hai file. 🔴 **Tiền đề của chính chú thích `:578–579` KHÔNG SỐNG SÓT:** nó nêu một *"products.json nêu tên một recipe không có"*, nhưng **`ProductModel` không có trường recipe và `Recipe` không có trường product** — hai không gian khoá **độc lập**, `CheckRecipeAsync` giải theo mã máy/`MachineType`. Trạng thái thật là một **CẶP PHÂN KỲ NỬA-ÁP-DỤNG** (seed cộng +2 phiên bản cho products, +1 cho recipes), và lần sửa kế tiếp gọi `Save()` **đóng băng chỗ lệch xuống đĩa**. **Một câu phải RÚT dù có sửa mã hay không.** Xem §64 ✅ **ĐÃ THI HÀNH 2026-08-24 (BP-1, base `d9d3aafc`), theo nhãn ⚖️ kiểm lại bằng ba miễn trừ.** Chú thích `:576–581` **RÚT nguyên văn** và thay bằng trạng thái ĐO ĐƯỢC; phép kiểm toàn vẹn chéo ship dưới dạng `SeedIntegrityWarning` — nó khai **XUẤT XỨ** (*"đúng một nửa vừa được gieo"*), **không** khai số học phiên bản, nên **không đóng băng hằng số nào chưa ai công bố**. 🔴 **Và một con số của chính mục này KHÔNG sống sót: *"seed cộng +2 phiên bản cho MODEL-A/B"* — đo lại: MODEL-A **+2**, MODEL-B **+1**, SCREWDRIVE-M4 **+1**; `ConfigSyncEngineTests` đã ghi đúng ba số ấy từ trước.** Mục **PHẦN I → PHẦN III** |
 | 65 | **`ConnectorsJsonRegistration.RegistrationKeyOf` trả `entry.Kind` cho TCP/OPC-UA** — tường minh về cú pháp, mặc định về ngữ nghĩa; MỘT file, HAI câu trả lời trên hai host | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). 🔴 **LỜI KHAI GỐC BỊ BÁC Ở CHỦ THỂ và khuyết tật thì CÓ THẬT:** BM-1 nêu tên `EdgeConnectors.RegistrationKeyOf`, nhưng `EdgeConnectors.cs:148–152` trả `DriverKinds.Normalize(entry.Id.Trim())` **VÔ ĐIỀU KIỆN cho mọi kind** và **không bao giờ đọc `entry.Kind`**. Chỗ trả `entry.Kind` là `ConnectorsJsonRegistration.cs:211`. **Đặc tả đúng, địa chỉ sai: sai file, sai assembly, sai host.** Hậu quả thật: hai mục Modbus-TCP với **id khác nhau** quy về khoá `"Modbus"`, mục thứ hai **bị bỏ** kèm cảnh báo **nêu tên một KIND với người vừa đặt hai ID**; cùng file trên `EdgeService` cho **hai** connector. 🔴 **Nhãn 🔴 là nhãn tôi ít chắc nhất trong mười bốn:** nó chạm (b) theo **GIÁ TRỊ**, không theo **HÌNH DẠNG** — bản sửa dời `TargetId` của cảnh báo, trường đi ra ở `WebhookNotification` và **đã lưu** trong `SqliteAuditStore`. Giải theo chiều thận trọng; §49.5 cho phép lật. Xem §65 |
 | 66 | **`PointShape` vẫn được ĐÁNH VẦN BẰNG TAY trên đường push** — cùng khuyết tật vừa sửa, cách nó SÁU DÒNG | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1), và nhãn ⚖️ **suy từ chính phán quyết của anh 2026-08-23**, vốn đặt **byte-identity** làm điều kiện để một vế nằm trong uỷ quyền. 🔴 **Số dòng của lời khai ĐÃ CŨ:** *"426"* là số **trước** bản sửa; hôm nay là **`:476`** (`p.Shape.ToString().ToLowerInvariant()`) so với `:470` (`WireToken(p.MeasurementType)`) — **"sáu dòng" thì ĐỨNG VỮNG**. **Byte-identity đo từng thành viên: 7/7 THOẢ** (`Circle/Rect/Polygon/Line/Ring/Mask/Array`, không cái nào nhiều từ) ⇒ **dây không dịch hôm nay**, nguy cơ **tiềm ẩn** ở thành viên nhiều từ đầu tiên. **Enum đánh vần tay CUỐI CÙNG trong `ToWireDto`.** 🔴 **Phát hiện phụ: `MeasurementPoint.cs:27–29` nêu tên sibling này SAI HAI mô tả** — *"NEXT-BUT-ONE argument"* (thật: **23 trên 25**) và *"one line down"* (thật: **sáu**); thông điệp merge `47907c67` viết đúng, khối doc trên cây thì không. Xem §66 ✅ **ĐÃ THI HÀNH 2026-08-24 (BP-1, base `d9d3aafc`).** **Điều kiện byte-identity ĐO LẠI RIÊNG cho `PointShape`, không suy từ `MeasurementType`: 7/7 THOẢ**, đo bằng một theory bảy hàng đối chiếu với vựng từ ĐÃ CÔNG BỐ (`circle|rect|polygon|line|ring|mask|array`), **XANH trước bản sửa và XANH sau** — cặp xanh ấy **CHÍNH LÀ** phép đo byte-identity, đỏ ở bờ nào cũng có nghĩa dây đã dịch. `:476` nay là `WireToken(p.Shape)`; **0 byte dịch trên dây**. Hai mô tả sai ở `MeasurementPoint.cs:27–29` **RÚT nguyên văn** (đo: **23 trên 25**, và **SÁU** dòng). 🔴 **Một con số của mục này KHÔNG sống sót: *"còn đúng bốn chỗ"*** — đo lại: **bốn FILE**, nhưng **năm vị trí dòng** và **sáu lần xuất hiện** (`WebhookNotification.cs:294` mang hai). Mục **PHẦN I → PHẦN III** |
@@ -585,23 +585,37 @@ lập một ngày trước, chỉ khác ở chỗ lần này cái bị rút là 
 * **mục 71 chuyển từ ⚖️ sang 🔴**, cùng đường mục 68 đi hôm qua và vì cùng một loại lý do: bờ còn lại
   của nó **chạm miễn trừ (b)**, đo bằng byte-identity theo đúng tiền lệ vế (1) mục 57 và mục 66
   (§71.6).
-📎 **Mục 63 và mục 73 ở LẠI kệ ⚖️**, và cả hai có lý do MỚI chứ không phải lý do cũ: 63 vì **hướng
-thứ ba nay đã được suy và định giá, và nó cũng không đi được** (§63.6) — mục nay mang ghi chép
-*"ba hướng đã định giá"*; 73 vì **lỗ CASE đo được là không đóng nổi mà không đẩy dương tính giả lên**
-(§73.8).
+📎 **NỬA NÓI VỀ MỤC 63 CỦA CÂU DƯỚI ĐÂY — RÚT 2026-08-24 (BS-1), giữ NGUYÊN VĂN, không xoá một dòng
+nào; nửa nói về mục 73 KHÔNG rút và vẫn đúng từng chữ.** Nguyên văn, như nó đứng ở base `48980288`:
+> 📎 **Mục 63 và mục 73 ở LẠI kệ ⚖️**, và cả hai có lý do MỚI chứ không phải lý do cũ: 63 vì **hướng
+> thứ ba nay đã được suy và định giá, và nó cũng không đi được** (§63.6) — mục nay mang ghi chép
+> *"ba hướng đã định giá"*; 73 vì **lỗ CASE đo được là không đóng nổi mà không đẩy dương tính giả
+> lên** (§73.8).
+
+🔴 **Cái đổi, và nó là một PHÁN QUYẾT CỦA ĐIỀU PHỐI VIÊN chứ không phải một phép dọn dẹp: mục 63
+chuyển từ kệ ⚖️ sang kệ 🔴 `chờ-chủ-sở-hữu`, 2026-08-24 (§63.7).** Lý do là **chính cái ghi chép mà
+câu vừa rút đã ghi đúng**: ba hướng đã định giá, **không hướng nào đi được**, nên cái còn lại là **một
+quyết định, không phải một việc** — đúng hình dạng mục 41 và mục 43, và đúng khuôn **mục 47 mà CHỦ SỞ
+HỮU đã phán ngày 2026-08-23**. Cộng một mâu thuẫn nội tại mà §63.6.5 đã nêu tên và cố ý không tự sửa:
+**§63.5 kết bằng chữ *"CÁI CÒN CHỜ ANH"* trong khi trường máy xếp mục ở `chờ-điều-phối-viên`** — hai
+dòng ấy nay đọc cùng một hướng. **Mục 73 ở LẠI kệ ⚖️, một mình.**
 
 **Các mục ở đây, LIỆT KÊ chứ không đếm: mục 41, 43, 49, 57, 59, 60, 61, 62, 63, 65, 68, 69, 70, 71, 72, 73 và 74.**
 Tất cả mang `🔴 CHỜ ANH` ở bảng phán quyết trên, và **bảng ấy vẫn là nguồn sự thật**. Phép liệt kê
 này **ĐO LẠI từ chính Phần I sau khi nhiệm vụ này sửa xong file** — quét đầu mục `^## ` giữa banner
 Phần I và banner Phần II — chứ **không** trừ đi bằng số học từ đoạn cũ; đúng cái bẫy §8.1(b) nêu và
-đúng cái mà nhiệm vụ ngay trước tự bắt được ở chính mình.
+đúng cái mà nhiệm vụ ngay trước tự bắt được ở chính mình. 📎 **Đo lại lần nữa 2026-08-24 (BS-1) bằng
+đúng phép quét ấy: phép liệt kê KHÔNG dịch một số hiệu nào** — mục 63 đổi KỆ, không rời Phần I, nên
+quần thể mười bảy đứng nguyên và chỉ phép chia đôi nó mới đổi.
 🔴 **Banner *"ĐANG CHỜ ANH"* vẫn RỘNG HƠN SỰ THẬT, và hai dòng dưới đây vẫn là chỗ nói rõ rộng ở chỗ
-nào:** **mười lăm** mục thật sự chờ CHỦ SỞ HỮU và **hai** chờ ĐIỀU PHỐI VIÊN. Hợp của hai trường
+nào:** **mười sáu** mục thật sự chờ CHỦ SỞ HỮU và **một** chờ ĐIỀU PHỐI VIÊN. 📎 **Câu này đọc
+*"**mười lăm** … và **hai** …"* cho tới 2026-08-24 và RÚT tại chỗ cùng ngày (BS-1):** nó đúng ở base
+`48980288` và sai kể từ phán quyết chuyển mục 63 (§63.7). Hợp của hai trường
 **bằng đúng** quần thể Phần I, giao của chúng **rỗng**, và `check-owner-decisions.sh` **kiểm `C7`**
 cả ba mệnh đề ấy mỗi lần chạy cổng. **Phép kiểm KHÔNG bị nhiệm vụ này sửa một dòng nào — chỉ quần
 thể đổi.**
-<!-- gate:phần-i-chờ-chủ-sở-hữu = 41 43 49 57 59 60 61 62 65 68 69 70 71 72 74 -->
-<!-- gate:phần-i-chờ-điều-phối-viên = 63 73 -->
+<!-- gate:phần-i-chờ-chủ-sở-hữu = 41 43 49 57 59 60 61 62 63 65 68 69 70 71 72 74 -->
+<!-- gate:phần-i-chờ-điều-phối-viên = 73 -->
 
 
 > 📎 **MỞ RỘNG 2026-08-20 (AO-1), KHÔNG phải RÚT — phép liệt kê ngay trên đọc *"… mục 30 và 31"* cho
@@ -2033,6 +2047,61 @@ dạng khuyết tật mà §54.8 vừa dựng cặp trường để bắt**, xu�
 ở banner. Nhiệm vụ này **không tự quyết** chỗ ấy: tiền lệ gần nhất là **mục 47** — cùng khuôn, cùng
 kiểu đánh đổi — và **chủ sở hữu** là người phán nó ngày 2026-08-23. Nêu tên, để nguyên vị trí theo
 lời giao việc, và ghi rằng nếu ai đó đọc lại mục này thì đây là chỗ phải quyết trước mọi thứ khác.
+
+### 63.7 ⚖️ PHÁN QUYẾT CỦA ĐIỀU PHỐI VIÊN — 2026-08-24 (BS-1), base `48980288`. **MỤC CHUYỂN SANG KỆ `chờ-chủ-sở-hữu`; KHÔNG MỘT DÒNG HÀNH VI NÀO ĐỔI, KHÔNG MỘT DÒNG `C7` NÀO ĐỔI**
+
+**Phán quyết, phát biểu một lần:** mục 63 rời trường máy `chờ-điều-phối-viên` và sang
+`chờ-chủ-sở-hữu`. Đây là một phán quyết về **CHỖ ĐỨNG** của mục, **không** về khuyết tật: nó không
+chọn hướng nào, không viết một dòng `ConnectorRegistry` nào, và không sửa `check-owner-decisions.sh`
+một dòng nào. Hợp của hai trường vẫn **bằng đúng** quần thể Phần I và giao của chúng vẫn **rỗng** —
+`C7` đọc quần thể mới mà không phải đổi, và đó là **phép đối chứng rẻ nhất cho chính phán quyết này**:
+nếu tôi phải nới một phép kiểm để nó xanh thì phán quyết đã sai hình dạng.
+
+#### 63.7.1 Hai phép đo đưa tới nó, không một lập luận
+
+**(1) §63.5 nói với CHỦ SỞ HỮU, và trường máy nói ngược lại.** §63.5 kết bằng đúng chữ
+*"CÁI CÒN CHỜ ANH, phát biểu lại cho đúng"*. Trong file này *"anh"* là **chủ sở hữu** — banner Phần I
+đọc *"ĐANG CHỜ ANH"* và §54.8 dựng cặp trường chính vì banner ấy nói với chủ sở hữu. Trong khi đó
+trường máy xếp mục ở `chờ-điều-phối-viên`. §63.6.5 **đã nêu tên chỗ ấy và cố ý không tự quyết**; đây là
+chỗ nó được quyết. 📎 Đây đúng hình dạng khuyết tật §54.8 dựng cặp trường để bắt, chỉ khác chỗ nó xuất
+hiện: **bên trong một thân mục**, chứ không ở banner — nên cặp trường thấy nó **không** được, và một
+người đọc mới thấy.
+
+**(2) Tiền lệ cùng khuôn là mục 47, và mục 47 do CHỦ SỞ HỮU phán.** Cùng phương thức
+(`ConnectorRegistry.Register`), cùng phán quyết được đề xuất (*"biến đụng độ thành lỗi"*), cùng kiểu
+đánh đổi (một cấu hình hôm nay chạy được thành một lỗi), và **chủ sở hữu** phán nó ngày **2026-08-23**
+(§47.5). 🔴 **Và chỗ hai mục KHÁC nhau đẩy về cùng một phía, không phía ngược lại:** mục 47 chạm khoá
+**do máy suy**, mục 63 chạm khoá **do người gõ** — §63.3 gọi đó là quần thể **dễ xảy ra hơn**. Một mục
+cùng khuôn với một mục chủ sở hữu đã phán, trên một quần thể rộng hơn, thuộc về cùng người đọc.
+
+#### 63.7.2 🔴 VÀ ĐÂY LÀ CÁI QUYẾT ĐỊNH: BA HƯỚNG ĐỀU ĐÃ ĐỊNH GIÁ, KHÔNG HƯỚNG NÀO ĐI ĐƯỢC
+
+Ba giá đọc đủ ở §63.5 và §63.6.4; **nhắc lại ở đây vì lời giao việc đòi chúng đứng ở chỗ chủ sở hữu
+đọc**, và vì một mục chuyển kệ mà không mang theo giá thì chỉ chuyển một cái tên. **Liệt kê trước:**
+
+| hướng | giá ĐÃ ĐO | ai dựng và đo |
+|---|---|---|
+| **1. NÉM** trên mọi id tường minh trùng | mọi lần **SỬA** một connector thành **500** ở chỗ **200** là kết cục được hỗ trợ — `ConnectorEndpoints.cs:369`, đường mà chú thích của chính nó (`:273–274`) gọi là *"the ordinary idempotent-update path"* | BP-1, §63.5, bản **được viết và chạy** |
+| **2. TỪ CHỐI** theo luật `OwnedBySomethingElse` | **đỏ** `ConnectorEndpointsEnvSeedingSideEffectsTests.PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s` — một hành vi **nhiệm vụ B-6 cố ý dựng**, và bài test tồn tại **để giữ** nó | BP-1, §63.5, bản **được viết, biên dịch, chạy** |
+| **3. REGISTRY GIỮ XUẤT XỨ** | *(i)* kiểu `ConnectorConfigSource` **không với tới được** tầng `St4i.EdgeCore` ⇒ **2/5** chỗ gọi id tường minh mù; *(ii)* vựng từ có **đúng hai** thành viên, **không giá trị nào cho 3/5** chỗ gọi ⇒ phải **phát minh thành viên rồi quyết một ma trận ưu tiên** mà không nguồn nào trong cây phát biểu; *(iii)* `Register` có **8** chỗ gọi `src/` + **126** trong `tests/` ⇒ tham số bắt buộc phá **134**, tham số mặc định **tái lập chính `keyWasDefaulted`**; *(iv)* **và nó không quyết được ca `Operator`×`Operator` của chính mục 63** | BR-1, §63.6, **suy và định giá**, không dựng |
+
+⇒ **Ba giá là lý do ba hướng ĐẮT; §63.6.3 là lý do hướng ba KHÔNG ĐÁNG, và một mình nó đủ.** Sau ba
+phép định giá, thứ còn lại **không phải một bản sửa chưa ai viết** mà là **một câu hỏi chưa ai được
+phép trả lời thay**: *có chấp nhận giá 1 hay giá 2 không* — tức có biến một cấu hình hôm nay chạy được
+thành một lỗi khởi động (giá 1), hoặc gỡ một hành vi B-6 cố ý dựng (giá 2). Đó là **hình dạng mục 41 và
+mục 43**: cơ chế đã đo xong, giá đã ghi, và cái còn lại là một lựa chọn.
+
+#### 63.7.3 Cái nhiệm vụ này KHÔNG làm — nêu tên chứ không để suy
+
+* **Không chọn hướng nào**, không đổi một dòng mã nào ở mục 63. Nhãn ⚖️ ở đầu mục, ở §63.5 và ở §63.6
+  **giữ nguyên từng chữ**: nó vẫn đúng ở cái nó nói — *ba miễn trừ không bị chạm* — và nó **chưa bao
+  giờ** nói rằng giá là chấp nhận được. Chuyển kệ **không bác** nhãn ấy; nó bác cách đọc *"⚖️ nghĩa là
+  điều phối viên sẽ làm"*.
+* **Không đụng mục 73.** Kệ `chờ-điều-phối-viên` sau nhiệm vụ này còn **một** mục, và đó là 73.
+* 🔴 **Không mở mục mới cho hai chỗ §63.5 để lại MỞ** — cửa sổ giữa ảnh chụp `:203` và `Register`
+  `:241`, và hàng thứ tư của bảng §63.5 (một đăng ký **không mang claim** đè lên người đang giữ **có**
+  claim, mà **không dụng cụ nào** chặn). Cả hai **vẫn mở, vẫn ở đúng chỗ chúng được ghi**, và nhiệm vụ
+  này chỉ trỏ lại vào chúng để phán quyết trên không bị đọc thành *"mục 63 nay đã đóng hết"*.
 
 ---
 
@@ -8709,6 +8778,42 @@ quyết): `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` —
 > Bảy do phán quyết, HAI do mã của AK-1, HAI do prose của AK-1, MỘT có trước cả hai** — tổng các lớp là
 > **mười hai lần xuất hiện trên chín câu cộng ba câu của lớp 3 và 4**, nên **con số duy nhất đọc được ở
 > đây là con số đếm lại được từ chính phép liệt kê trên**, không phải một số vô hướng đặt riêng.
+>
+> 🔴 **HAI CÂU NGAY TRÊN BẤT ĐỒNG VỚI NHAU VỀ SỐ FILE, VÀ MỘT SỔ NỢ TỰ MÂU THUẪN LÀ KHUYẾT TẬT NẶNG
+> HƠN MÓN NỢ NÓ GHI — nửa sai RÚT 2026-08-24 (BS-1), cả hai câu giữ NGUYÊN VĂN ở trên.** Chúng đọc
+> *"**CHÍN câu còn nợ, trong HAI file**"* và *"**ĐẾM SAU KHI LIỆT KÊ: CHÍN câu, trong BA file**"*.
+> **Đếm lại từ chính phép liệt kê trên, trên đĩa, 2026-08-24 — liệt kê trước, số sau:** SÁU câu ở
+> `src/St4i.Connector.Abstractions/Models/DeviceReading.cs` (lớp 1: `:47–49`, `:55–56`, `:98–99`,
+> `:102`; lớp 2: `:52`, `:95`) và **BA** ở
+> `tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContractTests.cs` (`:13`, `:120`, `:137`) ⇒ **CHÍN
+> câu, HAI file. HAI là đúng.** *"BA file"* đếm file của **cả bốn lớp**: file thứ ba là
+> `WaveformPairAtTheWireBoundaryTests.cs`, giữ **lớp 3**, thứ mà câu ngay trước nó vừa loại khỏi tập
+> còn nợ. 🔴 **Nên khuyết tật là SAI ĐƠN VỊ, không phải sai số học:** một mệnh đề có chủ ngữ *"CHÍN
+> câu"* và vị ngữ đếm trên **mười hai** câu. **Vế còn lại của chính câu ấy — *"TÁM là `///`, MỘT là
+> thông điệp `Assert` lúc chạy"* — đo lại và ĐỨNG VỮNG.**
+>
+> ✅ **CHÍN CÂU ẤY ĐÃ ĐƯỢC TRẢ — BS-1, 2026-08-24, base `48980288`, 0 dòng hành vi, 0 assertion đổi.**
+> Cả chín sửa **tại chỗ kèm ngày**, văn cũ **giữ nguyên từng chữ** trong hai file trên. Ghi theo **chủ
+> nợ**, vì đó là phân biệt chịu lực mà khối này lập ra:
+> * **BẢY câu lớp 1** sai vì **mục 14 ĐÃ ĐƯỢC QUYẾT** — chủ sở hữu, **2026-08-19**, lựa chọn 3, thi
+>   hành cùng ngày, mục nay ở **Phần III** — trong khi chúng đọc *"opened 2026-08-18 and NOT decided"*,
+>   *"still open"*, *"has not been decided"*, *"is precisely what item 14 must settle"*, *"item 14
+>   reopens them"*. Bản trả **không** tuyên bố mục 14 đã trả lời câu hỏi trong-tiến-trình: nó viết
+>   rằng mục 14 quyết **hình dạng TRÊN DÂY** và **cố ý để nguyên** kiểu này — tức đúng cái §63-style
+>   *"đóng mà không trả lời"*, chứ không phải một câu trả lời mới do người thi hành nghĩ ra.
+> * **HAI câu lớp 2** sai vì `St4i.EdgeCore.Mapping.Normalizer.ToWireSampleRows`: với `RateHz` hữu hạn
+>   và dương, một hàng **một phần tử** đi ra thành cặp `[i / rateHz, v]`. Nên *"passed to the wire
+>   unchanged"* và *"the normalizer copies rows to the wire unchanged"* là **phép CHÉP ở hàng cặp và
+>   phép GHI LẠI ở hàng vô hướng** — đo tại `Normalizer.cs:333–349`.
+> * 🔴 **Câu lớp 4 (`DeviceReading.cs:62`) CŨNG đã trả, và nó KHÔNG nằm trong chín — nói ra để con số
+>   chín không bị đọc rộng ra mười.** Đo lại `WelderSim.BuildCurrentWaveform`: **24** điểm vẽ ở
+>   `t = i / 23` của thời lượng `D`, công bố `rateHz = 24 / D` ⇒ mẫu thật ở `i·D/23` được khai ở
+>   `i·D/24`. **Con số 4,17 % của AI-1 SỐNG SÓT, và đơn vị của nó phải nói ra:** đó là **1/24 của thời
+>   gian THẬT**; đọc theo chiều kia, thời gian thật **muộn hơn 4,35 %** so với con số đã khai. Hai
+>   phân số ấy là **một chỗ lệch**, không phải hai.
+> * 🔴 **Cái KHÔNG được đụng, và vì sao:** `WelderSim` **không** bị sửa. Chỗ lệch nằm ở **bộ sinh**,
+>   không ở hợp đồng, và §14 đã ghi rằng sau AK-1 những con số ấy **đã rời khỏi máy** — sửa chúng là
+>   **đổi số đã xuất bản**, tức miễn trừ *"hình dạng dữ liệu trên dây"*. Ghi, không sửa.
 >
 > 🔴 **KHÔNG câu nào trong số ấy được AK-1 sửa, và ràng buộc là RÕ:** lớp 1 và 2 nằm trong hai file
 > **brief cấm chạm**; lớp 3 nằm trong **nhân chứng mới**, mà vòng phản biện **cấm đụng**. Nên tất cả
@@ -15751,6 +15856,114 @@ cả bốn **có thể vẫn đúng**:
 mà cây có**, và mục 30 **đã ở Phần III** với một phán quyết đã thi hành — nên một người đọc chúng hôm
 nay không có cách nào biết rằng **chưa ai từng nâng cấp một bản cài**. Đó chính là điều lời giao việc
 đòi: *"câu nào đang viết như thể đã quan sát thì rút tại chỗ kèm ngày."*
+
+---
+
+## Tồn dư đã TRẢ — BS-1 (2026-08-24, base `48980288`), và BA lời khai của các nhiệm vụ trước KHÔNG sống sót
+
+🔴 **Nhiệm vụ HỒ SƠ: 0 dòng hành vi sản phẩm, 0 mục mới, 0 lệnh đè cảnh báo, 0 dòng `check-owner-decisions.sh`.**
+Nó trả bốn món tồn dư đã được nêu tên ở khối BO-1 ngay trên và thi hành **một phán quyết của điều phối
+viên** (mục 63 → kệ chủ sở hữu, §63.7). **Mọi con số dưới đây được ĐO LẠI trước khi viết**, kể cả những
+con số do BO-1 và BR-1 khai.
+
+### (B) CHÍN câu P-2 — ĐẾM LẠI CẢ ĐƠN VỊ LẪN PHẠM VI, RỒI TRẢ CẢ CHÍN
+
+**Đơn vị là *"câu"* (một mệnh đề đã công bố), không phải *"chỗ"* và không phải *"tên"*.** Phạm vi là
+**HAI file**. Con số **chín** đứng vững; phép ghi *"BA file"* của chính sổ nợ **không**. Chi tiết, phép
+đếm lại và bản trả nằm **ở chính sổ nợ** — thân mục 14, khối AK-1 — chứ không ở đây, vì một sổ nợ được
+trả ở một trang khác là một sổ nợ thứ hai. **Sổ nợ nay hết tự mâu thuẫn.**
+
+🔴 **Ba chỗ lời khai của BO-1 KHÔNG sống sót nguyên văn, và không chỗ nào làm món nợ khác đi:**
+1. **Số dòng đã dời.** BO-1 trỏ sổ nợ ở `:6149–6238` và hai câu mâu thuẫn ở `:6232`/`:6235`. Trên cây
+   hôm nay chúng ở `:8620–8711` và `:8705`/`:8708` — **lệch đúng 2 473 dòng**, do BP-1/BQ-1/BR-1 thêm
+   nội dung **ở trên** chúng. Lời khai **đúng ở base của nó**; cái không đứng là **con trỏ**, và một
+   con trỏ vào một file chỉ-thêm-vào là thứ đi cũ mà không tự tố cáo. Ghi lại theo **TÊN** (thân mục
+   14, khối AK-1, lớp 1/lớp 2) chứ không theo số dòng.
+2. **Vị ngữ *"commit cuối của cả hai file là `efd46138` và `84836ad6`"* SAI.** Đo bằng
+   `git log -1 -- <path>`: commit cuối của **cả hai** file là `efd46138` (2026-08-18); `84836ad6`
+   (cùng ngày) là commit **áp chót của cả hai**. **Kết luận của BO-1 thì ĐỨNG** — cả hai file được
+   chạm lần cuối **trước** ngày món nợ được ghi sổ (2026-08-19), nên *"chưa trả câu nào"* là đúng.
+   Cái sai là hình dạng *"mỗi file một commit"*, và nó sai theo chiều **trung tính**, không theo chiều
+   có lợi.
+3. **Đơn vị của 4,17 % chưa từng được nói ra.** Xem gạch đầu dòng lớp 4 ở sổ nợ: 4,17 % là phần trăm
+   của **thời gian THẬT**; cùng một chỗ lệch đọc theo chiều kia là **4,35 %**.
+
+### (C) TRẦN CỦA MỤC 9(b) — KIỂM LẠI RỒI TRẢ, VÀ NÓ NÊU ĐƯỢC BẰNG MỘT CON SỐ
+
+**Phép kiểm lại lời khai của BO-1, từng vế:** mục 9 có ba lựa chọn, chủ sở hữu phán **(b)** ngày
+2026-08-19 ⇒ **(a) không được chọn và không có trần nào gắn với nó** — đúng. Trong thân mục 9 (từ đầu
+mục tới đầu mục 10) chữ *"TRẦN"* xuất hiện **đúng một lần**, bên trong khối ✅ ĐÃ THI HÀNH của AJ-1 —
+đúng. `docs/startup-failure-posture.md` kết đúng bằng *"It is the ceiling of item 9's **execution**"*
+và đánh vần **"owner item 9(b)"** — đúng. ⇒ **Tồn dư này được trả bằng cách viết "9(b)" / "phép thi
+hành mục 9", và nó được viết ở đây.**
+
+**CÁI TRẦN, phát biểu đầy đủ và bằng MỘT con số đo được:** nếu sàn `ST4I_*` được **ghi** rồi **áp
+hỏng**, nhánh `Unreadable` **không có** khối vứt tương đương nhánh GIEO, nên file vừa ghi **ở lại** và
+từ lần boot sau **thắng** các biến `ST4I_*` theo precedence FF-1. **Con số là MỘT:** đóng chỗ ấy đòi
+**một bộ xoá THỨ HAI** trong `src/`, và phép đếm hôm nay (2026-08-24) trả về **đúng một** —
+`settingsStore.Delete()` ở `src/St4i.EngineApi/Program.cs:2347`, gác ở `:2343` trên
+`Status == Absent && !replaySucceeded`; hai nhánh `Unreadable` (`:2013`, `:2028`) **không với tới
+được** nó. **Phán quyết 2026-08-19 không cho phép bộ xoá thứ hai**, nên trần này **mở có chủ ý**.
+
+🔴 **VÀ MỘT VẾ CỦA CHÍNH KHỐI AJ-1 KHÔNG SỐNG SÓT — ghi, không sửa.** AJ-1 viết rằng trần ấy được nêu ở
+**ba** chỗ: mục 9, `docs/startup-failure-posture.md` §3.1a-now, **và trong chú thích của chính
+`Program.cs`**. Đo hôm nay: hai chỗ đầu **có**; chỗ thứ ba **KHÔNG**. `Program.cs` mang **ranh giới**
+(*"the discard block further down is UNCHANGED and still cannot be entered from this arm"*, `:2219–2221`)
+và mang **cơ chế thắng-từ-boot-sau cho nhánh GIEO** (`:2287–2289`, arm `Absent`, arm **có** bộ vứt) —
+nhưng **không câu nào** nói rằng một sàn ghi-rồi-áp-hỏng trên nhánh `Unreadable` sống sót và thắng.
+**Đây là lời khai của một phép đo về CHÍNH NÓ, và nó đếm thừa một chỗ.** Không sửa: viết câu ấy vào
+`Program.cs` là chạm một file đường khởi động trong một nhiệm vụ hồ sơ, và lời giao việc nói *thấy
+khuyết tật thì ghi*.
+
+### (D) BẢNG GIÁ `Directory.Build.props` — ĐO LẠI, RÚT TẠI CHỖ, VÀ HAI SỔ KHÔNG BẤT ĐỒNG
+
+**Con số đo được 2026-08-24: `0` cảnh báo bao phủ trên nguồn CỦA TA + `103` vendored.** File ghi
+**212 = 109 + 103**; con số sống hôm nay là **103**, và cả 103 nằm trong rổ **không ai ở đây trả được**.
+**Phép đo, nêu rõ:** đọc ra từ **sổ phân theo XUẤT XỨ** mà cổng tự dựng lại mỗi lần chạy
+(`EXPECT_WARNING_LEDGER`, **14 hàng**, `scripts/verify-suites.sh`), chứ không phải một lần đếm rời. Mã
+bao phủ là `CS1591` và `CS1573`. Hàng OURS: `CS8601 7`, `CS8604 14`, `CS8767 2`, `NU1701 9`,
+`xUnit1013 1`, `xUnit2029 1` — tổng **34**, và **không hàng nào mang hai mã ấy**, nên *"0 của ta"* là
+một **phép liệt kê**, không phải một phép trừ. Hàng VENDORED: `CS1573 8` + `CS1591 95` = **103**, trong
+tổng vendored **185**. 34 + 185 = **219** = `EXPECT_WARNINGS`.
+
+🔴 **HAI CHỖ KHÔNG BẤT ĐỒNG, và nói theo chiều thuận vì một sự đồng ý im lặng đọc giống một chỗ chưa
+kiểm:** 103 **là tập con** của 185, không phải một phép đếm thứ hai trên cùng quần thể. 185 − 103 =
+**82** vendored ngoài-bao-phủ, và 82 + 34 = **116** — đúng con số mà chính khối *"tắt công tắc"* của
+`Directory.Build.props` đã ghi, đo ngày 2026-08-19 khi tổng còn **852**. Hai lần đọc cách nhau ba đợt
+trả nợ rơi vào **cùng một số** vì mọi thứ đã trả đều là của ta. **Không có bất đồng để nêu.**
+
+**Đã rút tại chỗ trong `Directory.Build.props`, kèm ngày, văn cũ giữ nguyên từng chữ:** *(i)* *"the
+live figure is 212 outstanding: 109 coverage warnings on our own source"*; *(ii)* *"They are owed to an
+owner RULING about access level, priced but not decided"* — phán quyết đã có **2026-08-22** và đợt
+9–12 trả cả 109; *(iii)* *"turning St4i.EdgeCore's switch back off drops 736 warnings at once"* — hôm
+nay **103**; *(iv)* hai câu đầu của khối AN-1 cuối file (*"ITEM 12 STAYS IN PART II"* + *"109 coverage
+warnings remain"*) — **Phần II RỖNG** và mục 12 ở **Phần III** từ 2026-08-22 (BC-1). 🔴 **Phép liệt kê
+của BO-1 cho vế (iii) ĐẾM THIẾU:** nó nêu **bốn** dòng mang *"ITEM 12 STAYS IN PART II"* (492, 562,
+616, 681); đếm lại ở base `48980288` có **TÁM** (445, 492, 562, 616, 620, 676, 681, 731). **Chỉ MỘT
+trong tám là khẳng định về HÔM NAY** (731), nên chỉ một bị rút — bảy dòng kia là hồ sơ có ngày của
+từng đợt, và file này không viết lại chúng. **Cột `set` đo lại và ĐỨNG:** 15 `.csproj` ngoài
+`bin/obj`, đúng **8** mang `GenerateDocumentationFile`, đúng **8** hàng bảng đánh `yes`. **Bảng
+theo-dự-án KHÔNG được đo lại** ở nhiệm vụ này, và chỗ ấy tự khai như thế từ trước.
+
+### (E) `SYNAPSE_GAP…ROADMAP` — KHUYẾT TẬT KHÔNG PHẢI "NGÀY CŨ", VÀ NGÀY THẬT KHÔNG PHẢI 29/07
+
+**Đo lại và lời khai NỬA ĐÚNG của BO-1 đứng vững ở cái nó nói:** `:32` đọc
+*"## 0-bis. TIẾN ĐỘ THỰC HIỆN *(cập nhật 28/07/2026)*"* trong khi `:11` ghi **29/07/2026** và `:10`
+gọi **chính §0-bis ấy** là *"(cập nhật 29/07/2026)"*. ⇒ **một file tự nói hai ngày cho cùng một mục**.
+
+🔴 **NHƯNG NGÀY THẬT KHÔNG PHẢI CÁI NÀO TRONG HAI, và đây là chỗ phép đo được giao cũng hụt.** Lịch sử
+git của chính file: lần đổi nội dung gần nhất là **`f95aaabf`, 2026-08-01**, và nó **thêm một hàng vào
+bảng GAP §0-bis.3** (hàng *"Cảnh báo ra ngoài"*, Đợt C) mà **không** đụng trường *"Cập nhật gần nhất"*;
+trước đó **`87b09e71`, 2026-07-30** (Đợt B) cũng vậy. ⇒ **Ngày thật của §0-bis là 01/08/2026.** Cả hai
+ứng viên có sẵn trong văn bản đều **hụt theo cùng một chiều**, và lý do là cả hai được đọc **từ văn
+bản** chứ không từ **lịch sử**.
+
+🔴 **Và một chỗ THỨ TƯ mà tồn dư được giao không nêu:** `:107`, đầu cột bảng GAP §0-bis.3, đọc
+*"| GAP | Trạng thái 28/07/2026 |"* — trên đúng cái bảng mà `f95aaabf` vừa thêm hàng vào. **Bốn con số
+ngày, không hai.** Cả bốn nay đọc **01/08/2026**, văn cũ trích nguyên văn trong khối ghi chú mở đầu
+§0-bis. **Và ngày thật ấy ĐÃ CŨ: 01/08/2026 cách 2026-08-24 hai mươi ba ngày** — nói ra vì đồng bộ bốn
+con số **không** làm nội dung mới lại, và nhiệm vụ này **không** đo lại một mệnh đề nội dung nào của
+§0-bis.
 
 ---
 ## Không phải quyết định của chủ sở hữu, nhưng đang chặn công cụ đo

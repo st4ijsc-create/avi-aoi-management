@@ -45,21 +45,50 @@ public record MetricSample(string Name, double Value, string? Unit = null, doubl
 /// the derivation from <c>torque_vs_angle</c> above.</param>
 /// <param name="RateHz">The sampling rate in hertz, or <see langword="null"/> for a series that is not
 /// sampled against a uniform time base. 🔴 Whether it ALSO determines how many elements a
-/// <paramref name="Samples"/> row holds is an open owner decision — see that parameter, which states both
-/// published conventions and names the one that is enforced at runtime. RETRACTED 2026-08-18 (task AA-1,
-/// review round 1), kept verbatim: <c>"It is also the DISCRIMINATOR for the shape of a Samples row —
-/// whether it is set is what a consumer reads FIRST, before touching a row."</c></param>
-/// <param name="Samples">The sample rows, passed to the wire unchanged.
+/// <paramref name="Samples"/> row holds is UNSETTLED for this type, and since 2026-08-19 that is a
+/// DECIDED state rather than an open question: the owner ruled <c>docs/owner-decisions.md</c> item 14 on
+/// 2026-08-19 (option 3, executed the same day, item now in Part III), and that ruling fixed the row shape
+/// ON THE WIRE while deliberately leaving this type alone. In process the two built-in producers still
+/// split on this parameter — see <paramref name="Samples"/>.
+/// RETRACTED 2026-08-24 (task BS-1), kept verbatim, because it points a reader at an owner decision that
+/// has been taken: <c>"Whether it ALSO determines how many elements a Samples row holds is an open owner
+/// decision — see that parameter, which states both published conventions and names the one that is
+/// enforced at runtime."</c>
+/// RETRACTED 2026-08-18 (task AA-1, review round 1), kept verbatim: <c>"It is also the DISCRIMINATOR for
+/// the shape of a Samples row — whether it is set is what a consumer reads FIRST, before touching a
+/// row."</c></param>
+/// <param name="Samples">The sample rows as this process holds them. 🔴 They are NOT what leaves the
+/// machine: <c>St4i.EdgeCore.Mapping.Normalizer.ToWireSampleRows</c> rewrites a ONE-element row into a
+/// <c>[t, v]</c> pair, with <c>t = i / RateHz</c>, whenever <paramref name="RateHz"/> is finite and
+/// positive. A two-element row and a row on a null-rate series go out byte for byte.
 ///
 /// <para>🔴 <b>TWO PUBLISHED CONVENTIONS DISAGREE ABOUT A ROW'S LENGTH, ONE OF THEM IS ENFORCED AT
-/// RUNTIME, AND WHICH IS CANONICAL IS AN OPEN OWNER DECISION — <c>docs/owner-decisions.md</c> item 14,
-/// opened 2026-08-18 and NOT decided.</b> This parameter states what is MEASURED on each side and
-/// deliberately picks neither. Read both before writing a driver.</para>
+/// RUNTIME, AND THE OWNER DECIDED WHICH IS CANONICAL ON THE WIRE — <c>docs/owner-decisions.md</c> item 14,
+/// opened 2026-08-18, decided 2026-08-19 (option 3) and executed the same day.</b> The wire carries pairs.
+/// This TYPE was deliberately left where it stood, so both conventions below still describe something
+/// real, and a driver author reads both: (A) is what the object holds, (B) is what the far end receives.
+/// RETRACTED 2026-08-24 (task BS-1), kept verbatim: <c>"The sample rows, passed to the wire unchanged."</c>
+/// — refuted by <c>ToWireSampleRows</c>, which is a copy for a pair row and a REWRITE for a scalar one; and
+/// <c>"WHICH IS CANONICAL IS AN OPEN OWNER DECISION — docs/owner-decisions.md item 14, opened 2026-08-18
+/// and NOT decided."</c> — the decision was taken on 2026-08-19; and <c>"This parameter states what is
+/// MEASURED on each side and deliberately picks neither. Read both before writing a driver."</c> — the
+/// second sentence stands and is kept live above, the first does not, because one side has been picked
+/// for the wire.</para>
 ///
 /// <para><b>(A) What this product's two built-in producers do — measured, and not in dispute.</b> The
 /// <c>weld_current</c> series (welder simulator) computes a rate from the weld duration, so
 /// <paramref name="RateHz"/> is always set, and emits <b>one-element</b> <c>[current]</c> rows, leaving
-/// the time axis implicit — row <c>i</c> is the sample at <c>i / RateHz</c> seconds. The
+/// the time axis implicit — a consumer reconstructs row <c>i</c> as the sample at <c>i / RateHz</c>
+/// seconds, which is the reading <c>rateHz</c> publishes and the one <c>ToWireSampleRows</c> writes out.
+/// 🔴 <b>That is the CONTRACT time, not WelderSim's own.</b> Re-measured 2026-08-24 (task BS-1) on
+/// <c>WelderSim.BuildCurrentWaveform</c>: it draws 24 points at <c>t = i / 23</c> of the weld duration
+/// <c>D</c> and publishes <c>rateHz = 24 / D</c>, so the sample really taken at <c>i·D/23</c> is announced
+/// at <c>i·D/24</c> — short by <b>1/24 = 4,17 %</b> of the true time (equivalently, the true time is
+/// 4,35 % later than the announced one). The skew is WelderSim's, not this contract's, and it is recorded
+/// here rather than fixed because the numbers have been on the wire since item 14 shipped.
+/// RETRACTED 2026-08-24 (task BS-1), kept verbatim: <c>"row i is the sample at i / RateHz seconds"</c> —
+/// it reads as a statement about the producer and is false of the only producer it names. The
+/// <c>torque_vs_angle</c> series (screwdriver simulator) passes <see langword="null"/> for
 /// <c>torque_vs_angle</c> series (screwdriver simulator) passes <see langword="null"/> for
 /// <paramref name="RateHz"/> and emits <b>two-element</b> <c>[angle, torque]</c> rows, where element 0 is
 /// a tightening angle in degrees and not a time. Those two are consistent with each other, and
@@ -92,16 +121,26 @@ public record MetricSample(string Name, double Value, string? Unit = null, doubl
 ///
 /// <para><b>What a consumer may rely on TODAY, stated narrowly because that is all that is measured.</b>
 /// Inside this assembly's own process nothing constrains a row: this type accepts any
-/// <see langword="double"/>[], the normalizer copies rows to the wire unchanged, and the conformance
-/// harness compares rows whole rather than asking their length. Past the wire the two-number rule applies
-/// and this type cannot negotiate it. <paramref name="RateHz"/> may be read as a statement about the
-/// UNIFORMITY of sampling; whether it also determines a row's length is precisely what item 14 must
-/// settle.</para>
+/// <see langword="double"/>[], and the conformance harness compares rows whole rather than asking their
+/// length. The normalizer is where that stops: <c>ToWireSampleRows</c> pairs a scalar row against
+/// <c>i / RateHz</c> before it leaves. Past the wire the two-number rule applies and this type cannot
+/// negotiate it. <paramref name="RateHz"/> may be read as a statement about the UNIFORMITY of sampling;
+/// whether it also determines a row's length in THIS type is a question item 14 was closed WITHOUT
+/// answering, and closing it now would be a new owner decision rather than a reading of that one.
+/// RETRACTED 2026-08-24 (task BS-1), kept verbatim: <c>"the normalizer copies rows to the wire
+/// unchanged"</c> — refuted by <c>ToWireSampleRows</c>; and <c>"whether it also determines a row's length
+/// is precisely what item 14 must settle"</c> — item 14 settled the wire and left this alone, so a reader
+/// who follows that pointer arrives at an answer that is not there.</para>
 ///
 /// <para>The sentence this parameter closed with BEFORE 2026-08-18 is kept verbatim too, because the
-/// grounds on which it was retired are themselves now in question and item 14 reopens them — RETIRED
+/// grounds on which it was retired were themselves in question when item 14 was open — RETIRED
 /// 2026-08-18 by owner decision of 2026-08-16 (<c>docs/owner-decisions.md</c> item 4): <c>"A consumer
-/// must therefore not assume a row shape from this type alone."</c></para></param>
+/// must therefore not assume a row shape from this type alone."</c> 🔴 On the 2026-08-19 ruling that
+/// sentence reads TRUE again for this type and FALSE for the wire, and it stays retired rather than
+/// restored, because a sentence that is true of one side of <c>ToWireSampleRows</c> and false of the other
+/// is the shape this block exists to stop. RETRACTED 2026-08-24 (task BS-1), kept verbatim: <c>"the
+/// grounds on which it was retired are themselves now in question and item 14 reopens them"</c> — item 14
+/// is decided and in Part III, so nothing is reopening anything.</para></param>
 public record WaveformSeries(string Name, string? Unit, double? RateHz, IReadOnlyList<double[]> Samples);
 
 /// <summary>

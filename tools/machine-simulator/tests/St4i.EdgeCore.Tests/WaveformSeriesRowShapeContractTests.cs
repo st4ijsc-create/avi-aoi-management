@@ -8,9 +8,15 @@ namespace St4i.EdgeCore.Tests;
 
 /// <summary>
 /// 🔴 Task AA-1 (.superpowers/sdd/oee-definition-and-row-shape/task-1-brief.md), rewritten in review round
-/// 1 — <b>this file pins the row shape THIS PRODUCT'S TWO BUILT-IN PRODUCERS EMIT. It does not assert that
-/// shape is the canonical one, because that is an OPEN OWNER DECISION</b> —
-/// <c>docs/owner-decisions.md</c> item 14, opened 2026-08-18 and not decided.
+/// 1 — <b>this file pins the row shape THIS PRODUCT'S TWO BUILT-IN PRODUCERS EMIT IN PROCESS. It does not
+/// assert that shape is the canonical one on the wire, and the owner has ruled that it is not</b> —
+/// <c>docs/owner-decisions.md</c> item 14, opened 2026-08-18, decided 2026-08-19 (option 3) and executed
+/// the same day. That ruling put <c>[t, v]</c> pairs on the wire at
+/// <c>St4i.EdgeCore.Mapping.Normalizer.ToWireSampleRows</c> and deliberately left <c>WaveformSeries</c>
+/// itself alone, which is why this file is still a drift report about the producers rather than a verdict.
+/// 🔴 RETRACTED 2026-08-24 (task BS-1), kept verbatim: <c>"It does not assert that shape is the canonical
+/// one, because that is an OPEN OWNER DECISION — docs/owner-decisions.md item 14, opened 2026-08-18 and
+/// not decided."</c> — the reason survives, the ground given for it does not.
 ///
 /// <para><b>WHY THE DISTINCTION IS THE WHOLE POINT.</b> Two published conventions in this repository
 /// disagree about how many numbers a <c>WaveformSeries.Samples</c> row holds. This product's producers
@@ -116,8 +122,10 @@ public sealed class WaveformSeriesRowShapeContractTests
         Assert.True(
             deviations.Count == 0,
             $"{deviations.Count} waveform series emitted by this product's own simulators no longer match the " +
-            "row shape recorded for them. That is a DRIFT report, not a verdict: which row shape is canonical " +
-            "is docs/owner-decisions.md item 14, still open. If this moved deliberately, say so there:" +
+            "row shape recorded for them. That is a DRIFT report, not a verdict: this file measures the " +
+            "IN-PROCESS shape, and docs/owner-decisions.md item 14 (decided 2026-08-19, option 3, executed) " +
+            "settled only the WIRE shape at Normalizer.ToWireSampleRows and left this one open on purpose. " +
+            "If this moved deliberately, say so in item 14's Part III record:" +
             Environment.NewLine + string.Join(Environment.NewLine, deviations.Select(d => "    " + d)));
 
         Assert.True(
@@ -134,7 +142,10 @@ public sealed class WaveformSeriesRowShapeContractTests
     /// <summary>The two producers named individually, each pinned to a concrete number out of the SAME
     /// reading, so a drift cannot hide behind a row count. 🔴 The <c>weld_current</c> assertion pins a shape
     /// the platform's ingest route does not accept — deliberately, because it is what this product emits
-    /// today and item 14 has not been decided. It is a record, not an endorsement.</summary>
+    /// IN PROCESS, and item 14's ruling of 2026-08-19 put the accepted shape on the wire instead of here.
+    /// It is a record, not an endorsement. RETRACTED 2026-08-24 (task BS-1), kept verbatim: <c>"because it
+    /// is what this product emits today and item 14 has not been decided"</c> — the first half stands, the
+    /// second is false since 2026-08-19.</summary>
     [Fact]
     public void TheTwoBuiltInProducers_SitOnOppositeSidesOfTheRateHzSplit_AndElementZeroIsAnAngleNotATime()
     {

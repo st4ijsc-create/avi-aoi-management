@@ -93,6 +93,36 @@
          four coverage stages are spent. They are owed to an owner RULING about access level, priced but
          not decided; see the AN-1 block at the foot of this file. Retired in place rather than re-pinned,
          for the same reason as the four lines above it.]
+         [🔴 BOTH SENTENCES OF THE BRACKET DIRECTLY ABOVE ARE WITHDRAWN 2026-08-24 by task BS-1, quoted
+          and retired in place, and this is a RECORD task: not one line of build behaviour was changed
+          here. They are not merely stale, they are REFUTED, and in the direction that makes the bill
+          look larger than it is.
+            (i) "the live figure is 212 outstanding: 109 coverage warnings on our own source (90 CS1591 +
+                19 CS1573, all of them Drivers/) plus the same 103 nobody here may pay" — MEASURED
+                2026-08-24: ZERO on our own source, 103 vendored. The live figure is 103 outstanding, all
+                of it the bucket nobody here may pay.
+            (ii) "They are owed to an owner RULING about access level, priced but not decided" — the
+                ruling was taken on 2026-08-22 and batches 9..12 paid the whole 109. Item 12 left Part II
+                the same day.
+          🔴 THE MEASUREMENT, NAMED SO IT CAN BE REPRODUCED OR REFUTED. It is not a fresh census; it is
+          read out of the ORIGIN-SPLIT LEDGER the gate re-derives on every run — EXPECT_WARNING_LEDGER in
+          scripts/verify-suites.sh, fourteen rows, asserted row-by-row against a full
+          MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild, with a second assertion that the rows sum to
+          the MSBuild total. Coverage codes are CS1591 and CS1573. OURS rows: CS8601 7, CS8604 14, CS8767
+          2, NU1701 9, xUnit1013 1, xUnit2029 1 — sum 34, and NEITHER coverage code appears, so ours is 0
+          by ENUMERATION rather than by subtraction. VENDORED rows: CS1573 8 + CS1591 95 = 103 of a
+          vendored total of 185. 34 + 185 = 219 = EXPECT_WARNINGS.
+          🔴 AND THE TWO PLACES DO NOT DISAGREE — stated in the positive because a silent agreement reads
+          the same as an unchecked one. The 103 here IS a subset of the 185 there, not a second count of
+          the same thing: 185 - 103 = 82 vendored non-coverage warnings, which is exactly the figure the
+          "switch it off" paragraph below already carries (116 = 82 vendored + 34 ours). That paragraph
+          was measured on 2026-08-19 at a total of 852 and it still reproduces at a total of 219, because
+          every warning paid since was one of ours and every one of the 103 survived.
+          🔴 WHAT IS *NOT* RE-MEASURED HERE, so this bracket cannot be read wider than it is: the
+          per-project table below is still AF-1's flag-flip reading and this task did not re-run it, for
+          the same reason the paragraph after it gives. The `set` column WAS re-measured and STANDS:
+          fifteen .csproj exist outside bin/obj, exactly eight carry GenerateDocumentationFile, and
+          exactly eight table rows say yes.]
         🔴 AND THE PER-PROJECT TABLE BELOW IS STILL NOT RE-MEASURED, by this stage either. Its
         St4i.EdgeCore row (543 CS1591 / 92 CS1573) is AF-1's reading at the flag flip and is labelled as
         such; four stages of payment have moved what that compilation actually emits without moving this
@@ -397,6 +427,15 @@
        existed nothing here could have seen it.
        🔴 "ONE OF THE SEVEN" IS EIGHT FROM 2026-08-19 (task AF-1), and the eighth is the exception that
        makes the row worth having: turning St4i.EdgeCore's switch back off drops 736 warnings at once.
+       [🔴 "drops 736 warnings at once" WITHDRAWN 2026-08-24 by task BS-1, quoted and retired in place.
+        MEASURED 2026-08-24 off the origin-split ledger: it drops 103, because batches 5..12 paid the 633
+        that were ours and the 103 vendored ones are what is left. The SENTENCE'S POINT is untouched and
+        that is why only the literal is withdrawn — the row is still worth having, and the arm below is
+        still the one that discriminates. 🔴 NOTE WHICH FIGURE DID NOT MOVE: the next paragraph's "116"
+        was measured on 2026-08-19 against a total of 852 (852 - 736) and it reproduces today against a
+        total of 219 (219 - 103). Two readings three payments apart landing on the same number is the
+        check, not a coincidence: everything paid since was ours, so the 116 = 82 vendored + 34 ours floor
+        never moved. This bracket touches no build behaviour.]
        🔴 AND THE FIRST VERSION OF THIS SENTENCE SAID THAT IS "INDISTINGUISHABLE FROM A STAGE THAT PAID
        THEM". THAT IS FALSE, AND IT WAS MEASURED FALSE — withdrawn 2026-08-19 by the task that wrote it,
        after actually running the arm instead of arguing it. Removing the property and rebuilding puts the
@@ -734,6 +773,32 @@
        and 7 handed forward. What remains is not a writing debt but an owner question about surface —
        should host-internal driver plumbing be public at all — and the read-surface census that prices it
        is in docs/owner-decisions.md §13 and in the EXPECT_WARNING_LEDGER block of scripts/verify-suites.sh.
-       No access level and no name was changed. -->
+       No access level and no name was changed.
+
+       [🔴 THE FIRST TWO SENTENCES OF THE PARAGRAPH ABOVE ARE WITHDRAWN 2026-08-24 by task BS-1, quoted
+        and retired in place; the rest of the paragraph is NOT withdrawn and is still the record of what
+        AN-1 measured on the day it wrote it.
+          (i) "ITEM 12 STAYS IN PART II" — item 12 LEFT Part II on 2026-08-22 (task BC-1) and is in Part
+              III. Part II is now EMPTY, and that emptiness is an assertion the gate reads: the machine
+              field named `gate:phần-ii`, an HTML comment holding an empty list directly under the Part
+              II banner, is checked by C6 of scripts/check-owner-decisions.sh on every gate run.
+              (Spelled by NAME rather than reproduced: an XML comment may not contain a double hyphen,
+              and the first draft of this bracket pasted the marker whole and took the whole solution
+              down with MSB4024 on 30 projects. Recorded because a build file that cannot quote the
+              syntax it is describing is a boundary worth knowing before the next person tries.)
+          (ii) "109 coverage warnings remain and they are all Drivers/" — MEASURED 2026-08-24: ZERO
+              remain on our own source. Batches 9..12 paid the whole 109; batch 12 (cf6397ef, 2026-08-22)
+              paid the last 38.
+        🔴 AND THE ENUMERATION HANDED TO THIS TASK WAS SHORT, WHICH IS WHY IT IS RE-COUNTED HERE RATHER
+        THAN COPIED. The residue as written named FOUR lines carrying "ITEM 12 STAYS IN PART II" (492,
+        562, 616, 681). Counted 2026-08-24 at base 48980288, before this bracket existed: EIGHT — 445,
+        492, 562, 616, 620, 676, 681, 731. Five are STAGE headers, each true on the day its stage wrote
+        it (445, 492, 562, 616, 676); 620 is a restatement inside stage 7's own withdrawal; 681 is a
+        QUOTATION which says in the same breath that the phrase is NOT withdrawn; 731 is this paragraph,
+        and it is the only one making a claim about TODAY. That is why the count is eight and the
+        withdrawal is one: the other seven are dated records of what a named stage asserted, and this
+        repository does not rewrite those. Line numbers are quoted against 48980288 on purpose, because
+        this bracket moves them.
+        This bracket changes no build behaviour and no warning count.] -->
 
 </Project>
