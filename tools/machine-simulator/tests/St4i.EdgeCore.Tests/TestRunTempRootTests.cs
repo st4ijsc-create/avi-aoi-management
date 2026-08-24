@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using St4i.EdgeCore.Config;
+using St4i.EdgeCore.Drivers.OpcUa;
 using St4i.EdgeCore.Infrastructure;
 using St4i.TestHygiene;
 using Xunit;
@@ -107,6 +108,49 @@ public class TestRunTempRootTests
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(MachineConfigStore.DefaultRoot()));
 
         Assert.NotEqual(besideTheBinary, resolved);
+        Assert.StartsWith(
+            Path.GetFullPath(TestRunTempRoot.Root!), resolved, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 🔴 Task BW-1, 2026-08-24 — the SEVENTH redirect, and the one whose seam was declared present and
+    /// measured absent (docs/owner-decisions.md item 72, option B).
+    ///
+    /// <para><b>What the record said and what re-counting found.</b> Item 72's table lists
+    /// <c>ST4I_OPCUA_PKI_DIR</c> under a column headed "the file that SETS it" with the value 1, against
+    /// 20-24 for each of the nine sibling leaves, and rests the judgement "the leaf to do first" on that 1.
+    /// Re-counted at BW-1 across <c>tests/</c>: one file MENTIONS the literal and zero files SET it. Both
+    /// mentions live inside a doc comment in <c>PerHostDataRootsTests</c>, one of which states the residual
+    /// outright — "nothing exercises <c>ST4I_OPCUA_PKI_DIR</c>, the env var". The instrument behind the
+    /// table was a literal count over <c>tests/</c>, and <c>PerHostDataRootsTests</c>' own F-8 note records
+    /// that this instrument cannot produce a "sets it" row at all.</para>
+    ///
+    /// <para><b>What this asserts, and why it is two predicates rather than one.</b> A test that checked
+    /// "the variable is set" would pass just as happily with the variable pointed at a second accumulating
+    /// directory, which is the defect wearing the fix's clothes. So both halves are pinned, exactly as the
+    /// credential and machine-config facts above pin theirs: the resolved root must differ from
+    /// <see cref="OpcUaPkiPaths.DefaultRoot"/> — the real installation's certificate store, holding an
+    /// app-instance certificate AND its private key — and it must sit inside this run's disposable root,
+    /// which is the thing that makes it disappear at process exit.</para>
+    ///
+    /// <para><b>What it does NOT assert.</b> The three OPC-UA driver suites pass an explicit PKI root and
+    /// take the explicit arm of <see cref="OpcUaPkiPaths.ResolveRoot"/>, so they were already clear of the
+    /// real store and this fact says nothing about them. It pins the AMBIENT default a class that passes
+    /// no path inherits — including a class nobody has written yet, which is the shape a structural
+    /// redirect buys and a per-class convention does not. It also asserts nothing about path LENGTH: the
+    /// run root is deeper than <c>%ProgramData%\ST4I\sim\opcua-pki</c>, and <see cref="OpcUaPkiPaths"/>'
+    /// own class doc records a native crypto failure once a certificate's full path approaches legacy
+    /// MAX_PATH. That ceiling is named in <c>TestRunTempRoot</c> with the measurement behind it and is
+    /// deliberately left unasserted here.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void OpcUaPkiStore_ResolvesAwayFromTheRealProgramDataPkiDirectory()
+    {
+        var resolved = Path.TrimEndingDirectorySeparator(Path.GetFullPath(OpcUaPkiPaths.ResolveRoot()));
+        var real = Path.TrimEndingDirectorySeparator(Path.GetFullPath(OpcUaPkiPaths.DefaultRoot()));
+
+        Assert.NotEqual(real, resolved);
         Assert.StartsWith(
             Path.GetFullPath(TestRunTempRoot.Root!), resolved, StringComparison.OrdinalIgnoreCase);
     }

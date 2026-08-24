@@ -90,7 +90,7 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 57 | **Bốn khuyết tật config-sync do AH-1 đo 2026-08-19 và ghi CHỈ trong thông điệp merge** — không cái nào từng vào file này | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1). **Không uỷ quyền được:** một trong bốn là *"hai mươi tám trường vận hành viên soạn được KHÔNG có chỗ trong hợp đồng đồng bộ"*, và nới hợp đồng ấy là **đổi một hình dạng dây đã xuất bản với một server ngoài sản phẩm này** — cùng hạng mục 14 🔧 **`THI HÀNH MỘT PHẦN` 2026-08-24 (BN-1, base `46576c36`) — PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-23: ba vế theo uỷ quyền, vế thứ tư TÁCH thành MỤC 59. Mục Ở LẠI PHẦN I.** **Vế (1)** — điều kiện tiên quyết ĐO TRƯỚC KHI SỬA và nó **THOẢ**: bảy trên bảy thành viên `MeasurementType` cho token **giống hệt từng byte** giữa `ToString().ToUpperInvariant()` và `SnakeCaseUpper` (cả bảy là một-từ-đơn), ⇒ **dây không đổi hôm nay** ⇒ trong uỷ quyền; nay đi qua `ConfigJson.Options`, đúng instance mà đường pull dùng. 🔴 **Một anh em CÙNG hình dạng cách đó sáu dòng — `p.Shape.ToString().ToLowerInvariant()`, `PointShape`, cũng bảy-trên-bảy — KHÔNG sửa và nêu tên: mục uỷ quyền dòng 420 và nêu tên `MeasurementType`.** **Vế (2)** — khuyết tật sửa ở `PullAsync` qua `IConfigSyncBackend.PullCarriesLifecycleStatus` (backend được HỎI chứ model không bị SOI, vì một `Development` mặc định và một `Development` thật là cùng một byte); câu doc **rút tại chỗ kèm ngày**; **giá nêu cùng một hơi: lifecycle nay lệch được và không gì trên dây kéo về** — đúng hình dạng mục 59. **Vế (3)** — 🔴 **KẾT LUẬN NHỊ PHÂN: TỒN TẠI**, ở `web/src/components/BoardCanvas.tsx` dòng 185–195; tập đã mở là **cả cây 63.452 file có trong index** cộng lịch sử mọi ref, và **lần quét cũ trượt vì `web/` bị một nhiệm vụ trước tuyên là không có trên đĩa — sai**; chính `Fiducial.cs:56–62` đã mô tả khuyết tật ấy. Đã sửa + hai khoá i18n + `npm run build` xanh. **Vế (4)** — **rời sang mục 59**. Xem §57.5 ✅ **ĐÃ THI HÀNH — BV-1, 2026-08-24, base `aa830bb7`, THEO PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-24 (nhóm F, HƯỚNG B). Mục PHẦN I → PHẦN III.** Phán quyết nguyên văn: *"Chọn theo đề xuất của bạn trong báo cáo"* ⇒ hướng B — **sửa NHÃN, KHÔNG nới phép kiểm**. 🔴 **Cả bốn vế đã xử, gọi bằng TÊN vì §57.1 và §57.5 đánh số hoán đổi nhau:** đánh vần tay `MeasurementType` ✅ sửa; một lần pull đặt lại `LifecycleStatus` ✅ sửa; canvas vứt fiducial ✅ sửa (cả ba BN-1, `47907c67`); **các trường không có khe PUSH ➡️ TÁCH thành mục 59** ngày 2026-08-24 — cộng vế sinh sau `PointShape` ➡️ **mục 66**, đã quyết, `đã thi hành`, đã sang Phần III — token ấy vào backtick **có chủ ý**: nó là trạng thái của **mục 66**, không phải lời khai của hàng này về chính nó. ⇒ **không câu hỏi nào của riêng mục này còn chờ ai**, và cái giữ nó lại từ hôm ấy là **thuần tuý thủ tục** (§57.6). 🔴 **`C2` và `check-owner-decisions.sh` KHÔNG đổi một dòng nào — `git diff` trên file ấy RỖNG.** Nới một phép kiểm để đi qua nó đắt hơn cái nó mua: mục 73 ghi BK-1 đo *"làm C2 hai chiều"* ra **20 hàng đỏ trên 58, 19 trong đó ĐÚNG** theo luật của chính file này. Cơ chế dùng thay đã có sẵn từ BQ-1: `C2` đọc trạng thái từ hàng **đã cắt bỏ các đoạn TRÍCH DẪN**, vì **một token được NÊU TÊN không phải một token được KHẲNG ĐỊNH** — nên chữ đã rút ở đầu ô này **giữ nguyên từng chữ**, chỉ được đặt vào cặp backtick, **đúng thao tác BU-1 làm trên hàng 41, 43 và 61 cùng ngày**. 🔴 **Hai khuyết tật HỒ SƠ trả kèm:** (a) §57.5 và §57.6 nêu hai lý do NGƯỢC NHAU và **cái sai đứng TRƯỚC**, nay có khối rút đặt **cạnh câu** ở §57.5; (b) câu §57.6 đã rút **vẫn sống nguyên văn trong §59.5** không có gì đánh dấu, nay đánh dấu ở **cả hai đầu** — và hôm nay nó bị bác bằng **SỰ KIỆN** chứ không chỉ bằng lập luận: mục 57 sang Phần III **trong khi** mục 59 vẫn ở Phần I. **0 dòng hành vi sản phẩm, 0 byte trên dây, 0 lệnh đè.** Xem §57.7 |
 | 59 | **HAI MƯƠI TÁM trường một vận hành viên sửa được không có KHE trên đường PUSH**, nên khác biệt chỉ xoá được bằng một lần **pull cũng vứt luôn bản sửa** | 🔴 **CHỜ ANH** — **TÁCH khỏi mục 57 ngày 2026-08-24 (BN-1)** theo phán quyết của chủ sở hữu 2026-08-23; đo lần đầu 2026-08-19 (AH-1) và ghi **chỉ** trong thông điệp merge `f08cb379`. **Không uỷ quyền được:** nó đòi **server nới một hợp đồng dây đã xuất bản**, đúng miễn trừ *"hình dạng dữ liệu trên dây"* và cùng hạng mục 3, 4 và 14 — **uỷ quyền phủ được *"làm hay không làm"*, KHÔNG phủ được sự đồng ý của bên thứ ba**. 🔴 **"28" đếm lại: con số ĐỨNG VỮNG ở cả ba đơn vị — 28 TÊN, 28 CHỖ (cả hai mươi tám nằm trên MỘT kiểu, `MeasurementPoint`, nên tên và chỗ trùng nhau), 28 TRƯỜNG nếu đếm `Lighting` là một; ở mức lá thì `LightingShot` có 12 thuộc tính riêng sửa được ⇒ CÙNG lỗ hổng ấy là 39.** 🔴 **Cái KHÔNG sống sót là VỊ NGỮ, và nó nằm trong chính lời mục 57: *"KHÔNG có CHỖ trong hợp đồng"* là SAI — cả 28 đều được PULL** (`LiveConfigSyncWireDtos` khai `IReadOnlyList<MeasurementPoint>`, kiểu miền CHÍNH LÀ hình dạng dây pull); cái thiếu là **KHE trên đường PUSH**, đúng chữ *"slot"* của AH-1. Đọc chặt theo *"không có chỗ nào cả"* thì con số là **15**, một tập **RỜI HẲN** (`LifecycleStatus`, `ImageHash`, `Variants`, cả `ProductVariant`, cả `VariantPointOverride`, `Recipe.MachineType`/`Status`) — và **mệnh đề hậu quả của chính câu ấy tự bác nó**: mười lăm trường kia không xoá được bằng một lần pull, vì một lần pull không chạm tới chúng. Xem §59 🔧 **THI HÀNH MỘT PHẦN: ĐÃ BÀN GIAO — BV-1, 2026-08-24, base `aa830bb7`, THEO PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-24. MỤC Ở LẠI PHẦN I — bàn giao KHÔNG phải chấp thuận.** Phán quyết nguyên văn: *"Các dữ liệu mà không có trường đẩy lên thì cần tạo ra 1 file Json mẫu để tôi báo server hỗ trợ nhận"*. Bộ bàn giao ở **`docs/handoff/`** (thư mục MỚI, không trộn vào `docs/` chung): thân request `sync-points` **mẫu, JSON hợp lệ, KHÔNG chú thích**, cộng bản giải thích tiếng Việt mang mục **"CÁI GÌ ĐANG HỎNG HÔM NAY"** viết bằng lời vận hành viên. 🔴 **"28" đo lại bằng chính dụng cụ sản xuất, và nay có ĐỊNH NGHĨA sắc hơn:** 52 thuộc tính ghi được − 3 trường kiểm toán mà `ConfigChecksum.CanonicalizePoint` loại = **49 nằm trong khoá drift**; `ConfigSyncEngine.ToWireDto` đổ **21** trong 49; **49 − 21 = 28** ⇒ 28 = *"nằm trong khoá drift VÀ không có khe PUSH"*, đúng cái tập bật được huy hiệu mà không có đường gỡ. 🔴 **MỨC LÁ CHỌN RÕ VÀ NÓI RA: 39** — 27 khoá vô hướng trên `point` cộng **12 lá** của mỗi phần tử `LightingShot`; bộ bàn giao viết ở mức ấy và tuyên bố mức ấy ở đầu, vì một schema mập mờ về độ sâu là schema không cài được. 🔴 **VỊ NGỮ đo lại bằng CHÍNH tài liệu hợp đồng, không bằng mã:** `CONFIG_SYNC_SERVER_CONTRACT.md` dòng **35** (khối `<POINT>` của `get-points`) mang **đủ 28**, dòng **24** (`Push up`) mang **0** ⇒ câu mở đầu bộ bàn giao là **"các trường này server ĐÃ gửi xuống được, nhưng KHÔNG nhận ngược lên"** — nói sai chỗ này là bắt đội server đi định nghĩa 28 trường mới thay vì thêm 28 khoá vào một schema đã có. 🔴 **Một mệnh đề của §59.4 KHÔNG SỐNG SÓT, và nó sai theo chiều *"khó hơn thực tế"*:** `measurementPointSyncSchema` (`server/routers/machineApiRouters.ts:170`) là một `z.object` **không có `.strict()`** (đo: `.strict()` xuất hiện **0 lần** trong cả file), và `zod` (`^4.3.6`) mặc định **strip** ⇒ gửi thừa 28 khoá hôm nay **KHÔNG hỏng push**, chúng chỉ bị bỏ trong im lặng, nên đội server triển khai **trước** được, không có cửa sổ đồng bộ nào. **KHÔNG ĐO: tôi ĐỌC schema, KHÔNG chạy server của họ** — bộ bàn giao nói đúng thế và xin họ xác nhận bằng một lần curl. **Nhân chứng cho file JSON:** `HandoffSyncPointsProposalTests` — ba `[Fact]`, quần thể **SUY tại lúc chạy** chứ không dán; **cặp đối chứng chạy trọn rồi hoàn nguyên** (bỏ `warpageMax` ⇒ **đúng 1 đỏ** gọi đúng tên; bỏ `focusOffsetUm` ⇒ **đúng 1 đỏ** ở phép kiểm KHÁC). **0 byte trên dây bị đổi**, `SyncPointDto`/`ToWireDto` không chạm một dòng. Xem §59.6 |
 | 58 | **Hai lời khai đếm được, đã công bố, đo lại là SAI và vẫn nguyên văn** — `SiteAdvertiserTests` nói *"twelve"* trên một tập đo được **20**, và chú thích nấc 4 của `ConnectorConfigStore` nói *"cùng một transaction với mọi nấc"* trong khi `EnsureSchema` mở **một transaction MỖI NẤC** | 🔴 **CHỜ ANH** — mở 2026-08-23 (BH-1); cái thứ nhất nêu 2026-08-18 (Z-1, *"booked in the report, not fixed here"*), cái thứ hai **BH-1 tự đo** trong lúc kiểm lại mục 5. ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** — cùng loài mục 52, rút/sửa một câu văn xuôi tại chỗ → ✅ **ĐÃ THI HÀNH 2026-08-23 (BJ-1), điều phối viên theo uỷ quyền.** Nhãn kiểm lại và **đứng vững**; không cửa sau vào mục nào chờ chủ sở hữu. **Cả hai lời khai xác nhận là SAI và MỌI con số của tác giả mục sống sót** — 21 file / 1 helper / **20 lớp**, và **cả 20** mang `SecurityEnvVarTests.CollectionName`; nấc 4 đúng **bốn** câu lệnh và `PRAGMA user_version = 4` nằm **trong cùng transaction**, `BeginTransaction()` dòng 556 và `Commit()` dòng 574 **cả hai BÊN TRONG** vòng `foreach` dòng 552. 🔴 **Và một điều tác giả mục không nói: câu ấy sai theo HAI cách.** Chủ ngữ của nó là *"classes that also READ this var"*, và đo được **không lớp test nào trong hai mươi đọc `ST4I_MDNS_ADVERTISE` theo tên** — đọc chặt theo chữ, quần thể là **không**; hai mươi lớp chạm nó **gián tiếp** qua `Program` → `SiteAdvertiser.IsAdvertiseEnabled` lúc `ApplicationStarted`. Nên chỉ thay `twelve`→`twenty` sẽ để lại một câu **vẫn sai**; lời văn dịch theo con số, nay đọc *"whose booted host reads this var"*. **Chiều ngược:** câu ấy **ĐÚNG khi được viết** tại `c6a47c79` (2026-07-28), khi quần thể đúng bằng mười hai — một khuyết tật **TRÔI**, không phải một phép đếm sai từ đầu. Với (2), **kết luận chịu lực được đo lại và nó ĐỨNG** (mỗi nấc vẫn nguyên tử; chết giữa nấc 4 và 5 dừng ở `user_version = 4` với dữ liệu nhất quán rồi chạy tiếp) — cái sai là **PHẠM VI**, và bản sửa nêu rõ điều người thêm nấc thứ sáu cần biết: **thang KHÔNG cuộn ngược như một khối**. Không phải nhân chứng đỏ được (chỉ đổi lời); `EXPECT_NEW_DOC_ABSOLUTES` **+1 vì phép sửa (1)**, đo riêng: 310 → 311. Xem **Phần III**, §58.6 |
-| 60 | **Cổng KHÔNG BAO GIỜ đo `web/`** — 124 file nguồn và 28 spec ngoài mọi phép kiểm, và một bản sửa SẢN PHẨM vừa hạ cánh ở đó không có nhân chứng | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). **Hai bờ định giá.** *Bờ sửa:* nối `web/` vào cổng, giá là **một hệ sinh thái build thứ hai (Node/npm + một trình duyệt)** vào một cổng hôm nay **chỉ cần .NET**, cộng một trần 900 s thứ sáu và hai quần thể tiến trình mới trong cửa sổ đo toàn máy. *Bờ để nguyên:* mọi bản sửa trong `web/` **mãi mãi không có nhân chứng**. 🔴 **Nhãn 🔴 này KHÔNG chạm miễn trừ nào** — nó nói về việc **mua hạ tầng**, không về quyền — nên nó là nhãn dễ lật nhất trong mười một, và §49.5 cho phép lật. 🔴 **THI HÀNH MỘT PHẦN 2026-08-24 (BO-1) — nửa KHÔNG CHỜ AI đã ship, và nó không phải một phán quyết:** cổng nay **KHAI** ở chỗ verdict hiện ra — `web_domain_declaration` in trên **cả hai** nhánh `PASS`/`FAIL`, mọi con số **dẫn xuất lúc chạy**, dòng `PASS:` mang thêm `NOT MEASURED: web/`; cặp đối chứng chạy được ở `--web-domain-self-test`. Đó là **luật (3)** áp vào chính cổng, và luật (3) không cần ai phán. 🔴 **Câu *"phát hiện này chưa ai nêu"* của lời giao việc KHÔNG sống sót:** sự kiện đã được viết ở **ít nhất bốn chỗ** (hai lần trong chú thích `verify-suites.sh`, ô phán quyết mục 53, thân mục 57 vế 3) — cái thiếu chưa bao giờ là hiểu biết, mà là **cả bốn chỗ đều không ai IN RA**. Xem §60 |
+| 60 | **Cổng KHÔNG BAO GIỜ đo `web/`** — 124 file nguồn và 28 spec ngoài mọi phép kiểm, và một bản sửa SẢN PHẨM vừa hạ cánh ở đó không có nhân chứng | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). **Hai bờ định giá.** *Bờ sửa:* nối `web/` vào cổng, giá là **một hệ sinh thái build thứ hai (Node/npm + một trình duyệt)** vào một cổng hôm nay **chỉ cần .NET**, cộng một trần 900 s thứ sáu và hai quần thể tiến trình mới trong cửa sổ đo toàn máy. *Bờ để nguyên:* mọi bản sửa trong `web/` **mãi mãi không có nhân chứng**. 🔴 **Nhãn 🔴 này KHÔNG chạm miễn trừ nào** — nó nói về việc **mua hạ tầng**, không về quyền — nên nó là nhãn dễ lật nhất trong mười một, và §49.5 cho phép lật. 🔴 **THI HÀNH MỘT PHẦN 2026-08-24 (BO-1) — nửa KHÔNG CHỜ AI đã ship, và nó không phải một phán quyết:** cổng nay **KHAI** ở chỗ verdict hiện ra — `web_domain_declaration` in trên **cả hai** nhánh `PASS`/`FAIL`, mọi con số **dẫn xuất lúc chạy**, dòng `PASS:` mang thêm `NOT MEASURED: web/`; cặp đối chứng chạy được ở `--web-domain-self-test`. Đó là **luật (3)** áp vào chính cổng, và luật (3) không cần ai phán. 🔴 **Câu *"phát hiện này chưa ai nêu"* của lời giao việc KHÔNG sống sót:** sự kiện đã được viết ở **ít nhất bốn chỗ** (hai lần trong chú thích `verify-suites.sh`, ô phán quyết mục 53, thân mục 57 vế 3) — cái thiếu chưa bao giờ là hiểu biết, mà là **cả bốn chỗ đều không ai IN RA**. 🔧 **HƯỚNG B ĐÃ ĐỊNH GIÁ — BW-1, 2026-08-24, base `7e6d9aed`, theo PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-24. ĐÂY LÀ MỘT PHÉP ĐO, KHÔNG PHẢI MỘT BẢN SỬA — `web/` KHÔNG được nối vào cổng, `SUITES` vẫn NĂM mục. MỤC Ở LẠI PHẦN I, QUYẾT LÀ CỦA ANH.** Sáu con số: node `v24.18.0` / npm `11.16.0` có sẵn, **gói `web/` KHÔNG khai `engines`** (sàn thật ≥ 20.19, do `vite`/`oxlint` áp, **không ai ghi**) · `npm ci` **16 s ấm / 20 s lạnh**, **67 MB** tải, **306 MB** đĩa · `build` **7,03 s** + `lint` **0,52 s** = **0,84 %** một trần 900 s · **0 tiến trình cư trú** (bộ so khớp cổng 3→3→3; `node`+`esbuild` 35→35→34) 🔴 **nhưng bộ so khớp ấy KHÔNG nêu `node.exe`, nên một quần thể node sẽ VÔ HÌNH với `EXPECT_BUILD_NODES`** · `lint` hôm nay **XANH `exit 0` kèm 15 cảnh báo**, còn `--deny-warnings` **ĐỎ ngay hôm nay** ⇒ hoặc một dòng xanh không đỏ được, hoặc một trần đỏ vĩnh viễn · **ca thật `BoardCanvas.tsx`**: đột biến KIỂU ⇒ build **ĐỎ `exit 2` TS2322**; 🔴 **đột biến hoàn nguyên ĐÚNG bản sửa 2026-08-24 (`unplacedFiducialCount = 0`, hợp kiểu) ⇒ build XANH, lint XANH, và KHÔNG spec e2e nào assert nó — nên hướng A với bộ spec hôm nay CŨNG không bắt được.** Cả hai đột biến đã hoàn nguyên. 📎 `124` đứng vững; `28`/`142` lệch ⇒ **29**/**144** (cổng tự dẫn xuất). Xem §60 và §60.7 |
 | 61 | **Một điểm HOÀN HẢO của `FunctionalTestSim` rơi ĐÚNG lên USL và trả `Warn`** — cùng loài mục 43, không nằm trong mục nào | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). Chạm **(a) payload MQTT**: `Verdict` ra dây ở trường `result` (`Normalizer.cs:122`). Margin **1,5 DẪN XUẤT**, không phải hằng số: `(100−90)×0,15`; `value=100` ⇒ `100 >= 98,5` ⇒ `Warn`. 🔴 **Con số ~42 % đúng nhưng lời khai DÁN một sự thật ĐIỂM lên một thống kê DẢI** (có điều kiện 42,07 %, không điều kiện 41,3 %). 🔴 **NÊU QUÁ DÈ DẶT ba lần:** **21,2 %** số lần rút bị **kẹp về đúng 100,0** rồi cảnh báo về chính con số phép kẹp tạo ra; dải `Fail` theo điểm là **3,8 σ**, gần như không với tới được; và **không một bài test nào ghim nó theo chiều nào** (`98.5`/`ScoreUsl` ⇒ 0 kết quả). **Không đổi một con số OEE nào** (mục 2: `Pass` và `Warn` cùng là hàng TỐT). 🔴 **Chờ CÙNG loại câu hỏi với mục 41 và 43** — *"dải nào?"* — đừng trả lời hộ. Xem §61 ✅ **ĐÃ THI HÀNH — BU-1, 2026-08-24, base `47252d57`, THEO PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-24 (HƯỚNG A). Mục PHẦN I → PHẦN III.** Phán quyết nguyên văn: *"Nhóm A: Các còn số đang có đều là giả định và dùng để test nên ko cần quan tâm tính chính xác của nó, hãy đảm bảo rằng logic code của chức năng trong các trường hợp là đúng là được, bạn tự quyết (hoặc chọn A cho tất cả)"*. 🔴 **HƯỚNG A ĐỌC ĐÚNG CHỮ *"chỉ mép trên"* THÌ HỎNG, và phép đo nói ngược:** `Evaluate(score, lsl: null, usl: 100)` cho margin `100 × 0,15` = **15 điểm** ⇒ mọi điểm ≥ 85 là `Warn` ⇒ **~100 % `Warn`**, và **điểm HOÀN HẢO VẪN `Warn`** — tức nó không sửa được đúng cái khuyết tật ở tiêu đề mục. Phép loại suy đúng là theo **VAI TRÒ** chứ không theo **PHÍA**: `LeakTestSim` bỏ **sàn vật lý** giữ **giới hạn spec**; ở đây **100 là TRẦN THANG ĐO** (`:98` kẹp về nó) và **90 là giới hạn spec**, nên bỏ **USL**, giữ **LSL**. 🔴 ***"một đối số ở chỗ gọi"* KHÔNG SỐNG SÓT — là HAI**, vì `MarginOf` scale theo **ĐỘ LỚN** của biên (90) chứ không theo dải (10): fraction mặc định cho margin 13,5 điểm. Đối số thứ hai được **DẪN XUẤT**: `1,5 / ScoreLsl`, với **1,5 chính là margin lời gọi hai phía đang cho**, nên **độ rộng vùng cảnh báo không dịch** — chỉ mép nó bám. 🔴 **`VerdictHelper` KHÔNG bị đụng một dòng nào** (đo bằng kiến tạo; sáu lớp còn lại không dịch phán quyết), nên điều kiện DỪNG *"file dùng chung phải đổi"* **không kích hoạt**. 🔴 **MIỄN TRỪ (a) payload MQTT BỊ CHẠM, có phép 2026-08-24, lý do của chính chủ sở hữu:** *"các con số là giả định dùng để test"*; **(b) hình dạng dây KHÔNG chạm** và mạnh hơn — **không một giá trị metric nào dịch**; **(c) số OEE KHÔNG chạm, ĐO: `Fail` 3 037 cả hai phía, Quality/OEE `0,969630000000` cả hai phía** ⇒ lời khai của mục về OEE **SỐNG SÓT**. 🔴 **CON SỐ ~42 % ĐO LẠI VÀ BỊ DỜI ĐƠN VỊ:** tỉ lệ `Warn` thật là **41,220 %** → **0,430 %**; **42,041 %** là tỉ lệ **ĐIỂM SỐ ≥ 98,5**, một thống kê về METRIC; con số *"41,3 % không điều kiện"* của mục lệch **0,08 điểm phần trăm**. Cột `result` dịch **40,790 %**. 📎 Hai lời khai khác **sống sót**: kẹp về 100 đo **21,123 %**, `Fail` theo điểm đo **0,012 %**. 🔴 **QUẦN THỂ MỤC 62 TĂNG THÊM MỘT, có chủ ý:** reading **vẫn công bố** `Lsl 90 / Usl 100` trong khi phán quyết dùng một biên — bỏ trần ở đây là trả lời mục 62 bằng tác dụng phụ, mà mục 62 **không thuộc nhóm này**. Xem §61.5 |
 | 62 | **`LeakTestSim` CÔNG BỐ một cặp giới hạn mà phán quyết của chính reading ấy KHÔNG dùng** — người suy lại nhận câu trả lời TRƯỚC-KHI-SỬA | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). Chạm **HAI** miễn trừ: **(a) payload MQTT** và **(b) hình dạng dây**. `:123` công bố **(0,0 ; 20,0)**, `:124` phán trên **(null ; 20,0)**; suy lại từ cặp công bố cho `Warn` ở chỗ máy phát `Pass`, trên **4,78 %** chu kỳ. 🔴 **Không phải phát hiện — đã KHAI ở `LeakTestSim.cs:108–114` và ĐÃ GHIM bởi `Item43_Guard_ThePublishedMetricStillDeclaresAFloorTheVerdictDoesNotUse`**; cái thiếu là một **mục**, đúng cơ chế mục 37. 🔴 **KHÔNG rộng hơn một sim:** đo cả năm — `AssemblySim`, `DispensingSim`, `FunctionalTestSim`, `ScrewdriveSim`, `WelderSim` **đều công bố đúng cặp chúng phán quyết trên**; `LeakTestSim` là **ca duy nhất**. Xem §62 |
 | 63 | **`ConnectorRegistry.Register` VẪN last-write-wins cho một id TƯỜNG MINH** — và một chỗ gọi sản xuất đã phải tự dựng một cái chốt NGOÀI khoá | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); không chạm ba miễn trừ; cùng khuôn mục 47 (*"biến đụng độ thành lỗi"*, 2026-08-23). Chốt của mục 47 gác **CHỈ** đường khoá **mặc định** (`keyWasDefaulted` `:227`); đường **id tường minh** rơi thẳng xuống `:275` `_entries[id] = …` **vô điều kiện**, và `:145–148` tự khai đúng thế. 🔴 **NÊU QUÁ DÈ DẶT:** `ModbusMultidropRegistration` **đã phải tự dựng** `OwnedBySomethingElse` (`:379`) chống lại chính hành vi này, và cái chốt ấy **ĐUA** — ảnh chụp lấy ở `:203`, `Register` gọi ở `:241`, tức kiểm-rồi-làm **NGOÀI `_registerGate`**. Biện pháp giảm nhẹ mà chú thích trỏ tới (`ResolveEntries`) **chỉ phủ đường `connectors.json`**. Xem §63 🔴 **ĐO LẠI 2026-08-24 (BP-1, base `d9d3aafc`) — TIỀN ĐỀ CỦA HƯỚNG SỬA BỊ BÁC, MỤC Ở LẠI PHẦN I.** Hai hình dạng đều được DỰNG và ĐỊNH GIÁ trên bộ test: (i) **ném** ⇒ `POST /v1/connectors` **500** ở đúng đường mà chú thích của chính nó gọi là *"ordinary idempotent-update path"*; (ii) **từ chối** theo đúng luật của `OwnedBySomethingElse` ⇒ **đỏ** `ConnectorEndpointsEnvSeedingSideEffectsTests.PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s`, một hành vi **nhiệm vụ B-6 cố ý dựng**. ⇒ **HAI chỗ gọi sản xuất muốn HAI câu trả lời NGƯỢC NHAU**, và thứ phân biệt chúng là **XUẤT XỨ** (Seeded/Operator) — dữ kiện registry **không giữ và không nên giữ**. **Cái chốt ngoài khoá KHÔNG thừa và KHÔNG THỂ làm cho thừa tại dòng ấy: nó là CHÍNH SÁCH theo chỗ gọi, không phải bất biến toàn cục thiếu chỗ đặt.** Đã trả: câu khai SAI về phạm vi `ResolveEntries` ở `:145–148` **RÚT nguyên văn** (đo: **năm** chỗ gọi truyền id tường minh, `ResolveEntries` không nằm trên đường nào), và cả hai phép đo ghi tại chỗ. **KHÔNG một dòng hành vi nào đổi.** Xem §63.5 🔴 **HƯỚNG THỨ BA ĐÃ SUY VÀ ĐỊNH GIÁ — BR-1, 2026-08-24: KHÔNG ĐI ĐƯỢC, và BA GIÁ nay ghi đủ.** Hướng ba = *cho registry GIỮ XUẤT XỨ để nó tự phân xử*. Luật suy ra **mạch lạc** (từ chối khi người đang giữ id là `Operator` phục vụ máy KHÁC; cho qua khi là `Seeded`) — và **giá thì không trả được**, đo chứ không đoán: *(i)* `ConnectorConfigSource` khai trong **`St4i.EngineApi`**, còn `ConnectorRegistry` ở **`St4i.EdgeCore`** (chỉ tham chiếu `St4i.Connector.Abstractions`) — **hai trong năm** chỗ gọi id tường minh nằm ở assembly **không gọi tên nổi kiểu ấy** (`ModbusMultidropRegistration` ở EdgeCore, `EdgeConnectors` ở EdgeService); *(ii)* vựng từ ấy có **đúng hai** thành viên, cả hai mô tả một sự kiện LƯU của `ConnectorConfigStore` — **ba trong năm** chỗ gọi không có giá trị nào để khai, nên hướng ba là *“phát minh thêm thành viên rồi quyết một ma trận ưu tiên”*, mà **không nguồn nào trong cây** phát biểu ma trận ấy; *(iii)* `Register` có **8** chỗ gọi sản xuất và **126** trong test — tham số bắt buộc phá cả **134**, tham số mặc định **tái lập đúng khuyết tật mở đầu chính mục này** (`keyWasDefaulted` gộp bốn trạng thái) ở một tham số thứ hai. 🔴 **VÀ NÓ KHÔNG QUYẾT ĐƯỢC CA CỦA CHÍNH MỤC 63:** §63.1/§63.3 nói về **hai** đăng ký dưới **một id do vận hành viên gõ** — xuất xứ **BẰNG NHAU hai bên**, nên một registry giữ xuất xứ vẫn không phân xử được, và last-write-wins sống nguyên trên đúng quần thể §63.3 gọi là **dễ xảy ra hơn**. Mục **Ở LẠI PHẦN I**, kệ ⚖️, kèm ghi chép *“ba hướng đã định giá”*. Xem §63.6 ⚖️ **PHÁN QUYẾT CỦA ĐIỀU PHỐI VIÊN — 2026-08-24 (BS-1), base `48980288`: MỤC CHUYỂN SANG KỆ `chờ-chủ-sở-hữu`, VÀ KHÔNG MỘT DÒNG HÀNH VI NÀO ĐỔI.** Ba hướng nay **đều đã được định giá và không hướng nào đi được**, nên cái còn lại **là một quyết định, không phải một việc** — đúng hình dạng mục 41 và mục 43. **Ba giá, đặt ngay ở đây vì đây là chỗ anh đọc:** *(1) NÉM* ⇒ mọi lần **SỬA** một connector thành **500** ở chỗ **200** là kết cục được hỗ trợ (`ConnectorEndpoints.cs:369`, đường mà chú thích của chính nó gọi là *“the ordinary idempotent-update path”*); *(2) TỪ CHỐI* theo luật `OwnedBySomethingElse` ⇒ **đỏ** `ConnectorEndpointsEnvSeedingSideEffectsTests.PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s`, một hành vi **nhiệm vụ B-6 cố ý dựng**; *(3) REGISTRY GIỮ XUẤT XỨ* ⇒ **2/5** chỗ gọi id tường minh nằm ở assembly **không gọi tên nổi kiểu ấy** · vựng từ **không có giá trị nào cho 3/5** · **134** chỗ gọi và một tham số mặc định **tái lập chính `keyWasDefaulted`** · **và nó không quyết được ca `Operator`×`Operator` của chính mục 63**. 🔴 **Vì sao là câu của ANH chứ không của điều phối viên:** §63.5 tự kết bằng đúng chữ **CÁI CÒN CHỜ ANH** trong khi trường máy xếp mục ở `chờ-điều-phối-viên` — §63.6.5 nêu tên chỗ ấy và **cố ý không tự quyết** — và **tiền lệ cùng khuôn là mục 47, do CHỦ SỞ HỮU phán ngày 2026-08-23**. Câu phải trả lời, một câu: **có chấp nhận giá 1 hay giá 2 không.** Cả hai **không chạm ba miễn trừ**; cái chặn là **giá**, và giá là thứ điều phối viên **đo được chứ không trả được**. Mục **Ở LẠI PHẦN I**. Xem §63.7 |
@@ -102,9 +102,9 @@ và con số OEE đã báo cáo trong quá khứ. Uỷ quyền phủ được *"
 | 69 | **`intentClassifier` gửi BỐN chuỗi ngoài vựng từ `stepType` vào một mệnh đề `WHERE`** — nên mọi câu hỏi mô-men và lượng keo trả về *"không đủ dữ liệu"* TRÊN MỘT BẢNG CÓ DỮ LIỆU | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); không chạm ba miễn trừ (`metricTrendParams` đã nhận `stepType?: string`, nên sửa là đổi một **giá trị**, không phải hình dạng). Vựng từ sản xuất là **bảng DB được gieo** `process_step_types` (**tám** giá trị, `screw_tightening`/`glue_dispense`/…), khớp với hợp đồng đã công bố và với chính `fleet.json`. **`"torque"` là một khoá METRIC, không phải một step type; `"dispense"` cũng không — mã thật là `glue_dispense`.** ⇒ **BỐN literal**, không một. 🔴 **Chữ *"CHẾT"* SAI theo chiều làm nó nghe vô hại:** nhánh **luôn được chọn**, và điều kiện SQL **AND với machineId** ⇒ 0 hàng ⇒ `"NOT_FOUND"`. **Đó là NGƯỢC LẠI của mã chết.** 🔴 **Hai bài test ĐANG GHIM khuyết tật** (`intentClassifier.f6.test.ts:17`, `:28`) — dụng cụ đứng về phía khuyết tật. 📎 Độc lập chứng thực phép rút của BL-1 về §41.4. Xem §69. 🔴 **KHÔNG THI HÀNH — BQ-1, 2026-08-24 (§69.5). NHÃN ⚖️ BỊ MỘT PHÉP ĐO BÁC; mục chuyển sang CHỜ CHỦ SỞ HỮU và Ở LẠI PHẦN I.** Mọi mệnh đề **kỹ thuật** đo lại **ĐỨNG** (bốn literal; tám mã gieo; `WHERE` AND với `machineId`; hai test ghim). Cái không đứng là **thẩm quyền**: `server/` **không thuộc sản phẩm này** — `package.json` gốc khai `synapse-platform` và chạy toàn `server/*`; `St4iMachineSimulator.sln` nhắc `server` **0** lần; **621 commit** chạm `tools/machine-simulator` và **0** chạm `server/` kể từ **2026-07-18**; `repo-scan.sh:43–46` gọi nó là *the CONSUMER's code*. Uỷ quyền **không phủ được sự đồng ý của bên thứ ba** — luật mục 59. **Nửa thứ hai, độc lập:** cổng không dựng/không chạy/không thấy `server/`, nên bản sửa ở đó **hạ cánh không nhân chứng**. 🔴 Tiền đề *"ngoài nón thưa nên không đo được"* **SAI**: `git show`/`git grep` đọc cả 1.589 file — mọi phép đo trên đây làm đúng thế; xem **mục 74**. 📎 `:17` là dòng `metricKey`, assertion `stepType` ở `:18` 🔧 **THI HÀNH MỘT PHẦN: ĐÃ BÀN GIAO — BV-1, 2026-08-24, base `aa830bb7`. MỤC Ở LẠI PHẦN I — nó chỉ rời khi BÊN KIA đã sửa.** §69.5 đo rằng cái mục này thiếu là **một kênh tới đội sở hữu `server/`**; chủ sở hữu đang mở đúng kênh ấy cho mục 59, nên trang mô tả khuyết tật 69 đi **cùng bộ bàn giao**, tới **cùng một đội** — và `docs/handoff/README.md` nói rõ **hai hồ sơ ĐỘC LẬP nhau**. 🔴 **0 dòng trong `server/` bị sửa** (`git diff --stat` không liệt kê một đường dẫn `server/` nào). **Bốn chuỗi đo lại 2026-08-24 qua `git show` vì `server/` vắng trên đĩa — BỐN đứng nguyên, và chúng ở HAI hàm chứ không một:** `intentClassifier.ts:172` và `:173` (`mapProcessMetric`, đối số `stepType`), `:180` và `:181` (`mapCorrelationArgs`, đối số `upstreamStepType`). Vựng từ đúng đo ở **nguồn gieo** chứ không ở tài liệu: `drizzle/0289_process_step_spec.sql:41–50` — **TÁM** mã, đứng nguyên. `WHERE`: `server/db/processResult.ts:131`, AND với `machineId` ở `:130`; nhánh tương quan ở `insightHandlersF6.ts:224`. 🔴 **MỘT CON SỐ CỦA HÀNG NÀY KHÔNG SỐNG SÓT, và sai theo chiều *"nhẹ hơn thực tế"*: *"hai bài test"* đo lại là BA assertion** — `f6.test.ts:18` (`stepType` = torque), `:28` (`stepType` = dispense) và **`:62`** (`upstreamStepType` = torque), cộng **tên** một bài test ở `:23` cũng mô tả hành vi sai. Bản ghi cũ đếm hai vì nó chỉ đếm nhánh `mapProcessMetric` — **cùng chỗ mù đã làm nó nói bốn literal mà chỉ trỏ được hai**. Đính chính `:17` → `:18` của BQ-1 **đứng nguyên**, chỉ phép đếm đổi. **KHÔNG ĐO:** không chạy server của họ, không đọc dữ liệu thật trong `process_results`, và **không mở hết tập** những chỗ viết cùng loại literal trong `server/` — trang bàn giao nói đúng cả ba. Xem §69.6 |
 | 70 | **`GET /v1/machines/{code}` ship BỐN con số mô-men cho MỘT chu kỳ** mà payload ingest, chuỗi SPC và historian đều báo MỘT | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). Chạm **(b) hình dạng dây** (`MachineDetailDto` đã công bố, soi gương ở `web/src/lib/api.ts:207–244`) **và (c) OEE theo ĐÚNG MỘT chiều sửa**. 🔴 **Lời khai *"hai con số"* đúng theo CHỮ nhưng VỊ NGỮ mời hiểu sai:** độ lệch duy nhất giữa `spc.values[]` (thô) và `plan.steps[0].metricValue` là **`Math.Round(…,3)`**, tức ≤ 5·10⁻⁴ Nm — **không** phải loài phân kỳ 12,0→1,35 Nm của mục 41. 🔴 **NÊU QUÁ DÈ DẶT ở chỗ đáng kể hơn nhiều:** `plan.steps[1..3].metricValue` là **BA lần rút ĐỘC LẬP MỚI**, không vào `Metrics`, không vào `spc`, không vào `Normalizer` (0 hit `Plan`), không vào historian, không lên Sparkplug. 🔴 **Và ba lần rút ấy ĐANG QUYẾT PHÁN QUYẾT** (`ScrewdriveSim.cs:173`), nên một bản sửa **xoá** chúng **hạ tỉ lệ Fail và dịch `Quality` của OEE** — miễn trừ (c); một bản sửa **chỉ chỉnh độ chính xác** thì không. **Hai bờ lệch nhau một bậc và lời khai gốc gộp chúng làm một.** Xem §70 |
 | 71 | **Doc thiết kế và mã bất đồng ở BỐN trên NĂM hàng tham số** — và cái được ghi lại là hàng ÍT nguy hiểm nhất trong bốn | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** cho bản sửa **tài liệu** — mở 2026-08-24 (BO-1). 🔴 **ĐƠN VỊ của lời khai SAI: KHOÁ KHÔNG LỆCH.** `weld_profile` **khớp ở cả BA nơi khai độc lập** (doc `:65`, `MachineParameterSchema.cs:76`, `recipeSchemas.ts`). Cái lệch là **DANH SÁCH THAM SỐ**: doc nêu *"lực ép, tiền/hậu nhiệt"*, mã khai `tempMax`/`voltage` — và §3 của doc nói nó **đi theo** đúng file nó mâu thuẫn. **Sim dùng cái nào? KHÔNG CÁI NÀO** — `WelderSim.cs:25–31` không nhận `MachineConfigStore`. 🔴 **Đã ghi HAI LẦN trước khi thành "khuyết tật dừng lại"** (`MACHINE_CONFIG_DESIGN.md:84–86` và mục 42 `:2186–2187`), cả hai **do chính BL-1 viết**. 🔴 **NÊU QUÁ DÈ DẶT: bốn trên năm hàng lệch, chỉ HAI được ghi** — `sequence[]` (SCREWDRIVE) và `retestPolicy` (AOI/AVI) vắng trong mã, và **hàng DISPENSING là hàng SẮC NHẤT chưa ai ghi** vì nó giấu `temperature`, đúng khoá mục 42 dựng phát hiện *"bẫy vận hành viên"* lên. **Bờ ngược — sửa MÃ cho khớp doc — là của anh** (vựng từ REST đã công bố; mọi `weld_profile` đã gieo mất hiệu lực). Xem §71 🔧 **THI HÀNH MỘT PHẦN 2026-08-24 (BP-1, base `d9d3aafc`) — bờ tài liệu đã trả, MỤC Ở LẠI PHẦN I.** 🔴 **VÀ CON SỐ TRUNG TÂM CỦA MỤC KHÔNG SỐNG SÓT.** Hướng sửa suy RIÊNG từng hàng, phân xử bằng chính nguồn §3 viện dẫn (`recipeSchemas.ts`, đọc từ kho object vì `server/` **nằm ngoài nón checkout thưa** của bản sao này): **DISPENSING và WELDER — DOC SAI**, TS khai `volumeTarget/pressure/speed/temperature` và `current/time/tempMax/voltage`, **trùng từng ký tự với C#** ⇒ đã sửa bảng, nguyên văn cũ giữ. **SCREWDRIVE `sequence[]` và IOT `thresholds{}` — DOC ĐÚNG, C# mới là kẻ lệch**: `recipeSchemas.ts` khai **CẢ HAI** ⇒ **không đụng bảng**, ghi lý do miễn trừ tại hằng số. **AOI `retestPolicy` — KHÔNG CÓ TRỌNG TÀI** (`RECIPE_KINDS` không có `aoi_inspection`) ⇒ ghi, không xoá. ⇒ **đo lại: HAI trên năm hàng doc sai, không phải BỐN**; *"bốn"* là số hàng **CHƯA AI GHI LÝ DO**, không phải số hàng lệch — và ba trong bốn ấy có **CÙNG MỘT lý do** với hàng duy nhất đã được ghi. **Vì sao hàng ít nguy hiểm nhất là hàng được ghi: vì luật ghi là *"ghi cái mình vấp phải"*** — BL-1 đang thi hành mục 42, mà chủ thể mục 42 đúng là hai kind KHÔNG sim nào đọc — **luật ấy không tương quan gì với mức nguy hiểm**, và đo được rằng WELDER là hàng duy nhất trong bốn **vừa không được sim nào đọc vừa không có va tên**. Cái hỏng thật: **bảng §3 CHƯA TỪNG có phép kiểm nào**; nay có `MachineConfigDesignDocTableTests`, hai chiều. **Bờ *"cái nào ĐÚNG về vật lý"* vẫn của anh.** Xem §71.5 🔴 **BỜ MÃ ĐO BẰNG BYTE-IDENTITY VÀ NÓ CHẠM MIỄN TRỪ (b) — BR-1, 2026-08-24. MỤC CHUYỂN SANG KỆ CHỦ SỞ HỮU**, cùng đường mục 68 vừa đi. Tiền lệ dùng đúng của nó: vế (1) mục 57 và mục 66 đều đi được **vì** token ra dây **giống hệt từng byte** (7/7). Chạy đúng phép ấy cho `sequence[]` (SCREWDRIVE) và `thresholds{}` (IOT): **HỎNG ở ba chỗ, mỗi chỗ đủ một mình** — *(1)* `MachineSettingsEndpoints` nhét nguyên `ParametersFor(kind)` vào `MachineSettingsResponseDto`, nên mảng `parameters` của mọi `GET /v1/machines/{code}/settings` **dài thêm một phần tử**; *(2)* `MachineConfigStore.SeedConfig` suy `Baseline.Values` rồi `ConfigChecksum.Compute` từ chính danh sách ấy ⇒ **checksum đổi** trên mọi phản hồi và mọi lần push; *(3)* không giá trị nào là **vô hướng**, mà `ParameterDef` là *một số có dải cứng* ⇒ **kiểu phần tử của DTO** phải đổi — thay đổi **cấu trúc** một phản hồi đã công bố, không phải thêm một trường. ⇒ bờ mã là **của ANH**, không của điều phối viên. 📎 `retestPolicy` (AOI) hỏng cùng phép đo **và** **không có trọng tài** (`RECIPE_KINDS` không có `aoi_inspection`) ⇒ một câu hỏi riêng của anh, không phải trường hợp thứ tư của cùng một câu. **Không một dòng mã nào bị nhiệm vụ này đổi ở mục 71.** Xem §71.6 🔧 **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-24 — HƯỚNG A: MỘT CÂU ĐÓNG, BA HÀNG DỪNG (BU-1, base `47252d57`). MỤC Ở LẠI PHẦN I.** Phán quyết nguyên văn: *"Nhóm A: Các còn số đang có đều là giả định và dùng để test nên ko cần quan tâm tính chính xác của nó, hãy đảm bảo rằng logic code của chức năng trong các trường hợp là đúng là được, bạn tự quyết (hoặc chọn A cho tất cả)"*. ✅ **Câu §71.5.6 nay CÓ TRỌNG TÀI:** hướng A = *"giữ mã, sửa tài liệu cho khớp mã"* ⇒ **`current`/`time`/`tempMax`/`voltage` THẮNG**; bảng §3 **không cần đụng** (BP-1 đã viết lại hai hàng), cái được thêm là một khối có ngày trong `MACHINE_CONFIG_DESIGN.md` §3 ghi phán quyết nguyên văn ở chỗ **người tích hợp đọc**, giữ nguyên văn câu cũ *"cái nào ĐÚNG về vật lý vẫn thuộc chủ sở hữu"* và trả lời ngay dưới. 🔴 **BA HÀNG DỪNG, lý do là PHÉP ĐO chạy lại hôm nay từ KHO OBJECT** (`git show HEAD:server/services/recipes/recipeSchemas.ts`; `server/` vẫn không có trên đĩa): `screwProgramShape` **CÓ** `sequence` và `iotSettingsShape` **CÓ** `thresholds` ⇒ hai hàng ấy **doc ĐÚNG, server ĐÚNG, C# mới hẹp** ⇒ *"sửa tài liệu cho khớp mã"* ở đó sẽ **viết một tài liệu MÂU THUẪN VỚI HỢP ĐỒNG SERVER**; `RECIPE_KINDS` **không có** `aoi_inspection` ⇒ `retestPolicy` **không có bản khai server nào để đúng hay sai với**, và xoá nó là **quyết một câu hỏi thiết kế bằng phép xoá**. Phán quyết nói *"ko cần quan tâm tính chính xác của SỐ"*, **không** nói *"hãy viết tài liệu trái hợp đồng bên thứ ba"*. 🔴 **Bờ MÃ KHÔNG chạm: nó chạm miễn trừ (b) hình dạng dữ liệu trên dây, và miễn trừ (b) KHÔNG được mở ngày 2026-08-24** — phán quyết mở **(a)** qua mục 61 và **(c)** qua mục 43. **Không một dòng mã nào và không một ô bảng nào bị đổi ở mục 71 hôm nay.** Xem §71.7 |
-| 72 | **Chỉ SÁU trên mười sáu lá `%ProgramData%\ST4I\sim\` được chuyển hướng CẤU TRÚC** — chín lá dựa vào một quy ước lặp bằng tay, `opcua-pki` gần như không có seam, và cái ngoặc canh chúng MÙ với đúng loại bằng chứng đã dựng ra nó | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). Chạm **(c)**: `sim\historian` là gốc của **cả** `SqliteHistorianStore` (bảng sự kiện OEE) **và** `OeeSettingsStore` (chủ đề mục 11 và 13). 🔴 **LỜI KHAI GỐC SAI THEO CẢ HAI CHIỀU.** *Nói quá:* nửa `assets` **ĐÃ ĐƯỢC TRẢ TẠI NGUỒN** — BK-1 (`9f95dd8a`) thêm `ST4I_ASSETS_DIR` + `ST4I_NOTIFICATIONS_DIR` với cặp đối chứng chạy trọn suite; trên đĩa `assets.db` đứng nguyên ở mtime của chính lần đối chứng ấy. *Nói quá dè dặt:* **LOÀI còn sống trên MƯỜI lá** — `historian` (hai người sinh) · `security` · `alarms` · `connector-config` · `settings` · `identity` · `sitelink` · `bridge-spool` · `wal` · `opcua-pki`. 🔴 **VÀ MỘT VỊ NGỮ CỦA CHÍNH BO-1 KHÔNG SỐNG SÓT PHÉP ĐO THỨ HAI, theo chiều NÓI QUÁ:** bản viết đầu nói mười lá ấy *"chưa ai đặt seam"*; đếm lại trong `tests/` thì **CHÍN trên mười ĐƯỢC seam, 20–24 file mỗi biến**. Khuyết tật là **HÌNH DẠNG của seam**, không phải sự vắng mặt của nó: **sáu lá được chuyển hướng CẤU TRÚC** (`[ModuleInitializer]`, cả năm assembly, mọi bài **gồm bài chưa ai viết**), **chín lá theo QUY ƯỚC LẶP BẰNG TAY** — hai mươi lớp nhớ **không chứng minh gì về lớp thứ 21** — và **`opcua-pki` có ĐÚNG MỘT file đặt nó**. 🔴 **Nói cho đúng mức: "seam theo từng lớp" KHÔNG bằng "đang rò"** — không lần ghi nào quan sát được trên mười lá ấy. 🔴 **HAI khuyết tật của chính DỤNG CỤ, chưa ai ghi:** ngoặc là `find -type f` nên **mù với một cú dịch mtime THƯ MỤC** — đúng loại bằng chứng `notifications` đã dựng ra nó; và `TestRunTempRoot.cs:187–188` nêu tên `RealProgramDataLeakGuard` như thứ *"now measures the CONSEQUENCE"*, **file ấy KHÔNG TỒN TẠI**, bị xoá trong cùng commit. **Ngoặc PHÁT HIỆN, không NGĂN**, và chỉ chạy trong cổng. Xem §72 |
+| 72 | **Chỉ SÁU trên mười sáu lá `%ProgramData%\ST4I\sim\` được chuyển hướng CẤU TRÚC** — chín lá dựa vào một quy ước lặp bằng tay, `opcua-pki` gần như không có seam, và cái ngoặc canh chúng MÙ với đúng loại bằng chứng đã dựng ra nó | 🔴 **CHỜ ANH** — mở 2026-08-24 (BO-1). Chạm **(c)**: `sim\historian` là gốc của **cả** `SqliteHistorianStore` (bảng sự kiện OEE) **và** `OeeSettingsStore` (chủ đề mục 11 và 13). 🔴 **LỜI KHAI GỐC SAI THEO CẢ HAI CHIỀU.** *Nói quá:* nửa `assets` **ĐÃ ĐƯỢC TRẢ TẠI NGUỒN** — BK-1 (`9f95dd8a`) thêm `ST4I_ASSETS_DIR` + `ST4I_NOTIFICATIONS_DIR` với cặp đối chứng chạy trọn suite; trên đĩa `assets.db` đứng nguyên ở mtime của chính lần đối chứng ấy. *Nói quá dè dặt:* **LOÀI còn sống trên MƯỜI lá** — `historian` (hai người sinh) · `security` · `alarms` · `connector-config` · `settings` · `identity` · `sitelink` · `bridge-spool` · `wal` · `opcua-pki`. 🔴 **VÀ MỘT VỊ NGỮ CỦA CHÍNH BO-1 KHÔNG SỐNG SÓT PHÉP ĐO THỨ HAI, theo chiều NÓI QUÁ:** bản viết đầu nói mười lá ấy *"chưa ai đặt seam"*; đếm lại trong `tests/` thì **CHÍN trên mười ĐƯỢC seam, 20–24 file mỗi biến**. Khuyết tật là **HÌNH DẠNG của seam**, không phải sự vắng mặt của nó: **sáu lá được chuyển hướng CẤU TRÚC** (`[ModuleInitializer]`, cả năm assembly, mọi bài **gồm bài chưa ai viết**), **chín lá theo QUY ƯỚC LẶP BẰNG TAY** — hai mươi lớp nhớ **không chứng minh gì về lớp thứ 21** — và **`opcua-pki` có ĐÚNG MỘT file đặt nó**. 🔴 **Nói cho đúng mức: "seam theo từng lớp" KHÔNG bằng "đang rò"** — không lần ghi nào quan sát được trên mười lá ấy. 🔴 **HAI khuyết tật của chính DỤNG CỤ, chưa ai ghi:** ngoặc là `find -type f` nên **mù với một cú dịch mtime THƯ MỤC** — đúng loại bằng chứng `notifications` đã dựng ra nó; và `TestRunTempRoot.cs:187–188` nêu tên `RealProgramDataLeakGuard` như thứ *"now measures the CONSEQUENCE"*, **file ấy KHÔNG TỒN TẠI**, bị xoá trong cùng commit. **Ngoặc PHÁT HIỆN, không NGĂN**, và chỉ chạy trong cổng. 🔧 **THI HÀNH MỘT PHẦN — HƯỚNG B, BW-1, 2026-08-24, base `7e6d9aed`, theo PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-24. MỤC Ở LẠI PHẦN I.** `ST4I_OPCUA_PKI_DIR` nay do `TestRunTempRoot` đặt (lá `opcua-pki` lên **CẤU TRÚC**), `src/` **0 dòng**. 🔴 **"MỘT BIẾN, MỘT LỚP ĐANG DÙNG" KHÔNG SỐNG SÓT, theo chiều nói-quá-dè-dặt: đếm lại trên `tests/` cho 1 file NHẮC và ZERO file ĐẶT** — cả hai lần nhắc nằm trong một chú thích `///` của `PerHostDataRootsTests`, một trong đó viết thẳng *"nothing exercises `ST4I_OPCUA_PKI_DIR`, the env var"*; dụng cụ sinh ra cột "file đặt nó" là đếm-chuỗi-trong-`tests/`, thứ mà ghi chú **F-8** của chính file ấy đã ghi là **không thể** sinh ra hàng đó. Nên *"không có quần thể nào phải kiểm lại"* **mạnh hơn** thân mục: quần thể là **RỖNG**. 🔴 **Khả năng ≠ sự kiện, đo lại:** `opcua-pki` thật giữ 3 file, mtime mới nhất **2026-07-29 15:42:07**, mtime thư mục cũng thế ⇒ **không lần ghi nào quan sát được**. **Chú thích trỏ `RealProgramDataLeakGuard` ĐÃ RÚT TẠI CHỖ kèm ngày, văn cũ giữ nguyên từng chữ.** 📎 §72.2(i) trích `sim_snapshot` thiếu `-printf '%p\t%s\t%T@\n'`: kết luận (mù với mtime THƯ MỤC) đứng vững, nhưng cái ngoặc **CÓ** thấy một file bị ghi đè. **Nhân chứng đỏ được + cặp đối chứng:** bờ A gỡ chuyển hướng ⇒ **1 đỏ/4 xanh**; bờ B đặt biến nhưng trỏ vào kho THẬT ⇒ **1 đỏ/4 xanh**; base ⇒ **0 đỏ/5 xanh**. `EXPECT_EDGECORE` 1285 → **1286**. **Chín lá kia vẫn QUY ƯỚC; hướng A vẫn chờ anh.** Xem §72 và §72.6 |
 | 73 | **`C2` không phân biệt một dấu trạng thái LỊCH SỬ với một dấu ĐANG SỐNG** — BỐN hàng xanh chỉ nhờ `has()` phân biệt hoa thường, và hình dạng thứ hai KHÔNG có ví dụ sống là hình dạng nguy hiểm | 🔴 **CHỜ ANH** ở bảng này theo hình thức, ⚖️ **ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC** theo nội dung — mở 2026-08-24 (BO-1); khuyết tật của **DỤNG CỤ**, không chạm ba miễn trừ. 🔴 **BO-1 ĐÃ BÁC lời khai này rồi TỰ LẬT PHÉP BÁC:** đọc §51.7/§51.9 tôi kết luận *"đã trả bằng một lời khai"*, nhưng ranh giới **(g)** nói về `Ở LẠI PHẦN II` và **IM LẶNG về ca `MỘT PHẦN`** — đúng chỗ khuyết tật sống. **Mệnh đề con ĐÚNG, đo bằng bản sao awk của `strip()`/`has()`:** hàng `| 12 |` cho `has "THI HÀNH MỘT PHẦN" = 0` nhưng `has "thi hành một phần" = 1` ⇒ gập hoa-thường thì `:222` **nổ ngay**. 🔴 **NÊU QUÁ DÈ DẶT: BỐN hàng, không một** — 12, 48, 51, 52, cả bốn Phần III; ba trong bốn viết thường **có chủ ý và tự khai**. 🔴 **Hình dạng B chưa có ví dụ sống là hình dạng nguy hiểm:** một mục ở **Phần I** mà `CHỜ ANH` chỉ còn là lịch sử được bảo tồn sẽ **xanh mãi mãi**; hơn hai mươi hàng đã mang một `CHỜ ANH` bị thay thế. **Bản sửa hiển nhiên không dùng được:** `toupper()` của awk làm việc **theo byte**. 📎 Ranh giới (g) và phần đầu `:51–55` nay **CŨ** (mục 12 sang Phần III, Phần II rỗng). Xem §73. 🔧 **THI HÀNH MỘT PHẦN — BQ-1, 2026-08-24, điều phối viên theo uỷ quyền (§73.7). Mục Ở LẠI PHẦN I, kệ ⚖️.** Mệnh đề **BỐN hàng ĐỨNG VỮNG** (12/48/51/52; hàng mục 12 đo **14 334** ký tự, khớp từng ký tự). 🔴 **HAI con số của mục KHÔNG sống sót:** *"ba hàng dạng HOA"* nay là **SÁU** (thêm 60, 71 **và chính hàng 73**), và *"cả 59 hàng"* nay là **73**. C2 nay đọc trạng thái từ **giọng của hàng** — cắt bỏ code span và đoạn trong ngoặc kép trước khi đọc token, đúng bản sửa hẹp §73.5 nêu tên. **Giá đo trên cả 73 hàng: đúng MỘT hàng đổi** (hàng 73, `partial` 1→0), so với **20/58** của bản hai chiều BK-1 đã bác. **Hình dạng B được DỰNG RA** thành fixture, không đợi: bốn hồ sơ giả lập, **hai lật và hai giữ** (A1 đỏ→xanh, A2 đỏ→đỏ, B1 xanh→**đỏ**, B2 xanh→xanh), chạy trong cổng qua `--self-test`. 🔴 **LỖ HOA-THƯỜNG KHÔNG được bịt, và đo được là không bịt nổi rẻ:** gập hoa-thường làm **cả bốn hàng đỏ KỂ CẢ khi đã cắt trích dẫn** — hai lỗ độc lập; ranh giới **(h)** nay khai điều đó ở chỗ kết quả hiện ra 🔴 **LỖ CASE ĐO LẠI TRÊN FILE ĐANG SỐNG VÀ DỰNG THÀNH FIXTURE — BR-1, 2026-08-24: KHÔNG ĐÓNG ĐƯỢC MÀ KHÔNG ĐẨY DƯƠNG TÍNH GIẢ LÊN, và đó là một PHÉP ĐO chứ không phải một thất bại.** Gập hoa-thường (liệt kê tay, vì `toupper()` của awk theo byte) làm đỏ đúng **hàng 12, 48, 51 và 52** — **BỐN** hàng, và **cả bốn là hồ sơ ĐÚNG**; mẫu số nêu cả hai chỗ vì nó vừa dịch trong chính nhiệm vụ này: **4/74 = 5,4 %** ở base `cdd7c063`, **4/75 = 5,3 %** ở ngọn nhánh. Hai luật hẹp hơn được **dựng và đo**, cả hai hỏng: *(a)* tôn trọng chỉ dấu `(lịch sử)` mà BK-1 đã viết sẵn trên 48/51/52 ⇒ tử số còn **MỘT** (**1/74 = 1,4 %** ở base), còn lại **hàng 12**, nơi token không phải một dấu trạng thái mà là một **câu văn** — một dương tính giả vẫn là một cổng ĐỎ; *(b)* đòi token nằm trọn trong một span đậm ⇒ **không dựng được trên `unquoted()`**, vì `unquoted()` xoá span trong ngoặc kép **trước**, mang theo cả dấu đậm nằm bên trong, để **BA** hàng (57, 71, 73) lệch chẵn-lẻ đậm — và sai của parser trỏ về phía **XANH**, tức mở một lỗ âm-tính-giả mới trong lúc bịt một lỗ âm-tính-giả cũ. **Nên lỗ CASE Ở LẠI, và nay nó CHẠY:** hai fixture mới **C1/C2**, **509 byte mỗi cái**, khác nhau **đúng một dòng và đúng một tính chất** — cách viết hoa; C1 assert **XANH CÓ CHỦ Ý** (lỗ), C2 **ĐỎ** (đối chứng). 🔴 **HAI CON SỐ CỦA §73.7 KHÔNG SỐNG SÓT NGAY TẠI COMMIT CỦA CHÍNH NÓ:** *“Hôm nay là SÁU”* hàng dạng HOA nay là **BẢY** (thêm **68**, do chính BQ-1 viết), và *“cả 73 hàng”* nay là **74** — nên *“1/73 = 1,4 %”* đúng là **1/74**. Mục **Ở LẠI PHẦN I**, kệ ⚖️. Xem §73.8 |
-| 74 | **Nón checkout thưa giấu 62.443 file được git theo dõi khỏi ĐĨA trong khi `git status` báo SẠCH** — nên mọi phép quét không-qua-git trả *"không thấy"* ở chỗ sự thật là *"không đo"* | 🔴 **CHỜ ANH** — mở 2026-08-24 (BQ-1); **không chạm ba miễn trừ**, đây là **môi trường**, và nhãn 🔴 nói về **GIÁ**, không về quyền (cùng loài mục 60). **Nón thưa, LIỆT KÊ trước:** chế độ cone, **đúng hai** thư mục — `examples/device-client`, `tools/machine-simulator` — cộng file gốc. **Rồi đếm:** **62.443/63.454** đường dẫn vắng mặt trên đĩa, trải **26 trên 27** thư mục cấp một (chỉ `examples/` nguyên vẹn). **ĐƠN VỊ đếm lại:** **1.589** của BP-1 cho `server/` **ĐÚNG** và đơn vị là **file (blob, mode 100644)** — không phải mục nhập cây, vốn là **1.703** kể cả 111 thư mục. 🔴 **Vị ngữ quanh nó là NỬA SỰ THẬT:** `server/` là **2/26** thư mục và **1.589/62.443** đường dẫn — **2,5%**, nhỏ hơn sự thật **39 lần**. 🔴 **VÀ PHÂN BIỆT HAI NHIỆM VỤ ĐÃ TRỘN: *không có trên ĐĨA* ≠ *không đo được*** — `git grep`/`git show` đọc cả 62.443; mù là `grep -r`, ripgrep, editor, `find`. ✅ **NỬA KHÔNG CHỜ AI ĐÃ TRẢ (§74.3):** `repo-scan.sh` nay **ĐO** vùng ấy mỗi lần chạy và **IN trong khối `_claim`**, chỗ mọi kết quả hiện ra; ranh giới `(b)` **hằng gõ tay → số đo** (câu cũ giữ nguyên văn; **cả 1.589 và 711 vẫn đúng**, cái sai là **phạm vi**); cặp đối chứng `--sparse-gap-self-test` (BANK A thật / BANK B checkout đầy đủ) + assertion rằng một đường dẫn vắng **đọc được qua git**. **Hai bờ (§74.4):** nới nón = **62.443 file** lên đĩa, **58.940 trong đó là `uploads/`** (94% giá cho thư mục không ai đọc) + thời gian checkout mọi người; để nguyên = lời khai **chỉ ràng buộc một dụng cụ**, và cái giá ấy **đã trả hai lần** (`web/` không được mở; cổng in PASS mà không khai). 📎 Nước đi giữa chưa ai định giá: `server`+`client`+`shared`+`contracts`+`drizzle` **không** kèm `uploads` = **2.729** file, **4,4%** giá. Xem §74 |
+| 74 | **Nón checkout thưa giấu 62.443 file được git theo dõi khỏi ĐĨA trong khi `git status` báo SẠCH** — nên mọi phép quét không-qua-git trả *"không thấy"* ở chỗ sự thật là *"không đo"* | 🔴 **CHỜ ANH** — mở 2026-08-24 (BQ-1); **không chạm ba miễn trừ**, đây là **môi trường**, và nhãn 🔴 nói về **GIÁ**, không về quyền (cùng loài mục 60). **Nón thưa, LIỆT KÊ trước:** chế độ cone, **đúng hai** thư mục — `examples/device-client`, `tools/machine-simulator` — cộng file gốc. **Rồi đếm:** **62.443/63.454** đường dẫn vắng mặt trên đĩa, trải **26 trên 27** thư mục cấp một (chỉ `examples/` nguyên vẹn). **ĐƠN VỊ đếm lại:** **1.589** của BP-1 cho `server/` **ĐÚNG** và đơn vị là **file (blob, mode 100644)** — không phải mục nhập cây, vốn là **1.703** kể cả 111 thư mục. 🔴 **Vị ngữ quanh nó là NỬA SỰ THẬT:** `server/` là **2/26** thư mục và **1.589/62.443** đường dẫn — **2,5%**, nhỏ hơn sự thật **39 lần**. 🔴 **VÀ PHÂN BIỆT HAI NHIỆM VỤ ĐÃ TRỘN: *không có trên ĐĨA* ≠ *không đo được*** — `git grep`/`git show` đọc cả 62.443; mù là `grep -r`, ripgrep, editor, `find`. ✅ **NỬA KHÔNG CHỜ AI ĐÃ TRẢ (§74.3):** `repo-scan.sh` nay **ĐO** vùng ấy mỗi lần chạy và **IN trong khối `_claim`**, chỗ mọi kết quả hiện ra; ranh giới `(b)` **hằng gõ tay → số đo** (câu cũ giữ nguyên văn; **cả 1.589 và 711 vẫn đúng**, cái sai là **phạm vi**); cặp đối chứng `--sparse-gap-self-test` (BANK A thật / BANK B checkout đầy đủ) + assertion rằng một đường dẫn vắng **đọc được qua git**. **Hai bờ (§74.4):** nới nón = **62.443 file** lên đĩa, **58.940 trong đó là `uploads/`** (94% giá cho thư mục không ai đọc) + thời gian checkout mọi người; để nguyên = lời khai **chỉ ràng buộc một dụng cụ**, và cái giá ấy **đã trả hai lần** (`web/` không được mở; cổng in PASS mà không khai). 📎 Nước đi giữa chưa ai định giá: `server`+`client`+`shared`+`contracts`+`drizzle` **không** kèm `uploads` = **2.729** file, **4,4%** giá. 🔧 **THI HÀNH MỘT PHẦN — HƯỚNG B, BW-1, 2026-08-24, base `7e6d9aed`, theo PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-24. MỤC Ở LẠI PHẦN I.** Lệnh: `git sparse-checkout add server client shared contracts drizzle`, ghi vào **README §2** vì nón là trạng thái **worktree, KHÔNG nằm trong commit** — bốn worktree khác và mọi clone mới vẫn thưa, nên phán quyết mới được **chạy**, chưa được **ship**. **2 729 và 4,4 % ĐẾM LẠI: cả hai đứng vững** (1589+711+399+21+9; 2729/62443 = 4,3704 %), và vùng vắng đi **62 443 → 59 714**, giảm **đúng 2 729**; `git status` sạch cả hai đầu; **0 dòng** trong năm thư mục. 🔴 **Nhưng ĐƠN VỊ của chữ *"giá"* KHÔNG sống sót, sai theo chiều ĐẮT-HƠN-THỰC-TẾ 14 lần: theo BYTE, hướng B là 65,42 MiB = 0,31 % của 20,35 GiB, không phải 4,4 %; và `uploads/` là 99,4 % của byte, không phải 94 % (94 % là phần theo SỐ FILE).** 🔴 **Và bờ mất mà mục này khẳng định — *"thời gian checkout mỗi lần đổi nhánh"* — KHÔNG sống sót: đo trên cùng cặp commit, trước 194/255/323/296 ms, sau 212/215/306/230 ms — trung bình SAU còn THẤP hơn, cả hai trong nhiễu, vì `git switch` chỉ ghi file KHÁC NHAU.** Giá thật là **1 348 ms MỘT LẦN** + **65,42 MiB**; và từ 2026-07-18 có **633** commit chạm `tools/machine-simulator`, **0** chạm năm thư mục ấy ⇒ chi phí lặp lại đo được là **0 ms** trên nhánh này (tần suất trên nhánh khác **CHƯA ĐO**). **Hằng số dịch: ĐÚNG MỘT** — `POPULATION sparse-absent-paths` 62 443 → 59 714 (+ mục cấp một 26 → 21), chính là hằng số `repo-scan.sh` **đo mỗi lần chạy**; `default-domain` 63 468, `probe-matches` 197, `case-probe-domain` 596, `now-files` 561, `now-sentences` 17 904, hàng/thân 75/75, `DIVERGENCES` 0 — **đứng yên**. 📎 `EXPECT_NEW_DOC_ABSOLUTES` **không** dịch vì nón, và phép kiểm ấy **VÔ HIỆU**: năm thư mục chứa **ZERO** `.cs` (cả repo có đúng **2** `.cs` ngoài `tools/machine-simulator`, đều dưới `examples/`, vốn đã trên đĩa), nên `corpus_of` gốc tại `tools/machine-simulator` chưa hề bị thử. 📎 **Ba con số nền của §74.1 lệch sau bốn ngày: 63 454 → 63 468, 1 011 → 1 025, 880 → 894; `62 443` và `26/27` đứng vững.** 📎 §74.2 trỏ `.git/info/sparse-checkout` — đường dẫn ấy **KHÔNG tồn tại** ở đây (`.git` là một FILE; worktree liên kết). Xem §74 và §74.6 |
 | 75 | **`MachineConfigStore.Ensure` cam kết trong BỘ NHỚ trước khi cam kết xuống ĐĨA** — nên một lần persist hỏng biến cú **500 ĐẦU TIÊN** thành im lặng vĩnh viễn, và fleet chạy tiếp trên một cấu hình **không file nào giữ** | ✅ **ĐÃ THI HÀNH — BR-1, 2026-08-24, base `cdd7c063`, ĐIỀU PHỐI VIÊN THEO UỶ QUYỀN. Mục MỞ THẲNG VÀO PHẦN III.** Mở cho cú 500 mà BQ-1 quan sát trực tiếp (`POST /v1/fleet/start` đầu tiên trên một tiến trình nguội, `UnauthorizedAccessException` từ phép đổi tên nguyên tử). ⚖️ **kiểm bằng ba miễn trừ:** không payload MQTT, không hình dạng dây (không DTO nào đổi), không số OEE. 🔴 **“cold boot” ĐO LẠI TRƯỚC MỌI THỨ, và nó KHÔNG phải cái nhãn nói:** không phải máy, không phải đĩa, không phải một cuộc đua — **là `_configs` của tiến trình còn RỖNG**, đúng một lần cho mỗi mã máy cho mỗi tiến trình. Vì `Ensure` ghi `_configs[code]` **trước** `Save()`, một `Save()` ném để lại bộ nhớ **đi trước** file; và vì chốt bất biến của `Ensure` **đọc chính cái map ấy**, lần gọi **THỨ HAI** rơi vào đường nhanh, trả **200**, và **không bao giờ ghi lại**. ⇒ **tái lập ĐƯỢC, và tái lập theo yêu cầu** — không cần seam nào: đặt thuộc tính ReadOnly lên `machine-operating-config.json` rồi gọi `Ensure` hai lần. **Nhân chứng đỏ được:** `MachineConfigStoreTests.Ensure_whose_persist_throws_remembers_nothing_so_the_next_call_is_not_silently_green`. **Bản sửa:** seed bị **hoàn tác** khi `Save()` ném. **Giá, nói thẳng:** một bản triển khai có gốc cấu hình thật sự không ghi được nay hỏng **MỌI** lần khởi động thay vì chỉ lần đầu — to tiếng hơn, và đó là chủ ý. 🔴 **VÀ MỘT LỜI KHAI CỦA CHÍNH TÔI KHÔNG SỐNG SÓT, bắt bởi `scan-doc-negations.sh`:** bản nháp viết *“năm chỗ `Save()` kia đều to tiếng”* — đo lại là **BỐN**. `RemoveAdjustment` (`:391`) là **thành viên thứ HAI** của đúng hình dạng này (chốt `removed` đọc chính cái map lần hỏng vừa sửa ⇒ lần thử lại trả **200** cho một phép xoá file chưa nhận, và bản điều chỉnh **quay lại** sau khởi động lại). **Nêu tên, KHÔNG sửa:** hoàn tác nó đòi **ba** phép khôi phục ở chỗ `Ensure` cần **một**, và không nhân chứng nào trong cây phủ chúng. Xem §75 |
 | — | cổng đòi máy độc quyền | 🔨 **SỬA SAU** — làm hỏng dụng cụ đo mọi mục trên |
 
@@ -1288,6 +1288,116 @@ sóng. Nhưng **124 file nguồn và 28 spec vẫn ở ngoài mọi phép kiểm
 theo lại phụ thuộc vào việc người thi hành **nhớ** gõ `npm run build` và **nhớ** ghi lại rằng mình đã
 gõ. Đó chính là hình dạng mục 37 mô tả, ở một thư mục thay vì một hồ sơ: một sự thật chỉ sống nếu có
 người nhớ viết nó ra.
+
+### 60.7 🔧 HƯỚNG B, ĐÃ ĐỊNH GIÁ — BW-1, 2026-08-24, base `7e6d9aed`, THEO **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-24** (*"hoãn hướng A; ĐO hướng B rồi quyết"*). 🔴 **ĐÂY LÀ MỘT PHÉP ĐO, KHÔNG PHẢI MỘT BẢN SỬA. `web/` KHÔNG ĐƯỢC NỐI VÀO CỔNG. MỤC Ở LẠI PHẦN I — QUYẾT LÀ CỦA ANH**
+
+**Hướng B** = *"chỉ nối build + lint, KHÔNG nối test trình duyệt"*. §60.4 định giá hướng A và
+**không** định giá cái này; sáu con số dưới đây lấp đúng chỗ trống ấy. Mỗi cái là một **CON SỐ hoặc
+một kết quả nguyên văn**, đo trên máy này ngày 2026-08-24.
+
+**(1) Node/npm có sẵn không, và gói `web/` ĐÒI phiên bản nào.**
+Có: `node v24.18.0`, `npm 11.16.0`, tại `C:\Program Files\nodejs`. 🔴 **Nhưng `web/package.json`
+KHÔNG khai trường `engines`, và không có `.nvmrc` cũng không có `.npmrc`** — ở đâu trong repo cũng
+không. Sàn thật phải đọc từ phụ thuộc đã cài: `vite 8.1.5` và `oxlint 1.74.0` đều đòi
+`^20.19.0 || >=22.12.0`; `typescript 6.0.3` đòi `>=14.17`; `@playwright/test 1.61.1` đòi `>=18`.
+⇒ **sàn ràng buộc là Node ≥ 20.19 (hoặc ≥ 22.12), và nó KHÔNG được ghi ở đâu trong cây này.** Máy
+này thoả. Một cổng nối hướng B thừa hưởng một sàn **không ai khai** — đó là một cái giá thứ hai, nhỏ,
+mà không phép đo nào ở trên nói ra.
+
+**(2) `npm ci` mất bao lâu, tốn bao nhiêu đĩa.** Đo trong một thư mục **ngoài cây**, chỉ `package.json`
++ `package-lock.json`: **16 giây** (cache ấm) và **20 giây** (cache lạnh, tải thật) cho **409 gói**;
+**67 MB** tải về; **306 MB / 24 653 file** trên đĩa. 📎 `web/node_modules` **đã có sẵn trên máy này
+TRƯỚC nhiệm vụ** — **312 MB / 24 777 file / 317 mục cấp một** — nên nhiệm vụ này **không sinh ra**
+`node_modules` nào trong cây và **không dọn** cái đang có; dọn nó mới là hành vi làm bẩn. Cả hai phép
+đo `npm ci` chạy trong `%TEMP%` và đã xoá.
+
+**(3) `npm run build` và `npm run lint` mất bao lâu, so với trần 900 giây MỖI bộ.**
+`npm run build` (`tsc -b && vite build`): **7,03 s** (ba lần đo khác: 5,96 s / 8,86 s / ~7 s).
+`npm run lint` (`oxlint`): **0,52 s**. Cộng lại **≈ 7,6 s = 0,84 %** của **một** trần 900 giây, và
+**0,17 %** của tổng năm trần. 🔴 **Nói cho đúng chiều còn lại: trần không phải cái đắt: 7,6 giây là
+thời gian mỗi lần chạy, và `npm ci` 16–20 giây là thời gian LẦN ĐẦU trên mỗi máy** — hai đơn vị khác
+nhau, và mục 60 chỉ nêu đơn vị thứ nhất.
+
+**(4) 🔴 CÂU QUAN TRỌNG NHẤT — chúng có sinh TIẾN TRÌNH SỐNG hay TIẾN TRÌNH NỀN nào không? KHÔNG,
+đo bằng chính bộ so khớp của cổng.** Bộ so khớp `BUILD_SERVER_WHERE` đọc **3 → 3 → 3** (trước / ngay
+sau / +5 s quanh một `npm run build`). Quần thể `node.exe`+`esbuild.exe` toàn máy đọc
+**35 → 35 → 34** (cái −1 là nhiễu của máy, không phải của lệnh). `npm run lint` cũng **0**: 53 → 53 →
+53 sau 10 giây. ⇒ **`tsc -b`, `vite build` và `oxlint` KHÔNG để lại tiến trình nào.**
+🔴 **VÀ ĐÂY LÀ NỬA THỨ HAI, LÀ CÁI PHẢI ĐỌC KỸ:** bộ so khớp ấy chỉ nêu `dotnet.exe` và
+`VBCSCompiler.exe`. **`node.exe` KHÔNG nằm trong nó.** Nên nếu một bước npm tương lai (hay `vite` ở
+chế độ watch, hay một trình duyệt của hướng A) **có** để lại tiến trình, `EXPECT_BUILD_NODES=0` vẫn
+đọc **0**. Con số 0 ở trên là một phép đo về **hành vi hôm nay của hai lệnh này**, **không** phải một
+tính chất cổng sẽ cưỡng chế. **Một quần thể mới trong cửa sổ đo mà dụng cụ không đếm được là rủi ro
+cho chính phép đo**, đúng như §60.4 nói — và hướng B tránh được nó **bằng hành vi**, không bằng
+kiểm tra.
+
+**(5) 🔴 HAI LỆNH ẤY CÓ ĐỎ ĐƯỢC KHÔNG — và câu trả lời SAI THEO CẢ HAI CHIỀU nếu chỉ nói một vế.**
+* `npm run build` **hôm nay xanh**, `exit 0`.
+* `npm run lint` **hôm nay XANH, `exit 0`** — **nhưng nó in 15 cảnh báo và 0 lỗi**. Nguyên văn, cùng
+  một luật `react(only-export-components)` trên 15 vị trí (`ControlButton.tsx:47`, `badge.tsx:54`,
+  `button.tsx:58`, `Sidebar.tsx:44` và `:134`, `annunciator.tsx:381`, `status-badge.tsx:77`,
+  `CycleLogTable.tsx:25` và `:37`, `tabs.tsx:82`, `HistorianResultsTable.tsx:35`,
+  `RecipePayloadEditor.tsx:61`, `BeaconState.tsx:29`, `ThemeToggle.tsx:7` và `:94`).
+* ⇒ **`oxlint` trần thoát 0 kèm cảnh báo, nên nó KHÔNG đỏ được vì đúng thứ nó in ra.** Đo phía kia:
+  `npx oxlint --deny-warnings` ⇒ **`exit 1` NGAY HÔM NAY**.
+* **Nên nửa lint của hướng B là một lựa chọn giữa hai thứ, không phải một phép kiểm:** giữ nguyên
+  lệnh ⇒ mua một dòng xanh **không có định nghĩa đỏ** cho cảnh báo; siết lại ⇒ **mua một cái trần ĐỎ
+  vĩnh viễn cho tới khi 15 cảnh báo ấy được trả**. Lời giao việc hỏi *"hôm nay đã đỏ sẵn chưa"*;
+  câu trả lời đo được là **chưa, và chỉ vì nó chưa hỏi**.
+
+**(6) 🔴 NÓ BẮT ĐƯỢC GÌ MÀ HÔM NAY KHÔNG BẮT ĐƯỢC — kiểm bằng CA THẬT, đột biến rồi hoàn nguyên.**
+Ca là chính bản sửa §60.3: `web/src/components/BoardCanvas.tsx`, 2026-08-24.
+
+| đột biến | `npm run build` | `npm run lint` | cổng hôm nay |
+|---|---|---|---|
+| **M1 — lỗi KIỂU.** `placeFiducial` trả `undefined` thay vì `null` (`:127`) | 🔴 **ĐỎ, `exit 2`** — `src/components/BoardCanvas.tsx(127,3): error TS2322: Type 'undefined' is not assignable to type 'PlacedFiducial \| null'.` | xanh, `exit 0` | xanh |
+| **M2 — HOÀN NGUYÊN ĐÚNG BẢN SỬA, hợp kiểu.** `unplacedFiducialCount = 0` thay cho `fiducials.length - placedFiducials.length` (`:228`) | ✅ **XANH, `exit 0`** | xanh, `exit 0` | xanh |
+
+**Cả hai đột biến đã HOÀN NGUYÊN** (`git checkout -- web/src/components/BoardCanvas.tsx`), cây sạch.
+
+🔴 **M2 là con số quan trọng nhất trong cả mục con này, và nó đi NGƯỢC hướng B.** Cái M2 xoá đúng là
+vế (3) của mục 57 mà BN-1 ship ngày 2026-08-24 — *"cái không đặt được nay được ĐẾM"* — tức **đúng
+bản sửa mà mục 60 tồn tại vì nó không có nhân chứng**. Hướng B **không thấy nó**. Và đi tìm tiếp:
+**không một spec e2e nào assert con số ấy** — ba spec có nhắc `fiducial`
+(`00-visual-and-a11y`, `09-points-editor`, `13-machine-settings`) nhưng `grep` cho
+`unplacedFiducial` / *"not yet positioned"* trong `web/tests/` trả **0**. ⇒ **hướng A cũng
+KHÔNG bắt được M2 với bộ spec hôm nay.** Nên câu *"B rẻ hơn A nhưng mua ít hơn"* đúng, và câu ngầm
+*"A thì sẽ bắt được"* **không sống sót phép đo**: cái bắt được M2 là **một spec chưa ai viết**, không
+phải một trong hai hướng.
+
+**HAI BỜ, viết bằng số ở trên và không thêm gì khác:**
+
+**BỜ MUA hướng B.** *Được:* **124** file nguồn TypeScript hôm nay **không được biên dịch bởi bất kỳ
+phép kiểm tự động nào** thì có một phép biên dịch — và nó **đỏ được**, chứng minh bằng M1 với thông
+điệp nêu **tên file và số dòng**. *Mất, đo chứ không ước:* Node/npm phải có trên mọi máy chạy cổng
+(có ở đây; **sàn phiên bản không được khai** — (1)); **16–20 giây + 306 MB** lần đầu mỗi máy (2);
+**≈ 7,6 giây** mỗi lần chạy, **0,84 %** một trần (3); **0 tiến trình cư trú** đo được, nhưng đo bằng
+một bộ so khớp **không nhìn thấy `node.exe`** (4); và nửa lint **hoặc không đỏ được, hoặc đỏ ngay hôm
+nay ở 15 cảnh báo** (5).
+
+**BỜ KHÔNG MUA.** *Được:* cổng giữ **một** hệ sinh thái build, và lời khai §60.5 đã đóng lỗ *"im lặng
+đọc như phủ sóng"* — cái đó **không đợi quyết định này**. *Mất:* mọi bản sửa `web/` tiếp tục **không
+có nhân chứng trong cổng**, và người thi hành phải **nhớ** gõ hai lệnh mà §60.7 vừa đo là mất **7,6
+giây**.
+
+🔴 **CÁI HƯỚNG B KHÔNG MUA, nêu ở chỗ kết quả hiện ra vì đó là luật (3):** nó mua *"mã có biên dịch
+không"*. Nó **không** mua *"màn hình có chạy đúng không"*, và **M2 là ví dụ chạy được của đúng câu
+ấy** — một bản hoàn nguyên hợp kiểu của một bản sửa sản phẩm đi qua cả build lẫn lint mà không một
+dòng đỏ nào.
+
+📎 **BA CON SỐ CỦA CHÍNH MỤC NÀY, ĐO LẠI.** `124` **đứng vững**. `28 spec` / *"ít nhất 142"* ở tiêu đề
+và §60.1 **đã lệch** — cổng tự dẫn xuất và in **29** / *"ít nhất 144"* hôm nay, và `--web-domain-self-test`
+in đúng thế trên **cả hai** bank. 🔴 **Và một cái bẫy về DỤNG CỤ, ghi lại vì đây là loài lỗi file này
+tồn tại để bắt:** đếm ngây thơ mọi chỗ xuất hiện chuỗi `test(` cho **145**, không phải 144. Cái thứ
+145 là `/same key|duplicate key/i.test(m)` ở `web/tests/24-connectors.spec.ts:161` — một
+`RegExp.test()`, **không phải một ca kiểm**. Cổng đếm `test(` **ở đầu dòng** và **144 là con số
+đúng**; con số 145 là một dụng cụ khác trả lời một câu hỏi khác. **Nêu tên dụng cụ, đừng chỉ nêu con
+số.**
+
+🔴 **MỤC NÀY Ở LẠI PHẦN I.** Chủ sở hữu bảo *đo rồi quyết*; phần *đo* đã trả ở đây, phần *quyết* thì
+chưa và không phải của người thi hành. **Không một dòng nào của `scripts/verify-suites.sh` nối `web/`
+vào cổng trong nhiệm vụ này**, mảng `SUITES` vẫn **năm** mục, và `web_domain_declaration` vẫn in
+`0 of 5 … DOES NOT MEASURE`.
 
 ---
 
@@ -2504,6 +2614,117 @@ tới một file **không tồn tại**. 🔴 **Và vì cái ngoặc mù với m
 cũng không phải một lời hứa đầy đủ.** 🔴 **Hình dạng nguy hiểm không phải hôm nay — nó là bài test
 TIẾP THEO**, và đó chính là thứ một phòng ngừa cấu trúc mua mà một quy ước thì không.
 
+### 72.6 🔧 THI HÀNH MỘT PHẦN — HƯỚNG B, BW-1, 2026-08-24, base `7e6d9aed`, THEO **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-24** (*"hướng B ngay, rồi cân nhắc A"*). 🔴 **"MỘT BIẾN, MỘT LỚP" KHÔNG SỐNG SÓT — LÀ MỘT BIẾN, **KHÔNG** LỚP NÀO. MỤC Ở LẠI PHẦN I**
+
+**Việc đã làm, một dòng:** `ST4I_OPCUA_PKI_DIR` nay được `tests/Shared/TestRunTempRoot.cs` đặt, cạnh
+sáu biến đang có, trong `[ModuleInitializer]` nối vào **cả năm** assembly. Lá `opcua-pki` do đó lên
+từ **QUY ƯỚC** thành **CẤU TRÚC**. `src/` **không đổi một dòng**.
+
+#### 🔴 (a) "MỘT BIẾN, MỘT LỚP ĐANG DÙNG" — ĐẾM LẠI, VÀ CON SỐ ĐÚNG THEO MỘT CÁCH ĐỌC, VỊ NGỮ THÌ SAI
+
+Bảng §72.1 để `ST4I_OPCUA_PKI_DIR` ở cột **"file đặt nó" = 1**, và **toàn bộ** lập luận *"ca rẻ nhất,
+đáng làm trước, không có quần thể nào phải kiểm lại"* dựa trên con số 1 ấy. Đếm lại ngày 2026-08-24
+trên `tests/`, hai dụng cụ, nêu tên cả hai:
+
+| dụng cụ | `ST4I_OPCUA_PKI_DIR` | chín lá kia |
+|---|---|---|
+| số file **NHẮC** chuỗi (đúng dụng cụ bảng §72.1 dùng) | **1** file, **2** lần nhắc | 20–24 file, 54–66 lần |
+| số file **ĐẶT** nó (`SetEnvironmentVariable("…"`) | 🔴 **0** | 17–19 file |
+
+⇒ **Con số 1 đúng cho "nhắc"; nó SAI cho tiêu đề cột.** Và cả **hai** lần nhắc nằm trong **một chú
+thích `///`** ở `tests/St4i.EngineApi.Tests/PerHostDataRootsTests.cs` (`:203`, `:231`) — **không phải
+mã chạy**. Một trong hai chính là câu kết luận: *"The true residual is narrower: **nothing exercises
+`ST4I_OPCUA_PKI_DIR`, the env var**"*. `scripts/verify-suites.sh:3295` mang đúng câu ấy.
+
+🔴 **VÀ DỤNG CỤ ĐÃ BỊ CHÍNH FILE ẤY BÁC TRƯỚC KHI MỤC 72 DÙNG NÓ.** Ghi chú **F-8** trong
+`PerHostDataRootsTests` viết đúng rằng đếm-chuỗi-trong-`tests/` **không thể** sinh ra hàng "đặt nó":
+*"`FleetSettingsStoreTests` spells `ST4I_SETTINGS_DIR` **zero** times while driving the seam through
+`FleetSettingsStore.EnvVarDir`"*. Bảng §72.1 dùng đúng dụng cụ ấy và dán cho nó tiêu đề mà nó không
+đo được. **Cùng loài với việc BO-1 tự bác *"mười lá không có seam"*: dừng ở phép đo đầu tiên hợp với
+điều mình đã nghĩ.**
+
+📎 **Chiều ngược lại, để câu trên không thành một nửa sự thật:** khuyết tật **KHÔNG** lớn hơn theo
+nghĩa "đang rò". `OpcUaDriver` giải `explicit > env > default` (`OpcUaPkiPaths.ResolveRoot`,
+`OpcUaDriver.cs:208`), và **ba** lớp có dựng driver — `OpcUaDriverConformanceTests`,
+`OpcUaDriverLoopbackTests`, `OpcUaDriverWriteTests` — **đều truyền `pkiDir:` tường minh ở MỌI chỗ
+dựng** (đếm lại từng file, không chép). Nên nhánh `env` chưa bao giờ được lớp nào lái, **và** nhánh
+`default` chưa bao giờ được lớp nào chạm. Cái đóng ở đây là **nhánh mặc định cho lớp CHƯA AI VIẾT** —
+đúng thứ §72.5 gọi là *"hình dạng nguy hiểm là bài test TIẾP THEO"*.
+
+⇒ **Vị ngữ đúng: `opcua-pki` là lá duy nhất mà chữ *"gần như không có seam"* đúng nghĩa đen — và nó
+đúng HƠN thân mục viết: không phải một lớp đặt nó, mà KHÔNG lớp nào.** Câu *"không có quần thể nào
+phải kiểm lại"* thì **sống sót và mạnh hơn**: quần thể phải kiểm lại là **rỗng**, không phải một.
+
+#### (b) KHẢ NĂNG ≠ SỰ KIỆN — đo lại, và nó vẫn là KHẢ NĂNG
+
+`C:\ProgramData\ST4I\sim\opcua-pki` tồn tại, giữ **3 file**, file mới nhất
+`St4iOpcUaClient [C9F5A6B377D090A7713E2AF337BC5019466DFE99].der` mang mtime **2026-07-29 15:42:07**,
+và **mtime của chính thư mục cũng là 2026-07-29 15:42:07**. ⇒ **Không quan sát được một lần ghi nào**
+vào lá này. Cái vừa đóng là **KHẢ NĂNG**, và mục con này không nâng nó lên thành sự kiện.
+📎 Ghi lại một quan sát cạnh bên, **không kết luận nhân quả vì không đo được nguồn**: sáu lá khác
+(`alarms`, `assets`, `connector-config`, `notifications`, `settings`, `sitelink`) mang file ghi lúc
+**2026-08-24 05:16:23** — trước nhiệm vụ này bắt đầu. Ai ghi thì **KHÔNG XÁC ĐỊNH ĐƯỢC TỪ ĐÂY**.
+
+#### (c) 🔴 MỘT CÂU PHẢI RÚT DÙ CÓ LÀM GÌ HAY KHÔNG — ĐÃ RÚT TẠI CHỖ, KÈM NGÀY
+
+§72.2(ii) đúng, đo lại và xác nhận: `tests/Shared/` giữ **đúng ba** file
+(`OwnOutputDirectoryGuard.cs`, `RealCredentialStoreLeakGuard.cs`, `TestRunTempRoot.cs`);
+**`RealProgramDataLeakGuard.cs` KHÔNG TỒN TẠI**; và ba chỗ còn nêu tên nó là
+`docs/owner-decisions.md`, `scripts/verify-suites.sh` (thì **quá khứ**, đúng) và
+`TestRunTempRoot.cs` (thì **hiện tại**, sai). Câu ấy nay được **giữ nguyên từng chữ** và mang một
+đoạn rút bên dưới, kèm ngày, kèm cái **thật sự** đo hậu quả (cái ngoặc `%ProgramData%` trong
+`verify-suites.sh`, vốn trải trên cả năm **tiến trình**).
+
+🔴 **VÀ MỘT PHÉP SỬA VỀ CHÍNH DỤNG CỤ, ở §72.2(i).** §72.2(i) trích `sim_snapshot` là
+`find "$REAL_SIM_ROOT" -type f`. Lệnh thật là
+`find "$REAL_SIM_ROOT" -type f -printf '%p\t%s\t%T@\n'`. **Kết luận của §72.2(i) đứng vững** — một cú
+rò chỉ chạm mtime **THƯ MỤC** vẫn vô hình, vì `-type f` loại thư mục ra — nhưng **trích dẫn thì hẹp
+hơn dụng cụ**: cái ngoặc **có** thấy một file đã tồn tại bị **GHI ĐÈ**, vì nó ghi cả **kích thước và
+mtime** của từng file. Một người đọc §72.2(i) sẽ kết luận ngược. **Sửa ở đây và trong chú thích, giữ
+nguyên văn cũ.**
+
+#### (d) NHÂN CHỨNG ĐỎ ĐƯỢC + CẶP ĐỐI CHỨNG — chạy, không mô tả
+
+Bài mới: `TestRunTempRootTests.OpcUaPkiStore_ResolvesAwayFromTheRealProgramDataPkiDirectory`
+(`EXPECT_EDGECORE` 1285 → **1286**). Nó assert **hai** vị ngữ, không một: gốc giải được **khác**
+`OpcUaPkiPaths.DefaultRoot()` **và** nằm **bên trong** gốc dùng-một-lần của lần chạy.
+
+| nhánh | kết quả, đo | ý nghĩa |
+|---|---|---|
+| **BỜ A** — gỡ hẳn khối chuyển hướng khỏi `TestRunTempRoot.cs` | **1 đỏ / 4 xanh** | bài mới **đỏ được**, và đỏ vì **đúng** khối này |
+| **BỜ B** — biến **VẪN ĐƯỢC ĐẶT**, nhưng trỏ vào `%ProgramData%\ST4I\sim\opcua-pki` thật | **1 đỏ / 4 xanh** | nó assert *"rời khỏi kho thật"*, **không** phải *"biến có được đặt"* |
+| **BASE** — như đang ship | **0 đỏ / 5 xanh** | |
+
+**Bờ B là cái làm bờ A có nghĩa:** thiếu nó, một bài chỉ kiểm *"biến đã đặt"* sẽ xanh với một chuyển
+hướng vào **một thư mục tích luỹ thứ hai** — đúng khuyết tật mặc áo bản sửa. Cả hai bờ **đã hoàn
+nguyên**; phạm vi cặp này là **lớp** (5 bài, lọc `FullyQualifiedName~TestRunTempRootTests`), và phạm
+vi ấy được nêu ra chứ không giấu.
+
+#### (e) GIÁ THẬT — và nó RẺ HƠN §72.4 nêu, vì §72.4 định giá HƯỚNG A
+
+§72.4 nói giá là *"một gốc mặc định mới dưới `%TEMP%` cho mỗi biến phải được `remove-data.ps1` và
+`NotificationDocumentationTests` công nhận — mười lăm artefact dịch cùng nhau"*. **Cái đó là giá của
+hướng A** (đổi **mặc định của SẢN PHẨM**). Hướng B ở đây chỉ đặt một **biến môi trường lúc chạy
+test**: `remove-data.ps1` **đã** biết `ST4I_OPCUA_PKI_DIR` (`:368`), `OpcUaPkiPaths.DefaultRoot()`
+**không** đọc biến ấy nên `DriverDocumentationTests` (so với `DefaultRoot()`) **không dịch**, và
+`src/` không đổi. **Không một artefact nào phải dịch cùng.**
+
+🔴 **MỘT CÁI GIÁ MÀ SÁU BIẾN KIA KHÔNG CÓ, đo chứ không đoán.** Chú thích lớp `OpcUaPkiPaths` ghi
+rằng kho chứng chỉ của OPC Foundation nạp lại cert vừa tạo qua crypto gốc của Windows và **hỏng khi
+đường dẫn ĐẦY ĐỦ chạm trần `MAX_PATH` cũ** — đã từng cắn một lần dưới thư mục scratch sâu. Gốc chạy
+ở đây **dài hơn** `%ProgramData%\ST4I\sim\opcua-pki`: ước từ hình dạng thật, **≈ 120 ký tự** cho gốc
+cộng **≈ 55** cho tên file cert ⇒ **≈ 175 trên 260** trên máy này. **Trong trần, có dư — và cái dư ấy
+là tính chất của `%TEMP%` MÁY NÀY, không phải của mã.** Nêu ra và **cố ý KHÔNG assert**: một ngưỡng
+bịa ra ở đây là một dương tính giả không có phép đo đằng sau. **Máy có `%TEMP%` sâu là chỗ chờ nó
+cắn.**
+
+#### (f) CÁI CHƯA TRẢ — vì sao mục Ở LẠI PHẦN I
+
+**Chín lá** vẫn ở **QUY ƯỚC** (20–24 file mỗi biến; 17–19 file thực sự đặt). **Hướng A vẫn chờ anh**,
+và §72.4 giữ nguyên giá của nó. Hai khuyết tật của dụng cụ ở §72.2 **chỉ được sửa ở phần TRÍCH DẪN**:
+cái ngoặc vẫn mù với mtime thư mục và vẫn **chỉ chạy trong cổng**, nên một `dotnet test` trần vẫn
+**không có nhân chứng nào**. Mục **Ở LẠI PHẦN I**, **THI HÀNH MỘT PHẦN**.
+
 ---
 
 ## 73. `C2` không phân biệt một dấu trạng thái LỊCH SỬ với một dấu ĐANG SỐNG — BỐN hàng xanh chỉ nhờ `has()` phân biệt hoa thường, và một hình dạng thứ hai KHÔNG có ví dụ sống là hình dạng nguy hiểm
@@ -2863,6 +3084,161 @@ cây mà **97 %** thư mục cấp một khuyết trên đĩa và **`git status`
 khám phá lại điều đó — hoặc **không**, và viết một câu phủ định tồn tại dựa trên một tập chưa bao
 giờ mở hết. 🔴 **Một câu phủ định tồn tại chỉ đúng nếu đã mở HẾT tập**, và trên cây này mặc định
 là **chưa**.
+
+### 74.6 🔧 THI HÀNH MỘT PHẦN — HƯỚNG B, BW-1, 2026-08-24, base `7e6d9aed`, THEO **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-24**. 🔴 **BỜ MẤT MÀ CẢ MỤC NÀY VÀ LỜI GIAO VIỆC KHẲNG ĐỊNH — "THỜI GIAN CHECKOUT MỖI LẦN ĐỔI NHÁNH" — KHÔNG SỐNG SÓT PHÉP ĐO. MỤC Ở LẠI PHẦN I**
+
+**Việc đã làm, một dòng:** nón thưa của cây này nay gồm `server/`, `client/`, `shared/`,
+`contracts/`, `drizzle/` **cộng** hai mục cũ; **`uploads/` KHÔNG được thêm**. **0 dòng** trong năm thư
+mục ấy bị sửa — kéo lên đĩa không phải quyền sửa, và `git status` **SẠCH, 0 dòng**, trước và sau.
+
+#### (a) 🔴 LỆNH TÁI LẬP — và một PHÉP SỬA về chỗ cấu hình ấy NẰM
+
+```
+git sparse-checkout add server client shared contracts drizzle
+```
+
+§74.2 trỏ cấu hình vào **`.git/info/sparse-checkout`**. Trên cây này **đường dẫn ấy KHÔNG TỒN TẠI**:
+`.git` là một **FILE**, không phải thư mục — đây là một **worktree liên kết** của
+`D:/SOURCES/avi-aoi-management`, và file nón thật nằm ở
+`D:/SOURCES/avi-aoi-management/.git/worktrees/avi-aoi-sim/info/sparse-checkout`. Ai `cat` theo §74.2
+nhận `cat: .git/info/sparse-checkout: Not a directory`.
+
+🔴 **Và hệ quả của phép sửa ấy là hệ quả CHÍNH của cả mục con này: nón là trạng thái CỦA MỘT
+WORKTREE, và nó KHÔNG NẰM TRONG COMMIT.** Nên thi hành hướng B ở đây đổi **cây này** và **không đổi
+cây của bất kỳ ai khác** — bốn worktree khác trong cùng repo (`avi-aoi-management`, `_hmi_pr_wt`,
+`avi-aoi-synapse`, một cái tạm) giữ nguyên nón của chúng, và một bản clone mới vẫn thừa hưởng mặc
+định cũ. **Một thay đổi môi trường không ghi lại là một thay đổi sẽ mất**, nên lệnh trên được ghi vào
+**README §2 — Requirements**, chỗ người dựng cây đọc, chứ không chỉ ở đây.
+**Đó cũng là lý do mục này ghi THI HÀNH MỘT PHẦN và Ở LẠI PHẦN I: phán quyết chưa được ship, nó mới
+được chạy.**
+
+#### (b) 2 729 / 4,4 % — ĐẾM LẠI, VÀ ĐẾM LẠI CẢ ĐƠN VỊ
+
+**Liệt kê trước, số sau,** từ chính phép đo vắng-mặt (`git ls-files -v`, tiền tố `S`):
+`server` **1 589** · `client` **711** · `drizzle` **399** · `contracts` **21** · `shared` **9**
+⇒ **2 729**. Và **2 729 / 62 443 = 4,3704 % ⇒ 4,4 %**. ✅ **Cả hai con số của §74.4 ĐỨNG VỮNG.**
+Kiểm chéo sau khi nới nón: đếm **file thật trên đĩa** trong năm thư mục cho **đúng** 1 589 / 711 /
+399 / 21 / 9, và vùng vắng đi từ **62 443 → 59 714** = giảm **đúng 2 729**. Hai dụng cụ độc lập, một
+con số.
+
+🔴 **NHƯNG ĐƠN VỊ CỦA CHỮ *"GIÁ"* KHÔNG SỐNG SÓT, VÀ NÓ SAI THEO CHIỀU *"ĐẮT HƠN THỰC TẾ"* — 14
+LẦN.** §74.4 viết *"**2 729** file thay vì 62 443, tức **4,4 %** GIÁ của bờ đầy đủ"*. Nhưng cái nón
+tiêu là **ĐĨA**, và đĩa đo bằng **byte**, không bằng số file. Đo từ kho đối tượng
+(`git ls-tree -r -l HEAD` giao với tập vắng mặt, **62 443/62 443** đường dẫn có kích thước, 0 thiếu):
+
+| | file | byte | % file | % byte |
+|---|---|---|---|---|
+| **toàn bộ vùng vắng** (bờ A) | 62 443 | 21 847 651 788 B = **20,35 GiB** | 100 % | 100 % |
+| **`uploads/` một mình** | 58 940 | 21 711 966 689 B = **20,22 GiB** | **94,39 %** | 🔴 **99,38 %** |
+| **hướng B, năm thư mục** | **2 729** | 68 601 817 B = **65,42 MiB** | **4,37 %** | 🔴 **0,31 %** |
+
+⇒ **Hướng B tốn 0,31 % giá đĩa của hướng A, không phải 4,4 %.** Và câu *"`uploads/` một mình đã
+94 % cái giá"* là **một nửa sự thật viết theo chiều số-file**: theo byte nó là **99,4 %**. Hai câu ấy
+không mâu thuẫn — chúng đo hai thứ, và **chỉ một trong hai là "giá"**. 📎 Nói ngược lại cho công
+bằng: theo **số mục nhập index** — thứ quyết định thời gian `git status` và kích thước index — **4,4 %
+mới là con số đúng**, và nó là con số §74.4 thực sự đo được. Cái phải sửa là **chữ "giá"**, không
+phải phép tính.
+
+#### (c) 🔴 MỌI ĐẠI LƯỢNG CỔNG ĐANG KHẲNG ĐỊNH — ĐO **TRƯỚC** VÀ **SAU**
+
+Đo trên cùng một cây, **trước** khi nới nón và **ngay sau**, **không** có một dòng mã nào đổi giữa
+hai lần đọc (thay đổi cho mục 72 đến **sau** cả hai):
+
+| đại lượng | TRƯỚC | SAU | |
+|---|---|---|---|
+| `POPULATION sparse-absent-paths` | **62 443** | 🔴 **59 714** | **DỊCH — đúng chủ đích** |
+| mục cấp một vắng mặt | 26 | 🔴 **21** | **DỊCH — đúng chủ đích** |
+| `largest absent entries` | `uploads=58940 server=1589 client=711` | 🔴 `uploads=58940 scripts=186 FactoryAlertSystem=167` | **DỊCH — đúng chủ đích** |
+| `POPULATION default-domain` | 63 468 | 63 468 | đứng yên |
+| `POPULATION probe-matches` | 197 | 197 | đứng yên |
+| `POPULATION case-probe-domain` | 596 | 596 | đứng yên |
+| `repo-scan --self-test` | PASS | PASS | đứng yên |
+| `scan-doc-negations` `now-files` | **561** | **561** | đứng yên |
+| `scan-doc-negations` `now-sentences` | **17 904** | **17 904** | đứng yên |
+| `scan-doc-negations` `base-files` / `base-sentences` | 545 / 15 965 | 545 / 15 965 | đứng yên |
+| `EXPECT_NEW_DOC_ABSOLUTES` đo được | **575** | **575** | đứng yên |
+| `check-owner-decisions` hàng / thân | 75 / 75 | 75 / 75 | đứng yên |
+| Phần I, hai trường máy đọc | `[49 59 60 62 63 65 68 69 70 71 72 74]` ⏳ + `[73]` ⚖️ | không đổi | đứng yên |
+| `DIVERGENCES` | 0 | 0 | đứng yên |
+| `git status --porcelain` | 0 dòng | 0 dòng | đứng yên |
+
+⇒ **Đúng MỘT hằng số dịch, và nó là hằng số `repo-scan.sh` ĐO mỗi lần chạy.** Không hằng số nào
+ngoài `repo-scan.sh` dịch. Nếu có, đó sẽ là một phát hiện, không phải một chỗ để chỉnh cho khớp.
+
+#### (d) 🔴 `scan-doc-negations.sh` VÀ MIỀN CỦA DỤNG CỤ — kiểm lại, và giả thuyết bị bác vì một lý do CƠ BẢN HƠN
+
+Câu hỏi: thêm `server/`/`client/` lên đĩa **có** kéo `.cs` mới vào tầm quét không? **KHÔNG**, và có
+**hai** lý do độc lập — nêu cả hai, vì chỉ một trong hai là lý do người ta đoán:
+
+1. **Năm thư mục ấy chứa ZERO file `.cs`.** Đo sau khi nới nón: `find server client shared contracts
+   drizzle -name '*.cs'` ⇒ **0**. Cả repo có **đúng 2** file `.cs` được theo dõi ngoài
+   `tools/machine-simulator` — `examples/device-client/csharp/ExampleScrewdriver.cs` và
+   `St4iDeviceClient.cs` — và `examples/` **đã ở trên đĩa từ trước**. 🔴 **Nên phép kiểm này VÔ HIỆU
+   theo nghĩa của mục 40: tập nó lượng hoá trên là RỖNG, và một tập rỗng thoả mọi khẳng định phổ
+   quát.** Nói ra thay vì đọc con số 561-không-đổi như một chứng cứ.
+2. **Kể cả nếu có, `corpus_of` đi từ `$SIMROOT` = `tools/machine-simulator`**, và năm thư mục kia là
+   **anh em cấp một**. Một file `.cs` ở `server/` **không thể** vào corpus. Lý do (2) là cái **thật
+   sự** che, và lý do (1) là lý do nó **chưa bị thử**.
+
+📎 Cùng câu hỏi cho cổng: `GATE_TREE_ROOT` của `verify-suites.sh` cũng là `tools/machine-simulator`,
+**không** phải gốc repo, nên không phép quét nào của cổng nhìn thấy vùng mới. Đo, không suy.
+
+#### (e) 🔴 HAI BỜ — VÀ BỜ MẤT KHÔNG SỐNG SÓT
+
+**BỜ ĐƯỢC.** *"Không thấy"* trở lại nghĩa *"không có"* cho **2 729 đường dẫn** trong **năm** thư mục
+mà các nhiệm vụ **thật sự phải đọc**: `ripgrep`, `find`, tìm-kiếm-trong-editor và dụng cụ `Grep` nay
+đọc được chúng trên đĩa. Vùng mù còn lại là **59 714 đường dẫn trong 21 mục cấp một**, và
+**58 940 = 98,7 %** của phần còn lại ấy là `uploads/`. Lời khai của `repo-scan.sh` **tự đính chính**:
+nó đo mỗi lần chạy, nên nó in `59714 … across 21` mà không ai phải sửa một chữ.
+
+**BỜ MẤT — nêu ra, rồi ĐO, và phép đo bác nó.** §74.4 và lời giao việc đều nói bờ mất là *"thời gian
+checkout **mỗi lần đổi nhánh**, cho MỌI người dùng cây"*. Đo trên cùng một cặp commit (`HEAD` ↔
+`HEAD~10`, **57 file khác nhau**), bốn lần đọc mỗi bên:
+
+| | TRƯỚC (1 025 file trên đĩa) | SAU (3 754 file trên đĩa) |
+|---|---|---|
+| `git switch` (57 file đổi) | 194 / 255 / 323 / 296 ms — **trung bình 267 ms** | 212 / 215 / 306 / 230 ms — **trung bình 241 ms** |
+| `git status --porcelain` | 93 / 79 / 97 ms | 80 / 83 / 84 ms |
+
+⇒ 🔴 **Chi phí đổi nhánh KHÔNG tăng đo được. Trung bình SAU còn thấp hơn TRƯỚC, tức cả hai nằm trong
+nhiễu.** Lý do là cơ học và phải nói ra thay vì để người đọc tự đoán: **`git switch` chỉ ghi những
+file KHÁC NHAU giữa hai commit.** 2 729 file mới nằm im ở cả hai đầu, nên git không chạm chúng.
+
+**Cái giá THẬT, đo được, và nó là một đơn vị khác:** **1 348 ms MỘT LẦN** cho lần vật chất hoá
+(`git sparse-checkout add`), cộng **65,42 MiB** đĩa **vĩnh viễn**. Cận trên của một lần đổi nhánh xấu
+nhất — một commit đổi cả 2 729 file — cũng chính là **1 348 ms**.
+**Và tần suất của cận trên ấy, đếm chứ không đoán:** kể từ **2026-07-18**, **633** commit chạm
+`tools/machine-simulator` và **0** commit chạm `server/`, `client/`, `shared/`, `contracts/`,
+`drizzle/` **hoặc** `uploads/`. Commit cuối chạm năm thư mục ấy: `adff917c` (2026-07-18),
+`dc0e372a` (2026-07-18), `9acd7574` (2026-07-17), `fea31483` (2026-07-13), `27cc2eff` (2026-07-18).
+⇒ **Trên lịch sử nhánh này, chi phí lặp lại của hướng B đo được là 0 ms.**
+📎 **Chiều còn lại, để câu trên không thành một nửa sự thật:** đó là lịch sử của **nhánh này**. Một
+người nhảy sang một nhánh mà `server/` khác — ví dụ `feat/hmi-dep` đang được worktree chính giữ — trả
+tới **1 348 ms** cho lần nhảy ấy. Cận trên đã đo; **tần suất trên các nhánh khác thì CHƯA ĐO.**
+
+#### (f) 📎 BA CON SỐ NỀN CỦA §74.1 ĐÃ LỆCH TRONG BỐN NGÀY — đo lại, và nêu ra
+
+| §74.1 viết | đo 2026-08-24 (BW-1) | |
+|---|---|---|
+| tổng theo dõi **63 454** | **63 468** | 🔴 lệch +14 |
+| có mặt **1 011** | **1 025** | 🔴 lệch +14 |
+| trong đó **880** dưới `tools/` | **894** | 🔴 lệch +14 |
+| vắng mặt **62 443** | **62 443** | ✅ đứng vững |
+| **26** mục cấp một vắng, trên **27** thư mục cấp một | **26 / 27** | ✅ đứng vững |
+| 121 file gốc · 10 dưới `examples/` | 121 · 10 | ✅ đứng vững |
+
+Cả **+14** đến từ file mới dưới `tools/machine-simulator` do các nhiệm vụ BR-1…BV-1 thêm vào. **Con
+số duy nhất mục này treo tên mình lên — 62 443 — sống sót nguyên vẹn**; ba con số nền quanh nó thì
+không. Đó chính là loài mà §74.3 gọi tên: *"một con số viết một lần trong văn xuôi trong khi tập nó
+mô tả đổi ở chỗ khác"* — lần này trong chính mục ấy, và bắt được **chỉ vì** có người đếm lại.
+
+#### (g) CÁI CHƯA TRẢ — vì sao mục Ở LẠI PHẦN I
+
+Nón là trạng thái worktree **không nằm trong commit** (a), nên bốn worktree khác và mọi bản clone
+tương lai **vẫn thưa**; điều duy nhất đi theo commit là **lệnh** ở README §2 và ở đây. `uploads/`
+(**58 940** file, **20,22 GiB**) và hai mươi mục cấp một khác vẫn ngoài đĩa, và
+**`repo-scan.sh` vẫn là dụng cụ DUY NHẤT khai chúng** — §74.4 bờ ĐỂ NGUYÊN đứng nguyên ở vế ấy.
+Mục **Ở LẠI PHẦN I**, **THI HÀNH MỘT PHẦN**.
 
 ---
 

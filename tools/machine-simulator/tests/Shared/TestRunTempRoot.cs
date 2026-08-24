@@ -186,6 +186,24 @@ internal static class TestRunTempRoot
             // is linked into reference only their own contract assembly and cannot see
             // AssetRegistryStore.EnvVarDir or NotificationConfigStore.EnvVarDir. RealProgramDataLeakGuard is
             // what now measures the CONSEQUENCE, which is the assertion that does not depend on the spelling.
+            //
+            // 🔴 THE LAST SENTENCE ABOVE IS RETRACTED, 2026-08-24 (task BW-1, docs/owner-decisions.md item 72
+            // §72.2(ii)). It is kept verbatim rather than edited, because the retraction is the record.
+            // RealProgramDataLeakGuard.cs DOES NOT EXIST and has not existed since the commit that wrote that
+            // sentence: BK-1 built it, its own control pair refuted it — with the redirects removed the suite
+            // rewrote the real assets.db and the guard stayed GREEN, because a [Fact]'s window ends when xunit
+            // schedules it — and it was deleted in that same commit. scripts/verify-suites.sh records the
+            // deletion in the PAST tense; this line did not, so for three tasks it sent a reader of tests/Shared/
+            // to a file that was never there. Re-measured at BW-1, 2026-08-24: tests/Shared/ holds exactly three
+            // files (OwnOutputDirectoryGuard.cs, RealCredentialStoreLeakGuard.cs, this one), and the three places
+            // that still spell the name are docs/owner-decisions.md, scripts/verify-suites.sh and this comment.
+            // WHAT ACTUALLY MEASURES THE CONSEQUENCE is the %ProgramData% bracket in scripts/verify-suites.sh
+            // (sim_snapshot), which spans all five suite PROCESSES — the thing a [Fact] cannot do. Its own reach
+            // is stated where it is read; two limits belong here because this comment is what sends people to it:
+            // the bracket runs ONLY inside verify-suites.sh, so a plain `dotnet test` has no witness at all, and
+            // it enumerates `-type f`, so a leak that moves only a DIRECTORY's mtime is invisible to it. (It is
+            // not blind to a file REWRITE: its printf records path, size and mtime per file. Item 72 §72.2(i)
+            // quotes the command without that printf and reads narrower than the instrument is.)
             if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ST4I_ASSETS_DIR")))
             {
                 Environment.SetEnvironmentVariable("ST4I_ASSETS_DIR", Path.Combine(root, "assets"));
@@ -194,6 +212,52 @@ internal static class TestRunTempRoot
             if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ST4I_NOTIFICATIONS_DIR")))
             {
                 Environment.SetEnvironmentVariable("ST4I_NOTIFICATIONS_DIR", Path.Combine(root, "notifications"));
+            }
+
+            // 🔴 Task BW-1, 2026-08-24 — docs/owner-decisions.md item 72, OPTION B under the owner's ruling of
+            // that date. This is the SEVENTH redirect, and it is the one leaf where the item's own number did
+            // not survive re-measurement — in the alarming direction.
+            //
+            // ITEM 72's TABLE says ST4I_OPCUA_PKI_DIR is set by "exactly ONE test file", against 20-24 files for
+            // each of the other nine %ProgramData% leaves, and calls that the reason it is the worst leaf.
+            // RE-COUNTED AT BW-1 over tests/: ONE file MENTIONS the literal and ZERO files SET it. Both mentions
+            // are inside a doc comment in tests/St4i.EngineApi.Tests/PerHostDataRootsTests.cs, and one of them
+            // states the conclusion outright — "the true residual is narrower: nothing exercises
+            // ST4I_OPCUA_PKI_DIR, the env var". scripts/verify-suites.sh carries the same sentence. So the
+            // column heading "the file that SETS it" was measured with an instrument that cannot produce it —
+            // a literal count over tests/ — and PerHostDataRootsTests' own F-8 note says that instrument cannot
+            // produce those rows. The seam existed, the product read it, and no suite drove it.
+            //
+            // WHAT THAT MEANT ON DISK. OpcUaDriver's constructor resolves explicit > env > default
+            // (OpcUaPkiPaths.ResolveRoot, OpcUaDriver.cs:208). OpcUaDriverConformanceTests,
+            // OpcUaDriverLoopbackTests and OpcUaDriverWriteTests each pass a real temporary root, so they take
+            // the EXPLICIT arm. Any class that does not — including the one nobody has written yet — took the
+            // DEFAULT arm, and the default arm is %ProgramData%\ST4I\sim\opcua-pki: the OPC-UA app-instance
+            // certificate, ITS PRIVATE KEY, and the trusted-peer store of a real installation.
+            //
+            // 🔴 WHAT THIS IS NOT, said here rather than left to be inferred. (1) It redirects where the TEST
+            // SUITE writes. It gives the product no new default, changes no line under src/, and settles
+            // nothing about the sixteen %ProgramData% roots as a product question — the same boundary the two
+            // BK-1 variables above carry. (2) It is not evidence of a leak. Measured 2026-08-24:
+            // C:\ProgramData\ST4I\sim\opcua-pki holds 3 files whose newest mtime is 2026-07-29 15:42:07, and
+            // the directory's own mtime is the same instant. What is closed here is a CAPABILITY, not an
+            // observed write, and item 72 says so in its own words.
+            // (3) 🔴 A PRICE THIS ONE HAS THAT THE OTHER SIX DO NOT, measured rather than assumed:
+            // OpcUaPkiPaths' class doc records that the OPC Foundation Directory certificate store round-trips
+            // a just-created cert through native Windows crypto that fails once the FULL file path approaches
+            // legacy MAX_PATH, and that a deeply-nested scratch root once tripped it. A run root here is
+            // ~120 characters and a cert file adds ~55, so ~175 of 260 on this machine — inside the limit with
+            // headroom, and the headroom is a property of THIS machine's %TEMP%, not of this code. It is stated
+            // and deliberately NOT asserted: a threshold invented here would be a false positive with no
+            // measurement behind it. A machine with a deep %TEMP% is where to expect this to bite.
+            //
+            // Spelled as a literal for the same reason the six above are: two of the five projects this file is
+            // linked into reference only their own contract assembly and cannot see OpcUaOptions.EnvVarPkiDir.
+            // TestRunTempRootTests.OpcUaPkiStore_ResolvesAwayFromTheRealProgramDataPkiDirectory pins the literal
+            // to the product's own name for it, and is what goes red if this block is deleted.
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ST4I_OPCUA_PKI_DIR")))
+            {
+                Environment.SetEnvironmentVariable("ST4I_OPCUA_PKI_DIR", Path.Combine(root, "opcua-pki"));
             }
 
             Root = root;

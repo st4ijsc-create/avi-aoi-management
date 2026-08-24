@@ -76,6 +76,44 @@ WPF nên cùng pipeline đó cũng chạy headless qua `St4i.EdgeService`.
 - No database, no external services required for Demo mode (see §4) — it runs fully offline out of
   the box.
 
+### 2.1 Working tree — the sparse checkout, and the one command that reproduces it
+
+🔴 **This repository is normally checked out SPARSE, and `git status` says CLEAN while most of the
+tree is absent from disk.** Measured 2026-08-24: **62,443** of **63,468** tracked file paths were in
+the commit and **not on disk**, across **26** of the **27** top-level directories. `git grep`,
+`git show` and `git ls-files` read all of them perfectly — the object store is complete. What is
+blind is every tool that reads the WORKING TREE: `grep -r`, ripgrep, editor search, `find`. Those
+return `0` for an absent path, and **that `0` means NOT LOOKED AT, not NOT PRESENT.**
+`scripts/repo-scan.sh` measures and prints the size of that region on every run; nothing else does.
+See `docs/owner-decisions.md` item 74.
+
+**The owner ruled on 2026-08-24 that five more directories should be on disk.** Run this once per
+working tree:
+
+```bash
+git sparse-checkout add server client shared contracts drizzle
+```
+
+Measured cost of that command on 2026-08-24 (task BW-1): **2,729 files**, **65.4 MiB**, **1.35 s**
+one-off. `uploads/` is deliberately **excluded** — alone it is **58,940 files / 20.2 GiB**, i.e.
+**99.4 % of the disk cost** of a full checkout, and nothing in this workstream reads it.
+
+📌 **Two things this command does NOT do, because both cost somebody a day when they were assumed:**
+
+1. **It is worktree-local and it is NOT in the commit.** The cone lives in
+   `<git-dir>/info/sparse-checkout`. In a LINKED WORKTREE (which this checkout is) `.git` is a
+   *file*, not a directory, and the real path is
+   `<main-repo>/.git/worktrees/<name>/info/sparse-checkout` — `cat .git/info/sparse-checkout` fails
+   with `Not a directory`. Use `git sparse-checkout list` instead of guessing the path. Every other
+   worktree and every fresh clone still gets the narrow default until this command is run there too.
+2. **It does not make branch switching measurably slower.** Measured before/after on the same commit
+   pair (57 files differing): **267 ms → 241 ms** mean — inside the noise, because `git switch` only
+   writes files that DIFFER between the two commits, and these 2,729 stand still. Since 2026-07-18,
+   **633** commits touched `tools/machine-simulator` and **0** touched any of the five directories.
+   The worst case for a single switch is the same **1.35 s** the materialisation cost.
+
+To go back: `git sparse-checkout set examples/device-client tools/machine-simulator`.
+
 ---
 
 ## 3. Build & Run / Build & Chạy
