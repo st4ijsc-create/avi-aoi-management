@@ -4253,7 +4253,40 @@ EXPECT_EDGESERVICE=52
 # EXPECT_EDGECORE above; it is written once rather than twice because it is one task and four items.
 # 🔴 BR-1, 2026-08-24 — 1443 -> 1445 (+2). The whole justification, per file and per test, is beside
 # EXPECT_EDGECORE above; it is written once rather than twice because it is one task and five items.
-EXPECT_ENGINEAPI=1445
+# 🔴 BV-1, 2026-08-24 — 1445 -> 1448 (+3), ONE new file, and the justification is written HERE rather
+# than beside EXPECT_EDGECORE because this task adds nothing to EdgeCore: EXPECT_EDGECORE, EXPECT_ABSTRACTIONS,
+# EXPECT_CONFORMANCE and EXPECT_EDGESERVICE are all UNMOVED, which is itself the claim that this task
+# touched no product behaviour.
+#   tests/St4i.EngineApi.Tests/HandoffSyncPointsProposalTests.cs — the witness for
+#   docs/handoff/2026-08-24-sync-points-push-fields.json (docs/owner-decisions.md item 59, owner ruling
+#   2026-08-24). +3: the file PARSES as a sync-points body; the sample's non-contract keys equal the
+#   DERIVED population of drift-key fields with no push slot (28 today, computed from
+#   ConfigChecksum.CanonicalizePoint minus SyncPointDto minus one named rename, never from a literal);
+#   and lighting[] demonstrates every LightingShot leaf (12), which is what pins the document's committed
+#   depth of 39.
+# 🔴 WHY A GATE-RUN TEST FOR A DOCUMENT AT ALL, since that is the unusual part: a handoff file has no
+# compiler, no consumer in this tree, and no reviewer who already knows the domain — so it rots silently,
+# and it rots in the direction that costs the far team days rather than one gate run. Control pair, run
+# in full and reverted: dropping "warpageMax" from the JSON gives exactly ONE red that NAMES it, and
+# dropping "focusOffsetUm" from a lighting shot gives exactly ONE red in a DIFFERENT [Fact].
+# 🔴 BV-1 again, same task, same file — 1448 -> 1449 (+1), AND THE REASON IS A DEFECT THIS TASK SHIPPED
+# TWICE INTO THE ONE ARTEFACT THAT LEAVES THE ORGANISATION. The first three [Fact]s pin the JSON and
+# declare that they never read the Vietnamese companion beside it. That declared ceiling turned out to be
+# load-bearing rather than modest: two separate counts in the companion were wrong (it claimed the sample
+# carried "all 25" current keys while the next sentence listed eight it does not carry -- it is 17 of 25;
+# and a section header said 20 keys where the section holds 21), and NOTHING caught either one.
+#   +1: Every_proposed_key_is_named_in_the_companion_document -- every proposed key and every lighting
+#   leaf in the JSON must appear as a BACKTICKED token in the .md. Matched on backtick spans, not on
+#   table structure, because the document is prose whose tables will be reformatted and a check that
+#   breaks on formatting is a check that gets deleted. The reverse direction is deliberately NOT
+#   asserted: the companion backticks type names, paths and library calls, so "a backticked token that
+#   is not a key" is the normal case there.
+# 🔴 WHAT IT STILL DOES NOT CATCH, stated because a ceiling stated too small is worse than none: it pins
+# that a key is NAMED, never the units/ranges/authorship written beside the name, and never any count the
+# document states about ITSELF -- so BOTH defects above would still pass it today. Control pair, run in
+# full and reverted: stripping the backticks off "warpageMax" throughout the .md gives exactly ONE red,
+# in this [Fact], naming warpageMax.
+EXPECT_ENGINEAPI=1449
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -5461,8 +5494,48 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 # this repository reads either for absolute claims. That gap predates BU-1 and is recorded, not closed.
 #
 # The baseline cfcfae42 is STILL not moved.
+#
+# 🔴 BV-1, 2026-08-24 — 568 -> 573 (+5), and the delta is ACCOUNTED FOR RATHER THAN ABSORBED: all five
+# sentences are in the ONE C# file this task adds
+# (tests/St4i.EngineApi.Tests/HandoffSyncPointsProposalTests.cs), every other .cs file in the tree is
+# byte-identical to base, and each of the five was READ against the code before this number was written:
+#   1. "Every unit, range and convention described there is unchecked prose — this instrument only pins
+#      the KEY SETS."  TRUE: the [Fact]s open the .json and never the .md beside it.
+#   2. "It says NOTHING about whether the SYNAPSE server accepts ... any of these keys."  TRUE: nothing
+#      here reaches that server, and saying so is the whole point of the sentence.
+#   3. "... every property name on this type is ASCII, which is why this is sufficient ..."  TRUE, and it
+#      is the PRECONDITION for lowering one leading character instead of re-deriving the naming policy;
+#      the run itself is the check, since a non-ASCII or multi-capital name would make the two key sets
+#      disagree and redden [Fact] 2.
+#   4. "... a key that DTO declares but ConfigSyncEngine.ToWireDto never fills still counts as present."
+#      TRUE, and it is a CEILING on the instrument, deliberately stated small-side-up.
+#   5. "... computed from [the canonicalizer, the DTO] and the production canonicalizer, never from a
+#      literal list."  TRUE: there is no literal field list in the file; the one hard-coded string is the
+#      single documented wire rename, and it is named as such.
+# 🔴 Four of the five are DOES-NOT-MEASURE sentences, which is the same pattern BJ-1/BM-1/BU-1 recorded:
+# a sentence whose entire job is to say what is NOT claimed is spelled with exactly the vocabulary this
+# scanner hunts, so obeying law (3) MOVES this number. That is the instrument working, not a cost.
+# 🔴 Outside this number: the corpus is C# only (boundary (e)). This task's largest prose edits are in
+# docs/owner-decisions.md and in the three NEW files under docs/handoff/ — the handoff set is Markdown
+# and Vietnamese, and NO instrument in this repository reads it for absolute claims. That gap is wider
+# for this task than for any before it, because docs/handoff/ is the first artefact written to leave the
+# organisation. Recorded, not closed.
+#
+# 🔴 BV-1 again, same task, same file — 573 -> 575 (+2 NET, seven sentences in the file rather than five).
+# One of the original five was REWRITTEN rather than kept, so the arithmetic is 5 - 1 + 3 = 7, and the
+# three that are new all belong to the fourth [Fact] added above:
+#   6. "Of the accompanying .md it reads exactly ONE thing: that every key in the sample is NAMED there."
+#      TRUE, and it is the whole of the new check's domain.
+#   7. "So every key the sample proposes, and every lighting leaf it demonstrates, must be NAMED in the
+#      companion as a backticked token."  TRUE: it is a restatement of the assertion the [Fact] makes.
+#   8. (replacing the old #1) "The units, ranges, authorship and 'why it must travel' columns beside those
+#      names are unchecked prose, and so is every count the document states about itself — this task
+#      shipped two drafts whose own arithmetic contradicted itself two sentences apart, and neither was
+#      caught here."  TRUE, and MEASURED rather than feared: both defects are named in the block beside
+#      EXPECT_ENGINEAPI above, and both would still pass the new check.
+# The baseline cfcfae42 is STILL not moved.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_NEW_DOC_ABSOLUTES=568
+EXPECT_NEW_DOC_ABSOLUTES=575
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

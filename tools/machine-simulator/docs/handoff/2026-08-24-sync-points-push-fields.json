@@ -1,0 +1,89 @@
+{
+  "machineCode": "AOI-01",
+  "productModelCode": "MODEL-A",
+  "sourceImageWidth": 1600,
+  "sourceImageHeight": 1200,
+  "clientVersion": "1.4.0",
+  "points": [
+    {
+      "code": "P08",
+      "name": "BGA U1 Coplanarity/Void (X-ray)",
+      "description": "Kiểm tra đồng phẳng & rỗng khí mối hàn BGA U1 bằng X-ray",
+      "measurementType": "DIMENSION",
+      "unit": "mm",
+      "lowerLimit": 1.95,
+      "upperLimit": 2.05,
+      "nominalValue": 2.0,
+      "positionX": 1088,
+      "positionY": 420,
+      "cropWidth": 96,
+      "cropHeight": 96,
+      "orderIndex": 7,
+      "isActive": true,
+      "normalizedX": 0.68,
+      "normalizedY": 0.35,
+      "shape": "array",
+      "measurementTypeCode": "BGA_XRAY",
+      "toleranceMode": "bilateral",
+      "tolPlus": 0.05,
+      "tolMinus": 0.05,
+      "cells": [
+        { "row": 0, "col": 0, "dx": 0.0, "dy": 0.0 },
+        { "row": 0, "col": 1, "dx": 0.01, "dy": -0.01 },
+        { "row": 1, "col": 0, "dx": -0.01, "dy": 0.02 },
+        { "row": 1, "col": 1, "dx": 0.0, "dy": 0.01 }
+      ],
+      "positionZ": 1.2,
+      "heightMin": 0.3,
+      "heightMax": 0.55,
+      "heightNominal": 0.42,
+      "heightUnit": "mm",
+      "areaMin": 0.15,
+      "areaMax": 0.35,
+      "areaNominal": 0.25,
+      "areaUnit": "mm2",
+      "volumeMin": 0.05,
+      "volumeMax": 0.18,
+      "volumeNominal": 0.11,
+      "volumeUnit": "mm3",
+      "coplanarityMax": 0.08,
+      "warpageMax": 0.05,
+      "voidPctMax": 15.0,
+      "offsetXMax": 0.1,
+      "offsetYMax": 0.1,
+      "tiltMax": 3.0,
+      "thicknessMin": 0.02,
+      "thicknessMax": 0.1,
+      "criteria": {
+        "xrayRequired": true,
+        "minBallCountDetected": 9
+      },
+      "lighting": [
+        {
+          "shotIndex": 0,
+          "name": "X-ray oblique",
+          "lightSource": "XRAY",
+          "intensityPct": 100,
+          "angleDeg": 30,
+          "exposureUs": 8000,
+          "gain": 2.0,
+          "purpose": "void_detection"
+        },
+        {
+          "shotIndex": 1,
+          "name": "Dark-field",
+          "lightSource": "LED_RING",
+          "color": "amber",
+          "colorHex": "#FFBF00",
+          "intensityPct": 90,
+          "angleDeg": 25,
+          "exposureUs": 3200,
+          "gain": 1.4,
+          "focusOffsetUm": -150,
+          "opticalFilter": "BANDPASS-450NM",
+          "purpose": "void"
+        }
+      ]
+    }
+  ]
+}
