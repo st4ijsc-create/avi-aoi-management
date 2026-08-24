@@ -1,0 +1,141 @@
+﻿{
+  "generatedAt": "2026-08-24T09:20:22.281Z",
+  "source": "postgresql://avi_app:***@127.0.0.1:5434/aoi_management",
+  "metrics": {
+    "chuan_finalYield": {
+      "total": 22996,
+      "ok": 22292,
+      "ng": 460,
+      "ntf": 244,
+      "yieldRate": 97.9997
+    },
+    "sai_okTrenTotal": {
+      "total": 22996,
+      "ok": 22292,
+      "ng": 460,
+      "ntf": 244,
+      "yieldRate": 96.9386
+    },
+    "chenhLech": {
+      "diemPhanTram": 1.0611,
+      "soBoBiTinhNhamThanhHONG": 244
+    },
+    "theoMay": [
+      {
+        "machineId": 1,
+        "total": 1533,
+        "ntf": 11,
+        "yield_chuan": "98.1735",
+        "yield_sai": "97.4560"
+      },
+      {
+        "machineId": 2,
+        "total": 1533,
+        "ntf": 18,
+        "yield_chuan": "97.0646",
+        "yield_sai": "95.8904"
+      },
+      {
+        "machineId": 3,
+        "total": 1533,
+        "ntf": 16,
+        "yield_chuan": "99.0215",
+        "yield_sai": "97.9778"
+      },
+      {
+        "machineId": 4,
+        "total": 1533,
+        "ntf": 11,
+        "yield_chuan": "98.3692",
+        "yield_sai": "97.6517"
+      },
+      {
+        "machineId": 5,
+        "total": 1533,
+        "ntf": 19,
+        "yield_chuan": "97.8474",
+        "yield_sai": "96.6080"
+      },
+      {
+        "machineId": 13,
+        "total": 1533,
+        "ntf": 22,
+        "yield_chuan": "98.1083",
+        "yield_sai": "96.6732"
+      },
+      {
+        "machineId": 14,
+        "total": 1533,
+        "ntf": 17,
+        "yield_chuan": "96.7384",
+        "yield_sai": "95.6295"
+      },
+      {
+        "machineId": 15,
+        "total": 1533,
+        "ntf": 13,
+        "yield_chuan": "99.0868",
+        "yield_sai": "98.2387"
+      },
+      {
+        "machineId": 16,
+        "total": 1533,
+        "ntf": 18,
+        "yield_chuan": "98.3692",
+        "yield_sai": "97.1950"
+      },
+      {
+        "machineId": 17,
+        "total": 1533,
+        "ntf": 17,
+        "yield_chuan": "98.4344",
+        "yield_sai": "97.3255"
+      },
+      {
+        "machineId": 25,
+        "total": 1533,
+        "ntf": 16,
+        "yield_chuan": "98.3040",
+        "yield_sai": "97.2603"
+      },
+      {
+        "machineId": 26,
+        "total": 1533,
+        "ntf": 22,
+        "yield_chuan": "96.5427",
+        "yield_sai": "95.1076"
+      },
+      {
+        "machineId": 27,
+        "total": 1533,
+        "ntf": 14,
+        "yield_chuan": "98.6301",
+        "yield_sai": "97.7169"
+      },
+      {
+        "machineId": 28,
+        "total": 1533,
+        "ntf": 17,
+        "yield_chuan": "97.9126",
+        "yield_sai": "96.8037"
+      },
+      {
+        "machineId": 29,
+        "total": 1533,
+        "ntf": 13,
+        "yield_chuan": "97.3907",
+        "yield_sai": "96.5427"
+      },
+      {
+        "machineId": 246,
+        "total": 1,
+        "ntf": 0,
+        "yield_chuan": "100.0000",
+        "yield_sai": "100.0000"
+      }
+    ],
+    "mvHourlyYieldCache": {
+      "ERROR": "column \"yieldRate\" does not exist"
+    }
+  }
+}
