@@ -17,6 +17,8 @@ này" cuối file. Y-1 (2026-08-18) chỉ **chuyển chỗ**, không đổi mộ
 trỏ, không phải bản sao**: trạng thái đang sống nằm ở **bảng phán quyết** ngay dưới đây
 và ở từng mục.
 
+📎 **CÓ MỘT FILE GIẢI THÍCH TẠM THỜI cho mười sáu mục Phần I đang chờ chủ sở hữu — `docs/owner-decisions-GIAI-THICH.md` (viết 2026-08-24, đọc trên `ec6b7ce3`): nó DIỄN GIẢI, KHÔNG thay thế, và file NÀY vẫn là nguồn sự thật.**
+
 ---
 
 ## Trạng thái phán quyết — 2026-08-16, cập nhật 2026-08-18
