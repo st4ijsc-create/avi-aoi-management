@@ -12,6 +12,7 @@ import type { AlertSetting } from "../../drizzle/schema";
 import { notifyOwner } from "../_core/notification";
 import { sendAlertEmail } from "../services/emailService";
 import { sendWebhookEvent } from "./webhookRouter";
+import { finalYield } from "../utils/kpi";
 
 // ============================================================================
 // LEGACY ALERT-SETTINGS EVALUATOR (bug #1 fix)
@@ -45,6 +46,17 @@ function startOfToday(): Date {
 }
 
 /**
+ * Yield dùng cho ngưỡng cảnh báo. NTF = PASS (decision #4).
+ *
+ * `total === 0` trả 100 — GIỮ NGUYÊN hành vi cũ: không có bo nào nghĩa là máy đang
+ * dừng, không phải máy đang hỏng. Đổi nó thành 0 sẽ bắn cảnh báo mỗi lúc nghỉ ca.
+ * Phép so ngưỡng KHÔNG nằm ở đây — nó dùng `compare()` với toán tử cấu hình được.
+ */
+export function tinhYieldCanhBao(stat: { total: number; ok: number; ntf: number }): number {
+  return stat.total > 0 ? finalYield({ ok: stat.ok, ntf: stat.ntf, total: stat.total }) : 100;
+}
+
+/**
  * Compute the current value for an alert setting and whether its threshold is
  * breached. Pure read — no notifications, no history. Reused by the scheduler
  * and the manual test endpoint so both agree on what "breached" means.
@@ -67,12 +79,14 @@ export async function evaluateAlertSetting(alert: AlertSetting): Promise<AlertBr
         .select({
           total: sql<number>`COALESCE(SUM(${dailyStatistics.totalCount}), 0)`,
           ok: sql<number>`COALESCE(SUM(${dailyStatistics.okCount}), 0)`,
+          ntf: sql<number>`COALESCE(SUM(${dailyStatistics.ntfCount}), 0)`,
         })
         .from(dailyStatistics)
         .where(and(...scope));
       const total = Number(row?.total ?? 0);
       const ok = Number(row?.ok ?? 0);
-      const yieldRate = total > 0 ? (ok / total) * 100 : 100;
+      const ntf = Number(row?.ntf ?? 0);
+      const yieldRate = tinhYieldCanhBao({ total, ok, ntf });
       const breached = total > 0 && compare(yieldRate, threshold, alert.comparisonOperator);
       return {
         breached,
