@@ -5319,8 +5319,52 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 # subtracting from it — the same effect this block's own "97 rather than 92" note records.
 #
 # The baseline cfcfae42 is STILL not moved.
+#
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_NEW_DOC_ABSOLUTES=527
+# 🔴 EXPECT_NEW_DOC_ABSOLUTES: 527 -> 530 (+3), BS-1, 2026-08-24. A RECORD task: it pays the nine P-2
+# sentences booked in docs/owner-decisions.md item 14's AK-1 ledger, plus the one class-4 sentence that
+# ledger lists separately. ZERO lines of product behaviour, zero assertions changed, zero suite totals
+# moved.
+#
+# 🔴 THE NET IS +3 AND THE NET IS NOT THE MEASUREMENT — split, because a net hides a subtraction and this
+# task made one. Measured against THIS task's base 48980288, by (path, sentence) identity, the same
+# identity scan-doc-negations.sh uses:
+#     ADDED   3   all in src/St4i.Connector.Abstractions/Models/DeviceReading.cs
+#     REMOVED 1   src/.../DeviceReading.cs — "Inside this assembly's own process nothing constrains a
+#                 row: this type accepts any [], the normalizer copies rows to the wire unchanged, and
+#                 the conformance harness compares rows whole rather than asking their length."
+#     NET     +2  against 48980288
+# 🔴 AND +2 AGAINST THE BASE IS +3 AGAINST THE BASELINE, which is not an arithmetic slip and is the
+# reason both numbers are written here. The constant counts `now \ base(cfcfae42)`. The REMOVED sentence
+# was already present AT cfcfae42 (2026-08-22 — verified with `git show cfcfae42:...`), so it was never
+# a member of the 527 and deleting it subtracts nothing from the constant. The three added sentences are
+# new at both refs. 527 + 3 - 0 = 530.
+#
+#   The three, listed before the count:
+#     1. "Inside this assembly's own process nothing constrains a row: this type accepts any [], and the
+#        conformance harness compares rows whole rather than asking their length." — the REMOVED sentence
+#        with its middle clause taken out, which under (path, sentence) identity is a new key rather than
+#        an edit. The clause taken out is the false one: Normalizer.ToWireSampleRows REWRITES a scalar row.
+#     2. "RETRACTED 2026-08-24 (task BS-1), kept verbatim: 'row i is the sample at i / RateHz seconds' —
+#        it reads as a statement about the producer and is false of the only producer it names."
+#     3. "RETRACTED 2026-08-24 (task BS-1), kept verbatim: 'the grounds on which it was retired are
+#        themselves now in question and item 14 reopens them' — item 14 is decided and in Part III, so
+#        nothing is reopening anything."
+#   Two of the three are RETRACTION sentences, which carry absolute words because the sentence they quote
+#   did. That is the same effect the BR-1 block above records: paying a false absolute claim in this
+#   repository's style ADDS to this corpus rather than subtracting from it, because the old wording is
+#   kept verbatim beside the correction. A task that made this number go DOWN would be a task that
+#   DELETED published prose, which the file law forbids.
+#
+# 🔴 WHAT THIS NUMBER DOES NOT SAY, and it matters for the item it pays: SIX of the nine paid sentences
+# carry no absolute word at all, and three live in tests/St4i.EdgeCore.Tests/WaveformSeriesRowShapeContract
+# Tests.cs, one of them inside an Assert message rather than a `///` block — outside this filter entirely
+# on both counts. This filter did not find the debt and cannot certify it paid; the ledger in item 14 is
+# the instrument for that, and this constant only says which sentences a human had to re-read.
+#
+# The baseline cfcfae42 is STILL not moved.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_NEW_DOC_ABSOLUTES=530
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

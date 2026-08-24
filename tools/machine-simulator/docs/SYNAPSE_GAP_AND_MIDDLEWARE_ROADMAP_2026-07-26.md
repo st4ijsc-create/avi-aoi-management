@@ -7,8 +7,8 @@
 | Đối tượng rà soát | `tools/machine-simulator` (bộ `St4i.*`, .NET 10) — "St4i Machine Simulator" đang tiến hoá thành edge middleware |
 | Tài liệu đối chiếu | Kế hoạch & thiết kế **SYNAPSE** tại `D:\SOURCES\SYNAPSE` (SYN-RAOE-SDD-001 v1.0 + KE-HOACH-PHAT-TRIEN + 5 tầng) |
 | Phương pháp | 3 AI Agent rà soát song song: (1) chuẩn hoá 97 yêu cầu SYNAPSE, (2) kiểm kê hiện trạng theo mã nguồn, (3) phân tích contract + thương mại hoá |
-| Trạng thái | **ĐANG THỰC HIỆN** — GĐ1 xong; GĐ2 xong (trừ B2); GĐ3 phần "Join" (WS-I) nay đã đóng advertise + reconciliation + xoay vòng chứng thư + lệnh khôi phục admin — chỉ còn auto-provision/trust-on-first-discovery; **WS-G-plugin (Connector SDK) nay đã có SEAM** (contract assembly độc lập + registry + `connectors.json` + bộ conformance — CHƯA có plugin loader/sidecar, xem §0-bis.2). **Đợt A (29/07/2026)** — một audit độc lập, SAU khi GĐ1 đã được đánh dấu "xong", phát hiện sản phẩm vẫn KHÔNG bán được cho khách chỉ mua 1 máy thật (đội hình mặc định vẫn fabricated ở cả hai host, dữ liệu demo có thể trộn vào số liệu khách hàng, màn "Connect ecosystem" chặn toàn trang, không có đường thêm máy thật từ UI) — đóng SM-1→SM-6, rồi **task-7 (whole-batch review, 1 Critical đã sửa)** phát hiện chính Đợt A đã làm HỎNG bản demo/triển lãm mà nó tự nhận "không đụng tới" (xem §0-bis.1 hàng cuối + §0-bis.3). Xem **§0-bis Tiến độ** (cập nhật 29/07/2026) |
-| Cập nhật gần nhất | **29/07/2026** — nhánh `feat/machine-simulator`; sau đợt WS-G-plugin Connector SDK seam (`2df998e3`/GP-7), đợt **Đợt A "máy độc lập bán được thật"** (SM-1 → SM-6, `.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/`) đóng tại SM-6, rồi **task-7** (cùng blueprint, review toàn batch — 1 Critical + 3 Important đã sửa) đóng đợt hẳn — xem §0-bis.1 |
+| Trạng thái | **ĐANG THỰC HIỆN** — GĐ1 xong; GĐ2 xong (trừ B2); GĐ3 phần "Join" (WS-I) nay đã đóng advertise + reconciliation + xoay vòng chứng thư + lệnh khôi phục admin — chỉ còn auto-provision/trust-on-first-discovery; **WS-G-plugin (Connector SDK) nay đã có SEAM** (contract assembly độc lập + registry + `connectors.json` + bộ conformance — CHƯA có plugin loader/sidecar, xem §0-bis.2). **Đợt A (29/07/2026)** — một audit độc lập, SAU khi GĐ1 đã được đánh dấu "xong", phát hiện sản phẩm vẫn KHÔNG bán được cho khách chỉ mua 1 máy thật (đội hình mặc định vẫn fabricated ở cả hai host, dữ liệu demo có thể trộn vào số liệu khách hàng, màn "Connect ecosystem" chặn toàn trang, không có đường thêm máy thật từ UI) — đóng SM-1→SM-6, rồi **task-7 (whole-batch review, 1 Critical đã sửa)** phát hiện chính Đợt A đã làm HỎNG bản demo/triển lãm mà nó tự nhận "không đụng tới" (xem §0-bis.1 hàng cuối + §0-bis.3). Xem **§0-bis Tiến độ** (cập nhật 01/08/2026 — ngày sửa 2026-08-24, nguyên văn cũ *"29/07/2026"* giữ ở khối ghi chú đầu §0-bis) |
+| Cập nhật gần nhất | **01/08/2026** *(sửa 2026-08-24, BS-1 — đo từ lịch sử git của chính file: `f95aaabf` 2026-08-01 thêm hàng Đợt C vào §0-bis.3; nguyên văn cũ **29/07/2026** giữ ở khối ghi chú đầu §0-bis)* — nhánh `feat/machine-simulator`; sau đợt WS-G-plugin Connector SDK seam (`2df998e3`/GP-7), đợt **Đợt A "máy độc lập bán được thật"** (SM-1 → SM-6, `.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/`) đóng tại SM-6, rồi **task-7** (cùng blueprint, review toàn batch — 1 Critical + 3 Important đã sửa) đóng đợt hẳn — xem §0-bis.1 |
 
 ---
 
@@ -29,7 +29,39 @@
 
 ---
 
-## 0-bis. TIẾN ĐỘ THỰC HIỆN *(cập nhật 28/07/2026)*
+## 0-bis. TIẾN ĐỘ THỰC HIỆN *(cập nhật 01/08/2026)*
+
+> 🔴 **BỐN CON SỐ NGÀY CỦA FILE NÀY BẤT ĐỒNG VỚI NHAU, VÀ CẢ BỐN ĐỀU HỤT — sửa tại chỗ 2026-08-24 (nhiệm
+> vụ BS-1), văn cũ trích NGUYÊN VĂN dưới đây, không xoá một dòng nào.** Khuyết tật **không phải** "một
+> ngày cũ": nó là **một file tự nói nhiều ngày cho cùng một mục**, và không con số nào trong số đó là
+> ngày file thật sự đổi lần cuối.
+>
+> **Nguyên văn bốn chỗ, như chúng đứng cho tới 2026-08-24 — số dòng trích ở base `48980288`, vì chính
+> khối này làm chúng dịch:**
+> * dòng 10 (bảng đầu file), trỏ vào chính §0-bis: *"Xem **§0-bis Tiến độ** (cập nhật 29/07/2026)"*
+> * dòng 11 (bảng đầu file), trường chính: *"| Cập nhật gần nhất | **29/07/2026** — nhánh
+>   `feat/machine-simulator`; …"*
+> * dòng 32, tiêu đề của chính §0-bis: *"## 0-bis. TIẾN ĐỘ THỰC HIỆN *(cập nhật 28/07/2026)*"*
+> * dòng 107, đầu cột bảng GAP §0-bis.3: *"| GAP | Trạng thái 28/07/2026 |"*
+>
+> 🔴 **PHÉP ĐO, và nó bác CẢ HAI ứng viên.** Lịch sử git của chính file này (`git log --  <file>`): lần
+> đổi nội dung **gần nhất** là `f95aaabf`, **2026-08-01** — nó **thêm một hàng vào bảng GAP §0-bis.3**
+> (hàng *"Cảnh báo ra ngoài"*, Đợt C) và **không đụng** trường *"Cập nhật gần nhất"* lẫn đầu cột
+> *"Trạng thái 28/07/2026"*. Trước đó: `87b09e71`, **2026-07-30** (đóng Đợt B, hàng *"Điều khiển máy"*),
+> cũng không đụng hai trường ấy. ⇒ **Ngày thật của §0-bis là 01/08/2026**, không phải 28/07 và cũng không
+> phải 29/07. Cả bốn con số trên được đặt về **01/08/2026**.
+>
+> 📎 **Hai chỗ đúng-một-nửa, ghi rõ để không đọc quá:** *(a)* 28/07 ở dòng 32 và dòng 107 **đúng vào ngày
+> chúng được viết**; cái sai là chúng **ở lại** qua ba lần bổ sung nội dung của chính §0-bis (Đợt A/task-7
+> 29/07, Đợt B 30/07, Đợt C 01/08). *(b)* Con số 29/07 ở dòng 10 và 11 **cũng chỉ đúng tới 30/07**, nên
+> phép đo giao cho nhiệm vụ này — *"dòng 32 ghi 28/07 còn dòng 10/11 ghi 29/07, 29/07 là ngày thật"* —
+> **hụt theo cùng một chiều**: nó dừng ở hai ứng viên có sẵn trong văn bản và không mở lịch sử file.
+>
+> 🔴 **VÀ NGÀY THẬT ẤY ĐÃ CŨ: 01/08/2026 cách hôm nay (2026-08-24) HAI MƯƠI BA ngày.** Việc đặt bốn con số
+> về cùng một ngày **KHÔNG** làm nội dung mới lại: không ai đo lại các mệnh đề của §0-bis so với cây kể
+> từ 01/08, và nhiệm vụ này **không** đo — nó chỉ sửa ngày. Bảng *"Bộ test SAU WS-I closeout"* ngay dưới
+> (EngineApi 538 · EdgeCore 463 · EdgeService 28 · tổng 1029) là một ví dụ đọc được của chỗ cũ ấy: cổng
+> hôm nay đếm **2958** bài trên năm suite.
 
 > Nhánh `feat/machine-simulator`, tính tới đợt **WS-I closeout** @ `09253325` (đã có `669eba86` trong lịch
 > sử, chưa push remote `fresh` tại thời điểm đóng đợt này). Mỗi workstream đóng bằng một **whole-branch
@@ -104,7 +136,7 @@ Trình tự **thi công** khác trình tự **§6**. Cụ thể: bốn đợt đ
 
 ### 0-bis.3 Bảng GAP cập nhật
 
-| GAP | Trạng thái 28/07/2026 |
+| GAP | Trạng thái 01/08/2026 *(sửa 2026-08-24 — xem ghi chú đầu §0-bis)* |
 |---|---|
 | **A** Dữ liệu bền & báo cáo | **DONE** (giữ 3 nhóm tổn thất thay vì six-big-losses — cố ý, trung thực) |
 | **B** Xương sống middleware | **PARTIAL** — B1 ✅ · B2 ✅ · B3 ✅ · B5 ✅ · **B4 dở** (Modbus/OPC-UA cơ bản; Serial/SECS chưa) |
