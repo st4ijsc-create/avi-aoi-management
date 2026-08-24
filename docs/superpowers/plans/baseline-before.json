@@ -1,5 +1,5 @@
-﻿{
-  "generatedAt": "2026-08-24T09:20:22.281Z",
+{
+  "generatedAt": "2026-08-24T09:28:05.297Z",
   "source": "postgresql://avi_app:***@127.0.0.1:5434/aoi_management",
   "metrics": {
     "chuan_finalYield": {

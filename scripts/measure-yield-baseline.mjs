@@ -1,8 +1,9 @@
 // scripts/measure-yield-baseline.mjs
 // CHỈ ĐỌC. Không có INSERT/UPDATE/DELETE/DDL.
-// Chạy: node scripts/measure-yield-baseline.mjs > docs/superpowers/plans/baseline-before.json
+// Chạy: node scripts/measure-yield-baseline.mjs docs/superpowers/plans/baseline-before.json
 import 'dotenv/config';
 import postgres from 'postgres';
+import { writeFileSync } from 'node:fs';
 
 const sql = postgres(process.env.DATABASE_URL, { ssl: 'prefer', max: 1 });
 const metrics = {};
@@ -50,10 +51,22 @@ metrics.mvHourlyYieldCache = await sql`
          round(avg("yieldRate")::numeric, 4) AS yield_tb
   FROM hourly_yield_cache`.catch((e) => ({ ERROR: e.message }));
 
-console.log(JSON.stringify({
+const ketQua = JSON.stringify({
   generatedAt: new Date().toISOString(),
   source: (process.env.DATABASE_URL || '').replace(/:[^:@]*@/, ':***@'),
   metrics,
-}, null, 2));
+}, null, 2);
+
+// Script TỰ ghi file, KHÔNG dựa vào `>` của shell.
+// Lý do: PowerShell ghi `>` kèm BOM UTF-8, và BOM làm JSON.parse ném lỗi.
+// require() thì nuốt được BOM nên lỗi ẩn mình. writeFileSync cho ra byte
+// giống nhau trên mọi shell.
+const duongDanRa = process.argv[2];
+if (duongDanRa) {
+  writeFileSync(duongDanRa, ketQua, { encoding: 'utf8' });
+  console.error(`đã ghi ${duongDanRa}`);
+} else {
+  console.log(ketQua);
+}
 
 await sql.end();
