@@ -869,8 +869,14 @@ const submitInspectionBatchInputSchema = z
     message: "Either apiKey or machineCode must be provided",
   });
 
-/** Extract a machine credential from Authorization: Bearer / X-API-Key headers. */
-function machineHeaderKey(ctx: unknown): string | null {
+/**
+ * Extract a machine credential from Authorization: Bearer / X-API-Key headers.
+ *
+ * ⚠ EXPORT có chủ ý (Task 10, 2026-08-24) — `aoiPackageRouter.ts` cần chính hàm
+ * này để gọi `authenticateMachine` với `headerKey` đúng, thay vì tự chép lại
+ * logic đọc header (hai bản chép sẽ lệch hành vi theo thời gian).
+ */
+export function machineHeaderKey(ctx: unknown): string | null {
   try {
     const headers = (ctx as { req?: { headers?: Record<string, unknown> } })?.req?.headers;
     if (!headers) return null;

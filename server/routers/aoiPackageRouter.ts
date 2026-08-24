@@ -49,6 +49,17 @@ import { evaluatePointResult, isPointLimitEvalEnabled } from "../services/pointR
 // ★★★ 2026-08-18 — mã tenant của một hàng ĐƯỢC GHI suy từ MÁY ĐÃ XÁC THỰC, không từ `meta.json`;
 // khoá lưu trữ gói cũng do máy chủ sinh theo chuỗi phân cấp ấy.
 import { macTenantChoGhi, khoaLuuTruGoi } from "./phamViGhiMay";
+// ★★★ Task 10 (2026-08-24) — ĐƯỜNG ZIP PACKAGE TỰ PHÂN GIẢI MÁY, BỎ QUA CỔNG
+// `authenticateMachine`. Ba chỗ dưới đây (presign/commit/reportQueueMetrics) + PUT
+// /api/aoi/upload/:packageId ở server/_core/index.ts gọi thẳng
+// `getMachineByCode`/`getMachineByApiKey`, nên cờ `MACHINE_CODE_ONLY_ALLOWED=deny`
+// (server/services/machineAuthService.ts) mua được 0 trên toàn đường ZIP: biết mã
+// máy — in trên nhãn dán, có trong URL, trong báo cáo — là đủ ghi kết quả
+// inspection. Đổi cả ba sang authenticateMachine({ scope: "ingest:write" }), CÙNG
+// cổng mọi đường machine khác đang tuân theo. `machineHeaderKey` TÁI DÙNG từ
+// machineApiRouters.ts (export có chủ ý) — không chép lại logic đọc header.
+import { authenticateMachine } from "../services/machineAuthService";
+import { machineHeaderKey } from "./machineApiRouters";
 
 // ============================================================
 // Image Cache Configuration
@@ -407,17 +418,17 @@ export const aoiPackageRouter = router({
     }).refine(data => data.apiKey || data.machineCode, {
       message: "Either apiKey or machineCode must be provided",
     }))
-    .mutation(async ({ input }) => {
-      // Validate machine
-      let machine;
-      if (input.apiKey) {
-        machine = await db.getMachineByApiKey(input.apiKey);
-      } else if (input.machineCode) {
-        machine = await db.getMachineByCode(input.machineCode.trim());
-      }
-      if (!machine) {
-        throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "machineCredentials" }, "Invalid machine credentials");
-      }
+    .mutation(async ({ input, ctx }) => {
+      // ★★★ Task 10 — TỪNG tự phân giải máy bằng getMachineByApiKey/getMachineByCode,
+      // bỏ qua hoàn toàn cổng MACHINE_CODE_ONLY_ALLOWED. Nay đi qua authenticateMachine
+      // (cùng cổng mọi đường machine khác dùng), scope ingest:write.
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "ingest:write",
+        endpoint: "aoiPackage.presign",
+      });
 
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
@@ -524,17 +535,16 @@ export const aoiPackageRouter = router({
     }).refine(data => data.apiKey || data.machineCode, {
       message: "Either apiKey or machineCode must be provided",
     }))
-    .mutation(async ({ input }) => {
-      // Validate machine
-      let machine;
-      if (input.apiKey) {
-        machine = await db.getMachineByApiKey(input.apiKey);
-      } else if (input.machineCode) {
-        machine = await db.getMachineByCode(input.machineCode.trim());
-      }
-      if (!machine) {
-        throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "machineCredentials" }, "Invalid machine credentials");
-      }
+    .mutation(async ({ input, ctx }) => {
+      // ★★★ Task 10 — same fix as presign: authenticateMachine instead of a raw
+      // getMachineByApiKey/getMachineByCode resolve.
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "ingest:write",
+        endpoint: "aoiPackage.commit",
+      });
 
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
@@ -1556,16 +1566,16 @@ export const aoiPackageRouter = router({
     }).refine(data => data.apiKey || data.machineCode, {
       message: "Either apiKey or machineCode must be provided",
     }))
-    .mutation(async ({ input }) => {
-      let machine;
-      if (input.apiKey) {
-        machine = await db.getMachineByApiKey(input.apiKey);
-      } else if (input.machineCode) {
-        machine = await db.getMachineByCode(input.machineCode.trim());
-      }
-      if (!machine) {
-        throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "machineCredentials" }, "Invalid machine credentials");
-      }
+    .mutation(async ({ input, ctx }) => {
+      // ★★★ Task 10 — same fix as presign/commit: authenticateMachine instead of a
+      // raw getMachineByApiKey/getMachineByCode resolve.
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "ingest:write",
+        endpoint: "aoiPackage.reportQueueMetrics",
+      });
 
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");

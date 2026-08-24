@@ -152,11 +152,19 @@ beforeEach(() => {
   _resetInlineGateBreaker();
   invalidateConfigCache();
   process.env.AI_INLINE_GATE_ENABLED = "true";
+  // ★★★ Task 10 (2026-08-24) — `commit` nay đi qua `authenticateMachine` thay vì
+  // `db.getMachineByApiKey` thẳng. Máy seed ở đây dùng `apiKey` LEGACY (đường
+  // shared-key), và mặc định `MACHINE_SHARED_KEY_ALLOWED` đã đổi thành `deny` từ
+  // mig 0334 (2026-08-22) — thiếu dòng này thì mọi lượt `commit` bị TỪ CHỐI
+  // đúng như thiết kế, chỉ là sai chỗ (test này canh cổng AI gate, không canh
+  // cổng auth). Cùng quy ước với machineApiProcessResult.test.ts:189.
+  process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
   (engine.runInference as any).mockResolvedValue(OK_INFERENCE);
 });
 
 afterEach(() => {
   delete process.env.AI_INLINE_GATE_ENABLED;
+  delete process.env.MACHINE_SHARED_KEY_ALLOWED;
 });
 
 describe("aoiPackage.commit × inline AI gate (V1)", () => {

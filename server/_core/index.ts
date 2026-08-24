@@ -4673,17 +4673,34 @@ async function startServer() {
         return res.status(401).json({ success: false, message: "x-api-key or x-machine-code header required" });
       }
 
-      // Validate machine
+      // ★★★ Task 10 (2026-08-24) — was a raw getMachineByApiKey/getMachineByCode
+      // resolve, bypassing the MACHINE_CODE_ONLY_ALLOWED gate entirely (this route
+      // has no tRPC ctx, so the header is read straight off `req` and passed as
+      // `headerKey`, same as the OT-ingest route above). Throws TRPCError on failure
+      // — caught below and mapped to the SAME 401/403 contract this route already had.
       const { getDb } = await import("../db");
-      const { getMachineByApiKey, getMachineByCode } = await import("../db");
+      const { authenticateMachine } = await import("../services/machineAuthService");
       let machine;
-      if (apiKey) {
-        machine = await getMachineByApiKey(apiKey);
-      } else {
-        machine = await getMachineByCode(machineCode);
-      }
-      if (!machine) {
-        return res.status(401).json({ success: false, message: "Invalid machine credentials" });
+      try {
+        const auth = await authenticateMachine({
+          headerKey: apiKey || null,
+          machineCode: machineCode || null,
+          scope: "ingest:write",
+          endpoint: "aoiPackage.upload",
+        });
+        machine = auth.machine;
+      } catch (authErr: any) {
+        // Same mapping as POST /api/ot/ingest above: TRPCError UNAUTHORIZED/FORBIDDEN
+        // → 401/403 (this route's pre-existing contract), DB-down → 503, else rethrow
+        // to the outer catch (→ 500), unchanged from before.
+        const code = authErr?.code;
+        if (code === "UNAUTHORIZED")
+          return res.status(401).json({ success: false, message: authErr?.message || "Invalid machine credentials" });
+        if (code === "FORBIDDEN")
+          return res.status(403).json({ success: false, message: authErr?.message || "Forbidden" });
+        if (authErr?.name === "DbUnavailableError")
+          return res.status(503).json({ success: false, message: "Database unavailable — retry" });
+        throw authErr;
       }
 
       // Find package record
