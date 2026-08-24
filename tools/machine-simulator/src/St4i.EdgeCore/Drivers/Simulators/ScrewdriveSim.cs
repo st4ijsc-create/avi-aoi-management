@@ -270,7 +270,26 @@ public sealed class ScrewdriveSim : SimulatorBase
                 NormalizedX: nx,
                 NormalizedY: 0.5,
                 Result: verdict == Verdict.Fail ? "NG" : "OK",
-                MetricValue: Math.Round(torque, 3),
+                // 🔴 OWNER'S RULING 2026-08-24, item 70 — DIRECTION A ONLY: the rounding is dropped, so
+                // step 0 and the published `spc` series carry the SAME double for the SAME draw instead of
+                // two renderings of it. `Math.Round(torque, 3)` stood here and its worst-case error was
+                // 5e-4 Nm; re-measured 2026-08-24 and that bound holds (see item 70 §70.5).
+                //
+                // 🔴 AND WHAT DIRECTION A DOES NOT BUY, WRITTEN AT THE LINE IT CHANGES, because the item
+                // it belongs to is about something else entirely. Item 70's headline is that this response
+                // ships FOUR torque numbers for ONE cycle while ingest, SPC and the historian each ship
+                // ONE. This edit does not remove a single one of those three extra draws — steps 1..3 are
+                // untouched, they still decide the reading's verdict (see NextCycle), and they still exist
+                // on no other surface. It removes an 0.0005 Nm discrepancy between two of the four.
+                // Directions B (delete the extra draws — moves OEE Quality) and C (persist them — widens a
+                // published payload) were NOT authorised and remain the owner's.
+                //
+                // 🔴 AND IT DOES NOT MAKE THIS RESPONSE SELF-CONSISTENT EITHER. `MachineState.FormatKeyMetric`
+                // renders the same primary draw as a STRING with the format "0.###" — three decimals, and
+                // away-from-zero at the midpoint where Math.Round was to-even. So `cycleLog[last].keyMetric`
+                // still disagrees with `spc.values[last]` in the same digit this line used to. Naming it
+                // here rather than letting the next reader think item 70 was closed by this.
+                MetricValue: torque,
                 Unit: "Nm"));
         }
 

@@ -330,19 +330,37 @@ public class AssumedProcessBandTests
         Assert.Equal(0.96963, OeeOf(good, rows.Count, Shipped("FCT-01").CycleSeconds), 12);
     }
 
-    /// <summary>🔴 <b>GUARD — GREEN ON BOTH SIDES OF THE FIX, and it pins a DIVERGENCE THIS TASK CHOSE TO
-    /// LEAVE STANDING.</b> The reading still publishes <c>Lsl = 90, Usl = 100</c> while the verdict is now
-    /// computed from the LSL alone, so <b>a reader who re-derives the verdict from the limits this reading
-    /// declares gets the PRE-FIX answer</b>. That is exactly the residue open as owner-decisions item 62
-    /// against <see cref="LeakTestSim"/>, and this fix ADDS A SECOND MEMBER to its population instead of
-    /// resolving it: item 62 is not in the group the 2026-08-24 ruling covers, and dropping the published
-    /// ceiling here would answer an open owner question as a side effect.
+    /// <summary>🔴🔴 <b>THIS TEST PINS AN ADJUDICATED STATE, NOT A CORRECT ONE. READ THIS BEFORE YOU "FIX"
+    /// WHAT IT GUARDS.</b> It is the SECOND of the two locks owner item 62 rests on; the first is
+    /// <c>LeakAndFunctionalVerdictDomainTests.Item62_Guard_ThePublishedMetricStillDeclaresAFloorTheVerdictDoesNotUse_OwnerRuled20260824</c>.
     ///
-    /// <para>Keeping the published pair also means the fix moves <b>no metric value on the wire at all</b> —
-    /// only the <c>result</c> field. Green before, green after; this is a statement of what was left, not
-    /// evidence of what was done.</para></summary>
+    /// <para><b>OWNER'S RULING, 2026-08-24, owner-decisions item 62 — direction B, WITH A SIGNATURE.</b> The
+    /// published pair <c>(90 ; 100)</c> STAYS, deliberately, while the verdict is computed from the LSL
+    /// alone. Until that date this pair survived by INERTIA: item 61's fix left it behind and recorded that
+    /// it had, but nobody had DECIDED it. It is decided now, and both banks of the cost are written down:
+    /// keeping it means a reader who re-derives the verdict from the limits this reading declares gets the
+    /// PRE-FIX answer; changing it would turn <c>usl</c> from <c>100</c> into ABSENT in the canonical record,
+    /// which is a WIRE-SHAPE change for a typed consumer, and the field leaves this product over MQTT. The
+    /// same two exemptions as the leak-test half, on the opposite side of the band.</para>
+    ///
+    /// <para>🔴 <b>THE POPULATION OF ITEM 62 IS TWO SIMULATORS, AND ITEM 62's BODY SAID ONE.</b> That body
+    /// measured all five process simulators and concluded "<c>LeakTestSim</c> is the only case". It was
+    /// right on the day it was written and item 61's fix — landed the SAME DAY, by ruling — made it wrong,
+    /// by adding this one. Re-measured 2026-08-24: <c>AssemblySim</c>, <c>DispensingSim</c>,
+    /// <c>ScrewdriveSim</c> and <c>WelderSim</c> each still publish exactly the pair they judge on;
+    /// <c>AoiInspectorSim</c> and <c>IotSensorSim</c> publish no <c>MetricSample</c> and never consult
+    /// <c>VerdictHelper</c> at all. So the population is <b>two of eight</b>, and the two differ in WHICH
+    /// SIDE is orphaned — a floor there, a ceiling here.</para>
+    ///
+    /// <para>🔴 <b>A RED HERE IS NOT NECESSARILY A DEFECT YOU INTRODUCED.</b> If you arrived by dropping the
+    /// published ceiling, you did the locally correct thing and collided with a decision that outranks it.
+    /// Do not edit the assertion. Reopen item 62.</para>
+    ///
+    /// <para><b>What this does NOT measure:</b> the verdict path, and the wire. Keeping the published pair
+    /// is also why item 61's fix moved <b>no metric value on the wire at all</b> — only the <c>result</c>
+    /// field — but that is asserted elsewhere, not here.</para></summary>
     [Fact]
-    public void Item61_Guard_ThePublishedScoreStillDeclaresACeilingTheVerdictDoesNotUse()
+    public void Item62_Guard_ThePublishedScoreStillDeclaresACeilingTheVerdictDoesNotUse_OwnerRuled20260824()
     {
         var metric = new FunctionalTestSim(Shipped("FCT-01"), seed: 11).NextCycle(1).Metrics.Single(m => m.Name == "functional_score");
 
@@ -350,5 +368,31 @@ public class AssumedProcessBandTests
         Assert.Equal(100.0, metric.Usl);
         Assert.Equal(98.0, metric.Nominal);
         Assert.Equal("%", metric.Unit);
+
+        // 🔴 THE DISAGREEMENT ITSELF, MEASURED — so this pins a ruled defect and not merely four numbers.
+        // A third party has the published pair and the documented two-sided rule: margin = (100-90)*0.15 =
+        // 1.5, and anything within 1.5 of EITHER limit warns. The machine seeds only the LSL, so scores at
+        // the top of the scale pass. Every cycle at or above 98.5 that the machine called Pass is a cycle
+        // where the two answers differ.
+        const double PublishedTwoSidedMargin = (100.0 - 90.0) * 0.15;
+        Assert.Equal(ScoreMargin, PublishedTwoSidedMargin);
+
+        var rows = FunctionalCycles();
+        var emittedPassButThePublishedPairSaysWarn =
+            rows.Count(r => r.Verdict == Verdict.Pass && r.Score >= 100.0 - PublishedTwoSidedMargin);
+
+        // 🔴 40 790 of 100 000 = 40.790%, AND THAT IS THE SAME NUMBER AS ITEM 61's FIX. It is not a
+        // coincidence and it is the cleanest statement of what item 62 now costs: the cycles item 61 moved
+        // from Warn to Pass are EXACTLY the cycles on which the published pair now contradicts the emitted
+        // verdict. The fix did not remove the disagreement, it relocated it from the machine's own verdict
+        // to the gap between that verdict and the limits the same reading publishes.
+        Assert.Equal(40_790, emittedPassButThePublishedPairSaysWarn);
+        Assert.Equal(0.40790, (double)emittedPassButThePublishedPairSaysWarn / rows.Count, 5);
+
+        // 🔴 AND THE SIZE COMPARISON THAT MATTERS TO THE RULING: item 62 was opened against LeakTestSim and
+        // priced at ~5% of that machine's cycles. This second member of its population disagrees on 40.790%
+        // — EIGHT TIMES the rate of the case the item was written about. Both are ruled B; only one of them
+        // was known when the direction was chosen.
+        Assert.True(emittedPassButThePublishedPairSaysWarn / (double)rows.Count > 8 * 0.05025);
     }
 }

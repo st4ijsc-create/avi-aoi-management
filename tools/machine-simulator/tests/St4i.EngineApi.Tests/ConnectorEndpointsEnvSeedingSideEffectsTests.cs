@@ -182,14 +182,43 @@ public sealed class ConnectorEndpointsEnvSeedingSideEffectsTests
         return (admin, engineer);
     }
 
-    /// <summary>Task B-6 — the provenance fix, proven directly: renamed from the pre-fix
-    /// <c>...409sNamingTheSeededMachine_OperatorNeverPersistedIt</c> (this exact scenario is what the
-    /// carried finding named). Before B-6, this exact request 409'd, naming a machine code the operator never
+    /// <summary>🔴 <b>WITNESS for owner item 63, direction B — 2026-08-24. Reddens by restoring
+    /// <c>ConnectorRegistry.Register</c>'s pre-ruling behaviour, and it is the ONE test item 63 predicted
+    /// this ruling would redden.</b>
+    ///
+    /// <para><b>THIS TEST HAS NOW BEEN INVERTED TWICE, AND BOTH PREVIOUS TEXTS ARE KEPT.</b> It began as
+    /// <c>...409sNamingTheSeededMachine_OperatorNeverPersistedIt</c>, became
+    /// <c>PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s</c> at task
+    /// B-6, and is inverted again here. B-6's summary, word for word:</para>
+    /// <para><i>"Task B-6 — the provenance fix, proven directly: renamed from the pre-fix
+    /// ...409sNamingTheSeededMachine_OperatorNeverPersistedIt (this exact scenario is what the carried
+    /// finding named). Before B-6, this exact request 409'd, naming a machine code the operator never
     /// persisted themselves — the load-bearing assertion below is now the OPPOSITE: the save SUCCEEDS,
-    /// because a <see cref="ConnectorConfigSource.Seeded"/> row is no longer treated as "an operator already
-    /// configured this kind".</summary>
+    /// because a ConnectorConfigSource.Seeded row is no longer treated as 'an operator already configured
+    /// this kind'."</i></para>
+    ///
+    /// <para><b>Why it was inverted, and by whom:</b> the OWNER ruled item 63 direction B on
+    /// <b>2026-08-24</b>, having been shown before choosing that its measured price is precisely the loss of
+    /// the behaviour B-6 built. <c>ConnectorRegistry.Register</c> now refuses a registration whose incumbent
+    /// under the same id serves a DIFFERENT machine, and the registry does not — and per §63.6.2 cannot
+    /// affordably — hold the provenance that would let it make B-6's exception. So the request this test
+    /// makes 409s again. B-6's reasoning is not repudiated; it is outranked by a ruling that priced it.</para>
+    ///
+    /// <para>🔴 <b>409 AND NOT 500, WHICH IS THE WHOLE DIFFERENCE BETWEEN THE RULED DIRECTION AND THE
+    /// REFUSED ONE.</b> Direction A (throw on any duplicate explicit id) was refused because it turns every
+    /// connector EDIT into a server error. Direction B returns <see langword="false"/>, which
+    /// <c>ConnectorEndpoints</c> already checks: it compensates the store row it had just written and
+    /// answers <see cref="HttpStatusCode.Conflict"/> with a message naming the incumbent. This test asserts
+    /// the status code for that reason — it is the load-bearing evidence that the ordinary update path was
+    /// not turned into a 500.</para>
+    ///
+    /// <para><b>What it does NOT measure:</b> the same-machine re-save. That path never reaches the new
+    /// refusal, and it is pinned by two OTHER tests, in two other files:
+    /// <c>ConnectorRegistryTests.AnExplicitId_WhoseIncumbentServesTheSameMachine_StillReplaces_TheIdempotentUpdatePath</c>
+    /// at the registry, and <c>ConnectorEndpointsMachineClaimTests.AConnectorReSavingItsOwnMachine_IsNotBlockedByItsOwnClaim</c>
+    /// through this endpoint. Both are green on both sides of the ruling.</para></summary>
     [Fact]
-    public async Task PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s()
+    public async Task PostConnector_ForADifferentMachine_OverASeededRow_Now409s_OwnersRuling20260824Item63()
     {
         var envCode = "ENVSEED-SHADOW-" + Guid.NewGuid().ToString("N")[..8];
         var envMapPath = Path.Combine(Path.GetTempPath(), $"st4i-envseed-map-{Guid.NewGuid():N}.json");
@@ -207,25 +236,37 @@ public sealed class ConnectorEndpointsEnvSeedingSideEffectsTests
                 var seededRow = Assert.Single(before!, s => s.Kind == "Modbus" && s.MachineCode == envCode);
                 Assert.Equal(ConnectorConfigSource.Seeded, seededRow.Source);
 
-                // The load-bearing assertion (Task B-6, closing Fix round 1 Important #3): an Engineer
-                // configuring a genuinely DIFFERENT Modbus machine through the normal UI path now SUCCEEDS —
-                // the seeded row is not an operator's own configuration, so it is not protected from being
-                // overwritten by one.
+                // 🔴 THE LOAD-BEARING ASSERTION, INVERTED BY THE OWNER'S RULING OF 2026-08-24 (item 63,
+                // direction B). Task B-6's version of this block read, word for word:
+                //
+                //     "The load-bearing assertion (Task B-6, closing Fix round 1 Important #3): an Engineer
+                //      configuring a genuinely DIFFERENT Modbus machine through the normal UI path now
+                //      SUCCEEDS — the seeded row is not an operator's own configuration, so it is not
+                //      protected from being overwritten by one."
+                //     Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+                //
+                // It now CONFLICTS. ConnectorRegistry.Register refuses the live registration because the
+                // instance already registered under this id serves a different machine, and this endpoint
+                // turns that refusal into a 409 — NOT a 500, which is the property that separates the ruled
+                // direction from the refused one.
                 var otherCode = "ENVSEED-OTHER-" + Guid.NewGuid().ToString("N")[..8];
                 using var create = await engineer.PostAsJsonAsync(
                     "/v1/connectors",
                     new ConnectorCreateRequest("Modbus", "10.0.0.99", 502, ValidModbusMap(otherCode)),
                     JsonOptions);
 
-                Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+                Assert.Equal(HttpStatusCode.Conflict, create.StatusCode);
 
-                // The store now reports the OPERATOR's own row (the seeded one was upserted over) — Source
-                // flips to Operator, since this row now genuinely IS an operator's own persisted config.
+                // 🔴 AND THE STORE ROW WAS COMPENSATED, which is the half a bare status-code assertion would
+                // miss. This endpoint writes the row BEFORE it registers; on a refusal it rolls that write
+                // back, because a persisted config that can never register is the state its own SM-5 comment
+                // says must not be creatable. So the seeded row is still here, still Seeded, still naming
+                // the env-var machine — the operator's failed save left nothing behind.
                 using var configuredAfter = await engineer.GetAsync("/v1/connectors/configured");
                 var after = await configuredAfter.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
-                var operatorRow = Assert.Single(after!, s => s.Kind == "Modbus");
-                Assert.Equal(otherCode, operatorRow.MachineCode);
-                Assert.Equal(ConnectorConfigSource.Operator, operatorRow.Source);
+                var survivingRow = Assert.Single(after!, s => s.Kind == "Modbus");
+                Assert.Equal(envCode, survivingRow.MachineCode);
+                Assert.Equal(ConnectorConfigSource.Seeded, survivingRow.Source);
             }
         }
         finally

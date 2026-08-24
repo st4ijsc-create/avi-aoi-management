@@ -342,6 +342,55 @@ public sealed class ConnectorsConfigTests
         Assert.Contains("modbus-first", warning);
     }
 
+    /// <summary>🔴 <b>WITNESS for owner item 65, direction C — 2026-08-24. Reddens by restoring the previous
+    /// constant warning sentence.</b> This is the EngineApi half of the pair; the EdgeService half is
+    /// <c>EdgeWorkerConnectorsTests.ADuplicateId_IsSkippedWithAWarningNamingTheIdThatCollided_NotTheKind</c>,
+    /// and the two together are what item 65 means by "one file, two hosts, two answers".
+    ///
+    /// <para>The operator does the thing item 65 §65.2 describes: declares two Modbus-TCP connectors in one
+    /// file and gives them <b>two ids of their own choosing</b>. Under this host's resolver both answer the
+    /// key <c>"Modbus"</c>, so the second is dropped. The old message told them entry two "already configures
+    /// this same kind" — naming a KIND at a person who had just named two IDS, which §65.4 calls the
+    /// costliest species of wrongness because the product does not break, it breaks differently in two
+    /// places.</para>
+    ///
+    /// <para>🔴 <b>What direction C does NOT change, asserted here and not merely said:</b> the resolved
+    /// list. One entry survives, exactly as before — C fixes the sentence, not the behaviour, and the
+    /// divergence stays open as item 65.</para></summary>
+    [Fact]
+    public void ResolveEntries_whenTheKeyIsTheKind_theWarningSaysSo_andNamesTheOtherHost_Item65DirectionC()
+    {
+        var entries = new[]
+        {
+            new ConnectorConfigEntry("line-a", DriverKinds.Modbus, "{\"a\":1}"),
+            new ConnectorConfigEntry("line-b", DriverKinds.Modbus, "{\"a\":2}"),
+        };
+        var warnings = new List<string>();
+
+        var resolved = ConnectorsConfig.ResolveEntries(
+            entries, new HashSet<string>(), warnings.Add,
+            registrationKeyOf: St4i.EngineApi.Config.ConnectorsJsonRegistration.RegistrationKeyOf);
+
+        // Behaviour is untouched: the second entry is still dropped, the first still wins.
+        Assert.Single(resolved);
+        Assert.Equal("line-a", resolved[0].Id);
+
+        var warning = Assert.Single(warnings);
+        Assert.Contains("line-a", warning);
+        Assert.Contains("line-b", warning);
+
+        // It names the key that collided, says it was the KIND and not the id the operator chose, and says
+        // the other host would have kept both.
+        Assert.Contains($"registers a '{DriverKinds.Modbus}' entry under its KIND ('{DriverKinds.Modbus}')", warning, StringComparison.Ordinal);
+        Assert.Contains("NOT under the `id` you gave it", warning, StringComparison.Ordinal);
+        Assert.Contains("St4i.EdgeService", warning, StringComparison.Ordinal);
+
+        // 🔴 And it declares that it has not fixed the divergence, at the place the operator reads it —
+        // law (3) applied to a log line. Without this a reader could take the message for a fix report.
+        Assert.Contains("item 65", warning, StringComparison.Ordinal);
+        Assert.Contains("does not fix it", warning, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ResolveEntries_emptyEntries_returnsEmpty_neverThrows()
     {

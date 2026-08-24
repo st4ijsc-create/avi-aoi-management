@@ -288,9 +288,7 @@ public static class ConnectorsConfig
 
             if (acceptedKeys.TryGetValue(key, out var firstId))
             {
-                logWarning?.Invoke(
-                    $"connectors.json entry '{entry.Id}' (kind '{entry.Kind}') ignored — entry '{firstId}' " +
-                    "already configures this same kind earlier in the file; the first entry for a given kind wins.");
+                logWarning?.Invoke(DuplicateKeyWarning(entry, firstId, key));
                 continue;
             }
 
@@ -299,6 +297,63 @@ public static class ConnectorsConfig
         }
 
         return resolved;
+    }
+
+    /// <summary>🔴 <b>OWNER'S RULING 2026-08-24, item 65 — DIRECTION C, AND ONLY DIRECTION C: say the true
+    /// thing about what the operator typed. NO registration key moves, on either host.</b>
+    ///
+    /// <para><b>What was wrong with the sentence this replaces.</b> It read "entry 'Y' already configures
+    /// this same KIND earlier in the file; the first entry for a given KIND wins" — a constant, on a line
+    /// where the thing that actually collided is <paramref name="key"/>, which is supplied by the CALLER and
+    /// is not the kind on every host. THREE production sites call <c>ResolveEntries</c>; the one at
+    /// <c>Program.cs:1306</c> passes <c>logWarning: null</c> and so can emit nothing, leaving TWO that can
+    /// reach this text — and those two disagree about the key, so the old sentence could only ever be right
+    /// for one of them:</para>
+    /// <list type="bullet">
+    /// <item><b>St4i.EngineApi</b> passes <c>ConnectorsJsonRegistration.RegistrationKeyOf</c>, which answers
+    /// the entry's KIND for a TCP or OPC-UA entry even when that entry carries an explicit id. So two
+    /// Modbus-TCP entries with two DIFFERENT operator-chosen ids collapse into one here, and the operator is
+    /// told about a "kind" they were not thinking about.</item>
+    /// <item><b>St4i.EdgeService</b> passes <c>EdgeConnectors.RegistrationKeyOf</c>, which answers
+    /// <c>DriverKinds.Normalize(entry.Id)</c> unconditionally, for every kind. Nothing there ever collapses
+    /// on a kind — so the old sentence was <b>simply false on that host</b>, in the opposite direction, and
+    /// a test was pinning it. Same file, two hosts, two answers: that is owner item 65.</item>
+    /// </list>
+    ///
+    /// <para><b>Which of the three standing exemptions this crosses: none, re-measured 2026-08-24.</b> No
+    /// MQTT payload (this is an <c>ILogger</c> warning), no shape of data on the wire (no field is added,
+    /// removed or retyped anywhere), no OEE number. It also moves NO registration key and NO
+    /// <c>TargetId</c>, which is the cost that keeps item 65's direction A on the owner's shelf — direction A
+    /// would relabel an already-installed pipeline slot and therefore the alarm target id that
+    /// <c>WebhookNotification</c> ships and <c>SqliteAuditStore</c> has already persisted. Nothing here goes
+    /// near that: the resolved list this method returns is byte-identical before and after.</para>
+    ///
+    /// <para>🔴 <b>WHAT THIS DOES NOT FIX, at the place the text is produced.</b> The DIVERGENCE itself is
+    /// untouched and item 65 stays open on it: the same <c>connectors.json</c> still yields ONE connector
+    /// under EngineApi and TWO under EdgeService. All that is bought is that an operator reading the log
+    /// learns which key merged their entries and that the other host would not have merged them. A reader
+    /// who takes this warning as a description of a bug that has been fixed is being misled, so it says
+    /// so.</para></summary>
+    private static string DuplicateKeyWarning(ConnectorConfigEntry entry, string firstId, string key)
+    {
+        // Derived, never pasted: whether this host keyed on the id or on the kind is read off the KEY that
+        // actually collided, so the day a caller supplies a third resolver this sentence corrects itself
+        // instead of becoming the next retraction.
+        var keyedOnId = string.Equals(key, DriverKinds.Normalize(entry.Id.Trim()), StringComparison.Ordinal);
+
+        var why = keyedOnId
+            ? $"Both entries register under the id '{key}', so what collided is the ID YOU GAVE THEM, not " +
+              "their kind — give the second one a different `id` and both will be kept."
+            : $"This host registers a '{entry.Kind}' entry under its KIND ('{key}'), NOT under the `id` you " +
+              $"gave it, so entries '{firstId}' and '{entry.Id}' collided even though you named them " +
+              "differently. The other host in this product (St4i.EdgeService) keys the SAME file on the id " +
+              "and would keep both — one file, two hosts, two answers. That divergence is open as " +
+              "docs/owner-decisions.md item 65 and this message does not fix it; it only stops describing " +
+              "it wrongly.";
+
+        return $"connectors.json entry '{entry.Id}' (kind '{entry.Kind}') ignored — entry '{firstId}' " +
+               $"earlier in the file already registers under the same key '{key}', and the first entry for " +
+               $"a given registration key wins. {why}";
     }
 
     /// <summary>

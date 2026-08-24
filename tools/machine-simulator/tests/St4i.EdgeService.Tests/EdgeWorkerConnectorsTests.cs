@@ -247,8 +247,28 @@ public sealed class EdgeWorkerConnectorsTests
             registry!.RegisteredIds.Select(DriverKinds.Normalize).OrderBy(x => x, StringComparer.Ordinal).ToArray());
     }
 
+    /// <summary>🔴 <b>WITNESS for owner item 65, direction C — 2026-08-24. Reddens by restoring the previous
+    /// constant warning sentence.</b>
+    ///
+    /// <para><b>WHAT THE PREVIOUS ASSERTION PINNED, AND WHY IT WAS WRONG ON THIS HOST.</b> It read, word for
+    /// word:</para>
+    /// <para><i>Assert.Contains(log.Lines, l =&gt; l.Contains("already configures this same kind earlier in
+    /// the file", StringComparison.Ordinal));</i></para>
+    /// <para>The two entries below collide on their <b>id</b> — <c>gw:unit1</c> twice — because
+    /// <c>EdgeConnectors.RegistrationKeyOf</c> answers <c>DriverKinds.Normalize(entry.Id)</c>
+    /// unconditionally on this host. Their KIND has nothing to do with it: three entries of the same kind
+    /// with three different ids all register, which the test directly above this one proves. So the sentence
+    /// this assertion was keeping alive was <b>false on this host in the opposite direction</b>, and the
+    /// assertion was what kept it alive. That is owner item 65: one <c>connectors.json</c>, two hosts, two
+    /// answers, and a message that could only be right for one of them.</para>
+    ///
+    /// <para><b>What direction C bought and what it did NOT.</b> The message now reads the key that actually
+    /// collided and names it. It changes <b>no</b> registration key on either host, so the divergence itself
+    /// — the same file yielding one connector under EngineApi and two here — is untouched and item 65 stays
+    /// open on it. Direction A, which would close it by making EngineApi key on the id, moves an alarm
+    /// <c>TargetId</c> that has already been persisted in audit rows, and remains the owner's.</para></summary>
     [Fact]
-    public void ADuplicateId_IsSkippedWithAWarningNamingBoth_NeverSilentlyLastWriteWins()
+    public void ADuplicateId_IsSkippedWithAWarningNamingTheIdThatCollided_NotTheKind()
     {
         var json = $$"""
             [
@@ -262,7 +282,17 @@ public sealed class EdgeWorkerConnectorsTests
 
         Assert.NotNull(registry);
         Assert.Single(registry!.RegisteredIds);
-        Assert.Contains(log.Lines, l => l.Contains("already configures this same kind earlier in the file", StringComparison.Ordinal));
+
+        var warning = Assert.Single(log.Lines, l => l.Contains("gw:unit1", StringComparison.Ordinal) && l.Contains("ignored", StringComparison.Ordinal));
+
+        // It names BOTH entries and the key that actually merged them — unchanged duty, now said truthfully.
+        Assert.Contains("already registers under the same key 'gw:unit1'", warning, StringComparison.Ordinal);
+        Assert.Contains("what collided is the ID YOU GAVE THEM, not", warning, StringComparison.Ordinal);
+
+        // 🔴 The load-bearing negative: this host never merges on a kind, so the word must not appear as the
+        // cause. Without this the message could drift back to a constant and the assertion above would still
+        // pass on the half of it that is generic.
+        Assert.DoesNotContain("already configures this same kind", warning, StringComparison.Ordinal);
     }
 
     [Fact]

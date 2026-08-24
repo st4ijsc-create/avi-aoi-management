@@ -76,9 +76,69 @@ public class CyclePlanTests
 
         // Step 0 must be the EXACT SAME torque draw already reported in Metrics — never a second,
         // independently-drawn value for the same physical position.
-        Assert.Equal(reading.Metrics[0].Value, reading.Plan.Steps[0].MetricValue!.Value, 3);
+        // 🔴 This assertion carried a precision argument of 3 and therefore could not tell a shared draw
+        // from a ROUNDED COPY of one, which is the whole of item 70's first claim. Owner's ruling
+        // 2026-08-24, direction A: exact now. See Item70_… below for the witness that says why.
+        Assert.Equal(reading.Metrics[0].Value, reading.Plan.Steps[0].MetricValue!.Value);
         Assert.All(reading.Plan.Steps, s => Assert.Equal("Nm", s.Unit));
         Assert.All(reading.Plan.Steps, s => Assert.True(s.Result is "OK" or "NG"));
+    }
+
+    /// <summary>🔴 <b>WITNESS for owner item 70, direction A — 2026-08-24. Reddens by restoring
+    /// <c>MetricValue: Math.Round(torque, 3)</c> in <c>ScrewdriveSim.BuildFasteningPlan</c>.</b>
+    ///
+    /// <para><b>The claim being pinned, and its unit.</b> Item 70 §70.1 says <c>GET /v1/machines/{code}</c>
+    /// carried "two numbers for one torque", and re-measures the gap between them as "≤ 5·10⁻⁴ Nm" — the
+    /// worst case of a round to three decimals. Direction A removes the rounding, so the gap is now exactly
+    /// zero, and that is asserted here as an EXACT equality of two doubles rather than a tolerance, because
+    /// a tolerance is what let the old shape sit unnoticed.</para>
+    ///
+    /// <para>🔴 <b>AND THE PART OF ITEM 70 THIS DOES NOT CLOSE, ASSERTED RATHER THAN SAID — because the
+    /// ruling was told, before it chose, that direction A "does not buy anything material".</b> Two facts
+    /// below carry that:</para>
+    /// <list type="number">
+    /// <item><b>The response still ships FOUR torque numbers for ONE cycle.</b> Steps 1..3 are fresh
+    /// independent draws, they are not in <c>Metrics</c>, so they reach neither SPC nor the ingest payload
+    /// nor the historian — and they still decide the reading's verdict. That is item 70's actual headline
+    /// and direction A does not touch it. Directions B and C were not authorised.</item>
+    /// <item><b>A rounded rendering of the same draw survives elsewhere in the same response.</b>
+    /// <c>MachineState.FormatKeyMetric</c> formats <c>Metrics[0]</c> with <c>"0.###"</c>, so
+    /// <c>cycleLog[].keyMetric</c> still disagrees with <c>spc.values[]</c> in the same digit
+    /// <c>Math.Round</c> used to. Direction A moved the discrepancy; it did not remove it from the
+    /// response.</item>
+    /// </list>
+    ///
+    /// <para><b>What this does NOT measure:</b> the endpoint or the DTO. It reads the simulator's own
+    /// reading, so it says nothing about what <c>FleetProjections.ToDetailDto</c> does with either
+    /// field.</para></summary>
+    [Fact]
+    public void Item70_DirectionA_Step0CarriesTheDrawItself_ButThreeExtraDrawsAndARoundedStringSurvive()
+    {
+        var d = ScrewDescriptor("SCRW-ITEM70");
+        var reading = new ScrewdriveSim(d, seed: 17).NextCycle(1);
+
+        var torque = reading.Metrics[0].Value;
+        Assert.Equal("torque", reading.Metrics[0].Name);
+
+        // (A) Direction A itself: the SAME double, not a rendering of it. Exact, no tolerance.
+        Assert.NotNull(reading.Plan);
+        Assert.Equal(torque, reading.Plan!.Steps[0].MetricValue!.Value);
+
+        // (A2) The unit of the claim item 70 makes, pinned: what direction A removed was bounded by 5e-4 Nm.
+        Assert.True(Math.Abs(Math.Round(torque, 3) - torque) <= 5e-4);
+
+        // (B) 🔴 FOUR torque numbers for ONE cycle — unchanged by direction A. Steps 1..3 are separate
+        // draws: they are not equal to the primary one, and nothing outside this plan carries them.
+        Assert.Equal(4, reading.Plan.Steps.Count);
+        Assert.Equal(3, reading.Plan.Steps.Skip(1).Count(s => s.MetricValue!.Value != torque));
+        Assert.Single(reading.Metrics, m => m.Name == "torque");
+
+        // (C) 🔴 A rounded rendering of the same draw still ships on this response, from a different field.
+        // "0.###" is three decimals, so a draw with more than three carries fewer digits in the log line
+        // than in the SPC series — the exact shape direction A was asked to remove.
+        var keyMetric = $"{reading.Metrics[0].Name}={torque:0.###}{reading.Metrics[0].Unit}";
+        Assert.Equal($"torque={torque:0.###}Nm", keyMetric);
+        Assert.NotEqual(torque.ToString("R", System.Globalization.CultureInfo.InvariantCulture), torque.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
     }
 
     [Fact]

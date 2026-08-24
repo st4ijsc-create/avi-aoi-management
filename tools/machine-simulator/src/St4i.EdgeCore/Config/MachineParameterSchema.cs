@@ -145,6 +145,26 @@ public static class MachineParameterSchema
         ["IOT_GATEWAY"] = IotSettings,
         ["AOI"] = AoiInspection,
         ["AVI"] = AoiInspection,
+
+        // 🔴 OWNER'S RULING 2026-08-24, item 49 — HALF C ONLY, AND THE OTHER TWO THIRDS ARE STILL SHUT.
+        // This one row is the whole of what was authorised. SimulatorFactory.Create already answers
+        // "AOI" or "AOI_AVI" or "AVI" with the same AoiInspectorSim AND the same store, so a machine
+        // typed AOI_AVI has been seeded and has had an aoi_inspection record written under its own code
+        // since the feature shipped — while GET /v1/machines/{code}/settings answered 400 "unsupported
+        // machine type" for that same machine, because this map was the only list that had not heard of
+        // the string. The row changes NO simulator, NO draw and NO byte on the wire; it changes one REST
+        // read from 400 to 200. Same species as item 33 (fix the READ side of a route).
+        //
+        // WHAT THIS ROW DOES NOT DO, said here because this is where someone will come looking:
+        //   * it does NOT decide item 49's half A (stop building a ScrewdriveSim for an unrecognised
+        //     type). That half was measured AGAIN on 2026-08-24 — see §49.6 — and it is STILL locked:
+        //     for a descriptor that declares no `screwTorque`, removing the store from
+        //     FallbackByDeviceClass's default arm still moves the reported torque 1.35 -> 12.0 Nm.
+        //   * it does NOT decide half B (IOT_GATEWAY into the factory switch), which changes that
+        //     machine's MQTT payload outright.
+        // Both remain the owner's. This row was split out from them by the owner's ruling of
+        // 2026-08-24, over the original item's stated objection that "a STOPPED item stops".
+        ["AOI_AVI"] = AoiInspection,
     };
 
     /// <summary>The <c>configKind</c> for a <c>MachineDescriptor.MachineType</c> string, or null when

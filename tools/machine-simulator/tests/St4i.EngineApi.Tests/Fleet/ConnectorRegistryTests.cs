@@ -745,36 +745,104 @@ public sealed class ConnectorRegistryTests
     // 🔴 What they do NOT measure: reachability of the window between the latch's snapshot and its
     // Register calls, and RtuBusConfiguration.TryRegisterAll, which fans out over derived device ids with
     // no equivalent check at all. Both stay open, and both are named in item 63's record.
+    //
+    // ── 🔴 THE PARAGRAPH ABOVE IS KEPT VERBATIM AND IS NOW HISTORY — BX-1, 2026-08-24 ────────────────
+    //
+    // The OWNER ruled item 63 on 2026-08-24 and chose the second of the two shapes priced above: REFUSE,
+    // narrowed to the latch's own rule. BP-1's measurement was not wrong — the price it names is real and
+    // it is exactly the price that has now been paid, deliberately, with a signature and a date. What has
+    // changed is not the measurement but the decision, and the sentence "it cannot be made redundant here"
+    // must be read as the pricing it was: refusing this shape at the registry costs a behaviour task B-6
+    // built on purpose, and the owner accepted that cost.
+    //
+    // 🔴 AND ONE CLAIM IN THE PARAGRAPH ABOVE DID NOT SURVIVE EXECUTION. It prices the REFUSE shape as
+    // reddening ONE named test. So do item 63 §63.5, §63.6.4 and §63.7.2, and so does the ruling brief.
+    // Measured 2026-08-24 by building it and running the suites: it reddens THREE —
+    //   1. ConnectorEndpointsEnvSeedingSideEffectsTests.PostConnector_ForADifferentMachine_… (the named one)
+    //   2. TheRegistryAndTheOutOfLockLatch_DisagreeOnExactlyOneIncumbentShape (this file)
+    //   3. AnExplicitId_WhoseIncumbentServesADifferentMachine_StillReplaces_AndTaskB6RequiresThat (this file)
+    // Two of the three were pinning the answer IN THIS FILE, ten lines below the paragraph that priced the
+    // change at one test. All three are inverted here, each keeping its previous text word for word.
+    //
+    // What is UNCHANGED by the ruling, and is now pinned rather than asserted: the item's own headline case
+    // (two registrations under one operator-typed id for the SAME machine) still replaces silently — see
+    // TwoRegistrationsUnderOneOperatorTypedId_… below. And both open shapes named above (the latch's
+    // snapshot window, and RtuBusConfiguration.TryRegisterAll) are still open and still unmeasured.
     // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
-    /// <summary>🔴 <b>GUARD, self-labelled: green before this task and after it, and the whole of why item
-    /// 63's fix was refused.</b> An explicit id whose incumbent serves a DIFFERENT machine still replaces,
-    /// and the incumbent's claim moves with it. That is the <c>POST /v1/connectors</c> behaviour task B-6
-    /// deliberately created for an env-var-seeded row, read at the registry level rather than through the
-    /// endpoint — so the constraint is visible to whoever next reads item 63 and reaches for the obvious
-    /// fix.</summary>
+    /// <summary>🔴 <b>WITNESS for owner item 63, direction B — 2026-08-24. Reddens by restoring
+    /// <c>ConnectorRegistry.Register</c>'s pre-ruling behaviour (delete the same-id/different-machine
+    /// refusal).</b>
+    ///
+    /// <para><b>THIS TEST WAS INVERTED, AND THE TEXT IT REPLACES IS KEPT VERBATIM RATHER THAN DELETED.</b>
+    /// It was named
+    /// <c>AnExplicitId_WhoseIncumbentServesADifferentMachine_StillReplaces_AndTaskB6RequiresThat</c> and it
+    /// asserted the opposite of what it asserts now. Its previous summary, word for word:</para>
+    /// <para><i>"GUARD, self-labelled: green before this task and after it, and the whole of why item 63's
+    /// fix was refused. An explicit id whose incumbent serves a DIFFERENT machine still replaces, and the
+    /// incumbent's claim moves with it. That is the POST /v1/connectors behaviour task B-6 deliberately
+    /// created for an env-var-seeded row, read at the registry level rather than through the endpoint — so
+    /// the constraint is visible to whoever next reads item 63 and reaches for the obvious fix."</i></para>
+    ///
+    /// <para><b>Why it was inverted:</b> the owner ruled direction B on <b>2026-08-24</b> — refuse when the
+    /// incumbent under this id serves a different machine — having been shown, in writing and before
+    /// choosing, that its price is the removal of exactly the B-6 behaviour the sentence above describes.
+    /// The behaviour was not dropped by accident or absorbed silently; it was priced, ruled on, and paid.
+    /// 🔴 <b>And this test was NOT one of the ones the ruling was told about.</b> Item 63 §63.5, §63.6.4
+    /// and §63.7.2 each priced direction B as reddening ONE named test. Measured on 2026-08-24 while
+    /// executing the ruling: it reddens THREE, and this is one of the two nobody had named.</para>
+    ///
+    /// <para><b>What it does NOT measure:</b> the endpoint. It reads the registry directly, so it says
+    /// nothing about what status code <c>POST /v1/connectors</c> returns — that is
+    /// <c>ConnectorEndpointsEnvSeedingSideEffectsTests</c>' subject, and a 409 rather than a 500 is the
+    /// property that keeps direction B distinct from the refused direction A.</para></summary>
     [Fact]
-    public void AnExplicitId_WhoseIncumbentServesADifferentMachine_StillReplaces_AndTaskB6RequiresThat()
+    public void AnExplicitId_WhoseIncumbentServesADifferentMachine_IsNowRefused_OwnersRuling20260824()
+    {
+        var registry = new ConnectorRegistry();
+        var firstDriver = new FakeDriver();
+
+        Assert.True(registry.Register(
+            new FakeFactory("vendor.acme.widget", _ => (true, firstDriver, null)), "first",
+            instanceId: "line-a", machineCode: "M-OLD"));
+        Assert.False(registry.Register(
+            new FakeFactory("vendor.acme.widget", _ => (true, new FakeDriver(), null)), "second",
+            instanceId: "line-a", machineCode: "M-NEW"));
+
+        // Nothing was mutated: the incumbent's factory, its config and its claim all survive the refusal.
+        Assert.Equal(new[] { "line-a" }, registry.RegisteredIds);
+        Assert.True(registry.TryCreateDriver("line-a", out var driver, out _));
+        Assert.Same(firstDriver, driver);
+
+        // 🔴 The claim no longer MOVES, which is the half item 63 was right about: before the ruling M-OLD
+        // ended up served by nothing and nothing said so.
+        Assert.True(registry.TryGetInstanceIdForMachine("M-OLD", out var stillServing));
+        Assert.Equal("line-a", stillServing);
+        Assert.False(registry.TryGetInstanceIdForMachine("M-NEW", out _));
+    }
+
+    /// <summary>🔴 <b>GUARD, self-labelled: green on both sides of the 2026-08-24 ruling — and it is the
+    /// boundary of direction B.</b> Item 63's own headline case is two registrations under one id the
+    /// OPERATOR TYPED, i.e. the SAME machine on both sides. Direction B does not fire there: the second
+    /// registration still replaces the first, silently, exactly as before. §63.6.3 said so and the ruling
+    /// did not repeal it, so it is pinned here rather than left as a claim in a document — the population
+    /// §63.3 calls the likelier one is the population still unprotected.</summary>
+    [Fact]
+    public void TwoRegistrationsUnderOneOperatorTypedId_ForTheSameMachine_StillReplaceSilently_ItemsHeadlineCaseIsOpen()
     {
         var registry = new ConnectorRegistry();
         var secondDriver = new FakeDriver();
 
         Assert.True(registry.Register(
             new FakeFactory("vendor.acme.widget", _ => (true, new FakeDriver(), null)), "first",
-            instanceId: "line-a", machineCode: "M-OLD"));
+            instanceId: "line-a", machineCode: "M-SAME"));
         Assert.True(registry.Register(
             new FakeFactory("vendor.acme.widget", _ => (true, secondDriver, null)), "second",
-            instanceId: "line-a", machineCode: "M-NEW"));
+            instanceId: "line-a", machineCode: "M-SAME"));
 
         Assert.Equal(new[] { "line-a" }, registry.RegisteredIds);
         Assert.True(registry.TryCreateDriver("line-a", out var driver, out _));
         Assert.Same(secondDriver, driver);
-
-        // 🔴 And the claim MOVED, which is the half item 63 is right about: M-OLD is now served by nothing
-        // and nothing said so. The item's remedy is refused; the consequence it names is real.
-        Assert.True(registry.TryGetInstanceIdForMachine("M-NEW", out var nowServing));
-        Assert.Equal("line-a", nowServing);
-        Assert.False(registry.TryGetInstanceIdForMachine("M-OLD", out _));
     }
 
     /// <summary>🔴 <b>GUARD, self-labelled: green both sides.</b> The ordinary idempotent-update path — an
@@ -798,23 +866,44 @@ public sealed class ConnectorRegistryTests
         Assert.Same(secondDriver, driver);
     }
 
-    /// <summary>🔴 <b>The registry's answer for every incumbent shape the out-of-lock latch distinguishes
-    /// — listed before counted, so "the latch is not redundant" is a reading rather than an opinion.</b>
-    /// The latch answers refuse / allow / allow for different-machine / same-machine / unbound; the
-    /// registry answers allow / allow / allow. They disagree on exactly one row, and that row is the one
-    /// task B-6 pinned. The fourth row — an incoming registration with NO claim landing on an incumbent
-    /// that holds one — is a claim-drop NEITHER instrument refuses, and it is listed here because a
-    /// three-row table would have read as an exhaustive one.</summary>
+    /// <summary>🔴 <b>WITNESS for owner item 63, direction B — 2026-08-24. Reddens by restoring
+    /// <c>ConnectorRegistry.Register</c>'s pre-ruling behaviour.</b> The registry's answer for every
+    /// incumbent shape the out-of-lock latch distinguishes — listed before counted, so "the latch and the
+    /// registry now agree" is a reading rather than an opinion.
+    ///
+    /// <para><b>THIS TEST WAS INVERTED, AND THE TEXT IT REPLACES IS KEPT VERBATIM.</b> It was named
+    /// <c>TheRegistryAndTheOutOfLockLatch_DisagreeOnExactlyOneIncumbentShape</c>. Its previous summary,
+    /// word for word:</para>
+    /// <para><i>"The registry's answer for every incumbent shape the out-of-lock latch distinguishes —
+    /// listed before counted, so 'the latch is not redundant' is a reading rather than an opinion. The latch
+    /// answers refuse / allow / allow for different-machine / same-machine / unbound; the registry answers
+    /// allow / allow / allow. They disagree on exactly one row, and that row is the one task B-6 pinned. The
+    /// fourth row — an incoming registration with NO claim landing on an incumbent that holds one — is a
+    /// claim-drop NEITHER instrument refuses, and it is listed here because a three-row table would have
+    /// read as an exhaustive one."</i></para>
+    ///
+    /// <para><b>Why it was inverted:</b> the owner ruled direction B on <b>2026-08-24</b>, so the registry
+    /// now refuses row one — the single row on which it and the latch used to disagree. The disagreement
+    /// count is therefore <b>zero</b>, not one, and the table below says so in the same shape it always did.
+    /// 🔴 <b>This test was not named by item 63, by any of its three pricings, or by the ruling</b>; all of
+    /// them priced direction B as reddening one test. It reddens three.</para>
+    ///
+    /// <para>🔴 <b>What this still does NOT measure, unchanged by the ruling:</b> row four. An incoming
+    /// registration carrying NO claim, landing on an incumbent that holds one, is a claim-drop that NEITHER
+    /// instrument refuses — it is listed because a three-row table would read as an exhaustive one, and it
+    /// remains open exactly as §63.5 left it. Nor does this measure the window between
+    /// <c>ModbusMultidropRegistration</c>'s snapshot and its <c>Register</c> calls, which is also still
+    /// open.</para></summary>
     [Fact]
-    public void TheRegistryAndTheOutOfLockLatch_DisagreeOnExactlyOneIncumbentShape()
+    public void TheRegistryAndTheOutOfLockLatch_NowAgreeOnEveryShapeEitherRefuses_OwnersRuling20260824()
     {
         // incumbent claim, incoming claim, what Register does, what OwnedBySomethingElse would say
         (string? Incumbent, string? Incoming, bool RegistryAccepts, bool LatchWouldRefuse)[] cases =
         [
-            ("M-OLD", "M-NEW", true,  true),   // the one disagreement — B-6 requires the accept
+            ("M-OLD", "M-NEW", false, true),   // was the one disagreement — the ruling closed it
             ("M-OLD", "M-OLD", true,  false),  // ordinary update      — both allow
             (null,    "M-NEW", true,  false),  // unbound incumbent    — both allow
-            ("M-OLD", null,    true,  false),  // claim-drop neither refuses
+            ("M-OLD", null,    true,  false),  // claim-drop neither refuses — STILL unmeasured by both
         ];
 
         foreach (var (incumbent, incoming, registryAccepts, _) in cases)
@@ -832,6 +921,6 @@ public sealed class ConnectorRegistryTests
         }
 
         Assert.Equal(4, cases.Length);
-        Assert.Equal(1, cases.Count(c => c.RegistryAccepts && c.LatchWouldRefuse));
+        Assert.Equal(0, cases.Count(c => c.RegistryAccepts && c.LatchWouldRefuse));
     }
 }

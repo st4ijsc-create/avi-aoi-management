@@ -2637,8 +2637,37 @@ EXPECT_CONFORMANCE=24
 # exclusive lock, both halves of the warnings ledger. BW-1 does NOT wire web/ into this gate — item 60 was
 # a MEASUREMENT of option B, not a build of it — so the web/ domain declaration prints unchanged, and
 # `npm run build` / `npm run lint` remain commands this script does not invoke.
+#
+# ══ BX-1, 2026-08-24 — OWNER'S RULINGS ON ITEMS 62, 65, 70, 49, 63, 68. TOTALS MOVE, MEASURED FIRST ═══
+#
+# EXPECT_EDGECORE 1286 -> 1288 (+2), EXPECT_ENGINEAPI 1449 -> 1451 (+2), EXPECT_EDGESERVICE UNMOVED at 52.
+# Grand total 2972 -> 2976. Counted from a full run of each suite, not by hand. Per file, listed before
+# counted:
+#
+#   EdgeCore +2
+#     * UnconsumedConfigKindsTests.Kinds() gains ONE THEORY ROW ("AOI_AVI") — item 49 half C. A MemberData
+#       row is a test case, so the total moves by one for a change of one line of data.
+#     * CyclePlanTests gains ONE [Fact] —
+#       Item70_DirectionA_Step0CarriesTheDrawItself_ButThreeExtraDrawsAndARoundedStringSurvive.
+#     * The two item-62 guards were RENAMED (Item43_/Item61_ -> Item62_) and given assertions; a rename is
+#       not a count move, which is why +2 and not +4.
+#   EngineApi +2
+#     * ConnectorsConfigTests gains ONE [Fact] — the EngineApi half of item 65 direction C.
+#     * ConnectorRegistryTests gains ONE [Fact] —
+#       TwoRegistrationsUnderOneOperatorTypedId_ForTheSameMachine_StillReplaceSilently_ItemsHeadlineCaseIsOpen,
+#       which pins the case direction B deliberately does NOT close.
+#     * Two ConnectorRegistryTests facts and one ConnectorEndpointsEnvSeedingSideEffectsTests fact were
+#       INVERTED and renamed. Inversions do not move a count either.
+#   EdgeService +0
+#     * EdgeWorkerConnectorsTests.ADuplicateId_… was renamed and its assertions rewritten. Same one test.
+#
+# NOT MOVED, and each was checked rather than assumed: EXPECT_WARNINGS (219, on a full solution build),
+# EXPECT_WARNING_LEDGER (all fourteen rows, unit for unit), EXPECT_BUILD_NODES (0), EXPECT_ABSTRACTIONS
+# (161), EXPECT_CONFORMANCE (24), the three settle constants, the process matcher, the exclusive lock.
+# BX-1 does NOT wire web/ into this gate — item 68's residue is recorded, not built — so the web/ domain
+# declaration prints unchanged and `npm run build` remains a command this script does not invoke.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1286
+EXPECT_EDGECORE=1288
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4327,7 +4356,7 @@ EXPECT_EDGESERVICE=52
 # document states about ITSELF -- so BOTH defects above would still pass it today. Control pair, run in
 # full and reverted: stripping the backticks off "warpageMax" throughout the .md gives exactly ONE red,
 # in this [Fact], naming warpageMax.
-EXPECT_ENGINEAPI=1449
+EXPECT_ENGINEAPI=1451
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -5599,7 +5628,108 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 # this instrument's domain — corpus_of walks tools/machine-simulator, and the five directories added to the
 # cone are top-level siblings holding ZERO *.cs between them.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_NEW_DOC_ABSOLUTES=578
+# 🔴 EXPECT_NEW_DOC_ABSOLUTES: 578 -> 600 (+22 NET; +25 GROSS with 3 REWRITTEN AWAY, so 578 + 25 - 3 = 600),
+# BX-1, 2026-08-24 (owner rulings on items 62, 65, 70, 49, 63, 68). MEASURED AFTER the edits, by diffing the
+# scanner's own (path, sentence) output at 2efca2fd against this tree — not by subtracting a guess. Every
+# sentence below was READ. Two of them were WRONG WHEN FIRST WRITTEN and this check is what caught them,
+# which is worth recording because it is the first time this instrument has failed a task on its own prose:
+#   * a "does NOT measure" clause on the item-62 leak guard said the test "reads the published MetricSample
+#     only". FALSE after the same commit added a verdict-counting assertion ten lines below it — the test
+#     WOULD redden if the verdict path started using the floor. Rewritten to say so.
+#   * an item-63 summary named a sibling test `PostConnector_ReSavingTheSameMachine…` as pinning the
+#     same-machine re-save. NO SUCH TEST EXISTS; the name was invented. Replaced with the two that do exist
+#     and were verified by grep: ConnectorRegistryTests.AnExplicitId_WhoseIncumbentServesTheSameMachine_…
+#     and ConnectorEndpointsMachineClaimTests.AConnectorReSavingItsOwnMachine_IsNotBlockedByItsOwnClaim.
+#
+# THE 25 GROSS ADDITIONS, by file, each with what makes it true:
+#
+# src/St4i.EdgeCore/Config/ConnectorsConfig.cs — 6, all in DuplicateKeyWarning's doc (item 65 direction C).
+#   1. Quotes the sentence direction C replaces and says the collided value is `key`, "supplied by the CALLER
+#      and not the kind on every host". TRUE: `keyOf = registrationKeyOf ?? (entry => entry.Kind)`.
+#   2. "the resolved list this method returns is byte-identical before and after". TRUE and ASSERTED, by both
+#      new witnesses (Assert.Single(resolved) + first-entry id on one host, Assert.Single(RegisteredIds) on
+#      the other). This is the sentence that keeps C from being read as a behaviour change.
+#   3. "Nothing there ever collapses on a kind — so the old sentence was simply false on that host, in the
+#      opposite direction, and a test was pinning it." TRUE, twice over: EdgeConnectors.RegistrationKeyOf
+#      (:148-152) has no branch, and EdgeWorkerConnectorsTests.NEntries_YieldNRegisteredInstances_EachKeyedByItsOwnId
+#      registers three same-kind entries. The test that was pinning it is named and was corrected here.
+#   4. "answers DriverKinds.Normalize(entry.Id) unconditionally, for every kind". TRUE, read off the method.
+#   5. "THREE production sites call ResolveEntries; the one at Program.cs:1306 passes logWarning: null and so
+#      can emit nothing, leaving TWO that can reach this text." TRUE, and it is the CORRECTED form — the
+#      first draft said "the two production callers", which undercounts the call sites by one.
+#   6. The ruling header, "DIRECTION C, AND ONLY DIRECTION C". TRUE: no registration key moves.
+#
+# src/St4i.EdgeCore/Fleet/ConnectorRegistry.cs — 3 (item 63 direction B).
+#   7. The <returns> clause, extended with the third `false`. TRUE — the new refusal returns before the
+#      indexer assignment.
+#   8. "A re-registration under the same id for the SAME machine still replaces … direction A … was priced at
+#      every connector EDIT becoming a 500 and was refused." TRUE, and green-on-both-sides asserted by
+#      AnExplicitId_WhoseIncumbentServesTheSameMachine_StillReplaces_TheIdempotentUpdatePath. "Every EDIT" is
+#      exact: ConnectorEndpoints reaches Register with an explicit id on every save of an existing connector.
+#   9. "Nothing is mutated and the incumbent wins, same as the other refusal." TRUE, asserted by the inverted
+#      registry witness (the incumbent's factory, config and claim all survive).
+#
+# tests/St4i.EdgeCore.Tests/AssumedProcessBandTests.cs — 3 (item 62).
+#  10. "…but that is asserted elsewhere, not here." A CEILING, and it replaces a sentence that stated the
+#      wire claim without one. TRUE: this test asserts nothing about Normalizer.
+#  11. "AssemblySim, DispensingSim, ScrewdriveSim and WelderSim each still publish exactly the pair they judge
+#      on; AoiInspectorSim and IotSensorSim publish no MetricSample and never consult VerdictHelper at all."
+#      TRUE, re-measured this task over the whole Simulators directory: every `new MetricSample(` and every
+#      `VerdictHelper.Evaluate` call site was listed. The two absentee classes set Verdict directly
+#      (AoiInspectorSim:194, IotSensorSim:134) and construct no MetricSample.
+#  12. "That body measured all five process simulators and concluded 'LeakTestSim is the only case'." TRUE,
+#      quoting item 62 §62.1, which names exactly five files. It is quoted in order to be corrected.
+#
+# tests/St4i.EdgeCore.Tests/CyclePlanTests.cs — 1 (item 70).
+#  13. "…says nothing about what FleetProjections.ToDetailDto does with either field." A CEILING, TRUE: the
+#      test reads the simulator's reading and never builds a DTO.
+#
+# tests/St4i.EdgeCore.Tests/LeakAndFunctionalVerdictDomainTests.cs — 3 (item 62).
+#  14. "Item 62's body said 'LeakTestSim is the only case'; that predicate was measured again on 2026-08-24
+#      and corrected there." TRUE; the correction is in item 62 §62.5.
+#  15. "Normalizer … is not on its path." A CEILING, TRUE — and this is the REWRITTEN one, see above.
+#  16. "This test says don't, and now it also says why and who decided, which is the whole of what it was
+#      missing." TRUE as a description of the edit: the guard carried no date, no ruler and no second bank.
+#
+# tests/St4i.EdgeCore.Tests/UnconsumedConfigKindsTests.cs — 1 (item 68).
+#  17. "Nothing in this repository's gate reads web/src/i18n/en.ts or vi.ts, where the operator-facing
+#      sentence machineSettings.limitation actually lives: the gate compiles no TypeScript and starts no
+#      browser (owner item 60)." TRUE on both halves, and both were checked rather than assumed: the SUITES
+#      array holds zero web/ entries (this script's own web_domain_declaration derives that at run time), and
+#      `machineSettings.limitation` was confirmed present in BOTH dictionaries. This is the sentence item 68's
+#      record turns on — the C# instrument exists and runs, the last mile to the web copy does not.
+#
+# tests/St4i.EdgeService.Tests/EdgeWorkerConnectorsTests.cs — 2 (item 65).
+#  18. "one connectors.json, two hosts, two answers, and a message that could only be right for one of them."
+#      TRUE; it is item 65's headline, now asserted on the host where the old text was false.
+#  19. "three entries of the same kind with three different ids all register, which the test directly above
+#      this one proves." TRUE, and the neighbour is named and is literally directly above.
+#
+# tests/St4i.EngineApi.Tests/ConnectorEndpointsEnvSeedingSideEffectsTests.cs — 3 (item 63).
+#  20. B-6's own summary, quoted word for word before being inverted. TRUE as a quotation.
+#  21. "Direction A … turns every connector EDIT into a server error." TRUE, same measurement as (8).
+#  22. "…pinned by two OTHER tests, in two other files". TRUE — this is the REWRITTEN one, see above; both
+#      names were verified to exist before this line was written the second time.
+#
+# tests/St4i.EngineApi.Tests/Fleet/ConnectorRegistryTests.cs — 3 (item 63).
+#  23. "…says nothing about what status code POST /v1/connectors returns". A CEILING, TRUE, and it points at
+#      the file that does measure it — the 409-not-500 property is the whole difference between the ruled
+#      direction and the refused one.
+#  24. The previous summary, quoted word for word. TRUE as a quotation.
+#  25. The same "listed before counted" sentence with its conclusion inverted to "the latch and the registry
+#      now agree". TRUE: the table below it asserts zero disagreements, and row four is still declared
+#      unmeasured by both instruments.
+#
+# THE 3 REWRITTEN AWAY (why the gross and the net differ):
+#   * ConnectorRegistry.Register's <returns>, superseded by (7).
+#   * AssumedProcessBandTests' "Keeping the published pair also means the fix moves no metric value on the
+#     wire at all — only the result field.", superseded by (10), which adds the missing ceiling.
+#   * ConnectorRegistryTests' "…so 'the latch is not redundant' is a reading rather than an opinion.",
+#     superseded by (25). The retired sentence is QUOTED inside its replacement, so it is not lost.
+#
+# The baseline cfcfae42 is STILL not moved. The corpus did not move either: 561 *.cs before and after — this
+# task added no file and deleted none.
+EXPECT_NEW_DOC_ABSOLUTES=600
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
