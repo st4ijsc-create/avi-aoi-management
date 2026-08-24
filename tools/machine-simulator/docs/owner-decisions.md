@@ -1149,6 +1149,16 @@ dải 2D — **hai bộ giá trị đều thật, cái ghép lại thì không**
 này khoá ấy **chỉ từng thấy giá trị `0`**; (iii) `opticalFilter` — **chưa shot nào trong kho đặt nó**.
 Cả ba được nêu tên trong `.md`, ở mục riêng, chứ không để người đọc suy nhầm rằng đó là quan sát.
 
+📎 🔴 **VÀ MỘT PHÉP ĐẾM CỦA CHÍNH BỘ BÀN GIAO ĐÃ SAI, BẮT ĐƯỢC BẰNG CÁCH ĐO LẠI SẢN PHẨM CỦA MÌNH SAU
+KHI VIẾT NÓ — ghi vì đây là bề mặt gửi RA NGOÀI.** Bản nháp của `README.md` và của §7 file `.md` viết
+*"chứa cả **25** khoá hiện hành mà điểm này thật sự đặt"*, rồi **ngay câu sau** liệt kê **tám** khoá
+hiện hành mà mẫu **không** có — hai câu **tự mâu thuẫn, cạnh nhau, trong file người ngoài đọc**. Đếm
+lại trên chính file JSON: **17 trong 25** khoá hiện hành, cộng **đủ 28** khoá đề nghị, **tổng 45 khoá**
+trên object `point`. Cả hai chỗ nay ghi `17 + 28 = 45`, và phép cộng ấy được đưa vào `.md` **như một
+cách để bên kia tự kiểm** bản họ nhận được. 🔴 **Nhân chứng KHÔNG bắt được cái này** — nó khẳng định
+tập khoá **đề nghị**, không khẳng định **văn xuôi mô tả tập ấy**; đúng cái trần mà doc comment của
+chính nó đã khai, và là bằng chứng rằng cái trần ấy có thật chứ không phải một lời khiêm tốn.
+
 #### Vì sao mục này **Ở LẠI PHẦN I**
 
 **Bàn giao không phải chấp thuận.** Cái mục này chờ là **sự đồng ý của một bên thứ ba**, và uỷ quyền

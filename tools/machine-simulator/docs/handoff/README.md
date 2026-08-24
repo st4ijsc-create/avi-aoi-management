@@ -20,7 +20,7 @@ Cả hai hồ sơ dưới đây đi tới **cùng một đội** nhưng **độc
 
 | file | nội dung | trạng thái phía ta |
 |---|---|---|
-| `2026-08-24-sync-points-push-fields.json` | Thân request `POST /api/machine/sync-points` **mẫu, hợp lệ, dán vào `curl` được** — mang cả 25 khoá hiện hành mà điểm mẫu đặt, cộng **28 khoá đề nghị** (mức lá: **39**). | **Chưa đổi một byte nào trên dây.** |
+| `2026-08-24-sync-points-push-fields.json` | Thân request `POST /api/machine/sync-points` **mẫu, hợp lệ, dán vào `curl` được** — mang **đủ 28 khoá đề nghị** cộng **17 trên 25** khoá hiện hành (đúng những khoá điểm mẫu thật sự đặt; tám khoá còn lại bị bỏ vì điểm này không đặt chúng — xem §7 của file `.md`). Mức lá: **39**. | **Chưa đổi một byte nào trên dây.** |
 | `2026-08-24-sync-points-push-fields.md` | Bản giải thích tiếng Việt đi kèm file JSON: từng khoá là gì, kiểu, miền hợp lệ, ai soạn, vì sao phải đi lên; chỗ phải sửa trong cây của họ; và mục **"CÁI GÌ ĐANG HỎNG HÔM NAY"** kể bằng lời vận hành viên. | *(nt)* |
 | `2026-08-24-intent-classifier-steptype.md` | Khuyết tật nằm **hoàn toàn trong `server/`**: bốn chuỗi ngoài vựng từ `stepType` đi vào một mệnh đề `WHERE`, làm mọi câu hỏi mô-men và mọi câu hỏi lượng keo trả về *"không đủ dữ liệu"* trên một bảng **có** dữ liệu. | **0 dòng `server/` bị sửa.** |
 

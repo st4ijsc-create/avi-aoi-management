@@ -228,11 +228,13 @@ chỉnh và hợp lệ**, dán thẳng vào `curl -d @…` được.
 
 * **JSON không có chú thích**, nên mọi giải thích nằm ở file này. File JSON cố tình **không** mang một
   khoá chú giải giả nào, vì như thế là giao một thân request không dùng được.
-* Nó chứa **cả 25 khoá hiện hành mà điểm này thật sự đặt**, **cộng cả 28 khoá đề nghị**. Khoá nào
-  điểm không đặt thì **bị bỏ hẳn** chứ không ghi `null` — đúng như máy thật tuần tự hoá
-  (`WhenWritingNull`). Vì thế các anh sẽ **không** thấy `radius`, `normalizedRadius`, `geometry`,
-  `workstationCode`, `imageBase64`, `imageMimeType`, `imageUrl`, `expectedUpdatedAt` trong mẫu — cả
-  tám khoá ấy **đã** có trong schema của các anh và điểm mẫu này đơn giản là không đặt chúng.
+* Nó chứa **đủ cả 28 khoá đề nghị**, cộng **17 trong 25 khoá hiện hành** — đúng những khoá điểm mẫu
+  **thật sự đặt**, không hơn. Khoá nào điểm không đặt thì **bị bỏ hẳn** chứ không ghi `null`, đúng như
+  máy thật tuần tự hoá (`WhenWritingNull`). Vì thế các anh sẽ **không** thấy tám khoá `radius`,
+  `normalizedRadius`, `geometry`, `workstationCode`, `imageBase64`, `imageMimeType`, `imageUrl`,
+  `expectedUpdatedAt` trong mẫu — cả tám **đã** có trong schema của các anh, và điểm mẫu này đơn giản
+  là không đặt chúng. **Tổng số khoá trên object `point` là 45 = 17 + 28**, và phép cộng ấy là cách
+  nhanh nhất để kiểm rằng bản các anh nhận được không bị cắt xén trên đường đi.
 * **Giá trị là giá trị thật**, lấy từ dữ liệu gieo sẵn của kho chúng tôi. 🔴 **Ba ngoại lệ, khai
   thẳng ở đây vì một mẫu không được giả vờ là một phép đo:**
   1. Điểm mẫu là **P08** (BGA U1, X-quang) — điểm **duy nhất** trong kho chúng tôi lấp kín khối 3D
