@@ -25,6 +25,7 @@ import { fileURLToPath } from "node:url";
 import {
   DeviceUnreachableError,
   DeviceProtocolUnsupportedError,
+  FeatureDisabledError,
   KHOA_THUC_THE_ROBOT,
 } from "./deviceErrors";
 import { readAppErrorMeta } from "./appError";
@@ -108,6 +109,38 @@ describe("F3 Pha 1 — lỗi thiết bị mang mã", () => {
     expect(thieuAnhXa, "hãng robot chưa có trong bảng ánh xạ").toEqual([]);
     const troTrat = vendors.filter((v) => vi[KHOA_THUC_THE_ROBOT[v]] === undefined);
     expect(troTrat, "bảng ánh xạ trỏ tới khoá KHÔNG tồn tại").toEqual([]);
+  });
+
+  it("★★★ `FeatureDisabledError` KHÔNG được nuốt tên biến môi trường", () => {
+    // Chuỗi gốc mang HAI thông tin cho HAI người: "tính năng chưa bật" (người vận hành xử
+    // được bằng cách báo quản trị) và "đặt SECS_GEM_ENABLED=true" (câu lệnh cho quản trị).
+    // `appCode`+`feature` chở phần đầu; `message` chở phần sau và LÀ fallback.
+    // Bỏ phần sau đi là một bước LÙI cho quản trị — đúng thứ luật hai điều kiện cấm.
+    const e = new FeatureDisabledError("secsGem", "set SECS_GEM_ENABLED=true to enable");
+    expect(e.message).toContain("SECS_GEM_ENABLED=true");
+    expect(readAppErrorMeta({ cause: e })).toEqual({
+      appCode: "FEATURE_DISABLED",
+      appParams: { feature: "secsGem" },
+    });
+  });
+
+  it("★★★ mọi `feature` truyền cho `FeatureDisabledError` phải có khoá ở CẢ BA locale", () => {
+    // Cùng lỗ hổng với `entity`: cổng `appErrorParamsCoverage` chỉ quét `appError(...)`,
+    // nên `feature` đi qua `appParams` của lớp lỗi thường là vô hình với nó.
+    const dung: string[] = [];
+    for (const f of walkTs(SERVER)) {
+      const src = readFileSync(f, "utf8");
+      for (const m of src.matchAll(/new FeatureDisabledError\(\s*"([^"]+)"/g)) dung.push(m[1]);
+    }
+    expect(dung.length, "cầu chì: phải THẤY lời gọi, không thì canh tập rỗng").toBeGreaterThan(2);
+    const vi = doc("vi").errors.feature ?? {};
+    const en = doc("en").errors.feature ?? {};
+    const zh = doc("zh").errors.feature ?? {};
+    const thieu = [...new Set(dung)]
+      .filter((k) => vi[k] === undefined || en[k] === undefined || zh[k] === undefined)
+      .sort();
+    if (thieu.length) console.error("[F3] feature KHÔNG có trong từ điển:", thieu);
+    expect(thieu).toEqual([]);
   });
 
   it("★★★ `mitsubishi` (robot) và `mitsubishi-mc` (PLC) phải là HAI khoá KHÁC nhau", () => {

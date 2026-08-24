@@ -4130,7 +4130,10 @@
       "moduleFederation": "多站点联合",
       "moduleQuality": "质量管理",
       "moduleEngineering": "工程与编程",
-      "unknownModule": "未知模块"
+      "unknownModule": "未知模块",
+      "secsGem": "SECS/GEM 主机通信",
+      "secsGemLive": "SECS/GEM 实时调度",
+      "gem300": "GEM300"
     },
     "action": {
       "viewOthersPermissions": "查看他人的权限",

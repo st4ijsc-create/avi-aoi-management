@@ -4138,7 +4138,10 @@
       "moduleFederation": "multi-site federation",
       "moduleQuality": "quality management",
       "moduleEngineering": "engineering & programming",
-      "unknownModule": "unknown module"
+      "unknownModule": "unknown module",
+      "secsGem": "SECS/GEM host communication",
+      "secsGemLive": "SECS/GEM live dispatch",
+      "gem300": "GEM300"
     },
     "action": {
       "viewOthersPermissions": "view another user's permissions",

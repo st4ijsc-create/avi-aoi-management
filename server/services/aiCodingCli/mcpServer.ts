@@ -370,6 +370,9 @@ export async function phucVu(
       tra = {
         jsonrpc: "2.0",
         id: goi.id ?? null,
+        // data-raw-ok: khung lỗi JSON-RPC theo ĐÚNG chuẩn MCP (`-32603` = Internal error).
+        // Khách là MCP client (Claude Code / Cursor) parse theo hợp đồng giao thức — cùng
+        // bản chất với khung SSE OpenAI ở `openaiGateway`. Dịch là phá tương thích.
         error: { code: -32603, message: e instanceof Error ? e.message : String(e) },
       };
     }

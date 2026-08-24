@@ -4138,7 +4138,10 @@
       "moduleFederation": "liên kết đa nhà máy",
       "moduleQuality": "quản lý chất lượng",
       "moduleEngineering": "kỹ thuật & lập trình",
-      "unknownModule": "module không xác định"
+      "unknownModule": "module không xác định",
+      "secsGem": "SECS/GEM (giao tiếp host bán dẫn)",
+      "secsGemLive": "SECS/GEM điều phối trực tiếp",
+      "gem300": "GEM300"
     },
     "action": {
       "viewOthersPermissions": "xem quyền của người khác",

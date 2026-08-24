@@ -34,6 +34,7 @@ import net from "node:net";
 import { encodeItem, decodeItem, type SecsMessage, type SecsItem } from "./secsMessages";
 import { decodeItem as decodeSecs2Item, type Secs2Item } from "./secs2Codec";
 import { DeviceUnreachableError } from "../../_core/deviceErrors";
+import { FeatureDisabledError } from "../../_core/deviceErrors";
 import {
   encodeBody as encodeSecs2Body,
   s1f1,
@@ -432,7 +433,7 @@ export class HsmsClient {
    */
   async probeOnline(): Promise<OnlineData> {
     if (!isSecsGemEnabled()) {
-      throw new Error("SECS/GEM framework is disabled (set SECS_GEM_ENABLED=true to enable).");
+      throw new FeatureDisabledError("secsGem", "SECS/GEM framework is disabled (set SECS_GEM_ENABLED=true to enable).");
     }
     if (this._state !== "SELECTED") throw new Error(`probeOnline() requires SELECTED, got ${this._state}`);
     const sessionId = this.cfg.deviceId ?? 0;
@@ -463,7 +464,7 @@ export class HsmsClient {
    */
   async establishCommunications(): Promise<GemCommState> {
     if (!isSecsGemEnabled()) {
-      throw new Error("SECS/GEM framework is disabled (set SECS_GEM_ENABLED=true to enable).");
+      throw new FeatureDisabledError("secsGem", "SECS/GEM framework is disabled (set SECS_GEM_ENABLED=true to enable).");
     }
     if (this._state !== "SELECTED") throw new Error(`establishCommunications() requires SELECTED, got ${this._state}`);
     const sessionId = this.cfg.deviceId ?? 0;
@@ -511,7 +512,7 @@ export class HsmsClient {
    */
   async requestOnline(): Promise<GemControlState> {
     if (!isSecsGemEnabled()) {
-      throw new Error("SECS/GEM framework is disabled (set SECS_GEM_ENABLED=true to enable).");
+      throw new FeatureDisabledError("secsGem", "SECS/GEM framework is disabled (set SECS_GEM_ENABLED=true to enable).");
     }
     if (this._state !== "SELECTED") throw new Error(`requestOnline() requires SELECTED, got ${this._state}`);
     if (this.gemState.commState !== "COMMUNICATING") {
@@ -568,10 +569,10 @@ export class HsmsClient {
    */
   enableLiveDispatch(handlers: LiveDispatchHandlers): () => void {
     if (!isSecsGemEnabled()) {
-      throw new Error("SECS/GEM framework is disabled (set SECS_GEM_ENABLED=true to enable).");
+      throw new FeatureDisabledError("secsGem", "SECS/GEM framework is disabled (set SECS_GEM_ENABLED=true to enable).");
     }
     if (!isSecsGemLiveEnabled()) {
-      throw new Error("SECS/GEM live dispatch is disabled (set SECS_GEM_LIVE_ENABLED=true to enable).");
+      throw new FeatureDisabledError("secsGemLive", "SECS/GEM live dispatch is disabled (set SECS_GEM_LIVE_ENABLED=true to enable).");
     }
     const sock = this.socket;
     if (!sock) throw new Error("enableLiveDispatch() requires an open connection");

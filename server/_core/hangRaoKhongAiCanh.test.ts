@@ -122,8 +122,20 @@ function diemGoiNgoaiThuTuc(): string[] {
   return ra.sort();
 }
 
-/** ★★★ GHIM số điểm đọc nằm ngoài lượng từ. Hôm nay: **5**. Một cái thứ SÁU phải là một quyết định. */
-const SO_DIEM_NGOAI = 5;
+/**
+ * ★★★ GHIM số điểm đọc nằm ngoài lượng từ. Một điểm MỚI phải là một quyết định.
+ *
+ * `5 → 6` (2026-08-24): điểm thứ sáu là `aiCodingCli/danhTinhCli.ts:173` — cổng danh
+ * tính của CLI (commit `54b1844d`) gọi `get2FAStatus(user.id)`. ĐÃ XEM XÉT trước khi
+ * nâng ghim, đúng nghi thức của cổng này:
+ *   • chỉ rút ra MỘT boolean (`twoFactorEnabled === true`) — không bí mật nào rời hàm;
+ *   • fail-CLOSED: đọc hỏng hoặc trả `null` ⇒ TỪ CHỐI (`LOI_HE_THONG`), không "coi như
+ *     không bật" — docblock tại chỗ nói rõ vì sao;
+ *   • giá trị trả về chỉ mang `{ userId, role, ten }` — không trường nào từ `user_secrets`.
+ * ⇒ Nâng ghim là ghi nhận một điểm đọc AN TOÀN, không phải nới lỏng. Cái thứ BẢY vẫn
+ *   phải qua đúng nghi thức này.
+ */
+const SO_DIEM_NGOAI = 6;
 
 describe("★★★ Pha 8 Task 4a — ∀ thủ tục đọc `user_secrets` PHẢI KHAI phân loại (`KhongMangBiMat`)", () => {
   it("★★★ cầu chì — tập cột bí mật và tập NGƯỜI ĐỌC đều KHÁC RỖNG (rỗng ⇒ mọi ô dưới là chân lý rỗng)", () => {

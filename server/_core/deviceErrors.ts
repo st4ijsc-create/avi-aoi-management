@@ -71,6 +71,43 @@ export class DeviceUnreachableError extends Error {
 }
 
 /**
+ * Tính năng CÓ trong bản dựng nhưng đang TẮT bằng cờ môi trường.
+ *
+ * ── VÌ SAO KHÔNG NUỐT TÊN BIẾN MÔI TRƯỜNG ────────────────────────────────────────
+ * Chuỗi gốc (`"SECS/GEM framework is disabled (set SECS_GEM_ENABLED=true)"`) mang HAI
+ * thông tin cho HAI người khác nhau:
+ *   • *"tính năng chưa bật"* — cho người vận hành, họ xử được bằng cách báo quản trị;
+ *   • *"đặt SECS_GEM_ENABLED=true"* — cho quản trị, đó là câu lệnh cụ thể.
+ * `appCode` + `feature` chở phần đầu (dịch được); tham số `cachBat` chở phần sau vào
+ * `message`, và `message` chính là `fallback` — nên không ai mất gì.
+ *
+ * ⇒ Đây là ca ĐIỂN HÌNH của luật hai điều kiện ghi ở `rawErrorCensus.test.ts`: di trú chỉ
+ *   đúng khi vừa tới được người dùng, VỪA không làm mất thông tin chuỗi gốc đang mang.
+ *   Nếu chỉ dịch mà bỏ tên biến, đây sẽ là một bước LÙI cho quản trị.
+ */
+export class FeatureDisabledError extends Error {
+  readonly appCode = "FEATURE_DISABLED" as const;
+  readonly appParams: { feature: string };
+
+  /**
+   * @param feature KHOÁ i18n (`errors.feature.*`) — chỉ dùng để DỊCH, không vào `message`.
+   * @param message chuỗi kỹ thuật GIỮ NGUYÊN VĂN, kể cả tên biến môi trường.
+   *
+   * ⚠ Hai tham số tách rời là có lý do, và lý do ấy do một bộ test dạy: bản đầu lấy luôn
+   * `feature` làm tiền tố `message`, nên `"GEM300 is disabled"` lặng lẽ thành
+   * `"gem300 is disabled"` — khoá i18n viết thường rò ra một chuỗi kỹ thuật.
+   * `gem300.test.ts` bắt được ngay.
+   * ⇒ **Khoá định danh nội bộ và câu cho người đọc là HAI thứ; đừng để cái này làm tiền
+   *   tố cho cái kia.** Cùng họ với bài học `col.header` vừa là nhãn vừa là khoá khớp.
+   */
+  constructor(feature: DeviceEntityKey, message: string) {
+    super(message);
+    this.name = "FeatureDisabledError";
+    this.appParams = { feature };
+  }
+}
+
+/**
  * Bản dựng này KHÔNG CÓ driver cho giao thức/hãng đó.
  *
  * Cách gỡ: đổi cấu hình hoặc nâng cấp bản dựng — KHÔNG phải đi kiểm dây.
