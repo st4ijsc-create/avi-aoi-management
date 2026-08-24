@@ -178,10 +178,13 @@ public class LeakAndFunctionalVerdictDomainTests
     /// band. Item 62's body said "LeakTestSim is the only case"; that predicate was measured again on
     /// 2026-08-24 and corrected there.</para>
     ///
-    /// <para><b>What this test does NOT measure:</b> the verdict. It reads the published
-    /// <see cref="MetricSample"/> only, so it would stay green if the verdict path were changed to USE the
-    /// floor — which would make the pair honest by the other route and is a change nobody has ruled on. It
-    /// also measures nothing about the wire: <c>Normalizer</c> is not on its path.</para></summary>
+    /// <para><b>What this test does NOT measure:</b> the WIRE. <c>Normalizer</c> — the thing that copies
+    /// <c>Lsl</c> into the outgoing envelope and therefore the whole reason changing it crosses an exemption
+    /// — is not on its path, so a green here is not evidence about what any consumer receives.
+    /// 🔴 <b>And it deliberately does NOT stay inside the published pair:</b> the second half below reads
+    /// VERDICTS, because a test that only asserted four numbers would pin a limit pair and not the fact that
+    /// makes the pair a ruled defect. One consequence worth naming: making the verdict path USE the floor
+    /// would redden this test too, and that is a change nobody has ruled on either.</para></summary>
     [Fact]
     public void Item62_Guard_ThePublishedMetricStillDeclaresAFloorTheVerdictDoesNotUse_OwnerRuled20260824()
     {

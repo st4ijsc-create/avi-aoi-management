@@ -213,9 +213,10 @@ public sealed class ConnectorEndpointsEnvSeedingSideEffectsTests
     /// not turned into a 500.</para>
     ///
     /// <para><b>What it does NOT measure:</b> the same-machine re-save. That path never reaches the new
-    /// refusal, and it is pinned separately by
+    /// refusal, and it is pinned by two OTHER tests, in two other files:
     /// <c>ConnectorRegistryTests.AnExplicitId_WhoseIncumbentServesTheSameMachine_StillReplaces_TheIdempotentUpdatePath</c>
-    /// and by <c>PostConnector_ReSavingTheSameMachine…</c> below.</para></summary>
+    /// at the registry, and <c>ConnectorEndpointsMachineClaimTests.AConnectorReSavingItsOwnMachine_IsNotBlockedByItsOwnClaim</c>
+    /// through this endpoint. Both are green on both sides of the ruling.</para></summary>
     [Fact]
     public async Task PostConnector_ForADifferentMachine_OverASeededRow_Now409s_OwnersRuling20260824Item63()
     {

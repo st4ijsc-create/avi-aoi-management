@@ -305,8 +305,10 @@ public static class ConnectorsConfig
     /// <para><b>What was wrong with the sentence this replaces.</b> It read "entry 'Y' already configures
     /// this same KIND earlier in the file; the first entry for a given KIND wins" — a constant, on a line
     /// where the thing that actually collided is <paramref name="key"/>, which is supplied by the CALLER and
-    /// is not the kind on every host. The two production callers disagree, and the old sentence could only
-    /// be right for one of them:</para>
+    /// is not the kind on every host. THREE production sites call <c>ResolveEntries</c>; the one at
+    /// <c>Program.cs:1306</c> passes <c>logWarning: null</c> and so can emit nothing, leaving TWO that can
+    /// reach this text — and those two disagree about the key, so the old sentence could only ever be right
+    /// for one of them:</para>
     /// <list type="bullet">
     /// <item><b>St4i.EngineApi</b> passes <c>ConnectorsJsonRegistration.RegistrationKeyOf</c>, which answers
     /// the entry's KIND for a TCP or OPC-UA entry even when that entry carries an explicit id. So two
