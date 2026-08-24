@@ -374,6 +374,34 @@ export interface MucDanhSachTrang {
   readonly phanGiai: (oTuDo: string | null, goc: string) => LenhDaPhanGiai | null;
 }
 
+/** Tên biến môi trường của công tắc restore — xem `dotnetChoPhepRestore`. */
+export const BIEN_DOTNET_CHO_PHEP_RESTORE = "DOTNET_CHO_PHEP_RESTORE";
+
+/**
+ * ★★★ 2026-08-24 — CÔNG TẮC RESTORE THEO TRIỂN KHAI (quyết định chủ dự án, cùng khuôn
+ * `AUTH_2FA_BAT_BUOC` ở `server/_core/trpc.ts`): *"bản chất đối với các bên sử dụng hệ sinh thái
+ * có internet thì vẫn phải kéo về bình thường được"*.
+ *
+ * Hai kiểu triển khai, hai chế độ:
+ *   • VẮNG biến / mọi giá trị khác `"1"` (mặc định trong MÃ — an toàn cho máy OFFLINE):
+ *     `dotnet build`/`dotnet test` chạy `--no-restore`. Trên máy không mạng, một lượt restore chỉ
+ *     đổi lỗi rõ ("cần restore trước ở terminal") lấy lỗi khó hiểu hơn (NuGet timeout/DNS sau vài
+ *     phút treo) — người dùng tự tải package và chép vào local feed rồi `dotnet restore` tay.
+ *   • `"1"` (triển khai CÓ INTERNET): bỏ `--no-restore` khỏi argv phân giải — restore NGẦM của
+ *     `dotnet build`/`dotnet test` kéo NuGet về bình thường, đúng chữ chủ dự án.
+ *
+ * ⚠ CHỈ chuỗi `"1"` bật — không `"true"`, không "khác rỗng": đổi mặc định là đổi tư thế mạng của
+ *   mọi bản cài chưa khai biến (lưới A/B ghim cả ba chiều: vắng · `"1"` · giá trị lạ).
+ * ⚠ Đọc TẠI THỜI ĐIỂM GỌI, không nhớ đệm ở tầng module — bài học `TENANT_RLS_ENABLED`: lưới đặt
+ *   env trong ca phải lật được cờ mà không nạp lại module; `moTa` (getter) và `phanGiai` của hai
+ *   mục dotnet cùng đọc qua hàm này nên lời khai trên thẻ duyệt KHÔNG lệch được argv thật.
+ * ⚠ Cờ này KHÔNG chạm phần còn lại của "không mạng bằng cấu tạo": `npm_config_offline`, telemetry
+ *   dotnet, môi trường ĐÃ LỌC giữ nguyên — nó chỉ mở đúng MỘT đường đã khai: restore NuGet.
+ */
+export function dotnetChoPhepRestore(): boolean {
+  return process.env[BIEN_DOTNET_CHO_PHEP_RESTORE] === "1";
+}
+
 /**
  * ★★★ DANH SÁCH TRẮNG — **CHÍN MỤC: TÁM CHỈ HỎI/KIỂM TRA, MỘT GHI ĐÈ MÃ NGUỒN.**
  *
@@ -490,14 +518,18 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
    *     mở — cùng hồ sơ rủi ro với `npx vitest run <đường>` (cả hai đều THI HÀNH mã của tệp test trong
    *     hộp cát), và cùng phòng vệ: môi trường ĐÃ LỌC (không bí mật), đường qua `phanQuyetDuongDan`.
    *
-   * ⚠ **KHÔNG MẠNG — GIỮ BẰNG `--no-restore`.** `dotnet build`/`dotnet test` mặc định chạy một lượt
-   *   `restore` NGẦM chạm NuGet feed (mạng) — đúng thứ phá "không mạng bằng cấu tạo" của pha B. Nên
-   *   argv PHÂN GIẢI thêm `--no-restore` (hằng của mã, không phải đầu vào model). Hệ quả KHAI THẲNG,
-   *   cùng triết lý với "ca CSDL phải gõ tay ở terminal": lần ĐẦU, một người phải chạy
-   *   `dotnet restore <dự-án>` ở terminal (có mạng); sau đó vòng lặp của tác nhân chạy offline trên
-   *   gói đã nằm trong cache toàn cục. `dotnet format` không nhận `--no-restore` ổn định giữa các bản
-   *   SDK nên để trần. Telemetry của dotnet (một đường ra mạng khác) bị tắt qua `DOTNET_*` ở
-   *   `BIEN_MOI_TRUONG_DAT_THEM`.
+   * ⚠ **RESTORE THEO TRIỂN KHAI — MẶC ĐỊNH OFFLINE (`--no-restore`), MỞ BẰNG CỜ.**
+   *   `dotnet build`/`dotnet test` mặc định chạy một lượt `restore` NGẦM chạm NuGet feed (mạng).
+   *   Mặc định của MÃ vẫn là thêm `--no-restore` vào argv phân giải (hằng của mã, không phải đầu
+   *   vào model): trên máy không mạng, lần ĐẦU một người phải chạy `dotnet restore <dự-án>` tay ở
+   *   terminal (package tự tải + chép vào local feed), sau đó vòng lặp tác nhân chạy offline trên
+   *   cache toàn cục. ★ 2026-08-24 — quyết định chủ dự án: triển khai CÓ INTERNET đặt
+   *   `DOTNET_CHO_PHEP_RESTORE=1` ⇒ bỏ `--no-restore`, restore ngầm kéo về bình thường. Cờ được
+   *   đọc TẠI LÚC PHÂN GIẢI qua `dotnetChoPhepRestore()` (một hàm thuần, CHỈ `"1"` bật) — `moTa`
+   *   của hai mục là getter đọc cùng hàm, nên thẻ duyệt khai đúng chế độ đang chạy, không phải chế
+   *   độ lúc nạp module. `dotnet format` không nhận `--no-restore` ổn định giữa các bản SDK nên để
+   *   trần. Telemetry của dotnet (một đường ra mạng khác) bị tắt qua `DOTNET_*` ở
+   *   `BIEN_MOI_TRUONG_DAT_THEM` — cờ restore KHÔNG chạm các biến ấy.
    *
    * ⚠ `dotnet` phân giải qua PATH (như `git`), không `existsSync`: vắng SDK ⇒ `spawn` ném ENOENT ⇒
    *   `CMD_SPAWN_ERROR` (một lỗi môi trường TRUNG THỰC, không phải "lệnh sai").
@@ -508,7 +540,13 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     nhan: "dotnet build <đường-dẫn>",
     khuon: ["dotnet", "build", null],
     hanGioMs: 240_000,
-    moTa: "Biên dịch một dự án/solution C# (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore) — cần restore trước ở terminal. KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.",
+    // ★ getter, KHÔNG phải chuỗi đóng băng: thẻ duyệt phải khai đúng chế độ restore ĐANG chạy —
+    //   một moTa tính lúc nạp module sẽ nói dối ngay khi cờ được lật (bài học `TENANT_RLS_ENABLED`).
+    get moTa() {
+      return dotnetChoPhepRestore()
+        ? "Biên dịch một dự án/solution C# (.csproj/.sln hoặc thư mục). DOTNET_CHO_PHEP_RESTORE=1 — restore NGẦM được phép, NuGet kéo về qua mạng như bình thường. KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/."
+        : "Biên dịch một dự án/solution C# (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore) — cần restore trước ở terminal. KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.";
+    },
     // ⚠ `bin/`+`obj/` là SẢN PHẨM DỰNG, không phải mã nguồn của người viết ⇒ `ghiDia: false`.
     //   Xem lý lẽ "vì sao HAI ô" ở `MucDanhSachTrang`.
     thoatCwdTheoCayThuMuc: false,
@@ -518,13 +556,22 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
       const ma = phanQuyetDuongDan(v);
       return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
     },
-    phanGiai: (oTuDo) => (oTuDo === null ? null : { file: "dotnet", args: ["build", oTuDo, "--no-restore"] }),
+    // ⚠ Cờ đọc TẠI LÚC PHÂN GIẢI (mỗi lượt phán quyết) — xem `dotnetChoPhepRestore`.
+    phanGiai: (oTuDo) =>
+      oTuDo === null
+        ? null
+        : { file: "dotnet", args: dotnetChoPhepRestore() ? ["build", oTuDo] : ["build", oTuDo, "--no-restore"] },
   },
   {
     nhan: "dotnet test <đường-dẫn>",
     khuon: ["dotnet", "test", null],
     hanGioMs: 240_000,
-    moTa: "Chạy bộ test C# của một dự án/solution (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore). KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.",
+    // ★ getter — cùng lý lẽ với `dotnet build` ngay trên.
+    get moTa() {
+      return dotnetChoPhepRestore()
+        ? "Chạy bộ test C# của một dự án/solution (.csproj/.sln hoặc thư mục). DOTNET_CHO_PHEP_RESTORE=1 — restore NGẦM được phép, NuGet kéo về qua mạng như bình thường. KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/."
+        : "Chạy bộ test C# của một dự án/solution (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore). KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.";
+    },
     thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
     sinhSanPhamDung: true,
@@ -532,7 +579,10 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
       const ma = phanQuyetDuongDan(v);
       return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
     },
-    phanGiai: (oTuDo) => (oTuDo === null ? null : { file: "dotnet", args: ["test", oTuDo, "--no-restore"] }),
+    phanGiai: (oTuDo) =>
+      oTuDo === null
+        ? null
+        : { file: "dotnet", args: dotnetChoPhepRestore() ? ["test", oTuDo] : ["test", oTuDo, "--no-restore"] },
   },
   {
     nhan: "dotnet format <đường-dẫn>",
@@ -727,7 +777,9 @@ export const BIEN_MOI_TRUONG_DAT_THEM: Readonly<Record<string, string>> = {
   CI: "1",
   // ★ doc 79 (D) — dotnet: tắt telemetry (một đường ra mạng) + logo + trải nghiệm lần đầu (tải gói).
   //   Cùng vai với `npm_config_offline`: chặn đường ra mạng NGẦM của chuỗi công cụ, không phải một
-  //   hộp cát mạng. `--no-restore` ở argv lo phần restore; ba biến này lo phần còn lại.
+  //   hộp cát mạng. `--no-restore` ở argv lo phần restore (mặc định — triển khai có internet mở
+  //   bằng `DOTNET_CHO_PHEP_RESTORE=1`, xem `dotnetChoPhepRestore`); ba biến này lo phần còn lại
+  //   và KHÔNG đổi theo cờ ấy.
   DOTNET_CLI_TELEMETRY_OPTOUT: "1",
   DOTNET_NOLOGO: "1",
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1",

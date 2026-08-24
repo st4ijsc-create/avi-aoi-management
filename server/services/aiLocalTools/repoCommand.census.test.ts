@@ -253,11 +253,25 @@ describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chín
       else expect(r.spec.file).toMatch(fileMatch);
       expect(r.spec.args.slice(0, argsDau.length)).toEqual(argsDau);
     };
-    // dotnet phân giải qua PATH ("dotnet"); node --test qua process.execPath.
-    check(["dotnet", "build", "sandbox-projects/csharp-demo/CalculatorDemo.sln"], "dotnet", ["build", "sandbox-projects/csharp-demo/CalculatorDemo.sln", "--no-restore"]);
-    check(["dotnet", "test", "sandbox-projects/csharp-demo"], "dotnet", ["test", "sandbox-projects/csharp-demo", "--no-restore"]);
-    check(["dotnet", "format", "sandbox-projects/csharp-demo/src"], "dotnet", ["format", "sandbox-projects/csharp-demo/src"]);
-    check(["node", "--test", "sandbox-projects/react-pg-demo/test/validate.test.mjs"], process.execPath, ["--test", "sandbox-projects/react-pg-demo/test/validate.test.mjs"]);
+    /**
+     * ★ CẬP NHẬT CÓ LỜI KHAI (2026-08-24): args dotnet KHÔNG còn là hằng — chúng đổi theo
+     * `DOTNET_CHO_PHEP_RESTORE` (quyết định chủ dự án: máy có internet kéo NuGet bình thường).
+     * Ca này ghim CHẾ ĐỘ MẶC ĐỊNH (vắng cờ ⇒ offline ⇒ `--no-restore`) nên phải XOÁ biến tường
+     * minh — một máy dev lỡ bật cờ trong env không được làm lưới chống-hồi-quy-offline xanh giả.
+     * Lưới A/B đủ ba chiều của cờ nằm ở khối "§A2 — công tắc restore" ngay dưới.
+     */
+    const coTruoc = process.env.DOTNET_CHO_PHEP_RESTORE;
+    delete process.env.DOTNET_CHO_PHEP_RESTORE;
+    try {
+      // dotnet phân giải qua PATH ("dotnet"); node --test qua process.execPath.
+      check(["dotnet", "build", "sandbox-projects/csharp-demo/CalculatorDemo.sln"], "dotnet", ["build", "sandbox-projects/csharp-demo/CalculatorDemo.sln", "--no-restore"]);
+      check(["dotnet", "test", "sandbox-projects/csharp-demo"], "dotnet", ["test", "sandbox-projects/csharp-demo", "--no-restore"]);
+      check(["dotnet", "format", "sandbox-projects/csharp-demo/src"], "dotnet", ["format", "sandbox-projects/csharp-demo/src"]);
+      check(["node", "--test", "sandbox-projects/react-pg-demo/test/validate.test.mjs"], process.execPath, ["--test", "sandbox-projects/react-pg-demo/test/validate.test.mjs"]);
+    } finally {
+      if (coTruoc === undefined) delete process.env.DOTNET_CHO_PHEP_RESTORE;
+      else process.env.DOTNET_CHO_PHEP_RESTORE = coTruoc;
+    }
   });
 
   it("★★★ `--` rồi lệnh tuỳ ý, và `node <script>` (KHÔNG --test) ⇒ CMD_NOT_ALLOWED", () => {
@@ -291,6 +305,84 @@ describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chín
       expect(r.ok, `${JSON.stringify(argv)} phải bị từ chối`).toBe(false);
       if (!r.ok) expect(r.ma).toBe(MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED);
     }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ §A2 — CÔNG TẮC RESTORE THEO TRIỂN KHAI (2026-08-24, quyết định chủ dự án — cùng khuôn
+ * `AUTH_2FA_BAT_BUOC`): *"các bên sử dụng hệ sinh thái có internet thì vẫn phải kéo về bình
+ * thường được"*. Lưới A/B HAI CHIỀU + giá trị lạ, đo trên CẢ argv phân giải LẪN lời khai `moTa`:
+ *   • VẮNG cờ  ⇒ args CÓ `--no-restore` (chống hồi quy offline — đột biến lật mặc định kiểu
+ *     `!== "0"` làm ca này ĐỎ ngay);
+ *   • `"1"`    ⇒ args KHÔNG có `--no-restore` (restore ngầm được phép);
+ *   • giá trị LẠ (`"true"`/`"0"`/`"2"`) ⇒ như VẮNG — chỉ đúng chuỗi `"1"` mở van mạng.
+ * ⚠ `moTa` đo CÙNG chiều với args: hai thứ này lệch nhau là thẻ duyệt nói dối về lệnh sắp chạy
+ *   (bài học `TENANT_RLS_ENABLED`: đọc cờ tại thời điểm gọi, không đóng băng lúc nạp module).
+ */
+describe("§A2 — công tắc DOTNET_CHO_PHEP_RESTORE: vắng/lạ = offline, đúng '1' mới bỏ --no-restore", () => {
+  const DUONG = "sandbox-projects/csharp-demo";
+
+  function voiCo<T>(co: string | undefined, than: () => T): T {
+    const truoc = process.env.DOTNET_CHO_PHEP_RESTORE;
+    if (co === undefined) delete process.env.DOTNET_CHO_PHEP_RESTORE;
+    else process.env.DOTNET_CHO_PHEP_RESTORE = co;
+    try {
+      return than();
+    } finally {
+      if (truoc === undefined) delete process.env.DOTNET_CHO_PHEP_RESTORE;
+      else process.env.DOTNET_CHO_PHEP_RESTORE = truoc;
+    }
+  }
+
+  function argsCua(argv: string[]): readonly string[] {
+    const r = phanQuyetLenh(argv);
+    expect(r.ok, `${argv.join(" ")} phải hợp lệ ở mọi chế độ cờ`).toBe(true);
+    return r.ok ? r.spec.args : [];
+  }
+
+  it("★★★ VẮNG cờ ⇒ CẢ build LẪN test giữ `--no-restore` (mặc định an toàn offline)", () => {
+    voiCo(undefined, () => {
+      expect(argsCua(["dotnet", "build", DUONG])).toEqual(["build", DUONG, "--no-restore"]);
+      expect(argsCua(["dotnet", "test", DUONG])).toEqual(["test", DUONG, "--no-restore"]);
+    });
+  });
+
+  it("★★★ cờ = '1' ⇒ `--no-restore` BIẾN MẤT khỏi argv phân giải — restore ngầm kéo NuGet bình thường", () => {
+    voiCo("1", () => {
+      expect(argsCua(["dotnet", "build", DUONG])).toEqual(["build", DUONG]);
+      expect(argsCua(["dotnet", "test", DUONG])).toEqual(["test", DUONG]);
+    });
+  });
+
+  it("★★★ giá trị LẠ ('true'/'0'/'2') ⇒ NHƯ VẮNG — van mạng chỉ mở bằng đúng chuỗi '1'", () => {
+    for (const la of ["true", "0", "2", "yes", " 1"]) {
+      voiCo(la, () => {
+        expect(argsCua(["dotnet", "build", DUONG]), `giá trị "${la}" không được mở restore`).toEqual([
+          "build",
+          DUONG,
+          "--no-restore",
+        ]);
+      });
+    }
+  });
+
+  it("★★ `moTa` của HAI mục dotnet khai đúng theo cờ — thẻ duyệt không được tả một lệnh khác lệnh sắp chạy", () => {
+    const muc = (nhan: string) => DANH_SACH_TRANG.find((m) => m.nhan === nhan)!;
+    for (const nhan of ["dotnet build <đường-dẫn>", "dotnet test <đường-dẫn>"]) {
+      voiCo(undefined, () => {
+        expect(muc(nhan).moTa, `${nhan} (cờ VẮNG)`).toContain("--no-restore");
+        expect(muc(nhan).moTa, `${nhan} (cờ VẮNG)`).not.toContain("DOTNET_CHO_PHEP_RESTORE=1");
+      });
+      voiCo("1", () => {
+        expect(muc(nhan).moTa, `${nhan} (cờ BẬT)`).toContain("DOTNET_CHO_PHEP_RESTORE=1");
+        expect(muc(nhan).moTa, `${nhan} (cờ BẬT)`).not.toContain("--no-restore");
+      });
+    }
+    // `dotnet format` KHÔNG đổi theo cờ — nó chưa bao giờ mang `--no-restore`.
+    voiCo("1", () => {
+      expect(argsCua(["dotnet", "format", DUONG])).toEqual(["format", DUONG]);
+    });
   });
 });
 

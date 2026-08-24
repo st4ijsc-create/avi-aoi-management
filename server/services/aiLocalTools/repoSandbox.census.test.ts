@@ -47,7 +47,9 @@ import { listTools, type Tool } from "./toolRegistry";
 import {
   DUOI_CHO_PHEP,
   KHUON_TEP_CAM,
+  TEN_TEP_CHO_PHEP,
   TRAN_BYTE_MOI_TEP,
+  duoiDuocPhep,
   gocHopCat,
   moTepTrongHopCat,
   xoaSoNganSach,
@@ -445,6 +447,9 @@ describe("§D — GỐC THẬT (thư mục repo): thứ duy nhất nói được
     for (const n of envs) {
       expect(KHUON_TEP_CAM.some((k) => k.test(n)), `lớp TÊN không bắt được ${n}`).toBe(true);
       expect(DUOI_CHO_PHEP.has(path.extname(n).toLowerCase()), `lớp ĐUÔI không bắt được ${n}`).toBe(false);
+      // ★ 2026-08-24 — lớp đuôi nay có NHÁNH BASENAME (`TEN_TEP_CHO_PHEP`): phải đo trên hàm SỐNG
+      //   `duoiDuocPhep` nữa, để một mục `.env*` lỡ tay nhét vào tập basename cũng làm ca này ĐỎ.
+      expect(duoiDuocPhep(n), `nhánh basename đã MỞ NHẦM ${n} — lớp đuôi mất tính độc-lập-đủ-chặn`).toBe(false);
     }
   });
 
@@ -481,6 +486,72 @@ describe("§D — GỐC THẬT (thư mục repo): thứ duy nhất nói được
       const kq = moTepTrongHopCat(p);
       expect(kq.ok, `lọt: ${p}`).toBe(false);
       if (!kq.ok) expect(["DENIED_DIR", "DENIED_EXT"]).toContain(kq.ma);
+    }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ §D2 — NHÁNH **BASENAME** của danh sách trắng (2026-08-24, quyết định chủ dự án: *"khi prompt
+ * yêu cầu tạo dự án thì vẫn tạo các file liên quan dự án được như bình thường"*).
+ *
+ * Trước bản vá: `path.extname(".gitignore")` = `""` ⇒ dotfile không-đuôi (tệp VĂN BẢN chuẩn của mọi
+ * dự án) bị `DENIED_EXT` oan ở CẢ đường đọc lẫn đường ghi. Nay `duoiDuocPhep` có nhánh
+ * `TEN_TEP_CHO_PHEP` — và khối này ghim BỐN ranh giới của nhánh ấy:
+ *   1. DƯƠNG: ba dotfile khai trong tập ĐI QUA (đột biến gỡ tập/gỡ nhánh ⇒ ĐỎ ngay đây);
+ *   2. ÂM nhị phân: `logo.png` vẫn bị chặn — đường ống này ghi VĂN BẢN;
+ *   3. ÂM hậu tố — QUYẾT ĐỊNH NGỮ NGHĨA GHI RA: `x.gitignore` có `extname === ".gitignore"`, nếu
+ *      so bằng ĐUÔI thì mọi `<tên-tuỳ-ý>.gitignore` lách được danh sách trắng ⇒ tập chỉ khớp
+ *      BASENAME NGUYÊN VĂN, hậu tố trùng tên KHÔNG khớp;
+ *   4. `.props`/`.targets` đi lối ĐUÔI (kiểm brief 2026-08-24: hai đuôi này TRƯỚC ĐÓ không nằm
+ *      trong danh sách — `Directory.Build.props` chết ở cửa; nay qua bằng đuôi, KHÔNG cần một mục
+ *      basename trùng lặp không-đo-được).
+ */
+describe("§D2 — nhánh basename: dotfile dự án ĐI QUA, nhị phân và hậu-tố-giả vẫn BỊ CHẶN", () => {
+  it("★★★ DƯƠNG thuần: từng mục của `TEN_TEP_CHO_PHEP` qua `duoiDuocPhep`, kể cả khác hoa/thường", () => {
+    expect(TEN_TEP_CHO_PHEP.size, "tập rỗng thì mọi ca dưới là chân lý rỗng").toBeGreaterThan(0);
+    for (const ten of TEN_TEP_CHO_PHEP) {
+      expect(duoiDuocPhep(ten), `"${ten}" nằm trong tập mà vẫn bị chặn`).toBe(true);
+    }
+    // Windows không phân biệt hoa/thường trên tên tệp — phép so phải theo.
+    expect(duoiDuocPhep(".GitIgnore")).toBe(true);
+    expect(duoiDuocPhep(".EDITORCONFIG")).toBe(true);
+  });
+
+  it("★★★ ÂM: nhị phân (`logo.png`) và dotfile NGOÀI tập (`.foorc`, `.npmrc`) vẫn bị chặn", () => {
+    for (const ten of ["logo.png", "appicon.ico", "font.woff2", ".foorc", ".babelrc"]) {
+      expect(duoiDuocPhep(ten), `"${ten}" phải NGOÀI danh sách`).toBe(false);
+    }
+    // `.npmrc` (tệp BÍ MẬT trong `KHUON_TEP_CAM`) phải bị chặn ở CẢ lớp đuôi — hai lớp độc lập.
+    expect(duoiDuocPhep(".npmrc")).toBe(false);
+    expect(duoiDuocPhep(".env")).toBe(false);
+  });
+
+  it("★★★ ÂM hậu tố: `x.gitignore` KHÔNG khớp — extname của nó là '.gitignore' nhưng nó KHÔNG PHẢI .gitignore", () => {
+    for (const ten of ["x.gitignore", "khung.editorconfig", "a.b.gitattributes"]) {
+      expect(
+        duoiDuocPhep(ten),
+        `"${ten}": nhánh basename khớp HẬU TỐ nghĩa là một tên tuỳ ý lách được danh sách trắng`,
+      ).toBe(false);
+    }
+  });
+
+  it("★★ `.props`/`.targets` qua lối ĐUÔI — `Directory.Build.props` hết chết ở cửa (đo brief 2026-08-24)", () => {
+    expect(duoiDuocPhep("Directory.Build.props")).toBe(true);
+    expect(duoiDuocPhep("Directory.Build.targets")).toBe(true);
+    expect(duoiDuocPhep("Common.props"), "mọi tệp .props là XML MSBuild văn bản — qua bằng đuôi").toBe(true);
+  });
+
+  it("★★★ ĐI HẾT ĐƯỜNG THẬT: `read_file` đọc được một `.gitignore` THẬT trong hộp cát (không chỉ hàm thuần)", async () => {
+    // Hàm thuần xanh mà tool vẫn chặn là hình dạng "hai lớp lệch nhau" — phải đo tới bề mặt tool.
+    fs.writeFileSync(path.join(HOP, ".gitignore"), "bin/\nobj/\n");
+    try {
+      const t = toolHopCat().find((x) => x.name === "read_file")!;
+      const r = await t.handler!({ path: ".gitignore", __authCtx: AUTH } as never);
+      expect(r.note, `bị chặn oan: ${r.textSummary}`).toBeUndefined();
+      expect((r.data as { content: string | null }).content).toContain("bin/");
+    } finally {
+      fs.rmSync(path.join(HOP, ".gitignore"), { force: true });
     }
   });
 });

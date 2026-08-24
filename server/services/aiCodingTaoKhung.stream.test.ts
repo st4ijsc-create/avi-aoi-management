@@ -314,13 +314,28 @@ describe("§3 — CÂU CỦA CHỦ DỰ ÁN đi tới MỘT `apply_diff_batch`, 
     }
   });
 
-  it("★★★ persona là TẠO KHUNG (trần 8 tệp + cấm NuGet ngoài) và prompt nhắc đúng khuôn manifest", async () => {
+  it("★★★ persona là TẠO KHUNG (trần 8 tệp + KHAI-THẬT NuGet hai chế độ) và prompt nhắc đúng khuôn manifest", async () => {
     h.manh = [MANIFEST_WPF];
     await chay(CAU);
     expect(h.moiPrompt.length, "MỘT lượt model cho cả khung — không phải N lượt").toBe(1);
     expect(h.systemPromptNhan).toContain("DỰNG KHUNG MỘT DỰ ÁN MỚI");
     expect(h.systemPromptNhan).toContain("Tối đa 8 tệp");
-    expect(h.systemPromptNhan, "nhà máy offline — model phải bị dặn về --no-restore").toContain("--no-restore");
+    /**
+     * ★ ĐẢO CHIỀU CÓ GHI LÝ DO (2026-08-24, tiền lệ §7.8 aiCodingMode): ca cũ đòi persona chứa
+     * `--no-restore` (luật "KHÔNG thêm package/NuGet NGOÀI" — nhà máy offline). Quyết định chủ dự
+     * án đảo luật từ CẤM sang KHAI: *"người dùng phải chấp nhận và tìm cách tải và copy vào…; các
+     * bên có internet thì vẫn phải kéo về bình thường"*. Persona nay (a) KHÔNG còn chữ cấm, (b) đòi
+     * một dòng khai-thật HAI CHẾ ĐỘ khi manifest có `PackageReference`. Đột biến khôi phục câu cấm
+     * cũ ⇒ vế (a) ĐỎ; đột biến xoá yêu cầu khai ⇒ vế (b) ĐỎ.
+     */
+    expect(h.systemPromptNhan, "luật cấm NuGet cũ phải BIẾN MẤT").not.toContain("KHÔNG thêm package/NuGet");
+    expect(h.systemPromptNhan, "package phải được KHAI là ĐƯỢC PHÉP khi việc cần").toContain("ĐƯỢC PHÉP khi việc cần");
+    expect(h.systemPromptNhan, "điều kiện khai-thật phải neo vào PackageReference").toContain("PackageReference");
+    expect(h.systemPromptNhan, "chế độ offline: người dùng tự tải + chép local feed").toContain("tự tải package");
+    expect(h.systemPromptNhan, "chế độ có internet: dotnet restore kéo bình thường").toContain("`dotnet restore` kéo về bình thường");
+    // Dotfile hợp lệ (2026-08-24) phải được persona LIỆT KÊ — model hết đoán mù về tệp không-đuôi.
+    expect(h.systemPromptNhan, "danh sách basename trắng phải được tiêm vào persona").toContain(".gitignore");
+    expect(h.systemPromptNhan, "nhị phân vẫn bị dặn là NGOÀI danh sách").toContain("KHÔNG tệp nhị phân");
     expect(h.promptNhan).toContain(MOC_TEP_KHUNG);
     expect(h.promptNhan).toContain(CAU);
     expect(h.promptNhan, "không có tệp nào tồn tại ⇒ không được chở khối 'NỘI DUNG HIỆN TẠI'").not.toContain("NỘI DUNG HIỆN TẠI");
@@ -492,17 +507,24 @@ describe("§6 — lượt tự sửa manifest: đúng MỘT, không hơn", () =>
  */
 describe("§7 — loại-an-toàn tệp phạm không-tham-chiếu", () => {
   const CAU = "tạo dự án C# WPF đọc file pdf";
-  const MANIFEST_DOTFILE = [
-    "Khung kèm dotfile (phạm nhưng KHÔNG ai tham chiếu):",
+  /**
+   * ★ ĐẢO MỒI CÓ GHI LÝ DO (2026-08-24, tiền lệ §7.8 aiCodingMode): mồi phạm cũ là `.editorconfig`
+   * — từ khi `TEN_TEP_CHO_PHEP` cho dotfile qua (quyết định chủ dự án *"tạo các file liên quan dự
+   * án được như bình thường"*), nó thành tệp HỢP LỆ và ca này sẽ đo một vị từ không còn tồn tại.
+   * Mồi mới là `anh/logo.png` — nhị phân THẬT SỰ ngoài danh sách (đường ống này ghi VĂN BẢN, một
+   * icon "viết bằng text" là một tệp hỏng), tức đúng lớp phạm mà luật loại-an-toàn còn canh.
+   */
+  const MANIFEST_NHI_PHAN = [
+    "Khung kèm ảnh nhị phân (phạm nhưng KHÔNG ai tham chiếu):",
     "",
     tepKhung("PdfReader.csproj", "xml", ND_CSPROJ),
     tepKhung("App.xaml", "xml", ND_XAML),
-    tepKhung(".editorconfig", "ini", "root = true"),
+    tepKhung("anh/logo.png", "text", "gia-anh-nhi-phan"),
     "",
   ].join("\n");
 
-  it("★★★ dotfile không-tham-chiếu ⇒ LOẠI + câu khai rõ, lô vẫn đề xuất với phần còn lại, KHÔNG tốn lượt tự sửa", async () => {
-    h.manhTheoLuot = [[MANIFEST_DOTFILE]];
+  it("★★★ nhị phân không-tham-chiếu ⇒ LOẠI + câu khai rõ, lô vẫn đề xuất với phần còn lại, KHÔNG tốn lượt tự sửa", async () => {
+    h.manhTheoLuot = [[MANIFEST_NHI_PHAN]];
     const r = await chay(CAU);
 
     expect(h.moiPrompt.length, "không cần lượt model thứ hai — loại êm rẻ hơn 4 phút 30B").toBe(1);
@@ -510,9 +532,37 @@ describe("§7 — loại-an-toàn tệp phạm không-tham-chiếu", () => {
     expect(lo.length, "khung còn lại vẫn được đề xuất").toBe(1);
     const files = (lo[0]!.args.files as Array<{ path: string }>).map((f) => f.path);
     expect(files).toEqual(["PdfReader.csproj", "App.xaml"]);
-    expect(files).not.toContain(".editorconfig");
+    expect(files).not.toContain("anh/logo.png");
     expect(r.chu, "loại PHẢI nói — im lặng cắt bớt là nói dối").toContain("Đã LOẠI 1 tệp");
-    expect(r.chu).toContain(".editorconfig");
+    expect(r.chu).toContain("anh/logo.png");
+  });
+
+  it("★★★ CA DƯƠNG 2026-08-24 — `.gitignore` + `.editorconfig` là tệp dự án BÌNH THƯỜNG: vào lô đủ mặt, KHÔNG bị loại", async () => {
+    /**
+     * Trước bản vá `TEN_TEP_CHO_PHEP`: hai dotfile này bị `duoiDuocPhep` chặn (extname = "") ⇒ bị
+     * loại-an-toàn khỏi lô. Quyết định chủ dự án: *"khi prompt yêu cầu tạo dự án thì vẫn tạo các
+     * file liên quan dự án được như bình thường"* ⇒ chúng phải đi QUA như `.cs`/`.csproj`. Đột
+     * biến gỡ nhánh basename khỏi `duoiDuocPhep` ⇒ hai tệp rơi khỏi `files` ⇒ ca này ĐỎ.
+     */
+    const M = [
+      tepKhung("PdfReader.csproj", "xml", ND_CSPROJ),
+      tepKhung(".gitignore", "text", "bin/\nobj/"),
+      tepKhung(".editorconfig", "ini", "root = true"),
+    ].join("\n");
+    h.manhTheoLuot = [[M]];
+    const r = await chay(CAU);
+
+    expect(h.moiPrompt.length, "manifest sạch ⇒ MỘT lượt model, không tự sửa").toBe(1);
+    const lo = cacLo();
+    expect(lo.length).toBe(1);
+    const files = (lo[0]!.args.files as Array<{ path: string; original: string }>);
+    expect(files.map((f) => f.path), "dotfile phải ĐỦ MẶT trong lô, đúng thứ tự manifest").toEqual([
+      "PdfReader.csproj",
+      ".gitignore",
+      ".editorconfig",
+    ]);
+    for (const f of files) expect(f.original, `TẠO ⇒ neo của "${f.path}" là băm('')`).toBe("");
+    expect(r.chu, "KHÔNG có tệp nào bị loại ⇒ không được in câu loại").not.toContain("Đã LOẠI");
   });
 
   it("★★★ tệp phạm CÓ tham chiếu ⇒ KHÔNG loại êm — đi đường tự sửa, câu lỗi nêu tệp tham chiếu", async () => {
@@ -534,7 +584,8 @@ describe("§7 — loại-an-toàn tệp phạm không-tham-chiếu", () => {
   });
 
   it("★★ MỌI tệp đều phạm không-tham-chiếu ⇒ không còn gì để đề xuất ⇒ TỪ CHỐI, không lô rỗng", async () => {
-    h.manhTheoLuot = [[tepKhung(".editorconfig", "ini", "root = true")], [tepKhung(".editorconfig", "ini", "root = true")]];
+    // ★ Đảo mồi cùng lý do khối trên: `.editorconfig` nay HỢP LỆ ⇒ mồi phải là nhị phân thật sự.
+    h.manhTheoLuot = [[tepKhung("logo.png", "text", "gia-anh")], [tepKhung("logo.png", "text", "gia-anh")]];
     const r = await chay(CAU);
     expect(cacLo().length).toBe(0);
     expect(r.chu).toContain("TỪ CHỐI CẢ KHUNG");

@@ -124,13 +124,22 @@ function khoi(truoc: string, sau: string): string {
 const ND_CSPROJ = ['<Project Sdk="Microsoft.NET.Sdk">', "  <PropertyGroup>", "    <OutputType>Exe</OutputType>", "    <TargetFramework>net8.0</TargetFramework>", "  </PropertyGroup>", "</Project>"].join("\n");
 const ND_PROGRAM = ["namespace PdfDemo;", "", "public static class Program {", "    public static void Main() { }", "}"].join("\n");
 const ND_README = ["# PdfDemo", "", "Build: `dotnet build --no-restore`"].join("\n");
+/**
+ * ★ 2026-08-24 — `.gitignore` đứng TRONG manifest CÓ CHỦ ĐÍCH: quyết định chủ dự án *"khi prompt
+ * yêu cầu tạo dự án thì vẫn tạo các file liên quan dự án được như bình thường"*. Trước bản vá
+ * `TEN_TEP_CHO_PHEP` (repoSandbox), tệp không-đuôi này bị `DENIED_EXT` — file NÀY là lưới duy nhất
+ * đi tới BYTE THẬT trên đĩa (apply_diff_batch không mock), nên nó là chỗ đo mệnh đề "như bình
+ * thường" đúng nghĩa đen. Đột biến gỡ nhánh basename ⇒ tệp bị loại khỏi lô ⇒ ca §1 ĐỎ ở phép đọc đĩa.
+ */
+const ND_GITIGNORE = ["bin/", "obj/"].join("\n");
 
-const MANIFEST_3_TEP = [
+const MANIFEST_KHUNG = [
   "Khung console tối thiểu:",
   "",
   tepKhung("PdfDemo.csproj", "xml", ND_CSPROJ),
   tepKhung("src/Program.cs", "csharp", ND_PROGRAM),
   tepKhung("README.md", "markdown", ND_README),
+  tepKhung(".gitignore", "text", ND_GITIGNORE),
 ].join("\n");
 
 const ENV = [
@@ -185,7 +194,7 @@ beforeEach(() => {
   process.env.AVI_CLI_PASSWORD = MAT_KHAU;
   h.manh = [];
   // Trả gốc về trạng thái nền: chỉ còn tệp có sẵn.
-  for (const rel of ["PdfDemo.csproj", "src/Program.cs", "README.md"]) {
+  for (const rel of ["PdfDemo.csproj", "src/Program.cs", "README.md", ".gitignore"]) {
     try {
       fs.rmSync(path.join(GOC, rel), { force: true });
     } catch {
@@ -199,13 +208,13 @@ afterEach(() => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-describe("§1 — VÒNG KHÉP KÍN: 'tạo dự án …' → MỘT thẻ lô → 'y' → BA TỆP trên đĩa, gốc KHÔNG git", () => {
+describe("§1 — VÒNG KHÉP KÍN: 'tạo dự án …' → MỘT thẻ lô → 'y' → BỐN TỆP trên đĩa (kèm `.gitignore` không-đuôi), gốc KHÔNG git", () => {
   it("★ ĐỐI CHỨNG HIỆU CHUẨN — gốc dự án thật sự KHÔNG có git (mọi mệnh đề dưới đứng trên nó)", () => {
     expect(fs.existsSync(path.join(GOC, ".git")), "lỡ ai git init thì mọi ca dưới đo một thứ khác").toBe(false);
   });
 
   it("★★★ gõ 'y' ⇒ CLI hiện thẻ lô + cảnh báo không-git, rồi GHI THẬT đúng từng byte", async () => {
-    h.manh = [MANIFEST_3_TEP];
+    h.manh = [MANIFEST_KHUNG];
     const c = congGia(["y"]);
     const ma = await chayCli(["--du-an", ID_DA, "--lenh", "tạo dự án C# console đọc file pdf"], c);
 
@@ -221,15 +230,17 @@ describe("§1 — VÒNG KHÉP KÍN: 'tạo dự án …' → MỘT thẻ lô →
     expect(docDia("PdfDemo.csproj")).toBe(ND_CSPROJ + "\n");
     expect(docDia("src/Program.cs")).toBe(ND_PROGRAM + "\n");
     expect(docDia("README.md")).toBe(ND_README + "\n");
+    // ★ 2026-08-24 — tệp KHÔNG-ĐUÔI đi hết vòng thật xuống đĩa (xem docblock `ND_GITIGNORE`).
+    expect(docDia(".gitignore"), "`.gitignore` phải được ghi NHƯ BÌNH THƯỜNG — không bị loại êm").toBe(ND_GITIGNORE + "\n");
     expect(docDia(TEP_CU), "tệp có sẵn KHÔNG liên quan không được chạm").toBe(ND_CU);
   }, 60_000);
 
   it("★★★ gõ 'n' ⇒ KHÔNG một tệp nào được tạo (đường ra MẶC ĐỊNH là KHÔNG ghi)", async () => {
-    h.manh = [MANIFEST_3_TEP];
+    h.manh = [MANIFEST_KHUNG];
     const c = congGia(["n"]);
     await chayCli(["--du-an", ID_DA, "--lenh", "tạo dự án C# console demo"], c);
     expect(c.manHinh()).toContain("ĐỀ XUẤT CẦN BẠN DUYỆT");
-    for (const rel of ["PdfDemo.csproj", "src/Program.cs", "README.md"]) {
+    for (const rel of ["PdfDemo.csproj", "src/Program.cs", "README.md", ".gitignore"]) {
       expect(coTren(rel), `"${rel}" không được rơi xuống đĩa khi người dùng từ chối`).toBe(false);
     }
   }, 60_000);

@@ -207,6 +207,40 @@ export const DUOI_CHO_PHEP: ReadonlySet<string> = new Set([
   //   của C#/WPF: XML văn bản thuần, cùng họ `.xaml` ngay trên. Thiếu nó thì mọi khung có chuỗi
   //   đa ngôn ngữ đều chết ở cửa. Cùng phép đo, cùng lý lẽ, cùng ngày với `.xaml`.
   ".resx",
+  // ★ 2026-08-24 — quyết định chủ dự án: *"khi prompt yêu cầu tạo dự án thì vẫn tạo các file liên
+  //   quan dự án được như bình thường"*. `Directory.Build.props`/`Directory.Build.targets` là tệp
+  //   cấu hình MSBuild CHUẨN của mọi dự án C# nhiều tầng — XML văn bản thuần, cùng họ `.csproj`.
+  //   ĐO trước khi thêm: `duoiDuocPhep("Directory.Build.props")` = false (extname `.props` không
+  //   nằm trong danh sách) ⇒ trước bản vá, một khung khai tệp ấy chết ở cửa đuôi.
+  ".props",
+  ".targets",
+]);
+
+/**
+ * ★ 2026-08-24 — DANH SÁCH TRẮNG **BASENAME** cho tệp KHÔNG-ĐUÔI, cùng lượt với quyết định chủ dự
+ * án *"khi prompt yêu cầu tạo dự án thì vẫn tạo các file liên quan dự án được như bình thường"*.
+ *
+ * Vì sao cần một tập RIÊNG thay vì nhét vào `DUOI_CHO_PHEP`: `path.extname(".gitignore")` = `""` —
+ * dotfile không-đuôi là VÔ HÌNH với phép soi đuôi, nên `.gitignore`/`.editorconfig`/`.gitattributes`
+ * (tệp VĂN BẢN chuẩn của mọi dự án) bị chặn oan `DENIED_EXT` suốt từ doc 78 pha A.
+ *
+ * ⚠⚠ SO **BASENAME NGUYÊN VĂN** (thường hoá), KHÔNG so hậu tố — quyết định ngữ nghĩa, ghi ra:
+ *   `path.extname("x.gitignore")` trả về `".gitignore"`, nên nếu nhét `".gitignore"` vào
+ *   `DUOI_CHO_PHEP` thì MỌI tệp `<bất-kỳ>.gitignore` đi qua — một cái tên tuỳ ý lách được danh
+ *   sách trắng chỉ bằng cách đổi đuôi. Tập này vì thế chỉ khớp khi CẢ TÊN TỆP bằng đúng một mục
+ *   (`x.gitignore` vẫn bị chặn — có ca lưới ghim chiều này).
+ * ⚠ NHỊ PHÂN (ico/png/font) vẫn NGOÀI mọi danh sách: đường ống này ghi VĂN BẢN — một icon "viết
+ *   bằng text" là một tệp hỏng; icon/tài nguyên nhị phân để người dùng tự thêm sau.
+ * ⚠ `Directory.Build.props` KHÔNG nằm ở đây dù brief gợi ý: nó CÓ đuôi (`.props` — vừa thêm ở
+ *   trên) nên nhánh đuôi đã cho qua; một mục basename trùng lặp là mục CHẾT — không đột biến nào
+ *   làm nó đỏ được, tức một lời khai không đo được.
+ * ⚠ KHÔNG mục nào ở đây được trùng họ `.env*`/`KHUON_TEP_CAM` — lớp TÊN-CẤM chạy TRƯỚC trong
+ *   `phanQuyetDuongDan`, nhưng hai lớp phải ĐỘC LẬP cùng chặn (bài học "hai lớp che nhau" §G).
+ */
+export const TEN_TEP_CHO_PHEP: ReadonlySet<string> = new Set([
+  ".gitignore",
+  ".editorconfig",
+  ".gitattributes",
 ]);
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -292,8 +326,18 @@ export function phanQuyetThuMuc(input: unknown): MaTuChoiHopCat | null {
   return phanQuyetDuongDan(raw);
 }
 
-/** Phán quyết ĐUÔI, tách riêng vì `phanQuyetThuMuc` không dùng nó. */
+/**
+ * Phán quyết TÊN TỆP theo danh sách trắng — tách riêng vì `phanQuyetThuMuc` không dùng nó.
+ *
+ * ★ 2026-08-24 — thêm nhánh **BASENAME** (`TEN_TEP_CHO_PHEP`) NGAY TRONG hàm này thay vì một hàm
+ * mới: mọi điểm gọi hiện có (`moTepTrongHopCat` đọc · `duyetTepDocDuoc` quét grep ·
+ * `applyDiff.phanQuyet` ghi · `kiemManifest` tạo khung) hưởng CÙNG LÚC, không điểm nào phải nhớ
+ * gọi thêm hàm thứ hai. Đã rà cả bốn điểm gọi: không nơi nào cần ngữ nghĩa "chỉ-đuôi" thuần.
+ * ⚠ Nhánh basename so NGUYÊN VĂN tên tệp (thường hoá) — `x.gitignore` KHÔNG khớp (xem docblock
+ *   `TEN_TEP_CHO_PHEP` về bẫy `path.extname("x.gitignore") === ".gitignore"`).
+ */
 export function duoiDuocPhep(ten: string): boolean {
+  if (TEN_TEP_CHO_PHEP.has(ten.toLowerCase())) return true;
   return DUOI_CHO_PHEP.has(path.extname(ten).toLowerCase());
 }
 

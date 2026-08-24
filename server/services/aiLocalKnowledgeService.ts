@@ -4325,7 +4325,9 @@ async function* streamCodingTaoKhung(
     // ── (1) CHÍNH SÁCH ĐƯỜNG — thuần, TRƯỚC mọi I/O: hộp cát + đuôi trắng, liệt kê ĐỦ tệp phạm.
     // ⚠ HAI loại phạm, HAI số phận: HÌNH DẠNG đường xấu (tuyệt đối/`..`/ổ đĩa/thư mục cấm) là dấu
     //   hiệu model cố thoát hộp cát ⇒ LUÔN từ chối, la to — không bao giờ "loại êm" một mưu toan.
-    //   Phạm ĐUÔI đơn thuần (dotfile, .ico) chỉ là thói quen xấu ⇒ mới được xét loại-an-toàn dưới.
+    //   Phạm ĐUÔI đơn thuần (.ico, .png — tài nguyên nhị phân) chỉ là thói quen xấu ⇒ mới được xét
+    //   loại-an-toàn dưới. (★ 2026-08-24: dotfile `.gitignore`/`.editorconfig` KHÔNG còn là phạm —
+    //   `TEN_TEP_CHO_PHEP` ở `repoSandbox` cho chúng qua như tệp dự án bình thường.)
     const phamDuongXau: string[] = [];
     const phamChinhSach: string[] = [];
     for (const t of boc.tep) {
@@ -4342,7 +4344,8 @@ async function* streamCodingTaoKhung(
      * đúng tệp bị mắng rồi thêm tệp phạm KHÁC).
      *
      * Tệp phạm chia hai loại theo MỘT vị từ: có tệp NÀO KHÁC trong manifest nhắc tới TÊN nó không?
-     *  • KHÔNG ai tham chiếu (`.editorconfig`, `.gitignore`…) ⇒ LOẠI khỏi lô + NÓI RÕ trong thẻ và
+     *  • KHÔNG ai tham chiếu (`logo.png`, `sample.pdf`… — 2026-08-24: dotfile đã HỢP LỆ, mồi phạm
+     *    nay là tài nguyên nhị phân) ⇒ LOẠI khỏi lô + NÓI RÕ trong thẻ và
      *    câu trả lời — khung còn lại vẫn nguyên vẹn, build không mất gì. Im lặng loại là nói dối;
      *    loại CÓ nói là đúng chuẩn "không cắt bớt âm thầm" của repo.
      *  • CÓ tham chiếu (`appicon.ico` trong `<ApplicationIcon>` của csproj) ⇒ loại là build GÃY

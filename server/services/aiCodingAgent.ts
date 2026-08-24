@@ -134,9 +134,9 @@ import { MOC_MO, MOC_NGAN, MOC_DONG, RE_MO, RE_NGAN, RE_DONG } from "@shared/aiC
 // ★ 2026-08-24 — nghiệm thu live tạo-khung lượt 1 và 2 ĐỀU chết ở cửa đuôi tệp (`Strings.resx`
 //   rồi `appicon.ico` + `.editorconfig`): persona chỉ dặn "đường tương đối" mà KHÔNG nói model
 //   biết DANH SÁCH TRẮNG đuôi ⇒ nó đoán mù, mỗi lần đoán sai đốt một lượt 30B ~4 phút và cả lô
-//   bị từ chối. Tiêm danh sách THẬT từ đúng nguồn (`DUOI_CHO_PHEP`) vào persona — một nguồn,
-//   không chép tay; đổi danh sách là persona tự đổi theo.
-import { DUOI_CHO_PHEP } from "./aiLocalTools/repoSandbox";
+//   bị từ chối. Tiêm danh sách THẬT từ đúng nguồn (`DUOI_CHO_PHEP` + `TEN_TEP_CHO_PHEP`) vào
+//   persona — một nguồn, không chép tay; đổi danh sách là persona tự đổi theo.
+import { DUOI_CHO_PHEP, TEN_TEP_CHO_PHEP } from "./aiLocalTools/repoSandbox";
 
 /** Một khối sửa có đích: thay `truoc` (phải DUY NHẤT trong tệp) bằng `sau`. */
 export interface KhoiSua {
@@ -695,8 +695,13 @@ export const RE_TEP_KHUNG = /^#{2,6}\s*FILE\s*[:：]\s*(.*)$/i;
  *   `bocManifestKhung` rồi tự dựng `apply_diff_batch` với mọi `original: ""`.
  * ⚠ Trần 8 tệp nói THẲNG trong persona vì nó là trần THẺ DUYỆT (`applyDiffBatch.TRAN_TEP_MOI_LO`):
  *   vượt là cả lô bị từ chối, nên thà model biết trước còn hơn đốt một lượt 30B.
- * ⚠ "KHÔNG NuGet ngoài" là ràng buộc MÔI TRƯỜNG đo được: nhà máy offline, `dotnet build` chạy
- *   `--no-restore` — một `<PackageReference>` lạ là một khung KHÔNG BUILD ĐƯỢC ngay lượt sau.
+ * ★ 2026-08-24 — luật NuGet đổi từ CẤM sang KHAI (quyết định chủ dự án, nguyên văn: *"vấn đề nuget
+ *   không kéo được do không có mạng là do vấn đề phía người dùng phải chấp nhận và tìm cách tải và
+ *   copy vào thay vì tự động tải online, bản chất đối với các bên sử dụng hệ sinh thái có internet
+ *   thì vẫn phải kéo về bình thường được"*). Package NGOÀI được phép khi việc cần; cái persona đòi
+ *   nay là LỜI KHAI: manifest có `<PackageReference>` ⇒ câu trả lời phải kèm một dòng nói thật hai
+ *   chế độ (offline: tự tải + chép local feed trước khi build · có internet: `dotnet restore` kéo
+ *   bình thường) — khớp công tắc `DOTNET_CHO_PHEP_RESTORE` ở `repoCommandSandbox`.
  */
 export function personaTaoKhung(lang: NgonNguMa, nguCanhDuAn: string): string {
   const than = w(
@@ -714,11 +719,14 @@ export function personaTaoKhung(lang: NgonNguMa, nguCanhDuAn: string): string {
       "1. Tối đa 8 tệp. Khung TỐI THIỂU CHẠY ĐƯỢC trước — tệp phụ (test, CI, tài nguyên) để lượt sau.",
       "2. Đường dẫn TƯƠNG ĐỐI, dùng dấu `/`, không có `..`, không có ổ đĩa.",
       `2b. CHỈ các đuôi tệp sau được ghi (danh sách trắng của hộp cát): ${[...DUOI_CHO_PHEP].join(" ")}.`,
-      "    KHÔNG tệp nhị phân (icon/ảnh/font), KHÔNG dotfile (.editorconfig, .gitignore) — một tệp",
-      "    ngoài danh sách làm CẢ KHUNG bị từ chối, không byte nào được ghi.",
+      `    Tệp KHÔNG đuôi: chỉ đúng các tên ${[...TEN_TEP_CHO_PHEP].join(" ")} được ghi.`,
+      "    KHÔNG tệp nhị phân (icon/ảnh/font) — tài nguyên nhị phân để người dùng tự thêm sau;",
+      "    một tệp ngoài danh sách làm CẢ KHUNG bị từ chối, không byte nào được ghi.",
       "3. Mỗi tệp ĐỦ và ĐỘC LẬP: đủ import/namespace để cả khung biên dịch được ngay.",
-      "4. KHÔNG thêm package/NuGet NGOÀI trừ khi người dùng nêu đích danh — máy build OFFLINE",
-      "   (`dotnet build --no-restore`); nếu việc đòi package ngoài, NÓI THẲNG là cần local NuGet feed.",
+      "4. Package/NuGet NGOÀI: ĐƯỢC PHÉP khi việc cần (thư viện chuẩn đủ thì ưu tiên thư viện chuẩn).",
+      "   Nếu khung có `PackageReference`, PHẢI kèm đúng MỘT dòng nói thật hai chế độ triển khai:",
+      "   máy OFFLINE ⇒ người dùng tự tải package và chép vào local NuGet feed TRƯỚC khi build;",
+      "   máy CÓ INTERNET ⇒ `dotnet restore` kéo về bình thường.",
       "5. Không viết patch/diff, không bịa 'nội dung hiện tại' — chưa có nội dung nào.",
       "6. SAU tệp cuối, tối đa 3 gạch đầu dòng: khung gồm gì và lệnh build/chạy.",
     ].join("\n"),
@@ -735,11 +743,14 @@ export function personaTaoKhung(lang: NgonNguMa, nguCanhDuAn: string): string {
       "1. At most 8 files. MINIMAL RUNNABLE skeleton first — extras (tests, CI, assets) next turn.",
       "2. RELATIVE paths with `/`, no `..`, no drive letters.",
       `2b. ONLY these file extensions are writable (sandbox whitelist): ${[...DUOI_CHO_PHEP].join(" ")}.`,
-      "    NO binary files (icons/images/fonts), NO dotfiles (.editorconfig, .gitignore) — one file",
-      "    outside the list gets the WHOLE skeleton refused, zero bytes written.",
+      `    Extension-less files: only the exact names ${[...TEN_TEP_CHO_PHEP].join(" ")} are writable.`,
+      "    NO binary files (icons/images/fonts) — the user adds binary assets later; one file",
+      "    outside the lists gets the WHOLE skeleton refused, zero bytes written.",
       "3. Each file complete and self-contained so the skeleton compiles as a whole.",
-      "4. NO external packages/NuGet unless the user named them — the build machine is OFFLINE",
-      "   (`dotnet build --no-restore`); if the task needs one, SAY a local NuGet feed is required.",
+      "4. External packages/NuGet: ALLOWED when the task needs them (prefer the standard library when it suffices).",
+      "   If the skeleton has any `PackageReference`, you MUST add exactly ONE truthful line about the two",
+      "   deployment modes: OFFLINE machine => the user downloads the packages and copies them into a local",
+      "   NuGet feed BEFORE building; machine WITH internet => `dotnet restore` fetches them normally.",
       "5. No patches/diffs, no invented 'current content' — there is none.",
       "6. AFTER the last file, at most 3 bullets: what the skeleton contains and how to build/run.",
     ].join("\n"),
@@ -756,10 +767,12 @@ export function personaTaoKhung(lang: NgonNguMa, nguCanhDuAn: string): string {
       "1. 最多 8 个文件。先给出最小可运行骨架——测试/CI/资源等留到下一轮。",
       "2. 相对路径，使用 `/`，不得含 `..` 或盘符。",
       `2b. 只允许以下扩展名（沙箱白名单）：${[...DUOI_CHO_PHEP].join(" ")}。`,
-      "    不得有二进制文件（图标/图片/字体）、不得有点文件（.editorconfig、.gitignore）——一个越界文件会导致整个骨架被拒绝，零字节写入。",
+      `    无扩展名文件：只允许这些确切名称：${[...TEN_TEP_CHO_PHEP].join(" ")}。`,
+      "    不得有二进制文件（图标/图片/字体）——二进制资源留给用户事后自行添加；一个越界文件会导致整个骨架被拒绝，零字节写入。",
       "3. 每个文件完整自包含，使整个骨架可以直接编译。",
-      "4. 除非用户点名，不要引入外部包/NuGet——构建机是离线的（`dotnet build --no-restore`）；",
-      "   若确实需要，请明说需要本地 NuGet 源。",
+      "4. 外部包/NuGet：任务需要时允许使用（标准库够用时优先标准库）。若骨架含 `PackageReference`，",
+      "   必须附上恰好一行、如实说明两种部署模式：离线机器 ⇒ 用户须自行下载包并复制到本地 NuGet 源后再构建；",
+      "   联网机器 ⇒ `dotnet restore` 可正常拉取。",
       "5. 不要写补丁/diff，不要臆造“当前内容”——并不存在。",
       "6. 最后一个文件之后，最多 3 条要点：骨架包含什么、如何构建/运行。",
     ].join("\n"),
