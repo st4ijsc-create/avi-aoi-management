@@ -21,6 +21,7 @@ import { NO_FACTORY_ASSIGNMENT_MESSAGE } from '../_core/accessControlLabels';
 // Cổng phạm vi cho bảng KHÔNG có cột tenant (`oee_metrics`, `downtime_events`, danh sách máy
 // dựng trong bộ nhớ). Một luật, một chỗ sửa — xem docblock ở `db/reportAggregators.ts`.
 import { tenantMachineGate, getTenantScopedMachineIds } from '../db/reportAggregators';
+import { finalYield } from '../utils/kpi';
 import type { SQL } from 'drizzle-orm';
 
 // Email template config interface - matches db schema
@@ -311,6 +312,18 @@ async function scheduleTenantFilter(actor: ExportActor): Promise<SQL | undefined
   return getAccessFilterConditions(actor.id, actor.role);
 }
 
+/**
+ * Dòng TỔNG của báo cáo — CÙNG công thức `finalYield` (decision #4: NTF = PASS) với các dòng
+ * chi tiết theo corporate. Nhận lại chính mảng dòng chi tiết đã dựng để bất biến "tổng = cộng
+ * các dòng" đúng theo CẤU TẠO, không phải trùng hợp giữa hai phép tính độc lập.
+ */
+export function tinhDongTong(rows: Array<{ total: number; ok: number; ntf: number }>): { total: number; ok: number; ntf: number; yieldRate: number } {
+  const total = rows.reduce((s, r) => s + r.total, 0);
+  const ok = rows.reduce((s, r) => s + r.ok, 0);
+  const ntf = rows.reduce((s, r) => s + r.ntf, 0);
+  return { total, ok, ntf, yieldRate: finalYield({ ok, ntf, total }) };
+}
+
 class ScheduledReportService {
   /**
    * Compute the next scheduled run strictly after `after` (default: now).
@@ -389,14 +402,20 @@ class ScheduledReportService {
         : '0.00',
     }));
 
-    // Calculate summary
-    const totalInspections = yieldByCorporate.reduce((sum, c) => sum + c.totalInspections, 0);
-    const okCount = yieldByCorporate.reduce((sum, c) => sum + c.okCount, 0);
+    // Calculate summary — dòng TỔNG phải dùng CÙNG công thức `finalYield` (NTF = PASS) với các
+    // dòng chi tiết theo corporate ở trên. `tinhDongTong` cộng lại chính `yieldByCorporate` nên
+    // bất biến "tổng = cộng các dòng" đúng theo cấu tạo, không phải trùng hợp giữa hai phép tính
+    // độc lập. `ngCount` không nằm trong yield (chỉ hiển thị) nên cộng riêng như trước.
     const ngCount = yieldByCorporate.reduce((sum, c) => sum + c.ngCount, 0);
-    const ntfCount = yieldByCorporate.reduce((sum, c) => sum + c.ntfCount, 0);
-    const yieldRate = totalInspections > 0
-      ? ((okCount / totalInspections) * 100).toFixed(2)
-      : '0.00';
+    const dongTong = tinhDongTong(
+      yieldByCorporate.map((c) => ({ total: c.totalInspections, ok: c.okCount, ntf: c.ntfCount }))
+    );
+    const totalInspections = dongTong.total;
+    const okCount = dongTong.ok;
+    const ntfCount = dongTong.ntf;
+    // `summary.yieldRate` là CHUỖI theo hợp đồng `ReportContent` (template PDF/email đang nối
+    // chuỗi `${yieldRate}%`) — `tinhDongTong` trả SỐ chưa làm tròn, `.toFixed(2)` chỉ ở đây.
+    const yieldRate = dongTong.yieldRate.toFixed(2);
 
     // Get top NG machines from factory stats
     interface NGMachine {
