@@ -2596,8 +2596,49 @@ EXPECT_CONFORMANCE=24
 # 0 suppressions of any kind), EXPECT_BUILD_NODES (0), the three settle constants, the process matcher,
 # the exclusive lock, both halves of the warnings ledger. BU-1 does NOT touch web/, so `npm run build`
 # does not arise and the web/ domain declaration is expected to print unchanged.
+#
+# ══ BW-1, 2026-08-24 — EXPECT_EDGECORE 1285 -> 1286 (+1). ITEM 72, OPTION B, AND THE ITEM'S OWN NUMBER
+#    DID NOT SURVIVE ═══════════════════════════════════════════════════════════════════════════════════
+#
+#   tests/St4i.EdgeCore.Tests/TestRunTempRootTests.cs                          +1
+#     OpcUaPkiStore_ResolvesAwayFromTheRealProgramDataPkiDirectory — the SEVENTH ambient redirect
+#     (ST4I_OPCUA_PKI_DIR), added to tests/Shared/TestRunTempRoot.cs beside the six already there, so a
+#     test class that passes no explicit PKI root can no longer fall through to a real installation's
+#     OPC-UA app-instance certificate, its private key and its trusted-peer store.
+#
+# 🔴 WHY THIS IS A LARGER GAP THAN THE ITEM RECORDED. docs/owner-decisions.md item 72 tabulates
+#   ST4I_OPCUA_PKI_DIR under a column headed "the file that SETS it" with the value 1 — against 20-24 for
+#   the nine sibling leaves — and rests "do this leaf first" on that 1. Re-counted at BW-1 over tests/:
+#   ONE file MENTIONS the literal and ZERO files SET it. Both mentions are inside a doc comment in
+#   PerHostDataRootsTests, one of which reaches the same conclusion in its own words ("nothing exercises
+#   ST4I_OPCUA_PKI_DIR, the env var"), and line 3295 of this file says it too. The instrument behind the
+#   item's table was a literal count over tests/, which PerHostDataRootsTests' own F-8 note records as
+#   unable to produce a "sets it" row. So the column heading and the number disagree, and the direction is
+#   the alarming one.
+#
+# 🔴 CONTROL PAIR, RUN AND REVERTED, scoped to the class (5 tests) and the scope is stated:
+#     ARM A  the redirect DELETED from TestRunTempRoot.cs            -> 1 failed / 4 passed  (the witness)
+#     ARM B  the variable SET, but pointed at the REAL ProgramData
+#            store instead of this run's disposable root             -> 1 failed / 4 passed  (same witness)
+#     BASE   the change as it ships                                  -> 0 failed / 5 passed
+#   ARM B is what makes ARM A mean something: without it, a test that merely checked "the variable is set"
+#   would be satisfied by a redirect into a second accumulating directory, which is the defect wearing the
+#   fix's clothes.
+#
+# 🔴 WHAT THIS DOES NOT BUY, because item 72 is only PARTLY paid by it. Nine leaves stay on a per-class
+#   convention (20-24 files each). This is a TEST-side redirect: it gives the product no new default and
+#   changes no line under src/, so the "fifteen artefacts moving together" price item 72 quotes belongs to
+#   option A, not to this. And it closes a CAPABILITY, not an observed write — measured 2026-08-24,
+#   C:\ProgramData\ST4I\sim\opcua-pki holds 3 files whose newest mtime is 2026-07-29 15:42:07.
+#
+# EXPECT_ABSTRACTIONS (161), EXPECT_CONFORMANCE (24), EXPECT_EDGESERVICE (52) and EXPECT_ENGINEAPI (1449)
+# are UNCHANGED by BW-1: the change is one [Fact] in one EdgeCore file plus comments. NOT MOVED:
+# EXPECT_WARNINGS (219), EXPECT_BUILD_NODES (0), the three settle constants, the process matcher, the
+# exclusive lock, both halves of the warnings ledger. BW-1 does NOT wire web/ into this gate — item 60 was
+# a MEASUREMENT of option B, not a build of it — so the web/ domain declaration prints unchanged, and
+# `npm run build` / `npm run lint` remain commands this script does not invoke.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1285
+EXPECT_EDGECORE=1286
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -5534,8 +5575,31 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #      caught here."  TRUE, and MEASURED rather than feared: both defects are named in the block beside
 #      EXPECT_ENGINEAPI above, and both would still pass the new check.
 # The baseline cfcfae42 is STILL not moved.
+#
+# 🔴 BW-1, 2026-08-24 — 575 -> 578 (+3 NET, and +3 GROSS: nothing was rewritten, so the arithmetic is
+# 575 + 3 = 578). All three belong to the single new [Fact] added for item 72 option B, and all three are
+# in tests/St4i.EdgeCore.Tests/TestRunTempRootTests.cs. Read, one at a time:
+#   1. "Both mentions live inside a doc comment in PerHostDataRootsTests, one of which states the residual
+#      outright — \"nothing exercises ST4I_OPCUA_PKI_DIR, the env var\"."  TRUE, and the absolute word is
+#      inside a QUOTATION of a sentence this repository already published (PerHostDataRootsTests F-10, and
+#      verify-suites.sh:3295 carries it too). Re-measured independently at BW-1: across tests/, the literal
+#      is mentioned by 1 file and set by 0, so the quoted sentence is not merely repeated, it is confirmed.
+#   2. "It also asserts nothing about path LENGTH: the run root is deeper than
+#      %ProgramData%\\ST4I\\sim\\opcua-pki, and OpcUaPkiPaths' own class doc records a native crypto failure
+#      once a certificate's full path approaches legacy MAX_PATH."  TRUE, and it is a declared CEILING
+#      rather than a claim of safety: the length is stated with its measurement in TestRunTempRoot.cs
+#      (~175 of 260 on this machine) and deliberately not asserted, because a threshold invented here would
+#      be a false positive with no measurement behind it.
+#   3. "The three OPC-UA driver suites pass an explicit PKI root and take the explicit arm of
+#      OpcUaPkiPaths.ResolveRoot, so they were already clear of the real store and this fact says nothing
+#      about them."  TRUE, and re-measured at BW-1 rather than copied: OpcUaDriverConformanceTests,
+#      OpcUaDriverLoopbackTests and OpcUaDriverWriteTests each pass `pkiDir:` at every construction site.
+# The baseline cfcfae42 is STILL not moved. The corpus itself did NOT move: 561 *.cs before and after,
+# which is the measurement that says widening the sparse cone (item 74, same task) pulled no new file into
+# this instrument's domain — corpus_of walks tools/machine-simulator, and the five directories added to the
+# cone are top-level siblings holding ZERO *.cs between them.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_NEW_DOC_ABSOLUTES=575
+EXPECT_NEW_DOC_ABSOLUTES=578
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
