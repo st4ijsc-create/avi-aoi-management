@@ -46,6 +46,14 @@ import type { CopilotUser } from "./aiCopilotActions";
 import { duoiDuocPhep, phanQuyetDuongDan } from "./aiLocalTools/repoSandbox";
 import { TRAN_TEP_MOI_LO } from "./aiLocalTools/writeHandlers/applyDiffBatch";
 /**
+ * ★★★ 2026-08-24 — KHUNG DỰ ÁN C# bằng `dotnet new` (khung CHUẨN Microsoft) THAY cho model tự viết
+ * csproj/xaml (đo LIVE: model sai chuẩn — csproj tham chiếu `.ico` không tồn tại, lén package). SERVER
+ * chạy `dotnet new` vào thư mục TẠM, đọc+lọc, rồi đưa qua ĐÚNG `apply_diff_batch` — GIỮ nguyên lớp
+ * duyệt diff. `dotnet new` là lệnh GHI ĐĨA nên KHÔNG vào `DANH_SACH_TRANG` (model không tự chạy được).
+ * Xem docblock đầu `ai/dotnetNewScaffold.ts`.
+ */
+import { anhXaTemplateDotnet, chayDotnetNewVaoTam, slugDuAn } from "./ai/dotnetNewScaffold";
+/**
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
  * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
  */
@@ -4622,41 +4630,20 @@ async function* streamCodingTaoKhung(
 ): AsyncGenerator<StreamEvent, boolean> {
   if (!codingEditEnabled()) return false;
   if (!execCtx) return false;
-  if (!(await codingModelSanSang())) return false;
 
   const nguCanh = await nguCanhDuAnChoPrompt(context, execCtx);
-  const lm = yield* motLuotModel({
-    heThong: personaTaoKhung(language, nguCanh),
-    // ⚠ KHÔNG có khối ngữ cảnh mã: thư mục đích TRỐNG — mục lục repo nền tảng không nói gì về nó.
-    ghepPrompt: (khoiLichSu, khoiBai) => promptTaoKhung(question, language, khoiLichSu, khoiBai),
-    khoiBaiHoc,
-    tranToken: TRAN_TOKEN_TAO_KHUNG,
-    language,
-    history,
-    relPath: "(khung dự án)",
-    userId: execCtx.user?.id,
-    signal: execCtx.signal,
-  });
-  if (lm.kq !== "chu") {
-    yield doneSinhMa(lm.traLoi, lm.provider, lm.degraded);
-    return true;
-  }
 
   /**
-   * Kết một lượt FAIL-SAFE: chữ model ĐÃ stream giữ nguyên như câu trả lời thường + đúng MỘT câu
-   * nói thật vì sao không có đề xuất. Generator con không `yield` hộ được nên trả câu về cho vòng
-   * ngoài phát — cùng lý do `chuanBiBanSuaMotTep` trả `traLoi` thay vì tự phát.
+   * ★★★ KIỂM MANIFEST TỆP — nhận danh sách tệp ĐÃ BÓC, dùng CHUNG cho HAI nguồn: manifest MODEL và
+   * khung `dotnet new`. Chạy TỐI ĐA hai lần cho đường model (lượt gốc + đúng MỘT lượt tự sửa). Nội
+   * dung là NGUYÊN khối kiểm cũ (chính sách đường · loại-an-toàn · kiểm CHƯA-tồn-tại), chỉ đổi đầu
+   * vào từ `boc.tep` sang `tepVao` — chép ra một bản mutable cục bộ để phần thân giữ nguyên `boc.tep`.
    */
-  /**
-   * ★ KIỂM MANIFEST — rút thành hàm cục bộ vì nó chạy TỐI ĐA HAI LẦN (lượt gốc + đúng MỘT lượt tự
-   * sửa). Nội dung là NGUYÊN khối kiểm cũ, không đổi một phép nào — chỉ đổi chỗ đứng.
-   */
-  const kiemManifest = async (
-    vanBan: string,
+  const kiemManifestTep = async (
+    tepVao: { duong: string; noiDung: string }[],
   ): Promise<{ ok: true; tep: { duong: string; noiDung: string }[]; cauLoai: string | null } | { ok: false; cau: string }> => {
-    const boc = bocManifestKhung(vanBan);
-    if (!boc.ok) return { ok: false, cau: codingKhungHongMessage(language, boc.ma, boc.chiTiet) };
-    if (boc.tep.length > TRAN_TEP_MOI_LO) return { ok: false, cau: codingKhungQuaTranMessage(language, boc.tep.length) };
+    if (tepVao.length > TRAN_TEP_MOI_LO) return { ok: false, cau: codingKhungQuaTranMessage(language, tepVao.length) };
+    const boc = { tep: tepVao.slice() };
     // ── (1) CHÍNH SÁCH ĐƯỜNG — thuần, TRƯỚC mọi I/O: hộp cát + đuôi trắng, liệt kê ĐỦ tệp phạm.
     // ⚠ HAI loại phạm, HAI số phận: HÌNH DẠNG đường xấu (tuyệt đối/`..`/ổ đĩa/thư mục cấm) là dấu
     //   hiệu model cố thoát hộp cát ⇒ LUÔN từ chối, la to — không bao giờ "loại êm" một mưu toan.
@@ -4732,6 +4719,116 @@ async function* streamCodingTaoKhung(
     return { ok: true, tep: boc.tep, cauLoai: cauLoaiTam };
   };
 
+  /**
+   * ★ Bọc TEXT→TỆP cho đường MODEL: bóc manifest bằng `bocManifestKhung` rồi vào `kiemManifestTep`.
+   *   (Đường `dotnet new` không cần bọc này — nó đã có sẵn danh sách tệp.)
+   */
+  const kiemManifest = async (
+    vanBan: string,
+  ): Promise<{ ok: true; tep: { duong: string; noiDung: string }[]; cauLoai: string | null } | { ok: false; cau: string }> => {
+    const boc = bocManifestKhung(vanBan);
+    if (!boc.ok) return { ok: false, cau: codingKhungHongMessage(language, boc.ma, boc.chiTiet) };
+    return kiemManifestTep(boc.tep);
+  };
+
+  /**
+   * ★★★ ĐUÔI CHUNG — dựng MỘT `apply_diff_batch` (mọi `original: ""`) rồi stream qua HITL. Dùng cho
+   * CẢ hai nguồn (khung `dotnet new` và manifest model), nên lớp xem-trước-diff GIỐNG HỆT nhau —
+   * `executeDecision` gửi mọi `kind:"write"` vào `proposeAction`, ở đây không nhánh nào chạm đĩa.
+   *
+   * ⚠ `vanBanTruoc` là chữ ĐÃ đi vào token stream (model: đầu ra model đã stream; dotnet: câu note đã
+   *   yield) — ở đây CHỈ dùng lại nó cho `answer` của `done` (client thay bong bóng bằng answer, nên
+   *   token rời sẽ biến mất khỏi bản ghi — bài học §7B), KHÔNG stream lần nữa.
+   */
+  const deXuatKhung = async function* (
+    tepKhung: { duong: string; noiDung: string }[],
+    vanBanTruoc: string,
+    cauLoai: string | null,
+  ): AsyncGenerator<StreamEvent, boolean> {
+    // ★ Tệp bị LOẠI-an-toàn: nói NGAY trong dòng chữ — trước cả thẻ duyệt, để người đọc thẻ biết vì sao thiếu.
+    if (cauLoai) yield { type: "token", token: `\n\n${cauLoai}` };
+    const ad = await executeDecision(
+      { tool: "apply_diff_batch", args: { files: tepKhung.map((t) => ({ path: t.duong, original: "", modified: t.noiDung })) } },
+      execCtx!,
+    );
+    const duoiDone = cauLoai ? `${cauLoai}\n\n` : "";
+    if (ad.pendingAction) {
+      yield { type: "pending_action", toolName: "apply_diff_batch", pendingAction: ad.pendingAction };
+      const m = ad.pendingAction.summary;
+      yield { type: "token", token: `\n\n${m}` };
+      yield doneSinhMa(`${vanBanTruoc}\n\n${duoiDone}${m}`, "ollama");
+      return true;
+    }
+    if (ad.denied) {
+      const m = ad.denied.message;
+      yield { type: "token", token: `\n\n${m}` };
+      yield doneSinhMa(`${vanBanTruoc}\n\n${duoiDone}${m}`, "tool");
+      return true;
+    }
+    const m = codingErrorMessage(language, "apply_diff_batch", ad.error ?? "PROPOSE_FAILED");
+    yield { type: "token", token: `\n\n${m}` };
+    yield doneSinhMa(`${vanBanTruoc}\n\n${duoiDone}${m}`, "tool");
+    return true;
+  };
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐƯỜNG 1 — `dotnet new` (khung CHUẨN Microsoft), THỬ TRƯỚC KHI HỎI MODEL.
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Ánh xạ ý định → template `dotnet new` (THUẦN). Khớp + `dotnet new` chạy được ⇒ khung chuẩn 100%,
+   * KHÔNG cần model (chạy được cả khi model 30B đang giữ VRAM — đó là lý do gate `codingModelSanSang`
+   * dời xuống nhánh 2). Không khớp / dotnet lỗi / không có SDK ⇒ fail-safe RƠI VỀ đường model tự viết
+   * (dự phòng cho TS/React/Python…). `dotnet new` là lệnh GHI ĐĨA nên SERVER chạy nó vào thư mục TẠM
+   * do server kiểm soát — model KHÔNG bao giờ tự chạy được (nó KHÔNG có trong `DANH_SACH_TRANG`).
+   */
+  const template = anhXaTemplateDotnet(question);
+  if (template !== null) {
+    const dn = await chayDotnetNewVaoTam({ template, slug: slugDuAn(context.projectId) });
+    if (dn.ok) {
+      // Chuẩn hoá kết dòng đúng như manifest model (LF + một dòng trống cuối) trước khi neo băm("").
+      const tepChuanHoa = dn.tep.map((t) => ({ duong: t.duong, noiDung: chuanHoaTepMoi(t.noiDung) }));
+      const note = codingKhungDotnetMessage(language, dn.template, dn.slug, dn.coNuGet);
+      yield { type: "token", token: note };
+      const kq = await kiemManifestTep(tepChuanHoa);
+      if (!kq.ok) {
+        // Hậu kiểm create-only từ chối CẢ LÔ (tệp đã tồn tại / quá trần). KHÔNG rơi về model: khung
+        // chuẩn đã sinh ĐÚNG; lỗi ở gốc dự án (không trống) — người dùng cần biết, không cần một lượt model.
+        yield { type: "token", token: `\n\n${kq.cau}` };
+        yield doneSinhMa(`${note}\n\n${kq.cau}`, "tool");
+        return true;
+      }
+      return yield* deXuatKhung(kq.tep, note, kq.cauLoai);
+    }
+    console.warn(
+      `[aiLocalKnowledge] dotnet new (${template}) không dùng được: ${dn.lyDo} ⇒ rơi về đường model tự viết khung`,
+    );
+  }
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐƯỜNG 2 — MODEL TỰ VIẾT KHUNG (fail-safe / ngôn ngữ ngoài .NET). NGUYÊN VẸN đường cũ.
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Kết một lượt FAIL-SAFE: chữ model ĐÃ stream giữ nguyên như câu trả lời thường + đúng MỘT câu nói
+   * thật vì sao không có đề xuất. Generator con không `yield` hộ được nên trả câu về cho vòng ngoài.
+   */
+  if (!(await codingModelSanSang())) return false;
+  const lm = yield* motLuotModel({
+    heThong: personaTaoKhung(language, nguCanh),
+    // ⚠ KHÔNG có khối ngữ cảnh mã: thư mục đích TRỐNG — mục lục repo nền tảng không nói gì về nó.
+    ghepPrompt: (khoiLichSu, khoiBai) => promptTaoKhung(question, language, khoiLichSu, khoiBai),
+    khoiBaiHoc,
+    tranToken: TRAN_TOKEN_TAO_KHUNG,
+    language,
+    history,
+    relPath: "(khung dự án)",
+    userId: execCtx.user?.id,
+    signal: execCtx.signal,
+  });
+  if (lm.kq !== "chu") {
+    yield doneSinhMa(lm.traLoi, lm.provider, lm.degraded);
+    return true;
+  }
+
   let vanBanCuoi = lm.text;
   let ketQuaKiem = await kiemManifest(vanBanCuoi);
   if (!ketQuaKiem.ok) {
@@ -4779,50 +4876,9 @@ async function* streamCodingTaoKhung(
       return true;
     }
   }
-  const tepKhung = ketQuaKiem.tep;
-  // ★ Tệp bị LOẠI-an-toàn: nói NGAY trong dòng chữ — trước cả thẻ duyệt, để người đọc thẻ biết vì sao thiếu.
-  if (ketQuaKiem.cauLoai) {
-    yield { type: "token", token: `
-
-${ketQuaKiem.cauLoai}` };
-  }
-  const cauLoaiCuoi = ketQuaKiem.cauLoai;
-
-  /**
-   * ── ĐỀ XUẤT: MỘT `apply_diff_batch`, MỌI mục `original: ""` (neo = băm("") — tool tự chứng minh
-   * lại "chưa tồn tại" ở CẢ propose LẪN confirm). Kể cả khung 1 tệp vẫn đi lô: một khuôn duyệt duy
-   * nhất cho "khung dự án", không rẽ nhánh theo N.
-   * ⚠ HITL nguyên vẹn: `executeDecision` gửi mọi `kind:"write"` vào `proposeAction` — ở đây không
-   *   có nhánh nào chạm đĩa.
-   */
-  const ad = await executeDecision(
-    { tool: "apply_diff_batch", args: { files: tepKhung.map((t) => ({ path: t.duong, original: "", modified: t.noiDung })) } },
-    execCtx,
-  );
-  /**
-   * ⚠ `vanBanCuoi` chứ KHÔNG phải `lm.text` — ba dòng dưới từng dùng `lm.text` và bị lưới §7B bắt:
-   *   client thay cả bong bóng bằng `answer` của done, nên văn bản lượt TỰ SỬA (thông báo + manifest
-   *   sạch) sẽ biến mất khỏi bản ghi nếu done vẫn chở văn bản lượt MỘT. Câu LOẠI-an-toàn cũng phải
-   *   sống sót vào done với cùng lý do.
-   */
-  const duoiDone = cauLoaiCuoi ? `${cauLoaiCuoi}\n\n` : "";
-  if (ad.pendingAction) {
-    yield { type: "pending_action", toolName: "apply_diff_batch", pendingAction: ad.pendingAction };
-    const m = ad.pendingAction.summary;
-    yield { type: "token", token: `\n\n${m}` };
-    yield doneSinhMa(`${vanBanCuoi}\n\n${duoiDone}${m}`, "ollama");
-    return true;
-  }
-  if (ad.denied) {
-    const m = ad.denied.message;
-    yield { type: "token", token: `\n\n${m}` };
-    yield doneSinhMa(`${vanBanCuoi}\n\n${duoiDone}${m}`, "tool");
-    return true;
-  }
-  const m = codingErrorMessage(language, "apply_diff_batch", ad.error ?? "PROPOSE_FAILED");
-  yield { type: "token", token: `\n\n${m}` };
-  yield doneSinhMa(`${vanBanCuoi}\n\n${duoiDone}${m}`, "tool");
-  return true;
+  // ★ Đường model hội tụ vào ĐUÔI CHUNG: `vanBanCuoi` (đầu ra model, có thể kèm thông báo tự-sửa) đã
+  //   đi vào token stream; `deXuatKhung` chỉ dùng lại nó cho `answer` của done + stream câu LOẠI-an-toàn.
+  return yield* deXuatKhung(ketQuaKiem.tep, vanBanCuoi, ketQuaKiem.cauLoai);
 }
 
 /** Vì sao nhánh sinh mã KHÔNG chạy — mỗi lý do là một câu khác nhau với người dùng. */
@@ -5244,6 +5300,32 @@ function codingLoKhongDoiMessage(language: KbLanguage, khongDoi: readonly string
  * ★ Tệp phạm chính sách nhưng KHÔNG ai tham chiếu ⇒ bị LOẠI khỏi lô, và câu này là lời khai —
  * loại ÂM THẦM là một kiểu cắt bớt nói dối, đúng lớp "không silent-truncation" của repo.
  */
+/**
+ * ★★★ 2026-08-24 — Câu NOTE khi khung tới từ `dotnet new` (khung CHUẨN Microsoft), KHÔNG từ model.
+ * Nói THẬT: dùng template gì, tên dự án gì, đã bỏ sản phẩm dựng (obj/bin) + tài nguyên nhị phân.
+ * Khi khung có `<PackageReference>` (đo bằng `coPackageReference`) ⇒ KHAI hai chế độ NuGet: máy
+ * OFFLINE tự tải + chép local feed TRƯỚC khi build · máy CÓ INTERNET `dotnet restore` kéo bình thường
+ * — khớp công tắc `DOTNET_CHO_PHEP_RESTORE` ở `repoCommandSandbox`, và cùng lời khai persona model.
+ */
+function codingKhungDotnetMessage(language: KbLanguage, template: string, slug: string, coNuGet: boolean): string {
+  if (language === "zh") {
+    const nuGet = coNuGet
+      ? `\n\n⚠ 骨架含 \`PackageReference\`（NuGet）。离线机器：构建前自行下载包并复制到本地 NuGet 源；联网机器：\`dotnet restore\` 可正常拉取。`
+      : "";
+    return `✓ 已用标准模板 \`dotnet new ${template}\`（微软官方骨架）生成项目「${slug}」，并剔除构建产物（obj/ bin/）与白名单之外的文件（二进制/资源）。请逐个文件审批下面的写入。${nuGet}`;
+  }
+  if (language === "en") {
+    const nuGet = coNuGet
+      ? `\n\n⚠ The skeleton has \`PackageReference\` (NuGet). OFFLINE machine: download the packages and copy them into a local NuGet feed BEFORE building; machine WITH internet: \`dotnet restore\` fetches them normally.`
+      : "";
+    return `✓ Used \`dotnet new ${template}\` (Microsoft's standard skeleton) to scaffold project "${slug}", with build artifacts (obj/ bin/) and non-whitelisted files (binary/assets) removed. Review each file write below.${nuGet}`;
+  }
+  const nuGet = coNuGet
+    ? `\n\n⚠ Khung có \`PackageReference\` (NuGet). Máy OFFLINE: tự tải package và chép vào local NuGet feed TRƯỚC khi build; máy CÓ INTERNET: \`dotnet restore\` kéo về bình thường.`
+    : "";
+  return `✓ Đã dùng khung CHUẨN \`dotnet new ${template}\` (Microsoft) để dựng dự án "${slug}", đã bỏ sản phẩm dựng (obj/ bin/) và tệp ngoài danh sách nguồn (nhị phân/tài nguyên). Duyệt từng tệp bên dưới.${nuGet}`;
+}
+
 function codingKhungLoaiTepMessage(language: KbLanguage, tepLoai: string[], conLai: number): string {
   const ds = tepLoai.join(", ");
   if (language === "zh")

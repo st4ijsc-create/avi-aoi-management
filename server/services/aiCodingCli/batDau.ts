@@ -20,14 +20,19 @@
  *   trường); file này là **vỏ chạy** và là nơi DUY NHẤT chạm `dotenv`.
  *
  * ⚠ Thứ tự import ở đây là **có ý nghĩa**: ESM đánh giá XONG toàn bộ import rồi mới chạy thân hàm,
- *   nên `dotenv/config` phải là câu `import` ĐẦU TIÊN — nếu không, một module nào đó đọc
- *   `process.env` ở tầng module sẽ thấy giá trị TRỐNG. Đây là cùng cạm bẫy mà
- *   `server/_core/index.ts` đã ghi lại trong docblock của nó.
+ *   nên `dotenv/config` phải là câu `import` ĐẦU TIÊN **trong nhóm module đọc env** — nếu không, một
+ *   module nào đó đọc `process.env` ở tầng module sẽ thấy giá trị TRỐNG. Đây là cùng cạm bẫy mà
+ *   `server/_core/index.ts` đã ghi lại trong docblock của nó. NGOẠI LỆ DUY NHẤT đứng TRƯỚC nó là
+ *   `./mcpStdoutSach` — nó đọc `process.argv` chứ KHÔNG đọc `process.env`, và phải đứng trước để kịp
+ *   chuyển `console.*` → stderr TRƯỚC khi các module hạ tầng in log rác lúc nạp (xem docblock file ấy).
  *
  * CÁCH CHẠY
  *   npm run ai:cli  -- --du-an repo
  *   npm run ai:mcp                    (MCP client tự sinh tiến trình này)
  */
+import "./mcpStdoutSach"; // ★ PHẢI đứng TRƯỚC mọi import (kể cả dotenv): ở chế độ MCP chuyển
+// console.log/info/debug → stderr để STDOUT thuần JSON-RPC, bắt cả log phát lúc-nạp-module. Đọc 0
+// biến env nên không phạm quy tắc "dotenv nạp trước". Xem docblock mcpStdoutSach.ts.
 import "dotenv/config";
 import { chayCliVoiTerminalThat } from "./cli";
 import { chayMcp } from "./mcpServer";

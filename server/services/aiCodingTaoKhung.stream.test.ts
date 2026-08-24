@@ -91,6 +91,19 @@ vi.mock("./aiLocalTools", async (goc) => {
   };
 });
 
+/**
+ * ★ 2026-08-24 — CHẶN đường `dotnet new` để lưới NÀY đo ĐÚNG đường MODEL (fallback THẬT khi vắng SDK
+ *   hoặc câu không ánh xạ được template). `chayDotnetNewVaoTam` trả {ok:false} ⇒ `streamCodingTaoKhung`
+ *   rơi về model tự viết. KHÔNG chặn thì một máy có dotnet SDK sẽ (a) chạy `dotnet new` THẬT trong
+ *   lưới (brief cấm) và (b) đo một khung KHÁC manifest model đã tiêm ⇒ mọi mệnh đề dưới vô nghĩa.
+ *   `anhXaTemplateDotnet`/`slugDuAn` GIỮ THẬT — routing không đổi. Đường `dotnet new` có lưới RIÊNG:
+ *   `aiCodingTaoKhungDotnet.stream.test.ts`.
+ */
+vi.mock("./ai/dotnetNewScaffold", async (goc) => {
+  const that = await goc<typeof import("./ai/dotnetNewScaffold")>();
+  return { ...that, chayDotnetNewVaoTam: vi.fn(async () => ({ ok: false as const, lyDo: "lưới: dotnet tắt" })) };
+});
+
 import { streamAnswer, type StreamEvent } from "./aiLocalKnowledgeService";
 import { bocManifestKhung, chuanHoaTepMoi, MOC_TEP_KHUNG } from "./aiCodingAgent";
 import { laYDinhTaoDuAn } from "./aiLocalTools/intentClassifier";

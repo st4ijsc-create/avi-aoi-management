@@ -769,6 +769,18 @@ describe("§G — MÔI TRƯỜNG: tiến trình con KHÔNG thừa kế bí mật
     expect(moiTruongDaLoc({ SystemRoot: "C:\\Windows" }).SystemRoot).toBe("C:\\Windows");
   });
 
+  it("★★ mục 5 — biến PROXY chuỗi công cụ ĐƯỢC truyền qua (hoa lẫn thường)", () => {
+    // Đột biến "quên thêm nhóm proxy vào BIEN_MOI_TRUONG_CHO_PHEP" ⇒ ba dòng dưới ĐỎ.
+    const ra = moiTruongDaLoc({
+      HTTP_PROXY: "http://proxy.cty:8080",
+      https_proxy: "http://proxy.cty:8080",
+      NO_PROXY: "localhost,127.0.0.1",
+    });
+    expect(ra.HTTP_PROXY).toBe("http://proxy.cty:8080");
+    expect(ra.https_proxy, "so khớp không phân biệt hoa/thường ⇒ https_proxy viết thường vẫn qua").toBe("http://proxy.cty:8080");
+    expect(ra.NO_PROXY).toBe("localhost,127.0.0.1");
+  });
+
   it("★ danh sách trắng tên biến KHÔNG chứa một cái tên nào nghe như bí mật", () => {
     for (const ten of BIEN_MOI_TRUONG_CHO_PHEP) {
       expect(/SECRET|TOKEN|KEY|PASSWORD|DATABASE|API/i.test(ten), `"${ten}" không được nằm trong danh sách trắng`).toBe(false);

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "avi-coding-repo": {
+      "command": "npx",
+      "args": ["tsx", "server/services/aiCodingCli/batDau.ts", "mcp"],
+      "cwd": "D:\\SOURCES\\avi-aoi-management",
+      "env": {
+        "AVI_MCP_USER": "<TEN_DANG_NHAP_ADMIN>",
+        "AVI_MCP_PASSWORD": "<MAT_KHAU_ADMIN>"
+      }
+    }
+  }
+}

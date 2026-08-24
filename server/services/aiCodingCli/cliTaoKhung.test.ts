@@ -49,6 +49,17 @@ vi.mock("../aiGgufEngine", () => ({
   },
 }));
 
+/**
+ * ★ 2026-08-24 — CHẶN đường `dotnet new` để vòng ghi-thật NÀY đo ĐÚNG đường MODEL. `chayDotnetNewVaoTam`
+ *   trả {ok:false} ⇒ `streamCodingTaoKhung` rơi về model tự viết (manifest tiêm qua `h.manh`). KHÔNG
+ *   chặn thì máy có dotnet SDK sẽ chạy `dotnet new` THẬT trong lưới (brief cấm) và ghi một khung KHÁC
+ *   xuống đĩa ⇒ mọi phép đọc-đĩa dưới sai. `MOC_*` vẫn thật; routing (`anhXaTemplateDotnet`) không đổi.
+ */
+vi.mock("../ai/dotnetNewScaffold", async (goc) => {
+  const that = await goc<typeof import("../ai/dotnetNewScaffold")>();
+  return { ...that, chayDotnetNewVaoTam: vi.fn(async () => ({ ok: false as const, lyDo: "lưới: dotnet tắt" })) };
+});
+
 import { chayCli, MA_THOAT, type CongTerminal } from "./cli";
 import { MOC_DONG, MOC_MO, MOC_NGAN, MOC_TEP_KHUNG } from "../aiCodingAgent";
 import { createLocalUser } from "../../db/auth";
