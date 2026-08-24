@@ -66,7 +66,7 @@ export const drillDownRouter = router({
         ok: s.ok,
         ng: s.ng,
         ntf: s.ntf,
-        yieldRate: s.total > 0 ? (s.ok / s.total) * 100 : 0,
+        yieldRate: finalYield({ ok: s.ok, ntf: s.ntf, total: s.total }),
         // W1: đánh dấu bucket "chưa gán tập đoàn" để client đổi nhãn + xếp cuối
         // (hàng này VẪN drill được — factoriesByCorporate hiểu sentinel = NULL).
         isUnassigned: s.code === UNASSIGNED_CORPORATE_CODE ? (true as const) : undefined,
@@ -117,7 +117,7 @@ export const drillDownRouter = router({
             ok: stats.ok,
             ng: stats.ng,
             ntf: stats.ntf,
-            yieldRate: stats.total > 0 ? (stats.ok / stats.total) * 100 : 0,
+            yieldRate: finalYield({ ok: stats.ok, ntf: stats.ntf, total: stats.total }),
           };
         })
         .sort((a, b) => b.total - a.total);
@@ -144,7 +144,7 @@ export const drillDownRouter = router({
           ok: unOk,
           ng: unNg,
           ntf: unNtf,
-          yieldRate: unTotal > 0 ? (unOk / unTotal) * 100 : 0,
+          yieldRate: finalYield({ ok: unOk, ntf: unNtf, total: unTotal }),
           isUnassigned: true,
         });
       }

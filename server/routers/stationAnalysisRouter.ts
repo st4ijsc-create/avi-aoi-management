@@ -819,6 +819,7 @@ export const stationAnalysisRouter = router({
         day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(...conditions))
@@ -828,7 +829,8 @@ export const stationAnalysisRouter = router({
       const dailyYields = dailyRows.map(d => {
         const t = Number(d.total) || 0;
         const o = Number(d.ok) || 0;
-        return { day: String(d.day), yield: t > 0 ? (o / t) * 100 : 0 };
+        const n = Number(d.ntf) || 0;
+        return { day: String(d.day), yield: finalYield({ ok: o, ntf: n, total: t }) };
       });
 
       // Hourly pattern for shift analysis
@@ -1471,6 +1473,7 @@ export const stationAnalysisRouter = router({
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(...baseCond))
@@ -1487,7 +1490,7 @@ export const stationAnalysisRouter = router({
           ok: Number(m.ok),
           ng: Number(m.ng),
           ntf: Number(m.ntf),
-          yield: Number(m.total) > 0 ? Math.round((Number(m.ok) / Number(m.total)) * 10000) / 100 : 0,
+          yield: Math.round(finalYield({ ok: Number(m.ok), ntf: Number(m.ntf), total: Number(m.total) }) * 100) / 100,
         })),
         byShift: byShift.map(s => ({
           shift: s.shift,
@@ -1495,14 +1498,15 @@ export const stationAnalysisRouter = router({
           ok: Number(s.ok),
           ng: Number(s.ng),
           ntf: Number(s.ntf),
-          yield: Number(s.total) > 0 ? Math.round((Number(s.ok) / Number(s.total)) * 10000) / 100 : 0,
+          yield: Math.round(finalYield({ ok: Number(s.ok), ntf: Number(s.ntf), total: Number(s.total) }) * 100) / 100,
         })),
         byDay: byDay.map(d => ({
           day: dayNames[Number(d.dayOfWeek)] || `Day ${d.dayOfWeek}`,
           total: Number(d.total),
           ok: Number(d.ok),
           ng: Number(d.ng),
-          yield: Number(d.total) > 0 ? Math.round((Number(d.ok) / Number(d.total)) * 10000) / 100 : 0,
+          ntf: Number(d.ntf),
+          yield: Math.round(finalYield({ ok: Number(d.ok), ntf: Number(d.ntf), total: Number(d.total) }) * 100) / 100,
         })),
       };
     }),
@@ -1536,6 +1540,7 @@ export const stationAnalysisRouter = router({
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(...conditions))
@@ -1547,7 +1552,8 @@ export const stationAnalysisRouter = router({
         total: Number(d.total) || 0,
         ok: Number(d.ok) || 0,
         ng: Number(d.ng) || 0,
-        yield: Number(d.total) > 0 ? (Number(d.ok) / Number(d.total)) * 100 : 0,
+        ntf: Number(d.ntf) || 0,
+        yield: finalYield({ ok: Number(d.ok) || 0, ntf: Number(d.ntf) || 0, total: Number(d.total) || 0 }),
       }));
 
       const yields = dailyData.map(d => d.yield);

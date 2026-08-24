@@ -29,6 +29,7 @@ import {
 import { getDb } from "../db/connection";
 import { dailyStatistics, machines } from "../../drizzle/schema";
 import { MACHINE_TYPES } from "../constants/machineTypes";
+import { finalYield } from "../utils/kpi";
 
 const timeSeriesPointSchema = z.object({
   timestamp: z.number(),
@@ -222,6 +223,7 @@ export const aiTimeSeriesRouter = router({
           total: sql<number>`COALESCE(SUM(${dailyStatistics.totalCount}), 0)::int`,
           ok: sql<number>`COALESCE(SUM(${dailyStatistics.okCount}), 0)::int`,
           ng: sql<number>`COALESCE(SUM(${dailyStatistics.ngCount}), 0)::int`,
+          ntf: sql<number>`COALESCE(SUM(${dailyStatistics.ntfCount}), 0)::int`,
         })
         .from(dailyStatistics)
         .leftJoin(machines, eq(dailyStatistics.machineId, machines.id))
@@ -234,7 +236,7 @@ export const aiTimeSeriesRouter = router({
         let value: number;
         switch (input.metric) {
           case "defect_rate":  value = r.total > 0 ? (r.ng / r.total) * 100 : 0; break;
-          case "yield_rate":   value = r.total > 0 ? (r.ok / r.total) * 100 : 0; break;
+          case "yield_rate":   value = finalYield({ ok: r.ok, ntf: r.ntf, total: r.total }); break;
           default:             value = r.total;
         }
         return { timestamp: ts, value };

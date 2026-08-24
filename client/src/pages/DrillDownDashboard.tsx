@@ -208,7 +208,7 @@ function toRow(item: AnyStat): DrillRow {
     ok: item.ok ?? 0,
     ng: item.ng ?? 0,
     ntf: item.ntf ?? 0,
-    yieldRate: item.yieldRate ?? (item.total > 0 ? (item.ok / item.total) * 100 : 0),
+    yieldRate: item.yieldRate ?? finalYield({ ok: item.ok ?? 0, ntf: item.ntf ?? 0, total: item.total ?? 0 }),
     // W1: bucket "chưa gán" (corporate 'Unknown' / factory dư ngoài master data).
     isUnassigned: "isUnassigned" in item && item.isUnassigned === true ? true : undefined,
   };
@@ -795,7 +795,7 @@ export default function DrillDownDashboard(): React.JSX.Element {
           <MetricCard
             label={t("dashboard.okProducts", "OK")}
             value={rollup.ok.toLocaleString()}
-            delta={`${((rollup.ok / rollup.total) * 100 || 0).toFixed(1)}%`}
+            delta={`${(rollup.yieldRate || 0).toFixed(1)}%`}
             icon={<CheckCircle2 className="h-5 w-5" />}
             tone="good"
           />

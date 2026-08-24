@@ -375,14 +375,14 @@ async function getMachineComparison(
     const currentOk = Number(row.okCount);
     const currentNg = Number(row.ngCount);
     const currentNtf = Number(row.ntfCount) || 0;
-    const currentYield = currentTotal > 0 ? Math.round((currentOk / currentTotal) * 1000) / 10 : 0;
+    const currentYield = Math.round(finalYield({ ok: currentOk, ntf: currentNtf, total: currentTotal }) * 10) / 10;
     const currentNgRate = currentTotal > 0 ? Math.round((currentNg / currentTotal) * 1000) / 10 : 0;
 
     const prevTotal = prev ? Number(prev.totalInspections) : 0;
     const prevOk = prev ? Number(prev.okCount) : 0;
     const prevNg = prev ? Number(prev.ngCount) : 0;
     const prevNtf = prev ? Number(prev.ntfCount) || 0 : 0;
-    const prevYield = prevTotal > 0 ? Math.round((prevOk / prevTotal) * 1000) / 10 : 0;
+    const prevYield = Math.round(finalYield({ ok: prevOk, ntf: prevNtf, total: prevTotal }) * 10) / 10;
     const prevNgRate = prevTotal > 0 ? Math.round((prevNg / prevTotal) * 1000) / 10 : 0;
 
     return {

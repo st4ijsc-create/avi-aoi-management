@@ -395,6 +395,7 @@ async function collectMachinePerformance(startDate: Date, endDate: Date, machine
     total: sql<number>`COUNT(*)`.as("total"),
     ok: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'OK')`.as("ok"),
     ng: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'NG')`.as("ng"),
+    ntf: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'NTF')`.as("ntf"),
   })
     .from(productInspections)
     .leftJoin(machines, eq(productInspections.machineId, machines.id))
@@ -402,14 +403,21 @@ async function collectMachinePerformance(startDate: Date, endDate: Date, machine
     .groupBy(productInspections.machineId, machines.code)
     .orderBy(desc(sql`COUNT(*)`));
 
-  return result.map(r => ({
-    machineId: r.machineId,
-    machineCode: r.machineCode ?? `Machine-${r.machineId}`,
-    total: Number(r.total),
-    ok: Number(r.ok),
-    ng: Number(r.ng),
-    yieldRate: Number(r.total) > 0 ? (Number(r.ok) / Number(r.total)) * 100 : 0,
-  }));
+  return result.map(r => {
+    const total = Number(r.total);
+    // Number(undefined) = NaN when a caller's row shape predates the `ntf` column
+    // (e.g. a stub in a test) — never let that NaN leak into finalYield().
+    const ntf = Number(r.ntf) || 0;
+    return {
+      machineId: r.machineId,
+      machineCode: r.machineCode ?? `Machine-${r.machineId}`,
+      total,
+      ok: Number(r.ok),
+      ng: Number(r.ng),
+      ntf,
+      yieldRate: finalYield({ ok: Number(r.ok), ntf, total }),
+    };
+  });
 }
 
 /** Minimum inference_results rows in-window before we flag an error-rate concern (avoid noise on tiny samples). */
@@ -745,7 +753,8 @@ export async function generateExecutiveSummary(params: ReportParams): Promise<Ex
   const currentTotal = currentStats?.total ?? 0;
   const currentOk = currentStats?.ok ?? 0;
   const currentNg = currentStats?.ng ?? 0;
-  const currentYield = currentTotal > 0 ? (currentOk / currentTotal) * 100 : 0;
+  const currentNtf = currentStats?.ntf ?? 0;
+  const currentYield = finalYield({ ok: currentOk, ntf: currentNtf, total: currentTotal });
   const currentDefectRate = currentTotal > 0 ? (currentNg / currentTotal) * 100 : 0;
 
   // Previous period stats (same duration before startDate)
@@ -756,7 +765,8 @@ export async function generateExecutiveSummary(params: ReportParams): Promise<Ex
   const prevTotal = prevStats?.total ?? 0;
   const prevOk = prevStats?.ok ?? 0;
   const prevNg = prevStats?.ng ?? 0;
-  const prevYield = prevTotal > 0 ? (prevOk / prevTotal) * 100 : 0;
+  const prevNtf = prevStats?.ntf ?? 0;
+  const prevYield = finalYield({ ok: prevOk, ntf: prevNtf, total: prevTotal });
   const prevDefectRate = prevTotal > 0 ? (prevNg / prevTotal) * 100 : 0;
 
   // Machine rankings

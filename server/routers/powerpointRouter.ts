@@ -19,6 +19,7 @@ import { generateComparison } from "../services/dataComparisonService";
 import type { QualityReportData } from "../services/pdfTemplateService";
 import type { ComparisonPeriod } from "../services/dataComparisonService";
 import type { DashboardSlideData, PowerPointConfig } from "../services/powerpointService";
+import { finalYield } from "../utils/kpi";
 
 export const powerpointRouter = router({
   /**
@@ -82,7 +83,7 @@ export const powerpointRouter = router({
           totalInspections: Number(d.totalCount || 0),
           okCount: Number(d.okCount || 0),
           ngCount: Number(d.ngCount || 0),
-          yieldRate: Number(d.totalCount) > 0 ? (Number(d.okCount) / Number(d.totalCount)) * 100 : 0,
+          yieldRate: finalYield({ ok: Number(d.okCount || 0), ntf: Number(d.ntfCount || 0), total: Number(d.totalCount || 0) }),
         })),
         // Bộ slide TỰ KHAI phạm vi — xem chú thích cùng nội dung ở pdfReportRouter.
         filters: { scopeNote: exportScopeNote(scope) },

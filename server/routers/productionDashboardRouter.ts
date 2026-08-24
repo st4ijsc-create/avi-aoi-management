@@ -15,7 +15,7 @@ import {
   productModels,
 } from "../../drizzle/schema";
 import { statsCache, CACHE_KEYS, CACHE_TTL } from "../_core/cache";
-import { resolveFactoryDateWindow } from "../utils/kpi";
+import { resolveFactoryDateWindow, finalYield as finalYieldPct } from "../utils/kpi";
 import { getFalseCallEscapeKpi } from "../services/falseCallEscapeService";
 
 export const productionDashboardRouter = router({
@@ -488,6 +488,7 @@ export const productionDashboardRouter = router({
           day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
           total: sql<number>`count(*)`,
           ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+          ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
         })
           .from(productInspections)
           .where(and(...dailyConditions))
@@ -497,7 +498,8 @@ export const productionDashboardRouter = router({
         const yields = dailyRows.map(d => {
           const t = Number(d.total) || 0;
           const o = Number(d.ok) || 0;
-          return t > 0 ? (o / t) * 100 : 0;
+          const n = Number(d.ntf) || 0;
+          return finalYieldPct({ ok: o, ntf: n, total: t });
         });
 
         const mean = yields.length > 0 ? yields.reduce((a, b) => a + b, 0) / yields.length : 0;
@@ -534,7 +536,7 @@ export const productionDashboardRouter = router({
           dataPoints: yields.length,
           dailyYields: dailyRows.map(d => ({
             day: String(d.day),
-            yield: Number(d.total) > 0 ? Math.round((Number(d.ok) / Number(d.total)) * 10000) / 100 : 0,
+            yield: Math.round(finalYieldPct({ ok: Number(d.ok) || 0, ntf: Number(d.ntf) || 0, total: Number(d.total) || 0 }) * 100) / 100,
           })),
         };
       }));

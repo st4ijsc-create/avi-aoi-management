@@ -20,6 +20,7 @@ import {
 import * as db from "../db";
 import { generateInspectionReportPDF, generateQualityReportPDF } from "../services/pdfTemplateService";
 import type { PDFReportConfig, QualityReportData, InspectionReportData } from "../services/pdfTemplateService";
+import { finalYield } from "../utils/kpi";
 
 // ─── Branding resolution ─────────────────────────────────────────────────────
 
@@ -206,7 +207,7 @@ export const pdfReportRouter = router({
           totalInspections: Number(d.totalCount || 0),
           okCount: Number(d.okCount || 0),
           ngCount: Number(d.ngCount || 0),
-          yieldRate: Number(d.totalCount) > 0 ? (Number(d.okCount) / Number(d.totalCount)) * 100 : 0,
+          yieldRate: finalYield({ ok: Number(d.okCount || 0), ntf: Number(d.ntfCount || 0), total: Number(d.totalCount || 0) }),
         })),
         // Tài liệu TỰ KHAI phạm vi của chính nó: một PDF 22.995 dòng của người gán MỘT nhà máy
         // trông y hệt báo cáo toàn công ty 22.996 dòng, và file thì rời khỏi hệ thống rồi được

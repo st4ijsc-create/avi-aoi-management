@@ -93,9 +93,9 @@ function makeDbStub(resolveRows: (ctx: QueryCtx) => unknown[]) {
 /** Hàng thô như driver trả về (drizzle trả string cho COUNT/AVG của pg — giữ đúng vậy). */
 interface StubTables {
   /** Hàng thống kê kiểm tra, tiêu thụ THEO THỨ TỰ (executive summary gọi 2 lần: kỳ này rồi kỳ trước). */
-  stats?: Array<{ total: number; ok: number; ng: number }>;
+  stats?: Array<{ total: number; ok: number; ng: number; ntf?: number }>;
   topDefects?: Array<{ defectType: string | null; count: number }>;
-  machinePerf?: Array<{ machineId: number; machineCode: string | null; total: number; ok: number; ng: number }>;
+  machinePerf?: Array<{ machineId: number; machineCode: string | null; total: number; ok: number; ng: number; ntf?: number }>;
   models?: Array<{ modelId: number; modelCode: string; modelVersion: string | null; status: string }>;
   inference?: Array<{ total: number; avgLatencyMs: number; p50LatencyMs: number; p95LatencyMs: number; errCount: number }>;
 }
@@ -545,6 +545,27 @@ describe("generateExecutiveSummary — con số đầu ra", () => {
     expect(r.kpis.worstPerformingMachine).toBe("N/A");
     expect(r.kpis.yieldChange).toBe(0);
     expect(r.trends).toEqual([]);
+  });
+
+  // ★ Lượt vá sau-review (2026-08-25, I-2a): collectMachinePerformance trước đây bỏ NTF
+  // khỏi yieldRate ⇒ xếp hạng máy dùng ok/total thay vì finalYield(ok,ntf,total). Ca này
+  // cố tình cho một máy NTF CAO để hai công thức cho ra HAI thứ hạng KHÁC NHAU — nếu ai
+  // đó lại hard-code `ntf: 0` (hoặc bỏ cột ntf khỏi SELECT), ca này phải ĐỎ ngay.
+  it("NTF = PASS trong xếp hạng máy: máy NTF cao KHÔNG bị coi là máy tệ nhất", async () => {
+    installDb({
+      stats: [{ total: 200, ok: 175, ng: 5 }, { total: 200, ok: 175, ng: 5 }],
+      machinePerf: [
+        // yield THẬT (NTF=PASS) = 100; nếu NTF bị bỏ qua thì tính ra 80 và xếp CUỐI bảng.
+        { machineId: 1, machineCode: "AOI-NTF", total: 100, ok: 80, ng: 0, ntf: 20 },
+        // Không NTF — yield 95 dù tính đúng hay sai, dùng làm mốc so sánh.
+        { machineId: 2, machineCode: "AOI-CLEAN", total: 100, ok: 95, ng: 5 },
+      ],
+    });
+
+    const r = await generateExecutiveSummary({ ...JAN, reportType: "executive" });
+
+    expect(r.kpis.topPerformingMachine).toBe("AOI-NTF");
+    expect(r.kpis.worstPerformingMachine).toBe("AOI-CLEAN");
   });
 });
 

@@ -10,9 +10,20 @@ import { join } from "node:path";
  * còn client tự viết tay `(ok+ntf)/total*100` ở 23 chỗ (1 chỗ trong đó SAI:
  * DrillDownDashboard.tsx thiếu hẳn `ntf`) mà không ai bắt được.
  *
+ * ★★★ Đợt vá sau-review (2026-08-25): thước CŨ chỉ khớp định danh TRẦN
+ * (`ok`, `total`) — `s.ok / s.total`, `Number(d.okCount) / Number(d.totalCount)`,
+ * `o / t`, `currentOk / currentTotal` đều MÙ, để lọt ~15 dòng qua 15 lượt review
+ * từng-task. HINH_DANG_CAM giờ cho phép một tiền tố thu nhận tuỳ chọn
+ * (`[A-Za-z_$][\w$]*\.`) và một lớp bọc `Number(...)` tuỳ chọn quanh mỗi vế,
+ * cộng thêm các tên ngắn/biến thể thường gặp (`o`, `t`, `pass`, `currentOk`, …).
+ *
  * ⚠ Cổng bắt theo HÌNH DẠNG mã nên nó KHÔNG phân biệt được ý nghĩa. Khi nó đỏ,
  * ĐỌC ĐÚNG DÒNG bị tố trước khi sửa — có thể là FPY (lỗi khác) chứ không phải
  * final yield. Sửa nhầm FPY thành finalYield sẽ làm NTF thành first-pass, sai hơn.
+ *
+ * ⚠⚠ Cổng này bắt theo HÌNH DẠNG, không phải AST — xanh KHÔNG chứng minh đã quét
+ * sạch. Một biến đổi cú pháp đủ lạ (phá vỡ hình dạng `(A/B)*100` mà thước tìm)
+ * vẫn có thể lọt qua mà không ai biết, kể cả sau bản mở rộng này.
  */
 const MIEN_TRU_FILE = new Set<string>([
   "server/utils/kpi.ts",
@@ -35,9 +46,63 @@ const MIEN_TRU_DONG: Array<{ file: string; dong: number; lyDo: string }> = [
   { file: "server/routers/productionDashboardRouter.ts", dong: 426, lyDo: "FPY proxy — lỗi KHÁC" },
   { file: "server/routers/productionDashboardRouter.ts", dong: 474, lyDo: "FPY proxy — lỗi KHÁC" },
   { file: "server/routers/stationAnalysisRouter.ts",     dong: 814, lyDo: "FPY proxy — lỗi KHÁC" },
+
+  // ── Đợt vá sau-review (2026-08-25) — thước mở rộng (tiền tố + tên ngắn) khai quật
+  // thêm các chỗ TRƯỚC ĐÂY vô hình với thước cũ. Đọc từng dòng trước khi tin dòng này:
+  // đây không phải chỗ giấu lỗi mới, là nợ ĐÃ XÁC MINH không phải final-yield-sai.
+  { file: "server/routers/productionDashboardRouter.ts", dong: 245, lyDo: "FPY proxy (prevFPY, kỳ trước) — cùng họ với :236, KHÁC lỗi" },
+  { file: "server/routers/stationAnalysisRouter.ts",      dong: 179, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng họ với :814" },
+  { file: "server/services/aiExecutiveReport.ts",          dong: 202, lyDo: "FPY proxy (biến fpy trong gatherKpis) — cùng họ, KHÁC lỗi" },
+  { file: "server/_core/index.ts",                          dong: 3698, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:179" },
+
+  // aiInspectionAnalytics.ts: `pass` ở BỐN dòng này KHÔNG phải OK-only — nó là
+  // COUNT(*) FILTER (WHERE finalYieldPassCondSql(...)) tính Ở SQL, tức đã CHÍNH LÀ
+  // OK+NTF (xem comment "canonical FINAL-yield definition (OK + NTF)" ngay cạnh mỗi
+  // dòng SELECT nguồn). (pass/total)*100 ở đây toán học BẰNG finalYield() — không phải
+  // FPY, không phải lỗi; giữ "pass" trong HINH_DANG_CAM vì đề bài yêu cầu bắt hình dạng
+  // `pass / total`, nên xử lý bốn ca ĐÃ-ĐÚNG này bằng miễn trừ có lý do thay vì bỏ tên
+  // "pass" (bỏ sẽ làm thước mù lại với các `pass/total` SAI thật ở nơi khác).
+  { file: "server/services/aiInspectionAnalytics.ts", dong: 569,  lyDo: "pass = SQL FILTER finalYieldPassCondSql (đã OK+NTF) — toán ĐÚNG, không phải FPY" },
+  { file: "server/services/aiInspectionAnalytics.ts", dong: 882,  lyDo: "pass = SQL FILTER finalYieldPassCondSql (đã OK+NTF) — toán ĐÚNG, không phải FPY" },
+  { file: "server/services/aiInspectionAnalytics.ts", dong: 1501, lyDo: "pass = SQL FILTER finalYieldPassCondSql (đã OK+NTF) — toán ĐÚNG, không phải FPY" },
+  { file: "server/services/aiInspectionAnalytics.ts", dong: 1596, lyDo: "pass = SQL FILTER finalYieldPassCondSql (đã OK+NTF) — toán ĐÚNG, không phải FPY" },
+
+  // client/src — biến/field `fpy` là FPY thật (first-pass yield, cố ý loại NTF khỏi
+  // tử số), không phải final yield viết sai. ComparisonStudio đặt `fpy` NGAY CẠNH
+  // `finalYield` tính đúng bằng finalYield() ở dòng kế — hai field khác nhau CÓ CHỦ Ý.
+  // Dashboard.tsx có docblock "doc65 W1" ngay trên xác nhận đây là FPY canonical.
+  { file: "client/src/pages/ComparisonStudio.tsx", dong: 230, lyDo: "FPY field, cạnh finalYield tính đúng ở dòng kế — hai metric khác nhau có chủ ý" },
+  { file: "client/src/pages/ComparisonStudio.tsx", dong: 270, lyDo: "FPY field, cạnh finalYield tính đúng ở dòng kế — hai metric khác nhau có chủ ý" },
+  { file: "client/src/pages/Dashboard.tsx",         dong: 1184, lyDo: "FPY (calculateYields) — docblock doc65 W1 ngay trên xác nhận first-pass yield có chủ ý" },
+  { file: "client/src/pages/Dashboard.tsx",         dong: 1206, lyDo: "FPY (yieldAlerts) — cùng quy ước fpy=ok/total với calculateYields ở trên" },
+
+  // RfTestCellSim.tsx: bộ mô phỏng RF test cell — `view` chỉ mô phỏng hai biến ok/ng
+  // (total := ok+ng, xem :411), KHÔNG có khái niệm NTF trong dữ liệu giả lập này.
+  // Không phải final-yield-sai — không có NTF nào để thiếu.
+  { file: "client/src/pages/RfTestCellSim.tsx", dong: 412, lyDo: "bộ mô phỏng: view.ok/view.ng thuần, không có khái niệm NTF trong dữ liệu giả lập" },
 ];
 
-const HINH_DANG_CAM = /\(\s*\(?\s*(ok|okCount|okQuantity)\s*\/\s*(total|totalCount|totalQuantity)\s*\)?\s*\*\s*(100|1000|10000)/i;
+/**
+ * Tên số hạng OK / TOTAL thường gặp trong repo (định danh TRẦN — không kèm tiền tố).
+ * Đặt tên DÀI trước tên NGẮN chỉ để dễ đọc; thứ tự KHÔNG ảnh hưởng độ chính xác vì
+ * mỗi tên đều được chặn hai đầu bằng `\b` (regex tự backtrack qua các nhánh).
+ */
+const TEN_OK = "okCount|okQuantity|currentOk|prevOk|passed|pass|ok|o";
+const TEN_TOTAL = "totalCount|totalQuantity|currentTotal|prevTotal|total|t";
+/** Tiền tố thu nhận tuỳ chọn: `s.`, `stats.`, `d.`, `row.`, ... */
+const TIEN_TO_THU_NHAN = String.raw`(?:[A-Za-z_$][\w$]*\.)?`;
+/** Lớp bọc `Number(...)` tuỳ chọn quanh mỗi vế (rất phổ biến quanh kết quả SQL). */
+function veChia(danhSachTen: string): string {
+  return String.raw`(?:Number\(\s*)?${TIEN_TO_THU_NHAN}\b(?:${danhSachTen})\b(?:\s*\))?`;
+}
+const HINH_DANG_CAM = new RegExp(
+  String.raw`\(\s*\(?\s*` +
+    veChia(TEN_OK) +
+    String.raw`\s*\/\s*` +
+    veChia(TEN_TOTAL) +
+    String.raw`\s*\)?\s*\*\s*(100|1000|10000)`,
+  "i",
+);
 
 /** Bỏ chú thích trước khi khớp — thước không được tố chính lời giải thích về nó. */
 function boChuThich(dong: string): string {
