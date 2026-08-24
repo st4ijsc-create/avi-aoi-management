@@ -2514,8 +2514,34 @@ EXPECT_CONFORMANCE=24
 # BQ-1 DOES touch web/ (item 68), so `npm run build` was run by hand and is green — and the web/ domain
 # declaration below is DERIVED, so it corrected itself from 28 specs/142 sites to 29/144 on this run
 # without anybody editing a number. That is the shape every constant in this block is trying to be.
+#
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1275
+# 🔴 BR-1, 2026-08-24 (docs/owner-decisions.md items 54, 63, 71, 73 and the NEW item 75) raises
+# EXPECT_EDGECORE 1275 -> 1276 (+1) and EXPECT_ENGINEAPI 1443 -> 1445 (+2). Grand total 2955 -> 2958.
+# COUNTED FROM THE RUNNER AFTER THE TESTS WERE WRITTEN, not predicted from the diff. Per file:
+#
+#   tests/St4i.EdgeCore.Tests/MachineConfigStoreTests.cs                      +1
+#     Ensure_whose_persist_throws_remembers_nothing_so_the_next_call_is_not_silently_green — item 75's
+#     witness. Reddens with the rollback removed (measured: 1/1), green with it.
+#   tests/St4i.EngineApi.Tests/FleetHostGateCommitCompletionTests.cs          +2
+#     AStartThatThrowsWhileInstallingSlots_RecordsTheFaultOnTheFieldHealthAnswersFrom — item 54's
+#     witness, red with the fix removed.
+#     AStartThatThrowsBeforeInstallingAnySlot_StillWritesNothingToLastError — the GUARD, green on BOTH
+#     branches of item 54's fix and labelled as such in its own doc comment. It earns its place by
+#     reddening under the plausible OVER-fix (writing LastError unconditionally in that catch), which
+#     the witness above does not notice. Two mutations, two different red tests.
+#
+# EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_EDGESERVICE are deliberately UNCHANGED, and that is
+# a check rather than a convenience: items 63 and 71 were measured and NOT changed in code, so a moved
+# total in those projects would mean this task reached somewhere it had no business reaching.
+#
+# NOT MOVED by this task: EXPECT_WARNINGS (219 — RE-MEASURED on a full -t:Rebuild of the solution after
+# every edit, ledger 185/34 untouched, 0 suppressions), EXPECT_BUILD_NODES (0), the three settle
+# constants, the process matcher, the exclusive lock, and both halves of the warnings ledger.
+# BR-1 does NOT touch web/ — no file under web/ is modified, so the web/ domain declaration is expected
+# to print unchanged and `npm run build` was not run.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1276
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4169,7 +4195,9 @@ EXPECT_EDGESERVICE=52
 # EXPECT_EDGECORE above; it is written once rather than twice because it is one task and one ruling.
 # 🔴 BP-1, 2026-08-24 — 1427 -> 1443 (+16). The whole justification, per file and per test, is beside
 # EXPECT_EDGECORE above; it is written once rather than twice because it is one task and four items.
-EXPECT_ENGINEAPI=1443
+# 🔴 BR-1, 2026-08-24 — 1443 -> 1445 (+2). The whole justification, per file and per test, is beside
+# EXPECT_EDGECORE above; it is written once rather than twice because it is one task and five items.
+EXPECT_ENGINEAPI=1445
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -5261,8 +5289,38 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 # BP-1's 469 - 3 + 31 there is no subtraction term here. The arithmetic is 497 + 3 and nothing else.
 #
 # The baseline cfcfae42 is STILL not moved.
+#
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_NEW_DOC_ABSOLUTES=500
+# 🔴 EXPECT_NEW_DOC_ABSOLUTES: 500 -> 527 (+27), BR-1, 2026-08-24 (docs/owner-decisions.md items 54, 63,
+# 71, 73 and the new item 75). MEASURED AFTER the prose was written, and RE-MEASURED after two of the
+# sentences it flagged turned out to be FALSE. All 27 were read; the arithmetic is 500 + 27 with no
+# subtraction term (no existing claim was retracted out of the corpus).
+#
+#   src/St4i.EdgeCore/Config/MachineConfigStore.cs      7   item 75 — Ensure's mutate-then-persist order,
+#                                                           why the retry is silent, and the price
+#   tests/St4i.EdgeCore.Tests/MachineConfigStoreTests.cs 7  the same item's witness
+#   src/St4i.EdgeCore/Fleet/FleetCore.cs                 6  item 54 — the third LastError producer, and
+#                                                           three published claims corrected at source
+#   tests/St4i.EngineApi.Tests/FleetHostGateCommitCompletionTests.cs 4  the witness/guard pair
+#   src/St4i.EdgeCore/Config/MachineParameterSchema.cs   3  item 71 — the byte-identity measurement
+#
+# 🔴 AND THE PART WORTH RECORDING RATHER THAN THE COUNT: THIS FILTER CAUGHT TWO OF MY OWN CLAIMS, AND
+# BOTH WERE WRONG IN THE DIRECTION THAT FLATTERED THE WORK. It does not verify anything — its own clause
+# (a) says so — it only forces a sentence to be READ again, and that was enough:
+#   1. "Five of the six Save() call sites are LOUD on every subsequent attempt." Re-measured: FOUR.
+#      RemoveAdjustment is a second member of item 75's exact shape — its `removed` flag is decided by a
+#      lookup in the map its own failed attempt already mutated, so the retry skips the write and returns
+#      200 for a delete the file never received. Named in the item and at the method, not fixed.
+#   2. "A new parameter key changes the checksum every settings response carries, including for machines
+#      seeded long ago." Re-measured: the baseline checksum is computed at SEED time and persisted, so it
+#      changes only for machines first seen after the change — which makes two hosts publish DIFFERENT
+#      checksums for the same parameter set. The corrected claim is WORSE for the fix than the wrong one.
+# Both corrections are themselves absolute-carrying sentences, so they stay in the corpus rather than
+# subtracting from it — the same effect this block's own "97 rather than 92" note records.
+#
+# The baseline cfcfae42 is STILL not moved.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_NEW_DOC_ABSOLUTES=527
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

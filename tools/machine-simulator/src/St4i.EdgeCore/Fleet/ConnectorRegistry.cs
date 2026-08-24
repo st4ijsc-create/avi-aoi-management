@@ -300,6 +300,36 @@ public sealed class ConnectorRegistry
             // provenance before it gets here. The out-of-lock check in ModbusMultidropRegistration is
             // therefore a LOCAL POLICY rather than a workaround for a missing global rule, and it cannot be
             // made redundant by anything written at this line. Recorded rather than left to be rediscovered.
+            //
+            // ══ THE THIRD DIRECTION, PRICED — BR-1, 2026-08-24, item 63 ══════════════════════════════════
+            // The paragraph above says provenance is "a fact this class does not hold and should not" and
+            // stops there, which reads as a preference. It was taken seriously and measured, because the
+            // rule it implies is COHERENT: refuse when the incumbent under this id is an OPERATOR row
+            // serving a DIFFERENT machine, allow when it is a SEEDED one. That reproduces both callers'
+            // answers — B-6's overwrite of an env-seeded row, and ModbusMultidropRegistration's refusal.
+            // It still does not go, and here is what it costs rather than why it is disliked:
+            //
+            //   (1) THE TYPE CANNOT REACH THIS LINE. ConnectorConfigSource is declared in St4i.EngineApi
+            //       (Fleet/ConnectorConfigStore.cs). This assembly ProjectReferences only
+            //       St4i.Connector.Abstractions. Of the FIVE call sites that pass an explicit id, TWO are in
+            //       assemblies that cannot name the type at all — ModbusMultidropRegistration (this
+            //       assembly) and EdgeConnectors (St4i.EdgeService, which also references only EdgeCore).
+            //   (2) THE VOCABULARY HAS NO VALUE FOR THREE OF THE FIVE. The enum has exactly two members and
+            //       both name a PERSISTENCE event in ConnectorConfigStore: an operator POST, or a
+            //       visibility seed. A bus-map device, a connectors.json entry and an env-var registration
+            //       are none of those. So this is not "pass a value you already have"; it is "invent the
+            //       missing members and decide a precedence matrix over them", and nothing in this tree
+            //       states that matrix.
+            //   (3) A DEFAULTED PARAMETER RE-CREATES THIS METHOD'S OWN OPENING DEFECT. Register has 8
+            //       production and 126 test call sites. Required breaks all 134; optional fuses "did not
+            //       declare" with a real value at a SECOND parameter, which is precisely what
+            //       `keyWasDefaulted` above does to four distinct states and what item 63's first paragraph
+            //       is about.
+            //   (4) 🔴 AND IT DOES NOT DECIDE THE ITEM'S OWN HEADLINE CASE. Item 63 §63.1/§63.3 is about two
+            //       registrations under one id THE OPERATOR TYPED. Provenance is EQUAL on both sides there,
+            //       so a registry holding it still cannot arbitrate them, and last-write-wins survives for
+            //       exactly the population §63.3 calls the likelier one. The third direction answers a
+            //       question the item did not ask.
             if (claim is not null)
             {
                 foreach (var (existingId, existingEntry) in _entries)

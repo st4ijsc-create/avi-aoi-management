@@ -628,6 +628,107 @@ public sealed class FleetHostGateCommitCompletionTests
         }
     }
 
+    /// <summary>🔴 S3's residual, consequence (3) — <b>the state REPORTED, not just torn down</b>. Item 54,
+    /// BR-1, 2026-08-24.
+    ///
+    /// <para><b>What this asserts.</b> The stuck state the test above constructs — live slots with
+    /// <c>_running == false</c> — used to leave <c>LastError</c> null, and <c>GET /v1/health</c> is literally
+    /// <c>LastError is null</c>. So a monitor polling health was told HEALTHY about a fleet that was neither
+    /// running nor cleanly stopped, permanently: nothing else writes that field, and only a start that
+    /// genuinely installs clears it. <c>Start</c>'s catch now writes it for exactly that state.</para>
+    ///
+    /// <para>🔴 <b>WHY THIS TEST IS THE WHOLE OF ITEM 54, and why the item stopped twice before it.</b>
+    /// §54.6 (BI-1) and §54.7 (BO-1) both refused to ship the fix on the ground that it had no red-able
+    /// witness — "no path in the tree today puts <c>Start()</c> into that state, so no test can go red before
+    /// the fix and green after". The first clause is a correct statement about PRODUCTION and the inference
+    /// drawn from it is false: <c>AStartThatThrowsWhileInstallingSlots_LeavesSlotsTheHaltPathCanStillTearDown</c>
+    /// directly above has reached that state, deterministically, through <c>AdditionalPipelinesForTests</c>,
+    /// since J-2 — and asserts it, in the two lines that read <c>Assert.False(host.IsRunning)</c> and
+    /// <c>Assert.Contains(host.GetDriverHealth(), ...)</c>. What those two measurements examined was the
+    /// ITEM's own text, which names no throw site inside <c>StartSlot</c>; the tree names two, on the S-set
+    /// banner. <b>An absent example is not an empty set, and here the example was not even absent.</b></para>
+    ///
+    /// <para><b>Production reachability is NOT claimed and the seam's own banner above says why:</b> every
+    /// argument <c>new EdgePipeline</c> null-checks is non-null by construction on every production path, so
+    /// the only production producer of a throw inside that loop is an allocation failure. The seam reproduces
+    /// the SHAPE, and the shape is what the fix is about — the guard is written as the STATE
+    /// (<c>!_running &amp;&amp; _slots.Count &gt; 0</c>) rather than as a list of throw sites, so a future
+    /// throw site does not have to remember to opt in.</para></summary>
+    [Fact]
+    public void AStartThatThrowsWhileInstallingSlots_RecordsTheFaultOnTheFieldHealthAnswersFrom()
+    {
+        const string installedLabel = "item54-installed";
+        var host = CreateHost();
+        var installed = new DisposeCountingDriver(installedLabel);
+        var neverReached = new DisposeCountingDriver("item54-never-reached");
+
+        host.AdditionalPipelinesForTests = () => new List<(string, IDeviceDriver, MappingProfile)>
+        {
+            (installedLabel, installed, ProfileFor(installedLabel)),
+            ("item54-throwing", neverReached, null!),
+        };
+
+        try
+        {
+            var thrown = Assert.Throws<ArgumentNullException>(() => host.Start());
+
+            // The state, asserted before the report — the same divergence the sibling test pins.
+            Assert.False(host.IsRunning);
+            Assert.Contains(host.GetDriverHealth(), h => h.SlotLabel == installedLabel);
+
+            // THE ASSERTION: the field GET /v1/health reads carries THIS fault. Null for the life of the
+            // process before item 54's fix, so health answered `{"ok": true}` about the state above.
+            Assert.Same(thrown, host.LastError);
+        }
+        finally
+        {
+            host.AdditionalPipelinesForTests = null;
+            try { host.Stop(); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>🔴 <b>GUARD — GREEN BEFORE ITEM 54'S FIX AND GREEN AFTER IT, and it says so rather than
+    /// letting a reader count it as evidence the fix works.</b> BR-1, 2026-08-24.
+    ///
+    /// <para>Item 54's fix is narrow on purpose, and the narrowness is the part that can rot. U-1's ruling —
+    /// bought with four edits and re-measured three times since — is that <c>LastError</c> means "a pipeline
+    /// stopped for a reason nobody asked for", and a <c>Start</c> that throws before installing anything
+    /// stops NOTHING: the fleet was stopped before it and after it. That branch must stay silent, and it is
+    /// the overwhelmingly common one: <c>BuildStartPlan</c> runs off-lock ahead of <c>StartLocked</c>
+    /// entirely, so every P5 throw (<c>MachineConfigStore.Ensure</c> through <c>SimulatorFactory.Create</c>)
+    /// lands here with <c>_slots</c> empty.</para>
+    ///
+    /// <para>Driven through <c>StartBuildObserverForTests</c>, which fires as the LAST statement of
+    /// <c>BuildStartPlan</c> — off <c>_gate</c>, before <c>StartLocked</c> — i.e. the same side of the start
+    /// as the real P5 throw that <c>POST /v1/fleet/start</c> returns 500 from on a cold process (item 75).
+    /// <b>Without this test the obvious "simplification" of item 54's guard — writing the field
+    /// unconditionally in that catch — passes everything else in this suite</b> while quietly converting the
+    /// field into "the last thing that threw", which is precisely the definition U-1 refused.</para></summary>
+    [Fact]
+    public void AStartThatThrowsBeforeInstallingAnySlot_StillWritesNothingToLastError()
+    {
+        var host = CreateHost();
+        host.StartBuildObserverForTests = () => throw new InvalidOperationException(InjectedMarker);
+
+        try
+        {
+            var thrown = Assert.Throws<InvalidOperationException>(() => host.Start());
+            Assert.Contains(InjectedMarker, thrown.Message, StringComparison.Ordinal);
+
+            // The precondition of the silence, asserted rather than assumed: no slot was installed.
+            Assert.False(host.IsRunning);
+            Assert.Empty(host.GetDriverHealth());
+
+            // THE ASSERTION, and it is a NON-event: health still says ok, because nothing was stopped.
+            Assert.Null(host.LastError);
+        }
+        finally
+        {
+            host.StartBuildObserverForTests = null;
+            try { host.Stop(); } catch { /* best-effort */ }
+        }
+    }
+
     /// <summary>🔴 S3's residual, consequence (1) — the orphaned connector driver, which is the half of the
     /// residual the banner has named since review I-5.
     ///

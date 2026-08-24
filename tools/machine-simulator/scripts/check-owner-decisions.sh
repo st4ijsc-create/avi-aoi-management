@@ -108,6 +108,40 @@ DOC="$(dirname "$HERE")/docs/owner-decisions.md"
 #   B2  Part I,  CHỜ ANH bare but superseded       GREEN -> GREEN still blind, and clause (h)/(j) say so
 #
 # The RED->GREEN and GREEN->RED columns were measured against the checker as it stood at 2530b94c.
+#
+# ══ BR-1, 2026-08-24 — THE CASE HOLE GETS THE SAME TREATMENT: BUILT, NOT DESCRIBED ═══════════════
+# The paragraph above ends with "this change closes one of them", and the OTHER one — the CASE hole
+# — has lived in this file as a sentence since BQ-1 and in item 73 as a sentence since BO-1. A
+# sentence is not a witness, and the whole argument for the bank above is that a shape nobody can
+# run is a shape nobody re-measures. So the hole now has a running pair:
+#
+#   C1  Part III, LIVE partial claim in LOWER case   GREEN   the hole, asserted GREEN on purpose
+#   C2  the SAME row with the token in UPPER case    RED     the control
+#
+# 🔴 C1 AND C2 ARE 509 BYTES EACH AND DIFFER ON EXACTLY ONE LINE, IN EXACTLY ONE PROPERTY: the
+# casing of the status token. That is the entire content of the defect stated as an artifact — the
+# verdict a reader gets is decided by the Shift key and by nothing about the record. C1 is asserted
+# GREEN the same way B2 is: the bank CERTIFIES the blindness rather than hiding it, and the day
+# someone closes the hole C1 is the fixture that must be flipped to RED and re-explained.
+#
+# 🔴 WHY THE HOLE IS STILL OPEN, RE-MEASURED HERE RATHER THAN INHERITED FROM BQ-1. Case-folding the
+# partial test (by hand — awk`s toupper() is byte-based and returns "THI HàNH MộT PHầN") reddens
+# exactly rows 12, 48, 51 and 52, and all four are CORRECT records: 4 of 74 = 5.4% false positives,
+# against 1 of 74 = 1.4% for the excision that shipped. Two narrower rules were built and measured
+# and both failed, and they are recorded because "we could not think of one" and "we tried two and
+# here is how they broke" are different claims:
+#
+#   * HONOUR THE DECLARED `(lịch sử)` MARKER. Rows 48/51/52 already carry it — BK-1 wrote it on
+#     2026-08-23 for exactly this reason — so this rule is free for three of the four and takes the
+#     rate to 1 of 74 = 1.4%. The residual is row 12, whose token is not a status marker at all but
+#     an ordinary sentence ("một cờ bật trên món nợ còn mở là thi hành một phần"). One false
+#     positive is still a RED gate, so this does not ship on its own.
+#   * REQUIRE THE TOKEN TO SIT WHOLLY INSIDE A `**...**` SPAN. This distinguishes all four correctly
+#     in principle — and it cannot be implemented on top of unquoted(). unquoted() deletes backtick
+#     and double-quoted spans FIRST, and this file routinely puts bold markers inside quotations, so
+#     three rows of 74 (57, 71 and 73) come out of the excision with unbalanced bold parity. The
+#     parser`s error points toward GREEN, i.e. it would open a new false-NEGATIVE hole while closing
+#     one. Measured on the live file, not reasoned about.
 if [[ "${1:-}" == "--self-test" ]]; then
   _fixdir="$(dirname "$HERE")/tests/fixtures/owner-decisions"
   _rc=0; _ran=0
@@ -125,11 +159,14 @@ if [[ "${1:-}" == "--self-test" ]]; then
   _expect A2-asserted-partial 1 "an ASSERTED partial token under Part III must still redden"
   _expect B1-quoted-choanh    1 "Part I with only a quoted CHỜ ANH is item 73 shape B"
   _expect B2-bare-choanh      0 "shape B in bare prose stays undetected — declared, not hidden"
+  _expect C1-lowercase-live-partial 0 "the CASE hole: a LIVE partial claim in lower case is invisible — certified, not fixed"
+  _expect C2-uppercase-live-partial 1 "the same row one keypress away, and this one reddens"
   echo "POPULATION c2-shape-fixtures $_ran"
-  echo "DOES-NOT-MEASURE (a) four constructed rows are not the 73 real ones; this pins the SHAPES C2 reads, never that the live record is correct — that is what the main run is for"
+  echo "DOES-NOT-MEASURE (a) six constructed rows are not the 74 real ones; this pins the SHAPES C2 reads, never that the live record is correct — that is what the main run is for"
   echo "DOES-NOT-MEASURE (b) B2 is asserted GREEN on purpose: item 73 shape B in BARE prose is still invisible to C2 and this bank certifies that it is still invisible, it does not fix it"
-  echo "DOES-NOT-MEASURE (c) nothing here touches the CASE hole (rows 12/48/51/52); case-folding was measured at BQ-1 to redden all four even with quotations excised, and was refused for that reason"
-  [[ $_rc -eq 0 ]] && echo "PASS: $_ran/4 shape fixtures at their expected verdicts; two flip with the fix and two hold against it."
+  echo "DOES-NOT-MEASURE (c) C1 is asserted GREEN on purpose too: the CASE hole is OPEN. Re-measured at BR-1 on the live file — case-folding reddens exactly rows 12/48/51/52, and all four are CORRECT records: 4 false positives out of 74 rows at base cdd7c063 (5.4%), out of 75 at that branch's tip (5.3%), against 1 row moved by the excision that shipped; honouring the declared (lịch sử) marker that rows 48/51/52 already carry takes the numerator to 1 — row 12, whose token is a sentence and not a status marker — and one false positive is still a red gate; a bold-position rule cannot be built on top of unquoted(), which leaves 3 rows (57/71/73) with unbalanced bold parity and errs toward GREEN"
+  echo "DOES-NOT-MEASURE (d) nothing in this bank says whether a row's status is TRUE of the work — only which token C2 reads out of which position"
+  [[ $_rc -eq 0 ]] && echo "PASS: $_ran/6 shape fixtures at their expected verdicts; two flip with the fix, two hold against it, and two more hold the CASE hole open where a reader can see it."
   exit $_rc
 fi
 
