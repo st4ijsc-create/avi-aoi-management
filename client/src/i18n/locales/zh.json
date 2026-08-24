@@ -19564,7 +19564,9 @@
     "revision": "版本 (Rev)",
     "lifecycleStatus": "生命周期状态",
     "targetYieldRate": "目标 FPY (%)",
-    "minYieldRate": "最低 FPY (%)"
+    "minYieldRate": "最低 FPY (%)",
+    "createdAt": "创建日期",
+    "updatedAt": "更新日期"
   },
   "showcaseCol": {
     "code": "编号",

@@ -19536,7 +19536,9 @@
     "revision": "Phiên bản (Rev)",
     "lifecycleStatus": "Trạng thái vòng đời",
     "targetYieldRate": "FPY mục tiêu (%)",
-    "minYieldRate": "FPY tối thiểu (%)"
+    "minYieldRate": "FPY tối thiểu (%)",
+    "createdAt": "Ngày tạo",
+    "updatedAt": "Ngày cập nhật"
   },
   "showcaseCol": {
     "code": "Mã",

@@ -19556,7 +19556,9 @@
     "revision": "Revision (Rev)",
     "lifecycleStatus": "Lifecycle status",
     "targetYieldRate": "Target FPY (%)",
-    "minYieldRate": "Minimum FPY (%)"
+    "minYieldRate": "Minimum FPY (%)",
+    "createdAt": "Created at",
+    "updatedAt": "Updated at"
   },
   "showcaseCol": {
     "code": "Code",

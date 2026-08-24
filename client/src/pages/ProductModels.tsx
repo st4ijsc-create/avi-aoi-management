@@ -52,7 +52,11 @@ import { navItems } from "@/lib/navigation";
 import { EmptyState, NoMeasurementPoints } from "@/components/EmptyState";
 import { DataTable } from "@/components/DataTable";
 // Doc 42 Đợt 4A (APPLY-B) — thanh nhập/xuất danh sách sản phẩm (Excel/CSV).
-import { ImportExportBar, type MasterDataColumn } from "@/components/patterns";
+import { ImportExportBar } from "@/components/patterns";
+// Task 13 — MỘT nguồn sự thật cho spec cột (trước: PRODUCT_IO_COLUMNS riêng ở
+// đây + PRODUCT_IMPORT_COLUMNS/PRODUCT_EXPORT_COLUMNS riêng ở productRouters.ts,
+// khớp 10/10 nhưng không cổng nào canh lệch).
+import { PRODUCT_COLUMN_SPEC } from "@shared/productColumnSpec";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -212,24 +216,9 @@ function mapCatalogCategoryToLegacyType(category?: string): MeasurementPoint["me
   }
 }
 
-// Doc 42 Đợt 4A (APPLY-B) — cột nhập/xuất danh sách sản phẩm. Khớp server
-// PRODUCT_IMPORT_COLUMNS (productRouters.ts); validate cùng luật @shared/masterDataIO.
 // Doc 43 Đợt 3 — 4 tab cột chi tiết + đồng bộ ?tab= URL (deep-link, reload giữ tab).
 // doc 55 Item 3 / PV3-UI — thêm tab "variants" (Biến thể) quản lý biến thể sản phẩm.
 const PRODUCT_DETAIL_TABS = ["points", "info", "release", "foundation", "variants"] as const;
-
-const PRODUCT_IO_COLUMNS: MasterDataColumn[] = [
-  { field: "code", header: "Mã sản phẩm", headerKey: "productModelsCol.code", required: true, type: "string", example: "SP-001" },
-  { field: "name", header: "Tên sản phẩm", headerKey: "productModelsCol.name", required: true, type: "string", example: "Bảng mạch A" },
-  { field: "description", header: "Mô tả", headerKey: "productModelsCol.description", type: "string" },
-  { field: "category", header: "Nhóm", headerKey: "productModelsCol.category", type: "string", example: "PCBA" },
-  { field: "productLine", header: "Dòng sản phẩm", headerKey: "productModelsCol.productLine", type: "string" },
-  { field: "variant", header: "Biến thể", headerKey: "productModelsCol.variant", type: "string" },
-  { field: "revision", header: "Phiên bản (Rev)", headerKey: "productModelsCol.revision", type: "string", example: "A" },
-  { field: "lifecycleStatus", header: "Trạng thái vòng đời", headerKey: "productModelsCol.lifecycleStatus", type: "string", example: "active" },
-  { field: "targetYieldRate", header: "FPY mục tiêu (%)", headerKey: "productModelsCol.targetYieldRate", type: "number", example: 98 },
-  { field: "minYieldRate", header: "FPY tối thiểu (%)", headerKey: "productModelsCol.minYieldRate", type: "number", example: 95 },
-];
 
 export default function ProductModels() {
   const { t } = useTranslation();
@@ -2559,7 +2548,7 @@ export default function ProductModels() {
               <ImportExportBar
                 entityLabel={t("products.entityLabel", "sản phẩm")}
                 fileBaseName="san_pham"
-                columns={PRODUCT_IO_COLUMNS}
+                columns={[...PRODUCT_COLUMN_SPEC]}
                 onExport={handleExportProducts}
                 onImport={canImportProducts ? handleImportProducts : undefined}
               />

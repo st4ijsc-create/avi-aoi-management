@@ -57,7 +57,12 @@ import {
   listLotDispositions,
 } from "../services/lotAcceptanceService";
 // Doc 42 Đợt 4A (APPLY-B) — engine import/export dùng chung cho danh sách sản phẩm.
-import { exportRows, type MasterDataColumn } from "../services/masterDataIO";
+import { exportRows } from "../services/masterDataIO";
+// Task 13 — MỘT nguồn sự thật cho spec cột (trước: PRODUCT_IMPORT_COLUMNS/
+// PRODUCT_EXPORT_COLUMNS ở đây + PRODUCT_IO_COLUMNS riêng ở ProductModels.tsx,
+// khớp 10/10 nhưng không cổng nào canh lệch). `header` KHÔNG được dịch — xem
+// docblock ở shared/productColumnSpec.ts.
+import { PRODUCT_COLUMN_SPEC, PRODUCT_EXPORT_COLUMN_SPEC } from "@shared/productColumnSpec";
 // Doc 51 P1 (R4) — machines learn about point-config changes off this MQTT topic.
 import { publishPointsConfigChanged } from "../services/mqttService";
 
@@ -354,28 +359,6 @@ async function extractDimsFromDataUrl(
 // ─── Doc 42 Đợt 4A (APPLY-B) — import/export danh sách sản phẩm ────────────────
 // Trạng thái vòng đời hợp lệ (khớp lifecycleStatusEnum + productModel.create).
 const productLifecycleValues = ["development", "active", "eol", "archived"] as const;
-
-// Cột NHẬP (parse + validate) & mẫu — trùng khớp cột client trong ProductModels.tsx
-// (cả hai phía validate cùng luật @shared/masterDataIO nên không lệch).
-const PRODUCT_IMPORT_COLUMNS: MasterDataColumn[] = [
-  { field: "code", header: "Mã sản phẩm", required: true, type: "string", example: "SP-001" },
-  { field: "name", header: "Tên sản phẩm", required: true, type: "string", example: "Bảng mạch A" },
-  { field: "description", header: "Mô tả", type: "string" },
-  { field: "category", header: "Nhóm", type: "string", example: "PCBA" },
-  { field: "productLine", header: "Dòng sản phẩm", type: "string" },
-  { field: "variant", header: "Biến thể", type: "string" },
-  { field: "revision", header: "Phiên bản (Rev)", type: "string", example: "A" },
-  { field: "lifecycleStatus", header: "Trạng thái vòng đời", type: "string", example: "active" },
-  { field: "targetYieldRate", header: "FPY mục tiêu (%)", type: "number", example: 98 },
-  { field: "minYieldRate", header: "FPY tối thiểu (%)", type: "number", example: 95 },
-];
-
-// Cột XUẤT = cột nhập + ngày tạo/cập nhật (chỉ đọc, không dùng khi nhập).
-const PRODUCT_EXPORT_COLUMNS: MasterDataColumn[] = [
-  ...PRODUCT_IMPORT_COLUMNS,
-  { field: "createdAt", header: "Ngày tạo", type: "date" },
-  { field: "updatedAt", header: "Ngày cập nhật", type: "date" },
-];
 
 export const productModelRouter = router({
   list: protectedProcedure
@@ -894,7 +877,7 @@ export const productModelRouter = router({
         createdAt: p.createdAt ?? null,
         updatedAt: p.updatedAt ?? null,
       }));
-      const buffer = await exportRows(rows, PRODUCT_EXPORT_COLUMNS, format);
+      const buffer = await exportRows(rows, [...PRODUCT_EXPORT_COLUMN_SPEC], format);
       const ext = format === "csv" ? "csv" : "xlsx";
       const mimeType =
         format === "csv"
@@ -935,6 +918,10 @@ export const productModelRouter = router({
         const n = Number(String(v).trim());
         return Number.isFinite(n) ? String(n) : undefined;
       };
+      // Thông báo bắt buộc-nhập lấy `header` từ nguồn sự thật chung — đổi header ở
+      // shared/productColumnSpec.ts thì thông báo lỗi đổi theo, không lệch tay.
+      const codeHeader = PRODUCT_COLUMN_SPEC.find((c) => c.field === "code")?.header ?? "code";
+      const nameHeader = PRODUCT_COLUMN_SPEC.find((c) => c.field === "name")?.header ?? "name";
 
       for (let i = 0; i < input.rows.length; i++) {
         const rowNo = i + 1;
@@ -942,12 +929,12 @@ export const productModelRouter = router({
         try {
           const code = String(raw.code ?? "").trim();
           const name = String(raw.name ?? "").trim();
-          if (!code) { errors.push({ row: rowNo, message: '"Mã sản phẩm" bắt buộc nhập' }); continue; }
+          if (!code) { errors.push({ row: rowNo, message: `"${codeHeader}" bắt buộc nhập` }); continue; }
           if (!/^[A-Za-z0-9_\-]+$/.test(code)) {
             errors.push({ row: rowNo, message: `Mã '${code}' chỉ được chứa chữ, số, gạch dưới, gạch ngang` });
             continue;
           }
-          if (!name) { errors.push({ row: rowNo, message: '"Tên sản phẩm" bắt buộc nhập' }); continue; }
+          if (!name) { errors.push({ row: rowNo, message: `"${nameHeader}" bắt buộc nhập` }); continue; }
 
           // Trạng thái vòng đời (nếu có) phải hợp lệ.
           let lifecycleStatus: (typeof productLifecycleValues)[number] | undefined;
