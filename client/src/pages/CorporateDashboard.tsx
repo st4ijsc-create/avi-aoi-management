@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
+import { finalYield } from "@shared/kpiYield";
 import { ScopeEmptyNotice } from "@/components/ScopeEmptyNotice";
 import { 
   Building2,
@@ -239,7 +240,7 @@ export default function CorporateDashboard() {
         name: m.name,
         isUnassigned: m.isUnassigned,
         factories: m.factories,
-        yield: m.total > 0 ? Math.round(((m.ok + m.ntf) / m.total) * 10000) / 100 : 0,
+        yield: m.total > 0 ? Math.round(finalYield({ ok: m.ok, ntf: m.ntf, total: m.total }) * 100) / 100 : 0,
         // W4: sản lượng (tổng inspection trong kỳ) — nguồn dữ liệu đúng ngữ nghĩa
         // cho pie "phân bố" (pie theo yield% là sai ngữ nghĩa part-of-whole).
         output: m.total,
@@ -273,7 +274,7 @@ export default function CorporateDashboard() {
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-6)
       .map(([key, v]) => {
-        const yieldVal = v.total > 0 ? Math.round(((v.ok + v.ntf) / v.total) * 10000) / 100 : 0;
+        const yieldVal = v.total > 0 ? Math.round(finalYield({ ok: v.ok, ntf: v.ntf, total: v.total }) * 100) / 100 : 0;
         const monthNum = parseInt(key.slice(5, 7), 10);
         return {
           month: `T${monthNum}`,

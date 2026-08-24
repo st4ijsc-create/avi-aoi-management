@@ -20,6 +20,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 // ISA-95 toàn cục (AssetScopeBar shell) là nguồn phạm vi duy nhất.
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { trpc } from "@/lib/trpc";
+import { finalYield } from "@shared/kpiYield";
 import { 
   Activity, 
   AlertTriangle, 
@@ -2268,7 +2269,7 @@ export default function Dashboard() {
                     .slice(0, 5)
                     .map((ws: any, index: number) => {
                       const totalDefects = (ws.ngCount || 0) + (ws.ntfCount || 0);
-                      const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+                      const yieldRate = ws.totalCount > 0 ? finalYield({ ok: ws.okCount, ntf: ws.ntfCount, total: ws.totalCount }) : 0;
                       return (
                         <div key={`${ws.workstationId ?? "na"}-${ws.workstationCode ?? "code"}-${index}`} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
                           <div className="flex items-center gap-3 flex-1">

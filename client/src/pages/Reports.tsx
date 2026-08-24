@@ -8,6 +8,7 @@ import { ScopeEmptyNotice } from "@/components/ScopeEmptyNotice";
 import { scopeEmptyReasonOf } from "@/lib/scopeEmpty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
+import { finalYield } from "@shared/kpiYield";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -167,7 +168,7 @@ export function ReportsContent() {
     const ok = stats.reduce((sum: number, d: DailyStat) => sum + d.okCount, 0);
     const ng = stats.reduce((sum: number, d: DailyStat) => sum + d.ngCount, 0);
     const ntf = stats.reduce((sum: number, d: DailyStat) => sum + d.ntfCount, 0);
-    const yieldRate = total > 0 ? ((ok + ntf) / total) * 100 : 0;
+    const yieldRate = total > 0 ? finalYield({ ok, ntf, total }) : 0;
 
     // Calculate trend (compare last 7 days vs previous 7 days)
     const recentDays = stats.slice(0, 7);
@@ -176,14 +177,14 @@ export function ReportsContent() {
     const recentYield = recentDays.length > 0 
       ? recentDays.reduce((sum: number, d: DailyStat) => {
           const dayTotal = d.totalProducts;
-          return sum + (dayTotal > 0 ? ((d.okCount + d.ntfCount) / dayTotal) * 100 : 0);
+          return sum + (dayTotal > 0 ? finalYield({ ok: d.okCount, ntf: d.ntfCount, total: dayTotal }) : 0);
         }, 0) / recentDays.length
       : 0;
     
     const previousYield = previousDays.length > 0
       ? previousDays.reduce((sum: number, d: DailyStat) => {
           const dayTotal = d.totalProducts;
-          return sum + (dayTotal > 0 ? ((d.okCount + d.ntfCount) / dayTotal) * 100 : 0);
+          return sum + (dayTotal > 0 ? finalYield({ ok: d.okCount, ntf: d.ntfCount, total: dayTotal }) : 0);
         }, 0) / previousDays.length
       : 0;
 
@@ -209,7 +210,7 @@ export function ReportsContent() {
       .reverse()
       .map((d: DailyStat) => {
         const total = d.totalProducts;
-        const yieldRate = total > 0 ? ((d.okCount + d.ntfCount) / total) * 100 : 0;
+        const yieldRate = total > 0 ? finalYield({ ok: d.okCount, ntf: d.ntfCount, total }) : 0;
         return {
           date: new Date(d.date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }),
           fullDate: d.date,

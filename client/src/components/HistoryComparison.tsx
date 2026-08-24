@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { trpc } from '@/lib/trpc';
 import { ScopeEmptyNotice } from '@/components/ScopeEmptyNotice';
 import { scopeEmptyReasonOf } from '@/lib/scopeEmpty';
+import { finalYield } from '@shared/kpiYield';
 import { 
   ArrowUp, 
   ArrowDown, 
@@ -160,7 +161,7 @@ export default function HistoryComparison() {
     const ok = inspections.filter((i: { overallResult: string }) => i.overallResult === 'OK').length;
     const ng = inspections.filter((i: { overallResult: string }) => i.overallResult === 'NG').length;
     const ntf = inspections.filter((i: { overallResult: string }) => i.overallResult === 'NTF').length;
-    const yieldRate = total > 0 ? ((ok + ntf) / total * 100) : 0;
+    const yieldRate = total > 0 ? finalYield({ ok, ntf, total }) : 0;
     return { total, ok, ng, ntf, yieldRate };
   }, [period1Data]);
 
@@ -171,7 +172,7 @@ export default function HistoryComparison() {
     const ok = inspections.filter((i: { overallResult: string }) => i.overallResult === 'OK').length;
     const ng = inspections.filter((i: { overallResult: string }) => i.overallResult === 'NG').length;
     const ntf = inspections.filter((i: { overallResult: string }) => i.overallResult === 'NTF').length;
-    const yieldRate = total > 0 ? ((ok + ntf) / total * 100) : 0;
+    const yieldRate = total > 0 ? finalYield({ ok, ntf, total }) : 0;
     return { total, ok, ng, ntf, yieldRate };
   }, [period2Data]);
 

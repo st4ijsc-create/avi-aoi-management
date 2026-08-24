@@ -23,6 +23,7 @@ import { useMemo, useState } from "react";
 // doc 64 IA-10 S3 — truc pham vi ISA-95.
 import { useScope } from "@/components/patterns/ScopeFilterBar";
 import { useScopeWired } from "@/contexts/AssetScopeContext";
+import { finalYield } from "@shared/kpiYield";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -227,7 +228,7 @@ export function ComparisonStudioContent(): React.JSX.Element {
           label: a.name,
           metrics: {
             fpy: a.total > 0 ? (a.ok / a.total) * 100 : null,
-            finalYield: a.total > 0 ? ((a.ok + a.ntf) / a.total) * 100 : null,
+            finalYield: a.total > 0 ? finalYield({ ok: a.ok, ntf: a.ntf, total: a.total }) : null,
             ngRate: a.total > 0 ? (a.ng / a.total) * 100 : null,
             output: a.output,
             throughput: a.output > 0 ? a.output / windowHours : null,

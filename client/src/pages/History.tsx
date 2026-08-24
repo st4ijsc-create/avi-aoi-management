@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError } from "@/lib/trpcErrors";
+import { finalYield } from "@shared/kpiYield";
 import { 
   Search, 
   Filter, 
@@ -380,7 +381,7 @@ export default function History() {
     const okCount = inspections.filter((i: any) => i.overallResult === "OK").length;
     const ngCount = inspections.filter((i: any) => i.overallResult === "NG").length;
     const ntfCount = inspections.filter((i: any) => i.overallResult === "NTF").length;
-    const yieldRate = total > 0 ? ((okCount + ntfCount) / total * 100) : 0;
+    const yieldRate = total > 0 ? finalYield({ ok: okCount, ntf: ntfCount, total }) : 0;
 
     // Group by machine
     const machineStats: Record<string, { ok: number; ng: number; ntf: number; total: number; name: string }> = {};
@@ -431,17 +432,17 @@ export default function History() {
       machineStats: Object.entries(machineStats).map(([id, stats]) => ({
         id,
         ...stats,
-        yieldRate: stats.total > 0 ? ((stats.ok + stats.ntf) / stats.total * 100) : 0,
+        yieldRate: stats.total > 0 ? finalYield({ ok: stats.ok, ntf: stats.ntf, total: stats.total }) : 0,
       })),
       dateStats: Object.entries(dateStats).map(([date, stats]) => ({
         date,
         ...stats,
-        yieldRate: stats.total > 0 ? ((stats.ok + stats.ntf) / stats.total * 100) : 0,
+        yieldRate: stats.total > 0 ? finalYield({ ok: stats.ok, ntf: stats.ntf, total: stats.total }) : 0,
       })).slice(-14), // Last 14 days
       productStats: Object.entries(productStats).map(([model, stats]) => ({
         model,
         ...stats,
-        yieldRate: stats.total > 0 ? ((stats.ok + stats.ntf) / stats.total * 100) : 0,
+        yieldRate: stats.total > 0 ? finalYield({ ok: stats.ok, ntf: stats.ntf, total: stats.total }) : 0,
       })),
     };
   }, [allData?.data, machines]);
@@ -530,7 +531,7 @@ export default function History() {
         const ngCount = inspection.ngCount || 0;
         const ntfCount = inspection.ntfCount || 0;
         const total = okCount + ngCount + ntfCount;
-        const yieldRate = total > 0 ? ((okCount + ntfCount) / total * 100).toFixed(2) : "0.00";
+        const yieldRate = total > 0 ? finalYield({ ok: okCount, ntf: ntfCount, total }).toFixed(2) : "0.00";
         
         return [
           index + 1,
@@ -644,7 +645,7 @@ export default function History() {
         const ngCount = inspection.ngCount || 0;
         const ntfCount = inspection.ntfCount || 0;
         const total = okCount + ngCount + ntfCount;
-        const yieldRate = total > 0 ? ((okCount + ntfCount) / total * 100).toFixed(2) : "0.00";
+        const yieldRate = total > 0 ? finalYield({ ok: okCount, ntf: ntfCount, total }).toFixed(2) : "0.00";
         
         return [
           index + 1,
@@ -857,7 +858,7 @@ export default function History() {
       }, []) || [];
 
       const rows = summaryData.map((ws: any) => {
-        const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+        const yieldRate = ws.totalCount > 0 ? finalYield({ ok: ws.okCount, ntf: ws.ntfCount, total: ws.totalCount }) : 0;
         return [
           ws.workstationName || t('common.unknown'),
           ws.workstationCode,
@@ -908,7 +909,7 @@ export default function History() {
         doc.text(t('history.summaryLabel') + ':', 14, 45);
         doc.setFontSize(10);
         const totalDefects = summaryData.reduce((sum: number, ws: any) => sum + (ws.ngCount || 0), 0);
-        const avgYield = summaryData.length > 0 ? summaryData.reduce((sum: number, ws: any) => sum + ((ws.okCount + ws.ntfCount) / Math.max(ws.totalCount, 1) * 100), 0) / summaryData.length : 0;
+        const avgYield = summaryData.length > 0 ? summaryData.reduce((sum: number, ws: any) => sum + finalYield({ ok: ws.okCount, ntf: ws.ntfCount, total: ws.totalCount }), 0) / summaryData.length : 0;
         doc.text(`- ${t('history.totalWorkstations')}: ${summaryData.length}`, 20, 52);
         doc.text(`- ${t('history.totalNgDefects')}: ${totalDefects}`, 20, 59);
         doc.text(`- ${t('history.avgYield')}: ${avgYield.toFixed(2)}%`, 20, 66);
@@ -2109,7 +2110,7 @@ export default function History() {
                           }
                           return acc;
                         }, []).map((ws: any) => {
-                          const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+                          const yieldRate = ws.totalCount > 0 ? finalYield({ ok: ws.okCount, ntf: ws.ntfCount, total: ws.totalCount }) : 0;
                           return (
                             <Card key={ws.workstationId} className="border-l-4 border-l-info">
                               <CardContent className="pt-4">
@@ -2266,7 +2267,7 @@ export default function History() {
                             }
                             return acc;
                           }, []).map((ws: any) => {
-                            const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+                            const yieldRate = ws.totalCount > 0 ? finalYield({ ok: ws.okCount, ntf: ws.ntfCount, total: ws.totalCount }) : 0;
                             return (
                               <TableRow key={ws.workstationId} className="border-b hover:bg-muted/50">
                                 <TableCell className="py-2 px-2">{ws.workstationName || t('common.unknown')}</TableCell>

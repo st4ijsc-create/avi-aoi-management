@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
+import { finalYield } from "@shared/kpiYield";
 import { 
   ArrowLeft,
   CheckCircle2,
@@ -402,7 +403,7 @@ export default function InspectionDetail() {
   const ngCount = measurementsWithCoords.filter((m: MeasurementPoint) => m.result === "NG").length;
   const ntfCount = measurementsWithCoords.filter((m: MeasurementPoint) => m.result === "NTF").length;
   const total = measurementsWithCoords.length;
-  const yieldRate = total > 0 ? ((okCount + ntfCount) / total * 100).toFixed(1) : "0";
+  const yieldRate = total > 0 ? finalYield({ ok: okCount, ntf: ntfCount, total }).toFixed(1) : "0";
 
   return (
     <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/history">

@@ -59,6 +59,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import { finalYield } from "@shared/kpiYield";
 import {
   DrillSpine,
   type DrillLevel,
@@ -564,7 +565,7 @@ export default function DrillDownDashboard(): React.JSX.Element {
       ng += r.ng;
       ntf += r.ntf;
     }
-    return { total, ok, ng, ntf, yieldRate: total > 0 ? (ok / total) * 100 : 0 };
+    return { total, ok, ng, ntf, yieldRate: finalYield({ ok, ntf, total }) };
   }, [rows]);
 
   const isLoading = corporateLoading || factoryLoading || lineLoading || machineLoading;
