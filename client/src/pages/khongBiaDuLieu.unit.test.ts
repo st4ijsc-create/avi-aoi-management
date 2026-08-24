@@ -21,9 +21,16 @@ const PRODUCTION_DASHBOARD_PATH = path.resolve(
   "ProductionDashboard.tsx",
 );
 const HISTORY_PATH = path.resolve(__dirname, "History.tsx");
+const ANH_CHUA_CO_PATH = path.resolve(
+  __dirname,
+  "..",
+  "components",
+  "AnhChuaCo.tsx",
+);
 
 const productionDashboardSource = readFileSync(PRODUCTION_DASHBOARD_PATH, "utf8");
 const historySource = readFileSync(HISTORY_PATH, "utf8");
+const anhChuaCoSource = readFileSync(ANH_CHUA_CO_PATH, "utf8");
 
 describe("khongBiaDuLieu — chống đọc file rỗng", () => {
   it("ProductionDashboard.tsx đọc được nội dung thật (không rỗng)", () => {
@@ -46,6 +53,13 @@ describe("Task 11 — PcbThumbnail (bo mạch bịa) phải biến mất khỏi 
 
   it("dùng AnhChuaCo thay cho ô ảnh bịa", () => {
     expect(productionDashboardSource).toContain("AnhChuaCo");
+  });
+
+  it("PH-A: AnhChuaCo có shrink-0 trong class MẶC ĐỊNH — hàng flex chứa nó có " +
+     "khối text min-w-0 bên cạnh; thiếu shrink-0 thì trình duyệt có thể co ô " +
+     "ảnh thay vì co text, phá kích thước ô cũ (w-17 h-13) mà chỗ gọi truyền vào.",
+     () => {
+    expect(anhChuaCoSource).toContain("shrink-0");
   });
 });
 

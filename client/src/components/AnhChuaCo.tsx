@@ -11,7 +11,7 @@ export function AnhChuaCo({ className, nhan }: { className?: string; nhan?: stri
   const { t } = useTranslation();
   return (
     <div
-      className={`flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 text-muted-foreground ${className ?? ""}`}
+      className={`flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 text-muted-foreground shrink-0 overflow-hidden ${className ?? ""}`}
       data-testid="anh-chua-co"
     >
       <ImageOff className="h-4 w-4 opacity-60" aria-hidden />
