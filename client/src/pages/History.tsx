@@ -2523,109 +2523,29 @@ export default function History() {
                     </CardContent>
                   </Card>
 
-                  {/* Heatmap - NG Distribution by Hour and Day */}
+                  {/* NG by Day — real backend data (analysisStats.dateStats), no simulated/random distribution */}
                   <Card className="glass-card">
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
                         <Activity className="h-5 w-5 text-primary" />
-                        {t("history.heatmapTitle")}
+                        {t("history.ngTheoNgayTitle")}
                       </CardTitle>
                       <CardDescription>
-                        {t("history.heatmapDesc")}
+                        {t("history.ngTheoNgayDesc")}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      {(() => {
-                        // Generate heatmap data from dateStats
-                        const hours = Array.from({ length: 24 }, (_, i) => i);
-                        const days = analysisStats.dateStats.slice(-7).map(d => d.date);
-                        
-                        // Create heatmap data: simulate distribution based on NG count
-                        const heatmapData = days.flatMap((day, dayIndex) => {
-                          const dayData = analysisStats.dateStats.find(d => d.date === day);
-                          const baseNG = dayData?.ng || 0;
-                          
-                          return hours.map(hour => {
-                            // Simulate hourly distribution (higher during work hours)
-                            const workHourMultiplier = (hour >= 8 && hour <= 17) ? 1.5 : 
-                                                       (hour >= 6 && hour <= 20) ? 1.0 : 0.3;
-                            const randomVariation = 0.5 + Math.random();
-                            const ngCount = Math.round((baseNG / 24) * workHourMultiplier * randomVariation);
-                            
-                            return {
-                              day: day,
-                              hour: hour,
-                              value: ngCount,
-                              dayIndex,
-                              hourLabel: `${hour.toString().padStart(2, '0')}:00`
-                            };
-                          });
-                        });
-                        
-                        const maxValue = Math.max(...heatmapData.map(d => d.value), 1);
-                        
-                        return (
-                          <div className="space-y-4">
-                            {/* Heatmap Grid */}
-                            <div className="overflow-x-auto">
-                              <div className="min-w-150">
-                                {/* Hour labels */}
-                                <div className="flex mb-2">
-                                  <div className="w-20"></div>
-                                  {hours.filter((_, i) => i % 3 === 0).map(hour => (
-                                    <div key={hour} className="flex-1 text-center text-xs text-muted-foreground">
-                                      {hour.toString().padStart(2, '0')}:00
-                                    </div>
-                                  ))}
-                                </div>
-                                
-                                {/* Heatmap rows */}
-                                {days.map((day, dayIndex) => (
-                                  <div key={day} className="flex items-center mb-1">
-                                    <div className="w-20 text-xs text-muted-foreground truncate pr-2">
-                                      {day}
-                                    </div>
-                                    <div className="flex-1 flex gap-0.5">
-                                      {hours.map(hour => {
-                                        const cellData = heatmapData.find(
-                                          d => d.dayIndex === dayIndex && d.hour === hour
-                                        );
-                                        const intensity = cellData ? cellData.value / maxValue : 0;
-                                        const bgColor = intensity === 0 ? 'bg-secondary/30' :
-                                                       intensity < 0.25 ? 'bg-success/30' :
-                                                       intensity < 0.5 ? 'bg-warning/30' :
-                                                       intensity < 0.75 ? 'bg-warning/60' :
-                                                       'bg-destructive/60';
-                                        
-                                        return (
-                                          <div
-                                            key={hour}
-                                            className={`flex-1 h-6 rounded-sm ${bgColor} cursor-pointer transition-all hover:ring-1 hover:ring-primary`}
-                                            title={`${day} ${hour.toString().padStart(2, '0')}:00 - ${cellData?.value || 0} NG`}
-                                          />
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                            
-                            {/* Legend */}
-                            <div className="flex items-center justify-center gap-4 pt-2">
-                              <span className="text-xs text-muted-foreground">{t("history.lowNg")}</span>
-                              <div className="flex gap-1">
-                                <div className="w-6 h-4 rounded bg-secondary/30" />
-                                <div className="w-6 h-4 rounded bg-success/30" />
-                                <div className="w-6 h-4 rounded bg-warning/30" />
-                                <div className="w-6 h-4 rounded bg-warning/60" />
-                                <div className="w-6 h-4 rounded bg-destructive/60" />
-                              </div>
-                              <span className="text-xs text-muted-foreground">{t("history.highNg")}</span>
-                            </div>
-                          </div>
-                        );
-                      })()}
+                      <div className="h-75">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={analysisStats.dateStats}>
+                            <CartesianGrid {...chartGridProps} />
+                            <XAxis dataKey="date" tick={chartAxisTick} />
+                            <YAxis tick={chartAxisTick} />
+                            <Tooltip contentStyle={chartTooltipStyle} />
+                            <Bar dataKey="ng" name="NG" fill={COLORS.ng} radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
                     </CardContent>
                   </Card>
 

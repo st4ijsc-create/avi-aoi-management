@@ -2463,6 +2463,7 @@
     "many": "{{count}} 项权限即将过期（最早 {{days}} 天后）——请联系管理员续期。"
   },
   "common": {
+    "chuaCoAnh": "暂无图片",
     "scopeEmpty": {
       "title": "您的账户尚未分配任何工厂",
       "hint": "因此没有任何检测记录处于您的数据范围内。这是范围为空——并不代表产线已停机。请联系管理员分配工厂。",
@@ -4719,8 +4720,8 @@
     "galleryTab": "图库",
     "galleryTitle": "检测图库",
     "galleryDesc": "查看检测图片和缺陷图像",
-    "heatmapTitle": "热力图",
-    "heatmapDesc": "缺陷分布热力图",
+    "ngTheoNgayTitle": "按日 NG 统计",
+    "ngTheoNgayDesc": "每日实际 NG 数量，直接取自检测数据",
     "exportExcelBtn": "导出Excel",
     "exportCsv": "导出CSV",
     "exportPdf": "导出PDF",
@@ -19311,7 +19312,10 @@
       "runVerify": "运行验证",
       "stop": "停止",
       "jumpFiles": "查看文件树",
-      "jumpChat": "返回对话"
+      "jumpChat": "返回对话",
+      "terminal": "终端面板",
+      "problems": "问题面板",
+      "newSession": "新会话"
     },
     "project": {
       "label": "项目",

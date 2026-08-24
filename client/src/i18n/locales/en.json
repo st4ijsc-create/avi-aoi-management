@@ -2471,6 +2471,7 @@
     "many": "{{count}} permissions are expiring (soonest in {{days}} day(s)) — contact an admin to renew."
   },
   "common": {
+    "chuaCoAnh": "No image yet",
     "scopeEmpty": {
       "title": "Your account is not assigned to any factory",
       "hint": "No inspection records therefore fall within your data scope. This is an EMPTY SCOPE — not a finding that the line has stopped running. Contact an administrator to be assigned a factory.",
@@ -4727,8 +4728,8 @@
     "galleryTab": "Gallery",
     "galleryTitle": "Image Gallery",
     "galleryDesc": "Browse inspection images and measurement data",
-    "heatmapTitle": "Defect Heatmap",
-    "heatmapDesc": "Visualize defect distribution across locations",
+    "ngTheoNgayTitle": "NG by Day",
+    "ngTheoNgayDesc": "Actual NG count per day, taken directly from inspection data",
     "exportExcelBtn": "Export Excel",
     "exportCsv": "Export CSV",
     "exportPdf": "Export PDF",
@@ -19303,7 +19304,10 @@
       "runVerify": "Run verification",
       "stop": "Stop",
       "jumpFiles": "View file tree",
-      "jumpChat": "Back to chat"
+      "jumpChat": "Back to chat",
+      "terminal": "Terminal panel",
+      "problems": "Problems panel",
+      "newSession": "New session"
     },
     "project": {
       "label": "Project",

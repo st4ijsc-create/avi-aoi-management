@@ -2463,6 +2463,7 @@
     "many": "{{count}} quyền sắp hết hạn (sớm nhất sau {{days}} ngày) — liên hệ quản trị để gia hạn."
   },
   "common": {
+    "chuaCoAnh": "Chưa có ảnh",
     "scopeEmpty": {
       "title": "Tài khoản của bạn chưa được gán nhà máy nào",
       "hint": "Vì thế KHÔNG có bản ghi kiểm nào nằm trong phạm vi bạn được xem. Đây là phạm vi rỗng — KHÔNG phải kết luận rằng dây chuyền đang ngừng chạy. Liên hệ quản trị viên để được gán nhà máy.",
@@ -4719,8 +4720,8 @@
     "galleryTab": "Thư viện ảnh",
     "galleryTitle": "Thư viện hình ảnh",
     "galleryDesc": "Duyệt ảnh kiểm tra và dữ liệu đo lường",
-    "heatmapTitle": "Bản đồ nhiệt lỗi",
-    "heatmapDesc": "Trực quan hóa phân bố lỗi theo vị trí",
+    "ngTheoNgayTitle": "NG theo ngày",
+    "ngTheoNgayDesc": "Số lượng NG thực tế theo từng ngày, lấy trực tiếp từ dữ liệu kiểm tra",
     "exportExcelBtn": "Xuất Excel",
     "exportCsv": "Xuất CSV",
     "exportPdf": "Xuất PDF",
@@ -19283,7 +19284,10 @@
       "runVerify": "Chạy kiểm chứng",
       "stop": "Dừng",
       "jumpFiles": "Xem cây tệp",
-      "jumpChat": "Về hội thoại"
+      "jumpChat": "Về hội thoại",
+      "terminal": "Cửa sổ Terminal",
+      "problems": "Cửa sổ Vấn đề",
+      "newSession": "Phiên mới"
     },
     "project": {
       "label": "Dự án",

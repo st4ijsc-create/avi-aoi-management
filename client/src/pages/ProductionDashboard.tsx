@@ -26,6 +26,7 @@ import {
 } from "@/lib/reportSections";
 import MachineAISummary from "@/components/MachineAISummary";
 import QuickIssueReport from "@/components/QuickIssueReport";
+import { AnhChuaCo } from "@/components/AnhChuaCo";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -171,65 +172,6 @@ function getDefectTagStyle(code: string, name: string) {
   if (lower.includes("ntf") || lower.includes("cable") || lower.includes("contact") || lower.includes("lỏng") || lower.includes("flying") || lower.includes("blockage"))
     return { label: "NTF", cls: "text-success border-success/25 bg-success/5" };
   return { label: code || "Other", cls: "text-muted-foreground border-border bg-muted/30" };
-}
-
-/* ── PCB Thumbnail ── */
-
-function PcbThumbnail({ seed }: { seed: number }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const w = (canvas.width = 136);
-    const h = (canvas.height = 104);
-    const rng = (s: number) => { const x = Math.sin(s) * 10000; return x - Math.floor(x); };
-
-    ctx.fillStyle = "#1a2035";
-    ctx.fillRect(0, 0, w, h);
-    // grid
-    ctx.strokeStyle = "#253050";
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i < w; i += 8) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, h); ctx.stroke(); }
-    for (let i = 0; i < h; i += 8) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke(); }
-    // traces
-    const colors = ["#1d4e89", "#1a5c3a", "#5c3a1a"];
-    for (let t = 0; t < 8; t++) {
-      ctx.strokeStyle = colors[t % 3]; ctx.lineWidth = 1.5; ctx.beginPath();
-      let x = rng(seed + t * 7) * w, y = rng(seed + t * 13) * h; ctx.moveTo(x, y);
-      for (let s = 0; s < 4; s++) { x = rng(seed + t * 7 + s) * w; y = rng(seed + t * 13 + s) * h; ctx.lineTo(x, y); }
-      ctx.stroke();
-    }
-    // components
-    const fills = ["#243860", "#1e3b2a", "#3a2418", "#2d2d3a"];
-    const strokes = ["#3a5a9a", "#2a6a44", "#7a4a28", "#4a4a6a"];
-    for (let c = 0; c < 6; c++) {
-      const cx = rng(seed + c * 3 + 1) * (w - 20) + 5;
-      const cy = rng(seed + c * 5 + 2) * (h - 16) + 4;
-      const cw = rng(seed + c * 7) * 22 + 8;
-      const ch = rng(seed + c * 11) * 14 + 6;
-      ctx.fillStyle = fills[c % 4]; ctx.fillRect(cx, cy, cw, ch);
-      ctx.strokeStyle = strokes[c % 4]; ctx.lineWidth = 0.7; ctx.strokeRect(cx, cy, cw, ch);
-    }
-    // chip
-    const chipX = rng(seed + 99) * (w - 40) + 10;
-    const chipY = rng(seed + 77) * (h - 30) + 8;
-    ctx.fillStyle = "#111827"; ctx.fillRect(chipX, chipY, 36, 24);
-    ctx.strokeStyle = "#4a5c8a"; ctx.lineWidth = 1; ctx.strokeRect(chipX, chipY, 36, 24);
-    for (let p = 0; p < 5; p++) {
-      ctx.fillStyle = "#8aacdc";
-      ctx.fillRect(chipX + 4 + p * 6, chipY - 3, 3, 3);
-      ctx.fillRect(chipX + 4 + p * 6, chipY + 24, 3, 3);
-    }
-  }, [seed]);
-
-  return (
-    <div className="w-17 h-13 rounded-md border border-border/50 overflow-hidden shrink-0 bg-muted">
-      <canvas ref={canvasRef} className="w-full h-full" />
-    </div>
-  );
 }
 
 /* ── Row skeleton ── */
@@ -1265,7 +1207,7 @@ function StationViewTab({
                       />
                     </div>
                   ) : (
-                    <PcbThumbnail seed={row.station.id * 31 + 17} />
+                    <AnhChuaCo className="w-17 h-13" />
                   )}
                   <div className="min-w-0">
                     <div className="text-[13px] font-semibold truncate">
