@@ -30,6 +30,8 @@ import {
   productInspections,
   packageActivityLogs,
   measurementResults,
+  InsertProductInspection,
+  InsertMeasurementResult,
 } from "../../drizzle/schema";
 import JSZip from "jszip";
 import fs from "fs";
@@ -348,6 +350,46 @@ const metaJsonSchema = z.object({
 });
 
 // ============================================================
+// Overall-result inference (Task 9 / PHẦN 2) — thuần, không I/O, test trực tiếp
+// được từ aoiPackageIngestHopNhat.test.ts.
+// ============================================================
+/**
+ * Suy `overallResult` của một gói ZIP AOI khi `meta.json` không khai thẳng.
+ *
+ * Trước sửa, cả hai nơi dùng biểu thức `metaData.overallResult ||
+ * (summary?.ng > 0 ? "NG" : "OK")` — KHÔNG nhánh nào trả "NTF". Một gói
+ * `summary.ntf > 0, ng = 0` bị suy thành "OK", mất trạng thái NTF (lỗi 1,
+ * task-9-report.md PHẦN 2).
+ *
+ * Quy tắc: có NG → NG; không NG mà có NTF → NTF; không cả hai → OK. Một
+ * `explicitResult` (lời khai trực tiếp trong `meta.json`) LUÔN được tôn trọng —
+ * hàm không được phép ghi đè lời khai đã có.
+ */
+export function inferAoiOverallResult(input: {
+  explicitResult?: "OK" | "NG" | "NTF" | null;
+  ngCount?: number | null;
+  ntfCount?: number | null;
+}): "OK" | "NG" | "NTF" {
+  if (input.explicitResult) return input.explicitResult;
+  if ((input.ngCount ?? 0) > 0) return "NG";
+  if ((input.ntfCount ?? 0) > 0) return "NTF";
+  return "OK";
+}
+
+/**
+ * `product_inspections.originalResult` ghi lại cái MÁY BÁO TRƯỚC KHI người xác
+ * nhận NTF — cột DB chỉ nhận OK/NG (`originalResultEnum`,
+ * drizzle/schema/enums.ts:59). "NTF" không phải giá trị máy tự báo, nó là một
+ * xác nhận CỦA NGƯỜI đến sau, nên khi overall suy ra NTF, `originalResult` vẫn
+ * phải là NG (đang chờ xác nhận) — KHÔNG BAO GIỜ "NTF" (lỗi 2, task-9-report.md
+ * PHẦN 2: ép kiểu `overallResult as "OK" | "NG"` cũ để lọt "NTF" xuống INSERT
+ * và vỡ ở tầng DB vì originalResultEnum không nhận giá trị đó).
+ */
+export function toOriginalResult(overall: "OK" | "NG" | "NTF"): "OK" | "NG" {
+  return overall === "NTF" ? "NG" : overall;
+}
+
+// ============================================================
 // Router
 // ============================================================
 export const aoiPackageRouter = router({
@@ -661,18 +703,181 @@ export const aoiPackageRouter = router({
             resolvedPoints.push({ pointCode, pointName, pointDefId, gateDef, measuredVal, measuredStr, isNumeric });
           }
 
-          // Outer-scope values needed AFTER the tx commits (logging/hooks/return).
+          // Outer-scope values needed AFTER persistInspectionAtomic / the tx below
+          // (logging/hooks/return).
           let linkedInspectionId: number | undefined;
           let createdInspection = false;
           let finalOverallResult: "OK" | "NG" | "NTF" = "OK";
 
-          // ── P1-A: ONE atomic transaction for ALL commit writes ──────────────
-          // package images + inspection (find/create) + measurement results +
-          // spec-gate overall-NG promotion + package status→committed. A crash
-          // mid-write can no longer leave a partially-committed package (e.g.
-          // measurement rows with no committed header, or an OK header over NG
-          // points). ZIP/object I/O and point-def auto-create already ran ABOVE
-          // (outside the tx); the post-commit hooks run BELOW (outside).
+          // Fix timezone: shift to "fake UTC" so Drizzle stores local time in
+          // timestamp without time zone. Tính MỘT LẦN — dùng lại cho cả header
+          // (board mới) lẫn measurement rows (board mới VÀ board tái dùng). An
+          // toàn khi `metaData` null: `pointsWithImages` rỗng nên `buildRecord`
+          // dưới đây không bao giờ thực sự chạy.
+          const rawInspTime = metaData?.inspectionTime
+            ? new Date(metaData.inspectionTime)
+            : metaData?.startedAt
+            ? new Date(metaData.startedAt)
+            : new Date();
+          const inspectionTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
+
+          // Build one measurement_results row from a pre-resolved point
+          // (pointDefId/gateDef resolved OUTSIDE any transaction above). The
+          // spec-gate EVAL runs here so `zipDowngradeCount` is only bumped for
+          // rows we actually (re)write with a result. Dùng chung cho CẢ đường
+          // board-mới (persistInspectionAtomic bên dưới) LẪN đường tái dùng
+          // (trong transaction cuối) — `linkedInspectionId` được đọc tại THỜI
+          // ĐIỂM GỌI qua closure nên mỗi đường thấy đúng giá trị nó vừa đặt.
+          const buildRecord = (absIdx: number, point: any) => {
+            const rp = resolvedPoints[absIdx];
+            let effectiveResult = (point.result || "NTF") as "OK" | "NG" | "NTF";
+            let specGateRemark: string | undefined;
+            if (rp.gateDef) {
+              const evalRes = evaluatePointResult(rp.gateDef as any, { measuredValue: rp.measuredVal as any }, effectiveResult);
+              effectiveResult = evalRes.result;
+              if (evalRes.overridden) {
+                zipDowngradeCount++;
+                specGateRemark = `Spec gate: ${evalRes.violations.join("; ")}`.slice(0, 480);
+              }
+            }
+            return {
+              inspectionId: linkedInspectionId!,
+              pointDefId: rp.pointDefId,
+              measuredValue: rp.isNumeric ? rp.measuredStr : null,
+              measuredValueText: rp.measuredStr,
+              result: effectiveResult,
+              imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
+              remark: specGateRemark ?? (point.remark || `${rp.pointName}${rp.measuredVal !== undefined ? ` (${rp.measuredVal}${point.unit || ''})` : ''}`),
+              createdAt: inspectionTime,
+            };
+          };
+
+          // ── Task 9 (PHẦN 1) — header + measurements của một board MỚI đi qua
+          // `persistInspectionAtomic`, KHÔNG còn tự INSERT thẳng vào bảng
+          // `productInspections` qua `tx`. Lối (a) (xem task-9-report.md): gọi TRƯỚC khi mở transaction
+          // ở dưới, vì `persistInspectionAtomic` tự mở `db.transaction()` CỦA
+          // RIÊNG NÓ trên một kết nối khác — gọi nó BÊN TRONG một transaction khác
+          // sẽ không khiến nó tham gia transaction đó, nên rollback ngoài sẽ
+          // KHÔNG hoàn tác nó. Đánh đổi: mất tính nguyên tử giữa (header+
+          // measurements) và (package_images+trạng thái gói) — nhưng ĐƯỢC sổ
+          // idempotency claim-first của nó, nên một lần retry của CÙNG
+          // `pkg.packageId` hội tụ về đúng MỘT inspection thay vì tự chép lại
+          // giao thức claim (điều task này sinh ra để xoá).
+          if (metaData?.serialNumber) {
+            // Try to find existing inspection (đọc trước khi ghi — một lượt commit
+            // ĐỒNG THỜI thật của CÙNG package vẫn bị chặn ở dưới bởi chính sổ
+            // idempotency claim-first của `persistInspectionAtomic`, không phải bởi
+            // SELECT này).
+            const inspections = await database
+              .select()
+              .from(productInspections)
+              .where(
+                and(
+                  eq(productInspections.machineId, machine.id),
+                  eq(productInspections.serialNumber, metaData.serialNumber)
+                )
+              )
+              .orderBy(desc(productInspections.createdAt))
+              .limit(1);
+
+            if (inspections.length > 0) {
+              linkedInspectionId = inspections[0].id;
+            } else {
+              // ── NEW inspection: reserve the surrogate id FIRST (mirrors the
+              // machineApiRouters PA-A path) so the measurement rows below can
+              // carry it, then persist header+measurements ATOMICALLY in ONE call.
+              const reservedId = await db.reserveInspectionId();
+              linkedInspectionId = reservedId;
+
+              const newMeasurementRows: InsertMeasurementResult[] = [];
+              for (let idx = 0; idx < pointsWithImages.length; idx++) {
+                newMeasurementRows.push(buildRecord(idx, pointsWithImages[idx] as any));
+              }
+
+              // Determine overall result — xem inferAoiOverallResult (PHẦN 2, lỗi 1).
+              const inferredOverall = inferAoiOverallResult({
+                explicitResult: metaData.overallResult ?? null,
+                ngCount: metaData.summary?.ng ?? null,
+                ntfCount: metaData.summary?.ntf ?? null,
+              });
+
+              const newInspectionData: InsertProductInspection & { id: number } = {
+                id: reservedId,
+                machineId: machine.id,
+                serialNumber: metaData.serialNumber,
+                productModel: metaData.productModel || null,
+                batchNumber: metaData.batchNumber || null,
+
+                // Enterprise hierarchy — SUY TỪ MÁY (xem `macTenantCommit` ở trên).
+                // ⚠ `stageCode` KHÔNG suy được (không phải nút phân cấp) ⇒ nguyên văn lời khai.
+                corporateCode: macTenantCommit.corporateCode ?? null,
+                factoryCode: macTenantCommit.factoryCode ?? null,
+                workshopCode: macTenantCommit.workshopCode ?? null,
+                lineCode: macTenantCommit.lineCode ?? null,
+                stageCode: metaData.stageCode || null,
+
+                // Production context
+                productionOrderCode: metaData.productionOrderCode || null,
+                operatorId: metaData.operatorId || null,
+
+                overallResult: inferredOverall,
+                // PHẦN 2 lỗi 2: originalResultEnum chỉ nhận OK/NG — NTF suy từ
+                // overall phải hạ về NG (cái máy báo TRƯỚC khi người xác nhận NTF).
+                originalResult: toOriginalResult(inferredOverall),
+                inspectionTime: inspectionTime,
+                cycleTime: metaData.cycleTime ? String(metaData.cycleTime) : null,
+                createdAt: inspectionTime,
+                updatedAt: inspectionTime,
+                // Sổ idempotency (doc 51 P1) tái dùng nguyên giao thức — packageId
+                // là UNIQUE (drizzle/schema/inspection.ts:364) ⇒ khoá ổn định qua
+                // mọi lần retry của CÙNG một gói.
+                idempotencyKey: `aoi-pkg:${pkg.packageId}`,
+              };
+
+              const persisted = await db.persistInspectionAtomic(
+                newInspectionData,
+                newMeasurementRows,
+                { promoteOverallToNg: zipDowngradeCount > 0 },
+              );
+              linkedInspectionId = persisted.id;
+              createdInspection = !persisted.duplicate;
+              if (persisted.duplicate) {
+                console.warn(
+                  `[AOI commit] persistInspectionAtomic reported duplicate for package ` +
+                    `${pkg.packageId} (idempotency key hit) → existing inspectionId=${persisted.id}`,
+                );
+                // Measurements vừa build KHÔNG được ghi (persistInspectionAtomic bỏ
+                // qua chúng khi duplicate) — nhánh tái dùng bên dưới tự đếm lại từ
+                // đầu trên các record ĐÃ tồn tại, nên đếm của lượt này không được
+                // rò sang đó.
+                zipDowngradeCount = 0;
+              }
+            }
+          }
+
+          // Calculate summary from measurements if not provided
+          const calculatedSummary = metaData?.summary || {
+            totalPoints: normalizedMeasurements.length,
+            ok: normalizedMeasurements.filter(p => p.result === 'OK').length,
+            ng: normalizedMeasurements.filter(p => p.result === 'NG').length,
+            ntf: normalizedMeasurements.filter(p => !p.result || p.result === 'NTF').length,
+          };
+
+          // Determine overall result (assigns the outer-scope var used by the
+          // post-commit WIP hook below). Cùng hàm thuần với header — biểu thức cũ
+          // `metaData?.overallResult || (calculatedSummary.ng > 0 ? "NG" : "OK")`
+          // mắc ĐÚNG lỗi 1 của PHẦN 2; `calculatedSummary.ntf` đã tính sẵn ở trên
+          // nên sửa ở đây không tốn thêm gì.
+          finalOverallResult = inferAoiOverallResult({
+            explicitResult: metaData?.overallResult ?? null,
+            ngCount: calculatedSummary.ng,
+            ntfCount: calculatedSummary.ntf,
+          });
+
+          // ── Phần ghi còn lại, VẪN MỘT transaction: package images + (CHỈ đường
+          // tái dùng) đồng bộ measurement/thăng hạng spec-gate + trạng thái
+          // gói→committed. Header+measurements của board MỚI đã commit nguyên tử
+          // ở TRÊN qua persistInspectionAtomic.
           await database.transaction(async (tx) => {
             // Insert package image records
             if (normalizedMeasurements.length > 0) {
@@ -690,219 +895,99 @@ export const aoiPackageRouter = router({
               }
             }
 
-          if (metaData?.serialNumber) {
-            // Try to find existing inspection
-            const inspections = await tx
-              .select()
-              .from(productInspections)
-              .where(
-                and(
-                  eq(productInspections.machineId, machine.id),
-                  eq(productInspections.serialNumber, metaData.serialNumber)
-                )
-              )
-              .orderBy(desc(productInspections.createdAt))
-              .limit(1);
+            // Create or update measurement results with image URLs pointing to AOI
+            // package images — CHỈ cho đường TÁI DÙNG (một inspection đã có sẵn,
+            // tìm thấy ở SELECT trên HOẶC được persistInspectionAtomic báo là
+            // duplicate). Đường board-MỚI đã ghi measurements nguyên tử cùng header
+            // qua persistInspectionAtomic rồi.
+            if (!createdInspection && linkedInspectionId && pointsWithImages.length > 0) {
+              const existingRecords = await tx
+                .select({ id: measurementResults.id, remark: measurementResults.remark })
+                .from(measurementResults)
+                .where(eq(measurementResults.inspectionId, linkedInspectionId))
+                .orderBy(measurementResults.id);
 
-            if (inspections.length > 0) {
-              linkedInspectionId = inspections[0].id;
-            } else {
-              // Create new inspection record from AOI package data
-              // Fix timezone: shift to "fake UTC" so Drizzle stores local time in timestamp without time zone
-              const rawInspTime = metaData.inspectionTime 
-                ? new Date(metaData.inspectionTime) 
-                : metaData.startedAt 
-                ? new Date(metaData.startedAt) 
-                : new Date();
-              const inspectionTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
-              
-              // Determine overall result
-              const overallResult = metaData.overallResult 
-                || (metaData.summary?.ng && metaData.summary.ng > 0 ? "NG" : "OK");
-
-              const [newInspection] = await tx
-                .insert(productInspections)
-                .values({
-                  machineId: machine.id,
-                  serialNumber: metaData.serialNumber,
-                  productModel: metaData.productModel || null,
-                  batchNumber: metaData.batchNumber || null,
-                  
-                  // Enterprise hierarchy — SUY TỪ MÁY (xem `macTenantCommit` ở trên).
-                  // ⚠ `stageCode` KHÔNG suy được (không phải nút phân cấp) ⇒ nguyên văn lời khai.
-                  corporateCode: macTenantCommit.corporateCode ?? null,
-                  factoryCode: macTenantCommit.factoryCode ?? null,
-                  workshopCode: macTenantCommit.workshopCode ?? null,
-                  lineCode: macTenantCommit.lineCode ?? null,
-                  stageCode: metaData.stageCode || null,
-                  
-                  // Production context
-                  productionOrderCode: metaData.productionOrderCode || null,
-                  operatorId: metaData.operatorId || null,
-                  
-                  overallResult: overallResult as "OK" | "NG" | "NTF",
-                  originalResult: overallResult as "OK" | "NG",
-                  inspectionTime: inspectionTime,
-                  cycleTime: metaData.cycleTime ? String(metaData.cycleTime) : null,
-                  createdAt: inspectionTime,
-                  updatedAt: inspectionTime,
-                })
-                .returning({ id: productInspections.id });
-
-              linkedInspectionId = newInspection.id;
-              createdInspection = true;
-            }
-
-            // Create or update measurement results with image URLs pointing to AOI package images
-            // Applies for BOTH new and existing inspections
-            if (linkedInspectionId && pointsWithImages.length > 0) {
-              const inspectionTime2Raw = metaData.inspectionTime
-                ? new Date(metaData.inspectionTime)
-                : metaData.startedAt
-                ? new Date(metaData.startedAt)
-                : new Date();
-              const inspectionTime = new Date(inspectionTime2Raw.getTime() - inspectionTime2Raw.getTimezoneOffset() * 60000);
-
-              // Build one measurement_results row from a pre-resolved point
-              // (pointDefId/gateDef resolved OUTSIDE the tx above). The spec-gate
-              // EVAL runs here so `zipDowngradeCount` is only bumped for rows we
-              // actually (re)write with a result.
-              const buildRecord = (absIdx: number, point: any) => {
-                const rp = resolvedPoints[absIdx];
-                let effectiveResult = (point.result || "NTF") as "OK" | "NG" | "NTF";
-                let specGateRemark: string | undefined;
-                if (rp.gateDef) {
-                  const evalRes = evaluatePointResult(rp.gateDef as any, { measuredValue: rp.measuredVal as any }, effectiveResult);
-                  effectiveResult = evalRes.result;
-                  if (evalRes.overridden) {
-                    zipDowngradeCount++;
-                    specGateRemark = `Spec gate: ${evalRes.violations.join("; ")}`.slice(0, 480);
+              if (existingRecords.length > 0) {
+                // Batch UPDATE existing rows' imageUrl by index order (was one
+                // UPDATE per row): pair id↔url via a VALUES list so it runs as
+                // a SINGLE statement (each id/url is a bound scalar param).
+                const updateCount = Math.min(existingRecords.length, pointsWithImages.length);
+                if (updateCount > 0) {
+                  const pairs = [];
+                  for (let i = 0; i < updateCount; i++) {
+                    const url = `/api/aoi/image/${pkg.packageId}/${pointsWithImages[i].fileName}`;
+                    pairs.push(sql`(${existingRecords[i].id}::int, ${url}::text)`);
                   }
+                  await tx.execute(sql`
+                    UPDATE ${measurementResults} AS mr
+                    SET "imageUrl" = data.image_url
+                    FROM (VALUES ${sql.join(pairs, sql`, `)}) AS data(id, image_url)
+                    WHERE mr.id = data.id
+                  `);
                 }
-                return {
-                  inspectionId: linkedInspectionId!,
-                  pointDefId: rp.pointDefId,
-                  measuredValue: rp.isNumeric ? rp.measuredStr : null,
-                  measuredValueText: rp.measuredStr,
-                  result: effectiveResult,
-                  imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
-                  remark: specGateRemark ?? (point.remark || `${rp.pointName}${rp.measuredVal !== undefined ? ` (${rp.measuredVal}${point.unit || ''})` : ''}`),
-                  createdAt: inspectionTime,
-                };
-              };
 
-              // For existing inspections, update existing records instead of creating duplicates
-              if (!createdInspection) {
-                const existingRecords = await tx
-                  .select({ id: measurementResults.id, remark: measurementResults.remark })
-                  .from(measurementResults)
-                  .where(eq(measurementResults.inspectionId, linkedInspectionId!))
-                  .orderBy(measurementResults.id);
-
-                if (existingRecords.length > 0) {
-                  // Batch UPDATE existing rows' imageUrl by index order (was one
-                  // UPDATE per row): pair id↔url via a VALUES list so it runs as
-                  // a SINGLE statement (each id/url is a bound scalar param).
-                  const updateCount = Math.min(existingRecords.length, pointsWithImages.length);
-                  if (updateCount > 0) {
-                    const pairs = [];
-                    for (let i = 0; i < updateCount; i++) {
-                      const url = `/api/aoi/image/${pkg.packageId}/${pointsWithImages[i].fileName}`;
-                      pairs.push(sql`(${existingRecords[i].id}::int, ${url}::text)`);
-                    }
-                    await tx.execute(sql`
-                      UPDATE ${measurementResults} AS mr
-                      SET "imageUrl" = data.image_url
-                      FROM (VALUES ${sql.join(pairs, sql`, `)}) AS data(id, image_url)
-                      WHERE mr.id = data.id
-                    `);
+                // Insert any extra AOI measurements beyond existing count
+                if (pointsWithImages.length > existingRecords.length) {
+                  const extraRecords = [];
+                  for (let realIdx = existingRecords.length; realIdx < pointsWithImages.length; realIdx++) {
+                    extraRecords.push(buildRecord(realIdx, pointsWithImages[realIdx] as any));
                   }
-
-                  // Insert any extra AOI measurements beyond existing count
-                  if (pointsWithImages.length > existingRecords.length) {
-                    const extraRecords = [];
-                    for (let realIdx = existingRecords.length; realIdx < pointsWithImages.length; realIdx++) {
-                      extraRecords.push(buildRecord(realIdx, pointsWithImages[realIdx] as any));
-                    }
-                    await tx.insert(measurementResults).values(extraRecords);
-                  }
-                } else {
-                  // Existing inspection but no measurement records yet — insert all
-                  const measurementRecords = [];
-                  for (let idx = 0; idx < pointsWithImages.length; idx++) {
-                    measurementRecords.push(buildRecord(idx, pointsWithImages[idx] as any));
-                  }
-                  await tx.insert(measurementResults).values(measurementRecords);
+                  await tx.insert(measurementResults).values(extraRecords);
                 }
               } else {
-                // New inspection — insert all measurement records
+                // Existing inspection but no measurement records yet — insert all
                 const measurementRecords = [];
                 for (let idx = 0; idx < pointsWithImages.length; idx++) {
                   measurementRecords.push(buildRecord(idx, pointsWithImages[idx] as any));
                 }
                 await tx.insert(measurementResults).values(measurementRecords);
               }
+
+              // W2-A / doc 35 D2 — spec-gate overall-NG promotion cho đường TÁI
+              // DÙNG (giống reconcileInspectionOverallNG: chỉ lật header đang OK
+              // sang NG; idempotent). Thăng hạng của đường board-MỚI đã chạy BÊN
+              // TRONG persistInspectionAtomic (`promoteOverallToNg`) rồi.
+              if (zipDowngradeCount > 0) {
+                await tx
+                  .update(productInspections)
+                  .set({ overallResult: "NG", updatedAt: new Date() })
+                  .where(and(
+                    eq(productInspections.id, linkedInspectionId),
+                    eq(productInspections.overallResult, "OK"),
+                  ));
+                console.warn(`[AOI commit] spec-gate downgraded ${zipDowngradeCount} point(s) → inspection ${linkedInspectionId} overall promoted to NG`);
+              }
             }
 
-            // W2-A / doc 35 D2 — spec-gate overall-NG promotion, now INSIDE the
-            // same atomic tx (mirrors reconcileInspectionOverallNG: only flips an
-            // OK header to NG; idempotent). Being part of the atomic unit, a
-            // failure here rolls the whole commit back rather than leaving an
-            // OK header over NG points.
-            if (zipDowngradeCount > 0 && linkedInspectionId) {
-              await tx
-                .update(productInspections)
-                .set({ overallResult: "NG", updatedAt: new Date() })
-                .where(and(
-                  eq(productInspections.id, linkedInspectionId),
-                  eq(productInspections.overallResult, "OK"),
-                ));
-              console.warn(`[AOI commit] spec-gate downgraded ${zipDowngradeCount} point(s) → inspection ${linkedInspectionId} overall promoted to NG`);
-            }
-          }
-
-          // Calculate summary from measurements if not provided
-          const calculatedSummary = metaData?.summary || {
-            totalPoints: normalizedMeasurements.length,
-            ok: normalizedMeasurements.filter(p => p.result === 'OK').length,
-            ng: normalizedMeasurements.filter(p => p.result === 'NG').length,
-            ntf: normalizedMeasurements.filter(p => !p.result || p.result === 'NTF').length,
-          };
-
-          // Determine overall result (assigns the outer-scope var used by the
-          // post-commit WIP hook below).
-          finalOverallResult = (metaData?.overallResult
-            || (calculatedSummary.ng > 0 ? "NG" : "OK")) as "OK" | "NG" | "NTF";
-
-          // Update package record → committed (atomic with the writes above)
-          await tx
-            .update(inspectionPackages)
-            .set({
-              status: "committed",
-              inspectionId: linkedInspectionId || null,
-              serialNumber: metaData?.serialNumber || null,
-              productModel: metaData?.productModel || null,
-              // ⚠ `inspection_packages` là bảng CÓ RLS (`app_tenant_allows("factoryCode", NULL)`):
-              // một `factoryCode` NULL ở đây nghĩa là gói ảnh này hiện ra với MỌI nhà máy sau
-              // mig 0327. Nên nó suy từ máy, không lấy từ `meta.json` — xem `macTenantCommit`.
-              factoryCode: macTenantCommit.factoryCode ?? null,
-              lineCode: macTenantCommit.lineCode ?? null,
-              overallResult: finalOverallResult,
-              totalPoints: calculatedSummary.totalPoints,
-              okCount: calculatedSummary.ok,
-              ngCount: calculatedSummary.ng,
-              imageCount: imageFiles.length,
-              inspectionTime: metaData?.inspectionTime
-                ? new Date(metaData.inspectionTime)
-                : metaData?.startedAt
-                ? new Date(metaData.startedAt)
-                : null,
-              metaJson: metaData as any,
-              committedAt: new Date(),
-              uploadedAt: new Date(),
-              updatedAt: new Date(),
-            })
-            .where(eq(inspectionPackages.id, pkg.id));
+            // Update package record → committed (atomic with the writes above)
+            await tx
+              .update(inspectionPackages)
+              .set({
+                status: "committed",
+                inspectionId: linkedInspectionId || null,
+                serialNumber: metaData?.serialNumber || null,
+                productModel: metaData?.productModel || null,
+                // ⚠ `inspection_packages` là bảng CÓ RLS (`app_tenant_allows("factoryCode", NULL)`):
+                // một `factoryCode` NULL ở đây nghĩa là gói ảnh này hiện ra với MỌI nhà máy sau
+                // mig 0327. Nên nó suy từ máy, không lấy từ `meta.json` — xem `macTenantCommit`.
+                factoryCode: macTenantCommit.factoryCode ?? null,
+                lineCode: macTenantCommit.lineCode ?? null,
+                overallResult: finalOverallResult,
+                totalPoints: calculatedSummary.totalPoints,
+                okCount: calculatedSummary.ok,
+                ngCount: calculatedSummary.ng,
+                imageCount: imageFiles.length,
+                inspectionTime: metaData?.inspectionTime
+                  ? new Date(metaData.inspectionTime)
+                  : metaData?.startedAt
+                  ? new Date(metaData.startedAt)
+                  : null,
+                metaJson: metaData as any,
+                committedAt: new Date(),
+                uploadedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(inspectionPackages.id, pkg.id));
           });
 
           // Log: commit_success
