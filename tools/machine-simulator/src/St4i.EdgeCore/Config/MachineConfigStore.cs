@@ -175,7 +175,43 @@ public sealed class MachineConfigStore
     /// <see cref="MachineParameterSchema.ParametersFor"/>'s defaults, version 1, no adjustments) if this
     /// is the first time it's been seen. Idempotent — a machine already configured with a DIFFERENT
     /// <paramref name="configKind"/> throws <see cref="InvalidOperationException"/> rather than silently
-    /// reinterpreting its stored adjustments under a new parameter vocabulary.</summary>
+    /// reinterpreting its stored adjustments under a new parameter vocabulary.
+    ///
+    /// <para>🔴 <b>ITEM 75, BR-1, 2026-08-24 — THE SEED IS NOT COMMITTED IN MEMORY UNTIL IT IS ON DISK.</b>
+    /// All six <c>Save()</c> call sites in this class mutate first and persist second, so a throw out of
+    /// <c>Save()</c> leaves memory ahead of the file in all six. FOUR of them are LOUD on every subsequent
+    /// attempt — the caller repeats the operation and reaches <c>Save()</c> again. This one is not: its
+    /// idempotency guard is <c>_configs.TryGetValue</c>, computed from the very map the failed attempt
+    /// already mutated, so the SECOND call takes the fast path, returns 200, and never writes. The method
+    /// whose whole contract is "safe to call repeatedly" was the one that could not repair itself.</para>
+    ///
+    /// <para>🔴 <b>"FOUR", NOT FIVE — and the correction is recorded because the first draft of this very
+    /// paragraph got it wrong and the doc-absolutes scanner is what surfaced the sentence for re-reading.</b>
+    /// <see cref="RemoveAdjustment"/> is a SECOND member of this shape, by the identical mechanism: its
+    /// <c>removed</c> flag is decided by a lookup in the map its own failed attempt already mutated, so a
+    /// retry after a throwing <c>Save()</c> finds nothing left to remove, skips the write entirely, and hands
+    /// the caller a 200 for a delete the file never received — and the adjustment returns at the next process
+    /// restart, when <c>Load()</c> reads the row that was never deleted. <b>NAMED, NOT CHANGED, and the
+    /// reason is a measurement rather than a schedule:</b> undoing it means restoring the removed entry,
+    /// possibly re-creating a product bucket that was dropped when it emptied, AND unwinding an appended
+    /// history row — three restorations where this method needs one, with no witness in this tree for any of
+    /// them. A half-rollback there would be a worse defect than the one it replaced. See
+    /// <c>docs/owner-decisions.md</c> item 75.</para>
+    ///
+    /// <para><b>The observable that made it visible, and what it actually was:</b> the first
+    /// <c>POST /v1/fleet/start</c> on a cold process returned 500 (this <c>Save()</c> throwing
+    /// <see cref="UnauthorizedAccessException"/> out of the atomic rename) and every later one returned 200.
+    /// That is not a machine being cold and it is not a race — "cold" here is this dictionary being EMPTY,
+    /// which is true exactly once per process per machine code. The fleet then ran for the life of the
+    /// process on a configuration that exists only in RAM and disappears at the next restart, with nobody
+    /// told.</para>
+    ///
+    /// <para><b>The price, stated because it is real:</b> a deployment whose config root genuinely cannot be
+    /// written now fails EVERY start instead of only the first. That is louder and it is the point — the
+    /// alternative on offer was a fleet running on a config no file holds. 📎 The other five sites are named
+    /// rather than changed: they are already loud every time, and rolling them back is a larger change with
+    /// its own history semantics (a retried <c>SetAdjustment</c> appends a second history entry) that no
+    /// measurement here covers.</para></summary>
     public MachineOperatingConfig Ensure(string machineCode, string configKind)
     {
         ArgumentException.ThrowIfNullOrEmpty(machineCode);
@@ -196,7 +232,22 @@ public sealed class MachineConfigStore
 
             var created = SeedConfig(machineCode, configKind);
             _configs[machineCode] = created;
-            Save();
+
+            try
+            {
+                Save();
+            }
+            catch
+            {
+                // Item 75. The entry is removed, not left behind: keeping it turns one loud failure into a
+                // silent, permanent divergence between this map and the file, because the guard above would
+                // then answer "already configured" forever. Only THIS call's own seed is undone — the map is
+                // otherwise untouched, so a failure here cannot lose an entry some earlier successful call
+                // put there.
+                _configs.Remove(machineCode);
+                throw;
+            }
+
             return DeepClone(created);
         }
     }

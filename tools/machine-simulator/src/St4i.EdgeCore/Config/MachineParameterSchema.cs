@@ -193,6 +193,42 @@ public static class MachineParameterSchema
     /// Throws <see cref="KeyNotFoundException"/> for an unknown <c>configKind</c> — callers always reach
     /// this via <see cref="ConfigKindForMachineType"/> first, so an unknown kind here means a
     /// programming error, not user input.</summary>
+    /// <remarks>🔴 <b>ITEM 71, BR-1, 2026-08-24 — THIS METHOD IS ON THE WIRE, AND THAT IS THE MEASUREMENT
+    /// THAT DECIDES WHO OWNS THE CODE-SIDE OF ITEM 71.</b>
+    ///
+    /// <para>Items 57 and 66 both set the same precedent and it is applied here rather than restated: a
+    /// change is inside the coordinator's delegation only if the bytes that leave this product are
+    /// IDENTICAL afterwards. §57's first arm shipped because seven of seven <c>MeasurementType</c> members
+    /// produced a byte-identical token; item 66's sibling shipped for the same reason, seven of seven.
+    /// <b>Run the same test on adding <c>sequence[]</c> to <see cref="ScrewProgram"/> or
+    /// <c>thresholds{}</c> to <see cref="IotSettings"/> — the two rows where the design doc and
+    /// <c>recipeSchemas.ts</c> agree and this schema is the outlier — and it FAILS on three counts, each
+    /// on its own sufficient:</b></para>
+    /// <list type="number">
+    /// <item><c>MachineSettingsEndpoints</c> puts the return value of this method into
+    /// <c>MachineSettingsResponseDto</c> verbatim, and <c>MachineConfigStore.Resolve</c> loops the same list
+    /// to build <c>effective.Parameters</c>, falling back to <c>def.Default</c> for any key the stored
+    /// baseline lacks. So a sixth element appears in BOTH arrays of every
+    /// <c>GET /v1/machines/{code}/settings</c> for that kind — for machines seeded long ago just as much as
+    /// for new ones. The response is not byte-identical; it is one member longer.</item>
+    /// <item><c>MachineConfigStore.SeedConfig</c> derives <c>Baseline.Values</c> from this list and then
+    /// <c>ConfigChecksum.Compute</c> over it — <b>at SEED time, and the result is persisted</b>. So the
+    /// baseline checksum changes for machines first seen AFTER the change and not for machines already on
+    /// disk, and two hosts of this same product then publish DIFFERENT baseline checksums for the SAME
+    /// parameter set, decided by when each machine was first started. That is worse than a uniform change,
+    /// not better, and it is a number integrators compare across hosts. (🔴 This clause read "changes the
+    /// CHECKSUM every settings response carries" in the first draft and that was too broad — an already
+    /// persisted baseline is not recomputed. Corrected in place.)</item>
+    /// <item>Neither value is a scalar. <see cref="ParameterDef"/> is one number with a hard band, a step
+    /// and a decimal count; an array of <c>{step, torque, angle}</c> and a free-form <c>string→number</c>
+    /// map are not that shape, so the DTO's ELEMENT TYPE has to change too. That is a structural change to
+    /// a published response, not an added member.</item>
+    /// </list>
+    /// <para>⇒ <b>the code-side of item 71 touches exemption (b), "the shape of the data on the wire", and
+    /// is the OWNER's to decide — measured, not deferred to.</b> The documentation side was already paid by
+    /// BP-1 (§71.5). 📎 <see cref="AoiInspection"/>'s <c>retestPolicy</c> fails the same test for the same
+    /// reason and ALSO has no arbiter at all, which makes it a separate owner question rather than a fourth
+    /// instance of this one.</para></remarks>
     public static IReadOnlyList<ParameterDef> ParametersFor(string configKind) =>
         Registry.TryGetValue(configKind, out var defs)
             ? defs

@@ -745,7 +745,16 @@ internal sealed class FleetCore
     /// reader arriving at this row is asking exactly "what else is like this". The reason it is out of item
     /// 7's scope is at that declaration, and it rests on the STATE TRANSITION (a restart takes a running
     /// fleet down; a <see cref="Start"/> stops nothing) rather than on "the caller is told", which is the
-    /// argument this row already rejects for its own two callers.</para></para></item>
+    /// argument this row already rejects for its own two callers.
+    /// <para>🔴 <b>NARROWED 2026-08-24 (BR-1, item 54), and narrowed rather than retracted because the
+    /// sentence it narrows is still the one that is true for the throw this row is about.</b>
+    /// <see cref="Start"/>'s catch now writes <see cref="LastError"/> in ONE state: <c>_running == false</c>
+    /// with <c>_slots</c> non-empty. <b>THE P5 SENTENCE ABOVE IS UNAFFECTED AND STAYS</b> —
+    /// <see cref="BuildStartPlan"/> runs off-lock ahead of <see cref="StartLocked"/> entirely, so a P5 throw
+    /// leaves <c>_slots</c> EMPTY, the new guard FALSE, and a stopped fleet still reporting healthy. What
+    /// changed is only the convergence state named at <see cref="LastError"/>'s declaration. 📎 The 500 an
+    /// operator actually meets from that P5 throw is a defect of its own with its own item (75) and is not
+    /// this one.</para></para></para></item>
     /// <item><b>S5 — CLOSED (G-2).</b> <see cref="Burst"/> → <see cref="RevertBurstAfterDelayAsync"/>.</item>
     /// <item><b>S6 — CLOSED (H-1a), and HOW it closed is the part worth carrying.</b>
     /// <see cref="UpdateSettings"/>'s committed triple versus its off-lock activation and persistence. G-2
@@ -2031,12 +2040,19 @@ internal sealed class FleetCore
     }
 
     /// <summary>The fault <c>GET /v1/health</c> answers from — that endpoint is literally
-    /// <c>LastError is null</c>. <b>TWO producers, named rather than counted, because a reader who finds one
+    /// <c>LastError is null</c>. <b>THREE producers, named rather than counted, because a reader who finds one
     /// of them stops looking:</b> <see cref="StartSlot"/>'s per-slot catch, for a slot that started and later
-    /// faulted at runtime; and <see cref="RebuildPipelineOffLock"/>'s fault path, for an internal restart
+    /// faulted at runtime; <see cref="RebuildPipelineOffLock"/>'s fault path, for an internal restart
     /// that tore the pipeline down and could not rebuild it (🔴 U-1, <c>docs/owner-decisions.md</c> item 7 —
     /// see that catch for why this field rather than a projection of its own, and for the identity guard both
-    /// producers share). One event in two shapes: a pipeline stopped for a reason nobody asked for.
+    /// producers share); and 🔴 <see cref="Start"/>'s own catch, <b>guarded to the one state where a start
+    /// leaves live slots behind</b> (BR-1, 2026-08-24, item 54 — see below). One event in three shapes: a
+    /// pipeline stopped for a reason nobody asked for.
+    ///
+    /// <para>🔴 <b>THE WORD "TWO" IN THE SENTENCE ABOVE READ THAT WAY UNTIL 2026-08-24 AND IS CORRECTED IN
+    /// PLACE RATHER THAN LEFT TO DRIFT</b> — it was true for as long as <see cref="Start"/> wrote nothing
+    /// here, which is the whole content of the SILENT TWIN entry below, and that entry is kept verbatim
+    /// because its reasoning is what decided the SHAPE of the third producer's guard.</para>
     ///
     /// <para><b>NOT producers, and each for its own reason — enumerated, because a reader who finds the two
     /// above stops looking:</b>
@@ -2063,7 +2079,18 @@ internal sealed class FleetCore
     /// the fleet is neither running nor cleanly stopped while this field stays <see langword="null"/>. That
     /// is the residual's own open question and it belongs to whoever takes it, not to item 7. Closing it is
     /// two statements in a <c>catch</c> that already exists; U-1 does not take it because item 7's subject is
-    /// a commit whose pipeline never came back, and <see cref="Start"/> commits nothing.</para></item>
+    /// a commit whose pipeline never came back, and <see cref="Start"/> commits nothing.</para>
+    /// <para>🔴 <b>THE PARAGRAPH ABOVE IS THE ONE THING IN THIS ENTRY THAT IS NO LONGER OPEN — CLOSED
+    /// 2026-08-24 (BR-1, item 54), and closed by exactly the two statements it predicted.</b>
+    /// <see cref="Start"/>'s catch now writes this field when — and only when — <c>_running == false</c> and
+    /// <c>_slots</c> is non-empty. Everything else in this entry STANDS and is deliberately not deleted: a
+    /// <see cref="Start"/> that throws with no slot installed still writes NOTHING here, so the transition
+    /// argument, the rejected "the caller is told" leg, and the ruling they support are all still the live
+    /// law of this field. The state that got a producer is the CONVERGENCE, not the twin.
+    /// <b>What unstopped it was not a new argument but a re-measurement:</b> §54.6 and §54.7 both stopped on
+    /// "there is no red-able witness, because nothing in the tree reaches that state", and
+    /// <c>FleetHostGateCommitCompletionTests.AStartThatThrowsWhileInstallingSlots_LeavesSlotsTheHaltPathCanStillTearDown</c>
+    /// had been reaching it and asserting it since J-2.</para></item>
     /// </list></para>
     ///
     /// <para><b>Cleared in exactly one place:</b> <see cref="StartLocked"/>, past its own latch. So a start
@@ -2662,12 +2689,48 @@ internal sealed class FleetCore
                 }
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // 🔴 T-1 fix round 1 — THE ONLY WRITE TO THE FAULT FLAG, and this clause exists for nothing else.
             // `throw;` rethrows the same exception object, so the install's own diagnostic is what leaves this
             // method; see the flag's declaration for why the polarity is FAULT and not COMPLETION.
             installFaulted = true;
+
+            // 🔴 BR-1, 2026-08-24 — docs/owner-decisions.md item 54, S3's residual (2). THE THIRD PRODUCER
+            // OF LastError, and it is guarded so narrowly that it changes NOTHING about the definition U-1
+            // bought with four edits.
+            //
+            // The field means "a pipeline stopped for a reason nobody asked for". A Start() that throws
+            // BEFORE any slot exists stops nothing — the fleet was stopped before it and after it — and that
+            // branch is deliberately left silent here, exactly as U-1 ruled. It is the overwhelmingly common
+            // branch: BuildStartPlan runs off-lock ahead of StartLocked entirely, so every P5 throw
+            // (MachineConfigStore.Ensure via SimulatorFactory.Create) leaves `_slots` EMPTY and this
+            // condition FALSE. A cold-process POST /v1/fleet/start returning 500 out of BuildStartPlan is
+            // that branch, and it is item 75, not this one.
+            //
+            // What this condition selects is the ONE state where the two genuinely converge, named at
+            // LastError's own declaration and left open there: a throw from INSIDE the slot loop, after at
+            // least one slot is installed and before `_running = true`. Those slots are LIVE — their run
+            // tasks are already driving their pipelines — while the fleet reports not-running, so a
+            // pipeline IS stopped-ish for a reason nobody asked for and GET /v1/health said HEALTHY about it
+            // for the life of the process. `_running == false && _slots.Count > 0` IS that state, spelled as
+            // the state rather than as "who threw", so no future throw site has to remember to opt in.
+            //
+            // 🔴 WHY THIS WAS STOPPED TWICE BEFORE AND IS NOT STOPPED NOW. §54.6 (BI-1) and §54.7 (BO-1)
+            // both concluded there was no red-able witness, because "no path in the tree puts Start() into
+            // that state". The first half of that is right about PRODUCTION and the inference from it is
+            // wrong: FleetHostGateCommitCompletionTests.
+            // AStartThatThrowsWhileInstallingSlots_LeavesSlotsTheHaltPathCanStillTearDown has constructed
+            // exactly this state since J-2, through AdditionalPipelinesForTests, and asserts it. The witness
+            // was in the tree the whole time; what was measured was the ITEM's text, not the tree.
+            lock (_gate)
+            {
+                if (!_running && _slots.Count > 0)
+                {
+                    LastError = ex;
+                }
+            }
+
             throw;
         }
         finally
@@ -3936,7 +3999,11 @@ internal sealed class FleetCore
         // rebuild throws now writes LastError too (RebuildPipelineOffLock's catch). The EXCLUSION this
         // paragraph states is unchanged and is what it was always for — a connector that could not be built
         // is not a fault of the fleet — so the reason is restated as the exclusion it is rather than as a
-        // claim about the field's only producer. See LastError's own declaration for both producers.
+        // claim about the field's only producer. See LastError's own declaration for the producers.
+        // 🔴 BR-1, 2026-08-24 (item 54) — that sentence read "for BOTH producers" until today, and it is
+        // corrected rather than left because it is a COUNT of a set that grew: Start()'s catch is now a
+        // third producer, narrowly guarded. The exclusion this paragraph states is again unchanged, and it
+        // is now doubly safe — a connector that could not be built never reaches Start()'s catch at all.
         //
         // Review fix round 2 — `orphanedConnectorDrivers` COLLECTS (never disposes inline) any driver a
         // rejected/faulted connector still handed back; disposal happens in the caller, off `_gate`, via

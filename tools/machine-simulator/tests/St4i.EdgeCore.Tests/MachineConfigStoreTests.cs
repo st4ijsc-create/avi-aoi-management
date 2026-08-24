@@ -470,4 +470,69 @@ public class MachineConfigStoreTests
         Assert.Equal(new[] { "push", "pull", "delete", "set" }, history.Select(h => h.Op).ToArray());
         Assert.Equal(new long[] { 4, 3, 2, 1 }, history.Select(h => h.Seq).ToArray());
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Item 75 (docs/owner-decisions.md) — a seed that could not be persisted must not be remembered
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>🔴 <b>Item 75, BR-1, 2026-08-24 — the defect behind "the first POST /v1/fleet/start on a cold
+    /// process returns 500 and every later one returns 200".</b>
+    ///
+    /// <para><c>Ensure</c> wrote <c>_configs[machineCode]</c> and only then called <c>Save()</c>. When
+    /// <c>Save()</c> threw, the caller got the exception — and the in-memory map kept the entry. Since
+    /// <c>Ensure</c>'s idempotency guard is a lookup in that same map, the SECOND call took the fast path,
+    /// returned normally, and never attempted the write again. So the fleet started, ran for the life of the
+    /// process on a configuration no file held, and nothing said so. <b>"Cold" was never about the machine:
+    /// it is this dictionary being empty, which is true exactly once per process per machine code</b> — which
+    /// is why the symptom looked like a one-off and is in fact deterministic.</para>
+    ///
+    /// <para><b>The failure is injected through the ENVIRONMENT, not through a seam,</b> because the
+    /// environment is where it came from: the persist is an atomic rename over
+    /// <c>machine-operating-config.json</c>, and a destination Windows refuses to replace is exactly the
+    /// <see cref="UnauthorizedAccessException"/> the field trace named. Read-only is the cheapest such
+    /// destination and needs no privilege to construct.</para>
+    ///
+    /// <para><b>The last leg is the one that keeps this honest:</b> once the obstruction is removed the store
+    /// must still work. A rollback that poisoned the entry permanently would pass every assertion above it
+    /// and be a worse defect than the one it replaced.</para></summary>
+    [Fact]
+    public void Ensure_whose_persist_throws_remembers_nothing_so_the_next_call_is_not_silently_green()
+    {
+        var dir = TempDir();
+        var path = Path.Combine(dir, "machine-operating-config.json");
+        File.WriteAllText(path, "[]");
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+
+        try
+        {
+            var store = new MachineConfigStore(dir);
+
+            var first = Assert.ThrowsAny<Exception>(
+                () => store.Ensure("SCRW-01", MachineParameterSchema.ScrewProgram));
+            Assert.True(
+                first is UnauthorizedAccessException or IOException,
+                $"the injected persist failure should surface as a file-system exception, got {first.GetType().Name}: {first.Message}");
+
+            // THE ASSERTION, both halves. The map must not hold what the disk does not…
+            Assert.Null(store.GetConfig("SCRW-01"));
+
+            // …and the retry must still be LOUD. Before the fix this second call returned a config
+            // happily, which is how a 500 turned into a fleet running on a record nobody wrote.
+            Assert.ThrowsAny<Exception>(() => store.Ensure("SCRW-01", MachineParameterSchema.ScrewProgram));
+
+            // The file is untouched by either attempt — no partial record, no empty rewrite.
+            Assert.Equal("[]", File.ReadAllText(path));
+
+            // And the store is not poisoned: remove the obstruction and the very same call works.
+            File.SetAttributes(path, FileAttributes.Normal);
+            var seeded = store.Ensure("SCRW-01", MachineParameterSchema.ScrewProgram);
+            Assert.Equal(MachineParameterSchema.ScrewProgram, seeded.ConfigKind);
+            Assert.NotNull(store.GetConfig("SCRW-01"));
+            Assert.Contains("SCRW-01", File.ReadAllText(path), StringComparison.Ordinal);
+        }
+        finally
+        {
+            try { if (File.Exists(path)) File.SetAttributes(path, FileAttributes.Normal); } catch { /* best-effort */ }
+        }
+    }
 }
