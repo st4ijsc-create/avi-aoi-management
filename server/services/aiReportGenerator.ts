@@ -35,6 +35,7 @@ import {
 } from "../../drizzle/schema";
 import { aiModels } from "../../drizzle/schema/ai";
 import { checkConfidenceDrift } from "./aiDriftMonitor";
+import { finalYield } from "../utils/kpi";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -319,6 +320,7 @@ async function collectInspectionStats(startDate: Date, endDate: Date, machineId?
     total: sql<number>`COUNT(*)`.as("total"),
     ok: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'OK')`.as("ok"),
     ng: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'NG')`.as("ng"),
+    ntf: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'NTF')`.as("ntf"),
   })
     .from(productInspections)
     .where(and(...conditions));
@@ -327,6 +329,7 @@ async function collectInspectionStats(startDate: Date, endDate: Date, machineId?
     total: Number(stats?.total) || 0,
     ok: Number(stats?.ok) || 0,
     ng: Number(stats?.ng) || 0,
+    ntf: Number(stats?.ntf) || 0,
   };
 }
 
@@ -555,7 +558,8 @@ export async function generateDailyQualitySummary(params: ReportParams): Promise
   const total = stats?.total ?? 0;
   const ok = stats?.ok ?? 0;
   const ng = stats?.ng ?? 0;
-  const yieldRate = total > 0 ? (ok / total) * 100 : 0;
+  const ntf = stats?.ntf ?? 0;
+  const yieldRate = finalYield({ ok, ntf, total });
 
   const topDefectsFormatted = topDefects.map(d => ({
     ...d,

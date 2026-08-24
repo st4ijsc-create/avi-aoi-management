@@ -29,6 +29,7 @@ import {
   type BulletinPayload,
 } from "../services/mqttBulletinService";
 import { publishBulletin } from "../services/mqttService";
+import { finalYield } from "../utils/kpi";
 
 export const mqttBulletinRouter = router({
 
@@ -502,7 +503,7 @@ export const mqttBulletinRouter = router({
       const ngCount = rand(5, Math.floor(totalCount * 0.1));
       const ntfCount = rand(0, Math.floor(totalCount * 0.03));
       const okCount = totalCount - ngCount - ntfCount;
-      const yieldRate = Math.round((okCount / totalCount) * 10000) / 100;
+      const yieldRate = Math.round(finalYield({ ok: okCount, ntf: ntfCount, total: totalCount }) * 100) / 100;
 
       // Random fail points
       const failPointNames = [

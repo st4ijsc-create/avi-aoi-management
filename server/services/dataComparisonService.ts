@@ -14,6 +14,7 @@ import { scopeLabelsOf, UNSCOPED_LABELS, type ScopeLabels } from "../_core/acces
 import { resolveLogicalModel } from "./ai/modelResolver";
 // ★ G5-E — bộ cắt chuỗi suy luận (module LÁ, import TĨNH ⇒ hàng rào vô điều kiện theo cấu tạo).
 import { stripThinking } from "./ai/thinkingStrip";
+import { finalYield } from "../utils/kpi";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -238,7 +239,7 @@ async function getPeriodSummary(
     okCount: ok,
     ngCount: ng,
     ntfCount: ntf,
-    yieldRate: total > 0 ? Math.round((ok / total) * 1000) / 10 : 0,
+    yieldRate: Math.round(finalYield({ ok, ntf, total }) * 10) / 10,
     ngRate: total > 0 ? Math.round((ng / total) * 1000) / 10 : 0,
   };
 }

@@ -7,6 +7,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db";
 import { productionSessions, dailyStatistics } from "../../drizzle/schema/production";
+import { finalYield } from "../utils/kpi";
 
 const SIGNOFF_ALGORITHM = "HMAC-SHA256";
 
@@ -57,6 +58,7 @@ async function computeKpiSnapshot(
       totalCount: sql<number>`COALESCE(SUM(${dailyStatistics.totalCount}), 0)`,
       okCount: sql<number>`COALESCE(SUM(${dailyStatistics.okCount}), 0)`,
       ngCount: sql<number>`COALESCE(SUM(${dailyStatistics.ngCount}), 0)`,
+      ntfCount: sql<number>`COALESCE(SUM(${dailyStatistics.ntfCount}), 0)`,
       avgCycle: sql<number>`AVG(${dailyStatistics.avgCycleTime})`,
     })
     .from(dailyStatistics)
@@ -68,11 +70,12 @@ async function computeKpiSnapshot(
         lte(dailyStatistics.date, end),
       ),
     );
-  const row = rows[0] ?? { totalCount: 0, okCount: 0, ngCount: 0, avgCycle: null };
+  const row = rows[0] ?? { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, avgCycle: null };
   const total = Number(row.totalCount) || 0;
   const ok = Number(row.okCount) || 0;
   const ng = Number(row.ngCount) || 0;
-  const yieldRate = total > 0 ? (ok / total) * 100 : 0;
+  const ntf = Number(row.ntfCount) || 0;
+  const yieldRate = finalYield({ ok, ntf, total });
   const avgCycleMs = row.avgCycle != null ? Number(row.avgCycle) * 1000 : null;
   return {
     totalCount: total,

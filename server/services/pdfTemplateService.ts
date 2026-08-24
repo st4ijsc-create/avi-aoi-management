@@ -18,6 +18,7 @@ import {
   containsCjk,
   VN_FONT_FAMILY,
 } from "./fontAssets";
+import { finalYield } from "../utils/kpi";
 
 /** {regular,bold} CJK family names once registered, or null when not installed. */
 type CjkFonts = { regular: string; bold: string } | null;
@@ -449,7 +450,7 @@ export async function generateInspectionReportPDF(
       .fillColor("#10b981").text(`OK: ${okCount}/${total}`, 55, y + 25)
       .fillColor("#ef4444").text(`NG: ${ngCount}/${total}`, 155, y + 25)
       .fillColor("#f59e0b").text(`NTF: ${ntfCount}/${total}`, 255, y + 25)
-      .fillColor("#333").text(`Yield: ${total > 0 ? ((okCount / total) * 100).toFixed(1) : 0}%`, 355, y + 25);
+      .fillColor("#333").text(`Yield: ${finalYield({ ok: okCount, ntf: ntfCount, total }).toFixed(1)}%`, 355, y + 25);
 
     // ─── Notes ───────────────────────────────────────────
     if (data.inspection.notes) {

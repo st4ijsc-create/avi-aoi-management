@@ -7,6 +7,7 @@ import { getDb } from "../db";
 import { sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { invokeLLM } from "../_core/llm";
+import { finalYield } from "../utils/kpi";
 
 // ============ DRILL DOWN ROUTER ============
 
@@ -194,7 +195,7 @@ export const drillDownRouter = router({
           ok,
           ng,
           ntf,
-          yieldRate: total > 0 ? (ok / total) * 100 : 0,
+          yieldRate: finalYield({ ok, ntf, total }),
         };
       }).sort((a, b) => b.total - a.total);
     }),
@@ -241,10 +242,10 @@ export const drillDownRouter = router({
           ok,
           ng,
           ntf,
-          yieldRate: total > 0 ? (ok / total) * 100 : 0,
+          yieldRate: finalYield({ ok, ntf, total }),
         };
       }));
-      
+
       return results.sort((a, b) => b.total - a.total);
     }),
 });

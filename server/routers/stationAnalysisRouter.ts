@@ -1055,6 +1055,7 @@ export const stationAnalysisRouter = router({
         day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(...conditions))
@@ -1064,7 +1065,8 @@ export const stationAnalysisRouter = router({
       const yields = dailyRows.map(d => {
         const total = Number(d.total) || 0;
         const ok = Number(d.ok) || 0;
-        return total > 0 ? (ok / total) * 100 : 0;
+        const ntf = Number(d.ntf) || 0;
+        return finalYield({ ok, ntf, total });
       }).filter(y => y > 0);
 
       if (yields.length === 0) return { bins: [], stats: { mean: 0, median: 0, mode: 0, stddev: 0, skewness: 0, kurtosis: 0, n: 0, min: 0, max: 0 } };
