@@ -17680,6 +17680,10 @@
     "identical": "The two versions are identical",
     "hunk": {
       "sectionTitle": "Apply hunk by hunk",
+      "viewUnified": "Unified",
+      "viewSideBySide": "Side by side",
+      "before": "Before",
+      "after": "After",
       "count": "{{n}} hunks",
       "appliedN": "{{n}} accepted",
       "applyAll": "Apply all",
@@ -19294,6 +19298,13 @@
         "day": "{{n}}d"
       }
     },
+    "ribbon": {
+      "refreshTree": "Refresh file tree",
+      "runVerify": "Run verification",
+      "stop": "Stop",
+      "jumpFiles": "View file tree",
+      "jumpChat": "Back to chat"
+    },
     "project": {
       "label": "Project",
       "local": "Local",
@@ -19408,6 +19419,10 @@
     },
     "diff": {
       "cardTitle": "Proposed file EDIT — needs your review",
+      "batchCardTitle": "Proposed EDIT to {{n}} files — needs your review",
+      "batchConfirm": "Approve & write ({{n}} files)",
+      "appliedBatch": "Batch written — details:",
+      "batchPartial": "Batch PARTIALLY applied [{{ma}}] — some files WERE written, the rest were not. See details in the conversation.",
       "file": "File",
       "writesSelected": "Confirming writes the {{chon}}/{{tong}} SELECTED hunks to disk — deselected hunks are NOT written. The browser only sends hunk INDEXES; the content is re-projected server-side from the locked proposal.",
       "zeroChon": "No hunks selected — select at least one hunk to write, or press Cancel. (Writing 0 hunks is not a write; the server refuses it too.)",
@@ -19462,11 +19477,34 @@
         "kill": "STOPPED because the emergency kill-switch is tripped — the auto-write loop halts immediately. Contact your administrator to reset it."
       }
     },
+    "terminal": {
+      "title": "Command output",
+      "empty": "No command has run yet. Approve a verification command to see its output here.",
+      "count": "{{n}} command(s)",
+      "exitCode": "Exit code: {{code}}",
+      "timedOut": "Timed out",
+      "durationMs": "{{ms}} ms",
+      "quickRunLabel": "Quick run",
+      "quickRunHint": "Only commands on the project's allow-list.",
+      "quickRunNone": "This project has no suggested commands yet.",
+      "fromLoop": "from the auto loop"
+    },
     "pane": {
       "tablist": "Choose pane",
       "files": "Files",
       "viewer": "Viewer",
-      "chat": "Chat"
+      "chat": "Chat",
+      "terminalTab": "Terminal",
+      "problemsTab": "Problems",
+      "problemsCount": "{{n}}"
+    },
+    "problems": {
+      "title": "Problems",
+      "count": "{{n}} problem(s)",
+      "empty": "No errors from the latest run",
+      "jumpFileLine": "Open {{tep}} at line {{dong}}",
+      "jumpFileOnly": "Open {{tep}}",
+      "unresolvedLocation": "Location not resolved — see Terminal."
     }
   },
   "masterDataCol": {

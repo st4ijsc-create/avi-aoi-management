@@ -119,10 +119,21 @@ import { QuanLyDuAnRepo } from "@/components/ai/QuanLyDuAnRepo";
 // cùng bài học TheDuyetDiff; phép so THUẦN + neo ở `@/lib/soKhoiMa` (lưới + đột biến riêng).
 import { taoBoKhoiMaCoNhan } from "@/components/ai/KhoiMaCoNhan";
 import { bocTheDocTep, dinhDangLucNhan, viTriCauTraLoiCungLuot } from "@/lib/soKhoiMa";
+// ★★★ 2026-08-24 · WAVE NỐI DÂY — bốn thành phần mới (ribbon tác vụ · bảng terminal · panel
+// Problems · thẻ duyệt LÔ). Tất cả THUẦN HIỂN THỊ + callback; mọi hành động THẬT vẫn ở TRANG,
+// và mọi lượt GHI/CHẠY vẫn đi qua ĐÚNG MỘT cửa `handleConfirm` → `confirmM.mutateAsync`.
+import { RibbonTacVu } from "@/components/ai/RibbonTacVu";
+import { BangTerminal, type LuotLenh } from "@/components/ai/BangTerminal";
+import { BangProblems } from "@/components/ai/BangProblems";
+import { TheDuyetDiffLo } from "@/components/ai/TheDuyetDiffLo";
+// Bộ đọc "đầu ra lệnh → ĐỊA ĐIỂM LỖI" DUY NHẤT (thuần, shared) — trang parse MỘT lần, panel dùng lại.
+import { phanTichLoiViTri } from "@shared/aiCodingLoiViTri";
+// ★ 2026-08-24 — `baseName` nay ở module lá dùng chung (`TheDuyetDiffLo` cũng cần) — bản cục bộ đã xoá.
+import { baseName } from "@/lib/repoPath";
 import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
-  Repeat, CheckCircle2, OctagonX,
+  Repeat, CheckCircle2, OctagonX, Terminal,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -138,12 +149,6 @@ import { toast } from "sonner";
  * `streamdown` — nhập thẳng chúng là dựng một "phantom dependency" sẽ vỡ ở lượt nâng cấp sau.)
  */
 import { Streamdown } from "streamdown";
-
-// ── Basename tương đối (repo dùng "/" cho relPath, kể cả trên Windows) ──
-function baseName(p: string): string {
-  const parts = p.split("/").filter(Boolean);
-  return parts[parts.length - 1] ?? p;
-}
 
 /**
  * ★ UX (A1) — CÂU ĐẦU của `textSummary` server cho chân thẻ duyệt: chân thẻ là một DÒNG trạng thái,
@@ -536,6 +541,13 @@ export default function AICodingWorkspace() {
 
   // ── Trình xem tệp ──
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  /**
+   * ★★★ 2026-08-24 — DÒNG ĐÍCH để trình xem CUỘN tới khi mở tệp từ panel Problems. `null` ⇔ mở
+   * bình thường (không nhảy). Effect cuộn (khoá `selectedPath`/`dongMucTieu`/`fileReply`) dùng
+   * chiều cao dòng ĐO ĐƯỢC (`getBoundingClientRect().height / soDòng`) — KHÔNG dựng lại `<pre>`
+   * thành N span. Mở tệp qua CÂY (`openFile`) đặt lại `null` ⇒ không kéo tệp mới về dòng của tệp cũ.
+   */
+  const [dongMucTieu, setDongMucTieu] = useState<number | null>(null);
   const fileQ = trpc.repoWorkspace.readFile.useQuery(
     { path: selectedPath ?? "", projectId },
     { enabled: !!selectedPath && !!projectId, staleTime: 5_000 },
@@ -544,6 +556,14 @@ export default function AICodingWorkspace() {
 
   // ── Diff đang chờ duyệt (từ chat) + buffer xem trước ở khung giữa ──
   const [pendingDiff, setPendingDiff] = useState<{ action: KbPendingAction; args: DiffArgs } | null>(null);
+  /**
+   * ★★★ 2026-08-24 — DIFF **LÔ** đang chờ duyệt (`apply_diff_batch`). Trước đây một đề xuất sửa N
+   * tệp rơi vào `ConfirmActionCard` phẳng (nội dung CẮT, không phải diff); nay đặc-cách sang
+   * `TheDuyetDiffLo` (mỗi tệp một tab, mỗi tab một diff THẬT). CHỈ mang args để HIỂN THỊ — mọi lượt
+   * ghi vẫn qua `handleConfirm` → `confirmM` (server đọc args từ hàng ai_pending_actions). Ba hàm
+   * reset đặt lại `null` (không hồi sinh một thẻ duyệt của mạch cũ).
+   */
+  const [pendingBatch, setPendingBatch] = useState<{ action: KbPendingAction; files: DiffArgs[] } | null>(null);
   const [diffPreview, setDiffPreview] = useState<string>("");
   useEffect(() => {
     if (pendingDiff) setDiffPreview(pendingDiff.args.original);
@@ -552,6 +572,20 @@ export default function AICodingWorkspace() {
   // ── Hội thoại tác nhân ──
   const [transcript, setTranscript] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
+  /**
+   * ★★★ 2026-08-24 · LỊCH SỬ LƯỢT LỆNH cho bảng Terminal + panel Problems. Mỗi lượt `run_command`
+   * ĐÃ CHẠY (qua cửa duyệt HITL) hoặc mỗi lượt vòng tự-ghi được đẩy vào đây từ CHÍNH các biến đã có
+   * tại chỗ (`d.*`/`out.*`/`kl` ở `handleConfirm`, `r.*` ở `chayLuotVong`) — **0 lời gọi tRPC mới**.
+   * `diaDiemLoi` do trang parse MỘT lần (`phanTichLoiViTri`) để panel Problems dùng lại. Ba hàm reset
+   * đặt lại `[]` (đổi dự án / nạp phiên / phiên mới ⇒ lịch sử lệnh của mạch cũ không dán sang mạch mới).
+   */
+  const [lenhDaChay, setLenhDaChay] = useState<LuotLenh[]>([]);
+  /**
+   * Vỏ DƯỚI khung Hội thoại: gập (`dong`) · Terminal · Vấn đề. Là TUỲ CHỌN HIỂN THỊ (như `khungHep`)
+   * ⇒ **KHÔNG** nằm trong ba hàm reset. Mặc định GẬP: nội dung có `max-h` + cuộn nội bộ nên không đẩy
+   * ô nhập xuống dưới nếp gấp (bài học `khungVuaManHinh`).
+   */
+  const [duoiChat, setDuoiChat] = useState<"dong" | "terminal" | "problems">("dong");
   const [streamTool, setStreamTool] = useState<ToolResultPayload | null>(null);
   /**
    * ★ LÔ 3 — MỐC-NHẬN của `streamTool` (đã định dạng), đóng dấu ngay trong `onToolResult`.
@@ -577,6 +611,8 @@ export default function AICodingWorkspace() {
   const endRef = useRef<HTMLDivElement>(null);
   const oNhapRef = useRef<HTMLTextAreaElement>(null);
   const khungRef = useRef<HTMLDivElement>(null);
+  /** ★★★ 2026-08-24 — `<pre>` nội dung tệp (trình xem) để cuộn tới `dongMucTieu` khi mở từ Problems. */
+  const preRef = useRef<HTMLPreElement>(null);
   const { cao: caoKhung, rong: rongKhung } = useKhungVua(khungRef);
   /** Ba khung cạnh nhau, hay một khung mỗi lần — hỏi BỀ RỘNG KHUNG, không hỏi cửa sổ. */
   const hep = xepMotKhung(rongKhung);
@@ -662,10 +698,48 @@ export default function AICodingWorkspace() {
     if (streamError) toast.error(streamError);
   }, [streamError]);
 
+  /**
+   * ★★★ 2026-08-24 — CUỘN TRÌNH XEM tới `dongMucTieu` khi mở một tệp từ panel Problems.
+   *
+   * Chiều cao dòng lấy ĐO ĐƯỢC (`getBoundingClientRect().height / soDòng`), KHÔNG dựng lại `<pre>`
+   * thành N span — bám đúng chỉ dẫn WAVE. `<pre>` bọc `whitespace-pre-wrap` nên dòng dài GẤP làm
+   * đây là phép XẤP XỈ (cao dòng trung bình), chấp nhận được cho việc "nhảy gần tới" — đủ để mắt
+   * tìm nốt. Cuộn trên VIEWPORT của ScrollArea (tổ tiên `[data-slot=scroll-area-viewport]`), không
+   * cuộn tài liệu (cùng kỷ luật với effect cuộn hội thoại ở trên).
+   * ⚠ Khoá gồm `fileReply` để lượt mở tệp MỚI (nội dung về sau fetch) cũng kích hoạt cuộn.
+   */
+  useEffect(() => {
+    if (dongMucTieu === null) return;
+    const preEl = preRef.current;
+    const noiDung = fileReply?.data?.content ?? null;
+    if (!preEl || typeof noiDung !== "string" || noiDung === "") return;
+    const soDong = noiDung.split("\n").length;
+    if (soDong <= 0) return;
+    const khungCuon = preEl.closest<HTMLElement>("[data-slot=scroll-area-viewport]");
+    if (!khungCuon) return;
+    const caoDong = preEl.getBoundingClientRect().height / soDong;
+    // Đỉnh `<pre>` so với đầu nội dung cuộn (kể cả padding + hàng huy hiệu phía trên).
+    const dinhPre = preEl.getBoundingClientRect().top - khungCuon.getBoundingClientRect().top + khungCuon.scrollTop;
+    const dich = dinhPre + Math.max(0, dongMucTieu - 1) * caoDong - khungCuon.clientHeight / 3;
+    khungCuon.scrollTop = Math.max(0, dich);
+  }, [selectedPath, dongMucTieu, fileReply]);
+
   const openFile = useCallback((path: string) => {
     setSelectedPath(path);
+    setDongMucTieu(null); // mở qua CÂY = xem bình thường, không nhảy về dòng của tệp Problems trước đó
     setPendingDiff((cur) => cur); // giữ diff nếu đang mở; người dùng có thể xem tệp khác song song
   }, []);
+
+  /**
+   * ★★★ 2026-08-24 — mở tệp TỪ PANEL PROBLEMS: đặt cả tệp LẪN dòng đích, và (màn hẹp) nhảy sang
+   * khung Trình xem để người dùng thấy ngay. Callback KHÔNG rẽ nhánh theo `dong` — component
+   * `BangProblems` gọi đúng một lần `(tep, dong)`; chỉ NHÃN của nó rẽ theo dòng (xem docblock ở đó).
+   */
+  const moTepTuVanDe = useCallback((tep: string, dong: number | null) => {
+    setSelectedPath(tep);
+    setDongMucTieu(dong);
+    if (hep) setKhungHep("xem");
+  }, [hep]);
 
   const lang = (i18n.language as "vi" | "en" | "zh") ?? "vi";
 
@@ -733,6 +807,19 @@ export default function AICodingWorkspace() {
             }
             vongRef.current = { ...vongRef.current, bamDeXuatTruoc: bam };
           }
+          // ★★★ 2026-08-24 — apply_diff_batch → thẻ duyệt LÔ (mỗi tệp một tab, một diff THẬT). Chỉ
+          //   trích args để HIỂN THỊ (`?? ""` như apply_diff); mọi byte vẫn do server đọc từ hàng
+          //   ai_pending_actions lúc `confirmAction`. KHÔNG khởi động vòng tự động cho lô (vòng bám
+          //   MỘT tệp đang sửa; lô đụng nhiều tệp nên không có `codingEditPath` đơn).
+          if (pa.tool === "apply_diff_batch" && pa.args && Array.isArray(pa.args.files)) {
+            setPendingBatch({
+              action: pa,
+              files: (pa.args.files as unknown[]).map((f) => {
+                const x = (f ?? {}) as { path?: string; original?: string; modified?: string };
+                return { path: x.path ?? "", original: x.original ?? "", modified: x.modified ?? "" };
+              }),
+            });
+          }
         },
         onClientAction: () => { /* không auto-điều hướng trong không gian làm việc */ },
       },
@@ -746,6 +833,22 @@ export default function AICodingWorkspace() {
     }
   }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId, dungVong]);
   handleSendRef.current = handleSend;
+
+  /**
+   * ★★★ 2026-08-24 · RIBBON TÁC VỤ — hai callback cho `RibbonTacVu`.
+   *   • `lamMoiCay`: làm mới CÂY TỆP bằng cách vô hiệu hoá cache query `listFiles` (cây tự nạp lại);
+   *     0 tool ghi, 0 lệnh chạy.
+   *   • `chayKiemChungNhanh`: **KHÔNG chạy thẳng.** Nó gửi câu gợi ý "chạy lệnh" của dự án qua ĐÚNG
+   *     đường cũ của ba nút gợi ý (chat → propose → NGƯỜI DUYỆT → chạy). Không có lệnh gợi ý ⇒ không
+   *     làm gì (ribbon đã ẩn nút khi `coTheChayKiemChung` là false — nhưng đây là chốt thứ hai).
+   */
+  const lamMoiCay = useCallback(() => {
+    void utils.repoWorkspace.listFiles.invalidate();
+  }, [utils]);
+  const chayKiemChungNhanh = useCallback(() => {
+    const g = goiYTheoDuAn(projectId).find((x) => x.canChayLenh);
+    if (g) void handleSend(t(g.khoa, g.macDinh));
+  }, [projectId, handleSend, t]);
 
   /**
    * ★★★ MỘT LƯỢT CỦA VÒNG: **CHẠY** lệnh kiểm chứng → **ĐỌC** đầu ra thật → **ĐỀ XUẤT** bản sửa
@@ -813,6 +916,26 @@ export default function AICodingWorkspace() {
       { role: "assistant", content: `${t("repoWs.loop.ranTurn", "Vòng tự động — lượt {{luot}}/{{tran}} đã chạy `{{lenh}}`", { luot, tran: cfg.tran, lenh: r.command ?? "" })}\n\n${klVong}\`\`\`\n${dauRa}\n\`\`\`` },
     ]);
 
+    // ★★★ 2026-08-24 · BẮT #2 — lượt vòng tự-ghi vào bảng Terminal. `r` (`KetQuaKiemChung`) KHÔNG
+    //   mang `durationMs` ⇒ `null`. `ketQua` dựng từ CON SỐ SERVER ĐÃ ĐỌC (`docKetQuaTest`), null khi
+    //   không đếm được ca (cùng guard với `klVong` phía trên). `diaDiemLoi` parse từ đầu ra THẬT.
+    setLenhDaChay((prev) => [
+      ...prev,
+      {
+        lenh: r.command ?? "?",
+        dauRa,
+        exitCode: r.exitCode ?? null,
+        timedOut: r.timedOut === true,
+        durationMs: null,
+        ketQua: r.soDo !== null && r.soDo !== undefined && r.soXanh !== null && r.soXanh !== undefined
+          ? { xanh: r.xanh, soDo: r.soDo, soXanh: r.soXanh }
+          : null,
+        luc: dinhDangLucNhan(new Date()),
+        nguon: "vong_tu_dong",
+        diaDiemLoi: phanTichLoiViTri(dauRa),
+      },
+    ]);
+
     const bamDauRa = bamChuoi(chuanHoaDauRa(dauRa));
     const pq = quyetDinhTiep({
       luot, tran: cfg.tran, xanh: r.xanh, soDo: r.soDo,
@@ -854,6 +977,8 @@ export default function AICodingWorkspace() {
     setProjectId(id);
     setSelectedPath(null);
     setPendingDiff(null);
+    setPendingBatch(null);
+    setLenhDaChay([]);
     setStreamTool(null);
     setPending(null);
     setDiffPreview("");
@@ -928,6 +1053,8 @@ export default function AICodingWorkspace() {
     }
     setPending(null);
     setPendingDiff(null);
+    setPendingBatch(null);
+    setLenhDaChay([]);
     setStreamTool(null);
     setDiffPreview("");
     setActionState("pending");
@@ -946,6 +1073,8 @@ export default function AICodingWorkspace() {
     datSessionId(null);
     setPending(null);
     setPendingDiff(null);
+    setPendingBatch(null);
+    setLenhDaChay([]);
     setStreamTool(null);
     setDiffPreview("");
     setActionState("pending");
@@ -1018,10 +1147,17 @@ export default function AICodingWorkspace() {
          *   một câu "lệnh chưa chạy" cho mọi mã (hai mã có hai sự thật khác nhau).
          */
         const laLenh = pending.tool === "run_command";
+        // ★★★ 2026-08-24 — LÔ ÁP MỘT PHẦN (`BATCH_PARTIAL`) là một lớp RIÊNG: MỘT SỐ tệp ĐÃ vào đĩa,
+        //   phần còn lại thì chưa (cây làm việc ở trạng thái nửa-vời). TUYỆT ĐỐI không dùng câu "tệp
+        //   trên đĩa KHÔNG đổi" (writeRejected/rejectedCode) — nó SAI, và người đọc sẽ tưởng an toàn
+        //   để đề xuất lại cả lô. `textSummary` của server đã liệt kê ĐÃ GHI / CHƯA GHI — ta chỉ dẫn.
+        const laLoPhanPhan = maTuChoi === "BATCH_PARTIAL";
         toast.error(
-          laLenh
-            ? t("repoWs.chat.cmdRejectedToast", "Lệnh bị chặn [{{ma}}] — xem chi tiết trong hội thoại.", { ma: maTuChoi ?? "?" })
-            : t("repoWs.diff.rejectedCode", "TỪ CHỐI [{{ma}}] — KHÔNG ghi byte nào.", { ma: maTuChoi ?? "?" }),
+          laLoPhanPhan
+            ? t("repoWs.diff.batchPartial", "Lô tệp áp MỘT PHẦN [{{ma}}] — một số tệp ĐÃ được ghi, phần còn lại thì chưa. Xem chi tiết trong hội thoại.", { ma: maTuChoi ?? "?" })
+            : laLenh
+              ? t("repoWs.chat.cmdRejectedToast", "Lệnh bị chặn [{{ma}}] — xem chi tiết trong hội thoại.", { ma: maTuChoi ?? "?" })
+              : t("repoWs.diff.rejectedCode", "TỪ CHỐI [{{ma}}] — KHÔNG ghi byte nào.", { ma: maTuChoi ?? "?" }),
         );
         setKetCucThongDiep(cauDauKetCuc(out?.textSummary) ?? t("repoWs.chat.rejectedGeneric", "Bị từ chối [{{ma}}] — xem chi tiết trong hội thoại.", { ma: maTuChoi ?? "?" }));
         setTranscript((prev) => [
@@ -1029,13 +1165,16 @@ export default function AICodingWorkspace() {
           {
             role: "assistant",
             content:
-              (laLenh
-                ? t("repoWs.chat.cmdRejected", "Lệnh KHÔNG hoàn thành [{{ma}}] — chi tiết:", { ma: maTuChoi ?? "?" })
-                : t("repoWs.chat.writeRejected", "Lượt ghi bị TỪ CHỐI [{{ma}}] — tệp trên đĩa KHÔNG đổi.", { ma: maTuChoi ?? "?" })) +
+              (laLoPhanPhan
+                ? t("repoWs.diff.batchPartial", "Lô tệp áp MỘT PHẦN [{{ma}}] — một số tệp ĐÃ được ghi, phần còn lại thì chưa. Xem chi tiết trong hội thoại.", { ma: maTuChoi ?? "?" })
+                : laLenh
+                  ? t("repoWs.chat.cmdRejected", "Lệnh KHÔNG hoàn thành [{{ma}}] — chi tiết:", { ma: maTuChoi ?? "?" })
+                  : t("repoWs.chat.writeRejected", "Lượt ghi bị TỪ CHỐI [{{ma}}] — tệp trên đĩa KHÔNG đổi.", { ma: maTuChoi ?? "?" })) +
               (out?.textSummary ? `\n\n${out.textSummary}` : ""),
           },
         ]);
         if (pending.tool === "apply_diff") setPendingDiff(null);
+        if (pending.tool === "apply_diff_batch") setPendingBatch(null);
         if (vongRef.current.dangChay || vongRef.current.luot > 0) dungVong("loi", maTuChoi);
       } else if (res.ok) {
         toast.success(res.message ?? t("repoWs.diff.executed", "Đã ghi tệp."));
@@ -1048,13 +1187,32 @@ export default function AICodingWorkspace() {
            * khuôn với vòng tự động) CHẮC mới nói: đếm không được (tsc) / mâu thuẫn (0 đỏ nhưng mã
            * thoát ≠ 0) ⇒ `null` ⇒ không thêm dòng nào, đúng hành vi cũ.
            */
-          const d = (out.data ?? {}) as { output?: string | null; exitCode?: number | null; timedOut?: boolean };
+          const d = (out.data ?? {}) as { command?: string | null; output?: string | null; exitCode?: number | null; timedOut?: boolean; durationMs?: number | null };
           const kl = ketLuanTest(d.output ?? out.textSummary, d.exitCode ?? null, d.timedOut === true);
           const dongKetLuan = kl === null
             ? ""
             : kl.xanh
               ? `${t("repoWs.chat.klXanh", "✅ {{xanh}}/{{tong}} PASS — không ca nào đỏ.", { xanh: kl.soXanh, tong: kl.soXanh + kl.soDo })}\n\n`
               : `${t("repoWs.chat.klDo", "❌ {{do}} ca đỏ / {{tong}} ca.", { do: kl.soDo, tong: kl.soXanh + kl.soDo })}\n\n`;
+          // ★★★ 2026-08-24 · BẮT #1 — lượt run_command ĐÃ chạy (qua cửa duyệt) vào bảng Terminal.
+          //   Dùng ĐÚNG biến đã có tại chỗ (`d.*` — cùng cast, nay rộng thêm `command`/`durationMs`;
+          //   `kl`; `out.textSummary`) — 0 lời gọi tRPC mới. Đầu ra THẬT ưu tiên `d.output` (thô),
+          //   lùi về `textSummary`; `phanTichLoiViTri` là bộ đọc DUY NHẤT cho địa điểm lỗi (Problems).
+          const dauRaLenh = d.output ?? out.textSummary ?? "";
+          setLenhDaChay((prev) => [
+            ...prev,
+            {
+              lenh: d.command ?? "?",
+              dauRa: dauRaLenh,
+              exitCode: d.exitCode ?? null,
+              timedOut: d.timedOut === true,
+              durationMs: d.durationMs ?? null,
+              ketQua: kl,
+              luc: dinhDangLucNhan(new Date()),
+              nguon: "duyet",
+              diaDiemLoi: phanTichLoiViTri(dauRaLenh),
+            },
+          ]);
           // ★ NHỊP KHÉP VÒNG — đưa đầu ra THẬT vào lịch sử để lượt sau tác nhân đọc lỗi rồi sửa tiếp.
           setTranscript((prev) => [
             ...prev,
@@ -1076,6 +1234,18 @@ export default function AICodingWorkspace() {
           // ★★★ doc 79 · VÒNG TỰ ĐỘNG BẮT ĐẦU ĐÚNG Ở ĐÂY — sau khi NGƯỜI đã duyệt và byte đã rời
           //   ra đĩa. Trước cú bấm này không có một lượt tự động nào chạy.
           if (tepDaGhi) void chayLuotVong(tepDaGhi);
+        } else if (pending.tool === "apply_diff_batch") {
+          // ★★★ 2026-08-24 — LÔ GHI THÀNH CÔNG. `out.textSummary` do SERVER viết (liệt kê từng tệp
+          //   đã ghi) — đưa NGUYÊN vào transcript sau câu dẫn, không viết lại. Refetch trình xem CHỈ
+          //   khi tệp đang mở nằm trong `daGhi`. KHÔNG khởi động vòng tự động: lô đụng NHIỀU tệp nên
+          //   không có `codingEditPath` đơn để vòng bám (vòng thuộc về một tệp đang sửa).
+          const daGhi = (out?.data as { daGhi?: Array<{ path?: string }> } | undefined)?.daGhi ?? [];
+          setPendingBatch(null);
+          if (selectedPath && daGhi.some((f) => f.path === selectedPath)) fileQ.refetch();
+          setTranscript((prev) => [
+            ...prev,
+            { role: "assistant", content: `${t("repoWs.diff.appliedBatch", "Đã ghi lô tệp — chi tiết:")}\n\n${out?.textSummary ?? ""}` },
+          ]);
         }
       } else {
         toast.error(res.message ?? t("repoWs.diff.denied", "Bị từ chối."));
@@ -1091,6 +1261,7 @@ export default function AICodingWorkspace() {
       await cancelM.mutateAsync({ actionId: pending.actionId });
       setActionState("cancelled");
       if (pending.tool === "apply_diff") setPendingDiff(null);
+      if (pending.tool === "apply_diff_batch") setPendingBatch(null);
       // Người từ chối bản sửa ⇒ vòng KẾT THÚC, và nói ra lý do (không im lặng biến mất).
       if (vongRef.current.dangChay || vongRef.current.luot > 0) dungVong("nguoi_tu_choi");
       toast.success(t("repoWs.diff.cancelled", "Đã hủy."));
@@ -1114,6 +1285,20 @@ export default function AICodingWorkspace() {
   }
 
   const busyConfirm = confirmM.isPending || cancelM.isPending;
+  /** Số vấn đề của lượt lệnh MỚI NHẤT — huy hiệu tab "Vấn đề" (panel Problems đọc cùng nguồn này). */
+  const soVanDe = lenhDaChay[lenhDaChay.length - 1]?.diaDiemLoi.length ?? 0;
+  /**
+   * ★★★ 2026-08-24 · NGHIỆM THU LIVE 900×700 BẮT: khi khung thấp (~293px) mà panel Terminal/Vấn đề
+   * MỞ, vùng transcript co về ~0 và **thẻ duyệt HITL bị panel ĐÈ — người dùng không bấm được "Xác
+   * nhận"** (đo: nút ở y=385-429, `elementFromPoint` = tablist vo-duoi). Không thể vừa cả panel-đầy +
+   * thẻ-250px + ô-nhập trong 293px. Thẻ duyệt là thứ QUAN TRỌNG NHẤT màn này (đã ghi ở docblock
+   * grid-cols) ⇒ khi có `pending`, panel dưới NHƯỜNG chỗ (chỉ hiển thị — trạng thái `duoiChat` của
+   * người dùng giữ nguyên, panel trở lại sau khi họ duyệt/hủy). `onClick` vẫn toggle `duoiChat` thật.
+   * ⚠ CHỈ gập khi thẻ ĐANG CHỜ DUYỆT (`actionState === "pending"`) — KHÔNG gập khi thẻ đã ở trạng
+   *   thái cuối (executed/denied): đo LIVE thấy nếu gập cả lúc "Đã thực thi" thì sau khi chạy lệnh,
+   *   người dùng KHÔNG mở lại Terminal xem được đầu ra — hỏng đúng mục đích của panel.
+   */
+  const duoiHienThi = pending && actionState === "pending" ? "dong" : duoiChat;
 
   return (
     <DashboardLayout>
@@ -1150,6 +1335,23 @@ export default function AICodingWorkspace() {
             </Tooltip>
           </div>
         </div>
+
+        {/* ★★★ 2026-08-24 · RIBBON TÁC VỤ — MỘT HÀNG nút icon NGOÀI `khungRef`, giữa đầu trang và
+            khung làm việc. Đặt TRƯỚC `khungRef` là cố ý: `useKhungVua` đo ĐỈNH tuyệt đối của
+            `khungRef`, nên chiều cao khung TỰ trừ đi phần ribbon (đã xác minh) — KHÔNG chạm
+            `khungVuaManHinh.ts`. Nút "Chạy kiểm chứng" đi qua ĐÚNG đường ba nút gợi ý (chat →
+            propose → NGƯỜI DUYỆT → chạy); ribbon KHÔNG nới quyền (ẩn khi thiếu `coTheChayKiemChung`). */}
+        <RibbonTacVu
+          hep={hep}
+          dangStream={isStreaming}
+          coTheChayKiemChung={canExec && !!goiYTheoDuAn(projectId).find((x) => x.canChayLenh)}
+          onLamMoiCay={lamMoiCay}
+          onChayKiemChung={chayKiemChungNhanh}
+          onDung={stopKbStream}
+          onNhayTep={() => setKhungHep("tep")}
+          onNhayChat={() => setKhungHep("chat")}
+          className="shrink-0 border-b px-3 py-1"
+        />
 
         {/* ⚠ BỐ CỤC: ba khung (cây tệp · trình xem · hội thoại) giữ nguyên thứ tự và vai trò.
             Cột phiên của doc 79 ĐÃ THU thành nút + popover trên thanh đầu Hội thoại (2026-08-23,
@@ -1318,7 +1520,7 @@ export default function AICodingWorkspace() {
                       {fileReply?.data?.redacted && <Badge variant="secondary" className="text-[10px]">{t("repoWs.viewer.redacted", "Đã che bí mật")}</Badge>}
                       {fileReply?.data?.truncated && <Badge variant="secondary" className="text-[10px]">{t("repoWs.viewer.truncated", "Đã cắt bớt")}</Badge>}
                     </div>
-                    <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">{fileReply?.data?.content ?? ""}</pre>
+                    <pre ref={preRef} className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">{fileReply?.data?.content ?? ""}</pre>
                   </>
                 )}
               </div>
@@ -1479,6 +1681,20 @@ export default function AICodingWorkspace() {
                     onConfirm={handleConfirm}
                     onCancel={handleCancel}
                   />
+                ) : pending && pending.tool === "apply_diff_batch" && pendingBatch && pendingBatch.action.actionId === pending.actionId ? (
+                  // ★★★ 2026-08-24 — apply_diff_batch → thẻ duyệt LÔ (mỗi tệp một tab, một diff THẬT,
+                  //   thay cho ConfirmActionCard phẳng nội-dung-cắt). `onConfirm` trỏ THẲNG `handleConfirm`
+                  //   đã có (KHÔNG mở điểm `confirmM` thứ hai): lô gọi `onConfirm()` KHÔNG tham số ⇒
+                  //   `chonKhoi=undefined` ⇒ KHÔNG gửi `selectedHunkIds` (server chặn lô kèm hunk-ids) —
+                  //   đúng hợp đồng của `TheDuyetDiffLo` (lô không chọn-khối-lẻ).
+                  <TheDuyetDiffLo
+                    action={pending}
+                    files={pendingBatch.files}
+                    state={actionState}
+                    busy={busyConfirm}
+                    onConfirm={handleConfirm}
+                    onCancel={handleCancel}
+                  />
                 ) : pending ? (
                   // run_command (và mọi write tool khác) — ConfirmActionCard hiện argv + cwd + hạn giờ + cảnh báo.
                   // ★ UX (A1) — `message`: câu kết cục THẬT của server; không truyền thì thẻ rơi về
@@ -1497,6 +1713,75 @@ export default function AICodingWorkspace() {
                 <div ref={endRef} />
               </div>
             </ScrollArea>
+
+            {/* ★★★ 2026-08-24 · VỎ TERMINAL / VẤN ĐỀ — mặc định GẬP (`duoiChat="dong"`). Mở ra thì
+                nội dung TỰ CHẶN chiều cao (`max-h-56` + cuộn nội bộ) nên KHÔNG đẩy ô nhập xuống dưới
+                nếp gấp — ô nhập vẫn là khối `shrink-0` cuối cùng, `ScrollArea flex-1` co lại nhường
+                chỗ (bài học `khungVuaManHinh`). Bấm tab ĐANG mở ⇒ về `dong` (gập). `duoiChat` là TUỲ
+                CHỌN HIỂN THỊ ⇒ KHÔNG nằm trong ba hàm reset. Panel Problems đọc địa điểm lỗi của lượt
+                lệnh MỚI NHẤT (đã parse sẵn ở `lenhDaChay`, một bộ đọc `phanTichLoiViTri`). */}
+            {/* ★★★ 2026-08-24 · NGHIỆM THU LIVE bắt tầng hai: panel MỞ ở `max-h-56` (224px) cố định
+                ĐẨY ô nhập xuống y=703 (dưới nếp gấp) ở khung 293px. Ưu tiên bất di: ô nhập (shrink-0)
+                > thẻ duyệt > panel. ⇒ panel CO ĐƯỢC (`shrink`+`min-h-0`) và CAP ≤ nửa khung
+                (`max-h-[50%]`); nội dung `flex-1` cuộn nội bộ. Ô nhập không bao giờ bị đẩy khuất. */}
+            <div data-vo-duoi className="flex min-h-0 shrink flex-col overflow-hidden border-t max-h-[50%]">
+              <div className="flex shrink-0 items-center gap-1 px-2 py-1" role="tablist" aria-label={t("repoWs.pane.tablist", "Chọn khung")}>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={duoiHienThi === "terminal"}
+                  data-tab-duoi="terminal"
+                  onClick={() => setDuoiChat((v) => (v === "terminal" ? "dong" : "terminal"))}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium",
+                    duoiHienThi === "terminal" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  <Terminal className="h-3.5 w-3.5" />
+                  {t("repoWs.pane.terminalTab", "Terminal")}
+                  {lenhDaChay.length > 0 && (
+                    <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{lenhDaChay.length}</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={duoiHienThi === "problems"}
+                  data-tab-duoi="problems"
+                  onClick={() => setDuoiChat((v) => (v === "problems" ? "dong" : "problems"))}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium",
+                    duoiHienThi === "problems" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {t("repoWs.pane.problemsTab", "Vấn đề")}
+                  {soVanDe > 0 && (
+                    <span className="rounded-full bg-amber-100 px-1.5 text-[10px] tabular-nums text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                      {t("repoWs.pane.problemsCount", "{{n}}", { n: soVanDe })}
+                    </span>
+                  )}
+                </button>
+              </div>
+              {duoiHienThi !== "dong" && (
+                <div className="min-h-0 flex-1 overflow-y-auto border-t px-2 py-2">
+                  {duoiHienThi === "terminal" ? (
+                    <BangTerminal
+                      luotLenh={lenhDaChay}
+                      goiYNhanh={goiYTheoDuAn(projectId)}
+                      dangGui={isStreaming}
+                      onChayNhanh={(g) => handleSend(t(g.khoa, g.macDinh))}
+                    />
+                  ) : (
+                    <BangProblems
+                      diaDiem={lenhDaChay[lenhDaChay.length - 1]?.diaDiemLoi ?? []}
+                      tepDangChon={selectedPath}
+                      onMoTep={moTepTuVanDe}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* ★★★ doc 81 · VIỆC 3 (1) — Ô nhập NHIỀU DÒNG: dán được stack trace, Shift+Enter xuống dòng.
                 ⚠ `shrink-0` (2026-08-23): ô nhập là thứ DUY NHẤT làm màn này dùng được. Không có nó,

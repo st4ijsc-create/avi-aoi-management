@@ -17859,6 +17859,10 @@
     "identical": "两个版本完全相同",
     "hunk": {
       "sectionTitle": "逐块应用",
+      "viewUnified": "合并",
+      "viewSideBySide": "并排",
+      "before": "变更前",
+      "after": "变更后",
       "count": "{{n}} 个修改块",
       "appliedN": "已接受 {{n}}",
       "applyAll": "全部应用",
@@ -19302,6 +19306,13 @@
         "day": "{{n}} 天"
       }
     },
+    "ribbon": {
+      "refreshTree": "刷新文件树",
+      "runVerify": "运行验证",
+      "stop": "停止",
+      "jumpFiles": "查看文件树",
+      "jumpChat": "返回对话"
+    },
     "project": {
       "label": "项目",
       "local": "本地",
@@ -19416,6 +19427,10 @@
     },
     "diff": {
       "cardTitle": "建议编辑文件——需要你审核",
+      "batchCardTitle": "建议编辑 {{n}} 个文件——需要你审核",
+      "batchConfirm": "批准并写入（{{n}} 个文件）",
+      "appliedBatch": "已批量写入——详情：",
+      "batchPartial": "批次部分应用 [{{ma}}]——部分文件已写入，其余尚未写入。详情见对话。",
       "file": "文件",
       "writesSelected": "确认将把所选 {{chon}}/{{tong}} 个块写入磁盘——未选块不会写入。浏览器只发送块序号；内容由服务器从已锁定的提议重新投影。",
       "zeroChon": "未选择任何块——请至少选择一个块，或点击取消。（写入 0 个块不算写入；服务器同样会拒绝。）",
@@ -19470,11 +19485,34 @@
         "kill": "已停止：紧急停止开关（kill-switch）已触发——自写循环立即停止。请联系管理员解除。"
       }
     },
+    "terminal": {
+      "title": "命令输出",
+      "empty": "尚未运行任何命令。批准一条验证命令即可在此查看输出。",
+      "count": "{{n}} 条命令",
+      "exitCode": "退出码：{{code}}",
+      "timedOut": "已超时",
+      "durationMs": "{{ms}} ms",
+      "quickRunLabel": "快速运行",
+      "quickRunHint": "仅限项目白名单中的命令。",
+      "quickRunNone": "该项目暂无建议命令。",
+      "fromLoop": "来自自动循环"
+    },
     "pane": {
       "tablist": "选择面板",
       "files": "文件",
       "viewer": "查看器",
-      "chat": "对话"
+      "chat": "对话",
+      "terminalTab": "终端",
+      "problemsTab": "问题",
+      "problemsCount": "{{n}}"
+    },
+    "problems": {
+      "title": "问题",
+      "count": "{{n}} 个问题",
+      "empty": "最近一次运行没有错误",
+      "jumpFileLine": "打开 {{tep}} 第 {{dong}} 行",
+      "jumpFileOnly": "打开 {{tep}}",
+      "unresolvedLocation": "无法定位 — 请查看终端。"
     }
   },
   "masterDataCol": {

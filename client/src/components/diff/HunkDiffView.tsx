@@ -16,6 +16,23 @@
  *    Mọi thao tác ở đây là bấm nút. Khi ghi, doc của CodeMirror đổi ⇒ `ghostField` tự xoá
  *    gợi ý đang treo (nhánh `tr.docChanged`), nên không có chuyện chèn ghost-text cũ vào
  *    một văn bản đã dịch dòng.
+ *
+ * ── HAI CHẾ ĐỘ THÊM (2026-08-24) — CẢ HAI GIỮ TƯƠNG THÍCH NGƯỢC TUYỆT ĐỐI ────────────
+ * • `readOnly` — CHỈ ĐỂ XEM (cho thẻ duyệt LÔ: nhiều diff cùng lúc, không chọn-khối-lẻ). Ẩn
+ *   "Áp tất cả"/"Hoàn tác hết", nút "Nhận khối"/"Hoàn tác" từng khối, ô "đã nhận", băng
+ *   stale và checkbox EOL. KHÔNG một byte nào ghi được qua chế độ này: mọi đường ghi (`ghi`)
+ *   chỉ treo dưới những nút vừa bị ẩn. Mặc định TẮT ⇒ đường tương tác cũ Y NGUYÊN.
+ *   ⚠ Vì thế `currentText`/`onApplyText` là TUỲ CHỌN — chế độ xem không cần buffer sống lẫn
+ *     callback ghi. Ở chế độ TƯƠNG TÁC mà thiếu `currentText`, `stale` hoá true ⇒ nút khoá ⇒
+ *     vẫn KHÔNG ghi mù (thoái hoá an toàn, không phải một ngoại lệ bị bỏ ngỏ).
+ * • `kieuXem` — "gop" (mặc định, ĐƯỜNG CŨ: dồn removed rồi added trong MỘT cột) hoặc
+ *   "canh_nhau" (hai cột `grid-cols-2`: TRÁI = `removed` gốc, PHẢI = `added` mới). Có nút
+ *   toggle nhỏ trong THANH ĐIỀU KHIỂN của chính component; state cục bộ, prop chỉ gieo giá
+ *   trị ĐẦU. Toggle bấm chuột thuần — KHÔNG phím tắt (giữ điều 3 ở trên).
+ *   ⚠⚠ "Cạnh nhau" là ghép THEO KHỐI, **KHÔNG** căn dòng-với-dòng trong khối (không chạy
+ *     LCS-trong-khối). Nó KHÔNG phải một diff Meld thật: hai dòng nằm ngang hàng ở hai cột
+ *     KHÔNG có nghĩa "dòng này thay dòng kia" — chỉ là cột trái liệt kê cái bị xoá, cột phải
+ *     liệt kê cái được thêm. Đừng đọc chúng như một cặp thay-thế.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -38,10 +55,17 @@ export interface HunkDiffViewProps {
   base: string;
   /** Toàn văn gợi ý của model. */
   suggested: string;
-  /** Buffer SỐNG ngay lúc này (để phát hiện người dùng gõ thêm giữa chừng). */
-  currentText: string;
-  /** Ghi ĐÈ toàn bộ buffer host bằng `text`. Khác `onApply` cũ (host tự quyết định chèn/nối). */
-  onApplyText: (text: string) => void;
+  /**
+   * Buffer SỐNG ngay lúc này (để phát hiện người dùng gõ thêm giữa chừng).
+   * ⚠ TUỲ CHỌN từ 2026-08-24: chế độ `readOnly` không cần buffer sống. Ở chế độ TƯƠNG TÁC mà
+   *   thiếu nó, `stale` hoá true ⇒ nút khoá ⇒ không ghi mù (thoái hoá an toàn).
+   */
+  currentText?: string;
+  /**
+   * Ghi ĐÈ toàn bộ buffer host bằng `text`. Khác `onApply` cũ (host tự quyết định chèn/nối).
+   * ⚠ TUỲ CHỌN từ 2026-08-24: chế độ `readOnly` KHÔNG ghi gì nên không cần callback này.
+   */
+  onApplyText?: (text: string) => void;
   /** Chụp lại `base` từ buffer hiện tại (lối thoát khi băng "buffer đã đổi" hiện lên). */
   onResync?: () => void;
   className?: string;
@@ -58,6 +82,18 @@ export interface HunkDiffViewProps {
    * chỉ số khối client gửi trỏ vào khối SAI trên plan mà server tự dựng lại.
    */
   khoaEol?: boolean;
+  /**
+   * ★ 2026-08-24 — CHẾ ĐỘ CHỈ-ĐỌC (cho thẻ duyệt LÔ). Ẩn MỌI đường ghi: "Áp tất cả"/"Hoàn tác
+   * hết", nút "Nhận khối"/"Hoàn tác" từng khối, ô "đã nhận", băng stale, checkbox EOL.
+   * `false`/không truyền ⇒ ĐƯỜNG TƯƠNG TÁC CŨ Y NGUYÊN. Không byte nào ghi được qua chế độ này.
+   */
+  readOnly?: boolean;
+  /**
+   * ★ 2026-08-24 — KIỂU VẼ DIFF: "gop" (mặc định = đường cũ) hoặc "canh_nhau" (hai cột
+   * `grid-cols-2`: trái `removed`, phải `added`). Chỉ GIEO giá trị đầu cho nút toggle cục bộ.
+   * ⚠ Ghép THEO KHỐI, KHÔNG căn dòng-với-dòng — không phải diff Meld (xem docblock đầu tệp).
+   */
+  kieuXem?: "gop" | "canh_nhau";
 }
 
 function LineRow({ sign, text }: { sign: "+" | "-"; text: string }) {
@@ -94,8 +130,14 @@ export function HunkDiffView({
   className,
   chonNgoai,
   khoaEol,
+  readOnly = false,
+  kieuXem = "gop",
 }: HunkDiffViewProps) {
   const { t } = useTranslation();
+
+  // ★ 2026-08-24 — kiểu vẽ diff: state CỤC BỘ (nút toggle ở thanh điều khiển), gieo từ prop.
+  //   Đổi cách VẼ, không đổi byte — nên độc lập hoàn toàn với `readOnly`/đường ghi.
+  const [cheDoXem, setCheDoXem] = useState<"gop" | "canh_nhau">(kieuXem);
 
   // Model hay trả LF cho một buffer CRLF. Không khớp lại thì MỌI dòng đều "khác" và diff
   // biến thành một khối nuốt cả file — đúng nhưng vô dụng. Mặc định BẬT khi phát hiện lệch.
@@ -131,12 +173,16 @@ export function HunkDiffView({
   }, [base, suggested]);
 
   const expected = useMemo(() => projectHunks(plan, applied), [plan, applied]);
-  const stale = !expected.ok || currentText !== expected.text;
+  // ★ readOnly ⇒ KHÔNG có khái niệm "stale" (không đường ghi nào để chặn). Ở chế độ tương tác mà
+  //   thiếu `currentText`, `currentText !== expected.text` là true ⇒ stale ⇒ nút khoá ⇒ không ghi mù.
+  const stale = !readOnly && (!expected.ok || currentText !== expected.text);
   const stats = planStats(plan);
   const appliedSet = useMemo(() => new Set(applied), [applied]);
 
   const ghi = (next: string[]) => {
-    const r = applyHunkSelection({ plan, applied, next, currentText });
+    // Chỉ gọi được từ các nút của chế độ TƯƠNG TÁC (đã ẩn khi readOnly), nên `currentText`/
+    // `onApplyText` chắc chắn có mặt ở đây; `?? ""` và `?.` chỉ là chốt kiểu do prop hoá tuỳ chọn.
+    const r = applyHunkSelection({ plan, applied, next, currentText: currentText ?? "" });
     if (!r.ok) {
       if (r.reason === "buffer-changed") {
         toast.error(
@@ -148,7 +194,7 @@ export function HunkDiffView({
       return;
     }
     datApplied(next);
-    onApplyText(r.text);
+    onApplyText?.(r.text);
   };
 
   const toggle = (h: DiffHunk) =>
@@ -184,31 +230,66 @@ export function HunkDiffView({
         </Badge>
         <span className="text-[11px] text-emerald-600 dark:text-emerald-400">+{stats.added}</span>
         <span className="text-[11px] text-red-600 dark:text-red-400">−{stats.removed}</span>
-        <Badge variant="secondary" className="text-[10px]">
-          {t("diff.hunk.appliedN", "Đã nhận {{n}}", { n: applied.length })}
-        </Badge>
-        {/* `flex-wrap` + `ml-auto`: khi còn chỗ thì hai nút dạt phải như cũ; khi hẹp thì chúng
-            XUỐNG DÒNG. Không có `flex-wrap`, cặp nút này là một khối cứng ~200 px và nó góp vào
-            bề rộng tối thiểu của cả thẻ duyệt. */}
-        <span className="ml-auto flex flex-wrap gap-1.5">
-          <Button
-            type="button" size="sm" variant="outline" className="h-7 text-[11px]"
-            disabled={stale || applied.length === 0} onClick={boHet}
-          >
-            <Undo2 className="mr-1 h-3.5 w-3.5" /> {t("diff.hunk.revertAll", "Hoàn tác hết")}
-          </Button>
-          <Button
-            type="button" size="sm" className="h-7 text-[11px]"
-            disabled={stale || applied.length === plan.hunks.length} onClick={apDung}
-          >
-            <Check className="mr-1 h-3.5 w-3.5" /> {t("diff.hunk.applyAll", "Áp tất cả")}
-          </Button>
+        {/* ô "đã nhận N" là con số của ĐƯỜNG TƯƠNG TÁC — ẩn khi chỉ-đọc (không có gì để nhận). */}
+        {!readOnly && (
+          <Badge variant="secondary" className="text-[10px]">
+            {t("diff.hunk.appliedN", "Đã nhận {{n}}", { n: applied.length })}
+          </Badge>
+        )}
+        {/* `flex-wrap` + `ml-auto`: khi còn chỗ thì các nút dạt phải như cũ; khi hẹp thì chúng
+            XUỐNG DÒNG. Không có `flex-wrap`, cụm nút này là một khối cứng và nó góp vào bề rộng
+            tối thiểu của cả thẻ duyệt. */}
+        <span className="ml-auto flex flex-wrap items-center gap-1.5">
+          {/* ★ 2026-08-24 · Toggle GỘP ↔ CẠNH NHAU — LUÔN hiện (kể cả readOnly): nó đổi CÁCH VẼ,
+              không đổi byte. Nút thuần chuột, KHÔNG phím tắt (giữ điều 3 docblock đầu tệp). */}
+          <span data-toggle-kieu-xem className="inline-flex overflow-hidden rounded-md border">
+            <button
+              type="button"
+              aria-pressed={cheDoXem === "gop"}
+              onClick={() => setCheDoXem("gop")}
+              className={cn(
+                "px-2 py-0.5 text-[10px] transition-colors",
+                cheDoXem === "gop" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {t("diff.hunk.viewUnified", "Gộp")}
+            </button>
+            <button
+              type="button"
+              aria-pressed={cheDoXem === "canh_nhau"}
+              onClick={() => setCheDoXem("canh_nhau")}
+              className={cn(
+                "border-l px-2 py-0.5 text-[10px] transition-colors",
+                cheDoXem === "canh_nhau" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {t("diff.hunk.viewSideBySide", "Cạnh nhau")}
+            </button>
+          </span>
+          {/* Hai nút GHI — CHỈ ở chế độ tương tác. readOnly ẩn cả cụm (thẻ duyệt LÔ chỉ xem). */}
+          {!readOnly && (
+            <>
+              <Button
+                type="button" size="sm" variant="outline" className="h-7 text-[11px]"
+                disabled={stale || applied.length === 0} onClick={boHet}
+              >
+                <Undo2 className="mr-1 h-3.5 w-3.5" /> {t("diff.hunk.revertAll", "Hoàn tác hết")}
+              </Button>
+              <Button
+                type="button" size="sm" className="h-7 text-[11px]"
+                disabled={stale || applied.length === plan.hunks.length} onClick={apDung}
+              >
+                <Check className="mr-1 h-3.5 w-3.5" /> {t("diff.hunk.applyAll", "Áp tất cả")}
+              </Button>
+            </>
+          )}
         </span>
       </div>
 
       {/* ── Lệch kiểu xuống dòng (Windows: CRLF là ca thật) ─────────────────── */}
-      {/* `khoaEol` ⇒ KHÔNG có checkbox: luật EOL phải tất định để chỉ số khối hai đầu dây khớp nhau. */}
-      {!khoaEol && eolMismatch && (
+      {/* `khoaEol` ⇒ KHÔNG có checkbox: luật EOL phải tất định để chỉ số khối hai đầu dây khớp nhau.
+          `readOnly` ⇒ cũng ẩn: đây là một CONTROL, mà chế độ chỉ-đọc dùng mặc định phát-hiện-lệch. */}
+      {!readOnly && !khoaEol && eolMismatch && (
         <label className="flex items-start gap-1.5 rounded-md border bg-muted/30 p-2 text-[11px] text-muted-foreground">
           <input
             type="checkbox" className="mt-0.5" checked={matchEol}
@@ -256,34 +337,71 @@ export function HunkDiffView({
                 <span className="text-[11px] text-muted-foreground">{nhanPhamVi(h)}</span>
                 <span className="text-[10px] text-emerald-600 dark:text-emerald-400">+{h.added.length}</span>
                 <span className="text-[10px] text-red-600 dark:text-red-400">−{h.removed.length}</span>
-                {on && (
+                {!readOnly && on && (
                   <Badge variant="outline" className="border-primary/40 text-[10px] text-primary">
                     {t("diff.hunk.on", "Đã nhận")}
                   </Badge>
                 )}
-                <Button
-                  type="button" size="sm" variant={on ? "outline" : "default"}
-                  className="ml-auto h-6 px-2 text-[11px]" aria-pressed={on}
-                  disabled={stale} onClick={() => toggle(h)}
-                >
-                  {on ? (
-                    <><Undo2 className="mr-1 h-3 w-3" /> {t("diff.hunk.undo", "Hoàn tác")}</>
-                  ) : (
-                    <><Check className="mr-1 h-3 w-3" /> {t("diff.hunk.accept", "Nhận khối")}</>
-                  )}
-                </Button>
+                {/* ★ 2026-08-24 — nút NHẬN/HOÀN TÁC từng khối CHỈ có ở chế độ tương tác. `readOnly`
+                    ẩn nó (thẻ duyệt LÔ chỉ để xem). ⚠ Bỏ điều kiện `!readOnly` này = mở lại đường
+                    ghi trong chế độ chỉ-đọc; lưới `HunkDiffView.unit.test.ts §2` bắt đúng đột biến ấy. */}
+                {!readOnly && (
+                  <Button
+                    type="button" size="sm" variant={on ? "outline" : "default"}
+                    className="ml-auto h-6 px-2 text-[11px]" aria-pressed={on}
+                    disabled={stale} onClick={() => toggle(h)}
+                  >
+                    {on ? (
+                      <><Undo2 className="mr-1 h-3 w-3" /> {t("diff.hunk.undo", "Hoàn tác")}</>
+                    ) : (
+                      <><Check className="mr-1 h-3 w-3" /> {t("diff.hunk.accept", "Nhận khối")}</>
+                    )}
+                  </Button>
+                )}
               </div>
               {/* ★★★ 2026-08-23 · ĐÂY mới là chỗ đúng của một thanh cuộn ngang: dòng diff là nội
                   dung THẬT SỰ rộng và **không được** xuống dòng (xuống dòng làm sai lệch mã). `w-full
-                  min-w-0` ghim hộp này bằng bề rộng khung, `overflow-auto` cho nó tự cuộn — nên nó
-                  KHÔNG còn kéo thẻ duyệt rộng ra. `overscroll-x-contain`: cuộn hết dòng thì dừng ở
-                  đây, không hất tiếp sang khung cha. */}
-              <pre className="max-h-56 w-full min-w-0 overflow-auto overscroll-x-contain text-[11px] leading-relaxed">
-                <code className="block">
-                  {h.removed.map((l, i) => <LineRow key={`d${i}`} sign="-" text={l} />)}
-                  {h.added.map((l, i) => <LineRow key={`a${i}`} sign="+" text={l} />)}
-                </code>
-              </pre>
+                  min-w-0` ghim mỗi hộp `<pre>` bằng bề rộng khung, `overflow-auto` cho nó tự cuộn —
+                  nên nó KHÔNG còn kéo thẻ duyệt rộng ra. `overscroll-x-contain`: cuộn hết dòng thì
+                  dừng ở đây, không hất tiếp sang khung cha. (Áp cho CẢ hai kiểu vẽ bên dưới.) */}
+              {cheDoXem === "canh_nhau" ? (
+                /* ── CẠNH NHAU: hai cột KHỐI-với-KHỐI. ⚠ KHÔNG căn dòng-với-dòng (không LCS-trong-
+                     khối) — trái chỉ liệt kê cái BỊ XOÁ, phải liệt kê cái ĐƯỢC THÊM; hai dòng ngang
+                     hàng KHÔNG phải một cặp thay-thế. Xem docblock đầu tệp. */
+                <div className="grid grid-cols-2 divide-x">
+                  <div className="min-w-0">
+                    <div className="border-b bg-muted/20 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {t("diff.hunk.before", "Trước")}
+                    </div>
+                    <pre className="max-h-56 w-full min-w-0 overflow-auto overscroll-x-contain text-[11px] leading-relaxed">
+                      <code className="block">
+                        {h.removed.length > 0
+                          ? h.removed.map((l, i) => <LineRow key={`d${i}`} sign="-" text={l} />)
+                          : <div className="select-none px-1 text-muted-foreground/50">·</div>}
+                      </code>
+                    </pre>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="border-b bg-muted/20 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {t("diff.hunk.after", "Sau")}
+                    </div>
+                    <pre className="max-h-56 w-full min-w-0 overflow-auto overscroll-x-contain text-[11px] leading-relaxed">
+                      <code className="block">
+                        {h.added.length > 0
+                          ? h.added.map((l, i) => <LineRow key={`a${i}`} sign="+" text={l} />)
+                          : <div className="select-none px-1 text-muted-foreground/50">·</div>}
+                      </code>
+                    </pre>
+                  </div>
+                </div>
+              ) : (
+                <pre className="max-h-56 w-full min-w-0 overflow-auto overscroll-x-contain text-[11px] leading-relaxed">
+                  <code className="block">
+                    {h.removed.map((l, i) => <LineRow key={`d${i}`} sign="-" text={l} />)}
+                    {h.added.map((l, i) => <LineRow key={`a${i}`} sign="+" text={l} />)}
+                  </code>
+                </pre>
+              )}
             </div>
           );
         })}

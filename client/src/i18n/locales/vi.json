@@ -17660,6 +17660,10 @@
     "identical": "Hai phiên bản giống nhau",
     "hunk": {
       "sectionTitle": "Áp theo từng khối",
+      "viewUnified": "Gộp",
+      "viewSideBySide": "Cạnh nhau",
+      "before": "Trước",
+      "after": "Sau",
       "count": "{{n}} khối",
       "appliedN": "Đã nhận {{n}}",
       "applyAll": "Áp tất cả",
@@ -19274,6 +19278,13 @@
         "day": "{{n}} ngày"
       }
     },
+    "ribbon": {
+      "refreshTree": "Làm mới cây tệp",
+      "runVerify": "Chạy kiểm chứng",
+      "stop": "Dừng",
+      "jumpFiles": "Xem cây tệp",
+      "jumpChat": "Về hội thoại"
+    },
     "project": {
       "label": "Dự án",
       "local": "Cục bộ",
@@ -19388,6 +19399,10 @@
     },
     "diff": {
       "cardTitle": "Đề xuất SỬA tệp — cần bạn duyệt",
+      "batchCardTitle": "Đề xuất SỬA {{n}} tệp — cần bạn duyệt",
+      "batchConfirm": "Duyệt & ghi ({{n}} tệp)",
+      "appliedBatch": "Đã ghi lô tệp — chi tiết:",
+      "batchPartial": "Lô tệp áp MỘT PHẦN [{{ma}}] — một số tệp ĐÃ được ghi, phần còn lại thì chưa. Xem chi tiết trong hội thoại.",
       "file": "Tệp",
       "writesSelected": "Xác nhận sẽ ghi {{chon}}/{{tong}} khối ĐANG CHỌN xuống đĩa — khối bỏ chọn KHÔNG được ghi. Trình duyệt chỉ gửi SỐ THỨ TỰ khối; nội dung được server chiếu lại từ đề xuất đã chốt.",
       "zeroChon": "Chưa chọn khối nào — chọn ít nhất một khối để ghi, hoặc bấm Hủy. (Ghi 0 khối không phải một lượt ghi; server cũng sẽ từ chối.)",
@@ -19442,11 +19457,34 @@
         "kill": "DỪNG vì công tắc khẩn cấp (kill-switch) đã được bật — vòng tự-ghi dừng ngay. Liên hệ quản trị viên để gỡ."
       }
     },
+    "terminal": {
+      "title": "Kết quả lệnh",
+      "empty": "Chưa có lệnh nào chạy. Duyệt một lệnh kiểm chứng để thấy đầu ra ở đây.",
+      "count": "{{n}} lệnh",
+      "exitCode": "Mã thoát: {{code}}",
+      "timedOut": "Quá hạn",
+      "durationMs": "{{ms}} ms",
+      "quickRunLabel": "Chạy nhanh",
+      "quickRunHint": "Chỉ lệnh trong danh sách trắng của dự án.",
+      "quickRunNone": "Dự án này chưa có lệnh gợi ý.",
+      "fromLoop": "từ vòng tự động"
+    },
     "pane": {
       "tablist": "Chọn khung",
       "files": "Tệp",
       "viewer": "Trình xem",
-      "chat": "Hội thoại"
+      "chat": "Hội thoại",
+      "terminalTab": "Terminal",
+      "problemsTab": "Vấn đề",
+      "problemsCount": "{{n}}"
+    },
+    "problems": {
+      "title": "Vấn đề",
+      "count": "{{n}} vấn đề",
+      "empty": "Không có lỗi nào từ lần chạy gần nhất",
+      "jumpFileLine": "Mở {{tep}} tại dòng {{dong}}",
+      "jumpFileOnly": "Mở {{tep}}",
+      "unresolvedLocation": "Không xác định được vị trí — xem Terminal."
     }
   },
   "masterDataCol": {

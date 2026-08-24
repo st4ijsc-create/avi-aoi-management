@@ -82,9 +82,14 @@ describe("§1 — BẤT BIẾN HITL: đúng MỘT cửa xác nhận, và nó là
     expect(i, "không tìm thấy handleConfirm").toBeGreaterThan(0);
     expect(j).toBeGreaterThan(i);
     expect(MA.slice(i, j)).toContain("confirmM.mutateAsync(");
-    // Và `handleConfirm` chỉ được tham chiếu ở khai báo + hai prop `onConfirm` (hai thẻ duyệt).
-    expect(dem(MA, "handleConfirm")).toBe(3);
-    expect(dem(MA, "onConfirm={handleConfirm}")).toBe(2);
+    // Và `handleConfirm` chỉ được tham chiếu ở khai báo + BA prop `onConfirm` (BA thẻ duyệt:
+    // apply_diff · apply_diff_batch · run_command). 2026-08-24: thêm thẻ duyệt LÔ (`TheDuyetDiffLo`)
+    // ⇒ đếm 2→3. ★★★ Bất biến THẬT vẫn là ĐÚNG MỘT `confirmM.mutateAsync(` (canh ở `it` phía trên):
+    // cả ba thẻ trỏ THẲNG về cùng `handleConfirm`, KHÔNG mở cửa ghi thứ hai. Con số dưới chỉ là phép
+    // đếm số THẺ (proxy), không phải số CỬA ghi — thêm một thẻ duyệt hợp lệ thì cập nhật nó, đúng kỷ
+    // luật "sửa ở thiết bị đo" khi thiết bị đo đếm sai thứ.
+    expect(dem(MA, "handleConfirm")).toBe(4);
+    expect(dem(MA, "onConfirm={handleConfirm}")).toBe(3);
   });
 
   it("★★★ bộ điều khiển vòng KHÔNG gọi handleConfirm/confirmM (nó chỉ CHẠY test và ĐỀ XUẤT)", () => {
