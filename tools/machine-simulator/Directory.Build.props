@@ -780,8 +780,12 @@
         AN-1 measured on the day it wrote it.
           (i) "ITEM 12 STAYS IN PART II" — item 12 LEFT Part II on 2026-08-22 (task BC-1) and is in Part
               III. Part II is now EMPTY, and that emptiness is an assertion the gate reads: the machine
-              field <!-- gate:phần-ii = --> under the Part II banner is checked by C6 of
-              scripts/check-owner-decisions.sh on every gate run.
+              field named `gate:phần-ii`, an HTML comment holding an empty list directly under the Part
+              II banner, is checked by C6 of scripts/check-owner-decisions.sh on every gate run.
+              (Spelled by NAME rather than reproduced: an XML comment may not contain a double hyphen,
+              and the first draft of this bracket pasted the marker whole and took the whole solution
+              down with MSB4024 on 30 projects. Recorded because a build file that cannot quote the
+              syntax it is describing is a boundary worth knowing before the next person tries.)
           (ii) "109 coverage warnings remain and they are all Drivers/" — MEASURED 2026-08-24: ZERO
               remain on our own source. Batches 9..12 paid the whole 109; batch 12 (cf6397ef, 2026-08-22)
               paid the last 38.
