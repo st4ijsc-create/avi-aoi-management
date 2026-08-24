@@ -138,7 +138,7 @@ public class AssumedProcessBandTests
         Assert.Equal(83_880, rows.Count(r => r.Verdict == Verdict.Pass));
         Assert.Equal(15_209, rows.Count(r => r.Verdict == Verdict.Warn));
         Assert.Equal(911, rows.Count(r => r.Verdict == Verdict.Fail));
-        Assert.Empty(rows.Where(r => r.Verdict == Verdict.Skip));
+        Assert.DoesNotContain(rows, r => r.Verdict == Verdict.Skip);
     }
 
     /// <summary>🔴 <b>THE BAND STATED END TO END, so the fix cannot be half-applied.</b> Both limits, both
@@ -288,7 +288,7 @@ public class AssumedProcessBandTests
 
         // Nothing warns for being high — the defect, negated. Every score above the warn band passes unless
         // the trial killed it.
-        Assert.Empty(rows.Where(r => r.Score > ScoreLsl + ScoreMargin && r.Verdict == Verdict.Warn));
+        Assert.DoesNotContain(rows, r => r.Score > ScoreLsl + ScoreMargin && r.Verdict == Verdict.Warn);
 
         // The width, pinned at exactly 1.5 points: 91.5 warns, the next representable step above it passes.
         Assert.Equal(1.5, ScoreMargin);
