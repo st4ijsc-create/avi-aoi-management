@@ -112,6 +112,26 @@ Mỗi tham số khai báo: khóa, nhãn vi/en, đơn vị, kiểu, **min/max (ch
 >   *"không thấy"* thay vì *"không đo"*. Hướng của từng hàng ở trên được phân xử **bằng tay**, một lần, và
 >   ghi ở đây.
 
+> ✅ **CÂU HỎI VẬT LÝ CỦA HÀNG WELDER ĐÃ CÓ TRỌNG TÀI — PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-24 (BU-1, mục 71,
+> HƯỚNG A).** Nguyên văn phán quyết: *"Nhóm A: Các còn số đang có đều là giả định và dùng để test nên ko cần
+> quan tâm tính chính xác của nó, hãy đảm bảo rằng logic code của chức năng trong các trường hợp là đúng là
+> được, bạn tự quyết (hoặc chọn A cho tất cả)"*. Hướng A của mục 71 là **giữ mã, sửa tài liệu cho khớp mã**
+> ⇒ **`current`/`time`/`tempMax`/`voltage` THẮNG**, và hàng WELDER trong bảng §3 — đã viết lại ngày
+> 2026-08-23 — **là câu trả lời**, không còn là một bên của một câu hỏi mở. Câu *"cái nào ĐÚNG về vật lý vẫn
+> thuộc chủ sở hữu"* ở gạch đầu dòng trên **được trả lời ngay tại đây và giữ nguyên văn** thay vì bị xoá.
+>
+> 🔴 **BA HÀNG CÒN LẠI KHÔNG ĐI THEO HƯỚNG A, và lý do là một PHÉP ĐO chứ không phải một sự dè dặt.**
+> `SCREWDRIVE sequence[]` và `IOT thresholds{}` đo lại ngày 2026-08-24 **từ kho object của git**
+> (`git show HEAD:server/services/recipes/recipeSchemas.ts` — file ấy vẫn **không có trên đĩa** trong bản
+> checkout thưa này): `screwProgramShape` **có** `sequence` (mảng `{step,torque,angle}`, optional) và
+> `iotSettingsShape` **có** `thresholds` (`z.record(z.string(), z.number())`, optional). Hai hàng ấy **doc
+> đúng, server đúng, C# mới là chỗ hẹp hơn** — nên thi hành đúng chữ *"sửa tài liệu cho khớp mã"* ở đó sẽ
+> **viết một tài liệu MÂU THUẪN VỚI HỢP ĐỒNG CỦA SERVER**. Hàng `AOI/AVI retestPolicy`: `RECIPE_KINDS` =
+> `["screw_program","dispense_program","weld_profile","iot_settings"]` — **không có** `aoi_inspection`, nên
+> hàng ấy **không có bản khai server nào để đúng hay sai với**. Phán quyết 2026-08-24 nói *"đừng bận tâm độ
+> chính xác của SỐ"*; nó **không** nói *"hãy viết tài liệu trái với hợp đồng bên thứ ba"*. **Ba hàng DỪNG,
+> bảng không đụng một chữ.**
+
 ---
 
 ## 4. Tham số phải THẬT SỰ tác động vào mô phỏng

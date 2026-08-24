@@ -2541,7 +2541,63 @@ EXPECT_CONFORMANCE=24
 # BR-1 does NOT touch web/ — no file under web/ is modified, so the web/ domain declaration is expected
 # to print unchanged and `npm run build` was not run.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1276
+# 🔴 BU-1, 2026-08-24 (docs/owner-decisions.md items 41, 43, 61 and 71, under the OWNER'S RULING of
+# 2026-08-24 — "Nhóm A … chọn A cho tất cả") raises EXPECT_EDGECORE 1276 -> 1285 (+9) and MOVES NO OTHER
+# SUITE TOTAL. Grand total 2958 -> 2967. COUNTED FROM THE RUNNER after the tests were written — the run
+# reported "total 1285" — not predicted from "+8 [Fact]s and a [Theory]", which is the arithmetic this
+# repo has twice found to be wrong about itself. Per file:
+#
+#   tests/St4i.EdgeCore.Tests/AssumedProcessBandTests.cs                      +8   (NEW FILE)
+#     Item43_AllThreeVerdictsAreReachableForTheShippedAssemblyMachine
+#     Item43_EveryReadingMatchesTheDeclaredEdges_AndTheNearEdgeBandFiresOnAllFourSides
+#     Item43_TheQualityOfTheShippedAssemblyMachineIsNoLongerExactlyOne
+#       — the three item-43 witnesses. Control pair RUN AND REVERTED: restoring
+#       `VerdictHelper.Evaluate(force, null, null)` reddens all three plus the rewritten SimulatorTests
+#       case (measured: 4 failed / 23 passed), and reverting the control returns them to green.
+#     Item43_Guard_PressDepthStillPublishesNoLimitsAndTakesNoPartInTheVerdict
+#       — GREEN ON BOTH BRANCHES and labelled GUARD in its own doc comment. It says what this task chose
+#       NOT to do (depth stays unjudged and publishes no limits) in a form that is true before and after.
+#     Item61_APerfectScoreNowPasses_InsteadOfWarningAboutTheCeilingItWasClampedTo
+#     Item61_TheBandIsOneSidedOnTheLowerLimit_AndKeepsItsOneAndAHalfPointWidth
+#     Item61_TheWarnRateFellFromFortyOnePercentToUnderOne_AndNoOeeNumberMoved
+#       — the three item-61 witnesses. Control pair RUN AND REVERTED: restoring
+#       `VerdictHelper.Evaluate(score, ScoreLsl, ScoreUsl)` reddens exactly these three and leaves the
+#       guard green (measured: 3 failed / 25 passed).
+#     Item61_Guard_ThePublishedScoreStillDeclaresACeilingTheVerdictDoesNotUse
+#       — GREEN ON BOTH BRANCHES, GUARD. It pins the residue this task deliberately left standing: the
+#       reading still publishes Lsl 90 / Usl 100 while the verdict uses one of them, which ADDS A SECOND
+#       MEMBER to owner-decisions item 62's population rather than resolving an item that is not in the
+#       group this ruling covers.
+#
+#   tests/St4i.EdgeCore.Tests/ScrewTorqueDeclarationTests.cs                  +1
+#     Declaring_a_band_also_tightens_the_un_wired_hosts_spread_from_an_absolute_to_a_fraction — item 41.
+#     It pins the ONE number the declaration moved on the two un-wired hosts: sigma 0.40177 -> 0.36159,
+#     because an undeclared un-wired machine used ScrewdriveSim's absolute 0.4 and every declared machine
+#     derives sigma as 0.03 of the target. The summary "only the API host's number moves" is not true to
+#     the last digit, and this is where that is said.
+#
+# 🔴 TWO EXISTING TESTS WENT RED AND WERE REWRITTEN IN PLACE, WHICH IS WHY +9 IS NOT +10:
+#   * ScrewTorqueDeclarationTests.Shipped_roster_declares_nothing_and_the_numbers_it_reports_have_not_moved
+#     -> Shipped_roster_declares_an_assumed_band_and_says_so_where_the_number_lives. BL-1 wrote that test
+#     with the sentence "declaring a band in fleet.json — either band — reddens this test". The owner
+#     declared the band on 2026-08-24, so the guard fired on the one event it was built for. Inverted,
+#     not deleted; the old name is quoted verbatim in the new test's summary.
+#   * SimulatorTests.Assembly_has_no_seeded_spec_so_verdict_is_warn_only
+#     -> Assembly_judges_press_force_against_an_assumed_band_so_more_than_warn_is_reachable. Same shape:
+#     the property it pinned (one reachable verdict) stopped being true BY DESIGN.
+#
+# EXPECT_ABSTRACTIONS (161), EXPECT_CONFORMANCE (24), EXPECT_EDGESERVICE (52) and EXPECT_ENGINEAPI (1445)
+# are deliberately UNCHANGED and were re-measured, not assumed: EngineApi was run to completion at 1445
+# after every edit. A moved total there would mean this task reached past the simulator layer — item 71
+# was measured and NOT changed in code or in the design-doc table, and items 41/43/61 change only
+# EdgeCore.
+#
+# NOT MOVED by this task: EXPECT_WARNINGS (219, re-measured on a full -t:Rebuild, ledger 185/34 unmoved,
+# 0 suppressions of any kind), EXPECT_BUILD_NODES (0), the three settle constants, the process matcher,
+# the exclusive lock, both halves of the warnings ledger. BU-1 does NOT touch web/, so `npm run build`
+# does not arise and the web/ domain declaration is expected to print unchanged.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1285
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -5364,7 +5420,49 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #
 # The baseline cfcfae42 is STILL not moved.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_NEW_DOC_ABSOLUTES=530
+# 🔴 EXPECT_NEW_DOC_ABSOLUTES: 530 -> 568 (+38), BU-1, 2026-08-24 (items 41, 43, 61 and 71 under the
+# OWNER'S RULING of 2026-08-24). MEASURED AFTER the prose was written, and the NET IS NOT THE MEASUREMENT
+# — it is a sum of two measured terms, split here because a bare +38 would hide a subtraction:
+#     scripts/scan-doc-negations.sh --since cfcfae42   ->  568   (the gated baseline)
+#     scripts/scan-doc-negations.sh --since 47252d57   ->   44   (this task against its own base: ADDED)
+#     530 + 44 = 574, not 568  ⇒  SIX sentences left the corpus.
+#
+# 🔴 THE SIX WERE NOT ESTIMATED. They were measured by running the SAME scan against the same baseline in
+# a throwaway `git worktree` at 47252d57 and diffing the two flagged lists by (path, sentence) — the
+# scanner's own identity — rather than by subtracting. All six are doc comments this task REWROTE IN
+# PLACE, and every one of them was a claim that stopped being true today:
+#   1-2. AssemblySim.cs — "VerdictHelper.Evaluate is called with both limits null, and its first branch
+#        answers … whenever neither limit is seeded" and its parenthesis. False since the band exists.
+#   3.   FunctionalTestSim.cs — "A score-driven Fail needs to fall below 88.5 … in practice essentially
+#        every Fail comes from the trial." The surviving half is restated in the rewritten paragraph.
+#   4-5. LeakAndFunctionalVerdictDomainTests.cs — "(a) It says NOTHING about AssemblySim." and "Item 43's
+#        other half is NOT executed…". The second is quoted VERBATIM in its replacement, which is why it
+#        also appears among the 44: a retraction that keeps the old wording adds a NEW (path, sentence)
+#        key while retiring the old one.
+#   6.   ScrewTorqueDeclarationTests.cs — "The roster this product ships declares NOTHING…". The owner
+#        declared it; the test was inverted and the old sentence quoted in the new summary.
+#
+# WHERE THE 44 COME FROM, by file, every one in a file this task edited (files it did not touch are
+# byte-identical to the base, which is what makes "all of them are mine" a measurement, not a claim):
+#   tests/St4i.EdgeCore.Tests/AssumedProcessBandTests.cs      20   (new file — the witness/guard set)
+#   src/St4i.EdgeCore/Drivers/Simulators/AssemblySim.cs        7
+#   tests/St4i.EdgeCore.Tests/ScrewTorqueDeclarationTests.cs   6
+#   src/St4i.EdgeCore/Drivers/Simulators/FunctionalTestSim.cs  4
+#   tests/St4i.EdgeCore.Tests/LeakAndFunctionalVerdictDomainTests.cs 3
+#   src/St4i.EdgeCore/Models/ScrewTorqueSpec.cs                3
+#   tests/St4i.EdgeCore.Tests/SimulatorTests.cs                1
+# 20 + 7 + 6 + 4 + 3 + 3 + 1 = 44. The reason the number is not smaller is the structural one BN-1, BP-1
+# and BR-1 each recorded: a NOT-MEASURED list and a RETRACTION are both sentences whose entire job is to
+# say what is NOT claimed, and they are spelled with exactly the absolute vocabulary this scanner hunts.
+#
+# 🔴 Outside this number, said because a count that looks whole invites being read as whole: the corpus
+# is C# only (boundary (e)). This task's largest prose edits are in docs/owner-decisions.md (four item
+# records) and docs/MACHINE_CONFIG_DESIGN.md (the 2026-08-24 WELDER ruling block), and NO instrument in
+# this repository reads either for absolute claims. That gap predates BU-1 and is recorded, not closed.
+#
+# The baseline cfcfae42 is STILL not moved.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_NEW_DOC_ABSOLUTES=568
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

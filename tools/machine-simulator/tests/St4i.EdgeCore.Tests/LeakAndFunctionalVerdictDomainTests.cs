@@ -17,11 +17,17 @@ using Xunit;
 /// <item><b>FALSE POSITIVES.</b> Nothing here touches the filesystem, the clock, the network or any shared
 /// process state. Every simulator is constructed with an explicit seed and every reading is a pure function
 /// of (seed, cycle), so a run here cannot be reddened by another suite, by ordering, or by a machine.</item>
-/// <item><b>🔴 WHAT IT DOES NOT MEASURE.</b> (a) It says NOTHING about <see cref="AssemblySim"/>. Item 43's
-/// other half is NOT executed — no source in this tree states what a valid <c>press_force</c> or
-/// <c>press_depth</c> is, and inventing a pair would repeat item 41's defect exactly; the existing
-/// <c>SimulatorTests.Assembly_has_no_seeded_spec_so_verdict_is_warn_only</c> therefore still stands
-/// unchanged and still pins one reachable verdict. (b) It does not reach <c>OeeCalculator</c>, the
+/// <item><b>🔴 WHAT IT DOES NOT MEASURE.</b> (a) It says NOTHING about <see cref="AssemblySim"/> — and the
+/// REST OF THIS CLAUSE DIED ON 2026-08-24, so it is corrected in place rather than left to be believed.
+/// It used to read: <i>"Item 43's other half is NOT executed — no source in this tree states what a valid
+/// <c>press_force</c> or <c>press_depth</c> is, and inventing a pair would repeat item 41's defect exactly;
+/// the existing <c>SimulatorTests.Assembly_has_no_seeded_spec_so_verdict_is_warn_only</c> therefore still
+/// stands unchanged and still pins one reachable verdict."</i> The owner ruled on 2026-08-24 that the
+/// numbers in this product are assumptions used for test and that what must be right is the LOGIC, so item
+/// 43's assembly half IS executed: <see cref="AssemblySim"/> now judges the press force against a band
+/// declared as an assumption, that test was reddened by the change and rewritten, and the witness lives in
+/// <c>AssumedProcessBandTests</c>. What survives of the old sentence is only its first clause — nothing in
+/// THIS file measures <see cref="AssemblySim"/>. (b) It does not reach <c>OeeCalculator</c>, the
 /// historian, or any report: the claim below that Quality does not move is derived from the good-count
 /// PREDICATE (Pass-or-Warn), asserted here on verdicts, not from an end-to-end OEE run. (c) It cannot see
 /// the wire: the published <c>MetricSample</c> still declares an LSL of 0.0 and this file asserts that it
