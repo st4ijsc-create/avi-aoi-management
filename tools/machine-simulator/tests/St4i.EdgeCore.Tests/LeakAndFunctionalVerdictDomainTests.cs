@@ -143,20 +143,77 @@ public class LeakAndFunctionalVerdictDomainTests
         Assert.Equal(rows.Count, rows.Count(r => r.Verdict != Verdict.Skip));   // nothing left the denominator
     }
 
-    /// <summary>🔴 <b>GUARD, and it pins a DIVERGENCE THIS TASK CHOSE TO LEAVE STANDING.</b> The reading still
-    /// publishes an LSL of 0.0 while the verdict is computed with no LSL at all. That is deliberate — the
-    /// published limit is the quantity's physical floor and it crosses the wire through
-    /// <c>Normalizer</c>'s <c>lsl</c> field, so moving it is a change item 43's ruling does not cover — but
-    /// the consequence is real and is named here rather than hidden: a reader who re-derives the verdict
-    /// from the limits this reading declares gets the PRE-FIX answer. Green on both sides of the fix.</summary>
+    /// <summary>🔴🔴 <b>THIS TEST PINS AN ADJUDICATED STATE, NOT A CORRECT ONE. READ THIS BEFORE YOU
+    /// "FIX" WHAT IT GUARDS.</b>
+    ///
+    /// <para><b>OWNER'S RULING, 2026-08-24, owner-decisions item 62 — direction B, WITH A SIGNATURE.</b> The
+    /// published limit pair <c>(0.0 ; 20.0)</c> STAYS, deliberately, and this test is the lock. Until that
+    /// date the pair survived by INERTIA — nobody had decided it, the residue was merely recorded. It has
+    /// now been decided, on the record, with both banks of the cost written down:</para>
+    /// <list type="bullet">
+    /// <item><b>What keeping it costs:</b> a published assertion that has been MEASURED FALSE. Any consumer
+    /// outside this product — an SPC board, an ingest gateway, a supervisor reading "lower limit 0" — who
+    /// re-derives the verdict from the limits this reading declares gets the PRE-FIX answer, <c>Warn</c>
+    /// where the machine emitted <c>Pass</c>, on ~4.78% of this machine's cycles. That is a published
+    /// DISAGREEMENT, not an ambiguity, and this test is the reason nobody removes it by accident.</item>
+    /// <item><b>What changing it would cost:</b> <c>lsl</c> would go from <c>0</c> to <b>absent</b> in the
+    /// canonical record. For a typed consumer that is a WIRE-SHAPE change, not a value change, and the
+    /// field leaves this product over MQTT via <c>Normalizer</c>. Two standing exemptions at once.</item>
+    /// <item><b>Why the ruling went the way it did:</b> <c>0</c> is the PHYSICAL FLOOR of a leak rate and it
+    /// is what a chart bands against; and this tree cannot enumerate who is reading the field, so the
+    /// precedent of items 2 and 3 applies — when the third-party population cannot be counted, KEEP the
+    /// behaviour and PUBLISH the fact. A set that cannot be counted is not an empty set.</item>
+    /// </list>
+    ///
+    /// <para>🔴 <b>SO: A RED HERE IS NOT NECESSARILY A DEFECT YOU INTRODUCED.</b> If you are here because
+    /// this went red, you have most likely done the LOCALLY correct thing — dropped a limit the verdict does
+    /// not use — and collided with a decision that outranks it. Do not "fix" the assertion. Reopen item 62
+    /// and get the ruling changed, or leave it. This test says <i>don't</i>, and now it also says
+    /// <i>why</i> and <i>who decided</i>, which is the whole of what it was missing.</para>
+    ///
+    /// <para>🔴 <b>AND IT IS NOT THE ONLY ONE. The population of item 62 is TWO simulators, not one.</b>
+    /// <c>AssumedProcessBandTests.Item61_Guard_ThePublishedScoreStillDeclaresACeilingTheVerdictDoesNotUse</c>
+    /// pins the mirror shape on <see cref="FunctionalTestSim"/> — a published CEILING the verdict does not
+    /// use, created by item 61's fix on the same day. Same ruling, same reasoning, opposite side of the
+    /// band. Item 62's body said "LeakTestSim is the only case"; that predicate was measured again on
+    /// 2026-08-24 and corrected there.</para>
+    ///
+    /// <para><b>What this test does NOT measure:</b> the verdict. It reads the published
+    /// <see cref="MetricSample"/> only, so it would stay green if the verdict path were changed to USE the
+    /// floor — which would make the pair honest by the other route and is a change nobody has ruled on. It
+    /// also measures nothing about the wire: <c>Normalizer</c> is not on its path.</para></summary>
     [Fact]
-    public void Item43_Guard_ThePublishedMetricStillDeclaresAFloorTheVerdictDoesNotUse()
+    public void Item62_Guard_ThePublishedMetricStillDeclaresAFloorTheVerdictDoesNotUse_OwnerRuled20260824()
     {
         var metric = new LeakTestSim(LeakDescriptor(), seed: 11).NextCycle(1).Metrics.Single(m => m.Name == "leak_rate");
 
         Assert.Equal(0.0, metric.Lsl);
         Assert.Equal(DefaultMaxLeak, metric.Usl);
         Assert.Equal("Pa/s", metric.Unit);
+
+        // 🔴 THE DISAGREEMENT ITSELF, MEASURED — otherwise this pins a pair of numbers and not the fact that
+        // makes them a ruled defect. The re-derivation is spelled out rather than borrowed, because
+        // VerdictHelper is `internal` and this assembly cannot see it — which is exactly the position a
+        // third party is in: they have the two published numbers and the documented rule, nothing else.
+        // The two-sided margin the published pair implies is (usl - lsl) * 0.15 = 3.0, numerically the SAME
+        // width the machine's one-sided rule used. So this is a divergence of RULE, not of arithmetic.
+        const double TwoSidedMargin = (DefaultMaxLeak - 0.0) * 0.15;
+        Assert.Equal(Margin, TwoSidedMargin);
+
+        var rows = LeakCycles();
+        var emittedPassButThePublishedPairSaysWarn =
+            rows.Count(r => r.Verdict == Verdict.Pass && r.Rate <= 0.0 + TwoSidedMargin);
+
+        // 🔴 AND THE ITEM'S OWN SEVERITY NUMBER DID NOT SURVIVE BEING MEASURED. Item 62 §62.1 says the
+        // disagreement lands on "4.78% of cycles", and derives it ANALYTICALLY as P(rate <= 3.0 | N(8;3)) =
+        // 0.0478. That is the right integral of the right distribution — but it is not this simulator's
+        // output. Over the 4000 cycles LEAK-01 actually draws at seed 11 the count is 201, i.e. 5.025%,
+        // because a finite seeded sample is not its own limiting distribution. The item's figure is a
+        // PROPERTY OF THE MODEL quoted as a property of the PRODUCT, and the gap is 0.245 points — about 5%
+        // of the figure itself. Corrected in item 62's body, and pinned here so it cannot drift back.
+        Assert.Equal(201, emittedPassButThePublishedPairSaysWarn);
+        Assert.Equal(0.05025, (double)emittedPassButThePublishedPairSaysWarn / rows.Count, 5);
+        Assert.Equal(4000, rows.Count);
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════════

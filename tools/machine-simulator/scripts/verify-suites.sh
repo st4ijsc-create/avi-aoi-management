@@ -2637,8 +2637,37 @@ EXPECT_CONFORMANCE=24
 # exclusive lock, both halves of the warnings ledger. BW-1 does NOT wire web/ into this gate — item 60 was
 # a MEASUREMENT of option B, not a build of it — so the web/ domain declaration prints unchanged, and
 # `npm run build` / `npm run lint` remain commands this script does not invoke.
+#
+# ══ BX-1, 2026-08-24 — OWNER'S RULINGS ON ITEMS 62, 65, 70, 49, 63, 68. TOTALS MOVE, MEASURED FIRST ═══
+#
+# EXPECT_EDGECORE 1286 -> 1288 (+2), EXPECT_ENGINEAPI 1449 -> 1451 (+2), EXPECT_EDGESERVICE UNMOVED at 52.
+# Grand total 2972 -> 2976. Counted from a full run of each suite, not by hand. Per file, listed before
+# counted:
+#
+#   EdgeCore +2
+#     * UnconsumedConfigKindsTests.Kinds() gains ONE THEORY ROW ("AOI_AVI") — item 49 half C. A MemberData
+#       row is a test case, so the total moves by one for a change of one line of data.
+#     * CyclePlanTests gains ONE [Fact] —
+#       Item70_DirectionA_Step0CarriesTheDrawItself_ButThreeExtraDrawsAndARoundedStringSurvive.
+#     * The two item-62 guards were RENAMED (Item43_/Item61_ -> Item62_) and given assertions; a rename is
+#       not a count move, which is why +2 and not +4.
+#   EngineApi +2
+#     * ConnectorsConfigTests gains ONE [Fact] — the EngineApi half of item 65 direction C.
+#     * ConnectorRegistryTests gains ONE [Fact] —
+#       TwoRegistrationsUnderOneOperatorTypedId_ForTheSameMachine_StillReplaceSilently_ItemsHeadlineCaseIsOpen,
+#       which pins the case direction B deliberately does NOT close.
+#     * Two ConnectorRegistryTests facts and one ConnectorEndpointsEnvSeedingSideEffectsTests fact were
+#       INVERTED and renamed. Inversions do not move a count either.
+#   EdgeService +0
+#     * EdgeWorkerConnectorsTests.ADuplicateId_… was renamed and its assertions rewritten. Same one test.
+#
+# NOT MOVED, and each was checked rather than assumed: EXPECT_WARNINGS (219, on a full solution build),
+# EXPECT_WARNING_LEDGER (all fourteen rows, unit for unit), EXPECT_BUILD_NODES (0), EXPECT_ABSTRACTIONS
+# (161), EXPECT_CONFORMANCE (24), the three settle constants, the process matcher, the exclusive lock.
+# BX-1 does NOT wire web/ into this gate — item 68's residue is recorded, not built — so the web/ domain
+# declaration prints unchanged and `npm run build` remains a command this script does not invoke.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1286
+EXPECT_EDGECORE=1288
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4327,7 +4356,7 @@ EXPECT_EDGESERVICE=52
 # document states about ITSELF -- so BOTH defects above would still pass it today. Control pair, run in
 # full and reverted: stripping the backticks off "warpageMax" throughout the .md gives exactly ONE red,
 # in this [Fact], naming warpageMax.
-EXPECT_ENGINEAPI=1449
+EXPECT_ENGINEAPI=1451
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

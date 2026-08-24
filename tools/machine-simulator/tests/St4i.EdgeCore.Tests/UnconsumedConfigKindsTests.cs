@@ -44,13 +44,41 @@ public class UnconsumedConfigKindsTests
         { "AVI",             DeviceClass.AoiAvi,     MachineParameterSchema.AoiInspection,   true  },
         { "DISPENSING",      DeviceClass.Automation, MachineParameterSchema.DispenseProgram, false },
         { "WELDER",          DeviceClass.Automation, MachineParameterSchema.WeldProfile,     false },
+
+        // 🔴 WITNESS for owner item 49, HALF C — owner's ruling 2026-08-24. Reddens by removing
+        // ["AOI_AVI"] = AoiInspection from MachineParameterSchema.MachineTypeToConfigKind: the
+        // ConfigKindForMachineType assertion below answered null for this string until that row was added,
+        // while the factory has always built an AoiInspectorSim WITH a store for it. That gap is the whole
+        // of half C — a machine that gets an aoi_inspection record written under its own code while
+        // GET /v1/machines/{code}/settings answers 400 for the same machine. `true` here is not new
+        // behaviour; it is the row that finally lets this table ASK about a type it could not name.
+        { "AOI_AVI",         DeviceClass.AoiAvi,     MachineParameterSchema.AoiInspection,   true  },
     };
 
     /// <summary>The declared answer must equal the measured one, in BOTH directions — a kind claimed
     /// consumed whose store never arrives, and a kind claimed unconsumed whose store does, both redden this.
     /// The second direction is the one that matters most: the day somebody wires
     /// <c>DispensingSim</c>/<c>WelderSim</c> to a store, this test fails and forces the doc comments, the
-    /// REST push message and item 42's record to be corrected in the same change rather than drifting.</summary>
+    /// REST push message and item 42's record to be corrected in the same change rather than drifting.
+    ///
+    /// <para>🔴 <b>OWNER ITEM 68, 2026-08-24 — THIS IS THE INSTRUMENT ITEM 68 SAYS DOES NOT EXIST, AND
+    /// NAMING IT HERE IS PART OF THAT ITEM'S RECORD.</b> Item 68 §68.3 says that choosing the cheap bank is
+    /// "accepting that the day a new simulator is wired, the warning will be wrong in the opposite direction
+    /// and NO TOOL WILL CATCH IT". Measured 2026-08-24: <b>this test catches exactly that event</b>, it has
+    /// caught it since BL-1 built it for item 42 on 2026-08-23 — a day before item 68 was opened — and it
+    /// runs INSIDE the gate, because it lives under <c>tests/St4i.EdgeCore.Tests</c> rather than under
+    /// <c>web/</c>. The claim in §68.3 is therefore false as written, and it is corrected in item 68's body
+    /// rather than quietly.</para>
+    ///
+    /// <para>🔴 <b>AND THE PART THAT IS STILL TRUE, said here because this is where the result appears —
+    /// law (3).</b> What reddens is the C# side. Nothing in this repository's gate reads
+    /// <c>web/src/i18n/en.ts</c> or <c>vi.ts</c>, where the operator-facing sentence
+    /// <c>machineSettings.limitation</c> actually lives: the gate compiles no TypeScript and starts no
+    /// browser (owner item 60). So this test forces the SERVER's account of itself to be corrected in the
+    /// same change; it does NOT force the web copy to be corrected, and a person who reddens it can make it
+    /// green again while leaving the operator's screen saying the stale thing. That last mile has no
+    /// instrument and this test is not it. Whoever turns a `false` above into a `true` must also edit both
+    /// i18n dictionaries and <c>web/tests/29-machine-settings-unwired-types.spec.ts</c> by hand.</para></summary>
     [Theory]
     [MemberData(nameof(Kinds))]
     public void The_declared_consumption_of_a_kind_matches_what_the_factory_actually_wires(

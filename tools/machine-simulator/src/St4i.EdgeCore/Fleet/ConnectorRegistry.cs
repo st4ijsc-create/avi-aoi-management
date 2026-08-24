@@ -221,7 +221,16 @@ public sealed class ConnectorRegistry
     /// if its <see cref="IConnectorFactory.Kind"/> getter threw or returned null/blank/whitespace, or if
     /// <paramref name="machineCode"/> is already claimed by a DIFFERENT instance id (in which case nothing
     /// is mutated — the existing claim wins, and the caller can name the incumbent via
-    /// <see cref="TryGetInstanceIdForMachine"/> to log a message an operator can act on).</returns>
+    /// <see cref="TryGetInstanceIdForMachine"/> to log a message an operator can act on).
+    ///
+    /// <para>🔴 <b>OWNER'S RULING 2026-08-24, item 63 — a THIRD false, and it is the MIRROR of the one
+    /// above.</b> The clause above refuses when one MACHINE is claimed by two ids; this one refuses when one
+    /// ID is held for two machines. <see langword="false"/> now also means: the entry already registered
+    /// under this <paramref name="instanceId"/> serves a machine other than <paramref name="machineCode"/>.
+    /// Nothing is mutated and the incumbent wins, same as the other refusal. <b>A re-registration under the
+    /// same id for the SAME machine still replaces</b> — that is the ordinary idempotent-update path and it
+    /// is deliberately left alone, because turning it into an error is direction A, which was priced at
+    /// every connector EDIT becoming a 500 and was refused.</para></returns>
     /// <exception cref="InvalidOperationException">🔴 Item 47 — <paramref name="instanceId"/> was omitted (or
     /// blank) and the key derived from <paramref name="factory"/>'s own <see cref="IConnectorFactory.Kind"/>
     /// is already registered. The message names BOTH connectors. Nothing is mutated.</exception>
@@ -330,6 +339,45 @@ public sealed class ConnectorRegistry
             //       so a registry holding it still cannot arbitrate them, and last-write-wins survives for
             //       exactly the population §63.3 calls the likelier one. The third direction answers a
             //       question the item did not ask.
+            // ══ OWNER'S RULING 2026-08-24, item 63 — DIRECTION B IS TAKEN, AND ITS PRICE IS PAID ON PURPOSE ══
+            //
+            // Of the three directions priced above the owner chose (2): REFUSE, narrowed to "the incumbent
+            // under this id serves a DIFFERENT machine" — exactly ModbusMultidropRegistration's
+            // OwnedBySomethingElse rule, now stated once here instead of rebuilt by each caller outside the
+            // lock. Direction (1) THROW and direction (3) PROVENANCE were both refused and stay refused.
+            //
+            // 🔴 WHAT THIS COSTS, NAMED RATHER THAN DISCOVERED. It removes a behaviour task B-6 built on
+            // purpose: an env-var-SEEDED row was deliberately made overwritable by an operator POSTing a
+            // DIFFERENT machine under the same defaulted id, on the reasoning that a seeded row is not an
+            // operator's own configuration and so has nothing of theirs to protect. Provenance is the fact
+            // that separates the two callers and this class does not hold it, so the refusal here cannot
+            // make that exception. Two tests were pinning the old answer and BOTH are corrected in this
+            // same change, with their previous text kept verbatim:
+            //   * ConnectorEndpointsEnvSeedingSideEffectsTests.
+            //     PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s
+            //   * ConnectorRegistryTests.TheRegistryAndTheOutOfLockLatch_DisagreeOnExactlyOneIncumbentShape
+            // 🔴 The SECOND of those was not named by item 63, by any of the three pricings, or by the
+            // ruling: every one of them priced direction B as reddening exactly ONE test. Measured on
+            // 2026-08-24: it reddens TWO, and the second is the table that exists to record that the
+            // registry and the latch disagree — after this change they AGREE, which is the point.
+            //
+            // 🔴 AND WHAT DIRECTION B DOES NOT DO, because §63.6.3 is still true and the ruling does not
+            // repeal it: item 63's headline case is TWO registrations under one id the OPERATOR TYPED, i.e.
+            // the SAME machine on both sides. This refusal does not fire there — `_entries[id] = …` below
+            // still replaces, silently, for exactly the population §63.3 calls the likelier one. Direction B
+            // buys the DIFFERENT-machine case and buys nothing for the same-machine one.
+            //
+            // Why this does NOT become the 500 that killed direction (1): the value is a `false` return, not
+            // a throw, and ConnectorEndpoints already checks it — that branch compensates the store row and
+            // answers 409 with a message naming the incumbent. Re-measured 2026-08-24: the ordinary
+            // idempotent-update path (same id, same machine) does not reach this refusal at all.
+            if (claim is not null && _entries.TryGetValue(id, out var heldUnderThisId)
+                && heldUnderThisId.MachineCode is not null
+                && !string.Equals(heldUnderThisId.MachineCode, claim, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
             if (claim is not null)
             {
                 foreach (var (existingId, existingEntry) in _entries)
