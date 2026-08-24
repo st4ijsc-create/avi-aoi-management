@@ -112,6 +112,14 @@ one-off. `uploads/` is deliberately **excluded** — alone it is **58,940 files 
    **633** commits touched `tools/machine-simulator` and **0** touched any of the five directories.
    The worst case for a single switch is the same **1.35 s** the materialisation cost.
 
+📌 **One hazard that was tested and does NOT exist, recorded so nobody has to fear it again.** A
+narrowing or re-applying cone does **not** delete untracked files that sit in EXCLUDED directories.
+Measured 2026-08-24 with a probe file placed under two excluded top-level directories, against
+git 2.55: `git sparse-checkout reapply`, `git sparse-checkout add`, `git sparse-checkout set` and
+`git switch` (away and back) all left the probe in place, each printing
+`warning: directory 'X/' contains untracked files, but is not in the sparse-checkout cone`. Git warns
+and preserves. Your scratch notes in an excluded directory survive this command.
+
 To go back: `git sparse-checkout set examples/device-client tools/machine-simulator`.
 
 ---

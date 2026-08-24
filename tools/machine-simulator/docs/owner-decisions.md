@@ -3204,6 +3204,14 @@ checkout **mỗi lần đổi nhánh**, cho MỌI người dùng cây"*. Đo tr�
 nhiễu.** Lý do là cơ học và phải nói ra thay vì để người đọc tự đoán: **`git switch` chỉ ghi những
 file KHÁC NHAU giữa hai commit.** 2 729 file mới nằm im ở cả hai đầu, nên git không chạm chúng.
 
+📎 **MỘT CÁI GIÁ NGƯỜI TA CÓ THỂ SỢ, ĐÃ THỬ, VÀ NÓ KHÔNG TỒN TẠI.** Một câu hỏi hợp lý về hướng B là
+*"nới rồi thu nón có XOÁ ghi chú chưa theo dõi của tôi trong thư mục bị loại không?"* **Không.** Đo
+bằng một file thăm dò đặt dưới **hai** thư mục cấp một bị loại (`.superpowers/`, `apidocs/`), git
+2.55: `git sparse-checkout reapply`, `add`, `set` và `git switch` (đi rồi về) — **cả bốn giữ nguyên
+file**, mỗi lần in `warning: directory 'X/' contains untracked files, but is not in the
+sparse-checkout cone`. **Git cảnh báo và giữ.** Ghi lại vì một cái giá bị đồn mà không ai thử cũng
+làm người ta không dám bấm, y như một cái giá thật.
+
 **Cái giá THẬT, đo được, và nó là một đơn vị khác:** **1 348 ms MỘT LẦN** cho lần vật chất hoá
 (`git sparse-checkout add`), cộng **65,42 MiB** đĩa **vĩnh viễn**. Cận trên của một lần đổi nhánh xấu
 nhất — một commit đổi cả 2 729 file — cũng chính là **1 348 ms**.
