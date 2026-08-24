@@ -71,6 +71,19 @@ export type ResultBucket = "ok" | "ng" | "ntf";
  * (overallResult 'NTF' OR a confirmed-NTF timestamp), then NG, else OK. This is
  * the single definition; the CASE sums in rollupDailyStatisticsNow mirror it so
  * ok+ng+ntf always equals COUNT(*).
+ *
+ * ⚠ The `row.ntfConfirmedAt != null` half of the OR is a DELIBERATE defensive
+ * branch, not dead code — it would only ever fire if `ntfConfirmedAt` got set
+ * on a row whose `overallResult` was never (or no longer) 'NTF'. The single
+ * write path (`updateProductInspectionNTF`, server/db/inspection.ts) sets both
+ * columns in the SAME UPDATE, so today the two columns never actually diverge
+ * (measured 2026-08-24 on the dev DB: 0/244 NTF-bucketed rows rely on this
+ * branch — every one of them already carries overallResult='NTF'). The
+ * invariant that backs this branch's right to exist is asserted, not assumed,
+ * at server/db/ntfCotKhongLech.db.test.ts — it goes RED the moment some future
+ * write sets one column without the other. See also
+ * server/db/ntfGhiKemCensus.test.ts, which polices every `.set(...)`/`UPDATE`
+ * write site in server/ for the same pairing.
  */
 export function classifyInspectionResult(row: InspectionResultRow): ResultBucket {
   if (row.overallResult === "NTF" || row.ntfConfirmedAt != null) return "ntf";
