@@ -15,9 +15,17 @@ using Xunit;
 /// machine. (ii) <see cref="Undeclared_screwdrive_is_reported_by_the_loader_and_still_diverges"/> reddens
 /// if the loader stops saying so, if the sentence stops naming both candidates, or if the undeclared
 /// divergence silently changes size. (iii)
-/// <see cref="Shipped_roster_declares_nothing_and_the_numbers_it_reports_have_not_moved"/> reddens if any
-/// shipped SCREWDRIVE acquires a declaration or if either wiring's band moves off the values item 41 §41.5
-/// recorded.</para>
+/// <see cref="Shipped_roster_declares_an_assumed_band_and_says_so_where_the_number_lives"/> reddens if a
+/// shipped SCREWDRIVE loses its declaration, if the declared band moves off <c>12.0 ± 1.2</c>, if the two
+/// entries disagree, or if the ASSUMED label is dropped from the fastener code.</para>
+///
+/// <para>🔴 <b>2026-08-24 — (iii) IS THE SAME TEST INVERTED, AND ITS OLD FORM FIRED FIRST.</b> Until the
+/// owner's ruling of that date it was <c>Shipped_roster_declares_nothing_and_the_numbers_it_reports_have_
+/// not_moved</c>, and it reddened on the one event its own summary named: a band being written into
+/// <c>fleet.json</c>. That is exactly what item 41 direction A did. It is inverted rather than removed, and
+/// the two paragraphs below — "it exercises argument shape, not host processes" and "it does not settle
+/// 12.0 vs 1.35" — both still stand, the second in a narrower form: the OWNER settled it, no measurement
+/// did.</para>
 ///
 /// <para>🔴 <b>WHAT THIS FILE DOES NOT MEASURE, said where the results appear.</b> It exercises the
 /// <b>argument shape</b> the three hosts use, not the three host processes. Measured at commit
@@ -31,9 +39,13 @@ using Xunit;
 /// <c>scripts/verify-suites.sh</c>'s five suites, so it is reached in this file only through the delegate
 /// it forwards to.</para>
 ///
-/// <para>🔴 <b>And it does not settle 12.0 vs 1.35.</b> Test (iii) PINS the undeclared divergence rather
-/// than removing it, on purpose: which screw the shipped roster drives is the owner's to declare, and a
-/// test that quietly picked one would have made that choice on their behalf.</para>
+/// <para>🔴 <b>And it does not settle 12.0 vs 1.35.</b> Test (iii) used to PIN the undeclared divergence
+/// rather than remove it, on purpose: which screw the shipped roster drives was the owner's to declare, and
+/// a test that quietly picked one would have made that choice on their behalf. The owner declared it on
+/// 2026-08-24 and gave the reason — the numbers are assumptions used for test — so (iii) now pins the
+/// DECLARATION. Nothing here measures that 12.0 is physically right, and nothing can:
+/// <see cref="An_out_of_range_declaration_is_rejected_never_clamped"/> still says at the guardrail that
+/// both candidates are inside the legal range.</para>
 /// </summary>
 public class ScrewTorqueDeclarationTests
 {
@@ -100,7 +112,13 @@ public class ScrewTorqueDeclarationTests
     /// a machine-scoped adjustment set, the adjustment wins — this is the rung-1-over-rung-2 precedence
     /// <c>ScrewdriveSim.ResolveTorqueBand</c> documents, and it is what keeps
     /// <c>MachineConfigDrivesSimulationTests</c>' "tighten the tolerance ⇒ more NG" property alive for a
-    /// declared machine. Reddens if a declaration were ever made to outrank an operator.</summary>
+    /// declared machine. Reddens if a declaration were ever made to outrank an operator.
+    ///
+    /// <para>🔴 <b>Since 2026-08-24 it also runs against the SHIPPED roster entry, and that is not
+    /// decoration.</b> Item 41's ruling wrote a band into <c>fleet.json</c>; the precedence is keyed on
+    /// <c>EffectiveParameter.Source</c> rather than on the VALUE, so it had to be shown that a real
+    /// declaration on a real roster entry still loses to a real operator adjustment. A value-keyed
+    /// implementation would pass the hand-built case above and could still lose this one.</para></summary>
     [Fact]
     public void An_operator_adjustment_still_outranks_the_roster_declaration()
     {
@@ -118,6 +136,17 @@ public class ScrewTorqueDeclarationTests
 
         Assert.Equal(6.25, after.Nominal);
         Assert.Equal(6.25 - 0.40, after.Lsl!.Value, 9);
+
+        // The same property on the entry the product actually ships, now that it declares one.
+        var shipped = FleetConfig.Load(Path.Combine(MachineSimulatorRoot(), "fleet.json"))
+            .First(m => m.MachineType == "SCREWDRIVE");
+        var shippedStore = new MachineConfigStore(TempDir());
+        shippedStore.Ensure(shipped.Code, MachineParameterSchema.ScrewProgram);
+
+        Assert.Equal(12.0, Torque(WiredHost(shipped, seed, shippedStore), 1).Nominal);
+
+        shippedStore.SetAdjustment(shipped.Code, "torqueTarget", 9.75, AdjustmentScope.Machine, null, "test", "operator wins on the shipped roster too");
+        Assert.Equal(9.75, Torque(WiredHost(shipped, seed, shippedStore), 1).Nominal);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -180,36 +209,98 @@ public class ScrewTorqueDeclarationTests
     // (iii) THE SHIPPED ROSTER — not one number moved
     // ─────────────────────────────────────────────────────────────────────
 
-    /// <summary>Property (iii). The roster this product ships declares NOTHING, and both of its SCREWDRIVE
-    /// entries still report exactly the bands <c>docs/owner-decisions.md</c> §41.5 recorded before item 41
-    /// was executed. This is the assertion that would have caught the fix choosing a screw on the owner's
-    /// behalf: declaring a band in <c>fleet.json</c> — either band — reddens this test.</summary>
+    /// <summary>🔴 <b>THIS TEST WENT RED ON 2026-08-24, EXACTLY AS ITS OLD SUMMARY PREDICTED IT WOULD, AND
+    /// IS REWRITTEN WITH THE REASON.</b> It used to be
+    /// <c>Shipped_roster_declares_nothing_and_the_numbers_it_reports_have_not_moved</c>, and its own words
+    /// were: <i>"This is the assertion that would have caught the fix choosing a screw on the owner's
+    /// behalf: declaring a band in <c>fleet.json</c> — either band — reddens this test."</i> The owner
+    /// declared the screw on 2026-08-24 (item 41, direction A), so the day that sentence names has arrived
+    /// and the guard fired on the one event it was built for. It is inverted here rather than deleted,
+    /// because the property worth pinning did not go away — it moved from <i>"nothing is declared"</i> to
+    /// <i>"exactly this is declared, and it is labelled as an assumption"</i>.
+    ///
+    /// <para><b>What reddens it now:</b> a shipped SCREWDRIVE losing its declaration, a band moving off
+    /// <c>12.0 ± 1.2</c>, the two entries disagreeing with each other, or the ASSUMED label being quietly
+    /// dropped from the fastener code so the roster starts reading as a commissioning fact.</para>
+    ///
+    /// <para>🔴 <b>WHAT IT DOES NOT SAY.</b> It does not say 12.0 is correct. Both 12.0 and 1.35 were legal
+    /// before and are legal now (see <see cref="An_out_of_range_declaration_is_rejected_never_clamped"/>);
+    /// the owner chose, and the ruling's own reason was that these numbers are assumptions used for test.
+    /// This test pins the CHOICE, not its truth.</para></summary>
     [Fact]
-    public void Shipped_roster_declares_nothing_and_the_numbers_it_reports_have_not_moved()
+    public void Shipped_roster_declares_an_assumed_band_and_says_so_where_the_number_lives()
     {
         var path = Path.Combine(MachineSimulatorRoot(), "fleet.json");
         var machines = FleetConfig.Load(path);
         var screwdrivers = machines.Where(m => m.MachineType == "SCREWDRIVE").ToList();
 
         Assert.Equal(2, screwdrivers.Count);
-        Assert.All(screwdrivers, m => Assert.Null(m.ScrewTorque));
+        Assert.All(screwdrivers, m =>
+        {
+            var spec = Assert.IsType<ScrewTorqueSpec>(m.ScrewTorque);
+            Assert.Equal(12.0, spec.TargetNm);
+            Assert.Equal(1.2, spec.ToleranceNm);
+
+            // 🔴 The assumption label is CHECKED, not merely written. Item 41's ruling is that these
+            // numbers are assumptions for test; the fastener code is the one member of the declaration a
+            // human reads and no draw consumes, so it is where that has to be legible.
+            Assert.Contains("ASSUMED", spec.ScrewCode, StringComparison.Ordinal);
+        });
 
         var seed = 1000;
         foreach (var d in screwdrivers)
         {
+            // Both host wirings, one physics — the whole point of item 41, asserted on the SHIPPED roster
+            // rather than on a hand-built descriptor.
             var unwired = Torque(UnwiredHost(d, seed), 1);
-            Assert.Equal(12.0, unwired.Nominal);
-            Assert.Equal(10.8, unwired.Lsl!.Value, 9);
-            Assert.Equal(13.2, unwired.Usl!.Value, 9);
-            Assert.Equal("Nm", unwired.Unit);
-
             var wired = Torque(WiredHost(d, seed, new MachineConfigStore(TempDir())), 1);
-            Assert.Equal(1.35, wired.Nominal);
-            Assert.Equal(1.20, wired.Lsl!.Value, 9);
-            Assert.Equal(1.50, wired.Usl!.Value, 9);
 
+            foreach (var m in new[] { unwired, wired })
+            {
+                Assert.Equal(12.0, m.Nominal);
+                Assert.Equal(10.8, m.Lsl!.Value, 9);
+                Assert.Equal(13.2, m.Usl!.Value, 9);
+                Assert.Equal("Nm", m.Unit);
+            }
+
+            Assert.Equal(unwired.Value, wired.Value, 12);
             seed++;
         }
+    }
+
+    /// <summary>🔴 <b>THE ONE NUMBER THE DECLARATION DID MOVE ON THE UN-WIRED HOSTS, pinned because the
+    /// obvious summary of item 41's direction A — "only the API host's number moves" — is NOT true to the
+    /// last digit.</b> The band <c>[10.8, 13.2]</c> and the nominal 12.0 are byte-identical to what
+    /// <c>EdgeWorker</c> and <c>FleetService</c> reported before the declaration. The GENERATED SPREAD is
+    /// not: an undeclared un-wired machine used this class's absolute <see cref="ScrewdriveSim"/> constant
+    /// of 0.4 Nm, while every declared machine derives σ as <c>ProcessNoiseFraction</c> (0.03) of the
+    /// target — <c>12.0 × 0.03 = 0.36</c>. So the two un-wired hosts draw from a distribution 10% tighter
+    /// than before, which is a real, small, one-directional change to a number that crosses the wire.
+    ///
+    /// <para>It is asserted here rather than mentioned, because a difference nobody pins is a difference
+    /// the next task will discover as a surprise. Reddens if that asymmetry is "tidied up" in either
+    /// direction.</para></summary>
+    [Fact]
+    public void Declaring_a_band_also_tightens_the_un_wired_hosts_spread_from_an_absolute_to_a_fraction()
+    {
+        var machines = FleetConfig.Load(Path.Combine(MachineSimulatorRoot(), "fleet.json"));
+        var declared = machines.First(m => m.MachineType == "SCREWDRIVE");
+        var undeclared = declared with { ScrewTorque = null };
+
+        Assert.Equal(0.36, StdDevOfTorque(undeclared with { ScrewTorque = declared.ScrewTorque }), 2);
+        Assert.Equal(0.40, StdDevOfTorque(undeclared), 2);
+    }
+
+    /// <summary>Sample standard deviation of the torque an UN-WIRED host draws for <paramref name="d"/>,
+    /// over enough cycles that the estimate is stable to two decimals.</summary>
+    /// <param name="d">The descriptor to build an un-wired simulator from.</param>
+    /// <returns>The observed standard deviation, in Nm.</returns>
+    private static double StdDevOfTorque(MachineDescriptor d)
+    {
+        const int n = 20_000;
+        var values = Enumerable.Range(1, n).Select(c => Torque(UnwiredHost(d, 1000), c).Value).ToList();
+        var mean = values.Average();
+        return Math.Sqrt(values.Sum(v => (v - mean) * (v - mean)) / n);
     }
 
     // ─────────────────────────────────────────────────────────────────────

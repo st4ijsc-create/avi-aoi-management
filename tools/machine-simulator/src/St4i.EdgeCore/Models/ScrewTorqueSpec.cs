@@ -46,7 +46,28 @@ namespace St4i.EdgeCore.Models;
 /// catalogue and inventing one would be a second, unowned vocabulary (the same reason
 /// <see cref="MachineDescriptor.MachineType"/> is a free string). It is REQUIRED and must be non-blank —
 /// a torque band with no fastener name is half a declaration, and the half it is missing is the half a
-/// human reads. It takes no part in any draw; it is the audit trail for WHY the band is what it is.</param>
+/// human reads. It takes no part in any draw; it is the audit trail for WHY the band is what it is.
+///
+/// <para>🔴 <b>OWNER'S RULING 2026-08-24 — THE SHIPPED ROSTER NOW DECLARES, AND ITS DECLARATION SAYS IN
+/// THIS FIELD THAT IT IS AN ASSUMPTION.</b> The ruling is quoted verbatim in
+/// <c>docs/owner-decisions.md</c> item 41: <i>"Các còn số đang có đều là giả định và dùng để test nên ko
+/// cần quan tâm tính chính xác của nó, hãy đảm bảo rằng logic code của chức năng trong các trường hợp là
+/// đúng là được"</i>. So <c>fleet.json</c>'s two SCREWDRIVE entries carry
+/// <c>"screwCode": "M6-ASSUMED-DEMO-ROSTER"</c> rather than a bare <c>"M6"</c>, and the shape was inferred
+/// from WHO READS IT rather than chosen for convenience: this field is the only member of the declaration
+/// that takes no part in a draw, is required to be non-blank, and exists to say why the band is what it is
+/// — so it is the one place where a commissioning engineer opening the roster cannot read the number
+/// WITHOUT reading that it is assumed. JSON has no comments, the numeric members are range-checked rather
+/// than annotated, and a sibling key nothing reads would be exactly the unread footnote this is meant not
+/// to be. It is pinned by
+/// <c>ScrewTorqueDeclarationTests.Shipped_roster_declares_an_assumed_band_and_says_so_where_the_number_lives</c>,
+/// so the label is CHECKED rather than merely written.</para>
+///
+/// <para><b>What that label does NOT claim, said where the label is.</b> It says the BAND is an assumption
+/// of this demo roster; it does not say M6 is wrong, and it is not a schema-level flag — nothing in this
+/// type, in <see cref="Infrastructure.FleetConfig"/> or in
+/// <see cref="Drivers.Simulators.ScrewdriveSim"/> parses the string or behaves differently because of it.
+/// A deployment that knows its fastener writes its own code here and the label disappears with it.</para></param>
 /// <param name="TargetNm">The torque this machine aims for, in NEWTON-METRES. Validated against the same
 /// hard band <see cref="MachineParameterSchema"/> enforces for <c>screw_program</c>'s <c>torqueTarget</c>
 /// (0.10–20.00 Nm) — the SAME rule the REST write path uses, not a second one, so a value legal here is

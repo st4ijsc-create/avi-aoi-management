@@ -14,6 +14,27 @@ public sealed class FunctionalTestSim : SimulatorBase
     private const double ScoreLsl = 90.0, ScoreUsl = 100.0;
     private const double CycleTimeMeanMs = 1200.0, CycleTimeStdMs = 80.0;
 
+    /// <summary>🔴 <b>An ASSUMED warn-band width in SCORE POINTS — owner's ruling 2026-08-24, item 61,
+    /// direction A.</b> 1.5 points is not a new number: it is exactly the margin the two-sided call
+    /// produced before this fix (<c>(100 − 90) × 0.15</c>), kept deliberately so that the ONLY thing this
+    /// change moves is WHICH edge the band hugs. Naming it as a constant also retires a defect item 61
+    /// records about the old arrangement — that 1.5 existed nowhere in the tree as a literal, so anybody
+    /// searching for it concluded the claim was wrong.
+    ///
+    /// <para><b>Why it has to be restated at all, measured rather than assumed.</b>
+    /// <c>VerdictHelper.MarginOf</c>'s one-sided branch scales the margin off the seeded bound's own
+    /// MAGNITUDE — <c>max(|bound| × fraction, 0.01)</c> — which is right for a leak rate whose limit (20)
+    /// is the same order as its range, and wrong for a score whose limit (90) is nine times its range (10).
+    /// At the default 0.15 the one-sided margin would be 13.5 points, so the warn band would swallow
+    /// <c>[90, 103.5]</c> and EVERY reading would warn. That is measured, not feared, and it is why
+    /// direction A costs two arguments at the call site rather than one.</para></summary>
+    private const double AssumedScoreWarnBandPoints = 1.5;
+
+    /// <summary>The fraction <see cref="VerdictHelper.Evaluate"/> is handed so its one-sided branch yields
+    /// <see cref="AssumedScoreWarnBandPoints"/> against a bound of <see cref="ScoreLsl"/>. Derived, not
+    /// authored, so the two cannot drift apart: change the band width and this follows.</summary>
+    private const double ScoreWarnMarginFraction = AssumedScoreWarnBandPoints / ScoreLsl;
+
     private readonly double _targetPassRate;
 
     /// <summary>Builds a FUNCTIONAL_TEST model. It wires no <c>MachineConfigStore</c>, and machine type
@@ -83,12 +104,41 @@ public sealed class FunctionalTestSim : SimulatorBase
     /// So a reading can carry a 99% functional score and a Fail verdict, and the metric a reader would use
     /// to explain the failure is the one the failure did not come from.</para>
     ///
-    /// <para>🔴 <b>On the score path, Warn is the ordinary outcome rather than the exceptional one.</b> The
-    /// band is <c>[90, 100]</c>, so <c>VerdictHelper</c>'s margin is 1.5 and any score at or above 98.5
-    /// warns for hugging the upper limit — with a mean of 98 that is about 42% of the cycles the trial lets
-    /// through, and the clamp at 100 lands exactly on the USL, which warns rather than fails. A score-driven
-    /// Fail needs to fall below 88.5, which is 3.8 standard deviations out; in practice essentially every
-    /// Fail this simulator emits comes from the trial, not from the score.</para>
+    /// <para>🔴 <b>OWNER'S RULING 2026-08-24, item 61 — DIRECTION A: THE SCORE IS JUDGED AGAINST A
+    /// ONE-SIDED BAND, AND THE SIDE THAT SURVIVES IS THE LOWER ONE.</b> Quoted verbatim from the ruling:
+    /// <i>"Các còn số đang có đều là giả định và dùng để test nên ko cần quan tâm tính chính xác của nó,
+    /// hãy đảm bảo rằng logic code của chức năng trong các trường hợp là đúng là được"</i>. Until this fix
+    /// the call passed <c>[90, 100]</c>, so the margin was 1.5 and any score at or above 98.5 warned for
+    /// hugging the UPPER limit — including the clamp at exactly 100, which is the best result the machine
+    /// can report. Measured before the fix on the shipped <c>FCT-01</c> descriptor, seed 11, 100 000
+    /// cycles: <b>Warn on 41 220 cycles = 41.220%</b>, of which the clamp at 100 accounted for 21.123% of
+    /// all cycles. 100 is a SCALE CEILING, not an acceptance limit; 90 is the acceptance limit. So the
+    /// verdict now seeds only the LSL, exactly as <see cref="LeakTestSim"/>'s fix seeds only the USL — the
+    /// same rule ("drop the bound that is physics, keep the bound that is spec"), applied by ROLE rather
+    /// than by side.</para>
+    ///
+    /// <para>🔴 <b>WHICH EXEMPTION THIS TOUCHES, NAMED RATHER THAN WALKED PAST.</b> One of the three
+    /// standing exemptions is crossed, WITH PERMISSION granted 2026-08-24, for the reason the ruling gives:
+    /// <b>the MQTT payload</b>. <c>Normalizer.VerdictToResult</c> carries the verdict out as <c>result</c>,
+    /// so that field moves on this machine. It moves NO OEE number (item 2: Pass and Warn are both the GOOD
+    /// column, and the trial-driven Fail rate is untouched) and it does NOT touch the third exemption, the
+    /// SHAPE of the data on the wire — no field is added, removed or retyped, and the published
+    /// <c>MetricSample</c> below is byte-identical to what it was.</para>
+    ///
+    /// <para>🔴 <b>AND HERE IS WHAT THE FIX DELIBERATELY LEAVES STANDING, because removing it would decide
+    /// an item that is still on the owner's shelf.</b> The published metric still declares
+    /// <c>Lsl = 90, Usl = 100</c> while the verdict is computed from ONE of them, so a reader who
+    /// re-derives the verdict from the limits this reading publishes gets the PRE-FIX answer. That is
+    /// precisely the residue open as owner-decisions item 62 against <see cref="LeakTestSim"/>, and this
+    /// fix ADDS A SECOND MEMBER to its population rather than resolving it: item 62 is not in the group
+    /// this ruling covers, and dropping the published ceiling here would answer it by side effect. Pinned,
+    /// not hidden, by
+    /// <c>AssumedProcessBandTests.Item61_Guard_ThePublishedScoreStillDeclaresACeilingTheVerdictDoesNotUse</c>.</para>
+    ///
+    /// <para><b>What the score path answers now.</b> Fail below 88.5, Warn in <c>[88.5, 91.5]</c>, Pass
+    /// above 91.5 — so a perfect 100 passes, and a score-driven Fail is still the rare event it was (3.8
+    /// standard deviations out). Essentially every Fail this simulator emits still comes from the trial,
+    /// not from the score, and that half of the old sentence is unchanged and still true.</para>
     ///
     /// <para><c>cycle_time</c> is published with no limits and takes no part in either path. Step type is
     /// the descriptor's own or the literal <c>functional_test</c>.</para></summary>
@@ -107,7 +157,7 @@ public sealed class FunctionalTestSim : SimulatorBase
         // that wins even if the score itself looks fine — mirrors a functional tester whose overall
         // result depends on many discrete sub-checks (booleans), not just one continuous metric.
         reading.Verdict = passRoll <= _targetPassRate
-            ? VerdictHelper.Evaluate(score, ScoreLsl, ScoreUsl)
+            ? VerdictHelper.Evaluate(score, ScoreLsl, usl: null, warnMarginFraction: ScoreWarnMarginFraction)
             : Verdict.Fail;
         return reading;
     }

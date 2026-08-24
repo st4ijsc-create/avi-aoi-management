@@ -8,7 +8,12 @@
     "driverKind": "simulated",
     "recipeCode": "RC-SCRW-A",
     "mappingProfile": "screwdrive",
-    "cycleSeconds": 0.8
+    "cycleSeconds": 0.8,
+    "screwTorque": {
+      "screwCode": "M6-ASSUMED-DEMO-ROSTER",
+      "targetNm": 12.0,
+      "toleranceNm": 1.2
+    }
   },
   {
     "code": "SCRW-02",
@@ -19,7 +24,12 @@
     "driverKind": "simulated",
     "recipeCode": "RC-SCRW-A",
     "mappingProfile": "screwdrive",
-    "cycleSeconds": 1.0
+    "cycleSeconds": 1.0,
+    "screwTorque": {
+      "screwCode": "M6-ASSUMED-DEMO-ROSTER",
+      "targetNm": 12.0,
+      "toleranceNm": 1.2
+    }
   },
   {
     "code": "DISP-01",

@@ -136,12 +136,32 @@ public class SimulatorTests
         Assert.Equal("SN-000001", r.SerialNumber);
     }
 
+    /// <summary>🔴 <b>THIS TEST WENT RED ON 2026-08-24 AND IS REWRITTEN WITH THE REASON, not deleted.</b>
+    /// It used to be <c>Assembly_has_no_seeded_spec_so_verdict_is_warn_only</c>, and it asserted
+    /// <see cref="Verdict.Warn"/> for one cycle of <see cref="AssemblySim"/> — pinning the property that
+    /// the class had exactly ONE reachable verdict. Owner's ruling 2026-08-24, item 43, direction A: the
+    /// press force is now judged against a band declared as an assumption, so all three verdicts are
+    /// reachable and the old assertion is false by design. The old name is written out here because the
+    /// name was the claim.
+    ///
+    /// <para>What is asserted instead is the property the rewrite is FOR — this is a smoke check that the
+    /// band reaches a draw at all. The band's edges, the reachability of each arm and the OEE shift are the
+    /// business of <c>AssumedProcessBandTests</c>, which is the witness; this stays where it is because
+    /// <c>SimulatorTests</c> is the file a reader consults for "what does each simulator answer".</para>
+    /// </summary>
     [Fact]
-    public void Assembly_has_no_seeded_spec_so_verdict_is_warn_only()
+    public void Assembly_judges_press_force_against_an_assumed_band_so_more_than_warn_is_reachable()
     {
         var d = new MachineDescriptor("ASM-01", "SN", DeviceClass.Automation, "ASSEMBLY", "press_fit", DriverKinds.Simulated, "RC1", null, 1.0);
-        var r = new AssemblySim(d, seed: 5).NextCycle(1);
-        Assert.Equal(Verdict.Warn, r.Verdict);
+        var sim = new AssemblySim(d, seed: 5);
+
+        var metric = sim.NextCycle(1).Metrics.Single(m => m.Name == "press_force");
+        Assert.Equal(400.0, metric.Lsl);
+        Assert.Equal(500.0, metric.Usl);
+
+        var verdicts = Enumerable.Range(1, 2000).Select(c => sim.NextCycle(c).Verdict).ToHashSet();
+        Assert.Contains(Verdict.Pass, verdicts);
+        Assert.Contains(Verdict.Warn, verdicts);
     }
 
     [Fact]
