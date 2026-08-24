@@ -1159,6 +1159,26 @@ cách để bên kia tự kiểm** bản họ nhận được. 🔴 **Nhân ch�
 tập khoá **đề nghị**, không khẳng định **văn xuôi mô tả tập ấy**; đúng cái trần mà doc comment của
 chính nó đã khai, và là bằng chứng rằng cái trần ấy có thật chứ không phải một lời khiêm tốn.
 
+📎 🔴 **VÀ MỘT PHÉP ĐẾM THỨ HAI TRONG CÙNG TÀI LIỆU, tìm ra bằng cách kiểm PHÉP CỘNG của chính nó:**
+tiêu đề §4.2 ghi *"(20 khoá)"* trong khi mục ấy chứa **21** (`positionZ`, bốn `height*`, bốn `area*`,
+bốn `volume*`, `coplanarityMax`, `warpageMax`, `voidPctMax`, `offsetXMax`, `offsetYMax`, `tiltMax`,
+`thicknessMin`, `thicknessMax`). Cộng lại: 4 + **20** + 2 + 1 = **27 ≠ 28**. Sửa 20 → 21, và **thêm
+dòng kiểm chéo `4 + 21 + 2 + 1 = 28` vào §2** để lần sau phép cộng sai **tự lộ ra ở chỗ người đọc
+đang đứng**. **HAI phép đếm sai trong MỘT tài liệu, trong MỘT nhiệm vụ, ở đúng bề mặt duy nhất rời
+khỏi tổ chức.**
+
+⇒ **Vì thế nhân chứng được nới ĐÚNG MỘT NẤC, không hơn:** `[Fact]` thứ tư
+`Every_proposed_key_is_named_in_the_companion_document` đọc **cả hai** file và buộc **mọi** khoá đề
+nghị cùng **mọi** lá `lighting` phải được **NÊU TÊN** trong `.md` như một token backtick — khớp theo
+**span backtick** chứ không theo cấu trúc bảng, vì tài liệu là văn xuôi và **một phép kiểm gãy vì
+định dạng là một phép kiểm bị xoá**. Chiều ngược lại **cố ý không khẳng định** (tài liệu backtick cả
+tên kiểu, đường dẫn, lời gọi thư viện). **Cặp đối chứng:** gỡ backtick quanh `warpageMax` trong `.md`
+⇒ **đúng 1 đỏ**, ở đúng `[Fact]` ấy, **gọi đúng tên**.
+
+🔴 **VÀ NÓ VẪN KHÔNG BẮT ĐƯỢC HAI LỖI VỪA KỂ** — nó ghim rằng khoá **được nêu tên**, không ghim cột
+đơn vị/miền/ai soạn bên cạnh, và **không ghim một phép đếm nào tài liệu tự nói về mình**. Nói ra ở
+chỗ kết quả hiện ra, chứ không để người sau tưởng phép kiểm này rộng hơn thực tế.
+
 #### Vì sao mục này **Ở LẠI PHẦN I**
 
 **Bàn giao không phải chấp thuận.** Cái mục này chờ là **sự đồng ý của một bên thứ ba**, và uỷ quyền

@@ -28,8 +28,10 @@ namespace St4i.EngineApi.Tests;
 /// <list type="bullet">
 ///   <item>It says NOTHING about whether the SYNAPSE server accepts, or will ever accept, any of these
 ///   keys. The proposal is an ASK; a green run means the ask is internally consistent, not agreed.</item>
-///   <item>It does not read the accompanying <c>.md</c> at all. Every unit, range and convention
-///   described there is unchecked prose — this instrument only pins the KEY SETS.</item>
+///   <item>Of the accompanying <c>.md</c> it reads exactly ONE thing: that every key in the sample is
+///   NAMED there. The units, ranges, authorship and "why it must travel" columns beside those names are
+///   unchecked prose, and so is every count the document states about itself — this task shipped two
+///   drafts whose own arithmetic contradicted itself two sentences apart, and neither was caught here.</item>
 ///   <item>It does not check VALUES. A key carrying a nonsensical number passes here.</item>
 ///   <item>It cannot see the push path's own code. The "already in the contract" side is read off
 ///   <see cref="SyncPointDto"/>'s serialized shape, so a key that DTO declares but
@@ -234,5 +236,57 @@ public sealed class HandoffSyncPointsProposalTests
         // 27 on the point + 12 in the shot = the 39 the document commits to. Asserted as an arithmetic
         // identity over the two measured sets rather than as a literal, so it cannot disagree with them.
         Assert.Equal(39, MissingPushSlots().Count - 1 + domainLeaves.Count);
+    }
+
+    /// <summary>
+    /// 🔴 THE ONE THING PINNED ABOUT THE PROSE, and it exists because the failure it guards HAPPENED:
+    /// a key can be added to the JSON and the companion's field table left behind, and then the far team
+    /// implements a column with no idea what belongs in it. So every key the sample proposes, and every
+    /// lighting leaf it demonstrates, must be NAMED in the companion as a backticked token.
+    /// <para>Matching is on backticked spans rather than on table structure on purpose: the document is
+    /// Vietnamese prose whose tables will be reformatted, and a check that breaks on formatting is a check
+    /// that gets deleted. The reverse direction is deliberately NOT asserted — the companion legitimately
+    /// backticks type names, file paths and library calls, so "a backticked token that is not a key" is
+    /// the normal case there and flagging it would produce noise instead of signal.</para>
+    /// </summary>
+    [Fact]
+    public void Every_proposed_key_is_named_in_the_companion_document()
+    {
+        var companion = Path.Combine(
+            MachineSimulatorRoot(), "docs", "handoff", "2026-08-24-sync-points-push-fields.md");
+        Assert.True(
+            File.Exists(companion),
+            $"The companion document is missing at \"{companion}\". The JSON carries no comments by " +
+            "design, so without this file the sample is a wall of keys with no stated units, ranges or " +
+            "reasons — which is the shape that costs the far team a round trip.");
+
+        var prose = File.ReadAllText(companion);
+        var named = new HashSet<string>(StringComparer.Ordinal);
+        foreach (System.Text.RegularExpressions.Match m in
+                 System.Text.RegularExpressions.Regex.Matches(prose, "`([^`\r\n]+)`"))
+        {
+            named.Add(m.Groups[1].Value);
+        }
+
+        using var doc = ReadProposal();
+        var point = doc.RootElement.GetProperty("points")[0];
+        var contract = PushContractKeys();
+
+        var wanted = point.EnumerateObject().Select(p => p.Name).Where(k => !contract.Contains(k)).ToList();
+        foreach (var shot in point.GetProperty("lighting").EnumerateArray())
+        {
+            wanted.AddRange(shot.EnumerateObject().Select(p => p.Name));
+        }
+
+        var undocumented = wanted.Distinct(StringComparer.Ordinal)
+            .Where(k => !named.Contains(k))
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(
+            undocumented.Count == 0,
+            $"These keys are proposed in the JSON but never named in the companion: " +
+            $"{string.Join(", ", undocumented)}. A key with no entry beside it is a column the far team " +
+            "has to guess the meaning, unit and range of — and guessing wrong there is silent.");
     }
 }

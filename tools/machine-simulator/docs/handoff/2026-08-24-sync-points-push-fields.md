@@ -45,7 +45,7 @@ mảng object**, nên nếu đếm tới **lá** thì con số khác:
 * **27 khoá vô hướng / JSON tự do** trên object `point`, **cộng**
 * **1 khoá mảng** (`lighting`), mà **mỗi phần tử có 12 khoá lá**.
 
-⇒ **27 + 12 = 39 khoá lá.**
+⇒ **27 + 12 = 39 khoá lá.** (Kiểm chéo với §4: **4 + 21 + 2 + 1 = 28** khoá trên `point`.)
 
 🔴 **BẢN ĐỀ NGHỊ NÀY DÙNG MỨC LÁ: 39.** Nghĩa là các anh cần **hai** schema, không phải một:
 **28 khoá thêm vào `measurementPointSyncSchema`**, trong đó `lighting` trỏ tới **một schema phần tử
@@ -112,7 +112,7 @@ thuộc tính**; **3** thuộc tính kiểm toán bị loại khỏi khoá băm 
 | `tolPlus` | `number` | ≥ 0, cùng đơn vị với `unit` | Nửa dương của dải `bilateral`, ghi bằng **độ lớn**. |
 | `tolMinus` | `number` | ≥ 0, cùng đơn vị với `unit`, **ghi DƯƠNG** (ví dụ `0.05`, không phải `-0.05`) | Nửa âm, cùng quy ước. |
 
-### 4.2 Khối 3D / mối hàn / X-quang (20 khoá)
+### 4.2 Khối 3D / mối hàn / X-quang (21 khoá)
 
 Ba nhóm ba-số-một-đơn-vị. 🔴 **Mỗi nhóm mang đơn vị RIÊNG và KHÔNG đọc `unit` của điểm** — một điểm
 hoàn toàn có thể là `mm3` ở `unit` và `mm` ở `heightUnit` cùng lúc.
