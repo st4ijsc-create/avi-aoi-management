@@ -26,6 +26,7 @@ import {
   computeHistogramBins,
   SPC_RULE_NAMES,
 } from "../utils/spc";
+import { finalYield } from "../utils/kpi";
 
 /** Fake-UTC: shift a Date so its UTC components equal local time.
  *  Drizzle calls .toISOString() which emits UTC — this trick makes
@@ -33,6 +34,25 @@ import {
  *  `timestamp without time zone` columns.  */
 function toFakeUtc(d: Date): Date {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+}
+
+/**
+ * Chuỗi yield theo bucket (giờ/ngày) — đầu vào của biểu đồ kiểm soát SPC.
+ * NTF = PASS (nguồn sự thật duy nhất: server/utils/kpi.ts finalYield).
+ * Làm tròn 2 chữ số thập phân — GIỮ NGUYÊN độ chính xác của công thức cũ
+ * `Math.round((ok / total) * 10000) / 100` (round-to-2-decimals của %),
+ * vì finalYield() đã trả về đơn vị PHẦN TRĂM (0-100), không phải phân số
+ * (0-1): `Math.round(finalYield(...) * 100) / 100` là công thức tương
+ * đương đúng — nhân thêm 10000 sẽ lệch 100 lần.
+ */
+export function tinhYieldTheoBucket(
+  rows: Array<{ bucket: string; total: number; ok: number; ntf: number }>,
+): Array<{ bucket: string; total: number; yieldRate: number }> {
+  return rows.map((r) => ({
+    bucket: r.bucket,
+    total: r.total,
+    yieldRate: Math.round(finalYield({ ok: r.ok, ntf: r.ntf, total: r.total }) * 100) / 100,
+  }));
 }
 
 export const stationAnalysisRouter = router({
@@ -210,21 +230,33 @@ export const stationAnalysisRouter = router({
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(...conditions))
         .groupBy(sql`hour`)
         .orderBy(sql`hour`);
 
-      return rows.map(r => {
+      const yieldByBucket = tinhYieldTheoBucket(
+        rows.map(r => ({
+          bucket: String(r.hour),
+          total: Number(r.total) || 0,
+          ok: Number(r.ok) || 0,
+          ntf: Number(r.ntf) || 0,
+        })),
+      );
+
+      return rows.map((r, i) => {
         const total = Number(r.total) || 0;
         const ok = Number(r.ok) || 0;
+        const ntf = Number(r.ntf) || 0;
         return {
           hour: Number(r.hour),
           total,
           ok,
           ng: Number(r.ng) || 0,
-          yield: total > 0 ? Math.round((ok / total) * 10000) / 100 : 0,
+          ntf,
+          yield: yieldByBucket[i].yieldRate,
         };
       });
     }),
@@ -566,21 +598,33 @@ export const stationAnalysisRouter = router({
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(...conditions))
         .groupBy(sql`day`)
         .orderBy(sql`day`);
 
-      const points = dailyRows.map(d => {
+      const yieldByBucket = tinhYieldTheoBucket(
+        dailyRows.map(d => ({
+          bucket: String(d.day),
+          total: Number(d.total) || 0,
+          ok: Number(d.ok) || 0,
+          ntf: Number(d.ntf) || 0,
+        })),
+      );
+
+      const points = dailyRows.map((d, i) => {
         const total = Number(d.total) || 0;
         const ok = Number(d.ok) || 0;
+        const ntf = Number(d.ntf) || 0;
         return {
           day: String(d.day),
           total,
           ok,
           ng: Number(d.ng) || 0,
-          yield: total > 0 ? Math.round((ok / total) * 10000) / 100 : 0,
+          ntf,
+          yield: yieldByBucket[i].yieldRate,
         };
       });
 
