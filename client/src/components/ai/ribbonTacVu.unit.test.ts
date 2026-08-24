@@ -63,6 +63,11 @@ function ve(over: Partial<RibbonProps> = {}): string {
       onDung: () => {},
       onNhayTep: () => {},
       onNhayChat: () => {},
+      duoiChat: "dong",
+      onToggleTerminal: () => {},
+      onToggleProblems: () => {},
+      soVanDe: 0,
+      onPhienMoi: () => {},
       ...over,
     } as RibbonProps),
   );
@@ -154,5 +159,33 @@ describe("§4 KHÔNG MỘT NHÃN NÀO RƠI VỀ `‹THIẾU:›` — kể cả k
     ]) {
       expect(html).toContain(d);
     }
+  });
+});
+
+describe("§5 NHÓM CỬA SỔ DƯỚI + PHIÊN — Terminal/Vấn đề/Phiên mới LUÔN có; badge + active theo state", () => {
+  it("★★★ ba nút luôn ra HTML (không phụ thuộc quyền/stream/khung), nhãn tra được vi.json", () => {
+    for (const html of [ve(), ve({ dangStream: true }), ve({ coTheChayKiemChung: false }), ve({ hep: true })]) {
+      expect(html).toContain("data-nut-terminal");
+      expect(html).toContain("data-nut-problems");
+      expect(html).toContain("data-nut-phien-moi");
+    }
+    const html = ve();
+    expect(html).toContain(esc(VI.repoWs.ribbon.terminal));
+    expect(html).toContain(esc(VI.repoWs.ribbon.problems));
+    expect(html).toContain(esc(VI.repoWs.ribbon.newSession));
+    expect(html).not.toContain("‹THIẾU:");
+  });
+
+  it("★★★ badge Vấn đề CHỈ khi soVanDe>0 (đột biến: bỏ điều kiện ⇒ badge '0' rò ra ⇒ ĐỎ)", () => {
+    expect(ve({ soVanDe: 0 })).not.toContain("bg-amber-500");
+    const html = ve({ soVanDe: 7 });
+    expect(html).toContain("bg-amber-500");
+    expect(html).toContain(">7<");
+  });
+
+  it("★★★ nút tô nền BẬT theo `duoiChat` (đột biến: hằng 'dong' ⇒ không nút nào active)", () => {
+    expect(ve({ duoiChat: "terminal" })).toContain("bg-primary/10");
+    expect(ve({ duoiChat: "problems" })).toContain("bg-primary/10");
+    expect(ve({ duoiChat: "dong", soVanDe: 0 })).not.toContain("bg-primary/10");
   });
 });

@@ -710,18 +710,29 @@ export default function AICodingWorkspace() {
    */
   useEffect(() => {
     if (dongMucTieu === null) return;
-    const preEl = preRef.current;
     const noiDung = fileReply?.data?.content ?? null;
-    if (!preEl || typeof noiDung !== "string" || noiDung === "") return;
-    const soDong = noiDung.split("\n").length;
-    if (soDong <= 0) return;
-    const khungCuon = preEl.closest<HTMLElement>("[data-slot=scroll-area-viewport]");
-    if (!khungCuon) return;
-    const caoDong = preEl.getBoundingClientRect().height / soDong;
-    // Đỉnh `<pre>` so với đầu nội dung cuộn (kể cả padding + hàng huy hiệu phía trên).
-    const dinhPre = preEl.getBoundingClientRect().top - khungCuon.getBoundingClientRect().top + khungCuon.scrollTop;
-    const dich = dinhPre + Math.max(0, dongMucTieu - 1) * caoDong - khungCuon.clientHeight / 3;
-    khungCuon.scrollTop = Math.max(0, dich);
+    if (typeof noiDung !== "string" || noiDung === "") return;
+    /**
+     * ⚠ 2026-08-24 — BỌC `requestAnimationFrame`. Đo LIVE lần đầu: `scrollTop` KẸT Ở 0 vì effect chạy
+     *   NGAY khi `fileReply` về, TRƯỚC khi trình duyệt bố trí xong `<pre>` mới ⇒ `getBoundingClientRect
+     *   ().height` còn 0 ⇒ `caoDong=0` ⇒ đích âm ⇒ `max(0,…)=0`. Một nhịp rAF cho layout hoàn tất rồi
+     *   mới ĐO + CUỘN. (Cùng lớp bẫy "đo trước khi bố trí" của `useKhungVua`.)
+     */
+    const id = requestAnimationFrame(() => {
+      const preEl = preRef.current;
+      if (!preEl) return;
+      const soDong = noiDung.split("\n").length;
+      if (soDong <= 0) return;
+      const khungCuon = preEl.closest<HTMLElement>("[data-slot=scroll-area-viewport]");
+      if (!khungCuon) return;
+      const caoDong = preEl.getBoundingClientRect().height / soDong;
+      if (caoDong <= 0) return; // `<pre>` chưa có chiều cao ⇒ chưa bố trí xong, bỏ nhịp này
+      // Đỉnh `<pre>` so với đầu nội dung cuộn (kể cả padding + hàng huy hiệu phía trên).
+      const dinhPre = preEl.getBoundingClientRect().top - khungCuon.getBoundingClientRect().top + khungCuon.scrollTop;
+      const dich = dinhPre + Math.max(0, dongMucTieu - 1) * caoDong - khungCuon.clientHeight / 3;
+      khungCuon.scrollTop = Math.max(0, dich);
+    });
+    return () => cancelAnimationFrame(id);
   }, [selectedPath, dongMucTieu, fileReply]);
 
   const openFile = useCallback((path: string) => {
@@ -1287,18 +1298,6 @@ export default function AICodingWorkspace() {
   const busyConfirm = confirmM.isPending || cancelM.isPending;
   /** Số vấn đề của lượt lệnh MỚI NHẤT — huy hiệu tab "Vấn đề" (panel Problems đọc cùng nguồn này). */
   const soVanDe = lenhDaChay[lenhDaChay.length - 1]?.diaDiemLoi.length ?? 0;
-  /**
-   * ★★★ 2026-08-24 · NGHIỆM THU LIVE 900×700 BẮT: khi khung thấp (~293px) mà panel Terminal/Vấn đề
-   * MỞ, vùng transcript co về ~0 và **thẻ duyệt HITL bị panel ĐÈ — người dùng không bấm được "Xác
-   * nhận"** (đo: nút ở y=385-429, `elementFromPoint` = tablist vo-duoi). Không thể vừa cả panel-đầy +
-   * thẻ-250px + ô-nhập trong 293px. Thẻ duyệt là thứ QUAN TRỌNG NHẤT màn này (đã ghi ở docblock
-   * grid-cols) ⇒ khi có `pending`, panel dưới NHƯỜNG chỗ (chỉ hiển thị — trạng thái `duoiChat` của
-   * người dùng giữ nguyên, panel trở lại sau khi họ duyệt/hủy). `onClick` vẫn toggle `duoiChat` thật.
-   * ⚠ CHỈ gập khi thẻ ĐANG CHỜ DUYỆT (`actionState === "pending"`) — KHÔNG gập khi thẻ đã ở trạng
-   *   thái cuối (executed/denied): đo LIVE thấy nếu gập cả lúc "Đã thực thi" thì sau khi chạy lệnh,
-   *   người dùng KHÔNG mở lại Terminal xem được đầu ra — hỏng đúng mục đích của panel.
-   */
-  const duoiHienThi = pending && actionState === "pending" ? "dong" : duoiChat;
 
   return (
     <DashboardLayout>
@@ -1350,6 +1349,11 @@ export default function AICodingWorkspace() {
           onDung={stopKbStream}
           onNhayTep={() => setKhungHep("tep")}
           onNhayChat={() => setKhungHep("chat")}
+          duoiChat={duoiChat}
+          onToggleTerminal={() => setDuoiChat((v) => (v === "terminal" ? "dong" : "terminal"))}
+          onToggleProblems={() => setDuoiChat((v) => (v === "problems" ? "dong" : "problems"))}
+          soVanDe={soVanDe}
+          onPhienMoi={phienMoi}
           className="shrink-0 border-b px-3 py-1"
         />
 
@@ -1467,7 +1471,7 @@ export default function AICodingWorkspace() {
                 <FolderTree className="h-3.5 w-3.5" /> {t("repoWs.tree.title", "Cây tệp")}
               </span>
             </div>
-            <ScrollArea className="flex-1">
+            <ScrollArea className="min-h-0 flex-1">
               <div className="py-1">
                 {projectId ? (
                   <FolderChildren key={projectId} path="" selectedPath={selectedPath} onOpenFile={openFile} depth={0} projectId={projectId} />
@@ -1500,7 +1504,7 @@ export default function AICodingWorkspace() {
                 </>
               )}
             </div>
-            <ScrollArea className="flex-1">
+            <ScrollArea className="min-h-0 flex-1">
               <div className="p-3">
                 {pendingDiff ? (
                   <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">{diffPreview}</pre>
@@ -1714,75 +1718,6 @@ export default function AICodingWorkspace() {
               </div>
             </ScrollArea>
 
-            {/* ★★★ 2026-08-24 · VỎ TERMINAL / VẤN ĐỀ — mặc định GẬP (`duoiChat="dong"`). Mở ra thì
-                nội dung TỰ CHẶN chiều cao (`max-h-56` + cuộn nội bộ) nên KHÔNG đẩy ô nhập xuống dưới
-                nếp gấp — ô nhập vẫn là khối `shrink-0` cuối cùng, `ScrollArea flex-1` co lại nhường
-                chỗ (bài học `khungVuaManHinh`). Bấm tab ĐANG mở ⇒ về `dong` (gập). `duoiChat` là TUỲ
-                CHỌN HIỂN THỊ ⇒ KHÔNG nằm trong ba hàm reset. Panel Problems đọc địa điểm lỗi của lượt
-                lệnh MỚI NHẤT (đã parse sẵn ở `lenhDaChay`, một bộ đọc `phanTichLoiViTri`). */}
-            {/* ★★★ 2026-08-24 · NGHIỆM THU LIVE bắt tầng hai: panel MỞ ở `max-h-56` (224px) cố định
-                ĐẨY ô nhập xuống y=703 (dưới nếp gấp) ở khung 293px. Ưu tiên bất di: ô nhập (shrink-0)
-                > thẻ duyệt > panel. ⇒ panel CO ĐƯỢC (`shrink`+`min-h-0`) và CAP ≤ nửa khung
-                (`max-h-[50%]`); nội dung `flex-1` cuộn nội bộ. Ô nhập không bao giờ bị đẩy khuất. */}
-            <div data-vo-duoi className="flex min-h-0 shrink flex-col overflow-hidden border-t max-h-[50%]">
-              <div className="flex shrink-0 items-center gap-1 px-2 py-1" role="tablist" aria-label={t("repoWs.pane.tablist", "Chọn khung")}>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={duoiHienThi === "terminal"}
-                  data-tab-duoi="terminal"
-                  onClick={() => setDuoiChat((v) => (v === "terminal" ? "dong" : "terminal"))}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium",
-                    duoiHienThi === "terminal" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  <Terminal className="h-3.5 w-3.5" />
-                  {t("repoWs.pane.terminalTab", "Terminal")}
-                  {lenhDaChay.length > 0 && (
-                    <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{lenhDaChay.length}</span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={duoiHienThi === "problems"}
-                  data-tab-duoi="problems"
-                  onClick={() => setDuoiChat((v) => (v === "problems" ? "dong" : "problems"))}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium",
-                    duoiHienThi === "problems" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  {t("repoWs.pane.problemsTab", "Vấn đề")}
-                  {soVanDe > 0 && (
-                    <span className="rounded-full bg-amber-100 px-1.5 text-[10px] tabular-nums text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                      {t("repoWs.pane.problemsCount", "{{n}}", { n: soVanDe })}
-                    </span>
-                  )}
-                </button>
-              </div>
-              {duoiHienThi !== "dong" && (
-                <div className="min-h-0 flex-1 overflow-y-auto border-t px-2 py-2">
-                  {duoiHienThi === "terminal" ? (
-                    <BangTerminal
-                      luotLenh={lenhDaChay}
-                      goiYNhanh={goiYTheoDuAn(projectId)}
-                      dangGui={isStreaming}
-                      onChayNhanh={(g) => handleSend(t(g.khoa, g.macDinh))}
-                    />
-                  ) : (
-                    <BangProblems
-                      diaDiem={lenhDaChay[lenhDaChay.length - 1]?.diaDiemLoi ?? []}
-                      tepDangChon={selectedPath}
-                      onMoTep={moTepTuVanDe}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-
             {/* ★★★ doc 81 · VIỆC 3 (1) — Ô nhập NHIỀU DÒNG: dán được stack trace, Shift+Enter xuống dòng.
                 ⚠ `shrink-0` (2026-08-23): ô nhập là thứ DUY NHẤT làm màn này dùng được. Không có nó,
                   trong một `flex flex-col` chật nó là khối co được đầu tiên và bị bóp về 0. */}
@@ -1824,6 +1759,70 @@ export default function AICodingWorkspace() {
             </div>
           </div>
           </div>
+        {/* ★★★ 2026-08-24 · TERMINAL/VẤN ĐỀ — CỬA SỔ FULL-WIDTH Ở ĐÁY (mẫu VSCode). Đặt NGOÀI
+            lưới 3 cột, dưới cùng khung: KHÔNG chen cột chat nên KHÔNG đè thẻ duyệt/ đẩy ô nhập
+            (hai lỗi layout của bản trong-cột đã hết theo cấu tạo). Co được + cap ≤45% khung; nội
+            dung `flex-1` cuộn nội bộ. Bấm tab đang mở ⇒ gập. `duoiChat` TUỲ CHỌN HIỂN THỊ (không
+            reset). Panel Vấn đề đọc lỗi đã parse ở `lenhDaChay` lượt mới nhất (`phanTichLoiViTri`). */}
+        <div data-vo-duoi className="flex min-h-0 shrink flex-col overflow-hidden border-t max-h-[45%]">
+          <div className="flex shrink-0 items-center gap-1 px-2 py-1" role="tablist" aria-label={t("repoWs.pane.tablist", "Chọn khung")}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={duoiChat === "terminal"}
+              data-tab-duoi="terminal"
+              onClick={() => setDuoiChat((v) => (v === "terminal" ? "dong" : "terminal"))}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium",
+                duoiChat === "terminal" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
+              )}
+            >
+              <Terminal className="h-3.5 w-3.5" />
+              {t("repoWs.pane.terminalTab", "Terminal")}
+              {lenhDaChay.length > 0 && (
+                <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{lenhDaChay.length}</span>
+              )}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={duoiChat === "problems"}
+              data-tab-duoi="problems"
+              onClick={() => setDuoiChat((v) => (v === "problems" ? "dong" : "problems"))}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium",
+                duoiChat === "problems" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
+              )}
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {t("repoWs.pane.problemsTab", "Vấn đề")}
+              {soVanDe > 0 && (
+                <span className="rounded-full bg-amber-100 px-1.5 text-[10px] tabular-nums text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                  {t("repoWs.pane.problemsCount", "{{n}}", { n: soVanDe })}
+                </span>
+              )}
+            </button>
+          </div>
+          {duoiChat !== "dong" && (
+            <div className="min-h-0 flex-1 overflow-y-auto border-t px-2 py-2">
+              {duoiChat === "terminal" ? (
+                <BangTerminal
+                  luotLenh={lenhDaChay}
+                  goiYNhanh={goiYTheoDuAn(projectId)}
+                  dangGui={isStreaming}
+                  onChayNhanh={(g) => handleSend(t(g.khoa, g.macDinh))}
+                />
+              ) : (
+                <BangProblems
+                  diaDiem={lenhDaChay[lenhDaChay.length - 1]?.diaDiemLoi ?? []}
+                  tepDangChon={selectedPath}
+                  onMoTep={moTepTuVanDe}
+                />
+              )}
+            </div>
+          )}
+        </div>
+
         </div>
       </PageContainer>
     </DashboardLayout>

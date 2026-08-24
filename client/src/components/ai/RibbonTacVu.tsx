@@ -23,7 +23,7 @@
  * chạy test bị ẩn — và server vẫn chặn nếu có ai gọi thẳng.
  */
 import { useTranslation } from "react-i18next";
-import { RefreshCw, Wrench, StopCircle, FolderTree, MessagesSquare } from "lucide-react";
+import { RefreshCw, Wrench, StopCircle, FolderTree, MessagesSquare, TerminalSquare, AlertTriangle, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +41,17 @@ export interface RibbonTacVuProps {
   onNhayTep: () => void;
   /** Chỉ dùng khi `hep` — nhảy về khung Hội thoại. */
   onNhayChat: () => void;
+  // ── Nhóm PANEL + PHIÊN (2026-08-24, theo yêu cầu chủ dự án: ribbon dày hơn) ──
+  /** Trạng thái cửa sổ dưới (Terminal/Vấn đề) — để tô nút đang bật. MỘT nguồn sự thật với tab ở đáy. */
+  duoiChat: "dong" | "terminal" | "problems";
+  /** Bật/tắt cửa Terminal ở đáy (toggle như bấm tab). */
+  onToggleTerminal: () => void;
+  /** Bật/tắt cửa Vấn đề ở đáy. */
+  onToggleProblems: () => void;
+  /** Số vấn đề của lượt lệnh mới nhất — huy hiệu trên nút Vấn đề (0 ⇒ không huy hiệu). */
+  soVanDe: number;
+  /** Mở một phiên hội thoại mới. */
+  onPhienMoi: () => void;
   /** Chỉ để TRANG đặt vị trí (vd `ml-auto` trên thanh công cụ). Không mang trạng thái. */
   className?: string;
 }
@@ -51,9 +62,11 @@ export interface RibbonTacVuProps {
  */
 export function RibbonTacVu({
   hep, dangStream, coTheChayKiemChung,
-  onLamMoiCay, onChayKiemChung, onDung, onNhayTep, onNhayChat, className,
+  onLamMoiCay, onChayKiemChung, onDung, onNhayTep, onNhayChat,
+  duoiChat, onToggleTerminal, onToggleProblems, soVanDe, onPhienMoi, className,
 }: RibbonTacVuProps) {
   const { t } = useTranslation();
+  const nutBat = "bg-primary/10 text-primary"; // nền nút đang bật (cửa panel đang mở)
 
   return (
     <div data-ribbon-tac-vu className={cn("flex items-center gap-1", className)}>
@@ -100,6 +113,51 @@ export function RibbonTacVu({
           <StopCircle className="h-4 w-4" />
         </Button>
       )}
+
+      {/* ── Nhóm CỬA SỔ DƯỚI + PHIÊN — vạch ngăn cho dễ đọc. Toggle Terminal/Vấn đề dùng CÙNG state
+          `duoiChat` với tab ở đáy (một nguồn sự thật), như "Terminal" menu của VSCode song hành với
+          tab panel. Không nới quyền, không mutation — chỉ callback. */}
+      <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-border" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        data-nut-terminal
+        onClick={onToggleTerminal}
+        title={t("repoWs.ribbon.terminal", "Cửa sổ Terminal")}
+        aria-label={t("repoWs.ribbon.terminal", "Cửa sổ Terminal")}
+        className={cn(duoiChat === "terminal" && nutBat)}
+      >
+        <TerminalSquare className="h-4 w-4" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        data-nut-problems
+        onClick={onToggleProblems}
+        title={t("repoWs.ribbon.problems", "Cửa sổ Vấn đề")}
+        aria-label={t("repoWs.ribbon.problems", "Cửa sổ Vấn đề")}
+        className={cn("relative", duoiChat === "problems" && nutBat)}
+      >
+        <AlertTriangle className="h-4 w-4" />
+        {soVanDe > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 min-w-3.5 rounded-full bg-amber-500 px-0.5 text-[9px] font-semibold leading-3.5 text-white tabular-nums">
+            {soVanDe}
+          </span>
+        )}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        data-nut-phien-moi
+        onClick={onPhienMoi}
+        title={t("repoWs.ribbon.newSession", "Phiên mới")}
+        aria-label={t("repoWs.ribbon.newSession", "Phiên mới")}
+      >
+        <Plus className="h-4 w-4" />
+      </Button>
 
       {/* Nhảy khung — CHỈ ở màn HẸP một-khung; ngăn cách nhóm bằng một vạch mảnh cho dễ đọc. */}
       {hep && (
