@@ -10,10 +10,17 @@
  *   2. **ĐỌC** đầu ra THẬT (mã thoát + số ca đỏ/xanh) — không đoán;
  *   3. **ĐỀ XUẤT** bản sửa kế tiếp dựa trên lỗi vừa đọc ⇒ lại ra thẻ HITL.
  *
- * ⚠⚠⚠ **HITL TRÊN MỖI LƯỢT GHI LÀ BẤT BIẾN.** Không có một dòng nào trong file này (hay trong
- * `server/services/aiCodingVerify.ts`) tự áp diff. Byte chỉ rời ra đĩa qua `apply_diff` →
- * `proposeAction` → NGƯỜI bấm duyệt → `confirmAction`. Vòng tự động chỉ **rút ngắn khoảng cách
- * giữa hai lần bấm**, không thay chỗ cho cái bấm.
+ * ⚠⚠⚠ **HITL TRÊN MỖI LƯỢT GHI LÀ BẤT BIẾN** — *cho doc 79*. Không có một dòng nào trong file này
+ * (hay trong `server/services/aiCodingVerify.ts`) tự áp diff. Byte chỉ rời ra đĩa qua `apply_diff` →
+ * `proposeAction` → NGƯỜI bấm duyệt → `confirmAction`. Vòng tự động (doc 79) chỉ **rút ngắn khoảng
+ * cách giữa hai lần bấm**, không thay chỗ cho cái bấm.
+ *
+ * ⚠⚠⚠ ĐÍNH CHÍNH (2026-08-24) — MỆNH ĐỀ "BẤT BIẾN" TRÊN CHỈ CÒN ĐÚNG CHO HAI FILE ĐƯỢC NÊU TÊN, KHÔNG
+ * CÒN ĐÚNG CHO CẢ HỆ. Chủ dự án đã quyết mở vòng TỰ GHI (`server/services/aiCodingTuTriGhi.ts`, cờ
+ * `AI_CODING_TU_TRI_GHI` mặc định TẮT) tự áp `apply_diff` KHÔNG người bấm. File NÀY vẫn không tự áp
+ * diff (nó chỉ là chính-sách-thuần), và các cầu chì ở đây (`quyetDinhTiep`, `kepTranVongTuTri`,
+ * `daBiTuChoiGhi`) là thứ vòng tự-ghi DÙNG LẠI để tự bó. Xem `LyDoDungVong` — hai giá trị
+ * `tep_ban_nguoi`/`kill_switch` được thêm CHO vòng tự-ghi.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠⚠ VÌ SAO PHẢI CÓ TRẦN VÀ ĐIỀU KIỆN "KHÔNG TIẾN BỘ"
@@ -55,6 +62,34 @@ export function kepTranVong(raw: unknown): number {
   const n = typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10);
   if (!Number.isFinite(n) || Number.isNaN(n)) return TRAN_VONG_MAC_DINH;
   return Math.min(TRAN_VONG_TOI_DA, Math.max(TRAN_VONG_TOI_THIEU, Math.trunc(n)));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ VÒNG TỰ-TRỊ-GHI (`AI_CODING_TU_TRI_GHI`) — TRẦN CỨNG RIÊNG, CAO HƠN, VÌ NÓ TỰ GHI LẪN TỰ CHẠY
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * Trần CỨNG của vòng **TỰ GHI** — cao hơn vòng chỉ-chạy-test (`TRAN_VONG_TOI_DA=5`) vì một lượt tự
+ * trị làm HAI việc (sinh bản vá + chạy test), nên một tác vụ sửa-cho-xanh thật cần vài lượt sửa nối
+ * tiếp. **KHÔNG** phải "vô hạn": 10 lượt × (≤75 s model + ≤240 s test) đã là trần thời gian rõ rệt,
+ * và cầu chì `quyetDinhTiep` (không-tiến-bộ) thường dừng sớm hơn nhiều.
+ *
+ * ⚠ VÌ SAO MỘT TRẦN THỨ HAI, KHÔNG NÂNG `TRAN_VONG_TOI_DA`: vòng chỉ-chạy-test (`aiCodingVerify.ts`)
+ *   chạy NGAY SAU một lượt NGƯỜI vừa duyệt — 5 là đủ và cố ý thấp. Vòng tự-ghi KHÔNG có người ở
+ *   giữa, nên nó cần biên độ khác. Trộn hai trần vào một hằng là để một lần nới cho đường này âm
+ *   thầm nới luôn đường kia. Hai con số, hai chủ.
+ */
+export const TRAN_VONG_TU_TRI_TOI_DA = 10;
+
+/**
+ * Kẹp trần cho vòng TỰ GHI về `[TRAN_VONG_TOI_THIEU .. TRAN_VONG_TU_TRI_TOI_DA]`. Cùng kỷ luật
+ * "kẹp, không ném" như `kepTranVong` — một `.env` gõ sai không được làm chết vòng, chỉ bị kẹp.
+ * ⚠ Mặc định vẫn là `TRAN_VONG_MAC_DINH` (3): trần CAO là một cái **kẹp trên**, không phải một lời
+ *   mời chạy 10 lượt mỗi lần. Người vận hành phải nêu đích danh số lượt lớn hơn mới có nó.
+ */
+export function kepTranVongTuTri(raw: unknown): number {
+  const n = typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10);
+  if (!Number.isFinite(n) || Number.isNaN(n)) return TRAN_VONG_MAC_DINH;
+  return Math.min(TRAN_VONG_TU_TRI_TOI_DA, Math.max(TRAN_VONG_TOI_THIEU, Math.trunc(n)));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -193,7 +228,21 @@ export type LyDoDungVong =
   | "nguoi_tu_choi"   // người bấm Hủy ở thẻ duyệt
   | "khong_co_lenh"   // không suy ra được lệnh kiểm chứng cho dự án này
   | "khong_quyen"     // thiếu ai_repo_exec/canCreate ⇒ không được chạy lệnh
-  | "co_tat"          // AI_CODING_AUTOLOOP=0
+  | "co_tat"          // AI_CODING_AUTOLOOP=0 (vòng chỉ-chạy-test) HOẶC AI_CODING_TU_TRI_GHI vắng (vòng tự-ghi)
+  /**
+   * ★★★ VÒNG TỰ-GHI — lượt tự apply_diff bị `applyDiff.execute` TỪ CHỐI vì tệp đích có thay đổi
+   * CHƯA COMMIT của NGƯỜI (`note: "FILE_DIRTY"`). Đây KHÔNG phải "model sửa sai" — nó là hàng rào
+   * cốt lõi của pha C đang bảo vệ đúng thứ nó sinh ra để bảo vệ (sự cố 2026-08-18: mất 123 dòng chưa
+   * commit). Vòng DỪNG NGAY, đĩa 0 đổi, và lý do này nói THẲNG "có việc chưa lưu của người" — khác
+   * hẳn `loi` (hỏng hệ) hay `khong_tien_bo` (model giậm chân).
+   */
+  | "tep_ban_nguoi"
+  /**
+   * ★★★ VÒNG TỰ-GHI — kill-switch runtime (`autonomyPolicy.isKillSwitchTripped`, bền qua restart,
+   * đọc TƯƠI mỗi lượt) đã bật GIỮA vòng ⇒ DỪNG ở lượt kế. Tách khỏi `co_tat` (cờ tĩnh): kill-switch
+   * là cái phanh khẩn cấp lật được LÚC ĐANG CHẠY, còn `co_tat` là "chưa bao giờ bật".
+   */
+  | "kill_switch"
   | "loi";            // hỏng thật (server/model) — kèm thông điệp gốc
 
 /** Trạng thái đủ để quyết định, sau khi một lượt test vừa chạy xong. */

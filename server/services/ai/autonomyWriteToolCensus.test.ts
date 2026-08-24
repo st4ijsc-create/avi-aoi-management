@@ -49,6 +49,8 @@ import {
   AUTONOMY_REASONS,
   AUTONOMY_INELIGIBLE,
   AUTONOMY_REVIEWED_SAFE,
+  apDungDiffTuTriDuoc,
+  autonomyGhiTuTriBat,
   phanLoaiTuTri,
   writeToolChuaPhanLoai,
   __resetAutonomyRateCapForTests,
@@ -77,6 +79,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.AI_AUTONOMY_ENABLED;
   delete process.env.AI_AUTONOMY_ALLOWLIST;
+  delete process.env.AI_CODING_TU_TRI_GHI;
 });
 
 /** Chạy `evaluateAutonomy` với MỌI điều kiện khác đã xanh + tool được allowlist. */
@@ -223,6 +226,52 @@ function duyetTs(dir: string, ra: string[] = []): string[] {
   }
   return ra;
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-24 · §D — LỜI KHAI: `apply_diff` "GỠ KHỎI INELIGIBLE CÓ ĐIỀU KIỆN" NGHĨA LÀ GÌ.
+//
+// Vòng TỰ-TRỊ-GHI (`AI_CODING_TU_TRI_GHI`, mặc định TẮT) auto-confirm `apply_diff` KHÔNG người bấm.
+// "Gỡ có điều kiện" ở đây là một **VỊ TỪ** (`apDungDiffTuTriDuoc`), KHÔNG phải xoá tên khỏi
+// `AUTONOMY_INELIGIBLE`. Hai lời khai phải cùng đúng, nếu không census đang nói dối:
+//   1. VỊ TỪ mở cửa THỨ HAI (vòng tự-ghi) theo cờ — CHỈ cho `apply_diff`, CHỈ khi cờ `"1"`.
+//   2. Đường bounded-autonomy VẬN HÀNH (`evaluateAutonomy`) VẪN từ chối `apply_diff` ở điều kiện 3
+//      — BẤT KỂ cờ. Cờ tự-ghi KHÔNG mở đường vận hành; đó là điểm của "hai cửa, hai chính sách".
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+describe("§D — apply_diff: cửa tự-ghi mở CÓ ĐIỀU KIỆN, cửa vận hành VẪN đóng", () => {
+  it("★★★ VỊ TỪ `apDungDiffTuTriDuoc` chỉ mở cho apply_diff + CHỈ khi cờ `\"1\"` (đột biến 'luôn true' ⇒ ĐỎ)", () => {
+    delete process.env.AI_CODING_TU_TRI_GHI;
+    expect(autonomyGhiTuTriBat(), "vắng cờ ⇒ TẮT").toBe(false);
+    expect(apDungDiffTuTriDuoc("apply_diff"), "cờ TẮT ⇒ apply_diff KHÔNG tự-ghi được").toBe(false);
+
+    process.env.AI_CODING_TU_TRI_GHI = "true";
+    expect(apDungDiffTuTriDuoc("apply_diff"), "chỉ chuỗi \"1\" mới bật — \"true\" không").toBe(false);
+
+    process.env.AI_CODING_TU_TRI_GHI = "1";
+    expect(autonomyGhiTuTriBat()).toBe(true);
+    expect(apDungDiffTuTriDuoc("apply_diff"), "cờ BẬT ⇒ apply_diff tự-ghi được").toBe(true);
+    // Chỉ apply_diff — không tool ghi nào khác được vị từ này mở, kể cả khi cờ bật.
+    for (const t of ["apply_diff_batch", "run_command", "machine_start", "set_spec_limits"]) {
+      expect(apDungDiffTuTriDuoc(t), `${t} KHÔNG được cửa tự-ghi mở`).toBe(false);
+    }
+  });
+
+  it("★★★ đường VẬN HÀNH: apply_diff VẪN TYPE_INELIGIBLE — BẤT KỂ cờ tự-ghi (cửa hai KHÔNG mở cửa một)", async () => {
+    for (const flag of [undefined, "1"] as const) {
+      if (flag === undefined) delete process.env.AI_CODING_TU_TRI_GHI;
+      else process.env.AI_CODING_TU_TRI_GHI = flag;
+      const res = await quyetDinhKhiMoiThuKhacXanh("apply_diff");
+      expect(res, `cờ=${flag}: evaluateAutonomy phải VẪN từ chối apply_diff`).toEqual({
+        allowed: false,
+        reason: AUTONOMY_REASONS.TYPE_INELIGIBLE,
+      });
+    }
+  });
+
+  it("★★ apply_diff vẫn nằm trong AUTONOMY_INELIGIBLE (không xoá cứng khỏi tập — chỉ thêm một VỊ TỪ)", () => {
+    expect(AUTONOMY_INELIGIBLE.has("apply_diff")).toBe(true);
+    expect(phanLoaiTuTri("apply_diff")).toBe("INELIGIBLE");
+  });
+});
 
 describe("§C — mọi FILE đăng ký write tool đều nằm trong đồ thị nhập của phép đếm", () => {
   it("★ phép quét nguồn khớp ĐÚNG danh sách file đã nạp", () => {

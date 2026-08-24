@@ -357,6 +357,9 @@ function VongTuDongCard({ vong, onDung, laAdmin }: { vong: TrangThaiVong; onDung
       ? t("repoWs.loop.stop.off", "Vòng tự động đang TẮT (mặc định) — bản sửa ĐÃ ghi, nhưng bạn phải tự chạy test. Bật bằng AI_CODING_AUTOLOOP=1 rồi khởi động lại máy chủ.")
       : t("repoWs.loop.stop.offUser", "Vòng tự động đang TẮT — bản sửa ĐÃ ghi, nhưng bạn phải tự chạy test. Tính năng này do quản trị viên bật trên máy chủ — hãy liên hệ quản trị viên."),
     loi: t("repoWs.loop.stop.error", "DỪNG vì một hỏng THẬT ở lượt chạy kiểm chứng."),
+    // ★★★ 2026-08-24 — VÒNG TỰ-TRỊ-GHI: hai lý do RIÊNG (khác `loi`/`co_tat`) — xem `LyDoDungVong`.
+    tep_ban_nguoi: t("repoWs.loop.stop.dirty", "DỪNG vì tệp đích có thay đổi CHƯA COMMIT của bạn — vòng tự-ghi KHÔNG đè lên công việc chưa lưu. Hãy commit (hoặc stash) rồi thử lại."),
+    kill_switch: t("repoWs.loop.stop.kill", "DỪNG vì công tắc khẩn cấp (kill-switch) đã được bật — vòng tự-ghi dừng ngay. Liên hệ quản trị viên để gỡ."),
   };
 
   const xong = vong.lyDoDung === "xanh";

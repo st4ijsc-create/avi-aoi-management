@@ -21,9 +21,22 @@ import {
   classifyCodingToolIntent,
   laCauCanSuyLuan,
   laYDinhTaoDuAn,
+  laYDinhTuTri,
   trichDuongSuaTatDinh,
   trichMoiDuongDanRepo,
 } from "./aiLocalTools/intentClassifier";
+/**
+ * ★★★ 2026-08-24 · VÒNG TỰ-TRỊ-GHI — điểm gọi PRODUCTION cho đường NGUY HIỂM NHẤT (model tự ghi mã
+ * KHÔNG người duyệt). Bộ điều phối + sáu hàng rào ở `aiCodingTuTriGhi.ts`; file này chỉ (a) nối
+ * `sinhBanVa` THẬT (tái dùng `chuanBiBanSuaMotTep`, KHÔNG cửa ghi thứ hai) và (b) stream tiến độ.
+ */
+import {
+  chayVongTuTriGhi,
+  type SinhBanVa,
+  type KetQuaVongTuTri,
+  type TienDoTuTri,
+} from "./aiCodingTuTriGhi";
+import type { CopilotUser } from "./aiCopilotActions";
 /**
  * ★★★ 2026-08-24 — đường TẠO KHUNG DỰ ÁN dùng LẠI đúng hai lớp phán quyết THUẦN của hộp cát
  * (`phanQuyetDuongDan` + `duoiDuocPhep`) để bắt-sớm đường xấu TRƯỚC khi đốt một lượt `read_file`
@@ -47,6 +60,7 @@ import {
   codingGenEnabled,
   codingKhoiSuaEnabled,
   codingModelSanSang,
+  chonDuongTuTri,
   dongBoXuongDong,
   MOC_MO,
   MOC_TEP_KHUNG,
@@ -3201,6 +3215,30 @@ async function* streamCodingAnswer(
   }
 
   /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-24 — CỬA **VÒNG TỰ-TRỊ-GHI** (model tự ghi mã KHÔNG người duyệt), đứng SAU cửa
+   * "sửa X:" + "tạo dự án" và TRƯỚC bộ chọn tool + vòng tool ĐỌC.
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * VÌ SAO THỨ TỰ NÀY:
+   *   • `laYDinhTuTri` (*"tự sửa cho test xanh"*) là loại trừ lẫn nhau với hai cửa trên: câu tự-trị
+   *     KHÔNG nêu đường dẫn nên `trichDuongSuaTatDinh` = null (không khớp "sửa X:"), và không có danh
+   *     từ dự án nên `laYDinhTaoDuAn` = false. Đặt SAU chúng: một câu có "sửa X:" tường minh vẫn là
+   *     một lượt sửa MỘT tệp (người dùng nêu đích danh tệp), KHÔNG bị vòng tự-ghi cướp.
+   *   • Đặt TRƯỚC vòng tool ĐỌC: nếu để rơi xuống đó, câu tự-trị chỉ được ĐỌC vài tệp rồi dừng —
+   *     đúng thứ vòng tự-ghi sinh ra để thay thế (đọc → tự sửa → chạy test → lặp).
+   *
+   * ⚠⚠ LUÔN RETURN sau cửa này — một câu `laYDinhTuTri` KHÔNG BAO GIỜ rơi xuống đường thường:
+   *   • cờ BẬT ⇒ chạy vòng, stream tiến độ, câu tổng (xanh / dừng-vì-gì);
+   *   • cờ TẮT ⇒ `chayVongTuTriGhi` trả `batDau:false` ⇒ `streamCodingTuTriGhi` NÓI THẲNG "đang TẮT
+   *     — bật `AI_CODING_TU_TRI_GHI=1` + `AI_CODING_AUTOLOOP=1`", KHÔNG im lặng trả về câu thường
+   *     (một người gõ "tự sửa cho test xanh" mà nhận về câu trả lời thường là bối rối).
+   */
+  if (laYDinhTuTri(question)) {
+    yield* streamCodingTuTriGhi(question, language, context, execCtx2, history, khoiBaiHocLuot, context.projectId);
+    return;
+  }
+
+  /**
    * ★★★ doc 79 · TRỤC 1 (C) — NHÁNH **SỬA TỆP**, đứng TRƯỚC bộ chọn tool tất định.
    *
    * Vì sao trước: một câu *"sửa src/Calculator.cs để Divide ném ArgumentException khi chia 0"* CÓ
@@ -3638,6 +3676,303 @@ async function* streamCodingEdit(
   yield { type: "token", token: `\n\n${m}` };
   yield doneSinhMa(`${bs.vanBanModel}\n\n${m}`, "tool");
   return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-24 — ĐIỂM GỌI PRODUCTION cho VÒNG TỰ-TRỊ-GHI (model tự ghi mã, KHÔNG người duyệt)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+/** Dịch ba ngôn ngữ, cục bộ cho nhánh tự trị (khuôn `w` của aiCodingAgent). */
+function wt(lang: KbLanguage, vi: string, en: string, zh: string): string {
+  return lang === "en" ? en : lang === "zh" ? zh : vi;
+}
+
+/**
+ * ★★★ Persona **BƯỚC 1 — CHỌN TỆP**: model CHỈ chọn tệp nguồn (từ cây thật), KHÔNG viết mã ở lượt này.
+ *
+ * ⚠ Vì sao tách khỏi lượt sửa: nghiệm thu live #2 (2026-08-24) — nếu bắt model vừa chọn tệp vừa xuất
+ *   SEARCH/REPLACE trong MỘT lượt (không có nội dung tệp), nó viết neo theo TRÍ NHỚ và lệch byte
+ *   (`public static double` vs `public double`) ⇒ neo không khớp ⇒ từ chối valid-fix. Bước 1 chỉ
+ *   CHỌN; bước 2 (`chuanBiBanSuaMotTep`) mới ĐỌC nội dung thật rồi để model COPY neo khớp byte.
+ */
+function personaChonTep(lang: KbLanguage): string {
+  return wt(
+    lang,
+    [
+      "Bạn là KỸ SƯ đang CHỌN tệp NGUỒN cần sửa. Ở LƯỢT NÀY bạn KHÔNG viết mã.",
+      "Nhận: ĐẦU RA LỖI test/build + CÂY TỆP NGUỒN THẬT.",
+      "Chọn ĐÚNG MỘT tệp NGUỒN chứa NGUYÊN NHÂN lỗi. KHÔNG chọn tệp TEST (sửa test để ép pass là gian lận).",
+      "Đường phải LẤY NGUYÊN VĂN TỪ CÂY TỆP — KHÔNG bịa, KHÔNG đường tuyệt đối.",
+      "ĐẦU RA: ĐÚNG MỘT dòng, không giải thích, không khối mã:",
+      `${MOC_TEP_KHUNG} <đường tương đối lấy từ cây tệp>`,
+    ].join("\n"),
+    [
+      "You are an ENGINEER CHOOSING which SOURCE file to fix. In THIS turn you do NOT write code.",
+      "You get: the test/build ERROR output + the REAL SOURCE FILE TREE.",
+      "Pick EXACTLY ONE SOURCE file that holds the ROOT CAUSE. Do NOT pick a TEST file (editing tests to force a pass is gaming).",
+      "The path MUST be copied VERBATIM FROM THE FILE TREE — do not invent, no absolute paths.",
+      "OUTPUT: EXACTLY one line, no explanation, no code block:",
+      `${MOC_TEP_KHUNG} <relative path taken from the file tree>`,
+    ].join("\n"),
+    [
+      "你是正在选择要修复哪个源文件的工程师。本轮你不写代码。",
+      "你会得到：测试/构建错误输出 + 真实源文件树。",
+      "选出恰好一个含有根因的源文件。不要选测试文件（改测试来强行通过属于作弊）。",
+      "路径必须逐字取自文件树——不要臆造，不要绝对路径。",
+      "输出：严格一行，不解释，不加代码块：",
+      `${MOC_TEP_KHUNG} <取自文件树的相对路径>`,
+    ].join("\n"),
+  );
+}
+
+/** Prompt bước 1: cây tệp + lỗi ⇒ model trả đúng một dòng `### FILE: <đường>`. */
+function promptChonTep(lang: KbLanguage, loi: string, cayTep: string): string {
+  const nhanCay = wt(lang, "CÂY TỆP NGUỒN (chọn đường TỪ đây)", "SOURCE FILE TREE (pick a path FROM here)", "源文件树（从此处选择路径）");
+  const nhanLoi = wt(lang, "ĐẦU RA LỖI TEST/BUILD", "TEST/BUILD ERROR OUTPUT", "测试/构建错误输出");
+  const yeuCau = wt(
+    lang,
+    "Chọn ĐÚNG tệp NGUỒN cần sửa (KHÔNG tệp test). Trả đúng MỘT dòng: `### FILE: <đường từ cây>`.",
+    "Pick the SOURCE file to fix (NOT a test). Return exactly ONE line: `### FILE: <path from the tree>`.",
+    "选择要修复的源文件（非测试）。仅返回一行：`### FILE: <取自树的路径>`。",
+  );
+  return [`=== ${nhanCay} ===`, cayTep, "", `=== ${nhanLoi} ===`, loi, "", yeuCau].join("\n");
+}
+
+/** Cây tệp NGUỒN THẬT (qua `list_files`) để model CHỌN đường — không bịa. `""` ⇒ không liệt kê được. */
+async function cayTepNguon(execCtx: ToolExecContext): Promise<string> {
+  const lf = await executeDecision({ tool: "list_files", args: { depth: 3 } }, execCtx);
+  const entries = (lf.result?.data as { entries?: Array<{ path: string; kind: string }> } | undefined)?.entries ?? [];
+  if (entries.length === 0) return "";
+  return entries
+    .slice(0, 200)
+    .map((e) => (e.kind === "dir" ? `${e.path}/` : e.path))
+    .join("\n");
+}
+
+/** Trần token cho lượt CHỌN tệp — đầu ra chỉ một dòng đường dẫn nên nhỏ. */
+const TRAN_TOKEN_CHON_TEP = 512;
+
+/**
+ * BƯỚC 1 — một lượt model NGẮN chọn tệp; server nhận CHỈ đường TRONG CÂY (`chonDuongTuTri`). Model
+ * bịa đường (không trong cây) ⇒ `null` ⇒ vòng dừng an toàn.
+ */
+async function chonTepTuTri(loi: string, cay: string, execCtx: ToolExecContext, language: KbLanguage): Promise<string | null> {
+  const gen = motLuotModel({
+    heThong: personaChonTep(language),
+    ghepPrompt: () => promptChonTep(language, loi, cay),
+    tranToken: TRAN_TOKEN_CHON_TEP,
+    language,
+    history: [],
+    relPath: "(chọn tệp)",
+    userId: execCtx.user?.id,
+    signal: execCtx.signal,
+  });
+  let r = await gen.next();
+  while (!r.done) r = await gen.next();
+  const lm = r.value;
+  if (lm.kq !== "chu") return null;
+  return chonDuongTuTri(lm.text, cay);
+}
+
+/**
+ * ★★★ `sinhBanVa` THẬT — **HAI BƯỚC** (model chọn tệp → server ĐỌC nội dung THẬT → model sửa khớp byte).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ HAI GỐC RỄ TỪ NGHIỆM THU LIVE 30B (2026-08-24) — VÀ ĐÁNH ĐỔI "ĐÚNG-HƠN-NHANH"
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * #1 regex-nhặt-tệp-đầu trỏ tệp TEST (đường tuyệt đối) ⇒ **để MODEL chọn tệp** (bước 1).
+ * #2 model một-lượt viết SEARCH theo TRÍ NHỚ ⇒ lệch byte ⇒ từ chối valid-fix. Gốc: prompt bước-viết
+ *    KHÔNG có nội dung tệp. ⇒ **bước 2 = `chuanBiBanSuaMotTep`** — đường SỬA thường ĐÃ chạy tốt: nó
+ *    ĐỌC tệp thật (`read_file`) rồi nhét NGUYÊN VĂN vào prompt ⇒ model COPY neo khớp byte, KHÔNG đoán.
+ * ⚠ ĐÁNH ĐỔI: HAI lượt model (~8 phút/vòng-lặp). Chấp nhận vì đường tự-ghi-KHÔNG-người thì
+ *   **đúng-hơn-nhanh** — fuzzy-neo trên nội dung thật là đường CẤM (áp nhầm chỗ trong im lặng).
+ *
+ * ⚠⚠ RANH GIỚI GIỮ NGUYÊN: hàm CHỈ SINH `{path, original, modified}` — **KHÔNG ghi** (byte rời đĩa ở
+ *   `chayLuotTuTriGhi`). Bước 2 (`chuanBiBanSuaMotTep`) DỪNG ngay trước lượt đề xuất — không cửa ghi thứ hai.
+ * ⚠ CHỐNG "model bịa đường": bước 1 nhận CHỈ đường TRONG CÂY (`chonDuongTuTri`); tệp bịa/không tồn tại
+ *   ⇒ `null`. Bước 2 đọc lại tệp — neo model gửi lệch byte ⇒ `apDungKhoiSua` từ chối ⇒ `null` (thà từ
+ *   chối còn hơn áp nhầm). Mọi `null` ⇒ vòng DỪNG an toàn (`loi: không sinh được bản vá`).
+ * ⚠ TÁI DÙNG: `motLuotModel` (bước 1) · `chuanBiBanSuaMotTep` (bước 2, gồm đọc-tệp + persona sửa +
+ *   `thuThapNguCanhMa` + `bocKhoiSua`/`apDungKhoiSua`) — KHÔNG bộ sinh thứ ba.
+ */
+function taoSinhBanVaTuTri(y: {
+  language: KbLanguage;
+  context: KbQueryContext;
+  execCtx?: ToolExecContext;
+  history: readonly LuotHoiThoai[];
+  khoiBaiHoc: string;
+  projectId?: string;
+}): SinhBanVa {
+  return async (loi, _luot) => {
+    const execCtx = y.execCtx;
+    if (!execCtx) return null;
+    if (!(await codingModelSanSang())) return null;
+
+    // CÂY TỆP NGUỒN THẬT (chống bịa đường). Không liệt kê được ⇒ dừng an toàn.
+    const cay = await cayTepNguon(execCtx);
+    if (cay === "") return null;
+
+    // BƯỚC 1 — model CHỌN tệp. Server nhận CHỈ đường TRONG CÂY ⇒ tồn tại + không bịa.
+    const duong = await chonTepTuTri(loi, cay, execCtx, y.language);
+    if (duong === null) return null;
+    if (phanQuyetDuongDan(duong) !== null) return null; // phòng vệ chiều sâu (cây vốn đã trong hộp cát)
+
+    // BƯỚC 2 — `chuanBiBanSuaMotTep` ĐỌC nội dung THẬT vào prompt ⇒ model sinh SEARCH/REPLACE khớp BYTE.
+    //   Rút cạn generator (không phát token model ra ngoài — tiến độ do điểm gọi tự stream).
+    const cauSua = wt(
+      y.language,
+      `Sửa tệp NGUỒN này để lỗi test/build sau biến mất (sửa đúng nguyên nhân, KHÔNG sửa tệp test):\n${loi}`,
+      `Fix this SOURCE file so the following test/build error disappears (fix the real cause, do NOT edit tests):\n${loi}`,
+      `修复此源文件以消除以下测试/构建错误（修复根因，不要修改测试）：\n${loi}`,
+    );
+    const gen = chuanBiBanSuaMotTep({
+      question: cauSua,
+      duong,
+      language: y.language,
+      context: y.context,
+      execCtx,
+      history: y.history,
+      yDinhTao: false,
+      khoiBaiHoc: y.khoiBaiHoc,
+      phatTheTool: false,
+    });
+    let r = await gen.next();
+    while (!r.done) r = await gen.next();
+    const bs = r.value;
+    if (bs.kq !== "ok") return null;
+    return { path: bs.relPath, original: bs.original, modified: bs.modified };
+  };
+}
+
+/** Một dòng tiến độ người-đọc-được cho MỘT móc `TienDoTuTri`. */
+function dongTienDoTuTri(lang: KbLanguage, t: TienDoTuTri): string {
+  const dau = wt(lang, "vòng tự trị", "autonomous loop", "自主循环");
+  const luot = `${wt(lang, "lượt", "turn", "轮")} ${t.luot}/${t.tran}`;
+  if (t.pha === "sua") {
+    return `[${dau}] ${luot} · ${wt(lang, "đang tự sửa…", "self-fixing…", "正在自动修复…")}`;
+  }
+  if (t.xanh) {
+    return `[${dau}] ${luot} · ${wt(lang, "test ĐÃ XANH", "tests GREEN", "测试已通过")}`;
+  }
+  const soDo = t.soDo ?? "?";
+  return `[${dau}] ${luot} · ${soDo} ${wt(lang, "test đỏ", "failing test(s)", "个失败测试")}`;
+}
+
+/** Câu TỔNG khi vòng kết thúc — nói THẲNG xanh / dừng-vì-gì + đã ghi mấy lượt. */
+function cauTongTuTri(lang: KbLanguage, kq: KetQuaVongTuTri): string {
+  // batDau=false: câu tới được đây đã qua `laYDinhTuTri`, nên lý do DUY NHẤT còn lại là **cờ TẮT**.
+  if (!kq.batDau) {
+    return wt(
+      lang,
+      "Vòng tự trị đang TẮT — bật `AI_CODING_TU_TRI_GHI=1` và `AI_CODING_AUTOLOOP=1` rồi khởi động lại.",
+      "Autonomous loop is OFF — set `AI_CODING_TU_TRI_GHI=1` and `AI_CODING_AUTOLOOP=1`, then restart.",
+      "自主循环已关闭——请设置 `AI_CODING_TU_TRI_GHI=1` 与 `AI_CODING_AUTOLOOP=1` 后重启。",
+    );
+  }
+  const soGhi = kq.luots.filter((l) => l.path !== null).length;
+  const daGhi = wt(lang, `đã ghi ${soGhi} lượt vào sổ WORM`, `wrote ${soGhi} turn(s) to the WORM log`, `已向 WORM 日志写入 ${soGhi} 次`);
+  if (kq.lyDo === "xanh") {
+    return wt(
+      lang,
+      `Vòng tự trị: test **ĐÃ XANH** sau ${kq.soLuot} lượt (${daGhi}).`,
+      `Autonomous loop: tests are **GREEN** after ${kq.soLuot} turn(s) (${daGhi}).`,
+      `自主循环：${kq.soLuot} 轮后测试**已通过**（${daGhi}）。`,
+    );
+  }
+  const viDung = ((): string => {
+    switch (kq.lyDo) {
+      case "tep_ban_nguoi":
+        return wt(lang, "tệp đích có thay đổi CHƯA LƯU của bạn — KHÔNG ghi đè", "the target file has UNSAVED changes — refused to overwrite", "目标文件有未保存的改动——已拒绝覆盖");
+      case "kill_switch":
+        return wt(lang, "kill-switch đã bật giữa vòng", "the kill-switch tripped mid-loop", "循环中途触发了急停开关");
+      case "het_tran":
+        return wt(lang, `hết trần ${kq.soLuot} lượt, test vẫn chưa xanh`, `hit the ${kq.soLuot}-turn cap, tests still not green`, `已达 ${kq.soLuot} 轮上限，测试仍未通过`);
+      case "khong_tien_bo":
+        return wt(lang, "không tiến bộ (số test đỏ không giảm / đầu ra lặp)", "no progress (failing count not shrinking / output repeats)", "没有进展（失败数未减少/输出重复）");
+      case "co_tat":
+        return wt(lang, "thiếu cờ `AI_CODING_AUTOLOOP=1` (vòng tự-ghi cần CẢ HAI cờ)", "missing `AI_CODING_AUTOLOOP=1` (self-write loop needs BOTH flags)", "缺少 `AI_CODING_AUTOLOOP=1`（自写循环需要两个开关）");
+      case "khong_quyen":
+        return wt(lang, "thiếu quyền chạy lệnh kiểm chứng", "missing permission to run the verify command", "缺少运行校验命令的权限");
+      case "khong_co_lenh":
+        return wt(lang, "không suy được lệnh kiểm chứng cho dự án này", "could not infer a verify command for this project", "无法为此项目推断校验命令");
+      case "nguoi_tu_choi":
+        return wt(lang, "người dùng đã hủy", "cancelled by the user", "用户已取消");
+      default:
+        return kq.message ?? wt(lang, "lỗi", "error", "错误");
+    }
+  })();
+  return wt(
+    lang,
+    `Vòng tự trị DỪNG sau ${kq.soLuot} lượt: ${viDung}. (${daGhi})`,
+    `Autonomous loop STOPPED after ${kq.soLuot} turn(s): ${viDung}. (${daGhi})`,
+    `自主循环在 ${kq.soLuot} 轮后停止：${viDung}。（${daGhi}）`,
+  );
+}
+
+/**
+ * ★★★ ĐIỂM GỌI: chạy vòng tự-trị-ghi + STREAM tiến độ từng lượt, rồi câu tổng.
+ *
+ * ⚠ HÀNG CHỜ + LỜI HỨA ĐÁNH THỨC — cùng khuôn đường tool (`streamAnswer`): một generator KHÔNG
+ *   `yield` được từ trong callback `onTien`, nên tiến độ đi qua hàng chờ rồi được rút ở vòng `while`.
+ *   Không có nó, người dùng nhìn màn hình đứng im tới nhiều PHÚT (tới 10 lượt × model + test).
+ * ⚠ LUÔN kết thúc bằng một câu tổng + `done`; điểm gọi ở `streamCodingAnswer` RETURN ngay sau, nên
+ *   một câu `laYDinhTuTri` không bao giờ rơi xuống đường thường (kể cả cờ TẮT ⇒ nói THẲNG "TẮT").
+ */
+async function* streamCodingTuTriGhi(
+  question: string,
+  language: KbLanguage,
+  context: KbQueryContext,
+  execCtx: ToolExecContext | undefined,
+  history: readonly LuotHoiThoai[],
+  khoiBaiHoc: string,
+  projectId?: string,
+): AsyncGenerator<StreamEvent> {
+  const sinhBanVa = taoSinhBanVaTuTri({ language, context, execCtx, history, khoiBaiHoc, projectId });
+  // Vòng tự-ghi ghi MÃ, nên cần một danh tính THẬT. Vắng phiên ⇒ vẫn đi qua `chayVongTuTriGhi` để
+  // NÓI THẲNG lý do (cờ tắt ⇒ "TẮT"; cờ bật nhưng thiếu execCtx ⇒ `chayKiemChung` trả NO_EXEC_CONTEXT).
+  const user: CopilotUser = execCtx?.user
+    ? { id: execCtx.user.id, role: execCtx.user.role, name: execCtx.user.name ?? null }
+    : { id: 0, role: "engineer", name: null };
+
+  const hangCho: TienDoTuTri[] = [];
+  let danhThuc: (() => void) | null = null;
+  let xong = false;
+  const loiHua = chayVongTuTriGhi({ projectId, cauHoi: question }, execCtx, user, language, sinhBanVa, (t) => {
+    hangCho.push(t);
+    danhThuc?.();
+  });
+  // Nhánh reject KHÔNG được để trơ (unhandled rejection giết tiến trình Node ≥15); `await loiHua`
+  // dưới đây mới là nơi lỗi thật sự được xử lý.
+  void loiHua.then(
+    () => {},
+    () => {},
+  ).then(() => {
+    xong = true;
+    danhThuc?.();
+  });
+  while (true) {
+    while (hangCho.length > 0) {
+      const t = hangCho.shift()!;
+      yield {
+        type: "tool_loop",
+        round: t.luot,
+        phase: t.pha === "chay" ? "xong" : "dang_goi",
+        toolName: t.pha === "chay" ? "run_command" : "apply_diff",
+        elapsedMs: 0,
+      };
+      yield { type: "token", token: `\n${dongTienDoTuTri(language, t)}` };
+    }
+    if (xong) break;
+    await new Promise<void>((r) => {
+      danhThuc = () => {
+        danhThuc = null;
+        r();
+      };
+    });
+  }
+  const kq = await loiHua;
+  const tong = cauTongTuTri(language, kq);
+  yield { type: "token", token: `\n\n${tong}` };
+  yield doneSinhMa(tong, kq.batDau ? "ollama" : "tool");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════

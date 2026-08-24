@@ -7,6 +7,18 @@
  * *"Vòng tự động vẫn giữ bạn duyệt mỗi lần GHI — cái được tự động hoá là chạy test → đọc lỗi →
  * đề xuất bản sửa tiếp, không phải quyền ghi đĩa."*
  *
+ * ⚠⚠⚠ ĐÍNH CHÍNH (2026-08-24 · VÒNG TỰ-TRỊ-GHI) — RANH GIỚI TRÊN LÀ QUYẾT ĐỊNH doc 79, KHÔNG CÒN
+ * LÀ RANH GIỚI DUY NHẤT CỦA HỆ. Chủ dự án đã quyết TƯỜNG MINH mở một vòng TỰ GHI (model tự áp
+ * `apply_diff`, không người duyệt) ở `server/services/aiCodingTuTriGhi.ts` (cờ `AI_CODING_TU_TRI_GHI`,
+ * **mặc định TẮT**). Hai sự thật phải nói cho đúng để không để lại lời khai sai:
+ *   • **FILE NÀY KHÔNG ĐỔI HÀNH VI**: `chayKiemChung` VẪN chỉ chạy `run_command` (bước CHẠY), tên
+ *     tool ở lời gọi dưới VẪN là HẰNG CHỮ, `apply_diff` VẪN không tới được đây. Câu trích trên vẫn
+ *     đúng NGUYÊN VĂN *cho file này*.
+ *   • Vòng tự-ghi **DÙNG LẠI** `chayKiemChung` làm bước CHẠY của nó, nhưng phần TỰ GHI nằm ở file
+ *     kia, sau một cổng riêng (`khoiDongTuTriGhiDuoc` + `apDungDiffTuTriDuoc` + kill-switch). Nên
+ *     đọc bốn ràng buộc dưới đây là "ràng buộc của BƯỚC CHẠY", không phải "toàn hệ vẫn giữ HITL mọi
+ *     lượt ghi" — mệnh đề sau KHÔNG còn đúng tuyệt đối khi cờ tự-ghi bật.
+ *
  * File này là chỗ DUY NHẤT của vòng tự động được sinh một tiến trình. Nó bị bó bằng bốn ràng buộc,
  * và cả bốn đều đo được:
  *   1. **CHỈ `run_command`.** Tên tool là một hằng viết thẳng ở lời gọi `executeDecision` bên dưới;

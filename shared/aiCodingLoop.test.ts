@@ -19,6 +19,7 @@ import {
   TRAN_VONG_MAC_DINH,
   TRAN_VONG_TOI_DA,
   TRAN_VONG_TOI_THIEU,
+  TRAN_VONG_TU_TRI_TOI_DA,
   TRAN_LOI_VAO_PROMPT,
   bamChuoi,
   catLoiChoPrompt,
@@ -26,6 +27,7 @@ import {
   deXuatLapLai,
   docKetQuaTest,
   kepTranVong,
+  kepTranVongTuTri,
   ketLuanTest,
   quyetDinhTiep,
   type TrangThaiSauTest,
@@ -235,5 +237,35 @@ describe("§5 — `ketLuanTest`: chắc mới nói, mâu thuẫn thì im lặng"
     expect(ketLuanTest("src/a.ts(3,1): error TS2304: Cannot find name 'x'.", 2)).toBeNull();
     expect(ketLuanTest("", 0)).toBeNull();
     expect(ketLuanTest(null, 0)).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-24 · VÒNG TỰ-TRỊ-GHI — §6: TRẦN CỨNG RIÊNG (cao hơn, vì vòng này TỰ GHI lẫn TỰ CHẠY)
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ĐỘT BIẾN PHẢI BẮT ĐƯỢC:
+ *   • đảo `TRAN_VONG_TU_TRI_TOI_DA` thành ∞ / bỏ kẹp trên     ⇒ ca "kẹp về 10" ĐỎ
+ *   • trộn hai trần (dùng `TRAN_VONG_TOI_DA=5` cho vòng tự-ghi) ⇒ ca "99 ⇒ 10, KHÔNG phải 5" ĐỎ
+ *   • đổi mặc định (trần cao thành số lượt mặc định)           ⇒ ca "méo ⇒ mặc định 3" ĐỎ
+ */
+describe("§6 — TRẦN vòng TỰ-GHI: kẹp `[1..10]`, mặc định 3, TÁCH khỏi trần vòng chỉ-chạy-test", () => {
+  it("★★★ trần CỨNG là 10 (cao hơn 5 của vòng chỉ-chạy-test) — và hai con số KHÁC nhau là điểm", () => {
+    expect(TRAN_VONG_TU_TRI_TOI_DA).toBe(10);
+    expect(TRAN_VONG_TU_TRI_TOI_DA).toBeGreaterThan(TRAN_VONG_TOI_DA);
+  });
+
+  it("★★★ kẹp về [1..10]; `99 ⇒ 10` (KHÔNG kẹp về 5 — trộn hai trần là đột biến)", () => {
+    expect(kepTranVongTuTri("99")).toBe(TRAN_VONG_TU_TRI_TOI_DA);
+    expect(kepTranVongTuTri("10")).toBe(10);
+    expect(kepTranVongTuTri("7")).toBe(7);
+    expect(kepTranVongTuTri("0")).toBe(TRAN_VONG_TOI_THIEU);
+    expect(kepTranVongTuTri("-3")).toBe(TRAN_VONG_TOI_THIEU);
+  });
+
+  it("★★ đầu vào méo ⇒ mặc định 3 (trần CAO là kẹp trên, KHÔNG phải số lượt mặc định)", () => {
+    for (const xau of [undefined, null, "", "ba", NaN, Infinity, {}]) {
+      expect(kepTranVongTuTri(xau), String(xau)).toBe(TRAN_VONG_MAC_DINH);
+    }
   });
 });

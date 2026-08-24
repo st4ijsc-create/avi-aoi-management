@@ -61,6 +61,50 @@ export function isAutonomyEnabled(): boolean {
   return process.env.AI_AUTONOMY_ENABLED === "true";
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-24 — CỜ + VỊ TỪ CHO **VÒNG TỰ-TRỊ-GHI** (`apply_diff` KHÔNG người duyệt)
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ `AI_CODING_TU_TRI_GHI` — CÔNG TẮC của thay đổi NGUY HIỂM NHẤT hệ này từng làm: model tự ghi
+ * đè mã nguồn (`apply_diff`) rồi tự chạy test, LẶP tới khi xanh/trần, **KHÔNG người bấm duyệt từng
+ * lượt**. **MẶC ĐỊNH TẮT.** Chỉ chuỗi `"1"` bật (khuôn `AUTH_2FA_BAT_BUOC`/`DOTNET_CHO_PHEP_RESTORE`).
+ *
+ * ⚠⚠⚠ ĐÂY LÀ MỘT NGOẠI LỆ CÓ CHỦ Ý VỚI MỘT BẤT BIẾN ĐÃ VIẾT RA. `apply_diff` nằm trong
+ * `AUTONOMY_INELIGIBLE` (ngay dưới) kèm câu *"bất biến mà doc 79 cũng KHÔNG được phép chạm"*, và
+ * `aiCodingVerify.ts` khai *"HITL trên mỗi lượt GHI là bất biến"*. Chủ dự án đã quyết TƯỜNG MINH gỡ
+ * đúng bất biến ấy (sau khi được nêu rõ "không đảo được nếu model phá"). Cờ này là cái công tắc của
+ * quyết định đó, và nó phải do NGƯỜI bật — một mặc định `.env` không được lật một lập trường an toàn
+ * đã viết ra cho mọi người pull nhánh này.
+ * ⚠ Đọc TẠI CHỖ GỌI, không nhớ đệm ở tầng module (bài học `TENANT_RLS_ENABLED`): lưới lật env theo
+ *   ca phải bật/tắt được vị từ mà không nạp lại module.
+ */
+export function autonomyGhiTuTriBat(): boolean {
+  return process.env.AI_CODING_TU_TRI_GHI === "1";
+}
+
+/**
+ * ★★★ **VỊ TỪ "gỡ apply_diff khỏi ineligible CÓ ĐIỀU KIỆN"** — thay cho việc xoá cứng tên khỏi
+ * `AUTONOMY_INELIGIBLE`.
+ *
+ * `apply_diff` là tool GHI DUY NHẤT mà vòng tự-trị được phép tự xác nhận, và CHỈ khi
+ * `autonomyGhiTuTriBat()`. Mọi tên khác trong denylist ⇒ **luôn** `false` (không cờ nào mở). Vòng
+ * tự-ghi (`aiCodingTuTriGhi.ts`) gọi CHÍNH hàm này làm cổng trước khi auto-confirm; đột biến "trả
+ * `true` bất kể cờ" ⇒ ca cờ-TẮT ĐỎ (xem `autonomyWriteToolCensus.test.ts §D`).
+ *
+ * ⚠⚠ **PHẠM VI HẸP CÓ CHỦ Ý — KHÔNG mở đường tự trị CHUNG cho apply_diff.** `evaluateAutonomy`
+ * (đường bounded-autonomy VẬN HÀNH: `AI_AUTONOMY_ENABLED` + allowlist) VẪN từ chối apply_diff ở điều
+ * kiện 3 (`AUTONOMY_INELIGIBLE.has` không đọc cờ này) — vì auto-ghi-mã là một cơ chế RIÊNG, hẹp hơn
+ * (đòi `laYDinhTuTri` + kill-switch + trần 10 + dừng-không-tiến-bộ + kiểm tệp-bẩn), KHÔNG phải một
+ * mục allowlist vận hành. Hai cửa, hai chính sách; hàm này CHỈ mở cửa thứ hai. Xem
+ * `autonomyWriteToolCensus.test.ts §D` (khai LỜI: cửa vận hành vẫn cấm; cửa tự-ghi mở theo cờ).
+ * ⚠ `apply_diff_batch` **KHÔNG** ở đây: một lô hỏng giữa chừng để lại cây NỬA VỜI (xem docblock của
+ *   nó trong `AUTONOMY_INELIGIBLE`) — trạng thái khó dò nhất để tự động hoá. Vòng tự-ghi tự sửa TỪNG
+ *   tệp một, mỗi lượt một `apply_diff`, nên nó không cần lô.
+ */
+export function apDungDiffTuTriDuoc(toolName: string): boolean {
+  return toolName === "apply_diff" && autonomyGhiTuTriBat();
+}
+
 /** Comma-separated action `type`s (tool names) eligible for auto-confirm. Default EMPTY. */
 export function getAutonomyAllowlist(): ReadonlySet<string> {
   const raw = process.env.AI_AUTONOMY_ALLOWLIST;
@@ -139,8 +183,22 @@ export const AUTONOMY_INELIGIBLE: ReadonlySet<string> = new Set<string>([
    * NÀO"*; không hàng rào nào trả lời *"nội dung ghi vào có ĐÚNG không"* — chỉ người đọc diff mới
    * trả lời được. Đây đúng nghĩa "không đảo lại được một cách rẻ tiền": một lượt ghi sai đè lên mã
    * đang chạy, và nếu tệp chưa commit thì không có bản gốc nào để quay về.
-   * ⇒ TUYỆT ĐỐI không auto-execute. Người đọc diff rồi bấm duyệt — đó là toàn bộ điểm của pha C,
-   *   và là bất biến mà doc 79 (vòng tự động) cũng KHÔNG được phép chạm.
+   * ⇒ TUYỆT ĐỐI không auto-execute **qua đường bounded-autonomy vận hành này** (`evaluateAutonomy`).
+   *   Người đọc diff rồi bấm duyệt — đó là toàn bộ điểm của pha C.
+   *
+   * ⚠⚠⚠ ĐÍNH CHÍNH (2026-08-24 · VÒNG TỰ-TRỊ-GHI) — CÂU "doc 79 cũng KHÔNG được phép chạm" **KHÔNG
+   * CÒN ĐÚNG TUYỆT ĐỐI**, và để nguyên nó là để lại một lời khai sai cho người đọc sau (đúng lỗi mà
+   * khối `run_command` bên dưới đã tự sửa).
+   * Chủ dự án đã quyết TƯỜNG MINH mở một vòng TỰ GHI (`aiCodingTuTriGhi.ts`, cờ `AI_CODING_TU_TRI_GHI`
+   * **mặc định TẮT**) — nó auto-confirm `apply_diff` KHÔNG người bấm. Hai sự thật phải nói cho đúng:
+   *   1. Vòng ấy **KHÔNG đi qua `evaluateAutonomy`** (nó dùng cửa `confirmAction(..., {reason})` trực
+   *      tiếp, y như `aiCodingVerify` làm với `run_command`). Nên `apply_diff` ở lại danh sách này là
+   *      ĐÚNG và **KHÔNG mâu thuẫn**: đường bounded-autonomy vận hành VẪN từ chối nó ở điều kiện 3.
+   *   2. Việc "gỡ có điều kiện" là một **VỊ TỪ** — `apDungDiffTuTriDuoc()` (ở đầu file), CHỈ `true`
+   *      cho `apply_diff` khi cờ bật. Vòng gọi vị từ ấy làm cổng; denylist này không bị xoá một tên.
+   * Vòng tự bó bằng đúng những hàng rào doc 78 nêu tên: `laYDinhTuTri` (khởi động tường minh) · trần
+   * cứng 10 + dừng-khi-không-tiến-bộ · kiểm tệp-bẩn (`applyDiff` barrier 4 ⇒ `FILE_DIRTY` ⇒ vòng
+   * DỪNG) · hộp cát/secret nguyên vẹn · kill-switch runtime · audit WORM mỗi lượt.
    */
   "apply_diff",
   /**

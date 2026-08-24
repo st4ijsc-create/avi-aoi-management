@@ -2228,6 +2228,58 @@ export function laYDinhTaoDuAn(question: string): boolean {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ Ý ĐỊNH **TỰ TRỊ GHI** (vòng tự sửa cho tới khi test xanh): vị từ TẤT ĐỊNH, KHỞI ĐỘNG TƯỜNG MINH
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ *"Câu này có KHỞI ĐỘNG một tác vụ TỰ TRỊ GHI không?"* — tức xin hệ **tự sinh bản vá + tự chạy
+ * test, lặp cho tới khi xanh/trần, KHÔNG người duyệt từng lượt.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO VỊ TỪ NÀY LÀ MỘT CÁI KHOÁ AN TOÀN, KHÔNG PHẢI MỘT BỘ ĐỊNH TUYẾN TIỆN NGHI
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `true` ở đây là điều kiện CẦN để mở vòng tự-ghi — thay đổi NGUY HIỂM NHẤT của hệ (model ghi đè mã
+ * production KHÔNG người duyệt). Hai chiều hỏng KHÔNG đối xứng, và lệch xa hơn mọi vị từ khác:
+ *   • SÓT (một tác vụ tự trị thật bị coi là câu thường) ⇒ người dùng nhận đường HITL cũ — mất tiện,
+ *     mất 0 an toàn.
+ *   • THỪA (một câu THƯỜNG khởi động vòng tự-ghi) ⇒ model bắt đầu tự ghi đĩa cho một yêu cầu người
+ *     dùng KHÔNG hề xin. ⇒ Khi phân vân, **KHÔNG nhận** — đòi tín hiệu tường minh, không đoán.
+ *
+ * ⇒ Đòi ĐỦ HAI VẾ, không một từ khoá đơn:
+ *   (1) một dấu hiệu TỰ-TRỊ (`tự sửa`/`tự động sửa`/`tự vá`) HOẶC một dấu hiệu VÒNG-TỚI-ĐÍCH
+ *       (`lặp/cho tới khi … + động từ sửa`); VÀ
+ *   (2) một MỤC TIÊU đo được (`test`/`build`/`xanh`/`pass`/`lỗi`/`green`).
+ * Nhờ (1)+(2): *"đọc tệp X"*, *"giải thích lớp Calculator"*, *"sửa src/a.cs: thêm chú thích"* (một
+ * lượt sửa tường minh — `trichDuongSuaTatDinh` lo), *"tự tin sửa lại"* đều **false**. *"chạy dotnet
+ * test"* (không có động từ SỬA) cũng false — nó là một lượt CHẠY, không phải một VÒNG tự sửa.
+ *
+ * ⚠ THUẦN + chịu không-dấu (`boDauThuong`, cùng khuôn `laYDinhTaoDuAn`/`laCauCanSuyLuan`); lưới A/B
+ *   có/không dấu ở `intentClassifier.tuTri.test.ts`.
+ * ⚠ Vị từ này KHÔNG tự bật cờ: `AI_CODING_TU_TRI_GHI` (mặc định TẮT) + kill-switch mới là cái CHO
+ *   PHÉP; đây chỉ trả lời *"người dùng có XIN không"*. Cả hai phải cùng đúng — xem
+ *   `autonomyPolicy.autonomyGhiTuTriBat` + `aiCodingTuTriGhi.khoiDongTuTriGhiDuoc`.
+ */
+export function laYDinhTuTri(question: string): boolean {
+  const q = boDauThuong(question);
+  const dongTuSua = /(sua|va|fix|khac\s*phuc)/;
+  const mucTieu = /(xanh|pass|test|build|loi|green|bug)/;
+  // (1a) TỰ-TRỊ: "tự sửa" / "tự động sửa" / "tự vá" / "tự động khắc phục" — động từ sửa đứng SÁT "tự".
+  const tuTri = /(^|[^a-z])tu(\s+dong|\s+tri)?\s+(sua|va|fix|khac\s*phuc)/.test(q);
+  // (1b) VÒNG-TỚI-ĐÍCH: "lặp/cho tới khi …" + có động từ sửa ở đâu đó trong câu.
+  const vongToiDich =
+    /(lap\s+(cho|toi|den)|cho\s+(toi|den)\s+khi|(^|[^a-z])(toi|den)\s+khi)/.test(q) && dongTuSua.test(q);
+  const vi = (tuTri || vongToiDich) && mucTieu.test(q);
+  const en =
+    (/(auto(?:matic(?:ally)?|nomous(?:ly)?)?|self)[\s-]*(fix|repair|patch|correct)/i.test(q) &&
+      /(pass|green|test|build|error|bug)/i.test(q)) ||
+    /(keep|loop|iterate|until)\b[\s\S]{0,40}(fix|repair|patch)[\s\S]{0,40}(pass|green|test|build)/i.test(q) ||
+    /(fix|repair|patch)[\s\S]{0,40}(until|till)[\s\S]{0,20}(pass|green|test|build)/i.test(q);
+  const zh =
+    (/(自动|自主)\s*(修复|修正|修改|改)/.test(question) && /(通过|绿|测试|构建|错误)/.test(question)) ||
+    /(直到|循环)[\s\S]{0,20}(通过|绿|测试)/.test(question);
+  return vi || en || zh;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
 // ★★★ doc 81 · VIỆC 2 — BỘ CHỌN TOOL CHO **VÒNG ≥2** CỦA CHẾ ĐỘ LẬP TRÌNH
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 /**

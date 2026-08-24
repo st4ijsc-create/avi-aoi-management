@@ -19454,7 +19454,9 @@
         "perm": "Loop did not run: your account lacks RUN-COMMAND permission (ai_repo_exec). The server is the real gate — get the permission and retry.",
         "off": "The auto loop is OFF (the default) — the fix WAS written, but you must run the tests yourself. Enable it with AI_CODING_AUTOLOOP=1 and restart the server.",
         "offUser": "The auto loop is OFF — the fix WAS written, but you must run the tests yourself. This feature is enabled by an administrator on the server — contact your administrator.",
-        "error": "STOPPED by a REAL failure while running the verification command."
+        "error": "STOPPED by a REAL failure while running the verification command.",
+        "dirty": "STOPPED because the target file has UNCOMMITTED changes of yours — the auto-write loop will NOT overwrite unsaved work. Commit (or stash) first, then retry.",
+        "kill": "STOPPED because the emergency kill-switch is tripped — the auto-write loop halts immediately. Contact your administrator to reset it."
       }
     },
     "pane": {

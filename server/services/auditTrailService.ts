@@ -192,6 +192,11 @@ export const AUDIT_ACTIONS = {
   // kill-switch (admin + 2FA). Distinct from AI_AUTONOMY_DECISION (a per-proposal
   // decision trace): this is the durable master-switch flip itself.
   AI_AUTONOMY_KILL_SWITCH: "ai_autonomy_kill_switch",
+  // ★★★ 2026-08-24 — VÒNG TỰ-TRỊ-GHI (AI_CODING_TU_TRI_GHI). MỘT hàng WORM cho MỖI lượt của vòng
+  // model-tự-ghi-mã-KHÔNG-người-duyệt: băm tệp TRƯỚC/SAU, lệnh kiểm chứng đã chạy, kết quả test,
+  // lượt thứ mấy. Đây là sổ để sau truy được CHÍNH XÁC model đã làm gì mà KHÔNG có người xem —
+  // xem server/services/aiCodingTuTriGhi.ts.
+  AI_CODING_TU_TRI_LUOT: "ai_coding_tu_tri_luot",
 
   // Interlock auto-block (GĐ F5b) — a DETERMINISTIC, human-approved interlock
   // rule auto-fired a block/stop/reduce command down to the machine. NOT an AI

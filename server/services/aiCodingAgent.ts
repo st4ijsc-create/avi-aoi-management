@@ -1103,6 +1103,60 @@ export function bocManifestKhung(text: string): KetQuaManifestKhung {
   return { ok: true, tep };
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-24 · VÒNG TỰ-TRỊ-GHI — BƯỚC 1: MODEL CHỌN TỆP (server xác thực IN-TREE)
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ HAI GỐC RỄ TỪ NGHIỆM THU LIVE 30B (2026-08-24) — VÌ SAO "MODEL CHỌN, SERVER XÁC THỰC" + HAI BƯỚC
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Live #1: regex-nhặt-tệp-đầu trong đầu ra test trỏ tệp TEST (đường TUYỆT ĐỐI) ⇒ hộp cát từ chối /
+ *   model sửa TEST để gaming. ⇒ **ĐỂ MODEL CHỌN TỆP** (nó hiểu "bug ở nguồn, không phải test").
+ * Live #2: model một-lượt xuất `### FILE:` + SEARCH/REPLACE ĐÚNG khuôn, nhưng SEARCH viết theo TRÍ
+ *   NHỚ (`public static double` trong khi tệp thật `public double`) ⇒ neo lệch BYTE ⇒ từ chối một
+ *   valid-fix. Gốc: prompt KHÔNG có nội dung tệp. ⇒ **HAI BƯỚC**: (1) model chọn TỆP [hàm này], rồi
+ *   (2) `chuanBiBanSuaMotTep` ĐỌC nội dung thật vào prompt ⇒ model COPY SEARCH khớp byte (bước 2 ở
+ *   `aiLocalKnowledgeService`). Đánh đổi: 2 lượt model (~8 phút/vòng) — đường tự-ghi-không-người thì
+ *   ĐÚNG-HƠN-NHANH; fuzzy-neo là đường cấm (áp nhầm chỗ).
+ *
+ * Hàm THUẦN này chỉ nhận đường **CÓ TRONG CÂY** `list_files` (chống "model bịa đường", đo LIVE
+ * 2026-08-19). KHÔNG lọc tệp test ở đây: `laTepTest` + cờ audit (ở `aiCodingTuTriGhi`) lo phần đó —
+ * sửa test đôi khi hợp lệ, chỉ cần KHAI trong sổ.
+ */
+function chuanHoaDuongCay(d: string): string {
+  return d.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "").toLowerCase();
+}
+
+export function chonDuongTuTri(phanHoi: string, cayTep: string): string | null {
+  // Bản đồ (đường chuẩn hoá → đường NGUYÊN VĂN của cây), CHỈ tệp (bỏ thư mục có `/` cuối).
+  const mapCay = new Map<string, string>();
+  for (const dong of String(cayTep ?? "").split("\n")) {
+    const raw = dong.trim();
+    if (raw === "" || raw.endsWith("/")) continue; // thư mục ⇒ bỏ (chỉ chọn TỆP)
+    mapCay.set(chuanHoaDuongCay(raw), raw);
+  }
+  if (mapCay.size === 0) return null;
+  const trongCay = (d: string): string | null => {
+    const sach = d.trim().replace(/^[`'"*\s]+/, "").replace(/[`'"*\s]+$/, "");
+    return mapCay.get(chuanHoaDuongCay(sach)) ?? null; // CHỈ đường TRONG CÂY (chống bịa)
+  };
+  // (a) ƯU TIÊN dòng `### FILE: <đường>` (persona bước 1 đòi đúng khuôn này).
+  for (const dong of String(phanHoi ?? "").split("\n")) {
+    const m = dong.match(RE_TEP_KHUNG);
+    if (m && m[1]) {
+      const r = trongCay(m[1]);
+      if (r) return r;
+    }
+  }
+  // (b) DỰ PHÒNG: một đường TRONG CÂY xuất hiện như TOKEN TRỌN VẸN trong phản hồi (không dính chữ khác).
+  const ph = String(phanHoi ?? "");
+  for (const [, entry] of mapCay) {
+    const esc = entry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`(^|[^\\w./\\\\-])${esc}([^\\w./\\\\-]|$)`).test(ph)) return entry;
+  }
+  return null;
+}
+
 /** Nhãn ngôn ngữ cho khối ``` theo đuôi tệp — chỉ để prompt đọc tự nhiên, không phải cổng an toàn. */
 export function nhanNgonNgu(duong: string): string {
   const duoi = (duong.match(/\.[A-Za-z0-9]+$/)?.[0] ?? "").toLowerCase();

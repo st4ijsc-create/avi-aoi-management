@@ -177,6 +177,8 @@ describe("§3 — IM LẶNG LÀ NÓI DỐI: mọi lý do dừng có câu chữ �
     khong_quyen: "repoWs.loop.stop.perm",
     co_tat: "repoWs.loop.stop.off",
     loi: "repoWs.loop.stop.error",
+    tep_ban_nguoi: "repoWs.loop.stop.dirty",
+    kill_switch: "repoWs.loop.stop.kill",
   };
 
   for (const [lyDo, khoa] of Object.entries(KHOA)) {
