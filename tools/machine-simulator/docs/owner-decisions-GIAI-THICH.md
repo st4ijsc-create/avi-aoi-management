@@ -338,8 +338,14 @@ Ba mục này **không phải khuyết tật sản phẩm**. Khách hàng không
 
 **1. Chuyện gì đang xảy ra.** Cổng kiểm tra tự động của sản phẩm chạy **năm bộ test**, và **không bộ
 nào** nằm dưới thư mục giao diện web — **0 trên 5** (đếm 2026-08-24 từ chính danh sách trong script).
-Dưới `web/` có **124** file nguồn và **28** file spec mang **ít nhất 142** chỗ gọi test (một **SÀN**,
+Dưới `web/` có **124** file nguồn và **29** file spec mang **ít nhất 144** chỗ gọi test (một **SÀN**,
 không phải một tổng). Cổng **không gọi cái nào**.
+🔴 **Hai con số ấy KHÔNG khớp thân mục 60, và tôi đo lại chứ không chép.** Thân mục viết **28 spec**
+và **ít nhất 142** — đúng vào lúc nó được viết. Cổng chạy hôm nay **tự dẫn xuất** con số lúc chạy và
+in **29** / **ít nhất 144**; đếm tay cũng cho **29**. Cái làm nó lệch là **spec nhân chứng của chính
+mục 68** (`29-machine-settings-unwired-types.spec.ts`), thêm vào **cùng ngày 2026-08-24**, sau khi
+mục 60 được viết. **Một lời khai chưa đầy một ngày tuổi đã lệch** — và nó lệch vì một mục khác trong
+chính danh sách này. Con số `124` thì **không dịch**.
 
 **2. Khách hàng / vận hành viên thấy gì.** Khách hàng không thấy gì — cho tới khi một bản sửa giao
 diện hỏng. Điều **đã xảy ra**: ngày 2026-08-24 một bản sửa **SẢN PHẨM** hạ cánh vào giao diện web
@@ -412,12 +418,13 @@ nhiệm vụ** và **giấu một khuyết tật sản phẩm thật**; rồi c�
 đĩa trong khi `git status` nói SẠCH, và mỗi nhiệm vụ **tự khám phá lại** điều đó — hoặc **không**, và
 viết một câu *"không tồn tại"* dựa trên một tập chưa bao giờ mở hết.
 
-**5. Đề xuất của tôi (ĐỀ XUẤT, không phải phép đo).** **Hướng B.** Cơ sở đo được: nó mua **97,5 %**
-giá trị (năm thư mục mà các nhiệm vụ thật sự phải đọc — `server/` một mình là chỗ mục 69 và mục 71
-phải đi vòng qua git để đọc) với **4,4 %** cái giá, và nó **tránh được đúng thứ chiếm 94 % chi phí**
-là thư mục `uploads/`. Mục gốc **cố ý không chọn** hướng này vì *"nó vẫn là ví tiền của anh"* — tôi
-chọn nó, và ghi rõ rằng đây là **ý kiến của tôi chồng lên một phép đo của mục**, không phải kết luận
-của phép đo ấy.
+**5. Đề xuất của tôi (ĐỀ XUẤT, không phải phép đo).** **Hướng B.** Cơ sở, và tôi chỉ dùng những con
+số mục gốc đã đo: hướng B **tránh được đúng thứ chiếm 94 % chi phí** (`uploads/`) và tốn **4,4 %**
+giá của hướng A; và năm thư mục nó kéo về **chính là những thư mục các nhiệm vụ thật sự phải đọc** —
+`server/` một mình là chỗ mục 69 và mục 71 đã phải **đi vòng qua git** để đọc. 🔴 **Tôi KHÔNG có con
+số nào cho "hướng B mua được bao nhiêu phần giá trị"** — không ai đo nó, và tôi không bịa một tỉ lệ
+ra ở đây. Mục gốc **cố ý không chọn** hướng này vì *"nó vẫn là ví tiền của anh"*; tôi chọn nó, và ghi
+rõ rằng đây là **ý kiến của tôi chồng lên một phép đo của mục**, không phải kết luận của phép đo ấy.
 
 ---
 
@@ -733,9 +740,11 @@ ngôn ngữ và cả hai bề mặt.
   Chọn bờ rẻ là chấp nhận rằng lần thêm một bộ mô phỏng mới, câu cảnh báo sẽ **sai theo chiều ngược
   lại** và **không dụng cụ nào bắt được**.
 
-**4. Nếu không quyết.** Bờ rẻ đứng nguyên. Và bộ test giao diện **không chạm hai loại máy ấy** — quét
-cả **28 spec**: **0** lần xuất hiện. Nên **ngay cả khi cổng có chạy `web/` (mục 60), nó vẫn sẽ không
-đỏ**. *(Một spec mới có chạy hai loại ấy đã được viết ngày 2026-08-24; cổng **không chạy** nó.)*
+**4. Nếu không quyết.** Bờ rẻ đứng nguyên. Và bộ test giao diện **cũ không chạm hai loại máy ấy** —
+quét **28 spec có từ trước**: **0** lần xuất hiện. 🔴 **Đọc con số ấy cho đúng:** nó đếm 28 spec
+**trước khi** spec nhân chứng của chính mục 68 ra đời. Hôm nay có **29** spec, và **cái thứ 29 CHÍNH
+LÀ spec chạy WELD-01 và DISP-01** — nhưng **cổng không chạy nó** (mục 60), nên nó chỉ đỏ được khi có
+người gõ lệnh bằng tay. ⇒ **Ngay cả khi cổng có chạy `web/`, bộ spec CŨ vẫn sẽ không đỏ.**
 
 **5. Đề xuất của tôi (ĐỀ XUẤT, không phải phép đo).** **Dừng ở B, trừ khi payload ấy đang được sửa vì
 lý do khác.** Cơ sở: **mục 42 đã quyết** rằng payload này không thêm trường, và tiền lệ **mục 27** nói
@@ -818,6 +827,13 @@ không theo con số, hoặc phải nói rằng chỗ ấy **đang tranh chấp*
 8. **Các con số đo ở ngày cũ vẫn nằm trong thân mục.** Ví dụ mục 41 §41.8 nói *"tổng 2852 không được
    dịch"*; tổng bộ test hôm nay là **2958**. Chúng **đúng vào ngày được viết** và file này **không
    sửa chúng** — nhưng chúng đọc như hiện tại.
+9. 🔴 **Mục 60 và mục 68 làm lệch số của nhau, TRONG CÙNG MỘT NGÀY — đo được hôm nay, chưa ai ghi.**
+   Mục 60 khai **28 spec** / **ít nhất 142** chỗ gọi test; đo hôm nay là **29** / **ít nhất 144**
+   (cổng tự dẫn xuất lúc chạy, và đếm tay khớp). Cái thứ 29 là **spec nhân chứng của chính mục 68**,
+   thêm cùng ngày. Và ngược lại: mục 68 khai *"0 lần WELD hoặc DISP trên cả 28 spec"* — câu ấy đếm
+   **28 spec có trước spec của chính nó**, mà spec của chính nó **chính là** cái chạy WELD/DISP.
+   **Hai mục trong cùng danh sách, viết cùng ngày, và mỗi mục làm con số của mục kia đọc sai.** Đây
+   là phát hiện của file này.
 
 **Không mục nào trong tám chỗ trên bị nhiệm vụ này sửa.** Chúng được **nêu tên**, ở đây, để anh biết
 chỗ nào cần đọc bằng tên thay vì bằng số.
