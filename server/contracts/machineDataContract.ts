@@ -118,8 +118,14 @@ export const machineDataContractV11 = z.object({
 // ── Registry phiên bản ──────────────────────────────────────────────────────
 // v2.0 (Pha 1A Task 4) — payload cây 4 cấp surface→position→capture→component
 // (`machineDataContractV2.ts`), thay hình dạng PHẲNG `measurements: []` của
-// v1.0/v1.1. v1.0/v1.1 GIỮ LẠI trong map KHÔNG phải để nhận — mà để nhận DIỆN
-// và từ chối máy cũ CÓ LÝ DO (xem `loiMayChuaNangCap` bên dưới).
+// v1.0/v1.1. v1.0/v1.1 GIỮ LẠI trong map để TRA CỨU/SO SÁNH — registry còn
+// nhận diện được các phiên bản cũ theo tên. ★ TRẠNG THÁI THẬT hôm nay:
+// `validateMachinePayload("1.1", <payload hợp lệ>)` vẫn trả `{ok:true}` —
+// v1.1 VẪN ĐƯỢC NHẬN qua hàm này, KHÔNG bị chặn. Việc "từ chối v1.x" là thông
+// điệp đã viết sẵn (`loiMayChuaNangCap` bên dưới) NHƯNG CHƯA CÓ NƠI GỌI trong
+// mã sản xuất (0 call site) — Pha 1A chỉ định nghĩa hợp đồng, chưa nối vào
+// đường quyết định nào. Pha 1B (nối đường ingest) sẽ là nơi việc từ chối THẬT
+// SỰ xảy ra.
 export const MACHINE_CONTRACT_VERSIONS = {
   "1.0": machineDataContractV1,
   "1.1": machineDataContractV11,
@@ -131,9 +137,15 @@ export type MachineContractVersion = keyof typeof MACHINE_CONTRACT_VERSIONS;
 export const LATEST_MACHINE_CONTRACT_VERSION: MachineContractVersion = "2.0";
 
 /**
- * Máy gửi payload phiên bản CŨ. Trả lỗi NÊU RÕ phiên bản cần, thay vì để zod ném
- * một đống lỗi trường mà kỹ sư hiện trường không đọc nổi.
- * Giữ v1.0/v1.1 trong map KHÔNG phải để nhận — mà để nhận DIỆN và từ chối có lý do.
+ * Thông điệp từ chối máy gửi payload phiên bản CŨ — NÊU RÕ phiên bản đang gửi
+ * và phiên bản cần, thay vì để zod ném một đống lỗi trường mà kỹ sư hiện
+ * trường không đọc nổi.
+ *
+ * ★ CHƯA CÓ NƠI GỌI trong mã sản xuất (0 call site) — hàm này mới chỉ là
+ * thông điệp được VIẾT SẴN. Giữ v1.0/v1.1 trong `MACHINE_CONTRACT_VERSIONS`
+ * là để registry còn TRA CỨU/SO SÁNH được, không phải bằng chứng chúng đã bị
+ * từ chối ở đâu đó. Pha 1B sẽ nối hàm này vào đường ingest thật để việc từ
+ * chối v1.x THẬT SỰ xảy ra, không chỉ được mô tả.
  */
 export function loiMayChuaNangCap(schemaVersion: string): Error {
   return new Error(

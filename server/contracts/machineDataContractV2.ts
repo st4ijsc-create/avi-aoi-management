@@ -23,6 +23,12 @@
  *    chụp vùng trống) là hình dạng thật trong dữ liệu sản xuất. KHÔNG `.min(1)`.
  *
  * Additive — không đụng DB, không đụng đường ingest (`machineApiRouters.ts`).
+ *
+ * ── Vòng sửa 1 (review 10-đột-biến, F2/F3/F9) ──────────────────────────────
+ * - Ba khoá join (`captureId`, `componentId`, `positionId`) đều `.trim().min(1)`
+ *   — chuỗi TOÀN KHOẢNG TRẮNG bị từ chối, vì nó không join được với gì.
+ * - `serialNumber` KHÔNG `.min(1)` (KHÔNG phải khoá join — rỗng là hình dạng
+ *   thật, xem chú thích tại chỗ khai báo).
  */
 import { z } from "zod";
 
@@ -39,8 +45,10 @@ const identityV2 = z.object({
 
 // ── Cấp 4 (lá): component (HookComponent, HookContracts.cs:18-29) ───────────
 // componentId = ComponentProject.Id — khoá join sang teach data (`template-sync-sample.json`).
+// .trim() vì chuỗi TOÀN KHOẢNG TRẮNG qua .min(1) trần vẫn "hợp lệ" — một khoá
+// join rỗng-thực-chất không join được với gì (F9, vòng sửa 1).
 const componentV2 = z.object({
-  componentId: z.string().min(1),
+  componentId: z.string().trim().min(1),
   componentName: z.string().optional(),
   // "OK"/"NG" — KHÔNG "NTF". NTF là cờ `ntf` riêng ngay dưới đây.
   result: z.enum(["OK", "NG"]),
@@ -56,8 +64,9 @@ const componentV2 = z.object({
 
 // ── Cấp 3: capture (HookCapture, HookContracts.cs:41-50) ────────────────────
 // captureId = Capture.Id — khoá join sang manifest ảnh (`aoipackage-meta-sample.json`).
+// .trim() — cùng lý do componentId ở trên (F9, vòng sửa 1).
 const captureV2 = z.object({
-  captureId: z.string().min(1),
+  captureId: z.string().trim().min(1),
   captureName: z.string().optional(),
   index: z.number().int().nonnegative().optional(),
   result: z.enum(["OK", "NG"]),
@@ -69,8 +78,11 @@ const captureV2 = z.object({
 });
 
 // ── Cấp 2: position (HookPosition, HookContracts.cs:61-69) ──────────────────
+// positionId = ImagePosition.PositionId — định danh ổn định, tên thư mục lưu
+// ảnh (sync-json-samples-reference.md:138) — cũng là khoá join, .trim() cùng
+// nguyên tắc với captureId/componentId (F9, vòng sửa 1).
 const positionV2 = z.object({
-  positionId: z.string().min(1),
+  positionId: z.string().trim().min(1),
   positionNumber: z.number().int().nonnegative().optional(),
   result: z.enum(["OK", "NG"]),
   ntf: z.boolean(),
@@ -104,7 +116,14 @@ export const machineDataContractV2 = z.object({
   apiKey: z.string().optional(),
   identity: identityV2,
   productId: z.string().min(1),
-  serialNumber: z.string().trim().min(1).max(100),
+  // KHÔNG .min(1): serialNumber KHÔNG PHẢI khoá join (không dùng để nối dữ
+  // liệu sang bảng khác) — rỗng là hình dạng THẬT khi máy chưa gán serial
+  // (D:\SOURCES\AOIData\sync-json-samples-reference.md:26 — "serialNumber
+  // ← HookProduct.Serial | Serial máy gửi; rỗng nếu máy chưa gửi"). Theo
+  // §4.5 (ranh giới TỪ CHỐI vs GẮN THẺ): không phải khoá join ⇒ không từ
+  // chối vì nội dung rỗng. Đã cân nhắc và loại `.min(1)` có chủ đích (F3,
+  // vòng sửa 1) — ĐỪNG "sửa lại cho chặt".
+  serialNumber: z.string().trim().max(100),
   productModel: z.string().optional(),
   overallResult: z.enum(["OK", "NG"]),
   ntf: z.boolean(),

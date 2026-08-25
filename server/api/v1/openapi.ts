@@ -6,7 +6,9 @@
  *
  * doc 37 §7 (dev-portal / C3): the request-body component schemas that HAVE an authoritative
  * Zod contract are now GENERATED from that Zod source (zod v4 `z.toJSONSchema`), not re-typed
- * by hand — `InspectionIngest` ← machineDataContract latest (v1.1, doc 56 API-2 drift fix),
+ * by hand — `InspectionIngest` ← machineDataContract latest (Pha 1A Task 4: latest is now "2.0",
+ * the nested 4-level tree surface→position→capture→component — see machineDataContractV2.ts;
+ * v1.0/v1.1's flat `measurements: []` shape, doc 56 API-2, is the PREVIOUS latest),
  * `ProcessResultIngest` ← machineProcessResultContractV1 (ST4I Standard Process Feed v1, doc 56
  * nhóm C), `WorkOrderIntake`/`BomIntake` ← erpIntake's Zod schemas. The TELEMETRY path
  * (`/api/v1/ingest/telemetry`, alias of the live POST /api/ot/ingest — AIR-8) is documented too.
@@ -14,6 +16,13 @@
  * falls back to a hand-written stub, so the doc always renders. Paths/tags for the ERP intake
  * (`/orders`, `/bom`), OAuth token (`/oauth/token`), twin-simulate (`/orchestration/simulate`)
  * and edge-sync (`/edge/sync`) routes are covered so the published contract matches router.ts.
+ *
+ * ⚠ DRIFT ĐANG BIẾT (Pha 1A Task 4, chưa đóng): `InspectionIngest` ở đây tự động đi theo
+ * `LATEST_MACHINE_CONTRACT_VERSION`, nay là "2.0" (cây 4 cấp) — nhưng route thật
+ * `/api/v1/ingest/inspection` (server/routers/machineApiRouters.ts) CHƯA đổi, vẫn chỉ nhận
+ * payload PHẲNG kiểu v1.x (Task 4 cố ý KHÔNG nối đường ingest). Tài liệu OpenAPI công bố ở
+ * đây tạm thời ĐI TRƯỚC hành vi thật của endpoint. Pha 1B (nối đường ingest) phải đóng
+ * khoảng lệch này — hoặc ghim doc theo version tường minh, hoặc nối ingest thật để khớp lại.
  */
 import { z } from "zod";
 import { ALL_SCOPES, SCOPE_DESCRIPTIONS } from "./scopes";

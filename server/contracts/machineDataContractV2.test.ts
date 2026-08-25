@@ -72,14 +72,62 @@ describe("machineDataContractV2 — cây 4 cấp", () => {
     expect(MACHINE_CONTRACT_VERSIONS["2.0"]).toBeDefined();
   });
 
-  it("v1.0 và v1.1 vẫn CÓ trong map — để từ chối CÓ LÝ DO, không phải để nhận", () => {
+  it("v1.0 và v1.1 vẫn CÓ trong map — registry còn tra cứu được (KHÔNG suy ra đã bị chặn ở ingest)", () => {
     expect(MACHINE_CONTRACT_VERSIONS["1.0"]).toBeDefined();
     expect(MACHINE_CONTRACT_VERSIONS["1.1"]).toBeDefined();
   });
 
-  it("lỗi từ chối máy cũ NÊU RÕ phiên bản cần, không phải lỗi zod thô", () => {
+  it("thông điệp loiMayChuaNangCap nêu rõ cả phiên bản đang gửi lẫn phiên bản cần (gọi thẳng hàm — không qua đường quyết định nào)", () => {
     const e = loiMayChuaNangCap("1.1");
     expect(e.message).toContain("1.1");
     expect(e.message).toContain("2.0");
+  });
+
+  // ── Vòng sửa 1 (review 10-đột-biến) ────────────────────────────────────────
+
+  // F2 — componentId đối xứng với captureId: cả hai đều là khoá join bắt buộc.
+  it("THIẾU componentId ⇒ TỪ CHỐI (khoá join thật, đối xứng với captureId)", () => {
+    const b = structuredClone(boHopLe);
+    delete (b.surfaces[0].positions[0].captures[0].components[0] as any).componentId;
+    expect(machineDataContractV2.safeParse(b).success).toBe(false);
+  });
+
+  // F8 — ba trường brief yêu cầu tường minh mà đột biến .optional() từng lọt qua.
+  it("THIẾU identity ⇒ TỪ CHỐI", () => {
+    const b: any = structuredClone(boHopLe);
+    delete b.identity;
+    expect(machineDataContractV2.safeParse(b).success).toBe(false);
+  });
+
+  it("THIẾU summary ⇒ TỪ CHỐI", () => {
+    const b: any = structuredClone(boHopLe);
+    delete b.summary;
+    expect(machineDataContractV2.safeParse(b).success).toBe(false);
+  });
+
+  it("THIẾU summary.surfaces ⇒ TỪ CHỐI (nhóm đếm bắt buộc TỪNG PHẦN, không chỉ object cha summary có mặt)", () => {
+    const b: any = structuredClone(boHopLe);
+    delete b.summary.surfaces;
+    expect(machineDataContractV2.safeParse(b).success).toBe(false);
+  });
+
+  it("THIẾU positionId ⇒ TỪ CHỐI", () => {
+    const b = structuredClone(boHopLe);
+    delete (b.surfaces[0].positions[0] as any).positionId;
+    expect(machineDataContractV2.safeParse(b).success).toBe(false);
+  });
+
+  // F3 — serialNumber KHÔNG phải khoá join ⇒ rỗng không bị từ chối (§4.5).
+  it("serialNumber RỖNG vẫn HỢP LỆ — không phải khoá join, máy có thể chưa gán serial", () => {
+    const b = structuredClone(boHopLe);
+    b.serialNumber = "";
+    expect(machineDataContractV2.safeParse(b).success).toBe(true);
+  });
+
+  // F9 — khoá join toàn khoảng trắng không join được với gì.
+  it("captureId TOÀN KHOẢNG TRẮNG ⇒ TỪ CHỐI (khoá join rỗng-thực-chất)", () => {
+    const b = structuredClone(boHopLe);
+    b.surfaces[0].positions[0].captures[0].captureId = "   ";
+    expect(machineDataContractV2.safeParse(b).success).toBe(false);
   });
 });
