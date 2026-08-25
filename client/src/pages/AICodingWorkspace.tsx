@@ -2011,6 +2011,9 @@ export default function AICodingWorkspace() {
                       onConfirm={handleConfirm}
                       onCancel={handleCancel}
                       t={t}
+                      // ★ ĐỢT 4 UX — `run_command` là CHẠY, không phải GHI: tiêu đề đúng nghĩa thay câu
+                      //   dùng-chung "thao tác ghi". Tool khác ⇒ undefined ⇒ thẻ giữ tiêu đề ghi mặc định.
+                      title={pending.tool === "run_command" ? t("repoWs.cmd.confirmRunTitle", "Xác nhận CHẠY lệnh") : undefined}
                     />
                   </>
                 ) : null}
@@ -2095,7 +2098,9 @@ export default function AICodingWorkspace() {
             <button
               type="button"
               role="tab"
+              id="repows-tab-terminal"
               aria-selected={duoiChat === "terminal"}
+              aria-controls="repows-panel-duoi"
               data-tab-duoi="terminal"
               onClick={() => setDuoiChat((v) => (v === "terminal" ? "dong" : "terminal"))}
               className={cn(
@@ -2112,7 +2117,9 @@ export default function AICodingWorkspace() {
             <button
               type="button"
               role="tab"
+              id="repows-tab-problems"
               aria-selected={duoiChat === "problems"}
+              aria-controls="repows-panel-duoi"
               data-tab-duoi="problems"
               onClick={() => setDuoiChat((v) => (v === "problems" ? "dong" : "problems"))}
               className={cn(
@@ -2130,7 +2137,12 @@ export default function AICodingWorkspace() {
             </button>
           </div>
           {duoiChat !== "dong" && (
-            <div className="min-h-0 flex-1 overflow-y-auto border-t px-2 py-2">
+            <div
+              className="min-h-0 flex-1 overflow-y-auto border-t px-2 py-2"
+              role="tabpanel"
+              id="repows-panel-duoi"
+              aria-labelledby={duoiChat === "terminal" ? "repows-tab-terminal" : "repows-tab-problems"}
+            >
               {duoiChat === "terminal" ? (
                 <BangTerminal
                   luotLenh={lenhDaChay}

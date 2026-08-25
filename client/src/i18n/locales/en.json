@@ -19392,7 +19392,8 @@
       "diffTip": "A diff is the list of LINES that will change: old vs. new. You review it before approving the write."
     },
     "cmd": {
-      "noWrite": "This command only RUNS — it does NOT write source files."
+      "noWrite": "This command only RUNS — it does NOT write source files.",
+      "confirmRunTitle": "Confirm RUN command"
     },
     "chat": {
       "title": "Agent conversation",

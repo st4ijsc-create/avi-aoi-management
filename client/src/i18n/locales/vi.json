@@ -19372,7 +19372,8 @@
       "diffTip": "Diff là danh sách những DÒNG sẽ đổi: bản cũ so với bản mới. Bạn xem rồi mới bấm duyệt ghi."
     },
     "cmd": {
-      "noWrite": "Lệnh này chỉ CHẠY, KHÔNG ghi tệp mã nguồn."
+      "noWrite": "Lệnh này chỉ CHẠY, KHÔNG ghi tệp mã nguồn.",
+      "confirmRunTitle": "Xác nhận CHẠY lệnh"
     },
     "chat": {
       "title": "Hội thoại tác nhân",

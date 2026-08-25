@@ -92,6 +92,7 @@ export function ConfirmActionCard({
   onConfirm,
   onCancel,
   t,
+  title,
 }: {
   action: PendingAction;
   // Accept undefined too (the bubble's ChatMessage.actionState is optional) — the
@@ -103,6 +104,13 @@ export function ConfirmActionCard({
   onConfirm: () => void;
   onCancel: () => void;
   t: (key: string, fallback: string) => string;
+  /**
+   * ★★★ 2026-08-25 · ĐỢT 4 UX — tiêu đề GHI ĐÈ theo LOẠI thao tác. Mặc định (undefined) giữ NGUYÊN
+   * "Xác nhận thao tác ghi" nên mọi consumer cũ (bubble /ai-chat, bước ghi tác nhân) không đổi một
+   * pixel. `/ai-coding-workspace` truyền "Xác nhận CHẠY lệnh" cho `run_command`: gọi một lượt chạy
+   * test là "thao tác GHI" là sai NGHĨA — người dùng đọc "ghi" rồi hoảng cho một lệnh chỉ đọc/chạy.
+   */
+  title?: string;
 }) {
   const ttl = useTtlCountdown(action.expiresAt, state === "pending");
   // Prefer the richer human-readable summary when present.
@@ -119,7 +127,7 @@ export function ConfirmActionCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300 text-[13px]">
           <AlertCircle className="size-4 shrink-0" />
-          {t("copilot.confirmTitle", "Xác nhận thao tác ghi")}
+          {title ?? t("copilot.confirmTitle", "Xác nhận thao tác ghi")}
         </div>
         {state === "pending" && (
           <span
