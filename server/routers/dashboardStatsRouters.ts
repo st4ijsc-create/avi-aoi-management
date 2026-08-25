@@ -360,23 +360,13 @@ export const dashboardRouter = router({
 });
 
 // ============ SEED DATA ROUTER ============
+// seedInspections / seedWorkstationAnalytics đã bị GỠ (2026-08-25): hai mutation này gọi
+// `db.seedInspectionData` / `db.seedWorkstationAnalyticsData`, bơm bản ghi `Math.random()`
+// thẳng vào `product_inspections`/`measurement_results` — hai bảng WORM, `avi_app` không có
+// quyền DELETE. Xoá bằng vai owner mới gỡ được. `seed` (→ `seedSampleData`, chỉ
+// `insert(factories)`, dữ liệu CHỦ) vẫn hợp lệ, giữ nguyên.
 export const seedDataRouter = router({
   seed: adminProcedure.mutation(async () => {
     return db.seedSampleData();
   }),
-  
-  seedInspections: adminProcedure
-    .input(z.object({ count: z.number().min(1).max(500).default(100) }))
-    .mutation(async ({ input }) => {
-      return db.seedInspectionData(input.count);
-    }),
-
-  seedWorkstationAnalytics: adminProcedure
-    .input(z.object({ 
-      inspectionCount: z.number().min(1).max(1000).default(500),
-      daysBack: z.number().min(1).max(30).default(7)
-    }))
-    .mutation(async ({ input }) => {
-      return db.seedWorkstationAnalyticsData(input);
-    }),
 });

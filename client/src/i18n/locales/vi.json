@@ -1513,9 +1513,6 @@
     "seedInfraTitle": "Dữ liệu hạ tầng mẫu",
     "seedInfraDesc": "Tạo nhà máy, xưởng, dây chuyền, trạm và máy mẫu",
     "seedDataBtn": "Tạo dữ liệu hạ tầng mẫu",
-    "seedInspectionsTitle": "Dữ liệu kiểm tra mẫu",
-    "seedInspectionsDesc": "Tạo bản ghi kiểm tra mẫu để kiểm thử bảng điều khiển",
-    "seedInspectionsBtn": "Tạo 100 bản kiểm tra",
     "analysis": "Phân tích",
     "autoRefreshOff": "Tắt tự động làm mới",
     "autoRefreshOn": "Bật tự động làm mới",
@@ -18967,15 +18964,7 @@
     "duLieuCoSo": "Dữ liệu cơ sở",
     "taoNhaMayDayChuyen": "Tạo nhà máy, dây chuyền, máy móc và sản phẩm mẫu",
     "dangTao": "Đang tạo...",
-    "duLieuKiemTra": "Dữ liệu kiểm tra",
-    "tao100BanGhiKiem": "Tạo 100 bản ghi kiểm tra mẫu (OK/NG)",
-    "dangTao2": "Đang tạo...",
-    "phanTichTramLamViec": "Phân tích trạm làm việc",
-    "tao500BanGhiPhan": "Tạo 500 bản ghi phân tích 7 ngày gần đây",
-    "dangTao3": "Đang tạo...",
-    "taoDuLieuCoSo": "Tạo dữ liệu cơ sở",
-    "taoDuLieuPhanTich": "Tạo dữ liệu phân tích",
-    "tao100BanGhiKiemTra": "Tạo 100 bản ghi kiểm tra"
+    "taoDuLieuCoSo": "Tạo dữ liệu cơ sở"
   },
   "showcase": {
     "canhBaoLienKetCode": "Cảnh báo liên kết code rác + xác nhận xoá/lưu-trữ thống nhất (doc 42 Đợt 1).",
@@ -19602,9 +19591,7 @@
     "may": "máy"
   },
   "seedDataTab": {
-    "daTaoDuLieuCo": "Đã tạo dữ liệu cơ sở mẫu thành công!",
-    "daTao100BanGhi": "Đã tạo 100 bản ghi kiểm tra mẫu thành công!",
-    "daTaoDuLieuPhan": "Đã tạo dữ liệu phân tích trạm làm việc mẫu thành công!"
+    "daTaoDuLieuCo": "Đã tạo dữ liệu cơ sở mẫu thành công!"
   },
   "stationsTab": {
     "tram": "trạm"

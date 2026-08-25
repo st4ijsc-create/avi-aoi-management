@@ -95,11 +95,10 @@ function exportedFunctionBodies(): Array<{ name: string; body: string }> {
  * ⚠ Danh sách này KHÔNG được nới ra để làm lưới xanh. Nới nó = tự cấp giấy miễn trừ.
  */
 const MIEN_TRU: Record<string, string> = {
-  seedInspectionData:
-    "GHI, không đọc: sinh dữ liệu demo. Chỉ gọi được qua `seedDataRouter.seedInspections` " +
-    "(adminProcedure). Một bộ lọc đọc ở đây không chặn gì — hàng do chính nó tạo ra.",
-  seedWorkstationAnalyticsData:
-    "GHI, không đọc: sinh dữ liệu demo cho phân tích trạm. `seedDataRouter` (adminProcedure).",
+  // seedInspectionData / seedWorkstationAnalyticsData — GỠ 2026-08-25: hai hàm GHI
+  // `Math.random()` thẳng vào bảng WORM `product_inspections`/`measurement_results`, xoá
+  // theo yêu cầu chủ dự án (server/db/khongBomInspectionBia.test.ts là lưới chặn tái phát).
+  // Miễn trừ trỏ tới hàm không còn tồn tại = rác che mắt lần rà sau nên gỡ luôn hai mục này.
   getMeasurementPointImagesByProduct:
     "CÓ LỌC (cổng bán-nối `pi.id`), chỉ MIỄN TRỪ phần NHÃN: trả về `Record<pointDefId, …>` — " +
     "một bản đồ khoá theo số, không có chỗ đặt ba ô nhãn mà không đụng không gian khoá. Nơi gọi " +

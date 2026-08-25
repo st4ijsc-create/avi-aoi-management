@@ -89,12 +89,10 @@ export default function AdminSettings() {
     setCollapsedCategories((prev) => ({ ...prev, [category]: !prev[category] }));
   };
 
-  // Seed mutations
+  // Seed mutation — `seedInspectionsMutation` GỠ 2026-08-25: gọi `seedData.seedInspections`
+  // (nay đã xoá khỏi router), bơm bản ghi `Math.random()` thẳng vào bảng WORM
+  // `product_inspections`/`measurement_results` (avi_app không có quyền DELETE).
   const seedDataMutation = trpc.seedData.seed.useMutation({
-    onSuccess: (data) => { toast.success(data.message); },
-    onError: (error) => toastTrpcError(error),
-  });
-  const seedInspectionsMutation = trpc.seedData.seedInspections.useMutation({
     onSuccess: (data) => { toast.success(data.message); },
     onError: (error) => toastTrpcError(error),
   });
@@ -404,7 +402,7 @@ export default function AdminSettings() {
                       {/* Progressive disclosure: seeding tools are advanced/destructive —
                           collapsed by default (preference persisted). Nothing removed. */}
                       <AdvancedSection storageKey="admin-data-seeding">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 gap-6 max-w-sm">
                         <Card className="border-dashed">
                           <CardHeader>
                             <CardTitle className="text-base flex items-center gap-2">
@@ -417,21 +415,6 @@ export default function AdminSettings() {
                             <Button variant="outline" className="w-full gap-2" onClick={() => seedDataMutation.mutate()} disabled={seedDataMutation.isPending}>
                               {seedDataMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                               {t("admin.seedDataBtn")}
-                            </Button>
-                          </CardContent>
-                        </Card>
-                        <Card className="border-dashed">
-                          <CardHeader>
-                            <CardTitle className="text-base flex items-center gap-2">
-                              <BarChart3 className="h-4 w-4 text-green-500" />
-                              {t("admin.seedInspectionsTitle")}
-                            </CardTitle>
-                            <CardDescription>{t("admin.seedInspectionsDesc")}</CardDescription>
-                          </CardHeader>
-                          <CardContent>
-                            <Button variant="outline" className="w-full gap-2" onClick={() => seedInspectionsMutation.mutate({ count: 100 })} disabled={seedInspectionsMutation.isPending}>
-                              {seedInspectionsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                              {t("admin.seedInspectionsBtn")}
                             </Button>
                           </CardContent>
                         </Card>

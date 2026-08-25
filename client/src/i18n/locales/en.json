@@ -1513,9 +1513,6 @@
     "seedInfraTitle": "Seed Infrastructure Data",
     "seedInfraDesc": "Create sample factories, workshops, lines, stations, and machines",
     "seedDataBtn": "Seed Infrastructure Data",
-    "seedInspectionsTitle": "Seed Inspections",
-    "seedInspectionsDesc": "Generate sample inspection records for testing dashboards",
-    "seedInspectionsBtn": "Seed 100 Inspections",
     "analysis": "Analysis",
     "autoRefreshOff": "Auto-refresh off",
     "autoRefreshOn": "Auto-refresh on",
@@ -18987,15 +18984,7 @@
     "duLieuCoSo": "Base data",
     "taoNhaMayDayChuyen": "Create sample factories, lines, machines and products",
     "dangTao": "Creating...",
-    "duLieuKiemTra": "Inspection data",
-    "tao100BanGhiKiem": "Create 100 sample inspection records (OK/NG)",
-    "dangTao2": "Creating...",
-    "phanTichTramLamViec": "Workstation analytics",
-    "tao500BanGhiPhan": "Create 500 analytics records for the last 7 days",
-    "dangTao3": "Creating...",
-    "taoDuLieuCoSo": "Create base data",
-    "taoDuLieuPhanTich": "Create analytics data",
-    "tao100BanGhiKiemTra": "Create 100 inspection records"
+    "taoDuLieuCoSo": "Create base data"
   },
   "showcase": {
     "canhBaoLienKetCode": "Dangling-code link warning + unified delete/archive confirmation (doc 42 Batch 1).",
@@ -19622,9 +19611,7 @@
     "may": "machine"
   },
   "seedDataTab": {
-    "daTaoDuLieuCo": "Sample base data created successfully!",
-    "daTao100BanGhi": "100 sample inspection records created successfully!",
-    "daTaoDuLieuPhan": "Sample workstation analytics data created successfully!"
+    "daTaoDuLieuCo": "Sample base data created successfully!"
   },
   "stationsTab": {
     "tram": "station"

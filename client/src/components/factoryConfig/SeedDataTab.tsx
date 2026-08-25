@@ -1,7 +1,14 @@
 /**
  * doc 47 Đợt 4 (tech-debt) — "Tạo dữ liệu mẫu" tab body extracted verbatim from
- * DataSettings.tsx. Fully self-contained: owns its three seed mutations, no shared
- * parent state / refetch. PURE RELOCATION — identical JSX + handlers, no behavior change.
+ * DataSettings.tsx. PURE RELOCATION — identical JSX + handlers, no behavior change.
+ *
+ * 2026-08-25 — GỠ hai thẻ/mutation "Dữ liệu kiểm tra" và "Phân tích trạm làm việc":
+ * chúng gọi `seedData.seedInspections`/`seedData.seedWorkstationAnalytics`, bơm bản ghi
+ * `Math.random()` thẳng vào `product_inspections`/`measurement_results` — hai bảng WORM
+ * mà `avi_app` không có quyền DELETE (xoá phải dùng vai owner). Một cú bấm nhầm trên môi
+ * trường thật để lại hàng trăm/nghìn bo bịa VĨNH VIỄN, lẫn vào dữ liệu sản xuất thật.
+ * Chỉ giữ "Dữ liệu cơ sở" (→ `seedData.seed` → `seedSampleData`, chỉ `insert(factories)`,
+ * dữ liệu CHỦ hợp lệ cho dev).
  */
 import { trpc } from "@/lib/trpc";
 import { useTranslation } from "react-i18next";
@@ -13,19 +20,9 @@ import { Database, Loader2 } from "lucide-react";
 
 export function SeedDataTab() {
   const { t } = useTranslation();
-  // Seed Data Mutations
+  // Seed Data Mutation
   const seedDataMutation = trpc.seedData.seed.useMutation({
     onSuccess: () => toast.success(t("seedDataTab.daTaoDuLieuCo", "Đã tạo dữ liệu cơ sở mẫu thành công!")),
-    onError: (error) => toastTrpcError(error),
-  });
-
-  const seedInspectionsMutation = trpc.seedData.seedInspections.useMutation({
-    onSuccess: () => toast.success(t("seedDataTab.daTao100BanGhi", "Đã tạo 100 bản ghi kiểm tra mẫu thành công!")),
-    onError: (error) => toastTrpcError(error),
-  });
-
-  const seedWorkstationAnalyticsMutation = trpc.seedData.seedWorkstationAnalytics.useMutation({
-    onSuccess: () => toast.success(t("seedDataTab.daTaoDuLieuPhan", "Đã tạo dữ liệu phân tích trạm làm việc mẫu thành công!")),
     onError: (error) => toastTrpcError(error),
   });
 
@@ -41,7 +38,7 @@ export function SeedDataTab() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="max-w-sm">
           <Card className="border-dashed">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">{t("seedData.duLieuCoSo", "Dữ liệu cơ sở")}</CardTitle>
@@ -58,41 +55,9 @@ export function SeedDataTab() {
               </Button>
             </CardContent>
           </Card>
-          <Card className="border-dashed">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">{t("seedData.duLieuKiemTra", "Dữ liệu kiểm tra")}</CardTitle>
-              <CardDescription className="text-xs">{t("seedData.tao100BanGhiKiem", "Tạo 100 bản ghi kiểm tra mẫu (OK/NG)")}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                onClick={() => seedInspectionsMutation.mutate({ count: 100 })}
-                disabled={seedInspectionsMutation.isPending}
-                className="w-full"
-                variant="outline"
-              >
-                {seedInspectionsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t("seedData.dangTao2", "Đang tạo...")}</> : t("seedData.tao100BanGhiKiemTra", "Tạo 100 bản ghi kiểm tra")}
-              </Button>
-            </CardContent>
-          </Card>
-          <Card className="border-dashed">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">{t("seedData.phanTichTramLamViec", "Phân tích trạm làm việc")}</CardTitle>
-              <CardDescription className="text-xs">{t("seedData.tao500BanGhiPhan", "Tạo 500 bản ghi phân tích 7 ngày gần đây")}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                onClick={() => seedWorkstationAnalyticsMutation.mutate({ inspectionCount: 500, daysBack: 7 })}
-                disabled={seedWorkstationAnalyticsMutation.isPending}
-                className="w-full"
-                variant="outline"
-              >
-                {seedWorkstationAnalyticsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t("seedData.dangTao3", "Đang tạo...")}</> : t("seedData.taoDuLieuPhanTich", "Tạo dữ liệu phân tích")}
-              </Button>
-            </CardContent>
-          </Card>
         </div>
         <p className="text-xs text-muted-foreground text-center">
-          ⚠️ Dữ liệu mẫu sẽ được thêm vào cơ sở dữ liệu hiện tại. Đảm bảo đã có cấu hình nhà máy và sản phẩm trước khi tạo dữ liệu kiểm tra.
+          ⚠️ Dữ liệu mẫu sẽ được thêm vào cơ sở dữ liệu hiện tại. Đảm bảo đã có cấu hình nhà máy trước khi tạo.
         </p>
       </CardContent>
     </Card>

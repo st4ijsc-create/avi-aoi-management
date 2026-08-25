@@ -1513,9 +1513,6 @@
     "seedInfraTitle": "基础设施数据",
     "seedInfraDesc": "生成工厂、车间、产线等基础数据",
     "seedDataBtn": "生成数据",
-    "seedInspectionsTitle": "检测数据",
-    "seedInspectionsDesc": "生成模拟检测记录数据",
-    "seedInspectionsBtn": "生成检测数据",
     "analysis": "分析",
     "autoRefreshOff": "Auto刷新off",
     "autoRefreshOn": "Auto刷新在",
@@ -18995,15 +18992,7 @@
     "duLieuCoSo": "基础数据",
     "taoNhaMayDayChuyen": "创建示例工厂、产线、设备和产品",
     "dangTao": "创建中...",
-    "duLieuKiemTra": "检测数据",
-    "tao100BanGhiKiem": "创建 100 条示例检测记录（OK/NG）",
-    "dangTao2": "创建中...",
-    "phanTichTramLamViec": "工位分析",
-    "tao500BanGhiPhan": "创建最近 7 天的 500 条分析记录",
-    "dangTao3": "创建中...",
-    "taoDuLieuCoSo": "创建基础数据",
-    "taoDuLieuPhanTich": "创建分析数据",
-    "tao100BanGhiKiemTra": "创建 100 条检测记录"
+    "taoDuLieuCoSo": "创建基础数据"
   },
   "showcase": {
     "canhBaoLienKetCode": "无效编码链接警告 + 统一的删除/归档确认（doc 42 第 1 批）。",
@@ -19630,9 +19619,7 @@
     "may": "设备"
   },
   "seedDataTab": {
-    "daTaoDuLieuCo": "示例基础数据创建成功！",
-    "daTao100BanGhi": "已成功创建 100 条示例检测记录！",
-    "daTaoDuLieuPhan": "示例工位分析数据创建成功！"
+    "daTaoDuLieuCo": "示例基础数据创建成功！"
   },
   "stationsTab": {
     "tram": "工位"
