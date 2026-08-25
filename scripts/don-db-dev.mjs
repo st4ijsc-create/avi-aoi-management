@@ -19,8 +19,26 @@ import 'dotenv/config';
 import postgres from 'postgres';
 
 const THAT_SU_XOA = process.argv.includes('--that-su-xoa');
+/**
+ * `--owner`: chạy bằng vai OWNER (`aoi`) thay vì `avi_app`.
+ *
+ * ⚠ Chỉ dùng khi CHỦ DỰ ÁN yêu cầu rõ ràng. `product_inspections` là bảng WORM —
+ * `avi_app` KHÔNG có quyền DELETE, và đó là CHỦ ĐÍCH. Cờ này vượt qua nó.
+ *
+ * Cách dựng URL owner LẤY NGUYÊN KHUÔN của `scripts/apply-migration-*.mjs`:
+ * đổi user/password của DATABASE_URL sang MIGRATION_DB_USER/PASSWORD (mặc định `aoi`).
+ * Cố ý tái dùng cơ chế CÓ SẴN của dự án thay vì tự chế một đường leo quyền mới.
+ */
+const DUNG_OWNER = process.argv.includes('--owner');
 const TRAN_SO_BO = 100000;
-const url = process.env.DATABASE_URL || '';
+let url = process.env.DATABASE_URL || '';
+
+if (DUNG_OWNER && url) {
+  const u = new URL(url);
+  u.username = process.env.MIGRATION_DB_USER ?? 'aoi';
+  u.password = process.env.MIGRATION_DB_PASSWORD ?? 'aoi';
+  url = u.toString();
+}
 
 // ── Lớp chặn 1: chỉ máy cục bộ ──────────────────────────────────────────────
 if (!/@(127\.0\.0\.1|localhost)[:/]/.test(url)) {
