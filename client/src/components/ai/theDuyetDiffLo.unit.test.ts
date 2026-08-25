@@ -45,6 +45,7 @@ function esc(s: string): string {
 }
 
 const { TheDuyetDiffLo, phanLoaiCanhBaoLo } = await import("./TheDuyetDiffLo");
+const { tachCanhBaoKyThuat } = await import("./TheDuyetDiff");
 
 /**
  * ★ FIXTURE HARDCODE. Hai tệp, mỗi tệp một khối:
@@ -235,5 +236,38 @@ describe("§5 ĐỘT BIẾN — lô KHÔNG có UI chọn-khối-lẻ (server t�
       createElement(HunkDiffView, { base: FILES[0].original, suggested: FILES[0].modified }),
     );
     expect(tuongTac).toContain(esc(VI.diff.hunk.applyAll)); // có readOnly=false ⇒ "Áp tất cả" hiện
+  });
+});
+
+/**
+ * ★★★ §7 (2026-08-25) — GIẤU BĂM HEX THEO TỆP. Cảnh báo `#N … băm …hex…` trong panel mỗi tệp phải
+ * GẬP trong `<details>` (điều tra mở xem được), KHÔNG phơi thẳng. Cảnh báo CHUNG (câu "N tệp… BĂM
+ * NEO RIÊNG", KHÔNG hex) vẫn HIỆN ở khối ghim — nó là lời trấn an bằng ngôn ngữ thường, không dọa.
+ */
+describe("§7 GIẤU BĂM HEX THEO TỆP — dòng '#N … băm …' GẬP trong <details>, chung thì không đổi", () => {
+  it("hàm THUẦN: '#1 … băm hex' (theoTep) ⇒ kyThuat; câu CHUNG (không hex) ⇒ thuong", () => {
+    const { chung, theoTep } = phanLoaiCanhBaoLo(CANH_BAO);
+    expect(tachCanhBaoKyThuat(theoTep.get(1) ?? []).kyThuat).toEqual([CANH_BAO[1]]);
+    // câu chung nhắc chữ "băm" nhưng KHÔNG có hex ⇒ vẫn là cảnh báo thường (hiện như cũ).
+    expect(tachCanhBaoKyThuat(chung).thuong).toEqual([CANH_BAO_CHUNG]);
+    expect(tachCanhBaoKyThuat(chung).kyThuat.length).toBe(0);
+  });
+
+  it("★ '#1 … băm hex' nằm TRONG <details data-chi-tiet-ky-thuat> ở panel, không phơi thẳng", () => {
+    const html = ve();
+    const iDetails = html.indexOf("data-chi-tiet-ky-thuat");
+    expect(iDetails).toBeGreaterThan(-1); // ĐỘT BIẾN: bỏ tachCanhBaoKyThuat (hiện thẳng) ⇒ mất details ⇒ ĐỎ
+    const iBam1 = html.indexOf(esc(CANH_BAO[1])); // "#1 … băm 725ee0d8aaaa… → …"
+    expect(iBam1).toBeGreaterThan(iDetails); // dòng băm đứng SAU marker ⇒ trong khối gập
+  });
+
+  it("★ câu CHUNG (không hex) VẪN HIỆN ở khối ghim, KHÔNG bị gập nhầm", () => {
+    const html = ve();
+    const iChung = html.indexOf("data-canh-bao-chung");
+    const iStrip = html.indexOf("data-tab-strip");
+    // câu chung nằm trong khối cảnh báo chung (giữa marker chung và tab strip), hiện nguyên văn.
+    expect(html.slice(iChung, iStrip)).toContain(esc(CANH_BAO_CHUNG));
+    expect(html).toContain(esc(VI.repoWs.diff.techDetails)); // summary tra thật
+    expect(html).not.toContain("‹THIẾU:");
   });
 });

@@ -19277,7 +19277,7 @@
       "meta": "{{n}} turns · {{luc}}",
       "delete": "Delete session",
       "confirmDelete": "Delete this session from the server? This cannot be undone.",
-      "denied": "Server refused to read sessions: missing ai_repo_read permission.",
+      "denied": "Server refused to read sessions: missing READ-code permission (ai_repo_read).",
       "openFailed": "Could not open that session (deleted, or it is not yours).",
       "deleteFailed": "Could not delete the session.",
       "scopeNote": "Sessions are stored on the server, private to your account and to this project — nobody else can read them.",
@@ -19372,8 +19372,8 @@
       "title": "File tree",
       "loading": "Loading…",
       "error": "Could not read directory",
-      "denied": "Server refused: missing ai_repo_read permission",
-      "empty": "No entries the sandbox allows to show",
+      "denied": "Server refused: missing READ-code permission (ai_repo_read)",
+      "empty": "No entries the sandbox allows to display.",
       "refresh": "Refresh",
       "showOther": "Show other files ({{n}})",
       "hideOther": "Hide other files ({{n}})"
@@ -19385,7 +19385,11 @@
       "denied": "Could not read (refused by the sandbox/server).",
       "redacted": "Secrets redacted",
       "truncated": "Truncated",
-      "diffFor": "Diff preview"
+      "diffFor": "Diff preview",
+      "diffTip": "A diff is the list of LINES that will change: old vs. new. You review it before approving the write."
+    },
+    "cmd": {
+      "noWrite": "This command only RUNS — it does NOT write source files."
     },
     "chat": {
       "title": "Agent conversation",
@@ -19427,7 +19431,8 @@
       "denied": "Refused.",
       "expired": "Expired.",
       "rejectedCode": "REJECTED [{{ma}}] — no bytes were written.",
-      "warningsTitle": "Read before approving"
+      "warningsTitle": "Read before approving",
+      "techDetails": "Technical details (hash, TOCTOU)"
     },
     "suggest": {
       "read": "Read server/routers.ts and summarize it",

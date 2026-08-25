@@ -16,6 +16,9 @@
  *   • bỏ điều kiện `dangStream` cho nút Dừng                      ⇒ §2 ĐỎ (ca false khẳng định VẮNG)
  *   • bỏ điều kiện `hep` cho hai nút nhảy khung                   ⇒ §1 ĐỎ (ca false khẳng định VẮNG)
  *   • gắn nhầm khoá i18n (title/aria-label)                       ⇒ §4 ĐỎ (`tThat` trả `‹THIẾU:…›`)
+ *   • bỏ điều kiện `soVanDe>0` (badge '0' rò ra)                  ⇒ §5 ĐỎ (ca 0 khẳng định VẮNG `bg-amber-100`)
+ *   • đổi badge về `amber-500`+trắng (trượt AA) / `leading-3.5`   ⇒ §5 ĐỎ (khẳng định cặp AA + `leading-none`)
+ *   • bỏ `overflow-x-auto` / đổi sang `flex-wrap` ở container     ⇒ §6 ĐỎ (nút tràn bị cắt / dải bị đội cao)
  */
 import { describe, it, expect, vi } from "vitest";
 import { createElement } from "react";
@@ -177,15 +180,43 @@ describe("§5 NHÓM CỬA SỔ DƯỚI + PHIÊN — Terminal/Vấn đề/Phiên 
   });
 
   it("★★★ badge Vấn đề CHỈ khi soVanDe>0 (đột biến: bỏ điều kiện ⇒ badge '0' rò ra ⇒ ĐỎ)", () => {
-    expect(ve({ soVanDe: 0 })).not.toContain("bg-amber-500");
+    // `bg-amber-100` là DẤU HIỆN của badge — cặp màu này chỉ dùng ở đây trong ribbon.
+    expect(ve({ soVanDe: 0 })).not.toContain("bg-amber-100");
     const html = ve({ soVanDe: 7 });
-    expect(html).toContain("bg-amber-500");
+    expect(html).toContain("bg-amber-100");
     expect(html).toContain(">7<");
+  });
+
+  it("★★★ badge dùng cặp màu AA (nhất quán tab 'Vấn đề' ở đáy), KHÔNG còn amber-500+trắng trượt AA", () => {
+    const html = ve({ soVanDe: 7 });
+    // Cùng cặp với tab đáy (AICodingWorkspace ~L1800): nền amber-100 + chữ amber-700 (+ biến thể dark).
+    expect(html).toContain("bg-amber-100");
+    expect(html).toContain("text-amber-700");
+    expect(html).toContain("dark:bg-amber-950/40");
+    expect(html).toContain("dark:text-amber-300");
+    // Regression: cặp cũ (nền amber-500 + chữ trắng ≈ 1.8:1) đã BỎ.
+    expect(html).not.toContain("bg-amber-500");
+    // `leading-3.5` KHÔNG hợp lệ (Tailwind không có nấc ấy) ⇒ phải đã đổi sang `leading-none`.
+    expect(html).not.toContain("leading-3.5");
+    expect(html).toContain("leading-none");
   });
 
   it("★★★ nút tô nền BẬT theo `duoiChat` (đột biến: hằng 'dong' ⇒ không nút nào active)", () => {
     expect(ve({ duoiChat: "terminal" })).toContain("bg-primary/10");
     expect(ve({ duoiChat: "problems" })).toContain("bg-primary/10");
     expect(ve({ duoiChat: "dong", soVanDe: 0 })).not.toContain("bg-primary/10");
+  });
+});
+
+describe("§6 RIBBON TRÀN — hàng nút CUỘN NGANG khi chật (không cắt cụt, không đội cao dải)", () => {
+  it("★★★ container mang `overflow-x-auto` + `flex-nowrap`, KHÔNG `flex-wrap` (đột biến bỏ ⇒ ĐỎ)", () => {
+    // Lớp nằm trên chính div gốc `data-ribbon-tac-vu`, độc lập mọi props — kể cả khi hiện HẾT nút.
+    for (const html of [ve(), ve({ hep: true, dangStream: true, coTheChayKiemChung: true, soVanDe: 3 })]) {
+      expect(html).toContain("overflow-x-auto"); // cuộn ngang thay vì cắt cụt/đẩy nút ra ngoài
+      expect(html).toContain("flex-nowrap"); // giữ đúng MỘT hàng
+    }
+    // KHÔNG dùng `flex-wrap`: xuống dòng sẽ đội chiều cao dải công cụ cố định ⇒ vỡ layout khung.
+    // (`flex-wrap` KHÔNG phải chuỗi con của `flex-nowrap`, nên phép này không tự thoả.)
+    expect(ve()).not.toContain("flex-wrap");
   });
 });

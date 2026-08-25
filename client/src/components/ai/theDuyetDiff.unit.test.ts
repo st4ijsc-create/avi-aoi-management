@@ -61,7 +61,7 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-const { TheDuyetDiff } = await import("./TheDuyetDiff");
+const { TheDuyetDiff, tachCanhBaoKyThuat } = await import("./TheDuyetDiff");
 
 const BA_CAU = [
   'Tệp SẠCH (không có thay đổi chưa commit) — sẽ GHI ĐÈ "src/StringUtils.cs".',
@@ -222,5 +222,49 @@ describe("§5 KHÔNG KHỐI NÀO ĐƯỢC PHÉP KHÔNG CO — mọi hộp chữ 
     const the = html.slice(html.lastIndexOf("<", i), html.indexOf(">", i));
     expect(the).toContain("min-w-0");
     expect(the).toContain("max-w-full");
+  });
+});
+
+/**
+ * ★★★ §7 (2026-08-25) — GIẤU CHUỖI BĂM HEX KHỎI HỘP "PHẢI ĐỌC".
+ * Audit UX (kỹ-sư-mới): dòng "Băm TRƯỚC a1b2c3… → SAU d4e5f6…" phơi nguyên văn trong hộp đỏ vừa
+ * VÔ NGHĨA vừa DỌA. Nó phải GẬP trong `<details>` (điều tra vẫn mở xem được), KHÔNG ở hộp chính.
+ * Hàm THUẦN `tachCanhBaoKyThuat` được đo MỘT MÌNH; phần render được đo trên CÂY THẬT.
+ */
+describe("§7a tachCanhBaoKyThuat — hàm THUẦN bóc dòng BĂM HEX khỏi cảnh báo thường", () => {
+  it("'Băm TRƯỚC…' → kyThuat; 'GHI ĐÈ' + 'N dòng' → thuong", () => {
+    const { thuong, kyThuat } = tachCanhBaoKyThuat(BA_CAU);
+    expect(kyThuat).toEqual([BA_CAU[1]]); // chỉ đúng dòng mang băm hex
+    expect(thuong).toEqual([BA_CAU[0], BA_CAU[2]]); // GHI ĐÈ + số dòng vẫn là cảnh báo thường
+  });
+
+  it("★ chống tự thoả: '3 tệp, mỗi tệp…' KHÔNG hex và KHÔNG mở đầu 'băm' ⇒ thuong", () => {
+    const { thuong, kyThuat } = tachCanhBaoKyThuat([
+      "3 tệp, mỗi tệp một băm neo riêng — kiểm lại lúc bạn duyệt.",
+    ]);
+    expect(thuong.length).toBe(1);
+    expect(kyThuat.length).toBe(0);
+  });
+});
+
+describe("§7b BĂM HEX GẬP trong <details>, KHÔNG ở hộp cảnh báo chính", () => {
+  it("★ 'Băm TRƯỚC…' nằm TRONG <details data-chi-tiet-ky-thuat>; hai dòng thường ở hộp chính", () => {
+    const html = ve();
+    const iDetails = html.indexOf("data-chi-tiet-ky-thuat");
+    expect(iDetails).toBeGreaterThan(-1); // ĐỘT BIẾN: bỏ phân loại (hiện thẳng) ⇒ mất details ⇒ ĐỎ
+    const iBam = html.indexOf(esc(BA_CAU[1]));
+    // dòng băm đứng SAU marker details ⇒ ở khối gập; hai dòng thường đứng TRƯỚC ⇒ ở hộp cảnh báo chính.
+    expect(iBam).toBeGreaterThan(iDetails);
+    expect(html.indexOf(esc(BA_CAU[0]))).toBeLessThan(iDetails);
+    expect(html.indexOf(esc(BA_CAU[2]))).toBeLessThan(iDetails);
+    // hộp cảnh báo CHÍNH (giữa `data-canh-bao` và <details>) KHÔNG được chứa chuỗi băm.
+    const iBox = html.indexOf("data-canh-bao");
+    expect(html.slice(iBox, iDetails)).not.toContain("Băm TRƯỚC");
+  });
+
+  it("★ summary tra THẬT `repoWs.diff.techDetails` (không phải khoá thô, không THIẾU)", () => {
+    const html = ve();
+    expect(html).toContain(esc(VI.repoWs.diff.techDetails));
+    expect(html).not.toContain("‹THIẾU:");
   });
 });

@@ -68,8 +68,13 @@ export function RibbonTacVu({
   const { t } = useTranslation();
   const nutBat = "bg-primary/10 text-primary"; // nền nút đang bật (cửa panel đang mở)
 
+  // ── RESPONSIVE (Lỗi 1): một HÀNG cuộn ngang khi chật — `flex-nowrap` giữ đúng một hàng, `overflow-x-auto`
+  //    cho phép CUỘN thay vì cắt cụt/đẩy nút ra ngoài ở màn rất hẹp (~10 nút icon + 2 vạch ngăn). KHÔNG
+  //    dùng `flex-wrap`: thanh này là dải `shrink-0 border-b` cao cố định (nút `h-8` + `py-1`), xuống hàng
+  //    sẽ ĐỘI chiều cao dải ⇒ vỡ layout khung. Nút đã `shrink-0` sẵn (buttonVariants) và các vạch ngăn cũng
+  //    `shrink-0` ⇒ không nút nào bị bóp méo khi cuộn.
   return (
-    <div data-ribbon-tac-vu className={cn("flex items-center gap-1", className)}>
+    <div data-ribbon-tac-vu className={cn("flex flex-nowrap items-center gap-1 overflow-x-auto", className)}>
       {/* Làm mới cây — LUÔN hiện (không phụ thuộc quyền hay trạng thái stream). */}
       <Button
         type="button"
@@ -141,8 +146,12 @@ export function RibbonTacVu({
         className={cn("relative", duoiChat === "problems" && nutBat)}
       >
         <AlertTriangle className="h-4 w-4" />
+        {/* Huy hiệu số vấn đề (Lỗi 2) — CÙNG cặp màu với tab "Vấn đề" ở đáy (AICodingWorkspace ~L1800):
+            `bg-amber-100/text-amber-700` (+dark) đạt tương phản AA, thay `amber-500`+chữ trắng (~1.8:1 TRƯỢT
+            AA) và chấm dứt cảnh "cùng con số vẽ 3-4 kiểu". `leading-none` thay `leading-3.5` (nấc `3.5` KHÔNG
+            tồn tại ⇒ trước đây mất line-height, chữ lệch tâm); flex canh tâm khi `min-w-3.5` rộng hơn chữ. */}
         {soVanDe > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 min-w-3.5 rounded-full bg-amber-500 px-0.5 text-[9px] font-semibold leading-3.5 text-white tabular-nums">
+          <span className="absolute -right-0.5 -top-0.5 inline-flex min-w-3.5 items-center justify-center rounded-full bg-amber-100 px-0.5 text-[9px] font-semibold leading-none text-amber-700 tabular-nums dark:bg-amber-950/40 dark:text-amber-300">
             {soVanDe}
           </span>
         )}

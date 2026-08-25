@@ -55,7 +55,7 @@ import { useTtlCountdown, type ActionState } from "@/components/ConfirmActionCar
 import { keHoachKhoiDuyet, planStats } from "@/lib/diffHunks";
 import { baseName } from "@/lib/repoPath";
 import { cn } from "@/lib/utils";
-import type { DiffArgs, HanhDongCanDuyet } from "./TheDuyetDiff";
+import { tachCanhBaoKyThuat, type DiffArgs, type HanhDongCanDuyet } from "./TheDuyetDiff";
 
 /**
  * ★ BÓC cảnh báo CHUNG khỏi cảnh báo THEO TỆP. Hàm THUẦN (không React) để lưới đo được một mình.
@@ -238,6 +238,9 @@ export function TheDuyetDiffLo({
       {files.map((f, i) => {
         const stt = i + 1;
         const canhBaoTep = theoTep.get(stt) ?? [];
+        // ★ 2026-08-25 — chẻ băm hex khỏi cảnh báo thường (cùng luật `TheDuyetDiff`): dòng
+        //   `#N … băm …hex…` gập vào <details>, không phơi ở panel. Xem docblock `tachCanhBaoKyThuat`.
+        const { thuong: tepThuong, kyThuat: tepKyThuat } = tachCanhBaoKyThuat(canhBaoTep);
         return (
           <div
             key={f.path}
@@ -251,14 +254,28 @@ export function TheDuyetDiffLo({
                 data-canh-bao-tep={stt}
                 className="min-w-0 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 dark:border-red-900/50 dark:bg-red-950/30"
               >
-                <ul className="space-y-0.5 text-[12px] text-red-700 dark:text-red-300">
-                  {canhBaoTep.map((c, k) => (
-                    <li key={k} className="flex min-w-0 items-start gap-1.5">
-                      <span aria-hidden className="mt-px shrink-0">⚠</span>
-                      <span className="min-w-0 break-words leading-snug">{c}</span>
-                    </li>
-                  ))}
-                </ul>
+                {tepThuong.length > 0 && (
+                  <ul className="space-y-0.5 text-[12px] text-red-700 dark:text-red-300">
+                    {tepThuong.map((c, k) => (
+                      <li key={k} className="flex min-w-0 items-start gap-1.5">
+                        <span aria-hidden className="mt-px shrink-0">⚠</span>
+                        <span className="min-w-0 break-words leading-snug">{c}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {tepKyThuat.length > 0 && (
+                  <details data-chi-tiet-ky-thuat className="mt-1 text-[11px] text-red-700/90 dark:text-red-300/90">
+                    <summary className="cursor-pointer font-medium underline-offset-2 hover:underline">
+                      {t("repoWs.diff.techDetails", "Chi tiết kỹ thuật (băm, TOCTOU)")}
+                    </summary>
+                    <ul className="mt-1 space-y-0.5 pl-1">
+                      {tepKyThuat.map((c, k) => (
+                        <li key={k} className="min-w-0 break-all font-mono leading-snug">{c}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
               </div>
             )}
             <HunkDiffView base={f.original} suggested={f.modified} readOnly />

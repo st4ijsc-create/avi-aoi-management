@@ -126,6 +126,9 @@ import { RibbonTacVu } from "@/components/ai/RibbonTacVu";
 import { BangTerminal, type LuotLenh } from "@/components/ai/BangTerminal";
 import { BangProblems } from "@/components/ai/BangProblems";
 import { TheDuyetDiffLo } from "@/components/ai/TheDuyetDiffLo";
+// ★★★ 2026-08-25 · UX (Đợt 1) — TRÌNH XEM MÃ: tô cú pháp + SỐ DÒNG THẬT + cuộn ngang, thay `<pre>`
+// trơn ở khung Trình xem. Component thuần hiển thị (lưới render riêng `trinhXemMa.unit.test.ts`).
+import { TrinhXemMa } from "@/components/ai/TrinhXemMa";
 // Bộ đọc "đầu ra lệnh → ĐỊA ĐIỂM LỖI" DUY NHẤT (thuần, shared) — trang parse MỘT lần, panel dùng lại.
 import { phanTichLoiViTri } from "@shared/aiCodingLoiViTri";
 // ★ 2026-08-24 — `baseName` nay ở module lá dùng chung (`TheDuyetDiffLo` cũng cần) — bản cục bộ đã xoá.
@@ -198,11 +201,11 @@ function FolderChildren({ path, selectedPath, onOpenFile, depth, projectId }: Tr
   const reply = q.data;
   // Server từ chối (thiếu ai_repo_read) ⇒ note=PERMISSION_DENIED; đây là hàng rào THẬT, không phải rỗng.
   if (reply && !reply.ok && reply.note === "PERMISSION_DENIED") {
-    return <div className="px-2 py-1 text-xs text-destructive">{t("repoWs.tree.denied", "Server từ chối: thiếu quyền ai_repo_read")}</div>;
+    return <div className="px-2 py-1 text-xs text-destructive">{t("repoWs.tree.denied", "Server từ chối: thiếu quyền ĐỌC mã (ai_repo_read)")}</div>;
   }
   const entries = reply?.data?.entries ?? [];
   if (entries.length === 0) {
-    return <div className="px-2 py-1 text-xs text-muted-foreground">{t("repoWs.tree.empty", "Không có mục nào hộp cát cho phép hiện")}</div>;
+    return <div className="px-2 py-1 text-xs text-muted-foreground">{t("repoWs.tree.empty", "Không có mục nào được hộp cát cho phép hiển thị.")}</div>;
   }
   const dirs = entries.filter((e) => e.kind === "dir");
   // ★ UX (D2) — chia ở TẦNG HIỂN THỊ (`chiaTepHienThi`, thuần, có lưới riêng); API server KHÔNG đổi.
@@ -543,9 +546,10 @@ export default function AICodingWorkspace() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   /**
    * ★★★ 2026-08-24 — DÒNG ĐÍCH để trình xem CUỘN tới khi mở tệp từ panel Problems. `null` ⇔ mở
-   * bình thường (không nhảy). Effect cuộn (khoá `selectedPath`/`dongMucTieu`/`fileReply`) dùng
-   * chiều cao dòng ĐO ĐƯỢC (`getBoundingClientRect().height / soDòng`) — KHÔNG dựng lại `<pre>`
-   * thành N span. Mở tệp qua CÂY (`openFile`) đặt lại `null` ⇒ không kéo tệp mới về dòng của tệp cũ.
+   * bình thường (không nhảy). Effect cuộn (khoá `selectedPath`/`dongMucTieu`/`fileReply`) nay tìm
+   * ĐÚNG ô gutter `[data-so-dong={dongMucTieu}]` của `TrinhXemMa` (số dòng THẬT) ⇒ cuộn CHÍNH XÁC,
+   * KHÔNG còn xấp xỉ "cao dòng trung bình". Mở tệp qua CÂY (`openFile`) đặt lại `null` ⇒ không kéo
+   * tệp mới về dòng của tệp cũ.
    */
   const [dongMucTieu, setDongMucTieu] = useState<number | null>(null);
   const fileQ = trpc.repoWorkspace.readFile.useQuery(
@@ -611,8 +615,8 @@ export default function AICodingWorkspace() {
   const endRef = useRef<HTMLDivElement>(null);
   const oNhapRef = useRef<HTMLTextAreaElement>(null);
   const khungRef = useRef<HTMLDivElement>(null);
-  /** ★★★ 2026-08-24 — `<pre>` nội dung tệp (trình xem) để cuộn tới `dongMucTieu` khi mở từ Problems. */
-  const preRef = useRef<HTMLPreElement>(null);
+  /** ★★★ 2026-08-25 — bọc `TrinhXemMa` (trình xem) để effect cuộn tìm ô `[data-so-dong]` tới `dongMucTieu`. */
+  const preRef = useRef<HTMLDivElement>(null);
   const { cao: caoKhung, rong: rongKhung } = useKhungVua(khungRef);
   /** Ba khung cạnh nhau, hay một khung mỗi lần — hỏi BỀ RỘNG KHUNG, không hỏi cửa sổ. */
   const hep = xepMotKhung(rongKhung);
@@ -699,38 +703,33 @@ export default function AICodingWorkspace() {
   }, [streamError]);
 
   /**
-   * ★★★ 2026-08-24 — CUỘN TRÌNH XEM tới `dongMucTieu` khi mở một tệp từ panel Problems.
+   * ★★★ 2026-08-25 — CUỘN TRÌNH XEM tới `dongMucTieu` khi mở một tệp từ panel Problems.
    *
-   * Chiều cao dòng lấy ĐO ĐƯỢC (`getBoundingClientRect().height / soDòng`), KHÔNG dựng lại `<pre>`
-   * thành N span — bám đúng chỉ dẫn WAVE. `<pre>` bọc `whitespace-pre-wrap` nên dòng dài GẤP làm
-   * đây là phép XẤP XỈ (cao dòng trung bình), chấp nhận được cho việc "nhảy gần tới" — đủ để mắt
-   * tìm nốt. Cuộn trên VIEWPORT của ScrollArea (tổ tiên `[data-slot=scroll-area-viewport]`), không
-   * cuộn tài liệu (cùng kỷ luật với effect cuộn hội thoại ở trên).
-   * ⚠ Khoá gồm `fileReply` để lượt mở tệp MỚI (nội dung về sau fetch) cũng kích hoạt cuộn.
+   * `TrinhXemMa` nay render một GUTTER số dòng THẬT (`<div data-so-dong={n}>` mỗi dòng) ⇒ cuộn
+   * CHÍNH XÁC tới đúng ô dòng, KHÔNG còn xấp xỉ bằng "cao dòng trung bình" (phép cũ sai vì `<pre>`
+   * bọc `whitespace-pre-wrap` gấp dòng dài). Cuộn trên VIEWPORT của ScrollArea (tổ tiên
+   * `[data-slot=scroll-area-viewport]`), không cuộn tài liệu (cùng kỷ luật với effect hội thoại trên).
+   * ⚠ Khoá gồm `fileReply` để lượt mở tệp MỚI (nội dung fetch về sau) cũng kích hoạt cuộn.
    */
   useEffect(() => {
     if (dongMucTieu === null) return;
     const noiDung = fileReply?.data?.content ?? null;
     if (typeof noiDung !== "string" || noiDung === "") return;
     /**
-     * ⚠ 2026-08-24 — BỌC `requestAnimationFrame`. Đo LIVE lần đầu: `scrollTop` KẸT Ở 0 vì effect chạy
-     *   NGAY khi `fileReply` về, TRƯỚC khi trình duyệt bố trí xong `<pre>` mới ⇒ `getBoundingClientRect
-     *   ().height` còn 0 ⇒ `caoDong=0` ⇒ đích âm ⇒ `max(0,…)=0`. Một nhịp rAF cho layout hoàn tất rồi
-     *   mới ĐO + CUỘN. (Cùng lớp bẫy "đo trước khi bố trí" của `useKhungVua`.)
+     * ⚠ BỌC `requestAnimationFrame`: ô gutter phải được trình duyệt BỐ TRÍ xong thì
+     *   `getBoundingClientRect()` mới có toạ độ thật (cùng lớp bẫy "đo trước khi bố trí" của
+     *   `useKhungVua`). Không thấy ô dòng (tệp ngắn hơn `dongMucTieu`, hay chưa bố trí xong) ⇒ BỎ NHỊP.
      */
     const id = requestAnimationFrame(() => {
-      const preEl = preRef.current;
-      if (!preEl) return;
-      const soDong = noiDung.split("\n").length;
-      if (soDong <= 0) return;
-      const khungCuon = preEl.closest<HTMLElement>("[data-slot=scroll-area-viewport]");
+      const goc = preRef.current;
+      if (!goc) return;
+      const oDong = goc.querySelector<HTMLElement>(`[data-so-dong="${dongMucTieu}"]`);
+      if (!oDong) return;
+      const khungCuon = goc.closest<HTMLElement>("[data-slot=scroll-area-viewport]");
       if (!khungCuon) return;
-      const caoDong = preEl.getBoundingClientRect().height / soDong;
-      if (caoDong <= 0) return; // `<pre>` chưa có chiều cao ⇒ chưa bố trí xong, bỏ nhịp này
-      // Đỉnh `<pre>` so với đầu nội dung cuộn (kể cả padding + hàng huy hiệu phía trên).
-      const dinhPre = preEl.getBoundingClientRect().top - khungCuon.getBoundingClientRect().top + khungCuon.scrollTop;
-      const dich = dinhPre + Math.max(0, dongMucTieu - 1) * caoDong - khungCuon.clientHeight / 3;
-      khungCuon.scrollTop = Math.max(0, dich);
+      // Đưa ô dòng đích vào ~1/3 trên của viewport (toạ độ ô so với đầu nội dung cuộn).
+      const dinhO = oDong.getBoundingClientRect().top - khungCuon.getBoundingClientRect().top + khungCuon.scrollTop;
+      khungCuon.scrollTop = Math.max(0, dinhO - khungCuon.clientHeight / 3);
     });
     return () => cancelAnimationFrame(id);
   }, [selectedPath, dongMucTieu, fileReply]);
@@ -1298,6 +1297,18 @@ export default function AICodingWorkspace() {
   const busyConfirm = confirmM.isPending || cancelM.isPending;
   /** Số vấn đề của lượt lệnh MỚI NHẤT — huy hiệu tab "Vấn đề" (panel Problems đọc cùng nguồn này). */
   const soVanDe = lenhDaChay[lenhDaChay.length - 1]?.diaDiemLoi.length ?? 0;
+  /**
+   * ★ UX (C2) — TÍN HIỆU THẬT "chỉ CHẠY, KHÔNG ghi đĩa" cho thẻ duyệt `run_command`. Server đặt một
+   * ô `preview.changes` `{ field:"ghiDia", newValue:"chi_hoi_kiem_tra" | "ghi_de_ma_nguon" }` (xem
+   * `server/services/aiLocalTools/writeHandlers/repoCommand.ts`): TÁM lệnh HỎI/KIỂM TRA (dotnet
+   * build/test · vitest · git status/diff · node --test) = `chi_hoi_kiem_tra`; riêng `dotnet format`
+   * = `ghi_de_ma_nguon`. ⇒ CHỈ trấn an khi cờ THẬT nói KHÔNG ghi (không bịa); `dotnet format` rơi về
+   * `false` nên GIỮ NGUYÊN cảnh báo GHI ĐÈ của server.
+   */
+  const lenhChiChay =
+    pending !== null &&
+    pending.tool === "run_command" &&
+    pending.preview.changes.some((c) => c.field === "ghiDia" && c.newValue === "chi_hoi_kiem_tra");
 
   return (
     <DashboardLayout>
@@ -1488,9 +1499,18 @@ export default function AICodingWorkspace() {
               {pendingDiff ? (
                 <>
                   <FileDiff className="h-4 w-4 text-amber-500" />
-                  <span className="truncate text-xs font-medium">
-                    {t("repoWs.viewer.diffFor", "Xem trước diff")}: <code className="font-mono">{pendingDiff.args.path}</code>
-                  </span>
+                  {/* ★ UX (C4) — "diff" là thuật ngữ; tooltip (cùng mẫu ba huy hiệu quyền) chú giải
+                      cho kỹ sư mới thay vì bắt đoán. */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-help truncate text-xs font-medium">
+                        {t("repoWs.viewer.diffFor", "Xem trước diff")}: <code className="font-mono">{pendingDiff.args.path}</code>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-[280px] text-xs">
+                      {t("repoWs.viewer.diffTip", "Diff là danh sách những DÒNG sẽ đổi: bản cũ so với bản mới. Bạn xem rồi mới bấm duyệt ghi.")}
+                    </TooltipContent>
+                  </Tooltip>
                 </>
               ) : (
                 <>
@@ -1524,7 +1544,13 @@ export default function AICodingWorkspace() {
                       {fileReply?.data?.redacted && <Badge variant="secondary" className="text-[10px]">{t("repoWs.viewer.redacted", "Đã che bí mật")}</Badge>}
                       {fileReply?.data?.truncated && <Badge variant="secondary" className="text-[10px]">{t("repoWs.viewer.truncated", "Đã cắt bớt")}</Badge>}
                     </div>
-                    <pre ref={preRef} className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">{fileReply?.data?.content ?? ""}</pre>
+                    {/* ★★★ 2026-08-25 · UX (Đợt 1 A) — TrinhXemMa: tô cú pháp (Streamdown/Shiki) +
+                        GUTTER số dòng THẬT (`[data-so-dong]`) + cuộn ngang, thay `<pre>` trơn. `preRef`
+                        bọc nó để effect cuộn tìm được ô `[data-so-dong={dongMucTieu}]`. Hàng huy hiệu
+                        (bytes/redacted/truncated) phía trên GIỮ NGUYÊN. */}
+                    <div ref={preRef} className="min-w-0">
+                      <TrinhXemMa noiDung={fileReply?.data?.content ?? ""} duongDan={selectedPath ?? ""} dongMucTieu={dongMucTieu} />
+                    </div>
                   </>
                 )}
               </div>
@@ -1622,6 +1648,11 @@ export default function AICodingWorkspace() {
                   </div>
                 ))}
 
+                {/* ★★★ 2026-08-25 · A11Y (Đợt 1 B) — vùng TRẠNG THÁI ĐỘNG (stream · "đang suy nghĩ"
+                    · vòng tự động) trong MỘT `aria-live="polite"`: trình đọc màn hình đọc cập nhật khi
+                    chúng XUẤT HIỆN, không im lặng. Bọc NHÓM này — KHÔNG bọc cả trang. `empty:hidden`
+                    để lúc nhàn (rỗng) nó không chiếm chỗ trong luồng `space-y-3`. */}
+                <div aria-live="polite" className="space-y-3 empty:hidden">
                 {/* Đang stream */}
                 {isStreaming && (streamingText || streamTool) && (
                   <div className="flex min-w-0 gap-2">
@@ -1672,7 +1703,13 @@ export default function AICodingWorkspace() {
                 {vong.dangChay && vong.pha === "chay_test" && (
                   <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t("repoWs.loop.waitCmd", "Đang chờ lệnh kiểm chứng chạy xong (có thể tới vài phút)…")}</div>
                 )}
+                </div>
 
+                {/* ★★★ 2026-08-25 · A11Y (Đợt 1 B) — THẺ DUYỆT (HITL) phải được trình đọc màn hình
+                    thông báo NGAY khi hiện (công cụ bắt-duyệt-mỗi-lượt): `aria-live="assertive"` +
+                    `role="status"`. Vùng LUÔN có trong DOM và LUÔN hiển thị (KHÔNG `empty:hidden`) để
+                    lượt chèn thẻ chắc chắn được đọc. */}
+                <div aria-live="assertive" role="status">
                 {/* Thẻ xác nhận write-tool */}
                 {pending && pending.tool === "apply_diff" && pendingDiff && pendingDiff.action.actionId === pending.actionId ? (
                   <TheDuyetDiff
@@ -1703,16 +1740,29 @@ export default function AICodingWorkspace() {
                   // run_command (và mọi write tool khác) — ConfirmActionCard hiện argv + cwd + hạn giờ + cảnh báo.
                   // ★ UX (A1) — `message`: câu kết cục THẬT của server; không truyền thì thẻ rơi về
                   //   câu RBAC mặc định ("Bạn không có quyền…") cho MỌI kết cục denied — đo live sai.
-                  <ConfirmActionCard
-                    action={pending as unknown as PendingAction}
-                    state={actionState}
-                    message={ketCucThongDiep}
-                    busy={busyConfirm}
-                    onConfirm={handleConfirm}
-                    onCancel={handleCancel}
-                    t={t}
-                  />
+                  // ★ UX (C2) — DÒNG TRẤN AN cho `run_command` KHÔNG ghi đĩa: tiêu đề dùng chung của
+                  //   ConfirmActionCard là "Xác nhận thao tác GHI" (component KHÔNG sửa ở đợt này) gây
+                  //   hoảng cho lệnh chỉ chạy test. Banner ở TẦNG TRANG (không đụng component), CHỈ hiện
+                  //   khi cờ THẬT `ghiDia=false` (xem `lenhChiChay`); `dotnet format` giữ cảnh báo ghi đè.
+                  <>
+                    {lenhChiChay && (
+                      <div className="mb-2 flex items-start gap-1.5 rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-[12px] text-sky-800 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300">
+                        <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>{t("repoWs.cmd.noWrite", "Lệnh này chỉ CHẠY, KHÔNG ghi tệp mã nguồn.")}</span>
+                      </div>
+                    )}
+                    <ConfirmActionCard
+                      action={pending as unknown as PendingAction}
+                      state={actionState}
+                      message={ketCucThongDiep}
+                      busy={busyConfirm}
+                      onConfirm={handleConfirm}
+                      onCancel={handleCancel}
+                      t={t}
+                    />
+                  </>
                 ) : null}
+                </div>
 
                 <div ref={endRef} />
               </div>

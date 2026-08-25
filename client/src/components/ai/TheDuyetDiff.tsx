@@ -70,6 +70,38 @@ export interface HanhDongCanDuyet {
   preview?: { warnings?: string[] } | null;
 }
 
+/**
+ * ★ 2026-08-25 · GIẤU CHUỖI BĂM HEX KỸ THUẬT KHỎI HỘP CẢNH BÁO CHÍNH — audit UX (persona kỹ-sư-mới)
+ * bắt: thẻ duyệt phơi nguyên văn `Băm TRƯỚC a1b2c3… → SAU d4e5f6…` trong hộp đỏ "Đọc trước khi
+ * duyệt" — vừa VÔ NGHĨA với người thường vừa DỌA. Hàm THUẦN này chẻ mảng cảnh báo làm hai:
+ *   • `kyThuat` — dòng MANG BĂM HEX (một cụm ≥6 ký tự hex, vd `725ee0d8aaaa`) HOẶC mở đầu bằng
+ *     "Băm"/"băm" ⇒ gập vào một `<details>` MẶC ĐỊNH ĐÓNG (điều tra/audit vẫn mở xem được).
+ *   • `thuong` — mọi cảnh báo còn lại (GHI ĐÈ tệp sạch · số dòng · cảnh báo không-git) ⇒ HIỆN như cũ.
+ *
+ * Nguồn chuỗi (server, `applyDiff.ts`/`applyDiffBatch.ts · xemTruoc`) — đồng bộ TAY nếu server đổi:
+ *   một tệp: `Băm TRƯỚC <16hex>… → SAU <16hex>… …`            ⇒ kyThuat (mở đầu "Băm" + có hex)
+ *   lô/tệp:  `#N <path> — GHI ĐÈ (tệp sạch); băm <12hex>… → …` ⇒ kyThuat (BẮT bằng luật hex; dòng
+ *            này KHÔNG mở đầu "băm" vì `phanLoaiCanhBaoLo` giữ nguyên tiền tố `#N` — chính cụm hex
+ *            đưa nó vào kyThuat)
+ *   thường:  `Tệp SẠCH … sẽ GHI ĐÈ "…"` · `30 dòng → 32 dòng` · `⚠ Thư mục … CHƯA có git …` ⇒ thuong
+ *
+ * ⚠ THUẦN (không React, không i18n) để lưới đo một mình — xem `theDuyetDiff.unit.test.ts`
+ *   ("Băm TRƯỚC…" → kyThuat · "3 tệp, mỗi tệp…" → thuong).
+ * ⚠ GIỚI HẠN NÓI THẲNG: regex hex là một PHÉP GẦN ĐÚNG — một đường dẫn tệp mang cụm ≥6 hex (vd tệp
+ *   tên `deadbeef.ts` trong cảnh báo không-git) sẽ bị xếp nhầm vào kyThuat. Hiếm; đổi lấy sự đơn
+ *   giản của một vị từ THUẦN không phụ thuộc khuôn câu server.
+ */
+const CO_BAM_HEX = /\b[0-9a-f]{6,}\b/i;
+export function tachCanhBaoKyThuat(warnings: string[]): { thuong: string[]; kyThuat: string[] } {
+  const thuong: string[] = [];
+  const kyThuat: string[] = [];
+  for (const c of warnings) {
+    if (/^\s*băm/i.test(c) || CO_BAM_HEX.test(c)) kyThuat.push(c);
+    else thuong.push(c);
+  }
+  return { thuong, kyThuat };
+}
+
 export function TheDuyetDiff({
   action, args, state, busy, preview, onPreview, onConfirm, onCancel,
 }: {
@@ -92,6 +124,9 @@ export function TheDuyetDiff({
   const { t } = useTranslation();
   const ttl = useTtlCountdown(action.expiresAt, state === "pending");
   const canhBao = action.preview?.warnings ?? [];
+  // ★ 2026-08-25 — chẻ dòng băm hex (kỹ thuật, DỌA người thường) khỏi cảnh báo thường; băm gập vào
+  //   <details> bên dưới, cảnh báo thường vẫn hiện. Xem docblock `tachCanhBaoKyThuat`.
+  const { thuong: canhBaoThuong, kyThuat: canhBaoKyThuat } = tachCanhBaoKyThuat(canhBao);
 
   /**
    * ★★★ ĐỢT 3 — KẾ HOẠCH KHỐI **CHUẨN** (`keHoachKhoiDuyet`): đúng hàm server sẽ gọi lại trên
@@ -191,14 +226,34 @@ export function TheDuyetDiff({
             <AlertTriangle className="size-3.5 shrink-0" />
             {t("repoWs.diff.warningsTitle", "Đọc trước khi duyệt")}
           </div>
-          <ul className="space-y-0.5 text-[12px] text-red-700 dark:text-red-300">
-            {canhBao.map((c, i) => (
-              <li key={i} className="flex min-w-0 items-start gap-1.5">
-                <span aria-hidden className="mt-px shrink-0">⚠</span>
-                <span className="min-w-0 break-words leading-snug">{c}</span>
-              </li>
-            ))}
-          </ul>
+          {canhBaoThuong.length > 0 && (
+            <ul className="space-y-0.5 text-[12px] text-red-700 dark:text-red-300">
+              {canhBaoThuong.map((c, i) => (
+                <li key={i} className="flex min-w-0 items-start gap-1.5">
+                  <span aria-hidden className="mt-px shrink-0">⚠</span>
+                  <span className="min-w-0 break-words leading-snug">{c}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {/*
+            ★ 2026-08-25 — DÒNG BĂM HEX GẬP LẠI: `<details>` thuần HTML (không thêm state/JS), theo
+            đúng tiền lệ `data-danh-sach-lenh` của `ConfirmActionCard`. Băm hex vô nghĩa với người
+            thường và gây DỌA ở hộp "phải đọc"; nó vẫn nằm TRONG cây (điều tra/audit mở xem được),
+            chỉ KHÔNG phơi mặc định trong hộp cảnh báo chính.
+          */}
+          {canhBaoKyThuat.length > 0 && (
+            <details data-chi-tiet-ky-thuat className="mt-1 text-[11px] text-red-700/90 dark:text-red-300/90">
+              <summary className="cursor-pointer font-medium underline-offset-2 hover:underline">
+                {t("repoWs.diff.techDetails", "Chi tiết kỹ thuật (băm, TOCTOU)")}
+              </summary>
+              <ul className="mt-1 space-y-0.5 pl-1">
+                {canhBaoKyThuat.map((c, i) => (
+                  <li key={i} className="min-w-0 break-all font-mono leading-snug">{c}</li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       )}
       </div>

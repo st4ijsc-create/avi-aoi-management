@@ -19257,7 +19257,7 @@
       "meta": "{{n}} lượt · {{luc}}",
       "delete": "Xoá phiên",
       "confirmDelete": "Xoá phiên này khỏi máy chủ? Không hoàn tác được.",
-      "denied": "Server từ chối đọc phiên: thiếu quyền ai_repo_read.",
+      "denied": "Server từ chối đọc phiên: thiếu quyền ĐỌC mã (ai_repo_read).",
       "openFailed": "Không mở được phiên (đã bị xoá hoặc không thuộc về bạn).",
       "deleteFailed": "Không xoá được phiên.",
       "scopeNote": "Phiên lưu trên máy chủ, riêng theo tài khoản và theo dự án — người khác không đọc được.",
@@ -19346,8 +19346,8 @@
       "title": "Cây tệp",
       "loading": "Đang tải…",
       "error": "Không đọc được thư mục",
-      "denied": "Server từ chối: thiếu quyền ai_repo_read",
-      "empty": "Không có mục nào hộp cát cho phép hiện",
+      "denied": "Server từ chối: thiếu quyền ĐỌC mã (ai_repo_read)",
+      "empty": "Không có mục nào được hộp cát cho phép hiển thị.",
       "refresh": "Làm mới",
       "showOther": "Hiện tệp khác ({{n}})",
       "hideOther": "Ẩn tệp khác ({{n}})"
@@ -19365,7 +19365,11 @@
       "denied": "Không đọc được (bị hộp cát/server từ chối).",
       "redacted": "Đã che bí mật",
       "truncated": "Đã cắt bớt",
-      "diffFor": "Xem trước diff"
+      "diffFor": "Xem trước diff",
+      "diffTip": "Diff là danh sách những DÒNG sẽ đổi: bản cũ so với bản mới. Bạn xem rồi mới bấm duyệt ghi."
+    },
+    "cmd": {
+      "noWrite": "Lệnh này chỉ CHẠY, KHÔNG ghi tệp mã nguồn."
     },
     "chat": {
       "title": "Hội thoại tác nhân",
@@ -19407,7 +19411,8 @@
       "denied": "Bị từ chối.",
       "expired": "Đã hết hạn.",
       "rejectedCode": "TỪ CHỐI [{{ma}}] — KHÔNG ghi byte nào.",
-      "warningsTitle": "Đọc trước khi duyệt"
+      "warningsTitle": "Đọc trước khi duyệt",
+      "techDetails": "Chi tiết kỹ thuật (băm, TOCTOU)"
     },
     "suggest": {
       "read": "Đọc file server/routers.ts và tóm tắt",

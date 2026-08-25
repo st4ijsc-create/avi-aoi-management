@@ -19285,7 +19285,7 @@
       "meta": "{{n}} 轮 · {{luc}}",
       "delete": "删除会话",
       "confirmDelete": "从服务器删除该会话？此操作无法撤销。",
-      "denied": "服务器拒绝读取会话：缺少 ai_repo_read 权限。",
+      "denied": "服务器拒绝读取会话：缺少读取代码权限（ai_repo_read）。",
       "openFailed": "无法打开该会话（已被删除，或不属于您）。",
       "deleteFailed": "无法删除该会话。",
       "scopeNote": "会话保存在服务器上，按账号和项目隔离——他人无法读取。",
@@ -19380,8 +19380,8 @@
       "title": "文件树",
       "loading": "加载中…",
       "error": "无法读取目录",
-      "denied": "服务器拒绝：缺少 ai_repo_read 权限",
-      "empty": "沙箱没有可显示的条目",
+      "denied": "服务器拒绝：缺少读取代码权限（ai_repo_read）",
+      "empty": "沙箱没有允许显示的条目。",
       "refresh": "刷新",
       "showOther": "显示其他文件（{{n}}）",
       "hideOther": "隐藏其他文件（{{n}}）"
@@ -19393,7 +19393,11 @@
       "denied": "无法读取（被沙箱/服务器拒绝）。",
       "redacted": "已脱敏",
       "truncated": "已截断",
-      "diffFor": "Diff 预览"
+      "diffFor": "Diff 预览",
+      "diffTip": "Diff（差异）是将要改动的行清单：旧版对比新版。您先查看再批准写入。"
+    },
+    "cmd": {
+      "noWrite": "该命令仅运行，不会写入源代码文件。"
     },
     "chat": {
       "title": "智能体会话",
@@ -19435,7 +19439,8 @@
       "denied": "已拒绝。",
       "expired": "已过期。",
       "rejectedCode": "已拒绝 [{{ma}}] — 未写入任何字节。",
-      "warningsTitle": "批准前请阅读"
+      "warningsTitle": "批准前请阅读",
+      "techDetails": "技术细节（哈希、TOCTOU）"
     },
     "suggest": {
       "read": "读取 server/routers.ts 并总结",
