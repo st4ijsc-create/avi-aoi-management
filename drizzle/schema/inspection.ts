@@ -166,6 +166,28 @@ export const productInspections = pgTable("product_inspections", {
   // the generated INSERT carries it when set — additive on a DB where 0286 added
   // the column, and an omitted (undefined) value simply never references it.
   variantId: integer("variantId"),
+  // ── Pha 1A (2026-08-25, migration 0339) — CÂY KẾT QUẢ header-level fields. ────────────
+  // Tất cả NULLABLE, KHÔNG backfill: header đã Timescale-compress một phần (chunk cũ có
+  // thể đã nén) nên NOT NULL DEFAULT chưa được chứng minh an toàn — xem drizzle/
+  // 0339_inspection_result_tree.sql. NULL trên mọi cột dưới đây = hàng lịch sử trước Pha 1
+  // (kể cả sau khi ingest mới bắt đầu ghi, một số hàng vẫn có thể NULL nếu máy không khai).
+  //
+  // Nguồn của ntf HEADER-level ('machine' | ta CUỘN từ inspection_surfaces con) — đối
+  // xứng với ntfSource ở mọi cấp trong cây kết quả (surface/position/capture).
+  ntfSource: varchar("ntfSource", { length: 10 }),
+  // Chỉ số board TRONG một lượt máy báo (khác boardIndex ở trên — đó là chỉ số trong
+  // PANEL vật lý; cái này là index máy tự đếm theo THỨ TỰ SUBMIT, dùng để phát hiện board
+  // bị máy bỏ qua/trùng khi đối chiếu với productionOrderCode).
+  machineProductIndex: integer("machineProductIndex"),
+  // Cờ LỆCH cấu hình phát hiện tại ingest — mảng JSON các mã lệch (VD: surface/position/
+  // capture máy gửi không khớp cây CẤU HÌNH đã dạy ở product_surfaces/product_positions/
+  // product_captures). NULL = chưa từng đối chiếu (pre-0339) hoặc không lệch gì.
+  configDriftFlags: jsonb("configDriftFlags").$type<string[]>(),
+  // Bộ đếm tổng hợp CUỘN từ cây kết quả con (đếm surface/position/capture theo OK/NG/NTF)
+  // — cache đọc nhanh cho dashboard, không phải nguồn sự thật (nguồn sự thật là chính các
+  // hàng inspection_surfaces/positions/captures). NULL = chưa cuộn (pre-0339 hoặc cây con
+  // rỗng).
+  summaryCounts: jsonb("summaryCounts").$type<Record<string, number>>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -318,6 +340,37 @@ export const measurementResults = pgTable("measurement_results", {
   defectCropUrl: text("defectCropUrl"),      // pre-cropped defect region image (optional, for fast display)
   defectCropKey: varchar("defectCropKey", { length: 255 }), // storage key for defectCropUrl
   // ============ end defect location ============
+  // ── Pha 1A (2026-08-25, migration 0339) — CÂY KẾT QUẢ leaf-level fields. ─────────────
+  // Tất cả NULLABLE — measurement_results là hypertable ĐÃ NÉN một phần, xem drizzle/
+  // 0339_inspection_result_tree.sql. CỐ Ý CHƯA có FK trên captureRowId (chi phí FK từ
+  // hypertable tới bảng thường trên chunk đã nén chưa đo được — để Pha 1B quyết).
+  //
+  // NULL = hàng LỊCH SỬ trước Pha 1 (ghi trước khi cây inspection_captures tồn tại) —
+  // không backfill, không suy đoán. Khi có giá trị: trỏ tới inspection_captures.id (soft,
+  // không FK) mà measurement này thuộc về.
+  captureRowId: integer("captureRowId"),
+  // Khoá join sang teach data = ComponentProject.Id (measurement_point_defs.componentExtId,
+  // migration 0338) — KHÔNG phải id nội bộ, là id máy khai cho linh kiện. NULL = chưa nối
+  // được (pre-0339 hoặc máy không khai).
+  componentExtId: varchar("componentExtId", { length: 64 }),
+  // NTF do MÁY khai ở cấp measurement — đối xứng ntf/rolledNtf trong cây kết quả phía trên
+  // (inspection_surfaces/positions/captures). NULL = máy không khai (khác false = khai
+  // KHÔNG NTF).
+  ntf: boolean("ntf"),
+  // Nguồn của ntf ở dòng này ('machine' | nơi khác cuộn/gán) — cùng quy ước ntfSource ở
+  // mọi cấp khác trong cây kết quả.
+  ntfSource: varchar("ntfSource", { length: 10 }),
+  // Mã lỗi/ngoại lệ pipeline máy báo cho PHÉP ĐO này (khác defectCodeRaw — đó là mã LỖI
+  // SẢN PHẨM đã có từ trước; errorCode là lỗi VẬN HÀNH của chính phép đo, VD cảm biến
+  // timeout, camera lỗi lấy nét). NULL = đo bình thường, không lỗi.
+  errorCode: varchar("errorCode", { length: 50 }),
+  // Mô tả người-đọc-được của errorCode (raw text từ máy, không chuẩn hoá).
+  errorDesc: text("errorDesc"),
+  // Mốc thời gian bắt đầu/kết thúc phép đo NÀY (khác createdAt — đó là lúc SERVER ghi
+  // hàng, hai giá trị có thể lệch nhau nếu ingest trễ). NULL = máy không khai timing
+  // per-measurement.
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_results_inspection").on(table.inspectionId),
@@ -334,6 +387,9 @@ export const measurementResults = pgTable("measurement_results", {
   // W3-A (0180): supports the ON DELETE SET NULL scan when a defect_catalog row
   // is deleted (partial — only rows that actually reference a defect).
   index("idx_results_defect_catalog").on(table.defectCatalogId).where(sql`${table.defectCatalogId} IS NOT NULL`),
+  // Pha 1A (migration 0339): partial — chỉ hàng ĐÃ nối vào cây kết quả mới cần scan
+  // theo captureRowId (hàng lịch sử pre-0339 có captureRowId NULL, không cần index).
+  index("idx_results_capture").on(table.captureRowId).where(sql`${table.captureRowId} IS NOT NULL`),
 ]);
 
 export type MeasurementResult = typeof measurementResults.$inferSelect;

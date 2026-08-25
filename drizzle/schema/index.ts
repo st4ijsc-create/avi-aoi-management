@@ -83,3 +83,4 @@ export * from "./aiCodingSession"; // doc 79 DANH SÁCH PHIÊN — mạch hội 
 export * from "./aiCodingLesson"; // doc 82 BỘ NHỚ XUYÊN PHIÊN — bài học người dùng tự khai, phạm vi CHỦ SỞ HỮU, migration 0336
 export * from "./aiRepoDuAn"; // QUẢN LÝ DỰ ÁN 2026-08-23 — dự án hộp cát đăng ký qua UI (nguồn DB, env thắng khi trùng id), migration 0337
 export * from "./productConfigTree"; // Pha 1A 2026-08-25 — cây CẤU HÌNH 4 cấp surface→position→capture→component, migration 0338
+export * from "./inspectionTree"; // Pha 1A 2026-08-25 — cây KẾT QUẢ 3 cấp surface→position→capture, migration 0339
