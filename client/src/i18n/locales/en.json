@@ -19291,6 +19291,7 @@
     "ribbon": {
       "refreshTree": "Refresh file tree",
       "runVerify": "Run verification",
+      "runVerifyNamed": "Run verification: {{lenh}}",
       "stop": "Stop",
       "jumpFiles": "View file tree",
       "jumpChat": "Back to chat",
@@ -19448,7 +19449,15 @@
       "csharpWhy": "Explain why the two Divide_ByZero tests fail",
       "reactRead": "Read src/validate.mjs and summarize it",
       "reactTest": "Run node --test test/validate.test.mjs",
-      "reactWhy": "Explain why the two validateTodo tests are failing"
+      "reactWhy": "Explain why the two validateTodo tests are failing",
+      "mac": {
+        "list": "List the files in this project",
+        "structure": "Describe this project's structure and purpose",
+        "readme": "Read the README (if any) and summarize"
+      }
+    },
+    "onboarding": {
+      "unknownProject": "This project has no tailored suggestions yet. Start with a few exploration prompts — the agent reads the real file tree:"
     },
     "exec": {
       "noPerm": "Your account has no RUN-COMMAND permission (ai_repo_exec) — the run-tests suggestion is hidden. If called directly, the server still blocks it."

@@ -19271,6 +19271,7 @@
     "ribbon": {
       "refreshTree": "Làm mới cây tệp",
       "runVerify": "Chạy kiểm chứng",
+      "runVerifyNamed": "Chạy kiểm chứng: {{lenh}}",
       "stop": "Dừng",
       "jumpFiles": "Xem cây tệp",
       "jumpChat": "Về hội thoại",
@@ -19428,7 +19429,15 @@
       "csharpWhy": "Giải thích vì sao hai ca Divide_ByZero đỏ",
       "reactRead": "Đọc src/validate.mjs và tóm tắt",
       "reactTest": "Chạy node --test test/validate.test.mjs",
-      "reactWhy": "Giải thích vì sao hai ca của validateTodo đang đỏ"
+      "reactWhy": "Giải thích vì sao hai ca của validateTodo đang đỏ",
+      "mac": {
+        "list": "Liệt kê các tệp trong dự án này",
+        "structure": "Mô tả cấu trúc và mục đích của dự án này",
+        "readme": "Đọc README (nếu có) và tóm tắt"
+      }
+    },
+    "onboarding": {
+      "unknownProject": "Dự án này chưa có gợi ý riêng. Bắt đầu bằng vài lệnh khám phá — tác nhân tự đọc cây tệp thật:"
     },
     "exec": {
       "noPerm": "Tài khoản của bạn không có quyền CHẠY LỆNH (ai_repo_exec) — gợi ý chạy test bị ẩn. Nếu gọi thẳng, server vẫn chặn."

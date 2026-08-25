@@ -100,7 +100,7 @@ import {
 // chuỗi gửi server/lưu phiên, chỉ áp ngay tại chỗ render <Streamdown>.
 import { lamSachMocChoHienThi } from "@shared/aiCodingMoc";
 // ★★★ 2026-08-23 · UX (B1) — gợi ý mở đầu THEO DỰ ÁN (một bảng, khoá theo id; id lạ ⇒ ẩn gợi ý).
-import { goiYTheoDuAn } from "@/lib/goiYDuAn";
+import { goiYTheoDuAn, MAC_DINH_KHAM_PHA } from "@/lib/goiYDuAn";
 // ★★★ 2026-08-23 · UX (D2) — lọc nhiễu cây tệp ở TẦNG HIỂN THỊ (ảnh/log/nhị phân gom sau một nút).
 import { chiaTepHienThi } from "@/lib/cayTepHienThi";
 // ★ UX (B2) — tooltip cho ba huy hiệu quyền; provider đã bọc cả App (App.tsx).
@@ -1014,6 +1014,12 @@ export default function AICodingWorkspace() {
     if (g) void handleSend(t(g.khoa, g.macDinh));
   }, [projectId, handleSend, t]);
 
+  // ★★★ 2026-08-25 · NHÓM HOÃN — gợi ý kiểm-chứng của dự án (lệnh ĐẦU TIÊN `canChayLenh`): dùng cho CẢ
+  //   `coTheChayKiemChung` (hiện/ẩn nút ribbon) LẪN tooltip "Chạy kiểm chứng: <lệnh>". Nút chỉ-icon
+  //   không nói người dùng sắp ĐỀ XUẤT lệnh gì — tooltip nêu đích danh (đi qua đúng cửa duyệt HITL).
+  const goiYKiemChung = useMemo(() => goiYTheoDuAn(projectId).find((x) => x.canChayLenh), [projectId]);
+  const lenhKiemChungHienThi = goiYKiemChung ? t(goiYKiemChung.khoa, goiYKiemChung.macDinh) : undefined;
+
   /**
    * ★★★ MỘT LƯỢT CỦA VÒNG: **CHẠY** lệnh kiểm chứng → **ĐỌC** đầu ra thật → **ĐỀ XUẤT** bản sửa
    * kế tiếp (hoặc DỪNG, nói rõ lý do).
@@ -1531,7 +1537,8 @@ export default function AICodingWorkspace() {
         <RibbonTacVu
           hep={hep}
           dangStream={isStreaming}
-          coTheChayKiemChung={canExec && !!goiYTheoDuAn(projectId).find((x) => x.canChayLenh)}
+          coTheChayKiemChung={canExec && !!goiYKiemChung}
+          lenhKiemChung={lenhKiemChungHienThi}
           onLamMoiCay={lamMoiCay}
           onChayKiemChung={chayKiemChungNhanh}
           onDung={stopKbStream}
@@ -1835,9 +1842,18 @@ export default function AICodingWorkspace() {
                     </p>
                     {/* ★★★ UX (B1) — gợi ý THEO DỰ ÁN đang chọn (`goiYTheoDuAn`): bản cũ viết cứng
                         cho repo chính nên ở dự án csharp nút đầu tiên dẫn vào một tệp KHÔNG tồn tại.
-                        Id lạ (dự án admin tự đăng ký) ⇒ mảng rỗng ⇒ ẨN gợi ý thay vì gợi sai. */}
+                        ★ NHÓM HOÃN (onboarding) — dự án id-lạ ⇒ `goiYTheoDuAn` rỗng; thay vì MÀN TRẮNG,
+                        đổ `MAC_DINH_KHAM_PHA` (khám phá THUẦN, không nêu tên tệp ⇒ an toàn mọi cây) +
+                        một dòng dẫn nhập. Nút "Chạy kiểm chứng"/quick-run vẫn đọc `goiYTheoDuAn` thẳng
+                        nên KHÔNG mọc lệnh chạy cho dự án lạ (xem docblock `MAC_DINH_KHAM_PHA`). */}
+                    {projectId && goiYTheoDuAn(projectId).length === 0 && (
+                      <p data-onboarding-macdinh className="flex items-start gap-1.5 rounded-md border border-dashed border-sky-300 bg-sky-50 px-2 py-1.5 text-[11px] text-sky-800 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300">
+                        <FolderTree className="mt-0.5 h-3 w-3 shrink-0" />
+                        {t("repoWs.onboarding.unknownProject", "Dự án này chưa có gợi ý riêng. Bắt đầu bằng vài lệnh khám phá — tác nhân tự đọc cây tệp thật:")}
+                      </p>
+                    )}
                     <div className="flex flex-col gap-1.5">
-                      {goiYTheoDuAn(projectId)
+                      {(goiYTheoDuAn(projectId).length > 0 ? goiYTheoDuAn(projectId) : (projectId ? MAC_DINH_KHAM_PHA : []))
                         .filter((g) => !g.canChayLenh || canExec)
                         .map((g) => (
                           <button

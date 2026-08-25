@@ -34,6 +34,9 @@ export interface RibbonTacVuProps {
   dangStream: boolean;
   /** false ⇒ ẨN nút Chạy kiểm chứng (thiếu quyền chạy lệnh, hoặc không có lệnh gợi ý nào). */
   coTheChayKiemChung: boolean;
+  /** ★ Lệnh/câu gợi ý kiểm-chứng sẽ ĐỀ XUẤT (đích danh) — vào tooltip nút Chạy kiểm chứng. `undefined`
+   *  ⇒ tooltip chung "Chạy kiểm chứng". KHÔNG nới quyền: chỉ là chữ trên tooltip của một callback. */
+  lenhKiemChung?: string;
   onLamMoiCay: () => void;
   onChayKiemChung: () => void;
   onDung: () => void;
@@ -61,7 +64,7 @@ export interface RibbonTacVuProps {
  * lưới bắt, cùng `title`/`aria-label` từ i18n (chữ duy nhất trên một nút chỉ-icon).
  */
 export function RibbonTacVu({
-  hep, dangStream, coTheChayKiemChung,
+  hep, dangStream, coTheChayKiemChung, lenhKiemChung,
   onLamMoiCay, onChayKiemChung, onDung, onNhayTep, onNhayChat,
   duoiChat, onToggleTerminal, onToggleProblems, soVanDe, onPhienMoi, className,
 }: RibbonTacVuProps) {
@@ -96,8 +99,9 @@ export function RibbonTacVu({
           size="icon-sm"
           data-nut-chay-kiem-chung
           onClick={onChayKiemChung}
-          title={t("repoWs.ribbon.runVerify", "Chạy kiểm chứng")}
-          aria-label={t("repoWs.ribbon.runVerify", "Chạy kiểm chứng")}
+          // ★ Tooltip NÊU ĐÍCH DANH lệnh sẽ đề xuất khi có (`lenhKiemChung`); rỗng ⇒ câu chung.
+          title={lenhKiemChung ? t("repoWs.ribbon.runVerifyNamed", "Chạy kiểm chứng: {{lenh}}", { lenh: lenhKiemChung }) : t("repoWs.ribbon.runVerify", "Chạy kiểm chứng")}
+          aria-label={lenhKiemChung ? t("repoWs.ribbon.runVerifyNamed", "Chạy kiểm chứng: {{lenh}}", { lenh: lenhKiemChung }) : t("repoWs.ribbon.runVerify", "Chạy kiểm chứng")}
         >
           <Wrench className="h-4 w-4" />
         </Button>

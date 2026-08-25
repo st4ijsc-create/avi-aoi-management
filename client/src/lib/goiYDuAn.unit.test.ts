@@ -11,7 +11,7 @@ import { describe, it, expect } from "vitest";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { goiYTheoDuAn } from "./goiYDuAn";
+import { goiYTheoDuAn, MAC_DINH_KHAM_PHA } from "./goiYDuAn";
 
 const GOC_REPO = resolve(fileURLToPath(import.meta.url), "..", "..", "..", "..");
 
@@ -54,5 +54,26 @@ describe("§3 — gợi ý bám CÂY THẬT: tệp nêu trong câu phải TỒN 
   it("★★★ react: src/validate.mjs + test/validate.test.mjs có thật trên đĩa", () => {
     expect(existsSync(join(GOC_REPO, "sandbox-projects", "react-pg-demo", "src", "validate.mjs"))).toBe(true);
     expect(existsSync(join(GOC_REPO, "sandbox-projects", "react-pg-demo", "test", "validate.test.mjs"))).toBe(true);
+  });
+});
+
+describe("§4 — GỢI Ý KHÁM PHÁ MẶC ĐỊNH (onboarding dự án id-lạ): có LỐI VÀO mà KHÔNG nêu tệp, KHÔNG chạy lệnh", () => {
+  it("★★★ non-empty (thay MÀN TRẮNG bằng lối vào) · 0 `canChayLenh` (không đoán lệnh test dự án lạ)", () => {
+    // Rỗng ⇒ tái phạm "màn trắng không lối vào"; có `canChayLenh` ⇒ đoán một lệnh chạy cho cây lạ = đúng
+    // loại rủi ro quyết định-2 chặn. Hai đột biến này §4 bắt.
+    expect(MAC_DINH_KHAM_PHA.length).toBeGreaterThan(0);
+    expect(MAC_DINH_KHAM_PHA.filter((x) => x.canChayLenh === true).length).toBe(0);
+  });
+
+  it("★★★ KHÔNG nêu ĐƯỜNG-DẪN tệp cụ thể (không `/` trong câu) — an toàn mọi cây (đúng tinh thần quyết định 2)", () => {
+    for (const g of MAC_DINH_KHAM_PHA) {
+      expect(g.macDinh.includes("/"), `"${g.macDinh}" nêu một đường dẫn — có thể trỏ tệp KHÔNG tồn tại ở dự án lạ`).toBe(false);
+    }
+  });
+
+  it("★★ khoá i18n DUY NHẤT, thuộc namespace `repoWs.suggest.mac.`", () => {
+    const khoa = MAC_DINH_KHAM_PHA.map((x) => x.khoa);
+    expect(new Set(khoa).size).toBe(khoa.length);
+    for (const k of khoa) expect(k.startsWith("repoWs.suggest.mac.")).toBe(true);
   });
 });

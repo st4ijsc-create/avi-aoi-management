@@ -19299,6 +19299,7 @@
     "ribbon": {
       "refreshTree": "刷新文件树",
       "runVerify": "运行验证",
+      "runVerifyNamed": "运行验证：{{lenh}}",
       "stop": "停止",
       "jumpFiles": "查看文件树",
       "jumpChat": "返回对话",
@@ -19456,7 +19457,15 @@
       "csharpWhy": "解释为什么两个 Divide_ByZero 用例失败",
       "reactRead": "读取 src/validate.mjs 并总结",
       "reactTest": "运行 node --test test/validate.test.mjs",
-      "reactWhy": "解释为什么 validateTodo 的两个用例失败"
+      "reactWhy": "解释为什么 validateTodo 的两个用例失败",
+      "mac": {
+        "list": "列出本项目中的文件",
+        "structure": "描述本项目的结构与用途",
+        "readme": "阅读 README（如有）并总结"
+      }
+    },
+    "onboarding": {
+      "unknownProject": "该项目暂无专属建议。先用几条探索指令开始——助手会读取真实的文件树："
     },
     "exec": {
       "noPerm": "您的账户没有运行命令的权限（ai_repo_exec）——运行测试的建议已隐藏。若直接调用，服务器仍会拦截。"

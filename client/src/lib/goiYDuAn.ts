@@ -63,3 +63,22 @@ export function goiYTheoDuAn(projectId: string | null | undefined): readonly Goi
   if (typeof projectId !== "string" || projectId === "") return [];
   return BANG_GOI_Y[projectId] ?? [];
 }
+
+/**
+ * ★★★ 2026-08-25 · NHÓM HOÃN (onboarding) — GỢI Ý KHÁM PHÁ MẶC ĐỊNH cho dự án id-lạ (admin tự đăng ký).
+ *
+ * Quyết định 2 ở trên vẫn ĐÚNG NGUYÊN: `goiYTheoDuAn` trả `[]` cho id-lạ — KHÔNG rơi về gợi ý repo, vì
+ * gợi SAI TỆP là lỗi đã vá. Nhưng "rỗng hoàn toàn" bỏ người mở một dự án lạ TRƯỚC MÀN TRẮNG không lối
+ * vào. Bộ này chữa đúng khe đó mà KHÔNG tái phạm lỗi cũ: **KHÔNG nêu tên tệp cụ thể** — chỉ nhờ tác
+ * nhân TỰ khám phá cây (list_files) / mô tả cấu trúc / đọc README "nếu có". An toàn cho MỌI cây thư mục.
+ *
+ * ⚠ **0 mục `canChayLenh`**: ta KHÔNG biết lệnh test của dự án lạ (dotnet? node? npm?) — đoán một lệnh
+ *   chạy là đúng loại rủi ro quyết định-2 chặn. Nút "Chạy kiểm chứng" (ribbon) + ô "Chạy nhanh"
+ *   (terminal) vẫn đọc `goiYTheoDuAn` TRỰC TIẾP ⇒ vắng mặt cho dự án lạ (đúng). Bộ này CHỈ để TRANG đổ
+ *   vào KHU GỢI Ý MỞ ĐẦU khi `goiYTheoDuAn` rỗng — một lối vào, không phải một cửa chạy lệnh.
+ */
+export const MAC_DINH_KHAM_PHA: readonly GoiYDuAn[] = [
+  { khoa: "repoWs.suggest.mac.list", macDinh: "Liệt kê các tệp trong dự án này" },
+  { khoa: "repoWs.suggest.mac.structure", macDinh: "Mô tả cấu trúc và mục đích của dự án này" },
+  { khoa: "repoWs.suggest.mac.readme", macDinh: "Đọc README (nếu có) và tóm tắt" },
+];
