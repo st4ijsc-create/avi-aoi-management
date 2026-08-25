@@ -82,3 +82,4 @@ export * from "./vram"; // 2026-08-02 VRAM Pha 1 Task 2 — nhật ký chỉ-ghi
 export * from "./aiCodingSession"; // doc 79 DANH SÁCH PHIÊN — mạch hội thoại tác nhân lập trình, phạm vi CHỦ SỞ HỮU, migration 0333
 export * from "./aiCodingLesson"; // doc 82 BỘ NHỚ XUYÊN PHIÊN — bài học người dùng tự khai, phạm vi CHỦ SỞ HỮU, migration 0336
 export * from "./aiRepoDuAn"; // QUẢN LÝ DỰ ÁN 2026-08-23 — dự án hộp cát đăng ký qua UI (nguồn DB, env thắng khi trùng id), migration 0337
+export * from "./productConfigTree"; // Pha 1A 2026-08-25 — cây CẤU HÌNH 4 cấp surface→position→capture→component, migration 0338

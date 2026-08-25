@@ -231,6 +231,22 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   // still below that version. NULL = deleted before 0274 (version unknown) → the
   // tombstone is shipped unconditionally (over-ship beats a point that never dies).
   deletedAtVersion: integer("deletedAtVersion"),
+  // ── Pha 1A (0338) — neo cấp component (chính bảng này) lên cây CẤU HÌNH 4 cấp
+  // surface → position → capture → component. `captureRowId IS NULL` = điểm đo PHẲNG cũ,
+  // chạy y hệt trước khi có cây (không backfill, không đổi hành vi resolveEffectivePoints/
+  // variant_point_overrides/spec-gate/revertPointsConfigToVersion). Soft-ref có chủ đích
+  // (KHÔNG `.references()`): DB có FK THẬT `REFERENCES product_captures(id) ON DELETE SET
+  // NULL` (đặt trong chính migration 0338), nhưng khai `.references()` ở đây sẽ tạo import
+  // vòng product.ts ↔ productConfigTree.ts — mirror quy ước soft-ref đã dùng nhiều lần trong
+  // chính bảng này (variantId, componentCode, …).
+  captureRowId: integer("captureRowId"),
+  // = Component.Id / RefDesignator phía máy, gắn với capture cha. Free-text, không FK.
+  componentExtId: varchar("componentExtId", { length: 64 }),
+  // ROI PIXEL TUYỆT ĐỐI trong khung ảnh capture (khác relX/relY 0..1 của product_positions).
+  roiX: integer("roiX"),
+  roiY: integer("roiY"),
+  roiWidth: integer("roiWidth"),
+  roiHeight: integer("roiHeight"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -260,6 +276,9 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   index("idx_point_defs_type_code").on(table.measurementTypeCode),
   // W8-A (0191): partial — the column is sparse until points are linked.
   index("idx_point_defs_component_code").on(table.componentCode).where(sql`${table.componentCode} IS NOT NULL`),
+  // Pha 1A (0338): partial — sparse until the point is anchored on the config tree.
+  index("idx_point_defs_capture").on(table.captureRowId).where(sql`${table.captureRowId} IS NOT NULL`),
+  index("idx_point_defs_component_ext").on(table.componentExtId).where(sql`${table.componentExtId} IS NOT NULL`),
 ]);
 
 export type MeasurementPointDef = typeof measurementPointDefs.$inferSelect;
