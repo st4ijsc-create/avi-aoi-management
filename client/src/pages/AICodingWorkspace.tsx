@@ -133,6 +133,10 @@ import { TrinhXemMa } from "@/components/ai/TrinhXemMa";
 import { phanTichLoiViTri } from "@shared/aiCodingLoiViTri";
 // ★ 2026-08-24 — `baseName` nay ở module lá dùng chung (`TheDuyetDiffLo` cũng cần) — bản cục bộ đã xoá.
 import { baseName } from "@/lib/repoPath";
+// ★★★ 2026-08-25 · ĐỢT 2 (C) — @-mention tệp ở ô nhập: component dropdown + bộ lọc/xếp-hạng THUẦN
+// (`goiYTep.unit.test.ts` đo cả hai). TRANG bắt `@`, giữ chỉ số chọn, chèn đường dẫn; `GoiYTep` chỉ
+// VẼ danh sách ĐÃ lọc + báo chọn (cùng khuôn `BangProblems`/`BoChonPhien`).
+import { GoiYTep, locTepTheoQuery } from "@/components/ai/GoiYTep";
 import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
@@ -641,6 +645,42 @@ export default function AICodingWorkspace() {
    */
   const [vongTool, setVongTool] = useState<KbToolLoopProgress | null>(null);
 
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ 2026-08-25 · ĐỢT 2 (audit UX cho model LOCAL chậm) — (A) đồng hồ elapsed · (B) dấu vết
+  // đa-tool · (C) @-mention tệp. Ba thứ ĐỀU thuần hiển thị/nhập; KHÔNG mở đường ghi nào (mọi lượt
+  // GHI/CHẠY vẫn qua ĐÚNG MỘT cửa `handleConfirm` → `confirmM.mutateAsync`).
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  /**
+   * (A) Số giây đã trôi của thao tác đang chờ — đang stream (đọc mã/vòng tool) HOẶC vòng tự động
+   * đang chờ lệnh kiểm chứng. Mốc bắt đầu ở `mocChoRef` (KHÔNG ở render — đếm đúng qua re-render).
+   * TRẦN cố ý KHÔNG hiện: `cauHinhVong` chỉ trả SỐ LƯỢT (`tran`/`tranTool`), không trả GIÂY — một
+   * con số giây viết ở client là một lời khai có thể sai. Elapsed nói "thực tế"; ETA tĩnh nói "kỳ vọng".
+   */
+  const [giayCho, setGiayCho] = useState(0);
+  const mocChoRef = useRef<number | null>(null);
+  /**
+   * (B) MỌI thẻ tool của lượt (dấu vết "đã đọc/grep gì"). `streamTool` VẪN là thẻ CUỐI và VẪN là mỏ
+   * neo của NHÃN TIN CẬY khối mã (`neoDocTep`) — mảng này chỉ THÊM để hiển thị dấu vết, không đụng nó.
+   */
+  const [streamTools, setStreamTools] = useState<ToolResultPayload[]>([]);
+  /**
+   * (C) @-mention: danh sách đường-dẫn KHỚP đang hiện, mục đang tô (điều hướng ↑/↓), và vị trí dấu
+   * `@` trong ô nhập (chèn đè lên đoạn nào). `dsTepDuAn` là danh sách tệp dự án đã phẳng.
+   * ⚠ v1: `list_files` depth 3, cắt theo TRẦN LIỆT KÊ của hộp cát (cờ `truncated`) — tệp sâu hơn 3
+   *   mức hoặc quá trần sẽ KHÔNG có trong gợi ý. Chỉ `kind==="file"`; đường dẫn TƯƠNG ĐỐI.
+   */
+  const [dsKhop, setDsKhop] = useState<string[]>([]);
+  const [chiSoChon, setChiSoChon] = useState(0);
+  const viTriAtRef = useRef<number | null>(null);
+  const dsTepQ = trpc.repoWorkspace.listFiles.useQuery(
+    { path: "", depth: 3, projectId },
+    { enabled: !!projectId, staleTime: 60_000 },
+  );
+  const dsTepDuAn = useMemo(
+    () => (dsTepQ.data?.data?.entries ?? []).filter((e) => e.kind === "file").map((e) => e.path),
+    [dsTepQ.data],
+  );
+
   /**
    * ★★★ LÔ 3 — NEO ĐỐI CHIẾU KHỐI↔TỆP và hai bộ component nhãn cho `<Streamdown>`.
    *
@@ -701,6 +741,77 @@ export default function AICodingWorkspace() {
   useEffect(() => {
     if (streamError) toast.error(streamError);
   }, [streamError]);
+
+  // ★★★ 2026-08-25 · ĐỢT 2 (A) — ĐỒNG HỒ ELAPSED: đếm giây THẬT khi đang stream (đọc mã/vòng tool)
+  //   HOẶC vòng tự động đang CHỜ lệnh kiểm chứng. Mục tiêu (senior + kỹ sư mới): hết mù "treo hay
+  //   chạy". Mốc ở `mocChoRef`; interval dọn (`clearInterval`) khi rời trạng thái chờ, reset về 0.
+  useEffect(() => {
+    const dangCho = isStreaming || (vong.dangChay && vong.pha === "chay_test");
+    if (!dangCho) {
+      mocChoRef.current = null;
+      setGiayCho(0);
+      return;
+    }
+    if (mocChoRef.current === null) mocChoRef.current = Date.now();
+    const doLai = () => {
+      if (mocChoRef.current !== null) setGiayCho(Math.max(0, Math.floor((Date.now() - mocChoRef.current) / 1000)));
+    };
+    doLai();
+    const id = setInterval(doLai, 1000);
+    return () => clearInterval(id);
+  }, [isStreaming, vong.dangChay, vong.pha]);
+
+  // ★★★ 2026-08-25 · ĐỢT 2 (B) — GOM dấu vết đa-tool ở EFFECT (KHÔNG trong `onToolResult`): giữ
+  //   NGUYÊN VĂN chuỗi `onToolResult` mà census `aiCodingWorkspaceNhanKhoi` §2 khớp từng-ký-tự
+  //   (mốc-nhận đóng dấu cùng nhịp `setStreamTool`). Mỗi lần `streamTool` đổi sang một thẻ MỚI ⇒ nối
+  //   thêm; reset về `[]` đi kèm mọi `setStreamTool(null)` (gửi lượt mới / đổi dự án / nạp phiên).
+  useEffect(() => {
+    if (streamTool) setStreamTools((prev) => [...prev, streamTool]);
+  }, [streamTool]);
+
+  // ★★★ 2026-08-25 · ĐỢT 2 (C) — chèn ĐƯỜNG DẪN SẠCH (KHÔNG kèm `@`) vào ô nhập; DÙNG CHUNG cho chuột
+  //   (`onChon`) lẫn Enter/Tab. Thay đoạn `@query` (từ vị trí `@` tới con trỏ) bằng chính đường dẫn.
+  //
+  //   ⚠⚠ VÌ SAO BỎ `@` (nghiệm thu live 2026-08-25 bắt): `@` chỉ là PHÍM MỞ gợi ý — KHÔNG ai lột nó ở
+  //   server. Bản trước chèn `@src/Calculator.cs`, model đọc NGUYÊN VĂN kèm `@` ⇒ hộp cát trả "Không có
+  //   tệp `@src/Calculator.cs`" — hỏng MỌI lượt. KHÔNG lột `@` ở tầng phân giải đường dẫn được: đường
+  //   hợp lệ VẪN có thể bắt đầu bằng `@` (gói phạm vi `@types/…`, `@angular/…`) ⇒ lột sẽ phá path thật.
+  //   Nên `@` bị TIÊU ở đây (client), path còn lại sạch — đúng như hint "@ để chèn đường dẫn tệp".
+  const chenMention = useCallback((duong: string) => {
+    const el = oNhapRef.current;
+    const at = viTriAtRef.current;
+    if (!el || at === null) return;
+    const conTro = el.selectionStart ?? el.value.length;
+    const truoc = el.value.slice(0, at); // phần TRƯỚC `@` (không gồm `@`) — nên `@query` bị thay trọn
+    const sau = el.value.slice(conTro);
+    const chen = `${duong} `;
+    setInput(`${truoc}${chen}${sau}`);
+    setDsKhop([]);
+    viTriAtRef.current = null;
+    requestAnimationFrame(() => {
+      const el2 = oNhapRef.current;
+      if (!el2) return;
+      const vt = truoc.length + chen.length;
+      el2.focus();
+      el2.setSelectionRange(vt, vt);
+      tuGianChieuCao(el2);
+    });
+  }, []);
+
+  // Bắt `@` ở phần TRƯỚC con trỏ (`/@([^\s@]*)$/`): khớp ⇒ mở gợi ý + ghi vị trí `@`; không ⇒ ẩn.
+  // ⚠ CHỈ ĐỌC ô nhập (không đổi `input` — onChange đã làm), nên gọi được từ onChange an toàn.
+  const capNhatGoiYTep = useCallback((el: HTMLTextAreaElement) => {
+    const truoc = el.value.slice(0, el.selectionStart ?? 0);
+    const m = /@([^\s@]*)$/.exec(truoc);
+    if (!m) {
+      viTriAtRef.current = null;
+      setDsKhop((cu) => (cu.length ? [] : cu));
+      return;
+    }
+    viTriAtRef.current = m.index;
+    setDsKhop(locTepTheoQuery(dsTepDuAn, m[1] ?? ""));
+    setChiSoChon(0);
+  }, [dsTepDuAn]);
 
   /**
    * ★★★ 2026-08-25 — CUỘN TRÌNH XEM tới `dongMucTieu` khi mở một tệp từ panel Problems.
@@ -771,6 +882,7 @@ export default function AICodingWorkspace() {
     const history = transcript.slice(-10);
     setTranscript((prev) => [...prev, { role: "user", content: text }]);
     setStreamTool(null);
+    setStreamTools([]);
     setPending(null);
     setActionState("pending");
     setKetCucThongDiep(null);
@@ -990,6 +1102,7 @@ export default function AICodingWorkspace() {
     setPendingBatch(null);
     setLenhDaChay([]);
     setStreamTool(null);
+    setStreamTools([]);
     setPending(null);
     setDiffPreview("");
     setTranscript([]);
@@ -1066,6 +1179,7 @@ export default function AICodingWorkspace() {
     setPendingBatch(null);
     setLenhDaChay([]);
     setStreamTool(null);
+    setStreamTools([]);
     setDiffPreview("");
     setActionState("pending");
     setKetCucThongDiep(null);
@@ -1086,6 +1200,7 @@ export default function AICodingWorkspace() {
     setPendingBatch(null);
     setLenhDaChay([]);
     setStreamTool(null);
+    setStreamTools([]);
     setDiffPreview("");
     setActionState("pending");
     setKetCucThongDiep(null);
@@ -1309,6 +1424,25 @@ export default function AICodingWorkspace() {
     pending !== null &&
     pending.tool === "run_command" &&
     pending.preview.changes.some((c) => c.field === "ghiDia" && c.newValue === "chi_hoi_kiem_tra");
+
+  /**
+   * ★★★ 2026-08-25 · ĐỢT 2 (B) — DẤU VẾT đa-tool (gọn): các thẻ TRƯỚC hiện `title`, thẻ CUỐI đậm.
+   * Chỉ hiện khi có TỪ HAI thẻ (một thẻ thì bản thân `AIToolResultCard` đã đủ). Dùng chung cho khối
+   * đang-stream lẫn khối đã-xong, đặt NGAY TRÊN thẻ chi tiết cuối. Thuần hiển thị, 0 tRPC.
+   */
+  const dauVetTool = streamTools.length > 1 ? (
+    <div data-dau-vet-tool className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-muted-foreground">
+      <Wrench className="h-3 w-3 shrink-0" />
+      {streamTools.map((tr, i) => (
+        <span key={i} className="inline-flex min-w-0 items-center gap-1">
+          {i > 0 && <span aria-hidden className="opacity-40">·</span>}
+          <span className={cn("truncate", i === streamTools.length - 1 ? "max-w-[160px] font-medium text-foreground" : "max-w-[120px]")}>
+            {tr.title}
+          </span>
+        </span>
+      ))}
+    </div>
+  ) : null;
 
   return (
     <DashboardLayout>
@@ -1658,6 +1792,15 @@ export default function AICodingWorkspace() {
                   <div className="flex min-w-0 gap-2">
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10"><Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /></div>
                     <div className="min-w-0 max-w-[85%] space-y-2 break-words rounded-lg bg-muted px-3 py-2 text-[13px]">
+                      {/* ★★★ 2026-08-25 · ĐỢT 2 (A) — ĐỒNG HỒ ELAPSED Ở ĐÂY (nghiệm thu live bắt): 3 chỗ đặt cũ
+                          (pre-think trống · vòng-tool nhiều lượt · chờ chay_test) ĐỀU KHÔNG bật cho câu trả lời
+                          stream-ngay MỘT-lượt — model local phát token/thẻ TỨC THÌ nên nhánh `!streamingText &&
+                          !streamTool` không bao giờ đúng ⇒ giây tàng hình đúng lúc người dùng hỏi "treo hay chạy".
+                          Header này (`streamingText || streamTool`) và khối pre-think (`!… && !…`) LOẠI TRỪ NHAU và
+                          PHỦ HẾT thời gian `isStreaming` ⇒ đặt giây ở CẢ HAI = một đồng hồ LIÊN TỤC, đúng một chỗ,
+                          không nhân đôi. (Đã bỏ giây ở dòng vòng-tool bên dưới để khỏi trùng khi thẻ tool đang hiện.) */}
+                      {giayCho > 0 && <div className="tabular-nums text-[10px] text-muted-foreground/80">{t("repoWs.chat.elapsed", "{{giay}} giây", { giay: giayCho })}</div>}
+                      {dauVetTool}
                       {streamTool && <AIToolResultCard toolResult={streamTool} lucNhan={lucNhanTool ?? undefined} />}
                       {/* `mode="streaming"` — Streamdown vá markdown DỞ DANG (``` chưa đóng) nên khối
                           mã đang stream vẫn hiện đúng thay vì nhảy layout ở mỗi token. */}
@@ -1678,12 +1821,14 @@ export default function AICodingWorkspace() {
                         tran: cauHinhVongQ.data?.tranTool ?? vongTool.round,
                       })}
                       {vongTool.toolName ? ` · ${vongTool.toolName}` : ""}
+                      {/* Giây ĐÃ DỜI lên header stream (mục A ở trên) — bỏ ở đây để khỏi hiện HAI lần khi thẻ
+                          tool của vòng đang hiển thị (header luôn bật vì `streamTool` được set trong vòng). */}
                     </span>
                   </div>
                 )}
                 {isStreaming && !streamingText && !streamTool && (
                   <div className="px-1">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t("repoWs.chat.thinking", "Đang suy nghĩ…")}</div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t("repoWs.chat.thinking", "Đang suy nghĩ…")}{giayCho > 0 && <span className="tabular-nums font-medium text-muted-foreground/90">{t("repoWs.chat.elapsed", "{{giay}} giây", { giay: giayCho })}</span>}</div>
                     {/* ★ UX (B2) — kỳ vọng thời gian THEO SỐ ĐO THẬT (buổi trải nghiệm 2026-08-23:
                         đọc 8–20 s · sửa tệp nhỏ 15–20 s trên model 30B cục bộ) — không chép một con
                         số "3–5 phút" từ tài liệu nào. */}
@@ -1693,15 +1838,20 @@ export default function AICodingWorkspace() {
                   </div>
                 )}
 
-                {/* Kết quả tool đã xong (không stream nữa) */}
-                {!isStreaming && streamTool && <AIToolResultCard toolResult={streamTool} lucNhan={lucNhanTool ?? undefined} />}
+                {/* Kết quả tool đã xong (không stream nữa) — ★ ĐỢT 2 (B): kèm dấu vết các thẻ trước. */}
+                {!isStreaming && streamTool && (
+                  <div className="space-y-2">
+                    {dauVetTool}
+                    <AIToolResultCard toolResult={streamTool} lucNhan={lucNhanTool ?? undefined} />
+                  </div>
+                )}
 
                 {/* ★★★ doc 79 · VÒNG TỰ ĐỘNG — lượt/trần · đang làm gì · vì sao dừng.
                     ★ UX (A3) — `laAdmin`: câu "cờ TẮT" nói tên biến env cho admin, nói "liên hệ
                     quản trị viên" cho vai thường (họ không sửa được `.env` máy chủ). */}
                 <VongTuDongCard vong={vong} onDung={() => dungVong("nguoi_tu_choi")} laAdmin={user?.role === "admin"} />
                 {vong.dangChay && vong.pha === "chay_test" && (
-                  <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t("repoWs.loop.waitCmd", "Đang chờ lệnh kiểm chứng chạy xong (có thể tới vài phút)…")}</div>
+                  <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t("repoWs.loop.waitCmd", "Đang chờ lệnh kiểm chứng chạy xong (có thể tới vài phút)…")}{giayCho > 0 && <span className="tabular-nums font-medium">{t("repoWs.chat.elapsed", "{{giay}} giây", { giay: giayCho })}</span>}</div>
                 )}
                 </div>
 
@@ -1771,23 +1921,47 @@ export default function AICodingWorkspace() {
             {/* ★★★ doc 81 · VIỆC 3 (1) — Ô nhập NHIỀU DÒNG: dán được stack trace, Shift+Enter xuống dòng.
                 ⚠ `shrink-0` (2026-08-23): ô nhập là thứ DUY NHẤT làm màn này dùng được. Không có nó,
                   trong một `flex flex-col` chật nó là khối co được đầu tiên và bị bóp về 0. */}
-            <div data-o-nhap className="shrink-0 border-t p-2">
+            <div data-o-nhap className="relative shrink-0 border-t p-2">
+              {/* ★★★ 2026-08-25 · ĐỢT 2 (C) — DROPDOWN @-mention: NỔI trên ô nhập (absolute) nên
+                  KHÔNG đẩy ô nhập xuống dưới nếp gấp (cùng kỷ luật `khungVuaManHinh`). Ẩn khi rỗng.
+                  A11y: textarea là `combobox` trỏ `aria-controls` tới hộp này. ⚠ Giới hạn đã ghi:
+                  KHÔNG có `aria-activedescendant` — `GoiYTep` (cấm sửa ở đợt này) không phát id cho
+                  từng mục, nên không neo được con trỏ đọc màn hình vào mục đang tô. */}
+              {dsKhop.length > 0 && (
+                <div id="repows-goiy-tep" className="absolute inset-x-2 bottom-full z-20 mb-1">
+                  <GoiYTep dsKhop={dsKhop} chiSoChon={chiSoChon} onChon={chenMention} />
+                </div>
+              )}
               <div className="flex items-end gap-2">
                 <textarea
                   ref={oNhapRef}
                   value={input}
-                  onChange={(e) => { setInput(e.target.value); tuGianChieuCao(e.currentTarget); }}
+                  onChange={(e) => { setInput(e.target.value); tuGianChieuCao(e.currentTarget); capNhatGoiYTep(e.currentTarget); }}
                   placeholder={t("repoWs.chat.placeholder", "Hỏi tác nhân: đọc/tìm mã, đề xuất sửa, chạy test…")}
                   onKeyDown={(e) => {
+                    const dangGoIme = (e.nativeEvent as unknown as { isComposing?: boolean }).isComposing;
+                    // ★ ĐỢT 2 (C) — điều hướng gợi ý @-mention CHẶN TRƯỚC `phanQuyetPhimNhap` (chỉ khi
+                    //   đang gợi ý VÀ không trong lúc gõ IME). dsKhop rỗng ⇒ để `phanQuyetPhimNhap` xử
+                    //   như cũ (Enter gửi). `phanQuyetPhimNhap` KHÔNG đổi — chỉ chèn xử lý @ TRƯỚC nó.
+                    if (!dangGoIme && dsKhop.length > 0) {
+                      if (e.key === "ArrowDown") { e.preventDefault(); setChiSoChon((i) => Math.min(i + 1, dsKhop.length - 1)); return; }
+                      if (e.key === "ArrowUp") { e.preventDefault(); setChiSoChon((i) => Math.max(i - 1, 0)); return; }
+                      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); chenMention(dsKhop[chiSoChon] ?? dsKhop[0]!); return; }
+                      if (e.key === "Escape") { e.preventDefault(); setDsKhop([]); viTriAtRef.current = null; return; }
+                    }
                     const pq = phanQuyetPhimNhap({
                       key: e.key, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey,
-                      isComposing: (e.nativeEvent as unknown as { isComposing?: boolean }).isComposing,
+                      isComposing: dangGoIme,
                     });
                     // "xuong_dong" và "bo_qua" ⇒ KHÔNG `preventDefault` ⇒ trình duyệt tự chèn "\n".
                     if (pq === "gui") { e.preventDefault(); void handleSend(); }
                   }}
                   disabled={isStreaming}
                   rows={1}
+                  role="combobox"
+                  aria-expanded={dsKhop.length > 0}
+                  aria-controls="repows-goiy-tep"
+                  aria-autocomplete="list"
                   className={cn(
                     "flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-[13px] leading-relaxed",
                     "ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none",
