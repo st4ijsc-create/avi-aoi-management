@@ -9785,11 +9785,33 @@ done
 # a failing test is a statement that the PRODUCT is wrong. Whether these five are paid or written off
 # is a product decision and therefore the owner's — see item 60, which carries it as a cost that was
 # not visible when the ruling was made.
+# 🔴 THE PINNED SET IS FOUR ROWS, NOT FIVE, AND THE FIFTH IS QUARANTINED — because THIS CHECK CAUGHT
+# ITS OWN AUTHOR ON ITS FIRST REAL RUN. The pin originally held five rows on the strength of two
+# independent runs producing an identical failing set. The first full gate run with this block wired
+# in produced FOUR: `01-dashboard.spec.ts:26:3` PASSED. So "deterministic, not flaky" was a claim made
+# at n=2 and refuted at n=3, by the instrument the claim was used to justify. Measured frequency to
+# date: FAILS 2 of 3. That is a frequency, not a diagnosis — nobody has found the mechanism.
+#
+# 🔴 WHY A FLAKY ROW CANNOT SIT IN AN EXACT-EQUALITY PIN, and it is law (2) in one sentence: a pin that
+# demands the failing set be EXACTLY these rows reddens when a flaky member passes AND when it fails.
+# A gate that goes red at random on a test nobody is looking at is a gate people learn to re-run until
+# it is green, which destroys every OTHER assertion in this file at the same time.
+#
+# SO THE TWO POPULATIONS ARE SEPARATED, because they are two different facts:
+#   PINNED     — DETERMINISTIC failures, asserted by exact set equality. 3 of 3 runs, identical.
+#                A sixth failure reddens; a different fourth reddens; one going green reddens.
+#   QUARANTINED — a row whose result is NOT STABLE. Its presence or absence is REPORTED at the verdict
+#                and ASSERTED BY NOTHING. This is the honest reading and it is stated as a LOSS: the
+#                gate has no opinion about that test at all, in either direction.
+# 🔴 QUARANTINE IS NOT A SKIP AND THE DIFFERENCE IS MEASURABLE: the test still RUNS, still counts
+# toward EXPECT_WEB_E2E_TESTS, still writes its trace and screenshot, and is named on every verdict.
+# What it cannot do is decide the gate. A SECOND quarantined row would have to be added here by hand,
+# which is the only thing stopping this list from becoming the place failures go to be forgotten.
 EXPECT_WEB_E2E_PINNED_FAILURES="tests\\00-visual-and-a11y.spec.ts:233:7 › inspector › visual — glass
 tests\\00-visual-and-a11y.spec.ts:233:7 › onboarding › visual — glass
 tests\\00-visual-and-a11y.spec.ts:233:7 › scenario › visual — glass
-tests\\00-visual-and-a11y.spec.ts:233:7 › settings › visual — glass
-tests\\01-dashboard.spec.ts:26:3 › dashboard — fleet start/stop › empty state renders, Start Fleet populates the grid, Stop Fleet freezes it"
+tests\\00-visual-and-a11y.spec.ts:233:7 › settings › visual — glass"
+WEB_E2E_QUARANTINED="tests\\01-dashboard.spec.ts:26:3 › dashboard — fleet start/stop › empty state renders, Start Fleet populates the grid, Stop Fleet freezes it"
 
 echo "[2b/3] Running the web/ browser suite (${#WEB_SUITES[@]} suite, ceiling ${WEB_SUITE_CEILING_SECONDS}s)..."
 WEB_E2E_LOG="$LOGDIR/web-e2e.log"
@@ -9847,6 +9869,12 @@ else
   # only the end-of-run failure summary starts a line with `[chromium] ›`.
   WEB_E2E_FAILED_SET="$(sed -n 's/^[[:space:]]*\[chromium\] › //p' "$WEB_E2E_LOG" \
     | sed 's/─//g' | sed 's/[[:space:]]*$//' | LC_ALL=C sort -u)"
+  # The quarantined rows are lifted OUT before the comparison, and whether each one was in the set is
+  # reported below. Removing them from the assertion is the whole point; removing them from the
+  # REPORT would be the suppression this block refuses.
+  WEB_E2E_ASSERTED_SET="$(LC_ALL=C comm -23 <(printf '%s\n' "$WEB_E2E_FAILED_SET") <(printf '%s\n' "$WEB_E2E_QUARANTINED" | LC_ALL=C sort))"
+  WEB_E2E_QUARANTINE_HIT="$(LC_ALL=C comm -12 <(printf '%s\n' "$WEB_E2E_FAILED_SET") <(printf '%s\n' "$WEB_E2E_QUARANTINED" | LC_ALL=C sort) | grep -c . || true)"
+  WEB_E2E_QUARANTINE_N="$(printf '%s\n' "$WEB_E2E_QUARANTINED" | grep -c . || true)"
 
   if [[ -z "${WEB_E2E_TOTAL:-}" ]]; then
     FAILURES+=("web e2e: no 'Running N tests' line -- the suite produced no result at all, so nothing about web/ was measured on this run. That is not a pass. log: $WEB_E2E_LOG")
@@ -9854,17 +9882,17 @@ else
     if [[ "$WEB_E2E_TOTAL" != "$EXPECT_WEB_E2E_TESTS" ]]; then
       FAILURES+=("web e2e: ran ${WEB_E2E_TOTAL} tests, expected ${EXPECT_WEB_E2E_TESTS} -- discovery loss or an unjustified change. This number is measured by RUNNING, not by --list; move EXPECT_WEB_E2E_TESTS and justify it beside the constant.")
     fi
-    if [[ "$WEB_E2E_FAILED_SET" != "$EXPECT_WEB_E2E_PINNED_FAILURES" ]]; then
+    if [[ "$WEB_E2E_ASSERTED_SET" != "$EXPECT_WEB_E2E_PINNED_FAILURES" ]]; then
       {
-        echo "web e2e: the set of FAILING tests is not the pinned set. Rows are test ids; '<' is pinned, '>' is this run:"
-        diff <(printf '%s\n' "$EXPECT_WEB_E2E_PINNED_FAILURES") <(printf '%s\n' "$WEB_E2E_FAILED_SET") | sed 's/^/      /'
+        echo "web e2e: the set of FAILING tests is not the pinned set (quarantined rows excluded from both sides). Rows are test ids; '<' is pinned, '>' is this run:"
+        diff <(printf '%s\n' "$EXPECT_WEB_E2E_PINNED_FAILURES") <(printf '%s\n' "$WEB_E2E_ASSERTED_SET") | sed 's/^/      /'
         echo "    A '>' row is a NEW failure and is what this gate was wired in to catch. A '<' row is a"
         echo "    pinned failure that has started passing: also red, on purpose and for the same reason"
         echo "    EXPECT_WARNINGS is red when a warning is fixed -- the pin comes down with a"
         echo "    justification beside it, never silently."
-        echo "    The five pinned rows are a DEBT, not a verdict on them: four stale visual baselines"
-        echo "    (last recorded 2026-08-01, 15 commits of web/src ago) and one functional toast"
-        echo "    assertion. Paying or writing them off is a product decision -- see item 60."
+        echo "    The four pinned rows are a DEBT, not a verdict on them: four stale visual baselines,"
+        echo "    last recorded 2026-08-01, 15 commits and 1053 insertions of web/src ago. Paying or"
+        echo "    writing them off is a product decision -- see item 60."
         echo "    log: $WEB_E2E_LOG"
       } > "$LOGDIR/web-e2e-report.txt"
       FAILURES+=("$(cat "$LOGDIR/web-e2e-report.txt")")
@@ -9874,7 +9902,11 @@ else
   # books `npm run test:e2e` exits 1 on a correct run, so asserting rc==0 would be asserting the
   # debt away. What IS asserted is the total and the failing SET; the rc is printed so that nobody
   # reads "exit 1" beside a PASS and assumes the gate lost track of it.
-  note "web e2e: ${WEB_E2E_TOTAL:-?}/${EXPECT_WEB_E2E_TESTS} ran, ${WEB_E2E_PASSED:-?} passed, ${WEB_E2E_FAILED:-0} failed, runner exit ${WEB_E2E_RC} (1 is EXPECTED while the pin holds five rows), ${WEB_E2E_ELAPSED}s of ${WEB_SUITE_CEILING_SECONDS}s"
+  note "web e2e: ${WEB_E2E_TOTAL:-?}/${EXPECT_WEB_E2E_TESTS} ran, ${WEB_E2E_PASSED:-?} passed, ${WEB_E2E_FAILED:-0} failed, runner exit ${WEB_E2E_RC} (non-zero is EXPECTED while the pin holds rows), ${WEB_E2E_ELAPSED}s of ${WEB_SUITE_CEILING_SECONDS}s"
+  # 🔴 The quarantine is reported on EVERY run, green or red, and on both branches — a disclosure that
+  # only appears when it is inconvenient is a footnote, not a disclosure. This is the one place a
+  # reader learns that some of the 220 tests above decide nothing.
+  note "web e2e: ${WEB_E2E_QUARANTINE_N} QUARANTINED row(s) — ${WEB_E2E_QUARANTINE_HIT} failed on this run, and this gate asserts NOTHING about them in either direction (measured unstable: 2 of 3 runs). They still run, still count in the ${EXPECT_WEB_E2E_TESTS}, and are named in the script beside the pin."
 fi
 
 # ── Gate 3: the verdict, as one line. ───────────────────────────────────────────
