@@ -962,6 +962,13 @@ trạng thái LỊCH SỬ với một dấu ĐANG SỐNG"*) — nó là khuyết
 không có lỗ.
 
 📌 **Hai trường máy đọc trong `owner-decisions.md` là nguồn của phép chia ấy**, và cổng kiểm chúng mỗi
-lần chạy: `gate:phần-i-chờ-chủ-sở-hữu = 49 59 60 65 69 70 71 72 74` · `gate:phần-i-chờ-điều-phối-viên
-= 73`. **Hợp của hai trường = quần thể Phần I; giao = rỗng.** Nếu file này và hai trường ấy nói khác
-nhau, **hai trường ấy đúng**.
+lần chạy (`C7`): **hợp của hai trường = quần thể Phần I; giao = rỗng.** Nếu file này và hai trường ấy
+nói khác nhau, **hai trường ấy đúng**.
+
+🔴 **Ở đây KHÔNG chép lại nội dung hai trường ấy nữa, và đó là một phép sửa có ngày — 2026-08-25.**
+Bản chép cũ đọc *"`gate:phần-i-chờ-chủ-sở-hữu = 49 59 60 65 69 70 71 72 74`"* (**văn cũ giữ nguyên
+từng chữ**), và tới 2026-08-25 nó **đã sai**: mục 70 đóng cùng ngày, nên quần thể thật còn **tám**.
+Nó sai được vì nó là **một BẢN SAO trông y hệt một trường máy** — đúng cái khuyết tật hai-nguồn-sự-
+thật mà đầu file này cảnh báo, xảy ra **bên trong chính file cảnh báo nó**. Cổng kiểm **trường thật**
+và **không đọc bản sao này**, nên bản sao chỉ có thể trôi, không thể được sửa tự động. **Muốn biết
+quần thể hôm nay: mở `owner-decisions.md` và đọc hai trường ấy.**
