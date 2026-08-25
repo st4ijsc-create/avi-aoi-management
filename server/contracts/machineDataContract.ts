@@ -9,6 +9,7 @@
  * dùng `validateMachinePayload` để kiểm tra trước khi gửi.
  */
 import { z } from "zod";
+import { machineDataContractV2 } from "./machineDataContractV2";
 
 // ── v1: phản ánh hợp đồng submitInspection hiện hành (tập ổn định) ──────────
 const measurementV1 = z.object({
@@ -115,14 +116,31 @@ export const machineDataContractV11 = z.object({
 });
 
 // ── Registry phiên bản ──────────────────────────────────────────────────────
+// v2.0 (Pha 1A Task 4) — payload cây 4 cấp surface→position→capture→component
+// (`machineDataContractV2.ts`), thay hình dạng PHẲNG `measurements: []` của
+// v1.0/v1.1. v1.0/v1.1 GIỮ LẠI trong map KHÔNG phải để nhận — mà để nhận DIỆN
+// và từ chối máy cũ CÓ LÝ DO (xem `loiMayChuaNangCap` bên dưới).
 export const MACHINE_CONTRACT_VERSIONS = {
   "1.0": machineDataContractV1,
   "1.1": machineDataContractV11,
+  "2.0": machineDataContractV2,
 } as const;
 
 export type MachineContractVersion = keyof typeof MACHINE_CONTRACT_VERSIONS;
 
-export const LATEST_MACHINE_CONTRACT_VERSION: MachineContractVersion = "1.1";
+export const LATEST_MACHINE_CONTRACT_VERSION: MachineContractVersion = "2.0";
+
+/**
+ * Máy gửi payload phiên bản CŨ. Trả lỗi NÊU RÕ phiên bản cần, thay vì để zod ném
+ * một đống lỗi trường mà kỹ sư hiện trường không đọc nổi.
+ * Giữ v1.0/v1.1 trong map KHÔNG phải để nhận — mà để nhận DIỆN và từ chối có lý do.
+ */
+export function loiMayChuaNangCap(schemaVersion: string): Error {
+  return new Error(
+    `Máy đang gửi hợp đồng phiên bản "${schemaVersion}". Server chỉ nhận từ "2.0" trở lên ` +
+    `(payload cây 4 cấp surface→position→capture→component). Nâng phần mềm máy trước khi gửi.`,
+  );
+}
 
 export function listMachineContractVersions(): MachineContractVersion[] {
   return Object.keys(MACHINE_CONTRACT_VERSIONS) as MachineContractVersion[];
