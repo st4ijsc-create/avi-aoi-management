@@ -125,6 +125,7 @@ import { bocTheDocTep, dinhDangLucNhan, viTriCauTraLoiCungLuot } from "@/lib/soK
 import { RibbonTacVu } from "@/components/ai/RibbonTacVu";
 import { BangTerminal, type LuotLenh } from "@/components/ai/BangTerminal";
 import { BangProblems } from "@/components/ai/BangProblems";
+import { HunkDiffView } from "@/components/diff/HunkDiffView";
 import { TheDuyetDiffLo } from "@/components/ai/TheDuyetDiffLo";
 // ★★★ 2026-08-25 · UX (Đợt 1) — TRÌNH XEM MÃ: tô cú pháp + SỐ DÒNG THẬT + cuộn ngang, thay `<pre>`
 // trơn ở khung Trình xem. Component thuần hiển thị (lưới render riêng `trinhXemMa.unit.test.ts`).
@@ -1770,7 +1771,17 @@ export default function AICodingWorkspace() {
             <ScrollArea className="min-h-0 flex-1">
               <div className="p-3">
                 {pendingDiff ? (
-                  <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">{diffPreview}</pre>
+                  /* ★★★ 2026-08-25 · NHÓM HOÃN (diff khung-giữa) — KHÔI PHỤC ĐÚNG Ý ĐỒ GỐC (docblock đầu
+                     tệp: "hiện <HunkDiffView/> dựng từ args.original/args.modified"): khung GIỮA — RỘNG —
+                     nay hiện DIFF TÔ MÀU thay `<pre>` trơn. `base/suggested` = `args.original/args.modified`
+                     (đề xuất ĐẦY ĐỦ của model) — CHÍNH cặp mà thẻ duyệt dùng, tin cậy tuyệt đối.
+                     ⚠ KHÔNG dùng `diffPreview` ở đây: nghiệm thu live 2026-08-25 bắt được nó = `original`
+                       lúc render (thẻ chưa kịp đẩy phép chiếu) ⇒ khung giữa khai "không có khối" trong khi
+                       thẻ có diff thật. `args.modified` không kẹt nhịp ấy.
+                     `readOnly` ⇒ 0 đường ghi (checkbox/nhận-khối/băng-stale đều ẩn): CHỌN khối vẫn ở THẺ
+                     DUYỆT (cạnh nút Duyệt — nơi luật an-toàn canh), khung giữa CHỈ để ĐỌC to. Cửa duyệt
+                     (`TheDuyetDiff`) + census của nó KHÔNG đụng ⇒ an toàn tuyệt đối. */
+                  <HunkDiffView base={pendingDiff.args.original} suggested={pendingDiff.args.modified} readOnly />
                 ) : !selectedPath ? (
                   <p className="p-6 text-center text-sm text-muted-foreground">{t("repoWs.viewer.empty", "Chọn một tệp ở cây bên trái để xem nội dung.")}</p>
                 ) : fileQ.isLoading ? (
