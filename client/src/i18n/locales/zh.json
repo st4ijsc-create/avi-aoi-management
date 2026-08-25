@@ -19378,6 +19378,9 @@
     },
     "tree": {
       "title": "文件树",
+      "filter": "筛选 / 快速打开文件…  (Ctrl+P)",
+      "filterResults": "快速打开结果",
+      "filterEmpty": "没有匹配的文件。",
       "loading": "加载中…",
       "error": "无法读取目录",
       "denied": "服务器拒绝：缺少读取代码权限（ai_repo_read）",

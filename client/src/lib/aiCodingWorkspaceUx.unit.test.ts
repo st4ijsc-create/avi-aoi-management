@@ -22,7 +22,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { phanQuyetPhimNhap, TRAN_CAO_O_NHAP_PX } from "./aiCodingInput";
+import { phanQuyetPhimNhap, phanGiaiPhimTatKhung, TRAN_CAO_O_NHAP_PX } from "./aiCodingInput";
 
 function doc(rel: string): string {
   return fs.readFileSync(path.resolve(process.cwd(), rel), "utf8").replace(/\r\n/g, "\n");
@@ -44,10 +44,17 @@ describe("§1 — Ô NHẬP NHIỀU DÒNG: Enter gửi, Shift+Enter XUỐNG DÒN
     expect(phanQuyetPhimNhap({ key: "Enter", shiftKey: true })).toBe("xuong_dong");
   });
 
-  it("★★ Ctrl/Cmd/Alt + Enter cũng ⇒ XUỐNG DÒNG (đoán sai theo hướng an toàn)", () => {
-    expect(phanQuyetPhimNhap({ key: "Enter", shiftKey: false, ctrlKey: true })).toBe("xuong_dong");
-    expect(phanQuyetPhimNhap({ key: "Enter", shiftKey: false, metaKey: true })).toBe("xuong_dong");
+  /**
+   * ★★★ ĐỢT 3 UX — ĐẢO chính sách modifier: Ctrl/Cmd+Enter nay ⇒ GỬI (quy ước "gửi cưỡng bức" Slack/
+   * GitHub, khớp Enter=gửi); CHỈ Shift/Alt+Enter còn XUỐNG DÒNG. Một đột biến đổi `altKey`→`ctrlKey` ở
+   * nhánh xuống-dòng biến Ctrl+Enter thành xuống-dòng, phá phím tắt gửi — ba dòng đầu bắt đúng chỗ đó.
+   */
+  it("★★★ Ctrl/Cmd + Enter ⇒ GỬI; Alt+Enter ⇒ XUỐNG DÒNG", () => {
+    expect(phanQuyetPhimNhap({ key: "Enter", shiftKey: false, ctrlKey: true })).toBe("gui");
+    expect(phanQuyetPhimNhap({ key: "Enter", shiftKey: false, metaKey: true })).toBe("gui");
     expect(phanQuyetPhimNhap({ key: "Enter", shiftKey: false, altKey: true })).toBe("xuong_dong");
+    // IME vẫn thắng mọi modifier (đang chốt từ — không được gửi dù có Ctrl).
+    expect(phanQuyetPhimNhap({ key: "Enter", shiftKey: false, ctrlKey: true, isComposing: true })).toBe("bo_qua");
   });
 
   /**
@@ -85,6 +92,49 @@ describe("§1 — Ô NHẬP NHIỀU DÒNG: Enter gửi, Shift+Enter XUỐNG DÒN
     expect(TRAN_CAO_O_NHAP_PX).toBeGreaterThan(60);
     expect(TRAN_CAO_O_NHAP_PX).toBeLessThan(400);
     expect(doc(TRANG)).toContain("tuGianChieuCao");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("§phím-tắt — PHÍM TẮT TOÀN KHUNG (Đợt 3 UX)", () => {
+  const P = phanGiaiPhimTatKhung;
+
+  it("★★★ Ctrl/Cmd + ` ⇒ bật/tắt Terminal (kể cả đang trong ô nhập); thiếu modifier ⇒ để yên", () => {
+    expect(P({ key: "`", ctrlKey: true, trongONhap: false, dangStream: false })).toBe("terminal");
+    expect(P({ key: "`", metaKey: true, trongONhap: true, dangStream: false })).toBe("terminal");
+    expect(P({ key: "`", trongONhap: false, dangStream: false })).toBe("bo_qua");
+  });
+
+  it("★★★ Ctrl/Cmd + P ⇒ mở nhanh (nhảy ô lọc cây); hoa/thường đều nhận; thiếu modifier ⇒ để yên", () => {
+    expect(P({ key: "p", ctrlKey: true, trongONhap: false, dangStream: false })).toBe("mo_nhanh");
+    expect(P({ key: "P", metaKey: true, trongONhap: true, dangStream: false })).toBe("mo_nhanh");
+    expect(P({ key: "p", trongONhap: false, dangStream: false })).toBe("bo_qua");
+  });
+
+  /** ★★★ Gửi ĐÔI là cái bẫy: trong ô chat, `onKeyDown` của nó (qua `phanQuyetPhimNhap`) đã gửi rồi. */
+  it("★★★ Ctrl/Cmd + Enter ⇒ GỬI CHỈ khi NGOÀI ô nhập; Enter trần ngoài ô nhập ⇒ để yên", () => {
+    expect(P({ key: "Enter", ctrlKey: true, trongONhap: false, dangStream: false })).toBe("gui");
+    expect(P({ key: "Enter", metaKey: true, trongONhap: false, dangStream: false })).toBe("gui");
+    expect(P({ key: "Enter", ctrlKey: true, trongONhap: true, dangStream: false })).toBe("bo_qua");
+    expect(P({ key: "Enter", trongONhap: false, dangStream: false })).toBe("bo_qua");
+  });
+
+  it("★★★ Esc ⇒ dừng stream CHỈ khi NGOÀI ô nhập VÀ đang stream (ô nhập tự lo Esc @-mention/lọc-cây)", () => {
+    expect(P({ key: "Escape", trongONhap: false, dangStream: true })).toBe("dung_stream");
+    expect(P({ key: "Escape", trongONhap: false, dangStream: false })).toBe("bo_qua");
+    expect(P({ key: "Escape", trongONhap: true, dangStream: true })).toBe("bo_qua");
+  });
+
+  it("★ phím thường / không modifier ⇒ BỎ QUA (không nuốt phím gõ)", () => {
+    for (const k of ["a", "x", "1", "ArrowDown", " ", "Enter", "p", "`"]) {
+      expect(P({ key: k, trongONhap: true, dangStream: false }), k).toBe("bo_qua");
+    }
+  });
+
+  it("★★ CENSUS: trang nghe keydown cấp document QUA `phanGiaiPhimTatKhung` (một nguồn chính sách)", () => {
+    const src = doc(TRANG);
+    expect(src).toContain("phanGiaiPhimTatKhung({");
+    expect(src).toContain('addEventListener("keydown"');
   });
 });
 

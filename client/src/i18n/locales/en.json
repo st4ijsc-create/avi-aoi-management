@@ -19370,6 +19370,9 @@
     },
     "tree": {
       "title": "File tree",
+      "filter": "Filter / quick-open files…  (Ctrl+P)",
+      "filterResults": "Quick-open results",
+      "filterEmpty": "No files match.",
       "loading": "Loading…",
       "error": "Could not read directory",
       "denied": "Server refused: missing READ-code permission (ai_repo_read)",

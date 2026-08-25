@@ -88,7 +88,7 @@ import { Badge } from "@/components/ui/badge";
 // ★ doc 81 · VIỆC 3 (1) — `Input` ĐÃ GỠ: ô nhập nay là `<textarea>` (xem `phanQuyetPhimNhap`).
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { phanQuyetPhimNhap, tuGianChieuCao, TRAN_CAO_O_NHAP_PX } from "@/lib/aiCodingInput";
+import { phanQuyetPhimNhap, phanGiaiPhimTatKhung, tuGianChieuCao, TRAN_CAO_O_NHAP_PX } from "@/lib/aiCodingInput";
 // ★★★ 2026-08-23 — trần chiều cao khung ĐO ĐƯỢC (hằng `8.5rem` cũ sai ở cả ba cỡ màn; xem tệp).
 import { tinhChieuCaoVua, xepMotKhung } from "@/lib/khungVuaManHinh";
 import {
@@ -140,7 +140,7 @@ import { GoiYTep, locTepTheoQuery } from "@/components/ai/GoiYTep";
 import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
-  Repeat, CheckCircle2, OctagonX, Terminal,
+  Repeat, CheckCircle2, OctagonX, Terminal, Search,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -681,6 +681,26 @@ export default function AICodingWorkspace() {
     [dsTepQ.data],
   );
 
+  // ★★★ 2026-08-25 · ĐỢT 3 UX (.NET bấm-được) — REF danh sách tệp cho parser lỗi. `phanTichLoiViTri` v2
+  //   cần cây workspace để suy đường .NET TUYỆT ĐỐI (máy build) → TƯƠNG ĐỐI có-thật (bấm được). Dùng REF
+  //   (cùng khuôn `handleSendRef`) để hai callback parse (vòng tự động · duyệt lệnh) LUÔN đọc danh sách
+  //   MỚI NHẤT — một closure cũ bắt `dsTepDuAn` RỖNG (trước khi cây nạp) sẽ khiến mọi đường .NET rớt về
+  //   `tep:null` dù cây đã có tệp. Gán trong render là AN TOÀN (y như `handleSendRef.current = handleSend`).
+  const dsTepDuAnRef = useRef<readonly string[]>(dsTepDuAn);
+  dsTepDuAnRef.current = dsTepDuAn;
+
+  // ★★★ 2026-08-25 · ĐỢT 3 UX — MỞ NHANH tệp (kiểu Ctrl+P của VSCode): ô LỌC trên cây. Query rỗng ⇒
+  //   cây thường; query có ⇒ danh sách PHẲNG đã lọc/xếp-hạng — DÙNG LẠI `locTepTheoQuery` của @-mention
+  //   (một bộ lọc, một lưới). `oLocCayRef` để phím tắt Ctrl/Cmd+P nhảy con trỏ tới. Nguồn cùng
+  //   `dsTepDuAn` (list_files depth 3 — tệp sâu hơn/quá trần liệt kê hộp cát sẽ không có, đã khai ở trên).
+  const [locCay, setLocCay] = useState("");
+  const [chiSoLoc, setChiSoLoc] = useState(0);
+  const oLocCayRef = useRef<HTMLInputElement>(null);
+  const dsLocCay = useMemo(
+    () => (locCay.trim() ? locTepTheoQuery(dsTepDuAn, locCay, 40) : []),
+    [locCay, dsTepDuAn],
+  );
+
   /**
    * ★★★ LÔ 3 — NEO ĐỐI CHIẾU KHỐI↔TỆP và hai bộ component nhãn cho `<Streamdown>`.
    *
@@ -768,6 +788,28 @@ export default function AICodingWorkspace() {
   useEffect(() => {
     if (streamTool) setStreamTools((prev) => [...prev, streamTool]);
   }, [streamTool]);
+
+  // ★★★ 2026-08-25 · ĐỢT 3 UX — PHÍM TẮT TOÀN KHUNG nghe ở CẤP `document`: Ctrl+` (Terminal) · Ctrl/Cmd+P
+  //   (mở-nhanh: nhảy ô lọc cây) · Ctrl/Cmd+Enter (gửi khi con trỏ NGOÀI ô nhập — trong ô chat thì
+  //   `onKeyDown` của nó đã gửi, tránh gửi ĐÔI) · Esc (cắt stream khi ngoài ô nhập). Quyết định do
+  //   `phanGiaiPhimTatKhung` THUẦN (lưới §phím-tắt) — effect chỉ ÁNH XẠ kết quả → hành động. Gửi qua
+  //   `handleSendRef` để không bắt bản đóng gói CŨ của `handleSend`. `preventDefault` mọi phím KHỚP —
+  //   cốt để CHẶN in-trình-duyệt mặc định của Ctrl+P.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      const trongONhap = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      const hd = phanGiaiPhimTatKhung({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, trongONhap, dangStream: isStreaming });
+      if (hd === "bo_qua") return;
+      e.preventDefault();
+      if (hd === "terminal") setDuoiChat((v) => (v === "terminal" ? "dong" : "terminal"));
+      else if (hd === "mo_nhanh") { if (hep) setKhungHep("tep"); requestAnimationFrame(() => oLocCayRef.current?.focus()); }
+      else if (hd === "gui") void handleSendRef.current?.();
+      else if (hd === "dung_stream") stopKbStream();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [hep, isStreaming, stopKbStream]);
 
   // ★★★ 2026-08-25 · ĐỢT 2 (C) — chèn ĐƯỜNG DẪN SẠCH (KHÔNG kèm `@`) vào ô nhập; DÙNG CHUNG cho chuột
   //   (`onChon`) lẫn Enter/Tab. Thay đoạn `@query` (từ vị trí `@` tới con trỏ) bằng chính đường dẫn.
@@ -1054,7 +1096,7 @@ export default function AICodingWorkspace() {
           : null,
         luc: dinhDangLucNhan(new Date()),
         nguon: "vong_tu_dong",
-        diaDiemLoi: phanTichLoiViTri(dauRa),
+        diaDiemLoi: phanTichLoiViTri(dauRa, dsTepDuAnRef.current),
       },
     ]);
 
@@ -1098,6 +1140,7 @@ export default function AICodingWorkspace() {
     if (!id || id === projectId) return;
     setProjectId(id);
     setSelectedPath(null);
+    setLocCay(""); // đổi dự án ⇒ ô lọc-nhanh về rỗng (cây mới, kết quả cũ vô nghĩa)
     setPendingDiff(null);
     setPendingBatch(null);
     setLenhDaChay([]);
@@ -1335,7 +1378,7 @@ export default function AICodingWorkspace() {
               ketQua: kl,
               luc: dinhDangLucNhan(new Date()),
               nguon: "duyet",
-              diaDiemLoi: phanTichLoiViTri(dauRaLenh),
+              diaDiemLoi: phanTichLoiViTri(dauRaLenh, dsTepDuAnRef.current),
             },
           ]);
           // ★ NHỊP KHÉP VÒNG — đưa đầu ra THẬT vào lịch sử để lượt sau tác nhân đọc lỗi rồi sửa tiếp.
@@ -1611,17 +1654,76 @@ export default function AICodingWorkspace() {
                 ))}
               </select>
             </div>
-            <div className="flex shrink-0 items-center justify-between border-b px-2 py-1.5">
+            {/* ★★★ 2026-08-25 · ĐỢT 3 UX — tiêu đề cây + Ô LỌC/MỞ-NHANH (Ctrl+P nhảy tới). Query rỗng ⇒
+                cây thường; có query ⇒ danh sách PHẲNG đã xếp-hạng (mở-nhanh kiểu VSCode). */}
+            <div className="flex shrink-0 flex-col gap-1 border-b px-2 py-1.5">
               <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                 <FolderTree className="h-3.5 w-3.5" /> {t("repoWs.tree.title", "Cây tệp")}
               </span>
+              <div className="relative">
+                <Search aria-hidden className="pointer-events-none absolute left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  ref={oLocCayRef}
+                  data-loc-cay
+                  type="text"
+                  value={locCay}
+                  onChange={(e) => { setLocCay(e.target.value); setChiSoLoc(0); }}
+                  onKeyDown={(e) => {
+                    // Điều hướng danh sách mở-nhanh khi có kết quả; Esc luôn xoá lọc (thoát mở-nhanh).
+                    if (dsLocCay.length > 0) {
+                      if (e.key === "ArrowDown") { e.preventDefault(); setChiSoLoc((i) => Math.min(i + 1, dsLocCay.length - 1)); return; }
+                      if (e.key === "ArrowUp") { e.preventDefault(); setChiSoLoc((i) => Math.max(i - 1, 0)); return; }
+                      if (e.key === "Enter") { e.preventDefault(); const tep = dsLocCay[chiSoLoc] ?? dsLocCay[0]; if (tep) { openFile(tep); setLocCay(""); } return; }
+                    }
+                    if (e.key === "Escape") { e.preventDefault(); setLocCay(""); e.currentTarget.blur(); }
+                  }}
+                  placeholder={t("repoWs.tree.filter", "Lọc / mở nhanh tệp…  (Ctrl+P)")}
+                  aria-label={t("repoWs.tree.filter", "Lọc / mở nhanh tệp…  (Ctrl+P)")}
+                  role="combobox"
+                  aria-expanded={dsLocCay.length > 0}
+                  aria-controls="repows-mo-nhanh"
+                  className="h-7 w-full rounded-md border bg-background pl-6 pr-2 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                />
+              </div>
             </div>
             <ScrollArea className="min-h-0 flex-1">
               <div className="py-1">
-                {projectId ? (
-                  <FolderChildren key={projectId} path="" selectedPath={selectedPath} onOpenFile={openFile} depth={0} projectId={projectId} />
-                ) : (
+                {!projectId ? (
                   <div className="px-2 py-1 text-xs text-muted-foreground">{t("repoWs.project.none", "Chưa có dự án nào để hiển thị.")}</div>
+                ) : locCay.trim() ? (
+                  dsLocCay.length > 0 ? (
+                    <ul id="repows-mo-nhanh" role="listbox" aria-label={t("repoWs.tree.filterResults", "Kết quả mở nhanh tệp")}>
+                      {dsLocCay.map((p, i) => {
+                        const cat = p.lastIndexOf("/");
+                        const ten = cat >= 0 ? p.slice(cat + 1) : p;
+                        const thuMuc = cat >= 0 ? p.slice(0, cat + 1) : "";
+                        return (
+                          <li key={p}>
+                            <button
+                              type="button"
+                              data-mo-nhanh-item
+                              role="option"
+                              aria-selected={i === chiSoLoc}
+                              onMouseEnter={() => setChiSoLoc(i)}
+                              onClick={() => { openFile(p); setLocCay(""); }}
+                              className={cn(
+                                "flex w-full items-baseline gap-1.5 px-2 py-1 text-left text-xs",
+                                i === chiSoLoc ? "bg-primary/10 text-primary" : "hover:bg-muted",
+                              )}
+                            >
+                              <FileCode className="h-3 w-3 shrink-0 translate-y-0.5 text-muted-foreground" />
+                              <span className="truncate font-medium">{ten}</span>
+                              {thuMuc && <span className="truncate text-[10px] text-muted-foreground">{thuMuc}</span>}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <div className="px-2 py-2 text-xs text-muted-foreground">{t("repoWs.tree.filterEmpty", "Không tệp nào khớp.")}</div>
+                  )
+                ) : (
+                  <FolderChildren key={projectId} path="" selectedPath={selectedPath} onOpenFile={openFile} depth={0} projectId={projectId} />
                 )}
               </div>
             </ScrollArea>

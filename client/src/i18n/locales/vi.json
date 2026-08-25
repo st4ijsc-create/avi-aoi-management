@@ -19344,6 +19344,9 @@
     },
     "tree": {
       "title": "Cây tệp",
+      "filter": "Lọc / mở nhanh tệp…  (Ctrl+P)",
+      "filterResults": "Kết quả mở nhanh tệp",
+      "filterEmpty": "Không tệp nào khớp.",
       "loading": "Đang tải…",
       "error": "Không đọc được thư mục",
       "denied": "Server từ chối: thiếu quyền ĐỌC mã (ai_repo_read)",

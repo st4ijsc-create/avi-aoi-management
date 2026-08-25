@@ -12,7 +12,7 @@
  * THUẦN — không React, chạy: `node node_modules/vitest/vitest.mjs run shared/aiCodingLoiViTri.test.ts`.
  */
 import { describe, it, expect } from "vitest";
-import { phanTichLoiViTri, type DiaDiemLoi } from "./aiCodingLoiViTri";
+import { phanTichLoiViTri, giaiDuongTuyetDoiTheoHauTo, type DiaDiemLoi } from "./aiCodingLoiViTri";
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 describe("§1 — tsc (`npm run check` / `check:tests`): vị trí ĐẦY ĐỦ, và KHÔNG nuốt `warning`", () => {
@@ -195,5 +195,209 @@ describe("§4 — biên: rỗng / không-chuỗi / rác / hỗn hợp", () => {
     expect(r[1]).toMatchObject({ tep: "server/b.test.ts", dong: 9, cot: 4 });
     expect(r[2]).toMatchObject({ tep: "server/b.test.ts", dong: null, cot: null });
     expect(r[3]).toMatchObject({ tep: null, dong: null, cot: null });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("§5 — giaiDuongTuyetDoiTheoHauTo: suy đường TUYỆT ĐỐI → TƯƠNG ĐỐI AN TOÀN theo cây workspace", () => {
+  it("★★★ khớp cơ bản: abs khớp đúng MỘT tệp trong cây ⇒ trả đường tương đối ấy", () => {
+    expect(giaiDuongTuyetDoiTheoHauTo("D:\\proj\\src\\Foo.cs", ["src/Foo.cs"])).toBe("src/Foo.cs");
+  });
+
+  /**
+   * ⚠⚠ CANH ĐỘT BIẾN "chọn dài nhất". Cây có CẢ `Calculator.cs` (gốc) LẪN `src/Calculator.cs`; abs
+   * `…/src/Calculator.cs` là hậu tố căn-đoạn của CẢ HAI (`/Calculator.cs` và `/src/Calculator.cs`).
+   * Phải chọn cái DÀI NHẤT = `src/Calculator.cs`, KHÔNG hút nhầm tệp gốc. Đổi `>` thành `<` (chọn
+   * ngắn nhất) ⇒ ca này ĐỎ.
+   */
+  it("★★★ hậu-tố-căn-ĐOẠN + chọn DÀI NHẤT: `Calculator.cs` gốc KHÔNG bị hút nhầm từ abs `…/src/Calculator.cs`", () => {
+    expect(
+      giaiDuongTuyetDoiTheoHauTo("D:\\proj\\src\\Calculator.cs", ["Calculator.cs", "src/Calculator.cs"]),
+    ).toBe("src/Calculator.cs");
+    // Thứ tự trong danh sách KHÔNG đổi kết quả (dài nhất thắng bất kể vị trí).
+    expect(
+      giaiDuongTuyetDoiTheoHauTo("D:\\proj\\src\\Calculator.cs", ["src/Calculator.cs", "Calculator.cs"]),
+    ).toBe("src/Calculator.cs");
+  });
+
+  /**
+   * ⚠⚠ CANH ĐỘT BIẾN "căn-đoạn". `Calculator.cs` là hậu tố THÔ của `…/myCalculator.cs` nhưng KHÔNG
+   * phải hậu tố CĂN-ĐOẠN (không có `/` trước). Bỏ dấu `/` trong `'/' + fn` (thành `endsWith(fn)`) ⇒
+   * dòng này khớp bừa ⇒ ĐỎ.
+   */
+  it("★★★ căn-ĐOẠN chặn khớp GIỮA-TÊN: `Calculator.cs` KHÔNG khớp abs `…/myCalculator.cs`", () => {
+    expect(giaiDuongTuyetDoiTheoHauTo("D:\\proj\\src\\myCalculator.cs", ["Calculator.cs"])).toBeNull();
+  });
+
+  /**
+   * ⚠⚠ CANH ĐỘT BIẾN "hoà → null". ≥2 tệp CÙNG khớp ở độ dài dài nhất ⇒ mơ hồ ⇒ null. (Với quy tắc
+   * hậu-tố-căn-đoạn, hoà THẬT chỉ nổ khi danh sách chứa MỤC TRÙNG — dùng entry lặp để chạm đúng guard.)
+   * Bỏ guard (`return best`) ⇒ ca này ĐỎ (trả `src/Calculator.cs` thay vì null).
+   */
+  it("★★★ HOÀ ở độ dài dài nhất (≥2 khớp cùng độ dài) ⇒ null (mơ hồ ⇒ KHÔNG đoán)", () => {
+    expect(
+      giaiDuongTuyetDoiTheoHauTo("D:\\proj\\src\\Calculator.cs", ["src/Calculator.cs", "src/Calculator.cs"]),
+    ).toBeNull();
+    // Đối chứng: chỉ một khớp ⇒ KHÔNG hoà, trả đường ấy.
+    expect(
+      giaiDuongTuyetDoiTheoHauTo("D:\\proj\\src\\Calculator.cs", ["src/Calculator.cs"]),
+    ).toBe("src/Calculator.cs");
+  });
+
+  it("★★ strip ổ đĩa `D:` + chuẩn hoá `\\`↔`/` (abs `\\` vs tệp `/`, và ngược lại)", () => {
+    // abs có ổ đĩa + gạch `\`; tệp gạch `/` ⇒ khớp (ổ đĩa chỉ là tiền tố, suffix bỏ qua).
+    expect(giaiDuongTuyetDoiTheoHauTo("D:\\a\\b\\Foo.cs", ["a/b/Foo.cs"])).toBe("a/b/Foo.cs");
+    // abs gạch `/`; tệp gạch `\` ⇒ vẫn khớp sau chuẩn hoá; trả dạng `/`.
+    expect(giaiDuongTuyetDoiTheoHauTo("D:/a/b/Foo.cs", ["a\\b\\Foo.cs"])).toBe("a/b/Foo.cs");
+  });
+
+  it("★★ không khớp / abs rỗng / dsTep rỗng ⇒ null (⇒ backward-compat: caller v1 luôn null)", () => {
+    expect(giaiDuongTuyetDoiTheoHauTo("D:\\proj\\src\\Foo.cs", ["src/Bar.cs"])).toBeNull();
+    expect(giaiDuongTuyetDoiTheoHauTo("", ["src/Foo.cs"])).toBeNull();
+    expect(giaiDuongTuyetDoiTheoHauTo("D:\\proj\\src\\Foo.cs", [])).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("§6 — csc (`dotnet build`): lỗi C# bấm-được; tuyệt đối giải theo cây; `warning CS` bị bỏ", () => {
+  const CAY = [
+    "sandbox-projects/csharp/src/Calculator.cs",
+    "sandbox-projects/csharp/Program.cs",
+  ] as const;
+
+  it("★★★ đường TƯƠNG ĐỐI ⇒ tep+dong+cot ĐẦY ĐỦ (dùng thẳng như tsc)", () => {
+    const r = phanTichLoiViTri("src/Calculator.cs(23,16): error CS0103: The name 'x' does not exist");
+    expect(r).toHaveLength(1);
+    expect(r[0]).toEqual<DiaDiemLoi>({
+      tep: "src/Calculator.cs",
+      dong: 23,
+      cot: 16,
+      thongDiep: "error CS0103: The name 'x' does not exist",
+    });
+  });
+
+  it("★★★ đường TUYỆT ĐỐI khớp cây ⇒ giải về tương đối, BẤM-ĐƯỢC; `[proj.csproj]` KHÔNG lẫn vào tep", () => {
+    const raw =
+      "D:\\SOURCES\\avi-aoi-management\\sandbox-projects\\csharp\\src\\Calculator.cs(23,16): error CS1002: ; expected [D:\\SOURCES\\avi-aoi-management\\sandbox-projects\\csharp\\CalculatorDemo.csproj]";
+    const r = phanTichLoiViTri(raw, CAY);
+    expect(r).toHaveLength(1);
+    expect(r[0].tep).toBe("sandbox-projects/csharp/src/Calculator.cs");
+    expect(r[0].dong).toBe(23);
+    expect(r[0].cot).toBe(16);
+    expect(r[0].thongDiep).toContain("error CS1002");
+    // tep KHÔNG được dính đuôi locator hay `.csproj`.
+    expect(r[0].tep).not.toContain("(");
+    expect(r[0].tep).not.toContain("csproj");
+  });
+
+  it("★★★ đường TUYỆT ĐỐI KHÔNG khớp cây ⇒ tep=null (dòng thông tin, KHÔNG mở nhầm tệp)", () => {
+    const raw = "D:\\OTHER\\repo\\src\\Ngoai.cs(9,3): error CS1002: ; expected";
+    const r = phanTichLoiViTri(raw, CAY);
+    expect(r).toHaveLength(1);
+    expect(r[0].tep).toBeNull();
+    expect(r[0].dong).toBeNull();
+    expect(r[0].cot).toBeNull();
+    expect(r[0].thongDiep).toContain("error CS1002"); // GIỮ msg ở dòng thông tin
+  });
+
+  it("★★★ đường TUYỆT ĐỐI mà KHÔNG truyền cây (v1 mode, 1 tham số) ⇒ tep=null (backward-compat)", () => {
+    const raw =
+      "D:\\SOURCES\\avi-aoi-management\\sandbox-projects\\csharp\\src\\Calculator.cs(23,16): error CS1002: ; expected";
+    const r = phanTichLoiViTri(raw);
+    expect(r).toHaveLength(1);
+    expect(r[0].tep).toBeNull();
+  });
+
+  /**
+   * ⚠⚠ CANH CHÍNH ĐỘT BIẾN §CS-warning (y hệt §1 của tsc). Nới `error\s+CS` → `(?:error|warning)` /
+   * `\w+` ⇒ dòng `warning CS` sinh một mục ⇒ ca này ĐỎ.
+   */
+  it("★★★ `warning CS…` KHÔNG sinh mục lỗi (nới regex nuốt `warning` là đột biến)", () => {
+    const canhBao = "src/Calculator.cs(23,16): warning CS0168: The variable 'x' is declared but never used";
+    expect(phanTichLoiViTri(canhBao, CAY)).toEqual([]);
+    // Đối chứng: cùng khuôn nhưng `error` ⇒ CÓ đúng một mục.
+    const loi = "src/Calculator.cs(23,16): error CS0168: The variable 'x' is declared but never used";
+    expect(phanTichLoiViTri(loi, CAY)).toHaveLength(1);
+  });
+
+  it("★ csc KHÔNG lẫn với tsc: `error TS` KHÔNG khớp RE_CSC và ngược lại", () => {
+    // Một dòng `error TS` chỉ tạo mục qua tsc (đầy đủ), KHÔNG nhân đôi qua csc.
+    expect(phanTichLoiViTri("a/b.ts(1,2): error TS2304: x", CAY)).toHaveLength(1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("§7 — dotnet stack `:line` (NÂNG): khớp cây ⇒ BẤM-ĐƯỢC; không khớp ⇒ tep=null (v1)", () => {
+  const CAY = ["dotnet/AoiTests/HeadroomCalculatorTests.cs", "dotnet/Aoi/HeadroomCalculator.cs"] as const;
+  const RAW =
+    "     at AoiTests.HeadroomCalculatorTests.Rejects_Negative() in D:\\SOURCES\\avi-aoi-management\\dotnet\\AoiTests\\HeadroomCalculatorTests.cs:line 42";
+
+  it("★★★ khớp cây ⇒ tep giải về tương đối, dong=42, cot=null (bấm-được)", () => {
+    const r = phanTichLoiViTri(RAW, CAY);
+    expect(r).toHaveLength(1);
+    expect(r[0].tep).toBe("dotnet/AoiTests/HeadroomCalculatorTests.cs");
+    expect(r[0].dong).toBe(42);
+    expect(r[0].cot).toBeNull();
+  });
+
+  it("★★★ KHÔNG khớp cây ⇒ tep=null nhưng vẫn là dòng thông tin (không mở nhầm)", () => {
+    const r = phanTichLoiViTri(RAW, ["dotnet/Khac/Foo.cs"]);
+    expect(r).toHaveLength(1);
+    expect(r[0].tep).toBeNull();
+    expect(r[0].dong).toBeNull();
+    expect(r[0].thongDiep).toContain("HeadroomCalculatorTests.cs:line 42");
+  });
+
+  it("★ v1 mode (không truyền cây) ⇒ tep=null Y HỆT v1", () => {
+    const r = phanTichLoiViTri(RAW);
+    expect(r).toHaveLength(1);
+    expect(r[0].tep).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("§8 — node stack tuyệt đối `D:\\…:dòng:cột` (NÂNG): khớp cây ⇒ BẤM-ĐƯỢC", () => {
+  const RAW = "   at TestContext.<anonymous> (D:\\SOURCES\\avi-aoi-management\\scripts\\bench.test.js:10:9)";
+
+  it("★★★ khớp cây ⇒ tep tương đối, dong=10, cot=9", () => {
+    const r = phanTichLoiViTri(RAW, ["scripts/bench.test.js"]);
+    expect(r).toHaveLength(1);
+    expect(r[0].tep).toBe("scripts/bench.test.js");
+    expect(r[0].dong).toBe(10);
+    expect(r[0].cot).toBe(9);
+  });
+
+  it("★★★ không khớp cây / v1 mode ⇒ tep=null (giữ kỷ luật không mở nhầm)", () => {
+    expect(phanTichLoiViTri(RAW, ["scripts/other.js"])[0].tep).toBeNull();
+    expect(phanTichLoiViTri(RAW)[0].tep).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("§9 — hỗn hợp CÓ cây: .NET giải được, tsc/vitest KHÔNG đổi; và backward-compat tuyệt đối", () => {
+  it("★★★ cùng khối + truyền cây ⇒ dotnet stack giải được, tsc/vitest giữ NGUYÊN", () => {
+    const hon = [
+      "server/a.ts(3,1): error TS2304: Cannot find name 'x'.", // tsc → đầy đủ
+      " ❯ server/b.test.ts:9:4", // vitest stack → có dòng
+      " FAIL  server/b.test.ts > mô tả > ca", // vitest FAIL → dong null
+      "     at X.Y() in D:\\SOURCES\\avi-aoi-management\\dotnet\\Aoi\\Foo.cs:line 5", // dotnet → giải được
+    ].join("\r\n");
+    const r = phanTichLoiViTri(hon, ["dotnet/Aoi/Foo.cs"]);
+    expect(r).toHaveLength(4);
+    expect(r[0]).toMatchObject({ tep: "server/a.ts", dong: 3, cot: 1 });
+    expect(r[1]).toMatchObject({ tep: "server/b.test.ts", dong: 9, cot: 4 });
+    expect(r[2]).toMatchObject({ tep: "server/b.test.ts", dong: null, cot: null });
+    expect(r[3]).toMatchObject({ tep: "dotnet/Aoi/Foo.cs", dong: 5, cot: null });
+  });
+
+  it("★★★ CÙNG khối, KHÔNG truyền cây ⇒ .NET stack tep=null (backward-compat CỨNG, y v1)", () => {
+    const hon = [
+      "server/a.ts(3,1): error TS2304: Cannot find name 'x'.",
+      "     at X.Y() in D:\\SOURCES\\avi-aoi-management\\dotnet\\Aoi\\Foo.cs:line 5",
+    ].join("\r\n");
+    const r = phanTichLoiViTri(hon);
+    expect(r).toHaveLength(2);
+    expect(r[0]).toMatchObject({ tep: "server/a.ts", dong: 3, cot: 1 });
+    expect(r[1].tep).toBeNull();
   });
 });

@@ -37,11 +37,48 @@ export interface PhimNhap {
 export function phanQuyetPhimNhap(e: PhimNhap): PhanQuyetPhimNhap {
   if (e.key !== "Enter") return "bo_qua";
   if (e.isComposing === true) return "bo_qua";
-  // Shift/Ctrl/Cmd/Alt + Enter ⇒ XUỐNG DÒNG. Shift là quy ước phổ thông; ba phím còn lại được nhận
-  // vì người dùng quen từ công cụ khác, và đoán sai theo hướng "xuống dòng" là **vô hại** (gửi nhầm
-  // một câu chưa viết xong thì không).
-  if (e.shiftKey || e.ctrlKey === true || e.metaKey === true || e.altKey === true) return "xuong_dong";
+  // Shift/Alt + Enter ⇒ XUỐNG DÒNG. Shift là quy ước phổ thông; Alt nhận kèm vì vài trình soạn dùng nó
+  // và đoán sai theo hướng "xuống dòng" là **vô hại**. Ctrl/Cmd + Enter ⇒ GỬI — quy ước "gửi cưỡng
+  // bức" của hầu hết công cụ chat/PR (Slack, GitHub) và ở đây khớp luôn Enter=gửi; người quen tổ hợp
+  // ấy từ nơi khác bấm được ngay (Đợt 3 UX phím tắt). ⚠ Đột biến đổi `altKey` → `ctrlKey` ở nhánh này
+  // sẽ biến Ctrl+Enter thành xuống-dòng, mâu thuẫn phím tắt gửi — lưới §phím-tắt canh đúng chỗ.
+  if (e.shiftKey || e.altKey === true) return "xuong_dong";
   return "gui";
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-25 · ĐỢT 3 UX — PHÍM TẮT TOÀN KHUNG (Ctrl+` · Ctrl/Cmd+P · Ctrl/Cmd+Enter · Esc).
+// Tách THUẦN cùng lý do `phanQuyetPhimNhap`: nghe `keydown` cấp `document` mà viết inline thì chỉ đo
+// được bằng một lượt render CẢ trang ⇒ trên thực tế không đo, một đột biến đổi phím sống sót. Ở đây
+// thuần ⇒ lưới đơn vị đo thẳng "phím X + bối cảnh Y ⇒ hành động Z".
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+export type PhimTatKhung = "terminal" | "mo_nhanh" | "gui" | "dung_stream" | "bo_qua";
+
+export interface PhimTat {
+  key: string;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  /** Con trỏ đang ở trong một ô nhập (input/textarea/select)? Quyết định `gui`/`dung_stream` KIÊNG nể. */
+  trongONhap: boolean;
+  /** Có một lượt stream đang chạy? (Esc chỉ cắt khi ĐANG chạy.) */
+  dangStream: boolean;
+}
+
+/**
+ * Quy ước:
+ *  • Ctrl/Cmd + `  ⇒ bật/tắt Terminal — LUÔN (kể cả đang gõ; `` ` `` không phải phím soạn thảo hệ trọng).
+ *  • Ctrl/Cmd + P  ⇒ mở-nhanh (nhảy tới ô lọc cây) — LUÔN, và CHẶN in-trình-duyệt (preventDefault ở trang).
+ *  • Ctrl/Cmd + Enter ⇒ GỬI — CHỈ khi con trỏ KHÔNG trong ô nhập: trong ô chat, chính `onKeyDown` của nó
+ *    (qua `phanQuyetPhimNhap`) đã gửi rồi; để trang gửi lần nữa là gửi ĐÔI. Ngoài ô nhập thì đây là lối gửi.
+ *  • Esc ⇒ dừng stream — CHỈ khi KHÔNG trong ô nhập (ô @-mention/lọc-cây tự lo Esc của chúng) VÀ đang stream.
+ */
+export function phanGiaiPhimTatKhung(e: PhimTat): PhimTatKhung {
+  const mod = e.ctrlKey === true || e.metaKey === true;
+  if (mod && e.key === "`") return "terminal";
+  if (mod && (e.key === "p" || e.key === "P")) return "mo_nhanh";
+  if (mod && e.key === "Enter" && !e.trongONhap) return "gui";
+  if (e.key === "Escape" && !e.trongONhap && e.dangStream) return "dung_stream";
+  return "bo_qua";
 }
 
 /** Trần chiều cao ô nhập (px) trước khi nó tự cuộn — ~7 dòng ở cỡ chữ 13px. */

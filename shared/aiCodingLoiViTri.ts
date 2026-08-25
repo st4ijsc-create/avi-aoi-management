@@ -16,41 +16,43 @@
  * vị chạy trên nó (một khuôn regex nới sai ⇒ ĐỎ tại đây, không phải phát hiện bằng mắt ở runtime).
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * PHẠM VI — TRUNG THỰC, CHỈ XỬ KHUÔN SUY RA CHẮC CHẮN (v1)
+ * PHẠM VI v2 — .NET TRỞ THÀNH BẤM-ĐƯỢC BẰNG SUY ĐƯỜNG TUYỆT ĐỐI → TƯƠNG ĐỐI (AN TOÀN)
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * Bốn bộ chạy trong danh sách trắng (`aiCodingVerify.NHAN_KIEM_CHUNG`) in vị trí lỗi theo BA nhóm
- * khuôn khác nhau. Chỉ nhóm nào **suy ra đường tệp CHẮC CHẮN** mới thành mục bấm-được:
+ * Chữ ký: `phanTichLoiViTri(dauRa, dsTepDuAn = [])`. `dsTepDuAn` = danh sách tệp CÓ THẬT trong cây
+ * workspace (client tự cấp; đường tương đối gốc repo, dấu `/`). RỖNG/không truyền ⇒ hành xử **Y HỆT
+ * v1** — mọi caller một-tham-số cũ giữ NGUYÊN kết quả (hợp đồng backward-compat CỨNG, có lưới chứng).
  *
- *   1. **tsc** (`npm run check` / `check:tests`) — khuôn NGUYÊN VĂN (đã đo, không `pretty` trong
- *      tsconfig ⇒ tsc khi bị pipe in MỘT DÒNG):
- *          `server/services/vram/_muta_luoiGia.test.ts(13,7): error TS2353: …`
- *          `client/src/pages/SessionManagement.tsx(195,64): error TS2339: Property 'userAgent' …`
- *      (trích THẬT từ `docs/superpowers/reports/2026-08-05-*` và `…/2026-08-02-*` — đầu ra
- *      `npm run check:tests` / `tsc --noEmit`). Đường TƯƠNG ĐỐI gốc repo (tsc chạy từ cwd repo),
- *      dấu `/`. ⇒ `{tep, dong, cot}` ĐẦY ĐỦ.
- *      ⚠⚠ CHỈ khớp `error TS`, **KHÔNG** `warning TS`. Nới regex nuốt luôn `warning` là một đột biến
- *         có thật (lưới `§1` canh đúng chỗ này): một cảnh báo KHÔNG phải một mục lỗi để nhảy tới.
+ * Sáu khuôn, mỗi bộ chạy một regex RỜI (đầu ra của danh sách trắng `aiCodingVerify.NHAN_KIEM_CHUNG`).
+ * Thứ tự đọc trong vòng lặp: tsc → csc → vitest-stack → vitest-FAIL → dotnet-`:line` → win-abs-loc.
  *
- *   2. **vitest** (`npx vitest run …`) — hai tín hiệu, khuôn NGUYÊN VĂN (trích THẬT từ
- *      `docs/superpowers/reports/2026-08-02-dot2-report.md`):
- *          `FAIL  scripts/ai-bench/bench.production-parity.test.ts > bench.mjs — …`  (tổng kết)
- *          `❯ scripts/ai-bench/bench.production-parity.test.ts:11:21`               (khung stack)
- *      • Dòng `FAIL <đường>` ⇒ `{tep, dong:null}` — biết TỆP hỏng, chưa biết dòng.
- *      • Dòng `❯ <đường>:<dòng>:<cột>` ⇒ `{tep, dong, cot}` — có cả dòng.
- *      Đường TƯƠNG ĐỐI. ⚠ `❯` còn được vitest dùng cho dòng TÊN CA (`❯ nhúng bằng modelId …`) — nên
- *      khuôn khung stack ĐÒI đuôi `:<số>:<số>` và một phần mở rộng tệp, nếu không sẽ đẻ mục rác từ
- *      mọi tên ca.
+ *   1. **tsc** (`npm run check` / `check:tests`) — `<đường>(<dòng>,<cột>): error TS<số>: <msg>`.
+ *      Đường TƯƠNG ĐỐI gốc repo, dấu `/`. ⇒ `{tep, dong, cot}` ĐẦY ĐỦ. ⚠ CHỈ `error TS`, KHÔNG
+ *      `warning TS` (lưới §1). (Khuôn NGUYÊN VĂN, đã đo — tsc bị pipe in MỘT DÒNG, không `pretty`.)
  *
- *   3. **`dotnet test` / `node --test`** — stack in đường **TUYỆT ĐỐI**:
- *          `… in D:\SOURCES\avi-aoi-management\dotnet\AoiTests\HeadroomTests.cs:line 42`   (.NET)
- *          `at … (D:\proj\test\foo.test.js:10:9)`                                          (node)
- *      **v1 KHÔNG suy ngược ra đường tương đối.** Ghép một đường tuyệt đối của MÁY BUILD vào cây tệp
- *      của workspace là rủi ro mở **NHẦM TỆP** (hoặc tệp ngoài repo). Nên: trả `{tep:null, dong:null,
- *      cot:null, thongDiep}` — một **dòng thông tin KHÔNG bấm được**, người đọc vẫn thấy "có lỗi chỗ
- *      kia" nhưng panel không dựng một liên kết dối. Nâng cấp đường-tuyệt-đối→tương-đối để dành v2.
+ *   2. **csc (MỚI — `dotnet build`)** — khuôn MSBuild MỘT DÒNG:
+ *          `<đường>(<dòng>,<cột>): error CS<số>: <msg>[  [proj.csproj]]`
+ *      • Đường TƯƠNG ĐỐI (`src/Calculator.cs(23,16): error CS0103: …`) ⇒ dùng THẲNG như tsc.
+ *      • Đường TUYỆT ĐỐI của máy build (`D:\…\src\Calculator.cs(23,16): error CS1002: …`) ⇒ đi qua
+ *        BỘ GIẢI HẬU TỐ: khớp cây ⇒ bấm-được; không khớp ⇒ dòng thông tin `tep:null`.
+ *      ⚠ CHỈ `error CS`, KHÔNG `warning CS` (lưới §CS-warning, y như §1 của tsc).
+ *
+ *   3. **vitest** (`npx vitest run …`) — hai tín hiệu, khuôn NGUYÊN VĂN: `❯ <đường>:<dòng>:<cột>`
+ *      ⇒ `{tep, dong, cot}`; `FAIL  <đường> > … > …` ⇒ `{tep, dong:null}`. Đường TƯƠNG ĐỐI.
+ *
+ *   4. **dotnet stack `:line` (NÂNG)** — `… in <đường tuyệt đối>:line <N>`. v1 chỉ DÒ rồi trả
+ *      `tep:null`. v2 TRÍCH đường + dòng, đưa qua BỘ GIẢI HẬU TỐ: khớp cây ⇒ `{tep, dong:N, cot:null}`
+ *      bấm-được; không khớp ⇒ `{tep:null,…}` (dòng thông tin, y v1).
+ *
+ *   5. **node stack tuyệt đối (NÂNG)** — `… (D:\…\x.test.js:10:9)`. v1 chỉ DÒ; v2 trích `tep/dong/cot`
+ *      rồi giải hậu tố: khớp ⇒ bấm-được; không khớp ⇒ `{tep:null,…}` (y v1).
+ *
+ * ⚠⚠ VÌ SAO AN TOÀN (khử ĐÚNG rủi ro v1 cố tránh — "mở NHẦM tệp"): một đường tuyệt đối của MÁY BUILD
+ *    chỉ trở thành liên kết KHI VÀ CHỈ KHI nó khớp HẬU TỐ CĂN-ĐOẠN với một tệp CÓ THẬT trong cây
+ *    (`giaiDuongTuyetDoiTheoHauTo`). Mơ hồ (≥2 khớp cùng độ dài dài nhất) ⇒ KHÔNG đoán ⇒ `tep:null`.
+ *    Không khớp ⇒ `tep:null`. Không leak đường server (msg vẫn giữ raw ở dòng thông tin), không dựng
+ *    liên kết tới tệp NGOÀI cây. `dsTepDuAn` rỗng ⇒ bộ giải LUÔN trả null ⇒ đúng y hành vi v1.
  *
  * Dòng KHÔNG khớp khuôn nào ⇒ **BỎ QUA** (không đẻ mục rác). Đầu vào rỗng / không phải chuỗi ⇒ `[]`.
- *
  * ⚠ CRLF: đầu ra lệnh trên Windows có `\r\n`. Tách bằng `split(/\r?\n/)` — xử cả hai.
  */
 
@@ -58,7 +60,7 @@
 // HỢP ĐỒNG (chốt cứng — Wave sau phụ thuộc, đừng đổi tên / hình dạng)
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 export interface DiaDiemLoi {
-  /** Đường tệp (tương đối gốc repo). `null` ⇔ đường tuyệt đối chưa suy ngược được ⇒ KHÔNG bấm được. */
+  /** Đường tệp (tương đối gốc repo). `null` ⇔ chưa suy được đường bấm-được (tuyệt đối không khớp cây / mơ hồ). */
   tep: string | null;
   /** Số dòng (1-based). `null` khi biết tệp mà chưa biết dòng (vd dòng `FAIL <đường>` của vitest). */
   dong: number | null;
@@ -69,7 +71,7 @@ export interface DiaDiemLoi {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// KHUÔN — mỗi bộ chạy một regex RỜI, có docblock VÌ SAO. "Một regex thông minh" cho cả bốn là cách
+// KHUÔN — mỗi bộ chạy một regex RỜI, có docblock VÌ SAO. "Một regex thông minh" cho cả sáu là cách
 // chắc chắn để một lần nới cho bộ này âm thầm nới cho bộ kia.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -84,13 +86,25 @@ export interface DiaDiemLoi {
 const RE_TSC = /^(?<tep>[^\s(][^(]*?)\((?<dong>\d+),(?<cot>\d+)\):\s+(?<msg>error\s+TS\d+\b.*)$/;
 
 /**
+ * csc: `<đường>(<dòng>,<cột>): error CS<số>: <thông điệp>[  [proj.csproj]]` — lỗi biên dịch C# của
+ * `dotnet build`, khuôn MSBuild MỘT DÒNG (đã đo THẬT ở `sandbox-projects/csharp`).
+ *   • Thân KHUÔN Y HỆT `RE_TSC` — CỐ Ý là một regex RỜI (KHÔNG gộp `(?:TS|CS)`): nới nhầm một bộ sẽ
+ *     âm thầm nới bộ kia; tách rời ⇒ một lưới soi đúng một đột biến.
+ *   • `[^\s(][^(]*?` — đường (tương đối HAY tuyệt đối `D:\…` đều KHÔNG chứa `(`) lười tới `(` locator.
+ *     Đuôi `[…\proj.csproj]` (nếu có) nằm SAU locator ⇒ rơi trọn vào `msg`, KHÔNG lẫn vào `tep`.
+ *   • ⚠⚠ `error\s+CS\d+\b` — ĐÒI đúng `error`. `(?:error|warning)` / `\w+` là đột biến §CS-warning
+ *     phải bắt: `warning CS…` KHÔNG phải một mục lỗi để nhảy tới.
+ */
+const RE_CSC = /^(?<tep>[^\s(][^(]*?)\((?<dong>\d+),(?<cot>\d+)\):\s+(?<msg>error\s+CS\d+\b.*)$/;
+
+/**
  * vitest — KHUNG STACK: `❯ <đường>:<dòng>:<cột>` (thường thụt đầu dòng vài dấu cách).
  *   • `[^\s:?*]+\.[A-Za-z0-9]+` — đường KHÔNG chứa khoảng trắng / `:` / ký tự glob, và có phần mở
  *     rộng tệp. Ràng buộc này loại các dòng TÊN CA cũng bắt đầu bằng `❯` (chúng có khoảng trắng và
  *     không kết bằng `:<số>:<số>`).
  *   • `:(\d+):(\d+)\s*$` — đuôi `:dòng:cột` ở CUỐI dòng ⇒ chắc chắn là một vị trí, không phải văn xuôi.
  *   • Đường tuyệt đối Windows (`D:\…`) KHÔNG khớp (lớp `[^\s:]` chặn dấu `:` của ổ đĩa) ⇒ rơi xuống
- *     bộ nhận-đường-tuyệt-đối bên dưới ⇒ `tep:null`, đúng kỷ luật "không mở nhầm tệp".
+ *     bộ nhận-đường-tuyệt-đối bên dưới.
  */
 const RE_VITEST_STACK = /^\s*❯\s+(?<tep>[^\s:?*]+\.[A-Za-z0-9]+):(?<dong>\d+):(?<cot>\d+)\s*$/;
 
@@ -104,24 +118,77 @@ const RE_VITEST_STACK = /^\s*❯\s+(?<tep>[^\s:?*]+\.[A-Za-z0-9]+):(?<dong>\d+):
 const RE_VITEST_FAIL = /^\s*FAIL\s+(?<tep>\S+\.[A-Za-z0-9]+)(?=\s|$)/;
 
 /**
- * .NET stack: `…:line <số>`. Token `:line <số>` CHỈ xuất hiện ở khung stack `dotnet` ⇒ tín hiệu
- * đường-tuyệt-đối rất sạch, không cần biết đường viết kiểu gì.
+ * .NET stack: `… in <đường tuyệt đối>:line <N>`. Token `:line <số>` CHỈ xuất hiện ở khung stack
+ * `dotnet` ⇒ tín hiệu đường-tuyệt-đối rất sạch.
+ *   • `\bin\s+` — ĐÒI ` in ` (có biên từ) đứng trước đường; KHÔNG khớp `in` giữa tên hàm (`Main()`,
+ *     `Domain`, thư mục `\bin\`) vì thiếu biên trước hoặc thiếu khoảng trắng theo sau.
+ *   • `(?<tep>.+?):line` — LƯỜI tới `:line` ĐẦU TIÊN. Đường chứa dấu `:` của ổ đĩa (`D:\`) KHÔNG cắt
+ *     sớm: literal đòi đúng chữ `:line`, khác `:\`. (Suffix-match bên dưới còn miễn nhiễm rác tiền tố.)
+ * v2: TRÍCH `tep`+`dong` rồi đưa qua bộ giải hậu tố (v1 chỉ dò, trả `tep:null`).
  */
-const RE_DOTNET_LINE = /:line\s+\d+\b/;
+const RE_DOTNET_LINE = /\bin\s+(?<tep>.+?):line\s+(?<dong>\d+)\b/;
 
 /**
- * Đường TUYỆT ĐỐI Windows + bộ định vị dòng: `D:\…\x.test.js:10` (đuôi `:<cột>` có/không đều được).
+ * Đường TUYỆT ĐỐI Windows + bộ định vị `:<dòng>[:<cột>]`: `D:\…\x.test.js:10:9` (node stack).
  *   • `(?<![A-Za-z])[A-Za-z]:[\\/]` — ổ đĩa `X:\` / `X:/` mà TRƯỚC nó KHÔNG phải một chữ cái — để
  *     `http:/` (chữ `p` sau `t`) KHÔNG bị nhận nhầm là ổ đĩa; còn `(D:\`, ` D:\`, `file:///D:/` thì
  *     ký tự trước ổ đĩa là `(` / khoảng trắng / `/` nên vẫn nhận đúng.
- *   • `[^\s:]*\.[A-Za-z0-9]+:\d+` — thân đường (không trắng, không `:`) tới `.<ext>` rồi `:<dòng>`.
- * ⇒ Dùng để nhận biết (KHÔNG để trích đường) — v1 trả `tep:null`.
+ *   • `[^\s:]*\.[A-Za-z0-9]+` — thân đường (không trắng, không `:`) tới `.<ext>`.
+ *   • `:(?<dong>\d+)(?::(?<cot>\d+))?` — dòng BẮT BUỘC, cột TUỲ CHỌN (node có `:dòng:cột`, đôi khi chỉ `:dòng`).
+ * v2: TRÍCH `tep`/`dong`/`cot` rồi giải hậu tố (v1 chỉ dò, trả `tep:null`). ⚠ CHẠY SAU khuôn `:line`
+ *     để dòng `.NET` (`…cs:line N` — KHÔNG có `.<ext>:<số>`) được khuôn dotnet nuốt trước, không lọt xuống đây.
  */
-const RE_WIN_ABS_LOC = /(?<![A-Za-z])[A-Za-z]:[\\/][^\s:]*\.[A-Za-z0-9]+:\d+/;
+const RE_WIN_ABS_LOC = /(?<![A-Za-z])(?<tep>[A-Za-z]:[\\/][^\s:]*\.[A-Za-z0-9]+):(?<dong>\d+)(?::(?<cot>\d+))?/;
 
-/** Một dòng có phải tham chiếu vị trí bằng đường TUYỆT ĐỐI (.NET/Node) không. */
-function laDinhViTuyetDoi(dong: string): boolean {
-  return RE_DOTNET_LINE.test(dong) || RE_WIN_ABS_LOC.test(dong);
+/**
+ * Đường (dạng chuỗi) có TUYỆT ĐỐI không: ổ đĩa Windows `X:\` / `X:/` (`/^[A-Za-z]:[\\/]/`), hoặc POSIX
+ * `/…` (`/^\//`). Dùng để `RE_CSC` rẽ nhánh: TƯƠNG ĐỐI ⇒ dùng thẳng (như tsc); TUYỆT ĐỐI ⇒ phải giải
+ * hậu tố theo cây workspace trước khi cho bấm.
+ */
+function laDuongTuyetDoiChuoi(p: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(p) || /^\//.test(p);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// BỘ GIẢI HẬU TỐ — trái tim v2
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★ Suy một đường TUYỆT ĐỐI của máy build về đường TƯƠNG ĐỐI CÓ THẬT trong cây workspace — hoặc `null`
+ * nếu không suy được CHẮC CHẮN. Đây là cách v2 khử rủi ro "mở NHẦM tệp" mà v1 cố ý né bằng `tep:null`.
+ *
+ *   • Chuẩn hoá `\`→`/` cho CẢ `abs` LẪN từng tệp (đầu ra build lẫn cây đều có thể lẫn hai kiểu gạch).
+ *   • Nhận `fn` là HẬU TỐ CĂN-THEO-ĐOẠN của `abs`: `norm === fn` HOẶC `norm.endsWith('/' + fn)`. Dấu
+ *     `/` ở đầu `'/' + fn` ép khớp tại BIÊN ĐOẠN ⇒ tệp `Calculator.cs` KHÔNG dính vào `…/myCalculator.cs`
+ *     (hậu tố THÔ sẽ dính — đó chính là lỗi ta phải chặn).
+ *   • Trả DUY NHẤT cái DÀI NHẤT (cụ thể nhất). Cây có cả `Calculator.cs` (gốc) lẫn `src/Calculator.cs`,
+ *     abs `…/src/Calculator.cs` ⇒ chọn `src/Calculator.cs`, KHÔNG hút nhầm tệp gốc.
+ *   • ⚠ HOÀ ở độ dài dài nhất — ĐẾM SỐ khớp ở max-length, `≥2 ⇒ null`: mơ hồ thì KHÔNG đoán (thà dòng
+ *     thông tin còn hơn một liên kết dối). Ghi chú TOÁN HỌC: hai đường KHÁC NHAU cùng độ dài KHÔNG THỂ
+ *     cùng là hậu tố của một `abs` (hậu tố ở độ dài cố định là duy nhất) — nên "hoà" chỉ thực sự nổ khi
+ *     `dsTep` chứa MỤC TRÙNG ở max-length; guard vẫn giữ để danh sách bẩn không đẻ liên kết đoán mò.
+ *   • Không khớp / `abs` rỗng-không-chuỗi / `dsTep` rỗng ⇒ `null` ⇒ caller v1 (không cây) LUÔN null.
+ *
+ * THUẦN, tất định, 0 I/O — chỉ so chuỗi. Trả về dạng đã chuẩn hoá `/` (đồng nhất với tep của tsc/vitest).
+ */
+export function giaiDuongTuyetDoiTheoHauTo(abs: string, dsTep: readonly string[]): string | null {
+  if (typeof abs !== "string" || abs.length === 0 || dsTep.length === 0) return null;
+  const norm = abs.replace(/\\/g, "/");
+  let best: string | null = null;
+  let bestLen = -1;
+  let soKhopDaiNhat = 0; // số tệp khớp ở độ dài dài nhất hiện tại (≥2 ⇒ mơ hồ)
+  for (const raw of dsTep) {
+    if (typeof raw !== "string" || raw.length === 0) continue;
+    const fn = raw.replace(/\\/g, "/");
+    if (norm !== fn && !norm.endsWith("/" + fn)) continue; // không phải hậu tố căn-đoạn ⇒ bỏ
+    if (fn.length > bestLen) {
+      best = fn;
+      bestLen = fn.length;
+      soKhopDaiNhat = 1;
+    } else if (fn.length === bestLen) {
+      soKhopDaiNhat += 1;
+    }
+  }
+  return soKhopDaiNhat >= 2 ? null : best;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -129,11 +196,12 @@ function laDinhViTuyetDoi(dong: string): boolean {
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 /**
  * Đọc đầu ra THÔ của một lệnh kiểm chứng, trả danh sách địa điểm lỗi theo THỨ TỰ xuất hiện.
- * THUẦN, tất định, 0 phụ thuộc ngoài. KHÔNG khử trùng lặp ở v1 (một block vitest có thể cho cả một
- * mục `FAIL` không-dòng lẫn một mục khung stack có-dòng cho cùng tệp — đó là HAI tín hiệu thật;
- * component hiển thị tự gộp nếu muốn).
+ * THUẦN, tất định, 0 phụ thuộc ngoài. KHÔNG khử trùng lặp (một block vitest có thể cho cả một mục
+ * `FAIL` không-dòng lẫn một mục khung stack có-dòng cho cùng tệp — đó là HAI tín hiệu thật).
+ *
+ * @param dsTepDuAn danh sách tệp CÓ THẬT trong cây workspace (tương đối, `/`). Rỗng ⇒ hành xử Y HỆT v1.
  */
-export function phanTichLoiViTri(dauRa: string): DiaDiemLoi[] {
+export function phanTichLoiViTri(dauRa: string, dsTepDuAn: readonly string[] = []): DiaDiemLoi[] {
   if (typeof dauRa !== "string" || dauRa.length === 0) return [];
 
   const ket: DiaDiemLoi[] = [];
@@ -150,7 +218,24 @@ export function phanTichLoiViTri(dauRa: string): DiaDiemLoi[] {
       continue;
     }
 
-    // 2) vitest — khung stack `❯ path:dòng:cột`.
+    // 2) csc — lỗi biên dịch C#. Đường TƯƠNG ĐỐI ⇒ dùng thẳng; TUYỆT ĐỐI ⇒ giải hậu tố theo cây.
+    const c = RE_CSC.exec(raw);
+    if (c?.groups) {
+      const tep = c.groups.tep.trim();
+      const dong = Number(c.groups.dong);
+      const cot = Number(c.groups.cot);
+      const msg = c.groups.msg.trim();
+      if (!laDuongTuyetDoiChuoi(tep)) {
+        ket.push({ tep, dong, cot, thongDiep: msg });
+      } else {
+        const giai = giaiDuongTuyetDoiTheoHauTo(tep, dsTepDuAn);
+        if (giai !== null) ket.push({ tep: giai, dong, cot, thongDiep: msg });
+        else ket.push({ tep: null, dong: null, cot: null, thongDiep: raw.trim() });
+      }
+      continue;
+    }
+
+    // 3) vitest — khung stack `❯ path:dòng:cột`.
     const vs = RE_VITEST_STACK.exec(raw);
     if (vs?.groups) {
       ket.push({
@@ -162,20 +247,43 @@ export function phanTichLoiViTri(dauRa: string): DiaDiemLoi[] {
       continue;
     }
 
-    // 3) vitest — dòng tổng kết `FAIL path` (biết tệp, CHƯA biết dòng).
+    // 4) vitest — dòng tổng kết `FAIL path` (biết tệp, CHƯA biết dòng).
     const vf = RE_VITEST_FAIL.exec(raw);
     if (vf?.groups) {
       ket.push({ tep: vf.groups.tep, dong: null, cot: null, thongDiep: raw.trim() });
       continue;
     }
 
-    // 4) dotnet / node — đường TUYỆT ĐỐI ⇒ dòng thông tin, KHÔNG bấm được (v1 không mở nhầm tệp).
-    if (laDinhViTuyetDoi(raw)) {
-      ket.push({ tep: null, dong: null, cot: null, thongDiep: raw.trim() });
+    // 5) dotnet stack `:line` — đường tuyệt đối máy build ⇒ giải hậu tố (v1: luôn tep:null).
+    const dn = RE_DOTNET_LINE.exec(raw);
+    if (dn?.groups) {
+      const giai = giaiDuongTuyetDoiTheoHauTo(dn.groups.tep, dsTepDuAn);
+      if (giai !== null) {
+        ket.push({ tep: giai, dong: Number(dn.groups.dong), cot: null, thongDiep: raw.trim() });
+      } else {
+        ket.push({ tep: null, dong: null, cot: null, thongDiep: raw.trim() });
+      }
       continue;
     }
 
-    // 5) không khớp khuôn nào ⇒ bỏ qua, không đẻ mục rác.
+    // 6) node stack tuyệt đối `D:\…:dòng:cột` ⇒ giải hậu tố (v1: luôn tep:null).
+    const wa = RE_WIN_ABS_LOC.exec(raw);
+    if (wa?.groups) {
+      const giai = giaiDuongTuyetDoiTheoHauTo(wa.groups.tep, dsTepDuAn);
+      if (giai !== null) {
+        ket.push({
+          tep: giai,
+          dong: Number(wa.groups.dong),
+          cot: wa.groups.cot != null ? Number(wa.groups.cot) : null,
+          thongDiep: raw.trim(),
+        });
+      } else {
+        ket.push({ tep: null, dong: null, cot: null, thongDiep: raw.trim() });
+      }
+      continue;
+    }
+
+    // 7) không khớp khuôn nào ⇒ bỏ qua, không đẻ mục rác.
   }
 
   return ket;
