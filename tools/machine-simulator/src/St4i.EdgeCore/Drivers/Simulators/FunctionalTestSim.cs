@@ -135,6 +135,29 @@ public sealed class FunctionalTestSim : SimulatorBase
     /// not hidden, by
     /// <c>AssumedProcessBandTests.Item61_Guard_ThePublishedScoreStillDeclaresACeilingTheVerdictDoesNotUse</c>.</para>
     ///
+    /// <para>🔴 <b>THE NAME ON THE LINE ABOVE POINTS AT A METHOD THAT NO LONGER EXISTS — corrected
+    /// 2026-08-25, and the dead name is left standing because it is what was written.</b> That guard was
+    /// renamed on 2026-08-24, when the owner ruled item 62, to
+    /// <c>AssumedProcessBandTests.Item62_Guard_ThePublishedScoreStillDeclaresACeilingTheVerdictDoesNotUse_OwnerRuled20260824</c>.
+    /// This is not a cosmetic slip. This paragraph exists for exactly one purpose — to route a reader who
+    /// is about to "fix" the published ceiling to the test that will stop them and explain why — and for a
+    /// day it routed them to a symbol no search resolves. <b>An instruction that names a thing which is not
+    /// there is the item 37 defect, and it is the ROUTING that had failed here, not the content.</b></para>
+    ///
+    /// <para>🔴 <b>THE OWNER'S RULING OF 2026-08-25 ON THIS EXACT QUESTION: "khong can phan lai, can toi uu"
+    /// — the ruling STANDS, the work is to OPTIMISE inside it.</b> Direction B (keep the published pair,
+    /// deliberately, with a signature) is unchanged and no published value on this line moves. The obvious
+    /// cheap optimisation — drop this orphan ceiling, since this member is one day old and can have
+    /// accumulated almost no reported history — WAS MEASURED AND REFUSED. Dropping it sets
+    /// <c>MetricSample.Usl</c> to null, and <c>Mapping/Normalizer.cs</c> copies that field into the outgoing
+    /// envelope unconditionally: on the retained MQTT mirror it becomes <c>"usl": null</c>, and on the HTTP
+    /// ingest body the vendored client serialises with <c>JsonIgnoreCondition.WhenWritingNull</c> so the KEY
+    /// DISAPPEARS. That is exemption (a) and exemption (b) together — the SAME two the leak-test member
+    /// crosses, through the SAME line of the SAME file. <b>The age of a member does not decide which
+    /// exemption a change crosses; those are two different predicates, and only the second one was ever the
+    /// question.</b> "Optimise" is not a licence to exceed an exemption, so this stops here and is
+    /// reported.</para>
+    ///
     /// <para><b>What the score path answers now.</b> Fail below 88.5, Warn in <c>[88.5, 91.5]</c>, Pass
     /// above 91.5 — so a perfect 100 passes, and a score-driven Fail is still the rare event it was (3.8
     /// standard deviations out). Essentially every Fail this simulator emits still comes from the trial,

@@ -19,7 +19,173 @@ ngày ấy nói thế"* — **không** nghĩa là *"đúng"*.
 
 ---
 
-# 🔴 BA VIỆC QUAY LẠI BÀN — đọc phần này TRƯỚC, nó dài hai phút
+# ✅ BA VIỆC QUAY LẠI BÀN — **ANH ĐÃ TRẢ LỜI CẢ BA NGÀY 2026-08-25. PHẦN NÀY NAY LÀ HỒ SƠ, KHÔNG PHẢI VIỆC**
+
+🔴 **Đọc trước: ba phán quyết ngày 2026-08-25, nguyên văn và đầy đủ.**
+
+| mục | anh viết, NGUYÊN VĂN | đã thi hành | kết cục |
+|---|---|---|---|
+| **62** | *"không cần phán lại, cần tối ưu"* | BZ-1, 2026-08-25 | **Ở LẠI PHẦN III.** Chữ ký cũ đứng nguyên; đường tối ưu rẻ nhất **đo rồi TỪ CHỐI** vì nó vượt miễn trừ |
+| **70** | *"chọn B"* | BZ-1, 2026-08-25 | **PHẦN I → PHẦN III.** ΔOEE đo được, **khác 0** |
+| **69** | *"đồng ý đề nghị"* | BZ-1, 2026-08-25 | **Ở LẠI PHẦN I.** Mốc **2026-09-08** nay in ở chỗ cổng ra verdict |
+
+🔴 **BA CHỖ TÔI PHẢI NÓI RẰNG PHÉP ĐO KHÔNG ỦNG HỘ CÁI TÔI TỪNG VIẾT — đọc ba dòng này nếu không đọc gì
+khác:**
+1. **Mục 62 — cái tôi gợi ý là đường rẻ nhất thì KHÔNG ĐI ĐƯỢC.** Sửa `FunctionalTestSim` chạm **đúng
+   hai miễn trừ** mà `LeakTestSim` chạm, **qua cùng hai dòng của cùng một file**. Lý lẽ *"nó mới một
+   ngày tuổi"* **không cứu được** — tuổi và miễn trừ là **hai câu hỏi khác nhau**.
+2. **Mục 62 — con số `8,12` bị dùng SAI ĐƠN VỊ**, kể cả bởi tôi. Nó là **tỉ số hai tần suất**, không
+   phải một **phần của khối lượng khuyết tật**.
+3. **Mục 70 — hướng B đóng được tiêu đề của mục, KHÔNG đóng được phân kỳ làm tròn.** Nói ra ngay đây
+   để anh không đọc *"đã thi hành"* thành *"đã hết chuyện"*.
+
+---
+
+## Mục 62 — anh nói *"không cần phán lại, cần tối ưu"*, và đây là cái tối ưu ĐƯỢC PHÉP
+
+🔴 **Tôi KHÔNG phán lại gì cả.** Hướng B — *giữ cặp giới hạn công bố, có chủ ý, có chữ ký* — **đứng
+nguyên từng chữ**. Không giá trị công bố nào đổi, không hình dạng dây nào đổi, **0 dòng hành vi**.
+
+**Bốn ứng viên tối ưu, liệt kê rồi định giá — ba bị từ chối, một đã làm:**
+
+| ứng viên | kết cục |
+|---|---|
+| **giảm quần thể** (bỏ trần mồ côi của `FunctionalTestSim`) | ❌ **vượt miễn trừ — DỪNG** |
+| **cho phán quyết dùng đúng cặp đã công bố** | ❌ đổi `Verdict` ⇒ ra MQTT ⇒ miễn trừ (a); và nó **lật ngược mục 61** |
+| **thu hẹp khoảng cách mà không đổi giá trị công bố** | ❌ khoảng cách **LÀ** hiệu của hai cặp ấy; không đổi cái nào thì không có gì để thu hẹp |
+| **làm chỗ đọc hiểu đúng** | ✅ **ĐÃ LÀM — 0 miễn trừ** |
+
+🔴 **Vì sao đường rẻ nhất không đi được, nói bằng lời thường.** Bỏ cái trần thừa ấy làm trường `usl`
+thành *"không có giá trị"*. Sản phẩm chép trường ấy ra ngoài **vô điều kiện**: trên **MQTT** nó thành
+`"usl": null`, còn trên **đường HTTP** thì **cái khoá biến mất hẳn**. Với một bên tiêu thụ có kiểu, khoá
+biến mất là **hình dạng dây đổi**. ⇒ **Cùng hai miễn trừ, cùng hai dòng, cùng một file** như ca anh đã
+phán. **Anh nói *tối ưu*; anh không nói *vượt miễn trừ*.** Nên tôi dừng và báo.
+
+🔴 **Và lý lẽ *"thành viên này mới một ngày tuổi"* KHÔNG PHẢI một lý lẽ về miễn trừ.** *Bao nhiêu dữ
+liệu đã phát ra* và *bản sửa này làm gì với payload* là **hai câu hỏi khác nhau**. Tuổi trả lời câu thứ
+nhất; **chỉ câu thứ hai** mới là phép thử miễn trừ. Một thành viên một ngày tuổi và một thành viên một
+năm tuổi **vượt cùng một miễn trừ**.
+
+✅ **Cái ĐÃ tối ưu, và nó là một khuyết tật có thật.** Mục 62 có **hai** lời trỏ chéo trong mã, cả hai
+tồn tại **đúng một việc**: dẫn người sắp *"sửa"* cặp giới hạn tới bài test sẽ chặn họ và nói vì sao.
+🔴 **Cả hai trỏ vào một phương thức KHÔNG TỒN TẠI** — nó bị đổi tên đúng hôm anh phán mục 62, và không
+ai sửa lời trỏ. **Nội dung thì đúng; ĐƯỜNG ĐI thì gãy** — đúng thứ BY-1 vừa đo, và đúng khuyết tật mục
+37 mô tả. Đã sửa, tên chết giữ nguyên tại chỗ kèm ngày.
+
+🔴 **HAI BÀI TEST GHIM MỤC 62 NAY BẮT ĐƯỢC MỘT CHỖ HỒ SƠ NÓI RỘNG HƠN CÁI NÓ ĐO.** Hồ sơ nói cả hai bài
+*"đếm số chu kỳ hai câu trả lời khác nhau"*. Đo lại:
+
+| máy | bài test khẳng định | **tổng thật** | chênh |
+|---|---|---|---|
+| `LEAK-01` | **201** | **201** — trùng khít | 0 |
+| `FCT-01` | **40 790** | 🔴 **43 815** | **3 025** |
+
+**3 025 chu kỳ ấy là một loài bất đồng THỨ HAI mà máy kia không thể có:** máy `FCT-01` có một **phép thử
+tỉ lệ đạt** ép nó trượt bất kể điểm số, và **không cặp giới hạn công bố nào đoán được một phép thử**.
+🔴 **Nên hai thành viên của mục 62 ĐÃ không cùng hình dạng sẵn** — không phải sẽ khác nhau **sau** một
+bản sửa nào đó, mà **đang khác nhau từ ngày thành viên thứ hai ra đời**. **Mục 62 mô tả MỘT chế độ và
+sở hữu HAI.**
+
+📎 **Một lỗi của chính dụng cụ tôi dùng, nói ra chứ không lặng lẽ sửa:** bản đầu của phép suy lại **bỏ
+mất** một nhánh của luật phán quyết và đếm dư **47** chu kỳ. Tôi bắt được bằng cách in ra vài ca thay vì
+tin con số.
+
+⇒ 🔴 **MỘT CÂU MỚI QUAY LẠI BÀN CỦA ANH** *(cộng với câu cũ ở §62.6 vẫn chưa được trả lời)*: *mục 62 nay
+đo được là có **hai chế độ bất đồng**, không phải một — hồ sơ có cần mô tả cả hai không, hay chế độ thứ
+hai (**3 025** chu kỳ, do phép thử tỉ lệ đạt ép trượt) là một mục riêng?* **Tôi không tự trả lời.**
+
+---
+
+## Mục 70 — anh viết *"chọn B"*, và đây là cái hai chữ ấy đã mua
+
+**Đã làm:** ba lần rút mô-men thừa bị xoá khỏi kế hoạch chu kỳ. **Bốn vị trí bắt vít giữ nguyên là
+bốn**; ba vị trí không đo nay **nói thẳng là không đo** thay vì bịa ra một con số.
+
+🔴 **"B" có HAI cách làm và anh không nêu cách nào — tôi chọn một, và nói ra rằng tôi đã chọn.**
+Cách A: hạ kế hoạch còn **một** bước. Cách B: giữ **bốn** vị trí, chỉ xoá **ba lần rút**. **Hai cách xoá
+đúng cùng ba lần rút ấy nên tác động lên OEE BẰNG NHAU.** Tôi chọn cách thứ hai vì cách thứ nhất còn đổi
+**độ dài** một mảng trong payload đã công bố và hạ mô hình động từ bốn vị trí xuống một — **hai thứ anh
+không yêu cầu**. Nếu anh muốn cách kia, đó là **một hằng số**.
+
+🔴 **MIỄN TRỪ *"số OEE đã báo cáo"* — ĐÂY LÀ LẦN THỨ HAI NÓ ĐƯỢC MỞ, VÀ LẦN NÀY KHÁC LẦN TRƯỚC:**
+
+| | lần 1 | lần 2 |
+|---|---|---|
+| ngày | 2026-08-24 | **2026-08-25** |
+| phạm vi | **nhóm A** | 🔴 **CHỈ mục 70** |
+| lý do | *"các con số là giả định dùng để test"* | 🔴 **ANH KHÔNG NÊU** |
+
+**Tôi ghi đúng như thế và KHÔNG mượn lý do cũ sang đây** — nới một chữ ký sang chỗ nó không được đặt là
+đúng thứ hồ sơ này cấm. Nó **không** mở *payload MQTT*, **không** mở *hình dạng dây* (**chưa bao giờ
+được mở**), và **không** mở cho mục nào khác.
+
+**ΔOEE — đo trên đội hình demo, cùng seed, cùng số chu kỳ, 100 000 chu kỳ mỗi máy:**
+
+| máy | chu kỳ trượt TRƯỚC | SAU | ΔOEE |
+|---|---|---|---|
+| `SCRW-01` | 3 | **1** | **+0,000020** |
+| `SCRW-02` | 9 | **3** | **+0,000060** |
+| **gộp** | **12** / 200 000 | **4** | **+0,000040** |
+
+🔴 **ΔOEE khác 0** — nếu nó bằng 0 thì bản sửa đã không làm được việc nó nhận. **Con số nhỏ; tỉ lệ thì
+không: 8 trên 12 lần trượt (66,7 %)** mà hai máy này báo là do những lần rút **không bề mặt nào lưu lại**.
+
+🔴 **CHIỀU KIA, và anh cần nó để đọc báo cáo tháng sau:** ai **so hai kỳ** bắc qua ngày 2026-08-25 **sẽ
+thấy một bậc nhảy OEE mà không một cải tiến sản xuất nào gây ra**. Thời gian tổn thất chất lượng báo ra
+tụt từ **11,4 giây xuống 3,8 giây** trên 200 000 chu kỳ. **Không có gì trong sản phẩm gắn nhãn chỗ gãy
+ấy**, và mọi đường xu hướng vẽ ngang qua ngày ấy đang so **hai định nghĩa khác nhau của chữ "trượt"**.
+
+🔴 **B ĐÓNG ĐƯỢC CÁI GÌ VÀ KHÔNG ĐÓNG ĐƯỢC CÁI GÌ — trả lời thẳng:**
+* ✅ **Tiêu đề của mục ĐÓNG:** *"bốn con số mô-men cho một chu kỳ"* → **một**.
+* 🔴 **Phân kỳ làm tròn KHÔNG đóng, và B cộng phần dư ấy vẫn không đóng.** Một chỗ khác trong sản phẩm
+  vẫn in cùng con số ấy ở **ba chữ số thập phân**. Đo lại: hai bản in khác nhau trên **100 000 / 100 000
+  chu kỳ = 100 %**. **Tôi không đóng mục trên một lời hứa.**
+
+**Hướng C** (lưu ba lần rút lại) **vẫn không làm** — nó nới một payload đã công bố.
+
+---
+
+## Mục 69 — anh nói *"đồng ý đề nghị"*, và mốc nay **nhìn thấy được**
+
+**Mốc: 2026-09-08. Ngày anh chấp nhận: 2026-08-25.**
+
+🔴 **Con số ấy là một ĐỀ NGHỊ CHƯA ĐO, và tôi ghi đúng như thế.** Tôi đề nghị nó như *"hai tuần"*, và
+chính câu đề nghị đã tự khai là **chưa đo** bao lâu là hợp lý với đội kia. **Anh chấp nhận đúng con số
+được đưa ra.** Không phép đo nào trong cây này định cỡ lịch của họ, và tôi **không bịa thêm một cái nào**.
+
+🔴 **Câu tôi phải trả lời không phải *"đã ghi mốc chưa"* mà là *"ngày ấy tới mà mục chưa xong thì AI
+THẤY, Ở ĐÂU?"*** — vì **một cái mốc chôn trong tài liệu không ai đọc lại là đúng khuyết tật mục 37**, và
+nhiệm vụ trước vừa đo được rằng chỗ hỏng của kho này là **đường đi, không phải nội dung**.
+
+**Ai đọc? Người chạy cổng kiểm tra** — bề mặt duy nhất một con người đọc **có chủ đích** và không bỏ qua
+được. Nên mốc **in ra ngay tại chỗ cổng ra kết luận**, mọi lần chạy, **cả khi đạt lẫn khi trượt**.
+
+**Hai bờ, định giá cả hai:**
+* **Bờ ĐỎ** — làm cổng **đỏ** sau mốc. **Tôi từ chối, và giá phải nói thẳng: nó sẽ đỏ cổng cho MỌI
+  người vào đúng ngày ấy, kể cả người đang làm việc hoàn toàn không liên quan** — về một khuyết tật
+  cổng **không nhìn thấy**, trong một kho cổng **không dựng**, mà **không việc gì làm ở đây khiến nó
+  xanh lại được**. Với tất cả trừ một người, đó là **báo động giả thuần tuý**, và một phép kiểm sủa vào
+  tất cả sẽ bị tắt trong một ngày.
+* **Bờ MỀM** — **một dòng in ra, không đỏ**. **Chọn.** 🔴 **Giá của nó, không giấu: không gì bắt ai phải
+  hành động.** Có thể bị bỏ qua mãi mãi và cổng vẫn báo đạt. Nó biến *"đang trôi"* thành *"đang trôi có
+  ghi, trước mặt một người đọc"* — **không** biến thành *"đã xử lý"*.
+
+🔴 **NÓ KHÔNG ĐO CÁI GÌ — và câu đó in ngay trong chính dòng ấy, không nằm ở tài liệu khác:** **nó đọc
+một cuốn lịch và không gì khác.** Nó **không biết** đội kia đã sửa hay chưa, **không dựng, không chạy,
+không nhìn thấy** mã của họ, và sẽ in **đúng cùng một câu** dù họ xong từ tuần trước hay chưa bắt đầu.
+**Một cổng xanh bên cạnh nó KHÔNG phải bằng chứng rằng mục 69 đã xong.**
+
+**Cặp đối chứng KHÔNG chờ đồng hồ thật:** nó **tiêm ngày vào** — 2026-09-07, 2026-09-08, 2027-01-01 — và
+**trượt** nếu chữ nghĩa không đổi qua mốc (*một lời nhắc in cùng một câu ở hai bên ranh giới của chính
+nó là một hằng số giả dạng một phép đo*), hoặc nếu bất kỳ bờ nào rơi mất dòng khai *"nó không đo cái
+gì"*.
+
+📎 **0 dòng trong mã của đội kia bị chạm.** Mục **ở lại Phần I** — mốc **không phải** bản sửa, và mục chỉ
+rời khi **bên kia đã sửa**.
+
+---
+
+# 🔴 BA VIỆC QUAY LẠI BÀN *(vòng trước — 2026-08-25, ĐÃ TRẢ LỜI. Giữ nguyên bên dưới làm hồ sơ)*
 
 **Ba mục anh đã phán ngày 2026-08-24 đều đã thi hành xong và đã sang Phần III. Ở cả ba, CƠ SỞ mà
 phán quyết đứng trên đã bị một phép đo bác — và ở cả ba, phép bác xảy ra SAU khi anh phán.** Không
@@ -439,6 +605,12 @@ của anh ở mục này là **theo dõi kênh đã mở**, không phải chọn
 
 ## Mục 69 — *"`intentClassifier` gửi BỐN chuỗi không thuộc vựng từ `stepType` vào một mệnh đề `WHERE` — nên mọi câu hỏi mô-men và mọi câu hỏi lượng keo trả về 'không đủ dữ liệu' TRÊN MỘT BẢNG CÓ DỮ LIỆU"*
 
+> ✅ **MỐC ĐÃ ĐẶT — 2026-08-25, *"đồng ý đề nghị"*. Mốc là 2026-09-08, và nó nay IN RA Ở CHỖ CỔNG RA
+> KẾT LUẬN**, mọi lần chạy, cả khi đạt lẫn khi trượt. 🔴 **Mục VẪN Ở PHẦN I** — một cái mốc **không phải**
+> một bản sửa, và **0 dòng** trong mã của đội kia bị chạm; mục chỉ rời khi **bên kia đã sửa**.
+> 🔴 **Câu *"đây là chỗ duy nhất tôi đề nghị anh THÊM một thứ"* dưới đây nay ĐÃ ĐƯỢC TRẢ.** Đọc kết cục
+> ở **[Mục 69 đầu file](#mục-69--anh-nói-đồng-ý-đề-nghị-và-mốc-nay-nhìn-thấy-được)** và **§69.7**.
+
 ⚠️ **Mục này mở đầu bằng *"⚖️ ĐIỀU PHỐI VIÊN QUYẾT ĐƯỢC"*. Nhãn ấy đã bị chính phép đo trong mục bác
 bỏ (§69.5) — mục này là của ANH.** ✅ Dòng đầu nay mang một phép rút tại chỗ, kèm ngày 2026-08-25.
 
@@ -558,6 +730,12 @@ nó vẫn cũ hôm nay.
 ---
 
 ## Mục 70 — *"`GET /v1/machines/{code}` ship BỐN con số mô-men cho MỘT chu kỳ mà payload ingest, chuỗi SPC và historian đều báo MỘT"*
+
+> ✅ **ĐÃ PHÁN VÀ ĐÃ THI HÀNH — 2026-08-25, *"chọn B"*. MỤC ĐÃ RỜI SANG PHẦN III và KHÔNG CÒN CHỜ ANH.**
+> Phần bên dưới là **văn của vòng trước**, giữ nguyên từng chữ vì nó là **cơ sở anh đã dùng để phán**.
+> Đọc kết cục ở **[Mục 70 đầu file](#mục-70--anh-viết-chọn-b-và-đây-là-cái-hai-chữ-ấy-đã-mua)**, và bản
+> đầy đủ ở **§70.6** của `owner-decisions.md`. 🔴 **Một câu dưới đây nay SAI:** *"B — Xoá ba lần rút
+> thêm. **VẪN CHỜ ANH**"* — B **đã được phán và đã thi hành**. **C** thì vẫn chờ, và vẫn không được làm.
 
 **1. Chuyện gì đang xảy ra.** Một lần gọi lấy chi tiết máy trả về **bốn** con số mô-men cho **một**
 chu kỳ. Ba trong bốn là **những lần rút NGẪU NHIÊN ĐỘC LẬP MỚI** — chúng **không** vào biểu đồ,

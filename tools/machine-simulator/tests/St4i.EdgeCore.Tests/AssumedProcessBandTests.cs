@@ -109,6 +109,32 @@ public class AssumedProcessBandTests
     /// <param name="total">Readings in the denominator.</param>
     /// <param name="cycleSeconds">The descriptor's cadence.</param>
     /// <returns>The OEE figure.</returns>
+    /// <summary>The verdict a third party derives from the PUBLISHED limit pair alone — added 2026-08-25 so
+    /// item 62's severity figure can be decomposed instead of quoted. Hand-rolled because
+    /// <c>VerdictHelper</c> is <c>internal</c> and this assembly cannot see it, which is exactly an outside
+    /// consumer's position. Mirrors <c>VerdictHelper.Evaluate</c>'s branch order, INCLUDING the near-miss
+    /// arm (outside a limit but within one margin of it is Warn, not Fail). A first draft of this helper
+    /// dropped that arm and over-counted this simulator's disagreements by 47 cycles; the omission is named
+    /// here because a re-derivation nobody checks is how a wrong number becomes a cited one.</summary>
+    /// <param name="value">The metric value the reading published.</param>
+    /// <param name="lsl">The published lower limit, or null if none was published.</param>
+    /// <param name="usl">The published upper limit, or null if none was published.</param>
+    /// <returns>The verdict the published pair implies.</returns>
+    private static Verdict ReDeriveFromPublishedPair(double value, double? lsl, double? usl)
+    {
+        if (lsl is null && usl is null) return Verdict.Warn;
+
+        var margin = lsl.HasValue && usl.HasValue
+            ? (usl.Value - lsl.Value) * 0.15
+            : Math.Max(Math.Abs(usl ?? lsl!.Value) * 0.15, 0.01);
+
+        if (lsl.HasValue && value < lsl.Value) return value >= lsl.Value - margin ? Verdict.Warn : Verdict.Fail;
+        if (usl.HasValue && value > usl.Value) return value <= usl.Value + margin ? Verdict.Warn : Verdict.Fail;
+        if (lsl.HasValue && value <= lsl.Value + margin) return Verdict.Warn;
+        if (usl.HasValue && value >= usl.Value - margin) return Verdict.Warn;
+        return Verdict.Pass;
+    }
+
     private static double OeeOf(long good, long total, double cycleSeconds)
     {
         var planned = TimeSpan.FromSeconds(total * cycleSeconds);
@@ -358,7 +384,31 @@ public class AssumedProcessBandTests
     ///
     /// <para><b>What this does NOT measure:</b> the verdict path, and the wire. Keeping the published pair
     /// is also why item 61's fix moved <b>no metric value on the wire at all</b> — only the <c>result</c>
-    /// field — but that is asserted elsewhere, not here.</para></summary>
+    /// field — but that is asserted elsewhere, not here.</para>
+    ///
+    /// <para>🔴 <b>OWNER'S RULING 2026-08-25 — "khong can phan lai, can toi uu": THE RULING STANDS AND THE
+    /// WORK IS TO OPTIMISE INSIDE IT. The cheapest-looking optimisation was measured and REFUSED.</b> The
+    /// proposal was to drop the orphan ceiling on THIS member on the grounds that it is one day old and can
+    /// therefore have almost no reported history behind it. Measured 2026-08-25, and the proposal does not
+    /// survive: dropping it sets <c>MetricSample.Usl</c> to null; <c>Mapping/Normalizer.cs</c> lines 110-111
+    /// copy <c>Lsl</c>/<c>Usl</c> into the outgoing envelope unconditionally; on the retained MQTT mirror
+    /// the field becomes <c>"usl": null</c> and on the HTTP ingest body the vendored client's
+    /// <c>JsonIgnoreCondition.WhenWritingNull</c> makes the KEY VANISH. That is exemption (a) and exemption
+    /// (b) at once — <b>the same two the leak member crosses, via the same two lines of the same file</b>.
+    /// <b>HOW OLD A MEMBER IS AND WHICH EXEMPTION A CHANGE CROSSES ARE TWO DIFFERENT PREDICATES.</b> Age
+    /// bounds how much history has accumulated; it says nothing about what the change does to the payload,
+    /// and only the second question was ever the exemption test. "Optimise" is not a licence to exceed an
+    /// exemption, so the population was NOT reduced and the refusal is reported rather than worked around.
+    /// What WAS optimised instead: the route from the code to this test (both cross-references named a
+    /// method that no longer existed), and this test's own disclosure of what its number does not
+    /// count.</para>
+    ///
+    /// <para>🔴 <b>THE ADVERSE BANK OF THAT REFUSAL, said rather than left implied.</b> Had the ceiling been
+    /// dropped here, item 62's two members would no longer have had the same shape and the item would have
+    /// had to describe TWO MODES instead of one. Measuring the refusal turned that up as something
+    /// stronger: <b>the two members ALREADY do not have the same shape</b>, and have not since the day this
+    /// one was created — see the decomposition asserted in the body below. The "two modes" cost is not a
+    /// future price of a fix; it is a present and until-now unrecorded property of the item.</para></summary>
     [Fact]
     public void Item62_Guard_ThePublishedScoreStillDeclaresACeilingTheVerdictDoesNotUse_OwnerRuled20260824()
     {
@@ -388,6 +438,30 @@ public class AssumedProcessBandTests
         // to the gap between that verdict and the limits the same reading publishes.
         Assert.Equal(40_790, emittedPassButThePublishedPairSaysWarn);
         Assert.Equal(0.40790, (double)emittedPassButThePublishedPairSaysWarn / rows.Count, 5);
+
+        // 🔴 2026-08-25 — WHAT THE 40 790 DOES NOT COUNT, AND WHY THAT MATTERS TO THE RULING.
+        // Item 62 §62.5 describes both guards as counting "the cycles on which the two answers differ".
+        // That sentence is WIDER than this assertion. 40 790 counts ONE DIRECTION: cycles the machine
+        // called Pass where the published pair says Warn. Re-deriving every cycle from the published pair
+        // and comparing verdict-to-verdict gives 43 815 — and the difference is not noise, it is a SECOND
+        // KIND of disagreement that the leak-test member cannot have at all:
+        //     40 790  emitted Pass,  published pair says Warn   (score at the top of the scale)
+        //    + 3 025  emitted Fail,  published pair says good   (the pass-rate TRIAL forced the Fail, and
+        //                                                        no published limit can predict a trial)
+        //    = 43 815  total, and the remainder is exactly ZERO — the decomposition is complete, which is
+        //              asserted below rather than stated, because "the rest is negligible" is how an
+        //              uncounted set gets read as an empty one.
+        // 🔴 THE CONSEQUENCE FOR THE RULING: item 62's two members DO NOT HAVE THE SAME SHAPE, and they
+        // have not had it since the day item 61's fix created this one. The leak member's disagreement is
+        // total and one-directional (201 of 201); this member's is two-directional. Item 62 describes one
+        // mode and owns two.
+        var totalDisagreements = rows.Count(r => ReDeriveFromPublishedPair(r.Score, ScoreLsl, 100.0) != r.Verdict);
+        var trialForcedFailButPublishedPairSaysGood =
+            rows.Count(r => r.Verdict == Verdict.Fail && ReDeriveFromPublishedPair(r.Score, ScoreLsl, 100.0) != Verdict.Fail);
+
+        Assert.Equal(43_815, totalDisagreements);
+        Assert.Equal(3_025, trialForcedFailButPublishedPairSaysGood);
+        Assert.Equal(totalDisagreements, emittedPassButThePublishedPairSaysWarn + trialForcedFailButPublishedPairSaysGood);
 
         // 🔴 AND THE SIZE COMPARISON THAT MATTERS TO THE RULING: item 62 was opened against LeakTestSim and
         // priced at ~5% of that machine's cycles. This second member of its population disagrees on 40.790%

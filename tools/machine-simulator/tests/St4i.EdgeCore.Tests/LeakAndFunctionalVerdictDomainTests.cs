@@ -178,6 +178,26 @@ public class LeakAndFunctionalVerdictDomainTests
     /// band. Item 62's body said "LeakTestSim is the only case"; that predicate was measured again on
     /// 2026-08-24 and corrected there.</para>
     ///
+    /// <para>🔴 <b>THE TEST NAME IN THE PARAGRAPH ABOVE DOES NOT EXIST — corrected 2026-08-25, dead name
+    /// left standing because it is what was written.</b> The sibling guard was renamed on 2026-08-24, in
+    /// the same task that wrote this paragraph, to
+    /// <c>AssumedProcessBandTests.Item62_Guard_ThePublishedScoreStillDeclaresACeilingTheVerdictDoesNotUse_OwnerRuled20260824</c>.
+    /// Both halves of item 62's "read the other one too" cross-reference pointed at a symbol no search
+    /// resolves — this file at the line above, and <c>FunctionalTestSim</c> in its own declaration block.
+    /// The pair of tests was correct; the ROUTE between them was broken, and a route nobody can follow is
+    /// the item 37 defect the whole cross-reference existed to avoid.</para>
+    ///
+    /// <para>🔴 <b>AND THE TWO MEMBERS DO NOT DISAGREE IN THE SAME SHAPE — measured 2026-08-25, and the
+    /// record had been reading them as one.</b> Both counts below are counts of "emitted Pass, published
+    /// pair says Warn". For THIS machine that is the WHOLE of its disagreement: re-deriving every one of
+    /// the 4000 cycles from the published pair and comparing to the emitted verdict gives <b>201</b>, the
+    /// same 201 asserted below — no other cycle disagrees at all. For the functional member the same total
+    /// re-derivation gives <b>43 815</b>, of which its guard asserts <b>40 790</b>; the remaining
+    /// <b>3025</b> are cycles its pass-rate trial forced to Fail while the published pair says the unit was
+    /// good. This class has no such trial, so it cannot have that second kind. <b>Item 62 therefore has
+    /// TWO MODES, not one, and it has had them since the day the second member was created — this is not a
+    /// cost of some future fix, it is an unrecorded property of the present.</b></para>
+    ///
     /// <para><b>What this test does NOT measure:</b> the WIRE. <c>Normalizer</c> — the thing that copies
     /// <c>Lsl</c> into the outgoing envelope and therefore the whole reason changing it crosses an exemption
     /// — is not on its path, so a green here is not evidence about what any consumer receives.
@@ -217,6 +237,46 @@ public class LeakAndFunctionalVerdictDomainTests
         Assert.Equal(201, emittedPassButThePublishedPairSaysWarn);
         Assert.Equal(0.05025, (double)emittedPassButThePublishedPairSaysWarn / rows.Count, 5);
         Assert.Equal(4000, rows.Count);
+
+        // 🔴 2026-08-25 — WHAT THE 201 ABOVE DOES NOT COUNT, MEASURED INSTEAD OF ASSUMED. The count above is
+        // ONE DIRECTION of disagreement (emitted Pass, published pair says Warn). Item 62 §62.5 describes
+        // both guards as counting "the cycles on which the two answers differ", which is a WIDER claim than
+        // the assertion actually makes. For THIS machine the two happen to coincide, and that is a fact
+        // worth pinning rather than a coincidence worth trusting: re-derive all 4000 cycles from the
+        // published pair and compare verdict-to-verdict, and the total is the SAME 201. It coincides
+        // because this simulator's verdict is a pure function of the metric, so the published pair can
+        // always predict it. The functional member's cannot — see this test's banner — and there the two
+        // numbers differ by 3025. A shared sentence over two members that do not share a shape is exactly
+        // the kind of claim this file keeps catching.
+        var totalDisagreements = rows.Count(r => ReDeriveFromPublishedPair(r.Rate, 0.0, DefaultMaxLeak) != r.Verdict);
+        Assert.Equal(201, totalDisagreements);
+        Assert.Equal(emittedPassButThePublishedPairSaysWarn, totalDisagreements);
+    }
+
+    /// <summary>The verdict a third party derives from the PUBLISHED limit pair alone. Hand-rolled on
+    /// purpose: <c>VerdictHelper</c> is <c>internal</c> and this assembly has no <c>InternalsVisibleTo</c>
+    /// to it, which is precisely the position an outside consumer is in — two published numbers and the
+    /// documented rule, nothing else. Mirrors <c>VerdictHelper.Evaluate</c>'s branch order exactly,
+    /// INCLUDING the near-miss arm (a value outside a limit but within one margin of it is Warn, not Fail);
+    /// an earlier draft of this helper omitted that arm and mis-counted the functional member by 47 cycles,
+    /// which is why the omission is called out here rather than quietly fixed.</summary>
+    /// <param name="value">The metric value the reading published.</param>
+    /// <param name="lsl">The published lower limit, or null if none was published.</param>
+    /// <param name="usl">The published upper limit, or null if none was published.</param>
+    /// <returns>The verdict the published pair implies.</returns>
+    private static Verdict ReDeriveFromPublishedPair(double value, double? lsl, double? usl)
+    {
+        if (lsl is null && usl is null) return Verdict.Warn;
+
+        var margin = lsl.HasValue && usl.HasValue
+            ? (usl.Value - lsl.Value) * 0.15
+            : Math.Max(Math.Abs(usl ?? lsl!.Value) * 0.15, 0.01);
+
+        if (lsl.HasValue && value < lsl.Value) return value >= lsl.Value - margin ? Verdict.Warn : Verdict.Fail;
+        if (usl.HasValue && value > usl.Value) return value <= usl.Value + margin ? Verdict.Warn : Verdict.Fail;
+        if (lsl.HasValue && value <= lsl.Value + margin) return Verdict.Warn;
+        if (usl.HasValue && value >= usl.Value - margin) return Verdict.Warn;
+        return Verdict.Pass;
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════════
