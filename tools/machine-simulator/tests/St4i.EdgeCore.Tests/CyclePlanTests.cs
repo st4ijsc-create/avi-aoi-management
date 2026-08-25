@@ -1,5 +1,8 @@
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers.Simulators;
+using St4i.EdgeCore.Historian;
+using St4i.EdgeCore.Infrastructure;
+using St4i.EdgeCore.Metrics;
 using St4i.EdgeCore.Models;
 using St4i.Connector.Abstractions.Models;
 using Xunit;
@@ -16,6 +19,33 @@ using Xunit;
 public class CyclePlanTests
 {
     private static string TempDir(string prefix) => Directory.CreateTempSubdirectory(prefix).FullName;
+
+    /// <summary>Cycles per machine for the item 70 direction-B OEE witness. Matches
+    /// <c>AssumedProcessBandTests.Cycles</c> so the two item-62/item-70 measurement families are read at the
+    /// same resolution.</summary>
+    private const long OeeCycles = 100_000;
+
+    private static string MachineSimulatorRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "fleet.json")) && Directory.Exists(Path.Combine(dir.FullName, "mapping")))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException(
+            $"Could not locate tools/machine-simulator (fleet.json + mapping/) by walking up from \"{AppContext.BaseDirectory}\"");
+    }
+
+    /// <summary>The descriptor the product actually ships for <paramref name="code"/>, read from the real
+    /// <c>fleet.json</c> rather than hand-built — the item 70 OEE measurement is a claim about the DEMO
+    /// FLEET, so it must not be made against a descriptor invented by the test.</summary>
+    /// <param name="code">A SCREWDRIVE machine code present in the shipped roster.</param>
+    /// <returns>That roster entry, including its declared <c>screwTorque</c> band.</returns>
+    private static MachineDescriptor ShippedScrew(string code) =>
+        FleetConfig.Load(Path.Combine(MachineSimulatorRoot(), "fleet.json")).Single(m => m.Code == code);
 
     private static MachineDescriptor ScrewDescriptor(string code) =>
         new(code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC1", null, 1.0);
@@ -81,7 +111,16 @@ public class CyclePlanTests
         // 2026-08-24, direction A: exact now. See Item70_… below for the witness that says why.
         Assert.Equal(reading.Metrics[0].Value, reading.Plan.Steps[0].MetricValue!.Value);
         Assert.All(reading.Plan.Steps, s => Assert.Equal("Nm", s.Unit));
-        Assert.All(reading.Plan.Steps, s => Assert.True(s.Result is "OK" or "NG"));
+
+        // 🔴 OWNER'S RULING 2026-08-25, item 70 — DIRECTION B. The assertion that stood here was:
+        //     Assert.All(reading.Plan.Steps, s => Assert.True(s.Result is "OK" or "NG"));
+        // It is retracted, not deleted, because it was TRUE and was the right assertion for as long as
+        // every step carried its own draw. Direction B removed the three extra draws, so steps 1..3 are
+        // now positions with no measurement and say so with a null Result — the same convention
+        // IotSensorSim's steps have always used. Step 0 still carries a real pass/fail, and that is now
+        // asserted separately rather than being averaged into an "all steps" claim that no longer holds.
+        Assert.True(reading.Plan.Steps[0].Result is "OK" or "NG");
+        Assert.All(reading.Plan.Steps.Skip(1), s => Assert.Null(s.Result));
     }
 
     /// <summary>🔴 <b>WITNESS for owner item 70, direction A — 2026-08-24. Reddens by restoring
@@ -112,7 +151,7 @@ public class CyclePlanTests
     /// reading, so it says nothing about what <c>FleetProjections.ToDetailDto</c> does with either
     /// field.</para></summary>
     [Fact]
-    public void Item70_DirectionA_Step0CarriesTheDrawItself_ButThreeExtraDrawsAndARoundedStringSurvive()
+    public void Item70_DirectionB_TheThreeExtraDrawsAreGone_ButTheRoundedStringStillSurvives()
     {
         var d = ScrewDescriptor("SCRW-ITEM70");
         var reading = new ScrewdriveSim(d, seed: 17).NextCycle(1);
@@ -120,25 +159,101 @@ public class CyclePlanTests
         var torque = reading.Metrics[0].Value;
         Assert.Equal("torque", reading.Metrics[0].Name);
 
-        // (A) Direction A itself: the SAME double, not a rendering of it. Exact, no tolerance.
+        // (A) Direction A itself, UNCHANGED by direction B: the SAME double, not a rendering of it.
         Assert.NotNull(reading.Plan);
         Assert.Equal(torque, reading.Plan!.Steps[0].MetricValue!.Value);
 
         // (A2) The unit of the claim item 70 makes, pinned: what direction A removed was bounded by 5e-4 Nm.
         Assert.True(Math.Abs(Math.Round(torque, 3) - torque) <= 5e-4);
 
-        // (B) 🔴 FOUR torque numbers for ONE cycle — unchanged by direction A. Steps 1..3 are separate
-        // draws: they are not equal to the primary one, and nothing outside this plan carries them.
+        // (B) 🔴 DIRECTION B — THE HEADLINE IS CLOSED. The assertions that stood here were:
+        //         Assert.Equal(4, reading.Plan.Steps.Count);
+        //         Assert.Equal(3, reading.Plan.Steps.Skip(1).Count(s => s.MetricValue!.Value != torque));
+        //     and they pinned the defect: FOUR torque numbers for ONE cycle. The first is KEPT — the four
+        //     positions are deliberately still four, because direction B deletes the extra DRAWS, not the
+        //     extra POSITIONS, and changing the array length would move a published payload's cardinality
+        //     for no reason the owner gave. The second is REPLACED by its negation, below.
         Assert.Equal(4, reading.Plan.Steps.Count);
-        Assert.Equal(3, reading.Plan.Steps.Skip(1).Count(s => s.MetricValue!.Value != torque));
+        Assert.Equal(3, reading.Plan.Steps.Skip(1).Count(s => s.MetricValue is null));
+        Assert.All(reading.Plan.Steps.Skip(1), s => Assert.Null(s.Result));
         Assert.Single(reading.Metrics, m => m.Name == "torque");
 
-        // (C) 🔴 A rounded rendering of the same draw still ships on this response, from a different field.
-        // "0.###" is three decimals, so a draw with more than three carries fewer digits in the log line
-        // than in the SPC series — the exact shape direction A was asked to remove.
+        // (B2) ONE torque number now leaves this cycle, and it is the one every other surface also carries.
+        Assert.Single(reading.Plan.Steps, s => s.MetricValue is not null);
+
+        // (C) 🔴 WHAT DIRECTION B DOES **NOT** CLOSE, asserted rather than said. `MachineState.FormatKeyMetric`
+        // renders Metrics[0] with "0.###" — three decimals — so `cycleLog[].keyMetric` still disagrees with
+        // `spc.values[]` in exactly the digit direction A was chosen to remove. B did not touch that file.
+        // Measured 2026-08-25 over 100 000 cycles on each shipped SCREWDRIVE: the two renderings differ on
+        // 100 000 of 100 000 — 100.00% of cycles. The response is one number closer to honest and is still
+        // not self-consistent.
         var keyMetric = $"{reading.Metrics[0].Name}={torque:0.###}{reading.Metrics[0].Unit}";
         Assert.Equal($"torque={torque:0.###}Nm", keyMetric);
         Assert.NotEqual(torque.ToString("R", System.Globalization.CultureInfo.InvariantCulture), torque.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>🔴 <b>THE OEE WITNESS for owner item 70, direction B — 2026-08-25. Reddens by restoring the
+    /// two retired lines in <c>ScrewdriveSim.BuildFasteningPlan</c>'s <c>else</c> arm.</b>
+    ///
+    /// <para><b>Why this test exists at all.</b> Direction B was authorised knowing it crosses the standing
+    /// "a REPORTED OEE NUMBER" exemption. An exemption crossed without a measurement of what it bought is
+    /// the shape item 43 was opened about, so the size of the shift is pinned here rather than described.
+    /// <b>If this number were zero, the change would not have done the thing it was authorised to do.</b></para>
+    ///
+    /// <para><b>The measurement, stated with its units.</b> The demo roster's own two SCREWDRIVE machines,
+    /// read from the real <c>fleet.json</c>, at <c>FleetCore</c>'s own seed rule (<c>1000 + rosterIndex</c>,
+    /// so SCRW-01 → 1000 and SCRW-02 → 1001), 100 000 cycles each, the SAME seed and the SAME cycle count on
+    /// both sides of the change. Determinism makes this a genuine controlled comparison rather than two
+    /// samples: <c>SimRng.For</c> is a pure function of (seed, cycle) and the extra draws were taken LAST in
+    /// the cycle, so removing them cannot shift the primary draw of this or any later cycle. Before → after:
+    /// SCRW-01 3 → 1 failing cycles, SCRW-02 9 → 3. Pooled 12 → 4 of 200 000.</para>
+    ///
+    /// <para>🔴 <b>THE OTHER DIRECTION, because a truth written only one way is half a truth.</b> Eight of
+    /// twelve reported failures disappearing is the favourable reading. The unfavourable one is that anyone
+    /// comparing a window before 2026-08-25 with a window after it sees a STEP UP IN OEE THAT NO PRODUCTION
+    /// IMPROVEMENT CAUSED, and nothing in the product labels that discontinuity.</para>
+    ///
+    /// <para><b>What this does NOT measure:</b> a real OEE as a customer would see it. Availability and
+    /// Performance are pinned at exactly 1 here (planned time = nominal cycle time, ideal cycle = the
+    /// descriptor's own), which is the shipped DEFAULT <c>OeeMachineSettings</c> but not every install's.
+    /// Under any other settings the same Quality shift is multiplied by A×P and is therefore SMALLER, never
+    /// larger. It also does not measure the historian, the endpoint, or any window a user actually
+    /// selects.</para></summary>
+    [Fact]
+    public void Item70_DirectionB_RemovingTheExtraDrawsMovesTheReportedOeeQualityNumber()
+    {
+        (long Fail, long Total, double Oee) Run(string code, int seed)
+        {
+            var sim = new ScrewdriveSim(ShippedScrew(code), seed);
+            long fail = 0;
+            for (long c = 1; c <= OeeCycles; c++)
+                if (sim.NextCycle(c).Verdict == Verdict.Fail) fail++;
+
+            var cycleSeconds = ShippedScrew(code).CycleSeconds;
+            var planned = TimeSpan.FromSeconds(OeeCycles * cycleSeconds);
+            var agg = new OeeInputAggregate(code, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, OeeCycles, OeeCycles - fail, planned);
+            return (fail, OeeCycles, OeeCalculator.Calculate(agg, planned, cycleSeconds).Oee);
+        }
+
+        var one = Run("SCRW-01", 1000);
+        var two = Run("SCRW-02", 1001);
+
+        // 🔴 The post-B counts. Before direction B these were 3 and 9; restoring the two retired draw lines
+        // reddens exactly here, which is what makes this a witness and not a description.
+        Assert.Equal(1, one.Fail);
+        Assert.Equal(3, two.Fail);
+
+        // The shift, in the unit the exemption is written in — a reported OEE number, not a rate of draws.
+        Assert.Equal(0.999990, one.Oee, 6);
+        Assert.Equal(0.999970, two.Oee, 6);
+
+        // 🔴 dOEE != 0 — asserted as the pooled figure so the claim is about the demo FLEET, not one machine.
+        const long PooledFailBeforeDirectionB = 12;
+        var pooledAfter = one.Fail + two.Fail;
+        Assert.Equal(4, pooledAfter);
+        var dQuality = (double)(PooledFailBeforeDirectionB - pooledAfter) / (one.Total + two.Total);
+        Assert.Equal(0.00004, dQuality, 8);
+        Assert.True(dQuality > 0, "a direction-B fix that moved no OEE number would not have done what it was authorised to do");
     }
 
     [Fact]
@@ -323,7 +438,23 @@ public class CyclePlanTests
             for (var c = 1; c <= cycles; c++)
             {
                 var reading = sim.NextCycle(cycleOffset + c);
-                totalSteps += reading.Plan!.Steps.Count;
+
+                // 🔴 OWNER'S RULING 2026-08-25, item 70 — DIRECTION B. This line used to read:
+                //     totalSteps += reading.Plan!.Steps.Count;
+                // and it must change, for a reason worth stating rather than patching around. The rate this
+                // test is about is "how often does a MEASURED fastening come out NG", and until direction B
+                // every one of the four steps was measured, so Steps.Count was the right denominator. After
+                // B only step 0 carries a measurement; leaving Steps.Count in place would have divided a
+                // real rate by four and quietly turned a genuine property into a false one.
+                // MEASURED 2026-08-25, tolerance 0.02 vs the 0.15 default, 1000 cycles, seed 2024:
+                //   denominator Steps.Count (4)  -> baseline 0.0000%, tight 13.0750%, diff 13.08 pts -> the
+                //                                   `+0.30` assertion below would have gone RED;
+                //   denominator MEASURED steps   -> baseline 0.0000%, tight 52.3000%, diff 52.30 pts -> green,
+                //                                   and materially the same figure as the 51.88 pts this
+                //                                   test measured before direction B existed.
+                // So the change of denominator RESTORES the quantity the test always meant; it does not
+                // relax it. A red here still means config stopped driving the NG rate.
+                totalSteps += reading.Plan!.Steps.Count(s => s.Result is not null);
                 ngSteps += reading.Plan.Steps.Count(s => s.Result == "NG");
             }
 

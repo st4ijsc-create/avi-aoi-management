@@ -113,6 +113,26 @@ public sealed class LeakTestSim : SimulatorBase
     /// the PRE-FIX answer</b>, because the verdict is computed from one limit and the reading declares two.
     /// That residue is named in the task report and left for a decision, not fixed here.</para>
     ///
+    /// <para>🔴 <b>THAT DECISION HAS SINCE BEEN TAKEN, and this paragraph did not say where to find it —
+    /// added 2026-08-25. Old text above kept word for word.</b> "Left for a decision" was true when it was
+    /// written and stopped being true on <b>2026-08-24</b>, when the owner ruled owner-decisions <b>item
+    /// 62, direction B — the published pair (0.0 ; 20.0) STAYS, deliberately, with a signature</b>. The
+    /// lock is
+    /// <c>LeakAndFunctionalVerdictDomainTests.Item62_Guard_ThePublishedMetricStillDeclaresAFloorTheVerdictDoesNotUse_OwnerRuled20260824</c>,
+    /// and a red there is very probably NOT a defect you introduced — read that test's own banner before
+    /// changing anything on the line below. <b>The content of this paragraph was never wrong; what was
+    /// missing was a route from here to the ruling, and a residue nobody can navigate to is the item 37
+    /// defect.</b></para>
+    ///
+    /// <para>🔴 <b>AND THE POPULATION IS TWO SIMULATORS, NOT ONE.</b> <see cref="FunctionalTestSim"/>
+    /// publishes an orphan CEILING (<c>Usl = 100</c>) exactly where this class publishes an orphan FLOOR
+    /// (<c>Lsl = 0.0</c>) — the same defect on opposite sides of the band, and item 62's ruling covers
+    /// both. Measured 2026-08-25 at seed 11, the two members do NOT disagree in the same shape, which is
+    /// the thing the record had been reading as one: this machine's disagreement is entirely of one kind
+    /// (emitted Pass where the published pair says Warn — 201 of 4000 cycles, and that is ALL of its
+    /// disagreement), while the functional member has a SECOND kind this class cannot have, because its
+    /// verdict can be forced to Fail by a pass-rate trial that no published limit can predict.</para>
+    ///
     /// <para>One metric, no waveform, step type from the descriptor or the literal <c>leak_test</c>.</para></summary>
     public override DeviceReading NextCycle(long cycle)
     {

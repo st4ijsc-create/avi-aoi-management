@@ -64,7 +64,26 @@ public sealed class CyclePlanFleetTests
             var running = host.MachineDetail("SCRW-01");
             Assert.NotNull(running!.Plan);
             Assert.Equal(4, running.Plan!.Steps.Count);
-            Assert.All(running.Plan.Steps, s => Assert.True(s.Result is "OK" or "NG"));
+
+            // 🔴 OWNER'S RULING 2026-08-25, item 70 — DIRECTION B, ASSERTED ON THE PUBLISHED PAYLOAD. The
+            // line that stood here was:
+            //     Assert.All(running.Plan.Steps, s => Assert.True(s.Result is "OK" or "NG"));
+            // Retracted, not deleted: it was true and correct while all four steps carried their own draw.
+            // Direction B removed the three extra draws, so the response now exposes ONE measured step and
+            // three positions that honestly report no measurement.
+            //
+            // 🔴 THIS IS THE ONE PLACE THE SHAPE CLAIM IS CHECKED WHERE IT MATTERS — on
+            // MachineDetailDto, the payload web/src/lib/api.ts mirrors field for field, rather than on the
+            // simulator's own reading. The step COUNT is unchanged at 4 (no cardinality move on a published
+            // array), the fields are the same fields, and the two that changed were already nullable in the
+            // published mirror (`metricValue: number | null`, `result: "OK" | "NG" | null`).
+            Assert.Single(running.Plan.Steps, s => s.Result is "OK" or "NG");
+            Assert.Equal("FSTN-01", running.Plan.Steps[0].PointCode);
+            Assert.All(running.Plan.Steps.Skip(1), s =>
+            {
+                Assert.Null(s.Result);
+                Assert.Null(s.MetricValue);
+            });
         }
         finally
         {

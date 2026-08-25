@@ -170,6 +170,41 @@ public sealed class ScrewdriveSim : SimulatorBase
         var plan = BuildFasteningPlan(
             rng, cycle, reading.Timestamp, CycleSecondsOverride ?? Descriptor.CycleSeconds,
             torqueTarget, torqueStd, lsl, usl, torque, reading.Verdict);
+        // 🔴 OWNER'S RULING 2026-08-25, item 70 — DIRECTION B, AND THIS LINE IS WHERE THE OEE NUMBER MOVED.
+        // Until 2026-08-25 this fold could flip a Pass/Warn reading to Fail on the strength of one of three
+        // EXTRA torque draws that existed on this one surface and were stored nowhere else. Direction B
+        // removed those draws (see BuildFasteningPlan), so the fold is now STRUCTURALLY A NO-OP: step 0 is
+        // the only step with a Result, and its "NG" is by construction the primary verdict's own Fail. It
+        // is kept, not deleted, because it is the "aggregate == per-step tally" contract (design-doc
+        // §3.4/§4) and it must keep holding if a future task ever re-adds measured positions.
+        //
+        // 🔴 THE SECOND EXEMPTION — "a REPORTED OEE NUMBER" — IS CROSSED HERE, WITH PERMISSION, AND THE
+        // PERMISSION'S SCOPE IS NARROW. Granted 2026-08-25, FOR ITEM 70 ONLY. The owner wrote two words,
+        // "chọn B", and gave NO REASON; no reason is invented here. It is NOT the 2026-08-24 permission
+        // (that one was for GROUP A, with the stated reason "the numbers are assumptions used for
+        // testing") and it does NOT extend to the MQTT-payload or wire-shape exemptions, nor to any other
+        // item.
+        //
+        // WHAT IT COST, MEASURED 2026-08-25 — 100 000 cycles per machine, the demo roster's own two
+        // SCREWDRIVE machines at FleetCore's own seeds (`1000 + rosterIndex`), same seed and same cycle
+        // count on both sides, via the shipped OeeCalculator at the shipped default OeeMachineSettings
+        // (PlannedProductionRatio 1.0, no IdealCycleSecondsOverride — so Availability and Performance are
+        // both exactly 1.0 and OEE IS Quality here, which is why this is an OEE shift and not merely a
+        // Quality one):
+        //   SCRW-01 (seed 1000): Fail 3 -> 1 of 100 000. Quality 0.999970 -> 0.999990. dOEE +0.000020.
+        //   SCRW-02 (seed 1001): Fail 9 -> 3 of 100 000. Quality 0.999910 -> 0.999970. dOEE +0.000060.
+        //   pooled             : Fail 12 -> 4 of 200 000. dQuality/dOEE +0.000040 (+0.0040 points).
+        // dOEE IS NOT ZERO — the check item 43 taught. And the honest way to read those figures is the
+        // RATIO, not the magnitude: EIGHT OF THE TWELVE failures these two machines reported (66.7%) were
+        // caused by draws that no other surface stored. At a tightened tolerance the same fix removes 139
+        // of 191 failing cycles in 500 (measured at torqueTolerance 0.05, seed 606).
+        //
+        // 🔴 THE OTHER DIRECTION, because a truth written only the favourable way is half a truth: anyone
+        // comparing a window before this change with a window after it sees a STEP UP IN OEE THAT NO
+        // PRODUCTION IMPROVEMENT CAUSED. On the demo roster that step is +0.0040 points of Quality and a
+        // drop in reported quality-loss time from 11.4 s to 3.8 s per 200 000 cycles. Nothing in the
+        // product labels that discontinuity, and any trend line drawn across 2026-08-25 is comparing two
+        // different definitions of "failure".
         if (plan.Steps.Any(s => s.Result == "NG")) reading.Verdict = Verdict.Fail;
         reading.Plan = plan;
 
@@ -246,9 +281,28 @@ public sealed class ScrewdriveSim : SimulatorBase
         var steps = new List<CyclePlanStep>(FasteningPositionsPerCycle);
         for (var i = 0; i < FasteningPositionsPerCycle; i++)
         {
-            double torque;
-            Verdict verdict;
-            if (i == 0)
+            // 🔴 OWNER'S RULING 2026-08-25, item 70 — DIRECTION B. The owner's whole ruling was the two
+            // words "chọn B", so what is enforced here is exactly what item 70's own §70.3 defines B to be
+            // and NOTHING WIDER: "xoá ba lần rút thêm ... bỏ chúng khỏi kế hoạch chu kỳ" — delete the three
+            // EXTRA DRAWS from the cycle plan. The draws are what go; the four physical POSITIONS stay.
+            //
+            // 🔴 "B" ADMITS TWO IMPLEMENTATIONS AND THE OWNER NAMED NEITHER. Said out loud rather than
+            // resolved silently, because picking one is a decision and the reader is entitled to know one
+            // was made:
+            //   (B-a) drop FasteningPositionsPerCycle to 1 — the plan then carries ONE step;
+            //   (B-b) keep the four positions, remove the three extra DRAWS — this file's choice.
+            // Both delete exactly the same three draws and therefore produce the IDENTICAL verdict change
+            // and the IDENTICAL OEE shift (measured: the cycles that stop failing are the same set). B-b is
+            // taken because B-a additionally changes the LENGTH of `plan.steps[]` on a PUBLISHED payload
+            // (`MachineDetailDto`, mirrored field-for-field by web/src/lib/api.ts) and drops the living
+            // twin from four fastening positions to one, and neither of those is anything the owner asked
+            // for. B-b changes no field, no type and no array length — see the exemption check below.
+            // If the owner meant B-a, that is a one-constant change and this note is where it starts.
+            var measured = i == 0;
+
+            double? torque;
+            Verdict? verdict;
+            if (measured)
             {
                 // The exact same draw/verdict already computed above — not a second, disagreeing sample.
                 torque = primaryTorque;
@@ -256,8 +310,22 @@ public sealed class ScrewdriveSim : SimulatorBase
             }
             else
             {
-                torque = rng.NextGaussian(torqueTarget, torqueStd);
-                verdict = VerdictHelper.Evaluate(torque, lsl, usl);
+                // 🔴 THE THREE EXTRA DRAWS USED TO BE TAKEN HERE. The retired code, kept verbatim so the
+                // reader can see precisely what was removed rather than a description of it:
+                //     torque = rng.NextGaussian(torqueTarget, torqueStd);
+                //     verdict = VerdictHelper.Evaluate(torque, lsl, usl);
+                // Those two lines are what made GET /v1/machines/{code} ship FOUR torque numbers for ONE
+                // cycle while ingest, the SPC series and the historian each shipped ONE, and — via
+                // NextCycle's `plan.Steps.Any(s => s.Result == "NG")` fold — what let a number stored on no
+                // other surface decide the reading's verdict. A position with no measurement now says so
+                // (`MetricValue: null`, `Result: null`) instead of inventing a reading for it. `Result: null`
+                // is the convention IotSensorSim's own steps already use for "no pass/fail concept here",
+                // and web/src/components/hmi/schematics/AutomationSchematic.tsx already renders it
+                // correctly and without a web change (`const lit = revealed && !!step.result` → the dot
+                // draws as a configured-but-unmeasured position, with the "configuredPosition" tooltip
+                // rather than the "measuredResult" one).
+                torque = null;
+                verdict = null;
             }
 
             var nx = FasteningPositionsPerCycle == 1
@@ -269,7 +337,11 @@ public sealed class ScrewdriveSim : SimulatorBase
                 PointCode: $"FSTN-{i + 1:D2}",
                 NormalizedX: nx,
                 NormalizedY: 0.5,
-                Result: verdict == Verdict.Fail ? "NG" : "OK",
+                // 🔴 2026-08-25, direction B: only a MEASURED step carries a pass/fail. The old expression
+                // was `verdict == Verdict.Fail ? "NG" : "OK"` over a verdict that always existed; steps
+                // 1..3 no longer have one, and reporting "OK" for them would have replaced three invented
+                // MEASUREMENTS with three invented PASSES — a smaller lie, still a lie.
+                Result: verdict is null ? null : verdict == Verdict.Fail ? "NG" : "OK",
                 // 🔴 OWNER'S RULING 2026-08-24, item 70 — DIRECTION A ONLY: the rounding is dropped, so
                 // step 0 and the published `spc` series carry the SAME double for the SAME draw instead of
                 // two renderings of it. `Math.Round(torque, 3)` stood here and its worst-case error was
@@ -289,6 +361,40 @@ public sealed class ScrewdriveSim : SimulatorBase
                 // away-from-zero at the midpoint where Math.Round was to-even. So `cycleLog[last].keyMetric`
                 // still disagrees with `spc.values[last]` in the same digit this line used to. Naming it
                 // here rather than letting the next reader think item 70 was closed by this.
+                //
+                // ─────────────────────────────────────────────────────────────────────────────────────
+                // 🔴 RETRACTION, 2026-08-25 — TWO SENTENCES ABOVE ARE NOW FALSE, AND THEY ARE LEFT
+                // STANDING WORD FOR WORD because they are what the owner was shown before choosing.
+                //   (1) "This edit does not remove a single one of those three extra draws — steps 1..3
+                //       are untouched, they still decide the reading's verdict" — TRUE of direction A on
+                //       2026-08-24, FALSE from 2026-08-25: direction B removed exactly those three draws,
+                //       and with them the verdict fold that let them decide anything.
+                //   (2) "Directions B ... and C ... were NOT authorised" — B WAS authorised, 2026-08-25.
+                //       C was NOT, and is still not: it widens a published payload.
+                // What is still TRUE and did NOT get fixed: the "0.###" paragraph directly above. Direction
+                // B does not touch FormatKeyMetric, so `cycleLog[last].keyMetric` still renders the primary
+                // draw at three decimals while `spc.values[last]` and this MetricValue carry the full
+                // double. MEASURED 2026-08-25 over 100 000 cycles on each of SCRW-01 (seed 1000) and
+                // SCRW-02 (seed 1001): the two renderings differ on 100 000 of 100 000 cycles — 100.00%.
+                // So B closes item 70's HEADLINE (four numbers for one cycle → one) and does NOT make this
+                // response self-consistent. Both halves are said because only one of them is good news.
+                //
+                // 🔴 THE THREE EXEMPTIONS, CHECKED FOR B AND MEASURED RATHER THAN ASSERTED:
+                //   (a) MQTT payload — `Mapping/Normalizer.cs` never reads `Plan` (0 hits), so no plan
+                //       field has ever reached the ingest wire. UNTOUCHED.
+                //   (b) SHAPE of the data on the wire — NOT touched, on this file's own operative
+                //       definition of shape, used twice before (item 70 §70.5(b) and FunctionalTestSim's
+                //       exemption note): "no field is added, removed or retyped". B-b adds none, removes
+                //       none, retypes none, and does not even change the array length. `MetricValue` was
+                //       already `double?` and `Result` already `string?` — both nullable in the shipped
+                //       record AND in the published TypeScript mirror (`metricValue: number | null`,
+                //       `result: "OK" | "NG" | null`), and IotSensorSim already emits the null form on the
+                //       same field of the same DTO today. A CHANGE IN A VALUE IS STILL A REAL CHANGE and is
+                //       named: a consumer reading steps[1..3].metricValue gets null where it got a number.
+                //       That is the same species of real-but-not-exemption-(b) cost direction A recorded
+                //       for precision on 2026-08-24.
+                //   (c) a REPORTED OEE NUMBER — TOUCHED, WITH PERMISSION granted 2026-08-25 and FOR THIS
+                //       ITEM ONLY. See NextCycle's ruling banner for the measured size and the scope.
                 MetricValue: torque,
                 Unit: "Nm"));
         }

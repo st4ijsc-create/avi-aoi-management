@@ -2667,7 +2667,27 @@ EXPECT_CONFORMANCE=24
 # BX-1 does NOT wire web/ into this gate — item 68's residue is recorded, not built — so the web/ domain
 # declaration prints unchanged and `npm run build` remains a command this script does not invoke.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1288
+# 🔴 BZ-1 (owner rulings 2026-08-25, items 62 / 70 / 69) raises EXPECT_EDGECORE 1288 -> 1289 (+1).
+# Grand total 2976 -> 2977. Measured by running the suite, not derived by arithmetic.
+#
+#   EdgeCore +1
+#     * CyclePlanTests gains ONE [Fact] —
+#       Item70_DirectionB_RemovingTheExtraDrawsMovesTheReportedOeeQualityNumber, the witness that the
+#       OEE exemption the owner opened on 2026-08-25 actually bought a non-zero shift (item 43's rule:
+#       a fix whose measured effect is zero did not do the thing it was authorised to do).
+#     * CyclePlanTests.Item70_DirectionA_Step0CarriesTheDrawItself_ButThreeExtraDrawsAndARoundedStringSurvive
+#       was RENAMED to Item70_DirectionB_TheThreeExtraDrawsAreGone_ButTheRoundedStringStillSurvives and
+#       its assertions inverted. A rename plus an inversion does not move a count.
+#     * Both Item62_Guard_… facts gained assertions; neither was split. No count move.
+#
+# NOT MOVED, and each was checked rather than assumed: EXPECT_WARNINGS (219, on a full solution build),
+# EXPECT_WARNING_LEDGER (all fourteen rows), EXPECT_BUILD_NODES (0), EXPECT_ABSTRACTIONS (161),
+# EXPECT_CONFORMANCE (24), EXPECT_EDGESERVICE (52), EXPECT_ENGINEAPI (1451 — CyclePlanFleetTests changed
+# assertions inside an existing fact), EXPECT_NEW_DOC_ABSOLUTES (600) and DOC_ABSOLUTES_BASELINE
+# (cfcfae42 — NOT moved), the three settle constants, the process matcher, the exclusive lock.
+# BZ-1 does NOT wire web/ into this gate; the web/ domain declaration and its control pair are UNTOUCHED.
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+EXPECT_EDGECORE=1289
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4457,6 +4477,106 @@ web_domain_declaration() {
   echo "     gate that needs only .NET today. That price is the owner's to accept or refuse: see"
   echo "     docs/owner-decisions.md item 60, which carries both banks. This line does not wait on it."
 }
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+# 🔴 ITEM 69 — THE RE-READ MILESTONE. OWNER ACCEPTED IT 2026-08-25 ("đồng ý đề nghị").
+#
+# WHY IT IS HERE AND NOT IN A DOCUMENT. Item 69's defect lives in `server/`, which belongs to a
+# DIFFERENT product (synapse-platform). It was handed off 2026-08-24; nothing in this tree can see
+# whether the other team has fixed it, and this gate builds/runs none of their code. The item is
+# therefore waiting on somebody else's calendar. The owner's own explainer says what that costs:
+# "Không có mốc thì mục này không phải 'đang chờ', nó là 'đang trôi', và một mục đang trôi không có ai
+# chịu trách nhiệm."
+#
+# 🔴 AND A MILESTONE WRITTEN WHERE NOBODY RE-READS IT IS THE ITEM 37 DEFECT ITSELF. The previous task
+# (BY-1) measured that what fails in this repository is ROUTING, not content: three refutations were
+# all correctly written down on the day they were found, and still did not reach the owner, because
+# they were written where he does not look. So the question this had to answer was not "is the
+# milestone recorded" but "WHEN THAT DATE ARRIVES AND ITEM 69 IS STILL OPEN, WHO SEES IT, AND WHERE?"
+# The answer is: whoever runs the gate, at the verdict, on every run — the one surface in this product
+# that a human reads on purpose and cannot skip.
+#
+# 🔴 WHICH BANK WAS CHOSEN, AND WHAT THE OTHER ONE COST. Both were priced:
+#   RED BANK  — a check that FAILS the gate once the milestone passes. Rejected on law (2). It would
+#               redden the gate for EVERY person on that date, including everyone whose work has
+#               nothing to do with item 69, over a defect this gate cannot see, in a repository this
+#               gate does not build, which no amount of local work can turn green. That is a pure
+#               false positive for every reader but one, and a check that cries wolf at everybody gets
+#               deleted or `--no-verify`d within a day — at which point it protects nothing.
+#   SOFT BANK — one line where the verdict appears, on BOTH branches, never red. Chosen. It makes no
+#               pass/fail claim, so it has NO false-positive rate to spend, and it is in front of the
+#               only audience that can act on it.
+# The price of the soft bank is stated rather than hidden: NOTHING FORCES ANYONE TO ACT ON IT. It can
+# be ignored forever and the gate will still say PASS. It converts "drifting" into "drifting in
+# writing, in front of a reader"; it does not convert it into "handled".
+#
+# 🔴 LAW (1) — WHAT IS RED-ABLE HERE. The declaration itself is not a check and cannot go red. What IS
+# falsifiable is the control pair below: it drives this function with THREE INJECTED dates and fails
+# if the wording does not change across the milestone. A declaration that prints the same words on
+# both sides of its own boundary is a constant pretending to be a measurement, and the control pair
+# exists to catch exactly that. It never reads the real clock, so it can neither pass by waiting nor
+# break by being run on the wrong day.
+ITEM69_MILESTONE="2026-09-08"
+ITEM69_ACCEPTED="2026-08-25"
+ITEM69_PROPOSED_BY="the assistant, in docs/owner-decisions-GIAI-THICH.md"
+
+item69_milestone_declaration() {
+  # $1, else the injected override, else the real clock. The override is what makes the control pair
+  # independent of the day it is run on.
+  local today="${1:-${ST4I_GATE_TODAY:-$(date +%F)}}"
+
+  echo "  🔴 ITEM 69 — RE-READ MILESTONE ${ITEM69_MILESTONE} (owner accepted ${ITEM69_ACCEPTED}); today ${today}."
+  if [[ "$today" < "$ITEM69_MILESTONE" ]]; then
+    echo "     NOT YET DUE. Item 69's defect is in server/ — a DIFFERENT product — handed off 2026-08-24."
+    echo "     On ${ITEM69_MILESTONE} this line changes and asks for a decision. Nothing to do today."
+  else
+    echo "     🔴 DUE — AND THIS LINE CANNOT TELL YOU WHETHER IT IS DONE. The date has arrived. If item 69"
+    echo "     is still open in docs/owner-decisions.md, it stopped being 'waiting' on ${ITEM69_MILESTONE}"
+    echo "     and became a decision that is OURS again: direction C (leave it, named and priced) or ask"
+    echo "     the other team a second time. Owner's call — see item 69 §69.7."
+  fi
+  echo "     THE DATE ITSELF IS AN UNMEASURED PROPOSAL. ${ITEM69_MILESTONE} was suggested by"
+  echo "     ${ITEM69_PROPOSED_BY} as 'two weeks', and accepted as offered. NOBODY MEASURED how long is"
+  echo "     reasonable for that team — no such measurement exists in this tree."
+  echo "     🔴 DOES-NOT-MEASURE, said where the result appears: this line reads A CALENDAR AND NOTHING"
+  echo "     ELSE. It does NOT know whether the other team has fixed intentClassifier, does not build,"
+  echo "     run, or see server/, and will print exactly the same words whether they finished a week ago"
+  echo "     or have not started. A green gate beside it is NOT evidence that item 69 is resolved."
+}
+
+# The control pair for the declaration above. Placed here — before the exclusive-run lock is taken —
+# on purpose: it measures nothing machine-wide, so it must not be able to lock a real gate run out.
+# 🔴 IT INJECTS THE DATE AND NEVER WAITS FOR ONE. Three banks either side of the boundary, so the run
+# is identical on any day of any year; a control pair that had to be run on 2026-09-08 to prove
+# anything would be untestable today, which is when it needs to be trusted.
+if [[ "${1:-}" == "--item69-milestone-self-test" ]]; then
+  echo "CONTROL PAIR for item69_milestone_declaration (owner ruling 2026-08-25, item 69)."
+  echo
+  echo "BANK A — the day before the milestone. Expect: 'NOT YET DUE'."
+  item69_milestone_declaration "2026-09-07"
+  echo
+  echo "BANK B — the milestone itself. Expect: 'DUE'."
+  item69_milestone_declaration "2026-09-08"
+  echo
+  echo "BANK C — a day well past it. Expect: 'DUE'."
+  item69_milestone_declaration "2027-01-01"
+  echo
+  _a="$(item69_milestone_declaration "2026-09-07")"
+  _b="$(item69_milestone_declaration "2026-09-08")"
+  if [[ "$_a" == "$_b" ]]; then
+    echo "FAIL: banks A and B printed the SAME text, so this declaration does not depend on the date"
+    echo "      it claims to be about — it is a constant, and a constant cannot be a milestone."
+    exit 1
+  fi
+  case "$_a" in *"NOT YET DUE"*) ;; *) echo "FAIL: bank A did not say NOT YET DUE"; exit 1 ;; esac
+  case "$_b" in *"DUE — AND THIS LINE CANNOT TELL YOU"*) ;; *) echo "FAIL: bank B did not say DUE"; exit 1 ;; esac
+  case "$_a" in *"DOES-NOT-MEASURE"*) ;; *) echo "FAIL: bank A dropped its does-not-measure line"; exit 1 ;; esac
+  case "$_b" in *"DOES-NOT-MEASURE"*) ;; *) echo "FAIL: bank B dropped its does-not-measure line"; exit 1 ;; esac
+  echo "OK: the wording changes across the milestone, and BOTH sides carry the does-not-measure line."
+  echo "    (Law (3) is checked on both banks on purpose: a disclosure that only accompanies the"
+  echo "     inactive state is not a disclosure, it is a footnote that disappears when it matters.)"
+  exit 0
+fi
 
 # The control pair for the declaration above. Placed here — before the exclusive-run lock is taken —
 # on purpose: it measures nothing machine-wide, so it must not be able to lock a real gate run out.
@@ -9278,6 +9398,11 @@ echo "[3/3] Verdict:"
 # 🔴 Law (3) applied to this script: printed on BOTH branches, because the verdict appears on both and
 # a domain declaration that only accompanies good news is an advertisement. See the block beside SUITES.
 web_domain_declaration "${SUITES[@]}"
+# 🔴 Owner ruling 2026-08-25, item 69 — printed on BOTH branches, for the same reason the line above is:
+# a milestone that only appears beside good news is an advertisement, and this one matters most on the
+# run where something else is already broken. Never fails the gate; see the function's own banner for
+# why the red bank was priced and refused, and for what this costs.
+item69_milestone_declaration
 if [[ $UPDATE -eq 1 ]]; then
   echo "Observed totals (paste into the EXPECT_* constants above, and justify each change):"
   for entry in "${SUITES[@]}"; do
