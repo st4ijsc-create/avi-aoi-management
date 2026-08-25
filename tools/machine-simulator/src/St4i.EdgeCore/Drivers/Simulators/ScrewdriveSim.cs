@@ -202,9 +202,11 @@ public sealed class ScrewdriveSim : SimulatorBase
         // 🔴 THE OTHER DIRECTION, because a truth written only the favourable way is half a truth: anyone
         // comparing a window before this change with a window after it sees a STEP UP IN OEE THAT NO
         // PRODUCTION IMPROVEMENT CAUSED. On the demo roster that step is +0.0040 points of Quality and a
-        // drop in reported quality-loss time from 11.4 s to 3.8 s per 200 000 cycles. Nothing in the
-        // product labels that discontinuity, and any trend line drawn across 2026-08-25 is comparing two
-        // different definitions of "failure".
+        // drop in reported quality-loss time from 11.4 s to 3.8 s per 200 000 cycles. Any trend line drawn
+        // across 2026-08-25 is comparing two different definitions of "failure".
+        // 🔴 NOT MEASURED: whether any surface labels that discontinuity. No search for such a label was
+        // run, so the honest statement is "none was looked for", not "none exists" — an uncounted set is
+        // not an empty one, and this file has been caught making that exact substitution before.
         if (plan.Steps.Any(s => s.Result == "NG")) reading.Verdict = Verdict.Fail;
         reading.Plan = plan;
 

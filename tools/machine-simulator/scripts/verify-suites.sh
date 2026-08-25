@@ -5747,6 +5747,30 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 # which is the measurement that says widening the sparse cone (item 74, same task) pulled no new file into
 # this instrument's domain — corpus_of walks tools/machine-simulator, and the five directories added to the
 # cone are top-level siblings holding ZERO *.cs between them.
+#
+# 🔴 BZ-1, 2026-08-25 — 600 -> 608 (+8 NET). GROSS against this task's own base 7e243792 is +10, and the
+# two-claim gap is NOT a discrepancy to wave at: identity here is (path, sentence), so appending a
+# paragraph next to an existing one re-splits its neighbour, retiring the old sentence and adding the new.
+# That is DOES-NOT-MEASURE (g) of this very instrument, operating exactly as declared.
+#
+# 🔴 AND THE INSTRUMENT CAUGHT TWO OF MY OWN CLAIMS BEFORE THIS NUMBER WAS WRITTEN, which is the only
+# reason it is 608 and not 610. Both were rewritten rather than recorded:
+#   * "nothing in the product labels that discontinuity" — an absolute over a population I NEVER SEARCHED.
+#     I measured an OEE step; I did not enumerate the product's surfaces looking for a label. Now reads
+#     "NOT MEASURED ... none was looked for, not none exists". An uncounted set is not an empty one, and
+#     writing it the other way is the exact substitution this repository keeps catching.
+#   * "multiplied by A×P and is therefore SMALLER, never larger" — wrong at the boundary. A and P clamp to
+#     [0,1], so the shift is NO LARGER, and EQUAL when A=P=1, which is the very condition the measurement
+#     is taken under. Now says so.
+# Both edits made the surrounding claim weaker and truer. Recording the number without reading the list is
+# how this ledger would become a rubber stamp; these two are the evidence that it was read.
+#
+# The eight that STAND, each a claim measured in this task: the age/exemption predicate split (twice — the
+# simulator and its guard), item 62's population being two simulators, the A=P=1 condition under which OEE
+# equals Quality, the pooled 12 -> 4 figure with its stated other direction, LEAK-01's 201 being the WHOLE
+# of its disagreement (asserted, not asserted-about), VerdictHelper being internal with no InternalsVisibleTo
+# reaching it (re-measured against AssemblyInfo.cs), and the dead cross-reference name.
+# The baseline cfcfae42 is STILL not moved.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
 # 🔴 EXPECT_NEW_DOC_ABSOLUTES: 578 -> 600 (+22 NET; +25 GROSS with 3 REWRITTEN AWAY, so 578 + 25 - 3 = 600),
 # BX-1, 2026-08-24 (owner rulings on items 62, 65, 70, 49, 63, 68). MEASURED AFTER the edits, by diffing the
@@ -5849,7 +5873,7 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #
 # The baseline cfcfae42 is STILL not moved. The corpus did not move either: 561 *.cs before and after — this
 # task added no file and deleted none.
-EXPECT_NEW_DOC_ABSOLUTES=600
+EXPECT_NEW_DOC_ABSOLUTES=608
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

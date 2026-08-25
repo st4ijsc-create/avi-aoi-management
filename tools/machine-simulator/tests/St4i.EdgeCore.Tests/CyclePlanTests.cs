@@ -211,14 +211,17 @@ public class CyclePlanTests
     /// <para>🔴 <b>THE OTHER DIRECTION, because a truth written only one way is half a truth.</b> Eight of
     /// twelve reported failures disappearing is the favourable reading. The unfavourable one is that anyone
     /// comparing a window before 2026-08-25 with a window after it sees a STEP UP IN OEE THAT NO PRODUCTION
-    /// IMPROVEMENT CAUSED, and nothing in the product labels that discontinuity.</para>
+    /// IMPROVEMENT CAUSED. 🔴 <b>Whether any surface labels that discontinuity is NOT MEASURED here</b> — this
+    /// test reads simulator output, so it cannot see the historian, the endpoint or any UI, and the honest
+    /// statement is that nothing was found rather than that nothing exists.</para>
     ///
     /// <para><b>What this does NOT measure:</b> a real OEE as a customer would see it. Availability and
     /// Performance are pinned at exactly 1 here (planned time = nominal cycle time, ideal cycle = the
     /// descriptor's own), which is the shipped DEFAULT <c>OeeMachineSettings</c> but not every install's.
-    /// Under any other settings the same Quality shift is multiplied by A×P and is therefore SMALLER, never
-    /// larger. It also does not measure the historian, the endpoint, or any window a user actually
-    /// selects.</para></summary>
+    /// Under any other settings the same Quality shift is multiplied by A×P, both of which are clamped to
+    /// [0,1], so the resulting OEE shift is NO LARGER than the figure below — equal to it exactly when
+    /// A=P=1, and smaller otherwise. It also does not measure the historian, the endpoint, or any window a
+    /// user actually selects.</para></summary>
     [Fact]
     public void Item70_DirectionB_RemovingTheExtraDrawsMovesTheReportedOeeQualityNumber()
     {
