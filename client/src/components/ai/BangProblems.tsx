@@ -15,13 +15,16 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * VÌ SAO CÓ HAI HÌNH DẠNG MỤC — và vì sao `tep === null` CỐ Ý không bấm được
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * Parser (v1) chỉ suy ra đường tệp CHẮC CHẮN cho tsc/vitest (đường tương đối gốc repo). Với stack
- * `dotnet`/`node` in đường TUYỆT ĐỐI của máy build, nó cố ý trả `tep:null` — ghép đường tuyệt đối vào
- * cây workspace là rủi ro **mở nhầm tệp**. Panel tôn trọng đúng lằn ranh đó:
+ * Parser **v2** (`shared/aiCodingLoiViTri.ts`, doc "để dành v2" NAY ĐÃ LÀM — 797d30b0) suy đường cho
+ * tsc/vitest (tương đối gốc repo) VÀ cho lỗi biên dịch C# (`error CS####`) + stack `dotnet`/`node` in
+ * đường TUYỆT ĐỐI máy build: nó GIẢI đường tuyệt đối về đường tương đối CÓ THẬT bằng khớp HẬU TỐ căn-đoạn
+ * với cây workspace (an toàn — chỉ nhận đường khớp một tệp CÓ THẬT; hoà/không-khớp ⇒ giữ `tep:null`, không
+ * mở nhầm tệp). Panel tôn trọng đúng lằn ranh đó:
  *   • `tep !== null` ⇒ một `<button data-loi-nut>` bấm được — bấm gọi `onMoTep(tep, dong)`.
  *   • `tep === null` ⇒ một `<div data-loi-tin>` KHÔNG bấm được — chỉ hiện `thongDiep` + câu
- *     `unresolvedLocation` ("… — xem Terminal."). Người đọc vẫn thấy "có lỗi chỗ kia" nhưng panel
- *     KHÔNG dựng một liên kết dối. (Nâng đường-tuyệt-đối→tương-đối để dành v2.)
+ *     `unresolvedLocation` ("… — xem Terminal."). Người đọc vẫn thấy "có lỗi chỗ kia" nhưng panel KHÔNG
+ *     dựng một liên kết dối. (v2 nay giải được nhiều đường .NET/node THẬT — dòng còn `tep:null` là đường
+ *     KHÔNG khớp cây workspace, giữ an toàn.)
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * VÌ SAO NHÃN NHẢY LÀ MỘT HÀM THUẦN (`nhanNhayTep`) TÁCH RIÊNG
