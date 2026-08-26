@@ -49,3 +49,20 @@ export function rollupVerdict(
 
   return { result, ntf: ntfTho, ntfSource };
 }
+
+/**
+ * Cầu nối giữa HAI bảng chữ cái khác nhau:
+ *   · Hợp đồng máy v2.0 — `result` chỉ `OK|NG`, NTF là cờ BOOL RIÊNG.
+ *   · Cột lưu trữ `product_inspections.overallResult` — BA giá trị `OK|NG|NTF`,
+ *     và `shared/kpiYield.ts` tính final yield bằng `["OK","NTF"]` trên chính cột đó.
+ *
+ * Thiếu hàm này thì 6,55% bo (2.760/42.147 đo trên DB test ngày 2026-08-26) chuyển
+ * từ PASS sang NG lặng lẽ vào đúng ngày cắt sang v2.0 — không lưới nào đỏ, vì enum
+ * DB vẫn NHẬN "NTF", chỉ là không ai ghi vào nữa.
+ *
+ * CỐ Ý TÁCH KHỎI `rollupVerdict`: cuộn cây và ánh xạ bảng chữ cái là hai việc khác nhau.
+ */
+export function verdictLuuTru(x: { result: ResultVerdict; ntf: boolean }): ResultVerdict {
+  if (x.result === "NG") return "NG"; // NG thắng NTF — luật cuộn đã chốt với chủ dự án
+  return x.ntf ? "NTF" : "OK";
+}

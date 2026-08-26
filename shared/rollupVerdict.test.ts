@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rollupVerdict, type NutKetQua } from "./rollupVerdict";
+import { rollupVerdict, verdictLuuTru, type NutKetQua } from "./rollupVerdict";
 
 const n = (result: "OK" | "NG" | "NTF", ntf = false, ntfSource: "machine" | "human" | "both" | null = null): NutKetQua =>
   ({ result, ntf, ntfSource });
@@ -46,5 +46,38 @@ describe("rollupVerdict — NG > NTF > OK", () => {
 
   it("MẢNG RỖNG ⇒ OK / false / null — KHÔNG ném lỗi", () => {
     expect(rollupVerdict([])).toEqual({ result: "OK", ntf: false, ntfSource: null });
+  });
+});
+
+describe("verdictLuuTru — cầu nối cờ ntf về bảng chữ cái BA giá trị của cột lưu trữ", () => {
+  it("NG thắng NTF — đúng luật cuộn của chủ dự án", () => {
+    expect(verdictLuuTru({ result: "NG", ntf: true })).toBe("NG");
+    expect(verdictLuuTru({ result: "NG", ntf: false })).toBe("NG");
+  });
+
+  it("không NG mà có cờ ntf ⇒ NTF (đây chính là 6,55% bo sẽ biến mất nếu thiếu hàm này)", () => {
+    expect(verdictLuuTru({ result: "OK", ntf: true })).toBe("NTF");
+  });
+
+  it("không NG, không ntf ⇒ OK", () => {
+    expect(verdictLuuTru({ result: "OK", ntf: false })).toBe("OK");
+  });
+
+  it("nối THẲNG từ rollupVerdict: cây toàn OK nhưng một component gắn cờ ntf ⇒ lưu NTF", () => {
+    const cuon = rollupVerdict([
+      { result: "OK", ntf: false },
+      { result: "OK", ntf: true, ntfSource: "machine" },
+    ]);
+    expect(cuon.result).toBe("OK");
+    expect(cuon.ntf).toBe(true);
+    expect(verdictLuuTru(cuon)).toBe("NTF");
+  });
+
+  it("giá trị trả về NẰM TRONG bảng chữ cái mà công thức final yield biết", () => {
+    const ra = new Set<string>();
+    for (const result of ["OK", "NG"] as const)
+      for (const ntf of [true, false]) ra.add(verdictLuuTru({ result, ntf }));
+    expect([...ra].sort()).toEqual(["NG", "NTF", "OK"]);
+    expect(ra.has("NTF")).toBe(true);
   });
 });
