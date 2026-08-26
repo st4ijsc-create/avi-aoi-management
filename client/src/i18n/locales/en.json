@@ -19394,6 +19394,14 @@
       "tabsLabel": "Open files",
       "closeTab": "Close {{ten}}"
     },
+    "find": {
+      "placeholder": "Find in file…",
+      "count": "{{i}}/{{n}}",
+      "none": "0/0",
+      "prev": "Previous match (Shift+Enter)",
+      "next": "Next match (Enter)",
+      "close": "Close (Esc)"
+    },
     "cmd": {
       "noWrite": "This command only RUNS — it does NOT write source files.",
       "confirmRunTitle": "Confirm RUN command"

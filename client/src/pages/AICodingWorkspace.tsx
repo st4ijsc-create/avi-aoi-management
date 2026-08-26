@@ -102,6 +102,7 @@ import { lamSachMocChoHienThi } from "@shared/aiCodingMoc";
 // ★★★ 2026-08-23 · UX (B1) — gợi ý mở đầu THEO DỰ ÁN (một bảng, khoá theo id; id lạ ⇒ ẩn gợi ý).
 import { goiYTheoDuAn, MAC_DINH_KHAM_PHA } from "@/lib/goiYDuAn";
 import { dongTab, moTab } from "@/lib/aiCodingTabs";
+import { timDongKhop, chiSoKhopKeTiep } from "@/lib/aiCodingTimTep";
 // ★★★ 2026-08-23 · UX (D2) — lọc nhiễu cây tệp ở TẦNG HIỂN THỊ (ảnh/log/nhị phân gom sau một nút).
 import { chiaTepHienThi } from "@/lib/cayTepHienThi";
 // ★ UX (B2) — tooltip cho ba huy hiệu quyền; provider đã bọc cả App (App.tsx).
@@ -141,7 +142,7 @@ import { GoiYTep, locTepTheoQuery } from "@/components/ai/GoiYTep";
 import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
-  Repeat, CheckCircle2, OctagonX, Terminal, Search, X,
+  Repeat, CheckCircle2, OctagonX, Terminal, Search, X, ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -552,6 +553,12 @@ export default function AICodingWorkspace() {
   // ★★★ 2026-08-26 · CURSOR-PARITY — TAB ĐA-TỆP: danh sách tệp ĐANG MỞ (đi kèm `selectedPath` = tab HOẠT
   //   ĐỘNG). Thuần additive — đường đọc tệp vẫn theo `selectedPath`; logic đóng-tab thuần ở `@/lib/aiCodingTabs`.
   const [openTabs, setOpenTabs] = useState<string[]>([]);
+  // ★★★ 2026-08-26 · CURSOR-PARITY — TÌM TRONG TỆP (Ctrl+F): thanh tìm ở Trình xem. Điều hướng đặt
+  //   `dongMucTieu` = dòng khớp ⇒ TÁI DÙNG cuộn+tô-sáng của nhảy-tới-dòng (xem `@/lib/aiCodingTimTep`).
+  const [timMo, setTimMo] = useState(false);
+  const [tuKhoaTim, setTuKhoaTim] = useState("");
+  const [chiSoTim, setChiSoTim] = useState(0);
+  const oTimRef = useRef<HTMLInputElement>(null);
   /**
    * ★★★ 2026-08-24 — DÒNG ĐÍCH để trình xem CUỘN tới khi mở tệp từ panel Problems. `null` ⇔ mở
    * bình thường (không nhảy). Effect cuộn (khoá `selectedPath`/`dongMucTieu`/`fileReply`) nay tìm
@@ -565,6 +572,32 @@ export default function AICodingWorkspace() {
     { enabled: !!selectedPath && !!projectId, staleTime: 5_000 },
   );
   const fileReply = fileQ.data;
+
+  // ★★★ CURSOR-PARITY — TÌM TRONG TỆP: dòng khớp từ khoá (rỗng khi không mở tìm / không nội dung).
+  const ketQuaTim = useMemo(
+    () => (timMo && tuKhoaTim ? timDongKhop(fileReply?.data?.content ?? "", tuKhoaTim) : []),
+    [timMo, tuKhoaTim, fileReply?.data?.content],
+  );
+  /** Điều hướng ▲▼ / Enter-Shift+Enter: đặt `dongMucTieu` = dòng khớp ⇒ tái dùng cuộn+tô-sáng. */
+  const nhayKhopTim = useCallback((tien: boolean) => {
+    if (ketQuaTim.length === 0) return;
+    const moi = chiSoKhopKeTiep(chiSoTim, ketQuaTim.length, tien);
+    setChiSoTim(moi);
+    setDongMucTieu(ketQuaTim[moi]);
+  }, [ketQuaTim, chiSoTim]);
+  const dongThanhTim = useCallback(() => {
+    setTimMo(false);
+    setTuKhoaTim("");
+    setDongMucTieu(null); // bỏ tô-sáng khớp cuối khi đóng thanh tìm
+  }, []);
+  // Đổi TỪ KHOÁ (hoặc mở tìm / đổi nội dung) ⇒ nhảy về khớp ĐẦU; điều hướng ▲▼ KHÔNG kích lại (ketQuaTim
+  //   ổn định khi chỉ `chiSoTim` đổi). Đóng tìm / hết khớp ⇒ không đụng `dongMucTieu` ở đây.
+  useEffect(() => {
+    if (timMo && ketQuaTim.length > 0) { setChiSoTim(0); setDongMucTieu(ketQuaTim[0]); }
+  }, [ketQuaTim, timMo]);
+  // Mở thanh tìm ⇒ LẤY NÉT + chọn văn bản (gõ đè ngay như VSCode). Effect chạy SAU khi thanh đã mount,
+  //   nên đáng tin hơn `requestAnimationFrame` trong chính handler phím (ref có thể chưa gắn lúc ấy).
+  useEffect(() => { if (timMo) oTimRef.current?.select(); }, [timMo]);
 
   // ── Diff đang chờ duyệt (từ chat) + buffer xem trước ở khung giữa ──
   const [pendingDiff, setPendingDiff] = useState<{ action: KbPendingAction; args: DiffArgs } | null>(null);
@@ -808,12 +841,20 @@ export default function AICodingWorkspace() {
       e.preventDefault();
       if (hd === "terminal") setDuoiChat((v) => (v === "terminal" ? "dong" : "terminal"));
       else if (hd === "mo_nhanh") { if (hep) setKhungHep("tep"); requestAnimationFrame(() => oLocCayRef.current?.focus()); }
+      else if (hd === "tim_trong_tep") {
+        // Ctrl+F — CHỈ khi đang xem một TỆP (không phải diff chờ duyệt): mở thanh tìm + lấy nét.
+        if (selectedPath && !pendingDiff && !pendingBatch) {
+          if (hep) setKhungHep("xem");
+          setTimMo(true);
+          oTimRef.current?.select(); // nếu thanh ĐANG mở: chọn lại ngay; vừa mở: effect `[timMo]` lấy nét
+        }
+      }
       else if (hd === "gui") void handleSendRef.current?.();
       else if (hd === "dung_stream") stopKbStream();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [hep, isStreaming, stopKbStream]);
+  }, [hep, isStreaming, stopKbStream, selectedPath, pendingDiff, pendingBatch]);
 
   // ★★★ 2026-08-25 · ĐỢT 2 (C) — chèn ĐƯỜNG DẪN SẠCH (KHÔNG kèm `@`) vào ô nhập; DÙNG CHUNG cho chuột
   //   (`onChon`) lẫn Enter/Tab. Thay đoạn `@query` (từ vị trí `@` tới con trỏ) bằng chính đường dẫn.
@@ -1844,6 +1885,34 @@ export default function AICodingWorkspace() {
                 </>
               )}
             </div>
+            {/* ★★★ 2026-08-26 · CURSOR-PARITY — THANH TÌM TRONG TỆP (Ctrl+F). Enter/▼ tới, Shift+Enter/▲
+                lui (vòng lại), Esc đóng. Điều hướng đặt `dongMucTieu` ⇒ cuộn+tô-sáng dòng khớp (tái dùng
+                nhảy-tới-dòng). CHỈ hiện khi đang xem TỆP (không diff chờ duyệt). */}
+            {timMo && !coDiffChoDuyet && selectedPath && (
+              <div className="flex shrink-0 items-center gap-1 border-b bg-muted/30 px-2 py-1" data-thanh-tim>
+                <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <input
+                  ref={oTimRef}
+                  data-o-tim
+                  type="text"
+                  value={tuKhoaTim}
+                  onChange={(e) => setTuKhoaTim(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); nhayKhopTim(!e.shiftKey); }
+                    else if (e.key === "Escape") { e.preventDefault(); dongThanhTim(); }
+                  }}
+                  placeholder={t("repoWs.find.placeholder", "Tìm trong tệp…")}
+                  aria-label={t("repoWs.find.placeholder", "Tìm trong tệp…")}
+                  className="h-6 min-w-0 flex-1 rounded border bg-background px-1.5 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+                <span data-tim-dem className="shrink-0 tabular-nums text-[11px] text-muted-foreground">
+                  {tuKhoaTim ? (ketQuaTim.length > 0 ? t("repoWs.find.count", "{{i}}/{{n}}", { i: chiSoTim + 1, n: ketQuaTim.length }) : t("repoWs.find.none", "0/0")) : ""}
+                </span>
+                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" disabled={ketQuaTim.length === 0} onClick={() => nhayKhopTim(false)} title={t("repoWs.find.prev", "Khớp trước (Shift+Enter)")} aria-label={t("repoWs.find.prev", "Khớp trước (Shift+Enter)")}><ChevronUp className="h-3.5 w-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" disabled={ketQuaTim.length === 0} onClick={() => nhayKhopTim(true)} title={t("repoWs.find.next", "Khớp sau (Enter)")} aria-label={t("repoWs.find.next", "Khớp sau (Enter)")}><ChevronDown className="h-3.5 w-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={dongThanhTim} title={t("repoWs.find.close", "Đóng (Esc)")} aria-label={t("repoWs.find.close", "Đóng (Esc)")}><X className="h-3.5 w-3.5" /></Button>
+              </div>
+            )}
             <ScrollArea className="min-h-0 flex-1">
               <div className="p-3">
                 {coDiffChoDuyet ? (

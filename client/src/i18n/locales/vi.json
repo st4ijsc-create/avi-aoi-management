@@ -19374,6 +19374,14 @@
       "tabsLabel": "Tệp đang mở",
       "closeTab": "Đóng {{ten}}"
     },
+    "find": {
+      "placeholder": "Tìm trong tệp…",
+      "count": "{{i}}/{{n}}",
+      "none": "0/0",
+      "prev": "Khớp trước (Shift+Enter)",
+      "next": "Khớp sau (Enter)",
+      "close": "Đóng (Esc)"
+    },
     "cmd": {
       "noWrite": "Lệnh này chỉ CHẠY, KHÔNG ghi tệp mã nguồn.",
       "confirmRunTitle": "Xác nhận CHẠY lệnh"

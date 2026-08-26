@@ -111,6 +111,12 @@ describe("§phím-tắt — PHÍM TẮT TOÀN KHUNG (Đợt 3 UX)", () => {
     expect(P({ key: "p", trongONhap: false, dangStream: false })).toBe("bo_qua");
   });
 
+  it("★★★ Ctrl/Cmd + F ⇒ tìm-trong-tệp (hoa/thường, kể cả đang gõ); thiếu modifier ⇒ để yên", () => {
+    expect(P({ key: "f", ctrlKey: true, trongONhap: false, dangStream: false })).toBe("tim_trong_tep");
+    expect(P({ key: "F", metaKey: true, trongONhap: true, dangStream: false })).toBe("tim_trong_tep");
+    expect(P({ key: "f", trongONhap: false, dangStream: false })).toBe("bo_qua");
+  });
+
   /** ★★★ Gửi ĐÔI là cái bẫy: trong ô chat, `onKeyDown` của nó (qua `phanQuyetPhimNhap`) đã gửi rồi. */
   it("★★★ Ctrl/Cmd + Enter ⇒ GỬI CHỈ khi NGOÀI ô nhập; Enter trần ngoài ô nhập ⇒ để yên", () => {
     expect(P({ key: "Enter", ctrlKey: true, trongONhap: false, dangStream: false })).toBe("gui");
@@ -126,7 +132,7 @@ describe("§phím-tắt — PHÍM TẮT TOÀN KHUNG (Đợt 3 UX)", () => {
   });
 
   it("★ phím thường / không modifier ⇒ BỎ QUA (không nuốt phím gõ)", () => {
-    for (const k of ["a", "x", "1", "ArrowDown", " ", "Enter", "p", "`"]) {
+    for (const k of ["a", "x", "1", "ArrowDown", " ", "Enter", "p", "f", "`"]) {
       expect(P({ key: k, trongONhap: true, dangStream: false }), k).toBe("bo_qua");
     }
   });
