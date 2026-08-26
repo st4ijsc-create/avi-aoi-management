@@ -19390,7 +19390,9 @@
       "redacted": "Secrets redacted",
       "truncated": "Truncated",
       "diffFor": "Diff preview",
-      "diffTip": "A diff is the list of LINES that will change: old vs. new. You review it before approving the write."
+      "diffTip": "A diff is the list of LINES that will change: old vs. new. You review it before approving the write.",
+      "tabsLabel": "Open files",
+      "closeTab": "Close {{ten}}"
     },
     "cmd": {
       "noWrite": "This command only RUNS — it does NOT write source files.",

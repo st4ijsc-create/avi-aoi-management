@@ -19370,7 +19370,9 @@
       "redacted": "Đã che bí mật",
       "truncated": "Đã cắt bớt",
       "diffFor": "Xem trước diff",
-      "diffTip": "Diff là danh sách những DÒNG sẽ đổi: bản cũ so với bản mới. Bạn xem rồi mới bấm duyệt ghi."
+      "diffTip": "Diff là danh sách những DÒNG sẽ đổi: bản cũ so với bản mới. Bạn xem rồi mới bấm duyệt ghi.",
+      "tabsLabel": "Tệp đang mở",
+      "closeTab": "Đóng {{ten}}"
     },
     "cmd": {
       "noWrite": "Lệnh này chỉ CHẠY, KHÔNG ghi tệp mã nguồn.",

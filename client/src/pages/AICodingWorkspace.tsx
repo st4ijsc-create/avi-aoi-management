@@ -101,6 +101,7 @@ import {
 import { lamSachMocChoHienThi } from "@shared/aiCodingMoc";
 // ★★★ 2026-08-23 · UX (B1) — gợi ý mở đầu THEO DỰ ÁN (một bảng, khoá theo id; id lạ ⇒ ẩn gợi ý).
 import { goiYTheoDuAn, MAC_DINH_KHAM_PHA } from "@/lib/goiYDuAn";
+import { dongTab, moTab } from "@/lib/aiCodingTabs";
 // ★★★ 2026-08-23 · UX (D2) — lọc nhiễu cây tệp ở TẦNG HIỂN THỊ (ảnh/log/nhị phân gom sau một nút).
 import { chiaTepHienThi } from "@/lib/cayTepHienThi";
 // ★ UX (B2) — tooltip cho ba huy hiệu quyền; provider đã bọc cả App (App.tsx).
@@ -140,7 +141,7 @@ import { GoiYTep, locTepTheoQuery } from "@/components/ai/GoiYTep";
 import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
-  Repeat, CheckCircle2, OctagonX, Terminal, Search,
+  Repeat, CheckCircle2, OctagonX, Terminal, Search, X,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -548,6 +549,9 @@ export default function AICodingWorkspace() {
 
   // ── Trình xem tệp ──
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  // ★★★ 2026-08-26 · CURSOR-PARITY — TAB ĐA-TỆP: danh sách tệp ĐANG MỞ (đi kèm `selectedPath` = tab HOẠT
+  //   ĐỘNG). Thuần additive — đường đọc tệp vẫn theo `selectedPath`; logic đóng-tab thuần ở `@/lib/aiCodingTabs`.
+  const [openTabs, setOpenTabs] = useState<string[]>([]);
   /**
    * ★★★ 2026-08-24 — DÒNG ĐÍCH để trình xem CUỘN tới khi mở tệp từ panel Problems. `null` ⇔ mở
    * bình thường (không nhảy). Effect cuộn (khoá `selectedPath`/`dongMucTieu`/`fileReply`) nay tìm
@@ -889,9 +893,20 @@ export default function AICodingWorkspace() {
 
   const openFile = useCallback((path: string) => {
     setSelectedPath(path);
+    setOpenTabs((t) => moTab(t, path)); // ★ CURSOR-PARITY — mở/kích hoạt TAB (chống trùng, giữ thứ tự)
     setDongMucTieu(null); // mở qua CÂY = xem bình thường, không nhảy về dòng của tệp Problems trước đó
     setPendingDiff((cur) => cur); // giữ diff nếu đang mở; người dùng có thể xem tệp khác song song
   }, []);
+
+  // ★★★ CURSOR-PARITY — ĐÓNG một tab; nếu là tab ĐANG hoạt động thì `dongTab` chọn tab kế (thuần, có lưới).
+  const dongTabTep = useCallback((path: string) => {
+    const kq = dongTab(openTabs, path, selectedPath);
+    setOpenTabs(kq.tabs);
+    if (kq.active !== selectedPath) {
+      setSelectedPath(kq.active);
+      if (kq.active === null) setDongMucTieu(null); // đóng tab cuối ⇒ không còn tệp ⇒ bỏ dòng-đích
+    }
+  }, [openTabs, selectedPath]);
 
   /**
    * ★★★ 2026-08-24 — mở tệp TỪ PANEL PROBLEMS: đặt cả tệp LẪN dòng đích, và (màn hẹp) nhảy sang
@@ -900,6 +915,7 @@ export default function AICodingWorkspace() {
    */
   const moTepTuVanDe = useCallback((tep: string, dong: number | null) => {
     setSelectedPath(tep);
+    setOpenTabs((t) => moTab(t, tep)); // ★ CURSOR-PARITY — mở tệp từ Problems cũng thành TAB
     setDongMucTieu(dong);
     if (hep) setKhungHep("xem");
   }, [hep]);
@@ -1146,6 +1162,7 @@ export default function AICodingWorkspace() {
     if (!id || id === projectId) return;
     setProjectId(id);
     setSelectedPath(null);
+    setOpenTabs([]); // đổi dự án ⇒ đóng hết TAB (tệp dự án cũ vô nghĩa với cây mới)
     setLocCay(""); // đổi dự án ⇒ ô lọc-nhanh về rỗng (cây mới, kết quả cũ vô nghĩa)
     setPendingDiff(null);
     setPendingBatch(null);
@@ -1775,15 +1792,55 @@ export default function AICodingWorkspace() {
                     </TooltipContent>
                   </Tooltip>
                 </>
-              ) : (
+              ) : openTabs.length > 0 ? (
+                /* ★★★ 2026-08-26 · CURSOR-PARITY — THANH TAB đa-tệp: mỗi tệp đang mở một tab (basename +
+                   nút đóng X), tab HOẠT ĐỘNG (`=== selectedPath`) tô đậm + gạch chân. Bấm tên = chuyển
+                   tab (openFile no-op moTab vì đã có); bấm X = `dongTabTep` (thuần `dongTab`, có lưới).
+                   `overflow-x-auto` cuộn ngang khi nhiều tab; nút Làm mới ngoài vùng cuộn (luôn thấy). */
                 <>
-                  <Eye className="h-4 w-4 text-muted-foreground" />
-                  <span className="truncate text-xs font-medium">{selectedPath ?? t("repoWs.viewer.title", "Trình xem")}</span>
+                  <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label={t("repoWs.viewer.tabsLabel", "Tệp đang mở")}>
+                    {openTabs.map((tp) => {
+                      const cat = tp.lastIndexOf("/");
+                      const ten = cat >= 0 ? tp.slice(cat + 1) : tp;
+                      const active = tp === selectedPath;
+                      return (
+                        <span
+                          key={tp}
+                          role="tab"
+                          aria-selected={active}
+                          data-tab-tep={tp}
+                          className={cn(
+                            "group flex shrink-0 items-center gap-0.5 rounded-t border-b-2 py-1 pl-2 pr-1 text-xs",
+                            active ? "border-primary bg-muted font-medium text-foreground" : "border-transparent text-muted-foreground hover:bg-muted/50",
+                          )}
+                        >
+                          <button type="button" onClick={() => openFile(tp)} className="min-w-0 max-w-[130px] truncate" title={tp}>{ten}</button>
+                          <button
+                            type="button"
+                            data-dong-tab={tp}
+                            onClick={() => dongTabTep(tp)}
+                            aria-label={t("repoWs.viewer.closeTab", "Đóng {{ten}}", { ten })}
+                            className={cn(
+                              "shrink-0 rounded p-0.5 hover:bg-foreground/10",
+                              active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                            )}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
                   {selectedPath && (
-                    <Button variant="ghost" size="icon" className="ml-auto h-6 w-6" onClick={() => fileQ.refetch()} title={t("repoWs.tree.refresh", "Làm mới")}>
+                    <Button variant="ghost" size="icon" className="ml-1 h-6 w-6 shrink-0" onClick={() => fileQ.refetch()} title={t("repoWs.tree.refresh", "Làm mới")}>
                       <RefreshCw className="h-3.5 w-3.5" />
                     </Button>
                   )}
+                </>
+              ) : (
+                <>
+                  <Eye className="h-4 w-4 text-muted-foreground" />
+                  <span className="truncate text-xs font-medium">{t("repoWs.viewer.title", "Trình xem")}</span>
                 </>
               )}
             </div>

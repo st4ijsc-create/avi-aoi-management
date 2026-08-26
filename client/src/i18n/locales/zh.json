@@ -19398,7 +19398,9 @@
       "redacted": "已脱敏",
       "truncated": "已截断",
       "diffFor": "Diff 预览",
-      "diffTip": "Diff（差异）是将要改动的行清单：旧版对比新版。您先查看再批准写入。"
+      "diffTip": "Diff（差异）是将要改动的行清单：旧版对比新版。您先查看再批准写入。",
+      "tabsLabel": "已打开的文件",
+      "closeTab": "关闭 {{ten}}"
     },
     "cmd": {
       "noWrite": "该命令仅运行，不会写入源代码文件。",
