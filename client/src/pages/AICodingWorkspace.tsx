@@ -125,7 +125,6 @@ import { bocTheDocTep, dinhDangLucNhan, viTriCauTraLoiCungLuot } from "@/lib/soK
 import { RibbonTacVu } from "@/components/ai/RibbonTacVu";
 import { BangTerminal, type LuotLenh } from "@/components/ai/BangTerminal";
 import { BangProblems } from "@/components/ai/BangProblems";
-import { HunkDiffView } from "@/components/diff/HunkDiffView";
 import { TheDuyetDiffLo } from "@/components/ai/TheDuyetDiffLo";
 // ★★★ 2026-08-25 · UX (Đợt 1) — TRÌNH XEM MÃ: tô cú pháp + SỐ DÒNG THẬT + cuộn ngang, thay `<pre>`
 // trơn ở khung Trình xem. Component thuần hiển thị (lưới render riêng `trinhXemMa.unit.test.ts`).
@@ -1476,6 +1475,25 @@ export default function AICodingWorkspace() {
     pending.preview.changes.some((c) => c.field === "ghiDia" && c.newValue === "chi_hoi_kiem_tra");
 
   /**
+   * ★★★ 2026-08-26 · NHÓM HOÃN (diff khung-giữa, kiểu CURSOR) — thẻ duyệt DIFF hiện Ở KHUNG GIỮA (trình
+   * biên tập), KHÔNG ở cột chat: đúng mô hình Cursor/VSCode — đề xuất sửa hiện NGAY trong editor, bấm
+   * Duyệt/Hủy TẠI ĐÓ. `TheDuyetDiff`/`TheDuyetDiffLo` (+ census của chúng) KHÔNG sửa MỘT DÒNG — chỉ DỜI
+   * KHUNG render. Hai cờ này là MỘT nguồn quyết định: khung giữa vẽ THẺ, cột chat vẽ CON TRỎ. Thẻ
+   * `run_command` (không phải diff) VẪN ở chat (nhỏ, thuộc mạch hội thoại). Điều kiện khớp đúng như cũ
+   * (tool + actionId) để không lệch khi một pending mới đè lên. */
+  const theDuyetDiffDon =
+    pending?.tool === "apply_diff" && pendingDiff && pendingDiff.action.actionId === pending.actionId ? pendingDiff : null;
+  const theDuyetDiffLo =
+    pending?.tool === "apply_diff_batch" && pendingBatch && pendingBatch.action.actionId === pending.actionId ? pendingBatch : null;
+  const coDiffChoDuyet = !!(theDuyetDiffDon || theDuyetDiffLo);
+
+  // Màn HẸP một-khung: khi có diff chờ duyệt, nhảy sang khung XEM (nơi thẻ duyệt hiện) — như Cursor tự
+  //   lấy nét editor. Không có dòng này, thẻ duyệt sống ở khung người dùng KHÔNG đang xem ⇒ họ tưởng treo.
+  useEffect(() => {
+    if (coDiffChoDuyet && hep) setKhungHep("xem");
+  }, [coDiffChoDuyet, hep]);
+
+  /**
    * ★★★ 2026-08-25 · ĐỢT 2 (B) — DẤU VẾT đa-tool (gọn): các thẻ TRƯỚC hiện `title`, thẻ CUỐI đậm.
    * Chỉ hiện khi có TỪ HAI thẻ (một thẻ thì bản thân `AIToolResultCard` đã đủ). Dùng chung cho khối
    * đang-stream lẫn khối đã-xong, đặt NGAY TRÊN thẻ chi tiết cuối. Thuần hiển thị, 0 tRPC.
@@ -1740,15 +1758,16 @@ export default function AICodingWorkspace() {
           {/* ── 2. TRÌNH XEM + DIFF ── */}
           <div className={cn("flex min-h-0 flex-col overflow-hidden border-r", hep && khungHep !== "xem" && "hidden")}>
             <div className="flex items-center gap-2 border-b px-3 py-1.5">
-              {pendingDiff ? (
+              {coDiffChoDuyet ? (
                 <>
                   <FileDiff className="h-4 w-4 text-amber-500" />
                   {/* ★ UX (C4) — "diff" là thuật ngữ; tooltip (cùng mẫu ba huy hiệu quyền) chú giải
-                      cho kỹ sư mới thay vì bắt đoán. */}
+                      cho kỹ sư mới thay vì bắt đoán. Đơn: nêu đường tệp; LÔ: thẻ tự liệt kê tệp. */}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="cursor-help truncate text-xs font-medium">
-                        {t("repoWs.viewer.diffFor", "Xem trước diff")}: <code className="font-mono">{pendingDiff.args.path}</code>
+                        {t("repoWs.viewer.diffFor", "Xem trước diff")}
+                        {theDuyetDiffDon ? <>: <code className="font-mono">{theDuyetDiffDon.args.path}</code></> : null}
                       </span>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-[280px] text-xs">
@@ -1770,18 +1789,36 @@ export default function AICodingWorkspace() {
             </div>
             <ScrollArea className="min-h-0 flex-1">
               <div className="p-3">
-                {pendingDiff ? (
-                  /* ★★★ 2026-08-25 · NHÓM HOÃN (diff khung-giữa) — KHÔI PHỤC ĐÚNG Ý ĐỒ GỐC (docblock đầu
-                     tệp: "hiện <HunkDiffView/> dựng từ args.original/args.modified"): khung GIỮA — RỘNG —
-                     nay hiện DIFF TÔ MÀU thay `<pre>` trơn. `base/suggested` = `args.original/args.modified`
-                     (đề xuất ĐẦY ĐỦ của model) — CHÍNH cặp mà thẻ duyệt dùng, tin cậy tuyệt đối.
-                     ⚠ KHÔNG dùng `diffPreview` ở đây: nghiệm thu live 2026-08-25 bắt được nó = `original`
-                       lúc render (thẻ chưa kịp đẩy phép chiếu) ⇒ khung giữa khai "không có khối" trong khi
-                       thẻ có diff thật. `args.modified` không kẹt nhịp ấy.
-                     `readOnly` ⇒ 0 đường ghi (checkbox/nhận-khối/băng-stale đều ẩn): CHỌN khối vẫn ở THẺ
-                     DUYỆT (cạnh nút Duyệt — nơi luật an-toàn canh), khung giữa CHỈ để ĐỌC to. Cửa duyệt
-                     (`TheDuyetDiff`) + census của nó KHÔNG đụng ⇒ an toàn tuyệt đối. */
-                  <HunkDiffView base={pendingDiff.args.original} suggested={pendingDiff.args.modified} readOnly />
+                {coDiffChoDuyet ? (
+                  /* ★★★ 2026-08-26 · NHÓM HOÃN (diff khung-giữa, kiểu CURSOR) — THẺ DUYỆT DIFF ĐẦY ĐỦ hiện
+                     Ở ĐÂY (trình biên tập), KHÔNG ở cột chat: đề xuất sửa hiện NGAY trong editor, đọc DIFF
+                     TO + chọn khối + bấm Duyệt/Hủy TẠI ĐÓ — đúng mô hình Cursor. `TheDuyetDiff`/`TheDuyetDiffLo`
+                     y NGUYÊN (census của chúng không đụng), chỉ DỜI khung. `aria-live="assertive"` giữ ở ĐÂY
+                     để trình đọc màn hình vẫn báo thẻ khi hiện (cột chat nay chỉ còn con trỏ). Cột chat vẽ
+                     con trỏ; thẻ `run_command` (không phải diff) VẪN ở chat. */
+                  <div aria-live="assertive" role="status" data-diff-khung-giua>
+                    {theDuyetDiffDon ? (
+                      <TheDuyetDiff
+                        action={pending!}
+                        args={theDuyetDiffDon.args}
+                        state={actionState}
+                        busy={busyConfirm}
+                        preview={diffPreview}
+                        onPreview={setDiffPreview}
+                        onConfirm={handleConfirm}
+                        onCancel={handleCancel}
+                      />
+                    ) : theDuyetDiffLo ? (
+                      <TheDuyetDiffLo
+                        action={pending!}
+                        files={theDuyetDiffLo.files}
+                        state={actionState}
+                        busy={busyConfirm}
+                        onConfirm={handleConfirm}
+                        onCancel={handleCancel}
+                      />
+                    ) : null}
+                  </div>
                 ) : !selectedPath ? (
                   <p className="p-6 text-center text-sm text-muted-foreground">{t("repoWs.viewer.empty", "Chọn một tệp ở cây bên trái để xem nội dung.")}</p>
                 ) : fileQ.isLoading ? (
@@ -1990,31 +2027,28 @@ export default function AICodingWorkspace() {
                     lượt chèn thẻ chắc chắn được đọc. */}
                 <div aria-live="assertive" role="status">
                 {/* Thẻ xác nhận write-tool */}
-                {pending && pending.tool === "apply_diff" && pendingDiff && pendingDiff.action.actionId === pending.actionId ? (
-                  <TheDuyetDiff
-                    action={pending}
-                    args={pendingDiff.args}
-                    state={actionState}
-                    busy={busyConfirm}
-                    preview={diffPreview}
-                    onPreview={setDiffPreview}
-                    onConfirm={handleConfirm}
-                    onCancel={handleCancel}
-                  />
-                ) : pending && pending.tool === "apply_diff_batch" && pendingBatch && pendingBatch.action.actionId === pending.actionId ? (
-                  // ★★★ 2026-08-24 — apply_diff_batch → thẻ duyệt LÔ (mỗi tệp một tab, một diff THẬT,
-                  //   thay cho ConfirmActionCard phẳng nội-dung-cắt). `onConfirm` trỏ THẲNG `handleConfirm`
-                  //   đã có (KHÔNG mở điểm `confirmM` thứ hai): lô gọi `onConfirm()` KHÔNG tham số ⇒
-                  //   `chonKhoi=undefined` ⇒ KHÔNG gửi `selectedHunkIds` (server chặn lô kèm hunk-ids) —
-                  //   đúng hợp đồng của `TheDuyetDiffLo` (lô không chọn-khối-lẻ).
-                  <TheDuyetDiffLo
-                    action={pending}
-                    files={pendingBatch.files}
-                    state={actionState}
-                    busy={busyConfirm}
-                    onConfirm={handleConfirm}
-                    onCancel={handleCancel}
-                  />
+                {coDiffChoDuyet ? (
+                  /* ★★★ 2026-08-26 · NHÓM HOÃN (kiểu CURSOR) — thẻ duyệt DIFF (`TheDuyetDiff`/`TheDuyetDiffLo`)
+                     nay hiện Ở KHUNG XEM (editor); cột chat chỉ còn CON TRỎ, KHÔNG lặp thẻ. Bấm ⇒ nhảy sang
+                     khung Xem (hữu ích ở màn HẸP; màn rộng thẻ đã hiện sẵn ở giữa). Thẻ `run_command` (không
+                     phải diff) VẪN ở nhánh dưới. `coDiffChoDuyet` = đúng cùng điều kiện tool+actionId cũ. */
+                  <button
+                    type="button"
+                    data-diff-con-tro
+                    onClick={() => setKhungHep("xem")}
+                    className="flex w-full items-center gap-2 rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2 text-left dark:border-amber-800 dark:bg-amber-950/30"
+                  >
+                    <FileDiff className="h-4 w-4 shrink-0 text-amber-500" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-semibold text-amber-800 dark:text-amber-300">{t("repoWs.diff.pointer", "Đề xuất SỬA tệp — xem & duyệt ở khung Xem")}</span>
+                      {theDuyetDiffDon ? (
+                        <span className="block truncate font-mono text-[11px] text-muted-foreground">{theDuyetDiffDon.args.path}</span>
+                      ) : theDuyetDiffLo ? (
+                        <span className="block text-[11px] text-muted-foreground">{t("repoWs.diff.pointerBatch", "{{n}} tệp", { n: theDuyetDiffLo.files.length })}</span>
+                      ) : null}
+                    </span>
+                    <span aria-hidden className="shrink-0 text-amber-600 dark:text-amber-400">→</span>
+                  </button>
                 ) : pending ? (
                   // run_command (và mọi write tool khác) — ConfirmActionCard hiện argv + cwd + hạn giờ + cảnh báo.
                   // ★ UX (A1) — `message`: câu kết cục THẬT của server; không truyền thì thẻ rơi về

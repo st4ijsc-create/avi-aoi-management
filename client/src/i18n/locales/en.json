@@ -19422,6 +19422,8 @@
     },
     "diff": {
       "cardTitle": "Proposed file EDIT — needs your review",
+      "pointer": "Proposed file EDIT — review & approve in the Viewer pane",
+      "pointerBatch": "{{n}} files",
       "batchCardTitle": "Proposed EDIT to {{n}} files — needs your review",
       "batchConfirm": "Approve & write ({{n}} files)",
       "appliedBatch": "Batch written — details:",

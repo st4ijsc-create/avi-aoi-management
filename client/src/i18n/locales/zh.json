@@ -19430,6 +19430,8 @@
     },
     "diff": {
       "cardTitle": "建议编辑文件——需要你审核",
+      "pointer": "建议编辑文件——在“查看”栏审核并批准",
+      "pointerBatch": "{{n}} 个文件",
       "batchCardTitle": "建议编辑 {{n}} 个文件——需要你审核",
       "batchConfirm": "批准并写入（{{n}} 个文件）",
       "appliedBatch": "已批量写入——详情：",
