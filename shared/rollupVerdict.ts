@@ -56,13 +56,31 @@ export function rollupVerdict(
  *   · Cột lưu trữ `product_inspections.overallResult` — BA giá trị `OK|NG|NTF`,
  *     và `shared/kpiYield.ts` tính final yield bằng `["OK","NTF"]` trên chính cột đó.
  *
- * Thiếu hàm này thì 6,55% bo (2.760/42.147 đo trên DB test ngày 2026-08-26) chuyển
- * từ PASS sang NG lặng lẽ vào đúng ngày cắt sang v2.0 — không lưới nào đỏ, vì enum
- * DB vẫn NHẬN "NTF", chỉ là không ai ghi vào nữa.
+ * NTF có HAI NGUỒN ĐỘC LẬP, hàm này PHẢI nhận CẢ HAI:
+ *   1. Cờ `ntf` — đường v2.0 mang NTF trong cờ bool riêng (`result` chỉ OK|NG ở đường đó).
+ *   2. `result === "NTF"` — chữ ký `ResultVerdict` có BA giá trị, và `rollupVerdict` (xem
+ *      docblock dòng 16-19: `result` và cờ `ntf` là hai tín hiệu ĐỘC LẬP, được phép LỆCH
+ *      nhau) có thể trả thẳng `result: "NTF"` khi dữ liệu đến từ đường khác (v1.x, hoặc
+ *      một cuộn hỗn hợp không đi qua cờ `ntf`). Bỏ nhánh này hạ NTF xuống OK ÂM THẦM —
+ *      ĐÚNG lỗi 6,55% mà hàm này sinh ra để chống, chỉ khác cửa vào.
+ *      (Vòng sửa 1, 2026-08-26 — người review đo được `verdictLuuTru({result:"NTF",
+ *      ntf:false})` trả "OK" ở bản đầu tiên: bản đó chỉ đọc cờ `ntf`, quên mất `result`
+ *      tự nó cũng có thể đã là "NTF".)
+ *
+ * Thiếu hàm này (hoặc thiếu MỘT trong hai nhánh trên) thì 6,55% bo (2.760/42.147 đo trên
+ * DB test ngày 2026-08-26) chuyển từ PASS sang NG lặng lẽ vào đúng ngày cắt sang v2.0 —
+ * không lưới nào đỏ, vì enum DB vẫn NHẬN "NTF", chỉ là không ai ghi vào nữa.
  *
  * CỐ Ý TÁCH KHỎI `rollupVerdict`: cuộn cây và ánh xạ bảng chữ cái là hai việc khác nhau.
+ *
+ * ⚠ CHƯA nối vào đường ingest thật (`server/db/inspection.ts` / `aoiPackageRouter.ts`) —
+ * tính tới vòng sửa 1, hàm này chỉ xuất hiện trong hai file test (đã kiểm bằng grep toàn
+ * repo). Lỗ 6,55% VẪN MỞ trên production cho tới khi Task 4/5 của Pha 1B nối dây gọi hàm
+ * này. Test xanh ở đây KHÔNG chứng minh đường ghi thật đã an toàn — cùng khuôn "test xanh
+ * gây hiểu nhầm" mà Pha 1A đã dính với `loiMayChuaNangCap`.
  */
 export function verdictLuuTru(x: { result: ResultVerdict; ntf: boolean }): ResultVerdict {
   if (x.result === "NG") return "NG"; // NG thắng NTF — luật cuộn đã chốt với chủ dự án
-  return x.ntf ? "NTF" : "OK";
+  if (x.result === "NTF" || x.ntf) return "NTF"; // NTF đến từ HAI nguồn độc lập, nhận cả hai
+  return "OK";
 }

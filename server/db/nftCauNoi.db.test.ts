@@ -21,7 +21,19 @@ describe("cầu nối NTF — bảng chữ cái cột lưu trữ", () => {
     expect(ntf, `bo NTF = 0/${tong} ⇒ cầu nối NTF không còn gì để canh`).toBeGreaterThan(0);
   });
 
-  it("MỌI giá trị verdictLuuTru sinh ra đều là giá trị cột đã thật sự dùng", async () => {
+  /**
+   * Vòng sửa 1 (2026-08-26) — đổi TÊN, KHÔNG đổi thân ca: người review chứng minh ca này
+   * chỉ đỏ được khi giá trị sinh ra NẰM NGOÀI kiểu `ResultVerdict` (vd ai đó nới chữ ký
+   * `verdictLuuTru` để nhận/trả một chuỗi tuỳ ý ngoài "OK"|"NG"|"NTF"). Với BẤT KỲ đột
+   * biến nào vẫn giữ đúng kiểu `ResultVerdict` — kể cả đột biến làm SAI HẲN luật cuộn,
+   * như đột biến bỏ nhánh `result==="NTF"` ở vòng sửa 1 — tập giá trị sinh ra vẫn là một
+   * TẬP CON của {"OK","NG","NTF"}, nên ca này KHÔNG đỏ (đã chứng minh: hàm bỏ nhánh đó
+   * trả "OK" thay vì "NTF", nhưng "OK" vẫn nằm trong cột thật). Ca này CHỈ canh "kiểu trả
+   * về có tràn khỏi bảng chữ cái cột hay không" — KHÔNG canh luật cuộn (luật cuộn thuộc
+   * về `shared/rollupVerdict.test.ts`). Giữ lại vì nó vẫn có giá trị canh riêng (một chữ
+   * ký nới kiểu trong tương lai), nhưng tên ca phải nói đúng thứ nó đo.
+   */
+  it("[chỉ canh KIỂU, KHÔNG canh luật cuộn] verdictLuuTru không bao giờ sinh giá trị NGOÀI bảng chữ cái cột đã dùng", async () => {
     const db = await getDb();
     const r: any = await db!.execute(sql`
       SELECT DISTINCT "overallResult" AS kq FROM product_inspections WHERE "overallResult" IS NOT NULL`);

@@ -80,4 +80,15 @@ describe("verdictLuuTru — cầu nối cờ ntf về bảng chữ cái BA giá 
     expect([...ra].sort()).toEqual(["NG", "NTF", "OK"]);
     expect(ra.has("NTF")).toBe(true);
   });
+
+  // ── Vòng sửa 1 (2026-08-26) — bản đầu chỉ đọc cờ `ntf`, quên mất `result` tự nó cũng
+  // có thể đã là "NTF" (đường khác v2.0, ví dụ rollupVerdict nhận trực tiếp một con có
+  // result:"NTF"). Hai ca dưới đây canh ĐÚNG hai nguồn NTF độc lập đó.
+  it("result ĐÃ là NTF (không qua cờ ntf) ⇒ vẫn NTF — NTF có HAI nguồn độc lập, thiếu nhánh này là đúng lỗi 6,55% mà hàm chống", () => {
+    expect(verdictLuuTru({ result: "NTF", ntf: false })).toBe("NTF");
+  });
+
+  it("NG vẫn thắng cả khi NTF đến từ cờ ntf (không phải từ result) — thứ tự kiểm tra NG PHẢI đứng trước", () => {
+    expect(verdictLuuTru({ result: "NG", ntf: true })).toBe("NG");
+  });
 });
