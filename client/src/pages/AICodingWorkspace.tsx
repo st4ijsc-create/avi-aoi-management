@@ -2053,10 +2053,10 @@ export default function AICodingWorkspace() {
                   // run_command (và mọi write tool khác) — ConfirmActionCard hiện argv + cwd + hạn giờ + cảnh báo.
                   // ★ UX (A1) — `message`: câu kết cục THẬT của server; không truyền thì thẻ rơi về
                   //   câu RBAC mặc định ("Bạn không có quyền…") cho MỌI kết cục denied — đo live sai.
-                  // ★ UX (C2) — DÒNG TRẤN AN cho `run_command` KHÔNG ghi đĩa: tiêu đề dùng chung của
-                  //   ConfirmActionCard là "Xác nhận thao tác GHI" (component KHÔNG sửa ở đợt này) gây
-                  //   hoảng cho lệnh chỉ chạy test. Banner ở TẦNG TRANG (không đụng component), CHỈ hiện
-                  //   khi cờ THẬT `ghiDia=false` (xem `lenhChiChay`); `dotnet format` giữ cảnh báo ghi đè.
+                  // ★ UX (C2) — DÒNG TRẤN AN cho `run_command` KHÔNG ghi đĩa. Đợt 4 (96c193e8) ĐÃ cho
+                  //   ConfirmActionCard prop `title` ⇒ trang truyền "Xác nhận CHẠY lệnh" (KHÔNG còn tiêu đề
+                  //   dùng-chung "thao tác GHI" gây hoảng). Banner này GIỮ LẠI để trấn an THÊM — CHỈ hiện khi
+                  //   cờ THẬT `ghiDia=false` (xem `lenhChiChay`); `dotnet format` (ghi-đè) rơi false ⇒ giữ cảnh báo.
                   <>
                     {lenhChiChay && (
                       <div className="mb-2 flex items-start gap-1.5 rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-[12px] text-sky-800 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300">
