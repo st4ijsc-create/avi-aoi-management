@@ -142,7 +142,7 @@ import { GoiYTep, locTepTheoQuery } from "@/components/ai/GoiYTep";
 import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
-  Repeat, CheckCircle2, OctagonX, Terminal, Search, X, ChevronUp, Wand2,
+  Repeat, CheckCircle2, OctagonX, Terminal, Search, X, ChevronUp, Wand2, Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -882,16 +882,17 @@ export default function AICodingWorkspace() {
         //   → model → apply_diff → cửa duyệt) — ở đây KHÔNG gửi, KHÔNG ghi gì.
         const sel = window.getSelection();
         const goc = preRef.current;
-        if (sel && !sel.isCollapsed && goc && (goc.contains(sel.anchorNode) || goc.contains(sel.focusNode))) {
-          const van = sel.toString();
-          if (van.trim()) {
-            const doan = van.length > 2000 ? van.slice(0, 2000) : van; // trần đoạn để câu không phình
-            setDoanChon(doan);
-            setSoDongChon(doan.split(/\r?\n/).length);
-            setYeuCauSua("");
-            setSuaChonMo(true);
-            if (hep) setKhungHep("xem");
-          }
+        const van = sel && !sel.isCollapsed && goc && (goc.contains(sel.anchorNode) || goc.contains(sel.focusNode)) ? sel.toString() : "";
+        if (van.trim()) {
+          const doan = van.length > 2000 ? van.slice(0, 2000) : van; // trần đoạn để câu không phình
+          setDoanChon(doan);
+          setSoDongChon(doan.split(/\r?\n/).length);
+          setYeuCauSua("");
+          setSuaChonMo(true);
+          if (hep) setKhungHep("xem");
+        } else if (selectedPath && !pendingDiff && !pendingBatch) {
+          // Không bôi đen ⇒ gợi ý thay vì im lặng (đuôi dài: Cmd+K cần một đoạn để phạm-vi-hoá).
+          toast.info(t("repoWs.suaChon.hint", "Bôi đen đoạn mã trong Trình xem rồi bấm Cmd+K để yêu cầu AI sửa."));
         }
       }
       else if (hd === "gui") void handleSendRef.current?.();
@@ -899,7 +900,7 @@ export default function AICodingWorkspace() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [hep, isStreaming, stopKbStream, selectedPath, pendingDiff, pendingBatch]);
+  }, [hep, isStreaming, stopKbStream, selectedPath, pendingDiff, pendingBatch, t]);
 
   // ★★★ 2026-08-25 · ĐỢT 2 (C) — chèn ĐƯỜNG DẪN SẠCH (KHÔNG kèm `@`) vào ô nhập; DÙNG CHUNG cho chuột
   //   (`onChon`) lẫn Enter/Tab. Thay đoạn `@query` (từ vị trí `@` tới con trỏ) bằng chính đường dẫn.
@@ -1015,6 +1016,17 @@ export default function AICodingWorkspace() {
     { enabled: cheDoCay === "tim" && !!projectId && tuKhoaRepoTre.trim().length >= 2, staleTime: 30_000 },
   );
   const ketQuaGrep = grepRepoQ.data?.ok ? grepRepoQ.data.data?.matches ?? [] : [];
+  // ★★★ CURSOR-PARITY (đuôi dài) — GOM kết quả grep THEO TỆP (như VSCode): mỗi tệp một nhóm (header +
+  //   các dòng khớp). `Map` giữ THỨ TỰ xuất hiện đầu tiên của tệp (server trả theo thứ tự quét).
+  const ketQuaGrepGom = useMemo(() => {
+    const map = new Map<string, { line: number; text: string }[]>();
+    for (const m of ketQuaGrep) {
+      const arr = map.get(m.path);
+      if (arr) arr.push({ line: m.line, text: m.text });
+      else map.set(m.path, [{ line: m.line, text: m.text }]);
+    }
+    return [...map.entries()];
+  }, [ketQuaGrep]);
 
   /**
    * `tuVong` có mặt ⇔ lượt này do VÒNG TỰ ĐỘNG phát, không phải người gõ. Hai khác biệt:
@@ -1121,6 +1133,17 @@ export default function AICodingWorkspace() {
     void handleSend(thongDiep);
     setSuaChonMo(false);
   }, [yeuCauSua, selectedPath, doanChon, t, handleSend]);
+
+  // ★★★ CURSOR-PARITY (đuôi dài) — SAO CHÉP nội dung tệp đang xem vào clipboard (localhost = ngữ cảnh
+  //   an toàn nên `navigator.clipboard` chạy được; vẫn bắt lỗi để báo nếu trình duyệt chặn).
+  const copyTepHienTai = useCallback(() => {
+    const ct = fileReply?.ok ? fileReply.data?.content : null;
+    if (!ct) return;
+    void navigator.clipboard.writeText(ct).then(
+      () => toast.success(t("repoWs.viewer.copied", "Đã sao chép nội dung tệp.")),
+      () => toast.error(t("repoWs.viewer.copyFail", "Không sao chép được (trình duyệt chặn clipboard).")),
+    );
+  }, [fileReply, t]);
 
   /**
    * ★★★ 2026-08-24 · RIBBON TÁC VỤ — hai callback cho `RibbonTacVu`.
@@ -1881,31 +1904,38 @@ export default function AICodingWorkspace() {
                   ) : ketQuaGrep.length === 0 ? (
                     <div className="px-2 py-2 text-xs text-muted-foreground">{t("repoWs.search.none", "Không thấy kết quả nào.")}</div>
                   ) : (
-                    <ul aria-label={t("repoWs.search.results", "Kết quả tìm toàn repo")}>
-                      <li className="px-2 pb-0.5 text-[10px] font-medium text-muted-foreground">{t("repoWs.search.count", "{{n}} kết quả", { n: ketQuaGrep.length })}</li>
-                      {ketQuaGrep.map((m, i) => {
-                        const cat = m.path.lastIndexOf("/");
-                        const ten = cat >= 0 ? m.path.slice(cat + 1) : m.path;
-                        const thuMuc = cat >= 0 ? m.path.slice(0, cat + 1) : "";
+                    /* ★★★ CURSOR-PARITY (đuôi dài) — GOM THEO TỆP: header (tệp + thư mục + số khớp) rồi các
+                       dòng khớp thụt vào (dòng + đoạn text). Sạch hơn danh sách phẳng khi nhiều tệp. */
+                    <div aria-label={t("repoWs.search.results", "Kết quả tìm toàn repo")}>
+                      <div className="px-2 pb-0.5 text-[10px] font-medium text-muted-foreground">{t("repoWs.search.count", "{{n}} kết quả", { n: ketQuaGrep.length })}</div>
+                      {ketQuaGrepGom.map(([path, matches]) => {
+                        const cat = path.lastIndexOf("/");
+                        const ten = cat >= 0 ? path.slice(cat + 1) : path;
+                        const thuMuc = cat >= 0 ? path.slice(0, cat + 1) : "";
                         return (
-                          <li key={`${m.path}:${m.line}:${i}`}>
-                            <button
-                              type="button"
-                              data-ket-qua-grep
-                              onClick={() => moTepTuVanDe(m.path, m.line)}
-                              className="flex w-full flex-col items-start gap-0.5 px-2 py-1 text-left hover:bg-muted"
-                            >
-                              <span className="flex w-full min-w-0 items-baseline gap-1.5 text-xs">
-                                <span className="truncate font-medium">{ten}</span>
-                                <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">:{m.line}</span>
-                                {thuMuc && <span className="ml-auto shrink-0 truncate text-[10px] text-muted-foreground">{thuMuc}</span>}
-                              </span>
-                              <span className="w-full truncate font-mono text-[10px] text-muted-foreground">{m.text}</span>
-                            </button>
-                          </li>
+                          <div key={path} className="mb-0.5">
+                            <div className="flex items-baseline gap-1.5 px-2 py-0.5 text-[11px] font-semibold">
+                              <FileCode className="h-3 w-3 shrink-0 translate-y-0.5 text-muted-foreground" />
+                              <span className="truncate">{ten}</span>
+                              {thuMuc && <span className="min-w-0 truncate text-[10px] font-normal text-muted-foreground">{thuMuc}</span>}
+                              <span className="ml-auto shrink-0 tabular-nums text-[10px] font-normal text-muted-foreground">{matches.length}</span>
+                            </div>
+                            {matches.map((m, i) => (
+                              <button
+                                key={`${m.line}:${i}`}
+                                type="button"
+                                data-ket-qua-grep
+                                onClick={() => moTepTuVanDe(path, m.line)}
+                                className="flex w-full min-w-0 items-baseline gap-1.5 py-0.5 pl-7 pr-2 text-left hover:bg-muted"
+                              >
+                                <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">{m.line}</span>
+                                <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">{m.text}</span>
+                              </button>
+                            ))}
+                          </div>
                         );
                       })}
-                    </ul>
+                    </div>
                   )
                 ) : !projectId ? (
                   <div className="px-2 py-1 text-xs text-muted-foreground">{t("repoWs.project.none", "Chưa có dự án nào để hiển thị.")}</div>
@@ -2008,9 +2038,14 @@ export default function AICodingWorkspace() {
                     })}
                   </div>
                   {selectedPath && (
-                    <Button variant="ghost" size="icon" className="ml-1 h-6 w-6 shrink-0" onClick={() => fileQ.refetch()} title={t("repoWs.tree.refresh", "Làm mới")}>
-                      <RefreshCw className="h-3.5 w-3.5" />
-                    </Button>
+                    <>
+                      <Button variant="ghost" size="icon" className="ml-1 h-6 w-6 shrink-0" data-nut-copy onClick={copyTepHienTai} disabled={!fileReply?.ok || !fileReply.data?.content} title={t("repoWs.viewer.copy", "Sao chép nội dung tệp")}>
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => fileQ.refetch()} title={t("repoWs.tree.refresh", "Làm mới")}>
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
                   )}
                 </>
               ) : (

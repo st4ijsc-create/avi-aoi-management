@@ -19392,7 +19392,10 @@
       "diffFor": "Diff preview",
       "diffTip": "A diff is the list of LINES that will change: old vs. new. You review it before approving the write.",
       "tabsLabel": "Open files",
-      "closeTab": "Close {{ten}}"
+      "closeTab": "Close {{ten}}",
+      "copy": "Copy file contents",
+      "copied": "File contents copied.",
+      "copyFail": "Couldn't copy (browser blocked clipboard)."
     },
     "find": {
       "placeholder": "Find in file…",
@@ -19419,7 +19422,8 @@
       "title": "Edit {{n}} selected line(s) — describe the change (AI proposes, you approve):",
       "placeholder": "e.g. add a null check, rename the variable, extract a function…",
       "send": "Send",
-      "cancel": "Cancel (Esc)"
+      "cancel": "Cancel (Esc)",
+      "hint": "Select some code in the Viewer, then press Cmd+K to ask the AI to edit it."
     },
     "cmd": {
       "noWrite": "This command only RUNS — it does NOT write source files.",

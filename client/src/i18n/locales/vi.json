@@ -19372,7 +19372,10 @@
       "diffFor": "Xem trước diff",
       "diffTip": "Diff là danh sách những DÒNG sẽ đổi: bản cũ so với bản mới. Bạn xem rồi mới bấm duyệt ghi.",
       "tabsLabel": "Tệp đang mở",
-      "closeTab": "Đóng {{ten}}"
+      "closeTab": "Đóng {{ten}}",
+      "copy": "Sao chép nội dung tệp",
+      "copied": "Đã sao chép nội dung tệp.",
+      "copyFail": "Không sao chép được (trình duyệt chặn clipboard)."
     },
     "find": {
       "placeholder": "Tìm trong tệp…",
@@ -19399,7 +19402,8 @@
       "title": "Sửa {{n}} dòng đã chọn — mô tả thay đổi (AI đề xuất, bạn duyệt):",
       "placeholder": "vd: thêm kiểm tra null, đổi tên biến, tách hàm…",
       "send": "Gửi",
-      "cancel": "Hủy (Esc)"
+      "cancel": "Hủy (Esc)",
+      "hint": "Bôi đen đoạn mã trong Trình xem rồi bấm Cmd+K để yêu cầu AI sửa."
     },
     "cmd": {
       "noWrite": "Lệnh này chỉ CHẠY, KHÔNG ghi tệp mã nguồn.",

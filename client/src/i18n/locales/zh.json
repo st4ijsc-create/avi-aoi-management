@@ -19400,7 +19400,10 @@
       "diffFor": "Diff 预览",
       "diffTip": "Diff（差异）是将要改动的行清单：旧版对比新版。您先查看再批准写入。",
       "tabsLabel": "已打开的文件",
-      "closeTab": "关闭 {{ten}}"
+      "closeTab": "关闭 {{ten}}",
+      "copy": "复制文件内容",
+      "copied": "已复制文件内容。",
+      "copyFail": "无法复制（浏览器阻止了剪贴板）。"
     },
     "find": {
       "placeholder": "在文件中查找…",
@@ -19427,7 +19430,8 @@
       "title": "修改选中的 {{n}} 行——描述改动（AI 提议，你审批）：",
       "placeholder": "例如：添加空值检查、重命名变量、抽取函数…",
       "send": "发送",
-      "cancel": "取消（Esc）"
+      "cancel": "取消（Esc）",
+      "hint": "在“查看”中选中一段代码，然后按 Cmd+K 让 AI 修改。"
     },
     "cmd": {
       "noWrite": "该命令仅运行，不会写入源代码文件。",
