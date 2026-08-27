@@ -142,7 +142,7 @@ import { GoiYTep, locTepTheoQuery } from "@/components/ai/GoiYTep";
 import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
-  Repeat, CheckCircle2, OctagonX, Terminal, Search, X, ChevronUp,
+  Repeat, CheckCircle2, OctagonX, Terminal, Search, X, ChevronUp, Wand2,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -571,6 +571,16 @@ export default function AICodingWorkspace() {
   }, [tuKhoaRepo]);
   // Vào chế độ "tim" ⇒ LẤY NÉT ô tìm-repo (effect chạy sau mount — đáng tin hơn rAF trong handler phím).
   useEffect(() => { if (cheDoCay === "tim") oTimRepoRef.current?.select(); }, [cheDoCay]);
+
+  // ★★★ 2026-08-27 · CURSOR-PARITY — Cmd+K SỬA ĐOẠN CHỌN: ô-lệnh cho đoạn mã đang BÔI ĐEN ở Trình xem.
+  //   AN TOÀN: chỉ DỰNG một câu hỏi có bối cảnh (đoạn + yêu cầu) rồi GỬI qua `handleSend` → model →
+  //   apply_diff → CỬA DUYỆT. KHÔNG mở đường ghi mới, KHÔNG chạm luồng propose/HITL.
+  const [suaChonMo, setSuaChonMo] = useState(false);
+  const [doanChon, setDoanChon] = useState("");
+  const [soDongChon, setSoDongChon] = useState(0);
+  const [yeuCauSua, setYeuCauSua] = useState("");
+  const oSuaChonRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (suaChonMo) oSuaChonRef.current?.focus(); }, [suaChonMo]);
   /**
    * ★★★ 2026-08-24 — DÒNG ĐÍCH để trình xem CUỘN tới khi mở tệp từ panel Problems. `null` ⇔ mở
    * bình thường (không nhảy). Effect cuộn (khoá `selectedPath`/`dongMucTieu`/`fileReply`) nay tìm
@@ -867,6 +877,23 @@ export default function AICodingWorkspace() {
         setCheDoCay("tim");
         oTimRepoRef.current?.select();
       }
+      else if (hd === "sua_chon") {
+        // Cmd+K — CHỈ khi có BÔI ĐEN trong nội dung Trình xem: mở ô-lệnh. GỬI là ở nút (qua `handleSend`
+        //   → model → apply_diff → cửa duyệt) — ở đây KHÔNG gửi, KHÔNG ghi gì.
+        const sel = window.getSelection();
+        const goc = preRef.current;
+        if (sel && !sel.isCollapsed && goc && (goc.contains(sel.anchorNode) || goc.contains(sel.focusNode))) {
+          const van = sel.toString();
+          if (van.trim()) {
+            const doan = van.length > 2000 ? van.slice(0, 2000) : van; // trần đoạn để câu không phình
+            setDoanChon(doan);
+            setSoDongChon(doan.split(/\r?\n/).length);
+            setYeuCauSua("");
+            setSuaChonMo(true);
+            if (hep) setKhungHep("xem");
+          }
+        }
+      }
       else if (hd === "gui") void handleSendRef.current?.();
       else if (hd === "dung_stream") stopKbStream();
     };
@@ -1080,6 +1107,20 @@ export default function AICodingWorkspace() {
     }
   }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId, dungVong]);
   handleSendRef.current = handleSend;
+
+  // ★★★ 2026-08-27 · CURSOR-PARITY — GỬI lệnh sửa-đoạn-chọn (Cmd+K): DỰNG câu hỏi có bối cảnh (đoạn đã bôi
+  //   đen + yêu cầu) rồi GỬI qua `handleSend` — ĐÚNG đường chat cũ → model → apply_diff → CỬA DUYỆT. Không
+  //   một byte nào ghi ra đĩa mà không qua nút Duyệt. Đây chỉ là dựng-câu-hỏi, không phải cơ chế ghi mới.
+  const guiSuaChon = useCallback(() => {
+    if (!yeuCauSua.trim() || !selectedPath) return;
+    const thongDiep =
+      t("repoWs.suaChon.m0", "Trong tệp `{{path}}`, sửa ĐÚNG đoạn mã đã bôi đen dưới đây:", { path: selectedPath }) +
+      "\n```\n" + doanChon + "\n```\n" +
+      t("repoWs.suaChon.m1", "Yêu cầu: {{yeuCau}}", { yeuCau: yeuCauSua }) + "\n" +
+      t("repoWs.suaChon.m2", "Chỉ sửa đúng đoạn đó; đề xuất apply_diff để tôi duyệt.");
+    void handleSend(thongDiep);
+    setSuaChonMo(false);
+  }, [yeuCauSua, selectedPath, doanChon, t, handleSend]);
 
   /**
    * ★★★ 2026-08-24 · RIBBON TÁC VỤ — hai callback cho `RibbonTacVu`.
@@ -2005,6 +2046,37 @@ export default function AICodingWorkspace() {
                 <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" disabled={ketQuaTim.length === 0} onClick={() => nhayKhopTim(false)} title={t("repoWs.find.prev", "Khớp trước (Shift+Enter)")} aria-label={t("repoWs.find.prev", "Khớp trước (Shift+Enter)")}><ChevronUp className="h-3.5 w-3.5" /></Button>
                 <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" disabled={ketQuaTim.length === 0} onClick={() => nhayKhopTim(true)} title={t("repoWs.find.next", "Khớp sau (Enter)")} aria-label={t("repoWs.find.next", "Khớp sau (Enter)")}><ChevronDown className="h-3.5 w-3.5" /></Button>
                 <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={dongThanhTim} title={t("repoWs.find.close", "Đóng (Esc)")} aria-label={t("repoWs.find.close", "Đóng (Esc)")}><X className="h-3.5 w-3.5" /></Button>
+              </div>
+            )}
+            {/* ★★★ 2026-08-27 · CURSOR-PARITY — Ô-LỆNH SỬA ĐOẠN CHỌN (Cmd+K). Gửi ⇒ dựng câu hỏi có bối cảnh
+                (đoạn bôi đen + yêu cầu) qua `handleSend` → model → apply_diff → CỬA DUYỆT (thẻ hiện ngay ở
+                khung này). KHÔNG ghi thẳng. Enter gửi · Esc đóng. */}
+            {suaChonMo && !coDiffChoDuyet && selectedPath && (
+              <div className="flex shrink-0 flex-col gap-1 border-b border-primary/30 bg-primary/5 px-2 py-1.5" data-sua-chon>
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-primary">
+                  <Wand2 className="h-3.5 w-3.5 shrink-0" />
+                  {t("repoWs.suaChon.title", "Sửa {{n}} dòng đã chọn — mô tả thay đổi (AI đề xuất, bạn duyệt):", { n: soDongChon })}
+                </div>
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={oSuaChonRef}
+                    data-o-sua-chon
+                    type="text"
+                    value={yeuCauSua}
+                    onChange={(e) => setYeuCauSua(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); guiSuaChon(); }
+                      else if (e.key === "Escape") { e.preventDefault(); setSuaChonMo(false); }
+                    }}
+                    placeholder={t("repoWs.suaChon.placeholder", "vd: thêm kiểm tra null, đổi tên biến, tách hàm…")}
+                    aria-label={t("repoWs.suaChon.placeholder", "vd: thêm kiểm tra null, đổi tên biến, tách hàm…")}
+                    className="h-7 min-w-0 flex-1 rounded border bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                  <Button size="sm" data-gui-sua-chon className="h-7 shrink-0 px-2 text-xs" disabled={!yeuCauSua.trim() || isStreaming} onClick={guiSuaChon}>
+                    {t("repoWs.suaChon.send", "Gửi")}
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setSuaChonMo(false)} title={t("repoWs.suaChon.cancel", "Hủy (Esc)")} aria-label={t("repoWs.suaChon.cancel", "Hủy (Esc)")}><X className="h-3.5 w-3.5" /></Button>
+                </div>
               </div>
             )}
             <ScrollArea className="min-h-0 flex-1">

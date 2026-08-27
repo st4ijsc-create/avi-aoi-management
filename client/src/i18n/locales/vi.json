@@ -19392,6 +19392,15 @@
       "results": "Kết quả tìm toàn repo",
       "count": "{{n}} kết quả"
     },
+    "suaChon": {
+      "m0": "Trong tệp `{{path}}`, sửa ĐÚNG đoạn mã đã bôi đen dưới đây:",
+      "m1": "Yêu cầu: {{yeuCau}}",
+      "m2": "Chỉ sửa đúng đoạn đó; đề xuất apply_diff để tôi duyệt.",
+      "title": "Sửa {{n}} dòng đã chọn — mô tả thay đổi (AI đề xuất, bạn duyệt):",
+      "placeholder": "vd: thêm kiểm tra null, đổi tên biến, tách hàm…",
+      "send": "Gửi",
+      "cancel": "Hủy (Esc)"
+    },
     "cmd": {
       "noWrite": "Lệnh này chỉ CHẠY, KHÔNG ghi tệp mã nguồn.",
       "confirmRunTitle": "Xác nhận CHẠY lệnh"

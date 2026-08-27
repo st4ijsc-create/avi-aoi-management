@@ -52,7 +52,7 @@ export function phanQuyetPhimNhap(e: PhimNhap): PhanQuyetPhimNhap {
 // được bằng một lượt render CẢ trang ⇒ trên thực tế không đo, một đột biến đổi phím sống sót. Ở đây
 // thuần ⇒ lưới đơn vị đo thẳng "phím X + bối cảnh Y ⇒ hành động Z".
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-export type PhimTatKhung = "terminal" | "mo_nhanh" | "tim_trong_tep" | "tim_repo" | "gui" | "dung_stream" | "bo_qua";
+export type PhimTatKhung = "terminal" | "mo_nhanh" | "tim_trong_tep" | "tim_repo" | "sua_chon" | "gui" | "dung_stream" | "bo_qua";
 
 export interface PhimTat {
   key: string;
@@ -74,6 +74,9 @@ export interface PhimTat {
  *    VSCode ghi đè Ctrl+F thành tìm-trong-editor. Trang chỉ hành động khi ĐANG xem một tệp.
  *  • Ctrl/Cmd + Shift + F ⇒ tìm-TOÀN-REPO (mở chế độ Tìm ở khung Cây) — như VSCode. Shift là thứ TÁCH nó
  *    khỏi Ctrl+F; thiếu Shift ⇒ tìm-trong-tệp.
+ *  • Ctrl/Cmd + K ⇒ sửa-đoạn-chọn (Cmd+K kiểu Cursor) — mở ô-lệnh cho đoạn mã ĐANG BÔI ĐEN ở Trình xem.
+ *    ⚠ CHỈ là phím-mở ô-lệnh: trang kiểm có bôi đen trong Trình xem không, rồi GỬI một câu hỏi có bối
+ *    cảnh qua ĐÚNG đường `handleSend` → model → apply_diff → CỬA DUYỆT. KHÔNG mở đường ghi mới nào.
  *  • Ctrl/Cmd + Enter ⇒ GỬI — CHỈ khi con trỏ KHÔNG trong ô nhập: trong ô chat, chính `onKeyDown` của nó
  *    (qua `phanQuyetPhimNhap`) đã gửi rồi; để trang gửi lần nữa là gửi ĐÔI. Ngoài ô nhập thì đây là lối gửi.
  *  • Esc ⇒ dừng stream — CHỈ khi KHÔNG trong ô nhập (ô @-mention/lọc-cây tự lo Esc của chúng) VÀ đang stream.
@@ -83,6 +86,7 @@ export function phanGiaiPhimTatKhung(e: PhimTat): PhimTatKhung {
   if (mod && e.key === "`") return "terminal";
   if (mod && (e.key === "p" || e.key === "P")) return "mo_nhanh";
   if (mod && (e.key === "f" || e.key === "F")) return e.shiftKey === true ? "tim_repo" : "tim_trong_tep";
+  if (mod && (e.key === "k" || e.key === "K")) return "sua_chon";
   if (mod && e.key === "Enter" && !e.trongONhap) return "gui";
   if (e.key === "Escape" && !e.trongONhap && e.dangStream) return "dung_stream";
   return "bo_qua";

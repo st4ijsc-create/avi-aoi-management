@@ -19412,6 +19412,15 @@
       "results": "Repo-wide search results",
       "count": "{{n}} results"
     },
+    "suaChon": {
+      "m0": "In file `{{path}}`, edit EXACTLY the selected code below:",
+      "m1": "Request: {{yeuCau}}",
+      "m2": "Change only that snippet; propose an apply_diff for me to review.",
+      "title": "Edit {{n}} selected line(s) — describe the change (AI proposes, you approve):",
+      "placeholder": "e.g. add a null check, rename the variable, extract a function…",
+      "send": "Send",
+      "cancel": "Cancel (Esc)"
+    },
     "cmd": {
       "noWrite": "This command only RUNS — it does NOT write source files.",
       "confirmRunTitle": "Confirm RUN command"
