@@ -13,6 +13,24 @@ import { overallResultEnum, originalResultEnum, aiDecisionEnum } from "./enums";
 import { machines } from "./hierarchy";
 import { measurementPointDefs, defectCatalog } from "./product";
 
+// Pha 1B Task 3 (BG-10). `summaryCounts` cuộn bộ đếm 4 nhóm × 4 cấp từ hợp đồng
+// máy v2.0 (`server/contracts/machineDataContractV2.ts`, trường `summary`).
+// Trước bản vá này cột khai `Record<string, number>` — GÁN `summary` (4 nhóm
+// lồng nhau, mỗi nhóm 4 số) vào đó ném `TS2322` thật: cột dựng ra để mang bộ
+// đếm của máy KHÔNG nhận được bộ đếm của máy.
+
+/** Bộ đếm một cấp — khớp `summary.<nhóm>` của hợp đồng máy v2.0. */
+export interface BoDemMotCap { total: number; pass: number; ng: number; ntf: number }
+
+/**
+ * `summaryCounts` — bộ đếm 4 cấp máy tự tính và gửi kèm.
+ * CỐ Ý giữ nguyên cấu trúc 4×4 thay vì bẹt hoá: bẹt hoá cần một lược đồ khoá tự chế
+ * ("surfaces.total"…), và lược đồ đó sẽ thành một hợp đồng ngầm không ai canh.
+ */
+export interface SummaryCounts {
+  surfaces: BoDemMotCap; positions: BoDemMotCap; captures: BoDemMotCap; components: BoDemMotCap;
+}
+
 export const productInspections = pgTable("product_inspections", {
   id: serial("id").primaryKey(),
   // W3-A (0180): fk_product_inspections_machine, ON DELETE RESTRICT — a machine
@@ -187,7 +205,7 @@ export const productInspections = pgTable("product_inspections", {
   // — cache đọc nhanh cho dashboard, không phải nguồn sự thật (nguồn sự thật là chính các
   // hàng inspection_surfaces/positions/captures). NULL = chưa cuộn (pre-0339 hoặc cây con
   // rỗng).
-  summaryCounts: jsonb("summaryCounts").$type<Record<string, number>>(),
+  summaryCounts: jsonb("summaryCounts").$type<SummaryCounts>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [

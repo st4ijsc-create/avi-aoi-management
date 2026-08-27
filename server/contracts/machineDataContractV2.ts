@@ -29,6 +29,16 @@
  *   — chuỗi TOÀN KHOẢNG TRẮNG bị từ chối, vì nó không join được với gì.
  * - `serialNumber` KHÔNG `.min(1)` (KHÔNG phải khoá join — rỗng là hình dạng
  *   thật, xem chú thích tại chỗ khai báo).
+ *
+ * ── Vòng sửa 2 (Pha 1B Task 3, BG-9) ────────────────────────────────────────
+ * - Ba khoá join (`captureId`, `componentId`, `positionId`) đều thêm `.max(64)`
+ *   khớp ĐÚNG sức chứa cột DB `varchar(64)`; `surface.name` thêm `.max(100)`
+ *   khớp `varchar(100)`. Trước bản vá này, hợp đồng nhận chuỗi bất kỳ độ dài,
+ *   DB mới chặn bằng `[22001] value too long for type character varying(64)`
+ *   SAU cửa hợp đồng — một thông điệp Postgres không nêu tên trường máy gửi.
+ *   Đã kiểm bằng mẫu máy thật (`D:\SOURCES\AOIData\dashboard-sample.json`):
+ *   captureId dài nhất 37, componentId 37, positionId 3, surfaceName 6 — đều
+ *   lọt xa dưới trần mới, KHÔNG vỡ mẫu thật.
  */
 import { z } from "zod";
 
@@ -47,8 +57,13 @@ const identityV2 = z.object({
 // componentId = ComponentProject.Id — khoá join sang teach data (`template-sync-sample.json`).
 // .trim() vì chuỗi TOÀN KHOẢNG TRẮNG qua .min(1) trần vẫn "hợp lệ" — một khoá
 // join rỗng-thực-chất không join được với gì (F9, vòng sửa 1).
+// .max(64) — cột đích `measurement_results.componentExtId` / `product.componentExtId`
+// là `varchar(64)` (drizzle/schema/inspection.ts, drizzle/schema/product.ts). Không
+// chặn ở đây thì chuỗi quá 64 ký tự lọt qua cửa hợp đồng ("ok: true"), rồi Postgres
+// mới từ chối bằng `[22001] value too long for type character varying(64)` — một
+// thông điệp không nêu tên trường máy gửi, kỹ sư hiện trường không đọc nổi (BG-9).
 const componentV2 = z.object({
-  componentId: z.string().trim().min(1),
+  componentId: z.string().trim().min(1).max(64),
   componentName: z.string().optional(),
   // "OK"/"NG" — KHÔNG "NTF". NTF là cờ `ntf` riêng ngay dưới đây.
   result: z.enum(["OK", "NG"]),
@@ -65,8 +80,10 @@ const componentV2 = z.object({
 // ── Cấp 3: capture (HookCapture, HookContracts.cs:41-50) ────────────────────
 // captureId = Capture.Id — khoá join sang manifest ảnh (`aoipackage-meta-sample.json`).
 // .trim() — cùng lý do componentId ở trên (F9, vòng sửa 1).
+// .max(64) — cột đích `inspection_captures.captureExtId` (drizzle/schema/
+// inspectionTree.ts) là `varchar(64)`. Cùng lý do componentId ở trên (BG-9).
 const captureV2 = z.object({
-  captureId: z.string().trim().min(1),
+  captureId: z.string().trim().min(1).max(64),
   captureName: z.string().optional(),
   index: z.number().int().nonnegative().optional(),
   result: z.enum(["OK", "NG"]),
@@ -81,8 +98,10 @@ const captureV2 = z.object({
 // positionId = ImagePosition.PositionId — định danh ổn định, tên thư mục lưu
 // ảnh (sync-json-samples-reference.md:138) — cũng là khoá join, .trim() cùng
 // nguyên tắc với captureId/componentId (F9, vòng sửa 1).
+// .max(64) — cột đích `inspection_positions.positionId` (drizzle/schema/
+// inspectionTree.ts) là `varchar(64)`. Cùng lý do captureId/componentId ở trên (BG-9).
 const positionV2 = z.object({
-  positionId: z.string().trim().min(1),
+  positionId: z.string().trim().min(1).max(64),
   positionNumber: z.number().int().nonnegative().optional(),
   result: z.enum(["OK", "NG"]),
   ntf: z.boolean(),
@@ -92,8 +111,11 @@ const positionV2 = z.object({
 });
 
 // ── Cấp 1: surface (gộp từ HookPosition.SurfaceName phía máy gửi) ───────────
+// .max(100) — cột đích `inspection_surfaces.surfaceName` (drizzle/schema/
+// inspectionTree.ts) là `varchar(100)`. Cùng lý do BG-9 ở componentV2/captureV2/
+// positionV2 phía trên: siết ở cửa hợp đồng, không để DB ném [22001] SAU cửa.
 const surfaceV2 = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1).max(100),
   result: z.enum(["OK", "NG"]),
   ntf: z.boolean(),
   positions: z.array(positionV2),
