@@ -340,15 +340,24 @@ export const measurementResults = pgTable("measurement_results", {
   defectCropUrl: text("defectCropUrl"),      // pre-cropped defect region image (optional, for fast display)
   defectCropKey: varchar("defectCropKey", { length: 255 }), // storage key for defectCropUrl
   // ============ end defect location ============
-  // ── Pha 1A (2026-08-25, migration 0339) — CÂY KẾT QUẢ leaf-level fields. ─────────────
-  // Tất cả NULLABLE — measurement_results là hypertable ĐÃ NÉN một phần, xem drizzle/
-  // 0339_inspection_result_tree.sql. CỐ Ý CHƯA có FK trên captureRowId (chi phí FK từ
-  // hypertable tới bảng thường trên chunk đã nén chưa đo được — để Pha 1B quyết).
+  // ── Pha 1A (2026-08-25, migration 0339) → Pha 1B (2026-08-26, migration 0340) — CÂY KẾT
+  // QUẢ leaf-level field. Tất cả NULLABLE — measurement_results là hypertable ĐÃ NÉN một phần.
+  //
+  // 0339 tạo cột tên "captureRowId" KHÔNG FK. 0340 đổi tên thành "inspectionCaptureRowId" +
+  // thêm FK THẬT (fk_measurement_results_inspection_capture, ON DELETE SET NULL) — xem
+  // drizzle/0340_capture_rowid_ro_nghia.sql. BG-8 (Critical, §13 Đ-16): có HAI cột từng cùng
+  // tên "captureRowId" trỏ HAI bảng khác nhau (đây trỏ inspection_captures — cây KẾT QUẢ;
+  // measurement_point_defs."captureRowId" trỏ product_captures — cây CẤU HÌNH) và hai dãy id
+  // CHỒNG KHOẢNG — đổi tên để không còn nhầm lẫn khi JOIN.
+  //
+  // Soft-ref CÓ CHỦ ĐÍCH ở Drizzle (KHÔNG `.references()`): DB đã có FK THẬT (đặt trong
+  // 0340), nhưng khai `.references()` ở đây sẽ tạo import vòng inspection.ts ↔ inspectionTree.ts
+  // — mirror đúng quy ước soft-ref đã dùng ở measurement_point_defs.captureRowId (product.ts).
   //
   // NULL = hàng LỊCH SỬ trước Pha 1 (ghi trước khi cây inspection_captures tồn tại) —
-  // không backfill, không suy đoán. Khi có giá trị: trỏ tới inspection_captures.id (soft,
-  // không FK) mà measurement này thuộc về.
-  captureRowId: integer("captureRowId"),
+  // không backfill, không suy đoán. Khi có giá trị: trỏ tới inspection_captures.id mà
+  // measurement này thuộc về.
+  inspectionCaptureRowId: integer("inspectionCaptureRowId"),
   // Khoá join sang teach data = ComponentProject.Id (measurement_point_defs.componentExtId,
   // migration 0338) — KHÔNG phải id nội bộ, là id máy khai cho linh kiện. NULL = chưa nối
   // được (pre-0339 hoặc máy không khai).
@@ -387,9 +396,11 @@ export const measurementResults = pgTable("measurement_results", {
   // W3-A (0180): supports the ON DELETE SET NULL scan when a defect_catalog row
   // is deleted (partial — only rows that actually reference a defect).
   index("idx_results_defect_catalog").on(table.defectCatalogId).where(sql`${table.defectCatalogId} IS NOT NULL`),
-  // Pha 1A (migration 0339): partial — chỉ hàng ĐÃ nối vào cây kết quả mới cần scan
-  // theo captureRowId (hàng lịch sử pre-0339 có captureRowId NULL, không cần index).
-  index("idx_results_capture").on(table.captureRowId).where(sql`${table.captureRowId} IS NOT NULL`),
+  // Pha 1A (migration 0339, cột đổi tên ở 0340): partial — chỉ hàng ĐÃ nối vào cây kết quả
+  // mới cần scan theo inspectionCaptureRowId (hàng lịch sử pre-0339 có giá trị NULL, không
+  // cần index). Postgres tự cập nhật định nghĩa index/partial-predicate khi RENAME COLUMN
+  // (tra theo attnum, không theo tên) — index vật lý idx_results_capture không đổi tên.
+  index("idx_results_capture").on(table.inspectionCaptureRowId).where(sql`${table.inspectionCaptureRowId} IS NOT NULL`),
 ]);
 
 export type MeasurementResult = typeof measurementResults.$inferSelect;

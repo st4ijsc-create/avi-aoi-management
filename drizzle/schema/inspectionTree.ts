@@ -45,6 +45,11 @@ export const inspectionSurfaces = pgTable("inspection_surfaces", {
   index("idx_insp_surfaces_inspection").on(table.inspectionId),
   index("idx_insp_surfaces_time").on(table.inspectionTime),
   index("idx_insp_surfaces_mismatch").on(table.declaredMismatch).where(sql`${table.declaredMismatch}`),
+  // Pha 1B (migration 0340, BG-11) — khử trùng cây KẾT QUẢ ở cấp surface: một inspection
+  // không thể có hai surface CÙNG TÊN. surface định danh bằng TÊN trong phạm vi một bo
+  // (QĐ-BG6) vì payload máy KHÔNG gửi id surface. Đích ON CONFLICT cho Task 5 (idempotent
+  // ingest — gửi lại 1 bo không còn tạo 2 surface).
+  uniqueIndex("uq_insp_surfaces_inspection_name").on(table.inspectionId, table.surfaceName),
 ]);
 
 export type InspectionSurface = typeof inspectionSurfaces.$inferSelect;
@@ -75,6 +80,9 @@ export const inspectionPositions = pgTable("inspection_positions", {
 }, (table) => [
   index("idx_insp_positions_surface").on(table.surfaceRowId),
   index("idx_insp_positions_time").on(table.inspectionTime),
+  // Pha 1B (migration 0340, BG-11) — khử trùng cây KẾT QUẢ ở cấp position: một surface
+  // không thể có hai position CÙNG positionId (khoá do máy cấp). Đích ON CONFLICT cho Task 5.
+  uniqueIndex("uq_insp_positions_surface_posid").on(table.surfaceRowId, table.positionId),
 ]);
 
 export type InspectionPosition = typeof inspectionPositions.$inferSelect;

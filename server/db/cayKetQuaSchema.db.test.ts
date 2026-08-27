@@ -57,9 +57,14 @@ const BANG_MOI: Array<{ ten: string; drizzle: Table }> = [
 
 /** 4 cột mới trên product_inspections (migration 0339). */
 const COT_MOI_PRODUCT_INSPECTIONS = ["ntfSource", "machineProductIndex", "configDriftFlags", "summaryCounts"];
-/** 8 cột mới trên measurement_results (migration 0339). */
+/**
+ * 8 cột mới trên measurement_results (migration 0339). "captureRowId" ĐÃ ĐỔI TÊN thành
+ * "inspectionCaptureRowId" ở migration 0340 (Pha 1B, BG-8 Critical) — hai cột cùng tên
+ * "captureRowId" từng trỏ HAI bảng khác nhau (đây trỏ inspection_captures — cây KẾT QUẢ;
+ * measurement_point_defs."captureRowId" trỏ product_captures — cây CẤU HÌNH), chỉ MỘT có FK.
+ */
 const COT_MOI_MEASUREMENT_RESULTS = [
-  "captureRowId", "componentExtId", "ntf", "ntfSource", "errorCode", "errorDesc", "startedAt", "completedAt",
+  "inspectionCaptureRowId", "componentExtId", "ntf", "ntfSource", "errorCode", "errorDesc", "startedAt", "completedAt",
 ];
 
 describe.skipIf(!DB_URL)("cây kết quả 3 cấp — Drizzle khớp cột THẬT trong DB (0339)", () => {

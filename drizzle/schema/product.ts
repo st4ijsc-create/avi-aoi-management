@@ -279,6 +279,13 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   // Pha 1A (0338): partial — sparse until the point is anchored on the config tree.
   index("idx_point_defs_capture").on(table.captureRowId).where(sql`${table.captureRowId} IS NOT NULL`),
   index("idx_point_defs_component_ext").on(table.componentExtId).where(sql`${table.componentExtId} IS NOT NULL`),
+  // Pha 1B (migration 0340, BG-13) — cấp component là cấp DUY NHẤT trong cây chưa có đích
+  // ON CONFLICT cho Task 5. Partial: chỉ áp cho hàng ĐÃ chuyển sang cây (captureRowId +
+  // componentExtId khác NULL) và CHƯA xoá mềm — điểm đo phẳng cũ (captureRowId NULL) không
+  // bị ràng buộc này chạm tới, hành vi y hệt trước 0340.
+  uniqueIndex("uq_point_defs_capture_component")
+    .on(table.captureRowId, table.componentExtId)
+    .where(sql`${table.captureRowId} IS NOT NULL AND ${table.componentExtId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
 ]);
 
 export type MeasurementPointDef = typeof measurementPointDefs.$inferSelect;
