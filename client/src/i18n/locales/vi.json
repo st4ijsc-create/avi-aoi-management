@@ -19382,6 +19382,16 @@
       "next": "Khớp sau (Enter)",
       "close": "Đóng (Esc)"
     },
+    "search": {
+      "tab": "Tìm",
+      "placeholder": "Tìm trong TOÀN repo…  (Ctrl+Shift+F)",
+      "modeLabel": "Chế độ khung Cây",
+      "hint": "Gõ ≥2 ký tự để tìm trong MỌI tệp của dự án (hộp cát server).",
+      "loading": "Đang tìm…",
+      "none": "Không thấy kết quả nào.",
+      "results": "Kết quả tìm toàn repo",
+      "count": "{{n}} kết quả"
+    },
     "cmd": {
       "noWrite": "Lệnh này chỉ CHẠY, KHÔNG ghi tệp mã nguồn.",
       "confirmRunTitle": "Xác nhận CHẠY lệnh"

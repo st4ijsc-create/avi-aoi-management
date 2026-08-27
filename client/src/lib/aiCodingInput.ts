@@ -52,12 +52,14 @@ export function phanQuyetPhimNhap(e: PhimNhap): PhanQuyetPhimNhap {
 // được bằng một lượt render CẢ trang ⇒ trên thực tế không đo, một đột biến đổi phím sống sót. Ở đây
 // thuần ⇒ lưới đơn vị đo thẳng "phím X + bối cảnh Y ⇒ hành động Z".
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-export type PhimTatKhung = "terminal" | "mo_nhanh" | "tim_trong_tep" | "gui" | "dung_stream" | "bo_qua";
+export type PhimTatKhung = "terminal" | "mo_nhanh" | "tim_trong_tep" | "tim_repo" | "gui" | "dung_stream" | "bo_qua";
 
 export interface PhimTat {
   key: string;
   ctrlKey?: boolean;
   metaKey?: boolean;
+  /** Shift — PHÂN BIỆT Ctrl+F (tìm-trong-tệp) với Ctrl+Shift+F (tìm-toàn-repo), như VSCode. */
+  shiftKey?: boolean;
   /** Con trỏ đang ở trong một ô nhập (input/textarea/select)? Quyết định `gui`/`dung_stream` KIÊNG nể. */
   trongONhap: boolean;
   /** Có một lượt stream đang chạy? (Esc chỉ cắt khi ĐANG chạy.) */
@@ -70,6 +72,8 @@ export interface PhimTat {
  *  • Ctrl/Cmd + P  ⇒ mở-nhanh (nhảy tới ô lọc cây) — LUÔN, và CHẶN in-trình-duyệt (preventDefault ở trang).
  *  • Ctrl/Cmd + F  ⇒ tìm-trong-tệp (mở thanh tìm ở Trình xem) — LUÔN, CHẶN find-trình-duyệt; như Cursor/
  *    VSCode ghi đè Ctrl+F thành tìm-trong-editor. Trang chỉ hành động khi ĐANG xem một tệp.
+ *  • Ctrl/Cmd + Shift + F ⇒ tìm-TOÀN-REPO (mở chế độ Tìm ở khung Cây) — như VSCode. Shift là thứ TÁCH nó
+ *    khỏi Ctrl+F; thiếu Shift ⇒ tìm-trong-tệp.
  *  • Ctrl/Cmd + Enter ⇒ GỬI — CHỈ khi con trỏ KHÔNG trong ô nhập: trong ô chat, chính `onKeyDown` của nó
  *    (qua `phanQuyetPhimNhap`) đã gửi rồi; để trang gửi lần nữa là gửi ĐÔI. Ngoài ô nhập thì đây là lối gửi.
  *  • Esc ⇒ dừng stream — CHỈ khi KHÔNG trong ô nhập (ô @-mention/lọc-cây tự lo Esc của chúng) VÀ đang stream.
@@ -78,7 +82,7 @@ export function phanGiaiPhimTatKhung(e: PhimTat): PhimTatKhung {
   const mod = e.ctrlKey === true || e.metaKey === true;
   if (mod && e.key === "`") return "terminal";
   if (mod && (e.key === "p" || e.key === "P")) return "mo_nhanh";
-  if (mod && (e.key === "f" || e.key === "F")) return "tim_trong_tep";
+  if (mod && (e.key === "f" || e.key === "F")) return e.shiftKey === true ? "tim_repo" : "tim_trong_tep";
   if (mod && e.key === "Enter" && !e.trongONhap) return "gui";
   if (e.key === "Escape" && !e.trongONhap && e.dangStream) return "dung_stream";
   return "bo_qua";

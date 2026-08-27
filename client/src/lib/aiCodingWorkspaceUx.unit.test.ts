@@ -111,10 +111,17 @@ describe("§phím-tắt — PHÍM TẮT TOÀN KHUNG (Đợt 3 UX)", () => {
     expect(P({ key: "p", trongONhap: false, dangStream: false })).toBe("bo_qua");
   });
 
-  it("★★★ Ctrl/Cmd + F ⇒ tìm-trong-tệp (hoa/thường, kể cả đang gõ); thiếu modifier ⇒ để yên", () => {
+  it("★★★ Ctrl/Cmd + F (KHÔNG Shift) ⇒ tìm-TRONG-TỆP (hoa/thường, kể cả đang gõ); thiếu modifier ⇒ để yên", () => {
     expect(P({ key: "f", ctrlKey: true, trongONhap: false, dangStream: false })).toBe("tim_trong_tep");
     expect(P({ key: "F", metaKey: true, trongONhap: true, dangStream: false })).toBe("tim_trong_tep");
     expect(P({ key: "f", trongONhap: false, dangStream: false })).toBe("bo_qua");
+  });
+
+  it("★★★ Ctrl/Cmd + SHIFT + F ⇒ tìm-TOÀN-REPO; Shift là thứ TÁCH khỏi Ctrl+F trong-tệp", () => {
+    expect(P({ key: "F", ctrlKey: true, shiftKey: true, trongONhap: false, dangStream: false })).toBe("tim_repo");
+    expect(P({ key: "f", metaKey: true, shiftKey: true, trongONhap: true, dangStream: false })).toBe("tim_repo");
+    // KHÔNG Shift ⇒ vẫn tìm-trong-tệp (đột biến gộp hai nhánh sẽ bắt ở đây)
+    expect(P({ key: "f", ctrlKey: true, shiftKey: false, trongONhap: false, dangStream: false })).toBe("tim_trong_tep");
   });
 
   /** ★★★ Gửi ĐÔI là cái bẫy: trong ô chat, `onKeyDown` của nó (qua `phanQuyetPhimNhap`) đã gửi rồi. */

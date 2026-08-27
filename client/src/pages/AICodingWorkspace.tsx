@@ -559,6 +559,18 @@ export default function AICodingWorkspace() {
   const [tuKhoaTim, setTuKhoaTim] = useState("");
   const [chiSoTim, setChiSoTim] = useState(0);
   const oTimRef = useRef<HTMLInputElement>(null);
+  // ★★★ 2026-08-27 · CURSOR-PARITY — TÌM TOÀN REPO (Ctrl+Shift+F): khung Cây có chế độ "cay" | "tim".
+  //   DÙNG LẠI endpoint `repoWorkspace.grep` (ĐÃ CÓ). Debounce 300ms để không gọi grep mỗi phím.
+  const [cheDoCay, setCheDoCay] = useState<"cay" | "tim">("cay");
+  const [tuKhoaRepo, setTuKhoaRepo] = useState("");
+  const [tuKhoaRepoTre, setTuKhoaRepoTre] = useState("");
+  const oTimRepoRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const id = setTimeout(() => setTuKhoaRepoTre(tuKhoaRepo), 300);
+    return () => clearTimeout(id);
+  }, [tuKhoaRepo]);
+  // Vào chế độ "tim" ⇒ LẤY NÉT ô tìm-repo (effect chạy sau mount — đáng tin hơn rAF trong handler phím).
+  useEffect(() => { if (cheDoCay === "tim") oTimRepoRef.current?.select(); }, [cheDoCay]);
   /**
    * ★★★ 2026-08-24 — DÒNG ĐÍCH để trình xem CUỘN tới khi mở tệp từ panel Problems. `null` ⇔ mở
    * bình thường (không nhảy). Effect cuộn (khoá `selectedPath`/`dongMucTieu`/`fileReply`) nay tìm
@@ -836,7 +848,7 @@ export default function AICodingWorkspace() {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       const trongONhap = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-      const hd = phanGiaiPhimTatKhung({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, trongONhap, dangStream: isStreaming });
+      const hd = phanGiaiPhimTatKhung({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, trongONhap, dangStream: isStreaming });
       if (hd === "bo_qua") return;
       e.preventDefault();
       if (hd === "terminal") setDuoiChat((v) => (v === "terminal" ? "dong" : "terminal"));
@@ -848,6 +860,12 @@ export default function AICodingWorkspace() {
           setTimMo(true);
           oTimRef.current?.select(); // nếu thanh ĐANG mở: chọn lại ngay; vừa mở: effect `[timMo]` lấy nét
         }
+      }
+      else if (hd === "tim_repo") {
+        // Ctrl+Shift+F — mở chế độ TÌM TOÀN REPO ở khung Cây + lấy nét (effect `[cheDoCay]` lo focus).
+        if (hep) setKhungHep("tep");
+        setCheDoCay("tim");
+        oTimRepoRef.current?.select();
       }
       else if (hd === "gui") void handleSendRef.current?.();
       else if (hd === "dung_stream") stopKbStream();
@@ -962,6 +980,14 @@ export default function AICodingWorkspace() {
   }, [hep]);
 
   const lang = (i18n.language as "vi" | "en" | "zh") ?? "vi";
+
+  // ★★★ CURSOR-PARITY — TÌM TOÀN REPO: gọi endpoint `grep` ĐÃ CÓ (trả {matches:{path,line,text}}). CHỈ chạy
+  //   ở chế độ "tim" + từ khoá ≥2 ký tự (server chặn min 1, nhưng ≥2 tránh kết quả nhiễu + gọi thừa).
+  const grepRepoQ = trpc.repoWorkspace.grep.useQuery(
+    { pattern: tuKhoaRepoTre.trim(), projectId, lang, maxResults: 100 },
+    { enabled: cheDoCay === "tim" && !!projectId && tuKhoaRepoTre.trim().length >= 2, staleTime: 30_000 },
+  );
+  const ketQuaGrep = grepRepoQ.data?.ok ? grepRepoQ.data.data?.matches ?? [] : [];
 
   /**
    * `tuVong` có mặt ⇔ lượt này do VÒNG TỰ ĐỘNG phát, không phải người gõ. Hai khác biệt:
@@ -1205,6 +1231,7 @@ export default function AICodingWorkspace() {
     setSelectedPath(null);
     setOpenTabs([]); // đổi dự án ⇒ đóng hết TAB (tệp dự án cũ vô nghĩa với cây mới)
     setLocCay(""); // đổi dự án ⇒ ô lọc-nhanh về rỗng (cây mới, kết quả cũ vô nghĩa)
+    setCheDoCay("cay"); setTuKhoaRepo(""); // đổi dự án ⇒ về chế độ Cây, xoá tìm-repo
     setPendingDiff(null);
     setPendingBatch(null);
     setLenhDaChay([]);
@@ -1738,41 +1765,108 @@ export default function AICodingWorkspace() {
                 ))}
               </select>
             </div>
-            {/* ★★★ 2026-08-25 · ĐỢT 3 UX — tiêu đề cây + Ô LỌC/MỞ-NHANH (Ctrl+P nhảy tới). Query rỗng ⇒
-                cây thường; có query ⇒ danh sách PHẲNG đã xếp-hạng (mở-nhanh kiểu VSCode). */}
+            {/* ★★★ 2026-08-25 · ĐỢT 3 — tiêu đề cây + Ô LỌC/MỞ-NHANH (Ctrl+P). ★★★ 2026-08-27 · CURSOR-PARITY
+                — thêm CHẾ ĐỘ "Cây | Tìm" (Ctrl+Shift+F tìm-toàn-repo qua endpoint `grep` đã có). */}
             <div className="flex shrink-0 flex-col gap-1 border-b px-2 py-1.5">
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-                <FolderTree className="h-3.5 w-3.5" /> {t("repoWs.tree.title", "Cây tệp")}
-              </span>
-              <div className="relative">
-                <Search aria-hidden className="pointer-events-none absolute left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  ref={oLocCayRef}
-                  data-loc-cay
-                  type="text"
-                  value={locCay}
-                  onChange={(e) => { setLocCay(e.target.value); setChiSoLoc(0); }}
-                  onKeyDown={(e) => {
-                    // Điều hướng danh sách mở-nhanh khi có kết quả; Esc luôn xoá lọc (thoát mở-nhanh).
-                    if (dsLocCay.length > 0) {
-                      if (e.key === "ArrowDown") { e.preventDefault(); setChiSoLoc((i) => Math.min(i + 1, dsLocCay.length - 1)); return; }
-                      if (e.key === "ArrowUp") { e.preventDefault(); setChiSoLoc((i) => Math.max(i - 1, 0)); return; }
-                      if (e.key === "Enter") { e.preventDefault(); const tep = dsLocCay[chiSoLoc] ?? dsLocCay[0]; if (tep) { openFile(tep); setLocCay(""); } return; }
-                    }
-                    if (e.key === "Escape") { e.preventDefault(); setLocCay(""); e.currentTarget.blur(); }
-                  }}
-                  placeholder={t("repoWs.tree.filter", "Lọc / mở nhanh tệp…  (Ctrl+P)")}
-                  aria-label={t("repoWs.tree.filter", "Lọc / mở nhanh tệp…  (Ctrl+P)")}
-                  role="combobox"
-                  aria-expanded={dsLocCay.length > 0}
-                  aria-controls="repows-mo-nhanh"
-                  className="h-7 w-full rounded-md border bg-background pl-6 pr-2 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-                />
+              <div className="flex items-center gap-1" role="tablist" aria-label={t("repoWs.search.modeLabel", "Chế độ khung Cây")}>
+                <button
+                  type="button" role="tab" data-che-do="cay" aria-selected={cheDoCay === "cay"}
+                  onClick={() => setCheDoCay("cay")}
+                  className={cn("flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold", cheDoCay === "cay" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted")}
+                >
+                  <FolderTree className="h-3.5 w-3.5" /> {t("repoWs.tree.title", "Cây tệp")}
+                </button>
+                <button
+                  type="button" role="tab" data-che-do="tim" aria-selected={cheDoCay === "tim"}
+                  onClick={() => setCheDoCay("tim")}
+                  className={cn("flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold", cheDoCay === "tim" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted")}
+                >
+                  <Search className="h-3.5 w-3.5" /> {t("repoWs.search.tab", "Tìm")}
+                </button>
               </div>
+              {cheDoCay === "cay" ? (
+                <div className="relative">
+                  <Search aria-hidden className="pointer-events-none absolute left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    ref={oLocCayRef}
+                    data-loc-cay
+                    type="text"
+                    value={locCay}
+                    onChange={(e) => { setLocCay(e.target.value); setChiSoLoc(0); }}
+                    onKeyDown={(e) => {
+                      if (dsLocCay.length > 0) {
+                        if (e.key === "ArrowDown") { e.preventDefault(); setChiSoLoc((i) => Math.min(i + 1, dsLocCay.length - 1)); return; }
+                        if (e.key === "ArrowUp") { e.preventDefault(); setChiSoLoc((i) => Math.max(i - 1, 0)); return; }
+                        if (e.key === "Enter") { e.preventDefault(); const tep = dsLocCay[chiSoLoc] ?? dsLocCay[0]; if (tep) { openFile(tep); setLocCay(""); } return; }
+                      }
+                      if (e.key === "Escape") { e.preventDefault(); setLocCay(""); e.currentTarget.blur(); }
+                    }}
+                    placeholder={t("repoWs.tree.filter", "Lọc / mở nhanh tệp…  (Ctrl+P)")}
+                    aria-label={t("repoWs.tree.filter", "Lọc / mở nhanh tệp…  (Ctrl+P)")}
+                    role="combobox"
+                    aria-expanded={dsLocCay.length > 0}
+                    aria-controls="repows-mo-nhanh"
+                    className="h-7 w-full rounded-md border bg-background pl-6 pr-2 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                  />
+                </div>
+              ) : (
+                <div className="relative">
+                  <Search aria-hidden className="pointer-events-none absolute left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    ref={oTimRepoRef}
+                    data-tim-repo
+                    type="text"
+                    value={tuKhoaRepo}
+                    onChange={(e) => setTuKhoaRepo(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setCheDoCay("cay"); } }}
+                    placeholder={t("repoWs.search.placeholder", "Tìm trong TOÀN repo…  (Ctrl+Shift+F)")}
+                    aria-label={t("repoWs.search.placeholder", "Tìm trong TOÀN repo…  (Ctrl+Shift+F)")}
+                    className="h-7 w-full rounded-md border bg-background pl-6 pr-2 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                  />
+                </div>
+              )}
             </div>
             <ScrollArea className="min-h-0 flex-1">
               <div className="py-1">
-                {!projectId ? (
+                {cheDoCay === "tim" ? (
+                  /* ★★★ CURSOR-PARITY — KẾT QUẢ TÌM TOÀN REPO (endpoint `grep`). Mỗi khớp bấm ⇒ mở tệp +
+                     nhảy dòng (`moTepTuVanDe` — cùng đường tab + tô-sáng của panel Vấn đề). */
+                  !projectId ? (
+                    <div className="px-2 py-1 text-xs text-muted-foreground">{t("repoWs.project.none", "Chưa có dự án nào để hiển thị.")}</div>
+                  ) : tuKhoaRepoTre.trim().length < 2 ? (
+                    <div className="px-2 py-2 text-[11px] leading-relaxed text-muted-foreground">{t("repoWs.search.hint", "Gõ ≥2 ký tự để tìm trong MỌI tệp của dự án (hộp cát server).")}</div>
+                  ) : grepRepoQ.isLoading ? (
+                    <div className="px-2 py-2 text-xs text-muted-foreground">{t("repoWs.search.loading", "Đang tìm…")}</div>
+                  ) : ketQuaGrep.length === 0 ? (
+                    <div className="px-2 py-2 text-xs text-muted-foreground">{t("repoWs.search.none", "Không thấy kết quả nào.")}</div>
+                  ) : (
+                    <ul aria-label={t("repoWs.search.results", "Kết quả tìm toàn repo")}>
+                      <li className="px-2 pb-0.5 text-[10px] font-medium text-muted-foreground">{t("repoWs.search.count", "{{n}} kết quả", { n: ketQuaGrep.length })}</li>
+                      {ketQuaGrep.map((m, i) => {
+                        const cat = m.path.lastIndexOf("/");
+                        const ten = cat >= 0 ? m.path.slice(cat + 1) : m.path;
+                        const thuMuc = cat >= 0 ? m.path.slice(0, cat + 1) : "";
+                        return (
+                          <li key={`${m.path}:${m.line}:${i}`}>
+                            <button
+                              type="button"
+                              data-ket-qua-grep
+                              onClick={() => moTepTuVanDe(m.path, m.line)}
+                              className="flex w-full flex-col items-start gap-0.5 px-2 py-1 text-left hover:bg-muted"
+                            >
+                              <span className="flex w-full min-w-0 items-baseline gap-1.5 text-xs">
+                                <span className="truncate font-medium">{ten}</span>
+                                <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">:{m.line}</span>
+                                {thuMuc && <span className="ml-auto shrink-0 truncate text-[10px] text-muted-foreground">{thuMuc}</span>}
+                              </span>
+                              <span className="w-full truncate font-mono text-[10px] text-muted-foreground">{m.text}</span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )
+                ) : !projectId ? (
                   <div className="px-2 py-1 text-xs text-muted-foreground">{t("repoWs.project.none", "Chưa có dự án nào để hiển thị.")}</div>
                 ) : locCay.trim() ? (
                   dsLocCay.length > 0 ? (

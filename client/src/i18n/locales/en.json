@@ -19402,6 +19402,16 @@
       "next": "Next match (Enter)",
       "close": "Close (Esc)"
     },
+    "search": {
+      "tab": "Search",
+      "placeholder": "Search the WHOLE repo…  (Ctrl+Shift+F)",
+      "modeLabel": "File-tree pane mode",
+      "hint": "Type ≥2 characters to search EVERY file in the project (server sandbox).",
+      "loading": "Searching…",
+      "none": "No results found.",
+      "results": "Repo-wide search results",
+      "count": "{{n}} results"
+    },
     "cmd": {
       "noWrite": "This command only RUNS — it does NOT write source files.",
       "confirmRunTitle": "Confirm RUN command"
