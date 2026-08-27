@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rollupVerdict, verdictLuuTru, type NutKetQua } from "./rollupVerdict";
+import { rollupVerdict, verdictLuuTru, type NutKetQua, type ResultVerdict } from "./rollupVerdict";
 
 const n = (result: "OK" | "NG" | "NTF", ntf = false, ntfSource: "machine" | "human" | "both" | null = null): NutKetQua =>
   ({ result, ntf, ntfSource });
@@ -90,5 +90,32 @@ describe("verdictLuuTru — cầu nối cờ ntf về bảng chữ cái BA giá 
 
   it("NG vẫn thắng cả khi NTF đến từ cờ ntf (không phải từ result) — thứ tự kiểm tra NG PHẢI đứng trước", () => {
     expect(verdictLuuTru({ result: "NG", ntf: true })).toBe("NG");
+  });
+
+  /**
+   * Re-review (chết giữa chừng vì giới hạn phiên, điều phối đo lại và xác nhận): `verdictLuuTru`
+   * có 3×2=6 tổ hợp đầu vào (`result` ba giá trị × `ntf` hai giá trị). Các ca phía trên
+   * (viết rải rác qua brief gốc + vòng sửa 1) chỉ CỘNG LẠI thành 5/6 — thiếu đúng tổ hợp
+   * CẢ HAI nguồn NTF cùng báo: `{result:"NTF", ntf:true}`. Mã KHÔNG sai ở tổ hợp này (đã đo:
+   * trả "NTF", đúng), đây thuần tuý là LỖ TRONG LƯỚI, không phải lỗi trong hàm.
+   *
+   * Ca dưới đây quét ĐỦ cả 6 tổ hợp bằng một bảng tường minh thay vì rải rác từng `it()` —
+   * mục đích là chống đúng LỚP lỗ này tái xuất hiện: nếu ai thêm giá trị thứ tư vào
+   * `ResultVerdict` (vd "SKIP"), bảng dưới đây phải được cập nhật tay và `BANG.length` sẽ tố
+   * ngay nếu quên, thay vì lặng lẽ để lại một tổ hợp không được canh như lần này.
+   */
+  it("quét ĐỦ 6 tổ hợp (3 result × 2 ntf) bằng bảng — chống lỗ tái xuất khi có ai thêm giá trị mới vào ResultVerdict", () => {
+    const BANG: Array<{ result: ResultVerdict; ntf: boolean; kyVong: ResultVerdict }> = [
+      { result: "OK", ntf: false, kyVong: "OK" },
+      { result: "OK", ntf: true, kyVong: "NTF" },
+      { result: "NG", ntf: false, kyVong: "NG" },
+      { result: "NG", ntf: true, kyVong: "NG" }, // NG thắng dù NTF đến từ cờ
+      { result: "NTF", ntf: false, kyVong: "NTF" },
+      { result: "NTF", ntf: true, kyVong: "NTF" }, // CẢ HAI nguồn NTF cùng báo ⇒ vẫn NTF, không triệt tiêu nhau — tổ hợp mà re-review bắt thiếu
+    ];
+    expect(BANG.length, "phải đủ 3×2=6 tổ hợp — thiếu một tổ hợp là đúng lỗ vừa vá").toBe(6);
+    for (const { result, ntf, kyVong } of BANG) {
+      expect(verdictLuuTru({ result, ntf }), `verdictLuuTru({result:"${result}", ntf:${ntf}}) phải là "${kyVong}"`).toBe(kyVong);
+    }
   });
 });
