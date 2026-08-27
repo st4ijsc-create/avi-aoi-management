@@ -37,3 +37,22 @@ export function chiSoKhopKeTiep(hienTai: number, tong: number, tien: boolean): n
   if (tong <= 0) return 0;
   return tien ? (hienTai + 1) % tong : (hienTai - 1 + tong) % tong;
 }
+
+/**
+ * ★★★ 2026-08-27 — VỊ TRÍ (offset) mọi lần `term` xuất hiện TRONG một chuỗi (không phân biệt hoa/thường,
+ * KHÔNG chồng lấn). Dùng để dựng `Range` tô CỤM KHỚP trong dòng (CSS Custom Highlight API) — phần TÌM
+ * trong Trình xem. Tách THUẦN để lưới đo offset chính xác (dựng Range là DOM, đo bằng mắt/Playwright).
+ * `term` rỗng / không phải chuỗi ⇒ `[]`.
+ */
+export function viTriKhopTrongChuoi(text: string, term: string): number[] {
+  if (typeof text !== "string" || typeof term !== "string" || term.length === 0) return [];
+  const t = text.toLowerCase();
+  const k = term.toLowerCase();
+  const ket: number[] = [];
+  let i = t.indexOf(k);
+  while (i !== -1) {
+    ket.push(i);
+    i = t.indexOf(k, i + k.length); // nhảy QUA cụm vừa khớp ⇒ không chồng lấn (đúng thói quen tìm-kiếm)
+  }
+  return ket;
+}

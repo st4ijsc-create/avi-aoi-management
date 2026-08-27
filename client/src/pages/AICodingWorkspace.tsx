@@ -102,7 +102,7 @@ import { lamSachMocChoHienThi } from "@shared/aiCodingMoc";
 // ★★★ 2026-08-23 · UX (B1) — gợi ý mở đầu THEO DỰ ÁN (một bảng, khoá theo id; id lạ ⇒ ẩn gợi ý).
 import { goiYTheoDuAn, MAC_DINH_KHAM_PHA } from "@/lib/goiYDuAn";
 import { dongTab, moTab } from "@/lib/aiCodingTabs";
-import { timDongKhop, chiSoKhopKeTiep } from "@/lib/aiCodingTimTep";
+import { timDongKhop, chiSoKhopKeTiep, viTriKhopTrongChuoi } from "@/lib/aiCodingTimTep";
 // ★★★ 2026-08-23 · UX (D2) — lọc nhiễu cây tệp ở TẦNG HIỂN THỊ (ảnh/log/nhị phân gom sau một nút).
 import { chiaTepHienThi } from "@/lib/cayTepHienThi";
 // ★ UX (B2) — tooltip cho ba huy hiệu quyền; provider đã bọc cả App (App.tsx).
@@ -620,6 +620,43 @@ export default function AICodingWorkspace() {
   // Mở thanh tìm ⇒ LẤY NÉT + chọn văn bản (gõ đè ngay như VSCode). Effect chạy SAU khi thanh đã mount,
   //   nên đáng tin hơn `requestAnimationFrame` trong chính handler phím (ref có thể chưa gắn lúc ấy).
   useEffect(() => { if (timMo) oTimRef.current?.select(); }, [timMo]);
+
+  // ★★★ 2026-08-27 — TÔ CỤM KHỚP TRONG DÒNG (tìm-trong-tệp) qua CSS Custom Highlight API: dựng `Range`
+  //   trên các cụm khớp trong `[data-ma]` rồi đăng ký MỘT `Highlight` — TÔ ĐÈ lên nội dung Shiki mà
+  //   KHÔNG chèn DOM. Feature-detect: trình duyệt thiếu API ⇒ no-op (vẫn còn tô-sáng DÒNG hiện tại qua
+  //   `dongMucTieu`). rAF chờ nội dung render xong mới đo Range. Cụm khớp CẮT NGANG span màu (hiếm) sẽ
+  //   không tô — giới hạn đã chấp nhận (một Range chỉ trong một text-node).
+  useEffect(() => {
+    const st = document.createElement("style");
+    st.textContent = "::highlight(repows-tim-cum){background-color:rgba(250,204,21,0.5);border-radius:2px;}";
+    document.head.appendChild(st);
+    return () => { st.remove(); };
+  }, []);
+  useEffect(() => {
+    const kho = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+    const HL = (globalThis as unknown as { Highlight?: new (...r: Range[]) => unknown }).Highlight;
+    if (!kho || !HL) return;
+    if (!timMo || tuKhoaTim.trim().length < 1) { kho.delete("repows-tim-cum"); return; }
+    const id = requestAnimationFrame(() => {
+      const goc = preRef.current?.querySelector("[data-ma]");
+      if (!goc) { kho.delete("repows-tim-cum"); return; }
+      const ranges: Range[] = [];
+      const walker = document.createTreeWalker(goc, NodeFilter.SHOW_TEXT);
+      let node: Node | null;
+      while ((node = walker.nextNode())) {
+        const txt = node.textContent ?? "";
+        for (const off of viTriKhopTrongChuoi(txt, tuKhoaTim)) {
+          const r = document.createRange();
+          r.setStart(node, off);
+          r.setEnd(node, off + tuKhoaTim.length);
+          ranges.push(r);
+        }
+      }
+      if (ranges.length) kho.set("repows-tim-cum", new HL(...ranges));
+      else kho.delete("repows-tim-cum");
+    });
+    return () => cancelAnimationFrame(id); // set() ghi đè nên KHÔNG delete ở đây (tránh nháy khi gõ)
+  }, [timMo, tuKhoaTim, fileReply, selectedPath]);
 
   // ── Diff đang chờ duyệt (từ chat) + buffer xem trước ở khung giữa ──
   const [pendingDiff, setPendingDiff] = useState<{ action: KbPendingAction; args: DiffArgs } | null>(null);

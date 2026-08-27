@@ -3,7 +3,7 @@
  * dòng tính MỘT · vòng-lại chỉ số. Đo THẲNG bằng `toEqual`/`toBe`, không qua render trang.
  */
 import { describe, it, expect } from "vitest";
-import { timDongKhop, chiSoKhopKeTiep } from "./aiCodingTimTep";
+import { timDongKhop, chiSoKhopKeTiep, viTriKhopTrongChuoi } from "./aiCodingTimTep";
 
 const MA = "using System;\nclass Calc {\n  int Add(int a, int b) => a + b;\n  int add2(int x) => x + 2;\n}\n";
 
@@ -44,5 +44,21 @@ describe("§2 chiSoKhopKeTiep — điều hướng có VÒNG LẠI", () => {
 
   it("★ tổng = 0 ⇒ 0 (không có khớp để nhảy)", () => {
     expect(chiSoKhopKeTiep(0, 0, true)).toBe(0);
+  });
+});
+
+describe("§3 viTriKhopTrongChuoi — offset các cụm khớp (cho Custom Highlight)", () => {
+  it("★★★ mọi offset, không phân biệt hoa/thường", () => {
+    // "ab" tại 0 và 5 ('AB'); hoa/thường đều nhận.
+    expect(viTriKhopTrongChuoi("abcXXABz", "ab")).toEqual([0, 5]);
+  });
+
+  it("★★★ KHÔNG chồng lấn: 'aa' trong 'aaaa' ⇒ [0,2] (nhảy qua cụm vừa khớp)", () => {
+    expect(viTriKhopTrongChuoi("aaaa", "aa")).toEqual([0, 2]);
+  });
+
+  it("★ rỗng / không khớp ⇒ []", () => {
+    expect(viTriKhopTrongChuoi("abc", "")).toEqual([]);
+    expect(viTriKhopTrongChuoi("abc", "zz")).toEqual([]);
   });
 });
