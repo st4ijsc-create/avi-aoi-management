@@ -119,6 +119,11 @@ import {
 // ★★★ 2026-08-18 — mã tenant của một hàng ĐƯỢC GHI phải suy từ MÁY ĐÃ XÁC THỰC, không lấy từ
 // JSON. `macTenantChoGhi` phân giải + đối chiếu lời khai + ném khi lệch/không suy được.
 import { macTenantChoGhi } from "./phamViGhiMay";
+// Pha 1B Task 6 (BG-1, §13 Đ-19) — nối payload máy v2.0 (cây 4 cấp) vào ingest THẬT +
+// hàm từ chối v1.x đã viết sẵn nhưng chưa có nơi gọi (§13 Đ-11).
+import { machineDataContractV2 } from "../contracts/machineDataContractV2";
+import { loiMayChuaNangCap } from "../contracts/machineDataContract";
+import { dichCayKetQua, type MachinePayloadV2 } from "../services/ingestCayKetQua";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Doc 51 P1 (CASE #5) — per-image base64 size cap.
@@ -2945,6 +2950,170 @@ function ensureProcessWalWired(): void {
   processWalSetDedupFn((payload) => processResultAlreadyPersisted(payload as SubmitProcessResultInput));
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Pha 1B Task 6 (BG-1, spec §13 Đ-11/Đ-19) — NỐI payload máy v2.0 (cây 4 cấp) vào
+// ingest THẬT, và đặt đường TỪ CHỐI v1.x sau một cờ MẶC ĐỊNH TẮT.
+//
+// QĐ chủ dự án: "chỉ nhận v2.0, cắt máy cũ". Task này KHÔNG thi hành vế "cắt" NGAY —
+// đo được (Đ-19): `measurement_results.pointDefId` là NOT NULL với FK ON DELETE
+// RESTRICT ⇒ đường v2.0 CHƯA lưu được kết quả CẤP COMPONENT (đo trên DB test:
+// measurement_results nối vào cây = 0/31.256) cho tới khi Khối B (đồng bộ teach data,
+// mở khoá componentExtId → pointDefId) chạy xong. Từ chối v1.x NGAY BÂY GIỜ, trong khi
+// v2.0 còn mất chi tiết component, làm hệ thống XẤU HƠN Ở CẢ HAI ĐẦU: máy cũ bị chặn,
+// máy mới mất dữ liệu cấp component. Vì vậy pha này NHẬN CẢ HAI — v2.0 đi đường cây
+// (Task 4 dịch + Task 5 ghi), v1.x giữ NGUYÊN đường cũ — và việc từ chối v1.x nằm sau
+// một cờ tính năng.
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Nhận diện phiên bản THEO HÌNH DẠNG payload, KHÔNG theo trường `schemaVersion` khai
+ * báo — trường đó là `z.string().max(20).optional()` (log-only, Doc 56 Đ1), máy CÓ
+ * THỂ không gửi. Hình dạng ổn định hơn: v2.0 LUÔN mang mảng `surfaces` (bắt buộc theo
+ * `machineDataContractV2`); v1.0/v1.1 LUÔN mang mảng `measurements` (bắt buộc theo
+ * `submitInspectionCoreObject`). Một payload thiếu CẢ HAI vẫn rơi vào nhánh v1.x bên
+ * dưới và bị `submitInspectionInputSchema` từ chối bằng lỗi zod bình thường — không gì
+ * đổi so với hôm nay cho một payload garbage.
+ */
+function laHinhDangCayV2(raw: unknown): boolean {
+  return (
+    typeof raw === "object" &&
+    raw !== null &&
+    Array.isArray((raw as { surfaces?: unknown }).surfaces)
+  );
+}
+
+/**
+ * Cờ CẮT máy cũ (BG-1). Mặc định TẮT. CHỈ bật SAU KHI Khối B (đồng bộ teach data)
+ * xong và cấp component lưu được — xem §13 Đ-19. Bật sớm hơn mốc đó chặn máy cũ trong
+ * khi máy mới còn chưa lưu được chi tiết component ⇒ xấu hơn hôm nay ở CẢ HAI đầu.
+ */
+function ingestRejectLegacyMachineEnabled(): boolean {
+  return envTrue(process.env.INGEST_REJECT_LEGACY_MACHINE_ENABLED);
+}
+
+/**
+ * Kết quả phân giải input CỦA `submitInspection` sau khi đã parse ĐÚNG hợp đồng của
+ * nhánh phát hiện được (không phải union thô của hai schema — mỗi nhánh tự `.parse()`
+ * hợp đồng của MÌNH, giữ nguyên hành vi lỗi riêng của từng nhánh).
+ */
+type SubmitInspectionRouterInput =
+  | { kind: "v1"; data: SubmitInspectionInput }
+  | { kind: "v2"; data: MachinePayloadV2 };
+
+/**
+ * Input parser THẬT của `submitInspection`, dùng làm `.input()` thay cho
+ * `submitInspectionInputSchema` trực tiếp. `z.unknown().transform(...)` là một zod
+ * schema THẬT (`_input=unknown`, `_output=SubmitInspectionRouterInput`) nên chữ ký
+ * client-facing KHÔNG đổi (`unknown` nhận mọi payload — mọi test/caller hiện có biên
+ * dịch nguyên vẹn). Lỗi ném RA TỪ BÊN TRONG `.transform()` (kể cả `Error` thường như
+ * `loiMayChuaNangCap()`, không chỉ ZodError — đã tự đo bằng node: transform không nuốt
+ * exception, `parse()`/`safeParse()` để lỗi thoát nguyên văn) được `createInputMiddleware`
+ * của tRPC bọc thành `TRPCError({code:"BAD_REQUEST", cause})` — ĐÚNG cơ chế `.input()`
+ * vẫn dùng xưa nay, không cần router tự viết middleware bọc lỗi riêng.
+ */
+const submitInspectionRouterInputSchema = z.unknown().transform((raw): SubmitInspectionRouterInput => {
+  if (laHinhDangCayV2(raw)) {
+    return { kind: "v2", data: machineDataContractV2.parse(raw) };
+  }
+  if (ingestRejectLegacyMachineEnabled()) {
+    const declared =
+      raw && typeof raw === "object" && typeof (raw as { schemaVersion?: unknown }).schemaVersion === "string"
+        ? (raw as { schemaVersion: string }).schemaVersion
+        : "(không khai schemaVersion — payload hình dạng phẳng v1.x/`measurements`)";
+    throw loiMayChuaNangCap(declared);
+  }
+  // Nhánh v1.x KHÔNG đổi: gọi lại ĐÚNG schema/lỗi mà `.input()` vẫn tự động chạy
+  // trước bản vá này — hành vi lỗi (zod issues thô cho payload sai) giữ nguyên văn.
+  return { kind: "v1", data: submitInspectionInputSchema.parse(raw) };
+});
+
+/**
+ * Pha 1B Task 6 (BG-1) — nhánh v2.0 của `submitInspection`: dịch cây (Task 4,
+ * `dichCayKetQua`) rồi ghi qua `persistInspectionAtomic` với `opts.cay` (Task 5) — CÙNG
+ * một transaction header+cây, bảo đảm CẤU TRÚC (server/db/inspection.ts), không phải
+ * quy ước bằng lời. `product_inspections.overallResult` PHẢI là `cay.verdictLuuTru`
+ * (KHÔNG phải `payload.overallResult` — đó chính là nơi 6,55% bo NTF biến mất, đã đo ở
+ * Task 1/4/5).
+ *
+ * PHẠM VI CỐ Ý HẸP HƠN `processInspectionSubmission` (nhánh v1.x): KHÔNG ghi
+ * `measurement_results` cấp component (chờ Khối B — xem khối chú thích Đ-19 phía trên),
+ * KHÔNG spec-gate/ảnh/ERP-outbox/NG-alert/production-order/store-forward WAL. Đây đúng
+ * phạm vi "nối đường ingest thật" của brief Task 6; phần còn thiếu nêu rõ trong báo cáo,
+ * không âm thầm bỏ qua.
+ */
+async function submitInspectionTreeV2(
+  payload: MachinePayloadV2,
+  opts: { headerKey?: string | null },
+): Promise<{ success: true; inspectionId: number; duplicate?: boolean }> {
+  const auth = await authenticateMachine({
+    apiKey: payload.apiKey,
+    headerKey: opts.headerKey,
+    scope: "ingest:write",
+  });
+  const machine = auth.machine;
+  enforceMachineIngestRateLimit(auth);
+
+  // Mã tenant SUY từ máy đã xác thực (★★★ 2026-08-18) — hợp đồng v2.0 không mang
+  // companyCode/factoryCode/workshopCode/lineCode để đối chiếu (khác v1.x), nên `khai`
+  // luôn rỗng: không có lời tự khai nào để so.
+  const macTenant = await macTenantChoGhi(machine, {});
+
+  const normalizedProductModelCode = payload.productModel?.trim();
+  const productModelRecord = normalizedProductModelCode
+    ? await db.getProductModelByCode(normalizedProductModelCode)
+    : undefined;
+  const resolvedProductModelCode = productModelRecord?.code || normalizedProductModelCode;
+
+  await db.updateMachineHeartbeat(machine.id);
+
+  const cay = dichCayKetQua(payload);
+
+  const rawInspTime = payload.completedAt
+    ? new Date(payload.completedAt)
+    : payload.startedAt
+      ? new Date(payload.startedAt)
+      : new Date();
+  // Cùng dịch "fake UTC" mà nhánh v1.x áp dụng (xem chú thích lớn ở
+  // processInspectionSubmission) — để cột đọc nhất quán giữa hai nhánh.
+  const localInspTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
+
+  const reservedInspectionId = await db.reserveInspectionId();
+  const insertOutcome: CreateInspectionOutcome = { duplicate: false };
+
+  const persisted = await db.persistInspectionAtomic(
+    {
+      id: reservedInspectionId,
+      machineId: machine.id,
+      serialNumber: payload.serialNumber,
+      productModelId: productModelRecord?.id,
+      productModel: resolvedProductModelCode,
+      // ⚠ CỘT THẬT — cay.verdictLuuTru, KHÔNG phải payload.overallResult (mệnh đề 2).
+      overallResult: cay.verdictLuuTru,
+      originalResult: payload.overallResult,
+      corporateCode: macTenant.corporateCode,
+      factoryCode: macTenant.factoryCode,
+      workshopCode: macTenant.workshopCode,
+      lineCode: macTenant.lineCode,
+      inspectionTime: localInspTime,
+      ntfSource: cay.ntfSource ?? undefined,
+      machineProductIndex: payload.machineProductIndex ?? undefined,
+      summaryCounts: payload.summary,
+    },
+    [],
+    { cay, outcome: insertOutcome },
+  );
+
+  if (persisted.duplicate) {
+    console.warn(
+      `[submitInspection][v2.0] duplicate submission ignored (natural key hit) — ` +
+        `machine=${machine.code} serial=${payload.serialNumber} ` +
+        `inspectionTime=${localInspTime.toISOString()} → existing inspectionId=${persisted.id}`,
+    );
+  }
+
+  return { success: true as const, inspectionId: persisted.id, duplicate: persisted.duplicate };
+}
+
 export const machineApiRouter = router({
   // Submit inspection data from machine — DURABLE (doc 27 W2-C, gap C3/R11):
   // a transient failure (DB down) buffers the full payload to the disk WAL and
@@ -2952,9 +3121,18 @@ export const machineApiRouter = router({
   // idempotency once the DB recovers. Permanent errors (bad key / validation)
   // still throw. With INSPECTION_STORE_FORWARD_ENABLED off → exact old behaviour.
   submitInspection: publicProcedure
-    .input(submitInspectionInputSchema)
-    .mutation(async ({ input, ctx }) => {
+    .input(submitInspectionRouterInputSchema)
+    .mutation(async ({ input: parsedInput, ctx }) => {
       const headerKey = machineHeaderKey(ctx);
+      // Pha 1B Task 6 (BG-1) — nhánh v2.0 tách hẳn khỏi pipeline v1.x bên dưới (xem
+      // `submitInspectionTreeV2`). Nhánh v1.x (kind:"v1") KHÔNG đổi một dòng hành vi
+      // nào so với trước bản vá: chỉ đổi CHỖ `submitInspectionInputSchema.parse` được
+      // gọi (từ `.input()` tự động sang bên trong `submitInspectionRouterInputSchema`
+      // ở trên), không đổi input/output/lỗi của nhánh này.
+      if (parsedInput.kind === "v2") {
+        return submitInspectionTreeV2(parsedInput.data, { headerKey });
+      }
+      const input = parsedInput.data;
       // Doc 56 Đ1 (API-2) — log-only: surface the machine's declared feed schema
       // version if it sent one. Debug level so the hottest ingest path is not
       // flooded; behaviour is otherwise unchanged.
