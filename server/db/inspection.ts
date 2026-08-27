@@ -15,12 +15,19 @@ import {
   productionLines,
   workshops,
   factories,
+  // Pha 1B Task 5 (BG-11) — cây KẾT QUẢ 3 cấp, migration 0339/0340.
+  inspectionSurfaces,
+  inspectionPositions,
+  inspectionCaptures,
 } from "../../drizzle/schema";
 import { getUserCorporateAssignments, getUserFactoryAssignments } from "./auth";
 // ⚠ CHỈ nhập KIỂU (`import type`) — bị xoá lúc biên dịch, nên không tạo vòng import
 // router → db → `_core/accessControl` → `_core/trpc`. Giá trị vẫn nạp qua `import()` động,
 // đúng khuôn sẵn có trong file này.
 import { UNSCOPED_LABELS, type ScopeEmptyReason, type ScopeLabels, scopeLabelsOf } from "../_core/accessControlLabels";
+// Pha 1B Task 5 — bộ dịch THUẦN payload v2.0 → cây 4 cấp (Task 4). Type-only: không tạo
+// phụ thuộc runtime vòng (ingestCayKetQua.ts không import ngược lại file này).
+import type { CayDaDich, SurfaceDaDich, PositionDaDich, CaptureDaDich } from "../services/ingestCayKetQua";
 
 // ============ LIST PROJECTION (doc 27 gap B9) ============
 /**
@@ -138,6 +145,210 @@ async function insertInspectionHeader(
     );
   }
   return { id: existingId, duplicate: true };
+}
+
+/** `undefined` khi máy không khai (ISO string) — Date khi có. `''`/thiếu trường ⇒ undefined. */
+function toDateOrUndefined(iso: string | undefined): Date | undefined {
+  return iso === undefined ? undefined : new Date(iso);
+}
+
+/**
+ * Cấp 1 (Pha 1B Task 5, BG-11) — ghi/khử-trùng MỘT `inspection_surfaces`. `ON CONFLICT DO
+ * NOTHING` theo `uq_insp_surfaces_inspection_name` (migration 0340): gửi lại cùng bo ⇒
+ * KHÔNG hàng mới, SELECT lại hàng đã có để lấy `id` làm cha cho các position. Cùng khuôn
+ * `insertInspectionHeader` phía trên — một chỗ sửa nếu khuôn đổi.
+ */
+async function upsertInspectionSurface(
+  runner: InsertRunner,
+  inspectionId: number,
+  inspectionTime: Date,
+  s: SurfaceDaDich,
+): Promise<number> {
+  const inserted = await runner
+    .insert(inspectionSurfaces)
+    .values({
+      inspectionId,
+      inspectionTime,
+      surfaceName: s.surfaceName,
+      // QĐ-BG6: KHÔNG ghi surfaceExtId ở đường ingest kết quả — chỉ điền từ đồng bộ teach
+      // data (Khối B, pha sau). Không đặt key ⇒ cột giữ NULL mặc định.
+      result: s.result,
+      ntf: s.ntf,
+      ntfSource: s.ntfSource,
+      rolledResult: s.rolledResult,
+      rolledNtf: s.rolledNtf,
+      declaredMismatch: s.declaredMismatch,
+    })
+    .onConflictDoNothing()
+    .returning({ id: inspectionSurfaces.id });
+
+  const newId = inserted[0]?.id;
+  if (newId !== undefined) return newId;
+
+  const existing = await runner
+    .select({ id: inspectionSurfaces.id })
+    .from(inspectionSurfaces)
+    .where(and(
+      eq(inspectionSurfaces.inspectionId, inspectionId),
+      eq(inspectionSurfaces.surfaceName, s.surfaceName),
+    ))
+    .limit(1);
+  const existingId = existing[0]?.id;
+  if (existingId === undefined) {
+    throw new Error(
+      `ghiCayKetQua: surface "${s.surfaceName}" xung đột ở uq_insp_surfaces_inspection_name ` +
+        `nhưng không tìm lại được hàng đã có (inspectionId=${inspectionId}) — bất thường.`,
+    );
+  }
+  return existingId;
+}
+
+/**
+ * Cấp 2 — ghi/khử-trùng MỘT `inspection_positions`. `ON CONFLICT DO NOTHING` theo
+ * `uq_insp_positions_surface_posid` (migration 0340).
+ */
+async function upsertInspectionPosition(
+  runner: InsertRunner,
+  surfaceRowId: number,
+  inspectionId: number,
+  inspectionTime: Date,
+  p: PositionDaDich,
+): Promise<number> {
+  const inserted = await runner
+    .insert(inspectionPositions)
+    .values({
+      surfaceRowId,
+      inspectionId,
+      inspectionTime,
+      positionId: p.positionId,
+      positionNumber: p.positionNumber,
+      result: p.result,
+      ntf: p.ntf,
+      ntfSource: p.ntfSource,
+      rolledResult: p.rolledResult,
+      rolledNtf: p.rolledNtf,
+      declaredMismatch: p.declaredMismatch,
+      startedAt: toDateOrUndefined(p.startedAt),
+      completedAt: toDateOrUndefined(p.completedAt),
+    })
+    .onConflictDoNothing()
+    .returning({ id: inspectionPositions.id });
+
+  const newId = inserted[0]?.id;
+  if (newId !== undefined) return newId;
+
+  const existing = await runner
+    .select({ id: inspectionPositions.id })
+    .from(inspectionPositions)
+    .where(and(
+      eq(inspectionPositions.surfaceRowId, surfaceRowId),
+      eq(inspectionPositions.positionId, p.positionId),
+    ))
+    .limit(1);
+  const existingId = existing[0]?.id;
+  if (existingId === undefined) {
+    throw new Error(
+      `ghiCayKetQua: position "${p.positionId}" xung đột ở uq_insp_positions_surface_posid ` +
+        `nhưng không tìm lại được hàng đã có (surfaceRowId=${surfaceRowId}) — bất thường.`,
+    );
+  }
+  return existingId;
+}
+
+/**
+ * Cấp 3 — ghi/khử-trùng MỘT `inspection_captures`. `ON CONFLICT DO NOTHING` theo
+ * `uq_insp_captures_position_extid` (migration 0339). Đây là cấp mà `measurement_results.
+ * inspectionCaptureRowId` (0340) sẽ trỏ tới — id trả về ở đây LÀ giá trị đường ingest thật
+ * (Task 6) sẽ gán vào cột đó, KHÔNG phải `product_captures.id` (cây CẤU HÌNH, dãy id khác).
+ */
+async function upsertInspectionCapture(
+  runner: InsertRunner,
+  positionRowId: number,
+  inspectionId: number,
+  inspectionTime: Date,
+  c: CaptureDaDich,
+): Promise<number> {
+  const inserted = await runner
+    .insert(inspectionCaptures)
+    .values({
+      positionRowId,
+      inspectionId,
+      inspectionTime,
+      captureExtId: c.captureId,
+      captureName: c.captureName,
+      captureIndex: c.index,
+      result: c.result,
+      ntf: c.ntf,
+      ntfSource: c.ntfSource,
+      rolledResult: c.rolledResult,
+      rolledNtf: c.rolledNtf,
+      declaredMismatch: c.declaredMismatch,
+      startedAt: toDateOrUndefined(c.startedAt),
+      completedAt: toDateOrUndefined(c.completedAt),
+    })
+    .onConflictDoNothing()
+    .returning({ id: inspectionCaptures.id });
+
+  const newId = inserted[0]?.id;
+  if (newId !== undefined) return newId;
+
+  const existing = await runner
+    .select({ id: inspectionCaptures.id })
+    .from(inspectionCaptures)
+    .where(and(
+      eq(inspectionCaptures.positionRowId, positionRowId),
+      eq(inspectionCaptures.captureExtId, c.captureId),
+    ))
+    .limit(1);
+  const existingId = existing[0]?.id;
+  if (existingId === undefined) {
+    throw new Error(
+      `ghiCayKetQua: capture "${c.captureId}" xung đột ở uq_insp_captures_position_extid ` +
+        `nhưng không tìm lại được hàng đã có (positionRowId=${positionRowId}) — bất thường.`,
+    );
+  }
+  return existingId;
+}
+
+/**
+ * Pha 1B Task 5 (BG-11 ⛔, §3.6) — ghi CÂY 3 cấp `surface → position → capture` đã dịch
+ * bởi `dichCayKetQua` (Task 4, `server/services/ingestCayKetQua.ts`) vào ba bảng cây.
+ * KHÔNG ghi cấp component/measurement — cấp đó thuộc `measurement_results` hiện có, ghi
+ * bởi CÙNG transaction ở caller (xem `persistInspectionAtomic` — truyền `opts.cay` để tự
+ * gọi hàm này bằng đúng `tx` của nó, KHÔNG mở transaction riêng).
+ *
+ * ⚠ BẮT BUỘC chạy trong CÙNG transaction với việc ghi header `product_inspections` — nếu
+ * ghi ở một lượt riêng, một lỗi giữa chừng (mất kết nối, vi phạm ràng buộc ở position/
+ * capture sau) để lại bo có header mà không có cây: đúng lớp mồ côi §3.6 phải dọn, không
+ * phải giả thuyết — `persistInspectionAtomic` gọi hàm này TRƯỚC KHI trả về, bên trong
+ * `db.transaction()` của chính nó.
+ *
+ * Khử trùng (BG-11): mỗi cấp `INSERT ... ON CONFLICT DO NOTHING` theo đúng unique index
+ * của migration 0340/0339, rồi SELECT lại hàng đã có khi bị conflict. Gửi lại một bo
+ * (retry mạng, hoặc hành vi "replay = duplicate" máy đã ghi nhận ở doc 61) không tạo thêm
+ * hàng ở BẤT KỲ cấp nào trong ba cấp — số hàng sau lượt hai bằng đúng số hàng sau lượt một.
+ *
+ * `inspectionTime` được truyền RIÊNG (không đọc từ `cay`) vì `CayDaDich` không mang mốc
+ * thời gian của bo — đúng thiết kế "sao thời gian xuống mọi cấp" của migration 0339: caller
+ * (đã có `data.inspectionTime` cho header) truyền lại y nguyên xuống đây.
+ */
+export async function ghiCayKetQua(
+  runner: InsertRunner,
+  inspectionId: number,
+  inspectionTime: Date,
+  cay: CayDaDich,
+): Promise<void> {
+  for (const surface of cay.surfaces) {
+    const surfaceRowId = await upsertInspectionSurface(runner, inspectionId, inspectionTime, surface);
+    for (const position of surface.positions) {
+      const positionRowId = await upsertInspectionPosition(
+        runner, surfaceRowId, inspectionId, inspectionTime, position,
+      );
+      for (const capture of position.captures) {
+        await upsertInspectionCapture(runner, positionRowId, inspectionId, inspectionTime, capture);
+      }
+    }
+  }
 }
 
 export async function createProductInspection(
@@ -293,11 +504,18 @@ export async function reserveInspectionId(): Promise<number> {
  * On duplicate the caller MUST skip every side-effect (order qty, ERP outbox, NG
  * alerts) exactly as with createProductInspection's duplicate short-circuit.
  * `opts.outcome.duplicate` is set for the out-param contract callers already use.
+ *
+ * Pha 1B Task 5 (BG-11 ⛔) — `opts.cay`: khi có, gọi `ghiCayKetQua` bằng ĐÚNG `tx` của
+ * transaction này (KHÔNG mở transaction riêng) NGAY SAU khi ghi measurements, chỉ trên
+ * nhánh board MỚI (không phải duplicate — cây của board gốc coi như đã có, giống hệt lý do
+ * measurementRows cũng bị bỏ qua trên nhánh duplicate). Đây là cách DUY NHẤT hàm này và
+ * `ghiCayKetQua` chia sẻ một transaction vật lý: nếu ghi cây ở một lượt riêng sau khi hàm
+ * này trả về, một lỗi giữa chừng để lại bo có header mà không có cây (mồ côi §3.6).
  */
 export async function persistInspectionAtomic(
   data: InsertProductInspection & { id: number },
   measurementRows: InsertMeasurementResult[],
-  opts?: { promoteOverallToNg?: boolean; outcome?: CreateInspectionOutcome },
+  opts?: { promoteOverallToNg?: boolean; outcome?: CreateInspectionOutcome; cay?: CayDaDich },
 ): Promise<{ id: number; duplicate: boolean }> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
@@ -365,6 +583,10 @@ export async function persistInspectionAtomic(
     // COMPLETE board instead of the P0 short-circuit resolving to an empty header.
     if (measurementRows.length > 0) {
       await tx.insert(measurementResults).values(measurementRows);
+    }
+    // Pha 1B Task 5 (BG-11) — cây kết quả, CÙNG tx với header + measurements ở trên.
+    if (opts?.cay) {
+      await ghiCayKetQua(tx, header.id, data.inspectionTime as Date, opts.cay);
     }
     if (opts?.promoteOverallToNg) {
       await tx
