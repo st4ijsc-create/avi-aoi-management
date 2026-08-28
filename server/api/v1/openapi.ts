@@ -6,23 +6,28 @@
  *
  * doc 37 §7 (dev-portal / C3): the request-body component schemas that HAVE an authoritative
  * Zod contract are now GENERATED from that Zod source (zod v4 `z.toJSONSchema`), not re-typed
- * by hand — `InspectionIngest` ← machineDataContract latest (Pha 1A Task 4: latest is now "2.0",
- * the nested 4-level tree surface→position→capture→component — see machineDataContractV2.ts;
- * v1.0/v1.1's flat `measurements: []` shape, doc 56 API-2, is the PREVIOUS latest),
- * `ProcessResultIngest` ← machineProcessResultContractV1 (ST4I Standard Process Feed v1, doc 56
- * nhóm C), `WorkOrderIntake`/`BomIntake` ← erpIntake's Zod schemas. The TELEMETRY path
+ * by hand — `ProcessResultIngest` ← machineProcessResultContractV1 (ST4I Standard Process Feed
+ * v1, doc 56 nhóm C), `WorkOrderIntake`/`BomIntake` ← erpIntake's Zod schemas. The TELEMETRY path
  * (`/api/v1/ingest/telemetry`, alias of the live POST /api/ot/ingest — AIR-8) is documented too.
  * Generation is fail-safe: if a schema can't be converted the builder
  * falls back to a hand-written stub, so the doc always renders. Paths/tags for the ERP intake
  * (`/orders`, `/bom`), OAuth token (`/oauth/token`), twin-simulate (`/orchestration/simulate`)
  * and edge-sync (`/edge/sync`) routes are covered so the published contract matches router.ts.
  *
- * ⚠ DRIFT ĐANG BIẾT (Pha 1A Task 4, chưa đóng): `InspectionIngest` ở đây tự động đi theo
- * `LATEST_MACHINE_CONTRACT_VERSION`, nay là "2.0" (cây 4 cấp) — nhưng route thật
- * `/api/v1/ingest/inspection` (server/routers/machineApiRouters.ts) CHƯA đổi, vẫn chỉ nhận
- * payload PHẲNG kiểu v1.x (Task 4 cố ý KHÔNG nối đường ingest). Tài liệu OpenAPI công bố ở
- * đây tạm thời ĐI TRƯỚC hành vi thật của endpoint. Pha 1B (nối đường ingest) phải đóng
- * khoảng lệch này — hoặc ghim doc theo version tường minh, hoặc nối ingest thật để khớp lại.
+ * `InspectionIngest` — Pha 1B Task 7 (BG-2, đóng lệch doc↔endpoint biết từ Pha 1A Task 4).
+ * `/api/v1/ingest/inspection` dùng lại chính caller `machineApi.submitInspection` (xem
+ * `apiV1.test.ts`), và Pha 1B Task 6 làm `submitInspection` nhận CẢ HAI hình dạng theo payload
+ * SHAPE (`laHinhDangCayV2`, server/routers/machineApiRouters.ts) — KHÔNG theo `LATEST_MACHINE_
+ * CONTRACT_VERSION` của registry hợp đồng (registry đó phục vụ `machineContractRouter`, một mặt
+ * TÁCH RIÊNG cho firmware tự kiểm, không phải nguồn sự thật của route ingest thật):
+ *   • mảng `surfaces[]` có mặt ⇒ nhánh cây v2.0 (`machineDataContractV2`, cố định — KHÔNG theo
+ *     LATEST tương lai của registry, vì `laHinhDangCayV2` gọi thẳng `machineDataContractV2`);
+ *   • ngược lại (mảng `measurements[]` phẳng, v1.0/v1.1, doc 56 API-2) ⇒ nhánh cũ — NHẬN theo
+ *     mặc định (`INGEST_REJECT_LEGACY_MACHINE_ENABLED` mặc định TẮT — xem machineApiRouters.ts).
+ * ⇒ `InspectionIngest` bên dưới publish `oneOf` HAI schema (v1.1 đại diện nhánh phẳng, v2.0 là
+ * nhánh cây) thay vì chỉ một — publish MỘT bên (như trước bản vá này, tự động đi theo
+ * `LATEST_MACHINE_CONTRACT_VERSION` của registry) đã xoá `machineCode`/`measurements` khỏi
+ * `required[]` dù route thật vẫn đòi đúng hai trường đó cho nhánh v1.x mặc định NHẬN.
  */
 import { z } from "zod";
 import { ALL_SCOPES, SCOPE_DESCRIPTIONS } from "./scopes";
@@ -30,7 +35,6 @@ import { V1_WEBHOOK_EVENTS } from "./webhookBridge";
 import { orderIntakeSchema, bomIntakeSchema } from "./erpIntake";
 import {
   machineContractJsonSchema,
-  LATEST_MACHINE_CONTRACT_VERSION,
   machineProcessContractJsonSchema,
   LATEST_PROCESS_CONTRACT_VERSION,
 } from "../../contracts/machineDataContract";
@@ -183,8 +187,26 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
   const scopeDoc = ALL_SCOPES.map((s) => `\`${s}\` — ${SCOPE_DESCRIPTIONS[s]}`).join("\n");
 
   // Request-body schemas GENERATED from their authoritative Zod contracts (fail-safe fallbacks).
-  const inspectionIngestSchema =
-    stripSchemaHeader(machineContractJsonSchema(LATEST_MACHINE_CONTRACT_VERSION)) ?? inspectionIngestFallback;
+  // InspectionIngest — Pha 1B Task 7 (BG-2): `oneOf` the TWO shapes `submitInspection` really
+  // accepts (see the file-level doc-comment above). Versions HARDCODED to "1.1"/"2.0" — the
+  // concrete schemas the real shape-dispatch (`laHinhDangCayV2`, machineApiRouters.ts) actually
+  // applies — deliberately NOT `LATEST_MACHINE_CONTRACT_VERSION`: that constant is the
+  // *registry's* "latest DEFINED contract" and can move ahead of what ingest implements (exactly
+  // how this doc drifted the first time — Pha 1A Task 4 bumped it to "2.0" before Pha 1B Task 6
+  // wired the tree path into ingest).
+  const inspectionIngestLegacySchema =
+    stripSchemaHeader(machineContractJsonSchema("1.1")) ?? inspectionIngestFallback;
+  const inspectionIngestTreeSchema =
+    stripSchemaHeader(machineContractJsonSchema("2.0")) ?? inspectionIngestFallback;
+  const inspectionIngestSchema = {
+    description:
+      "submitInspection accepts EITHER shape below — the branch is chosen by PAYLOAD SHAPE, " +
+      "not a declared field: an array `surfaces` present ⇒ the v2.0 TREE schema (2nd oneOf " +
+      "member); otherwise (array `measurements`, v1.0/v1.1 FLAT shape) ⇒ the legacy schema " +
+      "(1st member). Legacy acceptance is the CURRENT default and stays open until the server " +
+      "flag `INGEST_REJECT_LEGACY_MACHINE_ENABLED` is turned on (default: off).",
+    oneOf: [inspectionIngestLegacySchema, inspectionIngestTreeSchema],
+  };
   const workOrderIntakeSchema = zodToJson(orderIntakeSchema) ?? workOrderIntakeFallback;
   const bomIntakeSchemaJson = zodToJson(bomIntakeSchema) ?? bomIntakeFallback;
   // ST4I Standard Process Feed v1 — GENERATED from machineProcessResultContractV1 (fail-safe fallback).
@@ -358,7 +380,11 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
         post: {
           tags: ["Ingest"],
           summary: "Ingest an inspection result",
-          description: "Requires scope `ingest:write`. Reuses the existing submitInspection path.",
+          description:
+            "Requires scope `ingest:write`. Reuses the existing submitInspection path, which accepts " +
+            "EITHER shape published in `InspectionIngest` (`oneOf`) — legacy flat `measurements[]` " +
+            "(v1.0/v1.1, current default) or the v2.0 tree `surfaces[]`. Dispatch is by payload SHAPE " +
+            "(array `surfaces` present ⇒ tree), not a declared `schemaVersion`.",
           requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/InspectionIngest" } } } },
           responses: { "201": { description: "Committed", content: jsonOk() }, "400": { description: "Bad request", content: jsonErr() }, ...errResponses() },
         },
