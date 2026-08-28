@@ -34,6 +34,7 @@ export default defineConfig({
       "shared/**/*.test.ts",
       "client/src/**/*.unit.test.ts",
       "scripts/**/*.test.ts",
+      "vscode-extension/src/**/*.unit.test.ts",
     ],
     // Loads .env + forces DATABASE_URL to an ISOLATED test DB (see vitest.setup.ts).
     // Provision once: `node scripts/setup-test-db.mjs`.

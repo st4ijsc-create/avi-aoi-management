@@ -1,0 +1,52 @@
+{
+  "name": "avi-ai-local",
+  "displayName": "AI Local (ST4I)",
+  "description": "Trợ lý lập trình AI chạy nội bộ — offline, mọi lượt ghi phải có người duyệt.",
+  "version": "0.1.0",
+  "publisher": "st4i",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Programming Languages", "Other"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "aviAiLocal.moBangChat", "title": "AI Local: Mở bảng trò chuyện" },
+      { "command": "aviAiLocal.dangNhap", "title": "AI Local: Đăng nhập" },
+      { "command": "aviAiLocal.dangXuat", "title": "AI Local: Đăng xuất" }
+    ],
+    "configuration": {
+      "title": "AI Local",
+      "properties": {
+        "aviAiLocal.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "Địa chỉ máy chủ AI Local (box chạy model)."
+        },
+        "aviAiLocal.nganSachNguCanh": {
+          "type": "number",
+          "default": 24000,
+          "description": "Trần số ký tự mã nguồn gửi kèm mỗi lượt hỏi."
+        },
+        "aviAiLocal.uiLanguage": {
+          "type": "string",
+          "enum": ["vi", "en", "zh"],
+          "default": "vi",
+          "description": "Ngôn ngữ trả lời."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p .",
+    "build": "node build.mjs",
+    "package": "vsce package --no-dependencies --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.6.3"
+  }
+}

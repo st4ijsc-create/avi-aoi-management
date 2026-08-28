@@ -56,7 +56,10 @@
     "build-storybook": "storybook build",
     "ai:bench": "node scripts/ai-bench/bench.mjs",
     "ai:cli": "tsx server/services/aiCodingCli/batDau.ts",
-    "ai:mcp": "tsx server/services/aiCodingCli/batDau.ts mcp"
+    "ai:mcp": "tsx server/services/aiCodingCli/batDau.ts mcp",
+    "ext:check": "npm run check --prefix vscode-extension",
+    "ext:build": "npm run build --prefix vscode-extension",
+    "ext:package": "npm run package --prefix vscode-extension"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1019.0",

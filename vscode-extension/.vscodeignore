@@ -1,0 +1,6 @@
+src/**
+build.mjs
+tsconfig.json
+node_modules/**
+**/*.unit.test.ts
+**/*.map
