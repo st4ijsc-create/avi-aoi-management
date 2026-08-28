@@ -8,6 +8,8 @@ import { dungNguCanh } from "../loi/nguCanh";
 import { dungYeuCauStream, type CheDoDuAn, type LuotChat } from "../loi/yeuCau";
 import { moDongSse } from "../mang/dongSse";
 import { KHOA_COOKIE } from "../loi/dangNhap";
+import { gopDanhSachDuAn, type MucDuAn } from "../loi/duAn";
+import { goiTruyVanTrpc } from "../mang/trpc";
 
 function chuoiNgauNhien(): string {
   let s = "";
@@ -20,6 +22,8 @@ export class BangChat {
   private static hienTai: BangChat | undefined;
   private lichSu: LuotChat[] = [];
   private huy: AbortController | undefined;
+  private dsDuAn: MucDuAn[] = [];
+  private duAnChon: string | undefined;
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -30,7 +34,12 @@ export class BangChat {
       this.huy?.abort();
       BangChat.hienTai = undefined;
     });
-    this.panel.webview.onDidReceiveMessage((m: { loai: string; cauHoi?: string }) => {
+    // KHÔNG nạp danh sách dự án ở đây. `postMessage` có thể chạy TRƯỚC khi script trong webview
+    // kịp đăng ký `addEventListener("message", …)` ⇒ danh sách rơi mất mà không có lỗi nào — ô
+    // chọn trống một cách im lặng. Đợi webview tự báo "san_sang" (xem htmlBang.ts) rồi mới nạp.
+    this.panel.webview.onDidReceiveMessage((m: { loai: string; cauHoi?: string; duAnId?: string }) => {
+      if (m.loai === "san_sang") { void this.napDuAn(); return; }
+      if (m.duAnId) this.duAnChon = m.duAnId;
       if (m.loai === "hoi" && m.cauHoi) void this.hoi(m.cauHoi);
     });
   }
@@ -71,6 +80,27 @@ export class BangChat {
     });
   }
 
+  private async napDuAn(): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    const serverUrl = cfg.get<string>("serverUrl", "http://localhost:3000");
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    const local = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+    let server: Array<{ id: string; name: string }> = [];
+    if (cookie) {
+      try {
+        const du = (await goiTruyVanTrpc(serverUrl, cookie, "repoWorkspace.listProjects")) as
+          | { projects?: Array<{ id: string; name: string }> }
+          | null;
+        server = du?.projects ?? [];
+      } catch {
+        server = []; // không nối được server thì vẫn dùng được chế độ LOCAL
+      }
+    }
+    this.dsDuAn = gopDanhSachDuAn(local, server);
+    this.duAnChon = this.duAnChon ?? this.dsDuAn[0]?.id;
+    void this.panel.webview.postMessage({ loai: "duAn", ds: this.dsDuAn });
+  }
+
   private async hoi(cauHoi: string): Promise<void> {
     const cookie = await this.context.secrets.get(KHOA_COOKIE);
     if (!cookie) {
@@ -81,10 +111,11 @@ export class BangChat {
       return;
     }
     const cfg = vscode.workspace.getConfiguration("aviAiLocal");
-    const cheDo: CheDoDuAn = {
-      loai: "local",
-      nhan: vscode.workspace.workspaceFolders?.[0]?.name ?? "workspace",
-    };
+    const muc = this.dsDuAn.find((d) => d.id === this.duAnChon) ?? this.dsDuAn[0];
+    const cheDo: CheDoDuAn =
+      muc && muc.loai === "server"
+        ? { loai: "server", projectId: muc.id.slice("server:".length), nhan: muc.nhan }
+        : { loai: "local", nhan: muc?.nhan ?? "workspace" };
     const than = dungYeuCauStream({
       cauHoi,
       nguCanh: this.thuThapNguCanh(),

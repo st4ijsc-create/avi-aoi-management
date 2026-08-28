@@ -24,4 +24,17 @@ describe("dungHtmlBang", () => {
     expect(html).toContain('id="nut-gui"');
     expect(html).toContain('id="hoi-thoai"');
   });
+
+  it("★★★ có ô chọn dự án", () => {
+    expect(html).toContain('id="o-du-an"');
+  });
+
+  it("★★★ webview BÁO SẴN SÀNG sau khi đăng ký lắng nghe (chống đua mất danh sách dự án)", () => {
+    // Nếu extension gửi danh sách TRƯỚC khi webview lắng nghe, danh sách rơi mất mà không có lỗi
+    // nào — ô chọn trống một cách im lặng. Bắt tay bằng `san_sang` là thứ chặn đúng lớp lỗi đó.
+    const viTriDangKy = html.indexOf('addEventListener("message"');
+    const viTriBao = html.indexOf('loai: "san_sang"');
+    expect(viTriDangKy).toBeGreaterThan(-1);
+    expect(viTriBao).toBeGreaterThan(viTriDangKy); // báo SAU khi đã lắng nghe
+  });
 });

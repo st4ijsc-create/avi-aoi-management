@@ -13,6 +13,9 @@ export function dungHtmlBang(dv: { nonce: string }): string {
 <style nonce="${n}">
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
          margin: 0; padding: 8px; display: flex; flex-direction: column; height: 100vh; }
+  #o-du-an { width: 100%; margin-bottom: 8px; background: var(--vscode-dropdown-background);
+             color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border);
+             padding: 4px; }
   #hoi-thoai { flex: 1; overflow-y: auto; white-space: pre-wrap; font-size: 13px; }
   .luot { margin-bottom: 10px; }
   .nhan { opacity: .7; font-size: 11px; text-transform: uppercase; }
@@ -25,6 +28,7 @@ export function dungHtmlBang(dv: { nonce: string }): string {
 </style>
 </head>
 <body>
+<select id="o-du-an" title="Chọn dự án"></select>
 <div id="hoi-thoai"></div>
 <div id="hang-nhap">
   <textarea id="o-nhap" rows="2" placeholder="Hỏi AI Local… (Ctrl+Enter để gửi)"></textarea>
@@ -56,7 +60,7 @@ export function dungHtmlBang(dv: { nonce: string }): string {
     themLuot("Bạn", cauHoi);
     oNhap.value = "";
     khoiTraLoi = themLuot("AI Local", "");
-    vscode.postMessage({ loai: "hoi", cauHoi });
+    vscode.postMessage({ loai: "hoi", cauHoi, duAnId: document.getElementById("o-du-an").value });
   }
 
   document.getElementById("nut-gui").addEventListener("click", gui);
@@ -68,8 +72,21 @@ export function dungHtmlBang(dv: { nonce: string }): string {
     const m = e.data;
     if (m.loai === "token" && khoiTraLoi) khoiTraLoi.textContent += m.chu;
     else if (m.loai === "loi") themLuot("Lỗi", m.thongDiep);
+    else if (m.loai === "duAn") {
+      const o = document.getElementById("o-du-an");
+      o.innerHTML = "";
+      for (const d of m.ds) {
+        const opt = document.createElement("option");
+        opt.value = d.id; opt.textContent = d.nhan;
+        o.appendChild(opt);
+      }
+    }
     hoiThoai.scrollTop = hoiThoai.scrollHeight;
   });
+  // Bắt tay chống ĐUA: extension có thể gửi danh sách dự án TRƯỚC khi script này kịp đăng ký
+  // listener ở trên ⇒ danh sách rơi mất mà không có lỗi nào. Báo "san_sang" NGAY SAU khi đã lắng
+  // nghe để extension biết lúc nào an toàn để gửi.
+  vscode.postMessage({ loai: "san_sang" });
 </script>
 </body>
 </html>`;
