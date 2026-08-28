@@ -13,13 +13,20 @@ export async function docLuongSse(
   let dem = "";
   const hong: string[] = [];
 
-  for (;;) {
-    const { done, value } = await doc.read();
-    if (done) break;
-    const r = tachKhungSse(dem, giaiMa.decode(value, { stream: true }));
-    dem = r.du;
-    hong.push(...r.hong);
-    for (const sk of r.suKien) nhan(sk);
+  try {
+    for (;;) {
+      const { done, value } = await doc.read();
+      if (done) break;
+      const r = tachKhungSse(dem, giaiMa.decode(value, { stream: true }));
+      dem = r.du;
+      hong.push(...r.hong);
+      for (const sk of r.suKien) nhan(sk);
+    }
+  } finally {
+    // Trả khoá DÙ CÓ NÉM. `nhan` là callback của lớp trên (bảng chat) — nó ném thì luồng vẫn
+    // đang khoá và kết nối phía dưới không được giải phóng. `finally` là chỗ DUY NHẤT bảo đảm
+    // điều đó, vì đường thoát bằng ngoại lệ không đi qua `return`.
+    doc.releaseLock();
   }
   return { hong };
 }
@@ -41,7 +48,16 @@ export async function moDongSse(dv: {
     body: JSON.stringify(dv.than),
     signal: dv.tinHieu,
   });
-  if (!res.ok) throw new Error(`Máy chủ trả ${res.status} — thử đăng nhập lại.`);
+  if (!res.ok) {
+    // Chỉ 401/403 mới là chuyện phiên đăng nhập. Gán mọi mã lỗi vào "đăng nhập lại" là chỉ sai
+    // đường cho người dùng: họ đăng nhập lại, vẫn hỏng, và không ai biết nguyên nhân thật.
+    const mat_phien = res.status === 401 || res.status === 403;
+    throw new Error(
+      mat_phien
+        ? `Máy chủ trả ${res.status} — phiên đăng nhập không còn hiệu lực, hãy đăng nhập lại.`
+        : `Máy chủ trả ${res.status}.`,
+    );
+  }
   if (!res.body) throw new Error("Máy chủ không trả luồng dữ liệu.");
   return docLuongSse(res.body, dv.nhan);
 }

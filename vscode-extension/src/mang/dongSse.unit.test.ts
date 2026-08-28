@@ -34,4 +34,23 @@ describe("docLuongSse", () => {
     expect(thu).toEqual([{ i: 1 }]);
     expect(r.hong).toEqual([]);
   });
+
+  it("★★★ ký tự nhiều byte bị cắt GIỮA hai chunk không bị vỡ (chữ Việt)", async () => {
+    // 'à' trong UTF-8 là 2 byte. Cắt vào GIỮA hai byte đó ⇒ decoder buộc phải giữ trạng thái
+    // giữa hai lần đọc. Không có `{stream:true}` thì ký tự này biến thành ký tự thay thế.
+    const bo = new TextEncoder();
+    const byte = bo.encode('data: {"t":"Chào"}\n\n');
+    const truoc = bo.encode('data: {"t":"Ch').length; // byte ĐẦU của 'à'
+    const cat = truoc + 1; // rơi vào GIỮA 'à'
+    const luong = new ReadableStream<Uint8Array>({
+      start(dk) {
+        dk.enqueue(byte.slice(0, cat));
+        dk.enqueue(byte.slice(cat));
+        dk.close();
+      },
+    });
+    const thu: Array<Record<string, unknown>> = [];
+    await docLuongSse(luong, (sk) => thu.push(sk));
+    expect(thu).toEqual([{ t: "Chào" }]);
+  });
 });
