@@ -4,6 +4,7 @@
 import * as vscode from "vscode";
 import { dangNhap } from "./mang/dangNhap";
 import { KHOA_COOKIE } from "./loi/dangNhap";
+import { BangChat } from "./ui/bangChat";
 
 async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("aviAiLocal");
@@ -38,9 +39,7 @@ async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand("aviAiLocal.moBangChat", () => {
-      void vscode.window.showInformationMessage("AI Local: bảng trò chuyện sẽ mở ở Task 7.");
-    }),
+    vscode.commands.registerCommand("aviAiLocal.moBangChat", () => BangChat.moHoacHien(context)),
     vscode.commands.registerCommand("aviAiLocal.dangNhap", () => void chayDangNhap(context)),
     vscode.commands.registerCommand("aviAiLocal.dangXuat", async () => {
       await context.secrets.delete(KHOA_COOKIE);
