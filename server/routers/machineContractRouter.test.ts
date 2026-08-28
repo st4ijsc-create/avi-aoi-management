@@ -18,13 +18,21 @@
  * `ok:true` (đột biến canh ở cuối), các ca "payload hỏng" bên dưới ĐỎ vì `validateResult.ok`
  * (mutated → true) lệch với `ingestChapNhan` (vẫn `false`, vì `submitInspection` không bị đụng).
  *
- * Bốn điểm dùng `LATEST_MACHINE_CONTRACT_VERSION` trong router (`versions` ~28, `jsonSchema` ~52,
- * `validate` mặc định version ~66 — cho CẢ hai contract) đều được canh — kể cả GOTCHA đã đo TRƯỚC
- * khi viết lưới này: LATEST nay là "2.0", nên `validate({payload})` KHÔNG khai `version` trên một
- * payload v1.x hợp lệ (hình dạng phẳng `measurements[]`) bị đo NHẦM bằng cây v2.0 ⇒ báo ĐỎ dù
- * ingest thật NHẬN. Đây KHÔNG phải lỗi của lưới — đó là một khác biệt THẬT giữa "version mặc định
- * của validate()" và "shape-dispatch thật của ingest" (đã NÓI RA, không sửa hành vi router — cùng
- * nguyên tắc với `server/contracts/hopDongVsIngest.test.ts`: sự khác nhau phải được NÓI RA).
+ * Bốn điểm dùng `LATEST_MACHINE_CONTRACT_VERSION` trong router (`versions`, `jsonSchema`,
+ * `validate` mặc định version — cho CẢ hai contract) đều được canh.
+ *
+ * ── Task 7 phần 2 (2026-08-28, quyết định chủ dự án) — GOTCHA ban đầu đã được ĐÓNG, không chỉ
+ * NÓI RA ────────────────────────────────────────────────────────────────────────────────────
+ * Lượt đo ĐẦU (Task 7 phần 1) phát hiện: `validate({payload})` KHÔNG khai `version` LUÔN mặc
+ * định về `LATEST_MACHINE_CONTRACT_VERSION` ("2.0", cây) bất kể hình dạng payload ⇒ một payload
+ * v1.x hợp lệ (mảng `measurements[]`) tự kiểm không khai version bị đo NHẦM bằng cây v2.0, báo ĐỎ
+ * dù ingest thật NHẬN — `validate` "nói dối" firmware, đúng lớp lỗi BG-3 sinh ra để đóng. Ban đầu
+ * lưới này chỉ NÓI RA khác biệt (cùng nguyên tắc `hopDongVsIngest.test.ts`) và để ngoài phạm vi
+ * sửa. Chủ dự án phán KHÔNG hoãn: xuất xưởng GOTCHA đó trong chính pha có nhiệm vụ đóng BG-3 là
+ * tự mâu thuẫn. `machineContractRouter.ts` nay suy phiên bản MẶC ĐỊNH (khi KHÔNG khai `version`)
+ * THEO HÌNH DẠNG payload — DÙNG CHUNG vị từ `laHinhDangCayV2` mà ingest thật dùng (chuyển từ
+ * `machineApiRouters.ts` sang `contracts/machineDataContract.ts`, MỘT bản, tránh trôi — BG-19).
+ * Khai `version` tường minh VẪN LUÔN THẮNG hình dạng (đường thoát kiểm chéo có chủ đích).
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -212,6 +220,9 @@ describe("mệnh đề trung tâm — validate() XANH ⇔ ingest THẬT nhận",
     const payload = payloadV2();
     const v = await validateCaller().validate({ payload });
     const accepted = await ingestChapNhan(payload);
+    // Suy đúng theo HÌNH DẠNG (mảng surfaces có mặt) — trùng LATEST hôm nay, nhưng suy bằng
+    // vị từ hình dạng, KHÔNG phải "luôn luôn LATEST" (khác nhau khi payload là v1.x — xem dưới).
+    expect(v.version).toBe(LATEST_MACHINE_CONTRACT_VERSION);
     expect(v.ok).toBe(true);
     expect(accepted).toBe(true);
     // Phát biểu MỐI QUAN HỆ, không chỉ hai khẳng định độc lập — đây là mệnh đề BG-3 canh.
@@ -258,19 +269,49 @@ describe("mệnh đề trung tâm — validate() XANH ⇔ ingest THẬT nhận",
   });
 });
 
-describe("GOTCHA đã đo trước khi sửa — validate() KHÔNG khai version trên payload v1.x", () => {
-  it("payload v1.x hợp lệ, validate({payload}) KHÔNG khai version (mặc định LATEST='2.0') → báo ĐỎ dù ingest thật NHẬN", async () => {
-    // Giả định gốc của GOTCHA này — nếu LATEST đổi khỏi "2.0", ca này phải viết lại.
-    expect(LATEST_MACHINE_CONTRACT_VERSION).toBe("2.0");
+describe("Task 7 phần 2 — validate() KHÔNG khai version suy THEO HÌNH DẠNG (GOTCHA đã ĐÓNG, không chỉ nói ra)", () => {
+  it("mệnh đề 1 — payload v1.x hợp lệ, validate({payload}) KHÔNG khai version → suy '1.1' theo HÌNH DẠNG (KHÔNG phải LATEST '2.0') → XANH, khớp ingest thật", async () => {
     const payload = payloadV1();
     const v = await validateCaller().validate({ payload }); // KHÔNG khai version
     const accepted = await ingestChapNhan(payload);
-    expect(v.ok).toBe(false); // false NEGATIVE — validate() nói "hỏng"
-    expect(accepted).toBe(true); // ingest thật vẫn NHẬN (nhánh v1.x, cờ TẮT theo mặc định)
-    // KHÔNG phải lỗi của lưới: đây là khác biệt THẬT giữa "version mặc định của validate()" (theo
-    // LATEST của registry) và "shape-dispatch thật của ingest" (theo mảng surfaces có/không có
-    // mặt). Máy v1.x tự kiểm PHẢI khai version:"1.1" tường minh (xem describe ở trên) —
-    // validate({payload}) TRẦN không an toàn để tự kiểm một payload v1.x.
+    // TRƯỚC bản vá phần 2: version suy ra là LATEST_MACHINE_CONTRACT_VERSION ("2.0") ⇒ v.ok=false
+    // (false NEGATIVE). SAU bản vá: suy theo hình dạng (mảng measurements, không có surfaces) ⇒ "1.1".
+    expect(v.version).toBe("1.1");
+    expect(v.version).not.toBe(LATEST_MACHINE_CONTRACT_VERSION);
+    expect(v.ok).toBe(true);
+    expect(accepted).toBe(true);
+    // Mối quan hệ ĐÚNG bây giờ cho hình dạng v1.x — trước bản vá phần 2, dòng này ĐỎ
+    // (v.ok=false, accepted=true) chính là GOTCHA đo được ở Task 7 phần 1.
+    expect(v.ok).toBe(accepted);
+  });
+
+  it("mệnh đề 2 — payload v2.0 hợp lệ, validate({payload}) KHÔNG khai version → suy LATEST theo HÌNH DẠNG (mảng surfaces) → XANH, khớp ingest thật", async () => {
+    const payload = payloadV2();
+    const v = await validateCaller().validate({ payload });
+    const accepted = await ingestChapNhan(payload);
+    expect(v.version).toBe(LATEST_MACHINE_CONTRACT_VERSION);
+    expect(v.ok).toBe(true);
+    expect(accepted).toBe(true);
+    expect(v.ok).toBe(accepted);
+  });
+});
+
+describe("mệnh đề 3 — khai `version` tường minh LUÔN THẮNG hình dạng (đường thoát kiểm chéo có chủ đích)", () => {
+  it("validate({version:'1.1', payload: payload CÂY v2.0}) vẫn đo bằng 1.1 — KHÔNG bị hình dạng ghi đè lên version đã khai", async () => {
+    const payload = payloadV2(); // hình dạng CÂY (mảng surfaces) — nếu suy theo hình dạng sẽ ra "2.0"
+    const v = await validateCaller().validate({ payload, version: "1.1" });
+    expect(v.version).toBe("1.1"); // version khai tường minh thắng, KHÔNG bị suy lại thành "2.0"
+    // Payload cây không mang mảng `measurements` (required của schema 1.1) → ok:false, đúng NGHĨA:
+    // đây là một payload v2.0 bị đo (có chủ đích) bằng một hợp đồng KHÔNG phải của nó.
+    expect(v.ok).toBe(false);
+    expect((v.errors ?? []).some((e) => e.path === "measurements")).toBe(true);
+  });
+
+  it("validate({version:'2.0', payload: payload PHẲNG v1.x}) vẫn đo bằng 2.0 — KHÔNG bị hình dạng ghi đè lên version đã khai", async () => {
+    const payload = payloadV1(); // hình dạng PHẲNG (mảng measurements) — nếu suy theo hình dạng sẽ ra "1.1"
+    const v = await validateCaller().validate({ payload, version: "2.0" });
+    expect(v.version).toBe("2.0");
+    expect(v.ok).toBe(false); // payload phẳng thiếu identity/productId/summary/surfaces (required của 2.0)
   });
 });
 

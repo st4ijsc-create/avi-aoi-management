@@ -122,7 +122,10 @@ import { macTenantChoGhi } from "./phamViGhiMay";
 // Pha 1B Task 6 (BG-1, §13 Đ-19) — nối payload máy v2.0 (cây 4 cấp) vào ingest THẬT +
 // hàm từ chối v1.x đã viết sẵn nhưng chưa có nơi gọi (§13 Đ-11).
 import { machineDataContractV2 } from "../contracts/machineDataContractV2";
-import { loiMayChuaNangCap } from "../contracts/machineDataContract";
+// Pha 1B Task 7 phần 2 (quyết định chủ dự án 2026-08-28) — `laHinhDangCayV2` CHUYỂN sang
+// contracts/machineDataContract.ts để `machineContractRouter.validate()` dùng CHUNG một bản,
+// không đẻ bản thứ hai trôi khỏi bản gốc (xem chú thích tại định nghĩa).
+import { loiMayChuaNangCap, laHinhDangCayV2 } from "../contracts/machineDataContract";
 import { dichCayKetQua, type MachinePayloadV2 } from "../services/ingestCayKetQua";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2965,22 +2968,10 @@ function ensureProcessWalWired(): void {
 // một cờ tính năng.
 // ════════════════════════════════════════════════════════════════════════════
 
-/**
- * Nhận diện phiên bản THEO HÌNH DẠNG payload, KHÔNG theo trường `schemaVersion` khai
- * báo — trường đó là `z.string().max(20).optional()` (log-only, Doc 56 Đ1), máy CÓ
- * THỂ không gửi. Hình dạng ổn định hơn: v2.0 LUÔN mang mảng `surfaces` (bắt buộc theo
- * `machineDataContractV2`); v1.0/v1.1 LUÔN mang mảng `measurements` (bắt buộc theo
- * `submitInspectionCoreObject`). Một payload thiếu CẢ HAI vẫn rơi vào nhánh v1.x bên
- * dưới và bị `submitInspectionInputSchema` từ chối bằng lỗi zod bình thường — không gì
- * đổi so với hôm nay cho một payload garbage.
- */
-function laHinhDangCayV2(raw: unknown): boolean {
-  return (
-    typeof raw === "object" &&
-    raw !== null &&
-    Array.isArray((raw as { surfaces?: unknown }).surfaces)
-  );
-}
+// `laHinhDangCayV2` (nhận diện phiên bản THEO HÌNH DẠNG payload — mảng `surfaces` ⇒ cây v2.0)
+// CHUYỂN sang `../contracts/machineDataContract.ts` (Pha 1B Task 7 phần 2, 2026-08-28) để
+// `machineContractRouter.validate()` dùng CHUNG một bản với ingest thật — xem import ở đầu file
+// và chú thích tại định nghĩa gốc.
 
 /**
  * Cờ CẮT máy cũ (BG-1). Mặc định TẮT. CHỈ bật SAU KHI Khối B (đồng bộ teach data)

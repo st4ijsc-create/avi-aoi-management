@@ -190,6 +190,29 @@ export function machineContractJsonSchema(version: string): unknown | null {
   return z.toJSONSchema(schema, { target: "draft-7" });
 }
 
+/**
+ * Nhận diện phiên bản THEO HÌNH DẠNG payload, KHÔNG theo trường `schemaVersion` khai báo —
+ * trường đó là optional (log-only), máy CÓ THỂ không gửi. Hình dạng ổn định hơn: v2.0 LUÔN
+ * mang mảng `surfaces` (bắt buộc theo `machineDataContractV2`); v1.0/v1.1 LUÔN mang mảng
+ * `measurements` (bắt buộc theo hợp đồng máy phẳng).
+ *
+ * ★★★ MỘT BẢN DUY NHẤT, DÙNG CHUNG — chuyển từ `machineApiRouters.ts` sang đây (Pha 1B Task 7
+ * phần 2, quyết định chủ dự án 2026-08-28). Trước đó vị từ này SỐNG PRIVATE trong ingest thật
+ * (`submitInspectionRouterInputSchema`) và KHÔNG có bản nào khác — `machineContractRouter.
+ * validate()`/`jsonSchema()` mặc định thẳng về `LATEST_MACHINE_CONTRACT_VERSION` bất kể hình
+ * dạng payload, khiến `validate({payload})` không khai `version` "nói dối" firmware trên một
+ * payload v1.x hợp lệ (báo ĐỎ dù ingest thật NHẬN — GOTCHA đo được, xem `machineContractRouter.
+ * test.ts`). Đặt vị từ ở ĐÂY (module hợp đồng dùng chung) rồi cho CẢ HAI phía (ingest thật VÀ
+ * validate tự kiểm) cùng gọi — tránh đẻ bản thứ hai trôi khỏi bản gốc (chính là lớp lỗi BG-19).
+ */
+export function laHinhDangCayV2(raw: unknown): boolean {
+  return (
+    typeof raw === "object" &&
+    raw !== null &&
+    Array.isArray((raw as { surfaces?: unknown }).surfaces)
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // ST4I Standard Process Feed v1 — hợp đồng RESULT/TELEMETRY chuẩn hoá (doc 56/57).
 //
