@@ -228,3 +228,10 @@ knowledge/embeddings.jsonl
 # MOD_FEDERATION ⇒ MỌI bản sao repo thừa hưởng một SKU thiếu 5 module. Hệ đang chạy
 # được CHỈ NHỜ `LICENSE_BYPASS=true`; tắt cờ đó là 5 module tắt theo, KHÔNG chỉ AI.
 server/license/license-state-cache.json
+
+# ★ 2026-08-29 — TẠO TÁC ĐÓNG GÓI, sinh bởi `npm run ext:package` (Đợt A Task 9).
+# `.vsix` là bản build nhị phân của `vscode-extension/`, không phải mã nguồn; commit nó
+# sẽ khiến git theo dõi một blob đóng gói lại mỗi lần build (kích thước tăng vô ích) và
+# nhanh trôi khỏi mã nguồn thật ngay sau lần build kế tiếp. Cài offline bằng
+# `code --install-extension avi-ai-local-0.1.0.vsix` sau khi tự đóng gói lại.
+vscode-extension/*.vsix
