@@ -26,6 +26,18 @@ import { sql } from "drizzle-orm";
  * cô lập (`_probe` riêng, không đụng 2.340 hàng thật) với 1 điểm phẳng + 1 điểm cây, chạy lại
  * ca thứ nhất → ĐỎ, đúng `productModelId` bị nêu tên trong thông điệp lỗi; dọn sạch → chạy
  * lại → xanh trở lại. Xem `task-5-report.md` để có nguyên văn output của cả hai lượt chạy.
+ *
+ * ★★ Task 8 (BG-4, 2026-08-28) — NÓI THẬT về ca chống-tự-thoả thứ hai dưới đây: kế hoạch gốc
+ * đòi siết nó thành `count(*) FILTER (WHERE "captureRowId" IS NOT NULL) > 0` (tức đòi bằng
+ * chứng đã có điểm đo THẬT SỰ CHUYỂN SANG CÂY). Đo lại tại đây cho thấy điều đó BẤT KHẢ THI
+ * trong Pha 1B: `measurement_point_defs.captureRowId` chỉ được ghi bởi đồng bộ teach data
+ * (Khối B, CHƯA CHẠY) — Pha 1B chỉ ghi cây KẾT QUẢ (`inspection_surfaces/positions/captures`,
+ * xem ca chống-tự-thoả tương ứng ở cuối `server/db/cayKetQuaSchema.db.test.ts`), không đụng gì
+ * đến cây CẤU HÌNH. Nên GIỮ NGUYÊN mệnh đề `count(*) > 0` — nhưng phải khai ĐÚNG những gì nó
+ * canh: bảng `measurement_point_defs` KHÔNG RỖNG, hết. Nó KHÔNG canh, và CHƯA THỂ canh, việc
+ * "có điểm đo nào đã chuyển sang cây cấu hình" — một tên ca nghe rộng hơn phạm vi thật của nó
+ * là đúng khuôn sinh "xanh giả" mà dự án này đã trả giá nhiều lần. Việc siết thật (đòi
+ * `captureRowId > 0`) chuyển sang Khối B (BG-20), sau khi đồng bộ teach data chạy.
  */
 describe("bất biến: sản phẩm không trộn điểm phẳng và điểm cây", () => {
   it("KHÔNG sản phẩm nào có CẢ điểm phẳng LẪN điểm cây", async () => {
@@ -44,11 +56,15 @@ describe("bất biến: sản phẩm không trộn điểm phẳng và điểm c
     expect(rows, `sản phẩm trộn hai loại: ${rows.map((x) => x.productModelId).join(", ")}`).toEqual([]);
   });
 
-  it("mệnh đề KHÔNG tự thoả — phải có điểm đo trong bảng để phép đo có nghĩa", async () => {
+  it("chống-tự-thoả — CHỈ canh bảng KHÔNG RỖNG (Task 8: CHƯA canh đã có điểm nào chuyển sang cây)", async () => {
+    // ⚠ Đọc kỹ trước khi "siết" ca này: nó KHÔNG chứng minh có điểm đo nào đã chuyển sang cây
+    // cấu hình (đòi hỏi đó là `captureRowId > 0`, xem doc-comment đầu file, Task 8/BG-4) — chỉ
+    // chứng minh bảng có hàng, đủ để ca bất biến phía trên không tự thoả trên tập RỖNG. Việc
+    // siết thành `captureRowId > 0` chuyển sang Khối B (BG-20) sau khi đồng bộ teach data chạy.
     const db = await getDb();
     const r: any = await db!.execute(sql`
       SELECT count(*)::int AS n FROM measurement_point_defs WHERE "deletedAt" IS NULL`);
     const n = ((r.rows ?? r) as Array<{ n: number }>)[0].n;
-    expect(n, "bảng rỗng ⇒ ca trên tự thoả, phép đo vô nghĩa").toBeGreaterThan(0);
+    expect(n, "bảng rỗng ⇒ ca bất biến phía trên tự thoả, phép đo vô nghĩa").toBeGreaterThan(0);
   });
 });
