@@ -44,6 +44,33 @@ describe("cheBiMat", () => {
     const ma = "public int Add(int a, int b) => a + b;";
     expect(cheBiMat(ma)).toBe(ma);
   });
+
+  it("★★★ kiểu JSON: \"password\": \"…\" PHẢI bị che (appsettings.json của .NET)", () => {
+    const r = cheBiMat('{ "password": "SuperSecret123" }');
+    expect(r).not.toContain("SuperSecret123");
+  });
+
+  it("★★★ credential NHÚNG trong chuỗi kết nối bị che (đo thật trên .env.example)", () => {
+    const r = cheBiMat("DATABASE_URL=postgresql://user:sieu-mat-khau@localhost:5432/avi_aoi");
+    expect(r).not.toContain("sieu-mat-khau");
+    expect(r).toContain("postgresql://user:"); // vẫn đọc được cấu trúc, chỉ mất mật khẩu
+    expect(r).toContain("@localhost:5432");
+  });
+
+  it("★★★ giá trị NHIỀU TỪ không nháy bị che tới hết dòng", () => {
+    const r = cheBiMat("password = correct horse battery staple");
+    expect(r).not.toContain("horse");
+    expect(r).not.toContain("staple");
+  });
+
+  it("★★ khoá Stripe dùng GẠCH DƯỚI (sk_live_…) cũng bị che", () => {
+    expect(cheBiMat('const k = "sk_live_51H2xJ2KxABCDEFGHIJKLMNOP";')).not.toContain("51H2xJ2Kx");
+  });
+
+  it("★★ che tới hết dòng KHÔNG tràn sang dòng sau", () => {
+    const r = cheBiMat("password = bi-mat\nconst x = 1;");
+    expect(r).toContain("const x = 1;");
+  });
 });
 
 describe("dungNguCanh", () => {
@@ -77,5 +104,22 @@ describe("dungNguCanh", () => {
 
   it("★★ không có gì ⇒ chuỗi rỗng (không đẻ khung trống)", () => {
     expect(dungNguCanh({ nganSach: 1000 })).toBe("");
+  });
+
+  it("★★★ danh sách tệp bị LỌC: tên .env không lọt vào ngữ cảnh", () => {
+    const s = dungNguCanh({ dsTep: ["src/a.cs", ".env", "src/b.cs"], nganSach: 10_000 });
+    expect(s).toContain("src/a.cs");
+    expect(s).not.toContain(".env");
+  });
+
+  it("★★★ hết ngân sách ⇒ khối sau bị bỏ nhưng PHẢI KHAI BÁO (không bỏ im lặng)", () => {
+    const s = dungNguCanh({
+      doanChon: { duong: "a.cs", dongDau: 1, dongCuoi: 2, noiDung: "x".repeat(3000) },
+      tepDangMo: { duong: "a.cs", noiDung: "KHONG_DUOC_XUAT_HIEN" },
+      nganSach: 200,
+    });
+    expect(s).not.toContain("KHONG_DUOC_XUAT_HIEN");
+    expect(s).toContain("ĐÃ BỎ QUA");
+    expect(s).toContain("tệp đang mở");
   });
 });
