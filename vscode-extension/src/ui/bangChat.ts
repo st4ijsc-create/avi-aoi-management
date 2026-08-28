@@ -3,6 +3,7 @@
  * về. KHÔNG có bất kỳ đường ghi tệp nào ở đây.
  */
 import * as vscode from "vscode";
+import { randomBytes } from "node:crypto";
 import { dungHtmlBang } from "./htmlBang";
 import { dungNguCanh } from "../loi/nguCanh";
 import { dungYeuCauStream, type CheDoDuAn, type LuotChat } from "../loi/yeuCau";
@@ -11,11 +12,12 @@ import { KHOA_COOKIE } from "../loi/dangNhap";
 import { gopDanhSachDuAn, type MucDuAn } from "../loi/duAn";
 import { goiTruyVanTrpc } from "../mang/trpc";
 
+/**
+ * Nonce cho CSP của webview. Dùng CSPRNG chứ không `Math.random()`: nonce là thứ CSP dựa vào để
+ * quyết định script nào được phép chạy — đoán được nonce là làm yếu chính hàng rào đó.
+ */
 function chuoiNgauNhien(): string {
-  let s = "";
-  const bang = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) s += bang[Math.floor(Math.random() * bang.length)];
-  return s;
+  return randomBytes(24).toString("base64url");
 }
 
 export class BangChat {
@@ -141,15 +143,22 @@ export class BangChat {
             traLoi += sk.token;
             void this.panel.webview.postMessage({ loai: "token", chu: sk.token });
           } else if (sk.type === "error") {
+            // Máy chủ gửi chi tiết ở `error` (aiLocalKnowledgeApi.ts:628), KHÔNG phải `message`.
+            // Nhận cả hai để phòng đường khác, nhưng `error` phải đứng TRƯỚC.
+            const chiTiet =
+              typeof sk.error === "string" ? sk.error : typeof sk.message === "string" ? sk.message : null;
             void this.panel.webview.postMessage({
               loai: "loi",
-              thongDiep: typeof sk.message === "string" ? sk.message : "Máy chủ báo lỗi.",
+              thongDiep: chiTiet ?? "Máy chủ báo lỗi.",
             });
           }
         },
       });
       this.lichSu.push({ role: "user", content: cauHoi }, { role: "assistant", content: traLoi });
     } catch (e) {
+      // Huỷ lượt cũ là hành vi BÌNH THƯỜNG (người dùng hỏi câu mới) — không phải lỗi, không được
+      // khai thành lỗi. Chỉ lỗi THẬT mới hiện lên.
+      if ((e as Error).name === "AbortError") return;
       void this.panel.webview.postMessage({ loai: "loi", thongDiep: (e as Error).message });
     }
   }
