@@ -33,8 +33,27 @@ export function phanTichKetQuaDangNhap(du: unknown): KetQuaDangNhap {
     const nd = o.user as { name?: unknown } | undefined;
     return { loai: "ok", ten: typeof nd?.name === "string" ? nd.name : "" };
   }
-  return {
-    loai: "loi",
-    thongDiep: typeof o.message === "string" ? o.message : "Đăng nhập thất bại",
-  };
+  // Máy chủ trả lỗi ở trường `error` (oauth.ts:360), CHỈ 2FA mới dùng `message`. Đọc `error`
+  // TRƯỚC — đọc nhầm `message` ở đây khiến MỌI lỗi thật (sai mật khẩu, khoá tài khoản, vô hiệu
+  // hoá) đều rơi về câu dự phòng chung, người dùng không biết vì sao bị chặn.
+  const loi = typeof o.error === "string" ? o.error : typeof o.message === "string" ? o.message : null;
+  return { loai: "loi", thongDiep: loi ?? "Đăng nhập thất bại" };
+}
+
+/**
+ * Máy chủ chỉ được là http/https. Vị từ này chặn đường rò credential: `serverUrl` đến từ cấu
+ * hình VSCode, và một scheme lạ (file:, data:, javascript:) hoặc URL rác sẽ được ghép thẳng vào
+ * request MANG MẬT KHẨU. Từ chối rành mạch còn hơn gửi bí mật đi nơi không rõ.
+ */
+export function kiemTraServerUrl(url: string): { ok: true; url: string } | { ok: false; lyDo: string } {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return { ok: false, lyDo: "Địa chỉ máy chủ không hợp lệ" };
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    return { ok: false, lyDo: `Giao thức không được phép: ${u.protocol}` };
+  }
+  return { ok: true, url: url.replace(/\/+$/, "") };
 }

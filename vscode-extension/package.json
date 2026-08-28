@@ -20,6 +20,7 @@
       "properties": {
         "aviAiLocal.serverUrl": {
           "type": "string",
+          "scope": "machine",
           "default": "http://localhost:3000",
           "description": "Địa chỉ máy chủ AI Local (box chạy model)."
         },
