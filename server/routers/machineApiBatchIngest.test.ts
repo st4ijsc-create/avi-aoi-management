@@ -14,6 +14,7 @@
  * short-circuit must NOT re-run.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { TRPCError } from "@trpc/server";
 
 vi.mock("../db", () => {
   // State the fake reads from: `apiKeyRows` feeds BOTH the machine-key auth lookup
@@ -155,6 +156,7 @@ beforeEach(() => {
   delete process.env.MACHINE_HEARTBEAT_RATE_LIMIT_PER_MIN;
   delete process.env.MACHINE_KEY_ROTATION_WARN_DAYS;
   delete process.env.AI_INLINE_GATE_ENABLED;
+  delete process.env.INGEST_REJECT_LEGACY_MACHINE_ENABLED; // mặc định TẮT (Pha 1C Task 3, BG-31)
   state.apiKeyRows = [];
   _resetHeartbeatRateLimit();
   vi.clearAllMocks();
@@ -369,5 +371,54 @@ describe("heartbeat — rate limit (§5.1) + key-rotation signal (CASE #10)", ()
     expect(res.keyStatus).toBe("expiring");
     expect(res.keyRotationPending).toBe(true);
     expect(res.succeeded).toBe(1);
+  });
+});
+
+describe("submitInspectionBatch — Pha 1C Task 3 (BG-31): cờ CẮT máy cũ nay CŨNG gác cửa batch", () => {
+  /**
+   * TRƯỚC bản vá: `submitInspectionBatch` không hề đọc `INGEST_REJECT_LEGACY_MACHINE_ENABLED` —
+   * một máy cũ bị `submitInspection` từ chối khi cờ BẬT vẫn lách được bằng cách gói CHÍNH payload
+   * đó vào `{inspections:[payload]}` rồi gọi cửa này. Ba ca dưới đây đo HÀNH VI THẬT qua endpoint
+   * thật (không gọi thẳng hàm quyết định), đúng khuôn `machineApiIngestCayV2.test.ts` mệnh đề 4.
+   */
+  it("★★★ cờ BẬT + batch mảng phẳng (legacy) → BAD_REQUEST nêu rõ '2.0', KHÔNG chạm DB, KHÔNG bị đệm WAL", async () => {
+    process.env.INGEST_REJECT_LEGACY_MACHINE_ENABLED = "true";
+    setMachine(20);
+    const fake = installIdempotentInsertFake();
+    const caller = machineApiRouter.createCaller(ctx());
+
+    let thrown: unknown;
+    try {
+      await caller.submitInspectionBatch({ apiKey: "SHARED-KEY", inspections: [item("SN-LEGACY-BATCH")] });
+      throw new Error("submitInspectionBatch lẽ ra phải ném lỗi khi cờ BẬT");
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(TRPCError);
+    const trpcErr = thrown as TRPCError;
+    expect(trpcErr.code).toBe("BAD_REQUEST");
+    expect(trpcErr.message).toContain("2.0");
+    // Bị từ chối ở input-parse-time — KHÔNG một board nào chạm createProductInspection, và KHÔNG
+    // lọt qua đường per-item "queued" (đó là chính lỗ mà brief cảnh báo: một `Error` thường sẽ bị
+    // `isPermanentSubmitError()` phân loại TRANSIENT nếu phép kiểm này nằm trong thân .mutation()).
+    expect(fake.realInserts).toBe(0);
+  });
+
+  it("cờ BẬT + batch RỖNG items nhưng vẫn hình dạng legacy ở top-level → vẫn bị từ chối (cờ áp cho CẢ request, không phải per-item)", async () => {
+    process.env.INGEST_REJECT_LEGACY_MACHINE_ENABLED = "true";
+    setMachine(21);
+    const caller = machineApiRouter.createCaller(ctx());
+    await expect(
+      caller.submitInspectionBatch({ apiKey: "SHARED-KEY", inspections: [item("SN-X"), item("SN-Y")] }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("cờ TẮT (mặc định) → batch legacy vẫn chạy NHƯ HÔM NAY (chống hồi quy)", async () => {
+    setMachine(22);
+    const fake = installIdempotentInsertFake();
+    const caller = machineApiRouter.createCaller(ctx());
+    const res = await caller.submitInspectionBatch({ apiKey: "SHARED-KEY", inspections: [item("SN-OK-BATCH")] });
+    expect(res.succeeded).toBe(1);
+    expect(fake.realInserts).toBe(1);
   });
 });

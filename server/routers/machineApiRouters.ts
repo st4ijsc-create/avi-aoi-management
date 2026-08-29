@@ -2984,6 +2984,70 @@ function ingestRejectLegacyMachineEnabled(): boolean {
 }
 
 /**
+ * ★★★ Pha 1C Task 3 (BG-21 ⛔) — MỘT điểm quyết định phiên bản, DÙNG CHUNG cho mọi cửa ingest có
+ * hình dạng thuộc `machineDataContract` (phẳng v1.x/v1.1 ↔ cây v2.0).
+ *
+ * ⚠⚠⚠ VÌ SAO HÀM NÀY TỒN TẠI — lỗ đã đo được (Đ-20, spec §13, review toàn nhánh Pha 1B):
+ * ```
+ * // TRƯỚC bản vá — hai nhánh KHÔNG cùng một điểm quyết định:
+ * if (laHinhDangCayV2(raw)) { return { kind: "v2", … }; }   // ← dòng cũ 3007, KHÔNG kiểm cờ
+ * if (ingestRejectLegacyMachineEnabled()) { … }              // ← dòng cũ 3010, cờ CHỈ ở đây
+ * ```
+ * Nhánh NHẬN v2.0 `return` TRƯỚC phép kiểm cờ — cờ chỉ quyết định có TỪ CHỐI v1.x hay không, KHÔNG
+ * gác nhánh NHẬN. Tôi từng khai ở cổng ra Pha 1B rằng "thứ đang ngăn tai hoạ chỉ là một giá trị mặc
+ * định" — SAI: không có gì đang ngăn, vì nhánh nhận không hề đọc cờ. Gộp CẢ HAI phép kiểm vào một
+ * hàm: câu "khi cờ BẬT, payload v2.0 được xử lý thế nào?" nay có câu trả lời TƯỜNG MINH đọc được
+ * ngay tại đây (luôn "v2" — cờ không áp dụng cho hình dạng cây, chỉ áp dụng cho hình dạng CŨ),
+ * không còn là hệ quả của thứ tự dòng trong một hàm khác.
+ *
+ * Ném `loiMayChuaNangCap` NGAY TẠI ĐÂY (không trả "reject" rồi bắt nơi gọi tự throw) để không nơi
+ * gọi nào quên kiểm giá trị trả về và vô tình NHẬN một payload lẽ ra phải bị từ chối.
+ *
+ * `cuaIngestCensus.test.ts` (BG-31) quét TOÀN BỘ `machineApiRouter` bằng AST và đòi MỌI cửa nhận
+ * dữ liệu kiểm tra từ máy (`submit*`/`sync*Result*`) hoặc gọi được tới hàm này, hoặc có tên trong
+ * `MIEN_TRU_QUYET_DINH_PHIEN_BAN` kèm lý do — không cửa nào được im lặng đứng ngoài cả hai.
+ */
+function quyetDinhPhienBanIngest(raw: unknown): "v2" | "v1" {
+  if (laHinhDangCayV2(raw)) return "v2";
+  if (ingestRejectLegacyMachineEnabled()) {
+    const declared =
+      raw && typeof raw === "object" && typeof (raw as { schemaVersion?: unknown }).schemaVersion === "string"
+        ? (raw as { schemaVersion: string }).schemaVersion
+        : "(không khai schemaVersion — payload hình dạng phẳng v1.x/`measurements`)";
+    throw loiMayChuaNangCap(declared);
+  }
+  return "v1";
+}
+
+/**
+ * ★★★ Pha 1C Task 3 (BG-31) — SỔ MIỄN TRỪ khỏi `quyetDinhPhienBanIngest`, mỗi tên PHẢI kèm LÝ DO
+ * đo được. `cuaIngestCensus.test.ts` CHẤP NHẬN các thủ tục có tên trong bảng này KHÔNG gọi tới
+ * điểm quyết định phiên bản, với điều kiện lý do còn đúng.
+ *
+ * ⚠ Đây KHÔNG phải một cửa lách âm thầm — mỗi dòng là một khẳng định "cửa này SỐNG NGOÀI phạm vi
+ * cutover phẳng-v1.x/v1.1 → cây-v2.0 của `machineDataContract`", và census sẽ ĐỎ nêu đúng tên nếu
+ * ai thêm một cửa `submit*`/`sync*Result*` MỚI mà không có mặt ở đây VÀ cũng không gọi
+ * `quyetDinhPhienBanIngest`.
+ */
+export const MIEN_TRU_QUYET_DINH_PHIEN_BAN: Readonly<Record<string, string>> = {
+  submitProcessResult:
+    "Hợp đồng \"process feed\" (`MACHINE_PROCESS_CONTRACT_VERSIONS`, doc 56/57 — xem " +
+    "`server/contracts/machineDataContract.ts`) là HỌ HỢP ĐỒNG KHÁC, có registry RIÊNG chỉ " +
+    "gồm \"1.0\" (log-only, không ép buộc), không hề mang hình dạng phẳng v1.x/v1.1 hay cây " +
+    "v2.0 của `machineDataContract`. Cờ INGEST_REJECT_LEGACY_MACHINE_ENABLED nói về cutover " +
+    "INSPECTION AVI/AOI, không áp dụng cho quy trình chung (test/ép/hàn/dán…).",
+  submitProcessResultBatch:
+    "Cùng lý do với submitProcessResult — cùng hợp đồng `machineProcessResultContractV1`, cùng " +
+    "registry riêng, cùng schemaVersion log-only \"1.0\" không liên quan machineDataContract.",
+  syncEdgeResults:
+    "Payload là KẾT QUẢ SUY LUẬN EDGE (predictions/topLabel/confidence) tham chiếu một " +
+    "inspectionId ĐÃ TỒN TẠI — không phải một payload đo lường máy theo hợp đồng v1.x/v2.0 nào. " +
+    "Payload này KHÔNG BAO GIỜ mang `surfaces` lẫn `measurements`; ép nó qua " +
+    "`quyetDinhPhienBanIngest` sẽ từ chối 100% lượt gọi HỢP LỆ ngay khi cờ BẬT — sai đúng mục " +
+    "tiêu của cờ (cắt máy AVI/AOI cũ gửi kết quả đo, không phải cắt đường đồng bộ suy luận biên).",
+};
+
+/**
  * Kết quả phân giải input CỦA `submitInspection` sau khi đã parse ĐÚNG hợp đồng của
  * nhánh phát hiện được (không phải union thô của hai schema — mỗi nhánh tự `.parse()`
  * hợp đồng của MÌNH, giữ nguyên hành vi lỗi riêng của từng nhánh).
@@ -3002,21 +3066,45 @@ type SubmitInspectionRouterInput =
  * exception, `parse()`/`safeParse()` để lỗi thoát nguyên văn) được `createInputMiddleware`
  * của tRPC bọc thành `TRPCError({code:"BAD_REQUEST", cause})` — ĐÚNG cơ chế `.input()`
  * vẫn dùng xưa nay, không cần router tự viết middleware bọc lỗi riêng.
+ *
+ * Cả hai nhánh (NHẬN v2.0 / TỪ CHỐI v1.x khi cờ BẬT) nay cùng nằm sau đúng MỘT lời gọi
+ * `quyetDinhPhienBanIngest(raw)` — đóng BG-21, xem doc-comment tại định nghĩa hàm đó.
  */
 const submitInspectionRouterInputSchema = z.unknown().transform((raw): SubmitInspectionRouterInput => {
-  if (laHinhDangCayV2(raw)) {
+  const quyetDinh = quyetDinhPhienBanIngest(raw);
+  if (quyetDinh === "v2") {
     return { kind: "v2", data: machineDataContractV2.parse(raw) };
-  }
-  if (ingestRejectLegacyMachineEnabled()) {
-    const declared =
-      raw && typeof raw === "object" && typeof (raw as { schemaVersion?: unknown }).schemaVersion === "string"
-        ? (raw as { schemaVersion: string }).schemaVersion
-        : "(không khai schemaVersion — payload hình dạng phẳng v1.x/`measurements`)";
-    throw loiMayChuaNangCap(declared);
   }
   // Nhánh v1.x KHÔNG đổi: gọi lại ĐÚNG schema/lỗi mà `.input()` vẫn tự động chạy
   // trước bản vá này — hành vi lỗi (zod issues thô cho payload sai) giữ nguyên văn.
   return { kind: "v1", data: submitInspectionInputSchema.parse(raw) };
+});
+
+/**
+ * ★★★ Pha 1C Task 3 (BG-31) — gác `submitInspectionBatch` qua ĐÚNG điểm quyết định dùng chung.
+ *
+ * Cửa này chỉ nhận mảng PHẲNG `measurements` (`submitInspectionBatchItemSchema` = hợp đồng
+ * v1.x/v1.1, KHÔNG có nhánh cây v2.0 nào) — không phải "cửa quên gác vì không ai nghĩ tới", mà là
+ * cửa mà TOÀN BỘ nội dung của nó thuộc đúng hình dạng mà cờ CẮT máy cũ nhắm tới. Trước bản vá, một
+ * máy cũ bị `submitInspection` từ chối (cờ BẬT) vẫn lách được bằng cách gói CHÍNH payload đó vào
+ * `{inspections:[payload]}` rồi gọi cửa này — cờ hoàn toàn vô hiệu qua đường batch.
+ *
+ * `laHinhDangCayV2(raw)` ở CẤP TOP-LEVEL của request batch (`{machineCode, apiKey, inspections}`)
+ * luôn `false` (mảng `surfaces` không nằm ở tầng này dù một item bên trong có mang nó — và dù có,
+ * `submitInspectionCoreObject` không khai trường đó nên zod strip mất) — nên `quyetDinhPhienBanIngest`
+ * chỉ còn hỏi ĐÚNG MỘT câu cho cả batch: "cờ CẮT máy cũ có đang BẬT không?". Gọi MỘT lần ở cấp
+ * request, không phải per-item, phản ánh đúng bản chất "cả batch cùng một hình dạng cũ".
+ *
+ * ⚠ Cố ý đặt trong `.input()` (input-parse-time), KHÔNG phải trong thân `.mutation()`/per-item
+ * try-catch: `isPermanentSubmitError()` (`server/services/inspection/inspectionStoreForward.ts`)
+ * chỉ nhận diện `TRPCError` với code cố định — một `Error` thường như `loiMayChuaNangCap()` sẽ bị
+ * phân loại TRANSIENT và bị đệm vào WAL rồi thử lại MÃI MÃI thay vì bị từ chối thẳng. Đặt ở
+ * `.input()` cho lỗi thoát qua đúng đường `createInputMiddleware` → `TRPCError(BAD_REQUEST)` —
+ * CÙNG cơ chế, CÙNG loại lỗi với `submitInspection`.
+ */
+const submitInspectionBatchRouterInputSchema = z.unknown().transform((raw) => {
+  quyetDinhPhienBanIngest(raw);
+  return submitInspectionBatchInputSchema.parse(raw);
 });
 
 /**
@@ -3268,7 +3356,7 @@ export const machineApiRouter = router({
   // require rewriting the entire per-board side-effect chain and is out of scope.
   // ════════════════════════════════════════════════════════════════════════════
   submitInspectionBatch: publicProcedure
-    .input(submitInspectionBatchInputSchema)
+    .input(submitInspectionBatchRouterInputSchema)
     .mutation(async ({ input, ctx }) => {
       const headerKey = machineHeaderKey(ctx);
       // AUTH ONCE for the whole batch (the throughput point). Throws
