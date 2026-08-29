@@ -817,6 +817,29 @@ Gốc rễ: `uq_inspections_machine_serial_time … WHERE serialNumber <> ''` l�
 | **BG-32** | Sửa 2 chú thích **sai sự thật** (khai CHƯA nối trong khi ĐÃ nối) + `openapi.ts:20,192` | `rollupVerdict.ts:76-80`, `machineDataContract.ts:125,144` |
 | **BG-33** | `summaryCounts`: đối chiếu với cây, hoặc ghi rõ "lời khai chưa kiểm" | **1 nơi ghi / 0 nơi đọc** |
 
+### Bàn giao sau PHA 1C + WAL + PHA 1D — BG-34…BG-47
+
+⚠ **Ghi vào spec ngày 2026-08-30 sau khi phát hiện chúng chỉ tồn tại trong sổ SDD — mà thư mục đó `git-ignored`.** Một lượt `git clean -fdx` sẽ xoá sạch 14 mục này, gồm hai mục ⛔. Cùng khuôn đã cắn ba lần trước với **mã chưa commit**; lần này là **hiểu biết chưa commit**. Sổ SDD là bản nháp phục hồi, **spec mới là bản bàn giao**.
+
+| Mã | Việc | Số đo |
+|---|---|---|
+| **BG-34** | Census tìm cửa bằng **quy ước ĐẶT TÊN**, không phải bất biến tầng kiểu. ⚠ **SỬA MỨC ĐỘ:** không phải rủi ro tương lai — cửa thứ sáu **đã tồn tại và đang ghi** khi điều này được viết | Pha 1D T2 nâng census 5→**7** cửa |
+| **BG-35** | ✅ ĐÃ ĐÓNG (Pha 1C T5, `cf345335`) — `ntfSource="machine"` khi NTF khai cấp bo | trước: `null` |
+| **BG-36** | Giao diện **chưa vẽ** kết quả `integrityScan`; `softResults` cũng vậy từ trước | `grep client/src` = **0** |
+| **BG-37** | ✅ ĐÃ ĐÓNG (Pha 1D T1, `ae5b5e46`) — gộp vào BG-40 | |
+| **BG-38** | `acquisitionWorker.submitCanonical` chưa giữ/phát lại khung khi ghi lỗi | `LIVE_ACQUISITION_ENABLED` không bật |
+| **BG-39** ⛔ | **Cửa ingest thứ SÁU** `aoiPackage.presign/commit` — bỏ qua cả 4 cơ chế Pha 1C. Census đã thấy (Pha 1D T2); **cổng chặn máy cũ CHƯA nối** | **10 bo** `aoi-pkg:*` · **238 gói** committed |
+| **BG-40** ⛔ | ✅ ĐÃ ĐÓNG (Pha 1D T1, `ae5b5e46`) — phân loại lỗi DB + trần `attempts` + bỏ chặn-đầu-hàng | trước: 20 tick → `drained=0`; sau: 1 lượt → 4 bo lành ghi được |
+| **BG-41** | `updateProductInspectionNTF` không ghi `ntfSource` ⇒ truy vấn `='machine'` **đếm thừa** | **119** bo người-xác-nhận, **119/119** `ntfSource=NULL` |
+| **BG-42** | `inferAoiOverallResult` là **bản logic chép tay thứ hai**, `explicitResult` thắng vô điều kiện ⇒ ngược với `verdictXauHon` | gói khai `OK` + `summary.ng=3` ⇒ ghi `OK` |
+| **BG-43** | (gộp vào BG-34) | |
+| **BG-44** | Bất đồng chỉ mục 0272 ↔ `idempotencyKey` v2.0; `markSubmissionApplied` gọi cả khi `duplicate:true` ⇒ WAL **không bao giờ khôi phục** bo bị khoá tự nhiên nuốt | `persistInspectionAtomic:566-580` |
+| **BG-45** | `dungKhoaKhuTrungV2` khi `startedAt` vắng ⇒ hai lượt kiểm khác nhau **trùng khoá** | đo được: `true` |
+| **BG-46** | `processStoreForward.ts:240` có bản `isPermanentSubmitError` **RIÊNG, cùng lỗ**. Bán kính nhỏ hơn: **0** chỗ ghi `product_inspections` | `22001→false`, `23505→false` |
+| **BG-47** | Trần `attempts`=20 gắn với interval mặc định; đổi interval ⇒ đổi thời-gian-tới-dead-letter, **chưa có lưới canh chéo** | |
+
+**Đ-24 vẫn mở, và nặng hơn ghi ban đầu:** đường v1.x — **mặc định hôm nay** — **không có phép cuộn nào**. `promoteOverallToNg` chỉ bắn khi **spec-gate máy chủ** hạ điểm, không bắn khi máy tự khai `OK` kèm điểm NG. Đo được **3 bo v1.x** trong DB test: `OK` với **100% điểm NG** (5/5 · 2/2 · 1/1). Luật "xấu nhất" (BG-22) chỉ sống ở v2.0.
+
 **Thứ tự thi công đã chốt (Ruling R-5): PHA 1C TRƯỚC KHỐI B.** Lý lẽ quyết định: Khối B ghi `measurement_results` **trong cùng transaction** với `ghiCayKetQua` — mà Đ-23 làm transaction đó chạy lại nguyên vẹn mỗi lượt retry ⇒ làm Khối B trước là **nhân bản luôn cả cấp component**. Thêm nữa Đ-21…Đ-23 **đang sống** (không chờ cờ), còn Khối B **khuếch đại** chúng vì nó cho nhà máy lý do chuyển sang v2.0.
 
 Thêm: `positionNumber = 0` lọt qua trong khi tài liệu nguồn nói **1-based** — không hỏng join nên **cố ý không từ chối** (§4.5), nhưng là ứng viên **gắn thẻ lệch chuẩn** ở Pha 1B.
