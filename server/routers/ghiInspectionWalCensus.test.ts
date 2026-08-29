@@ -24,13 +24,21 @@
  *
  * ★★★ NĂM trong TÁM đường hôm nay nằm trong sổ miễn trừ — HAI mục
  * (`ensureInspectionWalWired→…`) là bộ điều phối phát lại của CHÍNH WAL (miễn trừ kiến trúc hợp
- * lệ), MỘT mục (`commit→persistInspectionAtomic`) là mutation người-kích-hoạt có transaction
- * riêng (miễn trừ hợp lệ), MỘT mục (`hotFolderService`) có tầng bền vững riêng dựa trên file
- * (miễn trừ hợp lệ) — nhưng MỘT mục còn lại
+ * lệ), MỘT mục (`commit→persistInspectionAtomic`) là một đường MÁY (Agent) gọi qua một giao thức
+ * BA BƯỚC bền vững độc lập DB (ZIP tồn tại trong storage bất kể commit thành hay bại, Agent tự
+ * retry theo hợp đồng đã công bố — KHÔNG PHẢI "người dùng bấm lại", xem sửa 2026-08-29 Task 2
+ * BG-39 tại định nghĩa miễn trừ ở `ghiInspectionWalScan.ts` cho lý do ĐẦY ĐỦ, ĐÃ SỬA sau khi phát
+ * hiện lý do cũ khai SAI diễn viên là "người"), MỘT mục (`hotFolderService`) có tầng bền vững
+ * riêng dựa trên file (miễn trừ hợp lệ) — nhưng MỘT mục còn lại
  * (`acquisitionWorker.submitCanonical→processInspectionSubmission`) là LỖ THẬT CHƯA VÁ, ghi vào
  * sổ để không chặn cổng ra Task 3 (brief cấm tự vá mã sản xuất mà không báo trước) — đọc lý do
  * đầy đủ ở `ghiInspectionWalScan.ts` và mục "mối lo" của `task-3-report.md` trước khi coi census
  * xanh là "đã ổn".
+ *
+ * ⚠ 2026-08-29 (Task 2, BG-39) — `commit` này CÙNG là "cửa ingest thứ SÁU" mà
+ * `cuaIngestCensus.test.ts` (`cuaIngestScan.ts`) phát hiện có một LỖ THẬT KHÁC, chưa vá, ở câu hỏi
+ * PHIÊN BẢN ingest (`quyetDinhPhienBanIngest`) — TÁCH BIỆT với câu hỏi WAL mà file này canh. Miễn
+ * trừ WAL ở đây KHÔNG PHẢI lời khẳng định "cửa commit đã ổn toàn bộ" — xem task-2-report.md.
  *
  * ★★★ 2026-08-29 (HOTFIX cùng ngày) — census bắt được đường số 9 THẬT SỰ khi mới dựng lưới:
  * `initInspectionStoreForward` (`inspectionStoreForward.ts`, chạy Ở BOOT, TRƯỚC bất kỳ lượt live

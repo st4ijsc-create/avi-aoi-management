@@ -38,14 +38,50 @@
  * "gọi authenticateMachine" KHÔNG phải một vị từ phân biệt được. Vị từ này hỏi trên TÊN THUỘC TÍNH
  * (một node AST, không phải một chuỗi con của toàn văn bản file) — khác về CHẤT với việc chạy regex
  * trên toàn bộ nội dung file như BG-14 đã làm.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-08-29 (Task 2, BG-39) — CỬA THỨ SÁU: KHÔNG PHẢI RỦI RO TƯƠNG LAI, ĐÃ TỒN TẠI HÔM NAY
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `aoiPackageRouter.presign`/`.commit` (`server/routers/aoiPackageRouter.ts`) là một cửa ingest
+ * THỨ HAI, sống SONG SONG với năm cửa `machineApiRouter` ở trên — không phải một khả năng cần cân
+ * nhắc, mà một đường ĐANG CHẠY THẬT: 10 bộ `idempotencyKey LIKE 'aoi-pkg:%'`, 238 gói
+ * `status='committed'` trong `aoi_management_test`. Hai census trước đây (`cuaIngestCensus.test.ts`
+ * ở đây, và `ghiInspectionWalCensus.test.ts`) đều "mù" với cửa này — vì HAI lý do KHÁC NHAU: file
+ * này chỉ mở MỘT file (`machineApiRouters.ts`) nên chưa từng thấy `aoiPackageRouter.ts`;
+ * `ghiInspectionWalScan.ts` THẤY `commit` (đã có trong `DUONG_FILE_QUET` từ trước) nhưng miễn trừ
+ * nó với một lý do SAI diễn viên (đã sửa — xem lịch sử `MIEN_TRU_GHI_INSPECTION_WAL.commit`).
+ *
+ * Lượng từ "∀ cửa ingest…" của file này bây giờ CŨNG phủ `presign`/`commit` — xem
+ * `TEN_BIEN_ROUTER_ZIP`, `laTenCuaIngestZip`, `MIEN_TRU_CUA_INGEST_ZIP` bên dưới. `commit` mang
+ * MỘT lỗ thật CHƯA VÁ ở câu hỏi phiên bản ingest (`MIEN_TRU_CUA_INGEST_ZIP.commit` giải thích đầy
+ * đủ) — không phải một dòng miễn trừ "cho xong việc", mà một khẳng định TƯỜNG MINH rằng câu hỏi đã
+ * được hỏi và câu trả lời hôm nay là "chưa gác", chờ chủ dự án quyết định gác hay chấp nhận rủi ro.
  */
 import ts from "typescript";
 
 /** Tên hàm quyết định phiên bản ingest DÙNG CHUNG, khai ở `machineApiRouters.ts`. */
 export const TEN_HAM_QUYET_DINH = "quyetDinhPhienBanIngest";
 
-/** Tên biến giữ `router({…})` của máy — mục tiêu quét. */
+/** Tên biến giữ `router({…})` của máy — mục tiêu quét MẶC ĐỊNH (`machineApiRouters.ts`). */
 export const TEN_BIEN_ROUTER = "machineApiRouter";
+
+/**
+ * ★★★ 2026-08-29 (Task 2, BG-39) — CỬA THỨ SÁU: `aoiPackageRouter.presign`/`.commit`
+ * (`server/routers/aoiPackageRouter.ts`) là một đường ingest THỨ HAI, publicProcedure xác thực
+ * bằng `authenticateMachine({scope:"ingest:write"})`, mà `commit` ghi thẳng `product_inspections`
+ * qua `persistInspectionAtomic` — ĐÃ chạy thật (10 bộ `idempotencyKey LIKE 'aoi-pkg:%'`, 238 gói
+ * `status='committed'` trong DB test). Đây KHÔNG phải một rủi ro kiến trúc trên giấy: cửa này
+ * SỐNG hôm nay, cùng lúc với năm cửa `machineApiRouter` mà `TEN_BIEN_ROUTER`/`laTenCuaIngest` phía
+ * trên đã canh — không đưa nó vào lượng từ "∀ cửa ingest…" là để lượng từ đó khai một điều SAI
+ * (rằng nó đã xét MỌI cửa, trong khi thực ra chỉ xét một router).
+ *
+ * Tên biến router + vị từ tên của cửa này KHÁC HẲN năm cửa kia (xem `TEN_BIEN_ROUTER_ZIP`,
+ * `laTenCuaIngestZip` bên dưới) — `quetCuaIngest` vì vậy nhận THÊM một tham số `tuyChon` (mặc định
+ * giữ NGUYÊN hành vi cũ cho lời gọi không truyền gì) thay vì viết một bộ quét THỨ HAI: cùng một
+ * hàm, cùng một kỹ thuật AST (`quetMotCay`/`coDuongToiQuyetDinh` không đổi một dòng), chỉ đổi
+ * ĐIỂM VÀO (tên router) và VỊ TỪ (tên cửa nào được tính).
+ */
+export const TEN_BIEN_ROUTER_ZIP = "aoiPackageRouter";
 
 /** Một cửa nhận dữ liệu kiểm tra từ máy, tìm thấy trong `machineApiRouter`. */
 export interface CuaIngest {
@@ -66,6 +102,65 @@ export interface KetQuaQuetCuaIngest {
 function laTenCuaIngest(ten: string): boolean {
   return /^submit/i.test(ten) || /^sync.*result/i.test(ten);
 }
+
+/**
+ * Vị từ tên của cửa ZIP package (`aoiPackageRouter.ts`) — CỬA THỨ SÁU (BG-39). DANH SÁCH TÊN
+ * TƯỜNG MINH, KHÔNG PHẢI REGEX như `laTenCuaIngest`: router này đặt tên theo quy ước KHÁC hẳn
+ * (`presign`, `commit` — không mang tiền tố `submit`/`sync…Result`) và có nhiều thủ tục ĐỌC không
+ * liên quan gì tới ingest (`listPackages`, `getPackage`, `getImage`, `getPackageImages`,
+ * `getPackageLogs`, `downloadZip`, `reportQueueMetrics`, `getQueueStatus`, `getUploadStats`) — mở
+ * rộng một vị từ kiểu regex sang router này có nguy cơ vô tình khớp một thủ tục đọc trong tương
+ * lai. Chỉ HAI thủ tục mang dữ liệu/tham chiếu một gói máy tải lên:
+ * - `presign`: KHÔNG mang payload đo lường (chỉ `inspectionId`/`sizeBytes`/`sha256`) — xem
+ *   `MIEN_TRU_CUA_INGEST_ZIP.presign` cho lý do miễn trừ CÓ THẬT (không phải lách).
+ * - `commit`: parse `meta.json` TỪ TRONG ZIP, có trường `measurements` — đây LÀ cửa mang dữ liệu
+ *   kiểm tra thật, và là cửa mà `cuaIngestCensus.test.ts` §3 phải hỏi "có gác không".
+ */
+export function laTenCuaIngestZip(ten: string): boolean {
+  return ten === "presign" || ten === "commit";
+}
+
+/**
+ * ★★★ SỔ MIỄN TRỪ cho cửa ZIP (BG-39, 2026-08-29) — đặt CẠNH bộ suy, KHÔNG đặt trong
+ * `aoiPackageRouter.ts`, theo ĐÚNG tiền lệ `MIEN_TRU_GHI_INSPECTION_WAL`
+ * (`ghiInspectionWalScan.ts`): (a) brief Task 2 CẤM tự sửa hành vi `aoiPackageRouter.ts` — đường
+ * đó đang chạy thật (238 gói `committed` trong DB test), đổi hành vi của nó cần người duyệt; (b)
+ * `MIEN_TRU_QUYET_DINH_PHIEN_BAN` (`machineApiRouters.ts`) được dựng riêng cho cửa của ĐÚNG router
+ * đó, không phải chỗ tự nhiên cho một cửa sống ở FILE khác. `cuaIngestCensus.test.ts` hợp cả hai
+ * sổ (dict này + của `machineApiRouters.ts`) trước khi áp luật §3 — hai sổ không đụng tên (kiểm
+ * bằng test) nên hợp bằng spread object là an toàn.
+ *
+ * ⚠⚠⚠ MỘT trong hai mục dưới đây (`commit`) là LỖ THẬT CHƯA VÁ, không phải một khác biệt kiến
+ * trúc hợp lệ — đọc kỹ lý do, và xem mục "mối lo" của `task-2-report.md`
+ * (`.superpowers/sdd/2026-08-30-aoi-pha1d-truoc-khoi-b/`) trước khi coi census xanh là "cửa này đã
+ * ổn". Ghi vào sổ CHỈ để không chặn cổng ra Task 2, không phải một tuyên bố rằng lỗ đã đóng.
+ */
+export const MIEN_TRU_CUA_INGEST_ZIP: Readonly<Record<string, string>> = {
+  presign:
+    "`presign` không mang bất kỳ trường `measurements`/`surfaces` nào — input schema của nó " +
+    "(aoiPackageRouter.ts:412-420) chỉ có `apiKey|machineCode`, `inspectionId`, `sizeBytes`, " +
+    "`sha256`: một yêu cầu 'xin phép tải lên', không phải một payload đo lường. Câu hỏi " +
+    "`quyetDinhPhienBanIngest` hỏi ('payload này hình dạng phẳng v1.x hay cây v2.0?') VÔ NGHĨA ở " +
+    "bước này vì chưa có payload đo lường nào tồn tại để phân loại — nó nằm TRONG ZIP, chỉ xuất " +
+    "hiện ở bước `commit`. Cùng LỚP lý do mà `syncEdgeResults` (machineApiRouters.ts) đã được " +
+    "chấp nhận: 'không phải một payload đo lường máy theo hợp đồng v1.x/v2.0 nào'.",
+  commit:
+    "★ LỖ THẬT, CHƯA VÁ — không phải miễn trừ kiến trúc: `commit` parse `meta.json` với trường " +
+    "`measurements` (aoiPackageRouter.ts:330-342), và chính chú thích tại chỗ khai trường đó " +
+    "'Đồng bộ với submitInspection measurements' — nghĩa là payload này CÙNG HÌNH DẠNG PHẲNG mà " +
+    "`INGEST_REJECT_LEGACY_MACHINE_ENABLED`/`quyetDinhPhienBanIngest` được dựng ra để từ chối. " +
+    "`meta.json` KHÔNG BAO GIỜ khai `surfaces` (không có nhánh cây v2.0 nào ở ZIP path hôm nay) " +
+    "⇒ `laHinhDangCayV2(metaData)` luôn `false` ⇒ nếu gọi `quyetDinhPhienBanIngest` trên payload " +
+    "này khi cờ BẬT, nó sẽ LUÔN throw `loiMayChuaNangCap` — ĐÚNG là 100% payload ZIP thuộc đúng " +
+    "hình dạng cờ nhắm tới. Ngày cờ `INGEST_REJECT_LEGACY_MACHINE_ENABLED` bật, một máy cũ bị " +
+    "`submitInspection` VÀ `submitInspectionBatch` từ chối vẫn ingest TRỌN VẸN qua đường ZIP — " +
+    "ĐÚNG lớp lỗ mà Task 3 Pha 1C đã đóng ở `submitInspectionBatch` ('cắt mà chừa bốn cửa thì " +
+    "không phải cắt'), tái diễn ở cửa thứ sáu. Miễn trừ ở đây KHÔNG PHẢI lời khẳng định 'cửa này " +
+    "ổn' — nó CHỈ để không chặn cổng ra Task 2 (brief cấm tự sửa `aoiPackageRouter.ts` để gác khi " +
+    "đường đó đang chạy thật). Quyết định GÁC (nối `commit` qua `quyetDinhPhienBanIngest` sau khi " +
+    "parse `meta.json`) hay MIỄN TRỪ VĨNH VIỄN với một lý do kiến trúc thật cần chủ dự án duyệt — " +
+    "xem task-2-report.md.",
+};
 
 /** `router({…})` của một biểu thức lời gọi — bỏ qua, không cần theo `.use()` bọc ngoài (không có ở đây). */
 function objRouter(n: ts.Node): ts.ObjectLiteralExpression | null {
@@ -146,14 +241,32 @@ function coDuongToiQuyetDinh(root: ts.Node, khaiBao: ReadonlyMap<string, ts.Node
 }
 
 /**
- * Quét `ma` (nội dung file `machineApiRouters.ts`, TRUYỀN VÀO chứ không tự đọc đĩa — cho phép lưới
- * census chạy lại bộ suy này trên một biến thể ĐÃ CHÈN đột biến, hoàn toàn TRONG BỘ NHỚ, không ghi
- * đè file thật) và trả mọi cửa `submit*`/`sync*Result*` trong `machineApiRouter`.
+ * Tuỳ chọn override cho `quetCuaIngest` — mặc định KHÔNG truyền gì giữ NGUYÊN VĂN hành vi cũ (một
+ * file, router `machineApiRouter`, vị từ `submit…` / `sync…Result…`; đây là điều kiện để §1-§5 của
+ * `cuaIngestCensus.test.ts` trên `machineApiRouters.ts` không hồi quy khi thêm cửa thứ sáu). Cửa
+ * thứ SÁU (BG-39) sống ở một FILE khác, biến router tên khác, quy ước đặt tên khác — thay vì viết
+ * một bộ quét THỨ HAI (cấm theo brief Task 2), hàm nhận một vị từ/tên router THAY THẾ và chạy lại
+ * CHÍNH kỹ thuật AST cũ (`quetMotCay`/`coDuongToiQuyetDinh` không đổi một dòng).
+ */
+export interface TuyChonQuetCuaIngest {
+  readonly tenBienRouter?: string;
+  readonly laTenCua?: (ten: string) => boolean;
+}
+
+/**
+ * Quét `ma` (nội dung một file router, TRUYỀN VÀO chứ không tự đọc đĩa — cho phép lưới census
+ * chạy lại bộ suy này trên một biến thể ĐÃ CHÈN đột biến, hoàn toàn TRONG BỘ NHỚ, không ghi đè
+ * file thật) và trả mọi cửa khớp `tuyChon.laTenCua` (mặc định `submit*`/`sync*Result*`) trong biến
+ * `tuyChon.tenBienRouter` (mặc định `machineApiRouter`).
  *
  * @param duong đường hiển thị trong lỗi (không cần là đường thật trên đĩa).
  * @param ma nội dung mã nguồn TypeScript.
+ * @param tuyChon override router/vị từ — xem `TuyChonQuetCuaIngest`. Dùng cho cửa thứ sáu
+ *   (`aoiPackageRouter.ts`, xem `TEN_BIEN_ROUTER_ZIP`/`laTenCuaIngestZip`).
  */
-export function quetCuaIngest(duong: string, ma: string): KetQuaQuetCuaIngest {
+export function quetCuaIngest(duong: string, ma: string, tuyChon?: TuyChonQuetCuaIngest): KetQuaQuetCuaIngest {
+  const tenBienRouter = tuyChon?.tenBienRouter ?? TEN_BIEN_ROUTER;
+  const laTenCua = tuyChon?.laTenCua ?? laTenCuaIngest;
   const mu: string[] = [];
   const sf = ts.createSourceFile(duong, ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 
@@ -173,13 +286,13 @@ export function quetCuaIngest(duong: string, ma: string): KetQuaQuetCuaIngest {
   for (const st of sf.statements) {
     if (!ts.isVariableStatement(st)) continue;
     for (const d of st.declarationList.declarations) {
-      if (ts.isIdentifier(d.name) && d.name.text === TEN_BIEN_ROUTER && d.initializer !== undefined) {
+      if (ts.isIdentifier(d.name) && d.name.text === tenBienRouter && d.initializer !== undefined) {
         routerObj = objRouter(d.initializer);
       }
     }
   }
   if (routerObj === null) {
-    mu.push(`${duong} — không tìm thấy \`const ${TEN_BIEN_ROUTER} = router({…})\` — bộ suy mất mục tiêu`);
+    mu.push(`${duong} — không tìm thấy \`const ${tenBienRouter} = router({…})\` — bộ suy mất mục tiêu`);
     return { cua: [], mu };
   }
 
@@ -187,7 +300,7 @@ export function quetCuaIngest(duong: string, ma: string): KetQuaQuetCuaIngest {
   for (const p of routerObj.properties) {
     if (!ts.isPropertyAssignment(p)) continue;
     const ten = ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) ? p.name.text : null;
-    if (ten === null || !laTenCuaIngest(ten)) continue;
+    if (ten === null || !laTenCua(ten)) continue;
     const loai = loaiThuTuc(p.initializer);
     if (loai === null) continue; // khớp tên nhưng không phải một thủ tục tRPC thật
     const dong = sf.getLineAndCharacterOfPosition(p.getStart(sf)).line + 1;

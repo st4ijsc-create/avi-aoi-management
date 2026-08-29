@@ -172,14 +172,36 @@ export const MIEN_TRU_GHI_INSPECTION_WAL: Record<string, string> = {
     "processFn dispatch-theo-hình-dạng (laHinhDangCayV2). Xem mục ensureInspectionWalWired→" +
     "submitInspectionTreeV2 ngay phía trên cho lý lẽ đầy đủ.",
 
-  // ── commit (aoiPackageRouter.ts) — mutation DO NGƯỜI kích hoạt, không phải ACK máy-quên ──────
+  // ── commit (aoiPackageRouter.ts) — Agent (MÁY) tự retry, ZIP bền vững độc lập DB ────────────
+  // ★★★ 2026-08-29 (Task 2, BG-39) — lý do CŨ ở đây SAI: nó khai "'commit' là mutation NGƯỜI kích
+  // hoạt… người dùng bấm 'commit' lại được". SAI theo chính docblock của `aoiPackageRouter.ts`
+  // (dòng 5-6: "presign: Tạo presigned URL để **Agent** upload ZIP" / "commit: Xác nhận upload
+  // thành công") và theo tài liệu đối tác (`client/src/components/apiDocs/AoiPackageSection.tsx:546`:
+  // "Commit — **Agent** gọi `aoiPackage.commit`"). Agent LÀ MÁY, không phải người — một lý do SAI
+  // trong một bảng dựng ra để TRUNG THỰC còn nguy hiểm hơn không có lý do, vì nó khiến người sau
+  // tin câu hỏi "ai kích hoạt lại khi lỗi" đã được cân nhắc đúng.
+  //
+  // Lý do ĐÚNG (sửa danh từ, GIỮ lại phần lập luận kỹ thuật vẫn đúng — persistInspectionAtomic
+  // vẫn tự mở transaction riêng, ZIP vẫn còn nguyên khi lỗi):
   "server/routers/aoiPackageRouter.ts::commit→persistInspectionAtomic":
-    "'commit' là mutation NGƯỜI kích hoạt (xác nhận ZIP đã tải lên xong), không phải một máy " +
-    "gửi-rồi-quên qua mạng: persistInspectionAtomic tự mở transaction RIÊNG (lỗi ⇒ rollback sạch, " +
-    "không có header mồ côi), và khi toàn bộ mutation ném lỗi, gói ZIP vẫn còn nguyên " +
-    "(storageKey không đổi, status chuyển 'failed' — xem catch ở dòng ~1138) — người dùng bấm " +
-    "'commit' lại được, không có gì để phải xếp hàng WAL thay hộ. Khác hẳn khế ước ACK-rồi-quên " +
-    "của máy AOI/AVI mà inspectionStoreForward được dựng ra để bảo vệ (doc 27 W2-C).",
+    "'commit' được MÁY (Agent) gọi, không phải người (aoiPackageRouter.ts:5-6; " +
+    "AoiPackageSection.tsx:546) — nhưng khác `submitInspection` (một lệnh RPC ĐỒNG BỘ DUY NHẤT, " +
+    "máy gửi-rồi-quên, không có bản sao nào khác của payload ngoài chính lượt gọi đó), giao thức " +
+    "ZIP là BA BƯỚC BỀN VỮNG ĐỘC LẬP VỚI DB: presign → PUT nhị phân lên storage → commit. Khi " +
+    "commit ném lỗi (kể cả lỗi TẠM THỜI), ZIP đã tải lên KHÔNG mất (storageKey không đổi trong " +
+    "inspection_packages), persistInspectionAtomic tự mở transaction RIÊNG (rollback sạch, không " +
+    "header mồ côi), và status chuyển 'failed' cho phép gọi lại commit nguyên trạng (catch ở " +
+    "dòng ~1138 — `commit` không có nhánh 'status !== committed' nào chặn retry). Agent (KHÔNG " +
+    "phải người) là bên retry, và giao thức này được TÀI LIỆU HOÁ tường minh cho đối tác là " +
+    "idempotent/retry-safe (AoiPackageSection.tsx:549: 'Tất cả endpoint đều idempotent — retry " +
+    "an toàn khi gặp lỗi mạng'). Đây LÀ cơ chế bền vững riêng của giao thức ZIP (ZIP tồn tại độc " +
+    "lập DB + Agent tự động retry theo hợp đồng đã công bố) — khác hẳn khế ước ACK-rồi-quên MỘT-" +
+    "LẦN của `submitInspection` mà `inspectionStoreForward` được dựng ra để bảo vệ (doc 27 W2-C). " +
+    "⚠ Đây là câu hỏi WAL (mất bo khi DB chớp nháy) — TÁCH BIỆT với câu hỏi phiên bản ingest " +
+    "(`quyetDinhPhienBanIngest`/`INGEST_REJECT_LEGACY_MACHINE_ENABLED`) mà `cuaIngestScan.ts` " +
+    "canh: xem `MIEN_TRU_CUA_INGEST_ZIP.commit` (cuaIngestScan.ts) — CÙNG cửa `commit` này có một " +
+    "LỖ THẬT CHƯA VÁ ở câu hỏi phiên bản, không được suy diễn ngược rằng miễn trừ WAL ở đây nghĩa " +
+    "là cửa `commit` đã được review xong toàn bộ.",
 
   // ── hotFolderService — có tầng bền vững RIÊNG dựa trên FILE, không dùng WAL này ─────────────
   "server/services/vision/hotFolderService.ts::submitCanonical→processInspectionSubmission":
