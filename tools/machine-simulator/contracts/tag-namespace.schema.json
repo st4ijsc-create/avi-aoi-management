@@ -18,12 +18,12 @@
       "properties": {
         "path": { "type": "string", "pattern": "^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)+$" },
         "dataType": { "enum": ["bool", "int", "float", "string", "enum"] },
-        "unit": { "type": ["string", "null"] },
-        "engMin": { "type": ["number", "null"] },
-        "engMax": { "type": ["number", "null"] },
-        "enumValues": { "type": ["array", "null"], "items": { "type": "string" } },
+        "unit": { "type": "string" },
+        "engMin": { "type": "number" },
+        "engMax": { "type": "number" },
+        "enumValues": { "type": "array", "items": { "type": "string" } },
         "access": { "enum": ["r", "rw"] },
-        "policyAction": { "enum": [null, "machine.setpoint", "machine.command"] },
+        "policyAction": { "enum": ["machine.setpoint", "machine.command"] },
         "source": { "$ref": "#/$defs/source" },
         "isBackedByDriver": { "type": "boolean" }
       },
@@ -50,7 +50,7 @@
             "kind": { "const": "modbus" },
             "unitId": { "type": "integer", "minimum": 0, "maximum": 255 },
             "register": { "type": "integer", "minimum": 0 },
-            "scale": { "type": ["number", "null"] }
+            "scale": { "type": "number" }
           }
         },
         {
@@ -64,7 +64,7 @@
           "properties": {
             "kind": { "const": "mqtt" },
             "topic": { "type": "string", "minLength": 1 },
-            "jsonPath": { "type": ["string", "null"] }
+            "jsonPath": { "type": "string" }
           }
         },
         {

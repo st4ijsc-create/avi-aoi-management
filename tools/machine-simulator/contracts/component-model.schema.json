@@ -20,7 +20,7 @@
         "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
         "typeId": { "type": "string", "pattern": "^[a-z0-9]+(\\.[a-z0-9]+)+$" },
         "label": { "type": "string", "minLength": 1 },
-        "parentId": { "type": ["string", "null"] },
+        "parentId": { "type": "string" },
         "tagPrefix": { "type": "string", "minLength": 1 }
       }
     },
@@ -44,10 +44,10 @@
         "name": { "type": "string", "pattern": "^[a-z0-9-]+$" },
         "role": { "enum": ["in", "out", "setpoint", "command"] },
         "dataType": { "enum": ["bool", "int", "float", "string", "enum"] },
-        "unit": { "type": ["string", "null"] },
-        "min": { "type": ["number", "null"] },
-        "max": { "type": ["number", "null"] },
-        "policyAction": { "enum": [null, "machine.setpoint", "machine.command"] }
+        "unit": { "type": "string" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "policyAction": { "enum": ["machine.setpoint", "machine.command"] }
       },
       "allOf": [
         {
