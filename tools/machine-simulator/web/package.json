@@ -12,7 +12,8 @@
     "test:e2e": "playwright test",
     "test:e2e:update-snapshots": "playwright test --update-snapshots",
     "test:e2e:report": "playwright show-report",
-    "check:test-budgets": "node scripts/check-test-budgets.mjs"
+    "check:test-budgets": "node scripts/check-test-budgets.mjs",
+    "test:contracts": "node --test contract-tests/*.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
