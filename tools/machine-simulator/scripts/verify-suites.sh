@@ -4386,7 +4386,61 @@ SUITES=(
   "tests/St4i.EngineApi.Tests:$EXPECT_ENGINEAPI"
 )
 
+# ══ THE SIXTH SUITE — web/, WIRED IN BY OWNER RULING 2026-08-25 (task CA-1, item 60) ════════════
+#
+# 🔴 WHY IT IS A SECOND ARRAY AND NOT A SIXTH ROW OF THE ONE ABOVE. Every entry of SUITES is fed to
+# `dotnet test "$proj" --no-build` and parsed for vstest's `Total:`/`Failed:`/`Skipped:` summary.
+# `web` answers to none of that: it is `npx playwright test`, its totals come out of a different
+# reporter, and it needs a WHOLE DIFFERENT CEILING (see below). Appending it to SUITES would have
+# put a row into a loop that cannot run it, and every count that loop derives (`${#SUITES[@]}`, the
+# grand total, the per-suite output-directory bracket) would have started answering a question about
+# a project that does not exist. The two arrays are kept separate and JOINED where a join is what is
+# meant — the domain declaration takes both, so its "N of M suites" self-corrects exactly as BO-1
+# built it to.
+#
+# 🔴 EXPECT_WEB_E2E_TESTS IS MEASURED BY RUNNING, NOT BY `--list`. BR-1 measured `--list-tests`
+# reporting 1260 where the real number was 1267 on the .NET side, and the same trap is live here:
+# Playwright's own `Running N tests` line is emitted by the RUN, after fixtures and project
+# expansion, and that is the number pinned. Measured on this tree 2026-08-25: 218 before this task's
+# spec, 220 after it. 🔴 THE .NET GRAND TOTAL IS UNTOUCHED BY THIS — it is still 2977 over five
+# suites (161/24/1289/52/1451), it is summed and asserted separately below, and the two are NEVER
+# added together. A single number over two runners with two definitions of "a test" would be a
+# scalar over a union, which is the exact defect EXPECT_WARNING_LEDGER exists downstream to catch.
+EXPECT_WEB_E2E_TESTS=220
+WEB_SUITES=(
+  "web:$EXPECT_WEB_E2E_TESTS"
+)
+
+# 🔴 THE CEILING IS MEASURED BEFORE IT IS SET, AND IT IS NOT THE 900 THE FIVE SUITES USE. Item 60's
+# own body priced this as "a sixth 900-second ceiling", and that number does not survive contact:
+# a full `npm run test:e2e` on this tree ran 792 SECONDS (13.2 min) — 88% of 900 — and that is the
+# GREEN-path duration, before this task's two new tests. The .NET ceiling is ~4x its slowest suite
+# (~3-4 min against 900 s) precisely because killing a healthy suite costs the whole run; copying 900
+# here would have bought a ~1.14x margin and a gate that reddens on a slow morning.
+#
+# 🔴 SO THE RATIO IS PRESERVED AND THE NUMBER IS NOT: 2400 s is ~3x the measured 792 s. It is stated
+# as what it is — a bound on the UNBOUNDED case, not a prediction — and the measured figure is
+# printed beside the result on every run so that the day it creeps toward this number, the person
+# reading the verdict sees it coming instead of meeting it as a kill.
+WEB_SUITE_CEILING_SECONDS=2400
+
 # ══ WHAT THIS GATE DOES NOT MEASURE, SAID WHERE THE VERDICT IS READ (task BO-1, 2026-08-24) ═══════
+#
+# 📎 🔴 READ THIS FIRST — 2026-08-25 (task CA-1). THE WHOLE BLOCK BELOW IS THE RECORD OF A BREACH THAT
+# HAS SINCE BEEN CLOSED BY AN OWNER RULING, AND IT IS KEPT VERBATIM RATHER THAN REWRITTEN because it
+# is the argument that produced the ruling and because this file retracts in place. Three of its
+# sentences about THIS SCRIPT are now FALSE and are named here so no reader takes them for current:
+#   * "This script starts no browser, runs no Playwright" — it does both, at [2b/3], every run.
+#   * "compiles no TypeScript" — `npm run build` (`tsc -b && vite build`) runs at gate 1b. The same
+#     sentence appears twice more in this file as a description of its own conduct (at the
+#     EXPECT_ENGINEAPI block and beside AS-1's row) and is equally false at both; they are records of
+#     what earlier TASKS measured and are left standing as such.
+#   * "a PASS below has always been silent about web/" — the PASS line now carries the web suite's own
+#     totals and the size of its pinned debt.
+# 🔴 WHAT IS NOT RETRACTED, and it is the reason the block stays rather than going: law (3) itself, and
+# the observation that a silence beside the word PASS reads as coverage. That is why the declaration
+# below did not become an advertisement when the wiring landed — it grew a NEW does-not-measure list
+# instead, and `--web-domain-self-test` now FAILS if that list disappears.
 #
 # THE LAW BEING APPLIED, and it is applied here to THIS SCRIPT rather than to something this script
 # inspects: a CHECK owes three things — (1) it must be able to go red, (2) its false-positive rate must
@@ -4466,16 +4520,59 @@ web_domain_declaration() {
   echo "     ${corpus_label}, counted off this tree on this run: ${sources} TypeScript sources"
   echo "     under web/src, ${specs} Playwright spec files under web/tests carrying AT LEAST ${cases}"
   echo "     test() call sites (a floor — call sites are not cases), and web/package.json's own"
-  echo "     build / lint / test:e2e scripts, none of which this script invokes."
-  echo "     CONSEQUENCE, stated plainly because a PASS beside a silence reads as coverage: a product"
-  echo "     fix that lands entirely in web/ passes this gate WITHOUT A WITNESS. It has happened —"
-  echo "     item 57 leg 3, web/src/components/BoardCanvas.tsx, 2026-08-24."
-  echo "     THE ONLY WITNESS AVAILABLE TODAY is run by hand, from ${root}:"
+  echo "     build / lint / test:e2e scripts."
+  if [[ $covered -eq 0 ]]; then
+    echo "     NONE OF WHICH THIS SCRIPT INVOKES."
+    echo "     CONSEQUENCE, stated plainly because a PASS beside a silence reads as coverage: a product"
+    echo "     fix that lands entirely in web/ passes this gate WITHOUT A WITNESS. It has happened —"
+    echo "     item 57 leg 3, web/src/components/BoardCanvas.tsx, 2026-08-24."
+    echo "     THE ONLY WITNESS AVAILABLE TODAY is run by hand, from ${root}:"
+    echo "         npm run build   (tsc -b && vite build)      npm run lint   (oxlint)"
+    echo "         npm run test:e2e   (playwright test)"
+    echo "     WIRING THAT INTO THIS GATE COSTS A SECOND BUILD ECOSYSTEM (Node/npm + a browser) in a"
+    echo "     gate that needs only .NET today. That price is the owner's to accept or refuse: see"
+    echo "     docs/owner-decisions.md item 60, which carries both banks. This line does not wait on it."
+    return 0
+  fi
+
+  # ── The wired branch. Every sentence below replaces one that became FALSE on 2026-08-25, and the
+  # replacement is written to be re-falsifiable rather than to be reassuring. ────────────────────
+  echo "     ALL THREE ARE NOW INVOKED BY THIS SCRIPT — owner ruling 2026-08-25, item 60."
+  echo "     🔴 THE FOUR SENTENCES THIS BLOCK USED TO PRINT ARE WITHDRAWN, not edited away: \"compiles"
+  echo "     no TypeScript\", \"starts no browser\", \"none of which this script invokes\", and \"a product"
+  echo "     fix that lands entirely in web/ passes this gate WITHOUT A WITNESS\". All four were true"
+  echo "     until this ruling and all four are false now. The one that paid for the change is the"
+  echo "     last: item 57 leg 3 (web/src/components/BoardCanvas.tsx, 2026-08-24) shipped past this"
+  echo "     gate with a hand-run build as its only witness, and web/tests now carries the spec that"
+  echo "     would have caught its removal."
+  echo "     🔴 AND NOW THE NEW DOMAIN, BECAUSE A GATE THAT JUST STOPPED SAYING \"I MEASURE NOTHING\""
+  echo "     IS THE MOST LIKELY PLACE FOR A SILENCE TO READ AS COVERAGE. What running"
+  echo "     build + lint + test:e2e STILL does not measure, counted off this tree on this run:"
+  local pw_projects pw_viewport pw_baselines
+  pw_projects=$(grep -oE '\{ *name: *"[a-z]+"' "$root/playwright.config.ts" 2>/dev/null | grep -oE '"[a-z]+"' | tr -d '"' | paste -sd, - || true)
+  pw_viewport=$(grep -oE 'viewport: \{ width: [0-9]+, height: [0-9]+ \}' "$root/playwright.config.ts" 2>/dev/null | head -1 || true)
+  pw_baselines=$(find "$root/tests" -name '*-snapshots' -type d -exec find {} -name '*.png' \; 2>/dev/null | grep -c . || true)
+  echo "       * ONE BROWSER ENGINE. playwright.config.ts declares these projects: ${pw_projects:-<unreadable>}."
+  echo "         Nothing here runs Firefox or WebKit, so \"it renders in Safari\" is not a claim this"
+  echo "         gate is entitled to make about any of the ${sources} sources above."
+  echo "       * ONE VIEWPORT, essentially. The default is ${pw_viewport:-<unreadable>}; two visual"
+  echo "         screens override the height and nothing overrides the WIDTH. No phone or tablet"
+  echo "         width is exercised anywhere in this corpus."
+  echo "       * THE DESKTOP SHELL IS NEVER BUILT. web/src-tauri is a Rust/Tauri host with its own"
+  echo "         toolchain; \`npm run build\` produces the browser bundle and this gate never invokes"
+  echo "         \`npm run tauri\`. A change that breaks only the packaged desktop app is invisible here."
+  echo "       * node_modules IS TAKEN ON TRUST. This script runs \`npm run\`, never \`npm ci\`, so it"
+  echo "         asserts NOTHING about whether what is installed matches package-lock.json. Two"
+  echo "         machines with different installs produce two different runs of this suite and this"
+  echo "         gate cannot tell them apart."
+  echo "       * THE SPECS THAT DO NOT EXIST. ${pw_baselines} committed screenshot baselines and the"
+  echo "         ${cases}-call-site floor above are a count of what someone WROTE, and a set this"
+  echo "         script cannot count is still not an empty set. Until 2026-08-25 that set included"
+  echo "         the count of unplaceable fiducials — build and lint both passed a mutation that"
+  echo "         deleted it, and no spec existed to notice."
+  echo "     THE COMMANDS, run from ${root}, and this script now runs exactly these:"
   echo "         npm run build   (tsc -b && vite build)      npm run lint   (oxlint)"
   echo "         npm run test:e2e   (playwright test)"
-  echo "     WIRING THAT INTO THIS GATE COSTS A SECOND BUILD ECOSYSTEM (Node/npm + a browser) in a"
-  echo "     gate that needs only .NET today. That price is the owner's to accept or refuse: see"
-  echo "     docs/owner-decisions.md item 60, which carries both banks. This line does not wait on it."
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -4580,15 +4677,55 @@ fi
 
 # The control pair for the declaration above. Placed here — before the exclusive-run lock is taken —
 # on purpose: it measures nothing machine-wide, so it must not be able to lock a real gate run out.
+#
+# 🔴 TASK CA-1, 2026-08-25 — THE BANKS SWAPPED WORLDS AND THE PAIR GREW A FAILURE BRANCH, and the
+# second half is the bigger change. As BO-1 shipped it this block PRINTED two banks and asserted
+# NOTHING about them: a human had to read the two paragraphs and notice they differed. Law (1) says a
+# declaration need not be red-able, and BZ-1 set that precedent — but it also says THE CONTROL PAIR
+# IS THE RED-ABLE PART, and a control pair with no failure branch is a printout. It is now asserted.
+#
+# WHICH BANK IS WHICH, AND WHY THAT HAD TO MOVE. Bank A used to be "the real SUITES array" and expect
+# 0 covered. Since the owner's ruling the real world HAS a web suite, so the old bank A now describes
+# a world that no longer exists. Rather than delete it, it is kept as the PRE-WIRING bank — driven by
+# the .NET array alone — because the sentence it produces is exactly the one this gate printed for
+# every run before today, and a pair that can only produce today's answer cannot show that today's
+# answer depends on anything.
 if [[ "${1:-}" == "--web-domain-self-test" ]]; then
-  echo "CONTROL PAIR for web_domain_declaration (task BO-1)."
+  echo "CONTROL PAIR for web_domain_declaration (task BO-1, banks re-cut and asserted by CA-1)."
   echo
-  echo "BANK A — the real SUITES array, ${#SUITES[@]} entries. Expect: 0 covered, wording 'DOES NOT MEASURE'."
+  echo "BANK A — the .NET SUITES array ALONE, ${#SUITES[@]} entries: the world before 2026-08-25."
+  echo "Expect: 0 covered, wording 'DOES NOT MEASURE', and the 'WITHOUT A WITNESS' consequence."
   web_domain_declaration "${SUITES[@]}"
   echo
-  echo "BANK B — the same array with one synthetic web/ entry appended. Expect: 1 covered, wording"
-  echo "'MEASURES ONLY PARTIALLY'. If A and B print the same words, this declaration is a constant."
-  web_domain_declaration "${SUITES[@]}" "web/tests:0"
+  echo "BANK B — the REAL population this gate now runs: ${#SUITES[@]} .NET + ${#WEB_SUITES[@]} web."
+  echo "Expect: 1 covered, wording 'MEASURES ONLY PARTIALLY', and a NEW does-not-measure list."
+  web_domain_declaration "${SUITES[@]}" "${WEB_SUITES[@]}"
+  echo
+  _wd_a="$(web_domain_declaration "${SUITES[@]}")"
+  _wd_b="$(web_domain_declaration "${SUITES[@]}" "${WEB_SUITES[@]}")"
+  if [[ "$_wd_a" == "$_wd_b" ]]; then
+    echo "FAIL: banks A and B printed the SAME text, so this declaration does not depend on the suite"
+    echo "      population it claims to be about — it is a constant with a measurement's manners."
+    exit 1
+  fi
+  case "$_wd_a" in *"DOES NOT MEASURE"*) ;; *) echo "FAIL: bank A did not say DOES NOT MEASURE"; exit 1 ;; esac
+  case "$_wd_a" in *"THE ONLY WITNESS AVAILABLE TODAY"*) ;; *) echo "FAIL: bank A dropped the consequence sentence"; exit 1 ;; esac
+  case "$_wd_b" in *"MEASURES ONLY PARTIALLY"*) ;; *) echo "FAIL: bank B did not say MEASURES ONLY PARTIALLY"; exit 1 ;; esac
+  # 🔴 The half that matters most, and the one a reader is likeliest to let rot: bank B must still
+  # declare a domain it does NOT reach. A wired gate whose declaration says only what it now covers
+  # is an advertisement, and it is the exact failure this whole block was built to prevent — one
+  # direction later.
+  case "$_wd_b" in *"STILL does not measure"*) ;; *) echo "FAIL: bank B carries no does-not-measure list — law (3) is unmet on the branch where it matters"; exit 1 ;; esac
+  # 🔴 THE DISCRIMINATOR IS THE LIVE SENTENCE, NOT THE WORDS IN IT — and the first draft of this line
+  # got that wrong and was caught by running it. Bank B QUOTES "passes this gate WITHOUT A WITNESS"
+  # inside the paragraph that WITHDRAWS it, so a substring test on those words reddens the correct
+  # output. This repository already owns the rule: a token NAMED is not a token ASSERTED (item 73,
+  # check-owner-decisions.sh C2, which reads status out of a row with its quotations excised). So the
+  # test is on "THE ONLY WITNESS AVAILABLE TODAY", a heading that appears only where the claim is LIVE.
+  case "$_wd_b" in *"THE ONLY WITNESS AVAILABLE TODAY"*) echo "FAIL: bank B still tells the reader the only witness is a hand-run command, which the ruling of 2026-08-25 made false"; exit 1 ;; *) ;; esac
+  case "$_wd_b" in *"ARE WITHDRAWN"*) ;; *) echo "FAIL: bank B does not withdraw the four sentences it replaced — this file retracts in place, it does not edit away"; exit 1 ;; esac
+  echo "OK: the wording changes with the suite population, bank A still speaks for the pre-wiring"
+  echo "    world, and bank B declares a domain it does NOT reach as well as one it does."
   exit 0
 fi
 
@@ -5873,7 +6010,49 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #
 # The baseline cfcfae42 is STILL not moved. The corpus did not move either: 561 *.cs before and after — this
 # task added no file and deleted none.
-EXPECT_NEW_DOC_ABSOLUTES=608
+#
+# ══ 608 -> 612 (+4), TASK CA-1, 2026-08-25, AND THE DELTA IS ACCOUNTED FOR RATHER THAN ABSORBED ══
+#
+# 🔴 WHY THIS TASK MOVED A DOC-CLAIM COUNT AT ALL, since it is a GATE task and touches no product code:
+# wiring web/ into this gate made a sentence in a SHIPPED C# FILE FALSE, and that sentence is item 17 of
+# the accounting above. tests/St4i.EdgeCore.Tests/UnconsumedConfigKindsTests.cs said, in its own doc
+# comment, "the gate compiles no TypeScript and starts no browser (owner item 60)". It was true when
+# BQ-1 wrote it and this task is what falsified it. Leaving it would have shipped a commit that makes
+# its own repository lie; it is RETRACTED IN PLACE, verbatim and un-struck, in this file's standard
+# operation. All four rows below are that one retraction.
+#
+#  A. "FALSE as of that ruling: 'the gate compiles no TypeScript and starts no browser' — it does both,
+#     on every run; and 'Nothing in this repository's gate reads web/src/i18n/en.ts or vi.ts' — both
+#     dictionaries are now type-checked by tsc -b, and vi.ts is additionally IMPORTED and asserted
+#     against the rendered screen by web/tests/29-machine-settings-unwired-types.spec.ts, which the gate
+#     now executes." TRUE, and every clause was RUN rather than reasoned: tsconfig.json references
+#     tsconfig.app.json and tsconfig.tests.json, so `tsc -b` covers src/ and tests/ both; spec 29's
+#     line 5 imports `vi` and its line 95 asserts the rendered element contains
+#     `viDict.machineSettings.limitation.body`.
+#  B. "That spec asserts THE SCREEN SHOWS WHAT THE DICTIONARY SAYS, which is a tautology with respect to
+#     staleness — nothing anywhere compares the operator-facing sentence against
+#     MachineParameterSchema.IsConsumedBySimulator." A CEILING, TRUE. This is the half of the retracted
+#     paragraph that SURVIVES, and it is stated in the same breath as the half that did not, because a
+#     retraction that only reports the false clause reads as though the whole paragraph fell.
+#  C. "A person who flips a false above to true and rewords vi.ts to match still gets a green gate
+#     whether the new wording is right or wrong, and en.ts is asserted by nothing at all." TRUE, and the
+#     🔴 FIRST JUSTIFICATION WRITTEN HERE FOR IT WAS WRONG AND IS RECORDED RATHER THAN QUIETLY REPLACED,
+#     because getting a count right while getting its PREDICATE wrong is the failure this ledger exists
+#     to catch. It said "en.ts appears in no import in web/tests except two"; measured, `en` is imported
+#     by FIFTEEN spec files. What survives is the claim itself, re-measured on the right predicate:
+#     `en.machineSettings` appears in ZERO assertions anywhere under web/tests, while
+#     `viDict.machineSettings` appears in 13-machine-settings and 29. The English sentence is unasserted;
+#     the file it lives in is not unread. Two different statements, and only the first was ever made.
+#  D. 🔴 THE FOURTH ROW IS NOT A NEW CLAIM, AND CALLING IT ONE WOULD BE THIS LEDGER MISREADING ITSELF.
+#     It is BQ-1's existing sentence "Whoever turns a `false` above into a `true` must also edit both
+#     i18n dictionaries and web/tests/29-…spec.ts by hand." re-identified because the new paragraph
+#     attached to it and the splitter is TEXTUAL — the scanner's own DOES-NOT-MEASURE (g) says exactly
+#     this can happen, and identity here is (path, sentence). Not one word of it changed. It is counted
+#     because the instrument counts that way, and it is named here so the next reader does not go
+#     looking for a fourth assertion that was never made.
+#
+# The baseline cfcfae42 is still not moved, and the corpus still did not: 561 *.cs before and after.
+EXPECT_NEW_DOC_ABSOLUTES=612
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
@@ -6335,7 +6514,159 @@ testhost_cpu_seconds() {
 # paid for. Trap 7's first rewrite dropped the Razor server and failed open on a null command line;
 # both were found by asking "does the new matcher miss anything". A copy that a future fix reaches
 # and a copy it does not is that same defect with a delay fuse on it. One string, interpolated twice.
-BUILD_SERVER_WHERE="Get-CimInstance Win32_Process -Filter \"Name='dotnet.exe' OR Name='VBCSCompiler.exe'\" | Where-Object { \$null -eq \$_.CommandLine -or \$_.CommandLine -match 'MSBuild\.dll|VBCSCompiler|rzc\.dll' }"
+#
+# 🔴 TASK CA-1, 2026-08-25 — THIS PREDICATE IS WIDENED FOR THE FIRST TIME IN SIXTY-ONE TASKS, AND THE
+# .NET HALF BELOW IS STILL UNCHANGED CHARACTER FOR CHARACTER. Owner ruling 2026-08-25 wires web/'s
+# build, lint and BROWSER tests into this gate (docs/owner-decisions.md item 60), which puts a Vite
+# dev server, a Playwright runner and a Chromium into the same window in which this file asserts
+# machine-wide quantities. BW-1 measured the hole this leaves — `EXPECT_BUILD_NODES` "does not name
+# node.exe, so a node population would be INVISIBLE to it" — and the brief that ordered this change
+# read that as "count node.exe". THAT INSTRUCTION DOES NOT SURVIVE MEASUREMENT, and the number is the
+# argument: this machine was carrying 37 node.exe and 2 esbuild.exe at the moment the wiring was
+# measured, none of them this tree's, most of them other repositories' toolchains and MCP servers.
+# A machine-wide node clause would read 37 against EXPECT_BUILD_NODES=0 and redden this gate forever,
+# over a population this file NEITHER CREATES NOR CAN DRAIN — which is the crying-wolf failure the
+# trap blocks below have already paid for three times, bought here at the highest price yet.
+#
+# 🔴 SO THE PREDICATE DIFFERS BECAUSE THE POPULATION DIFFERS, and that distinction is load-bearing
+# rather than cosmetic:
+#   * The .NET half targets processes THIS SCRIPT CREATES and drives to zero with
+#     `dotnet build-server shutdown`. Against that population a null CommandLine can afford to COUNT
+#     (fail loud), because a false red is one shutdown away from being resolved.
+#   * The web half targets processes that must not be RESIDENT from an earlier run or a developer's
+#     shell. Against that population the same rule would be a permanent false positive, so the web
+#     clause is scoped BY THIS TREE'S OWN PATH and by the Playwright browsers cache, never by name
+#     alone. Measured with the same instrument on the same machine at the same instant: 3 node.exe
+#     named this tree while `npm run test:e2e` ran (the Playwright CLI, its worker, and Vite), and 0
+#     when it had finished.
+#
+# 🔴 A TRAP THIS CLAUSE WALKED INTO AND CLIMBED BACK OUT OF, WRITTEN DOWN SO THE NEXT READER DOES NOT:
+# a command-line substring clause with NO name filter MATCHES THE POWERSHELL PROCESS RUNNING THE QUERY,
+# because the pattern is in its own command line. A first draft that matched `ms-playwright\` without
+# the Name filter read 1 on an idle machine, forever, and the one hit was the measuring process itself.
+# The Name filter is not decoration here; it is what makes a command-line predicate self-consistent.
+#
+# 🔴 WHAT THE WEB CLAUSE DOES NOT SEE, declared here because a matcher that hides its blind spots is
+# worse than one that has none:
+#   * A NULL CommandLine FAILS OPEN on this half — the opposite of the .NET half, deliberately, for
+#     the reason above. 190 of 477 processes on this machine report a null command line to a
+#     non-elevated query; 0 of them were node/esbuild/browser at the time of measurement. An elevated
+#     Vite server is therefore invisible here, and that is a KNOWN hole, not an oversight.
+#   * `npm run dev` invoked through the npm shim is TWO processes and only ONE of them names the tree.
+#     Measured: the npm-cli.js wrapper's command line carries no path into this tree; its Vite child
+#     does. So the child is caught and the parent is not — enough to redden, not enough to enumerate.
+#   * The VS Code Playwright extension's `test-server` processes invoke `node_modules\@playwright\...`
+#     RELATIVELY. Measured live: two of them resident in this tree, both invisible to this clause.
+#     They are also harmless to the ports this suite binds, which is why this is recorded rather than
+#     chased — a relative-path clause would have to match every node.exe on the machine.
+#   * Playwright's browsers cache is matched at `\ms-playwright\<engine>`, ANCHORED, so the separate
+#     `ms-playwright-mcp\` cache is NOT matched. Measured: 9 MCP browser processes resident, 0 matched.
+BUILD_SERVER_WHERE_DOTNET="Get-CimInstance Win32_Process -Filter \"Name='dotnet.exe' OR Name='VBCSCompiler.exe'\" | Where-Object { \$null -eq \$_.CommandLine -or \$_.CommandLine -match 'MSBuild\.dll|VBCSCompiler|rzc\.dll' }"
+
+# The tree's own path in Windows form — the web clause's whole scope. Derived, never spelled: a
+# hard-coded path is how this predicate would come to mean a different tree for a different caller,
+# which is the defect the tree-root derivation at the top of this file exists to stop.
+GATE_TREE_ROOT_WIN="$(cygpath -w "$GATE_TREE_ROOT" 2>/dev/null || true)"
+if [[ -z "$GATE_TREE_ROOT_WIN" ]]; then
+  echo "NO-VERDICT: could not express this tree's root as a Windows path (cygpath)."
+  echo "  The web half of the resident-process matcher is scoped BY THAT PATH, so without it this run"
+  echo "  cannot tell one of this tree's processes from any other node.exe on the machine. Refusing to"
+  echo "  widen the scope to 'every node process' to get past this — that reads 37 on this machine."
+  echo "  Nothing was measured. exit 3."
+  exit 3
+fi
+GATE_WEB_ROOT_WIN="${GATE_TREE_ROOT_WIN%\\}\\web"
+WEB_RESIDENT_WHERE="Get-CimInstance Win32_Process -Filter \"Name='node.exe' OR Name='esbuild.exe' OR Name='chrome.exe' OR Name='chrome-headless-shell.exe' OR Name='firefox.exe' OR Name='headless_shell.exe'\" | Where-Object { \$_.CommandLine -like '*${GATE_WEB_ROOT_WIN}*' -or \$_.CommandLine -like '*\\ms-playwright\\chromium*' -or \$_.CommandLine -like '*\\ms-playwright\\firefox*' -or \$_.CommandLine -like '*\\ms-playwright\\webkit*' }"
+
+# One string, still interpolated twice — the P-1 doctrine above is unchanged, and the union is what
+# both readers now see. `-like` rather than `-match` on every web clause on purpose: `-like` treats a
+# backslash as a literal, and the first draft of this line spent a measurement cycle on a .NET regex
+# reading `\(` as an escaped parenthesis and refusing the whole pattern with "Too many )'s".
+BUILD_SERVER_WHERE="(@(${BUILD_SERVER_WHERE_DOTNET}) + @(${WEB_RESIDENT_WHERE}))"
+
+# ══ THE CONTROL PAIR FOR THE WIDENING (task CA-1) ═══════════════════════════════════════════════
+#
+# 🔴 WHAT HAS TO BE PROVED, AND IT IS TWO THINGS THAT PULL IN OPPOSITE DIRECTIONS. A widened matcher
+# can fail in either direction and only one of them is visible from a green run:
+#   (1) THE OLD HALF STILL WORKS. A union that swallowed its first operand would read plausibly on an
+#       idle machine and stop asserting anything about MSBuild — silently, since EXPECT_BUILD_NODES=0
+#       is satisfied by a matcher that matches nothing at all. Sixty-one tasks rest on that half.
+#   (2) THE NEW HALF BUYS SOMETHING. A widening that matches nothing is a comment with a syntax.
+# So this drives the two halves SEPARATELY against a decoy it starts itself, and asserts a
+# DISAGREEMENT between them: the decoy must be visible to the union and INVISIBLE to the .NET half.
+# That is the same shape as `--web-domain-self-test`'s two banks — if both banks say the same thing,
+# the instrument is a constant — applied to a predicate instead of to a sentence.
+#
+# 🔴 THIS ONE TAKES THE EXCLUSIVE LOCK, UNLIKE THE OTHER TWO SELF-TESTS, and the difference is not a
+# style choice. Those two measure nothing machine-wide, so they must NOT be able to lock a real gate
+# run out. This one reads a MACHINE-WIDE process population and starts a process of its own; run it
+# beside a live gate and it perturbs the very quantity that gate is asserting. It is placed after
+# `gate_lock_acquire` for exactly that reason, and before anything is killed or built.
+#
+# 🔴 DOES-NOT-MEASURE, said where the result appears: this proves the two halves DISAGREE about a
+# decoy, never that either half's population is the right one. It starts a node process, not an
+# MSBuild node — so the .NET half is shown to be BLIND to the decoy, which is evidence that the union
+# is not collapsing, and is NOT evidence that the .NET half would still see a real build server. That
+# second property is asserted every run by EXPECT_BUILD_NODES itself against a population this script
+# creates, and no self-test can substitute for it.
+if [[ "${1:-}" == "--build-matcher-self-test" ]]; then
+  _bm_count() { powershell -NoProfile -NonInteractive -Command "($1 | Measure-Object).Count" 2>/dev/null | tr -d '\r' | head -1; }
+  echo "CONTROL PAIR for the resident-process matcher (task CA-1, owner ruling 2026-08-25, item 60)."
+  echo "  tree scope of the web half: ${GATE_WEB_ROOT_WIN}"
+  echo
+  _bm_u0="$(_bm_count "$BUILD_SERVER_WHERE")"
+  _bm_d0="$(_bm_count "@(${BUILD_SERVER_WHERE_DOTNET})")"
+  echo "BANK A — no decoy. union=${_bm_u0:-?}  dotnet-half=${_bm_d0:-?}"
+  if [[ -z "$_bm_u0" || -z "$_bm_d0" ]]; then
+    echo "FAIL: the population could not be read at all. An unreadable sample is not a clean one."
+    exit 1
+  fi
+  if [[ "$_bm_u0" -lt "$_bm_d0" ]]; then
+    echo "FAIL: the union read FEWER processes than its own .NET half (${_bm_u0} < ${_bm_d0})."
+    echo "      A union that loses members of an operand is not a widening, it is a replacement, and"
+    echo "      the sixty-one tasks' worth of assertion resting on the .NET half would be gone."
+    exit 1
+  fi
+  # A node process whose command line names this tree's web/ directory — the decoy. It carries a
+  # self-timeout so that a killed or crashed self-test cannot leave it behind to redden a real run.
+  node -e "/* ${GATE_WEB_ROOT_WIN} */ setTimeout(function(){}, 30000)" &
+  _bm_decoy=$!
+  sleep 3
+  _bm_u1="$(_bm_count "$BUILD_SERVER_WHERE")"
+  _bm_d1="$(_bm_count "@(${BUILD_SERVER_WHERE_DOTNET})")"
+  echo "BANK B — one decoy node process inside this tree. union=${_bm_u1:-?}  dotnet-half=${_bm_d1:-?}"
+  kill -9 "$_bm_decoy" 2>/dev/null || true
+  wait "$_bm_decoy" 2>/dev/null || true
+  sleep 3
+  _bm_u2="$(_bm_count "$BUILD_SERVER_WHERE")"
+  echo "BANK C — decoy reaped. union=${_bm_u2:-?}"
+  echo
+  if [[ "${_bm_u1:-0}" -le "${_bm_u0:-0}" ]]; then
+    echo "FAIL: the union did NOT rise when a node process appeared inside this tree"
+    echo "      (${_bm_u0} -> ${_bm_u1}). The web half matches nothing, so widening the matcher bought"
+    echo "      nothing and EXPECT_BUILD_NODES is still blind to everything the browser phase starts."
+    exit 1
+  fi
+  if [[ "${_bm_d1:-0}" -ne "${_bm_d0:-0}" ]]; then
+    echo "FAIL: the .NET HALF moved when only a node process was added (${_bm_d0} -> ${_bm_d1})."
+    echo "      Then bank B proves nothing about the new half: the rise could have come from either"
+    echo "      operand, and this control pair rests on the two halves disagreeing about the decoy."
+    exit 1
+  fi
+  if [[ "${_bm_u2:-0}" -ne "${_bm_u0:-0}" ]]; then
+    echo "FAIL: the union did not return to its bank-A reading after the decoy was reaped"
+    echo "      (${_bm_u0} -> ${_bm_u1} -> ${_bm_u2}). Either something else on this machine moved"
+    echo "      during the run — in which case re-run — or this predicate is not reading a LIVE"
+    echo "      population, which is the one property a resident-process check has to have."
+    exit 1
+  fi
+  echo "OK: ${_bm_u0} -> ${_bm_u1} -> ${_bm_u2} on the union, ${_bm_d0} -> ${_bm_d1} on the .NET half."
+  echo "    The new half sees a process in this tree; the old half does not; the reading falls back."
+  echo "    (DOES-NOT-MEASURE: this shows the halves DISAGREE about a decoy, never that either"
+  echo "     half's population is the correct one — see this block's own banner.)"
+  gate_lock_release
+  exit 0
+fi
 
 # ══ THE CENSUS — the instrument this script did not have (task P-1, §8.1(h7)) ═══════════════════
 #
@@ -8631,6 +8962,113 @@ note "warning ledger: $(printf '%s\n' "$OBSERVED_WARNING_LEDGER" | awk '$1=="VEN
 # the posture above, one full `-t:Rebuild` leaves exactly ONE resident process, a VBCSCompiler, and no
 # MSBuild worker node at all -- the 13-plus population the trap-8 note records was measured BEFORE the
 # export existed, and it is what a build WITHOUT this posture still leaves today (14, measured).
+# ══ GATE 1b — web/ COMPILES AND LINTS (task CA-1, owner ruling 2026-08-25, item 60) ═════════════
+#
+# WHY HERE, AND THE PLACEMENT IS AN ASSERTION RATHER THAN A CONVENIENCE. These two commands sit
+# AFTER the .NET build gate and its warning ledger, and BEFORE the post-build shutdown and the
+# resident-process settle poll below. That ordering buys one thing that any other ordering would
+# not: whatever `tsc -b`, `vite build` and `oxlint` leave running is INSIDE the window the settle
+# poll then measures, so the widened matcher is asserting something about them rather than about a
+# window they had already left. BW-1 measured these two commands leaving nothing (3 -> 3 -> 3 on the
+# .NET matcher, 35 -> 35 -> 34 machine-wide node), and that measurement is now RE-TAKEN every run by
+# EXPECT_BUILD_NODES instead of being inherited from a report.
+#
+# 🔴 WHAT THIS COSTS EVERY GREEN RUN, said rather than discovered: `npm run build` measured at 6.05 s
+# and `npm run lint` at 0.84 s on this tree — ~7 s, against a .NET build phase measured in minutes.
+# The expensive half of this ruling is the browser suite in [2/3], not this.
+_web_build_log="$LOGDIR/web-build.log"
+_web_lint_log="$LOGDIR/web-lint.log"
+_web_started=$SECONDS
+( cd "$GATE_TREE_ROOT/web" && npm run build ) > "$_web_build_log" 2>&1
+_web_build_rc=$?
+if [[ $_web_build_rc -ne 0 ]]; then
+  echo "FAIL: 'npm run build' in web/ exited ${_web_build_rc}."
+  echo "  That is \`tsc -b && vite build\`: a TYPE error or a bundler error behind that exit code."
+  echo "  🔴 THIS IS THE LEG THAT DID NOT EXIST BEFORE 2026-08-25. 124 TypeScript sources under web/src"
+  echo "     were compiled by nothing in this gate; a fix that landed entirely there had a hand-run"
+  echo "     build as its only witness (item 57 leg 3, 2026-08-24). tsc names the file and the line —"
+  echo "     read the log rather than re-running by hand:"
+  echo "  log: $_web_build_log"
+  tail -25 "$_web_build_log" | sed 's/^/    /'
+  exit 1
+fi
+
+# ── The lint half, and its SHAPE is the whole question. ────────────────────────────────────────
+#
+# 🔴 `oxlint` EXITS 0 WITH WARNINGS ON THE TABLE, so wiring the bare command would buy a green line
+# with NO DEFINITION OF RED for anything short of a hard error. BW-1 measured both ends of that:
+# `npm run lint` is exit 0 today with 15 warnings, and `npx oxlint --deny-warnings` is exit 1 today.
+# So the two obvious shapes are a line that cannot go red, or a ceiling that is red from the moment
+# it ships until fifteen unrelated warnings are paid off by somebody.
+#
+# 🔴 NEITHER IS CHOSEN, AND THE THIRD SHAPE IS NOT INVENTED HERE — IT IS THE ONE THIS FILE ALREADY
+# RUNS. Forty lines up, EXPECT_WARNINGS pins a .NET warning count that is NOT zero and has never
+# been zero, and EXPECT_WARNING_LEDGER asserts it ROW BY ROW as (bucket, code, count) because "a
+# scalar over a union cannot see one population fall while another rises". That mechanism exists for
+# exactly this situation: warnings that EXIST and MUST NOT GROW. The web half is the same shape with
+# the same two assertions — a total, and a per-rule partition that must agree with it.
+#
+# WHAT THAT BUYS AND WHAT IT DOES NOT. A NEW warning of any rule reddens. A new occurrence of the
+# SAME rule reddens. A warning that gets FIXED also reddens, and that is deliberate and identical to
+# the .NET side: the pin comes down with a justification beside it, never silently.
+# 🔴 WHAT IT IS NOT: it is not a suppression. Nothing here passes --deny-warnings, nothing edits
+# .oxlintrc.json, nothing adds an eslint-disable, and the fifteen warnings are printed in full on the
+# failure path. The count is NAMED, not silenced — the distinction this repository has spent sixty-one
+# tasks holding.
+# 🔴 AND THE FIFTEEN ARE NOT FIXED BY THIS TASK, which is a choice with a reason rather than a
+# deferral: all fifteen are `react(only-export-components)`, i.e. "this module exports a component AND
+# something else, so Fast Refresh cannot hot-reload it". Every fix is a FILE SPLIT in web/src — moving
+# a `cva` variant table or a context hook out of a component file — across 13 product files that this
+# task has no other reason to touch, in a task whose whole point is to start measuring web/ rather
+# than to start changing it. Fixing them here would put 13 unrelated product diffs under the same
+# commit as the gate change, and the first thing that goes wrong afterwards would have two candidate
+# causes instead of one.
+( cd "$GATE_TREE_ROOT/web" && npm run lint ) > "$_web_lint_log" 2>&1
+_web_lint_rc=$?
+WEB_LINT_ELAPSED=$((SECONDS - _web_started))
+if [[ $_web_lint_rc -ne 0 ]]; then
+  echo "FAIL: 'npm run lint' in web/ exited ${_web_lint_rc}."
+  echo "  oxlint exits non-zero for ERRORS (the .oxlintrc.json 'error' rules, e.g. react/rules-of-hooks),"
+  echo "  never for the warnings the ledger below pins. So this is a hard lint error, not a count move."
+  echo "  log: $_web_lint_log"
+  tail -25 "$_web_lint_log" | sed 's/^/    /'
+  exit 1
+fi
+
+# Two independent counts of ONE population, exactly as the .NET ledger does it: the total, and the
+# per-rule partition. If they disagree the partition is not a census of this run and NOTHING it says
+# may be believed -- including a green one.
+EXPECT_WEB_LINT_WARNINGS=15
+EXPECT_WEB_LINT_LEDGER="react(only-export-components) 15"
+WEB_LINT_WARNINGS=$(grep -cE '^[^ ].*: warning [a-z@/-]+\(' "$_web_lint_log" 2>/dev/null || true)
+WEB_LINT_LEDGER="$(grep -oE 'warning [a-z@/-]+\([a-z0-9/-]+\)' "$_web_lint_log" 2>/dev/null \
+  | sed 's/^warning //' | LC_ALL=C sort | uniq -c | awk '{printf "%s %s\n", $2, $1}' | LC_ALL=C sort)"
+WEB_LINT_LEDGER_SUM=$(printf '%s\n' "$WEB_LINT_LEDGER" | awk '{s+=$2} END {printf "%d", s+0}')
+if [[ "$WEB_LINT_LEDGER_SUM" != "${WEB_LINT_WARNINGS:-}" ]]; then
+  echo "FAIL: the web lint ledger partitioned ${WEB_LINT_LEDGER_SUM} warnings but the line count read ${WEB_LINT_WARNINGS:-unknown}."
+  echo "  These are two independent counts of one population and they must agree. They do not, so the"
+  echo "  partition is not a census of this run. Likeliest cause: oxlint's output format moved."
+  echo "  log: $_web_lint_log"
+  exit 1
+fi
+if [[ "${WEB_LINT_WARNINGS:-}" != "$EXPECT_WEB_LINT_WARNINGS" ]]; then
+  echo "FAIL: web lint warnings are ${WEB_LINT_WARNINGS:-unknown}, expected ${EXPECT_WEB_LINT_WARNINGS}."
+  echo "  A warning count is an expected quantity, not a readout — the same rule this file applies to"
+  echo "  EXPECT_WARNINGS on the .NET side. If this move is intended, move the pin and justify it there."
+  echo "  log: $_web_lint_log"
+  grep -E ': warning ' "$_web_lint_log" | head -40 | sed 's/^/    /'
+  exit 1
+fi
+if [[ "$WEB_LINT_LEDGER" != "$EXPECT_WEB_LINT_LEDGER" ]]; then
+  echo "FAIL: the web lint ledger moved. The TOTAL may not have."
+  echo "  ${EXPECT_WEB_LINT_WARNINGS} is a scalar over a union of rules, and a scalar over a union cannot see one rule"
+  echo "  fall while another rises. Rows are (RULE COUNT); '<' is expected, '>' is what this run produced:"
+  diff <(printf '%s\n' "$EXPECT_WEB_LINT_LEDGER") <(printf '%s\n' "$WEB_LINT_LEDGER") | sed 's/^/    /'
+  echo "  log: $_web_lint_log"
+  exit 1
+fi
+note "web/: build OK, lint OK -- ${WEB_LINT_WARNINGS} warning(s), every (rule,count) row asserted, in ${WEB_LINT_ELAPSED}s"
+
 build_server_shutdown post-build
 assert_shutdown_ran "after the rebuild"
 POST_BUILD_COUNT="$SD_BEFORE_COUNT"
@@ -9090,7 +9528,7 @@ note "  green here does NOT mean the suites are isolated: this is a MACHINE-WIDE
 note "  host running beside the gate would redden it, and a leak into a path this find cannot enter is a"
 note "  hard failure rather than a quiet zero."
 
-echo "[2/3] Running ${#SUITES[@]} suites sequentially..."
+echo "[2/3] Running ${#SUITES[@]} .NET suites sequentially (the web/ suite runs after them, at [2b/3])..."
 for entry in "${SUITES[@]}"; do
   proj="${entry%%:*}"; expected="${entry##*:}"; name=$(basename "$proj")
   log="$LOGDIR/$name.log"
@@ -9293,6 +9731,184 @@ for entry in "${SUITES[@]}"; do
   eval "OBSERVED_${name//[.-]/_}=$total"
 done
 
+# ══ THE SIXTH SUITE — web/'s BROWSER TESTS (task CA-1, owner ruling 2026-08-25, item 60) ═════════
+#
+# 🔴 IT RUNS LAST, AND THE ORDER IS DERIVED FROM A MEASUREMENT RATHER THAN FROM WHERE IT WAS EASY TO
+# ADD. `npm run test:e2e` does not just start a browser. playwright.config.ts declares TWO webServers,
+# and the second one is
+#     dotnet run --project ../src/St4i.EngineApi/St4i.EngineApi.csproj --no-launch-profile
+# — a SECOND .NET BUILD, inside the test phase. Measured live during a real run of this suite: it
+# spawned two `dotnet.exe ... MSBuild.dll` worker nodes and a VBCSCompiler, and ALL THREE are matched
+# by the .NET half of BUILD_SERVER_WHERE. So the population this ruling introduces into the measuring
+# window is not only the node/browser one the brief anticipated; the biggest part of it is a .NET one
+# the matcher has always seen, arriving AFTER the instant EXPECT_BUILD_NODES samples.
+# ⇒ Put this suite FIRST and the five .NET suites would run underneath a build-server population,
+#   which is precisely the condition the settle poll above exists to forbid. Put it LAST and they do
+#   not. That is the whole argument, and it is why this block is here and not in the loop above.
+#
+# 🔴 WHY IT IS STILL INSIDE THE TWO BRACKETS. Both the output-directory bracket and the %ProgramData%
+# bracket close below this line, so the engine this suite boots is WATCHED by them. That is a
+# strengthening, not an oversight: an engine started by Playwright writes real product data, and
+# playwright.config.ts's env block is what keeps it inside web/.e2e-data. MEASURED rather than
+# trusted: every ST4I_*_DIR that tests/Shared/TestRunTempRoot.cs redirects for the .NET suites is
+# ALSO redirected by playwright.config.ts, and playwright.config.ts redirects ELEVEN MORE. The
+# bracket below is what re-takes that measurement on every run instead of inheriting this sentence.
+#
+# 🔴 AND THE ASSERTION IS NOT `failed == 0`, WHICH IS A REAL ASYMMETRY WITH THE FIVE SUITES ABOVE AND
+# IS DECLARED RATHER THAN BURIED. On the .NET side a non-zero `Failed:` is unconditionally red and has
+# been for sixty-one tasks. Here it is not, because MEASURED ON THE SHIPPED TREE AT 94fc9160, BEFORE
+# THIS TASK CHANGED ANYTHING, `npm run test:e2e` was ALREADY RED: 5 failed / 213 passed of 218, exit 1,
+# 792 seconds. Re-run independently, the same five, byte for byte — deterministic, not flaky.
+#   FOUR of them are `00-visual-and-a11y.spec.ts` screenshot comparisons (inspector, onboarding,
+#   settings, scenario, all the `glass` theme) failing by ~13 900 pixels, ratio 0.01 against a
+#   configured maxDiffPixelRatio of 0.00002 — five hundred times the threshold, and the diff image
+#   shows CONTENT AT DIFFERENT VERTICAL OFFSETS, not antialiasing. The baselines were last recorded
+#   on 2026-08-01 (f95aaabf); web/src has taken 15 commits and 1053 insertions since, one of them to
+#   routes/Settings.tsx itself. They are STALE, and they are stale for exactly the reason item 60
+#   exists: nothing ran them.
+#   ONE is `01-dashboard.spec.ts`, a functional assertion on a toast that does not appear.
+#
+# 🔴 THE THREE THINGS THIS TASK REFUSED TO DO ABOUT THAT, each with its reason, because the shape of
+# a refusal is the argument:
+#   * NOT re-record the baselines (`test:e2e:update-snapshots`). One command would turn 23 days of
+#     unreviewed visual drift across 15 commits into a baseline signed by this task. That is asserting
+#     something nobody measured, in the file whose whole purpose is to stop that.
+#   * NOT loosen maxDiffPixelRatio, delete, skip or `.fixme` anything. That is suppression, and this
+#     is the sixty-second consecutive task with zero suppressions.
+#   * NOT leave the suite out of the gate. The owner ruled that it goes in.
+# What is left is the mechanism this file already runs for a debt that exists and must not grow: PIN
+# IT BY NAME. The five are listed individually below. A SIXTH failure reddens. A DIFFERENT fifth
+# reddens. One of these five starting to PASS also reddens — the pin comes down with a justification,
+# never silently. That is EXPECT_WARNING_LEDGER's discipline applied to a test result.
+# 🔴 AND THE HONEST PRICE OF IT, since this is the first time in sixty-two tasks that this gate has
+# been taught to expect a red: a pinned failure is a heavier instrument than a pinned warning, because
+# a failing test is a statement that the PRODUCT is wrong. Whether these five are paid or written off
+# is a product decision and therefore the owner's — see item 60, which carries it as a cost that was
+# not visible when the ruling was made.
+# 🔴 THE PINNED SET IS FOUR ROWS, NOT FIVE, AND THE FIFTH IS QUARANTINED — because THIS CHECK CAUGHT
+# ITS OWN AUTHOR ON ITS FIRST REAL RUN. The pin originally held five rows on the strength of two
+# independent runs producing an identical failing set. The first full gate run with this block wired
+# in produced FOUR: `01-dashboard.spec.ts:26:3` PASSED. So "deterministic, not flaky" was a claim made
+# at n=2 and refuted at n=3, by the instrument the claim was used to justify. Measured frequency to
+# date: FAILS 2 of 3. That is a frequency, not a diagnosis — nobody has found the mechanism.
+#
+# 🔴 WHY A FLAKY ROW CANNOT SIT IN AN EXACT-EQUALITY PIN, and it is law (2) in one sentence: a pin that
+# demands the failing set be EXACTLY these rows reddens when a flaky member passes AND when it fails.
+# A gate that goes red at random on a test nobody is looking at is a gate people learn to re-run until
+# it is green, which destroys every OTHER assertion in this file at the same time.
+#
+# SO THE TWO POPULATIONS ARE SEPARATED, because they are two different facts:
+#   PINNED     — DETERMINISTIC failures, asserted by exact set equality. 3 of 3 runs, identical.
+#                A sixth failure reddens; a different fourth reddens; one going green reddens.
+#   QUARANTINED — a row whose result is NOT STABLE. Its presence or absence is REPORTED at the verdict
+#                and ASSERTED BY NOTHING. This is the honest reading and it is stated as a LOSS: the
+#                gate has no opinion about that test at all, in either direction.
+# 🔴 QUARANTINE IS NOT A SKIP AND THE DIFFERENCE IS MEASURABLE: the test still RUNS, still counts
+# toward EXPECT_WEB_E2E_TESTS, still writes its trace and screenshot, and is named on every verdict.
+# What it cannot do is decide the gate. A SECOND quarantined row would have to be added here by hand,
+# which is the only thing stopping this list from becoming the place failures go to be forgotten.
+EXPECT_WEB_E2E_PINNED_FAILURES="tests\\00-visual-and-a11y.spec.ts:233:7 › inspector › visual — glass
+tests\\00-visual-and-a11y.spec.ts:233:7 › onboarding › visual — glass
+tests\\00-visual-and-a11y.spec.ts:233:7 › scenario › visual — glass
+tests\\00-visual-and-a11y.spec.ts:233:7 › settings › visual — glass"
+WEB_E2E_QUARANTINED="tests\\01-dashboard.spec.ts:26:3 › dashboard — fleet start/stop › empty state renders, Start Fleet populates the grid, Stop Fleet freezes it"
+
+echo "[2b/3] Running the web/ browser suite (${#WEB_SUITES[@]} suite, ceiling ${WEB_SUITE_CEILING_SECONDS}s)..."
+WEB_E2E_LOG="$LOGDIR/web-e2e.log"
+WEB_E2E_TOTAL=""
+WEB_E2E_ELAPSED=""
+_web_e2e_started=$SECONDS
+( cd "$GATE_TREE_ROOT/web" && npm run test:e2e ) > "$WEB_E2E_LOG" 2>&1 &
+_web_pid=$!
+# The wall-clock ceiling, borrowed in shape from the five suites above and NOT in value -- see
+# WEB_SUITE_CEILING_SECONDS for why 900 does not transfer. There is no CPU-flat companion here: the
+# .NET one samples `Get-Process testhost`, and this suite's work is spread over a node runner, a Vite
+# server, a browser and a dotnet host, so a single-process CPU reading would be measuring one limb of
+# four. A ceiling that bounds the unbounded case is what this has; it is not pretended to be more.
+_web_hung=0
+while kill -0 "$_web_pid" 2>/dev/null; do
+  sleep 30
+  kill -0 "$_web_pid" 2>/dev/null || break
+  if [[ $((SECONDS - _web_e2e_started)) -ge $WEB_SUITE_CEILING_SECONDS ]]; then
+    _web_hung=1
+    note "web e2e: EXCEEDED the ${WEB_SUITE_CEILING_SECONDS}s ceiling ($((SECONDS - _web_e2e_started))s) -- killing."
+    kill -9 "$_web_pid" 2>/dev/null || true
+    break
+  fi
+done
+wait "$_web_pid" 2>/dev/null
+WEB_E2E_RC=$?
+WEB_E2E_ELAPSED=$((SECONDS - _web_e2e_started))
+
+# 🔴 EVERY PROCESS THIS SUITE STARTED IS THIS SCRIPT'S TO REAP, and the reason is the same one the
+# test-host kill at [1/3] gives: an orphan has no parent left to be found by, and the next run reads
+# whatever it left behind. `reuseExistingServer` means a Vite server this run leaked would be SILENTLY
+# REUSED by the next one -- serving whatever code it was started with, which may not be this tree.
+# Scoped to processes whose command line names THIS TREE, so it can never reach another repository's.
+_web_reaped=$(powershell -NoProfile -NonInteractive -Command \
+  "\$p = @(${WEB_RESIDENT_WHERE}); foreach (\$q in \$p) { Stop-Process -Id \$q.ProcessId -Force -ErrorAction SilentlyContinue }; \$p.Count" \
+  2>/dev/null | tr -d '\r' | head -1)
+[[ "${_web_reaped:-0}" != "0" ]] && note "web e2e: reaped ${_web_reaped} leftover process(es) scoped to this tree"
+
+if [[ $_web_hung -eq 1 ]]; then
+  FAILURES+=("web e2e: HUNG past the ${WEB_SUITE_CEILING_SECONDS}s ceiling, and WE killed it. The green-path duration measured on this tree is 792s; anything near the ceiling is a real change, not a slow morning. log: $WEB_E2E_LOG")
+else
+  # Parsed from the RUN, never from `--list`. BR-1 measured `--list-tests` disagreeing with a real
+  # run by 7 on the .NET side; the same class of error is available here and this avoids it by
+  # reading the line the runner emits when it actually starts executing.
+  WEB_E2E_TOTAL=$(grep -oE 'Running [0-9]+ tests?' "$WEB_E2E_LOG" | grep -oE '[0-9]+' | tail -1)
+  WEB_E2E_PASSED=$(grep -oE '^[[:space:]]*[0-9]+ passed' "$WEB_E2E_LOG" | grep -oE '[0-9]+' | tail -1)
+  WEB_E2E_FAILED=$(grep -oE '^[[:space:]]*[0-9]+ failed' "$WEB_E2E_LOG" | grep -oE '[0-9]+' | tail -1)
+  # The failing set, by test id, in a stable order. Playwright prints one indented line per failure in
+  # its end-of-run summary; the trailing box-drawing padding is stripped so the row is the identity of
+  # the test and nothing about how wide the terminal was.
+  # 🔴 THE STRIP IS BYTE-WISE ON PURPOSE, and the first draft was wrong in a way only a run showed. A
+  # `─*` quantifier applied to a THREE-BYTE character under a C locale quantifies its last byte, so the
+  # padding survived and every row compared unequal. Deleting the exact sequence globally is locale-
+  # independent. The per-test progress lines cannot be caught by this pattern: they begin `ok NN` and
+  # only the end-of-run failure summary starts a line with `[chromium] ›`.
+  WEB_E2E_FAILED_SET="$(sed -n 's/^[[:space:]]*\[chromium\] › //p' "$WEB_E2E_LOG" \
+    | sed 's/─//g' | sed 's/[[:space:]]*$//' | LC_ALL=C sort -u)"
+  # The quarantined rows are lifted OUT before the comparison, and whether each one was in the set is
+  # reported below. Removing them from the assertion is the whole point; removing them from the
+  # REPORT would be the suppression this block refuses.
+  WEB_E2E_ASSERTED_SET="$(LC_ALL=C comm -23 <(printf '%s\n' "$WEB_E2E_FAILED_SET") <(printf '%s\n' "$WEB_E2E_QUARANTINED" | LC_ALL=C sort))"
+  WEB_E2E_QUARANTINE_HIT="$(LC_ALL=C comm -12 <(printf '%s\n' "$WEB_E2E_FAILED_SET") <(printf '%s\n' "$WEB_E2E_QUARANTINED" | LC_ALL=C sort) | grep -c . || true)"
+  WEB_E2E_QUARANTINE_N="$(printf '%s\n' "$WEB_E2E_QUARANTINED" | grep -c . || true)"
+
+  if [[ -z "${WEB_E2E_TOTAL:-}" ]]; then
+    FAILURES+=("web e2e: no 'Running N tests' line -- the suite produced no result at all, so nothing about web/ was measured on this run. That is not a pass. log: $WEB_E2E_LOG")
+  else
+    if [[ "$WEB_E2E_TOTAL" != "$EXPECT_WEB_E2E_TESTS" ]]; then
+      FAILURES+=("web e2e: ran ${WEB_E2E_TOTAL} tests, expected ${EXPECT_WEB_E2E_TESTS} -- discovery loss or an unjustified change. This number is measured by RUNNING, not by --list; move EXPECT_WEB_E2E_TESTS and justify it beside the constant.")
+    fi
+    if [[ "$WEB_E2E_ASSERTED_SET" != "$EXPECT_WEB_E2E_PINNED_FAILURES" ]]; then
+      {
+        echo "web e2e: the set of FAILING tests is not the pinned set (quarantined rows excluded from both sides). Rows are test ids; '<' is pinned, '>' is this run:"
+        diff <(printf '%s\n' "$EXPECT_WEB_E2E_PINNED_FAILURES") <(printf '%s\n' "$WEB_E2E_ASSERTED_SET") | sed 's/^/      /'
+        echo "    A '>' row is a NEW failure and is what this gate was wired in to catch. A '<' row is a"
+        echo "    pinned failure that has started passing: also red, on purpose and for the same reason"
+        echo "    EXPECT_WARNINGS is red when a warning is fixed -- the pin comes down with a"
+        echo "    justification beside it, never silently."
+        echo "    The four pinned rows are a DEBT, not a verdict on them: four stale visual baselines,"
+        echo "    last recorded 2026-08-01, 15 commits and 1053 insertions of web/src ago. Paying or"
+        echo "    writing them off is a product decision -- see item 60."
+        echo "    log: $WEB_E2E_LOG"
+      } > "$LOGDIR/web-e2e-report.txt"
+      FAILURES+=("$(cat "$LOGDIR/web-e2e-report.txt")")
+    fi
+  fi
+  # 🔴 The exit code is deliberately REPORTED and not asserted: with five pinned failures on the
+  # books `npm run test:e2e` exits 1 on a correct run, so asserting rc==0 would be asserting the
+  # debt away. What IS asserted is the total and the failing SET; the rc is printed so that nobody
+  # reads "exit 1" beside a PASS and assumes the gate lost track of it.
+  note "web e2e: ${WEB_E2E_TOTAL:-?}/${EXPECT_WEB_E2E_TESTS} ran, ${WEB_E2E_PASSED:-?} passed, ${WEB_E2E_FAILED:-0} failed, runner exit ${WEB_E2E_RC} (non-zero is EXPECTED while the pin holds rows), ${WEB_E2E_ELAPSED}s of ${WEB_SUITE_CEILING_SECONDS}s"
+  # 🔴 The quarantine is reported on EVERY run, green or red, and on both branches — a disclosure that
+  # only appears when it is inconvenient is a footnote, not a disclosure. This is the one place a
+  # reader learns that some of the 220 tests above decide nothing.
+  note "web e2e: ${WEB_E2E_QUARANTINE_N} QUARANTINED row(s) — ${WEB_E2E_QUARANTINE_HIT} failed on this run, and this gate asserts NOTHING about them in either direction (measured unstable: 2 of 3 runs). They still run, still count in the ${EXPECT_WEB_E2E_TESTS}, and are named in the script beside the pin."
+fi
+
 # ── Gate 3: the verdict, as one line. ───────────────────────────────────────────
 # The credential bracket is folded into FAILURES here rather than left to its EXIT trap, so that the
 # normal path still prints EXACTLY ONE PASS/FAIL line. A trap firing after a printed "PASS:" would be a
@@ -9421,7 +10037,10 @@ fi
 echo "[3/3] Verdict:"
 # 🔴 Law (3) applied to this script: printed on BOTH branches, because the verdict appears on both and
 # a domain declaration that only accompanies good news is an advertisement. See the block beside SUITES.
-web_domain_declaration "${SUITES[@]}"
+# 🔴 CA-1: both arrays, so the "N of M suites" corrects itself the way BO-1 built it to. That
+# sentence — "the day someone adds a web suite this corrects itself instead of becoming the next
+# retraction" — is the one claim in this file that got to be tested by the event it predicted.
+web_domain_declaration "${SUITES[@]}" "${WEB_SUITES[@]}"
 # 🔴 Owner ruling 2026-08-25, item 69 — printed on BOTH branches, for the same reason the line above is:
 # a milestone that only appears beside good news is an advertisement, and this one matters most on the
 # run where something else is already broken. Never fails the gate; see the function's own banner for
@@ -9439,7 +10058,12 @@ if [[ ${#FAILURES[@]} -eq 0 ]]; then
   grand=$((EXPECT_ABSTRACTIONS + EXPECT_CONFORMANCE + EXPECT_EDGECORE + EXPECT_EDGESERVICE + EXPECT_ENGINEAPI))
   # 🔴 The one-line summary carries the domain too. A reader who greps only for PASS gets exactly one
   # line, and before today that line said five suites were green and nothing about the sixth directory.
-  echo "PASS: 0 build errors, ${#SUITES[@]}/${#SUITES[@]} suites at their exact expected totals (${grand}), 0 failed, 0 skipped, none aborted. NOT MEASURED: web/ — see the domain declaration above."
+  # 🔴 CA-1 — `NOT MEASURED: web/` IS RETIRED FROM THIS LINE, and retiring it is the point of the
+  # ruling rather than a tidy-up. It was true from BO-1 until 2026-08-25 and it is false now. What
+  # replaces it is NOT silence: a one-line reader gets the web suite's own numbers AND the size of
+  # the pinned debt, because "213 of 218 passed" beside the word PASS is exactly the kind of thing a
+  # reader must not have to open a log to learn.
+  echo "PASS: 0 build errors, ${#SUITES[@]}/${#SUITES[@]} .NET suites at their exact expected totals (${grand}), 0 failed, 0 skipped, none aborted; web/ build+lint OK (${WEB_LINT_WARNINGS:-?} pinned lint warnings) and ${WEB_E2E_TOTAL:-?}/${EXPECT_WEB_E2E_TESTS} browser tests ran with ${WEB_E2E_FAILED:-0} PINNED failure(s) — see the domain declaration above for what is still not measured."
   exit 0
 fi
 echo "FAIL:"

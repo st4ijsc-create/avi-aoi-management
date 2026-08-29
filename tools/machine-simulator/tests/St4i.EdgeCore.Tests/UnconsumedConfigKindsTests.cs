@@ -78,7 +78,25 @@ public class UnconsumedConfigKindsTests
     /// same change; it does NOT force the web copy to be corrected, and a person who reddens it can make it
     /// green again while leaving the operator's screen saying the stale thing. That last mile has no
     /// instrument and this test is not it. Whoever turns a `false` above into a `true` must also edit both
-    /// i18n dictionaries and <c>web/tests/29-machine-settings-unwired-types.spec.ts</c> by hand.</para></summary>
+    /// i18n dictionaries and <c>web/tests/29-machine-settings-unwired-types.spec.ts</c> by hand.</para>
+    ///
+    /// <para>📎 🔴 <b>THE PARAGRAPH ABOVE IS PARTLY RETRACTED, 2026-08-25 (task CA-1, owner ruling of
+    /// 2026-08-25 on item 60) — kept verbatim and un-struck, because it was exactly true when written and
+    /// only one of its clauses moved.</b> The gate now runs <c>npm run build</c>, <c>npm run lint</c> and
+    /// <c>npm run test:e2e</c> for <c>web/</c>.
+    /// <i>FALSE as of that ruling:</i> "the gate compiles no TypeScript and starts no browser" — it does
+    /// both, on every run; and "Nothing in this repository's gate reads web/src/i18n/en.ts or vi.ts" — both
+    /// dictionaries are now type-checked by <c>tsc -b</c>, and <c>vi.ts</c> is additionally IMPORTED and
+    /// asserted against the rendered screen by <c>web/tests/29-machine-settings-unwired-types.spec.ts</c>,
+    /// which the gate now executes.
+    /// <i>STILL TRUE, and it is the half that matters:</i> "that last mile has no instrument". That spec
+    /// asserts THE SCREEN SHOWS WHAT THE DICTIONARY SAYS, which is a tautology with respect to staleness —
+    /// nothing anywhere compares the operator-facing sentence against
+    /// <c>MachineParameterSchema.IsConsumedBySimulator</c>. A person who flips a <c>false</c> above to
+    /// <c>true</c> and rewords <c>vi.ts</c> to match still gets a green gate whether the new wording is
+    /// right or wrong, and <c>en.ts</c> is asserted by nothing at all. So the hand-edit instruction in the
+    /// sentence above stands unchanged; what changed is that two of the three reasons given for it have
+    /// stopped being reasons.</para></summary>
     [Theory]
     [MemberData(nameof(Kinds))]
     public void The_declared_consumption_of_a_kind_matches_what_the_factory_actually_wires(
