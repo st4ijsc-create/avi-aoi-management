@@ -801,7 +801,23 @@ export async function updateProductInspectionNTF(id: number, userId: number, rea
     overallResult: "NTF",
     ntfConfirmedBy: userId,
     ntfConfirmedAt: new Date(),
-    ntfReason: reason
+    ntfReason: reason,
+    // BG-41: NGƯỜI xác nhận NTF cũng phải cập nhật `ntfSource`, không chỉ
+    // `ntfConfirmedBy/At`. Trước bản vá này cột đứng yên ⇒ bo đã mang
+    // 'machine' (đường v2.0) vẫn khai 'machine' sau khi người xác nhận, làm
+    // `WHERE ntfSource='machine'` đếm THỪA cả bo do người đánh dấu.
+    // Ba chuyển tiếp (CASE tính TRÊN DB, tránh đọc-rồi-ghi giữa hai lượt xác
+    // nhận đồng thời): NULL (chưa có nguồn) → 'human'; 'machine' → 'both';
+    // 'human' → vẫn 'human' (xác nhận lần hai không đổi gì). 'both' → vẫn
+    // 'both' (đã có cả hai, không được phép hạ xuống một nguồn).
+    // ⚠ Cột `varchar(10)` KHÔNG CHECK/enum — ELSE gom mọi giá trị lạ về
+    // 'human' thay vì tin cột chỉ chứa ba giá trị đã biết.
+    ntfSource: sql`CASE ${productInspections.ntfSource}
+      WHEN 'machine' THEN 'both'
+      WHEN 'both' THEN 'both'
+      WHEN 'human' THEN 'human'
+      ELSE 'human'
+    END`,
   }).where(eq(productInspections.id, id));
 }
 
