@@ -29,6 +29,28 @@
  *     live (machine retried directly after DB recovery) is never double-inserted.
  *   • a live-path success marks its key applied, guarding the crash-replay case.
  *
+ * ── 2026-08-29 (WAL cho cây v2.0, §QĐ-WAL-A) — HAI HỌ KHOÁ, MỘT ĐIỂM ĐIỀU PHỐI ──
+ * The formula above collides on v2.0 tree payloads: `serialNumber` empty is a
+ * VALID shape in v2.0 ("empty if the machine hasn't scanned yet") and v2.0
+ * carries `surfaces` — never `measurements` — so `measurementCount` is always 0.
+ * Two GENUINELY DIFFERENT v2.0 boards, same station, same `inspectionTime`, both
+ * empty serial ⇒ SAME key with this formula ⇒ the second board would be silently
+ * swallowed as a "duplicate". `bufferSubmission`/`restoreInspectionWal` therefore
+ * never call `computeSubmissionKey` directly — they go through
+ * `dungKhoaGuiTheoHinhDang`, which dispatches BY SHAPE (`laHinhDangCayV2`, not the
+ * optional `schemaVersion` field): v2.0 payloads key off `dungKhoaKhuTrungV2()`
+ * (`server/contracts/machineDataContract.ts` — identity+productId+startedAt, not
+ * serial-dependent); v1.x payloads keep this exact formula, unchanged.
+ * `submitInspectionTreeV2` (`machineApiRouters.ts`) now also buffers on a
+ * TRANSIENT failure and ACKs `{success:true, queued:true, submissionId}`, same
+ * contract as the v1.x path below. ⚠ KNOWN GAP (left for Task 2 of the same
+ * plan, §QĐ-WAL-B): a buffered v2.0 entry still REPLAYS through whatever
+ * `processFn` is wired — today that's always the v1.x `processInspectionSubmission`
+ * pipeline (wired by `ensureInspectionWalWired`/`initInspectionStoreForward`). A
+ * v2.0 entry will NOT drain correctly until a shape-aware `processFn` is wired;
+ * it stays safely queued (never silently dropped) in the meantime, but replay
+ * will keep failing/retrying until that lands.
+ *
  * BOUNDS (never grow unbounded, never drop silently): max entries + max age +
  * max bytes; on overflow the OLDEST entries are dropped — counted + warned.
  * PERMANENTLY invalid payloads (auth/validation TRPCErrors on replay) go to a
@@ -43,11 +65,25 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { TRPCError } from "@trpc/server";
+// Doc 2026-08-29 (WAL cho cây v2.0, §QĐ-WAL-A) — khoá gửi RIÊNG cho payload hình dạng
+// cây v2.0 + vị từ nhận diện hình dạng. Cả hai sống ở module hợp đồng LÁ
+// (`server/contracts/machineDataContract.ts`, KHÔNG import gì từ `routers/`), nên import
+// TĨNH ở đây không tạo vòng với `machineApiRouters.ts` (file đó import NGƯỢC LẠI từ module
+// này ở cấp module — xem `dungKhoaGuiTheoHinhDang` bên dưới để hiểu VÌ SAO không đặt điều
+// phối khoá ở `machineApiRouters.ts`).
+import { dungKhoaKhuTrungV2, laHinhDangCayV2 } from "../../contracts/machineDataContract";
+import type { MachineDataContractV2 } from "../../contracts/machineDataContractV2";
 
 /**
  * The buffered payload is the raw `submitInspection` input (plus the resolved
  * credential when the machine authenticated via Authorization header). Kept
  * structurally typed here to avoid a value-level import cycle with the router.
+ *
+ * 2026-08-29 (WAL cho cây v2.0) — this ALSO stands in for a v2.0 tree payload
+ * (`MachineDataContractV2`): it has no `measurements` (index signature absorbs
+ * its `surfaces`/`identity`/`productId` instead) and `serialNumber`/`overallResult`
+ * are both present, just narrower-typed (`overallResult: "OK"|"NG"`, no "NTF").
+ * Structural compatibility is intentional — see `dungKhoaGuiTheoHinhDang` below.
  */
 export interface BufferedSubmission {
   machineCode?: string;
@@ -208,6 +244,39 @@ export function computeSubmissionKey(payload: BufferedSubmission): string {
   return createHash("sha256").update(material).digest("hex");
 }
 
+/**
+ * §QĐ-WAL-A (`docs/superpowers/plans/2026-08-29-aoi-wal-cho-cay-v2.md`) — điều phối
+ * khoá gửi THEO HÌNH DẠNG payload (`laHinhDangCayV2`), KHÔNG theo trường `schemaVersion`
+ * khai báo (trường đó `optional()` — máy có thể không gửi, xem doc-comment tại chỗ khai
+ * `laHinhDangCayV2`).
+ *
+ * `computeSubmissionKey` (ngay phía trên) băm `serialNumber | inspectionTime |
+ * overallResult | measurements.length`. HAI thành phần cuối là hàng rào chống đụng độ
+ * cho client bỏ trống `inspectionTime` — nhưng hàng rào đó KHÔNG chắn được payload
+ * v2.0: `serialNumber` RỖNG là HỢP LỆ ở v2.0 (tài liệu máy: "rỗng nếu máy chưa gửi"),
+ * và payload v2.0 mang `surfaces` — KHÔNG có `measurements` ⇒ `measurements.length`
+ * luôn là 0. ⇒ Hai bo v2.0 KHÁC NHAU, cùng trạm, cùng `inspectionTime`, cả hai serial
+ * rỗng, cùng `overallResult` ⇒ TRÙNG KHOÁ theo công thức v1 ⇒ WAL nuốt bo thứ hai và
+ * coi là bản sao — MẤT DỮ LIỆU do chính cơ chế chống mất dữ liệu (chứng minh live bằng
+ * ca đỏ/xanh ở `walCayV2.test.ts`, không suy đoán từ đọc mã).
+ *
+ * Payload v2.0 dùng `dungKhoaKhuTrungV2()` (`server/contracts/machineDataContract.ts`)
+ * — dựng từ `identity` (7 trường BẮT BUỘC) + `productId` + `startedAt`, KHÔNG phụ thuộc
+ * serial, đã chứng minh tất định + không đụng độ ranh giới trường (Pha 1C Task 2, lưới
+ * `server/db/ingestV2KhuTrung.db.test.ts`). Payload v1.x GIỮ NGUYÊN `computeSubmissionKey`
+ * — chống hồi quy, đường cũ không đổi hành vi (mệnh đề 3, task-1-brief.md).
+ *
+ * Gọi TỪ bên trong `bufferSubmission`/`restoreInspectionWal` (không phải tại nơi gọi) để
+ * MỌI đường enqueue — kể cả restore từ file WAL sau khi restart — cùng dùng đúng MỘT
+ * điểm quyết định, không thể vô tình gọi `computeSubmissionKey` trực tiếp cho payload v2.0.
+ */
+export function dungKhoaGuiTheoHinhDang(payload: BufferedSubmission): string {
+  if (laHinhDangCayV2(payload)) {
+    return dungKhoaKhuTrungV2(payload as unknown as MachineDataContractV2);
+  }
+  return computeSubmissionKey(payload);
+}
+
 // ── error classification (transient → buffer; permanent → throw/dead-letter) ─
 
 const PERMANENT_TRPC_CODES = new Set([
@@ -268,7 +337,8 @@ export async function restoreInspectionWal(): Promise<number> {
     try {
       const parsed = JSON.parse(t) as { key?: string; enqueuedAt?: number; attempts?: number; payload?: BufferedSubmission };
       if (!parsed.payload) continue;
-      const key = typeof parsed.key === "string" ? parsed.key : computeSubmissionKey(parsed.payload);
+      const key =
+        typeof parsed.key === "string" ? parsed.key : dungKhoaGuiTheoHinhDang(parsed.payload);
       if (queuedKeys.has(key) || appliedKeys.has(key)) continue;
       const bytes = t.length;
       queue.push({ key, enqueuedAt: parsed.enqueuedAt ?? Date.now(), attempts: parsed.attempts ?? 0, bytes, payload: parsed.payload });
@@ -367,7 +437,7 @@ function maybeAlertDepth(): void {
 export async function bufferSubmission(
   payload: BufferedSubmission,
 ): Promise<{ buffered: boolean; duplicate: boolean; key: string }> {
-  const key = computeSubmissionKey(payload);
+  const key = dungKhoaGuiTheoHinhDang(payload);
   if (!inspectionStoreForwardEnabled()) return { buffered: false, duplicate: false, key };
   evictAged();
   if (queuedKeys.has(key) || appliedKeys.has(key)) {

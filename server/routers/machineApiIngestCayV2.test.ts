@@ -17,7 +17,7 @@
  *  5. Payload v2.0 KHÔNG khai `schemaVersion` vẫn được nhận diện đúng theo HÌNH DẠNG
  *     (mảng `surfaces`), không phụ thuộc trường tuỳ chọn đó.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { TRPCError } from "@trpc/server";
 
 // ── Cầu ghi lại tham số MỖI lượt gọi persistInspectionAtomic (v2.0) và
@@ -98,6 +98,13 @@ vi.mock("../services/integration/outboxProducers", () => ({ publishToOutbox: vi.
 import { machineApiRouter } from "./machineApiRouters";
 import * as db from "../db";
 import type { TrpcContext } from "../_core/context";
+import os from "node:os";
+import path from "node:path";
+import { promises as fs } from "node:fs";
+import {
+  _resetInspectionStoreForward,
+  bufferedInspectionCount,
+} from "../services/inspection/inspectionStoreForward";
 
 const MACHINE = { id: 777, code: "AOI-V2-01", name: "AOI V2", stationId: 1, isActive: true };
 
@@ -286,5 +293,81 @@ describe("Task 6 (BG-1) — mệnh đề 5: v2.0 KHÔNG khai schemaVersion vẫn
     expect(res.success).toBe(true);
     expect(capturedPersistCalls).toHaveLength(1);
     expect(db.createProductInspection).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Doc 2026-08-29 (WAL cho cây v2.0) Task 1 — buffer khi lỗi TẠM THỜI + ranh giới
+// TẠM THỜI/VĨNH VIỄN quanh `submitInspectionTreeV2`, canh Ở ĐÚNG ĐƯỜNG SẢN XUẤT
+// (router thật, `db.persistInspectionAtomic` mocked reject — không gọi thẳng hàm nội bộ).
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Task 1 (WAL cho cây v2.0) — buffer khi lỗi tạm thời + ranh giới tạm thời/vĩnh viễn", () => {
+  let walPath: string;
+
+  beforeEach(() => {
+    walPath = path.join(
+      os.tmpdir(),
+      `insp-sf-v2-router-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.jsonl`,
+    );
+    process.env.INSPECTION_STORE_FORWARD_FILE = walPath;
+    delete process.env.OT_STORE_FORWARD_ENABLED;
+    _resetInspectionStoreForward();
+  });
+
+  afterEach(async () => {
+    _resetInspectionStoreForward();
+    for (const f of [walPath, walPath.replace(/\.jsonl$/, "") + ".dead.jsonl"]) {
+      try {
+        await fs.unlink(f);
+      } catch {
+        /* có thể chưa tồn tại */
+      }
+    }
+  });
+
+  it("⚠ RÀNG BUỘC — cờ WAL TẮT (mặc định) ⇒ lỗi DB tạm thời vẫn NÉM NGUYÊN VĂN, không buffer (không đổi mặc định)", async () => {
+    process.env.INSPECTION_STORE_FORWARD_ENABLED = "false";
+    (db.persistInspectionAtomic as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("connect ECONNREFUSED"),
+    );
+    await expect(caller().submitInspection(payloadV2())).rejects.toThrow("ECONNREFUSED");
+    expect(bufferedInspectionCount()).toBe(0);
+  });
+
+  it("cờ BẬT + lỗi TẠM THỜI (Error thường, không phải TRPCError) ⇒ buffer vào WAL, ACK {success:true, queued:true, submissionId}", async () => {
+    process.env.INSPECTION_STORE_FORWARD_ENABLED = "true";
+    (db.persistInspectionAtomic as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("connect ECONNREFUSED"),
+    );
+    const res = await caller().submitInspection(payloadV2());
+    expect(res).toMatchObject({ success: true, queued: true, inspectionId: null });
+    expect(typeof (res as { submissionId: string }).submissionId).toBe("string");
+    expect(bufferedInspectionCount()).toBe(1);
+  });
+
+  it("cờ BẬT + lỗi VĨNH VIỄN (TRPCError BAD_REQUEST) ⇒ vẫn NÉM, KHÔNG buffer (không nghẽn hàng đợi bằng payload không bao giờ ghi được)", async () => {
+    process.env.INSPECTION_STORE_FORWARD_ENABLED = "true";
+    (db.persistInspectionAtomic as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new TRPCError({ code: "BAD_REQUEST", message: "payload rejected" }),
+    );
+    await expect(caller().submitInspection(payloadV2())).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(bufferedInspectionCount()).toBe(0);
+  });
+
+  it("★★★ hệ quả THẬT của mệnh đề 1 trên đường router: hai bo v2.0 KHÁC NHAU, cùng trạm, serial rỗng, DB down ⇒ CẢ HAI được buffer RIÊNG (không cái nào bị nuốt vì 'trùng')", async () => {
+    process.env.INSPECTION_STORE_FORWARD_ENABLED = "true";
+    (db.persistInspectionAtomic as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("connect ECONNREFUSED"));
+    const rA = await caller().submitInspection(
+      payloadV2([componentV2()], { serialNumber: "", productId: "PROD-BUF-A" }),
+    );
+    const rB = await caller().submitInspection(
+      payloadV2([componentV2()], { serialNumber: "", productId: "PROD-BUF-B" }),
+    );
+    expect((rA as { queued?: boolean }).queued).toBe(true);
+    expect((rB as { queued?: boolean }).queued).toBe(true);
+    expect((rA as { submissionId: string }).submissionId).not.toBe(
+      (rB as { submissionId: string }).submissionId,
+    );
+    expect(bufferedInspectionCount()).toBe(2);
   });
 });

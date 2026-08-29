@@ -9,7 +9,8 @@
  * dùng `validateMachinePayload` để kiểm tra trước khi gửi.
  */
 import { z } from "zod";
-import { machineDataContractV2 } from "./machineDataContractV2";
+import { createHash } from "node:crypto";
+import { machineDataContractV2, type MachineDataContractV2 } from "./machineDataContractV2";
 
 // ── v1: phản ánh hợp đồng submitInspection hiện hành (tập ổn định) ──────────
 const measurementV1 = z.object({
@@ -211,6 +212,62 @@ export function laHinhDangCayV2(raw: unknown): boolean {
     raw !== null &&
     Array.isArray((raw as { surfaces?: unknown }).surfaces)
   );
+}
+
+/**
+ * Pha 1C Task 2 (BG-23 ⛔, §QĐ-1C-B trong
+ * `docs/superpowers/plans/2026-08-29-aoi-pha1c-va-lo-du-lieu.md`) — khoá khử trùng
+ * CHO ĐƯỜNG v2.0, KHÔNG phụ thuộc `serialNumber`.
+ *
+ * Gốc rễ đóng ở đây: `uq_inspections_machine_serial_time` (migration 0272) là chỉ mục
+ * RIÊNG PHẦN — `WHERE ("serialNumber")::text <> ''::text`. Một serial RỖNG (hợp lệ theo
+ * hợp đồng: xem chú thích tại chỗ khai `serialNumber` trong `machineDataContractV2.ts`
+ * — "rỗng nếu máy chưa gửi", máy thật gửi bo chưa quét serial là chuyện bình thường)
+ * THOÁT HOÀN TOÀN khoá đó. Trước bản vá này `submitInspectionTreeV2` cũng KHÔNG đặt
+ * `idempotencyKey` — cơ chế khử trùng THỨ HAI (bảng `inspection_idempotency_keys`,
+ * xem `server/db/inspection.ts`) vắng mặt luôn. Đo được (transaction+rollback, vai
+ * `avi_app`): serial rỗng, ba lượt gửi giống hệt nhau → BA hàng (đúng ra phải MỘT).
+ *
+ * QĐ-1C-B đã loại hai đường sửa hiển nhiên khác: siết `.min(1)` vào hợp đồng (chặn bo
+ * thật — máy chưa quét serial là hình dạng dữ liệu THẬT) và dựa vào lưới regex (đã
+ * chứng minh xanh giả). Chốt: đường v2.0 LUÔN đặt `idempotencyKey`, dựng từ trường máy
+ * CHẮC CHẮN CÓ theo hợp đồng — `identity` (7 trường `.min(1)` BẮT BUỘC,
+ * `machineDataContractV2.ts`) + `productId` (`.min(1)` BẮT BUỘC) + `startedAt`
+ * (optional theo schema, nhưng máy thật luôn gửi — `dashboard-sample.json`). Không
+ * dùng `serialNumber`: tính chất cần chỉ là "CÙNG payload → CÙNG khoá" — nếu `startedAt`
+ * vắng mặt Ở CẢ HAI lượt của một retry (cùng thiếu), khoá vẫn khớp nhau.
+ *
+ * Băm sha256 (TẤT ĐỊNH — không `Math.random()`/`Date.now()`) để (a) luôn nằm gọn trong
+ * ràng buộc `.min(8).max(200)` của cột `idempotencyKey` (`product_inspections`) bất kể
+ * độ dài các trường máy gửi, (b) không rò nguyên văn `productId`/tên trạm vào một cột
+ * audit đọc rộng rãi. Serial CÓ giá trị: cơ chế 0272 (natural-key) vẫn khớp như cũ song
+ * song — hai cơ chế chồng lên nhau, vô hại.
+ *
+ * ── Doc 2026-08-29 (WAL cho cây v2.0, §QĐ-WAL-A) — CHUYỂN sang đây ──────────────────
+ * Trước bản vá này hàm sống ở `server/routers/machineApiRouters.ts` (chỗ DUY NHẤT gọi
+ * nó). `inspectionStoreForward.ts` (điều phối khoá GỬI cho WAL, xem
+ * `dungKhoaGuiTheoHinhDang` ở đó) cũng cần gọi hàm này — nhưng router ĐÃ import từ
+ * `inspectionStoreForward.ts` ở cấp module, nên import ngược lại (service → router) sẽ
+ * tạo VÒNG import giữa hai file. Chuyển hàm (hành vi giữ NGUYÊN VĂN, 0 thay đổi logic)
+ * sang module hợp đồng LÁ này — nơi cả router lẫn service đều import được một chiều —
+ * đóng vòng đó mà không cần import động (`await import(...)`) hay chép lại công thức.
+ * `machineApiRouters.ts` re-export lại tên này để giữ nguyên bề mặt công khai (test DB
+ * `server/db/ingestV2KhuTrung.db.test.ts` import từ đó).
+ */
+export function dungKhoaKhuTrungV2(payload: MachineDataContractV2): string {
+  const { identity } = payload;
+  const phanDinh = [
+    identity.station,
+    identity.machine,
+    identity.line,
+    identity.plant,
+    identity.country,
+    identity.solutionName,
+    identity.appVersion,
+    payload.productId,
+    payload.startedAt ?? "",
+  ].join(String.fromCharCode(1)); // dấu phân cách KHÔNG thể xuất hiện trong chuỗi máy gửi — tránh đụng độ ranh giới trường
+  return `v2i-${createHash("sha256").update(phanDinh, "utf8").digest("hex")}`;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

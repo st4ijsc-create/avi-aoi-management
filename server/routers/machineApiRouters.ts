@@ -1,7 +1,6 @@
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { createHash } from "node:crypto";
 import { appError } from "../_core/appError";
 // F2 — `DbUnavailableError` tự mang `appCode: "DB_UNAVAILABLE"` (đã đủ ba bản dịch), nên
 // client dịch được mà `errorFormatter` không phải đổi dòng nào. ⚠ `name` của lớp này phải
@@ -43,6 +42,7 @@ import {
   isPermanentSubmitError,
   setProcessFn as walSetProcessFn,
   setDedupFn as walSetDedupFn,
+  type BufferedSubmission,
 } from "../services/inspection/inspectionStoreForward";
 // Doc 56 Đ1 (nhóm B) — PROCESS RESULT ingest durability (disk WAL, parallel to
 // the inspection store-forward above). Flag-gated OFF → every entry point no-op.
@@ -126,8 +126,13 @@ import { machineDataContractV2 } from "../contracts/machineDataContractV2";
 // Pha 1B Task 7 phần 2 (quyết định chủ dự án 2026-08-28) — `laHinhDangCayV2` CHUYỂN sang
 // contracts/machineDataContract.ts để `machineContractRouter.validate()` dùng CHUNG một bản,
 // không đẻ bản thứ hai trôi khỏi bản gốc (xem chú thích tại định nghĩa).
-import { loiMayChuaNangCap, laHinhDangCayV2 } from "../contracts/machineDataContract";
+import { loiMayChuaNangCap, laHinhDangCayV2, dungKhoaKhuTrungV2 } from "../contracts/machineDataContract";
 import { dichCayKetQua, type MachinePayloadV2 } from "../services/ingestCayKetQua";
+// Doc 2026-08-29 (WAL cho cây v2.0, §QĐ-WAL-A) — `dungKhoaKhuTrungV2` CHUYỂN sang
+// `contracts/machineDataContract.ts` (xem doc-comment tại đó) để `inspectionStoreForward.ts`
+// dùng được mà không tạo vòng import với file này. Re-export lại để giữ NGUYÊN bề mặt
+// công khai — `server/db/ingestV2KhuTrung.db.test.ts` import tên này từ file này.
+export { dungKhoaKhuTrungV2 };
 
 // ════════════════════════════════════════════════════════════════════════════
 // Doc 51 P1 (CASE #5) — per-image base64 size cap.
@@ -3108,51 +3113,6 @@ const submitInspectionBatchRouterInputSchema = z.unknown().transform((raw) => {
 });
 
 /**
- * Pha 1C Task 2 (BG-23 ⛔, §QĐ-1C-B trong
- * `docs/superpowers/plans/2026-08-29-aoi-pha1c-va-lo-du-lieu.md`) — khoá khử trùng
- * CHO ĐƯỜNG v2.0, KHÔNG phụ thuộc `serialNumber`.
- *
- * Gốc rễ đóng ở đây: `uq_inspections_machine_serial_time` (migration 0272) là chỉ mục
- * RIÊNG PHẦN — `WHERE ("serialNumber")::text <> ''::text`. Một serial RỖNG (hợp lệ theo
- * hợp đồng: xem chú thích tại chỗ khai `serialNumber` trong `machineDataContractV2.ts`
- * — "rỗng nếu máy chưa gửi", máy thật gửi bo chưa quét serial là chuyện bình thường)
- * THOÁT HOÀN TOÀN khoá đó. Trước bản vá này `submitInspectionTreeV2` cũng KHÔNG đặt
- * `idempotencyKey` — cơ chế khử trùng THỨ HAI (bảng `inspection_idempotency_keys`,
- * xem `server/db/inspection.ts`) vắng mặt luôn. Đo được (transaction+rollback, vai
- * `avi_app`): serial rỗng, ba lượt gửi giống hệt nhau → BA hàng (đúng ra phải MỘT).
- *
- * QĐ-1C-B đã loại hai đường sửa hiển nhiên khác: siết `.min(1)` vào hợp đồng (chặn bo
- * thật — máy chưa quét serial là hình dạng dữ liệu THẬT) và dựa vào lưới regex (đã
- * chứng minh xanh giả). Chốt: đường v2.0 LUÔN đặt `idempotencyKey`, dựng từ trường máy
- * CHẮC CHẮN CÓ theo hợp đồng — `identity` (7 trường `.min(1)` BẮT BUỘC,
- * `machineDataContractV2.ts`) + `productId` (`.min(1)` BẮT BUỘC) + `startedAt`
- * (optional theo schema, nhưng máy thật luôn gửi — `dashboard-sample.json`). Không
- * dùng `serialNumber`: tính chất cần chỉ là "CÙNG payload → CÙNG khoá" — nếu `startedAt`
- * vắng mặt Ở CẢ HAI lượt của một retry (cùng thiếu), khoá vẫn khớp nhau.
- *
- * Băm sha256 (TẤT ĐỊNH — không `Math.random()`/`Date.now()`) để (a) luôn nằm gọn trong
- * ràng buộc `.min(8).max(200)` của cột `idempotencyKey` (:731) bất kể độ dài các trường
- * máy gửi, (b) không rò nguyên văn `productId`/tên trạm vào một cột audit đọc rộng rãi.
- * Serial CÓ giá trị: cơ chế 0272 (natural-key) vẫn khớp như cũ song song — hai cơ chế
- * chồng lên nhau, vô hại.
- */
-export function dungKhoaKhuTrungV2(payload: MachinePayloadV2): string {
-  const { identity } = payload;
-  const phanDinh = [
-    identity.station,
-    identity.machine,
-    identity.line,
-    identity.plant,
-    identity.country,
-    identity.solutionName,
-    identity.appVersion,
-    payload.productId,
-    payload.startedAt ?? "",
-  ].join(String.fromCharCode(1)); // dấu phân cách KHÔNG thể xuất hiện trong chuỗi máy gửi — tránh đụng độ ranh giới trường
-  return `v2i-${createHash("sha256").update(phanDinh, "utf8").digest("hex")}`;
-}
-
-/**
  * Pha 1B Task 6 (BG-1) — nhánh v2.0 của `submitInspection`: dịch cây (Task 4,
  * `dichCayKetQua`) rồi ghi qua `persistInspectionAtomic` với `opts.cay` (Task 5) — CÙNG
  * một transaction header+cây, bảo đảm CẤU TRÚC (server/db/inspection.ts), không phải
@@ -3162,9 +3122,17 @@ export function dungKhoaKhuTrungV2(payload: MachinePayloadV2): string {
  *
  * PHẠM VI CỐ Ý HẸP HƠN `processInspectionSubmission` (nhánh v1.x): KHÔNG ghi
  * `measurement_results` cấp component (chờ Khối B — xem khối chú thích Đ-19 phía trên),
- * KHÔNG spec-gate/ảnh/ERP-outbox/NG-alert/production-order/store-forward WAL. Đây đúng
- * phạm vi "nối đường ingest thật" của brief Task 6; phần còn thiếu nêu rõ trong báo cáo,
- * không âm thầm bỏ qua.
+ * KHÔNG spec-gate/ảnh/ERP-outbox/NG-alert/production-order. Đây đúng phạm vi "nối đường
+ * ingest thật" của brief Task 6; phần còn thiếu nêu rõ trong báo cáo, không âm thầm bỏ
+ * qua.
+ *
+ * ── Doc 2026-08-29 (WAL cho cây v2.0, Task 1) — hàm này KHÔNG còn ném thẳng ra ngoài
+ * trên lỗi tạm thời. Nơi gọi (`submitInspection.mutation`, nhánh `kind==="v2"`) bọc lời
+ * gọi này bằng try/catch: lỗi TẠM THỜI (`!isPermanentSubmitError`) ⇒ buffer nguyên văn
+ * payload vào `inspectionStoreForward` WAL (khoá gửi tính bằng `dungKhoaGuiTheoHinhDang`,
+ * KHÔNG phải `computeSubmissionKey` — xem §QĐ-WAL-A) và ACK
+ * `{success:true, queued:true, submissionId}`; lỗi VĨNH VIỄN (xác thực/hợp đồng) vẫn ném
+ * NGUYÊN VĂN như hàm này luôn làm — không đổi gì Ở ĐÂY, chỉ đổi Ở NƠI GỌI.
  */
 async function submitInspectionTreeV2(
   payload: MachinePayloadV2,
@@ -3261,8 +3229,42 @@ export const machineApiRouter = router({
       // nào so với trước bản vá: chỉ đổi CHỖ `submitInspectionInputSchema.parse` được
       // gọi (từ `.input()` tự động sang bên trong `submitInspectionRouterInputSchema`
       // ở trên), không đổi input/output/lỗi của nhánh này.
+      //
+      // Doc 2026-08-29 (WAL cho cây v2.0, Task 1) — bọc bằng ĐÚNG khuôn buffer-khi-lỗi-
+      // tạm-thời mà nhánh v1.x đã dùng bên dưới (isPermanentSubmitError/bufferSubmission/
+      // ensureInspectionWalWired): lỗi VĨNH VIỄN (xác thực/hợp đồng, hoặc cờ WAL TẮT) ném
+      // NGUYÊN VĂN — không đổi hành vi khi cờ tắt (docblock module, HONESTY). Lỗi TẠM THỜI
+      // → buffer nguyên văn payload cây, khoá gửi qua `dungKhoaGuiTheoHinhDang` (§QĐ-WAL-A,
+      // KHÔNG phải `computeSubmissionKey` — hai bo v2.0 khác nhau cùng serial rỗng sẽ trùng
+      // khoá theo công thức đó, xem doc-comment `inspectionStoreForward.ts`).
       if (parsedInput.kind === "v2") {
-        return submitInspectionTreeV2(parsedInput.data, { headerKey });
+        const v2Payload = parsedInput.data;
+        try {
+          return await submitInspectionTreeV2(v2Payload, { headerKey });
+        } catch (err) {
+          if (!inspectionStoreForwardEnabled() || isPermanentSubmitError(err)) throw err;
+          ensureInspectionWalWired();
+          // Tự-xác-thực khi phát lại (giống hệt nhánh v1.x bên dưới): gấp credential từ
+          // header vào `apiKey` — payload v2.0 KHÔNG mang `machineCode`, chỉ có `apiKey`.
+          const walPayload: BufferedSubmission = {
+            ...v2Payload,
+            apiKey: v2Payload.apiKey ?? headerKey ?? undefined,
+          };
+          const buffered = await bufferSubmission(walPayload);
+          if (!buffered.buffered && !buffered.duplicate) throw err; // bounds evicted it → never lie
+          console.error(
+            `[submitInspection][v2.0] transient failure (${(err as Error)?.message || err}) — ` +
+              `${buffered.duplicate ? "submission already queued in" : "payload queued to"} inspection WAL ` +
+              `(station=${v2Payload.identity?.station}, machine=${v2Payload.identity?.machine}, ` +
+              `submissionId=${buffered.key.slice(0, 12)}…)`,
+          );
+          return {
+            success: true as const,
+            queued: true as const,
+            submissionId: buffered.key,
+            inspectionId: null,
+          };
+        }
       }
       const input = parsedInput.data;
       // Doc 56 Đ1 (API-2) — log-only: surface the machine's declared feed schema
