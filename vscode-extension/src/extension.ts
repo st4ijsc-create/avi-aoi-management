@@ -42,9 +42,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Kho đề xuất ghi (chế độ SERVER): giữ nội dung diff ẢO trong bộ nhớ, KHÔNG ghi đĩa. Đợt B chưa
   // nối nút "Xem diff" — chỉ dựng đường dây để Task 4 dùng.
   const khoDeXuat = new KhoDeXuat();
-  context.subscriptions.push(
-    vscode.workspace.registerTextDocumentContentProvider(SCHEME, khoDeXuat),
-  );
+  context.subscriptions.push(khoDeXuat, vscode.workspace.registerTextDocumentContentProvider(SCHEME, khoDeXuat));
 
   context.subscriptions.push(
     vscode.commands.registerCommand("aviAiLocal.moBangChat", () => BangChat.moHoacHien(context, khoDeXuat)),

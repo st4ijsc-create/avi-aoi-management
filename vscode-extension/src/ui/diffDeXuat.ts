@@ -10,7 +10,7 @@ import type { DeXuatGhi } from "../loi/deXuatGhi";
 
 export const SCHEME = "avi-ai-de-xuat";
 
-export class KhoDeXuat implements vscode.TextDocumentContentProvider {
+export class KhoDeXuat implements vscode.TextDocumentContentProvider, vscode.Disposable {
   private noiDung = new Map<string, string>();
   private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
   readonly onDidChange = this._onDidChange.event;
@@ -20,7 +20,10 @@ export class KhoDeXuat implements vscode.TextDocumentContentProvider {
   }
 
   private uri(actionId: string, ben: "cu" | "moi", path: string): vscode.Uri {
-    return vscode.Uri.parse(`${SCHEME}:${ben}/${actionId}/${path}`);
+    // ⚠ Dựng theo THÀNH PHẦN, KHÔNG ghép chuỗi rồi `Uri.parse`. `path` đến từ máy chủ: một `%XX`
+    // hợp lệ sẽ bị `parse` GIẢI MÃ âm thầm, còn `#`/`?` bị hiểu thành fragment/query — diff mở ra
+    // RỖNG mà không có lỗi nào. Tên tệp tiếng Việt (dấu, khoảng trắng) làm chuyện này thành thường.
+    return vscode.Uri.from({ scheme: SCHEME, path: `/${ben}/${actionId}/${path}` });
   }
 
   datDeXuat(d: DeXuatGhi): { cu: vscode.Uri; moi: vscode.Uri } {
@@ -39,6 +42,13 @@ export class KhoDeXuat implements vscode.TextDocumentContentProvider {
   }
 
   quen(actionId: string): void {
+    // Giả định: `actionId` do máy chủ cấp dạng token/UUID, KHÔNG BAO GIỜ chứa `/` — nên khớp theo
+    // `/${actionId}/` an toàn (không lẫn sang đề xuất khác có actionId là tiền tố/hậu tố của nhau).
     for (const k of [...this.noiDung.keys()]) if (k.includes(`/${actionId}/`)) this.noiDung.delete(k);
+  }
+
+  dispose(): void {
+    this._onDidChange.dispose();
+    this.noiDung.clear();
   }
 }
