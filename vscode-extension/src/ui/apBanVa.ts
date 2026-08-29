@@ -33,9 +33,12 @@
  *    chưa lưu thì một lượt ghi ở đây sẽ nuốt mất phần chưa lưu ấy, và băm đĩa KHÔNG hề thấy.
  * 5. **`ghepBanVa`** — `{ok:false}` ⇒ DỪNG, báo `lyDo` (không tự cắt, không tự đoán).
  * 6. **`batDauApDungOClient` — GHI KIỂM TOÁN TRƯỚC KHI BYTE RƠI.** Lỗi ⇒ DỪNG, KHÔNG ghi.
- * 7. **Áp chỉnh sửa + `save()`** — điểm ghi duy nhất.
+ * 6b. **ĐO LẠI đĩa + tài liệu NGAY SÁT trước lượt ghi** (cửa sổ TOCTOU do chính bước 6 mở ra —
+ *     xem docblock riêng ở thân hàm). Lệch ⇒ DỪNG và CHỐT sổ `thanhCong:false`.
+ * 7. **Áp chỉnh sửa + `save()`** — điểm ghi duy nhất (`thayToanBoNoiDung`).
  * 8. **Đọc lại đĩa, băm lại, `chotApDungOClient({thanhCong:true, sha256SauThat})`.**
- * 9. Bước 7 ném ⇒ `chotApDungOClient({thanhCong:false, loi})` rồi báo lỗi cho người dùng.
+ * 9. Bước 7 hỏng ⇒ **ĐỌC ĐĨA**, **HOÀN NGUYÊN** nếu bộ đệm có thể đã đổi, rồi mới chốt sổ theo
+ *    đúng thứ ĐO ĐƯỢC (chi tiết ở docblock bước 9 — đây là chỗ đã từng nói dối, xem ngay dưới).
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠⚠⚠ VÌ SAO KIỂM TOÁN ĐI **TRƯỚC** (đây là câu quan trọng nhất của tệp này)
@@ -50,6 +53,22 @@
  *     (`aiCopilotActions.ts` §Đợt C · Task 5), vì tự đặt `da_ap_client` là nói dối lạc quan và tự
  *     đặt `ap_client_that_bai` là nói dối bi quan.
  * Vì thế: kiểm toán lỗi ⇒ **thà không ghi còn hơn ghi mà không có vết**.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ BA LỜI KHAI HỢP LỆ CỦA HÀM NÀY — VÀ MỘT CÂU **KHÔNG BAO GIỜ** ĐƯỢC NÓI NẾU CHƯA ĐO
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Hàm này chỉ được kết thúc bằng đúng một trong ba câu, và mỗi câu phải dựa trên một PHÉP ĐO:
+ *   (1) **ĐÃ GHI** — đọc lại đĩa, băm khớp bản mới ⇒ `ok:true`, sổ chốt `thanhCong:true`.
+ *   (2) **KHÔNG GHI GÌ** — hoặc chưa từng gọi tới điểm ghi, hoặc VSCode nói thẳng "tôi không áp",
+ *       hoặc đã HOÀN NGUYÊN và ĐO LẠI thấy đĩa bằng đúng bản gốc ⇒ `ok:false`, sổ chốt
+ *       `thanhCong:false`.
+ *   (3) **CHƯA RÕ** — ghi hỏng mà hoàn nguyên cũng hỏng ⇒ nội dung của AI CÓ THỂ còn nằm trong bộ
+ *       đệm editor ở dạng chưa lưu. Khi ấy **KHÔNG chốt sổ**: để hàng đứng ở `dang_ap_client`,
+ *       đúng nghĩa "một lượt ghi đã bắt đầu, kết cục chưa rõ".
+ * Câu bị CẤM: chốt `thanhCong:false` (⇒ `ap_client_that_bai`, đọc là *"đã thử và không byte nào
+ * rơi"*) trong khi chưa đo được điều đó. `ap_client_that_bai` là lời khai theo hướng **che giấu**
+ * một lượt ghi — với `files.autoSave` bật hoặc chỉ một cú Ctrl+S sau đó, byte của AI vẫn xuống đĩa
+ * trong khi sổ đã đóng lại là "không có gì xảy ra". Đây là lỗ đã có thật, vá 2026-08-29.
  *
  * ⚠ NGOÀI PHẠM VI (nói thẳng, không giả vờ): **KHÔNG tạo tệp mới**. Đợt này chỉ sửa tệp ĐÃ CÓ.
  *   Tạo tệp cần một lối ghi THỨ HAI (`.createFile()` của cùng đối tượng chỉnh-sửa) và một nhánh
@@ -82,7 +101,15 @@ export interface DauVaoApBanVa {
 }
 
 export interface KetQuaApBanVa {
-  /** `true` ⇔ byte ĐÃ vào đĩa (theo quan sát của chính extension: áp chỉnh sửa + `save` đều báo xong). */
+  /**
+   * `true` ⇔ byte ĐÃ vào đĩa — và điều đó được ĐO (đọc lại đĩa, băm khớp), không suy từ giá trị
+   * trả về của lời gọi ghi.
+   *
+   * ⚠ `false` KHÔNG tự động có nghĩa "không có gì xảy ra". Nó có nghĩa **"đĩa không mang nội dung
+   *   mới"**. Ca (3) ở docblock đầu tệp — ghi hỏng và hoàn nguyên cũng hỏng — cũng trả `false`,
+   *   nhưng khi ấy bộ đệm editor CÓ THỂ đang giữ nội dung của AI ở dạng chưa lưu. Sự thật đầy đủ
+   *   luôn nằm ở `thongDiep`; đừng dịch `ok:false` thành một câu ngắn hơn nó.
+   */
   ok: boolean;
   thongDiep: string;
 }
@@ -90,6 +117,32 @@ export interface KetQuaApBanVa {
 /** Đọc BYTE THẬT từ đĩa (không qua bộ đệm editor) và trả về dạng chuỗi utf8. */
 async function docDia(uri: vscode.Uri): Promise<string> {
   return Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+}
+
+/**
+ * ★★★ ĐIỂM GHI — hàm DUY NHẤT trong toàn extension chạm vào nội dung một tệp workspace.
+ *
+ * ⚠⚠ VÌ SAO NÓ LÀ MỘT HÀM RIÊNG (chứ không viết thẳng hai lần): đường ghi có HAI lượt gọi hợp lệ
+ *    — lượt ÁP bản vá (bước 7) và lượt HOÀN NGUYÊN khi lượt kia hỏng nửa chừng (bước 9). Viết lặp
+ *    là tạo **điểm ghi THỨ HAI**: census đếm số lần xuất hiện và đòi ĐÚNG MỘT, nên bản sao thứ hai
+ *    vừa làm lưới đỏ vừa — nguy hiểm hơn — đẻ ra một lối chạm đĩa mà người sau phải rà riêng.
+ *    Gói vào đây thì mọi byte của extension, theo cả hai chiều, đi qua đúng một cửa.
+ *
+ * Đi qua API chỉnh-sửa của VSCode (KHÔNG qua `fs`): người dùng **Ctrl+Z hoàn tác được**, editor
+ * thấy thay đổi ngay. Thay TOÀN BỘ nội dung — `validateRange` kẹp phạm vi về đúng biên tài liệu
+ * (tệp không có newline cuối vẫn đúng).
+ *
+ * Trả `false` ⇔ VSCode nói THẲNG rằng nó KHÔNG áp (khi ấy bộ đệm chắc chắn chưa đổi). Ném ⇒ trạng
+ * thái bộ đệm KHÔNG XÁC ĐỊNH, nơi gọi phải xử lý như vậy.
+ */
+async function thayToanBoNoiDung(
+  uri: vscode.Uri,
+  doc: vscode.TextDocument,
+  noiDung: string,
+): Promise<boolean> {
+  const bienTap = new vscode.WorkspaceEdit();
+  bienTap.replace(uri, doc.validateRange(new vscode.Range(0, 0, doc.lineCount, 0)), noiDung);
+  return await vscode.workspace.applyEdit(bienTap);
 }
 
 export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
@@ -159,6 +212,11 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
         `Hãy lưu (hoặc hoàn tác) rồi bấm lại.`,
     };
   }
+  // Vân tay của TÀI LIỆU tại thời điểm này, để bước 6b so lại được sau lượt đi-về mạng của bước 6.
+  // `version` của VSCode tăng ở MỌI lượt sửa bộ đệm, kể cả lượt sửa rồi hoàn tác — nên nó nhạy hơn
+  // cả `isDirty` (sửa rồi Ctrl+Z về nguyên trạng làm `isDirty` trở lại `false` nhưng `version` thì
+  // KHÔNG lùi). Ở một cửa ghi đè, nhạy quá là hướng đúng để sai.
+  const phienBanLucDoc = doc.version;
 
   // ── BƯỚC 5: ghép bản vá (thuần, chưa chạm đĩa) ─────────────────────────────────────────────
   const ghep = ghepBanVa(noiDungDia, dv.deXuat);
@@ -202,33 +260,195 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
     };
   }
 
-  // ── BƯỚC 7: GHI — ĐIỂM DUY NHẤT trong extension chạm đĩa workspace ─────────────────────────
-  // Đi qua API chỉnh-sửa của VSCode (KHÔNG qua `fs`): người dùng **Ctrl+Z hoàn tác được**, editor
-  // thấy thay đổi ngay, và mọi lượt ghi đi qua đúng một API mà census đếm được. Thay TOÀN BỘ nội
-  // dung — `validateRange` kẹp phạm vi về đúng biên tài liệu (tệp không newline cuối vẫn đúng).
+  // ── BƯỚC 6b: ĐO LẠI NGAY SÁT TRƯỚC LƯỢT GHI ────────────────────────────────────────────────
+  /**
+   * ⚠⚠⚠ VÌ SAO PHÉP KIỂM NÀY PHẢI ĐỨNG **SAU** LỜI GỌI KIỂM TOÁN, KHÔNG PHẢI CHỈ TRƯỚC NÓ.
+   *
+   * Bước 4 băm đĩa. Bước 6 gọi **MẠNG**. Giữa hai mốc ấy là cửa sổ RỘNG NHẤT của cả hàm — một lượt
+   * đi-về HTTP tới máy chủ, tính bằng chục đến hàng trăm mili-giây, thừa cho một lượt `git
+   * checkout`, một `formatOnSave`, một tiến trình build đang ghi, hay chính người dùng gõ phím.
+   * Bất cứ thứ gì rơi vào cửa sổ ấy đều bị lượt ghi ở bước 7 **xoá sạch không dấu vết**, và
+   * `sha256Truoc` vừa khai lên sổ ở bước 6 trở thành một con số KHÔNG còn đúng với đĩa.
+   *
+   * Không chữa được bằng cách dời phép kiểm lên trước bước 6: thứ tự "ghi sổ TRƯỚC — ghi byte SAU"
+   * là bất biến của tệp này (xem docblock đầu tệp) và không được đảo, nên bước 6 sẽ LUÔN nằm giữa
+   * phép đo và lượt ghi. Vì thế phép kiểm được **THÊM** ở đây, sát ngay trước lượt ghi, chứ không
+   * phải chuyển chỗ — cửa sổ còn lại thu về vài chục micro-giây thay vì một vòng mạng.
+   *
+   * Sổ đã mở rồi mà ta dừng ⇒ **phải chốt** `thanhCong:false`: chưa gọi tới điểm ghi lần nào nên
+   * "không byte nào rơi" ở đây là điều ĐO ĐƯỢC (chính phép đo vừa rồi), không phải suy đoán.
+   */
+  let lyDoDungTruocKhiGhi: string | undefined;
   try {
-    const bienTap = new vscode.WorkspaceEdit();
-    bienTap.replace(uri, doc.validateRange(new vscode.Range(0, 0, doc.lineCount, 0)), moi);
-    const daAp = await vscode.workspace.applyEdit(bienTap);
-    if (!daAp) throw new Error("VSCode từ chối áp chỉnh sửa (tệp bị khoá hoặc đã đổi giữa chừng)");
+    const bamNgayTruoc = bamNoiDung(await docDia(uri));
+    if (!khopBanGoc(bamNgayTruoc, bamDia)) {
+      lyDoDungTruocKhiGhi =
+        `tệp trên đĩa đã đổi TRONG LÚC mở sổ kiểm toán (băm ${bamNgayTruoc.slice(0, 12)}… ≠ ${bamDia.slice(0, 12)}…)`;
+    }
+  } catch (e) {
+    lyDoDungTruocKhiGhi = `không đọc lại được tệp ngay trước lượt ghi (${(e as Error).message})`;
+  }
+  if (!lyDoDungTruocKhiGhi && doc.version !== phienBanLucDoc) {
+    lyDoDungTruocKhiGhi = `bộ đệm editor đã đổi trong lúc mở sổ kiểm toán (phiên bản tài liệu ${phienBanLucDoc} → ${doc.version})`;
+  }
+  if (!lyDoDungTruocKhiGhi && doc.isDirty) {
+    lyDoDungTruocKhiGhi = "bộ đệm editor trở nên BẨN (có thay đổi chưa lưu) trong lúc mở sổ kiểm toán";
+  }
+  if (lyDoDungTruocKhiGhi) {
+    let ghiChuChot = "";
+    try {
+      await goiChotApClient(dv.serverUrl, dv.cookie, {
+        actionId: batDau.actionId,
+        token: batDau.token,
+        thanhCong: false,
+        loi: `DỪNG TRƯỚC KHI GHI: ${lyDoDungTruocKhiGhi}`,
+      });
+    } catch (e2) {
+      ghiChuChot = ` (và KHÔNG chốt được sổ kiểm toán: ${(e2 as Error).message} — lượt này đứng ở trạng thái "đang áp", tức máy chủ ghi nhận là CHƯA RÕ)`;
+    }
+    return {
+      ok: false,
+      thongDiep:
+        `KHÔNG GHI — "${dv.duongTuongDoi}": ${lyDoDungTruocKhiGhi}. ` +
+        `Chưa gọi tới điểm ghi lần nào nên KHÔNG byte nào của lượt này rơi xuống đĩa. ` +
+        `Hãy hỏi lại để AI đọc bản mới nhất.${ghiChuChot}`,
+    };
+  }
+
+  // ── BƯỚC 7: GHI — ĐIỂM DUY NHẤT trong extension chạm đĩa workspace ─────────────────────────
+  /** Đã GỌI tới điểm ghi ⇒ từ đây trở đi bộ đệm CÓ THỂ đang mang nội dung của AI. */
+  let daGoiDiemGhi = false;
+  /** VSCode nói THẲNG "tôi không áp" ⇒ bộ đệm chắc chắn CHƯA đổi (khác hẳn ca "ném"). */
+  let biTuChoiAp = false;
+  try {
+    daGoiDiemGhi = true;
+    const daAp = await thayToanBoNoiDung(uri, doc, moi);
+    if (!daAp) {
+      biTuChoiAp = true;
+      throw new Error("VSCode từ chối áp chỉnh sửa (tệp bị khoá hoặc đã đổi giữa chừng)");
+    }
     const daLuu = await doc.save();
     if (!daLuu) throw new Error("VSCode không lưu được tệp sau khi áp chỉnh sửa");
   } catch (e) {
-    // ── BƯỚC 9: ghi hỏng ⇒ chốt THẤT BẠI ────────────────────────────────────────────────────
+    // ── BƯỚC 9: GHI HỎNG — ĐỌC KẾT CỤC RỒI MỚI KHAI KẾT CỤC ─────────────────────────────────
+    /**
+     * ⚠⚠⚠ ĐÂY LÀ CHỖ ĐÃ NÓI DỐI, VÁ 2026-08-29 (C-1). Bản cũ chốt thẳng `thanhCong:false` và báo
+     * "GHI THẤT BẠI" cho MỌI lỗi của khối trên. Nhưng khối trên có HAI mốc rất khác nhau:
+     *   · áp chỉnh sửa ⇒ đổi **BỘ ĐỆM** (chưa chạm đĩa);
+     *   · `save()`     ⇒ đẩy bộ đệm xuống **ĐĨA**.
+     * Mốc đầu XONG mà mốc sau HỎNG ⇒ nội dung của AI đang nằm trong bộ đệm editor ở dạng **CHƯA
+     * LƯU**. Với `files.autoSave` (mặc định của rất nhiều người) hoặc chỉ một cú Ctrl+S sau đó,
+     * đúng những byte ấy rơi xuống đĩa — trong khi sổ kiểm toán đã đóng ở `ap_client_that_bai` và
+     * người dùng vừa đọc câu "GHI THẤT BẠI". Một lời khai SAI **theo hướng che giấu một lượt ghi**.
+     *
+     * Nên ở đây, đúng ba việc, đúng thứ tự:
+     *   (a) **ĐỌC ĐĨA** — `save()` báo hỏng KHÔNG có nghĩa byte không rơi; đọc rồi mới nói.
+     *   (b) **HOÀN NGUYÊN** qua ĐÚNG điểm ghi ở trên (`thayToanBoNoiDung`, không mở lối thứ hai),
+     *       rồi **ĐO LẠI** để xác nhận đĩa đã bằng bản gốc và bộ đệm đã sạch.
+     *   (c) chỉ khai "không byte nào rơi" khi (a)/(b) chứng minh được; nếu không, để sổ ở
+     *       `dang_ap_client` (CHƯA RÕ) và nói thẳng bộ đệm có thể còn nội dung chưa lưu.
+     */
     const loi = (e as Error).message;
+
+    // (a) Đĩa nói gì? — không suy từ giá trị trả về của lời gọi vừa hỏng.
+    let bamSauHong: string | undefined;
+    try {
+      bamSauHong = bamNoiDung(await docDia(uri));
+    } catch {
+      bamSauHong = undefined;
+    }
+
+    if (bamSauHong !== undefined && khopBanGoc(bamSauHong, bamSauDuKien)) {
+      // Byte ĐÃ vào đĩa dù lời gọi báo hỏng. Ở đây khai "thất bại" mới là nói dối — theo đúng
+      // hướng che giấu. Khai THÀNH CÔNG kèm nguyên văn lỗi để người dùng biết đường đi bất thường.
+      let ketSoNgoaiY = "";
+      try {
+        const chot = await goiChotApClient(dv.serverUrl, dv.cookie, {
+          actionId: batDau.actionId,
+          token: batDau.token,
+          thanhCong: true,
+          sha256SauThat: bamSauHong,
+        });
+        if (!chot.ok) ketSoNgoaiY = ` ⚠ Máy chủ từ chối chốt sổ kiểm toán: ${chot.message ?? "không rõ lý do"}.`;
+      } catch (e2) {
+        ketSoNgoaiY = ` ⚠ KHÔNG chốt được sổ kiểm toán (${(e2 as Error).message}) — lượt này đứng ở "đang áp", tức CHƯA RÕ trên máy chủ.`;
+      }
+      return {
+        ok: true,
+        thongDiep:
+          `ĐÃ GHI vào workspace: "${dv.duongTuongDoi}" (+${them} / −${bot}) — MẶC DÙ VSCode báo lỗi ("${loi}"). ` +
+          `Đọc lại đĩa cho thấy nội dung MỚI đã nằm trên đĩa (băm khớp bản đã xem trước), nên khai "thất bại" ở đây sẽ là lời khai sai. ` +
+          `Ctrl+Z hoàn tác được.${ketSoNgoaiY}`,
+      };
+    }
+
+    // (b) HOÀN NGUYÊN nếu bộ đệm CÓ THỂ đã mang nội dung của AI.
+    let daHoanTac = false;
+    let loiHoanTac = "";
+    if (daGoiDiemGhi && !biTuChoiAp) {
+      try {
+        if (!(await thayToanBoNoiDung(uri, doc, noiDungDia))) {
+          throw new Error("VSCode từ chối áp bản hoàn nguyên");
+        }
+        // ⚠ Giá trị trả về của `save()` ở đây được BỎ QUA CÓ CHỦ Ý — cùng lý lẽ với nhánh (a) ngay
+        // trên: lời gọi có thể báo hỏng mà byte vẫn đúng chỗ, và ngược lại. "Đã hoàn nguyên" là
+        // một KẾT CỤC, nên nó phải được ĐỌC (băm đĩa + `isDirty`), không được suy từ một cờ.
+        await doc.save();
+        const bamKiem = bamNoiDung(await docDia(uri));
+        if (!khopBanGoc(bamKiem, bamDia)) {
+          throw new Error(`đĩa sau hoàn nguyên mang băm ${bamKiem.slice(0, 12)}… ≠ băm gốc ${bamDia.slice(0, 12)}…`);
+        }
+        if (doc.isDirty) throw new Error("bộ đệm vẫn còn thay đổi CHƯA LƯU sau khi hoàn nguyên");
+        daHoanTac = true;
+      } catch (e3) {
+        loiHoanTac = (e3 as Error).message;
+      }
+    }
+
+    // (c) Khai theo đúng thứ đo được.
+    if (!biTuChoiAp && !daHoanTac) {
+      // ⚠ KHÔNG CHỐT SỔ. `thanhCong:false` ⇒ `ap_client_that_bai`, đọc là "đã thử và KHÔNG byte nào
+      // rơi" — một câu ta KHÔNG kiểm chứng được ở đây. Để hàng đứng ở `dang_ap_client` là câu trung
+      // thực duy nhất còn lại: "một lượt ghi đã BẮT ĐẦU, kết cục CHƯA RÕ".
+      return {
+        ok: false,
+        thongDiep:
+          `⚠⚠ CHƯA RÕ — "${dv.duongTuongDoi}": lượt ghi hỏng (${loi})` +
+          (loiHoanTac ? ` và HOÀN NGUYÊN CŨNG HỎNG (${loiHoanTac})` : "") +
+          `. Nội dung do AI đề xuất CÓ THỂ đang nằm trong bộ đệm editor ở dạng CHƯA LƯU: nếu ` +
+          `"files.autoSave" đang bật, hoặc bạn bấm Ctrl+S, nó SẼ rơi xuống đĩa. Hãy mở ` +
+          `"${dv.duongTuongDoi}" rồi Ctrl+Z (hoặc đóng tệp mà KHÔNG lưu) trước khi làm gì tiếp. ` +
+          `Sổ kiểm toán được ĐỂ NGUYÊN ở trạng thái "đang áp" (CHƯA RÕ) — chốt "thất bại" ở đây sẽ ` +
+          `là lời khai sai theo hướng che giấu một lượt ghi.`,
+      };
+    }
+
+    const xacNhanDia =
+      bamSauHong === undefined
+        ? " ⚠ (không đọc lại được đĩa để xác nhận)"
+        : khopBanGoc(bamSauHong, bamDia)
+          ? ""
+          : ` ⚠ nhưng đĩa lại mang băm ${bamSauHong.slice(0, 12)}… khác cả bản gốc lẫn bản đề xuất — hãy kiểm tra tệp bằng tay.`;
     let ghiChu = "";
     try {
       await goiChotApClient(dv.serverUrl, dv.cookie, {
         actionId: batDau.actionId,
         token: batDau.token,
         thanhCong: false,
-        loi,
+        loi: daHoanTac ? `${loi} — đã hoàn nguyên về nội dung gốc và đo lại xác nhận` : loi,
       });
     } catch (e2) {
       // Không chốt được: hàng đứng ở `dang_ap_client` — "chưa rõ" TRUNG THỰC. Nói ra, đừng nuốt.
       ghiChu = ` (và KHÔNG chốt được sổ kiểm toán: ${(e2 as Error).message} — lượt này đứng ở trạng thái "đang áp", tức máy chủ ghi nhận là CHƯA RÕ)`;
     }
-    return { ok: false, thongDiep: `GHI THẤT BẠI — "${dv.duongTuongDoi}": ${loi}.${ghiChu}` };
+    return {
+      ok: false,
+      thongDiep: daHoanTac
+        ? `KHÔNG GHI — "${dv.duongTuongDoi}": ${loi}. Nội dung của AI đã được HOÀN NGUYÊN qua đúng điểm ghi ấy; ` +
+          `đọc lại đĩa cho băm ${bamDia.slice(0, 12)}… (đúng bản gốc) và bộ đệm editor đã sạch, nên KHÔNG byte nào ` +
+          `của lượt này còn ở đâu cả.${ghiChu}`
+        : `KHÔNG GHI — "${dv.duongTuongDoi}": ${loi}. VSCode từ chối áp chỉnh sửa nên bộ đệm KHÔNG đổi.${xacNhanDia}${ghiChu}`,
+    };
   }
 
   // ── BƯỚC 8: đọc lại ĐĨA, băm lại, chốt sổ ──────────────────────────────────────────────────

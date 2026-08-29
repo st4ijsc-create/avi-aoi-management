@@ -17,7 +17,7 @@
  */
 import * as vscode from "vscode";
 import { randomBytes, randomUUID } from "node:crypto";
-import { relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import { dungHtmlBang } from "./htmlBang";
 import { dungNguCanh } from "../loi/nguCanh";
 import { dungYeuCauStream, type CheDoDuAn, type LuotChat } from "../loi/yeuCau";
@@ -29,13 +29,13 @@ import { laLoi401 } from "../loi/loiHttp";
 import { trangThaiBanDau, apDungSuKienChat, ketLuanLuotChat } from "../loi/suKienChat";
 import { docDeXuatGhi, laTaoTepMoi, type DeXuatGhi } from "../loi/deXuatGhi";
 import { tomTatDiff } from "../loi/tomTatDiff";
-import { coDuocHienTheDuyet } from "../loi/kiemTraCheDo";
+import { coDuocHienTheDuyet, suyCheDo } from "../loi/kiemTraCheDo";
 import { goiDuyet, goiHuy, daBiTuChoiGhi, maTuChoiGhi } from "../mang/duyetGhi";
 import type { KhoDeXuat } from "./diffDeXuat";
 import { docDeXuatCucBo, type DeXuatCucBo } from "../loi/deXuatCucBo";
 import { ghepBanVa } from "../loi/ghepBanVa";
 import { bamNoiDung } from "../loi/bamTep";
-import { duocPhepGhi } from "../loi/chanGhi";
+import { duocPhepGhi, duongTuongDoiTrongWorkspace } from "../loi/chanGhi";
 import { giaiDuongThat } from "../loi/duongThat";
 import { nhanNguonTheDuyet, nhanNutGhi } from "../loi/nhanTheDuyet";
 import { apBanVa } from "./apBanVa";
@@ -128,11 +128,17 @@ export class BangChat {
    */
   private quenDeXuat(thongBao?: string): void {
     const actionId = this.deXuatHienTai?.actionId ?? this.deXuatCucBoHienTai?.actionId;
-    if (!actionId) return;
-    this.khoDeXuat.quen(actionId);
+    // ⚠ XOÁ TRẠNG THÁI **VÔ ĐIỀU KIỆN**, TRƯỚC nhánh thoát sớm. Bản cũ `return` ngay khi không có
+    // `actionId` và vì thế bỏ lại `nhanNguonHienTai` của lượt TRƯỚC. Nhãn ấy không phải trang trí:
+    // `xemDiff()` lấy chính nó làm điều kiện đi tiếp, và nó mang chữ "LOCAL ·"/"SERVER ·" — tức
+    // mang CHẾ ĐỘ. Để một mảnh trạng thái chế độ sống sót qua một lượt "quên" là để lại đúng loại
+    // mảnh vụn mà cả tệp này đi vá (thẻ/nhãn của lượt cũ dùng cho lượt mới). Giá của việc xoá là 0.
     this.deXuatHienTai = undefined;
     this.deXuatCucBoHienTai = undefined;
     this.nhanNguonHienTai = undefined;
+    // Không có đề xuất nào ⇒ không có thẻ để ẩn và không có gì để báo (thoát SAU khi đã xoá sạch).
+    if (!actionId) return;
+    this.khoDeXuat.quen(actionId);
     void this.panel.webview.postMessage({ loai: "an_the_duyet" });
     if (thongBao) void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: thongBao });
   }
@@ -143,13 +149,19 @@ export class BangChat {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   }
 
-  /** CHẾ ĐỘ suy từ ô chọn dự án ĐANG hiển thị. Một chỗ duy nhất — `hoi()` và `duyetDeXuat()` đều
-   *  hỏi cùng câu này, nên hàng rào lúc HIỆN thẻ và hàng rào lúc BẤM duyệt không thể lệch nhau. */
-  private cheDoHienTai(): CheDoDuAn {
-    const muc = this.dsDuAn.find((d) => d.id === this.duAnChon) ?? this.dsDuAn[0];
-    return muc && muc.loai === "server"
-      ? { loai: "server", projectId: muc.id.slice("server:".length), nhan: muc.nhan }
-      : { loai: "local", nhan: muc?.nhan ?? "workspace" };
+  /**
+   * CHẾ ĐỘ suy từ ô chọn dự án ĐANG hiển thị. Một chỗ duy nhất — `hoi()`, `apDungCucBo()` và
+   * `duyetDeXuat()` đều hỏi cùng câu này, nên hàng rào lúc HIỆN thẻ và hàng rào lúc BẤM không thể
+   * lệch nhau.
+   *
+   * ⚠⚠⚠ TRẢ `undefined` KHI KHÔNG XÁC ĐỊNH ĐƯỢC — quyết định THUẦN nằm ở `loi/kiemTraCheDo.suyCheDo`
+   * (có lưới riêng). Bản cũ rơi về `{loai:"local", nhan:"workspace"}` khi danh sách dự án rỗng hoặc
+   * chưa nạp xong, tức đoán đúng cái nhánh có hậu quả nặng nhất: LOCAL là chế độ **extension tự
+   * cưỡng chế** và là chế độ mở cửa ghi vào đĩa máy dev. Mọi nơi gọi dưới đây PHẢI xử lý `undefined`
+   * bằng cách TỪ CHỐI, không bằng một giá trị mặc định.
+   */
+  private cheDoHienTai(): CheDoDuAn | undefined {
+    return suyCheDo(this.dsDuAn, this.duAnChon);
   }
 
   static moHoacHien(context: vscode.ExtensionContext, khoDeXuat: KhoDeXuat): void {
@@ -225,6 +237,17 @@ export class BangChat {
     }
     const cfg = vscode.workspace.getConfiguration("aviAiLocal");
     const cheDo = this.cheDoHienTai();
+    if (!cheDo) {
+      // FAIL-CLOSED: không biết lượt này ghi ở đâu thì KHÔNG hỏi. Bỏ qua đây là để một lượt trả lời
+      // đẻ ra thẻ duyệt mang chế độ ĐOÁN — và thẻ ấy là thứ chìa cho người dùng một cú bấm ghi đĩa.
+      void this.panel.webview.postMessage({
+        loai: "loi",
+        thongDiep:
+          "Chưa xác định được dự án đang chọn (danh sách dự án rỗng hoặc chưa nạp xong) — KHÔNG hỏi, " +
+          "vì chế độ quyết định byte sẽ rơi ở SERVER hay trên máy bạn. Hãy chọn lại dự án rồi hỏi lại.",
+      });
+      return;
+    }
     // Chốt CHẾ ĐỘ của lượt này NGAY BÂY GIỜ — `nhan` bên dưới (chạy trong cùng lượt) đọc lại field
     // này, không đọc `this.duAnChon` trực tiếp, để không lệch nếu người dùng đổi ô chọn giữa chừng.
     this.cheDoHoiHienTai = cheDo;
@@ -391,6 +414,18 @@ export class BangChat {
       void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Bỏ qua đề xuất sửa "${d.path}": ${that.lyDo}` });
       return;
     }
+    // ★★★ GỐC cũng phải GIẢI ĐƯỜNG THẬT — cùng hệ quy chiếu với `that.duong`. Đây không chỉ là để
+    // so ranh giới (đã có `wsThat` lo), mà còn để tính ĐƯỜNG TƯƠNG ĐỐI khai lên sổ kiểm toán: trộn
+    // một gốc CHƯA giải với một đích ĐÃ giải cho ra `..\..\…` khi chính gốc là junction, và trên
+    // Windows khác ổ đĩa thì cho ra NGUYÊN đường tuyệt đối máy dev. Xem `duongTuongDoiTrongWorkspace`.
+    const gocThat = giaiDuongThat(goc);
+    if (!gocThat.ok) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Bỏ qua đề xuất sửa "${d.path}": không giải được thư mục đang chọn "${goc}" (${gocThat.lyDo}).`,
+      });
+      return;
+    }
     const wsThat: string[] = [];
     for (const ws of dsWs) {
       const r = giaiDuongThat(ws);
@@ -426,7 +461,20 @@ export class BangChat {
       return;
     }
 
-    const duongTuongDoi = (relative(goc, that.duong) || d.path).replace(/\\/g, "/");
+    // ★★★ I-1 — CẶP {gốc, đường tương đối} PHẢI NÓI VỀ CÙNG MỘT GỐC, và gốc ấy phải THẬT SỰ CHỨA
+    // tệp. Thử gốc của ô chọn TRƯỚC (đó là thứ người dùng đang nhìn), rồi tới các thư mục workspace
+    // khác. `undefined` ⇒ không gốc nào chứa nó: KHÔNG bịa ra một chuỗi trông-như-đường-dẫn để khai
+    // lên sổ. (Về lý thuyết `duocPhepGhi` ở trên đã loại ca này; giữ nhánh vì "về lý thuyết" không
+    // phải một hàng rào, và giá của nó là bốn dòng.)
+    const viTri = duongTuongDoiTrongWorkspace(that.duong, [gocThat.duong, ...wsThat]);
+    if (!viTri) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Bỏ qua đề xuất sửa "${d.path}": không quy được về đường tương đối trong thư mục workspace nào.`,
+      });
+      return;
+    }
+    const duongTuongDoi = viTri.duongTuongDoi;
     const { them, bot, doiDong } = tomTatDiff(noiDungGoc, ghep.moi);
     this.deXuatCucBoHienTai = {
       actionId: randomUUID(),
@@ -435,7 +483,9 @@ export class BangChat {
       duongTuongDoi,
       bamGoc: bamNoiDung(noiDungGoc),
       moi: ghep.moi,
-      thuMucWorkspace: goc,
+      // Gốc mà `duongTuongDoi` được tính TRÊN — không phải `goc` chưa giải. Hai ô này đi cùng nhau
+      // lên sổ kiểm toán (`nhanWorkspace` + `path`), lệch nhau là sổ tự mâu thuẫn.
+      thuMucWorkspace: viTri.goc,
       them,
       bot,
     };
@@ -473,18 +523,29 @@ export class BangChat {
    * ⚠ Hàng rào chế độ ở LÚC BẤM (không chỉ lúc hiện thẻ) — cùng lý lẽ với `duyetDeXuat`: cái gây
    *   hậu quả là CÚ BẤM. Ở đây hậu quả nặng hơn hẳn: byte rơi trên máy của chính người dùng.
    * ⚠ Luôn `quenDeXuat()` sau một lượt bấm, khác với đường SERVER (nơi lỗi mạng để lại ca "KHÔNG
-   *   RÕ KẾT CỤC" đáng thử lại). Ở đây không có ca đó: `apBanVa` hoặc ĐÃ ghi (`ok:true`) hoặc CHƯA
-   *   ghi gì (`ok:false`) — nó tự quan sát được cả lượt áp chỉnh sửa lẫn `save`. Điều duy nhất "chưa rõ"
-   *   là sổ kiểm toán đã chốt chưa, mà bấm lại KHÔNG chữa được điều đó (lượt sau sẽ gặp băm đã đổi
-   *   và bị từ chối đúng như thiết kế). Giữ một cái nút sống trong ca đó chỉ mời người dùng ghi đè
+   *   RÕ KẾT CỤC" đáng thử lại). Lý lẽ: bấm lại KHÔNG chữa được gì — lượt sau sẽ gặp băm đã đổi (nếu
+   *   byte đã rơi) và bị từ chối đúng như thiết kế; giữ một cái nút sống chỉ mời người dùng ghi đè
    *   lần hai.
+   *
+   * ⚠⚠⚠ SỬA MỘT CÂU SAI TỪNG NẰM ĐÚNG CHỖ NÀY (2026-08-29). Ghi chú cũ khẳng định *"`apBanVa` hoặc
+   *   ĐÃ ghi (`ok:true`) hoặc CHƯA ghi gì (`ok:false`)"*. **Sai** — và sai theo hướng nguy hiểm. Có
+   *   một ca thứ BA: lượt áp chỉnh sửa thành công nhưng `save()` hỏng, khi ấy nội dung của AI nằm
+   *   trong BỘ ĐỆM editor ở dạng chưa lưu. `apBanVa` nay tự hoàn nguyên và ĐO LẠI; nếu hoàn nguyên
+   *   cũng hỏng thì nó trả `ok:false` với một `thongDiep` nói rõ **CHƯA RÕ** và bỏ ngỏ sổ kiểm toán
+   *   ở `dang_ap_client`. Vì thế `ok` KHÔNG đủ để kể lại câu chuyện: chỗ này chỉ được **hiện nguyên
+   *   văn `thongDiep`**, tuyệt đối không rút gọn nó thành "đã ghi"/"không ghi".
    */
   private async apDungCucBo(): Promise<void> {
     const cb = this.deXuatCucBoHienTai;
     if (!cb) return;
-    if (this.cheDoHienTai().loai !== "local") {
+    // `undefined` (không xác định được chế độ) đi CÙNG nhánh từ chối với "không phải LOCAL": ở một
+    // cửa ghi đĩa, "không biết" phải được xử như "không được", không như "chắc là LOCAL".
+    const cheDoLucBam = this.cheDoHienTai();
+    if (cheDoLucBam?.loai !== "local") {
       this.quenDeXuat(
-        "Dự án đang chọn KHÔNG phải chế độ LOCAL — đã bỏ đề xuất ghi thay vì ghi vào máy bạn. Chọn lại dự án LOCAL rồi hỏi lại.",
+        cheDoLucBam
+          ? "Dự án đang chọn KHÔNG phải chế độ LOCAL — đã bỏ đề xuất ghi thay vì ghi vào máy bạn. Chọn lại dự án LOCAL rồi hỏi lại."
+          : "KHÔNG xác định được dự án đang chọn — đã bỏ đề xuất ghi thay vì đoán chế độ rồi ghi vào máy bạn. Chọn lại dự án rồi hỏi lại.",
       );
       return;
     }
@@ -536,9 +597,12 @@ export class BangChat {
      * lần đổi ô chọn dự án. Nay ô chọn đổi thì thẻ bị vứt (xem `quenDeXuat`), nên nhánh này gần như
      * không tới được — giữ nó vì "gần như" không phải một hàng rào, và giá của nó là bốn dòng.
      */
-    if (!coDuocHienTheDuyet(this.cheDoHienTai().loai)) {
+    const cheDoLucBam = this.cheDoHienTai();
+    if (!cheDoLucBam || !coDuocHienTheDuyet(cheDoLucBam.loai)) {
       this.quenDeXuat(
-        "Dự án đang chọn KHÔNG phải chế độ SERVER — đã bỏ đề xuất ghi thay vì duyệt nó. Chọn lại dự án SERVER rồi hỏi lại.",
+        cheDoLucBam
+          ? "Dự án đang chọn KHÔNG phải chế độ SERVER — đã bỏ đề xuất ghi thay vì duyệt nó. Chọn lại dự án SERVER rồi hỏi lại."
+          : "KHÔNG xác định được dự án đang chọn — đã bỏ đề xuất ghi thay vì đoán chế độ. Chọn lại dự án rồi bấm lại.",
       );
       return;
     }

@@ -73,16 +73,54 @@ function moiTepVaoBundle(): string[] {
   return [...moiTepTs(GOC), ...TEP_NGOAI_CAY_VAO_BUNDLE];
 }
 
+/** Tệp LƯỚI (vitest) — không phải mã chạy trong extension. Xem `TEP_LUOI_KHONG_VAO_DIST`. */
+function laTepLuoi(p: string): boolean {
+  return p.endsWith(".unit.test.ts");
+}
+
 /**
- * VĨNH VIỄN CẤM: ghi đĩa bằng `fs`.
+ * VĨNH VIỄN CẤM: mọi API đặt byte lên đĩa (hoặc lên bộ đệm editor) **ngoài** điểm ghi duy nhất.
  *
  * ⚠⚠ Đây KHÔNG phải "chưa tới lượt" như hai từ `applyEdit`/`WorkspaceEdit` (đã chuyển sang khẳng
- * định "đúng MỘT lần" bên dưới khi Đợt C mở điểm ghi). Ba từ này phải bằng 0 **mãi mãi**: extension
- * ghi qua `WorkspaceEdit` của VSCode nên người dùng **Ctrl+Z hoàn tác được** và editor thấy thay
- * đổi ngay. Ai ghi bằng `fs` là mở một đường ghi THỨ HAI — không hoàn tác được, editor không biết,
- * và nằm ngoài mọi phép đếm ở dưới. Census phải bắt đúng lúc đó.
+ * định "đúng MỘT lần" bên dưới khi Đợt C mở điểm ghi). Danh sách này phải bằng 0 **mãi mãi**:
+ * extension ghi qua `WorkspaceEdit` của VSCode nên người dùng **Ctrl+Z hoàn tác được** và editor
+ * thấy thay đổi ngay. Ai ghi bằng `fs` là mở một đường ghi THỨ HAI — không hoàn tác được, editor
+ * không biết, và nằm ngoài mọi phép đếm ở dưới. Census phải bắt đúng lúc đó.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-08-29 (I-2) — "MỘT ĐIỂM GHI" CHỈ MẠNH BẰNG DANH SÁCH TỪ NÀY. NỚI DANH SÁCH, MẤT LUÔN
+ * LỜI KHAI.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Ba từ cũ (`fs.writeFile`, `writeFileSync`, `appendFile`) bỏ lọt những đường ghi TẦM THƯỜNG nhất:
+ *   · `import { writeFile } from "node:fs/promises"` rồi `await writeFile(p, s)` — KHÔNG chứa chuỗi
+ *     `"fs.writeFile"` ở bất kỳ đâu (dạng destructure là dạng phổ biến NHẤT trong repo này);
+ *   · `createWriteStream`, `rename`, `truncate`, `cp` — bốn cách khác đặt/đổi byte của một tệp;
+ *   · **`TextEditor.edit()`** — ghi vào BỘ ĐỆM mà không cần đối tượng chỉnh-sửa nào, nên nó lọt
+ *     khỏi cả phép đếm "đúng một lần" bên dưới. Đây là đường ghi thứ hai nguy hiểm nhất vì nó
+ *     trông y hệt đường hợp lệ.
+ * Mỗi từ dưới đây đã được ĐO là 0 lần trên toàn tập vào bundle tại lúc thêm — không từ nào được
+ * thêm "cho chắc" mà chưa đo.
+ *
+ * ⚠ `"cp("` và `".edit("` là chuỗi NGẮN: một ngày nào đó một định danh kết thúc bằng `cp` hay một
+ *   phương thức tên `edit` sẽ làm lưới đỏ dù vô hại. Khi ấy cách xử ĐÚNG là **đổi tên định danh**,
+ *   không phải nới census. Một census đủ hẹp để không bao giờ đỏ nhầm cũng là một census đủ hẹp để
+ *   không bao giờ bắt được gì.
+ * ⚠ Danh sách này áp cho **cả tệp lưới**: một tệp test cũng KHÔNG được ghi đĩa bằng `fs` (bài học
+ *   §2.1 của Task 6 — census bắt đúng lưới của người viết trước cả đột biến cố ý).
  */
-const CAM_TU = ["fs.writeFile", "writeFileSync", "appendFile"];
+const CAM_TU = [
+  "fs.writeFile",
+  "writeFileSync",
+  "appendFile",
+  // I-2 — dạng destructure (`import { writeFile } from "node:fs/promises"`) không chứa "fs.writeFile"
+  "writeFile",
+  "createWriteStream",
+  "rename",
+  "truncate",
+  "cp(",
+  // `editor.edit(...)` ghi thẳng vào bộ đệm, KHÔNG qua đối tượng chỉnh-sửa ⇒ lọt mọi phép đếm dưới.
+  ".edit(",
+];
 
 /**
  * ★★★ ĐỢT C (2026-08-29) — ĐIỂM GHI ĐĨA ĐÃ MỞ, VÀ ĐÂY LÀ THỨ GIỮ NÓ **ĐÚNG MỘT**.
@@ -97,6 +135,25 @@ const CAM_TU = ["fs.writeFile", "writeFileSync", "appendFile"];
  *    bản vá vô tình xoá mất cửa duyệt.
  * ⚠ Đếm SỐ LẦN XUẤT HIỆN chứ không chỉ danh sách tệp: một lời gọi thứ hai thêm vào CHÍNH
  *   `apBanVa.ts` giữ nguyên danh sách tệp (xem ca `confirmAction` bên dưới — cùng lỗ, đã vá).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-08-29 (I-3) — TỆP LƯỚI ĐƯỢC LOẠI KHỎI **PHÉP ĐẾM NÀY**, VÀ CHỈ PHÉP ĐẾM NÀY.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Trước bản vá này, census quét MỌI `.ts` dưới `src/` kể cả lưới. Hệ quả không ai định trước:
+ * **không thể viết một lưới cho `apBanVa`**, vì một lưới muốn kiểm thứ tự thì phải giả lập API
+ * chỉnh-sửa của VSCode, mà chỉ cần NHẮC TÊN nó là phép đếm nhảy lên 2 và census đỏ. Tức bất biến
+ * quan trọng nhất của cả Đợt C (THỨ TỰ các bước trong điểm ghi) bị chính hàng rào của nó cấm không
+ * cho có lưới — nó chỉ còn được canh bởi một script nằm ngoài repo.
+ *
+ * Loại trừ này AN TOÀN, và đây là lý do ĐO ĐƯỢC chứ không phải lời hứa:
+ *   1. Bundle dựng từ MỘT điểm vào (`src/extension.ts`, xem `build.mjs`) và esbuild chỉ gộp thứ
+ *      được `import` bắc tới. Không tệp sản xuất nào import một tệp `*.unit.test.ts`, nên không
+ *      byte nào của lưới vào `dist/extension.js`.
+ *   2. Điều (1) không phải niềm tin: ca "KHÔNG tệp SẢN XUẤT nào nhập một tệp lưới" bên dưới canh
+ *      đúng nó. Ai đó import một lưới vào mã sản xuất ⇒ ĐỎ, và loại trừ này lập tức mất hiệu lực
+ *      đúng lúc nó bắt đầu nguy hiểm.
+ *   3. `CAM_TU` **vẫn quét cả lưới**: một tệp test cũng không được `fs.writeFile`. Loại trừ chỉ áp
+ *      cho phép đếm "đúng MỘT lần", nơi con số nói về ĐƯỜNG GHI THẬT của extension.
  */
 const GHI_DUNG_MOT_LAN: Array<{ tu: string; tep: string }> = [
   { tu: "applyEdit", tep: "ui/apBanVa.ts" },
@@ -117,15 +174,42 @@ describe("census — không đường ghi ĐĨA nào ngoài ĐÚNG MỘT điểm
      * ai đó nhập thêm một tệp ngoài-cây nữa mà quên khai vào `TEP_NGOAI_CAY_VAO_BUNDLE`, census
      * sẽ mù đúng tệp mới ấy — và mù MỘT CÁCH IM LẶNG. Ca này bắt đúng lúc đó.
      */
+    /**
+     * ⚠⚠ 2026-08-29 (Minor) — MẪU CŨ CHỈ BẮT `from "…"`. Ba dạng nhập khác cũng làm esbuild gộp
+     * tệp vào bundle mà mẫu cũ MÙ hoàn toàn:
+     *   · `import "../../shared/x"`      — nhập CHỈ ĐỂ CHẠY tác dụng phụ (không có `from`);
+     *   · `import("../../shared/x")`     — nhập ĐỘNG, esbuild vẫn gộp (chỉ tách chunk);
+     *   · `require("../../shared/x")`    — vẫn hợp lệ ở đích `cjs` mà build.mjs đang dùng.
+     * Nhận cả nháy đơn: một lần chạy prettier khác cấu hình là đủ để đổi hết dấu nháy.
+     */
     const daKhai = new Set(TEP_NGOAI_CAY_VAO_BUNDLE.map((p) => p.replace(/\\/g, "/").split("/").pop()));
     const thieu: string[] = [];
     for (const p of moiTepTs(GOC)) {
-      for (const m of readFileSync(p, "utf8").matchAll(/from\s+"((?:\.\.\/){2,}[^"]+)"/g)) {
+      for (const m of readFileSync(p, "utf8").matchAll(
+        /(?:from|import|require)\s*\(?\s*["']((?:\.\.\/){2,}[^"']+)["']/g,
+      )) {
         const ten = `${m[1].split("/").pop()}.ts`;
         if (!daKhai.has(ten)) thieu.push(`${relative(GOC, p)} → ${m[1]}`);
       }
     }
     expect(thieu).toEqual([]);
+  });
+
+  it("★★★ KHÔNG tệp SẢN XUẤT nào nhập một tệp LƯỚI — điều kiện làm cho loại-trừ-lưới an toàn", () => {
+    /**
+     * ★★ Phép đếm "đúng MỘT lần" bên dưới loại tệp `*.unit.test.ts` ra khỏi tập đếm, với lý do
+     * "lưới không vào `dist`". Ca này biến lý do ấy từ LỜI HỨA thành ĐIỀU ĐƯỢC CANH: chỉ cần một
+     * tệp sản xuất `import` một tệp lưới là lưới đi vào bundle, và loại trừ kia lập tức trở thành
+     * một lỗ — census phải đỏ ĐÚNG LÚC ĐÓ, không phải khi có người tình cờ đọc lại docblock.
+     */
+    const cham: string[] = [];
+    for (const p of moiTepVaoBundle()) {
+      if (laTepLuoi(p)) continue;
+      for (const m of readFileSync(p, "utf8").matchAll(/(?:from|import|require)\s*\(?\s*["']([^"']+)["']/g)) {
+        if (m[1].includes(".unit.test")) cham.push(`${relative(GOC, p)} → ${m[1]}`);
+      }
+    }
+    expect(cham).toEqual([]);
   });
 
   for (const tu of CAM_TU) {
@@ -150,6 +234,9 @@ describe("census — không đường ghi ĐĨA nào ngoài ĐÚNG MỘT điểm
        */
       const dem = (s: string) => s.split(tu).length - 1;
       const theoTep = tep
+        // Loại TỆP LƯỚI — và CHỈ ở phép đếm này. Xem docblock `GHI_DUNG_MOT_LAN` (§I-3): lưới
+        // không vào `dist` (có ca riêng canh điều đó), còn `CAM_TU` vẫn quét chúng đầy đủ.
+        .filter((p) => !laTepLuoi(p))
         .map((p) => ({ ten: relative(GOC, p).replace(/\\/g, "/"), soLan: dem(readFileSync(p, "utf8")) }))
         .filter((x) => x.soLan > 0);
       const tong = theoTep.reduce((s, x) => s + x.soLan, 0);

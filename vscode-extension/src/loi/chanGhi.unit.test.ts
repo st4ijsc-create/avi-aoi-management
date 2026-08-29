@@ -9,7 +9,7 @@
  * nhạy cảm — DÙNG LẠI `duocPhepGuiNoiDung` (xem docblock ở `chanGhi.ts`, KHÔNG viết bản thứ hai).
  */
 import { describe, it, expect } from "vitest";
-import { duocPhepGhi } from "./chanGhi";
+import { duocPhepGhi, duongTuongDoiTrongWorkspace } from "./chanGhi";
 
 describe("duocPhepGhi", () => {
   it("★★★ tệp trong workspace ⇒ {ok:true}", () => {
@@ -80,5 +80,112 @@ describe("duocPhepGhi", () => {
 
   it("★ hoa/thường khác nhau trên Windows (c:\\ws\\x.cs vs workspace C:\\ws) ⇒ vẫn CHO", () => {
     expect(duocPhepGhi("c:\\ws\\x.cs", ["C:\\ws"])).toEqual({ ok: true });
+  });
+});
+
+/**
+ * ★★★ I-6 — LUẬT 4: "GỬI ĐƯỢC" VÀ "GHI ĐƯỢC" ĐÃ TÁCH ĐÁP ÁN.
+ *
+ * Mọi đường trong nhóm này đều **được phép GỬI** (`duocPhepGuiNoiDung` cho qua — chúng không phải
+ * `.env`, không phải khoá riêng) nhưng ghi vào chúng là ĐẶT MÃ SẼ CHẠY trên máy lập trình viên, sau
+ * một thẻ duyệt chỉ nói "Ghi vào workspace". Ca ĐỐI CHỨNG cuối nhóm chứng minh luật 4 không nuốt
+ * nhầm mã thường — chặn nhầm là mất chức năng ÂM THẦM.
+ */
+describe("duocPhepGhi — luật 4: cấm CHỈ-KHI-GHI (I-6)", () => {
+  it("★★★ .git/hooks/pre-commit ⇒ TỪ CHỐI (chạy ở lượt git kế tiếp)", () => {
+    const r = duocPhepGhi("C:\\ws\\.git\\hooks\\pre-commit", ["C:\\ws"]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.lyDo).toContain(".git");
+  });
+
+  it("★★★ mọi thứ dưới .git/ (config · hooks/post-merge · thư mục con sâu) ⇒ TỪ CHỐI", () => {
+    for (const duong of [
+      "C:\\ws\\.git\\config",
+      "C:\\ws\\.git\\hooks\\post-merge",
+      "C:\\ws\\.git\\modules\\sub\\hooks\\pre-push",
+      "C:\\ws\\sub\\.git\\hooks\\pre-commit",
+    ]) {
+      expect(duocPhepGhi(duong, ["C:\\ws"]).ok, `${duong} phải bị chặn`).toBe(false);
+    }
+  });
+
+  it("★★★ .vscode/tasks.json và .vscode/launch.json ⇒ TỪ CHỐI (VSCode chạy lệnh khai trong đó)", () => {
+    for (const duong of ["C:\\ws\\.vscode\\tasks.json", "C:\\ws\\.vscode\\launch.json"]) {
+      const r = duocPhepGhi(duong, ["C:\\ws"]);
+      expect(r.ok, `${duong} phải bị chặn`).toBe(false);
+      if (!r.ok) expect(r.lyDo).toContain(".vscode");
+    }
+  });
+
+  it("★★★ ĐỐI CHỨNG: chính những đường đó ĐƯỢC PHÉP GỬI — hai câu hỏi đã tách đáp án", async () => {
+    // Nếu ca này đỏ thì luật 4 là thừa (danh sách chung đã chặn rồi) và cả phán quyết I-6 sai.
+    const { duocPhepGuiNoiDung } = await import("./nguCanh");
+    for (const duong of ["C:\\ws\\.git\\hooks\\pre-commit", "C:\\ws\\.vscode\\tasks.json"]) {
+      expect(duocPhepGuiNoiDung(duong), `${duong} phải GỬI được`).toBe(true);
+    }
+  });
+
+  it("★★★ KHÔNG chặn nhầm: .gitignore · .github/workflows · src/gitUtils.ts · .vscode/settings.json ⇒ CHO", () => {
+    // `.git` phải là NGUYÊN một đoạn đường dẫn, không phải chuỗi con. `.vscode/settings.json` là
+    // đánh đổi ĐƯỢC BIẾT (xem docblock `camGhiRieng`), không phải chỗ bị bỏ quên.
+    for (const duong of [
+      "C:\\ws\\.gitignore",
+      "C:\\ws\\.gitattributes",
+      "C:\\ws\\.github\\workflows\\ci.yml",
+      "C:\\ws\\src\\gitUtils.ts",
+      "C:\\ws\\.vscode\\settings.json",
+      "C:\\ws\\src\\tasks.json",
+    ]) {
+      expect(duocPhepGhi(duong, ["C:\\ws"]), `${duong} KHÔNG được bị chặn`).toEqual({ ok: true });
+    }
+  });
+
+  it("★★ dấu phân cách kiểu POSIX cũng bị chặn (đường do model sinh hay dùng `/`)", () => {
+    expect(duocPhepGhi("C:/ws/.git/hooks/pre-commit", ["C:\\ws"]).ok).toBe(false);
+    expect(duocPhepGhi("C:/ws/.vscode/tasks.json", ["C:\\ws"]).ok).toBe(false);
+  });
+});
+
+/**
+ * ★★★ I-1 — SỔ KIỂM TOÁN PHẢI KHAI ĐÚNG TỆP NÀO VỪA ĐỔI.
+ *
+ * Nơi gọi cũ dùng `path.relative(gốc CHƯA giải liên kết, đích ĐÃ giải)` — hai hệ quy chiếu khác
+ * nhau. Byte vẫn rơi đúng chỗ; cái sai là LỜI KHAI về nó.
+ */
+describe("duongTuongDoiTrongWorkspace (I-1)", () => {
+  it("★★★ tệp trong gốc ⇒ đường tương đối dùng dấu `/`, KHÔNG có `..`, kèm ĐÚNG gốc", () => {
+    expect(duongTuongDoiTrongWorkspace("C:\\ws\\src\\a.ts", ["C:\\ws"])).toEqual({
+      goc: "C:\\ws",
+      duongTuongDoi: "src/a.ts",
+    });
+  });
+
+  it("★★★ tệp nằm ở thư mục workspace THỨ HAI ⇒ lấy gốc CHỨA nó, không đẻ ra `..`", () => {
+    // Đây là ca mà `relative(gốc-của-ô-chọn, đích)` cũ trả "../ws2/x.ts" — sổ khai một đường
+    // không tồn tại trong bất kỳ workspace nào. Cặp {goc, duongTuongDoi} phải nói về CÙNG gốc.
+    expect(duongTuongDoiTrongWorkspace("C:\\ws2\\x.ts", ["C:\\ws1", "C:\\ws2"])).toEqual({
+      goc: "C:\\ws2",
+      duongTuongDoi: "x.ts",
+    });
+  });
+
+  it("★★★ KHÁC Ổ ĐĨA (Windows) ⇒ `undefined`, KHÔNG trả đường TUYỆT ĐỐI của máy dev", () => {
+    // `path.relative("C:\\ws", "D:\\khac\\x.ts")` trả NGUYÊN "D:\khac\x.ts". Nếu hàm này để lọt,
+    // đường tuyệt đối máy dev bị khai lên máy chủ và in lên thẻ duyệt.
+    const r = duongTuongDoiTrongWorkspace("D:\\khac\\x.ts", ["C:\\ws"]);
+    expect(r).toBeUndefined();
+  });
+
+  it("★★★ tệp NGOÀI mọi gốc ⇒ `undefined` (nơi gọi phải xử lý tường minh, không nhận chuỗi sai)", () => {
+    expect(duongTuongDoiTrongWorkspace("C:\\ngoai\\x.ts", ["C:\\ws"])).toBeUndefined();
+    expect(duongTuongDoiTrongWorkspace("C:\\ws-khac\\x.ts", ["C:\\ws"])).toBeUndefined();
+  });
+
+  it("★★ danh sách gốc RỖNG ⇒ `undefined`", () => {
+    expect(duongTuongDoiTrongWorkspace("C:\\ws\\a.ts", [])).toBeUndefined();
+  });
+
+  it("★★ CHÍNH thư mục gốc ⇒ `undefined` (không phải một tệp con)", () => {
+    expect(duongTuongDoiTrongWorkspace("C:\\ws", ["C:\\ws"])).toBeUndefined();
   });
 });
