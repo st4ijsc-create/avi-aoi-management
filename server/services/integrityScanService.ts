@@ -30,7 +30,12 @@ import { getJobsDb as getDb } from "../db/connection";
 
 // ─── Relationship catalogue (single source of truth on the app side) ──────────
 
-export type IntegrityKind = "fk-orphan" | "unique-duplicate" | "fk-soft-orphan";
+// Pha 1C Task 5 (BG-28, spec §13 Đ-19): "cha-khong-con" là chiều NGƯỢC với "fk-orphan"/
+// "fk-soft-orphan" — hai kind đó bắt CON mồ côi (con trỏ tới cha không tồn tại); kind mới
+// bắt CHA không có con nào (header product_inspections tồn tại mà measurement_results rỗng).
+// Không FK/NOT NULL nào canh chiều này — một bo 0 dòng đo là hình dạng payload HỢP LỆ ở
+// tầng SQL, nên đây là luật GIÁM SÁT thuần, không phải ràng buộc.
+export type IntegrityKind = "fk-orphan" | "unique-duplicate" | "fk-soft-orphan" | "cha-khong-con";
 /** How scripts/repair-orphans.mjs may fix violations of this relationship. */
 export type RepairStrategy =
   | "set-null"      // safe auto-fix: NULL out the dangling soft reference
@@ -241,6 +246,68 @@ export const SOFT_INTEGRITY_CHECKS: IntegrityRelationship[] = [
   },
 ];
 
+// ─── "Cha không có con" checks (Pha 1C Task 5, BG-28, spec §13 Đ-19) ──────────
+//
+// Trước bản vá này, file có 12 luật fk-orphan + 1 luật fk-soft-orphan — TẤT CẢ đều bắt
+// chiều "con mồ côi" (con trỏ tới cha không tồn tại). KHÔNG luật nào bắt chiều ngược lại:
+// một bo (`product_inspections`) tồn tại mà `measurement_results` của nó RỖNG.
+//
+// Đây KHÔNG phải giả thuyết — đường ghi v2.0 hiện chưa ghi được cấp component vì
+// `measurement_results.pointDefId` là NOT NULL + FK RESTRICT, và định nghĩa điểm đo
+// (Khối B) chưa chạy. Hậu quả đo được (spec §13 Đ-19): khi total=0,
+//   • `stationAnalysisRouter.ts:1922`   defectRate=0 ⇒ status='pass'   → bản đồ bo TOÀN XANH
+//   • `ngRateAlertService.ts:208`       total<minSampleSize ⇒ return   → cảnh báo NG-rate KHÔNG BAO GIỜ bắn
+//   • (ở đây, trước bản vá)             0 luật                          → lỗ VÔ HÌNH với giám sát toàn vẹn
+//
+// SCOPE: chỉ tính bo đi qua đường ingest CÂY v2.0 — nhận diện bằng `summaryCounts IS NOT
+// NULL` (cột NÀY chỉ được ghi ở ĐÚNG MỘT nơi trong mã sản xuất: `machineApiRouters.ts:3225`,
+// nhánh `submitInspection` v2.0). KHÔNG quét toàn bộ `product_inspections` — DB thật có
+// 37.550/42.804 bo không có measurement_results, áp đảo bởi dữ liệu v1.x/di sản không liên
+// quan gì tới lỗ này (đo trực tiếp trên DB test 2026-08-29); một luật không lọc theo scope sẽ
+// luôn đỏ vì lý do KHÁC, làm loãng đúng tín hiệu cần bắt.
+//
+// childTable/childColumn/parentTable/parentColumn ở đây mang nghĩa "bảng có HÀNG VI PHẠM" /
+// "bảng lẽ ra phải có hàng khớp" — KHÔNG phải hướng FK thật (measurement_results mới là bên
+// giữ cột FK `inspectionId`). Cố ý đảo để nhất quán với ngữ nghĩa hiển thị `childTable` ở
+// RelationshipScanResult (nơi có hàng cần chú ý), không phải hướng khai báo ràng buộc.
+export const CHA_KHONG_CON_CHECKS: IntegrityRelationship[] = [
+  {
+    key: "cha-khong-con:product_inspections(v2.0)->measurement_results",
+    kind: "cha-khong-con",
+    childTable: "product_inspections", childColumn: "id",
+    parentTable: "measurement_results", parentColumn: "inspectionId",
+    // Không có ràng buộc DB nào cho chiều này (xem docblock trên) — field này chỉ để hiển
+    // thị UI/docs, theo đúng quy ước "gán giá trị gần nghĩa nhất" mà SOFT_INTEGRITY_CHECKS
+    // đã dùng cho trường hợp tương tự (soft:product_inspections.productModel...).
+    constraintName: "(none — luật GIÁM SÁT, không phải ràng buộc DB; xem spec §13 Đ-19)",
+    enforcement: "RESTRICT", repair: "manual",
+    countSql:
+      'SELECT count(*)::bigint AS n FROM product_inspections c ' +
+      'LEFT JOIN measurement_results m ON m."inspectionId" = c.id ' +
+      'WHERE c."summaryCounts" IS NOT NULL AND m.id IS NULL',
+    sampleSql:
+      'SELECT c.id, c."machineId", c."serialNumber", c."inspectionTime" FROM product_inspections c ' +
+      'LEFT JOIN measurement_results m ON m."inspectionId" = c.id ' +
+      'WHERE c."summaryCounts" IS NOT NULL AND m.id IS NULL ' +
+      'ORDER BY c.id DESC LIMIT 20',
+  },
+];
+
+/**
+ * BG-28 — số bo v2.0-không-có-dòng-đo TỐI THIỂU trước khi coi quan hệ là "dirty" đủ để
+ * cảnh báo (console.warn). Mặc định 1: MỘT bo v2.0 thiếu đo cũng đáng biết ngay — trước
+ * bản vá này số đó là 0 luật bắt được ca này ở BẤT KỲ ngưỡng nào. Cấu hình được để vận
+ * hành có thể nới ngưỡng khi đã biết rõ nguyên nhân (Khối B chưa chạy, xem §13 Đ-19) mà
+ * không cần sửa mã — CÙNG khuôn đọc-env-với-mặc-định của `enabled()`/INTEGRITY_SCAN_CRON/
+ * INTEGRITY_SCAN_TZ ở trên, không phải một cơ chế cấu hình mới.
+ * ⚠ Ngưỡng chỉ ảnh hưởng phân loại "dirty"/cảnh báo — `violationCount` LUÔN là số đếm
+ * THẬT, không bị ngưỡng cắt bớt.
+ */
+function nguongChaKhongCon(): number {
+  const raw = Number(process.env.INTEGRITY_SCAN_CHA_KHONG_CON_MIN ?? 1);
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+}
+
 // ─── Scan execution ───────────────────────────────────────────────────────────
 
 export interface RelationshipScanResult {
@@ -267,6 +334,13 @@ export interface IntegrityScanRunResult {
    * results.length === INTEGRITY_RELATIONSHIPS.length) is unaffected.
    */
   softResults: RelationshipScanResult[];
+  /**
+   * Pha 1C Task 5 (BG-28) — CHA_KHONG_CON_CHECKS (bo có header mà 0 dòng đo). Bucket
+   * RIÊNG cùng lý do softResults tách khỏi `results`: đây không phải một vi phạm FK/unique
+   * trong hợp đồng 0179/0180/repair-orphans.mjs, và test hợp đồng đó khẳng định
+   * results.length === INTEGRITY_RELATIONSHIPS.length — trộn vào sẽ làm phép đếm đó sai.
+   */
+  chaKhongConResults: RelationshipScanResult[];
   durationMs: number;
   scannedAt: string;
 }
@@ -288,15 +362,16 @@ export async function runIntegrityScanNow(scanSource: string = "service"): Promi
   const start = Date.now();
   const scannedAt = new Date().toISOString();
   if (running) {
-    return { ok: true, skipped: true, reason: "already_running", totalViolations: 0, dirtyRelationships: 0, results: [], softResults: [], durationMs: 0, scannedAt };
+    return { ok: true, skipped: true, reason: "already_running", totalViolations: 0, dirtyRelationships: 0, results: [], softResults: [], chaKhongConResults: [], durationMs: 0, scannedAt };
   }
   running = true;
   const results: RelationshipScanResult[] = [];
   const softResults: RelationshipScanResult[] = [];
+  const chaKhongConResults: RelationshipScanResult[] = [];
   try {
     const db = await getDb();
     if (!db) {
-      return { ok: false, skipped: true, reason: "db_unavailable", totalViolations: 0, dirtyRelationships: 0, results: [], softResults: [], durationMs: Date.now() - start, scannedAt };
+      return { ok: false, skipped: true, reason: "db_unavailable", totalViolations: 0, dirtyRelationships: 0, results: [], softResults: [], chaKhongConResults: [], durationMs: Date.now() - start, scannedAt };
     }
 
     // Scan ONE relationship (count + sample + best-effort persist) into `bucket`.
@@ -332,19 +407,24 @@ export async function runIntegrityScanNow(scanSource: string = "service"): Promi
     for (const rel of INTEGRITY_RELATIONSHIPS) await scanInto(rel, results);
     // doc 51 P2 (CASE #6): soft-orphan checks — separate bucket (see interface).
     for (const rel of SOFT_INTEGRITY_CHECKS) await scanInto(rel, softResults);
+    // Pha 1C Task 5 (BG-28, spec §13 Đ-19): "cha không có con" — separate bucket (see interface).
+    for (const rel of CHA_KHONG_CON_CHECKS) await scanInto(rel, chaKhongConResults);
   } finally {
     running = false;
   }
 
   const dirty = results.filter((r) => r.violationCount > 0);
   const softDirty = softResults.filter((r) => r.violationCount > 0);
+  const nguong = nguongChaKhongCon();
+  const chaKhongConDirty = chaKhongConResults.filter((r) => r.violationCount >= nguong);
   const totalViolations = dirty.reduce((s, r) => s + r.violationCount, 0);
   const run: IntegrityScanRunResult = {
-    ok: results.every((r) => !r.degraded) && softResults.every((r) => !r.degraded),
+    ok: results.every((r) => !r.degraded) && softResults.every((r) => !r.degraded) && chaKhongConResults.every((r) => !r.degraded),
     totalViolations,
     dirtyRelationships: dirty.length,
     results,
     softResults,
+    chaKhongConResults,
     durationMs: Date.now() - start,
     scannedAt,
   };
@@ -366,6 +446,18 @@ export async function runIntegrityScanNow(scanSource: string = "service"): Promi
       softDirty.map((r) => `${r.key}=${r.violationCount}`).join(", ") +
       ` — inspections predating their product model; repair: node scripts/repair-orphans.mjs --fix ` +
       `--rel "soft:product_inspections.productModel->product_models.code".`,
+    );
+  }
+  // BG-28 (spec §13 Đ-19) — thông điệp PHẢI nêu SỐ ĐẾM + gợi ý nguyên nhân, để người trực
+  // đêm không phải tự suy tại sao một trạm/dashboard chỉ có bo v2.0 lại "toàn xanh"/im lặng.
+  if (chaKhongConDirty.length > 0) {
+    console.warn(
+      `[integrityScan] BG-28 — ` +
+      chaKhongConDirty.map((r) => `${r.violationCount} bo v2.0 có header mà 0 dòng measurement_results (${r.key})`).join(", ") +
+      ` — NGUYÊN NHÂN: đường ghi v2.0 chưa ghi được cấp component (measurement_results.pointDefId ` +
+      `NOT NULL, định nghĩa điểm đo từ Khối B chưa chạy) — xem spec §13 Đ-19 ` +
+      `(docs/superpowers/specs/2026-08-24-aoi-5-cap-xuong-song-design.md). KHÔNG phải lỗi ingest mới; ` +
+      `theo dõi tới khi Khối B đóng, repair: chạy lại sau khi measurement_point_defs được nạp.`,
     );
   }
   return run;
@@ -453,6 +545,7 @@ export function getIntegrityScanSchedulerStatus() {
     timezone: process.env.INTEGRITY_SCAN_TZ || "Asia/Ho_Chi_Minh",
     relationshipCount: INTEGRITY_RELATIONSHIPS.length,
     softCheckCount: SOFT_INTEGRITY_CHECKS.length,
+    chaKhongConCheckCount: CHA_KHONG_CON_CHECKS.length, // BG-28
     running: !!job,
     scanInFlight: running,
     lastRunAt,
