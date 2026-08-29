@@ -47,14 +47,26 @@ public class TagNamespaceSchemaPinTests
         var kinds = oneOf.Select(v => v!["properties"]!["kind"]!["const"]!.GetValue<string>())
                          .ToHashSet(StringComparer.Ordinal);
 
-        // Mọi trường của các nhánh oneOf gộp lại phải nằm trong TagSource phẳng.
+        // Mọi trường của các nhánh oneOf gộp lại phải khớp HAI CHIỀU với TagSource phẳng: đây là bài
+        // ghim DUY NHẤT của TagSource (không có hàng [InlineData] riêng vì oneOf không có một
+        // "properties" gốc để trỏ tới), nên thiếu chiều nào cũng để lọt drift không ai bắt được.
         var allBranchProps = oneOf.SelectMany(v => v!["properties"]!.AsObject().Select(kv => kv.Key))
                                   .ToHashSet(StringComparer.Ordinal);
 
         var flat = SchemaPin.RecordProps(typeof(TagSource));
-        var missing = allBranchProps.Except(flat).OrderBy(s => s, StringComparer.Ordinal).ToList();
+        var missingFromRecord = allBranchProps.Except(flat).OrderBy(s => s, StringComparer.Ordinal).ToList();
+        var missingFromSchema = flat.Except(allBranchProps).OrderBy(s => s, StringComparer.Ordinal).ToList();
 
-        Assert.True(missing.Count == 0, $"TagSource thiếu trường của nhánh oneOf: {string.Join(", ", missing)}");
+        if (missingFromRecord.Count > 0 || missingFromSchema.Count > 0)
+        {
+            var parts = new List<string>();
+            if (missingFromRecord.Count > 0)
+                parts.Add($"nhánh oneOf khai nhưng TagSource thiếu: {string.Join(", ", missingFromRecord)}");
+            if (missingFromSchema.Count > 0)
+                parts.Add($"TagSource khai nhưng không nhánh oneOf nào có: {string.Join(", ", missingFromSchema)}");
+            Assert.Fail($"TagSource: {string.Join(" | ", parts)}");
+        }
+
         Assert.Equal(5, kinds.Count); // modbus, opcua, mqtt, simulated, derived
     }
 
