@@ -57,7 +57,18 @@ public sealed class ConnectorsConfigException : Exception
 /// repaired two lines from here — and neither was caught by the build, because XML doc generation is off and
 /// nothing checks prose. A doc comment carrying a load-bearing invariant needs the invariant asserted
 /// somewhere that can go red; this one now is, by
-/// <c>EdgeWorkerConnectorsTests.NEntries_YieldNRegisteredInstances_EachKeyedByItsOwnId</c>.</para></param>
+/// <c>EdgeWorkerConnectorsTests.NEntries_YieldNRegisteredInstances_EachKeyedByItsOwnId</c>.</para>
+///
+/// <para>📎 🔴 <b>THE LIST ABOVE IS RETRACTED IN ITS FIRST BULLET, 2026-08-25 — kept verbatim and un-struck,
+/// because it is the record of a rule the owner has now reversed.</b> <i>FALSE as of the owner's ruling of
+/// 2026-08-25 on <c>docs/owner-decisions.md</c> item 65, direction A:</i> the <c>St4i.EngineApi</c> bullet —
+/// "still true for a TCP/OPC-UA entry: it registers under the KIND … deliberately, because adopting the
+/// operator's id there would move a running install's pipeline slot label and therefore its alarm
+/// <c>TargetId</c>". It no longer registers under the kind for any entry, and the slot-label/<c>TargetId</c>
+/// move that sentence gives as the reason for refusing is the cost the owner accepted in order to close the
+/// divergence. <i>STILL TRUE, and now true of BOTH bullets rather than one:</i> "THE ID IS THE REGISTRATION
+/// KEY". <b>This field is therefore no longer host-dependent</b> — which is what this whole paragraph was
+/// added to record, and the record now runs the other way.</para></param>
 /// <param name="Kind">Which connector kind's factory to construct — normalized the same way every other
 /// connector id in this codebase is (<see cref="DriverKinds.Normalize"/>), so <c>"modbus"</c>/<c>"Modbus"</c>/
 /// <c>"MODBUS"</c> all resolve identically.</param>
@@ -333,7 +344,25 @@ public static class ConnectorsConfig
     /// under EngineApi and TWO under EdgeService. All that is bought is that an operator reading the log
     /// learns which key merged their entries and that the other host would not have merged them. A reader
     /// who takes this warning as a description of a bug that has been fixed is being misled, so it says
-    /// so.</para></summary>
+    /// so.</para>
+    ///
+    /// <para>📎 🔴 <b>THE PARAGRAPH ABOVE IS RETRACTED, 2026-08-25 — kept verbatim and un-struck, because it
+    /// was exactly true for the day it described.</b> <i>FALSE as of the owner's ruling of 2026-08-25 on item
+    /// 65, direction A:</i> "the DIVERGENCE itself is untouched and item 65 stays open on it: the same
+    /// <c>connectors.json</c> still yields ONE connector under EngineApi and TWO under EdgeService".
+    /// <c>ConnectorsJsonRegistration.RegistrationKeyOf</c> lost its branch on that date and now answers
+    /// <c>DriverKinds.Normalize(entry.Id.Trim())</c> for every entry, which is byte-for-byte
+    /// <c>EdgeConnectors.RegistrationKeyOf</c>'s body. Both hosts yield TWO. <i>STILL TRUE:</i> the rest —
+    /// this method's duty is to name the key that merged the entries, and it still discharges it.</para>
+    ///
+    /// <para>🔴 <b>AND THE CONSEQUENCE FOR THIS METHOD, stated because it is a live property of the code
+    /// below and not a historical note:</b> with both shipped hosts keying on the id, <c>keyedOnId</c> is
+    /// TRUE for every production call, so the ELSE arm is unreachable from anything in <c>src/</c> today. It
+    /// is kept rather than deleted for the reason it was written derived rather than pasted — a caller may
+    /// supply its own resolver — and its text now says which day that became true instead of claiming a
+    /// divergence that has been closed. 🔴 Nothing measures that unreachability: no test asserts the arm is
+    /// dead, and if a fourth call site appears with a kind-keyed resolver this text will simply start being
+    /// emitted again, correctly.</para></summary>
     private static string DuplicateKeyWarning(ConnectorConfigEntry entry, string firstId, string key)
     {
         // Derived, never pasted: whether this host keyed on the id or on the kind is read off the KEY that
@@ -344,12 +373,18 @@ public static class ConnectorsConfig
         var why = keyedOnId
             ? $"Both entries register under the id '{key}', so what collided is the ID YOU GAVE THEM, not " +
               "their kind — give the second one a different `id` and both will be kept."
+            // 🔴 OWNER ITEM 65, DIRECTION A, 2026-08-25 — this arm's SENTENCE changed and the arm itself did
+            // not. What it used to say after the first clause was: "The other host in this product
+            // (St4i.EdgeService) keys the SAME file on the id and would keep both — one file, two hosts, two
+            // answers. That divergence is open as docs/owner-decisions.md item 65 and this message does not
+            // fix it; it only stops describing it wrongly." Every word of that was true on 2026-08-24 and
+            // FALSE on 2026-08-25: both hosts now key on the id, so there is no other host that would answer
+            // differently and no open divergence to disclaim. Retracted here rather than left to be the next
+            // false sentence a check catches.
             : $"This host registers a '{entry.Kind}' entry under its KIND ('{key}'), NOT under the `id` you " +
               $"gave it, so entries '{firstId}' and '{entry.Id}' collided even though you named them " +
-              "differently. The other host in this product (St4i.EdgeService) keys the SAME file on the id " +
-              "and would keep both — one file, two hosts, two answers. That divergence is open as " +
-              "docs/owner-decisions.md item 65 and this message does not fix it; it only stops describing " +
-              "it wrongly.";
+              "differently. Note that as of 2026-08-25 neither shipped host keys on the kind — both answer " +
+              "the entry's own `id` — so reaching this text means a caller supplied its own key resolver.";
 
         return $"connectors.json entry '{entry.Id}' (kind '{entry.Kind}') ignored — entry '{firstId}' " +
                $"earlier in the file already registers under the same key '{key}', and the first entry for " +

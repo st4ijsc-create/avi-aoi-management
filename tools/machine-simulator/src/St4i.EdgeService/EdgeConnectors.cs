@@ -112,6 +112,24 @@ namespace St4i.EdgeService;
 /// So it stays the "acceptable divergence" the E-3 review ruled it — different for a stated, checkable
 /// reason, each side pinned by its own test — and the record that predicted otherwise is corrected in
 /// blueprint §14 rather than left to be re-derived.</para>
+///
+/// <para>📎 🔴 <b>BOTH PARAGRAPHS ABOVE ARE RETRACTED, 2026-08-25 — kept verbatim and un-struck. THE
+/// DIVERGENCE IS GONE, and this host did not move.</b> <i>FALSE as of the owner's ruling of 2026-08-25 on
+/// <c>docs/owner-decisions.md</c> item 65, direction A:</i> "ONE DELIBERATE DIVERGENCE FROM EngineApi";
+/// "<c>ConnectorsJsonRegistration.RegistrationKeyOf</c> answers 'the kind' for a TCP/OPC-UA entry"; "They
+/// differ on exactly one input class"; and "neither direction of convergence is available", whose first
+/// bullet — "EngineApi adopting id-keying is the slot-label/<c>TargetId</c> migration it has twice refused,
+/// with a test pinning the refusal" — describes precisely what the owner then authorised, and the test that
+/// pinned the refusal was the witness that went red for it. EngineApi now answers
+/// <c>DriverKinds.Normalize(entry.Id.Trim())</c> for every entry, which is this method's body.
+///
+/// <i>STILL TRUE, and it is the half worth keeping:</i> the SECOND bullet — this host cannot adopt
+/// kind-keying, because that would collapse N Modbus TCP entries into one. Convergence happened in the only
+/// direction that was ever available, and it happened because an owner paid for it, not because the
+/// enumeration above was wrong. 🔴 <b>Not measured:</b> nothing in this assembly asserts that the two hosts
+/// now agree — this host's rule and EngineApi's are still two statements in two assemblies that cannot see
+/// each other, pinned by two separate tests. What changed is that they now agree; what did not change is
+/// that only a human comparing them can tell.</para>
 /// </summary>
 internal static class EdgeConnectors
 {

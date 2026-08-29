@@ -156,7 +156,13 @@ public static class ConnectorsJsonRegistration
                     "connectors.json entry '{ConnectorId}' (kind '{ConnectorKind}'): {MapWarning}",
                     entry.Id, entry.Kind, msg));
 
-            if (!registry.Register(factory, entry.SettingsJson, machineCode: entryValidated?.MachineCode))
+            // 🔴 OWNER ITEM 65, DIRECTION A, 2026-08-25 — the instance id is no longer left to default to the
+            // kind. Passing it is the half of direction A that is actually OBSERVABLE: RegistrationKeyOf
+            // alone stops ResolveEntries from collapsing two ids into one, but without this line both
+            // survivors would then register under the SAME defaulted id and the second would be refused.
+            // This is also the line that moves the pipeline slot label and therefore the alarm TargetId —
+            // the priced cost. St4i.EdgeService has passed its own RegistrationKeyOf here since E-5.
+            if (!registry.Register(factory, entry.SettingsJson, instanceId: RegistrationKeyOf(entry), machineCode: entryValidated?.MachineCode))
             {
                 logger.LogWarning(
                     "connectors.json entry '{ConnectorId}' (kind '{ConnectorKind}') failed to register (its Kind getter " +
@@ -194,6 +200,52 @@ public static class ConnectorsJsonRegistration
     /// fork <c>TheEntrysOwnIdIsNotAdoptedAsTheInstanceId_…</c> pins, and a change worth making only alongside a
     /// migration nobody has asked for. RTU has no legacy at all (nothing in <c>src/</c> could construct an RTU
     /// driver before this task), so it has nothing to fork.</para>
+    ///
+    /// <para>📎 🔴 <b>THE PARAGRAPH ABOVE IS RETRACTED, 2026-08-25 — kept verbatim and un-struck, because it
+    /// was true for eleven months and because it is the exact statement of the price the owner has now
+    /// chosen to pay.</b> <i>FALSE as of the owner's ruling of 2026-08-25 on item 65, direction A:</i> "a TCP
+    /// or OPC-UA entry still answers with its KIND". It no longer does; there is no branch left. <i>STILL
+    /// TRUE, and it is now a description of what SHIPPED rather than of what was refused:</i> adopting the id
+    /// "would move an existing install's pipeline slot label and therefore its alarm <c>TargetId</c>". That
+    /// is exactly what this change does, it is the cost the ruling was made on, and
+    /// <c>TheEntrysOwnIdIsNotAdoptedAsTheInstanceId_SoItsPipelineSlotLabelAndAlarmTargetAreUnchanged</c> —
+    /// the test that paragraph names as the fork it pins — is the witness that went RED for it.</para>
+    ///
+    /// <para>🔴 <b>THE THREE STANDING EXEMPTIONS, CHECKED BEFORE THE EDIT AND MEASURED RATHER THAN
+    /// REASONED — direction A crosses NONE of them, and the one that had to be measured is (a).</b>
+    /// <list type="bullet">
+    /// <item><b>(a) the MQTT payload — NOT crossed, and this is the measurement, not an assurance.</b>
+    /// <c>IUnsPublisher</c>'s WHOLE surface is <c>PublishReading(DeviceReading, CanonicalEnvelope)</c>,
+    /// <c>PublishNodeBirth()</c>, <c>PublishNodeDeath()</c> and <c>PublishLineState(string)</c>: there is no
+    /// alarm-publishing member at all, so no alarm reaches MQTT by any route. <c>PublishReading</c> derives
+    /// both topics from <c>reading.MachineCode</c> and <c>reading.Kind</c>
+    /// (<c>UnsTopicBuilder.BuildSemanticTopic</c>, <c>BuildSparkplugDataTopic</c>) and the Sparkplug metrics
+    /// from the <c>DeviceReading</c>'s own fields. <c>CanonicalEnvelope</c> carries
+    /// <c>(Kind, MachineCode, Path, Payload, IdempotencyKey)</c> and no connector identity. A slot label
+    /// occurs nowhere outside <c>FleetCore</c>'s health/availability code and <c>AlarmEvaluator</c>. What
+    /// moves therefore leaves the product through <c>WebhookNotification</c> (HTTP) and
+    /// <c>SqliteAuditStore</c> (rows) — never through the broker.</item>
+    /// <item><b>(b) the shape of data on the wire — NOT crossed.</b> No field is added, removed or retyped
+    /// anywhere; a <c>TargetId</c> that was <c>"modbus"</c> becomes <c>"line3-weld"</c>, which is a VALUE
+    /// moving inside an unchanged string field. Item 65 §65.1 says this in its own words — it touches (b)
+    /// "by VALUE, not by SHAPE". 🔴 Exemption (b) has never been opened, on any date, for any item, and
+    /// nothing here asks it to be.</item>
+    /// <item><b>(c) a reported OEE number — NOT crossed.</b> No draw, verdict or ratio is touched.</item>
+    /// </list>
+    /// So this ruling opens NO exemption. It is a priced cost the owner accepted, which is a different
+    /// thing, and conflating the two would put a fourth entry in a ledger that has three.</para>
+    ///
+    /// <para>🔴 <b>WHO ACTUALLY MOVES, measured — because "an existing install's TargetId moves" is true in
+    /// the alarming direction and materially narrower than it sounds.</b> <c>ConnectorsConfig.Load</c>
+    /// defaults a blank <c>id</c> to the entry's KIND. Such an entry answers <c>"Modbus"</c>/<c>"OpcUa"</c>
+    /// here, and <c>FleetCore.ResolveConnectorSlotLabel</c> maps exactly those two through
+    /// <c>LegacyConnectorSlotLabels</c> to <c>"modbus"</c>/<c>"opcua"</c> — the same labels as before.
+    /// <b>So an install that never wrote an explicit <c>id</c> does not move at all.</b> The installs that
+    /// move are precisely those that DID name their connectors — which is the same set that was suffering
+    /// the defect, and the reason item 65 §65.4 calls this the costliest species of wrongness. 🔴 That set
+    /// is NOT enumerable from this repository: no measurement here can list the <c>connectors.json</c> files
+    /// on customer disks. An uncountable set is not an empty set, and the demo tree's own emptiness is a
+    /// fact about the demo tree.</para>
     /// </summary>
     public static string RegistrationKeyOf(ConnectorConfigEntry entry)
     {
@@ -206,9 +258,11 @@ public static class ConnectorsJsonRegistration
         // Three call sites, not four; the earlier count was wrong and in the direction that reads as a
         // synchronisation obligation nobody owes.) The "then what key" half is what still differs between the
         // two hosts, deliberately — see the remarks above and EdgeConnectors' own.
-        return ConnectorsConfig.IsRtuBus(entry)
-            ? DriverKinds.Normalize(entry.Id.Trim())
-            : entry.Kind;
+        // 🔴 OWNER ITEM 65, DIRECTION A — owner's ruling of 2026-08-25. The branch is GONE: every entry now
+        // answers with its own normalised id, which is byte-for-byte what St4i.EdgeService's
+        // EdgeConnectors.RegistrationKeyOf has always answered. One file, two hosts, ONE answer. See the
+        // retraction block on this method's summary for the price and for what it did NOT touch.
+        return DriverKinds.Normalize(entry.Id.Trim());
     }
 
     /// <summary>

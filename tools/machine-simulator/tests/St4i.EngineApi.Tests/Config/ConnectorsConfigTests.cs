@@ -356,9 +356,36 @@ public sealed class ConnectorsConfigTests
     ///
     /// <para>🔴 <b>What direction C does NOT change, asserted here and not merely said:</b> the resolved
     /// list. One entry survives, exactly as before — C fixes the sentence, not the behaviour, and the
-    /// divergence stays open as item 65.</para></summary>
+    /// divergence stays open as item 65.</para>
+    ///
+    /// <para>📎 🔴 <b>THE WHOLE SUMMARY ABOVE IS SUPERSEDED, 2026-08-25 — kept verbatim and un-struck, and
+    /// the test below is the DIRECTION A witness that replaced the direction C one.</b> Direction C's test
+    /// stood here and went RED for direction A, which is the correct outcome and not a regression: it pinned
+    /// the sentence that is emitted when the key is the KIND, and after direction A this host's key is never
+    /// the kind for an entry that names itself, so that sentence is no longer produced. Its assertions are
+    /// kept verbatim here because they are the record of what direction C bought:
+    /// <c>Assert.Single(resolved)</c> · <c>Assert.Equal("line-a", resolved[0].Id)</c> ·
+    /// <c>Assert.Contains("registers a 'Modbus' entry under its KIND ('Modbus')", warning)</c> ·
+    /// <c>Assert.Contains("NOT under the `id` you gave it", warning)</c> ·
+    /// <c>Assert.Contains("St4i.EdgeService", warning)</c> · <c>Assert.Contains("item 65", warning)</c> ·
+    /// <c>Assert.Contains("does not fix it", warning)</c>.
+    /// The last two were law (3) applied to a log line — the message declaring that it had NOT fixed the
+    /// divergence. The divergence is now fixed, so a message saying otherwise would be the new false
+    /// sentence, and <c>ConnectorsConfig.DuplicateKeyWarning</c> is corrected at source rather than
+    /// here.</para>
+    ///
+    /// <para>🔴 <b>What this replacement measures:</b> the operator does the thing item 65 §65.2 describes —
+    /// two Modbus-TCP connectors in one file, two ids of their own choosing — and now gets TWO connectors on
+    /// this host, which is the number <c>St4i.EdgeService</c> has always given. That is item 65's
+    /// "one file, two hosts, two answers" becoming one answer, asserted as a COUNT rather than as a
+    /// sentence. It reddens by restoring the branch in
+    /// <c>ConnectorsJsonRegistration.RegistrationKeyOf</c>.</para>
+    ///
+    /// <para>🔴 <b>What it does not measure:</b> it calls this host's resolver only. It does not run
+    /// EdgeService's — that assembly is not referenced here — so "the same answer" is a comparison against
+    /// EdgeService's separately-pinned behaviour, not against its compiled code in this process.</para></summary>
     [Fact]
-    public void ResolveEntries_whenTheKeyIsTheKind_theWarningSaysSo_andNamesTheOtherHost_Item65DirectionC()
+    public void ResolveEntries_twoTcpEntriesWithDifferentIds_areNowBothKept_asOnTheOtherHost_Item65DirectionA()
     {
         var entries = new[]
         {
@@ -371,24 +398,44 @@ public sealed class ConnectorsConfigTests
             entries, new HashSet<string>(), warnings.Add,
             registrationKeyOf: St4i.EngineApi.Config.ConnectorsJsonRegistration.RegistrationKeyOf);
 
-        // Behaviour is untouched: the second entry is still dropped, the first still wins.
+        // 🔴 The behaviour item 65 was opened about. Before direction A this was Single(resolved).
+        Assert.Equal(2, resolved.Count);
+        Assert.Equal(new[] { "line-a", "line-b" }, resolved.Select(e => e.Id).ToArray());
+
+        // Nothing collided, so there is nothing to warn about — the operator who named two connectors gets
+        // two connectors and no message about a "kind" they never mentioned.
+        Assert.Empty(warnings);
+    }
+
+    /// <summary>🔴 <b>The de-duplication warning still fires, and still says the true thing — direction A
+    /// narrowed WHEN it fires, it did not remove it.</b> Two entries that genuinely share one id collide on
+    /// this host exactly as they do on <c>St4i.EdgeService</c>, and the message names the id.
+    ///
+    /// <para>This is the control for the test above: without it, "no warning" there could equally mean the
+    /// warning path had been broken rather than avoided.</para></summary>
+    [Fact]
+    public void ResolveEntries_twoEntriesSharingOneId_stillCollide_andTheWarningNamesTheId_Item65DirectionA()
+    {
+        var entries = new[]
+        {
+            new ConnectorConfigEntry("line-a", DriverKinds.Modbus, "{\"a\":1}"),
+            new ConnectorConfigEntry("line-a", DriverKinds.Modbus, "{\"a\":2}"),
+        };
+        var warnings = new List<string>();
+
+        var resolved = ConnectorsConfig.ResolveEntries(
+            entries, new HashSet<string>(), warnings.Add,
+            registrationKeyOf: St4i.EngineApi.Config.ConnectorsJsonRegistration.RegistrationKeyOf);
+
         Assert.Single(resolved);
-        Assert.Equal("line-a", resolved[0].Id);
 
         var warning = Assert.Single(warnings);
-        Assert.Contains("line-a", warning);
-        Assert.Contains("line-b", warning);
+        Assert.Contains("already registers under the same key 'line-a'", warning, StringComparison.Ordinal);
+        Assert.Contains("what collided is the ID YOU GAVE THEM, not", warning, StringComparison.Ordinal);
 
-        // It names the key that collided, says it was the KIND and not the id the operator chose, and says
-        // the other host would have kept both.
-        Assert.Contains($"registers a '{DriverKinds.Modbus}' entry under its KIND ('{DriverKinds.Modbus}')", warning, StringComparison.Ordinal);
-        Assert.Contains("NOT under the `id` you gave it", warning, StringComparison.Ordinal);
-        Assert.Contains("St4i.EdgeService", warning, StringComparison.Ordinal);
-
-        // 🔴 And it declares that it has not fixed the divergence, at the place the operator reads it —
-        // law (3) applied to a log line. Without this a reader could take the message for a fix report.
-        Assert.Contains("item 65", warning, StringComparison.Ordinal);
-        Assert.Contains("does not fix it", warning, StringComparison.Ordinal);
+        // 🔴 The load-bearing negative, mirroring the EdgeService test: this host no longer merges on a kind,
+        // so the word must not appear as the cause on either host any more.
+        Assert.DoesNotContain("under its KIND", warning, StringComparison.Ordinal);
     }
 
     [Fact]
