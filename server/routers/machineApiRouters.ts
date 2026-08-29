@@ -1,6 +1,7 @@
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { createHash } from "node:crypto";
 import { appError } from "../_core/appError";
 // F2 — `DbUnavailableError` tự mang `appCode: "DB_UNAVAILABLE"` (đã đủ ba bản dịch), nên
 // client dịch được mà `errorFormatter` không phải đổi dòng nào. ⚠ `name` của lớp này phải
@@ -3019,6 +3020,51 @@ const submitInspectionRouterInputSchema = z.unknown().transform((raw): SubmitIns
 });
 
 /**
+ * Pha 1C Task 2 (BG-23 ⛔, §QĐ-1C-B trong
+ * `docs/superpowers/plans/2026-08-29-aoi-pha1c-va-lo-du-lieu.md`) — khoá khử trùng
+ * CHO ĐƯỜNG v2.0, KHÔNG phụ thuộc `serialNumber`.
+ *
+ * Gốc rễ đóng ở đây: `uq_inspections_machine_serial_time` (migration 0272) là chỉ mục
+ * RIÊNG PHẦN — `WHERE ("serialNumber")::text <> ''::text`. Một serial RỖNG (hợp lệ theo
+ * hợp đồng: xem chú thích tại chỗ khai `serialNumber` trong `machineDataContractV2.ts`
+ * — "rỗng nếu máy chưa gửi", máy thật gửi bo chưa quét serial là chuyện bình thường)
+ * THOÁT HOÀN TOÀN khoá đó. Trước bản vá này `submitInspectionTreeV2` cũng KHÔNG đặt
+ * `idempotencyKey` — cơ chế khử trùng THỨ HAI (bảng `inspection_idempotency_keys`,
+ * xem `server/db/inspection.ts`) vắng mặt luôn. Đo được (transaction+rollback, vai
+ * `avi_app`): serial rỗng, ba lượt gửi giống hệt nhau → BA hàng (đúng ra phải MỘT).
+ *
+ * QĐ-1C-B đã loại hai đường sửa hiển nhiên khác: siết `.min(1)` vào hợp đồng (chặn bo
+ * thật — máy chưa quét serial là hình dạng dữ liệu THẬT) và dựa vào lưới regex (đã
+ * chứng minh xanh giả). Chốt: đường v2.0 LUÔN đặt `idempotencyKey`, dựng từ trường máy
+ * CHẮC CHẮN CÓ theo hợp đồng — `identity` (7 trường `.min(1)` BẮT BUỘC,
+ * `machineDataContractV2.ts`) + `productId` (`.min(1)` BẮT BUỘC) + `startedAt`
+ * (optional theo schema, nhưng máy thật luôn gửi — `dashboard-sample.json`). Không
+ * dùng `serialNumber`: tính chất cần chỉ là "CÙNG payload → CÙNG khoá" — nếu `startedAt`
+ * vắng mặt Ở CẢ HAI lượt của một retry (cùng thiếu), khoá vẫn khớp nhau.
+ *
+ * Băm sha256 (TẤT ĐỊNH — không `Math.random()`/`Date.now()`) để (a) luôn nằm gọn trong
+ * ràng buộc `.min(8).max(200)` của cột `idempotencyKey` (:731) bất kể độ dài các trường
+ * máy gửi, (b) không rò nguyên văn `productId`/tên trạm vào một cột audit đọc rộng rãi.
+ * Serial CÓ giá trị: cơ chế 0272 (natural-key) vẫn khớp như cũ song song — hai cơ chế
+ * chồng lên nhau, vô hại.
+ */
+export function dungKhoaKhuTrungV2(payload: MachinePayloadV2): string {
+  const { identity } = payload;
+  const phanDinh = [
+    identity.station,
+    identity.machine,
+    identity.line,
+    identity.plant,
+    identity.country,
+    identity.solutionName,
+    identity.appVersion,
+    payload.productId,
+    payload.startedAt ?? "",
+  ].join(String.fromCharCode(1)); // dấu phân cách KHÔNG thể xuất hiện trong chuỗi máy gửi — tránh đụng độ ranh giới trường
+  return `v2i-${createHash("sha256").update(phanDinh, "utf8").digest("hex")}`;
+}
+
+/**
  * Pha 1B Task 6 (BG-1) — nhánh v2.0 của `submitInspection`: dịch cây (Task 4,
  * `dichCayKetQua`) rồi ghi qua `persistInspectionAtomic` với `opts.cay` (Task 5) — CÙNG
  * một transaction header+cây, bảo đảm CẤU TRÚC (server/db/inspection.ts), không phải
@@ -3089,6 +3135,13 @@ async function submitInspectionTreeV2(
       ntfSource: cay.ntfSource ?? undefined,
       machineProductIndex: payload.machineProductIndex ?? undefined,
       summaryCounts: payload.summary,
+      // Pha 1C Task 2 (BG-23 ⛔) — LUÔN đặt, KHÔNG phụ thuộc `serialNumber` (xem
+      // doc-comment của `dungKhoaKhuTrungV2` ngay phía trên). Đây là điều khoản
+      // trung tâm đóng lỗ đếm trùng serial-rỗng: `persistInspectionAtomic` claim
+      // khoá này TRƯỚC khi ghi header (server/db/inspection.ts), nên một lượt
+      // gửi lại (retry mạng, ACK timeout) với CÙNG payload không tạo bo thứ hai
+      // dù `serialNumber` rỗng thoát khỏi chỉ mục riêng phần 0272.
+      idempotencyKey: dungKhoaKhuTrungV2(payload),
     },
     [],
     { cay, outcome: insertOutcome },
