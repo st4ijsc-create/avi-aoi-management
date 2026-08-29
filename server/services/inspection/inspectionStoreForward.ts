@@ -60,8 +60,27 @@
  *
  * BOUNDS (never grow unbounded, never drop silently): max entries + max age +
  * max bytes; on overflow the OLDEST entries are dropped — counted + warned.
- * PERMANENTLY invalid payloads (auth/validation TRPCErrors on replay) go to a
- * dead-letter JSONL file instead of poisoning the queue.
+ * PERMANENTLY invalid payloads (auth/validation TRPCErrors, Postgres 22xxx data-
+ * exception / 23xxx constraint-violation on replay — `isPermanentSubmitError`,
+ * BG-40) go to a dead-letter JSONL file instead of poisoning the queue.
+ *
+ * ── 2026-08-29 (BG-40 ⛔) — TRẦN `attempts` + BỎ CHẶN-ĐẦU-HÀNG ────────────────────
+ * Hai lỗ mà bản vá này đóng, CẢ HAI đều nằm bên trong lời hứa BOUNDS ở trên:
+ *   • `isPermanentSubmitError` TRƯỚC ĐÂY chỉ nhận `TRPCError` — mọi lỗi Postgres
+ *     (kể cả `22001`/`23505`, không-retry-được) rơi vào nhánh TẠM THỜI, khiến câu
+ *     "never drop silently" đúng NGHĨA ĐEN nhưng không đúng THỰC TẾ: mục đó không
+ *     bị vứt, nhưng cũng không bao giờ rút được — nằm chờ 72h.
+ *   • `backfillInspections` `break` thoát CẢ VÒNG khi gặp lỗi tạm thời ở ĐẦU hàng
+ *     ⇒ một mục kẹt (dù xếp đúng hay xếp nhầm) chặn đứng MỌI mục lành xếp sau nó
+ *     (đo THẬT: 1 bo độc + 4 bo lành, 20 lượt rút ⇒ `drained=0` cả 20 lượt).
+ * Sửa: (1) mở rộng phân loại sang lớp SQLSTATE 22xxx/23xxx (không đụng ranh giới
+ * kết nối/timeout — vẫn TẠM THỜI, chống mất bo khi DB chỉ chớp nháy); (2) TRẦN
+ * `INSPECTION_STORE_FORWARD_MAX_ATTEMPTS` (mặc định 20) — vượt trần ⇒ dead-letter
+ * CÓ GHI NHẬN thay vì chờ evictAged/evictBounds vứt câm; (3) vòng rút quét THEO CHỈ
+ * SỐ thay vì neo `queue[0]` — một mục tạm-thời-lỗi bị bỏ qua trong CÙNG lượt (không
+ * `break`), các mục lành phía sau vẫn được thử, ngân sách `drainBatch()` có sẵn vẫn
+ * chặn trần tổng công việc mỗi tick. Chi tiết + lưới chứng minh:
+ * `inspectionStoreForwardKhongChanDauHang.test.ts`.
  *
  * HONESTY: with the flag OFF every entry point is a no-op → behaviour is exactly
  * as before (throw on DB failure). The process/dedup functions are INJECTED so
@@ -155,6 +174,21 @@ function drainBatch(): number {
   return envInt("INSPECTION_STORE_FORWARD_DRAIN_BATCH", 50);
 }
 
+/**
+ * BG-40 việc 2 — TRẦN số lần thử phát lại TẠM THỜI trước khi một mục bị chuyển
+ * dead-letter thay vì đệm vô thời hạn. TRƯỚC bản vá này, `attempts` chỉ được GHI và
+ * ĐỌC để in log — không nơi nào so với ngưỡng; lối thoát DUY NHẤT cho một mục kẹt là
+ * `evictAged` (72h) hoặc `evictBounds` (tràn 20.000 mục/512 MiB) — cả hai đều VỨT mục,
+ * không ghi nhận lý do. Mặc định 20 lượt: với interval nền 15s lùi-mũ tới trần 5 phút
+ * (`baseIntervalMs`/`maxIntervalMs`), 20 lượt thất bại LIÊN TỤC tương ứng khoảng một
+ * đến vài giờ DB gián đoạn thật — đủ xa một "chớp nháy" (1-3 lượt) để không giết oan
+ * một mục đang chờ DB hồi phục, nhưng xa DƯỚI 72h để không phải chờ tới lúc evictAged
+ * mới biết mục đó có vấn đề thật.
+ */
+function maxSubmitAttempts(): number {
+  return envInt("INSPECTION_STORE_FORWARD_MAX_ATTEMPTS", 20);
+}
+
 /** Warn loudly when the queue depth reaches this (repeated at most every 5 min). */
 function alertDepth(): number {
   return envInt("INSPECTION_STORE_FORWARD_ALERT_DEPTH", 500);
@@ -166,7 +200,8 @@ interface WalEntry {
   /** Idempotency key (see computeSubmissionKey). */
   key: string;
   enqueuedAt: number;
-  /** Replay attempts so far (transient failures leave the entry queued). */
+  /** Số lần phát lại TẠM THỜI thất bại — vượt `maxSubmitAttempts()` ⇒ dead-letter
+   * thay vì tiếp tục đệm (BG-40 việc 2). */
   attempts: number;
   /** Approximate serialized size (for the byte bound). */
   bytes: number;
@@ -299,13 +334,54 @@ const PERMANENT_TRPC_CODES = new Set([
 ]);
 
 /**
+ * ── 2026-08-29 (BG-40 ⛔) — LỚP SQLSTATE KHÔNG-RETRY-ĐƯỢC ─────────────────────────
+ * TRƯỚC bản vá này, `isPermanentSubmitError` chỉ nhận diện `TRPCError` — MỌI lỗi
+ * Postgres (kể cả `22001` chuỗi quá dài, `23505` vi phạm ràng buộc) rơi vào nhánh
+ * TRANSIENT ⇒ nằm đệm mãi mãi, máy nhận `{success:true, queued:true}` và không bao
+ * giờ gửi lại. Đo THẬT trên mã cũ (1 bo độc code=22001 + 4 bo lành, 20 lượt rút):
+ * `drained=0` ở CẢ 20 lượt — 4 bo lành không được thử lấy một lần (xem
+ * `inspectionStoreForwardKhongChanDauHang.test.ts`).
+ *
+ * Hai lớp SQLSTATE dưới đây KHÔNG BAO GIỜ thành công khi thử lại NGUYÊN VĂN payload:
+ *   22xxx — data exception (chuỗi quá dài, sai kiểu, tràn số…)
+ *   23xxx — integrity constraint violation (unique/FK/not-null/check…)
+ * ⚠ CHỐNG SIẾT QUÁ (mệnh đề 2, task-1-brief.md): lỗi kết nối/timeout dùng SQLSTATE
+ * lớp KHÁC hẳn — 08xxx (connection exception), 53xxx (insufficient resources),
+ * 57Pxx (admin shutdown / cannot connect now) — hoặc hoàn toàn KHÔNG có SQLSTATE
+ * (`ECONNREFUSED`/`ETIMEDOUT` là mã lỗi của Node, không phải Postgres). Không cái
+ * nào khớp `/^(22|23)/` ⇒ vẫn TRANSIENT. Xếp nhầm một kết nối chớp nháy thành "vĩnh
+ * viễn" là MẤT BO — đúng thứ WAL này sinh ra để chống, nên biên này KHÔNG được nới.
+ */
+const PERMANENT_SQLSTATE_PREFIX = /^(22|23)\d{3}$/;
+
+/**
+ * Đi bộ err → err.cause → ... tìm SQLSTATE lớp 22xxx/23xxx. postgres.js đặt `code`
+ * THẲNG trên lỗi driver thô; drizzle-orm ≥0.44 bọc trong `DrizzleQueryError` (message
+ * bắt đầu "Failed query: ...") mang mã thật ở `.cause` — CÙNG kiểu đi bộ với
+ * `isUniqueViolation`/`isMissingTable`/`isMissingColumn` (`server/_core/dbErrors.ts`),
+ * không chế lại một lần nữa.
+ */
+function isPermanentDbSqlState(err: unknown): boolean {
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current; depth++) {
+    if (typeof current !== "object") break;
+    const e = current as { code?: unknown; cause?: unknown };
+    if (typeof e.code === "string" && PERMANENT_SQLSTATE_PREFIX.test(e.code)) return true;
+    current = e.cause;
+  }
+  return false;
+}
+
+/**
  * A PERMANENT error means retrying the same payload can never succeed
- * (bad credentials / validation) — it must be surfaced to the caller (live
- * path) or dead-lettered (replay), never left in the queue. Everything else
- * (generic DB/network errors, TRPC INTERNAL_SERVER_ERROR) is TRANSIENT.
+ * (bad credentials / validation / Postgres 22xxx data-exception / 23xxx
+ * constraint-violation) — it must be surfaced to the caller (live path) or
+ * dead-lettered (replay), never left in the queue. Everything else (connection
+ * errors, timeouts, TRPC INTERNAL_SERVER_ERROR) is TRANSIENT.
  */
 export function isPermanentSubmitError(err: unknown): boolean {
-  return err instanceof TRPCError && PERMANENT_TRPC_CODES.has(err.code);
+  if (err instanceof TRPCError && PERMANENT_TRPC_CODES.has(err.code)) return true;
+  return isPermanentDbSqlState(err);
 }
 
 // ── file mirror (append-only JSONL rewrite; memory is the truth) ─────────────
@@ -516,12 +592,35 @@ export async function backfillInspections(): Promise<{
   let deadLettered = 0;
   try {
     let budget = drainBatch();
-    while (queue.length > 0 && budget > 0) {
-      const entry = queue[0];
+    // ── BG-40 việc 3 — quét THEO CHỈ SỐ, không neo cứng vào queue[0] ─────────────
+    // TRƯỚC bản vá: một mục TẠM THỜI ở đầu hàng `break` thoát CẢ VÒNG — đo THẬT (1 bo
+    // độc + 4 bo lành, 20 lượt rút) cho `drained=0` cả 20 lượt, 4 bo lành không được
+    // thử lấy một lần (xem `inspectionStoreForwardKhongChanDauHang.test.ts`).
+    // Mục thành công/dead-letter bị `removeAt` splice khỏi mảng (mục kế thừa TỰ trượt
+    // vào đúng chỉ số `i`, KHÔNG tăng `i`); mục còn tạm-thời-lỗi ở lại tại chỗ và `i`
+    // tăng lên để thử mục kế tiếp NGAY trong cùng lượt — thay vì chờ tick sau.
+    // `budget` (=`drainBatch()`, đã có sẵn cho mục đích "bounded work per attempt")
+    // vẫn giảm ở MỌI nhánh (thành công, dead-letter, HAY tạm-thời) nên tổng số lần
+    // gọi `processFn` mỗi lượt bị chặn trần — kể cả khi CẢ HÀNG đang lỗi tạm thời
+    // (DB sập thật): tối đa `drainBatch()` (mặc định 50) lần gọi mỗi tick, KHÔNG quét
+    // vô hạn toàn bộ hàng đợi mỗi lần — đây là câu trả lời cho cảnh báo "lãng phí" ở
+    // task-1-brief.md mục 3: phí tổn bị chặn trần bởi đúng ngân sách đã tồn tại sẵn
+    // cho mục đích khác, không phải cơ chế mới; và interval nền lùi-mũ (workerTick)
+    // càng làm phí tổn đó thưa dần khi KHÔNG mục nào rút được nhiều tick liên tiếp.
+    //
+    // (b) DB existence dedupe vẫn `break` khi CHÍNH lời gọi `dedupFn` (không phải
+    // `processFn`) ném lỗi — đó là phép kiểm tra tồn tại chạm DB TRỰC TIẾP, nên lỗi ở
+    // đây là tín hiệu "kết nối DB tự nó đang hỏng" DÙNG CHUNG cho mọi mục còn lại
+    // trong tick này (không phải lỗi riêng của một payload) — dừng sớm ở đây vẫn là
+    // tối ưu hợp lý, KHÔNG phải chặn-đầu-hàng (mục nó chặn không phải "mục lành xếp
+    // sau", mà là chính DB không trả lời được).
+    let i = 0;
+    while (i < queue.length && budget > 0) {
+      const entry = queue[i];
 
       // (a) ledger dedupe — live path already persisted it (or a prior replay did).
       if (appliedKeys.has(entry.key)) {
-        removeHead(entry);
+        removeAt(i, entry);
         deduped += 1;
         continue;
       }
@@ -537,7 +636,7 @@ export async function backfillInspections(): Promise<{
       }
       if (exists) {
         markSubmissionApplied(entry.key);
-        removeHead(entry);
+        removeAt(i, entry);
         deduped += 1;
         continue;
       }
@@ -547,23 +646,48 @@ export async function backfillInspections(): Promise<{
       } catch (err) {
         if (isPermanentSubmitError(err)) {
           await deadLetter(entry, err);
-          removeHead(entry);
+          removeAt(i, entry);
           deadLettered += 1;
           budget -= 1;
           continue;
         }
-        // transient → DB still down. Leave queued (bump attempts) and stop.
+
         entry.attempts += 1;
         fileDirty = true;
+
+        // BG-40 việc 2 — vượt TRẦN số lần thử ⇒ dead-letter CÓ GHI NHẬN, không tiếp
+        // tục đệm vô thời hạn chờ evictAged (72h)/evictBounds (tràn) vứt câm.
+        if (entry.attempts >= maxSubmitAttempts()) {
+          console.warn(
+            `[InspectionSF] mục VƯỢT TRẦN ${maxSubmitAttempts()} lần thử (key=${entry.key.slice(0, 12)}…, ` +
+              `serial=${entry.payload.serialNumber}) — chuyển dead-letter thay vì đệm vô thời hạn`,
+          );
+          await deadLetter(
+            entry,
+            new Error(
+              `vượt trần ${maxSubmitAttempts()} lần thử phát lại — lỗi gần nhất: ${(err as Error)?.message || err}`,
+            ),
+          );
+          removeAt(i, entry);
+          deadLettered += 1;
+          budget -= 1;
+          continue;
+        }
+
+        // Vẫn tạm thời và CHƯA vượt trần → giữ nguyên trong hàng đợi, nhưng KHÔNG
+        // `break` cả vòng (BG-40 việc 3): thử mục kế tiếp trong CÙNG lượt rút thay vì
+        // để một mục lỗi (thật hoặc xếp nhầm) chặn đứng mọi mục lành xếp sau nó.
         console.warn(
           `[InspectionSF] backfill still failing (attempt ${entry.attempts}, key=${entry.key.slice(0, 12)}…): ` +
-            `${(err as Error)?.message || err} — leaving buffered`,
+            `${(err as Error)?.message || err} — giữ trong hàng đợi, thử mục kế tiếp (không chặn đầu hàng)`,
         );
-        break;
+        budget -= 1;
+        i += 1;
+        continue;
       }
 
       markSubmissionApplied(entry.key);
-      removeHead(entry);
+      removeAt(i, entry);
       drained += 1;
       budget -= 1;
     }
@@ -587,9 +711,14 @@ export async function backfillInspections(): Promise<{
   return { enabled: true, drained, deduped, deadLettered, remaining: queue.length };
 }
 
-function removeHead(expected: WalEntry): void {
-  if (queue[0] !== expected) return;
-  queue.shift();
+/**
+ * Gỡ mục tại chỉ số `i` khỏi hàng đợi (BG-40 việc 3 — thay `removeHead`/`queue.shift()`
+ * vì vòng rút nay quét theo chỉ số, không neo cứng vào đầu mảng). `splice` giữ nguyên
+ * thứ tự tương đối của các mục còn lại — mục kế thừa tự trượt vào đúng chỉ số `i`.
+ */
+function removeAt(i: number, expected: WalEntry): void {
+  if (queue[i] !== expected) return; // phòng thủ — không xảy ra khi rút đơn luồng
+  queue.splice(i, 1);
   queuedKeys.delete(expected.key);
   queueBytes -= expected.bytes;
   fileDirty = true;
@@ -686,6 +815,8 @@ export interface InspectionStoreForwardStatus extends InspectionStoreForwardMetr
   maxEntries: number;
   maxAgeMs: number;
   maxBytes: number;
+  /** BG-40 việc 2 — trần số lần thử phát lại trước dead-letter. */
+  maxAttempts: number;
   walFile: string;
   deadLetterFile: string;
 }
@@ -698,6 +829,7 @@ export function getInspectionStoreForwardStatus(): InspectionStoreForwardStatus 
     maxEntries: maxEntries(),
     maxAgeMs: maxAgeMs(),
     maxBytes: maxBytes(),
+    maxAttempts: maxSubmitAttempts(),
     walFile: walFile(),
     deadLetterFile: deadLetterFile(),
     ...metrics,
