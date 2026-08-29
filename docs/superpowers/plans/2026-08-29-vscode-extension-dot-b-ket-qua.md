@@ -91,3 +91,41 @@ tệp** nay bị bắt — trước đây lọt).
 2. Siết census: quét cả tập được **gộp vào bundle**, không chỉ `src/`.
 3. Khi thêm điểm ghi đĩa **đầu tiên**, **SỬA** census thành "đúng MỘT lần tại đường dẫn X" —
    **không được xoá**.
+
+---
+
+## Cập nhật 2026-08-29 (chiều) — ba điều kiện trước Đợt C đã ĐÓNG
+
+**1. Migration đã chạy qua đúng runner.** Cổng 3000 dừng, `0341` + `0342` chạy bằng vai owner
+`aoi` (runner mặc định dùng `avi_app`, không có quyền DDL ⇒ `42501`; đặt biến cho riêng lệnh đó,
+**không sửa `.env`**). Cả hai vào sổ `__applied_migrations` với `success=true`; enum có đủ
+`bi_tu_choi_ghi | ap_mot_phan`.
+⚠ Lượt chạy báo **9 thành công / 4 thất bại** — bốn cái là `0057`, `0066`, `0125`, `0234`, tức
+~300 migration TRƯỚC Đợt B, thuộc đúng lớp runner tự khai là bình thường ("may be normal if
+tables/columns already exist"). Không liên quan việc này; ghi ra chứ không giấu.
+
+**2. ★★★ Bản vá T6 nay CHẠY THẬT, và được chứng minh bằng hậu quả.** Build lại + khởi động server
+(`dist` có `ap_mot_phan`), rồi dựng LẠI đúng kịch bản đã bắt được lời nói dối:
+
+| | Trước vá (đo sáng) | Sau vá (đo chiều) |
+|---|---|---|
+| `status` trả về | **`executed`** ← nói dối | **`bi_tu_choi_ghi`** ✓ |
+| `note` | `GIT_STATUS_FAILED` | `GIT_STATUS_FAILED` |
+| Cột `status` trong CSDL | **`executed`** cạnh note từ chối | **`bi_tu_choi_ghi`** cạnh note từ chối |
+| Đĩa | không đổi | không đổi |
+
+Hai trường trong cùng một hàng **hết mâu thuẫn**. Đây là lần đầu bản vá được chứng minh bằng
+hậu quả trên máy chủ thật, chứ không bằng lưới.
+
+**3. Census đã siết: TẬP QUÉT = TẬP VÀO BUNDLE.** Trước đó census quét `src/`, trong khi esbuild
+còn gộp `shared/aiCodingLoop.ts` (nhập cố ý để không nhân bản vị từ) ⇒ một đường ghi đĩa nấp
+trong tệp `shared/` sẽ **lọt qua toàn bộ hàng rào**. Nay khai `TEP_NGOAI_CAY_VAO_BUNDLE` và quét
+cả tập đó, **kèm một ca canh chính danh sách ấy** (đọc `src/` tìm mọi import vượt `../..`, đỏ nếu
+có tệp chưa khai — vì quên khai là tự chọc mù mình một cách im lặng).
+Đột biến chứng minh: giấu `fs.writeFileSync` vào `shared/aiCodingLoop.ts` ⇒ census **ĐỎ và nêu
+đúng tên tệp**; census cũ sẽ xanh. Lưới extension **128**, `ext:check` 0 lỗi.
+
+**Còn mở sang Đợt C:** lỗ bằng-chứng URI của Task 3 (không stub nào chứng minh được hành vi mã
+hoá URI thật của VSCode — phải là phép kiểm live tường minh) · `ap_mot_phan` chưa có lưới
+vòng-thật (cần mối tiêm lỗi hệ tệp giữa lô) · chưa mở bảng chat trong cửa sổ VSCode thật với
+phiên đăng nhập.
