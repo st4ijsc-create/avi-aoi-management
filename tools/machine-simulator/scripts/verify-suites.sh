@@ -2722,7 +2722,25 @@ EXPECT_CONFORMANCE=24
 # one byte there. The per-class convention is presently COMPLETE — the twenty-first class that forgets
 # does not exist yet. What option A buys is therefore a CAPABILITY closed, not a leak stopped, exactly
 # as item 72 words it. Anyone tempted to write this up as a leak fixed should read this block first.
-EXPECT_EDGECORE=1296
+# 🔴 TASK CC-1 (2026-08-25) raises EXPECT_EDGECORE 1296 -> 1302 (+6) and EXPECT_ENGINEAPI 1454 -> 1455
+# (+1). EXPECT_ABSTRACTIONS, EXPECT_CONFORMANCE and EXPECT_EDGESERVICE do NOT move, and EdgeService not
+# moving is EVIDENCE rather than a convenience: owner item 65's direction A was implemented on EngineApi
+# ONLY, so the host that already keyed on the entry id has nothing to change, and its 52 tests -- including
+# the one pinning ITS answer -- stay green on both sides of the change. Grand total 2987 -> 2994.
+#
+#   +6  tests/St4i.EdgeCore.Tests/SimulatorFactoryIotGatewayTests.cs  (NEW FILE) -- owner item 49 half B.
+#       Five reddened by removing the one-line "IOT_GATEWAY" arm from SimulatorFactory.Create; the sixth
+#       (the DeviceClass.Iot pairing) is asserted GREEN on purpose and holds on BOTH sides, which is what
+#       makes the other five mean something. 🔴 The control ratio is 5-flip/1-hold and NOT 4/1: DeviceClass
+#       has THREE members, so the ruling moves TWO pairings (Automation and AoiAvi), and item 49 prices
+#       only the first. See docs/owner-decisions.md §49.7.3.
+#   +1  tests/St4i.EngineApi.Tests/Config/  -- owner item 65 direction A, net of THREE edits: one test
+#       RETIRED (TheRegistrationKey_IsTheKindForEveryPreD7aEntry_..., whose assertions are kept verbatim in
+#       a comment because they are the record of the rule the owner reversed) and TWO added
+#       (TheRegistrationKey_IsNowTheEntrysOwnId_... and ResolveEntries_twoEntriesSharingOneId_...).
+#       -1 +2 = +1. Six EngineApi tests went RED before they were re-pinned, and one of them is the witness
+#       item 65 §65.5 says could never exist; the red run is recorded in §65.7.4 rather than hidden.
+EXPECT_EDGECORE=1302
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4414,7 +4432,9 @@ EXPECT_EDGESERVICE=52
 # 🔴 Task CB-1 raises this 1451 -> 1454 (+3): StructuralLeafRedirectTests, the item-72 option-A witness
 # for the three leaves declared in St4i.EngineApi. See the block above EXPECT_EDGECORE for the control
 # pair, the per-file breakdown and the measurement that says this closes a capability, not a leak.
-EXPECT_ENGINEAPI=1454
+# 🔴 Task CC-1 raises this 1454 -> 1455 (+1), owner item 65 direction A. See the block above
+# EXPECT_EDGECORE for the -1/+2 breakdown, the six-test red run and the two-host control pair.
+EXPECT_ENGINEAPI=1455
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -6127,7 +6147,37 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #
 # The baseline cfcfae42 is STILL not moved. The corpus grew by ONE file — StructuralLeafRedirectTests.cs,
 # the only file this task added: 561 -> 562 *.cs.
-EXPECT_NEW_DOC_ABSOLUTES=632
+# 🔴 EXPECT_NEW_DOC_ABSOLUTES: 632 -> 663 (+31), CC-1, 2026-08-25 (owner items 49 half B, 65 direction A,
+# 71). MEASURED AFTER the prose was written and RE-MEASURED after it was corrected, and the correction is
+# the point of this block rather than a footnote.
+#
+# 🔴 THIS CHECK CAUGHT A FALSE SENTENCE OF THIS TASK'S OWN, which is the third consecutive task it has done
+# that to. The draft carried, in SimulatorFactoryIotGatewayTests' class comment:
+#
+#     "Automation is the pairing item 49 §49.5(2) names, and it is the only pairing that moves."
+#
+# It is FALSE. DeviceClass has THREE members, so IOT_GATEWAY had three prior answers, and TWO of them move:
+# Automation (ScrewdriveSim -> IotSensorSim, the pairing item 49 prices) and AoiAvi (AoiInspectorSim ->
+# IotSensorSim, which item 49 never mentions anywhere -- verified by reading every IOT_GATEWAY occurrence in
+# its body: each one pairs the type with Automation or with Iot). Only Iot holds. The false sentence was
+# found by being forced to re-read each new absolute claim rather than by a test, fixed AT SOURCE, and the
+# finding it exposed -- a SECOND MQTT payload that entered the 2026-08-25 ruling UNPRICED -- is now recorded
+# in docs/owner-decisions.md §49.7.3 with its own witness. The control ratio in this file's EXPECT_EDGECORE
+# block moved 4/1 -> 5/1 for the same reason.
+#
+# The other new claims were each read against the tree and stand. The load-bearing ones, named so a later
+# reader can re-check them rather than trust this line: "exemption (b) has never been opened, on any date,
+# for any item" (docs/owner-decisions.md states it in two independent places, §70.6.1 and §71.7.2, and the
+# new consolidated exemption-history section collects both); "IUnsPublisher has no alarm-publishing member,
+# so no alarm reaches MQTT by any route" (its whole surface is four methods, read at 1a565b1d); "an install
+# that never wrote an explicit id does not move at all" (ConnectorsConfig.Load defaults a blank id to the
+# KIND, and FleetCore.LegacyConnectorSlotLabels maps exactly Modbus/OpcUa back to their old labels); and
+# "byte-for-byte EdgeConnectors.RegistrationKeyOf's body" (both are now
+# `return DriverKinds.Normalize(entry.Id.Trim());`).
+#
+# The baseline cfcfae42 is STILL not moved. The corpus grew by ONE file --
+# SimulatorFactoryIotGatewayTests.cs, the only file this task added: 562 -> 563 *.cs.
+EXPECT_NEW_DOC_ABSOLUTES=663
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

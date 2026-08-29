@@ -43,7 +43,75 @@ public static class SimulatorFactory
     /// <see cref="IotSensorSim"/> only through the <see cref="DeviceClass.Iot"/> fallback, so a descriptor
     /// carrying that type with <see cref="DeviceClass.Automation"/> is built as a screwdriver instead.
     /// (<c>OnboardingFleetJoin</c> does pair <c>IOT_GATEWAY</c> with <see cref="DeviceClass.Iot"/>, so the
-    /// onboarding path lands correctly; a hand-built or file-authored descriptor need not.)</para></param>
+    /// onboarding path lands correctly; a hand-built or file-authored descriptor need not.)</para>
+    ///
+    /// <para>📎 🔴 <b>THE SENTENCE ABOVE IS RETRACTED IN ITS FACTUAL HALF, 2026-08-25 — kept verbatim and
+    /// un-struck, because it was exactly true when written and is the record of what half B changed.</b>
+    /// <i>FALSE as of the owner's ruling of 2026-08-25 (item 49, half B):</i> "no case here", and therefore
+    /// "a descriptor carrying that type with <see cref="DeviceClass.Automation"/> is built as a screwdriver
+    /// instead". There IS a case here now, immediately below <c>IOT_SENSOR</c>, and such a descriptor is
+    /// built as an <see cref="IotSensorSim"/>. <i>STILL TRUE and load-bearing:</i> the parenthesis — the
+    /// onboarding path was already landing correctly, so the population this ruling moves is precisely the
+    /// hand-built and file-authored descriptors, and NOTHING here changes that.</para>
+    ///
+    /// <para>🔴 <b>THIS CROSSES THE FIRST OF THE THREE STANDING EXEMPTIONS — "the MQTT payload" — WITH
+    /// PERMISSION, AND THE PERMISSION'S SCOPE IS ONE HALF OF ONE ITEM.</b> Granted 2026-08-25, FOR ITEM 49
+    /// HALF B ONLY.
+    /// <list type="bullet">
+    /// <item><b>The reason, and it is the ruling's own and not a borrowed one:</b> the owner chose from a
+    /// list on which THIS OPTION ALREADY CARRIED THIS PRICE. Item 49 §49.5(2) states it in the owner's
+    /// reading: a descriptor carrying <c>IOT_GATEWAY</c> + <see cref="DeviceClass.Automation"/> "is a
+    /// <c>ScrewdriveSim</c> today and an <c>IotSensorSim</c> after the fix — different metric, different
+    /// unit, different verdict: that machine's MQTT payload changes outright". The price was the datum the
+    /// choice was made on, so the price is the reason. 🔴 It is <b>NOT</b> the 2026-08-24 GROUP A reason
+    /// ("the numbers that exist are assumptions used for testing"); that ruling was about NUMBERS, this one
+    /// is about a machine changing CLASS, and borrowing its words here would file this opening under a
+    /// justification nobody gave for it.</item>
+    /// <item><b>What it does NOT open:</b> not exemption (b), the shape of data on the wire — which has
+    /// never been opened, on any date, for any item; not exemption (c), a reported OEE number; and not this
+    /// same exemption (a) for any OTHER item. Item 49's HALF A remains closed and is re-measured below.</item>
+    /// </list>
+    /// <b>What the payload actually becomes, measured at 1a565b1d rather than described:</b>
+    /// <see cref="ScrewdriveSim"/> emits <c>ReadingKind.ProcessResult</c> with two <c>Metrics</c>
+    /// (<c>torque</c>/Nm, <c>angle</c>/deg), one waveform, and a Pass/Warn/Fail <c>Verdict</c>;
+    /// <see cref="IotSensorSim"/> emits <c>ReadingKind.Telemetry</c> with ZERO metrics, ZERO waveforms,
+    /// three <c>Telemetry</c> channels (<c>temperature</c>/C, <c>humidity</c>/%RH, <c>current</c>/A) and
+    /// <c>Verdict.Skip</c>. Not one metric name, unit or verdict survives the change — "changes outright"
+    /// is a measurement here, not an adjective.</para>
+    ///
+    /// <para>🔴 <b>AND A SECOND PAYLOAD MOVES THAT ITEM 49 NEVER NAMES — found by enumerating
+    /// <see cref="DeviceClass"/> instead of trusting the item's one example.</b> That enum has THREE
+    /// members, so <c>IOT_GATEWAY</c> had three prior answers and TWO of them change:
+    /// <c>Automation</c> (the priced one, above) and <b><c>AoiAvi</c></b>, which was an
+    /// <see cref="AoiInspectorSim"/> — <c>ReadingKind.Inspection</c>, a <c>Measurements</c> array, a
+    /// Pass/Fail verdict, and an <c>aoi_inspection</c> record on disk. Item 49 §49.5(2) prices half B on
+    /// the screwdriver pairing ALONE, so this second change entered the 2026-08-25 ruling UNPRICED, and
+    /// the unpaid <c>Ensure</c> migration noted below applies to it identically. Only the <c>Iot</c>
+    /// pairing holds. Reported in <c>docs/owner-decisions.md</c> §49.7.3 and witnessed by
+    /// <c>SimulatorFactoryIotGatewayTests.AnIotGatewayOnTheAoiAviDeviceClass_AlsoMoves_…</c>.</para>
+    ///
+    /// <para>🔴 <b>AND THE SET THAT MOVES CANNOT BE COUNTED, which is half the truth and the half that gets
+    /// dropped.</b> Because <c>OnboardingFleetJoin</c> already pairs <c>IOT_GATEWAY</c> with
+    /// <see cref="DeviceClass.Iot"/>, no machine reaching this factory through onboarding is affected. The
+    /// affected population is exactly the HAND-BUILT and FILE-AUTHORED descriptors, and no measurement in
+    /// this repository can enumerate that population on a customer's disk — item 49 §49.5(2) says so and
+    /// this task did not find a way around it. <b>An uncountable set is not an empty set.</b> The demo
+    /// roster in <c>fleet.json</c> contains no such descriptor, and that is a fact about this repository,
+    /// not about the installed base.</para>
+    ///
+    /// <para>🔴 <b>A COST THIS RULING WAS NOT PRICED ON, found by measuring rather than by reasoning, and
+    /// stated here because this is where someone will come looking.</b> An <c>IOT_GATEWAY</c> +
+    /// <see cref="DeviceClass.Automation"/> machine that was ALREADY started before this change has a
+    /// <c>screw_program</c> record persisted under its own code. <see cref="MachineConfigStore.Ensure"/>
+    /// refuses to re-ensure one machine under a second kind — it throws
+    /// <see cref="InvalidOperationException"/> ("cannot re-ensure") — so on the FIRST start after this
+    /// change that machine's <see cref="IotSensorSim"/> constructor throws where the old
+    /// <see cref="ScrewdriveSim"/> did not. This is a MIGRATION cost, it is not the MQTT-payload exemption,
+    /// and it is not covered by the 2026-08-25 permission, which was about the payload. It is reported in
+    /// <c>docs/owner-decisions.md</c> §49.7 rather than repaired here, because repairing it means either
+    /// deleting a persisted operator record or teaching <c>Ensure</c> to re-key one — and both are
+    /// decisions, not work. There is a witness for it in
+    /// <c>SimulatorFactoryIotGatewayTests</c>.</para></param>
     /// <param name="seed">Forwarded unchanged to whichever simulator is built and used only by
     /// <c>SimulatorBase.Rng</c>; see that constructor's own <c>seed</c> note for the determinism it
     /// carries. Nothing here derives it from <paramref name="d"/>, so two machines handed the same value
@@ -96,6 +164,13 @@ public static class SimulatorFactory
             "LEAK_TEST" => new LeakTestSim(d, seed),
             "FUNCTIONAL_TEST" => new FunctionalTestSim(d, seed),
             "IOT_SENSOR" => new IotSensorSim(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
+            // 🔴 OWNER ITEM 49, HALF B — owner's ruling of 2026-08-25. This one line is the whole change,
+            // and it CROSSES THE MQTT-PAYLOAD EXEMPTION. See the retraction block on this method's `d`
+            // parameter for the scope, the reason and the price.
+            "IOT_GATEWAY" => new IotSensorSim(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
+            // 🔴 OWNER ITEM 49, HALF B — owner's ruling of 2026-08-25. This one line is the whole change,
+            // and it CROSSES THE MQTT-PAYLOAD EXEMPTION. See the retraction block on this method's `d`
+            // parameter for the scope, the reason and the price.
             "AOI" or "AOI_AVI" or "AVI" => new AoiInspectorSim(d, seed, configStore: configStore, productCodeProvider: productCodeProvider, productConfigStore: productConfigStore),
             _ => FallbackByDeviceClass(d, seed, configStore, productCodeProvider, cycleRateMultiplier, productConfigStore),
         };

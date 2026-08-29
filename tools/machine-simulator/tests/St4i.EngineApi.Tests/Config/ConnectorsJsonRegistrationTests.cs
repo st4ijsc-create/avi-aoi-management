@@ -59,11 +59,15 @@ public sealed class ConnectorsJsonRegistrationTests
         """;
 
     [Fact]
-    public void AModbusEntry_RegistersUnderItsKind_AndIsBoundToTheMachineItsSettingsDeclare()
+    public void AModbusEntry_RegistersUnderItsOwnId_AndIsBoundToTheMachineItsSettingsDeclare()
     {
         // 🔴 The assertion the surviving mutation exposed. Registering is not enough: an UNBOUND connector
         // looks identical to a working one until somebody writes to it, at which point FleetHost falls back
         // to the pre-D-1 kind rule and a second same-kind machine makes both of them ambiguous.
+        // 🔴 OWNER ITEM 65, DIRECTION A, 2026-08-25 — this test's NAME and its two key assertions changed.
+        // It read `RegistersUnderItsKind` and asserted `RegisteredIds == [DriverKinds.Modbus]`; the entry
+        // carries the explicit id "line3-weld" and now registers under it. The MACHINE BINDING half is
+        // untouched and is why the rest of the test is unchanged.
         var registry = new ConnectorRegistry();
 
         var registered = ConnectorsJsonRegistration.RegisterAll(
@@ -71,16 +75,17 @@ public sealed class ConnectorsJsonRegistrationTests
             Modbus, OpcUa, registry, Logger);
 
         Assert.Equal(1, registered);
-        Assert.Equal(new[] { DriverKinds.Modbus }, registry.RegisteredIds);
+        Assert.Equal(new[] { "line3-weld" }, registry.RegisteredIds);
         Assert.True(registry.TryGetInstanceIdForMachine("CJ-MODBUS-01", out var instanceId));
-        Assert.Equal(DriverKinds.Modbus, instanceId);
+        Assert.Equal("line3-weld", instanceId);
     }
 
     [Fact]
-    public void AnOpcUaEntry_RegistersUnderItsKind_AndIsBoundToTheMachineItsSettingsDeclare()
+    public void AnOpcUaEntry_RegistersUnderItsOwnId_AndIsBoundToTheMachineItsSettingsDeclare()
     {
         // Both dispatch arms, not one plus an inference that the other "is the same code" — that inference
         // is exactly what Đợt B's review round 1 found to be false for the two halves of a symmetric pair.
+        // 🔴 Renamed and re-pinned by owner item 65 direction A, 2026-08-25; see the Modbus twin above.
         var registry = new ConnectorRegistry();
 
         var registered = ConnectorsJsonRegistration.RegisterAll(
@@ -88,26 +93,83 @@ public sealed class ConnectorsJsonRegistrationTests
             Modbus, OpcUa, registry, Logger);
 
         Assert.Equal(1, registered);
-        Assert.Equal(new[] { DriverKinds.OpcUa }, registry.RegisteredIds);
+        Assert.Equal(new[] { "cell-7" }, registry.RegisteredIds);
         Assert.True(registry.TryGetInstanceIdForMachine("CJ-OPCUA-01", out var instanceId));
-        Assert.Equal(DriverKinds.OpcUa, instanceId);
+        Assert.Equal("cell-7", instanceId);
     }
 
+    /// <summary>🔴 <b>WITNESS for owner item 65, DIRECTION A — owner's ruling of 2026-08-25. This test is the
+    /// INVERSION of the one that pinned the opposite answer for eleven months, and the old one's text is kept
+    /// here verbatim because it is the record of what was bought.</b>
+    ///
+    /// <para><b>The test that stood here, word for word, including its name:</b>
+    /// <c>TheEntrysOwnIdIsNotAdoptedAsTheInstanceId_SoItsPipelineSlotLabelAndAlarmTargetAreUnchanged</c> —
+    /// <i>"A deliberate D-1 decision, pinned so it cannot drift silently: `id` in connectors.json is
+    /// documented as naming-for-warnings only. Adopting it would move every such connector's pipeline slot
+    /// label — and therefore the TargetId its degraded/down alarms are keyed on — for no gain this task
+    /// needs. Promoting it is D-7's file-format work; until then this test is what says so."</i> — asserting
+    /// <c>RegisteredIds == [DriverKinds.Modbus]</c> and <c>DoesNotContain("line3-weld")</c>.</para>
+    ///
+    /// <para><b>Every word of that was true, and the owner has now bought the thing it priced.</b> The gain
+    /// it says does not exist is item 65's subject: one <c>connectors.json</c> answering differently on two
+    /// hosts. This test asserts the new answer AND, in its last line, the cost — the instance id an install's
+    /// alarms are keyed on is now the operator's own string. 🔴 It reddens by restoring the branch in
+    /// <c>ConnectorsJsonRegistration.RegistrationKeyOf</c>, which is the control this pair was measured
+    /// with.</para>
+    ///
+    /// <para>🔴 <b>What it does not measure:</b> it does not read a <c>SqliteAuditStore</c> row or a
+    /// <c>WebhookNotification</c>. It asserts the id at the registry, which is the input
+    /// <c>FleetCore.ResolveConnectorSlotLabel</c> and then <c>AlarmEvaluator</c> derive that
+    /// <c>TargetId</c> from. Nothing here proves what a persisted history row from before this change
+    /// contains — item 65 §65.4's point is precisely that it will not match, and no test in this repository
+    /// can see a customer's audit database.</para></summary>
     [Fact]
-    public void TheEntrysOwnIdIsNotAdoptedAsTheInstanceId_SoItsPipelineSlotLabelAndAlarmTargetAreUnchanged()
+    public void TheEntrysOwnIdIsNowAdoptedAsTheInstanceId_SoItsPipelineSlotLabelAndAlarmTargetMove_Item65DirectionA()
     {
-        // A deliberate D-1 decision, pinned so it cannot drift silently: `id` in connectors.json is
-        // documented as naming-for-warnings only. Adopting it would move every such connector's pipeline
-        // slot label — and therefore the TargetId its degraded/down alarms are keyed on — for no gain this
-        // task needs. Promoting it is D-7's file-format work; until then this test is what says so.
         var registry = new ConnectorRegistry();
 
         ConnectorsJsonRegistration.RegisterAll(
             new[] { new ConnectorConfigEntry("line3-weld", DriverKinds.Modbus, ModbusSettings("CJ-ID-01")) },
             Modbus, OpcUa, registry, Logger);
 
-        Assert.Equal(new[] { DriverKinds.Modbus }, registry.RegisteredIds);
-        Assert.DoesNotContain("line3-weld", registry.RegisteredIds);
+        Assert.Equal(new[] { "line3-weld" }, registry.RegisteredIds);
+        Assert.DoesNotContain(DriverKinds.Modbus, registry.RegisteredIds);
+    }
+
+    /// <summary>🔴 <b>The other half of owner item 65 direction A: the two hosts now give ONE answer, and
+    /// this is the closest a test in this assembly can get to saying so.</b>
+    ///
+    /// <para>🔴 <b>What it does not measure, and the limit is structural rather than an oversight.</b>
+    /// <c>St4i.EdgeService.EdgeConnectors.RegistrationKeyOf</c> is <c>internal</c> to an assembly this test
+    /// project does not reference (<c>St4i.EngineApi.Tests</c> → <c>St4i.EngineApi</c> only), so this
+    /// compares EngineApi's answer against a RESTATEMENT of EdgeService's body —
+    /// <c>DriverKinds.Normalize(entry.Id.Trim())</c> — and not against the compiled method. The other side is
+    /// pinned by <c>EdgeWorkerConnectorsTests.ADuplicateId_IsSkippedWithAWarningNamingTheIdThatCollided_NotTheKind</c>,
+    /// which did NOT move for this ruling and is the control that makes this one mean something. If someone
+    /// changes EdgeService's rule without changing this restatement, nothing here goes red.</para></summary>
+    [Fact]
+    public void TheRegistrationKey_IsNowTheEntrysOwnId_TheSameRuleStatedByTheOtherHost_Item65DirectionA()
+    {
+        ConnectorConfigEntry[] everyShape =
+        [
+            new(DriverKinds.Modbus, DriverKinds.Modbus, ModbusSettings("CJ-KEY-1")),   // id defaulted to the kind
+            new("line3-weld", DriverKinds.Modbus, ModbusSettings("CJ-KEY-2")),          // TCP with an explicit id
+            new("cell-7", DriverKinds.OpcUa, OpcUaSettings("CJ-KEY-3")),                // OPC-UA with an explicit id
+            new("weld", "vendor.acme.weld", """{"x":1}"""),                             // a third-party kind
+            new("rs485-line1", DriverKinds.Modbus, RtuBusSettings("gw", 4001, ("CJ-KEY-4", 1))), // an RTU bus
+        ];
+
+        foreach (var entry in everyShape)
+        {
+            Assert.Equal(DriverKinds.Normalize(entry.Id.Trim()), ConnectorsJsonRegistration.RegistrationKeyOf(entry));
+        }
+
+        // 🔴 THE ONE THAT MUST NOT MOVE, and it is why the precedence rule survives this change: an entry
+        // whose `id` was DEFAULTED to its kind by ConnectorsConfig.Load still answers the KIND, because
+        // normalising the kind returns the kind. So an install that never named its connectors keeps the key
+        // ST4I_MODBUS_MAP precedence has always compared against, and keeps its slot label too.
+        Assert.Equal(DriverKinds.Modbus, ConnectorsJsonRegistration.RegistrationKeyOf(
+            new ConnectorConfigEntry(DriverKinds.Modbus, DriverKinds.Modbus, ModbusSettings("CJ-KEY-5"))));
     }
 
     [Fact]
@@ -125,9 +187,12 @@ public sealed class ConnectorsJsonRegistrationTests
             new[] { new ConnectorConfigEntry("broken", DriverKinds.Modbus, """{"not":"a register map"}""") },
             Modbus, OpcUa, registry, Logger);
 
+        // 🔴 Re-pinned by owner item 65 direction A, 2026-08-25: this entry carries the explicit id
+        // "broken", so it now registers under that rather than under DriverKinds.Modbus. The state this
+        // test exists for — "registers but UNBOUND" — is unchanged, which is the point.
         Assert.Equal(1, registered);
-        Assert.Equal(new[] { DriverKinds.Modbus }, registry.RegisteredIds);
-        Assert.False(registry.IsBoundToAMachine(DriverKinds.Modbus));
+        Assert.Equal(new[] { "broken" }, registry.RegisteredIds);
+        Assert.False(registry.IsBoundToAMachine("broken"));
     }
 
     [Fact]
@@ -312,24 +377,24 @@ public sealed class ConnectorsJsonRegistrationTests
     /// <c>ST4I_MODBUS_MAP</c> set would stop suppressing its <c>connectors.json</c> Modbus entry, which is the
     /// one behaviour the whole precedence rule exists to guarantee.
     /// </summary>
-    [Fact]
-    public void TheRegistrationKey_IsTheKindForEveryPreD7aEntry_AndTheBusIdOnlyForAnRtuBus()
-    {
-        // Pre-D-7a shapes — including one carrying an explicit id, which is precisely the case that must NOT
-        // move (its pipeline slot label, and therefore its alarm TargetId, would fork).
-        Assert.Equal(DriverKinds.Modbus, ConnectorsJsonRegistration.RegistrationKeyOf(
-            new ConnectorConfigEntry(DriverKinds.Modbus, DriverKinds.Modbus, ModbusSettings("CJ-KEY-1"))));
-        Assert.Equal(DriverKinds.Modbus, ConnectorsJsonRegistration.RegistrationKeyOf(
-            new ConnectorConfigEntry("line3-weld", DriverKinds.Modbus, ModbusSettings("CJ-KEY-2"))));
-        Assert.Equal(DriverKinds.OpcUa, ConnectorsJsonRegistration.RegistrationKeyOf(
-            new ConnectorConfigEntry("cell-7", DriverKinds.OpcUa, OpcUaSettings("CJ-KEY-3"))));
-        Assert.Equal("vendor.acme.weld", ConnectorsJsonRegistration.RegistrationKeyOf(
-            new ConnectorConfigEntry("weld", "vendor.acme.weld", """{"x":1}""")));
-
-        // 🔴 …and only a Modbus entry that DECLARES A TRANSPORT answers with its own id.
-        Assert.Equal("rs485-line1", ConnectorsJsonRegistration.RegistrationKeyOf(
-            new ConnectorConfigEntry("rs485-line1", DriverKinds.Modbus, RtuBusSettings("gw", 4001, ("CJ-KEY-4", 1)))));
-    }
+    // 🔴 THE TEST THAT STOOD HERE IS RETIRED BY OWNER ITEM 65 DIRECTION A, 2026-08-25, and its assertions
+    // are kept VERBATIM in this comment rather than deleted, because it is the record of the rule that was
+    // replaced. It was named
+    // `TheRegistrationKey_IsTheKindForEveryPreD7aEntry_AndTheBusIdOnlyForAnRtuBus` and read:
+    //
+    //     // Pre-D-7a shapes — including one carrying an explicit id, which is precisely the case that must
+    //     // NOT move (its pipeline slot label, and therefore its alarm TargetId, would fork).
+    //     Assert.Equal(DriverKinds.Modbus, RegistrationKeyOf(new(DriverKinds.Modbus, DriverKinds.Modbus, …)));
+    //     Assert.Equal(DriverKinds.Modbus, RegistrationKeyOf(new("line3-weld",      DriverKinds.Modbus, …)));
+    //     Assert.Equal(DriverKinds.OpcUa,  RegistrationKeyOf(new("cell-7",          DriverKinds.OpcUa,  …)));
+    //     Assert.Equal("vendor.acme.weld", RegistrationKeyOf(new("weld", "vendor.acme.weld", …)));
+    //     // 🔴 …and only a Modbus entry that DECLARES A TRANSPORT answers with its own id.
+    //     Assert.Equal("rs485-line1",      RegistrationKeyOf(new("rs485-line1",     DriverKinds.Modbus, RtuBus…)));
+    //
+    // The case it calls out as "must NOT move" is exactly the case the owner moved. Its replacement is
+    // TheRegistrationKey_IsNowTheEntrysOwnId_TheSameRuleStatedByTheOtherHost_Item65DirectionA above, which
+    // covers all five shapes and additionally pins the one that genuinely does not move — the entry whose id
+    // was defaulted to its kind, which is what keeps the ST4I_MODBUS_MAP precedence rule intact.
 
     /// <summary>An RTU bus in a host that was composed without a Modbus bus registry is skipped with a named
     /// warning, never dispatched into a path that cannot work. The parameter is optional so every pre-D-7a
