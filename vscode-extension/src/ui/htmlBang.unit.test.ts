@@ -58,10 +58,31 @@ describe("dungHtmlBang", () => {
     expect(html).toContain('id="nut-huy"');
   });
 
-  it("★★★ nút duyệt nói rõ ghi Ở SERVER (không được mập mờ về nơi byte sẽ đổi)", () => {
+  it("★★★ nút ghi KHÔNG có chữ mặc định — chữ phải do extension gửi ở MỖI lần hiện thẻ", () => {
+    /**
+     * ★★★ ĐỢT C ĐỔI BẤT BIẾN NÀY, KHÔNG NỚI NÓ. Trước Đợt C chỉ có MỘT nơi ghi (máy chủ) nên chữ
+     * "Duyệt & ghi trên SERVER" đóng cứng trong HTML là đúng. Nay có HAI nơi ghi (máy chủ · đĩa máy
+     * lập trình viên) ⇒ một chữ đóng cứng là một câu khai về nơi ghi khi CHƯA AI nói nơi ghi là
+     * đâu, và nếu extension quên gửi nhãn thì nút sẽ đeo chữ của chế độ KIA — đúng "tai nạn không
+     * cứu được" ở spec §7. Nên: nút RỖNG trong HTML, chữ do `m.nhanNut` đặt mỗi lần hiện thẻ.
+     */
     const m = html.match(/<button id="nut-duyet">([^<]*)<\/button>/);
     expect(m).not.toBeNull();
-    expect(m![1]).toContain("SERVER");
+    expect(m![1].trim()).toBe("");
+    expect(html).toContain('document.getElementById("nut-duyet").textContent = m.nhanNut');
+  });
+
+  it("★★★ FAIL-CLOSED: thiếu nhãn nguồn hoặc chữ nút ⇒ thẻ duyệt KHÔNG hiện", () => {
+    // Không được rơi về "hiện thẻ với chữ cũ": chữ cũ có thể là chữ của chế độ còn lại.
+    expect(html).toContain("if (!m.nhanNguon || !m.nhanNut)");
+    const viTriChan = html.indexOf("if (!m.nhanNguon || !m.nhanNut)");
+    const viTriHien = html.indexOf("theDuyet.hidden = false");
+    expect(viTriChan).toBeGreaterThan(-1);
+    expect(viTriHien).toBeGreaterThan(viTriChan); // chặn TRƯỚC, hiện SAU
+  });
+
+  it("★★ đề xuất KHÔNG có hạn (chế độ LOCAL) không được in 'Hạn duyệt:' cụt đuôi", () => {
+    expect(html).toContain('m.han ? "Hạn duyệt: " + m.han :');
   });
 
   it("★★ webview chuyển tiếp cú bấm ba nút thẻ duyệt cho extension, KHÔNG tự quyết", () => {

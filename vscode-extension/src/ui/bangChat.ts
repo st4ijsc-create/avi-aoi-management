@@ -1,11 +1,23 @@
 /**
- * Bảng trò chuyện AI Local. ĐỢT A: chỉ đọc. ĐỢT B: mở đường DUYỆT & GHI cho chế độ SERVER — máy
- * chủ đề xuất sửa tệp, người dùng bấm Duyệt, MÁY CHỦ ghi byte vào hộp cát của nó. Bảng này KHÔNG
- * BAO GIỜ chạm đĩa: nó chỉ hiện thẻ duyệt và chuyển tiếp quyết định của người dùng qua tRPC
- * (`../mang/duyetGhi.ts` — điểm DUY NHẤT gọi `confirmAction`, có census cưỡng chế).
+ * Bảng trò chuyện AI Local.
+ *
+ * ĐỢT A: chỉ đọc. ĐỢT B: mở đường DUYỆT & GHI cho chế độ SERVER — máy chủ đề xuất sửa tệp, người
+ * dùng bấm Duyệt, MÁY CHỦ ghi byte vào hộp cát của nó. ĐỢT C: mở đường ghi CỤC BỘ cho chế độ LOCAL
+ * — đề xuất đến từ VĂN BẢN model (`loi/deXuatCucBo.ts`), người dùng bấm "Ghi vào workspace", và
+ * EXTENSION ghi byte vào máy lập trình viên qua `ui/apBanVa.ts`.
+ *
+ * ⚠⚠⚠ KHÔNG ĐƯỜNG CHÉO (spec §7). Tệp này giữ HAI đường tách bạch, và mỗi đường có hàng rào ở CẢ
+ * lúc hiện thẻ LẪN lúc bấm nút:
+ *   · chế độ SERVER ⇒ `deXuatHienTai` (`DeXuatGhi` từ SSE) ⇒ `goiDuyet`/`goiHuy` ⇒ máy chủ ghi.
+ *     **KHÔNG BAO GIỜ** đi qua `apBanVa` — bảng này không chạm đĩa ở đường SERVER.
+ *   · chế độ LOCAL  ⇒ `deXuatCucBoHienTai` (`DeXuatCucBo` từ văn bản) ⇒ `apBanVa` ⇒ extension ghi.
+ *     **KHÔNG BAO GIỜ** gọi cửa duyệt của máy chủ — không có hàng HITL nào trên đó để duyệt.
+ * Hai bất biến đó có census đếm (`loi/census.unit.test.ts`: đúng MỘT điểm ghi đĩa cục bộ, đúng MỘT
+ * nơi gọi cửa duyệt SERVER).
  */
 import * as vscode from "vscode";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { relative, resolve } from "node:path";
 import { dungHtmlBang } from "./htmlBang";
 import { dungNguCanh } from "../loi/nguCanh";
 import { dungYeuCauStream, type CheDoDuAn, type LuotChat } from "../loi/yeuCau";
@@ -20,6 +32,29 @@ import { tomTatDiff } from "../loi/tomTatDiff";
 import { coDuocHienTheDuyet } from "../loi/kiemTraCheDo";
 import { goiDuyet, goiHuy, daBiTuChoiGhi, maTuChoiGhi } from "../mang/duyetGhi";
 import type { KhoDeXuat } from "./diffDeXuat";
+import { docDeXuatCucBo, type DeXuatCucBo } from "../loi/deXuatCucBo";
+import { ghepBanVa } from "../loi/ghepBanVa";
+import { bamNoiDung } from "../loi/bamTep";
+import { duocPhepGhi } from "../loi/chanGhi";
+import { giaiDuongThat } from "../loi/duongThat";
+import { nhanNguonTheDuyet, nhanNutGhi } from "../loi/nhanTheDuyet";
+import { apBanVa } from "./apBanVa";
+
+/** Đề xuất ghi CỤC BỘ đang chờ duyệt + mọi thứ đã ĐO tại thời điểm dựng thẻ (không đo lại lúc bấm,
+ *  trừ băm đĩa — băm PHẢI đo lại trong `apBanVa` vì đó chính là phép chống xung đột). */
+interface DeXuatCucBoDangCho {
+  actionId: string;
+  deXuat: DeXuatCucBo;
+  duongTuyetDoi: string;
+  duongTuongDoi: string;
+  /** Băm nội dung ĐĨA lúc dựng thẻ — đúng bản người dùng nhìn thấy ở phía trái diff. */
+  bamGoc: string;
+  /** Nội dung sau khi ghép, dùng cho phía phải của diff và để người dùng xem trước. */
+  moi: string;
+  thuMucWorkspace: string;
+  them: number;
+  bot: number;
+}
 
 /**
  * Nonce cho CSP của webview. Dùng CSPRNG chứ không `Math.random()`: nonce là thứ CSP dựa vào để
@@ -39,9 +74,16 @@ export class BangChat {
   // lượt đó) biết mình đang ở LOCAL hay SERVER lúc quyết định có hiện thẻ duyệt hay không. Đọc lại
   // `this.duAnChon`/`this.dsDuAn` lúc SSE tới có thể đã lệch nếu người dùng đổi ô chọn giữa chừng.
   private cheDoHoiHienTai: CheDoDuAn | undefined;
+  // Thư mục workspace của lượt hỏi LOCAL đang chạy — chốt cùng lúc với `cheDoHoiHienTai` và vì cùng
+  // một lý do: đề xuất đọc được lúc lượt hỏi KẾT THÚC phải neo vào thư mục lúc nó BẮT ĐẦU, chứ
+  // không phải ô chọn hiện tại (người dùng có thể đã đổi giữa chừng).
+  private thuMucHoiHienTai: string | undefined;
   // Đề xuất ghi đang chờ duyệt (nếu có) + nhãn nguồn của nó, dùng chung cho ba tin nhắn webview
-  // gửi lại: "xem_diff" / "duyet" / "huy". Đợt B chỉ giữ TỐI ĐA một đề xuất tại một thời điểm.
+  // gửi lại: "xem_diff" / "duyet" / "huy". Giữ TỐI ĐA một đề xuất tại một thời điểm — và tối đa
+  // MỘT TRONG HAI loại: hai trường dưới đây KHÔNG BAO GIỜ cùng khác `undefined` (mỗi lượt hỏi chỉ
+  // ở một chế độ, và `quenDeXuat` xoá cả hai).
   private deXuatHienTai: DeXuatGhi | undefined;
+  private deXuatCucBoHienTai: DeXuatCucBoDangCho | undefined;
   private nhanNguonHienTai: string | undefined;
 
   private constructor(
@@ -85,12 +127,20 @@ export class BangChat {
    * chỗ quên ẩn thẻ để lại một cú bấm SỐNG cho một đề xuất đã chết.
    */
   private quenDeXuat(thongBao?: string): void {
-    if (!this.deXuatHienTai) return;
-    this.khoDeXuat.quen(this.deXuatHienTai.actionId);
+    const actionId = this.deXuatHienTai?.actionId ?? this.deXuatCucBoHienTai?.actionId;
+    if (!actionId) return;
+    this.khoDeXuat.quen(actionId);
     this.deXuatHienTai = undefined;
+    this.deXuatCucBoHienTai = undefined;
     this.nhanNguonHienTai = undefined;
     void this.panel.webview.postMessage({ loai: "an_the_duyet" });
     if (thongBao) void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: thongBao });
+  }
+
+  /** Thư mục LOCAL đang chọn ở ô dự án (`local:<fsPath>`), rơi về thư mục workspace đầu tiên. */
+  private thuMucLocalDangChon(): string | undefined {
+    if (this.duAnChon?.startsWith("local:")) return this.duAnChon.slice("local:".length);
+    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   }
 
   /** CHẾ ĐỘ suy từ ô chọn dự án ĐANG hiển thị. Một chỗ duy nhất — `hoi()` và `duyetDeXuat()` đều
@@ -178,6 +228,7 @@ export class BangChat {
     // Chốt CHẾ ĐỘ của lượt này NGAY BÂY GIỜ — `nhan` bên dưới (chạy trong cùng lượt) đọc lại field
     // này, không đọc `this.duAnChon` trực tiếp, để không lệch nếu người dùng đổi ô chọn giữa chừng.
     this.cheDoHoiHienTai = cheDo;
+    this.thuMucHoiHienTai = cheDo.loai === "local" ? this.thuMucLocalDangChon() : undefined;
     const than = dungYeuCauStream({
       cauHoi,
       nguCanh: this.thuThapNguCanh(),
@@ -230,6 +281,11 @@ export class BangChat {
         canhBao,
       });
       this.lichSu.push({ role: "user", content: cauHoi }, { role: "assistant", content: traLoi });
+      // ★★★ ĐỢT C — đường ghi CỤC BỘ. Ở chế độ LOCAL máy chủ gửi `codingMode:false` nên KHÔNG có
+      // `pending_action` nào; đề xuất sửa nằm trong VĂN BẢN model, đọc được sau khi lượt trả lời
+      // đóng. Hàng rào chế độ đặt ở đây (không phải bên trong `xuLyDeXuatCucBo`) để một lượt SERVER
+      // tình cờ chứa khối ```avi-tool``` không đẻ ra thẻ ghi-vào-máy-dev.
+      if (cheDo.loai === "local") void this.xuLyDeXuatCucBo(traLoi);
     } catch (e) {
       // Huỷ lượt cũ là hành vi BÌNH THƯỜNG (người dùng hỏi câu mới) — không phải lỗi, không được
       // khai thành lỗi. Chỉ lỗi THẬT mới hiện lên.
@@ -268,9 +324,10 @@ export class BangChat {
     // phải lỗ an toàn vì không có gì tự duyệt, nhưng là rò bộ nhớ không cần thiết).
     this.quenDeXuat();
     this.deXuatHienTai = d;
-    // Nhãn nguồn = nhãn dự án SERVER đang chọn (đã có tiền tố "SERVER · ", xem duAn.ts) — dùng
-    // NGUYÊN VĂN cho cả thẻ duyệt lẫn tiêu đề diff (Task 3) để hai nơi luôn khớp nhau.
-    this.nhanNguonHienTai = cheDo!.nhan;
+    // Nhãn nguồn = nhãn dự án SERVER đang chọn — `nhanNguonTheDuyet` đảm bảo ĐÚNG MỘT tiền tố
+    // "SERVER · " kể cả khi nhãn tới đây đã/chưa có sẵn. Dùng chung cho cả thẻ duyệt lẫn tiêu đề
+    // diff (Task 3) để hai nơi luôn khớp nhau.
+    this.nhanNguonHienTai = nhanNguonTheDuyet({ loai: "server", nhan: cheDo!.nhan });
     // ⚠ `tomTatDiff` là phép đếm ĐA TẬP HỢP, không phải thuật toán diff: một lượt **SẮP XẾP LẠI**
     // dòng (cùng tập dòng, khác thứ tự) cho them=0/bot=0 — và thẻ khi ấy khai "+0 / −0", tức nói
     // KHÔNG CÓ THAY ĐỔI cho một thay đổi CÓ THẬT sắp được ghi vào tệp. `doiDong` là ô mà chính hàm
@@ -285,18 +342,191 @@ export class BangChat {
     void this.panel.webview.postMessage({
       loai: "the_duyet",
       nhanNguon: this.nhanNguonHienTai,
+      // ★★★ CHỮ TRÊN NÚT LÀ HÀNG RÀO: nó nói byte sẽ rơi Ở ĐÂU. Webview KHÔNG có chữ mặc định nào
+      // cho nút này (xem `htmlBang.ts`) — thiếu `nhanNut` thì thẻ không hiện, thay vì hiện với chữ
+      // của lượt TRƯỚC (có thể là chữ của chế độ KIA).
+      nhanNut: nhanNutGhi("server"),
       duong: d.path,
       tomTat,
       han: d.hetHan,
     });
   }
 
+  /**
+   * ★★★ ĐỢT C — ĐỀ XUẤT GHI CỤC BỘ (chế độ LOCAL). Đọc khối ```avi-tool``` từ văn bản model rồi
+   * dựng thẻ duyệt + diff native. **Không ghi gì ở đây** — mọi byte chỉ rơi trong `apBanVa`.
+   *
+   * Thứ tự kiểm ở đây cố ý NGHIÊNG VỀ TỪ CHỐI SỚM: giải đường thật → vị từ chặn → đọc đĩa → ghép.
+   * Đặc biệt, vị từ chặn chạy **TRƯỚC** khi đọc nội dung: nếu không, một đề xuất trỏ vào `.env` sẽ
+   * khiến nội dung tệp bí mật hiện nguyên văn trong tab diff trước khi có ai kịp từ chối nó.
+   * ⚠ Đây KHÔNG phải nơi cưỡng chế — `apBanVa` kiểm lại toàn bộ lúc bấm (giữa lúc hiện thẻ và lúc
+   *   bấm, mọi thứ đều có thể đổi). Đây chỉ là "đừng vẽ ra một cái nút không bao giờ bấm được".
+   */
+  private async xuLyDeXuatCucBo(vanBan: string): Promise<void> {
+    const ds = docDeXuatCucBo(vanBan);
+    if (ds.length === 0) return;
+    this.quenDeXuat();
+    if (ds.length > 1) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Model đề xuất ${ds.length} thay đổi nhưng bảng này chỉ duyệt MỘT lần một tệp — chỉ hiện đề xuất đầu tiên, hãy hỏi lại cho các tệp còn lại.`,
+      });
+    }
+    const d = ds[0];
+
+    const goc = this.thuMucHoiHienTai;
+    if (!goc) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: "Model đề xuất sửa tệp nhưng KHÔNG có thư mục workspace nào đang mở — đã bỏ qua.",
+      });
+      return;
+    }
+    const dsWs = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+    // `resolve` xử được cả `path` tương đối lẫn tuyệt đối do model sinh; `giaiDuongThat` + vị từ
+    // chặn ngay sau đó quyết định nó có hợp lệ không.
+    const duongTuyetDoi = resolve(goc, d.path);
+    const that = giaiDuongThat(duongTuyetDoi);
+    if (!that.ok) {
+      void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Bỏ qua đề xuất sửa "${d.path}": ${that.lyDo}` });
+      return;
+    }
+    const wsThat: string[] = [];
+    for (const ws of dsWs) {
+      const r = giaiDuongThat(ws);
+      if (!r.ok) {
+        void this.panel.webview.postMessage({
+          loai: "thong_bao",
+          thongDiep: `Bỏ qua đề xuất sửa "${d.path}": không giải được thư mục workspace "${ws}" (${r.lyDo}).`,
+        });
+        return;
+      }
+      wsThat.push(r.duong);
+    }
+    const phep = duocPhepGhi(that.duong, wsThat);
+    if (!phep.ok) {
+      void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Bỏ qua đề xuất sửa "${d.path}": ${phep.lyDo}` });
+      return;
+    }
+
+    let noiDungGoc: string;
+    try {
+      // ĐỌC TỪ ĐĨA, không từ bộ đệm editor — cùng lý lẽ với `apBanVa` bước 3: băm phải nói về BYTE.
+      noiDungGoc = Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.file(that.duong))).toString("utf8");
+    } catch (e) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Bỏ qua đề xuất sửa "${d.path}": không đọc được tệp từ đĩa (${(e as Error).message}). Đợt này chỉ sửa tệp ĐÃ CÓ, không tạo tệp mới.`,
+      });
+      return;
+    }
+    const ghep = ghepBanVa(noiDungGoc, d);
+    if (!ghep.ok) {
+      void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Bỏ qua đề xuất sửa "${d.path}": ${ghep.lyDo}` });
+      return;
+    }
+
+    const duongTuongDoi = (relative(goc, that.duong) || d.path).replace(/\\/g, "/");
+    const { them, bot, doiDong } = tomTatDiff(noiDungGoc, ghep.moi);
+    this.deXuatCucBoHienTai = {
+      actionId: randomUUID(),
+      deXuat: d,
+      duongTuyetDoi: that.duong,
+      duongTuongDoi,
+      bamGoc: bamNoiDung(noiDungGoc),
+      moi: ghep.moi,
+      thuMucWorkspace: goc,
+      them,
+      bot,
+    };
+    this.nhanNguonHienTai = nhanNguonTheDuyet({ loai: "local", nhan: goc });
+    void this.panel.webview.postMessage({
+      loai: "the_duyet",
+      nhanNguon: this.nhanNguonHienTai,
+      nhanNut: nhanNutGhi("local"),
+      duong: duongTuongDoi,
+      tomTat: doiDong ? `+${them} / −${bot}` : "Có thay đổi (sắp xếp lại dòng) — mở diff để xem",
+      // Đề xuất CỤC BỘ không có TTL của máy chủ (chưa có hàng nào trên máy chủ cho tới lúc bấm
+      // ghi). Gửi chuỗi rỗng và để webview nói đúng điều đó, thay vì bịa ra một cái hạn.
+      han: "",
+    });
+  }
+
   private async xemDiff(): Promise<void> {
-    if (!this.deXuatHienTai || !this.nhanNguonHienTai) return;
+    if (!this.nhanNguonHienTai) return;
+    const cb = this.deXuatCucBoHienTai;
+    if (cb) {
+      // Chế độ LOCAL: TRÁI là TỆP THẬT trên đĩa (spec §6.2/§7).
+      await this.khoDeXuat.moDiffCucBo(
+        { actionId: cb.actionId, path: cb.duongTuongDoi, duongTuyetDoi: cb.duongTuyetDoi, modified: cb.moi },
+        this.nhanNguonHienTai,
+      );
+      return;
+    }
+    if (!this.deXuatHienTai) return;
     await this.khoDeXuat.moDiff(this.deXuatHienTai, this.nhanNguonHienTai);
   }
 
+  /**
+   * ★★★ ĐỢT C — BẤM "Ghi vào workspace" (chế độ LOCAL). Đây là lối đi DUY NHẤT tới `apBanVa`.
+   *
+   * ⚠ Hàng rào chế độ ở LÚC BẤM (không chỉ lúc hiện thẻ) — cùng lý lẽ với `duyetDeXuat`: cái gây
+   *   hậu quả là CÚ BẤM. Ở đây hậu quả nặng hơn hẳn: byte rơi trên máy của chính người dùng.
+   * ⚠ Luôn `quenDeXuat()` sau một lượt bấm, khác với đường SERVER (nơi lỗi mạng để lại ca "KHÔNG
+   *   RÕ KẾT CỤC" đáng thử lại). Ở đây không có ca đó: `apBanVa` hoặc ĐÃ ghi (`ok:true`) hoặc CHƯA
+   *   ghi gì (`ok:false`) — nó tự quan sát được cả lượt áp chỉnh sửa lẫn `save`. Điều duy nhất "chưa rõ"
+   *   là sổ kiểm toán đã chốt chưa, mà bấm lại KHÔNG chữa được điều đó (lượt sau sẽ gặp băm đã đổi
+   *   và bị từ chối đúng như thiết kế). Giữ một cái nút sống trong ca đó chỉ mời người dùng ghi đè
+   *   lần hai.
+   */
+  private async apDungCucBo(): Promise<void> {
+    const cb = this.deXuatCucBoHienTai;
+    if (!cb) return;
+    if (this.cheDoHienTai().loai !== "local") {
+      this.quenDeXuat(
+        "Dự án đang chọn KHÔNG phải chế độ LOCAL — đã bỏ đề xuất ghi thay vì ghi vào máy bạn. Chọn lại dự án LOCAL rồi hỏi lại.",
+      );
+      return;
+    }
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    if (!cookie) {
+      // KHÔNG quên đề xuất: đăng nhập xong bấm lại là được (băm đĩa chưa đổi thì vẫn hợp lệ).
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep:
+          "Chưa đăng nhập — sổ kiểm toán nằm trên máy chủ nên KHÔNG ghi khi chưa đăng nhập. Chạy lệnh 'AI Local: Đăng nhập' rồi bấm lại.",
+      });
+      return;
+    }
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    let thongDiep: string;
+    try {
+      const kq = await apBanVa({
+        deXuat: cb.deXuat,
+        duongTuyetDoi: cb.duongTuyetDoi,
+        duongTuongDoi: cb.duongTuongDoi,
+        bamGoc: cb.bamGoc,
+        thuMucWorkspace: (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
+        nhanWorkspace: cb.thuMucWorkspace,
+        serverUrl: cfg.get<string>("serverUrl", "http://localhost:3000"),
+        cookie,
+      });
+      thongDiep = kq.thongDiep;
+    } catch (e) {
+      // `apBanVa` đã bọc mọi bước có thể ném; tới đây là lỗi ngoài dự tính. Không đoán kết cục.
+      thongDiep = `Lỗi ngoài dự tính khi ghi "${cb.duongTuongDoi}": ${(e as Error).message}. Hãy KIỂM TRA LẠI tệp trước khi hỏi tiếp.`;
+    }
+    this.quenDeXuat();
+    void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
+  }
+
   private async duyetDeXuat(): Promise<void> {
+    // Đường LOCAL rẽ ở đây và KHÔNG BAO GIỜ chạm phần còn lại của hàm này (`confirmAction` bên
+    // dưới là cửa duyệt của chế độ SERVER — spec §7: không đường chéo).
+    if (this.deXuatCucBoHienTai) {
+      await this.apDungCucBo();
+      return;
+    }
     const d = this.deXuatHienTai;
     if (!d) return;
     /**
@@ -380,6 +610,12 @@ export class BangChat {
   }
 
   private async huyDeXuat(): Promise<void> {
+    // Đề xuất CỤC BỘ chỉ sống trong bộ nhớ extension — chưa có hàng nào trên máy chủ để huỷ (hàng
+    // kiểm toán chỉ sinh ra ở bước 6 của `apBanVa`, tức khi người dùng bấm GHI). Vứt tại chỗ.
+    if (this.deXuatCucBoHienTai) {
+      this.quenDeXuat(`Đã bỏ đề xuất sửa "${this.deXuatCucBoHienTai.duongTuongDoi}" — không có gì được ghi.`);
+      return;
+    }
     const d = this.deXuatHienTai;
     if (!d) return;
     const cookie = await this.context.secrets.get(KHOA_COOKIE);

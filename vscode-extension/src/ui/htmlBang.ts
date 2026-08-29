@@ -43,7 +43,12 @@ export function dungHtmlBang(dv: { nonce: string }): string {
   <div id="duyet-han"></div>
   <div class="the-duyet-nut">
     <button id="nut-xem-diff">Xem diff</button>
-    <button id="nut-duyet">Duyệt &amp; ghi trên SERVER</button>
+    <!-- ⚠⚠⚠ KHÔNG đặt chữ mặc định cho nút này. Chữ trên nút nói byte sẽ rơi Ở ĐÂU ("Duyệt & ghi
+         trên SERVER" = hộp cát máy chủ · "Ghi vào workspace" = đĩa máy lập trình viên) — một chữ
+         mặc định là một câu khai về nơi ghi khi CHƯA AI nói nơi ghi là đâu, và nếu extension quên
+         gửi nhanNut thì nó sẽ khai nhầm chế độ. Extension đặt chữ ở mỗi lần hiện thẻ; thiếu chữ
+         thì thẻ KHÔNG hiện (xem xử lý the_duyet bên dưới). -->
+    <button id="nut-duyet"></button>
     <button id="nut-huy">Huỷ</button>
   </div>
 </div>
@@ -116,13 +121,25 @@ export function dungHtmlBang(dv: { nonce: string }): string {
         o.appendChild(opt);
       }
     } else if (m.loai === "the_duyet") {
-      // Chữ hiển thị (nhãn nguồn, tóm tắt +N/-M hay "Tạo tệp mới") do EXTENSION dựng sẵn — webview
-      // chỉ đặt textContent, không tự suy luận gì thêm.
-      document.getElementById("duyet-nguon").textContent = m.nhanNguon;
-      document.getElementById("duyet-duong").textContent = m.duong;
-      document.getElementById("duyet-tom-tat").textContent = m.tomTat;
-      document.getElementById("duyet-han").textContent = "Hạn duyệt: " + m.han;
-      theDuyet.hidden = false;
+      // Chữ hiển thị (nhãn nguồn, chữ trên nút ghi, tóm tắt +N/-M hay "Tạo tệp mới") do EXTENSION
+      // dựng sẵn — webview chỉ đặt textContent, không tự suy luận gì thêm.
+      // ★★★ FAIL-CLOSED: thiếu nhãn nguồn hoặc chữ nút ⇒ KHÔNG hiện thẻ. Hiện một nút ghi mà không
+      // nói rõ ghi ở đâu (hoặc còn đeo chữ của lượt trước, có thể là chế độ KIA) đúng là "tai nạn
+      // không cứu được" mà spec §7 mô tả.
+      if (!m.nhanNguon || !m.nhanNut) {
+        theDuyet.hidden = true;
+        themLuot("Lỗi", "Thẻ duyệt thiếu nhãn nguồn hoặc chữ trên nút ghi — đã KHÔNG hiện thẻ.");
+      } else {
+        document.getElementById("duyet-nguon").textContent = m.nhanNguon;
+        document.getElementById("duyet-duong").textContent = m.duong;
+        document.getElementById("duyet-tom-tat").textContent = m.tomTat;
+        document.getElementById("nut-duyet").textContent = m.nhanNut;
+        // Đề xuất CỤC BỘ không có TTL máy chủ ⇒ extension gửi chuỗi rỗng; nói đúng điều đó thay vì
+        // in "Hạn duyệt: " cụt đuôi.
+        document.getElementById("duyet-han").textContent =
+          m.han ? "Hạn duyệt: " + m.han : "Không có hạn — đề xuất sống trong phiên làm việc này.";
+        theDuyet.hidden = false;
+      }
     } else if (m.loai === "an_the_duyet") {
       theDuyet.hidden = true;
     } else if (m.loai === "thong_bao") {

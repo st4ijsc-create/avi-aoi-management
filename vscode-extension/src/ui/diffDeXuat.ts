@@ -1,7 +1,11 @@
 /**
- * Diff native của VSCode cho một đề xuất ghi ở CHẾ ĐỘ SERVER.
+ * Diff native của VSCode cho một đề xuất ghi.
  *
- * ⚠ Cả hai phía đều là TÀI LIỆU ẢO trong bộ nhớ: Đợt B tuyệt đối không ghi đĩa, kể cả tệp tạm.
+ * ⚠ Ở CHẾ ĐỘ SERVER, cả hai phía đều là TÀI LIỆU ẢO trong bộ nhớ: extension tuyệt đối không ghi
+ *   đĩa ở đường đó, kể cả tệp tạm — byte do máy chủ ghi trong hộp cát của nó.
+ * ⚠ Ở CHẾ ĐỘ LOCAL (Đợt C), phía TRÁI là **TỆP THẬT trên đĩa** (spec §6.2 và bảng §7: "trái = tệp
+ *   thật") — người duyệt nhìn đúng cái sắp bị ghi đè, không nhìn một bản chụp. Phía PHẢI vẫn là tài
+ *   liệu ảo mang nội dung đề xuất.
  * ⚠ Tiêu đề diff PHẢI mang nhãn nguồn. Hai chế độ ghi vào HAI NƠI khác nhau; một người tưởng
  *   đang sửa tệp trên máy mình mà thật ra động vào box AI là tai nạn không cứu được (spec §7).
  */
@@ -9,6 +13,18 @@ import * as vscode from "vscode";
 import type { DeXuatGhi } from "../loi/deXuatGhi";
 
 export const SCHEME = "avi-ai-de-xuat";
+
+/**
+ * Hình dạng TỐI THIỂU mà kho này cần để phục vụ một diff. `DeXuatGhi` (chế độ SERVER) thoả nó theo
+ * CẤU TRÚC, nên chế độ LOCAL dùng lại được kho mà không phải giả vờ mình có `token`/`tool`/`hetHan`
+ * — những trường chỉ có nghĩa với vòng đời HITL của máy chủ.
+ */
+export interface NoiDungDiff {
+  actionId: string;
+  path: string;
+  original: string;
+  modified: string;
+}
 
 export class KhoDeXuat implements vscode.TextDocumentContentProvider, vscode.Disposable {
   private noiDung = new Map<string, string>();
@@ -32,7 +48,7 @@ export class KhoDeXuat implements vscode.TextDocumentContentProvider, vscode.Dis
     return vscode.Uri.from({ scheme: SCHEME, path: `/${ben}/${actionId}/${path}` });
   }
 
-  datDeXuat(d: DeXuatGhi): { cu: vscode.Uri; moi: vscode.Uri } {
+  datDeXuat(d: NoiDungDiff): { cu: vscode.Uri; moi: vscode.Uri } {
     const cu = this.uri(d.actionId, "cu", d.path);
     const moi = this.uri(d.actionId, "moi", d.path);
     this.noiDung.set(cu.toString(), d.original);
@@ -46,6 +62,28 @@ export class KhoDeXuat implements vscode.TextDocumentContentProvider, vscode.Dis
   async moDiff(d: DeXuatGhi, nhanNguon: string): Promise<void> {
     const { cu, moi } = this.datDeXuat(d);
     await vscode.commands.executeCommand("vscode.diff", cu, moi, `${nhanNguon} — ${d.path} (đề xuất của AI)`);
+  }
+
+  /**
+   * CHẾ ĐỘ LOCAL: trái = TỆP THẬT trên đĩa (spec §6.2/§7), phải = tài liệu ảo mang đề xuất.
+   *
+   * ⚠ Chỉ đặt phía "moi" vào kho — phía "cu" là `Uri.file`, không đi qua provider này. `quen()` vẫn
+   *   xoá đúng vì nó xoá theo DANH SÁCH khoá đã đăng ký cho `actionId`, không đoán theo quy ước tên.
+   */
+  async moDiffCucBo(
+    d: { actionId: string; path: string; duongTuyetDoi: string; modified: string },
+    nhanNguon: string,
+  ): Promise<void> {
+    const moi = this.uri(d.actionId, "moi", d.path);
+    this.noiDung.set(moi.toString(), d.modified);
+    this.khoaTheoAction.set(d.actionId, [moi.toString()]);
+    this._onDidChange.fire(moi);
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      vscode.Uri.file(d.duongTuyetDoi),
+      moi,
+      `${nhanNguon} — ${d.path} (đề xuất của AI)`,
+    );
   }
 
   quen(actionId: string): void {
