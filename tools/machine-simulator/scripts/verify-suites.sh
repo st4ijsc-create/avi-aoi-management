@@ -2687,7 +2687,42 @@ EXPECT_CONFORMANCE=24
 # (cfcfae42 — NOT moved), the three settle constants, the process matcher, the exclusive lock.
 # BZ-1 does NOT wire web/ into this gate; the web/ domain declaration and its control pair are UNTOUCHED.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
-EXPECT_EDGECORE=1289
+# ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 Task CB-1, 2026-08-29 — docs/owner-decisions.md item 72, OPTION A under the owner's ruling of
+# 2026-08-25. EXPECT_EDGECORE 1289 -> 1296 (+7) and EXPECT_ENGINEAPI 1451 -> 1454 (+3). Grand total
+# 2977 -> 2987 over the five .NET suites. MEASURED by running each suite, never derived by arithmetic.
+# 🔴 THE WEB CONSTANTS ARE UNTOUCHED and are never added to this total: EXPECT_WEB_E2E_TESTS, the pinned
+# browser failures and the quarantined spec are CA-1's and CB-1 does not move them.
+#
+#   +5  tests/St4i.EdgeCore.Tests/TestRunTempRootTests.cs
+#         EveryConventionOnlyLeaf_IsStructurallyRedirectedAwayFromItsRealProgramDataDirectory — a [Theory]
+#         with five cases (settings, identity, sitelink, bridge-spool, wal), one per leaf this assembly
+#         can name.
+#   +1    AClassThatSetsTheVariableItself_StillBeatsTheStructuralDefault — the regression witness. Roughly
+#         twenty classes set these variables by hand; installing a start-up default is only safe if those
+#         classes still win, so the winning arm is pinned rather than reasoned about.
+#   +1    HistorianVariable_IsInstalled_ButReachesOnlyTheCompositionRoot — the NINTH leaf, which is not
+#         like the other eight and says so where the result is read.
+#   +3  tests/St4i.EngineApi.Tests/StructuralLeafRedirectTests.cs (NEW FILE) — the same [Theory] for the
+#         three leaves whose stores live in St4i.EngineApi and are invisible from St4i.EdgeCore.Tests
+#         (security, alarms, connector-config).
+#
+# CONTROL PAIR, run IN FULL over both suites and reverted — and the two arms do NOT kill the same set,
+# which is what makes them two arms rather than one run twice:
+#   ARM A  redirect REMOVED          -> EdgeCore 7 red / 1289 green, EngineApi 3 red / 1451 green.
+#   ARM B  variables SET but pointed -> EdgeCore 6 red / 1290 green, EngineApi 3 red / 1451 green.
+#          at the REAL install root      The still-wins fact PASSES here and fails in A, because it asks
+#                                        whether the CLASS beats the default, not where the default points.
+#   BASE                             -> 0 red.
+#
+# 🔴 AND THE RESULT THAT REFUSES THE COMFORTABLE READING, recorded because it is evidence AGAINST the
+# urgency of the item this task executes: under BOTH arms the REAL %ProgramData%\ST4I\sim tree was
+# snapshotted before and after (files AND directory mtimes) and did NOT change. So with all nine
+# redirects removed, and again with them aimed straight at the real install, neither full suite wrote
+# one byte there. The per-class convention is presently COMPLETE — the twenty-first class that forgets
+# does not exist yet. What option A buys is therefore a CAPABILITY closed, not a leak stopped, exactly
+# as item 72 words it. Anyone tempted to write this up as a leak fixed should read this block first.
+EXPECT_EDGECORE=1296
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -4376,7 +4411,10 @@ EXPECT_EDGESERVICE=52
 # document states about ITSELF -- so BOTH defects above would still pass it today. Control pair, run in
 # full and reverted: stripping the backticks off "warpageMax" throughout the .md gives exactly ONE red,
 # in this [Fact], naming warpageMax.
-EXPECT_ENGINEAPI=1451
+# 🔴 Task CB-1 raises this 1451 -> 1454 (+3): StructuralLeafRedirectTests, the item-72 option-A witness
+# for the three leaves declared in St4i.EngineApi. See the block above EXPECT_EDGECORE for the control
+# pair, the per-file breakdown and the measurement that says this closes a capability, not a leak.
+EXPECT_ENGINEAPI=1454
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -10016,8 +10054,14 @@ if [[ -f "$SIM_BEFORE" ]]; then
         echo "     script or \`dotnet build\` performs. Measured, not feared: with two redirects removed, one"
         echo "     run of St4i.EngineApi.Tests rewrote ...\\sim\\assets\\assets.db."
         echo "  HOW TO FIX: set the offending store's ST4I_*_DIR variable in tests/Shared/TestRunTempRoot.cs"
-        echo "     beside the six already there -- one line covers every existing call site and every future"
-        echo "     one -- or hand the store an explicit directory at its construction site. Do NOT delete the"
+        echo "     beside the SIXTEEN already there -- CB-1 took it from seven to sixteen, which is every leaf"
+        echo "     src/ declares, so a store reddening this bracket now is either a NEW leaf or one taking a"
+        echo "     path that ignores its variable -- one line covers every existing call"
+        echo "     site and every future one -- or hand the store an explicit directory at its construction"
+        echo "     site. 🔴 EXCEPT FOR historian: SqliteHistorianStore and OeeSettingsStore read NO env var"
+        echo "     (their DefaultRoot() is private and hardcoded), so ST4I_HISTORIAN_DIR only reaches them"
+        echo "     through Program.cs. A direct \`new SqliteHistorianStore()\` cannot be redirected from here"
+        echo "     at all -- hand THAT one an explicit directory. Do NOT delete the"
         echo "     file: this compares the tree against its own state at the START of the test phase, so"
         echo "     removing it first makes the run CREATE it, which is still a difference."
         echo "  SCOPE, AND IT IS WIDER THAN THE CRITERION: this measures A MACHINE-WIDE DIRECTORY over the"

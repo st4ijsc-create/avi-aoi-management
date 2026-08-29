@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -94,6 +95,28 @@ internal static class TestRunTempRoot
     /// <summary>The resolved root for this process, or <see langword="null"/> if setup failed (in which
     /// case nothing was redirected and the suite behaves exactly as it did before).</summary>
     internal static string? Root { get; private set; }
+
+    /// <summary>🔴 Task CB-1 — the <c>ST4I_*_DIR</c> redirects this initializer actually INSTALLED, captured
+    /// at start-up, keyed by variable name.
+    ///
+    /// <para><b>Why a record exists rather than the witnesses reading the live environment.</b> A test that
+    /// asserted the ambient state by calling <c>Environment.GetEnvironmentVariable</c> — or a store's
+    /// <c>ResolveRoot()</c>, which does the same thing internally — would be reading a PROCESS-WIDE value
+    /// that other test classes legitimately flip while it runs. MEASURED at CB-1: within
+    /// <c>St4i.EngineApi.Tests</c> alone, EIGHTEEN classes set every one of these variables to a per-class
+    /// temporary directory, and several EdgeCore classes set theirs to <see langword="null"/> to assert the
+    /// default arm. xunit runs collections in parallel by default and this repository declares no
+    /// <c>xunit.runner.json</c> and no assembly-level collection behaviour, so those flips and a live read
+    /// genuinely interleave. A witness built on a live read would therefore be FLAKY, and a flaky witness
+    /// for a leak guard is worse than none: it teaches its readers to re-run it.</para>
+    ///
+    /// <para>This snapshot is written once, before the first test executes, and never mutated afterwards, so
+    /// a witness built on it measures exactly what it claims to measure — what the HARNESS installed — and
+    /// is deterministic under any interleaving. What it deliberately does NOT measure is what the variable
+    /// holds at the moment a given test reads it; that is the flipping class's own business and is the
+    /// property those classes' own tests already assert.</para></summary>
+    internal static IReadOnlyDictionary<string, string> InstalledRedirects { get; private set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 
     [ModuleInitializer]
     internal static void Initialize()
@@ -259,6 +282,90 @@ internal static class TestRunTempRoot
             {
                 Environment.SetEnvironmentVariable("ST4I_OPCUA_PKI_DIR", Path.Combine(root, "opcua-pki"));
             }
+
+            // 🔴 Task CB-1, 2026-08-29 — docs/owner-decisions.md item 72, OPTION A under the owner's ruling of
+            // 2026-08-25: the REMAINING %ProgramData%\ST4I\sim leaves go from CONVENTION to STRUCTURE, so that a
+            // class nobody has written yet cannot forget. These nine move as ONE batch and share one rationale,
+            // which is why they are a table rather than nine hand-written blocks like the seven above; those seven
+            // each carry a rationale of their own that collapsing them would destroy.
+            //
+            // THE POPULATION, RE-COUNTED AT CB-1 RATHER THAN INHERITED, because item 72 has now had a number
+            // refuted twice by the very tasks executing it. Counted by the `"ST4I", "sim", "<leaf>"` literal over
+            // src/ — the same instrument NotificationDocumentationTests uses, so the two agree by construction:
+            // SIXTEEN leaves exist, SEVEN were already structural (creds, machine-config, products, ecosystem,
+            // assets, notifications, opcua-pki — the seven blocks above), and NINE remain. The item's "nine" is
+            // therefore CORRECT as a count of LEAVES. It is not correct as a count of anything else, and the unit
+            // is where this item keeps going wrong:
+            //   9 leaves · 9 variables · but only EIGHT store-level seams · and TEN producer classes,
+            // because `historian` has TWO producers and NO seam on either of them. See the block below.
+            //
+            // WHAT THIS BUYS THAT THE CONVENTION DID NOT, measured rather than argued (item 72 asks the question
+            // and this is the answer): the redirect is a [ModuleInitializer], so it is ambient for the whole
+            // assembly and applies to a BARE `dotnet test` with no gate involved. MEASURED at CB-1 by running
+            // this file's own witnesses under `dotnet test --filter` outside scripts/verify-suites.sh. The
+            // %ProgramData% BRACKET in that script — the thing that DETECTS a leak — is gate-only, and that is
+            // the limit already recorded above. Prevention and detection have different reach, and until now
+            // only detection's reach had been written down.
+            //
+            // WHAT IT DOES NOT BUY, said here rather than left to be discovered. (1) It redirects where the TEST
+            // SUITE writes; it gives the product no new default and changes no line under src/. (2) It is not
+            // evidence of a leak: measured 2026-08-29, none of these nine real leaves had been written by a bare
+            // `dotnet test` of St4i.EdgeCore.Tests, because the per-class convention was in fact holding. What is
+            // closed is the CAPABILITY that convention leaves open for the class nobody has written yet — item 72
+            // says "capability, not event" in its own words and this does not upgrade it. (3) It does NOT close
+            // the directory-MTIME hole: that is a property of the gate bracket's `find -type f`, not of this file,
+            // and nothing here changes it.
+            //
+            // EACH CLASS THAT SETS ITS OWN VARIABLE STILL WINS — the primary regression risk of this batch, and
+            // the reason every line below is guarded by the same IsNullOrWhiteSpace check the seven above use
+            // rather than an unconditional Set. A test class that assigns its variable at RUNTIME overwrites this
+            // start-up default and is unaffected; a class that saves-sets-restores now restores to this root
+            // instead of to null, which is strictly better. TestRunTempRootTests.EveryStructuralRedirect_*
+            // is the red-able witness for the winning arm specifically, not merely for the root existing.
+            var installed = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var (variable, leaf) in new[]
+                     {
+                         ("ST4I_SECURITY_DIR", "security"),
+                         ("ST4I_ALARMS_DIR", "alarms"),
+                         ("ST4I_CONNECTOR_CONFIG_DIR", "connector-config"),
+                         ("ST4I_SETTINGS_DIR", "settings"),
+                         ("ST4I_IDENTITY_DIR", "identity"),
+                         ("ST4I_SITELINK_DIR", "sitelink"),
+                         ("ST4I_BRIDGE_SPOOL_DIR", "bridge-spool"),
+                         ("ST4I_WAL_DIR", "wal"),
+
+                         // 🔴 THE NINTH IS NOT LIKE THE OTHER EIGHT, and this is the measurement item 72 does not
+                         // contain. The eight above each have a store-level seam — a public ResolveRoot (or
+                         // FromEnvironment) that reads the variable — so setting it here reaches EVERY caller,
+                         // including one constructing the store with no argument. `historian` has NO such seam:
+                         // SqliteHistorianStore.DefaultRoot() and OeeSettingsStore.DefaultRoot() are both PRIVATE,
+                         // both hardcode the ProgramData path, and NEITHER reads an environment variable
+                         // (GetEnvironmentVariable count in both files: zero, measured at CB-1). The variable is
+                         // read in exactly one place, Program.cs:412, as a bare string literal with no const
+                         // behind it — the composition root, which then threads the resolved value into both
+                         // stores. So this line closes the WebApplicationFactory<Program> path and NOT
+                         // `new SqliteHistorianStore()`. Direct construction with no argument still resolves to
+                         // the REAL %ProgramData%\ST4I\sim\historian, and no value set here can change that.
+                         // Giving those two stores a seam is a change to src/ — it alters how the SHIPPING
+                         // product resolves its historian directory — which this task's brief forbids outright.
+                         // It is therefore STOPPED AND REPORTED rather than fixed here, and item 72 stays PARTIAL
+                         // on this leaf for a reason that is measured rather than asserted.
+                         ("ST4I_HISTORIAN_DIR", "historian"),
+                     })
+            {
+                if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variable)))
+                {
+                    var target = Path.Combine(root, leaf);
+                    Environment.SetEnvironmentVariable(variable, target);
+                    installed[variable] = target;
+                }
+            }
+
+            // Only the redirects this run actually INSTALLED are recorded. A variable an outer harness had
+            // already set is deliberately absent rather than recorded with the inherited value: the record
+            // exists to witness what this file did, and an entry it did not write would make a deliberate
+            // outer choice read as this initializer's own work.
+            InstalledRedirects = installed;
 
             Root = root;
             AppDomain.CurrentDomain.ProcessExit += (_, _) => TryDeleteTree(root);
