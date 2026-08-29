@@ -33,6 +33,19 @@ using Xunit;
 /// So "one pairing moves" would have been false, and the earlier draft of this very paragraph said it.
 /// The corrected statement is: <b>one of the three holds, two move.</b></para>
 ///
+/// <para>📎 🔴 <b>THE LIST ABOVE IS RETRACTED IN ITS SECOND ROW, 2026-08-25 (CD-1) — kept verbatim and
+/// un-struck, because it was true of the build it was written for and it is the finding that produced the
+/// owner's ruling.</b> The three rows were RE-MEASURED at <c>7847955d</c> before anything was edited, by
+/// enumerating <see cref="DeviceClass"/> and building both columns (an unrecognised machine type gives the
+/// pre-half-B answer, <c>IOT_GATEWAY</c> gives the post-half-B one); all three rows reproduced exactly as
+/// written. The owner then ruled <i>"narrow the fix"</i>.
+/// <i>FALSE as of that ruling:</i> the <c>AoiAvi</c> row, and therefore "two move".
+/// <b>ONE moves.</b> <c>IOT_GATEWAY</c> + <see cref="DeviceClass.AoiAvi"/> is an
+/// <see cref="AoiInspectorSim"/> again, with its <c>aoi_inspection</c> record intact.
+/// <i>STILL TRUE:</i> the enum has three members; the <c>Automation</c> row moves and is the one §49.5(2)
+/// priced; the <c>Iot</c> row is the control and never moved. See §49.8 of
+/// <c>docs/owner-decisions.md</c> for the re-measured table.</para>
+///
 /// <para>🔴 <b>WHAT THIS FILE DOES NOT MEASURE — law (3), stated where the result appears.</b>
 /// <list type="number">
 /// <item>It does not and cannot enumerate the affected population on a customer's disk. Every descriptor
@@ -111,21 +124,69 @@ public class SimulatorFactoryIotGatewayTests
     /// <c>aoi_inspection</c> throws on its first start after this change, exactly as the screwdriver one
     /// does. Reported in <c>docs/owner-decisions.md</c> §49.7.3.</para>
     ///
-    /// <para>🔴 Reddens by deleting the <c>"IOT_GATEWAY"</c> arm, like the others.</para></summary>
+    /// <para>🔴 Reddens by deleting the <c>"IOT_GATEWAY"</c> arm, like the others.</para>
+    ///
+    /// <para>📎 🔴 <b>EVERYTHING ABOVE IN THIS COMMENT IS RETRACTED AS A DESCRIPTION OF TODAY'S BEHAVIOUR,
+    /// 2026-08-25 (CD-1), kept verbatim — it is the finding, and the finding is what the owner ruled on.</b>
+    /// <i>FALSE now:</i> "It is now an <see cref="IotSensorSim"/>". The <c>when</c> clause added to the
+    /// <c>IOT_GATEWAY</c> arm restricts it to <see cref="DeviceClass.Automation"/>, so this pairing falls
+    /// through to the device-class fallback and is an <see cref="AoiInspectorSim"/> again.
+    /// <i>STILL TRUE:</i> everything the paragraph says about the PRE-narrowing build, including that the
+    /// second payload change entered the 2026-08-25 ruling unpriced. <b>The method is inverted rather than
+    /// deleted</b>, and its assertions are now the mirror image of what they were: this is the row the
+    /// narrowing bought back, and the price of the narrowing is measured by whether it stays
+    /// bought.</para></summary>
     [Fact]
-    public void AnIotGatewayOnTheAoiAviDeviceClass_AlsoMoves_AndItemFortyNineNeverNamedThisPairing()
+    public void AnIotGatewayOnTheAoiAviDeviceClass_KeepsItsInspector_BecauseTheOwnerNarrowedTheFix()
     {
         var dir = TempDir();
         var store = new MachineConfigStore(dir);
 
         var sim = SimulatorFactory.Create(Gateway("GW-AOI-01", DeviceClass.AoiAvi), seed: 7, configStore: store);
 
-        Assert.IsType<IotSensorSim>(sim);
-        Assert.IsNotType<AoiInspectorSim>(sim);
+        Assert.IsType<AoiInspectorSim>(sim);
+        Assert.IsNotType<IotSensorSim>(sim);
 
         var persisted = new MachineConfigStore(dir).GetConfig("GW-AOI-01");
-        Assert.Equal(MachineParameterSchema.IotSettings, persisted!.ConfigKind);
-        Assert.NotEqual(MachineParameterSchema.AoiInspection, persisted.ConfigKind);
+        Assert.Equal(MachineParameterSchema.AoiInspection, persisted!.ConfigKind);
+        Assert.NotEqual(MachineParameterSchema.IotSettings, persisted.ConfigKind);
+    }
+
+    /// <summary>🔴 <b>WHAT THE NARROWING BOUGHT, priced on DISK rather than on class identity — and this is
+    /// the assertion the second clause of the ruling is most likely to be misread about.</b>
+    ///
+    /// <para>The owner's second ruling authorises DELETING an operator's stored operating-config record. The
+    /// first ruling — narrow the fix — decides how far that authorisation can reach. Because
+    /// <see cref="DeviceClass.AoiAvi"/> no longer resolves to a sensor, an <c>aoi_inspection</c> record is
+    /// never in the way of anything, and so <b>no <c>aoi_inspection</c> record is deleted by any path item 49
+    /// adds</b>. This asserts it where it can be observed: a gateway seeded as an inspector, re-built after
+    /// the narrowing, still has the SAME record — same kind, and the operator's own adjustment still in
+    /// it.</para>
+    ///
+    /// <para>🔴 It is red-able in the direction that matters. Remove the <c>when</c> clause and this machine
+    /// becomes an <see cref="IotSensorSim"/> whose migration step drops the record; the adjustment assertion
+    /// then fails on a null, which is exactly the loss being priced.</para></summary>
+    [Fact]
+    public void NoAoiInspectionRecordIsDeleted_AndThatIsWhatTheNarrowingBought()
+    {
+        var dir = TempDir();
+        var seeded = new MachineConfigStore(dir);
+        seeded.Ensure("GW-AOI-02", MachineParameterSchema.AoiInspection);
+        var operatorEdit = seeded.SetAdjustment(
+            "GW-AOI-02", "lightIntensity", 55.0, AdjustmentScope.Machine, null, by: "operator", note: "line 3");
+        Assert.NotEmpty(operatorEdit.MachineAdjustments);
+
+        var reported = new List<string>();
+        _ = SimulatorFactory.Create(
+            Gateway("GW-AOI-02", DeviceClass.AoiAvi), seed: 7,
+            configStore: new MachineConfigStore(dir), logWarning: reported.Add);
+
+        var persisted = new MachineConfigStore(dir).GetConfig("GW-AOI-02");
+        Assert.NotNull(persisted);
+        Assert.Equal(MachineParameterSchema.AoiInspection, persisted!.ConfigKind);
+        Assert.True(persisted.MachineAdjustments.ContainsKey("lightIntensity"),
+            "The operator's adjustment is gone, which means the record was dropped and re-seeded.");
+        Assert.Empty(reported);
     }
 
     /// <summary>🔴 <b>THE CONTROL THAT MUST NOT MOVE.</b> A bank in which every case flips proves only that
@@ -157,9 +218,25 @@ public class SimulatorFactoryIotGatewayTests
     ///
     /// <para>🔴 What it does not measure: whether any host CATCHES this throw. It calls the factory
     /// directly. Whether a real start surfaces it as one failed machine or as a failed fleet is a
-    /// different measurement and this is not it.</para></summary>
+    /// different measurement and this is not it.</para>
+    ///
+    /// <para>📎 🔴 <b>RETRACTED IN ITS OUTCOME, 2026-08-25 (CD-1), kept verbatim.</b> The paragraph above
+    /// says what the day it was written required: name the cost, refuse to pick between two repairs, and
+    /// leave the choice to the owner. <b>The owner picked</b> — <i>"delete the record"</i>, 2026-08-25 — so
+    /// <i>FALSE now:</i> "the first start after the change throws", "green on a defect", "NOT repaired here".
+    /// <i>STILL TRUE:</i> that the cost was unpriced by the payload ruling; that re-keying is the repair NOT
+    /// taken; and the closing sentence's instruction, which is what is being carried out — this IS the test
+    /// that got flipped and re-explained, and the three tests below it are the flip.</para>
+    ///
+    /// <para>🔴 <b>And the "not measured" clause has since been MEASURED, elsewhere, and the answer belongs
+    /// beside the question:</b> of this product's three hosts only <c>St4i.EngineApi</c> can reach this
+    /// throw at all — <c>St4i.EdgeService</c>'s <c>EdgeWorker</c> and the WPF shell's
+    /// <c>FleetService.BuildSimulator</c> both call the factory with NO config store, so no <c>Ensure</c>
+    /// runs in either. In the one host that can reach it, nothing swallows it: it leaves
+    /// <c>BuildStartPlan</c>, and <c>FleetEndpoints</c>' <c>POST /v1/fleet/start</c> calls
+    /// <c>host.Start()</c> unwrapped. Recorded in <c>docs/owner-decisions.md</c> §49.8.</para></summary>
     [Fact]
-    public void AGatewayAlreadySeededAsAScrewdriver_NowThrowsOnItsFirstStart_AndThatIsUnpaidMigration()
+    public void AGatewayAlreadySeededAsAScrewdriver_NowStartsInstead_AndItsOldRecordIsGone()
     {
         var dir = TempDir();
         var before = new MachineConfigStore(dir);
@@ -167,10 +244,100 @@ public class SimulatorFactoryIotGatewayTests
 
         var after = new MachineConfigStore(dir);
 
-        var thrown = Assert.Throws<InvalidOperationException>(
-            () => SimulatorFactory.Create(Gateway("GW-MIGRATE-01", DeviceClass.Automation), seed: 7, configStore: after));
+        var sim = SimulatorFactory.Create(
+            Gateway("GW-MIGRATE-01", DeviceClass.Automation), seed: 7, configStore: after);
 
-        Assert.Contains("cannot re-ensure", thrown.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<IotSensorSim>(sim);
+
+        var persisted = new MachineConfigStore(dir).GetConfig("GW-MIGRATE-01");
+        Assert.Equal(MachineParameterSchema.IotSettings, persisted!.ConfigKind);
+    }
+
+    /// <summary>🔴 <b>PROPERTY (ii) OF THE DELETION — exactly one record goes, and every other machine's is
+    /// still there afterwards.</b> This is the assertion that separates "delete the record blocking the
+    /// re-seed" from "clear the store", and it is read back from DISK through a third store instance so what
+    /// is measured is the file rather than one instance's map.
+    ///
+    /// <para>The bystander is deliberately a machine carrying the SAME <c>screw_program</c> kind as the
+    /// record that gets dropped, and carrying an operator adjustment on top of it — a deletion keyed on the
+    /// kind instead of on the machine code would take it, and a deletion that rewrote the file from a fresh
+    /// seed would lose the adjustment while keeping the row.</para></summary>
+    [Fact]
+    public void TheDeletionTakesExactlyOneRecord_AndAnotherMachinesScrewProgramSurvivesIt()
+    {
+        var dir = TempDir();
+        var seeded = new MachineConfigStore(dir);
+        seeded.Ensure("GW-MIGRATE-02", MachineParameterSchema.ScrewProgram);
+        seeded.Ensure("SCRW-BYSTANDER", MachineParameterSchema.ScrewProgram);
+        seeded.SetAdjustment(
+            "SCRW-BYSTANDER", "torqueTarget", 1.40, AdjustmentScope.Machine, null, by: "operator", note: "line 3");
+
+        _ = SimulatorFactory.Create(
+            Gateway("GW-MIGRATE-02", DeviceClass.Automation), seed: 7, configStore: new MachineConfigStore(dir));
+
+        var reopened = new MachineConfigStore(dir);
+
+        Assert.Equal(MachineParameterSchema.IotSettings, reopened.GetConfig("GW-MIGRATE-02")!.ConfigKind);
+
+        var bystander = reopened.GetConfig("SCRW-BYSTANDER");
+        Assert.NotNull(bystander);
+        Assert.Equal(MachineParameterSchema.ScrewProgram, bystander!.ConfigKind);
+        Assert.True(bystander.MachineAdjustments.ContainsKey("torqueTarget"),
+            "Another machine's operator adjustment did not survive the migration.");
+    }
+
+    /// <summary>🔴 <b>PROPERTY (iii) OF THE DELETION — it leaves a trace, and the trace says WHAT went, of
+    /// WHICH machine, and WHY.</b> A removal that leaves no record is the defect items 45 and 64 exist for,
+    /// so this asserts the content of the announcement rather than merely that one was made.
+    ///
+    /// <para>🔴 <b>What this does NOT measure, and it is the part a reader will assume:</b> it captures the
+    /// HOST-SINK half of the channel — the <c>Action&lt;string&gt;</c> a host wires to its own
+    /// <c>ILogger</c>. The other half, an unconditional <see cref="Console.Error"/> write, is what makes the
+    /// deletion impossible to perform silently even from a caller that passes no sink, and it is NOT asserted
+    /// here: capturing the process's standard error inside a parallel test run would make this test's result
+    /// depend on every other test's output. It is stated instead, at
+    /// <c>SimulatorFactory.BuildGatewaySensor</c>, where the code is.</para></summary>
+    [Fact]
+    public void TheDeletionIsAnnounced_NamingTheMachine_TheKind_AndTheReason()
+    {
+        var dir = TempDir();
+        new MachineConfigStore(dir).Ensure("GW-MIGRATE-03", MachineParameterSchema.ScrewProgram);
+
+        var reported = new List<string>();
+        _ = SimulatorFactory.Create(
+            Gateway("GW-MIGRATE-03", DeviceClass.Automation), seed: 7,
+            configStore: new MachineConfigStore(dir), logWarning: reported.Add);
+
+        var line = Assert.Single(reported);
+        Assert.Contains("DELETED", line, StringComparison.Ordinal);
+        Assert.Contains("GW-MIGRATE-03", line, StringComparison.Ordinal);
+        Assert.Contains(MachineParameterSchema.ScrewProgram, line, StringComparison.Ordinal);
+        Assert.Contains(MachineParameterSchema.IotSettings, line, StringComparison.Ordinal);
+        Assert.Contains("item 49", line, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>🔴 <b>THE NARROWNESS OF THE DELETION, from the other side: a gateway that has nothing in the
+    /// way loses nothing and says nothing.</b> Two cases in one, because they are the two ways this could
+    /// have been written too broadly — a machine with NO stored record, and one already carrying the
+    /// <c>iot_settings</c> kind (i.e. a second start after the fix). Neither is a transition, so neither may
+    /// produce a deletion or a line of output; a version keyed on "the kinds differ" alone would pass the
+    /// first and a version keyed on "this is a gateway" would fail both.</summary>
+    [Fact]
+    public void AGatewayWithNothingInTheWay_DeletesNothingAndAnnouncesNothing()
+    {
+        var dir = TempDir();
+        var reported = new List<string>();
+
+        _ = SimulatorFactory.Create(
+            Gateway("GW-FRESH-01", DeviceClass.Automation), seed: 7,
+            configStore: new MachineConfigStore(dir), logWarning: reported.Add);
+
+        _ = SimulatorFactory.Create(
+            Gateway("GW-FRESH-01", DeviceClass.Automation), seed: 7,
+            configStore: new MachineConfigStore(dir), logWarning: reported.Add);
+
+        Assert.Empty(reported);
+        Assert.Equal(MachineParameterSchema.IotSettings, new MachineConfigStore(dir).GetConfig("GW-FRESH-01")!.ConfigKind);
     }
 
     /// <summary>🔴 <b>"The payload changes outright" as a MEASUREMENT.</b> Item 49 §49.5(2)'s words are

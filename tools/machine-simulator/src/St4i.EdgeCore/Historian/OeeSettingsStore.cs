@@ -476,7 +476,7 @@ public sealed class OeeSettingsStore
     /// present, which is why the message carries the reason and the exception is only extra.</param>
     public OeeSettingsStore(string? directory = null, Action<Exception?, string>? logError = null)
     {
-        RootDirectory = string.IsNullOrWhiteSpace(directory) ? DefaultRoot() : directory;
+        RootDirectory = ResolveRoot(directory);
         Directory.CreateDirectory(RootDirectory);
         _logError = logError;
         Load();
@@ -495,8 +495,37 @@ public sealed class OeeSettingsStore
         }
     }
 
-    private static string DefaultRoot() => Path.Combine(
+    /// <summary>🔴 <b>OWNER ITEM 72 — the SECOND of the two classes that generate the <c>historian</c> leaf,
+    /// and it carries the SAME variable as <see cref="SqliteHistorianStore.EnvVarDir"/> on purpose.</b> These
+    /// two stores share one directory by design (<c>historian.db</c> and <c>oee-settings.json</c> live side by
+    /// side so an operator or a backup tool finds every historian-adjacent file in one place), and one
+    /// directory that could be relocated by two different variables would be the defect, not the feature.
+    /// <c>St4i.EngineApi/Program.cs</c> already threads ONE resolved value into both constructors for exactly
+    /// that reason; this makes the no-argument construction path agree with it instead of diverging from
+    /// it.</summary>
+    public const string EnvVarDir = SqliteHistorianStore.EnvVarDir;
+
+    /// <summary>🔴 <b>The OEE-settings root — <c>%ProgramData%\ST4I\sim\historian</c> — BYTE-IDENTICAL to what
+    /// this method computed before item 72's seam existed.</b> The seam makes it overridable; it does not move
+    /// it. See <see cref="SqliteHistorianStore.DefaultRoot"/> for why that distinction is the load-bearing one
+    /// on this particular leaf.</summary>
+    /// <returns>The machine-wide historian directory. Pure path arithmetic — creates nothing.</returns>
+    public static string DefaultRoot() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ST4I", "sim", "historian");
+
+    /// <summary>Resolves the effective directory: <paramref name="directory"/> if given, else
+    /// <see cref="EnvVarDir"/> if set, else <see cref="DefaultRoot"/>. Same contract, same order and the same
+    /// winner as <see cref="SqliteHistorianStore.ResolveRoot"/> — see that method for the precedence
+    /// derivation against <c>Program.cs</c>'s own read.</summary>
+    /// <param name="directory">An explicit override, or <see langword="null"/>/whitespace to fall through to
+    /// the environment variable and then to the default.</param>
+    /// <returns>The directory <c>oee-settings.json</c> will be read and written in.</returns>
+    public static string ResolveRoot(string? directory = null)
+    {
+        if (!string.IsNullOrWhiteSpace(directory)) return directory;
+        var env = Environment.GetEnvironmentVariable(EnvVarDir);
+        return string.IsNullOrWhiteSpace(env) ? DefaultRoot() : env;
+    }
 
     /// <summary>Returns the effective settings for <paramref name="machineCode"/>: the stored entry if one
     /// exists (its raw <see cref="OeeMachineSettings.IdealCycleSecondsOverride"/> carried through

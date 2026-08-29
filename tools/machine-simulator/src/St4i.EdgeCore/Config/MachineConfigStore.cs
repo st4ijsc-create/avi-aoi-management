@@ -252,6 +252,102 @@ public sealed class MachineConfigStore
         }
     }
 
+    /// <summary>🔴 <b>OWNER ITEM 49, SECOND CLAUSE — owner's ruling of 2026-08-25 (<i>"narrow the fix,
+    /// delete the record"</i>). THIS METHOD DELETES OPERATOR-AUTHORED BYTES, and everything about its shape
+    /// is chosen to keep that deletion as small and as loud as it can be made.</b>
+    ///
+    /// <para><b>What it removes:</b> exactly ONE dictionary entry — the record filed under
+    /// <paramref name="machineCode"/> — and only when that record's <see cref="MachineOperatingConfig.ConfigKind"/>
+    /// is <paramref name="supersededKind"/>. It then rewrites <c>machine-operating-config.json</c> through the
+    /// same <see cref="Save"/> every other mutation uses. <b>It never touches a directory, never matches a file
+    /// name against a pattern, and cannot reach another machine's record</b>: the only key it can remove is the
+    /// one it was handed, and the only value it will accept is the one kind it was told to supersede. Every
+    /// other machine's baseline, adjustments and history are re-serialised byte-for-byte by the same
+    /// <see cref="Save"/> that already runs on every ordinary write.</para>
+    ///
+    /// <para>🔴 <b>Why a deletion at all, and why the alternative was refused.</b> A machine whose type now
+    /// resolves to a different simulator class carries a record seeded under the OLD parameter vocabulary, and
+    /// <see cref="Ensure"/> refuses to re-ensure it under the new one — it throws, so that machine cannot start.
+    /// The two repairs on offer were <i>delete the stored record</i> and <i>teach <see cref="Ensure"/> to re-key
+    /// one</i>. The owner took the first on 2026-08-25. Re-keying was NOT taken and is not implemented here: it
+    /// would have to decide what an operator's <c>torqueTarget</c> adjustment means under a vocabulary that has
+    /// no such parameter, and there is no answer to that which is not an invention.</para>
+    ///
+    /// <para>🔴 <b>Why it is not silent, and why <paramref name="report"/> is not optional.</b> This file has a
+    /// history of exactly this failure mode: item 45 exists because a constructor overwrote the one file the
+    /// decommissioning wipe deliberately KEEPS, and item 64 because a removal left no trace. A caller that
+    /// could pass <see langword="null"/> here would be able to delete an operator's record silently, so the
+    /// parameter is non-nullable and the message is composed from the record's own contents BEFORE it is
+    /// dropped — counts of adjustments and history rows cannot be recovered afterwards. 📌 The callback is
+    /// invoked AFTER <see cref="Save"/> returns and OUTSIDE <see cref="_gate"/>: it reports bytes that are
+    /// already gone rather than bytes that are about to go, and a slow or throwing sink cannot be holding this
+    /// store's lock while it does.</para>
+    ///
+    /// <para><b>Failure leaves nothing removed.</b> A throw out of <see cref="Save"/> puts the entry back
+    /// before rethrowing — the same item-75 discipline <see cref="Ensure"/> follows in the opposite direction,
+    /// and for the same reason: this map and that file must not disagree, because the guard that decides
+    /// whether a record exists is computed from the map.</para></summary>
+    /// <param name="machineCode">The ONE machine whose record may be dropped. No other key is read or written.</param>
+    /// <param name="supersededKind">The kind the stored record must already carry for the drop to happen. A
+    /// record under any other kind is left exactly as it is and <see langword="false"/> is returned — so a
+    /// caller that has mis-identified the transition removes nothing.</param>
+    /// <param name="replacementKind">The kind the caller is about to <see cref="Ensure"/>. Used only to
+    /// refuse a no-op (equal kinds drop nothing, because there is nothing blocking) and to say in the report
+    /// what the record is being cleared FOR.</param>
+    /// <param name="report">Where the completed deletion is announced. Required — see the remarks. Receives one
+    /// line naming the machine, the kind, how much was in the record, and why it went.</param>
+    /// <returns><see langword="true"/> when a record was removed and persisted; <see langword="false"/> when
+    /// there was nothing to remove (no record, a record under a different kind, or equal kinds).</returns>
+    public bool DropSupersededRecord(
+        string machineCode, string supersededKind, string replacementKind, Action<string> report)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(machineCode);
+        ArgumentException.ThrowIfNullOrEmpty(supersededKind);
+        ArgumentException.ThrowIfNullOrEmpty(replacementKind);
+        ArgumentNullException.ThrowIfNull(report);
+
+        if (string.Equals(supersededKind, replacementKind, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string message;
+        lock (_gate)
+        {
+            if (!_configs.TryGetValue(machineCode, out var existing) ||
+                !string.Equals(existing.ConfigKind, supersededKind, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            message =
+                $"[machineconfigstore] DELETED the persisted \"{existing.ConfigKind}\" operating-config record of " +
+                $"machine \"{existing.MachineCode}\" from \"{Path.Combine(RootDirectory, FileName)}\" " +
+                $"(baseline version {existing.Baseline.Version}, {existing.MachineAdjustments.Count} machine-scoped adjustment(s), " +
+                $"{existing.ProductAdjustments.Count} product bucket(s), {existing.History.Count} history row(s)). " +
+                $"REASON: this machine now resolves to a simulator whose configuration kind is " +
+                $"\"{replacementKind}\", and Ensure refuses to re-key one record across two vocabularies, so " +
+                "the machine could not start until the old record went. Owner ruling 2026-08-25, " +
+                "docs/owner-decisions.md item 49. Those bytes are gone and this store cannot restore them; " +
+                "no other machine's record was read or written.";
+
+            _configs.Remove(machineCode);
+
+            try
+            {
+                Save();
+            }
+            catch
+            {
+                _configs[machineCode] = existing;
+                throw;
+            }
+        }
+
+        report(message);
+        return true;
+    }
+
     /// <summary>This machine's config, or null if <see cref="Ensure"/>/<see cref="PullBaseline"/> has
     /// never been called for it. A deep clone.</summary>
     public MachineOperatingConfig? GetConfig(string machineCode)

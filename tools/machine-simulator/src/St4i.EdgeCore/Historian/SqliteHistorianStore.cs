@@ -105,14 +105,59 @@ public sealed class SqliteHistorianStore : IHistorianStore
     /// <see cref="DbPath"/>.</param>
     public SqliteHistorianStore(string? directory = null)
     {
-        var root = directory ?? DefaultRoot();
+        var root = ResolveRoot(directory);
         Directory.CreateDirectory(root);
         DbPath = Path.Combine(root, "historian.db");
         EnsureSchema();
     }
 
-    private static string DefaultRoot() => Path.Combine(
+    /// <summary>🔴 <b>OWNER ITEM 72 — the historian relocation variable, opened on the STORE by the owner's
+    /// ruling of 2026-08-25 (<i>"open the seam"</i>). It is the same literal the composition root has read
+    /// since WS-A-T14, deliberately, and that sameness is the whole design.</b>
+    ///
+    /// <para><b>Who wins, derived rather than assumed.</b> Before this const there was exactly ONE reader of
+    /// <c>ST4I_HISTORIAN_DIR</c> in <c>src/</c> — <c>St4i.EngineApi/Program.cs</c>, at the composition root —
+    /// which reads it and threads the value into this constructor as an EXPLICIT argument. There are three
+    /// readers now (that one, this store and <see cref="OeeSettingsStore"/>), and the precedence that decides
+    /// between them is the <c>explicit path &gt; environment variable &gt; default</c> order F-1 established
+    /// for all sixteen machine-wide roots: <b><c>Program.cs</c>'s explicit argument WINS</b>, and this store's
+    /// own env read is what answers for every OTHER construction site — <c>new SqliteHistorianStore()</c>
+    /// with no argument, which no host performs today and which every direct-construction test does.</para>
+    ///
+    /// <para>🔴 <b>The one window in which those two readers can disagree, named rather than denied.</b> They
+    /// read the SAME variable, so they can only differ if its value CHANGES between the composition root's
+    /// read (once, while the container is built) and a later construction. That is a real window and it is
+    /// not closed here; what is closed is the shape item 65 had to pay for, where two readers consulted two
+    /// different sources and answered differently on the same input. Here the source is one name and the
+    /// order is stated.</para></summary>
+    public const string EnvVarDir = "ST4I_HISTORIAN_DIR";
+
+    /// <summary>🔴 <b>The historian root — <c>%ProgramData%\ST4I\sim\historian</c> — and it is BYTE-IDENTICAL
+    /// to what this method computed before the seam existed.</b> Item 72's seam makes the root OVERRIDABLE;
+    /// it does not move it. Every deployment that sets no variable and passes no directory resolves exactly
+    /// the path it resolved before, which matters more here than anywhere else in the tree: this folder holds
+    /// the event table every reported OEE number is computed from. The witness that the default did not move
+    /// is <c>HistorianRootSeamTests.WithNoVariableSet_BothStoresResolveTheUnchangedProductionDefault</c>.
+    /// <para>Made <see langword="public"/> by the same ruling: it was private, so nothing outside these two
+    /// files could state what the production answer IS, and a test asserting "the default did not move" had
+    /// to re-spell the path instead of reading it.</para></summary>
+    /// <returns>The machine-wide historian directory. Pure path arithmetic — creates nothing.</returns>
+    public static string DefaultRoot() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ST4I", "sim", "historian");
+
+    /// <summary>Resolves the effective historian directory: <paramref name="directory"/> if given, else
+    /// <see cref="EnvVarDir"/> if set, else <see cref="DefaultRoot"/> — the identical contract
+    /// <c>DeviceIdentityStore.ResolveRoot</c> and its siblings carry. Pure path arithmetic: it does not create
+    /// anything on disk (the constructor does that).</summary>
+    /// <param name="directory">An explicit override, or <see langword="null"/>/whitespace to fall through to
+    /// the environment variable and then to the default.</param>
+    /// <returns>The directory <c>historian.db</c> will be opened in.</returns>
+    public static string ResolveRoot(string? directory = null)
+    {
+        if (!string.IsNullOrWhiteSpace(directory)) return directory;
+        var env = Environment.GetEnvironmentVariable(EnvVarDir);
+        return string.IsNullOrWhiteSpace(env) ? DefaultRoot() : env;
+    }
 
     // ─────────────────────────────────────────────────────────────────────
     // Schema

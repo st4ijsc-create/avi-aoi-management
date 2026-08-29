@@ -3355,7 +3355,14 @@ internal sealed class FleetCore
         var simFleet = effectiveFleet
             .Where(d => ResolveSlotLabelForMachine(d, inputs.Bindings) == SimulatedSlotLabel).ToList();
         var sims = simFleet
-            .Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore))
+            // 🔴 OWNER ITEM 49, SECOND CLAUSE — the seventh argument is the sink the factory announces a
+            // DELETED operator config record on, and it is BUFFERED into `deferredLogs` for exactly the
+            // reason the mapping resolver's two callbacks below already are (see the G-1 note there): this
+            // method runs off _gate today but StartLocked's copy of the same call does not, so both sites
+            // spell the channel the same way and neither can put a host's Event Log write under a lock.
+            .Select((d, i) => SimulatorFactory.Create(
+                d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore,
+                logWarning: msg => deferredLogs.Add(new DeferredLogEntry(null, msg))))
             .ToList();
 
         var mappingResolver = MappingProfileResolver.Build(
@@ -3861,8 +3868,13 @@ internal sealed class FleetCore
                 continue;
             }
 
+            // 🔴 OWNER ITEM 49, SECOND CLAUSE — same sink as BuildStartPlan's copy of this call, and here the
+            // buffering is load-bearing rather than merely consistent: this runs UNDER _gate, so a host
+            // delegate invoked straight from the factory would be a synchronous Event Log write inside this
+            // lock. `deferredLogs` is the caller's list and is flushed off-lock by CompleteStartOffLock.
             sims.Add(SimulatorFactory.Create(
-                simFleet[i], seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore));
+                simFleet[i], seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore,
+                logWarning: msg => deferredLogs.Add(new DeferredLogEntry(null, msg))));
         }
 
         // SM-1 (task-1-brief.md) — a roster with no simulated machines (an empty product roster, or one

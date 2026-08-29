@@ -2740,7 +2740,41 @@ EXPECT_CONFORMANCE=24
 #       (TheRegistrationKey_IsNowTheEntrysOwnId_... and ResolveEntries_twoEntriesSharingOneId_...).
 #       -1 +2 = +1. Six EngineApi tests went RED before they were re-pinned, and one of them is the witness
 #       item 65 §65.5 says could never exist; the red run is recorded in §65.7.4 rather than hidden.
-EXPECT_EDGECORE=1302
+# 🔴 TASK CD-1 (2026-08-25) raises EXPECT_EDGECORE 1302 -> 1310 (+8). EXPECT_ENGINEAPI, EXPECT_ABSTRACTIONS,
+# EXPECT_CONFORMANCE and EXPECT_EDGESERVICE do NOT move. Grand total 2994 -> 3002, measured by running each
+# suite, never by arithmetic. 🔴 THE WEB CONSTANTS ARE UNTOUCHED and are never added to this total:
+# EXPECT_WEB_E2E_TESTS, the four pinned failures and the one quarantined spec are CA-1's and belong to owner
+# item 60, which is a LATER task's subject.
+#
+#   +4  tests/St4i.EdgeCore.Tests/SimulatorFactoryIotGatewayTests.cs -- owner item 49, BOTH clauses of the
+#       2026-08-25 ruling ("narrow the fix, delete the record"). Net of five edits: ONE test inverted
+#       (AnIotGatewayOnTheAoiAviDeviceClass_AlsoMoves_... -> ..._KeepsItsInspector_..., because the
+#       narrowing gives that pairing its AoiInspectorSim back), ONE test replaced
+#       (..._NowThrowsOnItsFirstStart_AndThatIsUnpaidMigration -> ..._NowStartsInstead_AndItsOldRecordIsGone,
+#       because the owner paid the migration), and FOUR added: the aoi_inspection record that is NOT
+#       deleted, the exactly-one-record property, the announcement's content, and the two no-op cases.
+#       6 - 0 + 4 = 10 in the file, +4 on the ledger.
+#   +4  tests/St4i.EdgeCore.Tests/Historian/HistorianRootSeamTests.cs (NEW FILE) -- owner item 72, the
+#       ninth leaf. The FIRST of the four is the one that had to exist: production default UNCHANGED when
+#       no variable is set, asserted against the literal %ProgramData% triple rather than against
+#       DefaultRoot()'s own return value, because a test comparing the method to itself stays green
+#       through a moved default. historian holds the event table every reported OEE number comes from.
+#
+# CONTROL PAIRS -- FOUR edges, run and reverted, and they do NOT kill the same set:
+#   ITEM 49  edge A  `when d.DeviceClass == DeviceClass.Automation` REMOVED (i.e. CC-1's broad half B)
+#                    -> 2 red / 8 green, and the two are exactly the AoiAvi pair. The Automation row and
+#                       the Iot control hold on BOTH sides, which is what makes the two mean something.
+#            edge B  the DropSupersededRecord call disabled, narrowing kept
+#                    -> 3 red / 7 green, and the three are exactly the deletion's three properties
+#                       (starts / one record only / announced). The two no-op cases hold on BOTH sides.
+#   ITEM 72  edge C  ResolveRoot reverted to `directory ?? DefaultRoot()` (i.e. no env read)
+#                    -> 1 red / 15 green: only the construction-with-no-argument witness.
+#            edge D  env read KEPT, DefaultRoot() moved to %TEMP%
+#                    -> 1 red / 15 green: only the production-default control. Edge D is what makes edge C
+#                       mean "the seam works" instead of "something changed": a seam that reads the
+#                       variable while quietly relocating live OEE data would pass C and fail D.
+#   Scope of all four: class-filtered, NOT the full suite. Stated rather than implied. BASE -> 0 red.
+EXPECT_EDGECORE=1310
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
 # rewritten, split or deleted:
@@ -6177,7 +6211,31 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #
 # The baseline cfcfae42 is STILL not moved. The corpus grew by ONE file --
 # SimulatorFactoryIotGatewayTests.cs, the only file this task added: 562 -> 563 *.cs.
-EXPECT_NEW_DOC_ABSOLUTES=663
+# 🔴 EXPECT_NEW_DOC_ABSOLUTES: 663 -> 703 (+40), CD-1, 2026-08-25 (docs/owner-decisions.md items 49 and 72).
+# ACCOUNTED FOR, not absorbed. The delta is concentrated in FOUR places and every one of them is a sentence
+# this task was required to write:
+#   * the RETRACTION blocks. Six of them (SimulatorFactory's `d` param twice, SimulatorFactoryIotGatewayTests
+#     twice, TestRunTempRoot.cs, TestRunTempRootTests, PerHostDataRootsTests twice), and a retraction is
+#     absolute-dense BY CONSTRUCTION: it quotes the old absolute ("no case here", "NEITHER reads an
+#     environment variable", "TWO of them change", "only ever read as a bare literal") and then states the
+#     new one. The scanner counts both halves and that is correct — both are claims a human must read.
+#   * MachineConfigStore.DropSupersededRecord's remarks. It DELETES OPERATOR BYTES, so its narrowness is
+#     written as universals on purpose: "never touches a directory", "cannot reach another machine's record",
+#     "the only key it can remove is the one it was handed".
+#   * SqliteHistorianStore/OeeSettingsStore's new seam members — "creates nothing", "BYTE-IDENTICAL", "the
+#     production default did not move".
+#   * HistorianRootSeamTests' and the new item-49 tests' law-(3) ceilings, which are absolute by their nature
+#     ("it does not observe a leak", "no aoi_inspection record is deleted by any path item 49 adds").
+# Every one was re-read against the tree after it was written. 🔴 TWO sentences of this task's own prose were
+# caught by CHECKS rather than by the re-read — the fifth consecutive task in which that has happened — and
+# neither was an absolute-claim failure, which is the useful half of the finding: one was a doc comment that
+# a TEXT census read as a CALL SITE (InstallerHarvestExclusionTests, two assertions red), and one was an
+# unbalanced <para> that hid every claim in its block from the compiler (DocCommentProseTests). Both are
+# recorded in docs/owner-decisions.md §49.8; the first is a defect OF THE CENSUS and was reported, not
+# repaired.
+# The baseline cfcfae42 is STILL not moved. The corpus grew by ONE file — HistorianRootSeamTests.cs, the only
+# *.cs this task added: 563 -> 564.
+EXPECT_NEW_DOC_ABSOLUTES=703
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split
