@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://st4i.local/contracts/hmi-screen/v1",
+  "title": "St4i HMI Screen",
+  "type": "object",
+  "required": ["schemaVersion", "screenId", "title", "theme", "layout", "widgets"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "screenId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "title": { "type": "string", "minLength": 1 },
+    "titleEn": { "type": "string" },
+    "theme": { "enum": ["isa101", "blueprint"] },
+    "layout": { "$ref": "#/$defs/layout" },
+    "widgets": { "type": "array", "items": { "$ref": "#/$defs/widget" } }
+  },
+  "$defs": {
+    "layout": {
+      "type": "object",
+      "required": ["cols", "rows", "breakpoint"],
+      "additionalProperties": false,
+      "properties": {
+        "cols": { "type": "integer", "minimum": 1, "maximum": 48 },
+        "rows": { "type": "integer", "minimum": 1, "maximum": 48 },
+        "breakpoint": { "enum": ["panel", "tablet", "phone"] }
+      }
+    },
+    "rect": {
+      "type": "object",
+      "required": ["col", "row", "colSpan", "rowSpan"],
+      "additionalProperties": false,
+      "properties": {
+        "col": { "type": "integer", "minimum": 0 },
+        "row": { "type": "integer", "minimum": 0 },
+        "colSpan": { "type": "integer", "minimum": 1 },
+        "rowSpan": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "widget": {
+      "type": "object",
+      "required": ["id", "kind", "rect"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "kind": {
+          "enum": [
+            "readout", "status-lamp", "gauge", "trend", "alarm-banner", "alarm-list",
+            "log", "faceplate", "label", "sheet", "kpi-tile", "state-badge",
+            "setpoint-input", "command-button", "line-state"
+          ]
+        },
+        "rect": { "$ref": "#/$defs/rect" },
+        "component": { "type": "string" },
+        "bindings": { "type": "object", "additionalProperties": { "type": "string" } },
+        "props": { "type": "object" },
+        "policyAction": { "enum": ["machine.setpoint", "machine.command"] }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "enum": ["setpoint-input", "command-button"] } },
+            "required": ["kind"]
+          },
+          "then": { "properties": { "policyAction": { "type": "string" } }, "required": ["policyAction"] }
+        }
+      ]
+    }
+  }
+}

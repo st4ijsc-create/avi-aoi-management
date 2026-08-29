@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "screenId": "overview",
+  "title": "Tổng quan",
+  "titleEn": "OVERVIEW",
+  "theme": "isa101",
+  "layout": { "cols": 12, "rows": 8, "breakpoint": "panel" },
+  "widgets": [
+    {
+      "id": "state",
+      "kind": "status-lamp",
+      "rect": { "col": 0, "row": 0, "colSpan": 3, "rowSpan": 1 },
+      "bindings": { "state": "SCRW-01/spindle/state" }
+    }
+  ]
+}
