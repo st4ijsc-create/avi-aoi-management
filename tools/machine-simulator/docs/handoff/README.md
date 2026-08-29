@@ -13,10 +13,32 @@ vòng trao đổi **nhiều ngày**, không phải một lần chạy cổng.
 
 ---
 
-## Bộ bàn giao 2026-08-24 — gửi đội server SYNAPSE
+## 🔴 THỨ TỰ ƯU TIÊN — đọc trước bảng file
 
-Cả hai hồ sơ dưới đây đi tới **cùng một đội** nhưng **độc lập với nhau**; xử lý cái nào trước cũng
-được.
+Ba hồ sơ trong thư mục này đi tới **cùng một đội server SYNAPSE**. Chúng **độc lập về nội dung** — không
+hồ sơ nào cần hồ sơ kia để hiểu được — nhưng chúng **KHÔNG ngang nhau về mức quan trọng**, và thứ tự
+dưới đây là thứ tự chúng tôi đề nghị đội kia xếp lịch:
+
+| ưu tiên | hồ sơ | mục nội bộ | vì sao ở bậc này |
+|---|---|---|---|
+| **1** | `2026-08-24-sync-points-push-fields.md` + `.json` — **28 trường** | 59 | **Đắt nhất, và là thứ duy nhất đang LÀM MẤT dữ liệu.** Một vận hành viên sửa 28 trường rồi mất bản sửa ở lần pull kế. Câu hỏi chính — *"các anh có GHI 28 trường xuống DB không?"* — chặn một đường dữ liệu đang chạy. |
+| **2** | `2026-08-24-intent-classifier-steptype.md` | 69 | Một giá trị **sai** làm mọi câu hỏi mô-men và lượng keo trả *"không đủ dữ liệu"* trên một bảng CÓ dữ liệu. Hỏng thật, nhưng **không mất dữ liệu của ai**. |
+| **3** | `2026-08-25-aoi-inspection-recipe-kind.md` — **`aoi_inspection`** | 71 | Một **đề nghị nới hợp đồng**, không phải một báo lỗi. Một lược đồ kiểm **không chạy** cho một họ máy; không ai mất gì hôm nay. |
+
+🔴 **Nếu đội kia chỉ làm được MỘT việc, đó phải là hồ sơ số 1.** Ba hồ sơ được giữ thành **ba file
+riêng** chính vì thế: gộp một đề nghị rẻ vào một câu hỏi đắt làm **loãng** câu hỏi đắt, và người đọc sẽ
+trả lời cái dễ trước.
+
+📎 🔴 **CÂU DƯỚI ĐÂY ĐÃ RÚT — 2026-08-25, giữ NGUYÊN TỪNG CHỮ, không xoá.** Tới 2026-08-24 mục này viết
+*"Cả hai hồ sơ dưới đây đi tới **cùng một đội** nhưng **độc lập với nhau**; xử lý cái nào trước cũng
+được."* Vế *"độc lập với nhau"* **vẫn đúng**. Vế *"xử lý cái nào trước cũng được"* **nay SAI**: bảng ưu
+tiên ở trên là một thứ tự, và nó tồn tại vì hồ sơ thứ ba được thêm vào ngày 2026-08-25 và nó **rẻ hơn
+hẳn** hai hồ sơ kia — nên để nguyên câu cũ sẽ mời người đọc làm cái rẻ trước. Chữ *"Cả hai"* cũng đã cũ:
+nay là **ba**.
+
+---
+
+## Bộ bàn giao 2026-08-24 — gửi đội server SYNAPSE
 
 | file | nội dung | trạng thái phía ta |
 |---|---|---|
@@ -29,9 +51,28 @@ sai. Một schema ở đó sẽ là một cái schema không ai cài.
 
 ---
 
+## Bộ bàn giao 2026-08-25 — gửi CÙNG đội server SYNAPSE
+
+| file | nội dung | trạng thái phía ta |
+|---|---|---|
+| `2026-08-25-aoi-inspection-recipe-kind.md` | **Đề nghị** thêm `"aoi_inspection"` vào `RECIPE_KINDS`, một `RECIPE_PAYLOAD_SCHEMAS` tương ứng, và ánh xạ `AOI`/`AVI`/`AOI_AVI`. Đo lại `RECIPE_KINDS` ngày 2026-08-25 qua `git show HEAD:server/…` (thư mục `server/` **không có trên đĩa** vì nón checkout thưa — nên đây là *"đã đo"*, không phải *"không thấy"*): **bốn** phần tử, **không** có `aoi_inspection`. Sáu khoá kèm min/max/mặc định. | **0 dòng `server/` bị sửa.** Không đổi một byte nào trên dây. |
+
+**Không có file JSON nào cho hồ sơ này** — nó đề nghị một *hình dạng lược đồ*, và hình dạng ấy được viết
+thẳng bằng `zod` trong chính file `.md`, đúng khuôn ba `*Shape` đã có bên họ. Một file JSON mẫu ở đây sẽ
+là một **công thức**, không phải một **lược đồ**, tức là trả lời sai câu hỏi.
+
+🔴 **Khoá thứ BẢY (`retestPolicy`) cố ý KHÔNG được xin** — nó là một câu hỏi thiết kế không có trọng
+tài, và hồ sơ nói thẳng như thế ở §4 của nó.
+
+---
+
 ## Đối chiếu với hồ sơ nội bộ
 
-Hai hồ sơ trên tương ứng **mục 59** và **mục 69** trong `docs/owner-decisions.md`. **Bàn giao không
-phải chấp thuận:** cả hai mục **ở lại Phần I** và chỉ rời khi bên kia đã trả lời hoặc đã sửa. Bản
-trong `owner-decisions.md` vẫn là nguồn sự thật cho **ta**; các file ở đây là bản viết cho **họ**, và
-khi hai bên khác nhau thì `owner-decisions.md` thắng.
+Ba hồ sơ trên tương ứng **mục 59**, **mục 69** và **mục 71** trong `docs/owner-decisions.md`.
+**Bàn giao không phải chấp thuận:** cả ba mục **ở lại Phần I** và chỉ rời khi bên kia đã trả lời hoặc đã
+sửa. Bản trong `owner-decisions.md` vẫn là nguồn sự thật cho **ta**; các file ở đây là bản viết cho
+**họ**, và khi hai bên khác nhau thì `owner-decisions.md` thắng.
+
+📎 **Câu trên tới 2026-08-24 viết *"Hai hồ sơ trên tương ứng mục 59 và mục 69"* và *"cả hai mục"*** —
+đúng ngày ấy, cũ từ 2026-08-25. Sửa số, giữ nguyên vế còn lại, vì vế ấy là luật của thư mục chứ không
+phải một phép đếm.
