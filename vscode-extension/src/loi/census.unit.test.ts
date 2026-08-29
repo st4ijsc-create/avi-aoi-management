@@ -38,6 +38,22 @@ import { join, relative } from "node:path";
 
 const GOC = join(__dirname, "..");
 
+/**
+ * ★★★ 2026-08-29 — TỆP NGOÀI `src/` MÀ VẪN VÀO BUNDLE.
+ *
+ * ⚠⚠ Census chỉ có nghĩa nếu TẬP QUÉT = TẬP CHẠY. Đợt B cho `bangChat.ts` nhập
+ * `shared/aiCodingLoop.ts` (vị từ `daBiTuChoiGhi` dùng chung, cố ý KHÔNG nhân bản) ⇒ esbuild GỘP
+ * tệp ấy vào `dist/extension.js`, nhưng nó nằm NGOÀI `src/` nên census cũ KHÔNG nhìn thấy. Một
+ * đường ghi đĩa nấp trong một tệp `shared/` sẽ lọt qua toàn bộ hàng rào này mà không ai biết.
+ * Review toàn nhánh Đợt B nêu đúng chỗ đó và đặt việc siết làm ĐIỀU KIỆN trước Đợt C — đợt mở
+ * đường ghi đĩa ĐẦU TIÊN.
+ *
+ * ⚠ Danh sách này phải bám theo `import` THẬT: thêm một import ngoài-cây mới mà quên thêm vào đây
+ *   là tự chọc mù chính mình. Ca "tập quét phủ hết tệp ngoài-cây đang được import" bên dưới canh
+ *   đúng điều đó — nó đọc `src/` tìm import vượt lên `../..` và so với danh sách này.
+ */
+const TEP_NGOAI_CAY_VAO_BUNDLE = [join(GOC, "..", "..", "shared", "aiCodingLoop.ts")];
+
 /** Mọi `.ts` dưới `src/`, loại CHÍNH TỆP CENSUS này (xem lý do ở docblock trên). */
 function moiTepTs(dir: string): string[] {
   const ra: string[] = [];
@@ -52,19 +68,42 @@ function moiTepTs(dir: string): string[] {
   return ra;
 }
 
+/** Tập THẬT SỰ được gộp vào bundle: `src/` + các tệp ngoài cây đang được import. */
+function moiTepVaoBundle(): string[] {
+  return [...moiTepTs(GOC), ...TEP_NGOAI_CAY_VAO_BUNDLE];
+}
+
 /** Còn CHƯA tới lượt: KHÔNG đâu được có các API ghi đĩa này (Đợt C sẽ mở đúng MỘT nơi cho một
  *  trong số này — sửa từng dòng khi tới lượt, xem docblock trên). */
 const CAM_TU = ["fs.writeFile", "writeFileSync", "appendFile", "applyEdit", "WorkspaceEdit"];
 
 describe("census — Đợt A chỉ-đọc, không đường ghi ĐĨA nào", () => {
-  const tep = moiTepTs(GOC);
+  const tep = moiTepVaoBundle();
 
   it("★★★ lưới quét được tệp thật (không tự làm rỗng danh sách nguồn)", () => {
     expect(tep.length).toBeGreaterThan(5);
   });
 
+  it("★★★ TẬP QUÉT = TẬP VÀO BUNDLE: mọi import vượt ra ngoài `src/` phải nằm trong danh sách", () => {
+    /**
+     * ★★ Census chỉ có nghĩa nếu nó quét ĐÚNG những gì sẽ chạy. `bangChat.ts` nhập
+     * `shared/aiCodingLoop.ts` ⇒ esbuild gộp tệp đó vào bundle, nhưng nó ngoài `src/`. Nếu mai
+     * ai đó nhập thêm một tệp ngoài-cây nữa mà quên khai vào `TEP_NGOAI_CAY_VAO_BUNDLE`, census
+     * sẽ mù đúng tệp mới ấy — và mù MỘT CÁCH IM LẶNG. Ca này bắt đúng lúc đó.
+     */
+    const daKhai = new Set(TEP_NGOAI_CAY_VAO_BUNDLE.map((p) => p.replace(/\\/g, "/").split("/").pop()));
+    const thieu: string[] = [];
+    for (const p of moiTepTs(GOC)) {
+      for (const m of readFileSync(p, "utf8").matchAll(/from\s+"((?:\.\.\/){2,}[^"]+)"/g)) {
+        const ten = `${m[1].split("/").pop()}.ts`;
+        if (!daKhai.has(ten)) thieu.push(`${relative(GOC, p)} → ${m[1]}`);
+      }
+    }
+    expect(thieu).toEqual([]);
+  });
+
   for (const tu of CAM_TU) {
-    it(`★★★ KHÔNG chỗ nào trong vscode-extension/src chứa "${tu}"`, () => {
+    it(`★★★ KHÔNG chỗ nào trong TẬP VÀO BUNDLE chứa "${tu}"`, () => {
       const cham: string[] = [];
       for (const p of tep) {
         const noiDung = readFileSync(p, "utf8");
