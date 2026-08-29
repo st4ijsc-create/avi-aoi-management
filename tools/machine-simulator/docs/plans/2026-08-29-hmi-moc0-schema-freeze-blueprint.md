@@ -1086,7 +1086,7 @@ git commit -m "contract(hmi): the component model, where a setpoint without a ha
     "schemaVersion": { "const": 1 },
     "screenId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
     "title": { "type": "string", "minLength": 1 },
-    "titleEn": { "type": ["string", "null"] },
+    "titleEn": { "type": "string" },
     "theme": { "enum": ["isa101", "blueprint"] },
     "layout": { "$ref": "#/$defs/layout" },
     "widgets": { "type": "array", "items": { "$ref": "#/$defs/widget" } }
@@ -1127,10 +1127,10 @@ git commit -m "contract(hmi): the component model, where a setpoint without a ha
           ]
         },
         "rect": { "$ref": "#/$defs/rect" },
-        "component": { "type": ["string", "null"] },
-        "bindings": { "type": ["object", "null"], "additionalProperties": { "type": "string" } },
-        "props": { "type": ["object", "null"] },
-        "policyAction": { "enum": [null, "machine.setpoint", "machine.command"] }
+        "component": { "type": "string" },
+        "bindings": { "type": "object", "additionalProperties": { "type": "string" } },
+        "props": { "type": "object" },
+        "policyAction": { "enum": ["machine.setpoint", "machine.command"] }
       },
       "allOf": [
         {
@@ -1461,27 +1461,34 @@ export type TagDataType = "bool" | "int" | "float" | "string" | "enum"
 export type TagAccess = "r" | "rw"
 export type PolicyAction = "machine.setpoint" | "machine.command"
 
+/**
+ * 🔴 KHÔNG có `| null` ở bất kỳ trường tuỳ chọn nào, và đó là hợp đồng chứ không phải phong cách.
+ * Sau ruling ở Task 4: một tài liệu KHÔNG BAO GIỜ ghi `null` tường minh — khoá vắng mặt CHÍNH LÀ null.
+ * Schema thi hành điều đó (`{"type":"string"}`, không phải `["string","null"]`), và bộ serializer C#
+ * (`WhenWritingNull`) vốn không thể phát ra một null tường minh, nên một tài liệu chứa nó là tài liệu
+ * mà bản tham chiếu .NET không round-trip được. Viết `| null` ở đây là mở lại đúng cái bẫy ấy.
+ */
 export type TagSource = {
   kind: "modbus" | "opcua" | "mqtt" | "simulated" | "derived"
-  unitId?: number | null
-  register?: number | null
-  scale?: number | null
-  nodeId?: string | null
-  topic?: string | null
-  jsonPath?: string | null
-  expr?: string | null
+  unitId?: number
+  register?: number
+  scale?: number
+  nodeId?: string
+  topic?: string
+  jsonPath?: string
+  expr?: string
 }
 
 export type TagDescriptor = {
   path: string
   dataType: TagDataType
-  unit?: string | null
-  engMin?: number | null
-  engMax?: number | null
-  enumValues?: string[] | null
+  unit?: string
+  engMin?: number
+  engMax?: number
+  enumValues?: string[]
   access: TagAccess
-  /** Bất biến §5: bắt buộc khác null khi `access === "rw"`. Schema thi hành; TypeScript không. */
-  policyAction?: PolicyAction | null
+  /** Bất biến §5: bắt buộc có mặt khi `access === "rw"`. Schema thi hành; TypeScript không. */
+  policyAction?: PolicyAction
   source: TagSource
   isBackedByDriver: boolean
 }
