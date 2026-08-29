@@ -1367,6 +1367,8 @@
     "denied": "Bạn không có quyền thực hiện thao tác này.",
     "expired": "Đề xuất đã hết hạn.",
     "failed": "Không thể thực thi.",
+    "writeRejected": "Bị từ chối ghi — KHÔNG byte nào vào đĩa.",
+    "writePartial": "Áp MỘT PHẦN — một số tệp ĐÃ được ghi xuống đĩa, phần còn lại thì chưa. Kiểm bằng git diff trước khi làm tiếp.",
     "summaryLabel": "Tóm tắt thao tác",
     "changesTitle": "Thay đổi",
     "warningsTitle": "Lưu ý quan trọng",

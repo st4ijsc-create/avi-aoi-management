@@ -7,10 +7,11 @@
  *              RBAC gated, returns a pendingAction the UI renders as a confirm
  *              card. Token = row id (uuid) bound to userId, TTL 5'.
  *   confirm  → verify status/expiry/userId/token → RBAC re-check → idempotency
- *              (already executed/bi_tu_choi_ghi ⇒ return cached result) → execute()
+ *              (already executed/bi_tu_choi_ghi/ap_mot_phan ⇒ return cached result) → execute()
  *              with args read from the DB row (never the client) → mark status
  *              THEO KẾT QUẢ THẬT (`trangThaiSauThucThi`, Đợt B · Task 6: byte thật
- *              vào đĩa ⇒ executed; execute() TỪ CHỐI GHI ⇒ bi_tu_choi_ghi) + audit.
+ *              vào đĩa ⇒ executed; execute() TỪ CHỐI GHI ⇒ bi_tu_choi_ghi; lô ghi
+ *              hỏng GIỮA CHỪNG, tệp 1..k−1 đã trên đĩa ⇒ ap_mot_phan) + audit.
  *   cancel   → mark cancelled (only the owner, only while proposed).
  *
  * Safety invariants (Mục 8):
@@ -40,6 +41,10 @@ import { chieuTheoChiSoKhoi, keHoachKhoiDuyet } from "../../client/src/lib/diffH
 // `bam` (sha256) + `trich` (trích-đã-che) của chính apply_diff — để lời khai audit sau một lượt
 // chọn tập-con mang đúng băm/trích của BYTE THẬT, bằng đúng thước mà tool dùng.
 import { bam as bamNoiDung, trich } from "./aiLocalTools/writeHandlers/applyDiff";
+// ★★★ Rà soát cuối Đợt B (2026-08-29) — danh sách mã "đã có byte vào đĩa" ĐẾN TỪ chính tool sinh ra
+// mã đó, không phải một bảng chép tay ở đây. Cùng khuôn với `bam`/`trich` ngay trên: nơi tiêu thụ
+// nhập từ nơi sản xuất, để hai bên không thể trôi khỏi nhau.
+import { laMaGhiMotPhan } from "./aiLocalTools/writeHandlers/applyDiffBatch";
 import {
   AUDIT_ACTIONS,
   ENTITY_TYPES,
@@ -169,8 +174,14 @@ export interface ConfirmResult {
    * ⚠ `ok:true` với status này vẫn có thể xảy ra (xem nhánh cache-return): `ok` nói *"vòng đời HITL
    *   chạy hết chặng"*, KHÔNG nói *"byte đã vào đĩa"* — luôn đọc `result`/`daBiTuChoiGhi(result)`
    *   để biết sự thật, đúng hợp đồng mà CLI/web/extension đã dựa vào từ trước bản vá này.
+   *
+   * ★★★ Rà soát cuối Đợt B — `"ap_mot_phan"` MỚI (drizzle/0342): lượt ghi LÔ hỏng GIỮA CHỪNG
+   * (`apply_diff_batch` → `BATCH_PARTIAL`) ⇒ **một số tệp ĐÃ trên đĩa**, phần còn lại thì chưa.
+   * Đây KHÔNG phải `"bi_tu_choi_ghi"` (nhãn đó nghĩa là 0 byte) và cũng không phải `"executed"`.
+   * ⚠ Mọi nơi tiêu thụ `status` phải có nhánh cho CẢ HAI giá trị mới — rơi vào `default`/fall-through
+   *   nghĩa là thẻ duyệt không bao giờ tới trạng thái chung cục và nút Xác nhận ở lại sống.
    */
-  status: "executed" | "bi_tu_choi_ghi" | "denied" | "expired" | "not_found" | "invalid";
+  status: "executed" | "bi_tu_choi_ghi" | "ap_mot_phan" | "denied" | "expired" | "not_found" | "invalid";
   result?: unknown;
   message?: string;
   /**
@@ -656,16 +667,55 @@ function hunkRejectMessage(lang: ToolLang, reason: HunkRejectReason, chiTiet: st
  * nhưng đây KHÔNG phải một vị từ mồ côi: nó dùng lại NGUYÊN `daBiTuChoiGhi` (không viết bản thứ
  * hai) và được `confirmAction` gọi THẬT ngay dưới, tại đúng điểm ghi `status` vào CSDL lẫn điểm trả
  * `ConfirmResult` cho người gọi.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ RÀ SOÁT CUỐI ĐỢT B (2026-08-29) — **BẢN VÁ TRÊN ĐÂY TỰ ĐẺ RA MỘT LỜI KHAI SAI THỨ HAI.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản đầu coi **mọi** `note` không rỗng là "0 byte vào đĩa". Đúng cho `apply_diff` (một tệp: hoặc
+ * ghi, hoặc không). **SAI cho `apply_diff_batch`**: `BATCH_PARTIAL` nghĩa là pha GHI hỏng giữa
+ * chừng và tệp `1..k−1` **ĐÃ NẰM TRÊN ĐĨA** (`applyDiffBatch.ts` — docblock gọi đó là "mã quan
+ * trọng nhất của file này: nó tồn tại để trạng thái nửa vời KHÔNG BAO GIỜ im lặng").
+ * Dán `'bi_tu_choi_ghi'` lên ca đó là khai sai theo đúng hợp đồng CHỮ của chính nhãn ấy
+ * (`drizzle/0341` + `enums.ts`: "0 byte vào đĩa"), ở đúng ca nguy hiểm nhất — người đọc tin cây làm
+ * việc còn nguyên rồi đề xuất lại CẢ LÔ trên một cây nửa vời. Tầng giao diện đã phải tự tách ca này
+ * từ 2026-08-24 (`AICodingWorkspace.tsx`: *"TUYỆT ĐỐI không dùng câu 'tệp trên đĩa KHÔNG đổi'"*).
+ *
+ * ⇒ **MỘT VỊ TỪ TRẢ LỜI MỘT CÂU HỎI.** `daBiTuChoiGhi()` trả lời *"lượt ghi có trọn vẹn không?"*
+ *   (giữ NGUYÊN, vẫn là bản duy nhất — không viết bản thứ hai); `laMaGhiMotPhan()` trả lời tiếp
+ *   *"trong số không-trọn-vẹn, cái nào ĐÃ để lại byte?"*. Danh sách mã của câu hỏi thứ hai lấy từ
+ *   CHÍNH `applyDiffBatch.ts` (`MA_GHI_MOT_PHAN`), nơi mã được sinh ra — không bịa một bảng thứ hai
+ *   ở đây để rồi nó trôi khỏi nguồn.
  */
-export function trangThaiSauThucThi(ketQua: unknown): "executed" | "bi_tu_choi_ghi" {
-  return daBiTuChoiGhi(ketQua) ? "bi_tu_choi_ghi" : "executed";
+export type TrangThaiSauThucThi = "executed" | "bi_tu_choi_ghi" | "ap_mot_phan";
+
+export function trangThaiSauThucThi(ketQua: unknown): TrangThaiSauThucThi {
+  if (!daBiTuChoiGhi(ketQua)) return "executed";
+  return laMaGhiMotPhan(maTuChoiGhi(ketQua)) ? "ap_mot_phan" : "bi_tu_choi_ghi";
 }
 
 /** Câu khai "đã xử lý trước đó" cho nhánh cache-return — đúng bản chất từng trạng thái chung cục. */
-function cauDaXuLyTruocDo(trangThai: "executed" | "bi_tu_choi_ghi"): string {
-  return trangThai === "executed"
-    ? "Đã thực thi trước đó."
-    : "Đã bị từ chối ghi trước đó — không byte nào vào đĩa.";
+function cauDaXuLyTruocDo(trangThai: TrangThaiSauThucThi): string {
+  if (trangThai === "executed") return "Đã thực thi trước đó.";
+  if (trangThai === "ap_mot_phan") {
+    return "Đã xử lý trước đó — lô áp MỘT PHẦN: một số tệp ĐÃ được ghi, phần còn lại thì chưa.";
+  }
+  return "Đã bị từ chối ghi trước đó — không byte nào vào đĩa.";
+}
+
+/**
+ * Câu khai của lượt confirm VỪA CHẠY XONG. Tách THUẦN (khỏi thân `confirmAction`) để lưới hỏi
+ * được câu *"lời khai có khớp trạng thái không?"* mà không phải dựng DB + repo git thật.
+ *
+ * ⚠ Câu của `ap_mot_phan` **không được** chứa "không byte nào vào đĩa" — xem docblock
+ *   `trangThaiSauThucThi` ở trên. Chi tiết tệp nào ĐÃ/CHƯA ghi nằm trong `result.textSummary` của
+ *   chính tool (nó liệt kê đích danh), nên ở đây chỉ dẫn người đọc sang đó thay vì chép lại.
+ */
+export function cauKetCucThucThi(trangThai: TrangThaiSauThucThi): string {
+  if (trangThai === "executed") return "Đã thực thi.";
+  if (trangThai === "ap_mot_phan") {
+    return "Lô áp MỘT PHẦN — một số tệp ĐÃ được ghi xuống đĩa, phần còn lại thì chưa. Xem chi tiết từng tệp trong kết quả rồi quyết định hoàn nguyên hay đề xuất lại phần còn thiếu.";
+  }
+  return "Bị từ chối ghi — không byte nào vào đĩa.";
 }
 
 /**
@@ -716,7 +766,9 @@ export async function confirmAction(
   // không chạy execute() lần hai. ★ Đợt B · Task 6: 'bi_tu_choi_ghi' đứng CÙNG nhánh với 'executed'
   // — trước bản vá này một hàng bị từ chối ghi vẫn (sai) mang nhãn 'executed' nên vẫn rơi đúng
   // nhánh cache-return này; hành vi retry giữ NGUYÊN, chỉ nhãn trả về đổi cho đúng sự thật.
-  if (row.status === "executed" || row.status === "bi_tu_choi_ghi") {
+  // ★ Rà soát cuối: 'ap_mot_phan' đứng CÙNG nhánh, và ở đây điều đó QUAN TRỌNG HƠN — chạy lại
+  //   `execute()` trên một lô đã ghi một phần là ghi đè lên đúng những byte vừa rơi.
+  if (row.status === "executed" || row.status === "bi_tu_choi_ghi" || row.status === "ap_mot_phan") {
     return { ok: true, status: row.status, result: row.resultJson ?? null, message: cauDaXuLyTruocDo(row.status) };
   }
   if (row.status !== "proposed" && row.status !== "confirmed") {
@@ -789,7 +841,7 @@ export async function confirmAction(
   if (daGianh.length === 0) {
     // 0 hàng ⇒ ai đó đã CẦM action này trước ta. Đọc lại để nói đúng kết cục, không đoán.
     const [sau] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
-    if (sau?.status === "executed" || sau?.status === "bi_tu_choi_ghi") {
+    if (sau?.status === "executed" || sau?.status === "bi_tu_choi_ghi" || sau?.status === "ap_mot_phan") {
       // Nhánh idempotent y hệt nhánh đầu hàm: trả kết quả ĐÃ LƯU, không chạy lại `execute()`.
       return { ok: true, status: sau.status, result: sau.resultJson ?? null, message: cauDaXuLyTruocDo(sau.status) };
     }
@@ -966,7 +1018,12 @@ export async function confirmAction(
         // ★★★ Đợt B · Task 6 — ADDITIVE, chỉ có mặt khi bị từ chối: đây vẫn là audit "lượt confirm
         // đã xử lý xong" (AI_ACTION_EXECUTED không đổi tên — vòng đời HITL THẬT SỰ chạy hết chặng),
         // nhưng auditor không còn phải suy ra "ghi được hay không" từ `resultJson.note` nữa.
+        // ★★★ Rà soát cuối Đợt B — HAI CỜ RIÊNG, KHÔNG GỘP. `writeRejected:true` là một lời khai
+        //   "0 byte vào đĩa"; đặt nó cho một lô áp MỘT PHẦN là nói dối chính sổ kiểm toán — nơi
+        //   người ta tra khi cần biết cây làm việc có bị đụng hay không. `writePartial` nói đúng
+        //   thứ đã xảy ra, và `resultJson.data.daGhi` liệt kê đích danh tệp nào đã trên đĩa.
         ...(trangThaiThat === "bi_tu_choi_ghi" ? { writeRejected: true, rejectCode: maTuChoiGhi(result) } : {}),
+        ...(trangThaiThat === "ap_mot_phan" ? { writePartial: true, rejectCode: maTuChoiGhi(result) } : {}),
       },
     },
     status: "success",
@@ -997,7 +1054,7 @@ export async function confirmAction(
     ok: true,
     status: trangThaiThat,
     result,
-    message: trangThaiThat === "executed" ? "Đã thực thi." : "Bị từ chối ghi — không byte nào vào đĩa.",
+    message: cauKetCucThucThi(trangThaiThat),
   };
 }
 

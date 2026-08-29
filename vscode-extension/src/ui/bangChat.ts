@@ -61,12 +61,45 @@ export class BangChat {
     // chọn trống một cách im lặng. Đợi webview tự báo "san_sang" (xem htmlBang.ts) rồi mới nạp.
     this.panel.webview.onDidReceiveMessage((m: { loai: string; cauHoi?: string; duAnId?: string }) => {
       if (m.loai === "san_sang") { void this.napDuAn(); return; }
-      if (m.duAnId) this.duAnChon = m.duAnId;
+      // ★★★ ĐỔI DỰ ÁN ⇒ VỨT ĐỀ XUẤT ĐANG CHỜ. Thẻ duyệt mang nhãn nguồn của dự án nó SINH RA; để
+      // nó sống qua một lần đổi ô chọn là chìa nút "Duyệt & ghi trên SERVER" cho một người đang
+      // nhìn tên dự án KHÁC — đúng loại tai nạn không cứu được mà spec §7 nói tới. Đề xuất cũ vẫn
+      // còn trên máy chủ tới hết TTL và có thể hỏi lại; cái ta bỏ chỉ là CÚ BẤM.
+      if (m.duAnId && m.duAnId !== this.duAnChon) {
+        this.duAnChon = m.duAnId;
+        this.quenDeXuat("Đã đổi dự án — đề xuất ghi đang chờ đã được bỏ. Hãy hỏi lại nếu vẫn cần.");
+      } else if (m.duAnId) {
+        this.duAnChon = m.duAnId;
+      }
+      if (m.loai === "doi_du_an") return; // chỉ để đồng bộ ô chọn, không kèm hành động nào khác
       if (m.loai === "hoi" && m.cauHoi) { void this.hoi(m.cauHoi); return; }
       if (m.loai === "xem_diff") { void this.xemDiff(); return; }
       if (m.loai === "duyet") { void this.duyetDeXuat(); return; }
       if (m.loai === "huy") { void this.huyDeXuat(); return; }
     });
+  }
+
+  /**
+   * Vứt đề xuất đang chờ (nếu có): quên nội dung diff ảo, xoá field, ẩn thẻ. Gom vào MỘT chỗ vì ba
+   * nơi gọi (đổi dự án · lượt hỏi mới · sau khi Duyệt/Huỷ xong) từng làm ba việc lệch nhau — và
+   * chỗ quên ẩn thẻ để lại một cú bấm SỐNG cho một đề xuất đã chết.
+   */
+  private quenDeXuat(thongBao?: string): void {
+    if (!this.deXuatHienTai) return;
+    this.khoDeXuat.quen(this.deXuatHienTai.actionId);
+    this.deXuatHienTai = undefined;
+    this.nhanNguonHienTai = undefined;
+    void this.panel.webview.postMessage({ loai: "an_the_duyet" });
+    if (thongBao) void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: thongBao });
+  }
+
+  /** CHẾ ĐỘ suy từ ô chọn dự án ĐANG hiển thị. Một chỗ duy nhất — `hoi()` và `duyetDeXuat()` đều
+   *  hỏi cùng câu này, nên hàng rào lúc HIỆN thẻ và hàng rào lúc BẤM duyệt không thể lệch nhau. */
+  private cheDoHienTai(): CheDoDuAn {
+    const muc = this.dsDuAn.find((d) => d.id === this.duAnChon) ?? this.dsDuAn[0];
+    return muc && muc.loai === "server"
+      ? { loai: "server", projectId: muc.id.slice("server:".length), nhan: muc.nhan }
+      : { loai: "local", nhan: muc?.nhan ?? "workspace" };
   }
 
   static moHoacHien(context: vscode.ExtensionContext, khoDeXuat: KhoDeXuat): void {
@@ -127,6 +160,11 @@ export class BangChat {
   }
 
   private async hoi(cauHoi: string): Promise<void> {
+    // ★★★ LƯỢT HỎI MỚI ⇒ ĐỀ XUẤT CŨ HẾT HIỆU LỰC TRÊN GIAO DIỆN. Trước đây thẻ duyệt của lượt
+    // trước ở lại NGUYÊN trên bảng trong khi câu trả lời mới đang stream — người dùng đọc câu mới
+    // rồi bấm cái nút của câu CŨ. `xuLyDeXuat` có quên đề xuất cũ, nhưng chỉ khi một đề xuất MỚI
+    // tới; lượt hỏi không đẻ đề xuất nào thì thẻ cũ sống mãi.
+    this.quenDeXuat();
     const cookie = await this.context.secrets.get(KHOA_COOKIE);
     if (!cookie) {
       void this.panel.webview.postMessage({
@@ -136,11 +174,7 @@ export class BangChat {
       return;
     }
     const cfg = vscode.workspace.getConfiguration("aviAiLocal");
-    const muc = this.dsDuAn.find((d) => d.id === this.duAnChon) ?? this.dsDuAn[0];
-    const cheDo: CheDoDuAn =
-      muc && muc.loai === "server"
-        ? { loai: "server", projectId: muc.id.slice("server:".length), nhan: muc.nhan }
-        : { loai: "local", nhan: muc?.nhan ?? "workspace" };
+    const cheDo = this.cheDoHienTai();
     // Chốt CHẾ ĐỘ của lượt này NGAY BÂY GIỜ — `nhan` bên dưới (chạy trong cùng lượt) đọc lại field
     // này, không đọc `this.duAnChon` trực tiếp, để không lệch nếu người dùng đổi ô chọn giữa chừng.
     this.cheDoHoiHienTai = cheDo;
@@ -232,13 +266,22 @@ export class BangChat {
     // Đề xuất TRƯỚC (nếu có) chưa từng được Duyệt/Huỷ đang bị GHI ĐÈ ở đây — không `quen()` nó thì
     // nội dung diff ẢO của nó mồ côi trong `KhoDeXuat` tới khi TTL máy chủ hết (Finding 2, không
     // phải lỗ an toàn vì không có gì tự duyệt, nhưng là rò bộ nhớ không cần thiết).
-    if (this.deXuatHienTai) this.khoDeXuat.quen(this.deXuatHienTai.actionId);
+    this.quenDeXuat();
     this.deXuatHienTai = d;
     // Nhãn nguồn = nhãn dự án SERVER đang chọn (đã có tiền tố "SERVER · ", xem duAn.ts) — dùng
     // NGUYÊN VĂN cho cả thẻ duyệt lẫn tiêu đề diff (Task 3) để hai nơi luôn khớp nhau.
     this.nhanNguonHienTai = cheDo!.nhan;
-    const { them, bot } = tomTatDiff(d.original, d.modified);
-    const tomTat = laTaoTepMoi(d) ? "Tạo tệp mới" : `+${them} / −${bot}`;
+    // ⚠ `tomTatDiff` là phép đếm ĐA TẬP HỢP, không phải thuật toán diff: một lượt **SẮP XẾP LẠI**
+    // dòng (cùng tập dòng, khác thứ tự) cho them=0/bot=0 — và thẻ khi ấy khai "+0 / −0", tức nói
+    // KHÔNG CÓ THAY ĐỔI cho một thay đổi CÓ THẬT sắp được ghi vào tệp. `doiDong` là ô mà chính hàm
+    // đó trả về để phân biệt hai ca, trước đây bị vứt đi. Không đoán thêm gì: nói rõ có thay đổi
+    // nhưng phép đếm dòng không thấy, và mời mở diff — nơi VSCode vẽ diff THẬT.
+    const { them, bot, doiDong } = tomTatDiff(d.original, d.modified);
+    const tomTat = laTaoTepMoi(d)
+      ? "Tạo tệp mới"
+      : doiDong
+        ? `+${them} / −${bot}`
+        : "Có thay đổi (sắp xếp lại dòng) — mở diff để xem";
     void this.panel.webview.postMessage({
       loai: "the_duyet",
       nhanNguon: this.nhanNguonHienTai,
@@ -256,6 +299,19 @@ export class BangChat {
   private async duyetDeXuat(): Promise<void> {
     const d = this.deXuatHienTai;
     if (!d) return;
+    /**
+     * ★★★ HÀNG RÀO CHẾ ĐỘ Ở LÚC BẤM, KHÔNG CHỈ Ở LÚC HIỆN. `xuLyDeXuat` kiểm `coDuocHienTheDuyet`
+     * khi VẼ thẻ; hàm này trước đây kiểm lại KHÔNG GÌ CẢ. Một cổng chỉ canh lúc hiển thị là một
+     * cổng canh sai thời điểm: cái gây hậu quả là CÚ BẤM, và giữa lúc vẽ với lúc bấm có thể có một
+     * lần đổi ô chọn dự án. Nay ô chọn đổi thì thẻ bị vứt (xem `quenDeXuat`), nên nhánh này gần như
+     * không tới được — giữ nó vì "gần như" không phải một hàng rào, và giá của nó là bốn dòng.
+     */
+    if (!coDuocHienTheDuyet(this.cheDoHienTai().loai)) {
+      this.quenDeXuat(
+        "Dự án đang chọn KHÔNG phải chế độ SERVER — đã bỏ đề xuất ghi thay vì duyệt nó. Chọn lại dự án SERVER rồi hỏi lại.",
+      );
+      return;
+    }
     const cookie = await this.context.secrets.get(KHOA_COOKIE);
     if (!cookie) {
       // KHÔNG quên đề xuất ở đây: token còn hạn (TTL 5 phút), người dùng có thể đăng nhập rồi bấm
@@ -269,6 +325,8 @@ export class BangChat {
     const cfg = vscode.workspace.getConfiguration("aviAiLocal");
     const serverUrl = cfg.get<string>("serverUrl", "http://localhost:3000");
     let thongDiep: string;
+    /** Giữ đề xuất lại để người dùng thử lại — chỉ bật ở ca KHÔNG BIẾT KẾT CỤC (xem `catch`). */
+    let giuDeXuat = false;
     try {
       // Điểm DUY NHẤT trong extension gọi confirmAction — xem ../mang/duyetGhi.ts.
       const kq = await goiDuyet(serverUrl, cookie, d.actionId, d.token);
@@ -297,12 +355,27 @@ export class BangChat {
         thongDiep = `Đã duyệt — máy chủ đã ghi "${d.path}".`;
       }
     } catch (e) {
-      thongDiep = `Duyệt thất bại: ${(e as Error).message}`;
+      /**
+       * ★★★ HỎNG ĐƯỜNG TRUYỀN **KHÔNG PHẢI** "THẤT BẠI" — NÓ LÀ **KHÔNG BIẾT**.
+       *
+       * `fetch` ném khi không dựng nổi/không đọc hết được đáp ứng: mất mạng, máy chủ chết, **hoặc
+       * quá hạn chờ SAU KHI máy chủ đã nhận, đã chạy `execute()` và đã ghi byte xuống đĩa**. Ba ca
+       * đó không phân biệt được từ phía này. Khai "Duyệt thất bại" là chọn MỘT trong ba rồi trình
+       * bày nó như sự thật — đúng cái tật mà cả Đợt B đi vá: KHAI KẾT CỤC MÀ KHÔNG ĐỌC KẾT CỤC.
+       *
+       * ⚠⚠ Và nặng hơn lời khai sai: bản cũ `quen()` đề xuất ngay sau đó, xoá `deXuatHienTai` và ẩn
+       *   thẻ — **phá mất đường duy nhất để BIẾT**. `confirmAction` là idempotent theo thiết kế (một
+       *   hàng đã có kết cục chung cục trả kết quả ĐÃ LƯU, KHÔNG chạy `execute()` lần hai), nên bấm
+       *   Duyệt lại vừa an toàn vừa là cách hỏi máy chủ "rốt cuộc lượt kia ra sao?". Giữ đề xuất.
+       */
+      giuDeXuat = true;
+      thongDiep =
+        `KHÔNG RÕ KẾT CỤC — không nhận được trả lời của máy chủ (${(e as Error).message}). ` +
+        `Lượt ghi CÓ THỂ đã xong trên máy chủ, cũng có thể chưa: từ đây không phân biệt được. ` +
+        `Bấm "Duyệt & ghi trên SERVER" lần nữa là AN TOÀN — máy chủ xử lý idempotent, nếu lượt trước đã ` +
+        `xong nó trả lại kết quả đã lưu chứ KHÔNG ghi lần hai. Thẻ duyệt được giữ nguyên để bạn thử lại.`;
     }
-    this.khoDeXuat.quen(d.actionId);
-    this.deXuatHienTai = undefined;
-    this.nhanNguonHienTai = undefined;
-    void this.panel.webview.postMessage({ loai: "an_the_duyet" });
+    if (!giuDeXuat) this.quenDeXuat();
     void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
   }
 
@@ -320,6 +393,8 @@ export class BangChat {
     const cfg = vscode.workspace.getConfiguration("aviAiLocal");
     const serverUrl = cfg.get<string>("serverUrl", "http://localhost:3000");
     let thongDiep: string;
+    /** Giữ đề xuất lại để người dùng thử lại — chỉ bật ở ca KHÔNG BIẾT KẾT CỤC (xem `catch`). */
+    let giuDeXuat = false;
     try {
       const kq = await goiHuy(serverUrl, cookie, d.actionId);
       // `cancelAction` cũng TỪ CHỐI qua HTTP 200 (đã thực thi trước đó, trạng thái sai...) —
@@ -328,12 +403,19 @@ export class BangChat {
         ? `Đã huỷ đề xuất sửa "${d.path}" — không có gì được ghi.`
         : (kq.message ?? "Máy chủ từ chối lượt huỷ.");
     } catch (e) {
-      thongDiep = `Huỷ thất bại: ${(e as Error).message}`;
+      /**
+       * ★ Cùng lý lẽ với `duyetDeXuat`: `fetch` ném ⇒ KHÔNG BIẾT lượt huỷ có tới máy chủ hay không.
+       * Ở đây hậu quả nhẹ hơn (huỷ không ghi byte nào) nhưng lời khai vẫn phải đúng: nếu huỷ CHƯA
+       * tới nơi thì đề xuất vẫn SỐNG trên máy chủ tới hết TTL, và người dùng cần biết điều đó cùng
+       * cách xử lý. Giữ thẻ để bấm Huỷ lại được — vứt thẻ ở đây là bỏ mặc một đề xuất còn hiệu lực.
+       */
+      giuDeXuat = true;
+      thongDiep =
+        `KHÔNG RÕ KẾT CỤC — không nhận được trả lời của máy chủ (${(e as Error).message}). ` +
+        `Lượt huỷ có thể đã tới nơi, cũng có thể chưa; nếu chưa thì đề xuất vẫn còn hiệu lực trên máy chủ ` +
+        `cho tới khi hết hạn. Bấm "Huỷ" lần nữa là an toàn. Thẻ duyệt được giữ nguyên để bạn thử lại.`;
     }
-    this.khoDeXuat.quen(d.actionId);
-    this.deXuatHienTai = undefined;
-    this.nhanNguonHienTai = undefined;
-    void this.panel.webview.postMessage({ loai: "an_the_duyet" });
+    if (!giuDeXuat) this.quenDeXuat();
     void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
   }
 }

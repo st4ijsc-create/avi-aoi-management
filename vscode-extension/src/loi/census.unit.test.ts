@@ -81,4 +81,23 @@ describe("census — Đợt A chỉ-đọc, không đường ghi ĐĨA nào", ()
     const noiGoi = tep.filter((p) => readFileSync(p, "utf8").includes("aiCopilot.confirmAction"));
     expect(noiGoi.map((p) => relative(GOC, p).replace(/\\/g, "/"))).toEqual(["mang/duyetGhi.ts"]);
   });
+
+  it("★★★ ĐÚNG MỘT LỜI GỌI, không chỉ đúng một TỆP — lời gọi thứ hai TRONG CÙNG tệp cũng phải ĐỎ", () => {
+    /**
+     * ★★ LỖ CỦA CHÍNH LƯỚI TRÊN: nó khẳng định DANH SÁCH TỆP. Một lời gọi `confirmAction` thứ hai
+     * thêm vào **chính `mang/duyetGhi.ts`** giữ nguyên danh sách đó ⇒ ca trên vẫn XANH trong khi
+     * cửa duyệt đã có hai đường. Đây đúng khuôn "phép đếm thô ≠ kiểm kê" đã trả giá ở doc 78.
+     * Nên: đếm SỐ LẦN XUẤT HIỆN trên toàn bộ tập quét, và khẳng định bằng `toBe(1)`.
+     * ⚠ `toBe`, không phải `toBeLessThanOrEqual`: số TỤT (cửa duyệt bị gỡ) nguy hiểm ngang số PHÌNH.
+     */
+    const dem = (s: string) => s.split("aiCopilot.confirmAction").length - 1;
+    const theoTep = tep
+      .map((p) => ({ ten: relative(GOC, p).replace(/\\/g, "/"), soLan: dem(readFileSync(p, "utf8")) }))
+      .filter((x) => x.soLan > 0);
+    const tong = theoTep.reduce((s, x) => s + x.soLan, 0);
+    expect(theoTep, `phải là ĐÚNG một lời gọi duy nhất; thực tế: ${JSON.stringify(theoTep)}`).toEqual([
+      { ten: "mang/duyetGhi.ts", soLan: 1 },
+    ]);
+    expect(tong).toBe(1);
+  });
 });

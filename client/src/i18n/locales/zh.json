@@ -1367,6 +1367,8 @@
     "denied": "您没有执行此操作的权限。",
     "expired": "该提议已过期。",
     "failed": "无法执行。",
+    "writeRejected": "写入被拒绝——未写入任何字节。",
+    "writePartial": "部分应用——部分文件已写入磁盘，其余尚未写入。继续操作前请用 git diff 检查。",
     "summaryLabel": "操作摘要",
     "changesTitle": "变更",
     "warningsTitle": "重要提示",

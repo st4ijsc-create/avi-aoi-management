@@ -252,7 +252,20 @@ export function registerAdviceRoutes(r: Router): void {
       const d = await getDb();
       if (!d) return sendOk(res, { recommendations: [], count: 0 }); // honest-empty
 
-      const KNOWN_STATUS = ["proposed", "confirmed", "executed", "denied", "expired", "cancelled"];
+      // ★ Đợt B (2026-08-29) — hai giá trị enum MỚI (`drizzle/0341` + `0342`) phải có mặt ở đây,
+      //   nếu không `?status=bi_tu_choi_ghi` trả 400 và những hàng ĐÁNG TRA CỨU NHẤT (lượt ghi bị
+      //   từ chối · lô áp một phần) là những hàng DUY NHẤT không lọc ra được. Danh sách này phải
+      //   theo sát `drizzle/schema/enums.aiPendingActionStatusEnum`.
+      const KNOWN_STATUS = [
+        "proposed",
+        "confirmed",
+        "executed",
+        "denied",
+        "expired",
+        "cancelled",
+        "bi_tu_choi_ghi",
+        "ap_mot_phan",
+      ];
       const statusRaw = typeof req.query.status === "string" && req.query.status ? req.query.status : undefined;
       if (statusRaw && !KNOWN_STATUS.includes(statusRaw)) {
         throw new ApiHttpError(400, "bad_request", `Invalid status. Expected one of: ${KNOWN_STATUS.join(", ")}.`);

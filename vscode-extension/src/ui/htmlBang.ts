@@ -89,6 +89,10 @@ export function dungHtmlBang(dv: { nonce: string }): string {
   // cú bấm nút — mọi quyết định (gọi confirmAction/cancelAction, xoá đề xuất khỏi bộ nhớ) nằm ở
   // phía extension. Webview không bao giờ tự quyết ghi hay không.
   const theDuyet = document.getElementById("the-duyet");
+  // ĐỔI DỰ ÁN phải báo NGAY, không đợi tới câu hỏi kế tiếp: một đề xuất ghi đang chờ thuộc về dự án
+  // nó sinh ra, nên phía extension cần biết lúc ô chọn đổi để vứt thẻ duyệt đi (xem bangChat.ts).
+  document.getElementById("o-du-an").addEventListener("change", (e) =>
+    vscode.postMessage({ loai: "doi_du_an", duAnId: e.target.value }));
   document.getElementById("nut-xem-diff").addEventListener("click", () => vscode.postMessage({ loai: "xem_diff" }));
   document.getElementById("nut-duyet").addEventListener("click", () => vscode.postMessage({ loai: "duyet" }));
   document.getElementById("nut-huy").addEventListener("click", () => vscode.postMessage({ loai: "huy" }));

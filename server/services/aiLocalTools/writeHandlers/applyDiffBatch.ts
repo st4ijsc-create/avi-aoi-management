@@ -136,6 +136,30 @@ function w(lang: ToolLang, vi: string, en: string, zh: string): string {
 type MaLo = "BATCH_REJECTED" | "BATCH_PARTIAL" | "BATCH_DUPLICATE_PATH";
 type MaBatKy = MaLo | MaApplyDiff;
 
+/**
+ * ★★★ 2026-08-29 — **MÃ NÀO CÓ NGHĨA "MỘT SỐ BYTE ĐÃ VÀO ĐĨA".** Danh sách đứng ở ĐÂY, cạnh chỗ
+ * sinh ra mã, chứ không ở nơi tiêu thụ.
+ *
+ * `shared/aiCodingLoop.daBiTuChoiGhi()` chỉ phát biểu *"`ToolResult` có `note` ⇒ lượt ghi KHÔNG
+ * trọn vẹn"*. Với `apply_diff` (một tệp) "không trọn vẹn" ⇔ "0 byte" — hai câu đó trùng nhau nên
+ * một vị từ là đủ. Với LÔ thì KHÔNG: `BATCH_PARTIAL` nghĩa là tệp `1..k−1` **đã trên đĩa** (xem
+ * docblock hai-pha ở đầu file). Một nơi tiêu thụ chỉ đọc `note` sẽ khai nhầm nó thành "0 byte" —
+ * và đó là lời khai NGUY HIỂM NHẤT có thể có ở đây, vì người đọc sẽ tưởng an toàn để đề xuất lại
+ * CẢ LÔ trên một cây làm việc đã nửa vời.
+ *
+ * ⚠ Ba mã còn lại của lô **đều là 0 byte theo CẤU TẠO**, không phải theo lời hứa:
+ *   • `BATCH_REJECTED` / `BATCH_DUPLICATE_PATH` — kết thúc ở PHA 1, trước khi vòng ghi bắt đầu;
+ *   • `BUDGET_EXCEEDED` — phép cộng ngân sách chạy TRƯỚC lượt ghi đầu tiên, cố ý (xem PHA 2).
+ * Nên danh sách này có đúng MỘT phần tử. Thêm mã nửa-vời thứ hai ở tương lai ⇒ thêm vào ĐÂY, và
+ * `aiCopilotActions.trangThaiSauThucThi` đi theo mà không ai phải nhớ ra là phải sửa nó.
+ */
+export const MA_GHI_MOT_PHAN: readonly string[] = ["BATCH_PARTIAL"];
+
+/** Vị từ dùng ở tầng vòng đời HITL: mã từ chối này có nghĩa "đĩa ĐÃ đổi một phần" hay không? */
+export function laMaGhiMotPhan(ma: string | null | undefined): boolean {
+  return typeof ma === "string" && MA_GHI_MOT_PHAN.includes(ma);
+}
+
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // THAM SỐ
 // ══════════════════════════════════════════════════════════════════════════════════════════════

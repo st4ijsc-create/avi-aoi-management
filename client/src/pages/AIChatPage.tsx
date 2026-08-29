@@ -12,6 +12,8 @@ import { AIToolResultCard, type ToolResultPayload } from "@/components/AIToolRes
 // /ai-chat can confirm/cancel a proposed WRITE INLINE (no longer "open the bubble").
 import {
   ConfirmActionCard,
+  laKetCucThanhCong,
+  trangThaiTheTuConfirm,
   type PendingAction,
   type ActionState,
 } from "@/components/ConfirmActionCard";
@@ -416,15 +418,31 @@ export default function AIChatPage() {
         token: pa.token,
         lang: (i18n.language as "vi" | "en" | "zh") ?? "vi",
       });
-      const next: ActionState =
-        res.status === "executed" ? "executed"
-        : res.status === "denied" ? "denied"
-        : res.status === "expired" ? "expired"
-        : "pending";
-      setActionState(next);
+      /**
+       * ★★★ Rà soát cuối Đợt B (2026-08-29) — BẢN ĐỒ DÙNG CHUNG, KHÔNG CHÉP TAY NỮA.
+       * Chuỗi `? :` cũ dừng ở ba giá trị, nên hai trạng thái chung cục MỚI của máy chủ
+       * (`bi_tu_choi_ghi` · `ap_mot_phan`) rơi vào nhánh cuối `"pending"` ⇒ thẻ không bao giờ đóng,
+       * nút Xác nhận ở lại sống (`actionState !== "pending"`), và mỗi lượt bấm lại chỉ chạm nhánh
+       * cache-return idempotent của máy chủ rồi lại "pending" — kẹt vĩnh viễn.
+       */
+      const next = trangThaiTheTuConfirm(res.status);
+      // `pending` là đường lùi CHỈ cho status không phải kết cục (`not_found`/`invalid`): giữ
+      // nguyên hành vi cũ ở đúng những ca cũ, không mở rộng nó sang hai giá trị mới.
+      setActionState(next ?? "pending");
       setActionMessage(res.message ?? null);
-      if (res.ok) toast.success(res.message ?? t("copilot.executed", "Đã thực thi."));
-      else toast.error(res.message ?? t("copilot.failed", "Không thể thực thi."));
+      /**
+       * ⚠⚠ `res.ok` KHÔNG phải "byte đã vào đĩa" — nó chỉ nói vòng đời HITL chạy hết chặng
+       * (`shared/aiCodingLoop.ts` docblock). Báo `toast.success` theo `res.ok` vẽ một lượt TỪ CHỐI
+       * GHI thành thông báo XANH. Chỉ `executed` mới là thành công.
+       */
+      if (laKetCucThanhCong(next)) toast.success(res.message ?? t("copilot.executed", "Đã thực thi."));
+      else if (next === "ap_mot_phan") {
+        // Không xanh (chưa xong) và cũng không đỏ (đã có byte rơi) — cây làm việc đang NỬA VỜI.
+        toast.warning(
+          res.message ??
+            t("copilot.writePartial", "Áp MỘT PHẦN — một số tệp ĐÃ được ghi xuống đĩa, phần còn lại thì chưa. Kiểm bằng git diff trước khi làm tiếp."),
+        );
+      } else toast.error(res.message ?? t("copilot.failed", "Không thể thực thi."));
     } catch {
       toast.error(t("copilot.failed", "Không thể thực thi."));
     }

@@ -15,7 +15,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { danhDauDanhSachLenh, danhDauMaChan } from "@shared/aiCodingTuChoi";
-import { ConfirmActionCard, type PendingAction } from "./ConfirmActionCard";
+import {
+  ConfirmActionCard,
+  laKetCucThanhCong,
+  trangThaiTheTuConfirm,
+  type PendingAction,
+} from "./ConfirmActionCard";
 
 const CLIENT_SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const VI = JSON.parse(readFileSync(join(CLIENT_SRC, "i18n", "locales", "vi.json"), "utf8"));
@@ -112,5 +117,66 @@ describe("§4 (A1) — chân thẻ denied: `message` truyền vào THẮNG câu 
   it("★ state=denied KHÔNG message ⇒ vẫn còn đường lùi cũ (copilot.denied) — tương thích các trang khác", () => {
     const html = ve([], { state: "denied" as const });
     expect(html).toContain(esc(String(VI.copilot.denied)));
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+describe("§5 (rà soát cuối Đợt B) — HAI trạng thái chung cục MỚI không được hiện thành SỰ IM LẶNG", () => {
+  /**
+   * ★★★ LỚP LỖI ĐANG CANH: `AIGuidedActionCards` ép `res.status as ActionState`, nên một giá trị
+   * máy chủ nằm ngoài union cũ lọt vào và chân thẻ — vốn là bốn biểu thức `&&` cạnh nhau — vẽ ra
+   * **RỖNG**. Một lượt TỪ CHỐI GHI hiện thành không có gì cả, và người dùng đọc sự im lặng đó
+   * thành "chắc là xong". Lưới dựng CÂY THẬT nên nó đo cái được VẼ RA, không đo ý định.
+   */
+  it("★★★ state=bi_tu_choi_ghi ⇒ chân thẻ CÓ CHỮ, và nói đúng '0 byte'", () => {
+    const html = ve([], { state: "bi_tu_choi_ghi" as const });
+    expect(html).toContain(esc(String(VI.copilot.writeRejected)));
+    expect(html).not.toContain("‹THIẾU:");
+    // Không được mượn nhãn của trạng thái khác: đây KHÔNG phải "đã thực thi", cũng không phải RBAC.
+    expect(html).not.toContain(esc(String(VI.copilot.executed)));
+    expect(html).not.toContain(esc(String(VI.copilot.denied)));
+  });
+
+  it("★★★ state=ap_mot_phan ⇒ chân thẻ nói MỘT PHẦN và TUYỆT ĐỐI không nói '0 byte'", () => {
+    const html = ve([], { state: "ap_mot_phan" as const });
+    expect(html).toContain(esc(String(VI.copilot.writePartial)));
+    // ⚠ Mệnh đề trung tâm của cả bản vá: một lô áp một phần ĐÃ ghi tệp 1..k−1. Nói "không byte nào
+    //   vào đĩa" ở đây khiến người đọc tưởng an toàn để đề xuất lại CẢ LÔ trên một cây nửa vời.
+    expect(html).not.toContain(esc(String(VI.copilot.writeRejected)));
+    expect(html).not.toContain(esc(String(VI.copilot.executed)));
+    expect(html).not.toContain("‹THIẾU:");
+  });
+
+  it("★★ `message` của máy chủ THẮNG câu mặc định ở cả hai trạng thái mới", () => {
+    const cau = "Lô áp MỘT PHẦN — đã ghi src/a.ts, chưa ghi src/b.ts.";
+    expect(ve([], { state: "ap_mot_phan" as const, message: cau })).toContain(esc(cau));
+    expect(ve([], { state: "bi_tu_choi_ghi" as const, message: cau })).toContain(esc(cau));
+  });
+
+  it("★★ status KHÔNG dịch được (not_found/invalid) ⇒ hiện NGUYÊN VĂN message, KHÔNG im lặng", () => {
+    // Trước đây nhánh này vẽ rỗng. Nói thứ mình biết vẫn hơn không nói gì.
+    const cau = "Action không tồn tại.";
+    const html = ve([], { state: undefined, message: cau });
+    expect(html).toContain(esc(cau));
+  });
+
+  it("★★★ bản đồ status → ActionState: hai giá trị mới KHÔNG được rơi về 'pending'", () => {
+    // Rơi về "pending" là lỗi KẸT: nút Xác nhận ở lại sống (`state !== "pending"`) và mỗi lượt bấm
+    // lại chỉ chạm nhánh cache-return idempotent của máy chủ rồi lại "pending" — vĩnh viễn.
+    expect(trangThaiTheTuConfirm("bi_tu_choi_ghi")).toBe("bi_tu_choi_ghi");
+    expect(trangThaiTheTuConfirm("ap_mot_phan")).toBe("ap_mot_phan");
+    expect(trangThaiTheTuConfirm("executed")).toBe("executed");
+    // ...và không được đoán bừa cho những status KHÔNG phải kết cục của một lượt thực thi.
+    expect(trangThaiTheTuConfirm("not_found")).toBeUndefined();
+    expect(trangThaiTheTuConfirm(undefined)).toBeUndefined();
+  });
+
+  it("★★★ CHỈ 'executed' mới được báo THÀNH CÔNG (toast xanh)", () => {
+    // `res.ok` KHÔNG phải "byte đã vào đĩa" — đây là vị từ mà ba bề mặt chat dùng thay cho `res.ok`.
+    expect(laKetCucThanhCong("executed")).toBe(true);
+    for (const s of ["bi_tu_choi_ghi", "ap_mot_phan", "denied", "expired", "cancelled", "pending"] as const) {
+      expect(laKetCucThanhCong(s), `"${s}" KHÔNG phải một lượt ghi thành công`).toBe(false);
+    }
+    expect(laKetCucThanhCong(undefined)).toBe(false);
   });
 });

@@ -170,6 +170,13 @@ export const apiKeyStatusEnum = pgEnum("apikeystatus", ["active", "inactive", "e
 // CHỐI GHI (BASE_MISMATCH/FILE_DIRTY/…, daBiTuChoiGhi(result) === true) — 0 byte vào đĩa. KHÁC
 // 'denied' (bị chặn TRƯỚC execute(), bởi RBAC/hợp đồng). Trước migration này `confirmAction` dán
 // nhãn SAI 'executed' cho đúng ca này — xem docblock shared/aiCodingLoop.ts:325-360.
+// ★★★ Rà soát cuối Đợt B (2026-08-29, drizzle/0342) — 'ap_mot_phan': lượt ghi LÔ hỏng GIỮA CHỪNG
+// (`apply_diff_batch` trả `BATCH_PARTIAL`) ⇒ tệp 1..k−1 **ĐÃ TRÊN ĐĨA**, phần còn lại thì chưa.
+// KHÔNG được dùng 'bi_tu_choi_ghi' cho ca này: hợp đồng chữ của nhãn đó là "0 byte vào đĩa", nên
+// dán nó lên một lượt đã ghi một phần là khai SAI ở đúng ca nguy hiểm nhất (người đọc tưởng cây làm
+// việc còn nguyên rồi đề xuất lại CẢ LÔ). Cột này phải nói được BA sự thật: ghi · không ghi · ghi
+// MỘT PHẦN. Danh sách mã "đã có byte vào đĩa" nằm ở chính nơi sinh ra mã —
+// `aiLocalTools/writeHandlers/applyDiffBatch.MA_GHI_MOT_PHAN`.
 export const aiPendingActionStatusEnum = pgEnum("aipendingactionstatus", [
   "proposed",
   "confirmed",
@@ -178,6 +185,7 @@ export const aiPendingActionStatusEnum = pgEnum("aipendingactionstatus", [
   "expired",
   "cancelled",
   "bi_tu_choi_ghi",
+  "ap_mot_phan",
 ]);
 
 // AI Copilot agent session lifecycle (GĐ3b multi-step agentic orchestrator).

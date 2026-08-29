@@ -1,5 +1,28 @@
+-- ══════════════════════════════════════════════════════════════════════════════════════════════
+-- ⚠⚠⚠ CHẠY MIGRATION NÀY **TRƯỚC** KHI TRIỂN KHAI MÃ MÁY CHỦ CỦA ĐỢT B. KHÔNG ĐƯỢC ĐẢO THỨ TỰ.
+-- ══════════════════════════════════════════════════════════════════════════════════════════════
+-- Đây là CỔNG RA của lần phát hành, không phải một ghi chú. Nếu mã máy chủ mới chạy trên CSDL
+-- CHƯA áp migration này, chế độ hỏng là như sau — đã truy được từng bước, không phải lo xa:
+--   1. `confirmAction` giành quyền hàng (`proposed`/`confirmed` → `confirmed`) rồi CHẠY `execute()`
+--      — tới đây **byte có thể ĐÃ vào đĩa**;
+--   2. câu `UPDATE … SET status='bi_tu_choi_ghi'` NÉM vì giá trị enum chưa tồn tại ⇒ HTTP 500 ⇒
+--      hàng KẸT ở `confirmed`;
+--   3. người dùng bấm Duyệt lại: hàng đang ở `confirmed` **qua được** phép giành quyền (CAS nhận cả
+--      `proposed` lẫn `confirmed`) ⇒ `execute()` chạy **LẦN THỨ HAI** ⇒ **một lượt ghi thứ hai**.
+-- Tức là: thiếu migration không làm hệ "hỏng an toàn", nó làm hệ GHI HAI LẦN. Không có cách nào vá
+-- điều đó bằng mã ứng dụng — cửa duy nhất là áp migration TRƯỚC.
+--
+-- ⚠ Quyền: `ALTER TYPE` đòi OWNER của kiểu. `DATABASE_URL` của dev dùng `avi_app` (không phải owner)
+--   ⇒ trả 42501 "must be owner of type". Dùng credential owner `aoi` (mặc định có sẵn trong
+--   `docker-compose.yml` của chính dự án này) để chạy.
+-- ⚠ Đi kèm `0342_them_trang_thai_ap_mot_phan.sql` — áp CẢ HAI trước khi triển khai.
+--
 -- drizzle/0341_them_trang_thai_bi_tu_choi_ghi.sql
 -- Đợt B · Task 6 (spec §6.6) — vá lỗ nói dối `executed`.
+--
+-- ⚠ PHẠM VI CỦA GIÁ TRỊ NÀY LÀ "0 BYTE VÀO ĐĨA" — ĐÚNG THEO NGHĨA ĐEN. Lượt ghi LÔ hỏng giữa chừng
+--   (`apply_diff_batch` trả `BATCH_PARTIAL`) KHÔNG thuộc về đây: nó đã ghi tệp 1..k−1. Ca đó có giá
+--   trị riêng `ap_mot_phan` ở 0342 — đừng gộp lại, hai nhãn là hai sự thật khác nhau.
 --
 -- `confirmAction` (server/services/aiCopilotActions.ts) từng đặt `status='executed'` VÔ ĐIỀU
 -- KIỆN sau `tool.execute()`, kể cả khi apply_diff TỪ CHỐI GHI (BASE_MISMATCH/FILE_DIRTY…) và trả

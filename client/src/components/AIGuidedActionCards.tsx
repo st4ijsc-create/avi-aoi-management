@@ -45,7 +45,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ConfirmActionCard, type ActionState, type PendingAction } from "@/components/ConfirmActionCard";
+import { ConfirmActionCard, trangThaiTheTuConfirm, type ActionState, type PendingAction } from "@/components/ConfirmActionCard";
 import { Sparkles, SlidersHorizontal, Gauge, PlusCircle, Target, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -406,7 +406,15 @@ function SuggestedActionDialog({
   const onConfirm = async () => {
     if (!pending) return;
     const res = await confirmM.mutateAsync({ actionId: pending.actionId, token: pending.token, lang });
-    setState((res.status as ActionState) ?? (res.ok ? "executed" : undefined));
+    /**
+     * ★★★ Rà soát cuối Đợt B (2026-08-29) — ÉP KIỂU KHÔNG PHẢI MỘT PHÉP DỊCH.
+     * `res.status as ActionState` để LỌT mọi giá trị máy chủ trả (kể cả hai giá trị chung cục MỚI
+     * `bi_tu_choi_ghi`/`ap_mot_phan`, và cả `not_found`/`invalid`) vào một biến khai kiểu hẹp; chân
+     * `ConfirmActionCard` khi ấy không khớp nhánh nào và vẽ ra **RỖNG** — một lượt TỪ CHỐI hiện
+     * thành SỰ IM LẶNG. Dùng bản đồ tường minh dùng chung với hai bề mặt chat kia; ca không-dịch-được
+     * rơi về `undefined` và chân thẻ hiện NGUYÊN VĂN `message` của máy chủ (nhánh cuối ở đó).
+     */
+    setState(trangThaiTheTuConfirm(res.status));
     setMessage(res.message ?? null);
   };
 

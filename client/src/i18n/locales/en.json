@@ -1367,6 +1367,8 @@
     "denied": "You do not have permission to perform this action.",
     "expired": "The proposal has expired.",
     "failed": "Could not execute.",
+    "writeRejected": "Write refused — NOT a single byte reached disk.",
+    "writePartial": "PARTIALLY applied — some files WERE written to disk, the rest were not. Check with git diff before continuing.",
     "summaryLabel": "Action summary",
     "changesTitle": "Changes",
     "warningsTitle": "Important notes",
