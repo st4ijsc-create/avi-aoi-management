@@ -13,6 +13,7 @@ import { gopDanhSachDuAn, type MucDuAn } from "../loi/duAn";
 import { goiTruyVanTrpc } from "../mang/trpc";
 import { laLoi401 } from "../loi/loiHttp";
 import { trangThaiBanDau, apDungSuKienChat, ketLuanLuotChat } from "../loi/suKienChat";
+import type { KhoDeXuat } from "./diffDeXuat";
 
 /**
  * Nonce cho CSP của webview. Dùng CSPRNG chứ không `Math.random()`: nonce là thứ CSP dựa vào để
@@ -32,6 +33,10 @@ export class BangChat {
   private constructor(
     private readonly panel: vscode.WebviewPanel,
     private readonly context: vscode.ExtensionContext,
+    // Giữ tham chiếu cho Task 4 (nút "Xem diff"). Đợt B (task này) chưa nối nút — chỉ cần đường
+    // dây sẵn sàng và biên dịch sạch. KHÔNG `private`: trường `private` chưa-đọc-ở-đâu bị
+    // `noUnusedLocals` chặn ngay ở Task 3, trước khi Task 4 kịp dùng.
+    readonly khoDeXuat: KhoDeXuat,
   ) {
     this.panel.webview.html = dungHtmlBang({ nonce: chuoiNgauNhien() });
     this.panel.onDidDispose(() => {
@@ -48,7 +53,7 @@ export class BangChat {
     });
   }
 
-  static moHoacHien(context: vscode.ExtensionContext): void {
+  static moHoacHien(context: vscode.ExtensionContext, khoDeXuat: KhoDeXuat): void {
     if (BangChat.hienTai) {
       BangChat.hienTai.panel.reveal();
       return;
@@ -59,7 +64,7 @@ export class BangChat {
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true },
     );
-    BangChat.hienTai = new BangChat(panel, context);
+    BangChat.hienTai = new BangChat(panel, context, khoDeXuat);
   }
 
   private thuThapNguCanh(): string {

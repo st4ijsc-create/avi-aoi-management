@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import { dangNhap } from "./mang/dangNhap";
 import { KHOA_COOKIE } from "./loi/dangNhap";
 import { BangChat } from "./ui/bangChat";
+import { KhoDeXuat, SCHEME } from "./ui/diffDeXuat";
 
 async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("aviAiLocal");
@@ -38,8 +39,15 @@ async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  // Kho đề xuất ghi (chế độ SERVER): giữ nội dung diff ẢO trong bộ nhớ, KHÔNG ghi đĩa. Đợt B chưa
+  // nối nút "Xem diff" — chỉ dựng đường dây để Task 4 dùng.
+  const khoDeXuat = new KhoDeXuat();
   context.subscriptions.push(
-    vscode.commands.registerCommand("aviAiLocal.moBangChat", () => BangChat.moHoacHien(context)),
+    vscode.workspace.registerTextDocumentContentProvider(SCHEME, khoDeXuat),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("aviAiLocal.moBangChat", () => BangChat.moHoacHien(context, khoDeXuat)),
     vscode.commands.registerCommand("aviAiLocal.dangNhap", () => void chayDangNhap(context)),
     vscode.commands.registerCommand("aviAiLocal.dangXuat", async () => {
       await context.secrets.delete(KHOA_COOKIE);
