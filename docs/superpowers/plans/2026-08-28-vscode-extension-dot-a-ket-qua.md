@@ -221,3 +221,40 @@ mỗi lượt chỉ nhìn được một diff, còn các lỗi này nằm ở **
   độ SERVER có chạy nổi trong **trần 20 giây** của vòng tool máy chủ không.
 - `.vsix` đã **cài thật** vào VSCode (`st4i.avi-ai-local`), nhưng chưa mở bảng chat trong cửa sổ
   VSCode thật với một phiên đăng nhập hợp lệ.
+
+---
+
+## ★★★ NGHIỆM THU LIVE ĐÃ ĐẠT (2026-08-29) — tài khoản `engineer1`
+
+Chạy qua **chính mã của extension** (`dangNhap` → `dungNguCanh` → `dungYeuCauStream` →
+`moDongSse` → `goiTruyVanTrpc`), không mô phỏng.
+
+### Chế độ LOCAL
+
+| Đo | Kết quả THẬT |
+|---|---|
+| Đăng nhập | **ok**, cookie 252 ký tự nhận và đọc đúng |
+| Dự án SERVER (qua tRPC) | **4 dự án thật**: `repo` (Repo chinh) · `csharp` (Demo Csharp) · `react` (Demo React + Postgres) · `demo-project` (Dự án demo robot); mặc định `repo` |
+| Ngữ cảnh gửi đi | 430 ký tự, chứa hằng số mồi |
+| Khung SSE hỏng | `[]` |
+| **Token đầu tiên** | **5,0 giây** (tổng lượt 5,0s) |
+| Sự kiện nhận được | `tool_loop` · `meta` · `token` · **`done`** ⇒ khung `done` có thật, bản vá I3 xử lý đúng |
+| **Ngữ cảnh có tới não model không** | **CÓ** — model trả về đúng `4271`, hằng số **tự bịa** chỉ tồn tại trong tệp mồi ở scratchpad. Model **không thể đoán** ⇒ đây là bằng chứng mà không lưới đơn vị nào thay thế được |
+
+### Chế độ SERVER — rủi ro "trần 20 giây" (spec §7) KHÔNG xảy ra
+
+`codingMode:true` + `projectId:"csharp"` gửi đúng. Vòng tool máy chủ chạy **3 lượt gọi, xong
+trong dưới 1 giây** (`list_files` vòng 1: 0→5 ms; vòng 2: 426→431 ms) — cách trần 20 s rất xa.
+Trả lời liệt kê **đúng tệp thật của hộp cát máy chủ** (`CalculatorDemo.sln`, `src/Calculator.cs`
+1134 B, `src/StringUtils.cs`) và đọc được nội dung thật.
+
+**Giới hạn của phép đo này, nói thẳng:** tổng 0,6 s và **chỉ 1** sự kiện `token`, nội dung trả về
+chính là kết quả tool đã định dạng — tức đây là đường **TOOL**, chưa chứng minh một lượt **sinh
+văn bản dài** của model. Câu hỏi nặng (sinh mã) vẫn có thể chạm trần. **Chưa đo ⇒ chưa kết luận.**
+
+### Còn lại chưa xác minh
+
+- Chưa mở bảng chat trong **cửa sổ VSCode thật** với phiên đăng nhập (đường ống đã được đo qua
+  bundle đã build với `vscode` giả, nhưng đó không phải cùng một thứ).
+- Chưa đo một lượt **sinh mã dài** (xem giới hạn ở trên).
+- Chưa có test e2e tự động (`@vscode/test-electron`).
