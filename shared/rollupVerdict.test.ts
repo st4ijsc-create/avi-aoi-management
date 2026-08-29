@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rollupVerdict, verdictLuuTru, type NutKetQua, type ResultVerdict } from "./rollupVerdict";
+import { rollupVerdict, verdictLuuTru, verdictXauHon, type NutKetQua, type ResultVerdict } from "./rollupVerdict";
 
 const n = (result: "OK" | "NG" | "NTF", ntf = false, ntfSource: "machine" | "human" | "both" | null = null): NutKetQua =>
   ({ result, ntf, ntfSource });
@@ -117,5 +117,23 @@ describe("verdictLuuTru — cầu nối cờ ntf về bảng chữ cái BA giá 
     for (const { result, ntf, kyVong } of BANG) {
       expect(verdictLuuTru({ result, ntf }), `verdictLuuTru({result:"${result}", ntf:${ntf}}) phải là "${kyVong}"`).toBe(kyVong);
     }
+  });
+});
+
+describe("verdictXauHon — không bao giờ hạ cấp phán quyết", () => {
+  it("thứ tự nghiêm trọng: OK < NTF < NG", () => {
+    expect(verdictXauHon("OK", "NTF")).toBe("NTF");
+    expect(verdictXauHon("NTF", "NG")).toBe("NG");
+    expect(verdictXauHon("OK", "NG")).toBe("NG");
+  });
+
+  it("đối xứng — thứ tự đối số không đổi kết quả", () => {
+    for (const a of ["OK", "NG", "NTF"] as const)
+      for (const b of ["OK", "NG", "NTF"] as const)
+        expect(verdictXauHon(a, b)).toBe(verdictXauHon(b, a));
+  });
+
+  it("luỹ đẳng — cùng giá trị trả về chính nó", () => {
+    for (const v of ["OK", "NG", "NTF"] as const) expect(verdictXauHon(v, v)).toBe(v);
   });
 });

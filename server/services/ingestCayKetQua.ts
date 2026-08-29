@@ -34,7 +34,7 @@
 // rỗng 100%), lá gắn `ntfSource: "machine"` khi `ntf === true`, và `null` khi
 // không NTF. Nguồn "human"/"both" KHÔNG được suy đoán ở đường v2.0 — đường
 // v2.0 không mang luồng người xác nhận tại thời điểm ingest.
-import { rollupVerdict, verdictLuuTru, type NtfSource, type ResultVerdict } from "@shared/rollupVerdict";
+import { rollupVerdict, verdictLuuTru, verdictXauHon, type NtfSource, type ResultVerdict } from "@shared/rollupVerdict";
 import type { MachineDataContractV2 } from "../contracts/machineDataContractV2";
 
 /** Tên kiểu theo đúng chữ ký brief yêu cầu — alias của hợp đồng v2.0 đã zod-parse. */
@@ -121,9 +121,15 @@ export interface SurfaceDaDich {
 /**
  * Cây đã dịch — cả bo. `overallResult`/`ntf` là cái MÁY KHAI (HookProduct); `rolledResult`/
  * `rolledNtf` là cuộn TỪ CÁC SURFACE (không phải lấy lại overallResult/ntf máy khai).
- * `verdictLuuTru` = `verdictLuuTru(cuộn từ các surface)` — verdict SẼ GHI vào cột
- * `product_inspections.overallResult` (ba giá trị OK|NG|NTF), đúng chốt ở
- * `docs/superpowers/plans/2026-08-26-aoi-pha1b-ingest-cay.md` Task 4 Bước 3.
+ *
+ * `verdictLuuTru` = XẤU HƠN trong hai `verdictLuuTru` — một tính từ LỜI KHAI cấp bo
+ * của máy (`overallResult`/`ntf`), một tính từ CUỘN TỪ CÁC SURFACE — chứ KHÔNG phải
+ * chỉ đọc cuộn-từ-lá như bản trước Pha 1C (Đ-21/Đ-22, xem `verdictXauHon`). Đây là
+ * verdict SẼ GHI vào cột `product_inspections.overallResult` (ba giá trị OK|NG|NTF).
+ *
+ * `declaredMismatch` (gốc) = lời khai cấp bo và cuộn-từ-surface có KHỚP verdict lưu
+ * trữ hay không — độc lập với `declaredMismatch` ở ba cấp con (surface/position/
+ * capture), vốn so sánh trực tiếp `result`/`ntf` chứ không qua `verdictLuuTru`.
  */
 export interface CayDaDich {
   overallResult: "OK" | "NG";
@@ -132,6 +138,7 @@ export interface CayDaDich {
   rolledNtf: boolean;
   ntfSource: NtfSource | null;
   verdictLuuTru: ResultVerdict;
+  declaredMismatch: boolean;
   surfaces: SurfaceDaDich[];
 }
 
@@ -233,18 +240,33 @@ function dichSurface(surf: RawSurface): SurfaceDaDich {
  */
 export function dichCayKetQua(payload: MachinePayloadV2): CayDaDich {
   const surfaces = payload.surfaces.map(dichSurface);
-  // Verdict gốc của cả bo = cuộn từ các surface (đã cuộn), KHÔNG lấy lại
-  // overallResult/ntf máy khai ở cấp payload.
+  // Cuộn TỪ CÁC SURFACE (đã cuộn), KHÔNG lấy lại overallResult/ntf máy khai ở
+  // cấp payload — đây vẫn là "cuộn-từ-lá" như trước Pha 1C.
   const cuon = rollupVerdict(
     surfaces.map((s) => ({ result: s.rolledResult, ntf: s.rolledNtf, ntfSource: s.ntfSource })),
   );
+
+  // ── Pha 1C, đóng Đ-21 + Đ-22 (BG-22 + BG-24) ──────────────────────────────
+  // Verdict lưu trữ TRƯỚC bản vá này chỉ đọc `cuon` — bỏ rơi lời khai cấp bo
+  // của máy. Hậu quả đo được: máy khai overallResult="NG" nhưng surfaces:[]
+  // (cây rỗng) ⇒ cuộn ra "OK" ⇒ ghi "OK" — bo lỗi thành bo đạt. Và máy khai
+  // ntf:true cấp bo nhưng không lá nào ntf ⇒ cuộn ra ntf:false ⇒ mất NTF.
+  //
+  // LỜI KHAI cấp bo của máy, đưa về cùng bảng chữ cái với kết quả cuộn.
+  // `payload.ntf` là NGUỒN NTF THỨ HAI — bỏ nó là tái tạo đúng lỗ 6,55% (Đ-22).
+  const khai = verdictLuuTru({ result: payload.overallResult, ntf: payload.ntf });
+  const cuonRa = verdictLuuTru({ result: cuon.result, ntf: cuon.ntf });
+  // KHÔNG bên nào được làm nhẹ bên kia — xem `verdictXauHon` (Đ-21).
+  const verdict = verdictXauHon(khai, cuonRa);
+
   return {
     overallResult: payload.overallResult,
     ntf: payload.ntf,
     rolledResult: cuon.result,
     rolledNtf: cuon.ntf,
     ntfSource: cuon.ntfSource,
-    verdictLuuTru: verdictLuuTru({ result: cuon.result, ntf: cuon.ntf }),
+    verdictLuuTru: verdict,
+    declaredMismatch: khai !== cuonRa,
     surfaces,
   };
 }

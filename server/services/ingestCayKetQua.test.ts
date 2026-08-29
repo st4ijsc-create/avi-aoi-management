@@ -181,3 +181,79 @@ describe("dichCayKetQua — bộ dịch payload v2.0 thành cây 4 cấp", () =>
     expect(capture.declaredMismatch).toBe(false);
   });
 });
+
+// ── Pha 1C Task 1 — verdict lưu trữ = XẤU NHẤT của (khai, cuộn), đóng BG-22 + BG-24 ──
+//
+// Trước bản vá này, `verdictLuuTru` gốc chỉ đọc cuộn-từ-lá, bỏ rơi lời khai cấp bo
+// của máy: máy khai overallResult="NG" nhưng surfaces:[] (cây rỗng) ⇒ cuộn ra "OK"
+// ⇒ ghi "OK" — bo LỖI thành bo ĐẠT. Bốn mệnh đề dưới đây, mỗi cái một `it`, khớp
+// task-1-brief.md Bước 6.
+describe("dichCayKetQua — verdict lưu trữ = XẤU NHẤT của (khai, cuộn) [Pha 1C]", () => {
+  function payloadCayRong(overrides: Partial<{ overallResult: "OK" | "NG"; ntf: boolean }>) {
+    const p = mauHopLe();
+    p.overallResult = overrides.overallResult ?? p.overallResult;
+    p.ntf = overrides.ntf ?? false;
+    p.surfaces = [];
+    p.summary = {
+      surfaces: { total: 0, pass: 0, ng: 0, ntf: 0 },
+      positions: { total: 0, pass: 0, ng: 0, ntf: 0 },
+      captures: { total: 0, pass: 0, ng: 0, ntf: 0 },
+      components: { total: 0, pass: 0, ng: 0, ntf: 0 },
+    };
+    return p;
+  }
+
+  // ── Mệnh đề 1 (Đ-21) ─────────────────────────────────────────────────────
+  it("máy khai NG, cây rỗng ⇒ verdict lưu trữ 'NG' (KHÔNG hạ cấp thành OK) và declaredMismatch=true", () => {
+    const p = payloadCayRong({ overallResult: "NG", ntf: false });
+    const cay = dichCayKetQua(machineDataContractV2.parse(p));
+
+    expect(cay.rolledResult).toBe("OK"); // cây rỗng ⇒ cuộn ra OK — đúng như trước
+    expect(cay.verdictLuuTru).toBe("NG"); // nhưng verdict LƯU TRỮ phải giữ NG máy khai
+    expect(cay.declaredMismatch).toBe(true); // khai "NG" lệch cuộn "OK"
+  });
+
+  // ── Mệnh đề 2 (Đ-22) ─────────────────────────────────────────────────────
+  it("máy khai OK nhưng ntf:true cấp bo, cây rỗng (không lá nào ntf) ⇒ verdict lưu trữ 'NTF'", () => {
+    const p = payloadCayRong({ overallResult: "OK", ntf: true });
+    const cay = dichCayKetQua(machineDataContractV2.parse(p));
+
+    expect(cay.rolledNtf).toBe(false); // cây rỗng ⇒ không lá nào mang cờ ntf lên
+    expect(cay.verdictLuuTru).toBe("NTF"); // nhưng lời khai ntf cấp bo không được bỏ rơi
+  });
+
+  // ── Mệnh đề 3 — CHỐNG HỒI QUY (ca quan trọng nhất) ──────────────────────
+  it("mẫu máy THẬT: verdict lưu trữ KHÔNG ĐỔI so với trước bản vá ('NG'), declaredMismatch=false", () => {
+    const raw = JSON.parse(readFileSync(DUONG_MAU_THAT, "utf-8"));
+    const payload = machineDataContractV2.parse(raw);
+    const cay = dichCayKetQua(payload);
+
+    // Đo baseline TRƯỚC bản vá (script tạm, đã xoá): overallResult(khai)=NG,
+    // rolledResult=NG, verdictLuuTru(cũ)=NG. Bản vá KHÔNG được đổi số này.
+    expect(cay.verdictLuuTru).toBe("NG");
+    expect(cay.declaredMismatch).toBe(false); // khai "NG" khớp cuộn "NG" trên mẫu thật
+  });
+
+  // ── Mệnh đề 4 ────────────────────────────────────────────────────────────
+  it("máy khai OK nhưng một component NG ⇒ vẫn 'NG' (phép cuộn vẫn nâng cấp được)", () => {
+    const p = mauHopLe();
+    // Toàn cây khai "OK", nhưng component lá vẫn "NG" — mô phỏng máy khai lạc
+    // quan hơn thực tế đo được ở lá.
+    p.overallResult = "OK";
+    p.ntf = false;
+    p.surfaces[0].result = "OK";
+    p.surfaces[0].ntf = false;
+    p.surfaces[0].positions[0].result = "OK";
+    p.surfaces[0].positions[0].ntf = false;
+    p.surfaces[0].positions[0].captures[0].result = "OK";
+    p.surfaces[0].positions[0].captures[0].ntf = false;
+    p.surfaces[0].positions[0].captures[0].components[0].result = "NG"; // lá vẫn NG
+
+    const cay = dichCayKetQua(machineDataContractV2.parse(p));
+
+    expect(cay.overallResult).toBe("OK"); // máy khai
+    expect(cay.rolledResult).toBe("NG"); // cuộn từ lá NG
+    expect(cay.verdictLuuTru).toBe("NG"); // cuộn NÂNG cấp — không bị bản vá làm hỏng
+    expect(cay.declaredMismatch).toBe(true); // khai "OK" lệch cuộn "NG"
+  });
+});

@@ -84,3 +84,26 @@ export function verdictLuuTru(x: { result: ResultVerdict; ntf: boolean }): Resul
   if (x.result === "NTF" || x.ntf) return "NTF"; // NTF đến từ HAI nguồn độc lập, nhận cả hai
   return "OK";
 }
+
+/**
+ * Mức độ nghiêm trọng để so hai phán quyết. NG xấu nhất, OK tốt nhất.
+ * NTF ở giữa: bo không lỗi thật, nhưng đã bị máy/người đánh dấu nghi ngờ.
+ */
+const MUC_DO_NGHIEM_TRONG: Record<ResultVerdict, number> = { OK: 0, NTF: 1, NG: 2 };
+
+/**
+ * Trả về phán quyết XẤU HƠN trong hai cái.
+ *
+ * Dùng để hợp nhất LỜI KHAI của máy với KẾT QUẢ CUỘN từ cây — hai tín hiệu
+ * độc lập, được phép lệch nhau, và **không tín hiệu nào được phép làm nhẹ đi**
+ * tín hiệu kia:
+ *   · máy khai OK nhưng cây có component NG ⇒ NG  (công dụng của phép cuộn)
+ *   · máy khai NG nhưng cây rỗng           ⇒ NG  (máy biết thứ nó không gửi lên)
+ *
+ * Bất biến này khớp đường v1.x: `promoteOverallToNg` chỉ NÂNG OK→NG và
+ * `UPDATE` kèm `WHERE overallResult='OK'` — đo trên 42.431 bo lịch sử,
+ * số lần `NG→OK` là **0**. Đường v2.0 phải giữ đúng bất biến đó.
+ */
+export function verdictXauHon(a: ResultVerdict, b: ResultVerdict): ResultVerdict {
+  return MUC_DO_NGHIEM_TRONG[a] >= MUC_DO_NGHIEM_TRONG[b] ? a : b;
+}
