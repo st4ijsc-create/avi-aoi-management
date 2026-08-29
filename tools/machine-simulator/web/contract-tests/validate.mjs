@@ -12,10 +12,14 @@
 //        — mọi nút object; `additionalProperties` dạng MẢNG bị từ chối
 //   items — CHỈ dạng schema (một object). Dạng tuple (`[ {...}, {...} ]`) bị từ chối
 //   oneOf · allOf — mảng schema
-//   if / then — CHỈ khi là thành viên TRỰC TIẾP của một phần tử `allOf`, và phải ĐI CÙNG NHAU
-//   $ref — chỉ nội bộ (`#/...`), và KHÔNG được có anh em kế bên nào ngoài `$comment`
-//   $schema · $id · $defs · title · $comment — chú thích: đọc rồi bỏ qua có chủ ý (JSON Schema
-//        không gán cho chúng nghĩa validate nào, nên bỏ qua chúng không phải bỏ qua một phép kiểm)
+//   if / then — CHỈ khi là thành viên TRỰC TIẾP của một phần tử `allOf`, và phải ĐI CÙNG NHAU; phần tử
+//        `allOf` ấy KHÔNG được mang từ khoá nào khác ngoài if/then (xem 🔴 fix round 3, finding
+//        Important 1 bên dưới — vị trí thứ SÁU bị từ chối)
+//   $ref — chỉ nội bộ (`#/...`), và KHÔNG được có anh em kế bên nào ngoài `$comment`/`title`/
+//        `description` (ba chú thích thuần tuý — xem 🔴 fix round 3, finding Minor 2 bên dưới)
+//   $schema · $id · $defs · title · $comment · description — chú thích: đọc rồi bỏ qua có chủ ý
+//        (JSON Schema không gán cho chúng nghĩa validate nào, nên bỏ qua chúng không phải bỏ qua một
+//        phép kiểm)
 //
 // 🔴 NÓ KHÔNG PHẢI BỘ VALIDATE TỔNG QUÁT. Nếu ai đó thêm một từ khoá ngoài danh sách trên, HOẶC đặt
 // một từ khoá trong danh sách vào một vị trí ngoài bảng trên, `assertKnownKeywords` dưới đây NÉM
@@ -46,6 +50,36 @@
 // trên được ghim bằng test ở `contracts.test.mjs` ("vị trí … bị TỪ CHỐI"), nên đây là guard ĐÃ ĐƯỢC
 // NHÌN THẤY BẮN, không phải guard được tin là bắn.
 //
+// 🔴 VỊ TRÍ THỨ SÁU (fix round 3, finding Important 1). Review sau round 2 tìm thấy một vị trí nữa mà
+// round 2 bỏ sót — và round 2 còn viết THÊM hai câu SAI về đúng vị trí này, ngay ở khối bình luận này:
+//   - dòng "type · const · enum · required · … — mọi nút schema" (gần đầu file): dòng này ngụ ý
+//     `required` được đọc ở BẤT KỲ nút schema nào. SAI cho vị trí này — một phần tử `allOf` mang
+//     `if`/`then` không được `validate()` đối xử như một nút schema độc lập; vòng lặp
+//     `for (const sub of schema.allOf ?? [])` bên dưới CHỈ đọc `sub.if` và `sub.then` của phần tử đó,
+//     KHÔNG BAO GIỜ validate chính `sub` — nên một `required` (hay bất kỳ từ khoá nào khác) nằm cùng
+//     cấp với if/then trên phần tử đó không được đọc, dù `required` đứng trong danh sách "mọi nút
+//     schema" ở trên.
+//   - dòng "Nếu ai đó … đặt một từ khoá trong danh sách vào một vị trí ngoài bảng trên … NÉM LỖI thay
+//     vì bỏ qua âm thầm": SAI cho đúng vị trí này trước đợt sửa này — `assertKnownKeywords` round-2
+//     CHẤP NHẬN một phần tử allOf mang if/then kèm bất kỳ khoá nào khác, không ném lỗi.
+// Hình dạng cụ thể (ghim bằng test P6 trong `contracts.test.mjs`):
+//   {"type":"object","properties":{"kind":{"type":"string"}},
+//    "allOf":[{"if":{"properties":{"kind":{"const":"cb"}},"required":["kind"]},
+//              "then":{"required":["policyAction"]},
+//              "required":["alwaysNeeded"]}]}
+// Với tài liệu `{"kind":"other"}`: `assertKnownKeywords` round-2 chấp nhận, `validate()` trả về `[]`
+// (`if` không khớp `const:"cb"` nên `then` không chạy — nhưng `required:["alwaysNeeded"]` nằm CÙNG CẤP
+// với if/then, KHÔNG phụ thuộc `if`, và không bao giờ được `validate()` đọc), trong khi một validator
+// 2020-12 thật trả về lỗi thiếu trường `alwaysNeeded`.
+// ĐÃ SỬA CÙNG CÁCH với năm vị trí trên: TỪ CHỐI, không THI HÀNH. `assertKnownKeywords` giờ ném lỗi khi
+// một phần tử `allOf` mang `if` (đi cùng `then`, luật cũ đã ép cặp) VÀ có bất kỳ khoá nào khác ngoài
+// `if`/`then`. `validate()` KHÔNG đổi — đúng nguyên tắc của file này (từ chối vị trí, không thi hành
+// nó nửa vời).
+// ĐỌC LẠI CHO ĐÚNG hai dòng bị trích ở trên: "mọi nút schema" nghĩa là mọi nút mà `validate()` ĐỐI XỬ
+// như một schema độc lập — một phần tử `allOf` mang if/then không phải một nút như vậy (chỉ
+// `sub.if`/`sub.then` của nó là nút được `validate()` đọc). Và "NÉM LỖI thay vì bỏ qua âm thầm" bây
+// giờ đúng cho vị trí này rồi, kể từ đợt sửa này.
+//
 // 🔴 `additionalProperties` được THI HÀNH ở đúng hai dạng, không hơn: `false` (cấm mọi khoá lạ
 // ngoài `properties`) và MỘT SCHEMA — dạng bản đồ tên→giá trị, dùng cho `bindings`
 // (`{"type":"object","additionalProperties":{"type":"string"}}`, một node KHÔNG có `properties`
@@ -56,15 +90,34 @@
 // và validate GIÁ TRỊ của mọi khoá không thuộc `properties` (hoặc mọi khoá, nếu node không có
 // `properties`) theo schema đó. Fixture `invalid/screen-binding-value-not-string.json` chứng minh
 // nó giờ thật sự chặn.
+//
+// 🔴 DẠNG `false` CÓ CÙNG LỚP LỖI (fix round 3, finding Minor 1). Đoạn trên chỉ sửa dạng SCHEMA; dạng
+// `false` có cùng khuyết tật cho tới đợt này. Nhánh chặn `additionalProperties:false` chỉ chạy trong
+// `if (schema.properties && isPlainObject)` — nên một node `{"type":"object","additionalProperties":
+// false}` KHÔNG có `properties` nào validate SẠCH mọi khoá lạ, trong khi dòng "properties ·
+// additionalProperties (…) — mọi nút object" ở đầu file khẳng định nó được thi hành ở MỌI nút object.
+// Không schema nào trong ba schema hôm nay mang hình dạng đó nên chưa gây sai lệch thật (khẳng định ấy
+// đi trước mã, không đi trước một fixture sai). Đã sửa bằng cách THI HÀNH (rẻ hơn và đúng hành vi một
+// validator thật, không phải bằng cách thu hẹp câu ở đầu file): nhánh `additionalProperties:false` giờ
+// chạy độc lập với `schema.properties` có mặt hay không — dùng `schema.properties ?? {}` làm tập tên đã
+// biết, nên node không có `properties` từ chối MỌI khoá. Ghim bằng test trong `contracts.test.mjs`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// `$comment` nằm trong danh sách này một cách có chủ ý: JSON Schema KHÔNG gán cho nó nghĩa validate
-// nào, nên đọc-rồi-bỏ-qua nó không phải là bỏ qua một phép kiểm. Nó là anh em kế bên DUY NHẤT mà
-// `$ref` được phép có (xem guard `$ref` bên dưới) — chỗ tự nhiên để giải thích một `$ref` mà không
-// làm bốc hơi ràng buộc nào.
+// `$comment`, `title`, `description` nằm trong danh sách này một cách có chủ ý: JSON Schema KHÔNG gán
+// cho chúng nghĩa validate nào, nên đọc-rồi-bỏ-qua chúng không phải là bỏ qua một phép kiểm. Chúng là
+// CÁC anh em kế bên DUY NHẤT mà `$ref` được phép có (xem guard `$ref` bên dưới) — chỗ tự nhiên để chú
+// thích một `$ref` mà không làm bốc hơi ràng buộc nào.
+//
+// 🔴 `title` BỊ TỪ CHỐI OAN (fix round 3, finding Minor 2). Trước đợt này, danh sách miễn trừ của guard
+// `$ref` chỉ có `$comment` — nên `{"$ref":"...","title":"..."}` ném lỗi nói "ràng buộc anh em bốc hơi".
+// Câu đó SAI cho `title`: nó là chú thích thuần tuý, không mang ràng buộc nào để bốc hơi — cùng lớp với
+// `$comment`, vốn đã được miễn trừ vì đúng lý do đó. Sai lầm này thất bại TO TIẾNG (ném lỗi), không bao
+// giờ che một lỗ hổng thật, nên nó là một lý do từ chối sai chứ không phải một khuyết tật an toàn — vẫn
+// đáng sửa vì nó chặn nhầm một hình dạng hợp lệ. Đã sửa: thêm `title` và `description` (cùng lớp) vào
+// danh sách miễn trừ của guard `$ref`, và vào `KNOWN` bên dưới.
 const KNOWN = new Set([
-  "$schema", "$id", "$defs", "$ref", "$comment", "title", "type", "const", "enum", "required",
-  "additionalProperties", "properties", "items", "minLength", "minimum", "maximum",
+  "$schema", "$id", "$defs", "$ref", "$comment", "title", "description", "type", "const", "enum",
+  "required", "additionalProperties", "properties", "items", "minLength", "minimum", "maximum",
   "pattern", "oneOf", "allOf", "if", "then",
 ])
 
@@ -100,6 +153,21 @@ export function assertKnownKeywords(node, path = "#", isAllOfElement = false) {
       `if và then phải đi CÙNG NHAU trong một phần tử allOf; tại ${path} chỉ có ` +
       `${hasIf ? "if (thiếu then — validate() sẽ nổ khi if khớp)" : "then (thiếu if — validate() bỏ qua then hoàn toàn)"}.`)
 
+  // 🔴 fix round 3, finding Important 1 (vị trí thứ SÁU bị từ chối — xem khối đầu file). Tới đây
+  // `hasIf === hasThen` đã được ép ở trên, nên `isAllOfElement && hasIf` nghĩa là node này là một phần
+  // tử allOf mang CẢ if lẫn then. `validate()` xử lý phần tử đó bằng cách chỉ đọc `sub.if`/`sub.then`
+  // (vòng lặp `for (const sub of schema.allOf ?? [])`) — KHÔNG BAO GIỜ validate chính `sub` — nên bất kỳ
+  // khoá nào khác nằm cùng cấp (`required`, `properties`, …) bị bỏ qua âm thầm dù nó ở trong KNOWN.
+  if (isAllOfElement && hasIf) {
+    const extra = Object.keys(node).filter((k) => k !== "if" && k !== "then")
+    if (extra.length > 0)
+      throw new Error(
+        `một phần tử allOf mang if/then không được có từ khoá nào khác nằm cùng cấp; tại ${path} có ` +
+        `thêm ${extra.join(", ")}. validate() CHỈ đọc sub.if/sub.then của phần tử allOf này, không bao ` +
+        `giờ validate chính sub, nên ${extra.join(", ")} bị bỏ qua âm thầm. Tách ${extra.join(", ")} ` +
+        `vào một phần tử allOf riêng (không có if), hoặc gộp vào bên trong then.`)
+  }
+
   if (Array.isArray(node.items))
     throw new Error(
       `items dạng tuple (mảng) không được thi hành; tại ${path}. validate() truyền cả mảng vào chỗ ` +
@@ -111,7 +179,10 @@ export function assertKnownKeywords(node, path = "#", isAllOfElement = false) {
       `tại ${path}. Chỉ nhận \`false\` hoặc MỘT schema.`)
 
   if ("$ref" in node) {
-    const siblings = Object.keys(node).filter((k) => k !== "$ref" && k !== "$comment")
+    // fix round 3, finding Minor 2: title/description là chú thích thuần tuý, cùng lớp $comment —
+    // không mang ràng buộc nào để bốc hơi, nên không nên bị guard này từ chối.
+    const siblings = Object.keys(node).filter(
+      (k) => k !== "$ref" && k !== "$comment" && k !== "title" && k !== "description")
     if (siblings.length > 0)
       throw new Error(
         `$ref không được thi hành cùng anh em kế bên (${siblings.join(", ")}) tại ${path}: ` +
@@ -179,13 +250,19 @@ export function validate(root, schema, value, path = "$") {
     for (const req of schema.required ?? [])
       if (!(req in value)) errs.push(`${path}: thiếu trường bắt buộc "${req}"`)
 
-  if (schema.properties && isPlainObject) {
-    if (schema.additionalProperties === false)
-      for (const k of Object.keys(value))
-        if (!(k in schema.properties)) errs.push(`${path}: trường lạ "${k}"`)
+  // fix round 3, finding Minor 1: `additionalProperties:false` giờ chạy ĐỘC LẬP với `schema.properties`
+  // có mặt hay không — một node không có `properties` (`{"type":"object","additionalProperties":
+  // false}`) từ chối MỌI khoá, thay vì validate sạch vì nhánh cũ chỉ chạy bên trong `if (schema.properties
+  // && isPlainObject)`.
+  if (isPlainObject && schema.additionalProperties === false) {
+    const known = schema.properties ?? {}
+    for (const k of Object.keys(value))
+      if (!(k in known)) errs.push(`${path}: trường lạ "${k}"`)
+  }
+
+  if (schema.properties && isPlainObject)
     for (const [k, sub] of Object.entries(schema.properties))
       if (k in value) errs.push(...validate(root, sub, value[k], `${path}.${k}`))
-  }
 
   // `additionalProperties` là MỘT SCHEMA (không phải `true`/`false`) ⇒ bản đồ tên→giá trị. Chạy dù
   // `schema.properties` có mặt hay không — một node object có thể THUẦN LÀ bản đồ (không

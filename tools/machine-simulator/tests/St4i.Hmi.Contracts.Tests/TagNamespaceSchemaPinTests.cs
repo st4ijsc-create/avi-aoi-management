@@ -57,8 +57,14 @@ public class TagNamespaceSchemaPinTests
         // validate một tag `"access":"w"` KHÔNG có `policyAction`: 0 lỗi, toàn bộ test xanh. Tức là
         // "đường ghi không gác không diễn đạt được" chỉ cách một lần sửa hợp lệ.
         //
-        // Đây cũng là lý do bài này khẳng định SỐ LƯỢNG chứ không chỉ nội dung: `Assert.Equal(2, ...)`
-        // là thứ đỏ khi enum PHÌNH RA, còn khẳng định "rw có trong enum" thì không.
+        // Đây cũng là lý do bài này khẳng định SỐ LƯỢNG chứ không chỉ nội dung — dòng dưới đây từng viết
+        // "`Assert.Equal(2, ...)` là thứ đỏ khi enum PHÌNH RA, còn khẳng định 'rw có trong enum' thì
+        // không". Câu đó SAI về mặt chữ: mã bên dưới không dùng `Assert.Equal(2, access.Count)`, nó dùng
+        // `Assert.Equal(new[] { "r", "rw" }, access)` — so TẬP CHÍNH XÁC, không chỉ đếm. Mã MẠNH HƠN câu
+        // mô tả, không yếu hơn: một tập-chính-xác đỏ trên MỌI thay đổi enum (thêm, bớt, hay đổi tên phần
+        // tử), trong khi một khẳng định đếm chỉ đỏ khi SỐ LƯỢNG đổi — nó sẽ bỏ lọt kiểu thay ["r","rw"]
+        // thành ["r","w"] (đếm vẫn là 2). Tức là so-tập-chính-xác BAO TRÙM (subsumes) so-số-lượng: mọi
+        // thứ làm so-số-lượng đỏ cũng làm so-tập-chính-xác đỏ, nhưng không ngược lại.
         var schema = SchemaPin.Load(SchemaFile);
         var access = schema["$defs"]!["tag"]!["properties"]!["access"]!["enum"]!.AsArray()
             .Select(v => v!.GetValue<string>()).OrderBy(s => s, StringComparer.Ordinal).ToList();

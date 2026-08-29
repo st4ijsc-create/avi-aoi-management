@@ -153,6 +153,25 @@ const REJECTED_POSITIONS = [
     silentlyAccepts: { anything: 42 },
     expect: "additionalProperties dạng mảng không được thi hành",
   },
+  {
+    // Fix round 3, finding Important 1 — vị trí thứ SÁU. Phần tử allOf mang if/then, nhưng `required`
+    // nằm CÙNG CẤP (không phụ thuộc if khớp hay không) không bao giờ được `validate()` đọc: vòng lặp
+    // allOf của nó chỉ đọc `sub.if`/`sub.then`, không bao giờ validate chính `sub`.
+    name: "P6 allOf mang if/then kèm từ khoá khác nằm cùng cấp (vd required vô điều kiện)",
+    schema: {
+      type: "object",
+      properties: { kind: { type: "string" } },
+      allOf: [{
+        if: { properties: { kind: { const: "cb" } }, required: ["kind"] },
+        then: { required: ["policyAction"] },
+        required: ["alwaysNeeded"],
+      }],
+    },
+    // `kind` không khớp "cb" nên `if` không khớp và `then` không chạy — nhưng `required:["alwaysNeeded"]`
+    // là vô điều kiện, và tài liệu dưới đây không có "alwaysNeeded".
+    silentlyAccepts: { kind: "other" },
+    expect: "một phần tử allOf mang if/then không được có từ khoá nào khác",
+  },
 ]
 
 for (const p of REJECTED_POSITIONS) {
@@ -171,6 +190,33 @@ for (const p of REJECTED_POSITIONS) {
       `một lời từ chối không còn đúng`)
   })
 }
+
+// ── Fix round 3, finding Minor 1: additionalProperties:false không cần properties ─────────────
+// Trước đợt này, nhánh chặn additionalProperties:false chỉ chạy trong `if (schema.properties &&
+// isPlainObject)`, nên một node object KHÔNG có properties nào validate SẠCH mọi khoá lạ dù header
+// khẳng định additionalProperties được thi hành ở "mọi nút object". Đây là phép đo trực tiếp: không có
+// fixture nào cho hình dạng này trong ba schema hôm nay, nên bài dùng schema/value tại chỗ, cùng khuôn
+// với REJECTED_POSITIONS ở trên.
+test("validate.mjs: additionalProperties:false từ chối MỌI khoá kể cả khi node không có properties", () => {
+  const schema = { type: "object", additionalProperties: false }
+  const errs = validate(schema, schema, { anything: 1, another: 2 })
+  assert.ok(
+    errs.some((e) => e.includes('trường lạ "anything"')) && errs.some((e) => e.includes('trường lạ "another"')),
+    `additionalProperties:false không từ chối khoá lạ khi thiếu properties:\n${errs.join("\n")}`)
+})
+
+// ── Fix round 3, finding Minor 2: title/description là anh em vô hại của $ref ──────────────────
+// title/description không mang ràng buộc nào (cùng lớp $comment, vốn đã miễn trừ), nên guard $ref
+// không nên từ chối chúng bằng lý do "ràng buộc anh em bốc hơi" — không có ràng buộc nào ở đó để bốc
+// hơi. Bài này đo chiều "không bị từ chối oan", đối xứng với REJECTED_POSITIONS ở trên.
+test("validate.mjs: $ref kèm title/description KHÔNG bị từ chối", () => {
+  const schema = {
+    type: "object",
+    properties: { name: { $ref: "#/$defs/str", title: "Tên", description: "Nhãn hiển thị" } },
+    $defs: { str: { type: "string" } },
+  }
+  assert.doesNotThrow(() => assertKnownKeywords(schema))
+})
 
 // ── Ghim hai chiều schema ⟷ type TypeScript ───────────────────────────────────
 // Không đọc được type TS lúc chạy, nên bài này đọc TÊN PROPERTY từ chính file .ts bằng cách bóc
