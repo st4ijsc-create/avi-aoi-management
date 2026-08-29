@@ -2,7 +2,10 @@ using System;
 using System.IO;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers.OpcUa;
+using St4i.EdgeCore.Identity;
 using St4i.EdgeCore.Infrastructure;
+using St4i.EdgeCore.Site;
+using St4i.EdgeCore.Transport;
 using St4i.TestHygiene;
 using Xunit;
 
@@ -31,6 +34,15 @@ namespace St4i.EdgeCore.Tests;
 /// <c>CredentialStoreTests</c>' seam tests, which set the env var themselves and would keep passing even
 /// with the harness entirely absent.</para>
 /// </summary>
+/// 🔴 <b>Task CB-1 — this class joined <c>MachineWideStoreEnv</c>, and that is a FIX, not bookkeeping.</b>
+/// Every fact here reads AMBIENT process-wide state, four of them by calling a store's <c>ResolveRoot()</c>
+/// — which reads an <c>ST4I_*_DIR</c> environment variable that other classes in this assembly legitimately
+/// flip, including flips to <see langword="null"/> to assert the default arm. xunit runs collections in
+/// parallel by default and this repository sets no <c>xunit.runner.json</c>, so those reads and those flips
+/// could interleave. That hazard was LATENT here from the day the class was written; it is not something
+/// CB-1 introduced and then fixed. No failure from it has been observed — this is a race that was possible,
+/// not one that was seen, and the distinction is the point.
+[Collection("St4i.EdgeCore.Tests.MachineWideStoreEnv")]
 public class TestRunTempRootTests
 {
     [Fact]
@@ -153,5 +165,159 @@ public class TestRunTempRootTests
         Assert.NotEqual(real, resolved);
         Assert.StartsWith(
             Path.GetFullPath(TestRunTempRoot.Root!), resolved, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The real <c>%ProgramData%\ST4I\sim\&lt;leaf&gt;</c> directory for each leaf this assembly can
+    /// see, taken from the STORE'S OWN <c>DefaultRoot()</c> rather than from a path literal rebuilt here.
+    /// A literal would keep passing if a store's default moved, which is precisely the change that would
+    /// matter.</summary>
+    private static string RealLeafRoot(string leaf) => leaf switch
+    {
+        "settings" => FleetSettingsStore.DefaultRoot(),
+        "identity" => DeviceIdentityStore.DefaultRoot(),
+        "sitelink" => SiteLinkStore.DefaultRoot(),
+        "bridge-spool" => BridgeSpoolOptions.DefaultRoot(),
+        "wal" => WalOptions.DefaultRoot(),
+        _ => throw new ArgumentOutOfRangeException(nameof(leaf), leaf, "Unknown leaf."),
+    };
+
+    /// <summary>
+    /// 🔴 <b>Task CB-1, 2026-08-29 — docs/owner-decisions.md item 72, OPTION A. The five leaves this
+    /// assembly can see move from CONVENTION to STRUCTURE, and this is what makes that claim falsifiable.</b>
+    ///
+    /// <para><b>What "convention" meant and why counting classes never settled it.</b> Item 72's own body
+    /// records ~20 test classes setting each of these variables by hand. Twenty classes remembering proves
+    /// nothing about the twenty-first — and the twenty-first is not hypothetical: <c>ST4I_NOTIFICATIONS_DIR</c>
+    /// was added after an audit declared the isolation list complete, and every e2e run in between read and
+    /// wrote a real install's webhook URLs. A structural redirect covers the class nobody has written yet;
+    /// a convention covers exactly the classes someone remembered.</para>
+    ///
+    /// <para><b>Why this asserts the INSTALLED record and not the live variable.</b> Calling
+    /// <c>ResolveRoot()</c> here would read a process-wide value that eighteen classes in the sibling suite
+    /// and several in this one deliberately flip — some to <see langword="null"/>. That test would be flaky,
+    /// and a flaky leak guard trains its readers to re-run it rather than to believe it. See
+    /// <see cref="TestRunTempRoot.InstalledRedirects"/> for the measurement behind that sentence.</para>
+    ///
+    /// <para><b>Two predicates, because either alone is satisfiable by the wrong thing.</b> The redirect must
+    /// point somewhere OTHER than the real leaf (or it buys nothing), and it must point INSIDE this run's
+    /// disposable root (or it is a second accumulating directory wearing the fix's clothes — the defect, not
+    /// the remedy).</para>
+    ///
+    /// <para><b>What it does not measure.</b> It says nothing about whether any test actually writes to these
+    /// stores, and nothing about the <c>historian</c> leaf, which is not on this list for a measured reason —
+    /// see <see cref="HistorianVariable_IsInstalled_ButReachesOnlyTheCompositionRoot"/>.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("ST4I_SETTINGS_DIR", "settings")]
+    [InlineData("ST4I_IDENTITY_DIR", "identity")]
+    [InlineData("ST4I_SITELINK_DIR", "sitelink")]
+    [InlineData("ST4I_BRIDGE_SPOOL_DIR", "bridge-spool")]
+    [InlineData("ST4I_WAL_DIR", "wal")]
+    public void EveryConventionOnlyLeaf_IsStructurallyRedirectedAwayFromItsRealProgramDataDirectory(
+        string variable, string leaf)
+    {
+        Assert.True(TestRunTempRoot.InstalledRedirects.TryGetValue(variable, out var installed),
+            $"{variable} was NOT installed by TestRunTempRoot. Item 72 option A is the claim that this leaf " +
+            "is redirected STRUCTURALLY rather than by each class remembering; if the line was removed, " +
+            "every class that does not set it by hand now resolves to the REAL install directory.");
+
+        var redirected = Path.TrimEndingDirectorySeparator(Path.GetFullPath(installed!));
+        var real = Path.TrimEndingDirectorySeparator(Path.GetFullPath(RealLeafRoot(leaf)));
+
+        Assert.NotEqual(real, redirected);
+        Assert.StartsWith(
+            Path.GetFullPath(TestRunTempRoot.Root!), redirected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 🔴 <b>Task CB-1 — THE REGRESSION THIS BATCH COULD HAVE CAUSED, asserted rather than reasoned about.</b>
+    ///
+    /// <para>Roughly twenty classes across the suites set these variables themselves. Installing a start-up
+    /// default for the same variables is only safe if those classes STILL WIN — so this pins the winning arm
+    /// directly, not merely the existence of the default. It goes red if a store stops reading its variable,
+    /// which is the change that would silently redirect every one of those classes back onto a shared root.</para>
+    ///
+    /// <para><c>ST4I_IDENTITY_DIR</c> is the subject because <c>DeviceIdentityStoreTests</c> is the only other
+    /// class in this assembly that touches it, and CB-1 put that class in this same serialized collection —
+    /// so this flip cannot interleave with another. The leaf is also the one holding the device's PFX private
+    /// key, which makes it the right place to spend the assertion.</para>
+    ///
+    /// <para><b>Both directions are checked</b> — "a truth written only forwards is half a truth". The class's
+    /// own value must win while set, AND the structural default must be what is there again once the class
+    /// restores, because a class that leaves the variable empty on the way out would hand the NEXT class the
+    /// real install directory.</para>
+    /// </summary>
+    [Fact]
+    public void AClassThatSetsTheVariableItself_StillBeatsTheStructuralDefault()
+    {
+        var structural = TestRunTempRoot.InstalledRedirects["ST4I_IDENTITY_DIR"];
+        var previous = Environment.GetEnvironmentVariable(DeviceIdentityStore.EnvVarDir);
+        var mine = Path.Combine(Path.GetTempPath(), "st4i-cb1-class-wins-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Environment.SetEnvironmentVariable(DeviceIdentityStore.EnvVarDir, mine);
+
+            var resolved = Path.TrimEndingDirectorySeparator(Path.GetFullPath(DeviceIdentityStore.ResolveRoot()));
+
+            Assert.Equal(Path.TrimEndingDirectorySeparator(Path.GetFullPath(mine)), resolved);
+            Assert.NotEqual(Path.TrimEndingDirectorySeparator(Path.GetFullPath(structural)), resolved);
+            Assert.NotEqual(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(DeviceIdentityStore.DefaultRoot())), resolved);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(DeviceIdentityStore.EnvVarDir, previous);
+        }
+
+        Assert.Equal(
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(structural)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(DeviceIdentityStore.ResolveRoot())));
+    }
+
+    /// <summary>
+    /// 🔴 <b>Task CB-1 — the NINTH leaf is not like the other eight, and this fact exists to say so where the
+    /// result is read rather than in a report nobody re-opens.</b>
+    ///
+    /// <para><b>What is asserted:</b> <c>ST4I_HISTORIAN_DIR</c> IS installed structurally, and it points away
+    /// from the real historian directory and into this run's disposable root — the same two predicates the
+    /// five-leaf theory above applies.</para>
+    ///
+    /// <para>🔴 <b>WHAT IS NOT ASSERTED, AND IT IS THE HALF THAT MATTERS.</b> For the other eight leaves the
+    /// variable is read by the STORE TYPE ITSELF, through a public static entry point — a <c>ResolveRoot</c>
+    /// for six of them, and <c>FromEnvironment()</c> for <c>bridge-spool</c> and <c>wal</c>, whose stores
+    /// build an options object rather than resolve a path directly. Either way setting the variable reaches
+    /// every caller, including one that constructs the store with no argument. <c>historian</c> has no such
+    /// seam at all.
+    /// <c>SqliteHistorianStore.DefaultRoot()</c> and <c>OeeSettingsStore.DefaultRoot()</c> are both PRIVATE,
+    /// both hardcode <c>%ProgramData%\ST4I\sim\historian</c>, and NEITHER reads an environment variable —
+    /// measured at CB-1, the <c>GetEnvironmentVariable</c> count in both files is zero. The variable is read
+    /// in exactly ONE place, <c>Program.cs:412</c>, as a bare literal with no constant behind it: the
+    /// composition root, which threads the resolved value into both stores.</para>
+    ///
+    /// <para>So this redirect covers a test that boots the engine through
+    /// <c>WebApplicationFactory&lt;Program&gt;</c>, and does NOT cover <c>new SqliteHistorianStore()</c> or
+    /// <c>new OeeSettingsStore()</c>. Those still resolve to the REAL install directory, and no value set in
+    /// the harness can change that. Closing it means giving those two stores a seam, which changes how the
+    /// SHIPPING product resolves its historian directory — a <c>src/</c> change this task's brief forbids.
+    /// It is therefore reported rather than fixed, and item 72 remains PARTIAL on this leaf. This fact is
+    /// deliberately NOT written to fail on that gap: a test that pinned the defect in place would have to be
+    /// deleted by whoever finally fixes it.</para>
+    /// </summary>
+    [Fact]
+    public void HistorianVariable_IsInstalled_ButReachesOnlyTheCompositionRoot()
+    {
+        Assert.True(TestRunTempRoot.InstalledRedirects.TryGetValue("ST4I_HISTORIAN_DIR", out var installed),
+            "ST4I_HISTORIAN_DIR was not installed. Program.cs reads it at the composition root, so without " +
+            "it every WebApplicationFactory-booted test writes historian.db and oee-settings.json into the " +
+            "REAL install.");
+
+        var redirected = Path.TrimEndingDirectorySeparator(Path.GetFullPath(installed!));
+        var real = Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "ST4I", "sim", "historian")));
+
+        Assert.NotEqual(real, redirected);
+        Assert.StartsWith(
+            Path.GetFullPath(TestRunTempRoot.Root!), redirected, StringComparison.OrdinalIgnoreCase);
     }
 }

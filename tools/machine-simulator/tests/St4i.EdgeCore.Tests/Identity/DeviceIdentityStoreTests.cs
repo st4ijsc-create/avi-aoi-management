@@ -20,6 +20,15 @@ namespace St4i.EdgeCore.Tests.Identity;
 /// first (create) call — a later <c>LoadOrCreate</c> with a different nodeId still returns the originally
 /// persisted identity.
 /// </summary>
+/// 🔴 <b>Task CB-1 — joined <c>MachineWideStoreEnv</c> because it flips <c>ST4I_IDENTITY_DIR</c>, a
+/// PROCESS-WIDE variable, and is no longer the only class in this assembly that does.</b>
+/// <c>TestRunTempRootTests.AClassThatSetsTheVariableItself_StillBeatsTheStructuralDefault</c> flips the same
+/// variable to witness that a class setting its own root still beats the structural default installed at
+/// start-up. Two classes flipping one variable in parallel is the exact hazard
+/// <see cref="MachineWideStoreEnvCollection"/> was created for — and that collection's own doc comment says
+/// a class touching a variable a member also touches has to join it. This is that rule being obeyed rather
+/// than rediscovered later from a flake.
+[Collection("St4i.EdgeCore.Tests.MachineWideStoreEnv")]
 public sealed class DeviceIdentityStoreTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();
