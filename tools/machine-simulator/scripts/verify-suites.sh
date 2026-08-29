@@ -2745,6 +2745,9 @@ EXPECT_CONFORMANCE=24
 # suite, never by arithmetic. 🔴 THE WEB CONSTANTS ARE UNTOUCHED and are never added to this total:
 # EXPECT_WEB_E2E_TESTS, the four pinned failures and the one quarantined spec are CA-1's and belong to owner
 # item 60, which is a LATER task's subject.
+# 📎 That later task is CE-1 (2026-08-25): under the owner's "60, pay" it paid all five and BOTH lists are
+# now EMPTY. The sentence above is left verbatim as CD-1's record of its own scope; read it as history, not
+# as a description of the pin today. EXPECT_WEB_E2E_TESTS did NOT move (220), and neither did this total.
 #
 #   +4  tests/St4i.EdgeCore.Tests/SimulatorFactoryIotGatewayTests.cs -- owner item 49, BOTH clauses of the
 #       2026-08-25 ruling ("narrow the fix, delete the record"). Net of five edits: ONE test inverted
@@ -9937,6 +9940,11 @@ done
 # ALSO redirected by playwright.config.ts, and playwright.config.ts redirects ELEVEN MORE. The
 # bracket below is what re-takes that measurement on every run instead of inheriting this sentence.
 #
+# 🔴 THE PARAGRAPH BELOW IS HISTORICAL — CA-1, 2026-08-25 — AND IT IS KEPT VERBATIM BECAUSE THE DEBT IT
+# DECLARED HAS BEEN PAID, NOT DELETED. CE-1 (2026-08-25) paid all five rows; the assertion below is now
+# `the failing set is EMPTY`, which IS `failed == 0` and IS symmetric with the five .NET suites again.
+# Read the CE-1 block under the constants for what was measured, and §60.9 for the per-image signature.
+# ─── CA-1, verbatim ──────────────────────────────────────────────────────────────────────────────────
 # 🔴 AND THE ASSERTION IS NOT `failed == 0`, WHICH IS A REAL ASYMMETRY WITH THE FIVE SUITES ABOVE AND
 # IS DECLARED RATHER THAN BURIED. On the .NET side a non-zero `Failed:` is unconditionally red and has
 # been for sixty-one tasks. Here it is not, because MEASURED ON THE SHIPPED TREE AT 94fc9160, BEFORE
@@ -9950,6 +9958,23 @@ done
 #   routes/Settings.tsx itself. They are STALE, and they are stale for exactly the reason item 60
 #   exists: nothing ran them.
 #   ONE is `01-dashboard.spec.ts`, a functional assertion on a toast that does not appear.
+# ─── end verbatim ────────────────────────────────────────────────────────────────────────────────────
+#
+# 🔴 THREE OF THOSE SENTENCES DID NOT SURVIVE RE-MEASUREMENT, and they are corrected here rather than
+# quietly dropped, because this file is where a reader would otherwise inherit them:
+#   (1) "~13 900 pixels" is ONE screen generalised to four. Measured per screen, same run, same tree:
+#       inspector 13 863 · settings 14 667 · onboarding 6 309 · scenario 1 231. The spread is 11.9x.
+#   (2) "ratio 0.01 ... five hundred times the threshold" READS A DISPLAY ARTEFACT AS A MEASUREMENT.
+#       Playwright ceils that figure to two decimals, so EVERY non-identical comparison on this suite
+#       prints "ratio 0.01" no matter how small it is — all four printed it, and so would a 1-pixel
+#       diff. Against the real frame (1440x1600 = 2 304 000 px) the true ratios are 0.0060 · 0.0064 ·
+#       0.0027 · 0.00053, i.e. 301x · 318x · 137x · 27x the 0.00002 threshold. Not one of them is 500x,
+#       and the smallest is off by a factor of nearly nineteen.
+#   (3) "the diff image shows CONTENT AT DIFFERENT VERTICAL OFFSETS, not antialiasing" is FALSE FOR
+#       SCENARIO, and it is the sentence that would have sent the next reader looking for the wrong
+#       thing. Scenario's diff has NO vertical shift anywhere: the layout is pixel-identical and two
+#       SENTENCES changed in place. Three screens moved; the fourth reworded. "Four failures, one
+#       cause" was never measured — it was assumed, and per-screen review is what disproved it.
 #
 # 🔴 THE THREE THINGS THIS TASK REFUSED TO DO ABOUT THAT, each with its reason, because the shape of
 # a refusal is the argument:
@@ -9990,11 +10015,61 @@ done
 # toward EXPECT_WEB_E2E_TESTS, still writes its trace and screenshot, and is named on every verdict.
 # What it cannot do is decide the gate. A SECOND quarantined row would have to be added here by hand,
 # which is the only thing stopping this list from becoming the place failures go to be forgotten.
-EXPECT_WEB_E2E_PINNED_FAILURES="tests\\00-visual-and-a11y.spec.ts:233:7 › inspector › visual — glass
-tests\\00-visual-and-a11y.spec.ts:233:7 › onboarding › visual — glass
-tests\\00-visual-and-a11y.spec.ts:233:7 › scenario › visual — glass
-tests\\00-visual-and-a11y.spec.ts:233:7 › settings › visual — glass"
-WEB_E2E_QUARANTINED="tests\\01-dashboard.spec.ts:26:3 › dashboard — fleet start/stop › empty state renders, Start Fleet populates the grid, Stop Fleet freezes it"
+#
+# ══ CE-1, 2026-08-25 — BOTH LISTS ARE NOW EMPTY, AND THAT IS THE ASSERTION, NOT AN ABSENCE ═══════════
+# Owner ruling 2026-08-25: "60, pay". Paid, not written off. THE MECHANISM ABOVE IS UNCHANGED AND STAYS
+# — what changed is that it now holds nothing. An empty list here is not a disabled check: the equality
+# below still runs on every gate, and with an empty expectation it says THE FAILING SET MUST BE EMPTY.
+# ⇒ For the first time since CA-1 wired this suite in, THIS GATE NO LONGER EXPECTS A RED. `failed == 0`
+# is red on the web side again, exactly as it is on the five .NET suites — the asymmetry CA-1 declared
+# is closed, and it was closed by paying the debt rather than by relaxing the instrument.
+#
+# THE FOUR VISUAL ROWS — PAID BY RE-RECORDING, AND THE SIGNATURE IS THE POINT. CA-1 refused
+# `--update-snapshots` for a reason that was correct at the time: "one command would turn 23 days of
+# unreviewed visual drift into a baseline signed by this task." The refusal is answered by REVIEW, not
+# by a bigger command. Every one of the four diff images was OPENED AND LOOKED AT, what moved was named
+# in words, the cause was traced to a commit, and only then was the image re-recorded — per image, four
+# separate judgements, recorded in docs/owner-decisions.md §60.9. NOT `npm run test:e2e:update-
+# snapshots`; a run scoped by `-g` to exactly the four titles reviewed, and `git status` afterwards
+# showed exactly four PNGs changed.
+# 🔴 AND THE PREMISE THAT MADE THE REFUSAL FRIGHTENING DID NOT SURVIVE MEASUREMENT. "23 days of
+# unreviewed drift across 15 commits" measures, on these four screens, to EIGHT EDITS FROM TWO COMMITS,
+# every one of them already reviewed and signed as the payment of an owner item: 726cfaca (items 28/29
+# — three added `<p>` hint paragraphs, one subtitle with the false word "mọi" removed, two placeholders
+# SIM-0002 → ENGINE-API-01) and 513dfd7e (item 34 — two scenario sentences that claimed a high error
+# rate the transport cannot produce). The OTHER THIRTEEN commits and the remaining ~1000 insertions
+# moved not one pixel on these four screens.
+# 🔴 THE PROOF THAT NO REGRESSION WAS RIDING ALONG, because "it looks intentional" is not a measurement:
+# those eight edits were REVERTED IN THE WORKING TREE and the suite re-run against the UNTOUCHED
+# 2026-08-01 baselines — 14 passed, exit 0, ZERO differing pixels on all four. That is a two-sided
+# result: every changed pixel is attributable to a named deliberate edit, AND nothing else on those
+# screens changed at all. Re-recording was therefore case (i) — the old images were the wrong artefact
+# — for all four, and it is NOT four judgements collapsed into one: scenario reached (i) by a different
+# route than the other three (no layout shift at all, see correction (3) above).
+#
+# THE QUARANTINED ROW — MECHANISM FOUND, FIXED, AND THE ROW IS GONE. CA-1 was right that "2 of 3" is a
+# frequency and not a diagnosis. The diagnosis: `01-dashboard.spec.ts` fails because
+# `POST /v1/fleet/start` returns HTTP 500 — a REAL server error, not a flaky assertion and not a toast
+# timing problem. `MachineConfigStore.WriteAllTextAtomic` writes `<file>.tmp-<guid>` then
+# `File.Move(tmp, dest, overwrite: true)`, and that rename raised UnauthorizedAccessException on the
+# SECOND machine of eleven (forensics: the committed file held 1 entry, an orphaned .tmp-<guid> beside
+# it held 2). The cause is the HARNESS, not the product: playwright.config.ts points the engine's data
+# root at `web/.e2e-data`, INSIDE the Vite dev server's own project root, so the dev server's watcher
+# is walking the directory the engine is renaming files in. One variable, moved and moved back:
+# inside → 8 of 8 runs 500; outside → 3 of 3 runs 200; engine run standalone with no dev server → 200.
+# Fix is one option in `vite.config.ts` (`server.watch.ignored`) and it changes NO product code and no
+# build output — after it, 5 of 5 runs pass at 200. See that file for what the fix does NOT cover.
+# 🔴 SAID PLAINLY BECAUSE IT IS THE WHOLE ARGUMENT FOR NEVER LEAVING A ROW HERE: this quarantine was
+# holding a genuine HTTP 500, and the gate had — by design, and correctly declared — NO OPINION about
+# it in either direction for as long as it sat there.
+#
+# 📌 WHAT THE EMPTY LISTS DO NOT SAY, named because an empty list is the easiest place to read coverage
+# into a silence: they assert nothing about the 220 tests being the RIGHT tests, and re-recording a
+# baseline moves the standard to TODAY'S render — a defect already present on 2026-08-25 is now the
+# reference. The four images were reviewed against the CHANGE that produced them, not against a design
+# spec, because this tree has no such spec to compare a screenshot to.
+EXPECT_WEB_E2E_PINNED_FAILURES=""
+WEB_E2E_QUARANTINED=""
 
 echo "[2b/3] Running the web/ browser suite (${#WEB_SUITES[@]} suite, ceiling ${WEB_SUITE_CEILING_SECONDS}s)..."
 WEB_E2E_LOG="$LOGDIR/web-e2e.log"
@@ -10073,23 +10148,44 @@ else
         echo "    pinned failure that has started passing: also red, on purpose and for the same reason"
         echo "    EXPECT_WARNINGS is red when a warning is fixed -- the pin comes down with a"
         echo "    justification beside it, never silently."
-        echo "    The four pinned rows are a DEBT, not a verdict on them: four stale visual baselines,"
-        echo "    last recorded 2026-08-01, 15 commits and 1053 insertions of web/src ago. Paying or"
-        echo "    writing them off is a product decision -- see item 60."
+        if [[ -z "$EXPECT_WEB_E2E_PINNED_FAILURES" ]]; then
+          echo "    The pinned set is EMPTY (CE-1, 2026-08-25 -- owner item 60 paid: four baselines"
+          echo "    re-recorded after per-image review, and the quarantined row's HTTP 500 diagnosed"
+          echo "    and fixed). So every row above is a '>' and every one of them is a NEW failure."
+          echo "    Do NOT re-pin a row to get back to green: a pin is for a debt the OWNER has priced."
+        else
+          echo "    Pinned rows are a DEBT, not a verdict on them. Paying or writing one off is a"
+          echo "    product decision -- see docs/owner-decisions.md item 60."
+        fi
         echo "    log: $WEB_E2E_LOG"
       } > "$LOGDIR/web-e2e-report.txt"
       FAILURES+=("$(cat "$LOGDIR/web-e2e-report.txt")")
     fi
   fi
-  # 🔴 The exit code is deliberately REPORTED and not asserted: with five pinned failures on the
-  # books `npm run test:e2e` exits 1 on a correct run, so asserting rc==0 would be asserting the
-  # debt away. What IS asserted is the total and the failing SET; the rc is printed so that nobody
-  # reads "exit 1" beside a PASS and assumes the gate lost track of it.
-  note "web e2e: ${WEB_E2E_TOTAL:-?}/${EXPECT_WEB_E2E_TESTS} ran, ${WEB_E2E_PASSED:-?} passed, ${WEB_E2E_FAILED:-0} failed, runner exit ${WEB_E2E_RC} (non-zero is EXPECTED while the pin holds rows), ${WEB_E2E_ELAPSED}s of ${WEB_SUITE_CEILING_SECONDS}s"
+  # 🔴 CE-1: THE EXIT CODE IS NOW ASSERTED — but only while the pin is EMPTY, which is the condition
+  # that makes it meaningful. CA-1's reason for merely reporting it was exact and is preserved: with
+  # rows on the books `npm run test:e2e` exits 1 on a CORRECT run, so demanding rc==0 would have been
+  # demanding the debt away. With no rows, a correct run exits 0, and the reading is restored to the
+  # unconditional one the five .NET suites have always had. If a future task re-pins a row, this
+  # assertion stands down BY ITSELF rather than needing to be remembered — the branch is the mechanism.
+  # What it buys over the set check: a runner that dies after printing a plausible summary (config
+  # error, worker crash, an `--only` left in a spec under `forbidOnly`) is a non-zero rc with an empty
+  # failing set, which the set comparison alone reads as green.
+  if [[ -z "$EXPECT_WEB_E2E_PINNED_FAILURES" && "$WEB_E2E_RC" != "0" && -n "${WEB_E2E_TOTAL:-}" && "$WEB_E2E_ASSERTED_SET" == "$EXPECT_WEB_E2E_PINNED_FAILURES" ]]; then
+    FAILURES+=("web e2e: the runner exited ${WEB_E2E_RC} while the failing set was EMPTY and the pin holds no rows. Those cannot both be right: with nothing pinned a correct run exits 0. Something failed OUTSIDE the end-of-run failure summary this gate parses -- read the log rather than the counts. log: $WEB_E2E_LOG")
+  fi
+  note "web e2e: ${WEB_E2E_TOTAL:-?}/${EXPECT_WEB_E2E_TESTS} ran, ${WEB_E2E_PASSED:-?} passed, ${WEB_E2E_FAILED:-0} failed, runner exit ${WEB_E2E_RC} (pin holds $(printf '%s\n' "$EXPECT_WEB_E2E_PINNED_FAILURES" | grep -c . || true) row(s); with an EMPTY pin a non-zero exit is RED, same as the five .NET suites), ${WEB_E2E_ELAPSED}s of ${WEB_SUITE_CEILING_SECONDS}s"
   # 🔴 The quarantine is reported on EVERY run, green or red, and on both branches — a disclosure that
-  # only appears when it is inconvenient is a footnote, not a disclosure. This is the one place a
-  # reader learns that some of the 220 tests above decide nothing.
-  note "web e2e: ${WEB_E2E_QUARANTINE_N} QUARANTINED row(s) — ${WEB_E2E_QUARANTINE_HIT} failed on this run, and this gate asserts NOTHING about them in either direction (measured unstable: 2 of 3 runs). They still run, still count in the ${EXPECT_WEB_E2E_TESTS}, and are named in the script beside the pin."
+  # only appears when it is inconvenient is a footnote, not a disclosure. CE-1: it now reports ZERO,
+  # and zero is reported just as loudly, because "this list is empty" is the fact a reader most needs
+  # and the one a silence would hide. The old line's parenthetical ("measured unstable: 2 of 3 runs")
+  # is gone with the row: that frequency was never a diagnosis, and the diagnosis, once taken, was an
+  # HTTP 500 with a fix — see the block beside WEB_E2E_QUARANTINED.
+  if [[ "$WEB_E2E_QUARANTINE_N" == "0" ]]; then
+    note "web e2e: 0 QUARANTINED row(s) — this gate now has an opinion about ALL ${EXPECT_WEB_E2E_TESTS} tests it runs, in both directions. Nothing here is exempt from the verdict."
+  else
+    note "web e2e: ${WEB_E2E_QUARANTINE_N} QUARANTINED row(s) — ${WEB_E2E_QUARANTINE_HIT} failed on this run, and this gate asserts NOTHING about them in either direction. They still run, still count in the ${EXPECT_WEB_E2E_TESTS}, and are named in the script beside the pin."
+  fi
 fi
 
 # ── Gate 3: the verdict, as one line. ───────────────────────────────────────────
@@ -10252,7 +10348,7 @@ if [[ ${#FAILURES[@]} -eq 0 ]]; then
   # replaces it is NOT silence: a one-line reader gets the web suite's own numbers AND the size of
   # the pinned debt, because "213 of 218 passed" beside the word PASS is exactly the kind of thing a
   # reader must not have to open a log to learn.
-  echo "PASS: 0 build errors, ${#SUITES[@]}/${#SUITES[@]} .NET suites at their exact expected totals (${grand}), 0 failed, 0 skipped, none aborted; web/ build+lint OK (${WEB_LINT_WARNINGS:-?} pinned lint warnings) and ${WEB_E2E_TOTAL:-?}/${EXPECT_WEB_E2E_TESTS} browser tests ran with ${WEB_E2E_FAILED:-0} PINNED failure(s) — see the domain declaration above for what is still not measured."
+  echo "PASS: 0 build errors, ${#SUITES[@]}/${#SUITES[@]} .NET suites at their exact expected totals (${grand}), 0 failed, 0 skipped, none aborted; web/ build+lint OK (${WEB_LINT_WARNINGS:-?} pinned lint warnings) and ${WEB_E2E_TOTAL:-?}/${EXPECT_WEB_E2E_TESTS} browser tests ran with ${WEB_E2E_FAILED:-0} failed, $(printf '%s\n' "$EXPECT_WEB_E2E_PINNED_FAILURES" | grep -c . || true) pinned and ${WEB_E2E_QUARANTINE_N:-0} quarantined — see the domain declaration above for what is still not measured."
   exit 0
 fi
 echo "FAIL:"
