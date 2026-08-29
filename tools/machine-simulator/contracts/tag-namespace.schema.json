@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://st4i.local/contracts/tag-namespace/v1",
+  "title": "St4i Tag Namespace",
+  "type": "object",
+  "required": ["schemaVersion", "machineCode", "tags"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "machineCode": { "type": "string", "minLength": 1 },
+    "tags": { "type": "array", "items": { "$ref": "#/$defs/tag" } }
+  },
+  "$defs": {
+    "tag": {
+      "type": "object",
+      "required": ["path", "dataType", "access", "source", "isBackedByDriver"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "pattern": "^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)+$" },
+        "dataType": { "enum": ["bool", "int", "float", "string", "enum"] },
+        "unit": { "type": ["string", "null"] },
+        "engMin": { "type": ["number", "null"] },
+        "engMax": { "type": ["number", "null"] },
+        "enumValues": { "type": ["array", "null"], "items": { "type": "string" } },
+        "access": { "enum": ["r", "rw"] },
+        "policyAction": { "enum": [null, "machine.setpoint", "machine.command"] },
+        "source": { "$ref": "#/$defs/source" },
+        "isBackedByDriver": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "access": { "const": "rw" } }, "required": ["access"] },
+          "then": { "properties": { "policyAction": { "type": "string" } }, "required": ["policyAction"] }
+        },
+        {
+          "if": { "properties": { "dataType": { "enum": ["int", "float"] } }, "required": ["dataType"] },
+          "then": {
+            "properties": { "engMin": { "type": "number" }, "engMax": { "type": "number" } },
+            "required": ["engMin", "engMax"]
+          }
+        }
+      ]
+    },
+    "source": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "unitId", "register"],
+          "properties": {
+            "kind": { "const": "modbus" },
+            "unitId": { "type": "integer", "minimum": 0, "maximum": 255 },
+            "register": { "type": "integer", "minimum": 0 },
+            "scale": { "type": ["number", "null"] }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "nodeId"],
+          "properties": { "kind": { "const": "opcua" }, "nodeId": { "type": "string", "minLength": 1 } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "topic"],
+          "properties": {
+            "kind": { "const": "mqtt" },
+            "topic": { "type": "string", "minLength": 1 },
+            "jsonPath": { "type": ["string", "null"] }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "simulated" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "expr"],
+          "properties": { "kind": { "const": "derived" }, "expr": { "type": "string", "minLength": 1 } }
+        }
+      ]
+    }
+  }
+}

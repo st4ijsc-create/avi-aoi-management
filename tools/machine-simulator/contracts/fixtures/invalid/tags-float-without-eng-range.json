@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "machineCode": "SCRW-01",
+  "tags": [
+    {
+      "path": "SCRW-01/spindle/torque",
+      "dataType": "float", "unit": "Nm",
+      "access": "r",
+      "source": { "kind": "simulated" },
+      "isBackedByDriver": false
+    }
+  ]
+}

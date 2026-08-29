@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "machineCode": "SCRW-01",
+  "tags": [
+    {
+      "path": "SCRW-01/spindle/torque",
+      "dataType": "float", "unit": "Nm", "engMin": 0, "engMax": 20,
+      "access": "r",
+      "source": { "kind": "modbus", "unitId": 1, "register": 40001, "scale": 0.01 },
+      "isBackedByDriver": true
+    },
+    {
+      "path": "SCRW-01/spindle/torque-target",
+      "dataType": "float", "unit": "Nm", "engMin": 5, "engMax": 15,
+      "access": "rw", "policyAction": "machine.setpoint",
+      "source": { "kind": "modbus", "unitId": 1, "register": 40010, "scale": 0.01 },
+      "isBackedByDriver": true
+    },
+    {
+      "path": "SCRW-01/cell/reset",
+      "dataType": "bool",
+      "access": "rw", "policyAction": "machine.command",
+      "source": { "kind": "opcua", "nodeId": "ns=2;s=Cell.Reset" },
+      "isBackedByDriver": true
+    },
+    {
+      "path": "SCRW-01/ambient/temp",
+      "dataType": "float", "unit": "°C", "engMin": -10, "engMax": 80,
+      "access": "r",
+      "source": { "kind": "mqtt", "topic": "syn/site/scrw-01/ambient", "jsonPath": "$.tempC" },
+      "isBackedByDriver": true
+    },
+    {
+      "path": "SCRW-01/spindle/state",
+      "dataType": "enum", "enumValues": ["stopped", "running", "faulted"],
+      "access": "r",
+      "source": { "kind": "derived", "expr": "running ? 'running' : 'stopped'" },
+      "isBackedByDriver": false
+    }
+  ]
+}

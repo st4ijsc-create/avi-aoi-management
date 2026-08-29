@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "machineCode": "SCRW-01",
+  "tags": [
+    {
+      "path": "SCRW-01/spindle/torque-target",
+      "dataType": "float", "unit": "Nm", "engMin": 5, "engMax": 15,
+      "access": "rw",
+      "source": { "kind": "modbus", "unitId": 1, "register": 40010, "scale": 0.01 },
+      "isBackedByDriver": true
+    }
+  ]
+}
