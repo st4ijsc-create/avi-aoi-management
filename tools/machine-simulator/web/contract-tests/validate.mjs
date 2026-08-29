@@ -9,6 +9,17 @@
 // 🔴 NÓ KHÔNG PHẢI BỘ VALIDATE TỔNG QUÁT. Nếu ai đó thêm một từ khoá ngoài danh sách trên vào
 // schema, `assertKnownKeywords` dưới đây NÉM LỖI thay vì bỏ qua âm thầm — một từ khoá không được
 // hiểu mà bị bỏ qua chính là cách một bộ validate viết tay trở thành lời nói dối.
+//
+// 🔴 `additionalProperties` được THI HÀNH ở đúng hai dạng, không hơn: `false` (cấm mọi khoá lạ
+// ngoài `properties`) và MỘT SCHEMA — dạng bản đồ tên→giá trị, dùng cho `bindings`
+// (`{"type":"object","additionalProperties":{"type":"string"}}`, một node KHÔNG có `properties`
+// nào cả). Trước một đợt sửa (fix round 1), dạng schema nằm trong danh sách từ khoá "hiểu được" ở
+// trên nhưng KHÔNG được thi hành — `{"bindings":{"value":42}}` (giá trị không phải string) validate
+// sạch dù cả schema lẫn `Record<string, string>` bên TypeScript đều đòi string. Đã sửa: nhánh dưới
+// (`schema.additionalProperties` là object) chạy ĐỘC LẬP với `schema.properties` có mặt hay không,
+// và validate GIÁ TRỊ của mọi khoá không thuộc `properties` (hoặc mọi khoá, nếu node không có
+// `properties`) theo schema đó. Fixture `invalid/screen-binding-value-not-string.json` chứng minh
+// nó giờ thật sự chặn.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const KNOWN = new Set([
@@ -80,15 +91,28 @@ export function validate(root, schema, value, path = "$") {
       errs.push(`${path}: lớn hơn maximum ${schema.maximum}`)
   }
 
-  if (schema.properties && value !== null && typeof value === "object" && !Array.isArray(value)) {
+  const isPlainObject = value !== null && typeof value === "object" && !Array.isArray(value)
+
+  if (isPlainObject)
     for (const req of schema.required ?? [])
       if (!(req in value)) errs.push(`${path}: thiếu trường bắt buộc "${req}"`)
+
+  if (schema.properties && isPlainObject) {
     if (schema.additionalProperties === false)
       for (const k of Object.keys(value))
         if (!(k in schema.properties)) errs.push(`${path}: trường lạ "${k}"`)
     for (const [k, sub] of Object.entries(schema.properties))
       if (k in value) errs.push(...validate(root, sub, value[k], `${path}.${k}`))
   }
+
+  // `additionalProperties` là MỘT SCHEMA (không phải `true`/`false`) ⇒ bản đồ tên→giá trị. Chạy dù
+  // `schema.properties` có mặt hay không — một node object có thể THUẦN LÀ bản đồ (không
+  // `properties` nào cả, như `bindings`), và những khoá KHÔNG nằm trong `properties` (nếu có) vẫn
+  // phải qua schema này.
+  if (isPlainObject && schema.additionalProperties && typeof schema.additionalProperties === "object")
+    for (const [k, v] of Object.entries(value))
+      if (!schema.properties || !(k in schema.properties))
+        errs.push(...validate(root, schema.additionalProperties, v, `${path}.${k}`))
 
   if (schema.items && Array.isArray(value))
     value.forEach((v, i) => errs.push(...validate(root, schema.items, v, `${path}[${i}]`)))

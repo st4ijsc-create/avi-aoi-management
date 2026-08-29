@@ -108,3 +108,32 @@ for (const [schemaFile, pins] of Object.entries(PIN)) {
     })
   }
 }
+
+// ── Ghim hai chiều $defs/source ⟷ TagSource (gộp mọi nhánh oneOf) ─────────────
+// 🔴 Fix round 1, finding 1: `$defs/source` là `oneOf`, không có một `properties` gốc để PIN ở
+// trên trỏ tới — mỗi nhánh (modbus/opcua/mqtt/simulated/derived) có `properties` riêng của nó. Đây
+// là bài ghim DUY NHẤT của `TagSource`: gộp property của cả 5 nhánh rồi so HAI CHIỀU với `TagSource`
+// phẳng bên `tagNamespace.ts`. Mirror của
+// `TagNamespaceSchemaPinTests.TagSource_covers_every_source_kind_and_every_branch_field_the_schema_allows`
+// phía C# — hai bài phải CÙNG đỏ khi một nhánh source thêm/bớt field. Trước đợt sửa này bài này
+// không tồn tại ở phía web: thêm/bớt field trên một nhánh làm C# đỏ ngay còn web im lặng — đúng
+// kiểu drift Mốc 0 tồn tại để ngăn.
+test("tag-namespace.schema.json ⟷ TagSource: cùng tập tên property (gộp mọi nhánh oneOf)", () => {
+  const schema = load("tag-namespace.schema.json")
+  const oneOf = schema.$defs.source.oneOf
+
+  const kinds = new Set(oneOf.map((branch) => branch.properties.kind.const))
+  assert.equal(kinds.size, 5, `kỳ vọng đúng 5 kind nguồn, có ${kinds.size}: ${[...kinds].join(", ")}`)
+
+  const allBranchProps = new Set(oneOf.flatMap((branch) => Object.keys(branch.properties)))
+  const inTs = tsProps("tagNamespace.ts", "TagSource")
+
+  const missingFromTs = [...allBranchProps].filter((k) => !inTs.has(k)).sort()
+  const missingFromSchema = [...inTs].filter((k) => !allBranchProps.has(k)).sort()
+
+  assert.deepEqual(missingFromTs, [], `nhánh oneOf khai nhưng TagSource thiếu: ${missingFromTs}`)
+  assert.deepEqual(
+    missingFromSchema, [],
+    `TagSource khai nhưng không nhánh oneOf nào có: ${missingFromSchema}`,
+  )
+})
