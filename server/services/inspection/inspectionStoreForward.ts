@@ -647,16 +647,32 @@ export function stopInspectionBackfillWorker(): void {
 }
 
 /**
- * One-call startup init (wired from server bootstrap): dynamically binds the
- * REAL submit pipeline + dedup check from the router (dynamic import → no
- * module-load cycle), restores the WAL from disk, starts the worker.
- * Safe no-op when the flag is off.
+ * One-call startup init (wired from server bootstrap): binds the REAL submit
+ * pipeline + dedup check (dynamic import → no module-load cycle), restores the
+ * WAL from disk, starts the worker. Safe no-op when the flag is off.
+ *
+ * ── 2026-08-29 (WAL cho cây v2.0, Task 3 hotfix) — GỌI CHUNG `ensureInspectionWalWired`,
+ * KHÔNG TỰ CHÉP LẠI PHÉP DISPATCH ─────────────────────────────────────────────────────────
+ * TRƯỚC bản vá này, hàm này tự `setProcessFn`/`setDedupFn` thẳng vào
+ * `processInspectionSubmission`/`inspectionAlreadyPersisted` (v1.x CỨNG) — một BẢN THỨ HAI của
+ * phép dispatch, độc lập với `ensureInspectionWalWired` (`machineApiRouters.ts`, dispatch THEO
+ * HÌNH DẠNG mà Task 2 dựng cho đường LIVE). Vì hàm này chạy Ở BOOT — TRƯỚC bất kỳ lượt
+ * `submitInspection` LIVE nào (lượt live là nơi DUY NHẤT trước đây gọi
+ * `ensureInspectionWalWired`) — một mục v2.0 còn trên đĩa từ trước khi khởi động lại có thể bị
+ * `backfillInspections()` rút qua ĐÚNG đường v1.x này TRƯỚC KHI có lượt live nào kịp rewire lại
+ * cho đúng: ghi được header rồi ÂM THẦM bỏ mất cả ba cấp cây — TÁI DIỄN đúng lớp lỗi §QĐ-WAL-B
+ * (Task 2 đã đóng ở đường live) qua cửa BOOT. `.env` của repo này đặt
+ * `INSPECTION_STORE_FORWARD_ENABLED=true` — không phải rủi ro chỉ-trên-giấy (phát hiện bởi
+ * `ghiInspectionWalScan.ts`/`ghiInspectionWalCensus.test.ts`, Task 3).
+ *
+ * Sửa bằng cách gọi THẲNG `ensureInspectionWalWired()` (nay export) — MỘT điểm điều phối duy
+ * nhất cho CẢ HAI đường (boot và live), đúng kỷ luật đã nêu ở docblock của hàm đó. Mệnh đề BOOT
+ * (không gọi live trước khi gọi hàm này) canh ở `server/db/walCayV2PhatLai.db.test.ts`.
  */
 export async function initInspectionStoreForward(): Promise<void> {
   if (!inspectionStoreForwardEnabled()) return;
   const router = await import("../../routers/machineApiRouters");
-  setProcessFn((payload) => router.processInspectionSubmission(payload as never));
-  setDedupFn((payload) => router.inspectionAlreadyPersisted(payload as never));
+  router.ensureInspectionWalWired();
   await restoreInspectionWal();
   startInspectionBackfillWorker();
 }

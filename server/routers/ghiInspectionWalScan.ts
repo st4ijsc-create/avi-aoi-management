@@ -139,16 +139,24 @@ export interface KetQuaQuetGhiInspection {
  * ★★★ SỔ MIỄN TRỪ — khuôn `MIEN_TRU_QUYET_DINH_PHIEN_BAN` (`machineApiRouters.ts`, Pha 1C) là
  * mẫu, đã theo ĐÚNG tinh thần: mỗi đường KHÔNG bảo vệ WAL phải có tên ở đây KÈM lý do đo được,
  * không phải bảo trì im lặng. Đặt CẠNH bộ suy (không đặt trong `machineApiRouters.ts` như mẫu
- * gốc) vì sáu đường cần miễn trừ nằm ở BỐN file sản xuất khác nhau (`machineApiRouters.ts`,
- * `aoiPackageRouter.ts`, `acquisitionWorker.ts`, `hotFolderService.ts`,
- * `inspectionStoreForward.ts`) — không có một "chủ sở hữu" tự nhiên duy nhất như router gốc của
- * Pha 1C (nơi MỌI cửa nằm trong một object). Khoá bằng `khoaDuongGhi()` (`${duong}::${ten}`).
+ * gốc) vì các đường cần miễn trừ nằm ở NHIỀU file sản xuất khác nhau (`machineApiRouters.ts`,
+ * `aoiPackageRouter.ts`, `acquisitionWorker.ts`, `hotFolderService.ts`) — không có một "chủ sở
+ * hữu" tự nhiên duy nhất như router gốc của Pha 1C (nơi MỌI cửa nằm trong một object). Khoá bằng
+ * `khoaDuongGhi()` (`${duong}::${ten}`).
  *
- * ⚠ HAI mục dưới đây (`initInspectionStoreForward→processInspectionSubmission`,
- * `acquisitionWorker.submitCanonical→processInspectionSubmission`) là LỖ THẬT CHƯA VÁ, không
- * phải khác biệt kiến trúc hợp lệ — đọc kỹ lý do, và xem "mối lo" trong task-3-report.md trước
- * khi coi census xanh là "đã ổn". Ghi vào sổ ở đây là để KHÔNG chặn cổng ra của Task 3 (brief cấm
- * tự vá mã sản xuất mà không báo trước), không phải một tuyên bố rằng lỗ đã đóng.
+ * ⚠ MỘT mục dưới đây (`acquisitionWorker.submitCanonical→processInspectionSubmission`) là LỖ
+ * THẬT CHƯA VÁ, không phải khác biệt kiến trúc hợp lệ — đọc kỹ lý do, và xem "mối lo" trong
+ * task-3-report.md trước khi coi census xanh là "đã ổn". Ghi vào sổ ở đây là để KHÔNG chặn cổng
+ * ra của Task 3 (brief cấm tự vá mã sản xuất mà không báo trước), không phải một tuyên bố rằng
+ * lỗ đã đóng.
+ *
+ * ★★★ 2026-08-29 (Task 3 hotfix) — MỘT lỗ thật khác (`initInspectionStoreForward→
+ * processInspectionSubmission`) TỪNG ở đây, đã được VÁ NGAY trong cùng lượt (không đợi task
+ * riêng — coordinator yêu cầu sửa ngay vì `.env` bật `INSPECTION_STORE_FORWARD_ENABLED=true`
+ * thật): `initInspectionStoreForward` (`inspectionStoreForward.ts`) nay gọi THẲNG
+ * `ensureInspectionWalWired()` (export) thay vì tự wire cứng v1.x. Mục miễn trừ ĐÃ XOÁ vì call
+ * site đó KHÔNG CÒN TỒN TẠI — xem lịch sử git của khối `MIEN_TRU_GHI_INSPECTION_WAL` bên dưới
+ * cho lý lẽ đầy đủ, và ca hồi quy §6 của `ghiInspectionWalCensus.test.ts`.
  */
 export const MIEN_TRU_GHI_INSPECTION_WAL: Record<string, string> = {
   // ── ensureInspectionWalWired — CHÍNH LÀ bộ điều phối phát lại (processFn) của WAL ──────────
@@ -193,20 +201,21 @@ export const MIEN_TRU_GHI_INSPECTION_WAL: Record<string, string> = {
     "follow-up'). Ghi vào sổ để KHÔNG chặn cổng ra Task 3 (brief cấm tự vá mã sản xuất mà không " +
     "báo trước) — cần một quyết định RIÊNG trước khi bật submit:true cho một nguồn ảnh thật.",
 
-  // ── initInspectionStoreForward — ★★★ LỖ THẬT CHƯA VÁ, TÁI DIỄN LỚP LỖI TASK 2 QUA CỬA BOOT ──
-  "server/services/inspection/inspectionStoreForward.ts::initInspectionStoreForward→processInspectionSubmission":
-    "★★★ LỖ THẬT, CHƯA VÁ — RẤT GIỐNG lớp lỗi Task 2 (§QĐ-WAL-B) đã đóng, chỉ ở một cửa KHÁC: " +
-    "initInspectionStoreForward (chạy Ở BOOT — server/_core/index.ts, gọi ngay khi server khởi " +
-    "động) wire processFn CỨNG vào processInspectionSubmission (v1.x) RỒI MỚI restoreInspectionWal()" +
-    " + startInspectionBackfillWorker() — KHÔNG gọi ensureInspectionWalWired (hàm đó KHÔNG export " +
-    "khỏi machineApiRouters.ts, chỉ tự rewire khi có một lượt submitInspection/submitInspectionBatch " +
-    "LIVE chạy SAU boot). Nếu đĩa còn mục v2.0 từ TRƯỚC lúc khởi động lại (restoreInspectionWal " +
-    "nạp lại đúng các mục đó) và backfillWorker (mặc định 15s, INSPECTION_STORE_FORWARD_INTERVAL_MS)" +
-    " chạy TRƯỚC lượt submit LIVE đầu tiên sau boot, mục đó phát lại qua ĐÚNG đường v1.x từng gây " +
-    "mất cây ba cấp ÂM THẦM mà Task 2 đã sửa cho nhánh 'gọi trước khi live' — chỉ là tái diễn ở " +
-    "nhánh BOOT. `.env` của repo này đặt INSPECTION_STORE_FORWARD_ENABLED=true (không phải một cờ " +
-    "tắt trên giấy) nên đây KHÔNG chỉ là rủi ro lý thuyết. Ghi vào sổ để KHÔNG chặn cổng ra Task 3 " +
-    "(brief cấm tự vá mã sản xuất) — BÁO cho người trước khi sửa, xem task-3-report.md mục 'mối lo'.",
+  // ── initInspectionStoreForward — Task 3 hotfix ĐÃ ĐÓNG, không còn ở đây (xem lịch sử git) ──
+  // ★★★ 2026-08-29 — TỪNG có một mục ở đây: `initInspectionStoreForward` (chạy Ở BOOT,
+  // `server/_core/index.ts`) từng WIRE CỨNG processFn vào `processInspectionSubmission` (v1.x)
+  // RỒI MỚI `restoreInspectionWal()` — TÁI DIỄN lớp lỗi §QĐ-WAL-B (Task 2) qua cửa BOOT: mục
+  // v2.0 còn trên đĩa từ trước khi khởi động lại có thể bị backfill rút qua v1.x TRƯỚC lượt
+  // live đầu tiên, mất cây ÂM THẦM. Census (Task 3) phát hiện, ĐÃ VÁ NGAY (hotfix cùng ngày):
+  // `initInspectionStoreForward` nay gọi THẲNG `ensureInspectionWalWired()` (export, dùng CHUNG
+  // một điểm điều phối với đường live — đúng kỷ luật BG-19) thay vì tự chép lại phép dispatch.
+  // Call site `initInspectionStoreForward→processInspectionSubmission` KHÔNG CÒN TỒN TẠI (hàm đó
+  // không còn gọi trực tiếp bất kỳ tên nào trong TEN_CAC_HAM_GHI nữa) — mục miễn trừ vì vậy BỊ
+  // XOÁ, không phải "vẫn giữ nhưng đổi lý do". Canh bằng mệnh đề BOOT (KHÔNG gọi live trước khi
+  // gọi initInspectionStoreForward) ở `server/db/walCayV2PhatLai.db.test.ts`, VÀ bằng ca hồi quy
+  // §6 của `ghiInspectionWalCensus.test.ts` (initInspectionStoreForward không còn là phạm vi bao
+  // quanh của bất kỳ call site nào trong TEN_CAC_HAM_GHI — hồi quy về wire cứng sẽ tái xuất hiện
+  // ở ĐÓ, không chỉ ở mệnh đề BOOT).
 };
 
 // ── kỹ thuật tái dùng từ cuaIngestScan.ts (quetMotCay / coDuongToi) — xem docblock đầu file ──

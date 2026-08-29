@@ -14,7 +14,7 @@
  *   (1) bộ suy THẬT SỰ tìm thấy ≥2 đường — CẢ v1.x LẪN v2.0 — trên mã hôm nay (§1, cầu chì chống
  *       "xanh vì quét trúng 0 thứ": một bộ suy hỏng trả mảng rỗng làm mọi lượng từ "∀ đường…" bên
  *       dưới tự thoả VÔ NGHĨA — mệnh đề 1 của brief);
- *   (2) đúng CHÍN đường đã biết hôm nay, không thừa không thiếu (§2 — GHIM, đổi thì phải ghi lý
+ *   (2) đúng TÁM đường đã biết hôm nay, không thừa không thiếu (§2 — GHIM, đổi thì phải ghi lý
  *       do — mệnh đề 3 của brief: một đường BIẾN MẤT cũng bị bắt, không chỉ đường THÊM VÀO);
  *   (3) mỗi đường hoặc có WAL hoặc có miễn trừ ĐÃ KÝ lý do đo được, sổ miễn trừ không hoá thạch và
  *       không che giấu một đường thực ra đã có WAL (§3 — mệnh đề 2 của brief);
@@ -22,16 +22,29 @@
  *       KHÔNG bị báo nhầm (§5 — hai đột biến bắt buộc của brief, chạy trên CHÍNH bộ suy đang canh
  *       sản phẩm, không phải một bản giản lược).
  *
- * ★★★ SÁU trong CHÍN đường hôm nay nằm trong sổ miễn trừ — HAI mục
+ * ★★★ NĂM trong TÁM đường hôm nay nằm trong sổ miễn trừ — HAI mục
  * (`ensureInspectionWalWired→…`) là bộ điều phối phát lại của CHÍNH WAL (miễn trừ kiến trúc hợp
  * lệ), MỘT mục (`commit→persistInspectionAtomic`) là mutation người-kích-hoạt có transaction
  * riêng (miễn trừ hợp lệ), MỘT mục (`hotFolderService`) có tầng bền vững riêng dựa trên file
- * (miễn trừ hợp lệ) — nhưng HAI mục còn lại
- * (`acquisitionWorker.submitCanonical→processInspectionSubmission`,
- * `initInspectionStoreForward→processInspectionSubmission`) là LỖ THẬT CHƯA VÁ, ghi vào sổ để
- * không chặn cổng ra Task 3 (brief cấm tự vá mã sản xuất mà không báo trước) — đọc lý do đầy đủ
- * ở `ghiInspectionWalScan.ts` và mục "mối lo" của `task-3-report.md` trước khi coi census xanh là
- * "đã ổn".
+ * (miễn trừ hợp lệ) — nhưng MỘT mục còn lại
+ * (`acquisitionWorker.submitCanonical→processInspectionSubmission`) là LỖ THẬT CHƯA VÁ, ghi vào
+ * sổ để không chặn cổng ra Task 3 (brief cấm tự vá mã sản xuất mà không báo trước) — đọc lý do
+ * đầy đủ ở `ghiInspectionWalScan.ts` và mục "mối lo" của `task-3-report.md` trước khi coi census
+ * xanh là "đã ổn".
+ *
+ * ★★★ 2026-08-29 (HOTFIX cùng ngày) — census bắt được đường số 9 THẬT SỰ khi mới dựng lưới:
+ * `initInspectionStoreForward` (`inspectionStoreForward.ts`, chạy Ở BOOT, TRƯỚC bất kỳ lượt live
+ * nào) từng WIRE CỨNG `processFn` vào `processInspectionSubmission` (v1.x) — TÁI DIỄN lớp lỗi
+ * §QĐ-WAL-B (Task 2) qua cửa BOOT, và `.env` của repo bật `INSPECTION_STORE_FORWARD_ENABLED=true`
+ * THẬT nên không phải rủi ro trên giấy. ĐÃ VÁ NGAY (coordinator yêu cầu sửa trong lượt này, không
+ * hoãn): `initInspectionStoreForward` nay gọi THẲNG `ensureInspectionWalWired()` (export) — MỘT
+ * điểm điều phối cho CẢ HAI đường (boot + live). Đường số 9 vì vậy KHÔNG CÒN TỒN TẠI như một call
+ * site (`initInspectionStoreForward` không còn gọi trực tiếp bất kỳ tên nào trong
+ * `TEN_CAC_HAM_GHI`) — dân số đường ghi giảm từ CHÍN xuống TÁM, và khoá miễn trừ tương ứng đã bị
+ * XOÁ khỏi `MIEN_TRU_GHI_INSPECTION_WAL` (giữ lại sẽ hoá thạch — xem §3). §6 dưới đây là ca HỒI
+ * QUY: nếu ai đó vá lùi (`initInspectionStoreForward` quay lại wire cứng), `initInspectionStoreForward`
+ * sẽ TÁI XUẤT HIỆN như phạm vi bao quanh của một call site trong `TEN_CAC_HAM_GHI`, và §6 bắt
+ * ngay — độc lập với mệnh đề BOOT bằng DB thật ở `server/db/walCayV2PhatLai.db.test.ts`.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -71,7 +84,7 @@ const TEPS_DINH_NGHIA_THAT = DUONG_FILE_DINH_NGHIA.map(docTep);
 
 const QUET = quetDuongGhiInspection(TEPS_THAT);
 
-/** Chín đường đã biết hôm nay — GHIM. Đổi tập này là một LỜI KHAI, không phải bảo trì im lặng. */
+/** Tám đường đã biết hôm nay — GHIM. Đổi tập này là một LỜI KHAI, không phải bảo trì im lặng. */
 const GHIM_TEN_DUONG = [
   "server/routers/machineApiRouters.ts::ensureInspectionWalWired→submitInspectionTreeV2",
   "server/routers/machineApiRouters.ts::ensureInspectionWalWired→processInspectionSubmission",
@@ -81,7 +94,6 @@ const GHIM_TEN_DUONG = [
   "server/routers/aoiPackageRouter.ts::commit→persistInspectionAtomic",
   "server/services/vision/acquisition/acquisitionWorker.ts::submitCanonical→processInspectionSubmission",
   "server/services/vision/hotFolderService.ts::submitCanonical→processInspectionSubmission",
-  "server/services/inspection/inspectionStoreForward.ts::initInspectionStoreForward→processInspectionSubmission",
 ].sort();
 
 /** Ba đường PHẢI có WAL thẳng (nhánh live thật của v1.x + v2.0). */
@@ -91,14 +103,13 @@ const GHIM_CO_WAL = [
   "server/routers/machineApiRouters.ts::runItem→processInspectionSubmission",
 ].sort();
 
-/** Sáu đường MIỄN TRỪ (bốn kiến trúc hợp lệ + hai lỗ thật chưa vá, xem docblock trên). */
+/** Năm đường MIỄN TRỪ (bốn kiến trúc hợp lệ + một lỗ thật chưa vá, xem docblock trên). */
 const GHIM_MIEN_TRU = [
   "server/routers/machineApiRouters.ts::ensureInspectionWalWired→submitInspectionTreeV2",
   "server/routers/machineApiRouters.ts::ensureInspectionWalWired→processInspectionSubmission",
   "server/routers/aoiPackageRouter.ts::commit→persistInspectionAtomic",
   "server/services/vision/acquisition/acquisitionWorker.ts::submitCanonical→processInspectionSubmission",
   "server/services/vision/hotFolderService.ts::submitCanonical→processInspectionSubmission",
-  "server/services/inspection/inspectionStoreForward.ts::initInspectionStoreForward→processInspectionSubmission",
 ].sort();
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy mã không", () => {
@@ -129,7 +140,7 @@ describe("§0 — bốn tên trong TEN_CAC_HAM_GHI còn là hàm THẬT (chống
 });
 
 describe("§2 — DÂN SỐ ĐƯỜNG GHI — GHIM", () => {
-  it("đúng CHÍN đường đã biết, không thừa không thiếu", () => {
+  it("đúng TÁM đường đã biết, không thừa không thiếu", () => {
     expect(
       QUET.duong.map((d) => khoaDuongGhi(d)).sort(),
       "Dân số đường ghi product_inspections đã đổi. Sửa GHIM_TEN_DUONG cho khớp SỐ ĐO ĐƯỢC — " +
@@ -267,5 +278,61 @@ describe("§5 — ★★★ ĐỘT BIẾN THẬT: đường giả KHÔNG WAL b�
     expect(doc).toBe(MA_THAT_ROUTER);
     expect(doc.includes("attackVectorNoWal")).toBe(false);
     expect(doc.includes("attackVectorWithWal")).toBe(false);
+  });
+});
+
+describe("§6 — ★★★ HỒI QUY: initInspectionStoreForward KHÔNG được tự gọi trực tiếp một hàm ghi", () => {
+  /**
+   * ★★★ 2026-08-29 (Task 3 hotfix) — `initInspectionStoreForward` (`inspectionStoreForward.ts`,
+   * chạy Ở BOOT — server/_core/index.ts, TRƯỚC bất kỳ lượt live nào) TỪNG wire cứng `processFn`
+   * vào `processInspectionSubmission` (v1.x) thay vì gọi `ensureInspectionWalWired` (dispatch
+   * theo hình dạng của Task 2) — TÁI DIỄN lớp lỗi §QĐ-WAL-B qua cửa BOOT (đã vá: nay gọi thẳng
+   * `ensureInspectionWalWired()`, export). Ca này canh bằng CHÍNH đầu ra của census (không chỉ
+   * bằng mệnh đề BOOT trên DB thật ở `server/db/walCayV2PhatLai.db.test.ts`): nếu ai vá lùi về
+   * wire cứng, `initInspectionStoreForward` sẽ tái xuất hiện làm phạm vi bao quanh của một call
+   * site trong `TEN_CAC_HAM_GHI` — ca này bắt ngay, không cần chạy lưới DB thật (nhanh, không
+   * cần `DATABASE_URL`).
+   */
+  it("initInspectionStoreForward không phải phạm vi bao quanh của bất kỳ đường ghi nào", () => {
+    const truc = QUET.duong.filter((d) => d.tuNoi === "initInspectionStoreForward");
+    expect(
+      truc.map((d) => d.ten),
+      "initInspectionStoreForward gọi TRỰC TIẾP một hàm ghi trở lại — ĐÚNG lớp lỗi Task 3 hotfix " +
+        "đã đóng (wire cứng v1.x tại BOOT, tái diễn §QĐ-WAL-B). Phải gọi THẲNG " +
+        "ensureInspectionWalWired() (machineApiRouters.ts, export) thay vì tự setProcessFn/" +
+        "setDedupFn với processInspectionSubmission/inspectionAlreadyPersisted.",
+    ).toEqual([]);
+  });
+
+  it("★★★ ĐỘT BIẾN THẬT: vá lùi initInspectionStoreForward về wire cứng ⇒ ca trên phải bắt lại", () => {
+    const duongThat = TEPS_THAT.find((t) => t.duong === "server/services/inspection/inspectionStoreForward.ts")!;
+    const NEO_INIT = "export async function initInspectionStoreForward(): Promise<void> {\n  if (!inspectionStoreForwardEnabled()) return;\n  const router = await import(\"../../routers/machineApiRouters\");\n  router.ensureInspectionWalWired();";
+    expect(duongThat.ma.includes(NEO_INIT), "không tìm thấy thân hàm initInspectionStoreForward ĐÃ VÁ — bộ suy đã đổi neo?").toBe(true);
+
+    const maDotBien = duongThat.ma.replace(
+      NEO_INIT,
+      "export async function initInspectionStoreForward(): Promise<void> {\n" +
+        "  if (!inspectionStoreForwardEnabled()) return;\n" +
+        '  const router = await import("../../routers/machineApiRouters");\n' +
+        "  // ĐỘT BIẾN THỬ NGHIỆM (§6) — vá lùi về wire cứng v1.x.\n" +
+        "  setProcessFn((payload) => router.processInspectionSubmission(payload as never));\n" +
+        "  setDedupFn((payload) => router.inspectionAlreadyPersisted(payload as never));",
+    );
+    expect(maDotBien).not.toBe(duongThat.ma);
+
+    const cacTepKhac = TEPS_THAT.filter((t) => t.duong !== duongThat.duong);
+    const laiQuet = quetDuongGhiInspection([{ duong: duongThat.duong, ma: maDotBien }, ...cacTepKhac]);
+    const truc = laiQuet.duong.filter((d) => d.tuNoi === "initInspectionStoreForward");
+    expect(
+      truc.map((d) => d.ten),
+      "census PHẢI bắt lại initInspectionStoreForward→processInspectionSubmission khi vá lùi",
+    ).toEqual(["initInspectionStoreForward→processInspectionSubmission"]);
+    expect(truc[0]?.coBaoVeWal, "wire cứng KHÔNG gọi bufferSubmission").toBe(false);
+  });
+
+  it("file thật KHÔNG chạm đĩa — nội dung đọc lại khớp nguyên văn", () => {
+    const duongThat = TEPS_THAT.find((t) => t.duong === "server/services/inspection/inspectionStoreForward.ts")!;
+    const doc = readFileSync(join(REPO_ROOT, duongThat.duong), "utf8");
+    expect(doc).toBe(duongThat.ma);
   });
 });

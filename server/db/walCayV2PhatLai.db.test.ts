@@ -54,18 +54,32 @@
  * `backfillInspections()`, mà `choDenKhiRong()` (đợi tới khi `bufferedInspectionCount()===0`
  * hoặc hết giờ) rồi mới SELECT — bằng chứng đọc thẳng từ DB, không phụ thuộc AI rút.
  *
+ * ── Mệnh đề BOOT (Task 3 hotfix, 2026-08-29) — census phơi ra một lớp lỗi §QĐ-WAL-B THỨ HAI ──
+ * Census `server/routers/ghiInspectionWalCensus.test.ts` (Task 3) phát hiện
+ * `initInspectionStoreForward` (`inspectionStoreForward.ts`, gọi Ở BOOT —
+ * `server/_core/index.ts`, TRƯỚC bất kỳ lượt live nào) từng WIRE CỨNG `processFn` vào
+ * `processInspectionSubmission` (v1.x) thay vì gọi `ensureInspectionWalWired` (dispatch
+ * theo hình dạng của Task 2) — TÁI DIỄN đúng lớp lỗi §QĐ-WAL-B qua cửa BOOT: nếu đĩa còn
+ * mục v2.0 từ trước lúc khởi động lại và backfill worker chạy TRƯỚC lượt submit LIVE đầu
+ * tiên, mục đó phát lại qua v1.x và mất cây ÂM THẦM. Đã sửa (`initInspectionStoreForward`
+ * nay gọi THẲNG `ensureInspectionWalWired`, nay export). Mệnh đề BOOT dưới đây canh CHÍNH
+ * kịch bản đó: KHÔNG có lượt `caller().submitInspection` nào chạy trước
+ * `initInspectionStoreForward` trong toàn bộ ca — nếu có, ca sẽ VÔ TÌNH tự sửa lỗ (lượt live
+ * sẽ rewire đúng trước khi backfill chạy), làm ca xanh giả.
+ *
  * ── WORM — để lại bao nhiêu hàng (đọc TRƯỚC khi sửa file này) ──────────────────────
  * `product_inspections` bị REVOKE DELETE khỏi `avi_app` (migration 0279) ⇒ vai chạy lưới
  * này KHÔNG xoá được hàng đã ghi. File này vì vậy KHÔNG viết
  * `DELETE FROM product_inspections … .catch(() => {})` (đã đo 32 file test khác làm đúng
  * thế và tất cả là NO-OP CÂM — xem MEMORY/`ingestCayKetQua.db.test.ts`). MỘT lượt chạy
- * ĐẦY ĐỦ file này để lại ĐÚNG BA hàng `product_inspections` vĩnh viễn: mệnh đề 1+2 (MỘT
+ * ĐẦY ĐỦ file này để lại ĐÚNG BỐN hàng `product_inspections` vĩnh viễn: mệnh đề 1+2 (MỘT
  * board — xếp hàng ở mệnh đề 1, ghi thật khi phát lại ở mệnh đề 2) · mệnh đề 3 (MỘT
  * board) · mệnh đề 4 (MỘT board — bản LIVE; bản phát lại bị khử trùng, KHÔNG tạo hàng
- * thứ hai — đúng cái đang canh). Factory/workshop/line/station/machine dựng ở `beforeAll`
- * bị khoá theo (FK RESTRICT từ ba hàng trên), cũng để lại vĩnh viễn. Ba bảng cây
- * (`inspection_surfaces/positions/captures`) KHÔNG WORM (`avi_app` CÓ quyền DELETE,
- * migration 0339) — dọn sạch trong `afterAll` cho mọi board có cây thật.
+ * thứ hai — đúng cái đang canh) · mệnh đề BOOT (MỘT board — xem trên). Factory/workshop/
+ * line/station/machine dựng ở `beforeAll` bị khoá theo (FK RESTRICT từ bốn hàng trên),
+ * cũng để lại vĩnh viễn. Ba bảng cây (`inspection_surfaces/positions/captures`) KHÔNG
+ * WORM (`avi_app` CÓ quyền DELETE, migration 0339) — dọn sạch trong `afterAll` cho mọi
+ * board có cây thật.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
@@ -76,6 +90,8 @@ import { machineApiRouter, dungKhoaKhuTrungV2 } from "../routers/machineApiRoute
 import {
   bufferedInspectionCount,
   backfillInspections,
+  bufferSubmission,
+  initInspectionStoreForward,
   _resetInspectionStoreForward,
 } from "../services/inspection/inspectionStoreForward";
 import { mauHopLe } from "../contracts/machineDataContractV2.test-helpers";
@@ -355,5 +371,86 @@ describe.skipIf(!DB_URL)("WAL cây v2.0 — phát lại ĐÚNG ĐƯỜNG + đún
         WHERE "machineId" = ${ids.machine} AND "idempotencyKey" = ${key}`;
       expect(ledgerSau[0].c, "ledger vẫn ĐÚNG MỘT hàng sau backfill — không bị nhân đôi").toBe(1);
     });
+  });
+
+  // ══ Mệnh đề BOOT (Task 3 hotfix, §QĐ-WAL-B qua cửa boot) ═══════════════════════════════
+  describe("mệnh đề BOOT — initInspectionStoreForward, KHÔNG có lượt live nào trước đó, rút một mục v2.0 CÒN TRÊN ĐĨA ⇒ đủ ba cấp cây", () => {
+    const IDX = 5;
+
+    it(
+      "khởi động lại (mô phỏng): WAL đĩa còn mục v2.0 → initInspectionStoreForward (KHÔNG " +
+        "qua bất kỳ lượt submitInspection live nào) tự rút ⇒ đủ BA CẤP CÂY, không phải chỉ " +
+        "một header rỗng",
+      { timeout: 15000 },
+      async () => {
+        expect(await demTheoIndex(IDX)).toBe(0);
+        const payload = payloadCay(IDX);
+
+        // Bước 1 — xếp một mục v2.0 vào WAL TRỰC TIẾP qua bufferSubmission (KHÔNG qua router,
+        // KHÔNG có bất kỳ lượt `caller().submitInspection` nào trong toàn bộ ca này) — mô
+        // phỏng "mục còn trên đĩa TỪ TRƯỚC lúc khởi động lại". Nếu ca này lỡ gọi router trước
+        // initInspectionStoreForward, lượt live sẽ tự rewire đúng và VÔ TÌNH che mất lỗ —
+        // đây chính là bẫy "ca canh phát biểu 'hàm được gọi' thay vì đúng kịch bản".
+        const buffered = await bufferSubmission(payload as never);
+        expect(buffered.buffered, `phải xếp hàng được — nguyên văn: ${JSON.stringify(buffered)}`).toBe(true);
+        expect(await demTheoIndex(IDX), "mới chỉ xếp hàng — chưa chạm DB").toBe(0);
+
+        // Bước 2 — "khởi động lại": xoá TRẠNG THÁI TRONG BỘ NHỚ (queue, wiring processFn/
+        // dedupFn, worker) — KHÔNG đụng file WAL trên đĩa (file mirror sống sót qua restart
+        // thật; `bufferSubmission` ở Bước 1 đã ghi xuống nó).
+        _resetInspectionStoreForward();
+        expect(
+          bufferedInspectionCount(),
+          "sau reset, bộ nhớ phải rỗng (mô phỏng mất bộ nhớ khi tiến trình khởi động lại)",
+        ).toBe(0);
+
+        // Bước 3 — ĐÚNG hàm chạy Ở BOOT (server/_core/index.ts gọi hàm này lúc khởi động),
+        // KHÔNG gọi router trước nó. Nếu hàm boot wire cứng về v1.x, mục v2.0 vẫn NẠP LẠI được
+        // (đọc từ file) nhưng sẽ RÚT qua đường sai ở bước sau.
+        await initInspectionStoreForward();
+        expect(
+          bufferedInspectionCount(),
+          "initInspectionStoreForward phải nạp lại mục từ file WAL trên đĩa",
+        ).toBe(1);
+
+        // Bước 4 — rút hàng đợi (bỏ qua bộ đếm giờ mặc định của worker, gọi backfill tường
+        // minh — cùng khuôn choDenKhiRong() đã dùng ở mệnh đề 4). Timeout NGẮN HƠN timeout của
+        // chính `it()` (15s) để nếu processFn sai hình dạng khiến hàng đợi KẸT (ném lỗi thường,
+        // bị `isPermanentSubmitError` xếp nhầm TẠM THỜI ⇒ thử lại vô hạn — một biểu hiện KHÁC,
+        // cũng hợp lệ, của CÙNG lớp lỗi), ca này thất bại bằng một assertion CÓ THÔNG ĐIỆP rõ,
+        // không phải một "Test timed out" chung chung.
+        await choDenKhiRong(6000);
+        expect(
+          bufferedInspectionCount(),
+          "Hàng đợi KHÔNG rỗng sau khi chờ — dấu hiệu processFn được wire SAI hình dạng: " +
+            "processInspectionSubmission (v1.x) ném lỗi thường (không phải TRPCError) khi đọc " +
+            "`measurements` trên một payload cây v2.0 (chỉ có `surfaces`), bị isPermanentSubmitError " +
+            "xếp nhầm TẠM THỜI ⇒ backfill thử lại VÔ HẠN thay vì rút được. Đây CHÍNH LÀ lớp lỗi " +
+            "§QĐ-WAL-B tái diễn qua cửa BOOT — chỉ khác biểu hiện cụ thể (hàng đợi kẹt) so với " +
+            "'ghi header rỗng cây' mà docblock Task 2 mô tả trên lý thuyết.",
+        ).toBe(0);
+
+        expect(await demTheoIndex(IDX)).toBe(1);
+        const [row] = await sql<{ id: number; overallResult: string }[]>`
+          SELECT id, "overallResult" FROM product_inspections
+          WHERE "machineId" = ${ids.machine} AND "machineProductIndex" = ${IDX}`;
+        expect(row, "không tìm thấy board — backfill lúc BOOT không ghi tới DB thật").toBeTruthy();
+        expect(row.overallResult).toBe("OK");
+        boardIdsCoCay.push(row.id);
+
+        const dem = await demCay(row.id);
+        expect(
+          dem,
+          "MỆNH ĐỀ BOOT: initInspectionStoreForward (KHÔNG qua bất kỳ lượt live nào) phải rút " +
+            "mục v2.0 đủ BA CẤP CÂY. Nếu hàm boot wire cứng về processInspectionSubmission " +
+            "(v1.x), board VẪN ĐƯỢC TẠO (không phải 0 hàng — đây là điểm dễ viết ca giả nhất) " +
+            "nhưng cây sẽ RỖNG {0,0,0} vì v1.x không hiểu `surfaces` — CHÍNH XÁC lớp lỗi " +
+            "§QĐ-WAL-B tái diễn qua cửa BOOT.",
+        ).toEqual({ surfaces: 1, positions: 1, captures: 1 });
+
+        // Dọn worker/bộ nhớ WAL đã khởi động ở Bước 3 — không để lại timer sống sau ca này.
+        _resetInspectionStoreForward();
+      },
+    );
   });
 });

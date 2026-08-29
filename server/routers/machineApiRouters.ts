@@ -935,8 +935,29 @@ export function machineHeaderKey(ctx: unknown): string | null {
  * công). Đột biến ép TRỞ LẠI hành vi cũ (bỏ nhánh `laHinhDangCayV2`, luôn gọi
  * `processInspectionSubmission`) phải làm mệnh đề "đủ ba cấp cây" ĐỎ — xem
  * `server/db/walCayV2PhatLai.db.test.ts`.
+ *
+ * ── Doc 2026-08-29 (WAL cho cây v2.0, Task 3 hotfix — census `ghiInspectionWalCensus.test.ts`
+ *    bắt được đường số 9) — EXPORT có chủ ý ────────────────────────────────────────────────
+ * Task 2 chỉ nối lại đường LIVE (nhánh `submitInspection.mutation` gọi hàm này SAU MỖI lượt
+ * thành công/tạm-lỗi). `initInspectionStoreForward` (`inspectionStoreForward.ts`, chạy Ở BOOT
+ * — TRƯỚC bất kỳ lượt live nào) từng WIRE CỨNG `processFn`/`dedupFn` thẳng vào
+ * `processInspectionSubmission`/`inspectionAlreadyPersisted` (v1.x, tự chép lại một BẢN THỨ HAI
+ * của phép dispatch thay vì gọi hàm NÀY) — TÁI DIỄN đúng lớp lỗi §QĐ-WAL-B qua một cửa khác: nếu
+ * đĩa còn mục v2.0 từ trước lúc khởi động lại và backfill worker chạy TRƯỚC lượt submit LIVE đầu
+ * tiên sau boot, mục đó phát lại qua đường v1.x và mất cây ÂM THẦM — CHÍNH LỚP LỖI mệnh đề "đủ ba
+ * cấp cây" ở trên canh, chỉ khác Ở NƠI GỌI. EXPORT hàm này để `initInspectionStoreForward` gọi
+ * THẲNG (KHÔNG tự chép lại phép dispatch — đúng kỷ luật "một điểm điều phối" đã nêu ở trên, đúng
+ * cái mà `ghiInspectionWalScan.ts`/BG-19 được dựng ra để chặn: hai bản dispatch trôi khỏi nhau).
+ * Canh bằng mệnh đề BOOT trong `server/db/walCayV2PhatLai.db.test.ts` (KHÔNG gọi live trước khi
+ * gọi `initInspectionStoreForward`) — đột biến ép `initInspectionStoreForward` quay lại wire cứng
+ * làm mệnh đề đó ĐỎ (đo được: `processInspectionSubmission` ném lỗi thường ngay khi đọc
+ * `input.measurements` trên một payload chỉ có `surfaces` — không phải TRPCError nên
+ * `isPermanentSubmitError` xếp nhầm TẠM THỜI ⇒ hàng đợi KẸT, thử lại vô hạn, KHÔNG board nào
+ * được tạo — biểu hiện cụ thể là "hàng đợi không rút được" chứ KHÔNG phải "ghi header rồi bỏ mất
+ * cây" như dự đoán ban đầu; cả hai đều là hệ quả hợp lệ của ĐÚNG một nguyên nhân: processFn sai
+ * hình dạng).
  */
-function ensureInspectionWalWired(): void {
+export function ensureInspectionWalWired(): void {
   walSetProcessFn(async (payload) => {
     if (laHinhDangCayV2(payload)) {
       const ketQua = await submitInspectionTreeV2(payload as unknown as MachinePayloadV2, {});
