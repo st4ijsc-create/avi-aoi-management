@@ -13,7 +13,15 @@
     "commands": [
       { "command": "aviAiLocal.moBangChat", "title": "AI Local: Mở bảng trò chuyện" },
       { "command": "aviAiLocal.dangNhap", "title": "AI Local: Đăng nhập" },
-      { "command": "aviAiLocal.dangXuat", "title": "AI Local: Đăng xuất" }
+      { "command": "aviAiLocal.dangXuat", "title": "AI Local: Đăng xuất" },
+      { "command": "aviAiLocal.suaDoanChon", "title": "AI Local: Sửa đoạn đang chọn (hỏi AI)" }
+    ],
+    "keybindings": [
+      {
+        "command": "aviAiLocal.suaDoanChon",
+        "key": "ctrl+alt+k",
+        "when": "editorTextFocus"
+      }
     ],
     "configuration": {
       "title": "AI Local",

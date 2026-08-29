@@ -85,6 +85,13 @@ export class BangChat {
   private deXuatHienTai: DeXuatGhi | undefined;
   private deXuatCucBoHienTai: DeXuatCucBoDangCho | undefined;
   private nhanNguonHienTai: string | undefined;
+  // ★★★ CMD+K (Task 7) — cờ + hàng đợi cho `guiCauHoiTuLenh`. `daSanSang` bật NGAY khi webview báo
+  // "san_sang" (tức đã đăng ký `addEventListener("message", …)" — xem cảnh báo đua ở constructor
+  // dưới đây), KHÔNG đợi `napDuAn()` xong: đó là hai việc khác nhau (webview nhận được postMessage
+  // vs. danh sách dự án đã nạp). Một câu hỏi bắn tới TRƯỚC khi báo "san_sang" (bảng vừa được tạo,
+  // Cmd+K bấm ngay sau khi mở) sẽ rơi mất nếu gửi thẳng — xếp hàng ở đây rồi bắn lại lúc "san_sang".
+  private daSanSang = false;
+  private cauHoiChoGui: string | undefined;
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -102,7 +109,12 @@ export class BangChat {
     // kịp đăng ký `addEventListener("message", …)` ⇒ danh sách rơi mất mà không có lỗi nào — ô
     // chọn trống một cách im lặng. Đợi webview tự báo "san_sang" (xem htmlBang.ts) rồi mới nạp.
     this.panel.webview.onDidReceiveMessage((m: { loai: string; cauHoi?: string; duAnId?: string }) => {
-      if (m.loai === "san_sang") { void this.napDuAn(); return; }
+      if (m.loai === "san_sang") {
+        this.daSanSang = true;
+        void this.napDuAn();
+        this.guiCauHoiDangCho();
+        return;
+      }
       // ★★★ ĐỔI DỰ ÁN ⇒ VỨT ĐỀ XUẤT ĐANG CHỜ. Thẻ duyệt mang nhãn nguồn của dự án nó SINH RA; để
       // nó sống qua một lần đổi ô chọn là chìa nút "Duyệt & ghi trên SERVER" cho một người đang
       // nhìn tên dự án KHÁC — đúng loại tai nạn không cứu được mà spec §7 nói tới. Đề xuất cũ vẫn
@@ -164,10 +176,10 @@ export class BangChat {
     return suyCheDo(this.dsDuAn, this.duAnChon);
   }
 
-  static moHoacHien(context: vscode.ExtensionContext, khoDeXuat: KhoDeXuat): void {
+  static moHoacHien(context: vscode.ExtensionContext, khoDeXuat: KhoDeXuat): BangChat {
     if (BangChat.hienTai) {
       BangChat.hienTai.panel.reveal();
-      return;
+      return BangChat.hienTai;
     }
     const panel = vscode.window.createWebviewPanel(
       "aviAiLocalChat",
@@ -176,6 +188,43 @@ export class BangChat {
       { enableScripts: true, retainContextWhenHidden: true },
     );
     BangChat.hienTai = new BangChat(panel, context, khoDeXuat);
+    return BangChat.hienTai;
+  }
+
+  /**
+   * Bắn câu hỏi CMD+K đang xếp hàng (nếu có) — CHỈ được gọi sau khi webview đã báo "san_sang", tức
+   * ĐÃ đăng ký xong `addEventListener("message", …)`. Gọi sớm hơn thì `postMessage` có thể tới
+   * TRƯỚC khi script kịp lắng nghe và rơi mất trong im lặng — đúng lỗi đua mà `napDuAn` ở trên đã
+   * né bằng cùng một cách (đợi "san_sang").
+   */
+  private guiCauHoiDangCho(): void {
+    const c = this.cauHoiChoGui;
+    if (!c) return;
+    this.cauHoiChoGui = undefined;
+    void this.panel.webview.postMessage({ loai: "dat_cau_hoi_tu_lenh", cauHoi: c });
+  }
+
+  /**
+   * ★★★ CMD+K (Task 7) — LỐI VÀO DUY NHẤT được `extension.ts` gọi khi người dùng bấm `ctrl+alt+k`.
+   *
+   * ⚠⚠⚠ KHÔNG ĐƯỜNG GHI MỚI Ở ĐÂY. Hàm này KHÔNG gọi `hoi()` trực tiếp — nó `postMessage` cho
+   * WEBVIEW tự đổ câu hỏi vào ô nhập rồi tự bấm nút "Gửi" (hàm `gui()` trong `htmlBang.ts`), và
+   * chính `gui()` mới `postMessage({loai:"hoi"})` NGƯỢC lại cho `onDidReceiveMessage` ở constructor
+   * — CÙNG một handler xử lý một cú gõ tay bình thường. Lý do bắt buộc phải vòng qua webview thay
+   * vì gọi thẳng `this.hoi(cauHoi)`: `gui()` phía webview là nơi DUY NHẤT tạo bong bóng "Bạn: …" VÀ
+   * gán `khoiTraLoi` (khối DOM nhận token stream) — gọi thẳng `hoi()` từ đây thì `khoiTraLoi` vẫn
+   * `null`, token stream tới nơi nhưng KHÔNG CÓ CHỖ ĐỂ GHI, và câu trả lời rơi mất trên giao diện
+   * một cách im lặng dù mọi thứ phía sau (SSE, `docDeXuatCucBo`, thẻ duyệt, `apBanVa`) vẫn chạy
+   * đúng. Từ `gui()` trở đi, đường đi giống hệt một câu người dùng tự gõ — không có nhánh tắt nào.
+   */
+  public guiCauHoiTuLenh(cauHoi: string): void {
+    if (this.daSanSang) {
+      void this.panel.webview.postMessage({ loai: "dat_cau_hoi_tu_lenh", cauHoi });
+      return;
+    }
+    // Bảng vừa mới tạo, webview chưa kịp báo "san_sang" — xếp hàng, `guiCauHoiDangCho` sẽ bắn khi
+    // tín hiệu đó tới (xem nhánh `san_sang` trong constructor).
+    this.cauHoiChoGui = cauHoi;
   }
 
   private thuThapNguCanh(): string {

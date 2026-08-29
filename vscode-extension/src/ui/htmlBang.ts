@@ -144,6 +144,13 @@ export function dungHtmlBang(dv: { nonce: string }): string {
       theDuyet.hidden = true;
     } else if (m.loai === "thong_bao") {
       themLuot("Thông báo", m.thongDiep);
+    } else if (m.loai === "dat_cau_hoi_tu_lenh") {
+      // ★★★ CMD+K (Task 7) — extension đổ câu hỏi ĐÃ DỰNG SẴN (đường dẫn + dòng + đoạn mã + yêu
+      // cầu, xem loi/cauHoiSuaChon.ts) vào Ô NHẬP rồi gọi ĐÚNG hàm gửi mà nút "Gửi" dùng. KHÔNG có
+      // đường tắt nào ở đây: gui() vẫn tạo bong bóng "Bạn: …", vẫn postMessage({loai:"hoi"}),
+      // vẫn đi qua toàn bộ chuỗi đề-xuất → diff → duyệt → apBanVa y hệt một câu gõ tay.
+      oNhap.value = m.cauHoi;
+      gui();
     }
     hoiThoai.scrollTop = hoiThoai.scrollHeight;
   });
