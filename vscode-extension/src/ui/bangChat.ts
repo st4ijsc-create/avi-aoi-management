@@ -229,6 +229,10 @@ export class BangChat {
       });
       return;
     }
+    // Đề xuất TRƯỚC (nếu có) chưa từng được Duyệt/Huỷ đang bị GHI ĐÈ ở đây — không `quen()` nó thì
+    // nội dung diff ẢO của nó mồ côi trong `KhoDeXuat` tới khi TTL máy chủ hết (Finding 2, không
+    // phải lỗ an toàn vì không có gì tự duyệt, nhưng là rò bộ nhớ không cần thiết).
+    if (this.deXuatHienTai) this.khoDeXuat.quen(this.deXuatHienTai.actionId);
     this.deXuatHienTai = d;
     // Nhãn nguồn = nhãn dự án SERVER đang chọn (đã có tiền tố "SERVER · ", xem duAn.ts) — dùng
     // NGUYÊN VĂN cho cả thẻ duyệt lẫn tiêu đề diff (Task 3) để hai nơi luôn khớp nhau.
@@ -267,8 +271,13 @@ export class BangChat {
     let thongDiep: string;
     try {
       // Điểm DUY NHẤT trong extension gọi confirmAction — xem ../mang/duyetGhi.ts.
-      await goiDuyet(serverUrl, cookie, d.actionId, d.token);
-      thongDiep = `Đã duyệt — máy chủ đã ghi "${d.path}".`;
+      const kq = await goiDuyet(serverUrl, cookie, d.actionId, d.token);
+      // ⚠ Máy chủ TỪ CHỐI qua HTTP 200 (hết hạn TTL, token lệch, trạng thái sai...) — `goiDuyet`
+      // không ném cho các ca đó. Chỉ `ok === true` mới được khai "đã ghi"; ngược lại hiện NGUYÊN
+      // VĂN lý do của máy chủ, không bịa ra một câu thành công giả.
+      thongDiep = kq.ok
+        ? `Đã duyệt — máy chủ đã ghi "${d.path}".`
+        : (kq.message ?? "Máy chủ từ chối lượt duyệt.");
     } catch (e) {
       thongDiep = `Duyệt thất bại: ${(e as Error).message}`;
     }
@@ -294,8 +303,12 @@ export class BangChat {
     const serverUrl = cfg.get<string>("serverUrl", "http://localhost:3000");
     let thongDiep: string;
     try {
-      await goiHuy(serverUrl, cookie, d.actionId);
-      thongDiep = `Đã huỷ đề xuất sửa "${d.path}" — không có gì được ghi.`;
+      const kq = await goiHuy(serverUrl, cookie, d.actionId);
+      // `cancelAction` cũng TỪ CHỐI qua HTTP 200 (đã thực thi trước đó, trạng thái sai...) —
+      // `aiCopilotActions.ts:944-969` cùng hình dạng {ok,status,message} như confirmAction.
+      thongDiep = kq.ok
+        ? `Đã huỷ đề xuất sửa "${d.path}" — không có gì được ghi.`
+        : (kq.message ?? "Máy chủ từ chối lượt huỷ.");
     } catch (e) {
       thongDiep = `Huỷ thất bại: ${(e as Error).message}`;
     }
