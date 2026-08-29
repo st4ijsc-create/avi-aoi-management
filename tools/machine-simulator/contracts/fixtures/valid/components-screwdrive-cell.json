@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "machineCode": "SCRW-01",
+  "types": [
+    {
+      "typeId": "st4i.motor.spindle",
+      "label": "Trục vít / Spindle",
+      "defaultFaceplate": "fp.motor.spindle",
+      "tags": [
+        { "name": "running", "role": "in", "dataType": "bool" },
+        { "name": "torque", "role": "in", "dataType": "float", "unit": "Nm", "min": 0, "max": 20 },
+        { "name": "torque-target", "role": "setpoint", "dataType": "float", "unit": "Nm",
+          "min": 5, "max": 15, "policyAction": "machine.setpoint" },
+        { "name": "reset", "role": "command", "dataType": "bool", "policyAction": "machine.command" }
+      ],
+      "states": [
+        { "name": "running", "expr": "running == true", "tone": "run" },
+        { "name": "stopped", "expr": "running == false", "tone": "idle" }
+      ]
+    },
+    {
+      "typeId": "st4i.sensor.temp",
+      "label": "Cảm biến nhiệt / Temperature sensor",
+      "defaultFaceplate": "fp.sensor.analog",
+      "tags": [
+        { "name": "value", "role": "in", "dataType": "float", "unit": "°C", "min": -10, "max": 80 }
+      ],
+      "states": [{ "name": "ok", "expr": "value < 70", "tone": "run" },
+                 { "name": "hot", "expr": "value >= 70", "tone": "warn" }]
+    }
+  ],
+  "components": [
+    { "id": "spindle", "typeId": "st4i.motor.spindle", "label": "Trục vít chính",
+      "tagPrefix": "SCRW-01/spindle" },
+    { "id": "ambient", "typeId": "st4i.sensor.temp", "label": "Nhiệt độ buồng máy",
+      "tagPrefix": "SCRW-01/ambient" }
+  ]
+}

@@ -1,0 +1,36 @@
+namespace St4i.Hmi.Contracts;
+
+/// <summary>Bản sao C# của <c>contracts/component-model.schema.json</c> v1. Ghim hai chiều bởi
+/// <c>ComponentModelSchemaPinTests</c>.</summary>
+public sealed record ComponentModelDocument(
+    int SchemaVersion,
+    string MachineCode,
+    IReadOnlyList<ComponentNode> Components,
+    IReadOnlyList<ComponentTypeDef> Types);
+
+/// <summary>Một linh kiện cụ thể trên một máy cụ thể. <paramref name="TagPrefix"/> là thứ biến một
+/// faceplate dùng chung thành một instance: binding trong màn hình viết <c>{component}/torque</c>, runtime
+/// thay <c>{component}</c> bằng giá trị này. Đây là cơ chế indirect binding của §3.3 — không có nó thì
+/// "sinh màn hình theo linh kiện" biến thành copy-paste.</summary>
+public sealed record ComponentNode(
+    string Id, string TypeId, string Label, string? ParentId, string TagPrefix);
+
+/// <summary>Định nghĩa một KIỂU linh kiện — vai trò "UDT" trong mô hình này. Khai một lần, dùng N lần.</summary>
+public sealed record ComponentTypeDef(
+    string TypeId,
+    string Label,
+    IReadOnlyList<ComponentTagDef> Tags,
+    IReadOnlyList<ComponentStateDef> States,
+    string DefaultFaceplate);
+
+/// <summary>Tag khai báo của một kiểu linh kiện. <paramref name="Min"/>/<paramref name="Max"/> là dải chặn
+/// CỨNG cho <c>role == "setpoint"</c> — schema bắt buộc chúng, vì đây là giao diện vận hành máy công
+/// nghiệp và không được để nhập giá trị ngoài dải an toàn (nguyên tắc của MACHINE_CONFIG_DESIGN.md §3).</summary>
+public sealed record ComponentTagDef(
+    string Name, string Role, string DataType, string? Unit,
+    double? Min, double? Max, string? PolicyAction);
+
+/// <summary>Một trạng thái hiển thị được của linh kiện. <paramref name="Tone"/> ánh xạ vào bậc trạng thái
+/// run/warn/fault/idle — KHÔNG phải màu tuỳ ý; theme quyết định màu, và ISA-101 quy định màu chỉ xuất hiện
+/// khi bất thường (§6).</summary>
+public sealed record ComponentStateDef(string Name, string Expr, string Tone);

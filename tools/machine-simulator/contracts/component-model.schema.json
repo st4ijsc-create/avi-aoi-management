@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://st4i.local/contracts/component-model/v1",
+  "title": "St4i Component Model",
+  "type": "object",
+  "required": ["schemaVersion", "machineCode", "components", "types"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "machineCode": { "type": "string", "minLength": 1 },
+    "components": { "type": "array", "items": { "$ref": "#/$defs/component" } },
+    "types": { "type": "array", "items": { "$ref": "#/$defs/componentType" } }
+  },
+  "$defs": {
+    "component": {
+      "type": "object",
+      "required": ["id", "typeId", "label", "tagPrefix"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "typeId": { "type": "string", "pattern": "^[a-z0-9]+(\\.[a-z0-9]+)+$" },
+        "label": { "type": "string", "minLength": 1 },
+        "parentId": { "type": ["string", "null"] },
+        "tagPrefix": { "type": "string", "minLength": 1 }
+      }
+    },
+    "componentType": {
+      "type": "object",
+      "required": ["typeId", "label", "tags", "states", "defaultFaceplate"],
+      "additionalProperties": false,
+      "properties": {
+        "typeId": { "type": "string", "pattern": "^[a-z0-9]+(\\.[a-z0-9]+)+$" },
+        "label": { "type": "string", "minLength": 1 },
+        "tags": { "type": "array", "items": { "$ref": "#/$defs/componentTag" } },
+        "states": { "type": "array", "items": { "$ref": "#/$defs/componentState" } },
+        "defaultFaceplate": { "type": "string", "minLength": 1 }
+      }
+    },
+    "componentTag": {
+      "type": "object",
+      "required": ["name", "role", "dataType"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "role": { "enum": ["in", "out", "setpoint", "command"] },
+        "dataType": { "enum": ["bool", "int", "float", "string", "enum"] },
+        "unit": { "type": ["string", "null"] },
+        "min": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] },
+        "policyAction": { "enum": [null, "machine.setpoint", "machine.command"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "role": { "enum": ["setpoint", "command"] } }, "required": ["role"] },
+          "then": { "properties": { "policyAction": { "type": "string" } }, "required": ["policyAction"] }
+        },
+        {
+          "if": { "properties": { "role": { "const": "setpoint" } }, "required": ["role"] },
+          "then": {
+            "properties": { "min": { "type": "number" }, "max": { "type": "number" } },
+            "required": ["min", "max"]
+          }
+        }
+      ]
+    },
+    "componentState": {
+      "type": "object",
+      "required": ["name", "expr", "tone"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "expr": { "type": "string", "minLength": 1 },
+        "tone": { "enum": ["run", "warn", "fault", "idle"] }
+      }
+    }
+  }
+}
