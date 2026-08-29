@@ -351,6 +351,21 @@ internal static class TestRunTempRoot
                          // product resolves its historian directory — which this task's brief forbids outright.
                          // It is therefore STOPPED AND REPORTED rather than fixed here, and item 72 stays PARTIAL
                          // on this leaf for a reason that is measured rather than asserted.
+                         //
+                         // 📎 🔴 THE COMMENT ABOVE IS RETRACTED, 2026-08-25 (CD-1), KEPT VERBATIM. It was exactly
+                         // true of the tree CB-1 measured, and it is the record of the STOP that produced the
+                         // owner's ruling. FALSE as of that ruling ("open the seam"): "`historian` has NO such
+                         // seam", "both PRIVATE", "NEITHER reads an environment variable", "The variable is read
+                         // in exactly one place", "this line closes the WebApplicationFactory<Program> path and
+                         // NOT `new SqliteHistorianStore()`", and "no value set here can change that".
+                         // SqliteHistorianStore and OeeSettingsStore now carry the SAME public
+                         // EnvVarDir/DefaultRoot/ResolveRoot triple the other eight do, reading THIS variable, so
+                         // this line is now a structural redirect of the ninth leaf in the same sense as the eight
+                         // above it. STILL TRUE and load-bearing: the two stores share ONE variable because they
+                         // share one directory; Program.cs still reads it too and its explicit argument still
+                         // WINS; and nothing here moved the production default. NOT ADDED, deliberately: no
+                         // second variable and no second mechanism — this list is still the only place a
+                         // structural redirect is installed.
                          ("ST4I_HISTORIAN_DIR", "historian"),
                      })
             {

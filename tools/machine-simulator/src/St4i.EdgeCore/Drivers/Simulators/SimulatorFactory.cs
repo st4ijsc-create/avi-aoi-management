@@ -90,6 +90,18 @@ public static class SimulatorFactory
     /// pairing holds. Reported in <c>docs/owner-decisions.md</c> §49.7.3 and witnessed by
     /// <c>SimulatorFactoryIotGatewayTests.AnIotGatewayOnTheAoiAviDeviceClass_AlsoMoves_…</c>.</para>
     ///
+    /// <para>📎 🔴 <b>THE PARAGRAPH ABOVE IS RETRACTED IN ITS PRESENT TENSE, 2026-08-25 — kept verbatim and
+    /// un-struck, because it was exactly true of the build that shipped it and it is the record of WHY the
+    /// owner narrowed this arm.</b> <i>FALSE as of the owner's ruling of 2026-08-25 (<c>"narrow the fix"</c>):</i>
+    /// "TWO of them change". <b>ONE of them changes.</b> The <c>when</c> clause on the <c>IOT_GATEWAY</c> arm
+    /// restricts it to <see cref="DeviceClass.Automation"/>, so <c>IOT_GATEWAY</c> +
+    /// <see cref="DeviceClass.AoiAvi"/> falls through to the device-class fallback and is an
+    /// <see cref="AoiInspectorSim"/> again — same <c>ReadingKind.Inspection</c>, same <c>Measurements</c>
+    /// array, same Pass/Fail verdict, same <c>aoi_inspection</c> record. <i>STILL TRUE:</i> the enum has three
+    /// members, and enumerating it rather than trusting the item's one example is how the second pairing was
+    /// found at all. Measured again before the narrowing (three rows, both columns) in
+    /// <c>docs/owner-decisions.md</c> §49.8.</para>
+    ///
     /// <para>🔴 <b>AND THE SET THAT MOVES CANNOT BE COUNTED, which is half the truth and the half that gets
     /// dropped.</b> Because <c>OnboardingFleetJoin</c> already pairs <c>IOT_GATEWAY</c> with
     /// <see cref="DeviceClass.Iot"/>, no machine reaching this factory through onboarding is affected. The
@@ -111,7 +123,18 @@ public static class SimulatorFactory
     /// <c>docs/owner-decisions.md</c> §49.7 rather than repaired here, because repairing it means either
     /// deleting a persisted operator record or teaching <c>Ensure</c> to re-key one — and both are
     /// decisions, not work. There is a witness for it in
-    /// <c>SimulatorFactoryIotGatewayTests</c>.</para></param>
+    /// <c>SimulatorFactoryIotGatewayTests</c>.</para>
+    ///
+    /// <para>📎 🔴 <b>THE PARAGRAPH ABOVE IS RETRACTED IN ITS OUTCOME, 2026-08-25 — kept verbatim, because the
+    /// COST it names is real and was really unpaid on the day it was written.</b> <i>FALSE as of the owner's
+    /// ruling of 2026-08-25 (<c>"delete the record"</c>):</i> "on the FIRST start after this change that
+    /// machine's <see cref="IotSensorSim"/> constructor throws", and "it is reported … rather than repaired
+    /// here". <b>It is repaired here.</b> The owner took the first of the two decisions the paragraph
+    /// correctly refused to take on its own — delete the stored record — and
+    /// <see cref="BuildGatewaySensor"/> is the whole of the repair. <i>STILL TRUE and load-bearing:</i> the
+    /// migration was a cost the ruling was not priced on; it is NOT the MQTT-payload exemption and was never
+    /// covered by the 2026-08-25 permission; and re-keying an operator's record is still not implemented,
+    /// because it is still an invention.</para></param>
     /// <param name="seed">Forwarded unchanged to whichever simulator is built and used only by
     /// <c>SimulatorBase.Rng</c>; see that constructor's own <c>seed</c> note for the determinism it
     /// carries. Nothing here derives it from <paramref name="d"/>, so two machines handed the same value
@@ -145,9 +168,19 @@ public static class SimulatorFactory
     /// <param name="productConfigStore">WS3-T1 — optional (defaults null, every pre-existing call site
     /// unaffected) source for <see cref="AoiInspectorSim"/>'s real-product-points cycle plan; see its own
     /// <c>ResolveRealPoints</c> remarks. Ignored by every other machine type.</param>
+    /// <param name="logWarning">🔴 OWNER ITEM 49, SECOND CLAUSE — the host's warning sink, used by exactly one
+    /// thing in this class: <see cref="BuildGatewaySensor"/>'s announcement that it DELETED an operator's
+    /// stored operating-config record. <c>St4i.EdgeCore</c> is deliberately logging-framework-free (see
+    /// <c>FleetCore</c>'s own remarks), so this is the same nullable-callback convention every other
+    /// host-facing message in this assembly uses, and the hosts wire it to their own <c>ILogger</c>.
+    /// <b>Null (the default) does NOT make the deletion silent</b> — that message also goes unconditionally to
+    /// <see cref="Console.Error"/>, which is what <c>LegacyRootMigration</c> already does for the sibling
+    /// migration and what keeps a caller from being able to opt out of the trace. Every pre-existing call site
+    /// that does not pass one behaves exactly as before.</param>
     public static IMachineSimulator Create(
         MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string, string?>? currentProductCode = null,
-        double cycleRateMultiplier = 1.0, ProductConfigStore? productConfigStore = null)
+        double cycleRateMultiplier = 1.0, ProductConfigStore? productConfigStore = null,
+        Action<string>? logWarning = null)
     {
         ArgumentNullException.ThrowIfNull(d);
 
@@ -164,16 +197,74 @@ public static class SimulatorFactory
             "LEAK_TEST" => new LeakTestSim(d, seed),
             "FUNCTIONAL_TEST" => new FunctionalTestSim(d, seed),
             "IOT_SENSOR" => new IotSensorSim(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
-            // 🔴 OWNER ITEM 49, HALF B — owner's ruling of 2026-08-25. This one line is the whole change,
-            // and it CROSSES THE MQTT-PAYLOAD EXEMPTION. See the retraction block on this method's `d`
-            // parameter for the scope, the reason and the price.
-            "IOT_GATEWAY" => new IotSensorSim(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
-            // 🔴 OWNER ITEM 49, HALF B — owner's ruling of 2026-08-25. This one line is the whole change,
-            // and it CROSSES THE MQTT-PAYLOAD EXEMPTION. See the retraction block on this method's `d`
-            // parameter for the scope, the reason and the price.
+            // 🔴 OWNER ITEM 49, HALF B — owner's ruling of 2026-08-25, NARROWED by the owner's ruling of
+            // 2026-08-25 ("narrow the fix"). The `when` clause is the narrowing and it is the whole of it:
+            // this arm now claims ONLY the Automation pairing — the one §49.5(2) priced — and an
+            // IOT_GATEWAY descriptor on any other DeviceClass falls through to the device-class fallback
+            // exactly as it did before half B. It CROSSES THE MQTT-PAYLOAD EXEMPTION for that one pairing.
+            // See the retraction block on this method's `d` parameter for the scope, the reason and the price.
+            "IOT_GATEWAY" when d.DeviceClass == DeviceClass.Automation =>
+                BuildGatewaySensor(d, seed, configStore, productCodeProvider, cycleRateMultiplier, logWarning),
             "AOI" or "AOI_AVI" or "AVI" => new AoiInspectorSim(d, seed, configStore: configStore, productCodeProvider: productCodeProvider, productConfigStore: productConfigStore),
             _ => FallbackByDeviceClass(d, seed, configStore, productCodeProvider, cycleRateMultiplier, productConfigStore),
         };
+    }
+
+    /// <summary>🔴 <b>OWNER ITEM 49, SECOND CLAUSE — owner's ruling of 2026-08-25 (<i>"delete the
+    /// record"</i>). The whole of the migration, and it lives HERE because here is the one place in this
+    /// product that knows the transition has happened.</b>
+    ///
+    /// <para><b>The transition, spelled as a conjunction rather than as a directory.</b> An
+    /// <c>IOT_GATEWAY</c> descriptor on <see cref="DeviceClass.Automation"/> was a
+    /// <see cref="ScrewdriveSim"/> before half B, so a machine that ever started has a
+    /// <c>screw_program</c> record filed under its own code. It is an <see cref="IotSensorSim"/> now, whose
+    /// constructor ensures <c>iot_settings</c>, and <see cref="MachineConfigStore.Ensure"/> refuses one
+    /// machine under two kinds — so without this line that machine throws on its first start after the fix.
+    /// <see cref="MachineConfigStore.DropSupersededRecord"/> removes THAT record and only that record: the
+    /// machine code comes from this descriptor, the kind it will accept is <c>screw_program</c> and nothing
+    /// else, and a gateway that was never started (no record) or that already carries <c>iot_settings</c>
+    /// (started since the fix) is a no-op.</para>
+    ///
+    /// <para>🔴 <b>What the narrowing BOUGHT, stated here because it is the price of the ruling and it is
+    /// paid in this method's absence rather than in its presence.</b> Before the narrowing this arm also
+    /// claimed <c>IOT_GATEWAY</c> + <see cref="DeviceClass.AoiAvi"/>, whose record is an
+    /// <c>aoi_inspection</c> one — an INSPECTION vocabulary, with measurement points in it. That pairing no
+    /// longer reaches this method at all: it resolves to <see cref="AoiInspectorSim"/> as it did before half
+    /// B, ensures the same <c>aoi_inspection</c> kind it already has, and therefore has nothing to migrate.
+    /// <b>NO <c>aoi_inspection</c> RECORD IS DELETED BY THIS PRODUCT, ON ANY PATH ADDED BY ITEM 49</b>, and
+    /// the witness for it is
+    /// <c>SimulatorFactoryIotGatewayTests.AnIotGatewayOnTheAoiAviDeviceClass_KeepsItsInspectorAndItsRecord_…</c>.</para>
+    ///
+    /// <para><b>Loud on a channel that survives Release, on purpose.</b> The message goes to
+    /// <paramref name="logWarning"/> when a host supplied one (the hosts wire that to their own
+    /// <c>ILogger</c>) AND to <see cref="Console.Error"/> unconditionally — the same channel
+    /// <see cref="MachineConfigStore"/>'s sibling migration — <c>LegacyRootMigration</c>'s one-time copy —
+    /// already announces itself on. Both survive a Release build; <c>Debug.WriteLine</c> does not, which is
+    /// why it is not used. The unconditional half is what makes the deletion impossible to perform silently:
+    /// a caller that passes a store but no sink still leaves a trace.</para>
+    ///
+    /// <para>📌 <b>The sibling is named WITHOUT spelling its method, deliberately, and the reason is a
+    /// measurement.</b> <c>InstallerHarvestExclusionTests</c> builds its beside-the-binary store census by
+    /// text-matching the string <c>LegacyRootMigration</c> + <c>.CopyOnce</c> across every <c>.cs</c> under
+    /// <c>src/</c> — it cannot tell a doc-comment MENTION from a CALL, so the first draft of this comment put
+    /// THIS file into that census and turned two of that class's assertions red. The defect is the census's,
+    /// not this comment's, and it is reported in <c>docs/owner-decisions.md</c> §49.8 rather than repaired
+    /// here; the phrasing above is what keeps a true sentence from being read as a call site.</para></summary>
+    private static IMachineSimulator BuildGatewaySensor(
+        MachineDescriptor d, int seed, MachineConfigStore? configStore, Func<string?>? productCodeProvider,
+        double cycleRateMultiplier, Action<string>? logWarning)
+    {
+        configStore?.DropSupersededRecord(
+            d.Code,
+            supersededKind: MachineParameterSchema.ScrewProgram,
+            replacementKind: MachineParameterSchema.IotSettings,
+            report: message =>
+            {
+                logWarning?.Invoke(message);
+                Console.Error.WriteLine(message);
+            });
+
+        return new IotSensorSim(d, seed, configStore, productCodeProvider, cycleRateMultiplier);
     }
 
     private static IMachineSimulator FallbackByDeviceClass(

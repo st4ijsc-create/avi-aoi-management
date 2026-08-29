@@ -117,6 +117,20 @@ public sealed class PerHostDataRootsTests
     /// that constructs a historian store WITHOUT going through that composition root gets the machine-wide
     /// default with no env-var step. No host does today (only <c>St4i.EngineApi</c> has a historian at all),
     /// which is exactly the kind of "not in view" answer §8.1 calls dangerous — so it is written down.</para>
+    ///
+    /// <para>📎 🔴 <b>THE PARAGRAPH ABOVE IS RETRACTED, 2026-08-25 (CD-1), kept verbatim and un-struck. It is
+    /// the record of the exception, and the exception is closed.</b> <i>FALSE as of the owner's ruling of
+    /// 2026-08-25 on item 72 (<c>"open the seam"</c>):</i> "One store resolves its variable somewhere other
+    /// than on the store"; "those two types have no <c>EnvVarDir</c> and no <c>ResolveRoot</c> of their own,
+    /// unlike their twelve siblings"; and the consequence sentence — "a host that constructs a historian store
+    /// WITHOUT going through that composition root gets the machine-wide default with no env-var step".
+    /// <see cref="St4i.EdgeCore.Historian.SqliteHistorianStore"/> and
+    /// <see cref="St4i.EdgeCore.Historian.OeeSettingsStore"/> now carry the same triple as their siblings.
+    /// <i>STILL TRUE and still load-bearing for THIS test's shape:</i> the scan looks for the LITERAL anywhere
+    /// in <c>src/</c> rather than for a constant on a store type, which is what keeps it correct across BOTH
+    /// forms; and <c>Program.cs</c> still reads the variable at the composition root and still WINS there, by
+    /// <c>explicit &gt; env &gt; default</c>. The historian is no longer a thirteenth SHAPE, only a second
+    /// reader of one name.</para>
     /// </summary>
     [Fact]
     public void EveryMachineWideDirectory_IsRelocatable_ByADerivableEnvVarName()
@@ -308,6 +322,15 @@ public sealed class PerHostDataRootsTests
         // Controls for the two resolution FORMS, so a recogniser that silently lost one of them cannot pass:
         // ST4I_HISTORIAN_DIR is only ever read as a bare literal (in St4i.EngineApi/Program.cs, not on its
         // store), and ST4I_CREDS_DIR is only ever read through a same-file constant.
+        //
+        // 📎 🔴 THE COMMENT ABOVE IS RETRACTED IN HALF, 2026-08-25 (CD-1), kept verbatim. FALSE as of the
+        // owner's item-72 ruling: "ST4I_HISTORIAN_DIR is only ever read as a bare literal ... not on its
+        // store". It is read BOTH ways now — the bare literal at Program.cs's composition root AND a
+        // same-file constant on SqliteHistorianStore — so it is no longer a control for the literal FORM
+        // specifically, only for the variable being recognised at all. ST4I_CREDS_DIR still carries the
+        // same-file-constant form alone; the literal form's remaining sole carrier is ST4I_ASSETS_DIR /
+        // ST4I_SERVER_URL-style reads in Program.cs, which this assertion does not name. STILL TRUE: both
+        // assertions below hold, and neither had to move.
         Assert.Contains("ST4I_HISTORIAN_DIR", readVariables);
         Assert.Contains("ST4I_CREDS_DIR", readVariables);
 

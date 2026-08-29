@@ -302,9 +302,27 @@ public class TestRunTempRootTests
     /// It is therefore reported rather than fixed, and item 72 remains PARTIAL on this leaf. This fact is
     /// deliberately NOT written to fail on that gap: a test that pinned the defect in place would have to be
     /// deleted by whoever finally fixes it.</para>
+    ///
+    /// <para>📎 🔴 <b>EVERYTHING FROM "🔴 WHAT IS NOT ASSERTED" DOWN IS RETRACTED, 2026-08-25 (CD-1), KEPT
+    /// VERBATIM AND UN-STRUCK.</b> It was exactly true when CB-1 measured it, and it is the record of the STOP
+    /// that produced the owner's ruling of 2026-08-25 (<i>"open the seam"</i>).
+    /// <i>FALSE as of that ruling:</i> "<c>historian</c> has no such seam at all"; "both PRIVATE"; "NEITHER
+    /// reads an environment variable"; "read in exactly ONE place, <c>Program.cs:412</c>"; "does NOT cover
+    /// <c>new SqliteHistorianStore()</c> or <c>new OeeSettingsStore()</c>"; "no value set in the harness can
+    /// change that". Both stores now carry the same public <c>EnvVarDir</c>/<c>DefaultRoot</c>/
+    /// <c>ResolveRoot</c> triple as their eight siblings, reading THIS variable, so the redirect installed
+    /// above is structural for this leaf in the same sense as for the other eight.
+    /// <i>STILL TRUE:</i> <c>Program.cs</c> reads the variable too, and — by <c>explicit &gt; env &gt;
+    /// default</c> — its explicit constructor argument still WINS; the two stores deliberately share ONE
+    /// variable because they share one directory.
+    /// <b>The last sentence is the one that aged best and it is why this method's body did not have to
+    /// change:</b> it asserts the redirect and its destination, never the gap, so nothing here had to be
+    /// deleted by whoever fixed it — which is the whole argument that sentence was making. The method is
+    /// renamed (the old name asserted the gap in its own words) and the SECOND half of the claim now has its
+    /// own witnesses in <c>HistorianRootSeamTests</c>.</para>
     /// </summary>
     [Fact]
-    public void HistorianVariable_IsInstalled_ButReachesOnlyTheCompositionRoot()
+    public void HistorianVariable_IsInstalled_AndPointsAwayFromTheRealInstall()
     {
         Assert.True(TestRunTempRoot.InstalledRedirects.TryGetValue("ST4I_HISTORIAN_DIR", out var installed),
             "ST4I_HISTORIAN_DIR was not installed. Program.cs reads it at the composition root, so without " +

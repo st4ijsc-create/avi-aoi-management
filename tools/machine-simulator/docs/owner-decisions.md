@@ -180,6 +180,24 @@ mở một miễn trừ mà không sửa ở đây. Nói ra chứ không hứa.
 | **thứ 4** | 2026-08-25 | **(a) payload MQTT** | 🔴 **CHỈ MỤC 49 NỬA B** | 🔴 **giá đã được NÊU SẴN trong đúng phương án chủ sở hữu chọn** (§49.5(2): *khác metric, khác đơn vị, khác verdict*) — **không** mượn lý do lần 1 | §49.7.1 |
 | — | — | **(b) hình dạng dữ liệu trên dây** | — | — | 🔴 **CHƯA BAO GIỜ ĐƯỢC MỞ, ngày nào cũng vậy, mục nào cũng vậy** |
 
+🔴 **HÀNG "THỨ 4" ĐÃ HẸP LẠI — 2026-08-25 (CD-1), và văn cũ ở trên GIỮ NGUYÊN TỪNG CHỮ, không gạch, không
+xoá.** Ô *"phạm vi ghi trong hồ sơ"* của hàng ấy được CC-1 viết là **CHỈ MỤC 49 NỬA B**, và nửa B **như CC-1
+ship nó** dời **HAI** cặp `DeviceClass`. Chủ sở hữu phán ngày **2026-08-25**: *"thu hẹp bản sửa"*. Nên phạm vi
+**thật** của lần mở thứ tư, kể từ hôm nay, là:
+
+| lần | ngày | miễn trừ | 🔴 phạm vi SAU KHI THU HẸP | lý do | ở đâu |
+|---|---|---|---|---|---|
+| **thứ 4** | 2026-08-25 | **(a) payload MQTT** | 🔴 **MỤC 49 NỬA B, VÀ CHỈ CẶP `IOT_GATEWAY` + `DeviceClass.Automation`** — **MỘT** cú đổi payload, không phải hai. Cặp `IOT_GATEWAY` + `AoiAvi` **KHÔNG còn nằm trong phạm vi**: nó lại là `AoiInspectorSim`, `ReadingKind.Inspection`, mảng `Measurements`, verdict Pass/Fail, bản ghi `aoi_inspection` — **y như trước nửa B** | **KHÔNG ĐỔI** — vẫn là §49.5(2), và đó chính là lý do phạm vi hẹp lại: §49.5(2) định giá **đúng một** cặp, nên cặp thứ hai **chưa bao giờ có lý do** | §49.7.1 · §49.8 |
+
+🔴 **VÀ ĐÂY LÀ ĐIỀU PHẢI NÓI RÕ, VÌ NÓ LÀ CHỖ DỄ ĐỌC SAI NHẤT:** việc thu hẹp **KHÔNG** làm lần mở thứ tư
+biến mất và **KHÔNG** làm số lần mở giảm. Miễn trừ (a) **vẫn bị chạm**, vẫn ngày ấy, vẫn lý do ấy. Cái đổi là
+**BỀ RỘNG**: từ *hai payload* xuống *một payload*. Ba con số **3 / 4 / 6** ở đoạn dưới **KHÔNG dịch** — chúng
+đếm **lần mở**, không đếm **payload**. 📌 Nếu ai đó cần con số payload, nó là **một đơn vị thứ tư** và trước
+hôm nay không ai đếm nó: theo đơn vị **PAYLOAD BỊ ĐỔI**, lần thứ 4 mở **HAI** hôm qua và **MỘT** hôm nay.
+
+📎 **Đơn vị nào KHÔNG đổi và vì sao nói ra:** hàng này vẫn là **một** hàng của bảng, nên bảng vẫn **bốn** hàng
+mở; nếu ai đọc lần thu hẹp thành *"vậy là ba lần mở"* thì đã trộn **bề rộng** với **số lần**.
+
 🔴 **CON SỐ "BỐN" CHỈ SỐNG Ở MỘT ĐƠN VỊ, và đây là chỗ nói ra thay vì để người sau đếm lại và ra số
 khác.** *"Bốn"* đếm theo đơn vị **(miễn trừ × phán quyết)** — đúng đơn vị bảng trên dùng. Ở hai đơn vị
 khác nó **không sống sót**:
@@ -1133,6 +1151,18 @@ giữ nguyên văn vì nó đúng ngày BX-1 viết nó.
   §"LỊCH SỬ MỞ MIỄN TRỪ" trong phần đầu file, **chỗ ấy trước hôm nay KHÔNG TỒN TẠI**. Con số *"bốn"*
   chỉ đúng ở **một** đơn vị; §ấy nêu cả ba cách đếm.
 
+📎 🔴 **PHẠM VI GHI Ở MỤC CON NÀY ĐÃ HẸP LẠI — 2026-08-25 (CD-1), văn trên GIỮ NGUYÊN TỪNG CHỮ, không gạch,
+không xoá.** Chủ sở hữu phán *"thu hẹp bản sửa"* cùng ngày. **SAI kể từ phán quyết ấy:** câu *"Một descriptor
+mang `IOT_GATEWAY` + `DeviceClass.Automation` hôm qua là `ScrewdriveSim`, hôm nay là `IotSensorSim`"* vẫn
+đúng, nhưng **phạm vi thực tế mà lần mở này bao** thì **không còn là hai cú đổi payload**: nó là **MỘT**.
+Cặp `IOT_GATEWAY` + `DeviceClass.AoiAvi` (§49.7.3) **đã được trả về `AoiInspectorSim`** — `ReadingKind.Inspection`,
+mảng `Measurements`, verdict Pass/Fail, bản ghi `aoi_inspection` — nên payload của nó **không đổi**, và nó
+**KHÔNG nằm trong phép cho phép ngày 2026-08-25**.
+**VẪN ĐÚNG và vẫn chịu lực:** lý do (§49.5(2) đã nêu sẵn giá) **không đổi** — và chính nó là cơ sở của việc
+thu hẹp, vì §49.5(2) định giá **đúng một** cặp; *(b)* và *(c)* vẫn không được mở; **số LẦN mở không giảm**
+(vẫn là lần thứ hai của (a) và lần thứ tư nói chung) — cái giảm là **BỀ RỘNG**. Bảng gom ở đầu file mang
+đúng phép sửa này. Xem **§49.8.2**.
+
 #### 49.7.2 CÁI PAYLOAD THÀNH RA GÌ — ĐO, KHÔNG TẢ
 
 Đọc hai `DeviceReading` từ cùng một seed tại `1a565b1d`:
@@ -1258,6 +1288,188 @@ nháp đầu của chính mục này viết 4/1.
 định không, biết rằng nó dời mô-men báo ra **8,89 lần** trên một quần thể **không đếm được** (§49.7.6);
 *(b)* **giá di trú ở §49.7.5** — một máy đã gieo `screw_program` nay ném khi khởi động; xoá bản ghi hay
 dạy `Ensure` đổi khoá. **Mục Ở LẠI PHẦN I.**
+
+📎 **Câu ngay trên nay đúng một nửa — 2026-08-25 (CD-1), giữ nguyên văn.** Câu *(b)* **đã được trả**: chủ sở
+hữu chọn *xoá bản ghi*. Câu *(a)* — **nửa A** — **vẫn nguyên**, và §49.8.6 đo lại nó.
+
+### 49.8 🔧 THI HÀNH — **THU HẸP NỬA B + XOÁ BẢN GHI**, CD-1, 2026-08-25, base `7847955d`, THEO **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-25** (*"THu hẹp bản sửa, xóa bản ghi"*). 🔴 **PHẠM VI MIỄN TRỪ (a) HẸP LẠI TỪ HAI PAYLOAD XUỐNG MỘT. NỬA A ĐO LẠI VÀ VẪN KHOÁ, NÊN MỤC Ở LẠI PHẦN I**
+
+**Hai việc, đúng hai:** *(1)* arm `"IOT_GATEWAY"` trong `SimulatorFactory.Create` nay mang mệnh đề
+`when d.DeviceClass == DeviceClass.Automation`; *(2)* `MachineConfigStore.DropSupersededRecord` — một phương
+thức mới — xoá **đúng một** bản ghi, và chỉ được gọi từ **đúng một** chỗ: arm ấy.
+
+#### 49.8.1 🔴 BẢNG BA HÀNG — ĐO LẠI TẠI `7847955d` **TRƯỚC KHI SỬA**, VÀ LỜI KHAI CỦA CC-1 SỐNG SÓT TỪNG HÀNG
+
+**Dụng cụ, nêu tên:** một bài xunit tạm dựng trong `tests/St4i.EdgeCore.Tests`, chạy bằng
+`dotnet test --filter`, gọi `SimulatorFactory.Create` thật và đọc `GetType().Name`. **Hai cột được đo, không
+suy:** cột *trước nửa B* đo bằng một `machineType` **không nhận ra** trên cùng `DeviceClass` (đó **chính là**
+đường `FallbackByDeviceClass` mà `IOT_GATEWAY` đi trước nửa B); cột *sau nửa B* đo bằng chuỗi `IOT_GATEWAY`.
+Bài đo đã **xoá** sau khi đọc số.
+
+| `DeviceClass` | trước nửa B (đo) | sau nửa B (đo tại `7847955d`) | 🔴 **sau THU HẸP hôm nay** |
+|---|---|---|---|
+| `Automation` | `ScrewdriveSim` | `IotSensorSim` | **`IotSensorSim`** — dời, và là cặp **duy nhất** §49.5(2) định giá |
+| `AoiAvi` | `AoiInspectorSim` | `IotSensorSim` | 🔴 **`AoiInspectorSim` — TRẢ LẠI. Không còn dời.** |
+| `Iot` | `IotSensorSim` | `IotSensorSim` | **`IotSensorSim`** — đối chứng, không đụng, ba cột như nhau |
+
+`DeviceClass` có **BA** thành viên (`Automation`, `Iot`, `AoiAvi`) — đếm bằng `Enum.GetNames`, không bằng mắt.
+⇒ **Lời khai của CC-1 ĐỨNG VỮNG toàn bộ**: hai trong ba cặp dời, và cặp `AoiAvi` **thật sự** đã dời. Nên phán
+quyết thu hẹp **không** sửa một phép đo sai; nó **rút lại một bề rộng** mà phép đo ấy đã phơi ra đúng lúc.
+📌 **Vị ngữ dịch, không phải con số:** *"HAI trong ba dịch"* nay là *"MỘT trong ba dịch"*. Con số **3**
+(thành viên enum) không dịch.
+
+#### 49.8.2 🔴 HỒ SƠ MIỄN TRỪ ĐÃ HẸP LẠI — VÀ ĐÂY LÀ PHẦN DỄ QUÊN NHẤT, NÊN NÓ ĐƯỢC SỬA Ở **CẢ HAI** CHỖ
+
+* **§49.7.1** (thân mục, nơi lần mở được ghi lần đầu): giữ nguyên văn, kèm một đoạn rút bên dưới ghi rằng
+  phạm vi nay là **một** cú đổi payload.
+* **§"LỊCH SỬ MỞ MIỄN TRỪ"** (bảng gom, đầu file, do CC-1 dựng hôm qua): hàng **thứ 4** giữ nguyên văn, kèm
+  một **bảng thứ hai** ghi phạm vi sau khi thu hẹp. 🔴 **Sửa cả hai là bắt buộc chứ không phải cẩn thận:**
+  chính §ấy tự khai rằng nó *"sẽ trôi"* vì **không dụng cụ nào kiểm nó** — `check-owner-decisions.sh` không
+  đọc đoạn ấy — nên một lịch sử sai phạm vi còn tệ hơn không có lịch sử, và cái duy nhất giữ nó đúng là
+  người viết.
+* **Con số lần mở KHÔNG dịch: vẫn 3 / 4 / 6 ở ba đơn vị.** Thu hẹp đổi **BỀ RỘNG**, không đổi **SỐ LẦN**.
+  Một đơn vị **thứ tư** — *payload bị đổi* — là chỗ con số thật sự dịch: **2 → 1**. Nêu ra vì trước hôm nay
+  không ai đếm theo đơn vị ấy.
+* 🔴 **Cái KHÔNG được mở, đo lại chứ không chép:** *(b)* hình dạng dữ liệu trên dây — **không trường nào**
+  thêm/bớt/đổi kiểu ở bản sửa này; `DropSupersededRecord` xoá **một hàng** khỏi một file JSON đã có, không
+  đổi schema của nó. *(c)* số OEE — không chạm. **Miễn trừ (a) hẹp lại chứ không mở thêm.**
+
+#### 49.8.3 🔴 XOÁ CÁI GÌ, HẸP ĐẾN ĐÂU, VÀ VÌ SAO KHÔNG THỂ IM LẶNG
+
+**Cái bị xoá:** **một** phần tử của từ điển trong `machine-operating-config.json` — bản ghi mang **đúng mã
+máy** của descriptor **và** mang **đúng** `ConfigKind == "screw_program"`. File được ghi lại bằng chính
+`Save()` mà mọi lần ghi khác đã dùng.
+
+**Hẹp, và hẹp bằng bốn tính chất đo được, không bằng lời hứa:**
+1. **Không theo thư mục.** Không có `Directory.Delete`, không `File.Delete`, không glob. Bản ghi khác biến
+   mất được duy nhất qua một khoá từ điển, và khoá ấy là tham số truyền vào.
+2. **Không theo mẫu tên.** Phương thức nhận **một** `machineCode`; nó không quét, không so khớp tiền tố.
+3. **Chỉ một loại.** Bản ghi mang kind khác `screw_program` ⇒ **trả `false`, không đụng gì**. Nên một máy
+   `IOT_GATEWAY`+`Automation` chưa từng chạy (không bản ghi) hoặc đã chạy sau bản sửa (`iot_settings`) là
+   **no-op** — có nhân chứng riêng.
+4. **Chỉ một chỗ gọi.** `SimulatorFactory.BuildGatewaySensor`, tức **đúng** arm `IOT_GATEWAY` + `Automation`.
+   Không lối vào nào khác trong `src/`.
+
+**Hỏng thì không xoá gì:** một cú ném từ `Save()` **đặt lại** phần tử rồi mới ném tiếp — cùng kỷ luật mục 75
+mà `Ensure` áp theo chiều ngược lại.
+
+**TO TIẾNG, và kênh được chọn bằng phép đo chứ không bằng thói quen.** 🔴 **Một phát hiện phải nêu ngay:
+`St4i.EdgeCore` CỐ Ý KHÔNG CÓ FRAMEWORK LOG** — csproj của nó **không** tham chiếu
+`Microsoft.Extensions.Logging`, và `FleetCore` tự khai điều đó (*"Logging is nullable callbacks, not
+`ILogger`"*). Nên câu *"dùng `ILogger`"* **không thi hành được ở lớp này**; `ILogger` sống ở **HOST**, đúng
+như CC-1 đo, và EdgeCore với tới nó qua **callback**. Bản sửa dùng **hai** kênh, cả hai **sống ở Release**:
+* `Action<string>? logWarning` mới trên `SimulatorFactory.Create`, do `FleetCore` nối vào **cả hai** chỗ gọi
+  factory, đệm qua `deferredLogs` và xả **ngoài `_gate`** → `_logWarning` của host → `ILogger` của host.
+* `Console.Error.WriteLine` **vô điều kiện** — đúng kênh mà `LegacyRootMigration` (cú di trú **anh em**,
+  cũng trong EdgeCore, cũng trên đường DI khởi động) đã dùng từ trước. Nửa này là cái làm **im lặng trở nên
+  bất khả**: một caller truyền store mà không truyền sink vẫn để lại dấu.
+🔴 **`Debug.WriteLine` KHÔNG được dùng** — BL-1 đo được nó bị biên dịch bỏ ở Release trong kiosk WPF.
+
+**Nội dung dòng ấy** nêu: mã máy · kind bị xoá · đường dẫn file · **baseline version, số adjustment máy, số
+bucket sản phẩm, số hàng lịch sử** (đọc **trước** khi xoá, vì sau đó không đọc lại được) · kind thay thế ·
+lý do (*"owner ruling 2026-08-25, item 49"*) · và câu *"những byte ấy đã mất và store này không khôi phục
+được; không bản ghi máy nào khác bị đọc hay ghi"*.
+
+📌 **Cái KHÔNG có, nói ra ở chỗ kết quả hiện ra:** bản sửa **không** ghi một dấu vết BỀN trên đĩa (một hàng
+lịch sử, một file marker). Nó cố ý không làm: hàng lịch sử sẽ nằm trong bản ghi **mới**, tức một hàng lịch sử
+nói về một bản ghi **khác**, và `GET /v1/machines/{code}/settings/history` hôm nay trả `[]` cho mọi máy
+(§49.5) — thêm hàng ở đó là đổi **nội dung một route REST** cho đúng những máy vừa mất dữ liệu, và đó là một
+quyết định sản phẩm chưa ai phán. **Nên dấu vết là dấu vết LOG, và một log bị xoay vòng là một dấu vết mất
+được.** Đây là chỗ tôi cho rằng phán quyết còn thiếu một nửa — xem §49.8.7.
+
+#### 49.8.4 🔴 CÁI VIỆC THU HẸP **MUA ĐƯỢC**, ĐO CHỨ KHÔNG TẢ
+
+Vì `AoiAvi` **không còn dịch**, một gateway trên device class ấy **không** trở thành `IotSensorSim`, **không**
+gặp `Ensure` với kind thứ hai, và do đó **KHÔNG BẢN GHI `aoi_inspection` NÀO BỊ XOÁ — trên mọi đường mà mục
+49 thêm vào.** Đo bằng nhân chứng
+`NoAoiInspectionRecordIsDeleted_AndThatIsWhatTheNarrowingBought`: một gateway `AoiAvi` được gieo
+`aoi_inspection`, **cộng một adjustment do vận hành viên đặt** (`lightIntensity`), rồi dựng lại qua factory
+sau khi thu hẹp ⇒ bản ghi còn nguyên, kind còn nguyên, **adjustment còn nguyên**, và **không dòng nào** được
+báo ra. Gỡ mệnh đề `when` ⇒ bài này **đỏ ở đúng dòng adjustment** — tức mất mát được định giá là **mất mát**,
+không phải *"kind đổi"*.
+
+📎 **Và nửa sự thật ngược lại, để câu trên không thành một nửa:** việc thu hẹp **không cứu** cặp `Automation`.
+Bản ghi `screw_program` của cặp ấy **vẫn bị xoá** — đó là toàn bộ nội dung vế 2, và nó là dữ liệu vận hành
+viên soạn y như `aoi_inspection`. Cái thu hẹp mua là **một loại bản ghi**, không phải **mọi bản ghi**.
+
+#### 49.8.5 🔴 CÓ HOST NÀO BẮT CÚ NÉM ẤY KHÔNG — CC-1 KHAI LÀ CHƯA ĐO; ĐO Ở ĐÂY, TRÊN HOST THẬT, VÀ CÂU TRẢ LỜI LÀ MỘT PHÁT HIỆN
+
+**Liệt kê trước, số sau.** Ba host của sản phẩm, và chỗ mỗi host gọi factory:
+| host | chỗ gọi | có truyền `configStore`? | với tới cú ném được? |
+|---|---|---|---|
+| `St4i.EngineApi` | `FleetCore.BuildStartPlan` + `FleetCore.StartLocked` (qua `FleetHost`) | **CÓ** — `Program.cs:397` đăng ký `MachineConfigStore` singleton | **CÓ** |
+| `St4i.EdgeService` | `EdgeWorker.cs:211` — `SimulatorFactory.Create(d, seed: 2000 + i)` | **KHÔNG** | 🔴 **KHÔNG. `Ensure` không hề chạy.** |
+| `St4iMachineSimulator` (kiosk WPF) | `FleetService.BuildSimulator` — `SimulatorFactory.Create(d, seed)` | **KHÔNG** | 🔴 **KHÔNG.** |
+
+⇒ **HAI TRÊN BA HOST CHƯA BAO GIỜ Ở TRONG QUẦN THỂ.** Với chúng, *"giá di trú"* của §49.7.5 là **rỗng** — và
+đó là điều §49.7.5 không thể biết, vì nhân chứng của nó gọi thẳng factory.
+
+**Ở host duy nhất với tới được, KHÔNG AI NUỐT.** Đo bằng cách đọc đường đi, và mỗi mắt xích có tên: cú ném
+rời `BuildStartPlan`; `FleetCore` có **một** `catch (Exception ex)` trên đường ấy và nó `throw;` lại — clause
+ấy chỉ **ghi** `LastError` (và chỉ khi `!_running && _slots.Count > 0`, tức **không** phải nhánh này);
+`FleetEndpoints` gọi `host.Start()` **không bọc**, nên ASP.NET trả **500**. Có sẵn nhân chứng chạy được
+trong kho cho đúng hình dạng này: `FleetHostFailedRestartReportsTests` — bài đầu của nó dựng **đúng** một
+`MachineConfigStore` mang bản ghi sai kind và `Assert.Same` rằng ngoại lệ caller nhận **là chính** object
+nằm trên `LastError`.
+
+🔴 **Cái phép đo này KHÔNG nói:** nó **không** chạy một tiến trình host thật qua HTTP; nó đọc chỗ gọi và dựa
+trên một bài test đã có dựng `FleetHost` thật. *"Một máy hỏng hay cả fleet hỏng"* thì có câu trả lời: cú ném
+rời **`BuildStartPlan`**, tức **trước khi một slot nào được cài**, nên nó là **cả fleet**, không phải một máy.
+
+#### 49.8.6 🔴 NỬA A — ĐO LẠI HÔM NAY, VẪN KHOÁ
+
+Đọc `fleet.json` và `ScrewdriveSim` tại `7847955d`: `deviceClass: automation` là **SCRW-01, SCRW-02, DISP-01,
+WELD-01, ASSY-01, LEAK-01, FCT-01** — **bảy**; khai `screwTorque`: **SCRW-01, SCRW-02** — **hai**; không
+khai — **năm**. Hằng số `ScrewdriveSim`: `TorqueMean = 12.0`, `TorqueStd = 0.4`, `TorqueLsl = 10.8`,
+`TorqueUsl = 13.2`. Baseline schema `torqueTarget` = **1,35**. **12,0 / 1,35 = 8,89 lần.**
+⇒ **Điều kiện DỪNG của §49.5(1) sống sót. Nửa A KHÔNG được nhiệm vụ này chạm**, và **không** phán quyết nào
+ngày 2026-08-25 nói về nó.
+
+🔴 **VÀ VIỆC THU HẸP LÀM QUẦN THỂ NỬA A **RỘNG LẠI** MỘT CHÚT — nói ra vì §49.7.6 ghi chiều ngược lại.**
+§49.7.6 ghi rằng nửa B **thu hẹp** quần thể nửa A đúng một loại máy. Câu ấy vẫn đúng cho cặp `Automation`.
+Nhưng nó **không** liên quan tới `AoiAvi`: cặp ấy chưa bao giờ dựng `ScrewdriveSim` ở **cả hai** phía, nên
+việc trả nó về `AoiInspectorSim` **không** đưa máy nào trở lại quần thể nửa A. ⇒ **Quần thể nửa A hôm nay
+BẰNG ĐÚNG quần thể sau nửa B**, và câu *"rộng lại"* ở đầu đoạn này là câu tôi định viết trước khi đo. **Nó
+sai, và nó được giữ lại vì đó là bài học chứ không phải công trạng.**
+
+#### 49.8.7 NHÂN CHỨNG, CẶP ĐỐI CHỨNG, VÀ HAI CÂU CỦA CHÍNH TÔI BỊ MỘT PHÉP KIỂM BẮT
+
+`SimulatorFactoryIotGatewayTests` từ **6** bài lên **10**: một bài **lật** (cặp `AoiAvi`), một bài **thay**
+(bài khai cú ném → bài khai máy **khởi động được**), **bốn** bài mới (không xoá `aoi_inspection` · đúng một
+bản ghi, máy khác nguyên vẹn · dòng báo có nội dung · hai ca no-op). **`EXPECT_EDGECORE` 1302 → 1310 (+8)**,
+trong đó +4 là item 72 (§72.8). `EXPECT_ENGINEAPI` **1455 — không dịch**.
+
+**Cặp đối chứng, hai bờ, chạy rồi hoàn nguyên** (phạm vi: **lọc theo lớp**, không phải cả suite — nêu ra chứ
+không giấu):
+| bờ | kết quả | ý nghĩa |
+|---|---|---|
+| **A** — gỡ mệnh đề `when` (tức nửa B rộng của CC-1) | **2 đỏ / 8 xanh** | đúng hai bài `AoiAvi`. Hàng `Automation` và đối chứng `Iot` **xanh ở cả hai bờ** |
+| **B** — vô hiệu hoá cú gọi `DropSupersededRecord`, giữ mệnh đề `when` | **3 đỏ / 7 xanh** | đúng ba tính chất của lần xoá. Hai ca no-op **xanh ở cả hai bờ** |
+| **BASE** | **0 đỏ** | |
+
+🔴 **HAI CÂU CỦA CHÍNH NGƯỜI THI HÀNH BỊ MỘT PHÉP KIỂM BẮT — nhiệm vụ thứ NĂM liên tiếp:**
+1. Một chú thích `///` của tôi viết chuỗi `LegacyRootMigration` + `.CopyOnce`. `InstallerHarvestExclusionTests`
+   dựng sổ "store cạnh binary" bằng **`File.ReadAllText(...).Contains("LegacyRootMigration.CopyOnce")`** trên
+   mọi `.cs` dưới `src/` — **nó không phân biệt được một lần NHẮC trong văn xuôi với một lần GỌI** — nên
+   `SimulatorFactory.cs` bị xếp vào sổ ấy và **hai** assertion đỏ. 🔴 **Đây là khuyết tật CỦA DỤNG CỤ, cùng
+   loài với F-8 (§72.6(a)): một phép đếm chuỗi mang tiêu đề cột mà nó không đo được.** **Tôi KHÔNG sửa dụng
+   cụ** — nó ngoài phạm vi được giao và một sổ census sửa vội là đúng cái §"Checked, not assumed" phạt; tôi
+   đổi câu văn để nó không đọc như một chỗ gọi, **và báo cáo dụng cụ**.
+2. Một khối `<para>` của tôi thiếu thẻ đóng. `DocCommentProseTests` đỏ — và điều nó cảnh báo mới là phần
+   đáng sợ: một khối không well-formed làm trình biên dịch **bỏ mọi claim viết bên trong nó**, tức đúng các
+   đoạn rút vừa viết sẽ **vô hình**.
+
+#### 49.8.8 KẾT CỤC, VÀ VÌ SAO MỤC **Ở LẠI PHẦN I**
+
+**Còn đúng một câu chờ anh: NỬA A** (§49.8.6) — một quyết định, không phải việc. Vế 1 và vế 2 của phán quyết
+2026-08-25 **đã trả**. ⇒ **THI HÀNH MỘT PHẦN. Mục Ở LẠI PHẦN I.**
+
+🔴 **CHỖ TÔI CHO RẰNG PHÁN QUYẾT CÒN THIẾU MỘT NỬA, nói ra chứ không im:** *"xoá bản ghi"* trả lời **có xoá
+không**, và **không** trả lời **để lại gì**. Bản sửa này chọn **log** làm dấu vết, vì hai lối bền hơn — một
+hàng lịch sử, hay một file bản sao — đều đổi thứ khác (nội dung một route REST; một file mới mà
+`remove-data.ps1` chưa biết, tức đúng hình dạng mục 30 phải mua miễn trừ). **Cả hai là quyết định.** Nếu một
+vận hành viên mất `torqueTarget` họ tự chỉnh và log đã xoay vòng, **không gì trong kho này nói cho họ biết
+nó từng tồn tại.** Tôi cho rằng đó là cái giá thứ hai của vế 2 và nó chưa được định.
 
 ---
 
@@ -2787,6 +2999,115 @@ Gỡ hết chín chuyển hướng — rồi chĩa thẳng chúng vào bản cà
 `EXPECT_EDGECORE` 1289 → **1296** (+7), `EXPECT_ENGINEAPI` 1451 → **1454** (+3). Tổng .NET
 2977 → **2987**, đo bằng cách chạy từng suite. 🔴 **Hằng số web của CA-1 KHÔNG ĐỘNG** — tập ghim bốn
 bài đỏ và bài cách ly **không dịch**, và số web **không bao giờ cộng vào tổng .NET**.
+
+### 72.8 🔧 THI HÀNH — **SEAM TRONG `src/` CHO LÁ `historian`**, CD-1, 2026-08-25, base `7847955d`, THEO **PHÁN QUYẾT CỦA CHỦ SỞ HỮU 2026-08-25** (*"Cho mở"*). 🔴 **MẶC ĐỊNH SẢN XUẤT KHÔNG ĐỔI, VÀ CÓ NHÂN CHỨNG RIÊNG CHO ĐIỀU ĐÓ. MỤC Ở LẠI PHẦN I**
+
+**Đã làm, và nó là ba thành viên trên mỗi lớp, không hơn:** `SqliteHistorianStore` và `OeeSettingsStore` nay
+mang `public const string EnvVarDir` / `public static string DefaultRoot()` / `public static string
+ResolveRoot(string?)` — **đúng bộ ba** mà tám lá kia đã mang, **đúng thứ tự** `explicit > env > default` mà
+F-1 lập. `Program.cs` **không đổi một dòng**.
+
+#### (a) 🔴 "HAI LỚP SINH" — ĐẾM LẠI, VÀ ĐẾM LẠI **ĐƠN VỊ**. CON SỐ SỐNG SÓT; MỘT VỊ NGỮ THÌ KHÔNG
+
+**Liệt kê trước, số sau.** Đếm trên `src/`, dụng cụ nêu tên (`grep` literal `"ST4I", "sim", "historian"`;
+`grep` khai báo `static string DefaultRoot`; `grep` `: IHistorianStore`; `grep` chỗ `new`):
+
+| đơn vị | số | ai |
+|---|---|---|
+| **LỚP** sinh ra đường mặc định | **2** | `SqliteHistorianStore`, `OeeSettingsStore` |
+| **FILE** | **2** | một lớp một file |
+| **phương thức `DefaultRoot()`** | **2** | một cái mỗi lớp |
+| **literal `%ProgramData%` cho lá này trong `src/`** | **2** | một cái mỗi `DefaultRoot()` |
+| **chỗ KHỞI TẠO trong `src/`** | **2** | cả hai ở `Program.cs` (`:414`, `:1664`) — **đây không phải "lớp sinh"**, đây là composition root **ghi đè** mặc định |
+| 🔴 **cài đặt `IHistorianStore` trong `src/`** | **1** | **chỉ `SqliteHistorianStore`.** `OeeSettingsStore` **không phải** historian store — nó là một store JSON dùng chung thư mục |
+| **chỗ đọc `ST4I_HISTORIAN_DIR` trong `src/`** | **1 → 3** | `Program.cs:412` (đã có) + hai `ResolveRoot` mới |
+
+⇒ **"HAI" SỐNG SÓT ở đơn vị LỚP, FILE, `DefaultRoot()` và literal — bốn đơn vị, cùng một con số.** Nó
+**KHÔNG** sống sót ở đơn vị *"historian store"*: ở đó là **MỘT**. 📌 Vị ngữ đúng là **"hai lớp sinh ra đường
+`historian`"**, **không** phải *"hai historian store"* — hai thứ ấy khác nhau, và người sau đọc *"hai"* mà
+không mang theo đơn vị sẽ đi tìm một cài đặt `IHistorianStore` thứ hai không tồn tại.
+
+#### (b) 🔴 AI THẮNG GIỮA SEAM MỚI VÀ `Program.cs:412` — LIỆT KÊ MỌI CHỖ ĐỌC **RỒI MỚI** CHỌN
+
+**Mọi chỗ đọc biến ấy trong `src/`, trước bản sửa: ĐÚNG MỘT.** Đo bằng
+`grep -rn "GetEnvironmentVariable" src/ | grep -i historian` ⇒ một dòng, `Program.cs:412`, literal trần
+không const. (Mọi lần nhắc khác trong `src/` là **chú thích**, đã kiểm từng dòng.)
+
+**Chọn:** cùng **một cái tên** biến, và thứ tự `explicit > env > default`. ⇒ **`Program.cs:412` THẮNG** —
+nó đọc biến rồi truyền giá trị vào constructor như một **đối số tường minh**, và đối số tường minh đứng
+trước `env` trong đúng thứ tự ấy. Seam mới trả lời cho **mọi chỗ khởi tạo KHÁC**: `new SqliteHistorianStore()`
+không đối số — thứ **không host nào** làm hôm nay và **mọi test dựng trực tiếp** đều làm.
+Nhân chứng: `AnExplicitDirectory_BeatsTheVariable_WhichIsWhyTheCompositionRootStillWins`.
+
+🔴 **Vì sao đây KHÔNG phải hình dạng mục 65, và chỗ nó vẫn có thể cắn — nói cả hai chiều.** Mục 65 là *một
+file, hai câu trả lời trên hai host*: hai chỗ đọc **hai nguồn khác nhau**. Ở đây ba chỗ đọc **một cái tên**,
+và thứ tự được phát biểu. Chúng chỉ có thể lệch nếu **giá trị của biến ĐỔI** giữa lúc composition root đọc
+nó (một lần, lúc dựng container) và lúc một store được dựng sau đó. **Cửa sổ ấy có thật và bản sửa này
+không đóng nó**; nó cũng đã có trước bản sửa. Nêu ra chứ không phủ nhận.
+📌 **Một việc cố ý KHÔNG làm:** thay literal trần ở `Program.cs:412` bằng `SqliteHistorianStore.EnvVarDir`.
+Nó sẽ làm "một cái tên" thành một sự thật của trình biên dịch chứ không phải của con mắt — nhưng nó **đổi
+`Program.cs`**, ngoài phần chủ sở hữu cho mở (*hai lớp sinh*), và `PerHostDataRootsTests` dùng **đúng** literal
+trần ấy làm **đối chứng cho một trong hai HÌNH THỨC giải biến**. **Báo, không tự làm.**
+
+#### (c) 🔴 MẶC ĐỊNH SẢN XUẤT KHÔNG ĐỔI — VÀ NÓ CÓ NHÂN CHỨNG **RIÊNG**, VIẾT TRƯỚC NHÂN CHỨNG CỦA SEAM
+
+`historian` là thư mục chứa **bảng sự kiện mà MỌI con số OEE đã báo cáo được tính ra từ đó** (miễn trừ (c)).
+Nên bài **đầu tiên** của file mới là bài *"không đặt biến ⇒ đường cũ y nguyên"*:
+`WithNoVariableSet_BothStoresResolveTheUnchangedProductionDefault` — nó gỡ biến, rồi so `DefaultRoot()` **và**
+`ResolveRoot()` của **cả hai** lớp với **ba thành phần literal** `CommonApplicationData` + `ST4I` + `sim` +
+`historian`, **chứ không** so với giá trị trả về của chính phương thức đang đo. Một bài so phương thức với
+chính nó sẽ **xanh xuyên qua** một mặc định đã bị dời.
+**Bờ D của cặp đối chứng là thứ làm bài này có nghĩa:** giữ nguyên phần đọc biến nhưng dời `DefaultRoot()`
+sang `%TEMP%` ⇒ **đúng bài này đỏ**, một mình.
+
+#### (d) DÙNG LẠI CƠ CHẾ CỦA CB-1, KHÔNG DỰNG CƠ CHẾ THỨ HAI
+
+`ST4I_HISTORIAN_DIR` **đã** nằm trong `[ModuleInitializer]` của `tests/Shared/TestRunTempRoot.cs` từ CB-1.
+Bản sửa này **không thêm biến nào, không thêm danh sách nào, không thêm cơ chế nào** — nó chỉ làm cho dòng
+đã có ở đó **với tới được** `new SqliteHistorianStore()`. Chú thích của CB-1 tại chỗ ấy (và trong
+`TestRunTempRootTests`, và trong `PerHostDataRootsTests`) **giữ nguyên từng chữ** kèm đoạn rút, vì cả ba là
+**hồ sơ của lần DỪNG** đã sinh ra phán quyết này.
+
+#### (e) 🔴 KHẢ NĂNG ≠ SỰ KIỆN — và phép đo của CB-1 làm YẾU mục này vẫn đứng nguyên
+
+CB-1 đo, ở **cả hai** bờ đối chứng của nó, rằng cây `%ProgramData%\ST4I\sim` **THẬT** (file **và** mtime thư
+mục) **không đổi**: không suite nào ghi một byte vào đó. **Bản sửa này không lật phép đo ấy và không cố.**
+Cái vừa đóng là **một KHẢ NĂNG** — `new SqliteHistorianStore()` trong một lớp test **chưa ai viết** — chứ
+**không** phải một cú rò bị chặn. Ai định viết việc này thành *"đã bịt một chỗ rò"* phải đọc đoạn này trước.
+
+#### (f) LỖ DẤU-THỜI-GIAN-THƯ-MỤC: **KHÔNG ĐÓNG** — nói thẳng
+
+Cái ngoặc vẫn là `find "$REAL_SIM_ROOT" -type f -printf …`, và `-type f` loại thư mục ra. Đó là tính chất
+của `scripts/verify-suites.sh`, **không** của `src/`, và **không gì trong CD-1 chạm vào nó**. §72.2(i) và
+§72.7(d) đứng nguyên. Cũng không đổi: cái ngoặc **chỉ chạy trong cổng**, nên một `dotnet test` trần vẫn
+không có **nhân chứng** (dù nay có **phòng ngừa**, đúng phân biệt §72.7(c) lập).
+
+#### (g) NHÂN CHỨNG, CẶP ĐỐI CHỨNG, HẰNG SỐ
+
+File mới `tests/St4i.EdgeCore.Tests/Historian/HistorianRootSeamTests.cs` — **BỐN** bài: mặc định sản xuất
+không đổi · dựng-không-đối-số đi theo biến (dựng **thật**, và kiểm `historian.db` xuất hiện) · tường minh
+thắng biến · hai lớp dùng **một** biến và **một** mặc định.
+`TestRunTempRootTests.HistorianVariable_IsInstalled_ButReachesOnlyTheCompositionRoot` **đổi tên** thành
+`…_AndPointsAwayFromTheRealInstall` (tên cũ **khẳng định chính cái lỗ vừa bịt**); thân bài **không đổi một
+dòng** — nó vốn assert cái redirect và đích của nó, chưa bao giờ assert cái lỗ.
+
+| bờ | kết quả (lọc theo lớp) | ý nghĩa |
+|---|---|---|
+| **C** — `ResolveRoot` quay về `directory ?? DefaultRoot()` | **1 đỏ / 15 xanh** | đúng bài dựng-không-đối-số. Seam **đỏ được** |
+| **D** — giữ phần đọc biến, dời `DefaultRoot()` sang `%TEMP%` | **1 đỏ / 15 xanh** | đúng bài mặc-định-sản-xuất. **Hai bờ giết hai tập KHÁC NHAU** |
+| **BASE** | **0 đỏ** | |
+
+`EXPECT_EDGECORE` +4 phần của mục này (tổng cả hai mục: 1302 → **1310**). `EXPECT_ENGINEAPI` **không dịch**.
+`packaging/remove-data.ps1` **đã** biết `-HistorianDir`/`ST4I_HISTORIAN_DIR` từ trước ⇒ **không artefact nào
+phải dịch cùng**, đúng như §72.7(b) đo cho tám lá kia.
+
+#### (h) VÌ SAO MỤC VẪN **Ở LẠI PHẦN I**
+
+**Hướng A nay đủ mười sáu trên mười sáu lá ở mức CẤU TRÚC**, và lá `historian` — lý do §72.7 giữ mục lại —
+**đã trả**. Cái còn lại **không** phải việc của mục 72 nữa mà là **hai khuyết tật của DỤNG CỤ** ở §72.2, cả
+hai **chưa đóng**: cái ngoặc mù với mtime thư mục *(f)*, và cái ngoặc chỉ chạy trong cổng. Chúng thuộc
+`verify-suites.sh`, và **không phán quyết nào** ngày 2026-08-25 nói về chúng. ⇒ **THI HÀNH MỘT PHẦN. Mục Ở
+LẠI PHẦN I**, và cái chờ anh là **một câu**: có định giá việc sửa cái ngoặc không.
 
 ---
 
