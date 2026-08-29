@@ -43,13 +43,20 @@
  * serial-dependent); v1.x payloads keep this exact formula, unchanged.
  * `submitInspectionTreeV2` (`machineApiRouters.ts`) now also buffers on a
  * TRANSIENT failure and ACKs `{success:true, queued:true, submissionId}`, same
- * contract as the v1.x path below. ⚠ KNOWN GAP (left for Task 2 of the same
- * plan, §QĐ-WAL-B): a buffered v2.0 entry still REPLAYS through whatever
- * `processFn` is wired — today that's always the v1.x `processInspectionSubmission`
- * pipeline (wired by `ensureInspectionWalWired`/`initInspectionStoreForward`). A
- * v2.0 entry will NOT drain correctly until a shape-aware `processFn` is wired;
- * it stays safely queued (never silently dropped) in the meantime, but replay
- * will keep failing/retrying until that lands.
+ * contract as the v1.x path below.
+ *
+ * ── 2026-08-29 (WAL cho cây v2.0, Task 2, §QĐ-WAL-B) — PHÁT LẠI ĐÚNG ĐƯỜNG ──────────
+ * `ensureInspectionWalWired` (`machineApiRouters.ts`) nay CŨNG dispatch theo hình dạng
+ * (`laHinhDangCayV2`, cùng vị từ mà `dungKhoaGuiTheoHinhDang` dùng ở trên): payload cây
+ * v2.0 phát lại qua `submitInspectionTreeV2` (dichCayKetQua → persistInspectionAtomic
+ * với `opts.cay`) — CHUỖI RIÊNG của nó, KHÔNG bị ép qua `processInspectionSubmission`
+ * (đường v1.x — không hiểu `surfaces`, sẽ ghi được header rồi ÂM THẦM bỏ mất cả ba cấp
+ * cây). Đây là gốc rễ đã đóng — TRƯỚC bản vá này một mục v2.0 xếp hàng thành công
+ * (§QĐ-WAL-A) vẫn KHÔNG rút được: nó nằm an toàn trên đĩa (không mất) nhưng phát lại
+ * qua v1.x cứ ghi thiếu mãi. Dedup khi phát lại cũng theo hình dạng:
+ * `inspectionAlreadyPersistedV2` (machineApiRouters.ts) tra bảng LEDGER
+ * `inspection_idempotency_keys` theo `dungKhoaKhuTrungV2()` — v1.x giữ nguyên
+ * `inspectionAlreadyPersisted` (machineId+serialNumber+inspectionTime).
  *
  * BOUNDS (never grow unbounded, never drop silently): max entries + max age +
  * max bytes; on overflow the OLDEST entries are dropped — counted + warned.

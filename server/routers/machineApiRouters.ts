@@ -19,6 +19,11 @@ import {
   // Doc 56 Đ1 (nhóm B) — generic process-result ingest (stepType vocab + idempotency ledger).
   processStepTypes,
   processIdempotencyKeys,
+  // Doc 2026-08-29 (WAL cho cây v2.0, Task 2) — bảng LEDGER khử trùng (migration 0275), dùng
+  // bởi `inspectionAlreadyPersistedV2` để tra "khoá đã áp dụng" khi khoá gửi v2.0
+  // (`dungKhoaKhuTrungV2`) không phụ thuộc `serialNumber` nên KHÔNG tra được qua
+  // `product_inspections` bằng công thức của `inspectionAlreadyPersisted` (v1.x).
+  inspectionIdempotencyKeys,
 } from "../../drizzle/schema";
 import { requirePermission } from "../_core/accessControl";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
@@ -42,6 +47,10 @@ import {
   isPermanentSubmitError,
   setProcessFn as walSetProcessFn,
   setDedupFn as walSetDedupFn,
+  // Doc 2026-08-29 (WAL cho cây v2.0, Task 2, §QĐ-WAL-B) — khoá gửi điều phối THEO HÌNH
+  // DẠNG (dùng để ledger khi LIVE thành công, đối xứng với `computeSubmissionKey` mà
+  // nhánh v1.x dùng ở dưới — xem `submitInspection.mutation`, nhánh kind==="v2").
+  dungKhoaGuiTheoHinhDang,
   type BufferedSubmission,
 } from "../services/inspection/inspectionStoreForward";
 // Doc 56 Đ1 (nhóm B) — PROCESS RESULT ingest durability (disk WAL, parallel to
@@ -911,10 +920,36 @@ export function machineHeaderKey(ctx: unknown): string | null {
  * Wire the WAL's replay + dedup functions to THIS pipeline. Idempotent cheap
  * assignment (same pattern as telemetryBus.ensureStoreForwardWired) so the
  * wiring survives a store-forward _reset in tests/maintenance.
+ *
+ * ── Doc 2026-08-29 (WAL cho cây v2.0, Task 2, §QĐ-WAL-B) ─────────────────────────────
+ * MỘT điểm điều phối, dispatch THEO HÌNH DẠNG (`laHinhDangCayV2` — cùng vị từ mà
+ * `dungKhoaGuiTheoHinhDang` dùng khi GỬI vào hàng đợi, xem `inspectionStoreForward.ts`):
+ *   • payload cây v2.0 (`surfaces`) → `submitInspectionTreeV2` (dịch cây + ghi qua
+ *     `persistInspectionAtomic({cay})`) — CHUỖI RIÊNG của nó, y hệt đường LIVE.
+ *   • payload v1.x (`measurements`) → `processInspectionSubmission` như cũ, KHÔNG đổi.
+ * ⚠ TRƯỚC bản vá này CẢ HAI hình dạng đều đi qua `processInspectionSubmission` — đó
+ * chính là lỗ đã ghi trong docblock đầu file (KNOWN GAP §QĐ-WAL-A): một mục v2.0 xếp
+ * hàng xong không rút được, vì đường đó không hiểu `surfaces` ⇒ ghi ĐƯỢC một header
+ * (measurements rỗng) nhưng KHÔNG BAO GIỜ tạo `inspection_surfaces/positions/captures`
+ * — mất cả ba cấp cây một cách ÂM THẦM (không ném lỗi, không log — trông như thành
+ * công). Đột biến ép TRỞ LẠI hành vi cũ (bỏ nhánh `laHinhDangCayV2`, luôn gọi
+ * `processInspectionSubmission`) phải làm mệnh đề "đủ ba cấp cây" ĐỎ — xem
+ * `server/db/walCayV2PhatLai.db.test.ts`.
  */
 function ensureInspectionWalWired(): void {
-  walSetProcessFn((payload) => processInspectionSubmission(payload as SubmitInspectionInput));
-  walSetDedupFn((payload) => inspectionAlreadyPersisted(payload as SubmitInspectionInput));
+  walSetProcessFn(async (payload) => {
+    if (laHinhDangCayV2(payload)) {
+      const ketQua = await submitInspectionTreeV2(payload as unknown as MachinePayloadV2, {});
+      return { inspectionId: ketQua.inspectionId };
+    }
+    return processInspectionSubmission(payload as SubmitInspectionInput);
+  });
+  walSetDedupFn(async (payload) => {
+    if (laHinhDangCayV2(payload)) {
+      return inspectionAlreadyPersistedV2(payload as unknown as MachinePayloadV2);
+    }
+    return inspectionAlreadyPersisted(payload as SubmitInspectionInput);
+  });
 }
 
 /**
@@ -963,6 +998,48 @@ export async function inspectionAlreadyPersisted(input: SubmitInspectionInput): 
     )
     .limit(1);
   return rows.length > 0;
+}
+
+/**
+ * Doc 2026-08-29 (WAL cho cây v2.0, Task 2, §QĐ-WAL-B) — bản v2.0 của
+ * `inspectionAlreadyPersisted` ở trên. KHÔNG dùng lại công thức (machineId +
+ * serialNumber + inspectionTime): payload v2.0 cho phép `serialNumber` RỖNG
+ * (§QĐ-WAL-A) — tra theo bộ ba đó có thể khớp NHẦM một board v2.0 khác cùng máy cũng
+ * serial rỗng (dương tính giả) hoặc trật hoàn toàn nếu `inspectionTime` không tồn tại
+ * ở hình dạng này (v2.0 dùng `startedAt`/`completedAt`, không có trường `inspectionTime`).
+ *
+ * Tra thẳng bảng LEDGER `inspection_idempotency_keys` (migration 0275) theo
+ * (machineId, `dungKhoaKhuTrungV2(payload)`) — ĐÚNG khoá mà `submitInspectionTreeV2`
+ * luôn đặt khi ghi (bất kể `serialNumber`, xem doc-comment tại chỗ set `idempotencyKey`
+ * trong hàm đó). Đây là bảng DUY NHẤT giữ khoá này: `product_inspections` không có cột
+ * nào tra được v2.0 theo khoá khử trùng của nó mà không đụng vấn đề nêu trên.
+ */
+export async function inspectionAlreadyPersistedV2(input: MachinePayloadV2): Promise<boolean> {
+  let auth: MachineAuthResult;
+  try {
+    auth = await authenticateMachine({ apiKey: input.apiKey, scope: "ingest:write" });
+  } catch (err) {
+    if (err instanceof TRPCError) return false; // creds sai → phát lại sẽ dead-letter với lỗi thật
+    throw err; // DbUnavailableError v.v. → tạm thời
+  }
+  const dbi = await db.getDb();
+  if (!dbi) throw new DbUnavailableError();
+  const key = dungKhoaKhuTrungV2(input);
+  const rows = await dbi
+    .select({ inspectionId: inspectionIdempotencyKeys.inspectionId })
+    .from(inspectionIdempotencyKeys)
+    .where(
+      drizzleAnd(
+        drizzleEq(inspectionIdempotencyKeys.machineId, auth.machine.id),
+        drizzleEq(inspectionIdempotencyKeys.idempotencyKey, key),
+      ),
+    )
+    .limit(1);
+  // `inspectionId` NULL nghĩa là khoá đang được CLAIM giữa chừng bởi một transaction
+  // khác (xem persistInspectionAtomic bước 1/4) — không coi là "đã áp dụng" cho tới khi
+  // back-fill xong; trả false để backfill thử processFn (nó tự serialize đúng qua
+  // onConflictDoNothing, không tạo hàng thứ hai).
+  return rows.length > 0 && rows[0].inspectionId != null;
 }
 
 /**
@@ -3240,7 +3317,23 @@ export const machineApiRouter = router({
       if (parsedInput.kind === "v2") {
         const v2Payload = parsedInput.data;
         try {
-          return await submitInspectionTreeV2(v2Payload, { headerKey });
+          const result = await submitInspectionTreeV2(v2Payload, { headerKey });
+          // Doc 2026-08-29 (WAL cho cây v2.0, Task 2) — ĐỐI XỨNG với nhánh v1.x bên dưới
+          // (dòng ~markSubmissionApplied(computeSubmissionKey(walPayload))): ledger THÀNH
+          // CÔNG live để một bản SAO đang nằm trong hàng đợi (payload gửi lại trước khi DB
+          // hồi phục, xem mệnh đề 4 `walCayV2PhatLai.db.test.ts`) khử trùng được ở BACKFILL
+          // mà không cần chạm lại `persistInspectionAtomic`. Khoá dùng ĐÚNG
+          // `dungKhoaGuiTheoHinhDang` (§QĐ-WAL-A) — KHÔNG phải `computeSubmissionKey`, vì
+          // v2Payload có thể serial rỗng (xem docblock `inspectionStoreForward.ts`).
+          if (inspectionStoreForwardEnabled()) {
+            markSubmissionApplied(dungKhoaGuiTheoHinhDang(v2Payload as unknown as BufferedSubmission));
+            if (bufferedInspectionCount() > 0) {
+              // Rút cơ hội: DB rõ ràng vừa chứng minh nó SỐNG (lượt ghi này vừa thành công).
+              ensureInspectionWalWired();
+              void backfillInspections().catch(() => undefined);
+            }
+          }
+          return result;
         } catch (err) {
           if (!inspectionStoreForwardEnabled() || isPermanentSubmitError(err)) throw err;
           ensureInspectionWalWired();
