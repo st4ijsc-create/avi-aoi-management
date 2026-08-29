@@ -1,31 +1,49 @@
 /**
- * BG-40 ⛔ — lưới cho Task 1 (`.superpowers/sdd/2026-08-30-aoi-pha1d-truoc-khoi-b/task-1-brief.md`).
+ * BG-40 ⛔ — lưới cho Task 1 (`.superpowers/sdd/2026-08-30-aoi-pha1d-truoc-khoi-b/task-1-brief.md`)
+ * + VÒNG SỬA 2 (review toàn nhánh bác bỏ hai lời khai của vòng 1, `task-1-report.md`).
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * VÌ SAO LƯỚI NÀY TỒN TẠI
+ * VÒNG 1 — VÌ SAO LƯỚI NÀY TỒN TẠI
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * TRƯỚC bản vá: `isPermanentSubmitError` chỉ nhận diện `TRPCError` — mọi lỗi Postgres (kể cả
  * `22001` chuỗi quá dài, `23505` vi phạm ràng buộc) rơi vào nhánh TẠM THỜI. Kết hợp với
  * `backfillInspections` `break` thoát CẢ VÒNG khi gặp lỗi tạm thời ở đầu hàng, MỘT bo hỏng
- * (vd `productModel` 101 ký tự — hợp đồng v2.0 chưa có `.max()`, BG-27) khiến hàng đợi KẸT
- * VĨNH VIỄN: bo hỏng nằm đầu, mọi bo lành xếp sau không bao giờ được thử lấy. Đo THẬT trên mã
- * TRƯỚC bản vá (script tái hiện, KHÔNG suy từ đọc mã — xem `task-1-report.md`): 1 bo độc +
- * 4 bo lành, 20 lượt rút ⇒ `drained=0` ở CẢ 20 lượt.
+ * khiến hàng đợi KẸT VĨNH VIỄN. Đo THẬT (script tái hiện): 1 bo độc + 4 bo lành, 20 lượt rút
+ * ⇒ `drained=0` ở CẢ 20 lượt.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * BỐN MỆNH ĐỀ (task-1-brief.md)
+ * VÒNG 2 — REVIEW BÁC BỎ HAI LỜI KHAI CỦA VÒNG 1
  * ══════════════════════════════════════════════════════════════════════════════════════════
- *   1. `22001` và `23505` (kể cả bọc `DrizzleQueryError` qua `.cause`) ⇒ `isPermanentSubmitError = true`.
- *   2. ★ CHỐNG SIẾT QUÁ — lỗi kết nối/timeout (không SQLSTATE, hoặc SQLSTATE lớp 08/53/57P)
- *      ⇒ vẫn `false`. Xếp nhầm chúng thành vĩnh viễn = mất bo khi DB chỉ chớp nháy.
- *   3. ★★★ TRUNG TÂM — 1 bo độc + 4 bo lành, rút hàng MỘT lượt ⇒ 4 bo lành ĐƯỢC ghi, bo độc
- *      vào dead-letter. Kèm ca riêng: một bo TẠM THỜI THẬT (không được xếp permanent) cũng
- *      KHÔNG được chặn các bo lành phía sau (bỏ chặn-đầu-hàng, không chỉ nhờ phân loại).
- *   4. Quá trần `attempts` (`INSPECTION_STORE_FORWARD_MAX_ATTEMPTS`) ⇒ dead-letter CÓ GHI
- *      NHẬN (file dead-letter + không lặng lẽ biến mất khỏi mọi dấu vết), không phải vứt câm.
+ * C-1: `budget` (=`drainBatch()`=50) giảm ở CẢ nhánh tạm thời ⇒ với ≥50 mục cùng lỗi tạm
+ * thời, chỉ 50 mục ĐẦU hàng mỗi tick được tăng `attempts` — phần đuôi đứng ở 0 vĩnh viễn,
+ * còn 50 mục đầu chạm trần ĐẾM-LƯỢT (20) sau ~83 phút và bị dead-letter VÌ MỘT LỖI THUẦN
+ * TẠM THỜI. Đo THẬT trên mã vòng 1 (script tái hiện, xem `task-1-report.md`): 200 mục lỗi
+ * `08006`, 25 lượt ⇒ `sauDot(remaining)=150, deadLettered=50, soMucChuaDuocThuLanNao=100,
+ * soLanThu_SN000=20` (record dead-letter của SN000).
+ * C-2: nhánh `dedupFn` ném lỗi vẫn `break` — LÝ DO viện dẫn ("DB tự nó hỏng, dùng chung cho
+ * mọi mục") SAI: `dedupFn` có thể ném vì lý do RIÊNG của một payload (inspectionTime rác ⇒
+ * `RangeError`; v2.0 thiếu `identity` ⇒ huỷ tay). Đo THẬT: 1 payload dedupFn-ném + 4 bo
+ * lành, 30 lượt ⇒ `drained=0` cả 30 lượt.
+ *
+ * Sửa vòng 2: (a) `budget` CHỈ giảm khi một mục bị GỠ khỏi hàng đợi vì kết quả THẬT (thành
+ * công hoặc dead-letter) — mục tạm-thời-ở-lại không tốn ngân sách ⇒ một tick LUÔN quét hết
+ * hàng đợi hiện có; (b) trần đổi từ ĐẾM LƯỢT sang ĐO THỜI GIAN (`maxStuckMs`, mặc định 24h)
+ * — số lượt gọi không tỷ lệ thuận với thời gian thật; (c) `dedupFn` ném lỗi nay xử lý GIỐNG
+ * HỆT `processFn` (không `break`, có đường dead-letter, tăng `attempts`).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * MỆNH ĐỀ CANH (gộp cả hai vòng)
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ *   V1-1. `22001`/`23505` (kể cả bọc `DrizzleQueryError` qua `.cause`) ⇒ `isPermanentSubmitError = true`.
+ *   V1-2. ★ CHỐNG SIẾT QUÁ — lỗi kết nối/timeout (không SQLSTATE, hoặc SQLSTATE lớp 08/53/57P) ⇒ vẫn `false`.
+ *   V1-3. ★★★ 1 bo độc + 4 bo lành, rút hàng MỘT lượt ⇒ 4 bo lành ĐƯỢC ghi, bo độc vào dead-letter.
+ *   V2-1. ★★★ 200 mục toàn lỗi tạm thời, 25 lượt ⇒ 0 dead-letter, 0 mục có `attempts`=0.
+ *   V2-2. ★★★ 1 payload làm `dedupFn` ném + 4 bo lành, 10 lượt ⇒ 4 bo lành ĐƯỢC ghi.
+ *   V2-3. ★★★ CHỐNG HỒI QUY — lỗi VĨNH VIỄN (`22001`) vẫn vào dead-letter NGAY, không chờ trần thời gian.
  *
  * Đột biến BẮT BUỘC (chạy thủ công, không phải test trong file này — xem task-1-report.md):
- * hoàn nguyên `isPermanentSubmitError` về bản chỉ nhận `TRPCError` ⇒ mệnh đề 1 và 3 phải ĐỎ.
+ *   vòng 1: hoàn nguyên `isPermanentSubmitError` về bản chỉ nhận `TRPCError` ⇒ V1-1/V1-3 ĐỎ.
+ *   vòng 2: hoàn nguyên `budget` về giảm-ở-mọi-nhánh ⇒ V2-1 ĐỎ.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { promises as fs } from "node:fs";
@@ -81,7 +99,7 @@ beforeEach(() => {
   delete process.env.INSPECTION_STORE_FORWARD_MAX_AGE_MS;
   delete process.env.INSPECTION_STORE_FORWARD_MAX_BYTES;
   delete process.env.INSPECTION_STORE_FORWARD_DRAIN_BATCH;
-  delete process.env.INSPECTION_STORE_FORWARD_MAX_ATTEMPTS;
+  delete process.env.INSPECTION_STORE_FORWARD_MAX_STUCK_MS;
   _resetInspectionStoreForward();
 });
 
@@ -97,7 +115,7 @@ afterEach(async () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("mệnh đề 1 — 22001/23505 ⇒ isPermanentSubmitError = true", () => {
+describe("V1-1 — 22001/23505 ⇒ isPermanentSubmitError = true", () => {
   it("lỗi driver thô (code thẳng trên err)", () => {
     expect(isPermanentSubmitError(pgErr("22001", "value too long for type character varying(100)"))).toBe(true);
     expect(isPermanentSubmitError(pgErr("23505", "duplicate key value violates unique constraint"))).toBe(true);
@@ -128,7 +146,7 @@ describe("mệnh đề 1 — 22001/23505 ⇒ isPermanentSubmitError = true", () 
   });
 });
 
-describe("mệnh đề 2 — ★ CHỐNG SIẾT QUÁ: lỗi kết nối/timeout vẫn TẠM THỜI", () => {
+describe("V1-2 — ★ CHỐNG SIẾT QUÁ: lỗi kết nối/timeout vẫn TẠM THỜI", () => {
   it("ECONNREFUSED/ETIMEDOUT (mã lỗi Node, không phải SQLSTATE) ⇒ false", () => {
     expect(isPermanentSubmitError(new Error("connect ECONNREFUSED 127.0.0.1:5434"))).toBe(false);
     expect(isPermanentSubmitError(pgErr("ETIMEDOUT", "connection timed out"))).toBe(false);
@@ -151,7 +169,7 @@ describe("mệnh đề 2 — ★ CHỐNG SIẾT QUÁ: lỗi kết nối/timeout 
   });
 });
 
-describe("mệnh đề 3 — ★★★ TRUNG TÂM: 1 bo độc KHÔNG chặn 4 bo lành phía sau", () => {
+describe("V1-3 — ★★★ 1 bo độc KHÔNG chặn 4 bo lành phía sau (bỏ chặn-đầu-hàng, vòng 1)", () => {
   it("1 bo độc (Postgres 22001) + 4 bo lành, rút hàng MỘT lượt ⇒ 4 bo lành ĐƯỢC ghi, bo độc vào dead-letter", async () => {
     const good: string[] = [];
     setProcessFn(async (p) => {
@@ -173,7 +191,7 @@ describe("mệnh đề 3 — ★★★ TRUNG TÂM: 1 bo độc KHÔNG chặn 4 b
 
     const bf = await backfillInspections();
 
-    expect(bf.drained).toBe(4); // ★ TRƯỚC bản vá: drained=0 (xem task-1-report.md)
+    expect(bf.drained).toBe(4);
     expect(bf.deadLettered).toBe(1);
     expect(bf.remaining).toBe(0);
     expect(good).toEqual(["SN-GOOD-1", "SN-GOOD-2", "SN-GOOD-3", "SN-GOOD-4"]);
@@ -184,11 +202,6 @@ describe("mệnh đề 3 — ★★★ TRUNG TÂM: 1 bo độc KHÔNG chặn 4 b
   });
 
   it("bo độc lỗi TẠM THỜI THẬT (không phải permanent — chưa vượt trần) cũng KHÔNG chặn 4 bo lành phía sau", async () => {
-    // Ca này canh RIÊNG việc bỏ break ở backfillInspections (BG-40 việc 3) — độc lập
-    // với phân loại lỗi (việc 1): SN-STUCK ném lỗi TẠM THỜI THẬT (generic Error, mãi
-    // mãi thất bại — mô phỏng một hàng bị khoá/deadlock riêng cho payload này), KHÔNG
-    // bao giờ được isPermanentSubmitError xếp vĩnh viễn. Nếu vẫn còn `break`, các bo
-    // lành phía sau sẽ không được thử — giống hệt hiện trạng đo được TRƯỚC bản vá.
     const good: string[] = [];
     setProcessFn(async (p) => {
       if (p.serialNumber === "SN-STUCK") throw new Error("connect ECONNREFUSED (mô phỏng lỗi riêng của hàng này)");
@@ -206,7 +219,7 @@ describe("mệnh đề 3 — ★★★ TRUNG TÂM: 1 bo độc KHÔNG chặn 4 b
     const bf = await backfillInspections();
 
     expect(bf.drained).toBe(4);
-    expect(bf.deadLettered).toBe(0); // chưa vượt trần — vẫn TẠM THỜI, còn nằm hàng đợi
+    expect(bf.deadLettered).toBe(0); // chưa vượt trần thời gian — vẫn TẠM THỜI, còn nằm hàng đợi
     expect(bf.remaining).toBe(1);
     expect(good).toEqual(["SN-GOOD-1", "SN-GOOD-2", "SN-GOOD-3", "SN-GOOD-4"]);
     expect(bufferedInspectionCount()).toBe(1); // SN-STUCK vẫn còn, chờ lượt sau
@@ -235,66 +248,214 @@ describe("mệnh đề 3 — ★★★ TRUNG TÂM: 1 bo độc KHÔNG chặn 4 b
   });
 });
 
-describe("mệnh đề 4 — quá trần attempts ⇒ dead-letter CÓ GHI NHẬN, không vứt im lặng", () => {
-  it("trần cấu hình qua INSPECTION_STORE_FORWARD_MAX_ATTEMPTS — vượt trần ⇒ dead-letter kèm ghi chú lý do", async () => {
-    process.env.INSPECTION_STORE_FORWARD_MAX_ATTEMPTS = "3"; // đọc live tại thời điểm gọi, không cần reset lại
+// ═══════════════════════════════════════════════════════════════════════════════
+// VÒNG SỬA 2 — ba mệnh đề coordinator yêu cầu (review bác bỏ hai lời khai vòng 1)
+// ═══════════════════════════════════════════════════════════════════════════════
 
-    const processFn = vi.fn(async () => {
-      throw new Error("connect ECONNREFUSED (DB gián đoạn dài)");
+describe("V2-1 — ★★★ C-1: 200 mục toàn lỗi tạm thời KHÔNG bị đói ngân sách", () => {
+  it("200 mục toàn lỗi 08006 (mất kết nối), 25 lượt rút ⇒ 0 dead-letter, 0 mục có attempts=0, MỌI mục đều được thử ĐỦ 25 lần", async () => {
+    setProcessFn(async () => {
+      throw pgErr("08006", "could not connect to server");
     });
-    setProcessFn(processFn);
     setDedupFn(async () => false);
 
-    await bufferSubmission(submission("SN-KET"));
+    for (let n = 0; n < 200; n++) {
+      await bufferSubmission(submission(`SN${String(n).padStart(3, "0")}`));
+    }
+    expect(bufferedInspectionCount()).toBe(200);
 
-    let bf = await backfillInspections();
-    expect(bf.drained).toBe(0);
-    expect(bf.deadLettered).toBe(0);
-    expect(bf.remaining).toBe(1); // lượt 1: attempts=1, chưa vượt trần=3
+    let bf: Awaited<ReturnType<typeof backfillInspections>> | undefined;
+    for (let tick = 0; tick < 25; tick++) {
+      bf = await backfillInspections();
+    }
 
-    bf = await backfillInspections();
-    expect(bf.deadLettered).toBe(0);
-    expect(bf.remaining).toBe(1); // lượt 2: attempts=2, chưa vượt trần
+    expect(bf!.deadLettered).toBe(0); // ★ TRƯỚC vòng sửa 2: deadLettered=50 (xem task-1-report.md)
+    expect(bufferedInspectionCount()).toBe(200); // không mục nào mất, không mục nào dead-letter
 
-    bf = await backfillInspections();
-    expect(bf.deadLettered).toBe(1); // lượt 3: attempts=3 ⇒ VƯỢT trần ⇒ dead-letter
-    expect(bf.remaining).toBe(0);
-    expect(processFn).toHaveBeenCalledTimes(3);
-
-    // "có ghi nhận": không biến mất im lặng — có mặt trong file dead-letter kèm lý do,
-    // và không nằm trong ledger applied (một bản sửa đúng gửi lại sau này sẽ KHÔNG bị
-    // coi là trùng lặp — giữ đúng cam kết IDEMPOTENCY của docblock đầu file).
-    const dead = await fs.readFile(walPath.replace(/\.jsonl$/, "") + ".dead.jsonl", "utf8");
-    expect(dead).toContain("SN-KET");
-    expect(dead).toContain("vượt trần");
-    expect(dead).toContain("attempts\":3");
-
-    const st = getInspectionStoreForwardStatus();
-    expect(st.deadLettered).toBe(1);
-    expect(st.bufferedCount).toBe(0);
-    expect(st.maxAttempts).toBe(3);
+    // Đọc THẲNG file WAL mirror để kiểm TỪNG mục — không suy diễn từ mỗi lượt trả về.
+    const raw = await fs.readFile(walPath, "utf8");
+    const lines = raw.split("\n").filter((l) => l.trim());
+    expect(lines.length).toBe(200);
+    const attemptsList = lines.map((l) => (JSON.parse(l) as { attempts: number }).attempts);
+    const chuaDuocThuLanNao = attemptsList.filter((a) => a === 0);
+    expect(chuaDuocThuLanNao).toEqual([]); // ★ TRƯỚC vòng sửa 2: 100 mục đứng ở 0 (xem task-1-report.md)
+    // budget không còn đói mục nào: MỌI mục được thử ĐÚNG 25 lần — không lệch giữa đầu/đuôi hàng.
+    expect(attemptsList.every((a) => a === 25)).toBe(true);
   });
+});
 
-  it("mặc định KHÔNG cấu hình vẫn là 20 (khuôn env-var sẵn có — envInt fallback)", () => {
-    const st = getInspectionStoreForwardStatus();
-    expect(st.maxAttempts).toBe(20);
-  });
-
-  it("một mục chưa từng vượt trần KHÔNG bị dead-letter dù nhiều lượt rút thất bại xen kẽ thành công của mục khác", async () => {
-    process.env.INSPECTION_STORE_FORWARD_MAX_ATTEMPTS = "5";
-
+describe("V2-2 — ★★★ C-2: dedupFn ném lỗi KHÔNG còn chặn-đầu-hàng", () => {
+  it("1 payload làm dedupFn ném (lỗi RIÊNG kiểu RangeError — v1.x inspectionTime rác) + 4 bo lành, MỘT lượt ⇒ 4 bo lành ĐƯỢC ghi ngay", async () => {
+    const good: string[] = [];
     setProcessFn(async (p) => {
-      if (p.serialNumber === "SN-KET") throw new Error("db down");
+      good.push(p.serialNumber);
       return { inspectionId: 1 };
     });
+    setDedupFn(async (p) => {
+      if (p.serialNumber === "SN-POISON") throw new RangeError("Invalid time value");
+      return false;
+    });
+
+    await bufferSubmission(submission("SN-POISON"));
+    await bufferSubmission(submission("SN-GOOD-1"));
+    await bufferSubmission(submission("SN-GOOD-2"));
+    await bufferSubmission(submission("SN-GOOD-3"));
+    await bufferSubmission(submission("SN-GOOD-4"));
+
+    const bf = await backfillInspections();
+    expect(bf.drained).toBe(4); // ★ TRƯỚC vòng sửa 2: drained=0 (xem task-1-report.md)
+    expect(good).toEqual(["SN-GOOD-1", "SN-GOOD-2", "SN-GOOD-3", "SN-GOOD-4"]);
+    expect(bf.remaining).toBe(1); // SN-POISON vẫn còn — chưa vượt trần thời gian, chưa dead-letter
+  });
+
+  it("giữ được qua 10 lượt (khớp số reviewer nêu) — không hồi quy về drained=0", async () => {
+    const good: string[] = [];
+    setProcessFn(async (p) => {
+      good.push(p.serialNumber);
+      return { inspectionId: 1 };
+    });
+    setDedupFn(async (p) => {
+      if (p.serialNumber === "SN-POISON") throw new TypeError("Cannot read properties of undefined (reading 'identity')");
+      return false;
+    });
+
+    await bufferSubmission(submission("SN-POISON"));
+    await bufferSubmission(submission("SN-GOOD-1"));
+    await bufferSubmission(submission("SN-GOOD-2"));
+    await bufferSubmission(submission("SN-GOOD-3"));
+    await bufferSubmission(submission("SN-GOOD-4"));
+
+    let bf: Awaited<ReturnType<typeof backfillInspections>> | undefined;
+    for (let tick = 0; tick < 10; tick++) {
+      bf = await backfillInspections();
+    }
+    expect(good).toEqual(["SN-GOOD-1", "SN-GOOD-2", "SN-GOOD-3", "SN-GOOD-4"]);
+    expect(bf!.remaining).toBe(1); // SN-POISON còn kẹt (dưới trần thời gian), KHÔNG chặn ai khác
+  });
+
+  it("dedupFn ném lỗi PHÂN LOẠI ĐƯỢC là vĩnh viễn (vd 23505 từ chính câu tra dedup) ⇒ dead-letter NGAY, không chờ trần thời gian", async () => {
+    setProcessFn(async () => ({ inspectionId: 1 }));
+    setDedupFn(async (p) => {
+      if (p.serialNumber === "SN-BAD-DEDUP") throw pgErr("23505", "duplicate key value violates unique constraint");
+      return false;
+    });
+
+    await bufferSubmission(submission("SN-BAD-DEDUP"));
+    const bf = await backfillInspections();
+    expect(bf.deadLettered).toBe(1);
+    expect(bf.remaining).toBe(0);
+  });
+});
+
+describe("V2-3 — ★★★ CHỐNG HỒI QUY: lỗi VĨNH VIỄN vẫn dead-letter NGAY (không chờ trần thời gian 24h)", () => {
+  it("22001 dead-letter ở LƯỢT ĐẦU TIÊN — đồng hồ hệ thống KHÔNG hề nhích, chứng minh không phụ thuộc maxStuckMs", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T00:00:00.000Z"));
+    try {
+      setProcessFn(async () => {
+        throw pgErr("22001", "value too long for type character varying(100)");
+      });
+      setDedupFn(async () => false);
+
+      await bufferSubmission(submission("SN-VINH-VIEN"));
+      const bf = await backfillInspections(); // MỘT lượt duy nhất, 0 thời gian trôi qua
+      expect(bf.deadLettered).toBe(1);
+      expect(bf.remaining).toBe(0);
+
+      const dead = await fs.readFile(walPath.replace(/\.jsonl$/, "") + ".dead.jsonl", "utf8");
+      expect(dead).toContain("SN-VINH-VIEN");
+      expect(dead).toContain("attempts\":0"); // dead-letter NGAY, chưa từng tăng attempts
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Trần THỜI GIAN (maxStuckMs) — thay trần đếm-lượt của vòng 1, bị C-1 bác bỏ.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("trần THỜI GIAN maxStuckMs (vòng sửa 2) — CHỈ áp cho mục còn TẠM THỜI, đo bằng thời gian thật", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T00:00:00.000Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("★ câu hỏi bắt buộc — DB gián đoạn TỪNG PHẦN 4 giờ ⇒ 0 bo bị vứt (mặc định 24h > 4h)", async () => {
+    setProcessFn(async () => {
+      throw new Error("connect ECONNREFUSED (giả lập gián đoạn từng phần)");
+    });
     setDedupFn(async () => false);
 
-    await bufferSubmission(submission("SN-KET"));
-    for (let t = 0; t < 4; t++) {
+    await bufferSubmission(submission("SN-4H"));
+    for (let h = 0; h < 4; h++) {
+      vi.setSystemTime(new Date(Date.now() + 60 * 60 * 1000)); // +1h mỗi vòng, tổng 4h
       const bf = await backfillInspections();
       expect(bf.deadLettered).toBe(0);
     }
-    expect(bufferedInspectionCount()).toBe(1); // 4 lượt < trần 5 — còn nguyên trong hàng đợi
+    const st = getInspectionStoreForwardStatus();
+    expect(st.deadLettered).toBe(0);
+    expect(bufferedInspectionCount()).toBe(1); // vẫn còn nguyên — KHÔNG bị vứt
+  });
+
+  it("vượt trần mặc định 24h ⇒ dead-letter CÓ GHI NHẬN kèm lý do 'kẹt quá'", async () => {
+    setProcessFn(async () => {
+      throw new Error("connect ECONNREFUSED (DB gián đoạn dài)");
+    });
+    setDedupFn(async () => false);
+
+    await bufferSubmission(submission("SN-KET"));
+    await backfillInspections(); // tick đầu — attempts=1, chưa vượt trần
+
+    vi.setSystemTime(new Date(Date.now() + 25 * 60 * 60 * 1000)); // nhảy 25h > trần 24h
+    const bf = await backfillInspections();
+    expect(bf.deadLettered).toBe(1);
+    expect(bf.remaining).toBe(0);
+
+    const dead = await fs.readFile(walPath.replace(/\.jsonl$/, "") + ".dead.jsonl", "utf8");
+    expect(dead).toContain("SN-KET");
+    expect(dead).toContain("kẹt quá");
+    // "có ghi nhận": KHÔNG nằm trong ledger applied — một bản sửa đúng gửi lại sau này sẽ
+    // KHÔNG bị coi là trùng lặp, giữ đúng cam kết IDEMPOTENCY của docblock đầu file.
+  });
+
+  it("cấu hình được qua INSPECTION_STORE_FORWARD_MAX_STUCK_MS (đúng khuôn env-var sẵn có — envInt)", async () => {
+    process.env.INSPECTION_STORE_FORWARD_MAX_STUCK_MS = String(60 * 60 * 1000); // 1h
+    setProcessFn(async () => {
+      throw new Error("db down");
+    });
+    setDedupFn(async () => false);
+
+    await bufferSubmission(submission("SN-1H"));
+    await backfillInspections();
+    vi.setSystemTime(new Date(Date.now() + 61 * 60 * 1000)); // 61 phút > trần 1h
+    const bf = await backfillInspections();
+    expect(bf.deadLettered).toBe(1);
+
+    const st = getInspectionStoreForwardStatus();
+    expect(st.maxStuckMs).toBe(60 * 60 * 1000);
+  });
+
+  it("mặc định KHÔNG cấu hình = 24h", () => {
+    const st = getInspectionStoreForwardStatus();
+    expect(st.maxStuckMs).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it("attempts VẪN tăng mỗi lượt thất bại (chỉ để quan sát/log — KHÔNG còn quyết định dead-letter)", async () => {
+    setProcessFn(async () => {
+      throw new Error("db down");
+    });
+    setDedupFn(async () => false);
+
+    await bufferSubmission(submission("SN-OBS"));
+    for (let t = 0; t < 5; t++) {
+      await backfillInspections();
+    }
+    const raw = await fs.readFile(walPath, "utf8");
+    const entry = JSON.parse(raw.trim()) as { attempts: number };
+    expect(entry.attempts).toBe(5);
   });
 });
 

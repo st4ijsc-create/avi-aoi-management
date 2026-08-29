@@ -82,6 +82,33 @@
  * chặn trần tổng công việc mỗi tick. Chi tiết + lưới chứng minh:
  * `inspectionStoreForwardKhongChanDauHang.test.ts`.
  *
+ * ── 2026-08-30 (BG-40 vòng sửa 2 ⛔) — REVIEW BÁC BỎ HAI LỜI KHAI CỦA VÒNG 1 ──────────
+ * (2) và (3) ở trên có LỖ MỚI, đo THẬT (không suy từ đọc mã), xem
+ * `inspectionStoreForwardKhongChanDauHang.test.ts` phần "vòng sửa 2":
+ *   • C-1 — `budget` giảm ở CẢ nhánh tạm thời ⇒ với `drainBatch()`=50, một hàng ≥50 mục
+ *     CÙNG lỗi tạm thời khiến CHỈ 50 mục đầu mỗi tick được tăng `attempts` — phần đuôi
+ *     hàng đứng ở `attempts=0` VĨNH VIỄN, còn 50 mục đầu chạm trần đếm-lượt sau ~83 phút
+ *     và bị dead-letter VÌ MỘT LỖI THUẦN TẠM THỜI (đo: 200 mục lỗi `08006`, 25 lượt ⇒
+ *     `deadLettered=50, chưa-thử=100`). Sửa: `budget` nay CHỈ giảm khi có CÔNG VIỆC
+ *     THẬT (thành công hoặc dead-letter) — nhánh tạm thời không tốn ngân sách, nên MỖI
+ *     tick quét hết hàng đợi hiện có, không mục nào đứng ở `attempts=0`. Và trần đổi từ
+ *     ĐẾM LƯỢT sang ĐO THỜI GIAN (`maxStuckMs`, xem doc-comment tại chỗ khai) vì số lượt
+ *     gọi không tỷ lệ thuận với thời gian thật.
+ *   • C-2 — `break` ở nhánh `dedupFn` ném lỗi (bước "(b) DB existence dedupe") vẫn còn
+ *     nguyên — LÝ DO viện dẫn ("lỗi ở đây = DB tự nó hỏng, dùng chung cho mọi mục") SAI:
+ *     `dedupFn` có thể ném vì lý do RIÊNG của một payload (v1.x: `inspectionTime` rác ⇒
+ *     `new Date()` invalid ⇒ `RangeError`; v2.0: `laHinhDangCayV2` chỉ hỏi
+ *     `Array.isArray(surfaces)` ⇒ true cho payload thiếu `identity` ⇒
+ *     `dungKhoaKhuTrungV2` huỷ tay). Đo: 1 payload làm `dedupFn` ném + 4 bo lành, 30 lượt
+ *     ⇒ `drained=0` cả 30 lượt. Sửa: nhánh `(b)` nay xử lý GIỐNG HỆT nhánh `processFn`
+ *     (permanent ⇒ dead-letter ngay; không phân biệt được rẻ ⇒ coi như lỗi RIÊNG của
+ *     payload đó — không `break`, không chặn mục sau, vẫn chịu trần `maxStuckMs`).
+ * Dead-letter CHƯA có giao diện nào hiển thị (BG-36, đang mở) — 101 mục từng nằm 6 tuần
+ * không ai biết. `maybeAlertDeadLetter()` (dưới) phát WARN định kỳ (tối đa 1 lần/5 phút,
+ * cùng nhịp `maybeAlertDepth`) khi `metrics.deadLettered > 0`, TRONG PHIÊN CHẠY hiện tại
+ * — đây KHÔNG phải cảnh báo bền vững qua restart (metrics là in-memory); một giao diện
+ * đọc trực tiếp `deadLetterFile()` vẫn là việc CHƯA làm (BG-36).
+ *
  * HONESTY: with the flag OFF every entry point is a no-op → behaviour is exactly
  * as before (throw on DB failure). The process/dedup functions are INJECTED so
  * tests exercise buffer/backfill/idempotency without a live DB.
@@ -175,18 +202,31 @@ function drainBatch(): number {
 }
 
 /**
- * BG-40 việc 2 — TRẦN số lần thử phát lại TẠM THỜI trước khi một mục bị chuyển
- * dead-letter thay vì đệm vô thời hạn. TRƯỚC bản vá này, `attempts` chỉ được GHI và
- * ĐỌC để in log — không nơi nào so với ngưỡng; lối thoát DUY NHẤT cho một mục kẹt là
- * `evictAged` (72h) hoặc `evictBounds` (tràn 20.000 mục/512 MiB) — cả hai đều VỨT mục,
- * không ghi nhận lý do. Mặc định 20 lượt: với interval nền 15s lùi-mũ tới trần 5 phút
- * (`baseIntervalMs`/`maxIntervalMs`), 20 lượt thất bại LIÊN TỤC tương ứng khoảng một
- * đến vài giờ DB gián đoạn thật — đủ xa một "chớp nháy" (1-3 lượt) để không giết oan
- * một mục đang chờ DB hồi phục, nhưng xa DƯỚI 72h để không phải chờ tới lúc evictAged
- * mới biết mục đó có vấn đề thật.
+ * ── 2026-08-30 (BG-40 vòng sửa 2, C-1) — TRẦN GẮN THỜI GIAN, KHÔNG GẮN SỐ LƯỢT ──────
+ * Bản vòng 1 dùng `attempts >= 20` (đếm LƯỢT) làm điều kiện dead-letter — review toàn
+ * nhánh BÁC BỎ bằng phép đo THẬT: 200 mục CÙNG lỗi tạm thời (`08006` mất kết nối, không
+ * mục nào có payload hỏng), 25 lượt rút ⇒ `deadLettered=50, soMucChuaDuocThuLanNao=100,
+ * soLanThu_SN000=20` (dead-letter record). Gốc rễ ĐÔI: (a) `budget` (=`drainBatch()`=50)
+ * TRƯỚC ĐÂY giảm ở CẢ nhánh tạm thời ⇒ chỉ 50 mục ĐẦU hàng mỗi tick được tăng `attempts`
+ * (150 mục sau đứng ở 0 vĩnh viễn — xem `backfillInspections`, đã sửa: budget nay CHỈ
+ * giảm khi có công việc THẬT); (b) SỐ LƯỢT gọi `backfillInspections()` KHÔNG tỷ lệ thuận
+ * với THỜI GIAN THẬT (interval nền lùi-mũ 15s→5 phút NGOÀI đời thật, nhưng gọi tay/gọi
+ * dồn trong test có thể chạy hàng chục lượt trong vài mili-giây) ⇒ đếm LƯỢT trả lời SAI
+ * câu hỏi thật sự cần trả lời: "DB gián đoạn từng phần 4 giờ thì vứt bao nhiêu bo?" —
+ * với 20 lượt-đếm-mù đó, ~83 phút (interval lùi-mũ mặc định) là đủ để vứt oan một mục
+ * CHỈ đang chờ DB hồi phục — cửa sổ bền THẬT tụt từ lời hứa 72h (`maxAgeMs`) xuống ~83
+ * phút.
+ *
+ * Sửa: trần đổi sang ĐO THỜI GIAN THẬT đã trôi kể từ lúc xếp hàng (`Date.now() -
+ * entry.enqueuedAt`), không phải đếm số lần gọi. Mặc định 24h: xa TRÊN mọi gián đoạn
+ * "dài nhưng còn cứu được" trong thực tế vận hành (câu hỏi bắt buộc phải trả lời "0 bo
+ * bị vứt" cho một lần gián đoạn 4 giờ — 24h > 4h, an toàn), và xa DƯỚI 72h (`maxAgeMs`)
+ * để vẫn có một điểm GHI NHẬN sớm hơn hẳn trước khi `evictAged` vứt câm không lý do.
+ * `attempts` VẪN được tăng ở mỗi lượt thất bại (chỉ để quan sát/ghi log — không còn là
+ * điều kiện quyết định dead-letter).
  */
-function maxSubmitAttempts(): number {
-  return envInt("INSPECTION_STORE_FORWARD_MAX_ATTEMPTS", 20);
+function maxStuckMs(): number {
+  return envInt("INSPECTION_STORE_FORWARD_MAX_STUCK_MS", 24 * 60 * 60 * 1000);
 }
 
 /** Warn loudly when the queue depth reaches this (repeated at most every 5 min). */
@@ -200,8 +240,9 @@ interface WalEntry {
   /** Idempotency key (see computeSubmissionKey). */
   key: string;
   enqueuedAt: number;
-  /** Số lần phát lại TẠM THỜI thất bại — vượt `maxSubmitAttempts()` ⇒ dead-letter
-   * thay vì tiếp tục đệm (BG-40 việc 2). */
+  /** Số lần phát lại TẠM THỜI thất bại — CHỈ để quan sát/ghi log. Điều kiện dead-letter
+   * là THỜI GIAN đã trôi kể từ `enqueuedAt` so với `maxStuckMs()`, KHÔNG phải số này
+   * (BG-40 vòng sửa 2, C-1 — đếm lượt bị bác bỏ vì không tỷ lệ thuận với thời gian thật). */
   attempts: number;
   /** Approximate serialized size (for the byte bound). */
   bytes: number;
@@ -510,6 +551,30 @@ function maybeAlertDepth(): void {
   );
 }
 
+let lastDeadLetterAlertAt = 0;
+
+/**
+ * BG-40 vòng sửa 2, mục 4 (C-1 review) — dead-letter CHƯA có giao diện nào hiển thị
+ * (BG-36, đang mở): review đo THẬT trên máy này — `data/inspection-store-forward.dead.jsonl`
+ * có 101 mục, 7,4 MB, tất cả "UNAUTHORIZED: Invalid API key", KHÔNG ai chạm suốt 6 TUẦN.
+ * WARN định kỳ (tối đa 1 lần/5 phút, cùng nhịp `maybeAlertDepth`) khi còn dead-letter
+ * TRONG PHIÊN CHẠY hiện tại (`metrics.deadLettered` là bộ đếm in-memory, RESET khi tiến
+ * trình khởi động lại — đây KHÔNG phải cảnh báo bền vững qua nhiều phiên). Một giao diện
+ * đọc trực tiếp `deadLetterFile()` (đếm dòng, không cần tải cả file vào RAM) vẫn là việc
+ * CHƯA làm — BG-36 còn mở, cố tình KHÔNG giả vờ đã đóng ở đây.
+ */
+function maybeAlertDeadLetter(): void {
+  if (metrics.deadLettered === 0) return;
+  const now = Date.now();
+  if (now - lastDeadLetterAlertAt < 5 * 60 * 1000) return;
+  lastDeadLetterAlertAt = now;
+  console.error(
+    `[InspectionSF] ALERT — ${metrics.deadLettered} submission(s) đã dead-letter kể từ lúc tiến trình khởi ` +
+      `động (file=${deadLetterFile()}). CHƯA có giao diện nào hiển thị các mục này (BG-36, đang mở) — kiểm ` +
+      `tra thủ công.`,
+  );
+}
+
 // ── enqueue ───────────────────────────────────────────────────────────────────
 
 /**
@@ -568,6 +633,57 @@ async function deadLetter(entry: WalEntry, err: unknown): Promise<void> {
   );
 }
 
+type KetQuaXuLyLoiPhatLai = "deadLetter" | "conKet";
+
+/**
+ * ── 2026-08-30 (BG-40 vòng sửa 2) — MỘT ĐƯỜNG XỬ LÝ LỖI DÙNG CHUNG CHO CẢ `processFn`
+ * VÀ `dedupFn` ──────────────────────────────────────────────────────────────────────
+ * C-2 (review): nhánh `dedupFn` ném lỗi TRƯỚC ĐÂY `break` cả vòng với lý do "DB tự nó
+ * hỏng, dùng chung cho mọi mục" — SAI: `dedupFn` có thể ném vì lý do RIÊNG của MỘT
+ * payload (v1.x: `inspectionTime` rác ⇒ `new Date()` invalid ⇒ `RangeError`; v2.0:
+ * `laHinhDangCayV2` chỉ hỏi `Array.isArray(surfaces)` ⇒ true cho payload thiếu
+ * `identity` ⇒ `dungKhoaKhuTrungV2` huỷ tay). Không phân biệt được rẻ giữa "DB hỏng
+ * chung" và "payload này hỏng riêng" ⇒ coi như hỏng RIÊNG (an toàn hơn: mục sau vẫn
+ * chạy) — nên `dedupFn` ném lỗi nay đi ĐÚNG con đường mà `processFn` ném lỗi đã đi:
+ * VĨNH VIỄN (`isPermanentSubmitError`) ⇒ dead-letter ngay, không tăng `attempts`;
+ * ngược lại ⇒ tăng `attempts` (chỉ để quan sát/log) rồi dead-letter NẾU đã kẹt quá
+ * `maxStuckMs()` kể từ lúc xếp hàng, còn chưa thì vẫn ở lại — người gọi (vòng
+ * `backfillInspections`) chịu trách nhiệm KHÔNG `break`, thử mục kế tiếp.
+ */
+async function xuLyLoiPhatLai(entry: WalEntry, err: unknown): Promise<KetQuaXuLyLoiPhatLai> {
+  if (isPermanentSubmitError(err)) {
+    await deadLetter(entry, err);
+    return "deadLetter";
+  }
+
+  entry.attempts += 1;
+  fileDirty = true;
+
+  const tuoiMs = Date.now() - entry.enqueuedAt;
+  if (tuoiMs >= maxStuckMs()) {
+    const gioKet = (maxStuckMs() / 3_600_000).toFixed(1);
+    console.warn(
+      `[InspectionSF] mục KẸT QUÁ ${gioKet}h kể từ lúc xếp hàng (key=${entry.key.slice(0, 12)}…, ` +
+        `serial=${entry.payload.serialNumber}, đã thử ${entry.attempts} lượt) — chuyển dead-letter thay vì ` +
+        `đệm vô thời hạn`,
+    );
+    await deadLetter(
+      entry,
+      new Error(
+        `kẹt quá ${gioKet}h kể từ lúc xếp hàng (đã thử ${entry.attempts} lượt) — lỗi gần nhất: ` +
+          `${(err as Error)?.message || err}`,
+      ),
+    );
+    return "deadLetter";
+  }
+
+  console.warn(
+    `[InspectionSF] backfill still failing (attempt ${entry.attempts}, key=${entry.key.slice(0, 12)}…): ` +
+      `${(err as Error)?.message || err} — giữ trong hàng đợi, thử mục kế tiếp (không chặn đầu hàng)`,
+  );
+  return "conKet";
+}
+
 // ── backfill (replay oldest-first through the real pipeline, idempotent) ─────
 
 let draining = false;
@@ -592,28 +708,20 @@ export async function backfillInspections(): Promise<{
   let deadLettered = 0;
   try {
     let budget = drainBatch();
-    // ── BG-40 việc 3 — quét THEO CHỈ SỐ, không neo cứng vào queue[0] ─────────────
-    // TRƯỚC bản vá: một mục TẠM THỜI ở đầu hàng `break` thoát CẢ VÒNG — đo THẬT (1 bo
-    // độc + 4 bo lành, 20 lượt rút) cho `drained=0` cả 20 lượt, 4 bo lành không được
-    // thử lấy một lần (xem `inspectionStoreForwardKhongChanDauHang.test.ts`).
-    // Mục thành công/dead-letter bị `removeAt` splice khỏi mảng (mục kế thừa TỰ trượt
-    // vào đúng chỉ số `i`, KHÔNG tăng `i`); mục còn tạm-thời-lỗi ở lại tại chỗ và `i`
-    // tăng lên để thử mục kế tiếp NGAY trong cùng lượt — thay vì chờ tick sau.
-    // `budget` (=`drainBatch()`, đã có sẵn cho mục đích "bounded work per attempt")
-    // vẫn giảm ở MỌI nhánh (thành công, dead-letter, HAY tạm-thời) nên tổng số lần
-    // gọi `processFn` mỗi lượt bị chặn trần — kể cả khi CẢ HÀNG đang lỗi tạm thời
-    // (DB sập thật): tối đa `drainBatch()` (mặc định 50) lần gọi mỗi tick, KHÔNG quét
-    // vô hạn toàn bộ hàng đợi mỗi lần — đây là câu trả lời cho cảnh báo "lãng phí" ở
-    // task-1-brief.md mục 3: phí tổn bị chặn trần bởi đúng ngân sách đã tồn tại sẵn
-    // cho mục đích khác, không phải cơ chế mới; và interval nền lùi-mũ (workerTick)
-    // càng làm phí tổn đó thưa dần khi KHÔNG mục nào rút được nhiều tick liên tiếp.
-    //
-    // (b) DB existence dedupe vẫn `break` khi CHÍNH lời gọi `dedupFn` (không phải
-    // `processFn`) ném lỗi — đó là phép kiểm tra tồn tại chạm DB TRỰC TIẾP, nên lỗi ở
-    // đây là tín hiệu "kết nối DB tự nó đang hỏng" DÙNG CHUNG cho mọi mục còn lại
-    // trong tick này (không phải lỗi riêng của một payload) — dừng sớm ở đây vẫn là
-    // tối ưu hợp lý, KHÔNG phải chặn-đầu-hàng (mục nó chặn không phải "mục lành xếp
-    // sau", mà là chính DB không trả lời được).
+    // ── BG-40 việc 3 + vòng sửa 2 (C-1) — quét THEO CHỈ SỐ, `budget` CHỈ giảm khi có
+    // CÔNG VIỆC THẬT ─────────────────────────────────────────────────────────────────
+    // Vòng 1: `budget` giảm ở MỌI nhánh kể cả tạm-thời — review BÁC BỎ bằng phép đo
+    // thật: 200 mục CÙNG lỗi tạm thời, `drainBatch()`=50 ⇒ chỉ 50 mục ĐẦU hàng mỗi tick
+    // được tăng `attempts` (150 mục sau đứng ở 0 vĩnh viễn), rồi 50 mục đó chạm trần
+    // đếm-lượt và bị dead-letter VÌ MỘT LỖI THUẦN TẠM THỜI (đo: 25 lượt ⇒
+    // `deadLettered=50, chưa-thử=100`). Sửa: `budget` nay CHỈ giảm khi một mục bị GỠ
+    // khỏi hàng đợi vì có kết quả THẬT (thành công HOẶC dead-letter) — mục còn tạm-thời
+    // (ở lại hàng đợi, `i` tăng để thử mục kế) KHÔNG tốn ngân sách, nên một tick LUÔN
+    // quét hết toàn bộ hàng đợi HIỆN CÓ (`i` chạy tới `queue.length`, tự nhiên bị chặn
+    // trần bởi `maxEntries()`=20.000) — không mục nào bị bỏ sót, không mục nào đứng ở
+    // `attempts=0` trong khi mục khác đã thử nhiều lần. `budget` vẫn có tác dụng: giới
+    // hạn số THAO TÁC CÓ TÁC DỤNG PHỤ THẬT (ghi DB thành công / ghi file dead-letter)
+    // mỗi tick, tránh dồn cục một lượt phục hồi lớn — đúng mục đích ban đầu của nó.
     let i = 0;
     while (i < queue.length && budget > 0) {
       const entry = queue[i];
@@ -625,14 +733,22 @@ export async function backfillInspections(): Promise<{
         continue;
       }
 
-      // (b) DB existence dedupe — the machine retried directly after recovery,
-      // or a crash happened between insert-confirm and ledger update.
+      // (b) DB existence dedupe — BG-40 vòng sửa 2 (C-2): KHÔNG còn `break` khi
+      // `dedupFn` ném — xử lý qua `xuLyLoiPhatLai` GIỐNG HỆT nhánh `processFn` bên
+      // dưới (xem doc-comment tại `xuLyLoiPhatLai`).
       let exists = false;
       try {
         exists = await dedupFn(entry.payload);
-      } catch {
-        // dedup check needs the DB — if it fails, the DB is still down. Stop.
-        break;
+      } catch (err) {
+        const ket = await xuLyLoiPhatLai(entry, err);
+        if (ket === "deadLetter") {
+          removeAt(i, entry);
+          deadLettered += 1;
+          budget -= 1;
+        } else {
+          i += 1;
+        }
+        continue;
       }
       if (exists) {
         markSubmissionApplied(entry.key);
@@ -644,45 +760,14 @@ export async function backfillInspections(): Promise<{
       try {
         await processFn(entry.payload);
       } catch (err) {
-        if (isPermanentSubmitError(err)) {
-          await deadLetter(entry, err);
+        const ket = await xuLyLoiPhatLai(entry, err);
+        if (ket === "deadLetter") {
           removeAt(i, entry);
           deadLettered += 1;
           budget -= 1;
-          continue;
+        } else {
+          i += 1;
         }
-
-        entry.attempts += 1;
-        fileDirty = true;
-
-        // BG-40 việc 2 — vượt TRẦN số lần thử ⇒ dead-letter CÓ GHI NHẬN, không tiếp
-        // tục đệm vô thời hạn chờ evictAged (72h)/evictBounds (tràn) vứt câm.
-        if (entry.attempts >= maxSubmitAttempts()) {
-          console.warn(
-            `[InspectionSF] mục VƯỢT TRẦN ${maxSubmitAttempts()} lần thử (key=${entry.key.slice(0, 12)}…, ` +
-              `serial=${entry.payload.serialNumber}) — chuyển dead-letter thay vì đệm vô thời hạn`,
-          );
-          await deadLetter(
-            entry,
-            new Error(
-              `vượt trần ${maxSubmitAttempts()} lần thử phát lại — lỗi gần nhất: ${(err as Error)?.message || err}`,
-            ),
-          );
-          removeAt(i, entry);
-          deadLettered += 1;
-          budget -= 1;
-          continue;
-        }
-
-        // Vẫn tạm thời và CHƯA vượt trần → giữ nguyên trong hàng đợi, nhưng KHÔNG
-        // `break` cả vòng (BG-40 việc 3): thử mục kế tiếp trong CÙNG lượt rút thay vì
-        // để một mục lỗi (thật hoặc xếp nhầm) chặn đứng mọi mục lành xếp sau nó.
-        console.warn(
-          `[InspectionSF] backfill still failing (attempt ${entry.attempts}, key=${entry.key.slice(0, 12)}…): ` +
-            `${(err as Error)?.message || err} — giữ trong hàng đợi, thử mục kế tiếp (không chặn đầu hàng)`,
-        );
-        budget -= 1;
-        i += 1;
         continue;
       }
 
@@ -708,6 +793,7 @@ export async function backfillInspections(): Promise<{
   } else {
     await flushFile(); // persist attempt counters
   }
+  maybeAlertDeadLetter();
   return { enabled: true, drained, deduped, deadLettered, remaining: queue.length };
 }
 
@@ -815,8 +901,9 @@ export interface InspectionStoreForwardStatus extends InspectionStoreForwardMetr
   maxEntries: number;
   maxAgeMs: number;
   maxBytes: number;
-  /** BG-40 việc 2 — trần số lần thử phát lại trước dead-letter. */
-  maxAttempts: number;
+  /** BG-40 vòng sửa 2 — trần THỜI GIAN (ms) kẹt liên tục trước khi dead-letter một mục
+   * còn tạm thời (không phải trần đếm lượt — xem doc-comment ở `maxStuckMs()`). */
+  maxStuckMs: number;
   walFile: string;
   deadLetterFile: string;
 }
@@ -829,7 +916,7 @@ export function getInspectionStoreForwardStatus(): InspectionStoreForwardStatus 
     maxEntries: maxEntries(),
     maxAgeMs: maxAgeMs(),
     maxBytes: maxBytes(),
-    maxAttempts: maxSubmitAttempts(),
+    maxStuckMs: maxStuckMs(),
     walFile: walFile(),
     deadLetterFile: deadLetterFile(),
     ...metrics,
