@@ -256,6 +256,11 @@ export function registerAdviceRoutes(r: Router): void {
       //   nếu không `?status=bi_tu_choi_ghi` trả 400 và những hàng ĐÁNG TRA CỨU NHẤT (lượt ghi bị
       //   từ chối · lô áp một phần) là những hàng DUY NHẤT không lọc ra được. Danh sách này phải
       //   theo sát `drizzle/schema/enums.aiPendingActionStatusEnum`.
+      // ★ Đợt C · Task 5 (2026-08-29, drizzle/0343) — CÙNG LỚP LỖI, ba giá trị MỚI của chế độ LOCAL
+      //   (`dang_ap_client`/`da_ap_client`/`ap_client_that_bai` — spec §6.5). Bỏ sót ở đây không làm
+      //   sai một câu khai nào (đường KHÔNG lọc theo status vẫn liệt kê đủ những hàng này qua
+      //   passthrough), nhưng khoá đúng thứ một auditor cần nhất khi tra một lượt áp-ở-client: lọc
+      //   riêng theo trạng thái đó.
       const KNOWN_STATUS = [
         "proposed",
         "confirmed",
@@ -265,6 +270,9 @@ export function registerAdviceRoutes(r: Router): void {
         "cancelled",
         "bi_tu_choi_ghi",
         "ap_mot_phan",
+        "dang_ap_client",
+        "da_ap_client",
+        "ap_client_that_bai",
       ];
       const statusRaw = typeof req.query.status === "string" && req.query.status ? req.query.status : undefined;
       if (statusRaw && !KNOWN_STATUS.includes(statusRaw)) {

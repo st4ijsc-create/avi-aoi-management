@@ -1,0 +1,56 @@
+-- ══════════════════════════════════════════════════════════════════════════════════════════════
+-- ⚠⚠⚠ CHẠY MIGRATION NÀY **TRƯỚC** KHI TRIỂN KHAI MÃ MÁY CHỦ CỦA ĐỢT C. KHÔNG ĐƯỢC ĐẢO THỨ TỰ.
+-- ══════════════════════════════════════════════════════════════════════════════════════════════
+-- drizzle/0343_them_trang_thai_ap_o_client.sql
+-- Đợt C · Task 5 (spec §6.5) — kiểm toán lượt-áp-ở-CLIENT (chế độ LOCAL: extension VS Code ghi
+-- byte lên đĩa máy lập trình viên, NGOÀI TẦM VỚI của máy chủ — khác Đợt B, nơi máy chủ tự ghi).
+--
+-- Đây là CỔNG RA của lần phát hành, không phải một ghi chú. Nếu mã máy chủ mới (hai thủ tục
+-- `batDauApDungOClient`/`chotApDungOClient`, `server/services/aiCopilotActions.ts`) chạy trên CSDL
+-- CHƯA áp migration này, kiểu hỏng đã truy được từng bước — không phải lo xa:
+--   1. `batDauApDungOClient` cố `INSERT … status='dang_ap_client'` — giá trị enum CHƯA TỒN TẠI ⇒
+--      Postgres NÉM ngay tại câu INSERT ⇒ HTTP 500. Ở đây hệ FAIL-CLOSED AN TOÀN: không có hàng
+--      nào được tạo, extension không nhận được `actionId`/`token`, và theo đúng giao thức "ghi sổ
+--      TRƯỚC khi byte rơi" mà spec §6.5 đòi, nó KHÔNG được phép ghi byte khi chưa có hàng — 0 byte
+--      mất, 0 lần ghi kép. Đây là điểm khác Đợt B: Đợt B có `execute()` chạy TRƯỚC câu UPDATE gắn
+--      nhãn (byte đã rơi rồi mới gắn nhãn), nên UPDATE ném 500 để lại byte đã rơi mồ côi nhãn. Ở
+--      đây thứ tự NGƯỢC LẠI (ghi sổ trước, byte rơi sau) nên lỗi này chặn đứng TRƯỚC khi có byte
+--      nào để mất.
+--   2. Kịch bản còn lại (hiếm, chỉ xảy ra nếu ai đó áp migration THỦ CÔNG một phần — vd. chỉ
+--      `dang_ap_client` mà thiếu `da_ap_client`/`ap_client_that_bai`, KHÔNG xảy ra nếu migration
+--      này được chạy nguyên file như dưới đây): `batDauApDungOClient` thành công, extension ghi
+--      byte thật lên đĩa dev, rồi `chotApDungOClient` cố `UPDATE … SET status='da_ap_client'` ném
+--      500 vì giá trị đó chưa tồn tại ⇒ hàng KẸT VĨNH VIỄN ở `dang_ap_client`. Đây KHÔNG phải một
+--      lời nói dối — nó là đúng "chưa rõ TRUNG THỰC" mà docblock ở `aiCopilotActions.ts` mô tả cho
+--      MỌI ca sập-giữa-chừng — nhưng nó khoá đường LOCAL của người dùng đó lại cho tới khi migration
+--      chạy đủ, nên vẫn phải tránh: chạy CẢ BA dòng dưới đây TRONG CÙNG một lần, không tách lẻ.
+--
+-- ⚠ Quyền: `ALTER TYPE` đòi OWNER của kiểu. `DATABASE_URL` của dev dùng `avi_app` (không phải owner)
+--   ⇒ trả 42501 "must be owner of type". Dùng credential owner `aoi` (mặc định có sẵn trong
+--   `docker-compose.yml` của chính dự án này) để chạy. Cùng khuôn với `0341`/`0342`.
+--
+-- ══════════════════════════════════════════════════════════════════════════════════════════════
+-- VÌ SAO BA GIÁ TRỊ NÀY KHÁC `executed`/`bi_tu_choi_ghi`/`ap_mot_phan` (0341/0342) — KHÁC CHỦ THỂ
+-- ══════════════════════════════════════════════════════════════════════════════════════════════
+-- Ba giá trị của 0341/0342 nói về một lượt ghi MÁY CHỦ TỰ THỰC HIỆN (`confirmAction` gọi
+-- `tool.execute()` rồi tự đọc kết quả để gắn nhãn — máy chủ BIẾT chắc byte có rơi hay không, vì
+-- chính nó là bên cầm bút). Ba giá trị MỚI ở đây nói về một lượt ghi MÁY CHỦ KHÔNG THỰC HIỆN — chủ
+-- thể cầm bút là EXTENSION VS Code, ghi thẳng vào đĩa máy lập trình viên qua `vscode.workspace.fs`,
+-- một đường hoàn toàn ngoài tầm với của máy chủ. Máy chủ vì thế KHÔNG BAO GIỜ tự quan sát được byte
+-- có rơi hay không ở đây — nó chỉ giữ sổ những gì extension TỰ KHAI qua hai lượt gọi:
+--   `dang_ap_client`      — extension khai "TÔI SẮP GHI" (ghi TRƯỚC khi byte rơi).
+--   `da_ap_client`        — extension khai "TÔI ĐÃ GHI THÀNH CÔNG" (chốt SAU, thành công).
+--   `ap_client_that_bai`  — extension khai "TÔI GHI THẤT BẠI" (chốt SAU, thất bại).
+-- Trộn ba giá trị này với `executed`/`bi_tu_choi_ghi` là xoá mất đúng thông tin mà kiểm toán tồn
+-- tại để giữ: AI VỪA CẦM BÚT. Một hàng sập-giữa-chừng đứng NGUYÊN ở `dang_ap_client` — không có
+-- tiến trình dọn dẹp nào tự chuyển nó sang `da_ap_client` hay `ap_client_that_bai`, vì cả hai đều là
+-- một lời khai máy chủ không có cơ sở để nói.
+--
+-- ⚠⚠ `ALTER TYPE … ADD VALUE` KHÔNG chạy được trong transaction khối (một số cấu hình Postgres/
+-- driver bọc mỗi file migration trong BEGIN…COMMIT) ⇒ migration này ĐỨNG RIÊNG, không gộp bất kỳ
+-- DDL nào khác vào cùng file/transaction. Cùng khuôn với 0341/0342. Ba câu dưới đây CÙNG một file
+-- (không tách ba file) vì không câu nào SỬ DỤNG giá trị vừa thêm trong cùng lượt chạy — chỉ thêm,
+-- không đọc — nên không vướng giới hạn "không dùng giá trị mới trong cùng transaction".
+ALTER TYPE "aipendingactionstatus" ADD VALUE IF NOT EXISTS 'dang_ap_client';
+ALTER TYPE "aipendingactionstatus" ADD VALUE IF NOT EXISTS 'da_ap_client';
+ALTER TYPE "aipendingactionstatus" ADD VALUE IF NOT EXISTS 'ap_client_that_bai';

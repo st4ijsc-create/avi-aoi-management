@@ -183,6 +183,14 @@ export const AUDIT_ACTIONS = {
   AI_ACTION_EXECUTED: "ai_action_executed",
   AI_ACTION_DENIED: "ai_action_denied",
   AI_ACTION_CANCELLED: "ai_action_cancelled",
+  // ★★★ Đợt C · Task 5 (2026-08-29, spec §6.5) — kiểm toán lượt-áp-ở-CLIENT (chế độ LOCAL). CHỦ
+  // THỂ CỦA BA HÀNG NÀY LÀ EXTENSION VS CODE, KHÔNG PHẢI MÁY CHỦ — máy chủ không ghi byte nào ở
+  // chế độ này, nó chỉ giữ sổ những gì extension TỰ KHAI qua `batDauApDungOClient`/
+  // `chotApDungOClient` (server/services/aiCopilotActions.ts). Khác nhóm AI_ACTION_* ở trên (nơi
+  // `AI_ACTION_EXECUTED` đúng nghĩa "máy chủ vừa tự chạy `tool.execute()`") — đừng dùng lẫn.
+  AI_CLIENT_APPLY_STARTED: "ai_client_apply_started",
+  AI_CLIENT_APPLIED: "ai_client_applied",
+  AI_CLIENT_APPLY_FAILED: "ai_client_apply_failed",
   // D2 (doc69 Giai đoạn 4/Wave 3) — bounded-autonomy DECISION, audited as a separate
   // lightweight follow-up entry AFTER the PROPOSED row (and after any CONFIRMED/
   // EXECUTED/DENIED rows an auto-confirm attempt wrote), so it never distorts the

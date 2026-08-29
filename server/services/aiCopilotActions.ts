@@ -1350,3 +1350,228 @@ function contractRejectMessage(lang: ToolLang, reason: string, detail: string | 
       return lang === "en" ? `Blocked by advice contract${s}.` : `Bị chặn bởi hợp đồng khuyến nghị${s}.`;
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT C · TASK 5 (2026-08-29, spec §6.5) — KIỂM TOÁN LƯỢT ÁP Ở CLIENT (chế độ LOCAL)
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// Ở chế độ SERVER (Đợt B), `confirmAction` ở TRÊN vừa là người GHI BYTE (`tool.execute()`) vừa là
+// người GHI SỔ (`status`) — cùng một tiến trình đọc được kết quả của chính nó. Ở chế độ LOCAL, hai
+// việc đó tách ra HAI MÁY: byte rơi trên đĩa máy lập trình viên do EXTENSION VS Code ghi (qua
+// `vscode.workspace.fs`), NGOÀI TẦM VỚI của máy chủ này; sổ kiểm toán vẫn ở đây. Máy chủ vì thế
+// KHÔNG BAO GIỜ tự quan sát được byte có rơi hay không — nó chỉ biết những gì EXTENSION TỰ KHAI
+// qua đúng hai lượt gọi dưới đây:
+//
+//   `batDauApDungOClient` — GHI TRƯỚC khi byte rơi: tạo hàng `status='dang_ap_client'`. Đây là lời
+//   khai "tôi SẮP ghi", không phải "tôi ĐÃ ghi" — bản thân hàng này không chứng minh gì về đĩa dev.
+//
+//   `chotApDungOClient` — CHỐT SAU khi byte đã rơi (hoặc đã thất bại): extension tự báo `thanhCong`
+//   rồi hàng chuyển `da_ap_client`/`ap_client_that_bai`. Vẫn là TỰ KHAI — máy chủ không có đường
+//   nào đọc lại đĩa máy dev để xác minh `sha256SauThat` khớp byte thật.
+//
+// Nếu extension SẬP giữa hai lượt gọi (crash · mất mạng · người dùng tắt máy) — hàng đứng NGUYÊN ở
+// `dang_ap_client` MÃI MÃI: không tiến trình nền nào tự dọn nó (`expireStaleActions` ở trên CHỈ đọc
+// `status='proposed'`, KHÔNG đụng `dang_ap_client` — CÓ CHỦ Ý). Đó KHÔNG phải một lỗ cần vá: một
+// hàng kẹt ở `dang_ap_client` là câu TRUNG THỰC DUY NHẤT máy chủ nói được ở đây — "tôi biết có một
+// lượt ghi được BẮT ĐẦU, tôi KHÔNG biết nó có xong hay không". Tự ý đặt nó thành `da_ap_client` là
+// nói dối THEO HƯỚNG LẠC QUAN (khai byte đã rơi mà không biết); đặt nó thành `ap_client_that_bai`
+// là nói dối THEO HƯỚNG BI QUAN (khai thất bại mà không biết) — CẢ HAI đều là máy chủ khai điều nó
+// không biết, đúng lớp lỗi đã trả giá bốn lần ở Đợt B (xem
+// `docs/superpowers/plans/2026-08-29-vscode-extension-dot-b-ket-qua.md`). Đây là lý do
+// `chotApDungOClient` KHÔNG có một "trạng thái mặc định" nào cho việc suy đoán — nó chỉ CHUYỂN
+// TRẠNG THÁI theo đúng cái `thanhCong` mà lệnh gọi mang tới, và không tự suy diễn gì thêm.
+//
+// ⚠⚠ KHÔNG LƯU TOÀN VĂN NỘI DUNG TỆP (spec §6.5: "mã đã ở máy dev, máy chủ không cần bản sao — và
+//   một bản sao là một chỗ rò nữa"). `argsJson` của `batDauApDungOClient` CHỈ mang path + hai băm +
+//   tóm tắt + số dòng thêm/bớt — không một trường nào chứa nội dung trước/sau. `nhanWorkspace` (chỉ
+//   là một nhãn hiển thị, không phải nội dung) đi vào cột `summary` riêng, KHÔNG vào `argsJson`, để
+//   `argsJson` giữ đúng hợp đồng "chỉ năm trường" mà không phải nhớ trừ một ngoại lệ. Lưới
+//   `aiCopilotActions.apOClient.test.ts` khoá bất biến này bằng khẳng định tường minh (không chỉ
+//   "đúng danh sách khoá" mà còn "không có khoá nội dung nào lọt vào").
+const TOOL_AP_O_CLIENT = "ap_o_client";
+
+/** Input của `batDauApDungOClient` — TỰ KHAI của extension, KHÔNG phải quan sát của máy chủ. */
+export interface BatDauApDungOClientInput {
+  /** Đường dẫn TƯƠNG ĐỐI trong workspace (không phải đường tuyệt đối máy dev). */
+  path: string;
+  /** Nhãn workspace hiển thị cho người (vd. tên thư mục gốc) — mô tả, KHÔNG dùng để cưỡng chế. */
+  nhanWorkspace: string;
+  /** Băm nội dung TRƯỚC khi ghi, theo lời khai của extension (không phải máy chủ đo). */
+  sha256Truoc: string;
+  /** Băm nội dung SAU khi ghi mà extension DỰ KIẾN (băm THẬT xác nhận ở `chotApDungOClient`). */
+  sha256Sau: string;
+  tomTat: string;
+  soDongThem: number;
+  soDongBot: number;
+}
+
+export interface BatDauApDungOClientResult {
+  actionId: string;
+  /** == actionId — cùng quy ước `token === actionId` đã dùng cho propose/confirm ở trên. */
+  token: string;
+}
+
+/**
+ * GHI TRƯỚC khi byte rơi (spec §6.5). Không có `Tool` thật đứng sau lượt này (chế độ LOCAL không đi
+ * qua `toolRegistry` — đường ghi là extension, không phải server), nên không có `requiredPermission`
+ * để RBAC-gate như `proposeAction`; `protectedProcedure` + `moduleGate("MOD_AI")` ở tầng router
+ * (`aiCopilotRouter.ts`) đã là hàng rào truy cập. Hàm này CHỈ ghi sổ — không có nhánh nào ở đây ghi
+ * byte xuống bất kỳ đĩa nào.
+ */
+export async function batDauApDungOClient(
+  input: BatDauApDungOClientInput,
+  user: CopilotUser,
+  req?: ToolExecContext["req"],
+): Promise<BatDauApDungOClientResult> {
+  const db = await getDb();
+  if (!db) throw new Error("DB_UNAVAILABLE — không mở được sổ kiểm toán cho lượt áp ở client.");
+
+  const actionId = randomUUID();
+  const idempotencyKey = randomUUID();
+  const expiresAt = new Date(Date.now() + PENDING_TTL_MS);
+
+  // ⚠⚠ CHỈ năm trường này — path + hai băm + tóm tắt + số dòng. KHÔNG một trường nội dung nào.
+  const argsJson: Record<string, unknown> = {
+    path: input.path,
+    sha256Truoc: input.sha256Truoc,
+    sha256Sau: input.sha256Sau,
+    tomTat: input.tomTat,
+    soDongThem: input.soDongThem,
+    soDongBot: input.soDongBot,
+  };
+
+  await db.insert(aiPendingActions).values({
+    id: actionId,
+    tool: TOOL_AP_O_CLIENT,
+    argsJson,
+    userId: user.id,
+    userRole: user.role,
+    requiredPermissionJson: null,
+    summary: `[${input.nhanWorkspace}] ${input.tomTat} — ${input.path}`,
+    previewJson: null,
+    status: "dang_ap_client",
+    idempotencyKey,
+    expiresAt,
+  });
+
+  await logCrudOperation(buildAuditCtx(user, req), {
+    action: AUDIT_ACTIONS.AI_CLIENT_APPLY_STARTED,
+    entityType: ENTITY_TYPES.AI_ACTION,
+    entityName: TOOL_AP_O_CLIENT,
+    details: {
+      operation: "AI_CLIENT_APPLY_STARTED",
+      metadata: {
+        actionId,
+        path: input.path,
+        nhanWorkspace: input.nhanWorkspace,
+        sha256Truoc: input.sha256Truoc,
+        sha256Sau: input.sha256Sau,
+        soDongThem: input.soDongThem,
+        soDongBot: input.soDongBot,
+      },
+    },
+    status: "success",
+  });
+
+  return { actionId, token: actionId };
+}
+
+export interface ChotApDungOClientInput {
+  actionId: string;
+  token: string;
+  /** `true` ⇔ extension khai byte ĐÃ vào đĩa; `false` ⇔ extension khai lượt ghi THẤT BẠI. */
+  thanhCong: boolean;
+  /** Băm ĐĨA THẬT sau khi ghi, theo lời khai của extension — có thể khác `sha256Sau` đã khai lúc
+   *  bắt đầu (vd. người dùng sửa thêm trong lúc chờ). Máy chủ KHÔNG xác minh được giá trị này. */
+  sha256SauThat?: string;
+  /** Lý do thất bại (khi `thanhCong:false`). */
+  loi?: string;
+}
+
+export interface ChotApDungOClientResult {
+  ok: boolean;
+  status: "da_ap_client" | "ap_client_that_bai" | "invalid";
+  message?: string;
+}
+
+/**
+ * CHỐT SAU khi byte đã rơi hoặc đã thất bại (spec §6.5). Idempotent: chốt LẦN HAI trên một hàng ĐÃ
+ * có kết cục chung cuộc trả NGUYÊN kết quả CŨ — không chạm hàng, không ném, và (quan trọng) KHÔNG
+ * để lượt gọi thứ hai LẬT ngược kết cục đã chốt dù nó mang `thanhCong` khác lượt đầu (một client
+ * lỗi/độc hại gọi `chotApDungOClient` hai lần với hai câu trả lời trái ngược không được phép thắng
+ * lần thứ hai). Giành quyền bằng CAS (`UPDATE … WHERE status='dang_ap_client'`) — cùng khuôn
+ * `confirmAction` ở trên — để hai lượt chốt đồng thời không cùng thắng.
+ */
+export async function chotApDungOClient(
+  input: ChotApDungOClientInput,
+  user: CopilotUser,
+  req?: ToolExecContext["req"],
+): Promise<ChotApDungOClientResult> {
+  const db = await getDb();
+  if (!db) return { ok: false, status: "invalid", message: "DB_UNAVAILABLE" };
+
+  const [row] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, input.actionId)).limit(1);
+  if (!row) return { ok: false, status: "invalid", message: "Action không tồn tại." };
+
+  // Token bound to userId — cùng khuôn `confirmAction`.
+  if (input.token !== row.id || row.userId !== user.id) {
+    return { ok: false, status: "invalid", message: "Token hoặc người dùng không khớp." };
+  }
+
+  // Idempotent: ĐÃ có kết cục chung cuộc ⇒ trả NGUYÊN kết quả cũ, không chạm hàng lần hai — bất kể
+  // `input.thanhCong` lần này nói gì (xem docblock hàm).
+  if (row.status === "da_ap_client" || row.status === "ap_client_that_bai") {
+    return {
+      ok: true,
+      status: row.status,
+      message: row.status === "da_ap_client" ? "Đã áp trước đó." : "Đã ghi nhận thất bại trước đó.",
+    };
+  }
+
+  if (row.status !== "dang_ap_client") {
+    return { ok: false, status: "invalid", message: `Trạng thái không hợp lệ: ${row.status}.` };
+  }
+
+  const trangThaiMoi: "da_ap_client" | "ap_client_that_bai" = input.thanhCong ? "da_ap_client" : "ap_client_that_bai";
+  const resultJson: Record<string, unknown> = {
+    sha256SauThat: input.sha256SauThat ?? null,
+    loi: input.loi ?? null,
+  };
+
+  const daGianh = await db
+    .update(aiPendingActions)
+    .set({ status: trangThaiMoi, executedAt: new Date(), resultJson })
+    .where(and(eq(aiPendingActions.id, input.actionId), eq(aiPendingActions.status, "dang_ap_client")))
+    .returning({ id: aiPendingActions.id });
+
+  if (daGianh.length === 0) {
+    // Thua phép giành (một lượt chốt khác vừa thắng) — đọc lại, trả kết quả ĐÃ LƯU, không đoán.
+    const [sau] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, input.actionId)).limit(1);
+    if (sau?.status === "da_ap_client" || sau?.status === "ap_client_that_bai") {
+      return { ok: true, status: sau.status, message: "Đã xử lý trước đó." };
+    }
+    return { ok: false, status: "invalid", message: `Trạng thái không hợp lệ: ${sau?.status ?? "không rõ"}.` };
+  }
+
+  await logCrudOperation(buildAuditCtx(user, req), {
+    action: input.thanhCong ? AUDIT_ACTIONS.AI_CLIENT_APPLIED : AUDIT_ACTIONS.AI_CLIENT_APPLY_FAILED,
+    entityType: ENTITY_TYPES.AI_ACTION,
+    entityName: row.tool,
+    details: {
+      operation: input.thanhCong ? "AI_CLIENT_APPLIED" : "AI_CLIENT_APPLY_FAILED",
+      metadata: {
+        actionId: input.actionId,
+        sha256SauThat: input.sha256SauThat ?? null,
+        ...(input.loi ? { loi: input.loi } : {}),
+      },
+    },
+    status: input.thanhCong ? "success" : "failure",
+  });
+
+  return {
+    ok: true,
+    status: trangThaiMoi,
+    message: input.thanhCong
+      ? "Đã áp vào workspace."
+      : "Áp thất bại — theo lời khai của extension, byte không (hoặc chỉ một phần) vào đĩa.",
+  };
+}

@@ -177,6 +177,20 @@ export const apiKeyStatusEnum = pgEnum("apikeystatus", ["active", "inactive", "e
 // việc còn nguyên rồi đề xuất lại CẢ LÔ). Cột này phải nói được BA sự thật: ghi · không ghi · ghi
 // MỘT PHẦN. Danh sách mã "đã có byte vào đĩa" nằm ở chính nơi sinh ra mã —
 // `aiLocalTools/writeHandlers/applyDiffBatch.MA_GHI_MOT_PHAN`.
+// ★★★ Đợt C · Task 5 (2026-08-29, drizzle/0343) — BA giá trị MỚI cho chế độ LOCAL (spec §6.5):
+// `dang_ap_client`/`da_ap_client`/`ap_client_that_bai`. KHÁC HẲN sáu giá trị trên ở một trục: CHỦ
+// THỂ CẦM BÚT. `executed`/`bi_tu_choi_ghi`/`ap_mot_phan` nói về một lượt ghi MÁY CHỦ TỰ THỰC HIỆN
+// (`confirmAction` gọi `tool.execute()` rồi TỰ ĐỌC kết quả — máy chủ BIẾT chắc byte có rơi). Ba giá
+// trị mới nói về một lượt ghi MÁY CHỦ KHÔNG THỰC HIỆN — chủ thể là EXTENSION VS Code, ghi thẳng vào
+// đĩa máy lập trình viên qua `vscode.workspace.fs`, ngoài tầm với của máy chủ. Máy chủ CHỈ giữ sổ
+// những gì extension TỰ KHAI: `dang_ap_client` = "tôi SẮP ghi" (ghi TRƯỚC khi byte rơi — spec
+// "ghi TRƯỚC khi byte rơi, chốt SAU"); `da_ap_client`/`ap_client_that_bai` = "tôi ĐÃ ghi
+// xong/thất bại" (chốt SAU). Một hàng sập-giữa-chừng đứng NGUYÊN ở `dang_ap_client` MÃI MÃI — đó là
+// "chưa rõ" TRUNG THỰC, không phải một lời nói dối theo hướng nào. Đừng dùng `executed`/
+// `bi_tu_choi_ghi` cho ca này: trộn hai chủ thể (server-thực-hiện vs extension-tự-khai) vào cùng
+// nhãn là xoá mất đúng thông tin kiểm toán tồn tại để giữ. Xem docblock đầy đủ ở
+// `drizzle/0343_them_trang_thai_ap_o_client.sql` và `server/services/aiCopilotActions.ts`
+// (`batDauApDungOClient`/`chotApDungOClient`).
 export const aiPendingActionStatusEnum = pgEnum("aipendingactionstatus", [
   "proposed",
   "confirmed",
@@ -186,6 +200,9 @@ export const aiPendingActionStatusEnum = pgEnum("aipendingactionstatus", [
   "cancelled",
   "bi_tu_choi_ghi",
   "ap_mot_phan",
+  "dang_ap_client",
+  "da_ap_client",
+  "ap_client_that_bai",
 ]);
 
 // AI Copilot agent session lifecycle (GĐ3b multi-step agentic orchestrator).
