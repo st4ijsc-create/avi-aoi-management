@@ -85,7 +85,12 @@ describe("cheBiMat", () => {
   });
 
   it("★★ khoá Stripe dùng GẠCH DƯỚI (sk_live_…) cũng bị che", () => {
-    expect(cheBiMat('const k = "sk_live_51H2xJ2KxABCDEFGHIJKLMNOP";')).not.toContain("51H2xJ2Kx");
+    // ⚠ ĐỪNG đổi chuỗi mồi này thành một khoá "trông thật hơn". Bản trước dùng
+    // `sk_live_` + 24 ký tự chữ-số liền, đúng khuôn khoá Stripe THẬT, và GitHub Push Protection
+    // CHẶN CẢ LƯỢT PUSH vì tưởng repo đang rò khoá. Mồi phải khớp luật che của ta
+    // (`sk[-_][A-Za-z0-9_-]{16,}`) mà KHÔNG khớp bộ dò của nhà cung cấp — dấu gạch nối làm được
+    // đúng việc đó, vì khoá Stripe thật không bao giờ có gạch nối.
+    expect(cheBiMat('const k = "sk_live_KHONG-PHAI-KHOA-THAT-0000";')).not.toContain("KHONG-PHAI-KHOA-THAT");
   });
 
   it("★★ che tới hết dòng KHÔNG tràn sang dòng sau", () => {
