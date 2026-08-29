@@ -756,6 +756,69 @@ Hiện **0/42.147** bo có serial rỗng — vì ingest đang chặn.
 ⇒ Câu trả lời đúng **không phải** "nhận" hay "từ chối". Nếu Pha 1B muốn nhận bo chưa quét serial thì **phải đồng thời** dựng đường khử trùng khác cho đúng nhóm bo đó. Chưa làm việc ấy thì **không được nới ingest** — dù hợp đồng đã nới.
 Đây là lỗi kiểu MỚI của tôi, không cùng họ với bảy lần trước: không phải sai phạm vi phép đo, mà là **phán một thay đổi hợp đồng bằng cách đọc tài liệu NGUỒN mà không đọc mã TIÊU THỤ**.
 
+### Sáu dữ kiện sau PHA 1B — ba cái SỬA LẠI lời khai của chính tôi
+
+**Đ-19 (SỬA MỨC ĐỘ — nặng hơn nhiều so với bản đầu). Cấp component chưa ghi được, và đó KHÔNG chỉ là "thiếu dữ liệu".**
+`measurement_results.pointDefId` là `NOT NULL` + FK `ON DELETE RESTRICT` ⇒ không ghi được kết quả component khi chưa có định nghĩa điểm đo (đến từ Khối B). Đo: `measurement_results` nối vào cây = **0 / 31.256**.
+Bản đầu tôi ghi đây là "thiếu dữ liệu, chờ Khối B". **Sai mức độ.** Nó biến ba cơ chế an toàn thành **xanh giả**:
+
+| Nơi | Khi 0 dòng đo | Ai gặp gì |
+|---|---|---|
+| `stationAnalysisRouter.ts:1922` | `total=0 ⇒ defectRate=0 ⇒ status='pass'` | **Bản đồ bo TOÀN XANH** cho trạm chỉ có bo v2.0 |
+| `ngRateAlertService.ts:208` | `total < minSampleSize ⇒ return` | **Cảnh báo NG-rate KHÔNG BAO GIỜ bắn** |
+| `integrityScanService.ts:101` | 0 luật "header không có dòng đo" | Lỗ **vô hình** với giám sát toàn vẹn |
+| `pdfTemplateService.ts:441` | `Yield: 0.0%` | PDF chính thức của bo OK in "Yield 0.0%" |
+
+Cộng ~26 điểm INNER JOIN làm bo **biến mất** khỏi Pareto/SPC/BI/export; và thước "đủ hàng" của `exportRouter.ts:925` tính `expected` trên **cùng vị từ** ⇒ **cơ chế phát hiện cắt tệp TỰ THOẢ**.
+
+**Đ-20 (SAI — thu hồi). Cờ `INGEST_REJECT_LEGACY_MACHINE_ENABLED` KHÔNG gác đường v2.0.**
+Bản đầu tôi viết ba lỗ của đường v2.0 "hiện vô hại vì cờ mặc định TẮT", và kết ở cổng ra Pha 1B: *"thứ đang ngăn tai hoạ chỉ là một giá trị mặc định"*. **Cả hai câu đều sai.**
+```
+machineApiRouters.ts:3006   if (laHinhDangCayV2(raw)) { return {kind:"v2", …}; }   ← KHÔNG kiểm cờ
+machineApiRouters.ts:3009   if (ingestRejectLegacyMachineEnabled()) { … }          ← cờ CHỈ ở đây
+```
+Nhánh **NHẬN v2.0 trả về TRƯỚC** phép kiểm cờ; cờ chỉ quyết định có **TỪ CHỐI v1.x** hay không.
+⇒ **Không có gì đang ngăn.** Máy đầu tiên nâng firmware lên payload cây kích hoạt toàn bộ Đ-21…Đ-23 ngay.
+Nguồn gốc sai sót: tôi đọc đúng dòng 3009 khi truy cửa sau, rồi **suy** rằng cờ gác cả nhánh nhận, mà không đọc dòng ngay trên nó. **Đọc một nửa rồi khái quát.**
+
+**Đ-21 (CRITICAL). Cuộn GHI ĐÈ phán quyết máy theo chiều HẠ CẤP — bo NG lưu thành OK.**
+Đo: `{overallResult:"NG", surfaces:[]}` → hợp đồng **NHẬN** → cột DB = **`"OK"`**. Hợp đồng không `.min(1)` ở bất kỳ cấp nào, nên cây rỗng là hợp lệ và cuộn-từ-lá cho `OK`.
+`FINAL_YIELD_PASS_RESULTS = ["OK","NTF"]` ⇒ **bo lỗi tính là PASS và xuất xưởng.**
+Đối chiếu v1.x: `promoteOverallToNg` chỉ **NÂNG** OK→NG (`UPDATE … WHERE overallResult='OK'`) ⇒ v1.x **không bao giờ hạ cấp**. Lịch sử 42.431 bo: `OK→NG` 162 · `NG→NTF` 2.765 · **`NG→OK` = 0**.
+**Đây là hậu quả GHÉP của hai quyết định đều ĐÚNG khi đứng riêng:** T4 *"cuộn từ giá trị ĐÃ CUỘN"* (cần, cho `declaredMismatch`) + T6 *"cột = `verdictLuuTru`"* (cần, để bịt lỗ NTF). Ghép lại: phán quyết máy bị vứt theo **cả hai chiều**, chiều xuống **không ai canh**.
+
+**Đ-22 (CRITICAL). Lỗ 6,55% MỞ LẠI ở cấp gốc — `payload.ntf` đi vào hư không.**
+Đo: máy khai `ntf:true` **cấp bo**, không lá nào ntf → `cay.ntf=true` nhưng cột DB = **`"OK"`**.
+`verdictLuuTru` nay nhận cả hai nguồn NTF (vòng sửa Task 1), nhưng **người gọi chỉ đưa cho nó tín hiệu cuộn-từ-lá**, bỏ rơi `payload.ntf`. Đúng lớp lỗi đã bắt ở Task 1, **dịch lên một cấp**. BG-7 **chưa đóng hết** — spec bản trước khai nó đóng.
+
+**Đ-23 (CRITICAL). Serial rỗng làm MẤT SẠCH khử trùng — và lưới BG-14 XANH GIẢ vì soi nhầm nhánh.**
+Đo (transaction + rollback): serial chuẩn → lượt 2 chèn **0 hàng** (khử trùng chạy); serial **rỗng** → **3 lượt = 3 BO**.
+Gốc rễ: `uq_inspections_machine_serial_time … WHERE serialNumber <> ''` là chỉ mục **riêng phần**; và đường v2.0 **không** đặt `idempotencyKey`.
+**Đây là lỗ trong chính phán quyết ở §Đ-17.** Tôi phán *"nới hợp đồng, KHÔNG nới ingest"*, tin `.min(1)` ở `submitInspectionCoreObject` vẫn chặn. Nhưng **đường v2.0 dùng THẲNG hợp đồng** ⇒ nới hợp đồng **chính là** nới một cửa ingest. Lưới BG-14 hỏng theo **chiều NGƯỢC** với dự đoán: tôi lo *đỏ nhầm*, thực tế **xanh giả** vì regex soi đúng dòng của nhánh v1.x — nhánh không liên quan.
+
+**Đ-24. Cầu nối NTF chưa kín: HAI đường ghi `overallResult` không qua `verdictLuuTru`.**
+`machineApiRouters.ts:1464` (v1.x — **đường mặc định hôm nay**, phụ thuộc 100% vào việc máy tự gõ chuỗi `"NTF"`) và `aoiPackageRouter.ts:833` (`inferAoiOverallResult` — **bản logic chép tay thứ hai**, đúng hiện tại nhưng sẽ trôi). Lỗ 6,55% **vẫn mở ở cả hai**.
+
+### Bàn giao mở rộng sau review toàn nhánh Pha 1B
+
+| Mã | Việc | Số đo |
+|---|---|---|
+| **BG-21** ⛔ | Gác nhánh **NHẬN** v2.0 (cờ hiện chỉ gác nhánh TỪ CHỐI) | cờ ở dòng 3009, **sau** nhánh v2.0 ở 3006 |
+| **BG-22** ⛔ | **Chặn hạ cấp verdict**: `declared=NG` mà `rolled=OK` ⇒ giữ NG + cờ mismatch **ở gốc** (`CayDaDich` chưa có trường này) | `{NG, surfaces:[]}` → cột `OK`; lịch sử `NG→OK` **0/42.431** |
+| **BG-23** ⛔ | Serial rỗng: đóng bằng **CƠ CHẾ**, không bằng regex; lưới canh **mọi** cửa ingest (AST) | serial rỗng: **3 lượt = 3 bo** |
+| **BG-24** ⛔ | Nối `payload.ntf` cấp bo vào `verdictLuuTru` | `ntf:true` cấp bo → cột `OK` |
+| **BG-25** | WAL + phát lại cho payload cây; bọc `submitInspectionTreeV2` trong try/catch | v2 `return` ở 3124, `try` ở ~3159; `setProcessFn` chỉ nối v1 ⇒ **DB chớp nháy = MẤT TRẮNG bo** |
+| **BG-26** | Ca nghiệm thu **end-to-end THẬT** cho đường NHẬN v2.0 (không mock `../db`) | `summaryCounts`/`ntfSource` = NULL **6/6** bo có cây |
+| **BG-27** | `.max()` cho `productModel`(100) + `captureName`(255) | 2 trường v2.0 **ghi thật** mà không có `.max()` |
+| **BG-28** | Luật `integrityScan`: bo có header mà **0 dòng đo** | 0 luật hiện có |
+| **BG-29** | Gỡ `LATEST` khỏi `phienBanInspectionMacDinh` — gắn lại đúng gốc rễ vừa gỡ | `machineContractRouter.ts:46` |
+| **BG-30** | Khoá khử trùng cây mang `inspectionTime` (PK bo cha là `(id, inspectionTime)`) | khoá cây chỉ theo `inspectionId` |
+| **BG-31** | **BỐN** cửa sau, không phải một: `submitInspectionBatch` · `submitProcessResult` · `submitProcessResultBatch` · `syncEdgeResults` | Đ-20 mới ghi 1/4 |
+| **BG-32** | Sửa 2 chú thích **sai sự thật** (khai CHƯA nối trong khi ĐÃ nối) + `openapi.ts:20,192` | `rollupVerdict.ts:76-80`, `machineDataContract.ts:125,144` |
+| **BG-33** | `summaryCounts`: đối chiếu với cây, hoặc ghi rõ "lời khai chưa kiểm" | **1 nơi ghi / 0 nơi đọc** |
+
+**Thứ tự thi công đã chốt (Ruling R-5): PHA 1C TRƯỚC KHỐI B.** Lý lẽ quyết định: Khối B ghi `measurement_results` **trong cùng transaction** với `ghiCayKetQua` — mà Đ-23 làm transaction đó chạy lại nguyên vẹn mỗi lượt retry ⇒ làm Khối B trước là **nhân bản luôn cả cấp component**. Thêm nữa Đ-21…Đ-23 **đang sống** (không chờ cờ), còn Khối B **khuếch đại** chúng vì nó cho nhà máy lý do chuyển sang v2.0.
+
 Thêm: `positionNumber = 0` lọt qua trong khi tài liệu nguồn nói **1-based** — không hỏng join nên **cố ý không từ chối** (§4.5), nhưng là ứng viên **gắn thẻ lệch chuẩn** ở Pha 1B.
 
 ---
