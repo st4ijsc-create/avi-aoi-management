@@ -60,6 +60,11 @@ import { macTenantChoGhi, khoaLuuTruGoi } from "./phamViGhiMay";
 // machineApiRouters.ts (export có chủ ý) — không chép lại logic đọc header.
 import { authenticateMachine } from "../services/machineAuthService";
 import { machineHeaderKey } from "./machineApiRouters";
+// BG-42 (Pha 1D) — `inferAoiOverallResult` để `explicitResult` thắng VÔ ĐIỀU
+// KIỆN trên lời khai máy, ngược hẳn đường v2.0 (đóng bằng `verdictXauHon` ở
+// Pha 1C cho Đ-21). DÙNG LẠI hàm chung, KHÔNG chép logic "xấu hơn thắng"
+// thành bản thứ ba trong file này.
+import { verdictXauHon } from "@shared/rollupVerdict";
 
 // ============================================================
 // Image Cache Configuration
@@ -365,26 +370,33 @@ const metaJsonSchema = z.object({
 // được từ aoiPackageIngestHopNhat.test.ts.
 // ============================================================
 /**
- * Suy `overallResult` của một gói ZIP AOI khi `meta.json` không khai thẳng.
+ * Suy `overallResult` của một gói ZIP AOI, đối chiếu lời khai `meta.json` với
+ * cuộn tính TỪ `summary`.
  *
- * Trước sửa, cả hai nơi dùng biểu thức `metaData.overallResult ||
- * (summary?.ng > 0 ? "NG" : "OK")` — KHÔNG nhánh nào trả "NTF". Một gói
- * `summary.ntf > 0, ng = 0` bị suy thành "OK", mất trạng thái NTF (lỗi 1,
- * task-9-report.md PHẦN 2).
+ * Trước sửa (task-9-report.md PHẦN 2, lỗi 1), cả hai nơi dùng biểu thức
+ * `metaData.overallResult || (summary?.ng > 0 ? "NG" : "OK")` — KHÔNG nhánh
+ * nào trả "NTF". Bản vá đó thêm nhánh NTF nhưng vẫn để `explicitResult` THẮNG
+ * VÔ ĐIỀU KIỆN — đúng hình dạng Đ-21 mà Pha 1C vừa đóng cho đường v2.0 bằng
+ * `verdictXauHon`: gói khai `OK` với `summary.ng = 3` vẫn ghi `OK` (BG-42).
+ * Sau Pha 1C, đường ZIP là đường DUY NHẤT còn để lời khai thắng — cùng sản
+ * phẩm, hai đường ingest xử lý ngược nhau.
  *
- * Quy tắc: có NG → NG; không NG mà có NTF → NTF; không cả hai → OK. Một
- * `explicitResult` (lời khai trực tiếp trong `meta.json`) LUÔN được tôn trọng —
- * hàm không được phép ghi đè lời khai đã có.
+ * Quy tắc mới: cuộn từ `summary` trước (có NG → NG; không NG mà có NTF →
+ * NTF; không cả hai → OK), rồi lấy XẤU HƠN giữa cuộn đó và `explicitResult`
+ * (nếu có khai) qua `verdictXauHon` — cùng hàm chung đường v2.0 đang dùng,
+ * không viết bản chép tay thứ ba. `explicitResult` vẫn có tác dụng khi nó
+ * XẤU HƠN cuộn (VD: máy khai NG nhưng summary rỗng ⇒ vẫn NG — máy biết thứ
+ * nó không gửi lên), chỉ KHÔNG còn được phép làm NHẸ đi một cuộn tệ hơn.
  */
 export function inferAoiOverallResult(input: {
   explicitResult?: "OK" | "NG" | "NTF" | null;
   ngCount?: number | null;
   ntfCount?: number | null;
 }): "OK" | "NG" | "NTF" {
-  if (input.explicitResult) return input.explicitResult;
-  if ((input.ngCount ?? 0) > 0) return "NG";
-  if ((input.ntfCount ?? 0) > 0) return "NTF";
-  return "OK";
+  const cuonTuSummary: "OK" | "NG" | "NTF" =
+    (input.ngCount ?? 0) > 0 ? "NG" : (input.ntfCount ?? 0) > 0 ? "NTF" : "OK";
+  if (input.explicitResult) return verdictXauHon(input.explicitResult, cuonTuSummary);
+  return cuonTuSummary;
 }
 
 /**

@@ -17,6 +17,15 @@
  *
  * ĐỘT BIẾN BẮT BUỘC (task-9-report.md): bỏ nhánh NTF khỏi `inferAoiOverallResult`
  * (luôn trả OK/NG) → ca "không NG, có NTF → NTF" ở §5a phải ĐỎ; hoàn tác → xanh.
+ *
+ * §5c — BG-42 (Pha 1D task 4): `inferAoiOverallResult` từng để `explicitResult`
+ * thắng VÔ ĐIỀU KIỆN (return ngay khi có, bất kể summary nói gì) — đúng hình
+ * dạng Đ-21 mà Pha 1C đã đóng cho đường v2.0. Sau sửa, hàm lấy XẤU HƠN giữa
+ * `explicitResult` và cuộn-từ-summary qua `verdictXauHon` (shared/rollupVerdict.ts).
+ * ĐỘT BIẾN BẮT BUỘC: hoàn nguyên dòng đầu hàm về `if (input.explicitResult)
+ * return input.explicitResult;` (bỏ qua verdictXauHon) → mệnh đề 1 ở §5c
+ * ("khai OK với summary.ng>0 → NG") phải ĐỎ (kỳ vọng NG nhưng hàm trả OK);
+ * hoàn tác → xanh lại.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -62,10 +71,26 @@ describe("aoiPackageRouter — hợp nhất đường ghi ZIP vào persistInspec
       expect(inferAoiOverallResult({})).toBe("OK");
     });
 
-    it("metaData.overallResult khai sẵn → LUÔN tôn trọng lời khai, kể cả khi mâu thuẫn với summary", () => {
-      expect(inferAoiOverallResult({ explicitResult: "OK", ngCount: 9, ntfCount: 9 })).toBe("OK");
+    it("explicitResult NTF/NG với summary sạch (hoặc nhẹ hơn) → giữ nguyên lời khai", () => {
       expect(inferAoiOverallResult({ explicitResult: "NTF", ngCount: 0, ntfCount: 0 })).toBe("NTF");
       expect(inferAoiOverallResult({ explicitResult: "NG", ntfCount: 9 })).toBe("NG");
+    });
+  });
+
+  describe("§5c BG-42 — explicitResult KHÔNG còn thắng vô điều kiện, dùng verdictXauHon với cuộn-từ-summary", () => {
+    it("mệnh đề 1: gói khai OK với summary.ng>0 → ghi NG (Đ-21; TRƯỚC sửa hàm trả OK)", () => {
+      expect(inferAoiOverallResult({ explicitResult: "OK", ngCount: 3, ntfCount: 0 })).toBe("NG");
+      expect(inferAoiOverallResult({ explicitResult: "OK", ngCount: 9, ntfCount: 9 })).toBe("NG");
+    });
+
+    it("mệnh đề 2 (CHỐNG HỒI QUY): gói khai OK với summary.ng=0 → vẫn OK", () => {
+      expect(inferAoiOverallResult({ explicitResult: "OK", ngCount: 0, ntfCount: 0 })).toBe("OK");
+      expect(inferAoiOverallResult({ explicitResult: "OK", ngCount: 0, ntfCount: 3 })).toBe("NTF");
+    });
+
+    it("mệnh đề 3 (CHỐNG HỒI QUY): gói khai NG → vẫn NG, bất kể summary nói gì", () => {
+      expect(inferAoiOverallResult({ explicitResult: "NG", ngCount: 0, ntfCount: 0 })).toBe("NG");
+      expect(inferAoiOverallResult({ explicitResult: "NG", ngCount: 0, ntfCount: 9 })).toBe("NG");
     });
   });
 
