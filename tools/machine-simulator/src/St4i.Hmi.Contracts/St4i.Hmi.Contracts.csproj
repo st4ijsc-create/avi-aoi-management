@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Contract assembly cho HMI Builder. net10.0 THUẦN (không -windows) và ZERO dependency, cùng lý do
+       St4i.Connector.Abstractions được làm như vậy: một hợp đồng phải dùng được từ bất kỳ host nào mà
+       không kéo theo gì. Đừng thêm PackageReference vào đây. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>
