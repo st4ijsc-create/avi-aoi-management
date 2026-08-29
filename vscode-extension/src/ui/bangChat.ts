@@ -11,6 +11,8 @@ import { moDongSse } from "../mang/dongSse";
 import { KHOA_COOKIE } from "../loi/dangNhap";
 import { gopDanhSachDuAn, type MucDuAn } from "../loi/duAn";
 import { goiTruyVanTrpc } from "../mang/trpc";
+import { laLoi401 } from "../loi/loiHttp";
+import { trangThaiBanDau, apDungSuKienChat, ketLuanLuotChat } from "../loi/suKienChat";
 
 /**
  * Nonce cho CSP của webview. Dùng CSPRNG chứ không `Math.random()`: nonce là thứ CSP dựa vào để
@@ -129,18 +131,20 @@ export class BangChat {
 
     this.huy?.abort();
     this.huy = new AbortController();
-    let traLoi = "";
+    let tt = trangThaiBanDau();
     try {
-      await moDongSse({
+      const { hong } = await moDongSse({
         serverUrl: cfg.get<string>("serverUrl", "http://localhost:3000"),
         cookie,
         than,
         tinHieu: this.huy.signal,
         nhan: (sk) => {
+          // Vòng trạng thái THUẦN (suKienChat.ts) gom token + đóng lượt khi có `done` + phát hiện
+          // cắt ngang. Việc GỬI TỚI WEBVIEW theo từng khung vẫn ở đây vì đó là I/O.
+          tt = apDungSuKienChat(tt, sk);
           // Tên trường ĐÃ ĐO trên mã máy chủ: `send({ type:"token", token: evt.token })`
           // (server/routes/aiLocalKnowledgeApi.ts:595) — KHÔNG phải `text`.
           if (sk.type === "token" && typeof sk.token === "string") {
-            traLoi += sk.token;
             void this.panel.webview.postMessage({ loai: "token", chu: sk.token });
           } else if (sk.type === "error") {
             // Máy chủ gửi chi tiết ở `error` (aiLocalKnowledgeApi.ts:628), KHÔNG phải `message`.
@@ -154,11 +158,29 @@ export class BangChat {
           }
         },
       });
+      const { traLoi, canhBao } = ketLuanLuotChat(tt, hong);
+      // `degraded` ⇒ webview đang hiện chữ ĐÃ STREAM mà server vừa bảo là rác (vòng công cụ suy
+      // biến) — phải THAY bằng `answer` thật, không chỉ lặng lẽ lưu đúng mà hiện sai.
+      void this.panel.webview.postMessage({
+        loai: "hoan_tat",
+        vanBanCuoi: tt.degraded ? traLoi : null,
+        canhBao,
+      });
       this.lichSu.push({ role: "user", content: cauHoi }, { role: "assistant", content: traLoi });
     } catch (e) {
       // Huỷ lượt cũ là hành vi BÌNH THƯỜNG (người dùng hỏi câu mới) — không phải lỗi, không được
       // khai thành lỗi. Chỉ lỗi THẬT mới hiện lên.
       if ((e as Error).name === "AbortError") return;
+      if (laLoi401(e)) {
+        // Spec §5.1: "401 giữa chừng ⇒ xoá cookie, mời đăng nhập lại" — cookie chết mà để lại thì
+        // mọi lượt sau lại 401 y hệt, không ai biết vì sao. CHỈ 401 mới xoá — 403/500 không xoá.
+        await this.context.secrets.delete(KHOA_COOKIE);
+        void this.panel.webview.postMessage({
+          loai: "loi",
+          thongDiep: "Phiên đăng nhập hết hạn — đã xoá phiên cũ. Chạy lệnh 'AI Local: Đăng nhập' để vào lại.",
+        });
+        return;
+      }
       void this.panel.webview.postMessage({ loai: "loi", thongDiep: (e as Error).message });
     }
   }

@@ -3,6 +3,7 @@
  * không cần mạng), `moDongSse` chỉ lo `fetch` + cookie.
  */
 import { tachKhungSse } from "../loi/khungSse";
+import { LoiHttp, moTaLoiHttp } from "../loi/loiHttp";
 
 export async function docLuongSse(
   luong: ReadableStream<Uint8Array>,
@@ -49,14 +50,17 @@ export async function moDongSse(dv: {
     signal: dv.tinHieu,
   });
   if (!res.ok) {
-    // Chỉ 401/403 mới là chuyện phiên đăng nhập. Gán mọi mã lỗi vào "đăng nhập lại" là chỉ sai
-    // đường cho người dùng: họ đăng nhập lại, vẫn hỏng, và không ai biết nguyên nhân thật.
-    const mat_phien = res.status === 401 || res.status === 403;
-    throw new Error(
-      mat_phien
-        ? `Máy chủ trả ${res.status} — phiên đăng nhập không còn hiệu lực, hãy đăng nhập lại.`
-        : `Máy chủ trả ${res.status}.`,
-    );
+    // 401 và 403 KHÔNG PHẢI cùng một chuyện (server/routes/_xacThucRest.ts): 403 có thể là
+    // MUST_CHANGE_PASSWORD/ACCOUNT_DISABLED, mà "đăng nhập lại" không cứu được — đăng nhập xong,
+    // lượt kế lại 403 y hệt, một vòng lặp không lối ra. Đọc thân JSON (có thể vắng/không phải
+    // JSON) rồi giao `moTaLoiHttp` (THUẦN, có lưới) quyết định câu — không tự bịa ở đây.
+    let than: unknown = null;
+    try {
+      than = await res.json();
+    } catch {
+      than = null;
+    }
+    throw new LoiHttp(res.status, moTaLoiHttp(res.status, than));
   }
   if (!res.body) throw new Error("Máy chủ không trả luồng dữ liệu.");
   return docLuongSse(res.body, dv.nhan);

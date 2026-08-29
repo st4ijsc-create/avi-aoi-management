@@ -29,6 +29,12 @@ describe("dungHtmlBang", () => {
     expect(html).toContain('id="o-du-an"');
   });
 
+  it("★★★ I3: webview xử `hoan_tat` — thay chữ khi degraded, hiện cảnh báo cắt ngang/khung hỏng", () => {
+    expect(html).toContain('m.loai === "hoan_tat"');
+    expect(html).toContain("m.vanBanCuoi");
+    expect(html).toContain("m.canhBao");
+  });
+
   it("★★★ webview BÁO SẴN SÀNG sau khi đăng ký lắng nghe (chống đua mất danh sách dự án)", () => {
     // Nếu extension gửi danh sách TRƯỚC khi webview lắng nghe, danh sách rơi mất mà không có lỗi
     // nào — ô chọn trống một cách im lặng. Bắt tay bằng `san_sang` là thứ chặn đúng lớp lỗi đó.

@@ -7,10 +7,23 @@ const CHE = "«đã che»";
 
 const CAM_TEP = [
   /(^|[\\/])\.env(\.|$)/i,
-  /(^|[\\/])id_(rsa|dsa|ecdsa|ed25519)$/i,
+  // Khoá SSH: CÓ hoặc KHÔNG CÓ hậu tố (`id_rsa`, `id_rsa_work`, `id_ed25519_deploy`, …) — đo trên
+  // máy thật thì khoá thường được đặt hậu tố để phân biệt nhiều khoá trên cùng máy; luật cũ neo
+  // `$` ngay sau tên gốc nên `id_rsa_work` lọt qua nguyên vẹn.
+  /(^|[\\/])id_(rsa|dsa|ecdsa|ed25519)(_[\w-]*)?$/i,
   /\.pem$/i,
   /\.pfx$/i,
   /\.p12$/i,
+  // Đo trên mã thật: `server.key`, `app/certs/tls.key`, `store.jks`, `k.p8` đều lọt qua danh sách
+  // cũ ⇒ nội dung khoá riêng bị gửi nguyên văn cho máy chủ. Neo bằng `$` nên "keyboard.ts" hay
+  // "monkey.p8s.ts" (đuôi thật là .ts) KHÔNG bị chặn nhầm.
+  /\.key$/i,
+  /\.jks$/i,
+  /\.keystore$/i,
+  /\.p8$/i,
+  /\.pkcs12$/i,
+  /\.asc$/i,
+  /\.ppk$/i,
 ];
 
 export function duocPhepGuiNoiDung(duong: string): boolean {
@@ -22,20 +35,25 @@ export function duocPhepGuiNoiDung(duong: string): boolean {
  *
  * ⚠ Thứ tự các luật có ý nghĩa, và mọi luật đều nghiêng về CHE THỪA hơn là để lọt: một đoạn mã bị
  * che quá tay chỉ làm câu trả lời kém đi một chút, còn một khoá bị lọt là mất thật.
- * Bốn lớp dưới đây đều đến từ phép đo trên chính repo này, không phải phỏng đoán.
+ * Năm lớp dưới đây đều đến từ phép đo trên chính repo này, không phải phỏng đoán.
  */
 export function cheBiMat(s: string): string {
   return (
     s
-      // 1) Khoá có tiền tố. `sk[-_]` vì Stripe dùng GẠCH DƯỚI (sk_live_…), OpenAI dùng gạch nối.
+      // 1) Khối khoá riêng PEM dán TRONG một tệp không bị `duocPhepGuiNoiDung` chặn (ví dụ nhúng
+      //    trong một biến cấu hình `.ts`): `-----BEGIN … PRIVATE KEY-----` … `-----END …-----`.
+      //    Che THÂN (base64), GIỮ hai dòng BEGIN/END để người đọc còn biết cái gì đã bị che — đây
+      //    là lớp phòng thủ CHIỀU SÂU, khác với việc chặn cả TỆP ở `CAM_TEP`.
+      .replace(/(-----BEGIN .*?PRIVATE KEY-----)[\s\S]*?(-----END .*?-----)/g, `$1\n${CHE}\n$2`)
+      // 2) Khoá có tiền tố. `sk[-_]` vì Stripe dùng GẠCH DƯỚI (sk_live_…), OpenAI dùng gạch nối.
       .replace(/sk[-_][A-Za-z0-9_-]{16,}/g, CHE)
       .replace(/AKIA[0-9A-Z]{16}/g, CHE)
-      // 2) JWT ba đoạn.
+      // 3) JWT ba đoạn.
       .replace(/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/g, CHE)
-      // 3) Credential NHÚNG trong chuỗi kết nối: scheme://user:MẬT_KHẨU@host. Dự án đã coi đây là
+      // 4) Credential NHÚNG trong chuỗi kết nối: scheme://user:MẬT_KHẨU@host. Dự án đã coi đây là
       //    bí mật (aiSafety.test.ts:148); đo trên .env.example thật thì luật cũ để lọt DATABASE_URL.
       .replace(/(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)([^\s@]+)(@)/gi, `$1${CHE}$3`)
-      // 4) Gán khoá = giá trị. `["']?` cho phép dấu nháy ĐÓNG chen giữa từ khoá và dấu ngăn — đó
+      // 5) Gán khoá = giá trị. `["']?` cho phép dấu nháy ĐÓNG chen giữa từ khoá và dấu ngăn — đó
       //    chính là hình dạng JSON ("password": "…") mà luật cũ bỏ sót. Giá trị không nháy thì che
       //    tới HẾT DÒNG (`.` không khớp xuống dòng) vì bí mật nhiều từ chỉ che từ đầu là vẫn rò.
       .replace(

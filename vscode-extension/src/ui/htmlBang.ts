@@ -72,7 +72,13 @@ export function dungHtmlBang(dv: { nonce: string }): string {
     const m = e.data;
     if (m.loai === "token" && khoiTraLoi) khoiTraLoi.textContent += m.chu;
     else if (m.loai === "loi") themLuot("Lỗi", m.thongDiep);
-    else if (m.loai === "duAn") {
+    else if (m.loai === "hoan_tat") {
+      // vanBanCuoi chỉ có khi server bảo THAY chữ đã stream (degraded) — không phải mọi lượt.
+      if (m.vanBanCuoi != null && khoiTraLoi) khoiTraLoi.textContent = m.vanBanCuoi;
+      // Cắt ngang hoặc khung hỏng: KHÔNG được im lặng — phải hiện, kể cả khi câu trả lời trông
+      // như đã xong.
+      if (m.canhBao) themLuot("Lưu ý", m.canhBao);
+    } else if (m.loai === "duAn") {
       const o = document.getElementById("o-du-an");
       o.innerHTML = "";
       for (const d of m.ds) {

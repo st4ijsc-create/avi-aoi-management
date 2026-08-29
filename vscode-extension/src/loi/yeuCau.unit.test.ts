@@ -45,4 +45,27 @@ describe("dungYeuCauStream", () => {
     const t = dungYeuCauStream({ ...CHUNG, lichSu: ls, cheDo: { loai: "local", nhan: "x" } });
     expect(t.history).toEqual(ls);
   });
+
+  it("★★★ I5: chế độ LOCAL — question nêu rõ mã đính kèm đọc từ máy LOCAL", () => {
+    const t = dungYeuCauStream({ ...CHUNG, cheDo: { loai: "local", nhan: "d:/du-an" } });
+    const q = String(t.question);
+    expect(q).toContain("LOCAL");
+    expect(q).toContain("d:/du-an");
+  });
+
+  it("★★★ I5: chế độ SERVER — question phân biệt được nguồn mã dán (LOCAL) với dự án SERVER (cây khác)", () => {
+    const t = dungYeuCauStream({
+      ...CHUNG,
+      cheDo: { loai: "server", projectId: "csharp", nhan: "Demo Csharp" },
+    });
+    const q = String(t.question);
+    expect(q).toContain("LOCAL");
+    expect(q).toContain("Demo Csharp");
+    expect(q).toContain("KHÔNG PHẢI"); // hai nguồn phải được nói RÕ là khác nhau, không chỉ liệt kê tên
+  });
+
+  it("★★ I5: ngữ cảnh RỖNG ⇒ KHÔNG dán nhãn nguồn thừa (không đẻ khung trống)", () => {
+    const t = dungYeuCauStream({ ...CHUNG, nguCanh: "", cheDo: { loai: "server", projectId: "c", nhan: "Demo" } });
+    expect(t.question).toBe("Hàm Divide sai chỗ nào?");
+  });
 });

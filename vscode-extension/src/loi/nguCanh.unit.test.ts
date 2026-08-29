@@ -22,6 +22,27 @@ describe("duocPhepGuiNoiDung", () => {
     expect(duocPhepGuiNoiDung("src/Calculator.cs")).toBe(true);
     expect(duocPhepGuiNoiDung("client/src/env.ts")).toBe(true);
   });
+
+  it("★★★ C1: CẤM đuôi khoá riêng mở rộng — đo trên đường dẫn THẬT", () => {
+    expect(duocPhepGuiNoiDung("server.key")).toBe(false);
+    expect(duocPhepGuiNoiDung("app/certs/tls.key")).toBe(false);
+    expect(duocPhepGuiNoiDung("store.jks")).toBe(false);
+    expect(duocPhepGuiNoiDung("k.p8")).toBe(false);
+    expect(duocPhepGuiNoiDung("a.keystore")).toBe(false);
+    expect(duocPhepGuiNoiDung("a.pkcs12")).toBe(false);
+    expect(duocPhepGuiNoiDung("a.asc")).toBe(false);
+    expect(duocPhepGuiNoiDung("a.ppk")).toBe(false);
+  });
+
+  it("★★★ C1: CẤM khoá SSH có HẬU TỐ, không chỉ tên trần", () => {
+    expect(duocPhepGuiNoiDung("~/.ssh/id_rsa_work")).toBe(false);
+  });
+
+  it("★★ C1: tệp mã nguồn thường KHÔNG bị chặn nhầm dù tên gợi nhớ đuôi cấm", () => {
+    expect(duocPhepGuiNoiDung("src/env.ts")).toBe(true);
+    expect(duocPhepGuiNoiDung("keyboard.ts")).toBe(true);
+    expect(duocPhepGuiNoiDung("monkey.p8s.ts")).toBe(true);
+  });
 });
 
 describe("cheBiMat", () => {
@@ -70,6 +91,27 @@ describe("cheBiMat", () => {
   it("★★ che tới hết dòng KHÔNG tràn sang dòng sau", () => {
     const r = cheBiMat("password = bi-mat\nconst x = 1;");
     expect(r).toContain("const x = 1;");
+  });
+
+  it("★★★ C1: khối PEM dán TRONG một tệp bình thường — che THÂN, GIỮ dòng BEGIN/END", () => {
+    const cont =
+      "const cauHinh = `\n-----BEGIN RSA PRIVATE KEY-----\n" +
+      "MIIEowIBAAKCAQEAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n" +
+      "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n" +
+      "-----END RSA PRIVATE KEY-----\n`;";
+    const r = cheBiMat(cont);
+    expect(r).not.toContain("MIIEowIBAAKCAQEA");
+    expect(r).not.toContain("yyyyyyyyyyyyyyyy");
+    expect(r).toContain("-----BEGIN RSA PRIVATE KEY-----");
+    expect(r).toContain("-----END RSA PRIVATE KEY-----");
+  });
+
+  it("★★★ C1: khối PEM không nhãn thuật toán (`-----BEGIN PRIVATE KEY-----`) cũng bị che", () => {
+    const cont = "-----BEGIN PRIVATE KEY-----\nZZZZZZZZZZZZZZZZZZZZZZZZZZ\n-----END PRIVATE KEY-----";
+    const r = cheBiMat(cont);
+    expect(r).not.toContain("ZZZZZZZZZZZZZZZZZZZZZZZZZZ");
+    expect(r).toContain("-----BEGIN PRIVATE KEY-----");
+    expect(r).toContain("-----END PRIVATE KEY-----");
   });
 });
 
