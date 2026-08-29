@@ -103,8 +103,9 @@ internal static class TestRunTempRoot
     /// asserted the ambient state by calling <c>Environment.GetEnvironmentVariable</c> — or a store's
     /// <c>ResolveRoot()</c>, which does the same thing internally — would be reading a PROCESS-WIDE value
     /// that other test classes legitimately flip while it runs. MEASURED at CB-1: within
-    /// <c>St4i.EngineApi.Tests</c> alone, EIGHTEEN classes set every one of these variables to a per-class
-    /// temporary directory, and several EdgeCore classes set theirs to <see langword="null"/> to assert the
+    /// <c>St4i.EngineApi.Tests</c> alone, SEVENTEEN OR EIGHTEEN classes set each of these variables to a
+    /// per-class temporary directory — eighteen for every variable except <c>ST4I_SETTINGS_DIR</c>, which is
+    /// seventeen — and several EdgeCore classes set theirs to <see langword="null"/> to assert the
     /// default arm. xunit runs collections in parallel by default and this repository declares no
     /// <c>xunit.runner.json</c> and no assembly-level collection behaviour, so those flips and a live read
     /// genuinely interleave. A witness built on a live read would therefore be FLAKY, and a flaky witness

@@ -30,7 +30,7 @@ namespace St4i.EngineApi.Tests;
 /// that script. Prevention and detection have different reach; until CB-1 only detection's was written down.</para>
 ///
 /// <para>🔴 <b>Why every assertion reads the INSTALLED record and never the live variable.</b> Measured at
-/// CB-1: EIGHTEEN classes in this assembly set all of these variables while other tests run, and xunit runs
+/// CB-1: EIGHTEEN classes in this assembly set each of these three variables while other tests run, and xunit runs
 /// collections in parallel by default (this repository declares no <c>xunit.runner.json</c> and no
 /// assembly-level collection behaviour). A witness calling <c>ResolveRoot()</c> would be reading a value
 /// another class owns at that instant — flaky by construction. A flaky leak guard is worse than no guard:

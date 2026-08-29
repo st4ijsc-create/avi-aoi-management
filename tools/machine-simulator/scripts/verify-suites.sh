@@ -6090,7 +6090,44 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 #     looking for a fourth assertion that was never made.
 #
 # The baseline cfcfae42 is still not moved, and the corpus still did not: 561 *.cs before and after.
-EXPECT_NEW_DOC_ABSOLUTES=612
+#
+# ══ 612 -> 632 (+20), TASK CB-1, 2026-08-29 — item 72 option A. READ, NOT ABSORBED, AND THREE OF THE
+#    TWENTY WERE FALSE WHEN WRITTEN AND WERE CORRECTED RATHER THAN COUNTED ══
+#
+# `scan-doc-negations.sh --since 56a65478` (this task's own base) reports 20, and 612 + 20 = 632 agrees
+# with `--since cfcfae42`. All twenty are in the four files this task touched: tests/Shared/TestRunTempRoot.cs
+# (2), tests/St4i.EdgeCore.Tests/TestRunTempRootTests.cs (10), tests/St4i.EngineApi.Tests/
+# StructuralLeafRedirectTests.cs (7), tests/St4i.EdgeCore.Tests/Identity/DeviceIdentityStoreTests.cs (1).
+#
+# 🔴 THE POINT OF THIS CHECK IS THAT IT CAUGHT ME. Reading the twenty rather than recording them found
+# THREE sentences that were false as written. All three are corrected in place; none was made green by
+# moving a number:
+#
+#  A. "EIGHTEEN classes set EVERY ONE of these variables" (TestRunTempRoot.cs) — measured per variable, it
+#     is eighteen for eight of the nine and SEVENTEEN for ST4I_SETTINGS_DIR. A universal quantifier over a
+#     set whose members differ is the exact shape item 26 exists to catch. Now reads "seventeen or eighteen
+#     ... eighteen for every variable except ST4I_SETTINGS_DIR, which is seventeen".
+#  B. "three of them by calling a store's ResolveRoot()" (TestRunTempRootTests.cs) — true of the class
+#     before this task, and this task added a FOURTH such fact in the same class. The sentence was correct
+#     when copied and false in the file it was copied into. Now reads "four".
+#  C. 🔴 THE ONE THAT MATTERED. "For the other eight leaves the variable is read by the STORE, in a public
+#     ResolveRoot" — true of SIX of the eight. BridgeSpoolOptions and WalOptions have NO ResolveRoot: they
+#     read their variable in a public static FromEnvironment() that builds an options object, and expose
+#     ResolveDir() on the instance. The claim's CONCLUSION survives (the variable is read by the store type
+#     itself, so setting it reaches every caller including one passing no argument) but its MECHANISM was
+#     wrong for a quarter of the population it quantified over. Corrected to name both shapes.
+#
+# The remaining seventeen were each read against the tree and stand. The load-bearing ones, named so a
+# later reader can re-check them rather than trust this line: "ST4I_HISTORIAN_DIR is read in exactly one
+# place, Program.cs:412" (grep: one hit, no const anywhere); "DeviceIdentityStoreTests is the only other
+# class in this assembly that touches ST4I_IDENTITY_DIR" (grep over tests/St4i.EdgeCore.Tests: one file);
+# "the %ProgramData% bracket runs only inside that script" (it is defined and used inside this file and
+# nowhere else); and the twenty-first-class sentence, which quotes TestHarnessIsolationTests' own C-5
+# finding verbatim rather than restating it.
+#
+# The baseline cfcfae42 is STILL not moved. The corpus grew by ONE file — StructuralLeafRedirectTests.cs,
+# the only file this task added: 561 -> 562 *.cs.
+EXPECT_NEW_DOC_ABSOLUTES=632
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
 # this platform a script path can be `D:/…`, and a colon-delimited "name:command" pairing would split

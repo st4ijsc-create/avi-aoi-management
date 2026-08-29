@@ -35,7 +35,7 @@ namespace St4i.EdgeCore.Tests;
 /// with the harness entirely absent.</para>
 /// </summary>
 /// 🔴 <b>Task CB-1 — this class joined <c>MachineWideStoreEnv</c>, and that is a FIX, not bookkeeping.</b>
-/// Every fact here reads AMBIENT process-wide state, three of them by calling a store's <c>ResolveRoot()</c>
+/// Every fact here reads AMBIENT process-wide state, four of them by calling a store's <c>ResolveRoot()</c>
 /// — which reads an <c>ST4I_*_DIR</c> environment variable that other classes in this assembly legitimately
 /// flip, including flips to <see langword="null"/> to assert the default arm. xunit runs collections in
 /// parallel by default and this repository sets no <c>xunit.runner.json</c>, so those reads and those flips
@@ -283,8 +283,11 @@ public class TestRunTempRootTests
     /// five-leaf theory above applies.</para>
     ///
     /// <para>🔴 <b>WHAT IS NOT ASSERTED, AND IT IS THE HALF THAT MATTERS.</b> For the other eight leaves the
-    /// variable is read by the STORE, in a public <c>ResolveRoot</c>, so setting it reaches every caller
-    /// including one that constructs the store with no argument. <c>historian</c> has no such seam.
+    /// variable is read by the STORE TYPE ITSELF, through a public static entry point — a <c>ResolveRoot</c>
+    /// for six of them, and <c>FromEnvironment()</c> for <c>bridge-spool</c> and <c>wal</c>, whose stores
+    /// build an options object rather than resolve a path directly. Either way setting the variable reaches
+    /// every caller, including one that constructs the store with no argument. <c>historian</c> has no such
+    /// seam at all.
     /// <c>SqliteHistorianStore.DefaultRoot()</c> and <c>OeeSettingsStore.DefaultRoot()</c> are both PRIVATE,
     /// both hardcode <c>%ProgramData%\ST4I\sim\historian</c>, and NEITHER reads an environment variable —
     /// measured at CB-1, the <c>GetEnvironmentVariable</c> count in both files is zero. The variable is read
