@@ -275,8 +275,12 @@ export class BangChat {
       // ⚠ Máy chủ TỪ CHỐI qua HTTP 200 (hết hạn TTL, token lệch, trạng thái sai...) — `goiDuyet`
       // không ném cho các ca đó. Chỉ `ok === true` mới được khai "đã ghi"; ngược lại hiện NGUYÊN
       // VĂN lý do của máy chủ, không bịa ra một câu thành công giả.
+      // ⚠ `status === "executed"` cũng có `ok:true` (đã ghi TRƯỚC ĐÓ, không phải LẦN NÀY) — hiện
+      // nguyên văn message của máy chủ ("Đã thực thi trước đó."), đừng khai như vừa ghi mới.
       thongDiep = kq.ok
-        ? `Đã duyệt — máy chủ đã ghi "${d.path}".`
+        ? kq.status === "executed"
+          ? (kq.message ?? "Đã thực thi trước đó.")
+          : `Đã duyệt — máy chủ đã ghi "${d.path}".`
         : (kq.message ?? "Máy chủ từ chối lượt duyệt.");
     } catch (e) {
       thongDiep = `Duyệt thất bại: ${(e as Error).message}`;
