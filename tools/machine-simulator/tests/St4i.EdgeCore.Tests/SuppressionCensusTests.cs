@@ -481,7 +481,19 @@ public sealed class SuppressionCensusTests
     /// that before this row existed. Stage 3 of item 12 moves exactly one row here — St4i.EdgeCore, off to
     /// on — and having to move it deliberately, with a sentence, is the point.
     /// <para>🔴 <b>STAGE 3 RAN ON 2026-08-19 (task AF-1) AND MOVED EXACTLY THAT ONE ROW</b>, so the table is
-    /// now EIGHT on / SEVEN off plus the vendored sample's own project. It went red on the flip before the
+    /// now EIGHT on / SEVEN off plus the vendored sample's own project.
+    /// <para>🔴 "THE TABLE IS NOW EIGHT ON / SEVEN OFF PLUS THE VENDORED SAMPLE'S OWN PROJECT" IS WITHDRAWN,
+    /// 2026-08-30, WS-HMI Mốc 0 task 7
+    /// (.superpowers/sdd/2026-08-29-hmi-moc0-schema-freeze-blueprint/task-7-brief.md) — quoted and retired
+    /// in place rather than rewritten, the style this file and <c>Directory.Build.props</c> both use for a
+    /// stale count. It was true from AF-1's stage 3 (2026-08-19) until task 7 added two rows below for two
+    /// projects that existed on NEITHER date — <c>St4i.Hmi.Contracts</c> (<c>on</c>) and
+    /// <c>St4i.Hmi.Contracts.Tests</c> (<c>off</c>), each marked "A NEW PROJECT, NOT A SWITCH FLIP". The
+    /// table is now <b>NINE on / EIGHT off</b> plus the vendored sample's own project. Nothing about
+    /// stage 3's own event is corrected by this bracket — AF-1's row still moved off to on, alone, exactly
+    /// as the sentence above records; only the total the table sums to has moved since, by two new rows
+    /// appearing rather than by any row flipping.</para>
+    /// It went red on the flip before the
     /// row was edited — 1 failed / 4 passed, this assertion, naming the path and the direction — which is
     /// the measurement that this table watches the DECLARATION and not the diagnostics. The sentence in the
     /// paragraph above is unchanged for the other seven `on` rows and has one exception in degree: with 736

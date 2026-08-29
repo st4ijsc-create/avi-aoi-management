@@ -3,7 +3,8 @@
 // Vì sao cần một lệnh: hai phía sống ở hai toolchain (dotnet / node) và hai thư mục. Một người
 // sửa schema rồi chỉ chạy phía mình là kịch bản drift chính mà Mốc 0 tồn tại để chặn.
 //
-// 🔴 Cổng này KHÔNG chạy Playwright, KHÔNG chạy bốn test project .NET khác, và KHÔNG build web.
+// 🔴 Cổng này KHÔNG chạy Playwright, KHÔNG chạy năm test project .NET khác (EngineApi, EdgeCore,
+// EdgeService, Connector.Abstractions, Connector.Conformance), và KHÔNG build web.
 // Nó chỉ đo hợp đồng. Xanh ở đây không có nghĩa nhánh sẵn sàng merge.
 
 import { spawnSync } from "node:child_process"
