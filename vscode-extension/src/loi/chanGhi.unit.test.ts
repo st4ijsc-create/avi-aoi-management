@@ -9,7 +9,8 @@
  * nhạy cảm — DÙNG LẠI `duocPhepGuiNoiDung` (xem docblock ở `chanGhi.ts`, KHÔNG viết bản thứ hai).
  */
 import { describe, it, expect } from "vitest";
-import { duocPhepGhi, duongTuongDoiTrongWorkspace } from "./chanGhi";
+import { resolve } from "node:path";
+import { duocPhepGhi, duongTuongDoiTrongWorkspace, giaiDuongDeXuat } from "./chanGhi";
 
 describe("duocPhepGhi", () => {
   it("★★★ tệp trong workspace ⇒ {ok:true}", () => {
@@ -143,6 +144,105 @@ describe("duocPhepGhi — luật 4: cấm CHỈ-KHI-GHI (I-6)", () => {
   it("★★ dấu phân cách kiểu POSIX cũng bị chặn (đường do model sinh hay dùng `/`)", () => {
     expect(duocPhepGhi("C:/ws/.git/hooks/pre-commit", ["C:\\ws"]).ok).toBe(false);
     expect(duocPhepGhi("C:/ws/.vscode/tasks.json", ["C:\\ws"]).ok).toBe(false);
+  });
+
+  it("★★★ F5 — `*.code-workspace` ⇒ TỪ CHỐI: nó mang CHÍNH `tasks`/`launch` với nghĩa y hệt", () => {
+    /**
+     * ★★★ Chặn `.vscode/tasks.json` mà bỏ ngỏ `*.code-workspace` là chặn MỘT cách viết của cùng
+     * một hậu quả: `{"folders":[…],"tasks":{"tasks":[{"command":"…"}]},"launch":{…}}` chạy y hệt.
+     * Tệp này thường nằm ngay ở GỐC repo (không dưới `.vscode/`) nên luật cũ không chạm tới nó.
+     */
+    for (const duong of [
+      "C:\\ws\\du-an.code-workspace",
+      "C:\\ws\\sub\\Nhieu Goc.CODE-WORKSPACE",
+      "C:/ws/avi.code-workspace",
+    ]) {
+      const r = duocPhepGhi(duong, ["C:\\ws"]);
+      expect(r.ok, `${duong} phải bị chặn`).toBe(false);
+      if (!r.ok) expect(r.lyDo).toContain("code-workspace");
+    }
+  });
+
+  it("★★★ F5 ĐỐI CHỨNG: KHÔNG chặn nhầm tệp chỉ CHỨA chuỗi đó trong tên/thư mục", () => {
+    // Đuôi tên phải là ĐUÔI THẬT. `code-workspace.ts` là mã thường; một thư mục tên
+    // `code-workspace/` cũng vậy. Chặn nhầm là mất chức năng ÂM THẦM.
+    for (const duong of [
+      "C:\\ws\\src\\code-workspace.ts",
+      "C:\\ws\\code-workspace\\index.ts",
+      "C:\\ws\\src\\a.code-workspace.md",
+    ]) {
+      expect(duocPhepGhi(duong, ["C:\\ws"]), `${duong} KHÔNG được bị chặn`).toEqual({ ok: true });
+    }
+  });
+});
+
+/**
+ * ★★★ F3 (2026-08-30) — WORKSPACE NHIỀU GỐC: ĐƯỜNG MODEL NHÌN THẤY vs ĐƯỜNG LÚC GHI.
+ *
+ * Một đường tương đối chỉ có nghĩa cùng với cái GỐC nó được tính trên. Neo hai bên vào hai gốc
+ * khác nhau không chỉ đẻ ra lỗi — nó đẻ ra một lượt ghi vào **tệp KHÁC, CÓ THẬT**, lọt qua mọi
+ * hàng rào và trông hoàn toàn hợp lý trên thẻ duyệt.
+ */
+describe("giaiDuongDeXuat (F3)", () => {
+  const co = (...ds: string[]) => (p: string) => ds.map((x) => resolve(x)).includes(resolve(p));
+
+  it("★★★ tệp nằm ở gốc KHÁC gốc đang chọn ⇒ giải đúng về gốc CHỨA nó", () => {
+    // Cmd+K trên `lib/x.ts` khai đường "x.ts" (tính trên gốc `lib`); ô dự án đang chọn `app`.
+    // `resolve(app, "x.ts")` không tồn tại ⇒ ứng viên duy nhất có thật là `lib/x.ts`.
+    const r = giaiDuongDeXuat("x.ts", "C:\\ws\\app", ["C:\\ws\\app", "C:\\ws\\lib"], co("C:\\ws\\lib\\x.ts"));
+    expect(r).toEqual({ ok: true, duong: resolve("C:\\ws\\lib\\x.ts") });
+  });
+
+  it("★★★ HAI tệp CÙNG khớp (app/x.ts và lib/x.ts đều có thật) ⇒ TỪ CHỐI, không đoán", () => {
+    /**
+     * ★★★ ĐÂY LÀ CA "ghi nhầm tệp mà thẻ vẫn hợp lý". Ưu tiên gốc đang chọn sẽ cho ra `app/x.ts`
+     * — đọc được, băm khớp chính nó, nằm trong workspace ⇒ MỌI hàng rào cho qua, và người duyệt
+     * nhìn một diff của đúng tệp mình KHÔNG định sửa. "Không biết" ở cửa ghi phải là "không được".
+     */
+    const r = giaiDuongDeXuat(
+      "x.ts",
+      "C:\\ws\\app",
+      ["C:\\ws\\app", "C:\\ws\\lib"],
+      co("C:\\ws\\app\\x.ts", "C:\\ws\\lib\\x.ts"),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.lyDo).toContain("KHÔNG đoán");
+  });
+
+  it("★★★ HÌNH DẠNG ĐỤNG THƯ MỤC CON: gốc `lib` và `app/lib/` cùng tồn tại ⇒ TỪ CHỐI", () => {
+    // Đường "lib/x.ts" (dạng có tiền tố tên thư mục mà `asRelativePath` sinh ra ở workspace nhiều
+    // gốc) khớp CẢ `app/lib/x.ts` LẪN gốc `lib` + "lib/x.ts"... và quan trọng hơn: khớp hai tệp
+    // có thật ở hai gốc. Đây đúng hình dạng mà F3 mô tả.
+    const r = giaiDuongDeXuat(
+      "lib/x.ts",
+      "C:\\ws\\app",
+      ["C:\\ws\\app", "C:\\ws\\lib"],
+      co("C:\\ws\\app\\lib\\x.ts", "C:\\ws\\lib\\lib\\x.ts"),
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it("★★★ MỘT gốc duy nhất ⇒ y hệt `resolve(goc, path)` (không đổi hành vi ca thường)", () => {
+    const r = giaiDuongDeXuat("src/a.ts", "C:\\ws", ["C:\\ws"], co("C:\\ws\\src\\a.ts"));
+    expect(r).toEqual({ ok: true, duong: resolve("C:\\ws\\src\\a.ts") });
+  });
+
+  it("★★ KHÔNG gốc nào chứa tệp ⇒ vẫn trả đường neo trên gốc ĐANG CHỌN để nơi gọi báo đúng lỗi", () => {
+    // Trả `ok:false` ở đây sẽ nuốt mất câu "không đọc được tệp từ đĩa — đợt này chỉ sửa tệp ĐÃ CÓ",
+    // là câu mô tả ĐÚNG chuyện đang xảy ra.
+    const r = giaiDuongDeXuat("khong-co.ts", "C:\\ws\\app", ["C:\\ws\\app", "C:\\ws\\lib"], co());
+    expect(r).toEqual({ ok: true, duong: resolve("C:\\ws\\app\\khong-co.ts") });
+  });
+
+  it("★★ đường TUYỆT ĐỐI do model khai ⇒ giữ nguyên, để hàng rào phía sau phán xử", () => {
+    const r = giaiDuongDeXuat("C:\\ngoai\\x.ts", "C:\\ws\\app", ["C:\\ws\\app"], co());
+    expect(r).toEqual({ ok: true, duong: resolve("C:\\ngoai\\x.ts") });
+  });
+
+  it("★★ cùng một tệp qua HAI gốc trùng nhau ⇒ không tự coi là mập mờ", () => {
+    // `gocDangChon` luôn nằm trong `cacGoc` ⇒ ứng viên bị lặp. Đếm theo ĐƯỜNG đã chuẩn hoá.
+    const r = giaiDuongDeXuat("a.ts", "C:\\ws", ["C:\\ws", "C:\\ws"], co("C:\\ws\\a.ts"));
+    expect(r).toEqual({ ok: true, duong: resolve("C:\\ws\\a.ts") });
   });
 });
 

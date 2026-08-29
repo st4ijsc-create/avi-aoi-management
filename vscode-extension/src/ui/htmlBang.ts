@@ -30,6 +30,9 @@ export function dungHtmlBang(dv: { nonce: string }): string {
             padding: 6px; font-family: inherit; }
   button { background: var(--vscode-button-background); color: var(--vscode-button-foreground);
            border: none; padding: 6px 12px; cursor: pointer; }
+  /* Nút ghi đang chờ kết quả: phải THẤY ĐƯỢC là đang khoá, nếu không người dùng bấm tiếp vì nghĩ
+     cú bấm đầu rơi mất — đúng cái phản xạ sinh ra hàng kiểm toán thừa. */
+  button:disabled { opacity: .5; cursor: default; }
 </style>
 </head>
 <body>
@@ -99,7 +102,26 @@ export function dungHtmlBang(dv: { nonce: string }): string {
   document.getElementById("o-du-an").addEventListener("change", (e) =>
     vscode.postMessage({ loai: "doi_du_an", duAnId: e.target.value }));
   document.getElementById("nut-xem-diff").addEventListener("click", () => vscode.postMessage({ loai: "xem_diff" }));
-  document.getElementById("nut-duyet").addEventListener("click", () => vscode.postMessage({ loai: "duyet" }));
+
+  // ★★★ CHỐNG BẤM HAI LẦN (Minor, 2026-08-30) — CHỈ nút GHI, và chỉ nó.
+  //
+  // Phía extension xoá trạng thái đề xuất SAU \`await\` (đọc secret · gọi mạng · ghi đĩa), nên giữa
+  // hai cú bấm liền nhau trạng thái vẫn còn nguyên: cú thứ hai chạy trọn \`apBanVa\` lần nữa và
+  // MỞ MỘT HÀNG KIỂM TOÁN THỨ HAI trên máy chủ. Lượt ghi thứ hai gần như chắc chắn bị chặn ở phép
+  // so băm (đĩa đã đổi vì lượt đầu) — nhưng nó vẫn để lại một hàng \`ap_client_that_bai\` cho một
+  // lượt người dùng KHÔNG hề định làm. Sổ kiểm toán khi ấy kể một câu chuyện sai về hành vi người
+  // dùng, và đó là thứ duy nhất máy chủ có để kể lại.
+  // ⚠ KHÔNG đụng \`textContent\` của nút: chữ trên nút là HÀNG RÀO (nó nói byte rơi Ở ĐÂU). Chỉ khoá.
+  const nutDuyet = document.getElementById("nut-duyet");
+  let dangGuiDuyet = false;
+  function moKhoaNutDuyet() { dangGuiDuyet = false; nutDuyet.disabled = false; }
+  nutDuyet.addEventListener("click", () => {
+    if (dangGuiDuyet) return;
+    dangGuiDuyet = true;
+    nutDuyet.disabled = true;
+    vscode.postMessage({ loai: "duyet" });
+  });
+
   document.getElementById("nut-huy").addEventListener("click", () => vscode.postMessage({ loai: "huy" }));
 
   window.addEventListener("message", (e) => {
@@ -126,6 +148,8 @@ export function dungHtmlBang(dv: { nonce: string }): string {
       // ★★★ FAIL-CLOSED: thiếu nhãn nguồn hoặc chữ nút ⇒ KHÔNG hiện thẻ. Hiện một nút ghi mà không
       // nói rõ ghi ở đâu (hoặc còn đeo chữ của lượt trước, có thể là chế độ KIA) đúng là "tai nạn
       // không cứu được" mà spec §7 mô tả.
+      // Thẻ MỚI ⇒ một quyết định mới: mở khoá dù lượt trước kết thúc thế nào.
+      moKhoaNutDuyet();
       if (!m.nhanNguon || !m.nhanNut) {
         theDuyet.hidden = true;
         themLuot("Lỗi", "Thẻ duyệt thiếu nhãn nguồn hoặc chữ trên nút ghi — đã KHÔNG hiện thẻ.");
@@ -142,7 +166,14 @@ export function dungHtmlBang(dv: { nonce: string }): string {
       }
     } else if (m.loai === "an_the_duyet") {
       theDuyet.hidden = true;
+      moKhoaNutDuyet();
     } else if (m.loai === "thong_bao") {
+      // ⚠⚠ MỞ KHOÁ Ở ĐÂY LÀ BẮT BUỘC, không phải cho gọn. Đường SERVER có một ca CỐ Ý **giữ thẻ
+      // lại**: "KHÔNG RÕ KẾT CỤC" (mất mạng giữa chừng) chỉ gửi \`thong_bao\` và KHÔNG gửi
+      // \`an_the_duyet\`, vì bấm Duyệt lần nữa là cách DUY NHẤT để biết lượt trước ra sao
+      // (\`confirmAction\` idempotent — xem \`bangChat.duyetDeXuat\`). Khoá vĩnh viễn ở đó là lấy mất
+      // đúng đường thoát mà bản vá kia dựng ra.
+      moKhoaNutDuyet();
       themLuot("Thông báo", m.thongDiep);
     } else if (m.loai === "dat_cau_hoi_tu_lenh") {
       // ★★★ CMD+K (Task 7) — extension đổ câu hỏi ĐÃ DỰNG SẴN (đường dẫn + dòng + đoạn mã + yêu

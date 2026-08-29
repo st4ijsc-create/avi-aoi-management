@@ -97,3 +97,125 @@ describe("dungHtmlBang", () => {
     expect(html).toContain('m.loai === "thong_bao"');
   });
 });
+
+/**
+ * ★★★ CHỐNG BẤM HAI LẦN — LƯỚI **CHẠY THẬT** SCRIPT CỦA WEBVIEW, KHÔNG SOI CHỮ.
+ *
+ * ⚠ Mọi ca ở trên khẳng định HTML **CHỨA** một chuỗi nào đó — đo CƠ CHẾ, không đo KẾT CỤC. Với một
+ *   hàng rào chống bấm-hai-lần thì kết cục là thứ duy nhất đáng đo: "bấm hai phát ⇒ extension chỉ
+ *   nhận MỘT tin". Nên nhóm này bóc phần `<script>` ra và CHẠY nó trên một DOM giả tối thiểu.
+ * ⚠ DOM giả cố ý NGHÈO — chỉ đủ những gì script thật gọi tới. Dựng thêm là dựng một trình duyệt
+ *   thứ hai để rồi nó trôi khỏi trình duyệt thật.
+ */
+class PhanTuGia {
+  hidden = false;
+  disabled = false;
+  textContent = "";
+  value = "";
+  innerHTML = "";
+  className = "";
+  scrollTop = 0;
+  scrollHeight = 0;
+  private nghe: Record<string, Array<(e: unknown) => void>> = {};
+  addEventListener(loai: string, h: (e: unknown) => void): void {
+    (this.nghe[loai] ??= []).push(h);
+  }
+  appendChild(): void {
+    /* DOM giả không dựng cây thật — script chỉ cần lời gọi không ném */
+  }
+  /** Mô phỏng một cú BẤM CHUỘT thật (kể cả khi nút đang `disabled` — trình duyệt tự chặn, ta thì
+   *  cố ý KHÔNG chặn, để đo chính hàng rào trong script chứ không đo hộ trình duyệt). */
+  bam(): void {
+    for (const h of this.nghe["click"] ?? []) h({});
+  }
+}
+
+function chayWebview(): {
+  nut: (id: string) => PhanTuGia;
+  daGui: Array<Record<string, unknown>>;
+  banTin: (m: Record<string, unknown>) => void;
+} {
+  const ma = dungHtmlBang({ nonce: "N" }).match(/<script nonce="N">([\s\S]*?)<\/script>/)![1];
+  const kho = new Map<string, PhanTuGia>();
+  const nut = (id: string): PhanTuGia => {
+    if (!kho.has(id)) kho.set(id, new PhanTuGia());
+    return kho.get(id)!;
+  };
+  const daGui: Array<Record<string, unknown>> = [];
+  const ngheCuaWindow: Array<(e: { data: Record<string, unknown> }) => void> = [];
+  const documentGia = { getElementById: nut, createElement: () => new PhanTuGia() };
+  const windowGia = {
+    addEventListener: (_l: string, h: (e: { data: Record<string, unknown> }) => void) => ngheCuaWindow.push(h),
+  };
+  // ⚠ `new Function` ở đây KHÔNG phải lỗ tiêm mã: `ma` là văn bản do CHÍNH `dungHtmlBang` trong
+  //   repo này sinh ra (không có đầu vào ngoài nào chạm tới nó — `nonce` là hằng của lưới), và đây
+  //   là tệp LƯỚI, không vào `dist`. Đó cũng chính là điều làm ca này đáng giá: nó chạy ĐÚNG đoạn
+  //   mã sẽ chạy trong webview, chứ không chạy một bản chép lại.
+  new Function("document", "window", "acquireVsCodeApi", ma)(documentGia, windowGia, () => ({
+    postMessage: (m: Record<string, unknown>) => daGui.push(m),
+  }));
+  return { nut, daGui, banTin: (m) => ngheCuaWindow.forEach((h) => h({ data: m })) };
+}
+
+describe("webview — nút GHI không được gửi hai lượt cho một quyết định", () => {
+  it("★★★ BẤM HAI LẦN liên tiếp ⇒ extension chỉ nhận ĐÚNG MỘT tin `duyet`", () => {
+    /**
+     * ★★★ Phía extension xoá trạng thái đề xuất SAU `await` (secret · mạng · đĩa), nên cú bấm thứ
+     * hai chạy trọn đường ghi lần nữa và MỞ HÀNG KIỂM TOÁN THỨ HAI. Lượt ghi ấy gần như chắc chắn
+     * bị chặn ở phép so băm, nhưng hàng `ap_client_that_bai` thì ở lại VĨNH VIỄN — sổ kể một câu
+     * chuyện sai về hành vi người dùng.
+     */
+    const w = chayWebview();
+    w.banTin({ loai: "the_duyet", nhanNguon: "LOCAL · C:\\ws", nhanNut: "Ghi vào workspace", duong: "a.ts", tomTat: "+1 / −0", han: "" });
+
+    w.nut("nut-duyet").bam();
+    w.nut("nut-duyet").bam();
+    w.nut("nut-duyet").bam();
+
+    expect(w.daGui.filter((m) => m.loai === "duyet")).toHaveLength(1);
+    expect(w.nut("nut-duyet").disabled).toBe(true);
+  });
+
+  it("★★★ KẾT QUẢ VỀ (`thong_bao`) ⇒ MỞ KHOÁ — ca 'KHÔNG RÕ KẾT CỤC' phải bấm lại được", () => {
+    /**
+     * ★★★ Đường SERVER CỐ Ý giữ thẻ lại khi mất mạng giữa chừng và chỉ gửi `thong_bao`: bấm Duyệt
+     * lần nữa là cách DUY NHẤT để biết lượt trước ra sao (`confirmAction` idempotent). Một hàng rào
+     * chống-bấm-hai-lần khoá vĩnh viễn sẽ lấy mất đúng đường thoát ấy — chữa một lỗi bằng một lỗi.
+     */
+    const w = chayWebview();
+    w.banTin({ loai: "the_duyet", nhanNguon: "SERVER · repo", nhanNut: "Duyệt & ghi trên SERVER", duong: "a.cs", tomTat: "+1 / −0", han: "12:00" });
+    w.nut("nut-duyet").bam();
+    w.nut("nut-duyet").bam();
+    expect(w.daGui.filter((m) => m.loai === "duyet")).toHaveLength(1);
+
+    w.banTin({ loai: "thong_bao", thongDiep: "KHÔNG RÕ KẾT CỤC — …" });
+    expect(w.nut("nut-duyet").disabled).toBe(false);
+
+    w.nut("nut-duyet").bam();
+    expect(w.daGui.filter((m) => m.loai === "duyet")).toHaveLength(2);
+  });
+
+  it("★★★ THẺ MỚI (`the_duyet`) hoặc THẺ BỊ ẨN (`an_the_duyet`) ⇒ MỞ KHOÁ", () => {
+    const w = chayWebview();
+    w.nut("nut-duyet").bam();
+    w.banTin({ loai: "an_the_duyet" });
+    expect(w.nut("nut-duyet").disabled).toBe(false);
+
+    w.nut("nut-duyet").bam();
+    expect(w.nut("nut-duyet").disabled).toBe(true);
+    w.banTin({ loai: "the_duyet", nhanNguon: "LOCAL · C:\\ws", nhanNut: "Ghi vào workspace", duong: "b.ts", tomTat: "+2 / −1", han: "" });
+    expect(w.nut("nut-duyet").disabled).toBe(false);
+  });
+
+  it("★★ hàng rào CHỈ áp cho nút GHI — 'Xem diff' và 'Huỷ' vẫn bấm được bao nhiêu lần cũng được", () => {
+    // Hai nút kia không đẻ hàng kiểm toán nào; khoá chúng là làm giao diện đơ mà không được gì.
+    const w = chayWebview();
+    w.nut("nut-duyet").bam();
+    w.nut("nut-xem-diff").bam();
+    w.nut("nut-xem-diff").bam();
+    w.nut("nut-huy").bam();
+    w.nut("nut-huy").bam();
+    expect(w.daGui.filter((m) => m.loai === "xem_diff")).toHaveLength(2);
+    expect(w.daGui.filter((m) => m.loai === "huy")).toHaveLength(2);
+  });
+});

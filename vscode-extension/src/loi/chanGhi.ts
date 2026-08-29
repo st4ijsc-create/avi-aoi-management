@@ -76,6 +76,13 @@ function namTrongThuMuc(duong: string, ws: string): boolean {
  *   trình sẽ chạy qua một số thiết lập/extension. Nó KHÔNG có trong danh sách này vì đó là tệp
  *   người ta sửa hằng ngày và chặn nó sẽ chặn nhầm rất nhiều lượt sửa hợp lệ. Đây là đánh đổi
  *   ĐƯỢC BIẾT, không phải chỗ bị bỏ quên.
+ *
+ * ⚠⚠ 2026-08-30 (F5) — `*.code-workspace` PHẢI Ở ĐÂY, cùng lý do với `.vscode/tasks.json`. Tệp
+ *   workspace nhiều-thư-mục của VSCode mang **chính hai mục `tasks` và `launch`** với NGỮ NGHĨA Y
+ *   HỆT: `{"folders":[…], "tasks":{"tasks":[{"command":"…"}]}, "launch":{…}}`. Chặn `tasks.json`
+ *   mà bỏ ngỏ `*.code-workspace` là chặn MỘT cách viết của cùng một hậu quả — và bản không bị chặn
+ *   là bản đang chạy. So theo ĐUÔI TÊN (không phải một đoạn thư mục) vì tệp này nằm ở bất kỳ đâu,
+ *   thường ngay ở gốc repo và mang tên dự án.
  */
 function camGhiRieng(duongTuyetDoi: string): string | undefined {
   const doan = duongTuyetDoi.split(/[\\/]+/).filter((x) => x !== "").map((x) => x.toLowerCase());
@@ -91,6 +98,12 @@ function camGhiRieng(duongTuyetDoi: string): string | undefined {
     return (
       `là ".vscode/${cuoi}" — VSCode CHẠY lệnh khai trong tệp này (task/debug), nên ghi vào đó là ` +
       `đặt mã sẽ chạy trên máy bạn, không phải sửa mã nguồn: "${duongTuyetDoi}"`
+    );
+  }
+  if (cuoi.endsWith(".code-workspace")) {
+    return (
+      `là tệp workspace của VSCode (".code-workspace") — nó mang CHÍNH hai mục "tasks" và "launch" ` +
+      `với nghĩa y hệt ".vscode/tasks.json", nên ghi vào đó là đặt mã sẽ chạy trên máy bạn: "${duongTuyetDoi}"`
     );
   }
   return undefined;
@@ -124,6 +137,63 @@ export function duongTuongDoiTrongWorkspace(
     return { goc, duongTuongDoi: relative(resolve(goc), resolve(duongThat)).replace(/\\/g, "/") };
   }
   return undefined;
+}
+
+/**
+ * ★★★ F3 (2026-08-30) — PHÉP NGHỊCH của `duongTuongDoiTrongWorkspace`: quy một đường TƯƠNG ĐỐI do
+ * MODEL khai về ĐÚNG MỘT đường tuyệt đối, trên tập thư mục workspace đang mở.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * VÌ SAO KHÔNG ĐƯỢC `resolve(gocDangChon, path)` CHO XONG (lỗ đã có thật, workspace NHIỀU GỐC)
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Một đường tương đối chỉ có nghĩa khi đi kèm cái GỐC nó được tính trên. Trong workspace nhiều thư
+ * mục, đường mà model NHÌN THẤY được tính trên thư mục CHỨA tệp, còn `resolve(gocDangChon, …)` neo
+ * vào thư mục người dùng đang chọn ở ô dự án — HAI GỐC KHÁC NHAU. Hậu quả xấu nhất KHÔNG phải một
+ * lỗi: với hai gốc `app` và `lib`, một đường `x.ts` (tính trên `lib`) neo vào `app` cho ra
+ * `app/x.ts` — **một tệp KHÁC, CÓ THẬT**, lọt qua mọi hàng rào (nằm trong workspace, không nhạy
+ * cảm, đọc được, băm khớp chính nó) và thẻ duyệt trông hoàn toàn hợp lý.
+ *
+ * Vì thế: thử MỌI gốc, và quyết theo số ứng viên TỒN TẠI THẬT.
+ *   · đúng 1 ⇒ đó là tệp (kể cả khi nó không nằm ở gốc đang chọn — `duongTuongDoiTrongWorkspace`
+ *     đã ghi rằng tệp có thể ở thư mục workspace THỨ HAI);
+ *   · ≥ 2   ⇒ **TỪ CHỐI**. Đây là ca `app/x.ts` và `lib/x.ts` cùng có thật: cả hai đều khớp, không
+ *     có căn cứ nào chọn một. Chọn bừa (kể cả "ưu tiên gốc đang chọn") là ghi đè một tệp mà người
+ *     duyệt có thể chưa từng nghĩ tới. "Không biết" ở một cửa ghi đĩa phải xử như "không được".
+ *   · 0     ⇒ trả đường neo trên gốc đang chọn để nơi gọi báo đúng lỗi "không đọc được tệp" — chứ
+ *     không im lặng, và cũng không tự bịa ra một gốc khác.
+ *
+ * ⚠ `tonTai` được TIÊM VÀO để hàm này THUẦN (đo được bằng vitest, không dựng cây thư mục thật).
+ *   Nó chỉ được phép ĐỌC siêu dữ liệu — không nhánh nào ở đây chạm byte.
+ */
+export function giaiDuongDeXuat(
+  duongModel: string,
+  gocDangChon: string,
+  cacGoc: string[],
+  tonTai: (duong: string) => boolean,
+): { ok: true; duong: string } | { ok: false; lyDo: string } {
+  // Đường TUYỆT ĐỐI do model khai: không có gì để suy diễn, đưa thẳng cho các hàng rào phía sau
+  // (`giaiDuongThat` + `duocPhepGhi`) — chúng mới là nơi quyết định nó có hợp lệ hay không.
+  if (isAbsolute(duongModel)) return { ok: true, duong: resolve(duongModel) };
+
+  const ungVienTheoGoc = new Map<string, string>();
+  for (const goc of [gocDangChon, ...cacGoc]) {
+    if (!goc) continue;
+    const duong = resolve(goc, duongModel);
+    if (!ungVienTheoGoc.has(duong)) ungVienTheoGoc.set(duong, goc);
+  }
+  const coThat = [...ungVienTheoGoc.keys()].filter((p) => tonTai(p));
+
+  if (coThat.length === 1) return { ok: true, duong: coThat[0] };
+  if (coThat.length > 1) {
+    return {
+      ok: false,
+      lyDo:
+        `đường "${duongModel}" khớp ${coThat.length} tệp CÓ THẬT trong các thư mục workspace đang mở ` +
+        `(${coThat.join(" · ")}) — KHÔNG đoán tệp nào là tệp bạn muốn sửa. Hãy hỏi lại kèm đường dẫn ` +
+        `đầy đủ hơn, hoặc đóng bớt thư mục workspace.`,
+    };
+  }
+  return { ok: true, duong: resolve(gocDangChon, duongModel) };
 }
 
 export function duocPhepGhi(

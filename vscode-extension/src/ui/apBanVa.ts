@@ -36,7 +36,9 @@
  * 6b. **ĐO LẠI đĩa + tài liệu NGAY SÁT trước lượt ghi** (cửa sổ TOCTOU do chính bước 6 mở ra —
  *     xem docblock riêng ở thân hàm). Lệch ⇒ DỪNG và CHỐT sổ `thanhCong:false`.
  * 7. **Áp chỉnh sửa + `save()`** — điểm ghi duy nhất (`thayToanBoNoiDung`).
- * 8. **Đọc lại đĩa, băm lại, `chotApDungOClient({thanhCong:true, sha256SauThat})`.**
+ * 8. **Đọc lại đĩa, băm lại, SO với băm bản MỚI, rồi mới khai.** Khớp ⇒ `chotApDungOClient(
+ *    {thanhCong:true, sha256SauThat})`. Đĩa mang đúng BẢN GỐC hoặc KHÔNG đọc lại được ⇒ **CHƯA RÕ**:
+ *    KHÔNG chốt sổ (chi tiết ở docblock bước 8 — chỗ nói dối thứ HAI, vá 2026-08-30 · F1).
  * 9. Bước 7 hỏng ⇒ **ĐỌC ĐĨA**, **HOÀN NGUYÊN** nếu bộ đệm có thể đã đổi, rồi mới chốt sổ theo
  *    đúng thứ ĐO ĐƯỢC (chi tiết ở docblock bước 9 — đây là chỗ đã từng nói dối, xem ngay dưới).
  *
@@ -297,12 +299,19 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
   if (lyDoDungTruocKhiGhi) {
     let ghiChuChot = "";
     try {
-      await goiChotApClient(dv.serverUrl, dv.cookie, {
+      // ⚠ F6 (2026-08-30) — ĐỌC `chot.ok`. Máy chủ TỪ CHỐI qua HTTP 200 (token lệch, chủ sở hữu
+      // lệch, hàng không ở `dang_ap_client`) và `goiChotApClient` KHÔNG ném cho các ca đó. Bỏ qua
+      // trường này là để hàng đứng ở `dang_ap_client` VĨNH VIỄN trong khi người dùng không được
+      // nói gì — đúng lớp lỗi "khai kết cục mà không đọc kết cục", chỉ đổi chỗ.
+      const chot = await goiChotApClient(dv.serverUrl, dv.cookie, {
         actionId: batDau.actionId,
         token: batDau.token,
         thanhCong: false,
         loi: `DỪNG TRƯỚC KHI GHI: ${lyDoDungTruocKhiGhi}`,
       });
+      if (!chot.ok) {
+        ghiChuChot = ` (và máy chủ TỪ CHỐI chốt sổ kiểm toán: ${chot.message ?? "không rõ lý do"} — lượt này đứng ở trạng thái "đang áp", tức máy chủ ghi nhận là CHƯA RÕ)`;
+      }
     } catch (e2) {
       ghiChuChot = ` (và KHÔNG chốt được sổ kiểm toán: ${(e2 as Error).message} — lượt này đứng ở trạng thái "đang áp", tức máy chủ ghi nhận là CHƯA RÕ)`;
     }
@@ -431,12 +440,17 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
           : ` ⚠ nhưng đĩa lại mang băm ${bamSauHong.slice(0, 12)}… khác cả bản gốc lẫn bản đề xuất — hãy kiểm tra tệp bằng tay.`;
     let ghiChu = "";
     try {
-      await goiChotApClient(dv.serverUrl, dv.cookie, {
+      // ⚠ F6 — cùng lý lẽ với lượt chốt ở bước 6b: `ok:false` qua HTTP 200 là một lượt chốt KHÔNG
+      // xảy ra, và im lặng ở đây để lại một hàng `dang_ap_client` mà không ai biết.
+      const chot = await goiChotApClient(dv.serverUrl, dv.cookie, {
         actionId: batDau.actionId,
         token: batDau.token,
         thanhCong: false,
         loi: daHoanTac ? `${loi} — đã hoàn nguyên về nội dung gốc và đo lại xác nhận` : loi,
       });
+      if (!chot.ok) {
+        ghiChu = ` (và máy chủ TỪ CHỐI chốt sổ kiểm toán: ${chot.message ?? "không rõ lý do"} — lượt này đứng ở trạng thái "đang áp", tức máy chủ ghi nhận là CHƯA RÕ)`;
+      }
     } catch (e2) {
       // Không chốt được: hàng đứng ở `dang_ap_client` — "chưa rõ" TRUNG THỰC. Nói ra, đừng nuốt.
       ghiChu = ` (và KHÔNG chốt được sổ kiểm toán: ${(e2 as Error).message} — lượt này đứng ở trạng thái "đang áp", tức máy chủ ghi nhận là CHƯA RÕ)`;
@@ -451,17 +465,81 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
     };
   }
 
-  // ── BƯỚC 8: đọc lại ĐĨA, băm lại, chốt sổ ──────────────────────────────────────────────────
-  // Băm khai lên sổ là băm ĐO ĐƯỢC SAU KHI GHI, không phải băm DỰ KIẾN ở bước 6. Hai con số có thể
-  // lệch thật (formatOnSave, chuẩn hoá EOL của editor…) — khai cái đo được rồi nói rõ chỗ lệch còn
-  // hơn khai cái mình mong đợi.
+  // ── BƯỚC 8: ĐỌC LẠI ĐĨA, **SO BĂM**, RỒI MỚI KHAI KẾT CỤC ─────────────────────────────────
+  /**
+   * ⚠⚠⚠ F1 (2026-08-30) — ĐÂY LÀ CHỖ THỨ HAI ĐÃ NÓI DỐI, VÀ NÓ NẰM NGAY TRONG BẢN VÁ CỦA CHỖ THỨ
+   * NHẤT. Bản trước: đọc lại đĩa → băm → **chốt `thanhCong:true` và trả `ok:true "Đã ghi"` bất kể
+   * băm ấy là gì**, kể cả khi lượt đọc lại NÉM (`bamSauThat === undefined` ⇒ hàng `da_ap_client`
+   * mang `sha256SauThat: undefined`). Luật của chính tệp này — *"ĐÃ GHI — đọc lại đĩa, băm KHỚP
+   * BẢN MỚI"* — được cưỡng chế ở nhánh HỎNG (bước 9) và bị bỏ quên ở nhánh THÀNH CÔNG: **bản vá
+   * khẳng định một luật mà nó chỉ cài đặt ở MỘT PHÍA.**
+   *
+   * Hai câu KHÔNG ĐÚNG lọt qua được bản cũ:
+   *   (a) không đọc nổi kết cục, vẫn khai là đã áp — "đã ghi" khi ấy suy từ giá trị trả về của
+   *       `save()`, đúng thứ mà cả tệp này cấm;
+   *   (b) đĩa vẫn mang **BẢN GỐC** (có thứ trả tệp về ngay sau lượt lưu) ⇒ sổ ghi
+   *       `sha256SauThat === sha256Truoc` dưới trạng thái `da_ap_client` — hai ô mâu thuẫn trong
+   *       một hàng, đúng hình dạng lỗi mà Đợt B đã vá ở máy chủ — giao diện nói "Đã ghi", và cảnh
+   *       báo lệch băm còn quy sai nguyên nhân cho bộ định dạng của editor.
+   *
+   * Nên ở đây: ĐỌC → SO → rẽ theo BA kết cục THẬT, mỗi kết cục một lời khai và một trạng thái sổ
+   * ĐÚNG với nó. Băm khai lên sổ luôn là băm ĐO ĐƯỢC, không phải băm DỰ KIẾN ở bước 6.
+   */
   let bamSauThat: string | undefined;
-  let canhBaoDocLai = "";
+  let loiDocLai = "";
   try {
     bamSauThat = bamNoiDung(await docDia(uri));
   } catch (e) {
-    canhBaoDocLai = ` ⚠ Không đọc lại được tệp để băm xác nhận (${(e as Error).message}) — sổ kiểm toán không có băm sau.`;
+    loiDocLai = (e as Error).message;
   }
+
+  // ── (8a) KHÔNG ĐỌC ĐƯỢC KẾT CỤC ⇒ **CHƯA RÕ**, KHÔNG CHỐT SỔ ───────────────────────────────
+  if (bamSauThat === undefined) {
+    // `thanhCong:true` ⇒ `da_ap_client` = "byte ĐÃ vào đĩa"; `thanhCong:false` ⇒ `ap_client_that_bai`
+    // = "đã thử và KHÔNG byte nào rơi". Ở đây ta không đo được ĐIỀU NÀO trong hai điều đó, nên cả
+    // hai đều là khai điều mình không biết. `dang_ap_client` là câu trung thực duy nhất còn lại.
+    return {
+      ok: false,
+      thongDiep:
+        `⚠⚠ CHƯA RÕ — "${dv.duongTuongDoi}": lượt ghi báo THÀNH CÔNG nhưng KHÔNG đọc lại được tệp để ` +
+        `xác nhận (${loiDocLai}). "Đã ghi" là một KẾT CỤC và kết cục ấy vừa KHÔNG đo được, nên nó ` +
+        `không được khai ở đây. Byte CÓ THỂ đã vào đĩa, cũng có thể chưa. Sổ kiểm toán được ĐỂ NGUYÊN ` +
+        `ở trạng thái "đang áp" (CHƯA RÕ) — chốt "đã áp" lúc này là khai một điều chưa ai đọc. Hãy mở ` +
+        `"${dv.duongTuongDoi}" và tự kiểm tra trước khi làm gì tiếp.`,
+    };
+  }
+
+  // ── (8b) ĐĨA MANG ĐÚNG **BẢN GỐC** ⇒ LƯỢT GHI KHÔNG CÓ HIỆU LỰC ⇒ **CHƯA RÕ**, KHÔNG CHỐT ──
+  if (!khopBanGoc(bamSauThat, bamSauDuKien) && khopBanGoc(bamSauThat, bamDia)) {
+    // ⚠ VÌ SAO KHÔNG PHẢI `thanhCong:false`: `ap_client_that_bai` đọc là *"đã thử và KHÔNG byte nào
+    // rơi"*. Ta CHỈ đo được trạng thái ĐĨA LÚC NÀY. Lượt lưu vừa báo thành công, nên hoàn toàn có
+    // thể byte ĐÃ rơi rồi bị một thứ khác (git checkout, tiến trình build, extension khác) ghi đè
+    // trở lại. Hai ca ấy không phân biệt được từ đây ⇒ khai "0 byte" là nói dối theo hướng CHE GIẤU
+    // một lượt ghi, đúng câu bị CẤM ở docblock đầu tệp.
+    return {
+      ok: false,
+      thongDiep:
+        `⚠⚠ CHƯA RÕ — "${dv.duongTuongDoi}": lượt ghi báo THÀNH CÔNG, nhưng đọc lại đĩa cho ĐÚNG BĂM ` +
+        `TRƯỚC KHI GHI (${bamSauThat.slice(0, 12)}… = ${bamDia.slice(0, 12)}…) ⇒ trên đĩa hiện là ` +
+        `NỘI DUNG GỐC, tức lượt ghi này KHÔNG CÓ HIỆU LỰC: nội dung do AI đề xuất KHÔNG nằm trên đĩa. ` +
+        `Có thứ gì đó đã trả tệp về bản cũ ngay sau lượt lưu (git checkout, một tiến trình build, một ` +
+        `extension khác), hoặc lượt lưu chỉ BÁO là xong — từ đây không phân biệt được, nên KHÔNG khai ` +
+        `"đã ghi" mà cũng KHÔNG khai "không byte nào rơi".` +
+        (doc.isDirty
+          ? ` ⚠ Bộ đệm editor ĐANG có thay đổi CHƯA LƯU: một cú Ctrl+S (hoặc "files.autoSave") sẽ đẩy ` +
+            `nội dung của AI xuống đĩa. Hãy Ctrl+Z hoặc đóng tệp mà KHÔNG lưu nếu bạn không muốn điều đó.`
+          : "") +
+        ` Sổ kiểm toán được ĐỂ NGUYÊN ở trạng thái "đang áp" (CHƯA RÕ).`,
+    };
+  }
+
+  // ── (8c) BĂM KHỚP BẢN MỚI **hoặc** ĐĨA MANG MỘT BẢN THỨ BA ⇒ BYTE ĐÃ ĐỔI TRÊN ĐĨA ─────────
+  // Bản thứ ba (khác cả gốc lẫn bản xem trước) vẫn là "đã ghi": đĩa KHÔNG còn mang bản gốc. Ca
+  // thường gặp là editor định dạng/chuẩn hoá lúc lưu. Khai băm ĐO ĐƯỢC và nói rõ chỗ lệch — nhưng
+  // KHÔNG quy nguyên nhân thành một câu chắc chắn, vì nguyên nhân là thứ ta chưa đo.
+  const lechBam = khopBanGoc(bamSauThat, bamSauDuKien)
+    ? ""
+    : ` ⚠ Nội dung trên đĩa sau khi lưu KHÁC bản đã xem trước (băm ${bamSauThat.slice(0, 12)}… ≠ ${bamSauDuKien.slice(0, 12)}…) và cũng khác bản gốc — thường là do editor định dạng/chuẩn hoá lúc lưu, nhưng đó là PHỎNG ĐOÁN chứ không phải phép đo. Hãy xem lại tệp.`;
 
   let ketSo = "";
   try {
@@ -478,13 +556,8 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
       `lượt này đứng ở trạng thái "đang áp" trên máy chủ, tức được ghi nhận là CHƯA RÕ.`;
   }
 
-  const lechBam =
-    bamSauThat && bamSauThat !== bamSauDuKien
-      ? ` ⚠ Nội dung trên đĩa sau khi lưu KHÁC bản đã xem trước (băm ${bamSauThat.slice(0, 12)}… ≠ ${bamSauDuKien.slice(0, 12)}…) — nhiều khả năng do editor định dạng/chuẩn hoá lúc lưu. Hãy xem lại tệp.`
-      : "";
-
   return {
     ok: true,
-    thongDiep: `Đã ghi vào workspace: "${dv.duongTuongDoi}" (+${them} / −${bot}). Ctrl+Z hoàn tác được.${lechBam}${canhBaoDocLai}${ketSo}`,
+    thongDiep: `Đã ghi vào workspace: "${dv.duongTuongDoi}" (+${them} / −${bot}). Ctrl+Z hoàn tác được.${lechBam}${ketSo}`,
   };
 }

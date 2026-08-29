@@ -107,6 +107,25 @@ function laTepLuoi(p: string): boolean {
  *   không bao giờ bắt được gì.
  * ⚠ Danh sách này áp cho **cả tệp lưới**: một tệp test cũng KHÔNG được ghi đĩa bằng `fs` (bài học
  *   §2.1 của Task 6 — census bắt đúng lưới của người viết trước cả đột biến cố ý).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-08-30 (F4) — BA LÁNG GIỀNG CÒN THIẾU, HAI TRONG SỐ ĐÓ NGAY CẠNH API `apBanVa` ĐANG DÙNG
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Danh sách trên tự khai là "mọi API đặt byte lên đĩa", nhưng bỏ sót đúng các láng giềng của
+ * `workspace.fs.readFile` mà `apBanVa` đã nhập sẵn — tức chúng ở TRONG TẦM TAY của người sửa tiếp
+ * theo, không cần thêm một import nào:
+ *   · `workspace.fs.delete(…)` — XOÁ tệp/thư mục, **không hoàn tác được** (khác hẳn `WorkspaceEdit`);
+ *   · `workspace.fs.copy(…)`   — GHI ĐÈ đích, cũng không hoàn tác được. `cp(` có trong danh sách cũ,
+ *     `copy(` thì không — cùng một thao tác, hai cách viết, chỉ một bị canh.
+ *   · `WorkspaceEdit.deleteFile(…)` — nguy hiểm KIỂU KHÁC và là chỗ thủng thật sự: nó XOÁ tệp qua
+ *     **chính lời gọi áp-chỉnh-sửa** mà phép đếm "đúng MỘT lần" bên dưới đang coi là hợp lệ, nên
+ *     thêm một dòng `.deleteFile(` cạnh dòng `.replace(` hiện có sẽ KHÔNG làm số đếm ấy nhúc nhích.
+ * Bốn từ khác đã cân nhắc và **KHÔNG** thêm, nói thẳng lý do: `mkdir`/`rmSync` đang được
+ * `duongThat.unit.test.ts` dùng hợp lệ để dựng cây thư mục cho ca symlink (và tạo thư mục không
+ * phải "đặt byte"); `.createFile(` xuất hiện 1 lần trong **ghi chú** của `ui/apBanVa.ts` (census
+ * soi VĂN BẢN, không phân biệt mã với bình luận) nên thêm nó là dựng một lưới đỏ vì một câu chữ;
+ * `.renameFile(` đã bị `rename` phủ.
+ * ⚠ Mỗi từ thêm ở đây ĐÃ ĐƯỢC ĐO = 0 trên toàn tập vào bundle NGAY TRƯỚC khi thêm.
  */
 const CAM_TU = [
   "fs.writeFile",
@@ -120,6 +139,13 @@ const CAM_TU = [
   "cp(",
   // `editor.edit(...)` ghi thẳng vào bộ đệm, KHÔNG qua đối tượng chỉnh-sửa ⇒ lọt mọi phép đếm dưới.
   ".edit(",
+  // F4 — xoá tệp qua VSCode. `delete(` TRẦN thì quá rộng (`context.secrets.delete(...)` là hợp lệ
+  // và có thật), nên neo vào `fs.` cho đúng đối tượng hệ tệp.
+  "fs.delete(",
+  // F4 — chép đè. Đối xứng với `cp(` đã có; `fs.copy(` là tập con của mẫu này.
+  "copy(",
+  // F4 — XOÁ tệp qua CHÍNH lời gọi áp-chỉnh-sửa mà phép đếm dưới coi là hợp lệ ⇒ không đụng số đếm.
+  ".deleteFile(",
 ];
 
 /**

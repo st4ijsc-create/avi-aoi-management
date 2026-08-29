@@ -37,8 +37,15 @@ const may = vi.hoisted(() => ({
   ketQuaSave: [] as boolean[],
   /** `save()` BÁO HỎNG nhưng byte vẫn kịp xuống đĩa — ca "lời gọi nói dối, đĩa nói thật". */
   saveBaoHongNhungVanDay: false,
+  /**
+   * ★★★ F1 — `save()` BÁO THÀNH CÔNG nhưng ngay sau đó một thứ khác đặt lại nội dung này lên đĩa
+   * (git checkout, tiến trình build, extension khác). `undefined` ⇒ không có ai đụng vào.
+   */
+  doiDiaSauKhiLuu: undefined as string | undefined,
   /** Ép lượt đọc đĩa ném lỗi. */
   docDiaNem: false,
+  /** Ép lượt đọc đĩa THỨ N (đếm từ 1) ném lỗi — để bắt riêng lượt ĐỌC LẠI của bước 8. */
+  docDiaNemOLuot: undefined as number | undefined,
   /** Ép lượt mở sổ kiểm toán ném lỗi. */
   batDauNem: false,
   /** Mô phỏng "có thứ khác đổi tệp TRONG LÚC gọi mạng" — gán nội dung đĩa mới khi mở sổ. */
@@ -47,6 +54,8 @@ const may = vi.hoisted(() => ({
   doiVersionKhiBatDau: false,
   batDau: [] as Array<Record<string, unknown>>,
   chot: [] as Array<Record<string, unknown>>,
+  /** Đáp ứng của lượt chốt sổ — máy chủ có quyền TỪ CHỐI qua HTTP 200 (`ok:false`), không ném. */
+  chotTraVe: { ok: true } as { ok: boolean; message?: string },
 }));
 
 vi.mock("vscode", () => {
@@ -82,6 +91,9 @@ vi.mock("vscode", () => {
         may.dia = may.boDem;
         may.ban = false;
       }
+      // ★★★ F1 — CỬA SỔ SAU LƯỢT LƯU. `save()` trả `true` KHÔNG có nghĩa byte còn nằm đó lúc ta
+      // đọc lại: giữa hai mốc ấy vẫn có thời gian cho một `git checkout`/build/extension khác.
+      if (kq && may.doiDiaSauKhiLuu !== undefined) may.dia = may.doiDiaSauKhiLuu;
       return kq;
     },
   };
@@ -93,7 +105,8 @@ vi.mock("vscode", () => {
       fs: {
         readFile: async (): Promise<Buffer> => {
           may.nhatKy.push("docDia");
-          if (may.docDiaNem) throw new Error("đĩa giả: không đọc được");
+          const luot = may.nhatKy.filter((x) => x === "docDia").length;
+          if (may.docDiaNem || may.docDiaNemOLuot === luot) throw new Error("đĩa giả: không đọc được");
           return Buffer.from(may.dia, "utf8");
         },
       },
@@ -127,7 +140,9 @@ vi.mock("../mang/duyetGhi", () => ({
   goiChotApClient: async (_u: string, _c: string, dv: Record<string, unknown>) => {
     may.nhatKy.push("chotApClient");
     may.chot.push(dv);
-    return { ok: true };
+    // ⚠ F6 — máy chủ TỪ CHỐI qua HTTP 200 (token lệch, hàng không ở `dang_ap_client`): `ok:false`
+    // KHÔNG kèm ném. Bản giả phải nói được điều đó, nếu không lưới sẽ mù đúng ca cần đo.
+    return may.chotTraVe;
   },
 }));
 
@@ -201,12 +216,15 @@ beforeEach(() => {
   may.ketQuaAp = [];
   may.ketQuaSave = [];
   may.saveBaoHongNhungVanDay = false;
+  may.doiDiaSauKhiLuu = undefined;
   may.docDiaNem = false;
+  may.docDiaNemOLuot = undefined;
   may.batDauNem = false;
   may.doiDiaKhiBatDau = undefined;
   may.doiVersionKhiBatDau = false;
   may.batDau = [];
   may.chot = [];
+  may.chotTraVe = { ok: true };
 });
 
 describe("apBanVa — THỨ TỰ BẤT BIẾN", () => {
@@ -363,6 +381,117 @@ describe("apBanVa — C-1: `save()` hỏng SAU khi áp chỉnh sửa", () => {
     expect(may.chot).toHaveLength(1);
     expect(may.chot[0]).toMatchObject({ thanhCong: true, sha256SauThat: bam(MOI_ND) });
     expect(kq.thongDiep).toContain("ĐÃ GHI");
+  });
+});
+
+/**
+ * ★★★ F1 (2026-08-30) — ĐƯỜNG THÀNH CÔNG PHẢI **ĐỌC KẾT CỤC** TRƯỚC KHI KHAI KẾT CỤC.
+ *
+ * Bản trước: `save()` trả `true` ⇒ đọc lại đĩa ⇒ chốt `thanhCong:true` + "Đã ghi" **bất kể băm đọc
+ * lại là gì**, kể cả khi lượt đọc lại NÉM. Luật của chính tệp ấy ("ĐÃ GHI — băm khớp bản mới")
+ * được cưỡng chế ở nhánh HỎNG và bỏ quên ở nhánh THÀNH CÔNG — bản vá khai một luật mà nó chỉ cài
+ * ở MỘT PHÍA. Ba ca dưới đây khoá cả ba kết cục thật, mỗi ca đo CẢ lời khai LẪN trạng thái sổ.
+ */
+describe("apBanVa — F1: ba kết cục của đường THÀNH CÔNG", () => {
+  it("★★★ (1) KHỚP bản mới ⇒ 'Đã ghi' + sổ chốt `thanhCong:true` kèm băm ĐO ĐƯỢC", async () => {
+    const kq = await apBanVa(dauVao());
+
+    expect(kq.ok).toBe(true);
+    expect(kq.thongDiep).toContain("Đã ghi vào workspace");
+    expect(kq.thongDiep).not.toContain("CHƯA RÕ");
+    expect(may.chot).toHaveLength(1);
+    expect(may.chot[0]).toMatchObject({ thanhCong: true, sha256SauThat: bam(MOI_ND) });
+  });
+
+  it("★★★ (2) ĐĨA VẪN MANG BẢN GỐC sau lượt lưu ⇒ KHÔNG khai 'đã ghi', KHÔNG chốt sổ", async () => {
+    /**
+     * ★★★ CA GỐC CỦA F1(b). `save()` báo xong rồi một thứ khác trả tệp về bản cũ. Bản trước chốt
+     * `thanhCong:true` với `sha256SauThat === sha256Truoc` — HAI Ô MÂU THUẪN trong một hàng
+     * (`da_ap_client` mà băm sau = băm trước), giao diện nói "Đã ghi", và cảnh báo lệch băm còn
+     * quy sai nguyên nhân cho bộ định dạng của editor.
+     * ⚠ Và cũng KHÔNG được chốt `thanhCong:false`: `ap_client_that_bai` đọc là "đã thử và 0 byte
+     *   rơi" — ta chỉ đo được trạng thái đĩa LÚC NÀY, không đo được byte đã từng rơi hay chưa.
+     */
+    may.doiDiaSauKhiLuu = GOC_ND;
+
+    const kq = await apBanVa(dauVao());
+
+    expect(kq.ok).toBe(false);
+    expect(kq.thongDiep).toContain("CHƯA RÕ");
+    expect(kq.thongDiep).toContain("KHÔNG CÓ HIỆU LỰC");
+    expect(kq.thongDiep).not.toContain("Đã ghi vào workspace");
+    // ★★★ SỔ KHÔNG ĐƯỢC CHỐT — cả hai giá trị chung cuộc đều là khai điều mình không đo được.
+    expect(may.chot).toHaveLength(0);
+    expect(may.dia).toBe(GOC_ND);
+  });
+
+  it("★★★ (3) KHÔNG ĐỌC LẠI ĐƯỢC ĐĨA ⇒ khai CHƯA RÕ, KHÔNG chốt sổ (bản cũ chốt `da_ap_client` với băm rỗng)", async () => {
+    // Lượt đọc đĩa thứ BA là lượt đọc lại ở bước 8 (1: bước 3 · 2: bước 6b · 3: bước 8).
+    may.docDiaNemOLuot = 3;
+
+    const kq = await apBanVa(dauVao());
+
+    expect(kq.ok).toBe(false);
+    expect(kq.thongDiep).toContain("CHƯA RÕ");
+    expect(kq.thongDiep).not.toContain("Đã ghi vào workspace");
+    expect(may.chot).toHaveLength(0);
+    // Byte THẬT SỰ đã vào đĩa ở bản giả này — nhưng ta KHÔNG đọc được nên KHÔNG được khai.
+    expect(may.dia).toBe(MOI_ND);
+  });
+
+  it("★★★ (4) ĐĨA MANG BẢN THỨ BA (editor định dạng lúc lưu) ⇒ VẪN là 'đã ghi', băm khai là băm ĐO ĐƯỢC", async () => {
+    // Đây là ca PHẢI KHÔNG bị bản vá F1 nuốt nhầm: đĩa không còn mang bản gốc ⇒ byte ĐÃ đổi.
+    const SAU_DINH_DANG = "dong 1\nDONG 2 DA SUA;\ndong 3\n";
+    may.doiDiaSauKhiLuu = SAU_DINH_DANG;
+
+    const kq = await apBanVa(dauVao());
+
+    expect(kq.ok).toBe(true);
+    expect(kq.thongDiep).toContain("Đã ghi vào workspace");
+    expect(kq.thongDiep).toContain("KHÁC bản đã xem trước");
+    expect(may.chot).toHaveLength(1);
+    expect(may.chot[0]).toMatchObject({ thanhCong: true, sha256SauThat: bam(SAU_DINH_DANG) });
+  });
+});
+
+/**
+ * ★★★ F6 (2026-08-30) — `chot.ok` PHẢI ĐƯỢC ĐỌC Ở CẢ BỐN LƯỢT CHỐT.
+ *
+ * Máy chủ từ chối chốt qua **HTTP 200** (`{ok:false}` — token lệch, chủ sở hữu lệch, hàng không ở
+ * `dang_ap_client`) và `goiChotApClient` KHÔNG ném cho các ca đó. Bỏ qua trường ấy ⇒ hàng đứng ở
+ * `dang_ap_client` vĩnh viễn trong khi giao diện không nói một chữ nào.
+ */
+describe("apBanVa — F6: máy chủ TỪ CHỐI chốt sổ qua HTTP 200", () => {
+  it("★★★ lượt chốt của BƯỚC 6b (dừng trước khi ghi) — phải NÓI RA khi bị từ chối", async () => {
+    may.doiDiaKhiBatDau = "NGUOI DUNG VUA SUA TAY\ndong 2\ndong 3\n";
+    may.chotTraVe = { ok: false, message: "Token hoặc người dùng không khớp." };
+
+    const kq = await apBanVa(dauVao());
+
+    expect(kq.ok).toBe(false);
+    expect(kq.thongDiep).toContain("TỪ CHỐI chốt sổ kiểm toán");
+    expect(kq.thongDiep).toContain("Token hoặc người dùng không khớp.");
+    expect(kq.thongDiep).toContain("CHƯA RÕ");
+  });
+
+  it("★★★ lượt chốt của BƯỚC 9 (ghi hỏng, đã hoàn nguyên) — phải NÓI RA khi bị từ chối", async () => {
+    may.ketQuaSave = [false, true];
+    may.chotTraVe = { ok: false, message: "Trạng thái không hợp lệ: da_ap_client." };
+
+    const kq = await apBanVa(dauVao());
+
+    expect(kq.ok).toBe(false);
+    expect(kq.thongDiep).toContain("TỪ CHỐI chốt sổ kiểm toán");
+    expect(kq.thongDiep).toContain("Trạng thái không hợp lệ: da_ap_client.");
+  });
+
+  it("★★ lượt chốt của BƯỚC 8 (đường thành công) — đã đọc `ok` từ trước, giữ nguyên", async () => {
+    may.chotTraVe = { ok: false, message: "Action không tồn tại." };
+
+    const kq = await apBanVa(dauVao());
+
+    expect(kq.ok).toBe(true);
+    expect(kq.thongDiep).toContain("Máy chủ từ chối chốt sổ kiểm toán");
   });
 });
 

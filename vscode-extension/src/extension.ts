@@ -7,6 +7,7 @@ import { KHOA_COOKIE } from "./loi/dangNhap";
 import { BangChat } from "./ui/bangChat";
 import { KhoDeXuat, SCHEME } from "./ui/diffDeXuat";
 import { dungCauHoiSuaChon } from "./loi/cauHoiSuaChon";
+import { duongTuongDoiTrongWorkspace } from "./loi/chanGhi";
 
 async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("aviAiLocal");
@@ -71,9 +72,33 @@ async function chaySuaDoanChon(context: vscode.ExtensionContext, khoDeXuat: KhoD
   });
   if (!yeuCau) return; // người dùng bấm Esc hoặc để trống — huỷ lặng lẽ, đây là lượt CHỦ ĐỘNG huỷ
 
+  /**
+   * ★★★ F3 (2026-08-30) — ĐƯỜNG ĐƯA CHO MODEL PHẢI NEO **CÙNG GỐC** VỚI ĐƯỜNG LÚC GHI.
+   *
+   * Bản cũ dùng `vscode.workspace.asRelativePath(uri)`, và hàm đó **tự thêm TÊN THƯ MỤC làm tiền
+   * tố khi workspace có ≥2 thư mục** (`lib/x.ts` thay vì `x.ts`). Đường ghi thì quy đường của model
+   * về tuyệt đối bằng gốc của DỰ ÁN ĐANG CHỌN. Hai hệ quy chiếu khác nhau ⇒ tốt nhất là một sửa đổi
+   * hợp lệ bị từ chối kèm lý do sai; xấu nhất là tiền tố ấy TRÙNG một thư mục con có thật của gốc
+   * đang chọn (hai gốc `app` và `lib`, mà `app/lib/` cũng tồn tại) ⇒ đường quy về **một tệp KHÁC,
+   * CÓ THẬT**, lọt qua mọi hàng rào, và thẻ duyệt trông hoàn toàn hợp lý.
+   *
+   * Nên: dùng `duongTuongDoiTrongWorkspace` — CÙNG một hàm mà `bangChat` dùng để khai lên sổ kiểm
+   * toán — tức đường KHÔNG tiền tố, neo trên thư mục workspace CHỨA tệp. Phần mập mờ còn lại (đường
+   * không tiền tố khớp nhiều gốc) do `giaiDuongDeXuat` xử fail-closed ở phía ghi.
+   */
+  const dsGocWs = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+  const viTri = duongTuongDoiTrongWorkspace(ed.document.uri.fsPath, dsGocWs);
+  if (!viTri) {
+    // Tệp ngoài mọi thư mục workspace: `apBanVa` sẽ từ chối ở luật 2 dù model có trả lời gì đi nữa.
+    // Nói ngay còn hơn để người dùng đợi hết một lượt hỏi rồi mới nhận một câu từ chối.
+    void vscode.window.showInformationMessage(
+      "AI Local: tệp đang mở KHÔNG nằm trong thư mục workspace nào — extension chỉ sửa được tệp trong workspace đang mở.",
+    );
+    return;
+  }
   // Đường dẫn TƯƠNG ĐỐI theo workspace (không phải đường tuyệt đối máy dev) và số dòng 1-BASED —
   // hai điều kiện `docDeXuatCucBo` cần để khớp đúng đoạn khi đọc lại `de_xuat_sua_doan` từ model.
-  const duongTuongDoi = vscode.workspace.asRelativePath(ed.document.uri);
+  const duongTuongDoi = viTri.duongTuongDoi;
   const dongDau = ed.selection.start.line + 1;
   const dongCuoi = ed.selection.end.line + 1;
   const doanChon = ed.document.getText(ed.selection);

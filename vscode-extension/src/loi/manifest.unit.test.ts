@@ -31,9 +31,18 @@ describe("manifest extension", () => {
     for (const k of khoa) expect(k.startsWith("aviAiLocal.")).toBe(true);
   });
 
-  it("★★★ Đợt A KHÔNG khai lệnh nào mang nghĩa GHI/ÁP/DUYỆT", () => {
-    // Dùng mẫu CHÍNH XÁC, không dùng `contains("ghi")` — "nghiệm thu" cũng chứa "ghi" nên phép
-    // đo thô sẽ đỏ oan và người sau sẽ nới lỏng lưới cho hết đỏ (tệ hơn là không có lưới).
+  it("★★★ KHÔNG lệnh nào trong Command Palette tự nó GHI/ÁP/DUYỆT — mọi lượt ghi phải qua thẻ duyệt", () => {
+    /**
+     * ⚠ TIÊU ĐỀ CŨ NÓI SAI TỪ ĐỢT C (sửa 2026-08-30): nó viết "Đợt A KHÔNG khai lệnh nào mang nghĩa
+     * GHI" trong một đợt mà extension CÓ ghi vào đĩa. Khẳng định thì vẫn đúng và vẫn cần — nhưng lý
+     * do đã đổi: không phải "đợt này chưa ghi" mà là **đường ghi duy nhất đi qua thẻ duyệt của bảng
+     * chat** (`bangChat.duyetDeXuat` → `apBanVa`). Một lệnh Command Palette tên "Áp bản vá" sẽ là
+     * một lối ghi bấm-một-phát KHÔNG có diff, không có thẻ, không có nhãn nói byte rơi ở đâu.
+     * Tiêu đề sai làm người đọc tin lưới đang canh một bất biến đã hết hiệu lực — tệ hơn không có.
+     *
+     * Dùng mẫu CHÍNH XÁC, không dùng `contains("ghi")` — "nghiệm thu" cũng chứa "ghi" nên phép
+     * đo thô sẽ đỏ oan và người sau sẽ nới lỏng lưới cho hết đỏ (tệ hơn là không có lưới).
+     */
     const ten = JSON.stringify(manifest.contributes.commands).toLowerCase();
     for (const mau of [/ghi\s*tệp/, /áp\s*dụng/, /apply/, /confirm/, /duyệt/]) {
       expect(ten).not.toMatch(mau);

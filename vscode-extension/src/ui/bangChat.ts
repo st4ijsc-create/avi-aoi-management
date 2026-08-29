@@ -17,7 +17,7 @@
  */
 import * as vscode from "vscode";
 import { randomBytes, randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { dungHtmlBang } from "./htmlBang";
 import { dungNguCanh } from "../loi/nguCanh";
 import { dungYeuCauStream, type CheDoDuAn, type LuotChat } from "../loi/yeuCau";
@@ -35,7 +35,7 @@ import type { KhoDeXuat } from "./diffDeXuat";
 import { docDeXuatCucBo, type DeXuatCucBo } from "../loi/deXuatCucBo";
 import { ghepBanVa } from "../loi/ghepBanVa";
 import { bamNoiDung } from "../loi/bamTep";
-import { duocPhepGhi, duongTuongDoiTrongWorkspace } from "../loi/chanGhi";
+import { duocPhepGhi, duongTuongDoiTrongWorkspace, giaiDuongDeXuat } from "../loi/chanGhi";
 import { giaiDuongThat } from "../loi/duongThat";
 import { nhanNguonTheDuyet, nhanNutGhi } from "../loi/nhanTheDuyet";
 import { apBanVa } from "./apBanVa";
@@ -233,7 +233,15 @@ export class BangChat {
     const ed = vscode.window.activeTextEditor;
     if (!ed) return dungNguCanh({ nganSach });
 
-    const duong = vscode.workspace.asRelativePath(ed.document.uri);
+    // ★★★ F3 — CÙNG cách neo với Cmd+K và với đường ghi. `asRelativePath` thêm TÊN THƯ MỤC làm tiền
+    // tố khi workspace có ≥2 thư mục; model đọc ngữ cảnh rồi chép lại chính đường ấy vào `path` của
+    // đề xuất, nên một tiền tố ở ĐÂY cũng đi thẳng vào đường ghi. Rơi về `asRelativePath` khi tệp
+    // nằm ngoài mọi workspace: ngữ cảnh chỉ để ĐỌC, và một đề xuất ghi vào đó sẽ bị luật 2 chặn.
+    const viTri = duongTuongDoiTrongWorkspace(
+      ed.document.uri.fsPath,
+      (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
+    );
+    const duong = viTri?.duongTuongDoi ?? vscode.workspace.asRelativePath(ed.document.uri);
     const chon = ed.selection.isEmpty
       ? undefined
       : {
@@ -455,9 +463,16 @@ export class BangChat {
       return;
     }
     const dsWs = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
-    // `resolve` xử được cả `path` tương đối lẫn tuyệt đối do model sinh; `giaiDuongThat` + vị từ
-    // chặn ngay sau đó quyết định nó có hợp lệ không.
-    const duongTuyetDoi = resolve(goc, d.path);
+    // ★★★ F3 — `resolve(goc, d.path)` NEO CỨNG vào gốc đang chọn, trong khi đường model nhìn thấy
+    // được tính trên thư mục CHỨA tệp (workspace nhiều thư mục ⇒ hai gốc khác nhau). `giaiDuongDeXuat`
+    // thử mọi gốc và TỪ CHỐI khi có ≥2 tệp cùng khớp — xem docblock của nó về ca `app/x.ts` vs
+    // `lib/x.ts`, nơi neo sai không đẻ ra lỗi mà đẻ ra một lượt ghi vào TỆP KHÁC trông hợp lý.
+    const giai = giaiDuongDeXuat(d.path, goc, dsWs, existsSync);
+    if (!giai.ok) {
+      void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Bỏ qua đề xuất sửa "${d.path}": ${giai.lyDo}` });
+      return;
+    }
+    const duongTuyetDoi = giai.duong;
     const that = giaiDuongThat(duongTuyetDoi);
     if (!that.ok) {
       void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Bỏ qua đề xuất sửa "${d.path}": ${that.lyDo}` });

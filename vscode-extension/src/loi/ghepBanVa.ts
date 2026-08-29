@@ -15,6 +15,26 @@
  *
  * ⚠ KHÔNG tự thêm newline cuối tệp nếu gốc không có — giữ đúng "hình dạng byte" của gốc ở phần
  * không bị đề xuất chạm tới.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ 2026-08-30 (F2) — HAI GIẢ ĐỊNH SAI CỦA BẢN CŨ, CẢ HAI ĐỀU LÀM GHI **NHẦM CHỖ**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản cũ `goc.split(eol)` với `eol` suy từ "tệp có chứa \r\n hay không", tức giả định tệp có EOL
+ * ĐỒNG NHẤT. Tệp EOL LẪN LỘN là chuyện thường ngày (một lượt merge, một lượt vá bằng tay, một
+ * generator .NET ghi CRLF vào tệp LF):
+ *   · `"1\r\n2\n3\r\n4".split("\r\n")` ⇒ `["1", "2\n3", "4"]` — BA phần tử cho một tệp BỐN dòng.
+ *     `dongDau`/`dongCuoi` là số dòng của VSCode (đếm theo CẢ hai kiểu ngắt), nên chỉ số lệch:
+ *     bản vá cắm vào **VÙNG KHÁC**, hoặc một sửa đổi HỢP LỆ bị từ chối với lý do SAI ("vượt số
+ *     dòng thật của tệp (3 dòng)" cho một tệp có 4 dòng).
+ * Và `thayThe` KHÔNG chắc là LF trần: `deXuatCucBo.ts` cố ý GIỮ NGUYÊN byte của model, nên một
+ * `thayThe` mang sẵn CRLF gặp `split("\n").join("\r\n")` sẽ đẻ ra `\r\r\n`.
+ *
+ * Vì vậy: tách theo `/\r\n|\n/` — **giữ lại dấu ngắt của TỪNG dòng** — nên chỉ số dòng luôn khớp
+ * VSCode; `thayThe` cũng tách theo cả hai kiểu rồi nối lại bằng EOL của tệp gốc.
+ * ⚠ VÌ SAO GIỮ DẤU NGẮT CỦA TỪNG DÒNG thay vì `split(/\r?\n/).join(eol)` cho gọn: cách gọn hơn sẽ
+ *   CHUẨN HOÁ EOL TOÀN TỆP ở một tệp lẫn lộn — tức đổi cả những dòng bản vá KHÔNG hề chạm tới, và
+ *   `git diff` khi ấy hiện "sửa toàn bộ tệp". Đó đúng là tai hoạ mà docblock trên vừa mô tả, chỉ
+ *   đổi nguyên nhân. Ngoài vùng bị thay, byte của gốc phải nguyên vẹn.
  */
 import type { DeXuatCucBo } from "./deXuatCucBo";
 
@@ -26,9 +46,15 @@ export function ghepBanVa(
     return { ok: true, moi: d.modified };
   }
 
-  // EOL của GỐC quyết định EOL của kết quả — không phải EOL mà model dùng trong `thayThe`.
-  const eol = goc.includes("\r\n") ? "\r\n" : "\n";
-  const dong = goc.split(eol);
+  // Tách theo CẢ HAI kiểu ngắt dòng và GIỮ LẠI dấu ngắt đi sau mỗi dòng (`ngat[i]` là dấu ngắt sau
+  // `dong[i]`, rỗng ở dòng cuối không có ngắt). `split` với nhóm BẮT giữ trả xen kẽ dòng/dấu ngắt.
+  const phan = goc.split(/(\r\n|\n)/);
+  const dong: string[] = [];
+  const ngat: string[] = [];
+  for (let i = 0; i < phan.length; i += 2) {
+    dong.push(phan[i]);
+    ngat.push(phan[i + 1] ?? "");
+  }
 
   if (d.dongCuoi > dong.length) {
     return {
@@ -40,9 +66,18 @@ export function ghepBanVa(
     return { ok: false, lyDo: `khoảng dòng không hợp lệ: dongDau=${d.dongDau}, dongCuoi=${d.dongCuoi}` };
   }
 
-  // `thayThe` luôn dùng \n trần (quy ước của model) — dịch sang EOL của gốc trước khi ghép.
-  const dongThayThe = d.thayThe.split("\n");
-  const moi = [...dong.slice(0, d.dongDau - 1), ...dongThayThe, ...dong.slice(d.dongCuoi)].join(eol);
+  // EOL của GỐC quyết định EOL của phần THAY VÀO — không phải EOL model dùng trong `thayThe`.
+  const eol = goc.includes("\r\n") ? "\r\n" : "\n";
+  // `thayThe` giữ nguyên byte của model ⇒ có thể LF, có thể CRLF, có thể lẫn. Tách theo cả hai rồi
+  // nối lại bằng đúng `eol` — bản cũ `split("\n")` để lại `\r` treo và cho ra `\r\r\n`.
+  const dongThayThe = d.thayThe.split(/\r\n|\n/);
+
+  let moi = "";
+  for (let i = 0; i < d.dongDau - 1; i++) moi += dong[i] + ngat[i];
+  moi += dongThayThe.join(eol);
+  // Dấu ngắt đi SAU dòng `dongCuoi` của GỐC — giữ nguyên byte của gốc, không tự thêm cũng không bớt.
+  moi += ngat[d.dongCuoi - 1];
+  for (let i = d.dongCuoi; i < dong.length; i++) moi += dong[i] + ngat[i];
 
   return { ok: true, moi };
 }
