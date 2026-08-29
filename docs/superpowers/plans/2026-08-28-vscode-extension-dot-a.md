@@ -18,6 +18,31 @@ mẹ) · fetch/ReadableStream của Node 20 · tRPC qua HTTP + superjson.
 
 **Spec:** `docs/superpowers/specs/2026-08-28-vscode-extension-ai-local-design.md`
 
+## Tiến độ (cập nhật khi chạy)
+
+Sổ chi tiết (mọi phán quyết, số đo, nợ có tên): `.superpowers/sdd/2026-08-28-vscode-extension-dot-a/progress.md`
+
+| Task | Trạng thái | Commit | Ghi chú |
+|---|---|---|---|
+| 1 Scaffold + build + nối lưới | ✅ xong | `925802d8` | 5/5 lưới. Bundle nạp thật với `vscode` giả: đăng ký đúng 3 lệnh |
+| 2 Tách khung SSE | ✅ xong | `f8b4db78` | 7/7. Đột biến giết được lưới (ca khung cắt đôi) |
+| 3 Đăng nhập + cookie | ✅ xong | `80c2ce60`→`79074364` | **1 vòng sửa**: máy chủ trả `error` chứ không `message`; `serverUrl` workspace ghi đè được ⇒ rò mật khẩu+cookie |
+| 4 Che bí mật + ngữ cảnh | ✅ xong | `2169dbf0`→`b9240fbe` | **1 vòng sửa, 6 lỗ**: JSON `"password"`, chuỗi kết nối, nhiều từ, `sk_live_`, `dsTep` không lọc, bỏ khối im lặng |
+| 5 Thân yêu cầu `/stream` | ✅ xong | `21138b65` | Review đối chiếu **từng trường** với mã máy chủ — khớp hết |
+| 6 Vòng đọc SSE | ✅ xong | `f9710914`→`bf244be6` | **1 vòng sửa**: rò khoá đọc · thông điệp nói sai nguyên nhân · thiếu lưới UTF-8 (chữ Việt vỡ) |
+| 7 Bảng chat webview | ✅ xong | `0f7b434b`→`5a8545aa` | **1 vòng sửa**: đọc sai trường khung LỖI (lặp lại lớp lỗi T3) · huỷ lượt hiện thành "Lỗi" · nonce `Math.random()` |
+| 8 Ô chọn dự án LOCAL/SERVER | ✅ xong | `177fe835` | Áp dụng phán quyết **R-1** (bắt tay `san_sang` chống đua mất danh sách) |
+| 9 Đóng gói `.vsix` + nghiệm thu | ✅ xong | `6b130b3d` | `.vsix` 9 KB, **đã cài thật** vào VSCode (`st4i.avi-ai-local`) |
+| **Review TOÀN NHÁNH + vá** | ✅ xong | `7140d3f2` | **5 lỗi mà review từng-task không thấy nổi** (1 Critical: tệp khoá riêng bị gửi nguyên văn) + **cổng census chỉ-đọc**. Lưới 68→**99** |
+
+**Còn mở:** chưa có lượt **đăng nhập THẬT** nào chạy qua extension (tài khoản được cấp không tồn
+tại trong DB). Chi tiết + số đo: [tệp kết quả](2026-08-28-vscode-extension-dot-a-ket-qua.md).
+
+**Bài học đã trả giá (giữ lại cho đợt B/C/D):** năm lỗ nghiêm trọng nhất tới giờ **không lỗ nào**
+bị lưới đơn vị bắt — chúng bị bắt bởi phép đo trên máy chủ thật, trên dữ liệu thật của repo, và
+bởi người đọc mã độc lập. Lưới xanh chứng minh mã làm đúng điều **mình tưởng**; nó không chứng
+minh điều mình tưởng là **đúng**.
+
 ## Global Constraints
 
 - **KHÔNG đường ghi tệp trong Đợt A.** Không `fs.write*`, không `applyEdit`, không

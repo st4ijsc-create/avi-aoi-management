@@ -178,3 +178,46 @@ không miễn nhiễm cho các chỗ khác cùng loại (nhánh lỗi, nhánh hu
 phép đo CHẠM ĐÚNG nhánh đó, không chỉ đường vui (happy path); và lưới đơn vị tự viết cần được đối
 chiếu với hình dạng dữ liệu THẬT (đo bằng server sống hoặc dữ liệu sản xuất thật) trước khi được
 tin, vì lưới có thể tự thoả bằng chính giả định sai của người viết ra nó.
+
+---
+
+## Cập nhật sau REVIEW TOÀN NHÁNH (2026-08-29)
+
+Tệp trên được viết ở Task 9, **trước** lượt review toàn nhánh. Review đó (chạy trên model mạnh
+nhất, đọc cả 13 commit cùng lúc) tìm ra 5 lỗi mà **8 lượt review từng-task không thể thấy** — vì
+mỗi lượt chỉ nhìn được một diff, còn các lỗi này nằm ở **khoảng nối giữa các task**.
+
+| Mã | Mức | Lỗi | Hậu quả thật |
+|---|---|---|---|
+| C1 | **Critical** | `CAM_TEP` chỉ chặn `.env*`, `id_rsa` **đúng tên**, `.pem/.pfx/.p12` ⇒ `server.key`, `tls.key`, `store.jks`, `k.p8`, `id_rsa_work` đều lọt; `cheBiMat` không có luật nào khớp thân PEM | **Mở một tệp khoá riêng trong editor là khoá bay lên máy chủ** — vi phạm thẳng bất biến mà chính module đó sinh ra để giữ |
+| I1 | Important | 403 bị gộp chung với 401 | Tài khoản `MUST_CHANGE_PASSWORD`/`ACCOUNT_DISABLED` rơi vào **vòng không lối ra**: đăng nhập lại thành công, request vẫn 403, mãi mãi. **Lần thứ tư** của lớp lỗi "client đọc sai thứ server gửi" |
+| I2/I3 | Important | Khung `done` bị bỏ qua; `hong` bị vứt | Luồng **đứt giữa chừng không phân biệt được với đã xong**; câu trả lời cụt vẫn vào lịch sử như câu hoàn chỉnh; cờ `degraded` (phải THAY câu trả lời) bị lờ |
+| I4 | Important | Spec §5.1 "401 giữa chừng ⇒ xoá cookie" chưa cài | Cookie chết nằm lại tới khi người dùng tự nghĩ ra việc đăng xuất |
+| I5 | Important | Chế độ SERVER vẫn đính kèm tệp LOCAL **không dán nhãn nguồn** | Đúng thứ spec gọi là "tai nạn không cứu được" — ngay trước đợt mở đường ghi |
+
+**Đã vá toàn bộ + thêm cổng census** (commit `7140d3f2`, 13 tệp):
+
+- Lưới **68 → 99 ca** xanh · `ext:check` 0 lỗi · `ext:build` OK.
+- **Census tự động** `src/loi/census.unit.test.ts` duyệt **đệ quy** toàn `src/`, khẳng định **0**
+  lần xuất hiện của `fs.writeFile`/`writeFileSync`/`appendFile`/`applyEdit`/`WorkspaceEdit`/
+  `confirmAction`. Docblock dặn đợt sau: khi thêm điểm ghi ĐẦU TIÊN thì **SỬA** census thành
+  "đúng MỘT lần tại đường dẫn X" — **không được xoá**. Đây là thứ giữ bất biến "chỉ một điểm ghi"
+  bằng đèn đỏ, thay vì bằng một đoạn README.
+- Kiểm chứng độc lập của controller trên đầu vào **đối kháng**: 8/8 đường nguy hiểm bị chặn ·
+  **5/5 tệp hợp lệ vẫn gửi được** (`env.ts`, `keyboard.ts`, `monkey.p8s.ts`, `Calculator.cs`,
+  `keystore-guide.md` — không chặn nhầm) · thân PEM bị che, giữ dòng BEGIN/END.
+- Re-review độc lập còn kiểm thêm hai thứ ngoài lưới: tệp có **hai** khối PEM (che đúng cả hai),
+  và **răng của census** (chỉ chính tệp census chứa các tên API bị cấm ⇒ nó xanh vì lý do thật).
+
+### Vẫn CHƯA xác minh (không tô hồng)
+
+- **Chưa có lượt đăng nhập THẬT nào chạy qua extension.** Tài khoản người dùng cấp
+  (`testadmin`) **không tồn tại trong DB** — máy chủ trả 401 đúng, không phải lỗi extension.
+  Truy vấn chỉ đọc cho thấy các tài khoản đang có: `admin`, `operator1`, `supervisor1`, `maint1`,
+  `engineer1`, `audit_agent`, `p1_audit_op`, `p1_audit_admin`. Không tự tạo tài khoản (ghi DB +
+  nhạy cảm an ninh).
+- Do đó vẫn chưa đo được: **độ trễ tới token đầu tiên** · câu trả lời có **thật sự nhắc đúng nội
+  dung tệp đang mở** không · ô chọn dự án có hiện đúng `AI_REPO_SANDBOX_ROOTS` thật không · chế
+  độ SERVER có chạy nổi trong **trần 20 giây** của vòng tool máy chủ không.
+- `.vsix` đã **cài thật** vào VSCode (`st4i.avi-ai-local`), nhưng chưa mở bảng chat trong cửa sổ
+  VSCode thật với một phiên đăng nhập hợp lệ.
