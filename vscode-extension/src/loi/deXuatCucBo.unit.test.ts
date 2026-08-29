@@ -46,4 +46,24 @@ describe("docDeXuatCucBo", () => {
   it("★ văn bản không có khối nào ⇒ []", () => {
     expect(docDeXuatCucBo("chỉ là văn xuôi")).toEqual([]);
   });
+
+  it("★★★ thân khối là `null` (JSON HỢP LỆ) ⇒ bỏ qua, KHÔNG ném, KHÔNG mất khối hợp lệ khác", () => {
+    // `JSON.parse("null")` trả về null chứ không ném ⇒ try/catch quanh parse KHÔNG đủ.
+    // Ném ở đây sẽ vứt luôn những đề xuất hợp lệ đã thu được — tệ hơn nhiều so với bỏ một khối.
+    const v = KHOI("null") + KHOI('{"tool":"de_xuat_sua","args":{"path":"a","modified":"M"}}');
+    expect(docDeXuatCucBo(v)).toEqual([{ loai: "toanVan", path: "a", modified: "M" }]);
+  });
+
+  it("★★ thân khối là số / chuỗi / mảng (đều là JSON hợp lệ) ⇒ bỏ qua, không ném", () => {
+    expect(docDeXuatCucBo(KHOI("123"))).toEqual([]);
+    expect(docDeXuatCucBo(KHOI('"chuoi"'))).toEqual([]);
+    expect(docDeXuatCucBo(KHOI("[1,2]"))).toEqual([]);
+  });
+
+  it("★★★ đầu vào CRLF (Windows) đọc được y như LF", () => {
+    // Extension chạy trên Windows; chữ model sinh có thể mang \r\n. Regex `\n` trần làm MỌI đề
+    // xuất biến mất IM LẶNG — người dùng chỉ thấy model "trả lời suông", không có thẻ duyệt.
+    const v = KHOI('{"tool":"de_xuat_sua","args":{"path":"a","modified":"M"}}');
+    expect(docDeXuatCucBo(v.replace(/\n/g, "\r\n"))).toEqual([{ loai: "toanVan", path: "a", modified: "M" }]);
+  });
 });

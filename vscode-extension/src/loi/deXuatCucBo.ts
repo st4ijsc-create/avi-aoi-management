@@ -7,11 +7,15 @@
  * Parser này là cửa DUY NHẤT cho đường ghi cục bộ. Sai một nhịp ở đây = ghi nhầm tệp trên
  * máy lập trình viên ⇒ mọi ca biên phải trả `[]` chứ KHÔNG đoán.
  *
- * - Tách khối bằng hàng rào ``` ```avi-tool ``` `` … ``` ``` ```
+ * - Tách khối bằng hàng rào ``` ```avi-tool ``` `` … ``` ``` ``` (hỗ trợ LF + CRLF)
  * - `JSON.parse` trong `try/catch`; hỏng ⇒ bỏ qua khối đó, KHÔNG ném
+ * - Kiểm trước khi truy cập trường: phải là object (KHÔNG null/số/chuỗi)
  * - Kiểm từng trường bằng `typeof`; thiếu/sai kiểu ⇒ bỏ qua
  * - `dongDau`/`dongCuoi` phải là số nguyên ≥ 1 và `dongCuoi >= dongDau`; sai ⇒ bỏ qua
  * - `tool` khác `de_xuat_sua_doan`/`de_xuat_sua` ⇒ bỏ qua
+ *
+ * GIỚI HẠN ĐÃ BIẾT: nếu `thayThe`/`modified` chứa nguyên văn hàng rào ```, regex lười cắt khối
+ * sớm ⇒ JSON hỏng ⇒ một đề xuất hợp lệ bị bỏ im lặng. Không sửa ở đợt này (cần đổi giao thức).
  */
 
 export type DeXuatCucBo =
@@ -21,8 +25,8 @@ export type DeXuatCucBo =
 export function docDeXuatCucBo(vanBan: string): DeXuatCucBo[] {
   const ketQua: DeXuatCucBo[] = [];
 
-  // Tách các khối avi-tool từ văn bản
-  const regex = /```avi-tool\n([\s\S]*?)\n```/g;
+  // Tách các khối avi-tool từ văn bản (hỗ trợ LF `\n` và CRLF `\r\n`)
+  const regex = /```avi-tool\r?\n([\s\S]*?)\r?\n```/g;
   let khopMatches;
 
   while ((khopMatches = regex.exec(vanBan)) !== null) {
@@ -34,6 +38,13 @@ export function docDeXuatCucBo(vanBan: string): DeXuatCucBo[] {
       obj = JSON.parse(jsonText);
     } catch {
       // JSON không hợp lệ ⇒ bỏ qua
+      continue;
+    }
+
+    // JSON.parse("null") trả về null (JSON hợp lệ), không ném. Phải chặn trước khi truy cập
+    // trường, nếu không sẽ ném TypeError khi chạm obj.tool. Điều này sẽ vứt luôn những đề
+    // xuất hợp lệ đã thu được — tệ hơn nhiều so với bỏ một khối.
+    if (!obj || typeof obj !== "object") {
       continue;
     }
 
