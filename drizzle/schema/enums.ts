@@ -166,6 +166,10 @@ export const apiKeyProviderEnum = pgEnum("apikeyprovider", ["openai", "azure_ope
 export const apiKeyStatusEnum = pgEnum("apikeystatus", ["active", "inactive", "expired", "error"]);
 
 // AI Copilot pending-action lifecycle (GĐ2 HITL write-action)
+// ★★★ Đợt B · Task 6 (2026-08-29, drizzle/0341) — 'bi_tu_choi_ghi': execute() ĐÃ CHẠY nhưng TỪ
+// CHỐI GHI (BASE_MISMATCH/FILE_DIRTY/…, daBiTuChoiGhi(result) === true) — 0 byte vào đĩa. KHÁC
+// 'denied' (bị chặn TRƯỚC execute(), bởi RBAC/hợp đồng). Trước migration này `confirmAction` dán
+// nhãn SAI 'executed' cho đúng ca này — xem docblock shared/aiCodingLoop.ts:325-360.
 export const aiPendingActionStatusEnum = pgEnum("aipendingactionstatus", [
   "proposed",
   "confirmed",
@@ -173,6 +177,7 @@ export const aiPendingActionStatusEnum = pgEnum("aipendingactionstatus", [
   "denied",
   "expired",
   "cancelled",
+  "bi_tu_choi_ghi",
 ]);
 
 // AI Copilot agent session lifecycle (GĐ3b multi-step agentic orchestrator).

@@ -7,8 +7,10 @@
  *              RBAC gated, returns a pendingAction the UI renders as a confirm
  *              card. Token = row id (uuid) bound to userId, TTL 5'.
  *   confirm  → verify status/expiry/userId/token → RBAC re-check → idempotency
- *              (already executed ⇒ return cached result) → execute() with args
- *              read from the DB row (never the client) → mark executed + audit.
+ *              (already executed/bi_tu_choi_ghi ⇒ return cached result) → execute()
+ *              with args read from the DB row (never the client) → mark status
+ *              THEO KẾT QUẢ THẬT (`trangThaiSauThucThi`, Đợt B · Task 6: byte thật
+ *              vào đĩa ⇒ executed; execute() TỪ CHỐI GHI ⇒ bi_tu_choi_ghi) + audit.
  *   cancel   → mark cancelled (only the owner, only while proposed).
  *
  * Safety invariants (Mục 8):
@@ -59,6 +61,10 @@ import {
 // Center. ADDITIVE: fire-and-forget/non-throwing, minimal non-sensitive payload
 // only (no args/preview/result on the wire) — see aiAgentRealtime.ts.
 import { publishAiAgentEvent } from "./aiAgentRealtime";
+// ★★★ Đợt B · Task 6 (2026-08-29, spec §6.6) — vị từ CHUNG, THUẦN, MỘT bản duy nhất (0 import),
+// đã có 3 nơi gọi (CLI · web · vòng tự-trị-ghi). Dùng lại NGUYÊN VĂN — KHÔNG viết bản thứ hai.
+// Xem docblock đầy đủ ở shared/aiCodingLoop.ts:325-360 cho lý lẽ vì sao vị từ này đứng một mình.
+import { daBiTuChoiGhi, maTuChoiGhi } from "@shared/aiCodingLoop";
 
 /** E2-4 — defensive call site: a realtime-nudge failure must never break the
  *  choke point that triggered it. Belt-and-suspenders (publishAiAgentEvent
@@ -155,7 +161,16 @@ export interface ProposeResult {
 
 export interface ConfirmResult {
   ok: boolean;
-  status: "executed" | "denied" | "expired" | "not_found" | "invalid";
+  /**
+   * ★★★ Đợt B · Task 6 — `"bi_tu_choi_ghi"` MỚI (drizzle/0341, giá trị enum
+   * `aipendingactionstatus`): `execute()` ĐÃ CHẠY nhưng TỪ CHỐI GHI (BASE_MISMATCH/FILE_DIRTY/…,
+   * `daBiTuChoiGhi(result) === true`) — 0 byte vào đĩa. KHÁC `"denied"` (bị chặn TRƯỚC execute(),
+   * bởi RBAC/hợp đồng khuyến nghị) — hai lớp lỗi khác nhau, không được trộn.
+   * ⚠ `ok:true` với status này vẫn có thể xảy ra (xem nhánh cache-return): `ok` nói *"vòng đời HITL
+   *   chạy hết chặng"*, KHÔNG nói *"byte đã vào đĩa"* — luôn đọc `result`/`daBiTuChoiGhi(result)`
+   *   để biết sự thật, đúng hợp đồng mà CLI/web/extension đã dựa vào từ trước bản vá này.
+   */
+  status: "executed" | "bi_tu_choi_ghi" | "denied" | "expired" | "not_found" | "invalid";
   result?: unknown;
   message?: string;
   /**
@@ -629,6 +644,31 @@ function hunkRejectMessage(lang: ToolLang, reason: HunkRejectReason, chiTiet: st
 }
 
 /**
+ * ★★★ Đợt B · Task 6 (2026-08-29, spec §6.6) — QUYẾT ĐỊNH TRẠNG THÁI THẬT sau `tool.execute()`.
+ *
+ * Trước bản vá này, `confirmAction` đặt `status='executed'` VÔ ĐIỀU KIỆN ngay sau `execute()` trả
+ * về — kể cả khi `apply_diff` (hay bất kỳ write tool nào khác mang `note` trên `ToolResult`) TỪ
+ * CHỐI GHI đúng như thiết kế (BASE_MISMATCH/FILE_DIRTY/…). 0 byte vào đĩa nhưng cột `status` trong
+ * CSDL vẫn khai "đã thực thi" — đúng lớp lỗi mà `shared/aiCodingLoop.daBiTuChoiGhi()` được rút ra
+ * để CLI/web tự đoán lại, vì không tin được cột này.
+ *
+ * Hàm THUẦN, tách riêng để lưới được không cần dựng cả `confirmAction` (DB thật + repo thật) —
+ * nhưng đây KHÔNG phải một vị từ mồ côi: nó dùng lại NGUYÊN `daBiTuChoiGhi` (không viết bản thứ
+ * hai) và được `confirmAction` gọi THẬT ngay dưới, tại đúng điểm ghi `status` vào CSDL lẫn điểm trả
+ * `ConfirmResult` cho người gọi.
+ */
+export function trangThaiSauThucThi(ketQua: unknown): "executed" | "bi_tu_choi_ghi" {
+  return daBiTuChoiGhi(ketQua) ? "bi_tu_choi_ghi" : "executed";
+}
+
+/** Câu khai "đã xử lý trước đó" cho nhánh cache-return — đúng bản chất từng trạng thái chung cục. */
+function cauDaXuLyTruocDo(trangThai: "executed" | "bi_tu_choi_ghi"): string {
+  return trangThai === "executed"
+    ? "Đã thực thi trước đó."
+    : "Đã bị từ chối ghi trước đó — không byte nào vào đĩa.";
+}
+
+/**
  * Phase 2 — confirm. Verifies ownership/expiry/token, re-checks RBAC, then
  * executes with args from the DB row. Idempotent: a second confirm on an
  * already-executed action returns the cached result without re-running.
@@ -672,9 +712,12 @@ export async function confirmAction(
     return { ok: false, status: "invalid", message: "Token hoặc người dùng không khớp." };
   }
 
-  // Idempotency: already executed → return cached result.
-  if (row.status === "executed") {
-    return { ok: true, status: "executed", result: row.resultJson ?? null, message: "Đã thực thi trước đó." };
+  // Idempotency: đã có KẾT CỤC CHUNG CUỘC (dù ghi được hay bị TỪ CHỐI ghi) → trả kết quả ĐÃ LƯU,
+  // không chạy execute() lần hai. ★ Đợt B · Task 6: 'bi_tu_choi_ghi' đứng CÙNG nhánh với 'executed'
+  // — trước bản vá này một hàng bị từ chối ghi vẫn (sai) mang nhãn 'executed' nên vẫn rơi đúng
+  // nhánh cache-return này; hành vi retry giữ NGUYÊN, chỉ nhãn trả về đổi cho đúng sự thật.
+  if (row.status === "executed" || row.status === "bi_tu_choi_ghi") {
+    return { ok: true, status: row.status, result: row.resultJson ?? null, message: cauDaXuLyTruocDo(row.status) };
   }
   if (row.status !== "proposed" && row.status !== "confirmed") {
     return { ok: false, status: row.status === "expired" ? "expired" : "invalid", message: `Trạng thái không hợp lệ: ${row.status}.` };
@@ -746,9 +789,9 @@ export async function confirmAction(
   if (daGianh.length === 0) {
     // 0 hàng ⇒ ai đó đã CẦM action này trước ta. Đọc lại để nói đúng kết cục, không đoán.
     const [sau] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
-    if (sau?.status === "executed") {
+    if (sau?.status === "executed" || sau?.status === "bi_tu_choi_ghi") {
       // Nhánh idempotent y hệt nhánh đầu hàm: trả kết quả ĐÃ LƯU, không chạy lại `execute()`.
-      return { ok: true, status: "executed", result: sau.resultJson ?? null, message: "Đã thực thi trước đó." };
+      return { ok: true, status: sau.status, result: sau.resultJson ?? null, message: cauDaXuLyTruocDo(sau.status) };
     }
     await auditConfirmFailure(user, req, row.tool, actionId, "CONCURRENT_CONFIRM");
     return {
@@ -881,14 +924,20 @@ export async function confirmAction(
    */
   const argsThucThi = (luaChonKhoi ? luaChonKhoi.args : row.argsJson) as Record<string, unknown>;
   const result = await tool.execute!(argsThucThi, execCtx);
+  // ★★★ Đợt B · Task 6 — CỘT `status` NÓI THẬT TỪ ĐÂY: `trangThaiSauThucThi` đọc đúng `note` mà
+  // `execute()` vừa trả (quy ước máy-đọc-được chung của cả nhóm tool: có `note` ⇒ TỪ CHỐI GHI).
+  // `resultJson` bên dưới vẫn là `result` NGUYÊN VẸN (mang `note`) — CLI/web/extension tiếp tục tự
+  // kiểm `daBiTuChoiGhi(result)` như trước, hợp đồng không đổi; chỉ nhãn `status` hết nói dối.
+  const trangThaiThat = trangThaiSauThucThi(result);
 
   await db
     .update(aiPendingActions)
-    .set({ status: "executed", executedAt: new Date(), resultJson: result as unknown as Record<string, unknown> })
+    .set({ status: trangThaiThat, executedAt: new Date(), resultJson: result as unknown as Record<string, unknown> })
     .where(eq(aiPendingActions.id, actionId));
 
-  // E2-4 — nudge AFTER the row is persisted as executed. Fire-and-forget,
-  // minimal payload (event + timestamp only — no result/args on the wire).
+  // E2-4 — nudge AFTER the row is persisted (executed HOẶC bi_tu_choi_ghi — cả hai đều là một lượt
+  // confirm đã xử lý xong, đáng để UI làm tươi). Fire-and-forget, minimal payload (event +
+  // timestamp only — no result/args on the wire).
   nudge("action_confirmed");
 
   // Audit: executed (lifecycle) + target-entity update (before/after) when the
@@ -914,6 +963,10 @@ export async function confirmAction(
         // autonomy tier, not a human user)".
         ...(autonomy ? { autoConfirmed: true } : {}),
         ...autonomyAuditMeta(autonomy),
+        // ★★★ Đợt B · Task 6 — ADDITIVE, chỉ có mặt khi bị từ chối: đây vẫn là audit "lượt confirm
+        // đã xử lý xong" (AI_ACTION_EXECUTED không đổi tên — vòng đời HITL THẬT SỰ chạy hết chặng),
+        // nhưng auditor không còn phải suy ra "ghi được hay không" từ `resultJson.note` nữa.
+        ...(trangThaiThat === "bi_tu_choi_ghi" ? { writeRejected: true, rejectCode: maTuChoiGhi(result) } : {}),
       },
     },
     status: "success",
@@ -937,7 +990,15 @@ export async function confirmAction(
     );
   }
 
-  return { ok: true, status: "executed", result, message: "Đã thực thi." };
+  // ★★★ Đợt B · Task 6 — `ok:true` KHÔNG đổi (vòng đời HITL chạy hết chặng dù ghi được hay bị từ
+  // chối; hợp đồng CLI/web/extension dựa vào `daBiTuChoiGhi(result)`, không dựa vào `ok`, giữ
+  // nguyên). Chỉ `status`/`message` đổi để nói ĐÚNG cái vừa xảy ra.
+  return {
+    ok: true,
+    status: trangThaiThat,
+    result,
+    message: trangThaiThat === "executed" ? "Đã thực thi." : "Bị từ chối ghi — không byte nào vào đĩa.",
+  };
 }
 
 /** Cancel a proposed action (owner only, only while proposed/confirmed). */

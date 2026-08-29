@@ -1,0 +1,18 @@
+-- drizzle/0341_them_trang_thai_bi_tu_choi_ghi.sql
+-- Đợt B · Task 6 (spec §6.6) — vá lỗ nói dối `executed`.
+--
+-- `confirmAction` (server/services/aiCopilotActions.ts) từng đặt `status='executed'` VÔ ĐIỀU
+-- KIỆN sau `tool.execute()`, kể cả khi apply_diff TỪ CHỐI GHI (BASE_MISMATCH/FILE_DIRTY…) và trả
+-- một ToolResult mang `note` — 0 byte vào đĩa nhưng cột `status` vẫn khai "đã thực thi". Đó là lý
+-- do CLI (`aiCodingCli/cli.ts`) và web (`AICodingWorkspace.tsx`) đều phải tự đoán lại sự thật bằng
+-- `daBiTuChoiGhi()` (shared/aiCodingLoop.ts) thay vì tin cột `status`.
+--
+-- Giá trị enum MỚI này cho `confirmAction` một nhãn ĐÚNG để dùng: byte thật sự rơi ⇒ 'executed';
+-- bị từ chối ghi (daBiTuChoiGhi(result) === true) ⇒ 'bi_tu_choi_ghi'. KHÔNG dùng 'denied' — 'denied'
+-- mang nghĩa RBAC/hợp đồng từ chối TRƯỚC khi execute() chạy; 'bi_tu_choi_ghi' là execute() ĐÃ CHẠY
+-- nhưng tự nó từ chối ghi (TOCTOU/tệp bẩn) — hai lớp lỗi khác nhau, không được trộn.
+--
+-- ⚠⚠ `ALTER TYPE … ADD VALUE` KHÔNG được phép chạy trong một transaction khối (một số cấu hình
+-- Postgres/driver bọc mỗi file migration trong BEGIN…COMMIT) ⇒ migration này ĐỨNG RIÊNG, không gộp
+-- bất kỳ DDL nào khác vào cùng file/transaction.
+ALTER TYPE "aipendingactionstatus" ADD VALUE IF NOT EXISTS 'bi_tu_choi_ghi';
