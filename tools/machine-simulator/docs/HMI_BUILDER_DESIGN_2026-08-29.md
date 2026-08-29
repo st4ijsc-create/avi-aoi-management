@@ -132,9 +132,27 @@ Thay `mapping/*.json` placeholder bằng **compiler thật**. Mỗi tag:
 | `dataType` / `unit` | `float` / `Nm` |
 | `engMin` / `engMax` | `0` / `20` — dải kỹ thuật để widget vẽ gauge/scale không phải đoán |
 | `access` | `r` / `rw` |
-| `policyAction` | `null` nếu chỉ đọc; `machine.setpoint` hoặc `machine.command` nếu ghi (§5) |
+| `policyAction` | ~~`null` nếu chỉ đọc~~; `machine.setpoint` hoặc `machine.command` nếu ghi (§5) — xem ghi chú đè ngay dưới bảng |
 | `source` | `{ kind: "modbus", unitId, register, scale }` / `{ kind: "opcua", nodeId }` / `{ kind: "mqtt", topic, jsonPath }` / `{ kind: "simulated" }` / `{ kind: "derived", expr }` |
 | `quality` | `good` / `stale` / `bad` — **runtime bắt buộc hiển thị**, không được vẽ số như thể luôn tươi |
+
+> 🔴 **GHI CHÚ ĐÈ (fix round 2, 2026-08-30) — hai ô của bảng trên không còn đúng với hợp đồng đã đóng
+> băng. Nguyên văn giữ nguyên ở trên, không xoá.**
+>
+> **1. `policyAction`.** Bảng nói nguyên văn *"`null` nếu chỉ đọc"*. **Sai** kể từ phán quyết
+> "không-null-tường-minh" (Task 4, ghi ở `contracts/README.md`): một document **không bao giờ** viết
+> `null` tường minh — một property optional **vắng mặt CHÍNH LÀ** `null` của nó. Cả ba schema nay thi
+> hành điều đó bằng máy (`{"enum": ["machine.setpoint","machine.command"]}`, không có `null` trong
+> `enum`, không có `"type": [...,"null"]`), và `HmiContractJson.Options` phía .NET đặt `WhenWritingNull`
+> nên bản tham chiếu C# **không thể** phát ra một null tường minh. Một tag chỉ đọc **bỏ hẳn khoá
+> `policyAction`**; viết `"policyAction": null` là một tài liệu mà phía .NET không round-trip được.
+> Câu đúng: *"`policyAction` VẮNG MẶT nếu chỉ đọc; `machine.setpoint` hoặc `machine.command` nếu ghi"*.
+>
+> **2. `quality`.** Hàng này **không có** trong `tag-namespace.schema.json` đã đóng băng, và đó là một
+> **hoãn có chủ ý, không phải bỏ sót** — `quality` là trạng thái theo từng lần đọc, thuộc hợp đồng
+> *giá trị sống* mà WS-HMI-0 sẽ định nghĩa, không thuộc một document tĩnh được lưu và version hoá. Lý do
+> đầy đủ, cùng quyết định hoãn `alarms[]` của §3.1, ở `contracts/README.md` §"Trường được HOÃN có chủ ý".
+> Yêu cầu "runtime bắt buộc hiển thị quality" **không** bị bỏ; nó chuyển chỗ.
 
 Namespace publish lên UNS dưới dạng Sparkplug metric (hạ tầng WS-B đã có). API: `GET /v1/tags?machine=`, `GET /v1/tags/{path}`, `POST /v1/tags/subscribe` (SSE, tái dùng cơ chế `/v1/inspector/stream` đã có).
 
@@ -204,6 +222,22 @@ Xem §5. Tầng này **không phải mã mới** — là ràng buộc bắt bu�
 > nhau) với ít mã hơn và không có công cụ sinh mã nào phải bảo trì. Đây là
 > một quyết định có chủ ý của Mốc 0, không phải một khoản chưa làm kịp; xem `contracts/README.md` và
 > README §25 để biết cách luật đóng băng này được thi hành trong thực tế.
+>
+> **Khoản 3 được đọc là "≥5 fixture trải trên BA schema", không phải "≥5 màn hình".** Nguyên văn khoản 3
+> giữ nguyên bên dưới, không xoá — lại là một ghi chú đè. Khoản 3 nói *"≥5 **màn hình mẫu** JSON nằm
+> trong repo"*, tức năm **screen**. Cái thật sự giao là **5 fixture `valid/` + 6 fixture `invalid/`**
+> trải trên cả ba schema, trong đó chỉ **HAI** là màn hình (`screen-overview-minimal.json`,
+> `screen-screwdrive-full.json`); ba fixture `valid/` còn lại là tag namespace (×2) và component model
+> (×1). Lý do đọc rộng ra như vậy: Mốc 0 phải chứng minh **cả ba** schema đọc/ghi được ở cả hai phía, và
+> một corpus năm-màn-hình-không-có-tag-nào sẽ để hai schema kia hoàn toàn không được ví dụ nào chạm tới.
+>
+> **Nói thẳng cái giá của cách đọc ấy: hai màn hình là MỎNG cho đội runtime.** Corpus hiện tại chưa có
+> ví dụ nào cho `alarm-list`, `sheet`, `kpi-tile`, `state-badge`, `line-state`, `gauge`, `status-lamp`
+> — tức là hơn nửa danh sách `kind` chưa từng xuất hiện trong một tài liệu thật, và `breakpoint`
+> `tablet`/`phone` cũng chưa. Đội WS-HMI-1 sẽ gặp các hình dạng ấy lần đầu **trong lúc viết renderer**,
+> không phải trong một fixture. **Mở rộng bộ màn hình mẫu là việc ĐẦU TIÊN của WS-HMI-1**, và nó không
+> phải một khoản trang trí: mỗi màn hình mẫu mới chạy qua đúng hai bộ ghim đã có mà không cần thêm một
+> dòng hạ tầng test nào.
 
 Ràng buộc bắt buộc:
 1. **`schemaVersion` là trường bắt buộc** trong mọi document — màn hình lưu hôm nay phải đọc được sau 3 năm.

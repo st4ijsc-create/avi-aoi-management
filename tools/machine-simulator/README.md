@@ -6437,11 +6437,26 @@ types from the schema; what shipped is hand-written types on both sides, pinned 
 — a departure recorded, not silently taken, in a freeze note directly under §4's table. The web-side
 validator (`web/contract-tests/validate.mjs`) is a **hand-written partial** JSON Schema implementation
 covering only the keywords these three schemas actually use — `type`, `enum`, `const`, `required`,
-`additionalProperties`, `if`/`then`, `oneOf`, `pattern`, `minLength`, `minimum`/`maximum`, `$ref` into
-`$defs` — and it **throws** on any keyword it does not recognize rather than skipping it silently, so a
-future schema author who reaches for an unsupported keyword gets a loud failure instead of a validator
-that quietly stops checking. It is not a general-purpose JSON Schema engine and must never be read as
-one.
+`properties`, `additionalProperties` (`false` or a single schema), `items` (schema form), `allOf`,
+`oneOf`, `if`/`then`, `pattern`, `minLength`, `minimum`/`maximum`, `$ref` into `$defs`, plus the
+annotation-only `$schema`/`$id`/`$defs`/`title`/`$comment` — and it **throws** on any keyword it does not
+recognize rather than skipping it silently, so a future schema author who reaches for an unsupported
+keyword gets a loud failure instead of a validator that quietly stops checking. It is not a
+general-purpose JSON Schema engine and must never be read as one.
+
+Two corrections to that sentence, both from a later review round, kept here rather than quietly folded in.
+**(a) The list above previously omitted `allOf` and `items`** — both implemented, both used by all three
+schemas; a "supported keywords" list that omits what is supported is the same class of untruth as a
+validator that skips what it does not support. **(b) "Recognizes a keyword" now means recognizes it *in
+the position the validator actually reads it*,** which is the stronger and more important claim. The
+original guard accepted `if`/`then`/`items`/`$ref` **anywhere**, while the validator honours `if`/`then`
+only as direct members of an `allOf` element, `items` only in schema form, and returns from `$ref` before
+reading siblings. So `if`/`then` written directly on a node — legal JSON Schema, enforced by any real
+validator, and the most natural way for anyone to add a third conditional to `$defs/widget` — was accepted
+by the guard and silently ignored by the validator: an unpoliced `command-button` passed clean. Five such
+positions (bare `if`/`then`; `then` with no sibling `if`; `$ref` with siblings; tuple-form `items`;
+array-form `additionalProperties`) are now **rejected rather than implemented** — that matches the file's
+posture, and each of the five is pinned by a test that has been watched to fire.
 
 *(VI: `contracts/` (`.superpowers/sdd/2026-08-29-hmi-moc0-schema-freeze-blueprint/`,
 `docs/HMI_BUILDER_DESIGN_2026-08-29.md` §4) chứa ba JSON Schema — `tag-namespace.schema.json`,
@@ -6484,8 +6499,23 @@ chối đó là thật, không phải khẳng định suông.
 sự giao là kiểu viết tay ở cả hai phía, ghim bằng test hai chiều thay vì sinh mã — một sai lệch được ghi
 lại, không lặng lẽ áp dụng, trong một khối ghi chú đóng băng ngay dưới bảng của §4. Bộ validate phía web
 (`web/contract-tests/validate.mjs`) là một bản triển khai JSON Schema **viết tay, một phần**, chỉ phủ
-đúng những từ khoá ba schema này thật sự dùng — `type`, `enum`, `const`, `required`,
-`additionalProperties`, `if`/`then`, `oneOf`, `pattern`, `minLength`, `minimum`/`maximum`, `$ref` vào
-`$defs` — và nó **ném lỗi** khi gặp từ khoá không nhận ra thay vì bỏ qua âm thầm, để người viết schema sau
-này gặp một lỗi to tiếng thay vì một bộ validate lặng lẽ ngừng kiểm. Nó không phải một engine JSON Schema
-tổng quát và không bao giờ nên được đọc như vậy.)*
+đúng những từ khoá ba schema này thật sự dùng — `type`, `enum`, `const`, `required`, `properties`,
+`additionalProperties` (`false` hoặc MỘT schema), `items` (dạng schema), `allOf`, `oneOf`, `if`/`then`,
+`pattern`, `minLength`, `minimum`/`maximum`, `$ref` vào `$defs`, cộng nhóm chú thích
+`$schema`/`$id`/`$defs`/`title`/`$comment` — và nó **ném lỗi** khi gặp từ khoá không nhận ra thay vì bỏ
+qua âm thầm, để người viết schema sau này gặp một lỗi to tiếng thay vì một bộ validate lặng lẽ ngừng
+kiểm. Nó không phải một engine JSON Schema tổng quát và không bao giờ nên được đọc như vậy.
+
+Hai đính chính cho câu trên, đều từ một đợt review sau, để lại đây thay vì gộp vào âm thầm. **(a) Danh
+sách trên trước đây THIẾU `allOf` và `items`** — cả hai đều đã thi hành, cả ba schema đều dùng; một danh
+sách "từ khoá được hỗ trợ" mà bỏ sót thứ đang được hỗ trợ là cùng lớp nói-không-đúng với một bộ validate
+bỏ qua thứ nó không hỗ trợ. **(b) "Nhận ra một từ khoá" nay nghĩa là nhận ra nó Ở ĐÚNG VỊ TRÍ mà bộ
+validate thật sự đọc** — đây mới là khẳng định mạnh và quan trọng. Guard cũ nhận `if`/`then`/`items`/`$ref`
+ở BẤT CỨ ĐÂU, trong khi bộ validate chỉ đọc `if`/`then` khi chúng là thành viên trực tiếp của một phần tử
+`allOf`, chỉ đọc `items` dạng schema, và return ngay sau khi phân giải `$ref` nên bỏ mọi anh em kế bên. Vì
+vậy `if`/`then` đặt thẳng trên một nút — hợp lệ theo JSON Schema, được mọi bộ validate thật thi hành, và
+là cách TỰ NHIÊN NHẤT để ai đó thêm điều kiện thứ ba vào `$defs/widget` — được guard chấp nhận rồi bị bộ
+validate bỏ qua trong im lặng: một `command-button` không có `policyAction` đi lọt sạch. Năm vị trí như
+vậy (`if`/`then` trần; `then` không có `if` anh em; `$ref` có anh em; `items` dạng tuple;
+`additionalProperties` dạng mảng) nay bị **TỪ CHỐI thay vì được thi hành** — đúng posture của file ấy — và
+mỗi vị trí có một bài test đã được nhìn thấy bắn.)*

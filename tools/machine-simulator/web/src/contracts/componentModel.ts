@@ -28,6 +28,13 @@ export type ComponentTagDef = {
   name: string
   role: ComponentTagRole
   dataType: TagDataType
+  /**
+   * Giá trị của `dataType === "enum"`. Thêm ở fix round 2 (finding Important 3): schema cho phép
+   * `dataType: "enum"` mà không có chỗ khai giá trị, trong khi `tag-namespace.schema.json` đã có
+   * `enumValues` — hai schema bất đồng về đúng cùng một kiểu dữ liệu. Không `| null`: vắng mặt CHÍNH
+   * LÀ null của nó.
+   */
+  enumValues?: string[]
   unit?: string
   /** Dải chặn cứng cho `role === "setpoint"` — bất biến an toàn, schema thi hành. */
   min?: number

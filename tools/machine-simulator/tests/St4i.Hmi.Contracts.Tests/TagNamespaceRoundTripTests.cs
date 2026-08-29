@@ -10,8 +10,14 @@ namespace St4i.Hmi.Contracts.Tests;
 /// <see cref="TagNamespaceDocument"/> rồi ghi ra lại thành JSON <b>tương đương ngữ nghĩa</b> với bản gốc.
 ///
 /// <para><b>Bài test này KHÔNG đo cái gì:</b> (1) nó KHÔNG kiểm fixture có hợp lệ theo JSON Schema hay
-/// không — không có bộ validate JSON Schema nào trong cây này (chủ ý: contract assembly zero-dependency),
-/// việc "schema từ chối đúng thứ cần từ chối" do <c>TagNamespaceSchemaPinTests</c> đo bằng cách khác;
+/// không — KHÔNG có bộ validate JSON Schema nào ở phía .NET, và đó là chủ ý (contract assembly
+/// zero-dependency). Bộ validate DUY NHẤT của cây này nằm ở phía web,
+/// <c>web/contract-tests/validate.mjs</c> — một bản viết tay, một phần, chỉ phủ từ khoá ba schema thật
+/// sự dùng — và nó chạy ở <c>web/contract-tests/contracts.test.mjs</c>, không ở đây. (Câu này trước đây
+/// viết "không có bộ validate JSON Schema nào trong cây này"; đúng lúc nó được viết, sai kể từ khi
+/// <c>validate.mjs</c> ra đời cùng đợt — hai bài round-trip anh em đã nói đúng, bài này thì chưa.)
+/// Việc "schema từ chối đúng thứ cần từ chối" do <c>TagNamespaceSchemaPinTests</c> đo bằng cách khác ở
+/// phía .NET, và do corpus <c>invalid/</c> đo trực tiếp ở phía web;
 /// (2) nó KHÔNG chứng minh phía TypeScript đọc cùng fixture ra cùng kết quả — đó là
 /// <c>web/contract-tests/contracts.test.mjs</c>; (3) một fixture xanh ở đây KHÔNG có nghĩa driver
 /// nào nạp tag ấy thật — cờ <c>isBackedByDriver</c> chỉ là một trường dữ liệu ở tầng này.</para>

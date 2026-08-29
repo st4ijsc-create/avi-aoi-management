@@ -16,8 +16,10 @@ namespace St4i.Hmi.Contracts.Tests;
 /// <c>engMin</c> là number, bài test này không kiểm C# khai <c>double?</c>; sai kiểu bị round-trip ở
 /// <c>TagNamespaceRoundTripTests</c> bắt, nhưng chỉ khi có fixture chạm tới nó; (2) nó KHÔNG đo phía
 /// TypeScript — đó là bài tương ứng ở <c>web/contract-tests/</c>, và hai bài phải cùng đỏ khi schema
-/// đổi; (3) nó KHÔNG kiểm các ràng buộc <c>allOf</c>/<c>if-then</c> (luật rw→policyAction) — những luật
-/// ấy được đo bằng corpus <c>invalid/</c> ở phía web, nơi CÓ bộ validate.</para>
+/// đổi; (3) nó KHÔNG kiểm luật <c>allOf</c>/<c>if-then</c> có thật sự CHẶN hay không —
+/// <see cref="Every_writable_access_is_covered_by_the_policy_action_rule"/> chỉ khẳng định luật ấy PHỦ
+/// ĐÚNG tập <c>access</c> ghi được; việc nó thật sự từ chối một tài liệu vi phạm được đo bằng corpus
+/// <c>invalid/</c> ở phía web, nơi CÓ bộ validate.</para>
 /// </summary>
 public class TagNamespaceSchemaPinTests
 {
@@ -37,6 +39,37 @@ public class TagNamespaceSchemaPinTests
             SchemaPin.SchemaProps(SchemaPin.Load(SchemaFile), pointer),
             SchemaPin.RecordProps(recordType),
             CSharpOnlyByDesign);
+    }
+
+    [Fact]
+    public void Every_writable_access_is_covered_by_the_policy_action_rule()
+    {
+        // 🔴 Bất biến §5 ở tầng tag — MIRROR của
+        // `ComponentModelSchemaPinTests.Every_writable_role_is_covered_by_the_policy_action_rule` và
+        // `HmiScreenSchemaPinTests.Every_widget_kind_is_declared_once_and_the_writable_ones_are_exactly_two`.
+        //
+        // VÌ SAO BÀI NÀY TỒN TẠI (fix round 2, finding Critical 2): hai bài kia đã khẳng định "tập
+        // được gác BẰNG tập ghi được", nên thêm một thành viên ghi được vào enum của chúng làm chúng
+        // đỏ. `access` là guard DUY NHẤT trong ba guard KHÔNG có khẳng định ấy — không chỗ nào trong
+        // cây khẳng định `access.enum` đúng là ["r","rw"], cũng không chỗ nào khẳng định luật
+        // `allOf[0].if` phủ mọi thành viên ghi được của nó. Reviewer đã nới `access` thành
+        // ["r","rw","w"] — một thay đổi CỘNG THÊM mà `contracts/README.md` cho phép tường minh — rồi
+        // validate một tag `"access":"w"` KHÔNG có `policyAction`: 0 lỗi, toàn bộ test xanh. Tức là
+        // "đường ghi không gác không diễn đạt được" chỉ cách một lần sửa hợp lệ.
+        //
+        // Đây cũng là lý do bài này khẳng định SỐ LƯỢNG chứ không chỉ nội dung: `Assert.Equal(2, ...)`
+        // là thứ đỏ khi enum PHÌNH RA, còn khẳng định "rw có trong enum" thì không.
+        var schema = SchemaPin.Load(SchemaFile);
+        var access = schema["$defs"]!["tag"]!["properties"]!["access"]!["enum"]!.AsArray()
+            .Select(v => v!.GetValue<string>()).OrderBy(s => s, StringComparer.Ordinal).ToList();
+
+        Assert.Equal(new[] { "r", "rw" }, access);
+
+        var guarded = schema["$defs"]!["tag"]!["allOf"]!.AsArray()[0]!
+            ["if"]!["properties"]!["access"]!["const"]!.GetValue<string>();
+
+        Assert.Equal("rw", guarded);
+        Assert.Contains(guarded, access);
     }
 
     [Fact]

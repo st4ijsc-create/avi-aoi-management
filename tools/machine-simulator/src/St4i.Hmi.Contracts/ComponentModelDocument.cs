@@ -25,9 +25,17 @@ public sealed record ComponentTypeDef(
 
 /// <summary>Tag khai báo của một kiểu linh kiện. <paramref name="Min"/>/<paramref name="Max"/> là dải chặn
 /// CỨNG cho <c>role == "setpoint"</c> — schema bắt buộc chúng, vì đây là giao diện vận hành máy công
-/// nghiệp và không được để nhập giá trị ngoài dải an toàn (nguyên tắc của MACHINE_CONFIG_DESIGN.md §3).</summary>
+/// nghiệp và không được để nhập giá trị ngoài dải an toàn (nguyên tắc của MACHINE_CONFIG_DESIGN.md §3).
+///
+/// <para><paramref name="EnumValues"/> thêm ở fix round 2 (finding Important 3): schema cho phép
+/// <c>dataType: "enum"</c> nhưng KHÔNG có chỗ nào khai các giá trị của enum ấy, trong khi
+/// <c>tag-namespace.schema.json</c> đã có <c>enumValues</c> từ đầu — hai schema bất đồng về đúng cùng một
+/// kiểu dữ liệu. Đây là một mâu thuẫn NỘI BỘ của hợp đồng, không phải một tính năng mới, nên nó được
+/// sửa thay vì hoãn (khác với <c>quality</c> và <c>alarms[]</c> — xem phần hoãn tường minh ở
+/// <c>contracts/README.md</c>). Trường optional ⇒ vắng mặt CHÍNH LÀ null của nó; không bao giờ ghi
+/// <c>"enumValues": null</c>.</para></summary>
 public sealed record ComponentTagDef(
-    string Name, string Role, string DataType, string? Unit,
+    string Name, string Role, string DataType, IReadOnlyList<string>? EnumValues, string? Unit,
     double? Min, double? Max, string? PolicyAction);
 
 /// <summary>Một trạng thái hiển thị được của linh kiện. <paramref name="Tone"/> ánh xạ vào bậc trạng thái

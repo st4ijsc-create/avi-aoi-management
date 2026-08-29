@@ -9289,6 +9289,43 @@ note "web/: build OK, lint OK -- ${WEB_LINT_WARNINGS} warning(s), every (rule,co
 # part of the whole-solution build above and would catch a COMPILE error in it, but a logic defect
 # that still compiles (e.g. a pin check quietly loosened) is invisible to this file until someone runs
 # `dotnet test tests/St4i.Hmi.Contracts.Tests` or `node scripts/check-contracts.mjs` by hand.
+#
+# 🔴 THIS GATE HAS NEVER RUN IN SITU, AS OF 2026-08-30, AND SAYING SO IS THE POINT OF THIS BLOCK.
+# A reader who runs this harness after merge sees RED and has no way to tell that the new gate was
+# never reached. Measured on `feat/hmi-builder-moc0`, not recalled:
+#
+#   MSBUILDDISABLENODEREUSE=1 dotnet build -t:Rebuild --nologo   ->  exit 1
+#     219 Warning(s), 12 Error(s) -- every one of the twelve `error CS2001: Source file '...\*.g.cs'
+#     could not be found`, every one attributed to `St4iMachineSimulator_tc4qsanl_wpftmp.csproj`.
+#
+# That is the SAME `_wpftmp` CS2001 shape this file already documents in nine other places (see the
+# blocks at the AM-1/AH-1/AL-1 stages and the note near line 1980): the WPF markup pass re-compiles
+# the app under a generated `*_wpftmp.csproj` whose `obj/` intermediate is not where `-t:Rebuild` just
+# left it. Gate 1c sits DOWNSTREAM of that whole-solution rebuild, so the harness exits before it.
+#
+# 🔴 PRE-EXISTING AND UNRELATED TO THIS BRANCH, and both halves of that claim are measured:
+#   * `git diff --exit-code 49b9664e..HEAD -- src/St4iMachineSimulator/` -> exit 0. This branch does
+#     not contain one byte of change to the WPF app. Decision #3 of the design doc says the WPF shell
+#     is not touched in v1, and it was not.
+#   * `dotnet build --nologo` (no `-t:Rebuild`) -> exit 0, `0 Error(s)`. The failure is specific to the
+#     Rebuild target's interaction with the WPF markup pass, not to the code. (No warning count is
+#     pinned for this run on purpose: it was an INCREMENTAL build, and an incremental build does not
+#     re-emit warnings for projects it left up to date, so its figure is not comparable to the 219
+#     above and pinning it here would invite a false "the count moved" reading later.)
+#
+# 🔴 FIXING IT IS OUT OF SCOPE AND LEAVING IT UNRECORDED WAS NOT. A branch that froze three JSON
+# schemas has no business changing how the WPF app builds. What this branch owes instead is this
+# paragraph plus a standalone verification, which was run:
+#
+#   node scripts/check-contracts.mjs   ->  exit 0
+#     ".NET contract tests" 26 passed; "web contract tests" `ℹ tests 48 / ℹ pass 48 / ℹ fail 0`;
+#     "CONTRACT GATE: PASS -- hai phía đồng ý về cả ba schema."
+#
+# Those are the same two commands gate 1c and `dotnet test tests/St4i.Hmi.Contracts.Tests` run, so the
+# gate BODY is verified; what is unverified is the gate's PLACEMENT inside this harness -- that the
+# shell reaches line ~9325 and that the count assertion below reads node's summary out of the log
+# format this file expects. Whoever first gets the `-t:Rebuild` interaction fixed should delete this
+# block only after watching gate 1c print its `note` line for real.
 _web_contract_log="$LOGDIR/web-contract-tests.log"
 ( cd "$GATE_TREE_ROOT/web" && npm run test:contracts ) > "$_web_contract_log" 2>&1
 _web_contract_rc=$?
@@ -9308,7 +9345,17 @@ fi
 # than the suite has (a glob regression; see web/package.json's own marker beside test:contracts)
 # would still print PASS on exit code alone, and this gate exists precisely so that shape of failure
 # does not hide.
-EXPECT_WEB_CONTRACT_TESTS=29
+# 29 -> 48 at fix round 2 (whole-branch review of Milestone 0). The move is INTENDED and is itemised
+# rather than waved at, because "the pinned count grew" is exactly the sentence this assertion exists
+# to make someone justify: +5 for the five keyword POSITIONS `validate.mjs` now rejects instead of
+# silently ignoring (Critical 1 -- bare `if`/`then`, `then` with no sibling `if`, `$ref` with
+# siblings, tuple-form `items`, array-form `additionalProperties`); +12 for the enum-VALUE pin
+# (Important 5 -- eleven `properties.*.enum` nodes compared against their TypeScript union across the
+# cross-file import, plus one non-vacuity test pinning that the eleven are exactly the eleven);
+# +1 for the `access` writable-set pin, the web mirror of the C# one (Critical 2); +1 for the
+# assertion that every `invalid/` fixture declares which rule must have blocked it (Important 4).
+# 29 + 5 + 12 + 1 + 1 = 48 is arithmetic that AGREES with the measured `ℹ tests 48`.
+EXPECT_WEB_CONTRACT_TESTS=48
 WEB_CONTRACT_TESTS=$(grep -oE 'ℹ tests [0-9]+' "$_web_contract_log" 2>/dev/null | grep -oE '[0-9]+' || true)
 WEB_CONTRACT_PASS=$(grep -oE 'ℹ pass [0-9]+' "$_web_contract_log" 2>/dev/null | grep -oE '[0-9]+' || true)
 WEB_CONTRACT_FAIL=$(grep -oE 'ℹ fail [0-9]+' "$_web_contract_log" 2>/dev/null | grep -oE '[0-9]+' || true)

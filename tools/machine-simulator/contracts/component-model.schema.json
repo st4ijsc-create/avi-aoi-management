@@ -44,6 +44,7 @@
         "name": { "type": "string", "pattern": "^[a-z0-9-]+$" },
         "role": { "enum": ["in", "out", "setpoint", "command"] },
         "dataType": { "enum": ["bool", "int", "float", "string", "enum"] },
+        "enumValues": { "type": "array", "items": { "type": "string" } },
         "unit": { "type": "string" },
         "min": { "type": "number" },
         "max": { "type": "number" },

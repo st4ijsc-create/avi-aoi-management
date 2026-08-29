@@ -8,6 +8,8 @@
       "defaultFaceplate": "fp.motor.spindle",
       "tags": [
         { "name": "running", "role": "in", "dataType": "bool" },
+        { "name": "state", "role": "in", "dataType": "enum",
+          "enumValues": ["stopped", "running", "faulted"] },
         { "name": "torque", "role": "in", "dataType": "float", "unit": "Nm", "min": 0, "max": 20 },
         { "name": "torque-target", "role": "setpoint", "dataType": "float", "unit": "Nm",
           "min": 5, "max": 15, "policyAction": "machine.setpoint" },
