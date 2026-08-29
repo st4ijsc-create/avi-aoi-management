@@ -1,6 +1,8 @@
 /**
- * Bảng trò chuyện AI Local. ĐỢT A: chỉ đọc — gom ngữ cảnh từ editor đang mở, gửi câu hỏi, đổ chữ
- * về. KHÔNG có bất kỳ đường ghi tệp nào ở đây.
+ * Bảng trò chuyện AI Local. ĐỢT A: chỉ đọc. ĐỢT B: mở đường DUYỆT & GHI cho chế độ SERVER — máy
+ * chủ đề xuất sửa tệp, người dùng bấm Duyệt, MÁY CHỦ ghi byte vào hộp cát của nó. Bảng này KHÔNG
+ * BAO GIỜ chạm đĩa: nó chỉ hiện thẻ duyệt và chuyển tiếp quyết định của người dùng qua tRPC
+ * (`../mang/duyetGhi.ts` — điểm DUY NHẤT gọi `confirmAction`, có census cưỡng chế).
  */
 import * as vscode from "vscode";
 import { randomBytes } from "node:crypto";
@@ -13,6 +15,10 @@ import { gopDanhSachDuAn, type MucDuAn } from "../loi/duAn";
 import { goiTruyVanTrpc } from "../mang/trpc";
 import { laLoi401 } from "../loi/loiHttp";
 import { trangThaiBanDau, apDungSuKienChat, ketLuanLuotChat } from "../loi/suKienChat";
+import { docDeXuatGhi, laTaoTepMoi, type DeXuatGhi } from "../loi/deXuatGhi";
+import { tomTatDiff } from "../loi/tomTatDiff";
+import { coDuocHienTheDuyet } from "../loi/kiemTraCheDo";
+import { goiDuyet, goiHuy } from "../mang/duyetGhi";
 import type { KhoDeXuat } from "./diffDeXuat";
 
 /**
@@ -29,14 +35,21 @@ export class BangChat {
   private huy: AbortController | undefined;
   private dsDuAn: MucDuAn[] = [];
   private duAnChon: string | undefined;
+  // CHẾ ĐỘ của lượt hỏi đang chạy — chốt lại khi `hoi()` bắt đầu để `nhan` (callback SSE của CÙNG
+  // lượt đó) biết mình đang ở LOCAL hay SERVER lúc quyết định có hiện thẻ duyệt hay không. Đọc lại
+  // `this.duAnChon`/`this.dsDuAn` lúc SSE tới có thể đã lệch nếu người dùng đổi ô chọn giữa chừng.
+  private cheDoHoiHienTai: CheDoDuAn | undefined;
+  // Đề xuất ghi đang chờ duyệt (nếu có) + nhãn nguồn của nó, dùng chung cho ba tin nhắn webview
+  // gửi lại: "xem_diff" / "duyet" / "huy". Đợt B chỉ giữ TỐI ĐA một đề xuất tại một thời điểm.
+  private deXuatHienTai: DeXuatGhi | undefined;
+  private nhanNguonHienTai: string | undefined;
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
     private readonly context: vscode.ExtensionContext,
-    // Giữ tham chiếu cho Task 4 (nút "Xem diff"). Đợt B (task này) chưa nối nút — chỉ cần đường
-    // dây sẵn sàng và biên dịch sạch. KHÔNG `private`: trường `private` chưa-đọc-ở-đâu bị
-    // `noUnusedLocals` chặn ngay ở Task 3, trước khi Task 4 kịp dùng.
-    readonly khoDeXuat: KhoDeXuat,
+    // Nay ĐÃ được đọc (xemDiff/duyet/huyDeXuat bên dưới) ⇒ `private` biên dịch sạch qua
+    // `noUnusedLocals` (Task 3 phải để public vì lúc đó chưa ai đọc field này).
+    private readonly khoDeXuat: KhoDeXuat,
   ) {
     this.panel.webview.html = dungHtmlBang({ nonce: chuoiNgauNhien() });
     this.panel.onDidDispose(() => {
@@ -49,7 +62,10 @@ export class BangChat {
     this.panel.webview.onDidReceiveMessage((m: { loai: string; cauHoi?: string; duAnId?: string }) => {
       if (m.loai === "san_sang") { void this.napDuAn(); return; }
       if (m.duAnId) this.duAnChon = m.duAnId;
-      if (m.loai === "hoi" && m.cauHoi) void this.hoi(m.cauHoi);
+      if (m.loai === "hoi" && m.cauHoi) { void this.hoi(m.cauHoi); return; }
+      if (m.loai === "xem_diff") { void this.xemDiff(); return; }
+      if (m.loai === "duyet") { void this.duyetDeXuat(); return; }
+      if (m.loai === "huy") { void this.huyDeXuat(); return; }
     });
   }
 
@@ -125,6 +141,9 @@ export class BangChat {
       muc && muc.loai === "server"
         ? { loai: "server", projectId: muc.id.slice("server:".length), nhan: muc.nhan }
         : { loai: "local", nhan: muc?.nhan ?? "workspace" };
+    // Chốt CHẾ ĐỘ của lượt này NGAY BÂY GIỜ — `nhan` bên dưới (chạy trong cùng lượt) đọc lại field
+    // này, không đọc `this.duAnChon` trực tiếp, để không lệch nếu người dùng đổi ô chọn giữa chừng.
+    this.cheDoHoiHienTai = cheDo;
     const than = dungYeuCauStream({
       cauHoi,
       nguCanh: this.thuThapNguCanh(),
@@ -160,6 +179,11 @@ export class BangChat {
               loai: "loi",
               thongDiep: chiTiet ?? "Máy chủ báo lỗi.",
             });
+          } else {
+            // Payload LỒNG dưới `pendingAction` (deXuatGhi.ts) — `docDeXuatGhi` tự trả `null` cho
+            // mọi khung không phải đề xuất ghi apply_diff, nên gọi vô điều kiện ở đây là an toàn.
+            const d = docDeXuatGhi(sk);
+            if (d) this.xuLyDeXuat(d);
           }
         },
       });
@@ -188,5 +212,97 @@ export class BangChat {
       }
       void this.panel.webview.postMessage({ loai: "loi", thongDiep: (e as Error).message });
     }
+  }
+
+  /**
+   * Nhận một đề xuất ghi vừa đọc được từ khung SSE. Bước 4 (Task 4/5): hàng rào cuối — chỉ hiện
+   * thẻ duyệt khi lượt hỏi đang chạy THẬT SỰ ở chế độ SERVER. Việc này không nên xảy ra (LOCAL gửi
+   * `codingMode:false`) nhưng nếu máy chủ vẫn gửi, im lặng bỏ qua còn nguy hiểm hơn báo cảnh báo.
+   */
+  private xuLyDeXuat(d: DeXuatGhi): void {
+    const cheDo = this.cheDoHoiHienTai;
+    if (!coDuocHienTheDuyet(cheDo?.loai ?? "local")) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep:
+          "Cảnh báo: máy chủ gửi một đề xuất ghi trong khi lượt hỏi đang ở chế độ LOCAL — đã bỏ qua, KHÔNG hiện thẻ duyệt.",
+      });
+      return;
+    }
+    this.deXuatHienTai = d;
+    // Nhãn nguồn = nhãn dự án SERVER đang chọn (đã có tiền tố "SERVER · ", xem duAn.ts) — dùng
+    // NGUYÊN VĂN cho cả thẻ duyệt lẫn tiêu đề diff (Task 3) để hai nơi luôn khớp nhau.
+    this.nhanNguonHienTai = cheDo!.nhan;
+    const { them, bot } = tomTatDiff(d.original, d.modified);
+    const tomTat = laTaoTepMoi(d) ? "Tạo tệp mới" : `+${them} / −${bot}`;
+    void this.panel.webview.postMessage({
+      loai: "the_duyet",
+      nhanNguon: this.nhanNguonHienTai,
+      duong: d.path,
+      tomTat,
+      han: d.hetHan,
+    });
+  }
+
+  private async xemDiff(): Promise<void> {
+    if (!this.deXuatHienTai || !this.nhanNguonHienTai) return;
+    await this.khoDeXuat.moDiff(this.deXuatHienTai, this.nhanNguonHienTai);
+  }
+
+  private async duyetDeXuat(): Promise<void> {
+    const d = this.deXuatHienTai;
+    if (!d) return;
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    if (!cookie) {
+      // KHÔNG quên đề xuất ở đây: token còn hạn (TTL 5 phút), người dùng có thể đăng nhập rồi bấm
+      // Duyệt lại mà không phải hỏi lại câu cũ.
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: "Chưa đăng nhập — chạy lệnh 'AI Local: Đăng nhập' rồi bấm Duyệt lại.",
+      });
+      return;
+    }
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    const serverUrl = cfg.get<string>("serverUrl", "http://localhost:3000");
+    let thongDiep: string;
+    try {
+      // Điểm DUY NHẤT trong extension gọi confirmAction — xem ../mang/duyetGhi.ts.
+      await goiDuyet(serverUrl, cookie, d.actionId, d.token);
+      thongDiep = `Đã duyệt — máy chủ đã ghi "${d.path}".`;
+    } catch (e) {
+      thongDiep = `Duyệt thất bại: ${(e as Error).message}`;
+    }
+    this.khoDeXuat.quen(d.actionId);
+    this.deXuatHienTai = undefined;
+    this.nhanNguonHienTai = undefined;
+    void this.panel.webview.postMessage({ loai: "an_the_duyet" });
+    void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
+  }
+
+  private async huyDeXuat(): Promise<void> {
+    const d = this.deXuatHienTai;
+    if (!d) return;
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    if (!cookie) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: "Chưa đăng nhập — chạy lệnh 'AI Local: Đăng nhập' rồi bấm Huỷ lại.",
+      });
+      return;
+    }
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    const serverUrl = cfg.get<string>("serverUrl", "http://localhost:3000");
+    let thongDiep: string;
+    try {
+      await goiHuy(serverUrl, cookie, d.actionId);
+      thongDiep = `Đã huỷ đề xuất sửa "${d.path}" — không có gì được ghi.`;
+    } catch (e) {
+      thongDiep = `Huỷ thất bại: ${(e as Error).message}`;
+    }
+    this.khoDeXuat.quen(d.actionId);
+    this.deXuatHienTai = undefined;
+    this.nhanNguonHienTai = undefined;
+    void this.panel.webview.postMessage({ loai: "an_the_duyet" });
+    void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
   }
 }

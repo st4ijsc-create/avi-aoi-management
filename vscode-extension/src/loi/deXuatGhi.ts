@@ -27,3 +27,13 @@ export function docDeXuatGhi(sk: Record<string, unknown>): DeXuatGhi | null {
     summary: lay(pa, "summary") ?? "", hetHan: lay(pa, "expiresAt") ?? "",
   };
 }
+
+/**
+ * TRƯỜNG HỢP TẠO TỆP MỚI: máy chủ cho phép `original` RỖNG (`applyDiff.ts` không có `min(1)`) khi
+ * đề xuất là tạo một tệp chưa từng tồn tại. Thẻ duyệt phải nói thẳng "tạo tệp mới" — hiện `+N/−0`
+ * cho trường hợp này dễ đọc nhầm thành "sửa một tệp trống có sẵn", một khác biệt người duyệt cần
+ * biết TRƯỚC khi bấm Duyệt & ghi trên SERVER.
+ */
+export function laTaoTepMoi(d: DeXuatGhi): boolean {
+  return d.original === "";
+}

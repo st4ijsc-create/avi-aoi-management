@@ -4,7 +4,7 @@
  * hình dạng đo được trên `aiLocalKnowledgeApi.ts:582-585`, không phải hình dạng tự bịa.
  */
 import { describe, it, expect } from "vitest";
-import { docDeXuatGhi } from "./deXuatGhi";
+import { docDeXuatGhi, laTaoTepMoi, type DeXuatGhi } from "./deXuatGhi";
 
 const KHUNG_THAT = {
   type: "pending_action",
@@ -43,5 +43,20 @@ describe("docDeXuatGhi", () => {
 
   it("★★ khung loại khác ⇒ null", () => {
     expect(docDeXuatGhi({ type: "token", token: "x" } as never)).toBeNull();
+  });
+});
+
+describe("laTaoTepMoi", () => {
+  const deXuat = (original: string): DeXuatGhi => ({
+    actionId: "a1", token: "t1", tool: "apply_diff", path: "src/Moi.cs",
+    original, modified: "nội dung mới", summary: "", hetHan: "",
+  });
+
+  it("★★★ original RỖNG ⇒ tạo tệp mới", () => {
+    expect(laTaoTepMoi(deXuat(""))).toBe(true);
+  });
+
+  it("★★ original CÓ nội dung ⇒ đang sửa tệp có sẵn, không phải tạo mới", () => {
+    expect(laTaoTepMoi(deXuat("nội dung cũ"))).toBe(false);
   });
 });

@@ -43,4 +43,36 @@ describe("dungHtmlBang", () => {
     expect(viTriDangKy).toBeGreaterThan(-1);
     expect(viTriBao).toBeGreaterThan(viTriDangKy); // báo SAU khi đã lắng nghe
   });
+
+  it("★★★ thẻ duyệt tồn tại và MẶC ĐỊNH ẨN", () => {
+    expect(html).toContain('id="the-duyet" hidden');
+  });
+
+  it("★★★ thẻ duyệt có nhãn nguồn, đường dẫn, tóm tắt, hạn duyệt và đủ ba nút", () => {
+    expect(html).toContain('id="duyet-nguon"');
+    expect(html).toContain('id="duyet-duong"');
+    expect(html).toContain('id="duyet-tom-tat"');
+    expect(html).toContain('id="duyet-han"');
+    expect(html).toContain('id="nut-xem-diff"');
+    expect(html).toContain('id="nut-duyet"');
+    expect(html).toContain('id="nut-huy"');
+  });
+
+  it("★★★ nút duyệt nói rõ ghi Ở SERVER (không được mập mờ về nơi byte sẽ đổi)", () => {
+    const m = html.match(/<button id="nut-duyet">([^<]*)<\/button>/);
+    expect(m).not.toBeNull();
+    expect(m![1]).toContain("SERVER");
+  });
+
+  it("★★ webview chuyển tiếp cú bấm ba nút thẻ duyệt cho extension, KHÔNG tự quyết", () => {
+    expect(html).toContain('loai: "xem_diff"');
+    expect(html).toContain('loai: "duyet"');
+    expect(html).toContain('loai: "huy"');
+  });
+
+  it("★★ webview xử lý the_duyet (hiện thẻ) / an_the_duyet (ẩn thẻ) / thong_bao (báo kết quả)", () => {
+    expect(html).toContain('m.loai === "the_duyet"');
+    expect(html).toContain('m.loai === "an_the_duyet"');
+    expect(html).toContain('m.loai === "thong_bao"');
+  });
 });

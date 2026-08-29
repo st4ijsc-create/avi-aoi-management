@@ -12,6 +12,12 @@ export const SCHEME = "avi-ai-de-xuat";
 
 export class KhoDeXuat implements vscode.TextDocumentContentProvider, vscode.Disposable {
   private noiDung = new Map<string, string>();
+  // Bền theo CẤU TRÚC: giữ danh sách khoá URI đã dùng cho MỖI actionId, để `quen()` xoá theo
+  // DANH SÁCH thay vì so khớp chuỗi con `/${actionId}/`. So chuỗi vẫn an toàn TRÊN THỰC TẾ (server
+  // cấp actionId dạng UUID, không chứa `/`) nhưng đó là phụ thuộc NGẦM vào định dạng actionId —
+  // đổi định dạng ở máy chủ một ngày nào đó sẽ âm thầm xoá nhầm đề xuất KHÁC có actionId là
+  // tiền tố/hậu tố của nhau, không có lỗi nào báo.
+  private khoaTheoAction = new Map<string, string[]>();
   private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
   readonly onDidChange = this._onDidChange.event;
 
@@ -31,6 +37,7 @@ export class KhoDeXuat implements vscode.TextDocumentContentProvider, vscode.Dis
     const moi = this.uri(d.actionId, "moi", d.path);
     this.noiDung.set(cu.toString(), d.original);
     this.noiDung.set(moi.toString(), d.modified);
+    this.khoaTheoAction.set(d.actionId, [cu.toString(), moi.toString()]);
     this._onDidChange.fire(cu);
     this._onDidChange.fire(moi);
     return { cu, moi };
@@ -42,13 +49,15 @@ export class KhoDeXuat implements vscode.TextDocumentContentProvider, vscode.Dis
   }
 
   quen(actionId: string): void {
-    // Giả định: `actionId` do máy chủ cấp dạng token/UUID, KHÔNG BAO GIỜ chứa `/` — nên khớp theo
-    // `/${actionId}/` an toàn (không lẫn sang đề xuất khác có actionId là tiền tố/hậu tố của nhau).
-    for (const k of [...this.noiDung.keys()]) if (k.includes(`/${actionId}/`)) this.noiDung.delete(k);
+    const khoa = this.khoaTheoAction.get(actionId);
+    if (!khoa) return; // không có gì để quên (đã quên rồi, hoặc chưa từng đặt)
+    for (const k of khoa) this.noiDung.delete(k);
+    this.khoaTheoAction.delete(actionId);
   }
 
   dispose(): void {
     this._onDidChange.dispose();
     this.noiDung.clear();
+    this.khoaTheoAction.clear();
   }
 }
