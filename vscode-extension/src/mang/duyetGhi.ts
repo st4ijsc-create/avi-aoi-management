@@ -12,8 +12,23 @@
  *   đi qua BÌNH THƯỜNG như một lần gọi "thành công". Đọc trường `ok` ở phía gọi là BẮT BUỘC — bỏ
  *   qua nó là lặp lại đúng lớp lỗi "status nói dối" mà Đợt B này được dựng ra để chống (xem Task 6:
  *   vá lỗ tương tự ở phía máy chủ cho cột `status`).
+ *
+ * ⚠⚠⚠ 2026-08-29 — ĐỌC `ok` LÀ CẦN NHƯNG CHƯA ĐỦ. `ok:true` chỉ nói *"vòng đời HITL đã chạy
+ *   xong"*, KHÔNG nói *"byte đã vào đĩa"*. Khi băm neo lệch (`BASE_MISMATCH` — ai đó sửa tệp giữa
+ *   lúc thẻ duyệt hiện ra và lúc bấm) hay tệp bẩn (`FILE_DIRTY`), `execute()` TỪ CHỐI ghi ĐÚNG NHƯ
+ *   THIẾT KẾ, nhưng `confirmAction` vẫn trả `{ok:true, status:"executed", result:<ToolResult mang
+ *   note>}` (`aiCopilotActions.ts:940`). Sự thật nằm ở `note` của `ToolResult` (ở đây là
+ *   `KetQuaDuyet.result`) — đọc bằng ĐÚNG vị từ dùng chung `shared/aiCodingLoop.daBiTuChoiGhi`, đã
+ *   cắn CLI (`aiCodingCli/cli.ts`, 2026-08-23) và WEB (`AICodingWorkspace.tsx`) trước khi tới đây.
+ *   **KHÔNG viết lại phép kiểm `note` ở extension** — "hai bản sao của một vị từ an toàn là cách
+ *   chắc chắn nhất để chúng trôi khỏi nhau, và bản lỏng hơn bao giờ cũng là bản đang chạy" (docblock
+ *   `shared/aiCodingLoop.ts:339-343`). Extension là nơi gọi THỨ TƯ của cùng một hàm, không phải một
+ *   bản cài đặt thứ hai. Re-export ở đây để `bangChat.ts` có ĐÚNG MỘT nơi nhập trong extension.
  */
 import { boBoiSuperjson } from "../loi/trpc";
+import { daBiTuChoiGhi, maTuChoiGhi } from "../../../shared/aiCodingLoop";
+
+export { daBiTuChoiGhi, maTuChoiGhi };
 
 /** Kết quả cửa duyệt của máy chủ. ⚠ Máy chủ TRẢ VỀ (không ném) khi từ chối: hết hạn, token lệch,
  *  trạng thái sai — tất cả qua HTTP 200. Đọc `ok` là BẮT BUỘC, nếu không giao diện sẽ nói dối. */

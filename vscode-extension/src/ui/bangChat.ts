@@ -18,7 +18,7 @@ import { trangThaiBanDau, apDungSuKienChat, ketLuanLuotChat } from "../loi/suKie
 import { docDeXuatGhi, laTaoTepMoi, type DeXuatGhi } from "../loi/deXuatGhi";
 import { tomTatDiff } from "../loi/tomTatDiff";
 import { coDuocHienTheDuyet } from "../loi/kiemTraCheDo";
-import { goiDuyet, goiHuy } from "../mang/duyetGhi";
+import { goiDuyet, goiHuy, daBiTuChoiGhi, maTuChoiGhi } from "../mang/duyetGhi";
 import type { KhoDeXuat } from "./diffDeXuat";
 
 /**
@@ -272,16 +272,30 @@ export class BangChat {
     try {
       // Điểm DUY NHẤT trong extension gọi confirmAction — xem ../mang/duyetGhi.ts.
       const kq = await goiDuyet(serverUrl, cookie, d.actionId, d.token);
-      // ⚠ Máy chủ TỪ CHỐI qua HTTP 200 (hết hạn TTL, token lệch, trạng thái sai...) — `goiDuyet`
-      // không ném cho các ca đó. Chỉ `ok === true` mới được khai "đã ghi"; ngược lại hiện NGUYÊN
-      // VĂN lý do của máy chủ, không bịa ra một câu thành công giả.
-      // ⚠ `status === "executed"` cũng có `ok:true` (đã ghi TRƯỚC ĐÓ, không phải LẦN NÀY) — hiện
-      // nguyên văn message của máy chủ ("Đã thực thi trước đó."), đừng khai như vừa ghi mới.
-      thongDiep = kq.ok
-        ? kq.status === "executed"
-          ? (kq.message ?? "Đã thực thi trước đó.")
-          : `Đã duyệt — máy chủ đã ghi "${d.path}".`
-        : (kq.message ?? "Máy chủ từ chối lượt duyệt.");
+      if (!kq.ok) {
+        // (1) Máy chủ TỪ CHỐI lượt duyệt qua HTTP 200 (hết hạn TTL, token lệch, trạng thái sai...)
+        // — `goiDuyet` không ném cho các ca đó. Hiện NGUYÊN VĂN lý do của máy chủ, không bịa.
+        thongDiep = kq.message ?? "Máy chủ từ chối lượt duyệt.";
+      } else if (daBiTuChoiGhi(kq.result)) {
+        // (2) ★★★ `ok:true` CHỈ nói "vòng đời HITL đã chạy xong" — KHÔNG nói "byte đã được ghi".
+        // Băm neo lệch (BASE_MISMATCH) hay tệp bẩn (FILE_DIRTY) khiến `execute()` TỪ CHỐI ghi ĐÚNG
+        // NHƯ THIẾT KẾ, nhưng `confirmAction` vẫn trả `status:"executed"` — sự thật nằm ở `note`
+        // của `ToolResult` (`kq.result`), đọc bằng ĐÚNG vị từ dùng chung
+        // `shared/aiCodingLoop.daBiTuChoiGhi` (đã cắn CLI 2026-08-23 và WEB trước khi tới đây —
+        // extension là nơi gọi THỨ TƯ, KHÔNG viết lại phép kiểm `note`).
+        const ma = maTuChoiGhi(kq.result);
+        thongDiep = `CHƯA GHI [${ma}] — tệp đã đổi kể từ lúc đề xuất. Hãy yêu cầu lại.`;
+      } else if (kq.status === "executed" && kq.message) {
+        // Máy chủ LUÔN trả `status:"executed"` cho một lượt confirm `ok:true` thành công (kể cả
+        // lần đầu, `aiCopilotActions.ts:940`) — dùng NGUYÊN VĂN message của máy chủ ("Đã thực thi."
+        // / "Đã thực thi trước đó.") thay vì tự bịa câu khác, vì hai câu đó phân biệt lần-đầu với
+        // lặp-lại mà một câu tự soạn không phân biệt được.
+        thongDiep = kq.message;
+      } else {
+        // (3) `ok:true`, KHÔNG bị từ chối ghi, và máy chủ không kèm message riêng — mới được nói
+        // đã ghi.
+        thongDiep = `Đã duyệt — máy chủ đã ghi "${d.path}".`;
+      }
     } catch (e) {
       thongDiep = `Duyệt thất bại: ${(e as Error).message}`;
     }
