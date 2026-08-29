@@ -257,3 +257,70 @@ describe("dichCayKetQua — verdict lưu trữ = XẤU NHẤT của (khai, cuộ
     expect(cay.declaredMismatch).toBe(true); // khai "OK" lệch cuộn "NG"
   });
 });
+
+// ── Pha 1C Task 5 — NTF khai ở CẤP BO mất xuất xứ, đóng BG-35 ────────────────
+//
+// Task 4 tự đo sau khi Task 1 xong: NTF khai ở cấp bo (payload.ntf) làm verdictLuuTru
+// đúng "NTF" (Task 1, Đ-22) nhưng ntfSource vẫn null — `rollupVerdict` chỉ tổng hợp
+// ntfSource TỪ LÁ, và NTF khai ở cấp bo không có lá nào mang cờ. Máy nói "đây là NTF"
+// mà hệ ghi lại "không rõ ai đánh dấu" — mất thông tin đúng lúc đang có nó. Ba mệnh đề
+// dưới đây, mỗi cái một `it`, khớp task-5-brief.md phần "Ba mệnh đề phải canh (việc 2)".
+describe("dichCayKetQua — ntfSource khi NTF khai ở cấp bo [Pha 1C, BG-35]", () => {
+  function payloadCayRongNtf(ntf: boolean) {
+    const p = mauHopLe();
+    p.overallResult = "OK";
+    p.ntf = ntf;
+    p.surfaces = [];
+    p.summary = {
+      surfaces: { total: 0, pass: 0, ng: 0, ntf: 0 },
+      positions: { total: 0, pass: 0, ng: 0, ntf: 0 },
+      captures: { total: 0, pass: 0, ng: 0, ntf: 0 },
+      components: { total: 0, pass: 0, ng: 0, ntf: 0 },
+    };
+    return p;
+  }
+
+  // ── Mệnh đề 1 ────────────────────────────────────────────────────────────
+  it("NTF CHỈ từ khai cấp bo (cây rỗng, không lá nào ntf) ⇒ ntfSource='machine' (payload LÀ máy khai)", () => {
+    const p = payloadCayRongNtf(true);
+    const cay = dichCayKetQua(machineDataContractV2.parse(p));
+
+    expect(cay.rolledNtf).toBe(false); // cây rỗng ⇒ không lá nào mang cờ ntf lên
+    expect(cay.verdictLuuTru).toBe("NTF"); // Task 1 (Đ-22): verdict đã đúng
+    expect(cay.ntfSource).toBe("machine"); // BG-35: xuất xứ KHÔNG còn là null
+  });
+
+  // ── Mệnh đề 2 — CHỐNG HỒI QUY (Task 4 đã đo "machine" cho ca này) ────────
+  it("NTF CHỈ từ lá (payload.ntf=false cấp bo, một component lá ntf=true) ⇒ ntfSource GIỮ NGUYÊN giá trị lá cho", () => {
+    const p = mauHopLe();
+    p.ntf = false; // bo KHÔNG khai ntf ở cấp gốc
+    p.surfaces[0].positions[0].captures[0].components[0].ntf = true; // chỉ lá khai
+
+    const cay = dichCayKetQua(machineDataContractV2.parse(p));
+
+    expect(cay.ntf).toBe(false); // lời khai cấp bo — không đổi
+    expect(cay.rolledNtf).toBe(true); // cờ ntf cuộn (OR) từ lá lên
+    expect(cay.ntfSource).toBe("machine"); // lá cho nguồn — KHÔNG bị ghi đè, KHÔNG đổi so với trước bản vá
+  });
+
+  // ── Mệnh đề 3 ────────────────────────────────────────────────────────────
+  it("Không NTF ở đâu cả ⇒ ntfSource=null (không bịa nguồn)", () => {
+    const p = payloadCayRongNtf(false);
+    const cay = dichCayKetQua(machineDataContractV2.parse(p));
+
+    expect(cay.rolledNtf).toBe(false);
+    expect(cay.verdictLuuTru).toBe("OK");
+    expect(cay.ntfSource).toBeNull();
+  });
+
+  // ── Bonus (không thuộc 3 mệnh đề bắt buộc, nhưng brief yêu cầu "nghĩ kỹ") ──
+  it("NTF từ CẢ HAI (khai cấp bo VÀ lá) ⇒ vẫn giữ nguồn của lá — không ghi đè, không tự chế 'both'", () => {
+    const p = mauHopLe();
+    p.ntf = true; // bo CŨNG khai ntf
+    p.surfaces[0].positions[0].captures[0].components[0].ntf = true; // lá CŨNG khai
+
+    const cay = dichCayKetQua(machineDataContractV2.parse(p));
+
+    expect(cay.ntfSource).toBe("machine"); // lá thắng — không đổi hành vi khi trùng nguồn
+  });
+});

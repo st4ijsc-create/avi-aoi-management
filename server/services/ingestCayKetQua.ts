@@ -130,6 +130,11 @@ export interface SurfaceDaDich {
  * `declaredMismatch` (gốc) = lời khai cấp bo và cuộn-từ-surface có KHỚP verdict lưu
  * trữ hay không — độc lập với `declaredMismatch` ở ba cấp con (surface/position/
  * capture), vốn so sánh trực tiếp `result`/`ntf` chứ không qua `verdictLuuTru`.
+ *
+ * `ntfSource` (Pha 1C Task 5, BG-35): cuộn TỪ CÁC SURFACE (từ lá) khi có; khi lá
+ * không cho nguồn nào NHƯNG `payload.ntf` (khai cấp bo) là NTF, xuất xứ là `"machine"`
+ * — payload chính LÀ máy khai. Lá THẮNG khi lá đã cho nguồn (không bao giờ bị ghi đè
+ * bởi `payload.ntf`). Xem chi tiết ba trường hợp ở thân hàm `dichCayKetQua`.
  */
 export interface CayDaDich {
   overallResult: "OK" | "NG";
@@ -259,12 +264,31 @@ export function dichCayKetQua(payload: MachinePayloadV2): CayDaDich {
   // KHÔNG bên nào được làm nhẹ bên kia — xem `verdictXauHon` (Đ-21).
   const verdict = verdictXauHon(khai, cuonRa);
 
+  // ── Pha 1C Task 5, đóng BG-35 — NTF khai ở CẤP BO mất xuất xứ ────────────
+  // `cuon.ntfSource` chỉ tổng hợp từ LÁ (qua rollupVerdict ở các surface). Khi
+  // `payload.ntf === true` mà không lá nào mang cờ ntf, `cuon.ntfSource` = null dù
+  // `verdict` ở trên đã đúng là "NTF" (nhờ verdictXauHon đọc payload.ntf) — máy nói
+  // "đây là NTF" mà hệ ghi lại "không rõ ai đánh dấu". `payload.ntf` LÀ máy khai, nên
+  // khi nó là nguồn NTF DUY NHẤT, xuất xứ phải là "machine".
+  //
+  // ⚠ KHÔNG ghi đè khi lá đã cho nguồn (`cuon.ntfSource` khác null) — lá là tín hiệu
+  // granular hơn (và là nơi DUY NHẤT "human"/"both" có thể xuất hiện — xem đầu file:
+  // v2.0 không mang luồng người xác nhận tại ingest, nhưng hàm này không giả định điều
+  // đó mãi mãi đúng). Ba trường hợp:
+  //   1. NTF chỉ từ khai cấp bo (payload.ntf=true, cuon.ntfSource=null) → "machine".
+  //   2. NTF chỉ từ lá (payload.ntf=false, cuon.ntfSource khác null) → giữ nguyên lá.
+  //   3. NTF từ CẢ HAI (payload.ntf=true, cuon.ntfSource khác null) → giữ nguyên lá
+  //      (lá đã thắng — không ghi đè, đúng luật trên; v2.0 hôm nay lá chỉ cho "machine"
+  //      nên kết quả không đổi, nhưng luật không giả định mãi mãi vậy).
+  //   4. Không NTF ở đâu cả (payload.ntf=false, cuon.ntfSource=null) → null (không bịa).
+  const ntfSource: NtfSource | null = cuon.ntfSource ?? (payload.ntf ? "machine" : null);
+
   return {
     overallResult: payload.overallResult,
     ntf: payload.ntf,
     rolledResult: cuon.result,
     rolledNtf: cuon.ntf,
-    ntfSource: cuon.ntfSource,
+    ntfSource,
     verdictLuuTru: verdict,
     declaredMismatch: khai !== cuonRa,
     surfaces,

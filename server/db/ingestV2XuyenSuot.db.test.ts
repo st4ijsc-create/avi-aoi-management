@@ -272,10 +272,12 @@ describe.skipIf(!DB_URL)("submitInspection v2.0 — nghiệm thu XUYÊN SUỐT t
     boards.ngRong = { id: rNgRong.inspectionId };
     // KHÔNG push boardIdsCoCay — surfaces:[] không tạo hàng cây nào để dọn.
 
-    // ── Board HEADER-NTF (mệnh đề 6 hàng T1-2, Đ-22/BG-24) ──────────────────────────────
+    // ── Board HEADER-NTF (mệnh đề 6 hàng T1-2, Đ-22/BG-24; ntfSource — Pha 1C Task 5, BG-35) ──
     // Cây hoàn toàn OK, KHÔNG NTF nào — NTF DUY NHẤT đến từ payload.ntf=true cấp bo (header),
-    // KHÁC nguồn với board NTF ở trên (nguồn đó là component). ntfSource ở đây sẽ NULL (cuộn
-    // từ cây không hề có NTF) — cố ý KHÔNG canh ntfSource trên board này, xem it() tương ứng.
+    // KHÁC nguồn với board NTF ở trên (nguồn đó là component). TRƯỚC BG-35: ntfSource NULL ở
+    // đây (rollupVerdict chỉ tổng hợp từ lá, payload.ntf cấp bo không có lá nào nên rơi mất).
+    // SAU BG-35: payload.ntf=true mà không lá nào cho nguồn ⇒ ntfSource="machine" (payload
+    // CHÍNH LÀ máy khai) — xem it() tương ứng, đã đổi từ "ĐỐI CHỨNG …NULL" thành canh THẬT.
     const prefixHdr = `${RUN}-HDRNTF`;
     const payloadHeaderNtf = payloadGoc(5, {
       serialNumber: prefixHdr,
@@ -354,14 +356,17 @@ describe.skipIf(!DB_URL)("submitInspection v2.0 — nghiệm thu XUYÊN SUỐT t
       expect(row.overallResult).toBe("NTF");
     });
 
-    it("ĐỐI CHỨNG — board HEADER-NTF (NTF đến từ payload.ntf cấp bo, KHÔNG từ component) ⇒ ntfSource VẪN NULL (đúng, không phải lỗi)", async () => {
-      // Cố ý KHÔNG gộp với ca trên: hai nguồn NTF độc lập (Đ-22) tạo hai hệ quả DB khác nhau.
-      // cay.ntfSource chỉ mang giá trị khi CUỘN từ cây có NTF — payload.ntf=true (header) làm
-      // verdictLuuTru="NTF" NHƯNG không đi qua ntfSource (không có NguồnNTF nào ở cây con).
+    it("BG-35 — board HEADER-NTF (NTF đến từ payload.ntf cấp bo, KHÔNG từ component) ⇒ ntfSource='machine' (payload LÀ máy khai, không còn mất xuất xứ)", async () => {
+      // Cố ý KHÔNG gộp với ca trên: hai nguồn NTF độc lập (Đ-22) là hai TÌNH HUỐNG khác nhau,
+      // nhưng từ Pha 1C Task 5 (BG-35) cả hai đều phải cho ntfSource khác NULL. TRƯỚC BG-35 ca
+      // này từng là "ĐỐI CHỨNG" khẳng định NULL là đúng — đo lại (task-4-brief self-audit) lộ ra
+      // đó chính là lỗ: verdictLuuTru="NTF" (Task 1, Đ-22) nhưng xuất xứ "không rõ ai đánh dấu".
+      // dichCayKetQua nay fallback ntfSource="machine" khi payload.ntf=true mà không lá nào cho
+      // nguồn (KHÔNG ghi đè khi lá đã có nguồn — xem docblock dichCayKetQua/BG-35).
       const [row] = await sql<{ ntfSource: string | null; overallResult: string }[]>`
         SELECT "ntfSource", "overallResult" FROM product_inspections WHERE id = ${boards.headerNtf.id}`;
       expect(row.overallResult).toBe("NTF");
-      expect(row.ntfSource).toBeNull();
+      expect(row.ntfSource).toBe("machine");
     });
   });
 
