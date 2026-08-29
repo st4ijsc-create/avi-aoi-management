@@ -146,6 +146,8 @@
            St4i.EngineApi                              53             530        248     no
            St4i.EdgeCore.Tests                         36             705          0     no
            St4i.EngineApi.Tests                        38             742          5     no
+           St4i.Hmi.Contracts                           0               0          0     yes
+           St4i.Hmi.Contracts.Tests                     0              23          0     no
 
        🔴 TWO ROWS ABOVE ARE NOT WHAT THEY LOOK LIKE, because a source file can belong to more than one
        compilation. Neither was visible from the per-project numbers and both were found by review, not by me:
@@ -176,6 +178,34 @@
            OWNERSHIP: doc comments have been legal since C# 1.0, so writing them is perfectly possible — it
            is simply not our file, and a divergence here is a divergence from three sibling SDKs.
        Read every row above as "this compilation", never as "this directory".
+
+       ══════════════════════════════════════════════════════════════════════════════════════════════════
+       🔴 TWO ROWS ADDED 2026-08-30, WS-HMI Mốc 0 task 7
+       (.superpowers/sdd/2026-08-29-hmi-moc0-schema-freeze-blueprint/task-7-brief.md) — St4i.Hmi.Contracts
+       and St4i.Hmi.Contracts.Tests. These two projects did not exist at any earlier measurement in this
+       block and inherit no history; this is their FIRST row, not a re-measurement of anyone else's.
+
+       St4i.Hmi.Contracts: `dotnet build src/St4i.Hmi.Contracts/St4i.Hmi.Contracts.csproj -t:Rebuild
+       -p:GenerateDocumentationFile=true` → `Build succeeded.`, 0 Warning(s), 0 Error(s). The csproj already
+       sets `GenerateDocumentationFile>true` itself (written that way from the task that created the
+       project, not flipped by this one — see the file's own header comment), and its three public record
+       files carry doc comments already, so column (2) is zero and `set` reads yes with nothing owed — same
+       shape as the seven clean rows above it, not a new N-case.
+
+       St4i.Hmi.Contracts.Tests: the csproj does NOT set the property (same as every other `.Tests` row
+       above); forcing it on for one build —
+       `dotnet build tests/St4i.Hmi.Contracts.Tests/St4i.Hmi.Contracts.Tests.csproj -t:Rebuild
+       -p:GenerateDocumentationFile=true` → `Build succeeded.`, 23 Warning(s), 0 Error(s), all 23 CS1591 on
+       xUnit `[Fact]`/`[Theory]` methods and two helper types, zero CS1573, zero column (1). This is a
+       HYPOTHETICAL count in the same sense the other unset `.Tests` rows are — the switch stays off in the
+       checked-in csproj, so a normal build today emits none of the 23. Owed to the same owner decision
+       (2775-member population, no comment invented for a domain nobody has decided) as every other unset
+       row, not to anything specific to HMI contracts.
+
+       🔴 THIS DOES NOT RE-MEASURE OR REWRITE any earlier bracket's "fifteen .csproj" / "eight … yes"
+       sentence — those are pinned to their own measurement date, the same rule the price columns follow.
+       As of these two rows the tree carries SEVENTEEN .csproj outside bin/obj and NINE say yes; that is a
+       fact about today, stated once here, not a correction of BS-1's fact about 2026-08-24 two brackets up.
 
        🔴 "THE EIGHT STILL-UNSET PROJECTS" IS SEVEN FROM 2026-08-19 (task AF-1, item 12 stage 3) — it
        applies to this sentence and to the "237 unresolvable `cref`/`paramref` claims remain in the eight

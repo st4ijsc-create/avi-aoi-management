@@ -13,7 +13,8 @@
     "test:e2e:update-snapshots": "playwright test --update-snapshots",
     "test:e2e:report": "playwright show-report",
     "check:test-budgets": "node scripts/check-test-budgets.mjs",
-    "test:contracts": "node --test contract-tests/contracts.test.mjs"
+    "test:contracts": "node --test contract-tests/contracts.test.mjs",
+    "//test:contracts": "explicit filename ON PURPOSE, not a glob -- a glob matching zero files exits 0 with zero tests, and this suite is the only proof in the tree that contracts/fixtures/invalid/ is actually rejected. If you add a second *.test.mjs under contract-tests/, this line will NOT pick it up silently -- update the command above to list both files (or point node --test at the directory) and re-verify the printed test COUNT grew, not just that the command still exits 0."
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

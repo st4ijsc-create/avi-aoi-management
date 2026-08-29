@@ -32,20 +32,25 @@ cứng, không phải trang trí (`MACHINE_CONFIG_DESIGN.md §3`). Fixture
 
 ## Một document không bao giờ viết `null` tường minh / A document never writes an explicit `null`
 
-**VI** — Một property optional vắng mặt (absent) CHÍNH LÀ `null` của nó — không có property nào trong
-hai schema này còn nhận `"type": ["X", "null"]` hay `null` trong `enum`; absent đã mang optionality rồi
-(nó không có trong `required`). Đừng viết `"unit": null` — hãy bỏ hẳn key `unit`. Lý do không chỉ là quy
-ước: `HmiContractJson.Options` phía .NET đặt `WhenWritingNull`, nên phía C# **không bao giờ** có thể ghi
-ra một `null` tường minh — mọi document schema-hợp-lệ mà chứa `null` tường minh sẽ round-trip thất bại ở
-phía C#, dù chính document đó hoàn toàn hợp lệ theo schema. Bên TypeScript viết `"unit": null` là một cái
-bẫy tương thích giữa hai nhánh, không phải một lựa chọn hợp lệ khác — schema giờ cấm nó bằng máy, không
-chỉ bằng văn xuôi.
+**VI** — Một property optional vắng mặt (absent) CHÍNH LÀ `null` của nó — **không một schema nào trong
+thư mục này** còn nhận `"type": ["X", "null"]` hay `null` trong `enum`; absent đã mang optionality rồi
+(nó không có trong `required`). Câu luật này cố ý không đếm số schema (đợt viết đầu tiên nói "hai schema
+này" khi corpus mới có hai file; corpus giờ có ba, và một câu đếm-số chỉ đúng tới lần thêm schema tiếp
+theo — sửa "hai" thành "ba" sẽ chỉ đặt lại đúng cái bẫy đó cho file thứ tư). Đừng viết `"unit": null` —
+hãy bỏ hẳn key `unit`. Lý do không chỉ là quy ước: `HmiContractJson.Options` phía .NET đặt
+`WhenWritingNull`, nên phía C# **không bao giờ** có thể ghi ra một `null` tường minh — mọi document
+schema-hợp-lệ mà chứa `null` tường minh sẽ round-trip thất bại ở phía C#, dù chính document đó hoàn toàn
+hợp lệ theo schema. Bên TypeScript viết `"unit": null` là một cái bẫy tương thích giữa hai nhánh, không
+phải một lựa chọn hợp lệ khác — schema giờ cấm nó bằng máy, không chỉ bằng văn xuôi.
 
-**EN** — An absent optional property IS its null — neither schema still accepts `"type": ["X", "null"]`
-or `null` in an `enum`; absence already carries the optionality (it is not in `required`). Never write
-`"unit": null` — omit the `unit` key entirely. This is not just convention: the .NET side's
-`HmiContractJson.Options` sets `WhenWritingNull`, so the C# reference implementation can **never** emit an
-explicit null — any schema-valid document containing one would fail to round-trip on the C# side even
-though the document itself is valid. A TypeScript author writing `"unit": null` was falling into an
+**EN** — An absent optional property IS its null — **no schema in this directory** accepts
+`"type": ["X", "null"]` or `null` in an `enum`; absence already carries the optionality (it is not in
+`required`). This rule is deliberately count-agnostic (the first draft said "neither schema" when the
+corpus held two files; the corpus now holds three, and a counted sentence is only correct until the next
+schema lands — bumping "neither" to "none of the three" would just reset the same trap for a fourth
+file). Never write `"unit": null` — omit the `unit` key entirely. This is not just convention: the .NET
+side's `HmiContractJson.Options` sets `WhenWritingNull`, so the C# reference implementation can **never**
+emit an explicit null — any schema-valid document containing one would fail to round-trip on the C# side
+even though the document itself is valid. A TypeScript author writing `"unit": null` was falling into an
 interoperability trap between the two branches, not choosing an equally valid alternative — the schema now
 forbids it by machine, not by prose.

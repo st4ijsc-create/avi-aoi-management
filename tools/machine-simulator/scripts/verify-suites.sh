@@ -4668,6 +4668,13 @@ web_domain_declaration() {
   echo "     THE COMMANDS, run from ${root}, and this script now runs exactly these:"
   echo "         npm run build   (tsc -b && vite build)      npm run lint   (oxlint)"
   echo "         npm run test:e2e   (playwright test)"
+  echo "     🔴 A FOURTH JOINED THESE THREE, 2026-08-30 (WS-HMI Mốc 0 task 7) — npm run test:contracts,"
+  echo "     wired in at gate 1c directly after lint. That is a SEPARATE decision from item 60's ruling"
+  echo "     above and narrower in scope: it proves the frozen contracts/ JSON Schemas and their TS/C#"
+  echo "     types still agree, not general web/ coverage, which is what the rest of this function is"
+  echo "     still enumerating. The 'ALL THREE ARE NOW INVOKED' sentence above is item 60's own record and"
+  echo "     is left exactly as it reads rather than rewritten; today the tree invokes these four:"
+  echo "         npm run build   npm run lint   npm run test:e2e   npm run test:contracts"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -9255,6 +9262,68 @@ if [[ "$WEB_LINT_LEDGER" != "$EXPECT_WEB_LINT_LEDGER" ]]; then
 fi
 note "web/: build OK, lint OK -- ${WEB_LINT_WARNINGS} warning(s), every (rule,count) row asserted, in ${WEB_LINT_ELAPSED}s"
 
+# ══ GATE 1c — web/ CONTRACT TESTS (WS-HMI Mốc 0, task 7,
+# .superpowers/sdd/2026-08-29-hmi-moc0-schema-freeze-blueprint/task-7-brief.md) ═══════════════════
+#
+# WHY HERE, RIGHT AFTER LINT AND STILL BEFORE THE SHUTDOWN WINDOW: same reasoning as gate 1b's own
+# placement note above it -- whatever `node --test` leaves running sits INSIDE the window
+# `build_server_shutdown post-build` then measures, rather than outside it.
+#
+# 🔴 THIS GATE DID NOT EXIST BEFORE 2026-08-30, AND THE OMISSION WAS NAMED RATHER THAN FOUND BY
+# ACCIDENT -- task 7's own brief flagged it: this file ran `npm run build`, `npm run lint` and
+# `npm run test:e2e` but never `npm run test:contracts`. `web/contract-tests/contracts.test.mjs` is
+# the ONLY place in this tree proving the `contracts/fixtures/invalid/` corpus is actually rejected
+# by the hand-written TypeScript validator, and proving the schema<->TS property-name pin holds in
+# both directions. `npm run build` only type-checks; it would not notice a validator that quietly
+# stopped enforcing `policyAction` on a writable tag or widget, because a permissive validator still
+# type-checks. Leaving this unwired left that proof witnessed only by whichever task happened to run
+# it by hand -- the exact drift class contracts/README.md and scripts/check-contracts.mjs (this same
+# task) exist to close on the .NET/web boundary; this gate closes the twin gap inside verify-suites.sh
+# itself.
+#
+# 🔴 WHAT THIS DELIBERATELY DOES NOT DO: it does not add St4i.Hmi.Contracts.Tests to the SUITES array
+# above. That array's count feeds the "N of M suites" grand total and the "sixth suite" web/ numbering
+# both printed at the verdict below, and folding a SEVENTH project in cleanly is a bigger, riskier
+# edit than this task's docs-and-gate scope covers -- see task-7-report.md for the reasoning. Recorded
+# here rather than left silent: a `dotnet build -t:Rebuild` still compiles St4i.Hmi.Contracts.Tests as
+# part of the whole-solution build above and would catch a COMPILE error in it, but a logic defect
+# that still compiles (e.g. a pin check quietly loosened) is invisible to this file until someone runs
+# `dotnet test tests/St4i.Hmi.Contracts.Tests` or `node scripts/check-contracts.mjs` by hand.
+_web_contract_log="$LOGDIR/web-contract-tests.log"
+( cd "$GATE_TREE_ROOT/web" && npm run test:contracts ) > "$_web_contract_log" 2>&1
+_web_contract_rc=$?
+if [[ $_web_contract_rc -ne 0 ]]; then
+  echo "FAIL: 'npm run test:contracts' in web/ exited ${_web_contract_rc}."
+  echo "  That is \`node --test contract-tests/contracts.test.mjs\`: either the hand-written validator hit"
+  echo "  a schema keyword it does not know (it throws rather than skip silently) or one of the"
+  echo "  contracts/fixtures/{valid,invalid} files no longer agrees with a schema or a TS type. Read the"
+  echo "  log rather than re-running by hand:"
+  echo "  log: $_web_contract_log"
+  tail -25 "$_web_contract_log" | sed 's/^/    /'
+  exit 1
+fi
+# Two independent counts of ONE population, same shape as the .NET warning ledger and the web lint
+# ledger above: node's own test-runner summary (`ℹ tests N` / `ℹ pass N` / `ℹ fail N`) is read and
+# pinned as an EXACT total, not just an exit code -- an exit-0 run that silently matched fewer files
+# than the suite has (a glob regression; see web/package.json's own marker beside test:contracts)
+# would still print PASS on exit code alone, and this gate exists precisely so that shape of failure
+# does not hide.
+EXPECT_WEB_CONTRACT_TESTS=29
+WEB_CONTRACT_TESTS=$(grep -oE 'ℹ tests [0-9]+' "$_web_contract_log" 2>/dev/null | grep -oE '[0-9]+' || true)
+WEB_CONTRACT_PASS=$(grep -oE 'ℹ pass [0-9]+' "$_web_contract_log" 2>/dev/null | grep -oE '[0-9]+' || true)
+WEB_CONTRACT_FAIL=$(grep -oE 'ℹ fail [0-9]+' "$_web_contract_log" 2>/dev/null | grep -oE '[0-9]+' || true)
+if [[ "${WEB_CONTRACT_TESTS:-}" != "$EXPECT_WEB_CONTRACT_TESTS" || "${WEB_CONTRACT_PASS:-}" != "$EXPECT_WEB_CONTRACT_TESTS" || "${WEB_CONTRACT_FAIL:-}" != "0" ]]; then
+  echo "FAIL: web contract tests reported ${WEB_CONTRACT_TESTS:-unknown} tests / ${WEB_CONTRACT_PASS:-unknown} pass /"
+  echo "  ${WEB_CONTRACT_FAIL:-unknown} fail, expected ${EXPECT_WEB_CONTRACT_TESTS} / ${EXPECT_WEB_CONTRACT_TESTS} / 0."
+  echo "  Exit 0 with the wrong count is the failure mode this assertion exists for: node's runner matched"
+  echo "  fewer test files than the suite has (a glob regression) or the pinned count is simply stale."
+  echo "  Either way this is not the run Milestone 0 pinned. If the move is intended, move the pin and say"
+  echo "  why, the same rule EXPECT_WARNINGS follows on the .NET side."
+  echo "  log: $_web_contract_log"
+  exit 1
+fi
+note "web/: contract tests OK -- ${WEB_CONTRACT_TESTS} tests, ${WEB_CONTRACT_PASS} pass, 0 fail (schema<->TS pin + invalid/ fixture corpus, contracts/README.md's freeze rules)"
+
 build_server_shutdown post-build
 assert_shutdown_ran "after the rebuild"
 POST_BUILD_COUNT="$SD_BEFORE_COUNT"
@@ -10348,7 +10417,7 @@ if [[ ${#FAILURES[@]} -eq 0 ]]; then
   # replaces it is NOT silence: a one-line reader gets the web suite's own numbers AND the size of
   # the pinned debt, because "213 of 218 passed" beside the word PASS is exactly the kind of thing a
   # reader must not have to open a log to learn.
-  echo "PASS: 0 build errors, ${#SUITES[@]}/${#SUITES[@]} .NET suites at their exact expected totals (${grand}), 0 failed, 0 skipped, none aborted; web/ build+lint OK (${WEB_LINT_WARNINGS:-?} pinned lint warnings) and ${WEB_E2E_TOTAL:-?}/${EXPECT_WEB_E2E_TESTS} browser tests ran with ${WEB_E2E_FAILED:-0} failed, $(printf '%s\n' "$EXPECT_WEB_E2E_PINNED_FAILURES" | grep -c . || true) pinned and ${WEB_E2E_QUARANTINE_N:-0} quarantined — see the domain declaration above for what is still not measured."
+  echo "PASS: 0 build errors, ${#SUITES[@]}/${#SUITES[@]} .NET suites at their exact expected totals (${grand}), 0 failed, 0 skipped, none aborted; web/ build+lint OK (${WEB_LINT_WARNINGS:-?} pinned lint warnings), ${WEB_CONTRACT_TESTS:-?}/${EXPECT_WEB_CONTRACT_TESTS:-?} contract tests OK, and ${WEB_E2E_TOTAL:-?}/${EXPECT_WEB_E2E_TESTS} browser tests ran with ${WEB_E2E_FAILED:-0} failed, $(printf '%s\n' "$EXPECT_WEB_E2E_PINNED_FAILURES" | grep -c . || true) pinned and ${WEB_E2E_QUARANTINE_N:-0} quarantined — see the domain declaration above for what is still not measured."
   exit 0
 fi
 echo "FAIL:"

@@ -6389,3 +6389,103 @@ thì về cấu trúc host kia không nhìn thấy, còn một mutex có tên l�
 loại thứ mà hình dạng triển khai này tồn tại để giảm bớt. **Việc người vận hành thật sự phải làm:** với mỗi
 segment, chọn một host sở hữu nó, và chỉ cấu hình `connectors.json` của host đó cho segment ấy. Trên gateway,
 quyết định ấy CHÍNH LÀ toàn bộ cơ chế.)*
+
+---
+
+## 25. `contracts/` — the frozen HMI schema contract (WS-HMI Mốc 0) / Hợp đồng schema HMI đã đóng băng
+
+**EN** — `contracts/` (`.superpowers/sdd/2026-08-29-hmi-moc0-schema-freeze-blueprint/`,
+`docs/HMI_BUILDER_DESIGN_2026-08-29.md` §4) holds three JSON Schemas — `tag-namespace.schema.json`,
+`component-model.schema.json`, `hmi-screen.schema.json` — frozen so a future .NET "Tag Spine" branch
+and a future web "HMI Runtime/Editor" branch can be built **in parallel** without drifting apart. **Read
+this section as a warning before a feature list: Milestone 0 shipped no runtime, no editor, no driver,
+and nothing a user can see.** It is a contract between two branches that do not exist yet, proven by a
+corpus of fixtures and two independent pin-test suites, and nothing more.
+
+**What is actually there:** the three schemas; a shared fixture corpus under `contracts/fixtures/`
+(5 `valid/` + 6 `invalid/`, one `invalid/` file per named rule, its filename stating the rule it
+violates); a **zero-dependency** contract assembly `src/St4i.Hmi.Contracts` (net10.0, no
+`PackageReference`, same discipline as `St4i.Connector.Abstractions` in §19.1) with hand-written C#
+records; hand-written TypeScript types under `web/src/contracts/`; and a two-way pin test suite on
+**each** side (`tests/St4i.Hmi.Contracts.Tests`, `web/contract-tests/`) asserting the schema and the
+type declare the exact same property names in both directions. `node scripts/check-contracts.mjs` runs
+both suites from one command and prints one verdict — this is the command every WS-HMI-0/1/2 task runs
+before reporting done, and it is proven to catch drift, not just to exist: adding one property to any of
+the three schemas and running the gate turns **both** sides red, naming the missing property on each
+side; reverting turns both green again (see `contracts/README.md` for the freeze rules this checks).
+
+**The freeze rules, in one place** (full text in `contracts/README.md`): additive-only changes (removing
+a property, renaming, retyping, or tightening a constraint requires bumping `schemaVersion` and keeping
+an old-version read path); a change touches all **four** places — schema, fixture, C# record, TS
+type — **in the same commit**, because the two-way pin tests are what catches a partial edit; a fixture
+is part of the contract, not an example, so adding a property means adding/editing a `valid/` fixture
+that uses it and adding a constraint means adding an `invalid/` fixture that violates exactly that
+constraint; and the unresolvable `https://st4i.local/...` `$id` is deliberate — this product is
+absolute-offline and nothing here is permitted to fetch a schema over the network.
+
+**What became mechanically impossible rather than merely documented.** §5's "no unpoliced write" rule is
+now encoded IN the schema, not just in prose: a tag with `"access": "rw"` and no `policyAction`, and an
+`hmi-screen` widget of kind `setpoint-input` or `command-button` with no `policyAction`, are both refused
+by `additionalProperties`/conditional (`if`/`then`) schema keywords —
+`contracts/fixtures/invalid/tags-rw-without-policy-action.json` and
+`contracts/fixtures/invalid/screen-write-widget-without-policy-action.json` exist to prove the refusal is
+real, not asserted.
+
+**What Milestone 0 deliberately did NOT do, stated as plainly as what it did.** No code generation: the
+original design doc (`HMI_BUILDER_DESIGN_2026-08-29.md` §4, clause 2) called for generating C#/TypeScript
+types from the schema; what shipped is hand-written types on both sides, pinned by two-way tests instead
+— a departure recorded, not silently taken, in a freeze note directly under §4's table. The web-side
+validator (`web/contract-tests/validate.mjs`) is a **hand-written partial** JSON Schema implementation
+covering only the keywords these three schemas actually use — `type`, `enum`, `const`, `required`,
+`additionalProperties`, `if`/`then`, `oneOf`, `pattern`, `minLength`, `minimum`/`maximum`, `$ref` into
+`$defs` — and it **throws** on any keyword it does not recognize rather than skipping it silently, so a
+future schema author who reaches for an unsupported keyword gets a loud failure instead of a validator
+that quietly stops checking. It is not a general-purpose JSON Schema engine and must never be read as
+one.
+
+*(VI: `contracts/` (`.superpowers/sdd/2026-08-29-hmi-moc0-schema-freeze-blueprint/`,
+`docs/HMI_BUILDER_DESIGN_2026-08-29.md` §4) chứa ba JSON Schema — `tag-namespace.schema.json`,
+`component-model.schema.json`, `hmi-screen.schema.json` — được đóng băng để một nhánh .NET "Tag Spine"
+và một nhánh web "HMI Runtime/Editor" trong tương lai xây được **song song** mà không lệch nhau. **Đọc
+mục này như một lời cảnh báo trước khi đọc như một danh sách tính năng: Mốc 0 KHÔNG giao runtime, KHÔNG
+giao editor, KHÔNG giao driver, và không có gì người dùng nhìn thấy được.** Đây là hợp đồng giữa hai
+nhánh chưa tồn tại, được chứng minh bằng một bộ fixture và hai bộ test ghim độc lập, không hơn.
+
+**Thực tế có gì:** ba schema; bộ fixture dùng chung dưới `contracts/fixtures/` (5 `valid/` + 6
+`invalid/`, mỗi file `invalid/` ứng với đúng một luật, tên file nêu rõ luật bị vi phạm); một contract
+assembly **ZERO dependency** `src/St4i.Hmi.Contracts` (net10.0, không `PackageReference`, cùng kỷ luật
+với `St4i.Connector.Abstractions` ở §19.1) với record C# viết tay; type TypeScript viết tay dưới
+`web/src/contracts/`; và một bộ test ghim hai chiều ở **MỖI** phía (`tests/St4i.Hmi.Contracts.Tests`,
+`web/contract-tests/`) khẳng định schema và kiểu khai đúng cùng một tập tên property theo cả hai chiều.
+`node scripts/check-contracts.mjs` chạy cả hai bộ từ một lệnh và in một kết luận — đây là lệnh mọi task
+của WS-HMI-0/1/2 chạy trước khi báo xong, và nó đã được CHỨNG MINH bắt được drift chứ không chỉ tồn tại:
+thêm một property vào bất kỳ schema nào trong ba file rồi chạy cổng làm **CẢ HAI** phía đỏ, nêu đúng tên
+property thiếu ở mỗi phía; hoàn nguyên thì cả hai xanh lại (xem `contracts/README.md` để biết luật đóng
+băng cổng này kiểm).
+
+**Luật đóng băng, gom một chỗ** (toàn văn ở `contracts/README.md`): chỉ được cộng thêm (xoá property, đổi
+tên, đổi kiểu, hay siết ràng buộc phải tăng `schemaVersion` và giữ đường đọc bản cũ); một lần đổi phải
+chạm cả **bốn** chỗ — schema, fixture, record C#, type TS — **trong cùng một commit**, vì test ghim hai
+chiều tồn tại chính để bắt một lần sửa nửa vời; fixture là một phần của hợp đồng chứ không phải ví dụ,
+nên thêm property nghĩa là thêm/sửa một fixture `valid/` dùng nó và thêm ràng buộc nghĩa là thêm một
+fixture `invalid/` vi phạm đúng ràng buộc đó; và `$id` `https://st4i.local/...` không phân giải được là
+cố ý — sản phẩm này chạy offline tuyệt đối, không có gì ở đây được phép fetch một schema qua mạng.
+
+**Cái gì trở thành KHÔNG THỂ VIẾT SAI bằng máy, chứ không chỉ được ghi bằng văn xuôi.** Luật "không có
+đường ghi không gác" ở §5 nay được mã hoá TRONG schema: một tag `"access": "rw"` không có `policyAction`,
+và một widget `hmi-screen` loại `setpoint-input` hay `command-button` không có `policyAction`, đều bị từ
+chối bởi từ khoá `additionalProperties`/điều kiện (`if`/`then`) của schema —
+`contracts/fixtures/invalid/tags-rw-without-policy-action.json` và
+`contracts/fixtures/invalid/screen-write-widget-without-policy-action.json` tồn tại để chứng minh sự từ
+chối đó là thật, không phải khẳng định suông.
+
+**Cái Mốc 0 CỐ Ý KHÔNG làm, nói rõ như cái đã làm.** Không sinh mã: tài liệu thiết kế gốc
+(`HMI_BUILDER_DESIGN_2026-08-29.md` §4, khoản 2) từng đề nghị sinh kiểu C#/TypeScript từ schema; cái thật
+sự giao là kiểu viết tay ở cả hai phía, ghim bằng test hai chiều thay vì sinh mã — một sai lệch được ghi
+lại, không lặng lẽ áp dụng, trong một khối ghi chú đóng băng ngay dưới bảng của §4. Bộ validate phía web
+(`web/contract-tests/validate.mjs`) là một bản triển khai JSON Schema **viết tay, một phần**, chỉ phủ
+đúng những từ khoá ba schema này thật sự dùng — `type`, `enum`, `const`, `required`,
+`additionalProperties`, `if`/`then`, `oneOf`, `pattern`, `minLength`, `minimum`/`maximum`, `$ref` vào
+`$defs` — và nó **ném lỗi** khi gặp từ khoá không nhận ra thay vì bỏ qua âm thầm, để người viết schema sau
+này gặp một lỗi to tiếng thay vì một bộ validate lặng lẽ ngừng kiểm. Nó không phải một engine JSON Schema
+tổng quát và không bao giờ nên được đọc như vậy.)*

@@ -513,6 +513,20 @@ public sealed class SuppressionCensusTests
         ["tools/machine-simulator/tools/serial-bench/St4i.SerialBench.csproj"] = "on",
         ["tools/machine-simulator/tools/settings-acl-probe/St4i.SettingsAclProbe.csproj"] = "on",
 
+        // 🔴 A NEW PROJECT, NOT A SWITCH FLIP — WS-HMI Mốc 0 task 7
+        // (.superpowers/sdd/2026-08-29-hmi-moc0-schema-freeze-blueprint/task-7-brief.md), 2026-08-30. This
+        // census went red the moment Task 2 created src/St4i.Hmi.Contracts/St4i.Hmi.Contracts.csproj with
+        // GenerateDocumentationFile already true in the file itself — nobody flipped a bit here, the project
+        // simply did not exist when ExpectedDocumentationSwitch was last written. "a NEW project
+        // appearing/vanishing is neither [on->off nor off->on], and needs its own row" (the sentence this
+        // exact failure message carries, three rules below). It joins the clean-`on` group above rather than
+        // St4i.EdgeCore's group below: MEASURED, `dotnet build src/St4i.Hmi.Contracts/St4i.Hmi.Contracts.csproj
+        // -t:Rebuild` -> 0 Warning(s), same shape as the seven above it, not an unpaid debt being named.
+        // No companion change: EXPECT_WARNINGS and the origin-split ledger in scripts/verify-suites.sh both
+        // sum a whole-solution build that already includes this project (it is in St4iMachineSimulator.sln),
+        // and it contributes zero warnings whether this row reads on or off, so neither pin moves.
+        ["tools/machine-simulator/src/St4i.Hmi.Contracts/St4i.Hmi.Contracts.csproj"] = "on",
+
         // 🔴 THE ONE ROW ITEM 12 IS ABOUT, MOVED off -> on ON 2026-08-19 BY TASK AF-1 (stage 3), enforcing
         // the owner's ruling with NO exemption of any kind. It is the eighth `on` and it is deliberately
         // NOT written up beside the other seven: those seven stand at ZERO documentation warnings because
@@ -554,6 +568,17 @@ public sealed class SuppressionCensusTests
         ["tools/machine-simulator/tests/St4i.EdgeCore.Tests/St4i.EdgeCore.Tests.csproj"] = "off",
         ["tools/machine-simulator/tests/St4i.EdgeService.Tests/St4i.EdgeService.Tests.csproj"] = "off",
         ["tools/machine-simulator/tests/St4i.EngineApi.Tests/St4i.EngineApi.Tests.csproj"] = "off",
+
+        // 🔴 A NEW PROJECT, NOT A SWITCH FLIP — same task and reasoning as St4i.Hmi.Contracts above, listed
+        // here rather than there because THIS csproj does not declare the property at all (same shape as
+        // every other `.Tests` row in this group). MEASURED, forcing the switch on for one build only —
+        // `dotnet build tests/St4i.Hmi.Contracts.Tests/St4i.Hmi.Contracts.Tests.csproj -t:Rebuild
+        // -p:GenerateDocumentationFile=true` -> 23 Warning(s), all CS1591, zero CS1573 — but that number is
+        // NOT today's number: the checked-in csproj leaves the switch off, so a normal build (confirmed by
+        // running one) emits zero, and neither EXPECT_WARNINGS nor the origin-split ledger in
+        // scripts/verify-suites.sh moves. Turning it on is the same owner decision item 12 reserves for
+        // every other project in this `off` group, not something this task took.
+        ["tools/machine-simulator/tests/St4i.Hmi.Contracts.Tests/St4i.Hmi.Contracts.Tests.csproj"] = "off",
 
         // The vendored SDK sample's own project, which sits in the vendored file's directory and is therefore
         // inside the scanned domain. It is not one of the fifteen and this repository does not build it; it

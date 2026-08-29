@@ -183,6 +183,28 @@ Xem §5. Tầng này **không phải mã mới** — là ràng buộc bắt bu�
 | `contracts/component-model.schema.json` | `ComponentType` + cây asset (§3.1) | Nhánh .NET đề xuất, cả hai duyệt |
 | `contracts/hmi-screen.schema.json` | Màn hình + widget + binding + layout (§3.3) | Nhánh web đề xuất, cả hai duyệt |
 
+> 🔴 **BA FILE TRÊN ĐÃ ĐÓNG BĂNG, 2026-08-29, ở commit `9fb45a88`** (nhánh `feat/hmi-builder-moc0`) —
+> lần sửa cuối trên cả ba file. Task 7 (Mốc 0, `.superpowers/sdd/2026-08-29-hmi-moc0-schema-freeze-blueprint/task-7-brief.md`)
+> đóng đợt bằng cổng hợp nhất `node scripts/check-contracts.mjs`, chạy trên commit gate(contract) — xem
+> `task-7-report.md` để có SHA thật của commit đó. Người chốt: chủ sở hữu, theo quyết định #2 của §1
+> (song song hai nhánh, hợp đồng schema phải đóng TRƯỚC khi tách).
+>
+> **Khoản 2 dưới đây được thi hành bằng GHIM HAI CHIỀU, không phải bằng sinh mã (codegen).** Nguyên văn
+> khoản 2 giữ nguyên bên dưới, không xoá — đây là ghi chú đè, theo đúng thói quen của kho này. Khoản 2 nói
+> "Sinh kiểu hai chiều: C# record ⟷ TypeScript type **sinh** từ cùng một JSON Schema". Cái thật sự giao ở
+> Mốc 0 là NGƯỢC LẠI theo nghĩa hẹp: type C# và TypeScript đều **viết tay**, không có bước sinh mã nào,
+> và thứ ghim chúng lại với schema là hai bộ test đối chiếu tên property theo cả hai chiều
+> (`tests/St4i.Hmi.Contracts.Tests`, `web/contract-tests/`) — thiếu bên nào cũng đỏ, tên property thiếu
+> được nêu trong thông điệp lỗi. Lý do đổi hướng: viết một bộ sinh mã JSON-Schema→C#/TS đáng tin cậy cho
+> đúng ba schema, với `if`/`then`/`oneOf`/`$ref` mà chúng dùng, là một hạng mục công cụ riêng có rủi ro và
+> chi phí không nhỏ hơn việc viết tay 12 kiểu (record C# ⟷ type TS, đếm được: `TagNamespaceDocument`,
+> `TagDescriptor`, `TagSource`, `ComponentModelDocument`, `ComponentNode`, `ComponentTypeDef`,
+> `ComponentTagDef`, `ComponentStateDef`, `HmiScreenDocument`, `ScreenLayout`, `ScreenWidget`,
+> `WidgetRect`) và ghim chúng — trong khi ghim hai chiều cho cùng một bảo đảm (schema và kiểu không lệch
+> nhau) với ít mã hơn và không có công cụ sinh mã nào phải bảo trì. Đây là
+> một quyết định có chủ ý của Mốc 0, không phải một khoản chưa làm kịp; xem `contracts/README.md` và
+> README §25 để biết cách luật đóng băng này được thi hành trong thực tế.
+
 Ràng buộc bắt buộc:
 1. **`schemaVersion` là trường bắt buộc** trong mọi document — màn hình lưu hôm nay phải đọc được sau 3 năm.
 2. **Sinh kiểu hai chiều:** C# record ⟷ TypeScript type sinh từ **cùng một** JSON Schema, ghim bằng test ở CẢ HAI phía. Đây là bài học trực tiếp từ khuyết tật `MachineConfigDesignDocTableTests` — bảng tài liệu và mã lệch nhau suốt nhiều tháng vì *"không gì ghim chúng với nhau"*.
