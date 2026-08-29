@@ -128,3 +128,59 @@ scratchpad (KB5).
 3. Muốn đóng NỐT lỗ bằng-chứng URI (KB4 §2), cần một phép kiểm live tường minh TRONG cửa sổ VSCode
    thật (không phải bundle + `vscode` giả) — ghi lại thành một dòng riêng trong backlog Đợt D, đừng
    mang đi im lặng lần thứ ba.
+
+---
+
+## Cập nhật sau REVIEW TOÀN NHÁNH — lần thứ SÁU, và nó nằm TRONG bản vá lần thứ NĂM
+
+Review toàn nhánh (đọc cả đợt cùng lúc, trên model mạnh nhất) tìm ra **instance thứ sáu** của lớp
+lỗi xuyên suốt dự án. Câu chốt của reviewer đáng giữ nguyên văn:
+
+> *"bản vá đã khẳng định một nguyên tắc mà nó chỉ cài đặt ở MỘT PHÍA."*
+
+**F1 (Critical) — đường THÀNH CÔNG khai "Đã ghi" mà không kiểm.** Sau khi `save()` trả về true,
+mã đọc lại đĩa rồi đóng sổ `da_ap_client` + khai "Đã ghi" — **không so băm với gì cả**, và làm thế
+**kể cả khi lượt đọc lại đã NÉM** (`sha256SauThat: undefined`). Hai lời khai sai chạm tới được:
+(a) không đọc nổi kết cục nhưng vẫn khai đã áp; (b) đĩa vẫn giữ bản gốc (thứ gì đó khôi phục tệp
+giữa `save()` và lượt đọc lại) ⇒ hàng ghi `sha256SauThat === sha256Truoc` dưới `da_ap_client`,
+giao diện nói "Đã ghi", còn cảnh báo lệch băm thì **đổ tội nhầm cho formatter của editor**.
+Chính docblock của tệp đã ghi luật *"ĐÃ GHI — đọc lại đĩa, băm khớp bản mới"* — và luật đó được
+cưỡng chế ở nhánh THẤT BẠI, không ở nhánh THÀNH CÔNG.
+
+**Đã vá** (`faba0e01`, 13 tệp, lưới 233 → **268**): nhánh thành công nay rẽ **ba** theo sự thật đo
+được — khớp ⇒ `da_ap_client`; **đĩa vẫn là bản gốc** ⇒ nói thẳng lượt ghi không có hiệu lực và
+**để sổ mở ở `dang_ap_client`** (vì `ap_client_that_bai` nghĩa là "0 byte", điều không đo được ở
+đây); **không đọc nổi** ⇒ khai CHƯA RÕ, không đóng sổ.
+
+### Năm mục Important còn lại — đều nằm trên đường người dùng thật đi
+
+| Mã | Lỗi | Hậu quả |
+|---|---|---|
+| F2 | `ghepBanVa` giả định EOL đồng nhất | Tệp **hỗn hợp EOL**: `split("\r\n")` gộp nhiều dòng thật thành một ⇒ số dòng 1-based của VSCode trỏ **sai vùng** ⇒ vá lạc chỗ. `thayThe` mang CRLF ⇒ sinh `\r\r\n` |
+| F3 | Cmd+K trong workspace **đa gốc** | `asRelativePath` thêm tiền tố tên thư mục khi ≥2 gốc, còn `resolve` neo vào gốc đang chọn ⇒ xấu nhất là **trúng một tệp thật KHÁC**, qua hết mọi hàng rào |
+| F4 | `CAM_TU` thiếu `fs.delete`/`copy`/`deleteFile` | API xoá/chép đĩa, **không hoàn tác được**, không bị đếm |
+| F5 | `camGhiRieng` thiếu `*.code-workspace` | Tệp đó mang mục `tasks`/`launch` — cùng ngữ nghĩa "chạy mã sau này" với `.vscode/tasks.json` đã bị chặn |
+| F6 | `chot.ok` bị bỏ qua ở 2/4 lời gọi đóng sổ | Máy chủ từ chối qua HTTP 200 ⇒ hàng **kẹt ở `dang_ap_client` vĩnh viễn**, người dùng không được báo gì |
+
+**Hai chỗ implementer làm tốt hơn chỉ thị của tôi** (ghi lại vì đó là điều đáng khuyến khích):
+- **F2:** tôi chỉ định `split(/\r?\n/).join(eol)`; họ **bác bỏ** — làm thế sẽ chuẩn hoá EOL trên
+  toàn tệp hỗn hợp, đúng thảm hoạ git-diff mà module này sinh ra để tránh. Họ giữ dấu kết thúc
+  dòng **của từng dòng**.
+- **F3:** họ phát hiện bản vá của tôi **chưa đủ** — chỉ bỏ tiền tố thì cross-root vẫn trúng một tệp
+  thật khác; nên thêm vị từ **từ chối khi có ≥2 ứng viên**, và sửa **cả hai đầu** (Cmd+K lẫn
+  `thuThapNguCanh`).
+
+**Kiểm chứng của controller:** bundle đã build chứa **đúng 1** `applyEdit` và **đúng 1**
+`WorkspaceEdit` — bất biến giữ được trên chính artifact sẽ chạy, không chỉ trên lưới. Đột biến
+census hai chiều vẫn đỏ đúng cả hai. 268 lưới xanh, `ext:check` 0 lỗi.
+
+### CHƯA xác minh — điều kiện thật trước khi đưa cho người dùng
+
+- ★★★ **Chưa từng chạy trong cửa sổ VSCode THẬT.** Mọi khẳng định về thứ tự, `isDirty`, `version`,
+  ngữ nghĩa `applyEdit`/`save` đều dựa trên một bản giả **viết cùng lúc với mã mà nó đo**. Reviewer
+  gọi đây là "cổng trung thực" của đợt, và tôi đồng ý: đủ cho một lập trình viên **đã được cảnh
+  báo**, chưa đủ để gọi ba hàng rào là "đã đo".
+- F1 có ba kết cục nhưng chỉ kết cục "khớp" từng thấy trong thực tế; hai kết cục kia là suy luận
+  có lưới, chưa quan sát trên `save()` + `formatOnSave` thật.
+- Chưa hỗ trợ **tạo tệp mới**; symlink **TỆP** chưa đo được trên Windows; lỗ bằng-chứng URI của
+  Đợt B mới đóng **một phần**.
