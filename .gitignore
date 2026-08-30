@@ -235,3 +235,9 @@ server/license/license-state-cache.json
 # nhanh trôi khỏi mã nguồn thật ngay sau lần build kế tiếp. Cài offline bằng
 # `code --install-extension avi-ai-local-0.1.0.vsix` sau khi tự đóng gói lại.
 vscode-extension/*.vsix
+
+# ★ 2026-08-30 (Đợt E) — TẠO TÁC BUILD của bộ kiểm thử real-host, sinh bởi
+# `vscode-extension/test-real-host/build.mjs` (đích của `npm run test-that`). Mã NGUỒN
+# của bộ kiểm thử này nằm ở `vscode-extension/test-real-host/` (CÓ commit); tệp .js đã
+# dịch dưới đây là artifact, tái sinh mỗi lần chạy — không commit, cùng lý do với `dist/`.
+vscode-extension/test-real-host-out/

@@ -4,3 +4,5 @@ tsconfig.json
 node_modules/**
 **/*.unit.test.ts
 **/*.map
+test-real-host/**
+test-real-host-out/**

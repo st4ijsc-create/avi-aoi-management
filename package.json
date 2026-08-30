@@ -59,7 +59,8 @@
     "ai:mcp": "tsx server/services/aiCodingCli/batDau.ts mcp",
     "ext:check": "npm run check --prefix vscode-extension",
     "ext:build": "npm run build --prefix vscode-extension",
-    "ext:package": "npm run package --prefix vscode-extension"
+    "ext:package": "npm run package --prefix vscode-extension",
+    "ext:test-that": "npm run test-that --prefix vscode-extension"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1019.0",

@@ -6,15 +6,32 @@
   "publisher": "st4i",
   "private": true,
   "license": "UNLICENSED",
-  "engines": { "vscode": "^1.90.0" },
-  "categories": ["Programming Languages", "Other"],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
-      { "command": "aviAiLocal.moBangChat", "title": "AI Local: Mở bảng trò chuyện" },
-      { "command": "aviAiLocal.dangNhap", "title": "AI Local: Đăng nhập" },
-      { "command": "aviAiLocal.dangXuat", "title": "AI Local: Đăng xuất" },
-      { "command": "aviAiLocal.suaDoanChon", "title": "AI Local: Sửa đoạn đang chọn (hỏi AI)" }
+      {
+        "command": "aviAiLocal.moBangChat",
+        "title": "AI Local: Mở bảng trò chuyện"
+      },
+      {
+        "command": "aviAiLocal.dangNhap",
+        "title": "AI Local: Đăng nhập"
+      },
+      {
+        "command": "aviAiLocal.dangXuat",
+        "title": "AI Local: Đăng xuất"
+      },
+      {
+        "command": "aviAiLocal.suaDoanChon",
+        "title": "AI Local: Sửa đoạn đang chọn (hỏi AI)"
+      }
     ],
     "keybindings": [
       {
@@ -39,7 +56,11 @@
         },
         "aviAiLocal.uiLanguage": {
           "type": "string",
-          "enum": ["vi", "en", "zh"],
+          "enum": [
+            "vi",
+            "en",
+            "zh"
+          ],
           "default": "vi",
           "description": "Ngôn ngữ trả lời."
         }
@@ -49,13 +70,18 @@
   "scripts": {
     "check": "tsc --noEmit -p .",
     "build": "node build.mjs",
-    "package": "vsce package --no-dependencies --allow-missing-repository"
+    "package": "vsce package --no-dependencies --allow-missing-repository",
+    "test-that": "node build.mjs && node test-real-host/build.mjs && node test-real-host-out/runTest.js"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.25.12",
+    "glob": "^13.0.6",
+    "mocha": "^11.8.0",
     "typescript": "^5.6.3"
   }
 }
