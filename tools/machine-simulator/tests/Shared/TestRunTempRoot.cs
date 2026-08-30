@@ -203,7 +203,7 @@ internal static class TestRunTempRoot
             //
             // 🔴 AND THE HALF THAT IS NOT A FIX, said here rather than left to be discovered: this redirects
             // where the TEST SUITE writes. It does not give the product a new default, does not touch either
-            // store, and settles nothing about the sixteen %ProgramData% roots as a product question. The
+            // store, and settles nothing about the eighteen %ProgramData% roots as a product question. The
             // stores' own EnvVarDir seams already existed; nothing in src/ changed for this.
             //
             // Spelled as literals for the same reason the four above are: two of the five projects this file
@@ -261,7 +261,7 @@ internal static class TestRunTempRoot
             //
             // 🔴 WHAT THIS IS NOT, said here rather than left to be inferred. (1) It redirects where the TEST
             // SUITE writes. It gives the product no new default, changes no line under src/, and settles
-            // nothing about the sixteen %ProgramData% roots as a product question — the same boundary the two
+            // nothing about the eighteen %ProgramData% roots as a product question — the same boundary the two
             // BK-1 variables above carry. (2) It is not evidence of a leak. Measured 2026-08-24:
             // C:\ProgramData\ST4I\sim\opcua-pki holds 3 files whose newest mtime is 2026-07-29 15:42:07, and
             // the directory's own mtime is the same instant. What is closed here is a CAPABILITY, not an

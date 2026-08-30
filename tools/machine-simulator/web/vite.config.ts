@@ -16,7 +16,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     // 🔴 CE-1 (owner item 60) — THE DEV SERVER MUST NOT WATCH THE ENGINE'S DATA ROOT, and this is a
-    // fix for a REAL 500, not a tidy-up. `playwright.config.ts` points all sixteen `ST4I_*_DIR`
+    // fix for a REAL 500, not a tidy-up. `playwright.config.ts` points all eighteen `ST4I_*_DIR`
     // stores at `web/.e2e-data`, which is INSIDE this server's own project root, so chokidar walks
     // it. `MachineConfigStore.WriteAllTextAtomic` writes `<file>.tmp-<guid>` and then
     // `File.Move(tmp, dest, overwrite: true)`; on Windows that rename returns ERROR_ACCESS_DENIED

@@ -251,7 +251,18 @@ git commit -m "feat(hmi): announce a change only after it happened, never before
 - Modify: `docs/SYNAPSE_GAP_AND_MIDDLEWARE_ROADMAP_2026-07-26.md`, `README.md`
 - Test: mở rộng `tests/St4i.EngineApi.Tests/HmiModel/HmiModelEndpointsTests.cs`
 
-- [ ] **Step 1: Mô tả tám route trong OpenAPI**
+- [x] **Step 1: Mô tả ~~tám~~ **CHÍN** route trong ~~OpenAPI~~ `docs/HMI_API_CONTRACT.md`**
+
+> 📎 🔴 **ĐÍNH CHÍNH (Task 4, 2026-08-31) — hai chữ trong tiêu đề trên sai, và cả hai đều là loại sai mà
+> kho này đã theo dõi lệch năm lần.**
+> - **"tám" → CHÍN.** Đếm từ mã nguồn tại `6ca5c729`, không tin kế hoạch: năm route Task 1 + ba route
+>   Task 2 + **`WS /v1/hmi/changes` của Task 3**, vốn chưa tồn tại khi kế hoạch được viết. Tám đúng vào
+>   ngày viết và hết đúng ở Task 3. Một con số trong kế hoạch chính là loại hiện vật hay lệch nhất.
+> - **"OpenAPI" → không tồn tại.** Không có thư mục `src/St4i.EngineApi/openapi/`, và không có bộ sinh
+>   OpenAPI nào trong `St4i.EngineApi` — không Swashbuckle, không NSwag, không `AddEndpointsApiExplorer`.
+>   Dựng một cái là thêm một cơ chế tài liệu kho này chưa từng dùng, ngay ở task đóng sổ. Khuôn kho này
+>   THẬT SỰ dùng cho "hợp đồng cho một bên khác dựng theo" là `docs/*_CONTRACT.md` (đã có hai cái đang
+>   dùng), nên hợp đồng nằm ở **`docs/HMI_API_CONTRACT.md`**.
 
 Đọc `src/St4i.EngineApi/openapi/` để thấy các route hiện có được mô tả thế nào, rồi làm y hệt. Nhánh web đọc tài liệu này; một route không mô tả là một route nhánh kia phải đoán.
 
@@ -288,7 +299,10 @@ git commit -m "docs(hmi): describe the eight routes the other branch has to buil
 
 ## Nghiệm thu WS-HMI-0b
 
-- [ ] Tám route hoạt động, gắn đúng vai trò, mô tả trong OpenAPI.
+- [x] ~~Tám~~ **CHÍN** route hoạt động, gắn đúng vai trò, mô tả trong ~~OpenAPI~~ `docs/HMI_API_CONTRACT.md`
+      — xem đính chính ở Step 1 cho cả hai chỗ sai. Vai trò: sáu route đọc + kênh sự kiện ở
+      `Policies.Operator`, hai route ghi ở `Policies.Engineer`, **không bao giờ `Admin`**; census đầy đủ ở
+      `RbacPolicyTests.EveryV1Route_CarriesExactlyTheExpectedPolicyOrAnonymous`.
 - [ ] Máy chưa khai trả **rỗng**, không 404; một tag cụ thể không có trả **404**. Cả hai đều có bài ghim.
 - [ ] Vi phạm §5 là **400** và không để lại nửa bản ghi; mất toàn vẹn là **cảnh báo trong 200**.
 - [ ] Thứ tự khai báo không phải ràng buộc — `PUT` cây trước khi có namespace không sinh cảnh báo.

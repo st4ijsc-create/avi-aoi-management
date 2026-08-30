@@ -120,7 +120,14 @@ Machine (đã có, ISA-95 URN)
 
 **Lớp đè kế thừa nguyên tắc đã chốt:** `baseline` (khuyến nghị từ server) → `theo máy` → `theo máy × sản phẩm`. Mô hình linh kiện **không phá** mô hình này, nó bổ sung chiều *"tham số này thuộc linh kiện nào"*.
 
-API mới: `GET/POST/PUT /v1/components`, `GET /v1/component-types`.
+API mới: ~~`GET/POST/PUT /v1/components`, `GET /v1/component-types`~~.
+
+> 📎 🔴 **ĐÍNH CHÍNH (WS-HMI-0b Task 4, 2026-08-31) — đã thi công, và hình dạng thật khác lời khai ở đây.**
+> **Không có `POST`** — khai một cây linh kiện là `PUT` idempotent theo mã máy, không phải tạo tài nguyên
+> mới. Bề mặt thật là **năm** route: `GET /v1/components`, `GET /v1/components/{machineCode}`,
+> `PUT /v1/components/{machineCode}`, `GET /v1/components/{machineCode}/integrity`,
+> `GET /v1/component-types`. **Hợp đồng đầy đủ — mã lỗi, bất biến, hình dạng dây — ở
+> `docs/HMI_API_CONTRACT.md`**; đó là nơi nhánh web nên đọc, chứ không phải đoạn này.
 
 ### 3.2 Tầng ② — Tag Namespace (SPINE)
 
@@ -154,7 +161,25 @@ Thay `mapping/*.json` placeholder bằng **compiler thật**. Mỗi tag:
 > đầy đủ, cùng quyết định hoãn `alarms[]` của §3.1, ở `contracts/README.md` §"Trường được HOÃN có chủ ý".
 > Yêu cầu "runtime bắt buộc hiển thị quality" **không** bị bỏ; nó chuyển chỗ.
 
-Namespace publish lên UNS dưới dạng Sparkplug metric (hạ tầng WS-B đã có). API: `GET /v1/tags?machine=`, `GET /v1/tags/{path}`, `POST /v1/tags/subscribe` (SSE, tái dùng cơ chế `/v1/inspector/stream` đã có).
+Namespace publish lên UNS dưới dạng Sparkplug metric (hạ tầng WS-B đã có). API: ~~`GET /v1/tags?machine=`, `GET /v1/tags/{path}`, `POST /v1/tags/subscribe` (SSE, tái dùng cơ chế `/v1/inspector/stream` đã có)~~.
+
+> 📎 🔴 **ĐÍNH CHÍNH (WS-HMI-0b Task 4, 2026-08-31) — ba chi tiết trong câu trên sai, và cái thứ ba là cái
+> tốn kém nhất nếu nhánh web tin.**
+> 1. **`GET /v1/tags/{path}` → `GET /v1/tags/by-path/{**path}`.** Một tag `path` CHỨA dấu `/`, nên route
+>    phải là catch-all; một route `{path}` thường trả 404 cho mọi tag thật.
+> 2. **Không có `POST /v1/tags/subscribe`, và không phải SSE.** Là **`WS /v1/hmi/changes`**, một
+>    WebSocket, `Policies.Operator`.
+> 3. **Không "tái dùng cơ chế `/v1/inspector/stream`".** Đo được: `EventBus.Publish` chỉ có MỘT nơi gọi
+>    trong `src/` (`EdgePipeline.cs:135`, đường đẩy số liệu ra ngoài), nên khung của kênh ấy nghĩa là "đã
+>    gửi một reading", và khung ấy — `ApiTraceEvent` — bị một phán quyết đóng băng. Task 3 do đó mở một
+>    **route WebSocket thứ hai**, không phải một cơ chế realtime thứ hai: vẫn WebSocket, vẫn cùng thư viện
+>    client, thêm một URL. Xem đính chính ở phần Architecture của
+>    `docs/plans/2026-08-30-hmi-ws0b-api-stream-blueprint.md`.
+>
+> Bề mặt tag thật: **ba** route HTTP (`GET /v1/tags?machine=` — thiếu/rỗng là **400**, không phải trả mọi
+> máy; `GET /v1/tags/by-path/{**path}` — không có là **404**; `PUT /v1/tags/{machineCode}` — có thêm
+> **409** khi đụng path máy khác đã giữ) cộng kênh sự kiện. **Hợp đồng đầy đủ ở
+> `docs/HMI_API_CONTRACT.md`.**
 
 > ⚠️ **Giới hạn khai báo trước, không overclaim:** WS-HMI-0 định nghĩa và phục vụ namespace. Việc *mọi* driver hiện có nạp đủ tag vào đó là công việc của WS-HMI-0 giai đoạn 2 (Modbus + OPC-UA + simulated trước; MQTT/Serial sau). Bài học từ §3 của `MACHINE_CONFIG_DESIGN.md`: *"bảng này nói vựng từ nào được phục vụ, nó không nói giá trị có tác dụng"* — spec này phải phân biệt hai câu đó, và mỗi tag mang cờ `isBackedByDriver` được ghim bằng test.
 

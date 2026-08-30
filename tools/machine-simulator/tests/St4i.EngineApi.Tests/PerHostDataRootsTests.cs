@@ -157,7 +157,7 @@ public sealed class PerHostDataRootsTests
         // 🔴 BF-1 (2026-08-23) — THE PARTITION IS UNCHANGED AND ITS SECOND HALF IS NOW EMPTY. The owner's
         // ruling moved all three beside-the-binary defaults under %ProgramData%\ST4I\sim, so every
         // ST4I_*_DIR literal in src/ is once again derivable from a declared directory and the pairing is
-        // SIXTEEN and SIXTEEN. The partition is deliberately NOT deleted along with its last member: it is
+        // EIGHTEEN and EIGHTEEN. The partition is deliberately NOT deleted along with its last member: it is
         // what makes the emptiness a measurement instead of an assumption, and the guard below pins that
         // half at exactly zero for the reason an empty set always needs pinning — it satisfies every
         // universal claim made about it.
@@ -669,15 +669,17 @@ public sealed class PerHostDataRootsTests
             "row in §15.9's WRITES/READS table, none of which is a countable sentence. Walk those by hand. " +
             "🔴 THAT LIST WAS NOT THE WHOLE RESIDUE, and saying so was this message's own instance of the " +
             "defect it polices (fix-wave re-review, N-2). Eleven further LIVE 'sixteen' assertions survived " +
-            "the sweep, measured at c0cece8b in eight files none of which is named above: " +
-            "MachineConfigStore.cs:94, SqliteHistorianStore.cs:123, HistorianRootSeamTests.cs:23, " +
-            "TestHarnessIsolationTests.cs:70, THIS FILE at :160, TestRunTempRoot.cs:206 and :264, " +
-            "vite.config.ts:19, docs/startup-failure-posture.md:820 and :866, remove-data.ps1:280. They are " +
-            "STILL STALE at this commit — deliberately, as an owner decision, not an oversight: two are " +
-            "src/ doc comments and the posture doc ENUMERATES the directories, so it is short by two NAMES " +
-            "rather than by a number, and correcting it is an edit to operator-facing prose. Anyone moving " +
-            "18→19 must walk these eleven too; that is the whole point of naming them here rather than " +
-            "leaving the sentence above to read as complete. " +
+            "the sweep, measured at c0cece8b in eight files none of which is named above. 🔴 ALL ELEVEN ARE " +
+            "CLOSED as of WS-HMI-0b Task 4 (2026-08-31), the owner having assigned that debt to 0b rather " +
+            "than parking it further — so this message no longer lists them, because a 'still stale' list " +
+            "that is no longer true is the same defect one generation on, which is exactly what this " +
+            "message exists to police. What the closure had to respect, recorded because it is the reusable " +
+            "part: 'sixteen' is NOT one fact in this tree. It is the DECLARED-directory count in those " +
+            "eleven places, the PURGE count (18 minus the two the owner's 2026-08-23(b) ruling keeps) in " +
+            "remove-data.ps1's .SYNOPSIS/.PARAMETER/parameter-block prose, and a count of unrelated " +
+            "artefacts in TestHarnessIsolationTests.cs:64 — so a find-and-replace corrupts two of those " +
+            "three. The eleven line numbers above were the authority, not the word. Anyone moving 18→19 " +
+            "must still walk the by-hand list named earlier in this message. " +
             "This test exists because four of those places were already off by one when it was written, " +
             "and it was extended because the Vietnamese half of two of them was off by two afterwards.");
     }

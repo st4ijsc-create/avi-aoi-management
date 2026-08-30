@@ -46,7 +46,25 @@ public sealed record ModeDto(TransportMode Mode);
 // it off); WS-E License/Edition is the workstream that gives this a real gate, same as `DemoEnabled`
 // eventually got one, without moving where the flag is reported.
 // ─────────────────────────────────────────────────────────────────────────
-public sealed record CapabilitiesDto(bool DemoEnabled, TransportMode Mode, string Version, bool HmiModelEnabled);
+// WS-HMI-0b Task 4 — `HmiApiEnabled` added, under the exact name the comment above predicted. It answers
+// a DIFFERENT question from `HmiModelEnabled` and the difference is not hypothetical: WS-HMI-0a shipped
+// the two stores with no route able to reach them, so there was a real released state in which
+// "the store exists" was true and "the API is open" was false. A client that conflated them would have
+// fetched a tree from an endpoint that did not exist.
+//
+// 🔴 AND NO THIRD FLAG FOR THE CHANGE LANE (WS /v1/hmi/changes), decided rather than skipped. The
+// store/API split is justified because the two genuinely diverged in a shipped state. The lane and the API
+// never have: they are registered in one composition root, in one commit, on one branch, gated by the same
+// absence of any license tier — there is no version, released or buildable, in which `hmiApiEnabled` is
+// true and the lane is absent. A flag whose value is definitionally equal to another's does not let a
+// client branch; it lets a client BELIEVE it can branch, and the first release where they genuinely
+// diverge is the release where that belief is wrong in the dangerous direction — a client skipping its
+// subscribe because a flag it trusted said no. The honest expression of "the lane ships with the API" is
+// one flag plus the sentence in docs/HMI_API_CONTRACT.md, and the moment 0c or WS-E can separate them is
+// the moment to add the second. Both remain unconditionally `true` today for the reason the paragraph
+// above gives.
+public sealed record CapabilitiesDto(
+    bool DemoEnabled, TransportMode Mode, string Version, bool HmiModelEnabled, bool HmiApiEnabled);
 
 // ─────────────────────────────────────────────────────────────────────────
 // POST /v1/scenario, /v1/scenario/preset, /v1/scenario/burst

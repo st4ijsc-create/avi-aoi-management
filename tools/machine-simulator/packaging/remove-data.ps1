@@ -27,7 +27,16 @@
   resolves IComponentModelStore or ITagNamespaceStore, because no endpoint exists until WS-HMI-0b. A
   running engine at this commit therefore never constructs either store and neither directory is created.
   The honest form: DECLARED AND REGISTERED; CREATED ON FIRST RESOLUTION, WHICH NO ENDPOINT PERFORMS UNTIL
-  WS-HMI-0b. SIXTEEN of the eighteen are what a running engine actually creates today.
+  WS-HMI-0b.
+
+  WS-HMI-0b TASK 4, 2026-08-31 - THAT RESOLUTION NOW HAPPENS, and the paragraph above is kept verbatim
+  because its MECHANISM is still exactly right; only its "no endpoint exists" precondition expired.
+  WS-HMI-0b's HmiModelEndpoints/HmiTagEndpoints take IComponentModelStore/ITagNamespaceStore as handler
+  parameters, so ASP.NET resolves both seams and both stores get constructed. EIGHTEEN of the eighteen are
+  created by a running engine now - but on the FIRST REQUEST to an HMI route (/v1/components,
+  /v1/component-types, /v1/tags), never at startup. An engine nobody asks for an HMI model still creates
+  neither, so an operator who finds these two directories absent has a running engine that was never asked,
+  not a broken install.
 
   WHY THIS SCRIPT STILL LISTS ALL EIGHTEEN, and why that is not a contradiction: a purge tool has to
   cover what MAY exist, not what must. Both leaves are relocatable, both are purged IF PRESENT, and every
@@ -277,7 +286,7 @@
       ONE population. The beside-the-binary population is empty, and PerHostDataRootsTests pins it at
       exactly zero rather than merely quantifying over it.
   What SURVIVES unretracted is the shape of the warning, in a new subject: this script still reads only
-  its OWN shell's environment, so a deployment that relocated any of the sixteen through the service's
+  its OWN shell's environment, so a deployment that relocated any of the eighteen through the service's
   registry Environment value still needs the matching -XxxDir passed by hand.
 
   TASK BF-1 - THE KEPT LIST, AND WHY A THIRD STATUS WAS NEEDED RATHER THAN A SILENT OMISSION. Moving

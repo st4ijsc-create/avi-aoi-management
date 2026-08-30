@@ -30,8 +30,15 @@ public static class CapabilitiesEndpoints
         // it off, and the two stores it names (IComponentModelStore/ITagNamespaceStore) are registered a
         // few hundred lines up in Program.cs regardless. See CapabilitiesDto's own doc comment for why
         // this is named for the MODEL layer and not shared with the API-layer flag WS-HMI-0b adds later.
+        //
+        // WS-HMI-0b Task 4 — HmiApiEnabled, likewise unconditionally true, and deliberately a SECOND flag
+        // rather than a rename of the first: 0a shipped a released state where the stores existed and no
+        // route could reach them, which is precisely the state the two flags exist to let a client tell
+        // apart. The change lane (WS /v1/hmi/changes) gets NO third flag — see CapabilitiesDto's own doc
+        // comment for why a flag that can never disagree with another is worse than no flag.
         app.MapGet("/v1/capabilities", (FleetHost host, DemoModeGate demoGate) =>
-            Results.Ok(new CapabilitiesDto(demoGate.Enabled, host.Mode, ProductVersion, HmiModelEnabled: true)))
+            Results.Ok(new CapabilitiesDto(
+                demoGate.Enabled, host.Mode, ProductVersion, HmiModelEnabled: true, HmiApiEnabled: true)))
             .AllowAnonymous();
     }
 }

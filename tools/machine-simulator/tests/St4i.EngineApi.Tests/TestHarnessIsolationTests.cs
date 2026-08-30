@@ -67,7 +67,7 @@ namespace St4i.EngineApi.Tests;
 /// <para>What DID rot here is PROSE, and it is retracted in place rather than edited: the paragraph above
 /// says <c>PerHostDataRootsTests</c> "partitions the <c>ST4I_*_DIR</c> set into the THIRTEEN machine-wide
 /// directories ... and the beside-the-binary stores (<c>ST4I_MACHINE_CONFIG_DIR</c> today)". <b>There are
-/// SIXTEEN machine-wide directories now and the beside-the-binary half is EMPTY</b>, pinned at exactly
+/// EIGHTEEN machine-wide directories now and the beside-the-binary half is EMPTY</b>, pinned at exactly
 /// zero. The partition still exists and this test is still population-blind on purpose; the floor of 13 is
 /// still a non-vacuity floor on the SCAN rather than a census, which is why it did not have to move
 /// either.</para></para>

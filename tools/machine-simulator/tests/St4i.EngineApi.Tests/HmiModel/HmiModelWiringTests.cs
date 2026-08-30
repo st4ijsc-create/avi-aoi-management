@@ -124,6 +124,16 @@ public sealed class HmiModelWiringTests
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(doc.RootElement.GetProperty("hmiModelEnabled").GetBoolean());
 
+        // 🔴 WS-HMI-0b Task 4 — the API-layer flag, and it is asserted as a SEPARATE property rather than
+        // folded into the line above, because the whole point of two flags is that a client can see them
+        // disagree. WS-HMI-0a shipped a released state where `hmiModelEnabled` was true and no route could
+        // reach the stores; a test that only checked one would not have noticed the second never arrived.
+        //
+        // What this does NOT measure: that either flag can ever be FALSE. Neither can today — no license
+        // tier exists to turn them off, which CapabilitiesDto's own doc comment states. This pins that both
+        // are REPORTED, which is what a client branches on, not that the gate works.
+        Assert.True(doc.RootElement.GetProperty("hmiApiEnabled").GetBoolean());
+
         // 🔴 Step 1's own correctness, which nothing else in this suite would catch: at the time this test
         // was written, no endpoint read IComponentModelStore/ITagNamespaceStore yet (WS-HMI-0a Task 5's own
         // brief was explicit that adding one was WS-HMI-0b's job), so a broken/typo'd DI registration would

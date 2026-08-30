@@ -1307,7 +1307,18 @@ registration's delegate runs on the first **resolution**, and the reviewer measu
 running engine at this commit therefore never constructs either store, and
 `%ProgramData%\ST4I\sim\{hmi-model,hmi-tags}` are never created. The honest form, and the one the §15.9
 table row below already reaches for: **declared and registered; created on first resolution, which no
-endpoint performs until WS-HMI-0b.** Sixteen of the eighteen are created by a running engine today.
+endpoint performs until WS-HMI-0b.** ~~Sixteen of the eighteen are created by a running engine today.~~
+
+🔴 **WS-HMI-0b, 2026-08-31 — WS-HMI-0b IS THE COMMIT THAT PERFORMS THAT RESOLUTION, so the sentence
+struck through above has expired and its successor is: EIGHTEEN of the eighteen are created by a running
+engine.** The precondition the paragraph above states — *"created on first resolution, which no endpoint
+performs until WS-HMI-0b"* — is now met rather than refuted: `HmiModelEndpoints`/`HmiTagEndpoints` take
+`IComponentModelStore`/`ITagNamespaceStore` as handler parameters, so ASP.NET resolves both seams and the
+DI factory constructs both stores, whose constructors call `Directory.CreateDirectory`. **The precise
+trigger, because "the engine gained two directories" is the imprecision this correction exists to end:
+not startup — the FIRST REQUEST to any `/v1/components`, `/v1/component-types` or `/v1/tags` route.** An
+engine that boots and is never asked for an HMI model still creates neither. This also retires the
+contradiction §15.6 carried against this section: see the dated note there.
 
 **What did NOT change, said so the correction is not over-read:** both are relocatable
 (`ST4I_HMI_MODEL_DIR`/`ST4I_HMI_TAGS_DIR`), both are purged by `packaging/remove-data.ps1` if present,
@@ -1353,8 +1364,23 @@ directory and it **is** purged — it holds the machine's operating parameters a
 operator authored.
 
 🔴 **WS-HMI-0a Task 5, 2026-08-30 — `hmi-model` and `hmi-tags` joined the purge list, not the kept one.**
-The engine gained two more `%ProgramData%` directories the day `Program.cs` first registered
-`ComponentModelStore`/`TagNamespaceStore` (WS-HMI-0a Tasks 2/3) into its DI graph:
+~~The engine gained two more `%ProgramData%` directories the day `Program.cs` first registered
+`ComponentModelStore`/`TagNamespaceStore` (WS-HMI-0a Tasks 2/3) into its DI graph:~~
+
+> 📎 🔴 **WS-HMI-0b Task 4, 2026-08-31 — ONE DOCUMENT, ONE ANSWER. The struck clause and §15.9 said
+> different things about the same two directories, in the section an operator reads while
+> decommissioning.** §15.9 said they are *never created* because nothing resolves the stores; this said the
+> engine *gained* them at registration. **§15.9 was right about the mechanism and this was right about the
+> outcome — but only from WS-HMI-0b onward.** Registering a factory creates nothing; the delegate runs on
+> first RESOLUTION. What resolves it is an HMI endpoint, which did not exist when this was written and does
+> now. **The single true sentence, replacing both:** *the engine creates `hmi-model` and `hmi-tags` on the
+> first request to any HMI route — not at registration, and not at startup.* Everything below about them
+> being relocatable and purged was, and remains, correct.
+
+The engine creates two more `%ProgramData%` directories on the first request to any HMI route
+(`/v1/components`, `/v1/component-types`, `/v1/tags`) — the stores being
+`ComponentModelStore`/`TagNamespaceStore` (WS-HMI-0a Tasks 2/3), registered then and first resolved by
+WS-HMI-0b's endpoints:
 `hmi-model` (the declared component tree a HMI screen resolves against — component types and
 `tagPrefix` bindings) and `hmi-tags` (the declared tag namespace, plus the flat index a driver will
 eventually back). Both are relocatable (`ST4I_HMI_MODEL_DIR`/`ST4I_HMI_TAGS_DIR`) and both are
