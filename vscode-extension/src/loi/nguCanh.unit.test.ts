@@ -244,3 +244,64 @@ describe("dungNguCanh — đường NGỮ CẢNH cũng phải đóng `.git/**`",
     expect(ra).toContain("int a = 1;");
   });
 });
+
+/**
+ * ★★★ M3 (review toàn nhánh 2026-08-30) — khối bị bỏ vì NHẠY CẢM phải được KHAI, cùng khuôn với
+ * "hết ngân sách ⇒ PHẢI KHAI" ở trên (dòng 162) và cùng khuôn với `soDaLoaiTruoc` đã vá ở
+ * `docCucBo.ts`. Ca `★★★ tệp đang mở nằm trong .git/ ⇒ KHÔNG vào ngữ cảnh` (trên) chỉ khẳng định
+ * phần RÒ (`not.toContain("MOC_TU_GIT_CONFIG")`) — KHÔNG khẳng định phần KHAI, nên trước bản vá nó
+ * vẫn XANH dù model nhận một ngữ cảnh THIẾU mà không một lời giải thích.
+ */
+describe("dungNguCanh — M3: khối bị bỏ vì NHẠY CẢM phải được KHAI (không bỏ im lặng)", () => {
+  it("★★★ đoạn đang chọn nằm trong tệp nhạy cảm ⇒ bị bỏ NHƯNG phải khai rõ vì sao", () => {
+    const s = dungNguCanh({
+      doanChon: { duong: "C:\\ws\\.env", dongDau: 1, dongCuoi: 1, noiDung: "DATABASE_URL=KHONG_DUOC_XUAT_HIEN" },
+      nganSach: 10_000,
+    });
+    expect(s).not.toContain("KHONG_DUOC_XUAT_HIEN");
+    // ⚠ CHỐNG TỰ THOẢ: chuỗi rỗng cũng thoả khẳng định "không chứa bí mật" — phải có LỜI KHAI thật.
+    expect(s).toContain("ĐÃ BỎ QUA");
+    expect(s).toContain("nhạy cảm");
+  });
+
+  it("★★★ tệp đang mở nằm trong .git/ ⇒ bị bỏ NHƯNG phải khai rõ vì sao (không chỉ rò)", () => {
+    const s = dungNguCanh({
+      tepDangMo: { duong: "C:\\ws\\.git\\config", noiDung: "MOC_TU_GIT_CONFIG" },
+      nganSach: 10_000,
+    });
+    expect(s).not.toContain("MOC_TU_GIT_CONFIG");
+    expect(s).toContain("ĐÃ BỎ QUA");
+    expect(s).toContain("nhạy cảm");
+  });
+
+  it("★★★ danh sách tệp có mục nhạy cảm bị lọc ⇒ số lượng bị loại phải được KHAI", () => {
+    const s = dungNguCanh({ dsTep: ["src/a.cs", ".env", "keys/id_rsa", "src/b.cs"], nganSach: 10_000 });
+    expect(s).not.toContain(".env");
+    expect(s).not.toContain("id_rsa");
+    expect(s).toContain("2 khối"); // 2 tệp nhạy cảm bị loại khỏi danh sách
+  });
+
+  it("★★★ khai NHẠY CẢM và khai HẾT NGÂN SÁCH là HAI câu riêng — không gộp thành một lý do chung chung", () => {
+    // Đoạn chọn (tệp mã THƯỜNG) chiếm hết ngân sách ⇒ tệp đang mở (cũng tệp mã thường, được phép
+    // rời máy) bị bỏ vì HẾT CHỖ; danh sách tệp có một mục nhạy cảm bị lọc vì LÝ DO KHÁC HẲN. Hai
+    // nguyên nhân khác nhau phải sinh ra HAI dòng khai khác nhau.
+    const s = dungNguCanh({
+      doanChon: { duong: "a.cs", dongDau: 1, dongCuoi: 2, noiDung: "x".repeat(3000) },
+      tepDangMo: { duong: "b.cs", noiDung: "KHONG_DUOC_XUAT_HIEN" },
+      dsTep: [".env"],
+      nganSach: 200,
+    });
+    expect(s).not.toContain("KHONG_DUOC_XUAT_HIEN");
+    expect(s).toContain("hết ngân sách");
+    expect(s).toContain("tệp đang mở");
+    expect(s).toContain("nhạy cảm");
+  });
+
+  it("★ ĐỐI CHỨNG: không có khối nhạy cảm nào ⇒ KHÔNG khai bừa dòng 'nhạy cảm'", () => {
+    const s = dungNguCanh({
+      tepDangMo: { duong: "C:\\ws\\src\\a.ts", noiDung: "int a = 1;" },
+      nganSach: 10_000,
+    });
+    expect(s).not.toContain("nhạy cảm");
+  });
+});

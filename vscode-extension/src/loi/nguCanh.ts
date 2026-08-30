@@ -149,29 +149,44 @@ function khoi(nhan: string, noiDung: string, tran: number): string {
 export function dungNguCanh(dv: DauVaoNguCanh): string {
   const phan: string[] = [];
   const boQua: string[] = [];
+  // ★★★ M3 (review toàn nhánh 2026-08-30) — khối bị bỏ vì NHẠY CẢM phải được ĐẾM và KHAI, cùng
+  // khuôn với khối bị bỏ vì hết ngân sách (`boQua` bên dưới) và cùng khuôn với `soDaLoaiTruoc` đã
+  // vá ở `docCucBo.ts` (`dinhDangLietKe`/`grepThuan`). Trước bản vá, ba nhánh dưới đây kiểm
+  // `duocPhepRoiMay` NGAY TRONG điều kiện `if` — khối bị chặn biến mất KHÔNG một dấu vết: model
+  // nhận một ngữ cảnh trông như đầy đủ (hoặc trống trơn) mà không có lời giải thích, đúng ngược
+  // chiều lỗ `soDaLoaiTruoc` (ở đó lời khai biến mất vì đếm SAI CHỖ; ở đây lời khai chưa từng tồn
+  // tại). Đếm riêng — không gộp vào `boQua` (khác NGUYÊN NHÂN: một cái là "hết chỗ", một cái là
+  // "không được phép rời máy") — để người đọc biết ĐÚNG lý do, không phải một câu chung chung.
+  let soNhayCam = 0;
   let conLai = dv.nganSach;
 
-  if (dv.doanChon && duocPhepRoiMay(dv.doanChon.duong)) {
-    if (conLai > 0) {
-      const k = khoi(
-        `ĐOẠN ĐANG CHỌN ${dv.doanChon.duong} (dòng ${dv.doanChon.dongDau}-${dv.doanChon.dongCuoi})`,
-        dv.doanChon.noiDung,
-        conLai,
-      );
-      phan.push(k);
-      conLai -= k.length;
-    } else boQua.push("đoạn đang chọn");
+  if (dv.doanChon) {
+    if (duocPhepRoiMay(dv.doanChon.duong)) {
+      if (conLai > 0) {
+        const k = khoi(
+          `ĐOẠN ĐANG CHỌN ${dv.doanChon.duong} (dòng ${dv.doanChon.dongDau}-${dv.doanChon.dongCuoi})`,
+          dv.doanChon.noiDung,
+          conLai,
+        );
+        phan.push(k);
+        conLai -= k.length;
+      } else boQua.push("đoạn đang chọn");
+    } else soNhayCam++;
   }
 
-  if (dv.tepDangMo && duocPhepRoiMay(dv.tepDangMo.duong)) {
-    if (conLai > 0) {
-      const k = khoi(`TỆP ĐANG MỞ ${dv.tepDangMo.duong}`, dv.tepDangMo.noiDung, conLai);
-      phan.push(k);
-      conLai -= k.length;
-    } else boQua.push("tệp đang mở");
+  if (dv.tepDangMo) {
+    if (duocPhepRoiMay(dv.tepDangMo.duong)) {
+      if (conLai > 0) {
+        const k = khoi(`TỆP ĐANG MỞ ${dv.tepDangMo.duong}`, dv.tepDangMo.noiDung, conLai);
+        phan.push(k);
+        conLai -= k.length;
+      } else boQua.push("tệp đang mở");
+    } else soNhayCam++;
   }
 
-  const dsSach = (dv.dsTep ?? []).filter(duocPhepRoiMay);
+  const dsGoc = dv.dsTep ?? [];
+  const dsSach = dsGoc.filter(duocPhepRoiMay);
+  soNhayCam += dsGoc.length - dsSach.length;
   if (dsSach.length > 0) {
     if (conLai > 0) phan.push(khoi("DANH SÁCH TỆP", dsSach.join("\n"), conLai));
     else boQua.push("danh sách tệp");
@@ -180,6 +195,13 @@ export function dungNguCanh(dv: DauVaoNguCanh): string {
   // ⚠ Bỏ khối phải NÓI RA. Một ngữ cảnh thiếu âm thầm khiến model trả lời sai mà không ai truy
   //   được vì sao — đúng loại hỏng im lặng mà cả hệ này được dựng để tránh.
   if (boQua.length > 0) phan.push(`--- ĐÃ BỎ QUA vì hết ngân sách: ${boQua.join(", ")} ---\n`);
+  // ⚠ CỐ Ý không viết TÊN tệp bị loại — cùng lý do đã ghi ở `dinhDangLietKe`/`grepThuan`: tên một
+  //   tệp bí mật cũng là một mẩu tin không cần rời máy.
+  if (soNhayCam > 0) {
+    phan.push(
+      `--- ĐÃ BỎ QUA vì là tệp nhạy cảm (tệp cấu hình bí mật / khoá riêng / .git): ${soNhayCam} khối ---\n`,
+    );
+  }
 
   return phan.join("\n");
 }
