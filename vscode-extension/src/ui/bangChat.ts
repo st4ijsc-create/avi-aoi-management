@@ -46,6 +46,9 @@ import { docYeuCauDoc, type YeuCauDoc } from "../loi/yeuCauDoc";
 import { chayToolCucBo, danhSachTepGoiY } from "../mang/toolCucBo";
 import { buocKeTiep } from "../loi/vongTacNhan";
 import { TRAN_VONG_MAC_DINH } from "../../../shared/aiCodingLoop";
+// ★★★ PDCA vòng 2 — thay JSON thô bằng câu tiếng Việt khi vòng lặp dừng vì het_tran giữa lúc còn
+// khối `avi-tool` dở dang (T09, `pdca1-report.md`). Xem docblock `khoiDoDang.ts`.
+import { vanBanHetTranConDoDang } from "../loi/khoiDoDang";
 // ★★★ ĐỢT D / TASK 5 — @-mention: gõ "@" trong ô nhập, chọn một tệp, tệp đó được đọc qua ĐÚNG
 // đường tool `doc_tep` (Task 2/3) — không dựng một đường đọc riêng. `locDanhSachMention` (THUẦN)
 // lọc danh sách theo chữ đang gõ; xem docblock của nó cho vì sao KHÔNG chạm ký tự `@`.
@@ -521,6 +524,12 @@ export class BangChat {
     let canhBaoCuoi: string | null = null;
     let degradedCuoi = false;
     let vong = 0;
+    // ★★★ PDCA vòng 2 — thay JSON thô bằng câu tiếng Việt khi vòng lặp dừng vì HẾT TRẦN đúng lúc
+    // câu trả lời cuối còn khối `avi-tool` dở dang (xem `loi/khoiDoDang.ts`). CHỈ nhánh `het_tran`
+    // set biến này; `khong_con_tool`/`nguoi_dung_dung`/`loi` KHÔNG đụng tới ⇒ hành vi hai nhánh đó
+    // giữ NGUYÊN. `null` nghĩa là "không thay gì" — fallback cũ (`degradedCuoi ? traLoiCuoi : null`)
+    // ở dưới vẫn áp dụng, kể cả cho ca het_tran KHÔNG có khối dở dang.
+    let vanBanCuoiThayThe: string | null = null;
 
     try {
       for (;;) {
@@ -597,6 +606,11 @@ export class BangChat {
               thongDiep: nhanLyDoDungVong(buoc.lyDo, vong),
             });
           }
+          // ★★★ CHỈ nhánh het_tran — nguoi_dung_dung/loi/khong_con_tool KHÔNG được đổi hành vi
+          // (xem docblock biến `vanBanCuoiThayThe` ở trên). Trả `null` khi không có khối dở dang.
+          if (buoc.lyDo === "het_tran") {
+            vanBanCuoiThayThe = vanBanHetTranConDoDang(traLoiCuoi, vong, TRAN_VONG_MAC_DINH);
+          }
           break;
         }
 
@@ -638,9 +652,12 @@ export class BangChat {
       // biến) — phải THAY bằng `answer` thật, không chỉ lặng lẽ lưu đúng mà hiện sai. Một lượt DUY
       // NHẤT `hoan_tat` cho TOÀN BỘ vòng lặp (không phải một lượt cho mỗi vòng con) — người dùng chỉ
       // hỏi MỘT câu, hoàn tất phải khớp với đúng MỘT câu trả lời cuối cùng.
+      // ★★★ PDCA vòng 2 — `vanBanCuoiThayThe` (het_tran + khối dở dang) ĐỨNG TRƯỚC `degradedCuoi`:
+      // cả hai đều là "đừng để lộ chữ đã stream thô", override của het_tran ưu tiên hơn vì nó biết
+      // CHÍNH XÁC vì sao câu trả lời dở (degraded chỉ biết "server bảo suy biến", không biết lý do).
       void this.panel.webview.postMessage({
         loai: "hoan_tat",
-        vanBanCuoi: degradedCuoi ? traLoiCuoi : null,
+        vanBanCuoi: vanBanCuoiThayThe ?? (degradedCuoi ? traLoiCuoi : null),
         canhBao: canhBaoCuoi,
       });
       // Lịch sử NGOÀI (`this.lichSu`, dùng cho MỌI câu hỏi sau này) chỉ giữ câu hỏi GỐC + câu trả

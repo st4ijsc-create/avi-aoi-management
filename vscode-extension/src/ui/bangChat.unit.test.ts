@@ -322,3 +322,134 @@ describe("hoi — H3(b) (review toàn nhánh 2026-08-30): Cmd+K KHÔNG được 
     expect(q).toContain(nhacLaiCuoiCauHoi());
   });
 });
+
+/**
+ * ★★★ PDCA vòng 2 (Đợt D) — T09 (`pdca1-report.md`): hết trần vòng đọc GIỮA LÚC câu trả lời cuối
+ * còn một khối ```avi-tool``` chưa thực thi ⇒ trước bản vá, `hoan_tat.vanBanCuoi` là `null` nên
+ * webview GIỮ NGUYÊN chữ đã stream thô (bao gồm khối JSON nội bộ) làm nội dung bong bóng cuối cùng
+ * — người dùng thấy JSON thô. Ba ca dưới đây đo ĐÚNG ba nhánh: có khối dở dang (phải đổi), không có
+ * khối dở dang (giữ nguyên — "đừng thêm cảnh báo thừa"), và NHÁNH KIA `nguoi_dung_dung` (không được
+ * đổi dù văn bản CŨNG có khối dở dang — chỉ `het_tran` mới được phép đổi trình bày).
+ */
+describe("hoi — PDCA vòng 2: chỉ het_tran + khối avi-tool dở dang mới thay vanBanCuoi", () => {
+  const KHOI_DOC = (path: string) => '```avi-tool\n{"tool":"doc_tep","args":{"path":"' + path + '"}}\n```';
+
+  it("★★★ het_tran (vong 3/3) VÀ câu trả lời cuối còn khối avi-tool ⇒ vanBanCuoi là câu tiếng Việt, KHÔNG PHẢI JSON thô/null", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    // Cả BA vòng đều xin đọc thêm ⇒ chạm trần TRAN_VONG_MAC_DINH=3 trong khi câu trả lời vòng 3
+    // VẪN còn một khối chưa thực thi (đúng hình dạng T09 đo được).
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Để trả lời, tôi cần đọc:\n" + KHOI_DOC("a.ts") });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Cần đọc thêm:\n" + KHOI_DOC("b.ts") });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Vẫn cần đọc thêm:\n" + KHOI_DOC("c.ts") });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Hàm tinhLoiNhuanRongSauThue ở đâu?" });
+    for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.thanGoi.length, `phải dừng ĐÚNG sau 3 lượt SSE (trần); thực tế: ${may.thanGoi.length}`).toBe(3);
+
+    const hoanTat = may.daGui.filter((m) => m.loai === "hoan_tat");
+    expect(hoanTat).toHaveLength(1);
+    const vanBanCuoi = hoanTat[0].vanBanCuoi;
+    expect(vanBanCuoi, "vanBanCuoi KHÔNG được là null khi còn khối dở dang").not.toBeNull();
+    const vb = String(vanBanCuoi);
+    // Không lộ hàng rào/JSON của giao thức nội bộ ra bong bóng chat.
+    expect(vb).not.toContain("```");
+    expect(vb).not.toContain("avi-tool");
+    expect(vb).not.toContain('"tool":"doc_tep"');
+    // Câu tiếng Việt phải nói rõ: chạm trần (kèm số vòng), chưa hoàn tất, có thể hỏi lại.
+    expect(vb).toContain("3/3");
+    expect(vb).toMatch(/chưa hoàn tất/i);
+    expect(vb).toMatch(/hỏi lại/i);
+  });
+
+  it("★★ NHÁNH KIA — het_tran (vong 3/3) nhưng câu trả lời cuối KHÔNG còn khối dở dang ⇒ vanBanCuoi giữ NGUYÊN null (không thêm cảnh báo thừa)", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    // Hai vòng đầu xin đọc; vòng 3 (đúng lúc chạm trần) trả lời XONG XUÔI, không xin đọc thêm —
+    // `buocKeTiep` vẫn trả het_tran (vong>=tran được kiểm TRƯỚC coYeuCauDoc, xem vongTacNhan.ts)
+    // nhưng KHÔNG có khối nào sót lại trong `traLoiCuoi`.
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Cần đọc:\n" + KHOI_DOC("a.ts") });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Cần đọc thêm:\n" + KHOI_DOC("b.ts") });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Đây là câu trả lời cuối cùng, xong xuôi." });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Hàm tinhTonKhoConLai làm gì?" });
+    for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.thanGoi.length).toBe(3);
+    const hoanTat = may.daGui.filter((m) => m.loai === "hoan_tat");
+    expect(hoanTat).toHaveLength(1);
+    expect(hoanTat[0].vanBanCuoi).toBeNull();
+  });
+
+  it("★★★ NHÁNH KIA — dừng vì nguoi_dung_dung GIỮA hai vòng dù văn bản CŨNG còn khối dở dang ⇒ vanBanCuoi KHÔNG bị đổi", async () => {
+    /**
+     * Người dùng bấm Dừng ngay khi vòng 1 vừa xong (trước khi vòng 2 kịp gọi) — `buocKeTiep` đọc
+     * `biHuy=true` và trả `nguoi_dung_dung`, THẮNG trước cả het_tran/khong_con_tool (thứ tự ưu
+     * tiên của `vongTacNhan.ts`). Dù câu trả lời vòng 1 CŨNG mang một khối avi-tool dở dang y hệt
+     * ca het_tran ở trên, nhánh này KHÔNG được phép đổi `vanBanCuoi` — chỉ `het_tran` mới được.
+     */
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Cần đọc:\n" + KHOI_DOC("a.ts") });
+        dv.nhan({ type: "done" });
+        // Mô phỏng người dùng bấm nút Dừng NGAY khi vòng 1 vừa đóng (đồng bộ, TRƯỚC khi vòng lặp
+        // kịp gọi buocKeTiep) — dungVongHienTai() là hàm ĐỒNG BỘ (chỉ gọi AbortController.abort).
+        may.nhanTin?.({ loai: "dung_hoi" });
+        return { hong: [] };
+      },
+    ];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Hàm tinhTonKhoConLai làm gì?" });
+    for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+
+    // Chỉ MỘT lượt SSE — vòng 2 không bao giờ được gọi vì đã dừng theo yêu cầu người dùng ngay sau
+    // vòng 1.
+    expect(may.thanGoi.length, `chỉ được 1 lượt SSE (dừng ngay sau vòng 1); thực tế: ${may.thanGoi.length}`).toBe(1);
+
+    const thongBao = may.daGui.filter((m) => m.loai === "thong_bao");
+    expect(thongBao.some((m) => String(m.thongDiep).includes("Đã dừng"))).toBe(true);
+
+    const hoanTat = may.daGui.filter((m) => m.loai === "hoan_tat");
+    expect(hoanTat).toHaveLength(1);
+    // Hành vi CŨ (trước PDCA vòng 2): het_tran vẫn null. `nguoi_dung_dung` KHÔNG được chạm tới
+    // logic mới — vanBanCuoi phải giữ NGUYÊN null dù văn bản vòng 1 CŨNG mang khối dở dang.
+    expect(hoanTat[0].vanBanCuoi).toBeNull();
+  });
+});
