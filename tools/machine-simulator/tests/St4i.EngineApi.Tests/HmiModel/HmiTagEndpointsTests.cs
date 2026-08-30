@@ -680,6 +680,53 @@ public sealed class HmiTagEndpointsTests
         Assert.Equal(HttpStatusCode.NotFound, (await engineerC.GetAsync("/v1/tags/by-path/REDEC-01/retire")).StatusCode);
     }
 
+    /// <summary>🔴 <b>Ruling S-4's other half, on this route — whole-branch review.</b> The ruling required
+    /// last-writer-wins to be "DOCUMENTED and PINNED by a test so it is a measured property rather than an
+    /// accident". It was documented on both routes and pinned only on the component one, so on this route
+    /// the ruling was satisfied by a sentence citing no test.
+    ///
+    /// <para>Not a duplicate of the component test, and that is the point: a tag namespace write is a
+    /// DIFFERENT mechanism — a second store, a second database, and a delete-then-reinsert of the whole
+    /// <c>tag_index</c> for this machine inside one transaction. "Same as the other route" was an
+    /// inference. This asserts the second write wins in BOTH tables: the document that reads back, and the
+    /// index that <c>by-path</c> resolves through — because a retired tag surviving in the index while the
+    /// document forgot it is exactly the divergence one transaction exists to prevent.</para>
+    ///
+    /// <para><b>What this does NOT measure:</b> a concurrent race. Both writes are sequential, so this pins
+    /// "the second write wins", never "the second writer wins a contended write" — the limitation every
+    /// review in this workstream has recorded.</para></summary>
+    [Fact]
+    public async Task Put_TwiceToTheSameMachine_TheSecondWriteWins_LastWriterWins()
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync("last-writer-tags");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        var first = new TagNamespaceDocument(1, "LWW-01", new[] { ReadTag("LWW-01/first"), ReadTag("LWW-01/shared") });
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/tags/LWW-01", first, HmiContractJson.Options)).StatusCode);
+
+        var second = new TagNamespaceDocument(1, "LWW-01", new[] { ReadTag("LWW-01/second"), ReadTag("LWW-01/shared") });
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/tags/LWW-01", second, HmiContractJson.Options)).StatusCode);
+
+        // The DOCUMENT is the second write, whole — not a merge of the two.
+        using (var get = await engineerC.GetAsync("/v1/tags?machine=LWW-01"))
+        {
+            var doc = await get.Content.ReadFromJsonAsync<TagNamespaceDocument>(HmiContractJson.Options);
+            Assert.Equal(
+                new[] { "LWW-01/second", "LWW-01/shared" },
+                doc!.Tags.Select(t => t.Path).OrderBy(p => p, StringComparer.Ordinal).ToArray());
+        }
+
+        // ...and the INDEX agrees: the retired path is gone from it, not merely absent from the document.
+        Assert.Equal(HttpStatusCode.NotFound, (await engineerC.GetAsync("/v1/tags/by-path/LWW-01/first")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await engineerC.GetAsync("/v1/tags/by-path/LWW-01/second")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await engineerC.GetAsync("/v1/tags/by-path/LWW-01/shared")).StatusCode);
+    }
+
     /// <summary>The route/body machine-code guard, matching <c>HmiModelEndpoints.PutAsync</c>'s and
     /// <c>ConfigEndpoints</c>' established shape rather than inventing a fourth spelling: fill the identity
     /// in when the body omits it, REJECT when the body names a materially different machine. Without the

@@ -1316,9 +1316,14 @@ performs until WS-HMI-0b"* — is now met rather than refuted: `HmiModelEndpoint
 `IComponentModelStore`/`ITagNamespaceStore` as handler parameters, so ASP.NET resolves both seams and the
 DI factory constructs both stores, whose constructors call `Directory.CreateDirectory`. **The precise
 trigger, because "the engine gained two directories" is the imprecision this correction exists to end:
-not startup — the FIRST REQUEST to any `/v1/components`, `/v1/component-types` or `/v1/tags` route.** An
-engine that boots and is never asked for an HMI model still creates neither. This also retires the
-contradiction §15.6 carried against this section: see the dated note there.
+not startup — the FIRST REQUEST to a route that resolves THAT store.** They are two independent lazy
+factories, so the two directories appear independently: `/v1/components*` and `/v1/component-types` create
+`hmi-model`; `/v1/tags*` creates `hmi-tags`; `PUT /v1/components/{code}` and
+`GET /v1/components/{code}/integrity` create both, because they read the tag namespace to report
+referential integrity. An engine that boots and is never asked for an HMI model creates neither, and one
+asked only for tags creates only `hmi-tags` — **an absent directory here means an unasked engine, not a
+broken install.** This also retires the contradiction §15.6 carried against this section: see the dated
+note there.
 
 **What did NOT change, said so the correction is not over-read:** both are relocatable
 (`ST4I_HMI_MODEL_DIR`/`ST4I_HMI_TAGS_DIR`), both are purged by `packaging/remove-data.ps1` if present,
@@ -1373,12 +1378,23 @@ operator authored.
 > engine *gained* them at registration. **§15.9 was right about the mechanism and this was right about the
 > outcome — but only from WS-HMI-0b onward.** Registering a factory creates nothing; the delegate runs on
 > first RESOLUTION. What resolves it is an HMI endpoint, which did not exist when this was written and does
-> now. **The single true sentence, replacing both:** *the engine creates `hmi-model` and `hmi-tags` on the
-> first request to any HMI route — not at registration, and not at startup.* Everything below about them
-> being relocatable and purged was, and remains, correct.
+> now. **The single true sentence, replacing both:** *the engine creates each of `hmi-model` and `hmi-tags`
+> on the first request to a route that resolves **that** store — not at registration, and not at startup.*
+> Everything below about them being relocatable and purged was, and remains, correct.
+>
+> 📎 🔴 **AND THE QUANTIFIER, corrected 2026-08-31 in the sentence that calls itself the single true one.**
+> It read *"creates `hmi-model` **and** `hmi-tags` on the first request to **any** HMI route"*, which is one
+> quantifier too wide. They are **two independent lazy factories** — there is no `ValidateOnBuild` and no
+> eager construction — so `GET /v1/tags?machine=…` creates `hmi-tags` **only**, and
+> `GET /v1/components` creates `hmi-model` **only**. An operator who has served only tag traffic will find
+> `hmi-model` genuinely absent, and under the old wording would have read that as a broken install. **Which
+> route creates which:** `/v1/components*` and `/v1/component-types` → `hmi-model`; `/v1/tags*` →
+> `hmi-tags`; `PUT /v1/components/{code}` and `GET /v1/components/{code}/integrity` touch **both**, because
+> they consult the tag namespace to report referential integrity.
 
-The engine creates two more `%ProgramData%` directories on the first request to any HMI route
-(`/v1/components`, `/v1/component-types`, `/v1/tags`) — the stores being
+The engine creates two more `%ProgramData%` directories, each on the first request to a route that
+resolves **that** store (`/v1/components*` and `/v1/component-types` → the first; `/v1/tags*` → the
+second; the two component write/integrity routes → both) — the stores being
 `ComponentModelStore`/`TagNamespaceStore` (WS-HMI-0a Tasks 2/3), registered then and first resolved by
 WS-HMI-0b's endpoints:
 `hmi-model` (the declared component tree a HMI screen resolves against — component types and

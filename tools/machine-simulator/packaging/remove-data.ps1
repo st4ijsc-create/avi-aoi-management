@@ -33,10 +33,17 @@
   because its MECHANISM is still exactly right; only its "no endpoint exists" precondition expired.
   WS-HMI-0b's HmiModelEndpoints/HmiTagEndpoints take IComponentModelStore/ITagNamespaceStore as handler
   parameters, so ASP.NET resolves both seams and both stores get constructed. EIGHTEEN of the eighteen are
-  created by a running engine now - but on the FIRST REQUEST to an HMI route (/v1/components,
-  /v1/component-types, /v1/tags), never at startup. An engine nobody asks for an HMI model still creates
-  neither, so an operator who finds these two directories absent has a running engine that was never asked,
-  not a broken install.
+  created by a running engine now - but EACH on the FIRST REQUEST TO A ROUTE THAT RESOLVES THAT STORE,
+  never at startup, and never as a pair. The two are INDEPENDENT lazy factories (no ValidateOnBuild, no
+  eager construction): /v1/components* and /v1/component-types create hmi-model; /v1/tags* creates
+  hmi-tags; PUT /v1/components/{code} and GET /v1/components/{code}/integrity create both, because they
+  read the tag namespace to report referential integrity.
+
+  WHAT THAT MEANS FOR AN OPERATOR STANDING AT A MACHINE, which is the only reason this paragraph is here:
+  finding ONE of these two directories absent is NORMAL. A host that has served tag traffic and no
+  component traffic has hmi-tags and no hmi-model, and that is a correctly working install that was never
+  asked the other question - not a partial deployment and not a fault. An absent directory here is an
+  unasked engine.
 
   WHY THIS SCRIPT STILL LISTS ALL EIGHTEEN, and why that is not a contradiction: a purge tool has to
   cover what MAY exist, not what must. Both leaves are relocatable, both are purged IF PRESENT, and every

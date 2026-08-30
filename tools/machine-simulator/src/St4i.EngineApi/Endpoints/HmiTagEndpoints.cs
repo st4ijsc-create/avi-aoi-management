@@ -109,7 +109,14 @@ public static class HmiTagEndpoints
     // 🔴 LAST-WRITER-WINS, same as PUT /v1/components/{machineCode} and for the same reason: the frozen
     // TagNamespaceDocument carries no concurrency token, and TagNamespaceStore writes `updated_at` but no
     // SELECT returns it, so this handler has nothing to compare a caller's belief against. Two engineers
-    // re-declaring one machine's namespace concurrently silently lose an edit. Accepted by construction.
+    // re-declaring one machine's namespace concurrently silently lose an edit. Accepted by construction —
+    // and PINNED, by HmiTagEndpointsTests.Put_TwiceToTheSameMachine_TheSecondWriteWins_LastWriterWins.
+    // Ruling S-4 required this decision to be "DOCUMENTED and PINNED by a test so it is a measured property
+    // rather than an accident"; until the whole-branch review it was documented on both routes and pinned
+    // only on the COMPONENT one, so here the ruling was satisfied by a sentence citing no test. Not a
+    // duplicate of that test either: a namespace write is a different mechanism — a second store, a second
+    // database, and a delete-then-reinsert of this machine's whole tag_index inside one transaction — so
+    // "same as the other route" was an inference. The test asserts the second write wins in BOTH tables.
     //
     // 🔴 THE ROUTE/BODY GUARD is the same three-line shape ConfigEndpoints.cs uses three times and
     // HmiModelEndpoints.PutAsync uses once — fill the identity in when the body omits it, REJECT when the

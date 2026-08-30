@@ -678,8 +678,11 @@ public sealed class PerHostDataRootsTests
             "eleven places, the PURGE count (18 minus the two the owner's 2026-08-23(b) ruling keeps) in " +
             "remove-data.ps1's .SYNOPSIS/.PARAMETER/parameter-block prose, and a count of unrelated " +
             "artefacts in TestHarnessIsolationTests.cs:64 — so a find-and-replace corrupts two of those " +
-            "three. The eleven line numbers above were the authority, not the word. Anyone moving 18→19 " +
-            "must still walk the by-hand list named earlier in this message. " +
+            "three. What did the work was the ELEVEN LINE NUMBERS the previous version of this message " +
+            "carried — deleted in the same edit that closed them, because a list of stale sites that are no " +
+            "longer stale is itself the defect; they are recoverable from git history at 63f066a4 if a " +
+            "future author needs the population rather than the lesson. Anyone moving 18→19 must still " +
+            "walk the by-hand list named earlier in this message. " +
             "This test exists because four of those places were already off by one when it was written, " +
             "and it was extended because the Vietnamese half of two of them was off by two afterwards.");
     }

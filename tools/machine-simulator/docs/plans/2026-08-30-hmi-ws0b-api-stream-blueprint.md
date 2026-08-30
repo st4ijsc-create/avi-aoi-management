@@ -292,7 +292,7 @@ Một hàng ở §0-bis.1, nêu cả cái CHƯA có: chưa có driver nào nạp
 
 ```bash
 git add src/St4i.EngineApi docs/ README.md tests/
-git commit -m "docs(hmi): describe the eight routes the other branch has to build against"
+git commit -m "docs(hmi): describe the nine routes the other branch has to build against"
 ```
 
 ---

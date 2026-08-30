@@ -23,7 +23,53 @@ API and cannot be absent while `hmiApiEnabled` is true.
 
 ---
 
-## 1. Authorisation
+## 1. Authentication — you need a session before any of this answers
+
+**Every route below requires a logged-in session. None is anonymous.** Authentication is an
+**encrypted HTTP cookie**, not a bearer token: there is no `Authorization` header, no API key and no query
+token anywhere on this surface.
+
+```http
+POST /v1/auth/login        {"username":"…","password":"…"}   → 200 + Set-Cookie
+GET  /v1/auth/me                                             → who am I / am I still valid
+POST /v1/auth/logout
+GET  /v1/capabilities                                        → anonymous, the one exception
+```
+
+From a browser this is automatic provided the request is same-origin or `credentials: "include"` is set;
+the web client's `request()` in `web/src/lib/api.ts` already does this. **A cookie can be invalidated
+server-side** by a password change, a role change or the account being disabled, so treat `401` on any
+route as "log in again", not as a transport error.
+
+| Status | Means |
+|---|---|
+| **`401 Unauthorized`** | no session, or the cookie was invalidated. Re-authenticate. |
+| **`403 Forbidden`** | authenticated, but the wrong tier — e.g. an Operator attempting either `PUT`. Do not retry; it will never succeed for this user. |
+
+### 🔴 Authenticating the WebSocket from a browser
+
+**`new WebSocket(url)` cannot set headers** — the browser API exposes no way to add one, so the usual
+"send a token" pattern is unavailable. This surface does not need it: the upgrade request is an ordinary
+HTTP request and **the browser attaches the auth cookie automatically**, provided the socket URL is
+**same-origin** with the page. So:
+
+```ts
+// Works — same origin, cookie rides along on the upgrade, no headers needed.
+const ws = new WebSocket(`${location.origin.replace(/^http/, "ws")}/v1/hmi/changes`)
+```
+
+**Consequences worth knowing before you debug this at 2am:**
+
+- A **cross-origin** socket will not carry the cookie and the upgrade will be refused. Serve the web app
+  from the engine's origin, or proxy `/v1` through the dev server (the existing Vite config already
+  proxies `/v1`, which is why this works in development).
+- A refused upgrade does **not** give you a readable status code — the browser surfaces a generic
+  `error`/`close`. If a socket will not open, **call `GET /v1/capabilities` and then any Operator route**
+  to find out whether the problem is the session (`401`) or the tier (`403`); the socket cannot tell you.
+- The cookie can expire while a socket is open. The socket is not re-authenticated per frame, so it stays
+  up until it drops for other reasons — **reconnect logic must handle a reconnect that is now refused.**
+
+## 2. Authorisation
 
 | Tier | Routes |
 |---|---|
@@ -35,7 +81,25 @@ Subscribing to changes is a read, and what it carries (a machine code, a tag cou
 `GET /v1/tags?machine=` already returns at Operator, so gating the notification above the data it points at
 would have been a difference with no reason behind it.
 
-## 2. HTTP — component model (5)
+## 2-bis. The request and response bodies are FROZEN CONTRACTS — read them there, not here
+
+`ComponentModelDocument`, `TagNamespaceDocument`, `ComponentTypeDef` and `TagDescriptor` are **not defined
+in this document, deliberately.** They are frozen artefacts with a single definition per language and a
+two-way pin between them, and restating their fields here would create a third copy free to drift — which
+is the defect this whole branch has spent its rounds removing.
+
+| What you need | Where it lives |
+|---|---|
+| **The authority** — JSON Schema, both languages pin to it | `contracts/tag-namespace.schema.json`, `contracts/component-model.schema.json`, `contracts/hmi-screen.schema.json` |
+| **TypeScript types** — import these, do not hand-write | `web/src/contracts/` |
+| **C# records** | `src/St4i.Hmi.Contracts/` |
+| **Valid + invalid example payloads** | `contracts/fixtures/valid/`, `contracts/fixtures/invalid/` |
+| **The gate that keeps both sides honest** | `node scripts/check-contracts.mjs` |
+
+The `invalid/` fixtures are worth reading before you build a form: each one is named for the single rule it
+violates, and those rules are the `400`s you will get.
+
+## 3. HTTP — component model (5)
 
 | Route | Policy | Answers |
 |---|---|---|
@@ -43,7 +107,7 @@ would have been a difference with no reason behind it.
 | `GET /v1/components/{machineCode}` | Operator | `200 ComponentModelDocument`. **An undeclared machine is `200` with an EMPTY document, never `404`** |
 | `PUT /v1/components/{machineCode}` | Engineer | `200 PutModelResultDto` · `400 ApiErrorDto` |
 | `GET /v1/components/{machineCode}/integrity` | Operator | `200 IntegrityReportDto` |
-| `GET /v1/component-types` | Operator | `200 ComponentTypeDef[]` — merged across machines, one entry per `typeId`, first declaration wins |
+| `GET /v1/component-types` | Operator | `200 ComponentTypeDef[]` — merged across machines, one entry per `typeId`. **"First declaration wins", where "first" is ordinal by canonical machine code** — the merge walks `GET /v1/components`, which is sorted that way, so the winner is deterministic and does not depend on write order or on disk layout. Two machines declaring the same `typeId` with different content is a real gap; reporting it is a later task, not this one. |
 
 ```jsonc
 // PutModelResultDto
@@ -52,7 +116,7 @@ would have been a difference with no reason behind it.
 { "machineCode": "AOI-01", "namespaceLoaded": true, "violations": [] }
 ```
 
-## 3. HTTP — tag namespace (3)
+## 4. HTTP — tag namespace (3)
 
 | Route | Policy | Answers |
 |---|---|---|
@@ -85,7 +149,7 @@ another machine already owns is refused `409` with the offending path named:
 Re-declaring a machine's **own** paths is the ordinary edit and never collides. If many paths collide the
 message names up to ten and reports the exact total (`showing 10 of 27`).
 
-## 4. Realtime — `WS /v1/hmi/changes` (1)
+## 5. Realtime — `WS /v1/hmi/changes` (1)
 
 **This is the route no OpenAPI document could describe, and the reason this file exists rather than a
 generated one.** WebSocket, `Policies.Operator`, server-push only.
@@ -129,7 +193,7 @@ differently for a fresh pane than for a reconnecting one. Do not copy its client
 behave the same way. `/v1/inspector/stream` carries `ApiTraceEvent` frames about **outbound device sends**
 and is `Policies.Engineer`; it has nothing to do with HMI model changes and its frame is frozen.
 
-## 5. Invariants worth building against
+## 6. Invariants worth building against
 
 1. **§5-bis — undeclared is empty, not missing.** A machine that has declared nothing is a valid product
    state. `GET /v1/components/{code}` and `GET /v1/tags?machine=` both answer `200` with an empty document.

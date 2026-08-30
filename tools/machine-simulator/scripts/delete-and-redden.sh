@@ -28,6 +28,17 @@
 #
 # Every mutation is applied to a working copy, measured, and reverted from a pristine backup
 # taken at start-up. On any exit path the sources are restored; verify with `git status`.
+#
+# 🔴 DO NOT KILL THIS SCRIPT MID-ROW. The EXIT trap restores on Ctrl-C and on normal failure, but a
+# SIGKILL (or a harness that kills the wrapper while a child `perl`/`dotnet` is mid-row) leaves the
+# CURRENT row's mutation on disk — measured during the whole-branch-review fix wave, where a killed run
+# stranded a mutation that then failed an unrelated test and read exactly like a real regression. If a run
+# is interrupted for any reason, the recovery is:
+#
+#     grep -rn "MUTANT" src/ | grep -v /bin/ | grep -v /obj/     # expect NO output
+#     git diff HEAD --stat -- src/                               # expect only your own edits
+#
+# and `git checkout -- <file>` for anything it names. Let the script finish instead; it is ~25 minutes.
 
 set -u
 
@@ -38,7 +49,15 @@ HTE=src/St4i.EngineApi/Endpoints/HmiTagEndpoints.cs
 HME=src/St4i.EngineApi/Endpoints/HmiModelEndpoints.cs
 TIQ=src/St4i.EngineApi/HmiModel/TagIndexCollisionQuery.cs
 EV=src/St4i.EngineApi/HmiModel/HmiModelEvents.cs
-SOURCES="$HTE $HME $TIQ $EV"
+# 🔴 WHOLE-BRANCH REVIEW — THE HARNESS COULD NOT SEE THE LINES IT WAS BUILT AFTER.
+# SOURCES listed only the four files above, so every row was Task 2 or Task 3 and there was NO TASK 1 ROW
+# AT ALL — while the closing report concluded "no line pinned by Tasks 1, 2 or 3 has stopped reddening".
+# A sweep is only evidence for the files it can mutate, and a conclusion wider than the instrument is the
+# same defect this branch spent five rounds removing, this time inside the instrument itself.
+CMC=src/St4i.EngineApi/HmiModel/CanonicalMachineCodeStores.cs
+HCS=src/St4i.EngineApi/Hubs/HmiChangeStream.cs
+PROG=src/St4i.EngineApi/Program.cs
+SOURCES="$HTE $HME $TIQ $EV $CMC $HCS $PROG"
 
 FILTER='FullyQualifiedName~HmiTagEndpointsTests|FullyQualifiedName~TagIndexCollisionQueryTests|FullyQualifiedName~CanonicalMachineCodeStoresTests|FullyQualifiedName~TagNamespaceStoreTests|FullyQualifiedName~HmiModelEndpointsTests|FullyQualifiedName~HmiModelWiringTests|FullyQualifiedName~RbacPolicyTests|FullyQualifiedName~HmiModelEventsTests'
 
@@ -64,6 +83,17 @@ measure() {
   if echo "$out" | grep -q "error CS"; then
     echo "### $label => MUTATION DID NOT COMPILE — NOT A MEASUREMENT"
     echo "$out" | grep -m2 "error CS" | sed 's/\[.*//' | sed 's/^/      /'
+    restore
+    return
+  fi
+
+  # 🔴 CHECKED AFTER THE RUN TOO. Checking only before leaves a window: anything that reverts the source
+  # mid-row — an external `git checkout`, an editor writing a stale buffer, a concurrent tool — produces a
+  # perfectly ordinary green that means nothing. That happened during the whole-branch review, and it is
+  # the same class as the two non-measurement modes already closed here: the failure is not that the test
+  # passed, it is that nobody can tell what it was run against.
+  if ! grep -qF -- "$sentinel" $SOURCES; then
+    echo "### $label => MUTATION VANISHED MID-RUN (sentinel '$sentinel' gone after the run) — NOT A MEASUREMENT"
     restore
     return
   fi
@@ -130,5 +160,46 @@ measure "T4 component publish moved back above the response work" "ComponentMode
 perl -0777 -pi -e 's/(\s*)(\(\(Action<HmiModelChangedEvent>\)handler\)\(e\);)/$1$2 \/* MUTANT-NOCATCH *\//' $EV
 perl -0777 -pi -e 's/try\s*\r?\n\s*\{\s*\r?\n(\s*)(\(\(Action<HmiModelChangedEvent>\)handler\)\(e\); \/\* MUTANT-NOCATCH \*\/)\s*\r?\n\s*\}\s*\r?\n\s*catch \(Exception\)\s*\r?\n\s*\{[^}]*\}/$1$2/s' $EV
 measure "T5 Publish total catch removed" "MUTANT-NOCATCH"
+
+# ── Task 1's lines — the decorator seam and the composition root ─────────────────────────
+# None of these had a row before the whole-branch review, which is why the sweep's "Tasks 1, 2 and 3"
+# conclusion was wider than the sweep.
+
+perl -0777 -pi -e 's/return doc is null \? null : Canonical\(doc\);(\s*\}\s*\/\/\/ <summary>Canonicalised AND)/return doc; \/* MUTANT-CM-OUT *\/$1/s' $CMC
+perl -0777 -pi -e 's/(var storedKey = await ResolveStoredKeyAsync[^;]*;\s*if \(storedKey is not null\)\s*\{\s*doc = await _inner\.GetAsync\(storedKey, ct\)\.ConfigureAwait\(false\);\s*\}\s*\}\s*)return doc is null \? null : Canonical\(doc\);/$1return doc; \/* MUTANT-CM-OUT *\//s' $CMC
+measure "C1 component GetAsync output canonicalisation removed" "MUTANT-CM-OUT"
+
+perl -0777 -pi -e 's/var storedKey = await ResolveStoredKeyAsync\(canonical, ct\)\.ConfigureAwait\(false\);/string? storedKey = null; \/* MUTANT-NO-FALLBACK *\//' $CMC
+measure "C2 canonical-miss fallback disabled" "MUTANT-NO-FALLBACK"
+
+perl -0777 -pi -e 's/return stored\.Select\(MachineCodeIdentity\.Canonicalize\)\s*\r?\n\s*\.Distinct\(StringComparer\.Ordinal\)\s*\r?\n\s*\.OrderBy\(code => code, StringComparer\.Ordinal\)\s*\r?\n\s*\.ToList\(\);/return stored; \/* MUTANT-LIST-RAW *\//s' $CMC
+measure "C3 list canonicalise+dedup+sort removed" "MUTANT-LIST-RAW"
+
+perl -0777 -pi -e 's/var doc = await _inner\.GetAsync\(MachineCodeIdentity\.Canonicalize\(machineCode\), ct\)\.ConfigureAwait\(false\);\s*\r?\n\s*return doc is null \? null : Canonical\(doc\);/var doc = await _inner.GetAsync(MachineCodeIdentity.Canonicalize(machineCode), ct).ConfigureAwait(false); return doc; \/* MUTANT-TAG-OUT *\//s' $CMC
+measure "C4 tag GetAsync output canonicalisation removed" "MUTANT-TAG-OUT"
+
+perl -0777 -pi -e 's/_ => new St4i\.EngineApi\.HmiModel\.CanonicalizingComponentModelStore\(\s*\r?\n\s*new St4i\.EngineApi\.HmiModel\.ComponentModelStore\(/_ => \/* MUTANT-DI-COMP *\/ (St4i.EngineApi.HmiModel.IComponentModelStore)(new St4i.EngineApi.HmiModel.ComponentModelStore(/s' $PROG
+perl -0777 -pi -e 's/(MUTANT-DI-COMP[^;]*hmiModelDir\)\)\));/$1;/s' $PROG
+measure "C5 component store registered UNDECORATED" "MUTANT-DI-COMP"
+
+perl -0777 -pi -e 's/_ => new St4i\.EngineApi\.HmiModel\.CanonicalizingTagNamespaceStore\(rawTagNamespaceStore\.Value\)\);/_ => rawTagNamespaceStore.Value); \/* MUTANT-DI-TAG *\//' $PROG
+measure "C6 tag store registered UNDECORATED" "MUTANT-DI-TAG"
+
+perl -0777 -pi -e 's/if \(string\.IsNullOrWhiteSpace\(machine\)\)[^\S\r\n]*\r?\n[^\S\r\n]*\{/if (false) \/* MUTANT-NO-FILTER-GUARD *\/\n        {/s' $HTE
+measure "C7 ?machine= 400 guard removed" "MUTANT-NO-FILTER-GUARD"
+
+perl -0777 -pi -e 's/return tag is null\s*\r?\n\s*\? Results\.NotFound\(new ApiErrorDto\(\$"no tag is declared at path \x27\{path\}\x27\."\)\)\s*\r?\n\s*: Results\.Json\(tag, HmiContractJson\.Options\);/return Results.Json(tag, HmiContractJson.Options); \/* MUTANT-NO-404 *\//s' $HTE
+measure "C8 by-path 404 branch removed (always 200)" "MUTANT-NO-404"
+
+# ── Task 1's route/body reject arm ───────────────────────────────────────────────────────
+perl -0777 -pi -e 's/if \(!string\.IsNullOrWhiteSpace\(body\.MachineCode\) &&\s*\r?\n\s*!string\.Equals\(body\.MachineCode, machineCode, StringComparison\.OrdinalIgnoreCase\)\)/if (false) \/* MUTANT-NO-ROUTEBODY *\//s' $HME
+measure "C9 component route/body reject arm removed" "MUTANT-NO-ROUTEBODY"
+
+# ── Task 3's lane: the route and its policy ──────────────────────────────────────────────
+perl -0777 -pi -e 's/\}\)\.RequireAuthorization\(Policies\.Operator\);/}); \/* MUTANT-WS-ANON *\//' $HCS
+measure "C10 change lane authorisation removed" "MUTANT-WS-ANON"
+
+perl -0777 -pi -e 's/bus\.Changed \+= OnChanged;/\/* MUTANT-WS-NOSUB *\//' $HCS
+measure "C11 change lane never subscribes to the bus" "MUTANT-WS-NOSUB"
 
 echo "=== sources restored ==="
