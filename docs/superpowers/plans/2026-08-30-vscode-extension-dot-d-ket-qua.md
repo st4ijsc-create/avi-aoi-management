@@ -310,3 +310,77 @@ xác nhận Task 6 không chạm chúng).
    được phân tích ở đây.
 6. **4a (câu hỏi tự nhiên grep bí mật) không thực sự exercised hàng rào** vì model không thử tool
    nào — chỉ 4b (cưỡng bức) là bằng chứng chịu lực cho hàng rào gửi.
+
+---
+
+# Đợt D.1 — vá ba lỗi live, rồi ĐO LẠI bằng đúng thước cũ
+
+Nghiệm thu D (T6) đo được **0/11** và bắt ba lỗi. D.1 vá cả ba, mỗi lỗi một commit.
+
+## Gốc rễ THẬT của 0/11 — và một chẩn đoán SAI của người điều phối
+
+Tôi (điều phối) ban đầu chẩn đoán: *"persona tác nhân lập trình bị chặn sau `codingMode === true`,
+LOCAL gửi `false` nên không được dạy."* **Chẩn đoán này SAI**, và implementer bác bỏ đúng.
+
+Sự thật đo được: `grep -rl "avi-tool" server/ shared/` ⇒ **0 tệp**. `avi-tool` là giao thức
+**do extension tự chế**; máy chủ chưa bao giờ biết nó tồn tại, ở bất kỳ persona nào. `codingMode`
+chỉ là cá trích đỏ. Extension **bịa ra một giao thức rồi chờ model tuân theo mà không hề dạy**.
+
+★★★ Bài học: 373 ca lưới xanh cho một tính năng mà **model chưa từng được cho biết là tồn tại**.
+Lưới đo *cơ chế phía ta*; không ca nào đo *phía kia có hiểu không*.
+
+| Lỗi | Vá | Commit |
+|---|---|---|
+| 1. Giao thức không được dạy | `dayGiaoThucDoc.ts` sinh văn bản dạy **từ cùng nguồn** với parser (`khoiAviTool.ts`), chèn ở `yeuCau.ts` | `047d8383` |
+| 2. Hàng rào đòi cột 0 | Chấp nhận hàng rào **thụt lề** (CommonMark), gỡ thụt lề nội dung; phủ nhánh đóng lệch + CRLF | `fa5dddf1` |
+| 3. Dừng khai lỗi rỗng | Nhận diện huỷ bằng **`AbortSignal.aborted` của controller ta cầm**, không theo hình dạng đối tượng reject | `941017c4` |
+
+## Số đo lại — và phép ABLATION
+
+**Tuân thủ: 0/11 → 10/11 A · 0/11 B · 1/11 C.** (Vòng 1 chèn ở đầu prompt chỉ được 1/11; thêm câu
+nhắc **cuối** prompt mới lên 10/11 — vị trí của lời dạy quan trọng ngang nội dung.)
+
+★★★ **Ablation chứng minh nhân quả**: gỡ đúng 2 dòng chèn, build lại bundle, xác nhận chuỗi dạy
+không còn trong bundle, chạy lại 5 câu ⇒ **0/5 A, 5/5 C** — sập về đúng baseline. Con số đẹp đến từ
+đúng bản vá, không từ chỗ khác. (Người điều phối đã tự đếm lại tệp thô: 10 `A_DUNG_CU_PHAP` + 1
+`C_BO_QUA`, ablation 0 A / 5 C — khớp.)
+
+---
+
+# Review TOÀN NHÁNH — lần thứ tám bắt được thứ review-theo-task bỏ lọt
+
+396 ca xanh, census 19/19, `ext:check` sạch — **trong khi ba lỗi nghiêm trọng còn nguyên**.
+
+| # | Lỗi | Vì sao lưới mù |
+|---|---|---|
+| **H1** | **Đường Cmd+K KHÔNG có hàng rào gửi.** Mở `.env`, bôi đen `DATABASE_URL=…`, Ctrl+Alt+K ⇒ bí mật đi **nguyên văn**. `duocPhepRoiMay`/`cheBiMat` = **0 lần** trong `extension.ts` + `cauHoiSuaChon.ts` (so với 4/3 ở `nguCanh.ts`) | Đây là **đường thứ tư**; lưới chỉ phủ `doc_tep`/`liet_ke`/`grep`/`@`-mention |
+| **H2** | **`grep` che theo DÒNG, luật PEM là ĐA DÒNG** ⇒ khoá riêng dán inline trong tệp hợp lệ lọt **thân base64 nguyên văn** | Fixture chỉ dùng bí mật **một dòng**; `id_rsa` bị chặn theo tên nên **nhánh đa dòng chưa từng bị đo** |
+| **H3** | **Hồi quy do chính bản vá D.1**: (a) vòng ≥2 **thay hẳn** câu hỏi gốc bằng "KẾT QUẢ TOOL" ⇒ RAG truy hồi sai; (b) D.1 chèn phần dạy ĐỌC vào **mọi** câu kể cả Cmd+K ⇒ model đọc thay vì đề xuất sửa | Phép đo 10/11 hỏi *"model có phát khối không"*, **không** hỏi *"người dùng có nhận được thẻ duyệt không"* |
+| M1 | `cauHoiSuaChon.ts` **chép tay** `avi-tool`; docblock `khoiAviTool.ts` **khai sai** rằng nó lấy từ `NHAN_HANG_RAO` ⇒ đổi nhãn ở nguồn thì Cmd+K **chết im lặng**, 396 ca vẫn xanh | Không ca nào nối hai bản sao |
+| M2 | **Thứ đã BUILD không phải thứ vừa ĐO**: `dist/extension.js` có **0** lần chuỗi dạy D.1; `.vsix` là bản 29/08 | Census **không soi `dist/`** |
+| M3 | `dungNguCanh` bỏ khối vì nhạy cảm mà **không khai** — ngược đúng chiều lỗ `soDaLoaiTruoc` đã vá | — |
+
+**Đợt D.2 vá cả sáu**: `40c18755` (H1, chặn mức TỆP — *không* che nội dung, vì kết quả Cmd+K được
+ghi thẳng lên đĩa; che nội dung sẽ ghi rác đè tệp thật) · `5f1de696` (H2) · `b020c25d` (H3) ·
+`fc5255a1` (M1) · `08adb5e8` (M3) · `81505f99` (M2, **census nay soi cả bundle đã build**).
+
+**420 ca lưới xanh · census 22/22 · `ext:check` sạch.**
+
+---
+
+# CÒN MỞ — nói thẳng, không giấu
+
+1. ★★★ **Cmd+K chưa chứng minh được đầu-cuối.** Phần client của H3 đã đo bằng **bắt thân request**
+   (đúng như thiết kế), nhưng **thẻ duyệt KHÔNG hiện trong 3 lần thử live**. Nguyên nhân nằm ở
+   định tuyến **phía server** — tái hiện được cả với câu hỏi thường, không riêng Cmd+K. Vùng đó
+   (`server/services/aiLocalTools/`) **đang có tiến trình khác sửa dở** (cây làm việc bẩn), nên
+   đợt này **cố ý không đụng vào**. ⚠ Đừng đọc "H3 đã vá" thành "Cmd+K chạy được".
+2. ★★★ **Chưa từng chạy trong cửa sổ VSCode THẬT** (nợ từ Đợt C — cần người dùng bấm F5). Đây vẫn
+   là cổng trung thực cuối cùng trước khi giao cho lập trình viên.
+3. **Server dùng để đo là bản `dist/index.js` lúc 00:29 ngày 30/08** — không nhất thiết khớp mã
+   nguồn hiện tại. Mọi con số live ở trên gắn với **bản server đó**.
+4. **N=11 là MỘT lần đo**, chưa lặp lại để ước lượng phương sai. Một lượt (lượt 7) treo >13 phút ở
+   lần chạy đầu, nghi tranh chấp model với tiến trình khác — nguyên nhân **chưa xác định chắc**.
+5. **Hai tool GHI vẫn chưa được dạy** ở đường hỏi thường (ngoài Cmd+K) — ngoài phạm vi Đợt D.
+6. Nợ cũ còn nguyên: chưa tạo tệp mới · symlink tệp không kiểm được trên Windows · chuẩn hoá
+   EOL/BOM thật của VSCode chưa mô phỏng.
