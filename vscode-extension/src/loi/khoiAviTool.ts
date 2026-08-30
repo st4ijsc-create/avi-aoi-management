@@ -11,8 +11,8 @@
  * `yeuCauDoc.ts` (ĐỌC) đều gọi `tachKhoiAviTool` ở đây; đây là nơi DUY NHẤT sửa nếu cú pháp
  * hàng rào đổi.
  *
- * ★★★ BA BÀI HỌC ĐẮT đã trả giá ở `deXuatCucBo.ts` — người sau "tối ưu" mất bất kỳ cái nào dưới
- * đây là tái tạo lại đúng lỗi đã vá:
+ * ★★★ BỐN BÀI HỌC ĐẮT — người sau "tối ưu" mất bất kỳ cái nào dưới đây là tái tạo lại đúng lỗi
+ * đã vá (ba cái đầu trả giá ở `deXuatCucBo.ts`, cái thứ tư ở Đợt D.1 — đo LIVE, Task 6):
  *   1. `JSON.parse("null")` / `("123")` / `('"x"')` / `("[1,2]")` đều là JSON HỢP LỆ ⇒ KHÔNG
  *      ném ở bước parse. Phải kiểm `typeof obj === "object" && obj !== null` TRƯỚC KHI chạm bất
  *      kỳ trường nào — chạm `obj.tool` trên `null` ném `TypeError` THOÁT RA NGOÀI vòng lặp và
@@ -22,9 +22,39 @@
  *      biến mất IM LẶNG (không lỗi, không cảnh báo — người dùng chỉ thấy model "trả lời suông").
  *   3. Thiếu trường / sai kiểu ⇒ BỎ QUA khối đó, KHÔNG đoán giá trị mặc định. Một đề xuất đọc
  *      sai còn tệ hơn không đọc được.
+ *   4. ★ ĐỢT D.1 — hàng rào PHẢI chấp nhận thụt lề (model được dạy giao thức thường lồng khối vào
+ *      MỘT MỤC DANH SÁCH markdown, xem `dayGiaoThucDoc.ts`; đo Task 6 Step 3B: model sinh ĐÚNG
+ *      JSON nhưng cả ba dòng hàng rào bị thụt 3 dấu cách ⇒ regex cột-0 cũ khớp 0 khối). Nới CẢ
+ *      hàng rào MỞ lẫn ĐÓNG — nới một bên mà giữ bên kia ở cột 0 chỉ đổi hình dạng lỗi (khối mở ra
+ *      được không bao giờ khớp được điểm đóng thụt lề tương ứng, kết cục vẫn là "bỏ qua" y hệt).
  */
 
-const HANG_RAO = /```avi-tool\r?\n([\s\S]*?)\r?\n```/g;
+/** Nhãn hàng rào — nguồn DUY NHẤT cho cả regex tách khối (dưới đây) LẪN văn bản dạy giao thức
+ *  (`dayGiaoThucDoc.ts`, `cauHoiSuaChon.ts`). Đổi một chỗ, đổi cả nơi DẠY lẫn nơi ĐỌC — không có
+ *  bản chép tay cú pháp hàng rào nào được phép tồn tại ở nơi khác. */
+export const NHAN_HANG_RAO = "avi-tool";
+
+const HANG_RAO = new RegExp(
+  // Hàng rào MỞ: cho phép thụt lề bằng dấu cách/tab ở ĐẦU DÒNG (bài học #4) — `^` + cờ `m` đòi nó
+  // đứng đầu MỘT DÒNG (không phải giữa câu), giữ NGUYÊN vị trí bắt của mọi ca lưới cũ (hàng rào
+  // luôn đứng ngay sau `\n` trong helper `KHOI` của lưới).
+  `^([ \\t]*)\`\`\`${NHAN_HANG_RAO}\\r?\\n([\\s\\S]*?)\\r?\\n[ \\t]*\`\`\``,
+  "gm",
+);
+
+/**
+ * Gỡ thụt lề `thut` (chuỗi khoảng trắng bắt được ở hàng rào MỞ) khỏi đầu MỖI dòng của `noiDung`.
+ * Dòng có ÍT hơn `thut` khoảng trắng ở đầu thì gỡ hết phần khoảng trắng nó CÓ (không cắt lẹm vào
+ * ký tự không phải khoảng trắng) — tránh trường hợp một dòng thụt NÔNG hơn hàng rào mở (hiếm,
+ * nhưng an toàn hơn là giả định mọi dòng thụt ĐỀU) bị cắt sai.
+ */
+function goThutLe(noiDung: string, thut: string): string {
+  if (thut.length === 0) return noiDung;
+  return noiDung
+    .split(/\r?\n/)
+    .map((dong) => (dong.startsWith(thut) ? dong.slice(thut.length) : dong.replace(/^[ \t]*/, "")))
+    .join("\n");
+}
 
 export function tachKhoiAviTool(vanBan: string): Array<{ tool: string; args: Record<string, unknown> }> {
   const ketQua: Array<{ tool: string; args: Record<string, unknown> }> = [];
@@ -36,7 +66,12 @@ export function tachKhoiAviTool(vanBan: string): Array<{ tool: string; args: Rec
   let khop: RegExpExecArray | null;
 
   while ((khop = rao.exec(vanBan)) !== null) {
-    const jsonText = khop[1];
+    // Bài học #4: nội dung phải được gỡ ĐÚNG mức thụt lề của hàng rào MỞ trước khi parse — để lại
+    // khoảng trắng thừa ở đầu MỖI dòng bên trong JSON vô hại cho `JSON.parse` (bỏ qua khoảng trắng
+    // NGOÀI chuỗi), nhưng gỡ đúng là hành vi đáng tin cậy hơn khi `thayThe`/`modified` sau này có
+    // thể mang nội dung nhiều dòng mà việc thụt lệch có thể đổi Ý (thụt bên trong một chuỗi JSON
+    // multi-dòng không hợp lệ, nhưng đây là phòng thủ chiều sâu, không phải giả định JSON luôn 1 dòng).
+    const jsonText = goThutLe(khop[2], khop[1]);
 
     let obj: unknown;
     try {

@@ -79,3 +79,69 @@ describe("tachKhoiAviTool", () => {
     expect(tachKhoiAviTool(KHOI('{"tool":"doc_tep","args":5}'))).toEqual([]);
   });
 });
+
+/**
+ * ★★★ ĐỢT D.1 (LỖI 2) — HÀNG RÀO THỤT LỀ. Đo Task 6 Step 3B: được dạy thẳng cú pháp, model lồng
+ * khối vào một MỤC DANH SÁCH markdown ⇒ cả ba dòng hàng rào bị thụt (thường 3 dấu cách, khớp độ
+ * rộng của "1. "). Regex cột-0 cũ khớp 0 khối cho ĐÚNG hình dạng model thật sự sinh ra.
+ */
+describe("tachKhoiAviTool — hàng rào THỤT LỀ (Đợt D.1, LỖI 2)", () => {
+  it("★★★ hàng rào MỞ và ĐÓNG cùng thụt 3 dấu cách (mô phỏng lồng trong mục danh sách) ⇒ vẫn tách được", () => {
+    // Đúng hình dạng đo được ở `t6-day-giao-thuc.txt`: "1. Đọc tệp:\n   ```avi-tool\n   {...}\n   ```".
+    const v =
+      "1. Đọc tệp:\n" +
+      '   ```avi-tool\n   {"tool":"doc_tep","args":{"path":"src/modules/ModuleA.ts"}}\n   ```\n' +
+      "xong.";
+    expect(tachKhoiAviTool(v)).toEqual([{ tool: "doc_tep", args: { path: "src/modules/ModuleA.ts" } }]);
+  });
+
+  it("★★ hàng rào MỞ thụt, ĐÓNG ở cột 0 ⇒ vẫn tách được (hai bên không cần khớp NHAU)", () => {
+    const v = "  ```avi-tool\n" + '  {"tool":"liet_ke","args":{"path":"src"}}\n' + "```\nxong.";
+    expect(tachKhoiAviTool(v)).toEqual([{ tool: "liet_ke", args: { path: "src" } }]);
+  });
+
+  it("★★ hàng rào MỞ ở cột 0, ĐÓNG thụt lề ⇒ vẫn tách được", () => {
+    const v = "```avi-tool\n" + '{"tool":"grep","args":{"mau":"x"}}\n' + "  ```\nxong.";
+    expect(tachKhoiAviTool(v)).toEqual([{ tool: "grep", args: { mau: "x" } }]);
+  });
+
+  it("★★★ CRLF + thụt lề CÙNG LÚC (hai bài học đắt cộng dồn) ⇒ vẫn tách được", () => {
+    const v =
+      ("1. Đọc tệp:\n" +
+        '   ```avi-tool\n   {"tool":"doc_tep","args":{"path":"a"}}\n   ```\n' +
+        "xong.").replace(/\n/g, "\r\n");
+    expect(tachKhoiAviTool(v)).toEqual([{ tool: "doc_tep", args: { path: "a" } }]);
+  });
+
+  it("★★ nội dung nhiều dòng, thụt lề LỒNG (JSON pretty-print bên trong mục danh sách) ⇒ gỡ đúng, parse đúng", () => {
+    // Mỗi dòng thụt tối thiểu 3 (mức hàng rào) — các dòng bên trong JSON thụt SÂU HƠN (5) để giữ
+    // định dạng pretty-print của chính JSON, phải được GIỮ NGUYÊN phần thụt riêng đó sau khi gỡ 3.
+    const v =
+      "1. Đọc tệp:\n" +
+      "   ```avi-tool\n" +
+      "   {\n" +
+      '     "tool": "doc_tep",\n' +
+      '     "args": { "path": "a" }\n' +
+      "   }\n" +
+      "   ```\n" +
+      "xong.";
+    expect(tachKhoiAviTool(v)).toEqual([{ tool: "doc_tep", args: { path: "a" } }]);
+  });
+
+  it("★ nhiều mục danh sách, nhiều khối thụt lề ⇒ đọc đủ, đúng thứ tự", () => {
+    const v =
+      "1. Đọc A:\n   ```avi-tool\n   " +
+      '{"tool":"doc_tep","args":{"path":"a"}}\n   ```\n' +
+      "2. Đọc B:\n   ```avi-tool\n   " +
+      '{"tool":"doc_tep","args":{"path":"b"}}\n   ```\n';
+    expect(tachKhoiAviTool(v).map((x) => (x.args as { path: string }).path)).toEqual(["a", "b"]);
+  });
+
+  it("★★ hàng rào giữa câu (KHÔNG đứng đầu dòng) ⇒ bỏ qua — chỉ đầu-dòng mới được coi là hàng rào thật", () => {
+    // `^` + cờ `m`: một chuỗi "```avi-tool" xuất hiện giữa văn xuôi (không phải mở đầu một dòng)
+    // không phải là ý định phát khối của model — tránh dương tính giả trên một câu vô tình chứa
+    // đúng chuỗi đó.
+    const v = 'Xem cú pháp: ```avi-tool\n{"tool":"doc_tep","args":{"path":"a"}}\n```\nxong.';
+    expect(tachKhoiAviTool(v)).toEqual([]);
+  });
+});
