@@ -79,7 +79,7 @@ Ví dụ nặng nhất: bảng miễn trừ census WAL ký lý do *"mutation do 
 | **BG-70** | `demSoLoiVinhVienTuLichSu` đếm **cộng dồn**, chú thích khai **"LIÊN TIẾP"** ở 5 chỗ | gói lỗi 4 lần rồi sửa vẫn **cách `'dead'` đúng 1 lỗi** |
 | **BG-71** | Phân loại vĩnh viễn **đảo ngược** ở cửa ZIP: "ZIP not found" (ổ mạng rớt) tính vĩnh viễn; `TOO_MANY_REQUESTS` trong `PERMANENT_TRPC_CODES` | |
 | **BG-72** | `.max(40)` từ chối `DateTime.ToString()` mà `new Date()` **vẫn nhận** | 50 và 57 ký tự bị từ chối |
-| **BG-73** | `metaJsonSchema` **không mô tả** `meta.json` của máy thật | mẫu chuẩn `safeParse` = **false** |
+| **BG-73** | ✅ **ĐÃ QUYẾT (chủ dự án, 2026-09-01): BỎ hướng sửa schema.** Hướng (b) ở `8150ab6d` là lời giải CUỐI — lệch hình dạng **không đếm** vào ngưỡng `'dead'`, gói nằm `'failed'` và retry vô hạn | mẫu chuẩn `safeParse` = **false**; hệ quả đã duyệt |
 | **BG-74** | `'dead'` gần vô hình: `listPackages` không lọc được · `getStats` cộng không khớp · badge **xám nhạt** hơn `failed` (đỏ) · thiếu i18n · tài liệu Agent vẫn 5 giá trị | |
 | **BG-75** | `migrate-standalone.mjs` chạy 0344 bằng `avi_app` ⇒ `42501`; `MIGRATE_STRICT` **tắt** ⇒ deploy **xanh giả** | trên máy này đã đóng (đủ 6 giá trị enum) |
 | **BG-76** | `calculatedSummary` (`ngCount`) vẫn lấy từ `summary` khai, trong khi `overallResult` nay từ dữ liệu ⇒ **hai cột cùng hàng bất đồng** | hiện **0 hàng** biểu hiện — tiềm ẩn |
