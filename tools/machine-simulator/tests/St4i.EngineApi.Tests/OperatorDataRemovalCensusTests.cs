@@ -14,6 +14,7 @@ using St4i.EngineApi.AssetRegistry;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Config;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.HmiModel;
 using Xunit;
 
 namespace St4i.EngineApi.Tests;
@@ -923,6 +924,9 @@ public sealed class OperatorDataRemovalCensusTests
         ["src/St4i.EngineApi/Alarms/NotificationConfigStore.cs"] = "DELETE FROM, ON CONFLICT DO UPDATE SET",
         ["src/St4i.EngineApi/Auth/SqliteUserStore.cs"] = "UPDATE SET",
         ["src/St4i.EngineApi/Fleet/ConnectorConfigStore.cs"] = "DELETE FROM, DROP TABLE, ON CONFLICT DO UPDATE SET",
+        // WS-HMI-0a Task 2 — an engineer's deliberately-declared component tree (ComponentModelStore.PutAsync
+        // runs only from that user action, never from a startup/registration loop — see its doc comment).
+        ["src/St4i.EngineApi/HmiModel/ComponentModelStore.cs"] = "ON CONFLICT DO UPDATE SET",
 
         // ── product-generated rows, one operator-owned column ─────────────────────────────────────────
         ["src/St4i.EngineApi/AssetRegistry/AssetRegistryStore.cs"] = "ON CONFLICT DO UPDATE SET, UPDATE SET",
@@ -1061,11 +1065,14 @@ public sealed class OperatorDataRemovalCensusTests
         var filesWithRemovalSql = withRemovalSql.Select(b => b.File).Distinct(StringComparer.Ordinal)
             .OrderBy(f => f, StringComparer.Ordinal).ToList();
 
-        Assert.Equal(67, blocks.Count);
-        Assert.Equal(12, files.Count);
+        // WS-HMI-0a Task 2 — ComponentModelStore.cs added two raw-string blocks (the CREATE TABLE migration
+        // and the PutAsync INSERT ... ON CONFLICT) in one new file; only the INSERT block matches a removal
+        // SQL pattern (ON CONFLICT DO UPDATE SET) — the CREATE TABLE block does not.
+        Assert.Equal(69, blocks.Count);
+        Assert.Equal(13, files.Count);
 
         // The half that refutes the old sentence outright: raw-string blocks DO carry removal SQL.
-        Assert.Equal(10, withRemovalSql.Count);
+        Assert.Equal(11, withRemovalSql.Count);
 
         // 🔴 The review that found the original sentence false gave a block count and a FILE count, and
         // then enumerated one fewer file than its own count claimed. Re-deriving rather than adopting is the
@@ -1073,7 +1080,7 @@ public sealed class OperatorDataRemovalCensusTests
         // its own list one more time — this time in the correction, not in the thing corrected. The right
         // value is the assertion on the next line; the wrong one is deliberately not repeated here, because
         // a refuted number quoted in a comment is exactly the second uncounted copy the file header refuses.
-        Assert.Equal(5, filesWithRemovalSql.Count);
+        Assert.Equal(6, filesWithRemovalSql.Count);
 
         // And the reason the census is nevertheless right about them: the SQL pass scans whole lines, so
         // every one of those files is already in the pinned SQL enumeration. This is the assertion that
@@ -1165,6 +1172,9 @@ public sealed class OperatorDataRemovalCensusTests
         ["src/St4i.EngineApi/Alarms/NotificationConfigStore.cs"] = Provenance.OperatorAuthored,
         ["src/St4i.EngineApi/Auth/SqliteUserStore.cs"] = Provenance.OperatorAuthored,
         ["src/St4i.EngineApi/Fleet/ConnectorConfigStore.cs"] = Provenance.OperatorAuthored,
+        // WS-HMI-0a Task 2 — an engineer's deliberately-declared component tree (same reasoning as the
+        // ExpectedSqlSites entry above).
+        ["src/St4i.EngineApi/HmiModel/ComponentModelStore.cs"] = Provenance.OperatorAuthored,
 
         ["src/St4i.EdgeCore/Identity/DeviceIdentityStore.cs"] = Provenance.ProductGenerated,
         ["src/St4i.EdgeCore/Infrastructure/CredentialStore.cs"] = Provenance.ProductGenerated,
@@ -1203,6 +1213,9 @@ public sealed class OperatorDataRemovalCensusTests
         ["SimulatedEcosystem"] = "src/St4i.EngineApi/Config/SimulatedEcosystem.cs",
         ["ConnectorConfigStore"] = "src/St4i.EngineApi/Fleet/ConnectorConfigStore.cs",
         ["NotificationConfigStore"] = "src/St4i.EngineApi/Alarms/NotificationConfigStore.cs",
+        // WS-HMI-0a Task 2 — new SQLite store, same "owns a persisted artifact this product writes and
+        // later re-reads" shape as its siblings above.
+        ["ComponentModelStore"] = "src/St4i.EngineApi/HmiModel/ComponentModelStore.cs",
 
         // 🔴 TASK V-1 — five stores S-1 enumerated as removal sites and did NOT measure a posture for. Every
         // one of them owns an artifact this product writes and re-reads, which is the property that puts a
@@ -1424,6 +1437,14 @@ public sealed class OperatorDataRemovalCensusTests
             _ = new SqliteHistorianStore(dir);
             return Posture.UnreadableIsAbsent;
         }), dir => _ = new SqliteHistorianStore(dir)),
+
+        // ── WS-HMI-0a Task 2 — new SQLite store, same constructor-eager EnsureSchema() shape as
+        // AssetRegistryStore/AlarmStore/BridgeSpool/SqliteHistorianStore above ────────────────────────
+        new("ComponentModelStore", "hmi-model.db", true, dir => Observe(() =>
+        {
+            _ = new ComponentModelStore(dir);
+            return Posture.UnreadableIsAbsent;
+        }), dir => _ = new ComponentModelStore(dir)),
     ];
 
     /// <summary>🔴 <b>THE ANSWER, PINNED.</b> Measured, not read. Touching a store's behaviour at this
@@ -1449,6 +1470,9 @@ public sealed class OperatorDataRemovalCensusTests
         ["AssetRegistryStore"] = Posture.Throws,
         ["BridgeSpool"] = Posture.Throws,
         ["SqliteHistorianStore"] = Posture.Throws,
+        // WS-HMI-0a Task 2 — same constructor-eager EnsureSchema() shape as the SQLite stores above; a
+        // corrupt hmi-model.db fails PRAGMA/EnsureSchema inside the constructor and throws out of it.
+        ["ComponentModelStore"] = Posture.Throws,
 
         // 🔴 The one row left on the posture the law forbids, and it is DECIDED rather than surviving.
         // docs/owner-decisions.md item 1's residue 2 records why: the bytes are a product-minted key, the
@@ -1672,7 +1696,8 @@ public sealed class OperatorDataRemovalCensusTests
         // purpose — deriving it from ExpectedPostures, which is where `throwers` already comes from, would
         // make this a tautology and pin nothing. This is the one copy of that number in the file.
         // 🔴 Task V-1 moved it: four stores S-1 never measured are on this posture too.
-        Assert.Equal(10, throwers.Count);
+        // WS-HMI-0a Task 2 moved it again: ComponentModelStore joined this posture.
+        Assert.Equal(11, throwers.Count);
 
         foreach (var artifact in OperatorArtifacts.Where(a => throwers.Contains(a.Store)))
         {

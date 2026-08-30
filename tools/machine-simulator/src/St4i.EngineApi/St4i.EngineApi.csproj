@@ -36,6 +36,10 @@
          three now-POSITIVE deployment assertions ("this deployment DOES carry it") and one unchanged
          compile-time assertion that St4i.EdgeCore still references neither the package nor this assembly. -->
     <ProjectReference Include="..\St4i.EdgeCore.Serial\St4i.EdgeCore.Serial.csproj" />
+    <!-- WS-HMI-0a Task 2 — ComponentModelStore (HmiModel/) reads/writes St4i.Hmi.Contracts records
+         (ComponentModelDocument, ContractInvariants, HmiContractJson.Options). Zero-dependency contract
+         assembly per that project's own doc comment; this is the first host to reference it. -->
+    <ProjectReference Include="..\St4i.Hmi.Contracts\St4i.Hmi.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Same packaging convention as St4iMachineSimulator.csproj (Task 22): ships the default
