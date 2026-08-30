@@ -230,6 +230,13 @@ public sealed class RbacPolicyTests
         new("/v1/components/{machineCode}", new[] { "GET" }, Policies.Operator),
         new("/v1/components/{machineCode}/integrity", new[] { "GET" }, Policies.Operator),
         new("/v1/component-types", new[] { "GET" }, Policies.Operator),
+        // WS-HMI-0b Task 2 — the tag-namespace read surface (HmiTagEndpoints.cs). Same tier and the same
+        // reason as the component-tree reads directly above: reading a machine's declared tag namespace
+        // touches no device. The by-path route is a CATCH-ALL ({**path}) because a tag path contains '/';
+        // the pattern below is its RawText verbatim, so a silent change to a conventional {path} — which
+        // would 404 every multi-segment tag, i.e. every real one — moves this row and is caught here too.
+        new("/v1/tags", new[] { "GET" }, Policies.Operator),
+        new("/v1/tags/by-path/{**path}", new[] { "GET" }, Policies.Operator),
 
         // Engineer
         // Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — a setpoint
@@ -242,6 +249,11 @@ public sealed class RbacPolicyTests
         // the same tier of authority as the config-mutation routes below, not the setpoint/command routes
         // that actually reach a machine.
         new("/v1/components/{machineCode}", new[] { "PUT" }, Policies.Engineer),
+        // WS-HMI-0b Task 2 — the one write in the tag-namespace surface. Engineer, never Admin, for the
+        // identical reason as PUT /v1/components/{machineCode} above: declaring which tags a machine
+        // exposes is a configuration authority, not a device authority. Nothing in this workstream writes
+        // to a DEVICE — the routes that do (setpoint/command) are separately gated below.
+        new("/v1/tags/{machineCode}", new[] { "PUT" }, Policies.Engineer),
         new("/v1/machines/{code}/setpoint", new[] { "POST" }, Policies.Engineer),
         new("/v1/machines/{code}/sync-config", new[] { "POST" }, Policies.Engineer),
         new("/v1/mode", new[] { "PUT" }, Policies.Engineer),

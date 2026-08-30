@@ -1794,6 +1794,11 @@ app.MapAssetEndpoints();
 // ITagNamespaceStore (both registered above, WS-HMI-0a Task 5). Same "store-backed resource, Operator
 // reads / Engineer writes" shape as MapAssetEndpoints directly above.
 app.MapHmiModelEndpoints();
+// WS-HMI-0b Task 2 — the tag-namespace HTTP surface over the same ITagNamespaceStore seam (GET /v1/tags,
+// GET /v1/tags/by-path/{**path}, PUT /v1/tags/{machineCode}). Registered next to MapHmiModelEndpoints
+// because the two share the seam and the Operator-reads/Engineer-writes tier; see HmiTagEndpoints.cs for
+// why its two read routes answer "I don't have that" differently (§5-bis empty vs 404).
+app.MapHmiTagEndpoints();
 // GP-5 (task-5-brief.md item 3) — GET /v1/connectors: visibility for a configured-but-not-started connector.
 app.MapConnectorEndpoints();
 app.MapMachineWriteEndpoints();
