@@ -625,21 +625,35 @@ export class BangChat {
     } catch (e) {
       // Huỷ lượt cũ là hành vi BÌNH THƯỜNG (người dùng hỏi câu mới) — không phải lỗi, không được
       // khai thành lỗi. Chỉ lỗi THẬT mới hiện lên.
-      if ((e as Error).name === "AbortError") {
+      /**
+       * ★★★ TASK 6/D.1 — NGUỒN SỰ THẬT LÀ `dieuKhien.signal.aborted`, KHÔNG PHẢI HÌNH DẠNG CỦA `e`.
+       *
+       * Bản cũ nhận diện huỷ bằng `(e as Error).name === "AbortError"`. Đo LIVE (Task 6): huỷ GIỮA
+       * LÚC ĐANG ĐỌC THÂN SSE (chứ không phải trước khi có response — đó là kịch bản Task 4 đã đo)
+       * khiến `fetch` gốc của Node (undici) reject bằng CHÍNH `signal.reason` — khi
+       * `dungVongHienTai()` gọi `abort(LY_DO_NGUOI_DUNG_DUNG)`, `reason` đó là một CHUỖI TRẦN, không
+       * phải `Error`/`AbortError`. `(e as Error).name` trên một chuỗi luôn là `undefined` ⇒ lượt huỷ
+       * CÓ CHỦ Ý của người dùng rơi xuống nhánh lỗi chung với `(e as Error).message === undefined`
+       * ⇒ bong bóng "Lỗi" HIỆN RỖNG. Tái hiện 4/4 lần ở Task 6 (`t6-chan-doan-dung.json`).
+       *
+       * Vá bằng cách đọc TÍN HIỆU chứ không đọc HÌNH DẠNG của vật bị ném: `dieuKhien` là
+       * `AbortController` CỦA RIÊNG lượt `hoi()` này (biến cục bộ closure, không phải `this.huy` —
+       * cùng lý do Task 3 đã nêu), nên `dieuKhien.signal.aborted === true` CHỈ CÓ THỂ do MỘT trong
+       * hai lời gọi `abort()` nhắm đúng lượt này: (1) `dungVongHienTai()` của CHÍNH lượt này, hoặc
+       * (2) huỷ NGẦM ở đầu MỘT lượt `hoi()` MỚI đè lên lượt này. Bất kể `e` là `Error`, chuỗi, hay
+       * bất kỳ thứ gì khác — nếu tín hiệu đã báo huỷ thì đây LÀ một lượt huỷ, không phải lỗi thật.
+       */
+      if (dieuKhien.signal.aborted) {
         /**
-         * ★★★ TASK 4 — `AbortError` GIỮA MỘT vòng đang bay (fetch/đọc SSE bị cắt bởi `dungVongHienTai`
-         * hoặc bởi huỷ NGẦM ở đầu `hoi()`). PHẢI phân biệt HAI nguồn gốc bằng `reason`, KHÔNG bằng
-         * việc "có AbortError hay không" — Đợt A đã trả giá đúng chỗ này (huỷ lượt hiện thành bong
-         * bóng "Lỗi" tiếng Anh thô); vá sai hướng ở đây là hiện "đã dừng" cho MỌI AbortError, kể cả
-         * lượt bị huỷ NGẦM vì người dùng gõ câu hỏi khác — một bong bóng "đã dừng" lạc giữa một câu
-         * hỏi hoàn toàn mới còn tệ hơn im lặng.
-         *   · `reason === LY_DO_NGUOI_DUNG_DUNG` ⇒ CHÍNH `dungVongHienTai` của LƯỢT NÀY vừa gọi
-         *     (đọc `dieuKhien.signal`, biến CỤC BỘ của closure — không phải `this.huy`, cùng lý do
-         *     Task 3 đã nêu: `this.huy` có thể đã bị một lượt hỏi MỚI thay bằng bộ điều khiển khác).
+         * PHẢI phân biệt HAI nguồn gốc bằng `reason`, KHÔNG bằng việc "có phải huỷ hay không" — Đợt
+         * A đã trả giá đúng chỗ này (huỷ lượt hiện thành bong bóng "Lỗi" tiếng Anh thô); vá sai
+         * hướng ở đây là hiện "đã dừng" cho MỌI lượt huỷ, kể cả lượt bị huỷ NGẦM vì người dùng gõ
+         * câu hỏi khác — một bong bóng "đã dừng" lạc giữa một câu hỏi hoàn toàn mới còn tệ hơn im lặng.
+         *   · `reason === LY_DO_NGUOI_DUNG_DUNG` ⇒ CHÍNH `dungVongHienTai` của LƯỢT NÀY vừa gọi.
          *     Báo "đã dừng — ở vòng N" (không phải "lỗi"), rồi gửi `hoan_tat` để webview coi lượt
          *     này ĐÃ XONG (ẩn nút Dừng — xem `htmlBang.ts`; không tín hiệu nào khác làm việc đó).
-         *   · Ngược lại (huỷ NGẦM, không kèm lý do) ⇒ giữ NGUYÊN hành vi cũ: im lặng, không báo gì
-         *     — lượt hỏi MỚI đã tự lo trạng thái của chính nó.
+         *   · Ngược lại (huỷ NGẦM, `reason` mặc định của `abort()` không tham số) ⇒ giữ NGUYÊN hành
+         *     vi cũ: im lặng, không báo gì — lượt hỏi MỚI đã tự lo trạng thái của chính nó.
          */
         if (dieuKhien.signal.reason === LY_DO_NGUOI_DUNG_DUNG) {
           void this.panel.webview.postMessage({
@@ -660,7 +674,14 @@ export class BangChat {
         });
         return;
       }
-      void this.panel.webview.postMessage({ loai: "loi", thongDiep: (e as Error).message });
+      // ★ CÙNG LÝ LẼ với nhánh huỷ ở trên: lỗi THẬT cũng không đảm bảo là `Error` (một chuỗi trần
+      // ném ra sẽ làm `.message` là `undefined`, tái tạo đúng "bong bóng lỗi RỖNG" cho một lượt
+      // KHÔNG PHẢI do huỷ) — dùng `e instanceof Error` để đọc `.message`, ngược lại hiện chính giá
+      // trị bị ném (ép chuỗi) thay vì `undefined`.
+      void this.panel.webview.postMessage({
+        loai: "loi",
+        thongDiep: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 

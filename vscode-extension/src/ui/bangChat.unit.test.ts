@@ -21,6 +21,21 @@ const may = vi.hoisted(() => ({
   thuMucWorkspace: [] as string[],
 }));
 
+/**
+ * ★★★ TASK 6/D.1 (LỖI 3) — mô phỏng ĐÚNG hành vi `fetch`/undici thật đo được ở Task 6: huỷ GIỮA
+ * LÚC ĐANG ĐỌC THÂN SSE khiến promise reject bằng CHÍNH `signal.reason` — khi `dungVongHienTai()`
+ * gọi `abort(lyDo)` với một LÝ DO TUỲ CHỈNH (chuỗi), `reason` đó LÀ MỘT CHUỖI TRẦN, không phải
+ * `Error`/`AbortError`. Promise KHÔNG BAO GIỜ tự resolve — treo y hệt một luồng SSE thật đang bay,
+ * chỉ thoát khi tín hiệu huỷ bắn (đúng thời điểm đang "ĐỌC THÂN", không phải TRƯỚC KHI CÓ RESPONSE
+ * như kịch bản Task 4 đã đo).
+ */
+vi.mock("../mang/dongSse", () => ({
+  moDongSse: (dv: { tinHieu?: AbortSignal }) =>
+    new Promise((_resolve, reject) => {
+      dv.tinHieu?.addEventListener("abort", () => reject(dv.tinHieu!.reason), { once: true });
+    }),
+}));
+
 vi.mock("vscode", () => ({
   ViewColumn: { Beside: 2 },
   Uri: { file: (p: string) => ({ fsPath: p, toString: () => `file://${p}` }) },
@@ -115,5 +130,71 @@ describe("hoi — I-5: không xác định được chế độ ⇒ TỪ CHỐI,
     expect(String(loi[0].thongDiep)).toContain("Chưa xác định được dự án");
     // Và không có khung trả lời nào được mở ra.
     expect(may.daGui.some((m) => m.loai === "hoan_tat")).toBe(false);
+  });
+});
+
+describe("hoi — TASK 6/D.1 (LỖI 3): nút Dừng phải khai 'đã dừng', KHÔNG PHẢI 'lỗi rỗng'", () => {
+  it("★★★ huỷ GIỮA LÚC ĐANG ĐỌC THÂN SSE (reject bằng CHUỖI TRẦN, không phải AbortError) ⇒ báo 'đã dừng', KHÔNG báo lỗi", async () => {
+    /**
+     * ★★★ Đo Task 6 (`t6-chan-doan-dung.json`): bấm Dừng trong lúc `moDongSse` ĐANG đọc thân SSE
+     * khiến undici reject bằng `signal.reason` — MỘT CHUỖI TRẦN (`"nguoi_dung_dung"`), không phải
+     * `Error`. Bản cũ kiểm `(e as Error).name === "AbortError"` ⇒ luôn `undefined` trên một chuỗi
+     * ⇒ rơi xuống nhánh lỗi chung với `thongDiep: undefined` — bong bóng "Lỗi" HIỆN RỖNG cho một
+     * lượt người dùng CHỦ Ý dừng. Ca này tái hiện ĐÚNG hình dạng đó (mock ở đầu tệp).
+     */
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "đọc giúp tôi tệp a.ts" });
+    // Nhường nhịp cho `hoi()` chạy qua `await` đọc cookie rồi tới `await moDongSse(...)` (mocked ở
+    // đầu tệp — ĐANG TREO chờ tín hiệu huỷ, đúng mô phỏng "đang đọc thân SSE").
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Bấm Dừng — CHÍNH `dungVongHienTai()` gọi `abort(LY_DO_NGUOI_DUNG_DUNG)`, đồng bộ khiến
+    // listener trong mock `reject(signal.reason)` với ĐÚNG chuỗi đó.
+    may.nhanTin?.({ loai: "dung_hoi" });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const loi = may.daGui.filter((m) => m.loai === "loi");
+    expect(loi, `KHÔNG được có bong bóng lỗi cho một lượt DỪNG có chủ ý; thực tế: ${JSON.stringify(may.daGui)}`).toEqual(
+      [],
+    );
+
+    const thongBao = may.daGui.filter((m) => m.loai === "thong_bao");
+    expect(thongBao.some((m) => String(m.thongDiep).includes("Đã dừng"))).toBe(true);
+    // `hoan_tat` PHẢI tới để webview ẩn nút Dừng — không tín hiệu nào khác làm việc đó.
+    expect(may.daGui.some((m) => m.loai === "hoan_tat")).toBe(true);
+  });
+
+  it("★★ huỷ NGẦM (câu hỏi MỚI đè lên câu cũ, KHÔNG kèm lý do) ⇒ vẫn im lặng — NHÁNH KIA không bị vá nhầm", () => {
+    /**
+     * ★★★ KIỂM NHÁNH KIA của bản vá LỖI 3: nguồn sự thật đổi từ "hình dạng của `e`" sang
+     * "`dieuKhien.signal.aborted`" — phải xác nhận nhánh HUỶ NGẦM (một câu hỏi mới tự `abort()`
+     * KHÔNG kèm lý do, xem đầu `hoi()`) vẫn im lặng như hành vi cũ, KHÔNG bỗng dưng hiện "đã dừng"
+     * cho một lượt người dùng không hề bấm Dừng.
+     *
+     * ⚠ Ca này KHÔNG cần đợi bất kỳ điều gì huỷ giữa lúc SSE đang treo — `hoi()` tự `abort()` NGAY
+     *   ĐẦU của chính nó cho `this.huy` (bộ điều khiển của lượt TRƯỚC, nếu có). Gọi `hoi()` hai lần
+     *   liên tiếp mà không đợi lần đầu xong là đủ để kích hoạt đúng nhánh này — synchronous, không
+     *   cần mock SSE treo.
+     */
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "câu đầu tiên" });
+    // Câu hỏi THỨ HAI đè lên ngay lập tức — `this.huy?.abort()` (không lý do) huỷ bộ điều khiển của
+    // câu đầu TRƯỚC khi nó kịp nhận được response nào.
+    may.nhanTin?.({ loai: "hoi", cauHoi: "câu thứ hai" });
+
+    // KHÔNG assert bất đồng bộ ở đây: ca này chỉ cần xác nhận KHÔNG có bong bóng "đã dừng"/"lỗi"
+    // lạc vào giữa — hai điều đó chỉ có thể tới từ nhánh bị huỷ NGẦM nếu bản vá sai hướng.
+    expect(may.daGui.filter((m) => m.loai === "loi")).toEqual([]);
+    expect(may.daGui.filter((m) => m.loai === "thong_bao" && String(m.thongDiep).includes("Đã dừng"))).toEqual([]);
   });
 });
