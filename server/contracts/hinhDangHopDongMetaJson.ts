@@ -177,13 +177,69 @@ export function duongVangMat(data: unknown, duongDan: string): boolean {
 // (2) BANG_HINH_DANG — hình dạng CỤ THỂ, mỗi hình dạng mang kỳ vọng GHI RÕ.
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * ★★★ SỬA SAU PHÁT HIỆN COORDINATOR (2026-08-30) — trước bản vá này,
+ * `KyVongChapNhan.overallResult` là một chuỗi PHẲNG: không phân biệt được
+ * "tôi KHẲNG ĐỊNH đây là hành vi ĐÚNG" với "tôi GHI NHẬN đây là hành vi HIỆN
+ * TẠI (đã biết SAI, chưa vá)". Hậu quả THẬT đã xảy ra: hình dạng
+ * `"ngayGioDaiThatBiTuChoiOCuaZip_KHAC_v1x"` mã hoá HÀNH VI CŨ (bị từ chối,
+ * đếm vào 'dead') làm `kyVong` — khi BG-91 được vá ở `6082df2f`, cổng chuyển
+ * ĐỎ và trông giống hệt "bản vá gây hồi quy", trong khi thật ra đó là cổng
+ * ĐANG BẮT ĐÚNG một hành vi giờ đã khác. Đây CÙNG lớp lỗi với ca
+ * `"ĐỐI CHỨNG… ntfSource VẪN NULL (đúng, không phải lỗi)"` đã cắn dự án trước
+ * đó: một test HỢP THỨC HOÁ lỗi bằng cách gọi nó là chủ đích.
+ *
+ * `KyVongOverallResult` tách hai việc:
+ *   - `khangDinh` — khẳng định: giá trị NÀY PHẢI đúng. Cổng đo VÀ so trực
+ *     tiếp; lệch = lỗi thật (hồi quy hoặc cổng sai), không có "lý do chính
+ *     đáng" nào để lệch.
+ *   - `ghiNhanNoDaDuyet` — ghi nhận nợ ĐÃ ĐƯỢC CHỦ DỰ ÁN DUYỆT treo (ví dụ
+ *     BG-77, "còn mở SAU Pha 1F" — backlog toàn cảnh §3): cổng đo
+ *     `hanhViHienTai` (giữ XANH — đây không phải việc cổng này phải chặn) NHƯNG
+ *     BẮT BUỘC khai riêng `hanhViDung` (giá trị ĐÚNG theo ngữ nghĩa) +
+ *     `maBacklog` (liên kết nợ) — hai trường đó PHẢI khai KHÁC NHAU (lưới
+ *     `hinhDangHopDongMetaJson.test.ts` canh: nếu `hanhViHienTai===hanhViDung`,
+ *     không có lý do gì dùng biến thể "ghi nhận nợ" thay vì `khangDinh`).
+ *
+ * Chỉ dùng `khangDinh` cho MỘT giá trị mà tôi có bằng chứng ĐÂY LÀ ĐÚNG
+ * (hành vi đã được kiểm chứng đúng — mã sản xuất khớp ngữ nghĩa mong muốn),
+ * KHÔNG BAO GIỜ dùng nó chỉ vì "hôm nay nó đang chạy vậy".
+ */
+export type KyVongOverallResult =
+  | { dang: "khangDinh"; overallResult: "OK" | "NG" | "NTF" }
+  | {
+      dang: "ghiNhanNoDaDuyet";
+      /** Giá trị cổng ĐO ĐƯỢC hôm nay — cổng so khớp cái NÀY (giữ xanh). */
+      hanhViHienTai: "OK" | "NG" | "NTF";
+      /** Giá trị ĐÚNG theo ngữ nghĩa — KHÔNG dùng để assert, chỉ để khai rõ khoảng cách. */
+      hanhViDung: "OK" | "NG" | "NTF";
+      /** Mã backlog theo dõi nợ này — dạng "BG-NN", ví dụ "BG-77". */
+      maBacklog: string;
+      /** Ai/ở đâu đã duyệt treo nợ này — một câu, trích dẫn được. */
+      lyDoDuyet: string;
+    };
+
+/** Giá trị cổng THẬT SỰ phải đo được HÔM NAY (dùng để `expect(...).toBe(...)`).
+ *  `khangDinh` ⇒ chính giá trị khẳng định; `ghiNhanNoDaDuyet` ⇒ `hanhViHienTai`
+ *  (giá trị được CHO PHÉP treo — KHÔNG PHẢI giá trị đúng). */
+export function giaTriQuanSatDuoc(kv: KyVongOverallResult): "OK" | "NG" | "NTF" {
+  return kv.dang === "khangDinh" ? kv.overallResult : kv.hanhViHienTai;
+}
+
+/** Giá trị ĐÚNG theo ngữ nghĩa — dùng để GHI trong thông điệp lỗi/báo cáo,
+ *  KHÔNG dùng để assert trực tiếp (nếu không, một `ghiNhanNoDaDuyet` sẽ tự đỏ
+ *  vì chính định nghĩa của nó là "nợ CHƯA vá"). */
+export function giaTriDung(kv: KyVongOverallResult): "OK" | "NG" | "NTF" {
+  return kv.dang === "khangDinh" ? kv.overallResult : kv.hanhViDung;
+}
+
 /** Verdict cho hình dạng ĐƯỢC SCHEMA CHẤP NHẬN — đo bằng SELECT sau commit
  *  THẬT (`aoiPackageHinhDangHopDongChoPhep.test.ts`), không bằng giá trị
  *  `caller.commit()` trả về (cùng kỷ luật Task 1). */
 export interface KyVongChapNhan {
   loai: "chapNhan";
-  /** `product_inspections.overallResult` / `inspection_packages.overallResult` kỳ vọng. */
-  overallResult: "OK" | "NG" | "NTF";
+  /** `product_inspections.overallResult` / `inspection_packages.overallResult` kỳ vọng — xem `KyVongOverallResult`. */
+  overallResult: KyVongOverallResult;
   /** `inspection_packages.totalPoints` kỳ vọng (đếm MỌI lá, kể cả lá thiếu result). */
   tongDiem: number;
   /** `inspection_packages.okCount` kỳ vọng. */
@@ -236,7 +292,7 @@ export const BANG_HINH_DANG: readonly HinhDangMetaJson[] = [
       productModel: "HD-TT-PM",
       measurements: [{ fileName: "tt-1.jpg" }], // KHÔNG result/pointId/pointCode/code/name/measuredValue/value/unit/remark
     },
-    kyVong: { loai: "chapNhan", overallResult: "OK", tongDiem: 1, ok: 0, ng: 0 },
+    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "OK" }, tongDiem: 1, ok: 0, ng: 0 },
     ungCuVienKhongTrongDbTest: false, // hình dạng "tối thiểu" hợp lý là có thể trùng với dữ liệu test có sẵn — không dùng làm bằng chứng "không có trong DB test"
   },
   {
@@ -248,7 +304,7 @@ export const BANG_HINH_DANG: readonly HinhDangMetaJson[] = [
       overallResult: "NTF",
       measurements: [{ fileName: "ntf-1.jpg", result: "NTF" }],
     },
-    kyVong: { loai: "chapNhan", overallResult: "NTF", tongDiem: 1, ok: 0, ng: 0 },
+    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NTF" }, tongDiem: 1, ok: 0, ng: 0 },
   },
   {
     ten: "honHopBaLoaiKetQuaTrongMotGoi",
@@ -262,26 +318,39 @@ export const BANG_HINH_DANG: readonly HinhDangMetaJson[] = [
         { fileName: "hh-3.jpg" }, // thiếu result
       ],
     },
-    kyVong: { loai: "chapNhan", overallResult: "NG", tongDiem: 3, ok: 1, ng: 1 },
+    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NG" }, tongDiem: 3, ok: 1, ng: 1 },
   },
 
   // ── (B) Bí danh cũ points[] thay measurements[] — BG-77 (CHƯA SỬA, deferred sau Pha 1F) ──
   {
     ten: "biDanhPointsRongThayMeasurements_BG77",
     lyDo:
-      "★ BG-77 (backlog toàn cảnh §3, GHI RÕ 'còn mở SAU Pha 1F' — KHÔNG sửa trong task này). " +
-      "`measurements: []` (mảng RỖNG nhưng CÓ MẶT, vì measurements KHÔNG .optional()) cùng " +
-      "`points[]` mang dữ liệu NG thật. Biểu thức SẢN XUẤT `metaData?.measurements || metaData?.points || []` " +
-      "chọn `measurements` vì MẢNG RỖNG LÀ TRUTHY trong JS — `points[]` bị bỏ qua HOÀN TOÀN dù có dữ liệu NG. " +
-      "Hình dạng này ghi lại HÀNH VI HIỆN TẠI (SAI theo trực giác 'points là bí danh tương thích ngược'), KHÔNG PHẢI hành vi ĐÚNG — " +
-      "nếu BG-77 được vá sau này, kỳ vọng ở đây PHẢI đổi sang overallResult:'NG' (một sự cố ý, không phải quên cập nhật).",
+      "★ BG-77 (backlog toàn cảnh §3, GHI RÕ 'còn mở SAU Pha 1F' — KHÔNG sửa trong task này, chủ dự án " +
+      "đã DUYỆT treo qua kế hoạch Pha 1F). `measurements: []` (mảng RỖNG nhưng CÓ MẶT, vì measurements " +
+      "KHÔNG .optional()) cùng `points[]` mang dữ liệu NG thật. Biểu thức SẢN XUẤT " +
+      "`metaData?.measurements || metaData?.points || []` chọn `measurements` vì MẢNG RỖNG LÀ TRUTHY " +
+      "trong JS — `points[]` bị bỏ qua HOÀN TOÀN dù có dữ liệu NG. `kyVong.overallResult` dùng " +
+      "`ghiNhanNoDaDuyet` (KHÔNG `khangDinh`) — cổng GHI NHẬN hành vi hiện tại (OK) là nợ ĐÃ DUYỆT treo, " +
+      "KHÔNG khẳng định đó là đúng; `hanhViDung` khai rõ giá trị ngữ nghĩa đúng (NG). Nếu BG-77 được vá " +
+      "sau này, hàng SELECT sẽ tự lệch khỏi `hanhViHienTai` và ca này tự ĐỎ — đúng lúc đó đổi biến thể " +
+      "sang `khangDinh` (không phải một 'lý do' viết sẵn không ai kiểm — bài học `ntfSource`/BG-91).",
     meta: {
       serialNumber: "HD-BG77-SN",
       productModel: "HD-BG77-PM",
       measurements: [],
       points: [{ code: "P1", fileName: "bg77-1.jpg", result: "NG" }],
     },
-    kyVong: { loai: "chapNhan", overallResult: "OK", tongDiem: 0, ok: 0, ng: 0 },
+    kyVong: {
+      loai: "chapNhan",
+      overallResult: {
+        dang: "ghiNhanNoDaDuyet",
+        hanhViHienTai: "OK",
+        hanhViDung: "NG",
+        maBacklog: "BG-77",
+        lyDoDuyet: "docs/superpowers/specs/2026-08-31-aoi-backlog-toan-canh.md §3 + plan Pha 1F 'Còn mở sau Pha 1F: … BG-77'",
+      },
+      tongDiem: 0, ok: 0, ng: 0,
+    },
     ungCuVienKhongTrongDbTest: true,
   },
 
@@ -295,7 +364,7 @@ export const BANG_HINH_DANG: readonly HinhDangMetaJson[] = [
       overallResult: "NG",
       measurements: [],
     },
-    kyVong: { loai: "chapNhan", overallResult: "NG", tongDiem: 0, ok: 0, ng: 0 },
+    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NG" }, tongDiem: 0, ok: 0, ng: 0 },
   },
   {
     ten: "cuonTuMeasurementsNangHonLoiKhaiOk_D21_chieuNguoc",
@@ -306,7 +375,7 @@ export const BANG_HINH_DANG: readonly HinhDangMetaJson[] = [
       overallResult: "OK",
       measurements: [{ fileName: "d21b-1.jpg", result: "NG" }],
     },
-    kyVong: { loai: "chapNhan", overallResult: "NG", tongDiem: 1, ok: 0, ng: 1 },
+    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NG" }, tongDiem: 1, ok: 0, ng: 1 },
   },
 
   // ── (D) Hợp đồng LỆCH HÌNH DẠNG — phân loại lỗi (mệnh đề 2) ──────────────
@@ -348,22 +417,31 @@ export const BANG_HINH_DANG: readonly HinhDangMetaJson[] = [
     kyVong: { loai: "tuChoi", vinhVien: false },
   },
   {
-    ten: "ngayGioDaiThatBiTuChoiOCuaZip_KHAC_v1x",
+    ten: "ngayGioDaiThatDuocNhanOCuaZip_BG91_daVa",
     lyDo:
-      "★★★ PHÁT HIỆN MỚI của cổng này — BG-72 CHỈ được vá ở đường v1.x (`submitInspectionCoreObject.inspectionTime`/" +
-      "`.serverReceivedAt`, `.max(40)`→`.max(64)`, task-2-report.md). Cửa ZIP (`metaJsonSchema.inspectionTime`) " +
-      "CÒN NGUYÊN `.max(40)` (quyết định CÓ CHỦ Ý của Task 2 — 'brief đo CHỈ hai trường này (v1.x)'). " +
-      "Chuỗi `DateTime.ToString()` 50 ký tự — CÙNG bằng chứng NGUYÊN VĂN v1.x đã dùng — bị `.max(40)` từ chối " +
-      "Ở CỬA ZIP ⇒ MỘT issue too_big duy nhất ⇒ ĐẾM VÀO NGƯỠNG DEAD (khác BG-73: đây KHÔNG chỉ 'ở lại failed " +
-      "mãi', mà 'chết VĨNH VIỄN sau N lượt' — một máy ZIP dùng CÙNG Agent C# với máy v1.x có thể bị khoá " +
-      "'dead' vì ĐÚNG lớp hồi quy BG-72 mà v1.x đã vá. Xem 'mối lo' trong báo cáo Task 4.",
+      "★★★ BG-91 — cổng này TỰ PHÁT HIỆN lỗ này lần đầu (BG-72 chỉ được vá ở đường v1.x, " +
+      "`submitInspectionCoreObject.inspectionTime`/`.serverReceivedAt` .max(40)→.max(64); cửa ZIP " +
+      "`metaJsonSchema.inspectionTime` CÒN NGUYÊN .max(40) — cùng chuỗi DateTime.ToString() 50 ký tự bị " +
+      "TỪ CHỐI ở ZIP trong khi v1.x đã nhận, và bị đếm VĨNH VIỄN (too_big) ⇒ khoá 'dead' sau N lượt, " +
+      "NẶNG HƠN BG-73). Đã VÁ ở `6082df2f` (`.max(40)`→`.max(64)` tại `metaJsonSchema.inspectionTime`, " +
+      "cùng con số/lý lẽ v1.x) — xem `aoiPackageZipInspectionTimeDaiThat.test.ts` (Task 2, 5 ca). " +
+      "Hình dạng này giờ KHẲNG ĐỊNH (`khangDinh`, không phải ghi nhận) hành vi ĐÚNG: chuỗi 50 ký tự " +
+      "ĐƯỢC CHẤP NHẬN, gói commit THÀNH CÔNG ngay lượt đầu, KHÔNG hề chạm 'failed'/'dead'. " +
+      "★ BÀI HỌC ĐÃ TRẢ GIÁ (2026-08-30): trước bản sửa NÀY, hình dạng này mã hoá HÀNH VI CŨ (bị từ chối) " +
+      "làm kỳ vọng — khi BG-91 được vá, cổng ĐỎ và trông giống một hồi quy do bản vá gây ra, trong khi " +
+      "thực ra cổng đang bắt ĐÚNG một hành vi giờ đã đổi. `KyVongOverallResult.khangDinh` chỉ nên dùng " +
+      "cho hành vi ĐÃ XÁC NHẬN đúng — không phải 'hôm nay nó đang chạy vậy'.",
     meta: {
       serialNumber: "HD-DT50-SN",
       productModel: "HD-DT50-PM",
       measurements: [{ fileName: "dt50-1.jpg" }],
-      inspectionTime: "Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)", // 50 ký tự, new Date() parse được, .max(40) từ chối
+      inspectionTime: "Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)", // 50 ký tự, new Date() parse được — ĐƯỢC CHẤP NHẬN sau 6082df2f (.max(64))
     },
-    kyVong: { loai: "tuChoi", vinhVien: true },
+    kyVong: {
+      loai: "chapNhan",
+      overallResult: { dang: "khangDinh", overallResult: "OK" },
+      tongDiem: 1, ok: 0, ng: 0,
+    },
     ungCuVienKhongTrongDbTest: true,
   },
 ] as const;

@@ -44,6 +44,7 @@ import {
 import {
   BANG_HINH_DANG,
   layHinhDangMauMayThat,
+  giaTriQuanSatDuoc,
   type HinhDangMetaJson,
 } from "../contracts/hinhDangHopDongMetaJson";
 
@@ -147,7 +148,13 @@ describe("§A — mỗi hình dạng 'chapNhan' của BANG_HINH_DANG: verdict SE
   });
 
   for (const h of HINH_DANG_CHAP_NHAN) {
-    it(`"${h.ten}" (${h.lyDo.slice(0, 60)}…) ⇒ overallResult SELECT = ${h.kyVong.loai === "chapNhan" ? h.kyVong.overallResult : "?"}`, async () => {
+    const kyVongTruoc = h.kyVong as Extract<HinhDangMetaJson["kyVong"], { loai: "chapNhan" }>;
+    const giaTriDoDuocKyVong = giaTriQuanSatDuoc(kyVongTruoc.overallResult);
+    const ghiChuNo =
+      kyVongTruoc.overallResult.dang === "ghiNhanNoDaDuyet"
+        ? ` [★ NỢ ĐÃ DUYỆT ${kyVongTruoc.overallResult.maBacklog} — hành vi ĐÚNG là "${kyVongTruoc.overallResult.hanhViDung}", cổng CHỈ khoá hành vi hiện tại, KHÔNG khẳng định nó đúng]`
+        : "";
+    it(`"${h.ten}" (${h.lyDo.slice(0, 60)}…) ⇒ overallResult SELECT = ${giaTriDoDuocKyVong}${ghiChuNo}`, async () => {
       const kyVong = h.kyVong as Extract<HinhDangMetaJson["kyVong"], { loai: "chapNhan" }>;
       const meta = metaVoiSerialRieng(h);
       const { packageId, pkgDbId } = await ghiZipHopLeVaTaoGoi(h.ten, meta);
@@ -162,8 +169,14 @@ describe("§A — mỗi hình dạng 'chapNhan' của BANG_HINH_DANG: verdict SE
       const [inspRow] = await d.select().from(productInspections).where(eq(productInspections.id, inspectionId!));
       const [pkgRow] = await d.select().from(inspectionPackages).where(eq(inspectionPackages.id, pkgDbId));
 
-      expect(inspRow.overallResult, `"${h.ten}": SELECT product_inspections.overallResult (header)`).toBe(kyVong.overallResult);
-      expect(pkgRow.overallResult, `"${h.ten}": SELECT inspection_packages.overallResult (package row) — phải KHỚP header, không còn 'hai cột cùng hàng bất đồng' (BG-76)`).toBe(kyVong.overallResult);
+      // ★ Assert bằng `giaTriQuanSatDuoc` — với 'khangDinh' đây LÀ giá trị đúng
+      // (lệch = lỗi thật); với 'ghiNhanNoDaDuyet' đây là giá trị SANCTIONED để
+      // treo (lệch = hành vi vừa đổi, có thể là fix chưa được cập nhật kyVong
+      // HOẶC hồi quy — cả hai đều đáng được xem xét, message nêu rõ đây KHÔNG
+      // phải khẳng định "đúng").
+      const giaTriKyVong = giaTriQuanSatDuoc(kyVong.overallResult);
+      expect(inspRow.overallResult, `"${h.ten}": SELECT product_inspections.overallResult (header)${ghiChuNo}`).toBe(giaTriKyVong);
+      expect(pkgRow.overallResult, `"${h.ten}": SELECT inspection_packages.overallResult (package row) — phải KHỚP header, không còn 'hai cột cùng hàng bất đồng' (BG-76)`).toBe(giaTriKyVong);
       expect(pkgRow.totalPoints, `"${h.ten}": SELECT totalPoints`).toBe(kyVong.tongDiem);
       expect(pkgRow.okCount, `"${h.ten}": SELECT okCount`).toBe(kyVong.ok);
       expect(pkgRow.ngCount, `"${h.ten}": SELECT ngCount`).toBe(kyVong.ng);
@@ -244,50 +257,41 @@ describe("§C — mẫu meta.json máy THẬT (BG-73): một lượt commit ném
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// §D — TƯƠNG PHẢN: hình dạng VĨNH VIỄN THẬT SỰ đếm vào ngưỡng 'dead' —
-// PHÁT HIỆN MỚI của cổng này (metaJsonSchema.inspectionTime CÒN .max(40),
-// khác v1.x đã được BG-72 vá lên .max(64)).
+// §D — BG-91 ĐÃ VÁ (`6082df2f`): chuỗi DateTime.ToString() 50 ký tự Ở CỬA ZIP
+// nay ĐƯỢC CHẤP NHẬN, commit THÀNH CÔNG ngay lượt đầu, KHÔNG BAO GIỜ chạm
+// 'failed' nói gì tới 'dead'.
+//
+// ★★★ LỊCH SỬ (2026-08-30) — TRƯỚC bản sửa NÀY, describe này khẳng định NGƯỢC
+// LẠI: "chuỗi 50 ký tự bị từ chối, đếm vào ngưỡng dead" — đúng hành vi CŨ
+// (bug BG-91, mà chính cổng này phát hiện). Khi BG-91 được vá, describe đó
+// ĐỎ và trông giống một hồi quy do bản vá gây ra. Bài học: `kyVong` phải mã
+// hoá hành vi ĐÚNG (khangDinh), không phải "hành vi hôm nay" — xem
+// `KyVongOverallResult` (`hinhDangHopDongMetaJson.ts`) + §4 của
+// `hinhDangHopDongMetaJson.test.ts`.
 // ════════════════════════════════════════════════════════════════════════════
-describe("★★★ §D — PHÁT HIỆN MỚI: DateTime.ToString() 50 ký tự Ở CỬA ZIP (khác v1.x đã vá) ĐẾM VÀO NGƯỠNG 'dead'", () => {
-  const NGUONG = 3;
-
-  beforeEach(() => {
-    process.env.AOI_PACKAGE_ZIP_MAX_PERMANENT_FAILS = String(NGUONG);
-  });
-
-  it(`(ngưỡng)=${NGUONG} lượt commit liên tiếp trên chuỗi DateTime.ToString() 50 ký tự ⇒ status CHUYỂN 'dead' — TƯƠNG PHẢN trực tiếp với §B/§C (lệch hình dạng KHÔNG bao giờ 'dead')`, async () => {
-    const shape = BANG_HINH_DANG.find((h) => h.ten === "ngayGioDaiThatBiTuChoiOCuaZip_KHAC_v1x")!;
+describe("★★★ §D — BG-91 đã vá: DateTime.ToString() 50 ký tự Ở CỬA ZIP ĐƯỢC CHẤP NHẬN, KHÔNG chạm 'failed'/'dead'", () => {
+  it("gói mang inspectionTime 50 ký tự ⇒ commit success:true, status='committed' NGAY lượt đầu — TƯƠNG PHẢN trực tiếp với §B/§C (những hình dạng LỆCH hình dạng, không parse được)", async () => {
+    const shape = BANG_HINH_DANG.find((h) => h.ten === "ngayGioDaiThatDuocNhanOCuaZip_BG91_daVa")!;
     expect(shape, "test dựng sai — thiếu hình dạng trong BANG_HINH_DANG").toBeTruthy();
+    expect(shape.kyVong.loai, "BG-91 đã vá ⇒ hình dạng này nay PHẢI ở nhóm chapNhan, không còn tuChoi").toBe("chapNhan");
     const meta = metaVoiSerialRieng(shape);
-    const { packageId, pkgDbId } = await ghiZipHopLeVaTaoGoi("ngay-gio-dai-dead", meta);
+    const { packageId, pkgDbId } = await ghiZipHopLeVaTaoGoi("ngay-gio-dai-ok", meta);
     const caller = aoiPackageRouter.createCaller({ user: null } as never);
 
-    let thongDiepCuoi = "";
-    for (let lan = 1; lan <= NGUONG; lan++) {
-      let loi: any;
-      try {
-        await caller.commit({ apiKey: API_KEY, packageId });
-      } catch (e) {
-        loi = e;
-      }
-      expect(loi, `lượt ${lan} phải ném lỗi (inspectionTime 50 ký tự vượt .max(40) ở metaJsonSchema)`).toBeTruthy();
-      thongDiepCuoi = String(loi.message);
-    }
-    // Đúng lượt NGUONG: bộ đếm chạm ngưỡng TRONG CHÍNH lượt đó ⇒ thông điệp
-    // ném ra ở lượt cuối ĐÃ phải nêu "HỎNG VĨNH VIỄN" (đối chứng ngay tại
-    // nguồn, không đợi SELECT mới biết).
-    expect(thongDiepCuoi, `lượt ${NGUONG} (đúng ngưỡng) phải NÊU 'HỎNG VĨNH VIỄN' trong thông điệp ném ra`).toContain(
-      "HỎNG VĨNH VIỄN",
-    );
+    const ket = await caller.commit({ apiKey: API_KEY, packageId });
+    expect(ket.success, "commit phải THÀNH CÔNG ngay lượt đầu — chuỗi 50 ký tự không còn bị .max(40) chặn").toBe(true);
+    const inspectionId = (ket as { inspectionId: number | null }).inspectionId;
+    if (inspectionId) inspectionIds.push(inspectionId);
 
     const d = (await db.getDb())!;
     const [pkgRow] = await d.select().from(inspectionPackages).where(eq(inspectionPackages.id, pkgDbId));
-    expect(pkgRow.status, `sau đúng ${NGUONG} lượt (ngưỡng): status PHẢI 'dead' — hình dạng VĨNH VIỄN thật (too_big) đếm vào ngưỡng, khác §B/§C (lệch hình dạng)`).toBe("dead");
-
-    // Lượt tiếp theo phải bị KHOÁ VĨNH VIỄN — không có đường về từ phía máy chủ
-    // (đúng câu hỏi bắt buộc "gói đã chết vì lý do sai — lấy lại thế nào?": ở
-    // hình dạng NÀY thì gói THẬT vĩnh viễn — server đổi .max(40)→64 mới cứu được).
-    await expect(caller.commit({ apiKey: API_KEY, packageId })).rejects.toThrow(/HỎNG VĨNH VIỄN/);
+    expect(pkgRow.status, "gói phải 'committed' NGAY lượt đầu — KHÔNG hề chạm 'failed', nói gì tới 'dead'").toBe("committed");
+    expect(pkgRow.errorMessage, "commit thành công ⇒ không có lỗi nào ghi lại").toBeNull();
+    // CHỐNG HỒI QUY tự nhiên: nếu ai đó vô tình đặt lại `.max(40)` ở
+    // `metaJsonSchema.inspectionTime`, ba `expect` trên tự ĐỎ (ket.success
+    // false / status không phải 'committed') — không cần một cơ chế đột biến
+    // sống riêng trong CI (đột biến THẬT chỉ chạy tay, xem báo cáo Task 4,
+    // mục "mệnh đề 2").
   });
 });
 
@@ -314,12 +318,16 @@ describe("★★★ mệnh đề 3 — SELECT sống chứng minh ≥1 hình d�
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// §F — Đối chứng dùng laLoiVinhVienDemVaoNguongDeadZip TRỰC TIẾP (không qua commit)
-// để mệnh đề 2 (phân loại đúng lớp) có thêm một lớp đo THUẦN, độc lập với DB.
+// §F — Đối chứng dùng laLoiVinhVienDemVaoNguongDeadZip TRỰC TIẾP (không qua
+// commit) để mệnh đề 2 (phân loại đúng lớp) có thêm một lớp đo THUẦN, độc lập
+// với DB. (Trước bản sửa NÀY, §F đo đúng cơ chế này trên hình dạng inspectionTime
+// — hình dạng đó nay ĐƯỢC CHẤP NHẬN sau BG-91, nên KHÔNG còn ném lỗi để đo. Đổi
+// sang `varcharQuaCoChiMotLoiToCo`, hình dạng tuChoi/vĩnh-viễn KHÔNG bị BG-91
+// chạm tới — vẫn đúng mục tiêu ban đầu của §F.)
 // ════════════════════════════════════════════════════════════════════════════
 describe("§F — mệnh đề 2 đối chứng thuần: laLoiVinhVienDemVaoNguongDeadZip trên lỗi THẬT do commit ném ra", () => {
-  it("gói ngayGioDaiThatBiTuChoiOCuaZip khi commit ném lỗi thật ⇒ lỗi đó (bắt trực tiếp) được phân loại VĨNH VIỄN", async () => {
-    const shape = BANG_HINH_DANG.find((h) => h.ten === "ngayGioDaiThatBiTuChoiOCuaZip_KHAC_v1x")!;
+  it("gói varcharQuaCoChiMotLoiToCo khi commit ném lỗi thật ⇒ lỗi đó (bắt trực tiếp) được phân loại VĨNH VIỄN", async () => {
+    const shape = BANG_HINH_DANG.find((h) => h.ten === "varcharQuaCoChiMotLoiToCo")!;
     const meta = metaVoiSerialRieng(shape);
     const { packageId } = await ghiZipHopLeVaTaoGoi("f-doi-chung-vinh-vien", meta);
     const caller = aoiPackageRouter.createCaller({ user: null } as never);

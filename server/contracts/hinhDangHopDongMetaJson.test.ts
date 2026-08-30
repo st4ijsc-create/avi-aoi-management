@@ -4,7 +4,7 @@
  * — cổng verdict sống ở `server/routers/aoiPackageHinhDangHopDongChoPhep.test.ts`,
  * nơi DUY NHẤT có thể đo bằng SELECT sau commit THẬT).
  *
- * Ba việc file này canh:
+ * Bốn việc file này canh:
  *  §1 `duyetTruongOptional` — walker tự đúng trên một schema TỔNG HỢP đã biết
  *     trước kết quả (cùng kỹ thuật `capChuoiVarcharUnionDeQuy.test.ts`, BG-79).
  *  §2 CHỐNG TỰ THOẢ (mệnh đề 3, nửa đầu) — `duyetTruongOptional(metaJsonSchema)`
@@ -16,9 +16,17 @@
  *     `kyVong.loai` KHỚP với `metaJsonSchema.safeParse()` THẬT (không phải
  *     một lời khai đứng riêng), và mỗi hình dạng `tuChoi` phải có
  *     `kyVong.vinhVien` KHỚP `laLoiVinhVienDemVaoNguongDeadZip` THẬT.
+ *  §4 ★★★ MỚI (2026-08-30, sau phát hiện coordinator) — KỶ LUẬT
+ *     `KyVongOverallResult`: mọi hình dạng dùng biến thể `ghiNhanNoDaDuyet`
+ *     PHẢI khai `hanhViHienTai !== hanhViDung` (nếu bằng nhau, không có lý do
+ *     gì "ghi nhận nợ" một giá trị ĐÃ ĐÚNG — phải dùng `khangDinh`) VÀ
+ *     `maBacklog` khớp `/^BG-\d+$/` (không được để trống/mơ hồ). Đây là lưới
+ *     CHỐNG LẶP LẠI đúng lỗi BG-91: một `kyVong` mã hoá hành vi SAI mà không
+ *     có nhãn phân biệt "khẳng định" ↔ "ghi nhận" khiến cổng XANH GIẢ khi bug
+ *     còn đó, và ĐỎ-TRÔNG-GIỐNG-HỒI-QUY khi bug được vá.
  *
- * §2/§3 là chính "cổng theo hình dạng hợp đồng cho phép" ở TẦNG SCHEMA — cổng
- * ở TẦNG VERDICT (chạy commit thật, SELECT thật) nằm ở file tích hợp.
+ * §2/§3/§4 là chính "cổng theo hình dạng hợp đồng cho phép" ở TẦNG SCHEMA —
+ * cổng ở TẦNG VERDICT (chạy commit thật, SELECT thật) nằm ở file tích hợp.
  */
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
@@ -28,6 +36,8 @@ import {
   BANG_HINH_DANG,
   layHinhDangMauMayThat,
   phanLoaiTuChoi,
+  giaTriQuanSatDuoc,
+  giaTriDung,
 } from "./hinhDangHopDongMetaJson";
 import { metaJsonSchema } from "../routers/aoiPackageRouter";
 
@@ -172,5 +182,58 @@ describe("★★★ mệnh đề 3 (nửa sau) — ≥1 hình dạng CÓ THỂ C
     expect(mmt.ungCuVienKhongTrongDbTest).toBe(true);
     const r = metaJsonSchema.safeParse(mmt.meta);
     expect(r.success, "tiền đề của lập luận 'không trong DB test': parse PHẢI thất bại").toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// §4 ★★★ MỚI — kỷ luật "khẳng định" (khangDinh) vs "ghi nhận" (ghiNhanNoDaDuyet).
+// Chặn đúng lớp lỗi BG-91: một kyVong mã hoá hành vi SAI mà không phân biệt
+// được với "hành vi ĐÚNG" — xem docblock đầu file `hinhDangHopDongMetaJson.ts`
+// tại `KyVongOverallResult`.
+// ════════════════════════════════════════════════════════════════════════════
+describe("★★★ §4 — kỷ luật KyVongOverallResult: 'ghiNhanNoDaDuyet' KHÔNG được dùng để né đỏ", () => {
+  const HINH_DANG_CHAP_NHAN = BANG_HINH_DANG.filter(
+    (h): h is typeof h & { kyVong: { loai: "chapNhan" } } => h.kyVong.loai === "chapNhan",
+  );
+  const GHI_NHAN_NO = HINH_DANG_CHAP_NHAN.filter((h) => h.kyVong.overallResult.dang === "ghiNhanNoDaDuyet");
+
+  it("mọi hình dạng 'ghiNhanNoDaDuyet': hanhViHienTai KHÁC hanhViDung — nếu bằng nhau, phải dùng 'khangDinh' thay vì 'ghi nhận nợ' một giá trị đã đúng", () => {
+    for (const h of GHI_NHAN_NO) {
+      const kv = h.kyVong.overallResult as Extract<typeof h.kyVong.overallResult, { dang: "ghiNhanNoDaDuyet" }>;
+      expect(
+        kv.hanhViHienTai,
+        `"${h.ten}": hanhViHienTai==hanhViDung=="${kv.hanhViDung}" — không có lý do dùng 'ghiNhanNoDaDuyet', đổi sang 'khangDinh'`,
+      ).not.toBe(kv.hanhViDung);
+    }
+  });
+
+  it("mọi hình dạng 'ghiNhanNoDaDuyet': maBacklog khớp dạng 'BG-<số>' — không được để trống/mơ hồ", () => {
+    for (const h of GHI_NHAN_NO) {
+      const kv = h.kyVong.overallResult as Extract<typeof h.kyVong.overallResult, { dang: "ghiNhanNoDaDuyet" }>;
+      expect(kv.maBacklog, `"${h.ten}": maBacklog phải khớp /^BG-\\d+$/`).toMatch(/^BG-\d+$/);
+      expect(kv.lyDoDuyet.length, `"${h.ten}": lyDoDuyet không được rỗng`).toBeGreaterThan(10);
+    }
+  });
+
+  it("giaTriQuanSatDuoc/giaTriDung: với 'khangDinh' hai hàm trả CÙNG giá trị; với 'ghiNhanNoDaDuyet' trả HAI giá trị KHÁC NHAU (đúng thiết kế tách biệt)", () => {
+    for (const h of HINH_DANG_CHAP_NHAN) {
+      const kv = h.kyVong.overallResult;
+      const quanSat = giaTriQuanSatDuoc(kv);
+      const dung = giaTriDung(kv);
+      if (kv.dang === "khangDinh") {
+        expect(quanSat, `"${h.ten}": khangDinh ⇒ giaTriQuanSatDuoc===giaTriDung`).toBe(dung);
+      } else {
+        expect(quanSat, `"${h.ten}": ghiNhanNoDaDuyet ⇒ giaTriQuanSatDuoc (hiện tại) KHÁC giaTriDung (đúng) — đúng bản chất "nợ"`).not.toBe(dung);
+      }
+    }
+  });
+
+  it("★★★ ĐÚNG BÀI HỌC BG-91 — hình dạng inspectionTime-dài-ở-cửa-ZIP nay dùng 'khangDinh' (đã vá ở 6082df2f), KHÔNG còn 'ghiNhanNoDaDuyet'", () => {
+    const shape = BANG_HINH_DANG.find((h) => h.ten === "ngayGioDaiThatDuocNhanOCuaZip_BG91_daVa");
+    expect(shape, "hình dạng BG-91 phải tồn tại (đổi tên từ …BiTuChoiOCuaZip_KHAC_v1x)").toBeTruthy();
+    expect(shape!.kyVong.loai).toBe("chapNhan");
+    if (shape!.kyVong.loai === "chapNhan") {
+      expect(shape!.kyVong.overallResult.dang, "BG-91 đã vá — kỳ vọng phải là khangDinh, không phải ghi nhận nợ").toBe("khangDinh");
+    }
   });
 });
