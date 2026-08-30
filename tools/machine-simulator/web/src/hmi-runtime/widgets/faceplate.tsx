@@ -55,8 +55,10 @@ export function FaceplateWidget(props: WidgetProps) {
  * order nailed into that file's JSX. The two panels those hand-wrote (the live schematic via
  * `SchematicPanel`, the KPI table via `ReadoutGrid`) are NOT reinvented as a pile of generic `readout`/
  * `kpi-tile` widgets scattered across `ScreenRenderer`'s own CSS grid — that was tried and rejected,
- * for a provable, not a convenience, reason (task-5-review.md confirmed the proof independently and
- * found it stronger than fix round 1 stated — the sharper version is recorded here):
+ * for a provable, not a convenience, reason (`task-5-review.md` — the review of round 0, the first
+ * shipped attempt — confirmed the proof independently and found it stronger than round 0's own comment
+ * stated; the sharper version, further corrected by `task-5-re-review.md`'s N2 finding — round 0's
+ * figures were measured at a viewport this suite does not test — is recorded here):
  *
  * `ScreenRenderer`'s grid places every widget on the SAME document-wide `layout.cols` × integer
  * `colSpan` × ONE fixed `gap` — and that gap is a hardcoded `gap-2` (8px) in `ScreenRenderer.tsx`,
@@ -68,18 +70,42 @@ export function FaceplateWidget(props: WidgetProps) {
  * matching both the `W` coefficient and the constant: `a/N = ρ` AND `(a/N)g − g = −gρ`, which together
  * force `ρ = 1/2`. For any `g > 0`, a grid span reproduces a flex-grow split at EVERY viewport only when
  * the split is exactly 1:1 — trivially true for Automation's `[1, 1]`, impossible for AoiAvi's
- * `[1.15, 1]` or IoT's `[0.85, 1.15]`. The schema's own `layout.cols` cap (`maximum: 48`) closes the
- * one loophole a symbolic proof leaves open — a magic ratio tuned to ONE specific viewport: solving
- * `(a/N)(1068+8) − 8 = 564.703125` (the real AOI panel at the suite's own 1440×900) gives
- * `a/N ≈ 0.532252`, and the nearest reachable value at any `N ≤ 48` is off by double-digit pixels
- * (`25/48 → 552.3px`, `26/48 → 574.8px`) — not even a single-viewport escape hatch exists. And the gap
+ * `[1.15, 1]` or IoT's `[0.85, 1.15]`.
+ *
+ * 🔴 `task-5-re-review.md` N2 (round 2) — the paragraph above cites the algebra only; the ILLUSTRATIVE
+ * numbers below were wrong through two review passes and this file's own round-1 text, all three
+ * attributing a real measurement to "the suite's own 1440×900". `playwright.config.ts` SETS
+ * `use.viewport: {1440, 900}`, but `projects: [{ use: { ...devices["Desktop Chrome"] } }]` on the very
+ * next line OVERRIDES it — `devices["Desktop Chrome"]` carries its own `viewport: {1280, 720}`, and
+ * project-level `use` wins. Every committed baseline under `tests/11-hmi.spec.ts-snapshots/` is
+ * 1280×720; no spec anywhere calls `setViewportSize`. Re-measured live at the REAL width (tabpanel/
+ * `opRow` = 908px, not 1068): schematic **479.109375px**, readout **416.890625px**, one 12px `gap-3`
+ * (908 = 479.109375 + 416.890625 + 12, exactly). The schema's own `layout.cols` cap (`maximum: 48`)
+ * still closes the one loophole a symbolic proof leaves open — a magic ratio tuned to ONE specific
+ * viewport: solving `(a/N)(908+12) − 12 = 479.109375` gives `a/N ≈ 0.533815`, and the CLOSEST reachable
+ * value at any `N ≤ 48` is `a/N = 8/15` (`≈ 0.533333`, e.g. `24/45` or `16/30` — width depends only on
+ * the ratio, not which `N` realizes it), giving `478.667px` — off by `≈ 0.44px`, still not exact, and
+ * every other `N ≤ 48` checked is farther. Not even a single-viewport escape hatch exists. And the gap
  * itself is wrong before the ratio is: two adjacent generic widgets would sit 8px apart, not 12px,
  * regardless of any span choice.
  *
+ * The proof's conclusion is unchanged by the viewport correction — the algebra above never depended on
+ * `W`, only the illustrative numbers did. What DOES change, and is worth stating plainly because the
+ * prior review got it backwards: `task-5-review.md` §2 argued the ORIGINAL `564.703125 : 491.296875`
+ * figures were "not reproducible from the code they document" because idealised flex gives `564.8372`
+ * (a `1.15:1` split of `1056px = 1068 − 12`). That objection was ITSELF measuring the wrong viewport —
+ * Chrome never renders 1068px wide on this suite, so there was nothing for `564.703125` to reproduce. At
+ * the REAL 908px container the idealised split is `896 × 1.15/2.15 = 479.255814px`; the genuine
+ * measurement above is `479.109375px` — short by `≈ 0.146px`, the same order of magnitude and the same
+ * SIGN as the original (wrong-viewport) figures' own `≈ 0.134px` deviation. `564.703125` was a real
+ * Chrome measurement all along; it was measured at, and mis-attributed to, a viewport this suite has
+ * never once rendered.
+ *
  * Given the task's overriding rule (`maxDiffPixelRatio: 0.00002`, no baseline may move, ever), this
  * proof forces exactly ONE conclusion: **two generic grid-placed widgets cannot stand in for this pair.**
- * It does NOT force the proportions themselves to live in TypeScript — that was fix round 1's mistake
- * (task-5-review.md HIGH #1/#2). `schematicFlex`/`readoutFlex` are ordinary `props` values now
+ * It does NOT force the proportions themselves to live in TypeScript — that was round 0's mistake,
+ * closed by fix round 1 (`task-5-review.md` HIGH #1/#2). `schematicFlex`/`readoutFlex` are ordinary
+ * `props` values now
  * (`overviewFaceplate.ts`'s `resolveOverviewFaceplate`, read from each `*-overview.json`'s own
  * `widgets[0].props`), reaching the exact same inline `style` below — zero pixel change, genuinely
  * authored in the document. What stays fixed in code is narrower: which ONE widget kind (`faceplate`)
@@ -176,7 +202,25 @@ function OperationOverviewFaceplate({
   // for at most one tick beats a crash (plan §5-bis).
   if (!machine || !code) return null
 
-  const isAoi = machine.class === "AoiAvi"
+  // 🔴 `task-5-re-review.md` N4 (round 2) — before this fix, the schematic half read `config.deviceClass`
+  // (the DOCUMENT) while this half read `machine.class` (the REAL machine) — two sources of truth in one
+  // component. Harmless in shipped operation (`Hmi.tsx`'s `SCREEN_DOCS[machine.class]` guarantees they
+  // always agree), but a deliberately-mismatched document — this task's OWN falsification tooling
+  // (`overviewFaceplate.test.mjs`'s swap test, `tests/32-hmi-screen-wiring.spec.ts`) constructs exactly
+  // this — used to render "half document, half machine": the re-review's own swap run showed IOT-01's
+  // panel with the AOI/AVI cell DRAWING beside IoT readout TILES (`GÓI TIN / PACKETS`, `TỐC ĐỘ MẪU /
+  // SAMPLE RATE`), a plausible-looking but internally incoherent operator panel with no warning anywhere.
+  //
+  // Resolved in favour of the DOCUMENT, not the machine — the same direction the schematic half already
+  // committed to (undoing it would re-open HIGH #1, the finding that took two review rounds to close).
+  // `readoutMachine` is `machine` UNCHANGED whenever `config.deviceClass === machine.class` (the shipped
+  // case, always — this is a genuine no-op, not a behaviour change: `ReadoutGrid`'s own tile set, tones,
+  // and every live NUMBER it shows still come from the real `machine`, only the CLASS LABEL it branches
+  // its tile layout on is swapped to what the document declares). A mismatched document now renders one
+  // coherent (if data that doesn't fit its own labels) panel, driven by ONE class end to end, rather than
+  // silently mixing two.
+  const readoutMachine = config.deviceClass === machine.class ? machine : { ...machine, class: config.deviceClass }
+  const isAoi = config.deviceClass === "AoiAvi"
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 gap-3">
@@ -205,7 +249,7 @@ function OperationOverviewFaceplate({
           className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
         >
           <ReadoutGrid
-            machine={machine}
+            machine={readoutMachine}
             productLabel={isAoi ? productTileLabel : undefined}
             configDriftState={configDriftState}
           />

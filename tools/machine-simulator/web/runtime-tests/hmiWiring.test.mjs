@@ -16,6 +16,24 @@
 // `DeviceClass → HmiScreenDocument` chọn TÀI LIỆU) là sai — nó không phải mục tiêu của bài này, phần
 // "đúng bố cục" đã chuyển hẳn vào JSON (`overviewFaceplate.test.mjs`) và chọn TÀI LIỆU theo lớp máy
 // chính là điều task brief đòi ("chọn tài liệu JSON theo deviceClass"), không phải điều bị cấm.
+//
+// 🔴 `task-5-re-review.md` finding N1 (round 2) — nói THẲNG giới hạn của bài này, không để nó đọc như
+// một bảo đảm HÀNH VI: đây là một bài SO CHỮ (source-text pattern match), và nó BỊ ĐÁNH BẠI, đo được
+// chứ không chỉ suy diễn — reviewer phục hồi nguyên bố cục viết tay trước-Task-5 rồi sửa BỐN chỗ mang
+// tính "làm đẹp": import viết `"../components/hmi/SchematicPanel"` thay vì `"@/components/hmi/
+// SchematicPanel"`; `SCHEMATIC_READOUT_FLEX` đổi tên thành `PANEL_FLEX_BY_CLASS`; kiểu viết
+// `Record<DeviceClass, readonly [number, number]>` (từ khoá `readonly` phá regex `\[\s*number` bên
+// dưới); và một đoạn comment hai dòng chỉ NHẮC TÊN `<ScreenRenderer` cùng ba đường dẫn JSON — cả 5 bài
+// dưới đây XANH trở lại dù TOÀN BỘ sản phẩm Task 5 đã bị hoàn tác. Một refactor bình thường (đổi alias
+// path, một rule lint đòi tuple `readonly`) có thể vô tình gây ra ĐÚNG kết quả đó, không cần cố ý né.
+//
+// Bài này VẪN Ở LẠI (rẻ, nhanh, bắt được một REVERT THẬT — 5/5 đỏ, đo bằng `AssertionError` thật, không
+// phải lỗi biên dịch, xem task-5-re-review.md §A1) nhưng KHÔNG CÒN LÀ BẢO ĐẢM DUY NHẤT: bài chứng minh
+// HÀNH VI thật — DOM thật, trình duyệt thật, tài liệu bị hoán đổi thật sự đổi những gì hiện ra — nằm ở
+// `tests/32-hmi-screen-wiring.spec.ts` (Playwright), phương án được chọn theo đúng thứ tự ưu tiên
+// coordinator đưa ra: không có `jsdom`/gói render-React nào trong `devDependencies`, thêm một gói mới
+// bị cấm bởi ràng buộc của task, và `.tsx` không `import()` được dưới `node --test` — nên "render
+// component thật" ở kho này chỉ có một hình dạng thực thi được: một trình duyệt thật qua Playwright.
 
 import { test } from "node:test"
 import assert from "node:assert/strict"

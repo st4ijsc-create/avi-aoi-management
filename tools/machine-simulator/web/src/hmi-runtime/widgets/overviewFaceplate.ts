@@ -8,11 +8,14 @@
  * determines what would render, not just that a plausible-looking value sits in a JSON file beside
  * TypeScript that ignores it.
  *
- * 🔴 What round 1 shipped, and why the reviewer rejected it: `FaceplateWidget` checked `props.faceplate`
+ * 🔴 What round 0 shipped, and why fix round 1 (`task-5-review.md`) rejected it — corrected numbering,
+ * `task-5-re-review.md` finding N5: an earlier version of this comment called round 0's shape "round 1",
+ * which is what THIS file's own fix actually is; fixed here rather than left to contradict
+ * `ScreenRenderer.tsx`'s own (correct) numbering. Round 0's `FaceplateWidget` checked `props.faceplate`
  * for Set membership (`OVERVIEW_FACEPLATE_IDS.has(id)`) and then discarded the value —
  * `OperationOverviewFaceplate` re-derived `deviceClass` from the REAL `machine.class` and read the
  * schematic:readout ratio from `OVERVIEW_SCHEMATIC_READOUT_FLEX`, a `Record<DeviceClass, [number,
- * number]>` relocated verbatim from `Hmi.tsx`'s deleted `SCHEMATIC_READOUT_FLEX`. The reviewer's
+ * number]>` relocated verbatim from `Hmi.tsx`'s deleted `SCHEMATIC_READOUT_FLEX`. The round-1 review's
  * falsification: swap `"fp.overview.aoi"` and `"fp.overview.iot"` between the two documents and NOTHING
  * changes — the id was inert, and the "generic grid can't do a non-1:1 ratio" proof (real, and it holds
  * — see `faceplate.tsx`'s own header) was being used to justify a DIFFERENT, unforced decision: keeping
@@ -20,10 +23,11 @@
  * (`hmi-screen.schema.json`'s `$defs/widget.props` is `{"type":"object"}`), and the widget already reads
  * `widget.props` — nothing stopped the ratio from living there too.
  *
- * The fix: `resolveOverviewFaceplate` below reads BOTH the `deviceClass` (from the id itself, via
- * `FACEPLATE_DEVICE_CLASS`) AND the flex ratio (from `props.schematicFlex`/`props.readoutFlex`) — both
- * now genuinely travel from the JSON document to the rendered pixels, and swapping either would visibly
- * change what renders (this module's own tests demonstrate exactly that swap).
+ * The fix (this file, round 1): `resolveOverviewFaceplate` below reads BOTH the `deviceClass` (from the
+ * id itself, via `FACEPLATE_DEVICE_CLASS`) AND the flex ratio (from `props.schematicFlex`/
+ * `props.readoutFlex`) — both now genuinely travel from the JSON document to the rendered pixels, and
+ * swapping either would visibly change what renders (this module's own tests demonstrate exactly that
+ * swap, and `tests/32-hmi-screen-wiring.spec.ts` — round 2 — demonstrates it in a real rendered page).
  */
 import type { DeviceClass } from "../../lib/api.ts"
 
@@ -62,6 +66,15 @@ function readFlex(raw: unknown): number {
   // (`widgets/shared.ts`'s `asRecord`/`readThresholds`): a JSON document is not guaranteed to match its
   // declared shape at runtime, and a missing/non-numeric/non-positive ratio must fall back to an even
   // split, not throw or silently render a panel at zero width (plan §5-bis).
+  //
+  // 🔴 `task-5-re-review.md` N3 (round 2) — this fallback is why a DECLARED `1` and an ABSENT field are
+  // indistinguishable from this function's own return value alone: `readFlex(1) === readFlex(undefined)
+  // === 1`. That is correct behaviour for THIS function (the fallback is deliberate, same house style as
+  // `asRecord`/`readThresholds`) — the finding was that `runtime-tests/screens.test.mjs`'s test claimed
+  // to check the declared ratio while only checking the RESOLVED one, so deleting
+  // `automation-overview.json`'s `schematicFlex`/`readoutFlex` entirely stayed green. Fixed at the test
+  // (an explicit `Object.hasOwn` check on the raw document), not here — the fallback itself is correct
+  // and unchanged.
   return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_FLEX
 }
 

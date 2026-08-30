@@ -161,6 +161,16 @@ function RenderedWidget({
  * needed) and folded into the one tooltip idiom this renderer already uses, not a second one.
  */
 export function ScreenRenderer({ doc, source, components }: ScreenRendererProps) {
+  // 🔴 `task-5-re-review.md` §B (round 2) — `doc.title`/`doc.titleEn` are validated by the schema
+  // (`required: [..., "title"]`, `titleEn` optional) but DELIBERATELY not read here: `title`/`titleEn`
+  // are authoring-time metadata — a screen's own name, for a future editor's document list or a
+  // publish-time human label (WS-HMI-2) — not an on-screen element this runtime renders. No widget's
+  // heading derives from them, and none should without a deliberate design decision to add one (a
+  // heading appearing where there was none before is a pixel change, not a wiring fix, and none of
+  // this task's screens are authorised to move a baseline). This is a chosen, documented gap, not an
+  // oversight: the alternative — silence — is how the NEXT author would conclude an unread schema field
+  // is honoured just because it validates. `data-hmi-screen={doc.screenId}` two lines below is the one
+  // `doc` field this component DOES surface, as a DOM hook, not for display either.
   const { layout, widgets } = doc
   return (
     <div
@@ -169,8 +179,10 @@ export function ScreenRenderer({ doc, source, components }: ScreenRendererProps)
       // WS-HMI-1 Task 5 fix round 1 (task-5-review.md LOW) — `min-w-0 min-h-0` added: this div is now
       // (Task 5) a flex ITEM of `Hmi.tsx`'s tabpanel row, and a flex item's default `min-width`/
       // `min-height: auto` uses its min-CONTENT size as a floor, ignoring `w-full`/`h-full` — harmless
-      // at the suite's 1440×900 (the content already fits, so the floor never binds and no pixel
-      // moves), but a real overflow risk at a narrower `ScreenBreakpoint`, where the flex row this
+      // at the suite's real tested viewport (`devices["Desktop Chrome"]`'s 1280×720 — see
+      // `faceplate.tsx`'s own N2 note; `task-5-re-review.md` caught this file's comment repeating the
+      // same wrong-viewport claim — the content already fits there, so the floor never binds and no
+      // pixel moves), but a real overflow risk at a narrower `ScreenBreakpoint`, where the flex row this
       // replaced always carried its own `min-w-0`.
       className="grid h-full w-full min-h-0 min-w-0 gap-2"
       style={{

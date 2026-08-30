@@ -78,4 +78,22 @@ for (const [file, expected] of Object.entries(SCREEN_FILES)) {
     assert.equal(resolved.schematicFlex, expected.schematicFlex)
     assert.equal(resolved.readoutFlex, expected.readoutFlex)
   })
+
+  test(`web/screens/${file}: schematicFlex/readoutFlex được KHAI BÁO tường minh trong props, không dựa vào giá trị mặc định`, () => {
+    // `task-5-re-review.md` N3 (round 2) — `resolveOverviewFaceplate`'s fallback (`readFlex`,
+    // `overviewFaceplate.ts`) trả `1` cho CẢ HAI trường hợp "khai báo schematicFlex: 1" VÀ "không khai
+    // báo schematicFlex gì cả" — bài test trên (so `resolved.schematicFlex === expected.schematicFlex`)
+    // không phân biệt được hai trường hợp đó cho `automation-overview.json` (tỉ lệ 1:1, đúng bằng giá
+    // trị mặc định). CHỨNG MINH: xoá cả hai trường khỏi `automation-overview.json` và chạy lại
+    // `test:runtime` — 72/72 VẪN XANH, kể cả bài "tỉ lệ 1:1" phía trên. Bài NÀY kiểm THÀNH PHẦN của
+    // document (`Object.hasOwn`, không đi qua `resolveOverviewFaceplate`), nên nó là bài DUY NHẤT đỏ
+    // nếu ai đó xoá — không đổi `readFlex`'s fallback (đúng house style, xem `overviewFaceplate.ts`'s
+    // doc-comment), chỉ đổi PHÉP ĐO.
+    const doc = JSON.parse(readFileSync(join(SCREENS_DIR, file), "utf8"))
+    const props = doc.widgets[0].props ?? {}
+    assert.ok(Object.hasOwn(props, "schematicFlex"), `${file}: props.schematicFlex phải được khai báo tường minh (không dựa vào giá trị mặc định readFlex)`)
+    assert.ok(Object.hasOwn(props, "readoutFlex"), `${file}: props.readoutFlex phải được khai báo tường minh (không dựa vào giá trị mặc định readFlex)`)
+    assert.equal(typeof props.schematicFlex, "number")
+    assert.equal(typeof props.readoutFlex, "number")
+  })
 }
