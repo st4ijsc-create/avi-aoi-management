@@ -9316,22 +9316,43 @@ note "web/: build OK, lint OK -- ${WEB_LINT_WARNINGS} warning(s), every (rule,co
 # task) exist to close on the .NET/web boundary; this gate closes the twin gap inside verify-suites.sh
 # itself.
 #
-# 📎 🔴 THE PARAGRAPH ABOVE (as it stood 2026-08-29 to 2026-08-30) IS RETRACTED, kept verbatim rather than
-# deleted, by WS-HMI-0a Task 5 FIX ROUND 1 (2026-08-30). It said: "it does not add St4i.Hmi.Contracts.Tests
-# to the SUITES array above ... folding a SEVENTH project in cleanly is a bigger, riskier edit than this
-# task's docs-and-gate scope covers." That was a scope call correct for Mốc 0 Task 7 (a docs-and-gate task
-# with no business widening a different mechanism) and it is FALSE now: St4i.Hmi.Contracts.Tests has an
-# EXPECT_HMI_CONTRACTS pin and a SUITES entry (see the block beside EXPECT_ENGINEAPI, above), so the
-# "logic defect invisible until someone runs it by hand" gap this paragraph recorded is closed the same way
-# the other five projects' equivalent gap already was. The edit was not bigger or riskier than advertised:
-# `SUITES` is consumed generically everywhere in this file (every loop iterates `"${SUITES[@]}"`;
-# `web_domain_declaration` takes it as a spread argument; the output-directory bracket derives its watch
-# list from it) — the ONE place that is NOT generic, `grand=$((...))`, was updated by hand alongside it.
-# 🔴 WHAT DID NOT CHANGE, so a reader does not have to re-derive it: reachability on THIS machine. The
-# `-t:Rebuild` / WPF `_wpftmp` failure documented immediately below still means this file — SUITES entry,
-# gate 1c, all of it — has never run to completion IN SITU here, for the same pre-existing, unrelated
-# reason. Adding the pin makes the mechanism correct; it does not make the mechanism reachable on a machine
-# with that bug.
+# 📎 🔴 READ THIS FIRST — 2026-08-30 (WS-HMI-0a Task 5, fix round 1). THE PARAGRAPH BELOW IS THE RECORD OF
+# A SCOPE DECISION THAT HAS SINCE BEEN SUPERSEDED, AND IT IS KEPT VERBATIM RATHER THAN REWRITTEN because it
+# is the argument a later reader needs to see was actually made, and because this file retracts in place —
+# see the two precedents this fix round followed, beside WEB_SUITE_CEILING_SECONDS above and beside CD-1's
+# EXPECT_EDGECORE block. 🔴 A FIRST DRAFT OF THIS RETRACTION DID NOT FOLLOW THEM: it replaced the paragraph
+# below with a paraphrase instead of wrapping it, while its own first sentence claimed "kept verbatim
+# rather than deleted" — false of the diff that produced it. Recorded here rather than silently fixed,
+# because a comment misdescribing its own diff mechanics is exactly the failure this file's whole premise
+# — precise self-narration of its own history — exists to prevent, one layer up from the product defects it
+# verifies. Two of the paragraph's claims are now FALSE and are named here so no reader takes them for
+# current:
+#   * "it does not add St4i.Hmi.Contracts.Tests to the SUITES array above" — it does now: see the
+#     EXPECT_HMI_CONTRACTS declaration and the SUITES entry beside EXPECT_ENGINEAPI, above.
+#   * "a logic defect that still compiles (e.g. a pin check quietly loosened) is invisible to this file
+#     until someone runs `dotnet test tests/St4i.Hmi.Contracts.Tests` ... by hand" — closed by that same
+#     edit: a loosened pin in that project now fails THIS file's own SUITES loop and grand-total sum, the
+#     same as the other five projects already did. This is the sentence Finding 2 of this fix round leans
+#     on directly ("an absent pin ... fails silently, which is ... worse than a stale one") — restoring it
+#     here is what keeps that argument's own record intact.
+# 🔴 WHAT IS NOT RETRACTED: the paragraph's account of WHY the exclusion existed — the array's count
+# genuinely does feed the "N of M suites" grand total and the (now stale, separately-flagged) "sixth
+# suite" web/ numbering — and the fact that folding the project in touched more than one line (a SUITES
+# entry, an EXPECT_* constant, and the hand-enumerated `grand=$((...))` sum all had to move together,
+# exactly as the paragraph below warns). What changed is only the SCOPE judgment: correct for Mốc 0 Task
+# 7 (a docs-and-gate task with no business widening a different mechanism), superseded now that an absent
+# pin is the finding a later review named. Reachability on THIS machine did NOT change: the `-t:Rebuild` /
+# WPF `_wpftmp` failure documented immediately below still means neither this SUITES entry nor gate 1c has
+# ever run to completion IN SITU here, for the same pre-existing, unrelated reason.
+#
+# 🔴 WHAT THIS DELIBERATELY DOES NOT DO: it does not add St4i.Hmi.Contracts.Tests to the SUITES array
+# above. That array's count feeds the "N of M suites" grand total and the "sixth suite" web/ numbering
+# both printed at the verdict below, and folding a SEVENTH project in cleanly is a bigger, riskier
+# edit than this task's docs-and-gate scope covers -- see task-7-report.md for the reasoning. Recorded
+# here rather than left silent: a `dotnet build -t:Rebuild` still compiles St4i.Hmi.Contracts.Tests as
+# part of the whole-solution build above and would catch a COMPILE error in it, but a logic defect
+# that still compiles (e.g. a pin check quietly loosened) is invisible to this file until someone runs
+# `dotnet test tests/St4i.Hmi.Contracts.Tests` or `node scripts/check-contracts.mjs` by hand.
 #
 # 🔴 THIS GATE HAS NEVER RUN IN SITU, AS OF 2026-08-30, AND SAYING SO IS THE POINT OF THIS BLOCK.
 # A reader who runs this harness after merge sees RED and has no way to tell that the new gate was
