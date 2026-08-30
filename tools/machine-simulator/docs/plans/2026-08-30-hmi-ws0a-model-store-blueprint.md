@@ -483,6 +483,7 @@ git commit -m "feat(hmi): persist the component tree, and refuse a setpoint with
 
 ```csharp
 using St4i.EngineApi.HmiModel;
+using St4i.EngineApi.Tests.Auth;
 using St4i.Hmi.Contracts;
 using Xunit;
 
@@ -492,11 +493,20 @@ namespace St4i.EngineApi.Tests.HmiModel;
 /// <c>TagNamespaceStore</c>: tài liệu lưu nguyên dạng JSON, cộng một bảng chỉ mục phẳng chỉ cho
 /// <c>path</c> — thứ duy nhất cần tra nhanh.
 ///
+/// <para>🔴 <b>`[Collection]` ở trên KHÔNG phải trang trí.</b> Bảy lớp trong assembly này gọi
+/// <c>SqliteConnection.ClearAllPools()</c> — một lời gọi ở phạm vi TIẾN TRÌNH. Một lớp test không nằm
+/// trong collection ấy mà đang giữ một kết nối SQLite mở đúng lúc đó sẽ dính
+/// <c>ObjectDisposedException: SQLitePCL.sqlite3</c>, và kho này ghi nhận triệu chứng đó đã xảy ra
+/// thật. 50 lớp test hiện có mang thuộc tính này, gồm cả <c>AssetRegistryStoreTests</c>. Tài liệu của
+/// chính quy ước ấy (<c>Auth/SecurityEnvVarTests.cs</c>) nói thẳng rằng <b>không có test nào ép được tư
+/// cách thành viên</b> — nên thiếu nó là im lặng cho tới khi thành CI flake, chứ không đỏ ngay.</para>
+///
 /// <para><b>KHÔNG đo cái gì:</b> (1) không đo giá trị sống hay <c>quality</c> — store này giữ KHAI BÁO,
 /// còn giá trị thuộc hợp đồng live mà WS-HMI-0c sẽ định nghĩa; (2) không đo <c>isBackedByDriver</c> có
 /// đúng sự thật hay không — nó là một trường dữ liệu ở tầng này, và việc nó khớp driver thật là phép đo
 /// của WS-HMI-0c; (3) không kiểm schema đầy đủ, chỉ ba luật §5.</para>
 /// </summary>
+[Collection(SecurityEnvVarTests.CollectionName)]
 public class TagNamespaceStoreTests : IDisposable
 {
     readonly string _dir = Path.Combine(Path.GetTempPath(), "st4i-hmi-tags-" + Guid.NewGuid().ToString("N"));
