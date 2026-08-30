@@ -4471,9 +4471,44 @@ EXPECT_EDGESERVICE=52
 # pair, the per-file breakdown and the measurement that says this closes a capability, not a leak.
 # 🔴 Task CC-1 raises this 1454 -> 1455 (+1), owner item 65 direction A. See the block above
 # EXPECT_EDGECORE for the -1/+2 breakdown, the six-test red run and the two-host control pair.
-EXPECT_ENGINEAPI=1455
+#
+# 🔴 WS-HMI-0a Task 5 FIX ROUND 1 (2026-08-30) raises this 1455 -> 1475 (+20), and the finding is not the
+# number — it is that NOTHING raised it across the four tasks that earned it, so this pin sat wrong on the
+# branch for four commits before anyone read this file. "Pre-existing drift from Tasks 1-4" was the first,
+# self-contradicting draft of this sentence: drift FROM this branch's own tasks is this branch's drift, not
+# something inherited from outside it. Corrected here rather than left standing.
+#
+# MEASURED, not summed from memory: `dotnet test tests/St4i.EngineApi.Tests` on this tree reports
+# `Passed: 1475, Failed: 0, Total: 1475`. The four per-task deltas that add to it are each read out of that
+# task's own report rather than recomputed:
+#   Task 1 (ContractInvariants, St4i.Hmi.Contracts) — +0 here; it touches no EngineApi test.
+#   Task 2 (ComponentModelStore) — 1455 -> 1460 (+5): ComponentModelStoreTests, 5 facts.
+#   Task 3 (TagNamespaceStore)   — 1460 -> 1466 (+6): TagNamespaceStoreTests, 6 facts.
+#   Task 4 (ModelIntegrity)      — 1466 -> 1471 (+5): ModelIntegrityTests, 5 facts (the original set).
+#   Task 5 (this task, wiring)   — 1471 -> 1475 (+4): HmiModelWiringTests (3 facts, new file) + one more
+#     ModelIntegrityTests fact (the IsPathPrefix path-segment regression, confirmed red against a plain
+#     StartsWith before being added, then reverted — see task-5-report.md).
+# 5 + 6 + 5 + 4 = 20, matching 1455 -> 1475 exactly with no unaccounted remainder.
+EXPECT_ENGINEAPI=1475
+
+# 🔴 WS-HMI-0a Task 5 FIX ROUND 1 (2026-08-30) — St4i.Hmi.Contracts.Tests gets its FIRST pin here. It has
+# existed since WS-HMI Mốc 0 (Task 1, 2026-08-29) with zero mechanical coverage in this file: no EXPECT_*
+# constant, no SUITES entry, so a `[Fact]` disappearing from it — or all 33 disappearing — would leave this
+# harness reporting PASS. That is worse than a stale pin, which at least fails loudly; an absent one fails
+# silently, which is the exact "guard with nothing mechanical behind it" shape this programme has hit twice
+# already on this branch (the missing `[Collection]` attribute, and a test titled "still warns" that
+# asserted no warning). See the retracted paragraph beside gate 1c, below, for why the earlier decision NOT
+# to add it is now superseded rather than simply wrong — reachability on THIS machine has not changed; the
+# decision to leave a project with zero mechanical coverage has.
+#
+# MEASURED: `dotnet test tests/St4i.Hmi.Contracts.Tests` reports `Passed: 33, Failed: 0, Total: 33`.
+EXPECT_HMI_CONTRACTS=33
 
 SUITES=(
+  # St4i.Hmi.Contracts first — zero-dependency contract assembly, same population as Abstractions/
+  # Conformance below it, and the cheapest of the six (33 tests, well under a second), so a broken schema
+  # mirror fails before the six-suite run spends any real wall-clock time on the rest.
+  "tests/St4i.Hmi.Contracts.Tests:$EXPECT_HMI_CONTRACTS"
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
   "tests/St4i.Connector.Conformance.Tests:$EXPECT_CONFORMANCE"
   "tests/St4i.EdgeCore.Tests:$EXPECT_EDGECORE"
@@ -9281,14 +9316,22 @@ note "web/: build OK, lint OK -- ${WEB_LINT_WARNINGS} warning(s), every (rule,co
 # task) exist to close on the .NET/web boundary; this gate closes the twin gap inside verify-suites.sh
 # itself.
 #
-# 🔴 WHAT THIS DELIBERATELY DOES NOT DO: it does not add St4i.Hmi.Contracts.Tests to the SUITES array
-# above. That array's count feeds the "N of M suites" grand total and the "sixth suite" web/ numbering
-# both printed at the verdict below, and folding a SEVENTH project in cleanly is a bigger, riskier
-# edit than this task's docs-and-gate scope covers -- see task-7-report.md for the reasoning. Recorded
-# here rather than left silent: a `dotnet build -t:Rebuild` still compiles St4i.Hmi.Contracts.Tests as
-# part of the whole-solution build above and would catch a COMPILE error in it, but a logic defect
-# that still compiles (e.g. a pin check quietly loosened) is invisible to this file until someone runs
-# `dotnet test tests/St4i.Hmi.Contracts.Tests` or `node scripts/check-contracts.mjs` by hand.
+# 📎 🔴 THE PARAGRAPH ABOVE (as it stood 2026-08-29 to 2026-08-30) IS RETRACTED, kept verbatim rather than
+# deleted, by WS-HMI-0a Task 5 FIX ROUND 1 (2026-08-30). It said: "it does not add St4i.Hmi.Contracts.Tests
+# to the SUITES array above ... folding a SEVENTH project in cleanly is a bigger, riskier edit than this
+# task's docs-and-gate scope covers." That was a scope call correct for Mốc 0 Task 7 (a docs-and-gate task
+# with no business widening a different mechanism) and it is FALSE now: St4i.Hmi.Contracts.Tests has an
+# EXPECT_HMI_CONTRACTS pin and a SUITES entry (see the block beside EXPECT_ENGINEAPI, above), so the
+# "logic defect invisible until someone runs it by hand" gap this paragraph recorded is closed the same way
+# the other five projects' equivalent gap already was. The edit was not bigger or riskier than advertised:
+# `SUITES` is consumed generically everywhere in this file (every loop iterates `"${SUITES[@]}"`;
+# `web_domain_declaration` takes it as a spread argument; the output-directory bracket derives its watch
+# list from it) — the ONE place that is NOT generic, `grand=$((...))`, was updated by hand alongside it.
+# 🔴 WHAT DID NOT CHANGE, so a reader does not have to re-derive it: reachability on THIS machine. The
+# `-t:Rebuild` / WPF `_wpftmp` failure documented immediately below still means this file — SUITES entry,
+# gate 1c, all of it — has never run to completion IN SITU here, for the same pre-existing, unrelated
+# reason. Adding the pin makes the mechanism correct; it does not make the mechanism reachable on a machine
+# with that bug.
 #
 # 🔴 THIS GATE HAS NEVER RUN IN SITU, AS OF 2026-08-30, AND SAYING SO IS THE POINT OF THIS BLOCK.
 # A reader who runs this harness after merge sees RED and has no way to tell that the new gate was
@@ -10456,7 +10499,12 @@ if [[ $UPDATE -eq 1 ]]; then
 fi
 
 if [[ ${#FAILURES[@]} -eq 0 ]]; then
-  grand=$((EXPECT_ABSTRACTIONS + EXPECT_CONFORMANCE + EXPECT_EDGECORE + EXPECT_EDGESERVICE + EXPECT_ENGINEAPI))
+  # 🔴 WS-HMI-0a Task 5 FIX ROUND 1 (2026-08-30) adds EXPECT_HMI_CONTRACTS to this sum. This line is the
+  # ONE place SUITES' generic consumption does not reach: `grand` is COMPUTED from the five (now six)
+  # named constants by design (see the comment beside EXPECT_EDGECORE's own "grand total" history — "no
+  # second literal"), so a sixth project's pin existing without its addend here would print a PASS total
+  # that silently omitted 33 tests from the number a reader is told to trust.
+  grand=$((EXPECT_HMI_CONTRACTS + EXPECT_ABSTRACTIONS + EXPECT_CONFORMANCE + EXPECT_EDGECORE + EXPECT_EDGESERVICE + EXPECT_ENGINEAPI))
   # 🔴 The one-line summary carries the domain too. A reader who greps only for PASS gets exactly one
   # line, and before today that line said five suites were green and nothing about the sixth directory.
   # 🔴 CA-1 — `NOT MEASURED: web/` IS RETIRED FROM THIS LINE, and retiring it is the point of the
