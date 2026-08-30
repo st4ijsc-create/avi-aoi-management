@@ -174,10 +174,14 @@ public static class HmiTagEndpoints
 
             // "showing 10 of 27", never a hedge. Fix round 1 said "there may be more" because a
             // prefix-limited probe genuinely did not know; the bulk query knows the exact total, so the
-            // message states it. That also dissolves fix round 1's other defect (re-review NEW-2): the
-            // truncation notice used to be omitted on the found-nothing branch — precisely the case where
-            // the cap had bitten — leaving a caller unable to tell "no collision" from "gave up looking".
-            // There is no longer a "gave up looking" state to be unable to distinguish.
+            // message states it.
+            //
+            // That removes the SCAN's "gave up looking" state — the cap that could stop short of a
+            // collision is gone. It does NOT remove every ambiguity, and the earlier claim that it did was
+            // over-broad: if the diagnosis THROWS, the catch below degrades to the generic
+            // `claimed.Count == 0` message, which still reads the same to a caller as "no collision found".
+            // That path is now the only one, it is far narrower than a silent cap, and it is deliberate —
+            // a diagnosis must never outrank the answer it decorates (see DescribeClaimedPathsAsync).
             var shown = claimed.Take(MaxNamedCollisions).ToList();
             return Results.Conflict(new ApiErrorDto(
                 claimed.Count > 0
@@ -229,9 +233,13 @@ public static class HmiTagEndpoints
     /// pinned by <c>A_409_names_the_path_another_machine_owns_and_never_the_claimants_own</c>, which,
     /// unlike the re-declaration test this once cited, actually enters the 409 path.</para>
     ///
-    /// <para><b>Duplicates are collapsed before the query</b>: a body may legally repeat a path (that is
-    /// ContractInvariants' rule to refuse, not this diagnosis's), and asking about it twice would both
-    /// waste a parameter slot and print it twice.</para>
+    /// <para><b><c>Distinct</c> and the blank-path filter are UNREACHABLE DEFENCE, and that is said rather
+    /// than dressed up as necessity</b> (re-review #2). An earlier version of this paragraph claimed "a body
+    /// may legally repeat a path", which is FALSE: <see cref="ContractInvariants"/>'s duplicate-path rule
+    /// refuses a repeat with a 400, and its blank-path rule refuses a blank one, both BEFORE the store is
+    /// reached — so no body that gets as far as a collision can carry either. They are kept because this
+    /// method must be correct for the document it is handed, not for the document today's callers happen to
+    /// hand it, and because the cost is one pass over a list already in memory.</para>
     ///
     /// <para>🔴 <b>TOTAL by design, and that is the point rather than a lapse (fix round 1, F3).</b> This
     /// method previously caught only <see cref="SqliteException"/> while standing under a comment saying a

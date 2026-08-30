@@ -33,10 +33,19 @@ namespace St4i.EngineApi.HmiModel;
 /// second SQL query, so this cannot drift from the store's schema" as the reason to avoid exactly this, and
 /// that concern is real: this file now knows <c>tag_index(path, machine_code)</c>. It is paid for
 /// MECHANICALLY rather than by avoidance — <c>TagIndexCollisionQueryTests</c> drives this type and the real
-/// <see cref="TagNamespaceStore"/> against one database and requires them to agree, so a schema change
-/// reddens a test instead of silently returning "no collisions". <b>Read-only by construction:</b> the only
-/// statement this type can issue is the <c>SELECT</c> below, so it cannot become a second write door, and
-/// it is deliberately NOT the store — nothing here can be mistaken for one or substituted for one.</para>
+/// <see cref="TagNamespaceStore"/> against one database and requires them to agree path by path, using the
+/// store's own <c>FindTagAsync</c> as the oracle, so a schema change reddens a test instead of silently
+/// returning "no collisions". <b>That file was cited here before it existed</b> (re-review #2, NEW-2) —
+/// which was worse than a wrong citation, because this paragraph is precisely what a reader is asked to
+/// accept the concession on. It exists now.</para>
+///
+/// <para><b>Read-only at the HANDLE, not merely in intent.</b> The connection is opened
+/// <c>Mode=ReadOnly</c>, so SQLite itself refuses a write through it — an earlier version of this sentence
+/// claimed "read-only by construction" while describing only the statement text, which a later edit could
+/// have changed. <c>busy_timeout</c> matches the frozen store's own pragma so a diagnosis running beside a
+/// live writer waits rather than failing instantly; if it fails anyway the caller degrades to SQLite's own
+/// message, never to a 500. It is deliberately NOT the store — nothing here can be mistaken for one or
+/// substituted for one.</para>
 ///
 /// <para><b>Values are always bound.</b> The command text is assembled from generated parameter
 /// PLACEHOLDERS only (<c>@p0…@pN</c>); no caller-supplied string is ever concatenated into SQL.</para>
@@ -83,8 +92,16 @@ internal sealed class SqliteTagIndexCollisionQuery : ITagIndexCollisionQuery
 
         var claimedByOthers = new HashSet<string>(StringComparer.Ordinal);
 
-        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        using var connection = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly");
         await connection.OpenAsync(ct).ConfigureAwait(false);
+
+        using (var pragma = connection.CreateCommand())
+        {
+            // Same value the frozen store applies, so a diagnosis running beside a live writer waits
+            // instead of failing instantly. It is allowed on a read-only handle: it changes no data.
+            pragma.CommandText = "PRAGMA busy_timeout=5000;";
+            await pragma.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
 
         foreach (var chunk in Chunk(candidatePaths))
         {

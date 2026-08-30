@@ -790,29 +790,49 @@ public sealed class HmiTagEndpointsTests
         }
     }
 
-    /// <summary>The bulk-collision seam, scripted. <see cref="ClaimedPaths"/> is what the index would
-    /// answer; <see cref="OnQuery"/> replaces the whole call when a failure has to be produced.</summary>
+    /// <summary>The bulk-collision seam, scripted. <see cref="Returns"/> is handed back verbatim;
+    /// <see cref="OnQuery"/> replaces the whole call when a failure has to be produced.</summary>
+    /// <summary>🔴 <b>A pure RECORDER and STUB — deliberately containing no logic of its own (fix round 3,
+    /// NEW-1).</b>
+    ///
+    /// <para>Round 2's version re-implemented the production ownership predicate
+    /// (<c>!Equals(owner, canonicalMachineCode)</c>) so that it could answer realistically. That is how the
+    /// ownership <c>continue</c> in <c>TagIndexCollisionQuery</c> and the <c>Canonicalize</c> call in
+    /// <c>HmiTagEndpoints</c> both lost their pins while a test bearing the pinning test's exact name went
+    /// on passing: <b>the test was certifying the double, not the code.</b> A name-diff across the two
+    /// commits showed nothing, because the loss was inside a test whose name never changed.</para>
+    ///
+    /// <para>So this type now decides nothing. It returns whatever the test hands it and records what it
+    /// was asked, which is all a handler-level test may legitimately need. Everything about WHICH paths
+    /// count as claimed is measured against the real query and a real database — see
+    /// <c>A_409_names_the_path_another_machine_owns_and_never_the_claimants_own</c>.</para></summary>
     private sealed class ScriptedCollisionQuery : ITagIndexCollisionQuery
     {
-        /// <summary>path → owning machine code, exactly as `tag_index` holds it.</summary>
-        public IReadOnlyDictionary<string, string> Index { get; init; } =
-            new Dictionary<string, string>(StringComparer.Ordinal);
+        /// <summary>Returned verbatim. No filtering, no ownership rule, no intersection with the
+        /// candidates — a double that reproduced any of those could certify itself again.</summary>
+        public IReadOnlyList<string> Returns { get; init; } = Array.Empty<string>();
 
         public Func<string, IReadOnlyList<string>, Task<IReadOnlyList<string>>>? OnQuery { get; init; }
 
         public int QueryCallCount { get; private set; }
 
+        /// <summary>What the handler actually passed. This is the anti-truncation measurement: if the
+        /// handler ever caps or reorders the candidate list, it shows up here regardless of what the
+        /// query would have done with it.</summary>
+        public IReadOnlyList<string> LastCandidates { get; private set; } = Array.Empty<string>();
+
+        public string? LastMachineCode { get; private set; }
+
         public Task<IReadOnlyList<string>> ClaimedByAnotherMachineAsync(
             string canonicalMachineCode, IReadOnlyList<string> candidatePaths, CancellationToken ct = default)
         {
             QueryCallCount++;
-            if (OnQuery is not null) return OnQuery(canonicalMachineCode, candidatePaths);
+            LastCandidates = candidatePaths;
+            LastMachineCode = canonicalMachineCode;
 
-            return Task.FromResult<IReadOnlyList<string>>(
-                candidatePaths
-                    .Where(p => Index.TryGetValue(p, out var owner)
-                                && !string.Equals(owner, canonicalMachineCode, StringComparison.Ordinal))
-                    .ToList());
+            return OnQuery is not null
+                ? OnQuery(canonicalMachineCode, candidatePaths)
+                : Task.FromResult(Returns);
         }
     }
 
@@ -869,38 +889,58 @@ public sealed class HmiTagEndpointsTests
         Assert.False(string.IsNullOrWhiteSpace(why));
     }
 
-    /// <summary>🔴 <b>F2 — the <c>ownPaths</c> exclusion, deletable with everything green.</b> Without it a
-    /// 409 names the claimant's OWN already-owned paths as "already declared by another machine", sending an
-    /// engineer to rename paths nobody else owns. The report previously cited
-    /// <c>Put_ReDeclaringAMachinesOwnNamespace_…</c> as covering this; that test never enters the 409 path,
-    /// which is a citation that does not reach the thing it certifies. This one does: the store is scripted
-    /// so that EVERY path is present in the index (as it is when the claimant already has a namespace), so
-    /// ownership — not presence — is the only thing separating the two lists.</summary>
+    /// <summary>🔴 <b>The ownership rule, pinned against PRODUCTION CODE and a REAL database (fix round 3,
+    /// NEW-1).</b> Without it a 409 names the claimant's OWN already-owned paths as "already declared by
+    /// another machine", sending an engineer to rename paths nobody else owns.
+    ///
+    /// <para>This test kept its name across three rounds and lost its teeth in the middle one: round 2
+    /// rewrote it onto a scripted double that re-implemented the ownership predicate, so it began
+    /// certifying the double instead of the code, and deleting either production line left it green. It is
+    /// now end-to-end — the real HTTP surface, the real frozen <c>TagNamespaceStore</c>, and the real
+    /// <c>SqliteTagIndexCollisionQuery</c> — so no double stands between the assertion and the rule.</para>
+    ///
+    /// <para><b>It covers BOTH lines that lost their pins, in one scenario, deliberately:</b> the route is
+    /// spelled in LOWERCASE while the index stores the canonical spelling, so
+    /// <c>HmiTagEndpoints</c>' <c>MachineCodeIdentity.Canonicalize</c> is what makes the ownership compare
+    /// meet at all; and the claimant genuinely owns two prior paths, so
+    /// <c>TagIndexCollisionQuery</c>'s ownership <c>continue</c> is what keeps them off the list. Delete
+    /// either and this reddens.</para></summary>
     [Fact]
     public async Task A_409_names_the_path_another_machine_owns_and_never_the_claimants_own()
     {
-        var store = new ScriptedTagNamespaceStore { OnPut = ThrowsSqlite(19, 1555) };
-        var collisions = new ScriptedCollisionQuery
-        {
-            Index = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["OWN-01/pre"] = "OWN-01",       // present, and this machine's own
-                ["shared/claimed"] = "OTHER-01", // present, and somebody else's
-            },
-        };
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync("own-paths-real");
+        await using var _f = factory;
+        using var engineerC = engineer;
 
-        var body = new TagNamespaceDocument(1, "OWN-01", new[]
+        // Somebody else takes a path.
+        var other = new TagNamespaceDocument(1, "OTHER-09", new[] { ReadTag("shared/p") });
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/tags/OTHER-09", other, HmiContractJson.Options)).StatusCode);
+
+        // The claimant already owns two paths of its own — declared through a LOWERCASE route, so the
+        // index holds them under the CANONICAL machine code while the route keeps saying "claim-09".
+        var first = new TagNamespaceDocument(1, "claim-09", new[] { ReadTag("CLAIM-09/a"), ReadTag("CLAIM-09/b") });
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/tags/claim-09", first, HmiContractJson.Options)).StatusCode);
+
+        // Now it re-declares its own two paths AND reaches for somebody else's.
+        var clash = new TagNamespaceDocument(1, "claim-09", new[]
         {
-            ReadTag("OWN-01/pre"),      // the claimant's OWN path — re-declared, which is the ordinary edit
-            ReadTag("shared/claimed"),  // the one another machine owns
+            ReadTag("CLAIM-09/a"),
+            ReadTag("CLAIM-09/b"),
+            ReadTag("shared/p"),
         });
 
-        var result = await HmiTagEndpoints.PutAsync("OWN-01", body, store, collisions, CancellationToken.None);
+        using var put = await engineerC.PutAsJsonAsync("/v1/tags/claim-09", clash, HmiContractJson.Options);
 
-        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
-        var error = ErrorOf(result);
-        Assert.Contains("shared/claimed", error, StringComparison.Ordinal);
-        Assert.DoesNotContain("OWN-01/pre", error, StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.Conflict, put.StatusCode);
+        var error = await put.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
+
+        Assert.Contains("shared/p", error!.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("CLAIM-09/a", error.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("CLAIM-09/b", error.Error, StringComparison.Ordinal);
     }
 
     /// <summary>🔴 <b>F3 — the code written to close a 500 path opened one on its own error branch.</b> The
@@ -983,10 +1023,7 @@ public sealed class HmiTagEndpointsTests
         var collidingPath = $"POS-01/tag{collidingIndex}";
 
         var store = new ScriptedTagNamespaceStore { OnPut = ThrowsSqlite(19, 1555) };
-        var collisions = new ScriptedCollisionQuery
-        {
-            Index = new Dictionary<string, string>(StringComparer.Ordinal) { [collidingPath] = "OTHER-01" },
-        };
+        var collisions = new ScriptedCollisionQuery { Returns = new[] { collidingPath } };
         var body = new TagNamespaceDocument(
             1, "POS-01",
             Enumerable.Range(0, TagsInBody).Select(i => ReadTag($"POS-01/tag{i}")).ToList());
@@ -995,6 +1032,14 @@ public sealed class HmiTagEndpointsTests
 
         Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
         Assert.Contains(collidingPath, ErrorOf(result), StringComparison.Ordinal);
+
+        // 🔴 The assertion that actually pins ordinal blindness, and it is about what the handler PASSED,
+        // not what the double returned: every path must reach the query, so a path at index 1 999 is asked
+        // about exactly as one at index 0 is. Round 1's `.Take(200)` reddens here regardless of what any
+        // query would have done with the truncated list — which is the point of measuring the handler's
+        // output rather than a double's answer.
+        Assert.Contains(collidingPath, collisions.LastCandidates);
+        Assert.Equal(TagsInBody, collisions.LastCandidates.Count);
     }
 
     /// <summary>🔴 <b>The cost bound, asserted against LITERALS.</b> Fix round 1's version compared
@@ -1017,8 +1062,7 @@ public sealed class HmiTagEndpointsTests
         };
         var collisions = new ScriptedCollisionQuery
         {
-            Index = Enumerable.Range(0, TagsInBody)
-                .ToDictionary(i => $"COST-01/tag{i}", _ => "OTHER-01", StringComparer.Ordinal),
+            Returns = Enumerable.Range(0, TagsInBody).Select(i => $"COST-01/tag{i}").ToList(),
         };
         var body = new TagNamespaceDocument(
             1, "COST-01",
@@ -1083,22 +1127,6 @@ public sealed class HmiTagEndpointsTests
         Assert.Equal(
             HttpStatusCode.OK,
             (await engineerC.GetAsync("/v1/tags/by-path/plant/line9/last")).StatusCode);
-    }
-
-    /// <summary>The SQL round-trip bound, measured on the pure chunker so no database is needed, and
-    /// asserted against literals: 2 000 paths must cost 4 statements, not 2 000. Dropping
-    /// <c>ChunkSize</c> to 1 makes this 2 000 and reddens; raising it past SQLite's parameter limit reddens
-    /// the second assertion.</summary>
-    [Fact]
-    public void The_bulk_collision_query_costs_one_statement_per_500_paths()
-    {
-        var paths = Enumerable.Range(0, 2_000).Select(i => $"p/{i}").ToList();
-
-        var chunks = SqliteTagIndexCollisionQuery.Chunk(paths);
-
-        Assert.Equal(4, chunks.Count);
-        Assert.All(chunks, c => Assert.True(c.Count <= 500, $"a chunk of {c.Count} risks SQLite's parameter limit"));
-        Assert.Equal(2_000, chunks.Sum(c => c.Count)); // and nothing is dropped on the way
     }
 
     /// <summary>🔴 <b>F4 — the PUT response echo's canonicalisation, deletable with everything green.</b>

@@ -102,7 +102,20 @@ namespace St4i.EngineApi.HmiModel;
 ///   gets the report of an engineer who wrote nothing. That is materially better than the shape re-review
 ///   #2 condemned — it never claims health for a document it did not read, and the component half of the
 ///   same request IS read and reported — but it is not free, and it is the reason the residue is pinned by
-///   a test rather than merely admitted here.</description></item>
+///   a test rather than merely admitted here.
+///   <para>🔴 <b>A SECOND consequence of the same residue, added when WS-HMI-0b Task 2 built the write
+///   path that exposes it.</b> This exclusion previously recorded the row as "unreachable rather than
+///   mis-reported", which was complete for the READ side and is no longer complete now that
+///   <c>PUT /v1/tags/{machineCode}</c> exists. A namespace row written outside DI under a non-canonical
+///   spelling still owns its paths in <c>tag_index</c>, which is keyed globally and does not care about
+///   this seam. So the machine that morally owns those paths — asking under its canonical identity — gets
+///   a <b>409 naming its own paths as another machine's</b>: the ownership comparison in
+///   <c>SqliteTagIndexCollisionQuery</c> is Ordinal against the canonical code, and the row's stored code
+///   is not it. That is inherited from this exclusion, not introduced by Task 2, and it is unreachable by
+///   the same argument as the rest of the residue (no supported path writes a non-canonical row — zero
+///   <c>new TagNamespaceStore(</c> call sites in <c>src/</c>). Recorded HERE, where the exclusion lives,
+///   because a reader who accepts this paragraph's "unreachable rather than mis-reported" is entitled to
+///   know the full shape of what "reachable" would mean.</para></description></item>
 /// </list></para>
 ///
 /// <para>🔴 <b>THE GUARANTEE, stated at the strength it actually has.</b> Anything that takes
