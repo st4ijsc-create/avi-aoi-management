@@ -436,11 +436,22 @@ async function getOrExtractImage(
  *   - `machineCode`/`inspectionId` (gốc) — KHÔNG đọc ở đâu trong `commit`
  *     (đã grep `metaData?.machineCode`/`metaData?.inspectionId` — 0 kết quả) —
  *     `.max(100)`.
- *   - `startedAt`/`finishedAt`/`inspectionTime` (gốc) — `startedAt`/
- *     `inspectionTime` đi `new Date(...)` vào cột `timestamp` (KHÔNG PHẢI
- *     varchar, `22001` không áp dụng); `finishedAt` không đọc ở đâu hôm nay
- *     (chuẩn bị trước, cùng lý do `machineCode`) — `.max(40)`, dư sức ISO-8601
- *     dài nhất có múi giờ.
+ *   - `startedAt`/`finishedAt` (gốc) — `startedAt` đi `new Date(...)` vào cột
+ *     `timestamp` (KHÔNG PHẢI varchar, `22001` không áp dụng); `finishedAt`
+ *     không đọc ở đâu hôm nay (chuẩn bị trước, cùng lý do `machineCode`) —
+ *     `.max(40)`, dư sức ISO-8601 dài nhất có múi giờ.
+ *   - `inspectionTime` — ★★★ BG-72 (Pha 1F Task 2 ⛔, lượt soát thứ hai) — KHÁC
+ *     `startedAt`/`finishedAt`: trường này là "Alias for startedAt
+ *     (submitInspection compat)" — TỰ NHẬN cố ý khớp `inspectionTime` của
+ *     `submitInspectionCoreObject` (`machineApiRouters.ts`, đường v1.x). Bản
+ *     vá BG-72 đầu tiên chỉ nới `.max(64)` ở v1.x, BỎ SÓT alias này ở cửa ZIP
+ *     — cùng payload `DateTime.ToString()` 45-50 ký tự, hai đường hai số phận:
+ *     v1.x NHẬN, ZIP ném `ZodError` (`code:"too_big"`) → ĐẾM VĨNH VIỄN (đúng
+ *     lớp lỗi BG-64 xếp `.max()` vi phạm là vĩnh viễn) → `'dead'` sau
+ *     `nguongLoiVinhVienZip()` lượt — NẶNG HƠN BG-73 (BG-73 để gói `'failed'`
+ *     retry được; ca này gói CHẾT THẬT vì một trường KHÔNG liên quan gì đến
+ *     hình dạng `measurements[]`). `.max(64)` — cùng con số, cùng lý lẽ đã
+ *     dùng cho v1.x.
  *   - `companyCode`/`factoryCode`/`factory`/`workshopCode`/`lineCode`/`line`
  *     (gốc) — KHÔNG ghi verbatim: `macTenantCommit` (`phamViGhiMay.ts`) chỉ
  *     dùng chúng để ĐỐI CHIẾU với chuỗi SUY TỪ MÁY, giá trị THẬT ghi xuống
@@ -471,7 +482,7 @@ export const metaJsonSchema = z.object({
   // Inspection timing
   startedAt: z.string().max(40).optional(), // ISO datetime
   finishedAt: z.string().max(40).optional(), // ISO datetime
-  inspectionTime: z.string().max(40).optional(), // Alias for startedAt (submitInspection compat)
+  inspectionTime: z.string().max(64).optional(), // Alias for startedAt (submitInspection compat) — BG-72: khớp .max(64) của submitInspectionCoreObject.inspectionTime (machineApiRouters.ts), xem docblock trên
   cycleTime: z.number().optional(), // Thời gian chu kỳ (giây)
 
   // Overall result

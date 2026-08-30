@@ -182,6 +182,17 @@ export const KIEM_KE_CAP_CHUOI: readonly MucCapChuoi[] = [
  *       (100 — trần SIẾT HƠN trong hai cột nó chạm, xem docblock schema) →
  *       `.measurementValue`.
  *   (B) VỆ SINH — phần còn lại (đo avi_app 2026-08-30, xem docblock schema).
+ *
+ * ★★★ BG-72 (Pha 1F Task 2 ⛔, lượt soát THỨ HAI) — `inspectionTime` KHÔNG chỉ
+ * "vệ sinh" như `startedAt`/`finishedAt`: chú thích tại chỗ khai schema tự
+ * nhận nó là "Alias for startedAt (submitInspection compat)" — tức PHẢI khớp
+ * `.max()` của `submitInspectionCoreObject.inspectionTime` (đường v1.x,
+ * `KIEM_KE_SUBMIT_INSPECTION_CORE` ở trên). Lượt vá BG-72 đầu tiên chỉ nới
+ * v1.x lên 64, bỏ sót cửa ZIP — cùng payload `DateTime.ToString()` 45-50 ký
+ * tự, v1.x nhận còn ZIP ném `ZodError code:"too_big"` → đếm VĨNH VIỄN → gói
+ * `'dead'` sau `nguongLoiVinhVienZip()` lượt (nặng hơn BG-73: gói CHẾT THẬT,
+ * không phải kẹt `'failed'`). Đã nới `.max(64)` khớp lại — xem docblock đầy
+ * đủ tại `metaJsonSchema.inspectionTime` (`aoiPackageRouter.ts`).
  */
 export const KIEM_KE_META_JSON: readonly MucCapChuoi[] = [
   // ── Nhóm (A) khớp cột THẬT ────────────────────────────────────────────────
@@ -208,7 +219,7 @@ export const KIEM_KE_META_JSON: readonly MucCapChuoi[] = [
   { ten: "inspectionId", duongDan: ["inspectionId"], max: 100, nguon: "ve-sinh", ghiChu: "không đọc ở đâu trong commit — chỉ parse" },
   { ten: "startedAt", duongDan: ["startedAt"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp qua new Date(), không phải varchar" },
   { ten: "finishedAt", duongDan: ["finishedAt"], max: 40, nguon: "ve-sinh", ghiChu: "không đọc ở đâu trong commit hôm nay — chuẩn bị trước, cùng quy ước ngày-giờ" },
-  { ten: "inspectionTime", duongDan: ["inspectionTime"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp qua new Date(), không phải varchar" },
+  { ten: "inspectionTime", duongDan: ["inspectionTime"], max: 64, nguon: "ve-sinh", ghiChu: "đi timestamp qua new Date(), không phải varchar — BG-72 (lượt 2): alias CỦA submitInspectionCoreObject.inspectionTime (v1.x) — PHẢI khớp .max(64), lượt vá BG-72 đầu tiên bỏ sót cửa ZIP" },
   { ten: "companyCode", duongDan: ["companyCode"], max: 50, nguon: "ve-sinh", ghiChu: "chỉ đối chiếu qua macTenantChoGhi (không ghi verbatim) — khớp corporates.code varchar(50)" },
   { ten: "factoryCode", duongDan: ["factoryCode"], max: 50, nguon: "ve-sinh", ghiChu: "chỉ đối chiếu — khớp factories.code varchar(50)" },
   { ten: "factory", duongDan: ["factory"], max: 50, nguon: "ve-sinh", ghiChu: "alias của factoryCode — cùng lý do" },
