@@ -30,7 +30,26 @@ namespace St4i.EngineApi.HmiModel;
 ///   <item><description>Only when <paramref name="ns"/> — see <see cref="Check"/> — is non-null: every
 ///   <see cref="ComponentNode.TagPrefix"/> must be a path-segment prefix of at least one
 ///   <see cref="TagDescriptor.Path"/> in the namespace.</description></item>
+///   <item><description>🔴 <b>FIFTH, added 2026-08-30 (whole-branch review, Minor 5):</b> no
+///   <see cref="ComponentNode.Id"/> and no <see cref="ComponentTypeDef.TypeId"/> may be declared twice in
+///   one document.</description></item>
 /// </list></para>
+///
+/// <para>🔴 <b>Why the fifth check exists, and what it replaces.</b> The <c>byId</c> dictionary is built
+/// with <c>GroupBy(…).First()</c> and the type-id set with <c>ToHashSet</c>: both ABSORB a duplicate
+/// silently. Two nodes with <c>id: "spindle"</c> therefore reported CLEAN from a function whose entire job
+/// is referential integrity — and worse than clean, because §3.3's indirect binding resolves
+/// <c>{component}</c> through that id, so a duplicate makes the binding AMBIGUOUS at runtime while the
+/// integrity check says nothing. <c>First()</c> is retained rather than replaced: once the duplicate is
+/// REPORTED, picking a deterministic representative is the right way to keep checks 1–4 running and
+/// produce every violation in one pass instead of stopping at the first. Absorbing silently was the
+/// defect; absorbing loudly is the fix.</para>
+///
+/// <para><b>What the fifth check does NOT do:</b> it does not compare against any other document, so two
+/// MACHINES declaring the same component id remain a different question this pure function cannot see —
+/// the same boundary <see cref="ContractInvariants.Validate(TagNamespaceDocument)"/>'s duplicate-path rule
+/// states for itself. And it says nothing about duplicate <see cref="ComponentTagDef.Name"/> inside one
+/// <see cref="ComponentTypeDef"/>, which is neither a binding key nor a store key today.</para>
 ///
 /// <para><b><c>ns == null</c> means "not loaded yet", not "loaded and empty" — and silence on <c>null</c> is
 /// the deliberate behaviour, not a missing branch.</b> The same reasoning that keeps the stores from calling
@@ -54,9 +73,36 @@ public static class ModelIntegrity
     {
         var violations = new List<string>();
 
-        var byId = model.Components
-            .GroupBy(n => n.Id, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var groupedById = model.Components.GroupBy(n => n.Id, StringComparer.Ordinal).ToList();
+
+        // 5. 🔴 Duplicates are REPORTED before they are absorbed. `First()` below keeps checks 1–4 running
+        // over a deterministic representative — that is what makes this a full pass rather than a
+        // stop-at-first — but the absorption itself is now a violation instead of a silence. See this
+        // class's doc comment for why a duplicate id is worse than merely untidy: it makes §3.3's
+        // `{component}` binding ambiguous at runtime.
+        foreach (var g in groupedById)
+        {
+            var count = g.Count();
+            if (count > 1)
+            {
+                violations.Add(
+                    $"component id '{g.Key}': được khai {count} lần trong cùng tài liệu — id là khoá mà " +
+                    "binding gián tiếp {component} phân giải qua, nên bản thứ hai làm phép phân giải ấy nhập nhằng");
+            }
+        }
+
+        foreach (var g in model.Types.GroupBy(t => t.TypeId, StringComparer.Ordinal))
+        {
+            var count = g.Count();
+            if (count > 1)
+            {
+                violations.Add(
+                    $"componentType typeId '{g.Key}': được khai {count} lần trong cùng tài liệu — kiểu nào " +
+                    "thắng là không xác định, nên tags/states/faceplate mà một linh kiện nhận được cũng vậy");
+            }
+        }
+
+        var byId = groupedById.ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
         var typeIds = model.Types.Select(t => t.TypeId).ToHashSet(StringComparer.Ordinal);
 

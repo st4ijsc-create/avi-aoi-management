@@ -6,7 +6,7 @@
 
 .DESCRIPTION
   The MSI installer (packaging/installer/) only ever removes what IT installed, under Program Files -
-  it has no idea this exe/service, once running, goes on to create 18 directories under
+  it has no idea this exe/service declares 18 directories under
   %ProgramData%\ST4I\sim\ - the historian database, the store-and-forward WAL buffer, the local
   user/session/audit-log database, the DPAPI-protected machine credential, the alarm-notification
   channel configuration and its credentials, the DEVICE IDENTITY PRIVATE KEY, saved device connections
@@ -19,7 +19,23 @@
   for an operator who genuinely wants a clean-slate wipe (e.g. decommissioning a machine, resetting a
   demo box back to a fresh-install state).
 
-  IT CREATES EIGHTEEN AND PURGES SIXTEEN. Two of the eighteen - `products` and `ecosystem`, holding the
+  DECLARES, NOT "GOES ON TO CREATE" - CORRECTED 2026-08-30 (whole-branch review of WS-HMI-0a, Important
+  2), OLD SENTENCE KEPT VERBATIM. The sentence above read "it has no idea this exe/service, once running,
+  goes on to create 18 directories under %ProgramData%\ST4I\sim\". REGISTRATION OF A FACTORY SINGLETON IS
+  NOT CREATION. `hmi-model` and `hmi-tags` are registered in St4i.EngineApi/Program.cs as
+  AddSingleton<T>(sp => new ...) - a factory delegate runs on the first RESOLUTION, and nothing in src/
+  resolves IComponentModelStore or ITagNamespaceStore, because no endpoint exists until WS-HMI-0b. A
+  running engine at this commit therefore never constructs either store and neither directory is created.
+  The honest form: DECLARED AND REGISTERED; CREATED ON FIRST RESOLUTION, WHICH NO ENDPOINT PERFORMS UNTIL
+  WS-HMI-0b. SIXTEEN of the eighteen are what a running engine actually creates today.
+
+  WHY THIS SCRIPT STILL LISTS ALL EIGHTEEN, and why that is not a contradiction: a purge tool has to
+  cover what MAY exist, not what must. Both leaves are relocatable, both are purged IF PRESENT, and every
+  $subdirs entry already tolerates an absent directory (see the Step 2 loop). An operator who has run a
+  WS-HMI-0b build, or a machine upgraded from one, will have them; a machine on this exact commit will
+  not. Listing them is correct in both cases; claiming the engine creates them is correct in neither.
+
+  IT DECLARES EIGHTEEN AND PURGES SIXTEEN. Two of the eighteen - `products` and `ecosystem`, holding the
   four files products.json / recipes.json / ecosystem-products.json / ecosystem-recipes.json - are
   DELIBERATELY KEPT, by the owner's ruling of 2026-08-23(b), and are listed separately in the banner
   this script prints. The reason, in the owner's words: CONFIGURATION AN OPERATOR AUTHORED IS NOT
@@ -300,9 +316,14 @@
   wipe is the exact outcome this script exists to prevent.
 
   TASK 5, WS-HMI-0a, 2026-08-30 - SIXTEEN -> EIGHTEEN, SIXTEEN -> EIGHTEEN, FOURTEEN -> SIXTEEN. The
-  engine gained two more machine-wide directories the day St4i.EngineApi/Program.cs first registered
+  engine DECLARED two more machine-wide directories the day St4i.EngineApi/Program.cs first registered
   IComponentModelStore/ITagNamespaceStore (ComponentModelStore/TagNamespaceStore, WS-HMI-0a Tasks 2/3)
-  into its DI graph: `hmi-model` (the declared component tree a HMI screen resolves against) and
+  into its DI graph (📎 🔴 CORRECTED 2026-08-30, whole-branch review Important 2, previous wording kept
+  verbatim: this sentence read "The engine GAINED two more machine-wide directories the day ... first
+  registered ...". Both registrations are AddSingleton<T>(sp => new ...) FACTORY singletons; the delegate
+  runs on first resolution, nothing in src/ resolves either seam, so what the engine gained that day was
+  two DECLARATIONS, not two directories - see the .DESCRIPTION block above for the full correction):
+  `hmi-model` (the declared component tree a HMI screen resolves against) and
   `hmi-tags` (the declared tag namespace a driver will eventually back). Both are relocatable
   (ST4I_HMI_MODEL_DIR / ST4I_HMI_TAGS_DIR) and both are PURGED, same -XxxDir > env var > %ProgramData%
   default resolution order as every directory above. Neither holds a credential and neither is exempt:

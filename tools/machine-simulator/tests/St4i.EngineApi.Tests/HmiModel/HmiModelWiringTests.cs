@@ -3,6 +3,13 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using St4i.EngineApi.HmiModel;
+// 🔴 Review toàn nhánh WS-HMI-0a, Minor 9 — cái `using` này TỒN TẠI ĐỂ [Collection(...)] bên dưới viết
+// được dạng NGẮN. Không gì thi hành được tư cách thành viên của collection ấy, nên khả năng TÌM THẤY
+// BẰNG GREP là toàn bộ phòng tuyến: 30+ lớp trong assembly này viết
+// `[Collection(SecurityEnvVarTests.CollectionName)]`, và bản đầy đủ `[Collection(St4i.EngineApi.Tests.
+// Auth.SecurityEnvVarTests.CollectionName)]` mà file này từng dùng KHÔNG lọt vào phép grep tự nhiên ấy —
+// một lớp boot WebApplicationFactory<Program> nhìn như đang đứng ngoài collection.
+using St4i.EngineApi.Tests.Auth;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.HmiModel;
@@ -32,7 +39,7 @@ namespace St4i.EngineApi.Tests.HmiModel;
 /// this task changes configuration, not a rendered component, so the full e2e suite was deliberately not
 /// re-run (see this task's report for why).</para>
 /// </summary>
-[Collection(St4i.EngineApi.Tests.Auth.SecurityEnvVarTests.CollectionName)]
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class HmiModelWiringTests
 {
     // Same "one process, one SQLite pool, one env block" hazard SecurityEnvVarTests' own doc comment

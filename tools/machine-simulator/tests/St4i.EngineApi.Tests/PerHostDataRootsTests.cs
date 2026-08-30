@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Xunit;
 
@@ -20,7 +21,7 @@ namespace St4i.EngineApi.Tests;
 /// say so. 🔴 <b>A fourteenth BESIDE-THE-BINARY store does NOT fail the same way</b>, and this was the one
 /// paragraph in the file where the qualifier was still missing — the paragraph that introduces the file
 /// (whole-branch review, Minor 8). That is what the fourth guard below exists for; see
-/// <see cref="TheBesideTheBinaryStorePopulation_IsEmpty_AndTheSixteenMachineWideOnesAccountForEveryVariable"/>.</para>
+/// <see cref="TheBesideTheBinaryStorePopulation_IsEmpty_AndTheMachineWideOnesAccountForEveryVariable"/>.</para>
 ///
 /// <para>🔴 <b>The task brief that produced this file named FOUR stores. The enumeration found THIRTEEN, and
 /// the brief's own instruction was to start from the SET rather than from its list</b> (blueprint §8.1: "not
@@ -38,7 +39,7 @@ namespace St4i.EngineApi.Tests;
 /// <c>%LOCALAPPDATA%\St4iMachineSimulator\{logs,WebView2}</c>. That was a false statement of COMPLETENESS,
 /// and it had been in the tree since F-1: the product also writes THREE persistent stores BESIDE THE
 /// BINARY (<c>MachineConfigStore</c>, <c>ProductConfigStore</c>, <c>SimulatedEcosystem</c> — see
-/// <see cref="TheBesideTheBinaryStorePopulation_IsEmpty_AndTheSixteenMachineWideOnesAccountForEveryVariable"/>
+/// <see cref="TheBesideTheBinaryStorePopulation_IsEmpty_AndTheMachineWideOnesAccountForEveryVariable"/>
 /// for the enumeration, the exclusions and the instrument's own blind spots). The claim was written from
 /// inside a <c>%ProgramData%</c>-shaped instrument and inherited that instrument's domain — blueprint
 /// §8.1(f) — and its cost is the one §8.1 names as invisible by construction: a reader who believed it
@@ -487,6 +488,44 @@ public sealed class PerHostDataRootsTests
     /// fourteenth MACHINE-WIDE store makes the derived number 14 and turns both comparisons red, with a
     /// message naming
     /// every place the word has to move.</para>
+    ///
+    /// <para>📎 🔴 <b>THE PARAGRAPH ABOVE IS RETRACTED, 2026-08-30, KEPT VERBATIM — it says TWO sentences,
+    /// and TWO is what made this test state a requirement it could not check</b> (whole-branch review of
+    /// WS-HMI-0a, Important 1). Both sentences it named are ENGLISH. The failure message below has always
+    /// named "README §15.9 (EN+VI table and rule sentence), §24.6 (EN+VI)" among the places the number must
+    /// move — <b>a requirement in the message that was absent from the measurement</b>. WS-HMI-0a walked
+    /// straight through the gap: the branch moved the count 16 → 18 in English, left the Vietnamese halves
+    /// of §15.9's rule sentence and §24.6 reading <i>mười sáu</i>, and this test stayed green while the two
+    /// language halves of one sentence contradicted each other and a Vietnamese-reading operator was told
+    /// sixteen. Fixing only the words would have left the same hole open for the next author.</para>
+    ///
+    /// <para><b>SEVEN sentences are now compared, not two</b> — README §15.9 EN + VI rule sentences, README
+    /// §24.6 EN + VI, README §15.4 EN + VI, and <c>packaging/remove-data.ps1</c>'s <c>.DESCRIPTION</c>.
+    /// Each pattern must match <b>EXACTLY ONCE among LIVE text</b>, not merely at least once: this tree's
+    /// retract-in-place convention leaves superseded numbers sitting verbatim inside quoted 🔴 blocks, so a
+    /// first-match-wins scan would happily read <i>mười ba</i> out of a 2026-08-23 retraction and call it
+    /// today's count. Matches that begin immediately after a <c>"</c> are treated as quoted retractions
+    /// and discarded; an ambiguous parse among what remains is reported as a broken SCAN, which is what it
+    /// is. A verbatim retraction written WITHOUT quotation marks would still read as live — the honest
+    /// ceiling of a text scan, stated at the code rather than left to be discovered.</para>
+    ///
+    /// <para>🔴 <b>WHAT IS STILL NOT CHECKED, stated instead of implied — this is the half of Important 1
+    /// that cannot be closed by adding a pattern.</b> The failure message also names
+    /// <c>packaging/remove-data.ps1</c>'s <c>.EXAMPLE</c>/<c>.NOTES</c>/Step-2 comment,
+    /// <c>web/playwright.config.ts</c>, <c>scripts/verify-suites.sh</c>, and §15.9's WRITES/READS table
+    /// rows. Those state the number in running commentary, in retracted-and-kept blocks, and in tables
+    /// whose row count is the fact — there is no single sentence per artefact to anchor on, and a scan that
+    /// guessed would produce false reds that get it deleted. They are named as <b>UNCHECKED prose</b> in
+    /// the message now, not as requirements this test enforces. The distinction is the whole point of the
+    /// finding: an instrument may measure less than the criterion, but it must not be REPORTED as measuring
+    /// the criterion.</para>
+    ///
+    /// <para><b>AND A CONSTRAINT ON FUTURE EDITS, because exactly-once has a cost:</b> when this number
+    /// moves again, edit each live sentence <b>in place</b> and quote the old one inside a dated 🔴 block —
+    /// do not append a second live sentence carrying the same anchor phrase. Two live sentences with one
+    /// anchor make the scan ambiguous and this test red with "found 2". That is the repository's
+    /// retract-in-place convention anyway; it is written down here because this test now depends on
+    /// it.</para>
     /// </summary>
     [Fact]
     public void TheNumberOfMachineWideDirectories_IsDerivedFromSource_AndAgreesWithEveryPlaceThatSpellsIt()
@@ -496,38 +535,140 @@ public sealed class PerHostDataRootsTests
         // Non-vacuity: the scan must find a plausible set before its count is compared to anything.
         Assert.InRange(derived, 13, 40);
 
+        // 🔴 Whole-branch review of WS-HMI-0a, Minor 1: the map used to stop at "seventeen", so an author
+        // who wrote the WORD form of the new count got a FormatException stack trace out of int.Parse
+        // instead of this test's own message — the message being the entire reason the test is worth
+        // having. Extended past the current count with headroom, and the fall-through below now fails with
+        // a sentence rather than an exception, so the next word past the end is a repair instruction too.
+        //
+        // 🔴 And the VIETNAMESE numerals, which is Important 1: the mirrors below spell the count in words
+        // in both languages. Keyed OrdinalIgnoreCase and looked up after ToLowerInvariant, because §15.4's
+        // VI sentence shouts its count in capitals (MƯỜI TÁM) while §15.9's writes it lowercase.
         var words = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
             ["eleven"] = 11, ["twelve"] = 12, ["thirteen"] = 13, ["fourteen"] = 14,
             ["fifteen"] = 15, ["sixteen"] = 16, ["seventeen"] = 17,
+            ["eighteen"] = 18, ["nineteen"] = 19, ["twenty"] = 20, ["twenty-one"] = 21,
+
+            ["mười một"] = 11, ["mười hai"] = 12, ["mười ba"] = 13, ["mười bốn"] = 14,
+            ["mười lăm"] = 15, ["mười sáu"] = 16, ["mười bảy"] = 17, ["mười tám"] = 18,
+            ["mười chín"] = 19, ["hai mươi"] = 20, ["hai mươi mốt"] = 21,
         };
+
+        // README.md is hard-wrapped at ~110 columns, so a two-word Vietnamese numeral can straddle a line
+        // break. Collapse runs of whitespace before the lookup so the pattern does not pin the WRAPPING —
+        // the same reasoning TheReadme_TellsAnOperator… gives for using [\s\S] rather than [^\n].
+        static string Collapse(string s) => Regex.Replace(s, @"\s+", " ").Trim();
 
         int SpelledCount(string relativePath, string pattern, string what)
         {
-            var text = File.ReadAllText(Path.Combine(MachineSimulatorRoot(), relativePath));
-            var m = Regex.Match(text, pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            Assert.True(m.Success,
-                $"Could not find {what} in {relativePath}. The SCAN broke, not the product — repair the " +
-                "pattern rather than deleting this assertion, because its whole job is to notice that a " +
-                "number stopped being true.");
-            var raw = m.Groups["n"].Value;
-            return words.TryGetValue(raw, out var word) ? word : int.Parse(raw);
+            // core.autocrlf=true on this repository. The patterns below use \s+ rather than anchors so a
+            // \r would not break them, but normalising costs nothing and this tree has been bitten twice.
+            var text = File.ReadAllText(Path.Combine(MachineSimulatorRoot(), relativePath))
+                           .Replace("\r\n", "\n", StringComparison.Ordinal);
+
+            var matches = Regex.Matches(text, pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+            // 🔴 A match that begins immediately after a quotation mark is RETRACTED TEXT, quoted verbatim
+            // — this repository's §5 convention for a superseded sentence, and the reason a naive
+            // first-match-wins scan can read "mười ba" out of a 2026-08-23 block and call it today's
+            // count. Those are dropped here rather than pattern-dodged, because the whole point of
+            // retract-in-place is that the old sentence stays REPRODUCED WORD FOR WORD; a pattern crafted
+            // to miss it would have to be re-crafted every time a sentence is retracted.
+            //
+            // WHAT THIS DOES NOT DECIDE, said rather than implied: a verbatim retraction written WITHOUT
+            // the quotation marks this repository wraps them in reads as live text to any scan, including
+            // this one. That is the honest ceiling here, and it is why the quoting convention is
+            // load-bearing rather than decorative.
+            var live = matches.Where(m => m.Index == 0 || text[m.Index - 1] != '"').ToList();
+
+            // EXACTLY ONE live match, not at-least-one: two live sentences with one anchor means the scan
+            // cannot tell which one states the rule, and guessing is how the number it reads stops being
+            // the number a reader reads.
+            Assert.True(live.Count == 1,
+                $"Expected EXACTLY ONE live {what} in {relativePath}; found {live.Count} " +
+                $"({matches.Count} total, {matches.Count - live.Count} discarded as quoted retractions)" +
+                (matches.Count > 0
+                    ? ": " + string.Join(" · ", matches.Select(m =>
+                        (m.Index > 0 && text[m.Index - 1] == '"' ? "[quoted] " : "[live] ") + Collapse(m.Value)))
+                    : string.Empty) +
+                ". The SCAN broke, not the product — repair the pattern rather than deleting this " +
+                "assertion, because its whole job is to notice that a number stopped being true. If the " +
+                "count just moved: edit the LIVE sentence in place and quote the old one in a dated 🔴 " +
+                "block; appending a second UNQUOTED sentence with the same anchor phrase is what produces " +
+                "\"found 2\" here.");
+
+            var raw = Collapse(live[0].Groups["n"].Value);
+            if (words.TryGetValue(raw, out var word)) return word;
+            if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var digits)) return digits;
+
+            Assert.Fail(
+                $"{what} in {relativePath} spells its count as \"{raw}\", which is neither a digit form nor " +
+                "a word this test's vocabulary knows. Add it to the `words` map above — that map exists so " +
+                "an author who writes the word form gets THIS sentence instead of a FormatException stack " +
+                "trace, and a map that stops one short of the current count is the defect it was built to " +
+                "prevent (whole-branch review, Minor 1).");
+            return -1;
         }
 
-        var readmeSays = SpelledCount(
-            "README.md", @"There are \*\*(?<n>\w+)\*\* of them\s+today", "README §15.9's count sentence");
-        var scriptSays = SpelledCount(
-            Path.Combine("packaging", "remove-data.ps1"),
-            @"goes on to create (?<n>\w+) directories under", "remove-data.ps1's .DESCRIPTION count");
+        // 🔴 SEVEN sentences, not two — see this method's doc comment for why two was the defect. Every
+        // entry here is a LIVE rule sentence, deliberately anchored on surrounding words rather than on a
+        // date, so a count change is a one-token edit rather than a pattern rewrite. EN and VI sit next to
+        // each other on purpose: the two halves of one sentence are what drifted apart, so they are read
+        // by one instrument in one pass.
+        var spelled = new (string Where, int Value)[]
+        {
+            ("README §15.9 rule sentence (EN)", SpelledCount(
+                "README.md",
+                @"There are \*\*(?<n>[\p{L}\d-]+)\*\* of them\s+today",
+                "README §15.9's EN count sentence")),
 
-        Assert.True(derived == readmeSays && derived == scriptSays,
-            $"The product declares {derived} directories under %ProgramData%\\ST4I\\sim, README §15.9 says " +
-            $"{readmeSays}, and packaging/remove-data.ps1 says {scriptSays}. Every place that spells this " +
-            "number has to move together: README §15.4 (EN+VI), §15.9 (EN+VI table and rule sentence), " +
-            "§24.6 (EN+VI), packaging/remove-data.ps1 (.DESCRIPTION, .EXAMPLE, .NOTES, the Step-2 comment), " +
-            "web/playwright.config.ts and scripts/verify-suites.sh — plus a new -XxxDir parameter, a new " +
-            "playwright env entry and a new row in §15.9's WRITES/READS table. This test exists because " +
-            "four of those places were already off by one when it was written.");
+            ("README §15.9 rule sentence (VI)", SpelledCount(
+                "README.md",
+                @"Hôm nay có\s+\*\*(?<n>[\p{L}\s]+?)\*\*\s+thư mục, \*\*không có ngoại lệ",
+                "README §15.9's VI count sentence")),
+
+            ("README §24.6 (EN)", SpelledCount(
+                "README.md",
+                @"every one of the \*\*(?<n>[\p{L}\d-]+)\*\*",
+                "README §24.6's EN count clause")),
+
+            ("README §24.6 (VI)", SpelledCount(
+                "README.md",
+                @"cả \*\*(?<n>[\p{L}\s]+?)\*\* thư mục \*\*toàn máy\*\*",
+                "README §24.6's VI count clause")),
+
+            ("README §15.4 (EN)", SpelledCount(
+                "README.md",
+                @"engine declares \*\*(?<n>[\p{L}\d-]+)\*\*\s+directories there",
+                "README §15.4's EN count sentence")),
+
+            ("README §15.4 (VI)", SpelledCount(
+                "README.md",
+                @"engine KHAI (?<n>[\p{L}\s]+?) thư mục",
+                "README §15.4's VI count sentence")),
+
+            ("packaging/remove-data.ps1 .DESCRIPTION", SpelledCount(
+                Path.Combine("packaging", "remove-data.ps1"),
+                @"declares (?<n>[\p{L}\d-]+) directories under",
+                "remove-data.ps1's .DESCRIPTION count")),
+        };
+
+        var disagreeing = spelled.Where(s => s.Value != derived).ToList();
+
+        Assert.True(disagreeing.Count == 0,
+            $"The product declares {derived} directories under %ProgramData%\\ST4I\\sim, but " +
+            string.Join("; ", disagreeing.Select(d => $"{d.Where} says {d.Value}")) + ". " +
+            "CHECKED BY THIS TEST, all seven and both languages: " +
+            string.Join(", ", spelled.Select(s => s.Where)) + ". " +
+            "🔴 NOT CHECKED BY THIS TEST, and named as prose rather than as a requirement it enforces " +
+            "(whole-branch review, Important 1 — a message must not state a requirement the measurement " +
+            "does not make): §15.9's WRITES/READS table rows, packaging/remove-data.ps1's .EXAMPLE / " +
+            ".NOTES / Step-2 comment, web/playwright.config.ts's running commentary, and " +
+            "scripts/verify-suites.sh — plus a new -XxxDir parameter, a new playwright env entry and a new " +
+            "row in §15.9's WRITES/READS table, none of which is a countable sentence. Walk those by hand. " +
+            "This test exists because four of those places were already off by one when it was written, " +
+            "and it was extended because the Vietnamese half of two of them was off by two afterwards.");
     }
 
     /// <summary>
@@ -631,9 +772,18 @@ public sealed class PerHostDataRootsTests
     /// <para><b>Repo-relative paths, not base names</b> (branch review, Minor 3): <c>src/</c> contains two
     /// <c>Program.cs</c>. Keyed on <see cref="Path.GetFileName(string)"/>, EdgeService's entering the set
     /// while EngineApi's left it would have kept this green over a changed population.</para>
+    ///
+    /// <para>🔴 <b>RENAMED 2026-08-30 — the count came OUT of the name</b> (whole-branch review of
+    /// WS-HMI-0a, Minor 2). It read <c>…AndTheSixteenMachineWideOnes…</c>, and WS-HMI-0a made sixteen
+    /// false while the test stayed green, because <b>a name is not an assertion</b> and nothing can catch a
+    /// stale one. The count IS asserted, one line into the body:
+    /// <c>Assert.Equal(DeclaredDirectoryNames().Count, machineWide.Count)</c> — derived from <c>src/</c>,
+    /// so it moves by itself. Putting a number in a method name duplicates a fact that already has a
+    /// measurement, and the duplicate is the copy that rots. Previous names are recorded in
+    /// <c>scripts/verify-suites.sh</c>'s rename ledger.</para>
     /// </summary>
     [Fact]
-    public void TheBesideTheBinaryStorePopulation_IsEmpty_AndTheSixteenMachineWideOnesAccountForEveryVariable()
+    public void TheBesideTheBinaryStorePopulation_IsEmpty_AndTheMachineWideOnesAccountForEveryVariable()
     {
         // The variable side first: whatever is NOT derivable from a machine-wide directory relocates
         // something that is not machine-wide, so the partition itself is the classification.

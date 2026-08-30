@@ -297,6 +297,18 @@ internal static class TestRunTempRoot
             // assets, notifications, opcua-pki — the seven blocks above), and NINE remain. The item's "nine" is
             // therefore CORRECT as a count of LEAVES. It is not correct as a count of anything else, and the unit
             // is where this item keeps going wrong:
+            //
+            // 📎 🔴 "SIXTEEN leaves exist … and NINE remain" IS RETRACTED 2026-08-30 (whole-branch review of
+            // WS-HMI-0a, Minor 3), KEPT VERBATIM. Both numbers were measured correctly at CB-1 on 2026-08-29 and
+            // both went stale the next day, IN THIS FILE, at the loop below: WS-HMI-0a Task 5 added the TENTH and
+            // ELEVENTH leaves (ST4I_HMI_MODEL_DIR / ST4I_HMI_TAGS_DIR — see the dated block beside them) and
+            // corrected the count everywhere except the paragraph that states it. Today: EIGHTEEN leaves exist,
+            // SEVEN are structural via the blocks above, and ELEVEN are in the table below. WHAT IS NOT
+            // RETRACTED: the reason this is a table rather than eleven hand-written blocks (one shared
+            // rationale), the re-count-rather-than-inherit discipline the paragraph argues for, and the
+            // historian exception recorded inside the table — none of those depend on the number. And the unit
+            // warning below is still exactly right, which is why it is left standing: the leaf count, the
+            // variable count, the seam count and the producer-class count are four different numbers.
             //   9 leaves · 9 variables · but only EIGHT store-level seams · and TEN producer classes,
             // because `historian` has TWO producers and NO seam on either of them. See the block below.
             //

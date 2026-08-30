@@ -2184,6 +2184,16 @@ EXPECT_CONFORMANCE=24
 #         -> NotificationDocumentationTests.EveryDirectoryTheEngineCreatesUnderProgramData_IsEitherPurged_OrKeptByNameWithAStatedReason
 #     NO TEST WAS DELETED and no assertion was weakened by any of the three renames; the third is the
 #     only one whose SUBJECT narrowed, and that narrowing is owner ruling (b).
+#
+# 📎 🔴 ONE MORE LINK IN THE FIRST CHAIN, 2026-08-30 (whole-branch review of WS-HMI-0a, Minor 2). The
+# block above is left verbatim; the name it records as the NEW one is itself now old:
+#     TheBesideTheBinaryStorePopulation_IsEmpty_AndTheSixteenMachineWideOnesAccountForEveryVariable
+#       -> TheBesideTheBinaryStorePopulation_IsEmpty_AndTheMachineWideOnesAccountForEveryVariable
+# The count came OUT of the name rather than being bumped to eighteen. Reason: WS-HMI-0a moved the
+# machine-wide count 16 -> 18 and this name kept saying sixteen, green, because a NAME IS NOT AN
+# ASSERTION and nothing in the repository can catch a stale one. The count is asserted in the body from a
+# src/ scan, which moves by itself; a number in the method name was a second copy of a fact that already
+# had a measurement, and the second copy is the one that rots. No test deleted, no assertion weakened.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
 # 🔴 TASK BI-1 (2026-08-23, docs/owner-decisions.md items 50 and 55 EXECUTED — COORDINATOR RULINGS UNDER
@@ -4489,7 +4499,26 @@ EXPECT_EDGESERVICE=52
 #     ModelIntegrityTests fact (the IsPathPrefix path-segment regression, confirmed red against a plain
 #     StartsWith before being added, then reverted — see task-5-report.md).
 # 5 + 6 + 5 + 4 = 20, matching 1455 -> 1475 exactly with no unaccounted remainder.
-EXPECT_ENGINEAPI=1475
+#
+# 🔴 WS-HMI-0a FIX WAVE (2026-08-30, whole-branch review) raises this 1475 -> 1479 (+4). All four are
+# ModelIntegrityTests facts for review Minor 5: ModelIntegrity's `GroupBy(n => n.Id)...First()` and its
+# `Types.ToHashSet` ABSORBED a duplicate silently, so two nodes with id "spindle" reported CLEAN from the
+# one function whose job is referential integrity -- and worse than clean, because SS3.3's indirect binding
+# resolves {component} through that id. The fifth check reports the duplicate instead of swallowing it;
+# `First()` is deliberately kept so checks 1-4 still run over a deterministic representative and one pass
+# still returns every violation. The four facts: a duplicate id is reported, a duplicate typeId is
+# reported, a duplicate does not stop check 1 from also firing, and a clean document reports nothing (the
+# false-positive direction, without which the other three are satisfiable by a check that always fires).
+#
+# MEASURED this wave, not summed from memory:
+#   dotnet test /d/SOURCES/avi-aoi-sim/tools/machine-simulator/tests/St4i.EngineApi.Tests
+#   -> Passed: 1479, Failed: 0, Total: 1479
+# The rest of the wave touches PerHostDataRootsTests and HmiModelWiringTests but adds no [Fact] to either:
+# the count guard gained five more parsed SENTENCES inside one existing fact, and the other two changes are
+# a method RENAME (review Minor 2 -- the count came out of the name) and an attribute written in its short
+# form (Minor 9). A rename moves no number, and that is why +4 is the whole delta rather than +4 plus a
+# remainder nobody could account for.
+EXPECT_ENGINEAPI=1479
 
 # 🔴 WS-HMI-0a Task 5 FIX ROUND 1 (2026-08-30) — St4i.Hmi.Contracts.Tests gets its FIRST pin here. It has
 # existed since WS-HMI Mốc 0 (Task 1, 2026-08-29) with zero mechanical coverage in this file: no EXPECT_*
@@ -4502,11 +4531,39 @@ EXPECT_ENGINEAPI=1475
 # decision to leave a project with zero mechanical coverage has.
 #
 # MEASURED: `dotnet test tests/St4i.Hmi.Contracts.Tests` reports `Passed: 33, Failed: 0, Total: 33`.
-EXPECT_HMI_CONTRACTS=33
+#
+# 🔴 WS-HMI-0a FIX WAVE (2026-08-30, whole-branch review) raises this 33 -> 46 (+13), and this pin
+# being ONE DAY OLD is why the +13 is legible at all -- the previous entry had to reconstruct four tasks'
+# worth of drift after the fact.
+#   +8 ContractInvariantsTests. Four for review Important 3: `tag_index.path` is a GLOBAL primary key and
+#     PutAsync fills the index with a bare INSERT, while the schema's `tags` array has no uniqueness
+#     constraint -- so a schema-VALID document declaring one path twice reached SQLite and came back as
+#     `UNIQUE constraint failed`, i.e. a SqliteException where WS-HMI-0b's error map only turns
+#     ContractViolationException into a 400. A client-authored document landed as a 500 with no
+#     explanation. The rule now fires at the door. Four for review Important 4: ContractInvariants had no
+#     Validate(HmiScreenDocument) at all, so `new ScreenWidget("b1", "command-button", rect,
+#     PolicyAction: null)` -- the construction Task 1 exists to prevent, for the SS5 rule stated most
+#     directly -- compiled unopposed.
+#   +5 SchemaEnumGuardPinTests (new file, review Important 5): 1 fact comparing each schema's own
+#     `allOf[].if` condition against the set ContractInvariants guards, 3 Theory rows requiring every
+#     `access`/`role`/`kind` enum member to be either guarded or explicitly exempt, and 1 fact pinning the
+#     policyAction enum across all three schemas. Milestone 0's fix round found this exact shape on the WEB
+#     side (widen `access` to ["r","rw","w"], validate a "w" tag with no policyAction, get ZERO errors)
+#     and closed it with a schema<->TS pin; there was no .NET equivalent, because SchemaPin compares
+#     property NAMES and the records type every enum as `string` by design. This branch made those string
+#     literals THE GUARD, so the gap stopped being cosmetic. Confirmed red by widening the schema's
+#     `access` enum, then reverted (`git diff --exit-code -- contracts/` -> 0).
+# 8 + 5 = 13, matching 33 -> 46 with no unaccounted remainder.
+#
+# MEASURED this wave:
+#   dotnet test /d/SOURCES/avi-aoi-sim/tools/machine-simulator/tests/St4i.Hmi.Contracts.Tests
+#   -> Passed: 46, Failed: 0, Total: 46
+EXPECT_HMI_CONTRACTS=46
 
 SUITES=(
   # St4i.Hmi.Contracts first — zero-dependency contract assembly, same population as Abstractions/
-  # Conformance below it, and the cheapest of the six (33 tests, well under a second), so a broken schema
+  # Conformance below it, and the cheapest of the six (46 tests, well under a second — 🔴 33 until the
+  # WS-HMI-0a fix wave of 2026-08-30 added the duplicate-path, HmiScreen and schema-enum-guard pins), so a broken schema
   # mirror fails before the six-suite run spends any real wall-clock time on the rest.
   "tests/St4i.Hmi.Contracts.Tests:$EXPECT_HMI_CONTRACTS"
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -10475,7 +10532,8 @@ if [[ -f "$SIM_BEFORE" ]]; then
         echo "     script or \`dotnet build\` performs. Measured, not feared: with two redirects removed, one"
         echo "     run of St4i.EngineApi.Tests rewrote ...\\sim\\assets\\assets.db."
         echo "  HOW TO FIX: set the offending store's ST4I_*_DIR variable in tests/Shared/TestRunTempRoot.cs"
-        echo "     beside the SIXTEEN already there -- CB-1 took it from seven to sixteen, which is every leaf"
+        echo "     beside the EIGHTEEN already there -- CB-1 took it from seven to sixteen and WS-HMI-0a"
+        echo "     Task 5 took it to eighteen (hmi-model, hmi-tags), which is every leaf"
         echo "     src/ declares, so a store reddening this bracket now is either a NEW leaf or one taking a"
         echo "     path that ignores its variable -- one line covers every existing call"
         echo "     site and every future one -- or hand the store an explicit directory at its construction"

@@ -1284,7 +1284,7 @@ pass) removes only what the MSI itself installed — everything under `%ProgramF
 Simulator\`, the Start Menu/Startup shortcuts, and — if `ServiceFeature` was enabled — stops and
 deletes the `St4iEngineApi` service.
 
-**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine creates **eighteen**
+**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine declares **eighteen**
 directories there (`historian`, `wal`, `security`, `creds`, `notifications`, `identity`,
 `connector-config`, `opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`,
 `machine-config`, `products`, `ecosystem` — 🔴 the last three arrived on **2026-08-23**, when the owner
@@ -1295,6 +1295,27 @@ the MSI has no `<Component>` referencing anything there (it's all runtime-create
 installed), so Windows Installer's uninstall/remove sequence never touches it. This is deliberate: an
 uninstall or upgrade must never silently destroy production history, the audit trail, or a machine's
 credential.
+
+🔴 **DECLARES, not CREATES — corrected 2026-08-30 (whole-branch review of WS-HMI-0a, Important 2), and
+the two sentences above it are kept verbatim.** The first sentence of this section read *"the engine
+creates **eighteen** directories there"*, and the parenthesis read *"`hmi-model`, `hmi-tags` arrived on
+**2026-08-30** (WS-HMI-0a Task 5), the day `Program.cs` first registered
+`ComponentModelStore`/`TagNamespaceStore` into the DI graph"*. **Registration of a factory singleton is
+not creation.** Both stores are registered as `AddSingleton<T>(sp => new …)` (`Program.cs`); a factory
+registration's delegate runs on the first **resolution**, and the reviewer measured that nothing in
+`src/` resolves `IComponentModelStore` or `ITagNamespaceStore` — there is no endpoint until WS-HMI-0b. A
+running engine at this commit therefore never constructs either store, and
+`%ProgramData%\ST4I\sim\{hmi-model,hmi-tags}` are never created. The honest form, and the one the §15.9
+table row below already reaches for: **declared and registered; created on first resolution, which no
+endpoint performs until WS-HMI-0b.** Sixteen of the eighteen are created by a running engine today.
+
+**What did NOT change, said so the correction is not over-read:** both are relocatable
+(`ST4I_HMI_MODEL_DIR`/`ST4I_HMI_TAGS_DIR`), both are purged by `packaging/remove-data.ps1` if present,
+and both count toward the **eighteen** the naming rule of §15.9 covers — that rule is about DECLARED
+directories, and `PerHostDataRootsTests` derives its number from `ST4I_*_DIR` literals in `src/`, which
+is a declaration count and always was. The `.NET` test harness redirects both leaves structurally
+(`tests/Shared/TestRunTempRoot.cs`) and that redirect stays required, not optional: `HmiModelWiringTests`
+resolves both seams directly, and WS-HMI-0b's endpoint tests will resolve them constantly.
 
 To actually purge it (decommissioning a machine, resetting a demo box), run the separate, explicit,
 destructive script — **never** invoked by the MSI itself:
@@ -1424,11 +1445,23 @@ chúng chứa mọi định nghĩa sản phẩm/công thức mà vận hành vi�
 bằng tay; **cố ý KHÔNG có cờ nào** làm việc đó. `machine-config` là thư mục mới thứ ba và nó **CÓ** bị xoá:
 nó giữ tham số vận hành của máy và danh sách `History` chỉ-thêm của mọi lần điều chỉnh — một bản ghi về
 việc máy ĐÃ LÀM GÌ, không phải thứ vận hành viên dựng lên.
-🔴 **CẬP NHẬT 2026-08-30 (WS-HMI-0a Task 5) — engine nay tạo MƯỜI TÁM thư mục, script xoá MƯỜI SÁU.**
+🔴 **CẬP NHẬT 2026-08-30 (WS-HMI-0a Task 5) — engine KHAI MƯỜI TÁM thư mục, script xoá MƯỜI SÁU.**
 `hmi-model` (cây linh kiện đã khai của máy) và `hmi-tags` (namespace tag đã khai) gia nhập danh sách
 XOÁ, không phải danh sách GIỮ — chúng gần với `machine-config` (bản ghi máy đang chạy gì) hơn là với
 `products`/`ecosystem` (cấu hình vận hành viên tự soạn), và danh sách GIỮ vẫn ghim đúng
-`{ecosystem, products}` bởi `NotificationDocumentationTests`/`PerHostDataRootsTests`.)*
+`{ecosystem, products}` bởi `NotificationDocumentationTests`/`PerHostDataRootsTests`.
+🔴 **KHAI, KHÔNG PHẢI TẠO — sửa 2026-08-30 (review toàn nhánh WS-HMI-0a, Important 2), câu cũ giữ nguyên
+văn.** Câu ngay trên đọc *"engine nay tạo MƯỜI TÁM thư mục, script xoá MƯỜI SÁU"*. **Đăng ký một factory
+singleton KHÔNG phải là tạo.** Cả hai store được đăng ký dạng `AddSingleton<T>(sp => new …)` trong
+`Program.cs`; delegate của một factory chỉ chạy ở lần PHÂN GIẢI đầu tiên, và người review đo được rằng
+**không có gì trong `src/` phân giải** `IComponentModelStore` hay `ITagNamespaceStore` — chưa có endpoint
+nào cho tới WS-HMI-0b. Nên một engine đang chạy ở commit này **không bao giờ dựng** hai store ấy, và
+`%ProgramData%\ST4I\sim\{hmi-model,hmi-tags}` **không bao giờ được tạo**. Dạng trung thực: **đã khai và đã
+đăng ký; được tạo ở lần phân giải đầu tiên, mà chưa endpoint nào thực hiện trước WS-HMI-0b.** MƯỜI SÁU
+trong MƯỜI TÁM là số thư mục một engine đang chạy thật sự tạo hôm nay. **Cái KHÔNG đổi:** cả hai vẫn dời
+chỗ được, vẫn bị `remove-data.ps1` xoá NẾU CÓ, và vẫn tính vào con số mười tám của quy tắc đặt tên §15.9 —
+quy tắc ấy nói về thư mục ĐƯỢC KHAI, và `PerHostDataRootsTests` suy số của nó từ các literal `ST4I_*_DIR`
+trong `src/`, tức là một phép đếm lời khai.)*
 
 ### 15.5 `St4i.DesktopShell` coexistence / Cùng tồn tại với DesktopShell
 
@@ -1638,6 +1671,16 @@ the day `Program.cs` first registered both stores into the DI graph — see the 
 WRITES/READS table below. Nothing about the RULE changed; only the count did, which is the whole point
 of stating it as a derived count rather than a list (see `PerHostDataRootsTests`' own doc comment).
 
+🔴 **"JOINED THE POPULATION" IS RIGHT; "the engine creates them" WOULD NOT BE — 2026-08-30, whole-branch
+review of WS-HMI-0a, Important 2.** Both are `AddSingleton<T>(sp => new …)` **factory** registrations, and
+a factory's delegate runs on the first RESOLUTION. Nothing in `src/` resolves `IComponentModelStore` or
+`ITagNamespaceStore` — no endpoint exists until WS-HMI-0b — so a running engine at this commit never
+constructs either store and neither directory is created. They are **declared and registered; created on
+first resolution, which no endpoint performs until WS-HMI-0b.** The naming RULE above counts declared
+directories, which is what makes eighteen the right number here and sixteen the number of directories a
+live machine actually has today. §15.4's own count sentence carried the wrong verb until this correction;
+it now reads "declares".
+
 📎 **THE SENTENCE AFTER THE COUNT IS RETRACTED, 2026-08-23 (BF-1), kept verbatim.** It read *"three more
 stores live BESIDE THE ENGINE BINARY and are isolated only by accident"*, and it was true from F-1 until
 that date. The owner ruled on **2026-08-23(a)** that those three move their defaults under
@@ -1672,8 +1715,8 @@ effect.
 | `machine-config` | `ST4I_MACHINE_CONFIG_DIR` | EngineApi (`MachineConfigStore`, on the operator's first write) | EngineApi | `machine-operating-config.json` — per-machine baselines, every operator adjustment, and the append-only `History` behind them. 🔴 **joined this table on 2026-08-23**; the only root written **under the fleet's global lock** |
 | `products` | `ST4I_PRODUCTS_DIR` | EngineApi (`ProductConfigStore`, **during construction**) | EngineApi | `products.json`, `recipes.json` — the product and recipe definitions. 🔴 **joined on 2026-08-23**, and **KEPT by `remove-data.ps1`** (§15.4) |
 | `ecosystem` | `ST4I_ECOSYSTEM_DIR` | EngineApi (`SimulatedEcosystem`, **during construction**) | EngineApi | `ecosystem-products.json`, `ecosystem-recipes.json` — the Demo-mode ecosystem. 🔴 **joined on 2026-08-23**, and **KEPT by `remove-data.ps1`** (§15.4) |
-| `hmi-model` | `ST4I_HMI_MODEL_DIR` | EngineApi (`ComponentModelStore`, on an engineer's `PutAsync`) | EngineApi | `hmi-model.db` — the declared component tree (types, `tagPrefix` bindings) a HMI screen resolves against. 🔴 **joined on 2026-08-30** (WS-HMI-0a Task 5); no endpoint reads it yet (WS-HMI-0b) |
-| `hmi-tags` | `ST4I_HMI_TAGS_DIR` | EngineApi (`TagNamespaceStore`, on an engineer/connector's `PutAsync`) | EngineApi | `tag-namespaces.db` — the declared tag namespace + its flat path index. 🔴 **joined on 2026-08-30** (WS-HMI-0a Task 5); no driver loads a real tag into it yet (WS-HMI-0c) |
+| `hmi-model` | `ST4I_HMI_MODEL_DIR` | EngineApi (`ComponentModelStore`, on an engineer's `PutAsync`) | EngineApi | `hmi-model.db` — the declared component tree (types, `tagPrefix` bindings) a HMI screen resolves against. 🔴 **joined on 2026-08-30** (WS-HMI-0a Task 5); no endpoint reads it yet (WS-HMI-0b). 🔴 **Declared and registered; CREATED on first resolution, which no endpoint performs until WS-HMI-0b** — the DI registration is a factory singleton, so this directory does not exist on a live machine today |
+| `hmi-tags` | `ST4I_HMI_TAGS_DIR` | EngineApi (`TagNamespaceStore`, on an engineer/connector's `PutAsync`) | EngineApi | `tag-namespaces.db` — the declared tag namespace + its flat path index. 🔴 **joined on 2026-08-30** (WS-HMI-0a Task 5); no driver loads a real tag into it yet (WS-HMI-0c). 🔴 **Declared and registered; CREATED on first resolution, which no endpoint performs until WS-HMI-0b** — same factory-singleton reason as the row above |
 
 *(The WRITES/READS columns are an enumeration of CALL SITES in `src/`, not an inference from which assembly
 references which type: `CredentialStore.Save` appears in `St4i.EngineApi/Fleet/OnboardingService.cs` and in the
@@ -1687,7 +1730,9 @@ Pinned by `PerHostDataRootsTests` — `EveryMachineWideDirectory_IsRelocatable_B
 fourteenth store, it **did** arrive, and this guard stayed green — correctly, because it is not machine-wide.
 The guard that turned red was `TestHarnessIsolationTests`, for a different reason. The beside-the-binary
 population has its own guard,
-`TheBesideTheBinaryStorePopulation_IsEmpty_AndTheSixteenMachineWideOnesAccountForEveryVariable`), and
+`TheBesideTheBinaryStorePopulation_IsEmpty_AndTheMachineWideOnesAccountForEveryVariable` — 🔴 renamed
+2026-08-30 from `…AndTheSixteenMachineWideOnes…`; the count came OUT of the name because a name is not an
+assertion and this one had gone stale at 16 while the test stayed green), and
 `EveryRelocationVariable_IsActuallyREAD_NotMerelyDeclared` requires each variable to reach a real
 `Environment.GetEnvironmentVariable` call rather than merely existing as a literal somewhere. That is
 deliberate: the mechanism was already complete before this section existed, and the thing that would break
@@ -1730,8 +1775,15 @@ with no env-var step. None does today.)*
 >
 > **What is true today, in five lines:**
 > 1. All three roots are `%ProgramData%\ST4I\sim\<leaf>` and all three variables are derivable from the
->    leaf: `ST4I_MACHINE_CONFIG_DIR`, `ST4I_PRODUCTS_DIR`, `ST4I_ECOSYSTEM_DIR`. **Sixteen directories,
->    sixteen variables, one population.**
+>    leaf: `ST4I_MACHINE_CONFIG_DIR`, `ST4I_PRODUCTS_DIR`, `ST4I_ECOSYSTEM_DIR`. **Eighteen directories,
+>    eighteen variables, one population.**
+>    🔴 **SIXTEEN → EIGHTEEN, 2026-08-30 (whole-branch review of WS-HMI-0a, Important 1).** This line read
+>    *"**Sixteen directories, sixteen variables, one population.**"* It was written on 2026-08-23 by BF-1
+>    and was true then. WS-HMI-0a added `hmi-model`/`hmi-tags` and moved the count everywhere the guard
+>    reads — but this line, and its Vietnamese mirror five lines further down, are in a
+>    "what is true today" header that no guard reads, so both kept saying sixteen. The count of the three
+>    stores BF-1 moved has not changed and is not what this line states; it states the size of the single
+>    population they joined.
 > 2. Two hosts launched from **one install directory** no longer share these files by accident — they
 >    share them by DEFAULT, machine-wide, exactly like the other thirteen, and the fix is the same fix:
 >    give each host its own roots. That is a real change of shape, not a repeal of the warning.
@@ -1831,8 +1883,15 @@ decision rather than taking it.
 > rỗng ấy được **ghim bằng test** chứ không phải được giả định, vì một tập rỗng thoả mọi khẳng định phổ
 > quát. Giữ nguyên văn vì không câu nào trong đó từng sai: chính lập luận "tách vì tình cờ thì không phải
 > đã cô lập" là thứ khiến phép chuyển được phán.
-> **Hôm nay, năm dòng:** (1) mười sáu thư mục, mười sáu biến, MỘT quần thể — tên biến suy được từ tên thư
-> mục. (2) Hai host chạy từ một thư mục cài nay dùng chung các file ấy **theo mặc định**, giống hệt mười ba
+> **Hôm nay, năm dòng:** (1) mười tám thư mục, mười tám biến, MỘT quần thể — tên biến suy được từ tên thư
+> mục.
+> (🔴 **MƯỜI SÁU → MƯỜI TÁM, 2026-08-30**, review toàn nhánh WS-HMI-0a, Important 1: dòng này đọc
+> *"(1) mười sáu thư mục, mười sáu biến, MỘT quần thể"* — đúng khi BF-1 viết nó ngày 2026-08-23, và sai
+> từ ngày WS-HMI-0a thêm `hmi-model`/`hmi-tags`. Nó nằm trong một khối "hôm nay đúng cái gì" mà không có
+> bài test nào đọc, cùng với bản tiếng Anh của chính nó năm dòng phía trên — nên cả hai cùng đứng yên ở
+> mười sáu. Số ba store BF-1 chuyển thì KHÔNG đổi; dòng này nói kích thước của cái quần thể chúng gia
+> nhập, không nói số của chúng.)
+> (2) Hai host chạy từ một thư mục cài nay dùng chung các file ấy **theo mặc định**, giống hệt mười ba
 > cái kia; cách tách vẫn là cho mỗi host một gốc riêng. (3) 🔴 Một bản cài ĐÃ TỒN TẠI **thôi đọc file cũ**
 > — đó là cái giá chủ sở hữu đã chấp nhận; nó được giảm nhẹ bằng **một phép CHÉP MỘT LẦN** từ gốc cũ,
 > **KHÔNG BAO GIỜ xoá bản cũ** (`LegacyRootMigration`), và phép chép chỉ chạy khi gốc giải ra từ MẶC ĐỊNH.
@@ -1979,7 +2038,17 @@ triển khai bình thường (§24). Hai host không chia sẻ roster, không ch
 nào — nhưng mặc định chúng **dùng chung một bộ file**. Mục này nói cách cho mỗi host một bộ riêng, và cái giá
 phải trả. **Quy tắc:** mọi thư mục sản phẩm tạo dưới `%ProgramData%\ST4I\sim\<tên>` đều dời chỗ được bằng một
 biến môi trường suy ra được từ tên thư mục — **`ST4I_` + `<TÊN>` (viết hoa, `-` → `_`) + `_DIR`**. Hôm nay có
-**mười sáu** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên).
+**mười tám** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên).
+📎 🔴 **RÚT 2026-08-30 (review toàn nhánh WS-HMI-0a, Important 1), giữ nguyên văn:** câu ngay trên đọc
+*"Hôm nay có **mười sáu** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên)."* Nó đúng cho
+tới 2026-08-30, và nó **sai từ ngày ấy mà không ai thấy**: WS-HMI-0a Task 5 chuyển số này 16 → 18 ở nửa
+TIẾNG ANH (*"There are **18** of them today"*, ngay trên) và **để nguyên nửa tiếng Việt ở mười sáu**, nên hai
+nửa của cùng MỘT câu mâu thuẫn nhau và người vận hành đọc tiếng Việt bị bảo là mười sáu. Báo cáo của task
+ấy còn khai là đã sửa *"all in **both languages**"* — xem `task-5-report.md` để biết chỗ đính chính. Phép đo
+bác nó: `PerHostDataRootsTests.TheNumberOfMachineWideDirectories_…` suy số từ `src/` và ra **18**, nhưng
+regex của nó khi ấy chỉ đọc câu TIẾNG ANH, trong khi thông điệp thất bại của chính nó lại kể tên "README
+§15.9 (EN+VI …), §24.6 (EN+VI)" — một đòi hỏi được phát biểu mà không được đo. Từ 2026-08-30 bài test ấy đọc
+**cả bảy** câu, cả hai ngôn ngữ, nên chỗ hở này không mở lại được bằng cùng cách nữa.
 📎 **RÚT 2026-08-23 (BF-1), giữ nguyên văn:** câu ngay trên đọc *"Hôm nay có **mười ba** thư mục"* và tiếp
 *"🔴 nhưng đó **không phải toàn bộ những gì sản phẩm ghi**: còn **ba** store nữa nằm **cạnh file binary của
 engine**, chỉ cô lập một cách tình cờ, xem mục 'Quần thể store THỨ HAI' bên dưới."* Cả hai nửa đúng cho tới
@@ -6364,14 +6433,22 @@ của nó là hàng đợi WAL), nên không có gì thụt lùi — **và E-5 c
 cổng COM còn một tuyến gateway mở một socket; không cái nào là store, và sổ sách chia sẻ lần mở là một
 dictionary trong tiến trình do host sở hữu.** **Máy của một connector đã xoá vẫn nằm trong roster tới khi khởi
 động lại** (§23.5), không đổi. 🔴 **F-1 đổi phần "mặc định" ấy: gốc dữ liệu theo host giờ là hình dạng triển
-khai ĐƯỢC HỖ TRỢ (§15.9)** — cả **mười sáu** thư mục **toàn máy** dưới `%ProgramData%` đều dời chỗ được bằng
-một biến `ST4I_*_DIR` suy ra được (📎 **RÚT 2026-08-23 (BF-1), giữ nguyên văn:** chỗ này đọc *"cả mười ba thư
+khai ĐƯỢC HỖ TRỢ (§15.9)** — cả **mười tám** thư mục **toàn máy** dưới `%ProgramData%` đều dời chỗ được bằng
+một biến `ST4I_*_DIR` suy ra được (📎 🔴 **RÚT 2026-08-30 (review toàn nhánh WS-HMI-0a, Important 1), giữ
+nguyên văn:** chỗ này đọc *"cả **mười sáu** thư mục **toàn máy**"*, trong khi nửa TIẾNG ANH của đúng câu này
+đã được WS-HMI-0a Task 5 sửa thành **eighteen** cùng với **nineteenth** ở mệnh đề sau. Hai nửa của một câu
+song ngữ mâu thuẫn nhau từ 2026-08-30 tới khi vòng sửa sau review bắt được; xem `task-5-report.md` để biết
+chỗ đính chính lời khai *"all in **both languages**"* của task ấy. Từ nay
+`PerHostDataRootsTests.TheNumberOfMachineWideDirectories_…` đọc **cả hai** nửa của câu này, nên chúng không
+lệch nhau lặng lẽ được nữa. 📎 **RÚT 2026-08-23 (BF-1), giữ nguyên văn:** chỗ này đọc *"cả mười ba thư
 mục"* và *"🔴 H-1c thêm chữ 'toàn máy': sản phẩm còn ba store ghi **cạnh binary**, ở đó sự cô lập giữa hai
 host là **tình cờ** — đọc mục quần thể thứ hai của §15.9 trước khi lên kế hoạch một máy hai host"*. Chủ sở
 hữu chuyển cả ba store ấy xuống `%ProgramData%` ngày 2026-08-23, nên **mười ba thành mười sáu** và quần thể
 cạnh-binary **RỖNG**; hai host trên một máy nay dùng chung ba file ấy **theo mặc định** giống hệt mười ba cái
 kia, và cách tách vẫn là cho mỗi host một gốc riêng), và
-một test suy ra cả hai tập từ `src/` nên store **toàn máy** thứ mười bảy không thể ra đời mà thiếu biến — còn
+một test suy ra cả hai tập từ `src/` nên store **toàn máy** thứ **mười chín** không thể ra đời mà thiếu biến
+(🔴 **MƯỜI BẢY → MƯỜI CHÍN, 2026-08-30**, cùng finding: mệnh đề này đọc *"store **toàn máy** thứ mười bảy"*,
+là số thứ tự đi kèm con số mười sáu ở đầu câu; nửa tiếng Anh đã nói **nineteenth** từ Task 5) — còn
 một store cạnh-binary thì **không còn cái nào**, và phép ghim của quần thể ấy nay ghim đúng số không. Cái F-1 **không**
 làm là đặt chúng thay bạn: không đặt gì thì vẫn là một bộ file dùng chung, và đổi gốc thì **không có gì được
 di trú**. **Do đó quyết định đang chặn OPC-UA ở biên đã ĐÓNG** — xem §24.2, phần còn lại là công việc kỹ

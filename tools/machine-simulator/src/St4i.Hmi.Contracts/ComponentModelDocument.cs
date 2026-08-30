@@ -27,6 +27,13 @@ public sealed record ComponentTypeDef(
 /// CỨNG cho <c>role == "setpoint"</c> — schema bắt buộc chúng, vì đây là giao diện vận hành máy công
 /// nghiệp và không được để nhập giá trị ngoài dải an toàn (nguyên tắc của MACHINE_CONFIG_DESIGN.md §3).
 ///
+/// <para>📎 🔴 <b>"schema bắt buộc chúng" GIỮ NGUYÊN VĂN nhưng đã HẾT ĐỦ, 2026-08-30</b> (review toàn
+/// nhánh WS-HMI-0a, Minor 7). Từ WS-HMI-0a Task 1, <see cref="ContractInvariants.Validate(ComponentModelDocument)"/>
+/// thi hành cùng luật ấy ở phía .NET — cả <c>min</c>/<c>max</c> lẫn <c>policyAction</c> cho
+/// <c>role ∈ {setpoint, command}</c> — và <c>ComponentModelStore.PutAsync</c> gọi
+/// <see cref="ContractInvariants.ThrowIfInvalid(ComponentModelDocument)"/> trước khi mở kết nối. Schema
+/// không còn là NƠI DUY NHẤT; nó vẫn là nơi duy nhất kiểm được pattern, kiểu và trường lạ.</para>
+///
 /// <para><paramref name="EnumValues"/> thêm ở fix round 2 (finding Important 3): schema cho phép
 /// <c>dataType: "enum"</c> nhưng KHÔNG có chỗ nào khai các giá trị của enum ấy, trong khi
 /// <c>tag-namespace.schema.json</c> đã có <c>enumValues</c> từ đầu — hai schema bất đồng về đúng cùng một

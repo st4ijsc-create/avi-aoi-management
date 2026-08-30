@@ -172,6 +172,19 @@ export default defineConfig({
       // directories and is still true" is the sentence that stopped being true; every one of them now
       // reads sixteen. The historical 12-name SM-6 list is left alone, still labelled as a record.
       //
+      // 📎 🔴 READ THIS FIRST — 2026-08-30 (whole-branch review of WS-HMI-0a, Minor 4). THE THREE
+      // "SIXTEEN"s IN THE PARAGRAPH DIRECTLY ABOVE ARE STALE, and so is "every one of them now reads
+      // sixteen". WS-HMI-0a Task 5 added `ST4I_HMI_MODEL_DIR`/`ST4I_HMI_TAGS_DIR` and made the count
+      // EIGHTEEN, but corrected it only at the block beside those two entries ~120 lines below — this
+      // repository's retract-in-place marker normally sits AT the stale sentence, which is why this one
+      // is here rather than only there. Today: EIGHTEEN machine-wide directories, EIGHTEEN `ST4I_*_DIR`
+      // variables, EIGHTEEN entries in the `env:` block below.
+      //
+      // WHAT IS NOT RETRACTED: BF-1's substance. The second population really is empty, the three stores
+      // really did move under `%ProgramData%\ST4I\sim`, and "one population, one number" is still the
+      // shape — only the number moved. And the isolation property this file rests on is unchanged: the
+      // harness isolates on "the engine CAN write there", not on "this suite exercises it".
+      //
       // 🔴 ALL THIRTEEN MACHINE-WIDE stores are now redirected under an isolated `../.e2e-data` root that
       // `scripts/reset-engine-state.mjs` wipes in full before every boot — isolated AND disposable,
       // not merely relocated to accumulate somewhere else instead. Three separate audits each declared
@@ -278,6 +291,13 @@ export default defineConfig({
         // file now read SIXTEEN machine-wide directories and SIXTEEN `ST4I_*_DIR` variables — ONE
         // population, not two, and the second population is empty. What did NOT change is the reason the
         // line above is required: this harness isolates on "the engine writes there", and it always did.
+        //
+        // 📎 🔴 2026-08-30 (whole-branch review of WS-HMI-0a, Minor 4) — "SIXTEEN … and SIXTEEN" in the
+        // sentence directly above is STALE: it is EIGHTEEN since WS-HMI-0a Task 5 added
+        // ST4I_HMI_MODEL_DIR/ST4I_HMI_TAGS_DIR (block ~15 lines below). Marked here, at the stale
+        // sentence, because that is where this repository puts a retraction — the correction existed only
+        // downstream until now, which is a marker a reader passing THIS line never sees. BF-1's substance
+        // is untouched: one population, second population empty, the count is the only thing that moved.
         //
         // The two new entries are what stops `npm run test:e2e` and `npm run dev` from reading and writing
         // a REAL install's products/recipes — which, before the move, they merely did to the engine's own
