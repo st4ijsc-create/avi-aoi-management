@@ -204,15 +204,6 @@ public static class HmiModelEndpoints
             return Results.BadRequest(new ApiErrorDto(ex.Message));
         }
 
-        // 🔴 WS-HMI-0b Task 3 — announce AFTER the store accepted the write, and only here. Every failure
-        // path above has already returned, so this line is unreachable unless the change really happened:
-        // that is what makes "a request that does not return 2xx emits nothing" a property of the control
-        // flow rather than a list of cases someone has to keep current. A client that hears "changed",
-        // re-reads and finds nothing changed stops trusting the channel, and that is cheap to cause and
-        // expensive to undo. Publish cannot throw — see HmiChangeBus.Publish for why that is a guarantee
-        // and not a hope, and why a successful write must never be failed by its own announcement.
-        changes.Publish(HmiModelEvents.ComponentModelChanged(machineCode));
-
         // Referential integrity against whatever tag namespace this machine has loaded (null if none) is a
         // WARNING, never a rejection — declaration order between a component tree and a tag namespace is
         // not a constraint (see ModelIntegrity's own doc comment for why). `machineCode` passed RAW — same
@@ -222,7 +213,30 @@ public static class HmiModelEndpoints
 
         // Response echo only — computed AFTER the store calls, never used to decide what got written.
         var canonicalCode = MachineCodeIdentity.Canonicalize(machineCode);
-        return Results.Ok(new PutModelResultDto(canonicalCode, body.Components.Count, warnings));
+        var response = Results.Ok(new PutModelResultDto(canonicalCode, body.Components.Count, warnings));
+
+        // 🔴 WS-HMI-0b Task 3, fix round 1 (HIGH-1) — THE PUBLISH IS THE LAST THING THIS HANDLER DOES, and
+        // the response it will return is already built above it. That ordering is the property, not a
+        // stylistic preference.
+        //
+        // 📎 The sentence that used to stand here — "every failure path above has already returned, so this
+        // line is unreachable unless the change really happened: that is what makes 'a request that does not
+        // return 2xx emits nothing' a property of the control flow" — is RETRACTED, kept rather than
+        // silently edited because the way it was wrong is worth carrying. Every clause of it was TRUE. The
+        // INFERENCE was not: it reasoned about the lines ABOVE the publish and concluded something about the
+        // WHOLE HANDLER, which at that point still had two awaits below it. `tags.GetAsync` reaches a
+        // SECOND SQLite database and can throw, and `ct` can cancel; either escaped as a 500 with the event
+        // already sent — a client told a change happened by a request that reported catastrophe. Measured by
+        // review, not theorised. A true statement carrying a conclusion one scope wider than its evidence is
+        // its own defect shape, and it is the reason this shipped looking sound.
+        //
+        // The rule now, true of the handler rather than of a prefix of it: NOTHING THAT CAN THROW RUNS AFTER
+        // THE PUBLISH. Enforced by construction — `response` already exists, so the only work left is the
+        // publish itself and a `return` of a value already in hand. `HmiChangeBus.Publish` is total (see its
+        // own doc comment), so it cannot fail the write it is announcing either. Pinned by
+        // HmiModelEventsTests.A_component_write_whose_response_work_throws_after_the_store_emits_nothing.
+        changes.Publish(HmiModelEvents.ComponentModelChanged(machineCode));
+        return response;
     }
 
     // ─────────────────────────────────────────────────────────────────────

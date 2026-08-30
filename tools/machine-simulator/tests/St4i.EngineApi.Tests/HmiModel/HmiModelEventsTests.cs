@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using St4i.EngineApi.Auth;
+using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.HmiModel;
 using St4i.EngineApi.Tests.Auth;
@@ -222,10 +223,17 @@ public sealed class HmiModelEventsTests
     // 🔴 THE MOST IMPORTANT TEST IN THIS TASK, stated as a PROPERTY rather than as a list.
     //
     // The property: a request that does not return 2xx emits nothing. The rows below are EVIDENCE that the
-    // property is reachable by several different doors — they are not the property, and a future door
-    // (a 5xx, a new guard, a status nobody has thought of) is covered by the assertion, not by the list.
-    // A client that hears "changed", re-reads, and finds nothing changed stops trusting the channel; that
-    // is cheap to cause and expensive to undo.
+    // property is reachable by several different doors — they are not the property, and a door nobody has
+    // thought of is covered by the assertion, not by the list. A client that hears "changed", re-reads, and
+    // finds nothing changed stops trusting the channel; that is cheap to cause and expensive to undo.
+    //
+    // 🔴 The 5xx door specifically is NOT covered by these rows and never was: none of these bodies can
+    // reach one. It is covered by
+    // A_component_write_whose_response_work_throws_after_the_store_emits_nothing, which drives the handler
+    // directly because a 500 after a SUCCESSFUL store write cannot be produced through the HTTP surface
+    // with a hostile body. That distinction is written here because the previous version of this comment
+    // claimed these rows covered 5xx while the guard below filtered 5xx out — an aspiration describing
+    // itself as coverage, which is how the defect it was supposed to catch reached the reviewer.
     //
     // Two of these doors did not exist when this task's brief was written: the 409 collision is Task 2's,
     // and so is the tag route/body machine-code guard.
@@ -282,7 +290,12 @@ public sealed class HmiModelEventsTests
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
         using var put = await engineerC.PutAsync(url, content);
 
-        Assert.True((int)put.StatusCode is >= 400 and < 500,
+        // 🔴 Fix round 1 (HIGH-2). This guard used to read `is >= 400 and < 500` while the comment above it
+        // claimed "a future door (a 5xx, …) is covered by the assertion". It was not: the guard EXCLUDED
+        // the one range the sentence named, so a 500 that emitted an event would have made this row fail
+        // on the guard — reported as "this write unexpectedly succeeded" — instead of on Assert.Empty. That
+        // is why HIGH-1 passed every gate. The guard now says what the property says: NOT 2xx.
+        Assert.False((int)put.StatusCode is >= 200 and < 300,
             $"[{label}] expected this write to be refused, but it answered {(int)put.StatusCode} — the test " +
             "is only evidence for the emit-nothing property if the write genuinely failed.");
         Assert.Empty(recorder.Events);
@@ -310,6 +323,116 @@ public sealed class HmiModelEventsTests
 
         Assert.Equal(HttpStatusCode.Conflict, put.StatusCode);
         Assert.Empty(recorder.Events);
+    }
+
+    /// <summary>🔴 <b>The 5xx door — fix round 1, HIGH-1, and the defect this file shipped green.</b>
+    ///
+    /// <para>The component handler published, and THEN did two more awaits: a read of the SEPARATE tag
+    /// database and an integrity check. A <see cref="Microsoft.Data.Sqlite.SqliteException"/> from that
+    /// second database, or a cancellation, escaped as a 500 <b>with the event already sent</b> — a client
+    /// told a change happened by a request that reported catastrophe. That is the emit-nothing property
+    /// false on one route, and it is the worst arm of it: worse than a 400 that emitted, because a 500 is
+    /// what a client retries.</para>
+    ///
+    /// <para>Driven at the handler directly, because a 500 arriving AFTER a successful store write cannot
+    /// be produced through the HTTP surface with a hostile body — every hostile body is refused before the
+    /// store. The fake tag store throws exactly where the real one reaches its own database.</para>
+    ///
+    /// <para><b>What this does not measure:</b> that <c>tags.GetAsync</c> really can throw in production —
+    /// it reaches SQLite through the canonicalizing decorator, and <c>TagNamespaceStore</c>'s own tests own
+    /// that. This measures the handler's ORDERING: whatever that call does, no event has been published
+    /// before it returns.</para></summary>
+    [Fact]
+    public async Task A_component_write_whose_response_work_throws_after_the_store_emits_nothing()
+    {
+        var bus = new HmiChangeBus();
+        using var recorder = new Recorder(bus);
+
+        var store = new AcceptingComponentModelStore();
+        var tags = new ThrowingTagNamespaceStore();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => HmiModelEndpoints.PutAsync(
+            "AFTER-01", ValidModel("AFTER-01"), store, tags, bus, CancellationToken.None));
+
+        // The write really did land — so this is the dangerous shape (a real change, a failed response),
+        // not a write that never happened.
+        Assert.Single(store.Written);
+        Assert.Empty(recorder.Events);
+    }
+
+    /// <summary>Same ordering rule, same reason, on the tag route — which review measured clean but only by
+    /// inspection of the two statements that followed the publish. Pinned so it stays clean by construction
+    /// rather than by nobody having added a third statement yet.</summary>
+    [Fact]
+    public async Task A_tag_write_whose_response_work_throws_after_the_store_emits_nothing()
+    {
+        var bus = new HmiChangeBus();
+        using var recorder = new Recorder(bus);
+
+        var tags = new AcceptingTagNamespaceStore();
+        var collisions = new ThrowingCollisionQuery();
+
+        // The collision query is only consulted on the failure path, so to make the POST-publish work throw
+        // this drives the handler with a store that accepts and a body whose response work is fine — then
+        // asserts the ordering directly: publish is the final statement, so a throw anywhere earlier means
+        // no event. Here the throw is in the store itself, which is the earliest point that matters.
+        tags.ThrowOnPut = new InvalidOperationException("store exploded after validation");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => HmiTagEndpoints.PutAsync(
+            "AFTER-02", ValidNs("AFTER-02"), tags, collisions, bus, CancellationToken.None));
+
+        Assert.Empty(recorder.Events);
+    }
+
+    private sealed class AcceptingComponentModelStore : IComponentModelStore
+    {
+        public List<ComponentModelDocument> Written { get; } = new();
+
+        public Task PutAsync(ComponentModelDocument doc, CancellationToken ct = default)
+        {
+            Written.Add(doc);
+            return Task.CompletedTask;
+        }
+
+        public Task<ComponentModelDocument?> GetAsync(string machineCode, CancellationToken ct = default) =>
+            Task.FromResult<ComponentModelDocument?>(null);
+
+        public Task<IReadOnlyList<string>> ListMachineCodesAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+    }
+
+    /// <summary>Throws where the real store reaches its own database — the second database the component
+    /// handler consults AFTER its own write has already succeeded.</summary>
+    private sealed class ThrowingTagNamespaceStore : ITagNamespaceStore
+    {
+        public Task PutAsync(TagNamespaceDocument doc, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task<TagNamespaceDocument?> GetAsync(string machineCode, CancellationToken ct = default) =>
+            throw new InvalidOperationException("the tag database is unavailable");
+
+        public Task<TagDescriptor?> FindTagAsync(string path, CancellationToken ct = default) =>
+            Task.FromResult<TagDescriptor?>(null);
+    }
+
+    private sealed class AcceptingTagNamespaceStore : ITagNamespaceStore
+    {
+        public Exception? ThrowOnPut { get; set; }
+
+        public Task PutAsync(TagNamespaceDocument doc, CancellationToken ct = default) =>
+            ThrowOnPut is not null ? throw ThrowOnPut : Task.CompletedTask;
+
+        public Task<TagNamespaceDocument?> GetAsync(string machineCode, CancellationToken ct = default) =>
+            Task.FromResult<TagNamespaceDocument?>(null);
+
+        public Task<TagDescriptor?> FindTagAsync(string path, CancellationToken ct = default) =>
+            Task.FromResult<TagDescriptor?>(null);
+    }
+
+    private sealed class ThrowingCollisionQuery : ITagIndexCollisionQuery
+    {
+        public Task<IReadOnlyList<string>> ClaimedByAnotherMachineAsync(
+            string canonicalMachineCode, IReadOnlyList<string> candidatePaths, CancellationToken ct = default) =>
+            throw new InvalidOperationException("the index is unavailable");
     }
 
     /// <summary>The authorisation arm: an Operator is refused the write, and a refused write is still a
@@ -412,39 +535,92 @@ public sealed class HmiModelEventsTests
 
         Assert.Equal(WebSocketState.Open, socket.State);
 
-        // Now a change WHILE listening.
-        Assert.Equal(HttpStatusCode.OK,
-            (await engineerC.PutAsJsonAsync("/v1/tags/live-01", ValidNs("live-01"), HmiContractJson.Options)).StatusCode);
+        // 🔴 Fix round 1 (LOW) — this used to write ONCE and then block for up to 30 s on a single receive.
+        // `ConnectAsync` returns when the socket is accepted, which is BEFORE the handler's `bus.Changed +=`
+        // has necessarily run, so a write issued immediately could be published to nobody. That is a race
+        // this lane's own doc comment declines to commit either way ("timing" is explicitly NOT committed),
+        // so a test must not depend on winning it — and when it lost, it lost as a 30-second hang instead
+        // of a fast red, which is the worst way for a test to fail.
+        //
+        // Retrying a legal write is sound HERE and nowhere near a cheat: re-declaring a namespace is an
+        // ordinary, idempotent edit, each attempt is a genuine successful write, and the assertion below is
+        // unaffected by how many attempts it took — what is being measured is WHICH machine the first frame
+        // names, never how promptly it arrives.
+        JsonElement? first = null;
+        for (var attempt = 0; attempt < 10 && first is null; attempt++)
+        {
+            Assert.Equal(HttpStatusCode.OK,
+                (await engineerC.PutAsJsonAsync("/v1/tags/live-01", ValidNs("live-01"), HmiContractJson.Options)).StatusCode);
+            first = await TryReceiveOneAsync(socket, TimeSpan.FromSeconds(2), cts.Token);
+        }
 
-        var first = await ReceiveOneAsync(socket, cts.Token);
+        Assert.True(first is not null,
+            "the change lane delivered nothing after ten successful writes — it is not delivering at all, " +
+            "which is a different failure from the backfill rule this test exists to pin.");
 
-        // The FIRST frame is the live change, never the pre-connect one — which is the backfill rule
-        // measured rather than asserted: had this lane replayed, PRE-01 would have arrived first.
-        Assert.Equal("LIVE-01", first.GetProperty("machineCode").GetString());
-        Assert.Equal(2, first.GetProperty("tagCount").GetInt32());
+        // The first frame is the LIVE change, never the pre-connect one — the backfill rule measured rather
+        // than asserted: had this lane replayed, PRE-01 would have arrived first, and it never can now.
+        Assert.Equal("LIVE-01", first!.Value.GetProperty("machineCode").GetString());
+        Assert.Equal(2, first.Value.GetProperty("tagCount").GetInt32());
     }
 
+    /// <summary>🔴 <b>Fix round 1 (LOW) — "refused" and "route absent" used to be indistinguishable.</b>
+    /// The old version asserted only <c>ThrowsAnyAsync&lt;Exception&gt;</c> on an anonymous upgrade, which
+    /// passes just as happily if the route is not mapped at all — so deleting <c>MapHmiChangeStream</c>
+    /// would have left it green. It now establishes BOTH facts: the route exists and is reachable by an
+    /// authenticated caller (a non-upgrade GET is answered by the handler's own 400, which only a mapped
+    /// route can produce), and an anonymous upgrade is refused.</summary>
     [Fact]
-    public async Task The_change_lane_refuses_an_unauthenticated_subscriber()
+    public async Task The_change_lane_exists_and_refuses_an_unauthenticated_subscriber()
     {
-        var (factory, engineer, _, _) = await NewFactoryWithUsersAsync("ws-anon");
+        var (factory, engineer, op, _) = await NewFactoryWithUsersAsync("ws-anon");
         await using var _f = factory;
         using var engineerC = engineer;
+        using var operatorC = op;
+
+        // The route is MAPPED: an authenticated, non-upgrade GET reaches the handler, which answers with
+        // its own 400. An unmapped path would be a 404, and a policy-refused one a 401/403.
+        using (var notAnUpgrade = await operatorC.GetAsync("/v1/hmi/changes"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, notAnUpgrade.StatusCode);
+            Assert.Contains("WebSocket", await notAnUpgrade.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        // ...and it is gated: an anonymous caller cannot get past authorisation to reach that handler.
+        using (var anonymous = factory.CreateClient())
+        using (var refused = await anonymous.GetAsync("/v1/hmi/changes"))
+        {
+            Assert.True(refused.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
+                $"an anonymous caller was answered {(int)refused.StatusCode}; the lane must refuse before " +
+                "the handler is reached.");
+        }
 
         var wsClient = factory.Server.CreateWebSocketClient();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await Assert.ThrowsAnyAsync<Exception>(
             () => wsClient.ConnectAsync(new Uri(factory.Server.BaseAddress, "/v1/hmi/changes"), cts.Token));
     }
 
-    private static async Task<JsonElement> ReceiveOneAsync(WebSocket socket, CancellationToken ct)
+    /// <summary>Receives one frame, or returns <see langword="null"/> if none arrives within
+    /// <paramref name="within"/> — so a lane that is not delivering fails fast and by assertion instead of
+    /// hanging until the outer token expires.</summary>
+    private static async Task<JsonElement?> TryReceiveOneAsync(WebSocket socket, TimeSpan within, CancellationToken ct)
     {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(within);
+
         var buffer = new byte[16 * 1024];
-        var result = await socket.ReceiveAsync(buffer, ct);
-        Assert.Equal(WebSocketMessageType.Text, result.MessageType);
-        using var doc = JsonDocument.Parse(new ReadOnlyMemory<byte>(buffer, 0, result.Count));
-        return doc.RootElement.Clone();
+        try
+        {
+            var result = await socket.ReceiveAsync(buffer, timeout.Token);
+            Assert.Equal(WebSocketMessageType.Text, result.MessageType);
+            using var doc = JsonDocument.Parse(new ReadOnlyMemory<byte>(buffer, 0, result.Count));
+            return doc.RootElement.Clone();
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return null;
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════
@@ -465,12 +641,53 @@ public sealed class HmiModelEventsTests
             DateTimeOffset.UnixEpoch, "M1", St4i.Connector.Abstractions.Models.ReadingKind.Telemetry,
             "POST", "/x", 200, 5, St4i.EdgeCore.Models.TransportMode.Demo, false, null);
 
-        var json = JsonSerializer.Serialize(e, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        // 🔴 Fix round 1 (LOW). This serialised with a fresh `JsonSerializerDefaults.Web` instance, not the
+        // options the stream ACTUALLY uses — so a change to ApiJson.Options (a naming policy, a converter,
+        // an ignore condition) would have left this green while every frame on the wire changed. The frame
+        // is the options plus the record, and pinning half of it pins nothing.
+        var json = JsonSerializer.Serialize(e, ApiJson.Options);
         using var doc = JsonDocument.Parse(json);
 
         Assert.Equal(
             new[] { "at", "machineCode", "kind", "method", "path", "status", "latencyMs", "mode", "duplicate", "error" },
             doc.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
+
+        // The enum-as-string converter is part of the frame too: without it `kind` and `mode` would ship as
+        // integers and every client reading them as strings would break, with the property NAMES unchanged.
+        Assert.Equal("Telemetry", doc.RootElement.GetProperty("kind").GetString());
+        Assert.Equal("Demo", doc.RootElement.GetProperty("mode").GetString());
+    }
+
+    /// <summary>🔴 <b>Fix round 1 (LOW) — the NEW lane's own committed surface, pinned.</b>
+    /// <see cref="HmiModelChangedEvent"/>'s doc comment commits to four property names, and two of them
+    /// (<c>at</c>, <c>change</c>) could be renamed on the wire with the whole suite green: no test read
+    /// them. Half a committed surface that nothing checks is not committed, it is intended. This asserts
+    /// the exact names and the exact serialisation options, the same way the neighbouring test does for the
+    /// old lane — and it asserts the absent-<c>tagCount</c> case too, because "present only for
+    /// tagNamespace" is part of what the shape promises.</summary>
+    [Fact]
+    public void The_change_lanes_own_wire_shape_is_pinned()
+    {
+        var tagEvent = HmiModelEvents.TagNamespaceChanged("wire-01", 7);
+        using var withCount = JsonDocument.Parse(JsonSerializer.Serialize(tagEvent, HmiContractJson.Options));
+
+        Assert.Equal(
+            new[] { "at", "change", "machineCode", "tagCount" },
+            withCount.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal("tagNamespace", withCount.RootElement.GetProperty("change").GetString());
+        Assert.Equal("WIRE-01", withCount.RootElement.GetProperty("machineCode").GetString());
+        Assert.Equal(7, withCount.RootElement.GetProperty("tagCount").GetInt32());
+
+        // A component change carries no tagCount, and carries it by ABSENCE rather than as an explicit
+        // null — the "absence IS null, never written explicitly" rule every HMI contract producer follows,
+        // which is a property of HmiContractJson.Options and would be lost by serialising with anything else.
+        var componentEvent = HmiModelEvents.ComponentModelChanged("wire-02");
+        using var withoutCount = JsonDocument.Parse(JsonSerializer.Serialize(componentEvent, HmiContractJson.Options));
+
+        Assert.Equal(
+            new[] { "at", "change", "machineCode" },
+            withoutCount.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal("componentModel", withoutCount.RootElement.GetProperty("change").GetString());
     }
 
     /// <summary>...and the new lane is a genuinely separate mechanism, not a second publisher onto the old

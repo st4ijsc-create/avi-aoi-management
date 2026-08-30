@@ -195,15 +195,22 @@ public static class HmiTagEndpoints
         var tagCount = body.Tags.Count;
         var backedByDriverCount = body.Tags.Count(t => t is { IsBackedByDriver: true });
 
-        // 🔴 WS-HMI-0b Task 3 — announce AFTER the store accepted the write. Unreachable from any refusal
-        // above, including the 409 collision path this task's brief predates: every one of them has already
-        // returned. See HmiModelEndpoints.PutAsync's twin comment, and HmiChangeBus.Publish for why this
-        // call cannot fail the write it is announcing.
-        changes.Publish(HmiModelEvents.TagNamespaceChanged(machineCode, tagCount));
-
         // Response echo only — computed after the store call, never used to decide what got written.
-        return Results.Ok(new PutNamespaceResultDto(
+        var response = Results.Ok(new PutNamespaceResultDto(
             MachineCodeIdentity.Canonicalize(machineCode), tagCount, backedByDriverCount));
+
+        // 🔴 WS-HMI-0b Task 3, fix round 1 (HIGH-1) — same shape as HmiModelEndpoints.PutAsync, and the
+        // shape is the point: NOTHING THAT CAN THROW RUNS AFTER THE PUBLISH. This route was already correct
+        // by inspection — review measured it clean — but "correct because the two statements below happen
+        // not to throw" is exactly the reasoning that made the component route look sound while it was
+        // broken. Building the response first makes it correct by CONSTRUCTION on both routes, so the rule
+        // is one rule a reader can check in one glance rather than two handlers to reason about separately.
+        //
+        // Unreachable from any refusal above, including the 409 collision path this task's brief predates:
+        // every one of them has already returned. See HmiChangeBus.Publish for why this call cannot fail the
+        // write it is announcing.
+        changes.Publish(HmiModelEvents.TagNamespaceChanged(machineCode, tagCount));
+        return response;
     }
 
     /// <summary>Narrowed to the two extended codes a duplicate <c>tag_index.path</c> can actually raise.

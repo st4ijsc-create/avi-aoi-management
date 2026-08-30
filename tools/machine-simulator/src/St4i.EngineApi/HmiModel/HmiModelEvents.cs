@@ -27,8 +27,13 @@ namespace St4i.EngineApi.HmiModel;
 ///   <item><description><b>Committed:</b> <see cref="Change"/> is the discriminator, and it is an OPEN set
 ///   of strings. A consumer must treat an unrecognised value as "something changed for this machine, and I
 ///   do not know what" and re-read, never as an error. That is the deliberate opposite of the inspector
-///   frame's <c>kind</c>, whose client-side union is CLOSED and therefore had to be edited in two published
-///   web mirrors before a member could be added — the cost this lane is designed not to inherit.</description></item>
+///   frame's <c>kind</c>, whose client-side union is CLOSED: <c>web/src/lib/inspector.ts</c> declares it as
+///   a fixed alternation, so a member cannot be emitted until that published client is edited.
+///   <b>ONE mirror, not two</b> — an earlier version of this sentence claimed two and was wrong:
+///   <c>web/src/components/TraceTable.tsx</c>'s <c>KIND_DOT</c> is a <c>Record&lt;string,string&gt;</c> with
+///   a <c>?? "bg-neutral"</c> fallback, and forces nothing. One closed published union is reason enough to
+///   choose an open set here; inflating it to two is how a sound decision gets reversed later by someone who
+///   checks the justification and finds it overstated.</description></item>
 ///   <item><description><b>NOT committed:</b> delivery order between two different machines, timing, or
 ///   coalescing. Two writes may produce two events or, in a future revision, one; a consumer that re-reads
 ///   current state on any event is correct under every such change, and one that counts events is
