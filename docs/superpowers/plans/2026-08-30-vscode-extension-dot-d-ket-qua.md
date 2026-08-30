@@ -384,3 +384,61 @@ ghi thẳng lên đĩa; che nội dung sẽ ghi rác đè tệp thật) · `5f1d
 5. **Hai tool GHI vẫn chưa được dạy** ở đường hỏi thường (ngoài Cmd+K) — ngoài phạm vi Đợt D.
 6. Nợ cũ còn nguyên: chưa tạo tệp mới · symlink tệp không kiểm được trên Windows · chuẩn hoá
    EOL/BOM thật của VSCode chưa mô phỏng.
+
+---
+
+# Đợt E — chạy trong VSCode THẬT (trả nợ mở từ Đợt C)
+
+Suốt A→D, **mọi** lưới chạy trên một module `vscode` **GIẢ**. Đợt E dựng
+`vscode-extension/test-real-host/` (`@vscode/test-electron`) và chạy trong **extension host thật**.
+
+★ Chỉ thị đầu của tôi (trỏ vào bản VSCode đã cài) **tự tạo ra blocker**: hai tiến trình
+`CodeSetup-stable-…` kẹt từ 27/08 giữ mutex `vscode-updating`. Sửa bằng cách để test-electron **tự
+tải bản portable** — không đụng tiến trình của người dùng. (Implementer đã đúng khi **không tự ý
+giết** hai PID đó.)
+
+## Kết quả: 24 lượt · 22 xanh · 1 ĐỎ · 1 dự đoán BỊ BÁC BỎ
+
+**Xanh — và chỉ VSCode thật mới trả lời nổi:** `activate()` chạy không ném lỗi trong host thật
+(**câu hỏi cơ bản nhất, chưa ai từng hỏi suốt bốn đợt**) · **mọi** `contributes.commands` có mặt
+trong `getCommands(true)` · ghi đĩa thật qua `WorkspaceEdit`+`save()` (đọc lại bằng `node:fs`,
+KHÔNG bằng API vừa ghi) · `asRelativePath` thật **xác nhận quirk thêm tiền tố `app/`** khi ≥2 gốc,
+và hàm sản xuất né đúng · `giaiDuongDeXuat` **từ chối** `x.ts` khi cả hai gốc đều có tệp thật.
+
+**Dự đoán bị bác bỏ:** implementer đọc mã và đoán **BOM sẽ rụng** khi sửa dòng 1. Đo thật: **BOM
+sống sót** cả khi sửa chính dòng 1 — VSCode giữ BOM như metadata mã hoá, tách khỏi nội dung. Họ tự
+ghi nhận đoán sai. *Đây đúng là công dụng của việc chạy thật.*
+
+## ★★★ Ca ĐỎ — lớp lỗi chữ ký, ở một TẦNG MỚI
+
+Tệp EOL **lẫn lộn** `M1\r\nM2\nM3\r\nM4\n`, sửa **mỗi dòng 3**. Đĩa thật:
+`M1\nM2\nM3-EDITED\nM4\n` — **dòng 1 bị đổi EOL dù không ai chạm vào nó.**
+
+Gốc rễ: `TextDocument` chỉ mang **MỘT** `eol` cho cả tệp; `save()` **chuẩn hoá toàn tài liệu**.
+
+★★★ `ghepBanVa.ts` giữ EOL **theo từng dòng** và có **lưới đơn vị XANH** chứng minh điều đó. Logic
+**đúng** — nhưng **không bao giờ tới được đĩa**. Lưới cũ **đo đúng, nhưng đo nhầm TẦNG**: nó khẳng
+định một tính chất mà hệ thống thật vô hiệu hoá. Đây là cùng một lớp lỗi đã cắn dự án tám lần, lần
+này ở tầng "lưới thật sự đo cái gì".
+
+**Vá (Đợt D.3, `dcb03cb6`)** — chọn **fail-closed**, KHÔNG mở đường ghi thứ hai:
+- Đường (B) "ghi thẳng bằng `fs` cho tệp lẫn lộn" bị **cấm tuyệt đối**: phá bất biến census chịu
+  lực nhất (đúng MỘT `applyEdit`, `fs.*` ghi = 0).
+- Tệp lẫn lộn ⇒ **từ chối cả lượt**, nói rõ vì sao, **đĩa không đổi một byte**.
+- ★ Kiểm đặt **trước khi mở sổ kiểm toán**, không phải sau — mở sổ rồi mới từ chối chính là cách
+  Đợt C đẻ ra lỗi 5 và 6 (sổ mở rồi bị đóng sai sự thật).
+- **Nhánh kia đã kiểm**: CRLF đồng nhất và LF đồng nhất **vẫn áp vá bình thường** — không cấm tất.
+- Lưới `ghepBanVa` **giữ nguyên** (logic chuỗi vẫn đúng, vẫn đáng canh) nhưng **ghi rõ trong tệp**
+  rằng tính chất này KHÔNG tới được đĩa, kèm trỏ sang ca real-host.
+
+**434 ca vitest · real-host 15+9 xanh · census 22/22 · `.vsix` đã cài lại** (`st4i.avi-ai-local@0.1.0`,
+bundle xác nhận chứa bản vá).
+
+## Còn mở sau Đợt E
+
+1. ★★ **Nghiệm thu phần CON NGƯỜI vẫn chưa làm** — host thật chứng minh extension nạp được, lệnh
+   đăng ký đủ, ghi đĩa đúng; **không** chứng minh được người dùng bấm vào thì thấy gì. Cần người
+   dùng tự mở VSCode và đi qua checklist trong `that-vscode-report.md`.
+2. ★★★ **Cmd+K vẫn chưa hiện thẻ duyệt** (xem phần Đợt D.2 / H3) — nguyên nhân ở định tuyến server,
+   vùng đang có tiến trình khác sửa dở.
+3. Xung đột phím của keybinding **không kiểm được qua API công khai** — chỉ xác nhận được lệnh tồn tại.
