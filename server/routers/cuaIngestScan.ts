@@ -90,6 +90,40 @@ export interface CuaIngest {
   readonly loai: "query" | "mutation" | "subscription";
   /** Subtree của cửa này có TỚI ĐƯỢC một lời gọi `quyetDinhPhienBanIngest(...)` không. */
   readonly quaDiemQuyetDinh: boolean;
+  /**
+   * ★★★ Pha 1F Task 3 (BG-80) — tập ĐỊNH DANH tới được TỪ CHÍNH tham số truyền
+   * cho `.input(...)` của cửa này (đệ quy qua khai báo cấp file, CÙNG bao đóng
+   * `coDuongToiQuyetDinh` dùng — xem `taphopDinhDanhTiepCan`), KHÔNG bao gồm
+   * thân `.mutation()`/`.query()` phía sau. Dùng để buộc "cửa ↔ schema nó THẬT
+   * SỰ đăng ký ở `.input()`" bằng MÃ, không phải lời văn — kiểm tra
+   * `dinhDanhOInput.has("tenSchema")` chứng minh AST-level rằng tên schema đó
+   * THẬT SỰ được nhắc tới trong hình dạng `.input()` đã đăng ký, không phải
+   * một cái tên census GIẢ ĐỊNH mà không ai kiểm.
+   *
+   * ⚠ GIỚI HẠN ĐÃ BIẾT (như `coDuongToiQuyetDinh`): đây là quan hệ THAM CHIẾU
+   * ĐỊNH DANH, KHÔNG phải "cấu trúc hoàn toàn không đổi" — một `.input(X.extend({…}))`
+   * viết thẳng tại chỗ VẪN nhắc tới định danh `X` (nên vẫn nằm trong tập này)
+   * dù hình dạng THẬT SỰ đăng ký đã bị mở rộng thêm trường. Đóng lỗ "mở rộng
+   * TẠI CHỖ vô hình" cần một kỹ thuật khác (so khớp THAM CHIẾU object lúc chạy,
+   * xem `capChuoiVarcharDuongIngestMacDinh.test.ts` §0 cho các cửa áp dụng
+   * được) — trường này chỉ chứng minh "census không soi một cái tên schema
+   * KHÔNG LIÊN QUAN gì tới cửa thật", không chứng minh "schema đăng ký chưa hề
+   * bị sửa hình dạng tại chỗ".
+   *
+   * `null` nếu cửa này KHÔNG gọi `.input(...)` ở đâu trong subtree (không xảy
+   * ra với 7 cửa ingest hôm nay — mọi mutation ingest đều có `.input()`).
+   */
+  readonly dinhDanhOInput: ReadonlySet<string> | null;
+  /**
+   * ★★★ Pha 1F Task 3 (BG-80) — tập ĐỊNH DANH tới được từ TOÀN BỘ thân thủ
+   * tục (input + mutation/query) — RỘNG HƠN và YẾU HƠN `dinhDanhOInput`: một
+   * tên xuất hiện Ở ĐÂY có thể chỉ là dùng lại trong LOGIC XỬ LÝ, không chứng
+   * minh nó là schema `.input()`. CHỈ dùng cho cửa có payload đo lường KHÔNG
+   * nằm trong `.input()` (ví dụ `commit` — `meta.json` được parse TRONG thân
+   * `.mutation()`, sau khi tải ZIP về, xem `MIEN_TRU_CUA_INGEST_ZIP.commit`).
+   * Mọi cửa khác nên ưu tiên `dinhDanhOInput` (hẹp hơn, ít dương tính giả hơn).
+   */
+  readonly dinhDanhCaThan: ReadonlySet<string>;
 }
 
 export interface KetQuaQuetCuaIngest {
@@ -98,8 +132,17 @@ export interface KetQuaQuetCuaIngest {
   readonly mu: readonly string[];
 }
 
-/** Cửa nhận dữ liệu kiểm tra từ máy, nhận theo TÊN THUỘC TÍNH — xem khối lý lẽ ở đầu file. */
-function laTenCuaIngest(ten: string): boolean {
+/**
+ * Cửa nhận dữ liệu kiểm tra từ máy, nhận theo TÊN THUỘC TÍNH — xem khối lý lẽ ở đầu file.
+ *
+ * ★★★ Pha 1F Task 3 (BG-80) — `export` (KHÔNG đổi hình dạng/hành vi). TRƯỚC bản vá này hàm
+ * KHÔNG được export ⇒ `capChuoiVarcharDuongIngestMacDinh.test.ts` (census `.max()` cho các cửa
+ * ingest) không thể TÁI DÙNG đúng vị từ mà `cuaIngestCensus.test.ts` đã tin cậy — nó phải viết lại
+ * một danh sách TÊN CỬA bằng tay (`DANH_SACH_SCHEMA_INGEST`), tách rời khỏi vị từ THẬT. Export ở
+ * đây là điều kiện CẦN (không đủ — còn cần nối bằng mã, xem `taphopDinhDanhTiepCan` bên dưới và
+ * §0 của file test kia) để hai census không còn là hai lời khai độc lập không kiểm tra lẫn nhau.
+ */
+export function laTenCuaIngest(ten: string): boolean {
   return /^submit/i.test(ten) || /^sync.*result/i.test(ten);
 }
 
@@ -241,6 +284,65 @@ function coDuongToiQuyetDinh(root: ts.Node, khaiBao: ReadonlyMap<string, ts.Node
 }
 
 /**
+ * ★★★ Pha 1F Task 3 (BG-80) — trích ARGUMENT ĐẦU TIÊN của lời gọi `.input(...)` trong subtree của
+ * MỘT cửa (`p.initializer`, chuỗi `publicProcedure.input(X).mutation(fn)`). `null` nếu không tìm
+ * thấy `.input(...)` nào (không xảy ra với 7 cửa ingest hôm nay).
+ *
+ * Vì sao TÁCH RIÊNG khỏi việc quét cả `p.initializer`: `quetMotCay`/BFS quét TOÀN BỘ subtree (kể cả
+ * thân `.mutation()` phía sau `.input()`) — cần cho `coDuongToiQuyetDinh` (BG-21) vì
+ * `quyetDinhPhienBanIngest` có thể được gọi ở TRONG thân mutation (không chỉ ở `.input()`, xem
+ * HỒI QUY test `cuaIngestCensus.test.ts §4` chèn lời gọi ngay đầu `.mutation()` của `commit`). Nhưng
+ * câu hỏi BG-80 ("cửa ↔ SCHEMA nó đăng ký ở `.input()`") hẹp hơn: nếu quét cả thân mutation, một tên
+ * schema xuất hiện lại đâu đó trong logic xử lý (vd ép kiểu `as z.infer<typeof X>`) sẽ tạo DƯƠNG
+ * TÍNH GIẢ — "census tưởng đã nối, thực ra chỉ tình cờ trùng tên ở một chỗ không liên quan
+ * `.input()`". Giới hạn phạm vi về ĐÚNG argument của `.input(...)` loại bỏ lớp dương tính giả đó.
+ */
+function layThamSoInput(root: ts.Node): ts.Node | null {
+  let ra: ts.Node | null = null;
+  const di = (x: ts.Node): void => {
+    if (ra !== null) return;
+    if (
+      ts.isCallExpression(x) &&
+      ts.isPropertyAccessExpression(x.expression) &&
+      x.expression.name.text === "input" &&
+      x.arguments[0] !== undefined
+    ) {
+      ra = x.arguments[0];
+      return;
+    }
+    ts.forEachChild(x, di);
+  };
+  di(root);
+  return ra;
+}
+
+/**
+ * ★★★ Pha 1F Task 3 (BG-80) — bao đóng CÓ ĐIỀU KIỆN từ `root`, TRẢ VỀ toàn bộ tập ĐỊNH DANH tới
+ * được (không chỉ true/false cho MỘT tên như `coDuongToiQuyetDinh`) — CÙNG thuật toán BFS/hàng đợi,
+ * tái dùng `quetMotCay` KHÔNG chế lại (đối xứng `coDuongToiQuyetDinh`, chỉ khác điểm dừng: gom UNION
+ * thay vì trả sớm khi khớp một tên). Dùng cho `dinhDanhOInput`/`dinhDanhCaThan` của `CuaIngest`.
+ */
+function taphopDinhDanhTiepCan(root: ts.Node, khaiBao: ReadonlyMap<string, ts.Node>): ReadonlySet<string> {
+  const daTham = new Set<string>();
+  const tong = new Set<string>();
+  const hangDoi: ts.Node[] = [root];
+  let i = 0;
+  while (i < hangDoi.length) {
+    const node = hangDoi[i++];
+    if (node === undefined) continue;
+    const { dinhDanh } = quetMotCay(node);
+    for (const id of dinhDanh) {
+      tong.add(id);
+      if (daTham.has(id)) continue;
+      daTham.add(id);
+      const khai = khaiBao.get(id);
+      if (khai !== undefined) hangDoi.push(khai);
+    }
+  }
+  return tong;
+}
+
+/**
  * Tuỳ chọn override cho `quetCuaIngest` — mặc định KHÔNG truyền gì giữ NGUYÊN VĂN hành vi cũ (một
  * file, router `machineApiRouter`, vị từ `submit…` / `sync…Result…`; đây là điều kiện để §1-§5 của
  * `cuaIngestCensus.test.ts` trên `machineApiRouters.ts` không hồi quy khi thêm cửa thứ sáu). Cửa
@@ -304,7 +406,19 @@ export function quetCuaIngest(duong: string, ma: string, tuyChon?: TuyChonQuetCu
     const loai = loaiThuTuc(p.initializer);
     if (loai === null) continue; // khớp tên nhưng không phải một thủ tục tRPC thật
     const dong = sf.getLineAndCharacterOfPosition(p.getStart(sf)).line + 1;
-    cua.push({ ten, dong, loai, quaDiemQuyetDinh: coDuongToiQuyetDinh(p.initializer, khaiBao) });
+    // BG-80 — dinhDanhOInput: PHẠM VI HẸP (chỉ argument của .input(...)); dinhDanhCaThan: PHẠM VI
+    // RỘNG (cả thủ tục) — xem docblock hai trường này ở `CuaIngest` cho lý do tách riêng.
+    const thamSoInput = layThamSoInput(p.initializer);
+    const dinhDanhOInput = thamSoInput !== null ? taphopDinhDanhTiepCan(thamSoInput, khaiBao) : null;
+    const dinhDanhCaThan = taphopDinhDanhTiepCan(p.initializer, khaiBao);
+    cua.push({
+      ten,
+      dong,
+      loai,
+      quaDiemQuyetDinh: coDuongToiQuyetDinh(p.initializer, khaiBao),
+      dinhDanhOInput,
+      dinhDanhCaThan,
+    });
   }
 
   return { cua, mu };

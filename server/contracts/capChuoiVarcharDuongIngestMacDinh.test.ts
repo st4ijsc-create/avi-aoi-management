@@ -29,6 +29,46 @@
 //        (throw), không im lặng bỏ qua — kèm ca đối chứng `.default()` (TRONG
 //        SUỐT, không báo động — vì `machineDataContractV2.schemaVersion` là
 //        một `.default()` THẬT đang chạy sản xuất, xem `capChuoiVarcharScan.ts`).
+//
+// ══════════════════════════════════════════════════════════════════════════
+// ★★★ Pha 1F Task 3 (BG-80) — §0 MỚI: "biên tựa vào census cửa ingest" chuyển
+// từ LỜI VĂN sang LIÊN KẾT MÃ.
+// ══════════════════════════════════════════════════════════════════════════
+// Đo được TRƯỚC bản vá này: khối chú thích §1 phía dưới (giữ nguyên, KHÔNG bị
+// xoá — nó vẫn đúng VỀ NỘI DUNG) tự nhận "tái dùng NGUYÊN VĂN cửa ingest mà
+// `cuaIngestScan.ts` đã xác lập" — nhưng file này KHÔNG hề `import` bất cứ gì
+// từ `cuaIngestScan.ts`; `laTenCuaIngest` còn CHƯA được export; và
+// `DANH_SACH_SCHEMA_INGEST` là một mảng VIẾT TAY, đối chiếu bằng
+// `expect(length).toBe(6)` — con số do NGƯỜI ĐẾM, không phải do MÃ tính ra.
+// "Tái dùng nguyên văn" thật ra là "tái tạo cùng REGEX bằng lời văn trong
+// comment" — không phải liên kết mã, dù chữ dùng đọc như một liên kết.
+//
+// §0 sửa bằng chọn (a) CHO PHẦN RẺ: import + gọi THẬT `quetCuaIngest`/
+// `laTenCuaIngest`/`laTenCuaIngestZip` (nay đã export) — CÙNG census mà
+// `cuaIngestCensus.test.ts` tin cậy — rồi buộc HAI điều bằng mã, không lời:
+//   (1) tập TÊN CỬA trong `CUA_TOI_TEN_SCHEMA` (mapping cửa → tên schema mong
+//       đợi) phải khớp CHÍNH XÁC tập cửa THẬT mà `quetCuaIngest` tìm được —
+//       không đoán số 7, tính ra.
+//   (2) MỖI tên schema trong mapping đó phải THẬT SỰ tới được (đệ quy AST,
+//       `dinhDanhOInput` — xem `cuaIngestScan.ts`) TỪ CHÍNH tham số truyền cho
+//       `.input(...)` của cửa đó — không phải một cặp tên trùng nhau tình cờ.
+// `DANH_SACH_SCHEMA_INGEST` (§1, giữ nguyên cấu trúc bảng cũ) nay được đối
+// chiếu với tập tên schema SUY RA từ `CUA_TOI_TEN_SCHEMA` — con số không còn
+// là một hằng số 6 đứng một mình.
+//
+// ⚠ GIỚI HẠN THẬT, KHÔNG PHỦ NHẬN (chọn (b) CHO PHẦN KHÔNG RẺ): `commit` →
+// `metaJsonSchema` KHÔNG buộc được ở mức `.input()` — `meta.json` được parse
+// TRONG thân `.mutation()` (sau khi tải ZIP về), `.input()` của `commit` chỉ
+// mang `apiKey/machineCode/packageId/sizeBytes/sha256`, không hề nhắc tới
+// `metaJsonSchema`. §0 đo THẲNG điều này (kỳ vọng RỖNG ở phạm vi `.input()`)
+// thay vì giả vờ đã buộc được — chỉ dùng phạm vi TOÀN THÂN thủ tục
+// (`dinhDanhCaThan`, RỘNG HƠN, YẾU HƠN: một tên xuất hiện lại trong logic xử
+// lý cũng tính, không chỉ ở input) làm bằng chứng "còn được nhắc tới ở đâu đó
+// trong `commit`", KHÔNG phải bằng chứng "hình dạng đăng ký chưa hề bị sửa".
+// Đây KHÔNG phải một lỗ MỚI do §0 tạo ra — nó tồn tại từ Pha 1D Task 5 (câu
+// "commit's OWN input schema … KHÔNG nằm trong danh sách" ở khối §1 dưới đây
+// đã nói y hệt); §0 chỉ dừng việc NGẦM để `commit` hưởng chung một mức đảm bảo
+// với sáu cửa kia.
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
@@ -46,8 +86,10 @@ import {
   submitInspectionCoreObject,
   submitProcessResultCoreObject,
   syncEdgeResultsCoreObject,
+  machineApiRouter,
 } from "../routers/machineApiRouters";
-import { presignCoreObject, metaJsonSchema } from "../routers/aoiPackageRouter";
+import { presignCoreObject, metaJsonSchema, aoiPackageRouter } from "../routers/aoiPackageRouter";
+import { quetCuaIngest, laTenCuaIngest, laTenCuaIngestZip, TEN_BIEN_ROUTER_ZIP } from "../routers/cuaIngestScan";
 
 const MAU_MAY_THAT = "D:\\SOURCES\\AOIData\\dashboard-sample.json";
 
@@ -59,6 +101,144 @@ const DUONG_MACHINE_API = new URL("../routers/machineApiRouters.ts", import.meta
 const DUONG_AOI_PACKAGE = new URL("../routers/aoiPackageRouter.ts", import.meta.url);
 const NOI_DUNG_MACHINE_API_GOC = readFileSync(DUONG_MACHINE_API, "utf8");
 const NOI_DUNG_AOI_PACKAGE_GOC = readFileSync(DUONG_AOI_PACKAGE, "utf8");
+
+// ════════════════════════════════════════════════════════════════════════════
+// §0 — ★★★ BG-80: CỬA ↔ SCHEMA nối bằng MÃ THẬT (không phải lời văn).
+// ════════════════════════════════════════════════════════════════════════════
+// Chạy LẠI ĐÚNG census mà `cuaIngestCensus.test.ts` tin cậy (cùng hàm
+// `quetCuaIngest`, cùng vị từ, cùng NỘI DUNG file — `NOI_DUNG_MACHINE_API_GOC`/
+// `NOI_DUNG_AOI_PACKAGE_GOC` đã snapshot ở trên) — KHÔNG viết một bộ quét
+// thứ hai (cấm theo tiền lệ `cuaIngestScan.ts`), KHÔNG tự đếm/tự đoán tên cửa.
+const QUET_MACHINE = quetCuaIngest("server/routers/machineApiRouters.ts", NOI_DUNG_MACHINE_API_GOC);
+const QUET_ZIP = quetCuaIngest("server/routers/aoiPackageRouter.ts", NOI_DUNG_AOI_PACKAGE_GOC, {
+  tenBienRouter: TEN_BIEN_ROUTER_ZIP,
+  laTenCua: laTenCuaIngestZip,
+});
+const QUET_CUA = [...QUET_MACHINE.cua, ...QUET_ZIP.cua];
+
+/**
+ * Mapping "cửa → (các) tên schema mong đợi tới được TỪ CHÍNH tham số `.input(...)`
+ * của cửa đó". `commit` cố ý map tới `[]` (RỖNG) — xem khối chú thích lớn ở
+ * đầu file: `.input()` của `commit` KHÔNG hề mang `metaJsonSchema`, ánh xạ RỖNG
+ * ở đây là PHÁT BIỂU TRUNG THỰC, không phải một ô quên điền.
+ */
+const CUA_TOI_TEN_SCHEMA: Readonly<Record<string, readonly string[]>> = {
+  submitInspection: ["submitInspectionCoreObject", "machineDataContractV2"],
+  submitInspectionBatch: ["submitInspectionCoreObject"],
+  submitProcessResult: ["submitProcessResultCoreObject"],
+  submitProcessResultBatch: ["submitProcessResultCoreObject"],
+  syncEdgeResults: ["syncEdgeResultsCoreObject"],
+  presign: ["presignCoreObject"],
+  commit: [],
+};
+
+describe("§0a — CẦU CHÌ: census cửa (quetCuaIngest) tìm được ≥7 cửa (chống 'xanh vì quét trúng 0 thứ')", () => {
+  it("không có ô mù (gộp cả hai lượt quét)", () => {
+    expect([...QUET_MACHINE.mu, ...QUET_ZIP.mu]).toEqual([]);
+  });
+
+  it("tìm được ĐÚNG 7 cửa — cùng con số GHIM_TEN_CUA của cuaIngestCensus.test.ts", () => {
+    expect(QUET_CUA.length).toBe(7);
+  });
+});
+
+describe("§0b — ★★★ CUA_TOI_TEN_SCHEMA khớp ĐÚNG tập cửa THẬT (không phải bảy cái tên đoán tay)", () => {
+  it("khoá của CUA_TOI_TEN_SCHEMA === tập tên cửa mà quetCuaIngest tìm được", () => {
+    expect(Object.keys(CUA_TOI_TEN_SCHEMA).sort()).toEqual(QUET_CUA.map((c) => c.ten).sort());
+  });
+});
+
+describe("§0c — ★★★ MỖI cửa (trừ commit) ↔ ĐÚNG schema nó ĐĂNG KÝ ở .input() — bằng AST, không bằng tên trùng tình cờ", () => {
+  for (const [ten, tenSchemaMongDoi] of Object.entries(CUA_TOI_TEN_SCHEMA)) {
+    if (tenSchemaMongDoi.length === 0) continue; // commit — xem §0d
+    it(`${ten} — dinhDanhOInput chứa ĐỦ [${tenSchemaMongDoi.join(", ")}] (tới được TỪ tham số .input() thật)`, () => {
+      const cua = QUET_CUA.find((c) => c.ten === ten);
+      expect(cua, `không tìm thấy cửa ${ten} trong census`).toBeDefined();
+      expect(cua!.dinhDanhOInput, `${ten}: .input() không tìm thấy trong subtree`).not.toBeNull();
+      for (const tenSchema of tenSchemaMongDoi) {
+        expect(
+          cua!.dinhDanhOInput!.has(tenSchema),
+          `${ten}: .input() KHÔNG nhắc tới định danh "${tenSchema}" — census .max() đang soi một schema ` +
+            `KHÔNG LIÊN QUAN gì tới cửa thật này (đúng lỗ BG-80).`,
+        ).toBe(true);
+      }
+    });
+  }
+});
+
+describe("§0d — ★★★ commit ↔ metaJsonSchema: GIỚI HẠN THẬT, đo bằng mã, KHÔNG che giấu", () => {
+  it("commit — .input() KHÔNG nhắc tới metaJsonSchema (ĐÚNG — meta.json parse TRONG thân .mutation(), không phải .input())", () => {
+    const cua = QUET_CUA.find((c) => c.ten === "commit");
+    expect(cua).toBeDefined();
+    expect(cua!.dinhDanhOInput, "commit .input() không tìm thấy").not.toBeNull();
+    expect(
+      cua!.dinhDanhOInput!.has("metaJsonSchema"),
+      "commit.input() ĐÃ nhắc tới metaJsonSchema — nếu đúng, mệnh đề 'không buộc được ở .input()' đã lỗi thời, cập nhật docblock",
+    ).toBe(false);
+  });
+
+  it("commit — dinhDanhCaThan (TOÀN THÂN thủ tục) CÓ nhắc tới metaJsonSchema — bằng chứng YẾU HƠN (chỉ 'còn dùng ở đâu đó', không phải 'chưa hề bị sửa hình dạng')", () => {
+    const cua = QUET_CUA.find((c) => c.ten === "commit");
+    expect(cua!.dinhDanhCaThan.has("metaJsonSchema")).toBe(true);
+  });
+});
+
+describe("§0e — ★★★ ĐỘT BIẾN BẮT BUỘC: gỡ liên kết mã ⇒ §0c PHẢI ĐỎ", () => {
+  /** Cùng idiom mutation-trong-bộ-nhớ đã dùng ở `cuaIngestCensus.test.ts §5` —
+   *  KHÔNG ghi đè file thật, chỉ chèn vào một BIẾN THỂ text rồi chạy lại CHÍNH
+   *  `quetCuaIngest`. */
+  it("thay .input(submitProcessResultInputSchema) bằng một schema KHÔNG liên quan ⇒ dinhDanhOInput mất 'submitProcessResultCoreObject' — §0c sẽ đỏ trên mã thật nếu ai làm điều này", () => {
+    const NEO = ".input(submitProcessResultInputSchema)";
+    const viTri = NOI_DUNG_MACHINE_API_GOC.indexOf(NEO);
+    expect(viTri, "không tìm thấy điểm neo — bộ suy đã đổi neo?").toBeGreaterThan(-1);
+    const maDotBien =
+      NOI_DUNG_MACHINE_API_GOC.slice(0, viTri) +
+      ".input(z.object({ khongLienQuanGiCaSchemaCu: z.string() }))" +
+      NOI_DUNG_MACHINE_API_GOC.slice(viTri + NEO.length);
+
+    const laiQuet = quetCuaIngest("server/routers/machineApiRouters.ts", maDotBien);
+    const cua = laiQuet.cua.find((c) => c.ten === "submitProcessResult");
+    expect(cua, "cửa submitProcessResult biến mất sau đột biến — bộ suy mất mục tiêu").toBeDefined();
+    expect(cua!.dinhDanhOInput).not.toBeNull();
+
+    // ★ NGUYÊN VĂN — đây là điều §0c sẽ thấy nếu liên kết mã bị gỡ trên file thật:
+    const conLienKet = cua!.dinhDanhOInput!.has("submitProcessResultCoreObject");
+    expect(conLienKet, "ĐỘT BIẾN PHẢI cắt đứt liên kết — nếu vẫn true, đột biến không có tác dụng").toBe(false);
+  });
+
+  it("mã thật KHÔNG hề bị đụng bởi đột biến trong chính test này (đọc lại đĩa, so nguyên văn)", () => {
+    expect(readFileSync(DUONG_MACHINE_API, "utf8")).toBe(NOI_DUNG_MACHINE_API_GOC);
+  });
+});
+
+describe("§0f — BONUS (không thay thế §0c): với BA cửa KHÔNG bọc .transform(), một mức MẠNH HƠN — THAM CHIẾU OBJECT thật lúc chạy, không chỉ TRÙNG TÊN", () => {
+  // `.shape` của ZodObject là MỘT tham chiếu cố định lúc dựng — `.refine()`/
+  // `.superRefine()` KHÔNG tạo `.shape` mới (đã đo bằng node, xem task-3-report.md),
+  // nhưng `.extend()`/`.merge()`/`.omit()`/`.pick()` THÌ CÓ (đối chứng bên dưới
+  // chứng minh kỹ thuật này không tự thoả). `submitInspection`/`submitInspectionBatch`
+  // KHÔNG có ca này — `.input()` của chúng là `ZodPipe` (`.transform()`, xem
+  // `submitInspectionRouterInputSchema`), không có `.shape` cấp ngoài để so —
+  // §0c (đệ quy định danh) là bằng chứng DUY NHẤT khả thi cho hai cửa đó.
+  it("presign — .input() đăng ký ĐÚNG THAM CHIẾU presignCoreObject (.shape trùng object)", () => {
+    const inp: any = (aoiPackageRouter as any).presign._def.inputs[0];
+    expect(inp.shape).toBe((presignCoreObject as any).shape);
+  });
+
+  it("submitProcessResult — .input() đăng ký ĐÚNG THAM CHIẾU submitProcessResultCoreObject", () => {
+    const inp: any = (machineApiRouter as any).submitProcessResult._def.inputs[0];
+    expect(inp.shape).toBe((submitProcessResultCoreObject as any).shape);
+  });
+
+  it("syncEdgeResults — .input() đăng ký ĐÚNG THAM CHIẾU syncEdgeResultsCoreObject", () => {
+    const inp: any = (machineApiRouter as any).syncEdgeResults._def.inputs[0];
+    expect(inp.shape).toBe((syncEdgeResultsCoreObject as any).shape);
+  });
+
+  it("ĐỐI CHỨNG — kỹ thuật '.shape ===' THẬT SỰ phân biệt được: .extend() tại chỗ tạo .shape KHÁC tham chiếu (không tự thoả)", () => {
+    const bienThe = (presignCoreObject as any).extend({ truongMoiChenTaiCho: z.string() });
+    expect(bienThe.shape).not.toBe((presignCoreObject as any).shape);
+  });
+});
 
 // ════════════════════════════════════════════════════════════════════════════
 // §1 — DANH SÁCH ĐẦY ĐỦ mọi schema census phải soi + VÌ SAO ĐỦ.
@@ -103,8 +283,13 @@ const DANH_SACH_SCHEMA_INGEST: readonly MucSchemaIngest[] = [
 ];
 
 describe("§1 — DANH SÁCH ĐẦY ĐỦ 6 schema (6 cửa ingest) — walker XANH trên cả sáu", () => {
-  it("★★★ đúng SÁU schema đăng ký — đổi số này là một lời khai (thêm/bớt cửa ingest)", () => {
-    expect(DANH_SACH_SCHEMA_INGEST.length).toBe(6);
+  it("★★★ BG-80: tập TÊN SCHEMA trong DANH_SACH_SCHEMA_INGEST == tập SUY RA từ CUA_TOI_TEN_SCHEMA (§0) + 'metaJsonSchema' (payload ZIP của commit, ngoài .input()) — KHÔNG còn là hằng số 6 đứng một mình", () => {
+    const tuCuaToiSchema = new Set(Object.values(CUA_TOI_TEN_SCHEMA).flat());
+    const tenSchemaMongDoi = new Set([...tuCuaToiSchema, "metaJsonSchema"]);
+    expect(DANH_SACH_SCHEMA_INGEST.map((x) => x.ten).sort()).toEqual([...tenSchemaMongDoi].sort());
+    // Con số 6 giờ là một KẾT QUẢ suy ra, không phải một lời khai đứng riêng —
+    // nhưng vẫn hiển thị tường minh cho người đọc lỗi khi con số đổi:
+    expect(tenSchemaMongDoi.size, "đổi số này là một lời khai (thêm/bớt cửa ingest) — sửa CUA_TOI_TEN_SCHEMA (§0) trước, DANH_SACH_SCHEMA_INGEST sẽ tự đối chiếu theo").toBe(6);
   });
 
   for (const { ten, schema, mienTru } of DANH_SACH_SCHEMA_INGEST) {

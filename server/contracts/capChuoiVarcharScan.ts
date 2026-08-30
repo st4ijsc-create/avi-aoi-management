@@ -407,11 +407,9 @@ const GIOI_HAN_DO_SAU_DUYET = 15; // chặn đệ quy vô hạn nếu lỡ có c
  * — tái dùng, không chế lại. `ZodObject` ⇒ đệ quy từng key trong `.shape`.
  * `ZodArray` ⇒ đệ quy `.element`, thêm bước `"[]"`. `ZodTuple` ⇒ đệ quy TỪNG
  * VỊ TRÍ trong `.def.items` (khác `ZodArray`: mỗi vị trí kiểu RIÊNG, không
- * đồng nhất — xem chú thích tại nhánh). `ZodUnion` ⇒ tìm nhánh `ZodString`
- * (cùng logic `layMaxChuoi` dùng cho lá đơn — nếu không có nhánh chuỗi nào,
- * đây KHÔNG PHẢI trường chuỗi, bỏ qua, không đệ quy sâu hơn vào từng nhánh
- * union khác vì không có schema nào hôm nay có union chứa object/mảng lồng
- * NGOÀI `ZodDiscriminatedUnion`, đã chặn TRƯỚC nhánh này — xem bên dưới).
+ * đồng nhất — xem chú thích tại nhánh). `ZodUnion` ⇒ đệ quy MỌI NHÁNH (Pha 1F
+ * Task 3, BG-79 — xem khối chú thích lớn ngay tại nhánh `ZodUnion` bên dưới,
+ * đây KHÔNG còn là "tìm nhánh ZodString đầu tiên" như trước bản vá đó).
  *
  * ★★★ Pha 1E Task 3 (BG-69), mệnh đề 4 — TRƯỚC bản vá này, MỌI kiểu không
  * khớp bốn nhánh trên (`ZodObject`/`ZodArray`/`ZodUnion`/`ZodString`) rơi vào
@@ -425,6 +423,19 @@ const GIOI_HAN_DO_SAU_DUYET = 15; // chặn đệ quy vô hạn nếu lỡ có c
  * con — `KIEU_LA_AN_TOAN` bên dưới) mới được `return []`; MỌI kiểu khác
  * KHÔNG khớp bất kỳ nhánh nào ở trên ném lỗi — buộc người thêm nhánh xử lý
  * TRƯỚC khi tin kết quả, thay vì âm thầm được tính là "sạch".
+ *
+ * ⚠⚠⚠ Pha 1F Task 3 (BG-79) — MỆNH ĐỀ 4 (bản BG-69) VẪN CÒN MỘT LỖ Ở ĐÚNG
+ * NHÁNH `ZodUnion`: bản vá BG-69 KHÔNG throw cho union — nó `return []` IM
+ * LẶNG khi không có nhánh `ZodString` TRỰC TIẾP ở CẤP NÀY, kể cả khi một
+ * nhánh khác là `ZodObject`/`ZodArray` CHỨA lá chuỗi bên trong (ví dụ
+ * `z.union([z.number(), z.object({beTrong: z.string()})])` — lá `beTrong`
+ * biến mất hoàn toàn, không throw, không xuất hiện trong kết quả). Đây ĐÚNG
+ * LÀ lớp lỗi "hôm nay chưa có" mà docblock đầu file (dòng "không có schema
+ * nào hôm nay có union chứa object … NGOÀI ZodDiscriminatedUnion") đã dùng để
+ * biện minh — lập luận đã hỏng bốn lần trong dự án này (spec
+ * 2026-08-31-aoi-backlog-toan-canh.md §L-1). `ZodDiscriminatedUnion` đứng
+ * TRƯỚC nhánh này (throw) không hề "chặn" ca này: một `z.union([...])`
+ * THƯỜNG (không discriminated) chứa object vẫn rơi thẳng vào nhánh dưới đây.
  */
 /** Nối `duongDanHienTai` thành chuỗi hiển thị cùng QUY ƯỚC với `KIEM_KE_CAP_CHUOI`
  *  (`"surfaces[].positions[].positionId"`, KHÔNG phải `"surfaces.[].positions.[]…"`).
@@ -519,9 +530,27 @@ export function duyetTimTruongChuoi(
     );
   }
   if (n instanceof z.ZodUnion) {
-    const nhanhChuoi = (n.options as z.ZodTypeAny[]).map(boLopNgoai).find((o) => o instanceof z.ZodString);
-    if (!nhanhChuoi) return []; // union không có nhánh chuỗi nào (vd number|boolean) — không phải trường chuỗi
-    return [{ duongDan: noiDuongDan(duongDanHienTai), max: (nhanhChuoi as z.ZodString).maxLength }];
+    // Pha 1F Task 3 (BG-79) — ĐỆ QUY MỌI NHÁNH, không chỉ tìm nhánh `ZodString`
+    // ĐẦU TIÊN ở cấp này (hành vi CŨ, đã mù với union chứa object — xem khối
+    // chú thích lớn ngay phía trên hàm). Mỗi nhánh (`option`) được đệ quy qua
+    // ĐÚNG `duyetTimTruongChuoi` — CÙNG `duongDanHienTai` (nhánh union không tự
+    // thêm một bước điều hướng riêng: nó là hình dạng THAY THẾ của CÙNG một
+    // trường, không phải một trường con MỚI). Kết quả:
+    //   - nhánh `ZodString` trực tiếp ⇒ một lá tại `duongDanHienTai` (giống hệt
+    //     hành vi cũ khi CHỈ có một nhánh chuỗi).
+    //   - nhánh `ZodObject`/`ZodArray`/`ZodTuple` ⇒ đệ quy tiếp, tự nối thêm
+    //     bước theo ĐÚNG logic các nhánh đó (vd "beTrong" ⇒
+    //     "<duongDanHienTai>.beTrong") — đây là ca `union[number,
+    //     object{beTrong:string}]` mà bản BG-69 từng bỏ lọt.
+    //   - nhánh nằm trong `KIEU_LA_AN_TOAN` (number/boolean/…) ⇒ `[]`, không
+    //     đóng góp gì (an toàn, không thể giấu chuỗi).
+    //   - nhánh KHÔNG khớp gì (`.transform()`, `ZodRecord`, …) ⇒ THROW từ chính
+    //     lời gọi đệ quy — union KHÔNG che giấu nhánh nguy hiểm.
+    const ra: TruongChuoiPhatHien[] = [];
+    for (const option of n.options as z.ZodTypeAny[]) {
+      ra.push(...duyetTimTruongChuoi(option, duongDanHienTai, doSau + 1));
+    }
+    return ra;
   }
   if (n instanceof z.ZodString) {
     return [{ duongDan: noiDuongDan(duongDanHienTai), max: n.maxLength }];
