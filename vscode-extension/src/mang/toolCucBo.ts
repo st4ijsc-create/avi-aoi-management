@@ -244,6 +244,38 @@ async function chayLietKe(duongModel: string, gocThat: string[]): Promise<KetQua
   };
 }
 
+/** Trần SỐ TỆP thu thập cho danh sách gợi ý @-mention (Task 5) — rộng hơn hẳn dropdown hiển thị
+ *  (`locMention.locDanhSachMention` cắt xuống còn ~20), vì đây là TẬP NGUỒN để lọc theo chữ đang
+ *  gõ: cắt quá hẹp ở đây sẽ làm những tệp NẰM SAU trong `findFiles` không bao giờ gợi ý được, dù
+ *  đúng khớp chữ người dùng gõ. */
+const TRAN_TEP_GOI_Y_MENTION = 5000;
+
+/**
+ * ★★★ ĐỢT D / TASK 5 — danh sách tệp GỢI Ý cho `@`-mention.
+ *
+ * TÁI DÙNG `locUngVien` (hàng rào 2 + 3, Y HỆT `liet_ke`/`grep`) — không dựng một lượt gating thứ
+ * hai cho cùng câu hỏi "tệp này có được RỜI MÁY không". Trả về NHÃN (đường tương đối) đã gạn, KHÔNG
+ * phải nội dung — nội dung chỉ được đọc khi người dùng THỰC SỰ mention một tệp (đường riêng, đi qua
+ * `chayDocTep`/`chayToolCucBo` ở lượt hỏi thật, gọi từ `bangChat.ts`).
+ *
+ * ⚠ Vì sao KHÔNG rời rạc gọi `chayToolCucBo({loai:"liet_ke"}, …)` rồi tự bóc chuỗi kết quả: chuỗi đó
+ *   được ĐỊNH DẠNG cho MODEL đọc (`dinhDangLietKe` — có tiêu đề, dòng "đã cắt", dòng "đã loại N tệp
+ *   nhạy cảm" xen giữa các đường dẫn) chứ không phải một mảng SẠCH; bóc lại bằng regex là dựng một
+ *   parser giòn cho một định dạng KHÔNG được thiết kế để máy đọc lại.
+ */
+export async function danhSachTepGoiY(gocThat: string[], tran = TRAN_TEP_GOI_Y_MENTION): Promise<string[]> {
+  if (gocThat.length === 0) return [];
+  const uris: vscode.Uri[] = [];
+  for (const g of gocThat) {
+    if (uris.length >= tran) break;
+    uris.push(
+      ...(await vscode.workspace.findFiles(new vscode.RelativePattern(vscode.Uri.file(g), "**/*"), LOAI_TRU, tran - uris.length)),
+    );
+  }
+  const { giu } = locUngVien(uris, gocThat);
+  return giu.map((u) => u.nhan);
+}
+
 async function chayGrep(mau: string, duongModel: string | undefined, gocThat: string[]): Promise<KetQuaToolCucBo> {
   // Không khai `path` ⇒ quét MỌI gốc workspace. Khai `path` ⇒ vẫn phải qua đủ hàng rào 1-3.
   let goc: vscode.Uri[];

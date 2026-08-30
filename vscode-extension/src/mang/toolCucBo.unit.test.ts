@@ -90,7 +90,7 @@ vi.mock("vscode", () => {
   };
 });
 
-const { chayToolCucBo } = await import("./toolCucBo");
+const { chayToolCucBo, danhSachTepGoiY } = await import("./toolCucBo");
 
 beforeEach(() => {
   may.tep.clear();
@@ -160,6 +160,31 @@ describe("chayToolCucBo — doc_tep / liet_ke", () => {
     // ★★★ Bỏ tệp mà KHÔNG khai là đưa model một danh sách trông như ĐẦY ĐỦ — nó sẽ kết luận "dự
     //     án không có tệp cấu hình bí mật". Lời khai phải sống sót qua CẢ HAI lớp lọc.
     expect(kq.ketQua).toContain("đã loại 2");
+  });
+});
+
+describe("danhSachTepGoiY — ĐỢT D / TASK 5: danh sách gợi ý cho @-mention", () => {
+  it("★★★ '.env' và khoá riêng KHÔNG xuất hiện trong danh sách gợi ý", async () => {
+    const ds = await danhSachTepGoiY([WS]);
+    expect(ds.some((d) => d.includes(".env"))).toBe(false);
+    expect(ds.some((d) => d.includes("id_rsa"))).toBe(false);
+    // ⚠ CHỐNG TỰ THOẢ: một danh sách RỖNG cũng thoả hai khẳng định trên — tệp hợp lệ phải CÓ mặt.
+    expect(ds).toContain("src/Calculator.cs");
+    expect(ds).toContain("src/config.ts");
+  });
+
+  it("★★ tái dùng ĐÚNG hàng rào symlink của ba tool đọc — liên kết ra ngoài workspace bị loại", async () => {
+    const lienKet = join(WS, "ghichu.txt");
+    const dich = join(NGOAI, "bi-mat.txt");
+    may.tep.set(dich, "DATABASE_URL=bi-mat");
+    may.lienKet.set(lienKet, dich);
+
+    const ds = await danhSachTepGoiY([WS]);
+    expect(ds).not.toContain("ghichu.txt");
+  });
+
+  it("★ không có thư mục workspace nào ⇒ danh sách rỗng, không chạm findFiles", async () => {
+    expect(await danhSachTepGoiY([])).toEqual([]);
   });
 });
 

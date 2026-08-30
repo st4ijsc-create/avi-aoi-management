@@ -43,9 +43,13 @@ import { apBanVa } from "./apBanVa";
 // đề xuất sửa. `buocKeTiep` (THUẦN, có lưới riêng) là nơi quyết định DUY NHẤT dừng/tiếp; tệp này
 // chỉ THỰC THI quyết định đó (gọi model, chạy tool, hiện tiến độ) — xem docblock `vongTacNhan.ts`.
 import { docYeuCauDoc, type YeuCauDoc } from "../loi/yeuCauDoc";
-import { chayToolCucBo } from "../mang/toolCucBo";
+import { chayToolCucBo, danhSachTepGoiY } from "../mang/toolCucBo";
 import { buocKeTiep } from "../loi/vongTacNhan";
 import { TRAN_VONG_MAC_DINH } from "../../../shared/aiCodingLoop";
+// ★★★ ĐỢT D / TASK 5 — @-mention: gõ "@" trong ô nhập, chọn một tệp, tệp đó được đọc qua ĐÚNG
+// đường tool `doc_tep` (Task 2/3) — không dựng một đường đọc riêng. `locDanhSachMention` (THUẦN)
+// lọc danh sách theo chữ đang gõ; xem docblock của nó cho vì sao KHÔNG chạm ký tự `@`.
+import { locDanhSachMention } from "../loi/locMention";
 
 /** Đề xuất ghi CỤC BỘ đang chờ duyệt + mọi thứ đã ĐO tại thời điểm dựng thẻ (không đo lại lúc bấm,
  *  trừ băm đĩa — băm PHẢI đo lại trong `apBanVa` vì đó chính là phép chống xung đột). */
@@ -140,6 +144,12 @@ export class BangChat {
   // Cmd+K bấm ngay sau khi mở) sẽ rơi mất nếu gửi thẳng — xếp hàng ở đây rồi bắn lại lúc "san_sang".
   private daSanSang = false;
   private cauHoiChoGui: string | undefined;
+  // ★★★ TASK 5 — bộ nhớ đệm danh sách tệp gợi ý @-mention CỦA DỰ ÁN ĐANG CHỌN. `undefined` nghĩa là
+  // "chưa nạp" (nạp LƯỜI ở lượt gõ "@" ĐẦU TIÊN, không quét cả workspace ngay lúc mở bảng — quét là
+  // một lượt `findFiles` đệ quy, không đáng trả giá cho một tính năng có thể không ai dùng tới).
+  // Đổi dự án PHẢI xoá bộ nhớ đệm này (xem nhánh `doi_du_an` trong constructor) — danh sách tệp của
+  // dự án CŨ mà hiện ra dropdown của dự án MỚI là gợi ý sai workspace.
+  private dsTepMention: string[] | undefined;
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -156,7 +166,8 @@ export class BangChat {
     // KHÔNG nạp danh sách dự án ở đây. `postMessage` có thể chạy TRƯỚC khi script trong webview
     // kịp đăng ký `addEventListener("message", …)` ⇒ danh sách rơi mất mà không có lỗi nào — ô
     // chọn trống một cách im lặng. Đợi webview tự báo "san_sang" (xem htmlBang.ts) rồi mới nạp.
-    this.panel.webview.onDidReceiveMessage((m: { loai: string; cauHoi?: string; duAnId?: string }) => {
+    this.panel.webview.onDidReceiveMessage(
+      (m: { loai: string; cauHoi?: string; duAnId?: string; truy?: string; tepMention?: unknown }) => {
       if (m.loai === "san_sang") {
         this.daSanSang = true;
         void this.napDuAn();
@@ -170,11 +181,21 @@ export class BangChat {
       if (m.duAnId && m.duAnId !== this.duAnChon) {
         this.duAnChon = m.duAnId;
         this.quenDeXuat("Đã đổi dự án — đề xuất ghi đang chờ đã được bỏ. Hãy hỏi lại nếu vẫn cần.");
+        // ★★★ TASK 5 — danh sách gợi ý @-mention thuộc về DỰ ÁN CŨ; đổi dự án mà giữ nguyên bộ nhớ
+        // đệm sẽ gợi ý tệp của workspace KHÁC. Nạp lại LƯỜI ở lượt gõ "@" kế tiếp (`guiGoiYMention`).
+        this.dsTepMention = undefined;
       } else if (m.duAnId) {
         this.duAnChon = m.duAnId;
       }
       if (m.loai === "doi_du_an") return; // chỉ để đồng bộ ô chọn, không kèm hành động nào khác
-      if (m.loai === "hoi" && m.cauHoi) { void this.hoi(m.cauHoi); return; }
+      if (m.loai === "hoi" && m.cauHoi) {
+        const tepMention = Array.isArray(m.tepMention)
+          ? m.tepMention.filter((x): x is string => typeof x === "string")
+          : [];
+        void this.hoi(m.cauHoi, tepMention);
+        return;
+      }
+      if (m.loai === "xin_goi_y_mention") { void this.guiGoiYMention(typeof m.truy === "string" ? m.truy : ""); return; }
       if (m.loai === "xem_diff") { void this.xemDiff(); return; }
       if (m.loai === "duyet") { void this.duyetDeXuat(); return; }
       if (m.loai === "huy") { void this.huyDeXuat(); return; }
@@ -222,6 +243,35 @@ export class BangChat {
     const goc = this.thuMucHoiHienTai;
     const tatCa = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
     return goc ? [goc, ...tatCa.filter((p) => p !== goc)] : tatCa;
+  }
+
+  /**
+   * ★★★ TASK 5 — gốc cho danh sách gợi ý @-mention. CÙNG HÌNH DẠNG với `dsGocDoc()` (gốc ĐANG CHỌN
+   * đứng đầu, các gốc workspace còn lại theo sau) nhưng KHÔNG THỂ dùng `dsGocDoc()` trực tiếp: gõ
+   * "@" xảy ra TRONG LÚC GÕ, TRƯỚC khi có lượt hỏi nào chạy, nên `this.thuMucHoiHienTai` (chỉ được
+   * chốt bên trong `hoi()`) còn `undefined`. Dùng `thuMucLocalDangChon()` — đọc thẳng `duAnChon`,
+   * có giá trị BẤT KỲ LÚC NÀO, không cần một lượt hỏi đang chạy.
+   */
+  private dsGocMention(): string[] {
+    const goc = this.thuMucLocalDangChon();
+    const tatCa = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+    return goc ? [goc, ...tatCa.filter((p) => p !== goc)] : tatCa;
+  }
+
+  /**
+   * ★★★ TASK 5 — trả lời webview cho một lượt gõ "@..." — nạp (LƯỜI, chỉ MỘT lần cho tới khi đổi
+   * dự án) danh sách tệp GỢI Ý đã qua hàng rào gửi (`danhSachTepGoiY`, tái dùng `locUngVien`), rồi
+   * lọc THEO CHỮ đang gõ bằng vị từ THUẦN `locDanhSachMention`. Extension quyết định NỘI DUNG dropdown
+   * — webview chỉ hiển thị, đúng nguyên tắc đã áp cho thẻ duyệt.
+   */
+  private async guiGoiYMention(truy: string): Promise<void> {
+    if (!this.dsTepMention) {
+      this.dsTepMention = await danhSachTepGoiY(this.dsGocMention());
+    }
+    void this.panel.webview.postMessage({
+      loai: "goi_y_mention",
+      ds: locDanhSachMention(this.dsTepMention, truy),
+    });
   }
 
   /**
@@ -361,7 +411,12 @@ export class BangChat {
     this.huy?.abort(LY_DO_NGUOI_DUNG_DUNG);
   }
 
-  private async hoi(cauHoi: string): Promise<void> {
+  /**
+   * `tepMention` — ĐỢT D / TASK 5: đường dẫn (tương đối, SẠCH — không kèm `@`) người dùng đã chọn
+   * qua dropdown @-mention trong CHÍNH lượt hỏi này. Nội dung của chúng đi qua ĐÚNG tool `doc_tep`
+   * (Task 2/3) trước khi vào ngữ cảnh — xem đoạn xử lý ngay dưới `nguCanhVong` bên dưới.
+   */
+  private async hoi(cauHoi: string, tepMention: string[] = []): Promise<void> {
     // ★★★ LƯỢT HỎI MỚI ⇒ ĐỀ XUẤT CŨ HẾT HIỆU LỰC TRÊN GIAO DIỆN. Trước đây thẻ duyệt của lượt
     // trước ở lại NGUYÊN trên bảng trong khi câu trả lời mới đang stream — người dùng đọc câu mới
     // rồi bấm cái nút của câu CŨ. `xuLyDeXuat` có quên đề xuất cũ, nhưng chỉ khi một đề xuất MỚI
@@ -412,6 +467,24 @@ export class BangChat {
     let lichSuVong: LuotChat[] = [...this.lichSu];
     let cauHoiVong = cauHoi;
     let nguCanhVong: string | undefined = this.thuThapNguCanh();
+    /**
+     * ★★★ TASK 5 — nội dung tệp @-mention. Đọc qua ĐÚNG `chayToolCucBo({loai:"doc_tep"})` — cùng
+     * hàm, cùng hàng rào (`duocPhepDoc`/`duocPhepRoiMay`), cùng phép che (`cheBiMat` trong
+     * `dinhDangDocTep`) mà ba tool đọc của Task 2/3 dùng. KHÔNG dựng một đường đọc RIÊNG cho
+     * @-mention — đây là một đường dữ liệu RỜI MÁY (nội dung tệp đi kèm câu hỏi gửi lên máy chủ),
+     * và một đường đọc thứ hai là đúng "cửa sau" mà Task 5 bị cấm mở.
+     * ⚠ Chạy TRƯỚC vòng lặp, chỉ MỘT LẦN, bất kể chế độ LOCAL/SERVER: đây là ngữ cảnh của CÂU HỎI
+     *   GỐC, không phải một yêu cầu đọc phát sinh giữa vòng lặp tác nhân.
+     */
+    if (tepMention.length > 0) {
+      const dsGocMention = this.dsGocDoc();
+      const doanMention: string[] = [];
+      for (const duong of tepMention) {
+        const kq = await chayToolCucBo({ loai: "doc_tep", path: duong }, dsGocMention);
+        doanMention.push(kq.ok ? kq.ketQua : `--- @${duong}: KHÔNG đọc được — ${kq.lyDo} ---`);
+      }
+      nguCanhVong = `${nguCanhVong ?? ""}\n${doanMention.join("\n\n")}`;
+    }
     let traLoiCuoi = "";
     let canhBaoCuoi: string | null = null;
     let degradedCuoi = false;

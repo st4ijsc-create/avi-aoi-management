@@ -122,6 +122,11 @@ class PhanTuGia {
   className = "";
   scrollTop = 0;
   scrollHeight = 0;
+  // TASK 5 — vị trí con trỏ trong ô nhập, dùng cho lưới @-mention (`viTriMention` trong htmlBang.ts
+  // đọc `selectionStart` để biết đang gõ "@..." ở đâu). `undefined` mặc định — script thật rơi về
+  // cuối chuỗi khi thiếu, đúng hành vi một textarea thật lúc mới gõ xong.
+  selectionStart: number | undefined = undefined;
+  selectionEnd: number | undefined = undefined;
   private nghe: Record<string, Array<(e: unknown) => void>> = {};
   addEventListener(loai: string, h: (e: unknown) => void): void {
     (this.nghe[loai] ??= []).push(h);
@@ -278,5 +283,105 @@ describe("webview — nút Dừng chỉ hiện khi ĐANG chạy", () => {
     w.banTin({ loai: "token", chu: "a" });
     w.banTin({ loai: "thong_bao", thongDiep: "vòng 2/3 — đang đọc tệp" });
     expect(w.nut("nut-dung").hidden).toBe(false);
+  });
+});
+
+/**
+ * ★★★ TASK 5 — @-MENTION: KẾT CỤC thật, chạy script THẬT (cùng khuôn "CHỐNG BẤM HAI LẦN"/"nút
+ * Dừng" ở trên). Trục đo trọng tâm — bài học `/ai-coding-workspace` đã trả giá: đường dẫn CHÈN RA
+ * phải SẠCH, không kèm ký tự "@".
+ */
+describe("webview — @-mention", () => {
+  it("★★★ gõ '@' ⇒ hỏi extension gợi ý ĐÚNG phần chữ sau '@' (không kèm '@')", () => {
+    const w = chayWebview();
+    const oNhap = w.nut("o-nhap");
+    oNhap.value = "sửa giúp @src/A";
+    oNhap.selectionStart = oNhap.value.length;
+    oNhap.kichHoat("input", {});
+
+    const yc = w.daGui.filter((m) => m.loai === "xin_goi_y_mention");
+    expect(yc).toHaveLength(1);
+    expect(yc[0].truy).toBe("src/A");
+  });
+
+  it("★★★ CHỌN gợi ý (Tab) ⇒ đường dẫn CHÈN RA là SẠCH, KHÔNG có ký tự '@' nào trong ô nhập", () => {
+    const w = chayWebview();
+    const oNhap = w.nut("o-nhap");
+    oNhap.value = "sửa giúp @src/A";
+    oNhap.selectionStart = oNhap.value.length;
+    oNhap.kichHoat("input", {});
+
+    w.banTin({ loai: "goi_y_mention", ds: ["src/A.ts", "src/A.spec.ts"] });
+    expect(w.nut("mention-ds").hidden).toBe(false);
+
+    // Tab chọn gợi ý ĐẦU TIÊN — đường bàn phím-trước, không cần dựng lại cây DOM động của dropdown
+    // (DOM giả không dựng cây thật — xem docblock `PhanTuGia`), nhưng đi qua ĐÚNG hàm chèn `chonGoiY`
+    // mà cú click chuột cũng gọi.
+    oNhap.kichHoat("keydown", { key: "Tab", preventDefault: () => undefined });
+
+    expect(oNhap.value).toBe("sửa giúp src/A.ts ");
+    expect(oNhap.value).not.toContain("@");
+    // Dropdown phải TỰ ẨN sau khi chọn — một dropdown còn mở sau khi đã chèn là trạng thái mồ côi.
+    expect(w.nut("mention-ds").hidden).toBe(true);
+  });
+
+  it("★★★ câu hỏi gửi đi mang ĐÚNG đường dẫn đã mention, và KHÔNG kèm '@' trong tepMention", () => {
+    const w = chayWebview();
+    const oNhap = w.nut("o-nhap");
+    oNhap.value = "@src/A";
+    oNhap.selectionStart = oNhap.value.length;
+    oNhap.kichHoat("input", {});
+    w.banTin({ loai: "goi_y_mention", ds: ["src/A.ts"] });
+    oNhap.kichHoat("keydown", { key: "Tab", preventDefault: () => undefined });
+
+    w.nut("nut-gui").bam();
+
+    const hoi = w.daGui.filter((m) => m.loai === "hoi");
+    expect(hoi).toHaveLength(1);
+    expect(hoi[0].tepMention).toEqual(["src/A.ts"]);
+    expect(hoi[0].cauHoi).not.toContain("@");
+  });
+
+  it("★★ chọn gợi ý xong rồi GỬI ⇒ danh sách mention của lượt SAU rỗng (không rò sang câu hỏi tiếp theo)", () => {
+    const w = chayWebview();
+    const oNhap = w.nut("o-nhap");
+    oNhap.value = "@src/A";
+    oNhap.selectionStart = oNhap.value.length;
+    oNhap.kichHoat("input", {});
+    w.banTin({ loai: "goi_y_mention", ds: ["src/A.ts"] });
+    oNhap.kichHoat("keydown", { key: "Tab", preventDefault: () => undefined });
+    w.nut("nut-gui").bam();
+
+    oNhap.value = "câu hỏi tiếp theo, không mention gì";
+    w.nut("nut-gui").bam();
+
+    const hoi = w.daGui.filter((m) => m.loai === "hoi");
+    expect(hoi).toHaveLength(2);
+    expect(hoi[1].tepMention).toEqual([]);
+  });
+
+  it("★ Escape đóng dropdown mà KHÔNG chèn gì vào ô nhập", () => {
+    const w = chayWebview();
+    const oNhap = w.nut("o-nhap");
+    oNhap.value = "@src/A";
+    oNhap.selectionStart = oNhap.value.length;
+    oNhap.kichHoat("input", {});
+    w.banTin({ loai: "goi_y_mention", ds: ["src/A.ts"] });
+    expect(w.nut("mention-ds").hidden).toBe(false);
+
+    oNhap.kichHoat("keydown", { key: "Escape", preventDefault: () => undefined });
+
+    expect(w.nut("mention-ds").hidden).toBe(true);
+    expect(oNhap.value).toBe("@src/A"); // KHÔNG chèn gì — Escape chỉ đóng dropdown.
+  });
+
+  it("★★ '@' KHÔNG đứng đầu và KHÔNG sau khoảng trắng (như email) ⇒ KHÔNG kích hoạt gợi ý", () => {
+    const w = chayWebview();
+    const oNhap = w.nut("o-nhap");
+    oNhap.value = "lien he ten@mien.com";
+    oNhap.selectionStart = oNhap.value.length;
+    oNhap.kichHoat("input", {});
+
+    expect(w.daGui.filter((m) => m.loai === "xin_goi_y_mention")).toHaveLength(0);
   });
 });

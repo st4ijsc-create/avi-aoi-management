@@ -24,10 +24,17 @@ export function dungHtmlBang(dv: { nonce: string }): string {
                font-size: 12px; }
   #the-duyet #duyet-duong { font-weight: 600; margin: 2px 0; }
   .the-duyet-nut { display: flex; gap: 6px; margin-top: 8px; }
-  #hang-nhap { display: flex; gap: 6px; margin-top: 8px; }
+  #hang-nhap { display: flex; gap: 6px; margin-top: 8px; position: relative; }
   #o-nhap { flex: 1; background: var(--vscode-input-background);
             color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border);
             padding: 6px; font-family: inherit; }
+  /* TASK 5 — dropdown gợi ý @-mention. Neo lên TRÊN ô nhập (ô nhập nằm ở đáy khung chat) qua
+     #hang-nhap position:relative ở trên — relative không phá layout flex hiện có. */
+  #mention-ds { position: absolute; left: 0; right: 88px; bottom: 100%; margin-bottom: 4px;
+                max-height: 160px; overflow-y: auto; background: var(--vscode-dropdown-background);
+                border: 1px solid var(--vscode-dropdown-border); font-size: 12px; z-index: 10; }
+  .mention-muc { padding: 4px 8px; cursor: pointer; }
+  .mention-muc:hover { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.2)); }
   button { background: var(--vscode-button-background); color: var(--vscode-button-foreground);
            border: none; padding: 6px 12px; cursor: pointer; }
   /* Nút ghi đang chờ kết quả: phải THẤY ĐƯỢC là đang khoá, nếu không người dùng bấm tiếp vì nghĩ
@@ -56,7 +63,11 @@ export function dungHtmlBang(dv: { nonce: string }): string {
   </div>
 </div>
 <div id="hang-nhap">
-  <textarea id="o-nhap" rows="2" placeholder="Hỏi AI Local… (Ctrl+Enter để gửi)"></textarea>
+  <!-- TASK 5 — dropdown gợi ý @-mention. MẶC ĐỊNH ẨN: chỉ hiện khi đang gõ "@..." VÀ extension đã
+       trả về ít nhất một gợi ý. Nội dung (danh sách tệp) do EXTENSION dựng — webview chỉ hiển thị
+       và chuyển tiếp lựa chọn, đúng nguyên tắc đã áp cho thẻ duyệt. -->
+  <div id="mention-ds" hidden></div>
+  <textarea id="o-nhap" rows="2" placeholder="Hỏi AI Local… (Ctrl+Enter để gửi, @ để chèn tệp)"></textarea>
   <button id="nut-gui">Gửi</button>
   <!-- TASK 4 — nút DỪNG. MẶC ĐỊNH ẨN: chỉ có ý nghĩa khi một lượt hỏi đang chạy (đang chờ SSE
        hoặc đang giữa vòng lặp tác nhân), không phải lúc rảnh. Hàm gui() hiện nó khi bắn câu hỏi;
@@ -89,6 +100,77 @@ export function dungHtmlBang(dv: { nonce: string }): string {
   const nutDung = document.getElementById("nut-dung");
   nutDung.addEventListener("click", () => vscode.postMessage({ loai: "dung_hoi" }));
 
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ TASK 5 — @-MENTION. Webview chỉ (1) phát hiện vị trí "@..." đang gõ, (2) hỏi extension
+  // gợi ý (nội dung dropdown do EXTENSION dựng — cùng nguyên tắc thẻ duyệt), (3) chèn lựa chọn
+  // của người dùng. KHÔNG quyết định tệp nào được phép mention (đó là hàng rào gửi ở phía
+  // extension) và KHÔNG bao giờ gửi đi ký tự "@" kèm đường dẫn đã chọn.
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  const mentionDs = document.getElementById("mention-ds");
+  /** Gợi ý ĐANG HIỂN THỊ (rỗng khi dropdown ẩn) — dùng để Tab chọn mục ĐẦU mà không cần chuột. */
+  let goiYHienTai = [];
+  /** Đường dẫn SẠCH đã chèn cho LƯỢT HỎI CHƯA GỬI hiện tại — đi kèm "hoi" rồi bị xoá sau khi gửi. */
+  let mentionsHienTai = [];
+
+  /**
+   * Tìm khối "@đang-gõ" NGAY TRƯỚC con trỏ, nếu có. "@" phải đứng ĐẦU DÒNG hoặc ngay sau khoảng
+   * trắng (tránh bắt nhầm "@" giữa một địa chỉ email như "ten@mien.com" làm trigger mention).
+   * \`selectionStart\` rơi về CUỐI chuỗi khi chưa từng được đặt (gõ xong luôn ở cuối trong đa số
+   * lượt gõ thật).
+   */
+  function viTriMention() {
+    const text = oNhap.value;
+    const caret = typeof oNhap.selectionStart === "number" ? oNhap.selectionStart : text.length;
+    let i = caret - 1;
+    while (i >= 0 && !/\\s/.test(text[i]) && text[i] !== "@") i--;
+    if (i < 0 || text[i] !== "@") return null;
+    if (i > 0 && !/\\s/.test(text[i - 1])) return null;
+    return { batDau: i, truy: text.slice(i + 1, caret) };
+  }
+
+  function anMenuMention() {
+    mentionDs.hidden = true;
+    goiYHienTai = [];
+  }
+
+  function hienMenuMention(ds) {
+    mentionDs.innerHTML = "";
+    for (const duong of ds) {
+      const dong = document.createElement("div");
+      dong.className = "mention-muc";
+      dong.textContent = duong;
+      dong.addEventListener("click", () => chonGoiY(duong));
+      mentionDs.appendChild(dong);
+    }
+    goiYHienTai = ds;
+    mentionDs.hidden = ds.length === 0;
+  }
+
+  /**
+   * ★★★ CHÈN ĐƯỜNG DẪN SẠCH — KHÔNG kèm "@". Bài học đã trả giá ở \`/ai-coding-workspace\`: chèn
+   * "@src/…" khiến model đọc chính ký tự "@" đó theo nghĩa đen và hỏng MỌI lượt hỏi sau. \`duongSach\`
+   * tới đây đã là đường TRẦN (không "@") — extension gửi nguyên đường tương đối, webview không tự
+   * thêm hay bớt ký tự nào ở đầu.
+   */
+  function chonGoiY(duongSach) {
+    const vt = viTriMention();
+    if (!vt) return;
+    const truoc = oNhap.value.slice(0, vt.batDau);
+    const sau = oNhap.value.slice(vt.batDau + 1 + vt.truy.length);
+    const chen = duongSach + " ";
+    oNhap.value = truoc + chen + sau;
+    const viTriMoi = (truoc + chen).length;
+    oNhap.selectionStart = oNhap.selectionEnd = viTriMoi;
+    mentionsHienTai.push(duongSach);
+    anMenuMention();
+  }
+
+  oNhap.addEventListener("input", () => {
+    const vt = viTriMention();
+    if (!vt) { anMenuMention(); return; }
+    vscode.postMessage({ loai: "xin_goi_y_mention", truy: vt.truy });
+  });
+
   function gui() {
     const cauHoi = oNhap.value.trim();
     if (!cauHoi) return;
@@ -96,12 +178,22 @@ export function dungHtmlBang(dv: { nonce: string }): string {
     oNhap.value = "";
     khoiTraLoi = themLuot("AI Local", "");
     nutDung.hidden = false;
-    vscode.postMessage({ loai: "hoi", cauHoi, duAnId: document.getElementById("o-du-an").value });
+    anMenuMention();
+    const tepMention = mentionsHienTai;
+    mentionsHienTai = [];
+    vscode.postMessage({ loai: "hoi", cauHoi, duAnId: document.getElementById("o-du-an").value, tepMention });
   }
 
   document.getElementById("nut-gui").addEventListener("click", gui);
   oNhap.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); gui(); }
+  });
+  // TASK 5 — Tab CHỌN gợi ý ĐẦU TIÊN đang hiện (bàn phím-trước, không bắt buộc dùng chuột); Escape
+  // đóng dropdown mà KHÔNG chèn gì. Đặt ở listener RIÊNG, tách khỏi listener Ctrl+Enter phía trên
+  // để mỗi khối chỉ lo một việc.
+  oNhap.addEventListener("keydown", (e) => {
+    if (e.key === "Tab" && goiYHienTai.length > 0) { e.preventDefault(); chonGoiY(goiYHienTai[0]); return; }
+    if (e.key === "Escape" && !mentionDs.hidden) { anMenuMention(); }
   });
 
   // Thẻ duyệt (chế độ SERVER): webview chỉ HIỂN THỊ chữ do extension đã dựng sẵn và CHUYỂN TIẾP
@@ -198,6 +290,14 @@ export function dungHtmlBang(dv: { nonce: string }): string {
       // vẫn đi qua toàn bộ chuỗi đề-xuất → diff → duyệt → apBanVa y hệt một câu gõ tay.
       oNhap.value = m.cauHoi;
       gui();
+    } else if (m.loai === "goi_y_mention") {
+      // TASK 5 — nội dung dropdown (danh sách tệp) do EXTENSION lọc/gạn sẵn (hàng rào gửi + vị từ
+      // lọc theo chữ đang gõ); webview chỉ hiển thị. Bỏ qua nếu người dùng đã rời khỏi ngữ cảnh
+      // "@..." trong lúc chờ trả lời (gõ tiếp qua khoảng trắng, xoá "@", đổi vị trí con trỏ…) —
+      // một dropdown xuất hiện SAU KHI ý định gõ mention đã qua là một cú giật giao diện vô nghĩa.
+      const vt = viTriMention();
+      if (!vt) { anMenuMention(); }
+      else hienMenuMention(m.ds || []);
     }
     hoiThoai.scrollTop = hoiThoai.scrollHeight;
   });
