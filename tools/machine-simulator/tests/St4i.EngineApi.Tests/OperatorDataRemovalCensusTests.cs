@@ -927,6 +927,10 @@ public sealed class OperatorDataRemovalCensusTests
         // WS-HMI-0a Task 2 — an engineer's deliberately-declared component tree (ComponentModelStore.PutAsync
         // runs only from that user action, never from a startup/registration loop — see its doc comment).
         ["src/St4i.EngineApi/HmiModel/ComponentModelStore.cs"] = "ON CONFLICT DO UPDATE SET",
+        // WS-HMI-0a Task 3 — a connector/engineer re-declaring a machine's tag namespace. TagNamespaceStore
+        // gained a DELETE FROM this store's own ComponentModelStore lacks: PutAsync's delete-then-reinsert
+        // of tag_index (see that method's doc comment) so a retired tag actually leaves the index.
+        ["src/St4i.EngineApi/HmiModel/TagNamespaceStore.cs"] = "DELETE FROM, ON CONFLICT DO UPDATE SET",
 
         // ── product-generated rows, one operator-owned column ─────────────────────────────────────────
         ["src/St4i.EngineApi/AssetRegistry/AssetRegistryStore.cs"] = "ON CONFLICT DO UPDATE SET, UPDATE SET",
@@ -1068,11 +1072,16 @@ public sealed class OperatorDataRemovalCensusTests
         // WS-HMI-0a Task 2 — ComponentModelStore.cs added two raw-string blocks (the CREATE TABLE migration
         // and the PutAsync INSERT ... ON CONFLICT) in one new file; only the INSERT block matches a removal
         // SQL pattern (ON CONFLICT DO UPDATE SET) — the CREATE TABLE block does not.
-        Assert.Equal(69, blocks.Count);
-        Assert.Equal(13, files.Count);
+        // WS-HMI-0a Task 3 — TagNamespaceStore.cs added five raw-string blocks in one new file (two CREATE
+        // TABLE migration statements, the PutAsync upsert, the PutAsync tag_index re-insert, and the
+        // FindTagAsync join) — measured via this assertion's own Expected/Actual, not hand-counted first.
+        // Only the upsert (`... ON CONFLICT ... DO UPDATE SET`) matches a removal SQL pattern; the two
+        // CREATE TABLEs, the plain tag_index INSERT and the SELECT/JOIN do not.
+        Assert.Equal(74, blocks.Count);
+        Assert.Equal(14, files.Count);
 
         // The half that refutes the old sentence outright: raw-string blocks DO carry removal SQL.
-        Assert.Equal(11, withRemovalSql.Count);
+        Assert.Equal(12, withRemovalSql.Count);
 
         // 🔴 The review that found the original sentence false gave a block count and a FILE count, and
         // then enumerated one fewer file than its own count claimed. Re-deriving rather than adopting is the
@@ -1080,7 +1089,9 @@ public sealed class OperatorDataRemovalCensusTests
         // its own list one more time — this time in the correction, not in the thing corrected. The right
         // value is the assertion on the next line; the wrong one is deliberately not repeated here, because
         // a refuted number quoted in a comment is exactly the second uncounted copy the file header refuses.
-        Assert.Equal(6, filesWithRemovalSql.Count);
+        // WS-HMI-0a Task 3 moved it again: TagNamespaceStore.cs joined the files carrying removal SQL in a
+        // raw-string block.
+        Assert.Equal(7, filesWithRemovalSql.Count);
 
         // And the reason the census is nevertheless right about them: the SQL pass scans whole lines, so
         // every one of those files is already in the pinned SQL enumeration. This is the assertion that
@@ -1175,6 +1186,9 @@ public sealed class OperatorDataRemovalCensusTests
         // WS-HMI-0a Task 2 — an engineer's deliberately-declared component tree (same reasoning as the
         // ExpectedSqlSites entry above).
         ["src/St4i.EngineApi/HmiModel/ComponentModelStore.cs"] = Provenance.OperatorAuthored,
+        // WS-HMI-0a Task 3 — an engineer/connector's deliberately-declared tag namespace (same reasoning:
+        // TagNamespaceStore.PutAsync runs only from that user action).
+        ["src/St4i.EngineApi/HmiModel/TagNamespaceStore.cs"] = Provenance.OperatorAuthored,
 
         ["src/St4i.EdgeCore/Identity/DeviceIdentityStore.cs"] = Provenance.ProductGenerated,
         ["src/St4i.EdgeCore/Infrastructure/CredentialStore.cs"] = Provenance.ProductGenerated,
@@ -1216,6 +1230,8 @@ public sealed class OperatorDataRemovalCensusTests
         // WS-HMI-0a Task 2 — new SQLite store, same "owns a persisted artifact this product writes and
         // later re-reads" shape as its siblings above.
         ["ComponentModelStore"] = "src/St4i.EngineApi/HmiModel/ComponentModelStore.cs",
+        // WS-HMI-0a Task 3 — same shape, sibling store.
+        ["TagNamespaceStore"] = "src/St4i.EngineApi/HmiModel/TagNamespaceStore.cs",
 
         // 🔴 TASK V-1 — five stores S-1 enumerated as removal sites and did NOT measure a posture for. Every
         // one of them owns an artifact this product writes and re-reads, which is the property that puts a
@@ -1445,6 +1461,14 @@ public sealed class OperatorDataRemovalCensusTests
             _ = new ComponentModelStore(dir);
             return Posture.UnreadableIsAbsent;
         }), dir => _ = new ComponentModelStore(dir)),
+
+        // ── WS-HMI-0a Task 3 — same constructor-eager EnsureSchema() shape as ComponentModelStore above,
+        // over its own file (tag-namespaces.db) ─────────────────────────────────────────────────────────
+        new("TagNamespaceStore", "tag-namespaces.db", true, dir => Observe(() =>
+        {
+            _ = new TagNamespaceStore(dir);
+            return Posture.UnreadableIsAbsent;
+        }), dir => _ = new TagNamespaceStore(dir)),
     ];
 
     /// <summary>🔴 <b>THE ANSWER, PINNED.</b> Measured, not read. Touching a store's behaviour at this
@@ -1473,6 +1497,9 @@ public sealed class OperatorDataRemovalCensusTests
         // WS-HMI-0a Task 2 — same constructor-eager EnsureSchema() shape as the SQLite stores above; a
         // corrupt hmi-model.db fails PRAGMA/EnsureSchema inside the constructor and throws out of it.
         ["ComponentModelStore"] = Posture.Throws,
+        // WS-HMI-0a Task 3 — same shape, same reason: a corrupt tag-namespaces.db fails PRAGMA/EnsureSchema
+        // inside the constructor and throws out of it.
+        ["TagNamespaceStore"] = Posture.Throws,
 
         // 🔴 The one row left on the posture the law forbids, and it is DECIDED rather than surviving.
         // docs/owner-decisions.md item 1's residue 2 records why: the bytes are a product-minted key, the
@@ -1697,7 +1724,8 @@ public sealed class OperatorDataRemovalCensusTests
         // make this a tautology and pin nothing. This is the one copy of that number in the file.
         // 🔴 Task V-1 moved it: four stores S-1 never measured are on this posture too.
         // WS-HMI-0a Task 2 moved it again: ComponentModelStore joined this posture.
-        Assert.Equal(11, throwers.Count);
+        // WS-HMI-0a Task 3 moved it again: TagNamespaceStore joined this posture.
+        Assert.Equal(12, throwers.Count);
 
         foreach (var artifact in OperatorArtifacts.Where(a => throwers.Contains(a.Store)))
         {
