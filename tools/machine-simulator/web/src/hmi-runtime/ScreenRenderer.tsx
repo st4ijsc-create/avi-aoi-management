@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react"
 import type { ComponentNode } from "../contracts/componentModel.ts"
 import type { HmiScreenDocument, ScreenWidget } from "../contracts/hmiScreen.ts"
-import { componentTagPrefixOf, resolveBinding } from "./bindings.ts"
+import { componentTagPrefixOf, resolveBinding, unresolvedComponentBindingWarning } from "./bindings.ts"
 import { clampRectToLayout } from "./gridLayout.ts"
 import type { TagValueSource } from "./TagValueSource.ts"
 import { widgetRegistry } from "./widgetRegistry.ts"
@@ -141,6 +141,13 @@ function RenderedWidget({
  * `layout.rows` is resized to fit (`gridLayout.ts`'s `clampRectToLayout`) and a warning is emitted
  * (`console.warn` plus a `title` tooltip on the placed cell) rather than the widget vanishing from the
  * screen or spilling past the declared grid.
+ *
+ * 🔴 Fix round 1, Finding 2: the SAME `title` tooltip also carries an unresolved-`{component}`-binding
+ * warning (`bindings.ts`'s `unresolvedComponentBindingWarning`) when a widget's `bindings` use
+ * `{component}` but no tag prefix resolved — `resolveBinding`'s own `console.warn` is real but is not
+ * something an operator at a kiosk with no devtools open will ever see; this is the on-screen echo of
+ * the exact same condition, computed statically per widget (no interception of `resolve()` calls
+ * needed) and folded into the one tooltip idiom this renderer already uses, not a second one.
  */
 export function ScreenRenderer({ doc, source, components }: ScreenRendererProps) {
   const { layout, widgets } = doc
@@ -155,12 +162,15 @@ export function ScreenRenderer({ doc, source, components }: ScreenRendererProps)
       }}
     >
       {widgets.map((widget) => {
-        const { rect, warning } = clampRectToLayout(widget.rect, layout, widget.id)
+        const { rect, warning: clampWarning } = clampRectToLayout(widget.rect, layout, widget.id)
+        const tagPrefix = componentTagPrefixOf(components, widget.component)
+        const bindingWarning = unresolvedComponentBindingWarning(widget, tagPrefix)
+        const title = [clampWarning, bindingWarning].filter((w): w is string => Boolean(w)).join(" | ") || undefined
         return (
           <div
             key={widget.id}
             data-hmi-widget={widget.id}
-            title={warning}
+            title={title}
             style={{
               gridColumn: `${rect.col + 1} / span ${rect.colSpan}`,
               gridRow: `${rect.row + 1} / span ${rect.rowSpan}`,
