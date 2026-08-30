@@ -205,3 +205,56 @@ describe("Cmd+K — đường dẫn đưa cho model (F3)", () => {
     expect(may.thongBao).toHaveLength(0);
   });
 });
+
+describe("Cmd+K — H1: hàng rào GỬI ở mức TỆP (review toàn nhánh 2026-08-30)", () => {
+  /**
+   * ★★★ Trước bản vá: `chaySuaDoanChon` chỉ kiểm "có đoạn chọn" và "tệp có trong workspace" — CHƯA
+   * BAO GIỜ hỏi `duocPhepRoiMay`. Cùng một `.env` mà đường NGỮ CẢNH (`dungNguCanh`) bị chặn đúng,
+   * còn đường CÂU HỎI của Cmd+K thì không — đây là ca đo ĐƯỜNG THỨ TƯ đó, đo KẾT CỤC (không phải
+   * chỉ đo ý định): không một byte nào của đoạn chọn được gửi đi.
+   */
+  it("★★★ `.env` ⇒ KHÔNG dựng câu hỏi, KHÔNG một byte nào của đoạn chọn rời máy", async () => {
+    may.thuMucWs = ["C:\\ws"];
+    may.tepDangMo = "C:\\ws\\.env";
+    may.doanChon = "DATABASE_URL=postgres://nguoidung:MAT_KHAU_THAT@10.0.0.7:5432/db";
+
+    await bamCmdK();
+
+    expect(may.cauHoiDaGui).toHaveLength(0);
+    expect(may.cauHoiDaGui.join(" ")).not.toContain("MAT_KHAU_THAT");
+    expect(may.thongBao.join(" ")).toContain("nhạy cảm");
+  });
+
+  it("★★★ khoá riêng SSH (`keys/id_rsa`) ⇒ KHÔNG dựng câu hỏi", async () => {
+    may.thuMucWs = ["C:\\ws"];
+    may.tepDangMo = "C:\\ws\\keys\\id_rsa";
+    may.doanChon = "-----BEGIN OPENSSH PRIVATE KEY-----\nMOC_THAN_KHOA\n-----END OPENSSH PRIVATE KEY-----";
+
+    await bamCmdK();
+
+    expect(may.cauHoiDaGui).toHaveLength(0);
+    expect(may.cauHoiDaGui.join(" ")).not.toContain("MOC_THAN_KHOA");
+  });
+
+  it("★★★ `.git/config` (token remote) ⇒ KHÔNG dựng câu hỏi", async () => {
+    may.thuMucWs = ["C:\\ws"];
+    may.tepDangMo = "C:\\ws\\.git\\config";
+    may.doanChon = "url = https://nguoidung:MOC_TOKEN@github.com/x/y.git";
+
+    await bamCmdK();
+
+    expect(may.cauHoiDaGui).toHaveLength(0);
+    expect(may.cauHoiDaGui.join(" ")).not.toContain("MOC_TOKEN");
+  });
+
+  it("★★ NHÁNH KIA: tệp BÌNH THƯỜNG vẫn chạy Cmd+K được như cũ (hàng rào không chặn nhầm)", async () => {
+    may.thuMucWs = ["C:\\ws"];
+    may.tepDangMo = "C:\\ws\\src\\a.ts";
+    may.doanChon = "let a = 1;";
+
+    await bamCmdK();
+
+    expect(may.cauHoiDaGui).toHaveLength(1);
+    expect(may.cauHoiDaGui[0]).toContain("let a = 1;");
+  });
+});

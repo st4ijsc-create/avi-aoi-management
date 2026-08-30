@@ -8,6 +8,7 @@ import { BangChat } from "./ui/bangChat";
 import { KhoDeXuat, SCHEME } from "./ui/diffDeXuat";
 import { dungCauHoiSuaChon } from "./loi/cauHoiSuaChon";
 import { duongTuongDoiTrongWorkspace } from "./loi/chanGhi";
+import { duocPhepRoiMay } from "./loi/nguCanh";
 
 async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("aviAiLocal");
@@ -62,6 +63,29 @@ async function chaySuaDoanChon(context: vscode.ExtensionContext, khoDeXuat: KhoD
     // lệnh bấm-mà-không-thấy-gì-xảy-ra.
     void vscode.window.showInformationMessage(
       "AI Local: hãy chọn (bôi đen) một đoạn mã trong trình soạn thảo trước khi dùng lệnh 'Sửa đoạn đang chọn'.",
+    );
+    return;
+  }
+
+  /**
+   * ★★★ H1 (review 2026-08-30) — HÀNG RÀO GỬI CHO CMD+K, Ở MỨC TỆP, TUYỆT ĐỐI KHÔNG CHE NỘI DUNG.
+   *
+   * `chaySuaDoanChon` trước bản vá này chỉ kiểm "có đoạn chọn không" và "tệp có trong workspace
+   * không" — CHƯA BAO GIỜ hỏi `duocPhepRoiMay`. Đường ngữ cảnh (`thuThapNguCanh` → `dungNguCanh`)
+   * và ba tool đọc (`docCucBo.ts`) đều hỏi đúng vị từ đó; Cmd+K là ĐƯỜNG THỨ TƯ đi song song mà
+   * không có hàng rào nào — bôi đen một dòng `DATABASE_URL=...` trong `.env` rồi bấm `ctrl+alt+k`
+   * gửi NGUYÊN VĂN dòng đó lên máy chủ.
+   *
+   * ⚠⚠⚠ CỐ Ý CHẶN CẢ TỆP, KHÔNG `cheBiMat(doanChon)`: kết quả Cmd+K (`thayThe`) được GHI THẲNG LÊN
+   * ĐĨA qua `apBanVa`. Nếu chỉ che nội dung gửi đi, model sẽ "sửa" đúng văn bản đã bị che
+   * (`«đã che»`) rồi ta ghi RÁC đè lên tệp thật của người dùng — tệ hơn cả việc từ chối. Tệp nhạy
+   * cảm thì từ chối CẢ LƯỢT, không dựng câu hỏi, không gửi byte nào — và nói RÕ vì sao, đúng khuôn
+   * "không im lặng" của cả tệp này.
+   */
+  if (!duocPhepRoiMay(ed.document.uri.fsPath)) {
+    void vscode.window.showInformationMessage(
+      "AI Local: tệp này là tệp nhạy cảm (.env / khoá riêng / .git) — KHÔNG gửi nội dung đi, và " +
+        "extension cũng không được phép ghi vào nó. Hãy dùng lệnh này trên một tệp khác.",
     );
     return;
   }
