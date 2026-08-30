@@ -4,7 +4,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { gotoHmi } from "./support/screens"
-import { resetTrackedScreenFixtures } from "./support/screenFixtures"
+import { assertScreenFixturesClean } from "./support/screenFixtures"
 import { vi as viDict } from "../src/i18n/vi"
 
 /**
@@ -41,10 +41,10 @@ const CRASHING_WIDGET = {
 }
 
 test.describe("HMI widget error boundary — one crashing widget must not take the kiosk page down", () => {
-  // whole-branch-review.md L4 — self-heals a prior interrupted run's leftover fixture mutation before
-  // this test builds its own. See `support/screenFixtures.ts`'s own doc comment.
+  // final-fix-re-review.md N2 — refuses to run (loudly) rather than silently overwrite a dirty fixture.
+  // See `support/screenFixtures.ts`'s own doc comment.
   test.beforeAll(() => {
-    resetTrackedScreenFixtures(AUTOMATION_PATH)
+    assertScreenFixturesClean(AUTOMATION_PATH)
   })
 
   test("a widget that throws while rendering degrades to a named placeholder; every sibling, and the page, survive", async ({ page }) => {

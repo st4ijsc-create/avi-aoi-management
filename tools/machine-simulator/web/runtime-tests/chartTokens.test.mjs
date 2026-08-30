@@ -17,38 +17,44 @@
 // `glassTokens` object references instead of hand-copying — is plain `.ts`, JSX-free, and IS imported
 // for real below; Glass gets a stronger, two-layer check because of that (see the bottom of this file).
 //
-// 🔴 What this file does NOT check, and why — three fields excluded from the mirror table on purpose,
-// not by oversight:
-//   - `border`: `chartTokens.ts` mirrors a DIFFERENT css custom property per theme for this ONE field —
-//     `consoleTokens.border` is the literal `--color-divider` value (a translucent `color-mix()`
-//     string), while `glassTokens`/`warmthTokens`/`isa101Tokens`.border all mirror the OPAQUE `--border`
-//     hex instead. Measured, not assumed: `--border` for console is `#26303f`, which is NOT what
-//     `consoleTokens.border` contains. Whether that's a deliberate per-theme choice (a chart element
-//     might read wrong against Console's near-black ground with an opaque border colour) or a latent
-//     drift is a real question this branch's own task didn't ask, and asserting one canonical mapping
-//     here would either be a guess dressed as a check or a new finding outside M3's scope. Left alone.
-//   - `line` / `chartSeries`: NOT a strict mirror by the file's own inline comments. Console's `line`
-//     mirrors `--color-accent` (`#38D6FF`); Glass's `line` is the FIXED `navy[700]` (`#1E3A8A`), which is
-//     NOT Glass's `--color-accent` (`#2F6BFF`, a lifted azure) — measured, they genuinely differ. Warmth
-//     and isa101's own comments state `--color-accent === navy-700 (unlifted)` for those two themes
+// 🔴 final-fix-re-review.md, finding N1 — this header used to exclude `chartSeries` alongside `line`, on
+// a paragraph whose OWN measurements were all about `line` (console's `line` vs `--color-accent`,
+// Glass's `line` vs Glass's `--color-accent`, Warmth/isa101's inline comments) and then closed with a
+// claim covering both fields. That claim is true of `line` and was FALSE of `chartSeries`, unmeasured for
+// it specifically: `chartSeries[i] === --chart-{i+1}` resolves to an EXACT match, in all four themes, for
+// i in 0..4 (verified below, by reading the raw declarations on both sides — not the resolved values —
+// then resolving and comparing). `chartSeries` is now covered (its own section, below the per-field
+// table); `line` remains excluded, on grounds now stated for `line` alone, not borrowed from it for a
+// second field. `border` also moved from "excluded" to "covered per-theme" — see that section too; the
+// SAME per-theme divergence that made a single canonical mapping wrong for one shared table is exactly
+// pinnable once each theme gets its OWN named mapping instead of a mapping table built for one CSS var
+// per field.
+//
+// What remains excluded, and why, stated only for what it is actually about:
+//   - `line`: NOT a strict mirror by the file's own inline comments. Console's `line` mirrors
+//     `--color-accent` (`#38D6FF`); Glass's `line` is the FIXED `navy[700]` (`#1E3A8A`), which is NOT
+//     Glass's `--color-accent` (`#2F6BFF`, a lifted azure) — measured, they genuinely differ. Warmth and
+//     isa101's own comments state `--color-accent === navy-700 (unlifted)` for those two themes
 //     specifically, which is what makes `line: navy[700]` look like it mirrors `--color-accent` there —
 //     but it's the SAME fixed constant Glass uses for a DIFFERENT (non-mirroring) reason. There is no
 //     single formula across all four themes to assert without re-deriving each theme's own design
-//     rationale by hand, which is exactly the kind of untested judgement call this file is not the
-//     place to introduce.
+//     rationale by hand.
 //
-// Eleven fields ARE a consistent, unambiguous, measured 1:1 mirror across all four themes —
-// `surfaceCard`, `textMuted`, `textBody`, `textStrong` (the field that actually went stale), `accent500`,
-// `accent600`, `ok`, `warn`, `danger`, `neutral`, `info` — verified by checking every one of the 44
-// console/warmth/isa101 comparisons plus Glass's own 11 by hand before writing this table, not asserted
-// from the field names alone.
+// Eleven fields (`surfaceCard`, `textMuted`, `textBody`, `textStrong` — the field that actually went
+// stale — `accent500`, `accent600`, `ok`, `warn`, `danger`, `neutral`, `info`) are a consistent,
+// unambiguous, measured 1:1 mirror against the SAME CSS variable across all four themes; `border` is a
+// consistent, measured 1:1 mirror against a DIFFERENT CSS variable per theme (console → `--color-divider`,
+// the other three → `--border` — console's own `--border`, `#26303f`, is genuinely not what
+// `consoleTokens.border` holds); `chartSeries[0..4]` mirrors `--chart-1`..`--chart-5` in all four themes,
+// exactly (`chartSeries[5]` has no CSS counterpart at all — no `--chart-6` is declared anywhere in
+// `index.css` — so index 5 is the one array element left unpinned, not the whole field).
 
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { accent, navy, status, surface, text } from "../src/theme/tokens.ts"
+import { accent, border, chartSeries as chartSeriesGlass, navy, status, surface, text } from "../src/theme/tokens.ts"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, "..", "src")
@@ -99,8 +105,10 @@ function resolveCssVar(raw, blockVars) {
 
 const normalizeColor = (s) => s.trim().toLowerCase()
 
-// Trường ChartTokens → biến CSS nó mirror — CHỈ 11 trường đã đo là khớp NHẤT QUÁN ở cả 4 theme (xem
-// header file này cho 3 trường bị loại và lý do).
+// Trường ChartTokens → biến CSS nó mirror — 11 trường đã đo là khớp NHẤT QUÁN, CÙNG một biến CSS, ở
+// cả 4 theme (xem header file này cho trường còn lại bị loại và lý do). `border` KHÔNG ở trong bảng
+// này dù nó CŨNG được pin bên dưới — nó mirror biến CSS KHÁC NHAU tùy theme (console → --color-divider,
+// còn lại → --border), nên không có một `cssVarName` chung để đưa vào bảng dùng chung này.
 const MIRROR = {
   surfaceCard: "--color-surface",
   textMuted: "--text-muted",
@@ -114,6 +122,18 @@ const MIRROR = {
   neutral: "--status-idle",
   info: "--info",
 }
+
+// `border`: console mirrors `--color-divider` (measured — console's OWN `--border`, `#26303f`, is a
+// different value entirely); the other three mirror `--border` directly. See this file's header.
+const BORDER_CSS_VAR = {
+  console: "--color-divider",
+  warmth: "--border",
+  isa101: "--border",
+}
+
+// `chartSeries[0..4]` mirrors `--chart-1`..`--chart-5`, index for index, in all four themes — measured
+// exact in each. Index 5 is excluded: no `--chart-6` exists anywhere in `index.css` for it to mirror.
+const CHART_SERIES_CSS_VARS = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"]
 
 function extractChartTokensObjectBody(constName) {
   const re = new RegExp(`const ${constName}: ChartTokens = \\{([\\s\\S]*?)\\n\\}`)
@@ -147,6 +167,43 @@ function resolveTsFieldValue(raw, constName, field) {
   assert.fail(`${constName}.${field} = ${raw} — không phải chuỗi literal hay navy[N], bài này chưa biết cách so hình dạng này`)
 }
 
+/** `border` is always a plain double-quoted string literal in console/warmth/isa101 (never `navy[N]`)
+ * — but console's own value, `"color-mix(in srgb, #e9f1fb 14%, transparent)"`, contains COMMAS inside
+ * the string, which breaks `extractField`'s comma-stopping regex the same way an array literal does
+ * (measured: it silently truncates to `"color-mix(in srgb`, the text up to the FIRST comma). Matches
+ * the quoted string directly instead, so an embedded comma is just more characters inside `"…"`, not a
+ * stop signal. */
+function extractQuotedField(body, field, constName) {
+  const re = new RegExp(`^\\s*${field}:\\s*"([^"]*)",`, "m")
+  const m = re.exec(body)
+  assert.ok(m, `${constName} thiếu trường "${field}" dạng chuỗi literal (hoặc hình dạng dòng đã đổi khỏi 'field: "value",')`)
+  return m[1]
+}
+
+/** `chartSeries` is written as a single-line array literal (`chartSeries: [a, b, c, d, e, f],`) —
+ * `extractField`'s comma-stopping regex can't capture it whole (its own stop character IS the array's
+ * own element separator; it would return just the first element). Captures the bracketed body via a
+ * GREEDY match anchored to the closing `]` immediately followed by `,` at end-of-line: greedy
+ * backtracking naturally lands on the LAST such `]` on the line, which is the array's own closing
+ * bracket — skipping past the inner `]` that `navy[N]` elements contain along the way. Splits the
+ * captured body on `,`, which is safe here because no element shape used in this file (`"#hex"` or
+ * `navy[N]`) contains an internal comma. */
+function extractArrayField(body, field, constName) {
+  const re = new RegExp(`^\\s*${field}:\\s*\\[([^\\n]*)\\]\\s*,\\s*$`, "m")
+  const m = re.exec(body)
+  assert.ok(m, `${constName} thiếu trường mảng "${field}" (hoặc hình dạng dòng đã đổi khỏi "field: [...],")`)
+  const items = m[1]
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+  assert.equal(
+    items.length,
+    6,
+    `${constName}.${field} có ${items.length} phần tử, kỳ vọng 6 — ChartTokens.chartSeries cố định 6 phần tử theo interface`
+  )
+  return items
+}
+
 // ── console / warmth / isa101 — hand-copied hex literal, so đọc thẳng ────────────────────────────
 for (const themeName of ["console", "warmth", "isa101"]) {
   const constName = `${themeName}Tokens`
@@ -169,6 +226,42 @@ for (const themeName of ["console", "warmth", "isa101"]) {
       )
     })
   }
+
+  // `border` — final-fix-re-review.md N1: per-theme cssVarName, so its own test rather than a MIRROR entry.
+  const borderCssVarName = BORDER_CSS_VAR[themeName]
+  test(`chartTokens.ts's ${constName}.border khớp index.css's [data-theme="${themeName}"] ${borderCssVarName}`, () => {
+    const tsValue = extractQuotedField(body, "border", constName)
+
+    const cssRaw = cssVars[borderCssVarName]
+    assert.ok(cssRaw !== undefined, `index.css thiếu ${borderCssVarName} trong [data-theme="${themeName}"]`)
+    const cssValue = resolveCssVar(cssRaw, cssVars)
+
+    assert.equal(
+      normalizeColor(tsValue),
+      normalizeColor(cssValue),
+      `${constName}.border = "${tsValue}" nhưng index.css's [data-theme="${themeName}"] ${borderCssVarName} (đã giải var()) = "${cssValue}" — hai bên LỆCH NHAU`
+    )
+  })
+
+  // `chartSeries[0..4]` — final-fix-re-review.md N1: index-by-index against --chart-1..--chart-5.
+  // Index 5 stays unpinned (no CSS counterpart) — see this file's header.
+  const chartSeriesItems = extractArrayField(body, "chartSeries", constName)
+  CHART_SERIES_CSS_VARS.forEach((cssVarName, i) => {
+    test(`chartTokens.ts's ${constName}.chartSeries[${i}] khớp index.css's [data-theme="${themeName}"] ${cssVarName}`, () => {
+      const tsRaw = chartSeriesItems[i]
+      const tsValue = resolveTsFieldValue(tsRaw, constName, `chartSeries[${i}]`)
+
+      const cssRaw = cssVars[cssVarName]
+      assert.ok(cssRaw !== undefined, `index.css thiếu ${cssVarName} trong [data-theme="${themeName}"]`)
+      const cssValue = resolveCssVar(cssRaw, cssVars)
+
+      assert.equal(
+        normalizeColor(tsValue),
+        normalizeColor(cssValue),
+        `${constName}.chartSeries[${i}] = ${tsRaw} (= "${tsValue}") nhưng index.css's [data-theme="${themeName}"] ${cssVarName} (đã giải var()) = "${cssValue}" — hai bên LỆCH NHAU`
+      )
+    })
+  })
 }
 
 // ── glass — chartTokens.ts's glassTokens KHÔNG hand-copy hex, nó tham chiếu THẲNG theme/tokens.ts.
@@ -187,6 +280,12 @@ const GLASS_SOURCE_EXPR = {
   danger: "status.danger",
   neutral: "status.neutral",
   info: "status.info",
+  // final-fix-re-review.md N1 — `extractField`'s comma-stopping regex works fine for BOTH of these:
+  // neither `border.DEFAULT` nor `chartSeriesGlass` (a bare identifier reference, not an array literal
+  // — glassTokens doesn't hand-copy the array, it points at the same one `theme/tokens.ts` exports)
+  // contains a comma, so they need no new extraction machinery to fold into this existing loop.
+  border: "border.DEFAULT",
+  chartSeries: "chartSeriesGlass",
 }
 
 const GLASS_REAL_VALUES = {
@@ -229,3 +328,33 @@ for (const [field, cssVarName] of Object.entries(MIRROR)) {
     )
   })
 }
+
+// `border`/`chartSeries` real values — kept OUT of MIRROR (see MIRROR's own comment) so they need their
+// own tests rather than falling out of the loop above for free. Same `border`/`chartSeriesGlass` real
+// imports the structural test above already confirmed `glassTokens` points AT, not a re-typed copy.
+test(`theme/tokens.ts's giá trị thật cho glassTokens.border (border.DEFAULT) khớp index.css's :root --border`, () => {
+  const cssRaw = rootVars["--border"]
+  assert.ok(cssRaw !== undefined, `index.css :root thiếu --border`)
+  const cssValue = resolveCssVar(cssRaw, rootVars)
+
+  assert.equal(
+    normalizeColor(border.DEFAULT),
+    normalizeColor(cssValue),
+    `theme/tokens.ts's border.DEFAULT (${border.DEFAULT}) KHÔNG khớp index.css's :root --border (đã giải var() = "${cssValue}")`
+  )
+})
+
+CHART_SERIES_CSS_VARS.forEach((cssVarName, i) => {
+  test(`theme/tokens.ts's giá trị thật cho glassTokens.chartSeries[${i}] khớp index.css's :root ${cssVarName}`, () => {
+    const cssRaw = rootVars[cssVarName]
+    assert.ok(cssRaw !== undefined, `index.css :root thiếu ${cssVarName}`)
+    const cssValue = resolveCssVar(cssRaw, rootVars)
+    const tokenValue = chartSeriesGlass[i]
+
+    assert.equal(
+      normalizeColor(tokenValue),
+      normalizeColor(cssValue),
+      `theme/tokens.ts's chartSeries[${i}] (${tokenValue}) KHÔNG khớp index.css's :root ${cssVarName} (đã giải var() = "${cssValue}")`
+    )
+  })
+})

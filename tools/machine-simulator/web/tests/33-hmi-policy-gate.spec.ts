@@ -4,7 +4,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { gotoHmi } from "./support/screens"
-import { resetTrackedScreenFixtures } from "./support/screenFixtures"
+import { assertScreenFixturesClean } from "./support/screenFixtures"
 
 /**
  * WS-HMI-1 whole-branch review, finding M1 — `runtime-tests/widgetRegistry.test.mjs` pins §5's write
@@ -71,10 +71,10 @@ const PROBE_WIDGETS = [
 ]
 
 test.describe("HMI §5 write gate — the DOM proof widgetRegistry.test.mjs deferred and never collected", () => {
-  // whole-branch-review.md L4 — self-heals a prior interrupted run's leftover fixture mutation before
-  // this test builds its own. See `support/screenFixtures.ts`'s own doc comment.
+  // final-fix-re-review.md N2 — refuses to run (loudly) rather than silently overwrite a dirty fixture.
+  // See `support/screenFixtures.ts`'s own doc comment.
   test.beforeAll(() => {
-    resetTrackedScreenFixtures(AUTOMATION_PATH)
+    assertScreenFixturesClean(AUTOMATION_PATH)
   })
 
   test("command-button/setpoint-input without policyAction render disabled WITH a visible reason; with policyAction, enabled and reason-free", async ({ page }) => {

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { gotoHmi } from "./support/screens"
-import { resetTrackedScreenFixtures } from "./support/screenFixtures"
+import { assertScreenFixturesClean } from "./support/screenFixtures"
 import { vi as viDict } from "../src/i18n/vi"
 
 /**
@@ -65,11 +65,12 @@ const AOI_PATH = join(SCREENS_DIR, "aoi-overview.json")
 const IOT_PATH = join(SCREENS_DIR, "iot-overview.json")
 
 test.describe("HMI screen wiring — the rendered panel follows the document, not just its own source text", () => {
-  // whole-branch-review.md L4 — self-heals a prior interrupted run's leftover swap BEFORE this test
-  // builds its own fixture, so a SIGINT/crash/CI-cancellation that skipped the `finally` below cannot
-  // leak into this run. See `support/screenFixtures.ts`'s own doc comment.
+  // final-fix-re-review.md N2 — refuses to run (loudly) rather than silently overwrite, if either path
+  // already differs from HEAD (a human's own uncommitted edit, or a prior interrupted run's leftover
+  // swap — this cannot tell the two apart, and must not guess). See `support/screenFixtures.ts`'s own
+  // doc comment for why an unconditional `git checkout` here was itself the defect, not the fix.
   test.beforeAll(() => {
-    resetTrackedScreenFixtures(AOI_PATH, IOT_PATH)
+    assertScreenFixturesClean(AOI_PATH, IOT_PATH)
   })
 
   test("swapping aoi-overview.json ⇄ iot-overview.json's CONTENTS swaps which drawing each machine renders", async ({ page }) => {
