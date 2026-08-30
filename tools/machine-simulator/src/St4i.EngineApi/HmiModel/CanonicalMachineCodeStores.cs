@@ -111,11 +111,22 @@ namespace St4i.EngineApi.HmiModel;
 ///   this seam. So the machine that morally owns those paths — asking under its canonical identity — gets
 ///   a <b>409 naming its own paths as another machine's</b>: the ownership comparison in
 ///   <c>SqliteTagIndexCollisionQuery</c> is Ordinal against the canonical code, and the row's stored code
-///   is not it. That is inherited from this exclusion, not introduced by Task 2, and it is unreachable by
-///   the same argument as the rest of the residue (no supported path writes a non-canonical row — zero
-///   <c>new TagNamespaceStore(</c> call sites in <c>src/</c>). Recorded HERE, where the exclusion lives,
-///   because a reader who accepts this paragraph's "unreachable rather than mis-reported" is entitled to
-///   know the full shape of what "reachable" would mean.</para></description></item>
+///   is not it. That is inherited from this exclusion, not introduced by Task 2. Recorded HERE, where the
+///   exclusion lives, because a reader who accepts this paragraph's "unreachable rather than mis-reported"
+///   is entitled to know the full shape of what "reachable" would mean.</para>
+///   <para>🔴 <b>WHY IT IS UNREACHABLE — the true reason, replacing a false one.</b> This paragraph used to
+///   say there are "zero <c>new TagNamespaceStore(</c> call sites in <c>src/</c>". That is FALSE, and it is
+///   false about the one file a reader would check: <b><c>Program.cs</c> constructs one</b>. The conclusion
+///   survives; the evidence did not, and a reader who verified the sentence would have found a call site
+///   and been unable to tell whether this residue had been reasoned about or merely asserted.
+///   <b>What actually makes it unreachable is the absence of a DI REGISTRATION, not the absence of a
+///   constructor call.</b> That single construction is a LOCAL: it is wrapped in
+///   <see cref="CanonicalizingTagNamespaceStore"/> for the <see cref="ITagNamespaceStore"/> registration and
+///   read once for its <c>DbPath</c> (to point the read-only collision query at the same file). The raw type
+///   is never <c>AddSingleton</c>'d, so no consumer can resolve an undecorated store, and no code path
+///   reaches that local's own <c>PutAsync</c> — every write goes through the decorator and is therefore
+///   canonical. <b>The rule to keep, stated as a rule rather than as a count:</b> the raw store may be
+///   constructed exactly where the composition root needs it and must never be registered.</para></description></item>
 /// </list></para>
 ///
 /// <para>🔴 <b>THE GUARANTEE, stated at the strength it actually has.</b> Anything that takes

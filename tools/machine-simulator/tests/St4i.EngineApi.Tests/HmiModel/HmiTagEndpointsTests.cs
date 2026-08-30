@@ -1006,11 +1006,13 @@ public sealed class HmiTagEndpointsTests
     // assertions compared against the same constants the production code read. A test that reads the same
     // constant on both sides pins nothing.
     //
-    // The three tests below replace it, and none can repeat either mistake:
-    //   - POSITION: the collision is LAST in the body, so a prefix-limited scan cannot find it.
+    // The two tests below replace it, and neither can repeat either mistake:
+    //   - POSITION: the collision sits first, middle and LAST, and the assertion is on what the handler
+    //               PASSED to the query, so truncation at any position shows up here.
     //   - COST:     asserted as a LITERAL 0 per-tag probes, so reintroducing per-tag probing reddens this
     //               whatever any constant is set to.
-    //   - SQL:      asserted as a LITERAL 4 statements for 2 000 paths, on the pure chunker.
+    // The SQL round-trip bound moved to TagIndexCollisionQueryTests when that file was created — it belongs
+    // beside the chunker it measures, and this comment said "three" for one round after it left.
     // ═════════════════════════════════════════════════════════════════════
 
     [Theory]

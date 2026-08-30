@@ -42,10 +42,12 @@ namespace St4i.EngineApi.HmiModel;
 /// <para><b>Read-only at the HANDLE, not merely in intent.</b> The connection is opened
 /// <c>Mode=ReadOnly</c>, so SQLite itself refuses a write through it — an earlier version of this sentence
 /// claimed "read-only by construction" while describing only the statement text, which a later edit could
-/// have changed. <c>busy_timeout</c> matches the frozen store's own pragma so a diagnosis running beside a
-/// live writer waits rather than failing instantly; if it fails anyway the caller degrades to SQLite's own
-/// message, never to a 500. It is deliberately NOT the store — nothing here can be mistaken for one or
-/// substituted for one.</para>
+/// have changed. Review verified this against a real WAL database: <c>CREATE</c>/<c>UPDATE</c>/
+/// <c>DELETE</c>/<c>DROP</c> through this handle all fail with SQLite error 8. If a read fails for any
+/// other reason the caller degrades to SQLite's own message, never to a 500. It is deliberately NOT the
+/// store — nothing here can be mistaken for one or substituted for one. (There is deliberately no
+/// <c>busy_timeout</c>: see <see cref="ClaimedByAnotherMachineAsync"/> for why an unmeasurable pragma was
+/// removed rather than re-justified.)</para>
 ///
 /// <para><b>Values are always bound.</b> The command text is assembled from generated parameter
 /// PLACEHOLDERS only (<c>@p0…@pN</c>); no caller-supplied string is ever concatenated into SQL.</para>
@@ -92,16 +94,16 @@ internal sealed class SqliteTagIndexCollisionQuery : ITagIndexCollisionQuery
 
         var claimedByOthers = new HashSet<string>(StringComparer.Ordinal);
 
+        // 🔴 No `busy_timeout` pragma here, and its absence is a decision (fix round 4). An earlier version
+        // set one and justified it as "so a diagnosis running beside a live writer waits instead of failing
+        // instantly" — a benefit that is NOT OBSERVABLE for this database. The frozen store applies
+        // `journal_mode=WAL`, which is a persistent property of the file, so every connection to it is a WAL
+        // connection; under WAL a reader does not block on a writer at all. Review measured the same thing
+        // from the other side: removing the pragma changed nothing. A pragma defended by an effect nobody
+        // can measure is a claim wearing a defence's clothes, which is the exact shape this workstream has
+        // spent four rounds removing — so it is gone rather than re-justified.
         using var connection = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly");
         await connection.OpenAsync(ct).ConfigureAwait(false);
-
-        using (var pragma = connection.CreateCommand())
-        {
-            // Same value the frozen store applies, so a diagnosis running beside a live writer waits
-            // instead of failing instantly. It is allowed on a read-only handle: it changes no data.
-            pragma.CommandText = "PRAGMA busy_timeout=5000;";
-            await pragma.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-        }
 
         foreach (var chunk in Chunk(candidatePaths))
         {
