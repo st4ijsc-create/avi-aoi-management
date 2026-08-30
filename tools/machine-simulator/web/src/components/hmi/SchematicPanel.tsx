@@ -29,12 +29,17 @@ interface SchematicPanelProps {
   aoiProductName?: string | null
   aoiPoints: AoiSchematicPoint[]
   /** I-1 — real per-cycle NG count from the engine's own board points, computed with NO product-point
-   * involvement (see `Hmi.tsx`'s remarks) — the fallback caption when no live plan is in hand. */
+   * involvement (see `hmi-runtime/widgets/faceplate.tsx`'s `OperationOverviewFaceplate` remarks — this
+   * logic lived in `Hmi.tsx` before WS-HMI-1 Task 5 relocated it there) — the fallback caption when no
+   * live plan is in hand. */
   aoiUnlocatedDefects?: number
   iotLatestReading?: string | null
   className?: string
-  /** H5 — the caller (`Hmi.tsx`) sets `flexGrow`/`flexBasis` here per `deviceClass` (layout spec §8's
-   * "adapt proportions per machine class" note) rather than a fixed Tailwind flex utility. */
+  /** H5 — the caller (WS-HMI-1 Task 5: `hmi-runtime/widgets/faceplate.tsx`'s
+   * `OperationOverviewFaceplate`, reading `props.schematicFlex`/`props.readoutFlex` off the screen
+   * document; before that task, `Hmi.tsx` set it inline from a TypeScript table) sets `flexGrow`/
+   * `flexBasis` here per `deviceClass` (layout spec §8's "adapt proportions per machine class" note)
+   * rather than a fixed Tailwind flex utility. */
   style?: CSSProperties
 }
 

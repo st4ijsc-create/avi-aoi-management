@@ -20,6 +20,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { validate } from "../contract-tests/validate.mjs"
+import { resolveOverviewFaceplate } from "../src/hmi-runtime/widgets/overviewFaceplate.ts"
 
 // web/runtime-tests → web
 const WEB = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -29,14 +30,22 @@ const SCHEMA_PATH = join(WEB, "..", "contracts", "hmi-screen.schema.json")
 
 const schema = JSON.parse(readFileSync(SCHEMA_PATH, "utf8"))
 
-const SCREEN_FILES = ["automation-overview.json", "aoi-overview.json", "iot-overview.json"]
+// 🔴 Fix round 1 (task-5-review.md HIGH #1) — this table is what gives "props.faceplate khớp máy"
+// (below) real teeth. Round 0's version of that test only asserted `typeof === "string"`, which
+// `"fp.overview.iot"` inside `aoi-overview.json` would ALSO have passed — the id's actual VALUE was
+// unchecked, matching `faceplate.tsx`'s own round-0 defect (Set-membership check, then discarded).
+const SCREEN_FILES = {
+  "automation-overview.json": { deviceClass: "Automation", schematicFlex: 1, readoutFlex: 1 },
+  "aoi-overview.json": { deviceClass: "AoiAvi", schematicFlex: 1.15, readoutFlex: 1 },
+  "iot-overview.json": { deviceClass: "Iot", schematicFlex: 0.85, readoutFlex: 1.15 },
+}
 
 test("web/screens/ chứa ĐÚNG ba tài liệu Task 5 đòi — không thừa, không thiếu", () => {
   const onDisk = readdirSync(SCREENS_DIR).filter((f) => f.endsWith(".json")).sort()
-  assert.deepEqual(onDisk, [...SCREEN_FILES].sort())
+  assert.deepEqual(onDisk, Object.keys(SCREEN_FILES).sort())
 })
 
-for (const file of SCREEN_FILES) {
+for (const [file, expected] of Object.entries(SCREEN_FILES)) {
   test(`web/screens/${file}: hợp lệ theo contracts/hmi-screen.schema.json (qua validate.mjs của Mốc 0)`, () => {
     const doc = JSON.parse(readFileSync(join(SCREENS_DIR, file), "utf8"))
     const errs = validate(schema, schema, doc)
@@ -54,10 +63,19 @@ for (const file of SCREEN_FILES) {
     assert.equal(doc.theme, "blueprint")
   })
 
-  test(`web/screens/${file}: đúng MỘT widget kind "faceplate", props.faceplate khớp máy`, () => {
+  test(`web/screens/${file}: đúng MỘT widget kind "faceplate", props.faceplate khớp máy VÀ tỉ lệ đúng`, () => {
+    // Fix round 1 — chạy đúng hàm THẬT `faceplate.tsx` sẽ gọi lúc render (`resolveOverviewFaceplate`),
+    // không phải suy luận từ hình dạng JSON. Nếu `props.faceplate` của một file bị đổi thành id của
+    // MỘT FILE KHÁC (đúng kịch bản falsification của review), `deviceClass` trả về sẽ SAI, và bài này
+    // đỏ — trước fix round 1, `screens.test.mjs` chỉ kiểm `typeof … === "string"`, nên hoán đổi
+    // "fp.overview.aoi" ⇄ "fp.overview.iot" giữa hai file vẫn xanh.
     const doc = JSON.parse(readFileSync(join(SCREENS_DIR, file), "utf8"))
     assert.equal(doc.widgets.length, 1)
     assert.equal(doc.widgets[0].kind, "faceplate")
-    assert.equal(typeof doc.widgets[0].props?.faceplate, "string")
+    const resolved = resolveOverviewFaceplate(doc.widgets[0].props ?? {})
+    assert.ok(resolved, `props.faceplate ("${doc.widgets[0].props?.faceplate}") phải phân giải được`)
+    assert.equal(resolved.deviceClass, expected.deviceClass)
+    assert.equal(resolved.schematicFlex, expected.schematicFlex)
+    assert.equal(resolved.readoutFlex, expected.readoutFlex)
   })
 }

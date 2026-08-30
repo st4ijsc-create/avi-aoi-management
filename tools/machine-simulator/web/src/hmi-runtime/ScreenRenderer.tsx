@@ -133,9 +133,20 @@ function RenderedWidget({
  * three shapes — `"panel" | "tablet" | "phone"` — that the SAME screen document is meant to render
  * across; a `1fr`-track CSS grid lets the exact same `col`/`row`/`colSpan`/`rowSpan` integers reflow at
  * a different physical size for free, because they describe grid CELLS, not screen coordinates. Pixel
- * positioning would have to be hand-recomputed per breakpoint, which is precisely the hand-written,
- * per-machine-class layout work (`SCHEMATIC_READOUT_FLEX` in today's `Hmi.tsx`) this whole runtime
- * exists to replace with one JSON document.
+ * positioning would have to be hand-recomputed per breakpoint.
+ *
+ * 🔴 WS-HMI-1 Task 5 fix round 1 (task-5-review.md MEDIUM) — this paragraph used to claim this grid
+ * "exists to replace [the hand-written, per-machine-class layout work] `SCHEMATIC_READOUT_FLEX` in
+ * today's `Hmi.tsx` with one JSON document." That was stale even at the moment it was written (Task 5
+ * round 0 kept the ratio in a TypeScript table, `faceplate.tsx`'s `OVERVIEW_SCHEMATIC_READOUT_FLEX` —
+ * the review caught the same defect this comment's claim would have papered over). As of round 1 it is
+ * true, but NOT because of anything in THIS file: `schematicFlex`/`readoutFlex` now live in each
+ * `web/screens/*-overview.json`'s own `widgets[0].props`, read by `hmi-runtime/widgets/faceplate.tsx`'s
+ * `OperationOverviewFaceplate` — `ScreenRenderer` itself stays agnostic to what any widget's `props`
+ * mean, same as every other widget-specific value. What this grid genuinely provides, and the only
+ * claim this file can make about itself, is the reflow-for-free property above; a widget author choosing
+ * to put layout numbers in `props` (as `faceplate` now does) is what actually gets them out of
+ * TypeScript, not a property of the grid alone.
  *
  * Grid placement is CLAMPED, never dropped: a widget whose `rect` would overflow `layout.cols`/
  * `layout.rows` is resized to fit (`gridLayout.ts`'s `clampRectToLayout`) and a warning is emitted
@@ -155,7 +166,13 @@ export function ScreenRenderer({ doc, source, components }: ScreenRendererProps)
     <div
       data-hmi-screen={doc.screenId}
       data-theme={doc.theme}
-      className="grid h-full w-full gap-2"
+      // WS-HMI-1 Task 5 fix round 1 (task-5-review.md LOW) — `min-w-0 min-h-0` added: this div is now
+      // (Task 5) a flex ITEM of `Hmi.tsx`'s tabpanel row, and a flex item's default `min-width`/
+      // `min-height: auto` uses its min-CONTENT size as a floor, ignoring `w-full`/`h-full` — harmless
+      // at the suite's 1440×900 (the content already fits, so the floor never binds and no pixel
+      // moves), but a real overflow risk at a narrower `ScreenBreakpoint`, where the flex row this
+      // replaced always carried its own `min-w-0`.
+      className="grid h-full w-full min-h-0 min-w-0 gap-2"
       style={{
         gridTemplateColumns: `repeat(${Math.max(1, layout.cols)}, 1fr)`,
         gridTemplateRows: `repeat(${Math.max(1, layout.rows)}, 1fr)`,

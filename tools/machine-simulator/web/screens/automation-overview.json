@@ -10,7 +10,7 @@
       "id": "overview",
       "kind": "faceplate",
       "rect": { "col": 0, "row": 0, "colSpan": 12, "rowSpan": 8 },
-      "props": { "faceplate": "fp.overview.automation" }
+      "props": { "faceplate": "fp.overview.automation", "schematicFlex": 1, "readoutFlex": 1 }
     }
   ]
 }

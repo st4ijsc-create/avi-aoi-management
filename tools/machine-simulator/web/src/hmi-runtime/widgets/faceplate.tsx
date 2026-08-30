@@ -7,17 +7,22 @@ import { ReadoutGrid } from "@/components/hmi/ReadoutGrid"
 import { SchematicPanel } from "@/components/hmi/SchematicPanel"
 import type { AoiSchematicPoint } from "@/components/hmi/schematics/AoiSchematic"
 import { useT } from "@/i18n"
-import { useFleetEstopEngaged, useFleetIsRunning, useMachine, type DeviceClass } from "@/lib/api"
+import { useFleetEstopEngaged, useFleetIsRunning, useMachine } from "@/lib/api"
 import { useMachineConfigCheck, useProduct, useProductPoints } from "@/lib/configApi"
 import type { WidgetProps } from "../widgetRegistry.ts"
 import { asRecord } from "./shared.ts"
+import { resolveOverviewFaceplate, type OverviewFaceplateConfig } from "./overviewFaceplate.ts"
 
 /**
- * `kind: "faceplate"` — THE SEAM WS-HMI-1 Task 5 plugs into. Dispatches on `props.faceplate`:
+ * `kind: "faceplate"` — THE SEAM WS-HMI-1 Task 5 plugs into. Dispatches on `props.faceplate` via
+ * `resolveOverviewFaceplate` (`overviewFaceplate.ts`):
  *
  * - `"fp.overview.automation" | "fp.overview.aoi" | "fp.overview.iot"` — WS-HMI-1 Task 5's own three
  *   screens (`web/screens/*-overview.json`) each carry exactly ONE widget with one of these ids, sized
- *   to fill the whole grid. `OperationOverviewFaceplate` (below) is that widget's real implementation.
+ *   to fill the whole grid, plus `props.schematicFlex`/`props.readoutFlex`. `OperationOverviewFaceplate`
+ *   (below) is that widget's real implementation, and it receives the RESOLVED config (device class +
+ *   ratio) as a prop rather than re-deriving either — see `overviewFaceplate.ts`'s own header for why
+ *   this changed in fix round 1.
  * - anything else (today: `fp.motor.spindle`, from `contracts/fixtures/valid/screen-screwdrive-full.json`,
  *   a Milestone-0 fixture this task does not own or render) — the pre-Task-5 "not wired yet" placeholder,
  *   unchanged. A future component-level faceplate library (WS-HMI-3) plugs in here the same way this
@@ -25,12 +30,13 @@ import { asRecord } from "./shared.ts"
  */
 export function FaceplateWidget(props: WidgetProps) {
   const p = asRecord(props.widget.props)
-  const faceplateId = typeof p.faceplate === "string" ? p.faceplate : undefined
+  const overview = resolveOverviewFaceplate(p)
 
-  if (faceplateId && OVERVIEW_FACEPLATE_IDS.has(faceplateId)) {
-    return <OperationOverviewFaceplate source={props.source} />
+  if (overview) {
+    return <OperationOverviewFaceplate source={props.source} config={overview} />
   }
 
+  const faceplateId = typeof p.faceplate === "string" ? p.faceplate : undefined
   return (
     <Sheet className="h-full" bodyClassName="flex h-full flex-1 items-center justify-center text-center">
       <p className="hmi-micro normal-case">
@@ -42,8 +48,6 @@ export function FaceplateWidget(props: WidgetProps) {
   )
 }
 
-const OVERVIEW_FACEPLATE_IDS = new Set(["fp.overview.automation", "fp.overview.aoi", "fp.overview.iot"])
-
 /**
  * WS-HMI-1 Task 5 — the "delete the React" corrigendum's own resolution (see the plan's top block):
  * what actually gets deleted is `Hmi.tsx`'s HAND-WRITTEN page layout — the `SCHEMATIC_READOUT_FLEX`
@@ -51,39 +55,60 @@ const OVERVIEW_FACEPLATE_IDS = new Set(["fp.overview.automation", "fp.overview.a
  * order nailed into that file's JSX. The two panels those hand-wrote (the live schematic via
  * `SchematicPanel`, the KPI table via `ReadoutGrid`) are NOT reinvented as a pile of generic `readout`/
  * `kpi-tile` widgets scattered across `ScreenRenderer`'s own CSS grid — that was tried and rejected,
- * for a provable, not a convenience, reason:
+ * for a provable, not a convenience, reason (task-5-review.md confirmed the proof independently and
+ * found it stronger than fix round 1 stated — the sharper version is recorded here):
  *
  * `ScreenRenderer`'s grid places every widget on the SAME document-wide `layout.cols` × integer
- * `colSpan` × ONE fixed `gap`. For an EQUAL split (Automation's `[1, 1]`) that reproduces a flex-grow
- * ratio exactly, for any gap, any viewport — trivial, `a === b` cancels the gap term. For a NON-equal
- * split (AoiAvi's `[1.15, 1]`, IoT's `[0.85, 1.15]`) it provably CANNOT, while also keeping the
- * original 12px inter-panel gap: a grid item spanning `a` of `cols` tracks has rendered width
- * `a·trackWidth + (a-1)·gap` — the `(a-1)·gap` term is exactly what makes two panels' width RATIO
- * diverge from their track-count ratio `a:b` the moment `gap > 0` and `a ≠ b`, for every viewport
- * width, not just the one this repo's suite happens to test at. Measured, not just derived: the real
- * AOI panel at the suite's own 1440×900 viewport renders schematic:readout as 564.703125px :
- * 491.296875px (opRow width 1068px minus one 12px `gap-3`) — not the "nice" 1.15:1 rational split an
- * integer `colSpan` pair could land on exactly. The only way to hit that exactly through the grid is a
- * per-viewport magic-pixel `padding` hack tuned to ONE screen size — which breaks the whole point of a
- * `1fr`-track grid reflowing for free across `ScreenBreakpoint`s (`ScreenLayout`'s own doc comment),
- * and reads as numerology to the next person who opens the JSON. Given the task's overriding rule —
- * `maxDiffPixelRatio: 0.00002`, no baseline may move — a real, unfakeable per-viewport ratio wins over
- * a generic-looking decomposition that is provably a few pixels wrong.
+ * `colSpan` × ONE fixed `gap` — and that gap is a hardcoded `gap-2` (8px) in `ScreenRenderer.tsx`,
+ * **not authorable from the document at all**, while the row this replaces used a 12px `gap-3`. Let `W`
+ * = available width, `g` = gap, `N` = `layout.cols`, an item spanning `a` tracks: track width
+ * `T = (W−(N−1)g)/N`, so `width(a) = a·T + (a−1)·g = (a/N)(W+g) − g`. A flex row of the same width with
+ * grow ratio ρ gives `width_flex = (W−g)·ρ`. Equating for EVERY `W` (not one screen size — `1fr` tracks
+ * are supposed to reflow across `ScreenBreakpoint`s for free, `ScreenLayout`'s own doc comment) requires
+ * matching both the `W` coefficient and the constant: `a/N = ρ` AND `(a/N)g − g = −gρ`, which together
+ * force `ρ = 1/2`. For any `g > 0`, a grid span reproduces a flex-grow split at EVERY viewport only when
+ * the split is exactly 1:1 — trivially true for Automation's `[1, 1]`, impossible for AoiAvi's
+ * `[1.15, 1]` or IoT's `[0.85, 1.15]`. The schema's own `layout.cols` cap (`maximum: 48`) closes the
+ * one loophole a symbolic proof leaves open — a magic ratio tuned to ONE specific viewport: solving
+ * `(a/N)(1068+8) − 8 = 564.703125` (the real AOI panel at the suite's own 1440×900) gives
+ * `a/N ≈ 0.532252`, and the nearest reachable value at any `N ≤ 48` is off by double-digit pixels
+ * (`25/48 → 552.3px`, `26/48 → 574.8px`) — not even a single-viewport escape hatch exists. And the gap
+ * itself is wrong before the ratio is: two adjacent generic widgets would sit 8px apart, not 12px,
+ * regardless of any span choice.
  *
- * So: each `*-overview.json` document carries exactly ONE `faceplate` widget filling its whole grid,
- * and THIS component reproduces the original flex row verbatim — same `SchematicPanel`/`ReadoutGrid`
- * calls, same `flexGrow`/`flexBasis: 0` ratio, same `gap-3` — just relocated one call-frame down, from
- * `Hmi.tsx`'s JSX into the widget layer `props.faceplate` selects. `ScreenRenderer`'s own wrapper divs
- * around a lone 1×1 widget (its `grid` root, the per-widget placement `<div>`) add zero box-model
- * footprint of their own (no padding/margin/border, `w-full`/`h-full` filling exactly what the old
- * flex row filled) — Playwright's own pixel diff is the proof this holds, not an assertion here.
+ * Given the task's overriding rule (`maxDiffPixelRatio: 0.00002`, no baseline may move, ever), this
+ * proof forces exactly ONE conclusion: **two generic grid-placed widgets cannot stand in for this pair.**
+ * It does NOT force the proportions themselves to live in TypeScript — that was fix round 1's mistake
+ * (task-5-review.md HIGH #1/#2). `schematicFlex`/`readoutFlex` are ordinary `props` values now
+ * (`overviewFaceplate.ts`'s `resolveOverviewFaceplate`, read from each `*-overview.json`'s own
+ * `widgets[0].props`), reaching the exact same inline `style` below — zero pixel change, genuinely
+ * authored in the document. What stays fixed in code is narrower: which ONE widget kind (`faceplate`)
+ * hosts the pair, and the `props.faceplate → DeviceClass` id table (`overviewFaceplate.ts`'s
+ * `FACEPLATE_DEVICE_CLASS`) — a REGISTRY, the same category as `widgetRegistry.ts`'s own `kind →
+ * Component` map, not a layout table.
+ *
+ * So: each `*-overview.json` document carries exactly ONE `faceplate` widget filling its whole grid, its
+ * `props` naming BOTH which drawing (`faceplate` id → `deviceClass`) and how big each panel is
+ * (`schematicFlex`/`readoutFlex`) — and THIS component reproduces the original flex row verbatim from
+ * that resolved config — same `SchematicPanel`/`ReadoutGrid` calls, same `flexGrow`/`flexBasis: 0`
+ * pattern, same `gap-3` — just relocated one call-frame down, from `Hmi.tsx`'s JSX into the widget layer
+ * `props.faceplate` selects. `ScreenRenderer`'s own wrapper divs around a lone 1×1 widget (its `grid`
+ * root, the per-widget placement `<div>`) add zero box-model footprint of their own (no padding/margin/
+ * border, `w-full`/`h-full` filling exactly what the old flex row filled) — Playwright's own pixel diff
+ * is the proof this holds, not an assertion here; re-verified after this fix (task-5-report.md).
  *
  * This is exactly the same "wrap, don't reinvent" posture Task 2 used for `readout`/`status-lamp`/…
  * around `web/src/components/industrial/`, one layer up: `SchematicPanel`/`ReadoutGrid` are already
- * axe-AA'd, visually-pinned, `DeviceClass`-aware components — this widget's job is wiring live data
- * into them, not redrawing them.
+ * axe-AA'd, visually-pinned components — this widget's job is wiring live data (and now, document-
+ * authored layout numbers) into them, not redrawing them.
  */
-function OperationOverviewFaceplate({ source }: { source: WidgetProps["source"] }) {
+function OperationOverviewFaceplate({
+  source,
+  config,
+}: {
+  source: WidgetProps["source"]
+  config: OverviewFaceplateConfig
+}) {
   const t = useT()
   const gloss = useGloss()
 
@@ -152,14 +177,13 @@ function OperationOverviewFaceplate({ source }: { source: WidgetProps["source"] 
   if (!machine || !code) return null
 
   const isAoi = machine.class === "AoiAvi"
-  const [schematicFlex, readoutFlex] = OVERVIEW_SCHEMATIC_READOUT_FLEX[machine.class]
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 gap-3">
       <SchematicPanel
         className="min-h-0 min-w-0"
-        style={{ flexGrow: schematicFlex, flexBasis: 0 }}
-        deviceClass={machine.class}
+        style={{ flexGrow: config.schematicFlex, flexBasis: 0 }}
+        deviceClass={config.deviceClass}
         isRunning={running}
         cycles={machine.cycles}
         plan={machine.plan}
@@ -171,7 +195,7 @@ function OperationOverviewFaceplate({ source }: { source: WidgetProps["source"] 
 
       <Sheet
         className="hmi-readout-grid min-h-0 min-w-0"
-        style={{ flexGrow: readoutFlex, flexBasis: 0 }}
+        style={{ flexGrow: config.readoutFlex, flexBasis: 0 }}
         title={t("hmi.readoutPanel.title")}
         titleEn={gloss("hmi.readoutPanel.title")}
         bodyClassName="flex flex-1 min-h-0 flex-col p-0"
@@ -210,17 +234,9 @@ function worstDriftState(products: readonly { driftState: string }[]): string | 
   )
 }
 
-/**
- * H5 (relocated verbatim from `Hmi.tsx` by Task 5 — see this file's own header comment for why the
- * ratio itself could not move into the JSON documents) — layout spec §8's "adapt proportions per
- * machine class rather than copying the reference's fixed split blindly": `[schematicFlex,
- * readoutFlex]` grow ratios for the schematic/readout pair. AOI gets the extra room (its board + real
- * measurement-point dots need to stay legible, spec §7: "make this the strongest one"); IoT gives room
- * back to the readout grid instead, since its wireframe (a node, a link, an uplink) is comparatively
- * sparse and doesn't need the width; Automation splits evenly.
- */
-const OVERVIEW_SCHEMATIC_READOUT_FLEX: Record<DeviceClass, [number, number]> = {
-  Automation: [1, 1],
-  AoiAvi: [1.15, 1],
-  Iot: [0.85, 1.15],
-}
+// H5 — the `schematicFlex`/`readoutFlex` ratio itself (AOI gets the extra room: its board + real
+// measurement-point dots need to stay legible, spec §7's "make this the strongest one"; IoT gives room
+// back to the readout grid instead, since its wireframe — a node, a link, an uplink — is comparatively
+// sparse; Automation splits evenly) now lives in each `*-overview.json` document's own
+// `widgets[0].props.schematicFlex`/`.readoutFlex` (fix round 1, task-5-review.md HIGH #2) — NOT in a
+// TypeScript table here. See `overviewFaceplate.ts`'s `resolveOverviewFaceplate` for where it's read.
