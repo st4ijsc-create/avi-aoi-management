@@ -135,6 +135,40 @@ describe("docCucBo — grep KHÔNG rò nội dung tệp cấm (R-D2, tầng a + 
     const kq = grepThuan("DATABASE_URL", ungVien, doc);
     expect(kq).toContain("src/Calculator.cs");
   });
+
+  it("★★★ H2: thân khoá PEM dán trong tệp HỢP LỆ KHÔNG rời máy qua grep (luật PEM ĐA DÒNG)", () => {
+    /**
+     * `keys/id_rsa` KHÔNG đo được lỗ này — nó bị chặn ở tầng (a) TRƯỚC khi thân của nó tới đây, nên
+     * nhánh đa dòng của `cheBiMat` (luật 1, cần BEGIN+END trong CÙNG một chuỗi) chưa từng bị đo.
+     * Đặt khối PEM ngay trong `src/config.ts` (tệp KHÔNG nằm trong danh sách cấm nào) để buộc dữ
+     * liệu đi qua đúng nhánh grep-từng-dòng — đây là nhánh trước bản vá để lọt thân base64 nguyên văn.
+     */
+    const than1 = "MIIEowIBAAKCAQEAsecretbodyline1";
+    const than2 = "MIIEowIBAAKCAQEAsecretbodyline2";
+    const ungVien = [
+      { duong: trongWs("src/config.ts"), nhan: "src/config.ts" },
+      { duong: trongWs("src/Calculator.cs"), nhan: "src/Calculator.cs" },
+    ];
+    const noiDungPem: Record<string, string> = {
+      "src/config.ts": ["-----BEGIN RSA PRIVATE KEY-----", than1, than2, "-----END RSA PRIVATE KEY-----"].join("\n"),
+      "src/Calculator.cs": NOI_DUNG["src/Calculator.cs"],
+    };
+    const doc = (duong: string): string => {
+      for (const [nhan, nd] of Object.entries(noiDungPem)) {
+        if (duong.endsWith(nhan.replace(/\//g, process.platform === "win32" ? "\\" : "/"))) return nd;
+      }
+      throw new Error(`không đọc được: ${duong}`);
+    };
+
+    const kq = grepThuan("MII", ungVien, doc);
+
+    // KẾT CỤC (khẳng định chính) — thân base64 KHÔNG có mặt trong thứ được gửi đi.
+    expect(kq).not.toContain(than1);
+    expect(kq).not.toContain(than2);
+    // ⚠ CHỐNG TỰ THOẢ: vẫn CÓ kết quả — chỉ là đã bị che, không phải "không tìm thấy gì".
+    expect(kq).toContain("«đã che»");
+    expect(kq).toContain("src/config.ts");
+  });
 });
 
 describe("docCucBo — `.git/**` KHÔNG rời máy qua grep/liet_ke (vòng sửa 1)", () => {

@@ -3,7 +3,11 @@
  * giống khoá · ngân sách là trần THẬT (cắt thì phải KHAI là đã cắt, vì một ngữ cảnh bị cắt âm
  * thầm làm model trả lời sai mà không ai biết vì sao).
  */
-const CHE = "«đã che»";
+// ★★★ H2 (review 2026-08-30) — export để `docCucBo.ts` (grep) có thể che NGUYÊN DÒNG bằng ĐÚNG
+// chuỗi này khi tự phát hiện một dòng nằm giữa BEGIN/END của khối PEM đa dòng (xem docblock
+// `grepThuan`) — hai bản sao của cùng một chuỗi che sẽ trôi khỏi nhau, đúng bài học đã trả giá ở
+// docblock đầu tệp này.
+export const CHE = "«đã che»";
 
 const CAM_TEP = [
   /(^|[\\/])\.env(\.|$)/i,

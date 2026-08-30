@@ -42,7 +42,7 @@
  *   và chỉ câu đầu mới chứng minh không rò.
  */
 import { isAbsolute, relative, resolve } from "node:path";
-import { camRoiMay, cheBiMat, duocPhepGuiNoiDung, duocPhepRoiMay } from "./nguCanh";
+import { CHE, camRoiMay, cheBiMat, duocPhepGuiNoiDung, duocPhepRoiMay } from "./nguCanh";
 import { namTrongThuMuc } from "./chanGhi";
 
 /** Trần BYTE cho `doc_tep`. Đo bằng byte UTF-8 vì đó là thứ THẬT SỰ rời máy, không phải số ký tự. */
@@ -296,10 +296,38 @@ export function grepThuan(
     soTepDaQuet++;
 
     const cacDong = noiDung.split(/\r?\n/);
+    /**
+     * ★★★ H2 (review toàn nhánh 2026-08-30) — luật 1 của `cheBiMat` che khối PEM ĐA DÒNG (cần
+     * thấy CẢ `BEGIN` lẫn `END` trong CÙNG một chuỗi truyền cho nó). Vòng dưới gọi `sach()` trên
+     * TỪNG DÒNG riêng lẻ — `BEGIN`/`END` không bao giờ cùng có mặt trong một lượt gọi nữa ⇒ luật 1
+     * không bao giờ khớp ⇒ thân base64 nằm giữa hai dòng đó rời máy NGUYÊN VĂN, kể cả khi nó nằm
+     * trong một tệp HỢP LỆ (không bị chặn theo TÊN, ví dụ một khoá dán inline trong `src/config.ts`).
+     * `keys/id_rsa` không lộ lỗ này vì tệp ĐÓ bị chặn ở tầng (a) — TRƯỚC khi thân của nó tới đây.
+     *
+     * Vá bằng cách đánh dấu TRƯỚC mọi dòng nằm GIỮA một cặp `BEGIN`/`END` rồi thay THẲNG bằng
+     * `CHE` khi dòng đó khớp `mau` — KHÔNG gộp nhiều dòng thành một dòng che (nếu gộp, `i + 1` sẽ
+     * báo sai số dòng cho model ở những kết quả khớp SAU khối PEM). Regex khớp CHÍNH XÁC luật 1 của
+     * `cheBiMat` (không thêm `i`/`s`) để hai luật không trôi khỏi nhau.
+     */
+    const trongPem = new Set<number>();
+    let dangTrongPem = false;
+    for (let i = 0; i < cacDong.length; i++) {
+      if (/-----BEGIN .*PRIVATE KEY-----/.test(cacDong[i])) {
+        dangTrongPem = true;
+        continue;
+      }
+      if (/-----END .*-----/.test(cacDong[i])) {
+        dangTrongPem = false;
+        continue;
+      }
+      if (dangTrongPem) trongPem.add(i);
+    }
+
     for (let i = 0; i < cacDong.length; i++) {
       if (ra.length > tran) break;
       if (!cacDong[i].toLowerCase().includes(canTim)) continue;
-      ra.push(`${sach(u.nhan)}:${i + 1}: ${catDong(sach(cacDong[i].trim()))}`);
+      const than = trongPem.has(i) ? CHE : catDong(sach(cacDong[i].trim()));
+      ra.push(`${sach(u.nhan)}:${i + 1}: ${than}`);
     }
   }
 
