@@ -667,6 +667,17 @@ public sealed class PerHostDataRootsTests
             ".NOTES / Step-2 comment, web/playwright.config.ts's running commentary, and " +
             "scripts/verify-suites.sh — plus a new -XxxDir parameter, a new playwright env entry and a new " +
             "row in §15.9's WRITES/READS table, none of which is a countable sentence. Walk those by hand. " +
+            "🔴 THAT LIST WAS NOT THE WHOLE RESIDUE, and saying so was this message's own instance of the " +
+            "defect it polices (fix-wave re-review, N-2). Eleven further LIVE 'sixteen' assertions survived " +
+            "the sweep, measured at c0cece8b in eight files none of which is named above: " +
+            "MachineConfigStore.cs:94, SqliteHistorianStore.cs:123, HistorianRootSeamTests.cs:23, " +
+            "TestHarnessIsolationTests.cs:70, THIS FILE at :160, TestRunTempRoot.cs:206 and :264, " +
+            "vite.config.ts:19, docs/startup-failure-posture.md:820 and :866, remove-data.ps1:280. They are " +
+            "STILL STALE at this commit — deliberately, as an owner decision, not an oversight: two are " +
+            "src/ doc comments and the posture doc ENUMERATES the directories, so it is short by two NAMES " +
+            "rather than by a number, and correcting it is an edit to operator-facing prose. Anyone moving " +
+            "18→19 must walk these eleven too; that is the whole point of naming them here rather than " +
+            "leaving the sentence above to read as complete. " +
             "This test exists because four of those places were already off by one when it was written, " +
             "and it was extended because the Vietnamese half of two of them was off by two afterwards.");
     }

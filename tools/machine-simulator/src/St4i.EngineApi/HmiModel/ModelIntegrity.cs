@@ -18,7 +18,9 @@ namespace St4i.EngineApi.HmiModel;
 /// request's lifecycle, is left to whichever later workstream owns the endpoint that needs both documents
 /// loaded at once (WS-HMI-0b at the earliest).
 ///
-/// <para>The four checks:
+/// <para>The five checks (this heading said FOUR until 2026-08-30: Minor 5's own fix added the fifth item
+/// below and left the count above it stale — the identical defect shape, reproduced inside its own repair.
+/// Caught by the fix-wave re-review, N-3):
 /// <list type="number">
 ///   <item><description>Every non-null <see cref="ComponentNode.ParentId"/> must name the <see cref="ComponentNode.Id"/>
 ///   of some node in the SAME document.</description></item>
@@ -66,7 +68,7 @@ namespace St4i.EngineApi.HmiModel;
 /// </summary>
 public static class ModelIntegrity
 {
-    /// <summary>Runs all four checks and returns every violation found (empty if the pair is clean).
+    /// <summary>Runs all five checks and returns every violation found (empty if the pair is clean).
     /// <paramref name="ns"/> may be <see langword="null"/> — see this class's doc comment for why that
     /// deliberately silences check 4 rather than treating an unloaded namespace as an empty one.</summary>
     public static IReadOnlyList<string> Check(ComponentModelDocument model, TagNamespaceDocument? ns)
