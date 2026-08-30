@@ -1,3 +1,5 @@
+import { NHAN_HANG_RAO } from "./khoiAviTool";
+
 /**
  * Dựng câu hỏi cho "Cmd+K — sửa đoạn đang chọn" (phím `ctrl+alt+k`).
  *
@@ -41,9 +43,9 @@ export function dungCauHoiSuaChon(dv: {
     "```",
     `Yêu cầu: ${dv.yeuCau}`,
     "",
-    "Trả lời bằng ĐÚNG MỘT khối ```avi-tool``` chứa JSON theo đúng hình dạng sau (KHÔNG dùng tool " +
-      "nào khác, KHÔNG đổi dongDau/dongCuoi):",
-    "```avi-tool",
+    `Trả lời bằng ĐÚNG MỘT khối \`\`\`${NHAN_HANG_RAO}\`\`\` chứa JSON theo đúng hình dạng sau (KHÔNG ` +
+      "dùng tool nào khác, KHÔNG đổi dongDau/dongCuoi):",
+    "```" + NHAN_HANG_RAO,
     JSON.stringify({
       tool: "de_xuat_sua_doan",
       args: { path: dv.duongTuongDoi, dongDau: dv.dongDau, dongCuoi: dv.dongCuoi, thayThe: "<mã đã sửa>" },

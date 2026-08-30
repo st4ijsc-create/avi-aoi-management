@@ -7,6 +7,8 @@
  */
 import { describe, it, expect } from "vitest";
 import { dungCauHoiSuaChon } from "./cauHoiSuaChon";
+import { docDeXuatCucBo } from "./deXuatCucBo";
+import { NHAN_HANG_RAO } from "./khoiAviTool";
 
 const DAU_VAO = {
   duongTuongDoi: "src/tinh/CongTien.cs",
@@ -68,5 +70,28 @@ describe("dungCauHoiSuaChon", () => {
       expect(e).toBeInstanceOf(Error);
       expect((e as Error).message).toContain("rỗng");
     }
+  });
+
+  /**
+   * ★★★ M1 (review toàn nhánh 2026-08-30) — HÀNG RÀO CHỐNG-TRÔI THẬT, cùng khuôn
+   * `dayGiaoThucDoc.unit.test.ts:205`. Mọi ca ở trên chỉ khẳng định `s.toContain("de_xuat_sua_doan")`
+   * — một chuỗi do CHÍNH `dungCauHoiSuaChon` viết ra; nếu tệp này (hoặc `khoiAviTool.ts`) đổi nhãn
+   * hàng rào mà quên đồng bộ, những ca đó vẫn XANH vì chúng so hai chuỗi CHÉP TAY với nhau, không so
+   * với parser THẬT. Ca này quay khối mẫu trong chính câu hỏi Cmd+K qua ĐÚNG `docDeXuatCucBo` — cửa
+   * DUY NHẤT đọc đề xuất ghi cục bộ — để chứng minh nhãn hàng rào của `dungCauHoiSuaChon` và của
+   * parser vẫn khớp nhau, không phải hai bản sao đã trôi.
+   */
+  it("★★★ câu hỏi Cmd+K là hàng rào THẬT — ĐÚNG parser thật (`docDeXuatCucBo`) đọc được khối mẫu", () => {
+    const cauHoi = dungCauHoiSuaChon(DAU_VAO);
+    expect(docDeXuatCucBo(cauHoi)).toEqual([
+      { loai: "doan", path: "src/tinh/CongTien.cs", dongDau: 12, dongCuoi: 18, thayThe: "<mã đã sửa>" },
+    ]);
+  });
+
+  it("★ đối chứng: dùng ĐÚNG `NHAN_HANG_RAO`, không chép tay — đổi nhãn ở nguồn thì ca trên PHẢI đỏ", () => {
+    // Không tự thoả: khẳng định nhãn THẬT xuất hiện trong câu hỏi, đọc từ CHÍNH hằng số dùng chung,
+    // không phải chuỗi "avi-tool" gõ tay ở lưới.
+    const s = dungCauHoiSuaChon(DAU_VAO);
+    expect(s).toContain("```" + NHAN_HANG_RAO);
   });
 });
