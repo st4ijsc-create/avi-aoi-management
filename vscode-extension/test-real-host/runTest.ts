@@ -1,10 +1,26 @@
 /**
  * ★★★ ĐỢT E — chạy lưới TRONG extension host VSCode THẬT (không phải `vscode` giả của vitest).
  *
- * Trỏ THẲNG vào bản VSCode ĐÃ CÀI trên máy (`vscodeExecutablePath`), KHÔNG tải bản mới — nhanh hơn
- * và đo đúng thứ người dùng đang chạy. `@vscode/test-electron` vẫn dùng một `--user-data-dir` +
- * `--extensions-dir` RIÊNG trong scratchpad (không phải profile thật của người dùng), nên lượt chạy
- * này không đụng cấu hình/extension khác đang cài.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-08-30 (vòng sửa 1) — ĐẢO NGƯỢC chỉ thị ban đầu, theo đúng chỉ đạo của điều phối viên.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản đầu trỏ THẲNG vào `vscodeExecutablePath` = bản VSCode ĐÃ CÀI trên máy — và bị CHẶN CỨNG:
+ * `checkInnoSetupMutex` của chính VSCode từ chối khởi động vì hai tiến trình cài đặt
+ * (`CodeSetup-stable-...`) giữ mutex "vscode-updating" kẹt nhiều ngày. Không được giết tiến trình
+ * của người dùng để lấy đường chạy.
+ *
+ * Nên GIỜ LÀM NGƯỢC LẠI: KHÔNG truyền `vscodeExecutablePath` (trừ khi ép bằng biến môi trường
+ * `AVI_VSCODE_EXE` — lối thoát cho người muốn quay lại bản cũ) ⇒ `@vscode/test-electron` TỰ TẢI một
+ * bản VSCode `stable` về cache cục bộ (`.vscode-test/` trong `vscode-extension/`, mặc định của
+ * `runTests()` khi không truyền `cachePath`). Bản tải về là ARCHIVE giải nén thẳng, KHÔNG qua trình
+ * cài Inno Setup ⇒ không có tiến trình `CodeSetup-*` nào giữ mutex "vscode-updating" của NÓ (mutex
+ * đó gắn với BẢN CÀI qua Inno Setup trên máy, không phải bản archive độc lập trong `.vscode-test/`).
+ *
+ * `--user-data-dir`/`--extensions-dir` vẫn trỏ riêng vào scratchpad như cũ — không đụng đến profile
+ * thật của người dùng dù chạy bản tải về hay bản đã cài.
+ *
+ * `delete process.env.ELECTRON_RUN_AS_NODE` (phát hiện ở vòng trước) GIỮ NGUYÊN — vẫn cần dù chạy
+ * bản nào, vì lỗ đó nằm ở TIẾN TRÌNH CHA, không phải ở bản Code.exe cụ thể.
  *
  * Chạy HAI lượt VSCode tuần tự — hai workspace KHÁC HÌNH DẠNG không thể trộn vào một cửa sổ:
  *   1. Workspace MỘT gốc — kích hoạt, lệnh, ghi đĩa thật, EOL/BOM, diff provider.
@@ -18,7 +34,9 @@ import { prepareMultiRoot, prepareSingleRoot } from "./fixtures";
 
 async function chayMotLuot(opts: {
   ten: string;
-  vscodeExecutablePath: string;
+  /** `undefined` ⇒ để `@vscode/test-electron` TỰ TẢI bản `stable` (xem docblock đầu tệp). */
+  vscodeExecutablePath: string | undefined;
+  cachePath: string;
   extensionDevelopmentPath: string;
   extensionTestsPath: string;
   mocOpen: string;
@@ -28,9 +46,15 @@ async function chayMotLuot(opts: {
 }): Promise<number> {
   console.log(`\n[real-host] ═══ lượt "${opts.ten}" ═══`);
   console.log(`[real-host] mở: ${opts.mocOpen}`);
+  console.log(
+    opts.vscodeExecutablePath
+      ? `[real-host] VSCode: ĐÃ CÀI tại ${opts.vscodeExecutablePath} (ép qua AVI_VSCODE_EXE)`
+      : `[real-host] VSCode: TỰ TẢI bản stable về ${opts.cachePath} (không dùng bản đã cài)`,
+  );
   try {
     const code = await runTests({
-      vscodeExecutablePath: opts.vscodeExecutablePath,
+      ...(opts.vscodeExecutablePath ? { vscodeExecutablePath: opts.vscodeExecutablePath } : {}),
+      cachePath: opts.cachePath,
       extensionDevelopmentPath: opts.extensionDevelopmentPath,
       extensionTestsPath: opts.extensionTestsPath,
       launchArgs: [
@@ -75,13 +99,18 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const vscodeExecutablePath =
-    process.env.AVI_VSCODE_EXE || "C:\\Users\\Admin\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe";
-  if (!existsSync(vscodeExecutablePath)) {
-    console.error(`[real-host] Không thấy VSCode đã cài tại: ${vscodeExecutablePath}`);
-    console.error(`[real-host] (đây là "bin\\code" CLI shim, KHÔNG dùng được — cần Code.exe thật)`);
+  // ★ Mặc định: KHÔNG truyền vscodeExecutablePath ⇒ @vscode/test-electron tự tải bản `stable`.
+  //   Ép dùng bản ĐÃ CÀI (đường cũ, bị chặn bởi mutex cài đặt kẹt trên máy này) chỉ khi người gọi
+  //   TỰ ĐẶT AVI_VSCODE_EXE — không còn là mặc định.
+  const vscodeExecutablePath = process.env.AVI_VSCODE_EXE || undefined;
+  if (vscodeExecutablePath && !existsSync(vscodeExecutablePath)) {
+    console.error(`[real-host] AVI_VSCODE_EXE trỏ tới đường KHÔNG tồn tại: ${vscodeExecutablePath}`);
     process.exit(1);
   }
+  // Cache bản VSCode tự tải — mặc định của `runTests()` là `.vscode-test/` trong CWD; đặt TƯỜNG
+  // MINH ở đây (neo theo `extRoot`, không phụ thuộc CWD lúc gọi script) để luôn nằm trong
+  // `vscode-extension/.vscode-test/` bất kể ai gọi từ thư mục nào. Đã thêm vào `.gitignore`.
+  const cachePath = join(extRoot, ".vscode-test");
 
   const tmpBase = process.env.AVI_TEST_TMP || join(tmpdir(), "avi-ai-local-real-host");
   rmSync(tmpBase, { recursive: true, force: true });
@@ -98,6 +127,7 @@ async function main(): Promise<void> {
   ma1 = await chayMotLuot({
     ten: "workspace MỘT gốc",
     vscodeExecutablePath,
+    cachePath,
     extensionDevelopmentPath: extRoot,
     extensionTestsPath,
     mocOpen: ws1,
@@ -109,6 +139,7 @@ async function main(): Promise<void> {
   ma2 = await chayMotLuot({
     ten: "workspace HAI gốc",
     vscodeExecutablePath,
+    cachePath,
     extensionDevelopmentPath: extRoot,
     extensionTestsPath,
     mocOpen: wsFile,

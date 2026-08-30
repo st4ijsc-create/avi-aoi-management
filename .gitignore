@@ -241,3 +241,8 @@ vscode-extension/*.vsix
 # của bộ kiểm thử này nằm ở `vscode-extension/test-real-host/` (CÓ commit); tệp .js đã
 # dịch dưới đây là artifact, tái sinh mỗi lần chạy — không commit, cùng lý do với `dist/`.
 vscode-extension/test-real-host-out/
+
+# ★ 2026-08-30 (Đợt E, vòng sửa 1) — cache VSCode TỰ TẢI bởi `@vscode/test-electron`
+# (`runTests()` không còn trỏ `vscodeExecutablePath` vào bản đã cài — bản cài bị chặn bởi
+# mutex "vscode-updating" kẹt trên máy dev). Vài trăm MB nhị phân đã giải nén — KHÔNG commit.
+vscode-extension/.vscode-test/
