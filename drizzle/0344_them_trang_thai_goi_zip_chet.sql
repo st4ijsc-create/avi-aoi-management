@@ -1,0 +1,34 @@
+-- drizzle/0344_them_trang_thai_goi_zip_chet.sql
+-- Pha 1D Task 5 (BG-52 ⛔) — chốt chặn retry vô hạn ở cửa ZIP (aoiPackageRouter.commit).
+--
+-- ⚠ Quyền: `ALTER TYPE` đòi OWNER của kiểu. `DATABASE_URL` của dev dùng `avi_app`
+--   (không phải owner) ⇒ trả 42501 "must be owner of type". Dùng credential owner
+--   `aoi` (mặc định có sẵn trong `docker-compose.yml` của dự án này) để chạy —
+--   xem `scripts/apply-migration-0344.mjs`.
+--
+-- ══════════════════════════════════════════════════════════════════════════════
+-- VÌ SAO CẦN GIÁ TRỊ THỨ SÁU — VÀ VÌ SAO NÓ KHÔNG PHẢI CHỈ MỘT DÒNG errorMessage
+-- ══════════════════════════════════════════════════════════════════════════════
+-- Review toàn nhánh Pha 1D (C-3) bắt: cửa ZIP (`aoiPackageRouter.commit`) BẮT lỗi,
+-- đặt `status='failed'`, rồi ném — nhưng `:578` (nhánh idempotent) chỉ ngắn mạch
+-- `status==='committed'`. KHÔNG có gì chặn Agent gọi lại `commit` trên một gói
+-- `failed` VĨNH VIỄN (Postgres 22xxx/23xxx, hoặc TRPCError NOT_FOUND/FORBIDDEN/…)
+-- vô hạn lần — mỗi lần lại tải ZIP, parse, đụng DB, y hệt lần trước.
+--
+-- `'dead'` là trạng thái CUỐI: gói đã lỗi VĨNH VIỄN (isPermanentSubmitError, dùng
+-- lại nguyên hàm ở `server/services/inspection/inspectionStoreForward.ts`, KHÔNG
+-- viết bản thứ hai) đủ N lần liên tiếp — xem `nguongLoiVinhVienZip()` trong
+-- `aoiPackageRouter.ts`. Khi đạt 'dead', `commit` từ chối NGAY ở đầu handler,
+-- không tải lại ZIP/không đụng DB lần nữa, và thông điệp nói THẲNG cho Agent biết
+-- đừng thử lại. Lỗi TẠM THỜI (DB chớp nháy, mạng storage rớt) KHÔNG được đếm vào
+-- đây — gói vẫn ở `'failed'` và vẫn retry được, đúng ý WAL (T1) đã lập cho đường
+-- inspection: đừng biến một lần chớp mạng thành một gói chết.
+--
+-- Giá trị này KHÔNG đụng 238 gói `'committed'` đang có trong `aoi_management_test`
+-- (ADD VALUE là additive — không đổi enum hiện có, không UPDATE hàng nào).
+--
+-- ⚠⚠ `ALTER TYPE … ADD VALUE` KHÔNG được phép chạy trong một transaction khối (một
+-- số cấu hình Postgres/driver bọc mỗi file migration trong BEGIN…COMMIT) ⇒
+-- migration này ĐỨNG RIÊNG, không gộp bất kỳ DDL nào khác vào cùng file/transaction.
+-- Cùng khuôn với 0341/0342/0343.
+ALTER TYPE "packagestatusenum" ADD VALUE IF NOT EXISTS 'dead';

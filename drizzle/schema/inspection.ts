@@ -433,7 +433,15 @@ export const packageStatusEnum = pgEnum("packagestatusenum", [
   "uploading",    // ZIP upload in progress
   "uploaded",     // ZIP uploaded to storage, not yet committed
   "committed",    // Metadata parsed and linked to inspection
-  "failed",       // Upload or processing failed
+  "failed",       // Upload or processing failed — STILL RETRYABLE (transient, or
+                  // permanent but under the threshold — xem `nguongLoiVinhVienZip()`
+                  // ở aoiPackageRouter.ts).
+  // Pha 1D Task 5 (BG-52 ⛔, migration 0344) — TRẠNG THÁI CUỐI: đủ N lỗi VĨNH
+  // VIỄN liên tiếp (isPermanentSubmitError, dùng lại từ
+  // server/services/inspection/inspectionStoreForward.ts). `commit` từ chối
+  // NGAY khi thấy trạng thái này, không tải lại ZIP/không đụng DB nữa — chấm
+  // dứt retry vô hạn của Agent trên một gói không bao giờ ghi được.
+  "dead",
 ]);
 
 /**

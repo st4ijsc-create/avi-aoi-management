@@ -63,10 +63,21 @@ export function layMaxChuoi(node: z.ZodTypeAny): number | null {
  */
 export type BuocDuongDan = string;
 
-/** Đi theo `duongDan` từ schema gốc tới `ZodType` của trường lá. */
+/**
+ * Đi theo `duongDan` từ schema gốc tới `ZodType` của trường lá.
+ *
+ * Bóc `ZodOptional`/`ZodNullable` (`boLopNgoai`) TRƯỚC mỗi bước điều hướng —
+ * cần cho `metaJsonSchema` (cửa ZIP, Pha 1D Task 5): `points` là một mảng
+ * OPTIONAL (`z.array(...).optional()`), khác `machineDataContractV2` (mọi mảng
+ * trên các đường trong `KIEM_KE_CAP_CHUOI` đều BẮT BUỘC) — thiếu bước bóc này
+ * thì bước "[]" gọi `.element` thẳng trên `ZodOptional` (không có thuộc tính đó)
+ * và ném nhầm "mất dấu". Không đổi hành vi trên MDC v2 (không có mảng/object
+ * optional dọc các đường hiện có, nên bước bóc luôn là no-op ở đó).
+ */
 function layTheoDuong(goc: z.ZodTypeAny, duongDan: BuocDuongDan[]): z.ZodTypeAny {
   let node: any = goc;
   for (const buoc of duongDan) {
+    node = boLopNgoai(node);
     node = buoc === "[]" ? node.element : node.shape[buoc];
     if (!node) {
       throw new Error(
@@ -150,6 +161,56 @@ export const KIEM_KE_CAP_CHUOI: readonly MucCapChuoi[] = [
   { ten: "surfaces[].positions[].captures[].components[].completedAt", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "completedAt"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp, không phải varchar" },
 ];
 
+/**
+ * Pha 1D Task 5 (BG-52 ⛔) — kiểm kê ĐẦY ĐỦ 30 trường chuỗi của `metaJsonSchema`
+ * (cửa ZIP, `aoiPackageRouter.ts`), TRỪ `measurements[].remark` (cột đích `text`,
+ * xem docblock tại chỗ khai báo schema). Cùng khuôn `KIEM_KE_CAP_CHUOI` — hai
+ * nhóm, hai lý do:
+ *   (A) KHỚP CỘT THẬT — `serialNumber`/`productModel`/`batchNumber`/
+ *       `productionOrderCode` (100), `stageCode`/`operatorId` (50) →
+ *       `product_inspections.*`; `measurements[]`/`points[]`: `pointId`/
+ *       `pointCode`/`code` (50) → `package_images.pointCode`; `name` (255) →
+ *       `.pointName`; `fileName` (255) → `.fileName`; `measuredValue`/`value`
+ *       (100 — trần SIẾT HƠN trong hai cột nó chạm, xem docblock schema) →
+ *       `.measurementValue`.
+ *   (B) VỆ SINH — phần còn lại (đo avi_app 2026-08-30, xem docblock schema).
+ */
+export const KIEM_KE_META_JSON: readonly MucCapChuoi[] = [
+  // ── Nhóm (A) khớp cột THẬT ────────────────────────────────────────────────
+  { ten: "serialNumber", duongDan: ["serialNumber"], max: 100, nguon: "db", ghiChu: "product_inspections.serialNumber varchar(100)" },
+  { ten: "productModel", duongDan: ["productModel"], max: 100, nguon: "db", ghiChu: "product_inspections.productModel varchar(100)" },
+  { ten: "batchNumber", duongDan: ["batchNumber"], max: 100, nguon: "db", ghiChu: "product_inspections.batchNumber varchar(100)" },
+  { ten: "stageCode", duongDan: ["stageCode"], max: 50, nguon: "db", ghiChu: "product_inspections.stageCode varchar(50)" },
+  { ten: "productionOrderCode", duongDan: ["productionOrderCode"], max: 100, nguon: "db", ghiChu: "product_inspections.productionOrderCode varchar(100)" },
+  { ten: "operatorId", duongDan: ["operatorId"], max: 50, nguon: "db", ghiChu: "product_inspections.operatorId varchar(50)" },
+  { ten: "measurements[].pointId", duongDan: ["measurements", "[]", "pointId"], max: 50, nguon: "db", ghiChu: "package_images.pointCode varchar(50) (1/3 nguồn ứng viên — xem docblock schema)" },
+  { ten: "measurements[].pointCode", duongDan: ["measurements", "[]", "pointCode"], max: 50, nguon: "db", ghiChu: "package_images.pointCode varchar(50) (2/3 nguồn ứng viên)" },
+  { ten: "measurements[].code", duongDan: ["measurements", "[]", "code"], max: 50, nguon: "db", ghiChu: "package_images.pointCode varchar(50) (3/3 nguồn ứng viên)" },
+  { ten: "measurements[].name", duongDan: ["measurements", "[]", "name"], max: 255, nguon: "db", ghiChu: "package_images.pointName varchar(255)" },
+  { ten: "measurements[].fileName", duongDan: ["measurements", "[]", "fileName"], max: 255, nguon: "db", ghiChu: "package_images.fileName varchar(255)" },
+  { ten: "measurements[].measuredValue", duongDan: ["measurements", "[]", "measuredValue"], max: 100, nguon: "db", ghiChu: "package_images.measurementValue varchar(100) — SIẾT HƠN measurement_results.measuredValueText(255), xem docblock schema" },
+  { ten: "measurements[].value", duongDan: ["measurements", "[]", "value"], max: 100, nguon: "db", ghiChu: "package_images.measurementValue varchar(100) — cùng cột trên" },
+  { ten: "points[].code", duongDan: ["points", "[]", "code"], max: 50, nguon: "db", ghiChu: "package_images.pointCode varchar(50) (đường points[] tương thích ngược)" },
+  { ten: "points[].name", duongDan: ["points", "[]", "name"], max: 255, nguon: "db", ghiChu: "package_images.pointName varchar(255)" },
+  { ten: "points[].fileName", duongDan: ["points", "[]", "fileName"], max: 255, nguon: "db", ghiChu: "package_images.fileName varchar(255)" },
+  { ten: "points[].value", duongDan: ["points", "[]", "value"], max: 100, nguon: "db", ghiChu: "package_images.measurementValue varchar(100)" },
+
+  // ── Nhóm (B) vệ sinh — KHÔNG khớp cột nào, hoặc khớp NHƯNG không ghi verbatim ──
+  { ten: "machineCode", duongDan: ["machineCode"], max: 100, nguon: "ve-sinh", ghiChu: "không đọc ở đâu trong commit — chỉ parse" },
+  { ten: "inspectionId", duongDan: ["inspectionId"], max: 100, nguon: "ve-sinh", ghiChu: "không đọc ở đâu trong commit — chỉ parse" },
+  { ten: "startedAt", duongDan: ["startedAt"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp qua new Date(), không phải varchar" },
+  { ten: "finishedAt", duongDan: ["finishedAt"], max: 40, nguon: "ve-sinh", ghiChu: "không đọc ở đâu trong commit hôm nay — chuẩn bị trước, cùng quy ước ngày-giờ" },
+  { ten: "inspectionTime", duongDan: ["inspectionTime"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp qua new Date(), không phải varchar" },
+  { ten: "companyCode", duongDan: ["companyCode"], max: 50, nguon: "ve-sinh", ghiChu: "chỉ đối chiếu qua macTenantChoGhi (không ghi verbatim) — khớp corporates.code varchar(50)" },
+  { ten: "factoryCode", duongDan: ["factoryCode"], max: 50, nguon: "ve-sinh", ghiChu: "chỉ đối chiếu — khớp factories.code varchar(50)" },
+  { ten: "factory", duongDan: ["factory"], max: 50, nguon: "ve-sinh", ghiChu: "alias của factoryCode — cùng lý do" },
+  { ten: "workshopCode", duongDan: ["workshopCode"], max: 50, nguon: "ve-sinh", ghiChu: "chỉ đối chiếu — khớp workshops.code varchar(50)" },
+  { ten: "lineCode", duongDan: ["lineCode"], max: 50, nguon: "ve-sinh", ghiChu: "chỉ đối chiếu — khớp production_lines.code varchar(50)" },
+  { ten: "line", duongDan: ["line"], max: 50, nguon: "ve-sinh", ghiChu: "alias của lineCode — cùng lý do" },
+  { ten: "measurements[].unit", duongDan: ["measurements", "[]", "unit"], max: 50, nguon: "ve-sinh", ghiChu: "chỉ nội suy vào remark (text) — không có cột đích riêng" },
+  { ten: "points[].unit", duongDan: ["points", "[]", "unit"], max: 50, nguon: "ve-sinh", ghiChu: "cùng lý do measurements[].unit" },
+];
+
 export interface KetQuaKiemKe {
   /** Mỗi phần tử: một trường ĐỎ — thiếu `.max()` hoặc lệch số. */
   loi: string[];
@@ -157,14 +218,14 @@ export interface KetQuaKiemKe {
 }
 
 /**
- * Chạy toàn bộ `KIEM_KE_CAP_CHUOI` trên một schema gốc (mặc định
- * `machineDataContractV2` thật — nhưng nhận tham số để lưới đột biến (§ test)
- * chạy lại CHÍNH hàm này trên một schema đã bị mutate trong bộ nhớ, không phải
- * một bản giản lược riêng).
+ * Chạy MỘT bảng kiểm kê bất kỳ (`MucCapChuoi[]`) trên MỘT schema gốc bất kỳ —
+ * lõi dùng chung của `kiemKeCapChuoi` (MDC v2) và census `metaJsonSchema`
+ * (`capChuoiMetaJsonCensus.test.ts`), tránh chép lại vòng lặp so khớp lần thứ
+ * hai cho schema thứ hai.
  */
-export function kiemKeCapChuoi(goc: z.ZodTypeAny = machineDataContractV2): KetQuaKiemKe {
+export function kiemKeTheoBang(goc: z.ZodTypeAny, bang: readonly MucCapChuoi[]): KetQuaKiemKe {
   const loi: string[] = [];
-  for (const muc of KIEM_KE_CAP_CHUOI) {
+  for (const muc of bang) {
     let node: z.ZodTypeAny;
     try {
       node = layTheoDuong(goc, muc.duongDan);
@@ -179,5 +240,139 @@ export function kiemKeCapChuoi(goc: z.ZodTypeAny = machineDataContractV2): KetQu
       loi.push(`${muc.ten}: .max(${thuc}) LỆCH, kỳ vọng .max(${muc.max}) — ${muc.ghiChu}`);
     }
   }
-  return { loi, soTruongDaXet: KIEM_KE_CAP_CHUOI.length };
+  return { loi, soTruongDaXet: bang.length };
+}
+
+/**
+ * Chạy toàn bộ `KIEM_KE_CAP_CHUOI` trên một schema gốc (mặc định
+ * `machineDataContractV2` thật — nhưng nhận tham số để lưới đột biến (§ test)
+ * chạy lại CHÍNH hàm này trên một schema đã bị mutate trong bộ nhớ, không phải
+ * một bản giản lược riêng).
+ */
+export function kiemKeCapChuoi(goc: z.ZodTypeAny = machineDataContractV2): KetQuaKiemKe {
+  return kiemKeTheoBang(goc, KIEM_KE_CAP_CHUOI);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Pha 1D Task 5 (BG-52 ⛔) — CENSUS DUYỆT SCHEMA, không duyệt BẢNG
+// ════════════════════════════════════════════════════════════════════════════
+//
+// `kiemKeCapChuoi` ở trên (Task 3) chỉ soi CÁC ĐƯỜNG có mặt trong
+// `KIEM_KE_CAP_CHUOI` — một BẢNG viết tay. Review toàn nhánh Pha 1D bắt đúng
+// điểm mù đó: (1) bảng chỉ liệt kê `machineDataContractV2`, `metaJsonSchema`
+// (cửa ZIP) có 0 trường `.max()` mà không ai nhận ra vì không cửa nào soi nó;
+// (2) NGAY CẢ khi soi đúng schema, một trường chuỗi MỚI được thêm vào schema
+// mà KHÔNG được thêm vào bảng vẫn lọt qua — `capChuoiVarcharCensus.test.ts:84`
+// ghim `KIEM_KE_CAP_CHUOI.length === 30` và §2/§4 chỉ lặp trên CHÍNH bảng đó,
+// không có ca nào duyệt schema để PHÁT HIỆN trường mới.
+//
+// `duyetTimTruongChuoi` dưới đây đi ngược lại: xuất phát từ SCHEMA (không phải
+// bảng), tự đệ quy qua `ZodObject`/`ZodArray`/`ZodUnion`/optional/nullable/
+// default để liệt kê MỌI lá `ZodString`, không cần ai khai trước đường đi của
+// nó. Một trường chuỗi mới không `.max()` sẽ tự xuất hiện trong kết quả với
+// `max: null` — census trên nó (`kiemTraToanBoTruongChuoi`) đỏ ngay, nêu đúng
+// tên, KHÔNG cần sửa bất kỳ bảng kiểm kê nào (đây là bằng chứng Việc 4 THẬT sự
+// khác Task 3: đột biến "thêm trường mới" không đụng `KIEM_KE_CAP_CHUOI`/
+// `DANH_SACH_SCHEMA` mà vẫn đỏ — xem `capChuoiVarcharSchemaWalk.test.ts`).
+//
+// `kiemKeCapChuoi`/`KIEM_KE_CAP_CHUOI` KHÔNG bị xoá — nó vẫn giữ vai trò riêng:
+// đối chiếu SỐ CHÍNH XÁC cho nhóm trường đã đo trực tiếp từ DB (Nhóm A), thứ
+// walker không tự biết ("thiếu .max()" ≠ "có .max() nhưng SAI SỐ" — hai lớp lỗi
+// khác nhau, xem ca "LỆCH SỐ" ở Task 3). Hai lớp bổ sung cho nhau, không thay
+// thế nhau: walker canh SỰ TỒN TẠI trên MỌI trường của MỌI schema; bảng canh
+// GIÁ TRỊ CHÍNH XÁC trên tập trường đã biết.
+
+/** Một lá `ZodString` (hoặc nhánh chuỗi của một `ZodUnion`) phát hiện được khi duyệt schema. */
+export interface TruongChuoiPhatHien {
+  /** Đường điều hướng dạng chuỗi, nối bằng "." — "[]" cho bước vào phần tử mảng. */
+  duongDan: string;
+  /** `null` = KHÔNG có `.max()`. */
+  max: number | null;
+}
+
+const GIOI_HAN_DO_SAU_DUYET = 15; // chặn đệ quy vô hạn nếu lỡ có cấu trúc tự trỏ — không có trong 2 schema hôm nay, nhưng an toàn hơn để.
+
+/**
+ * Đệ quy MỌI lá `ZodString` của một schema `ZodType` bất kỳ — KHÔNG cần bảng
+ * khai trước đường đi. Đây là khác biệt cốt lõi với `layTheoDuong` (Task 3):
+ * hàm đó ĐI THEO một `duongDan` đã biết trước; hàm này TỰ TÌM mọi đường.
+ *
+ * Bọc ngoài được bóc bằng `boLopNgoai` (ĐÃ có ở trên) — tái dùng, không chế lại.
+ * `ZodObject` ⇒ đệ quy từng key trong `.shape`. `ZodArray` ⇒ đệ quy `.element`,
+ * thêm bước `"[]"`. `ZodUnion` ⇒ tìm nhánh `ZodString` (cùng logic `layMaxChuoi`
+ * dùng cho lá đơn — nếu không có nhánh chuỗi nào, đây KHÔNG PHẢI trường chuỗi,
+ * bỏ qua, không đệ quy sâu hơn vào từng nhánh union khác vì hai schema hôm nay
+ * không có union chứa object/mảng lồng). Mọi kiểu khác (`ZodNumber`/
+ * `ZodBoolean`/`ZodEnum`/`ZodLiteral`/…) không phải trường chuỗi — bỏ qua.
+ */
+/** Nối `duongDanHienTai` thành chuỗi hiển thị cùng QUY ƯỚC với `KIEM_KE_CAP_CHUOI`
+ *  (`"surfaces[].positions[].positionId"`, KHÔNG phải `"surfaces.[].positions.[]…"`). */
+function noiDuongDan(cac: readonly string[]): string {
+  let s = "";
+  for (const b of cac) {
+    s += b === "[]" ? "[]" : (s.length > 0 ? "." : "") + b;
+  }
+  return s;
+}
+
+export function duyetTimTruongChuoi(
+  goc: z.ZodTypeAny,
+  duongDanHienTai: string[] = [],
+  doSau = 0,
+): TruongChuoiPhatHien[] {
+  if (doSau > GIOI_HAN_DO_SAU_DUYET) {
+    throw new Error(
+      `duyetTimTruongChuoi: vượt độ sâu ${GIOI_HAN_DO_SAU_DUYET} tại "${noiDuongDan(duongDanHienTai)}" ` +
+        `— khả năng cấu trúc tự trỏ, dừng lại để không treo thay vì đệ quy vô hạn.`,
+    );
+  }
+  const n = boLopNgoai(goc);
+  if (n instanceof z.ZodObject) {
+    const shape = n.shape as Record<string, z.ZodTypeAny>;
+    const ra: TruongChuoiPhatHien[] = [];
+    for (const key of Object.keys(shape)) {
+      ra.push(...duyetTimTruongChuoi(shape[key], [...duongDanHienTai, key], doSau + 1));
+    }
+    return ra;
+  }
+  if (n instanceof z.ZodArray) {
+    // Ép `any` trước khi đọc `.element`: zod v4 `ZodArray.element` trả kiểu nội
+    // bộ `$ZodType` (khác `ZodTypeAny` công khai) sau khi TS đã NARROW `n` qua
+    // `instanceof` — cùng lý do `layTheoDuong`/`layMaxChuoi` ở trên giữ tham số
+    // `node: any`, không phải lỗi mới.
+    return duyetTimTruongChuoi((n as any).element, [...duongDanHienTai, "[]"], doSau + 1);
+  }
+  if (n instanceof z.ZodUnion) {
+    const nhanhChuoi = (n.options as z.ZodTypeAny[]).map(boLopNgoai).find((o) => o instanceof z.ZodString);
+    if (!nhanhChuoi) return []; // union không có nhánh chuỗi nào (vd number|boolean) — không phải trường chuỗi
+    return [{ duongDan: noiDuongDan(duongDanHienTai), max: (nhanhChuoi as z.ZodString).maxLength }];
+  }
+  if (n instanceof z.ZodString) {
+    return [{ duongDan: noiDuongDan(duongDanHienTai), max: n.maxLength }];
+  }
+  return []; // number/boolean/enum/literal/date/… — không phải trường chuỗi, không xét
+}
+
+/**
+ * Census DUYỆT SCHEMA cho MỘT schema gốc: mọi lá `ZodString` phát hiện được
+ * (qua `duyetTimTruongChuoi`) mà KHÔNG nằm trong `mienTru` phải có `.max()`
+ * (`max !== null`). `mienTru` là danh sách NHỎ, TƯỜNG MINH các trường cố ý
+ * không có trần (cột đích `text`, không có sức chứa thật để khớp — vd
+ * `errorDesc`/`measurements[].remark`) — mỗi mục trong đó phải có lý do ghi ở
+ * nơi khai báo schema, KHÔNG phải một cách lặng lẽ tắt cổng.
+ */
+export function kiemTraToanBoTruongChuoi(
+  goc: z.ZodTypeAny,
+  tenSchema: string,
+  mienTru: ReadonlySet<string> = new Set(),
+): KetQuaKiemKe {
+  const phatHien = duyetTimTruongChuoi(goc);
+  const loi: string[] = [];
+  for (const { duongDan, max } of phatHien) {
+    if (mienTru.has(duongDan)) continue;
+    if (max === null) {
+      loi.push(`[${tenSchema}] ${duongDan}: THIẾU .max()`);
+    }
+  }
+  return { loi, soTruongDaXet: phatHien.length };
 }

@@ -697,7 +697,10 @@ function raiseClockSkewAlert(params: {
  * durability layer (inspectionStoreForward) can buffer + replay the EXACT
  * payload through the same pipeline.
  */
-const submitInspectionCoreObject = z.object({
+// Pha 1D Task 5 (BG-52 ⛔) — exported (đổi `const` → `export const`, KHÔNG đổi
+// hình dạng/hành vi) chỉ để census schema-walk (server/contracts/capChuoiVarcharScan.ts)
+// soi được đối tượng ZodType THẬT, không phải để dùng ở nơi khác.
+export const submitInspectionCoreObject = z.object({
       // Machine identification
       machineCode: z.string().optional(), // Mã máy (alternative to apiKey)
       apiKey: z.string().optional(), // API key (backward compatible)
@@ -715,13 +718,22 @@ const submitInspectionCoreObject = z.object({
       // serialNumber <> ''), so accepting one would silently re-open the
       // double-count hole. `.trim()` normalises before both checks.
       serialNumber: z.string().trim().min(1).max(100), // Số serial sản phẩm
-      productModel: z.string().optional(), // Model sản phẩm
+      // Pha 1D Task 5 (BG-52 ⛔) — KHỚP CỘT THẬT `product_inspections.productModel`
+      // varchar(100) (đo bằng vai avi_app qua information_schema, 2026-08-30).
+      // Sau BG-40 (T1), một chuỗi quá 100 ký tự KHÔNG còn kẹt WAL vô hạn — nó
+      // ném thẳng về máy — nhưng vẫn là lỗi rơi SAU cửa hợp đồng với thông điệp
+      // Postgres `[22001] value too long for type character varying(100)` mà kỹ
+      // sư hiện trường không đọc nổi. Siết Ở ĐÂY để câu trả lời nêu đúng tên
+      // trường máy gửi.
+      productModel: z.string().max(100).optional(), // Model sản phẩm
       // Doc 55 Item 3 PV2 — OPTIONAL variant code (additive). Inert unless
       // PRODUCT_VARIANT_ENABLED is on: absent ⇒ base (+ tag when the model has >1
       // variant, QĐ#12); present ⇒ the board is filed AS that variant. A machine
       // that never sends it keeps exactly today's behaviour.
       variantCode: z.string().trim().min(1).max(50).optional(),
-      batchNumber: z.string().optional(), // Số lô
+      // Pha 1D Task 5 (BG-52 ⛔) — KHỚP CỘT THẬT `product_inspections.batchNumber`
+      // varchar(100) (đo avi_app, cùng lý do productModel ở trên).
+      batchNumber: z.string().max(100).optional(), // Số lô
       
       // Inspection results
       cycleTime: z.number().optional(), // Thời gian chu kỳ (giây)
@@ -763,15 +775,26 @@ const submitInspectionCoreObject = z.object({
 
 
       // Enterprise hierarchy (top-down)
-      companyCode: z.string().optional(), // Mã tập đoàn/công ty
-      factoryCode: z.string().optional(), // Mã nhà máy
-      workshopCode: z.string().optional(), // Mã nhà xưởng
-      lineCode: z.string().optional(), // Mã dây chuyền
-      stageCode: z.string().optional(), // Mã công đoạn
-      
-      // Production context
-      productionOrderCode: z.string().optional(), // Mã lệnh sản xuất
-      operatorId: z.string().optional(), // Mã công nhân vận hành (doc 29 §3: BADGE CODE — resolved to users.id at ingest, fail-open)
+      // Pha 1D Task 5 (BG-52 ⛔) — VỆ SINH (không phải khớp cột thật): bốn trường
+      // này KHÔNG được ghi verbatim vào `product_inspections` — `macTenantChoGhi`
+      // (phamViGhiMay.ts) chỉ dùng chúng để ĐỐI CHIẾU với chuỗi SUY TỪ MÁY
+      // (`doiChieuKhai`), giá trị THẬT được ghi luôn là bản suy. `.max(50)` khớp
+      // sức chứa `factories.code`/`workshops.code`/`production_lines.code`/
+      // `corporates.code` — đều `varchar(50)` (đo avi_app) — mà chuỗi khai được so
+      // sánh với; không phải rủi ro `22001` (WHERE, không INSERT) nhưng vẫn chặn
+      // payload rác (chuỗi khổng lồ trôi vào `doiChieuKhai`/console.warn/message lỗi).
+      companyCode: z.string().max(50).optional(), // Mã tập đoàn/công ty
+      factoryCode: z.string().max(50).optional(), // Mã nhà máy
+      workshopCode: z.string().max(50).optional(), // Mã nhà xưởng
+      lineCode: z.string().max(50).optional(), // Mã dây chuyền
+      // KHỚP CỘT THẬT `product_inspections.stageCode` varchar(50) (đo avi_app) —
+      // KHÁC bốn trường trên: `stageCode` KHÔNG suy được (không phải nút phân
+      // cấp, xem phamViGhiMay.ts), nên `input.stageCode` được ghi NGUYÊN VĂN.
+      stageCode: z.string().max(50).optional(), // Mã công đoạn
+
+      // Production context — KHỚP CỘT THẬT, ghi verbatim (đo avi_app).
+      productionOrderCode: z.string().max(100).optional(), // Mã lệnh sản xuất — product_inspections.productionOrderCode varchar(100)
+      operatorId: z.string().max(50).optional(), // Mã công nhân vận hành (doc 29 §3: BADGE CODE — resolved to users.id at ingest, fail-open) — product_inspections.operatorId varchar(50)
 
       // W8-B (doc 29 §2.3, migration 0192) — panel multi-up context (ADDITIVE,
       // optional): machine-reported panel serial + 1-based board index inside

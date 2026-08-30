@@ -65,6 +65,10 @@ import { machineHeaderKey } from "./machineApiRouters";
 // Pha 1C cho Đ-21). DÙNG LẠI hàm chung, KHÔNG chép logic "xấu hơn thắng"
 // thành bản thứ ba trong file này.
 import { verdictXauHon } from "@shared/rollupVerdict";
+// Pha 1D Task 5 (BG-52 ⛔) — phân loại lỗi VĨNH VIỄN/TẠM THỜI cho chốt chặn retry
+// vô hạn ở cửa ZIP (commit). DÙNG LẠI nguyên hàm đã có ở đường WAL inspection —
+// KHÔNG viết bản thứ hai (đúng chỉ dẫn brief).
+import { isPermanentSubmitError } from "../services/inspection/inspectionStoreForward";
 
 // ============================================================
 // Image Cache Configuration
@@ -79,6 +83,36 @@ const PRESIGN_TTL_MINUTES = parseInt(process.env.AOI_PRESIGN_TTL_MINUTES || "15"
 // Ensure cache directory exists
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+
+// ============================================================
+// Pha 1D Task 5 (BG-52 ⛔) — chốt chặn retry vô hạn ở cửa ZIP
+// ============================================================
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/**
+ * Số lần lỗi VĨNH VIỄN LIÊN TIẾP (đếm qua `package_activity_logs.event='commit_fail'`
+ * với `metadata.permanent===true` — KHÔNG thêm cột đếm mới vào `inspection_packages`)
+ * trước khi một gói ZIP chuyển trạng thái CUỐI `'dead'`. Lỗi TẠM THỜI KHÔNG được
+ * đếm vào đây (mệnh đề 4 — chống siết quá: đừng biến DB chớp nháy thành gói chết).
+ * Mặc định 5: đủ thấp để không tốn quá nhiều lượt tải-ZIP-thật vô ích trên một
+ * gói không bao giờ ghi được, đủ cao để một cú xếp-nhầm-loại hiếm (nếu có) không
+ * biến một gói còn cứu được thành 'dead' chỉ sau một lần.
+ */
+function nguongLoiVinhVienZip(): number {
+  return envInt("AOI_PACKAGE_ZIP_MAX_PERMANENT_FAILS", 5);
+}
+
+/** Đếm THUẦN (không I/O) — tách riêng để test đơn vị không cần DB thật. */
+export function demSoLoiVinhVienTuLichSu(lichSuMetadata: ReadonlyArray<unknown>): number {
+  return lichSuMetadata.filter(
+    (m) => m !== null && typeof m === "object" && (m as Record<string, unknown>).permanent === true,
+  ).length;
 }
 
 // ============================================================
@@ -300,62 +334,123 @@ async function getOrExtractImage(
 // ============================================================
 // Meta.json schema - Đồng bộ với submitInspection API
 // ============================================================
-const metaJsonSchema = z.object({
+/**
+ * Pha 1D Task 5 (BG-52 ⛔) — trước bản vá này, `metaJsonSchema` có **0 trường
+ * `.max()`** trong khi 6 trường (`serialNumber`/`productModel`/`batchNumber`/
+ * `productionOrderCode`/`stageCode`/`operatorId`) ghi NGUYÊN VĂN vào cột
+ * `varchar` của `product_inspections` — đúng lớp lỗi BG-9/BG-27 mà
+ * `machineDataContractV2` (đường v2.0) đã đóng, nhưng cửa ZIP chưa từng được vá.
+ * Sau bản vá `.max()` này, một payload quá cỡ bị TỪ CHỐI ở cửa hợp đồng
+ * (`metaJsonSchema.parse()` ném, `commit` bắt ở `:catch`) thay vì rơi tới Postgres
+ * `[22001] value too long for type character varying(n)` — thông điệp không nêu
+ * tên trường, kỹ sư hiện trường không đọc nổi.
+ *
+ * `export` (đổi từ `const` nội bộ) CHỈ để `capChuoiVarcharScan.ts` (census
+ * schema-walk) soi được đối tượng `ZodType` THẬT — không đổi ai import/dùng nó
+ * để parse.
+ *
+ * HAI NHÓM, cùng khuôn `machineDataContractV2.ts` ("Vòng sửa 3"):
+ *
+ * (A) KHỚP CỘT THẬT — số đo từ `information_schema.columns`, vai `avi_app`,
+ *   kiểm 2026-08-30 — sai một ký tự là sai:
+ *   - `serialNumber`/`productModel`/`batchNumber`/`productionOrderCode` →
+ *     `product_inspections.*` varchar(100).
+ *   - `stageCode`/`operatorId` → `product_inspections.*` varchar(50).
+ *   - `measurements[]`/`points[]`: `pointId`/`pointCode`/`code` →
+ *     `package_images.pointCode` varchar(50) (ba tên là BA nguồn ứng viên cho
+ *     CÙNG một cột, `point.pointId || point.pointCode || point.code`, xem
+ *     `aoiPackageRouter.ts` gần dòng "Insert package image records" — cả ba
+ *     phải cùng trần với cột đích); `name` → `package_images.pointName`
+ *     varchar(255); `fileName` → `package_images.fileName` varchar(255);
+ *     `measuredValue`/`value` (nhánh chuỗi) → cột SIẾT HƠN trong HAI cột nó có
+ *     thể chạm — `package_images.measurementValue` varchar(**100**, không
+ *     phải `measurement_results.measuredValueText` varchar(255) — cùng giá trị
+ *     `.toString()` ghi vào CẢ HAI bảng, lấy trần NHỎ HƠN để không vỡ cột nào).
+ *
+ * (B) VỆ SINH — không khớp cột nào, hoặc khớp cột NHƯNG giá trị KHÔNG được ghi
+ *   verbatim (bị suy lại/chỉ dùng đối chiếu) — `.max()` CHẶN PAYLOAD RÁC, số là
+ *   hằng CHỌN (trừ khi ghi chú nói khác):
+ *   - `machineCode`/`inspectionId` (gốc) — KHÔNG đọc ở đâu trong `commit`
+ *     (đã grep `metaData?.machineCode`/`metaData?.inspectionId` — 0 kết quả) —
+ *     `.max(100)`.
+ *   - `startedAt`/`finishedAt`/`inspectionTime` (gốc) — `startedAt`/
+ *     `inspectionTime` đi `new Date(...)` vào cột `timestamp` (KHÔNG PHẢI
+ *     varchar, `22001` không áp dụng); `finishedAt` không đọc ở đâu hôm nay
+ *     (chuẩn bị trước, cùng lý do `machineCode`) — `.max(40)`, dư sức ISO-8601
+ *     dài nhất có múi giờ.
+ *   - `companyCode`/`factoryCode`/`factory`/`workshopCode`/`lineCode`/`line`
+ *     (gốc) — KHÔNG ghi verbatim: `macTenantCommit` (`phamViGhiMay.ts`) chỉ
+ *     dùng chúng để ĐỐI CHIẾU với chuỗi SUY TỪ MÁY, giá trị THẬT ghi xuống
+ *     luôn là bản suy. `.max(50)` khớp sức chứa `factories.code`/
+ *     `workshops.code`/`production_lines.code`/`corporates.code` (đo avi_app,
+ *     đều varchar(50)) — không phải rủi ro `22001` nhưng vẫn chặn payload rác
+ *     trôi vào so sánh/log.
+ *   - `measurements[].unit`/`points[].unit` — chỉ nội suy vào `remark` (text,
+ *     không giới hạn), không có cột đích riêng — `.max(50)` (nhãn đơn vị ngắn).
+ *
+ * NGOẠI LỆ DUY NHẤT — `measurements[].remark`: cột đích
+ * `measurement_results.remark` là `text`, KHÔNG có `character_maximum_length`
+ * (đã kiểm avi_app, NULL = không giới hạn thật) — KHÔNG thêm `.max()`, cùng lý
+ * do `errorDesc` bị loại trừ ở `machineDataContractV2.ts`. Census
+ * (`capChuoiVarcharScan.ts`, danh sách miễn trừ theo schema) biết loại trừ
+ * đúng MỘT trường này, không phải cả cây `measurements[]`.
+ */
+export const metaJsonSchema = z.object({
   // Machine identification (backward compatible)
-  machineCode: z.string().optional(),
-  inspectionId: z.string().optional(), // Internal inspection ID from agent
-  
+  machineCode: z.string().max(100).optional(),
+  inspectionId: z.string().max(100).optional(), // Internal inspection ID from agent
+
   // Product information (REQUIRED)
-  serialNumber: z.string(), // Số serial sản phẩm
-  productModel: z.string(), // Model sản phẩm
-  batchNumber: z.string().optional(), // Số lô
-  
+  serialNumber: z.string().max(100), // Số serial sản phẩm — product_inspections.serialNumber varchar(100)
+  productModel: z.string().max(100), // Model sản phẩm — product_inspections.productModel varchar(100)
+  batchNumber: z.string().max(100).optional(), // Số lô — product_inspections.batchNumber varchar(100)
+
   // Inspection timing
-  startedAt: z.string().optional(), // ISO datetime
-  finishedAt: z.string().optional(), // ISO datetime
-  inspectionTime: z.string().optional(), // Alias for startedAt (submitInspection compat)
+  startedAt: z.string().max(40).optional(), // ISO datetime
+  finishedAt: z.string().max(40).optional(), // ISO datetime
+  inspectionTime: z.string().max(40).optional(), // Alias for startedAt (submitInspection compat)
   cycleTime: z.number().optional(), // Thời gian chu kỳ (giây)
-  
+
   // Overall result
   overallResult: z.enum(["OK", "NG", "NTF"]).optional(), // Kết quả tổng thể
-  
+
   // Enterprise hierarchy (top-down) - Đồng bộ với submitInspection
-  companyCode: z.string().optional(), // Mã tập đoàn/công ty
-  factoryCode: z.string().optional(), // Mã nhà máy (alias: factory)
-  factory: z.string().optional(), // Backward compatible
-  workshopCode: z.string().optional(), // Mã nhà xưởng
-  lineCode: z.string().optional(), // Mã dây chuyền (alias: line)
-  line: z.string().optional(), // Backward compatible
-  stageCode: z.string().optional(), // Mã công đoạn
-  
+  companyCode: z.string().max(50).optional(), // Mã tập đoàn/công ty
+  factoryCode: z.string().max(50).optional(), // Mã nhà máy (alias: factory)
+  factory: z.string().max(50).optional(), // Backward compatible
+  workshopCode: z.string().max(50).optional(), // Mã nhà xưởng
+  lineCode: z.string().max(50).optional(), // Mã dây chuyền (alias: line)
+  line: z.string().max(50).optional(), // Backward compatible
+  stageCode: z.string().max(50).optional(), // Mã công đoạn — product_inspections.stageCode varchar(50)
+
   // Production context
-  productionOrderCode: z.string().optional(), // Mã lệnh sản xuất
-  operatorId: z.string().optional(), // Mã công nhân vận hành
-  
+  productionOrderCode: z.string().max(100).optional(), // Mã lệnh sản xuất — product_inspections.productionOrderCode varchar(100)
+  operatorId: z.string().max(50).optional(), // Mã công nhân vận hành — product_inspections.operatorId varchar(50)
+
   // Measurement data - Đồng bộ với submitInspection measurements
   measurements: z.array(z.object({
-    pointId: z.string().optional(), // ID điểm đo (submitInspection compat)
-    pointCode: z.string().optional(), // Mã điểm đo (backward compatible)
-    code: z.string().optional(), // Alias for pointCode
-    name: z.string().optional(), // Tên điểm đo
-    fileName: z.string(), // Tên file ảnh trong ZIP
+    pointId: z.string().max(50).optional(), // ID điểm đo (submitInspection compat) — package_images.pointCode varchar(50)
+    pointCode: z.string().max(50).optional(), // Mã điểm đo (backward compatible) — cùng cột trên
+    code: z.string().max(50).optional(), // Alias for pointCode — cùng cột trên
+    name: z.string().max(255).optional(), // Tên điểm đo — package_images.pointName varchar(255)
+    fileName: z.string().max(255), // Tên file ảnh trong ZIP — package_images.fileName varchar(255)
     result: z.enum(["OK", "NG", "NTF"]).optional(), // Kết quả
-    measuredValue: z.union([z.number(), z.string()]).optional(), // Giá trị đo (submitInspection compat)
-    value: z.union([z.number(), z.string()]).optional(), // Alias (backward compatible)
-    unit: z.string().optional(), // Đơn vị
-    remark: z.string().optional(), // Ghi chú
+    measuredValue: z.union([z.number(), z.string().max(100)]).optional(), // Giá trị đo — package_images.measurementValue varchar(100) (trần SIẾT HƠN — xem docblock)
+    value: z.union([z.number(), z.string().max(100)]).optional(), // Alias — cùng cột trên
+    unit: z.string().max(50).optional(), // Đơn vị
+    remark: z.string().optional(), // Ghi chú — measurement_results.remark là `text`, KHÔNG `.max()` (xem docblock)
   })),
-  
+
   // Legacy fields (backward compatible)
   points: z.array(z.object({
-    code: z.string(),
-    name: z.string().optional(),
-    fileName: z.string(),
+    code: z.string().max(50), // package_images.pointCode varchar(50)
+    name: z.string().max(255).optional(), // package_images.pointName varchar(255)
+    fileName: z.string().max(255), // package_images.fileName varchar(255)
     result: z.enum(["OK", "NG", "NTF"]).optional(),
-    value: z.union([z.number(), z.string()]).optional(),
-    unit: z.string().optional(),
+    value: z.union([z.number(), z.string().max(100)]).optional(), // package_images.measurementValue varchar(100)
+    unit: z.string().max(50).optional(),
   })).optional(),
-  
+
   // Summary (auto-calculated if not provided)
   summary: z.object({
     totalPoints: z.number(),
@@ -582,6 +677,25 @@ export const aoiPackageRouter = router({
       // Validate package belongs to this machine
       if (pkg.machineId !== machine.id) {
         throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "aoiPackage", parent: "machine" }, "Package belongs to another machine");
+      }
+
+      // ★★★ Pha 1D Task 5 (BG-52 ⛔) — CHỐT CHẶN RETRY VÔ HẠN. Gói đã chạm trạng
+      // thái CUỐI `'dead'` (đủ `nguongLoiVinhVienZip()` lỗi VĨNH VIỄN LIÊN TIẾP,
+      // xem `catch` bên dưới) — từ chối NGAY, KHÔNG tải lại ZIP/KHÔNG đụng DB
+      // thêm lần nào nữa. Trước bản vá này, `:673` (nhánh idempotent ở trên) chỉ
+      // ngắn mạch `status==='committed'` — một gói `'failed'` VĨNH VIỄN bị Agent
+      // gọi lại `commit` sẽ chạy LẠI TOÀN BỘ chi phí (tải ZIP, parse, transaction)
+      // để nhận đúng lỗi cũ, vô hạn lần. Đặt SAU cổng xác thực/uỷ quyền ở trên để
+      // không lộ trạng thái gói cho một máy không sở hữu nó.
+      if (pkg.status === "dead") {
+        throw appError(
+          "UNPROCESSABLE_CONTENT",
+          "OPERATION_FAILED",
+          { operation: "processAoiPackage" },
+          `Gói ${pkg.packageId} đã bị đánh dấu HỎNG VĨNH VIỄN sau nhiều lần lỗi không thể phục hồi ` +
+            `(lỗi gần nhất: ${pkg.errorMessage ?? "?"}) — Agent KHÔNG được thử lại gói này nữa. ` +
+            `Cần một gói ZIP MỚI (packageId khác) nếu payload đã được sửa.`,
+        );
       }
 
       // Log: commit_start
@@ -1150,6 +1264,16 @@ export const aoiPackageRouter = router({
         } catch (err: any) {
           // Log: commit_fail
           const commitDuration = Date.now() - commitStartTime;
+          // ★★★ Pha 1D Task 5 (BG-52 ⛔) — phân loại VĨNH VIỄN/TẠM THỜI bằng
+          // CHÍNH `isPermanentSubmitError` (server/services/inspection/
+          // inspectionStoreForward.ts) — KHÔNG viết bản thứ hai. VĨNH VIỄN
+          // (Postgres 22xxx/23xxx qua `.cause`, hoặc TRPCError NOT_FOUND/
+          // FORBIDDEN/BAD_REQUEST/…) sẽ KHÔNG BAO GIỜ thành công khi thử lại
+          // NGUYÊN VĂN cùng ZIP; đếm vào ngưỡng dead-letter dưới đây. TẠM THỜI
+          // (mạng storage rớt, DB chớp nháy, lỗi JS chung không rõ lớp) KHÔNG
+          // được đếm — gói vẫn `'failed'` và vẫn retry được vô hạn, đúng ý
+          // chống-siết-quá (mệnh đề 4).
+          const laLoiVinhVien = isPermanentSubmitError(err);
           await logPackageActivity({
             packageDbId: pkg.id,
             packageId: pkg.packageId,
@@ -1160,21 +1284,56 @@ export const aoiPackageRouter = router({
             source: "server",
             durationMs: commitDuration,
             detail: err.stack || err.message,
-            metadata: { errorCode: err.code, storageKey: pkg.storageKey },
+            metadata: { errorCode: err.code, storageKey: pkg.storageKey, permanent: laLoiVinhVien },
           });
 
-          // Mark as failed
+          // ★★★ Pha 1D Task 5 (BG-52 ⛔) — ĐẾM lỗi VĨNH VIỄN LIÊN TIẾP trên
+          // CHÍNH hàng `inspection_packages`, qua nhật ký `package_activity_logs`
+          // đã có sẵn (KHÔNG thêm cột đếm mới). Đã ghi entry `commit_fail` của
+          // LƯỢT NÀY ở trên nên nó nằm TRONG tập đếm dưới đây. Quá ngưỡng ⇒
+          // trạng thái CUỐI `'dead'` (migration 0344) thay vì `'failed'` (vẫn
+          // retry được).
+          let trangThaiMoi: "failed" | "dead" = "failed";
+          let soLanLoiVinhVien = 0;
+          if (laLoiVinhVien) {
+            const lichSuLoi = await database
+              .select({ metadata: packageActivityLogs.metadata })
+              .from(packageActivityLogs)
+              .where(and(
+                eq(packageActivityLogs.packageDbId, pkg.id),
+                eq(packageActivityLogs.event, "commit_fail"),
+              ));
+            soLanLoiVinhVien = demSoLoiVinhVienTuLichSu(lichSuLoi.map((r) => r.metadata));
+            if (soLanLoiVinhVien >= nguongLoiVinhVienZip()) {
+              trangThaiMoi = "dead";
+            }
+          }
+
+          // Mark as failed/dead
           await database
             .update(inspectionPackages)
             .set({
-              status: "failed",
+              status: trangThaiMoi,
               // data-raw-ok: đây là object `.values()` của một INSERT — chuỗi này đi vào
               // BẢNG NHẬT KÝ, không rời máy chủ. Ở nhật ký kỹ thuật, chuỗi GỐC mới đúng:
               // nó là bằng chứng truy nguyên, không phải câu nói với người dùng.
-              errorMessage: err.message || "Failed to process package",
+              errorMessage:
+                trangThaiMoi === "dead"
+                  ? `HỎNG VĨNH VIỄN sau ${soLanLoiVinhVien} lần lỗi không thể phục hồi — KHÔNG retry nữa. Lỗi gần nhất: ${err.message}`
+                  : err.message || "Failed to process package",
               updatedAt: new Date(),
             })
             .where(eq(inspectionPackages.id, pkg.id));
+
+          if (trangThaiMoi === "dead") {
+            throw appError(
+              "UNPROCESSABLE_CONTENT",
+              "OPERATION_FAILED",
+              { operation: "processAoiPackage" },
+              `Gói ${pkg.packageId} đã bị đánh dấu HỎNG VĨNH VIỄN sau ${soLanLoiVinhVien} lần lỗi không thể ` +
+                `phục hồi (lỗi gần nhất: ${err.message}) — Agent KHÔNG được thử lại gói này nữa.`,
+            );
+          }
 
           throw appError(
             "INTERNAL_SERVER_ERROR",
