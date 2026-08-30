@@ -42,7 +42,19 @@ public sealed class ContractViolationException : Exception
 ///   cả <c>min</c> và <c>max</c>.</description></item>
 ///   <item><description><see cref="HmiScreenDocument"/> — <c>kind ∈ {setpoint-input, command-button}</c>
 ///   ⇒ bắt buộc có <c>policyAction</c>.</description></item>
-/// </list></para>
+///   <item><description>🔴 <b>Thêm ở fix round 4, và như luật (2) đây KHÔNG phải luật §5:</b> mọi trường
+///   số thực (<c>min</c>, <c>max</c>, <c>engMin</c>, <c>engMax</c>, <c>source.scale</c> — NĂM trường, liệt
+///   kê đầy đủ) phải HỮU HẠN. <c>NaN</c>/<c>±∞</c> làm <c>JsonSerializer.Serialize</c> của cửa ghi ném
+///   <see cref="ArgumentException"/>, tức một thân do client soạn hạ cánh thành <b>500 không lời giải
+///   thích</b> — cùng hình dạng, cùng lý do như luật trùng <c>path</c>. Xem
+///   <see cref="Validate(ComponentModelDocument)"/> để biết cơ chế đầy đủ.</description></item>
+/// </list>
+/// <b>Và một dòng về việc ĐẾM, vì đoạn này đã đếm sai một lần:</b> con số ở đây là SÁU, và bài kiểm giữ
+/// nó khỏi lệch không phải là ai đó đọc lại danh sách — mà là
+/// <c>ContractInvariantsTests.Every_floating_point_field_that_reaches_serialisation_is_covered_by_the_non_finite_rule</c>
+/// (phản chiếu ba record, đỏ khi có trường số thực thứ sáu) và
+/// <c>...ContractInvariants_uses_one_missing_string_predicate_at_every_site</c> (quét mã nguồn, đỏ khi có
+/// một cửa hỏi câu hỏi khác về "chuỗi bắt buộc bị thiếu").</para>
 ///
 /// <para>🔴 <b>CÁI CÒN LẠI CHƯA KIỂM, nói tên chứ không để người đọc tự suy:</b> không có bộ kiểm nào cho
 /// <c>screenId</c>/<c>widget.id</c> trùng nhau, cho <see cref="ScreenLayout"/> có nằm trong dải
@@ -146,7 +158,27 @@ public static class ContractInvariants
     /// whose <c>access</c> was simply omitted. <see cref="TagNamespaceDocument.MachineCode"/> is checked
     /// too — <c>TagNamespaceStore.PutAsync</c> binds it as a SQL parameter the identical way
     /// <see cref="ComponentModelDocument.MachineCode"/> is bound; see that overload's own doc comment for
-    /// the measurement.</para></summary>
+    /// the measurement.</para>
+    ///
+    /// <para>🔴 <b>THE BOUNDARY FOR THIS OVERLOAD — fix round 4. Re-review #3, LOW: this overload had no
+    /// boundary paragraph at all while its <see cref="ComponentModelDocument"/> sibling had one, so its
+    /// 0-violation fields were unnamed and a reader had to derive the rule from the code.</b> Same ONE
+    /// criterion its sibling states, so read that one for the full wording: a field is checked iff (a) its
+    /// null/blank/non-finite value makes THIS METHOD, <c>ModelIntegrity.Check</c>, or a STORE'S OWN WRITE
+    /// DOOR throw something that is not a <see cref="ContractViolationException"/>; or (b) its null-ness
+    /// makes this method silently skip the very §5 rule it exists to enforce. Under (a):
+    /// <see cref="TagNamespaceDocument.MachineCode"/> and <see cref="TagDescriptor.Path"/> (SQL parameter
+    /// binds in <c>TagNamespaceStore.PutAsync</c>; <c>Path</c> also the unguarded argument to
+    /// <c>ModelIntegrity.IsPathPrefix</c>), plus <see cref="TagDescriptor.EngMin"/>,
+    /// <see cref="TagDescriptor.EngMax"/> and <see cref="TagSource.Scale"/> when NON-FINITE (see the
+    /// non-finite rule stated on <see cref="Validate(ComponentModelDocument)"/>). Under (b):
+    /// <see cref="TagDescriptor.Access"/>. <b>Named and deliberately NOT checked:</b>
+    /// <see cref="TagDescriptor.DataType"/>, <see cref="TagDescriptor.Source"/> and
+    /// <see cref="TagSource.Kind"/> — each is declared non-nullable by its record and each CAN arrive null
+    /// from the same missing-field mechanism, but none is dereferenced by this method or by the store in a
+    /// way that throws (the store writes the whole document as one JSON blob), and none gates another §5
+    /// check. Closing that is full JSON-Schema-shape validation, the same deliberate non-fix the sibling
+    /// overload declares.</para></summary>
     public static IReadOnlyList<string> Validate(TagNamespaceDocument doc)
     {
         var v = new List<string>();
@@ -179,8 +211,21 @@ public static class ContractInvariants
             if (string.IsNullOrWhiteSpace(t.Access))
                 v.Add($"tags[{i}]: access thiếu (null/rỗng) — access rỗng âm thầm bỏ qua luật §5 (rw ⇒ policyAction)");
 
-            if (WritableTagAccess.Contains(t.Access) && string.IsNullOrEmpty(t.PolicyAction))
+            // 🔴 Fix round 4, MEDIUM-1 — IsNullOrWhiteSpace, the ONE predicate this class asks about a
+            // missing required string, at EVERY site. Round 3 adopted it at the two fields a finding used
+            // as illustrations and left the three §5 policyAction gates on the other one, so `" "` was
+            // accepted and STORED (measured over HTTP: 200) while `""` was rejected — an ungated write
+            // door reported as gated, on the gate whose entire stated purpose is "§5 cấm đường ghi không
+            // gác". The enumeration that keeps this closed is a source scan, not three behaviours:
+            // ContractInvariantsTests.ContractInvariants_uses_one_missing_string_predicate_at_every_site.
+            if (WritableTagAccess.Contains(t.Access) && string.IsNullOrWhiteSpace(t.PolicyAction))
                 v.Add($"tag '{t.Path}': access='{t.Access}' nhưng thiếu policyAction — §5 cấm đường ghi không gác");
+
+            // 🔴 Fix round 4, HIGH-2 / P1 — the non-finite rule, applied to every floating-point field this
+            // document exposes to JsonSerializer. See Validate(ComponentModelDocument) for the mechanism.
+            AddIfNonFinite(v, t.EngMin, $"tag '{t.Path}'", "engMin");
+            AddIfNonFinite(v, t.EngMax, $"tag '{t.Path}'", "engMax");
+            AddIfNonFinite(v, t.Source?.Scale, $"tag '{t.Path}'", "source.scale");
         }
 
         // Một vi phạm mỗi PATH trùng, không phải một vi phạm mỗi lần xuất hiện: khai một path ba lần là
@@ -233,26 +278,61 @@ public static class ContractInvariants
     /// string index bound, respectively.</para>
     ///
     /// <para>🔴 <b>THE BOUNDARY, DRAWN ON PURPOSE — stated so the next round does not have to re-discover
-    /// it, and CORRECTED at fix round 3 to match what is actually checked below (re-review #2, LOW: this
-    /// paragraph used to omit <see cref="ComponentModelDocument.MachineCode"/> from its own enumeration,
-    /// and the omission was not harmless — see the MachineCode check below).</b> This is a crash-prevention
-    /// gate, not a JSON Schema validator (see this class's own top-level doc comment). Every field checked
-    /// below is checked for ONE of two reasons: (a) its null-ness makes EITHER this method OR
-    /// <c>ModelIntegrity.Check</c> throw an unhandled exception instead of returning an ordinary violation
-    /// (<c>MachineCode</c>, <c>Components</c>/its elements, <c>Id</c>, <c>TagPrefix</c>, <c>Types</c>/its
-    /// elements, a type's <c>Tags</c>/its elements), or (b) its null-ness makes THIS METHOD silently skip
-    /// the very §5 rule it exists to enforce (<c>Role</c> — see that check's own comment).
-    /// <see cref="ComponentNode.TypeId"/>, <see cref="ComponentNode.Label"/>,
-    /// <see cref="ComponentTypeDef.TypeId"/>, <see cref="ComponentTypeDef.Label"/>,
-    /// <see cref="ComponentTypeDef.DefaultFaceplate"/>, <see cref="ComponentTypeDef.States"/>,
-    /// <see cref="ComponentTagDef.PolicyAction"/>, <see cref="ComponentTagDef.Name"/> and
-    /// <see cref="ComponentTagDef.DataType"/> are each declared non-nullable by their record too, and each
-    /// CAN arrive null from the same missing-field mechanism — but none of them is ever dereferenced by
-    /// this method or by <c>ModelIntegrity.Check</c> in a way that throws, and none of them gates another
-    /// §5 check the way <c>Role</c> does (a null <see cref="ComponentTypeDef.TypeId"/>, for one concrete
-    /// example, is silently accepted and reported at 200 — measured, fix round 2's report). Closing THAT
-    /// gap is full JSON-Schema-shape validation, a DIFFERENT and larger job than this class has ever
-    /// claimed, stated here as a deliberate non-fix rather than left for a future reviewer to find.</para></summary>
+    /// it. Corrected at fix round 3 to name <see cref="ComponentModelDocument.MachineCode"/> at all, and
+    /// AGAIN at fix round 4 because round 3's correction mis-filed it (re-review #3, LOW: it listed
+    /// <c>MachineCode</c> under "makes this method or <c>ModelIntegrity.Check</c> throw", which it does
+    /// NOT — it makes <c>ComponentModelStore.PutAsync</c> throw, on a SQL parameter bind, which this
+    /// method's own inline comment three lines below the check states correctly. The paragraph and the code
+    /// it documents disagreed about why the check exists, inside the paragraph whose job is to state why
+    /// the checks exist — the same shape, a third time, in one file).</b>
+    ///
+    /// <para>This is a crash-prevention gate, not a JSON Schema validator (see this class's own top-level
+    /// doc comment). <b>ONE criterion, stated once and used by all three overloads</b> — a field is checked
+    /// iff:
+    /// <list type="letter">
+    ///   <item><description>its null / blank / non-finite value makes THIS METHOD, <c>ModelIntegrity.Check</c>,
+    ///   or <b>a STORE'S OWN WRITE DOOR</b> throw something that is not a
+    ///   <see cref="ContractViolationException"/> — the third of those is the clause round 3 left out, and
+    ///   it is the one <c>MachineCode</c> (a SQL parameter bind) and the non-finite numeric rule below (a
+    ///   <c>JsonSerializer.Serialize</c> call) both belong to; or</description></item>
+    ///   <item><description>its null-ness makes this method silently skip the very §5 rule it exists to
+    ///   enforce (<c>Role</c> here; <c>Access</c> and <c>Kind</c> in the sibling overloads).</description></item>
+    /// </list>
+    /// Under (a) for this overload: <c>MachineCode</c>, <c>Components</c>/its elements, <c>Id</c>,
+    /// <c>TagPrefix</c>, <c>Types</c>/its elements, a type's <c>Tags</c>/its elements, and
+    /// <see cref="ComponentTagDef.Min"/>/<see cref="ComponentTagDef.Max"/> when non-finite. Under (b):
+    /// <c>Role</c>.</para>
+    ///
+    /// <para>🔴 <b>THE NON-FINITE RULE, and why it is criterion (a) rather than a §5 rule</b> (fix round 4,
+    /// HIGH-2 — P1, "no client-authored body may produce a 500", measured FALSE by re-review #3).
+    /// <c>{"role":"setpoint","min":1e400,"max":2,"policyAction":"p"}</c> satisfies EVERY §5 rule: min is
+    /// not null, max is not null, policyAction is present. <c>1e400</c> deserializes to
+    /// <see cref="double.PositiveInfinity"/>, and <c>JsonSerializer.Serialize</c> then throws
+    /// <see cref="ArgumentException"/> ("...positive and negative infinity cannot be written as valid
+    /// JSON") inside <c>ComponentModelStore.PutAsync</c> — not a <see cref="ContractViolationException"/>,
+    /// so it escaped the endpoint's <c>catch</c> and became a bare 500. Checked for EVERY floating-point
+    /// field of all three contracts, not for <c>min</c>: <see cref="ComponentTagDef.Min"/>/<c>Max</c>,
+    /// <see cref="TagDescriptor.EngMin"/>/<c>EngMax</c>, <see cref="TagSource.Scale"/> — five fields, and
+    /// <c>ContractInvariantsTests.Every_floating_point_field_that_reaches_serialisation_is_covered_by_the_non_finite_rule</c>
+    /// re-derives that list by REFLECTION so a sixth one cannot be added silently. Deliberately independent
+    /// of <c>role</c>: the hard band is a §5 rule about <c>setpoint</c>, but serialisation happens for every
+    /// tag, so an <c>in</c> tag with a non-finite <c>min</c> is the same 500. <b>The rejected alternative,
+    /// named:</b> <c>JsonNumberHandling.AllowNamedFloatingPointLiterals</c> on
+    /// <see cref="HmiContractJson.Options"/> would stop the throw and persist <c>Infinity</c> into a
+    /// document the frozen JSON Schema rejects — trading a 500 for a corrupt record.</para>
+    ///
+    /// <para><b>Named and deliberately NOT checked:</b> <see cref="ComponentNode.TypeId"/>,
+    /// <see cref="ComponentNode.Label"/>, <see cref="ComponentTypeDef.TypeId"/>,
+    /// <see cref="ComponentTypeDef.Label"/>, <see cref="ComponentTypeDef.DefaultFaceplate"/>,
+    /// <see cref="ComponentTypeDef.States"/>/its elements, <see cref="ComponentTagDef.PolicyAction"/> when
+    /// the role is not writable, <see cref="ComponentTagDef.Name"/>, <see cref="ComponentTagDef.DataType"/>,
+    /// and every field of <see cref="ComponentStateDef"/>. Each is declared non-nullable by its record too,
+    /// and each CAN arrive null from the same missing-field mechanism — but none is ever dereferenced by
+    /// this method or by <c>ModelIntegrity.Check</c> in a way that throws, and none gates another §5 check
+    /// the way <c>Role</c> does (a null <see cref="ComponentTypeDef.TypeId"/>, for one concrete example, is
+    /// silently accepted and reported at 200 — measured, fix round 2's report). Closing THAT gap is full
+    /// JSON-Schema-shape validation, a DIFFERENT and larger job than this class has ever claimed, stated
+    /// here as a deliberate non-fix rather than left for a future reviewer to find.</para></summary>
     public static IReadOnlyList<string> Validate(ComponentModelDocument doc)
     {
         var v = new List<string>();
@@ -337,17 +417,37 @@ public static class ContractInvariants
                     v.Add($"componentTag '{type.TypeId}.{t.Name}': role thiếu (null/rỗng) — role rỗng âm thầm bỏ qua luật §5");
 
                 var writable = WritableComponentTagRoles.Contains(t.Role);
-                if (writable && string.IsNullOrEmpty(t.PolicyAction))
+                // IsNullOrWhiteSpace, not the other predicate — see the identical note in
+                // Validate(TagNamespaceDocument) for why " " on a §5 gate is the worst place for the two
+                // to disagree (fix round 4, MEDIUM-1).
+                if (writable && string.IsNullOrWhiteSpace(t.PolicyAction))
                     v.Add($"componentTag '{type.TypeId}.{t.Name}': role='{t.Role}' nhưng thiếu policyAction — §5");
                 var needsHardBand = HardBandComponentTagRoles.Contains(t.Role);
                 if (needsHardBand && t.Min is null)
                     v.Add($"componentTag '{type.TypeId}.{t.Name}': {t.Role} thiếu min — dải chặn cứng là bắt buộc");
                 if (needsHardBand && t.Max is null)
                     v.Add($"componentTag '{type.TypeId}.{t.Name}': {t.Role} thiếu max — dải chặn cứng là bắt buộc");
+
+                // 🔴 Fix round 4, HIGH-2 / P1 — non-finite, for EVERY tag, not only a setpoint: the hard
+                // band above is a §5 rule about a role, this is criterion (a) about serialisation, and
+                // serialisation happens for every tag. See this method's own doc comment.
+                AddIfNonFinite(v, t.Min, $"componentTag '{type.TypeId}.{t.Name}'", "min");
+                AddIfNonFinite(v, t.Max, $"componentTag '{type.TypeId}.{t.Name}'", "max");
             }
         }
 
         return v;
+    }
+
+    /// <summary>The ONE place the non-finite rule is written, so the five call sites cannot drift into five
+    /// spellings of it. <see langword="null"/> is NOT a violation here — an absent optional number is a
+    /// different question, owned by the §5 hard-band rule for the two fields that have one.</summary>
+    private static void AddIfNonFinite(List<string> v, double? value, string subject, string field)
+    {
+        if (value is null || double.IsFinite(value.Value)) return;
+        v.Add($"{subject}: {field} không phải số hữu hạn ({value.Value}) — JsonSerializer.Serialize của cửa " +
+              "ghi ném ArgumentException với NaN/±∞, tức một thân do client soạn hạ cánh thành 500 không " +
+              "lời giải thích thay vì một vi phạm 400");
     }
 
     /// <summary>Kiểm luật §5 cho một <see cref="HmiScreenDocument"/>: mọi <see cref="ScreenWidget"/> có
@@ -388,11 +488,55 @@ public static class ContractInvariants
     /// SAME non-crash reason <see cref="TagDescriptor.Access"/> and <see cref="ComponentTagDef.Role"/> are
     /// (see their own checks): a null <c>Kind</c> reads as "not writable" below, silently skipping the
     /// policyAction rule for a <c>command-button</c>/<c>setpoint-input</c> widget whose OWN <c>kind</c> was
-    /// omitted. <see cref="WidgetRect"/> is deliberately NOT checked — nothing dereferences it, and it is a
-    /// plain value record, not an identity or a §5 gate.</para></summary>
+    /// omitted.</para>
+    ///
+    /// <para>📎 🔴 <b>THE SENTENCE THAT FOLLOWED — "<see cref="WidgetRect"/> is deliberately NOT checked —
+    /// nothing dereferences it" — IS RETRACTED at fix round 4, kept in git history rather than silently
+    /// edited.</b> It was true, and it disqualified <see cref="ScreenWidget.Id"/> too: three sentences
+    /// above it, <c>Id</c> was checked while CONCEDING that "no store dereferences it unsafely today
+    /// because no store writes this type at all". Two fields of one record, two mutually incompatible
+    /// criteria (re-review #3, LOW). Also 0-violation and unmentioned anywhere:
+    /// <see cref="HmiScreenDocument.ScreenId"/>, <see cref="HmiScreenDocument.Title"/>,
+    /// <see cref="HmiScreenDocument.Theme"/>, <see cref="HmiScreenDocument.Layout"/>.</para>
+    ///
+    /// <para>🔴 <b>THE BOUNDARY FOR THIS OVERLOAD — one criterion, and the ONE tie-break it needs, both
+    /// stated rather than left to be inferred field by field.</b> The criterion is the same one
+    /// <see cref="Validate(ComponentModelDocument)"/> states in full: (a) crashes something at a write door
+    /// or in <c>ModelIntegrity.Check</c>, or (b) silently disables a §5 gate. <b>Clause (a) is VACUOUS for
+    /// this whole overload</b> — no .NET store writes an <see cref="HmiScreenDocument"/>, so no field can be
+    /// shown to crash a door that does not exist, and reading that vacuum as "checked" for <c>Id</c> and as
+    /// "not checked" for <c>Rect</c> is precisely the incoherence above. The tie is therefore broken ONCE,
+    /// for the WHOLE overload, in one direction: <b>every field the frozen record declares NON-NULLABLE is
+    /// required</b> — <c>ScreenId</c>, <c>Title</c>, <c>Theme</c>, <c>Layout</c> (and its
+    /// <see cref="ScreenLayout.Breakpoint"/>), <c>Widgets</c>, and per widget <c>Id</c>, <c>Kind</c>,
+    /// <c>Rect</c>. Chosen over the opposite tie-break (drop the <c>Id</c> check) because this validator is
+    /// a door built AHEAD of the store that will use it, and when that store arrives <c>ScreenId</c> will
+    /// be its primary key and <c>Rect</c>'s ints will be bound or laid out — so the strict direction is the
+    /// one that will still be right then. <b>Not required, because the record declares them nullable:</b>
+    /// <see cref="HmiScreenDocument.TitleEn"/>, <see cref="ScreenWidget.Component"/>,
+    /// <see cref="ScreenWidget.Bindings"/>, <see cref="ScreenWidget.Props"/>, and
+    /// <see cref="ScreenWidget.PolicyAction"/> for a non-writable <c>kind</c>. <b>This overload's criterion
+    /// therefore differs from its two siblings' — deliberately, for the stated reason — and that is said
+    /// out loud rather than presented as one rule covering all three.</b> There is no non-finite check
+    /// here because this contract exposes no floating-point field at all (verified by the reflection walk
+    /// in <c>Every_floating_point_field_that_reaches_serialisation_is_covered_by_the_non_finite_rule</c>);
+    /// every number it carries is an <see langword="int"/>.</para></summary>
     public static IReadOnlyList<string> Validate(HmiScreenDocument doc)
     {
         var v = new List<string>();
+
+        // Fix round 4 — the document's own non-nullable fields, on the criterion this method's doc comment
+        // states. Previously all four were silently 0-violation and named nowhere.
+        if (string.IsNullOrWhiteSpace(doc.ScreenId))
+            v.Add("screenId: thiếu trường bắt buộc (null/rỗng) — bắt buộc phải có");
+        if (string.IsNullOrWhiteSpace(doc.Title))
+            v.Add("title: thiếu trường bắt buộc (null/rỗng) — bắt buộc phải có");
+        if (string.IsNullOrWhiteSpace(doc.Theme))
+            v.Add("theme: thiếu trường bắt buộc (null/rỗng) — bắt buộc phải có");
+        if (doc.Layout is null)
+            v.Add("layout: thiếu trường bắt buộc (null) — một màn hình không khai lưới đặt widget không phải tài liệu hợp lệ");
+        else if (string.IsNullOrWhiteSpace(doc.Layout.Breakpoint))
+            v.Add("layout: breakpoint thiếu (null/rỗng) — bắt buộc phải có");
 
         if (doc.Widgets is null)
         {
@@ -413,8 +557,12 @@ public static class ContractInvariants
                 v.Add($"widgets[{i}]: id thiếu (null/rỗng) — bắt buộc phải có");
             if (string.IsNullOrWhiteSpace(w.Kind))
                 v.Add($"widgets[{i}]: kind thiếu (null/rỗng) — kind rỗng âm thầm bỏ qua luật §5");
+            // Fix round 4 — checked on the SAME criterion that requires `id` two lines above, which is the
+            // whole point: round 3 excluded `rect` for a reason that disqualified `id` as well.
+            if (w.Rect is null)
+                v.Add($"widgets[{i}]: rect thiếu (null) — bắt buộc phải có");
 
-            if (WritableWidgetKinds.Contains(w.Kind) && string.IsNullOrEmpty(w.PolicyAction))
+            if (WritableWidgetKinds.Contains(w.Kind) && string.IsNullOrWhiteSpace(w.PolicyAction))
                 v.Add($"widget '{w.Id}': kind='{w.Kind}' nhưng thiếu policyAction — §5 cấm đường ghi không gác");
         }
 

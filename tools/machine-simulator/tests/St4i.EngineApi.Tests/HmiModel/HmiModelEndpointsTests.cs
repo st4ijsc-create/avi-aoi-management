@@ -50,7 +50,16 @@ public sealed class HmiModelEndpointsTests
     private static readonly SemaphoreSlim EnvLock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync()
+    private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync() =>
+        (await CreateFactoryWithDirsAsync().ConfigureAwait(false)).Factory;
+
+    /// <summary>Same factory, but also handing back the two store directories it isolated. Fix round 4
+    /// needs them: reproducing a row that was NOT written through the canonicalizing decorator — a direct
+    /// <c>new ComponentModelStore(dir)</c> caller, or this branch two commits ago, whose row survives under
+    /// <c>%ProgramData%</c> across a redeploy — requires constructing the raw store over the SAME directory
+    /// the running host resolved, and the host reads that directory from an env var this method restores
+    /// before returning.</summary>
+    private static async Task<(WebApplicationFactory<Program> Factory, string ModelDir, string TagsDir)> CreateFactoryWithDirsAsync()
     {
         var hmiModelDir = Directory.CreateTempSubdirectory("st4i-hmi-ep-model-").FullName;
         var hmiTagsDir = Directory.CreateTempSubdirectory("st4i-hmi-ep-tags-").FullName;
@@ -78,7 +87,7 @@ public sealed class HmiModelEndpointsTests
 
             var factory = new WebApplicationFactory<Program>();
             _ = factory.Server; // force the host to build NOW, while the overrides above are still live.
-            return factory;
+            return (factory, hmiModelDir, hmiTagsDir);
         }
         finally
         {
@@ -120,7 +129,16 @@ public sealed class HmiModelEndpointsTests
     private static async Task<(WebApplicationFactory<Program> Factory, HttpClient Engineer, HttpClient Operator)> NewFactoryWithUsersAsync(
         string suffix)
     {
-        var factory = await CreateFactoryAsync().ConfigureAwait(false);
+        var (factory, engineer, operatorClient, _, _) = await NewFactoryWithUsersAndDirsAsync(suffix).ConfigureAwait(false);
+        return (factory, engineer, operatorClient);
+    }
+
+    /// <summary>As <see cref="NewFactoryWithUsersAsync"/>, plus the isolated store directories — see
+    /// <see cref="CreateFactoryWithDirsAsync"/> for why fix round 4 needs them.</summary>
+    private static async Task<(WebApplicationFactory<Program> Factory, HttpClient Engineer, HttpClient Operator, string ModelDir, string TagsDir)>
+        NewFactoryWithUsersAndDirsAsync(string suffix)
+    {
+        var (factory, modelDir, tagsDir) = await CreateFactoryWithDirsAsync().ConfigureAwait(false);
         await BootstrapAdminAsync(factory, $"hmi-admin-{suffix}", "AdminPass123!").ConfigureAwait(false);
         await CreateUserAsync(factory, $"hmi-engineer-{suffix}", "EngineerPass123!", Roles.Engineer).ConfigureAwait(false);
         await CreateUserAsync(factory, $"hmi-operator-{suffix}", "OperatorPass123!", Roles.Operator).ConfigureAwait(false);
@@ -128,7 +146,7 @@ public sealed class HmiModelEndpointsTests
         var engineer = await LoginAsAsync(factory, $"hmi-engineer-{suffix}", "EngineerPass123!").ConfigureAwait(false);
         var operatorClient = await LoginAsAsync(factory, $"hmi-operator-{suffix}", "OperatorPass123!").ConfigureAwait(false);
 
-        return (factory, engineer, operatorClient);
+        return (factory, engineer, operatorClient, modelDir, tagsDir);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -872,5 +890,251 @@ public sealed class HmiModelEndpointsTests
         var codes = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
         Assert.NotNull(codes);
         Assert.DoesNotContain("OMIT-TAGS-01", codes);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 4, HIGH-1 — re-review #3's own reproduction, end to end. Round 3 canonicalised what went
+    // INTO the store and not what came OUT: `ListMachineCodesAsync` forwarded stored keys verbatim while
+    // `GetAsync` canonicalised its lookup key, so the two methods of ONE decorator disagreed about the
+    // identity of a row that was already on disk. The row below is written through the RAW, still-public
+    // `new ComponentModelStore(dir)` — the same thing a direct store caller does, the same thing WS-HMI-0c
+    // does, and the same shape rounds 1 and 2 of this branch persisted for a lowercase route into a
+    // %ProgramData% database that survives a redeploy.
+    //
+    // Before this fix the four reads below returned, in order: ["legacy-01"] · the §5-bis EMPTY document ·
+    // {"namespaceLoaded":false,"violations":[]} (A CLEAN BILL OF HEALTH, AT OPERATOR TIER, FOR A DOCUMENT
+    // IT NEVER READ — re-review #2's own condemnation of round 2, verbatim) · [].
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_row_written_directly_to_the_store_is_listed_readable_and_honestly_reported()
+    {
+        var (factory, engineer, operatorClient, modelDir, tagsDir) =
+            await NewFactoryWithUsersAndDirsAsync("legacy-row");
+        await using var _f = factory;
+        using var engineerC = engineer;
+        using var operatorC = operatorClient;
+
+        // A row keyed 'legacy-01' — NOT written through the canonicalizing decorator, and not reachable
+        // through any HTTP route that would have canonicalised it.
+        var raw = new ComponentModelStore(modelDir);
+        await raw.PutAsync(ValidDoc("legacy-01", typeId: "st4i.legacy.type"));
+
+        // ...and a real namespace for the same machine, so "read the real namespace" and "read nothing"
+        // are DISTINGUISHABLE outcomes at the integrity route rather than two shades of empty. Its tags
+        // deliberately do not match the tree's tagPrefix. Loaded through the DI-resolved seam (the
+        // decorator) rather than raw, because that is the only supported way a namespace is ever written —
+        // the raw, non-canonically-keyed case is a declared residue with no resolution mechanism available,
+        // measured separately and by name in
+        // A_namespace_written_directly_under_a_non_canonical_key_is_reported_as_unloaded_not_as_clean.
+        _ = tagsDir;
+        await factory.Services.GetRequiredService<ITagNamespaceStore>()
+            .PutAsync(NamespaceThatDoesNotMatch("legacy-01"));
+
+        // 1. The list reports the ONE canonical identity — not the stored spelling, and never both.
+        using (var list = await operatorC.GetAsync("/v1/components"))
+        {
+            var codes = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
+            Assert.Equal(new[] { "LEGACY-01" }, codes);
+        }
+
+        // 2. The detail route serves the REAL document at every spelling of that identity — including the
+        //    spelling the list handed out. An empty document here is indistinguishable from "never
+        //    declared" (§5-bis), which is exactly what made this defect invisible.
+        foreach (var spelling in new[] { "legacy-01", "LEGACY-01", "LeGaCy-01" })
+        {
+            using var get = await operatorC.GetAsync($"/v1/components/{spelling}");
+            Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+            var back = await get.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
+            Assert.Equal("LEGACY-01", back!.MachineCode);
+            Assert.Single(back.Types);
+            Assert.Equal("st4i.legacy.type", back.Types[0].TypeId);
+        }
+
+        // 3. The Operator-tier integrity route reports the REAL document against the REAL namespace —
+        //    namespaceLoaded:true and a non-empty violation list, not a clean bill of health.
+        using (var integrity = await operatorC.GetAsync("/v1/components/legacy-01/integrity"))
+        {
+            var report = await integrity.Content.ReadFromJsonAsync<IntegrityReportDto>(HmiContractJson.Options);
+            Assert.Equal("LEGACY-01", report!.MachineCode);
+            Assert.True(report.NamespaceLoaded);
+            Assert.NotEmpty(report.Violations);
+        }
+
+        // 4. The merged catalogue does not silently drop this machine's types.
+        using (var types = await operatorC.GetAsync("/v1/component-types"))
+        {
+            var typeDefs = await types.Content.ReadFromJsonAsync<List<ComponentTypeDef>>(HmiContractJson.Options);
+            Assert.Contains(typeDefs!, t => t.TypeId == "st4i.legacy.type");
+        }
+
+        // 5. And an Engineer PUT at the spelling the list handed out lands on the SAME identity — never
+        //    ["LEGACY-01","legacy-01"], two rows for one machine with the old one orphaned.
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync(
+                "/v1/components/LEGACY-01", ValidDoc("LEGACY-01", typeId: "st4i.new.type"), HmiContractJson.Options)).StatusCode);
+
+        using (var list = await operatorC.GetAsync("/v1/components"))
+        {
+            var codes = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
+            Assert.Equal(new[] { "LEGACY-01" }, codes);
+        }
+
+        using (var get = await operatorC.GetAsync("/v1/components/legacy-01"))
+        {
+            var back = await get.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
+            Assert.Equal("st4i.new.type", back!.Types[0].TypeId);
+        }
+    }
+
+    /// <summary>🔴 <b>THE ONE RESIDUE OF THE HIGH-1 FIX, MEASURED RATHER THAN MERELY DISCLOSED.</b>
+    /// <c>CanonicalizingComponentModelStore.GetAsync</c> resolves a non-canonically-keyed row by
+    /// ENUMERATING stored keys; <see cref="ITagNamespaceStore"/> exposes no enumeration, and
+    /// <see cref="TagNamespaceStore"/> is frozen, so the same resolution is unavailable there. A namespace
+    /// written by a direct <c>new TagNamespaceStore(dir)</c> caller under a non-canonical spelling is
+    /// therefore invisible to this seam.
+    ///
+    /// <para><b>What this test pins is that the invisibility is REPORTED HONESTLY rather than as health.</b>
+    /// The condemned shape was a CLEAN BILL OF HEALTH for a document it never read; here the DOCUMENT is
+    /// read (the component-tree fallback works), and the namespace's absence is declared through the field
+    /// that exists to declare exactly that — <c>namespaceLoaded:false</c>, which
+    /// <see cref="IntegrityReportDto"/>'s own doc comment defines as "not loaded" and distinguishes from
+    /// "loaded and empty". No supported path can create this state: every DI caller, and Task 2's
+    /// <c>PUT /v1/tags/{machineCode}</c>, writes through the decorator and therefore canonically.</para>
+    ///
+    /// <para><b>If a later round closes this</b> — by giving <see cref="ITagNamespaceStore"/> an
+    /// enumeration, or by a migration — this test goes red, which is the point: the residue is pinned, so
+    /// it cannot be closed silently or widened silently.</para></summary>
+    [Fact]
+    public async Task A_namespace_written_directly_under_a_non_canonical_key_is_reported_as_unloaded_not_as_clean()
+    {
+        var (factory, engineer, operatorClient, _, tagsDir) =
+            await NewFactoryWithUsersAndDirsAsync("raw-namespace-residue");
+        await using var _f = factory;
+        using var engineerC = engineer;
+        using var operatorC = operatorClient;
+
+        var rawTags = new TagNamespaceStore(tagsDir);
+        await rawTags.PutAsync(NamespaceThatDoesNotMatch("resid-01"));
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync(
+                "/v1/components/RESID-01", ValidDoc("RESID-01"), HmiContractJson.Options)).StatusCode);
+
+        using var integrity = await operatorC.GetAsync("/v1/components/RESID-01/integrity");
+        var report = await integrity.Content.ReadFromJsonAsync<IntegrityReportDto>(HmiContractJson.Options);
+
+        // The residue: this seam cannot see that namespace...
+        Assert.False(report!.NamespaceLoaded);
+
+        // ...and says so, instead of reporting a namespace it never read as matched. `violations` being
+        // empty here means "check 4 was SKIPPED", which namespaceLoaded:false is the field that says.
+        Assert.Empty(report.Violations);
+
+        // And the component tree itself — the half that IS resolvable — was genuinely read: not the
+        // §5-bis empty document.
+        using var get = await operatorC.GetAsync("/v1/components/RESID-01");
+        var back = await get.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
+        Assert.Single(back!.Components);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 4, HIGH-2 — P1 ("no client-authored body may produce a 500") measured FALSE by re-review
+    // #3. `1e400` deserializes to double.PositiveInfinity; it passes every §5 rule (min present, max
+    // present, policyAction present), and then JsonSerializer.Serialize throws ArgumentException inside
+    // ComponentModelStore.PutAsync — NOT a ContractViolationException, so it escapes the handler's catch
+    // and becomes a bare 500 (Program.cs installs no UseExceptionHandler/AddProblemDetails).
+    //
+    // Raw JSON, not the record's constructor: `1e400` is what a client actually sends, and it is
+    // System.Text.Json's number parser that turns it into a non-finite double.
+    // ─────────────────────────────────────────────────────────────────────
+
+    public static TheoryData<string, string> NonFiniteSetpointBands() => new()
+    {
+        { "min-positive-infinity", "\"min\":1e400,\"max\":2" },
+        { "min-negative-infinity", "\"min\":-1e400,\"max\":2" },
+        { "max-positive-infinity", "\"min\":0,\"max\":1e400" },
+        { "both-infinite", "\"min\":-1e400,\"max\":1e400" },
+    };
+
+    [Theory]
+    [MemberData(nameof(NonFiniteSetpointBands))]
+    public async Task Put_SetpointWithANonFiniteBand_Gets400_NotA500_AndWritesNothing(string label, string band)
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync($"nonfinite-{label}");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        var code = $"NF-{label}";
+        var json = "{\"schemaVersion\":1,\"components\":[],\"types\":[{\"typeId\":\"t\",\"label\":\"T\"," +
+                   "\"tags\":[{\"name\":\"x\",\"role\":\"setpoint\",\"dataType\":\"float\"," + band +
+                   ",\"policyAction\":\"p\"}],\"states\":[],\"defaultFaceplate\":\"f\"}]}";
+
+        using (var content = new StringContent(json, Encoding.UTF8, "application/json"))
+        using (var put = await engineerC.PutAsync($"/v1/components/{code}", content))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+            var error = await put.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
+            Assert.NotNull(error);
+            Assert.False(string.IsNullOrWhiteSpace(error!.Error));
+        }
+
+        // P2 must keep holding — serialisation precedes the connection, so nothing was ever written, and
+        // it must stay that way now that the rejection happens even earlier (at the §5 door).
+        using (var get = await engineerC.GetAsync($"/v1/components/{code}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+            var back = await get.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
+            Assert.Empty(back!.Components);
+            Assert.Empty(back.Types);
+        }
+
+        using (var list = await engineerC.GetAsync("/v1/components"))
+        {
+            var codes = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
+            Assert.DoesNotContain(code.ToUpperInvariant(), codes!);
+        }
+
+        using (var integrity = await engineerC.GetAsync($"/v1/components/{code}/integrity"))
+        {
+            Assert.Equal(HttpStatusCode.OK, integrity.StatusCode);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 4, MEDIUM-1 — re-review #3's own measurement: `policyAction: " "` returned 200 AND WAS
+    // STORED, while `policyAction: ""` correctly 400'd. Empty rejected, whitespace accepted — on the §5
+    // safety gate itself, i.e. an ungated write door reported as gated. Both arms are asserted here so
+    // the two can never drift apart again.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("WSP-01", " ")]
+    [InlineData("WSP-02", "")]
+    [InlineData("WSP-03", "\t")]
+    public async Task Put_SetpointWithABlankPolicyAction_Gets400_AndIsNotStored(string code, string policyAction)
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync($"blank-policy-{code}");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        var json = "{\"schemaVersion\":1,\"components\":[],\"types\":[{\"typeId\":\"t\",\"label\":\"T\"," +
+                   "\"tags\":[{\"name\":\"torque\",\"role\":\"setpoint\",\"dataType\":\"float\"," +
+                   "\"min\":0,\"max\":10,\"policyAction\":\"" + policyAction.Replace("\t", "\\t", StringComparison.Ordinal) +
+                   "\"}],\"states\":[],\"defaultFaceplate\":\"f\"}]}";
+
+        using (var content = new StringContent(json, Encoding.UTF8, "application/json"))
+        using (var put = await engineerC.PutAsync($"/v1/components/{code}", content))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+            var error = await put.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
+            Assert.Contains("policyAction", error!.Error, StringComparison.Ordinal);
+        }
+
+        using var list = await engineerC.GetAsync("/v1/components");
+        var codes = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
+        Assert.DoesNotContain(code, codes!);
     }
 }

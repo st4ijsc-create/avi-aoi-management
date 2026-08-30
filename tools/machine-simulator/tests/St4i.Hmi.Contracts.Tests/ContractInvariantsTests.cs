@@ -588,4 +588,313 @@ public class ContractInvariantsTests
         var doc = Screen(new ScreenWidget("w1", "readout", Rect()));
         Assert.Empty(ContractInvariants.Validate(doc));
     }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Fix round 4 — the three properties re-review #3 measured false, closed as PROPERTIES with an
+    // enumeration behind each, not as the individual cases the findings used as illustrations.
+    // ═════════════════════════════════════════════════════════════════════
+
+    // ─────────────────────────────────────────────────────────────────────
+    // HIGH-2 / P1: no client-authored body may produce a 500.
+    //
+    // `{"role":"setpoint","min":1e400,"max":2,"policyAction":"p"}` passed every §5 rule — min present, max
+    // present, policyAction present — and then made JsonSerializer.Serialize throw ArgumentException
+    // INSIDE ComponentModelStore.PutAsync. Not a ContractViolationException, so not the 400 the whole
+    // error→HTTP map depends on that type to produce: a bare 500 on a body a client authored.
+    //
+    // Closed as a property, not at `min`: EVERY floating-point field that reaches serialisation is
+    // rejected when non-finite, and
+    // `Every_floating_point_field_that_reaches_serialisation_is_covered_by_the_non_finite_rule` is the
+    // enumeration that goes red when a sixth one is added to a contract record.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>The five floating-point fields the three frozen contract records expose to
+    /// <c>JsonSerializer</c>, enumerated by hand HERE and re-derived by REFLECTION in
+    /// <see cref="Every_floating_point_field_that_reaches_serialisation_is_covered_by_the_non_finite_rule"/>
+    /// — the hand list is what a reader checks against the tests below; the reflection walk is what fails
+    /// when the two drift.</summary>
+    private static readonly string[] FloatingPointFieldsThatReachSerialisation =
+    {
+        "ComponentTagDef.Max",
+        "ComponentTagDef.Min",
+        "TagDescriptor.EngMax",
+        "TagDescriptor.EngMin",
+        "TagSource.Scale",
+    };
+
+    [Fact]
+    public void Every_floating_point_field_that_reaches_serialisation_is_covered_by_the_non_finite_rule()
+    {
+        var reached = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var root in new[] { typeof(ComponentModelDocument), typeof(TagNamespaceDocument), typeof(HmiScreenDocument) })
+        {
+            CollectFloatingPointFields(root, reached, new HashSet<Type>());
+        }
+
+        var uncovered = reached.Except(FloatingPointFieldsThatReachSerialisation, StringComparer.Ordinal).ToList();
+        var stale = FloatingPointFieldsThatReachSerialisation.Except(reached, StringComparer.Ordinal).ToList();
+
+        if (uncovered.Count == 0 && stale.Count == 0) return;
+
+        var parts = new List<string>();
+        if (uncovered.Count > 0)
+        {
+            parts.Add(
+                $"a contract record now exposes floating-point field(s) with no non-finite rule: {string.Join(", ", uncovered)}. " +
+                "A non-finite double (1e400 in a request body deserializes to +∞) passes every §5 rule and " +
+                "then makes JsonSerializer.Serialize throw ArgumentException inside a store's PutAsync — an " +
+                "unexplained 500 on a client-authored body, which is P1 measured false. Add a " +
+                "double.IsFinite check in the matching ContractInvariants.Validate overload, add a test " +
+                "beside the four below, and add the field here");
+        }
+        if (stale.Count > 0)
+        {
+            parts.Add($"listed here but no longer reachable from any contract record: {string.Join(", ", stale)}");
+        }
+
+        Assert.Fail(string.Join(" | ", parts));
+    }
+
+    /// <summary>Walks the record graph the way <c>JsonSerializer</c> does — every property, through
+    /// collection element types, staying inside the contracts assembly — so the enumeration is derived
+    /// from the records rather than from anybody's memory of them.</summary>
+    private static void CollectFloatingPointFields(Type type, ISet<string> into, ISet<Type> visited)
+    {
+        if (!visited.Add(type)) return;
+
+        foreach (var prop in type.GetProperties())
+        {
+            var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+
+            if (propType == typeof(double) || propType == typeof(float) || propType == typeof(decimal))
+            {
+                into.Add($"{type.Name}.{prop.Name}");
+                continue;
+            }
+
+            foreach (var candidate in ElementTypes(propType))
+            {
+                if (candidate.Assembly == typeof(ContractInvariants).Assembly)
+                {
+                    CollectFloatingPointFields(candidate, into, visited);
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<Type> ElementTypes(Type type)
+    {
+        yield return type;
+        if (!type.IsGenericType) yield break;
+        foreach (var arg in type.GetGenericArguments()) yield return arg;
+    }
+
+    public static TheoryData<double> NonFiniteValues() => new()
+    {
+        double.PositiveInfinity,
+        double.NegativeInfinity,
+        double.NaN,
+    };
+
+    [Theory]
+    [MemberData(nameof(NonFiniteValues))]
+    public void A_componentTag_with_a_non_finite_Min_is_a_violation_not_a_500(double value)
+    {
+        var tag = new ComponentTagDef("t", "setpoint", "float", null, null, value, 2, "machine.setpoint");
+        var type = new ComponentTypeDef("t1", "T1", new[] { tag }, Array.Empty<ComponentStateDef>(), "fp.x");
+        var doc = new ComponentModelDocument(1, "M1", Array.Empty<ComponentNode>(), new[] { type });
+
+        Assert.Contains(ContractInvariants.Validate(doc), v => v.Contains("min", StringComparison.OrdinalIgnoreCase));
+        Assert.Throws<ContractViolationException>(() => ContractInvariants.ThrowIfInvalid(doc));
+    }
+
+    [Theory]
+    [MemberData(nameof(NonFiniteValues))]
+    public void A_componentTag_with_a_non_finite_Max_is_a_violation_not_a_500(double value)
+    {
+        var tag = new ComponentTagDef("t", "setpoint", "float", null, null, 0, value, "machine.setpoint");
+        var type = new ComponentTypeDef("t1", "T1", new[] { tag }, Array.Empty<ComponentStateDef>(), "fp.x");
+        var doc = new ComponentModelDocument(1, "M1", Array.Empty<ComponentNode>(), new[] { type });
+
+        Assert.Contains(ContractInvariants.Validate(doc), v => v.Contains("max", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The rule is about SERIALISATION, not about the §5 hard band — so it applies to a role that
+    /// needs no band at all. Round 3's `min`/`max` checks only fire for a <c>setpoint</c>; a non-finite
+    /// <c>min</c> on an <c>in</c> tag reaches <c>JsonSerializer</c> exactly the same way.</summary>
+    [Fact]
+    public void A_non_finite_bound_on_a_non_setpoint_tag_is_still_a_violation()
+    {
+        var tag = new ComponentTagDef("t", "in", "float", null, null, double.PositiveInfinity, null, null);
+        var type = new ComponentTypeDef("t1", "T1", new[] { tag }, Array.Empty<ComponentStateDef>(), "fp.x");
+        var doc = new ComponentModelDocument(1, "M1", Array.Empty<ComponentNode>(), new[] { type });
+
+        Assert.NotEmpty(ContractInvariants.Validate(doc));
+    }
+
+    [Theory]
+    [MemberData(nameof(NonFiniteValues))]
+    public void A_tag_with_a_non_finite_EngMin_or_EngMax_is_a_violation_not_a_500(double value)
+    {
+        var engMin = new TagDescriptor("M1/x", "float", null, value, 1, null, "r", null, Sim(), false);
+        var engMax = new TagDescriptor("M1/y", "float", null, 0, value, null, "r", null, Sim(), false);
+
+        Assert.NotEmpty(ContractInvariants.Validate(new TagNamespaceDocument(1, "M1", new[] { engMin })));
+        Assert.NotEmpty(ContractInvariants.Validate(new TagNamespaceDocument(1, "M1", new[] { engMax })));
+    }
+
+    [Theory]
+    [MemberData(nameof(NonFiniteValues))]
+    public void A_tag_source_with_a_non_finite_Scale_is_a_violation_not_a_500(double value)
+    {
+        var tag = new TagDescriptor(
+            "M1/x", "float", null, null, null, null, "r", null, new TagSource("modbus", 1, 40001, value), false);
+
+        Assert.Contains(
+            ContractInvariants.Validate(new TagNamespaceDocument(1, "M1", new[] { tag })),
+            v => v.Contains("scale", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The counterpart control: an ordinary finite band, including the extremes, must stay legal.
+    /// A guard that rejected <c>double.MaxValue</c> would be a new defect wearing this fix's clothes.</summary>
+    [Fact]
+    public void Control_A_finite_band_including_the_extremes_is_not_a_violation()
+    {
+        var tag = new ComponentTagDef("t", "setpoint", "float", null, null, double.MinValue, double.MaxValue, "machine.setpoint");
+        var type = new ComponentTypeDef("t1", "T1", new[] { tag }, Array.Empty<ComponentStateDef>(), "fp.x");
+        Assert.Empty(ContractInvariants.Validate(
+            new ComponentModelDocument(1, "M1", Array.Empty<ComponentNode>(), new[] { type })));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // MEDIUM-1: ONE rule for "a required string is missing", adopted at EVERY site rather than at the two
+    // a finding used as illustrations.
+    //
+    // Re-review #3 measured `policyAction: " "` returning 200 AND BEING STORED while `""` correctly 400'd —
+    // on the §5 gate itself, i.e. an ungated write door reported as gated. The rule is
+    // IsNullOrWhiteSpace everywhere; the three surviving IsNullOrEmpty sites were the three policyAction
+    // gates, one per overload.
+    // ─────────────────────────────────────────────────────────────────────
+
+    public static TheoryData<string> BlankButNotEmptyStrings() => new() { " ", "\t", "\n", "   " };
+
+    [Theory]
+    [MemberData(nameof(BlankButNotEmptyStrings))]
+    public void A_writable_tag_with_a_whitespace_only_policy_action_is_a_violation(string blank)
+    {
+        var violations = ContractInvariants.Validate(Ns(Tag("rw", blank)));
+
+        Assert.Contains(violations, v => v.Contains("policyAction", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(BlankButNotEmptyStrings))]
+    public void A_writable_componentTag_with_a_whitespace_only_policy_action_is_a_violation(string blank)
+    {
+        var tag = new ComponentTagDef("torque", "setpoint", "float", null, null, 0, 10, blank);
+        var type = new ComponentTypeDef("t1", "T1", new[] { tag }, Array.Empty<ComponentStateDef>(), "fp.x");
+        var doc = new ComponentModelDocument(1, "M1", Array.Empty<ComponentNode>(), new[] { type });
+
+        Assert.Contains(ContractInvariants.Validate(doc), v => v.Contains("policyAction", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(BlankButNotEmptyStrings))]
+    public void A_command_button_with_a_whitespace_only_policy_action_is_a_violation(string blank)
+    {
+        var doc = Screen(new ScreenWidget("b1", "command-button", Rect(), PolicyAction: blank));
+
+        Assert.Contains(ContractInvariants.Validate(doc), v => v.Contains("policyAction", StringComparison.Ordinal));
+    }
+
+    /// <summary>...and the door, not only the checker: a whitespace-only <c>policyAction</c> on an
+    /// <c>rw</c> tag used to be WRITTEN by <c>TagNamespaceStore.PutAsync</c> with no exception at all
+    /// (measured, re-review #3 §7.2).</summary>
+    [Fact]
+    public void ThrowIfInvalid_throws_for_a_whitespace_only_policy_action_on_a_writable_tag()
+    {
+        Assert.Throws<ContractViolationException>(() => ContractInvariants.ThrowIfInvalid(Ns(Tag("rw", " "))));
+    }
+
+    /// <summary>🔴 <b>The ENUMERATION behind the three tests above, and the thing that goes red when a
+    /// FOURTH site is written with the wrong predicate.</b> The rule this class holds is one rule — a
+    /// required string is missing when it is null, empty, OR whitespace — and three consecutive review
+    /// rounds have now shown that adopting it at the sites a finding NAMED is not the same as adopting it.
+    /// So the check is on the source, where the sites live, rather than on three behaviours that happen to
+    /// be the three sites known today.
+    ///
+    /// <para><b>Convention this depends on, stated because it is load-bearing:</b> prose in
+    /// <c>ContractInvariants.cs</c> writes the rejected predicate WITHOUT its <c>string.</c> qualifier, so
+    /// that this scan reads code and not commentary.</para></summary>
+    [Fact]
+    public void ContractInvariants_uses_one_missing_string_predicate_at_every_site()
+    {
+        var source = File.ReadAllText(ContractInvariantsSourcePath());
+
+        var offenders = source.Split('\n')
+            .Select((line, i) => (Line: line, Number: i + 1))
+            .Where(x => x.Line.Contains("string.IsNullOrEmpty(", StringComparison.Ordinal))
+            .Select(x => $"line {x.Number}: {x.Line.Trim()}")
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "ContractInvariants must ask ONE question about a missing required string, at every site: " +
+            "string.IsNullOrWhiteSpace. A whitespace-only value is not a declaration — and on a " +
+            "policyAction gate it is an UNGATED WRITE DOOR that this class reports as gated (re-review #3, " +
+            "MEDIUM-1; the same finding was closed at two illustration sites in round 3 and left open at " +
+            "the three that mattered). Sites still asking the other question:\n  " +
+            string.Join("\n  ", offenders));
+    }
+
+    private static string ContractInvariantsSourcePath()
+    {
+        // ContractFixtures.ContractsDir is <solution>/contracts — its parent is the solution directory.
+        var solutionDir = Path.GetDirectoryName(ContractFixtures.ContractsDir)!;
+        var path = Path.Combine(solutionDir, "src", "St4i.Hmi.Contracts", "ContractInvariants.cs");
+        Assert.True(File.Exists(path),
+            $"Could not find ContractInvariants.cs at \"{path}\". If the layout moved, fix this path — do " +
+            "NOT delete the scan it feeds.");
+        return path;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // LOW — Validate(HmiScreenDocument)'s criterion, made ONE criterion. Round 3 excluded
+    // ScreenWidget.Rect on the grounds that nothing dereferences it, and included ScreenWidget.Id while
+    // conceding the same thing three sentences apart; HmiScreenDocument.ScreenId/Title/Theme/Layout were
+    // 0-violation and unmentioned. See Validate(HmiScreenDocument)'s own BOUNDARY paragraph for the rule
+    // now in force and for why this overload's tie-break differs from its two siblings'.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A_widget_with_a_null_Rect_is_a_violation_on_the_same_criterion_that_requires_its_Id()
+    {
+        var doc = Screen(new ScreenWidget("w1", "readout", null!));
+        Assert.Contains(ContractInvariants.Validate(doc), v => v.Contains("rect", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void A_screen_with_a_null_ScreenId_Title_Theme_or_Layout_is_a_violation()
+    {
+        var doc = new HmiScreenDocument(1, null!, null!, null, null!, null!, Array.Empty<ScreenWidget>());
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("screenId", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(violations, v => v.Contains("title", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(violations, v => v.Contains("theme", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(violations, v => v.Contains("layout", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The other half of the same criterion: fields the frozen record declares NULLABLE stay
+    /// optional. A guard that required <c>titleEn</c> would be reading "checked everything" as the rule
+    /// instead of "checked what the record declares required".</summary>
+    [Fact]
+    public void Control_A_screen_omitting_only_its_nullable_fields_reports_no_violations()
+    {
+        var doc = new HmiScreenDocument(
+            1, "s1", "Màn hình", TitleEn: null, "isa101", new ScreenLayout(12, 8, "panel"),
+            new[] { new ScreenWidget("w1", "readout", Rect(), Component: null, Bindings: null, Props: null, PolicyAction: null) });
+
+        Assert.Empty(ContractInvariants.Validate(doc));
+    }
 }
