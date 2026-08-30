@@ -48,8 +48,18 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { duocPhepGuiNoiDung } from "./nguCanh";
 
-/** Đường `duong` có nằm TRONG thư mục `ws` không, so theo ranh giới thư mục (không phải tiền tố chuỗi). */
-function namTrongThuMuc(duong: string, ws: string): boolean {
+/**
+ * Đường `duong` có nằm TRONG thư mục `ws` không, so theo ranh giới thư mục (không phải tiền tố chuỗi).
+ *
+ * ⚠⚠ 2026-08-30 (Đợt D) — `export` thêm vì đường **ĐỌC** cục bộ (`loi/docCucBo.ts`) cần ĐÚNG vị từ
+ * này. Nó KHÔNG được dùng lại cả `duocPhepGhi`: luật 4 (`camGhiRieng`) là danh sách **chỉ-cấm-GHI**
+ * (`.git/…`, `.vscode/tasks.json`, `*.code-workspace`) — những tệp ấy nguy hiểm khi GHI nhưng vô
+ * hại khi ĐỌC, và áp nhầm chúng vào đường đọc sẽ làm AI mù đúng các tệp cấu hình nó cần nhất, một
+ * cách IM LẶNG. Nên: dùng chung MẢNH đúng nghĩa ("có trong workspace không"), không dùng chung cả
+ * QUYẾT ĐỊNH. Đây chính là điều docblock đầu tệp dặn — tách TƯỜNG MINH khi hai câu hỏi khác nhau,
+ * không nhân bản vị từ.
+ */
+export function namTrongThuMuc(duong: string, ws: string): boolean {
   const r = relative(resolve(ws), resolve(duong));
   // Nằm trong ⇔ cả ba: (a) r không rỗng — rỗng nghĩa là CHÍNH thư mục ws, không phải tệp con;
   // (b) r không phải ".." và không bắt đầu bằng "..<sep>" — đó là dấu hiệu đã thoát RA NGOÀI qua
