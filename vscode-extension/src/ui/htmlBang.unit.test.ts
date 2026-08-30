@@ -25,6 +25,12 @@ describe("dungHtmlBang", () => {
     expect(html).toContain('id="hoi-thoai"');
   });
 
+  it("★★★ TASK 4: có nút Dừng, và nó MẶC ĐỊNH ẨN trong khung HTML (không hiện khi rảnh)", () => {
+    // Đo trên chính THUỘC TÍNH `hidden` trong markup — đây là trạng thái BAN ĐẦU trước khi bất kỳ
+    // script nào chạy, tức đúng nghĩa "lúc rảnh" (chưa có lượt hỏi nào được gửi).
+    expect(html).toContain('<button id="nut-dung" hidden>Dừng</button>');
+  });
+
   it("★★★ có ô chọn dự án", () => {
     expect(html).toContain('id="o-du-an"');
   });
@@ -126,7 +132,12 @@ class PhanTuGia {
   /** Mô phỏng một cú BẤM CHUỘT thật (kể cả khi nút đang `disabled` — trình duyệt tự chặn, ta thì
    *  cố ý KHÔNG chặn, để đo chính hàng rào trong script chứ không đo hộ trình duyệt). */
   bam(): void {
-    for (const h of this.nghe["click"] ?? []) h({});
+    this.kichHoat("click", {});
+  }
+  /** Phát một sự kiện BẤT KỲ đã đăng ký qua `addEventListener` — tổng quát hoá của `bam()`, dùng
+   *  cho những phím KHÔNG phải click (vd `keydown` của Task 5 — chọn gợi ý @-mention bằng Tab). */
+  kichHoat(loai: string, e: unknown): void {
+    for (const h of this.nghe[loai] ?? []) h(e);
   }
 }
 
@@ -217,5 +228,55 @@ describe("webview — nút GHI không được gửi hai lượt cho một quy�
     w.nut("nut-huy").bam();
     expect(w.daGui.filter((m) => m.loai === "xem_diff")).toHaveLength(2);
     expect(w.daGui.filter((m) => m.loai === "huy")).toHaveLength(2);
+  });
+});
+
+/**
+ * ★★★ TASK 4 — NÚT DỪNG: KẾT CỤC, không chỉ CHỮ TRONG HTML. Cùng khuôn với nhóm "CHỐNG BẤM HAI
+ * LẦN" ở trên — chạy THẬT script của webview, quan sát `hidden` đổi và tin nhắn thật được gửi.
+ */
+describe("webview — nút Dừng chỉ hiện khi ĐANG chạy", () => {
+  it("★★★ rảnh ⇒ ẩn; gửi câu hỏi ⇒ HIỆN; nhận `hoan_tat` ⇒ ẨN lại", () => {
+    const w = chayWebview();
+    // Trạng thái ban đầu của DOM giả (`PhanTuGia.hidden = false` mặc định) không mô phỏng thuộc
+    // tính `hidden` tĩnh trong HTML — cái đó đã có lưới riêng ở trên. Ở đây ta đo ĐỘNG: script
+    // phải TỰ ẩn nút khi có tín hiệu "đã xong", không nhờ vào trạng thái ban đầu của trình duyệt.
+    w.nut("o-nhap").value = "hỏi gì đó";
+    w.nut("nut-gui").bam();
+    expect(w.nut("nut-dung").hidden).toBe(false);
+
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: null, canhBao: null });
+    expect(w.nut("nut-dung").hidden).toBe(true);
+  });
+
+  it("★★ nhận `loi` ⇒ CŨNG ẩn nút Dừng (đường lỗi thật, không phải AbortError, vẫn phải kết thúc)", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "hỏi gì đó";
+    w.nut("nut-gui").bam();
+    expect(w.nut("nut-dung").hidden).toBe(false);
+
+    w.banTin({ loai: "loi", thongDiep: "lỗi thật" });
+    expect(w.nut("nut-dung").hidden).toBe(true);
+  });
+
+  it("★★★ bấm nút Dừng ⇒ extension nhận ĐÚNG MỘT tin `dung_hoi`, KHÔNG lẫn với `huy` (huỷ đề xuất ghi)", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "hỏi gì đó";
+    w.nut("nut-gui").bam();
+    w.nut("nut-dung").bam();
+
+    expect(w.daGui.filter((m) => m.loai === "dung_hoi")).toHaveLength(1);
+    expect(w.daGui.filter((m) => m.loai === "huy")).toHaveLength(0);
+  });
+
+  it("★★ chỉ `thong_bao`/`token` giữa chừng KHÔNG được ẩn nút — chúng là tiến độ, không phải kết thúc", () => {
+    // Vòng lặp tác nhân (Task 3) bắn `thong_bao` nhiều lần GIỮA một lượt hỏi còn đang chạy (báo
+    // "vòng N/3 — đang đọc tệp…"). Ẩn nút Dừng theo tín hiệu đó là ẩn nhầm lúc còn đang chạy.
+    const w = chayWebview();
+    w.nut("o-nhap").value = "hỏi gì đó";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "token", chu: "a" });
+    w.banTin({ loai: "thong_bao", thongDiep: "vòng 2/3 — đang đọc tệp" });
+    expect(w.nut("nut-dung").hidden).toBe(false);
   });
 });

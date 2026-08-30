@@ -82,6 +82,13 @@ function nhanYeuCauDoc(y: YeuCauDoc): string {
  * Câu báo khi vòng lặp tác nhân DỪNG vì một lý do KHÔNG PHẢI "xong việc bình thường". `khong_con_tool`
  * (model trả lời suông, hết yêu cầu đọc) KHÔNG có câu — đó là đường hạnh phúc, báo thêm là làm ồn
  * cho một việc đúng như mong đợi.
+ *
+ * ★★★ TASK 4 — hàm này giờ được gọi từ HAI nơi cho `lyDo === "nguoi_dung_dung"`: (1) huỷ GIỮA HAI
+ * vòng — `biHuy` được `buocKeTiep` đọc SAU khi một lượt SSE đã đóng bình thường (chỉ ở LOCAL); (2)
+ * huỷ GIỮA MỘT vòng đang bay — `AbortError` bắt ở `catch` ngoài của `hoi()` (có thể ở CẢ LOCAL lẫn
+ * SERVER, xem đó). Cả hai đường đều phải NÓI RÕ dừng ở vòng mấy — bản cũ chỉ nói "Đã dừng vòng đọc
+ * tự động theo yêu cầu." không kèm số vòng, đủ cho ca (1) (chỉ có một cách hiểu) nhưng KHÔNG đủ cho
+ * ca (2) (người dùng không biết model đã kịp đọc xong bao nhiêu lượt trước khi bị cắt).
  */
 function nhanLyDoDungVong(lyDo: "het_tran" | "nguoi_dung_dung" | "loi", vong: number): string {
   if (lyDo === "het_tran") {
@@ -90,9 +97,20 @@ function nhanLyDoDungVong(lyDo: "het_tran" | "nguoi_dung_dung" | "loi", vong: nu
       "vẫn còn muốn đọc thêm. Hỏi lại nếu cần tiếp tục."
     );
   }
-  if (lyDo === "nguoi_dung_dung") return "Đã dừng vòng đọc tự động theo yêu cầu.";
+  if (lyDo === "nguoi_dung_dung") return `Đã dừng theo yêu cầu — ở vòng ${vong}.`;
   return `Vòng đọc tự động dừng ở lượt ${vong}/${TRAN_VONG_MAC_DINH} vì máy chủ báo lỗi giữa chừng.`;
 }
+
+/**
+ * ★★★ TASK 4 — lý do huỷ khi CHÍNH người dùng bấm nút Dừng, gắn vào `AbortController.abort(reason)`.
+ * Khác với huỷ NGẦM ở đầu `hoi()` (một câu hỏi MỚI đè lên câu cũ, `this.huy?.abort()` KHÔNG kèm lý
+ * do) — `catch` của `hoi()` đọc `reason` này để quyết định có báo "đã dừng" cho người dùng hay
+ * không: huỷ ngầm vì câu hỏi mới không phải một lượt DỪNG, báo ở đó là bong bóng lạc giữa một câu
+ * hỏi hoàn toàn khác (đúng lớp lỗi Đợt A đã trả giá — xem docblock ở `catch` bên dưới).
+ * Trùng chữ CÓ CHỦ Ý với `lyDo: "nguoi_dung_dung"` của `BuocVong` (`vongTacNhan.ts`) — một từ vựng
+ * DUY NHẤT cho "người dùng chủ động dừng", dùng ở cả quyết định vòng lặp lẫn quyết định thực thi.
+ */
+const LY_DO_NGUOI_DUNG_DUNG = "nguoi_dung_dung";
 
 export class BangChat {
   private static hienTai: BangChat | undefined;
@@ -160,6 +178,9 @@ export class BangChat {
       if (m.loai === "xem_diff") { void this.xemDiff(); return; }
       if (m.loai === "duyet") { void this.duyetDeXuat(); return; }
       if (m.loai === "huy") { void this.huyDeXuat(); return; }
+      // ★★★ TASK 4 — nút Dừng. Tên loại tin CỐ Ý khác "huy" (huỷ ĐỀ XUẤT GHI, một khái niệm hoàn
+      // toàn khác) — hai nút không được lẫn vào nhau.
+      if (m.loai === "dung_hoi") { this.dungVongHienTai(); return; }
     });
   }
 
@@ -318,6 +339,26 @@ export class BangChat {
     this.dsDuAn = gopDanhSachDuAn(local, server);
     this.duAnChon = this.duAnChon ?? this.dsDuAn[0]?.id;
     void this.panel.webview.postMessage({ loai: "duAn", ds: this.dsDuAn });
+  }
+
+  /**
+   * ★★★ TASK 4 — NÚT DỪNG phải cắt CẢ HAI: luồng SSE đang bay VÀ vòng lặp tác nhân (Task 3).
+   *
+   * MỘT lời gọi `abort()` đã làm cả hai, không cần một cờ RIÊNG cho vòng lặp: `moDongSse` nhận
+   * chính `AbortSignal` này làm `tinHieu` (cắt SSE — fetch/đọc luồng ném `AbortError`), VÀ vòng lặp
+   * đọc `biHuy: dieuKhien.signal.aborted` ở cuối MỖI vòng (`hoi()`, xem lời gọi `buocKeTiep`) — hai
+   * chỗ đọc CÙNG một `signal.aborted`, không phải hai cờ có thể trôi khỏi nhau.
+   *
+   * `this.huy` LUÔN là bộ điều khiển của lượt hỏi ĐANG CHẠY (một câu hỏi mới thay `this.huy` bằng
+   * bộ điều khiển KHÁC và tự huỷ bộ cũ — xem đầu `hoi()`), nên `abort()` ở đây luôn nhắm ĐÚNG lượt
+   * người dùng đang nhìn thấy trên giao diện, không bao giờ nhắm nhầm một lượt đã chết từ trước.
+   *
+   * `reason = LY_DO_NGUOI_DUNG_DUNG` — PHẢI kèm lý do (khác `abort()` trần dùng cho huỷ NGẦM ở đầu
+   * `hoi()`): `catch` của `hoi()` đọc `dieuKhien.signal.reason` để phân biệt "người dùng bấm Dừng"
+   * (phải báo "đã dừng") với "câu hỏi mới đè lên câu cũ" (im lặng, đúng hành vi đã có từ Đợt A).
+   */
+  private dungVongHienTai(): void {
+    this.huy?.abort(LY_DO_NGUOI_DUNG_DUNG);
   }
 
   private async hoi(cauHoi: string): Promise<void> {
@@ -496,7 +537,31 @@ export class BangChat {
     } catch (e) {
       // Huỷ lượt cũ là hành vi BÌNH THƯỜNG (người dùng hỏi câu mới) — không phải lỗi, không được
       // khai thành lỗi. Chỉ lỗi THẬT mới hiện lên.
-      if ((e as Error).name === "AbortError") return;
+      if ((e as Error).name === "AbortError") {
+        /**
+         * ★★★ TASK 4 — `AbortError` GIỮA MỘT vòng đang bay (fetch/đọc SSE bị cắt bởi `dungVongHienTai`
+         * hoặc bởi huỷ NGẦM ở đầu `hoi()`). PHẢI phân biệt HAI nguồn gốc bằng `reason`, KHÔNG bằng
+         * việc "có AbortError hay không" — Đợt A đã trả giá đúng chỗ này (huỷ lượt hiện thành bong
+         * bóng "Lỗi" tiếng Anh thô); vá sai hướng ở đây là hiện "đã dừng" cho MỌI AbortError, kể cả
+         * lượt bị huỷ NGẦM vì người dùng gõ câu hỏi khác — một bong bóng "đã dừng" lạc giữa một câu
+         * hỏi hoàn toàn mới còn tệ hơn im lặng.
+         *   · `reason === LY_DO_NGUOI_DUNG_DUNG` ⇒ CHÍNH `dungVongHienTai` của LƯỢT NÀY vừa gọi
+         *     (đọc `dieuKhien.signal`, biến CỤC BỘ của closure — không phải `this.huy`, cùng lý do
+         *     Task 3 đã nêu: `this.huy` có thể đã bị một lượt hỏi MỚI thay bằng bộ điều khiển khác).
+         *     Báo "đã dừng — ở vòng N" (không phải "lỗi"), rồi gửi `hoan_tat` để webview coi lượt
+         *     này ĐÃ XONG (ẩn nút Dừng — xem `htmlBang.ts`; không tín hiệu nào khác làm việc đó).
+         *   · Ngược lại (huỷ NGẦM, không kèm lý do) ⇒ giữ NGUYÊN hành vi cũ: im lặng, không báo gì
+         *     — lượt hỏi MỚI đã tự lo trạng thái của chính nó.
+         */
+        if (dieuKhien.signal.reason === LY_DO_NGUOI_DUNG_DUNG) {
+          void this.panel.webview.postMessage({
+            loai: "thong_bao",
+            thongDiep: nhanLyDoDungVong("nguoi_dung_dung", vong),
+          });
+          void this.panel.webview.postMessage({ loai: "hoan_tat", vanBanCuoi: null, canhBao: null });
+        }
+        return;
+      }
       if (laLoi401(e)) {
         // Spec §5.1: "401 giữa chừng ⇒ xoá cookie, mời đăng nhập lại" — cookie chết mà để lại thì
         // mọi lượt sau lại 401 y hệt, không ai biết vì sao. CHỈ 401 mới xoá — 403/500 không xoá.

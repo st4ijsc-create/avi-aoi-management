@@ -58,6 +58,10 @@ export function dungHtmlBang(dv: { nonce: string }): string {
 <div id="hang-nhap">
   <textarea id="o-nhap" rows="2" placeholder="Hỏi AI Local… (Ctrl+Enter để gửi)"></textarea>
   <button id="nut-gui">Gửi</button>
+  <!-- TASK 4 — nút DỪNG. MẶC ĐỊNH ẨN: chỉ có ý nghĩa khi một lượt hỏi đang chạy (đang chờ SSE
+       hoặc đang giữa vòng lặp tác nhân), không phải lúc rảnh. Hàm gui() hiện nó khi bắn câu hỏi;
+       nơi DUY NHẤT ẩn lại là lúc nhận được tín hiệu 'lượt này đã xong' (hoan_tat/loi) — xem dưới. -->
+  <button id="nut-dung" hidden>Dừng</button>
 </div>
 <script nonce="${n}">
   const vscode = acquireVsCodeApi();
@@ -79,12 +83,19 @@ export function dungHtmlBang(dv: { nonce: string }): string {
     return c;
   }
 
+  // ★★★ TASK 4 — nút Dừng: hiện khi một lượt hỏi ĐANG chạy, ẩn lúc rảnh. Webview không tự quyết
+  // "dừng nghĩa là gì" (cắt SSE? đặt cờ vòng lặp?) — nó chỉ báo Ý ĐỊNH của người dùng qua
+  // \`postMessage\`, đúng nguyên tắc "webview chỉ hiển thị + chuyển tiếp" đã áp cho thẻ duyệt.
+  const nutDung = document.getElementById("nut-dung");
+  nutDung.addEventListener("click", () => vscode.postMessage({ loai: "dung_hoi" }));
+
   function gui() {
     const cauHoi = oNhap.value.trim();
     if (!cauHoi) return;
     themLuot("Bạn", cauHoi);
     oNhap.value = "";
     khoiTraLoi = themLuot("AI Local", "");
+    nutDung.hidden = false;
     vscode.postMessage({ loai: "hoi", cauHoi, duAnId: document.getElementById("o-du-an").value });
   }
 
@@ -127,13 +138,18 @@ export function dungHtmlBang(dv: { nonce: string }): string {
   window.addEventListener("message", (e) => {
     const m = e.data;
     if (m.loai === "token" && khoiTraLoi) khoiTraLoi.textContent += m.chu;
-    else if (m.loai === "loi") themLuot("Lỗi", m.thongDiep);
+    else if (m.loai === "loi") { themLuot("Lỗi", m.thongDiep); nutDung.hidden = true; }
     else if (m.loai === "hoan_tat") {
       // vanBanCuoi chỉ có khi server bảo THAY chữ đã stream (degraded) — không phải mọi lượt.
       if (m.vanBanCuoi != null && khoiTraLoi) khoiTraLoi.textContent = m.vanBanCuoi;
       // Cắt ngang hoặc khung hỏng: KHÔNG được im lặng — phải hiện, kể cả khi câu trả lời trông
       // như đã xong.
       if (m.canhBao) themLuot("Lưu ý", m.canhBao);
+      // ★★★ TASK 4 — \`hoan_tat\` là tín hiệu DUY NHẤT "cả lượt hỏi (mọi vòng) đã xong", kể cả khi nó
+      // xong VÌ bị dừng (extension vẫn gửi \`hoan_tat\` sau khi báo "đã dừng" — xem \`bangChat.ts\`).
+      // Ẩn nút Dừng Ở ĐÂY, không đoán qua bất kỳ tín hiệu nào khác (token/thong_bao vẫn có thể bắn
+      // giữa các vòng của MỘT lượt hỏi đang chạy — ẩn theo chúng sẽ ẩn nhầm lúc còn đang chạy).
+      nutDung.hidden = true;
     } else if (m.loai === "duAn") {
       const o = document.getElementById("o-du-an");
       o.innerHTML = "";
