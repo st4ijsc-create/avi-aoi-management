@@ -115,6 +115,23 @@ export function demSoLoiVinhVienTuLichSu(lichSuMetadata: ReadonlyArray<unknown>)
   ).length;
 }
 
+/**
+ * ★★★ BG-65 (Pha 1E Task 2 ⛔) — hàm THUẦN, MỘT nguồn sự thật cho "gói ZIP
+ * này đã HỎNG VĨNH VIỄN chưa" ('dead', migration 0344, trạng thái CUỐI). Dùng
+ * CHUNG cho CẢ BA cửa của vòng Agent (`presign`/`commit` ở file này, VÀ tuyến
+ * PUT `/api/aoi/upload/:packageId` ở `server/_core/index.ts`, gọi qua
+ * `await import("../routers/aoiPackageRouter")` — cùng cách file đó đã tự
+ * import động mọi service khác). TRƯỚC bản vá BG-65, `upload` tự quyết theo
+ * cách RIÊNG (chỉ biết ngắn mạch `'committed'`, không biết `'dead'`) — một bản
+ * chép tay thứ hai của "trạng thái nào là CUỐI" lệch khỏi bản gốc, đúng lớp
+ * lỗi khiến gói `'dead'` sống lại qua `presign → upload → commit`. Hàm này
+ * đóng lỗ đó bằng cách xoá luôn khả năng lệch: chỉ MỘT chỗ định nghĩa "dead
+ * nghĩa là gì", ba cửa cùng gọi.
+ */
+export function laGoiDaChet(status: string | null | undefined): boolean {
+  return status === "dead";
+}
+
 // ============================================================
 // Activity Log Helper - Ghi nhật ký hoạt động gói tin
 // ============================================================
@@ -557,6 +574,24 @@ export const aoiPackageRouter = router({
             message: "Package already committed",
           };
         }
+        // ★★★ BG-65 (Pha 1E Task 2 ⛔) — 'dead' là trạng thái CUỐI (migration
+        // 0344, Pha 1D Task 5/BG-52): gói đã chạm ngưỡng lỗi VĨNH VIỄN LIÊN
+        // TIẾP ở `commit`. Trước bản vá này, nhánh DUY NHẤT còn lại cho một
+        // gói không-committed là "trả presign cũ để retry" ngay bên dưới —
+        // đúng nghĩa MỜI Agent thử lại một gói không bao giờ commit được, tốn
+        // một lượt upload ZIP (có thể hàng chục MB) vô ích trước khi `commit`
+        // mới từ chối được (:~825 dưới). Từ chối NGAY ở đây — cùng lời văn với
+        // cổng `commit` (:~825) để Agent nhận đúng MỘT thông điệp cho cả vòng.
+        if (laGoiDaChet(pkg.status)) {
+          throw appError(
+            "UNPROCESSABLE_CONTENT",
+            "OPERATION_FAILED",
+            { operation: "processAoiPackage" },
+            `Gói ${pkg.packageId} đã bị đánh dấu HỎNG VĨNH VIỄN sau nhiều lần lỗi không thể phục hồi ` +
+              `(lỗi gần nhất: ${pkg.errorMessage ?? "?"}) — Agent KHÔNG được thử lại gói này nữa. ` +
+              `Cần một gói ZIP MỚI (packageId khác) nếu payload đã được sửa.`,
+          );
+        }
         // Return existing presign info for retry
         return {
           success: true,
@@ -687,7 +722,7 @@ export const aoiPackageRouter = router({
       // gọi lại `commit` sẽ chạy LẠI TOÀN BỘ chi phí (tải ZIP, parse, transaction)
       // để nhận đúng lỗi cũ, vô hạn lần. Đặt SAU cổng xác thực/uỷ quyền ở trên để
       // không lộ trạng thái gói cho một máy không sở hữu nó.
-      if (pkg.status === "dead") {
+      if (laGoiDaChet(pkg.status)) {
         throw appError(
           "UNPROCESSABLE_CONTENT",
           "OPERATION_FAILED",
@@ -762,6 +797,30 @@ export const aoiPackageRouter = router({
 
           // Normalize measurements - support both measurements and points (backward compat)
           const normalizedMeasurements = metaData?.measurements || metaData?.points || [];
+
+          // ★★★ BG-68 (Pha 1E Task 2 ⛔) — đếm NG/NTF THẬT từ measurements[].result,
+          // KHÔNG BAO GIỜ từ metaData.summary. `summary` là lời khai THỨ HAI của
+          // CHÍNH MÁY, trong CÙNG tệp meta.json, CÙNG ZIP — không phải dữ liệu độc
+          // lập. Trước bản vá này, cả `inferredOverall` (header board-mới) lẫn
+          // `finalOverallResult` (package row + hook WIP) suy verdict từ
+          // `metaData.summary?.ng`/`calculatedSummary.ng` (calculatedSummary ưu
+          // tiên `metaData.summary` khi có — xem dưới), nên `verdictXauHon(khai,
+          // khai)` chỉ so hai lời khai của MỘT nguồn với nhau: một máy khai NHẤT
+          // QUÁN SAI (`overallResult:"OK"` + `summary.ng:0` + `measurements[]` có
+          // `result:"NG"`) đi lọt hoàn toàn. Đúng lỗ mà `614245c0` vừa đóng cho
+          // đường v1.x (`machineApiRouters.ts`, cuộn từ `measurementResults` THẬT
+          // qua `rollupVerdict`) — vẫn mở nguyên ở cửa ZIP.
+          // Đếm này nuôi CẢ HAI nơi suy overallResult bên dưới (header board-mới
+          // ở khối `metaData?.serialNumber` VÀ `finalOverallResult`) — không còn
+          // nơi nào đọc `metaData.summary` để quyết định VERDICT. Phạm vi cố ý hẹp:
+          // `calculatedSummary` (totalPoints/ok/ng lưu vào `inspection_packages`
+          // để BÁO CÁO) giữ nguyên hành vi cũ — chỉ overallResult mới bắt buộc
+          // cuộn từ dữ liệu thật (BG-68 chỉ canh verdict, không mở rộng sang các
+          // cột đếm báo cáo).
+          const ngNtfThat = {
+            ng: normalizedMeasurements.filter((p) => p.result === "NG").length,
+            ntf: normalizedMeasurements.filter((p) => !p.result || p.result === "NTF").length,
+          };
 
           // ── P0-A data-integrity: resolve REAL measurement-point definition ids ──
           // Resolve the product model (by code) so auto-provisioned point defs are
@@ -930,11 +989,13 @@ export const aoiPackageRouter = router({
                 newMeasurementRows.push(buildRecord(idx, pointsWithImages[idx] as any));
               }
 
-              // Determine overall result — xem inferAoiOverallResult (PHẦN 2, lỗi 1).
+              // Determine overall result — xem inferAoiOverallResult (PHẦN 2, lỗi 1)
+              // + BG-68 (ngNtfThat, đếm THẬT từ measurements[].result — KHÔNG còn
+              // đọc metaData.summary để suy verdict, xem docblock tại chỗ khai báo).
               const inferredOverall = inferAoiOverallResult({
                 explicitResult: metaData.overallResult ?? null,
-                ngCount: metaData.summary?.ng ?? null,
-                ntfCount: metaData.summary?.ntf ?? null,
+                ngCount: ngNtfThat.ng,
+                ntfCount: ngNtfThat.ntf,
               });
 
               const newInspectionData: InsertProductInspection & { id: number } = {
@@ -991,7 +1052,12 @@ export const aoiPackageRouter = router({
             }
           }
 
-          // Calculate summary from measurements if not provided
+          // Calculate summary from measurements if not provided — CHỈ dùng cho
+          // các cột BÁO CÁO (totalPoints/okCount/ngCount lưu vào
+          // `inspection_packages`, xem :~1140 dưới). KHÔNG dùng cho verdict —
+          // BG-68 tách hẳn hai việc: đếm này vẫn được phép ưu tiên lời khai
+          // `metaData.summary` (phạm vi cố ý hẹp, xem docblock `ngNtfThat`), còn
+          // verdict luôn cuộn từ `ngNtfThat` (đo thật) ở dưới.
           const calculatedSummary = metaData?.summary || {
             totalPoints: normalizedMeasurements.length,
             ok: normalizedMeasurements.filter(p => p.result === 'OK').length,
@@ -1000,14 +1066,15 @@ export const aoiPackageRouter = router({
           };
 
           // Determine overall result (assigns the outer-scope var used by the
-          // post-commit WIP hook below). Cùng hàm thuần với header — biểu thức cũ
-          // `metaData?.overallResult || (calculatedSummary.ng > 0 ? "NG" : "OK")`
-          // mắc ĐÚNG lỗi 1 của PHẦN 2; `calculatedSummary.ntf` đã tính sẵn ở trên
-          // nên sửa ở đây không tốn thêm gì.
+          // post-commit WIP hook below). Cùng hàm thuần với header — BG-68: dùng
+          // `ngNtfThat` (đếm THẬT từ measurements[].result, tính MỘT LẦN ở trên)
+          // thay vì `calculatedSummary.ng/ntf` — biểu thức cũ đọc lại đúng lời
+          // khai `metaData.summary` khi máy CÓ gửi summary (dù summary đó nhất
+          // quán SAI với measurements[]), để lọt đúng lỗ BG-68 mô tả.
           finalOverallResult = inferAoiOverallResult({
             explicitResult: metaData?.overallResult ?? null,
-            ngCount: calculatedSummary.ng,
-            ntfCount: calculatedSummary.ntf,
+            ngCount: ngNtfThat.ng,
+            ntfCount: ngNtfThat.ntf,
           });
 
           // ── Phần ghi còn lại, VẪN MỘT transaction: package images + (CHỈ đường

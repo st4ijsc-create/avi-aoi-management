@@ -17,22 +17,33 @@
  *        lại N lần ⇒ đúng lượt thứ N chuyển 'dead'; lượt N+1 bị từ chối NGAY,
  *        KHÔNG ghi thêm entry `commit_fail` nào (chứng minh short-circuit thật,
  *        không chỉ đọc code rồi tin).
- *   §2 — lỗi TẠM THỜI (ZIP tồn tại nhưng nội dung KHÔNG PHẢI zip hợp lệ ⇒ lỗi
- *        JSZip chung, không khớp TRPCError/SQLSTATE) lặp lại NHIỀU HƠN ngưỡng
- *        ⇒ gói VẪN 'failed' (KHÔNG BAO GIỜ 'dead') — mệnh đề 4, chống siết quá.
+ *   §2 — lỗi TẠM THỜI THẬT (`db.persistInspectionAtomic` ném lỗi kết nối dạng
+ *        `ECONNREFUSED` — KHÔNG phải TRPCError/SQLSTATE 22-23xxx/ZodError/
+ *        SyntaxError/JSZip-corrupt) lặp lại NHIỀU HƠN ngưỡng ⇒ gói VẪN 'failed'
+ *        (KHÔNG BAO GIỜ 'dead') — mệnh đề 4, chống siết quá.
  *
- * ⚠ Giới hạn ĐÃ BIẾT (ghi trong report, không giấu): JSZip parse lỗi trên một
- * file rác thực ra là lỗi VĨNH VIỄN về mặt nghiệp vụ (thử lại CÙNG byte không
- * bao giờ thành công) — nhưng `isPermanentSubmitError` (tái dùng nguyên văn,
- * không viết bản thứ hai) không nhận diện được lỗi JSZip vì nó không phải
- * TRPCError/SQLSTATE. §2 dùng chính kịch bản này làm PROXY cho "lỗi bị xếp
- * TẠM THỜI" — đúng hành vi thật của hệ thống hôm nay, không phải hành vi lý
- * tưởng.
+ * ── Pha 1E Task 1 (`a1061acb`, BG-64) đổi PHÂN LOẠI, §2 CŨ đổi GIẢ ĐỊNH ────────
+ * §2 TỪNG dùng "ZIP tồn tại nhưng nội dung KHÔNG PHẢI zip hợp lệ" (lỗi JSZip
+ * chung) làm PROXY cho "lỗi bị xếp TẠM THỜI" — CHỈ đúng vì `isPermanentSubmitError`
+ * (bản TRƯỚC Task 1) không nhận diện được lỗi JSZip. Task 1 sửa ĐÚNG lỗ đó: nay
+ * `isPermanentSubmitError` đi bộ `.cause` nhận diện `CORRUPT_ARCHIVE_MESSAGE`
+ * (`inspectionStoreForward.ts`) là VĨNH VIỄN — proxy cũ của §2 giờ ĐÚNG nghĩa
+ * vĩnh viễn, không còn đại diện được cho "tạm thời" nữa (task-1-brief.md đã ghi
+ * trước ripple này). §2 nay dùng đại diện tạm-thời THẬT: `db.persistInspectionAtomic`
+ * (module `../db` THẬT — `vi.spyOn`, KHÔNG `vi.mock("../db")`, cùng kỹ thuật
+ * `server/db/walCayV2PhatLai.db.test.ts` — mọi lời gọi DB KHÁC vẫn chạm CSDL
+ * thật) ném `Error("connect ECONNREFUSED …")` — đúng hình dạng một kết nối DB
+ * chớp nháy thật, KHÔNG khớp bất kỳ lớp VĨNH VIỄN nào của `isPermanentSubmitError`
+ * (xem `inspectionStoreForwardBaLoWal.test.ts:184-186`, cùng khẳng định
+ * `ECONNREFUSED`/`08006`/`57P03` ⇒ `false`). ZIP dùng ở §2 nay HỢP LỆ (đi hết
+ * đường parse tới `persistInspectionAtomic`), khác hẳn §1 (ZIP/file không tồn
+ * tại trên đĩa — lỗi VĨNH VIỄN xảy ra SỚM HƠN, trước khi tới bước này).
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import os from "node:os";
 import path from "node:path";
 import { promises as fsp } from "node:fs";
+import JSZip from "jszip";
 import { eq, and, inArray } from "drizzle-orm";
 import { aoiPackageRouter, demSoLoiVinhVienTuLichSu } from "./aoiPackageRouter";
 import * as db from "../db";
@@ -169,19 +180,54 @@ describe("§1 — lỗi VĨNH VIỄN (ZIP không tồn tại ⇒ NOT_FOUND) lặ
   });
 });
 
-describe("§2 — mệnh đề 4 (chống siết quá): lỗi TẠM THỜI lặp lại NHIỀU HƠN ngưỡng ⇒ KHÔNG BAO GIỜ 'dead', vẫn retry được", () => {
-  it("ZIP tồn tại nhưng KHÔNG PHẢI zip hợp lệ (JSZip ném lỗi chung, không khớp TRPCError/SQLSTATE) — 5 lượt (> ngưỡng=3) ⇒ status vẫn 'failed'", async () => {
+describe("§2 — mệnh đề 4 (chống siết quá): lỗi TẠM THỜI THẬT lặp lại NHIỀU HƠN ngưỡng ⇒ KHÔNG BAO GIỜ 'dead', vẫn retry được", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("db.persistInspectionAtomic ném ECONNREFUSED (ZIP HỢP LỆ, đi hết đường parse) — 5 lượt (> ngưỡng=3) ⇒ status vẫn 'failed'", async () => {
     const packageId = `BG52-PKG-${STAMP}-tmp-a`;
+    const serial = `BG52-SN-${STAMP}-tmp-a`;
     const storageKey = `aoi-packages/${packageId}.zip`;
     const filePath = path.join(process.env.LOCAL_STORAGE_DIR!, storageKey);
+
+    // ZIP THẬT hợp lệ (meta.json parse được, serialNumber MỚI — chưa từng có
+    // product_inspections nào khớp) để lượt commit đi TỚI được
+    // `db.persistInspectionAtomic` — chỗ duy nhất bị vá ném lỗi tạm thời bên dưới.
+    const zip = new JSZip();
+    zip.file(
+      "meta.json",
+      JSON.stringify({
+        serialNumber: serial,
+        productModel: `BG52-PM-${STAMP}`,
+        overallResult: "OK",
+        measurements: [{ pointId: "P1", fileName: "p1.jpg", result: "OK", measuredValue: 1 }],
+        summary: { totalPoints: 1, ok: 1, ng: 0 },
+      }),
+    );
+    zip.file("images/p1.jpg", Buffer.from("bg52-tmp-a-fake-image"));
+    const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
     await fsp.mkdir(path.dirname(filePath), { recursive: true });
-    await fsp.writeFile(filePath, Buffer.from("khong-phai-file-zip-hop-le"));
+    await fsp.writeFile(filePath, zipBuffer);
 
     const pkgDbId = await taoGoi("tmp-a", storageKey);
     const caller = aoiPackageRouter.createCaller({ user: null } as never);
 
+    // Vá ĐÚNG một lời gọi trên module `../db` THẬT (KHÔNG `vi.mock("../db")`,
+    // xem docblock đầu file) — mọi lời gọi DB KHÁC trong `commit` (auth, SELECT
+    // gói, resolve point-def, ghi package_activity_logs, UPDATE status) vẫn
+    // chạm CSDL thật. `connect ECONNREFUSED` không khớp TRPCError/SQLSTATE
+    // 22-23xxx/ZodError/SyntaxError/JSZip-corrupt ⇒ `isPermanentSubmitError`
+    // phân loại TẠM THỜI (đúng như `inspectionStoreForwardBaLoWal.test.ts:184-186`
+    // đã canh cho chính hàm này).
+    vi.spyOn(db, "persistInspectionAtomic").mockRejectedValue(
+      new Error("connect ECONNREFUSED 127.0.0.1:5434"),
+    );
+
     for (let lan = 1; lan <= 5; lan++) {
       await expect(caller.commit({ apiKey: API_KEY, packageId })).rejects.toThrow();
+      const [rowGiua] = await (await db.getDb())!.select().from(inspectionPackages).where(eq(inspectionPackages.id, pkgDbId));
+      expect(rowGiua.status, `sau lượt ${lan}: lỗi tạm thời KHÔNG được đổi status khỏi 'failed'`).toBe("failed");
     }
     const [row] = await (await db.getDb())!.select().from(inspectionPackages).where(eq(inspectionPackages.id, pkgDbId));
     expect(row.status, "5 lượt lỗi TẠM THỜI (vượt ngưỡng 3) — KHÔNG được biến gói chớp-nháy thành gói chết").toBe("failed");

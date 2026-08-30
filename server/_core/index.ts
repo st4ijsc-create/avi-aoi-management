@@ -4732,6 +4732,36 @@ async function startServer() {
         return res.json({ success: true, alreadyUploaded: true, packageId });
       }
 
+      // ★★★ BG-65 (Pha 1E Task 2 ⛔) — 'dead' là trạng thái CUỐI (migration
+      // 0344, Pha 1D Task 5/BG-52): gói đã chạm ngưỡng lỗi VĨNH VIỄN LIÊN TIẾP
+      // ở `aoiPackageRouter.commit`. TRƯỚC bản vá này, route này KHÔNG có
+      // nhánh nào cho 'dead' — nó rơi thẳng xuống dưới và GHI ĐÈ
+      // status→'uploaded' (:~4770 cũ) như một upload bình thường. Vòng Agent
+      // chuẩn `presign → upload → commit` do đó chỉ cần lặp lại là đủ đưa một
+      // gói 'dead' TRỞ VỀ 'uploaded' — xoá tác dụng của cổng
+      // `if (status === "dead")` ở `commit` (aoiPackageRouter.ts:~690), vì cổng
+      // đó không bao giờ còn thấy status='dead' nữa (đã bị route này đổi trước
+      // khi Agent gọi `commit` lại). Mỗi vòng lặp còn GHI ĐÈ ZIP cũ bằng
+      // `storagePut` bên dưới — chi phí I/O vô ích cho một gói không bao giờ
+      // commit được. Từ chối NGAY ở đây, TRƯỚC `storagePut`/UPDATE — cùng lý
+      // do `commit` từ chối sớm: một gói đã bị đánh dấu hỏng vĩnh viễn không
+      // được phép "sống lại" qua BẤT KỲ cửa nào của vòng Agent, không chỉ
+      // riêng `commit`. Dùng `laGoiDaChet` (aoiPackageRouter.ts, import ĐỘNG
+      // — cùng cách file này đã tự `await import(...)` mọi service khác) làm
+      // MỘT nguồn sự thật CHUNG với `presign`/`commit` — không tự định nghĩa
+      // "dead nghĩa là gì" một lần nữa ở đây (đúng lớp lỗi BG-65 vừa vá: một
+      // bản chép tay RIÊNG của luật trạng-thái-cuối lệch khỏi bản gốc).
+      const { laGoiDaChet } = await import("../routers/aoiPackageRouter");
+      if (laGoiDaChet(pkg.status)) {
+        return res.status(422).json({
+          success: false,
+          message:
+            `Gói ${packageId} đã bị đánh dấu HỎNG VĨNH VIỄN sau nhiều lần lỗi không thể phục hồi ` +
+            `(lỗi gần nhất: ${pkg.errorMessage ?? "?"}) — Agent KHÔNG được thử lại gói này nữa. ` +
+            `Cần một gói ZIP MỚI (packageId khác) nếu payload đã được sửa.`,
+        });
+      }
+
       // Detect retry (already uploaded before)
       const isRetry = pkg.status === "uploaded" || pkg.status === "uploading";
 
