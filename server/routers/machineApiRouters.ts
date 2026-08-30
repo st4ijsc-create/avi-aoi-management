@@ -706,8 +706,18 @@ function raiseClockSkewAlert(params: {
 // soi được đối tượng ZodType THẬT, không phải để dùng ở nơi khác.
 export const submitInspectionCoreObject = z.object({
       // Machine identification
-      machineCode: z.string().optional(), // Mã máy (alternative to apiKey)
-      apiKey: z.string().optional(), // API key (backward compatible)
+      // Pha 1E Task 3 (BG-69) — .max() VỆ SINH (không phải rủi ro 22001): cả hai
+      // chỉ dùng để SO KHỚP qua authenticateMachine (SELECT eq(), không INSERT).
+      // machineCode khớp sức chứa machines.code varchar(50) (đo avi_app,
+      // 2026-08-30) — một giá trị dài hơn 50 KHÔNG BAO GIỜ khớp được hàng nào dù
+      // có .max() hay không, nên siết ở đây không từ chối bất kỳ máy nào từng xác
+      // thực thành công hôm nay. apiKey giữ .max(256) — CÙNG con số đã chọn cho
+      // trường `apiKey` của machineDataContractV2 (capChuoiVarcharScan.ts,
+      // KIEM_KE_CAP_CHUOI: "so khớp bằng SELECT eq(), không INSERT — không có
+      // rủi ro 22001"), tái dùng để hai trường CÙNG TÊN trong hai hợp đồng không
+      // lệch quy ước.
+      machineCode: z.string().max(50).optional(), // Mã máy (alternative to apiKey)
+      apiKey: z.string().max(256).optional(), // API key (backward compatible)
 
       // Doc 56 Đ1 (API-2) — OPTIONAL, LOG-ONLY feed schema version. Accepted +
       // logged when present; changes NO behaviour (zod would silently strip an
@@ -747,8 +757,14 @@ export const submitInspectionCoreObject = z.object({
       // only under INGEST_REQUIRE_TIME_OFFSET). Left as a bare string here on
       // purpose: z.string().datetime({offset:true}) would be a HARD tightening
       // applied at import time, killing every machine that sends naive stamps —
-      // QĐ#1 requires the flag + a backward-compatible default.
-      inspectionTime: z.string().optional(),
+      // QĐ#1 requires the flag + a backward-compatible default. `.max(40)` CHỈ
+      // chặn ĐỘ DÀI (dư sức ISO-8601 dài nhất có múi giờ, cùng con số đã dùng
+      // cho `startedAt`/`completedAt` ở machineDataContractV2.ts) — KHÔNG thêm
+      // ràng buộc ĐỊNH DẠNG nào (đó vẫn là superRefine bên dưới), nên không siết
+      // hơn HÀNH VI hôm nay, chỉ chặn payload rác trước khi vào `new Date(...)`
+      // (Pha 1E Task 3, BG-69 — trường này đi cột `timestamp`, không phải
+      // varchar, nên không có rủi ro `22001`).
+      inspectionTime: z.string().max(40).optional(),
 
       // Doc 51 P1 — EXPLICIT INGEST IDEMPOTENCY KEY (closes the 0272 hole).
       // CLIENT-generated and STABLE across retries of the SAME board (e.g. a UUID
@@ -774,7 +790,9 @@ export const submitInspectionCoreObject = z.object({
       // would re-derive provenance from the replay clock and report every buffered
       // board as wildly clock-skewed. The mutation OVERWRITES both unconditionally
       // from the ORIGINAL request, so a machine cannot forge either one.
-      serverReceivedAt: z.string().optional(),
+      // Pha 1E Task 3 (BG-69) — `.max(40)`, cùng lý do `inspectionTime` ở trên
+      // (timestamp column, chặn payload rác, không siết định dạng).
+      serverReceivedAt: z.string().max(40).optional(),
       timeSource: z.enum(["machine_utc", "machine_naive", "server"]).optional(),
 
 
@@ -808,10 +826,19 @@ export const submitInspectionCoreObject = z.object({
       boardIndex: z.number().int().min(1).optional(),
 
       // Measurement data
+      // Pha 1E Task 3 (BG-69) — pointId/pointCode KHỚP CỘT THẬT
+      // `measurement_point_defs.code` varchar(50) VÀ `.name` varchar(255) (đo
+      // avi_app, 2026-08-30): `resolveOrCreateMeasurementPointDefId`
+      // (measurementPointResolver.ts, autoCreate:true) ghi CÙNG một chuỗi
+      // (`normalizedCode`, suy từ pointId||pointCode) vào CẢ HAI cột — trần
+      // ràng buộc là cột HẸP HƠN trong hai (50), không phải 255.
+      // measuredValue KHỚP CỘT THẬT `measurement_results.measuredValueText`
+      // varchar(255) (đo avi_app) — nhánh không-phải-số của `measuredValue`
+      // (machineApiRouters.ts ~dòng 1865: `textValue = String(rawValue)`).
       measurements: z.array(z.object({
-        pointId: z.string().optional(), // ID điểm đo (new)
-        pointCode: z.string().optional(), // Mã điểm đo (backward compatible)
-        measuredValue: z.union([z.number(), z.string()]).optional(), // Giá trị đo (number hoặc string)
+        pointId: z.string().max(50).optional(), // ID điểm đo (new) — measurement_point_defs.code varchar(50)
+        pointCode: z.string().max(50).optional(), // Mã điểm đo (backward compatible) — cùng cột trên
+        measuredValue: z.union([z.number(), z.string().max(255)]).optional(), // Giá trị đo (number hoặc string) — measurement_results.measuredValueText varchar(255)
         // Doc 51 P2 (CASE #11) — the unit the machine measured `measuredValue` in
         // (e.g. "mil"). Optional + additive: absent ⇒ exactly today's behaviour.
         // When it differs from the point def's unit, the server converts the value
@@ -819,21 +846,40 @@ export const submitInspectionCoreObject = z.object({
         // silently downgrade a good board. `unitScaleToCanonical` optionally gives
         // an explicit factor to mm for a non-standard unit the table doesn't know.
         unit: z.string().trim().max(20).optional(),
-        unitScaleToCanonical: z.union([z.number(), z.string()]).optional(),
+        // Pha 1E Task 3 (BG-69) — VỆ SINH: `unitScaleToCanonical` KHÔNG được ghi
+        // xuống DB ở đâu cả (chỉ vào `toNum()` trong pointResultEvaluator.ts để
+        // đổi đơn vị TRONG BỘ NHỚ) — `.max(255)` chỉ chặn payload rác, cùng con
+        // số ĐÃ CHỌN cho nhánh chuỗi của `value`/`lowerLimit`/`upperLimit` ở
+        // machineDataContractV2.ts (đối xứng, không phải đo từ cột nào).
+        unitScaleToCanonical: z.union([z.number(), z.string().max(255)]).optional(),
         result: z.enum(["OK", "NG", "NTF"]), // Kết quả
-        remark: z.string().optional(), // Ghi chú
+        // Pha 1E Task 3 (BG-69) — MIỄN TRỪ có chủ đích, KHÔNG phải lỗ bỏ sót:
+        // cột đích `measurement_results.remark` là `text` (đo avi_app, NULL =
+        // không giới hạn thật) — cùng lý do `errorDesc` bị loại trừ ở
+        // machineDataContractV2.ts và `measurements[].remark` bị loại trừ ở
+        // `metaJsonSchema` (aoiPackageRouter.ts). Đăng ký trong
+        // `MIEN_TRU_SUBMIT_INSPECTION_CORE` (capChuoiVarcharDuongIngestMacDinh.test.ts)
+        // để walker biết đây là loại trừ TƯỜNG MINH, không phải một lá bị quên.
+        remark: z.string().optional(), // Ghi chú — measurement_results.remark là `text`, KHÔNG `.max()`
         imageBase64: z.string().max(MAX_IMAGE_B64, IMAGE_B64_TOO_LARGE).optional(), // Hình ảnh base64 (optional)
-        valueZ: z.union([z.number(), z.string()]).optional(),
-        valueHeight: z.union([z.number(), z.string()]).optional(),
-        valueArea: z.union([z.number(), z.string()]).optional(),
-        valueVolume: z.union([z.number(), z.string()]).optional(),
-        valueVoidPct: z.union([z.number(), z.string()]).optional(),
-        valueCoplanarity: z.union([z.number(), z.string()]).optional(),
-        valueWarpage: z.union([z.number(), z.string()]).optional(),
-        valueOffsetX: z.union([z.number(), z.string()]).optional(),
-        valueOffsetY: z.union([z.number(), z.string()]).optional(),
-        valueTilt: z.union([z.number(), z.string()]).optional(),
-        valueThickness: z.union([z.number(), z.string()]).optional(),
+        // Pha 1E Task 3 (BG-69) — VỆ SINH: cả mười trường dưới đây đi cột
+        // `decimal(15,6)` (drizzle/schema/inspection.ts) qua `toOptionalDecimal()`
+        // — KHÔNG PHẢI varchar, không có rủi ro `22001`. `.max(255)` chỉ chặn
+        // payload rác trước khi `Number()`/`toOptionalDecimal()` xử lý, cùng
+        // hằng số 255 dùng cho mọi nhánh chuỗi "giá trị đo" khác trong hai hợp
+        // đồng (đối xứng `measuredValue`/`value`/`lowerLimit`/`upperLimit`) —
+        // không phải số đo từ cột nào (không có cột varchar đích).
+        valueZ: z.union([z.number(), z.string().max(255)]).optional(),
+        valueHeight: z.union([z.number(), z.string().max(255)]).optional(),
+        valueArea: z.union([z.number(), z.string().max(255)]).optional(),
+        valueVolume: z.union([z.number(), z.string().max(255)]).optional(),
+        valueVoidPct: z.union([z.number(), z.string().max(255)]).optional(),
+        valueCoplanarity: z.union([z.number(), z.string().max(255)]).optional(),
+        valueWarpage: z.union([z.number(), z.string().max(255)]).optional(),
+        valueOffsetX: z.union([z.number(), z.string().max(255)]).optional(),
+        valueOffsetY: z.union([z.number(), z.string().max(255)]).optional(),
+        valueTilt: z.union([z.number(), z.string().max(255)]).optional(),
+        valueThickness: z.union([z.number(), z.string().max(255)]).optional(),
         defectCatalogCode: z.string().max(50).optional(),
         defectSeverity: z.enum(["critical", "major", "minor", "cosmetic"]).optional(),
       })),
@@ -2879,16 +2925,28 @@ const processWaveformSchema = z.object({
   samples: z.array(z.tuple([z.number(), z.number()])).max(100_000),
 });
 
-const submitProcessResultCoreObject = z.object({
+// Pha 1E Task 3 (BG-69) — `export` (KHÔNG đổi hình dạng/hành vi) CHỈ để census
+// schema-walk (server/contracts/capChuoiVarcharScan.ts) soi được đối tượng
+// ZodType THẬT của cửa ingest thứ ba/tư (submitProcessResult/…Batch, cùng
+// `laTenCuaIngest` mà cuaIngestScan.ts đã canh) — cùng quy ước
+// `submitInspectionCoreObject` ở trên. serialNumber/stepType/recipe.*/
+// lineCode/productionOrderCode/lotCode/idempotencyKey ĐÃ khớp cột thật
+// `process_results.*` (đo avi_app, 2026-08-30: serialNumber(128)/stepType(64)/
+// lineCode(50)/productionOrderCode(80)/lotCode(80)/idempotencyKey(200)) TRƯỚC
+// lượt sửa này — chỉ machineCode/apiKey/ts/serverReceivedAt còn thiếu `.max()`,
+// cùng lý do (SO KHỚP/timestamp, không INSERT verbatim) + cùng con số đã chọn
+// cho các trường CÙNG TÊN ở `submitInspectionCoreObject`.
+export const submitProcessResultCoreObject = z.object({
   schemaVersion: z.string().max(20).optional(), // log-only provenance (shared w/ inspection feed)
-  machineCode: z.string().optional(),           // OR authenticate via Authorization header
-  apiKey: z.string().optional(),
+  machineCode: z.string().max(50).optional(),   // OR authenticate via Authorization header
+  apiKey: z.string().max(256).optional(),
   serialNumber: z.string().trim().min(1).max(128),
   stepType: z.string().trim().min(1).max(64),   // SHOULD be in process_step_types (validate mode)
   result: z.enum(PROCESS_RESULT_VALUES),
   // ISO-8601. OPTIONAL: absent ⇒ server stamps now() + timeSource='server'. When
   // PRESENT it MUST be parseable AND carry an explicit UTC offset (refine below).
-  ts: z.string().optional(),
+  // .max(40) — Pha 1E Task 3 (BG-69), timestamp column, không phải varchar.
+  ts: z.string().max(40).optional(),
   recipe: z
     .object({
       code: z.string().trim().min(1).max(128),
@@ -2905,8 +2963,47 @@ const submitProcessResultCoreObject = z.object({
   productionOrderCode: z.string().trim().max(80).optional(),
   lotCode: z.string().trim().max(80).optional(),
   // ── SERVER-STAMPED, carried through the WAL (a machine cannot forge them) ──
-  serverReceivedAt: z.string().optional(),
+  // .max(40) — Pha 1E Task 3 (BG-69), cùng lý do `ts` ở trên.
+  serverReceivedAt: z.string().max(40).optional(),
   timeSource: z.enum(["device", "server"]).optional(),
+});
+
+/**
+ * Pha 1E Task 3 (BG-69) — `syncEdgeResults.input`, TRÍCH XUẤT từ inline
+ * `.input(z.object({…}))` thành named export CÙNG quy ước
+ * `submitInspectionCoreObject`/`submitProcessResultCoreObject` ở trên — cửa
+ * ingest thứ năm (`laTenCuaIngest`: `/^sync.*result/i` khớp "syncEdgeResults").
+ *
+ * `localResultId`/`topLabel` ĐÃ khớp cột thật `edge_inference_sync.*` varchar(100)
+ * (đo avi_app, 2026-08-30) TRƯỚC lượt sửa này — không đổi. `machineCode`/
+ * `apiKey` — VỆ SINH, cùng lý do + cùng con số hai trường CÙNG TÊN ở
+ * `submitInspectionCoreObject`. `inferredAt` (nhánh chuỗi) — VỆ SINH:
+ * `edge_inference_sync.inferredAt` là cột `timestamp` (không phải varchar),
+ * `.max(40)` cùng lý do `ts`/`serverReceivedAt` ở `submitProcessResultCoreObject`.
+ * `results[].inputReference` — MIỄN TRỪ có chủ đích: cột đích
+ * `edge_inference_sync.inputReference` là `text` (đo avi_app, NULL = không
+ * giới hạn thật), cùng lớp lý do `errorDesc`/`measurements[].remark`.
+ * `results[].predictions[].label` — VỆ SINH: `predictions` là cột `json`
+ * (`drizzle/schema/ai.ts`, `.$type<Array<{label,confidence}>>()`), cả mảng
+ * được serialize NGUYÊN VẸN — không có trần varchar nào cho riêng `label`,
+ * nhưng KHÔNG unbounded thật như `text` (JSON vẫn có thể phình vô hạn nếu
+ * không chặn) — `.max(255)` chặn payload rác, cùng hằng số 255 dùng cho các
+ * nhánh chuỗi "giá trị" khác trong ba hợp đồng.
+ */
+export const syncEdgeResultsCoreObject = z.object({
+  machineCode: z.string().max(50).optional(),
+  apiKey: z.string().max(256).optional(),
+  deploymentId: z.number().int().positive(),
+  results: z.array(z.object({
+    localResultId: z.string().min(1).max(100),
+    inputReference: z.string().optional(), // edge_inference_sync.inputReference là `text`, KHÔNG `.max()` (xem docblock)
+    predictions: z.array(z.object({ label: z.string().max(255), confidence: z.number() })),
+    confidence: z.number(),
+    topLabel: z.string().max(100),
+    processingTimeMs: z.number().int().nonnegative().optional(),
+    inferredAt: z.union([z.string().max(40), z.date()]),
+    inspectionId: z.number().int().positive().optional(),
+  })).max(500),
 });
 
 /**
@@ -5746,21 +5843,7 @@ export const machineApiRouter = router({
   // syncEdgeResults — machine pushes offline inference results. Idempotent via
   // localResultId (re-sending the same batch never duplicates rows).
   syncEdgeResults: publicProcedure
-    .input(z.object({
-      machineCode: z.string().optional(),
-      apiKey: z.string().optional(),
-      deploymentId: z.number().int().positive(),
-      results: z.array(z.object({
-        localResultId: z.string().min(1).max(100),
-        inputReference: z.string().optional(),
-        predictions: z.array(z.object({ label: z.string(), confidence: z.number() })),
-        confidence: z.number(),
-        topLabel: z.string().max(100),
-        processingTimeMs: z.number().int().nonnegative().optional(),
-        inferredAt: z.union([z.string(), z.date()]),
-        inspectionId: z.number().int().positive().optional(),
-      })).max(500),
-    }).refine((d) => d.apiKey || d.machineCode, {
+    .input(syncEdgeResultsCoreObject.refine((d) => d.apiKey || d.machineCode, {
       message: 'Either apiKey or machineCode must be provided',
     }))
     .mutation(async ({ input, ctx }) => {

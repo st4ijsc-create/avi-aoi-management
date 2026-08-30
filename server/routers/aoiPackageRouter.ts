@@ -524,6 +524,40 @@ export function toOriginalResult(overall: "OK" | "NG" | "NTF"): "OK" | "NG" {
   return overall === "NTF" ? "NG" : overall;
 }
 
+/**
+ * Pha 1E Task 3 (BG-69) — `presign.input`, TRÍCH XUẤT thành named export CÙNG
+ * quy ước `submitInspectionCoreObject` (machineApiRouters.ts): `export`
+ * (không đổi hình dạng/hành vi) CHỈ để census schema-walk
+ * (`server/contracts/capChuoiVarcharScan.ts`) soi được đối tượng `ZodType`
+ * THẬT trước khi `.refine()` áp lên — `.refine()` không đổi cấu trúc trường,
+ * chỉ thêm một ràng buộc CHÉO (apiKey || machineCode) không đụng tới `.max()`.
+ *
+ * ★★★ LỖ THẬT ĐƯỢC ĐÓNG Ở ĐÂY — `inspectionId` KHỚP CỘT THẬT
+ * `inspection_packages.packageId` varchar(100) (đo avi_app, 2026-08-30):
+ * `presign` INSERT `packageId: input.inspectionId` NGUYÊN VĂN
+ * (xem `database.insert(inspectionPackages).values({...})` bên dưới) — trước
+ * bản vá này, một `inspectionId` > 100 ký tự rơi thẳng xuống Postgres
+ * `[22001] value too long for type character varying(100)`, và lỗi đó xảy ra
+ * Ở BƯỚC `presign` — TRƯỚC KHI `metaJsonSchema` (đã siết từ Pha 1D Task 5)
+ * kịp soi bất kỳ trường nào của `meta.json` (`meta.json` chỉ xuất hiện ở bước
+ * `commit`, sau khi ZIP đã được tải lên trọn vẹn — presign từ chối SỚM tiết
+ * kiệm một lượt upload ZIP vô ích).
+ *
+ * `apiKey`/`machineCode` — VỆ SINH, cùng lý do + cùng con số đã chọn cho hai
+ * trường CÙNG TÊN ở `submitInspectionCoreObject` (chỉ SO KHỚP qua
+ * `authenticateMachine`, không INSERT). `sha256` — VỆ SINH: đã grep toàn file
+ * `input.sha256` — chỉ xuất hiện ở khai báo schema (đây + `commit`), không hề
+ * được đọc/so sánh ở đâu khác — `.max(128)` dư sức SHA-256 hex thật (64 ký
+ * tự), chặn payload rác.
+ */
+export const presignCoreObject = z.object({
+  apiKey: z.string().max(256).optional(),
+  machineCode: z.string().max(50).optional(),
+  inspectionId: z.string().max(100), // From agent (unique ID) — inspection_packages.packageId varchar(100)
+  sizeBytes: z.number(),
+  sha256: z.string().max(128).optional(),
+});
+
 // ============================================================
 // Router
 // ============================================================
@@ -533,13 +567,7 @@ export const aoiPackageRouter = router({
    * Agent gọi endpoint này trước khi upload
    */
   presign: publicProcedure
-    .input(z.object({
-      apiKey: z.string().optional(),
-      machineCode: z.string().optional(),
-      inspectionId: z.string(), // From agent (unique ID)
-      sizeBytes: z.number(),
-      sha256: z.string().optional(),
-    }).refine(data => data.apiKey || data.machineCode, {
+    .input(presignCoreObject.refine(data => data.apiKey || data.machineCode, {
       message: "Either apiKey or machineCode must be provided",
     }))
     .mutation(async ({ input, ctx }) => {
