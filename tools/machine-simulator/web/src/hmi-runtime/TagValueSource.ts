@@ -48,10 +48,17 @@
  * ── `keyMetric`: giving the regex hack a face, not moving it ───────────────────────────────────
  * The engine's own `MachineState.FormatKeyMetric` emits `"{name}={value}{unit}"` with no separating
  * space (`"Torque=4.2Nm"`) — `web/src/components/hmi/derive.ts`'s `parseKeyMetric` already parses that
- * back apart with a regex, and three components import it directly today (`ReadoutGrid.tsx`,
- * `SchematicPanel.tsx`, `Hmi.tsx`). This adapter REUSES that exact function (not a second copy of the
- * regex — a second copy is the copy nobody updates) so the seam and the existing screens agree by
- * construction. `parseKeyMetric` returns `null` for shapes that don't match that grammar (the AOI "N
+ * back apart with a regex. This adapter REUSES that exact function (not a second copy of the regex — a
+ * second copy is the copy nobody updates) so the seam and the existing screens agree by construction.
+ *
+ * 🔴 whole-branch-review.md L1 — this sentence used to name the importers as "`ReadoutGrid.tsx`,
+ * `SchematicPanel.tsx`, `Hmi.tsx`", and both of the other two were already wrong before this correction:
+ * `SchematicPanel.tsx` never imported `parseKeyMetric` (a Task-1 deferral, wrong at the branch base
+ * too), and `Hmi.tsx` stopped being an importer at `7902570f`, on THIS branch, when Task 5 moved its
+ * `iotLatestReading` derivation out — the sentence was not updated in that same pass. Measured at `HEAD`:
+ * the real importers are `ReadoutGrid.tsx`, `hmi-runtime/widgets/faceplate.tsx` (the live consumer this
+ * sentence used to omit entirely), and this file's own `keyMetricReading` below. `parseKeyMetric` returns
+ * `null` for shapes that don't match that grammar (the AOI "N
  * pts, M NG" / "—" summary strings) — that is NOT an error condition, just a different valid shape the
  * same field takes for a different `DeviceClass`, so this adapter falls back to the raw string with
  * `quality: "good"`, never `"bad"` (see below for why `"bad"` is never used at all).

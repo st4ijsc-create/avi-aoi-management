@@ -61,11 +61,21 @@
    independent of the operator's own global preference: it stamps
    `data-theme={doc.theme}` (`"isa101" | "blueprint"`, contracts/hmiScreen.ts's
    `ScreenTheme`) on its own root grid `<div>` — `"isa101"` resolves against
-   the block below the same way it does at `<html>`; `"blueprint"` has no
-   block of its own on purpose (contracts/hmiScreen.ts's own comment: it means
-   "whatever the app's own theme currently is"), so that attribute value is
-   inert and the nested div just keeps inheriting the ambient Glass/Console/
-   Warmth/isa101 values same as before the attribute was stamped. Bare :root
+   the block below the same way it does at `<html>`.
+   🔴 whole-branch-review.md L2 — this used to attribute "blueprint" has no block of its
+   own on purpose, meaning 'whatever the app's own theme currently is'" to "contracts/
+   hmiScreen.ts's own comment". `web/src/contracts/hmiScreen.ts:21` (`export type
+   ScreenTheme = "isa101" | "blueprint"`) carries NO comment at all, and that file is
+   frozen from Milestone 0 — none can be added there. The semantics were always THIS
+   file's own design decision about what to do with the frozen type's second legal
+   value, not something the contract itself documents: **there is deliberately no
+   `[data-theme="blueprint"]` block below** — no selector matches it — so that
+   attribute value is inert and the nested div just keeps inheriting the ambient
+   Glass/Console/Warmth/isa101 values same as before the attribute was stamped. Adding
+   a `[data-theme="blueprint"]` block here would silently re-theme every screen
+   document that declares it away from the operator's own choice — see
+   `runtime-tests/screens.test.mjs`'s own test pinning all three shipped documents to
+   `"blueprint"` for exactly this reason. Bare :root
    below carries the Glass values and doubles as the safe pre-hydration default
    (first paint, before the provider's effect stamps the attribute) — Glass
    being both the default theme AND the fallback is exactly what "default
