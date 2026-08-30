@@ -436,6 +436,22 @@ builder.Services.AddSingleton<St4i.EngineApi.AssetRegistry.IAssetRegistry>(sp =>
         string.IsNullOrWhiteSpace(assetsDir) ? null : assetsDir,
         logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("Assets").LogError(ex, "{AssetsMsg}", msg)));
 
+// WS-HMI-0a Task 5 — the two stores Tasks 2/3 built (ComponentModelStore/TagNamespaceStore) registered
+// behind their seams (IComponentModelStore/ITagNamespaceStore), same "resolve env var, pass explicit-or-
+// null to the ctor, AddSingleton BEFORE Build()" convention as IAssetRegistry directly above. NO endpoint
+// reads either seam yet — that is WS-HMI-0b's job, and this task deliberately does not add one (see this
+// task's brief: "Không thêm endpoint nào — API là WS-HMI-0b"). Registering the seam now, endpoint-free, is
+// what lets 0b depend on DI resolution instead of constructing its own store.
+var hmiModelDir = Environment.GetEnvironmentVariable(St4i.EngineApi.HmiModel.ComponentModelStore.EnvVarDir);
+builder.Services.AddSingleton<St4i.EngineApi.HmiModel.IComponentModelStore>(
+    _ => new St4i.EngineApi.HmiModel.ComponentModelStore(
+        string.IsNullOrWhiteSpace(hmiModelDir) ? null : hmiModelDir));
+
+var hmiTagsDir = Environment.GetEnvironmentVariable(St4i.EngineApi.HmiModel.TagNamespaceStore.EnvVarDir);
+builder.Services.AddSingleton<St4i.EngineApi.HmiModel.ITagNamespaceStore>(
+    _ => new St4i.EngineApi.HmiModel.TagNamespaceStore(
+        string.IsNullOrWhiteSpace(hmiTagsDir) ? null : hmiTagsDir));
+
 // GĐ3 sub-4 LC-1 (.superpowers/sdd/2026-07-27-giaidoan3-alarms-linecontroller-blueprint/task-1-brief.md) —
 // the alarm backbone: a durable SQLite store (alarms.db) for the ISA-18.2 alarm model (raise/clear/ack/
 // list/history). Registered as a singleton BEFORE Build() (same convention as IAssetRegistry above) so

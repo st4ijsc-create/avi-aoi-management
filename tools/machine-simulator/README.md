@@ -1201,9 +1201,11 @@ started one) — and see §17.3 for the full Ecosystem Connect table:
 discovery), plus GĐ3 closeout WI-1/WI-2/WI-3's new `ST4I_MDNS_ADVERTISE`/`ST4I_MDNS_SERVICE_TYPE`
 (§17.8, mDNS advertise — **new outbound network behavior, on by default whenever UNS is enabled**) and
 `ST4I_BRIDGE_SPOOL_ENABLED`/`_DIR`/`_MAX_BYTES`/`_MAX_AGE_HOURS` (§17.9, the durable bridge spool), and
-§18.2 for `ST4I_IDENTITY_EXPIRY_WARN_DAYS` (§17.10, the `Identity` alarm) and 🔴 `ST4I_NOTIFICATIONS_DIR`
+§18.2 for `ST4I_IDENTITY_EXPIRY_WARN_DAYS` (§17.10, the `Identity` alarm), 🔴 `ST4I_NOTIFICATIONS_DIR`
 (Đợt C, §22 — the alarm **notification** configuration store, which holds channel credentials protected
-with DPAPI, so **that directory's ACL is a confidentiality boundary**).)*
+with DPAPI, so **that directory's ACL is a confidentiality boundary**), and 🔴 `ST4I_HMI_MODEL_DIR`/
+`ST4I_HMI_TAGS_DIR` (WS-HMI-0a Task 5, §15.9 — the declared HMI component tree and tag namespace;
+neither has an endpoint yet, see the roadmap ledger).)*
 
 *(WS-F1 final-review fix F1 — `ST4I_SERVER_URL`/`ST4I_MACHINE_CODE`/`ST4I_VERIFY_TLS` are read ONCE at
 process start and applied via `FleetHost.UpdateSettings` — the exact same code path a runtime
@@ -1282,11 +1284,13 @@ pass) removes only what the MSI itself installed — everything under `%ProgramF
 Simulator\`, the Start Menu/Startup shortcuts, and — if `ServiceFeature` was enabled — stops and
 deletes the `St4iEngineApi` service.
 
-**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine creates **sixteen**
+**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine creates **eighteen**
 directories there (`historian`, `wal`, `security`, `creds`, `notifications`, `identity`,
 `connector-config`, `opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`,
 `machine-config`, `products`, `ecosystem` — 🔴 the last three arrived on **2026-08-23**, when the owner
-moved three stores that until then wrote **beside the engine binary**; see §15.9) and
+moved three stores that until then wrote **beside the engine binary**; see §15.9 — and `hmi-model`,
+`hmi-tags` arrived on **2026-08-30** (WS-HMI-0a Task 5), the day `Program.cs` first registered
+`ComponentModelStore`/`TagNamespaceStore` into the DI graph) and
 the MSI has no `<Component>` referencing anything there (it's all runtime-created by the engine, not
 installed), so Windows Installer's uninstall/remove sequence never touches it. This is deliberate: an
 uninstall or upgrade must never silently destroy production history, the audit trail, or a machine's
@@ -1304,7 +1308,7 @@ destructive script — **never** invoked by the MSI itself:
 .\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -SecurityDir D:\St4iData\security -IdentityDir D:\St4iData\identity
 ```
 
-It stops+deletes the `St4iEngineApi` service if present, then deletes **fourteen of the sixteen** data
+It stops+deletes the `St4iEngineApi` service if present, then deletes **sixteen of the eighteen** data
 directories — printing an explicit "this destroys the audit chain + historian + credentials" warning up
 front, and a per-directory line naming exactly what each one loses, gated through PowerShell's
 `ShouldProcess`/`-WhatIf`/`-Confirm`.
@@ -1327,6 +1331,18 @@ directory and it **is** purged — it holds the machine's operating parameters a
 `History` of every adjustment, which is a record of what the machine did rather than something an
 operator authored.
 
+🔴 **WS-HMI-0a Task 5, 2026-08-30 — `hmi-model` and `hmi-tags` joined the purge list, not the kept one.**
+The engine gained two more `%ProgramData%` directories the day `Program.cs` first registered
+`ComponentModelStore`/`TagNamespaceStore` (WS-HMI-0a Tasks 2/3) into its DI graph:
+`hmi-model` (the declared component tree a HMI screen resolves against — component types and
+`tagPrefix` bindings) and `hmi-tags` (the declared tag namespace, plus the flat index a driver will
+eventually back). Both are relocatable (`ST4I_HMI_MODEL_DIR`/`ST4I_HMI_TAGS_DIR`) and both are
+**purged**: neither holds a credential, and neither is exempt the way `products`/`ecosystem` are — a
+component tree is closer to `machine-config`'s "record of what the machine currently does" than to a
+recipe an operator typed, and the kept set stays pinned at exactly `{ecosystem, products}` by
+`NotificationDocumentationTests`/`PerHostDataRootsTests`, so a third exemption was never available
+without its own owner ruling.
+
 🔴 **The purge list went from four directories to thirteen in Đợt C (C-8 and its review), and the gap was
 real rather than documentary.** C-8 first added `notifications` — `notifications.db` holds the webhook
 URLs, webhook signing secrets, webhook auth tokens and SMTP passwords an operator configured (§22.5), so
@@ -1345,10 +1361,12 @@ missed hold credentials**:
 The remaining six (`opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`) are customer
 data or trust material rather than bearer credentials, but this script's stated purpose is a clean-slate
 wipe — leaving them meant it did not do that, and an operator reading the old output would reasonably
-have believed the machine was clean. 🔴 **All SIXTEEN directories are relocatable and each has its own
-`-XxxDir` parameter** — `creds` included, and since 2026-08-23 `-MachineConfigDir`, `-ProductsDir` and
-`-EcosystemDir` too. (The last two resolve a path the script **prints and does not delete**; they exist so
-a relocated install's KEPT directories are named correctly in the banner.) (This paragraph said "every directory except `creds`" until the
+have believed the machine was clean. 🔴 **All EIGHTEEN directories are relocatable and each has its own
+`-XxxDir` parameter** — `creds` included, since 2026-08-23 `-MachineConfigDir`, `-ProductsDir` and
+`-EcosystemDir` too, and since 2026-08-30 `-HmiModelDir`/`-HmiTagsDir` (WS-HMI-0a Task 5). (`-ProductsDir`/
+`-EcosystemDir` resolve a path the script **prints and does not delete**; they exist so
+a relocated install's KEPT directories are named correctly in the banner — `-HmiModelDir`/`-HmiTagsDir`
+are ordinary PURGE parameters, not reporting-only ones.) (This paragraph said "every directory except `creds`" until the
 Đợt F branch review: `creds` became relocatable in the test-hygiene batch via `ST4I_CREDS_DIR`
 (`CredentialStore.cs`), `remove-data.ps1` gained `-CredsDir` in the same change, and this sentence was not
 updated with them. It mattered: it told an operator who HAD relocated `creds` that the wipe would still find
@@ -1358,7 +1376,7 @@ it at the default, so the DPAPI-sealed machine credential survived a "clean-slat
 real data doesn't have to live under
 `%ProgramData%\ST4I\sim\*` at all — the script used to assume it always did, silently deleting an
 empty default directory while the real data sat untouched elsewhere. It now resolves **each of the
-sixteen relocatable directories** per its own `-XxxDir` parameter, else the matching `ST4I_*_DIR` environment variable
+eighteen relocatable directories** per its own `-XxxDir` parameter, else the matching `ST4I_*_DIR` environment variable
 in **this same PowerShell process**, else the `%ProgramData%` default — printing the resolved path for
 each before doing anything. **It does NOT read the service's own registry `Environment` value** (only
 this shell's own env) — if a relocated directory was only ever configured there, pass the matching
@@ -1405,7 +1423,12 @@ không chứa thông tin đăng nhập và không chứa lịch sử sản xuấ
 chúng chứa mọi định nghĩa sản phẩm/công thức mà vận hành viên đã gõ vào. Muốn xoá thì xoá hai thư mục ấy
 bằng tay; **cố ý KHÔNG có cờ nào** làm việc đó. `machine-config` là thư mục mới thứ ba và nó **CÓ** bị xoá:
 nó giữ tham số vận hành của máy và danh sách `History` chỉ-thêm của mọi lần điều chỉnh — một bản ghi về
-việc máy ĐÃ LÀM GÌ, không phải thứ vận hành viên dựng lên.)*
+việc máy ĐÃ LÀM GÌ, không phải thứ vận hành viên dựng lên.
+🔴 **CẬP NHẬT 2026-08-30 (WS-HMI-0a Task 5) — engine nay tạo MƯỜI TÁM thư mục, script xoá MƯỜI SÁU.**
+`hmi-model` (cây linh kiện đã khai của máy) và `hmi-tags` (namespace tag đã khai) gia nhập danh sách
+XOÁ, không phải danh sách GIỮ — chúng gần với `machine-config` (bản ghi máy đang chạy gì) hơn là với
+`products`/`ecosystem` (cấu hình vận hành viên tự soạn), và danh sách GIỮ vẫn ghim đúng
+`{ecosystem, products}` bởi `NotificationDocumentationTests`/`PerHostDataRootsTests`.)*
 
 ### 15.5 `St4i.DesktopShell` coexistence / Cùng tồn tại với DesktopShell
 
@@ -1604,10 +1627,16 @@ Windows machine** (§24). They share no roster, no claim registry and no channel
 **The rule, and it is the whole mechanism — and it is scoped to the MACHINE-WIDE population:** every
 directory this product creates under
 `%ProgramData%\ST4I\sim\<name>` is relocatable by an environment variable whose name is derived from the
-directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **sixteen** of them
+directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **18** of them
 today, and there is no exception **within that population**. 🔴 **It is not the whole of what this product
 writes**: three more stores live BESIDE THE ENGINE BINARY and are isolated only by accident — see "The
 SECOND store population" below, and read it before concluding two hosts are separated.
+
+🔴 **WS-HMI-0a Task 5, 2026-08-30 — SIXTEEN → EIGHTEEN.** `hmi-model` (`ComponentModelStore`,
+`ST4I_HMI_MODEL_DIR`) and `hmi-tags` (`TagNamespaceStore`, `ST4I_HMI_TAGS_DIR`) joined the population
+the day `Program.cs` first registered both stores into the DI graph — see the two new rows in the
+WRITES/READS table below. Nothing about the RULE changed; only the count did, which is the whole point
+of stating it as a derived count rather than a list (see `PerHostDataRootsTests`' own doc comment).
 
 📎 **THE SENTENCE AFTER THE COUNT IS RETRACTED, 2026-08-23 (BF-1), kept verbatim.** It read *"three more
 stores live BESIDE THE ENGINE BINARY and are isolated only by accident"*, and it was true from F-1 until
@@ -1643,6 +1672,8 @@ effect.
 | `machine-config` | `ST4I_MACHINE_CONFIG_DIR` | EngineApi (`MachineConfigStore`, on the operator's first write) | EngineApi | `machine-operating-config.json` — per-machine baselines, every operator adjustment, and the append-only `History` behind them. 🔴 **joined this table on 2026-08-23**; the only root written **under the fleet's global lock** |
 | `products` | `ST4I_PRODUCTS_DIR` | EngineApi (`ProductConfigStore`, **during construction**) | EngineApi | `products.json`, `recipes.json` — the product and recipe definitions. 🔴 **joined on 2026-08-23**, and **KEPT by `remove-data.ps1`** (§15.4) |
 | `ecosystem` | `ST4I_ECOSYSTEM_DIR` | EngineApi (`SimulatedEcosystem`, **during construction**) | EngineApi | `ecosystem-products.json`, `ecosystem-recipes.json` — the Demo-mode ecosystem. 🔴 **joined on 2026-08-23**, and **KEPT by `remove-data.ps1`** (§15.4) |
+| `hmi-model` | `ST4I_HMI_MODEL_DIR` | EngineApi (`ComponentModelStore`, on an engineer's `PutAsync`) | EngineApi | `hmi-model.db` — the declared component tree (types, `tagPrefix` bindings) a HMI screen resolves against. 🔴 **joined on 2026-08-30** (WS-HMI-0a Task 5); no endpoint reads it yet (WS-HMI-0b) |
+| `hmi-tags` | `ST4I_HMI_TAGS_DIR` | EngineApi (`TagNamespaceStore`, on an engineer/connector's `PutAsync`) | EngineApi | `tag-namespaces.db` — the declared tag namespace + its flat path index. 🔴 **joined on 2026-08-30** (WS-HMI-0a Task 5); no driver loads a real tag into it yet (WS-HMI-0c) |
 
 *(The WRITES/READS columns are an enumeration of CALL SITES in `src/`, not an inference from which assembly
 references which type: `CredentialStore.Save` appears in `St4i.EngineApi/Fleet/OnboardingService.cs` and in the
@@ -6087,10 +6118,11 @@ holds COM3 — and on a **gateway** there is no such protection to reason about 
   is the WAL queue), so nothing regressed — **and E-5 did not change that either: an RS-485 bus opens a COM
   port and a gateway bus opens a socket; neither is a store, and the shared-open bookkeeping is an in-process
   dictionary the host owns.** 🔴 **F-1 changed the "by default": per-host data roots are now a SUPPORTED
-  deployment (§15.9)** — every one of the **sixteen** (🔴 thirteen until 2026-08-23) **machine-wide**
+  deployment (§15.9)** — every one of the **eighteen** (🔴 thirteen until 2026-08-23, sixteen until
+  2026-08-30 — WS-HMI-0a Task 5 added `hmi-model`/`hmi-tags`) **machine-wide**
   directories under `%ProgramData%` is
   relocatable by a derivable `ST4I_*_DIR`
-  variable, and a test derives both sets from `src/` so a **seventeenth** machine-wide store cannot arrive
+  variable, and a test derives both sets from `src/` so a **nineteenth** machine-wide store cannot arrive
   without one. 📎 **The clause that used to follow — *"a beside-the-binary store can, and does; that is what
   the second population below is"* — is RETRACTED 2026-08-23 (BF-1) and kept verbatim:** the owner moved all
   three of those stores under `%ProgramData%`, so the second population is EMPTY and a store arriving beside

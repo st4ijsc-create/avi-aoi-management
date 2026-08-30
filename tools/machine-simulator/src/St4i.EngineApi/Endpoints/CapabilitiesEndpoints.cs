@@ -25,8 +25,13 @@ public static class CapabilitiesEndpoints
         // WS-D-D1 — anonymous: the web shell needs to know whether Demo is even offered (and, per D1, will
         // also need to know whether it's looking at a logged-out shell) BEFORE any login has happened —
         // same reasoning as /v1/health.
+        //
+        // WS-HMI-0a Task 5 — HmiModelEnabled is unconditionally true: no license tier exists yet to turn
+        // it off, and the two stores it names (IComponentModelStore/ITagNamespaceStore) are registered a
+        // few hundred lines up in Program.cs regardless. See CapabilitiesDto's own doc comment for why
+        // this is named for the MODEL layer and not shared with the API-layer flag WS-HMI-0b adds later.
         app.MapGet("/v1/capabilities", (FleetHost host, DemoModeGate demoGate) =>
-            Results.Ok(new CapabilitiesDto(demoGate.Enabled, host.Mode, ProductVersion)))
+            Results.Ok(new CapabilitiesDto(demoGate.Enabled, host.Mode, ProductVersion, HmiModelEnabled: true)))
             .AllowAnonymous();
     }
 }

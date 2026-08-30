@@ -36,8 +36,17 @@ public sealed record ModeDto(TransportMode Mode);
 // single <Version>/<AssemblyVersion>, the same value the installer will read for upgrade-vs-fresh-install
 // decisions), read back off this running assembly at request time. Web can surface it (e.g. an "About"
 // panel, a support-ticket footer) later; no web change required by this task.
+//
+// WS-HMI-0a Task 5 — `HmiModelEnabled` added: the seam §6 of the machine-edition skill calls out
+// ("capabilities là seam license") applied to the HMI component-model/tag-namespace stores this task
+// wired into DI. Named for the MODEL layer specifically, not `HmiEnabled`, because the sibling plan
+// (docs/plans/2026-08-30-hmi-ws0b-api-stream-blueprint.md) adds a SEPARATE `HmiApiEnabled`-shaped flag
+// later — two parallel branches need to tell "the store exists" apart from "the API is open", and a
+// shared name would collide the moment 0b lands. Always `true` today (no license tier exists yet to turn
+// it off); WS-E License/Edition is the workstream that gives this a real gate, same as `DemoEnabled`
+// eventually got one, without moving where the flag is reported.
 // ─────────────────────────────────────────────────────────────────────────
-public sealed record CapabilitiesDto(bool DemoEnabled, TransportMode Mode, string Version);
+public sealed record CapabilitiesDto(bool DemoEnabled, TransportMode Mode, string Version, bool HmiModelEnabled);
 
 // ─────────────────────────────────────────────────────────────────────────
 // POST /v1/scenario, /v1/scenario/preset, /v1/scenario/burst

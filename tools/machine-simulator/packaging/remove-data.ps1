@@ -6,20 +6,20 @@
 
 .DESCRIPTION
   The MSI installer (packaging/installer/) only ever removes what IT installed, under Program Files -
-  it has no idea this exe/service, once running, goes on to create SIXTEEN directories under
+  it has no idea this exe/service, once running, goes on to create 18 directories under
   %ProgramData%\ST4I\sim\ - the historian database, the store-and-forward WAL buffer, the local
   user/session/audit-log database, the DPAPI-protected machine credential, the alarm-notification
   channel configuration and its credentials, the DEVICE IDENTITY PRIVATE KEY, saved device connections
   (whose OPC-UA map carries a plaintext password), the OPC-UA client certificate and key, the Site link
   and its pinned PEM, the alarm store, the asset registry, fleet settings, the bridge spool, the machine
-  operating configuration, the product/recipe configuration, and the simulated-ecosystem configuration.
-  That is entirely
+  operating configuration, the product/recipe configuration, the simulated-ecosystem configuration, the
+  HMI component-tree document, and the HMI tag namespace. That is entirely
   intentional: uninstalling (or upgrading via MajorUpgrade) must never silently destroy a customer's
   production history, audit trail, or credentials. This script is the separate, explicit, opt-in tool
   for an operator who genuinely wants a clean-slate wipe (e.g. decommissioning a machine, resetting a
   demo box back to a fresh-install state).
 
-  IT CREATES SIXTEEN AND PURGES FOURTEEN. Two of the sixteen - `products` and `ecosystem`, holding the
+  IT CREATES EIGHTEEN AND PURGES SIXTEEN. Two of the eighteen - `products` and `ecosystem`, holding the
   four files products.json / recipes.json / ecosystem-products.json / ecosystem-recipes.json - are
   DELIBERATELY KEPT, by the owner's ruling of 2026-08-23(b), and are listed separately in the banner
   this script prints. The reason, in the owner's words: CONFIGURATION AN OPERATOR AUTHORED IS NOT
@@ -27,6 +27,14 @@
   NOT the pre-2026-08-23 arrangement re-labelled: before that date those files sat beside the binary and
   went when the install directory went, which was an accident of layout; now they are under
   %ProgramData% and are kept ON PURPOSE, which is a decision with a name and a date on it.
+
+  TASK 5, WS-HMI-0a, 2026-08-30 - `hmi-model` and `hmi-tags` (ComponentModelStore/TagNamespaceStore)
+  JOINED THIS SCRIPT'S PURGE LIST, not the kept one. They hold the declared component tree and tag
+  namespace a HMI screen resolves against - a record of how the machine is currently WIRED, the same
+  kind of fact `machine-config` already is, not a recipe/product definition an operator authored the way
+  `products`/`ecosystem` are. The kept set stays pinned at exactly those two by
+  NotificationDocumentationTests; a third member would be a NEW exemption decision requiring its own
+  owner ruling, and this task made no such request.
 
   THE OTHER DIRECTION OF THE SAME RULING, because a kept directory is a survival and survivals cut both
   ways: a machine handed on, scrapped or returned after running this script still carries its product
@@ -116,6 +124,18 @@
   holding bearer credentials - see the test-hygiene note further down for why `creds` stopped being the
   sole non-relocatable exception.
 
+.PARAMETER HmiModelDir
+  Task 5, WS-HMI-0a - the declared HMI component-tree store (ST4I_HMI_MODEL_DIR), holding
+  `hmi-model.db` (one JSON document per machine code: components, their types and their tagPrefix
+  bindings). PURGED, not kept - see .NOTES for why this is not a third member of the `products`/
+  `ecosystem` exemption.
+
+.PARAMETER HmiTagsDir
+  Task 5, WS-HMI-0a - the declared HMI tag-namespace store (ST4I_HMI_TAGS_DIR), holding the flat tag
+  index and documents `tag-namespaces.db` persists (one per machine code, each a `path`-keyed set of
+  declared tags with their type/policyAction/hard-band metadata). PURGED, not kept, same reasoning as
+  -HmiModelDir.
+
 .EXAMPLE
   .\packaging\remove-data.ps1 -WhatIf
   Preview exactly what would be stopped/deleted, without touching anything.
@@ -123,7 +143,7 @@
 .EXAMPLE
   .\packaging\remove-data.ps1
   Interactive - prompts (Y/N) before stopping/deleting the service and before deleting each of the
-  14 purged data directories (each resolved per the matching -XxxDir parameter or the matching
+  16 purged data directories (each resolved per the matching -XxxDir parameter or the matching
   ST4I_*_DIR environment variable or the default %ProgramData%\ST4I\sim\<name> - see the
   WARNING below about relocated directories this script cannot discover on its own). The 2 KEPT
   directories (products, ecosystem - owner ruling 2026-08-23(b)) are printed but never prompted for,
@@ -137,10 +157,11 @@
   .\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -WalDir D:\St4iData\wal -SecurityDir D:\St4iData\security -IdentityDir D:\St4iData\identity
   Purges relocated data directories explicitly - needed whenever the service was configured (via its
   registry Environment value, README section 15.2) with a directory that is NOT the default
-  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory - SIXTEEN of
-  them, all sixteen documented under .PARAMETER above (-CredsDir's block was missing until the Dot F
-  branch review, F-9; -MachineConfigDir, -ProductsDir and -EcosystemDir arrived with task BF-1). FOURTEEN
-  of those sixteen name a directory this script PURGES; -ProductsDir and -EcosystemDir resolve the two the
+  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory - EIGHTEEN of
+  them, all eighteen documented under .PARAMETER above (-CredsDir's block was missing until the Dot F
+  branch review, F-9; -MachineConfigDir, -ProductsDir and -EcosystemDir arrived with task BF-1;
+  -HmiModelDir and -HmiTagsDir arrived with task 5, WS-HMI-0a). SIXTEEN
+  of those eighteen name a directory this script PURGES; -ProductsDir and -EcosystemDir resolve the two the
   owner's 2026-08-23(b) ruling KEEPS, so passing them changes what is PRINTED and never what is deleted.
 
 .NOTES
@@ -277,6 +298,19 @@
   (`Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\<service>' -Name Environment`) and run
   this script once per host with that host's -XxxDir parameters. Data left behind by a "clean-slate"
   wipe is the exact outcome this script exists to prevent.
+
+  TASK 5, WS-HMI-0a, 2026-08-30 - SIXTEEN -> EIGHTEEN, SIXTEEN -> EIGHTEEN, FOURTEEN -> SIXTEEN. The
+  engine gained two more machine-wide directories the day St4i.EngineApi/Program.cs first registered
+  IComponentModelStore/ITagNamespaceStore (ComponentModelStore/TagNamespaceStore, WS-HMI-0a Tasks 2/3)
+  into its DI graph: `hmi-model` (the declared component tree a HMI screen resolves against) and
+  `hmi-tags` (the declared tag namespace a driver will eventually back). Both are relocatable
+  (ST4I_HMI_MODEL_DIR / ST4I_HMI_TAGS_DIR) and both are PURGED, same -XxxDir > env var > %ProgramData%
+  default resolution order as every directory above. Neither holds a credential and neither is exempt:
+  a component tree names types/tagPrefixes an engineer declared through the (not-yet-built) HMI editor,
+  which is closer to `machine-config`'s "record of what the machine currently does" than to
+  `products`/`ecosystem`'s "recipe an operator authored" - and PerHostDataRootsTests/
+  NotificationDocumentationTests both pin the KEPT set at exactly {ecosystem, products}, so adding a
+  third member here was never available without an owner ruling this task did not request.
 #>
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 # PSScriptAnalyzer matches the substring "Cred" in a [string] parameter name and assumes it carries a
@@ -307,7 +341,11 @@ param(
     # REPORTING ONLY (ruling (b) keeps those two), and nothing in this script deletes what they name.
     [string]$MachineConfigDir,
     [string]$ProductsDir,
-    [string]$EcosystemDir
+    [string]$EcosystemDir,
+    # Task 5, WS-HMI-0a - both purge parameters like the sixteen above them; no reporting-only pair
+    # here because neither hmi-model nor hmi-tags is on the kept list (see .NOTES).
+    [string]$HmiModelDir,
+    [string]$HmiTagsDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -379,6 +417,13 @@ $subdirs = @(
     # History of every adjustment - a record of what the machine DID, which is operational data - while
     # products/ecosystem hold definitions an operator AUTHORED. See $keptByDesign below.
     @{ Name = 'machine-config';   Path = (Resolve-DataDir $MachineConfigDir   'ST4I_MACHINE_CONFIG_DIR'   (Join-Path $root 'machine-config'));   Warning = 'per-machine operating parameters, every operator adjustment, and the append-only History behind them (machine-operating-config.json)' }
+
+    # ---- Task 5, WS-HMI-0a, 2026-08-30 -----------------------------------------------------------
+    # hmi-model and hmi-tags joined this list the day Program.cs first registered
+    # IComponentModelStore/ITagNamespaceStore. Both are PURGED, not kept - see .NOTES for why they are
+    # not a third member of the products/ecosystem exemption.
+    @{ Name = 'hmi-model';        Path = (Resolve-DataDir $HmiModelDir        'ST4I_HMI_MODEL_DIR'        (Join-Path $root 'hmi-model'));        Warning = 'the declared HMI component tree per machine - component types and tagPrefix bindings (hmi-model.db)' }
+    @{ Name = 'hmi-tags';         Path = (Resolve-DataDir $HmiTagsDir         'ST4I_HMI_TAGS_DIR'         (Join-Path $root 'hmi-tags'));         Warning = 'the declared HMI tag namespace per machine and its flat path index (tag-namespaces.db)' }
 )
 
 # ---- Task BF-1, owner ruling 2026-08-23(b): THE KEPT LIST -----------------------------------------
@@ -466,7 +511,7 @@ elseif ($PSCmdlet.ShouldProcess("Windows service '$serviceName'", "Stop and dele
     }
 }
 
-# ---- Step 2: delete the 14 purged data subdirectories (each already resolved above per -XxxDir /
+# ---- Step 2: delete the 16 purged data subdirectories (each already resolved above per -XxxDir /
 # ST4I_*_DIR / the %ProgramData% default - see $subdirs). $keptByDesign is deliberately NOT iterated
 # here: the owner's 2026-08-23(b) ruling keeps those two, and the way that ruling is enforced is that
 # this loop has no access to the list at all. ---------------------------------------------------

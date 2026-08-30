@@ -80,4 +80,27 @@ public class ModelIntegrityTests
         });
         Assert.Empty(ModelIntegrity.Check(model, ns));
     }
+
+    /// <summary>
+    /// 🔴 Task 5 review (WS-HMI-0a) — pins <c>IsPathPrefix</c>'s path-SEGMENT boundary, which
+    /// <see cref="ModelIntegrity"/>'s own doc comment describes but nothing before this test measured.
+    /// A future "simplify this to plain <c>StartsWith</c>" cleanup would pass every OTHER test in this
+    /// file — <c>tagPrefix</c> <c>"M1/a"</c> would falsely match tag path <c>"M1/ab/x"</c>, so a genuine
+    /// orphan (no tag actually rooted UNDER <c>M1/a</c>) would silently stop being reported. Confirmed
+    /// red against a temporary <c>StartsWith</c> substitution, then reverted — see this task's report.
+    /// </summary>
+    [Fact]
+    public void A_tag_prefix_that_only_shares_characters_with_a_tag_path_is_still_reported_as_orphaned()
+    {
+        var model = Model(Node("a", null, "M1/a"));
+        var ns = new TagNamespaceDocument(1, "M1", new[]
+        {
+            // "M1/ab/x" STARTS WITH the characters "M1/a", but is not rooted under the SEGMENT "M1/a" —
+            // the boundary IsPathPrefix exists to require. If it degraded to StartsWith, this tag would
+            // wrongly satisfy node "a"'s tagPrefix and the orphan below would go unreported.
+            new TagDescriptor("M1/ab/x", "bool", null, null, null, null, "r", null, new TagSource("simulated"), false),
+        });
+
+        Assert.Contains(ModelIntegrity.Check(model, ns), m => m.Contains("M1/a"));
+    }
 }

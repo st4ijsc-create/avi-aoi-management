@@ -367,6 +367,21 @@ internal static class TestRunTempRoot
                          // second variable and no second mechanism — this list is still the only place a
                          // structural redirect is installed.
                          ("ST4I_HISTORIAN_DIR", "historian"),
+
+                         // 🔴 WS-HMI-0a Task 5, 2026-08-30 — the TENTH and ELEVENTH leaves, added the day
+                         // Program.cs first registered IComponentModelStore/ITagNamespaceStore
+                         // (ComponentModelStore/TagNamespaceStore, Tasks 2/3) into the DI graph. Both carry
+                         // the same public EnvVarDir/DefaultRoot/ResolveRoot triple the eight structural
+                         // leaves above do, so this line reaches every caller, including one that
+                         // constructs the store with no argument — the same shape as `creds`/`assets`/etc.,
+                         // not the historian exception directly above. Without this pair, EVERY
+                         // WebApplicationFactory<Program> boot in this repository's test suites resolves
+                         // both stores against the REAL %ProgramData%\ST4I\sim\{hmi-model,hmi-tags}, exactly
+                         // the class of leak BK-1/CB-1 measured and closed for the nine leaves above — this
+                         // is that same fix applied at the moment the leak first became possible, not after
+                         // a census found it.
+                         ("ST4I_HMI_MODEL_DIR", "hmi-model"),
+                         ("ST4I_HMI_TAGS_DIR", "hmi-tags"),
                      })
             {
                 if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variable)))

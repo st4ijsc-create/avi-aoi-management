@@ -285,6 +285,20 @@ export default defineConfig({
         // not optional either.
         ST4I_PRODUCTS_DIR: join(e2eDataDir, "products"),
         ST4I_ECOSYSTEM_DIR: join(e2eDataDir, "ecosystem"),
+        // 🔴 WS-HMI-0a Task 5, 2026-08-30 — THE SEVENTEENTH AND EIGHTEENTH MACHINE-WIDE STORES.
+        // ComponentModelStore/TagNamespaceStore (Tasks 2/3) were wired into St4i.EngineApi's DI graph by
+        // this task (Program.cs), which is what makes them reachable from THIS webServer process — not
+        // merely declared in `src/`. `EveryStoreTheEngineCreates_IsIsolatedByThePlaywrightHarness`
+        // derives its subject set from every `ST4I_*_DIR` literal in `src/`, population-blind on purpose
+        // (see that test's own doc comment), so both were required the moment the two stores' `EnvVarDir`
+        // constants existed — before this task even wired the DI registration. Every "sixteen" above this
+        // point is therefore now EIGHTEEN: eighteen machine-wide directories, eighteen `ST4I_*_DIR`
+        // variables, eighteen entries in this block. Isolated on exactly the same terms as their sixteen
+        // neighbours — this suite never calls anything that reads or writes a component tree or a tag
+        // namespace today (WS-HMI-0b is the API layer that will), but the harness isolates on "the engine
+        // CAN write there", not on "this suite's specs happen to exercise it".
+        ST4I_HMI_MODEL_DIR: join(e2eDataDir, "hmi-model"),
+        ST4I_HMI_TAGS_DIR: join(e2eDataDir, "hmi-tags"),
       },
     },
   ],
