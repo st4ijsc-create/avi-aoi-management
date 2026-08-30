@@ -1,4 +1,5 @@
 using St4i.EngineApi.HmiModel;
+using St4i.EngineApi.Tests.Auth;
 using St4i.Hmi.Contracts;
 using Xunit;
 
@@ -11,7 +12,15 @@ namespace St4i.EngineApi.Tests.HmiModel;
 /// luật §5 qua <see cref="ContractInvariants"/>, phần còn lại của schema do phía web đo; (2) không kiểm
 /// toàn vẹn tham chiếu sang tag namespace — đó là <c>ModelIntegrityTests</c>; (3) không đo hành vi đồng
 /// thời nhiều tiến trình — WAL được bật nhưng bài này chạy một tiến trình.</para>
+///
+/// <para><b><see cref="SecurityEnvVarTests.CollectionName"/> membership:</b> every test here opens a real
+/// <c>Microsoft.Data.Sqlite</c> connection through <see cref="ComponentModelStore"/>, and seven classes in
+/// this assembly call the process-global <c>SqliteConnection.ClearAllPools()</c> — see that collection's own
+/// doc comment for the full membership rule. Without <c>[Collection]</c> this class risks
+/// <c>ObjectDisposedException: SQLitePCL.sqlite3</c> if one of those seven fires while a connection here is
+/// open; nothing here would go red to say so, it would just flake in CI.</para>
 /// </summary>
+[Collection(SecurityEnvVarTests.CollectionName)]
 public class ComponentModelStoreTests : IDisposable
 {
     readonly string _dir = Path.Combine(Path.GetTempPath(), "st4i-hmi-model-" + Guid.NewGuid().ToString("N"));
