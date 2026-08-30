@@ -33,7 +33,7 @@
  * MỘT nơi mình vừa thêm, không phải lỗi cần né bằng cách xoá `it()`.
  */
 import { describe, it, expect } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const GOC = join(__dirname, "..");
@@ -299,4 +299,77 @@ describe("census — không đường ghi ĐĨA nào ngoài ĐÚNG MỘT điểm
     ]);
     expect(tong).toBe(1);
   });
+});
+
+/**
+ * ★★★ M2 (review toàn nhánh 2026-08-30) — CENSUS TRÊN NGUỒN KHÔNG ĐỦ: NÓ KHÔNG SOI `dist/`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * VÌ SAO NHÓM CA NÀY TỒN TẠI
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Review đo được: `dist/extension.js` (12:49) và `avi-ai-local-0.1.0.vsix` (29/08 03:38) KHÔNG
+ * chứa Đợt D.1 (thiếu văn bản dạy giao thức + hàng rào thụt lề fa5dddf1) TẠI THỜI ĐIỂM 396 ca lưới
+ * và census trên nguồn đều đã xanh — "lưới xanh" khi đó chỉ chứng minh MÃ NGUỒN đúng, không chứng
+ * minh ARTIFACT đã build đúng, và người cài `.vsix`/chạy `F5` dùng đúng cái thứ hai. Nhóm ca dưới
+ * đây chạy lại ĐÚNG vòng `CAM_TU` + `GHI_DUNG_MOT_LAN` trên chính `dist/extension.js`, cộng thêm
+ * hai câu neo CHỈ có mặt nếu bản vá D.1 (dạy giao thức đọc) đã vào bundle.
+ *
+ * ⚠ BỎ QUA (không đỏ) nếu `dist/extension.js` chưa tồn tại — `npx vitest run` một mình không được
+ *   ép phải build trước. Nhưng MỌI lời khai LIVE (nghiệm thu, đo tỉ lệ tuân thủ...) PHẢI chạy
+ *   `npm run ext:build` trước, và khi đã build thì nhóm ca này PHẢI xanh trên đúng bundle đang có
+ *   — nếu không, lần sau lại đo trên mã nguồn rồi ship một artifact khác (đúng lỗ M2 vừa vá).
+ */
+describe("census — TRÊN BUNDLE ĐÃ BUILD (dist/extension.js), M2", () => {
+  // ⚠ `GOC` = `vscode-extension/src` (một cấp TRÊN `src/loi`, xem khai báo `GOC` đầu tệp) — `dist/`
+  //   nằm ở GỐC GÓI (`vscode-extension/`), tức MỘT CẤP NỮA lên trên `GOC`, không phải bên trong nó.
+  const DIST = join(GOC, "..", "dist", "extension.js");
+  const coBundle = existsSync(DIST);
+  const noiDungBundle = coBundle ? readFileSync(DIST, "utf8") : "";
+
+  it.skipIf(!coBundle)("★★★ KHÔNG chỗ nào trong BUNDLE ĐÃ BUILD chứa API ghi đĩa bị cấm (CAM_TU)", () => {
+    const cham = CAM_TU.filter((tu) => noiDungBundle.includes(tu));
+    expect(cham, `bundle chứa API bị cấm: ${JSON.stringify(cham)}`).toEqual([]);
+  });
+
+  it.skipIf(!coBundle)(
+    "★★★ ĐÚNG MỘT lần applyEdit/WorkspaceEdit trong BUNDLE ĐÃ BUILD (GHI_DUNG_MOT_LAN)",
+    () => {
+      for (const { tu } of GHI_DUNG_MOT_LAN) {
+        const soLan = noiDungBundle.split(tu).length - 1;
+        expect(soLan, `"${tu}" phải xuất hiện ĐÚNG 1 lần trong bundle; thực tế: ${soLan}`).toBe(1);
+      }
+    },
+  );
+
+  it.skipIf(!coBundle)(
+    "★★★ BUNDLE ĐÃ BUILD chứa hàm dạy giao thức ĐỌC của Đợt D.1 — không phải bản trước D.1",
+    () => {
+      /**
+       * ⚠⚠ ĐO ĐƯỢC, ĐÃ SỬA MỘT LẦN: bản đầu của ca này so khớp văn bản tiếng Việt CÓ DẤU
+       * ("NGUYÊN TẮC TRẢ LỜI"/"Nhắc lại") lấy trực tiếp từ chuỗi trả về của hai hàm bên dưới — và
+       * ĐỎ trên chính bundle vừa build ĐÚNG (build.mjs không đặt `charset: "utf8"`, nên esbuild
+       * TỰ ĐỘNG thoát mọi ký tự ngoài ASCII trong CHUỖI thành `\uXXXX`/`\xXX`, khác hẳn dạng chữ
+       * có dấu nguyên văn mà một câu `.toContain(...)` chép tay mong đợi — trong khi CHÚ THÍCH thì
+       * esbuild KHÔNG đụng, nên grep tay trên `dist/` của chính review (khớp theo COMMENT, không
+       * phải chuỗi) từng "đỡ" được điều này mà không ai nhận ra hai đường khác nhau).
+       * Vá: so khớp TÊN HÀM (`function dungVanBanDayGiaoThucDoc(`/`function nhacLaiCuoiCauHoi(`) —
+       * định danh ASCII, esbuild GIỮ NGUYÊN (không có xung đột tên buộc phải đổi, xác nhận bằng
+       * chính đầu ra bundle) — chắc chắn hơn một chuỗi có dấu có thể bị thoát ký tự bất kỳ lúc nào.
+       */
+      expect(
+        noiDungBundle,
+        "thiếu function dungVanBanDayGiaoThucDoc — bundle có thể là bản TRƯỚC D.1",
+      ).toContain("function dungVanBanDayGiaoThucDoc(");
+      expect(
+        noiDungBundle,
+        "thiếu function nhacLaiCuoiCauHoi — bundle có thể là bản TRƯỚC D.1",
+      ).toContain("function nhacLaiCuoiCauHoi(");
+    },
+  );
+
+  if (!coBundle) {
+    it("★ (bỏ qua nhóm ca trên) dist/extension.js chưa tồn tại — chạy `npm run ext:build` trước khi đo LIVE hoặc đóng gói .vsix", () => {
+      expect(coBundle).toBe(false);
+    });
+  }
 });
