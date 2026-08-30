@@ -13,7 +13,7 @@
  * - getQueueStatus: Xem trạng thái hàng đợi upload theo máy
  */
 
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import { router, publicProcedure, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -113,6 +113,52 @@ export function demSoLoiVinhVienTuLichSu(lichSuMetadata: ReadonlyArray<unknown>)
   return lichSuMetadata.filter(
     (m) => m !== null && typeof m === "object" && (m as Record<string, unknown>).permanent === true,
   ).length;
+}
+
+/**
+ * ★★★ BG-73 (Pha 1F Task 2 ⛔) — ZodError do LỆCH HÌNH DẠNG hợp đồng (thiếu
+ * trường bắt buộc/sai kiểu) KHÔNG được đếm vào ngưỡng `'dead'` ở cửa ZIP.
+ *
+ * Mẫu `meta.json` THẬT của máy (`D:\SOURCES\AOIData\aoipackage-meta-sample.json`)
+ * mang `images[]`, không có `measurements[]`/`points[]` — `metaJsonSchema.parse()`
+ * ném `ZodError` MỘT issue duy nhất (`code:"invalid_type"`, thiếu trường bắt
+ * buộc `measurements`, đã đo LIVE bằng `safeParse` — xem task-2-report.md).
+ * TRƯỚC bản vá này, `isPermanentSubmitError` (BG-64) coi MỌI `ZodError` là
+ * VĨNH VIỄN như nhau — đúng cho payload QUÁ CỠ (Postgres cũng sẽ `22001` nếu
+ * `.max()` không chặn trước), nhưng SAI cho payload LỆCH HÌNH DẠNG: "thử lại
+ * NGUYÊN VĂN không bao giờ thành công" vẫn đúng, nhưng lý do là HỢP ĐỒNG MÁY
+ * CHỦ hẹp hơn máy thật — không phải "payload rác không sửa được". Một gói như
+ * vậy chạm `'dead'` sau `nguongLoiVinhVienZip()` lượt rồi `presign`/`commit`/
+ * `upload` (BG-65) đều khoá VĨNH VIỄN — không có đường về nào từ phía máy chủ,
+ * DÙ server sau đó sửa `metaJsonSchema` cho đúng: `laGoiDaChet` chỉ đọc
+ * `status`, không tự phục hồi khi hợp đồng đổi.
+ *
+ * Phân biệt theo `issue.code`: `"too_big"` (MỌI issue, một mình) là QUÁ CỠ —
+ * GIỮ NGUYÊN đếm vào ngưỡng, đúng lý do BG-64. Bất kỳ issue nào KHÁC
+ * (`invalid_type` thiếu trường/sai kiểu, `invalid_enum_value`,
+ * `unrecognized_keys`, `invalid_union`, …) là LỆCH HÌNH DẠNG — KHÔNG đếm; gói
+ * ở lại `'failed'`, `presign`/`commit` vẫn nhận retry vô hạn — đúng hành vi
+ * TRƯỚC Pha 1E cho lớp lỗi này. Vận hành lấy gói này về bằng: (1) ZIP gốc +
+ * `meta.json` THẬT vẫn còn nguyên trên storage (không mất byte nào vì gói
+ * KHÔNG BAO GIỜ khoá); (2) khi kỹ sư server sửa `metaJsonSchema`/tầng ánh xạ để
+ * nhận hình dạng máy thật (hướng (a) trong task-2-brief.md — đổi hợp đồng,
+ * CHƯA làm ở bản vá này), một lượt `commit` MỚI trên CÙNG `packageId` (không
+ * bị khoá vì chưa từng `'dead'`) sẽ parse thành công và chuyển `'committed'` —
+ * không cần thao tác hồi sinh thủ công nào trên hàng DB.
+ *
+ * ⚠ KHÔNG đổi `isPermanentSubmitError` DÙNG CHUNG (`inspectionStoreForward.ts`)
+ * — hàm đó còn phục vụ WAL replay của `machineApiRouters.ts` (v1.x, nhiều chục
+ * điểm gọi) VÀ `processStoreForward.ts`, nơi "ZodError = vĩnh viễn" vẫn ĐÚNG
+ * (đóng đúng lớp lỗi BG-64: một payload không parse được không bao giờ tự sửa
+ * qua replay NGUYÊN VĂN). Đây là MỘT lớp HẸP HƠN, CHỈ áp dụng cho ngưỡng
+ * `'dead'` của cửa ZIP — nơi DUY NHẤT một schema hẹp hơn máy thật có thể được
+ * server sửa VÀ gói cũ hưởng lợi mà không cần gửi lại (Agent không cần biết).
+ */
+export function laLoiVinhVienDemVaoNguongDeadZip(err: unknown): boolean {
+  if (err instanceof ZodError) {
+    return err.issues.every((issue) => issue.code === "too_big");
+  }
+  return isPermanentSubmitError(err);
 }
 
 /**
@@ -1380,15 +1426,22 @@ export const aoiPackageRouter = router({
           // Log: commit_fail
           const commitDuration = Date.now() - commitStartTime;
           // ★★★ Pha 1D Task 5 (BG-52 ⛔) — phân loại VĨNH VIỄN/TẠM THỜI bằng
-          // CHÍNH `isPermanentSubmitError` (server/services/inspection/
-          // inspectionStoreForward.ts) — KHÔNG viết bản thứ hai. VĨNH VIỄN
-          // (Postgres 22xxx/23xxx qua `.cause`, hoặc TRPCError NOT_FOUND/
-          // FORBIDDEN/BAD_REQUEST/…) sẽ KHÔNG BAO GIỜ thành công khi thử lại
-          // NGUYÊN VĂN cùng ZIP; đếm vào ngưỡng dead-letter dưới đây. TẠM THỜI
-          // (mạng storage rớt, DB chớp nháy, lỗi JS chung không rõ lớp) KHÔNG
-          // được đếm — gói vẫn `'failed'` và vẫn retry được vô hạn, đúng ý
-          // chống-siết-quá (mệnh đề 4).
-          const laLoiVinhVien = isPermanentSubmitError(err);
+          // `laLoiVinhVienDemVaoNguongDeadZip` (định nghĩa phía trên, dựa trên
+          // CHÍNH `isPermanentSubmitError` của server/services/inspection/
+          // inspectionStoreForward.ts — KHÔNG viết bản thứ hai). VĨNH VIỄN
+          // (Postgres 22xxx/23xxx qua `.cause`, TRPCError NOT_FOUND/FORBIDDEN/
+          // BAD_REQUEST/…, hoặc `ZodError` CHỈ gồm issue `"too_big"` — payload
+          // QUÁ CỠ) sẽ KHÔNG BAO GIỜ thành công khi thử lại NGUYÊN VĂN cùng
+          // ZIP; đếm vào ngưỡng dead-letter dưới đây. TẠM THỜI (mạng storage
+          // rớt, DB chớp nháy, lỗi JS chung không rõ lớp) KHÔNG được đếm — gói
+          // vẫn `'failed'` và vẫn retry được vô hạn, đúng ý chống-siết-quá
+          // (mệnh đề 4). ★★★ BG-73 (Pha 1F Task 2 ⛔) — `ZodError` do LỆCH
+          // HÌNH DẠNG (thiếu trường bắt buộc/sai kiểu, ví dụ mẫu meta.json
+          // THẬT của máy mang `images[]` thay vì `measurements[]`) CŨNG KHÔNG
+          // được đếm — xem docblock `laLoiVinhVienDemVaoNguongDeadZip` phía
+          // trên cho lý do đầy đủ + câu trả lời "vận hành lấy gói này về bằng
+          // cách nào".
+          const laLoiVinhVien = laLoiVinhVienDemVaoNguongDeadZip(err);
           await logPackageActivity({
             packageDbId: pkg.id,
             packageId: pkg.packageId,

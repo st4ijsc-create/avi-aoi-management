@@ -757,14 +757,29 @@ export const submitInspectionCoreObject = z.object({
       // only under INGEST_REQUIRE_TIME_OFFSET). Left as a bare string here on
       // purpose: z.string().datetime({offset:true}) would be a HARD tightening
       // applied at import time, killing every machine that sends naive stamps —
-      // QĐ#1 requires the flag + a backward-compatible default. `.max(40)` CHỈ
-      // chặn ĐỘ DÀI (dư sức ISO-8601 dài nhất có múi giờ, cùng con số đã dùng
-      // cho `startedAt`/`completedAt` ở machineDataContractV2.ts) — KHÔNG thêm
-      // ràng buộc ĐỊNH DẠNG nào (đó vẫn là superRefine bên dưới), nên không siết
-      // hơn HÀNH VI hôm nay, chỉ chặn payload rác trước khi vào `new Date(...)`
-      // (Pha 1E Task 3, BG-69 — trường này đi cột `timestamp`, không phải
-      // varchar, nên không có rủi ro `22001`).
-      inspectionTime: z.string().max(40).optional(),
+      // QĐ#1 requires the flag + a backward-compatible default.
+      // ★★★ BG-72 (Pha 1F Task 2 ⛔) — Pha 1E Task 3 đặt `.max(40)` ở đây và
+      // khẳng định "không siết hơn HÀNH VI hôm nay" — SAI SỰ THẬT, đo LIVE bằng
+      // `new Date()`/zod THẬT (không suy đoán): một Agent C# dùng
+      // `DateTime.ToString()` MẶC ĐỊNH (không phải ISO-8601) sinh chuỗi dài tới
+      // 45-50 ký tự (vd `"Sunday, August 30, 2026 12:00:00 PM GMT+07:00"`,
+      // `"Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)"`) — CẢ HAI `new
+      // Date(...)` parse được (không phải payload rác) NHƯNG `.max(40)` từ
+      // chối trước khi tới `superRefine`, trên đường v1.x (`submitInspection`)
+      // — đường BẬN NHẤT. TRƯỚC Pha 1E T3 (`z.string().optional()`, không
+      // `.max()`) cả hai được nhận và ghi bình thường ⇒ đây là HỒI QUY THẬT,
+      // không phải chặn payload rác. Cột đích `product_inspections.inspectionTime`
+      // là `timestamp`, KHÔNG PHẢI `varchar` — không có rủi ro Postgres `22001`
+      // nào để đóng ở trường này; sự "parseable hay không" đã được `superRefine`
+      // (`refineInspectionTime` bên dưới) canh VÔ ĐIỀU KIỆN, độc lập với độ dài.
+      // Nới lên `.max(64)` — dư margin (14 ký tự) trên mẫu dài nhất đã đo (50),
+      // đủ cho các biến thể văn hoá/múi giờ khác chưa đo tới, đồng thời vẫn
+      // chặn payload THẬT SỰ bệnh hoạn (chuỗi hàng nghìn ký tự) trước khi vào
+      // `new Date(...)` — không unbounded hoàn toàn, nhưng không còn từ chối
+      // nhầm một chuỗi thời gian hợp lệ đang chạy sản xuất. (Đối xứng
+      // `KIEM_KE_SUBMIT_INSPECTION_CORE` ở `capChuoiVarcharScan.ts` — census
+      // "vệ sinh" cũng cập nhật số này, KHÔNG đổi cột "db" nào khác.)
+      inspectionTime: z.string().max(64).optional(),
 
       // Doc 51 P1 — EXPLICIT INGEST IDEMPOTENCY KEY (closes the 0272 hole).
       // CLIENT-generated and STABLE across retries of the SAME board (e.g. a UUID
@@ -790,9 +805,15 @@ export const submitInspectionCoreObject = z.object({
       // would re-derive provenance from the replay clock and report every buffered
       // board as wildly clock-skewed. The mutation OVERWRITES both unconditionally
       // from the ORIGINAL request, so a machine cannot forge either one.
-      // Pha 1E Task 3 (BG-69) — `.max(40)`, cùng lý do `inspectionTime` ở trên
-      // (timestamp column, chặn payload rác, không siết định dạng).
-      serverReceivedAt: z.string().max(40).optional(),
+      // ★★★ BG-72 (Pha 1F Task 2 ⛔) — cùng hồi quy VÀ cùng bản vá với
+      // `inspectionTime` ở trên (xem docblock tại chỗ đó cho bằng chứng đo
+      // được đầy đủ): trường này đi qua CÙNG cửa `.input()` (zod validate
+      // TRƯỚC KHI mutation kịp GHI ĐÈ nó bằng đồng hồ máy chủ — dòng "OVERWRITES
+      // unconditionally" ở trên chỉ áp dụng cho GIÁ TRỊ ĐƯỢC LƯU, không áp dụng
+      // cho bước validate input), cùng cột đích `timestamp` (không phải
+      // `varchar`), cùng lý do KHÔNG có rủi ro `22001`. Nới `.max(40)` →
+      // `.max(64)` — không có bằng chứng field này CẦN trần khác `inspectionTime`.
+      serverReceivedAt: z.string().max(64).optional(),
       timeSource: z.enum(["machine_utc", "machine_naive", "server"]).optional(),
 
 

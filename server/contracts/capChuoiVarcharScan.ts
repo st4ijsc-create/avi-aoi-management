@@ -243,11 +243,23 @@ export const KIEM_KE_META_JSON: readonly MucCapChuoi[] = [
  * (B) VỆ SINH — không khớp cột nào, hoặc chỉ SO KHỚP (không INSERT verbatim):
  *   `machineCode`/`apiKey` (SELECT eq() qua authenticateMachine — cùng con số
  *   `apiKey` đã chọn ở nhóm B của `KIEM_KE_CAP_CHUOI`); `inspectionTime`/
- *   `serverReceivedAt` (đi cột `timestamp`, không phải varchar — cùng con số
- *   40 đã chọn cho `startedAt`/`completedAt`); `unitScaleToCanonical`/
+ *   `serverReceivedAt` (đi cột `timestamp`, không phải varchar); `unitScaleToCanonical`/
  *   `valueZ`…`valueThickness` (11 trường, đi cột `decimal(15,6)` qua
  *   `toOptionalDecimal()`, không phải varchar — cùng con số 255 đã chọn cho
  *   nhánh chuỗi của `value`/`lowerLimit`/`upperLimit` ở `machineDataContractV2.ts`).
+ *
+ * ★★★ BG-72 (Pha 1F Task 2 ⛔) — `inspectionTime`/`serverReceivedAt` TỪNG
+ * `.max(40)` (cùng con số `startedAt`/`completedAt`) — ĐO LIVE cho thấy đó là
+ * HỒI QUY: `DateTime.ToString()` mặc định của Agent C# (KHÔNG phải ISO-8601)
+ * dài tới 45-50 ký tự, `new Date()` VẪN parse được (không phải payload rác)
+ * nhưng `.max(40)` từ chối trên đường v1.x BẬN NHẤT. Nới `.max(40)` →
+ * `.max(64)` (xem docblock tại `submitInspectionCoreObject.inspectionTime`/
+ * `.serverReceivedAt`, `machineApiRouters.ts`, cho bằng chứng đo được đầy đủ +
+ * lý do). `startedAt`/`completedAt` ở `KIEM_KE_CAP_CHUOI`
+ * (machineDataContractV2, đường v2.0 cây) và `startedAt`/`finishedAt`/
+ * `inspectionTime` ở `KIEM_KE_META_JSON` (cửa ZIP) GIỮ NGUYÊN 40 — brief
+ * Pha 1F Task 2 đo CHỈ hai trường này (v1.x) hồi quy, không mở rộng sang
+ * hai schema kia.
  */
 export const KIEM_KE_SUBMIT_INSPECTION_CORE: readonly MucCapChuoi[] = [
   // ── Nhóm (A) khớp cột THẬT ──────────────────────────────────────────────
@@ -263,10 +275,10 @@ export const KIEM_KE_SUBMIT_INSPECTION_CORE: readonly MucCapChuoi[] = [
     ghiChu: "so khớp bằng SELECT eq() qua authenticateMachine, không INSERT — khớp sức chứa machines.code varchar(50)" },
   { ten: "apiKey", duongDan: ["apiKey"], max: 256, nguon: "ve-sinh",
     ghiChu: "so khớp bằng SELECT eq(), không INSERT — cùng con số apiKey của machineDataContractV2" },
-  { ten: "inspectionTime", duongDan: ["inspectionTime"], max: 40, nguon: "ve-sinh",
-    ghiChu: "đi timestamp qua new Date(), không phải varchar" },
-  { ten: "serverReceivedAt", duongDan: ["serverReceivedAt"], max: 40, nguon: "ve-sinh",
-    ghiChu: "đi timestamp, không phải varchar (server-stamped, WAL replay)" },
+  { ten: "inspectionTime", duongDan: ["inspectionTime"], max: 64, nguon: "ve-sinh",
+    ghiChu: "đi timestamp qua new Date(), không phải varchar — BG-72: nới từ 40, DateTime.ToString() mặc định dài tới 50 ký tự vẫn phải nhận được" },
+  { ten: "serverReceivedAt", duongDan: ["serverReceivedAt"], max: 64, nguon: "ve-sinh",
+    ghiChu: "đi timestamp, không phải varchar (server-stamped, WAL replay) — BG-72: nới từ 40, cùng lý do inspectionTime" },
   { ten: "measurements[].unitScaleToCanonical", duongDan: ["measurements", "[]", "unitScaleToCanonical"], max: 255, nguon: "ve-sinh",
     ghiChu: "chỉ vào toNum() trong bộ nhớ để đổi đơn vị — không có cột đích" },
   { ten: "measurements[].valueZ", duongDan: ["measurements", "[]", "valueZ"], max: 255, nguon: "ve-sinh", ghiChu: "đi cột decimal(15,6) qua toOptionalDecimal(), không phải varchar" },
