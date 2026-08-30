@@ -7,9 +7,9 @@
  * Parser này là cửa DUY NHẤT cho đường ghi cục bộ. Sai một nhịp ở đây = ghi nhầm tệp trên
  * máy lập trình viên ⇒ mọi ca biên phải trả `[]` chứ KHÔNG đoán.
  *
- * - Tách khối bằng hàng rào ``` ```avi-tool ``` `` … ``` ``` ``` (hỗ trợ LF + CRLF)
- * - `JSON.parse` trong `try/catch`; hỏng ⇒ bỏ qua khối đó, KHÔNG ném
- * - Kiểm trước khi truy cập trường: phải là object (KHÔNG null/số/chuỗi)
+ * Việc TÁCH khối rào (regex, JSON.parse an toàn, kiểm `tool`/`args` là object) đã chuyển sang
+ * `khoiAviTool.ts` — MỘT nơi DUY NHẤT biết cú pháp hàng rào, dùng chung với `yeuCauDoc.ts` (Đợt
+ * D, ba tool ĐỌC). Tệp này chỉ còn lo phần RIÊNG của hai tool GHI:
  * - Kiểm từng trường bằng `typeof`; thiếu/sai kiểu ⇒ bỏ qua
  * - `dongDau`/`dongCuoi` phải là số nguyên ≥ 1 và `dongCuoi >= dongDau`; sai ⇒ bỏ qua
  * - `tool` khác `de_xuat_sua_doan`/`de_xuat_sua` ⇒ bỏ qua
@@ -18,6 +18,8 @@
  * sớm ⇒ JSON hỏng ⇒ một đề xuất hợp lệ bị bỏ im lặng. Không sửa ở đợt này (cần đổi giao thức).
  */
 
+import { tachKhoiAviTool } from "./khoiAviTool";
+
 export type DeXuatCucBo =
   | { loai: "doan"; path: string; dongDau: number; dongCuoi: number; thayThe: string }
   | { loai: "toanVan"; path: string; modified: string };
@@ -25,37 +27,7 @@ export type DeXuatCucBo =
 export function docDeXuatCucBo(vanBan: string): DeXuatCucBo[] {
   const ketQua: DeXuatCucBo[] = [];
 
-  // Tách các khối avi-tool từ văn bản (hỗ trợ LF `\n` và CRLF `\r\n`)
-  const regex = /```avi-tool\r?\n([\s\S]*?)\r?\n```/g;
-  let khopMatches;
-
-  while ((khopMatches = regex.exec(vanBan)) !== null) {
-    const jsonText = khopMatches[1];
-
-    // Cố gắng parse JSON; hỏng ⇒ bỏ qua khối này, không ném
-    let obj: any;
-    try {
-      obj = JSON.parse(jsonText);
-    } catch {
-      // JSON không hợp lệ ⇒ bỏ qua
-      continue;
-    }
-
-    // JSON.parse("null") trả về null (JSON hợp lệ), không ném. Phải chặn trước khi truy cập
-    // trường, nếu không sẽ ném TypeError khi chạm obj.tool. Điều này sẽ vứt luôn những đề
-    // xuất hợp lệ đã thu được — tệ hơn nhiều so với bỏ một khối.
-    if (!obj || typeof obj !== "object") {
-      continue;
-    }
-
-    // Kiểm cấu trúc: phải có `tool` và `args`
-    if (typeof obj.tool !== "string" || typeof obj.args !== "object" || !obj.args) {
-      continue;
-    }
-
-    const tool = obj.tool;
-    const args = obj.args;
-
+  for (const { tool, args } of tachKhoiAviTool(vanBan)) {
     // Xử lý de_xuat_sua_doan: sửa đoạn (dòng từ→đến)
     if (tool === "de_xuat_sua_doan") {
       // Kiểm trường bắt buộc
