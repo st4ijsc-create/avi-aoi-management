@@ -845,9 +845,21 @@ export const aoiPackageRouter = router({
           // để BÁO CÁO) giữ nguyên hành vi cũ — chỉ overallResult mới bắt buộc
           // cuộn từ dữ liệu thật (BG-68 chỉ canh verdict, không mở rộng sang các
           // cột đếm báo cáo).
+          //
+          // ★★★ Pha 1F Task 1 (BG-78 ⛔) — `!p.result ||` coi một điểm đo KHÔNG
+          // khai `result` là NTF. Nhưng `result` là `.optional()` ở CẢ HAI nhánh
+          // (`measurements[]`/`points[]`, metaJsonSchema :454/:466) và cột đích
+          // `package_images.result` NULLABLE (drizzle/schema/inspection.ts:513)
+          // ⇒ manifest ảnh không kèm phán quyết từng điểm là HÌNH DẠNG HỢP LỆ,
+          // KHÔNG phải "máy khai NTF". Trước bản vá: bo TỐT (mọi điểm đo đều
+          // thiếu `result`) bị hồ sơ hoá thành `overallResult=NTF` — vào hàng
+          // đợi xác nhận NTF như lỗi giả, ghi vào bảng WORM. Sau bản vá: chỉ
+          // đếm điểm ĐÃ KHAI `NTF`; điểm thiếu `result` KHÔNG sinh phán quyết
+          // nào (không rơi vào ok/ng/ntf) — chống-siết-ngược: điểm khai NTF
+          // THẬT vẫn được đếm bình thường.
           const ngNtfThat = {
             ng: normalizedMeasurements.filter((p) => p.result === "NG").length,
-            ntf: normalizedMeasurements.filter((p) => !p.result || p.result === "NTF").length,
+            ntf: normalizedMeasurements.filter((p) => p.result === "NTF").length,
           };
 
           // ── P0-A data-integrity: resolve REAL measurement-point definition ids ──
@@ -1086,11 +1098,19 @@ export const aoiPackageRouter = router({
           // BG-68 tách hẳn hai việc: đếm này vẫn được phép ưu tiên lời khai
           // `metaData.summary` (phạm vi cố ý hẹp, xem docblock `ngNtfThat`), còn
           // verdict luôn cuộn từ `ngNtfThat` (đo thật) ở dưới.
+          //
+          // ★★★ Pha 1F Task 1 (BG-78 ⛔) — CÙNG biểu thức sai với `ngNtfThat`
+          // (xem docblock ở đó, `!p.result || p.result === 'NTF'`) từng sống ở
+          // đây TRƯỚC cả Pha 1E. `.ntf` không được ghi vào cột DB nào hiện tại
+          // (chỉ `totalPoints`/`ok`/`ng` được đọc xuống `inspection_packages`
+          // ở :~1220) nhưng sửa CÙNG lúc để hai nơi đếm NTF trong file này
+          // không còn LỆCH CÔNG THỨC — tránh việc sau này một task khác (BG-76,
+          // hợp nhất hai chỗ) vô tình CHÉP LẠI biểu thức sai từ đây.
           const calculatedSummary = metaData?.summary || {
             totalPoints: normalizedMeasurements.length,
             ok: normalizedMeasurements.filter(p => p.result === 'OK').length,
             ng: normalizedMeasurements.filter(p => p.result === 'NG').length,
-            ntf: normalizedMeasurements.filter(p => !p.result || p.result === 'NTF').length,
+            ntf: normalizedMeasurements.filter(p => p.result === 'NTF').length,
           };
 
           // Determine overall result (assigns the outer-scope var used by the
