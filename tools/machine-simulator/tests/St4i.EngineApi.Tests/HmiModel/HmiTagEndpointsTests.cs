@@ -1132,7 +1132,7 @@ public sealed class HmiTagEndpointsTests
     // ═════════════════════════════════════════════════════════════════════
     // 🔴 F7 — RULED, not left as an accident. §5 IS A PRESENCE RULE, NOT A MEMBERSHIP RULE.
     //
-    // `policyAction: " "` is accepted and stored, because NUL is not whitespace. The alternative —
+    // `policyAction: "0000"` is accepted and stored, because NUL is not whitespace. The alternative —
     // "NUL means absence, close it" — was considered and REJECTED, because it would be membership
     // validation applied to exactly one unresolvable value while `policyAction: "xyzzy"` (equally
     // unresolvable, equally unable to gate anything at runtime) stayed accepted. ContractInvariants states
@@ -1146,7 +1146,12 @@ public sealed class HmiTagEndpointsTests
     // ═════════════════════════════════════════════════════════════════════
 
     [Theory]
-    [InlineData(" ")]  // NUL — not whitespace, therefore present
+    // 🔴 Fix round 3, NEW-3 — these were LITERAL control bytes in the source until now. A raw NUL made git
+    // classify this whole file as BINARY (`git ls-files --eol` reported `i/-text`), which silently disables
+    // autocrlf normalisation for it — so a rewrite could flip every line ending and produce a whole-file
+    // diff that hid a rewritten-in-place test from review. C# escapes are byte-identical in meaning and
+    // keep the file text, which is what puts it back under the same normalisation as every neighbour.
+    [InlineData("\u0000")]  // NUL — not whitespace, therefore PRESENT
     [InlineData("xyzzy")]   // a policy no runtime can resolve — equally present, equally accepted
     public async Task Limit_A_policyAction_that_is_present_but_meaningless_is_accepted_because_5_checks_presence(
         string policyAction)
@@ -1176,7 +1181,7 @@ public sealed class HmiTagEndpointsTests
     [InlineData("")]
     [InlineData(" ")]
     [InlineData("\t")]
-    [InlineData(" ")] // NBSP — whitespace, therefore absent
+    [InlineData("\u00a0")] // NBSP — whitespace, therefore absent
     public async Task A_policyAction_that_is_absent_is_still_refused(string? policyAction)
     {
         var (factory, engineer, _) = await NewFactoryWithUsersAsync($"absent-{policyAction?.Length ?? -1}-{(int?)policyAction?.FirstOrDefault() ?? -1}");
