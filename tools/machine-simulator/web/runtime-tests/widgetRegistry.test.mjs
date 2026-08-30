@@ -31,10 +31,16 @@
 // `ScreenRenderer`/`bindings.ts` (Task 3) — chưa được viết, `resolve()` ở đây chỉ là một CHỮ KÝ hàm;
 // (3) PolicyEngine/role/HALT thật ở server (`.claude/skills/st4i-machine-edition/SKILL.md` §3) —
 // `policyGate` chỉ là điều kiện PHÍA WEB đủ để không hiện một điều khiển bật khi tài liệu thiếu
-// `policyAction`, không phải bản sao hay thay thế cho gác cổng phía server; (4) rằng `command-button.tsx`/
-// `setpoint-input.tsx` DÙNG kết quả của `policyGate` ĐÚNG CÁCH trong JSX (disabled thật, lý do thật hiện
-// ra) — bài dưới chỉ đo (a) bản thân `policyGate` đúng, và (b) hai file đó CÓ GỌI nó; nối hai điều đó
-// với "JSX render ra đúng" cần Playwright, ngoài phạm vi bài `node --test` này.
+// `policyAction`, không phải bản sao hay thay thế cho gác cổng phía server; (4) rằng DOM THẬT phản ánh
+// đúng những gì `policyGate` trả về. Bài dưới đo được BA việc, không chỉ hai như trước fix round 1: (a)
+// bản thân `policyGate` đúng (thực thi hàm thật); (b) `command-button.tsx`/`setpoint-input.tsx` CÓ GỌI
+// nó; và (c) cả hai file đó THAM CHIẾU cả `gate.disabled` LẪN `gate.reason` trong văn bản nguồn — bắt
+// được cả lớp regression "gọi rồi vứt kết quả" (gọi `policyGate()` nhưng không dùng gì từ nó) LẪN lớp
+// "chỉ dùng disabled mà bỏ lý do" (thread `gate.disabled` vào nhưng không bao giờ hiện `gate.reason`).
+// Cái vẫn KHÔNG đo được, và chỉ còn đúng phần này: liệu thuộc tính `disabled` THẬT trên phần tử DOM có
+// thực sự được set, đoạn văn lý do THẬT có thực sự hiện ra trên trang, `aria-describedby` THẬT có trỏ
+// đúng chỗ — đó là một khẳng định RENDER (cần cây DOM thật), `node --test` không tạo ra được; nó thuộc
+// Playwright của Task 4/5 (kế hoạch), không phải một khoảng trống bị bỏ qua ở đây.
 
 import { test } from "node:test"
 import assert from "node:assert/strict"
@@ -62,7 +68,16 @@ function readWidgetKindMembers() {
   return members
 }
 
-/** Trích tập khoá đã đăng ký trong `widgetRegistry.ts` — ĐỌC VĂN BẢN, không `import()` (xem header). */
+/** Trích tập khoá đã đăng ký trong `widgetRegistry.ts` — ĐỌC VĂN BẢN, không `import()` (xem header).
+ *
+ * 🔴 Regex `/^\s*"([^"]+)":/gm` khớp ĐÚNG một khoá CÓ NGOẶC KÉP — không phải vì mọi kind đều chứa dấu
+ * gạch nối (SAI: bảy trong mười lăm — `readout`, `gauge`, `trend`, `log`, `faceplate`, `label`,
+ * `sheet` — là định danh TypeScript hợp lệ KHÔNG cần ngoặc kép). Đây là một RÀNG BUỘC bài test đặt ra
+ * cho `widgetRegistry.ts`, không phải một tính chất tự nhiên của chuỗi: nếu một trong bảy khoá đó bị bỏ
+ * ngoặc kép (một lần "dọn code TS" bình thường, `tsc`/`oxlint` không bắt), khoá đó biến mất KHỎI tập
+ * trích xuất — bài ghim hai chiều bên dưới sẽ báo nó "thiếu trong registry", một cảnh báo TO nhưng SAI
+ * LÝ DO (registry vẫn đúng, chỉ là quy trình đọc văn bản không thấy dòng đó nữa). `widgetRegistry.ts`'s
+ * own header nêu đúng ràng buộc này ở phía nó. */
 function readRegisteredKinds() {
   const src = readNormalized(join(SRC, "hmi-runtime", "widgetRegistry.ts"))
   const m = /export const widgetRegistry:[^\n]*=\s*\{([\s\S]*?)\n\}/.exec(src)
@@ -134,15 +149,31 @@ test('policyGate: policyAction có mặt ("machine.command") ⇒ disabled=false,
   assert.equal(gate.reason, undefined)
 })
 
-// Đóng khoảng cách "hàm đúng" ⟷ "widget thật có gọi hàm đó không" mà không cần thực thi JSX (xem header
-// điểm KHÔNG đo (4)): đọc văn bản nguồn của đúng hai file được phép render điều khiển ghi, khẳng định cả
-// hai THỰC SỰ gọi `policyGate(`, không phải một hàm mồ côi không ai dùng.
-test("command-button.tsx và setpoint-input.tsx thực sự GỌI policyGate — không phải một hàm mồ côi", () => {
+// 🔴 Fix round 1, Important finding 2. Bài CŨ chỉ đo "có gọi policyGate(" — không đo GÌ về việc kết quả
+// gọi đó có được DÙNG hay không. Hai regression thực tế lọt qua bài cũ hoàn toàn: (a) gọi
+// `policyGate(widget)` rồi VỨT kết quả (không gán vào đâu, hoặc gán rồi không đọc trường nào); (b) chỉ
+// thread `gate.disabled` vào điều khiển nhưng ÂM THẦM BỎ `gate.reason` (điều khiển vô hiệu hoá đúng,
+// nhưng không còn "kèm lý do nhìn thấy được" — đúng bất biến §5 mà brief đòi ghim). Bài dưới đóng cả hai
+// khoảng trống bằng cách khẳng định văn bản nguồn tham chiếu ĐÚNG hai tên trường thật sự được dùng trong
+// mã hôm nay (`gate.disabled`, `gate.reason` — biến được đặt tên `gate` ở cả hai file, đọc lại chính mã
+// nguồn trước khi viết bài này, không giả định tên biến).
+//
+// Vẫn KHÔNG đo (xem header điểm KHÔNG đo (4)): rằng DOM RENDER RA đúng những gì hai dòng này ám chỉ —
+// đó cần Playwright thật.
+test("command-button.tsx và setpoint-input.tsx GỌI policyGate VÀ DÙNG cả disabled lẫn reason nó trả về — không gọi-rồi-vứt, không bỏ lý do", () => {
   for (const file of ["command-button.tsx", "setpoint-input.tsx"]) {
     const src = readNormalized(join(SRC, "hmi-runtime", "widgets", file))
     assert.ok(
       src.includes("policyGate("),
       `${file} không gọi policyGate(...) — bài đo policyGate ở trên không còn chứng minh gì về widget thật nếu widget không dùng nó`
+    )
+    assert.ok(
+      src.includes("gate.disabled"),
+      `${file} gọi policyGate nhưng không thấy "gate.disabled" ở đâu trong văn bản nguồn — một regression gọi-rồi-vứt-kết-quả (policyGate() được gọi nhưng kết quả không đi đâu cả) sẽ lọt qua bài "có gọi" một mình nhưng bị bài này bắt`
+    )
+    assert.ok(
+      src.includes("gate.reason"),
+      `${file} có dùng gate.disabled nhưng không thấy "gate.reason" trong văn bản nguồn — một regression chỉ vô hiệu hoá điều khiển mà KHÔNG hiện lý do (vi phạm đúng bất biến §5: "vô hiệu hoá KÈM lý do nhìn thấy được") sẽ lọt qua nếu thiếu assert này`
     )
   }
 })

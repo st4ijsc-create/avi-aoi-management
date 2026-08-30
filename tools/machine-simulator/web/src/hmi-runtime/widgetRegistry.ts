@@ -10,9 +10,16 @@
  * same technique `web/contract-tests/contracts.test.mjs`'s `tsUnionMembers` already uses for the exact
  * same reason (a type/schema pin that must not require executing the thing it pins).
  *
- * Keep every entry on its OWN LINE as a quoted `"kind-string": Component` pair — that shape is what the
- * test's regex expects, and every widget kind's string contains a hyphen anyway, which forces the
- * quotes regardless of this constraint.
+ * Keep every entry on its OWN LINE as a quoted `"kind-string": Component` pair — quoted, even the seven
+ * kinds that would be perfectly valid UNQUOTED TypeScript identifiers on their own (`readout`, `gauge`,
+ * `trend`, `log`, `faceplate`, `label`, `sheet` — no hyphen, nothing stopping a bare `readout:` from
+ * compiling). This is NOT an incidental property of the strings; it is a constraint the TEST imposes:
+ * `widgetRegistry.test.mjs`'s `readRegisteredKinds()` extracts keys with `/^\s*"([^"]+)":/gm`, which
+ * matches ONLY a quoted key. Unquote any one of those seven and it silently drops out of the extracted
+ * set — the pin then reports that kind as "missing from the registry" (a loud, but WRONG-REASON,
+ * failure: the registry is fine, the extraction just stopped seeing that line), exactly the kind of trap
+ * an ordinary "TS cleanup" pass would walk into with neither `oxlint` nor `tsc` objecting. Keep ALL
+ * FIFTEEN keys quoted, always — not because the strings need it, but because the pin does.
  */
 import type { ReactElement } from "react"
 import type { ScreenWidget, WidgetKind } from "../contracts/hmiScreen.ts"
