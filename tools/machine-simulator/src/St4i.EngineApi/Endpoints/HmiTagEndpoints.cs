@@ -118,7 +118,8 @@ public static class HmiTagEndpoints
     // namespace while reporting success, which is Task 1's HIGH-1 one contract over.
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PutAsync(
-        string machineCode, TagNamespaceDocument body, ITagNamespaceStore tags, CancellationToken ct)
+        string machineCode, TagNamespaceDocument body, ITagNamespaceStore tags,
+        ITagIndexCollisionQuery collisions, CancellationToken ct)
     {
         // `body` itself can never be null — TagNamespaceDocument is a non-nullable complex parameter, so
         // RequestDelegateFactory 400s an absent/literal-null body before this handler is entered.
@@ -169,11 +170,19 @@ public static class HmiTagEndpoints
             // The store's transaction has already rolled back by the time this runs (PutAsync's `using var
             // transaction` disposes without a Commit on the throw path), so P2 holds and the diagnosis
             // below reads the pre-existing state, not a partial one.
-            var (claimed, truncated) = await DescribeClaimedPathsAsync(body, tags, ct).ConfigureAwait(false);
+            var claimed = await DescribeClaimedPathsAsync(body, machineCode, collisions, ct).ConfigureAwait(false);
+
+            // "showing 10 of 27", never a hedge. Fix round 1 said "there may be more" because a
+            // prefix-limited probe genuinely did not know; the bulk query knows the exact total, so the
+            // message states it. That also dissolves fix round 1's other defect (re-review NEW-2): the
+            // truncation notice used to be omitted on the found-nothing branch — precisely the case where
+            // the cap had bitten — leaving a caller unable to tell "no collision" from "gave up looking".
+            // There is no longer a "gave up looking" state to be unable to distinguish.
+            var shown = claimed.Take(MaxNamedCollisions).ToList();
             return Results.Conflict(new ApiErrorDto(
                 claimed.Count > 0
-                    ? $"tag path(s) already declared by another machine: {string.Join(", ", claimed)}" +
-                      (truncated ? $" (diagnosis truncated at {MaxNamedCollisions} paths / {MaxCollisionProbes} probes — there may be more)" : "") +
+                    ? $"tag path(s) already declared by another machine: {string.Join(", ", shown)}" +
+                      (claimed.Count > shown.Count ? $" (showing {shown.Count} of {claimed.Count})" : "") +
                       ". A tag path is a GLOBAL key across every machine, not a per-machine one — rename " +
                       "the path, or retire it from the machine that owns it first."
                     : $"a tag path in this namespace is already declared by another machine ({ex.Message})."));
@@ -197,81 +206,61 @@ public static class HmiTagEndpoints
         && (ex.SqliteExtendedErrorCode == 1555 // SQLITE_CONSTRAINT_PRIMARYKEY — tag_index.path is the PK
             || ex.SqliteExtendedErrorCode == 2067); // SQLITE_CONSTRAINT_UNIQUE — defensive alternate
 
-    /// <summary>🔴 <b>The BOUND on the collision diagnosis (fix round 1, F5).</b> The diagnosis runs one
-    /// index probe per tag in the CLIENT'S body, and each probe opens a fresh <c>SqliteConnection</c> and
-    /// applies four PRAGMAs. Review measured, for a single colliding PUT: 10 tags → 6 ms, 2 000 → 63 ms,
-    /// 20 000 → 539 ms, and roughly 230 000 index queries (~6 s) at Kestrel's default 30 MB body limit —
-    /// work a caller can demand repeatedly with a request that is being REJECTED, which is the wrong way
-    /// round. 200 is chosen against that measurement rather than picked: it is ~6 ms, it is bounded
-    /// independently of body size, and it is large enough to diagnose a REAL namespace, which
-    /// <see cref="ITagNamespaceStore"/>'s own doc comment describes as "hàng trăm/nghìn tag" — a cap of 20
-    /// would fail to explain most genuine collisions and push the caller back to SQLite's own useless
-    /// message.</summary>
-    internal const int MaxCollisionProbes = 200;
-
-    /// <summary>How many colliding paths the 409 names. An error listing hundreds of paths is not a
-    /// diagnosis; ten is enough to show the pattern, and the message says when it stopped short rather
-    /// than presenting a partial list as the whole answer.</summary>
+    /// <summary>How many colliding paths the 409 NAMES. Purely a presentation choice now that
+    /// <see cref="ITagIndexCollisionQuery"/> finds them all in bulk — an error listing hundreds of paths is
+    /// not a diagnosis, and the message states the exact total alongside ("showing 10 of 27") rather than
+    /// hedging. In fix round 1 this doubled as a correctness bound, which is what made a collision past the
+    /// cut-off undiagnosable; it no longer bounds what is FOUND, only what is PRINTED.</summary>
     internal const int MaxNamedCollisions = 10;
 
     /// <summary>Names the offending path(s) so the 409 is actionable — SQLite's own message says only
     /// <c>UNIQUE constraint failed: tag_index.path</c> and never which value collided.
     ///
-    /// <para>Runs ONLY on the failure path, so it costs nothing in normal operation, and it is BOUNDED —
-    /// see <see cref="MaxCollisionProbes"/>. A path this machine ALREADY owns is excluded: re-declaring a
-    /// machine's own namespace re-uses its own paths, and that is the ordinary edit —
-    /// <c>TagNamespaceStore.PutAsync</c> deletes this machine's index rows and re-inserts them inside ONE
-    /// transaction, so a machine can never collide with itself. Without that exclusion the 409 would name
-    /// the claimant's own paths as another machine's and send an engineer to rename paths nobody else owns;
-    /// it is pinned by <c>A_409_names_the_path_another_machine_owns_and_never_the_claimants_own</c>, which
-    /// — unlike the re-declaration test this used to cite — actually enters the 409 path. Diagnosing
-    /// through <see cref="ITagNamespaceStore"/> only, never a second SQL query, so this cannot drift from
-    /// the frozen store's own schema.</para>
+    /// <para>Runs ONLY on the failure path, so it costs nothing in normal operation. It asks
+    /// <see cref="ITagIndexCollisionQuery"/> ONE bulk question rather than probing per tag — see that
+    /// type's doc comment for why fix round 1's per-tag loop had to go and what property replaced it:
+    /// <b>a collision anywhere in the body is diagnosed, and the cost does not grow per tag.</b></para>
+    ///
+    /// <para><b>Paths this machine already owns cannot appear</b>, and that is now decided by the table
+    /// that actually owns the answer: the query compares <c>tag_index.machine_code</c> against this
+    /// machine's canonical code. Fix round 1 inferred the same thing from the machine's own stored
+    /// document, which worked but asked a proxy. Without the exclusion in either form the 409 names the
+    /// claimant's own paths as another machine's and sends an engineer to rename paths nobody else owns —
+    /// pinned by <c>A_409_names_the_path_another_machine_owns_and_never_the_claimants_own</c>, which,
+    /// unlike the re-declaration test this once cited, actually enters the 409 path.</para>
+    ///
+    /// <para><b>Duplicates are collapsed before the query</b>: a body may legally repeat a path (that is
+    /// ContractInvariants' rule to refuse, not this diagnosis's), and asking about it twice would both
+    /// waste a parameter slot and print it twice.</para>
     ///
     /// <para>🔴 <b>TOTAL by design, and that is the point rather than a lapse (fix round 1, F3).</b> This
     /// method previously caught only <see cref="SqliteException"/> while standing under a comment saying a
     /// throwing diagnosis "would turn the 409 it is explaining back into the 500 it exists to prevent" —
-    /// which was exactly what it permitted: both reads <c>JsonSerializer.Deserialize</c> a stored document
-    /// (<c>TagNamespaceStore.cs:269,291</c>), so a <see cref="System.Text.Json.JsonException"/> from a
-    /// corrupt row escaped and the code written to close a 500 path opened one on its own error branch. The
-    /// fix is not "add JsonException to the list" — that closes the type this review named and leaves the
-    /// next one. The PROPERTY is: <b>no path through the collision handler, including its diagnostic reads,
-    /// may produce a 500.</b> A best-effort explanation is never more important than the answer it
-    /// decorates, so every failure degrades to "no paths named" and the caller falls back to SQLite's own
-    /// message. <see cref="OperationCanceledException"/> is the one deliberate exception: a cancelled
-    /// request is the caller going away, not a server error, and reporting a conflict that never happened
-    /// would be worse than propagating. Pinned by
-    /// <c>A_collision_diagnosis_that_fails_still_answers_409_never_500</c> and
+    /// which was exactly what it permitted: the diagnostic reads <c>JsonSerializer.Deserialize</c> a stored
+    /// document, so a <see cref="System.Text.Json.JsonException"/> from a corrupt row escaped and the code
+    /// written to close a 500 path opened one on its own error branch. The fix is not "add JsonException to
+    /// the list" — that closes the type a review named and leaves the next one. The PROPERTY is: <b>no path
+    /// through the collision handler, including its diagnosis, may produce a 500.</b> A best-effort
+    /// explanation is never more important than the answer it decorates, so every failure degrades to "no
+    /// paths named" and the caller falls back to SQLite's own message.
+    /// <see cref="OperationCanceledException"/> is the one deliberate exception: a cancelled request is the
+    /// caller going away, not a server error, and reporting a conflict that never happened would be worse
+    /// than propagating. Pinned by <c>A_collision_diagnosis_that_fails_still_answers_409_never_500</c> and
     /// <c>A_cancelled_request_still_propagates_out_of_the_collision_diagnosis</c>.</para></summary>
-    private static async Task<(IReadOnlyList<string> Paths, bool Truncated)> DescribeClaimedPathsAsync(
-        TagNamespaceDocument body, ITagNamespaceStore tags, CancellationToken ct)
+    private static async Task<IReadOnlyList<string>> DescribeClaimedPathsAsync(
+        TagNamespaceDocument body, string machineCode, ITagIndexCollisionQuery collisions, CancellationToken ct)
     {
         try
         {
-            var existing = await tags.GetAsync(body.MachineCode, ct).ConfigureAwait(false);
-            var ownPaths = existing?.Tags?.Where(t => t is not null).Select(t => t.Path).ToHashSet(StringComparer.Ordinal)
-                           ?? new HashSet<string>(StringComparer.Ordinal);
+            var candidates = body.Tags
+                .Where(t => t is not null && !string.IsNullOrWhiteSpace(t.Path))
+                .Select(t => t.Path)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
 
-            var claimed = new List<string>();
-            var probes = 0;
-            var truncated = false;
-
-            foreach (var tag in body.Tags)
-            {
-                if (tag is null || string.IsNullOrWhiteSpace(tag.Path)) continue;
-                if (ownPaths.Contains(tag.Path)) continue;
-
-                if (probes >= MaxCollisionProbes || claimed.Count >= MaxNamedCollisions)
-                {
-                    truncated = true;
-                    break;
-                }
-
-                probes++;
-                if (await tags.FindTagAsync(tag.Path, ct).ConfigureAwait(false) is not null) claimed.Add(tag.Path);
-            }
-
-            return (claimed, truncated);
+            return await collisions
+                .ClaimedByAnotherMachineAsync(MachineCodeIdentity.Canonicalize(machineCode), candidates, ct)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -282,7 +271,7 @@ public static class HmiTagEndpoints
         {
             // Deliberately total — see this method's own doc comment. The 409 is the answer; the list of
             // names is decoration, and decoration must never be able to replace the answer with a 500.
-            return (Array.Empty<string>(), false);
+            return Array.Empty<string>();
         }
     }
 }

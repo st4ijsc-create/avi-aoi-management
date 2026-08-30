@@ -790,6 +790,32 @@ public sealed class HmiTagEndpointsTests
         }
     }
 
+    /// <summary>The bulk-collision seam, scripted. <see cref="ClaimedPaths"/> is what the index would
+    /// answer; <see cref="OnQuery"/> replaces the whole call when a failure has to be produced.</summary>
+    private sealed class ScriptedCollisionQuery : ITagIndexCollisionQuery
+    {
+        /// <summary>path → owning machine code, exactly as `tag_index` holds it.</summary>
+        public IReadOnlyDictionary<string, string> Index { get; init; } =
+            new Dictionary<string, string>(StringComparer.Ordinal);
+
+        public Func<string, IReadOnlyList<string>, Task<IReadOnlyList<string>>>? OnQuery { get; init; }
+
+        public int QueryCallCount { get; private set; }
+
+        public Task<IReadOnlyList<string>> ClaimedByAnotherMachineAsync(
+            string canonicalMachineCode, IReadOnlyList<string> candidatePaths, CancellationToken ct = default)
+        {
+            QueryCallCount++;
+            if (OnQuery is not null) return OnQuery(canonicalMachineCode, candidatePaths);
+
+            return Task.FromResult<IReadOnlyList<string>>(
+                candidatePaths
+                    .Where(p => Index.TryGetValue(p, out var owner)
+                                && !string.Equals(owner, canonicalMachineCode, StringComparison.Ordinal))
+                    .ToList());
+        }
+    }
+
     private static Func<TagNamespaceDocument, Task> ThrowsSqlite(int errorCode, int extendedErrorCode) =>
         _ => throw new SqliteException("simulated", errorCode, extendedErrorCode);
 
@@ -826,7 +852,7 @@ public sealed class HmiTagEndpointsTests
 
         if (expectConflict)
         {
-            var result = await HmiTagEndpoints.PutAsync("SHAPE-01", body, store, CancellationToken.None);
+            var result = await HmiTagEndpoints.PutAsync("SHAPE-01", body, store, new ScriptedCollisionQuery(), CancellationToken.None);
             Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
         }
         else
@@ -834,9 +860,13 @@ public sealed class HmiTagEndpointsTests
             // Escaping is CORRECT here: an error this handler cannot honestly explain must not be dressed
             // up as one it can. It becomes a 500, which is what an unexplained store failure is.
             var escaped = await Assert.ThrowsAsync<SqliteException>(
-                () => HmiTagEndpoints.PutAsync("SHAPE-01", body, store, CancellationToken.None));
+                () => HmiTagEndpoints.PutAsync("SHAPE-01", body, store, new ScriptedCollisionQuery(), CancellationToken.None));
             Assert.Equal(errorCode, escaped.SqliteErrorCode);
         }
+
+        // `why` is the row's reason for existing; naming it in an assertion keeps it load-bearing rather
+        // than decorative (and silences xUnit1026, which correctly flags an unused theory parameter).
+        Assert.False(string.IsNullOrWhiteSpace(why));
     }
 
     /// <summary>🔴 <b>F2 — the <c>ownPaths</c> exclusion, deletable with everything green.</b> Without it a
@@ -844,17 +874,19 @@ public sealed class HmiTagEndpointsTests
     /// engineer to rename paths nobody else owns. The report previously cited
     /// <c>Put_ReDeclaringAMachinesOwnNamespace_…</c> as covering this; that test never enters the 409 path,
     /// which is a citation that does not reach the thing it certifies. This one does: the store is scripted
-    /// so that EVERY path resolves in the index (as it would when the claimant already has a namespace), so
-    /// the exclusion is the only thing separating the two lists.</summary>
+    /// so that EVERY path is present in the index (as it is when the claimant already has a namespace), so
+    /// ownership — not presence — is the only thing separating the two lists.</summary>
     [Fact]
     public async Task A_409_names_the_path_another_machine_owns_and_never_the_claimants_own()
     {
-        var existing = new TagNamespaceDocument(1, "OWN-01", new[] { ReadTag("OWN-01/pre") });
-        var store = new ScriptedTagNamespaceStore
+        var store = new ScriptedTagNamespaceStore { OnPut = ThrowsSqlite(19, 1555) };
+        var collisions = new ScriptedCollisionQuery
         {
-            OnPut = ThrowsSqlite(19, 1555),
-            OnGet = _ => Task.FromResult<TagNamespaceDocument?>(existing),
-            OnFind = path => Task.FromResult<TagDescriptor?>(ReadTag(path)), // everything is in the index
+            Index = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["OWN-01/pre"] = "OWN-01",       // present, and this machine's own
+                ["shared/claimed"] = "OTHER-01", // present, and somebody else's
+            },
         };
 
         var body = new TagNamespaceDocument(1, "OWN-01", new[]
@@ -863,7 +895,7 @@ public sealed class HmiTagEndpointsTests
             ReadTag("shared/claimed"),  // the one another machine owns
         });
 
-        var result = await HmiTagEndpoints.PutAsync("OWN-01", body, store, CancellationToken.None);
+        var result = await HmiTagEndpoints.PutAsync("OWN-01", body, store, collisions, CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
         var error = ErrorOf(result);
@@ -896,26 +928,15 @@ public sealed class HmiTagEndpointsTests
     [MemberData(nameof(DiagnosticReadFailures))]
     public async Task A_collision_diagnosis_that_fails_still_answers_409_never_500(string label, Exception thrown)
     {
+        var store = new ScriptedTagNamespaceStore { OnPut = ThrowsSqlite(19, 1555) };
         var body = new TagNamespaceDocument(1, "DIAG-01", new[] { ReadTag("DIAG-01/x") });
 
-        // Arm 1: the FIRST diagnostic read (GetAsync, for the machine's own paths) fails.
-        var getFails = new ScriptedTagNamespaceStore
-        {
-            OnPut = ThrowsSqlite(19, 1555),
-            OnGet = _ => throw thrown,
-        };
-        var viaGet = await HmiTagEndpoints.PutAsync("DIAG-01", body, getFails, CancellationToken.None);
-        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(viaGet));
-        Assert.False(string.IsNullOrWhiteSpace(ErrorOf(viaGet)), $"[{label}] the 409 must still explain itself");
+        var collisionsFail = new ScriptedCollisionQuery { OnQuery = (_, _) => throw thrown };
 
-        // Arm 2: the SECOND diagnostic read (FindTagAsync, per path) fails.
-        var findFails = new ScriptedTagNamespaceStore
-        {
-            OnPut = ThrowsSqlite(19, 1555),
-            OnFind = _ => throw thrown,
-        };
-        var viaFind = await HmiTagEndpoints.PutAsync("DIAG-01", body, findFails, CancellationToken.None);
-        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(viaFind));
+        var result = await HmiTagEndpoints.PutAsync("DIAG-01", body, store, collisionsFail, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
+        Assert.False(string.IsNullOrWhiteSpace(ErrorOf(result)), $"[{label}] the 409 must still explain itself");
     }
 
     /// <summary>The one thing the total catch must NOT swallow. A cancelled request is the caller going
@@ -925,53 +946,159 @@ public sealed class HmiTagEndpointsTests
     [Fact]
     public async Task A_cancelled_request_still_propagates_out_of_the_collision_diagnosis()
     {
-        var store = new ScriptedTagNamespaceStore
-        {
-            OnPut = ThrowsSqlite(19, 1555),
-            OnGet = _ => throw new OperationCanceledException(),
-        };
+        var store = new ScriptedTagNamespaceStore { OnPut = ThrowsSqlite(19, 1555) };
+        var cancelling = new ScriptedCollisionQuery { OnQuery = (_, _) => throw new OperationCanceledException() };
         var body = new TagNamespaceDocument(1, "CANCEL-01", new[] { ReadTag("CANCEL-01/x") });
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => HmiTagEndpoints.PutAsync("CANCEL-01", body, store, CancellationToken.None));
+            () => HmiTagEndpoints.PutAsync("CANCEL-01", body, store, cancelling, CancellationToken.None));
     }
 
-    /// <summary>🔴 <b>F5 — the diagnosis was uncapped work driven by a client-controlled count.</b> One
-    /// <c>FindTagAsync</c> per tag in the body, each opening a fresh <see cref="SqliteConnection"/> and
-    /// applying four PRAGMAs. Measured by review for a single colliding PUT: 10 tags → 6 ms, 2 000 → 63 ms,
-    /// 20 000 → 539 ms, and roughly 230 000 index queries at Kestrel's default 30 MB body limit — from a
-    /// caller whose write is being REJECTED, repeatable. The bound is now a constant, and this is the test
-    /// that fails when it is raised or removed: the body carries far more colliding tags than the cap, and
-    /// the store counts probes.</summary>
+    // ═════════════════════════════════════════════════════════════════════
+    // 🔴 FIX ROUND 2, NEW-3 — the cap made the COMMON CASE worse; and NEW-1 — the test that was supposed to
+    // guard that cap pinned nothing.
+    //
+    // Round 1 capped the diagnosis at 200 per-tag probes. The loop walks the body IN ORDER, so the cap did
+    // not merely bound the COST — it bounded WHICH COLLISIONS COULD BE FOUND: a 2 000-tag body whose
+    // colliding path is LAST fell back to a generic message naming nothing, having been diagnosed fine
+    // before the cap existed. And the bound test stayed GREEN with the cap raised 200 to 100 000, because
+    // its store made every path collide so the DISPLAY cap (10) tripped first, and because both of its
+    // assertions compared against the same constants the production code read. A test that reads the same
+    // constant on both sides pins nothing.
+    //
+    // The three tests below replace it, and none can repeat either mistake:
+    //   - POSITION: the collision is LAST in the body, so a prefix-limited scan cannot find it.
+    //   - COST:     asserted as a LITERAL 0 per-tag probes, so reintroducing per-tag probing reddens this
+    //               whatever any constant is set to.
+    //   - SQL:      asserted as a LITERAL 4 statements for 2 000 paths, on the pure chunker.
+    // ═════════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData(0)]      // first
+    [InlineData(999)]    // middle
+    [InlineData(1_999)]  // LAST — the position fix round 1 could not reach
+    public async Task A_collision_is_diagnosed_wherever_it_sits_in_the_body(int collidingIndex)
+    {
+        const int TagsInBody = 2_000;
+        var collidingPath = $"POS-01/tag{collidingIndex}";
+
+        var store = new ScriptedTagNamespaceStore { OnPut = ThrowsSqlite(19, 1555) };
+        var collisions = new ScriptedCollisionQuery
+        {
+            Index = new Dictionary<string, string>(StringComparer.Ordinal) { [collidingPath] = "OTHER-01" },
+        };
+        var body = new TagNamespaceDocument(
+            1, "POS-01",
+            Enumerable.Range(0, TagsInBody).Select(i => ReadTag($"POS-01/tag{i}")).ToList());
+
+        var result = await HmiTagEndpoints.PutAsync("POS-01", body, store, collisions, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
+        Assert.Contains(collidingPath, ErrorOf(result), StringComparison.Ordinal);
+    }
+
+    /// <summary>🔴 <b>The cost bound, asserted against LITERALS.</b> Fix round 1's version compared
+    /// <c>FindCallCount</c> against <c>MaxCollisionProbes</c> — the same constant the production code read —
+    /// so raising the constant raised the assertion with it and the test could never fail.
+    ///
+    /// <para>The bound is now structural rather than numeric: the diagnosis asks ONE bulk question, so the
+    /// number of per-tag store probes is <b>zero</b>, and zero is a literal no constant can move. Any
+    /// reintroduction of per-tag probing — at any cap, however large — reddens this.</para></summary>
     [Fact]
-    public async Task The_collision_diagnosis_is_bounded_regardless_of_how_many_tags_the_body_carries()
+    public async Task The_collision_diagnosis_makes_no_per_tag_store_probes_at_all()
     {
         const int TagsInBody = 2_000;
 
         var store = new ScriptedTagNamespaceStore
         {
             OnPut = ThrowsSqlite(19, 1555),
-            OnFind = path => Task.FromResult<TagDescriptor?>(ReadTag(path)), // every path collides
+            OnFind = path => Task.FromResult<TagDescriptor?>(ReadTag(path)),
+            OnGet = _ => Task.FromResult<TagNamespaceDocument?>(null),
+        };
+        var collisions = new ScriptedCollisionQuery
+        {
+            Index = Enumerable.Range(0, TagsInBody)
+                .ToDictionary(i => $"COST-01/tag{i}", _ => "OTHER-01", StringComparer.Ordinal),
         };
         var body = new TagNamespaceDocument(
-            1, "BOUND-01",
-            Enumerable.Range(0, TagsInBody).Select(i => ReadTag($"BOUND-01/tag{i}")).ToList());
+            1, "COST-01",
+            Enumerable.Range(0, TagsInBody).Select(i => ReadTag($"COST-01/tag{i}")).ToList());
 
-        var result = await HmiTagEndpoints.PutAsync("BOUND-01", body, store, CancellationToken.None);
+        var result = await HmiTagEndpoints.PutAsync("COST-01", body, store, collisions, CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
-        Assert.True(store.FindCallCount <= HmiTagEndpoints.MaxCollisionProbes,
-            $"the diagnosis made {store.FindCallCount} index probes for a {TagsInBody}-tag body — the bound " +
-            $"is {HmiTagEndpoints.MaxCollisionProbes}, and it exists because this work is driven by a " +
-            "client-controlled count on a request that is being REJECTED.");
+        Assert.Equal(0, store.FindCallCount);
+        Assert.Equal(1, collisions.QueryCallCount);
 
-        // ...and the message is bounded too: an error naming two thousand paths is not a diagnosis.
-        var named = ErrorOf(result).Split("BOUND-01/tag", StringSplitOptions.None).Length - 1;
-        Assert.True(named <= HmiTagEndpoints.MaxNamedCollisions,
-            $"the 409 named {named} paths; the bound is {HmiTagEndpoints.MaxNamedCollisions}");
+        // The display bound still applies — an error naming two thousand paths is not a diagnosis — and it
+        // reports the EXACT total rather than hedging, which is only possible because the query found them
+        // all. Literals, so neither number can be moved by editing a constant.
+        var named = ErrorOf(result).Split("COST-01/tag", StringSplitOptions.None).Length - 1;
+        Assert.Equal(10, named);
+        Assert.Contains("showing 10 of 2000", ErrorOf(result), StringComparison.Ordinal);
+    }
 
-        // ...and it SAYS it was truncated, rather than presenting a partial list as the whole answer.
-        Assert.Contains("truncated", ErrorOf(result), StringComparison.OrdinalIgnoreCase);
+    /// <summary>🔴 <b>The same property, end to end against a REAL database and the REAL frozen store —
+    /// this is the one that would have caught NEW-3.</b> The scripted tests above pin the handler's
+    /// behaviour; this pins that the bulk query and <see cref="TagNamespaceStore"/> agree about one
+    /// database. It is also what pays for this branch reading <c>tag_index</c> directly instead of going
+    /// through <see cref="ITagNamespaceStore"/>: if the frozen store's schema ever moves, the query stops
+    /// agreeing with it and THIS reddens, rather than the diagnosis silently returning "no collisions".
+    ///
+    /// <para>The colliding path is deliberately the LAST of 2 000 — the exact body fix round 1 regressed,
+    /// diagnosed at ~47 ms before the cap and undiagnosable after it.</para></summary>
+    [Fact]
+    public async Task A_collision_last_in_a_two_thousand_tag_body_is_named_against_the_real_store()
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync("real-store-last");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        // OWNER-02 takes one path, through the real HTTP surface and the real store.
+        var owner = new TagNamespaceDocument(1, "OWNER-02", new[] { ReadTag("plant/line9/last") });
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/tags/OWNER-02", owner, HmiContractJson.Options)).StatusCode);
+
+        // CLAIM-02 declares 2 000 tags whose ONLY collision is the very last one.
+        var tags = Enumerable.Range(0, 1_999).Select(i => ReadTag($"CLAIM-02/tag{i}")).ToList();
+        tags.Add(ReadTag("plant/line9/last"));
+        var claimant = new TagNamespaceDocument(1, "CLAIM-02", tags);
+
+        using var put = await engineerC.PutAsJsonAsync("/v1/tags/CLAIM-02", claimant, HmiContractJson.Options);
+
+        Assert.Equal(HttpStatusCode.Conflict, put.StatusCode);
+        var error = await put.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
+        Assert.Contains("plant/line9/last", error!.Error, StringComparison.Ordinal);
+
+        // ...and none of the claimant's own 1 999 non-colliding paths is named as somebody else's.
+        Assert.DoesNotContain("CLAIM-02/tag", error.Error, StringComparison.Ordinal);
+
+        // P2 — the rejected write left nothing behind, and the owner still holds its path.
+        using (var claimantGet = await engineerC.GetAsync("/v1/tags?machine=CLAIM-02"))
+        {
+            var doc = await claimantGet.Content.ReadFromJsonAsync<TagNamespaceDocument>(HmiContractJson.Options);
+            Assert.Empty(doc!.Tags);
+        }
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.GetAsync("/v1/tags/by-path/plant/line9/last")).StatusCode);
+    }
+
+    /// <summary>The SQL round-trip bound, measured on the pure chunker so no database is needed, and
+    /// asserted against literals: 2 000 paths must cost 4 statements, not 2 000. Dropping
+    /// <c>ChunkSize</c> to 1 makes this 2 000 and reddens; raising it past SQLite's parameter limit reddens
+    /// the second assertion.</summary>
+    [Fact]
+    public void The_bulk_collision_query_costs_one_statement_per_500_paths()
+    {
+        var paths = Enumerable.Range(0, 2_000).Select(i => $"p/{i}").ToList();
+
+        var chunks = SqliteTagIndexCollisionQuery.Chunk(paths);
+
+        Assert.Equal(4, chunks.Count);
+        Assert.All(chunks, c => Assert.True(c.Count <= 500, $"a chunk of {c.Count} risks SQLite's parameter limit"));
+        Assert.Equal(2_000, chunks.Sum(c => c.Count)); // and nothing is dropped on the way
     }
 
     /// <summary>🔴 <b>F4 — the PUT response echo's canonicalisation, deletable with everything green.</b>

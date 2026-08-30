@@ -455,10 +455,27 @@ builder.Services.AddSingleton<St4i.EngineApi.HmiModel.IComponentModelStore>(
             string.IsNullOrWhiteSpace(hmiModelDir) ? null : hmiModelDir)));
 
 var hmiTagsDir = Environment.GetEnvironmentVariable(St4i.EngineApi.HmiModel.TagNamespaceStore.EnvVarDir);
+// WS-HMI-0b Task 2, fix round 2 — ONE raw TagNamespaceStore instance, shared by the canonicalizing
+// decorator and by the read-only collision query, and constructed LAZILY so that merely booting the host
+// still does not create the database (the previous inline `new` inside the factory had that property and
+// losing it would change startup behaviour for every test that asserts a directory is untouched).
+//
+// 🔴 The raw store is deliberately a LOCAL, never an AddSingleton: Task 1's structural fix is that DI hands
+// out ONLY the canonicalizing decorator, never the case-sensitive-keyed store, so a future handler cannot
+// obtain the raw one even by asking for it by type. The collision query is registered instead — a
+// read-only, SELECT-only diagnostic seam that cannot be mistaken or substituted for a store.
+var rawTagNamespaceStore = new Lazy<St4i.EngineApi.HmiModel.TagNamespaceStore>(
+    () => new St4i.EngineApi.HmiModel.TagNamespaceStore(
+        string.IsNullOrWhiteSpace(hmiTagsDir) ? null : hmiTagsDir));
+
 builder.Services.AddSingleton<St4i.EngineApi.HmiModel.ITagNamespaceStore>(
-    _ => new St4i.EngineApi.HmiModel.CanonicalizingTagNamespaceStore(
-        new St4i.EngineApi.HmiModel.TagNamespaceStore(
-            string.IsNullOrWhiteSpace(hmiTagsDir) ? null : hmiTagsDir)));
+    _ => new St4i.EngineApi.HmiModel.CanonicalizingTagNamespaceStore(rawTagNamespaceStore.Value));
+
+// Takes the path FROM the store rather than re-deriving the file name, so the two cannot point at
+// different databases. See TagIndexCollisionQuery.cs for why a bulk SQL read exists at all and what pins
+// it against the frozen store's schema.
+builder.Services.AddSingleton<St4i.EngineApi.HmiModel.ITagIndexCollisionQuery>(
+    _ => new St4i.EngineApi.HmiModel.SqliteTagIndexCollisionQuery(rawTagNamespaceStore.Value.DbPath));
 
 // GĐ3 sub-4 LC-1 (.superpowers/sdd/2026-07-27-giaidoan3-alarms-linecontroller-blueprint/task-1-brief.md) —
 // the alarm backbone: a durable SQLite store (alarms.db) for the ISA-18.2 alarm model (raise/clear/ack/
