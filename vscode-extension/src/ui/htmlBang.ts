@@ -79,6 +79,11 @@ export function dungHtmlBang(dv: { nonce: string }): string {
   const hoiThoai = document.getElementById("hoi-thoai");
   const oNhap = document.getElementById("o-nhap");
   let khoiTraLoi = null;
+  // ★★★ H3(b) (review toàn nhánh 2026-08-30) — cờ báo lượt "hoi" SẮP GỬI đến từ Cmd+K
+  // ("dat_cau_hoi_tu_lenh") chứ không phải người dùng tự gõ. gui() đọc cờ này rồi ĐÍNH KÈM vào
+  // postMessage({loai:"hoi"}) — đây là cách DUY NHẤT phía extension (bangChat.ts) biết một lượt hỏi
+  // có mang giao thức Cmd+K hay không, vì nội dung cauHoi lúc đó trông giống hệt một câu gõ tay.
+  let laCauHoiTuLenh = false;
 
   function themLuot(nhan, chu) {
     const d = document.createElement("div");
@@ -181,7 +186,12 @@ export function dungHtmlBang(dv: { nonce: string }): string {
     anMenuMention();
     const tepMention = mentionsHienTai;
     mentionsHienTai = [];
-    vscode.postMessage({ loai: "hoi", cauHoi, duAnId: document.getElementById("o-du-an").value, tepMention });
+    // ★★★ H3(b) — đọc rồi RESET NGAY (không phải cờ dính): chỉ LƯỢT "hoi" NÀY được đánh dấu Cmd+K,
+    // câu gõ tay kế tiếp (kể cả khi người dùng gõ ngay sau khi ô nhập vừa được Cmd+K đổ chữ vào,
+    // trước khi gui() kịp chạy) không được ăn theo cờ của lượt trước.
+    const tuLenh = laCauHoiTuLenh;
+    laCauHoiTuLenh = false;
+    vscode.postMessage({ loai: "hoi", cauHoi, duAnId: document.getElementById("o-du-an").value, tepMention, tuLenh });
   }
 
   document.getElementById("nut-gui").addEventListener("click", gui);
@@ -288,6 +298,10 @@ export function dungHtmlBang(dv: { nonce: string }): string {
       // cầu, xem loi/cauHoiSuaChon.ts) vào Ô NHẬP rồi gọi ĐÚNG hàm gửi mà nút "Gửi" dùng. KHÔNG có
       // đường tắt nào ở đây: gui() vẫn tạo bong bóng "Bạn: …", vẫn postMessage({loai:"hoi"}),
       // vẫn đi qua toàn bộ chuỗi đề-xuất → diff → duyệt → apBanVa y hệt một câu gõ tay.
+      // ★★★ H3(b) — đặt cờ TRƯỚC khi gọi gui(): đây là lượt DUY NHẤT được đánh dấu "đến từ Cmd+K"
+      // để phía extension biết KHÔNG chèn giao thức dạy-đọc (giao thức đó cạnh tranh với chỉ dẫn
+      // \`de_xuat_sua_doan\` mà chính câu hỏi này đã mang sẵn).
+      laCauHoiTuLenh = true;
       oNhap.value = m.cauHoi;
       gui();
     } else if (m.loai === "goi_y_mention") {

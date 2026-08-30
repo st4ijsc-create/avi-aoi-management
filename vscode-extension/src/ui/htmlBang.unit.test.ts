@@ -385,3 +385,47 @@ describe("webview — @-mention", () => {
     expect(w.daGui.filter((m) => m.loai === "xin_goi_y_mention")).toHaveLength(0);
   });
 });
+
+/**
+ * ★★★ H3(b) (review toàn nhánh 2026-08-30) — KẾT CỤC thật, chạy script THẬT của webview. Đây là
+ * cách DUY NHẤT phía extension (`bangChat.ts`) biết một lượt "hoi" đến từ Cmd+K hay từ người dùng
+ * tự gõ — nội dung `cauHoi` lúc đó trông giống hệt nhau. Sai ở TẦNG NÀY (quên đặt cờ, đặt cờ rồi
+ * không reset, đặt cờ SAI THỜI ĐIỂM) sẽ không lộ ra ở lưới `bangChat.unit.test.ts` (lưới đó bơm
+ * thẳng `tuLenh` vào tin nhắn, bỏ qua đúng khâu webview này).
+ */
+describe("webview — H3(b): cờ `tuLenh` đánh dấu ĐÚNG lượt đến từ Cmd+K", () => {
+  it("★★★ `dat_cau_hoi_tu_lenh` (Cmd+K) ⇒ tin `hoi` gửi đi mang `tuLenh:true`", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "dat_cau_hoi_tu_lenh", cauHoi: "Sửa đoạn mã sau..." });
+
+    const hoi = w.daGui.filter((m) => m.loai === "hoi");
+    expect(hoi).toHaveLength(1);
+    expect(hoi[0].cauHoi).toBe("Sửa đoạn mã sau...");
+    expect(hoi[0].tuLenh).toBe(true);
+  });
+
+  it("★★ NHÁNH KIA: người dùng tự gõ rồi bấm Gửi ⇒ `tuLenh` KHÔNG phải `true`", () => {
+    const w = chayWebview();
+    const oNhap = w.nut("o-nhap");
+    oNhap.value = "câu hỏi tự gõ, không qua Cmd+K";
+    w.nut("nut-gui").bam();
+
+    const hoi = w.daGui.filter((m) => m.loai === "hoi");
+    expect(hoi).toHaveLength(1);
+    expect(hoi[0].tuLenh).not.toBe(true);
+  });
+
+  it("★★★ cờ KHÔNG dính: lượt Cmd+K xong, câu gõ tay KẾ TIẾP không được ăn theo `tuLenh:true` của lượt trước", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "dat_cau_hoi_tu_lenh", cauHoi: "câu hỏi Cmd+K" });
+
+    const oNhap = w.nut("o-nhap");
+    oNhap.value = "câu hỏi tự gõ ngay sau đó";
+    w.nut("nut-gui").bam();
+
+    const hoi = w.daGui.filter((m) => m.loai === "hoi");
+    expect(hoi).toHaveLength(2);
+    expect(hoi[0].tuLenh).toBe(true);
+    expect(hoi[1].tuLenh).not.toBe(true);
+  });
+});

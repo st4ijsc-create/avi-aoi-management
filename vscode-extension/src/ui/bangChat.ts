@@ -167,7 +167,17 @@ export class BangChat {
     // kịp đăng ký `addEventListener("message", …)` ⇒ danh sách rơi mất mà không có lỗi nào — ô
     // chọn trống một cách im lặng. Đợi webview tự báo "san_sang" (xem htmlBang.ts) rồi mới nạp.
     this.panel.webview.onDidReceiveMessage(
-      (m: { loai: string; cauHoi?: string; duAnId?: string; truy?: string; tepMention?: unknown }) => {
+      (m: {
+        loai: string;
+        cauHoi?: string;
+        duAnId?: string;
+        truy?: string;
+        tepMention?: unknown;
+        // ★★★ H3(b) — webview đặt cờ này TRUE khi câu hỏi vừa gửi đến từ `dat_cau_hoi_tu_lenh`
+        // (Cmd+K), xem `htmlBang.ts`. Đây là cách DUY NHẤT `hoi()` biết một lượt hỏi có mang giao
+        // thức Cmd+K hay không — nội dung `cauHoi` tới đây trông giống hệt một câu gõ tay.
+        tuLenh?: unknown;
+      }) => {
       if (m.loai === "san_sang") {
         this.daSanSang = true;
         void this.napDuAn();
@@ -192,7 +202,7 @@ export class BangChat {
         const tepMention = Array.isArray(m.tepMention)
           ? m.tepMention.filter((x): x is string => typeof x === "string")
           : [];
-        void this.hoi(m.cauHoi, tepMention);
+        void this.hoi(m.cauHoi, tepMention, m.tuLenh === true);
         return;
       }
       if (m.loai === "xin_goi_y_mention") { void this.guiGoiYMention(typeof m.truy === "string" ? m.truy : ""); return; }
@@ -430,8 +440,15 @@ export class BangChat {
    * `tepMention` — ĐỢT D / TASK 5: đường dẫn (tương đối, SẠCH — không kèm `@`) người dùng đã chọn
    * qua dropdown @-mention trong CHÍNH lượt hỏi này. Nội dung của chúng đi qua ĐÚNG tool `doc_tep`
    * (Task 2/3) trước khi vào ngữ cảnh — xem đoạn xử lý ngay dưới `nguCanhVong` bên dưới.
+   *
+   * `laCmdK` — ★★★ H3(b) (review toàn nhánh 2026-08-30): `true` khi lượt hỏi này bắt nguồn từ
+   * Cmd+K (webview đặt cờ `tuLenh` khi đáp lại `dat_cau_hoi_tu_lenh`, xem `htmlBang.ts` +
+   * `onDidReceiveMessage` ở constructor). Thread THẲNG xuống MỌI lượt gọi `dungYeuCauStream` bên
+   * dưới (kể cả các vòng đọc ≥2 của CHÍNH lượt hỏi này) để giao thức dạy-đọc không bao giờ chèn vào
+   * một câu hỏi mang giao thức Cmd+K — hai giao thức cạnh tranh trong cùng một `question` khiến
+   * model chọn đọc trước và nuốt mất chỉ dẫn `de_xuat_sua_doan`, Cmd+K im lặng không đẻ thẻ duyệt.
    */
-  private async hoi(cauHoi: string, tepMention: string[] = []): Promise<void> {
+  private async hoi(cauHoi: string, tepMention: string[] = [], laCmdK = false): Promise<void> {
     // ★★★ LƯỢT HỎI MỚI ⇒ ĐỀ XUẤT CŨ HẾT HIỆU LỰC TRÊN GIAO DIỆN. Trước đây thẻ duyệt của lượt
     // trước ở lại NGUYÊN trên bảng trong khi câu trả lời mới đang stream — người dùng đọc câu mới
     // rồi bấm cái nút của câu CŨ. `xuLyDeXuat` có quên đề xuất cũ, nhưng chỉ khi một đề xuất MỚI
@@ -523,6 +540,7 @@ export class BangChat {
           ngonNgu: cfg.get<string>("uiLanguage", "vi"),
           vaiTro: "engineer",
           cheDo,
+          laCmdK,
         });
         let tt = trangThaiBanDau();
         const { hong } = await moDongSse({
@@ -597,7 +615,20 @@ export class BangChat {
           const kq = await chayToolCucBo(y, dsGoc);
           doanKetQua.push(kq.ok ? kq.ketQua : `LỖI: ${kq.lyDo}`);
         }
-        cauHoiVong = `KẾT QUẢ TOOL:\n${doanKetQua.join("\n\n")}`;
+        /**
+         * ★★★ H3(a) (review toàn nhánh 2026-08-30) — GIỮ câu hỏi GỐC, đừng THAY hẳn bằng kết quả
+         * tool. Bản cũ gán `cauHoiVong = "KẾT QUẢ TOOL: ..."` — câu hỏi gốc (`cauHoi`, tham số của
+         * `hoi()`, còn nguyên trong closure) biến mất khỏi `question` của vòng kế tiếp. Hai hậu quả
+         * đo được:
+         *  · đường hỏi thường: máy chủ truy hồi RAG theo `question` — vòng quyết định (vòng cuối)
+         *    truy hồi trên NỘI DUNG TOOL thay vì trên câu người dùng hỏi, tức ngữ cảnh KB sai đề;
+         *  · Cmd+K: câu hỏi gốc mang CẢ chỉ dẫn `de_xuat_sua_doan` LẪN `dongDau`/`dongCuoi` cố định
+         *    — mất nó ở vòng ≥2 là mất luôn hình dạng đề xuất, thẻ duyệt không bao giờ hiện.
+         * Vá: NỐI kết quả tool với câu hỏi gốc, không THAY — một dòng vá cả hai kịch bản.
+         */
+        cauHoiVong =
+          `KẾT QUẢ TOOL:\n${doanKetQua.join("\n\n")}\n\n` +
+          `--- CÂU HỎI GỐC (hãy trả lời ĐÚNG câu này, theo đúng hình dạng đã yêu cầu ở trên) ---\n${cauHoi}`;
         // Ngữ cảnh soạn thảo (tệp đang mở/đoạn đang chọn) CHỈ đính kèm lượt hỏi GỐC — lặp lại nó ở
         // mỗi vòng vừa tốn ngân sách ngữ cảnh vừa không mang tin gì mới cho những lượt sau.
         nguCanhVong = undefined;

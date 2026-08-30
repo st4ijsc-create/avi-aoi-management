@@ -141,3 +141,39 @@ describe("dungYeuCauStream — ĐỢT D.1 (LỖI 1): LOCAL tự dạy giao thứ
     expect(nhac).toContain("```avi-tool```");
   });
 });
+
+describe("dungYeuCauStream — H3(b) (review toàn nhánh 2026-08-30): `laCmdK` tắt giao thức dạy-đọc", () => {
+  /**
+   * Cmd+K mang giao thức RIÊNG của nó ngay trong `cauHoi` (`de_xuat_sua_doan` + `dongDau`/
+   * `dongCuoi` cố định, xem `loi/cauHoiSuaChon.ts`). Giao thức dạy-đọc (ba tool ĐỌC) chèn CẠNH nó
+   * làm model có hai chỉ dẫn cạnh tranh; trước bản vá, `laCmdK` chưa tồn tại nên LOCAL luôn bị dạy
+   * bất kể nguồn gốc câu hỏi.
+   */
+  it("★★★ LOCAL + laCmdK:true ⇒ KHÔNG có văn bản dạy giao thức đọc lẫn câu nhắc cuối", () => {
+    const t = dungYeuCauStream({ ...CHUNG, cheDo: { loai: "local", nhan: "x" }, laCmdK: true });
+    const q = String(t.question);
+    expect(q).not.toContain(dungVanBanDayGiaoThucDoc());
+    expect(q).not.toContain(nhacLaiCuoiCauHoi());
+    // ⚠ CHỐNG TỰ THOẢ: câu hỏi GỐC + ngữ cảnh vẫn phải còn nguyên — không phải cả `question` bị
+    // xoá sạch, chỉ riêng phần dạy giao thức đọc mới vắng mặt.
+    expect(q).toContain("Hàm Divide sai chỗ nào?");
+    expect(q).toContain("--- TỆP ---");
+  });
+
+  it("★★ NHÁNH KIA: LOCAL + laCmdK KHÔNG đặt (mặc định) ⇒ vẫn dạy giao thức đọc như cũ", () => {
+    const t = dungYeuCauStream({ ...CHUNG, cheDo: { loai: "local", nhan: "x" } });
+    const q = String(t.question);
+    expect(q).toContain(dungVanBanDayGiaoThucDoc());
+    expect(q).toContain(nhacLaiCuoiCauHoi());
+  });
+
+  it("★ SERVER + laCmdK:true ⇒ vẫn KHÔNG dạy giao thức đọc (cùng lý do không dạy cho SERVER)", () => {
+    // Đối chứng: `laCmdK` không được BẬT LẠI thứ mà chế độ SERVER đã tắt vì lý do khác.
+    const t = dungYeuCauStream({
+      ...CHUNG,
+      cheDo: { loai: "server", projectId: "csharp", nhan: "Demo" },
+      laCmdK: true,
+    });
+    expect(String(t.question)).not.toContain(dungVanBanDayGiaoThucDoc());
+  });
+});

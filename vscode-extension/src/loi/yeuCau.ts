@@ -47,6 +47,20 @@ export function dungYeuCauStream(dv: {
   ngonNgu: string;
   vaiTro: string;
   cheDo: CheDoDuAn;
+  /**
+   * ★★★ H3(b) (review toàn nhánh 2026-08-30) — `true` khi câu hỏi này bắt nguồn từ CMD+K (`loi/
+   * cauHoiSuaChon.ts`), KHÔNG phải một câu người dùng tự gõ. Mặc định `false` (đường hỏi thường).
+   *
+   * Cmd+K mang GIAO THỨC RIÊNG của nó, đã dạy NGAY TRONG chính `cauHoi` (đòi ĐÚNG MỘT khối
+   * ```avi-tool``` với `de_xuat_sua_doan`, `dongDau`/`dongCuoi` cố định). `phanDayGiaoThuc`/
+   * `phanNhacLaiCuoi` bên dưới dạy một giao thức KHÁC (ba tool ĐỌC) — trước bản vá này chúng bị
+   * chèn vào MỌI câu hỏi LOCAL, kể cả Cmd+K, tạo ra HAI chỉ dẫn cạnh tranh trong cùng một `question`.
+   * Model chọn đọc trước (hành vi hợp lý — nó vừa được dạy là được phép) ⇒ nuốt mất chỉ dẫn
+   * `de_xuat_sua_doan` ⇒ Cmd+K im lặng không đẻ thẻ duyệt. Vá: chỉ dạy giao thức ĐỌC cho đường hỏi
+   * THƯỜNG — Cmd+K tự lo giao thức của chính nó, không cần và không được dạy thêm một giao thức khác
+   * cạnh tranh với nó.
+   */
+  laCmdK?: boolean;
 }): Record<string, unknown> {
   const context: Record<string, unknown> = {
     route: "vscode",
@@ -55,19 +69,23 @@ export function dungYeuCauStream(dv: {
   };
   if (dv.cheDo.loai === "server") context.projectId = dv.cheDo.projectId;
 
+  const dayGiaoThucDoc = dv.cheDo.loai === "local" && dv.laCmdK !== true;
+
   // ★★★ LỖI 1 — dạy giao thức `avi-tool` (ba tool ĐỌC) CHỈ ở chế độ LOCAL, đứng TRƯỚC cả ngữ cảnh
   // mã lẫn câu hỏi. SERVER có vòng tool riêng chạy trên hộp cát máy chủ (xem docblock module) —
   // dạy `avi-tool` ở đó là dạy một giao thức không ai đọc, nên KHÔNG chèn cho `cheDo.loai==="server"`.
-  const phanDayGiaoThuc = dv.cheDo.loai === "local" ? `${dungVanBanDayGiaoThucDoc()}\n\n` : "";
+  // ★★★ H3(b) — cũng KHÔNG chèn cho Cmd+K (`dv.laCmdK`), xem docblock tham số ở trên.
+  const phanDayGiaoThuc = dayGiaoThucDoc ? `${dungVanBanDayGiaoThucDoc()}\n\n` : "";
 
   // ★★★ LỖI 1, vòng đo lại thứ nhất — nhắc lại NGẮN ở CUỐI `question` (gần điểm sinh chữ nhất).
   // Đo LIVE: dạy MỘT LẦN ở đầu prompt thua luật "NGUYÊN TẮC TRẢ LỜI" máy chủ tự chèn ở 10/11 lượt
-  // — xem docblock `dayGiaoThucDoc.ts`. KHÔNG áp cho SERVER (cùng lý do không dạy giao thức ở đó).
+  // — xem docblock `dayGiaoThucDoc.ts`. KHÔNG áp cho SERVER (cùng lý do không dạy giao thức ở đó),
+  // và KHÔNG áp cho Cmd+K (H3(b), cùng lý do với `phanDayGiaoThuc` ở trên).
   // ★ CHỐNG TỰ-THOẢ (đo 2026-08-30): gỡ đúng hai dòng `phanDayGiaoThuc`/`phanNhacLaiCuoi` này (ép
   //   rỗng bất kể chế độ), build lại, chạy 5 câu Step 2 ⇒ tỉ lệ tuân thủ SẬP về 0/5 (C_BO_QUA_GIAO_
   //   THUC cả năm) — y hệt baseline Task 6. Xác nhận số đẹp đến từ ĐÚNG hai dòng này, không phải
   //   nơi khác. Đã hoàn nguyên về đúng bản đã đo LIVE (10/11 A) sau khi ablation xong.
-  const phanNhacLaiCuoi = dv.cheDo.loai === "local" ? nhacLaiCuoiCauHoi() : "";
+  const phanNhacLaiCuoi = dayGiaoThucDoc ? nhacLaiCuoiCauHoi() : "";
 
   // Chỉ dán nhãn khi THẬT SỰ có ngữ cảnh đính kèm — ngữ cảnh rỗng thì không đẻ khung/nhãn thừa.
   const nguCanhCoNhan =

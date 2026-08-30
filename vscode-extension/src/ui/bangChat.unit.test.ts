@@ -19,6 +19,18 @@ const may = vi.hoisted(() => ({
   daGui: [] as Array<Record<string, unknown>>,
   cookie: undefined as string | undefined,
   thuMucWorkspace: [] as string[],
+  /**
+   * ★★★ H3 (review 2026-08-30) — HÀNG ĐỢI các "lượt gọi SSE" kế tiếp, mỗi phần tử là một hàm nhận
+   * `dv` (đúng tham số `moDongSse` thật) và trả `{hong}` sau khi bắn token/done qua `dv.nhan`. Rỗng
+   * ⇒ rơi về hành vi TREO mặc định (giữ nguyên cho hai nhóm ca cũ bên dưới, không đổi hành vi của
+   * chúng). Cho phép lưới H3 mô phỏng NHIỀU vòng (model xin đọc ở vòng 1, trả lời ở vòng 2) mà
+   * không cần một stream thật.
+   */
+  hangDoiSse: [] as Array<
+    (dv: { nhan: (sk: Record<string, unknown>) => void; tinHieu?: AbortSignal }) => Promise<{ hong: string[] }>
+  >,
+  /** ★★★ H3 — thân POST (`dungYeuCauStream(...)`) của TỪNG lượt gọi SSE, theo đúng thứ tự vòng. */
+  thanGoi: [] as Array<Record<string, unknown>>,
 }));
 
 /**
@@ -27,13 +39,28 @@ const may = vi.hoisted(() => ({
  * gọi `abort(lyDo)` với một LÝ DO TUỲ CHỈNH (chuỗi), `reason` đó LÀ MỘT CHUỖI TRẦN, không phải
  * `Error`/`AbortError`. Promise KHÔNG BAO GIỜ tự resolve — treo y hệt một luồng SSE thật đang bay,
  * chỉ thoát khi tín hiệu huỷ bắn (đúng thời điểm đang "ĐỌC THÂN", không phải TRƯỚC KHI CÓ RESPONSE
- * như kịch bản Task 4 đã đo).
+ * như kịch bản Task 4 đã đo). ★★★ H3 — `may.hangDoiSse` cho phép GHI ĐÈ hành vi này cho MỘT vài
+ * lượt gọi kế tiếp (dùng cho lưới nhiều vòng); rỗng thì vẫn treo y hệt bản cũ.
  */
 vi.mock("../mang/dongSse", () => ({
-  moDongSse: (dv: { tinHieu?: AbortSignal }) =>
-    new Promise((_resolve, reject) => {
+  moDongSse: (dv: { than: Record<string, unknown>; tinHieu?: AbortSignal; nhan: (sk: Record<string, unknown>) => void }) => {
+    may.thanGoi.push(dv.than);
+    const ke = may.hangDoiSse.shift();
+    if (ke) return ke(dv);
+    return new Promise((_resolve, reject) => {
       dv.tinHieu?.addEventListener("abort", () => reject(dv.tinHieu!.reason), { once: true });
-    }),
+    });
+  },
+}));
+
+/**
+ * ★★★ H3(a) — lưới cho vòng ≥2 cần `chayToolCucBo` trả lời NGAY (không chạm `vscode`/đĩa thật, mà
+ * bản giả `vscode` ở đầu tệp này cố ý TỐI THIỂU không có `workspace.findFiles`). Kết quả ở đây
+ * không mang bí mật nào — chỉ cần đủ để vòng lặp tác nhân đi tiếp sang vòng kế.
+ */
+vi.mock("../mang/toolCucBo", () => ({
+  chayToolCucBo: async () => ({ ok: true, ketQua: "--- TỆP a.ts ---\nnội dung tệp giả" }),
+  danhSachTepGoiY: async () => [],
 }));
 
 vi.mock("vscode", () => ({
@@ -67,6 +94,7 @@ vi.mock("vscode", () => ({
 }));
 
 import { BangChat } from "./bangChat";
+import { dungVanBanDayGiaoThucDoc, nhacLaiCuoiCauHoi } from "../loi/dayGiaoThucDoc";
 
 /** Kho đề xuất giả — chỉ cần `quen()` để `quenDeXuat` gọi được. */
 const khoGia = { quen: () => undefined, moDiff: async () => undefined, moDiffCucBo: async () => undefined };
@@ -88,6 +116,8 @@ beforeEach(() => {
   may.daGui = [];
   may.cookie = "cookie-gia";
   may.thuMucWorkspace = [];
+  may.hangDoiSse = [];
+  may.thanGoi = [];
 });
 
 describe("quenDeXuat — xoá trạng thái VÔ ĐIỀU KIỆN (Minor)", () => {
@@ -196,5 +226,99 @@ describe("hoi — TASK 6/D.1 (LỖI 3): nút Dừng phải khai 'đã dừng', K
     // lạc vào giữa — hai điều đó chỉ có thể tới từ nhánh bị huỷ NGẦM nếu bản vá sai hướng.
     expect(may.daGui.filter((m) => m.loai === "loi")).toEqual([]);
     expect(may.daGui.filter((m) => m.loai === "thong_bao" && String(m.thongDiep).includes("Đã dừng"))).toEqual([]);
+  });
+});
+
+describe("hoi — H3(a) (review toàn nhánh 2026-08-30): vòng ≥2 KHÔNG được vứt câu hỏi GỐC", () => {
+  it("★★★ vòng 2 vẫn chứa NGUYÊN VĂN câu hỏi gốc — không chỉ mỗi 'KẾT QUẢ TOOL'", async () => {
+    /**
+     * ★★★ Bản cũ: `cauHoiVong = "KẾT QUẢ TOOL:\n..."` THAY HẲN câu hỏi gốc. Vòng 1 model xin đọc
+     * `doc_tep` (khối ```avi-tool```); vòng 2 phải hỏi lại model ĐÚNG câu hỏi gốc kèm kết quả đọc —
+     * mất câu hỏi gốc ở đây là mất luôn thứ máy chủ dùng để truy hồi RAG VÀ (với Cmd+K) mất luôn
+     * chỉ dẫn `de_xuat_sua_doan`.
+     */
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    may.hangDoiSse = [
+      // Vòng 1 — model xin đọc một tệp.
+      async (dv) => {
+        dv.nhan({
+          type: "token",
+          token: '```avi-tool\n{"tool":"doc_tep","args":{"path":"a.ts"}}\n```',
+        });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+      // Vòng 2 — trả lời bình thường, KHÔNG xin đọc thêm ⇒ vòng lặp dừng ở đây.
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Đây là câu trả lời cuối cùng." });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+
+    const cauHoiGoc = "Hàm Divide trong Calculator.cs sai chỗ nào?";
+    may.nhanTin?.({ loai: "hoi", cauHoi: cauHoiGoc });
+    // Nhường đủ nhịp cho CẢ HAI vòng (đọc cookie, gọi SSE vòng 1, chạy tool, gọi SSE vòng 2).
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.thanGoi.length, `phải có đúng 2 lượt gọi SSE; thực tế: ${may.thanGoi.length}`).toBe(2);
+    const qVong2 = String(may.thanGoi[1].question);
+    expect(qVong2, `question vòng 2: ${qVong2}`).toContain(cauHoiGoc);
+    expect(qVong2).toContain("KẾT QUẢ TOOL");
+  });
+});
+
+describe("hoi — H3(b) (review toàn nhánh 2026-08-30): Cmd+K KHÔNG được dạy giao thức ĐỌC", () => {
+  /**
+   * Giao thức dạy-đọc (`dungVanBanDayGiaoThucDoc`/`nhacLaiCuoiCauHoi`) cạnh tranh với giao thức
+   * riêng của Cmd+K (đòi ĐÚNG MỘT khối `de_xuat_sua_doan`). Trước bản vá, D.1 chèn giao thức dạy-đọc
+   * vào MỌI câu hỏi LOCAL — kể cả câu hỏi webview đánh dấu `tuLenh:true` (đến từ `dat_cau_hoi_tu_lenh`
+   * / Cmd+K, xem `htmlBang.ts`).
+   */
+  it("★★★ `tuLenh:true` ⇒ question KHÔNG chứa văn bản dạy giao thức đọc", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Đã hiểu, không cần đọc thêm." });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Sửa đoạn mã sau...", tuLenh: true });
+    for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.thanGoi).toHaveLength(1);
+    const q = String(may.thanGoi[0].question);
+    expect(q).not.toContain(dungVanBanDayGiaoThucDoc());
+    expect(q).not.toContain(nhacLaiCuoiCauHoi());
+  });
+
+  it("★★ NHÁNH KIA: câu hỏi THƯỜNG (không `tuLenh`) ⇒ vẫn được dạy giao thức đọc như cũ", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Trả lời bình thường." });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Hàm Divide sai chỗ nào?" });
+    for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.thanGoi).toHaveLength(1);
+    const q = String(may.thanGoi[0].question);
+    expect(q).toContain(dungVanBanDayGiaoThucDoc());
+    expect(q).toContain(nhacLaiCuoiCauHoi());
   });
 });
