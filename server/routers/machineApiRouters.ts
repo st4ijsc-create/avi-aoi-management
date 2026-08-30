@@ -137,6 +137,10 @@ import { machineDataContractV2 } from "../contracts/machineDataContractV2";
 // không đẻ bản thứ hai trôi khỏi bản gốc (xem chú thích tại định nghĩa).
 import { loiMayChuaNangCap, laHinhDangCayV2, dungKhoaKhuTrungV2 } from "../contracts/machineDataContract";
 import { dichCayKetQua, type MachinePayloadV2 } from "../services/ingestCayKetQua";
+// Pha 1D Task 6 (món nợ cuối trước Khối B) — đường v1.x dùng LẠI đúng bộ hàm cuộn dùng
+// chung với đường v2.0 (ingestCayKetQua.ts) và đường ZIP (aoiPackageRouter.ts). KHÔNG
+// viết bản chép tay thứ tư — xem docblock tại nơi dùng (khoảng dòng ~2050).
+import { rollupVerdict, verdictXauHon, type NutKetQua, type ResultVerdict } from "@shared/rollupVerdict";
 // Doc 2026-08-29 (WAL cho cây v2.0, §QĐ-WAL-A) — `dungKhoaKhuTrungV2` CHUYỂN sang
 // `contracts/machineDataContract.ts` (xem doc-comment tại đó) để `inspectionStoreForward.ts`
 // dùng được mà không tạo vòng import với file này. Re-export lại để giữ NGUYÊN bề mặt
@@ -2033,23 +2037,87 @@ export async function processInspectionSubmission(
         }
       }
 
-      // Doc 35 W2.8 (W2-A) — persist the measurement rows AND the spec-gate
-      // overall-NG promotion in ONE transaction so a crash mid-write can't leave
-      // a board whose per-point rows say NG under an OK header. The inspection
+      // Doc 35 W2.8 (W2-A) — persist the measurement rows AND the overall-NG
+      // promotion (Pha 1D Task 6: spec-gate downgrade OR machine-declared NG
+      // point, see docblock below) in ONE transaction so a crash mid-write
+      // can't leave a board whose per-point rows say NG under an OK header. The inspection
       // header insert + external image uploads already ran above (image/object
       // I/O must stay OUTSIDE the DB transaction), and the fire-and-forget
       // post-ACK hooks below (embedding, quality-gate, WIP, inline AI) stay
       // OUTSIDE too so they can never block/roll back ingest. Uses the repo's
       // getDb()/db.transaction/tx.insert convention (see fleet/resourceManager).
       //
-      // Doc 31 MP6 — when the server spec-gate downgraded ≥1 point to NG on a
-      // machine-"OK" inspection, promote the board's overallResult to NG so
-      // yield/FPY stays consistent with the per-point verdicts. originalResult
-      // (the machine's original) is left intact for audit. NOTE: downstream
-      // realtime NG alerts below key off the machine's original overall
-      // (input.overallResult) — a server-downgraded board is reflected in stored
-      // data/analytics but does not retro-fire the live NG alert.
-      const promoteOverallToNg = serverDowngradeCount > 0 && input.overallResult === "OK";
+      // ══ Pha 1D Task 6 (món nợ CUỐI trước Khối B) ════════════════════════════
+      // TRƯỚC bản vá này, `promoteOverallToNg` chỉ bắn khi SPEC-GATE MÁY CHỦ hạ
+      // ≥1 điểm OK→NG (serverDowngradeCount > 0) — bỏ sót trường hợp CHÍNH MÁY
+      // gửi overallResult="OK" kèm điểm ĐÃ mang result="NG" (bo lỗi THẬT, không
+      // qua spec-gate). Đo trên `aoi_management_test` (vai avi_app) trước bản vá:
+      // 3 bo (id 97438/97442/97444) khai OK với 5/5, 2/2, 1/1 điểm NG — lưu thành
+      // "OK" ⇒ `FINAL_YIELD_PASS_RESULTS` (shared/kpiYield.ts) tính PASS, xuất xưởng.
+      //
+      // Đây là đường v1.x — đường MẶC ĐỊNH hôm nay (cờ
+      // INGEST_REJECT_LEGACY_MACHINE_ENABLED tắt) — nên đóng ĐÚNG luật cuộn mà
+      // Pha 1C đã chốt cho v2.0 (`dichCayKetQua`, verdictXauHon(khai, cuộn-từ-lá))
+      // và Pha 1D vừa chốt cho ZIP (`inferAoiOverallResult`, cùng công thức):
+      // verdict lưu trữ = XẤU HƠN giữa LỜI KHAI của máy và CUỘN TỪ CÂY ĐIỂM ĐO.
+      // Dùng LẠI `rollupVerdict`/`verdictXauHon` (shared/rollupVerdict.ts, ĐÃ CÓ)
+      // — KHÔNG viết bản chép tay thứ tư của luật cuộn.
+      //
+      // `effectiveResult` (đã set vào measurementResults[i].result ở vòng lặp
+      // trên) đã GỘP CẢ HAI nguồn NG: điểm máy tự khai NG (đi thẳng, spec-gate
+      // tắt hoặc không có limits) VÀ điểm bị spec-gate hạ cấp (serverDowngradeCount).
+      // Cuộn trên `measurementResults` do đó tự động phủ CẢ HAI, không cần tách
+      // hai trường hợp riêng.
+      const conDiem: NutKetQua[] = measurementResults.map((m) => ({
+        result: (m.result as ResultVerdict | undefined) ?? "OK",
+        ntf: m.result === "NTF",
+      }));
+      const cuonDiem = rollupVerdict(conDiem);
+      // Đếm riêng cho log — bao nhiêu điểm NG đến từ MÁY TỰ KHAI (không qua spec-gate),
+      // để log không còn nói "spec-gate downgraded" khi thực ra máy đã tự báo NG.
+      const machineDeclaredNgCount = conDiem.filter((c) => c.result === "NG").length - serverDowngradeCount;
+      const overallVerdictCuoi = verdictXauHon(
+        input.overallResult as ResultVerdict,
+        cuonDiem.result,
+      );
+      // PHẠM VI CỐ Ý HẸP: chỉ nâng khi verdict cuối là "NG" VÀ máy khai "OK" —
+      // đúng 5 mệnh đề chống hồi quy của Task 6 (không mệnh đề nào canh OK→NTF).
+      // `promoteOverallToNg` (biến này + `persistInspectionAtomic`, server/db/
+      // inspection.ts) là một UPDATE NG-CHUYÊN-BIỆT (WHERE overallResult='OK' →
+      // SET 'NG'), có lưới riêng canh ĐÚNG hình dạng đó
+      // (persistInspectionAtomic.db.test.ts). Mở rộng thành cuộn 3 chiều đầy đủ
+      // (OK→NTF, hoặc NTF khai→NG cuộn) đòi tái cấu trúc contract của một helper
+      // DB dùng chung — NGOÀI phạm vi "món nợ NG" mà brief Task 6 mô tả và NGOÀI
+      // 3 bo bằng chứng (cả ba đều khai "OK", không bo nào khai "NTF"). Để lại
+      // CHƯA LÀM, nêu rõ trong task-6-report.md — không phải hệ quả ngẫu nhiên.
+      //
+      // originalResult (lời khai gốc của máy) giữ NGUYÊN, không đổi ở đây — vẫn
+      // set từ `input.overallResult` tại `inspectionHeaderData` phía trên, phục
+      // vụ truy vết (mệnh đề 5).
+      //
+      // ⚠ QUYẾT ĐỊNH THIẾT KẾ (câu hỏi bắt buộc của Task 6) — cảnh báo NG thời
+      // gian thực (emitNGAlert/publishNGAlert bên dưới, khoảng dòng ~2300) VẪN
+      // khoá theo `input.overallResult` (lời khai GỐC của máy), KHÔNG đổi theo
+      // `overallVerdictCuoi`/`promoteOverallToNg` — GIỮ NGUYÊN hành vi cũ, áp
+      // dụng ĐỒNG NHẤT cho CẢ hai nguồn nâng cấp (spec-gate lẫn nguồn mới này).
+      // Lý do CHỌN "KHÔNG bắn thêm":
+      //   1) Nhất quán với tiền lệ ĐÃ CÓ — spec-gate downgrade (nguồn nâng cấp
+      //      CŨ) chưa từng retro-fire alert (xem chú thích gốc, nay chuyển
+      //      xuống dưới); tách hai nguồn nâng cấp CÙNG MỘT LOẠI ra hai hành vi
+      //      khác nhau (một im lặng, một bắn) mới là hệ quả ngẫu nhiên, không
+      //      phải quyết định có chủ đích.
+      //   2) Đây là bản vá "dữ liệu lưu trữ đúng" (yield/FPY/analytics) — cảnh
+      //      báo Andon thời gian thực là một mối quan tâm VẬN HÀNH khác, có
+      //      người tiêu thụ MQTT/dashboard đã CHỈNH theo lưu lượng hôm nay; đổi
+      //      lưu lượng đó là quyết định vận hành riêng, cần người biên đơn
+      //      chấp thuận, không phải hệ quả phụ của một bản vá tính đúng cột.
+      //   3) Cảnh báo bắn SAU khi bo đã ACK xong (board có thể đã rời trạm) —
+      //      một alert "trễ" cho một bo đã trôi qua dây chuyền có thể GÂY HIỂU
+      //      LẦM cho vận hành viên đang đứng máy (ngỡ là bo HIỆN TẠI).
+      // Nếu sau này nhà máy muốn bắn alert cho lớp bo mới được bắt (bo khai OK,
+      // có điểm NG, trước đây im lặng), đó là một thay đổi HÀNH VI có chủ đích,
+      // cần bàn riêng — không lẫn vào bản vá này.
+      const promoteOverallToNg = overallVerdictCuoi === "NG" && input.overallResult === "OK";
 
       if (singleTxOn) {
         // ── Doc 55 Item 1 (PA-A) — SINGLE PHYSICAL TRANSACTION ─────────────────
@@ -2089,7 +2157,10 @@ export async function processInspectionSubmission(
           return { success: true as const, inspectionId, duplicate: true as const };
         }
         if (promoteOverallToNg) {
-          console.warn(`[submitInspection] spec-gate downgraded ${serverDowngradeCount} point(s) → inspection ${inspectionId} overall promoted to NG`);
+          console.warn(
+            `[submitInspection] overall promoted OK→NG for inspection ${inspectionId} ` +
+              `(${serverDowngradeCount} point(s) spec-gate downgraded, ${machineDeclaredNgCount} point(s) machine-declared NG)`,
+          );
         }
       } else {
       // Doc 51 P1 (CASE #5) — keys of images ALREADY uploaded to object storage for
@@ -2178,7 +2249,10 @@ export async function processInspectionSubmission(
           throw txErr;
         }
         if (promoteOverallToNg) {
-          console.warn(`[submitInspection] spec-gate downgraded ${serverDowngradeCount} point(s) → inspection ${inspectionId} overall promoted to NG`);
+          console.warn(
+            `[submitInspection] overall promoted OK→NG for inspection ${inspectionId} ` +
+              `(${serverDowngradeCount} point(s) spec-gate downgraded, ${machineDeclaredNgCount} point(s) machine-declared NG)`,
+          );
         }
       }
       } // end two-phase (INSPECTION_SINGLE_TX_ENABLED off) measurement path
