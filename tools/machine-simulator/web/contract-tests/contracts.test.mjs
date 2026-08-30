@@ -11,7 +11,7 @@
 
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync, readdirSync } from "node:fs"
+import { readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { validate, assertKnownKeywords } from "./validate.mjs"
@@ -248,7 +248,32 @@ const PIN = {
   ],
 }
 
-const tsSource = (sourceFile) => readFileSync(join(HERE, "..", "src", "contracts", sourceFile), "utf8")
+// 🔴 CRLF, phát hiện lúc merge Mốc 0 (2026-08-30). Repo này đặt `core.autocrlf=true` và không
+// `.gitattributes` nào ép chiều cho `web/src/contracts/**` hay `web/contract-tests/**`, nên MỘT
+// checkout MỚI — `git checkout`, `git merge`, bất kỳ máy nào KHÔNG PHẢI máy vừa GHI các file này —
+// nhận `\r\n` trên đĩa, còn mọi regex bóc tách bên dưới hard-code `\n`. `readFileSync` trả ĐÚNG BYTE
+// trên đĩa, không tự chuẩn hoá gì cả; đây là chốt DUY NHẤT chuẩn hoá, để mọi hàm bóc tách phía dưới
+// (tsTypeBody, tsProps, tsPropTypeName, tsUnionMembers) luôn thấy LF, bất kể trên đĩa là gì.
+//
+// VÌ SAO CHỈ `tsUnionMembers` GÃY còn `tsProps`/`tsPropTypeName` SỐNG SÓT (đo thật, không suy — xem
+// bài "CRLF regression" bên dưới): `tsProps` chỉ neo `^` ở ĐẦU dòng (cờ `m`) để bắt tên property —
+// `\r` cuối dòng nằm SAU chỗ nó cần khớp nên không cản. `tsPropTypeName` neo `\s*$` ở CUỐI dòng, và
+// JS coi CẢ `\r` LẪN `\n` là line terminator cho `$` (cờ `m`), nên `$` vẫn khớp ngay trước `\r`. Còn
+// `tsUnionMembers` dùng lớp ký tự tự chế `(?:.|\n)*?` để "khớp bất kỳ ký tự nào kể cả xuống dòng" —
+// nhưng `.` (không cờ `s`) loại trừ MỌI line terminator (`\r` lẫn `\n`), và nhánh `\n` trong alternation
+// chỉ khớp đúng byte `\n`, không nhánh nào khớp được `\r` đứng riêng. Với `\r\n`, việc khớp kẹt cứng
+// tại `\r` đầu tiên sau dấu `=`, toàn bộ regex không khớp, `decl` là `null`, rơi xuống nhánh import
+// (không tìm thấy), rồi `assert.fail`. Đó là lỗi thật đã đo: 11/51 bài đỏ, đúng 11 bài ghim GIÁ TRỊ
+// enum (tsUnionMembers) — 11 bài ghim TÊN property (tsProps) vẫn xanh, đúng như cơ chế trên dự đoán.
+//
+// VÌ SAO MỌI LẦN CHẠY TRƯỚC ĐỀU XANH: mọi lần bộ test này từng xanh, `web/src/contracts/*.ts` đều là
+// file một agent VỪA GHI bằng LF trong cùng phiên — không phải file git VỪA MATERIALISE. Lần đầu tiên
+// git tự tay checkout/merge các file này (việc xảy ra với BẤT KỲ ai khác clone/pull nhánh) là lần đầu
+// tiên "CONTRACT GATE" — cổng có đúng một việc là CHỨNG MINH các fixture an toàn bị từ chối — tự nó
+// báo FAIL, cho bất kỳ ai không phải tác giả. Sửa ở ĐÂY (một chỗ), không sửa từng regex riêng lẻ, vì
+// đây là lớp lỗi ("bất kỳ regex bóc tách nào ở đây có thể gãy trên CRLF"), không phải một lần gãy.
+const tsSource = (sourceFile) =>
+  readFileSync(join(HERE, "..", "src", "contracts", sourceFile), "utf8").replace(/\r\n/g, "\n")
 
 const tsTypeBody = (sourceFile, typeName) => {
   const m = new RegExp(`export type ${typeName} = \\{([\\s\\S]*?)\\n\\}`).exec(tsSource(sourceFile))
@@ -293,6 +318,44 @@ function tsUnionMembers(sourceFile, unionName) {
 
   assert.fail(`không tìm thấy "export type ${unionName} =" trong ${sourceFile}, và không import nào mang tên đó`)
 }
+
+// ── Regression: bóc tách phải sống sót qua CRLF, không chỉ trên máy vừa GHI file bằng LF ─────────
+// 🔴 Đây là bài ghim cho đúng lỗi ở khối bình luận `tsSource` phía trên. Nó GHI một file `.ts` thật
+// bằng tay với dòng nối `\r\n` — ghép bằng escape sequence trong CHÍNH VĂN BẢN NGUỒN của file
+// `.mjs` này (hai ký tự `\`+`r` và `\`+`n` trong mã nguồn, không phải byte CRLF thật nằm trong file
+// trên đĩa) — nên bài này KHÔNG phụ thuộc `core.autocrlf` hay hệ điều hành đang chạy nó: nó đỏ trên
+// Linux/macOS y hệt Windows nếu ai gỡ `.replace(/\r\n/g, "\n")` khỏi `tsSource`, khác với một bài chỉ
+// đọc lại `web/src/contracts/*.ts` đang có trên đĩa (bài như vậy XANH trên máy Linux/macOS bất kể có
+// sửa hay không, vì checkout ở đó vốn đã là LF — không đo được gì).
+test("CRLF regression: tsProps và tsUnionMembers đọc đúng khi nguồn trên đĩa là CRLF", () => {
+  const tmpFile = "__crlf-regression.ts"
+  const tmpPath = join(HERE, "..", "src", "contracts", tmpFile)
+  const crlfSource = [
+    "export type Widget = {",
+    "  kind: WidgetKind",
+    "  label?: string",
+    "}",
+    "",
+    "export type WidgetKind =",
+    '  | "a"',
+    '  | "b"',
+    '  | "c"',
+    "",
+  ].join("\r\n")
+  assert.ok(crlfSource.includes("\r\n"), "fixture nội bộ phải THẬT SỰ chứa CRLF, không thì bài này đo sai thứ")
+
+  writeFileSync(tmpPath, crlfSource, "utf8")
+  try {
+    assert.deepEqual(
+      tsProps(tmpFile, "Widget"), new Set(["kind", "label"]),
+      "tsProps đáng lẽ sống sót qua CRLF (neo ^ đầu dòng, không cần chuẩn hoá) — nếu bài này đỏ, cơ chế nêu ở tsSource đã sai")
+    assert.deepEqual(
+      tsUnionMembers(tmpFile, "WidgetKind"), new Set(["a", "b", "c"]),
+      "tsUnionMembers đáng lẽ đọc đúng union sau khi tsSource chuẩn hoá CRLF→LF — nếu bài này đỏ, chốt chuẩn hoá đã bị gỡ hoặc hỏng")
+  } finally {
+    rmSync(tmpPath, { force: true })
+  }
+})
 
 for (const [schemaFile, pins] of Object.entries(PIN)) {
   const schema = load(schemaFile)
