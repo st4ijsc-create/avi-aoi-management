@@ -209,4 +209,64 @@ public class ContractInvariantsTests
         Assert.Empty(ContractInvariants.Validate(
             new ComponentModelDocument(1, "M1", Array.Empty<ComponentNode>(), new[] { type })));
     }
+
+    /// <summary>WS-HMI-0b Task 1, fix round 1, HIGH-2 — a body that OMITS <c>components</c> lands here as a
+    /// genuine runtime <see langword="null"/>, not an empty list: C#'s non-nullable annotation on
+    /// <see cref="ComponentModelDocument.Components"/> does not survive <c>System.Text.Json</c>
+    /// deserializing a missing field (neither <c>RespectNullableAnnotations</c> nor
+    /// <c>RespectRequiredConstructorParameters</c> is enabled anywhere in this solution). Before this test,
+    /// <see cref="ContractInvariants.Validate(ComponentModelDocument)"/> never read <c>doc.Components</c> at
+    /// all, so a null here passed the §5 door silently and only crashed later, downstream, in
+    /// <c>St4i.EngineApi.HmiModel.ModelIntegrity.Check</c> — AFTER <c>ComponentModelStore.PutAsync</c> had
+    /// already written it. Constructed with <c>null!</c> deliberately: this is not a "can't happen" case,
+    /// it is exactly what a malformed request produces at this exact type.</summary>
+    [Fact]
+    public void A_null_Components_is_a_violation_not_a_silent_pass()
+    {
+        var doc = new ComponentModelDocument(1, "M1", null!, Array.Empty<ComponentTypeDef>());
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("components", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The symmetric case for <see cref="ComponentModelDocument.Types"/>. Before this test, a null
+    /// <c>Types</c> was NOT silently absorbed — the opposite failure: <c>foreach (var type in doc.Types)</c>
+    /// dereferenced it immediately and threw <see cref="NullReferenceException"/> out of
+    /// <c>Validate</c> itself, before a single violation could be collected, and before the store's own
+    /// write (a symmetric-looking but luckier bug, since it happened to crash BEFORE
+    /// <c>ComponentModelStore.PutAsync</c> writes anything — see this task's review for why that asymmetry
+    /// was luck, not design). Both are now ordinary, reported §5 violations instead of either failure
+    /// mode.</summary>
+    [Fact]
+    public void A_null_Types_is_a_violation_not_a_NullReferenceException()
+    {
+        var doc = new ComponentModelDocument(1, "M1", Array.Empty<ComponentNode>(), null!);
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("types", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ThrowIfInvalid_rejects_a_null_Components_document_before_any_write_could_happen()
+    {
+        var doc = new ComponentModelDocument(1, "M1", null!, Array.Empty<ComponentTypeDef>());
+
+        var ex = Assert.Throws<ContractViolationException>(() => ContractInvariants.ThrowIfInvalid(doc));
+
+        Assert.Contains(ex.Violations, v => v.Contains("components", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void A_null_Components_and_a_null_Types_are_BOTH_reported_in_one_pass()
+    {
+        var doc = new ComponentModelDocument(1, "M1", null!, null!);
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Equal(2, violations.Count);
+        Assert.Contains(violations, v => v.Contains("components", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(violations, v => v.Contains("types", StringComparison.OrdinalIgnoreCase));
+    }
 }

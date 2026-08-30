@@ -75,13 +75,38 @@ public static class HmiModelEndpoints
     // caller. Accepted here by construction, not by accident — see
     // HmiModelEndpointsTests.Put_TwiceToTheSameMachine_TheSecondWriteWins_LastWriterWins for the test that
     // pins it.
+    //
+    // 🔴 REVIEW FIX ROUND 1, HIGH-1 — THE ROUTE'S machineCode IS AUTHORITATIVE, NEVER THE BODY'S, BY
+    // REJECTION RATHER THAN SILENT OVERRIDE. ComponentModelStore.PutAsync keys its row on doc.MachineCode
+    // (the body), not on this handler's route parameter — nothing reconciled the two before this fix. A
+    // caller PUTting to /v1/components/INTENDED-01 with body.machineCode = "VICTIM-99" was silently writing
+    // VICTIM-99's ENTIRE tree while being told, at 200, that INTENDED-01 now has one component — and
+    // because an undeclared machine reads back 200-empty (§5-bis), the caller could not distinguish "my
+    // write landed on the wrong machine" from "nothing was ever declared here". Decided REJECT (400) rather
+    // than silently rewriting body.MachineCode to match the route: a client that gets no signal when its
+    // belief about which field is authoritative is wrong learns nothing and keeps sending the same bug.
+    // This is the SAME three-line guard shape ConfigEndpoints.cs uses three times already
+    // (UpsertProductAsync/UpsertPointAsync/UpsertRecipeAsync: fill the identity in when the body omits it,
+    // reject when the body disagrees with the route) — matched here rather than inventing a fourth spelling
+    // of the same rule, per the reviewer's steer that consistency inside one API beats a fresh preference.
+    // See Put_BodyMachineCodeMismatchesRoute_Gets400_AndTheVictimMachineIsUntouched (rejection) and
+    // Put_BodyMachineCodeOmitted_IsFilledFromTheRoute (the lenient arm) for the tests that pin both halves.
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PutAsync(
         string machineCode, ComponentModelDocument body, IComponentModelStore store, ITagNamespaceStore tags, CancellationToken ct)
     {
-        if (body is null)
+        // `body` itself can never be null here — ComponentModelDocument is a non-nullable complex parameter,
+        // so RequestDelegateFactory already 400s an absent/literal-null body before this handler is entered.
+        // `body.MachineCode`, however, CAN be null/blank (an omitted JSON field, or an explicit ""): handled
+        // by the fill-or-reject guard immediately below, not here.
+        if (string.IsNullOrWhiteSpace(body.MachineCode))
         {
-            return Results.BadRequest(new ApiErrorDto("Request body is required."));
+            body = body with { MachineCode = machineCode };
+        }
+        else if (!string.Equals(body.MachineCode, machineCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest(new ApiErrorDto(
+                $"body.machineCode ('{body.MachineCode}') must match the route {{machineCode}} ('{machineCode}') (or be omitted)."));
         }
 
         try

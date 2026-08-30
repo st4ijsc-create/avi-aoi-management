@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -17,10 +18,23 @@ namespace St4i.EngineApi.Tests.HmiModel;
 /// <summary>
 /// Endpoint cây linh kiện.
 ///
-/// <para><b>KHÔNG đo cái gì:</b> (1) không đo phân quyền thật đầu-cuối — chỉ ghim ĐÚNG policy được gắn
-/// vào từng route; việc `Policies.Engineer` thật sự chặn một Operator là phép đo của tầng auth và đã có
-/// bài riêng; (2) không đo toàn vẹn tham chiếu sâu — chỉ đo rằng cảnh báo được TRẢ RA, còn nội dung
-/// từng luật là `ModelIntegrityTests` của 0a; (3) không đo tài liệu hợp lệ theo JSON Schema.</para>
+/// <para>🔴 <b>Đoạn "KHÔNG đo" dưới đây được SỬA ở vòng review 1 (MEDIUM finding: bản gốc — nguyên văn
+/// theo brief — nói NGƯỢC với việc lớp này thực sự làm).</b> Bản gốc tự nhận "không đo phân quyền thật
+/// đầu-cuối", trong khi <see cref="Operator_CannotPut_Gets403"/> và
+/// <see cref="Operator_CanReadAllFourGetRoutes"/> đăng nhập một Operator THẬT qua pipeline auth THẬT
+/// (cookie, <see cref="WebApplicationFactory{Program}"/>) và đo chính xác điều đó — đầu-cuối, không phải
+/// ghim metadata. Và bản gốc tự nhận "chỉ ghim ĐÚNG policy được gắn vào từng route", trong khi không có
+/// dòng nào trong file này đọc <c>EndpointDataSource</c>/<c>IAuthorizeData</c> — đó là việc của
+/// <c>RbacPolicyTests</c>. Diện đo (coverage) của mười bài test không đổi; câu mô tả diện đo thì đổi để
+/// khớp với nó.</para>
+///
+/// <para><b>KHÔNG đo cái gì (đã sửa):</b> (1) KHÔNG đo rằng đúng CHUỖI POLICY được gắn vào metadata của
+/// từng route (đó là <c>RbacPolicyTests</c>'s <c>EndpointDataSource</c> sweep — nơi DUY NHẤT trong repo
+/// này ghim "Engineer, never Admin" như một thuộc tính metadata). Lớp này đo điều khác, thật hơn: một
+/// Operator đã đăng nhập có thực sự bị chặn (403) ở PUT và thực sự đi qua được bốn route đọc hay không —
+/// qua đúng middleware auth mà production dùng; (2) không đo toàn vẹn tham chiếu sâu — chỉ đo rằng cảnh
+/// báo được TRẢ RA, còn nội dung từng luật là `ModelIntegrityTests` của 0a; (3) không đo tài liệu hợp lệ
+/// theo JSON Schema.</para>
 ///
 /// <para><b>Real-pipeline (<see cref="WebApplicationFactory{Program}"/>), same convention as
 /// <c>AssetEndpointsTests</c>.</b> Unlike <c>HmiModelWiringTests</c> (which relies entirely on
@@ -226,6 +240,15 @@ public sealed class HmiModelEndpointsTests
             var error = await put.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
             Assert.NotNull(error);
             Assert.False(string.IsNullOrWhiteSpace(error!.Error));
+
+            // Fix round 1, MEDIUM-2 — DocMissingSetpointBounds's one tag trips TWO §5 rules at once (missing
+            // `min` AND missing `max`), and the body must carry BOTH, not just the first. Without this pair
+            // of assertions, HmiModelEndpoints.PutAsync's `new ApiErrorDto(ex.Message)` could regress to
+            // `new ApiErrorDto(ex.Violations[0])` (first violation only) and every test in this file would
+            // still pass — this is the assertion that actually makes "every violation, not just the first"
+            // load-bearing rather than merely implemented.
+            Assert.Contains("thiếu min", error.Error, StringComparison.Ordinal);
+            Assert.Contains("thiếu max", error.Error, StringComparison.Ordinal);
         }
 
         // The rejected PUT must not leave a half-written record behind — the machine is still undeclared.
@@ -352,9 +375,13 @@ public sealed class HmiModelEndpointsTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // RBAC metadata — four read routes carry Policies.Operator, PUT carries Policies.Engineer. Real
-    // end-to-end enforcement is the auth layer's own suite (RbacPolicyTests); this only pins that the
-    // CORRECT policy string is attached to each route, same scope as this class's doc comment states.
+    // RBAC end-to-end (fixed at review round 1 — the section header used to say "RBAC metadata" and claim
+    // this pins the policy STRING attached to each route; it does not, and never did). These two tests log
+    // in as a REAL Operator over the REAL auth pipeline and assert the REAL outcome: 403 on the one write,
+    // 200 on all four reads. That is end-to-end enforcement, not metadata. The metadata sweep — the thing
+    // that actually inspects EndpointDataSource/IAuthorizeData and pins "Engineer, never Admin" as a
+    // property of route registration — is RbacPolicyTests.EveryV1Route_CarriesExactlyTheExpectedPolicyOrAnonymous;
+    // that is the ONE place in this repository doing that measurement, and it is not this file.
     // ─────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -428,6 +455,128 @@ public sealed class HmiModelEndpointsTests
             Assert.DoesNotContain("\"max\":null", raw, StringComparison.Ordinal);
             Assert.DoesNotContain("\"enumValues\":null", raw, StringComparison.Ordinal);
             Assert.DoesNotContain("\"policyAction\":null", raw, StringComparison.Ordinal);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1, HIGH-1 — PUT must not trust the body's machineCode over the route's. Reviewer's own
+    // measurement: PUT /v1/components/INTENDED-01 with body.machineCode = "VICTIM-99" returned 200 and
+    // silently overwrote VICTIM-99's entire tree, while GET /v1/components/INTENDED-01 kept coming back
+    // 200 + empty (§5-bis makes that indistinguishable from "never declared" — the failure was invisible).
+    // Decided REJECT (400), matching the reviewer's steer and ConfigEndpoints.cs's own
+    // UpsertProductAsync/UpsertPointAsync/UpsertRecipeAsync guard shape (fill-if-omitted,
+    // reject-if-mismatched) — see HmiModelEndpoints.PutAsync's own doc comment for the full reasoning.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Put_BodyMachineCodeMismatchesRoute_Gets400_AndTheVictimMachineIsUntouched()
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync("mismatch-guard");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        // VICTIM-99 already has a real, distinguishable tree declared — the thing the mismatch guard has
+        // to keep safe from a PUT aimed at a DIFFERENT route.
+        var victimDoc = ValidDoc("VICTIM-99", typeId: "st4i.victim.type");
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/components/VICTIM-99", victimDoc, HmiContractJson.Options)).StatusCode);
+
+        // A PUT to a DIFFERENT route (INTENDED-01) whose BODY claims to be VICTIM-99 — exactly the
+        // reviewer's probe shape.
+        var attackDoc = ValidDoc("VICTIM-99", typeId: "st4i.attacker.type");
+        using (var put = await engineerC.PutAsJsonAsync("/v1/components/INTENDED-01", attackDoc, HmiContractJson.Options))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+            var error = await put.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
+            Assert.False(string.IsNullOrWhiteSpace(error!.Error));
+        }
+
+        // INTENDED-01 — the route actually addressed — must still be undeclared: the rejected PUT wrote
+        // nothing anywhere.
+        using (var getIntended = await engineerC.GetAsync("/v1/components/INTENDED-01"))
+        {
+            var doc = await getIntended.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
+            Assert.Empty(doc!.Components);
+        }
+
+        // VICTIM-99's tree must be EXACTLY as it was before the attack PUT — untouched, not overwritten by
+        // "st4i.attacker.type".
+        using (var getVictim = await engineerC.GetAsync("/v1/components/VICTIM-99"))
+        {
+            var back = await getVictim.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
+            Assert.Single(back!.Types);
+            Assert.Equal("st4i.victim.type", back.Types[0].TypeId);
+        }
+    }
+
+    [Fact]
+    public async Task Put_BodyMachineCodeOmitted_IsFilledFromTheRoute()
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync("omitted-code");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        // machineCode explicitly blank — the "or be omitted" leniency ConfigEndpoints.cs's own
+        // route/body-code guards grant (fill from the route rather than reject), preserved here for
+        // consistency with that established pattern.
+        var doc = ValidDoc("IGNORED-VALUE") with { MachineCode = "" };
+
+        using var put = await engineerC.PutAsJsonAsync("/v1/components/FILLED-01", doc, HmiContractJson.Options);
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+        var result = await put.Content.ReadFromJsonAsync<PutModelResultDto>(HmiContractJson.Options);
+        Assert.Equal("FILLED-01", result!.MachineCode);
+
+        // NOT just that the response echoes the route's code (both the §5-bis empty-document fallback and
+        // the response DTO always do that regardless) — that the write itself actually landed under
+        // "FILLED-01", not under "" (the empty string a naive pass-through would have keyed the store on).
+        using var get = await engineerC.GetAsync("/v1/components/FILLED-01");
+        var back = await get.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
+        Assert.Equal("FILLED-01", back!.MachineCode);
+        Assert.Single(back.Components);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1, HIGH-2 — a body omitting `components` must not be written before it is validated.
+    // Reviewer's own measurement: `{"schemaVersion":1,"machineCode":"OMIT-01","types":[]}` (no "components"
+    // key) passed the old §5 door (ContractInvariants.Validate only read doc.Types), was WRITTEN, and only
+    // then threw ArgumentNullException inside ModelIntegrity.Check — after the half-record already existed.
+    // Constructed via raw JSON (StringContent), not ComponentModelDocument's own constructor: C#'s
+    // non-nullable annotation on `Components` does not survive System.Text.Json deserializing a MISSING
+    // field (neither RespectNullableAnnotations nor RespectRequiredConstructorParameters is enabled
+    // anywhere in this solution), so this is the only way to reproduce what a real malformed request sends.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Put_ComponentsOmittedFromRawJson_Gets400_LeavesNoHalfRecord_AndIntegrityStaysReadable()
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync("omit-components");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        const string json = "{\"schemaVersion\":1,\"machineCode\":\"OMIT-01\",\"types\":[]}";
+        using (var content = new StringContent(json, Encoding.UTF8, "application/json"))
+        using (var put = await engineerC.PutAsync("/v1/components/OMIT-01", content))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+            var error = await put.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
+            Assert.NotNull(error);
+            Assert.False(string.IsNullOrWhiteSpace(error!.Error));
+        }
+
+        // No half-record: OMIT-01 must still read back as undeclared, not as a document with a missing
+        // `components` field.
+        using (var get = await engineerC.GetAsync("/v1/components/OMIT-01"))
+        {
+            Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+            var back = await get.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
+            Assert.Empty(back!.Components);
+        }
+
+        // The integrity route must not become a permanent poison pill for this machine.
+        using (var integrity = await engineerC.GetAsync("/v1/components/OMIT-01/integrity"))
+        {
+            Assert.Equal(HttpStatusCode.OK, integrity.StatusCode);
         }
     }
 }

@@ -140,10 +140,38 @@ public static class ContractInvariants
     /// <summary>Kiểm luật §5 cho một <see cref="ComponentModelDocument"/>: mọi <see cref="ComponentTagDef"/>
     /// với <c>role</c> là <c>"setpoint"</c> hoặc <c>"command"</c> phải có <see cref="ComponentTagDef.PolicyAction"/>,
     /// và riêng <c>"setpoint"</c> còn phải có cả <see cref="ComponentTagDef.Min"/> và <see cref="ComponentTagDef.Max"/>.
-    /// Trả về rỗng nếu hợp lệ; danh sách đầy đủ nếu không.</summary>
+    /// Trả về rỗng nếu hợp lệ; danh sách đầy đủ nếu không.
+    ///
+    /// <para>🔴 <b>WS-HMI-0b Task 1, fix round 1, HIGH-2 — <see cref="ComponentModelDocument.Components"/>
+    /// and <see cref="ComponentModelDocument.Types"/> are checked for <see langword="null"/> FIRST, before
+    /// either is dereferenced.</b> C#'s non-nullable annotation on an <c>IReadOnlyList&lt;&gt;</c> does not
+    /// survive <c>System.Text.Json</c> deserializing a MISSING field — this solution enables neither
+    /// <c>RespectNullableAnnotations</c> nor <c>RespectRequiredConstructorParameters</c> anywhere — so a
+    /// client that omits <c>components</c> or <c>types</c> produces a genuine runtime <see langword="null"/>
+    /// here, not an empty list. Before this fix, a null <c>Components</c> was invisible to this method
+    /// entirely (nothing below ever read it) — it passed the §5 door silently, was WRITTEN by
+    /// <c>ComponentModelStore.PutAsync</c>, and only then crashed downstream in
+    /// <c>St4i.EngineApi.HmiModel.ModelIntegrity.Check</c> — after the half-record already existed on disk.
+    /// A null <c>Types</c> failed the OPPOSITE way — <c>foreach (var type in doc.Types)</c> threw a bare
+    /// <see cref="NullReferenceException"/> immediately, before the store's write and before a single
+    /// violation could be collected — which happened to avoid persisting anything, but by luck (the
+    /// dereference order), not by design. Both are now ordinary, reported §5 violations: this is the door
+    /// every caller of <see cref="ThrowIfInvalid(ComponentModelDocument)"/> shares (both
+    /// <c>ComponentModelStore.PutAsync</c> and any future caller), so fixing it here — rather than in one
+    /// HTTP handler — closes it for everyone at once.</para></summary>
     public static IReadOnlyList<string> Validate(ComponentModelDocument doc)
     {
         var v = new List<string>();
+
+        if (doc.Components is null)
+            v.Add("components: thiếu trường bắt buộc (null) — một tài liệu không khai components không phải tài liệu hợp lệ");
+        if (doc.Types is null)
+            v.Add("types: thiếu trường bắt buộc (null) — một tài liệu không khai types không phải tài liệu hợp lệ");
+
+        // Nothing below this line can run without doc.Types — Components is never dereferenced further
+        // down, so its own null check above is already complete.
+        if (doc.Types is null) return v;
+
         foreach (var type in doc.Types)
         foreach (var t in type.Tags)
         {
