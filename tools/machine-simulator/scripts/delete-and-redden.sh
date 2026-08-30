@@ -39,6 +39,35 @@
 #     git diff HEAD --stat -- src/                               # expect only your own edits
 #
 # and `git checkout -- <file>` for anything it names. Let the script finish instead; it is ~25 minutes.
+#
+# ─────────────────────────────────────────────────────────────────────────────────────────
+# 🔴 WHAT THIS IS, AND WHAT IT IS NOT — owner ruling, whole-branch review fix wave, 2026-08-31.
+#
+# THIS IS A CURATED REGRESSION LIST, NOT A COVERAGE TOOL. Each row exists because a specific line was
+# once found deletable-while-green, or because a review named it as load-bearing. Rows are evidence that
+# particular decisions stayed pinned across repairs — three separate rounds on this branch saw a repair
+# silently un-pin an earlier repair's line, and this is what caught it.
+#
+# The FILE list (SOURCES) must be complete: a file absent from it cannot be mutated at all, so any
+# conclusion drawn from a run is silently narrower than it sounds. That was the actual defect the
+# whole-branch review found — SOURCES held four files while the report concluded about three tasks — and
+# it is fixed.
+#
+# The ROW list is deliberately NOT complete, and does not need to be. The review enumerated six further
+# load-bearing lines with no row: the two `catch (ContractViolationException) -> BadRequest` arms,
+# HmiChangeStream's unsubscribe in its finally block, Program.cs's collision-query DbPath wiring and the
+# IHmiChangeBus registration, and the eight HTTP routes' .RequireAuthorization calls. The owner ruled:
+# PARK THEM. Every one is already covered by ordinary tests — deleting a `catch` arm reddens the §5
+# 400-tests Tasks 1 and 2 pin, and deleting a .RequireAuthorization reddens RbacPolicyTests' exhaustive
+# census in both directions. Adding rows for lines that already fail loudly buys little and costs a
+# minute of wall clock each.
+#
+# So: EXTENDING THE ROW LIST IS ORDINARY MAINTENANCE, and belongs to whoever next touches those files.
+# Add a row when you find a line that a full-suite run does NOT catch, or when a review names one. The
+# cost if that ruling is wrong, stated so a future reader can weigh it rather than re-derive it: a repair
+# un-pins one of those six and only a full-suite red catches it — one step later than a row here would,
+# but caught.
+# ─────────────────────────────────────────────────────────────────────────────────────────
 
 set -u
 

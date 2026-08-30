@@ -680,9 +680,11 @@ public sealed class PerHostDataRootsTests
             "artefacts in TestHarnessIsolationTests.cs:64 — so a find-and-replace corrupts two of those " +
             "three. What did the work was the ELEVEN LINE NUMBERS the previous version of this message " +
             "carried — deleted in the same edit that closed them, because a list of stale sites that are no " +
-            "longer stale is itself the defect; they are recoverable from git history at 63f066a4 if a " +
-            "future author needs the population rather than the lesson. Anyone moving 18→19 must still " +
-            "walk the by-hand list named earlier in this message. " +
+            "longer stale is itself the defect. To read them, check out 6ca5c729 — the PARENT of 63f066a4, " +
+            "which is the commit that removed them; an earlier draft of this sentence pointed at 63f066a4 " +
+            "itself, where `git show 63f066a4:…PerHostDataRootsTests.cs | grep -c MachineConfigStore.cs:94` " +
+            "returns 0, i.e. a self-reference that does not resolve inside the very message written to stop " +
+            "exactly that. Anyone moving 18→19 must still walk the by-hand list named earlier here. " +
             "This test exists because four of those places were already off by one when it was written, " +
             "and it was extended because the Vietnamese half of two of them was off by two afterwards.");
     }

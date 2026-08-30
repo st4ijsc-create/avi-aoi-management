@@ -29,6 +29,51 @@ API and cannot be absent while `hmiApiEnabled` is true.
 **encrypted HTTP cookie**, not a bearer token: there is no `Authorization` header, no API key and no query
 token anywhere on this surface.
 
+> # 🔴 READ THIS BEFORE YOU BELIEVE THE PARAGRAPH ABOVE
+>
+> **The sentence above is true in production and FALSE on the engine you are about to develop against.**
+>
+> When `ST4I_DEMO_ENABLED=true`, `DemoAutoLoginMiddleware` **auto-signs-in every unauthenticated request**
+> as a user called `demo-admin` — created on demand — and that user holds **`Roles.Admin`**. It runs
+> between `UseAuthentication` and `UseAuthorization` (`Program.cs`), so by the time authorisation is
+> evaluated the caller is already an authenticated Admin. Measured: with that flag on,
+> `GET /v1/tags?machine=PROBE-01` returns **200 to a caller with no login and no cookie**.
+>
+> **`web/playwright.config.ts` sets `ST4I_DEMO_ENABLED: "true"` for the dev engine it starts.** So if you
+> develop or run e2e against that engine, you are working on a host where:
+>
+> - **`401` cannot occur.** Every request is signed in before authorisation runs.
+> - **`403` cannot occur** on this surface. `demo-admin` is Admin, so it clears both `Policies.Operator`
+>   and `Policies.Engineer` — including the two `PUT`s an Operator is supposed to be refused.
+> - **Session expiry cannot occur.** A request whose cookie has been invalidated is simply signed in again
+>   on the spot.
+>
+> **The trap:** you can implement exactly the login / `401` / `403` handling this section prescribes,
+> watch every path appear to work, and have none of it exercised — because none of those three codes can
+> be produced. The first machine where it runs for real is a customer's.
+>
+> ### How to actually test the auth paths this document describes
+>
+> Turn the flag off and use a real login. It is a plain environment variable
+> (`DemoModeGate.EnvVarName`), read per host:
+>
+> ```bash
+> # PowerShell — a dev engine that behaves like a customer's
+> $env:ST4I_DEMO_ENABLED = "false"; dotnet run --project src/St4i.EngineApi
+> ```
+>
+> Then: bootstrap or log in as a real user, exercise `401` by clearing the cookie, and exercise `403` by
+> logging in as an **Operator** and attempting `PUT /v1/components/{code}` — the one refusal this surface
+> has that a wrong-tier user can actually reach.
+>
+> **Confirm which engine you are talking to before drawing conclusions:** `GET /v1/capabilities` is
+> anonymous and reports `demoEnabled`. If it says `true`, every auth conclusion you draw from that host is
+> about demo behaviour, not about this contract.
+>
+> **This is a §5-bis surface, which is why it is here and not in a footnote.** Demo behaviour exists only
+> under that flag and is a valid product state; a contract document that let a reader discover it in
+> production would undermine the invariant it is meant to serve.
+
 ```http
 POST /v1/auth/login        {"username":"…","password":"…"}   → 200 + Set-Cookie
 GET  /v1/auth/me                                             → who am I / am I still valid
@@ -60,9 +105,14 @@ const ws = new WebSocket(`${location.origin.replace(/^http/, "ws")}/v1/hmi/chang
 
 **Consequences worth knowing before you debug this at 2am:**
 
-- A **cross-origin** socket will not carry the cookie and the upgrade will be refused. Serve the web app
-  from the engine's origin, or proxy `/v1` through the dev server (the existing Vite config already
-  proxies `/v1`, which is why this works in development).
+- A **cross-site** socket will not carry the cookie and the upgrade will be refused. Serve the web app
+  from the engine's site, or proxy `/v1` through the dev server (the existing Vite config already proxies
+  `/v1` with `ws: true`, which is why this works in development).
+  **"Cross-site", not "cross-origin", and the difference is the one you will hit while debugging:**
+  `SameSite=Lax` compares the *registrable domain*, and cookies ignore the port entirely — so
+  `localhost:5173` → `localhost:5199` is cross-**origin** but same-**site**, and the cookie *does* ride
+  along. The case that genuinely fails is a different site, which is what the shipped desktop shell
+  (`tauri://localhost`) is.
 - A refused upgrade does **not** give you a readable status code — the browser surfaces a generic
   `error`/`close`. If a socket will not open, **call `GET /v1/capabilities` and then any Operator route**
   to find out whether the problem is the session (`401`) or the tier (`403`); the socket cannot tell you.
