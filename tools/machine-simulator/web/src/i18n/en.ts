@@ -55,6 +55,7 @@ export const en: Dictionary = {
     glass: { name: "Glass", description: "Light, premium" },
     console: { name: "Console", description: "Dark, high-tech" },
     warmth: { name: "Warmth", description: "Warm, industrial" },
+    isa101: { name: "ISA-101", description: "Grey, ISA-101 compliant" },
   },
 
   shell: {

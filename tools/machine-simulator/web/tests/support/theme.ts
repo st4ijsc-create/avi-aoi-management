@@ -5,8 +5,14 @@ import type { Page } from "@playwright/test"
  * visual baseline; WS1-T3 rebuilds baselines properly across all 3 themes for a representative
  * screen set (see that task's plan entry). Keeping the union type here (not narrowing it to just
  * `"glass"`) is deliberate — it's what every call site type-checks against, so T3 only has to widen
- * the *values* each spec iterates, not touch this type or any call site's shape. */
-export type Theme = "glass" | "console" | "warmth"
+ * the *values* each spec iterates, not touch this type or any call site's shape.
+ *
+ * WS-HMI-1 Task 4 — widened to a 4th value, `"isa101"`, mirroring `src/theme/ThemeToggle.tsx`'s own
+ * `Theme` union. Existing `const THEMES: Theme[] = ["glass", "console", "warmth"]` literals elsewhere
+ * in this suite (`00-visual-and-a11y.spec.ts`, `11-hmi.spec.ts`, `12`/`13`/`14`) still type-check
+ * unchanged — a plain array typed `Theme[]` is not required to be exhaustive — so this widening does
+ * not by itself add isa101 to any of their existing baseline loops. */
+export type Theme = "glass" | "console" | "warmth" | "isa101"
 
 /**
  * Pins the shell's theme + language in `localStorage` via `addInitScript` — injected before ANY of

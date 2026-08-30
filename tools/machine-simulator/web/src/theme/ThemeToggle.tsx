@@ -1,15 +1,24 @@
 import * as React from "react"
 
-export type Theme = "glass" | "console" | "warmth"
+// Task 4 (docs/plans/2026-08-30-hmi-ws1-runtime-blueprint.md) — widened from 3 to 4. `isa101` is the
+// ASM Consortium/ISA-101 "grey base, colour only for abnormal" world (docs/HMI_BUILDER_DESIGN_2026-08-29.md
+// §6) — a genuine 4th value here, not just a CSS block, because §6's own table frames it as "Mặc định
+// cho máy sản xuất" (the default a real production customer should pick), selectable the same way
+// Glass/Console/Warmth already are. It is ALSO the value `HmiScreenDocument.theme` (contracts/hmiScreen.ts's
+// `ScreenTheme`) can stamp per-screen via `ScreenRenderer`'s `data-theme={doc.theme}` — same string,
+// same `[data-theme="…"]` attribute mechanism, two independent call sites (global app preference here,
+// per-screen override there) landing on the one CSS block index.css defines for it.
+export type Theme = "glass" | "console" | "warmth" | "isa101"
 
-/** Draw order for anything that cycles/lists the 3 themes (topbar quick-switch, Settings
- * radiogroup) — Glass first since it's the default. */
-export const THEMES: readonly Theme[] = ["glass", "console", "warmth"]
+/** Draw order for anything that cycles/lists the 4 themes (topbar quick-switch, Settings
+ * radiogroup) — Glass first since it's the default; `isa101` appended last so it doesn't reshuffle
+ * the existing 3's cycle order for anyone already relying on it. */
+export const THEMES: readonly Theme[] = ["glass", "console", "warmth", "isa101"]
 
 const STORAGE_KEY = "st4i-sim-theme"
 
 function isTheme(value: string | null): value is Theme {
-  return value === "glass" || value === "console" || value === "warmth"
+  return value === "glass" || value === "console" || value === "warmth" || value === "isa101"
 }
 
 /** WS1 migrates the old 2-way light/dark storage value onto the 3-way theme it most resembles —

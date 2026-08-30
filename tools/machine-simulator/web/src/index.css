@@ -38,6 +38,16 @@
    carry state meaning only) hold unchanged across all three themes — see
    PRODUCTION_UI_DESIGN.md §4.
 
+   WS-HMI-1 Task 4 — a FOURTH theme, `isa101` (docs/HMI_BUILDER_DESIGN_2026-08-29.md
+   §6): ASM Consortium/ISA-101 "high-performance HMI" doctrine — a grey,
+   deliberately low-contrast-of-INTEREST base, colour reserved for the
+   run/warn/fault/idle status ramp and for genuinely operator-initiated
+   controls, never for decoration. It sits ALONGSIDE Glass/Console/Warmth
+   (same `[data-theme="…"]` mechanism, same token surface) rather than
+   replacing any of them — Glass/Console/Warmth stay exactly as WS1 left
+   them; nothing in their three blocks below changed for this task. See that
+   theme's own block for the specific token-by-token reasoning.
+
    Theme blocks are plain `[data-theme="…"]` attribute selectors (not
    `:root[data-theme="…"]`): an attribute selector matches the attribute
    wherever it's stamped, so the SAME rule applies both at the root (the
@@ -46,14 +56,23 @@
    on a small nested `<div>` to render a pixel-accurate Console preview while
    the rest of the app stays on whichever theme is actually active, with zero
    duplicated hex (custom properties inherit down from the nested element to
-   its own descendants same as they would from :root). Bare `:root` below
-   carries the Glass values and doubles as the safe pre-hydration default
+   its own descendants same as they would from :root). This is also exactly
+   how `hmi-runtime/ScreenRenderer.tsx` applies a PER-SCREEN theme override
+   independent of the operator's own global preference: it stamps
+   `data-theme={doc.theme}` (`"isa101" | "blueprint"`, contracts/hmiScreen.ts's
+   `ScreenTheme`) on its own root grid `<div>` — `"isa101"` resolves against
+   the block below the same way it does at `<html>`; `"blueprint"` has no
+   block of its own on purpose (contracts/hmiScreen.ts's own comment: it means
+   "whatever the app's own theme currently is"), so that attribute value is
+   inert and the nested div just keeps inheriting the ambient Glass/Console/
+   Warmth/isa101 values same as before the attribute was stamped. Bare :root
+   below carries the Glass values and doubles as the safe pre-hydration default
    (first paint, before the provider's effect stamps the attribute) — Glass
    being both the default theme AND the fallback is exactly what "default
    Glass" already implies, so there's nothing left for a dedicated
    `[data-theme="glass"]` block to override; it exists as an explicit anchor
-   only (see the empty block right after :root). Console/Warmth blocks below
-   only redeclare what differs from :root — the navy ramp, radius-pill,
+   only (see the empty block right after :root). Console/Warmth/isa101 blocks
+   below only redeclare what differs from :root — the navy ramp, radius-pill,
    typography, and shadow-scale are theme-invariant and declared once.
    ========================================================================== */
 
@@ -427,6 +446,151 @@
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: var(--navy-100);
   --sidebar-accent-foreground: var(--navy-800);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--focus);
+}
+
+[data-theme="isa101"] {
+  /* ==== ISA-101 — ASM Consortium "high-performance HMI" doctrine, spec §6: grey base, colour ONLY
+     for abnormal states. This is not a fifth palette swap — it is the one theme in this file where
+     several tokens deliberately give up a decorative use of colour that Glass/Console/Warmth all
+     keep, because that decorative use is exactly what the doctrine says degrades alarm response
+     (published figures: 38–42% slower ack on a screen where colour isn't reserved). Every deviation
+     below from "just reskin the same roles" is called out inline — this comment is the map of them. */
+
+  /* Ground: a genuinely mid grey, not a tinted near-white/near-black the way Glass/Console/Warmth's
+     "light"/"dark"/"warm" grounds all are — the base itself must read as neutral, not as a mood.
+     Panels lift slightly ABOVE the ground (surface lighter than bg, same direction as Glass/Console)
+     so structure is still legible without leaning on colour to do it. */
+  --color-bg: #c7cac8;
+  --color-surface: #d6d8d6;
+  /* Live axe (first verify pass, this task) reproduced the SAME pitfall Warmth's own comment already
+     names: `ui/tabs.tsx`'s inactive-tab `text-foreground/65` (65%-opacity ink) composited over
+     `--surface-muted` measured 4.32:1 here at the mock-plausible #1c1e1e — under the 4.5:1 AA floor,
+     same failure mode as Warmth's #26221B, just a different composite because this ground is grey
+     rather than near-white. Darkened for real margin, same fix Warmth applied to itself: hand-
+     calculated ~5.18:1 for that SAME 65%-over-`--surface-muted` composite with this value (full-
+     opacity uses against --color-bg/--color-surface only gain margin from darkening further). */
+  --color-text: #0a0c0c;
+  --color-divider: color-mix(in srgb, #0a0c0c 22%, transparent);
+  --color-divider-strong: color-mix(in srgb, #0a0c0c 36%, transparent);
+
+  --surface-base: var(--color-surface);
+  --surface-subtle: var(--color-bg);
+  --surface-muted: #cdd0ce;
+  --surface-card: var(--color-surface);
+  --border: #a9adab;
+  --border-strong: #888d8a;
+
+  /* Accent stays the flat, UNLIFTED brand navy (Warmth's choice, not Glass's brighter lifted azure)
+     — the most restrained option the existing component set actually offers. It still appears on
+     genuinely operator-initiated affordances (START's fill, links, focus rings) — the doctrine's own
+     4th trigger for colour ("người vận hành ra lệnh") — so this is a legitimate use, not a leak, but
+     it is deliberately the least eye-catching version of "navy" available at the token layer. */
+  --color-accent: var(--navy-700);
+
+  --text-strong: var(--color-text);
+  --text-body: #2c2f2e;
+  /* Hand-calculated (sRGB relative luminance) ~5.9:1 against --color-bg and ~6.8:1 against
+     --color-surface — extra margin over the 4.5:1 AA floor because this grey ground sits at a lower
+     luminance than Glass/Warmth's near-white surfaces, which leaves less room to spare by default. */
+  --text-muted: #3f4241;
+
+  /* Secondary accent tint — deliberately grey-neutral, NOT a light navy tint the way Glass/Warmth's
+     --accent-100 is. This tint drives hover/secondary FILLS (see --secondary/--accent below), a
+     passive/decorative role rather than an active one — exactly the role the doctrine says colour
+     should not occupy on a normal screen, so this is where isa101 actually withholds it. */
+  --accent-100: #dde1e6;
+  --accent-500: var(--navy-700);
+  --accent-600: var(--navy-800);
+
+  /* Status ramp — SAME hue family as Glass/Console/Warmth (hand-verified: run/warn/fault land within
+     ~5° of each other theme's hue angle), only lightness/saturation retuned for THIS grey ground.
+     This is the one place colour is unambiguously earned, so it stays fully saturated relative to the
+     muted ground around it — the point is for it to be the most colourful thing on the screen when it
+     appears, not to blend in. */
+  --status-run: #2f7d4c;
+  --status-warn: #b5790f;
+  --status-fault: #b23327;
+  --status-idle: #6f7371;
+  /* AA-safe text-on-tint variants, same convention as the other three themes' own comments: tuned
+     against a ~15% tint of the solid hue composited over --color-surface (ControlButton's PAUSE/HALT
+     tint fills, e.g. bg-status-fault at 15% opacity; LogTag's own tint fills sit at 10%) —
+     hand-calculated ≥5.8:1 against that composite for all three, not just clearing 4.5:1 on the
+     plain background. */
+  --status-run-text: #0b4a29;
+  --status-warn-text: #5c3d09;
+  --status-fault-text: #7a2018;
+  --status-idle-text: var(--text-muted);
+
+  --ok-text: var(--status-run-text);
+  --warn-text: var(--status-warn-text);
+  --danger-text: var(--status-fault-text);
+  --info: var(--navy-600);
+  --info-text: var(--navy-700);
+
+  /* Radius 0 — the one theme that restores HMI_DESIGN_SPEC.md §1's original "radius 0 everywhere"
+     ground rule (WS1 made radius per-theme; isa101 is where it comes back). A true right-angle panel
+     reads as measuring-instrument/engineered rather than consumer-soft, which is the same instinct as
+     the grey ground: nothing here should look inviting or premium, it should look like equipment. */
+  --radius: 0px;
+  --radius-card: 0px;
+
+  --shadow-color: 160 4% 18%;
+  /* Deliberately the QUIETEST --elevation of the four themes — a hairline-level flat shadow, no glow,
+     no coloured tint (contrast Console's cyan-ring, Warmth's soft contact shadow). A panel that visibly
+     "lifts" is itself a mild decorative flourish; isa101 keeps just enough shadow that a dialog/toast
+     reads as being on top, and no more. */
+  --elevation: 0 1px 2px color-mix(in srgb, #0a0c0c 16%, transparent);
+  /* Off, on purpose — this is the single biggest behavioural difference from Console, which glows a
+     LIVE "running" element. Running is a NORMAL state; a halo around it is colour doing decorative
+     work on exactly the kind of normal-operation reading the doctrine says must stay plain. isa101
+     lets the status ramp's own hue carry that meaning and nothing else. */
+  --glow-run: none;
+  --panel-fill: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  --glass-blur: 0px;
+  --focus: var(--navy-700);
+
+  /* Flat ground, no wash — same reasoning as Warmth's own override (this file's WS1-T2 comment on
+     `.hmi-graph-paper` below); --graph-paper-line is left at its :root default (plain --color-divider),
+     which re-resolves against ISA-101's own divider colour automatically because it's declared as a
+     var() reference, not a baked value (see this file's own top comment on that mechanism). */
+  --graph-paper-wash: none;
+
+  --background: var(--surface-base);
+  --foreground: var(--text-strong);
+  --card: var(--surface-card);
+  --card-foreground: var(--text-strong);
+  --popover: var(--surface-base);
+  --popover-foreground: var(--text-strong);
+  --primary: var(--navy-700);
+  --primary-foreground: #ffffff;
+  --primary-text: var(--primary);
+  /* Secondary/hover-accent surfaces route through the GREY muted tier instead of a navy-100 tint the
+     way all three other themes do — the deliberate divergence flagged at the top of this block. A
+     secondary button or a menu-hover highlight is not an alarm, a limit, a mode change, or a command;
+     it earns no colour under this doctrine, so it stays grey-on-grey with the same dark ink foreground
+     used everywhere else (huge contrast margin, not a tuned-to-the-floor value). */
+  --secondary: var(--surface-muted);
+  --secondary-foreground: var(--text-strong);
+  --muted: var(--surface-muted);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--surface-muted);
+  --accent-foreground: var(--text-strong);
+  --destructive: var(--danger-text);
+  --input: var(--border);
+  --ring: var(--focus);
+  --chart-1: var(--navy-700);
+  --chart-2: var(--navy-400);
+  --chart-3: var(--navy-300);
+  --chart-4: var(--ok);
+  --chart-5: var(--warn);
+  --sidebar: var(--surface-subtle);
+  --sidebar-foreground: var(--text-strong);
+  --sidebar-primary: var(--navy-700);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--surface-muted);
+  --sidebar-accent-foreground: var(--text-strong);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--focus);
 }
