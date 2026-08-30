@@ -49,12 +49,26 @@ public sealed class ContractViolationException : Exception
 ///   thích</b> — cùng hình dạng, cùng lý do như luật trùng <c>path</c>. Xem
 ///   <see cref="Validate(ComponentModelDocument)"/> để biết cơ chế đầy đủ.</description></item>
 /// </list>
-/// <b>Và một dòng về việc ĐẾM, vì đoạn này đã đếm sai một lần:</b> con số ở đây là SÁU, và bài kiểm giữ
-/// nó khỏi lệch không phải là ai đó đọc lại danh sách — mà là
+/// <b>Và một dòng về việc ĐẾM, vì đoạn này đã đếm sai một lần:</b> con số cho các luật CÓ ĐIỀU KIỆN ở trên
+/// là SÁU, và bài kiểm giữ nó khỏi lệch không phải là ai đó đọc lại danh sách — mà là
 /// <c>ContractInvariantsTests.Every_floating_point_field_that_reaches_serialisation_is_covered_by_the_non_finite_rule</c>
 /// (phản chiếu ba record, đỏ khi có trường số thực thứ sáu) và
-/// <c>...ContractInvariants_uses_one_missing_string_predicate_at_every_site</c> (quét mã nguồn, đỏ khi có
-/// một cửa hỏi câu hỏi khác về "chuỗi bắt buộc bị thiếu").</para>
+/// <c>...ContractInvariants_uses_one_missing_string_predicate_at_every_site</c> (đọc METADATA của assembly
+/// đã biên dịch, đỏ khi có bất kỳ cửa nào gọi <c>IsNullOrEmpty</c> — mọi cách viết, xem doc-comment của bài
+/// ấy).</para>
+///
+/// <para>🔴 <b>LOẠI LUẬT THỨ HAI — các kiểm tra CÓ MẶT, tách riêng ở fix round 5 vì đếm lại đúng SÁU luật
+/// có điều kiện trong khi bỏ quên cả một LOẠI khác là chính xác cái lỗi đoạn trên vừa xin lỗi vì đã mắc</b>
+/// (re-review #4). Ngoài sáu luật có điều kiện, bộ kiểm còn đòi một số trường BẮT BUỘC PHẢI CÓ, không phụ
+/// thuộc điều kiện nào: <c>machineCode</c> (cả hai tài liệu), <c>components</c>/<c>types</c>/<c>tags</c>/
+/// <c>widgets</c> và mọi PHẦN TỬ của chúng, <c>component.id</c>, <c>component.tagPrefix</c>,
+/// <c>tag.path</c>, <c>tag.access</c>, <c>componentTag.role</c>, <c>widget.id</c>, <c>widget.kind</c>, và —
+/// thêm ở round 4, và là năm cái đoạn này bỏ sót — <c>screenId</c>, <c>title</c>, <c>theme</c>,
+/// <c>layout</c>/<c>layout.breakpoint</c>, <c>widget.rect</c>. <b>Không bài kiểm nào ở trên gác DANH SÁCH
+/// này</b> (chúng gác trường số thực và vị từ chuỗi, không gác "còn thiếu trường bắt buộc nào không"); cái
+/// gác nó là TIÊU CHÍ được phát biểu trong đoạn BOUNDARY của từng overload — và tiêu chí ấy, chứ không phải
+/// danh sách này, là thứ một người thêm trường mới phải đọc. Danh sách này tồn tại để người đọc biết loại
+/// luật thứ hai CÓ tồn tại.</para>
 ///
 /// <para>🔴 <b>CÁI CÒN LẠI CHƯA KIỂM, nói tên chứ không để người đọc tự suy:</b> không có bộ kiểm nào cho
 /// <c>screenId</c>/<c>widget.id</c> trùng nhau, cho <see cref="ScreenLayout"/> có nằm trong dải
@@ -284,7 +298,7 @@ public static class ContractInvariants
     /// NOT — it makes <c>ComponentModelStore.PutAsync</c> throw, on a SQL parameter bind, which this
     /// method's own inline comment three lines below the check states correctly. The paragraph and the code
     /// it documents disagreed about why the check exists, inside the paragraph whose job is to state why
-    /// the checks exist — the same shape, a third time, in one file).</b>
+    /// the checks exist — the same shape, a third time, in one file).</b></para>
     ///
     /// <para>This is a crash-prevention gate, not a JSON Schema validator (see this class's own top-level
     /// doc comment). <b>ONE criterion, stated once and used by all three overloads</b> — a field is checked

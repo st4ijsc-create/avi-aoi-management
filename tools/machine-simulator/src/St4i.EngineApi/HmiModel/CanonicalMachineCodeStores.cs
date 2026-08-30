@@ -54,15 +54,27 @@ namespace St4i.EngineApi.HmiModel;
 /// to be assumed.</b> Round 3's version of this paragraph named one of two exclusions and omitted the
 /// broken one; this is the complete list.
 /// <list type="number">
-///   <item><description><b>A tag <c>path</c></b> (<see cref="ITagNamespaceStore.FindTagAsync"/>'s
-///   parameter, and every <see cref="TagDescriptor.Path"/> inside a document) — a DIFFERENT identity from a
-///   machine code, and deliberately untouched. <c>tag_index.path</c> is a GLOBAL primary key with no
+///   <item><description><b>Every machine-code-prefixed PATH — all THREE of them, counted rather than
+///   sampled.</b> <see cref="ITagNamespaceStore.FindTagAsync"/>'s <c>path</c> parameter; every
+///   <see cref="TagDescriptor.Path"/> inside a namespace document; and — named here at fix round 5, after
+///   this same paragraph shipped incomplete in two consecutive rounds — <b><see cref="ComponentNode.TagPrefix"/>
+///   inside a component-tree document</b>. The third is not an afterthought: it is the field
+///   <c>ModelIntegrity.Check</c>'s Ordinal check 4 actually compares, so it is the field the pinned
+///   integrity-warning test below exercises, and it is the field that goes out of step with
+///   <c>machineCode</c> on a read-modify-write — a document read back through the fallback carries
+///   <c>machineCode: LEGACY-01</c> next to <c>tagPrefix: legacy-01/spindle</c>, and PUTting it back
+///   PERSISTS that disagreement. All three are one identity kind and get one rule, below.</description></item>
+///   <item><description><b>Why paths are that identity kind and not this one</b> — a tag <c>path</c> is a
+///   DIFFERENT identity from a machine code, and deliberately untouched. <c>tag_index.path</c> is a GLOBAL primary key with no
 ///   machine-code-prefix requirement (<see cref="ContractInvariants"/>'s own doc comment: "Pattern của
 ///   <c>path</c> không đòi tiền tố mã máy"), and <c>ModelIntegrity.IsPathPrefix</c> is Ordinal by design,
 ///   so rewriting a leading segment would corrupt every path that does not begin with a machine code.
-///   <b>The consequence, stated because it is real and downstream:</b> a namespace authored as
-///   <c>find-01</c> persists as <c>machineCode: "FIND-01"</c> with paths still <c>find-01/…</c>, and the
-///   two halves of that document disagree about the machine's spelling. That is FORCED, not chosen — the
+///   <b>The consequence, stated because it is real and downstream — in BOTH contracts, because giving only
+///   the namespace example is how <see cref="ComponentNode.TagPrefix"/> went unnamed for two rounds:</b> a
+///   namespace authored as <c>find-01</c> persists as <c>machineCode: "FIND-01"</c> with paths still
+///   <c>find-01/…</c>; and a component tree authored as <c>find-01</c> persists as
+///   <c>machineCode: "FIND-01"</c> with <c>tagPrefix: "find-01/spindle"</c>. Either way the two halves of
+///   one document disagree about the machine's spelling. That is FORCED, not chosen — the
 ///   frozen store derives its primary key from <c>doc.MachineCode</c>, so a canonical KEY is unobtainable
 ///   without a canonical FIELD. <b>The rule that follows, and the one WS-HMI-0c and Task 2's
 ///   <c>PUT /v1/tags/{machineCode}</c> are meant to read: a tag path is NOT derivable from a machine code
@@ -83,7 +95,14 @@ namespace St4i.EngineApi.HmiModel;
 ///   <c>new TagNamespaceStore(dir)</c> caller under a non-canonical spelling is invisible to this seam. It
 ///   is unreachable rather than mis-reported (<c>namespaceLoaded:false</c> is the honest answer to "this
 ///   seam has no namespace for that identity"), and nothing that goes through DI — every HTTP handler, and
-///   Task 2's write path — can create one.</description></item>
+///   Task 2's write path — can create one. <b>The one cost of that honesty, spelled out at fix round 5
+///   rather than left one sentence short:</b> <c>namespaceLoaded:false</c> is byte-for-byte what a machine
+///   with NO namespace at all reports, so an API client cannot distinguish "your namespace is on disk and
+///   this seam cannot read it" from "you never declared one". An engineer who wrote through a non-DI path
+///   gets the report of an engineer who wrote nothing. That is materially better than the shape re-review
+///   #2 condemned — it never claims health for a document it did not read, and the component half of the
+///   same request IS read and reported — but it is not free, and it is the reason the residue is pinned by
+///   a test rather than merely admitted here.</description></item>
 /// </list></para>
 ///
 /// <para>🔴 <b>THE GUARANTEE, stated at the strength it actually has.</b> Anything that takes
@@ -103,9 +122,28 @@ namespace St4i.EngineApi.HmiModel;
 /// superseded duplicate can linger on disk unreachable.</b> Cleaning those up is a migration, and a
 /// migration is a task, not a silence.</para>
 ///
+/// <para>🔴 <b>AND ONE ASSUMPTION THE GUARANTEE RESTS ON THAT THIS CLASS DOES NOT OWN, named at fix round 5
+/// because an unnamed assumption is how the last three rounds went wrong.</b> "A caller who read the list
+/// and a caller who read a document never hold two different names for one machine" is true because both
+/// frozen stores bind their primary key FROM the document's own field —
+/// <c>AddWithValue("@machine_code", doc.MachineCode)</c>, <c>ComponentModelStore.cs:192</c> and
+/// <c>TagNamespaceStore.cs:219</c> — so key ≡ field for every row that can exist. This decorator cannot
+/// enforce that and does not try. What it does instead is not depend on it: <c>GetAsync</c> canonicalises
+/// the <c>machineCode</c> of every document on the way OUT, so even a store that accepted a key independent
+/// of the field could not make the list and a document disagree. That output half is otherwise invisible
+/// (a real row's field is already canonical), which is exactly why it went unmeasured until round 5 — it is
+/// now driven by the <c>GetAsync</c> entries in <c>CanonicalMachineCodeStoresTests</c>' disposition table,
+/// seeded with the key≠field row no real writer can produce.</para>
+///
 /// <para><b>Cost, named:</b> the fallback costs one extra <c>ListMachineCodesAsync</c> query per
-/// <c>GetAsync</c> MISS — which includes every §5-bis "machine declared nothing" read. Accepted for a
-/// local SQLite file with a fleet-sized row count; it would not be for a remote store.</para>
+/// <c>GetAsync</c> MISS — which includes every §5-bis "machine declared nothing" read. <b>The aggregate,
+/// which the per-call figure does not convey:</b> <c>GET /v1/component-types</c> reads every listed code
+/// through <c>GetAsync</c>, so over a database whose rows are ALL non-canonically keyed it is n misses ×
+/// an n-row scan each — O(n²) rows read (measured by re-review #4: 151 inner calls, 51 of them full scans,
+/// for 50 legacy rows). A CANONICAL database pays none of it: zero misses, zero scans. So the cost is a
+/// property of legacy data awaiting migration, not of normal operation, and at fleet scale (tens of
+/// machines against a local SQLite file) the worst case is a few thousand short row reads. Accepted here;
+/// it would not be acceptable against a remote store.</para>
 /// </summary>
 internal static class MachineCodeIdentity
 {

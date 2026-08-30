@@ -1,3 +1,7 @@
+// The metadata guard below reads the COMPILED contracts assembly rather than its source text — see
+// ContractInvariants_uses_one_missing_string_predicate_at_every_site for why a text scan was evadable.
+// PEReader.GetMetadataReader() is an extension method living in this namespace.
+using System.Reflection.Metadata;
 using St4i.Hmi.Contracts;
 using Xunit;
 
@@ -819,43 +823,135 @@ public class ContractInvariantsTests
     /// <summary>🔴 <b>The ENUMERATION behind the three tests above, and the thing that goes red when a
     /// FOURTH site is written with the wrong predicate.</b> The rule this class holds is one rule — a
     /// required string is missing when it is null, empty, OR whitespace — and three consecutive review
-    /// rounds have now shown that adopting it at the sites a finding NAMED is not the same as adopting it.
-    /// So the check is on the source, where the sites live, rather than on three behaviours that happen to
-    /// be the three sites known today.
+    /// rounds showed that adopting it at the sites a finding NAMED is not the same as adopting it. So the
+    /// guard is an enumeration over the whole assembly rather than three behaviours that happen to be the
+    /// three sites known today.
     ///
-    /// <para><b>Convention this depends on, stated because it is load-bearing:</b> prose in
-    /// <c>ContractInvariants.cs</c> writes the rejected predicate WITHOUT its <c>string.</c> qualifier, so
-    /// that this scan reads code and not commentary.</para></summary>
+    /// <para>🔴 <b>Fix round 5, item 2 — this guard was itself evadable, and the evasion was reproduced
+    /// before it was closed.</b> Round 4 scanned the SOURCE TEXT for the literal
+    /// <c>string.IsNullOrEmpty(</c>. Re-review #4 measured: a fourth site written
+    /// <c>string.IsNullOrEmpty(w.Component)</c> → RED, named with its line; the identical call written
+    /// <c>String.IsNullOrEmpty(w.Component)</c> — the BCL type name instead of the C# keyword alias —
+    /// → <b>GREEN</b>. I reproduced exactly that (green, and the compiler emitted no warning about the
+    /// spelling; there is no <c>.editorconfig</c> anywhere in this repository, so no <c>IDE0049</c> would
+    /// have caught it either). That permits a fourth <c>policyAction</c>-shaped gate accepting <c>" "</c>
+    /// — MEDIUM-1's ungated write door reported as gated — re-entering through a synonym.</para>
+    ///
+    /// <para><b>Why this is not fixed with a case-insensitive regex.</b> A regex closes the one synonym the
+    /// review happened to name and leaves the next one: <c>System.String.IsNullOrEmpty(</c>,
+    /// <c>global::System.String.IsNullOrEmpty(</c>, whitespace or a newline around the <c>.</c> or the
+    /// <c>(</c>, <c>using static System.String;</c> then a bare <c>IsNullOrEmpty(</c>, or
+    /// <c>using Str = System.String;</c> then <c>Str.IsNullOrEmpty(</c>. Patching the spelling a finding
+    /// names, and leaving the property open, is the exact failure this whole task exists to end. <b>So the
+    /// assertion is made against the COMPILED ASSEMBLY, not the text:</b> every one of those spellings
+    /// emits the same <c>MemberRef</c> to <c>System.String::IsNullOrEmpty</c>, so an assembly that
+    /// references it nowhere cannot call it by any spelling that exists or that anyone invents later. The
+    /// source scan is retained only to name a line number in the failure message — it is a diagnostic, and
+    /// the assertion no longer depends on it, which also retires round 4's fragile "prose must write the
+    /// predicate without its qualifier" convention.</para>
+    ///
+    /// <para><b>Scope, deliberately the whole assembly rather than one file:</b> <c>St4i.Hmi.Contracts</c>
+    /// contains the three frozen record files and this validator, and it IS the §5 door. A required-string
+    /// check anywhere in it must ask the one question.</para></summary>
     [Fact]
     public void ContractInvariants_uses_one_missing_string_predicate_at_every_site()
     {
-        var source = File.ReadAllText(ContractInvariantsSourcePath());
+        var assemblyPath = typeof(ContractInvariants).Assembly.Location;
+        var referenced = MemberReferencesNamed(assemblyPath, "IsNullOrEmpty");
 
-        var offenders = source.Split('\n')
-            .Select((line, i) => (Line: line, Number: i + 1))
-            .Where(x => x.Line.Contains("string.IsNullOrEmpty(", StringComparison.Ordinal))
-            .Select(x => $"line {x.Number}: {x.Line.Trim()}")
+        if (referenced.Count == 0) return;
+
+        Assert.Fail(
+            "The St4i.Hmi.Contracts assembly CALLS the wrong missing-string predicate. It must ask ONE " +
+            "question about a missing required string, at every site: string.IsNullOrWhiteSpace. A " +
+            "whitespace-only value is not a declaration — and on a policyAction gate it is an UNGATED " +
+            "WRITE DOOR that this class reports as gated (re-review #3, MEDIUM-1: closed at two " +
+            "illustration sites in round 3 and left open at the three that mattered).\n" +
+            "Compiled references found: " + string.Join(", ", referenced) + "\n" +
+            "Candidate source lines (best-effort text search, for locating it only — the assertion above " +
+            "came from the compiled metadata and holds for EVERY spelling, including String./" +
+            "System.String./using static/aliased):\n  " +
+            string.Join("\n  ", LocateCandidateSourceLines()));
+    }
+
+    /// <summary>Every <c>MemberRef</c> in <paramref name="assemblyPath"/> whose member name matches, with
+    /// its declaring type — read straight out of the PE metadata, so it sees what the compiler emitted
+    /// rather than what somebody typed.</summary>
+    private static IReadOnlyList<string> MemberReferencesNamed(string assemblyPath, string memberName)
+    {
+        using var stream = File.OpenRead(assemblyPath);
+        using var pe = new System.Reflection.PortableExecutable.PEReader(stream);
+        var md = pe.GetMetadataReader();
+
+        var found = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var handle in md.MemberReferences)
+        {
+            var member = md.GetMemberReference(handle);
+            if (!string.Equals(md.GetString(member.Name), memberName, StringComparison.Ordinal)) continue;
+
+            var owner = member.Parent.Kind == System.Reflection.Metadata.HandleKind.TypeReference
+                ? DescribeTypeReference(md, (System.Reflection.Metadata.TypeReferenceHandle)member.Parent)
+                : member.Parent.Kind.ToString();
+            found.Add($"{owner}::{memberName}");
+        }
+
+        return found.ToList();
+    }
+
+    private static string DescribeTypeReference(
+        System.Reflection.Metadata.MetadataReader md, System.Reflection.Metadata.TypeReferenceHandle handle)
+    {
+        var typeRef = md.GetTypeReference(handle);
+        var ns = md.GetString(typeRef.Namespace);
+        var name = md.GetString(typeRef.Name);
+        return string.IsNullOrWhiteSpace(ns) ? name : $"{ns}.{name}";
+    }
+
+    /// <summary>Diagnostic only — never the assertion. Deliberately loose (case-insensitive, optional
+    /// qualifier, tolerant of whitespace) because a false positive in a failure message costs nothing and
+    /// a false negative in an ASSERTION is what this round is fixing.</summary>
+    private static IReadOnlyList<string> LocateCandidateSourceLines()
+    {
+        var path = ContractInvariantsSourcePath();
+        if (!File.Exists(path)) return new[] { $"(source not found at {path})" };
+
+        var lines = File.ReadAllLines(path)
+            .Select((text, i) => (Text: text, Number: i + 1))
+            .Where(x => System.Text.RegularExpressions.Regex.IsMatch(
+                x.Text, @"(?<![A-Za-z0-9_])(?:[sS]tring\s*\.\s*)?IsNullOrEmpty\s*\("))
+            .Select(x => $"line {x.Number}: {x.Text.Trim()}")
             .ToList();
 
-        Assert.True(offenders.Count == 0,
-            "ContractInvariants must ask ONE question about a missing required string, at every site: " +
-            "string.IsNullOrWhiteSpace. A whitespace-only value is not a declaration — and on a " +
-            "policyAction gate it is an UNGATED WRITE DOOR that this class reports as gated (re-review #3, " +
-            "MEDIUM-1; the same finding was closed at two illustration sites in round 3 and left open at " +
-            "the three that mattered). Sites still asking the other question:\n  " +
-            string.Join("\n  ", offenders));
+        return lines.Count > 0 ? lines : new[] { "(no candidate line matched — check for an alias or a using static)" };
     }
 
     private static string ContractInvariantsSourcePath()
     {
         // ContractFixtures.ContractsDir is <solution>/contracts — its parent is the solution directory.
         var solutionDir = Path.GetDirectoryName(ContractFixtures.ContractsDir)!;
-        var path = Path.Combine(solutionDir, "src", "St4i.Hmi.Contracts", "ContractInvariants.cs");
-        Assert.True(File.Exists(path),
-            $"Could not find ContractInvariants.cs at \"{path}\". If the layout moved, fix this path — do " +
-            "NOT delete the scan it feeds.");
-        return path;
+        return Path.Combine(solutionDir, "src", "St4i.Hmi.Contracts", "ContractInvariants.cs");
     }
+
+    /// <summary>The control the guard above needs to be worth anything: proof that
+    /// <see cref="MemberReferencesNamed"/> can SEE such a call at all. Without this, a metadata reader that
+    /// silently found nothing — wrong table, wrong file, an exception swallowed upstream — would look
+    /// exactly like a clean assembly, and the guard would be a permanent green light. THIS test assembly
+    /// deliberately calls <c>string.IsNullOrEmpty</c> once, in
+    /// <see cref="DeliberateIsNullOrEmptyCallSoTheDetectorHasSomethingToFind"/>, and the detector must find
+    /// it here while finding nothing in the contracts assembly.</summary>
+    [Fact]
+    public void Control_The_predicate_detector_can_actually_see_such_a_call()
+    {
+        Assert.True(DeliberateIsNullOrEmptyCallSoTheDetectorHasSomethingToFind(""));
+
+        var inThisAssembly = MemberReferencesNamed(
+            typeof(ContractInvariantsTests).Assembly.Location, "IsNullOrEmpty");
+
+        Assert.Contains("System.String::IsNullOrEmpty", inThisAssembly);
+    }
+
+    private static bool DeliberateIsNullOrEmptyCallSoTheDetectorHasSomethingToFind(string? value) =>
+        string.IsNullOrEmpty(value);
 
     // ─────────────────────────────────────────────────────────────────────
     // LOW — Validate(HmiScreenDocument)'s criterion, made ONE criterion. Round 3 excluded
