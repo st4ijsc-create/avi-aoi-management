@@ -495,6 +495,59 @@ describe("apBanVa — F6: máy chủ TỪ CHỐI chốt sổ qua HTTP 200", () =
   });
 });
 
+/**
+ * ★★★ F7 (2026-08-30) — TỆP EOL LẪN LỘN BỊ TỪ CHỐI TRƯỚC CẢ SO BĂM VÀ MỞ SỔ KIỂM TOÁN.
+ *
+ * ⚠ Đây là lưới bằng `vscode` GIẢ, nên nó KHÔNG (và không thể) đo được đúng lỗi đã có thật — lỗi
+ *   thật chỉ hiện ra qua hành vi chuẩn-hoá-EOL-toàn-tài-liệu của VSCode THẬT lúc `save()`, thứ mà
+ *   bản giả ở đầu tệp này không mô phỏng. Nhóm ca dưới đây chỉ khoá lại VỊ TRÍ gọi `eolLanLon` bên
+ *   trong THỨ TỰ các bước (trước bước 4/5/6, không đọc đĩa thêm lần nào, không mở sổ MẠNG cho một
+ *   lượt chắc chắn bị từ chối) — phần "đĩa không đổi một byte" được đo THẬT ở
+ *   `test-real-host/suite/eolBom.test.ts`.
+ */
+describe("apBanVa — F7: EOL LẪN LỘN bị từ chối TRƯỚC khi so băm / mở sổ kiểm toán", () => {
+  const GOC_LAN_LON = "M1\r\nM2\nM3\r\nM4\n";
+
+  it("★★★ tệp gốc EOL LẪN LỘN ⇒ ok:false, KHÔNG so băm, KHÔNG mở sổ, KHÔNG ghi", async () => {
+    may.dia = GOC_LAN_LON;
+    may.boDem = GOC_LAN_LON;
+
+    const kq = await apBanVa(dauVao({ bamGoc: bam(GOC_LAN_LON) }));
+
+    expect(kq.ok).toBe(false);
+    expect(kq.thongDiep).toContain("EOL LẪN LỘN");
+    // Dừng ngay sau lượt đọc đĩa của bước 3 — trước cả bamNoiDung (bước 4), batDauApClient (bước
+    // 6) và apChinhSua (bước 7).
+    expect(may.nhatKy).not.toContain("bamNoiDung");
+    expect(may.nhatKy).not.toContain("batDauApClient");
+    expect(may.nhatKy).not.toContain("apChinhSua");
+    expect(demTrongNhatKy("docDia")).toBe(1);
+    expect(may.chot).toHaveLength(0); // sổ chưa từng mở ⇒ không có gì để chốt
+    expect(may.dia).toBe(GOC_LAN_LON); // đĩa không đổi
+  });
+
+  it("★★ tệp gốc CRLF ĐỒNG NHẤT ⇒ KHÔNG bị chặn nhầm, vẫn đi tới batDauApClient như cũ", async () => {
+    const GOC_CRLF = "dong 1\r\ndong 2\r\ndong 3\r\n";
+    may.dia = GOC_CRLF;
+    may.boDem = GOC_CRLF;
+
+    const kq = await apBanVa(dauVao({ bamGoc: bam(GOC_CRLF) }));
+
+    expect(kq.thongDiep).not.toContain("EOL LẪN LỘN");
+    expect(may.nhatKy).toContain("batDauApClient");
+    expect(may.nhatKy).toContain("apChinhSua");
+  });
+
+  it("★★ tệp gốc LF ĐỒNG NHẤT ⇒ KHÔNG bị chặn nhầm, vẫn đi tới batDauApClient như cũ", async () => {
+    // GOC_ND (mặc định của beforeEach) đã là LF thuần — khẳng định lại tường minh ở đây cho rõ ý.
+    const kq = await apBanVa(dauVao());
+
+    expect(kq.thongDiep).not.toContain("EOL LẪN LỘN");
+    expect(may.nhatKy).toContain("batDauApClient");
+    expect(may.nhatKy).toContain("apChinhSua");
+  });
+});
+
 describe("apBanVa — I-4: cửa sổ TOCTOU do chính lượt gọi kiểm toán mở ra", () => {
   it("★★★ ĐĨA đổi TRONG LÚC mở sổ ⇒ DỪNG trước lượt ghi, KHÔNG ghi đè thay đổi vừa rồi", async () => {
     /**

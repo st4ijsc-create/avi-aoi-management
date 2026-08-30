@@ -15,6 +15,7 @@ export const TEN = {
   GHI_XUNG_DOT: "ghi-that-2.txt",
   // dùng bởi eolBom.test.ts
   EOL_CRLF: "eol-crlf.txt",
+  EOL_LF: "eol-lf.txt",
   EOL_BOM: "eol-bom.txt",
   EOL_BOM_DONG2: "eol-bom-dong2.txt",
   EOL_MIXED: "eol-mixed.txt",
@@ -26,6 +27,7 @@ export const NOI_DUNG = {
   GHI_OK: "dong 1\ndong 2\ndong 3\n",
   GHI_XUNG_DOT: "chi mot dong\n",
   EOL_CRLF: "L1\r\nL2\r\nL3\r\n",
+  EOL_LF: "P1\nP2\nP3\n",
   // Thân LF-thuần đi SAU ba byte BOM (ghép ở `prepareSingleRoot`) — KHÔNG gõ ký tự BOM trực tiếp
   // vào mã nguồn TS (dễ bị công cụ/EOL của git nuốt mất mà không ai thấy).
   EOL_BOM_BODY: "L1\nL2\nL3\n",
@@ -41,6 +43,7 @@ export function prepareSingleRoot(root: string): void {
   writeFileSync(join(root, TEN.GHI_OK), NOI_DUNG.GHI_OK, "utf8");
   writeFileSync(join(root, TEN.GHI_XUNG_DOT), NOI_DUNG.GHI_XUNG_DOT, "utf8");
   writeFileSync(join(root, TEN.EOL_CRLF), NOI_DUNG.EOL_CRLF, "utf8");
+  writeFileSync(join(root, TEN.EOL_LF), NOI_DUNG.EOL_LF, "utf8");
   // BOM thật: ghi BUFFER (3 byte BOM + nội dung utf8), không dựa vào chuỗi JS tự thêm BOM.
   const bomFile = Buffer.concat([BOM_BYTES, Buffer.from(NOI_DUNG.EOL_BOM_BODY, "utf8")]);
   writeFileSync(join(root, TEN.EOL_BOM), bomFile);

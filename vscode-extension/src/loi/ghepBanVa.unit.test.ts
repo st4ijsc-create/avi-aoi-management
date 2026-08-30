@@ -4,6 +4,23 @@
  *       tệp", người duyệt mất khả năng thấy thay đổi THẬT (xem docblock `ghepBanVa.ts`).
  *   (2) `dongCuoi` vượt số dòng thật của tệp ⇒ `{ok:false}`, KHÔNG tự cắt bớt — mã đến từ model,
  *       im lặng cắt là ghi một thứ người duyệt chưa từng thấy.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ 2026-08-30 (F7) — CÁC CA "GIỮ EOL" DƯỚI ĐÂY ĐÚNG Ở TẦNG CHUỖI, KHÔNG NÓI GÌ VỀ ĐĨA
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Mọi ca `expect(r.moi).toBe(...)` dưới đây đo `ghepBanVa` NHƯ MỘT HÀM THUẦN — chuỗi vào, chuỗi ra,
+ * không VSCode, không đĩa. Tính chất "giữ EOL theo từng dòng" mà chúng khẳng định là ĐÚNG ở tầng
+ * đó, và VẪN ĐÁNG CANH (đừng xoá) — nhưng nó **KHÔNG BAO GIỜ TỚI ĐƯỢC ĐĨA THẬT** khi đi qua
+ * `ui/apBanVa.ts`: hàm đó ghi bằng `TextDocument` + `WorkspaceEdit.replace()` + `save()` của
+ * VSCode, và `TextDocument` chỉ mang MỘT `eol` cho cả tài liệu — `save()` CHUẨN HOÁ EOL của TOÀN
+ * BỘ tệp về giá trị đó. Với một tệp EOL LẪN LỘN, điều này đổi cả những dòng `ghepBanVa` vừa cố giữ
+ * nguyên (đo THẬT, đọc đĩa bằng `node:fs` sau một lượt VSCode host thật, ở
+ * `test-real-host/suite/eolBom.test.ts`, ca "EOL LẪN LỘN"). Vì thế `ui/apBanVa.ts` giờ TỪ CHỐI cả
+ * lượt ghi khi tệp gốc có EOL lẫn lộn, TRƯỚC khi gọi tới `ghepBanVa` (`loi/eolLanLon.ts`) — các ca
+ * "GIỮ NGUYÊN CRLF" dưới đây vẫn đúng vì chúng dùng tệp EOL ĐỒNG NHẤT (không lẫn lộn), nhánh duy
+ * nhất mà `ui/apBanVa.ts` còn cho phép ghi tới `ghepBanVa`.
+ * ⚠ Người đọc sau: đừng suy từ lưới XANH ở đây rằng "byte trên đĩa cũng giữ đúng EOL từng dòng cho
+ *   MỌI tệp" — với tệp lẫn lộn, câu đúng là "lượt ghi bị từ chối", không phải "EOL được giữ".
  */
 import { describe, it, expect } from "vitest";
 import { ghepBanVa } from "./ghepBanVa";
@@ -80,6 +97,11 @@ describe("ghepBanVa", () => {
 
   // ════════════════════════════════════════════════════════════════════════════════════════════
   // ★★★ F2 (2026-08-30) — TỆP EOL LẪN LỘN + `thayThe` MANG SẴN CRLF
+  // ⚠⚠⚠ F7 (2026-08-30): các ca "EOL LẪN LỘN" dưới đây vẫn đúng ở tầng CHUỖI (hợp đồng của chính
+  //   `ghepBanVa`), nhưng KHÔNG còn xảy ra qua đường sản xuất `ui/apBanVa.ts` — hàm đó nay TỪ CHỐI
+  //   cả lượt TRƯỚC khi gọi tới `ghepBanVa` khi tệp gốc lẫn lộn (`loi/eolLanLon.ts`), vì `save()`
+  //   của VSCode chuẩn hoá EOL toàn tài liệu và xoá sạch kết quả đúng mà các ca này đo được. Xem
+  //   docblock F7 ở đầu tệp này và ở `ghepBanVa.ts`.
   // ════════════════════════════════════════════════════════════════════════════════════════════
 
   it("★★★ EOL LẪN LỘN: chỉ số dòng phải khớp VSCode ⇒ vá ĐÚNG vùng, không lệch", () => {

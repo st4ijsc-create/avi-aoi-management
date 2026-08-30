@@ -5,6 +5,20 @@
  *
  * Dùng CÙNG cửa duyệt server thật như `writeDiskReal.test.ts` (mỗi tệp `before()` đăng nhập riêng —
  * rẻ, và giữ mỗi tệp lưới độc lập, không phụ thuộc thứ tự chạy).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ 2026-08-30 (F7) — LỖI ĐÃ ĐO ĐƯỢC Ở CA "EOL LẪN LỘN", VÀ HÀNH VI MỚI SAU KHI VÁ
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Ca "EOL LẪN LỘN" bên dưới TỪNG đỏ: gốc `"M1\r\nM2\nM3\r\nM4\n"`, sửa dòng 3, đọc lại bằng
+ * `node:fs` cho `"M1\nM2\nM3-EDITED\nM4\n"` — dòng 1 (CRLF, KHÔNG hề bị chạm) đổi thành LF, vì
+ * `TextDocument` của VSCode chỉ mang MỘT `eol` cho cả tài liệu và `save()` chuẩn hoá EOL của TOÀN
+ * BỘ tệp. `loi/ghepBanVa.ts` giữ đúng dấu ngắt từng dòng ở tầng CHUỖI (đúng, có lưới riêng), nhưng
+ * điều đó không bao giờ tới được đĩa qua đường ghi thật.
+ *
+ * Vá: `ui/apBanVa.ts` nay TỪ CHỐI CẢ LƯỢT khi tệp gốc có EOL lẫn lộn (`loi/eolLanLon.ts`), TRƯỚC
+ * khi chạm đĩa lần thứ hai. Ca dưới đây giờ đo ĐÚNG hành vi mới: từ chối, đĩa KHÔNG đổi một byte —
+ * KHÔNG còn đo "kết quả sau khi ghi" vì lượt ghi không còn xảy ra. Hai ca "CRLF thuần" và "LF
+ * thuần" đo NHÁNH KIA: tệp EOL ĐỒNG NHẤT không hề bị vá này chặn, vẫn áp vá được như cũ.
  */
 import * as assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -58,13 +72,40 @@ describe("Đợt E — chuẩn hoá EOL/BOM THẬT khi ghi qua apBanVa", functio
     assert.equal(/(?<!\r)\n/.test(sau), false, "có \\n TRẦN (không đi kèm \\r) trong một tệp vốn CRLF thuần — chuẩn hoá EOL đã lệch");
   });
 
-  it("★★★ tệp EOL LẪN LỘN: sửa MỘT dòng giữa → các dòng KHÔNG bị chạm giữ ĐÚNG kiểu ngắt dòng gốc của TỪNG dòng", async () => {
-    const abs = join(ws, TEN.EOL_MIXED);
-    const { ket } = await ghi(TEN.EOL_MIXED, 3, 3, "M3-EDITED");
-    assert.equal(ket.ok, true, `ghi thất bại: ${(ket as any).thongDiep}`);
+  it("★★★ tệp LF thuần: sửa dòng giữa → vẫn ÁP VÁ ĐƯỢC như cũ (NHÁNH KIA của F7 — không phải cấm tất)", async () => {
+    // Đối xứng với ca CRLF thuần ở trên, cho kiểu ngắt dòng còn lại. Vá F7 chỉ chặn tệp LẪN LỘN —
+    // tệp LF đồng nhất (phổ biến trên mã nguồn không phải .NET) không hề bị chạm.
+    const abs = join(ws, TEN.EOL_LF);
+    const { ket } = await ghi(TEN.EOL_LF, 2, 2, "P2-EDITED");
+    assert.equal(ket.ok, true, `ghi thất bại (KHÔNG kỳ vọng bị chặn — tệp LF đồng nhất): ${(ket as any).thongDiep}`);
     const sau = readFileSync(abs, "utf8");
-    // Gốc: "M1\r\nM2\nM3\r\nM4\n" — dòng 3 (M3) đổi, dòng 1/2/4 PHẢI giữ đúng dấu ngắt gốc của chúng.
-    assert.equal(sau, "M1\r\nM2\nM3-EDITED\r\nM4\n", `kết quả sai — EOL của các dòng KHÔNG bị sửa đã bị đổi: ${JSON.stringify(sau)}`);
+    assert.equal(sau, "P1\nP2-EDITED\nP3\n", `kết quả sai: ${JSON.stringify(sau)}`);
+    assert.equal(/\r/.test(sau), false, "có \\r xuất hiện trong một tệp vốn LF thuần — chuẩn hoá EOL đã lệch");
+  });
+
+  it("★★★ tệp EOL LẪN LỘN: cả lượt áp vá bị TỪ CHỐI, đĩa (node:fs) KHÔNG đổi MỘT BYTE", async () => {
+    /**
+     * ★★★ F7 (2026-08-30) — LỖI ĐÃ ĐO ĐƯỢC: bản trước kỳ vọng ghi THÀNH CÔNG với các dòng không bị
+     * chạm giữ đúng EOL gốc (`"M1\r\nM2\nM3-EDITED\r\nM4\n"`), nhưng đọc đĩa thật cho
+     * `"M1\nM2\nM3-EDITED\nM4\n"` — dòng 1 (CRLF, KHÔNG hề bị chạm) bị VSCode chuẩn hoá thành LF lúc
+     * `save()`, vì `TextDocument` chỉ mang MỘT `eol` cho cả tài liệu. Vá: `ui/apBanVa.ts` nay TỪ
+     * CHỐI cả lượt khi tệp gốc EOL lẫn lộn, TRƯỚC khi chạm đĩa lần thứ hai — nên bây giờ đúng phải
+     * là: `ok:false`, VÀ đĩa giữ NGUYÊN VĂN nội dung gốc (không một byte nào đổi, kể cả dòng 3 mà
+     * đề xuất nhắm tới).
+     */
+    const abs = join(ws, TEN.EOL_MIXED);
+    const truocBuf = readFileSync(abs);
+    const { ket } = await ghi(TEN.EOL_MIXED, 3, 3, "M3-EDITED");
+
+    assert.equal(ket.ok, false, `apBanVa PHẢI từ chối tệp EOL lẫn lộn (kỳ vọng ok:false): ${JSON.stringify(ket)}`);
+    assert.match((ket as any).thongDiep, /EOL LẪN LỘN/, `lời khai từ chối không nói rõ lý do EOL: ${(ket as any).thongDiep}`);
+
+    // Đĩa (đọc bằng node:fs THÔ, không qua VSCode) phải NGUYÊN VĂN — so cả CHUỖI lẫn BYTE, phòng
+    // trường hợp một phép so chuỗi utf8 bỏ sót một khác biệt byte-level mà so buffer bắt được.
+    const sauBuf = readFileSync(abs);
+    assert.equal(Buffer.compare(sauBuf, truocBuf), 0, `đĩa ĐÃ ĐỔI dù apBanVa báo từ chối — chính lỗ mà F7 vá: trước=${JSON.stringify(truocBuf.toString("utf8"))}, sau=${JSON.stringify(sauBuf.toString("utf8"))}`);
+    const sau = readFileSync(abs, "utf8");
+    assert.equal(sau, "M1\r\nM2\nM3\r\nM4\n", `đĩa phải giữ NGUYÊN nội dung gốc (kể cả dòng 3 mà đề xuất nhắm tới): ${JSON.stringify(sau)}`);
   });
 
   it("★★★ tệp có BOM: sửa dòng 2 (KHÔNG chạm dòng 1) → BOM (3 byte EF BB BF) GIỮ NGUYÊN ở đầu tệp", async () => {

@@ -27,6 +27,12 @@
  * 3. **Đọc tệp từ ĐĨA** bằng `vscode.workspace.fs.readFile` — **byte thật**, KHÔNG lấy từ
  *    `TextDocument.getText()`: bộ đệm editor có thể đã chuẩn hoá EOL/BOM, nên băm sẽ so hai thứ
  *    khác nhau và vị từ chống xung đột mất tác dụng ĐÚNG LÚC CẦN nhất.
+ * 3b. **`eolLanLon` (F7, 2026-08-30)** — tệp có EOL LẪN LỘN ⇒ DỪNG, KHÔNG ghi. `TextDocument` chỉ
+ *     mang MỘT `eol` cho cả tài liệu; bước 7 (`save()`) sẽ CHUẨN HOÁ EOL của TOÀN BỘ tệp, đổi cả
+ *     những dòng bản vá không hề chạm tới. Đo THẬT bằng `test-real-host/suite/eolBom.test.ts`; chi
+ *     tiết ở docblock `loi/eolLanLon.ts`. Đặt NGAY SAU bước 3 vì tính chất này là của TỆP, không
+ *     phụ thuộc đề xuất hay băm gốc — kiểm càng sớm càng đỡ việc thừa, và KHÔNG mở sổ kiểm toán
+ *     (bước 6) cho một lượt chắc chắn sẽ bị từ chối.
  * 4. **So băm** với băm gốc của đề xuất (`khopBanGoc`). Lệch ⇒ DỪNG: tệp đã đổi kể từ lúc đề xuất,
  *    ghi đè là xoá thay đổi của người dùng. ⚠ Cộng thêm phép kiểm **bộ đệm BẨN** (`doc.isDirty`):
  *    băm nói về ĐĨA, nhưng bước 7 áp chỉnh sửa rồi `save()` cái đang ở BỘ ĐỆM — đĩa sạch mà bộ đệm có sửa
@@ -82,6 +88,7 @@ import type { DeXuatCucBo } from "../loi/deXuatCucBo";
 import { bamNoiDung, khopBanGoc } from "../loi/bamTep";
 import { duocPhepGhi } from "../loi/chanGhi";
 import { giaiDuongThat } from "../loi/duongThat";
+import { eolLanLon } from "../loi/eolLanLon";
 import { ghepBanVa } from "../loi/ghepBanVa";
 import { tomTatDiff } from "../loi/tomTatDiff";
 import { goiBatDauApClient, goiChotApClient } from "../mang/duyetGhi";
@@ -182,6 +189,35 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
     return {
       ok: false,
       thongDiep: `KHÔNG GHI — không đọc được tệp từ đĩa: "${dv.duongTuongDoi}" (${(e as Error).message}). Đợt này chỉ sửa tệp ĐÃ CÓ, không tạo tệp mới.`,
+    };
+  }
+
+  // ── BƯỚC 3b: TỪ CHỐI tệp EOL LẪN LỘN (F7, 2026-08-30) — TRƯỚC khi tính bất cứ gì khác ────────
+  /**
+   * ★★★ LỖI CHỈ MỘT VSCODE HOST THẬT MỚI BẮT ĐƯỢC (xem docblock đầu tệp, mục 3b, và
+   * `loi/eolLanLon.ts` để biết đủ ba hướng đã cân nhắc). Tóm tắt: `loi/ghepBanVa.ts` giữ đúng dấu
+   * ngắt của TỪNG dòng ở tầng CHUỖI (đúng, có lưới riêng), nhưng bước 7 dưới đây ghi qua
+   * `TextDocument` + API áp-chỉnh-sửa + `save()` của VSCode — và `TextDocument` chỉ mang
+   * MỘT `eol` cho cả tài liệu, nên `save()` CHUẨN HOÁ EOL TOÀN BỘ tệp về giá trị đó. Với một tệp
+   * EOL lẫn lộn, điều đó đổi cả những dòng bản vá KHÔNG hề chạm tới — người dùng thấy đĩa đổi ở
+   * những chỗ họ không yêu cầu, im lặng.
+   *
+   * Đặt NGAY ĐÂY, trước cả bước 4 (so băm) và bước 5 (`ghepBanVa`): tính chất "EOL lẫn lộn" là của
+   * TỆP đang có trên đĩa, không phụ thuộc đề xuất hay băm gốc — dù đề xuất có hợp lệ đến đâu, dù
+   * băm có khớp đến đâu, lượt ghi vẫn sẽ bị chuẩn hoá EOL sai. Kiểm ở đây tránh tính toán thừa VÀ
+   * tránh mở sổ kiểm toán (bước 6, gọi MẠNG) cho một lượt chắc chắn bị từ chối — cùng tinh thần với
+   * các bước 1-3: chưa từng chạm mạng thì không cần khai gì lên sổ kiểm toán khi từ chối.
+   */
+  if (eolLanLon(noiDungDia)) {
+    return {
+      ok: false,
+      thongDiep:
+        `KHÔNG GHI — "${dv.duongTuongDoi}": tệp có EOL LẪN LỘN (một số dòng kết bằng \\r\\n kiểu ` +
+        `Windows, một số dòng kết bằng \\n kiểu Unix). VSCode chỉ nhớ MỘT kiểu ngắt dòng cho cả ` +
+        `tệp và sẽ CHUẨN HOÁ TOÀN BỘ tệp về kiểu đó khi lưu — kể cả những dòng bản vá này không hề ` +
+        `chạm tới. Để không âm thầm đổi những dòng bạn không yêu cầu, lượt áp vá này bị TỪ CHỐI. ` +
+        `Hãy tự chuẩn hoá EOL của tệp về MỘT kiểu duy nhất (VD lệnh "Change End of Line Sequence" ` +
+        `của VSCode) rồi nhờ AI sửa lại.`,
     };
   }
 

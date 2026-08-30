@@ -35,8 +35,46 @@
  *   CHUẨN HOÁ EOL TOÀN TỆP ở một tệp lẫn lộn — tức đổi cả những dòng bản vá KHÔNG hề chạm tới, và
  *   `git diff` khi ấy hiện "sửa toàn bộ tệp". Đó đúng là tai hoạ mà docblock trên vừa mô tả, chỉ
  *   đổi nguyên nhân. Ngoài vùng bị thay, byte của gốc phải nguyên vẹn.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ 2026-08-30 (F7) — LOGIC GIỮ EOL Ở ĐÂY ĐÚNG Ở TẦNG CHUỖI, NHƯNG KHÔNG BAO GIỜ TỚI ĐƯỢC ĐĨA
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `tachDongVaNgat` (export ngay dưới) tách đúng dấu ngắt của TỪNG dòng, và lưới đơn vị của tệp này
+ * (`ghepBanVa.unit.test.ts`) khẳng định điều đó ở mức CHUỖI THUẦN — logic ấy vẫn ĐÚNG và vẫn đáng
+ * canh. Nhưng `ui/apBanVa.ts` không ghi chuỗi này thẳng ra đĩa: nó đi qua `TextDocument` + API
+ * áp-chỉnh-sửa + `save()` của VSCode, và `TextDocument` chỉ mang **MỘT** `eol` cho cả
+ * tài liệu — `save()` CHUẨN HOÁ EOL của TOÀN BỘ tệp về giá trị đó, kể cả những dòng hàm này vừa cố
+ * giữ nguyên. Đo bằng `test-real-host/suite/eolBom.test.ts` (đọc đĩa thật bằng `node:fs` sau một
+ * lượt `apBanVa` thật): tệp EOL lẫn lộn, sửa dòng 3, dòng 1 (CRLF, không hề bị chạm) đổi thành LF.
+ * Vì thế `ui/apBanVa.ts` giờ TỪ CHỐI cả lượt ghi khi tệp gốc có EOL lẫn lộn (`loi/eolLanLon.ts`,
+ * dùng lại chính `tachDongVaNgat` bên dưới) — TRƯỚC khi gọi tới hàm này. Hàm này và lưới của nó
+ * không đổi, vì tính chất chúng canh vẫn đúng ở tầng CHUỖI; chỉ tầng ĐĨA là tầng bị vô hiệu hoá.
  */
 import type { DeXuatCucBo } from "./deXuatCucBo";
+
+/**
+ * Tách nội dung thành CẶP (dòng, dấu ngắt-theo-sau), theo CÙNG quy tắc mà `ghepBanVa` dùng để ghép:
+ * tách theo `\r\n` hoặc `\n`, KHÔNG coi một `\r` đơn độc (không theo sau bởi `\n`) là dấu ngắt dòng
+ * — nó ở lại làm ký tự thường của dòng chứa nó, giống hệt cách `ghepBanVa` xử lý.
+ * `ngat[i]` là dấu ngắt đi sau `dong[i]`; dòng cuối không có dấu ngắt thì `ngat[cuoi] === ""`.
+ *
+ * ⚠ Export để `loi/eolLanLon.ts` DÙNG LẠI — không tự viết một regex tách dòng THỨ HAI. Hai vị từ
+ *   cùng nhìn một tệp mà tách dòng khác nhau sẽ TRÔI KHỎI NHAU theo thời gian (bài học đã có ở
+ *   `chanGhi.ts`, docblock `duocPhepGhi`), và ở đây hậu quả cụ thể là: `eolLanLon` nói "không lẫn
+ *   lộn" trong khi `ghepBanVa` lại đếm dòng khác đi, hoặc ngược lại.
+ */
+export function tachDongVaNgat(noiDung: string): { dong: string[]; ngat: string[] } {
+  // Tách theo CẢ HAI kiểu ngắt dòng và GIỮ LẠI dấu ngắt đi sau mỗi dòng (`ngat[i]` là dấu ngắt sau
+  // `dong[i]`, rỗng ở dòng cuối không có ngắt). `split` với nhóm BẮT giữ trả xen kẽ dòng/dấu ngắt.
+  const phan = noiDung.split(/(\r\n|\n)/);
+  const dong: string[] = [];
+  const ngat: string[] = [];
+  for (let i = 0; i < phan.length; i += 2) {
+    dong.push(phan[i]);
+    ngat.push(phan[i + 1] ?? "");
+  }
+  return { dong, ngat };
+}
 
 export function ghepBanVa(
   goc: string,
@@ -46,15 +84,7 @@ export function ghepBanVa(
     return { ok: true, moi: d.modified };
   }
 
-  // Tách theo CẢ HAI kiểu ngắt dòng và GIỮ LẠI dấu ngắt đi sau mỗi dòng (`ngat[i]` là dấu ngắt sau
-  // `dong[i]`, rỗng ở dòng cuối không có ngắt). `split` với nhóm BẮT giữ trả xen kẽ dòng/dấu ngắt.
-  const phan = goc.split(/(\r\n|\n)/);
-  const dong: string[] = [];
-  const ngat: string[] = [];
-  for (let i = 0; i < phan.length; i += 2) {
-    dong.push(phan[i]);
-    ngat.push(phan[i + 1] ?? "");
-  }
+  const { dong, ngat } = tachDongVaNgat(goc);
 
   if (d.dongCuoi > dong.length) {
     return {
