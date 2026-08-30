@@ -39,6 +39,13 @@ import { duocPhepGhi, duongTuongDoiTrongWorkspace, giaiDuongDeXuat } from "../lo
 import { giaiDuongThat } from "../loi/duongThat";
 import { nhanNguonTheDuyet, nhanNutGhi } from "../loi/nhanTheDuyet";
 import { apBanVa } from "./apBanVa";
+// ★★★ ĐỢT D / TASK 3 — vòng lặp tác nhân: model tự đọc mã (ba tool CHỈ ĐỌC của Task 2) TRƯỚC khi
+// đề xuất sửa. `buocKeTiep` (THUẦN, có lưới riêng) là nơi quyết định DUY NHẤT dừng/tiếp; tệp này
+// chỉ THỰC THI quyết định đó (gọi model, chạy tool, hiện tiến độ) — xem docblock `vongTacNhan.ts`.
+import { docYeuCauDoc, type YeuCauDoc } from "../loi/yeuCauDoc";
+import { chayToolCucBo } from "../mang/toolCucBo";
+import { buocKeTiep } from "../loi/vongTacNhan";
+import { TRAN_VONG_MAC_DINH } from "../../../shared/aiCodingLoop";
 
 /** Đề xuất ghi CỤC BỘ đang chờ duyệt + mọi thứ đã ĐO tại thời điểm dựng thẻ (không đo lại lúc bấm,
  *  trừ băm đĩa — băm PHẢI đo lại trong `apBanVa` vì đó chính là phép chống xung đột). */
@@ -62,6 +69,29 @@ interface DeXuatCucBoDangCho {
  */
 function chuoiNgauNhien(): string {
   return randomBytes(24).toString("base64url");
+}
+
+/** Nhãn NGƯỜI ĐỌC ĐƯỢC cho một yêu cầu đọc — dùng để báo tiến độ "đang làm gì" (Task 3). */
+function nhanYeuCauDoc(y: YeuCauDoc): string {
+  if (y.loai === "doc_tep") return `đọc tệp "${y.path}"`;
+  if (y.loai === "liet_ke") return `liệt kê thư mục "${y.path}"`;
+  return y.path ? `tìm "${y.mau}" trong "${y.path}"` : `tìm "${y.mau}"`;
+}
+
+/**
+ * Câu báo khi vòng lặp tác nhân DỪNG vì một lý do KHÔNG PHẢI "xong việc bình thường". `khong_con_tool`
+ * (model trả lời suông, hết yêu cầu đọc) KHÔNG có câu — đó là đường hạnh phúc, báo thêm là làm ồn
+ * cho một việc đúng như mong đợi.
+ */
+function nhanLyDoDungVong(lyDo: "het_tran" | "nguoi_dung_dung" | "loi", vong: number): string {
+  if (lyDo === "het_tran") {
+    return (
+      `Vòng đọc tự động dừng ở lượt ${vong}/${TRAN_VONG_MAC_DINH} vì đã chạm trần — model có thể ` +
+      "vẫn còn muốn đọc thêm. Hỏi lại nếu cần tiếp tục."
+    );
+  }
+  if (lyDo === "nguoi_dung_dung") return "Đã dừng vòng đọc tự động theo yêu cầu.";
+  return `Vòng đọc tự động dừng ở lượt ${vong}/${TRAN_VONG_MAC_DINH} vì máy chủ báo lỗi giữa chừng.`;
 }
 
 export class BangChat {
@@ -159,6 +189,18 @@ export class BangChat {
   private thuMucLocalDangChon(): string | undefined {
     if (this.duAnChon?.startsWith("local:")) return this.duAnChon.slice("local:".length);
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  }
+
+  /**
+   * ★★★ TASK 3 — gốc cho BA TOOL ĐỌC (`chayToolCucBo`). Thư mục ĐANG CHỌN đứng ĐẦU: `chayToolCucBo`
+   * coi phần tử đầu của mảng là gốc ƯU TIÊN khi một đường model khai khớp nhiều gốc (workspace đa
+   * thư mục) — cùng quy ước với `giaiDuongDeXuat` ở đường GHI (`xuLyDeXuatCucBo` bên dưới). Các thư
+   * mục workspace CÒN LẠI theo sau làm gốc dự phòng, không phải bị bỏ qua.
+   */
+  private dsGocDoc(): string[] {
+    const goc = this.thuMucHoiHienTai;
+    const tatCa = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+    return goc ? [goc, ...tatCa.filter((p) => p !== goc)] : tatCa;
   }
 
   /**
@@ -309,63 +351,148 @@ export class BangChat {
     // này, không đọc `this.duAnChon` trực tiếp, để không lệch nếu người dùng đổi ô chọn giữa chừng.
     this.cheDoHoiHienTai = cheDo;
     this.thuMucHoiHienTai = cheDo.loai === "local" ? this.thuMucLocalDangChon() : undefined;
-    const than = dungYeuCauStream({
-      cauHoi,
-      nguCanh: this.thuThapNguCanh(),
-      lichSu: this.lichSu,
-      ngonNgu: cfg.get<string>("uiLanguage", "vi"),
-      vaiTro: "engineer",
-      cheDo,
-    });
 
     this.huy?.abort();
-    this.huy = new AbortController();
-    let tt = trangThaiBanDau();
+    // ★★★ TASK 3 — bộ điều khiển huỷ CỦA RIÊNG lượt hỏi này, giữ trong một biến CỤC BỘ chứ không
+    // đọc lại `this.huy` bên trong vòng lặp bên dưới: một lượt hỏi MỚI khởi động giữa chừng (người
+    // dùng gõ câu khác) thay `this.huy` bằng một `AbortController` KHÁC — đọc `this.huy.signal`
+    // lúc đó sẽ đọc NHẦM sang bộ điều khiển mới (`aborted` luôn `false`) thay vì bộ điều khiển của
+    // CHÍNH lượt vòng lặp đang chạy, và người dùng bấm-huỷ-mà-vòng-vẫn-chạy đúng lỗi Task 3 phải vá.
+    const dieuKhien = new AbortController();
+    this.huy = dieuKhien;
+
+    // ★★★ TASK 3 — VÒNG LẶP TÁC NHÂN: model trả lời → có yêu cầu đọc (`doc_tep`/`liet_ke`/`grep`,
+    // Task 1/2) ⇒ chạy `chayToolCucBo` → nối kết quả thành lượt hỏi KẾ TIẾP ("KẾT QUẢ TOOL") → hỏi
+    // lại, tới khi hết yêu cầu đọc hoặc chạm trần `TRAN_VONG_MAC_DINH`. `buocKeTiep`
+    // (`loi/vongTacNhan.ts`, THUẦN, có lưới riêng) là nơi quyết định DUY NHẤT dừng/tiếp — KHÔNG rải
+    // thêm điều kiện dừng ở đây, đúng ranh giới "quyết định THUẦN vs thực thi" mà tệp đó dựng ra.
+    // CHỈ chạy ở chế độ LOCAL: SERVER đã có vòng tool CỦA NÓ chạy trên hộp cát máy chủ (xem
+    // docblock `dungYeuCauStream`) — vòng NÀY sẽ hỏi ĐÈ lên đó nếu bật nhầm chế độ.
+    let lichSuVong: LuotChat[] = [...this.lichSu];
+    let cauHoiVong = cauHoi;
+    let nguCanhVong: string | undefined = this.thuThapNguCanh();
+    let traLoiCuoi = "";
+    let canhBaoCuoi: string | null = null;
+    let degradedCuoi = false;
+    let vong = 0;
+
     try {
-      const { hong } = await moDongSse({
-        serverUrl: cfg.get<string>("serverUrl", "http://localhost:3000"),
-        cookie,
-        than,
-        tinHieu: this.huy.signal,
-        nhan: (sk) => {
-          // Vòng trạng thái THUẦN (suKienChat.ts) gom token + đóng lượt khi có `done` + phát hiện
-          // cắt ngang. Việc GỬI TỚI WEBVIEW theo từng khung vẫn ở đây vì đó là I/O.
-          tt = apDungSuKienChat(tt, sk);
-          // Tên trường ĐÃ ĐO trên mã máy chủ: `send({ type:"token", token: evt.token })`
-          // (server/routes/aiLocalKnowledgeApi.ts:595) — KHÔNG phải `text`.
-          if (sk.type === "token" && typeof sk.token === "string") {
-            void this.panel.webview.postMessage({ loai: "token", chu: sk.token });
-          } else if (sk.type === "error") {
-            // Máy chủ gửi chi tiết ở `error` (aiLocalKnowledgeApi.ts:628), KHÔNG phải `message`.
-            // Nhận cả hai để phòng đường khác, nhưng `error` phải đứng TRƯỚC.
-            const chiTiet =
-              typeof sk.error === "string" ? sk.error : typeof sk.message === "string" ? sk.message : null;
+      for (;;) {
+        vong++;
+        // Tiến độ cho NGƯỜI DÙNG: chỉ vòng ≥ 2 mới báo — vòng 1 là câu hỏi bình thường, token đã tự
+        // stream ra rồi, báo thêm ở đó là làm ồn cho đường hạnh phúc phổ biến nhất (không cần đọc gì).
+        if (cheDo.loai === "local" && vong > 1) {
+          void this.panel.webview.postMessage({
+            loai: "thong_bao",
+            thongDiep: `— vòng ${vong}/${TRAN_VONG_MAC_DINH}: đang hỏi lại model với kết quả tool —`,
+          });
+        }
+        const than = dungYeuCauStream({
+          cauHoi: cauHoiVong,
+          nguCanh: nguCanhVong ?? "",
+          lichSu: lichSuVong,
+          ngonNgu: cfg.get<string>("uiLanguage", "vi"),
+          vaiTro: "engineer",
+          cheDo,
+        });
+        let tt = trangThaiBanDau();
+        const { hong } = await moDongSse({
+          serverUrl: cfg.get<string>("serverUrl", "http://localhost:3000"),
+          cookie,
+          than,
+          tinHieu: dieuKhien.signal,
+          nhan: (sk) => {
+            // Vòng trạng thái THUẦN (suKienChat.ts) gom token + đóng lượt khi có `done` + phát hiện
+            // cắt ngang. Việc GỬI TỚI WEBVIEW theo từng khung vẫn ở đây vì đó là I/O.
+            tt = apDungSuKienChat(tt, sk);
+            // Tên trường ĐÃ ĐO trên mã máy chủ: `send({ type:"token", token: evt.token })`
+            // (server/routes/aiLocalKnowledgeApi.ts:595) — KHÔNG phải `text`.
+            if (sk.type === "token" && typeof sk.token === "string") {
+              void this.panel.webview.postMessage({ loai: "token", chu: sk.token });
+            } else if (sk.type === "error") {
+              // Máy chủ gửi chi tiết ở `error` (aiLocalKnowledgeApi.ts:628), KHÔNG phải `message`.
+              // Nhận cả hai để phòng đường khác, nhưng `error` phải đứng TRƯỚC.
+              const chiTiet =
+                typeof sk.error === "string" ? sk.error : typeof sk.message === "string" ? sk.message : null;
+              void this.panel.webview.postMessage({
+                loai: "loi",
+                thongDiep: chiTiet ?? "Máy chủ báo lỗi.",
+              });
+            } else {
+              // Payload LỒNG dưới `pendingAction` (deXuatGhi.ts) — `docDeXuatGhi` tự trả `null` cho
+              // mọi khung không phải đề xuất ghi apply_diff, nên gọi vô điều kiện ở đây là an toàn.
+              const d = docDeXuatGhi(sk);
+              if (d) this.xuLyDeXuat(d);
+            }
+          },
+        });
+        const ket = ketLuanLuotChat(tt, hong);
+        traLoiCuoi = ket.traLoi;
+        canhBaoCuoi = ket.canhBao;
+        degradedCuoi = tt.degraded;
+
+        // SERVER: một vòng duy nhất, giữ NGUYÊN hành vi trước Task 3 — không đọc `traLoiCuoi` tìm
+        // yêu cầu đọc, không gọi `buocKeTiep`.
+        if (cheDo.loai !== "local") break;
+
+        const yeuCau = docYeuCauDoc(traLoiCuoi);
+        const buoc = buocKeTiep({
+          vong,
+          tran: TRAN_VONG_MAC_DINH,
+          coYeuCauDoc: yeuCau.length > 0,
+          biHuy: dieuKhien.signal.aborted,
+          coLoi: tt.daBaoLoi,
+        });
+        if (buoc.loai === "dung") {
+          if (buoc.lyDo !== "khong_con_tool") {
             void this.panel.webview.postMessage({
-              loai: "loi",
-              thongDiep: chiTiet ?? "Máy chủ báo lỗi.",
+              loai: "thong_bao",
+              thongDiep: nhanLyDoDungVong(buoc.lyDo, vong),
             });
-          } else {
-            // Payload LỒNG dưới `pendingAction` (deXuatGhi.ts) — `docDeXuatGhi` tự trả `null` cho
-            // mọi khung không phải đề xuất ghi apply_diff, nên gọi vô điều kiện ở đây là an toàn.
-            const d = docDeXuatGhi(sk);
-            if (d) this.xuLyDeXuat(d);
           }
-        },
-      });
-      const { traLoi, canhBao } = ketLuanLuotChat(tt, hong);
+          break;
+        }
+
+        // buoc.loai === "chay_tool" — chạy TỪNG yêu cầu đọc (Task 2), nối kết quả thành lượt hỏi
+        // KẾ TIẾP. Lượt VỪA XONG (câu hỏi + trả lời) vào lịch sử của VÒNG này để model lượt sau còn
+        // nhớ nó vừa xin đọc gì — lịch sử này KHÔNG đụng `this.lichSu` (bộ nhớ NGOÀI của bảng chat),
+        // xem ghi chú ở cuối hàm.
+        lichSuVong = [...lichSuVong, { role: "user", content: cauHoiVong }, { role: "assistant", content: traLoiCuoi }];
+        const dsGoc = this.dsGocDoc();
+        const doanKetQua: string[] = [];
+        for (const y of yeuCau) {
+          void this.panel.webview.postMessage({
+            loai: "thong_bao",
+            thongDiep: `vòng ${vong}/${TRAN_VONG_MAC_DINH} — đang ${nhanYeuCauDoc(y)}`,
+          });
+          const kq = await chayToolCucBo(y, dsGoc);
+          doanKetQua.push(kq.ok ? kq.ketQua : `LỖI: ${kq.lyDo}`);
+        }
+        cauHoiVong = `KẾT QUẢ TOOL:\n${doanKetQua.join("\n\n")}`;
+        // Ngữ cảnh soạn thảo (tệp đang mở/đoạn đang chọn) CHỈ đính kèm lượt hỏi GỐC — lặp lại nó ở
+        // mỗi vòng vừa tốn ngân sách ngữ cảnh vừa không mang tin gì mới cho những lượt sau.
+        nguCanhVong = undefined;
+      }
+
       // `degraded` ⇒ webview đang hiện chữ ĐÃ STREAM mà server vừa bảo là rác (vòng công cụ suy
-      // biến) — phải THAY bằng `answer` thật, không chỉ lặng lẽ lưu đúng mà hiện sai.
+      // biến) — phải THAY bằng `answer` thật, không chỉ lặng lẽ lưu đúng mà hiện sai. Một lượt DUY
+      // NHẤT `hoan_tat` cho TOÀN BỘ vòng lặp (không phải một lượt cho mỗi vòng con) — người dùng chỉ
+      // hỏi MỘT câu, hoàn tất phải khớp với đúng MỘT câu trả lời cuối cùng.
       void this.panel.webview.postMessage({
         loai: "hoan_tat",
-        vanBanCuoi: tt.degraded ? traLoi : null,
-        canhBao,
+        vanBanCuoi: degradedCuoi ? traLoiCuoi : null,
+        canhBao: canhBaoCuoi,
       });
-      this.lichSu.push({ role: "user", content: cauHoi }, { role: "assistant", content: traLoi });
-      // ★★★ ĐỢT C — đường ghi CỤC BỘ. Ở chế độ LOCAL máy chủ gửi `codingMode:false` nên KHÔNG có
-      // `pending_action` nào; đề xuất sửa nằm trong VĂN BẢN model, đọc được sau khi lượt trả lời
-      // đóng. Hàng rào chế độ đặt ở đây (không phải bên trong `xuLyDeXuatCucBo`) để một lượt SERVER
-      // tình cờ chứa khối ```avi-tool``` không đẻ ra thẻ ghi-vào-máy-dev.
-      if (cheDo.loai === "local") void this.xuLyDeXuatCucBo(traLoi);
+      // Lịch sử NGOÀI (`this.lichSu`, dùng cho MỌI câu hỏi sau này) chỉ giữ câu hỏi GỐC + câu trả
+      // lời CUỐI — các lượt "KẾT QUẢ TOOL" ở giữa là chi tiết THI CÔNG của một câu hỏi, không phải
+      // một lượt hỏi mới của người dùng; nhét chúng vào đây sẽ phình lịch sử mọi câu hỏi SAU này
+      // bằng nguyên văn kết quả `liet_ke`/`grep` của một câu hỏi đã xong từ lâu.
+      this.lichSu.push({ role: "user", content: cauHoi }, { role: "assistant", content: traLoiCuoi });
+      // ★★★ ĐỢT C — đường ghi CỤC BỘ, dựa trên câu trả lời CUỐI của vòng lặp (sau khi đã đọc xong
+      // mọi yêu cầu ĐỌC của model, nếu có). Đề xuất GHI KHÔNG được xử lý bên trong vòng lặp Task 3
+      // ở trên — chỉ ở đây, ĐÚNG MỘT LẦN, y hệt đường Đợt C trước Task 3 (chỉ khác nguồn `traLoiCuoi`
+      // là câu trả lời của LƯỢT CUỐI thay vì lượt duy nhất).
+      if (cheDo.loai === "local") void this.xuLyDeXuatCucBo(traLoiCuoi);
     } catch (e) {
       // Huỷ lượt cũ là hành vi BÌNH THƯỜNG (người dùng hỏi câu mới) — không phải lỗi, không được
       // khai thành lỗi. Chỉ lỗi THẬT mới hiện lên.
