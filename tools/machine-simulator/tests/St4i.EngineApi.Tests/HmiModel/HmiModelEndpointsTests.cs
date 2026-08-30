@@ -581,16 +581,17 @@ public sealed class HmiModelEndpointsTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Fix round 2, HIGH-A — the mismatch guard compared case-insensitively (StringComparison.OrdinalIgnoreCase)
-    // but never normalised body.MachineCode to the route's spelling, while ComponentModelStore's
-    // `machine_code TEXT PRIMARY KEY` has no COLLATE NOCASE and is case-SENSITIVE. Two different-cased
-    // spellings of "the same" machine therefore landed as TWO rows — HIGH-1's exact failure mode, narrowed
-    // to case variants. Fixed by normalising unconditionally once the guard passes, so the route's spelling
-    // is authoritative in FACT (what gets persisted), not only in the 400/200 decision.
+    // Fix round 2 → round 3, HIGH-A — the mismatch guard compared case-insensitively but round 2 only
+    // normalised THIS handler's own body, leaving three other handlers (GetAsync, GetIntegrityAsync, and
+    // ITagNamespaceStore.GetAsync) passing the raw route string to a case-SENSITIVE `machine_code TEXT
+    // PRIMARY KEY`. Round 3 closes it STRUCTURALLY — see CanonicalMachineCodeStores.cs — so the canonical
+    // persisted spelling is now `ToUpperInvariant()`, applied at the store seam regardless of which handler
+    // or which of body/route supplied which casing. These tests assert the CANONICAL (uppercase) spelling
+    // throughout, not "the route's original casing" (round 2's now-superseded claim).
     // ─────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Put_BodyMachineCodeCaseVariant_NormalizesToTheRoutesSpelling_NoDuplicateRow()
+    public async Task Put_BodyMachineCodeCaseVariant_NormalizesToOneCanonicalSpelling_NoDuplicateRow()
     {
         var (factory, engineer, _) = await NewFactoryWithUsersAsync("case-variant");
         await using var _f = factory;
@@ -607,23 +608,195 @@ public sealed class HmiModelEndpointsTests
             HttpStatusCode.OK,
             (await engineerC.PutAsJsonAsync("/v1/components/case-11", second, HmiContractJson.Options)).StatusCode);
 
-        // No duplicate row: exactly ONE machine code exists, spelled exactly as the ROUTE spelled it —
-        // never "CASE-11", regardless of what casing either body used.
+        // No duplicate row: exactly ONE machine code exists, spelled in the ONE canonical (uppercase) form —
+        // never two entries, regardless of what casing either write used.
         using (var list = await engineerC.GetAsync("/v1/components"))
         {
             var codes = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
-            Assert.Equal(new[] { "case-11" }, codes);
+            Assert.Equal(new[] { "CASE-11" }, codes);
         }
 
         // The second write actually landed on the SAME row (last-writer-wins) rather than being silently
-        // lost onto a shadow row under "CASE-11" that nobody reading "case-11" would ever see.
+        // lost onto a shadow row that nobody reading "case-11" would ever see.
         using (var get = await engineerC.GetAsync("/v1/components/case-11"))
         {
             var back = await get.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
-            Assert.Equal("case-11", back!.MachineCode);
+            Assert.Equal("CASE-11", back!.MachineCode);
             Assert.Single(back.Types);
             Assert.Equal("st4i.shadow.type", back.Types[0].TypeId);
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 3, HIGH-A — re-review #2's own exact reproduction, driven from the ROUTE this time (round
+    // 2's fix normalised only the body). Two PUTs whose BODY matches its OWN route's case each time —
+    // exactly the shape that survived round 2 unfixed.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Put_RouteCaseVariant_NormalizesToOneRow_NotTwo()
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync("route-case-variant");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        // First PUT via a lowercase ROUTE, body matching that route's case.
+        var first = ValidDoc("case-21", typeId: "st4i.original.type");
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/components/case-21", first, HmiContractJson.Options)).StatusCode);
+
+        // Second PUT via an UPPERCASE route, body matching THAT route's case — re-review #2's exact probe.
+        var second = ValidDoc("CASE-21", typeId: "st4i.shadow.type");
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/components/CASE-21", second, HmiContractJson.Options)).StatusCode);
+
+        using (var list = await engineerC.GetAsync("/v1/components"))
+        {
+            var codes = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
+            Assert.Equal(new[] { "CASE-21" }, codes);
+        }
+
+        // The second write is visible via EITHER case — one row, not a shadow the first spelling can't see.
+        using (var get = await engineerC.GetAsync("/v1/components/case-21"))
+        {
+            var back = await get.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
+            Assert.Single(back!.Types);
+            Assert.Equal("st4i.shadow.type", back.Types[0].TypeId);
+        }
+    }
+
+    [Fact]
+    public async Task Put_RouteCaseVariant_WithBodyMachineCodeOmitted_StillNormalizesToOneRow()
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync("route-case-variant-omitted");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        var first = ValidDoc("case-22", typeId: "st4i.original.type");
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/components/case-22", first, HmiContractJson.Options)).StatusCode);
+
+        // Second PUT via an UPPERCASE route — body omits machineCode entirely (the lenient arm the guard
+        // deliberately preserves), exercising re-review #2's "lenient arm" reproduction.
+        var second = ValidDoc("case-22", typeId: "st4i.shadow.type") with { MachineCode = "" };
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/components/CASE-22", second, HmiContractJson.Options)).StatusCode);
+
+        using var list = await engineerC.GetAsync("/v1/components");
+        var codes = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
+        Assert.Equal(new[] { "CASE-22" }, codes);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 3, HIGH-A — the READ side, exhaustively. Re-review #2's single worst-named consequence:
+    // GET .../integrity (Operator tier) returned a CLEAN report — namespaceLoaded:false, zero violations —
+    // for a document and namespace it never actually read, because both lookups missed on a case-sensitive
+    // key. This test loads a REAL namespace that deliberately does NOT match the component's tagPrefix, so
+    // "the integrity route actually read the real data" and "the integrity route silently read nothing" are
+    // DISTINGUISHABLE outcomes (namespaceLoaded:true + a real violation, vs. the old namespaceLoaded:false
+    // + zero violations) — not just two shades of "empty".
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Get_And_GetIntegrity_And_List_FindTheSameRow_RegardlessOfRouteCase()
+    {
+        var (factory, engineer, operatorClient) = await NewFactoryWithUsersAsync("read-side-case-variant");
+        await using var _f = factory;
+        using var engineerC = engineer;
+        using var operatorC = operatorClient;
+
+        // A namespace whose tags do NOT match the component's tagPrefix, loaded directly via the store seam
+        // (DI-resolved, so it goes through the SAME canonicalizing decorator a real connector would).
+        var tagsStore = factory.Services.GetRequiredService<ITagNamespaceStore>();
+        await tagsStore.PutAsync(NamespaceThatDoesNotMatch("case-23"));
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/components/case-23", ValidDoc("case-23"), HmiContractJson.Options)).StatusCode);
+
+        // GET via an UPPERCASE route must find the REAL document — not the §5-bis empty fallback, which is
+        // indistinguishable from "never declared" and is exactly what made this defect invisible.
+        using (var get = await operatorC.GetAsync("/v1/components/CASE-23"))
+        {
+            Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+            var back = await get.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
+            Assert.NotEmpty(back!.Components);
+        }
+
+        // GET .../integrity via an UPPERCASE route must reflect the REAL document AND the REAL namespace —
+        // namespaceLoaded:true (found the namespace) and a NON-EMPTY violation list (the real tagPrefix
+        // mismatch), not the old "clean bill of health for a document it never read".
+        using (var integrity = await operatorC.GetAsync("/v1/components/CASE-23/integrity"))
+        {
+            Assert.Equal(HttpStatusCode.OK, integrity.StatusCode);
+            var report = await integrity.Content.ReadFromJsonAsync<IntegrityReportDto>(HmiContractJson.Options);
+            Assert.True(report!.NamespaceLoaded);
+            Assert.NotEmpty(report.Violations);
+        }
+
+        // GET /v1/components (list) shows exactly one canonical entry, never a route-case-driven second row.
+        using (var list = await operatorC.GetAsync("/v1/components"))
+        {
+            var codes = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
+            Assert.Equal(new[] { "CASE-23" }, codes);
+        }
+
+        // GET /v1/component-types (merged catalogue) reflects the one row's type, reachable regardless of
+        // which case populated it.
+        using (var types = await operatorC.GetAsync("/v1/component-types"))
+        {
+            var typeDefs = await types.Content.ReadFromJsonAsync<List<ComponentTypeDef>>(HmiContractJson.Options);
+            Assert.Contains(typeDefs!, t => t.TypeId == "st4i.motor.spindle");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 3, HIGH-A — the structural half, pinned directly: IComponentModelStore/ITagNamespaceStore
+    // resolve to the canonicalizing decorators, not to ComponentModelStore/TagNamespaceStore. This is the
+    // property that makes "no fifth path can be added without normalizing" true by construction — DI is the
+    // ONLY way any handler (existing or future) obtains either interface (see this class's own doc comment:
+    // "a plain constructor parameter ASP.NET's minimal-API model binder resolves from DI, no manual
+    // GetRequiredService anywhere in this file"), so a handler cannot reach the case-sensitive store even by
+    // omission. Same DI-resolution-assertion shape HmiModelWiringTests already uses for the un-decorated
+    // registration.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task IComponentModelStore_And_ITagNamespaceStore_ResolveToTheCanonicalizingDecorator()
+    {
+        var factory = await CreateFactoryAsync();
+        await using var _f = factory;
+
+        Assert.IsType<CanonicalizingComponentModelStore>(factory.Services.GetRequiredService<IComponentModelStore>());
+        Assert.IsType<CanonicalizingTagNamespaceStore>(factory.Services.GetRequiredService<ITagNamespaceStore>());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 3, LOW — re-review #2's A18: id/tagPrefix of " " (whitespace-only) is not a usable identity
+    // any more than null/empty is. Endpoint-level companion to ContractInvariantsTests' unit-level pin.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Put_ComponentWithWhitespaceOnlyIdAndTagPrefix_Gets400()
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync("whitespace-id");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        const string json = "{\"schemaVersion\":1,\"machineCode\":\"WS-01\"," +
+                             "\"components\":[{\"id\":\" \",\"typeId\":\"t\",\"label\":\"L\",\"tagPrefix\":\" \"}],\"types\":[]}";
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var put = await engineerC.PutAsync("/v1/components/WS-01", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+        var error = await put.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
+        Assert.NotNull(error);
+        Assert.Contains("id", error!.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("tagPrefix", error.Error, StringComparison.OrdinalIgnoreCase);
     }
 
     // ─────────────────────────────────────────────────────────────────────

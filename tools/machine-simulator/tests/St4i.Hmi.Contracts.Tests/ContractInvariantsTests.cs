@@ -322,13 +322,6 @@ public class ContractInvariantsTests
     }
 
     [Fact]
-    public void A_well_formed_component_reports_neither_id_nor_tagPrefix_violations()
-    {
-        var doc = new ComponentModelDocument(1, "M1", new[] { Node() }, new[] { Type() });
-        Assert.Empty(ContractInvariants.Validate(doc));
-    }
-
-    [Fact]
     public void A_null_element_in_Types_is_a_violation_not_an_exception()
     {
         var doc = new ComponentModelDocument(1, "M1", Array.Empty<ComponentNode>(), new ComponentTypeDef?[] { null }!);
@@ -430,5 +423,169 @@ public class ContractInvariantsTests
     {
         var doc = new HmiScreenDocument(1, "s1", "Màn hình", null, "isa101", new ScreenLayout(12, 8, "panel"), null!);
         Assert.Throws<ContractViolationException>(() => ContractInvariants.ThrowIfInvalid(doc));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 3 — re-review #2 measured that the twin fix (round 2) closed element-NULL depth but not
+    // element-FIELD depth: TagDescriptor.Path is the exact analogue of ComponentNode.TagPrefix (bound as
+    // tag_index's PRIMARY KEY parameter, AND the unguarded `path` argument to ModelIntegrity.IsPathPrefix),
+    // and Validate(TagNamespaceDocument) let it through at 0 violations, after which
+    // TagNamespaceStore.PutAsync threw InvalidOperationException ("Value must be set.") — not a
+    // ContractViolationException, so not a 400. Same enumeration method as round 2's HIGH-B fix: list every
+    // field the STORE and ModelIntegrity dereference, reach each with a null, confirm a violation instead
+    // of an exception. Access is added for a DIFFERENT, non-crash reason — see the tests below.
+    // ─────────────────────────────────────────────────────────────────────
+
+    static TagDescriptor TagWith(string? path, string? access, string? policyAction = null) =>
+        new(path!, "bool", null, null, null, null, access!, policyAction, Sim(), false);
+
+    [Fact]
+    public void A_tag_with_null_Path_is_a_violation_not_a_downstream_crash()
+    {
+        var doc = new TagNamespaceDocument(1, "M1", new[] { TagWith(path: null, access: "r") });
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("path", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Re-review #2's exact measurement, reproduced at the door: a document that passes
+    /// <see cref="ContractInvariants.Validate(TagNamespaceDocument)"/> with a null <c>Path</c> makes
+    /// <c>TagNamespaceStore.PutAsync</c> throw <see cref="InvalidOperationException"/> — a raw ADO.NET
+    /// exception, not the <see cref="ContractViolationException"/> the whole error→HTTP map depends on to
+    /// produce a 400 instead of a 500.</summary>
+    [Fact]
+    public void ThrowIfInvalid_throws_ContractViolationException_for_a_null_Path_tag()
+    {
+        var doc = new TagNamespaceDocument(1, "M1", new[] { TagWith(path: null, access: "r") });
+        Assert.Throws<ContractViolationException>(() => ContractInvariants.ThrowIfInvalid(doc));
+    }
+
+    /// <summary>A DIFFERENT reason than a crash: <c>WritableTagAccess.Contains(t.Access)</c> reads a null
+    /// <c>Access</c> as "not writable" (<c>HashSet&lt;string&gt;.Contains(null)</c> is <see langword="false"/>,
+    /// not an exception) — so a <c>"rw"</c> tag whose <c>access</c> was accidentally omitted would silently
+    /// skip the very policyAction check this class exists to enforce. Same silent-bypass shape as a null
+    /// <c>role</c>/<c>kind</c> below, one field over.</summary>
+    [Fact]
+    public void A_tag_with_null_Access_is_a_violation_not_a_silent_5_bypass()
+    {
+        var doc = new TagNamespaceDocument(1, "M1", new[] { TagWith(path: "M1/x", access: null) });
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("access", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Re-review #2, LOW-4: <c>ComponentModelDocument.MachineCode</c> was absent from the BOUNDARY
+    /// paragraph's "declared-but-deliberately-unchecked" list, and the omission was not harmless —
+    /// <c>ComponentModelStore.PutAsync(new ComponentModelDocument(1, null!, [], []))</c> throws
+    /// <see cref="InvalidOperationException"/> ("Value must be set."), not a
+    /// <see cref="ContractViolationException"/>. Closed by an actual check rather than by documenting the
+    /// gap — the same choice made for <see cref="TagNamespaceDocument.MachineCode"/> just below, since
+    /// <c>TagNamespaceStore.PutAsync</c> binds it the identical way.</summary>
+    [Fact]
+    public void A_null_or_empty_MachineCode_on_a_ComponentModelDocument_is_a_violation()
+    {
+        var doc1 = new ComponentModelDocument(1, null!, Array.Empty<ComponentNode>(), Array.Empty<ComponentTypeDef>());
+        var doc2 = new ComponentModelDocument(1, "", Array.Empty<ComponentNode>(), Array.Empty<ComponentTypeDef>());
+
+        Assert.Contains(ContractInvariants.Validate(doc1), v => v.Contains("machineCode", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(ContractInvariants.Validate(doc2), v => v.Contains("machineCode", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ThrowIfInvalid_throws_ContractViolationException_for_a_null_MachineCode_ComponentModelDocument()
+    {
+        var doc = new ComponentModelDocument(1, null!, Array.Empty<ComponentNode>(), Array.Empty<ComponentTypeDef>());
+        Assert.Throws<ContractViolationException>(() => ContractInvariants.ThrowIfInvalid(doc));
+    }
+
+    [Fact]
+    public void A_null_or_empty_MachineCode_on_a_TagNamespaceDocument_is_a_violation()
+    {
+        var doc = new TagNamespaceDocument(1, null!, Array.Empty<TagDescriptor>());
+        Assert.Contains(ContractInvariants.Validate(doc), v => v.Contains("machineCode", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Re-review #2, LOW-5: the sibling check (<see cref="ComponentNode.TagPrefix"/>, above) used
+    /// <c>string.IsNullOrEmpty</c> in round 2, which accepts a whitespace-only <c>" "</c> as "present" — a
+    /// perfectly good <c>Dictionary</c> key, but not a usable <c>{component}</c> binding target, and not
+    /// what an engineer means by "declared". Switched to <c>IsNullOrWhiteSpace</c> so both halves of one
+    /// fix agree on what "missing" means — matching <c>HmiModelEndpoints.cs</c>'s own route/body-code guard,
+    /// which already used <c>IsNullOrWhiteSpace</c>.</summary>
+    [Fact]
+    public void A_component_with_whitespaceOnly_Id_and_TagPrefix_is_a_violation()
+    {
+        var node = new ComponentNode(" ", "st4i.motor.spindle", "L", null, " ");
+        var doc = new ComponentModelDocument(1, "M1", new[] { node }, new[] { Type() });
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("id", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(violations, v => v.Contains("tagPrefix", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The same silent-bypass shape as a null tag <c>Access</c> (above) and a null widget
+    /// <c>Kind</c> (below): <c>WritableComponentTagRoles.Contains(t.Role)</c> reads a null <c>Role</c> as
+    /// "not writable", so a <c>setpoint</c>/<c>command</c> tag whose OWN <c>role</c> was omitted would skip
+    /// the policyAction/min/max checks immediately below it.</summary>
+    [Fact]
+    public void A_componentTag_with_null_Role_is_a_violation_not_a_silent_5_bypass()
+    {
+        var tag = new ComponentTagDef("t", null!, "float", null, null, null, null, null);
+        var type = new ComponentTypeDef("t1", "T1", new[] { tag }, Array.Empty<ComponentStateDef>(), "fp.x");
+        var doc = new ComponentModelDocument(1, "M1", Array.Empty<ComponentNode>(), new[] { type });
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("role", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void A_widget_with_null_Id_is_a_violation()
+    {
+        var doc = Screen(new ScreenWidget(null!, "readout", Rect()));
+        Assert.Contains(ContractInvariants.Validate(doc), v => v.Contains("id", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Same silent-bypass shape as a null tag <c>Role</c>/<c>Access</c> above:
+    /// <c>WritableWidgetKinds.Contains(w.Kind)</c> reads a null <c>Kind</c> as "not writable", so a
+    /// <c>setpoint-input</c>/<c>command-button</c> widget whose OWN <c>kind</c> was omitted would skip the
+    /// policyAction check immediately below it.</summary>
+    [Fact]
+    public void A_widget_with_null_Kind_is_a_violation_not_a_silent_5_bypass()
+    {
+        var doc = Screen(new ScreenWidget("w1", null!, Rect()));
+        Assert.Contains(ContractInvariants.Validate(doc), v => v.Contains("kind", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Controls — NOT guards. Each of these asserts that a WELL-FORMED document produces ZERO violations.
+    // A control cannot fail by construction against any of the checks above (it would only fail if a check
+    // became too strict and started flagging valid input) — re-review #2, LOW-6, on
+    // A_well_formed_component_reports_neither_id_nor_tagPrefix_violations being filed, in round 2, under a
+    // header that presented it as pinning the fix it sits beside. Kept, relocated, and re-labelled here so
+    // nobody counts it as coverage for the checks above.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Control_A_well_formed_component_reports_no_violations()
+    {
+        var doc = new ComponentModelDocument(1, "M1", new[] { Node() }, new[] { Type() });
+        Assert.Empty(ContractInvariants.Validate(doc));
+    }
+
+    [Fact]
+    public void Control_A_well_formed_tag_namespace_reports_no_violations()
+    {
+        var doc = new TagNamespaceDocument(1, "M1", new[] { TagWith(path: "M1/x", access: "r") });
+        Assert.Empty(ContractInvariants.Validate(doc));
+    }
+
+    [Fact]
+    public void Control_A_well_formed_screen_reports_no_violations()
+    {
+        var doc = Screen(new ScreenWidget("w1", "readout", Rect()));
+        Assert.Empty(ContractInvariants.Validate(doc));
     }
 }

@@ -124,13 +124,22 @@ public sealed class HmiModelWiringTests
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(doc.RootElement.GetProperty("hmiModelEnabled").GetBoolean());
 
-        // 🔴 Step 1's own correctness, which nothing else in this suite would catch: no endpoint reads
-        // IComponentModelStore/ITagNamespaceStore today (this task's brief is explicit that adding one is
-        // WS-HMI-0b's job), so a broken/typo'd DI registration would leave every other test in this
-        // project green while the seam quietly resolved nothing. This is the one place that registration
-        // is actually exercised.
-        Assert.IsType<ComponentModelStore>(factory.Services.GetRequiredService<IComponentModelStore>());
-        Assert.IsType<TagNamespaceStore>(factory.Services.GetRequiredService<ITagNamespaceStore>());
+        // 🔴 Step 1's own correctness, which nothing else in this suite would catch: at the time this test
+        // was written, no endpoint read IComponentModelStore/ITagNamespaceStore yet (WS-HMI-0a Task 5's own
+        // brief was explicit that adding one was WS-HMI-0b's job), so a broken/typo'd DI registration would
+        // have left every other test in this project green while the seam quietly resolved nothing.
+        //
+        // 🔴 WS-HMI-0b Task 1, fix round 3 (HIGH-A) — the assertion below is UPDATED, not the premise above:
+        // HmiModelEndpoints now reads both seams, so a broken registration would ALSO be caught by
+        // HmiModelEndpointsTests today. What changed is WHAT Program.cs registers these interfaces AS —
+        // CanonicalizingComponentModelStore/CanonicalizingTagNamespaceStore (CanonicalMachineCodeStores.cs),
+        // not the bare stores — because the structural fix for machine-code case-identity is that DI hands
+        // out ONLY the canonicalizing decorator, never the raw, case-sensitive-keyed store, to any handler.
+        // HmiModelEndpointsTests.IComponentModelStore_And_ITagNamespaceStore_ResolveToTheCanonicalizingDecorator
+        // pins the same fact from the WS-HMI-0b side; kept here too so this file's own claim about what
+        // Program.cs registers does not go stale silently.
+        Assert.IsType<CanonicalizingComponentModelStore>(factory.Services.GetRequiredService<IComponentModelStore>());
+        Assert.IsType<CanonicalizingTagNamespaceStore>(factory.Services.GetRequiredService<ITagNamespaceStore>());
     }
 
     [Fact]

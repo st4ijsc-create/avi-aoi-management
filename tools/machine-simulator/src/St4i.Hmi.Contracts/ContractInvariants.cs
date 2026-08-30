@@ -126,10 +126,34 @@ public static class ContractInvariants
     /// <see cref="NullReferenceException"/> with no chance to collect a violation. Closed NOW, ahead of
     /// need, because <see cref="TagNamespaceDocument"/> becomes HTTP-reachable in WS-HMI-0b Task 2
     /// (<c>PUT /v1/tags/{machineCode}</c>) — leaving this hole here would have shipped it on that task's
-    /// day one, under a test suite with no reason to go looking for it.</para></summary>
+    /// day one, under a test suite with no reason to go looking for it.</para>
+    ///
+    /// <para>🔴 <b>Fix round 3 — round 2 closed element-NULL depth and stopped one level short of
+    /// element-FIELD depth, on the exact document type its own justification named.</b> Re-review #2
+    /// measured: a <see cref="TagDescriptor"/> with a null <see cref="TagDescriptor.Path"/> passed this
+    /// method at 0 violations, then made <c>TagNamespaceStore.PutAsync</c> throw
+    /// <see cref="InvalidOperationException"/> ("Value must be set.") — not a
+    /// <see cref="ContractViolationException"/>, so not the 400 the whole error→HTTP map depends on that
+    /// type to produce. <see cref="TagDescriptor.Path"/> is checked now for the SAME two reasons
+    /// <see cref="ComponentNode.TagPrefix"/> is checked in <see cref="Validate(ComponentModelDocument)"/>:
+    /// it is bound as <c>tag_index.path</c>'s PRIMARY KEY SQL parameter, AND it is the unguarded <c>path</c>
+    /// argument to <c>St4i.EngineApi.HmiModel.ModelIntegrity.IsPathPrefix</c>
+    /// (<c>path.Length</c> with no null check) — so a null <c>Path</c> that somehow reached that far would
+    /// crash a component-tree integrity check too, not only the namespace's own write door.
+    /// <see cref="TagDescriptor.Access"/> is checked for a DIFFERENT reason, not a crash: a null
+    /// <c>Access</c> reads as "not writable" (<c>Contains(null)</c> is <see langword="false"/>, not an
+    /// exception), silently skipping the very policyAction rule this class exists to enforce for a tag
+    /// whose <c>access</c> was simply omitted. <see cref="TagNamespaceDocument.MachineCode"/> is checked
+    /// too — <c>TagNamespaceStore.PutAsync</c> binds it as a SQL parameter the identical way
+    /// <see cref="ComponentModelDocument.MachineCode"/> is bound; see that overload's own doc comment for
+    /// the measurement.</para></summary>
     public static IReadOnlyList<string> Validate(TagNamespaceDocument doc)
     {
         var v = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(doc.MachineCode))
+            v.Add("machineCode: thiếu trường bắt buộc (null/rỗng) — TagNamespaceStore.PutAsync bind nó làm " +
+                  "tham số SQL; rỗng làm lần ghi hỏng ở tầng SQLite thay vì đỏ ở cửa này");
 
         if (doc.Tags is null)
         {
@@ -145,6 +169,16 @@ public static class ContractInvariants
                 v.Add($"tags[{i}]: phần tử null — một tag rỗng không phải khai báo hợp lệ");
                 continue;
             }
+
+            // Path: bound as tag_index's PRIMARY KEY AND the unguarded `path` argument to
+            // ModelIntegrity.IsPathPrefix — see this method's own doc comment. Access: a null value reads
+            // as "not writable" below, silently bypassing the policyAction rule for an `rw` tag whose
+            // `access` was simply omitted.
+            if (string.IsNullOrWhiteSpace(t.Path))
+                v.Add($"tags[{i}]: path thiếu (null/rỗng) — path là khoá chính của tag_index, bắt buộc phải có");
+            if (string.IsNullOrWhiteSpace(t.Access))
+                v.Add($"tags[{i}]: access thiếu (null/rỗng) — access rỗng âm thầm bỏ qua luật §5 (rw ⇒ policyAction)");
+
             if (WritableTagAccess.Contains(t.Access) && string.IsNullOrEmpty(t.PolicyAction))
                 v.Add($"tag '{t.Path}': access='{t.Access}' nhưng thiếu policyAction — §5 cấm đường ghi không gác");
         }
@@ -155,7 +189,7 @@ public static class ContractInvariants
         var reported = new HashSet<string>(StringComparer.Ordinal);
         foreach (var t in doc.Tags)
         {
-            if (t is null) continue; // already reported above — not this loop's concern.
+            if (t is null || string.IsNullOrWhiteSpace(t.Path)) continue; // already reported above.
             if (seen.Add(t.Path) || !reported.Add(t.Path)) continue;
             v.Add($"tag '{t.Path}': path bị khai nhiều lần trong cùng tài liệu — tag_index.path là khoá " +
                   "chính, nên bản khai thứ hai sẽ làm cả lần ghi hỏng ở tầng SQLite thay vì ở cửa này");
@@ -198,23 +232,41 @@ public static class ContractInvariants
     /// whose null-ness is what actually crashes <c>ModelIntegrity.Check</c> — a <c>Dictionary</c> key and a
     /// string index bound, respectively.</para>
     ///
-    /// <para>🔴 <b>THE BOUNDARY, DRAWN ON PURPOSE — stated so a THIRD round does not have to re-discover
-    /// it.</b> This is a crash-prevention gate, not a JSON Schema validator (see this class's own top-level
-    /// doc comment): every field checked here is checked because its null-ness makes EITHER this method OR
-    /// <c>ModelIntegrity.Check</c> throw an unhandled exception instead of returning an ordinary violation.
+    /// <para>🔴 <b>THE BOUNDARY, DRAWN ON PURPOSE — stated so the next round does not have to re-discover
+    /// it, and CORRECTED at fix round 3 to match what is actually checked below (re-review #2, LOW: this
+    /// paragraph used to omit <see cref="ComponentModelDocument.MachineCode"/> from its own enumeration,
+    /// and the omission was not harmless — see the MachineCode check below).</b> This is a crash-prevention
+    /// gate, not a JSON Schema validator (see this class's own top-level doc comment). Every field checked
+    /// below is checked for ONE of two reasons: (a) its null-ness makes EITHER this method OR
+    /// <c>ModelIntegrity.Check</c> throw an unhandled exception instead of returning an ordinary violation
+    /// (<c>MachineCode</c>, <c>Components</c>/its elements, <c>Id</c>, <c>TagPrefix</c>, <c>Types</c>/its
+    /// elements, a type's <c>Tags</c>/its elements), or (b) its null-ness makes THIS METHOD silently skip
+    /// the very §5 rule it exists to enforce (<c>Role</c> — see that check's own comment).
     /// <see cref="ComponentNode.TypeId"/>, <see cref="ComponentNode.Label"/>,
     /// <see cref="ComponentTypeDef.TypeId"/>, <see cref="ComponentTypeDef.Label"/>,
-    /// <see cref="ComponentTypeDef.DefaultFaceplate"/>, <see cref="ComponentTypeDef.States"/>, and
-    /// <see cref="ComponentTagDef.Role"/>/<see cref="ComponentTagDef.PolicyAction"/>/<see cref="ComponentTagDef.Name"/>
-    /// are each declared non-nullable by their record too, and each CAN arrive null from the same missing-
-    /// field mechanism — but none of them is ever dereferenced by this method or by
-    /// <c>ModelIntegrity.Check</c> in a way that throws (a null <see cref="ComponentTypeDef.TypeId"/>, for
-    /// one concrete example, is silently accepted and reported at 200 — see this task's fix round 2 report).
-    /// Closing that gap is full JSON-Schema-shape validation, a DIFFERENT and larger job than this class has
-    /// ever claimed, stated here as a deliberate non-fix rather than left for a THIRD reviewer to find.</para></summary>
+    /// <see cref="ComponentTypeDef.DefaultFaceplate"/>, <see cref="ComponentTypeDef.States"/>,
+    /// <see cref="ComponentTagDef.PolicyAction"/>, <see cref="ComponentTagDef.Name"/> and
+    /// <see cref="ComponentTagDef.DataType"/> are each declared non-nullable by their record too, and each
+    /// CAN arrive null from the same missing-field mechanism — but none of them is ever dereferenced by
+    /// this method or by <c>ModelIntegrity.Check</c> in a way that throws, and none of them gates another
+    /// §5 check the way <c>Role</c> does (a null <see cref="ComponentTypeDef.TypeId"/>, for one concrete
+    /// example, is silently accepted and reported at 200 — measured, fix round 2's report). Closing THAT
+    /// gap is full JSON-Schema-shape validation, a DIFFERENT and larger job than this class has ever
+    /// claimed, stated here as a deliberate non-fix rather than left for a future reviewer to find.</para></summary>
     public static IReadOnlyList<string> Validate(ComponentModelDocument doc)
     {
         var v = new List<string>();
+
+        // 🔴 Fix round 3 — ComponentModelStore.PutAsync binds MachineCode as a SQL parameter
+        // (`@machine_code`); a null value throws InvalidOperationException ("Value must be set."), not a
+        // ContractViolationException, so a direct store caller (bypassing HTTP, where a route segment can
+        // never be null) got a non-mappable exception from a door whose entire contract is
+        // ContractViolationException. Not client-reachable over HTTP in Task 1 — HmiModelEndpoints.PutAsync
+        // normalises the body to the route before this is ever called — but this door serves every caller,
+        // not only the HTTP one (see this method's own doc comment).
+        if (string.IsNullOrWhiteSpace(doc.MachineCode))
+            v.Add("machineCode: thiếu trường bắt buộc (null/rỗng) — ComponentModelStore.PutAsync bind nó làm " +
+                  "tham số SQL; rỗng làm lần ghi hỏng ở tầng SQLite thay vì đỏ ở cửa này");
 
         if (doc.Components is null)
         {
@@ -235,10 +287,14 @@ public static class ContractInvariants
                 // ModelIntegrity.Check downstream (a Dictionary key via groupedById.ToDictionary, and a
                 // string index bound inside IsPathPrefix, respectively) — see this method's own doc
                 // comment for why TypeId/Label are declared non-nullable too but NOT checked here.
-                if (string.IsNullOrEmpty(node.Id))
+                // IsNullOrWhiteSpace, not IsNullOrEmpty (fix round 3, re-review #2 LOW): a whitespace-only
+                // "id":" " is just as unusable a Dictionary/binding key as an empty one, and the sibling
+                // route/body-code guard in HmiModelEndpoints.cs already used IsNullOrWhiteSpace — the two
+                // halves of one fix now agree on what "missing" means.
+                if (string.IsNullOrWhiteSpace(node.Id))
                     v.Add($"components[{i}]: id thiếu (null/rỗng) — id là khoá ModelIntegrity/binding gián tiếp " +
                           "{component} phân giải qua, bắt buộc phải có");
-                if (string.IsNullOrEmpty(node.TagPrefix))
+                if (string.IsNullOrWhiteSpace(node.TagPrefix))
                     v.Add($"components[{i}]: tagPrefix thiếu (null/rỗng) — bắt buộc phải có để đối chiếu tham chiếu namespace");
             }
         }
@@ -271,6 +327,14 @@ public static class ContractInvariants
                     v.Add($"componentType '{type.TypeId}': tags[{j}] là phần tử null — một componentTag rỗng không phải khai báo hợp lệ");
                     continue;
                 }
+
+                // Fix round 3 — a null Role reads as "not writable" below (Contains(null) is false, not an
+                // exception), which would let a setpoint/command tag whose OWN role was omitted silently
+                // skip the policyAction/min/max checks immediately below it — the exact "an ungated write
+                // door" shape this class exists to close, one field over from the case WS-HMI-0a's own
+                // review found (Access: "rw", PolicyAction: null).
+                if (string.IsNullOrWhiteSpace(t.Role))
+                    v.Add($"componentTag '{type.TypeId}.{t.Name}': role thiếu (null/rỗng) — role rỗng âm thầm bỏ qua luật §5");
 
                 var writable = WritableComponentTagRoles.Contains(t.Role);
                 if (writable && string.IsNullOrEmpty(t.PolicyAction))
@@ -313,7 +377,19 @@ public static class ContractInvariants
     /// Fixed alongside <see cref="Validate(TagNamespaceDocument)"/> while the reasoning was in front of the
     /// fix, even though no .NET store writes an <see cref="HmiScreenDocument"/> today (see this class's own
     /// remarks on <see cref="ThrowIfInvalid(HmiScreenDocument)"/>) — cheaper to close now than to leave for
-    /// whichever task builds that store to rediscover.</para></summary>
+    /// whichever task builds that store to rediscover.</para>
+    ///
+    /// <para>🔴 <b>Fix round 3 — element-NULL depth (round 2) was not element-FIELD depth.</b> Re-review #2
+    /// measured <c>new ScreenWidget(Id: null, Kind: null, Rect: null)</c> passing at 0 violations.
+    /// <see cref="ScreenWidget.Id"/> is now required (its own identity key, the same role
+    /// <see cref="ComponentNode.Id"/> plays — no store dereferences it unsafely today because no store
+    /// writes this type at all, checked anyway for the same declared-required, same missing-field-mechanism
+    /// reasoning applied everywhere else this round). <see cref="ScreenWidget.Kind"/> is required for the
+    /// SAME non-crash reason <see cref="TagDescriptor.Access"/> and <see cref="ComponentTagDef.Role"/> are
+    /// (see their own checks): a null <c>Kind</c> reads as "not writable" below, silently skipping the
+    /// policyAction rule for a <c>command-button</c>/<c>setpoint-input</c> widget whose OWN <c>kind</c> was
+    /// omitted. <see cref="WidgetRect"/> is deliberately NOT checked — nothing dereferences it, and it is a
+    /// plain value record, not an identity or a §5 gate.</para></summary>
     public static IReadOnlyList<string> Validate(HmiScreenDocument doc)
     {
         var v = new List<string>();
@@ -332,6 +408,12 @@ public static class ContractInvariants
                 v.Add($"widgets[{i}]: phần tử null — một widget rỗng không phải khai báo hợp lệ");
                 continue;
             }
+
+            if (string.IsNullOrWhiteSpace(w.Id))
+                v.Add($"widgets[{i}]: id thiếu (null/rỗng) — bắt buộc phải có");
+            if (string.IsNullOrWhiteSpace(w.Kind))
+                v.Add($"widgets[{i}]: kind thiếu (null/rỗng) — kind rỗng âm thầm bỏ qua luật §5");
+
             if (WritableWidgetKinds.Contains(w.Kind) && string.IsNullOrEmpty(w.PolicyAction))
                 v.Add($"widget '{w.Id}': kind='{w.Kind}' nhưng thiếu policyAction — §5 cấm đường ghi không gác");
         }

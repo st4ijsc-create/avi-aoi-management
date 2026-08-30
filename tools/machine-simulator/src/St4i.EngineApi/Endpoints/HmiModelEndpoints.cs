@@ -46,7 +46,12 @@ public static class HmiModelEndpoints
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> GetAsync(string machineCode, IComponentModelStore store, CancellationToken ct)
     {
+        // Fix round 3, HIGH-A — `machineCode` is passed to the store RAW, deliberately: `store` is the
+        // canonicalizing decorator (CanonicalMachineCodeStores.cs), and THAT is what makes this lookup find
+        // the right row regardless of which case the caller used in the URL — not a normalization line in
+        // this handler. `canonicalCode` below is computed separately and used ONLY for the response echo.
         var doc = await store.GetAsync(machineCode, ct).ConfigureAwait(false);
+        var canonicalCode = MachineCodeIdentity.Canonicalize(machineCode);
 
         // §5-bis: a machine that has declared nothing is a VALID product state, not an error. The store
         // already returns null rather than throwing for this case (see ComponentModelStore.GetAsync's own
@@ -59,7 +64,7 @@ public static class HmiModelEndpoints
         // OTHER HMI contract producer in this codebase (the two stores) already serializes with this exact
         // options instance; this is the HTTP layer keeping that same "absence IS null, never written
         // explicitly" rule the contract's own doc comments state.
-        return Results.Json(doc ?? EmptyDocument(machineCode), HmiContractJson.Options);
+        return Results.Json(doc ?? EmptyDocument(canonicalCode), HmiContractJson.Options);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -90,36 +95,48 @@ public static class HmiModelEndpoints
     // reject when the body disagrees with the route) — matched here rather than inventing a fourth spelling
     // of the same rule, per the reviewer's steer that consistency inside one API beats a fresh preference.
     //
-    // 🔴 REVIEW FIX ROUND 2, HIGH-A — comparing case-INSENSITIVELY (StringComparison.OrdinalIgnoreCase,
-    // matching ConfigEndpoints' own three guards) was not, by itself, enough: ComponentModelStore keys
-    // `machine_code TEXT PRIMARY KEY` with no `COLLATE NOCASE`, so SQLite treats it as case-SENSITIVE. A
-    // body that "matched" only case-insensitively (e.g. route "case-01", body "CASE-01") was left with its
-    // ORIGINAL casing and written as-is — landing on a DIFFERENT row than the route addressed, reproducing
-    // HIGH-1's exact failure mode narrowed to case variants (measured: two PUTs to /v1/components/case-02,
-    // second body spelled "CASE-02", reported 200 while the edit silently landed on a shadow row that
-    // GET /v1/components/case-02 never saw).
+    // 🔴 REVIEW FIX ROUND 2, HIGH-A, PARTIAL — comparing case-INSENSITIVELY was not, by itself, enough:
+    // ComponentModelStore keys `machine_code TEXT PRIMARY KEY` with no `COLLATE NOCASE` (case-SENSITIVE),
+    // and round 2 only normalized THIS handler's own `body` — the other three handlers that hand a machine
+    // code to the store (GetAsync, GetIntegrityAsync, and ITagNamespaceStore.GetAsync via this handler and
+    // GetIntegrityAsync) still passed the raw route string straight through. Re-review #2 measured the
+    // ORIGINAL failure mode reproduced through the ROUTE instead of the body: two PUTs at differing route
+    // case landed on two rows, hid each other's edits, and GET /v1/components/{variant}/integrity — an
+    // Operator-tier route — returned a clean bill of health for a document it had never read.
     //
-    // THE IDENTITY RULE, CHOSEN HERE RATHER THAN LEFT IMPLICIT: machine codes are a CASE-INSENSITIVE
-    // identity at this API's boundary (matching the OrdinalIgnoreCase comparison every sibling guard in this
-    // codebase already uses for a route/body code), and the ONE canonical persisted spelling for that
-    // identity is always the ROUTE's — never the body's, whether the two matched exactly, matched only by
-    // case, or the body omitted the field entirely. That is enforced by NORMALIZING unconditionally, once
-    // the guard below has passed, rather than only comparing. So the claim below is true in FACT, not only
-    // in the 400/200 decision: whatever ends up written and reported is deterministically the route's exact
-    // spelling. See Put_BodyMachineCodeMismatchesRoute_Gets400_AndTheVictimMachineIsUntouched (rejection),
-    // Put_BodyMachineCodeOmitted_IsFilledFromTheRoute (the lenient arm), and
-    // Put_BodyMachineCodeCaseVariant_NormalizesToTheRoutesSpelling_NoDuplicateRow (the case-variance fix)
-    // for the tests that pin all three.
+    // 🔴 REVIEW FIX ROUND 3, HIGH-A, CLOSED STRUCTURALLY — not by adding a normalization line to the other
+    // three handlers (a fourth, fifth, sixth per-handler patch is exactly the shape that produced rounds 1
+    // and 2's failures). See CanonicalMachineCodeStores.cs: `store`/`tags` in EVERY handler in this file are
+    // CANONICALIZING DECORATORS, registered as the ONLY thing IComponentModelStore/ITagNamespaceStore
+    // resolve to in Program.cs. Every machine code this seam sees — `body` below (its `MachineCode` field,
+    // rewritten by the decorator BEFORE it reaches the case-sensitive store) and every read handler's route
+    // parameter — is canonicalized structurally, whether or not the handler author remembers to think about
+    // case: this handler does NOT canonicalize `body`/`machineCode` itself for the store calls below
+    // (deliberately — see their own comments), because the decorator is what has to be trusted, not this
+    // handler's own diligence. The guard immediately below still rejects a genuine MISMATCH (a body naming a
+    // materially different machine — HIGH-1's original concern); once it passes, a SEPARATE `canonicalCode`
+    // value is computed near the end, used ONLY for the RESPONSE echo — see GetAsync/GetIntegrityAsync for
+    // the identical split applied on the read side.
     //
-    // NOTE ON ConfigEndpoints.cs, measured rather than assumed: its three route/body-code guards share this
-    // same compare-without-normalizing SHAPE, but NOT this defect — probed directly against
-    // ProductConfigStore (UpsertProduct/UpsertPoint), whose `_products`/`_recipes` Dictionaries use
-    // StringComparer.OrdinalIgnoreCase and whose UpsertPoint matches points by
-    // StringComparison.OrdinalIgnoreCase before replacing in place. A case-variant upsert there does NOT
-    // create a second row (case-insensitive identity is already the STORAGE layer's own semantics, not just
-    // the guard's) — it only lets the persisted Code field's own casing drift to whichever request wrote
-    // last, a much milder residual than ComponentModelStore's case-sensitive SQLite key. Not fixed here:
-    // pre-existing, on `main`, outside this task's range — reported to the owner rather than patched.
+    // THE IDENTITY RULE: a machine code is a case-INSENSITIVE identity, and its ONE canonical persisted
+    // spelling is `ToUpperInvariant()` — see MachineCodeIdentity's own doc comment for why upper rather than
+    // lower, and for the property this now makes true STRUCTURALLY rather than per-handler: two spellings of
+    // one identity cannot diverge into two rows regardless of which handler, which HTTP verb, or which of
+    // body/route supplied which spelling. Verified by probe before trusting the sentence, per the reviewer's
+    // own instruction — see Put_RouteCaseVariant_NormalizesToOneRow_NotTwo,
+    // Put_RouteCaseVariant_WithBodyMachineCodeOmitted_StillNormalizesToOneRow, and
+    // Get_And_GetIntegrity_And_List_FindTheSameRow_RegardlessOfRouteCase for the tests that pin the route
+    // side specifically (the body side is still pinned by round 2's own three tests).
+    //
+    // NOTE ON ConfigEndpoints.cs, measured rather than assumed (twice — round 2's own probe, then re-review
+    // #2's independent, stronger one covering BOTH body- and route-case variants surviving a disk reload):
+    // its three route/body-code guards share this compare-without-normalize SHAPE but NOT this defect.
+    // ProductConfigStore's `_products`/`_recipes` Dictionaries use StringComparer.OrdinalIgnoreCase and
+    // UpsertPoint matches by StringComparison.OrdinalIgnoreCase before replacing in place — case-insensitive
+    // identity is already that STORE's own semantics, not just the guard's, so a case-variant upsert there
+    // never creates a second row; only the persisted Code field's own casing drifts to whichever request
+    // wrote last. Not fixed here: pre-existing, on `main`, outside this task's range — reported to the owner
+    // rather than patched.
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PutAsync(
         string machineCode, ComponentModelDocument body, IComponentModelStore store, ITagNamespaceStore tags, CancellationToken ct)
@@ -127,7 +144,7 @@ public static class HmiModelEndpoints
         // `body` itself can never be null here — ComponentModelDocument is a non-nullable complex parameter,
         // so RequestDelegateFactory already 400s an absent/literal-null body before this handler is entered.
         // `body.MachineCode`, however, CAN be null/blank (an omitted JSON field, or an explicit ""), or spell
-        // the same identity in a different case — both handled below, then normalized unconditionally.
+        // the same identity in a different case — both handled below.
         if (!string.IsNullOrWhiteSpace(body.MachineCode) &&
             !string.Equals(body.MachineCode, machineCode, StringComparison.OrdinalIgnoreCase))
         {
@@ -135,10 +152,14 @@ public static class HmiModelEndpoints
                 $"body.machineCode ('{body.MachineCode}') must match the route {{machineCode}} ('{machineCode}') (or be omitted)."));
         }
 
-        // The route's spelling is authoritative in FACT, not only in the 400/200 decision above: this runs
-        // whether the guard above filled in an omitted code, matched exactly, or matched only case-
-        // insensitively — so two differently-cased spellings of "the same" machine can never become two rows.
-        body = body with { MachineCode = machineCode };
+        // Fill an omitted body code from the route — still NOT canonicalized here. The STORE call below is
+        // what determines the persisted spelling (store.PutAsync is the canonicalizing decorator, which
+        // rewrites doc.MachineCode before it ever reaches the case-sensitive SQLite key); this line only
+        // keeps `body.MachineCode` non-blank for ModelIntegrity.Check further down.
+        if (string.IsNullOrWhiteSpace(body.MachineCode))
+        {
+            body = body with { MachineCode = machineCode };
+        }
 
         try
         {
@@ -157,11 +178,14 @@ public static class HmiModelEndpoints
 
         // Referential integrity against whatever tag namespace this machine has loaded (null if none) is a
         // WARNING, never a rejection — declaration order between a component tree and a tag namespace is
-        // not a constraint (see ModelIntegrity's own doc comment for why).
+        // not a constraint (see ModelIntegrity's own doc comment for why). `machineCode` passed RAW — same
+        // reason as GetAsync above: `tags` is the canonicalizing decorator.
         var ns = await tags.GetAsync(machineCode, ct).ConfigureAwait(false);
         var warnings = ModelIntegrity.Check(body, ns);
 
-        return Results.Ok(new PutModelResultDto(machineCode, body.Components.Count, warnings));
+        // Response echo only — computed AFTER the store calls, never used to decide what got written.
+        var canonicalCode = MachineCodeIdentity.Canonicalize(machineCode);
+        return Results.Ok(new PutModelResultDto(canonicalCode, body.Components.Count, warnings));
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -170,13 +194,22 @@ public static class HmiModelEndpoints
     internal static async Task<IResult> GetIntegrityAsync(
         string machineCode, IComponentModelStore store, ITagNamespaceStore tags, CancellationToken ct)
     {
-        var doc = await store.GetAsync(machineCode, ct).ConfigureAwait(false) ?? EmptyDocument(machineCode);
+        // Fix round 3, HIGH-A — this is the route re-review #2 singled out as the worst consequence of the
+        // round-2 gap: WITHOUT the canonicalizing decorator, a case-variant route finds neither the real
+        // document nor the real namespace (both case-sensitive-keyed misses), so this handler would report a
+        // CLEAN health check — namespaceLoaded:false, zero violations — for a machine whose tree was
+        // declared under the other spelling. `machineCode` is passed RAW to both calls below: `store`/`tags`
+        // are the canonicalizing decorators, and THEY are what makes these lookups find the real data
+        // regardless of route case. `canonicalCode` is computed separately, used only for the response echo.
+        var doc = await store.GetAsync(machineCode, ct).ConfigureAwait(false);
         var ns = await tags.GetAsync(machineCode, ct).ConfigureAwait(false);
+        var canonicalCode = MachineCodeIdentity.Canonicalize(machineCode);
+        doc ??= EmptyDocument(canonicalCode);
         var violations = ModelIntegrity.Check(doc, ns);
 
         // ns is not null ⇔ a namespace has actually been loaded for this machine — distinct from "loaded and
         // empty" (Tags.Count == 0), which IntegrityReportDto's own doc comment calls out by name.
-        return Results.Ok(new IntegrityReportDto(machineCode, ns is not null, violations));
+        return Results.Ok(new IntegrityReportDto(canonicalCode, ns is not null, violations));
     }
 
     // ─────────────────────────────────────────────────────────────────────
