@@ -42,7 +42,7 @@
  *   và chỉ câu đầu mới chứng minh không rò.
  */
 import { isAbsolute, relative, resolve } from "node:path";
-import { cheBiMat, duocPhepGuiNoiDung } from "./nguCanh";
+import { camRoiMay, cheBiMat, duocPhepGuiNoiDung, duocPhepRoiMay } from "./nguCanh";
 import { namTrongThuMuc } from "./chanGhi";
 
 /** Trần BYTE cho `doc_tep`. Đo bằng byte UTF-8 vì đó là thứ THẬT SỰ rời máy, không phải số ký tự. */
@@ -140,6 +140,12 @@ export function duocPhepDoc(
     };
   }
 
+  // Luật 4 (vòng sửa 1): cấm RỜI MÁY riêng — hiện là `.git/**`. Hỏi RIÊNG thay vì qua
+  // `duocPhepRoiMay` để giữ được LÝ DO cụ thể của `camRoiMay`; một câu "tệp nhạy cảm" chung chung
+  // ở đây sẽ khiến người dùng không hiểu vì sao `.git/config` bị chặn còn `.gitignore` thì không.
+  const camDoc = camRoiMay(duongTuyetDoi);
+  if (camDoc) return { ok: false, lyDo: sach(camDoc) };
+
   return { ok: true };
 }
 
@@ -148,7 +154,7 @@ export function duocPhepDoc(
  * Dùng ở `mang/toolCucBo.ts` (trước khi đọc đĩa) VÀ bên trong `grepThuan` (nhánh kia).
  */
 export function locTapQuet(duongs: string[]): string[] {
-  return duongs.filter(duocPhepGuiNoiDung);
+  return duongs.filter(duocPhepRoiMay);
 }
 
 /**
@@ -268,7 +274,7 @@ export function grepThuan(
   tapNguonBiCat = false,
   soDaLoaiTruoc = 0,
 ): string {
-  const tapQuet = ungVien.filter((u) => duocPhepGuiNoiDung(u.duong) && duocPhepGuiNoiDung(u.nhan));
+  const tapQuet = ungVien.filter((u) => duocPhepRoiMay(u.duong) && duocPhepRoiMay(u.nhan));
   // `soDaLoaiTruoc`: xem docblock `dinhDangLietKe` — nơi lọc TRƯỚC phải đếm, nếu không lời khai
   // biến mất đúng trên đường chạy thật.
   const soBiChan = ungVien.length - tapQuet.length + soDaLoaiTruoc;

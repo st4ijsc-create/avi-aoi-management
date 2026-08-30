@@ -4,7 +4,7 @@
  * đã cắt, chứ không im lặng gửi quá.
  */
 import { describe, it, expect } from "vitest";
-import { cheBiMat, duocPhepGuiNoiDung, dungNguCanh } from "./nguCanh";
+import { camRoiMay, cheBiMat, duocPhepGuiNoiDung, duocPhepRoiMay, dungNguCanh } from "./nguCanh";
 
 describe("duocPhepGuiNoiDung", () => {
   it("★★★ CẤM mọi biến thể .env", () => {
@@ -168,5 +168,79 @@ describe("dungNguCanh", () => {
     expect(s).not.toContain("KHONG_DUOC_XUAT_HIEN");
     expect(s).toContain("ĐÃ BỎ QUA");
     expect(s).toContain("tệp đang mở");
+  });
+});
+
+/**
+ * ★★★ 2026-08-30 (Đợt D, vòng sửa 1) — `.git/**` KHÔNG ĐƯỢC RỜI MÁY.
+ *
+ * Đây là danh sách THỨ HAI, tách TƯỜNG MINH khỏi `duocPhepGuiNoiDung` — đúng như docblock
+ * `chanGhi.ts` dặn khi hai câu hỏi tách đáp án. LÝ DO KHÔNG GỘP (đo được, không phải sở thích):
+ * `chanGhi.unit.test.ts` có một ca ★★★ "ĐỐI CHỨNG" khẳng định
+ * `duocPhepGuiNoiDung(".git/hooks/pre-commit") === true`, kèm ghi chú "nếu ca này đỏ thì luật 4
+ * là thừa và cả phán quyết I-6 sai". Nhét `.git` vào danh sách chung sẽ làm ca ấy ĐỎ và biến
+ * nhánh `.git` của `camGhiRieng` thành mã CHẾT — tức xoá mất câu giải thích "ghi vào đó là ĐẶT MÃ
+ * SẼ CHẠY trên máy bạn" mà Đợt C dựng riêng.
+ */
+describe("camRoiMay — `.git/**` không được RỜI MÁY (Đợt D vòng sửa 1)", () => {
+  it("★★★ mọi thứ dưới .git/ đều bị chặn RỜI MÁY", () => {
+    for (const duong of [
+      "C:\\ws\\.git\\config",
+      "C:\\ws\\.git\\hooks\\pre-commit",
+      "C:/ws/.git/config",
+      "C:\\ws\\sub\\.git\\config",
+      "C:\\ws\\.GIT\\config",
+    ]) {
+      expect(camRoiMay(duong), `${duong} phải bị chặn`).toBeTypeOf("string");
+      expect(duocPhepRoiMay(duong), `${duong} không được rời máy`).toBe(false);
+    }
+  });
+
+  it("★★★ KHÔNG chặn nhầm: .gitignore · .github/workflows · src/gitUtils.ts vẫn RỜI MÁY được", () => {
+    // `.git` phải là NGUYÊN một đoạn đường dẫn. Chặn nhầm là mất chức năng ÂM THẦM.
+    for (const duong of [
+      "C:\\ws\\.gitignore",
+      "C:\\ws\\.gitattributes",
+      "C:\\ws\\.github\\workflows\\ci.yml",
+      "C:\\ws\\src\\gitUtils.ts",
+      "C:\\ws\\src\\Calculator.cs",
+    ]) {
+      expect(camRoiMay(duong), `${duong} KHÔNG được bị chặn`).toBeUndefined();
+      expect(duocPhepRoiMay(duong), `${duong} phải rời máy được`).toBe(true);
+    }
+  });
+
+  it("★★★ `duocPhepRoiMay` GỘP cả hai luật — tệp nhạy cảm cũ vẫn bị chặn", () => {
+    expect(duocPhepRoiMay("C:\\ws\\.env")).toBe(false);
+    expect(duocPhepRoiMay("C:\\ws\\keys\\id_rsa")).toBe(false);
+  });
+
+  it("★★★ ĐỐI CHỨNG: `duocPhepGuiNoiDung` KHÔNG bị sửa lén — luật 4 của đường GHI vẫn còn nghĩa", () => {
+    // Nếu ca này đỏ, nghĩa là ai đó đã nhét `.git` vào danh sách CHUNG, và nhánh `.git` của
+    // `camGhiRieng` (Đợt C) vừa trở thành mã chết mà không ai nhận ra.
+    expect(duocPhepGuiNoiDung("C:\\ws\\.git\\hooks\\pre-commit")).toBe(true);
+  });
+});
+
+describe("dungNguCanh — đường NGỮ CẢNH cũng phải đóng `.git/**`", () => {
+  it("★★★ tệp đang mở nằm trong .git/ ⇒ KHÔNG vào ngữ cảnh", () => {
+    /**
+     * Người ta CÓ mở `.git/config` trong trình soạn thảo. Nếu chỉ đóng ở ba tool đọc mà bỏ ngỏ
+     * đường ngữ cảnh, thì cùng một tệp vẫn rời máy chỉ vì nó đang là tab hoạt động — đúng lớp lỗi
+     * "hai đường cho một bất biến, và đường lỏng hơn là đường đang chạy".
+     */
+    const ra = dungNguCanh({
+      tepDangMo: { duong: "C:\\ws\\.git\\config", noiDung: "MOC_TU_GIT_CONFIG" },
+      nganSach: 10000,
+    });
+    expect(ra).not.toContain("MOC_TU_GIT_CONFIG");
+  });
+
+  it("★ ĐỐI CHỨNG: tệp mã thường vẫn vào ngữ cảnh bình thường", () => {
+    const ra = dungNguCanh({
+      tepDangMo: { duong: "C:\\ws\\src\\a.ts", noiDung: "int a = 1;" },
+      nganSach: 10000,
+    });
+    expect(ra).toContain("int a = 1;");
   });
 });

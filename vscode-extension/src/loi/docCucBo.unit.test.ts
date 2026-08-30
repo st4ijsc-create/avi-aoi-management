@@ -137,6 +137,58 @@ describe("docCucBo — grep KHÔNG rò nội dung tệp cấm (R-D2, tầng a + 
   });
 });
 
+describe("docCucBo — `.git/**` KHÔNG rời máy qua grep/liet_ke (vòng sửa 1)", () => {
+  const NOI_DUNG_GIT: Record<string, string> = {
+    ".git/config": [
+      '[remote "origin"]',
+      `  url = https://nguoidung:${MAT_KHAU_TRONG_ENV}@github.com/x/y.git`,
+      "  MOC_TU_GIT = DATABASE_URL",
+    ].join("\n"),
+    ".gitignore": "# DATABASE_URL khong bao gio commit\nnode_modules/",
+    "src/Calculator.cs": "// DATABASE_URL doc tu cau hinh",
+  };
+
+  function docGiaGit(so: string[]): (duong: string) => string {
+    return (duong: string) => {
+      so.push(duong);
+      for (const [nhan, noiDung] of Object.entries(NOI_DUNG_GIT)) {
+        if (duong.endsWith(nhan.replace(/\//g, process.platform === "win32" ? "\\" : "/"))) return noiDung;
+      }
+      throw new Error(`không đọc được: ${duong}`);
+    };
+  }
+
+  const ungVienGit = [
+    { duong: trongWs(".git/config"), nhan: ".git/config" },
+    { duong: trongWs(".gitignore"), nhan: ".gitignore" },
+    { duong: trongWs("src/Calculator.cs"), nhan: "src/Calculator.cs" },
+  ];
+
+  it("★★★ KẾT CỤC: grep KHÔNG trả dòng nào từ `.git/` — mà `.gitignore` thì VẪN trả", () => {
+    const so: string[] = [];
+    const kq = grepThuan("DATABASE_URL", ungVienGit, docGiaGit(so));
+
+    // KẾT CỤC (khẳng định chính)
+    expect(kq).not.toContain("MOC_TU_GIT");
+    expect(kq).not.toContain(MAT_KHAU_TRONG_ENV);
+    expect(kq).not.toContain(".git/config");
+    // Ý ĐỊNH (khẳng định phụ): tệp ấy không hề được MỞ RA.
+    expect(so.some((p) => p.includes(".git") && !p.includes(".gitignore"))).toBe(false);
+    // ⚠ CHỐNG CHẶN NHẦM + CHỐNG TỰ THOẢ: `.gitignore` KHÔNG phải `.git`, phải còn nguyên.
+    expect(kq).toContain(".gitignore");
+    expect(kq).toContain("src/Calculator.cs");
+  });
+
+  it("★★★ liet_ke KHÔNG liệt kê gì trong `.git/`, nhưng VẪN liệt kê `.gitignore`", () => {
+    const kq = dinhDangLietKe("ws", [".git/config", ".git/hooks/pre-commit", ".gitignore", "src/a.ts"]);
+    expect(kq).not.toContain(".git/config");
+    expect(kq).not.toContain("pre-commit");
+    expect(kq).toContain(".gitignore");
+    expect(kq).toContain("src/a.ts");
+    expect(kq).toContain("đã loại 2");
+  });
+});
+
 describe("docCucBo — liet_ke loại tệp cấm khỏi DANH SÁCH", () => {
   it("★★★ `.env` và khoá riêng KHÔNG có trong danh sách; tệp mã thường thì CÓ", () => {
     const kq = dinhDangLietKe("src", [".env", ".env.local", "src/Calculator.cs", "keys/id_rsa", "certs/tls.pem", "src/config.ts"]);
@@ -260,14 +312,34 @@ describe("docCucBo — hàng rào ĐƯỜNG DẪN cho lượt ĐỌC", () => {
 
   it("★★★ NHÁNH KIA: danh sách CHỈ-CẤM-GHI KHÔNG được áp cho lượt ĐỌC", () => {
     /**
-     * `.git/hooks/pre-commit`, `.vscode/tasks.json`, `*.code-workspace` nguy hiểm khi **GHI** (mã
-     * sẽ chạy trên máy lập trình viên) nhưng **vô hại khi ĐỌC** — chúng là văn bản, và model đọc
-     * chúng để hiểu dự án. Dùng nhầm `duocPhepGhi` ở đường đọc sẽ chặn chúng và làm AI mù đúng
-     * những tệp cấu hình mà nó cần nhất, một cách IM LẶNG.
+     * `.vscode/tasks.json` và `*.code-workspace` nguy hiểm khi **GHI** (mã sẽ chạy trên máy lập
+     * trình viên) nhưng **vô hại khi ĐỌC** — chúng là văn bản, và model đọc chúng để hiểu dự án.
+     * Dùng nhầm `duocPhepGhi` ở đường đọc sẽ chặn chúng và làm AI mù đúng những tệp cấu hình mà nó
+     * cần nhất, một cách IM LẶNG.
+     *
+     * ⚠⚠ 2026-08-30 (vòng sửa 1) — `.git/hooks/pre-commit` ĐÃ RỜI KHỎI DANH SÁCH NÀY. Nó từng ở
+     * đây vì "vô hại khi ĐỌC"; phán quyết mới là `.git/**` KHÔNG được rời máy (xem `camRoiMay`).
+     * Nói thẳng: đây là một ca lưới BỊ ĐỔI, không phải một ca bị nới — luật chặn nó là luật MỚI
+     * (`camRoiMay`), KHÔNG phải `camGhiRieng` rò sang; và bất biến gốc của ca này (danh sách
+     * chỉ-cấm-GHI không được áp cho đường đọc) vẫn được hai đường còn lại canh nguyên vẹn.
      */
-    expect(duocPhepDoc(trongWs(".git/hooks/pre-commit"), [WS]).ok).toBe(true);
     expect(duocPhepDoc(trongWs(".vscode/tasks.json"), [WS]).ok).toBe(true);
     expect(duocPhepDoc(trongWs("duan.code-workspace"), [WS]).ok).toBe(true);
+  });
+
+  it("★★★ `.git/**` bị TỪ CHỐI ĐỌC (vòng sửa 1) — token remote + lịch sử tệp đã xoá", () => {
+    for (const duong of [".git/config", ".git/hooks/pre-commit", ".git/COMMIT_EDITMSG", "sub/.git/config"]) {
+      const kq = duocPhepDoc(trongWs(duong), [WS]);
+      expect(kq.ok, `${duong} phải bị chặn đọc`).toBe(false);
+    }
+  });
+
+  it("★★★ ĐỐI CHỨNG `.git`: `.gitignore` · `.github/workflows` · `src/gitUtils.ts` VẪN đọc được", () => {
+    // `.git` phải là NGUYÊN một đoạn đường dẫn. Chặn nhầm là mất chức năng ÂM THẦM.
+    expect(duocPhepDoc(trongWs(".gitignore"), [WS]).ok).toBe(true);
+    expect(duocPhepDoc(trongWs(".gitattributes"), [WS]).ok).toBe(true);
+    expect(duocPhepDoc(trongWs(".github/workflows/ci.yml"), [WS]).ok).toBe(true);
+    expect(duocPhepDoc(trongWs("src/gitUtils.ts"), [WS]).ok).toBe(true);
   });
 
   it("★★ CHÍNH thư mục gốc workspace: cấm với `doc_tep`, cho với `liet_ke`", () => {

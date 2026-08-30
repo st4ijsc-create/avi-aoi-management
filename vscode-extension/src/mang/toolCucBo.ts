@@ -2,6 +2,47 @@
  * ★★★ BA TOOL ĐỌC CỤC BỘ — LỚP CHẠM `vscode` VÀ CHẠM ĐĨA. **CHỈ ĐỌC.**
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ĐỌC TRƯỚC KHI SỬA TỆP NÀY — BẰNG CHỨNG MẠNH NHẤT CỦA NÓ **KHÔNG NẰM TRONG CI**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Hàng rào gửi của tệp này được chứng minh bằng **hai** thứ, và thứ thứ hai KHÔNG tự chạy lại:
+ *
+ *   1. Lưới trong repo — `mang/toolCucBo.unit.test.ts` — chạy trên một **hệ tệp ẢO**
+ *      (`vi.mock("node:fs")`). Nó phủ logic định tuyến, hàng rào đường dẫn, và sổ ghi "tệp nào bị
+ *      MỞ RA". Nó **KHÔNG** phủ hành vi trên hệ tệp thật.
+ *   2. **Script chạy TAY trên ĐĨA THẬT** — bằng chứng mạnh nhất, và là thứ đã bắt được lỗ mà lưới
+ *      MÙ hoàn toàn (xem "LỖ Ở KHE GIỮA HAI LỚP" ở `locUngVien`).
+ *      Đường dẫn: `<scratchpad>/do-thay-the-task2.cjs`
+ *      (`C:\Users\Admin\AppData\Local\Temp\claude\d--SOURCES-avi-aoi-management\
+ *        2bb420b5-d46e-4bb6-ba85-864d423de458\scratchpad\do-thay-the-task2.cjs`)
+ *      Nó: build bundle bằng ĐÚNG cấu hình `build.mjs` → tiêm `vscode` GIẢ → dựng workspace thử
+ *      trên thư mục tạm THẬT (`src/Calculator.cs`, `.env` có chuỗi kết nối, `src/config.ts` có
+ *      khoá hardcode, `keys/id_rsa`, tệp > 64 KB, `.git/config` có token remote, `.gitignore`,
+ *      và một **junction THẬT** trỏ ra ngoài workspace) → chạy cả ba tool → khẳng định 17 điều,
+ *      trong đó: chuỗi bí mật KHÔNG xuất hiện ở bất kỳ kết quả nào · `.env`/`id_rsa`/`.git` không
+ *      lọt · `.gitignore` VẪN đọc được · khoá trong tệp hợp lệ bị che · tệp lớn có lời khai đã cắt
+ *      · junction bị chặn ở cả ba tool.
+ *
+ * ⚠⚠ **AI SỬA TỆP NÀY PHẢI CHẠY LẠI SCRIPT ẤY** (`node do-thay-the-task2.cjs`) và **dán output vào
+ *    mô tả thay đổi**. Lưới xanh KHÔNG đủ để nói "hàng rào còn nguyên" — lỗ đã bắt được lần trước
+ *    là một lỗ mà toàn bộ lưới vẫn XANH.
+ *
+ * ⚠ VÌ SAO KHÔNG ĐƯA ĐƯỢC VÀO CI (và vì sao đó là điều ĐÚNG): census (`loi/census.unit.test.ts`,
+ *   mảng `CAM_TU`) cấm **mọi tệp — kể cả tệp lưới** — gọi API ghi đĩa của `fs`. Một lưới dựng
+ *   workspace thử trên đĩa thật buộc phải ghi tệp, tức phải nới census. Census là thứ giữ bất biến
+ *   "Đợt D không mở đường ghi nào"; nới nó để chiều một lưới là đánh đổi sai chiều. Nên bằng chứng
+ *   đĩa-thật **cố ý** sống ngoài repo, và cái giá của lựa chọn ấy là dòng cảnh báo bạn đang đọc.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * GIỚI HẠN ĐÃ BIẾT (không phải chỗ bị bỏ quên)
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *   · `cheBiMat` là một danh sách **KHUÔN MẪU**, không phải bộ dò bí mật. Một khoá không khớp năm
+ *     luật hiện có (token nội bộ 32 hex không tiền tố, gán bằng tên biến lạ…) **SẼ rời máy** nếu nó
+ *     nằm hardcode trong một tệp mã hợp lệ. Tầng chặn-theo-TỆP không với tới ca đó. Đây là nợ đã
+ *     ghi từ Đợt A: gộp bộ che của client với `redactSecretsAndPII` của máy chủ — chưa làm.
+ *   · `liet_ke` là **ĐỆ QUY** (`**​/*` qua `findFiles`), không phải một-mức, và có trần số mục +
+ *     trần tầng tìm kiếm; cả hai lần cắt đều được KHAI ra trong kết quả.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ĐỢT D KHÔNG MỞ ĐƯỜNG GHI NÀO
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * Không nhánh nào trong tệp này đặt một byte lên đĩa. Census (`loi/census.unit.test.ts`) cưỡng chế
@@ -45,7 +86,7 @@
 import * as vscode from "vscode";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { duongTuongDoiTrongWorkspace, giaiDuongDeXuat } from "../loi/chanGhi";
-import { duocPhepGuiNoiDung } from "../loi/nguCanh";
+import { duocPhepRoiMay } from "../loi/nguCanh";
 import { giaiDuongThat } from "../loi/duongThat";
 import type { YeuCauDoc } from "../loi/yeuCauDoc";
 import {
@@ -124,7 +165,7 @@ function locUngVien(
   for (const u of uris) {
     const that = giaiDuongThat(u.fsPath);
     if (!that.ok) continue;
-    if (!duocPhepGuiNoiDung(that.duong)) {
+    if (!duocPhepRoiMay(that.duong)) {
       soNhayCam++;
       continue;
     }
