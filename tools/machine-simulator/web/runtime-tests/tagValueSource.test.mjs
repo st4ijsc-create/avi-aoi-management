@@ -138,6 +138,16 @@ test("keyMetric không khớp lưới name=value+unit (hình AOI) vẫn trả ch
   assert.deepEqual(source.get("keyMetric"), { value: "12 pts, 1 NG", quality: "good" })
 })
 
+// ── WS-HMI-1 Task 5: path "code" — không phải tag, nhưng faceplate cần nó ───────────────────────
+// Xem doc-comment "WS-HMI-1 Task 5" ở đầu `TagValueSource.ts`: `widgets/faceplate.tsx` cần biết máy
+// nào để tự gọi `useMachine(code)` lấy `plan` (CyclePlan) — thứ `TagValue.value` (number|boolean|
+// string) không mang được. "good" luôn — `code` không có khái niệm "cũ"/"mới" như `passRate`/
+// `driftState`.
+test('path "code" trả đúng MachineDetail.code, quality luôn "good"', () => {
+  const source = createMachineDetailSource(baseMachine({ code: "AOI-01" }))
+  assert.deepEqual(source.get("code"), { value: "AOI-01", quality: "good" })
+})
+
 // ── Đề xuất 4: subscribe trả hàm huỷ hoạt động thật ─────────────────────────────────────────────
 test("subscribe trả về một hàm huỷ, và gọi hàm đó thì callback thôi chạy", () => {
   const source = createMachineDetailSource(baseMachine({ cycles: 1 }))

@@ -1,18 +1,13 @@
 import * as React from "react"
 import { Link, useParams } from "wouter"
 
-import { Sheet, type StatusLampState } from "@/components/industrial"
+import { type StatusLampState } from "@/components/industrial"
 import { ControlColumn } from "@/components/hmi/ControlColumn"
 import { Nameplate } from "@/components/hmi/Nameplate"
 import { OutputCard } from "@/components/hmi/OutputCard"
-import { ReadoutGrid } from "@/components/hmi/ReadoutGrid"
-import { SchematicPanel } from "@/components/hmi/SchematicPanel"
-import type { AoiSchematicPoint } from "@/components/hmi/schematics/AoiSchematic"
 import { SettingsTab } from "@/components/hmi/SettingsTab"
 import { SystemLog, type HmiLocalLogEvent } from "@/components/hmi/SystemLog"
 import { TabRail, type HmiTabId } from "@/components/hmi/TabRail"
-import { useGloss } from "@/components/hmi/bilingual"
-import { parseKeyMetric } from "@/components/hmi/derive"
 import { useT } from "@/i18n"
 import {
   EngineApiError,
@@ -25,53 +20,43 @@ import {
   useStopFleet,
   type DeviceClass,
 } from "@/lib/api"
-import { useMachineConfigCheck, useProduct, useProductPoints } from "@/lib/configApi"
 import { useInspectorStream } from "@/lib/inspector"
+import { ScreenRenderer } from "@/hmi-runtime/ScreenRenderer"
+import { createMachineDetailSource } from "@/hmi-runtime/TagValueSource"
+import type { HmiScreenDocument } from "@/contracts/hmiScreen"
 
-function clamp01(n: number): number {
-  return Math.max(0, Math.min(1, n))
-}
+// WS-HMI-1 Task 5 — the corrigendum at the top of `docs/plans/2026-08-30-hmi-ws1-runtime-blueprint.md`:
+// what deletes is the HAND-WRITTEN layout (the `SCHEMATIC_READOUT_FLEX` proportions table that used to
+// live here, the `if`-branch that picked a schematic by `DeviceClass`, the panel order nailed into this
+// file's JSX) — not the three living-twin drawings themselves, which survive as `kind: "faceplate"`
+// widget implementations (`src/hmi-runtime/widgets/faceplate.tsx`). This file's only remaining job for
+// the operator's main panel is picking WHICH document describes this machine's class and handing it to
+// `<ScreenRenderer>` — no proportions, no schematic-selection branch, no fixed panel order live here
+// anymore.
+//
+// 🔴 Statically imported (build-time), not `fetch()`ed — see `resolveJsonModule` in
+// `tsconfig.app.json`. This satisfies the plan's "the renderer reads JSON at RUNTIME" rule (
+// `<ScreenRenderer>` still interprets the generic `HmiScreenDocument` structure in the browser, at
+// render time — no build step turns this JSON into hand-written React for these three screens) but it
+// does NOT satisfy the plan's stronger, separate aspiration in the same paragraph — "an engineer at the
+// factory must be able to fix the screen without rebuilding the app" — since a static import bundles
+// these three files' bytes into the JS output; editing `web/screens/*.json` on a deployed kiosk needs a
+// rebuild until something (this route, or a future WS-HMI-2 "publish" flow) actually fetches them from
+// disk at runtime instead. Named here explicitly rather than silently claimed — see task-5-report.md.
+import automationOverview from "../../screens/automation-overview.json"
+import aoiOverview from "../../screens/aoi-overview.json"
+import iotOverview from "../../screens/iot-overview.json"
 
-/**
- * H5 — layout spec §8's "adapt proportions per machine class rather than copying the reference's
- * fixed split blindly": `[schematicFlex, readoutFlex]` grow ratios for the two flexible left columns
- * (the third, control-rail column is a fixed width — see the render below). AOI gets the extra room
- * (its board + real measurement-point dots need to stay legible, spec §7: "make this the strongest
- * one"); IoT gives room back to the readout grid instead, since its wireframe (a node, a link, an
- * uplink) is comparatively sparse and doesn't need the width; Automation splits evenly.
- */
-const SCHEMATIC_READOUT_FLEX: Record<DeviceClass, [number, number]> = {
-  Automation: [1, 1],
-  AoiAvi: [1.15, 1],
-  Iot: [0.85, 1.15],
+const SCREEN_DOCS: Record<DeviceClass, HmiScreenDocument> = {
+  Automation: automationOverview as HmiScreenDocument,
+  AoiAvi: aoiOverview as HmiScreenDocument,
+  Iot: iotOverview as HmiScreenDocument,
 }
 
 let localEventSeq = 0
 function nextLocalId(): string {
   localEventSeq += 1
   return `local-${localEventSeq}`
-}
-
-/**
- * I-3 (branch-review) — `configCheck.data.products` is not necessarily one entry: an AOI/AVI machine's
- * `/config/check` (no `productCode` filter, `Hmi.tsx` never passes one) returns EVERY product the
- * ecosystem knows about, each with its OWN independent drift state (live-confirmed against the running
- * Demo fleet: AOI-01/AOI-02 both come back `[MODEL-A: in_sync, MODEL-B: drift]`). The previous build
- * read only `products[0]` for BOTH the product tile and the CONFIG STATE tile, so MODEL-B's real drift
- * was silently invisible on every AOI panel — an operator staring at a green/"in sync" CONFIG STATE
- * tile while a second product was, in fact, out of sync. Worst-wins across the whole list is the only
- * honest single-tile summary: `drift` (a real, actionable problem) outranks `unknown` (we can't tell)
- * outranks `in_sync` (fine) — same severity ordering `CONFIG_DRIFT_TONE` already encodes as
- * warn > idle > run.
- */
-const DRIFT_SEVERITY: Record<string, number> = { drift: 2, unknown: 1, in_sync: 0 }
-
-function worstDriftState(products: readonly { driftState: string }[]): string | null {
-  if (products.length === 0) return null
-  return products.reduce<string>(
-    (worst, p) => (DRIFT_SEVERITY[p.driftState] ?? 1) > (DRIFT_SEVERITY[worst] ?? 1) ? p.driftState : worst,
-    products[0].driftState
-  )
 }
 
 function LoadingKiosk() {
@@ -107,7 +92,6 @@ function ErrorKiosk({ title, description }: { title: string; description: string
 export default function Hmi() {
   const { code } = useParams<{ code: string }>()
   const t = useT()
-  const gloss = useGloss()
 
   const { data: machine, isPending, isError, error } = useMachine(code)
   const fleetIsRunning = useFleetIsRunning()
@@ -141,76 +125,16 @@ export default function Hmi() {
     setActiveTab("operation")
   }, [code])
 
-  const isAoi = machine?.class === "AoiAvi"
-  // H2c: enabled for EVERY class now, not just AOI — `ConfigSyncEngine.CheckAsync` resolves
-  // `configKind` (`points` for AOI/AVI, `recipe` for Automation/IoT) off the machine's own
-  // `DeviceClass` server-side, so this single call already covers all three; the CONFIG STATE tile
-  // below was permanently "—" before this pass precisely because nothing populated it for the two
-  // non-AOI classes (and `machine.driftState` itself only reflects a manual sync-config action THIS
-  // session, not the real always-on checksum drift this hook exposes).
-  const configCheck = useMachineConfigCheck(code)
-  // I-3 — the full list (possibly >1 product, see `worstDriftState`'s doc comment above), NOT just
-  // the first entry. The schematic below still only DRAWS one product's points (it can't overlay two
-  // boards' measurement-point layouts at once — a real drawing constraint, not an oversight), so it
-  // keeps using this same first/primary entry; what changes is that the CONFIG STATE tile and the
-  // product tile (`ReadoutGrid.tsx`) now honestly reflect the WHOLE list instead of pretending it has
-  // exactly one element.
-  const productDrifts = configCheck.data?.configKind === "points" ? configCheck.data.products : []
-  const productCode = productDrifts[0]?.productModelCode
-  const product = useProduct(productCode)
-  const productPoints = useProductPoints(productCode)
-
-  // Real checksum-based config-sync drift (`in_sync | drift | unknown`) — `ConfigDtos.cs`'s
-  // `MachineConfigCheckDto`: exactly one of `products`/`recipe` is populated per `configKind`. I-3:
-  // worst-wins across every product, not just the first — see `worstDriftState`.
-  const configDriftState: string | null = configCheck.data
-    ? configCheck.data.configKind === "points"
-      ? worstDriftState(productDrifts)
-      : (configCheck.data.recipe?.driftState ?? null)
-    : null
-
-  // I-3 — the product tile (`ReadoutGrid.tsx`'s "product"/AOI class) must not silently claim a machine
-  // runs a single product when the config-check actually named more than one: "MODEL-A +1" style
-  // suffix rather than dropping the second product on the floor the way a bare product name would.
-  const primaryProductLabel = product.data?.name ?? productCode ?? null
-  const productTileLabel =
-    primaryProductLabel && productDrifts.length > 1
-      ? `${primaryProductLabel} +${productDrifts.length - 1}`
-      : primaryProductLabel
-
-  // I-1 — branch-review: the engine's per-cycle `boardPoints` are generic simulator points
-  // (`PT-001`…`PT-020`, `AoiInspectorSim.cs`) that share NO code vocabulary with the product's own
-  // configured `MeasurementPoint.code`s (e.g. `P01`) — there is no engine-side link between "this
-  // cycle's board result" and "this specific configured point." The previous build zipped the two
-  // lists BY ARRAY INDEX, which put a real NG verdict's colour on a specific, named, wrong physical
-  // location (live-reproduced: an NG at board index 9 painted product point `P03` red, and the NG at
-  // index 9 itself was silently dropped whenever the product had fewer than 10 configured points).
-  // Per the review's second remediation option: positions stay real (`nx`/`ny` come straight from
-  // the product's own config, unchanged below); no dot is coloured by an unverifiable per-point
-  // match — `aoiPoints` below carries ONLY position + code, never a `result`. The real per-cycle
-  // verdict is instead surfaced as an honest AGGREGATE (`aoiUnlocatedDefects`, computed straight from
-  // `machine.boardPoints` with no product-point involvement at all) plus a disclosure caption on the
-  // schematic itself — see `AoiSchematic.tsx`'s own remarks.
-  const aoiPoints = React.useMemo<AoiSchematicPoint[]>(() => {
-    if (!productPoints.data) return []
-    const sorted = [...productPoints.data]
-      .filter((p) => !p.deletedAt)
-      .sort((a, b) => a.orderIndex - b.orderIndex)
-    const imgW = product.data?.imageWidth ?? null
-    const imgH = product.data?.imageHeight ?? null
-    return sorted.map((p) => ({
-      code: p.code,
-      nx: clamp01(p.normalizedX ?? (imgW ? p.positionX / imgW : 0.5)),
-      ny: clamp01(p.normalizedY ?? (imgH ? p.positionY / imgH : 0.5)),
-    }))
-  }, [productPoints.data, product.data])
-
-  const aoiUnlocatedDefects = React.useMemo(
-    () => (machine?.boardPoints ?? []).filter((p) => p.result === "NG").length,
-    [machine?.boardPoints]
-  )
-
   const running = fleetIsRunning && !estopEngaged
+
+  // WS-HMI-1 Task 5 — everything the operator panel's main content used to derive here for the
+  // schematic/readout pair (config-drift worst-wins across products, the AOI product's real
+  // measurement-point positions, the per-cycle NG aggregate, the parsed IoT key metric) moved to
+  // `src/hmi-runtime/widgets/faceplate.tsx`'s `OperationOverviewFaceplate` — the ONE widget each of
+  // `SCREEN_DOCS` below now names. It re-derives all of it itself off the SAME `useMachine(code)` (and
+  // sibling) TanStack Query hooks, sharing this component's own cache entries rather than duplicating
+  // a fetch. See that file's own header comment for why this moved as a single unit instead of being
+  // decomposed into the 15 generic widget kinds.
 
   function pushLocalEvent(level: HmiLocalLogEvent["level"], viMsg: string, enMsg: string) {
     setLocalEvents((prev) => [...prev.slice(-199), { id: nextLocalId(), at: Date.now(), level, vi: viMsg, en: enMsg }])
@@ -277,11 +201,15 @@ export default function Hmi() {
   const lampLabel = estopEngaged ? t("hmi.status.estop") : running ? t("hmi.status.sub.run") : t("hmi.status.sub.idle")
   const lampSub = estopEngaged ? t("hmi.status.sub.fault") : undefined
 
-  const lastRow = machine.cycleLog.length > 0 ? machine.cycleLog[machine.cycleLog.length - 1] : undefined
-  const parsedIotMetric = lastRow ? parseKeyMetric(lastRow.keyMetric) : null
-  const iotLatestReading = parsedIotMetric ? `${parsedIotMetric.name}: ${parsedIotMetric.value}${parsedIotMetric.unit}` : undefined
-
-  const [schematicFlex, readoutFlex] = SCHEMATIC_READOUT_FLEX[machine.class]
+  // WS-HMI-1 Task 5 — the seam `ScreenRenderer`'s widgets read live values through
+  // (`src/hmi-runtime/TagValueSource.ts`, Task 1). Recreated each render off the SAME `machine` this
+  // component's own `useMachine(code)` just resolved — cheap (a handful of closures, no work done
+  // eagerly), and behaviourally identical to the seam's own documented "one stable identity + call
+  // `.update()` per poll" pattern for THIS integration specifically, because nothing downstream calls
+  // `source.subscribe()` today (`ScreenRenderer`/every widget only ever calls `.get()`, driven by
+  // React's own re-render on each poll, same as every other live value on this page). A future widget
+  // that DOES need push notifications independent of a re-render would need this reconsidered.
+  const source = createMachineDetailSource(machine)
 
   return (
     <div className="flex h-svh w-full flex-col overflow-hidden bg-surface-subtle text-text-body">
@@ -339,37 +267,14 @@ export default function Hmi() {
             tabIndex={0}
             className="flex min-h-0 min-w-0 flex-1 gap-3 outline-none"
           >
-            <SchematicPanel
-              className="min-h-0 min-w-0"
-              style={{ flexGrow: schematicFlex, flexBasis: 0 }}
-              deviceClass={machine.class}
-              isRunning={running}
-              cycles={machine.cycles}
-              plan={machine.plan}
-              aoiProductName={primaryProductLabel}
-              aoiPoints={aoiPoints}
-              aoiUnlocatedDefects={aoiUnlocatedDefects}
-              iotLatestReading={iotLatestReading}
-            />
-
-            <Sheet
-              className="hmi-readout-grid min-h-0 min-w-0"
-              style={{ flexGrow: readoutFlex, flexBasis: 0 }}
-              title={t("hmi.readoutPanel.title")}
-              titleEn={gloss("hmi.readoutPanel.title")}
-              bodyClassName="flex flex-1 min-h-0 flex-col p-0"
-            >
-              <div
-                tabIndex={0}
-                className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
-              >
-                <ReadoutGrid
-                  machine={machine}
-                  productLabel={isAoi ? productTileLabel : undefined}
-                  configDriftState={configDriftState}
-                />
-              </div>
-            </Sheet>
+            {/* WS-HMI-1 Task 5 — this used to be `<SchematicPanel>` + `<Sheet><ReadoutGrid/></Sheet>`
+                hand-placed side by side with a `DeviceClass`-keyed flex-grow ratio computed right here
+                in this file (`SCHEMATIC_READOUT_FLEX`). Both the ratio and the schematic-selection
+                branch moved to `src/hmi-runtime/widgets/faceplate.tsx`'s `OperationOverviewFaceplate` —
+                this file now only picks WHICH of the three static `HmiScreenDocument`s (`SCREEN_DOCS`)
+                describes `machine.class`'s screen and hands it to the generic renderer. No layout
+                decision keyed on `DeviceClass` is made in THIS file anymore. */}
+            <ScreenRenderer doc={SCREEN_DOCS[machine.class]} source={source} />
           </div>
         ) : (
           <SettingsTab

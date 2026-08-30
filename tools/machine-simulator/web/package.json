@@ -15,8 +15,8 @@
     "check:test-budgets": "node scripts/check-test-budgets.mjs",
     "test:contracts": "node --test contract-tests/contracts.test.mjs",
     "//test:contracts": "explicit filename ON PURPOSE, not a glob -- a glob matching zero files exits 0 with zero tests, and this suite is the only proof in the tree that contracts/fixtures/invalid/ is actually rejected. If you add a second *.test.mjs under contract-tests/, this line will NOT pick it up silently -- update the command above to list both files (or point node --test at the directory) and re-verify the printed test COUNT grew, not just that the command still exits 0.",
-    "test:runtime": "node --test runtime-tests/tagValueSource.test.mjs runtime-tests/widgetRegistry.test.mjs runtime-tests/bindings.test.mjs",
-    "//test:runtime": "explicit filenames ON PURPOSE, same reasoning as //test:contracts above -- a glob matching zero files exits 0 with zero tests. WS-HMI-1 Task 3 added bindings.test.mjs under runtime-tests/ (bindings.ts + gridLayout.ts pins) -- if a future task adds another *.test.mjs under runtime-tests/, list it explicitly in the command above too and re-verify the printed test COUNT grew, not just that the command still exits 0."
+    "test:runtime": "node --test runtime-tests/tagValueSource.test.mjs runtime-tests/widgetRegistry.test.mjs runtime-tests/bindings.test.mjs runtime-tests/screens.test.mjs",
+    "//test:runtime": "explicit filenames ON PURPOSE, same reasoning as //test:contracts above -- a glob matching zero files exits 0 with zero tests. WS-HMI-1 Task 3 added bindings.test.mjs under runtime-tests/ (bindings.ts + gridLayout.ts pins); WS-HMI-1 Task 5 added screens.test.mjs (validates web/screens/*-overview.json against contracts/hmi-screen.schema.json via contract-tests/validate.mjs, imported not copied) -- if a future task adds another *.test.mjs under runtime-tests/, list it explicitly in the command above too and re-verify the printed test COUNT grew, not just that the command still exits 0."
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

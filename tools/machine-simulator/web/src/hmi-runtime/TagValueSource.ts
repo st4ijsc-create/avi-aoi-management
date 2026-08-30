@@ -24,11 +24,26 @@
  * | "driftState"      | `MachineDetail.driftState` (raw, incl. the "—" sentinel) | —  |
  * | "keyMetric"       | the LATEST `cycleLog` row's `keyMetric`, parsed via `parseKeyMetric` (see below) | parsed, if any |
  * | "telemetry/{name}"| the latest value of the `TelemetrySeries` whose `metric === name` | the metric name itself |
+ * | "code"            | `MachineDetail.code` — see the WS-HMI-1 Task 5 note below           | —       |
  *
- * Anything else — including every other `MachineDetail` field (`spc`, `boardPoints`, `plan`, `code`,
+ * Anything else — including every other `MachineDetail` field (`spc`, `boardPoints`, `plan`,
  * `class`, `driverKind`) — is NOT exposed. This is deliberately the same field set `derive.ts` and the
  * three hand-written HMI screens already consume; extending the table is a small, obvious addition
  * when a widget actually needs one of those, not something to pre-guess here.
+ *
+ * ── WS-HMI-1 Task 5 — why "code" was the one addition, and why it stops there ──────────────────────
+ * `code` is not a "tag" in the ISA-95 sense the rest of this table's paths are — it names WHICH
+ * machine this source is bound to. It earns a path anyway for a reason nothing else on this table can
+ * substitute for: `widgets/faceplate.tsx`'s `kind: "faceplate"` implementation (Task 5) wraps the three
+ * living-twin drawings (`AutomationSchematic`/`AoiSchematic`/`IotSchematic`, via `SchematicPanel`),
+ * which take a `plan: CyclePlan | null` — a per-cycle array of positioned, timed, individually-resulted
+ * steps. `TagValue.value` is deliberately `number | boolean | string`, not `unknown`: widening it to
+ * smuggle a `CyclePlan` through it would quietly defeat the type safety every OTHER widget on this seam
+ * relies on, for one caller's convenience. `"code"` is the narrow, honest bridge instead:
+ * `FaceplateWidget` reads it, then calls the SAME `useMachine(code)` TanStack Query hook `Hmi.tsx`
+ * already calls for this page (identical query key ⇒ the two subscribers share one cached poll, not
+ * two) and gets the full live `MachineDetail` — `plan` included — the normal, typed way. No other
+ * widget needs this today, so no other raw field was added speculatively alongside it.
  *
  * ── `keyMetric`: giving the regex hack a face, not moving it ───────────────────────────────────
  * The engine's own `MachineState.FormatKeyMetric` emits `"{name}={value}{unit}"` with no separating
@@ -147,6 +162,10 @@ function readPath(dto: MachineDetail, path: string): TagValue | undefined {
       return { value: dto.driftState, quality: dto.driftState === DRIFT_STATE_NOT_YET_RUN ? "stale" : "good" }
     case "keyMetric":
       return keyMetricReading(dto)
+    case "code":
+      // See the module doc-comment's "WS-HMI-1 Task 5" note: not a tag, but the one non-tag identity
+      // field `faceplate` needs to fetch the full live `MachineDetail` (`plan` included) itself.
+      return { value: dto.code, quality: "good" }
     default:
       if (path.startsWith(TELEMETRY_PATH_PREFIX)) {
         return telemetryReading(dto, path.slice(TELEMETRY_PATH_PREFIX.length))

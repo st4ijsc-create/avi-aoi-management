@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "screenId": "automation-overview",
+  "title": "Vận hành — Automation",
+  "titleEn": "OPERATION — AUTOMATION",
+  "theme": "blueprint",
+  "layout": { "cols": 12, "rows": 8, "breakpoint": "panel" },
+  "widgets": [
+    {
+      "id": "overview",
+      "kind": "faceplate",
+      "rect": { "col": 0, "row": 0, "colSpan": 12, "rowSpan": 8 },
+      "props": { "faceplate": "fp.overview.automation" }
+    }
+  ]
+}
