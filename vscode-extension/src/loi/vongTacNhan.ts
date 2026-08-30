@@ -16,16 +16,16 @@ import { kepTranVong } from "../../../shared/aiCodingLoop";
 /**
  * Bước kế tiếp của vòng lặp.
  *
- * ⚠⚠ `goi_model` KHÔNG BAO GIỜ được `buocKeTiep` dưới đây TRẢ VỀ — hàm này chỉ quyết định giữa
- * "chạy tool" và "dừng". Sau khi tool chạy xong, gọi model lại là bước KẾ TIẾP CHẮC CHẮN của
- * `ui/bangChat.ts` (vòng lặp ở đó tự quay lại đầu), không phải một nhánh cần quyết định thêm — MỌI
- * điều kiện DỪNG (huỷ/lỗi/hết trần/hết yêu cầu đọc) đều đã được xét NGAY SAU lượt model vừa rồi,
- * trước khi có bất kỳ tool nào chạy. Biến thể `goi_model` vẫn có mặt trong kiểu để `ui/bangChat.ts`
- * dùng CHUNG một nhãn khi báo tiến độ ("vòng N/T — đang gọi model") thay vì tự bịa ra một chuỗi
- * loại-bước thứ hai lệch khỏi kiểu này.
+ * ⚠⚠⚠ 2026-08-30 (Đợt D, dọn nhánh chết) — TRƯỚC ĐÂY kiểu này có thêm nhánh `{loai:"goi_model"}`
+ * mà `buocKeTiep` KHÔNG BAO GIỜ trả về (đã ghi rõ trong báo cáo Task 3: với đúng NĂM trường đầu
+ * vào, "còn yêu cầu đọc" chỉ có thể dẫn tới "chạy tool NGAY", không có chỗ nào cho "gọi model tiếp"
+ * làm QUYẾT ĐỊNH của hàm này). Một nhánh union mà hàm không bao giờ sinh ra là một LỜI KHAI KIỂU
+ * KHÔNG GIỮ — cùng họ với lớp lỗi "khai kết quả mà không đọc kết quả" đã cắn dự án này nhiều lần.
+ * Đã BỎ nhánh đó khỏi kiểu. Nếu `ui/bangChat.ts` cần một nhãn để báo tiến độ "đang gọi model", đó
+ * là một CHUỖI HIỂN THỊ của riêng nơi hiển thị — không phải một quyết định của `buocKeTiep`, nên
+ * KHÔNG thuộc kiểu này.
  */
 export type BuocVong =
-  | { loai: "goi_model" }
   | { loai: "chay_tool" }
   | { loai: "dung"; lyDo: "het_tran" | "khong_con_tool" | "nguoi_dung_dung" | "loi" };
 
