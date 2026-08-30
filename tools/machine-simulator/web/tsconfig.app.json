@@ -7,6 +7,10 @@
     "types": ["vite/client"],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
+    // WS-HMI-1 Task 5 — `web/screens/*.json` are the three JSON screen documents `Hmi.tsx` now
+    // imports (see that file's own note on the "hot-editable without a rebuild" trade-off this
+    // static import makes). Scoped to exactly this: it doesn't touch any OTHER compiler behaviour.
+    "resolveJsonModule": true,
 
     /* Bundler mode */
     "moduleResolution": "bundler",

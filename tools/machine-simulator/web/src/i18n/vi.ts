@@ -62,6 +62,10 @@ export const vi = {
     glass: { name: "Glass", description: "Sáng, cao cấp" },
     console: { name: "Console", description: "Tối, công nghệ cao" },
     warmth: { name: "Warmth", description: "Ấm, công nghiệp" },
+    // Task 4 (docs/plans/2026-08-30-hmi-ws1-runtime-blueprint.md) — the ASM Consortium/ISA-101 "grey
+    // base, colour only for abnormal" world (HMI_BUILDER_DESIGN_2026-08-29.md §6). `name` stays a
+    // proper noun (identical in both dictionaries) same as the other three.
+    isa101: { name: "ISA-101", description: "Xám, tuân chuẩn ISA-101" },
   },
 
   shell: {

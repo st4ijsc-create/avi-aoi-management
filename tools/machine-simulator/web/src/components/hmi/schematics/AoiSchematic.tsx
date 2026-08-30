@@ -8,8 +8,10 @@ import type { CyclePlan } from "@/lib/api"
 export interface AoiSchematicPoint {
   code: string
   /** Normalized 0–1 position within the product's reference image (`MeasurementPoint.normalizedX/Y`,
-   * or `positionX/Y` divided by the product's stored `imageWidth/imageHeight` — see `Hmi.tsx`'s own
-   * derivation, which falls back to a centered point only if the product genuinely has neither). */
+   * or `positionX/Y` divided by the product's stored `imageWidth/imageHeight` — see
+   * `hmi-runtime/widgets/faceplate.tsx`'s `OperationOverviewFaceplate`'s own derivation (this lived in
+   * `Hmi.tsx` before WS-HMI-1 Task 5 relocated it), which falls back to a centered point only if the
+   * product genuinely has neither). */
   nx: number
   ny: number
 }

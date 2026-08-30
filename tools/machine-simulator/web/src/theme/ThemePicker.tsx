@@ -1,6 +1,6 @@
 import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
-import { Flame, Sparkles, SquareTerminal } from "lucide-react"
+import { Factory, Flame, Sparkles, SquareTerminal } from "lucide-react"
 
 import { useGloss } from "@/components/hmi/bilingual"
 import { SelectItem, SelectPopup, SelectPortal, SelectPositioner } from "@/components/ui/select"
@@ -8,10 +8,13 @@ import { useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { THEMES, useTheme, type Theme } from "@/theme/ThemeToggle"
 
+// Task 4 — `Factory` for isa101 (docs/HMI_BUILDER_DESIGN_2026-08-29.md §6): a plain industrial glyph,
+// deliberately not a "sparkle"/"flame" register — this theme's own signature is restraint, not flair.
 const THEME_ICON: Record<Theme, React.ComponentType<{ className?: string }>> = {
   glass: Sparkles,
   console: SquareTerminal,
   warmth: Flame,
+  isa101: Factory,
 }
 
 /** Bilingual copy for one theme — `name` is a proper noun (identical in both dictionaries, like

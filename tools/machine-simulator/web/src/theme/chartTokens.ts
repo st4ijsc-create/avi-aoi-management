@@ -2,12 +2,12 @@
  * Reactive per-theme literal colors for the handful of consumers that draw outside CSS (Recharts
  * `stroke`/`fill` props, raw SVG) — see `theme/tokens.ts`'s doc comment for why those need literal
  * hex strings instead of `var(--…)` at all. `tokens.ts` only ever exports the GLASS values (it
- * predates the 3-theme system); this adds Console's and Warmth's own counterparts and picks
- * between all three based on the live theme, so chart lines/grids/tooltips stay legible instead of
- * silently keeping Glass's colors (e.g. navy-600 on Console's near-black ground — nearly invisible)
- * after the user switches theme.
+ * predates the 3-theme system); this adds Console's, Warmth's, and now ISA-101's own counterparts
+ * and picks between all four based on the live theme, so chart lines/grids/tooltips stay legible
+ * instead of silently keeping Glass's colors (e.g. navy-600 on Console's near-black ground — nearly
+ * invisible) after the user switches theme.
  *
- * Mirrors `index.css`'s three `[data-theme="…"]` blocks; keep all three in lockstep.
+ * Mirrors `index.css`'s four `[data-theme="…"]` blocks; keep all four in lockstep.
  */
 import { useTheme } from "@/theme/ThemeToggle"
 import { accent, border, chartSeries as chartSeriesGlass, navy, status, surface, text } from "@/theme/tokens"
@@ -89,9 +89,38 @@ const warmthTokens: ChartTokens = {
   chartSeries: [navy[700], navy[400], navy[300], "#3F8C4F", "#BD851B", navy[500]],
 }
 
+// Mirrors index.css's [data-theme="isa101"] block — ASM Consortium/ISA-101 grey base (spec §6). The
+// solid status hues stay fully saturated (that's the one place colour is earned); `line`/`accent500`/
+// `accent600` deliberately stay the flat, unlifted brand navy rather than a livelier lifted tone —
+// same restraint that block's own comment explains for `--color-accent`. `chartSeries` follows the
+// SAME structure Warmth's own comment establishes (navy gradation + the two status hues that are
+// actually meaningful here, ok/warn) rather than a rainbow — a multi-series chart still needs
+// distinguishable lines, which is a legibility need, not a decorative one.
+const isa101Tokens: ChartTokens = {
+  surfaceCard: "#D6D8D6", // --color-surface (isa101)
+  border: "#A9ADAB", // --border (isa101)
+  textMuted: "#3F4241",
+  textBody: "#2C2F2E",
+  // Fix round 1 — was "#1C1E1E", the exact pre-AA-fix value of index.css's --color-text (that file's
+  // own comment on --color-text names #1c1e1e as the literal value that measured 4.32:1 against
+  // tabs.tsx's inactive-tab composite, under the 4.5:1 AA floor). index.css was darkened to #0a0c0c
+  // for margin; this literal mirror was not updated in the same pass. Corrected to match.
+  textStrong: "#0A0C0C",
+  accent500: navy[700], // isa101 --accent-500 === navy-700 (unlifted, same as --color-accent)
+  accent600: navy[800],
+  ok: "#2F7D4C",
+  warn: "#B5790F",
+  danger: "#B23327",
+  info: navy[600],
+  neutral: "#6F7371",
+  line: navy[700], // isa101 --color-accent === navy-700 (unlifted)
+  chartSeries: [navy[700], navy[400], navy[300], "#2F7D4C", "#B5790F", navy[500]],
+}
+
 export function useChartTokens(): ChartTokens {
   const { theme } = useTheme()
   if (theme === "console") return consoleTokens
   if (theme === "warmth") return warmthTokens
+  if (theme === "isa101") return isa101Tokens
   return glassTokens
 }

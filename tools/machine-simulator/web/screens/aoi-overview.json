@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "screenId": "aoi-overview",
+  "title": "Vận hành — AOI / AVI",
+  "titleEn": "OPERATION — AOI / AVI",
+  "theme": "blueprint",
+  "layout": { "cols": 12, "rows": 8, "breakpoint": "panel" },
+  "widgets": [
+    {
+      "id": "overview",
+      "kind": "faceplate",
+      "rect": { "col": 0, "row": 0, "colSpan": 12, "rowSpan": 8 },
+      "props": { "faceplate": "fp.overview.aoi", "schematicFlex": 1.15, "readoutFlex": 1 }
+    }
+  ]
+}
