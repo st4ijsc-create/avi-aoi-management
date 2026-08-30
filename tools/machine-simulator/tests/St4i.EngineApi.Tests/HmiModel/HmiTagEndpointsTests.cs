@@ -872,7 +872,7 @@ public sealed class HmiTagEndpointsTests
 
         if (expectConflict)
         {
-            var result = await HmiTagEndpoints.PutAsync("SHAPE-01", body, store, new ScriptedCollisionQuery(), CancellationToken.None);
+            var result = await HmiTagEndpoints.PutAsync("SHAPE-01", body, store, new ScriptedCollisionQuery(), new HmiChangeBus(), CancellationToken.None);
             Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
         }
         else
@@ -880,7 +880,7 @@ public sealed class HmiTagEndpointsTests
             // Escaping is CORRECT here: an error this handler cannot honestly explain must not be dressed
             // up as one it can. It becomes a 500, which is what an unexplained store failure is.
             var escaped = await Assert.ThrowsAsync<SqliteException>(
-                () => HmiTagEndpoints.PutAsync("SHAPE-01", body, store, new ScriptedCollisionQuery(), CancellationToken.None));
+                () => HmiTagEndpoints.PutAsync("SHAPE-01", body, store, new ScriptedCollisionQuery(), new HmiChangeBus(), CancellationToken.None));
             Assert.Equal(errorCode, escaped.SqliteErrorCode);
         }
 
@@ -973,7 +973,7 @@ public sealed class HmiTagEndpointsTests
 
         var collisionsFail = new ScriptedCollisionQuery { OnQuery = (_, _) => throw thrown };
 
-        var result = await HmiTagEndpoints.PutAsync("DIAG-01", body, store, collisionsFail, CancellationToken.None);
+        var result = await HmiTagEndpoints.PutAsync("DIAG-01", body, store, collisionsFail, new HmiChangeBus(), CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
         Assert.False(string.IsNullOrWhiteSpace(ErrorOf(result)), $"[{label}] the 409 must still explain itself");
@@ -991,7 +991,7 @@ public sealed class HmiTagEndpointsTests
         var body = new TagNamespaceDocument(1, "CANCEL-01", new[] { ReadTag("CANCEL-01/x") });
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => HmiTagEndpoints.PutAsync("CANCEL-01", body, store, cancelling, CancellationToken.None));
+            () => HmiTagEndpoints.PutAsync("CANCEL-01", body, store, cancelling, new HmiChangeBus(), CancellationToken.None));
     }
 
     // ═════════════════════════════════════════════════════════════════════
@@ -1030,7 +1030,7 @@ public sealed class HmiTagEndpointsTests
             1, "POS-01",
             Enumerable.Range(0, TagsInBody).Select(i => ReadTag($"POS-01/tag{i}")).ToList());
 
-        var result = await HmiTagEndpoints.PutAsync("POS-01", body, store, collisions, CancellationToken.None);
+        var result = await HmiTagEndpoints.PutAsync("POS-01", body, store, collisions, new HmiChangeBus(), CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
         Assert.Contains(collidingPath, ErrorOf(result), StringComparison.Ordinal);
@@ -1070,7 +1070,7 @@ public sealed class HmiTagEndpointsTests
             1, "COST-01",
             Enumerable.Range(0, TagsInBody).Select(i => ReadTag($"COST-01/tag{i}")).ToList());
 
-        var result = await HmiTagEndpoints.PutAsync("COST-01", body, store, collisions, CancellationToken.None);
+        var result = await HmiTagEndpoints.PutAsync("COST-01", body, store, collisions, new HmiChangeBus(), CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
         Assert.Equal(0, store.FindCallCount);

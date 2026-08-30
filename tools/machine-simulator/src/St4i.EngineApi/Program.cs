@@ -477,6 +477,14 @@ builder.Services.AddSingleton<St4i.EngineApi.HmiModel.ITagNamespaceStore>(
 builder.Services.AddSingleton<St4i.EngineApi.HmiModel.ITagIndexCollisionQuery>(
     _ => new St4i.EngineApi.HmiModel.SqliteTagIndexCollisionQuery(rawTagNamespaceStore.Value.DbPath));
 
+// WS-HMI-0b Task 3 — the HMI change lane's fan-out. Deliberately NOT St4i.EdgeCore.Infrastructure.EventBus:
+// publishing there would put HMI rows in front of every inspector subscriber and inside both Export files,
+// which is the commitment InspectorStream.cs:217-219 froze — and it would do so while the frame's bytes
+// stayed identical, which is why the separation is structural rather than a convention. See
+// HmiModelEvents.cs for the full reasoning and for what this lane commits to.
+builder.Services.AddSingleton<St4i.EngineApi.HmiModel.IHmiChangeBus>(
+    _ => new St4i.EngineApi.HmiModel.HmiChangeBus());
+
 // GĐ3 sub-4 LC-1 (.superpowers/sdd/2026-07-27-giaidoan3-alarms-linecontroller-blueprint/task-1-brief.md) —
 // the alarm backbone: a durable SQLite store (alarms.db) for the ISA-18.2 alarm model (raise/clear/ack/
 // list/history). Registered as a singleton BEFORE Build() (same convention as IAssetRegistry above) so
@@ -1816,6 +1824,11 @@ app.MapHmiModelEndpoints();
 // because the two share the seam and the Operator-reads/Engineer-writes tier; see HmiTagEndpoints.cs for
 // why its two read routes answer "I don't have that" differently (§5-bis empty vs 404).
 app.MapHmiTagEndpoints();
+// WS-HMI-0b Task 3 — WS /v1/hmi/changes. A second WebSocket ROUTE, not a second realtime MECHANISM: same
+// transport and the same client library as /v1/inspector/stream, one more URL, so the web branch still
+// speaks one realtime dialect. The existing stream could not carry these events — its frame is the frozen
+// ApiTraceEvent — see HmiChangeStream.cs for the measurement and the decision.
+app.MapHmiChangeStream();
 // GP-5 (task-5-brief.md item 3) — GET /v1/connectors: visibility for a configured-but-not-started connector.
 app.MapConnectorEndpoints();
 app.MapMachineWriteEndpoints();

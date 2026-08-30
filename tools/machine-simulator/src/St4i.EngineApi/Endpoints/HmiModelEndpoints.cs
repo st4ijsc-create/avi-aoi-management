@@ -166,7 +166,8 @@ public static class HmiModelEndpoints
     // rather than patched.
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PutAsync(
-        string machineCode, ComponentModelDocument body, IComponentModelStore store, ITagNamespaceStore tags, CancellationToken ct)
+        string machineCode, ComponentModelDocument body, IComponentModelStore store, ITagNamespaceStore tags,
+        IHmiChangeBus changes, CancellationToken ct)
     {
         // `body` itself can never be null here — ComponentModelDocument is a non-nullable complex parameter,
         // so RequestDelegateFactory already 400s an absent/literal-null body before this handler is entered.
@@ -202,6 +203,15 @@ public static class HmiModelEndpoints
             // with " | "), not just the first — the brief's own requirement, met without re-deriving the join.
             return Results.BadRequest(new ApiErrorDto(ex.Message));
         }
+
+        // 🔴 WS-HMI-0b Task 3 — announce AFTER the store accepted the write, and only here. Every failure
+        // path above has already returned, so this line is unreachable unless the change really happened:
+        // that is what makes "a request that does not return 2xx emits nothing" a property of the control
+        // flow rather than a list of cases someone has to keep current. A client that hears "changed",
+        // re-reads and finds nothing changed stops trusting the channel, and that is cheap to cause and
+        // expensive to undo. Publish cannot throw — see HmiChangeBus.Publish for why that is a guarantee
+        // and not a hope, and why a successful write must never be failed by its own announcement.
+        changes.Publish(HmiModelEvents.ComponentModelChanged(machineCode));
 
         // Referential integrity against whatever tag namespace this machine has loaded (null if none) is a
         // WARNING, never a rejection — declaration order between a component tree and a tag namespace is

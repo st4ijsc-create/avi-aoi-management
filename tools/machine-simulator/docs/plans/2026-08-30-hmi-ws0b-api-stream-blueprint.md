@@ -5,7 +5,15 @@
 
 **Goal:** Mở cây linh kiện và tag namespace ra ngoài qua HTTP, và cho khách đăng ký nhận thay đổi — để nhánh web dựng editor và runtime mà không cần biết SQLite tồn tại.
 
-**Architecture:** Endpoint tối thiểu (`app.MapGet/MapPut` + `RequireAuthorization`) trên hai seam `IComponentModelStore`/`ITagNamespaceStore` của WS-HMI-0a, đúng khuôn `AssetEndpoints` đã có. Luồng thay đổi **mở rộng WebSocket `/v1/inspector/stream` đang chạy**, không dựng kênh SSE thứ hai.
+**Architecture:** Endpoint tối thiểu (`app.MapGet/MapPut` + `RequireAuthorization`) trên hai seam `IComponentModelStore`/`ITagNamespaceStore` của WS-HMI-0a, đúng khuôn `AssetEndpoints` đã có. Luồng thay đổi ~~**mở rộng WebSocket `/v1/inspector/stream` đang chạy**~~, không dựng kênh SSE thứ hai.
+
+> 📎 🔴 **ĐÍNH CHÍNH (Task 3, 2026-08-30) — nửa gạch bỏ ở trên dựa trên một tiền đề ĐO ĐƯỢC LÀ SAI.** Giữ nguyên văn thay vì xoá, theo lối chú-thích-không-xoá của kho này.
+>
+> - **Câu cũ nói:** luồng thay đổi *mở rộng* `WS /v1/inspector/stream` đang chạy.
+> - **Sự thật đo được:** `/v1/inspector/stream` **không phải** kênh sự kiện API chung. `EventBus.Publish` có **đúng một** nơi gọi trong `src/` — `EdgePipeline.cs:135`, đường **đẩy số liệu RA NGOÀI** — nên mỗi khung của nó nghĩa là "đã gửi một reading của máy X, nhận status S sau L ms". Một thay đổi mô hình HMI không phải là "thêm một cái như thế". Khung ấy là `ApiTraceEvent`, một record ĐÓNG: không có `ReadingKind` nào đúng sự thật cho nó, và `tagCount` **không có chỗ để đặt**. Mang được sự kiện của Task 3 lên kênh đó buộc phải THÊM TRƯỜNG vào `ApiTraceEvent`, tức đổi khung trên cả ba mặt mà phán quyết ở `InspectorStream.cs:217-219` đã đóng băng (khung WS và hai file Export).
+> - **Quyết định thay thế (chủ sở hữu phán, Task 3):** một **ROUTE WebSocket thứ hai**, `WS /v1/hmi/changes`, với shape riêng (`HmiModelChangedEvent`). **Mục tiêu của câu cũ vẫn được giữ:** đây là *một route nữa*, **không phải một cơ chế nữa** — vẫn WebSocket, vẫn cùng thư viện client, nên nhánh web vẫn chỉ nói MỘT thứ tiếng realtime. Vì thế điểm 1 ở §"Hai đính chính" bên dưới (bác bỏ SSE) **vẫn còn hiệu lực**, chỉ có mệnh đề "mở rộng kênh đã có" là bị thay.
+> - **Phán quyết byte-identical KHÔNG được gỡ.** Đi vòng qua nó chính là việc mà một phán quyết như thế tồn tại để bắt người ta làm. Kho này đã trả lời đúng câu hỏi ấy một lần rồi: `InspectorBodiesResponse` chọn route mới thay vì nới khung.
+> - **Nếu sau này ai đó muốn nới `ApiTraceEvent`:** `ApiJson.Options` không đặt `DefaultIgnoreCondition`, nên một trường nullable mới sẽ được ghi thành `"x":null` trên **mọi** sự kiện cũ — khung đổi kể cả với sự kiện không bao giờ dùng trường đó. Đó phải là một phần của quyết định gỡ phán quyết, không phải một phát hiện sau đó.
 
 **Tech Stack:** .NET 10 · ASP.NET minimal API · WebSocket qua `EventBus` đã có · xUnit.
 
@@ -16,7 +24,9 @@
 
 ## Hai đính chính so với spec, đã đo từ mã
 
-**1. Spec §3.2 viết "SSE subscribe". Cây này không dùng SSE cho việc đó.** `src/St4i.EngineApi/Hubs/InspectorStream.cs:86` đăng ký `app.Map("/v1/inspector/stream", ...)` và doc comment của chính nó gọi đây là `WS /v1/inspector/stream` — một **WebSocket** backfill từ `EventBus.Recent` khi client kết nối. Dựng thêm một kênh SSE riêng cho HMI nghĩa là hai cơ chế realtime song song trong một sản phẩm offline chạy trên một máy, và nhánh web sẽ phải nói cả hai thứ tiếng. Kế hoạch này **mở rộng kênh đã có**. Nếu chủ sở hữu muốn đúng nguyên văn "SSE", đó là một quyết định riêng — nói trước khi bắt đầu, đừng đổi giữa chừng.
+**1. Spec §3.2 viết "SSE subscribe". Cây này không dùng SSE cho việc đó.** `src/St4i.EngineApi/Hubs/InspectorStream.cs:86` đăng ký `app.Map("/v1/inspector/stream", ...)` và doc comment của chính nó gọi đây là `WS /v1/inspector/stream` — một **WebSocket** backfill từ `EventBus.Recent` khi client kết nối. Dựng thêm một kênh SSE riêng cho HMI nghĩa là hai cơ chế realtime song song trong một sản phẩm offline chạy trên một máy, và nhánh web sẽ phải nói cả hai thứ tiếng. Kế hoạch này ~~**mở rộng kênh đã có**~~. Nếu chủ sở hữu muốn đúng nguyên văn "SSE", đó là một quyết định riêng — nói trước khi bắt đầu, đừng đổi giữa chừng.
+
+> 📎 🔴 **ĐÍNH CHÍNH (Task 3, 2026-08-30).** **Kết luận của mục 1 này — KHÔNG dựng SSE — vẫn đúng và vẫn được thi hành.** Cái sai chỉ là ba chữ "mở rộng kênh đã có": xem đính chính ở phần **Architecture** đầu file cho phép đo (`EventBus.Publish` chỉ có một nơi gọi, `EdgePipeline.cs:135`) và cho quyết định thay thế (`WS /v1/hmi/changes`, một route nữa chứ không phải một cơ chế nữa). Lý do bác bỏ SSE mà mục này nêu — "hai cơ chế realtime song song… nhánh web sẽ phải nói cả hai thứ tiếng" — chính là lý do quyết định thay thế vẫn là WebSocket.
 
 **2. WS-HMI-0a cố ý KHÔNG gọi `ModelIntegrity`, và đây là chỗ quyết định ai gọi.** Lý do 0a hoãn: bắt cây linh kiện và tag namespace khớp nhau tại cửa ghi sẽ biến *thứ tự khai báo* thành ràng buộc — kỹ sư phải khai tag trước linh kiện, hoặc ngược lại, tuỳ chiều ta chọn. Đó là ràng buộc sai; cả hai thứ tự đều hợp lệ trong đời thật.
 

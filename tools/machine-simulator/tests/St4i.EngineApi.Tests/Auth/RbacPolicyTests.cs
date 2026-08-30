@@ -237,6 +237,13 @@ public sealed class RbacPolicyTests
         // would 404 every multi-segment tag, i.e. every real one — moves this row and is caught here too.
         new("/v1/tags", new[] { "GET" }, Policies.Operator),
         new("/v1/tags/by-path/{**path}", new[] { "GET" }, Policies.Operator),
+        // WS-HMI-0b Task 3 — WS /v1/hmi/changes, the HMI change lane. Methods empty for the same reason
+        // /v1/inspector/stream's row is: a WebSocket upgrade is registered with app.Map and carries no HTTP
+        // method restriction. Operator, NOT Engineer like the inspector stream: subscribing is a read, and
+        // what it carries — a machine code and a tag count — is strictly less than GET /v1/tags?machine=
+        // already returns at Operator. Gating a notification higher than the data it points at would be a
+        // difference with no reason behind it. Nothing on this lane writes to a device, so never Admin.
+        new("/v1/hmi/changes", Array.Empty<string>(), Policies.Operator),
 
         // Engineer
         // Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — a setpoint

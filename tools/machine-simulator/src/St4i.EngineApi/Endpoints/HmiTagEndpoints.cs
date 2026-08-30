@@ -119,7 +119,7 @@ public static class HmiTagEndpoints
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PutAsync(
         string machineCode, TagNamespaceDocument body, ITagNamespaceStore tags,
-        ITagIndexCollisionQuery collisions, CancellationToken ct)
+        ITagIndexCollisionQuery collisions, IHmiChangeBus changes, CancellationToken ct)
     {
         // `body` itself can never be null — TagNamespaceDocument is a non-nullable complex parameter, so
         // RequestDelegateFactory 400s an absent/literal-null body before this handler is entered.
@@ -194,6 +194,12 @@ public static class HmiTagEndpoints
 
         var tagCount = body.Tags.Count;
         var backedByDriverCount = body.Tags.Count(t => t is { IsBackedByDriver: true });
+
+        // 🔴 WS-HMI-0b Task 3 — announce AFTER the store accepted the write. Unreachable from any refusal
+        // above, including the 409 collision path this task's brief predates: every one of them has already
+        // returned. See HmiModelEndpoints.PutAsync's twin comment, and HmiChangeBus.Publish for why this
+        // call cannot fail the write it is announcing.
+        changes.Publish(HmiModelEvents.TagNamespaceChanged(machineCode, tagCount));
 
         // Response echo only — computed after the store call, never used to decide what got written.
         return Results.Ok(new PutNamespaceResultDto(
