@@ -579,4 +579,125 @@ public sealed class HmiModelEndpointsTests
             Assert.Equal(HttpStatusCode.OK, integrity.StatusCode);
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 2, HIGH-A — the mismatch guard compared case-insensitively (StringComparison.OrdinalIgnoreCase)
+    // but never normalised body.MachineCode to the route's spelling, while ComponentModelStore's
+    // `machine_code TEXT PRIMARY KEY` has no COLLATE NOCASE and is case-SENSITIVE. Two different-cased
+    // spellings of "the same" machine therefore landed as TWO rows — HIGH-1's exact failure mode, narrowed
+    // to case variants. Fixed by normalising unconditionally once the guard passes, so the route's spelling
+    // is authoritative in FACT (what gets persisted), not only in the 400/200 decision.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Put_BodyMachineCodeCaseVariant_NormalizesToTheRoutesSpelling_NoDuplicateRow()
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync("case-variant");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        var first = ValidDoc("case-11", typeId: "st4i.original.type");
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/components/case-11", first, HmiContractJson.Options)).StatusCode);
+
+        // Second PUT to the SAME route — but the BODY spells the machine code in a DIFFERENT case.
+        var second = ValidDoc("CASE-11", typeId: "st4i.shadow.type");
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/components/case-11", second, HmiContractJson.Options)).StatusCode);
+
+        // No duplicate row: exactly ONE machine code exists, spelled exactly as the ROUTE spelled it —
+        // never "CASE-11", regardless of what casing either body used.
+        using (var list = await engineerC.GetAsync("/v1/components"))
+        {
+            var codes = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
+            Assert.Equal(new[] { "case-11" }, codes);
+        }
+
+        // The second write actually landed on the SAME row (last-writer-wins) rather than being silently
+        // lost onto a shadow row under "CASE-11" that nobody reading "case-11" would ever see.
+        using (var get = await engineerC.GetAsync("/v1/components/case-11"))
+        {
+            var back = await get.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
+            Assert.Equal("case-11", back!.MachineCode);
+            Assert.Single(back.Types);
+            Assert.Equal("st4i.shadow.type", back.Types[0].TypeId);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 2, HIGH-B — Validate(ComponentModelDocument) checked the two COLLECTIONS for null but
+    // never read a single ELEMENT. `{"components":[{}]}` (an empty component object) passed the §5 door,
+    // was WRITTEN, and crashed inside ModelIntegrity.Check with ArgumentNullException — reproducing every
+    // consequence of the original HIGH-2 finding through an element-level null instead of a top-level one.
+    // Fixed by validating each element of `components`/`types` (and each element of a type's own `tags`)
+    // for null, plus each ComponentNode's `id`/`tagPrefix` — the two fields whose null-ness is what
+    // actually crashes ModelIntegrity.Check (a Dictionary key and a Substring bound, respectively).
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Put_ComponentElementWithNullRequiredFields_Gets400_LeavesNoHalfRecord_AndIntegrityStaysReadable()
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync("null-component-element");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        const string json = "{\"schemaVersion\":1,\"machineCode\":\"NULLID-01\",\"components\":[{}],\"types\":[]}";
+        using (var content = new StringContent(json, Encoding.UTF8, "application/json"))
+        using (var put = await engineerC.PutAsync("/v1/components/NULLID-01", content))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+            var error = await put.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
+            Assert.NotNull(error);
+            Assert.False(string.IsNullOrWhiteSpace(error!.Error));
+        }
+
+        // No half-record — NOT just an empty document at the detail route (§5-bis's normal empty state),
+        // but genuinely ABSENT from the machine-code list too.
+        using (var get = await engineerC.GetAsync("/v1/components/NULLID-01"))
+        {
+            Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+            var back = await get.Content.ReadFromJsonAsync<ComponentModelDocument>(HmiContractJson.Options);
+            Assert.Empty(back!.Components);
+        }
+
+        using (var list = await engineerC.GetAsync("/v1/components"))
+        {
+            var codes = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
+            Assert.NotNull(codes);
+            Assert.DoesNotContain("NULLID-01", codes);
+        }
+
+        // The integrity route must not become a permanent poison pill for this machine.
+        using (var integrity = await engineerC.GetAsync("/v1/components/NULLID-01/integrity"))
+        {
+            Assert.Equal(HttpStatusCode.OK, integrity.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task Put_TypeElementWithOmittedTags_Gets400_NotA500()
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync("null-type-tags");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        // The TYPE's own `tags` array omitted — the sibling shape review found surviving at
+        // ContractInvariants.cs:176, two lines below the fix that was supposed to have closed it.
+        const string json = "{\"schemaVersion\":1,\"machineCode\":\"OMIT-TAGS-01\",\"components\":[]," +
+                             "\"types\":[{\"typeId\":\"t1\",\"label\":\"T\",\"states\":[],\"defaultFaceplate\":\"fp\"}]}";
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var put = await engineerC.PutAsync("/v1/components/OMIT-TAGS-01", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+        var error = await put.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
+        Assert.NotNull(error);
+        Assert.False(string.IsNullOrWhiteSpace(error!.Error));
+
+        using var list = await engineerC.GetAsync("/v1/components");
+        var codes = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
+        Assert.NotNull(codes);
+        Assert.DoesNotContain("OMIT-TAGS-01", codes);
+    }
 }

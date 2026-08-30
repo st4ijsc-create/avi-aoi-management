@@ -115,13 +115,39 @@ public static class ContractInvariants
     /// <para><b>Luật này KHÔNG bắt được gì:</b> hai MÁY KHÁC NHAU cùng khai một <c>path</c>. Pattern của
     /// <c>path</c> không đòi tiền tố mã máy, nên hai tài liệu hợp lệ vẫn có thể va nhau ở
     /// <c>tag_index</c> — bộ kiểm này thuần trên MỘT tài liệu và không đọc đĩa, nên nó không thấy tài liệu
-    /// kia. Trường hợp ấy vẫn ném <c>SqliteException</c> ở store, và nó được ghi ra đây thay vì để im.</para></summary>
+    /// kia. Trường hợp ấy vẫn ném <c>SqliteException</c> ở store, và nó được ghi ra đây thay vì để im.</para>
+    ///
+    /// <para>🔴 <b>WS-HMI-0b Task 1, fix round 2 — <see cref="TagNamespaceDocument.Tags"/> is checked for
+    /// <see langword="null"/> first, and every element is checked for <see langword="null"/> before it is
+    /// dereferenced.</b> Found by review as the FIRST of two twins sharing
+    /// <see cref="Validate(ComponentModelDocument)"/>'s exact pre-fix hole: a missing <c>tags</c> field
+    /// deserializes to a genuine runtime <see langword="null"/> (same <c>System.Text.Json</c> mechanism —
+    /// see that overload's own doc comment), and <c>foreach (var t in doc.Tags)</c> threw a bare
+    /// <see cref="NullReferenceException"/> with no chance to collect a violation. Closed NOW, ahead of
+    /// need, because <see cref="TagNamespaceDocument"/> becomes HTTP-reachable in WS-HMI-0b Task 2
+    /// (<c>PUT /v1/tags/{machineCode}</c>) — leaving this hole here would have shipped it on that task's
+    /// day one, under a test suite with no reason to go looking for it.</para></summary>
     public static IReadOnlyList<string> Validate(TagNamespaceDocument doc)
     {
         var v = new List<string>();
-        foreach (var t in doc.Tags)
+
+        if (doc.Tags is null)
+        {
+            v.Add("tags: thiếu trường bắt buộc (null) — một tài liệu không khai tags không phải tài liệu hợp lệ");
+            return v; // nothing below can run without it.
+        }
+
+        for (var i = 0; i < doc.Tags.Count; i++)
+        {
+            var t = doc.Tags[i];
+            if (t is null)
+            {
+                v.Add($"tags[{i}]: phần tử null — một tag rỗng không phải khai báo hợp lệ");
+                continue;
+            }
             if (WritableTagAccess.Contains(t.Access) && string.IsNullOrEmpty(t.PolicyAction))
                 v.Add($"tag '{t.Path}': access='{t.Access}' nhưng thiếu policyAction — §5 cấm đường ghi không gác");
+        }
 
         // Một vi phạm mỗi PATH trùng, không phải một vi phạm mỗi lần xuất hiện: khai một path ba lần là
         // MỘT lỗi cần sửa, và ba dòng giống hệt nhau chỉ làm loãng danh sách.
@@ -129,6 +155,7 @@ public static class ContractInvariants
         var reported = new HashSet<string>(StringComparer.Ordinal);
         foreach (var t in doc.Tags)
         {
+            if (t is null) continue; // already reported above — not this loop's concern.
             if (seen.Add(t.Path) || !reported.Add(t.Path)) continue;
             v.Add($"tag '{t.Path}': path bị khai nhiều lần trong cùng tài liệu — tag_index.path là khoá " +
                   "chính, nên bản khai thứ hai sẽ làm cả lần ghi hỏng ở tầng SQLite thay vì ở cửa này");
@@ -154,36 +181,108 @@ public static class ContractInvariants
     /// <c>St4i.EngineApi.HmiModel.ModelIntegrity.Check</c> — after the half-record already existed on disk.
     /// A null <c>Types</c> failed the OPPOSITE way — <c>foreach (var type in doc.Types)</c> threw a bare
     /// <see cref="NullReferenceException"/> immediately, before the store's write and before a single
-    /// violation could be collected — which happened to avoid persisting anything, but by luck (the
-    /// dereference order), not by design. Both are now ordinary, reported §5 violations: this is the door
-    /// every caller of <see cref="ThrowIfInvalid(ComponentModelDocument)"/> shares (both
-    /// <c>ComponentModelStore.PutAsync</c> and any future caller), so fixing it here — rather than in one
-    /// HTTP handler — closes it for everyone at once.</para></summary>
+    /// violation could be collected.</para>
+    ///
+    /// <para>📎 🔴 <b>THE SENTENCE THAT FOLLOWED THIS ONE — "which happened to avoid persisting anything,
+    /// but by luck (the dereference order), not by design. Both are now ordinary, reported §5 violations"
+    /// — IS RETRACTED, kept in the git history rather than silently edited.</b> It was true of the two
+    /// TOP-LEVEL fields it named and false of the method as a whole: two lines below it,
+    /// <c>foreach (var t in type.Tags)</c> threw that exact same bare <see cref="NullReferenceException"/>,
+    /// by that exact same luck, for a <c>type.Tags</c> omitted from the request — reproducing HIGH-2's full
+    /// consequence set (write-then-crash, half-record, a permanently poisoned Operator-tier integrity
+    /// route) through an ELEMENT-level null instead of a collection-level one. Round 1 checked whether the
+    /// two COLLECTIONS were null; it never read a single ELEMENT of either. Round 2 (below) does — every
+    /// element of <c>Components</c>, every element of <c>Types</c>, and every element of a type's own
+    /// <c>Tags</c> is now checked for <see langword="null"/> before it is dereferenced, plus the two
+    /// <see cref="ComponentNode"/> fields (<see cref="ComponentNode.Id"/>, <see cref="ComponentNode.TagPrefix"/>)
+    /// whose null-ness is what actually crashes <c>ModelIntegrity.Check</c> — a <c>Dictionary</c> key and a
+    /// string index bound, respectively.</para>
+    ///
+    /// <para>🔴 <b>THE BOUNDARY, DRAWN ON PURPOSE — stated so a THIRD round does not have to re-discover
+    /// it.</b> This is a crash-prevention gate, not a JSON Schema validator (see this class's own top-level
+    /// doc comment): every field checked here is checked because its null-ness makes EITHER this method OR
+    /// <c>ModelIntegrity.Check</c> throw an unhandled exception instead of returning an ordinary violation.
+    /// <see cref="ComponentNode.TypeId"/>, <see cref="ComponentNode.Label"/>,
+    /// <see cref="ComponentTypeDef.TypeId"/>, <see cref="ComponentTypeDef.Label"/>,
+    /// <see cref="ComponentTypeDef.DefaultFaceplate"/>, <see cref="ComponentTypeDef.States"/>, and
+    /// <see cref="ComponentTagDef.Role"/>/<see cref="ComponentTagDef.PolicyAction"/>/<see cref="ComponentTagDef.Name"/>
+    /// are each declared non-nullable by their record too, and each CAN arrive null from the same missing-
+    /// field mechanism — but none of them is ever dereferenced by this method or by
+    /// <c>ModelIntegrity.Check</c> in a way that throws (a null <see cref="ComponentTypeDef.TypeId"/>, for
+    /// one concrete example, is silently accepted and reported at 200 — see this task's fix round 2 report).
+    /// Closing that gap is full JSON-Schema-shape validation, a DIFFERENT and larger job than this class has
+    /// ever claimed, stated here as a deliberate non-fix rather than left for a THIRD reviewer to find.</para></summary>
     public static IReadOnlyList<string> Validate(ComponentModelDocument doc)
     {
         var v = new List<string>();
 
         if (doc.Components is null)
-            v.Add("components: thiếu trường bắt buộc (null) — một tài liệu không khai components không phải tài liệu hợp lệ");
-        if (doc.Types is null)
-            v.Add("types: thiếu trường bắt buộc (null) — một tài liệu không khai types không phải tài liệu hợp lệ");
-
-        // Nothing below this line can run without doc.Types — Components is never dereferenced further
-        // down, so its own null check above is already complete.
-        if (doc.Types is null) return v;
-
-        foreach (var type in doc.Types)
-        foreach (var t in type.Tags)
         {
-            var writable = WritableComponentTagRoles.Contains(t.Role);
-            if (writable && string.IsNullOrEmpty(t.PolicyAction))
-                v.Add($"componentTag '{type.TypeId}.{t.Name}': role='{t.Role}' nhưng thiếu policyAction — §5");
-            var needsHardBand = HardBandComponentTagRoles.Contains(t.Role);
-            if (needsHardBand && t.Min is null)
-                v.Add($"componentTag '{type.TypeId}.{t.Name}': {t.Role} thiếu min — dải chặn cứng là bắt buộc");
-            if (needsHardBand && t.Max is null)
-                v.Add($"componentTag '{type.TypeId}.{t.Name}': {t.Role} thiếu max — dải chặn cứng là bắt buộc");
+            v.Add("components: thiếu trường bắt buộc (null) — một tài liệu không khai components không phải tài liệu hợp lệ");
         }
+        else
+        {
+            for (var i = 0; i < doc.Components.Count; i++)
+            {
+                var node = doc.Components[i];
+                if (node is null)
+                {
+                    v.Add($"components[{i}]: phần tử null — một component rỗng không phải khai báo hợp lệ");
+                    continue;
+                }
+
+                // Id and TagPrefix are the two ComponentNode fields whose null-ness actually crashes
+                // ModelIntegrity.Check downstream (a Dictionary key via groupedById.ToDictionary, and a
+                // string index bound inside IsPathPrefix, respectively) — see this method's own doc
+                // comment for why TypeId/Label are declared non-nullable too but NOT checked here.
+                if (string.IsNullOrEmpty(node.Id))
+                    v.Add($"components[{i}]: id thiếu (null/rỗng) — id là khoá ModelIntegrity/binding gián tiếp " +
+                          "{component} phân giải qua, bắt buộc phải có");
+                if (string.IsNullOrEmpty(node.TagPrefix))
+                    v.Add($"components[{i}]: tagPrefix thiếu (null/rỗng) — bắt buộc phải có để đối chiếu tham chiếu namespace");
+            }
+        }
+
+        if (doc.Types is null)
+        {
+            v.Add("types: thiếu trường bắt buộc (null) — một tài liệu không khai types không phải tài liệu hợp lệ");
+            return v; // nothing below can run without it.
+        }
+
+        for (var i = 0; i < doc.Types.Count; i++)
+        {
+            var type = doc.Types[i];
+            if (type is null)
+            {
+                v.Add($"types[{i}]: phần tử null — một componentType rỗng không phải khai báo hợp lệ");
+                continue;
+            }
+            if (type.Tags is null)
+            {
+                v.Add($"componentType '{type.TypeId}': tags thiếu (null) — một kiểu không khai tags không phải khai báo hợp lệ");
+                continue;
+            }
+
+            for (var j = 0; j < type.Tags.Count; j++)
+            {
+                var t = type.Tags[j];
+                if (t is null)
+                {
+                    v.Add($"componentType '{type.TypeId}': tags[{j}] là phần tử null — một componentTag rỗng không phải khai báo hợp lệ");
+                    continue;
+                }
+
+                var writable = WritableComponentTagRoles.Contains(t.Role);
+                if (writable && string.IsNullOrEmpty(t.PolicyAction))
+                    v.Add($"componentTag '{type.TypeId}.{t.Name}': role='{t.Role}' nhưng thiếu policyAction — §5");
+                var needsHardBand = HardBandComponentTagRoles.Contains(t.Role);
+                if (needsHardBand && t.Min is null)
+                    v.Add($"componentTag '{type.TypeId}.{t.Name}': {t.Role} thiếu min — dải chặn cứng là bắt buộc");
+                if (needsHardBand && t.Max is null)
+                    v.Add($"componentTag '{type.TypeId}.{t.Name}': {t.Role} thiếu max — dải chặn cứng là bắt buộc");
+            }
+        }
+
         return v;
     }
 
@@ -204,13 +303,39 @@ public static class ContractInvariants
     /// widget <c>kind: "commandbutton"</c> (gõ sai) KHÔNG khớp danh sách ghi-được ở đây, nên nó đi qua bộ
     /// kiểm này im lặng — schema là thứ từ chối nó, và <c>SchemaEnumGuardPinTests</c> ở
     /// <c>St4i.Hmi.Contracts.Tests</c> là thứ báo đỏ nếu enum của schema rộng ra mà danh sách này thì
-    /// không.</para></summary>
+    /// không.</para>
+    ///
+    /// <para>🔴 <b>WS-HMI-0b Task 1, fix round 2 — <see cref="HmiScreenDocument.Widgets"/> is checked for
+    /// <see langword="null"/> first, and every element is checked for <see langword="null"/> before it is
+    /// dereferenced.</b> The SECOND of the two twins review found sharing
+    /// <see cref="Validate(ComponentModelDocument)"/>'s exact pre-fix hole — same mechanism, same missing
+    /// guard, same bare <see cref="NullReferenceException"/> from <c>foreach (var w in doc.Widgets)</c>.
+    /// Fixed alongside <see cref="Validate(TagNamespaceDocument)"/> while the reasoning was in front of the
+    /// fix, even though no .NET store writes an <see cref="HmiScreenDocument"/> today (see this class's own
+    /// remarks on <see cref="ThrowIfInvalid(HmiScreenDocument)"/>) — cheaper to close now than to leave for
+    /// whichever task builds that store to rediscover.</para></summary>
     public static IReadOnlyList<string> Validate(HmiScreenDocument doc)
     {
         var v = new List<string>();
-        foreach (var w in doc.Widgets)
+
+        if (doc.Widgets is null)
+        {
+            v.Add("widgets: thiếu trường bắt buộc (null) — một tài liệu không khai widgets không phải tài liệu hợp lệ");
+            return v;
+        }
+
+        for (var i = 0; i < doc.Widgets.Count; i++)
+        {
+            var w = doc.Widgets[i];
+            if (w is null)
+            {
+                v.Add($"widgets[{i}]: phần tử null — một widget rỗng không phải khai báo hợp lệ");
+                continue;
+            }
             if (WritableWidgetKinds.Contains(w.Kind) && string.IsNullOrEmpty(w.PolicyAction))
                 v.Add($"widget '{w.Id}': kind='{w.Kind}' nhưng thiếu policyAction — §5 cấm đường ghi không gác");
+        }
+
         return v;
     }
 

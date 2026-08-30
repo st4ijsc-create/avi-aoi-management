@@ -248,8 +248,16 @@ public class ContractInvariantsTests
         Assert.Contains(violations, v => v.Contains("types", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>Fix round 2, LOW-6 — renamed from
+    /// <c>ThrowIfInvalid_rejects_a_null_Components_document_before_any_write_could_happen</c>: the old name
+    /// promised a WRITE-ORDERING property ("before any write could happen") that this test cannot measure —
+    /// there is no store anywhere in this assembly. It asserts only that <c>ThrowIfInvalid</c> throws. The
+    /// ordering property it was gesturing at IS measured, correctly, by
+    /// <c>ComponentModelStoreTests.A_document_violating_the_safety_invariant_is_refused_and_nothing_is_written</c>
+    /// in <c>St4i.EngineApi.Tests</c> — this test's job is narrower: that a null <c>Components</c> reaches
+    /// <c>ThrowIfInvalid</c> as an exception at all, not where in a request's lifecycle that happens.</summary>
     [Fact]
-    public void ThrowIfInvalid_rejects_a_null_Components_document_before_any_write_could_happen()
+    public void ThrowIfInvalid_throws_ContractViolationException_for_a_null_Components_document()
     {
         var doc = new ComponentModelDocument(1, "M1", null!, Array.Empty<ComponentTypeDef>());
 
@@ -268,5 +276,159 @@ public class ContractInvariantsTests
         Assert.Equal(2, violations.Count);
         Assert.Contains(violations, v => v.Contains("components", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(violations, v => v.Contains("types", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 2, HIGH-B — Validate(ComponentModelDocument) checked the two COLLECTIONS for null but never
+    // read an ELEMENT. Re-review's own measurement: `{"components":[{}]}` (an empty component object) passed
+    // the door, was WRITTEN by ComponentModelStore.PutAsync, and crashed inside
+    // St4i.EngineApi.HmiModel.ModelIntegrity.Check with ArgumentNullException (a null ComponentNode.Id used
+    // as a Dictionary key) — the exact HIGH-2 shape, one level down. These pin the fix at the CONTRACTS
+    // level: a null element, or a null Id/TagPrefix on a non-null element, is now an ordinary violation.
+    // ─────────────────────────────────────────────────────────────────────
+
+    static ComponentNode Node(string id = "n1", string typeId = "st4i.motor.spindle", string tagPrefix = "M1/n1") =>
+        new(id, typeId, "N1", null, tagPrefix);
+
+    static ComponentTypeDef Type(string typeId = "st4i.motor.spindle") =>
+        new(typeId, typeId, Array.Empty<ComponentTagDef>(), Array.Empty<ComponentStateDef>(), "fp.x");
+
+    /// <summary>Reproduces the re-review's exact probe (<c>{"components":[{}]}</c>) at the Contracts level:
+    /// a <see cref="ComponentNode"/> whose four required <see langword="string"/> fields are ALL null — the
+    /// literal shape <c>System.Text.Json</c> produces from an empty JSON object <c>{}</c>.</summary>
+    [Fact]
+    public void A_component_with_null_Id_and_null_TagPrefix_is_a_violation_not_a_downstream_crash()
+    {
+        var node = new ComponentNode(null!, null!, null!, null, null!);
+        var doc = new ComponentModelDocument(1, "M1", new[] { node }, Array.Empty<ComponentTypeDef>());
+
+        var violations = ContractInvariants.Validate(doc);
+
+        // Id and tagPrefix are the two fields whose null-ness is what actually crashes
+        // ModelIntegrity.Check (a Dictionary key, and a string index bound inside IsPathPrefix,
+        // respectively) — both must be reported, not just one.
+        Assert.Contains(violations, v => v.Contains("id", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(violations, v => v.Contains("tagPrefix", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void A_null_element_in_Components_is_a_violation_not_an_exception()
+    {
+        var doc = new ComponentModelDocument(1, "M1", new ComponentNode?[] { null }!, Array.Empty<ComponentTypeDef>());
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.NotEmpty(violations);
+    }
+
+    [Fact]
+    public void A_well_formed_component_reports_neither_id_nor_tagPrefix_violations()
+    {
+        var doc = new ComponentModelDocument(1, "M1", new[] { Node() }, new[] { Type() });
+        Assert.Empty(ContractInvariants.Validate(doc));
+    }
+
+    [Fact]
+    public void A_null_element_in_Types_is_a_violation_not_an_exception()
+    {
+        var doc = new ComponentModelDocument(1, "M1", Array.Empty<ComponentNode>(), new ComponentTypeDef?[] { null }!);
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.NotEmpty(violations);
+    }
+
+    /// <summary>The sibling shape the re-review found surviving TWO LINES below the fix round 1 repair,
+    /// inside the very method that was supposed to have closed it: <c>type.Tags</c> omitted (a
+    /// <see cref="ComponentTypeDef"/> whose <c>tags</c> array System.Text.Json leaves null) threw a bare
+    /// <see cref="NullReferenceException"/> from <c>foreach (var t in type.Tags)</c>, before a single
+    /// violation could be collected — the exact "luck, not design" failure mode
+    /// <see cref="ContractInvariants.Validate(ComponentModelDocument)"/>'s own doc comment claimed had been
+    /// eliminated.</summary>
+    [Fact]
+    public void A_componentType_with_null_Tags_is_a_violation_not_a_NullReferenceException()
+    {
+        var type = new ComponentTypeDef("t1", "T1", null!, Array.Empty<ComponentStateDef>(), "fp.x");
+        var doc = new ComponentModelDocument(1, "M1", Array.Empty<ComponentNode>(), new[] { type });
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("tags", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void A_null_element_in_a_componentType_Tags_array_is_a_violation_not_an_exception()
+    {
+        var type = new ComponentTypeDef(
+            "t1", "T1", new ComponentTagDef?[] { null }!, Array.Empty<ComponentStateDef>(), "fp.x");
+        var doc = new ComponentModelDocument(1, "M1", Array.Empty<ComponentNode>(), new[] { type });
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.NotEmpty(violations);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 2 — the twins the re-review found sharing the identical unguarded dereference:
+    // Validate(TagNamespaceDocument) at the old :122 (doc.Tags) and Validate(HmiScreenDocument) at the old
+    // :211 (doc.Widgets). Neither is HTTP-reachable today, but TagNamespaceDocument becomes reachable in
+    // Task 2 of this very plan (PUT /v1/tags/{machineCode}) — fixed now rather than shipped broken on day
+    // one of that task. HmiScreenDocument fixed alongside it while the reasoning is in front of us, per the
+    // same "the mechanism is not specific to one document type" observation.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A_null_Tags_on_a_TagNamespaceDocument_is_a_violation_not_a_NullReferenceException()
+    {
+        var doc = new TagNamespaceDocument(1, "M1", null!);
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("tags", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void A_null_element_in_a_TagNamespaceDocuments_Tags_is_a_violation_not_an_exception()
+    {
+        var doc = new TagNamespaceDocument(1, "M1", new TagDescriptor?[] { null }!);
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.NotEmpty(violations);
+    }
+
+    [Fact]
+    public void ThrowIfInvalid_throws_ContractViolationException_not_NullReferenceException_for_a_null_Tags_namespace()
+    {
+        var doc = new TagNamespaceDocument(1, "M1", null!);
+        Assert.Throws<ContractViolationException>(() => ContractInvariants.ThrowIfInvalid(doc));
+    }
+
+    [Fact]
+    public void A_null_Widgets_on_an_HmiScreenDocument_is_a_violation_not_a_NullReferenceException()
+    {
+        var doc = new HmiScreenDocument(1, "s1", "Màn hình", null, "isa101", new ScreenLayout(12, 8, "panel"), null!);
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("widgets", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void A_null_element_in_an_HmiScreenDocuments_Widgets_is_a_violation_not_an_exception()
+    {
+        var doc = new HmiScreenDocument(
+            1, "s1", "Màn hình", null, "isa101", new ScreenLayout(12, 8, "panel"), new ScreenWidget?[] { null }!);
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.NotEmpty(violations);
+    }
+
+    [Fact]
+    public void ThrowIfInvalid_throws_ContractViolationException_not_NullReferenceException_for_a_null_Widgets_screen()
+    {
+        var doc = new HmiScreenDocument(1, "s1", "Màn hình", null, "isa101", new ScreenLayout(12, 8, "panel"), null!);
+        Assert.Throws<ContractViolationException>(() => ContractInvariants.ThrowIfInvalid(doc));
     }
 }

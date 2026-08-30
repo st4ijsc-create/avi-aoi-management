@@ -76,38 +76,69 @@ public static class HmiModelEndpoints
     // HmiModelEndpointsTests.Put_TwiceToTheSameMachine_TheSecondWriteWins_LastWriterWins for the test that
     // pins it.
     //
-    // 🔴 REVIEW FIX ROUND 1, HIGH-1 — THE ROUTE'S machineCode IS AUTHORITATIVE, NEVER THE BODY'S, BY
-    // REJECTION RATHER THAN SILENT OVERRIDE. ComponentModelStore.PutAsync keys its row on doc.MachineCode
-    // (the body), not on this handler's route parameter — nothing reconciled the two before this fix. A
-    // caller PUTting to /v1/components/INTENDED-01 with body.machineCode = "VICTIM-99" was silently writing
-    // VICTIM-99's ENTIRE tree while being told, at 200, that INTENDED-01 now has one component — and
-    // because an undeclared machine reads back 200-empty (§5-bis), the caller could not distinguish "my
-    // write landed on the wrong machine" from "nothing was ever declared here". Decided REJECT (400) rather
-    // than silently rewriting body.MachineCode to match the route: a client that gets no signal when its
-    // belief about which field is authoritative is wrong learns nothing and keeps sending the same bug.
-    // This is the SAME three-line guard shape ConfigEndpoints.cs uses three times already
+    // 🔴 REVIEW FIX ROUND 1, HIGH-1 — the route's machineCode wins over the body's, by REJECTING a
+    // disagreement rather than silently overriding it. ComponentModelStore.PutAsync keys its row on
+    // doc.MachineCode (the body), not on this handler's route parameter — nothing reconciled the two before
+    // this fix. A caller PUTting to /v1/components/INTENDED-01 with body.machineCode = "VICTIM-99" was
+    // silently writing VICTIM-99's ENTIRE tree while being told, at 200, that INTENDED-01 now has one
+    // component — and because an undeclared machine reads back 200-empty (§5-bis), the caller could not
+    // distinguish "my write landed on the wrong machine" from "nothing was ever declared here". Decided
+    // REJECT (400) rather than silently rewriting body.MachineCode to match the route: a client that gets no
+    // signal when its belief about which field is authoritative is wrong learns nothing and keeps sending
+    // the same bug. This is the SAME three-line guard shape ConfigEndpoints.cs uses three times already
     // (UpsertProductAsync/UpsertPointAsync/UpsertRecipeAsync: fill the identity in when the body omits it,
     // reject when the body disagrees with the route) — matched here rather than inventing a fourth spelling
     // of the same rule, per the reviewer's steer that consistency inside one API beats a fresh preference.
-    // See Put_BodyMachineCodeMismatchesRoute_Gets400_AndTheVictimMachineIsUntouched (rejection) and
-    // Put_BodyMachineCodeOmitted_IsFilledFromTheRoute (the lenient arm) for the tests that pin both halves.
+    //
+    // 🔴 REVIEW FIX ROUND 2, HIGH-A — comparing case-INSENSITIVELY (StringComparison.OrdinalIgnoreCase,
+    // matching ConfigEndpoints' own three guards) was not, by itself, enough: ComponentModelStore keys
+    // `machine_code TEXT PRIMARY KEY` with no `COLLATE NOCASE`, so SQLite treats it as case-SENSITIVE. A
+    // body that "matched" only case-insensitively (e.g. route "case-01", body "CASE-01") was left with its
+    // ORIGINAL casing and written as-is — landing on a DIFFERENT row than the route addressed, reproducing
+    // HIGH-1's exact failure mode narrowed to case variants (measured: two PUTs to /v1/components/case-02,
+    // second body spelled "CASE-02", reported 200 while the edit silently landed on a shadow row that
+    // GET /v1/components/case-02 never saw).
+    //
+    // THE IDENTITY RULE, CHOSEN HERE RATHER THAN LEFT IMPLICIT: machine codes are a CASE-INSENSITIVE
+    // identity at this API's boundary (matching the OrdinalIgnoreCase comparison every sibling guard in this
+    // codebase already uses for a route/body code), and the ONE canonical persisted spelling for that
+    // identity is always the ROUTE's — never the body's, whether the two matched exactly, matched only by
+    // case, or the body omitted the field entirely. That is enforced by NORMALIZING unconditionally, once
+    // the guard below has passed, rather than only comparing. So the claim below is true in FACT, not only
+    // in the 400/200 decision: whatever ends up written and reported is deterministically the route's exact
+    // spelling. See Put_BodyMachineCodeMismatchesRoute_Gets400_AndTheVictimMachineIsUntouched (rejection),
+    // Put_BodyMachineCodeOmitted_IsFilledFromTheRoute (the lenient arm), and
+    // Put_BodyMachineCodeCaseVariant_NormalizesToTheRoutesSpelling_NoDuplicateRow (the case-variance fix)
+    // for the tests that pin all three.
+    //
+    // NOTE ON ConfigEndpoints.cs, measured rather than assumed: its three route/body-code guards share this
+    // same compare-without-normalizing SHAPE, but NOT this defect — probed directly against
+    // ProductConfigStore (UpsertProduct/UpsertPoint), whose `_products`/`_recipes` Dictionaries use
+    // StringComparer.OrdinalIgnoreCase and whose UpsertPoint matches points by
+    // StringComparison.OrdinalIgnoreCase before replacing in place. A case-variant upsert there does NOT
+    // create a second row (case-insensitive identity is already the STORAGE layer's own semantics, not just
+    // the guard's) — it only lets the persisted Code field's own casing drift to whichever request wrote
+    // last, a much milder residual than ComponentModelStore's case-sensitive SQLite key. Not fixed here:
+    // pre-existing, on `main`, outside this task's range — reported to the owner rather than patched.
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PutAsync(
         string machineCode, ComponentModelDocument body, IComponentModelStore store, ITagNamespaceStore tags, CancellationToken ct)
     {
         // `body` itself can never be null here — ComponentModelDocument is a non-nullable complex parameter,
         // so RequestDelegateFactory already 400s an absent/literal-null body before this handler is entered.
-        // `body.MachineCode`, however, CAN be null/blank (an omitted JSON field, or an explicit ""): handled
-        // by the fill-or-reject guard immediately below, not here.
-        if (string.IsNullOrWhiteSpace(body.MachineCode))
-        {
-            body = body with { MachineCode = machineCode };
-        }
-        else if (!string.Equals(body.MachineCode, machineCode, StringComparison.OrdinalIgnoreCase))
+        // `body.MachineCode`, however, CAN be null/blank (an omitted JSON field, or an explicit ""), or spell
+        // the same identity in a different case — both handled below, then normalized unconditionally.
+        if (!string.IsNullOrWhiteSpace(body.MachineCode) &&
+            !string.Equals(body.MachineCode, machineCode, StringComparison.OrdinalIgnoreCase))
         {
             return Results.BadRequest(new ApiErrorDto(
                 $"body.machineCode ('{body.MachineCode}') must match the route {{machineCode}} ('{machineCode}') (or be omitted)."));
         }
+
+        // The route's spelling is authoritative in FACT, not only in the 400/200 decision above: this runs
+        // whether the guard above filled in an omitted code, matched exactly, or matched only case-
+        // insensitively — so two differently-cased spellings of "the same" machine can never become two rows.
+        body = body with { MachineCode = machineCode };
 
         try
         {
