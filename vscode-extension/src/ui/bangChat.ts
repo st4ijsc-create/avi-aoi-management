@@ -251,11 +251,26 @@ export class BangChat {
    * "@" xảy ra TRONG LÚC GÕ, TRƯỚC khi có lượt hỏi nào chạy, nên `this.thuMucHoiHienTai` (chỉ được
    * chốt bên trong `hoi()`) còn `undefined`. Dùng `thuMucLocalDangChon()` — đọc thẳng `duAnChon`,
    * có giá trị BẤT KỲ LÚC NÀO, không cần một lượt hỏi đang chạy.
+   *
+   * ⚠⚠ PHẢI GIẢI ĐƯỜNG THẬT Ở ĐÂY — khác `dsGocDoc()` (nơi giữ nguyên đường CHƯA giải, vì
+   * `chayToolCucBo` tự giải lại bên trong `chayThat`/`gocDaGiai` cho MỌI lời gọi ba tool đọc).
+   * `danhSachTepGoiY` (dùng trực tiếp `locUngVien`, không đi qua `chayThat`) mang đúng tên tham số
+   * `gocThat` như các hàm nội bộ khác của `mang/toolCucBo.ts` — tức nó GIẢ ĐỊNH gốc ĐÃ giải, giống
+   * hệt quy ước nội bộ của tệp đó. Gốc CHƯA giải ở đây không mở lỗ rò (một đích RA NGOÀI vẫn bị
+   * `namTrongThuMuc` từ chối vì so lệch hệ quy chiếu), nhưng làm MỌI tệp trong một workspace là
+   * junction/symlink bị loại NHẦM khỏi gợi ý — mất chức năng ÂM THẦM, đúng lớp lỗi mà
+   * `duongTuongDoiTrongWorkspace`/`gocDaGiai` được dựng ra để tránh.
    */
   private dsGocMention(): string[] {
     const goc = this.thuMucLocalDangChon();
     const tatCa = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
-    return goc ? [goc, ...tatCa.filter((p) => p !== goc)] : tatCa;
+    const raw = goc ? [goc, ...tatCa.filter((p) => p !== goc)] : tatCa;
+    const ra: string[] = [];
+    for (const p of raw) {
+      const r = giaiDuongThat(p);
+      if (r.ok) ra.push(r.duong);
+    }
+    return ra;
   }
 
   /**
