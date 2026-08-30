@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Endpoints;
@@ -511,10 +513,24 @@ public sealed class HmiTagEndpointsTests
             status = put.StatusCode;
         }
 
-        // P1: any 2xx or 4xx is an ANSWER. A 5xx is the defect — and so is an escaping exception, which
-        // TestServer rethrows to the caller instead of synthesising the 500 Kestrel would produce, so the
-        // await above would have thrown rather than reached here.
-        Assert.True((int)status < 500, $"body '{label}' produced {(int)status} — P1 says no client-authored body may.");
+        // P1: a 5xx is the defect — and so is an escaping exception, which TestServer rethrows to the
+        // caller instead of synthesising the 500 Kestrel would produce, so the await above would have
+        // thrown rather than reached here.
+        //
+        // 🔴 Fix round 1, F6 — this used to assert only `< 500`, which cannot tell 400 from 409, and that
+        // blind spot mattered: NONE of these 35 bodies collides with another machine (they are all one
+        // machine, P1-01), so a 409 here would mean a body reached SQLite that a §5 door was supposed to
+        // stop — most obviously `duplicate-path-in-one-doc`, whose in-document rule exists precisely to
+        // keep a client body away from `tag_index`'s primary key. Deleting that rule left this file green
+        // under the old assertion, because the new collision catch converted the escape into a tidy 409.
+        // Naming the two statuses that are legitimate here restores this theory's ability to see it.
+        // (The in-document rule is separately and genuinely pinned by three tests in
+        // St4i.Hmi.Contracts.Tests — this assertion is about what THIS file can see, not about coverage.)
+        Assert.True(
+            status is HttpStatusCode.OK or HttpStatusCode.BadRequest,
+            $"body '{label}' produced {(int)status}. P1 says no client-authored body may produce a 5xx; and " +
+            "a 409 here would mean it reached SQLite's global path index, which a §5 door should have " +
+            "refused first — none of these bodies collides with another machine.");
 
         // P2: if it was rejected, nothing may have been recorded — checked at BOTH read surfaces this task
         // adds, because a half-write visible through only one of them is still a half-write.
@@ -691,6 +707,17 @@ public sealed class HmiTagEndpointsTests
             var doc = await victim.Content.ReadFromJsonAsync<TagNamespaceDocument>(HmiContractJson.Options);
             Assert.Equal(2, doc!.Tags.Count); // untouched — still ValidNs's two tags
         }
+        // Fix round 1, F8 — through BOTH read surfaces, like every other P2 assertion in this file. The
+        // index and the document are two tables kept in step by one transaction; asserting only the
+        // document would miss a rejected write that had reached the index.
+        using (var victimByPath = await engineerC.GetAsync("/v1/tags/by-path/VICTIM-01/spindle/torque"))
+        {
+            Assert.Equal(HttpStatusCode.OK, victimByPath.StatusCode);
+        }
+        using (var attackerByPath = await engineerC.GetAsync("/v1/tags/by-path/VICTIM-01/attacker"))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, attackerByPath.StatusCode);
+        }
         using (var intended = await engineerC.GetAsync("/v1/tags?machine=INTENDED-01"))
         {
             var doc = await intended.Content.ReadFromJsonAsync<TagNamespaceDocument>(HmiContractJson.Options);
@@ -718,6 +745,321 @@ public sealed class HmiTagEndpointsTests
         using var get = await engineerC.GetAsync("/v1/tags?machine=FILLED-01");
         var doc = await get.Content.ReadFromJsonAsync<TagNamespaceDocument>(HmiContractJson.Options);
         Assert.Single(doc!.Tags);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // 🔴 FIX ROUND 1 — the collision handler's own lines, each of which was DELETABLE with all 52 tests
+    // green. Review of Task 2 inverted the usual question: every test that targeted a reverted change went
+    // red, and what survived was production lines with no test targeting them at all. These are those
+    // lines.
+    //
+    // Driven at HmiTagEndpoints.PutAsync DIRECTLY rather than over HTTP — the handler is `internal static`
+    // and this assembly has InternalsVisibleTo — because the states being pinned (a store raising a
+    // specific SQLite extended code; a diagnostic read throwing) cannot be produced through a real store
+    // without corrupting one. Reading the status off IResult via IStatusCodeHttpResult is what makes that
+    // possible without a host.
+    //
+    // What these do NOT measure: the real store actually raising code 1555 for a duplicate
+    // tag_index.path — that is measured end-to-end by
+    // Put_ANamespaceClaimingAPathAnotherMachineOwns_Gets409_NotA500_AndTheOwnerIsUntouched, which drives a
+    // genuine collision through a genuine SQLite file. These pin the HANDLER's response to each shape; that
+    // one pins that the shape is real.
+    // ═════════════════════════════════════════════════════════════════════
+
+    /// <summary>A store whose three methods are supplied per-test, so a single failure shape can be
+    /// produced exactly. Counts <see cref="FindTagAsync"/> calls, which is what makes the diagnostic cap
+    /// measurable rather than merely declared.</summary>
+    private sealed class ScriptedTagNamespaceStore : ITagNamespaceStore
+    {
+        public Func<TagNamespaceDocument, Task>? OnPut { get; init; }
+        public Func<string, Task<TagNamespaceDocument?>>? OnGet { get; init; }
+        public Func<string, Task<TagDescriptor?>>? OnFind { get; init; }
+
+        public int FindCallCount { get; private set; }
+
+        public Task PutAsync(TagNamespaceDocument doc, CancellationToken ct = default) =>
+            OnPut?.Invoke(doc) ?? Task.CompletedTask;
+
+        public Task<TagNamespaceDocument?> GetAsync(string machineCode, CancellationToken ct = default) =>
+            OnGet?.Invoke(machineCode) ?? Task.FromResult<TagNamespaceDocument?>(null);
+
+        public Task<TagDescriptor?> FindTagAsync(string path, CancellationToken ct = default)
+        {
+            FindCallCount++;
+            return OnFind?.Invoke(path) ?? Task.FromResult<TagDescriptor?>(null);
+        }
+    }
+
+    private static Func<TagNamespaceDocument, Task> ThrowsSqlite(int errorCode, int extendedErrorCode) =>
+        _ => throw new SqliteException("simulated", errorCode, extendedErrorCode);
+
+    private static int? StatusOf(IResult result) => (result as IStatusCodeHttpResult)?.StatusCode;
+
+    private static string ErrorOf(IResult result) =>
+        ((result as IValueHttpResult)?.Value as ApiErrorDto)?.Error ?? string.Empty;
+
+    /// <summary>🔴 <b>F1 — the extended-code narrowing, which was the best decision in this task and had
+    /// nothing mechanical behind it.</b> Widening <c>IsPathAlreadyClaimed</c> to bare
+    /// <c>SqliteErrorCode == 19</c> left all 52 tests green, so a later "simplification" would hand a
+    /// genuine NOT NULL bug in the store to the caller as a tidy 409 telling them to rename a path — the
+    /// exact defect the narrowing's own comment describes. Both directions are pinned here: the two
+    /// collision codes must MAP, and five non-collision shapes must ESCAPE. Widening reddens the five;
+    /// removing the mapping reddens the two.</summary>
+    public static TheoryData<int, int, bool, string> SqliteFailureShapes() => new()
+    {
+        { 19, 1555, true,  "SQLITE_CONSTRAINT_PRIMARYKEY — what a duplicate tag_index.path actually raises" },
+        { 19, 2067, true,  "SQLITE_CONSTRAINT_UNIQUE — defensive alternate for a future schema/SQLite version" },
+        { 19, 1299, false, "SQLITE_CONSTRAINT_NOTNULL — a genuine store bug, NOT a path collision" },
+        { 19,  275, false, "SQLITE_CONSTRAINT_CHECK" },
+        { 19,  787, false, "SQLITE_CONSTRAINT_FOREIGNKEY" },
+        {  5,    5, false, "SQLITE_BUSY — a locked database is not a client's fault to rename a path over" },
+        { 11,   11, false, "SQLITE_CORRUPT — must never be reported as a tidy conflict" },
+    };
+
+    [Theory]
+    [MemberData(nameof(SqliteFailureShapes))]
+    public async Task Only_a_genuine_path_collision_becomes_a_409_every_other_sqlite_failure_escapes(
+        int errorCode, int extendedErrorCode, bool expectConflict, string why)
+    {
+        var store = new ScriptedTagNamespaceStore { OnPut = ThrowsSqlite(errorCode, extendedErrorCode) };
+        var body = new TagNamespaceDocument(1, "SHAPE-01", new[] { ReadTag("SHAPE-01/x") });
+
+        if (expectConflict)
+        {
+            var result = await HmiTagEndpoints.PutAsync("SHAPE-01", body, store, CancellationToken.None);
+            Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
+        }
+        else
+        {
+            // Escaping is CORRECT here: an error this handler cannot honestly explain must not be dressed
+            // up as one it can. It becomes a 500, which is what an unexplained store failure is.
+            var escaped = await Assert.ThrowsAsync<SqliteException>(
+                () => HmiTagEndpoints.PutAsync("SHAPE-01", body, store, CancellationToken.None));
+            Assert.Equal(errorCode, escaped.SqliteErrorCode);
+        }
+    }
+
+    /// <summary>🔴 <b>F2 — the <c>ownPaths</c> exclusion, deletable with everything green.</b> Without it a
+    /// 409 names the claimant's OWN already-owned paths as "already declared by another machine", sending an
+    /// engineer to rename paths nobody else owns. The report previously cited
+    /// <c>Put_ReDeclaringAMachinesOwnNamespace_…</c> as covering this; that test never enters the 409 path,
+    /// which is a citation that does not reach the thing it certifies. This one does: the store is scripted
+    /// so that EVERY path resolves in the index (as it would when the claimant already has a namespace), so
+    /// the exclusion is the only thing separating the two lists.</summary>
+    [Fact]
+    public async Task A_409_names_the_path_another_machine_owns_and_never_the_claimants_own()
+    {
+        var existing = new TagNamespaceDocument(1, "OWN-01", new[] { ReadTag("OWN-01/pre") });
+        var store = new ScriptedTagNamespaceStore
+        {
+            OnPut = ThrowsSqlite(19, 1555),
+            OnGet = _ => Task.FromResult<TagNamespaceDocument?>(existing),
+            OnFind = path => Task.FromResult<TagDescriptor?>(ReadTag(path)), // everything is in the index
+        };
+
+        var body = new TagNamespaceDocument(1, "OWN-01", new[]
+        {
+            ReadTag("OWN-01/pre"),      // the claimant's OWN path — re-declared, which is the ordinary edit
+            ReadTag("shared/claimed"),  // the one another machine owns
+        });
+
+        var result = await HmiTagEndpoints.PutAsync("OWN-01", body, store, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
+        var error = ErrorOf(result);
+        Assert.Contains("shared/claimed", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("OWN-01/pre", error, StringComparison.Ordinal);
+    }
+
+    /// <summary>🔴 <b>F3 — the code written to close a 500 path opened one on its own error branch.</b> The
+    /// diagnosis catches only <see cref="SqliteException"/>, while both of its reads
+    /// (<c>GetAsync</c>/<c>FindTagAsync</c>) <c>JsonSerializer.Deserialize</c> a stored document
+    /// (<c>TagNamespaceStore.cs:269,291</c>) and can raise <see cref="JsonException"/> from a corrupt row.
+    /// That escapes, and the 409 turns back into the 500 it exists to prevent — standing directly under a
+    /// comment claiming the opposite.
+    ///
+    /// <para>Closed as a PROPERTY rather than by adding <c>JsonException</c> to the catch list: <b>no path
+    /// through the collision handler, including its diagnostic reads, may produce a 500.</b> Adding one
+    /// exception type would close the one this review named and leave the next
+    /// (<see cref="InvalidOperationException"/>, <see cref="ObjectDisposedException"/>, anything a future
+    /// decorator introduces) — the failure this workstream spent five rounds learning not to repeat.</para></summary>
+    public static TheoryData<string, Exception> DiagnosticReadFailures() => new()
+    {
+        { "JsonException-a-corrupt-stored-row", new JsonException("corrupt document") },
+        { "InvalidOperationException", new InvalidOperationException("Value must be set.") },
+        { "NullReferenceException", new NullReferenceException() },
+        { "ObjectDisposedException", new ObjectDisposedException("connection") },
+        { "SqliteException-the-only-one-originally-caught", new SqliteException("db gone", 11, 11) },
+    };
+
+    [Theory]
+    [MemberData(nameof(DiagnosticReadFailures))]
+    public async Task A_collision_diagnosis_that_fails_still_answers_409_never_500(string label, Exception thrown)
+    {
+        var body = new TagNamespaceDocument(1, "DIAG-01", new[] { ReadTag("DIAG-01/x") });
+
+        // Arm 1: the FIRST diagnostic read (GetAsync, for the machine's own paths) fails.
+        var getFails = new ScriptedTagNamespaceStore
+        {
+            OnPut = ThrowsSqlite(19, 1555),
+            OnGet = _ => throw thrown,
+        };
+        var viaGet = await HmiTagEndpoints.PutAsync("DIAG-01", body, getFails, CancellationToken.None);
+        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(viaGet));
+        Assert.False(string.IsNullOrWhiteSpace(ErrorOf(viaGet)), $"[{label}] the 409 must still explain itself");
+
+        // Arm 2: the SECOND diagnostic read (FindTagAsync, per path) fails.
+        var findFails = new ScriptedTagNamespaceStore
+        {
+            OnPut = ThrowsSqlite(19, 1555),
+            OnFind = _ => throw thrown,
+        };
+        var viaFind = await HmiTagEndpoints.PutAsync("DIAG-01", body, findFails, CancellationToken.None);
+        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(viaFind));
+    }
+
+    /// <summary>The one thing the total catch must NOT swallow. A cancelled request is the caller going
+    /// away, not a server error, and ASP.NET Core has its own handling for it — converting it into a 409
+    /// would report a conflict that never happened. Pinned so "catch everything" cannot quietly become
+    /// "catch everything including the thing that must propagate".</summary>
+    [Fact]
+    public async Task A_cancelled_request_still_propagates_out_of_the_collision_diagnosis()
+    {
+        var store = new ScriptedTagNamespaceStore
+        {
+            OnPut = ThrowsSqlite(19, 1555),
+            OnGet = _ => throw new OperationCanceledException(),
+        };
+        var body = new TagNamespaceDocument(1, "CANCEL-01", new[] { ReadTag("CANCEL-01/x") });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => HmiTagEndpoints.PutAsync("CANCEL-01", body, store, CancellationToken.None));
+    }
+
+    /// <summary>🔴 <b>F5 — the diagnosis was uncapped work driven by a client-controlled count.</b> One
+    /// <c>FindTagAsync</c> per tag in the body, each opening a fresh <see cref="SqliteConnection"/> and
+    /// applying four PRAGMAs. Measured by review for a single colliding PUT: 10 tags → 6 ms, 2 000 → 63 ms,
+    /// 20 000 → 539 ms, and roughly 230 000 index queries at Kestrel's default 30 MB body limit — from a
+    /// caller whose write is being REJECTED, repeatable. The bound is now a constant, and this is the test
+    /// that fails when it is raised or removed: the body carries far more colliding tags than the cap, and
+    /// the store counts probes.</summary>
+    [Fact]
+    public async Task The_collision_diagnosis_is_bounded_regardless_of_how_many_tags_the_body_carries()
+    {
+        const int TagsInBody = 2_000;
+
+        var store = new ScriptedTagNamespaceStore
+        {
+            OnPut = ThrowsSqlite(19, 1555),
+            OnFind = path => Task.FromResult<TagDescriptor?>(ReadTag(path)), // every path collides
+        };
+        var body = new TagNamespaceDocument(
+            1, "BOUND-01",
+            Enumerable.Range(0, TagsInBody).Select(i => ReadTag($"BOUND-01/tag{i}")).ToList());
+
+        var result = await HmiTagEndpoints.PutAsync("BOUND-01", body, store, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status409Conflict, StatusOf(result));
+        Assert.True(store.FindCallCount <= HmiTagEndpoints.MaxCollisionProbes,
+            $"the diagnosis made {store.FindCallCount} index probes for a {TagsInBody}-tag body — the bound " +
+            $"is {HmiTagEndpoints.MaxCollisionProbes}, and it exists because this work is driven by a " +
+            "client-controlled count on a request that is being REJECTED.");
+
+        // ...and the message is bounded too: an error naming two thousand paths is not a diagnosis.
+        var named = ErrorOf(result).Split("BOUND-01/tag", StringSplitOptions.None).Length - 1;
+        Assert.True(named <= HmiTagEndpoints.MaxNamedCollisions,
+            $"the 409 named {named} paths; the bound is {HmiTagEndpoints.MaxNamedCollisions}");
+
+        // ...and it SAYS it was truncated, rather than presenting a partial list as the whole answer.
+        Assert.Contains("truncated", ErrorOf(result), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>🔴 <b>F4 — the PUT response echo's canonicalisation, deletable with everything green.</b>
+    /// Without it, <c>PUT /v1/tags/find-01</c> reports <c>machineCode: "find-01"</c> while the row is stored
+    /// and served as <c>FIND-01</c>, so a caller keying off the PUT response holds a different name for the
+    /// machine than <c>GET</c> returns. That is the two-names-for-one-identity failure
+    /// <c>CanonicalMachineCodeStores</c> exists to prevent, at the one place in this branch where a machine
+    /// code crosses to a client uncanonicalised without a guard — and it is the family of defect Task 1
+    /// spent five rounds on.</summary>
+    [Fact]
+    public async Task The_put_response_names_the_machine_the_same_way_every_read_does()
+    {
+        var (factory, engineer, operatorClient) = await NewFactoryWithUsersAsync("echo-canonical");
+        await using var _f = factory;
+        using var engineerC = engineer;
+        using var operatorC = operatorClient;
+
+        using var put = await engineerC.PutAsJsonAsync(
+            "/v1/tags/find-01", ValidNs("find-01"), HmiContractJson.Options);
+
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+        var result = await put.Content.ReadFromJsonAsync<PutNamespaceResultDto>(HmiContractJson.Options);
+        Assert.Equal("FIND-01", result!.MachineCode);
+
+        // The whole point: the write response and the read agree about the machine's name.
+        using var get = await operatorC.GetAsync("/v1/tags?machine=find-01");
+        var doc = await get.Content.ReadFromJsonAsync<TagNamespaceDocument>(HmiContractJson.Options);
+        Assert.Equal(result.MachineCode, doc!.MachineCode);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // 🔴 F7 — RULED, not left as an accident. §5 IS A PRESENCE RULE, NOT A MEMBERSHIP RULE.
+    //
+    // `policyAction: " "` is accepted and stored, because NUL is not whitespace. The alternative —
+    // "NUL means absence, close it" — was considered and REJECTED, because it would be membership
+    // validation applied to exactly one unresolvable value while `policyAction: "xyzzy"` (equally
+    // unresolvable, equally unable to gate anything at runtime) stayed accepted. ContractInvariants states
+    // that boundary itself: it is not a list of VALID values, it is a list of values it treats as writable,
+    // and "một `access` gõ sai ("rww") … đi qua đây im lặng — schema từ chối nó, bộ kiểm này thì không".
+    // Closing NUL alone would be the inconsistency this workstream keeps punishing, one field over.
+    //
+    // So: §5 asks "is a policyAction PRESENT", the JSON Schema asks "is it a real one", and this test is
+    // the boundary between them made mechanical rather than discovered again next round. It pins a LIMIT,
+    // not a desirable behaviour — which is why it is named for what it is.
+    // ═════════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData(" ")]  // NUL — not whitespace, therefore present
+    [InlineData("xyzzy")]   // a policy no runtime can resolve — equally present, equally accepted
+    public async Task Limit_A_policyAction_that_is_present_but_meaningless_is_accepted_because_5_checks_presence(
+        string policyAction)
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync($"presence-{policyAction.Length}-{(int)policyAction[0]}");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        var ns = new TagNamespaceDocument(1, "PRES-01", new[] { WritableTag("PRES-01/x", policyAction) });
+
+        using var put = await engineerC.PutAsJsonAsync("/v1/tags/PRES-01", ns, HmiContractJson.Options);
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+
+        // And it round-trips rather than corrupting the row — the reason this is a limit and not a defect.
+        using var get = await engineerC.GetAsync("/v1/tags?machine=PRES-01");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        var doc = await get.Content.ReadFromJsonAsync<TagNamespaceDocument>(HmiContractJson.Options);
+        Assert.Equal(policyAction, doc!.Tags[0].PolicyAction);
+    }
+
+    /// <summary>The same rule's other half, so the limit above cannot be read as "anything goes": a
+    /// policyAction that is genuinely ABSENT — null, empty, or whitespace of any kind — is still refused.
+    /// If someone ever "fixes" the NUL case by making §5 a membership rule, this pair is where the decision
+    /// has to be re-argued rather than quietly reversed.</summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("\t")]
+    [InlineData(" ")] // NBSP — whitespace, therefore absent
+    public async Task A_policyAction_that_is_absent_is_still_refused(string? policyAction)
+    {
+        var (factory, engineer, _) = await NewFactoryWithUsersAsync($"absent-{policyAction?.Length ?? -1}-{(int?)policyAction?.FirstOrDefault() ?? -1}");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        var ns = new TagNamespaceDocument(1, "ABS-01", new[] { WritableTag("ABS-01/x", policyAction) });
+
+        using var put = await engineerC.PutAsJsonAsync("/v1/tags/ABS-01", ns, HmiContractJson.Options);
+        Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
     }
 
     /// <summary>The same "absence IS null, never written explicitly" rule Task 1 pins for the component
