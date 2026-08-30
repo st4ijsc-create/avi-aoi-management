@@ -1782,6 +1782,10 @@ app.MapHistorianEndpoints();
 app.MapAuditEndpoints();
 app.MapUserEndpoints();
 app.MapAssetEndpoints();
+// WS-HMI-0b Task 1 — the component-tree HTTP surface over WS-HMI-0a's IComponentModelStore/
+// ITagNamespaceStore (both registered above, WS-HMI-0a Task 5). Same "store-backed resource, Operator
+// reads / Engineer writes" shape as MapAssetEndpoints directly above.
+app.MapHmiModelEndpoints();
 // GP-5 (task-5-brief.md item 3) — GET /v1/connectors: visibility for a configured-but-not-started connector.
 app.MapConnectorEndpoints();
 app.MapMachineWriteEndpoints();

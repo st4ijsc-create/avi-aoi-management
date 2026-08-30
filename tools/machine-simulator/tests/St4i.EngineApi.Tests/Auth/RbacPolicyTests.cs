@@ -224,6 +224,12 @@ public sealed class RbacPolicyTests
         // GET /v1/assets/GET /v1/site above; the two mutations (create/delete) are Engineer below, same tier
         // as PUT /v1/site and PUT /v1/assets/{code}/lifecycle.
         new("/v1/connectors/configured", new[] { "GET" }, Policies.Operator),
+        // WS-HMI-0b Task 1 — the component-tree HTTP surface (HmiModelEndpoints.cs). Same tier as
+        // GET /v1/assets/GET /v1/site above: none of these four writes to a device, so Operator is enough.
+        new("/v1/components", new[] { "GET" }, Policies.Operator),
+        new("/v1/components/{machineCode}", new[] { "GET" }, Policies.Operator),
+        new("/v1/components/{machineCode}/integrity", new[] { "GET" }, Policies.Operator),
+        new("/v1/component-types", new[] { "GET" }, Policies.Operator),
 
         // Engineer
         // Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — a setpoint
@@ -231,6 +237,11 @@ public sealed class RbacPolicyTests
         // but sits beside the OTHER Engineer-gated connector/config mutations (including the one that
         // declares a point writable at all — POST /v1/connectors' own save gate) rather than the lower
         // Operator tier (whose existing actions never touch a device at all).
+        // WS-HMI-0b Task 1 — the one write in the component-tree surface. Engineer, never Admin: per this
+        // task's brief, nothing in this workstream writes to a DEVICE — it declares/reads a component tree,
+        // the same tier of authority as the config-mutation routes below, not the setpoint/command routes
+        // that actually reach a machine.
+        new("/v1/components/{machineCode}", new[] { "PUT" }, Policies.Engineer),
         new("/v1/machines/{code}/setpoint", new[] { "POST" }, Policies.Engineer),
         new("/v1/machines/{code}/sync-config", new[] { "POST" }, Policies.Engineer),
         new("/v1/mode", new[] { "PUT" }, Policies.Engineer),
