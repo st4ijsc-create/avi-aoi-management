@@ -109,6 +109,81 @@
  * — đây KHÔNG phải cảnh báo bền vững qua restart (metrics là in-memory); một giao diện
  * đọc trực tiếp `deadLetterFile()` vẫn là việc CHƯA làm (BG-36).
  *
+ * ── 2026-08-31 (Pha 1E Task 1 — BG-64 + BG-66 + BG-67 ⛔) — REVIEW LƯỢT 5 BÁC BỎ "MỐC SON"
+ * VÒNG SỬA 2, BA LỖ MỚI, CẢ BA LÀ HẬU QUẢ CỦA CHÍNH CÁC BẢN VÁ TRƯỚC ────────────────────────
+ * Bài học chi phối cả ba: **một bản vá đúng ở chỗ nó nhắm, rồi mở một chiều khác.** Trước khi
+ * viết mã sửa, câu hỏi bắt buộc: "bản vá này chuyển thứ gì từ lớp nào sang lớp nào, và ai đang
+ * phụ thuộc vào phân lớp cũ?"
+ *
+ * BG-64 — `isPermanentSubmitError` bỏ sót đúng lớp nguy hiểm nhất. Commit `1c3c74ef` (BG-52)
+ * thêm `.max()` cho `metaJsonSchema` (cửa ZIP, `aoiPackageRouter.ts`) — ĐÚNG, chặn payload quá
+ * cỡ sớm hơn. Nhưng nó CHUYỂN lỗi chuỗi-quá-cỡ từ tầng Postgres (`22001`, đã VĨNH VIỄN — đúng)
+ * sang tầng Zod (`ZodError` ném THẲNG từ `metaJsonSchema.parse()`, gọi tay — KHÔNG đi qua
+ * `.input()`/`createInputMiddleware` của tRPC nên KHÔNG được bọc `TRPCError(BAD_REQUEST)`, vốn
+ * đã nằm trong `PERMANENT_TRPC_CODES`). `isPermanentSubmitError` TRƯỚC bản vá này chỉ biết hai
+ * lớp (`TRPCError` theo code cố định, SQLSTATE 22/23xxx) — một `ZodError` trần không khớp lớp
+ * nào ⇒ TẠM THỜI ⇒ "hai nửa của cùng một commit cắn nhau": nửa thêm `.max()` làm chốt chặn ĐẾM
+ * (dead-letter sau N lần) tại `aoiPackageRouter.commit` (BG-52) **yếu đi** đúng cho lớp payload
+ * nó sinh ra để chặn. Cùng lỗ, hai biểu hiện khác: JSZip lỗi archive hỏng (`JSZip.loadAsync`,
+ * KHÔNG có class lỗi riêng — plain `Error`, xem `node_modules/jszip/lib/{zipEntries,zipEntry,
+ * load}.js`) và `JSON.parse` lỗi cú pháp (`metaContent` không phải JSON hợp lệ) — CẢ HAI đều
+ * KHÔNG BAO GIỜ thành công khi thử lại NGUYÊN VĂN cùng byte, nhưng trước bản vá này đều rơi
+ * TẠM THỜI. Sửa: `isPermanentSubmitError` nay còn nhận diện (đi bộ `.cause` như lớp SQLSTATE ở
+ * trên, không viết bộ đi-bộ thứ hai) — `err instanceof ZodError`, `err instanceof SyntaxError`,
+ * và thông điệp lỗi JSZip khớp `CORRUPT_ARCHIVE_MESSAGE` (chữ ký lấy TỪ MÃ NGUỒN JSZip thật, xem
+ * `isPermanentPayloadShapeError`). ⚠ CHỐNG SIẾT QUÁ (mệnh đề 2, `task-1-brief.md`): KHÔNG đụng
+ * ranh giới lỗi kết nối — `ECONNREFUSED`/`08006`/`57P03` không khớp bất kỳ lớp nào ở trên, vẫn
+ * TẠM THỜI. `isPermanentSubmitError` được TÁI DÙNG ở `aoiPackageRouter.commit` (cửa ZIP, BG-52)
+ * — bản vá NÀY (ở tầng hàm dùng chung) đổi hành vi CỬA ĐÓ mà không sửa file đó (đúng ranh giới
+ * task, xem `task-1-brief.md`); ai đang phụ thuộc phân lớp CŨ ("JSZip/JSON hỏng ⇒ tạm thời") là
+ * `aoiPackageZipChotChanRetry.test.ts` §2 — file đó tự khai đây là "giới hạn ĐÃ BIẾT", nay lỗ
+ * đã đóng Ở TẦNG HÀM, phần cập nhật lại kỳ vọng của bài test đó thuộc Task 2 (BG-65+68, file
+ * `aoiPackageRouter.ts` không thuộc phạm vi Task 1).
+ *
+ * BG-66 — `maxStuckMs` (vòng sửa 2) đo từ lúc XẾP HÀNG (`enqueuedAt`), không đo "kẹt". Một mục
+ * nằm im 25h chưa từng được `backfillInspections()` chạm tới (`attempts=0`, KHÔNG phải do nó
+ * bền — do tiến trình đứng/bảo trì) rồi gặp lỗi TẠM THỜI ở lượt đầu tiên bị dead-letter NGAY vì
+ * `Date.now() - enqueuedAt` đã vượt 24h — dù nó CHƯA HỀ được thử lần nào. Kịch bản thật: tắt
+ * bảo trì cuối tuần → `restoreInspectionWal` khôi phục nguyên `enqueuedAt` từ đĩa (đúng, đó là
+ * lúc nó xếp hàng thật) → tick đầu sau khởi động gặp lỗi tạm thời → MỌI mục nằm quá 24h TRƯỚC
+ * KHI có cơ hội retry nào đều chết CÙNG LÚC — WAL biến thành máy vứt bo ĐÚNG khi nó vừa được
+ * đánh thức để cứu bo. Ai phụ thuộc phân lớp cũ ("khoảng thời gian bền = khoảng thời gian nằm
+ * trong hàng đợi"): KHÔNG ai — đây thuần là lỗi phép đo của vòng sửa trước, không ai cố ý dựa
+ * vào nó. Sửa: mốc dùng để so với `maxStuckMs()` đổi từ `enqueuedAt` sang `WalEntry.lanHongDauMs`
+ * — dấu thời gian của LẦN HỎNG ĐẦU TIÊN qua `backfillInspections` (KHÔNG phải lần buffer/enqueue
+ * — buffer là do LIVE PATH hỏng, backfill là chuyện KHÁC). `lanHongDauMs` là `undefined` cho một
+ * mục CHƯA TỪNG hỏng qua backfill (không có đồng hồ nào chạy — mệnh đề 3), được set MỘT LẦN ở
+ * lần hỏng đầu (không dịch chuyển ở các lần hỏng liên tiếp sau — mới đo được "kẹt LIÊN TỤC bao
+ * lâu"), và không tồn tại (⇒ đồng hồ RESET) cho một entry MỚI sau khi entry CŨ (nếu có) đã thành
+ * công (thành công luôn `removeAt` khỏi hàng đợi — một entry mới, dù cùng máy/cùng seri, luôn
+ * bắt đầu với đồng hồ trống, không kế thừa thời gian đã trôi của một đợt trước đã khép lại).
+ * Được PERSIST vào file mirror (không chỉ in-memory) để sống sót qua restart — nếu không, một
+ * mục ĐANG kẹt thật (đã hỏng nhiều lần, gần chạm trần) sẽ bị "ân xá" oan mỗi lần tiến trình khởi
+ * động lại, hoãn vô thời hạn cảnh báo dead-letter cho một mục có payload thật sự có vấn đề.
+ *
+ * BG-67 — một tick `backfillInspections()` quét TOÀN hàng đợi hiện có, không có trần nào ngoài
+ * `budget` (`drainBatch()`, mặc định 50) — nhưng `budget` (từ vòng sửa 2, C-1) CHỈ giảm khi có
+ * CÔNG VIỆC THẬT (thành công hoặc dead-letter); một hàng đợi TOÀN lỗi tạm thời không giảm
+ * `budget` bao giờ ⇒ vòng quét đi hết `queue.length`. Đo THẬT: 20.000 mục = 40.000 lời gọi DB
+ * (`dedupFn`+`processFn`) TRONG MỘT TICK — 137ms nếu cả hai hàm chạy trong bộ nhớ, nhưng với
+ * ECONNREFUSED thật (~12,9ms/lượt đo được) ⇒ ~518 giây; với DB "hố đen" (gói tin rơi lặng im,
+ * `connect_timeout=30s`, không refuse ngay) ⇒ 40.000 × 30s ≈ 333 GIỜ MỘT TICK — suốt thời gian
+ * đó `draining=true` khiến MỌI lượt gọi `backfillInspections()` khác (kể cả rút cơ hội từ đường
+ * ingest LIVE khi nó tự phát hiện DB đã hồi) trả về ngay, làm 0 việc. Đây là hậu quả TRỰC TIẾP
+ * của vòng sửa 2: vòng 1 (BG-40 việc 3) có một trần quét (tái dùng `drainBatch()` làm trần quét
+ * LUÔN — SAI, gây đói hàng đuôi khi có ≥50 mục lỗi tạm thời ở đầu hàng: C-1); vòng sửa 2 GỠ trần
+ * đó (đổi `budget` thành chỉ đếm việc-có-hậu-quả) để đóng C-1, và KHÔNG đo lại chi phí quét —
+ * "phí tổn bị chặn trần bởi đúng ngân sách đã tồn tại sẵn" (chú thích vòng 1) không còn đúng.
+ * Ai đang phụ thuộc phân lớp cũ ("scan không cần trần riêng, `budget` là đủ"): chính vòng sửa 2
+ * — lời giải thích của nó cho việc gỡ trần dựa trên tiền đề mà nó vừa phá (budget-giảm-mọi-
+ * nhánh). Sửa: hai trần TÁCH BIỆT — `budget` (thao-tác-CÓ-HẬU-QUẢ mỗi tick, không đổi) và
+ * `maxScanPerTick()` (mục ĐƯỢC CHẠM — dù có hậu quả hay không — mỗi tick, MỚI). Để không đói
+ * hàng đuôi khi `maxScanPerTick() < queue.length` (đúng lỗi C-1 đã bắt vòng 1, KHÔNG được tái
+ * diễn dưới tên khác), vị trí quét NHỚ giữa các tick qua con trỏ xoay vòng module-level
+ * `scanCursor` — tick sau tiếp tục từ chỗ tick trước dừng (mod độ dài hàng đợi hiện tại), không
+ * bao giờ luôn bắt đầu lại từ đầu mảng. Qua ĐỦ SỐ TICK, mọi mục đều được chạm — "quét hết theo
+ * lượt" (nhiều tick) THAY vì "quét hết trong MỘT tick" (đúng thứ gây ra BG-67).
+ *
  * HONESTY: with the flag OFF every entry point is a no-op → behaviour is exactly
  * as before (throw on DB failure). The process/dedup functions are INJECTED so
  * tests exercise buffer/backfill/idempotency without a live DB.
@@ -118,6 +193,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { TRPCError } from "@trpc/server";
+import { ZodError } from "zod";
 // Doc 2026-08-29 (WAL cho cây v2.0, §QĐ-WAL-A) — khoá gửi RIÊNG cho payload hình dạng
 // cây v2.0 + vị từ nhận diện hình dạng. Cả hai sống ở module hợp đồng LÁ
 // (`server/contracts/machineDataContract.ts`, KHÔNG import gì từ `routers/`), nên import
@@ -229,6 +305,24 @@ function maxStuckMs(): number {
   return envInt("INSPECTION_STORE_FORWARD_MAX_STUCK_MS", 24 * 60 * 60 * 1000);
 }
 
+/**
+ * ── 2026-08-31 (BG-67 ⛔) — TRẦN QUÉT, TÁCH KHỎI `budget` (trần thao-tác-CÓ-HẬU-QUẢ) ──────────
+ * `budget` (vòng sửa 2) CHỈ giảm khi một mục có kết quả THẬT (thành công/dead-letter) — một
+ * hàng đợi TOÀN lỗi tạm thời không giảm `budget` bao giờ, nên vòng quét đi hết `queue.length`
+ * KHÔNG TRẦN. Đo THẬT: 20.000 mục = 40.000 lời gọi DB (`dedupFn`+`processFn`) TRONG MỘT TICK;
+ * với DB "hố đen" (`connect_timeout=30s`) ⇒ ~333 GIỜ một tick, suốt thời gian đó `draining=true`
+ * chặn MỌI lượt `backfillInspections()` khác. `maxScanPerTick()` giới hạn SỐ MỤC ĐƯỢC CHẠM (dù
+ * có hậu quả hay không) mỗi tick — ĐỘC LẬP với `budget`. Mặc định 2.000: đủ lớn để KHÔNG phá
+ * mệnh đề 7 (200 mục lỗi tạm thời phải được thử ĐỦ mỗi tick — vòng sửa 2 vừa đạt, xem
+ * `inspectionStoreForwardKhongChanDauHang.test.ts`, V2-1), đủ nhỏ để 20.000 mục KHÔNG còn ra
+ * 40.000 lời gọi trong một tick. Để không đói hàng đuôi khi `maxScanPerTick() < queue.length`
+ * (đúng lỗi C-1 đã bắt ở vòng 1 dưới tên "trần đếm-lượt" — KHÔNG được tái diễn dưới tên khác),
+ * vị trí quét NHỚ giữa các tick qua con trỏ xoay vòng `scanCursor` (xem `backfillInspections`).
+ */
+function maxScanPerTick(): number {
+  return envInt("INSPECTION_STORE_FORWARD_MAX_SCAN_PER_TICK", 2000);
+}
+
 /** Warn loudly when the queue depth reaches this (repeated at most every 5 min). */
 function alertDepth(): number {
   return envInt("INSPECTION_STORE_FORWARD_ALERT_DEPTH", 500);
@@ -241,9 +335,20 @@ interface WalEntry {
   key: string;
   enqueuedAt: number;
   /** Số lần phát lại TẠM THỜI thất bại — CHỈ để quan sát/ghi log. Điều kiện dead-letter
-   * là THỜI GIAN đã trôi kể từ `enqueuedAt` so với `maxStuckMs()`, KHÔNG phải số này
-   * (BG-40 vòng sửa 2, C-1 — đếm lượt bị bác bỏ vì không tỷ lệ thuận với thời gian thật). */
+   * là THỜI GIAN KẸT LIÊN TỤC so với `maxStuckMs()` (xem `lanHongDauMs` — BG-66, KHÔNG
+   * còn tính từ `enqueuedAt`), KHÔNG phải số này (BG-40 vòng sửa 2, C-1 — đếm lượt bị
+   * bác bỏ vì không tỷ lệ thuận với thời gian thật). */
   attempts: number;
+  /** ── 2026-08-31 (BG-66 ⛔) — mốc THỜI GIAN của LẦN HỎNG ĐẦU TIÊN qua `backfillInspections`
+   * (KHÔNG phải `enqueuedAt` — mục nằm hàng đợi lâu nhưng CHƯA TỪNG được thử không "kẹt").
+   * `undefined` = mục này CHƯA từng hỏng qua backfill — KHÔNG có đồng hồ nào chạy (mệnh đề 3,
+   * `task-1-brief.md`). Set MỘT LẦN ở lần hỏng đầu (không dịch chuyển ở các lần hỏng liên tiếp
+   * sau — mới đo được "kẹt LIÊN TỤC bao lâu", mệnh đề 4). Một entry MỚI (sau khi entry cũ đã
+   * `removeAt` vì thành công) luôn bắt đầu `undefined` — đồng hồ RESET tự nhiên, không kế thừa
+   * thời gian đã trôi của đợt trước (mệnh đề 5). Được PERSIST vào file mirror để sống sót qua
+   * restart (nếu không, một mục ĐANG kẹt thật sẽ được "ân xá" oan mỗi lần tiến trình khởi động
+   * lại). */
+  lanHongDauMs?: number;
   /** Approximate serialized size (for the byte bound). */
   bytes: number;
   payload: BufferedSubmission;
@@ -414,15 +519,56 @@ function isPermanentDbSqlState(err: unknown): boolean {
 }
 
 /**
+ * ── 2026-08-31 (BG-64 ⛔) — LỚP "HÌNH DẠNG PAYLOAD KHÔNG BAO GIỜ ĐỌC ĐƯỢC" ─────────────────
+ * Chữ ký lấy TỪ MÃ NGUỒN JSZip thật (`node_modules/jszip/lib/{zipEntries,zipEntry,load}.js`),
+ * không đoán: `"Corrupted zip : CRC32 mismatch"`, `"Corrupted zip or bug: unexpected signature"`,
+ * `"Can't find end of central directory : ..."`, `"Corrupted zip: can't find end of central
+ * directory"`, `"Corrupted zip: can't find the ZIP64 end of central directory..."`,
+ * `"Corrupted zip: missing N bytes"`, `"Bug or corrupted zip : didn't get enough information..."`,
+ * `"Corrupted zip : compression ... unknown..."`, `"Encrypted zip are not supported"`. JSZip
+ * KHÔNG có class lỗi riêng (mọi lỗi trên đều `new Error(...)` trần) nên chỉ còn cách nhận diện
+ * qua chữ ký thông điệp — cố ý HẸP (không match "zip" trần chung chung) để không vô tình nuốt
+ * một lỗi mạng/storage tình cờ nhắc tới "zip".
+ */
+const CORRUPT_ARCHIVE_MESSAGE = /corrupted zip|central directory|encrypted zip are not supported/i;
+
+/**
+ * ── 2026-08-31 (BG-64 ⛔) — Ba chế độ hỏng PHỔ BIẾN NHẤT của một payload không cái nào được
+ * `isPermanentSubmitError` (bản TRƯỚC bản vá này) nhận ra: **quá cỡ** (`ZodError` — commit
+ * `1c3c74ef`/BG-52 thêm `.max()` cho `metaJsonSchema`, chặn SỚM HƠN Postgres nên chuỗi quá cỡ
+ * giờ ném `ZodError` TRẦN từ `metaJsonSchema.parse()` gọi tay, KHÔNG qua `.input()` nên KHÔNG
+ * được tRPC bọc `TRPCError(BAD_REQUEST)` — vốn đã VĨNH VIỄN từ trước), **nén hỏng** (JSZip, xem
+ * `CORRUPT_ARCHIVE_MESSAGE`), **JSON hỏng** (`JSON.parse(metaContent)` ném `SyntaxError` chuẩn
+ * của V8 khi bytes không phải JSON hợp lệ). Cả ba: thử lại NGUYÊN VĂN cùng byte KHÔNG BAO GIỜ
+ * thành công — đúng định nghĩa VĨNH VIỄN, y hệt lý do SQLSTATE 22/23xxx ở trên. Đi bộ `.cause`
+ * giống `isPermanentDbSqlState` (không viết bộ đi-bộ thứ hai) vì tRPC/middleware có thể bọc lỗi
+ * gốc ở `.cause` trước khi nó tới đây.
+ */
+function isPermanentPayloadShapeError(err: unknown): boolean {
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current; depth++) {
+    if (current instanceof ZodError) return true;
+    if (current instanceof SyntaxError) return true;
+    if (current instanceof Error && CORRUPT_ARCHIVE_MESSAGE.test(current.message)) return true;
+    if (typeof current !== "object") break;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
  * A PERMANENT error means retrying the same payload can never succeed
  * (bad credentials / validation / Postgres 22xxx data-exception / 23xxx
- * constraint-violation) — it must be surfaced to the caller (live path) or
- * dead-lettered (replay), never left in the queue. Everything else (connection
- * errors, timeouts, TRPC INTERNAL_SERVER_ERROR) is TRANSIENT.
+ * constraint-violation / oversized-or-corrupt payload — BG-64) — it must be
+ * surfaced to the caller (live path) or dead-lettered (replay), never left in
+ * the queue. Everything else (connection errors, timeouts, TRPC
+ * INTERNAL_SERVER_ERROR) is TRANSIENT — CHỐNG SIẾT QUÁ: không đụng ranh giới
+ * này, xếp nhầm một lỗi kết nối thành vĩnh viễn là MẤT BO khi DB chỉ chớp nháy.
  */
 export function isPermanentSubmitError(err: unknown): boolean {
   if (err instanceof TRPCError && PERMANENT_TRPC_CODES.has(err.code)) return true;
-  return isPermanentDbSqlState(err);
+  if (isPermanentDbSqlState(err)) return true;
+  return isPermanentPayloadShapeError(err);
 }
 
 // ── file mirror (append-only JSONL rewrite; memory is the truth) ─────────────
@@ -430,7 +576,15 @@ export function isPermanentSubmitError(err: unknown): boolean {
 let fileDirty = false;
 
 function entryToLine(e: WalEntry): string {
-  return JSON.stringify({ key: e.key, enqueuedAt: e.enqueuedAt, attempts: e.attempts, payload: e.payload });
+  // BG-66: `lanHongDauMs` đi kèm khi có (JSON.stringify tự bỏ field `undefined`) — một mục
+  // CHƯA từng hỏng qua backfill không ghi field này xuống đĩa, giữ đúng "không có đồng hồ chạy".
+  return JSON.stringify({
+    key: e.key,
+    enqueuedAt: e.enqueuedAt,
+    attempts: e.attempts,
+    lanHongDauMs: e.lanHongDauMs,
+    payload: e.payload,
+  });
 }
 
 async function flushFile(): Promise<void> {
@@ -459,13 +613,29 @@ export async function restoreInspectionWal(): Promise<number> {
     const t = line.trim();
     if (!t) continue;
     try {
-      const parsed = JSON.parse(t) as { key?: string; enqueuedAt?: number; attempts?: number; payload?: BufferedSubmission };
+      const parsed = JSON.parse(t) as {
+        key?: string;
+        enqueuedAt?: number;
+        attempts?: number;
+        lanHongDauMs?: number;
+        payload?: BufferedSubmission;
+      };
       if (!parsed.payload) continue;
       const key =
         typeof parsed.key === "string" ? parsed.key : dungKhoaGuiTheoHinhDang(parsed.payload);
       if (queuedKeys.has(key) || appliedKeys.has(key)) continue;
       const bytes = t.length;
-      queue.push({ key, enqueuedAt: parsed.enqueuedAt ?? Date.now(), attempts: parsed.attempts ?? 0, bytes, payload: parsed.payload });
+      // BG-66: khôi phục `lanHongDauMs` NGUYÊN VĂN (không suy ra từ `enqueuedAt`) — một mục
+      // đang kẹt thật (đã hỏng nhiều lần trước khi tiến trình dừng) giữ đúng đồng hồ của nó
+      // qua restart; một mục CHƯA từng hỏng (field vắng mặt trên đĩa) khôi phục `undefined`.
+      queue.push({
+        key,
+        enqueuedAt: parsed.enqueuedAt ?? Date.now(),
+        attempts: parsed.attempts ?? 0,
+        lanHongDauMs: typeof parsed.lanHongDauMs === "number" ? parsed.lanHongDauMs : undefined,
+        bytes,
+        payload: parsed.payload,
+      });
       queuedKeys.add(key);
       queueBytes += bytes;
     } catch {
@@ -647,8 +817,9 @@ type KetQuaXuLyLoiPhatLai = "deadLetter" | "conKet";
  * chạy) — nên `dedupFn` ném lỗi nay đi ĐÚNG con đường mà `processFn` ném lỗi đã đi:
  * VĨNH VIỄN (`isPermanentSubmitError`) ⇒ dead-letter ngay, không tăng `attempts`;
  * ngược lại ⇒ tăng `attempts` (chỉ để quan sát/log) rồi dead-letter NẾU đã kẹt quá
- * `maxStuckMs()` kể từ lúc xếp hàng, còn chưa thì vẫn ở lại — người gọi (vòng
- * `backfillInspections`) chịu trách nhiệm KHÔNG `break`, thử mục kế tiếp.
+ * `maxStuckMs()` kể từ LẦN HỎNG ĐẦU TIÊN (`lanHongDauMs` — BG-66, KHÔNG còn tính từ
+ * lúc xếp hàng), còn chưa thì vẫn ở lại — người gọi (vòng `backfillInspections`)
+ * chịu trách nhiệm KHÔNG `break`, thử mục kế tiếp.
  */
 async function xuLyLoiPhatLai(entry: WalEntry, err: unknown): Promise<KetQuaXuLyLoiPhatLai> {
   if (isPermanentSubmitError(err)) {
@@ -657,21 +828,27 @@ async function xuLyLoiPhatLai(entry: WalEntry, err: unknown): Promise<KetQuaXuLy
   }
 
   entry.attempts += 1;
+  // BG-66 ⛔ — mốc "kẹt" là LẦN HỎNG ĐẦU TIÊN qua backfill, KHÔNG phải `enqueuedAt`. Một mục
+  // nằm hàng đợi lâu nhưng CHƯA TỪNG được thử (`lanHongDauMs` còn `undefined`) không có đồng
+  // hồ nào chạy cho tới NGAY LÚC NÀY — set một lần, không dịch chuyển ở các lần hỏng sau.
+  if (entry.lanHongDauMs === undefined) {
+    entry.lanHongDauMs = Date.now();
+  }
   fileDirty = true;
 
-  const tuoiMs = Date.now() - entry.enqueuedAt;
+  const tuoiMs = Date.now() - entry.lanHongDauMs;
   if (tuoiMs >= maxStuckMs()) {
     const gioKet = (maxStuckMs() / 3_600_000).toFixed(1);
     console.warn(
-      `[InspectionSF] mục KẸT QUÁ ${gioKet}h kể từ lúc xếp hàng (key=${entry.key.slice(0, 12)}…, ` +
-        `serial=${entry.payload.serialNumber}, đã thử ${entry.attempts} lượt) — chuyển dead-letter thay vì ` +
-        `đệm vô thời hạn`,
+      `[InspectionSF] mục KẸT QUÁ ${gioKet}h liên tục (kể từ LẦN HỎNG ĐẦU TIÊN, không phải lúc ` +
+        `xếp hàng — BG-66) (key=${entry.key.slice(0, 12)}…, serial=${entry.payload.serialNumber}, ` +
+        `đã thử ${entry.attempts} lượt) — chuyển dead-letter thay vì đệm vô thời hạn`,
     );
     await deadLetter(
       entry,
       new Error(
-        `kẹt quá ${gioKet}h kể từ lúc xếp hàng (đã thử ${entry.attempts} lượt) — lỗi gần nhất: ` +
-          `${(err as Error)?.message || err}`,
+        `kẹt quá ${gioKet}h liên tục kể từ lần hỏng đầu tiên (đã thử ${entry.attempts} lượt) — lỗi ` +
+          `gần nhất: ${(err as Error)?.message || err}`,
       ),
     );
     return "deadLetter";
@@ -687,6 +864,14 @@ async function xuLyLoiPhatLai(entry: WalEntry, err: unknown): Promise<KetQuaXuLy
 // ── backfill (replay oldest-first through the real pipeline, idempotent) ─────
 
 let draining = false;
+/** BG-67 ⛔ — con trỏ quét XOAY VÒNG, nhớ giữa các tick (xem `maxScanPerTick`). Chỉ số vào
+ * mảng `queue` HIỆN TẠI tại thời điểm tick TIẾP THEO bắt đầu — không phải chỉ số "tuyệt đối"
+ * bất biến (mảng co/giãn giữa các tick do enqueue/dead-letter/drain), nên được lấy `% queue.length`
+ * mỗi lần dùng. Mục đích DUY NHẤT: khi `maxScanPerTick() < queue.length`, tick SAU tiếp tục
+ * quét từ chỗ tick TRƯỚC dừng thay vì luôn bắt đầu lại từ đầu mảng — nếu không, những mục ở
+ * ĐUÔI hàng đợi không bao giờ được chạm (đúng lỗi C-1 đã bắt ở vòng 1 dưới tên "trần đếm-lượt",
+ * tái diễn dưới tên "trần quét" nếu thiếu con trỏ này). */
+let scanCursor = 0;
 
 export async function backfillInspections(): Promise<{
   enabled: boolean;
@@ -716,15 +901,35 @@ export async function backfillInspections(): Promise<{
     // đếm-lượt và bị dead-letter VÌ MỘT LỖI THUẦN TẠM THỜI (đo: 25 lượt ⇒
     // `deadLettered=50, chưa-thử=100`). Sửa: `budget` nay CHỈ giảm khi một mục bị GỠ
     // khỏi hàng đợi vì có kết quả THẬT (thành công HOẶC dead-letter) — mục còn tạm-thời
-    // (ở lại hàng đợi, `i` tăng để thử mục kế) KHÔNG tốn ngân sách, nên một tick LUÔN
-    // quét hết toàn bộ hàng đợi HIỆN CÓ (`i` chạy tới `queue.length`, tự nhiên bị chặn
-    // trần bởi `maxEntries()`=20.000) — không mục nào bị bỏ sót, không mục nào đứng ở
-    // `attempts=0` trong khi mục khác đã thử nhiều lần. `budget` vẫn có tác dụng: giới
-    // hạn số THAO TÁC CÓ TÁC DỤNG PHỤ THẬT (ghi DB thành công / ghi file dead-letter)
-    // mỗi tick, tránh dồn cục một lượt phục hồi lớn — đúng mục đích ban đầu của nó.
-    let i = 0;
-    while (i < queue.length && budget > 0) {
+    // (ở lại hàng đợi) KHÔNG tốn ngân sách. `budget` vẫn có tác dụng: giới hạn số THAO
+    // TÁC CÓ TÁC DỤNG PHỤ THẬT (ghi DB thành công / ghi file dead-letter) mỗi tick,
+    // tránh dồn cục một lượt phục hồi lớn — đúng mục đích ban đầu của nó.
+    //
+    // ── BG-67 ⛔ — TRẦN QUÉT (`maxScanPerTick`) TÁCH KHỎI `budget` ──────────────────────
+    // Vòng sửa 2 làm `budget` hết còn chặn số mục ĐƯỢC CHẠM (chỉ chặn số mục CÓ HẬU QUẢ)
+    // ⇒ với một hàng đợi TOÀN lỗi tạm thời, vòng quét đi hết `queue.length` — 20.000 mục
+    // = 40.000 lời gọi DB MỘT TICK (đo THẬT, xem docblock đầu file). `gioiHanQuet` chặn
+    // TỔNG SỐ MỤC được chạm (`daQuet`) mỗi tick, không phân biệt có hậu quả hay không —
+    // ĐỘC LẬP với `budget`. `i` bắt đầu từ `scanCursor` (không phải luôn từ 0) và XOAY
+    // VÒNG (`% queue.length`) để tick sau tiếp tục đúng chỗ tick trước dừng — nếu không,
+    // với `maxScanPerTick() < queue.length`, các mục ở ĐUÔI hàng đợi (append liên tục ở
+    // cuối mảng) sẽ KHÔNG BAO GIỜ được chạm — tái diễn đúng lỗi đói-hàng-đuôi C-1 dưới
+    // một cái tên khác.
+    // `Math.min(..., queue.length)` — KHÔNG chỉ `maxScanPerTick()` trần: nếu hàng đợi NHỎ
+    // HƠN trần quét (vd 200 mục, trần mặc định 2.000), thiếu điều kiện này con trỏ xoay
+    // vòng sẽ LẶP LẠI quanh cùng những mục đó nhiều lần TRONG MỘT TICK cho tới khi chạm
+    // `gioiHanQuet` — biến MỘT tick thành N tick dồn lại (tăng `attempts` nhiều lần oan cho
+    // cùng một lượt gọi `backfillInspections()`, tự đo bắt được: 1 mục, trần mặc định 2.000
+    // ⇒ `attempts` nhảy thẳng lên 2.000 sau đúng MỘT lượt gọi thay vì 1). Chốt tại kích
+    // thước hàng đợi LÚC BẮT ĐẦU tick — mục mới enqueue xen giữa (bufferSubmission gọi
+    // đồng thời) đợi tick sau, không cần quét ngay trong tick đang chạy.
+    const gioiHanQuet = Math.min(maxScanPerTick(), queue.length);
+    let daQuet = 0;
+    let i = queue.length > 0 ? scanCursor % queue.length : 0;
+    while (daQuet < gioiHanQuet && budget > 0 && queue.length > 0) {
+      if (i >= queue.length) i = 0; // mảng vừa co lại (removeAt) — vòng lại đầu mảng
       const entry = queue[i];
+      daQuet += 1;
 
       // (a) ledger dedupe — live path already persisted it (or a prior replay did).
       if (appliedKeys.has(entry.key)) {
@@ -776,6 +981,9 @@ export async function backfillInspections(): Promise<{
       drained += 1;
       budget -= 1;
     }
+    // BG-67: lưu vị trí cho tick sau — `% queue.length` phòng thủ (queue có thể rỗng đúng
+    // lúc dừng, hoặc co lại đúng bằng `i`).
+    scanCursor = queue.length > 0 ? i % queue.length : 0;
   } finally {
     draining = false;
   }
@@ -901,9 +1109,14 @@ export interface InspectionStoreForwardStatus extends InspectionStoreForwardMetr
   maxEntries: number;
   maxAgeMs: number;
   maxBytes: number;
-  /** BG-40 vòng sửa 2 — trần THỜI GIAN (ms) kẹt liên tục trước khi dead-letter một mục
-   * còn tạm thời (không phải trần đếm lượt — xem doc-comment ở `maxStuckMs()`). */
+  /** BG-40 vòng sửa 2 — trần THỜI GIAN (ms) kẹt liên tục kể từ LẦN HỎNG ĐẦU TIÊN (BG-66)
+   * trước khi dead-letter một mục còn tạm thời (không phải trần đếm lượt, không còn tính
+   * từ lúc xếp hàng — xem doc-comment ở `maxStuckMs()`). */
   maxStuckMs: number;
+  /** BG-67 — trần SỐ MỤC được chạm (dedupFn/processFn) mỗi tick, TÁCH khỏi `budget`
+   * (trần thao-tác-CÓ-HẬU-QUẢ, không lộ ra status vì đã có sẵn qua hành vi `drained+
+   * deadLettered`). Xem doc-comment ở `maxScanPerTick()`. */
+  maxScanPerTick: number;
   walFile: string;
   deadLetterFile: string;
 }
@@ -917,6 +1130,7 @@ export function getInspectionStoreForwardStatus(): InspectionStoreForwardStatus 
     maxAgeMs: maxAgeMs(),
     maxBytes: maxBytes(),
     maxStuckMs: maxStuckMs(),
+    maxScanPerTick: maxScanPerTick(),
     walFile: walFile(),
     deadLetterFile: deadLetterFile(),
     ...metrics,
@@ -947,6 +1161,7 @@ export function _resetInspectionStoreForward(): void {
   metrics.lastBufferedAt = null;
   fileDirty = false;
   draining = false;
+  scanCursor = 0;
   consecutiveFailures = 0;
   lastDepthAlertAt = 0;
   processFn = async () => {
