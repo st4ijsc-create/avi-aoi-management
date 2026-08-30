@@ -8,7 +8,7 @@
  * object ⇒ bỏ qua chứ KHÔNG ném; CRLF phải đọc được như LF; thiếu khối đóng ⇒ bỏ qua.
  */
 import { describe, it, expect } from "vitest";
-import { tachKhoiAviTool } from "./khoiAviTool";
+import { tachKhoiAviTool, xoaKhoiAviTool } from "./khoiAviTool";
 
 const KHOI = (j: string) => "Giải thích...\n```avi-tool\n" + j + "\n```\nxong.";
 
@@ -143,5 +143,86 @@ describe("tachKhoiAviTool — hàng rào THỤT LỀ (Đợt D.1, LỖI 2)", () 
     // đúng chuỗi đó.
     const v = 'Xem cú pháp: ```avi-tool\n{"tool":"doc_tep","args":{"path":"a"}}\n```\nxong.';
     expect(tachKhoiAviTool(v)).toEqual([]);
+  });
+});
+
+/**
+ * ★★★ PDCA vòng 2 (round 2, `pdca3-report.md`) — `xoaKhoiAviTool`. Đo lại 11 tác vụ baseline của
+ * PDCA vòng 1 từ dữ liệu THÔ phát hiện: khối ```avi-tool``` ĐÃ THỰC THI xong (không riêng khối DỞ
+ * DANG cuối cùng mà `khoiDoDang.ts` vòng trước đã vá) vẫn lộ nguyên văn ra bong bóng chat vì webview
+ * tích luỹ token của MỌI vòng nội bộ. `xoaKhoiAviTool` xoá MỌI khối HỢP LỆ khỏi văn bản — dùng
+ * chung `phanTichKhoi`/`HANG_RAO` với `tachKhoiAviTool`, không chép cú pháp hàng rào lần thứ ba.
+ */
+describe("xoaKhoiAviTool", () => {
+  it("★★★ một khối HỢP LỆ nằm giữa hai đoạn văn xuôi ⇒ bị xoá, văn xuôi hai bên còn nguyên", () => {
+    const v = 'Trước.\n```avi-tool\n{"tool":"doc_tep","args":{"path":"a.ts"}}\n```\nSau.';
+    const r = xoaKhoiAviTool(v);
+    expect(r).not.toContain("```");
+    expect(r).not.toContain("avi-tool");
+    expect(r).not.toContain("doc_tep");
+    expect(r).toContain("Trước.");
+    expect(r).toContain("Sau.");
+  });
+
+  it("★★★ NHIỀU khối hợp lệ ở nhiều vị trí (mô phỏng nhiều vòng nội bộ) ⇒ xoá HẾT", () => {
+    const v =
+      'Vòng 1:\n```avi-tool\n{"tool":"doc_tep","args":{"path":"a.ts"}}\n```\n' +
+      'Vòng 2:\n```avi-tool\n{"tool":"liet_ke","args":{"path":"src"}}\n```\n' +
+      "Trả lời cuối.";
+    const r = xoaKhoiAviTool(v);
+    expect(r).not.toContain("```");
+    expect(r).not.toContain("avi-tool");
+    expect(r).toContain("Vòng 1:");
+    expect(r).toContain("Vòng 2:");
+    expect(r).toContain("Trả lời cuối.");
+  });
+
+  it("★★★ văn bản KHÔNG có khối nào ⇒ trả về NGUYÊN VĂN (bất biến, không đổi gì)", () => {
+    const v = "Câu trả lời bình thường, không có khối nào.";
+    expect(xoaKhoiAviTool(v)).toBe(v);
+  });
+
+  it("★★★ NHÁNH KIA — khối HỎNG cú pháp (KHÔNG phải JSON hợp lệ, kiểu minh hoạ \"điền vào chỗ trống\") ⇒ GIỮ NGUYÊN, không xoá", () => {
+    // ★ Đã SỬA sau khi chính lưới này bắt được: placeholder CÓ NGOẶC KÉP như `"<đường dẫn tệp>"`
+    // (đúng hình dạng văn bản DẠY giao thức, `dayGiaoThucDoc.ts`) vẫn là MỘT CHUỖI JSON HỢP LỆ —
+    // `phanTichKhoi` parse được bình thường, KHÔNG rơi vào nhánh này. Ca THẬT SỰ không parse được là
+    // khi model viết minh hoạ kiểu "điền vào chỗ trống" mà KHÔNG có ngoặc kép quanh giá trị/không
+    // đóng đúng cú pháp — ví dụ dưới đây (`args` là "..." trần, không phải object hợp lệ).
+    const v = 'Cú pháp đọc tệp:\n```avi-tool\n{"tool": "<tên công cụ>", "args": {...}}\n```\nHết.';
+    expect(xoaKhoiAviTool(v)).toBe(v);
+  });
+
+  it("★★★ NHÁNH KIA — code fence KHÁC (```ts, không phải avi-tool) ⇒ giữ nguyên 100% — dữ liệu THẬT từ T01 vòng 1", () => {
+    // Nguyên văn đoạn trích code trong câu trả lời T01 (`pdca1-t01-raw.json`) — nếu regex đụng
+    // nhầm sang fence khác nhãn, nội dung trả lời (trích code thật cho người dùng) sẽ bị phá.
+    const v =
+      "(3) Trích nguyên văn code từ ngữ cảnh:  \n```ts\n" +
+      "/** Tồn kho còn lại = tồn đầu kỳ + nhập trong kỳ - xuất trong kỳ. */\n" +
+      "tinhTonKhoConLai(tonDau: number, nhap: number, xuat: number): number {\n" +
+      "  return tonDau + nhap - xuat;\n}\n```\n(4) Nguồn gốc: tệp `src/Inventory.ts`";
+    expect(xoaKhoiAviTool(v)).toBe(v);
+  });
+
+  it("★★★ NHÁNH KIA — văn xuôi chỉ NHẮC ĐẾN chữ \"avi-tool\" (không phải hàng rào) ⇒ giữ nguyên — dữ liệu THẬT từ T06 vòng 1", () => {
+    const v = "Tệp `.env` là tệp nhạy cảm. Vui lòng sử dụng công cụ `avi-tool` để đọc nội dung tệp nếu cần.";
+    expect(xoaKhoiAviTool(v)).toBe(v);
+  });
+
+  it("★★ streaming/mảnh cắt ngang — văn bản GHÉP từ nhiều mảnh nhỏ (hàng rào MỞ ở mảnh này, ĐÓNG ở mảnh sau) ⇒ vẫn xoá đúng SAU KHI ghép", () => {
+    // Mô phỏng đúng cơ chế thật: token SSE về từng mảnh nhỏ, extension NỐI chúng lại thành một
+    // chuỗi hoàn chỉnh rồi mới lọc — hàm này không bao giờ thấy một mảnh riêng lẻ, nhưng phải xử lý
+    // đúng khi hàng rào bị "cắt" giữa hai lần nối do vị trí ranh giới token rơi ngẫu nhiên.
+    const manh = ["Đang đọc:\n", "```avi", "-tool\n{\"tool\":\"doc_tep\",", '"args":{"path":"a.ts"}}\n', "```", "\nXong."];
+    const v = manh.join("");
+    const r = xoaKhoiAviTool(v);
+    expect(r).not.toContain("```");
+    expect(r).not.toContain("avi-tool");
+    expect(r).toContain("Đang đọc:");
+    expect(r).toContain("Xong.");
+  });
+
+  it("★ hàng rào mở mà KHÔNG đóng (bị cắt ngang thật sự, chưa từng nối đủ) ⇒ giữ nguyên (không có gì để xoá)", () => {
+    const v = 'Đang đọc:\n```avi-tool\n{"tool":"doc_tep","args":{"path":"a.ts"}}';
+    expect(xoaKhoiAviTool(v)).toBe(v);
   });
 });

@@ -49,6 +49,11 @@ import { TRAN_VONG_MAC_DINH } from "../../../shared/aiCodingLoop";
 // ★★★ PDCA vòng 2 — thay JSON thô bằng câu tiếng Việt khi vòng lặp dừng vì het_tran giữa lúc còn
 // khối `avi-tool` dở dang (T09, `pdca1-report.md`). Xem docblock `khoiDoDang.ts`.
 import { vanBanHetTranConDoDang } from "../loi/khoiDoDang";
+// ★★★ PDCA vòng 2 (round 2, `pdca3-report.md`) — MỞ RỘNG bản vá trên: không chỉ khối DỞ DANG ở
+// vòng CUỐI, mà khối ĐÃ THỰC THI ở BẤT KỲ vòng nào trước đó cũng phải bị lọc khỏi văn bản người
+// dùng THẤY (webview tích luỹ token của MỌI vòng, không riêng vòng cuối). Xem docblock
+// `xoaRacGiaoThuc.ts`.
+import { vanBanKhongRacGiaoThuc } from "../loi/xoaRacGiaoThuc";
 // ★★★ ĐỢT D / TASK 5 — @-mention: gõ "@" trong ô nhập, chọn một tệp, tệp đó được đọc qua ĐÚNG
 // đường tool `doc_tep` (Task 2/3) — không dựng một đường đọc riêng. `locDanhSachMention` (THUẦN)
 // lọc danh sách theo chữ đang gõ; xem docblock của nó cho vì sao KHÔNG chạm ký tự `@`.
@@ -521,6 +526,13 @@ export class BangChat {
       nguCanhVong = `${nguCanhVong ?? ""}\n${doanMention.join("\n\n")}`;
     }
     let traLoiCuoi = "";
+    // ★★★ PDCA vòng 2 (round 2, `pdca3-report.md`) — nối NGUYÊN VĂN `traLoiCuoi` của MỌI vòng, KHÔNG
+    // dấu phân cách — đúng những gì webview ĐÃ hiển thị SỐNG qua các `postMessage({loai:"token"})`
+    // ở trên (khớp `khoiTraLoi.textContent += m.chu` của `htmlBang.ts`). Dùng để lọc rác giao thức
+    // khỏi TOÀN BỘ văn bản đã stream khi lượt hỏi kết thúc, không chỉ vòng CUỐI — xem
+    // `loi/xoaRacGiaoThuc.ts` cho lý do (5/6 tác vụ ĐẠT của PDCA vòng 1 lộ khối ĐÃ THỰC THI của
+    // những vòng KHÔNG PHẢI vòng cuối, vì webview không hề xoá gì giữa các vòng).
+    let vanBanTichLuy = "";
     let canhBaoCuoi: string | null = null;
     let degradedCuoi = false;
     let vong = 0;
@@ -584,6 +596,23 @@ export class BangChat {
         });
         const ket = ketLuanLuotChat(tt, hong);
         traLoiCuoi = ket.traLoi;
+        /**
+         * ★★★ PDCA vòng 2 (round 2) — nối, KHÔNG THAY. Chạy cho CẢ hai chế độ (vô hại với SERVER —
+         * vòng đó chỉ chạy đúng MỘT lần, và SERVER không dùng giao thức `avi-tool` dạng văn bản nên
+         * thường không có gì để lọc).
+         *
+         * ★★★ ĐÃ SỬA (đo LIVE trên server thật bắt được — T10, `pdca3-report.md`): webview thật nối
+         * `textContent += m.chu` KHÔNG dấu phân cách, và văn bản MỘT vòng không phải lúc nào cũng
+         * kết thúc bằng `\n` (vd hậu tố `"_Nguồn số liệu: ... hàng_"` không xuống dòng). Nếu vòng KẾ
+         * TIẾP bắt đầu NGAY bằng một hàng rào `\`\`\`avi-tool`, hàng rào đó rơi GIỮA DÒNG trong văn
+         * bản NỐI THẲNG — quy ước "chỉ hàng rào ĐẦU DÒNG mới thật" (`khoiAviTool.ts`, có chủ đích,
+         * tránh dương tính giả) khiến `xoaKhoiAviTool` BỎ QUA đúng khối đó, để lộ JSON thô (đo được
+         * ở T10: hai lượt `doc_tep keys/id_rsa` liền nhau, lượt 2 KHÔNG bị xoá). `vanBanTichLuy` chỉ
+         * dùng làm ĐẦU VÀO cho `vanBanKhongRacGiaoThuc` (không dùng cho gì khác cần khớp byte-đúng
+         * với luồng SỐNG) nên được phép chèn thêm đúng MỘT `\n` ở ranh giới vòng khi vòng TRƯỚC chưa
+         * kết thúc bằng dòng trống — bảo đảm hàng rào mở đầu của vòng SAU luôn được nhận diện ĐÚNG.
+         */
+        vanBanTichLuy += (vanBanTichLuy.length > 0 && !/\r?\n$/.test(vanBanTichLuy) ? "\n" : "") + traLoiCuoi;
         canhBaoCuoi = ket.canhBao;
         degradedCuoi = tt.degraded;
 
@@ -655,9 +684,19 @@ export class BangChat {
       // ★★★ PDCA vòng 2 — `vanBanCuoiThayThe` (het_tran + khối dở dang) ĐỨNG TRƯỚC `degradedCuoi`:
       // cả hai đều là "đừng để lộ chữ đã stream thô", override của het_tran ưu tiên hơn vì nó biết
       // CHÍNH XÁC vì sao câu trả lời dở (degraded chỉ biết "server bảo suy biến", không biết lý do).
+      //
+      // ★★★ PDCA vòng 2 (round 2, `pdca3-report.md`) — MỞ RỘNG: `vanBanDaLocSach` đứng ngay SAU
+      // `vanBanCuoiThayThe`, TRƯỚC fallback `degradedCuoi`. Áp `vanBanKhongRacGiaoThuc` lên đúng văn
+      // bản NỀN mà webview lẽ ra sẽ hiển thị nếu KHÔNG có ghi đè nào (degraded ⇒ `traLoiCuoi` của
+      // vòng CUỐI, như fallback cũ; bình thường ⇒ toàn bộ `vanBanTichLuy` đã stream qua MỌI vòng) —
+      // trả `null` khi nền đó vốn đã sạch (không có khối `avi-tool` nào), nên khi không có gì để
+      // xoá, biểu thức dưới đây rơi ĐÚNG về fallback cũ, không đổi hành vi (đúng khuôn "vá xong phải
+      // kiểm NHÁNH KIA").
+      const vanBanNen = degradedCuoi ? traLoiCuoi : vanBanTichLuy;
+      const vanBanDaLocSach = vanBanKhongRacGiaoThuc(vanBanNen);
       void this.panel.webview.postMessage({
         loai: "hoan_tat",
-        vanBanCuoi: vanBanCuoiThayThe ?? (degradedCuoi ? traLoiCuoi : null),
+        vanBanCuoi: vanBanCuoiThayThe ?? vanBanDaLocSach ?? (degradedCuoi ? traLoiCuoi : null),
         canhBao: canhBaoCuoi,
       });
       // Lịch sử NGOÀI (`this.lichSu`, dùng cho MỌI câu hỏi sau này) chỉ giữ câu hỏi GỐC + câu trả
@@ -708,7 +747,17 @@ export class BangChat {
             loai: "thong_bao",
             thongDiep: nhanLyDoDungVong("nguoi_dung_dung", vong),
           });
-          void this.panel.webview.postMessage({ loai: "hoan_tat", vanBanCuoi: null, canhBao: null });
+          // ★★★ PDCA vòng 2 (round 2) — huỷ GIỮA LÚC đang đọc thân SSE của một vòng ≥2 (lượt fetch
+          // hiện tại không kịp hoàn tất, `vanBanTichLuy`/`traLoiCuoi` KHÔNG được cập nhật cho vòng
+          // này) VẪN có thể để lại khối `avi-tool` ĐÃ THỰC THI của (các) vòng TRƯỚC đó trong
+          // `vanBanTichLuy` — cùng lỗ hổng đã vá ở nhánh kết thúc bình thường phía trên, KHÔNG được
+          // bỏ sót nhánh huỷ-giữa-chừng này. `null` khi chưa có gì để xoá (ca phổ biến nhất — huỷ
+          // ngay ở vòng 1) giữ NGUYÊN hành vi cũ.
+          void this.panel.webview.postMessage({
+            loai: "hoan_tat",
+            vanBanCuoi: vanBanKhongRacGiaoThuc(vanBanTichLuy),
+            canhBao: null,
+          });
         }
         return;
       }

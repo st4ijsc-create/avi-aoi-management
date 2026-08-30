@@ -56,6 +56,39 @@ function goThutLe(noiDung: string, thut: string): string {
     .join("\n");
 }
 
+/**
+ * Phân tích PHẦN THÂN (đã gỡ thụt lề) của MỘT khối — dùng CHUNG cho cả tách (`tachKhoiAviTool`)
+ * LẪN xoá (`xoaKhoiAviTool`, PDCA vòng 2/round 2). Tách ra đây để hai hàm đó không có hai bản sao
+ * validate trôi khỏi nhau — đúng bài học đắt đã ghi ở đầu tệp này (bốn bài học, mục 1/3).
+ */
+function phanTichKhoi(jsonText: string): { tool: string; args: Record<string, unknown> } | null {
+  let obj: unknown;
+  try {
+    obj = JSON.parse(jsonText);
+  } catch {
+    // JSON hỏng cú pháp ⇒ bỏ qua khối này, không ném — không được làm mất khối hợp lệ khác.
+    return null;
+  }
+
+  // Bài học #1: `null`/số/chuỗi/mảng đều là JSON hợp lệ. Kiểm trước khi truy cập trường.
+  if (!obj || typeof obj !== "object") {
+    return null;
+  }
+
+  const rec = obj as Record<string, unknown>;
+  if (typeof rec.tool !== "string") {
+    return null;
+  }
+  // Giữ ĐÚNG quy ước gốc của `deXuatCucBo.ts`: object và truthy (loại null/thiếu/số/chuỗi).
+  // KHÔNG loại-trừ mảng ở tầng dùng-chung này — bản gốc chưa từng làm vậy, và việc lọc theo
+  // TỪNG trường cụ thể của mỗi tool (ở tầng trên) đã đủ để một `args` mảng không đi tới đâu.
+  if (typeof rec.args !== "object" || !rec.args) {
+    return null;
+  }
+
+  return { tool: rec.tool, args: rec.args as Record<string, unknown> };
+}
+
 export function tachKhoiAviTool(vanBan: string): Array<{ tool: string; args: Record<string, unknown> }> {
   const ketQua: Array<{ tool: string; args: Record<string, unknown> }> = [];
 
@@ -72,33 +105,30 @@ export function tachKhoiAviTool(vanBan: string): Array<{ tool: string; args: Rec
     // thể mang nội dung nhiều dòng mà việc thụt lệch có thể đổi Ý (thụt bên trong một chuỗi JSON
     // multi-dòng không hợp lệ, nhưng đây là phòng thủ chiều sâu, không phải giả định JSON luôn 1 dòng).
     const jsonText = goThutLe(khop[2], khop[1]);
-
-    let obj: unknown;
-    try {
-      obj = JSON.parse(jsonText);
-    } catch {
-      // JSON hỏng cú pháp ⇒ bỏ qua khối này, không ném — không được làm mất khối hợp lệ khác.
-      continue;
-    }
-
-    // Bài học #1: `null`/số/chuỗi/mảng đều là JSON hợp lệ. Kiểm trước khi truy cập trường.
-    if (!obj || typeof obj !== "object") {
-      continue;
-    }
-
-    const rec = obj as Record<string, unknown>;
-    if (typeof rec.tool !== "string") {
-      continue;
-    }
-    // Giữ ĐÚNG quy ước gốc của `deXuatCucBo.ts`: object và truthy (loại null/thiếu/số/chuỗi).
-    // KHÔNG loại-trừ mảng ở tầng dùng-chung này — bản gốc chưa từng làm vậy, và việc lọc theo
-    // TỪNG trường cụ thể của mỗi tool (ở tầng trên) đã đủ để một `args` mảng không đi tới đâu.
-    if (typeof rec.args !== "object" || !rec.args) {
-      continue;
-    }
-
-    ketQua.push({ tool: rec.tool, args: rec.args as Record<string, unknown> });
+    const ket = phanTichKhoi(jsonText);
+    if (ket) ketQua.push(ket);
   }
 
   return ketQua;
+}
+
+/**
+ * ★★★ PDCA vòng 2 (round 2, `pdca3-report.md`) — XOÁ khỏi `vanBan` MỌI khối rào ```avi-tool```
+ * HỢP LỆ (đúng vị từ hợp lệ mà `tachKhoiAviTool` dùng — `phanTichKhoi` ở trên: parse được, là
+ * object, có `tool:string`, có `args:object`). Dùng để dọn văn bản HIỂN THỊ cho người dùng —
+ * không phải một luật thực thi mới; `tachKhoiAviTool`/`docYeuCauDoc`/`docDeXuatCucBo` (thực thi
+ * tool thật) hoàn toàn KHÔNG đổi, đọc `vanBan` GỐC như cũ.
+ *
+ * Khối HỎNG cú pháp (JSON sai, thiếu trường, hàng rào mở không đóng) KHÔNG bị đụng — `phanTichKhoi`
+ * trả `null` cho ca đó nên callback dưới đây GIỮ NGUYÊN đoạn khớp được. Đây là ranh giới AN TOÀN có
+ * chủ đích: một khối minh hoạ/placeholder mà model trích khi giải thích cú pháp cho người dùng hỏi
+ * VỀ `avi-tool` (xem `dayGiaoThucDoc.ts`, dùng placeholder dạng `<đường dẫn tệp>` — KHÔNG phải JSON
+ * hợp lệ) sẽ KHÔNG bị xoá, giữ nguyên văn xuôi hợp lệ cho người dùng.
+ */
+export function xoaKhoiAviTool(vanBan: string): string {
+  const rao = new RegExp(HANG_RAO.source, HANG_RAO.flags);
+  return vanBan.replace(rao, (khopDayDu: string, thut: string, noiDung: string) => {
+    const jsonText = goThutLe(noiDung, thut);
+    return phanTichKhoi(jsonText) ? "" : khopDayDu;
+  });
 }

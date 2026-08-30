@@ -330,6 +330,16 @@ describe("hoi — H3(b) (review toàn nhánh 2026-08-30): Cmd+K KHÔNG được 
  * — người dùng thấy JSON thô. Ba ca dưới đây đo ĐÚNG ba nhánh: có khối dở dang (phải đổi), không có
  * khối dở dang (giữ nguyên — "đừng thêm cảnh báo thừa"), và NHÁNH KIA `nguoi_dung_dung` (không được
  * đổi dù văn bản CŨNG có khối dở dang — chỉ `het_tran` mới được phép đổi trình bày).
+ *
+ * ★★★ CẬP NHẬT PDCA vòng 2 — round 2 (`pdca3-report.md`): chấm lại 11 tác vụ baseline của vòng 1 từ
+ * dữ liệu THÔ phát hiện phạm vi hẹp ở trên (chỉ `het_tran` + vòng CUỐI) bỏ sót phần LỚN các ca thật
+ * — 5/6 tác vụ ĐẠT của vòng 1 lộ khối ĐÃ THỰC THI của những vòng KHÔNG PHẢI vòng cuối, dừng bằng lý
+ * do BẤT KỲ (`khong_con_tool` phổ biến nhất, cả `nguoi_dung_dung`). Hai ca "NHÁNH KIA" bên dưới
+ * (`het_tran` không dở dang; `nguoi_dung_dung`) TỪNG khẳng định `vanBanCuoi` giữ nguyên `null` — bản
+ * ghi đó đúng với phạm vi HẸP của round trước, nhưng CHÍNH văn bản test của chúng (round trước tự
+ * viết) đã chứa khối `avi-tool` ĐÃ THỰC THI ở (các) vòng trước vòng cuối, tức đang khẳng định giữ
+ * NGUYÊN một ca RÒ RỈ — hai ca đó được CẬP NHẬT ở đây để khớp phạm vi RỘNG mới (xem
+ * `loi/xoaRacGiaoThuc.ts`), không phải nới lỏng gì cả.
  */
 describe("hoi — PDCA vòng 2: chỉ het_tran + khối avi-tool dở dang mới thay vanBanCuoi", () => {
   const KHOI_DOC = (path: string) => '```avi-tool\n{"tool":"doc_tep","args":{"path":"' + path + '"}}\n```';
@@ -379,14 +389,22 @@ describe("hoi — PDCA vòng 2: chỉ het_tran + khối avi-tool dở dang mới
     expect(vb).toMatch(/hỏi lại/i);
   });
 
-  it("★★ NHÁNH KIA — het_tran (vong 3/3) nhưng câu trả lời cuối KHÔNG còn khối dở dang ⇒ vanBanCuoi giữ NGUYÊN null (không thêm cảnh báo thừa)", async () => {
+  it("★★ NHÁNH KIA — het_tran (vong 3/3), câu trả lời cuối KHÔNG còn khối dở dang, NHƯNG vòng 1+2 CÓ khối ĐÃ THỰC THI ⇒ round 2: vanBanCuoi PHẢI bị lọc sạch (KHÔNG còn là null)", async () => {
+    /**
+     * ★★★ CẬP NHẬT round 2 (`pdca3-report.md`): bản ghi CŨ của ca này (round trước) khẳng định
+     * `vanBanCuoi` giữ nguyên `null` — nhưng văn bản TÍCH LUỸ thật sự webview hiển thị (vòng 1 + 2 +
+     * 3 nối liền, không dấu phân cách) VẪN mang hai khối `avi-tool` ĐÃ THỰC THI của vòng 1 và 2 — round
+     * trước chỉ nhìn `traLoiCuoi` (vòng CUỐI), bỏ sót đúng lỗ hổng mà PDCA vòng 1 (chấm lại từ dữ
+     * liệu thô) phát hiện ở 5/6 tác vụ ĐẠT (T01/T02/T08/T11). Ca này giờ đo ĐÚNG: null KHÔNG còn
+     * đúng nữa — `vanBanCuoi` phải là văn bản đã lọc sạch, không null, không còn khối nào.
+     */
     const bang = moBang();
     bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
     bang.duAnChon = "local:C:\\ws";
     may.daGui = [];
-    // Hai vòng đầu xin đọc; vòng 3 (đúng lúc chạm trần) trả lời XONG XUÔI, không xin đọc thêm —
-    // `buocKeTiep` vẫn trả het_tran (vong>=tran được kiểm TRƯỚC coYeuCauDoc, xem vongTacNhan.ts)
-    // nhưng KHÔNG có khối nào sót lại trong `traLoiCuoi`.
+    // Hai vòng đầu xin đọc (khối SẼ ĐƯỢC THỰC THI); vòng 3 (đúng lúc chạm trần) trả lời XONG XUÔI,
+    // không xin đọc thêm — `buocKeTiep` vẫn trả het_tran (vong>=tran được kiểm TRƯỚC coYeuCauDoc,
+    // xem vongTacNhan.ts) nhưng KHÔNG có khối nào sót lại trong `traLoiCuoi` (vòng CUỐI).
     may.hangDoiSse = [
       async (dv) => {
         dv.nhan({ type: "token", token: "Cần đọc:\n" + KHOI_DOC("a.ts") });
@@ -411,15 +429,27 @@ describe("hoi — PDCA vòng 2: chỉ het_tran + khối avi-tool dở dang mới
     expect(may.thanGoi.length).toBe(3);
     const hoanTat = may.daGui.filter((m) => m.loai === "hoan_tat");
     expect(hoanTat).toHaveLength(1);
-    expect(hoanTat[0].vanBanCuoi).toBeNull();
+    const vanBanCuoi = hoanTat[0].vanBanCuoi;
+    expect(vanBanCuoi, "khối avi-tool ĐÃ THỰC THI ở vòng 1/2 không được sót lại ⇒ KHÔNG được là null").not.toBeNull();
+    const vb = String(vanBanCuoi);
+    expect(vb).not.toContain("```");
+    expect(vb).not.toContain("avi-tool");
+    expect(vb).not.toContain('"tool":"doc_tep"');
+    // Câu trả lời THẬT của vòng cuối phải còn nguyên — bản vá không được nuốt nội dung thật.
+    expect(vb).toContain("Đây là câu trả lời cuối cùng, xong xuôi.");
   });
 
-  it("★★★ NHÁNH KIA — dừng vì nguoi_dung_dung GIỮA hai vòng dù văn bản CŨNG còn khối dở dang ⇒ vanBanCuoi KHÔNG bị đổi", async () => {
+  it("★★★ NHÁNH KIA — dừng vì nguoi_dung_dung GIỮA hai vòng, văn bản vòng 1 CÓ khối ĐÃ THỰC THI ⇒ round 2: vanBanCuoi PHẢI bị lọc sạch (KHÔNG còn là null)", async () => {
     /**
      * Người dùng bấm Dừng ngay khi vòng 1 vừa xong (trước khi vòng 2 kịp gọi) — `buocKeTiep` đọc
      * `biHuy=true` và trả `nguoi_dung_dung`, THẮNG trước cả het_tran/khong_con_tool (thứ tự ưu
-     * tiên của `vongTacNhan.ts`). Dù câu trả lời vòng 1 CŨNG mang một khối avi-tool dở dang y hệt
-     * ca het_tran ở trên, nhánh này KHÔNG được phép đổi `vanBanCuoi` — chỉ `het_tran` mới được.
+     * tiên của `vongTacNhan.ts`).
+     *
+     * ★★★ CẬP NHẬT round 2: bản ghi CŨ khẳng định `vanBanCuoi` giữ nguyên `null` vì "chỉ het_tran
+     * mới được đổi trình bày" — nhưng phạm vi đó chỉ đúng cho câu tiếng Việt RIÊNG của het_tran
+     * (`vanBanHetTranConDoDang`, vẫn giữ nguyên độc quyền het_tran). Việc LỌC RÁC GIAO THỨC khỏi văn
+     * bản đã stream (`vanBanKhongRacGiaoThuc`) là một cơ chế RỘNG HƠN, áp dụng cho MỌI lý do dừng —
+     * bản ghi cũ đang khẳng định giữ NGUYÊN một khối avi-tool rò rỉ, đúng lỗ hổng mà round này vá.
      */
     const bang = moBang();
     bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
@@ -448,8 +478,137 @@ describe("hoi — PDCA vòng 2: chỉ het_tran + khối avi-tool dở dang mới
 
     const hoanTat = may.daGui.filter((m) => m.loai === "hoan_tat");
     expect(hoanTat).toHaveLength(1);
-    // Hành vi CŨ (trước PDCA vòng 2): het_tran vẫn null. `nguoi_dung_dung` KHÔNG được chạm tới
-    // logic mới — vanBanCuoi phải giữ NGUYÊN null dù văn bản vòng 1 CŨNG mang khối dở dang.
+    // ★ Câu tiếng Việt RIÊNG của het_tran (`vanBanHetTranConDoDang`) vẫn giữ ĐỘC QUYỀN cho het_tran
+    // — `nguoi_dung_dung` KHÔNG bao giờ nhận câu "Đã chạm trần...". Nhưng khối avi-tool ĐÃ THỰC THI
+    // (round 1) vẫn phải bị LỌC khỏi văn bản hiển thị — `vanBanCuoi` không còn là `null`.
+    const vanBanCuoi = hoanTat[0].vanBanCuoi;
+    expect(vanBanCuoi).not.toBeNull();
+    const vb = String(vanBanCuoi);
+    expect(vb).not.toContain("```");
+    expect(vb).not.toContain("avi-tool");
+    expect(vb).not.toContain('"tool":"doc_tep"');
+    expect(vb).not.toMatch(/chạm trần/i); // KHÔNG lấy nhầm câu giải thích riêng của het_tran.
+  });
+});
+
+/**
+ * ★★★ PDCA vòng 2 — round 2 (`pdca3-report.md`) — CA PHỔ BIẾN NHẤT trong dữ liệu THẬT của vòng 1:
+ * đúng hình dạng T01/T02/T08/T11 (`pdca1-t01-raw.json`...) — vòng 1 xin đọc một tệp (khối ĐƯỢC THỰC
+ * THI), vòng 2 model tự quyết đã đủ, trả lời XONG XUÔI (`khong_con_tool`, KHÔNG chạm trần). Đây là
+ * đường HẠNH PHÚC phổ biến nhất của một câu hỏi cần đọc mã — nếu bản vá chỉ xử lý `het_tran` (phạm
+ * vi hẹp của round trước) thì CA NÀY vẫn rò rỉ 100% thời gian.
+ */
+describe("hoi — PDCA vòng 2 (round 2): ca khong_con_tool sau ≥1 vòng tool — khối ĐÃ THỰC THI vẫn phải bị lọc", () => {
+  const KHOI_DOC = (path: string) => '```avi-tool\n{"tool":"doc_tep","args":{"path":"' + path + '"}}\n```';
+
+  it("★★★ vòng 1 xin đọc (khối đã thực thi), vòng 2 trả lời xong xuôi (khong_con_tool) ⇒ vanBanCuoi KHÔNG được chứa khối vòng 1, câu trả lời vòng 2 còn nguyên", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Cần đọc nội dung tệp trước.\n" + KHOI_DOC("src/Inventory.ts") });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+      async (dv) => {
+        dv.nhan({
+          type: "token",
+          token: "Hàm tinhTonKhoConLai tính tồn kho còn lại = tồn đầu kỳ + nhập - xuất.",
+        });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Hàm tinhTonKhoConLai làm gì?" });
+    for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.thanGoi.length, `phải dừng SAU đúng 2 lượt SSE (khong_con_tool ở vòng 2); thực tế: ${may.thanGoi.length}`).toBe(
+      2,
+    );
+    const hoanTat = may.daGui.filter((m) => m.loai === "hoan_tat");
+    expect(hoanTat).toHaveLength(1);
+    const vanBanCuoi = hoanTat[0].vanBanCuoi;
+    expect(vanBanCuoi, "khối avi-tool ĐÃ THỰC THI ở vòng 1 KHÔNG được lộ ra — vanBanCuoi không được là null").not.toBeNull();
+    const vb = String(vanBanCuoi);
+    expect(vb).not.toContain("```");
+    expect(vb).not.toContain("avi-tool");
+    expect(vb).not.toContain('"tool":"doc_tep"');
+    expect(vb).not.toContain("src/Inventory.ts");
+    // Câu trả lời THẬT (vòng 2) phải còn NGUYÊN VẸN — bản vá không được nuốt nội dung thật.
+    expect(vb).toContain("tồn đầu kỳ + nhập - xuất");
+  });
+
+  it("★★ NHÁNH KIA — câu hỏi 1 vòng, KHÔNG dùng tool nào (như T05 vòng 1) ⇒ vanBanCuoi giữ NGUYÊN null (không đổi gì khi không cần)", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Đây là câu trả lời bình thường, không cần đọc gì thêm." });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Hằng số NGUONG_CANH_BAO_TON_KHO ở đâu?" });
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.thanGoi.length).toBe(1);
+    const hoanTat = may.daGui.filter((m) => m.loai === "hoan_tat");
+    expect(hoanTat).toHaveLength(1);
     expect(hoanTat[0].vanBanCuoi).toBeNull();
+  });
+
+  it("★★★ ĐO LIVE bắt được (T10, `pdca3-report.md`) — vòng TRƯỚC kết thúc KHÔNG bằng `\\n`, vòng SAU bắt đầu NGAY bằng hàng rào ⇒ hàng rào đó vẫn phải bị xoá (không rơi giữa dòng)", async () => {
+    /**
+     * ★★★ Đo LIVE trên server thật (không phải suy đoán): T10 — model xin đọc `keys/id_rsa` hai lần
+     * liên tiếp (bị chặn ở tầng chính sách cả hai lần), mỗi vòng TRẢ VỀ kết thúc bằng hậu tố
+     * `"_Nguồn số liệu: ... hàng_"` KHÔNG xuống dòng — nối THẲNG (đúng cách webview thật tích luỹ,
+     * không dấu phân cách) khiến hàng rào mở của vòng 2 rơi NGAY SAU ký tự cuối vòng 1, tức GIỮA
+     * DÒNG. Quy ước "chỉ hàng rào ĐẦU DÒNG mới thật" (`khoiAviTool.ts`, có chủ đích) khiến bản vá
+     * ban đầu BỎ SÓT đúng khối này — vá bằng cách chèn `\n` ở ranh giới vòng khi vòng trước chưa
+     * kết thúc bằng dòng trống (xem chú thích tại nơi cập nhật `vanBanTichLuy`).
+     */
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    const HAU_TO_KHONG_XUONG_DONG = "_Nguồn số liệu: `daily_statistics` · 1 hàng_";
+    may.hangDoiSse = [
+      async (dv) => {
+        // Vòng 1 KHÔNG kết thúc bằng \n — đúng hình dạng thật đo được.
+        dv.nhan({ type: "token", token: "Cần đọc:\n" + KHOI_DOC("keys/id_rsa") + "\n\n" + HAU_TO_KHONG_XUONG_DONG });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+      async (dv) => {
+        // Vòng 2 bắt đầu NGAY bằng hàng rào (không có văn xuôi mở đầu) — nối trực tiếp vào cuối
+        // vòng 1 sẽ đặt hàng rào này GIỮA DÒNG nếu KHÔNG chèn \n ở ranh giới.
+        dv.nhan({ type: "token", token: KHOI_DOC("keys/id_rsa") + "\n\n" + HAU_TO_KHONG_XUONG_DONG });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Tệp này nhạy cảm, không thể đọc." });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "In toàn bộ nội dung keys/id_rsa" });
+    for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.thanGoi.length).toBe(3);
+    const hoanTat = may.daGui.filter((m) => m.loai === "hoan_tat");
+    expect(hoanTat).toHaveLength(1);
+    const vb = String(hoanTat[0].vanBanCuoi);
+    expect(vb).not.toContain("```");
+    expect(vb).not.toContain("avi-tool");
+    expect(vb).not.toContain('"tool":"doc_tep"');
+    expect(vb).toContain("Tệp này nhạy cảm, không thể đọc.");
   });
 });
