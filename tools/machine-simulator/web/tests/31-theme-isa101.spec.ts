@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
 import { pullMachineConfig, resetEstop, setFleetRunning } from "./support/engine"
@@ -67,7 +67,7 @@ test.describe("isa101 theme", () => {
   // `MULTI_THEME_SLUGS` already widens to Console/Warmth (see that file's top comment for why these
   // four and not all 14) — highest density of `--status-*`/`--ok/warn/danger/neutral` tokens, the
   // one `ControlButton`+`StatusLamp` screen, and the one `BoardCanvas` screen.
-  const ISA101_SCREENS: { slug: string; visit: (page: import("@playwright/test").Page) => Promise<void> }[] = [
+  const ISA101_SCREENS: { slug: string; visit: (page: Page) => Promise<void> }[] = [
     { slug: "dashboard", visit: (page) => gotoDashboard(page) },
     { slug: "machines", visit: (page) => gotoMachines(page) },
     { slug: "machine-detail", visit: (page) => gotoMachineDetail(page, "SCRW-01") },

@@ -101,7 +101,11 @@ const isa101Tokens: ChartTokens = {
   border: "#A9ADAB", // --border (isa101)
   textMuted: "#3F4241",
   textBody: "#2C2F2E",
-  textStrong: "#1C1E1E",
+  // Fix round 1 — was "#1C1E1E", the exact pre-AA-fix value of index.css's --color-text (that file's
+  // own comment on --color-text names #1c1e1e as the literal value that measured 4.32:1 against
+  // tabs.tsx's inactive-tab composite, under the 4.5:1 AA floor). index.css was darkened to #0a0c0c
+  // for margin; this literal mirror was not updated in the same pass. Corrected to match.
+  textStrong: "#0A0C0C",
   accent500: navy[700], // isa101 --accent-500 === navy-700 (unlifted, same as --color-accent)
   accent600: navy[800],
   ok: "#2F7D4C",
