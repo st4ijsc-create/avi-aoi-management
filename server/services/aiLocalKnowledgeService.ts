@@ -5530,6 +5530,120 @@ const KHONG_TOOL_VSCODE: TryExecuteToolLoopResult = {
   loop: null,
 };
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ PDCA vòng 8 (`.superpowers/sdd/2026-08-30-vscode-extension-dot-d/pdca8-report.md`) — GỐC RỄ
+ * ĐO ĐƯỢC của misfire vòng 5 KHÔNG PHẢI "bộ chọn tool bị đánh lừa bởi văn bản dạy giao thức nói
+ * chung" (kết luận vòng 5) — nó HẸP HƠN NHIỀU và TẤT ĐỊNH: `boDauTiengViet` gộp "kỹ" (tính từ, "đọc
+ * KỸ") và "kỳ" (danh từ, "KỲ trước" — trigger của `get_ng_compare`) về CÙNG MỘT chuỗi không dấu
+ * "ky". Câu mở đầu của chính giáo cụ — "ĐỌC KỸ TRƯỚC KHI ÁP DỤNG..." — bỏ dấu thành "doc KY TRUOC
+ * khi", chứa trọn cụm "ky truoc" có BIÊN, khớp đúng biến thể không dấu của trigger `"kỳ trước"`.
+ * Đo trực tiếp bằng `classifyToolIntent` (import qua `aiLocalTools/index.ts` để registry tool nạp
+ * đủ — bài học đo được TRONG vòng này: import thẳng `intentClassifier.ts` cho registry RỖNG, mọi
+ * lượt gọi tự thoả về `NO_TRIGGER_MATCH`, xem `pdca8-report.md` §MSA): văn bản CHỈ giáo cụ (không
+ * kèm câu hỏi nào) đã đủ trả về `{tool:"get_ng_compare", reason:"HEURISTIC_MATCH"}` — misfire xảy ra
+ * TRƯỚC KHI bộ chọn nhìn thấy câu hỏi thật, với MỌI câu hỏi LOCAL không phải Cmd+K.
+ *
+ * ⇒ Gốc rễ nằm ở PHÍA GIÁO CỤ (nội dung CỦA CHÍNH TA, biết CHÍNH XÁC nó là gì), không phải phía câu
+ * hỏi người dùng — nên vá đúng chỗ là BÓC giáo cụ ra khỏi `question` TRƯỚC khi đưa cho bộ chọn tool
+ * (không phải sửa `intentClassifier.ts`, và không phải một cuộc đuổi-từ-khoá bất tận như vòng 5 lo
+ * ngại — đó là lo ngại ĐÚNG cho việc REWORD giáo cụ để né bộ chọn, KHÔNG áp dụng cho việc bộ chọn
+ * đơn giản là KHÔNG ĐƯỢC THẤY một khối văn bản ta biết chắc không phải ý định của người dùng).
+ *
+ * ★ ĐO LẠI ĐƯỢC: sau khi bóc, bộ chọn trả `NO_TRIGGER_MATCH` cho câu hỏi thật (đúng — các câu hỏi
+ * đọc/tìm mã nguồn không cần tool VẬN HÀNH nào) — vòng lặp tool dừng ở `khong_co_tool`, KHÔNG có
+ * `_Nguồn số liệu` giả, KHÔNG có tool lạ. Đây là kết cục ĐÚNG, khác về BẢN CHẤT với gate vòng 5 (chặn
+ * TOÀN BỘ vòng tool bất kể nội dung câu hỏi thật): ở đây, một câu hỏi VẬN HÀNH thật gõ trực tiếp vào
+ * panel LOCAL (vd "OEE hôm nay bao nhiêu") vẫn được tool phục vụ ĐÚNG — điều mà gate vòng 5 chặn
+ * NHẦM luôn (chưa có ca thật nào trong 11 tác vụ chạm tới, nhưng là một hồi quy ẩn của chính gate đó).
+ *
+ * ★★★ KHÔNG PHỤC HỒI ĐƯỢC T02 MỘT MÌNH — ĐÃ ĐO, NÓI THẲNG: T02 ("hằng số X nằm ở tệp nào") đo được
+ * `laLuotToolSearch=false` CẢ HAI PHÍA bóc/không bóc, vì bản thân câu hỏi T02 không khớp trigger nào
+ * (đúng — nó cần tool ĐỌC MÃ của EXTENSION, không phải tool VẬN HÀNH của server). "ĐẠT 4/5" quan sát
+ * được ở ablation-tắt-gate hoàn toàn (vòng 7) là một hiệu ứng PHỤ của chính misfire: khối
+ * "_Nguồn số liệu" (dù SAI ngữ cảnh) đã vô tình mồi model tự thử tool CỦA NÓ. Bóc giáo cụ vá đúng
+ * misfire ⇒ mất luôn cái mồi phụ đó ⇒ T02 KHÔNG tự phục hồi qua bản vá này.
+ *
+ * ★★★ ĐÃ THỬ VÁ THỨ HAI (phía extension, `dayGiaoThucDoc.ts`, thêm mệnh lệnh "PHẢI TỰ TÌM, ĐỪNG hỏi
+ * người dùng") VÀ ĐÃ HOÀN NGUYÊN — đo LIVE cho kết quả XẤU HƠN, không phải trung tính: T02 tuy có tìm
+ * (`laLuotToolSearch` 5/5, trước đó 0/5) nhưng vòng 2 (đọc kết quả tool THẬT) chỉ dùng đúng 1/5 — 4/5
+ * BỊA một câu trả lời sai tự tin ("Đã quét 600 tệp... KHÔNG khớp") dù kết quả tool THẬT đưa vào prompt
+ * hoàn toàn đúng (`src/Inventory.ts:2`, giá trị 50) — BYTE-FOR-BYTE giống hệt cả 4 lượt, không phải
+ * nhiễu ngẫu nhiên. T11 (cùng hình dạng câu hỏi) tệ hơn nữa: 0/3 (trước đó 1/3), vòng 2 rơi thẳng về
+ * câu mẫu bị cấm dù đã tìm được. Đây là hồi quy CHẤT LƯỢNG thật (từ chối trung thực → bịa tự tin) —
+ * xem `pdca8-report.md` mục "Plan B" cho bằng chứng đầy đủ. T02 hiện VẪN MỞ — vá đúng cần nhắm vào
+ * độ tin cậy của model ở VÒNG 2 (dùng đúng kết quả tool đã cho), một vấn đề khác hẳn — chưa vá.
+ *
+ * ─── VÌ SAO AN TOÀN GẤP ĐÔI (fallback KHÔNG bao giờ mở rộng rủi ro so với vòng 5) ────────────────
+ * `tachThanKhoiGiaoCuVscode` chỉ trả về non-null khi `question` khớp CHÍNH XÁC hình dạng đã biết
+ * (tiền tố + hậu tố nguyên văn của `dungVanBanDayGiaoThucDoc()`/`nhacLaiCuoiCauHoi()` tại thời điểm
+ * vá này). Mọi ca KHÔNG khớp — Cmd+K (không chèn giáo cụ này, xem `yeuCau.ts::dayGiaoThucDoc`), hoặc
+ * giáo cụ phía extension đổi chữ trong tương lai — rơi thẳng về `KHONG_TOOL_VSCODE` (chặn toàn bộ,
+ * NGUYÊN VẸN hành vi vòng 5). Không có đường nào để một hình dạng LẠ bị coi nhầm là "đã bóc sạch".
+ */
+const VSCODE_GIAO_THUC_PREFIX =
+  "QUAN TRỌNG — ĐỌC KỸ TRƯỚC KHI ÁP DỤNG \"NGUYÊN TẮC TRẢ LỜI\" Ở TRÊN: nếu câu hỏi bên dưới cần biết NỘI DUNG một tệp/thư mục cụ thể trong workspace mà bạn KHÔNG thấy trong \"Ngữ cảnh từ knowledge base\", đây KHÔNG PHẢI ca \"ngữ cảnh không liên quan\" — ĐỪNG trả lời câu mẫu \"Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\". Bạn có một cách khác: TỰ ĐỌC tệp/thư mục đó rồi mới trả lời.\n\nMuốn đọc, phát ra ĐÚNG MỘT khối rào sau (không thêm chữ nào khác trong khối); tôi sẽ chạy công cụ đó và gửi lại NGUYÊN VĂN kết quả cho bạn ở lượt kế tiếp — bạn KHÔNG tự bịa nội dung tệp:\n\nĐọc một tệp:\n```avi-tool\n{\"tool\":\"doc_tep\",\"args\":{\"path\":\"<đường dẫn tệp>\"}}\n```\n\nLiệt kê một thư mục:\n```avi-tool\n{\"tool\":\"liet_ke\",\"args\":{\"path\":\"<đường dẫn thư mục>\"}}\n```\n\nTìm một chuỗi/mẫu trong workspace (path có thể bỏ trống để tìm toàn workspace):\n```avi-tool\n{\"tool\":\"grep\",\"args\":{\"mau\":\"<mẫu cần tìm>\",\"path\":\"<thư mục, tuỳ chọn>\"}}\n```\n\nMỗi lượt trả lời CHỈ MỘT khối (một yêu cầu đọc). Nếu bạn ĐÃ có đủ nội dung cần thiết (đọc rồi, hoặc câu hỏi không cần đọc tệp nào), trả lời bình thường — KHÔNG phát khối này.\n\nQUAN TRỌNG THỨ HAI — CA KHÁC, CŨNG GHI ĐÈ \"NGUYÊN TẮC TRẢ LỜI\" Ở TRÊN: nếu câu hỏi bên dưới yêu cầu VIẾT MỘT ĐOẠN MÃ/HÀM HOÀN TOÀN MỚI (chưa tồn tại ở đâu cả — không phải sửa, không phải tìm, không cần đọc một tệp cụ thể nào để trả lời), đây CŨNG KHÔNG PHẢI ca \"ngữ cảnh không liên quan\" — ĐỪNG trả lời câu mẫu \"Tôi không có thông tin chính xác...\", và ĐỪNG phát khối đọc tệp ở trên để đi tìm một tệp không tồn tại. Hãy viết THẲNG đoạn mã được yêu cầu ngay trong câu trả lời này." +
+  "\n\n";
+const VSCODE_NHAC_LAI_SUFFIX =
+  "\n\n(Nhắc lại: nếu câu hỏi trên cần nội dung một tệp bạn chưa có, hãy phát khối ```avi-tool``` như đã hướng dẫn; nếu câu hỏi là yêu cầu viết mã MỚI (không cần đọc tệp), hãy viết THẲNG mã đó — cả hai ca ĐỪNG trả lời \"không có thông tin\".)";
+
+/**
+ * Bóc đúng phần "than" (ngữ cảnh đính kèm + câu hỏi thật) ra khỏi `question` khi nó khớp CHÍNH XÁC
+ * hình dạng giáo cụ LOCAL không-Cmd+K đã biết. Trả `null` khi không khớp (Cmd+K, đường web, hoặc
+ * giáo cụ đã đổi chữ) — gọi nơi dùng PHẢI coi `null` là "không bóc được, giữ nguyên hành vi chặn".
+ */
+function tachThanKhoiGiaoCuVscode(question: string): string | null {
+  if (!question.startsWith(VSCODE_GIAO_THUC_PREFIX)) return null;
+  let than = question.slice(VSCODE_GIAO_THUC_PREFIX.length);
+  if (than.endsWith(VSCODE_NHAC_LAI_SUFFIX)) {
+    than = than.slice(0, than.length - VSCODE_NHAC_LAI_SUFFIX.length);
+  }
+  return than.trim().length > 0 ? than : null;
+}
+
+/**
+ * ★ Rút từ nhánh `else` cũ của gate (nguyên vẹn, KHÔNG đổi một dòng hành vi) thành một generator
+ * dùng lại được — nay có HAI nơi gọi: đường web (`route !== "vscode"`, `cauHoi = question` đầy đủ,
+ * y hệt trước vòng 8) và đường vscode ĐÃ bóc giáo cụ (`cauHoi = than`, MỚI ở vòng 8). Cả hai đường
+ * chạy CHUNG một hàm ⇒ không có chỗ cho hai bản sao trôi khỏi nhau.
+ */
+async function* chayVongLapToolPhatTienDo(
+  cauHoi: string,
+  context: KbQueryContext | undefined,
+  execCtx: ToolExecContext | undefined,
+): AsyncGenerator<StreamEvent, TryExecuteToolLoopResult> {
+  const hangCho: ToolLoopProgress[] = [];
+  let danhThuc: (() => void) | null = null;
+  let toolXong = false;
+  const loiHuaTool = tryExecuteToolLoop(cauHoi, context, execCtx, (ev) => {
+    hangCho.push(ev);
+    danhThuc?.();
+  });
+  // `then(ok, err)` KHÔNG được để lại một nhánh reject chưa ai bắt (unhandled rejection giết
+  // tiến trình dưới Node ≥15). `await loiHuaTool` phía dưới mới là nơi lỗi thật sự được xử lý.
+  void loiHuaTool.then(
+    () => {},
+    () => {},
+  ).then(() => {
+    toolXong = true;
+    danhThuc?.();
+  });
+  while (true) {
+    while (hangCho.length > 0) {
+      const ev = hangCho.shift()!;
+      yield { type: "tool_loop", round: ev.round, phase: ev.phase, toolName: ev.tool, elapsedMs: ev.elapsedMs, stop: ev.stop };
+    }
+    if (toolXong) break;
+    await new Promise<void>((r) => {
+      danhThuc = () => {
+        danhThuc = null;
+        r();
+      };
+    });
+  }
+  return await loiHuaTool;
+}
+
 export async function* streamAnswer(
   question: string,
   topK = 5,
@@ -5559,47 +5673,18 @@ export async function* streamAnswer(
   const now = Date.now();
 
   // Real-time tool first (live DB state — must NOT be cached).
-  // ★★★ PDCA vòng 5 — GATE `route === "vscode"` đứng NGAY TRƯỚC lượt suy luận chọn-tool đầu tiên
-  // (xem docblock lớn phía trên hàm này cho lý lẽ đầy đủ). Nhánh `else` là mã CŨ, KHÔNG đổi một
-  // dòng nào — đó là điều kiện để "đường web (route khác 'vscode')" là một phép đo A/B sạch.
+  // ★★★ PDCA vòng 8 — gate `route === "vscode"` nay BÓC giáo cụ TRƯỚC khi phân loại thay vì chặn mù
+  // toàn bộ (xem docblock lớn cạnh `tachThanKhoiGiaoCuVscode`/`VSCODE_GIAO_THUC_PREFIX` phía trên
+  // hàm này cho gốc rễ đo được + lý do). Bóc được (đường LOCAL không-Cmd+K) ⇒ chạy vòng tool THẬT
+  // trên PHẦN CÂU HỎI THẬT (`than`). Không bóc được (Cmd+K, hình dạng lạ) ⇒ giữ NGUYÊN hành vi chặn
+  // của vòng 5 (`KHONG_TOOL_VSCODE`). Đường web (route khác "vscode") chạy `question` đầy đủ, y hệt
+  // trước vòng 8 — cùng một hàm `chayVongLapToolPhatTienDo`, không có hai bản sao trôi khỏi nhau.
   let toolExec: TryExecuteToolLoopResult;
   if (context?.route === "vscode") {
-    toolExec = KHONG_TOOL_VSCODE;
+    const thanThat = tachThanKhoiGiaoCuVscode(question);
+    toolExec = thanThat === null ? KHONG_TOOL_VSCODE : yield* chayVongLapToolPhatTienDo(thanThat, context, execCtx);
   } else {
-    // ★ G2-C — chạy vòng lặp và PHÁT trạng thái trung gian NGAY khi nó xảy ra. Một generator không
-    // `yield` được từ trong callback, nên tiến độ đi qua một hàng chờ + một lời hứa "đánh thức";
-    // vòng while dưới đây rút hàng chờ cho tới khi lượt tool xong. Không có nó thì người dùng ngồi
-    // nhìn màn hình đứng im tới `AI_TOOL_LOOP_MAX_MS` — đúng thứ brief cấm.
-    const hangCho: ToolLoopProgress[] = [];
-    let danhThuc: (() => void) | null = null;
-    let toolXong = false;
-    const loiHuaTool = tryExecuteToolLoop(question, context, execCtx, (ev) => {
-      hangCho.push(ev);
-      danhThuc?.();
-    });
-    // `then(ok, err)` KHÔNG được để lại một nhánh reject chưa ai bắt (unhandled rejection giết
-    // tiến trình dưới Node ≥15). `await loiHuaTool` phía dưới mới là nơi lỗi thật sự được xử lý.
-    void loiHuaTool.then(
-      () => {},
-      () => {},
-    ).then(() => {
-      toolXong = true;
-      danhThuc?.();
-    });
-    while (true) {
-      while (hangCho.length > 0) {
-        const ev = hangCho.shift()!;
-        yield { type: "tool_loop", round: ev.round, phase: ev.phase, toolName: ev.tool, elapsedMs: ev.elapsedMs, stop: ev.stop };
-      }
-      if (toolXong) break;
-      await new Promise<void>((r) => {
-        danhThuc = () => {
-          danhThuc = null;
-          r();
-        };
-      });
-    }
-    toolExec = await loiHuaTool;
+    toolExec = yield* chayVongLapToolPhatTienDo(question, context, execCtx);
   }
   const toolResult = toolExec.result;
   const loop = toolExec.loop;

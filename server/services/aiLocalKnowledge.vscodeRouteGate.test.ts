@@ -191,3 +191,53 @@ describe("§B — ĐỐI CHỨNG bắt buộc: đường WEB (route khác \"vsco
  * engine — vá lại là tăng bề mặt lưới không cần thiết); suite đó đã chạy KHÔNG ĐỔI để xác nhận
  * nhánh `codingMode` không hồi quy (xem báo cáo).
  */
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ PDCA vòng 8 (`.superpowers/sdd/2026-08-30-vscode-extension-dot-d/pdca8-report.md`) — §A ở
+ * trên đo ĐÚNG một câu hỏi KHÔNG mang hình dạng giáo cụ (`"OEE line 2 hôm nay thế nào"` trần trụi)
+ * — với câu đó, gate vòng 8 hành xử Y HỆT gate vòng 5 (không bóc được ⇒ chặn, `KHONG_TOOL_VSCODE`).
+ * §D dưới đây đo NHÁNH KIA của vòng 8: câu hỏi MANG ĐÚNG hình dạng giáo cụ LOCAL (như extension thật
+ * gửi) — gate phải BÓC giáo cụ rồi VẪN gọi `tryExecuteToolLoop`, nhưng CHỈ trên phần câu hỏi thật.
+ *
+ * ⚠ `PREFIX`/`SUFFIX` dưới đây là bản SAO literal của `VSCODE_GIAO_THUC_PREFIX`/`VSCODE_NHAC_LAI_
+ * SUFFIX` (`aiLocalKnowledgeService.ts`, chính nó đã là bản sao của `vscode-extension/src/loi/
+ * dayGiaoThucDoc.ts`) — bản sao THỨ BA có chủ đích, chỉ để DỰNG đầu vào test giống hệt sản xuất.
+ * Nếu văn bản giáo cụ đổi, ca ★★★ đầu tiên dưới đây sẽ ĐỎ (không còn bóc được) — đó là tín hiệu ĐÚNG
+ * để đồng bộ lại cả ba bản sao, không phải một lưới hỏng.
+ */
+describe("§D — PDCA vòng 8: route \"vscode\" MANG giáo cụ LOCAL thật ⇒ bóc rồi VẪN gọi tool trên PHẦN CÂU HỎI THẬT", () => {
+  const PREFIX =
+    "QUAN TRỌNG — ĐỌC KỸ TRƯỚC KHI ÁP DỤNG \"NGUYÊN TẮC TRẢ LỜI\" Ở TRÊN: nếu câu hỏi bên dưới cần biết NỘI DUNG một tệp/thư mục cụ thể trong workspace mà bạn KHÔNG thấy trong \"Ngữ cảnh từ knowledge base\", đây KHÔNG PHẢI ca \"ngữ cảnh không liên quan\" — ĐỪNG trả lời câu mẫu \"Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\". Bạn có một cách khác: TỰ ĐỌC tệp/thư mục đó rồi mới trả lời.\n\nMuốn đọc, phát ra ĐÚNG MỘT khối rào sau (không thêm chữ nào khác trong khối); tôi sẽ chạy công cụ đó và gửi lại NGUYÊN VĂN kết quả cho bạn ở lượt kế tiếp — bạn KHÔNG tự bịa nội dung tệp:\n\nĐọc một tệp:\n```avi-tool\n{\"tool\":\"doc_tep\",\"args\":{\"path\":\"<đường dẫn tệp>\"}}\n```\n\nLiệt kê một thư mục:\n```avi-tool\n{\"tool\":\"liet_ke\",\"args\":{\"path\":\"<đường dẫn thư mục>\"}}\n```\n\nTìm một chuỗi/mẫu trong workspace (path có thể bỏ trống để tìm toàn workspace):\n```avi-tool\n{\"tool\":\"grep\",\"args\":{\"mau\":\"<mẫu cần tìm>\",\"path\":\"<thư mục, tuỳ chọn>\"}}\n```\n\nMỗi lượt trả lời CHỈ MỘT khối (một yêu cầu đọc). Nếu bạn ĐÃ có đủ nội dung cần thiết (đọc rồi, hoặc câu hỏi không cần đọc tệp nào), trả lời bình thường — KHÔNG phát khối này.\n\nQUAN TRỌNG THỨ HAI — CA KHÁC, CŨNG GHI ĐÈ \"NGUYÊN TẮC TRẢ LỜI\" Ở TRÊN: nếu câu hỏi bên dưới yêu cầu VIẾT MỘT ĐOẠN MÃ/HÀM HOÀN TOÀN MỚI (chưa tồn tại ở đâu cả — không phải sửa, không phải tìm, không cần đọc một tệp cụ thể nào để trả lời), đây CŨNG KHÔNG PHẢI ca \"ngữ cảnh không liên quan\" — ĐỪNG trả lời câu mẫu \"Tôi không có thông tin chính xác...\", và ĐỪNG phát khối đọc tệp ở trên để đi tìm một tệp không tồn tại. Hãy viết THẲNG đoạn mã được yêu cầu ngay trong câu trả lời này." +
+    "\n\n";
+  const SUFFIX =
+    "\n\n(Nhắc lại: nếu câu hỏi trên cần nội dung một tệp bạn chưa có, hãy phát khối ```avi-tool``` như đã hướng dẫn; nếu câu hỏi là yêu cầu viết mã MỚI (không cần đọc tệp), hãy viết THẲNG mã đó — cả hai ca ĐỪNG trả lời \"không có thông tin\".)";
+  const THAN_THAT = "Hằng số NGUONG_CANH_BAO_TON_KHO nằm ở tệp nào trong workspace, và giá trị của nó là bao nhiêu?";
+  const WRAPPED = `${PREFIX}${THAN_THAT}${SUFFIX}`;
+
+  it("★★★ giáo cụ ĐÚNG hình dạng ⇒ tryExecuteToolLoop ĐƯỢC gọi, với ĐÚNG phần câu hỏi thật (không giáo cụ)", async () => {
+    await chay(WRAPPED, { route: "vscode" });
+    expect(tryExecuteToolLoop, "gốc rễ vòng 8: giáo cụ không còn là lý do chặn toàn bộ vòng tool").toHaveBeenCalledTimes(1);
+    expect(tryExecuteToolLoop.mock.calls[0]![0], "bộ chọn tool phải nhận PHẦN CÂU HỎI THẬT, không phải cả giáo cụ").toBe(THAN_THAT);
+  });
+
+  it("★★ giáo cụ ĐÚNG hình dạng, có kết quả tool THẬT ⇒ kết quả đó VẪN đi vào answer (đường vscode không còn mù)", async () => {
+    datToolThat();
+    const r = await chay(WRAPPED, { route: "vscode" });
+    expect(r.done && r.done.type === "done" && r.done.answer).toContain(TOM_TAT_TOOL_THAT);
+  });
+
+  it("★★★ ĐỘT BIẾN — đổi 1 ký tự trong giáo cụ (không còn khớp CHÍNH XÁC) ⇒ RƠI VỀ AN TOÀN, không gọi tool (chưa từng đo, không suy diễn)", async () => {
+    const gioiHan = WRAPPED.replace("ĐỌC KỸ TRƯỚC KHI", "ĐỌC Kĩ TRƯỚC KHI"); // đổi 1 chữ, không còn khớp startsWith
+    const r = await chay(gioiHan, { route: "vscode" });
+    expect(tryExecuteToolLoop, "khớp KHÔNG chính xác ⇒ fallback chặn toàn bộ, giống hệt vòng 5 — AN TOÀN, không phải lỗi").not.toHaveBeenCalled();
+    expect(r.done && r.done.type === "done" && r.done.answer.length).toBeGreaterThan(0);
+  });
+
+  it("★★ Cmd+K (không mang giáo cụ này — dạy giao thức RIÊNG ngay trong câu hỏi) ⇒ vẫn chặn NGUYÊN VẸN như §A", async () => {
+    const cauHoiCmdK = "```avi-tool\n{\"tool\":\"de_xuat_sua_doan\",\"args\":{}}\n```\n\nSửa đoạn này: thêm kiểm tra chia 0.";
+    const r = await chay(cauHoiCmdK, { route: "vscode" });
+    expect(tryExecuteToolLoop).not.toHaveBeenCalled();
+    expect(r.done && r.done.type === "done" && r.done.answer.length).toBeGreaterThan(0);
+  });
+});
