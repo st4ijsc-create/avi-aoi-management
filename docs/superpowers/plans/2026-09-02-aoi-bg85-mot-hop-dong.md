@@ -112,8 +112,25 @@ ImageRef = { captureId: string, fileName: string, captureName?: string, sha256?:
 - [ ] **262 gói `committed` không đổi verdict**; hình dạng cũ **vẫn nhận vào**.
 - [ ] `inferAoiOverallResult` **đã xoá**, hoặc còn kèm lý do ghi rõ.
 - [ ] `sha256` lệch ⇒ từ chối · `sizeBytes` vượt trần ⇒ từ chối · không còn fallback tên trần.
-- [ ] Đếm được **hai hình dạng** ở mọi cửa, có lưới chứng minh tín hiệu phát ra thật.
-- [ ] `npm run check` sạch · hai cổng Pha 0 xanh.
-- [ ] **BG-42/53/68/76 tự tan** — chứng minh bằng cách chỉ ra mã sinh ra chúng đã biến mất.
+- [~] Đếm được **hai hình dạng** — ĐẠT MỘT PHẦN, xem Đ-27 ngay dưới. Lưới chứng minh tín hiệu phát ra thật: **ĐẠT** (đo trên DB: `ingest_shape_legacy=93`, `ingest_shape_v2=18`).
+- [x] `npm run check` sạch · các cổng xanh (99 + 131 ca).
+- [x] **BG-42/53/68/76 tự tan** — chứng minh bằng cách chỉ ra mã sinh ra chúng đã biến mất.
+
+---
+
+## Đ-27 — tín hiệu đếm im lặng ở **đúng cửa mà hình dạng cũ đi qua**
+
+**Kế hoạch viết:** *"phát tín hiệu đếm được … ở **mọi** cửa ingest."*
+**Đo được:** `grep -c ghiTinHieuHinhDangIngest server/routers/aoiPackageRouter.ts` = **0**.
+
+Tín hiệu nằm ở `quyetDinhPhienBanIngest` — điểm quyết định của `submitInspection`/`submitInspectionBatch`. **Cửa ZIP không đi qua đó.** Mà hình dạng cũ (`images[]` không cây) **chính là hình dạng của cửa ZIP** — mẫu máy thật `aoipackage-meta-sample.json` là đúng nó.
+
+⇒ Truy vấn vận hành đếm hai cửa nơi hình dạng cũ **hiếm khi** tới, và **câm** ở cửa nơi nó **sống**. Con số `legacy=93` là thật, nhưng nó **không phải** câu trả lời cho *"còn bao nhiêu máy gửi hình dạng cũ?"* — nó là câu trả lời cho *"…ở đường trực tiếp"*.
+
+**Đây là lớp lỗi L-4 (đo một tập, khai cho tập khác) — lần thứ CHÍN.** Lần này bắt được **trước** khi con số kịp được dùng để quyết định cắt.
+
+**Ruling R-BG89-1:** **không** dispatch task riêng. Gộp vào **BG-39 gđ2** (gác cửa ZIP, đã nằm trong Khối B) — vì gđ2 sửa đúng tệp đó, và nối `commit` vào cùng điểm quyết định thì tín hiệu **có sẵn**, không phải viết lại. *Giá nếu sai:* Khối B trượt thì con số vẫn thiếu cửa ZIP — chấp nhận được vì **chưa ai được phép cắt dựa trên nó**; điều kiện cắt của §7 là "về 0 ở **mọi** cửa".
+
+⚠ **Ràng buộc kèm theo:** cấm dùng `legacy=93` làm căn cứ bật cờ từ chối cho tới khi cửa ZIP có tín hiệu.
 
 **Còn mở sau pha này:** BG-39 gđ2 (gác cửa ZIP) · Đ-19 + **Khối B** · BG-36 · BG-70/71/74/75/77/83/90/93…99 · §6 giao thức version · §3.6 dọn mồ côi · **Khối C** · **Khối D**.
