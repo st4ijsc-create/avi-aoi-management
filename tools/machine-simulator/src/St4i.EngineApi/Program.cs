@@ -477,6 +477,18 @@ builder.Services.AddSingleton<St4i.EngineApi.HmiModel.ITagNamespaceStore>(
 builder.Services.AddSingleton<St4i.EngineApi.HmiModel.ITagIndexCollisionQuery>(
     _ => new St4i.EngineApi.HmiModel.SqliteTagIndexCollisionQuery(rawTagNamespaceStore.Value.DbPath));
 
+// WS-HMI-2 Task 2 — IHmiScreenStore resolves to CanonicalizingHmiScreenStore (CanonicalScreenStore.cs),
+// same law as IComponentModelStore/ITagNamespaceStore above and the same law CanonicalMachineCodeStores.cs
+// states for its own two seams: the raw store may be constructed exactly where the composition root needs
+// it, and must never be registered. HmiScreenStore is a LOCAL here — never AddSingleton'd by its own
+// concrete type — so no handler, existing or written next month, can resolve the whitespace-sensitive-keyed
+// store directly.
+var hmiScreensDir = Environment.GetEnvironmentVariable(St4i.EngineApi.HmiModel.HmiScreenStore.EnvVarDir);
+builder.Services.AddSingleton<St4i.EngineApi.HmiModel.IHmiScreenStore>(
+    _ => new St4i.EngineApi.HmiModel.CanonicalizingHmiScreenStore(
+        new St4i.EngineApi.HmiModel.HmiScreenStore(
+            string.IsNullOrWhiteSpace(hmiScreensDir) ? null : hmiScreensDir)));
+
 // WS-HMI-0c Task 4, ruling S-3 — the ingestion door. Registered by TYPE with no factory lambda, which is
 // the point: its one constructor takes ITagNamespaceStore, so DI hands it the CANONICALIZING decorator
 // registered three lines above and there is no expression here that could hand it anything else. A factory

@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using St4i.EngineApi.HmiModel;
 using St4i.EngineApi.Tests.Auth;
 using St4i.Hmi.Contracts;
@@ -254,4 +256,239 @@ public class HmiScreenStoreTests : IDisposable
         new[] { new ScreenWidget("w1", "label", Rect()) });
 
     static WidgetRect Rect() => new(0, 0, 2, 1);
+}
+
+/// <summary>
+/// WS-HMI-2 Task 2 — <c>screenId</c> identity at the <see cref="IHmiScreenStore"/> seam:
+/// <see cref="CanonicalizingHmiScreenStore"/> resolves from DI as the ONLY thing
+/// <see cref="IHmiScreenStore"/> ever hands out, and every method that sees a <c>screenId</c>
+/// canonicalises it before the inner (possibly raw) store ever sees it — the same law
+/// <c>CanonicalMachineCodeStoresTests</c> pins for machine-code identity, applied here to a different
+/// field with a different rule (see <c>CanonicalScreenStore.cs</c>'s own doc comment for the measurement
+/// behind <b>Trim only, no case fold</b>).
+///
+/// <para><b>What this class does NOT measure:</b> (1) that <see cref="HmiScreenStore"/> itself round-trips
+/// a document correctly — that is <see cref="HmiScreenStoreTests"/> above; (2) JSON Schema conformance of
+/// <c>screenId</c>'s <c>^[a-z0-9-]+$</c> pattern — nothing in this repository's C# runtime enforces that
+/// pattern today (measured in <c>CanonicalScreenStore.cs</c>'s doc comment: zero regex checks in
+/// <c>ContractInvariants.Validate(HmiScreenDocument)</c>), and this class does not paper over that gap by
+/// pretending the decorator folds case — it deliberately does not; (3) an HTTP surface for screens — none
+/// exists yet, that is WS-HMI-2 Task 3's job.</para>
+/// </summary>
+[Collection(SecurityEnvVarTests.CollectionName)]
+public sealed class CanonicalizingHmiScreenStoreTests
+{
+    private static readonly SemaphoreSlim EnvLock = new(1, 1);
+
+    /// <summary>Same "force Production, eager-build while the override is live" idiom
+    /// <c>HmiModelWiringTests.CreateFactoryAsync</c> already uses, duplicated for the same reason that
+    /// class duplicates it from <c>AuthPipelineTests</c>/<c>RbacPolicyTests</c>: each is private to its own
+    /// class. This class does not isolate <c>ST4I_HMI_SCREENS_DIR</c> itself — <c>TestRunTempRoot</c>'s
+    /// module initializer already redirects it (same as every other leaf), and the ONE test below that
+    /// boots a host asks only which CONCRETE TYPE was resolved, never touching the database.</summary>
+    private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync()
+    {
+        await EnvLock.WaitAsync().ConfigureAwait(false);
+        var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        try
+        {
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
+            var factory = new WebApplicationFactory<Program>();
+            _ = factory.Server; // force the host to build NOW, while the override above is still live.
+            return factory;
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
+            EnvLock.Release();
+        }
+    }
+
+    [Fact]
+    public async Task TheScreenStoreResolvedFromDi_IsTheCanonicalizingDecorator_NeverTheRawStore()
+    {
+        // Does NOT measure that the decorator canonicalises correctly when driven — that is every test
+        // below, against the decorator directly. This measures only WHICH CONCRETE TYPE Program.cs's DI
+        // container hands back for IHmiScreenStore, the same structural property
+        // HmiModelWiringTests/HmiModelEndpointsTests pin for IComponentModelStore/ITagNamespaceStore.
+        await using var factory = await CreateFactoryAsync().ConfigureAwait(false);
+        var store = factory.Services.GetRequiredService<IHmiScreenStore>();
+        Assert.IsType<CanonicalizingHmiScreenStore>(store);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // RecordingScreenStore — records what it received and decides nothing. WS-HMI-0b learned that a
+    // double which re-implements the predicate under test (trimming, version bookkeeping, ...) ends up
+    // certifying itself rather than the decorator in front of it: every method here just appends to
+    // `Calls` and returns a fixed, uninteresting value.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private sealed class RecordingScreenStore : IHmiScreenStore
+    {
+        public List<string> Calls { get; } = new();
+
+        public Task<HmiScreenDocument?> GetAsync(string screenId, int? version = null, CancellationToken ct = default)
+        {
+            Calls.Add($"Get:{screenId}:{(version.HasValue ? version.Value.ToString() : "null")}");
+            return Task.FromResult<HmiScreenDocument?>(null);
+        }
+
+        public Task<int> PutAsync(HmiScreenDocument doc, CancellationToken ct = default)
+        {
+            Calls.Add($"Put:{doc.ScreenId}");
+            return Task.FromResult(1);
+        }
+
+        public Task<IReadOnlyList<string>> ListScreenIdsAsync(CancellationToken ct = default)
+        {
+            Calls.Add("List:");
+            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+        }
+
+        public Task<IReadOnlyList<ScreenVersionInfo>> ListVersionsAsync(string screenId, CancellationToken ct = default)
+        {
+            Calls.Add($"ListVersions:{screenId}");
+            return Task.FromResult<IReadOnlyList<ScreenVersionInfo>>(Array.Empty<ScreenVersionInfo>());
+        }
+
+        public Task<int> RollbackAsync(string screenId, int toVersion, CancellationToken ct = default)
+        {
+            Calls.Add($"Rollback:{screenId}:{toVersion}");
+            return Task.FromResult(1);
+        }
+    }
+
+    static HmiScreenDocument Screen(string id, string title) => new(
+        1, id, title, null, "isa101",
+        new ScreenLayout(12, 8, "panel"),
+        new[] { new ScreenWidget("w1", "label", Rect()) });
+
+    static WidgetRect Rect() => new(0, 0, 2, 1);
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Every method's disposition, measured against RecordingScreenStore — not merely declared.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("  line-overview  ")]
+    [InlineData("line-overview")]
+    public async Task EveryMethodOfTheDecorator_TrimsTheScreenId_SoOneScreenIsOneRow(string spelling)
+    {
+        // Does NOT measure GetAsync/ListVersionsAsync/RollbackAsync/ListScreenIdsAsync's own dispositions —
+        // each has its own probe below. This is PutAsync's: doc.ScreenId IS the SQLite primary key
+        // (screens/screen_current, both `screen_id TEXT` with no COLLATE NOCASE and no trimming of their
+        // own — verified against HmiScreenStore's migration DDL), so writing it un-trimmed is how one
+        // screen, saved twice with stray whitespace, becomes two rows.
+        var inner = new RecordingScreenStore();
+        var store = new CanonicalizingHmiScreenStore(inner);
+        await store.PutAsync(Screen(spelling, "x"));
+        Assert.Equal(new[] { "Put:line-overview" }, inner.Calls);
+    }
+
+    [Fact]
+    public async Task GetAsync_TrimsTheScreenId_AndForwardsTheVersionUnchanged()
+    {
+        // Does NOT measure the `version` parameter's own handling beyond "unchanged" — version is not an
+        // identity value this decorator has any opinion about, only screenId is.
+        var inner = new RecordingScreenStore();
+        var store = new CanonicalizingHmiScreenStore(inner);
+
+        await store.GetAsync("  line-overview  ", version: 3);
+
+        Assert.Equal(new[] { "Get:line-overview:3" }, inner.Calls);
+    }
+
+    [Fact]
+    public async Task ListVersionsAsync_TrimsTheScreenId_BeforeAskingTheInnerStore()
+    {
+        var inner = new RecordingScreenStore();
+        var store = new CanonicalizingHmiScreenStore(inner);
+
+        await store.ListVersionsAsync("  line-overview  ");
+
+        Assert.Equal(new[] { "ListVersions:line-overview" }, inner.Calls);
+    }
+
+    [Fact]
+    public async Task RollbackAsync_TrimsTheScreenId_AndForwardsToVersionUnchanged()
+    {
+        var inner = new RecordingScreenStore();
+        var store = new CanonicalizingHmiScreenStore(inner);
+
+        await store.RollbackAsync("  line-overview  ", toVersion: 2);
+
+        Assert.Equal(new[] { "Rollback:line-overview:2" }, inner.Calls);
+    }
+
+    [Fact]
+    public async Task ListScreenIdsAsync_ForwardsVerbatim_NoScreenIdParameterToCanonicalise()
+    {
+        // Does NOT measure output canonicalisation/deduplication — CanonicalScreenStore.cs's own doc
+        // comment states, and this pins, that ListScreenIdsAsync deliberately does NOT canonicalise-and-
+        // dedupe the way CanonicalizingComponentModelStore.ListMachineCodesAsync does: pairing that with a
+        // fallback-free GetAsync would make the list name an identity GetAsync cannot serve — the exact
+        // defect CanonicalMachineCodeStores.cs's re-review #3 closed for machine codes.
+        var inner = new RecordingScreenStore();
+        var store = new CanonicalizingHmiScreenStore(inner);
+
+        await store.ListScreenIdsAsync();
+
+        Assert.Equal(new[] { "List:" }, inner.Calls);
+    }
+
+    [Fact]
+    public async Task PutAsync_WithAWhitespaceOnlyScreenId_ForwardsItUnchanged_LeavingRejectionToContractInvariants()
+    {
+        // Does NOT measure that ContractInvariants actually rejects a blank screenId — that is
+        // HmiScreenStoreTests.PutAsync_WithAScreenViolatingSection5_ThrowsAndWritesNothing (a different §5
+        // violation) and ContractInvariantsTests. This measures only that ScreenIdentity.Canonicalize does
+        // NOT coerce a whitespace-only screenId to "" or throw — mirroring MachineCodeIdentity's own
+        // documented choice for the same reason: whether a blank identity is valid is ContractInvariants'
+        // call, not this decorator's.
+        var inner = new RecordingScreenStore();
+        var store = new CanonicalizingHmiScreenStore(inner);
+
+        await store.PutAsync(Screen("   ", "x"));
+
+        Assert.Equal(new[] { "Put:   " }, inner.Calls);
+    }
+
+    [Fact]
+    public async Task GetAsync_WithANullScreenId_DoesNotThrow_ForwardingItUnchanged()
+    {
+        // Does NOT measure what the inner store does with a null screenId (HmiScreenStore itself would
+        // fail a NOT NULL SQL bind) — only that ScreenIdentity.Canonicalize's null guard is real and not
+        // merely asserted in prose: `null!.Trim()` throws NullReferenceException, and the interface's
+        // non-nullable `string screenId` is a compile-time promise a runtime caller (e.g. malformed JSON
+        // binding) is not forced to keep.
+        var inner = new RecordingScreenStore();
+        var store = new CanonicalizingHmiScreenStore(inner);
+
+        await store.GetAsync(null!);
+
+        Assert.Equal(new[] { "Get::null" }, inner.Calls);
+    }
+
+    [Fact]
+    public void EveryMethodOnTheSeam_HasAnIdentityDisposition_SoANewMethodCannotForwardUnhandled()
+    {
+        // Does NOT measure that a handled method canonicalises CORRECTLY — only that every method NAME on
+        // IHmiScreenStore's surface (its own declared members AND every member inherited from a base
+        // interface, walked via GetInterfaces() so a future "factor shared members into a base seam"
+        // refactor cannot slip a method past this the way CanonicalMachineCodeStoresTests' re-review #4
+        // measured GetMethods() alone could) has SOME declared disposition. Correctness of each disposition
+        // is every test above.
+        var seam = typeof(IHmiScreenStore);
+        var handled = CanonicalizingHmiScreenStore.HandledMethods;
+        var declared = seam.GetMethods().Concat(seam.GetInterfaces().SelectMany(i => i.GetMethods()))
+                           .Select(m => m.Name).Distinct().ToArray();
+        var missing = declared.Except(handled).ToArray();
+        Assert.True(missing.Length == 0,
+            $"IHmiScreenStore's surface — its own members AND every member inherited from a base interface — " +
+            $"carries method(s) with NO identity disposition: {string.Join(", ", missing)}. Decide: does this " +
+            $"method see a screen id? If yes, canonicalise it and add a probe measuring what the inner store " +
+            $"received. If no, add a `false` entry NAMING the other identity. Do NOT delete this test to make " +
+            $"it pass: forwarding an unhandled method is the exact defect it exists to catch (WS-HMI-0b, three " +
+            $"consecutive rounds).");
+    }
 }
