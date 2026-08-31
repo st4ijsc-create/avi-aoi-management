@@ -286,11 +286,10 @@ public sealed class HmiScreenStore : IHmiScreenStore
 
         if (version is null)
         {
-            // No explicit version ⇒ whatever the pointer currently names, NOT necessarily MAX(version) —
-            // RollbackAsync can leave the pointer on a version that is not the highest row for this
-            // screenId only in the sense that a later PutAsync could still append past it; at any given
-            // instant the pointer IS the highest row, because both PutAsync and RollbackAsync (via
-            // PutAsync) always move it to the version they just inserted.
+            // No explicit version ⇒ whatever the pointer currently names, which IS ALWAYS MAX(version)
+            // for this screenId — both PutAsync and RollbackAsync (via PutAsync) move the pointer to the
+            // version they just inserted, and neither ever inserts anything but the next number, so the
+            // pointer and "the highest row" can never disagree at any instant a caller can observe.
             cmd.CommandText = """
                 SELECT s.document
                 FROM screens s

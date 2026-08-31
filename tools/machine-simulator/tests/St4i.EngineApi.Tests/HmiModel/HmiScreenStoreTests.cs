@@ -13,21 +13,62 @@ namespace St4i.EngineApi.Tests.HmiModel;
 /// <c>ContractInvariants</c> thi hành; (2) không đo phân quyền — đó là tầng auth và
 /// <c>HmiScreenEndpointsTests</c>.</para>
 ///
-/// <para>🔴 <b>Fix round 1 — mục (2) cũ "không đo tranh chấp ghi đồng thời vì kho này nối tiếp theo
-/// kết nối SQLite" bị RÚT, vì lý do nó nêu là SAI, được đo chứ không phải đọc.</b>
-/// <see cref="HmiScreenStore.PutAsync"/> mở một kết nối MỚI mỗi lần gọi và đọc <c>MAX(version)</c>
+/// <para>📎 🔴 <b>Fix round 1's paragraph — RÚT, fix round 2, giữ nguyên văn — SAI cả ba chỗ, đo bằng
+/// một probe khác cho ra kết quả ngược lại.</b> Đoạn ngay trên (bản round-1) đọc: <i>"</i>
+/// <see cref="HmiScreenStore.PutAsync"/><i> mở một kết nối MỚI mỗi lần gọi và đọc <c>MAX(version)</c>
 /// trước khi ghi — nó không nối tiếp gì cả. Đo bằng một probe hai luồng thật (<c>Task.Run</c> +
 /// <c>Barrier</c>, 30 lần lặp, không giữ trong repo) không bắt được va chạm ở mức tranh chấp đó —
 /// SQLite/lịch trình hệ điều hành làm cửa sổ đọc-rồi-ghi hẹp trong thực tế. Nhưng cửa sổ đó vẫn có
-/// thật khi đọc mã: hai lời gọi <see cref="HmiScreenStore.PutAsync"/> đồng thời CÓ THỂ cùng đọc một
-/// <c>MAX(version)</c>. Cái chúng KHÔNG THỂ làm là cùng ghi thành công cùng một hàng
+/// thật khi đọc mã: hai lời gọi </i><see cref="HmiScreenStore.PutAsync"/><i> đồng thời CÓ THỂ cùng
+/// đọc một <c>MAX(version)</c>. Cái chúng KHÔNG THỂ làm là cùng ghi thành công cùng một hàng
 /// <c>(screen_id, version)</c>: <c>PRIMARY KEY(screen_id, version)</c> trên bảng <c>screens</c> được
 /// SQLite đối chiếu với trạng thái ĐÃ COMMIT thật tại thời điểm INSERT chạy, không phải với bản đọc
 /// cũ của bên thua — nên bên thua nhận <c>SqliteException</c> (constraint) và toàn bộ transaction
-/// của nó cuộn lại, không ghi gì, không mất phiên bản nào, không có con trỏ treo. Lớp này vẫn KHÔNG
-/// đo đường đi đó (không có bài test tranh chấp cố ý), vì bắt một cửa sổ đua hẹp một cách tin cậy
-/// đòi một fixture định thời mà lớp này chưa có; câu ở đây chỉ nói ĐÚNG cái store làm, không còn nói
-/// nó làm cái nó không làm.</para>
+/// của nó cuộn lại, không ghi gì, không mất phiên bản nào, không có con trỏ treo."</i> Sai ba câu, đo
+/// từng câu bên dưới — kể cả câu quan sát "0/30 không va chạm" cũng đúng SỰ KIỆN nhưng sai LÝ DO nó
+/// đưa ra: cửa sổ không "hẹp trong thực tế", nó BỊ ĐÓNG bởi <c>BEGIN IMMEDIATE</c>, nên 30 lần lặp
+/// không thấy gì vì không có gì để thấy.</para>
+///
+/// <para>🔴 <b>Cơ chế THẬT, đo bằng kết nối thô và một race ép mở, không đọc mã suông.</b>
+/// <c>connection.BeginTransaction()</c> gọi không tham số trong <c>Microsoft.Data.Sqlite</c> phân
+/// giải thành <c>BeginTransaction(IsolationLevel.Serializable, deferred: false)</c> — tức
+/// <c>BEGIN IMMEDIATE</c>, không phải <c>deferred</c> như hai bản trước (round-0 và round-1) cùng
+/// giả định. Đo trực tiếp: một kết nối B gọi <c>BeginTransaction()</c> trong lúc kết nối A đang giữ
+/// một transaction ném ngay <c>SqliteException | SqliteErrorCode=5</c> ("database is locked") —
+/// nghĩa là A giữ khoá GHI ngay tại <c>BEGIN</c>, TRƯỚC khi <c>SELECT MAX(version)</c>
+/// (<see cref="HmiScreenStore.PutAsync"/>) từng chạy. <b>Hai lời gọi <c>PutAsync</c> đồng thời KHÔNG
+/// THỂ cùng đọc một <c>MAX(version)</c></b> — bên thứ hai chặn ngay tại <c>BEGIN</c> tới khi bên thứ
+/// nhất commit, rồi mới đọc <c>MAX</c> đã cập nhật. Đo trên tranh chấp thật: 8 luồng × 30 lần
+/// <c>PutAsync</c> trên CÙNG một <c>screenId</c> → 240 lần trả về, <b>0 lần ném</b>, dãy phiên bản
+/// liên tục 1..240 không trùng không thiếu, đúng MỘT <c>IsCurrent</c>. Kho THẬT SỰ nối tiếp — nhưng
+/// bởi khoá ghi <c>BEGIN IMMEDIATE</c> của SQLite cộng <c>PRAGMA busy_timeout=5000</c>, không phải
+/// "không nối tiếp gì" (câu SAI của round-1) và không phải <c>PRIMARY KEY</c> (câu SAI THỨ HAI của
+/// round-1). <c>PRIMARY KEY(screen_id, version)</c> KHÔNG BAO GIỜ nổ trên đường này: ép mở race bằng
+/// một transaction <c>deferred: true</c> tường minh trên CẢ HAI kết nối (thế giới mà câu round-1 MÔ
+/// TẢ, không phải thế giới <c>PutAsync</c> thật tạo ra) cho bên thua
+/// <c>SqliteException | SqliteErrorCode=5 Extended=517</c> (<c>SQLITE_BUSY_SNAPSHOT</c> — WAL từ
+/// chối nâng một read-transaction lên write-transaction sau khi một kết nối khác đã commit dưới nó),
+/// KHÔNG PHẢI lỗi 19/1555 mà một vi phạm khoá chính sẽ ném. Trong tranh chấp THẬT (không ép mở),
+/// <c>PutAsync</c> nhận <c>SqliteErrorCode=5 Extended=5</c> (<c>SQLITE_BUSY</c> trần) từ chính
+/// <c>BEGIN</c>, không phải từ <c>INSERT</c>. Cả ba trường hợp: không phiên bản nào mất hay hỏng —
+/// lịch sử nguyên vẹn, con trỏ đúng và duy nhất, <c>GetAsync(id, 1)</c> vẫn phục vụ tài liệu cũ, và
+/// lần <c>PutAsync</c> tiếp theo tiếp tục đúng dãy số.</para>
+///
+/// <para>🔴 <b>Cái store KHÔNG làm, đo bằng cách giữ khoá ghi 34 giây — dành cho ai đọc trước Task
+/// 3.</b> Giữ khoá ghi trên một kết nối ngoài lâu hơn <c>busy_timeout</c> rồi gọi <c>PutAsync</c>
+/// THẬT: sau <b>~34 giây</b> (34,4 s và 34,1 s ở hai lần đo, ~gấp bảy <c>busy_timeout=5000</c>ms cấu
+/// hình), <c>PutAsync</c> ném <c>SqliteException(SqliteErrorCode=5)</c> — từ <c>BeginTransaction()</c>,
+/// TRƯỚC bất kỳ lần đọc nào. <c>src/</c> không có <c>UseExceptionHandler</c>, không
+/// <c>IExceptionHandler</c>, không ánh xạ <c>ProblemDetails</c> nào (không khớp cả ba khi grep) — nên
+/// một handler Task 3 lấy <see cref="HmiScreenStore"/> mà không tự bắt lỗi này để lộ
+/// <c>SqliteException</c> ra ngoài pipeline mặc định của ASP.NET Core thành <b>HTTP 500 thân rỗng,
+/// sau khi giữ luồng request ~34 giây</b>. <b>Một
+/// <c>catch (SqliteException ex) when (…khoá chính…)</c> ánh xạ sang 409 — đúng khuôn
+/// <c>HmiTagEndpoints.cs:161</c> đã dùng cho một ràng buộc khoá thật — sẽ là CATCH CHẾT ở đây</b>: lỗi
+/// khoá chính không bao giờ tới; lỗi tranh chấp thật là <c>SQLITE_BUSY</c>. Task 3 cần bắt
+/// <c>SqliteErrorCode == 5</c> (BUSY) riêng, và cần QUYẾT ĐỊNH người vận hành thấy gì thay vì một màn
+/// hình trắng 34 giây rồi 500 — câu này ghi lại làm một GHI CHÚ cho việc đó, không phải một lời hứa
+/// rằng nó đã được xử lý.</para>
 ///
 /// <para><b><see cref="SecurityEnvVarTests.CollectionName"/> membership:</b> every test here opens a real
 /// <c>Microsoft.Data.Sqlite</c> connection through <see cref="HmiScreenStore"/>. 🔴 <b>Fix round 1 —
@@ -183,11 +224,12 @@ public class HmiScreenStoreTests : IDisposable
             () => store.RollbackAsync("line-overview", toVersion: 99));
 
         // Bước 4 của brief: thông điệp phải NÊU số phiên bản có thật, không chỉ nói "không hợp lệ".
-        // Một thông điệp bị tước hết số (vd. chỉ còn "khong co phien ban 99") vẫn là
-        // ArgumentOutOfRangeException — chỉ Assert.ThrowsAsync thôi thì không bắt được lỗi ấy.
-        Assert.Contains("1", ex.Message);
-        Assert.Contains("2", ex.Message);
-        Assert.Contains("99", ex.Message);
+        // 🔴 Fix round 2 — Assert.Contains("99", ...) bị RÚT: ArgumentOutOfRangeException tự nối thêm
+        // "Actual value was 99." vào cuối message, nên "99" luôn có mặt BẤT KỂ store nói gì — assertion
+        // ấy không thể đỏ. Hai dòng dưới khớp đúng CỤM CHỮ store tự viết (bao gồm cả số phiên bản có
+        // thật), không phải một chữ số rời có thể trùng ngẫu nhiên với đuôi message của framework.
+        Assert.Contains("không có phiên bản 99", ex.Message);
+        Assert.Contains("Phiên bản có thật: 1, 2", ex.Message);
     }
 
     [Fact]
@@ -199,6 +241,11 @@ public class HmiScreenStoreTests : IDisposable
             () => store.RollbackAsync("never-declared", toVersion: 1));
 
         Assert.Contains("never-declared", ex.Message);
+        // 🔴 Fix round 2 — tên bài hứa "SayingNoVersionExists" nhưng bài cũ chỉ đo screenId, nên một
+        // message bị tước sạch cụm "Phiên bản có thật: không có phiên bản nào" vẫn qua (đo được:
+        // stripping đúng cụm đó để lại bài này XANH). Khớp đúng cụm chữ store tự viết cho trường hợp
+        // rỗng, không chỉ tên màn hình.
+        Assert.Contains("Phiên bản có thật: không có phiên bản nào", ex.Message);
     }
 
     static HmiScreenDocument Screen(string id, string title) => new(

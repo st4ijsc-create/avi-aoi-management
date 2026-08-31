@@ -546,18 +546,50 @@ public static class ContractInvariants
     /// fix, even though no .NET store wrote an <see cref="HmiScreenDocument"/> AT THE TIME (🔴 WS-HMI-2
     /// Task 1 built that store; see this class's own remarks on
     /// <see cref="ThrowIfInvalid(HmiScreenDocument)"/> for the current state) — cheaper to close then than
-    /// to leave for whichever task built that store to rediscover.</para>
+    /// to leave for whichever task built that store to rediscover.
+    ///
+    /// 📎 <b>THIS SENTENCE WAS TENSE-EDITED ("writes … today" → "wrote … AT THE TIME"), fix round 2 —
+    /// deliberately, not the quote-verbatim-in-a-dated-block form the five retractions elsewhere in
+    /// this file use, and that is a decision rather than an oversight, stated because the re-review
+    /// asked for one or the other.</b> The other five all made a PRESENT-TENSE claim about today
+    /// ("no store WRITES", "NOBODY calls", "clause (a) IS vacuous") that this branch's own store made
+    /// false the moment it landed — a reader hitting them after <c>30c4fd62</c> would be told something
+    /// false about the CURRENT tree, which is exactly what the retract-in-place convention exists to
+    /// stop. This sentence never made that claim: it already read "even though no .NET store wrote …
+    /// AT THE TIME" — explicitly scoped to the fix-round-2 moment it narrates, inside a paragraph whose
+    /// whole subject is a past event ("Fixed alongside …, while the reasoning was in front of the
+    /// fix"). A verbatim quote-and-retract of a sentence that was never wrong to begin with would
+    /// manufacture a defect to perform the fix for, not disclose one. The one word that DID need to
+    /// move ("wrote", not "writes") is corrected in place, same as any other tense a narrated-history
+    /// paragraph gets right.</para>
     ///
     /// <para>🔴 <b>Fix round 3 — element-NULL depth (round 2) was not element-FIELD depth.</b> Re-review #2
     /// measured <c>new ScreenWidget(Id: null, Kind: null, Rect: null)</c> passing at 0 violations.
     /// <see cref="ScreenWidget.Id"/> is now required (its own identity key, the same role
-    /// <see cref="ComponentNode.Id"/> plays — no store dereferences it unsafely today because no store
-    /// writes this type at all, checked anyway for the same declared-required, same missing-field-mechanism
+    /// <see cref="ComponentNode.Id"/> plays — a store both writes this type AND dereferences it by
+    /// serialising it, checked anyway for the same declared-required, same missing-field-mechanism
     /// reasoning applied everywhere else this round). <see cref="ScreenWidget.Kind"/> is required for the
     /// SAME non-crash reason <see cref="TagDescriptor.Access"/> and <see cref="ComponentTagDef.Role"/> are
     /// (see their own checks): a null <c>Kind</c> reads as "not writable" below, silently skipping the
     /// policyAction rule for a <c>command-button</c>/<c>setpoint-input</c> widget whose OWN <c>kind</c> was
     /// omitted.</para>
+    ///
+    /// <para>📎 🔴 <b>"NO STORE DEREFERENCES IT UNSAFELY TODAY BECAUSE NO STORE WRITES THIS TYPE AT
+    /// ALL" — RETRACTED, WS-HMI-2 Task 1 fix round 2, kept verbatim. This is the SIXTH statement of
+    /// exactly this class this branch has now found and retracted — five were closed at fix round 1;
+    /// this one sat two paragraphs from an edited one and was walked past twice.</b> The parenthetical
+    /// in the paragraph directly above used to end: <i>"— no store dereferences it unsafely today because no store
+    /// writes this type at all, checked anyway for the same declared-required, same
+    /// missing-field-mechanism reasoning applied everywhere else this round)."</i> True through
+    /// <c>34fb998a</c>. False from <c>30c4fd62</c>: <c>St4i.EngineApi.HmiModel.HmiScreenStore.PutAsync</c>
+    /// serialises the whole document and binds <c>doc.ScreenId</c> as a SQL parameter — a store both
+    /// writes this type AND, by serialising <c>Widgets</c>, dereferences <c>ScreenWidget.Id</c>. What was
+    /// already true and remains true: <c>Id</c> is required for the reason stated first — its own
+    /// identity key, the same role <see cref="ComponentNode.Id"/> plays — the retracted clause was
+    /// never load-bearing for THAT reason, only an aside about whether a crash was reachable yet.
+    /// <b>The identical words survive, correctly, as QUOTED retraction text inside the very next
+    /// paragraph below ("THE SENTENCE THAT FOLLOWED … IS RETRACTED at fix round 4") — that occurrence
+    /// is a quote of history and must not be touched by this one.</b></para>
     ///
     /// <para>📎 🔴 <b>THE SENTENCE THAT FOLLOWED — "<see cref="WidgetRect"/> is deliberately NOT checked —
     /// nothing dereferences it" — IS RETRACTED at fix round 4, kept in git history rather than silently
@@ -579,14 +611,24 @@ public static class ContractInvariants
     /// <see cref="HmiScreenDocument"/>, so no field can be shown to crash a door that does not exist, and
     /// reading that vacuum as 'checked' for <c>Id</c> and as 'not checked' for <c>Rect</c> is precisely the
     /// incoherence above."</i> True through <c>34fb998a</c>; false from <c>30c4fd62</c> on —
-    /// <c>St4i.EngineApi.HmiModel.HmiScreenStore.PutAsync</c> is now exactly such a write door, and every
-    /// field this overload requires (<c>ScreenId</c>, <c>Title</c>, <c>Theme</c>, <c>Layout</c>/
-    /// <c>Breakpoint</c>, <c>Widgets</c>, per-widget <c>Id</c>/<c>Kind</c>/<c>Rect</c>) is now genuinely
-    /// bound as a SQL parameter or serialised at that door — clause (a) is no longer vacuous for a single
-    /// one of them. <b>What survives unchanged is the TIE-BREAK itself</b> — every non-nullable field of
-    /// the frozen record is required, stated below — because the store's arrival only makes clause (a)
-    /// affirm the same direction the tie-break already chose; it does not ask this method to choose a
-    /// different set of required fields, only to stop calling the reason for them hypothetical.</para>
+    /// <c>St4i.EngineApi.HmiModel.HmiScreenStore.PutAsync</c> is now exactly such a write door.</para>
+    ///
+    /// <para>📎 🔴 <b>THE REPLACEMENT THAT FOLLOWED THIS SENTENCE OVERSTATED, fix round 2, kept
+    /// verbatim: "clause (a) is no longer vacuous for a single one of them" / "the store's arrival only
+    /// makes clause (a) affirm the same direction the tie-break already chose."</b> Measured over the
+    /// real door, not assumed from its existence: <c>JsonSerializer.Serialize</c> on a document with
+    /// null <c>Title</c>/<c>Theme</c>/<c>Layout.Breakpoint</c>/per-widget <c>Kind</c>/<c>Rect</c> does
+    /// NOT throw — it serialises 88 bytes and returns normally. Binding a null <c>ScreenId</c> as the
+    /// SQL parameter DOES throw: <c>SqliteException</c>, error 19 extended 1299,
+    /// <c>"NOT NULL constraint failed: screens.screen_id"</c>. <b>Clause (a) engages for exactly ONE of
+    /// the eight required fields — <c>ScreenId</c> — not eight of eight.</b> The other seven
+    /// (<c>Title</c>, <c>Theme</c>, <c>Breakpoint</c>, <c>Widgets</c>, per-widget <c>Id</c>/<c>Kind</c>/
+    /// <c>Rect</c>) are required for the reasons already stated above and below THIS paragraph —
+    /// declared-non-nullable, or clause (b) (silently disables a §5 gate for <c>Kind</c>) — and remain
+    /// so on those grounds alone; clause (a) says nothing about them. <b>What survives unchanged is the
+    /// TIE-BREAK itself</b> — every non-nullable field of the frozen record is required, stated below —
+    /// because the tie-break was never SUPPOSED to rest on clause (a) engaging for every field; it rests
+    /// on the declared-non-nullable rule, which the store's arrival does not touch either way.</para>
     ///
     /// The tie is therefore broken ONCE,
     /// for the WHOLE overload, in one direction: <b>every field the frozen record declares NON-NULLABLE is
