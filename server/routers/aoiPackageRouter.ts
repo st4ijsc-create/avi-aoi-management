@@ -33,6 +33,9 @@ import {
 import JSZip from "jszip";
 import fs from "fs";
 import path from "path";
+// BG-87 — băm sha256 THẬT trên byte nhận được (kiểm toàn vẹn ZIP + toàn vẹn
+// từng ảnh), thay vì nhận trường rồi vứt (xem `tranByteGoiZip`/`commit` bên dưới).
+import { createHash } from "node:crypto";
 // ★★★ 2026-08-18 — mã tenant của một hàng ĐƯỢC GHI suy từ MÁY ĐÃ XÁC THỰC, không từ `meta.json`;
 // khoá lưu trữ gói cũng do máy chủ sinh theo chuỗi phân cấp ấy.
 import { macTenantChoGhi, khoaLuuTruGoi } from "./phamViGhiMay";
@@ -100,6 +103,37 @@ function envInt(name: string, fallback: number): number {
  */
 function nguongLoiVinhVienZip(): number {
   return envInt("AOI_PACKAGE_ZIP_MAX_PERMANENT_FAILS", 5);
+}
+
+/**
+ * ★★★ BG-87 (docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md §5-6) —
+ * TRẦN CỨNG `sizeBytes` phía máy chủ. NGUỒN CỦA CON SỐ — không phải một số
+ * đẹp chọn riêng cho task này: nó LÀ giới hạn `express.raw({ limit })` mà
+ * tuyến DUY NHẤT từng nhận byte ZIP thật từ Agent (`PUT
+ * /api/aoi/upload/:packageId`, `server/_core/index.ts`) đã áp dụng SẴN —
+ * `"200mb"`, một hằng số được CHỌN CÓ CHỦ ĐÍCH ở R-1 (doc 38, xem comment tại
+ * `LARGE_BODY_LIMIT` cùng file) làm trần BỘ NHỚ chống memory-exhaustion DoS
+ * (`express.raw()` giữ NGUYÊN body trong RAM trước khi handler chạy — 200MB
+ * là con số đã định cỡ theo dung lượng máy chủ, không phải "nghe hợp lý").
+ * BG-87 KHÔNG phát minh trần mới — nó RÚT con số ĐÃ CÓ THẬT này ra một hàm
+ * dùng CHUNG, để `presign` (từ chối SỚM — trước khi Agent tốn một lượt tải
+ * ZIP hàng trăm MB vô ích, mệnh đề 2) và `commit`/tuyến upload (đối chiếu
+ * byte THẬT, mệnh đề 3) không thể trôi lệch khỏi con số tầng transport ĐANG
+ * thực thi (`server/_core/index.ts` đổi từ chuỗi `"200mb"` hardcode SANG gọi
+ * THẲNG hàm này — một nguồn, không hai hằng số tách rời).
+ *
+ * Env-tunable qua `AOI_PACKAGE_ZIP_MAX_BYTES` (byte) — cùng quy ước
+ * `envInt()`/`nguongLoiVinhVienZip()` ở trên, để test hành vi "vượt trần"
+ * KHÔNG cần cấp phát một buffer 200MB thật (hạ trần bằng ENV rồi dùng buffer
+ * nhỏ — xem `aoiPackageBaLoToanVenBg87.test.ts`). RIÊNG cổng `.max()` TĨNH ở
+ * `presignCoreObject.sizeBytes` đọc hàm này MỘT LẦN lúc module nạp (giới hạn
+ * của Zod `.max()` — không lazy theo từng lượt parse); test hành vi trần ở
+ * CỔNG ĐÓ vì vậy dùng THẲNG giá trị mặc định (`sizeBytes: tranByteGoiZip() +
+ * 1` — presign chỉ nhận một SỐ, không cấp phát byte thật, nên 200MB+1 không
+ * tốn bộ nhớ nào để kiểm).
+ */
+export function tranByteGoiZip(): number {
+  return envInt("AOI_PACKAGE_ZIP_MAX_BYTES", 200 * 1024 * 1024);
 }
 
 /** Đếm THUẦN (không I/O) — tách riêng để test đơn vị không cần DB thật. */
@@ -364,11 +398,24 @@ async function getOrExtractImage(
 
   // Parse ZIP and extract image
   const zip = await JSZip.loadAsync(zipBuffer);
+  // BG-87 (docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md §3) — MỘT
+  // đường dẫn duy nhất: `images/<fileName>`. TRƯỚC bản vá này, `zip.file(fileName)`
+  // là một cửa THỨ HAI để tìm CÙNG một ảnh — hai đường tìm cho cùng một tệp
+  // nghĩa là hành vi phụ thuộc NỘI DUNG GÓI (ảnh nằm ở gốc hay ở images/), khó
+  // chẩn đoán khi lệch. Đo trước khi bỏ (task-2-report.md): 296 gói `committed`
+  // trong `aoi_management_test` — 0 gói dựng qua test hiện có phụ thuộc
+  // fallback (mọi `zip.file(` ghi ảnh trong repo đều dưới `images/`, đối
+  // chứng bằng grep toàn repo).
   const imagePath = `images/${fileName}`;
-  const imageFile = zip.file(imagePath) || zip.file(fileName);
+  const imageFile = zip.file(imagePath);
 
   if (!imageFile) {
-    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, `Image ${fileName} not found in ZIP package`);
+    throw appError(
+      "NOT_FOUND",
+      "ENTITY_NOT_FOUND",
+      { entity: "image" },
+      `Không tìm thấy ảnh "${fileName}" trong gói ZIP — đường mong đợi DUY NHẤT là "${imagePath}" (không còn tìm ở gốc gói).`,
+    );
   }
 
   let imageBuffer: Buffer = Buffer.from(await imageFile.async("uint8array")) as Buffer;
@@ -533,16 +580,43 @@ export function toOriginalResult(overall: "OK" | "NG" | "NTF"): "OK" | "NG" {
  *
  * `apiKey`/`machineCode` — VỆ SINH, cùng lý do + cùng con số đã chọn cho hai
  * trường CÙNG TÊN ở `submitInspectionCoreObject` (chỉ SO KHỚP qua
- * `authenticateMachine`, không INSERT). `sha256` — VỆ SINH: đã grep toàn file
- * `input.sha256` — chỉ xuất hiện ở khai báo schema (đây + `commit`), không hề
- * được đọc/so sánh ở đâu khác — `.max(128)` dư sức SHA-256 hex thật (64 ký
- * tự), chặn payload rác.
+ * `authenticateMachine`, không INSERT).
+ *
+ * ★★★ BG-87 (2026-09-02) — CẬP NHẬT lời khai `sha256`/`sizeBytes` ở trên: TRƯỚC
+ * bản vá này cả hai đúng là "khai báo nhưng không đọc ở đâu" (nhận rồi vứt) —
+ * SAU bản vá, KHÔNG còn đúng cho `sha256` (đọc/so ở `commit`, xem docblock tại
+ * `commit`) và KHÔNG còn đúng cho `sizeBytes` (`.max()` dưới đây + đối chiếu ở
+ * `commit`). Chi tiết từng trường:
+ *
+ * `sha256` — TUỲ CHỌN (KHÔNG bắt buộc), quyết định có chủ đích: (1) hợp đồng
+ * `imageRefSchema.sha256` (machineDataContractV2.ts) cũng khai `sha256?` —
+ * kiểu tuỳ chọn đã là quyết định của chủ dự án, không phải chỗ này tự chọn
+ * lại; (2) Agent/firmware ĐANG chạy hôm nay không gửi trường này (đo:
+ * 296 gói `committed` trong `aoi_management_test`, 0 gói có `sha256` — xem
+ * task-2-report.md) — bắt buộc NGAY sẽ từ chối 100% lưu lượng thật với 0 dữ
+ * liệu đếm-được về tốc độ nâng cấp Agent, ngược nguyên tắc di trú 3 giai đoạn
+ * của chính chuẩn này (§7: "cắt trước khi cái thay thế sẵn sàng là làm hệ
+ * thống tệ hơn", Đ-20). ⚠ TUỲ CHỌN KHÔNG ĐƯỢC tạo cảm giác "đã kiểm": một gói
+ * KHÔNG gửi `sha256` không hề an toàn hơn/kém hơn một gói gửi SAI — cả hai
+ * đều không có bảo đảm toàn vẹn từ trường này; chỉ gói gửi ĐÚNG mới có bảo
+ * đảm THẬT. `sha256` khai ở ĐÂY (presign, TRƯỚC khi byte tồn tại) KHÔNG được
+ * lưu lại để đối chiếu sau (không thêm cột DB cho việc này — ngoài phạm vi
+ * task) — muốn được KIỂM THẬT, Agent phải khai LẠI `sha256` ở lượt gọi
+ * `commit` (trường đã có sẵn ở `commit`'s input, xem docblock tại đó), thời
+ * điểm byte ZIP thật đã tồn tại trên máy chủ để băm và so. `.max(128)` dư sức
+ * SHA-256 hex thật (64 ký tự), chặn payload rác.
+ *
+ * `sizeBytes` — TRẦN CỨNG `tranByteGoiZip()` (xem docblock hàm đó ngay phía
+ * trên `demSoLoiVinhVienTuLichSu`): từ chối NGAY ở đây nếu Agent khai một con
+ * số vượt trần — TRƯỚC KHI Agent tốn một lượt tải ZIP (có thể hàng trăm MB)
+ * vô ích cho một gói chắc chắn sẽ bị `express.raw` (server/_core/index.ts)
+ * 413 sau đó. `.int().positive()` — byte không thể âm/lẻ.
  */
 export const presignCoreObject = z.object({
   apiKey: z.string().max(256).optional(),
   machineCode: z.string().max(50).optional(),
   inspectionId: z.string().max(100), // From agent (unique ID) — inspection_packages.packageId varchar(100)
-  sizeBytes: z.number(),
+  sizeBytes: z.number().int().positive().max(tranByteGoiZip()),
   sha256: z.string().max(128).optional(),
 });
 
@@ -688,8 +762,14 @@ export const aoiPackageRouter = router({
       apiKey: z.string().optional(),
       machineCode: z.string().optional(),
       packageId: z.string(),
-      sizeBytes: z.number().optional(),
-      sha256: z.string().optional(),
+      // BG-87 — TUỲ CHỌN, ĐỐI CHIẾU THẬT khi có mặt (xem khối kiểm ngay sau khi
+      // `zipBuffer` được tải về, trong thân mutation bên dưới): so với byte ZIP
+      // THẬT vừa tải, KHÔNG PHẢI chỉ nhận rồi bỏ như trước bản vá này.
+      sizeBytes: z.number().int().positive().max(tranByteGoiZip()).optional(),
+      // BG-87 — TUỲ CHỌN, KIỂM THẬT khi có mặt: băm `zipBuffer` bằng sha256, so
+      // với chuỗi Agent khai — lệch ⇒ từ chối cả gói (mệnh đề 1). `.max(128)`
+      // cùng con số presignCoreObject.sha256 (dư sức hex 64 ký tự thật).
+      sha256: z.string().max(128).optional(),
     }).refine(data => data.apiKey || data.machineCode, {
       message: "Either apiKey or machineCode must be provided",
     }))
@@ -785,6 +865,89 @@ export const aoiPackageRouter = router({
             zipBuffer = Buffer.from(await response.arrayBuffer());
           }
 
+          // ════════════════════════════════════════════════════════════════
+          // BG-87 (docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md §6)
+          // — BA lỗ toàn vẹn/kích thước ĐÓNG Ở ĐÂY, TRÊN `zipBuffer` — byte
+          // ZIP THẬT vừa tải về ở trên, KHÔNG phải con số Agent tự khai.
+          // ════════════════════════════════════════════════════════════════
+
+          // (1) Trần cứng — BACKSTOP trên byte THẬT. Cùng con số
+          // `express.raw({ limit })` của tuyến PUT /api/aoi/upload/:packageId
+          // (server/_core/index.ts) — xem docblock `tranByteGoiZip()`. Tuyến
+          // đó ĐÃ chặn ở tầng transport TRƯỚC KHI byte tới đây trong vận hành
+          // bình thường; kiểm lại ở đây là backstop cho đường ghi thẳng vào
+          // storage không đi qua Express (vd. thao tác vận hành/khôi phục).
+          const tranByte = tranByteGoiZip();
+          if (zipBuffer.length > tranByte) {
+            throw appError(
+              "PAYLOAD_TOO_LARGE",
+              "INVALID_VALUE",
+              { field: "sizeBytes" },
+              `TỪ CHỐI gói: ZIP nhận được ${zipBuffer.length} byte vượt trần cứng ${tranByte} byte ` +
+                `(= giới hạn express.raw của tuyến upload, server/_core/index.ts) — không commit.`,
+            );
+          }
+
+          // (2) `sizeBytes` ĐỐI CHIẾU byte THẬT — hai nguồn khai độc lập, kiểm
+          // CẢ HAI nếu có mặt (không còn nhận rồi vứt như trước bản vá này):
+          //   (2a) `input.sizeBytes` — Agent khai LẠI ngay tại lượt gọi
+          //        `commit` này.
+          if (input.sizeBytes != null && input.sizeBytes !== zipBuffer.length) {
+            throw appError(
+              "BAD_REQUEST",
+              "INVALID_VALUE",
+              { field: "sizeBytes" },
+              `TỪ CHỐI gói: sizeBytes Agent khai ở commit (${input.sizeBytes} byte) không khớp byte ZIP ` +
+                `THẬT nhận được (${zipBuffer.length} byte).`,
+            );
+          }
+          //   (2b) `pkg.fileSizeBytes` — con số Agent khai ở BƯỚC PRESIGN, lưu
+          //        trên hàng — CHỈ đối chiếu khi gói CHƯA từng đi qua tuyến
+          //        upload thật (`status==='pending'`): SAU khi tuyến upload
+          //        (server/_core/index.ts, cùng BG-87) đã ghi đè cột này bằng
+          //        byte THẬT của lần upload đó, một lượt `commit` gọi lại
+          //        không còn đối chiếu "lời khai gốc" nữa — nó luôn khớp
+          //        chính byte vừa tải nên phép so ở đây sẽ không phát hiện
+          //        được gì (không phải lỗ mới — gói ĐÃ qua tuyến upload nghĩa
+          //        là byte THẬT đã được đối chiếu Ở ĐÓ rồi, hoặc gói đã bị từ
+          //        chối tại đó).
+          if (
+            pkg.status === "pending" &&
+            pkg.fileSizeBytes != null &&
+            Number(pkg.fileSizeBytes) !== zipBuffer.length
+          ) {
+            throw appError(
+              "BAD_REQUEST",
+              "INVALID_VALUE",
+              { field: "sizeBytes" },
+              `TỪ CHỐI gói: sizeBytes Agent khai ở presign (${pkg.fileSizeBytes} byte) không khớp byte ZIP ` +
+                `THẬT nhận được (${zipBuffer.length} byte).`,
+            );
+          }
+
+          // (3) `sha256` KIỂM THẬT — TUỲ CHỌN (xem docblock `presignCoreObject`/
+          // `commit` input cho lý do bắt buộc/tuỳ chọn): nếu Agent gửi, băm
+          // NGUYÊN VĂN byte `zipBuffer` vừa tải về và so — lệch ⇒ từ chối.
+          // KHÔNG gửi ⇒ KHÔNG kiểm được gì (một gói không khai sha256 không hề
+          // "kém an toàn hơn" một gói khai SAI — cả hai đều không có bảo đảm
+          // toàn vẹn từ trường này; khác biệt là gói khai ĐÚNG mới có bảo đảm
+          // THẬT). So sánh KHÔNG phân biệt hoa/thường + `.trim()` — digest hex
+          // phía máy chủ luôn chữ thường, nhưng Agent .NET (`Convert.
+          // ToHexString`) mặc định trả HOA — không được coi hoa/thường khác
+          // nhau là "lệch nội dung".
+          if (input.sha256) {
+            const shaZipThuc = createHash("sha256").update(zipBuffer).digest("hex");
+            if (shaZipThuc.toLowerCase() !== input.sha256.trim().toLowerCase()) {
+              throw appError(
+                "BAD_REQUEST",
+                "INVALID_VALUE",
+                { field: "sha256" },
+                `TỪ CHỐI gói: sha256 Agent khai ("${input.sha256}") không khớp sha256 THẬT của byte ZIP ` +
+                  `nhận được ("${shaZipThuc}") — dữ liệu có thể đã hỏng khi truyền/lưu. Tải lại ZIP và commit lại.`,
+              );
+            }
+          }
+
           const zip = await JSZip.loadAsync(zipBuffer);
           const metaFile = zip.file("meta.json");
           if (metaFile) {
@@ -871,10 +1034,20 @@ export const aoiPackageRouter = router({
             }
             // Bất biến 2 — mọi `images[].fileName` PHẢI có tệp thật trong
             // `images/` của ZIP. Thiếu ⇒ từ chối, cùng lý do phân loại VĨNH VIỄN
-            // ở trên. (Fallback tên trần `zip.file(fileName)` ở đường ĐỌC ảnh
-            // — `getOrExtractImage` — KHÔNG bị đụng ở đây, đó là Task 2/BG-87.)
+            // ở trên. CÙNG VÒNG LẶP (BG-87, Task 2) — nếu `images[].sha256` có
+            // mặt (tuỳ chọn, xem `imageRefSchema`), băm nội dung ảnh THẬT vừa
+            // đọc và so — lệch ⇒ từ chối CẢ GÓI, không âm thầm bỏ qua MỘT ảnh
+            // hỏng (cùng nguyên tắc "không âm thầm bỏ ảnh" của bất biến 1).
+            // KHÔNG có `sha256` ⇒ KHÔNG kiểm được gì cho ảnh đó — KHÔNG coi là
+            // lỗi (tuỳ chọn, xem docblock `presignCoreObject`/`commit` cho lý
+            // do bắt buộc/tuỳ chọn — cùng quyết định áp cho cả sha256 cấp-ZIP
+            // và sha256 cấp-ảnh). Fallback tên trần `zip.file(fileName)` ở
+            // đường ĐỌC ảnh SAU commit (`getOrExtractImage`, GET
+            // /api/aoi/image/:packageId/:fileName) — ĐÃ BỎ ở bản vá này (BG-87,
+            // Task 2, "một đường dẫn duy nhất").
             for (const img of images) {
-              if (!zip.file(`images/${img.fileName}`)) {
+              const anhFileBg87 = zip.file(`images/${img.fileName}`);
+              if (!anhFileBg87) {
                 throw appError(
                   "BAD_REQUEST",
                   "INVALID_VALUE",
@@ -882,6 +1055,19 @@ export const aoiPackageRouter = router({
                   `TỪ CHỐI gói: images[].fileName="${img.fileName}" không có tệp thật trong images/ của ` +
                     `ZIP (bất biến 2, §4 chuẩn gói ảnh).`,
                 );
+              }
+              if (img.sha256) {
+                const noiDungAnhThuc = Buffer.from(await anhFileBg87.async("uint8array"));
+                const shaAnhThuc = createHash("sha256").update(noiDungAnhThuc).digest("hex");
+                if (shaAnhThuc.toLowerCase() !== img.sha256.trim().toLowerCase()) {
+                  throw appError(
+                    "BAD_REQUEST",
+                    "INVALID_VALUE",
+                    { field: "images[].sha256" },
+                    `TỪ CHỐI gói: images[].sha256 Agent khai cho fileName="${img.fileName}" ("${img.sha256}") ` +
+                      `không khớp sha256 THẬT của ảnh nhận được ("${shaAnhThuc}") — dữ liệu ảnh có thể đã hỏng.`,
+                  );
+                }
               }
             }
 
@@ -1119,7 +1305,9 @@ export const aoiPackageRouter = router({
                         productModelId: gateProductModelId,
                         source: "aoi_package",
                         getImage: async () => {
-                          const f = zip.file(`images/${gateFileName}`) || zip.file(gateFileName);
+                          // BG-87 — một đường dẫn duy nhất (bỏ fallback tên
+                          // trần), cùng chuẩn `getOrExtractImage` ở trên.
+                          const f = zip.file(`images/${gateFileName}`);
                           if (!f) return null;
                           return Buffer.from(await f.async("uint8array"));
                         },

@@ -4644,7 +4644,17 @@ async function startServer() {
   // AOI Package Upload - REST endpoint for binary ZIP upload
   // Agent uploads ZIP directly via this endpoint
   // ============================================================
-  app.put("/api/aoi/upload/:packageId", express.raw({ type: "*/*", limit: "200mb" }), uploadGuard("zip"), async (req, res) => {
+  // BG-87 (docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md §6) — MỘT
+  // trần byte DUY NHẤT cho toàn tuyến ZIP: cùng hàm `tranByteGoiZip()`
+  // (aoiPackageRouter.ts) dùng ở cổng `sizeBytes` của `presign` VÀ ở đối
+  // chiếu bên trong handler dưới đây — import ĐỘNG MỘT LẦN ở đây (thời điểm
+  // ĐĂNG KÝ route, không phải mỗi request — `startServer()` là async nên
+  // top-level await hợp lệ) để `express.raw({ limit })` dùng ĐÚNG con số đó.
+  // TRƯỚC bản vá này, `"200mb"` ở đây là một chuỗi hardcode RIÊNG, không liên
+  // hệ gì với trần `sizeBytes` mới ở `presign` — hai hằng số có thể trôi lệch
+  // theo thời gian nếu một bên đổi mà bên kia quên.
+  const aoiPackageRouterModuleAtBoot = await import("../routers/aoiPackageRouter");
+  app.put("/api/aoi/upload/:packageId", express.raw({ type: "*/*", limit: aoiPackageRouterModuleAtBoot.tranByteGoiZip() }), uploadGuard("zip"), async (req, res) => {
     const startTime = Date.now();
     
     // Ensure CORS headers are set (even on error responses). Hardening (WS0.2):
@@ -4751,7 +4761,7 @@ async function startServer() {
       // MỘT nguồn sự thật CHUNG với `presign`/`commit` — không tự định nghĩa
       // "dead nghĩa là gì" một lần nữa ở đây (đúng lớp lỗi BG-65 vừa vá: một
       // bản chép tay RIÊNG của luật trạng-thái-cuối lệch khỏi bản gốc).
-      const { laGoiDaChet } = await import("../routers/aoiPackageRouter");
+      const { laGoiDaChet, tranByteGoiZip } = await import("../routers/aoiPackageRouter");
       if (laGoiDaChet(pkg.status)) {
         return res.status(422).json({
           success: false,
@@ -4772,6 +4782,44 @@ async function startServer() {
       }
 
       console.log(`[AOI-Upload] Body received: ${zipBuffer.length} bytes for ${packageId}`);
+
+      // ════════════════════════════════════════════════════════════════════
+      // BG-87 (docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md §6) — hai
+      // lỗ đóng Ở ĐÂY, TRÊN `zipBuffer` — byte ZIP THẬT vừa nhận qua
+      // `express.raw`, TRƯỚC `storagePut`/UPDATE (cùng nguyên tắc "từ chối
+      // TRƯỚC khi ghi" mà cổng `laGoiDaChet` ở trên đã theo).
+      // ════════════════════════════════════════════════════════════════════
+      // (1) Trần cứng — BACKSTOP. `express.raw({ limit: tranByteGoiZip() })`
+      // ở route này (xem đăng ký route phía trên) ĐÃ chặn Ở TẦNG TRANSPORT
+      // (Node/Express tự trả 413 trước khi handler này chạy) — nhánh dưới đây
+      // chỉ còn ý nghĩa nếu limit đó từng bị đổi lệch khỏi `tranByteGoiZip()`
+      // (đúng lý do dùng CHUNG một hàm — một nguồn, không hai con số tách rời
+      // có thể trôi lệch theo thời gian).
+      const tranByteUpload = tranByteGoiZip();
+      if (zipBuffer.length > tranByteUpload) {
+        return res.status(413).json({
+          success: false,
+          message: `ZIP ${(zipBuffer.length / 1048576).toFixed(1)}MB vượt trần cứng ${(tranByteUpload / 1048576).toFixed(0)}MB`,
+        });
+      }
+
+      // (2) `sizeBytes` ĐỐI CHIẾU byte THẬT — `pkg.fileSizeBytes` ở đây VẪN LÀ
+      // lời khai gốc từ `presign` (route này CHƯA overwrite nó — UPDATE nằm
+      // dưới, SAU nhánh này) CHỈ khi đây là LẦN upload ĐẦU TIÊN sau presign
+      // (`!isRetry` — biến đã có sẵn ở trên, không tính lại logic retry lần
+      // hai). Một lượt RETRY hợp lệ (sửa ZIP rồi tải lại — mệnh đề 5 CHỐNG
+      // HỒI QUY, `aoiPackageZipCuaNoiDoi.test.ts`) có thể đổi kích thước thật
+      // một cách CHÍNH ĐÁNG (nội dung đã sửa) — so nó với `fileSizeBytes` của
+      // LẦN upload TRƯỚC (không còn là lời khai gốc nữa) sẽ từ chối NHẦM một
+      // retry hợp lệ, nên chỉ đối chiếu ở lần đầu.
+      if (!isRetry && pkg.fileSizeBytes != null && Number(pkg.fileSizeBytes) !== zipBuffer.length) {
+        return res.status(400).json({
+          success: false,
+          message:
+            `sizeBytes Agent khai ở presign (${pkg.fileSizeBytes} byte) không khớp byte ZIP THẬT nhận được ` +
+            `(${zipBuffer.length} byte) — gói KHÔNG được lưu.`,
+        });
+      }
 
       // Store the ZIP file
       const { storagePut } = await import("../storage");
@@ -4989,8 +5037,15 @@ async function startServer() {
       }
 
       const zip = await JSZip.loadAsync(zipBuffer);
-      const imageFile = zip.file(`images/${fileName}`) || zip.file(fileName);
-      if (!imageFile) return res.status(404).json({ message: `Image ${fileName} not found in ZIP` });
+      // BG-87 — một đường dẫn duy nhất, cùng chuẩn `getOrExtractImage`
+      // (aoiPackageRouter.ts) — bỏ fallback tên trần `zip.file(fileName)`.
+      const imagePathBg87 = `images/${fileName}`;
+      const imageFile = zip.file(imagePathBg87);
+      if (!imageFile) {
+        return res.status(404).json({
+          message: `Không tìm thấy ảnh "${fileName}" trong gói ZIP — đường mong đợi DUY NHẤT là "${imagePathBg87}".`,
+        });
+      }
 
       const imageBuffer = Buffer.from(await imageFile.async("uint8array"));
 
