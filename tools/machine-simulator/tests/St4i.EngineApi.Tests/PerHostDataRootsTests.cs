@@ -674,17 +674,26 @@ public sealed class PerHostDataRootsTests
             "than parking it further — so this message no longer lists them, because a 'still stale' list " +
             "that is no longer true is the same defect one generation on, which is exactly what this " +
             "message exists to police. What the closure had to respect, recorded because it is the reusable " +
-            "part: 'sixteen' is NOT one fact in this tree. It is the DECLARED-directory count in those " +
-            "eleven places, the PURGE count (18 minus the two the owner's 2026-08-23(b) ruling keeps) in " +
+            "part: a spelled count is NOT one fact in this tree. It is the DECLARED-directory count in those " +
+            "eleven places, the PURGE count (19 minus the two the owner's 2026-08-23(b) ruling keeps) in " +
             "remove-data.ps1's .SYNOPSIS/.PARAMETER/parameter-block prose, and a count of unrelated " +
             "artefacts in TestHarnessIsolationTests.cs:64 — so a find-and-replace corrupts two of those " +
-            "three. What did the work was the ELEVEN LINE NUMBERS the previous version of this message " +
+            "three. 🔴 THERE IS A FOURTH, found while walking 18→19 (WS-HMI-0c): remove-data.ps1's " +
+            ".DESCRIPTION also carries a CREATED-BY-A-RUNNING-ENGINE count, and it does NOT move with the " +
+            "declared count. `hmi-tagmaps` is the one leaf the engine only ever READS — it is an operator's " +
+            "hand-authored input, ingested at startup — so that sentence went from 'EIGHTEEN of the " +
+            "eighteen are created by a running engine' to 'EIGHTEEN of the NINETEEN', and a fifth " +
+            "directory that the engine writes would move it again. Four facts, three of which move on " +
+            "different rules. What did the work was the ELEVEN LINE NUMBERS the previous version of this message " +
             "carried — deleted in the same edit that closed them, because a list of stale sites that are no " +
             "longer stale is itself the defect. To read them, check out 6ca5c729 — the PARENT of 63f066a4, " +
             "which is the commit that removed them; an earlier draft of this sentence pointed at 63f066a4 " +
             "itself, where `git show 63f066a4:…PerHostDataRootsTests.cs | grep -c MachineConfigStore.cs:94` " +
             "returns 0, i.e. a self-reference that does not resolve inside the very message written to stop " +
-            "exactly that. Anyone moving 18→19 must still walk the by-hand list named earlier here. " +
+            "exactly that. 🔴 18→19 HAS NOW BEEN WALKED (WS-HMI-0c, `hmi-tagmaps`): the by-hand list above " +
+            "was followed line by line rather than by find-and-replace, which is what kept the purge count " +
+            "and the created-by-engine count from being dragged along with the declared one. Anyone moving " +
+            "19→20 must walk it again. " +
             "This test exists because four of those places were already off by one when it was written, " +
             "and it was extended because the Vietnamese half of two of them was off by two afterwards.");
     }
@@ -841,15 +850,6 @@ public sealed class PerHostDataRootsTests
             ["src/St4i.EdgeService/EdgeConnectors.cs"] = ReadOnly,            // connectors.json
             ["src/St4iMachineSimulator/Services/FleetService.cs"] = ReadOnly, // fleet.json
 
-            // 🔴 WS-HMI-0c Task 4 (fix round) — tag-maps/{machineCode}.json, one hand-authored file per
-            // machine, READ at startup and never written. Deliberately paired with NO relocation variable,
-            // which is what keeps the variable population above EMPTY: BF-1's rule is that a directory
-            // WITH one must be derivable from the machine-wide root, and the first version of this feature
-            // had both a beside-the-binary default and an ST4I_HMI_TAGMAPS_DIR, which this guard and
-            // TestHarnessIsolationTests both refused. The machine-wide alternative is real and was built,
-            // but it needs a keep-versus-purge classification in remove-data.ps1 — owner ruling
-            // 2026-08-23(b) territory — so it is with the owner rather than in this table.
-            ["src/St4i.EngineApi/HmiModel/TagIngestionService.cs"] = ReadOnly, // tag-maps/{machineCode}.json
 
             ["src/St4i.DesktopShell/MainWindow.xaml.cs"] = NotAStore,         // engine exe path; its writes are per-USER %LOCALAPPDATA%
             ["src/St4i.EngineApi/Program.cs"] = NotAStore,                    // connectors.json read + wwwroot (packaged web UI)
@@ -860,6 +860,13 @@ public sealed class PerHostDataRootsTests
             // must gate on it; it takes both roots as parameters and resolves neither. Prose, and the
             // category check enforces that: the day it starts composing a path from the base directory,
             // every occurrence stops being on a `///` line and this entry goes red.
+            // 🔴 WS-HMI-0c — RE-CATEGORISED, not deleted. This file was ReadOnly while tag maps sat
+            // beside the binary; the owner's purge ruling moved them under %ProgramData%, so it no
+            // longer RESOLVES that root. Three occurrences remain and every one is on a /// line,
+            // explaining the history and why the startup loop takes its directory as a parameter —
+            // which is exactly what the Prose category asserts, and what goes red the day this file
+            // composes a path from the base directory again.
+            ["src/St4i.EngineApi/HmiModel/TagIngestionService.cs"] = Prose,
             ["src/St4i.EdgeCore/Config/LegacyRootMigration.cs"] = Prose,
             ["src/St4i.EdgeCore/Engine/EdgeAgentPipelines.cs"] = Prose,
             ["src/St4i.EdgeCore/Mapping/MappingProfileResolver.cs"] = Prose,

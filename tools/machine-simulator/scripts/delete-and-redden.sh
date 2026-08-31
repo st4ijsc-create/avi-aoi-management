@@ -317,8 +317,11 @@ measure "D-0c-11 per-machine swallow removed" "MUTANT-0C-SWALLOW1"
 perl -0777 -pi -e 's/        catch \(Exception ex\)\r?\n        \{\r?\n            \/\/ [^\n]{0,8}THE DIRECTORY SWALLOW/        catch (Exception ex) when (false) \/* MUTANT-0C-SWALLOW2 *\/\n        {\n            \/\/ THE DIRECTORY SWALLOW/s' $TIS
 measure "D-0c-12 directory-listing swallow removed (W-HIGH-1)" "MUTANT-0C-SWALLOW2"
 
-perl -0777 -pi -e 's/Path\.Combine\(AppContext\.BaseDirectory, TagIngestionService\.DirectoryName\)/Path.Combine(AppContext.BaseDirectory, "tagmaps") \/* MUTANT-0C-DIRNAME *\//' $TIS
-measure "D-0c-13 tag-map folder name typo'd" "MUTANT-0C-DIRNAME"
+# The leaf name. Repointed for WS-HMI-0c's move to the machine-wide root: this row used to mutate
+# Path.Combine(AppContext.BaseDirectory, DirectoryName), which no longer exists — and the harness reported
+# MUTATION DID NOT LAND rather than a green, which is the whole reason that check is there.
+perl -0777 -pi -e 's/public const string DirectoryName = "hmi-tagmaps";/public const string DirectoryName = "hmi-tagmapz"; \/* MUTANT-0C-DIRNAME *\//' $TIS
+measure "D-0c-13 tag-map leaf name typo'd" "MUTANT-0C-DIRNAME"
 
 # MED-3: the three schema-required-field presence checks, in the assembly that owns them.
 perl -0777 -pi -e 's/if \(t\.Source is null\)/if (false) \/* MUTANT-0C-NOSOURCE *\//' $CI

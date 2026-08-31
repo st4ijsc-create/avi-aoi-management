@@ -91,36 +91,53 @@ public sealed class TagIngestionWiringTests
     }
 
     /// <summary>
-    /// The tag-map folder constant, pinned the same way <c>HmiModelWiringTests</c> pins the two store env
-    /// vars: a constant nothing names is a constant that drifts from whatever is keyed on it.
+    /// The tag-map directory constants, pinned the same way <c>HmiModelWiringTests</c> pins the two store
+    /// env vars: a constant nothing names is a constant that drifts from whatever is keyed on it.
     ///
-    /// <para><b>And the deliberate ABSENCE of a relocation variable</b>, which is the half a reader is
-    /// most likely to think was an oversight. Tag maps sit beside the binary with no
-    /// <c>ST4I_*_DIR</c> — the same shape as <c>connectors.json</c> and <c>fleet.json</c>. A version with
-    /// both a variable and a beside-the-binary default was written and reverted after
-    /// <c>PerHostDataRootsTests</c> and <c>TestHarnessIsolationTests</c> refused it; asserting the absence
-    /// here means a future edit that adds the variable back without also moving the default under
-    /// <c>%ProgramData%</c> fails HERE, next to the explanation, rather than in a whole-tree census whose
-    /// message cannot know why this directory exists.</para>
+    /// <para>🔴 <b>MACHINE-WIDE, after the owner ruled the leaf PURGE-on-decommission.</b> An earlier
+    /// version of this test asserted the OPPOSITE — that tag maps sat beside the binary and deliberately
+    /// had no relocation variable. That shape was legal but carried a real cost: a publish replaces a
+    /// directory beside the binary, so hand-authored tag maps died on every upgrade. Completing the
+    /// machine-wide shape required a keep-versus-purge classification, which is owner ruling
+    /// 2026-08-23(b)'s territory; with the ruling made, the variable exists and the default is derivable
+    /// from the machine-wide root, which is what BF-1 requires of any directory that HAS a variable.</para>
     ///
-    /// <para>Does not measure: that any file is read from it. The folder is absent in every build output,
-    /// which is exactly what makes this task's startup change byte-identical for an existing deployment —
-    /// and is why no test here creates it.</para>
+    /// <para>The variable's NAME is derived rather than chosen — README §15.9's rule is <c>ST4I_</c> + the
+    /// leaf uppercased with <c>-</c> → <c>_</c> + <c>_DIR</c> — so this asserts the derivation rather than
+    /// a spelling, and a leaf rename that forgot the variable fails here as well as in
+    /// <c>PerHostDataRootsTests</c>.</para>
+    ///
+    /// <para>Does not measure: that any file is read from it, or that the directory exists. It is absent on
+    /// a machine that has never declared a tag map, which is the ordinary state.</para>
     /// </summary>
     [Fact]
-    public void Tag_maps_live_beside_the_binary_and_deliberately_have_no_relocation_variable()
+    public void Tag_maps_live_under_the_machine_wide_root_with_a_variable_whose_name_is_derived()
     {
-        Assert.Equal("tag-maps", TagIngestionService.DirectoryName);
+        Assert.Equal("hmi-tagmaps", TagIngestionService.DirectoryName);
 
-        var relocationVariables = typeof(TagIngestionService)
-            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-            .Where(f => f.FieldType == typeof(string))
-            .Select(f => f.GetValue(null) as string)
-            .Where(v => v is not null && v.StartsWith("ST4I_", StringComparison.Ordinal) &&
-                        v.EndsWith("_DIR", StringComparison.Ordinal))
-            .ToList();
+        // The README §15.9 rule, applied rather than restated.
+        Assert.Equal(
+            "ST4I_" + TagIngestionService.DirectoryName.ToUpperInvariant().Replace('-', '_') + "_DIR",
+            TagIngestionService.EnvVarDir);
 
-        Assert.Empty(relocationVariables);
+        // Derivable from the machine-wide root, which is what makes the variable legal under BF-1.
+        Assert.Equal(
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "ST4I", "sim", TagIngestionService.DirectoryName),
+            TagIngestionService.DefaultRoot);
+
+        // …and the env var wins when set, which is the whole point of having one.
+        var previous = Environment.GetEnvironmentVariable(TagIngestionService.EnvVarDir);
+        try
+        {
+            Environment.SetEnvironmentVariable(TagIngestionService.EnvVarDir, @"X:\relocated");
+            Assert.Equal(@"X:\relocated", TagIngestionService.ResolveDir());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(TagIngestionService.EnvVarDir, previous);
+        }
     }
 
     /// <summary>

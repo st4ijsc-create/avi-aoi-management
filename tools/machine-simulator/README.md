@@ -1284,7 +1284,7 @@ pass) removes only what the MSI itself installed — everything under `%ProgramF
 Simulator\`, the Start Menu/Startup shortcuts, and — if `ServiceFeature` was enabled — stops and
 deletes the `St4iEngineApi` service.
 
-**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine declares **eighteen**
+**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine declares **nineteen**
 directories there (`historian`, `wal`, `security`, `creds`, `notifications`, `identity`,
 `connector-config`, `opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`,
 `machine-config`, `products`, `ecosystem` — 🔴 the last three arrived on **2026-08-23**, when the owner
@@ -1487,7 +1487,7 @@ chúng chứa mọi định nghĩa sản phẩm/công thức mà vận hành vi�
 bằng tay; **cố ý KHÔNG có cờ nào** làm việc đó. `machine-config` là thư mục mới thứ ba và nó **CÓ** bị xoá:
 nó giữ tham số vận hành của máy và danh sách `History` chỉ-thêm của mọi lần điều chỉnh — một bản ghi về
 việc máy ĐÃ LÀM GÌ, không phải thứ vận hành viên dựng lên.
-🔴 **CẬP NHẬT 2026-08-30 (WS-HMI-0a Task 5) — engine KHAI MƯỜI TÁM thư mục, script xoá MƯỜI SÁU.**
+🔴 **CẬP NHẬT 2026-08-30 (WS-HMI-0a Task 5) — engine KHAI MƯỜI CHÍN thư mục, script xoá MƯỜI BẢY.**
 `hmi-model` (cây linh kiện đã khai của máy) và `hmi-tags` (namespace tag đã khai) gia nhập danh sách
 XOÁ, không phải danh sách GIỮ — chúng gần với `machine-config` (bản ghi máy đang chạy gì) hơn là với
 `products`/`ecosystem` (cấu hình vận hành viên tự soạn), và danh sách GIỮ vẫn ghim đúng
@@ -1702,7 +1702,7 @@ Windows machine** (§24). They share no roster, no claim registry and no channel
 **The rule, and it is the whole mechanism — and it is scoped to the MACHINE-WIDE population:** every
 directory this product creates under
 `%ProgramData%\ST4I\sim\<name>` is relocatable by an environment variable whose name is derived from the
-directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **18** of them
+directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **19** of them
 today, and there is no exception **within that population**. 🔴 **It is not the whole of what this product
 writes**: three more stores live BESIDE THE ENGINE BINARY and are isolated only by accident — see "The
 SECOND store population" below, and read it before concluding two hosts are separated.
@@ -2080,7 +2080,7 @@ triển khai bình thường (§24). Hai host không chia sẻ roster, không ch
 nào — nhưng mặc định chúng **dùng chung một bộ file**. Mục này nói cách cho mỗi host một bộ riêng, và cái giá
 phải trả. **Quy tắc:** mọi thư mục sản phẩm tạo dưới `%ProgramData%\ST4I\sim\<tên>` đều dời chỗ được bằng một
 biến môi trường suy ra được từ tên thư mục — **`ST4I_` + `<TÊN>` (viết hoa, `-` → `_`) + `_DIR`**. Hôm nay có
-**mười tám** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên).
+**mười chín** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên).
 📎 🔴 **RÚT 2026-08-30 (review toàn nhánh WS-HMI-0a, Important 1), giữ nguyên văn:** câu ngay trên đọc
 *"Hôm nay có **mười sáu** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên)."* Nó đúng cho
 tới 2026-08-30, và nó **sai từ ngày ấy mà không ai thấy**: WS-HMI-0a Task 5 chuyển số này 16 → 18 ở nửa
@@ -6229,7 +6229,7 @@ holds COM3 — and on a **gateway** there is no such protection to reason about 
   is the WAL queue), so nothing regressed — **and E-5 did not change that either: an RS-485 bus opens a COM
   port and a gateway bus opens a socket; neither is a store, and the shared-open bookkeeping is an in-process
   dictionary the host owns.** 🔴 **F-1 changed the "by default": per-host data roots are now a SUPPORTED
-  deployment (§15.9)** — every one of the **eighteen** (🔴 thirteen until 2026-08-23, sixteen until
+  deployment (§15.9)** — every one of the **nineteen** (🔴 thirteen until 2026-08-23, sixteen until
   2026-08-30 — WS-HMI-0a Task 5 added `hmi-model`/`hmi-tags`) **machine-wide**
   directories under `%ProgramData%` is
   relocatable by a derivable `ST4I_*_DIR`
@@ -6475,7 +6475,7 @@ của nó là hàng đợi WAL), nên không có gì thụt lùi — **và E-5 c
 cổng COM còn một tuyến gateway mở một socket; không cái nào là store, và sổ sách chia sẻ lần mở là một
 dictionary trong tiến trình do host sở hữu.** **Máy của một connector đã xoá vẫn nằm trong roster tới khi khởi
 động lại** (§23.5), không đổi. 🔴 **F-1 đổi phần "mặc định" ấy: gốc dữ liệu theo host giờ là hình dạng triển
-khai ĐƯỢC HỖ TRỢ (§15.9)** — cả **mười tám** thư mục **toàn máy** dưới `%ProgramData%` đều dời chỗ được bằng
+khai ĐƯỢC HỖ TRỢ (§15.9)** — cả **mười chín** thư mục **toàn máy** dưới `%ProgramData%` đều dời chỗ được bằng
 một biến `ST4I_*_DIR` suy ra được (📎 🔴 **RÚT 2026-08-30 (review toàn nhánh WS-HMI-0a, Important 1), giữ
 nguyên văn:** chỗ này đọc *"cả **mười sáu** thư mục **toàn máy**"*, trong khi nửa TIẾNG ANH của đúng câu này
 đã được WS-HMI-0a Task 5 sửa thành **eighteen** cùng với **nineteenth** ở mệnh đề sau. Hai nửa của một câu
@@ -6752,22 +6752,35 @@ string untouched and satisfy every current assertion.
 is a census of the four carrier files — the day a fifth production file mentions the field it reddens, and
 forces this decision at the moment it is being made.
 
-### 26.6 🔴 OPEN OWNER DECISION — where tag maps live
+### 26.6 Where tag maps live — RULED, and what a decommission costs
 
-Tag maps ship **beside the binary** (`tag-maps/{machineCode}.json`, next to `connectors.json` and
-`fleet.json`) with **no relocation environment variable**. That pairing is deliberate: BF-1's rule is that a
-directory which *has* an `ST4I_*_DIR` must be derivable from the machine-wide root, and
-`PerHostDataRootsTests` + `TestHarnessIsolationTests` both refuse a variable with a beside-the-binary
-default.
+Tag maps live under the machine-wide root: **`%ProgramData%\ST4I\sim\hmi-tagmaps\{machineCode}.json`**,
+relocatable via **`ST4I_HMI_TAGMAPS_DIR`**. That makes them the **nineteenth** machine-wide directory.
 
-**The cost, stated so nobody discovers it in the field: a publish REPLACES that directory, so hand-authored
-tag maps are destroyed by every upgrade** — exactly as a hand-edited `connectors.json` is today.
+**The owner ruled the leaf PURGE** (the keep-versus-purge classification that owner ruling
+**2026-08-23(b)** reserves). Two consequences, both deliberate:
 
-The machine-wide alternative (`%ProgramData%\ST4I\sim\hmi-tagmaps`) was built and reverted: it requires a
-**keep-versus-purge classification in `packaging/remove-data.ps1`**, and that is owner ruling
-**2026-08-23(b)** territory — whether a hand-authored tag map is operator configuration that survives
-decommissioning, like `ecosystem`/`products`, or generated data a wipe removes. **This is with the owner and
-is not resolved here.**
+- **They survive an upgrade.** The first shape put them beside the binary with no variable, like
+  `connectors.json`. That was legal, and it carried a real cost: **a publish REPLACES a directory beside the
+  binary, so hand-authored tag maps died on every upgrade.** Machine-wide fixes exactly that.
+- **A decommissioning wipe removes them.** `packaging/remove-data.ps1 -HmiTagMapsDir` purges the leaf; it is
+  *not* a third member of the `products`/`ecosystem` keep exemption.
+
+**What an operator loses on decommission, stated as a decision rather than left to be discovered:** every
+tag map on the machine, and with it every HMI screen those maps drive. The connectors still run and the
+machines still produce — a tag map is not a safety or control artefact — but the screens do not come back
+until somebody re-authors the files. **Copy the directory out first if the site is being rebuilt rather than
+retired.**
+
+**Two guards refused the earlier half-shape and were right both times**, which is why it took a ruling to
+finish: a first version had *both* a variable and a beside-the-binary default, and
+`PerHostDataRootsTests.TheBesideTheBinaryStorePopulation_IsEmpty_…` and `TestHarnessIsolationTests` each
+rejected it. BF-1's rule is that a directory which *has* an `ST4I_*_DIR` must be derivable from the
+machine-wide root. Neither guard was worked around.
+
+**It is the one leaf on that list the engine only ever READS.** The other eighteen it writes. That is why
+`remove-data.ps1`'s "created by a running engine" sentence reads *eighteen of the nineteen* — a count that
+does **not** move with the declared count, and a distinction a find-and-replace would have destroyed.
 
 ### 26.7 The swallow, and what it costs an operator
 
@@ -6790,7 +6803,7 @@ for.
 **(b) The directory-listing swallow** (`IndexMapFiles`) — **the one with the wider blast radius, and the
 one that went unmeasured longest.** It is reached before any machine is considered, from a method called at
 the top of `IngestAll`, which `Program.cs` invokes from a **top-level statement with nothing above it to
-catch**. Without it, a permission change on `tag-maps/` — an operator tightening an ACL, an installer
+catch**. Without it, a permission change on `hmi-tagmaps/` — an operator tightening an ACL, an installer
 running as a different principal, an antivirus lock — propagates out and **the host does not start**.
 Every machine on that box stops, not one screen.
 

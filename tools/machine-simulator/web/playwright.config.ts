@@ -319,6 +319,15 @@ export default defineConfig({
         // CAN write there", not on "this suite's specs happen to exercise it".
         ST4I_HMI_MODEL_DIR: join(e2eDataDir, "hmi-model"),
         ST4I_HMI_TAGS_DIR: join(e2eDataDir, "hmi-tags"),
+        // 🔴 WS-HMI-0c — THE NINETEENTH. Every "eighteen" above this point is now NINETEEN.
+        // Unlike its eighteen neighbours this leaf is an INPUT the engine READS and never writes — one
+        // hand-authored {machineCode}.json tag map per machine, ingested at startup. Isolated anyway, and
+        // the reason matters because "we only read it" is exactly the argument that has been wrong here
+        // before: an un-isolated read makes every `npm run test:e2e` and `npm run dev` depend on whatever
+        // tag maps happen to exist on the developer's own machine, so the suite would pass or fail by
+        // accident of the host. The guard isolates every ST4I_*_DIR the engine names, population-blind on
+        // purpose, and that is the right property for a read too.
+        ST4I_HMI_TAGMAPS_DIR: join(e2eDataDir, "hmi-tagmaps"),
       },
     },
   ],

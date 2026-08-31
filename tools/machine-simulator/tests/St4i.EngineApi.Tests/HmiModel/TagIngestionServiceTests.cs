@@ -782,9 +782,8 @@ public sealed class TagIngestionServiceTests : IDisposable
 
         Assert.Equal(0, ingested);
 
-        Assert.Equal(
-            Path.Combine(AppContext.BaseDirectory, "tag-maps"),
-            TagMapStartupIngestion.ResolveDirectory());
+        Assert.Equal(TagIngestionService.ResolveDir(), TagMapStartupIngestion.ResolveDirectory());
+        Assert.EndsWith("hmi-tagmaps", TagMapStartupIngestion.ResolveDirectory(), StringComparison.Ordinal);
     }
 
     /// <summary>

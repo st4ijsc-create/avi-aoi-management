@@ -63,35 +63,60 @@ public sealed record IngestResult(bool Ok, int TagCount, int BackedCount, IReadO
 public sealed class TagIngestionService
 {
     /// <summary>
-    /// The folder, beside the binary, the composition root reads tag maps from — one
-    /// <c>{machineCode}.json</c> per machine, a sibling of <c>connectors.json</c> and <c>fleet.json</c>.
-    /// A constant rather than a literal in <c>Program.cs</c> so the convention has one spelling and a test
-    /// can name it.
+    /// The leaf directory tag maps live in — one <c>{machineCode}.json</c> per machine, under the
+    /// machine-wide root as <c>%ProgramData%\ST4I\sim\hmi-tagmaps</c>.
     ///
     /// <para>🔴 <b>This class never reads that folder</b> — it is handed a document string. Ingestion is a
-    /// no-op until an operator creates the folder, which is what keeps this task's startup change
-    /// byte-identical for every existing deployment.</para>
+    /// no-op until an operator creates it, which is what keeps this feature's startup change
+    /// byte-identical for a deployment that has never declared a tag map.</para>
     ///
-    /// <para>🔴 <b>BESIDE THE BINARY WITH NO RELOCATION VARIABLE, WHICH IS A DELIBERATE PAIR — my first
-    /// version got this wrong and two guards caught it.</b> I first gave it BOTH a
-    /// <c>ST4I_HMI_TAGMAPS_DIR</c> variable AND a beside-the-binary default.
+    /// <para>🔴 <b>MACHINE-WIDE, AFTER THE OWNER RULED — and the route here is worth recording because two
+    /// guards refused an earlier shape and were right both times.</b> The first version had BOTH an
+    /// <c>ST4I_HMI_TAGMAPS_DIR</c> variable AND a beside-the-binary default;
     /// <c>PerHostDataRootsTests.TheBesideTheBinaryStorePopulation_IsEmpty_…</c> and
-    /// <c>TestHarnessIsolationTests</c> both refused it, and they were right: BF-1's rule is that a
-    /// directory which HAS a relocation variable must be derivable from the machine-wide root. That left
-    /// two coherent shapes, and this is the one with a precedent — <c>connectors.json</c> and
-    /// <c>fleet.json</c> are operator-authored input beside the binary with no variable, which is a
-    /// category <c>PerHostDataRootsTests</c> already names ("READS ONLY — operator-authored input beside
-    /// the binary; a shared copy is the intent").
+    /// <c>TestHarnessIsolationTests</c> both rejected it, correctly: BF-1's rule is that a directory which
+    /// HAS a relocation variable must be derivable from the machine-wide root. The second version dropped
+    /// the variable and sat beside the binary like <c>connectors.json</c> — legal, and it carried a real
+    /// cost: <b>a publish REPLACES the directory beside the binary, so hand-authored tag maps died on every
+    /// upgrade.</b> Completing the machine-wide shape needed a keep-versus-purge classification in
+    /// <c>packaging/remove-data.ps1</c>, which is owner ruling territory (2026-08-23(b)) and not a decision
+    /// this workstream could make for itself.</para>
     ///
-    /// <para>The alternative — a nineteenth machine-wide root under <c>%ProgramData%\ST4I\sim</c> — was
-    /// built and then reverted. It works, and it survives an upgrade, which this shape does NOT: a publish
-    /// replaces the directory beside the binary, so hand-authored tag maps are lost on every upgrade
-    /// exactly as a hand-edited <c>connectors.json</c> is. But it also requires a keep-versus-purge
-    /// classification in <c>packaging/remove-data.ps1</c>, and that is an OWNER ruling
-    /// (2026-08-23(b) is cited as one) rather than something this task may decide. Both the cost and the
-    /// alternative are recorded in this task's report for the owner to rule on.</para></para>
+    /// <para><b>The owner ruled PURGE.</b> Tag maps are therefore machine-wide — they survive an upgrade,
+    /// which is the defect the beside-the-binary shape had — and a decommissioning wipe removes them with
+    /// the rest of the operator's data. See README §26.6 for what that costs an operator, stated as a
+    /// decision rather than left to be discovered.</para>
     /// </summary>
-    public const string DirectoryName = "tag-maps";
+    public const string DirectoryName = "hmi-tagmaps";
+
+    /// <summary>
+    /// The environment variable relocating the tag-map directory. Its NAME is derived, not chosen: README
+    /// §15.9's rule is <c>ST4I_</c> + the leaf uppercased with <c>-</c> → <c>_</c> + <c>_DIR</c>, and
+    /// <c>PerHostDataRootsTests</c> enforces that the two agree, so this constant and
+    /// <see cref="DirectoryName"/> cannot drift apart.
+    /// </summary>
+    public const string EnvVarDir = "ST4I_HMI_TAGMAPS_DIR";
+
+    /// <summary>The default tag-map root: <c>%ProgramData%\ST4I\sim\hmi-tagmaps</c> — a SIBLING of
+    /// <c>hmi-model</c> and <c>hmi-tags</c>, which is where the documents it feeds end up.</summary>
+    /// <remarks>🔴 The leaf is spelled as a LITERAL here rather than as <see cref="DirectoryName"/>, and
+    /// that is required rather than sloppy: <c>PerHostDataRootsTests</c> derives the machine-wide directory
+    /// population by scanning <c>src/</c> for the literal triple <c>"ST4I", "sim", "&lt;name&gt;"</c>, so a
+    /// constant reference here makes this leaf invisible to it — measured, the derived count stayed at 18
+    /// and the guard reported every one of the seven count sentences as wrong instead of reporting the
+    /// missing directory. The two spellings cannot drift: <c>TagIngestionWiringTests</c> asserts this value
+    /// equals the same path composed from <see cref="DirectoryName"/>.</remarks>
+    public static readonly string DefaultRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ST4I", "sim", "hmi-tagmaps");
+
+    /// <summary>The directory tag maps are read from: <see cref="EnvVarDir"/> if set, else
+    /// <see cref="DefaultRoot"/>. Pure path arithmetic — creates nothing, and an absent directory is the
+    /// ordinary state of an install that has never declared a tag map.</summary>
+    public static string ResolveDir()
+    {
+        var configured = Environment.GetEnvironmentVariable(EnvVarDir);
+        return string.IsNullOrWhiteSpace(configured) ? DefaultRoot : configured;
+    }
 
     private readonly ITagNamespaceStore _store;
 
@@ -226,11 +251,12 @@ public sealed class TagIngestionService
 /// </summary>
 public static class TagMapStartupIngestion
 {
-    /// <summary>The folder tag maps are read from in a real run: <c>tag-maps/</c> beside the binary. Kept
-    /// separate from <see cref="IngestAll"/> so the loop takes a directory a test can choose, while the
-    /// production path still has exactly one place that decides where that directory is.</summary>
-    public static string ResolveDirectory() =>
-        Path.Combine(AppContext.BaseDirectory, TagIngestionService.DirectoryName);
+    /// <summary>The directory tag maps are read from in a real run — <see cref="EnvVarDir"/> if set, else
+    /// <c>%ProgramData%\ST4I\sim\hmi-tagmaps</c>. Kept separate from <see cref="IngestAll"/> so the loop
+    /// takes a directory a test can choose, while the production path still has exactly one place that
+    /// decides where that directory is. Delegates rather than re-deriving, so this file and
+    /// <see cref="TagIngestionService"/> cannot point at two different folders.</summary>
+    public static string ResolveDirectory() => TagIngestionService.ResolveDir();
 
     /// <summary>
     /// 🔴 <b>Set the first time <see cref="IngestAll"/> runs against the PRODUCTION directory — the only

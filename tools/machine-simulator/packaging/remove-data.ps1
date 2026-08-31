@@ -6,7 +6,7 @@
 
 .DESCRIPTION
   The MSI installer (packaging/installer/) only ever removes what IT installed, under Program Files -
-  it has no idea this exe/service declares 18 directories under
+  it has no idea this exe/service declares 19 directories under
   %ProgramData%\ST4I\sim\ - the historian database, the store-and-forward WAL buffer, the local
   user/session/audit-log database, the DPAPI-protected machine credential, the alarm-notification
   channel configuration and its credentials, the DEVICE IDENTITY PRIVATE KEY, saved device connections
@@ -32,7 +32,7 @@
   WS-HMI-0b TASK 4, 2026-08-31 - THAT RESOLUTION NOW HAPPENS, and the paragraph above is kept verbatim
   because its MECHANISM is still exactly right; only its "no endpoint exists" precondition expired.
   WS-HMI-0b's HmiModelEndpoints/HmiTagEndpoints take IComponentModelStore/ITagNamespaceStore as handler
-  parameters, so ASP.NET resolves both seams and both stores get constructed. EIGHTEEN of the eighteen are
+  parameters, so ASP.NET resolves both seams and both stores get constructed. EIGHTEEN of the nineteen are
   created by a running engine now - but EACH on the FIRST REQUEST TO A ROUTE THAT RESOLVES THAT STORE,
   never at startup, and never as a pair. The two are INDEPENDENT lazy factories (no ValidateOnBuild, no
   eager construction): /v1/components* and /v1/component-types create hmi-model; /v1/tags* creates
@@ -45,13 +45,13 @@
   asked the other question - not a partial deployment and not a fault. An absent directory here is an
   unasked engine.
 
-  WHY THIS SCRIPT STILL LISTS ALL EIGHTEEN, and why that is not a contradiction: a purge tool has to
+  WHY THIS SCRIPT STILL LISTS ALL NINETEEN, and why that is not a contradiction: a purge tool has to
   cover what MAY exist, not what must. Both leaves are relocatable, both are purged IF PRESENT, and every
   $subdirs entry already tolerates an absent directory (see the Step 2 loop). An operator who has run a
   WS-HMI-0b build, or a machine upgraded from one, will have them; a machine on this exact commit will
   not. Listing them is correct in both cases; claiming the engine creates them is correct in neither.
 
-  IT DECLARES EIGHTEEN AND PURGES SIXTEEN. Two of the eighteen - `products` and `ecosystem`, holding the
+  IT DECLARES NINETEEN AND PURGES SEVENTEEN. Two of the nineteen - `products` and `ecosystem`, holding the
   four files products.json / recipes.json / ecosystem-products.json / ecosystem-recipes.json - are
   DELIBERATELY KEPT, by the owner's ruling of 2026-08-23(b), and are listed separately in the banner
   this script prints. The reason, in the owner's words: CONFIGURATION AN OPERATOR AUTHORED IS NOT
@@ -162,6 +162,21 @@
   bindings). PURGED, not kept - see .NOTES for why this is not a third member of the `products`/
   `ecosystem` exemption.
 
+.PARAMETER HmiTagMapsDir
+  WS-HMI-0c - the HMI TAG-MAP directory (ST4I_HMI_TAGMAPS_DIR), holding one hand-authored
+  `{machineCode}.json` per machine: the register/node-to-tag declarations a connector supplies, which
+  St4i.EngineApi ingests at startup to build each machine's tag namespace.
+
+  PURGED, not kept - and that is an OWNER RULING, not an oversight. It is the one leaf on this list the
+  engine only ever READS; the other eighteen it writes. That made it a genuine question whether it
+  belonged with `products`/`ecosystem` under the 2026-08-23(b) keep exemption, since a tag map is
+  engineering configuration a person authored rather than data the product generated. The owner ruled
+  PURGE: a decommissioning wipe removes it.
+
+  WHAT AN OPERATOR LOSES, stated so it reads as a decision: every tag map on the machine, and with it
+  every HMI screen those maps drive. The connectors still run and the machines still produce - the maps
+  are not a safety or control artefact - but the screens do not come back until somebody re-authors the
+  files. Copy the directory out first if the site is being rebuilt rather than retired.
 .PARAMETER HmiTagsDir
   Task 5, WS-HMI-0a - the declared HMI tag-namespace store (ST4I_HMI_TAGS_DIR), holding the flat tag
   index and documents `tag-namespaces.db` persists (one per machine code, each a `path`-keyed set of
@@ -189,11 +204,11 @@
   .\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -WalDir D:\St4iData\wal -SecurityDir D:\St4iData\security -IdentityDir D:\St4iData\identity
   Purges relocated data directories explicitly - needed whenever the service was configured (via its
   registry Environment value, README section 15.2) with a directory that is NOT the default
-  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory - EIGHTEEN of
-  them, all eighteen documented under .PARAMETER above (-CredsDir's block was missing until the Dot F
+  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory - NINETEEN of
+  them, all nineteen documented under .PARAMETER above (-CredsDir's block was missing until the Dot F
   branch review, F-9; -MachineConfigDir, -ProductsDir and -EcosystemDir arrived with task BF-1;
-  -HmiModelDir and -HmiTagsDir arrived with task 5, WS-HMI-0a). SIXTEEN
-  of those eighteen name a directory this script PURGES; -ProductsDir and -EcosystemDir resolve the two the
+  -HmiModelDir and -HmiTagsDir arrived with task 5, WS-HMI-0a; -HmiTagMapsDir arrived with WS-HMI-0c). SEVENTEEN
+  of those nineteen name a directory this script PURGES; -ProductsDir and -EcosystemDir resolve the two the
   owner's 2026-08-23(b) ruling KEEPS, so passing them changes what is PRINTED and never what is deleted.
 
 .NOTES
@@ -293,7 +308,7 @@
       ONE population. The beside-the-binary population is empty, and PerHostDataRootsTests pins it at
       exactly zero rather than merely quantifying over it.
   What SURVIVES unretracted is the shape of the warning, in a new subject: this script still reads only
-  its OWN shell's environment, so a deployment that relocated any of the eighteen through the service's
+  its OWN shell's environment, so a deployment that relocated any of the nineteen through the service's
   registry Environment value still needs the matching -XxxDir passed by hand.
 
   TASK BF-1 - THE KEPT LIST, AND WHY A THIRD STATUS WAS NEEDED RATHER THAN A SILENT OMISSION. Moving
@@ -382,7 +397,10 @@ param(
     # Task 5, WS-HMI-0a - both purge parameters like the sixteen above them; no reporting-only pair
     # here because neither hmi-model nor hmi-tags is on the kept list (see .NOTES).
     [string]$HmiModelDir,
-    [string]$HmiTagsDir
+    [string]$HmiTagsDir,
+    # WS-HMI-0c - a purge parameter like the two above it. The owner ruled the tag-map directory PURGE
+    # rather than adding a third member to the products/ecosystem keep exemption; see .PARAMETER.
+    [string]$HmiTagMapsDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -461,6 +479,9 @@ $subdirs = @(
     # not a third member of the products/ecosystem exemption.
     @{ Name = 'hmi-model';        Path = (Resolve-DataDir $HmiModelDir        'ST4I_HMI_MODEL_DIR'        (Join-Path $root 'hmi-model'));        Warning = 'the declared HMI component tree per machine - component types and tagPrefix bindings (hmi-model.db)' }
     @{ Name = 'hmi-tags';         Path = (Resolve-DataDir $HmiTagsDir         'ST4I_HMI_TAGS_DIR'         (Join-Path $root 'hmi-tags'));         Warning = 'the declared HMI tag namespace per machine and its flat path index (tag-namespaces.db)' }
+    # WS-HMI-0c - the only leaf here the engine READS rather than writes. Purged by owner ruling; see
+    # .PARAMETER HmiTagMapsDir for what that costs an operator.
+    @{ Name = 'hmi-tagmaps';      Path = (Resolve-DataDir $HmiTagMapsDir      'ST4I_HMI_TAGMAPS_DIR'      (Join-Path $root 'hmi-tagmaps'));      Warning = 'the hand-authored HMI tag maps ({machineCode}.json) every machine''s tag namespace is built from' }
 )
 
 # ---- Task BF-1, owner ruling 2026-08-23(b): THE KEPT LIST -----------------------------------------

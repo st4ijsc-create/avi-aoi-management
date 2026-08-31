@@ -394,6 +394,13 @@ internal static class TestRunTempRoot
                          // a census found it.
                          ("ST4I_HMI_MODEL_DIR", "hmi-model"),
                          ("ST4I_HMI_TAGS_DIR", "hmi-tags"),
+                         // WS-HMI-0c — the tag-map INPUT directory, machine-wide since the owner ruled it
+                         // purge-on-decommission. Isolated for the mirror-image reason of the pair above:
+                         // those exist so no test WRITES to the real %ProgramData%, this one so none READS
+                         // it. St4i.EngineApi ingests every {machineCode}.json it finds here at startup, so
+                         // without this line a WebApplicationFactory<Program> boot would ingest whatever tag
+                         // maps happen to sit on the machine running the suite — an outcome decided by the host.
+                         ("ST4I_HMI_TAGMAPS_DIR", "hmi-tagmaps"),
                      })
             {
                 if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variable)))
