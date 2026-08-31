@@ -99,7 +99,11 @@ ImageRef = {
 ⚠ Bài học đã trả giá: **cắt trước khi cái thay thế sẵn sàng là làm hệ thống tệ hơn** (xem Đ-20).
 
 **Ba giai đoạn:**
-1. **Nhận cả hai** — `meta.json` hình dạng cũ (`images[]` không cây) vẫn commit được như hôm nay; hình dạng mới đi đường cây đầy đủ. Nhận diện **theo hình dạng** (`Array.isArray(surfaces)`), dùng lại `laHinhDangCayV2` — **không** thêm vị từ thứ hai.
+1. **Nhận cả hai** — hình dạng mới đi đường cây đầy đủ; hình dạng cũ **vẫn được nhận vào và giữ nguyên**, không bị khoá `'dead'`. Nhận diện **theo hình dạng** (`Array.isArray(surfaces)`), dùng lại `laHinhDangCayV2` — **không** thêm vị từ thứ hai.
+
+⚠ **SỬA LẠI (2026-08-31, review lượt 7 I-6).** Bản đầu của mục này viết *"`meta.json` hình dạng cũ (`images[]` không cây) **vẫn commit được như hôm nay**"* — **SAI**, và mâu thuẫn với chính dòng dưới nó trong cùng mục. Phép đo: mẫu máy thật `safeParse` = **false** (`invalid_type@measurements`) ⇒ hình dạng `images[]` thuần **KHÔNG commit được hôm nay**, nó nằm `'failed'` và retry vô hạn (bản vá `8150ab6d`).
+⇒ Giai đoạn 1 **không** phải "giữ nguyên hiện trạng cho hình dạng cũ" — hiện trạng của hình dạng cũ **đã là không commit được**. Giai đoạn 1 chỉ bảo đảm nó **không bị khoá `'dead'`** trong lúc di trú.
+**Đây là lỗi trong tài liệu tôi vừa viết: hai câu trái nhau về cùng một thứ, cách nhau bốn dòng.**
 2. **Đếm được** — log/metric phân biệt hai hình dạng, để trả lời *"còn bao nhiêu máy gửi hình dạng cũ?"*. Đây là điều kiện tiên quyết của giai đoạn 3, và là lỗ BG-57 đang mở.
 3. **Cắt** — khi số máy gửi hình dạng cũ về 0, bật cờ từ chối, dùng lại đúng `loiMayChuaNangCap` và `quyetDinhPhienBanIngest` đã có.
 
