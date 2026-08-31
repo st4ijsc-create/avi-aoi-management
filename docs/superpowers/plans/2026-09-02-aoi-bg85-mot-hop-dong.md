@@ -133,4 +133,25 @@ Tín hiệu nằm ở `quyetDinhPhienBanIngest` — điểm quyết định củ
 
 ⚠ **Ràng buộc kèm theo:** cấm dùng `legacy=93` làm căn cứ bật cờ từ chối cho tới khi cửa ZIP có tín hiệu.
 
+---
+
+## Đ-28 — L-4 lần thứ MƯỜI, và lần này người phạm là TÔI, ngay trong lượt vừa ghi Đ-27
+
+Tôi đo `audit_logs` ra `ingest_shape_legacy=93 · ingest_shape_v2=18` rồi khai với chủ dự án: *"tín hiệu là thật — đo trên DB, không suy từ mã."*
+
+**Vế đầu đúng. Vế sau che mất một điều quyết định ý nghĩa của con số:**
+
+| DB | `ingest_shape_*` |
+|---|---|
+| `aoi_management_test` | legacy=**93** · v2=**18** |
+| `aoi_management` (dev) | **KHÔNG CÓ HÀNG NÀO** |
+
+93 hàng đó do **chính bộ test của agent** ghi ra. Chúng chứng minh **cơ chế phát** — đúng thứ cổng ra đòi ("lưới chứng minh tín hiệu phát ra thật"), và đó là một kết quả **thật**. Nhưng chúng **không** là bằng chứng về lưu lượng máy thật. Câu *"còn bao nhiêu máy gửi hình dạng cũ?"* sau pha này vẫn là **chưa đo**, vì hai lý do độc lập: cửa ZIP câm (Đ-27), **và** chưa có lượt ingest thật nào chạy qua mã mới.
+
+**Tôi đo tập A (test), khai cho tập B (máy thật) — đúng định nghĩa L-4.** Xảy ra **trong cùng một lượt** tôi vừa viết Đ-27 để tố cáo L-4 lần thứ chín.
+
+⇒ Bài học không phải *"cẩn thận hơn"*. Là **thủ tục**: mọi con số đo từ DB phải khai kèm `current_database()`. Một con số không có tên DB đi kèm là một con số **chưa biết nói về ai**.
+
+⚠ Ràng buộc Đ-27 mạnh thêm: điều kiện cắt của §7 (*"về 0 ở mọi cửa"*) hiện **chưa có phép đo nào chạm tới** — không phải "gần đạt".
+
 **Còn mở sau pha này:** BG-39 gđ2 (gác cửa ZIP) · Đ-19 + **Khối B** · BG-36 · BG-70/71/74/75/77/83/90/93…99 · §6 giao thức version · §3.6 dọn mồ côi · **Khối C** · **Khối D**.
