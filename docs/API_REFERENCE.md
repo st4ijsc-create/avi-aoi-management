@@ -705,6 +705,13 @@ Tạo URL upload cho inspection package mới.
 ### 11.2 Upload ZIP File (HTTP POST)
 Upload file ZIP đến URL từ presign.
 
+> ⚠ **Hướng sắp tới (đã quyết định, CHƯA triển khai — BG-85):** `meta.json` sẽ được
+> hợp nhất thành CÙNG hình dạng với payload kết quả v2.0 (`machineDataContractV2` +
+> thêm mảng `images[]`, khoá nối `captureId`) — xem `docs/UNIFIED_API_STRUCTURE.md`
+> và `docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md`. Cấu trúc
+> `measurements[]`/`points[]` dưới đây vẫn là hợp đồng ĐANG CHẠY hôm nay; bên tích
+> hợp máy nên đọc spec trên trước khi đầu tư nhiều vào engine sinh `meta.json`.
+
 **Method:** POST  
 **URL:** `{uploadUrl}` từ presign response  
 **Content-Type:** `multipart/form-data`  
@@ -778,7 +785,7 @@ package.zip
 }
 ```
 
-**Legacy meta.json (vẫn hỗ trợ - backward compatible):**
+**Legacy meta.json (tên trường cũ vẫn hỗ trợ — mảng đo lường PHẢI mang tên `measurements`, xem cảnh báo dưới):**
 ```json
 {
   "inspectionId": "INS-20240115-001",
@@ -789,7 +796,7 @@ package.zip
   "machineCode": "AOI-LINE1-01",
   "startedAt": "2024-01-15T10:30:00Z",
   "finishedAt": "2024-01-15T10:32:30Z",
-  "points": [
+  "measurements": [
     {
       "code": "R1",
       "name": "Resistance 1",
@@ -806,6 +813,13 @@ package.zip
   }
 }
 ```
+
+⚠️ **`points[]` (tên trường cũ của mảng đo lường) KHÔNG được server chấp nhận khi
+đứng MỘT MÌNH.** `measurements` là trường **bắt buộc** trên MỌI gói (có thể là mảng
+rỗng `[]`, nhưng không được vắng mặt) — kể cả gói dùng tên trường cũ khác (`factory`,
+`line`, `code`, `value`) vẫn phải đặt mảng đo lường dưới khoá `measurements`, không
+phải `points`. Một gói chỉ gửi `points[]` mà thiếu `measurements` bị server từ chối
+(`invalid_type`) và không bao giờ commit được, dù retry bao nhiêu lần.
 
 ### 11.3 aoiPackage.commit
 Xác nhận package đã upload hoàn tất và parse dữ liệu.

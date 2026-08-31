@@ -90,7 +90,7 @@ Headers: X-API-Key: machine-api-key
 //     ├── P02.jpg
 //     └── ...
 
-// meta.json schema:
+// meta.json schema — "measurements" BẮT BUỘC (server từ chối gói thiếu trường này, kể cả khi mảng rỗng []):
 {
   "serialNumber": "SN-20260207-001",
   "productModel": "PCBA-REV3",
@@ -104,23 +104,28 @@ Headers: X-API-Key: machine-api-key
     "ok": 11,
     "ng": 1
   },
-  "points": [
+  "measurements": [
     {
-      "code": "P01",
+      "pointCode": "P01",
       "name": "Connector A",
       "fileName": "P01.jpg",
       "result": "OK",
-      "value": 0.25
+      "measuredValue": 0.25
     },
     {
-      "code": "P02",
+      "pointCode": "P02",
       "name": "IC U3",
       "fileName": "P02.jpg",
       "result": "NG",
-      "value": 0.52
+      "measuredValue": 0.52
     }
   ]
-}`;
+}
+
+// ⚠ "points[]" (tên trường cũ) KHÔNG được server chấp nhận khi đứng MỘT MÌNH —
+// "measurements" là trường BẮT BUỘC trên MỌI gói (dù rỗng []). Một gói chỉ gửi
+// "points[]" mà thiếu "measurements" sẽ bị từ chối (invalid_type) và KHÔNG BAO
+// GIỜ commit được — dù retry bao nhiêu lần.`;
 
   const aoiQueueMetricsExample = `POST ${endpointBase}/aoiPackage.reportQueueMetrics
 Headers: X-API-Key: machine-api-key
@@ -292,7 +297,10 @@ public class AoiUploadService
                 ok = points.Count(p => p.Result == "OK"),
                 ng = points.Count(p => p.Result == "NG")
             },
-            points = points.Select(p => new
+            // "measurements" — server BẮT BUỘC trường này (dù rỗng). Đặt tên "points"
+            // ở đây (tên trường JSON cũ) sẽ khiến server từ chối gói (invalid_type) vì
+            // thiếu "measurements" — gói không bao giờ commit được, dù retry.
+            measurements = points.Select(p => new
             {
                 code = p.Code,
                 name = p.Name,
@@ -672,10 +680,10 @@ record PendingUpload
                       <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 text-sm text-white/80">
                         <h4 className="font-semibold mb-2">Xử lý khi commit</h4>
                         <ul className="list-disc space-y-1 pl-5">
-                          <li>Parse <code>meta.json</code> từ ZIP để lấy serialNumber, productModel, points</li>
+                          <li>Parse <code>meta.json</code> từ ZIP để lấy serialNumber, productModel, measurements</li>
                           <li>Tự động tạo <code>package_images</code> records cho từng điểm đo</li>
                           <li>Link tới <code>product_inspections</code> nếu trùng serialNumber + machineId</li>
-                          <li>Đếm OK/NG từ summary hoặc danh sách points</li>
+                          <li>Đếm OK/NG từ summary hoặc danh sách measurements</li>
                           <li>Nếu lỗi parse → status = "failed" với errorMessage</li>
                         </ul>
                       </div>
@@ -705,11 +713,23 @@ record PendingUpload
                         <h4 className="font-semibold mb-2">Quy tắc đặt tên file ảnh</h4>
                         <ul className="list-disc space-y-1 pl-5">
                           <li>Tất cả ảnh nằm trong thư mục <code>images/</code></li>
-                          <li><code>fileName</code> trong points phải khớp với tên file thực tế trong ZIP</li>
+                          <li><code>fileName</code> trong <code>measurements</code> phải khớp với tên file thực tế trong ZIP</li>
                           <li>Hỗ trợ định dạng: JPG, JPEG, PNG, BMP, TIFF</li>
                           <li>Nên dùng tên <code>pointCode</code> làm tên file (vd: P01.jpg)</li>
                           <li><code>result</code>: "OK" | "NG" | "NTF" (Not True Failure)</li>
                         </ul>
+                      </div>
+                      <div className="rounded-2xl border border-dashed border-blue-400/30 bg-blue-500/5 p-4 text-sm text-white/80">
+                        <h4 className="font-semibold text-blue-300 mb-2">Hướng sắp tới (đã quyết định, CHƯA triển khai — BG-85)</h4>
+                        <p>
+                          <code>meta.json</code> sẽ hợp nhất thành CÙNG hình dạng với payload kết quả v2.0
+                          (<code>machineDataContractV2</code>: cây surfaces/positions/captures/components) cộng
+                          thêm đúng một mảng <code>images[]</code> tham chiếu ảnh (nối bằng <code>captureId</code>).
+                          Cấu trúc <code>measurements[]</code>/<code>points[]</code> ở trên sẽ bị thay thế khi
+                          BG-85 hoàn tất, theo lộ trình di trú 3 giai đoạn (nhận cả hai hình dạng → đếm được →
+                          cắt hình dạng cũ). Bên tích hợp máy nên theo dõi trước khi đầu tư nhiều vào engine
+                          sinh <code>meta.json</code> hiện tại, để không phải viết lại hai lần.
+                        </p>
                       </div>
                     </CardContent>
                   </Card>

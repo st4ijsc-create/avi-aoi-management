@@ -10,6 +10,21 @@ Mục tiêu: Client có thể sử dụng cùng một cấu trúc JSON để g�
 
 ---
 
+## ⚠ Hướng sắp tới (đã quyết định, CHƯA triển khai) — BG-85
+
+Chủ dự án đã quyết định (`docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md`):
+`meta.json` trong gói ZIP sẽ **không còn là một hợp đồng riêng**. Nó sẽ trở thành
+**chính payload kết quả v2.0** (`machineDataContractV2` — cây
+`surfaces[].positions[].captures[].components[]`) **cộng thêm đúng một trường**
+`images[]` (tham chiếu ảnh, nối bằng `captureId`). Cấu trúc `measurements[]`/
+`points[]` mà tài liệu này mô tả bên dưới **sẽ bị thay thế** khi BG-85 hoàn tất —
+máy di trú theo 3 giai đoạn (nhận cả hai hình dạng → đếm được → cắt hình dạng cũ
+khi số máy về 0). Bên tích hợp máy nên xem spec trên trước khi đầu tư nhiều vào
+engine sinh `meta.json` theo hình dạng hiện tại, để tránh viết lại hai lần. Chi
+tiết `images[]`/lịch trình di trú **CHƯA CHỐT** — không suy đoán thêm ngoài spec.
+
+---
+
 ## 1. Inspection Metadata - Thông tin kiểm tra
 
 ### Thông tin sản phẩm (REQUIRED)
@@ -111,26 +126,38 @@ Cấu trúc từ trên xuống (top-down):
 
 ### 4.2. Cấu trúc legacy (Old - Vẫn hỗ trợ)
 
+⚠️ **Chỉ TÊN TRƯỜNG bên trong là tương thích ngược** (`code`, `value` thay cho
+`pointId`/`measuredValue`) — mảng đo lường vẫn phải đặt ở khoá `measurements`.
+Server **bắt buộc** trường `measurements` (có thể rỗng `[]`) trên mọi payload;
+gói chỉ gửi `points[]` (không có `measurements`) sẽ bị server **từ chối**
+(`invalid_type`) và không bao giờ commit được.
+
 ```json
 {
-  "points": [
+  "serialNumber": "SN123456789",
+  "productModel": "ModelA-V2",
+  "measurements": [
     {
-      "code": "R1-IC1-PIN1",                // Mã điểm đo (old field)
+      "code": "R1-IC1-PIN1",
       "name": "IC1 Pin 1 Resistance",
       "fileName": "image_001.jpg",
       "result": "OK",
-      "value": 1023.5,                      // Old field name
+      "value": 1023.5,
       "unit": "Ω"
     }
   ]
 }
 ```
 
-**Hệ thống tự động normalize:**
-- `measurements` → ưu tiên
-- `points` → fallback nếu không có `measurements`
+**Hệ thống tự động normalize (SAU KHI đã parse hợp lệ — `measurements` phải có mặt trước bước này):**
 - Point code: `pointId` → `pointCode` → `code`
 - Measured value: `measuredValue` → `value`
+
+⚠️ **Nếu muốn giữ `points[]` song song cho hệ thống cũ đọc** (thay vì đổi hẳn
+sang `measurements`), phải gửi kèm `measurements` với **DỮ LIỆU THẬT** — KHÔNG
+được để `measurements: []` rỗng trong khi `points[]` có dữ liệu: mảng rỗng vẫn
+được server ưu tiên hơn `points[]` có dữ liệu (nợ đã biết, xem
+`docs/superpowers/specs/2026-08-31-aoi-backlog-toan-canh.md`, BG-77).
 
 ---
 
@@ -334,20 +361,23 @@ package.zip
 
 ## 9. Backward Compatibility - Tương thích ngược
 
-Hệ thống **vẫn chấp nhận** cấu trúc cũ:
+Hệ thống **vẫn chấp nhận TÊN TRƯỜNG cũ** — nhưng khoá mảng đo lường cấp cao nhất
+PHẢI là `measurements` (bắt buộc trên mọi payload, có thể rỗng `[]`). `points[]`
+KHÔNG phải một khoá thay thế hợp lệ — một payload chỉ có `points[]` (không có
+`measurements`) bị server từ chối, không phải "cấu trúc cũ vẫn hoạt động":
 
-### Legacy meta.json (vẫn hoạt động)
+### Legacy meta.json (tên trường cũ vẫn hoạt động)
 
 ```json
 {
   "serialNumber": "SN123",
   "productModel": "PCB-V1",
-  "factory": "FACTORY-HN",       // Old field
-  "line": "LINE-3",              // Old field
-  "points": [                     // Old field name
+  "factory": "FACTORY-HN",
+  "line": "LINE-3",
+  "measurements": [
     {
-      "code": "R1",               // Old field name
-      "value": 1023.5,            // Old field name
+      "code": "R1",
+      "value": 1023.5,
       "fileName": "image_001.jpg",
       "result": "OK"
     }
@@ -355,8 +385,10 @@ Hệ thống **vẫn chấp nhận** cấu trúc cũ:
 }
 ```
 
-**Normalization logic:**
-1. `measurements` field missing → use `points`
+**Normalization logic (SAU KHI đã parse hợp lệ):**
+1. `measurements` rỗng (`[]`) → dùng `points` NẾU có mặt (⚠ chỉ đúng khi
+   `measurements` là mảng rỗng — nếu `measurements` HOÀN TOÀN VẮNG MẶT, payload
+   bị từ chối TRƯỚC khi tới bước normalize này, xem cảnh báo trên)
 2. `factoryCode` missing → use `factory`
 3. `lineCode` missing → use `line`
 4. `pointId` missing → use `pointCode` → use `code`
@@ -388,6 +420,12 @@ Hệ thống **vẫn chấp nhận** cấu trúc cũ:
 ---
 
 ## 11. Migration Guide - Hướng dẫn chuyển đổi
+
+⚠️ **Lưu ý:** khoá `points` (dòng `-` bên dưới) chỉ minh hoạ TÊN TRƯỜNG cũ để so
+sánh — một payload thật với khoá `points` mà KHÔNG có `measurements` bị server
+**từ chối ngay hôm nay** (không phải "cấu trúc cũ đang chạy, nâng cấp khi rảnh").
+Ưu tiên đổi khoá `measurements` trước các trường khác nếu client còn ở hình dạng
+này.
 
 ### Client cũ (Old structure) → Client mới (New structure)
 
@@ -474,7 +512,10 @@ ORDER BY pi.inspection_time, mr.id;
 ### Required fields
 - ✅ `serialNumber` (string, min 1 char)
 - ✅ `productModel` (string, min 1 char)
-- ✅ `measurements` array (min 1 item) hoặc `points` array
+- ✅ `measurements` array — **BẮT BUỘC trên MỌI payload** (có thể là mảng rỗng
+  `[]`, nhưng khoá này không được vắng mặt). `points` array là bí danh CŨ của
+  các TÊN TRƯỜNG bên trong (`code`/`value`) — KHÔNG thay thế được khoá
+  `measurements` ở cấp cao nhất (xem §4.2/§9)
 
 ### Optional but recommended
 - `companyCode`, `factoryCode`, `workshopCode`, `lineCode`, `stageCode`

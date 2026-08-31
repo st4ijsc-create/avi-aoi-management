@@ -7,7 +7,7 @@
   "machineCode": "AOI-LINE1-01",
   "startedAt": "2024-01-15T10:30:00Z",
   "finishedAt": "2024-01-15T10:32:30Z",
-  "points": [
+  "measurements": [
     {
       "code": "R1",
       "name": "Resistance 1",
