@@ -1048,4 +1048,55 @@ public class ContractInvariantsTests
 
         Assert.Empty(ContractInvariants.Validate(doc));
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // WS-HMI-2 Task 2 fix round 1 — LOẠI LUẬT THỨ BA (the carried ruling). Before this round, measured:
+    // ScreenId="MyScreen" (violates the frozen schema's `^[a-z0-9-]+$` pattern) drew ZERO violations here
+    // and HmiScreenStore.PutAsync wrote it to disk unchanged — no regex anywhere in this class, no invalid
+    // fixture catching it, and the "TypeScript builder" a previous draft of CanonicalScreenStore.cs cited
+    // as the enforcer does not exist (zero a-z0-9-pattern hits in web/src). Closed at THIS door because it
+    // is the one every producer — DI-decorated or a direct store caller — passes through.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A_ScreenId_Violating_The_Frozen_az09_Pattern_Is_A_Violation()
+    {
+        // Does NOT measure every character class the schema's pattern excludes — one representative
+        // violation (uppercase, the exact shape CanonicalizingHmiScreenStore deliberately does NOT fold)
+        // is enough to prove the door is not silently open. Uses the local Screen(...) helper's widgets so
+        // only ScreenId varies from the well-formed control below.
+        var doc = Screen(new ScreenWidget("w1", "readout", Rect())) with { ScreenId = "MyScreen" };
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("screenId", StringComparison.OrdinalIgnoreCase) &&
+                                          v.Contains("MyScreen", StringComparison.Ordinal));
+    }
+
+    /// <summary>The positive control this property needs: a screenId that DOES match the pattern must not
+    /// be flagged — a regex bug that rejected every screenId (not just out-of-pattern ones) would pass the
+    /// test above (which only checks a violation EXISTS for a bad id) while breaking every legitimate
+    /// screen. <c>Control_A_well_formed_screen_reports_no_violations</c> already covers <c>"s1"</c>; this
+    /// covers the character class explicitly — lowercase, digits, and a hyphen, all three.</summary>
+    [Fact]
+    public void Control_A_ScreenId_Matching_The_Frozen_Pattern_Is_Not_A_Violation()
+    {
+        var doc = Screen(new ScreenWidget("w1", "readout", Rect())) with { ScreenId = "line-overview-9" };
+
+        Assert.Empty(ContractInvariants.Validate(doc));
+    }
+
+    /// <summary>The tie-break with the presence check directly above: a blank <c>screenId</c> reports
+    /// EXACTLY ONE violation (the missing-field one), not two. Written because the pattern check is an
+    /// <c>else if</c> — reachable only once presence has already passed — and this is the test that would
+    /// redden if that ordering were ever inverted to an unconditional <c>if</c>.</summary>
+    [Fact]
+    public void A_blank_ScreenId_Reports_Only_The_Missing_Field_Violation_Not_Also_A_Pattern_Violation()
+    {
+        var doc = Screen(new ScreenWidget("w1", "readout", Rect())) with { ScreenId = "" };
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Single(violations, v => v.Contains("screenId", StringComparison.OrdinalIgnoreCase));
+    }
 }

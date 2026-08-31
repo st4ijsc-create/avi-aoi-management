@@ -284,8 +284,18 @@ public sealed class CanonicalizingHmiScreenStoreTests
     /// <c>HmiModelWiringTests.CreateFactoryAsync</c> already uses, duplicated for the same reason that
     /// class duplicates it from <c>AuthPipelineTests</c>/<c>RbacPolicyTests</c>: each is private to its own
     /// class. This class does not isolate <c>ST4I_HMI_SCREENS_DIR</c> itself — <c>TestRunTempRoot</c>'s
-    /// module initializer already redirects it (same as every other leaf), and the ONE test below that
-    /// boots a host asks only which CONCRETE TYPE was resolved, never touching the database.</summary>
+    /// module initializer already redirects it (same as every other leaf).
+    ///
+    /// <para>🔴 <b>"NEVER TOUCHING THE DATABASE" — RETRACTED, WS-HMI-2 Task 2 fix round 1, kept verbatim
+    /// above.</b> <c>GetRequiredService&lt;IHmiScreenStore&gt;()</c> below is the FIRST resolution of that
+    /// singleton factory, and the factory's lambda runs <c>new HmiScreenStore(dir)</c>, whose constructor
+    /// calls <c>EnsureSchema()</c> unconditionally — a real <c>SqliteConnection</c> opens and
+    /// <c>hmi-screens.db</c>/<c>-shm</c>/<c>-wal</c> are created on disk. Measured, not assumed: they
+    /// appear under <c>TestRunTempRoot</c>'s redirected temp directory the moment this test's
+    /// <c>GetRequiredService</c> call runs. What the corrected sentence should have said: the database IS
+    /// touched, but it is touched inside this run's ISOLATED temp directory (never real
+    /// <c>%ProgramData%</c>), and this test asks only which CONCRETE TYPE was resolved, not what is inside
+    /// the file that touch created.</para></summary>
     private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync()
     {
         await EnvLock.WaitAsync().ConfigureAwait(false);
@@ -311,7 +321,11 @@ public sealed class CanonicalizingHmiScreenStoreTests
         // below, against the decorator directly. This measures only WHICH CONCRETE TYPE Program.cs's DI
         // container hands back for IHmiScreenStore, the same structural property
         // HmiModelWiringTests/HmiModelEndpointsTests pin for IComponentModelStore/ITagNamespaceStore.
-        await using var factory = await CreateFactoryAsync().ConfigureAwait(false);
+        // 🔴 No .ConfigureAwait(false) on this line, deliberately — xUnit1030: a test method that calls
+        // ConfigureAwait(false) can bypass xUnit's parallelization limits. CreateFactoryAsync's OWN body
+        // still uses it (that method is not a test method), same as every other CreateFactoryAsync in this
+        // assembly.
+        await using var factory = await CreateFactoryAsync();
         var store = factory.Services.GetRequiredService<IHmiScreenStore>();
         Assert.IsType<CanonicalizingHmiScreenStore>(store);
     }
@@ -323,38 +337,70 @@ public sealed class CanonicalizingHmiScreenStoreTests
     // `Calls` and returns a fixed, uninteresting value.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>🔴 <b>WS-HMI-2 Task 2 fix round 1 (review MED-1) — gained a Dictionary, still decides
+    /// nothing.</b> Testing the canonical-miss fallback (below) needs SOME way to reproduce "a row exists
+    /// at a spelling the caller did not ask for", and a <c>Calls</c>-only double with no state cannot
+    /// represent that at all. The dictionary is exact-match, Ordinal-keyed — the SAME shape
+    /// <c>CanonicalMachineCodeStoresTests.RecordingComponentModelStore</c> already uses for the identical
+    /// reason — and every method still does nothing but look itself up or insert itself: no trimming, no
+    /// case folding, no resolution across spellings. THAT logic lives only in
+    /// <see cref="CanonicalizingHmiScreenStore"/>, which is the whole point — a double that resolved
+    /// spellings itself would certify itself instead of the decorator in front of it.</summary>
     private sealed class RecordingScreenStore : IHmiScreenStore
     {
         public List<string> Calls { get; } = new();
 
+        private readonly Dictionary<string, HmiScreenDocument> _rows = new(StringComparer.Ordinal);
+
+        /// <summary>Seeds a row at a VERBATIM (possibly non-canonical) key — the only way to reproduce a
+        /// row written by a direct <c>new HmiScreenStore(dir)</c> caller bypassing
+        /// <see cref="ContractInvariants"/> entirely, which is exactly how such a row can exist after this
+        /// round's <c>ContractInvariants.Validate(HmiScreenDocument)</c> pattern check closes the
+        /// write-door reproduction MED-1's own probe originally used.</summary>
+        public void SeedRaw(string storedScreenId, HmiScreenDocument doc) => _rows[storedScreenId] = doc;
+
         public Task<HmiScreenDocument?> GetAsync(string screenId, int? version = null, CancellationToken ct = default)
         {
             Calls.Add($"Get:{screenId}:{(version.HasValue ? version.Value.ToString() : "null")}");
-            return Task.FromResult<HmiScreenDocument?>(null);
+            return Task.FromResult(screenId is not null && _rows.TryGetValue(screenId, out var doc) ? doc : null);
         }
 
         public Task<int> PutAsync(HmiScreenDocument doc, CancellationToken ct = default)
         {
             Calls.Add($"Put:{doc.ScreenId}");
+            _rows[doc.ScreenId] = doc;
             return Task.FromResult(1);
         }
 
         public Task<IReadOnlyList<string>> ListScreenIdsAsync(CancellationToken ct = default)
         {
             Calls.Add("List:");
-            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+            return Task.FromResult<IReadOnlyList<string>>(_rows.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList());
         }
 
         public Task<IReadOnlyList<ScreenVersionInfo>> ListVersionsAsync(string screenId, CancellationToken ct = default)
         {
             Calls.Add($"ListVersions:{screenId}");
-            return Task.FromResult<IReadOnlyList<ScreenVersionInfo>>(Array.Empty<ScreenVersionInfo>());
+            IReadOnlyList<ScreenVersionInfo> result = screenId is not null && _rows.ContainsKey(screenId)
+                ? new[] { new ScreenVersionInfo(1, "2026-01-01T00:00:00.0000000Z", true) }
+                : Array.Empty<ScreenVersionInfo>();
+            return Task.FromResult(result);
         }
 
+        /// <summary>Throws exactly like the real <see cref="HmiScreenStore.RollbackAsync"/> does for a
+        /// screen nobody declared under this spelling — required so
+        /// <see cref="CanonicalizingHmiScreenStore.RollbackAsync"/>'s catch-and-retry fallback has
+        /// something real to catch. Does NOT check <paramref name="toVersion"/> against real history (this
+        /// double keeps none) — presence of the row is the only thing simulated.</summary>
         public Task<int> RollbackAsync(string screenId, int toVersion, CancellationToken ct = default)
         {
             Calls.Add($"Rollback:{screenId}:{toVersion}");
-            return Task.FromResult(1);
+            if (screenId is null || !_rows.ContainsKey(screenId))
+            {
+                throw new ArgumentOutOfRangeException(nameof(toVersion), toVersion, $"no such screen '{screenId}'");
+            }
+
+            return Task.FromResult(2);
         }
     }
 
@@ -389,8 +435,12 @@ public sealed class CanonicalizingHmiScreenStoreTests
     public async Task GetAsync_TrimsTheScreenId_AndForwardsTheVersionUnchanged()
     {
         // Does NOT measure the `version` parameter's own handling beyond "unchanged" — version is not an
-        // identity value this decorator has any opinion about, only screenId is.
+        // identity value this decorator has any opinion about, only screenId is. Does NOT measure the
+        // canonical-miss fallback either — that needs a row seeded at a NON-canonical spelling, which is a
+        // separate scenario covered below (MED-1). Seeded at the CANONICAL spelling here specifically so
+        // the canonical lookup HITS on the first try and no fallback call muddies what this test is about.
         var inner = new RecordingScreenStore();
+        inner.SeedRaw("line-overview", Screen("line-overview", "x"));
         var store = new CanonicalizingHmiScreenStore(inner);
 
         await store.GetAsync("  line-overview  ", version: 3);
@@ -401,7 +451,10 @@ public sealed class CanonicalizingHmiScreenStoreTests
     [Fact]
     public async Task ListVersionsAsync_TrimsTheScreenId_BeforeAskingTheInnerStore()
     {
+        // Seeded at the canonical spelling for the same reason GetAsync's trim test is — see that test's
+        // comment. The canonical-miss fallback is measured separately below (MED-1).
         var inner = new RecordingScreenStore();
+        inner.SeedRaw("line-overview", Screen("line-overview", "x"));
         var store = new CanonicalizingHmiScreenStore(inner);
 
         await store.ListVersionsAsync("  line-overview  ");
@@ -412,7 +465,10 @@ public sealed class CanonicalizingHmiScreenStoreTests
     [Fact]
     public async Task RollbackAsync_TrimsTheScreenId_AndForwardsToVersionUnchanged()
     {
+        // Seeded at the canonical spelling so the first (canonical) RollbackAsync attempt succeeds and the
+        // catch-and-retry fallback never engages — that fallback is measured separately below (MED-1).
         var inner = new RecordingScreenStore();
+        inner.SeedRaw("line-overview", Screen("line-overview", "x"));
         var store = new CanonicalizingHmiScreenStore(inner);
 
         await store.RollbackAsync("  line-overview  ", toVersion: 2);
@@ -421,19 +477,131 @@ public sealed class CanonicalizingHmiScreenStoreTests
     }
 
     [Fact]
-    public async Task ListScreenIdsAsync_ForwardsVerbatim_NoScreenIdParameterToCanonicalise()
+    public async Task ListScreenIdsAsync_ForwardsAnEmptyList_WhenNothingIsStored()
     {
-        // Does NOT measure output canonicalisation/deduplication — CanonicalScreenStore.cs's own doc
-        // comment states, and this pins, that ListScreenIdsAsync deliberately does NOT canonicalise-and-
-        // dedupe the way CanonicalizingComponentModelStore.ListMachineCodesAsync does: pairing that with a
-        // fallback-free GetAsync would make the list name an identity GetAsync cannot serve — the exact
-        // defect CanonicalMachineCodeStores.cs's re-review #3 closed for machine codes.
+        // 🔴 RENAMED, WS-HMI-2 Task 2 fix round 1 (review MED-3). This test used to be named
+        // "...ForwardsVerbatim_NoScreenIdParameterToCanonicalise" and claimed ListScreenIdsAsync
+        // "deliberately does NOT canonicalise-and-dedupe" — a claim this very test could not have caught
+        // going false, because an EMPTY inner list canonicalises to an EMPTY list either way. Measured:
+        // the old test stayed GREEN after MED-1 made the method canonicalise-and-dedupe for real. This
+        // version measures only the trivial case (empty in, empty out, one call) that IS still true; the
+        // canonicalise-and-dedupe property itself is
+        // ListScreenIdsAsync_CanonicalisesAndDeduplicates_SoTheListNeverNamesAnIdentityGetAsyncCannotServe
+        // below.
         var inner = new RecordingScreenStore();
         var store = new CanonicalizingHmiScreenStore(inner);
 
-        await store.ListScreenIdsAsync();
+        var ids = await store.ListScreenIdsAsync();
 
+        Assert.Empty(ids);
         Assert.Equal(new[] { "List:" }, inner.Calls);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // MED-1 (review round 1) — every identity the seam NAMES, the seam can SERVE. Before this round: a
+    // row written directly (bypassing this round's own ContractInvariants pattern fix — see
+    // CanonicalScreenStore.cs's own doc comment for why that closes the reproduction going forward but not
+    // the PROPERTY) under a non-canonical (padded) spelling made the list name one identity while
+    // GetAsync/ListVersionsAsync answered "never declared" for that exact name and RollbackAsync threw
+    // naming a THIRD spelling matching neither. Reproduced and closed here.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListScreenIdsAsync_CanonicalisesAndDeduplicates_SoTheListNeverNamesAnIdentityGetAsyncCannotServe()
+    {
+        // Does NOT measure GetAsync's own fallback — the next test does. This measures the OUTPUT half
+        // only: a row seeded at a padded, non-canonical spelling is reported under its TRIMMED name, not
+        // the raw stored one — mirroring CanonicalizingComponentModelStore.ListMachineCodesAsync's own
+        // canonicalise-and-dedupe for the identical reason.
+        var inner = new RecordingScreenStore();
+        inner.SeedRaw("  padded-screen  ", Screen("padded-screen", "legacy"));
+        var store = new CanonicalizingHmiScreenStore(inner);
+
+        var ids = await store.ListScreenIdsAsync();
+
+        Assert.Equal(new[] { "padded-screen" }, ids);
+    }
+
+    [Fact]
+    public async Task GetAsync_ServesARowStoredUnderANonCanonicalSpelling_ViaTheCanonicalMissFallback()
+    {
+        // MED-1's own reproduction, reproduced clean: seed a row at a padded spelling directly (the only
+        // way such a row can exist once this round's ContractInvariants pattern check closes the
+        // write-door reproduction), then ask for it at the CANONICAL spelling — the exact spelling
+        // ListScreenIdsAsync above proves the list would report.
+        var inner = new RecordingScreenStore();
+        inner.SeedRaw("  padded-screen  ", Screen("padded-screen", "legacy"));
+        var store = new CanonicalizingHmiScreenStore(inner);
+
+        var doc = await store.GetAsync("padded-screen");
+
+        Assert.True(doc is not null, "the canonical-miss fallback did not serve a row stored under a non-canonical spelling");
+        Assert.Equal("padded-screen", doc!.ScreenId);
+        // Canonical miss, then the fallback's own resolve-and-retry — exact call trace, so the fallback
+        // cannot be silently removed or short-circuited without this reddening.
+        Assert.Equal(new[] { "Get:padded-screen:null", "List:", "Get:  padded-screen  :null" }, inner.Calls);
+    }
+
+    [Fact]
+    public async Task ListVersionsAsync_ServesARowStoredUnderANonCanonicalSpelling_ViaTheCanonicalMissFallback()
+    {
+        var inner = new RecordingScreenStore();
+        inner.SeedRaw("  padded-screen  ", Screen("padded-screen", "legacy"));
+        var store = new CanonicalizingHmiScreenStore(inner);
+
+        var versions = await store.ListVersionsAsync("padded-screen");
+
+        Assert.NotEmpty(versions);
+        Assert.Equal(new[] { "ListVersions:padded-screen", "List:", "ListVersions:  padded-screen  " }, inner.Calls);
+    }
+
+    [Fact]
+    public async Task RollbackAsync_ServesARowStoredUnderANonCanonicalSpelling_InsteadOfThrowingNeverDeclared()
+    {
+        // Does NOT prove the new version is written under the CANONICAL spelling — it is not; see
+        // CanonicalScreenStore.cs's own doc comment ("WHAT THE FALLBACK DOES NOT DO") for why not, and why
+        // that is judged an acceptable residual rather than fixed here.
+        var inner = new RecordingScreenStore();
+        inner.SeedRaw("  padded-screen  ", Screen("padded-screen", "legacy"));
+        var store = new CanonicalizingHmiScreenStore(inner);
+
+        var newVersion = await store.RollbackAsync("padded-screen", toVersion: 1);
+
+        Assert.True(newVersion > 0);
+        Assert.Equal(new[] { "Rollback:padded-screen:1", "List:", "Rollback:  padded-screen  :1" }, inner.Calls);
+    }
+
+    [Fact]
+    public async Task RollbackAsync_OnAGenuinelyUndeclaredScreen_StillThrowsTheOriginalException()
+    {
+        // 🔴 The negative control the fallback needs: a canonical miss with NOTHING seeded anywhere must
+        // still throw — the fallback resolving to null must fall through to the ORIGINAL exception, not
+        // swallow it or manufacture a success. Without this, the catch-and-retry in
+        // CanonicalizingHmiScreenStore.RollbackAsync could be replaced by a bare `return 0;` on any
+        // exception and every OTHER test in this file would stay green.
+        var inner = new RecordingScreenStore();
+        var store = new CanonicalizingHmiScreenStore(inner);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => store.RollbackAsync("never-declared", toVersion: 1));
+    }
+
+    [Fact]
+    public async Task EveryMethodAgreesAboutOneRowsIdentity_TheExactPropertyMED1Requires()
+    {
+        // The property stated directly, as one scenario rather than four isolated probes: every identity
+        // ListScreenIdsAsync NAMES, every other method can SERVE. Before this round's fix, measured: the
+        // list named "  padded-screen  ", GetAsync/ListVersionsAsync both answered "never declared" for
+        // that exact string, and RollbackAsync threw naming a THIRD spelling matching neither.
+        var inner = new RecordingScreenStore();
+        inner.SeedRaw("  padded-screen  ", Screen("padded-screen", "legacy"));
+        var store = new CanonicalizingHmiScreenStore(inner);
+
+        var listed = await store.ListScreenIdsAsync();
+        var name = Assert.Single(listed);
+
+        Assert.True(await store.GetAsync(name) is not null, $"GetAsync could not serve '{name}', which the list just reported");
+        Assert.NotEmpty(await store.ListVersionsAsync(name));
+        Assert.True(await store.RollbackAsync(name, toVersion: 1) > 0, $"RollbackAsync could not serve '{name}', which the list just reported");
     }
 
     [Fact]
@@ -478,17 +646,58 @@ public sealed class CanonicalizingHmiScreenStoreTests
         // refactor cannot slip a method past this the way CanonicalMachineCodeStoresTests' re-review #4
         // measured GetMethods() alone could) has SOME declared disposition. Correctness of each disposition
         // is every test above.
+        //
+        // 🔴 WS-HMI-2 Task 2 fix round 1 (review MED-3) — made ACTUALLY bidirectional, not merely narrated
+        // as such. CanonicalizingHmiScreenStore.HandledMethods' own doc comment says this test "fails if
+        // either side names a method the other does not" — measured FALSE before this fix: seeding
+        // HandledMethods with a stale extra name ("FrobnicateAsync", naming no real method) left this test
+        // GREEN, because only the "missing" direction (declared-but-unhandled) was ever checked. Both
+        // directions now run, combined into ONE failure so a run never reports only half a drift — same
+        // reasoning CanonicalMachineCodeStoresTests.AssertDispositionsCoverExactly states for its own
+        // two-directional check.
         var seam = typeof(IHmiScreenStore);
         var handled = CanonicalizingHmiScreenStore.HandledMethods;
         var declared = seam.GetMethods().Concat(seam.GetInterfaces().SelectMany(i => i.GetMethods()))
                            .Select(m => m.Name).Distinct().ToArray();
         var missing = declared.Except(handled).ToArray();
-        Assert.True(missing.Length == 0,
-            $"IHmiScreenStore's surface — its own members AND every member inherited from a base interface — " +
-            $"carries method(s) with NO identity disposition: {string.Join(", ", missing)}. Decide: does this " +
-            $"method see a screen id? If yes, canonicalise it and add a probe measuring what the inner store " +
-            $"received. If no, add a `false` entry NAMING the other identity. Do NOT delete this test to make " +
-            $"it pass: forwarding an unhandled method is the exact defect it exists to catch (WS-HMI-0b, three " +
-            $"consecutive rounds).");
+        var stale = handled.Except(declared).ToArray();
+
+        var parts = new List<string>();
+        if (missing.Length > 0)
+        {
+            parts.Add(
+                $"IHmiScreenStore's surface — its own members AND every member inherited from a base interface — " +
+                $"carries method(s) with NO identity disposition: {string.Join(", ", missing)}. Decide: does this " +
+                $"method see a screen id? If yes, canonicalise it and add a probe measuring what the inner store " +
+                $"received. If no, add a `false` entry NAMING the other identity. Do NOT delete this test to make " +
+                $"it pass: forwarding an unhandled method is the exact defect it exists to catch (WS-HMI-0b, three " +
+                $"consecutive rounds).");
+        }
+        if (stale.Length > 0)
+        {
+            parts.Add(
+                $"HandledMethods names method(s) IHmiScreenStore's surface no longer carries: " +
+                $"{string.Join(", ", stale)} — remove the stale entry.");
+        }
+
+        Assert.True(missing.Length == 0 && stale.Length == 0, string.Join(" | ", parts));
+    }
+
+    [Fact]
+    public void TheSeamGuard_ActuallyRedensOnAStaleHandledMethodsEntry_NotJustOnAMissingOne()
+    {
+        // 🔴 The positive control MED-3 named directly: an instrument that cannot go red is not an
+        // instrument. Reproduces the exact false-green the review measured (a stale "FrobnicateAsync" entry
+        // survived undetected) against a HAND-BUILT set, so this control does not depend on
+        // CanonicalizingHmiScreenStore.HandledMethods ever actually going stale to prove the CHECKER catches
+        // it when it does.
+        var seam = typeof(IHmiScreenStore);
+        var declared = seam.GetMethods().Concat(seam.GetInterfaces().SelectMany(i => i.GetMethods()))
+                           .Select(m => m.Name).Distinct().ToArray();
+
+        var withStaleEntry = new HashSet<string>(declared, StringComparer.Ordinal) { "FrobnicateAsync" };
+        var stale = withStaleEntry.Except(declared).ToArray();
+
+        Assert.Equal(new[] { "FrobnicateAsync" }, stale);
     }
 }

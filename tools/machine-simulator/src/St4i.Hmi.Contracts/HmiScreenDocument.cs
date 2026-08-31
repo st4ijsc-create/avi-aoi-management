@@ -42,7 +42,15 @@ public sealed record ScreenLayout(int Cols, int Rows, string Breakpoint);
 /// <c>PutAsync</c> của nó gọi <see cref="ContractInvariants.ThrowIfInvalid(HmiScreenDocument)"/> làm câu
 /// lệnh đầu tiên. Giờ đọc đúng là NGƯỢC LẠI: bộ kiểm tồn tại, VÀ một cửa ghi có gác cũng đã có — chỉ là
 /// cửa ấy (<c>HmiScreenStore</c>) chưa có đăng ký DI/route nào đưa engine đang chạy tới nó (dự kiến
-/// WS-HMI-2 Task 2/3).</para></summary>
+/// WS-HMI-2 Task 2/3).</para>
+///
+/// <para>📎 🔴 <b>"CHƯA CÓ ĐĂNG KÝ DI" — RÚT, WS-HMI-2 Task 2, giữ nguyên văn đoạn trên.</b> Đúng tới hết
+/// <c>c30655b5</c>. SAI từ <c>66bcedda</c>: <c>Program.cs</c> giờ đăng ký <c>IHmiScreenStore</c> là
+/// <c>St4i.EngineApi.HmiModel.CanonicalizingHmiScreenStore</c> (bọc <c>HmiScreenStore</c> — một biến cục
+/// bộ, không bao giờ đăng ký theo kiểu cụ thể). Vẫn CHƯA có route/endpoint nào lấy <c>IHmiScreenStore</c>
+/// làm tham số handler (dự kiến WS-HMI-2 Task 3) — nên đúng trạng thái trung gian <c>hmi-model</c>/
+/// <c>hmi-tags</c> từng ở giữa WS-HMI-0a Task 5 và WS-HMI-0b Task 4: ĐÃ KHAI VÀ ĐÃ ĐĂNG KÝ, được tạo ở
+/// lần phân giải đầu tiên mà chưa endpoint nào thực hiện.</para></summary>
 public sealed record ScreenWidget(
     string Id,
     string Kind,

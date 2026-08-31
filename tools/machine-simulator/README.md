@@ -1335,6 +1335,17 @@ is a declaration count and always was. The `.NET` test harness redirects both le
 (`tests/Shared/TestRunTempRoot.cs`) and that redirect stays required, not optional: `HmiModelWiringTests`
 resolves both seams directly, and WS-HMI-0b's endpoint tests will resolve them constantly.
 
+🔴 **WS-HMI-2 Task 2, 2026-09-01 — "declared the same way, not yet resolved by any DI registration or
+endpoint" (§15.4's opening paragraph, `hmi-screens` parenthetical) is RETRACTED, kept verbatim there.**
+True through `c30655b5`. False from `66bcedda`: `Program.cs` now registers `IHmiScreenStore` as
+`CanonicalizingHmiScreenStore` (wrapping `HmiScreenStore` — a local, never registered by its own
+concrete type, same law this section already documents for `IComponentModelStore`/`ITagNamespaceStore`).
+**What did NOT change:** still no route/endpoint takes `IHmiScreenStore` as a handler parameter (WS-HMI-2
+Task 3's job), so a running engine still never resolves the seam and `%ProgramData%\ST4I\sim\hmi-screens`
+is still never created today — the exact intermediate state this section's own history documents for
+`hmi-model`/`hmi-tags` between WS-HMI-0a Task 5 and WS-HMI-0b Task 4: **declared and registered; created
+on first resolution, which no endpoint performs until WS-HMI-2 Task 3.**
+
 To actually purge it (decommissioning a machine, resetting a demo box), run the separate, explicit,
 destructive script — **never** invoked by the MSI itself:
 
@@ -1492,6 +1503,12 @@ việc máy ĐÃ LÀM GÌ, không phải thứ vận hành viên dựng lên.
 🔴 **CẬP NHẬT WS-HMI-2 Task 1 — engine KHAI HAI MƯƠI thư mục, script xoá MƯỜI TÁM.** `hmi-screens` (tài
 liệu màn hình HMI đã lưu, mỗi lần ghi một phiên bản) gia nhập danh sách XOÁ cùng lý do với `hmi-model`/
 `hmi-tags` ở dưới — chưa store .NET nào phân giải nó qua DI hôm nay, nhưng đã KHAI trong `src/`.
+📎 🔴 **"CHƯA STORE .NET NÀO PHÂN GIẢI NÓ QUA DI" — RÚT, WS-HMI-2 Task 2, 2026-09-01, giữ nguyên văn câu
+trên.** Đúng tới hết `c30655b5`. Sai từ `66bcedda`: `Program.cs` giờ đăng ký `IHmiScreenStore` là
+`CanonicalizingHmiScreenStore`. Vẫn CHƯA đổi: chưa route/endpoint nào lấy `IHmiScreenStore` làm tham số
+handler (dự kiến WS-HMI-2 Task 3) — nên một engine đang chạy vẫn chưa phân giải seam này và
+`%ProgramData%\ST4I\sim\hmi-screens` vẫn chưa được tạo hôm nay, đúng trạng thái trung gian `hmi-model`/
+`hmi-tags` từng ở giữa WS-HMI-0a Task 5 và WS-HMI-0b Task 4.
 📎 🔴 **RÚT WS-HMI-2 Task 1, giữ nguyên văn:** câu ngay trên đọc CẬP NHẬT 2026-08-30 (WS-HMI-0a Task 5) —
 *"engine KHAI MƯỜI CHÍN thư mục, script xoá MƯỜI BẢY."* `hmi-model` (cây linh kiện đã khai của máy) và
 `hmi-tags` (namespace tag đã khai) gia nhập danh sách XOÁ, không phải danh sách GIỮ — chúng gần với
@@ -1718,6 +1735,15 @@ SECOND store population" below, and read it before concluding two hosts are sepa
 `ST4I_HMI_SCREENS_DIR`) to the population — declared in `src/` from this task, not yet resolved by any DI
 registration or endpoint, the same "declared, not created" distinction the paragraph below draws for
 `hmi-model`/`hmi-tags`.
+
+🔴 **"NOT YET RESOLVED BY ANY DI REGISTRATION" — RETRACTED, WS-HMI-2 Task 2, 2026-09-01, the paragraph
+above kept verbatim.** True through `c30655b5`. False from `66bcedda`: `Program.cs` now registers
+`IHmiScreenStore` as `CanonicalizingHmiScreenStore`. **What did NOT change:** still no
+route/endpoint resolves it (WS-HMI-2 Task 3's job), so `hmi-screens` moves from "declared, not
+registered" to **declared and registered; created on first resolution, which no endpoint performs until
+WS-HMI-2 Task 3** — the identical intermediate state the next paragraph documents for
+`hmi-model`/`hmi-tags` between WS-HMI-0a Task 5 and WS-HMI-0b Task 4. The count (**20**) does not move
+either way — it was always a declaration count, not a resolution count.
 
 🔴 **WS-HMI-0a Task 5, 2026-08-30 — SIXTEEN → EIGHTEEN.** `hmi-model` (`ComponentModelStore`,
 `ST4I_HMI_MODEL_DIR`) and `hmi-tags` (`TagNamespaceStore`, `ST4I_HMI_TAGS_DIR`) joined the population

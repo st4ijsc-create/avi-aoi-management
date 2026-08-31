@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace St4i.Hmi.Contracts;
 
 /// <summary>Ném khi một tài liệu vi phạm luật an toàn §5. <see cref="Violations"/> mang TOÀN BỘ vi phạm,
@@ -25,6 +27,17 @@ public sealed class ContractViolationException : Exception
 /// không kiểm tư cách thành viên của bất kỳ <c>enum</c> nào. Một tài liệu qua được
 /// đây vẫn có thể bị schema từ chối. Và nó chỉ chạy ở nơi có ai đó gọi nó; serialize thẳng bằng
 /// <c>JsonSerializer</c> vẫn đi vòng qua được. Bảo vệ nằm ở CỬA GHI (các store), không ở kiểu dữ liệu.</para>
+///
+/// <para>📎 🔴 <b>"KHÔNG PATTERN" KHÔNG CÒN ĐÚNG CHO MỘT TRƯỜNG — RÚT MỘT PHẦN, WS-HMI-2 Task 2 fix round
+/// 1, giữ nguyên văn đoạn trên.</b> Đúng tới hết <c>66bcedda</c>: đo được, một
+/// <see cref="HmiScreenDocument"/> với <c>ScreenId="MyScreen"</c> qua <see cref="Validate(HmiScreenDocument)"/>
+/// với 0 vi phạm, và <c>St4i.EngineApi.HmiModel.HmiScreenStore.PutAsync</c> ghi nó xuống đĩa nguyên vẹn —
+/// không regex nào trong file này, không fixture <c>invalid/</c> nào bắt nó, và trình biên soạn
+/// TypeScript được nhắc tới ở một bản trước của
+/// <c>St4i.EngineApi.HmiModel.CanonicalScreenStore.cs</c> không tồn tại (grep <c>web/src</c>: 0 kết quả).
+/// SAI từ đợt sửa này: <see cref="Validate(HmiScreenDocument)"/> giờ kiểm ĐÚNG MỘT pattern — xem "LOẠI
+/// LUẬT THỨ BA" bên dưới. <b>Đoạn trên vẫn đúng cho MỌI trường khác:</b> đây không trở thành một bộ
+/// validate JSON Schema tổng quát chỉ vì MỘT trường có thêm một luật định dạng.</para>
 ///
 /// <para>🔴 <b>LUẬT ĐƯỢC KIỂM — liệt kê đầy đủ, vì đoạn giới hạn cũ nói "ba luật" trong khi bảng dưới đây
 /// có nhiều hơn ba, và một đoạn đếm sai làm người đọc kết luận §5 đã đóng ở chỗ nó chưa đóng</b>
@@ -70,11 +83,28 @@ public sealed class ContractViolationException : Exception
 /// danh sách này, là thứ một người thêm trường mới phải đọc. Danh sách này tồn tại để người đọc biết loại
 /// luật thứ hai CÓ tồn tại.</para>
 ///
+/// <para>🔴 <b>LOẠI LUẬT THỨ BA — ĐỊNH DẠNG (PATTERN), ĐÚNG MỘT TRƯỜNG, THÊM Ở WS-HMI-2 Task 2 fix round
+/// 1 (review MED-carried-ruling).</b> Ngoài luật CÓ ĐIỀU KIỆN và luật CÓ MẶT ở trên,
+/// <see cref="Validate(HmiScreenDocument)"/> giờ kiểm một luật thứ ba, hẹp có chủ ý:
+/// <c>ScreenId</c> phải khớp <c>^[a-z0-9-]+$</c> — pattern <c>contracts/hmi-screen.schema.json</c> đã đóng
+/// băng cho trường này nhưng phía .NET trước đợt sửa này không thi hành. <b>Vì sao đóng ở ĐÂY chứ không ở
+/// một builder phía trên</b> — cùng lý do WS-HMI-0c đóng lỗ <c>source</c> thiếu ở
+/// <see cref="Validate(TagNamespaceDocument)"/> thay vì ở một builder: đây là cửa MỌI producer .NET đi
+/// qua, kể cả một caller gọi thẳng store mà không qua builder/endpoint nào; đóng ở một lớp trên sẽ để cửa
+/// ấy mở. <b>Vì sao KHÔNG mở rộng sang trường nào khác</b> — không <c>widget.id</c>, dù nó mang pattern
+/// giống hệt trong schema: <see cref="St4i.EngineApi.HmiModel.CanonicalizingHmiScreenStore"/> (WS-HMI-2
+/// Task 2) là lý do luật này tồn tại NGAY BÂY GIỜ — nó trim khoảng trắng của <c>screenId</c> nhưng KHÔNG
+/// sửa hoa/thường, với lý do hoa/thường là một VI PHẠM hợp đồng cần TỪ CHỐI chứ không phải hai cách viết
+/// một định danh cần GỘP; thiếu luật này, quyết định "từ chối, không gộp" đó không có gì thi hành. Mở
+/// rộng sang các trường khác là trôi dần về một bộ validate JSON Schema tổng quát — điều đoạn "Giới hạn"
+/// ở đầu file này vẫn từ chối làm, trừ đúng một ngoại lệ được đặt tên ở đây.</para>
+///
 /// <para>🔴 <b>CÁI CÒN LẠI CHƯA KIỂM, nói tên chứ không để người đọc tự suy:</b> không có bộ kiểm nào cho
 /// <c>screenId</c>/<c>widget.id</c> trùng nhau, cho <see cref="ScreenLayout"/> có nằm trong dải
 /// <c>1..48</c> của schema, cho <c>bindings</c> có tham chiếu tới một <c>component</c> có thật, hay cho
 /// bất kỳ chuỗi enum nào (<c>theme</c>, <c>breakpoint</c>, <c>kind</c>, <c>tone</c>, <c>dataType</c>) là
-/// thành viên hợp lệ. Những thứ ấy schema thi hành và <c>web/contract-tests/validate.mjs</c> chạy; ở phía
+/// thành viên hợp lệ — <c>widget.id</c>'s OWN pattern included, dù <c>screenId</c>'s giờ được kiểm (đoạn
+/// ngay trên). Những thứ ấy schema thi hành và <c>web/contract-tests/validate.mjs</c> chạy; ở phía
 /// .NET chúng KHÔNG được thi hành.</para>
 ///
 /// <para>📎 🔴 <b>"VÀ KHÔNG CÓ STORE .NET NÀO GHI <c>HmiScreenDocument</c>… CHƯA CÓ AI GỌI" — RÚT
@@ -87,6 +117,15 @@ public sealed class ContractViolationException : Exception
 /// ra để không lệch sang cực kia:</b> <c>HmiScreenStore</c> chưa có đăng ký DI trong <c>Program.cs</c> và
 /// chưa có route nào gọi tới nó (dự kiến WS-HMI-2 Task 2/3) — nên bộ kiểm này đã canh cửa THẬT, nhưng
 /// engine đang chạy vẫn chưa đi qua cửa ấy hôm nay.</para>
+///
+/// <para>📎 🔴 <b>"CHƯA CÓ ĐĂNG KÝ DI" — RÚT, WS-HMI-2 Task 2, giữ nguyên văn câu trên.</b> Đúng tới hết
+/// <c>c30655b5</c>. SAI từ <c>66bcedda</c>: <c>Program.cs</c> giờ đăng ký <c>IHmiScreenStore</c> —
+/// <c>CanonicalizingHmiScreenStore</c> bọc <c>HmiScreenStore</c> (một biến cục bộ, không bao giờ
+/// <c>AddSingleton</c> theo kiểu cụ thể — cùng luật <c>CanonicalMachineCodeStores.cs</c> phát biểu cho hai
+/// kho anh em của nó). <b>Cái vẫn CHƯA đổi:</b> chưa route/endpoint nào lấy <c>IHmiScreenStore</c> làm
+/// tham số handler (dự kiến WS-HMI-2 Task 3), nên đúng trạng thái trung gian <c>hmi-model</c>/<c>hmi-tags</c>
+/// từng ở giữa WS-HMI-0a Task 5 và WS-HMI-0b Task 4: ĐÃ KHAI VÀ ĐÃ ĐĂNG KÝ, được tạo ở lần phân giải đầu
+/// tiên mà chưa endpoint nào thực hiện.</para>
 /// </summary>
 public static class ContractInvariants
 {
@@ -131,6 +170,12 @@ public static class ContractInvariants
     /// <c>hmi-screen.schema.json</c> → <c>$defs.widget.allOf[0].if</c>.</summary>
     public static readonly IReadOnlySet<string> WritableWidgetKinds =
         new HashSet<string>(StringComparer.Ordinal) { "setpoint-input", "command-button" };
+
+    /// <summary>WS-HMI-2 Task 2 fix round 1 — LOẠI LUẬT THỨ BA (xem doc-comment đầu file). Ghim với
+    /// <c>hmi-screen.schema.json</c> → <c>properties.screenId.pattern</c>, ĐÚNG MỘT trường —
+    /// <c>widget.id</c> mang pattern giống hệt trong schema nhưng KHÔNG được thi hành ở đây, có chủ ý
+    /// (xem "CÁI CÒN LẠI CHƯA KIỂM" ở doc-comment đầu file).</summary>
+    private static readonly Regex ScreenIdPattern = new("^[a-z0-9-]+$", RegexOptions.Compiled);
 
     /// <summary>Kiểm một <see cref="TagNamespaceDocument"/>: (1) mọi tag <c>access == "rw"</c>
     /// phải có <see cref="TagDescriptor.PolicyAction"/> (luật §5); (2) mọi <see cref="TagDescriptor.Path"/>
@@ -654,6 +699,10 @@ public static class ContractInvariants
         // states. Previously all four were silently 0-violation and named nowhere.
         if (string.IsNullOrWhiteSpace(doc.ScreenId))
             v.Add("screenId: thiếu trường bắt buộc (null/rỗng) — bắt buộc phải có");
+        else if (!ScreenIdPattern.IsMatch(doc.ScreenId))
+            v.Add($"screenId: '{doc.ScreenId}' không khớp mẫu bắt buộc \"^[a-z0-9-]+$\" mà " +
+                  "contracts/hmi-screen.schema.json đã đóng băng cho trường này — chỉ chữ thường a-z, " +
+                  "chữ số, và dấu gạch ngang");
         if (string.IsNullOrWhiteSpace(doc.Title))
             v.Add("title: thiếu trường bắt buộc (null/rỗng) — bắt buộc phải có");
         if (string.IsNullOrWhiteSpace(doc.Theme))
@@ -723,7 +772,13 @@ public static class ContractInvariants
     /// chỗ hai anh em nó, <c>ComponentModelStore</c>/<c>TagNamespaceStore</c>'s <c>PutAsync</c>, đã gọi từ
     /// trước). Cái vẫn CHƯA đổi: <c>HmiScreenStore</c> chưa có đăng ký DI, chưa có route — nên "màn hình
     /// đã được gác" đúng ở CỬA STORE, chưa đúng ở "engine đang chạy phục vụ request thật" (dự kiến
-    /// WS-HMI-2 Task 2/3).</para></summary>
+    /// WS-HMI-2 Task 2/3).</para>
+    ///
+    /// <para>📎 🔴 <b>"CHƯA CÓ ĐĂNG KÝ DI" — RÚT, WS-HMI-2 Task 2, giữ nguyên văn câu trên.</b> Đúng tới
+    /// hết <c>c30655b5</c>. SAI từ <c>66bcedda</c>: <c>Program.cs</c> giờ đăng ký <c>IHmiScreenStore</c> là
+    /// <c>CanonicalizingHmiScreenStore</c>. Vẫn CHƯA có route/endpoint nào lấy nó làm tham số handler (dự
+    /// kiến WS-HMI-2 Task 3) — nên "màn hình đã được gác" giờ đúng ở CẢ CỬA STORE LẪN Ở DI, nhưng "engine
+    /// đang chạy phục vụ request thật" thì vẫn chưa, đúng như đoạn trên đã dự đoán.</para></summary>
     public static void ThrowIfInvalid(HmiScreenDocument doc)
     {
         var v = Validate(doc);

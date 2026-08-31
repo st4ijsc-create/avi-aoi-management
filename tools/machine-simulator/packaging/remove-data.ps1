@@ -30,7 +30,16 @@
   of "record of what the machine currently shows" `hmi-model`/`hmi-tags` already are, not a
   `products`/`ecosystem`-style recipe an operator authored outside the product.
 
-  THE TRIGGER, STATED NOW SO IT DOES NOT HAVE TO BE GUESSED WHEN TASK 2/3 WIRE THIS SEAM: neither at
+  "NO DI REGISTRATION" - RETRACTED, WS-HMI-2 TASK 2, 2026-09-01, PARAGRAPH ABOVE KEPT VERBATIM. True
+  through c30655b5. False from 66bcedda: Program.cs now registers IHmiScreenStore as
+  CanonicalizingHmiScreenStore (wrapping HmiScreenStore - a LOCAL, never registered by its own concrete
+  type). What did NOT change: still no route/endpoint takes IHmiScreenStore as a handler parameter
+  (that is WS-HMI-2 Task 3), so a running engine still never resolves the seam and
+  %ProgramData%\ST4I\sim\hmi-screens is still never created today - the same "declared and registered;
+  created on first resolution, which no endpoint performs" state hmi-model/hmi-tags were in between
+  WS-HMI-0a Task 5 and WS-HMI-0b Task 4, documented at length below.
+
+  THE TRIGGER, STATED NOW SO IT DOES NOT HAVE TO BE GUESSED WHEN TASK 3 WIRES THIS SEAM: neither at
   startup nor at first WRITE. `HmiScreenStore`'s constructor calls `Directory.CreateDirectory(root)`
   unconditionally, so once something registers `IHmiScreenStore` as an `AddSingleton<T>(sp => new …)`
   factory and a route takes it as a handler parameter, the directory appears on the FIRST DI
@@ -60,6 +69,14 @@
   eager construction): /v1/components* and /v1/component-types create hmi-model; /v1/tags* creates
   hmi-tags; PUT /v1/components/{code} and GET /v1/components/{code}/integrity create both, because they
   read the tag namespace to report referential integrity.
+
+  "HMI-SCREENS HAS NO DI REGISTRATION YET" - RETRACTED, WS-HMI-2 TASK 2, 2026-09-01, THE PARENTHETICAL
+  TWO PARAGRAPHS ABOVE KEPT VERBATIM. True through c30655b5. False from 66bcedda: Program.cs now
+  registers IHmiScreenStore as CanonicalizingHmiScreenStore. The numerator it was given as the reason
+  for still does NOT move to nineteen, because registration alone does not create the directory - no
+  route resolves IHmiScreenStore yet (WS-HMI-2 Task 3's job), so hmi-screens is still excluded from the
+  eighteen, now for the SAME reason hmi-model/hmi-tags were excluded between WS-HMI-0a Task 5 and
+  WS-HMI-0b Task 4: declared and registered, not yet resolved.
 
   WHAT THAT MEANS FOR AN OPERATOR STANDING AT A MACHINE, which is the only reason this paragraph is here:
   finding ONE of these two directories absent is NORMAL. A host that has served tag traffic and no

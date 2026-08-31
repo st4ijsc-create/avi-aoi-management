@@ -22,26 +22,67 @@ namespace St4i.EngineApi.HmiModel;
 /// lower-casing it would launder a contract violation into a merge instead of surfacing it. So this seam
 /// folds exactly one thing: <see cref="ScreenIdentity.Canonicalize"/> is <c>Trim()</c>, nothing else.</para>
 ///
-/// <para>🔴 <b>The gap that makes trimming necessary anyway, measured rather than assumed from the pattern
-/// string above.</b> The schema's <c>pattern</c> is enforced by <c>check-contracts.mjs</c> against
-/// fixtures and by the TypeScript builder — <b>not</b> by the C# runtime write door.
-/// <see cref="ContractInvariants.Validate(HmiScreenDocument)"/>, which
-/// <see cref="HmiScreenStore.PutAsync"/> calls as its first statement, checks only
-/// <c>string.IsNullOrWhiteSpace(doc.ScreenId)</c> for this field — there is no regex check anywhere in
-/// that method (grepped: zero hits for the pattern's character class in <c>ContractInvariants.cs</c>). So
-/// <c>"  line-overview  "</c> reaches <see cref="HmiScreenStore.PutAsync"/> exactly as freely as
-/// <c>"line-overview"</c> does, and the <c>screens</c>/<c>screen_current</c> tables key on
-/// <c>screen_id TEXT</c> with no <c>COLLATE NOCASE</c> and no trimming of their own (verified against
-/// <see cref="HmiScreenStore"/>'s migration DDL) — SQLite's default BINARY collation treats padded and
-/// unpadded spellings as two distinct primary keys. Left alone, one screen edited once with a
-/// leading/trailing space would silently become two rows: one the builder's next load finds, one it
-/// never sees again. That is the exact "two spellings, one entity, two rows" shape
-/// <c>CanonicalMachineCodeStores.cs</c>'s own doc comment opens with, for a different field. <b>This is
-/// reported, not silently fixed elsewhere</b>: enforcing the schema's character-class pattern at the C#
-/// write door is a validation gap in <see cref="ContractInvariants"/>, not an identity question this
-/// decorator answers — folding whitespace here does not, and is not meant to, make an out-of-pattern
-/// spelling (a stray uppercase letter, say) valid. It only stops whitespace from splitting one identity
-/// into two.</para>
+/// <para>🔴 <b>THE GAP THAT MADE TRIMMING NECESSARY WAS TWO GAPS, NOT ONE — CLOSED, WS-HMI-2 Task 2 fix
+/// round 1 (review carried ruling).</b> This paragraph used to say <see cref="ContractInvariants"/> checks
+/// only <c>IsNullOrWhiteSpace(doc.ScreenId)</c> and cited a "TypeScript builder" enforcing the schema's
+/// pattern — <b>that builder does not exist</b> (grepped: zero <c>a-z0-9</c>-pattern hits anywhere in
+/// <c>web/src</c>), so the corrected claim is worse than the one it replaces, not better, and is retracted
+/// rather than repeated. What was true and now is NOT: <see cref="ContractInvariants.Validate(HmiScreenDocument)"/>,
+/// which <see cref="HmiScreenStore.PutAsync"/> calls as its first statement, now ALSO rejects a
+/// <c>screenId</c> that does not match <c>^[a-z0-9-]+$</c> — see that method's own doc comment for the
+/// measurement (<c>ScreenId="MyScreen"</c> drew 0 violations before this round) and for why the fix belongs
+/// there and not in a builder. <b>How the two fixes interact, stated so a reader does not have to work it
+/// out:</b> this decorator's <c>Trim()</c> runs BEFORE the document reaches that check, so a DI caller who
+/// types <c>"  line-overview  "</c> gets it silently forgiven (trimmed, then valid) while a DI caller who
+/// types <c>"  Line-Overview  "</c> gets a <see cref="ContractViolationException"/> naming the violation
+/// (trimmed to <c>"Line-Overview"</c>, still fails the pattern) — whitespace is an accident this decorator
+/// exists to forgive, a wrong character is a specification violation <see cref="ContractInvariants"/> exists
+/// to refuse, and the two are not the same question. <b>What is now UNREACHABLE through any DI or direct
+/// <c>HmiScreenStore.PutAsync</c> call, stated so the residual below is not over-read:</b> the exact
+/// padded-and-otherwise-valid row (<c>"  padded-screen  "</c>) MED-1's own probe used to demonstrate the
+/// fallback below is now REJECTED at the write door before it ever reaches a table, because
+/// <c>^[a-z0-9-]+$</c> has no whitespace in its character class either. That closes the reproduction this
+/// task shipped it against — it does not retire the PROPERTY the fallback establishes; see the next
+/// paragraph for why the fallback is kept anyway.</para>
+///
+/// <para>🔴 <b>THE PROPERTY THIS SEAM NOW ESTABLISHES — every identity the seam NAMES, the seam can SERVE —
+/// closed as a property (review MED-1), not left paired with a decision that did not survive its own
+/// probe.</b> A previous version of this file argued <see cref="ListScreenIdsAsync"/> forwarding verbatim
+/// and <see cref="GetAsync"/> having no canonical-miss fallback were a SAFE PAIRING. Measured, with a raw
+/// <c>new HmiScreenStore(dir)</c>-written row <c>"  padded-screen  "</c> seeded directly (bypassing
+/// <see cref="ContractInvariants"/> entirely, which is exactly how such a row would exist — a build from
+/// before this round, or a direct database write, not a live C# write path): the list named
+/// <c>"  padded-screen  "</c>, and <see cref="GetAsync"/>/<see cref="ListVersionsAsync"/> BOTH answered
+/// "never declared" for the exact string the list had just handed back, while
+/// <see cref="RollbackAsync"/> threw naming a THIRD spelling (the canonicalised one) that matched neither.
+/// Three methods, three different answers, for one row. <b>The argument was wrong because decision (2) —
+/// no output canonicalisation — bought nothing: decision (1), no fallback, was the entire cause</b>, and
+/// removing (2) alone (canonicalise-and-dedupe the list) would have made the list LIE (report a clean
+/// canonical name for a row nothing could then serve), which is worse. Closed here the way
+/// <see cref="CanonicalizingComponentModelStore.GetAsync"/> already closes it for machine codes — see that
+/// method's own doc comment for the re-review it defends against, now measured for screens too:
+/// <see cref="ListScreenIdsAsync"/> canonicalises AND de-duplicates its output (so the list only ever
+/// names an identity that is, by construction, a name <see cref="GetAsync"/> can resolve), and
+/// <see cref="GetAsync"/>/<see cref="ListVersionsAsync"/>/<see cref="RollbackAsync"/> each try the canonical
+/// spelling first and, on a miss, resolve the identity against the RAW stored ids
+/// (<c>_inner.ListScreenIdsAsync</c>, never this decorator's own canonicalised one — resolving against an
+/// already-canonicalised list could never find a non-canonical row) and retry under whichever spelling the
+/// row actually lives at.</para>
+///
+/// <para>🔴 <b>WHAT THE FALLBACK DOES NOT DO — <see cref="RollbackAsync"/>'s residual, named rather than
+/// assumed away.</b> <see cref="HmiScreenStore.RollbackAsync"/> reads and re-<c>PutAsync</c>s entirely
+/// through its OWN (raw) <c>GetAsync</c>/<c>PutAsync</c> — so forwarding a RESOLVED raw spelling to
+/// <c>_inner.RollbackAsync</c> makes the call SUCCEED (the property above holds: the identity is served),
+/// but the NEW version it appends is written under that SAME raw, non-canonical spelling, not migrated to
+/// canonical — because the raw store's own <c>PutAsync</c> does not go back through this decorator. This
+/// is the identical shape <c>CanonicalMachineCodeStores.cs</c>'s own guarantee section accepts for a direct
+/// <c>ComponentModelStore</c> caller: airtight for SERVING an identity through DI, not a promise to REWRITE
+/// a row's storage key. A screen rolled back through this path stays reachable at every spelling
+/// <see cref="GetAsync"/> already resolves; it does not become a canonical row by being rolled back.
+/// Self-healing the key would mean re-implementing <see cref="HmiScreenStore.RollbackAsync"/>'s own
+/// version-history and error-message logic here, duplicating business logic this decorator exists to wrap
+/// rather than replace — judged the wrong trade for a residual that, after the paragraph above, requires a
+/// row already on disk from before this round shipped.</para>
 ///
 /// <para><b>The empty string, named rather than left to be inferred.</b>
 /// <see cref="ScreenIdentity.Canonicalize"/> mirrors <see cref="MachineCodeIdentity.Canonicalize"/>'s
@@ -56,45 +97,13 @@ namespace St4i.EngineApi.HmiModel;
 /// <c>IsNullOrWhiteSpace</c>, true for both spellings), so there is no behavioural reason to coerce it
 /// and a philosophical reason not to: canonicalisation and validation are different jobs.</para>
 ///
-/// <para>🔴 <b>What this does NOT do, named the way <c>CanonicalMachineCodeStores.cs</c> names its own
-/// exclusions — because a decorator that describes its guarantee without describing its edges invites the
-/// same "PARTIAL adoption of a stated rule" defect that file spent five rounds closing.</b>
-/// <list type="number">
-///   <item><description><b>No canonical-miss fallback on <see cref="GetAsync"/>/
-///   <see cref="ListVersionsAsync"/>/<see cref="RollbackAsync"/>.</b>
-///   <see cref="CanonicalizingComponentModelStore.GetAsync"/> carries one because
-///   <see cref="ComponentModelStore"/> already had real, reachable rows on disk — written through a raw,
-///   undecorated registration — before its decorator existed. <see cref="HmiScreenStore"/> has no such
-///   history: this task is the FIRST time <see cref="IHmiScreenStore"/> is registered in
-///   <c>Program.cs</c> at all, so no handler has ever been able to write a screen through DI without
-///   going through this decorator, and no shipped build has ever exposed a raw-store write path to a real
-///   <c>%ProgramData%</c> installation. A fallback here would be unreachable code with nothing to
-///   reach.</description></item>
-///   <item><description><b>The residual risk that leaves, named rather than assumed away:</b> the raw
-///   <see cref="HmiScreenStore"/> constructor stays <c>public</c> (it must — the composition root
-///   constructs it directly, and its tests do too), so a caller that does
-///   <c>new HmiScreenStore(dir)</c> against the SAME directory <c>Program.cs</c> resolves can still write
-///   a padded row this decorator's <see cref="GetAsync"/> will report as "never declared". That is the
-///   same honest shape <c>CanonicalMachineCodeStores.cs</c> accepts for a direct
-///   <c>new ComponentModelStore(dir)</c> caller: airtight for DI, not for a raw constructor call against
-///   production data. Should a screen ever need the fallback machinery (a migration finds padded rows on
-///   a real install), <see cref="IHmiScreenStore.ListScreenIdsAsync"/> already gives this store the
-///   enumeration <see cref="ITagNamespaceStore"/> lacks, so the fix would be adding that fallback here —
-///   not inventing a new mechanism.</description></item>
-///   <item><description><b><see cref="ListScreenIdsAsync"/> forwards verbatim — no canonicalise-and-
-///   deduplicate the way <see cref="CanonicalizingComponentModelStore.ListMachineCodesAsync"/> does.</b>
-///   Not an oversight: canonicalise-and-dedupe on the way OUT while <see cref="GetAsync"/> has no
-///   fallback would reproduce the EXACT bug <c>CanonicalMachineCodeStores.cs</c> spent re-review #3 on —
-///   the list naming an identity a detail read cannot serve. Given no fallback exists (see above), the
-///   only safe pairing is "neither method rewrites what it did not write", which is what every row
-///   already is under the DI-only guarantee this decorator provides.</description></item>
-/// </list></para>
-///
 /// <para><b>The guarantee, at the strength it actually has.</b> Every screen written through DI — which is
 /// every screen any HTTP handler or background job can write, because the raw store is never registered —
-/// is stored under its trimmed <c>screenId</c>, and every read through DI resolves that same trimmed
-/// spelling. Two spellings differing only in surrounding whitespace can never diverge into two rows through
-/// this seam. What is NOT covered is stated above rather than left to be discovered.</para>
+/// is stored under its trimmed, pattern-valid <c>screenId</c>, and every read through DI resolves that
+/// same identity NO MATTER which spelling of it (canonical, or a raw non-canonical spelling a row happens
+/// to be stored under) a caller supplies — the list, the document, and every version-history read agree.
+/// What is NOT covered — a rolled-back row's storage key staying non-canonical — is stated above rather
+/// than left to be discovered.</para>
 /// </summary>
 internal static class ScreenIdentity
 {
@@ -105,6 +114,12 @@ internal static class ScreenIdentity
     /// violation to report, not this method's job to paper over or reject.</summary>
     public static string Canonicalize(string? screenId) =>
         string.IsNullOrWhiteSpace(screenId) ? screenId! : screenId.Trim();
+
+    /// <summary>Two spellings of one <c>screenId</c> identity, compared the way this seam defines identity.
+    /// Exists so the fallback below cannot drift into a second, subtly different comparison — same reason
+    /// <see cref="MachineCodeIdentity.SameIdentity"/> exists for its own seam.</summary>
+    public static bool SameIdentity(string? a, string? b) =>
+        string.Equals(Canonicalize(a), Canonicalize(b), StringComparison.Ordinal);
 }
 
 /// <summary>Canonicalises every <c>screenId</c> crossing the <see cref="IHmiScreenStore"/> seam — see this
@@ -136,10 +151,28 @@ internal sealed class CanonicalizingHmiScreenStore : IHmiScreenStore
         nameof(IHmiScreenStore.RollbackAsync),
     };
 
-    /// <summary>Canonicalises the lookup key only. No canonical-miss fallback — see this file's top-level
-    /// doc comment for why one is not reachable today and what would need to change to add it.</summary>
-    public Task<HmiScreenDocument?> GetAsync(string screenId, int? version = null, CancellationToken ct = default) =>
-        _inner.GetAsync(ScreenIdentity.Canonicalize(screenId), version, ct);
+    /// <summary>Canonical key first; if that misses, resolve the identity against the RAW stored ids and
+    /// retry under whichever spelling the row actually lives at — see this file's top-level doc comment
+    /// (MED-1) for the measurement that made this necessary and for why <see cref="ListScreenIdsAsync"/>'s
+    /// own canonicalisation does not make this redundant. The returned document's <c>ScreenId</c> is
+    /// re-canonicalised on the way out, so a caller never sees a document whose identity contradicts the
+    /// list it came from — same reasoning as <see cref="CanonicalizingComponentModelStore.GetAsync"/>.</summary>
+    public async Task<HmiScreenDocument?> GetAsync(string screenId, int? version = null, CancellationToken ct = default)
+    {
+        var canonical = ScreenIdentity.Canonicalize(screenId);
+
+        var doc = await _inner.GetAsync(canonical, version, ct).ConfigureAwait(false);
+        if (doc is null)
+        {
+            var storedId = await ResolveStoredScreenIdAsync(canonical, ct).ConfigureAwait(false);
+            if (storedId is not null)
+            {
+                doc = await _inner.GetAsync(storedId, version, ct).ConfigureAwait(false);
+            }
+        }
+
+        return doc is null ? null : Canonical(doc);
+    }
 
     /// <summary>Canonicalises <c>doc.ScreenId</c> before it ever reaches the inner store's SQL parameter —
     /// this is the one method where skipping canonicalisation would let two spellings become two rows,
@@ -147,24 +180,87 @@ internal sealed class CanonicalizingHmiScreenStore : IHmiScreenStore
     public Task<int> PutAsync(HmiScreenDocument doc, CancellationToken ct = default) =>
         _inner.PutAsync(doc with { ScreenId = ScreenIdentity.Canonicalize(doc.ScreenId) }, ct);
 
-    /// <summary>No <c>screenId</c> parameter to canonicalise, and — unlike
-    /// <see cref="CanonicalizingComponentModelStore.ListMachineCodesAsync"/> — no canonicalise-and-
-    /// deduplicate on the returned list either. See this file's top-level doc comment, exclusion 3: pairing
-    /// that with a fallback-free <see cref="GetAsync"/> would reproduce the exact "list names an identity
-    /// the detail read cannot serve" defect <c>CanonicalMachineCodeStores.cs</c> was built to close.</summary>
-    public Task<IReadOnlyList<string>> ListScreenIdsAsync(CancellationToken ct = default) =>
-        _inner.ListScreenIdsAsync(ct);
+    /// <summary>Canonicalised AND de-duplicated — mirrors
+    /// <see cref="CanonicalizingComponentModelStore.ListMachineCodesAsync"/>'s own reasoning exactly, closed
+    /// here for the same MED-1 property: every entry names an identity <see cref="GetAsync"/> can actually
+    /// serve. Re-sorted after canonicalising because the inner store's <c>ORDER BY screen_id</c> is an
+    /// ordinal sort of the STORED (possibly padded) spellings, which is not an ordering of the canonical
+    /// ones.</summary>
+    public async Task<IReadOnlyList<string>> ListScreenIdsAsync(CancellationToken ct = default)
+    {
+        var stored = await _inner.ListScreenIdsAsync(ct).ConfigureAwait(false);
 
-    /// <summary>Canonicalises the lookup key only, same as <see cref="GetAsync"/> — an empty result for a
-    /// screen nobody declared under this spelling is this method's own documented, non-throwing
-    /// contract.</summary>
-    public Task<IReadOnlyList<ScreenVersionInfo>> ListVersionsAsync(string screenId, CancellationToken ct = default) =>
-        _inner.ListVersionsAsync(ScreenIdentity.Canonicalize(screenId), ct);
+        return stored.Select(ScreenIdentity.Canonicalize)
+                     .Distinct(StringComparer.Ordinal)
+                     .OrderBy(id => id, StringComparer.Ordinal)
+                     .ToList();
+    }
 
-    /// <summary>Canonicalises the lookup key only. The inner store's own <see cref="HmiScreenStore.RollbackAsync"/>
-    /// reads and re-<c>PutAsync</c>s entirely through its OWN (raw) methods, so by the time this call
-    /// reaches it, handing it an already-trimmed <paramref name="screenId"/> is enough — there is no second
-    /// identity-bearing value on this call for this decorator to touch.</summary>
-    public Task<int> RollbackAsync(string screenId, int toVersion, CancellationToken ct = default) =>
-        _inner.RollbackAsync(ScreenIdentity.Canonicalize(screenId), toVersion, ct);
+    /// <summary>Canonical key first; if that returns EMPTY (this method's own documented, non-throwing
+    /// "nobody declared this" signal — see <see cref="IHmiScreenStore.ListVersionsAsync"/>), resolve the
+    /// identity against the RAW stored ids and retry, same fallback as <see cref="GetAsync"/>.</summary>
+    public async Task<IReadOnlyList<ScreenVersionInfo>> ListVersionsAsync(string screenId, CancellationToken ct = default)
+    {
+        var canonical = ScreenIdentity.Canonicalize(screenId);
+
+        var versions = await _inner.ListVersionsAsync(canonical, ct).ConfigureAwait(false);
+        if (versions.Count == 0)
+        {
+            var storedId = await ResolveStoredScreenIdAsync(canonical, ct).ConfigureAwait(false);
+            if (storedId is not null)
+            {
+                versions = await _inner.ListVersionsAsync(storedId, ct).ConfigureAwait(false);
+            }
+        }
+
+        return versions;
+    }
+
+    /// <summary>Canonical key first; <see cref="HmiScreenStore.RollbackAsync"/> THROWS
+    /// <see cref="ArgumentOutOfRangeException"/> rather than returning an empty/null miss signal, so the
+    /// fallback here is a catch-and-retry, not a result check. Only retries when the resolved raw spelling
+    /// actually DIFFERS from what was already tried — otherwise a genuinely-bad <paramref name="toVersion"/>
+    /// on an already-canonical screen would be re-thrown a second time for no reason, and the ORIGINAL
+    /// exception (naming the real available versions) is what should reach the caller. See this file's
+    /// top-level doc comment for what this fallback does NOT do: the new version it appends is written
+    /// under the RESOLVED (possibly non-canonical) spelling, not migrated to canonical.</summary>
+    public async Task<int> RollbackAsync(string screenId, int toVersion, CancellationToken ct = default)
+    {
+        var canonical = ScreenIdentity.Canonicalize(screenId);
+        try
+        {
+            return await _inner.RollbackAsync(canonical, toVersion, ct).ConfigureAwait(false);
+        }
+        catch (ArgumentOutOfRangeException) when (!string.IsNullOrWhiteSpace(canonical))
+        {
+            var storedId = await ResolveStoredScreenIdAsync(canonical, ct).ConfigureAwait(false);
+            if (storedId is null || string.Equals(storedId, canonical, StringComparison.Ordinal))
+            {
+                throw;
+            }
+
+            return await _inner.RollbackAsync(storedId, toVersion, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Resolves a canonical identity against the ids ACTUALLY on disk — deliberately reading
+    /// <c>_inner.ListScreenIdsAsync</c> (the raw, un-canonicalised list), never this decorator's own
+    /// <see cref="ListScreenIdsAsync"/>: resolving against an already-canonicalised list could never find a
+    /// non-canonical row, which would make this method always return <see langword="null"/> and the whole
+    /// fallback a no-op. Deterministic when more than one non-canonical spelling exists (ordinally-first
+    /// wins), same tie-break as <see cref="CanonicalizingComponentModelStore"/>'s twin.</summary>
+    private async Task<string?> ResolveStoredScreenIdAsync(string canonical, CancellationToken ct)
+    {
+        // A blank screenId is not an identity — ContractInvariants reports it; scanning for it here would
+        // only turn one violation into a table scan.
+        if (string.IsNullOrWhiteSpace(canonical)) return null;
+
+        var stored = await _inner.ListScreenIdsAsync(ct).ConfigureAwait(false);
+        return stored.Where(id => ScreenIdentity.SameIdentity(id, canonical))
+                     .OrderBy(id => id, StringComparer.Ordinal)
+                     .FirstOrDefault();
+    }
+
+    private static HmiScreenDocument Canonical(HmiScreenDocument doc) =>
+        doc with { ScreenId = ScreenIdentity.Canonicalize(doc.ScreenId) };
 }
