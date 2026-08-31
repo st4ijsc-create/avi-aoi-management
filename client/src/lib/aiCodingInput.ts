@@ -52,7 +52,7 @@ export function phanQuyetPhimNhap(e: PhimNhap): PhanQuyetPhimNhap {
 // được bằng một lượt render CẢ trang ⇒ trên thực tế không đo, một đột biến đổi phím sống sót. Ở đây
 // thuần ⇒ lưới đơn vị đo thẳng "phím X + bối cảnh Y ⇒ hành động Z".
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-export type PhimTatKhung = "terminal" | "mo_nhanh" | "tim_trong_tep" | "tim_repo" | "sua_chon" | "gui" | "dung_stream" | "bo_qua";
+export type PhimTatKhung = "terminal" | "mo_nhanh" | "tim_trong_tep" | "tim_repo" | "sua_chon" | "nhay_dong" | "gui" | "dung_stream" | "bo_qua";
 
 export interface PhimTat {
   key: string;
@@ -87,6 +87,9 @@ export function phanGiaiPhimTatKhung(e: PhimTat): PhimTatKhung {
   if (mod && (e.key === "p" || e.key === "P")) return "mo_nhanh";
   if (mod && (e.key === "f" || e.key === "F")) return e.shiftKey === true ? "tim_repo" : "tim_trong_tep";
   if (mod && (e.key === "k" || e.key === "K")) return "sua_chon";
+  // ★ 2026-08-31 · ĐỢT B (UX H1) — Ctrl/Cmd+G nhảy-tới-dòng (chuẩn VSCode); tái dùng đúng cơ chế
+  //   cuộn+tô của `dongMucTieu` (panel Vấn đề) — không đẻ đường cuộn thứ hai.
+  if (mod && (e.key === "g" || e.key === "G")) return "nhay_dong";
   if (mod && e.key === "Enter" && !e.trongONhap) return "gui";
   if (e.key === "Escape" && !e.trongONhap && e.dangStream) return "dung_stream";
   return "bo_qua";

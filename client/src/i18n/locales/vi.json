@@ -19376,6 +19376,7 @@
       "tabsLabel": "Tệp đang mở",
       "closeTab": "Đóng {{ten}}",
       "copy": "Sao chép nội dung tệp",
+      "gotoLine": "Nhảy tới dòng:",
       "copied": "Đã sao chép nội dung tệp.",
       "copyFail": "Không sao chép được (trình duyệt chặn clipboard)."
     },
@@ -19410,7 +19411,8 @@
       "sending": "Đang tạo…",
       "cancel": "Hủy",
       "unchanged": "Chưa có thay đổi nào.",
-      "failed": "Không tạo được đề xuất ({{ma}})."
+      "failed": "Không tạo được đề xuất ({{ma}}).",
+      "undo": "Hoàn tác lượt áp cuối ({{tep}}) — tạo đề xuất ngược, bạn duyệt"
     },
     "suaChon": {
       "m0": "Trong tệp `{{path}}`, sửa ĐÚNG đoạn mã đã bôi đen dưới đây:",

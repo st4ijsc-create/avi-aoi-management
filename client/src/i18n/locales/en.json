@@ -19386,6 +19386,7 @@
     },
     "viewer": {
       "title": "Viewer",
+      "gotoLine": "Go to line:",
       "empty": "Pick a file in the tree on the left to view its contents.",
       "loading": "Reading file…",
       "denied": "Could not read (refused by the sandbox/server).",
@@ -19430,7 +19431,8 @@
       "sending": "Creating…",
       "cancel": "Cancel",
       "unchanged": "No changes yet.",
-      "failed": "Could not create proposal ({{ma}})."
+      "failed": "Could not create proposal ({{ma}}).",
+      "undo": "Undo last applied change ({{tep}}) — creates a reverse proposal you approve"
     },
     "suaChon": {
       "m0": "In file `{{path}}`, edit EXACTLY the selected code below:",

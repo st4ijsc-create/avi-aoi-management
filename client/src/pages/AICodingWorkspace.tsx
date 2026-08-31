@@ -142,7 +142,7 @@ import { GoiYTep, locTepTheoQuery } from "@/components/ai/GoiYTep";
 import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
-  Repeat, CheckCircle2, OctagonX, Terminal, Search, X, ChevronUp, Wand2, Copy,
+  Repeat, CheckCircle2, OctagonX, Terminal, Search, X, ChevronUp, Wand2, Copy, Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -528,6 +528,13 @@ export default function AICodingWorkspace() {
    */
   const [dangSuaTay, setDangSuaTay] = useState(false);
   const [banSua, setBanSua] = useState("");
+  /**
+   * ★ ĐỢT C (UX H2) — HOÀN TÁC SAU ÁP: nhớ lượt `apply_diff` vừa ghi TRỌN (đủ mọi khối) để một cú
+   * bấm dựng ĐỀ XUẤT NGƯỢC (original↔modified) qua chính `deXuatSuaTay` → cùng thẻ duyệt HITL.
+   * Áp MỘT PHẦN khối thì KHÔNG nhớ: bản ngược dựng từ `modified` đầy đủ sẽ không khớp đĩa — băm
+   * TOCTOU của execute sẽ từ chối, nhưng mời người dùng một nút chắc chắn thất bại là nói dối họ.
+   */
+  const [lanApCuoi, setLanApCuoi] = useState<{ path: string; original: string; modified: string } | null>(null);
 
   // ══════════════════════════════════════════════════════════════════════════════════════════
   // ★★★ doc 79 · DANH SÁCH PHIÊN — trạng thái + ba bất biến, đọc trước khi sửa
@@ -1017,6 +1024,18 @@ export default function AICodingWorkspace() {
           toast.info(t("repoWs.suaChon.hint", "Bôi đen đoạn mã trong Trình xem rồi bấm Cmd+K để yêu cầu AI sửa."));
         }
       }
+      else if (hd === "nhay_dong") {
+        // Ctrl+G — nhảy tới dòng (chuẩn VSCode). `window.prompt` theo tiền lệ `window.confirm` của
+        // xoá-phiên: một hộp hỏi hệ thống cho MỘT con số, không đẻ thêm UI riêng cho việc này.
+        if (selectedPath && !pendingDiff && !pendingBatch) {
+          const v = window.prompt(t("repoWs.viewer.gotoLine", "Nhảy tới dòng:"));
+          const n = v === null ? NaN : parseInt(v.trim(), 10);
+          if (Number.isInteger(n) && n >= 1) {
+            if (hep) setKhungHep("xem");
+            setDongMucTieu(n);
+          }
+        }
+      }
       else if (hd === "gui") void handleSendRef.current?.();
       else if (hd === "dung_stream") stopKbStream();
     };
@@ -1316,6 +1335,27 @@ export default function AICodingWorkspace() {
 
   // Đổi tệp/dự án ⇒ thoát chế độ sửa (buffer thuộc về tệp CŨ — giữ lại là dán nhầm nội dung).
   useEffect(() => { setDangSuaTay(false); }, [selectedPath, projectId]);
+  // Đổi dự án ⇒ quên lượt áp cuối (đường tệp thuộc cây CŨ).
+  useEffect(() => { setLanApCuoi(null); }, [projectId]);
+
+  /** ★ ĐỢT C — HOÀN TÁC = đề xuất NGƯỢC qua đúng `deXuatSuaTay`; đĩa đã đổi tiếp thì TOCTOU từ chối. */
+  const deXuatHoanTac = useCallback(async () => {
+    if (!lanApCuoi) return;
+    let r: Awaited<ReturnType<typeof deXuatSuaTayM.mutateAsync>> | null = null;
+    try {
+      r = await deXuatSuaTayM.mutateAsync({ path: lanApCuoi.path, original: lanApCuoi.modified, modified: lanApCuoi.original, lang, projectId });
+    } catch (e) { toast.error(mapTrpcError(e)); return; }
+    if (!r.ok || !r.pendingAction) {
+      toast.error(r.message ?? t("repoWs.suaTay.failed", "Không tạo được đề xuất ({{ma}}).", { ma: r.note ?? "?" }));
+      return;
+    }
+    const pa = r.pendingAction as unknown as KbPendingAction;
+    setPending(pa);
+    setActionState("pending");
+    setPendingDiff({ action: pa, args: { path: lanApCuoi.path, original: lanApCuoi.modified, modified: lanApCuoi.original } });
+    setSelectedPath(lanApCuoi.path);
+    setLanApCuoi(null);
+  }, [lanApCuoi, deXuatSuaTayM, lang, projectId, t]);
 
   const lamMoiCay = useCallback(() => {
     void utils.repoWorkspace.listFiles.invalidate();
@@ -1707,6 +1747,17 @@ export default function AICodingWorkspace() {
           ]);
         } else if (pending.tool === "apply_diff") {
           const tepDaGhi = (pending.args as unknown as DiffArgs | undefined)?.path ?? pendingDiff?.args.path ?? null;
+          // ★ ĐỢT C — nhớ lượt áp TRỌN cho nút Hoàn tác (áp một phần ⇒ không nhớ, xem docblock state).
+          {
+            const khoiInfo = (out?.data as { hunksApplied?: { selected?: unknown[]; total?: unknown } } | undefined)?.hunksApplied;
+            const apTron = !khoiInfo || !Array.isArray(khoiInfo.selected) || typeof khoiInfo.total !== "number" || khoiInfo.selected.length === khoiInfo.total;
+            const argsAp = (pending.args as unknown as DiffArgs | undefined) ?? pendingDiff?.args;
+            if (apTron && tepDaGhi && argsAp && typeof argsAp.original === "string" && typeof argsAp.modified === "string") {
+              setLanApCuoi({ path: tepDaGhi, original: argsAp.original, modified: argsAp.modified });
+            } else {
+              setLanApCuoi(null);
+            }
+          }
           setPendingDiff(null);
           if (selectedPath) fileQ.refetch();
           // ⚠ Câu này nay chỉ chạy ở nhánh THẬT SỰ ghi được (nhánh `tuChoi` ở trên đã rẽ đi chỗ khác),
@@ -2253,6 +2304,16 @@ export default function AICodingWorkspace() {
                       >
                         <Wand2 className="h-3.5 w-3.5" />
                       </Button>
+                      {lanApCuoi && (
+                        <Button
+                          variant="ghost" size="icon" className="h-6 w-6 shrink-0" data-nut-hoan-tac
+                          disabled={deXuatSuaTayM.isPending || coDiffChoDuyet}
+                          onClick={() => void deXuatHoanTac()}
+                          title={t("repoWs.suaTay.undo", "Hoàn tác lượt áp cuối ({{tep}}) — tạo đề xuất ngược, bạn duyệt", { tep: lanApCuoi.path })}
+                        >
+                          <Undo2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" data-nut-copy onClick={copyTepHienTai} disabled={!fileReply?.ok || !fileReply.data?.content} title={t("repoWs.viewer.copy", "Sao chép nội dung tệp")}>
                         <Copy className="h-3.5 w-3.5" />
                       </Button>
