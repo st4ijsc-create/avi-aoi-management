@@ -477,6 +477,14 @@ builder.Services.AddSingleton<St4i.EngineApi.HmiModel.ITagNamespaceStore>(
 builder.Services.AddSingleton<St4i.EngineApi.HmiModel.ITagIndexCollisionQuery>(
     _ => new St4i.EngineApi.HmiModel.SqliteTagIndexCollisionQuery(rawTagNamespaceStore.Value.DbPath));
 
+// WS-HMI-0c Task 4, ruling S-3 — the ingestion door. Registered by TYPE with no factory lambda, which is
+// the point: its one constructor takes ITagNamespaceStore, so DI hands it the CANONICALIZING decorator
+// registered three lines above and there is no expression here that could hand it anything else. A factory
+// lambda would have been the place a future edit could quietly substitute `rawTagNamespaceStore.Value`,
+// bypassing every machine-code identity guarantee WS-HMI-0b spent five fix rounds building at the one door
+// that writes most.
+builder.Services.AddSingleton<St4i.EngineApi.HmiModel.TagIngestionService>();
+
 // WS-HMI-0b Task 3 — the HMI change lane's fan-out. Deliberately NOT St4i.EdgeCore.Infrastructure.EventBus:
 // publishing there would put HMI rows in front of every inspector subscriber and inside both Export files,
 // which is the commitment InspectorStream.cs:217-219 froze — and it would do so while the frame's bytes
@@ -1943,6 +1951,126 @@ foreach (var persistedSeed in persistedConnectorSeeds)
 {
     LogIfRegisterMachineCollided(app.Logger, fleetHost, persistedSeed, fleetHost.RegisterMachine(persistedSeed), "Persisted (ConnectorConfigStore)");
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────
+// WS-HMI-0c Task 4 — tag-map ingestion, AFTER every connector source above has registered.
+//
+// Placed here, and not inside the ConnectorRegistry factory lambda, for two reasons. The lambda runs on
+// first RESOLUTION at an arbitrary later moment and would make "ingestion happened" depend on who asked
+// for the registry first; and it is a DI factory, where blocking disk and database I/O does not belong.
+// By this line all four registration sources (the two env-var connectors, connectors.json, the persisted
+// store, and the RTU buses) have run, so SnapshotBindings() is the complete set for this process.
+//
+// 🔴 A BAD TAG MAP MUST NEVER BREAK CONNECTOR REGISTRATION — THE SWALLOW, AND WHAT IT COSTS.
+// This is one of exactly TWO places in this workstream that swallow an exception; the other is
+// AssetRegistryStore.UpsertAsync, and the reasoning is identical: a machine must still RUN when its HMI
+// namespace is broken. Registration has already happened above; a connector is polling a real device, its
+// roster tile is live, its historian rows are being written. Letting a malformed JSON file abort startup
+// here would take a working production line down over a screen definition.
+//
+// THE PRICE, stated plainly rather than left to be discovered: an operator whose tag map is malformed gets
+// a machine that runs and a screen that never appears, and the ONLY trace is the log line below. Nothing
+// in the UI says "this machine's tag map was refused" — GET /v1/tags simply returns the previous namespace
+// or an empty one, which is indistinguishable from a machine nobody has declared tags for yet. The cheap
+// way to close that, NOT built here because it is a contract change this task is not scoped for: carry the
+// last ingestion outcome per machine (the IngestResult is already computed and structured) and expose it
+// on the existing GET /v1/capabilities or as a field on the tag-namespace response, so the refusal is
+// visible where somebody is already looking. Recorded in this task's report as the open item.
+var tagIngestion = app.Services.GetRequiredService<St4i.EngineApi.HmiModel.TagIngestionService>();
+var tagMapRegistry = app.Services.GetRequiredService<St4i.EdgeCore.Fleet.ConnectorRegistry>();
+var tagMapLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("HmiTagIngestion");
+
+// Beside the binary, exactly like the connectors.json read further up this file, and with NO relocation
+// variable — see TagIngestionService.DirectoryName for why that pairing is deliberate and what the version
+// with an ST4I_HMI_TAGMAPS_DIR variable cost when two guards refused it.
+var tagMapDir = Path.Combine(AppContext.BaseDirectory, St4i.EngineApi.HmiModel.TagIngestionService.DirectoryName);
+
+// Enumerated ONCE and keyed by canonical machine code rather than probed with Path.Combine(dir, code +
+// ".json") per binding. A machine code is a case-INSENSITIVE identity (MachineCodeIdentity), and file-name
+// case sensitivity is a property of the FILESYSTEM — so a per-binding probe would find `aoi-01.json` for
+// machine `AOI-01` on Windows and silently not find it on Linux. Same lookup on both, decided by this
+// codebase's identity rule instead of by the volume the product happens to be installed on.
+var tagMapFiles = new Dictionary<string, string>(StringComparer.Ordinal);
+try
+{
+    if (Directory.Exists(tagMapDir))
+    {
+        foreach (var file in Directory.EnumerateFiles(tagMapDir, "*.json"))
+        {
+            var key = St4i.EngineApi.HmiModel.MachineCodeIdentity.Canonicalize(
+                Path.GetFileNameWithoutExtension(file));
+            if (string.IsNullOrWhiteSpace(key)) continue;
+
+            if (!tagMapFiles.TryAdd(key, file))
+            {
+                tagMapLogger.LogWarning(
+                    "Two tag-map files in '{TagMapDir}' name the same machine '{MachineCode}' (they differ " +
+                    "only in spelling); '{Winner}' is used and '{Ignored}' is ignored. Machine codes are a " +
+                    "case-insensitive identity — rename one of the files.",
+                    tagMapDir, key, tagMapFiles[key], file);
+            }
+        }
+    }
+}
+catch (Exception ex)
+{
+    // An unreadable directory disables tag ingestion for this run and nothing else. Same "one bad source
+    // disables only itself" posture every other startup config load in this file has.
+    tagMapLogger.LogError(ex,
+        "Tag-map directory '{TagMapDir}' could not be listed — no HMI tag namespace is ingested this run. " +
+        "Every connector still registers and every machine still runs.", tagMapDir);
+}
+
+foreach (var binding in tagMapRegistry.SnapshotBindings())
+{
+    // An UNBOUND connector names no machine, so there is no namespace to attach a map to. Skipping is not
+    // a failure: the connector runs, it simply has no HMI identity to declare tags for.
+    if (string.IsNullOrWhiteSpace(binding.MachineCode)) continue;
+
+    try
+    {
+        var canonical = St4i.EngineApi.HmiModel.MachineCodeIdentity.Canonicalize(binding.MachineCode);
+        if (!tagMapFiles.TryGetValue(canonical, out var tagMapPath))
+        {
+            // §5-bis — a connector that declares no tag map is VALID. It contributes nothing, and in
+            // particular it does not reach the store, so it cannot erase a namespace an engineer already
+            // established for this machine through PUT /v1/tags.
+            continue;
+        }
+
+        var result = tagIngestion
+            .IngestAsync(binding.MachineCode, tagMapRegistry.KindOf(binding.InstanceId), File.ReadAllText(tagMapPath))
+            .GetAwaiter().GetResult();
+
+        if (result.Ok)
+        {
+            tagMapLogger.LogInformation(
+                "Machine '{MachineCode}': ingested {TagCount} tag(s) from '{TagMapPath}', {BackedCount} of " +
+                "them backed by a real driver.", binding.MachineCode, result.TagCount, tagMapPath, result.BackedCount);
+        }
+        else
+        {
+            // EVERY violation, on one line per machine, because an operator told about one of five errors
+            // fixes the file five restarts in a row.
+            tagMapLogger.LogError(
+                "Machine '{MachineCode}': tag map '{TagMapPath}' was REFUSED and the previously stored HMI " +
+                "namespace for this machine is UNCHANGED. The connector is registered and the machine runs " +
+                "normally; only its HMI screen is affected. {ViolationCount} problem(s): {Violations}",
+                binding.MachineCode, tagMapPath, result.Errors.Count, string.Join(" | ", result.Errors));
+        }
+    }
+    catch (Exception ex)
+    {
+        // 🔴 THE SWALLOW. See the block comment above for why it exists and what it costs. Total, and
+        // deliberately so: IngestAsync already converts every failure it can foresee into a result, so
+        // anything arriving here is unforeseen — an I/O error reading the file, a permission change
+        // mid-boot — and the one thing that must not happen is that it reaches the host and stops a line.
+        tagMapLogger.LogError(ex,
+            "Machine '{MachineCode}': HMI tag ingestion failed unexpectedly and was skipped. The connector " +
+            "is registered and the machine runs normally; its HMI namespace is unchanged.", binding.MachineCode);
+    }
+}
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
 // WS-F1 final-review fix F1 — apply the env-resolved (see the ST4I_SERVER_URL/ST4I_MACHINE_CODE/
 // ST4I_VERIFY_TLS reads above) settings as this instance's INITIAL Live config, now that FleetHost
