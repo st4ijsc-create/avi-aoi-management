@@ -143,7 +143,21 @@ Lưới **cố định theo breakpoint, không toạ độ pixel tự do** — v
 
 - [ ] **Step 2: Viết bài test thất bại**
 
-`tests/St4i.EngineApi.Tests/HmiModel/HmiScreenStoreTests.cs`. Dùng `TestRunTempRoot` để cô lập, đúng cách `TagNamespaceStoreTests` dùng.
+`tests/St4i.EngineApi.Tests/HmiModel/HmiScreenStoreTests.cs`.
+
+🔴 **Đính chính, 2026-09-01 (review Task 1).** Bản đầu của kế hoạch này viết `using var root = TestRunTempRoot.Create();` ở sáu chỗ. **API ấy không tồn tại** — grep cả kho cho thấy thứ duy nhất dùng nó là chính tài liệu này. `TestRunTempRoot` là `internal static` với `[ModuleInitializer]`: nó **môi trường sẵn cho cả assembly**, không phải thứ để khởi tạo. Khuôn cô lập THẬT, sao đúng từ `TagNamespaceStoreTests` và `ComponentModelStoreTests`:
+
+```csharp
+[Collection(SecurityEnvVarTests.CollectionName)]
+public class HmiScreenStoreTests : IDisposable
+{
+    readonly string _dir = Path.Combine(Path.GetTempPath(), "st4i-screen-tests", Guid.NewGuid().ToString("n"));
+    void IDisposable.Dispose() { try { Directory.Delete(_dir, true); } catch { } }
+    // ... mỗi bài dùng `new HmiScreenStore(_dir)`
+}
+```
+
+`[Collection]` không phải trang trí: nhiều lớp trong assembly này gọi `SqliteConnection.ClearAllPools()`, và `SecurityEnvVarTests` nói thẳng rằng không bài nào ép được tư thế ấy nếu chạy song song.
 
 ```csharp
 /// <summary>
@@ -160,8 +174,7 @@ public class HmiScreenStoreTests
     [Fact]
     public async Task PutAsync_ReturnsIncrementingVersions_AndGetWithoutVersionServesTheLatest()
     {
-        using var root = TestRunTempRoot.Create();
-        var store = new HmiScreenStore(root.Path);
+        var store = new HmiScreenStore(_dir);
 
         var v1 = await store.PutAsync(Screen("line-overview", "Tổng quan"));
         var v2 = await store.PutAsync(Screen("line-overview", "Tổng quan sửa"));
@@ -175,8 +188,7 @@ public class HmiScreenStoreTests
     [Fact]
     public async Task GetAsync_WithAnExplicitVersion_ServesThatVersion_NotTheLatest()
     {
-        using var root = TestRunTempRoot.Create();
-        var store = new HmiScreenStore(root.Path);
+        var store = new HmiScreenStore(_dir);
         await store.PutAsync(Screen("line-overview", "một"));
         await store.PutAsync(Screen("line-overview", "hai"));
 
@@ -187,8 +199,7 @@ public class HmiScreenStoreTests
     [Fact]
     public async Task RollbackAsync_MakesTheOldVersionCurrent_ByAppendingIt_NeverByDeletingHistory()
     {
-        using var root = TestRunTempRoot.Create();
-        var store = new HmiScreenStore(root.Path);
+        var store = new HmiScreenStore(_dir);
         await store.PutAsync(Screen("line-overview", "một"));
         await store.PutAsync(Screen("line-overview", "hai"));
 
@@ -204,8 +215,7 @@ public class HmiScreenStoreTests
     [Fact]
     public async Task PutAsync_WithAScreenViolatingSection5_ThrowsAndWritesNothing()
     {
-        using var root = TestRunTempRoot.Create();
-        var store = new HmiScreenStore(root.Path);
+        var store = new HmiScreenStore(_dir);
         var bad = Screen("bad-screen", "x") with { Widgets = new[] { new ScreenWidget(null!, "readout", Rect()) } };
 
         await Assert.ThrowsAsync<ContractViolationException>(() => store.PutAsync(bad));
@@ -216,8 +226,7 @@ public class HmiScreenStoreTests
     [Fact]
     public async Task GetAsync_ForAScreenNobodyDeclared_ReturnsNull_NotAnError()
     {
-        using var root = TestRunTempRoot.Create();
-        var store = new HmiScreenStore(root.Path);
+        var store = new HmiScreenStore(_dir);
         Assert.Null(await store.GetAsync("never-declared"));
     }
 
@@ -287,7 +296,6 @@ public async Task TheScreenStoreResolvedFromDi_IsTheCanonicalizingDecorator_Neve
 [InlineData("line-overview")]
 public async Task EveryMethodOfTheDecorator_TrimsTheScreenId_SoOneScreenIsOneRow(string spelling)
 {
-    using var root = TestRunTempRoot.Create();
     var inner = new RecordingScreenStore();
     var store = new CanonicalizingHmiScreenStore(inner);
     await store.PutAsync(Screen(spelling, "x"));
