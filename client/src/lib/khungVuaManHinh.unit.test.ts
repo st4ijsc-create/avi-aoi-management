@@ -120,16 +120,22 @@ describe("§3 BA SÀN PHẢI KHỚP `grid-cols` CỦA TRANG — hai chỗ, một
     "utf8",
   );
 
-  it("`grid-cols` trong AICodingWorkspace.tsx dùng đúng 240/320/360", () => {
-    const m = /grid-cols-\[(\d+)px_minmax\((\d+)px,1fr\)_minmax\((\d+)px,(\d+)px\)\]/.exec(trang);
-    expect(m, "không tìm thấy grid-cols ba khung trong trang").not.toBeNull();
-    const [, tep, xem, chat, tranChat] = m!;
-    expect(Number(tep)).toBe(SAN_KHUNG_PX.tep);
-    expect(Number(xem)).toBe(SAN_KHUNG_PX.xem);
-    expect(Number(chat)).toBe(SAN_KHUNG_PX.chat);
-    // Trần cột hội thoại phải LỚN HƠN sàn (nới được) nhưng CÓ trần — không có trần thì nó nuốt
-    // `1fr` của Trình xem và ta quay lại đúng lỗi 82 px, chỉ đổi chiều.
-    expect(Number(tranChat)).toBeGreaterThan(SAN_KHUNG_PX.chat);
+  it("★ 2026-09-01 · ĐỢT B — grid cứng ĐÃ THAY bằng ResizablePanelGroup; mỗi Panel PHẢI có minSize", () => {
+    /**
+     * ĐÍNH CHÍNH HỢP ĐỒNG: trang không còn khai sàn px trong `grid-cols` — ba cột nay KÉO được
+     * (react-resizable-panels, tự lưu theo `autoSaveId`). "Hai chỗ, một sự thật" đổi hình dạng:
+     *   • sự thật SÀN TUYỆT ĐỐI (ngưỡng 920px vào chế độ một-khung) nay sống MỘT MÌNH ở
+     *     `SAN_KHUNG_PX`/`TONG_TOI_THIEU_BA_KHUNG_PX` (đo §1/§2 — không đổi một chữ);
+     *   • sự thật CHỐNG-CO-VỀ-0 khi rộng chuyển thành `minSize` trên TỪNG Panel — gỡ một `minSize`
+     *     là mở lại đúng lỗi 82px (cột bị nuốt), và ô này ĐỎ.
+     */
+    expect(trang).toContain("<ResizablePanelGroup");
+    expect(trang).toContain('autoSaveId="repoWs.beRongKhung"');
+    const minSizes = [...trang.matchAll(/<ResizablePanel[^>]*minSize=\{(\d+)\}/g)].map((m) => Number(m[1]));
+    expect(minSizes.length, "phải có ĐỦ BA Panel mang minSize").toBe(3);
+    for (const ms of minSizes) expect(ms, "minSize=0 là mở lại lỗi cột-bị-nuốt").toBeGreaterThanOrEqual(10);
+    // Grid cứng cũ không được quay lại (một bố cục, một cơ chế — hai cơ chế là hai số phận).
+    expect(trang).not.toMatch(/grid-cols-\[\d+px_minmax/);
   });
 
   it("★ CHỐNG QUAY LẠI 4 CỘT: không còn `grid-cols` nào mở đầu bằng HAI cột cố định", () => {

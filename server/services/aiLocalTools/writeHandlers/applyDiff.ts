@@ -290,6 +290,8 @@ export type PhanQuyet =
       ok: true;
       target: ConfinedTarget;
       relPath: string;
+      /** ★ 2026-09-01 — gốc dự án của lượt phán quyết; `ghiTheoPhanQuyet` cần nó làm khoá `soBamHITL`. */
+      goc: string;
       hienTai: string;
       daCo: boolean;
       bamTruoc: string;
@@ -455,6 +457,7 @@ export async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQu
     ok: true,
     target: confined.target,
     relPath: confined.target.relPath,
+    goc,
     hienTai,
     daCo,
     bamTruoc,
@@ -474,7 +477,11 @@ export async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQu
  *     ghi đều đã đi qua bốn hàng rào, kể cả lượt ghi thứ ba trong một lô.
  */
 export function ghiTheoPhanQuyet(pq: PhanQuyetXanh, modified: string): ConfinedWriteOutcome {
-  return writeConfined(pq.target, modified);
+  const res = writeConfined(pq.target, modified);
+  // ★ 2026-09-01 · ĐỢT C — vào sổ băm-sau-ghi-HITL ngay TẠI cửa ghi chung: một nguồn phủ CẢ
+  //   `apply_diff` LẪN `apply_diff_batch` theo cấu tạo (không nơi gọi nào phải nhớ ghi sổ).
+  if (res.ok) soBamHITL.set(`${pq.goc}::${pq.relPath}`, bam(modified));
+  return res;
 }
 
 /** Khoá sổ ngân sách — export để lô dùng CÙNG sổ, không mở sổ riêng. */
@@ -650,10 +657,7 @@ export const applyDiffTool: Tool<ThamSo, DuLieuApDung> = {
     }
 
     tieuNganSach(khoa, res.bytes);
-    // ★ 2026-09-01 · ĐỢT C — vào sổ băm-sau-ghi-HITL (miễn-trừ-hẹp cho lượt HITL kế tiếp; xem
-    //   docblock `soBamHITL`). `p.modified` là byte THẬT đã ghi (kể cả sau chọn-khối — confirmAction
-    //   đã thay `argsJson.modified` bằng bản chiếu trước khi execute chạy).
-    soBamHITL.set(`${goc}::${pq.relPath}`, bam(p.modified));
+    // (Sổ băm-sau-ghi-HITL nay vào ngay trong `ghiTheoPhanQuyet` — cửa ghi chung, phủ cả batch.)
 
     /**
      * ★★★ ĐỢT 3 (2026-08-23) — DẤU **CHỌN KHỐI** do server đóng, không phải client.

@@ -131,6 +131,11 @@ import { TheDuyetDiffLo } from "@/components/ai/TheDuyetDiffLo";
 // ★★★ 2026-08-25 · UX (Đợt 1) — TRÌNH XEM MÃ: tô cú pháp + SỐ DÒNG THẬT + cuộn ngang, thay `<pre>`
 // trơn ở khung Trình xem. Component thuần hiển thị (lưới render riêng `trinhXemMa.unit.test.ts`).
 import { TrinhXemMa } from "@/components/ai/TrinhXemMa";
+// ★ 2026-09-01 · ĐỢT C — editor CodeMirror có sẵn của engineering (số dòng + tô cú pháp) cho chế
+//   độ SỬA TAY. Chỉ là bề mặt NHẬP cục bộ — đường ghi vẫn duy nhất qua đề xuất + thẻ duyệt.
+import { CodeEditor } from "@/components/engineering/CodeEditor";
+// ★ 2026-09-01 · ĐỢT B — ba cột kéo-resize được (bề rộng tự lưu theo autoSaveId).
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 // Bộ đọc "đầu ra lệnh → ĐỊA ĐIỂM LỖI" DUY NHẤT (thuần, shared) — trang parse MỘT lần, panel dùng lại.
 import { phanTichLoiViTri } from "@shared/aiCodingLoiViTri";
 // ★ 2026-08-24 — `baseName` nay ở module lá dùng chung (`TheDuyetDiffLo` cũng cần) — bản cục bộ đã xoá.
@@ -1991,15 +1996,19 @@ export default function AICodingWorkspace() {
               ★★★ 2026-08-23 — cột "Phiên" 190 px ĐÃ BỎ (thành popover, xem `BoChonPhien`): phần
                 dồn lại về `1fr` của Trình xem. Đo được (Playwright, grid thật): khung 1240 ⇒ Trình
                 xem 370 → 560 px; khung 920 ⇒ thoát chế độ một-khung, ba khung cùng hiện. */}
-          <div
+          {/* ★ 2026-09-01 · ĐỢT B (UX H6) — GRID CỨNG → `ResizablePanelGroup` (react-resizable-panels,
+              `ui/resizable.tsx` có sẵn): ba cột KÉO được, bề rộng tự lưu (`autoSaveId` → localStorage).
+              Màn HẸP giữ ngữ nghĩa một-khung cũ: cột không-chọn `hidden` ở CẤP Panel (flex-child
+              display:none không chiếm chỗ ⇒ khung còn lại tự đầy), handle cũng ẩn. */}
+          <ResizablePanelGroup
             data-luoi-khung
-            className={cn(
-              "grid min-h-0 flex-1",
-              hep ? "grid-cols-1" : "grid-cols-[240px_minmax(320px,1fr)_minmax(360px,440px)]",
-            )}
+            direction="horizontal"
+            autoSaveId="repoWs.beRongKhung"
+            className="min-h-0 flex-1"
           >
           {/* ── 1. CÂY TỆP ── */}
-          <div className={cn("flex min-h-0 flex-col overflow-hidden border-r", hep && khungHep !== "tep" && "hidden")}>
+          <ResizablePanel defaultSize={19} minSize={12} className={cn("min-w-0", hep && khungHep !== "tep" && "hidden")}>
+          <div className="flex h-full min-h-0 flex-col overflow-hidden border-r">
             {/* Bộ chọn DỰ ÁN (doc 79 · TRỤC 2) — tham khảo "Select folder" của Claude Code. Client
                 giữ + gửi MỘT id; server tra danh sách TRẮNG .env để ra gốc (không nhận đường dẫn). */}
             {/* ⚠ `shrink-0` KHÔNG phải trang trí — nghiệm thu LIVE 2026-08-19 bắt được: thiếu nó thì
@@ -2233,8 +2242,12 @@ export default function AICodingWorkspace() {
             </ScrollArea>
           </div>
 
+          </ResizablePanel>
+          <ResizableHandle className={cn(hep && "hidden")} />
+
           {/* ── 2. TRÌNH XEM + DIFF ── */}
-          <div className={cn("flex min-h-0 flex-col overflow-hidden border-r", hep && khungHep !== "xem" && "hidden")}>
+          <ResizablePanel defaultSize={48} minSize={25} className={cn("min-w-0", hep && khungHep !== "xem" && "hidden")}>
+          <div className="flex h-full min-h-0 flex-col overflow-hidden border-r">
             <div className="flex items-center gap-2 border-b px-3 py-1.5">
               {coDiffChoDuyet ? (
                 <>
@@ -2445,14 +2458,18 @@ export default function AICodingWorkspace() {
                           <Wand2 className="h-3.5 w-3.5 shrink-0 text-primary" />
                           {t("repoWs.suaTay.hint", "Sửa trực tiếp rồi bấm Tạo đề xuất — thay đổi thành một DIFF chờ bạn duyệt, không ghi thẳng.")}
                         </div>
-                        <textarea
-                          data-o-sua-tay
-                          value={banSua}
-                          onChange={(e) => setBanSua(e.target.value)}
-                          spellCheck={false}
-                          className="min-h-[320px] w-full flex-1 resize-y rounded-md border bg-background p-2 font-mono text-[12px] leading-snug focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          aria-label={t("repoWs.suaTay.enter", "Sửa tệp (tạo đề xuất, bạn duyệt)")}
-                        />
+                        {/* ★ 2026-09-01 — CodeMirror thay textarea: số dòng + thụt lề + tô cú pháp
+                            (bảng đuôi→mode ở CodeEditor, legacy-modes có sẵn — 0 gói mới). Vẫn là
+                            BUFFER cục bộ: byte chỉ rời trình duyệt qua "Tạo đề xuất" → thẻ duyệt. */}
+                        <div data-o-sua-tay className="min-h-[320px] w-full flex-1 overflow-hidden rounded-md border">
+                          <CodeEditor
+                            value={banSua}
+                            onChange={setBanSua}
+                            language={(selectedPath ?? "").split(".").pop()?.toLowerCase()}
+                            height="460px"
+                            aria-label={t("repoWs.suaTay.enter", "Sửa tệp (tạo đề xuất, bạn duyệt)")}
+                          />
+                        </div>
                         <div className="flex items-center gap-2">
                           <Button size="sm" data-gui-sua-tay className="h-7 px-3 text-xs" disabled={deXuatSuaTayM.isPending || banSua === (fileReply?.data?.content ?? "")} onClick={() => void guiDeXuatSuaTay()}>
                             {deXuatSuaTayM.isPending ? t("repoWs.suaTay.sending", "Đang tạo…") : t("repoWs.suaTay.propose", "Tạo đề xuất")}
@@ -2480,8 +2497,12 @@ export default function AICodingWorkspace() {
             </ScrollArea>
           </div>
 
+          </ResizablePanel>
+          <ResizableHandle className={cn(hep && "hidden")} />
+
           {/* ── 3. HỘI THOẠI TÁC NHÂN ── */}
-          <div className={cn("flex min-h-0 flex-col overflow-hidden", hep && khungHep !== "chat" && "hidden")}>
+          <ResizablePanel defaultSize={33} minSize={20} className={cn("min-w-0", hep && khungHep !== "chat" && "hidden")}>
+          <div className="flex h-full min-h-0 flex-col overflow-hidden">
             <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-1.5">
               <Bot className="h-4 w-4 text-primary" />
               <span className="text-xs font-semibold">{t("repoWs.chat.title", "Hội thoại tác nhân")}</span>
@@ -2780,7 +2801,8 @@ export default function AICodingWorkspace() {
               </p>
             </div>
           </div>
-          </div>
+          </ResizablePanel>
+          </ResizablePanelGroup>
         {/* ★★★ 2026-08-24 · TERMINAL/VẤN ĐỀ — CỬA SỔ FULL-WIDTH Ở ĐÁY (mẫu VSCode). Đặt NGOÀI
             lưới 3 cột, dưới cùng khung: KHÔNG chen cột chat nên KHÔNG đè thẻ duyệt/ đẩy ô nhập
             (hai lỗi layout của bản trong-cột đã hết theo cấu tạo). Co được + cap ≤45% khung; nội

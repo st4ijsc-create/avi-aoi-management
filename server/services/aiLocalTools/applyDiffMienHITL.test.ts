@@ -117,6 +117,37 @@ describe("§2 ÂM then chốt — NGƯỜI chen một byte giữa hai lượt �
   });
 });
 
+describe("§4 LÔ — `apply_diff_batch` vào CÙNG sổ (ghi tại cửa chung `ghiTheoPhanQuyet`)", () => {
+  it("★★★ lô ghi 2 tệp → lượt ĐƠN tiếp theo trên một tệp của lô phải ĐI (bẩn thuần-HITL-lô)", async () => {
+    const b1 = "export const L1 = 1;\n";
+    const b2 = "export const L2 = 1;\n";
+    ghiCommit("src/lo-a.ts", b1);
+    ghiCommit("src/lo-b.ts", b2);
+    const batch = listTools().find((t) => t.name === "apply_diff_batch")!;
+    const r = await batch.execute!(
+      {
+        files: [
+          { path: "src/lo-a.ts", original: b1, modified: b1 + "export const L1b = 2;\n" },
+          { path: "src/lo-b.ts", original: b2, modified: b2 + "export const L2b = 2;\n" },
+        ],
+      } as never,
+      CTX as never,
+    );
+    expect(r.note, `lô phải ghi được: ${r.textSummary}`).toBeUndefined();
+
+    // Tệp lo-a giờ git-bẩn (sản phẩm của lô HITL) — lượt ĐƠN kế tiếp phải được miễn trừ.
+    const v2 = docDia("src/lo-a.ts");
+    const r2 = await tool().execute!(
+      { path: "src/lo-a.ts", original: v2, modified: v2 + "export const L1c = 3;\n" } as never,
+      CTX as never,
+    );
+    expect(r2.note, `lượt đơn sau lô phải đi: ${r2.textSummary}`).toBeUndefined();
+
+    git("checkout", "--", "src/lo-a.ts");
+    git("checkout", "--", "src/lo-b.ts");
+  });
+});
+
 describe("§3 ÂM — sổ rỗng (chưa từng ghi HITL) ⇒ luật cũ giữ nguyên từng chữ", () => {
   it("★★★ tệp bẩn thuần-tay + sổ rỗng ⇒ FILE_DIRTY (ca §B của census cũ KHÔNG bị nới)", async () => {
     const goc = docDia("src/so-rong.ts");

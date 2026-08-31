@@ -14,6 +14,15 @@ import ReactCodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { StreamLanguage, type StreamParser } from "@codemirror/language";
+// ★ 2026-09-01 · ĐỢT C (workspace sửa tay) — mode CHUẨN từ `@codemirror/legacy-modes` ĐÃ CÓ SẴN
+//   trong package.json (0 gói mới): tô cú pháp cho tệp mã nguồn thường gặp của repo. Thuần ADDITIVE
+//   vào bảng `languageExtension` — mọi token PLC cũ giữ nguyên từng chữ.
+import { javascript as cmJs, json as cmJson, typescript as cmTs } from "@codemirror/legacy-modes/mode/javascript";
+import { css as cmCss } from "@codemirror/legacy-modes/mode/css";
+import { xml as cmXml } from "@codemirror/legacy-modes/mode/xml";
+import { yaml as cmYaml } from "@codemirror/legacy-modes/mode/yaml";
+import { python as cmPy } from "@codemirror/legacy-modes/mode/python";
+import { shell as cmShell } from "@codemirror/legacy-modes/mode/shell";
 import { linter, type Diagnostic as CmDiagnostic } from "@codemirror/lint";
 import { trpc } from "@/lib/trpc";
 import { inlineCopilotExtension } from "./inlineCopilotExtension";
@@ -169,6 +178,32 @@ function languageExtension(language?: string): Extension | null {
     case "gcode":
     case "g-code":
       return StreamLanguage.define(gcodeParser);
+    // ★ 2026-09-01 — tệp mã nguồn thường gặp (workspace sửa tay). Token = ĐUÔI tệp thường hoá.
+    case "ts":
+    case "tsx":
+      return StreamLanguage.define(cmTs);
+    case "js":
+    case "jsx":
+    case "mjs":
+    case "cjs":
+      return StreamLanguage.define(cmJs);
+    case "json":
+      return StreamLanguage.define(cmJson);
+    case "css":
+    case "scss":
+      return StreamLanguage.define(cmCss);
+    case "html":
+    case "xml":
+    case "svg":
+      return StreamLanguage.define(cmXml);
+    case "yaml":
+    case "yml":
+      return StreamLanguage.define(cmYaml);
+    case "py":
+      return StreamLanguage.define(cmPy);
+    case "sh":
+    case "bash":
+      return StreamLanguage.define(cmShell);
     default:
       return null; // plain text + số dòng vẫn là nâng cấp lớn so với textarea
   }
