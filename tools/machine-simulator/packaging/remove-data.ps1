@@ -6,18 +6,29 @@
 
 .DESCRIPTION
   The MSI installer (packaging/installer/) only ever removes what IT installed, under Program Files -
-  it has no idea this exe/service declares 19 directories under
+  it has no idea this exe/service declares 20 directories under
   %ProgramData%\ST4I\sim\ - the historian database, the store-and-forward WAL buffer, the local
   user/session/audit-log database, the DPAPI-protected machine credential, the alarm-notification
   channel configuration and its credentials, the DEVICE IDENTITY PRIVATE KEY, saved device connections
   (whose OPC-UA map carries a plaintext password), the OPC-UA client certificate and key, the Site link
   and its pinned PEM, the alarm store, the asset registry, fleet settings, the bridge spool, the machine
   operating configuration, the product/recipe configuration, the simulated-ecosystem configuration, the
-  HMI component-tree document, and the HMI tag namespace. That is entirely
-  intentional: uninstalling (or upgrading via MajorUpgrade) must never silently destroy a customer's
-  production history, audit trail, or credentials. This script is the separate, explicit, opt-in tool
-  for an operator who genuinely wants a clean-slate wipe (e.g. decommissioning a machine, resetting a
-  demo box back to a fresh-install state).
+  HMI component-tree document, the HMI tag namespace, and the HMI screen-editor document store. That is
+  entirely intentional: uninstalling (or upgrading via MajorUpgrade) must never silently destroy a
+  customer's production history, audit trail, or credentials. This script is the separate, explicit,
+  opt-in tool for an operator who genuinely wants a clean-slate wipe (e.g. decommissioning a machine,
+  resetting a demo box back to a fresh-install state).
+
+  WS-HMI-2 TASK 1, 2026-08-31 - NINETEEN -> TWENTY. `hmi-screens` (HmiScreenStore) joined the
+  population the day the type was added under St4i.EngineApi/HmiModel - DECLARED, not yet CREATED, in
+  the same sense the paragraph above already draws for every other leaf here: nothing in src/ resolves
+  IHmiScreenStore yet (no DI registration, no endpoint), so a running engine at this commit never
+  constructs it and %ProgramData%\ST4I\sim\hmi-screens is never created. Listed anyway, for the same
+  reason `hmi-model`/`hmi-tags` were listed before WS-HMI-0b resolved them: a purge tool has to cover
+  what MAY exist (a direct `new HmiScreenStore()` call, or a future endpoint), not what must. PURGED,
+  not kept - it holds an engineer's declared screen documents and their version history, the same kind
+  of "record of what the machine currently shows" `hmi-model`/`hmi-tags` already are, not a
+  `products`/`ecosystem`-style recipe an operator authored outside the product.
 
   DECLARES, NOT "GOES ON TO CREATE" - CORRECTED 2026-08-30 (whole-branch review of WS-HMI-0a, Important
   2), OLD SENTENCE KEPT VERBATIM. The sentence above read "it has no idea this exe/service, once running,
@@ -184,6 +195,13 @@
   declared tags with their type/policyAction/hard-band metadata). PURGED, not kept, same reasoning as
   -HmiModelDir.
 
+.PARAMETER HmiScreensDir
+  WS-HMI-2 Task 1 - the declared HMI screen-editor store (ST4I_HMI_SCREENS_DIR), holding `hmi-screens.db`
+  (one APPENDED row per version per screenId, plus a current-version pointer - rollback, spec §7, reads
+  the old version back and appends it again rather than deleting anything). PURGED, not kept, same
+  reasoning as -HmiModelDir/-HmiTagsDir: it records what the machine's HMI currently shows, not a
+  recipe/product definition an operator authored outside the product.
+
 .EXAMPLE
   .\packaging\remove-data.ps1 -WhatIf
   Preview exactly what would be stopped/deleted, without touching anything.
@@ -191,7 +209,7 @@
 .EXAMPLE
   .\packaging\remove-data.ps1
   Interactive - prompts (Y/N) before stopping/deleting the service and before deleting each of the
-  16 purged data directories (each resolved per the matching -XxxDir parameter or the matching
+  18 purged data directories (each resolved per the matching -XxxDir parameter or the matching
   ST4I_*_DIR environment variable or the default %ProgramData%\ST4I\sim\<name> - see the
   WARNING below about relocated directories this script cannot discover on its own). The 2 KEPT
   directories (products, ecosystem - owner ruling 2026-08-23(b)) are printed but never prompted for,
@@ -205,11 +223,12 @@
   .\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -WalDir D:\St4iData\wal -SecurityDir D:\St4iData\security -IdentityDir D:\St4iData\identity
   Purges relocated data directories explicitly - needed whenever the service was configured (via its
   registry Environment value, README section 15.2) with a directory that is NOT the default
-  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory - NINETEEN of
-  them, all nineteen documented under .PARAMETER above (-CredsDir's block was missing until the Dot F
+  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory - TWENTY of
+  them, all twenty documented under .PARAMETER above (-CredsDir's block was missing until the Dot F
   branch review, F-9; -MachineConfigDir, -ProductsDir and -EcosystemDir arrived with task BF-1;
-  -HmiModelDir and -HmiTagsDir arrived with task 5, WS-HMI-0a; -HmiTagMapsDir arrived with WS-HMI-0c). SEVENTEEN
-  of those nineteen name a directory this script PURGES; -ProductsDir and -EcosystemDir resolve the two the
+  -HmiModelDir and -HmiTagsDir arrived with task 5, WS-HMI-0a; -HmiTagMapsDir arrived with WS-HMI-0c;
+  -HmiScreensDir arrived with WS-HMI-2 Task 1). EIGHTEEN
+  of those twenty name a directory this script PURGES; -ProductsDir and -EcosystemDir resolve the two the
   owner's 2026-08-23(b) ruling KEEPS, so passing them changes what is PRINTED and never what is deleted.
 
 .NOTES
@@ -401,7 +420,10 @@ param(
     [string]$HmiTagsDir,
     # WS-HMI-0c - a purge parameter like the two above it. The owner ruled the tag-map directory PURGE
     # rather than adding a third member to the products/ecosystem keep exemption; see .PARAMETER.
-    [string]$HmiTagMapsDir
+    [string]$HmiTagMapsDir,
+    # WS-HMI-2 Task 1 - a purge parameter like the three above it; same reasoning as -HmiModelDir/
+    # -HmiTagsDir (see .PARAMETER), not a fourth member of the products/ecosystem keep exemption.
+    [string]$HmiScreensDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -483,6 +505,11 @@ $subdirs = @(
     # WS-HMI-0c - the only leaf here the engine READS rather than writes. Purged by owner ruling; see
     # .PARAMETER HmiTagMapsDir for what that costs an operator.
     @{ Name = 'hmi-tagmaps';      Path = (Resolve-DataDir $HmiTagMapsDir      'ST4I_HMI_TAGMAPS_DIR'      (Join-Path $root 'hmi-tagmaps'));      Warning = 'the hand-authored HMI tag maps ({machineCode}.json) every machine''s tag namespace is built from' }
+
+    # ---- WS-HMI-2 Task 1 -----------------------------------------------------------------------------
+    # hmi-screens joined this list the day HmiScreenStore was added under St4i.EngineApi/HmiModel. PURGED,
+    # not kept - same reasoning as hmi-model/hmi-tags above (see .PARAMETER HmiScreensDir).
+    @{ Name = 'hmi-screens';      Path = (Resolve-DataDir $HmiScreensDir      'ST4I_HMI_SCREENS_DIR'      (Join-Path $root 'hmi-screens'));      Warning = 'every saved version of every HMI screen document, and the current-version pointer per screen (hmi-screens.db)' }
 )
 
 # ---- Task BF-1, owner ruling 2026-08-23(b): THE KEPT LIST -----------------------------------------
@@ -570,7 +597,7 @@ elseif ($PSCmdlet.ShouldProcess("Windows service '$serviceName'", "Stop and dele
     }
 }
 
-# ---- Step 2: delete the 16 purged data subdirectories (each already resolved above per -XxxDir /
+# ---- Step 2: delete the 18 purged data subdirectories (each already resolved above per -XxxDir /
 # ST4I_*_DIR / the %ProgramData% default - see $subdirs). $keptByDesign is deliberately NOT iterated
 # here: the owner's 2026-08-23(b) ruling keeps those two, and the way that ruling is enforced is that
 # this loop has no access to the list at all. ---------------------------------------------------

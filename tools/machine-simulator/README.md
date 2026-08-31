@@ -1284,13 +1284,15 @@ pass) removes only what the MSI itself installed — everything under `%ProgramF
 Simulator\`, the Start Menu/Startup shortcuts, and — if `ServiceFeature` was enabled — stops and
 deletes the `St4iEngineApi` service.
 
-**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine declares **nineteen**
+**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine declares **twenty**
 directories there (`historian`, `wal`, `security`, `creds`, `notifications`, `identity`,
 `connector-config`, `opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`,
 `machine-config`, `products`, `ecosystem` — 🔴 the last three arrived on **2026-08-23**, when the owner
 moved three stores that until then wrote **beside the engine binary**; see §15.9 — and `hmi-model`,
 `hmi-tags` arrived on **2026-08-30** (WS-HMI-0a Task 5), the day `Program.cs` first registered
-`ComponentModelStore`/`TagNamespaceStore` into the DI graph) and
+`ComponentModelStore`/`TagNamespaceStore` into the DI graph, and `hmi-screens` arrived with **WS-HMI-2
+Task 1**, the day `HmiScreenStore` was added — declared the same way, not yet resolved by any DI
+registration or endpoint) and
 the MSI has no `<Component>` referencing anything there (it's all runtime-created by the engine, not
 installed), so Windows Installer's uninstall/remove sequence never touches it. This is deliberate: an
 uninstall or upgrade must never silently destroy production history, the audit trail, or a machine's
@@ -1487,11 +1489,15 @@ chúng chứa mọi định nghĩa sản phẩm/công thức mà vận hành vi�
 bằng tay; **cố ý KHÔNG có cờ nào** làm việc đó. `machine-config` là thư mục mới thứ ba và nó **CÓ** bị xoá:
 nó giữ tham số vận hành của máy và danh sách `History` chỉ-thêm của mọi lần điều chỉnh — một bản ghi về
 việc máy ĐÃ LÀM GÌ, không phải thứ vận hành viên dựng lên.
-🔴 **CẬP NHẬT 2026-08-30 (WS-HMI-0a Task 5) — engine KHAI MƯỜI CHÍN thư mục, script xoá MƯỜI BẢY.**
-`hmi-model` (cây linh kiện đã khai của máy) và `hmi-tags` (namespace tag đã khai) gia nhập danh sách
-XOÁ, không phải danh sách GIỮ — chúng gần với `machine-config` (bản ghi máy đang chạy gì) hơn là với
-`products`/`ecosystem` (cấu hình vận hành viên tự soạn), và danh sách GIỮ vẫn ghim đúng
-`{ecosystem, products}` bởi `NotificationDocumentationTests`/`PerHostDataRootsTests`.
+🔴 **CẬP NHẬT WS-HMI-2 Task 1 — engine KHAI HAI MƯƠI thư mục, script xoá MƯỜI TÁM.** `hmi-screens` (tài
+liệu màn hình HMI đã lưu, mỗi lần ghi một phiên bản) gia nhập danh sách XOÁ cùng lý do với `hmi-model`/
+`hmi-tags` ở dưới — chưa store .NET nào phân giải nó qua DI hôm nay, nhưng đã KHAI trong `src/`.
+📎 🔴 **RÚT WS-HMI-2 Task 1, giữ nguyên văn:** câu ngay trên đọc CẬP NHẬT 2026-08-30 (WS-HMI-0a Task 5) —
+*"engine KHAI MƯỜI CHÍN thư mục, script xoá MƯỜI BẢY."* `hmi-model` (cây linh kiện đã khai của máy) và
+`hmi-tags` (namespace tag đã khai) gia nhập danh sách XOÁ, không phải danh sách GIỮ — chúng gần với
+`machine-config` (bản ghi máy đang chạy gì) hơn là với `products`/`ecosystem` (cấu hình vận hành viên tự
+soạn), và danh sách GIỮ vẫn ghim đúng `{ecosystem, products}` bởi
+`NotificationDocumentationTests`/`PerHostDataRootsTests`.
 🔴 **KHAI, KHÔNG PHẢI TẠO — sửa 2026-08-30 (review toàn nhánh WS-HMI-0a, Important 2), câu cũ giữ nguyên
 văn.** Câu ngay trên đọc *"engine nay tạo MƯỜI TÁM thư mục, script xoá MƯỜI SÁU"*. **Đăng ký một factory
 singleton KHÔNG phải là tạo.** Cả hai store được đăng ký dạng `AddSingleton<T>(sp => new …)` trong
@@ -1702,10 +1708,16 @@ Windows machine** (§24). They share no roster, no claim registry and no channel
 **The rule, and it is the whole mechanism — and it is scoped to the MACHINE-WIDE population:** every
 directory this product creates under
 `%ProgramData%\ST4I\sim\<name>` is relocatable by an environment variable whose name is derived from the
-directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **19** of them
+directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **20** of them
 today, and there is no exception **within that population**. 🔴 **It is not the whole of what this product
 writes**: three more stores live BESIDE THE ENGINE BINARY and are isolated only by accident — see "The
 SECOND store population" below, and read it before concluding two hosts are separated.
+
+🔴 **WS-HMI-2 Task 1 — NINETEEN → TWENTY, kept verbatim below rather than edited.** The count above read
+*"There are **19** of them today"* until this task added `hmi-screens` (`HmiScreenStore`,
+`ST4I_HMI_SCREENS_DIR`) to the population — declared in `src/` from this task, not yet resolved by any DI
+registration or endpoint, the same "declared, not created" distinction the paragraph below draws for
+`hmi-model`/`hmi-tags`.
 
 🔴 **WS-HMI-0a Task 5, 2026-08-30 — SIXTEEN → EIGHTEEN.** `hmi-model` (`ComponentModelStore`,
 `ST4I_HMI_MODEL_DIR`) and `hmi-tags` (`TagNamespaceStore`, `ST4I_HMI_TAGS_DIR`) joined the population
@@ -2080,7 +2092,10 @@ triển khai bình thường (§24). Hai host không chia sẻ roster, không ch
 nào — nhưng mặc định chúng **dùng chung một bộ file**. Mục này nói cách cho mỗi host một bộ riêng, và cái giá
 phải trả. **Quy tắc:** mọi thư mục sản phẩm tạo dưới `%ProgramData%\ST4I\sim\<tên>` đều dời chỗ được bằng một
 biến môi trường suy ra được từ tên thư mục — **`ST4I_` + `<TÊN>` (viết hoa, `-` → `_`) + `_DIR`**. Hôm nay có
-**mười chín** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên).
+**hai mươi** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên).
+📎 🔴 **RÚT WS-HMI-2 Task 1, giữ nguyên văn:** câu ngay trên đọc
+*"Hôm nay có **mười chín** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên)."* `hmi-screens`
+gia nhập quần thể cùng lý do với `hmi-model`/`hmi-tags`/`hmi-tagmaps` — xem đoạn tiếng Anh ngay trên.
 📎 🔴 **RÚT 2026-08-30 (review toàn nhánh WS-HMI-0a, Important 1), giữ nguyên văn:** câu ngay trên đọc
 *"Hôm nay có **mười sáu** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên)."* Nó đúng cho
 tới 2026-08-30, và nó **sai từ ngày ấy mà không ai thấy**: WS-HMI-0a Task 5 chuyển số này 16 → 18 ở nửa
@@ -6229,8 +6244,9 @@ holds COM3 — and on a **gateway** there is no such protection to reason about 
   is the WAL queue), so nothing regressed — **and E-5 did not change that either: an RS-485 bus opens a COM
   port and a gateway bus opens a socket; neither is a store, and the shared-open bookkeeping is an in-process
   dictionary the host owns.** 🔴 **F-1 changed the "by default": per-host data roots are now a SUPPORTED
-  deployment (§15.9)** — every one of the **nineteen** (🔴 thirteen until 2026-08-23, sixteen until
-  2026-08-30 — WS-HMI-0a Task 5 added `hmi-model`/`hmi-tags`) **machine-wide**
+  deployment (§15.9)** — every one of the **twenty** (🔴 thirteen until 2026-08-23, sixteen until
+  2026-08-30 — WS-HMI-0a Task 5 added `hmi-model`/`hmi-tags`; nineteen until WS-HMI-2 Task 1, which added
+  `hmi-screens`) **machine-wide**
   directories under `%ProgramData%` is
   relocatable by a derivable `ST4I_*_DIR`
   variable, and a test derives both sets from `src/` so a **nineteenth** machine-wide store cannot arrive
@@ -6475,8 +6491,11 @@ của nó là hàng đợi WAL), nên không có gì thụt lùi — **và E-5 c
 cổng COM còn một tuyến gateway mở một socket; không cái nào là store, và sổ sách chia sẻ lần mở là một
 dictionary trong tiến trình do host sở hữu.** **Máy của một connector đã xoá vẫn nằm trong roster tới khi khởi
 động lại** (§23.5), không đổi. 🔴 **F-1 đổi phần "mặc định" ấy: gốc dữ liệu theo host giờ là hình dạng triển
-khai ĐƯỢC HỖ TRỢ (§15.9)** — cả **mười chín** thư mục **toàn máy** dưới `%ProgramData%` đều dời chỗ được bằng
-một biến `ST4I_*_DIR` suy ra được (📎 🔴 **RÚT 2026-08-30 (review toàn nhánh WS-HMI-0a, Important 1), giữ
+khai ĐƯỢC HỖ TRỢ (§15.9)** — cả **hai mươi** thư mục **toàn máy** dưới `%ProgramData%` đều dời chỗ được bằng
+một biến `ST4I_*_DIR` suy ra được (📎 🔴 **RÚT WS-HMI-2 Task 1, giữ nguyên văn:** chỗ này đọc
+*"cả **mười chín** thư mục **toàn máy**"*, trong khi nửa TIẾNG ANH của đúng câu này đã được sửa thành
+**twenty** cùng với `hmi-screens` — xem đoạn tiếng Anh ngay trên. 📎 🔴 **RÚT 2026-08-30 (review toàn nhánh
+WS-HMI-0a, Important 1), giữ
 nguyên văn:** chỗ này đọc *"cả **mười sáu** thư mục **toàn máy**"*, trong khi nửa TIẾNG ANH của đúng câu này
 đã được WS-HMI-0a Task 5 sửa thành **eighteen** cùng với **nineteenth** ở mệnh đề sau. Hai nửa của một câu
 song ngữ mâu thuẫn nhau từ 2026-08-30 tới khi vòng sửa sau review bắt được; xem `task-5-report.md` để biết

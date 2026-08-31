@@ -328,6 +328,14 @@ export default defineConfig({
         // accident of the host. The guard isolates every ST4I_*_DIR the engine names, population-blind on
         // purpose, and that is the right property for a read too.
         ST4I_HMI_TAGMAPS_DIR: join(e2eDataDir, "hmi-tagmaps"),
+        // 🔴 WS-HMI-2 Task 1 — THE TWENTIETH. Every "nineteen" above this point is now TWENTY.
+        // HmiScreenStore's EnvVarDir constant (ST4I_HMI_SCREENS_DIR) exists in src/ from this task, so
+        // EveryStoreTheEngineCreates_IsIsolatedByThePlaywrightHarness requires it here on the same terms
+        // as its nineteen neighbours — before any DI registration or endpoint makes it reachable from a
+        // running engine, exactly the precedent ST4I_HMI_MODEL_DIR/ST4I_HMI_TAGS_DIR set above. A direct
+        // `new HmiScreenStore()` (no DI required) would otherwise write into a real install's data the
+        // moment this harness or a developer's own `npm run dev` happened to construct one.
+        ST4I_HMI_SCREENS_DIR: join(e2eDataDir, "hmi-screens"),
       },
     },
   ],
