@@ -313,21 +313,22 @@ const result = await trpc.machine.submitInspection.mutate({
 
 ## 7. Field Mapping - Bảng mapping giữa 2 API
 
-| Concept | AOI Package (meta.json) | submitInspection (tRPC) | Priority |
+> ⚠ **BG-85 (2026-09-02) — hai cột này KHÔNG còn là hai bản của cùng một hình dạng.**
+> `meta.json` nay là **hợp đồng CÂY v2.0** (`machineDataContractV2` + `images[]`);
+> `submitInspection` (tRPC) vẫn nhận hình dạng **PHẲNG v1.x** (`measurements[]`).
+> Bảng dưới đây ánh xạ **khái niệm**, không phải "cùng tên trường".
+
+| Concept | AOI Package (meta.json — CÂY v2.0) | submitInspection (tRPC — PHẲNG v1.x) | Priority |
 |---------|-------------------------|-------------------------|----------|
-| Point ID | `measurements[].pointId` | `measurements[].pointId` | ✅ Same |
-| Point Code | `measurements[].pointCode` | `measurements[].pointCode` | ✅ Same |
-| Measured Value | `measurements[].measuredValue` | `measurements[].measuredValue` | ✅ Same |
-| Result | `measurements[].result` | `measurements[].result` | ✅ Same |
-| Remark | `measurements[].remark` | `measurements[].remark` | ✅ Same |
-| Image | `measurements[].fileName` | `measurements[].imageBase64` | Different |
-| Factory | `factoryCode` (new) | `factoryCode` (new) | ✅ Same |
-| Line | `lineCode` (new) | `lineCode` (new) | ✅ Same |
-| Workshop | `workshopCode` (new) | `workshopCode` (new) | ✅ Same |
-| Stage | `stageCode` (new) | `stageCode` (new) | ✅ Same |
-| Production Order | `productionOrderCode` (new) | `productionOrderCode` (new) | ✅ Same |
-| Operator | `operatorId` (new) | `operatorId` (new) | ✅ Same |
-| Batch | `batchNumber` (new) | `batchNumber` (new) | ✅ Same |
+| Điểm chụp / điểm đo | `surfaces[].positions[].captures[].captureId` | `measurements[].pointId` / `pointCode` | ❌ Khác hẳn |
+| Giá trị đo | `…captures[].components[].value` (cấp COMPONENT) | `measurements[].measuredValue` | ❌ Khác cấp |
+| Kết quả điểm | `…captures[].result` (`"OK"`\|`"NG"`) + cờ `ntf` RIÊNG | `measurements[].result` (`"OK"`\|`"NG"`\|`"NTF"`) | ❌ Khác enum |
+| Ảnh | `images[].fileName` (nối cây bằng `images[].captureId`) | `measurements[].imageBase64` | ❌ Khác hẳn |
+| Danh tính máy/trạm | `identity.{station,machine,line,plant,country,…}` | `machineCode` + `lineCode`/`factoryCode`… | ❌ Khác hẳn |
+| Phán quyết bo | `overallResult` — server **CUỘN LẠI TỪ CÂY**, lời khai chỉ để đối chiếu | `overallResult` (auto-calculated nếu vắng) | ⚠ meta.json: lời khai KHÔNG quyết định |
+| Bốn nhóm đếm | `summary.{surfaces,positions,captures,components}` — **BẮT BUỘC**, lưu nguyên văn để đối chiếu, **KHÔNG BAO GIỜ** là nguồn | (không có) | ❌ Chỉ meta.json |
+| Serial | `serialNumber` — **được phép RỖNG** (máy chưa gán serial); gói vẫn ghi `product_inspections` | `serialNumber` | ⚠ Khác ràng buộc |
+| Factory / Line / Workshop / Stage / Production Order / Operator / Batch | (không có trong hợp đồng cây — tenant SUY TỪ MÁY đã xác thực) | `factoryCode`, `lineCode`, `workshopCode`, `stageCode`, `productionOrderCode`, `operatorId`, `batchNumber` | ❌ Chỉ tRPC |
 
 ---
 
@@ -562,45 +563,72 @@ ORDER BY pi.inspection_time, mr.id;
 
 ## 13. Validation Rules - Quy tắc validation
 
-### Required fields
+> ⚠ **BG-85 — HAI hợp đồng, HAI bộ luật.** Trước 2026-09-02 mục này viết như thể có
+> một bộ luật chung ("BẮT BUỘC trên MỌI payload"); điều đó **không còn đúng** và một
+> bên tích hợp làm theo sẽ dựng gói ZIP **không bao giờ commit được**.
+
+### Required fields — `meta.json` (gói ZIP, hợp đồng CÂY v2.0)
+- ✅ `identity` (đủ `station`/`machine`/`line`/`plant`/`country`/`solutionName`/`appVersion`)
+- ✅ `productId` (min 1 char)
+- ✅ `serialNumber` — **có mặt bắt buộc, nhưng ĐƯỢC PHÉP RỖNG** (`""`) khi máy chưa gán
+  serial. Gói serial rỗng **vẫn ghi** `product_inspections` (hội tụ theo `packageId`)
+- ✅ `overallResult` (`"OK"` | `"NG"`) và `ntf` (boolean) — hai trường RIÊNG
+- ✅ `summary` đủ bốn nhóm `surfaces`/`positions`/`captures`/`components`
+- ✅ `surfaces` (mảng cây, có thể rỗng)
+- ❌ **KHÔNG có** `measurements` / `points` / `pointCode` — hình dạng phẳng cũ đã NGỪNG
+  được nhận (gói vào `status="failed"`, retry được, nhưng không bao giờ tự commit)
+- 🔸 `images[]` là TUỲ CHỌN; nếu có thì **mỗi** `captureId` phải tồn tại trong cây và
+  **mỗi** `fileName` phải có tệp thật trong `images/` — sai một trong hai ⇒ **TỪ CHỐI CẢ GÓI**
+
+### Required fields — `submitInspection` (tRPC, hợp đồng PHẲNG v1.x)
 - ✅ `serialNumber` (string, min 1 char)
 - ✅ `productModel` (string, min 1 char)
-- ✅ `measurements` array — **BẮT BUỘC trên MỌI payload** (có thể là mảng rỗng
-  `[]`, nhưng khoá này không được vắng mặt). `points` array là bí danh CŨ của
-  các TÊN TRƯỜNG bên trong (`code`/`value`) — KHÔNG thay thế được khoá
-  `measurements` ở cấp cao nhất (xem §4.2/§9)
+- ✅ `measurements` array — bắt buộc có mặt (có thể là mảng rỗng `[]`). `points` array là
+  bí danh CŨ của các TÊN TRƯỜNG bên trong (`code`/`value`) — KHÔNG thay thế được khoá
+  `measurements` ở cấp cao nhất
 
-### Optional but recommended
+### Optional but recommended (chỉ `submitInspection` tRPC)
 - `companyCode`, `factoryCode`, `workshopCode`, `lineCode`, `stageCode`
 - `productionOrderCode`, `operatorId`, `batchNumber`
 - `inspectionTime` (ISO 8601 datetime)
 - `overallResult` (auto-calculated if missing)
 
 ### Measurement point rules
-- Mỗi point phải có `fileName` (AOI package) hoặc `imageBase64` (submitInspection)
-- `pointId` hoặc `pointCode` hoặc `code` (at least one)
-- `result` phải là `"OK"` | `"NG"` | `"NTF"`
+- `submitInspection` (tRPC): mỗi point cần `imageBase64` (tuỳ chọn); `pointId` hoặc
+  `pointCode` hoặc `code` (ít nhất một); `result` là `"OK"` | `"NG"` | `"NTF"`
+- `meta.json` (cây v2.0): ảnh khai ở `images[]`, khoá nối là `captureId`; `result` ở MỌI
+  cấp chỉ nhận `"OK"` | `"NG"`, còn NTF là trường `ntf` (boolean) RIÊNG cùng cấp
 
 ---
 
 ## 14. FAQ
 
 ### Q1: Có cần thay đổi client code ngay không?
-**A:** Không bắt buộc. Hệ thống vẫn hỗ trợ cấu trúc cũ (backward compatible). Nhưng **khuyến nghị migrate** để có đầy đủ features mới.
+**A:** **Tuỳ đường bạn đang dùng — câu trả lời KHÔNG còn giống nhau (BG-85, 2026-09-02):**
+- **Gói ZIP (`meta.json`): CÓ, bắt buộc.** Hình dạng phẳng cũ KHÔNG còn parse được. Gói sai
+  hình dạng vào `status="failed"` và ở lại chờ retry — nó không bị khoá vĩnh viễn, nhưng
+  cũng **không bao giờ tự commit được** cho tới khi Agent gửi đúng cây v2.0 + `images[]`.
+- **`submitInspection` (tRPC): chưa bắt buộc.** Hình dạng phẳng v1.x vẫn được nhận. Việc cắt
+  nằm sau cờ `INGEST_REJECT_LEGACY_MACHINE_ENABLED` (mặc định **TẮT**) và chỉ được bật sau
+  Khối B — xem §7.
 
 ### Q2: `measurements` và `points` khác gì nhau?
-**A:** 
-- `measurements`: Cấu trúc mới, đồng bộ với submitInspection, có thêm field `pointId`, `measuredValue`, `remark`
-- `points`: Cấu trúc cũ, vẫn hoạt động nhưng thiếu một số fields mới
+**A:** Câu hỏi này chỉ còn nghĩa với **`submitInspection` (tRPC)**:
+- `measurements`: khoá cấp cao nhất, BẮT BUỘC có mặt
+- `points`: bí danh CŨ của các tên trường bên trong, KHÔNG thay thế được khoá `measurements`
+
+Với **`meta.json`** thì **cả hai đều không còn tồn tại** — hợp đồng là cây
+`surfaces[].positions[].captures[].components[]` cộng `images[]`.
 
 ### Q3: Nếu gửi cả `measurements` và `points` thì sao?
-**A:** Hệ thống ưu tiên `measurements`. Field `points` bị ignore.
+**A:** (`submitInspection` tRPC) Hệ thống ưu tiên `measurements`. Field `points` bị ignore.
+Với `meta.json`, gửi cả hai vẫn bị **từ chối** vì thiếu `surfaces`/`summary`/`identity`/`ntf`.
 
 ### Q4: `inspectionTime` và `startedAt` khác gì?
-**A:** Giống nhau, chỉ là tên khác nhau để tương thích:
-- `inspectionTime`: submitInspection (tRPC)
-- `startedAt`: AOI package (old field)
-- Hệ thống ưu tiên `inspectionTime`
+**A:**
+- `inspectionTime`: `submitInspection` (tRPC)
+- `startedAt`/`completedAt`: `meta.json` cây v2.0 — server lấy `completedAt`, thiếu thì `startedAt`
+- Trên đường tRPC, hệ thống ưu tiên `inspectionTime`
 
 ### Q5: Có thể tìm history theo production order không?
 **A:** Có! Dùng field `productionOrderCode` → Query `product_inspections.production_order_code`.

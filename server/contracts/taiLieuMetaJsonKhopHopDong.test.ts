@@ -39,6 +39,9 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { metaJsonSchema } from "../routers/aoiPackageRouter";
+// Ranh giới phạm vi §5.2 phải ĐO được: hợp đồng PHẲNG v1.x còn sống thì `measurements`/
+// `result:"NTF"` vẫn ĐÚNG ở tài liệu mô tả nó — xem mệnh đề "RANH GIỚI PHẠM VI".
+import { machineDataContractV1 } from "./machineDataContract";
 
 // server/contracts/taiLieuMetaJsonKhopHopDong.test.ts → GOC = repo root
 const GOC = resolve(__dirname, "..", "..");
@@ -233,6 +236,230 @@ describe("§3 — TỰ KIỂM: pipeline này THẬT SỰ bắt được hình d�
     };
     const r = metaJsonSchema.safeParse(hinhDangDaSua);
     expect(r.success, r.success ? "" : JSON.stringify((r as { error?: unknown }).error)).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// §5 (I-2, review lượt 8) — LỜI VĂN, không chỉ khối JSON
+//
+// ⚠ VÌ SAO §1–§4 XANH TRONG KHI TÀI LIỆU SAI — đúng lớp lỗi L-1:
+// §1 trích các khối JSON CÂN BẰNG NGOẶC rồi `safeParse`. Khối JSON của
+// `AoiPackageSection.tsx` ĐÃ được cập nhật đúng hình dạng cây; **lời văn xung
+// quanh thì không**, và lời văn không phải JSON nên bộ trích không thấy nó.
+// Lưới cưỡng chế một DANH SÁCH (những khối trích được) thay vì một BẤT BIẾN
+// (mọi khẳng định hành vi trong tài liệu phải đúng). Hệ quả đo được: trang API
+// docs CHẠY TRONG SẢN PHẨM vẫn dạy `measurements[]`, `pointCode` làm tên tệp,
+// "link theo serialNumber trùng", `result: "OK"|"NG"|"NTF"`, và — nặng nhất —
+// "đếm OK/NG từ `summary`", đúng thứ bất biến 3 (§4 chuẩn gói ảnh) CẤM.
+//
+// ⚠ CÁI §5 KHÔNG LÀM ĐƯỢC, khai thẳng: "mọi khẳng định hành vi trong tài liệu
+// phải đúng" KHÔNG máy kiểm được. §5 chỉ cưỡng chế được phần ĐO ĐƯỢC của bất
+// biến đó: (a) tên trường suy TỪ HỢP ĐỒNG SỐNG, (b) một danh sách khẳng định
+// ĐÃ BỊ MÃ BÁC BỎ phải biến mất, (c) khẳng định về nguồn cuộn verdict phải CÓ
+// MẶT. Một câu SAI MỚI, chưa ai gặp, vẫn lọt — đó là nợ **BG-94**, ghi trong
+// backlog toàn cảnh §3, KHÔNG giấu dưới một lưới xanh.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Các bề mặt tài liệu MÔ TẢ hợp đồng `meta.json` (khác với nơi chỉ có ví dụ). */
+const BE_MAT_MO_TA_HOP_DONG: readonly string[] = [DUONG_AOI_PACKAGE_SECTION, DUONG_API_REFERENCE];
+
+/** Mọi bề mặt §5 canh — hợp của `VI_DU` và danh sách trên, không trùng lặp. */
+const MOI_BE_MAT: readonly string[] = Array.from(
+  new Set<string>([...VI_DU.map((v) => v.file), ...BE_MAT_MO_TA_HOP_DONG]),
+);
+
+function doc(duong: string): string {
+  return readFileSync(resolve(GOC, duong), "utf8");
+}
+
+/**
+ * Khoá TOP-LEVEL **BẮT BUỘC** suy TỪ `metaJsonSchema` SỐNG (không phải danh sách
+ * chép tay): đổi tên/bỏ một trường trong hợp đồng ⇒ mệnh đề §5.1 ĐỎ ngay, vì nó
+ * đi hỏi chính hợp đồng chứ không hỏi một bản sao.
+ */
+function truongBatBuocCuaHopDong(): string[] {
+  const shape = (metaJsonSchema as unknown as { shape: Record<string, { isOptional(): boolean }> }).shape;
+  return Object.entries(shape)
+    .filter(([, v]) => !v.isOptional())
+    .map(([k]) => k)
+    .sort();
+}
+
+/**
+ * Bề mặt chỉ mô tả `meta.json` (gói ZIP). ⚠ `docs/API_REFERENCE.md` và
+ * `docs/UNIFIED_API_STRUCTURE.md` mô tả CẢ HAI hợp đồng (ZIP cây v2.0 **và**
+ * `submitInspection` tRPC phẳng v1.x, nơi `measurements`/`result:"NTF"` VẪN ĐÚNG)
+ * nên chúng KHÔNG nằm ở đây — cấm một chuỗi trên toàn tệp đó sẽ bắt oan hợp đồng
+ * còn sống. Đây là ranh giới CÓ CHỦ Ý, không phải sót.
+ */
+const BE_MAT_CHI_META_JSON: readonly string[] = [
+  DUONG_AOI_PACKAGE_SECTION,
+  DUONG_META_EXAMPLE,
+  DUONG_META_LEGACY_EXAMPLE,
+];
+
+/**
+ * Khẳng định ĐÃ BỊ MÃ BÁC BỎ — mỗi mục là một câu tài liệu TỪNG dạy và hôm nay
+ * SAI. Xuất hiện lại trong `phamVi` của nó ⇒ ĐỎ, kèm đúng lý do nó sai.
+ */
+const KHANG_DINH_DA_BI_BAC_BO: ReadonlyArray<{
+  ten: string;
+  mau: RegExp;
+  viSao: string;
+  phamVi: readonly string[];
+}> = [
+  {
+    ten: 'đếm OK/NG "từ summary"',
+    mau: /(đếm|count)[^\n]{0,40}từ\s*[`"'<]*(<code>)?\s*summary/i,
+    viSao:
+      "bất biến 3 (§4 chuẩn gói ảnh): `overallResult` và mọi số đếm CUỘN TỪ CÂY. `summary` máy khai " +
+      "chỉ được lưu nguyên văn + gắn cờ lệch, KHÔNG BAO GIỜ là nguồn.",
+    phamVi: MOI_BE_MAT, // `summary` chỉ tồn tại ở hợp đồng cây ⇒ cấm được trên MỌI bề mặt
+  },
+  {
+    ten: "link/gộp inspection theo serialNumber trùng",
+    mau: /(link|liên kết|gộp)[^\n]{0,80}(trùng\s*(<\/?code>)?\s*serialNumber|serialNumber\s*(<\/?code>)?\s*\+\s*machineId)/i,
+    viSao:
+      "BG-85 + C-1: hội tụ theo `packageId` (khoá idempotency `aoi-pkg:<packageId>`); KHÔNG bao giờ " +
+      "gộp theo serial — và một gói serial RỖNG vẫn PHẢI ghi `product_inspections`.",
+    phamVi: MOI_BE_MAT,
+  },
+  {
+    ten: 'result là enum BA giá trị "OK"|"NG"|"NTF" trong meta.json',
+    mau: /result[^\n]{0,20}["'`]OK["'`]\s*\|\s*["'`]NG["'`]\s*\|\s*["'`]NTF["'`]/,
+    viSao:
+      "`machineDataContractV2` khai `result: z.enum([\"OK\",\"NG\"])` ở MỌI cấp; NTF là trường `ntf` " +
+      "(boolean) RIÊNG. Gộp thành enum ba giá trị làm MẤT tổ hợp (NG đã được xác nhận là NTF). " +
+      "⚠ Hợp đồng PHẲNG v1.x (`submitInspection` tRPC) THẬT SỰ khai `z.enum([\"OK\",\"NG\",\"NTF\"])` " +
+      "— vì thế phạm vi chỉ gồm bề mặt CHỈ nói về `meta.json`.",
+    phamVi: BE_MAT_CHI_META_JSON,
+  },
+  {
+    ten: "`measurements` là trường BẮT BUỘC của meta.json",
+    mau: /measurements[^\n]{0,40}(BẮT BUỘC|bắt buộc|required)/,
+    viSao:
+      "hợp đồng hợp nhất BG-85 KHÔNG có `measurements`. Câu này từng nằm trong CHÍNH mẫu C# của trang " +
+      "API docs — bên tích hợp làm đúng nó sinh 100% gói `'failed'`. (Trên đường tRPC phẳng v1.x thì " +
+      "`measurements` VẪN bắt buộc ⇒ phạm vi chỉ gồm bề mặt CHỈ nói về `meta.json`.)",
+    phamVi: BE_MAT_CHI_META_JSON,
+  },
+  {
+    ten: "`fileName` nằm trong `measurements`",
+    // "trong" là bắt buộc: nó phân biệt một LỜI DẠY ("fileName trong measurements phải khớp…")
+    // với một câu PHỦ ĐỊNH/đối chiếu ("images[].fileName — KHÔNG còn measurements[].fileName").
+    mau: /fileName[^\n]{0,25}trong[^\n]{0,15}(<code>)?measurements/i,
+    viSao: "ảnh nay tham chiếu qua `images[].fileName`, nối cây bằng `images[].captureId`.",
+    phamVi: MOI_BE_MAT,
+  },
+  {
+    ten: "dùng `pointCode` làm tên tệp ảnh",
+    mau: /(<code>)?pointCode(<\/code>)?[^\n]{0,40}(làm tên file|làm tên tệp)/i,
+    viSao:
+      "`pointCode` không còn là trường của `meta.json`. Khoá nối ảnh ↔ cây là `images[].captureId`; " +
+      "tên tệp chỉ cần khớp nguyên văn tệp trong `images/`.",
+    phamVi: MOI_BE_MAT,
+  },
+];
+
+describe("§5.1 — TÊN TRƯỜNG suy TỪ HỢP ĐỒNG SỐNG: mọi trường BẮT BUỘC của `metaJsonSchema` phải được NÊU TÊN trong lời văn của bề mặt mô tả hợp đồng", () => {
+  const batBuoc = truongBatBuocCuaHopDong();
+
+  it("★ chống tự thoả — hợp đồng phải trả về ≥5 trường bắt buộc (nếu bộ suy hỏng và trả rỗng thì mọi khẳng định dưới đây tự thoả)", () => {
+    expect(batBuoc.length, `trường bắt buộc suy được: ${JSON.stringify(batBuoc)}`).toBeGreaterThanOrEqual(5);
+    // Neo NGỮ NGHĨA: hai trường mà cả bốn khẳng định sai của I-2 đều xoay quanh.
+    expect(batBuoc).toContain("surfaces");
+    expect(batBuoc).toContain("summary");
+  });
+
+  for (const duong of BE_MAT_MO_TA_HOP_DONG) {
+    it(`${duong} — nêu đủ MỌI trường bắt buộc của hợp đồng`, () => {
+      const nd = doc(duong);
+      const thieu = batBuoc.filter((t) => !nd.includes(t));
+      expect(
+        thieu,
+        `${duong} KHÔNG nhắc tới ${thieu.length} trường BẮT BUỘC của \`metaJsonSchema\`: ${JSON.stringify(thieu)}. ` +
+          "Một bề mặt mô tả hợp đồng mà không nêu đủ trường bắt buộc là một tài liệu dạy hình dạng KHÔNG commit được.",
+      ).toEqual([]);
+    });
+  }
+});
+
+describe("§5.2 — LỜI VĂN: 0 khẳng định ĐÃ BỊ MÃ BÁC BỎ, trên MỌI bề mặt tài liệu", () => {
+  for (const kd of KHANG_DINH_DA_BI_BAC_BO) {
+    it(`0 nơi còn dạy: ${kd.ten}  [phạm vi ${kd.phamVi.length} tệp]`, () => {
+      expect(kd.phamVi.length, `phạm vi RỖNG ⇒ mệnh đề tự thoả: ${kd.ten}`).toBeGreaterThan(0);
+      const dinh: string[] = [];
+      for (const duong of kd.phamVi) {
+        const dong = doc(duong).split(/\r?\n/);
+        dong.forEach((d, i) => {
+          if (kd.mau.test(d)) dinh.push(`${duong}:${i + 1} → ${d.trim().slice(0, 160)}`);
+        });
+      }
+      expect(dinh, `Khẳng định SAI còn sống.\nVÌ SAO SAI: ${kd.viSao}\n${dinh.join("\n")}`).toEqual([]);
+    });
+  }
+
+  it("★★★ CHỐNG BỘ-DÒ-KHÔNG-KHỚP-GÌ — mọi mẫu phải bắt được ĐÚNG câu tài liệu từng dạy (một regex gõ sai sẽ luôn cho 0 kết quả và trông y hệt 'đã sạch')", () => {
+    const cauCu: Record<string, string> = {
+      'đếm OK/NG "từ summary"': "<li>Đếm OK/NG từ <code>summary</code> hoặc danh sách measurements</li>",
+      "link/gộp inspection theo serialNumber trùng":
+        "<li>Link tới <code>product_inspections</code> nếu trùng serialNumber + machineId</li>",
+      'result là enum BA giá trị "OK"|"NG"|"NTF" trong meta.json':
+        '<li><code>result</code>: "OK" | "NG" | "NTF" (Not True Failure)</li>',
+      "`measurements` là trường BẮT BUỘC của meta.json":
+        '// "measurements" — server BẮT BUỘC trường này (dù rỗng).',
+      "`fileName` nằm trong `measurements`":
+        "<li><code>fileName</code> trong <code>measurements</code> phải khớp với tên file thực tế trong ZIP</li>",
+      "dùng `pointCode` làm tên tệp ảnh": "<li>Nên dùng tên <code>pointCode</code> làm tên file (vd: P01.jpg)</li>",
+    };
+    for (const kd of KHANG_DINH_DA_BI_BAC_BO) {
+      const mau = cauCu[kd.ten];
+      expect(mau, `thiếu câu-cũ đối chứng cho "${kd.ten}"`).toBeTruthy();
+      expect(kd.mau.test(mau), `mẫu của "${kd.ten}" KHÔNG bắt được chính câu nó được dựng ra để bắt`).toBe(true);
+    }
+  });
+
+  it("★ ĐỐI CHỨNG ÂM — bộ lọc `listPackages.overallResult` (enum BA giá trị HỢP LỆ) KHÔNG bị mẫu `result` bắt nhầm", () => {
+    const mauResult = KHANG_DINH_DA_BI_BAC_BO.find((k) => k.ten.includes("BA giá trị"))!.mau;
+    expect(mauResult.test('  overallResult: "NG",         // "OK" | "NG" | "NTF"')).toBe(false);
+  });
+
+  it("★★ RANH GIỚI PHẠM VI được ĐO, không phải được KHAI — hợp đồng PHẲNG v1.x THẬT SỰ còn nhận `result:\"NTF\"`, nên hai tệp mô tả CẢ HAI hợp đồng phải nằm NGOÀI hai mẫu chỉ-dành-cho-meta.json", () => {
+    // Hỏi CHÍNH hợp đồng v1.x đang chạy: nếu Khối B cắt nó đi, mệnh đề này ĐỎ và người
+    // sau phải mở rộng phạm vi hai mẫu ra toàn bộ tài liệu — đúng lúc điều đó thành đúng.
+    const v1 = machineDataContractV1.safeParse({
+      machineCode: "MC-RANH-GIOI", // `.refine`: phải có apiKey HOẶC machineCode
+      serialNumber: "SN-RANH-GIOI",
+      productModel: "PM-RANH-GIOI",
+      overallResult: "NG",
+      measurements: [{ pointCode: "P01", result: "NTF" }],
+    });
+    expect(
+      v1.success,
+      "hợp đồng PHẲNG v1.x KHÔNG còn nhận `result:\"NTF\"` ⇒ ranh giới phạm vi bên dưới đã hết hiệu lực",
+    ).toBe(true);
+    for (const ten of ['result là enum BA giá trị', "`measurements` là trường BẮT BUỘC"]) {
+      const kd = KHANG_DINH_DA_BI_BAC_BO.find((k) => k.ten.includes(ten))!;
+      expect(kd.phamVi).not.toContain(DUONG_API_REFERENCE);
+      expect(kd.phamVi).not.toContain(DUONG_UNIFIED);
+    }
+  });
+});
+
+describe("§5.3 — LỜI VĂN: khẳng định về NGUỒN cuộn verdict phải CÓ MẶT trên trang API docs chạy trong sản phẩm", () => {
+  it("★★★ nói rõ verdict/đếm CUỘN TỪ CÂY, và `summary` KHÔNG BAO GIỜ là nguồn", () => {
+    const nd = doc(DUONG_AOI_PACKAGE_SECTION);
+    expect(/cu[ộo]n\s+từ\s+C[ÂA]Y/i.test(nd), "thiếu câu 'cuộn từ CÂY' — bất biến 3 không được công bố").toBe(true);
+    expect(
+      /summary[^\n]{0,120}KHÔNG BAO GIỜ/.test(nd),
+      "thiếu câu 'summary … KHÔNG BAO GIỜ là nguồn' — bên tích hợp sẽ tin summary quyết định phán quyết",
+    ).toBe(true);
+  });
+
+  it("★ nói rõ HAI bất biến TỪ CHỐI CẢ GÓI (captureId lạ / thiếu tệp ảnh) — thứ quyết định gói commit được hay không", () => {
+    const nd = doc(DUONG_AOI_PACKAGE_SECTION);
+    expect(/captureId[^\n]{0,120}(TỪ CHỐI|từ chối)/i.test(nd)).toBe(true);
+    expect(/fileName[^\n]{0,160}(TỪ CHỐI|từ chối)/i.test(nd)).toBe(true);
   });
 });
 

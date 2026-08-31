@@ -283,11 +283,16 @@ public class AoiUploadService
     }
 
     // ── Tạo ZIP Package từ thư mục ảnh AOI ──────────────────
+    // ⚠ BG-85 (2026-09-02): meta.json là hợp đồng CÂY v2.0 + images[].
+    // Hình dạng PHẲNG cũ ("measurements[]"/"points[]") KHÔNG còn parse được —
+    // gói sẽ vào status="failed" và không bao giờ tự commit, dù retry.
     public string CreateZipPackage(
         string imageFolder,
         string serialNumber,
         string productModel,
-        string factoryCode,
+        string productId,          // định danh sản phẩm/chương trình (BẮT BUỘC, không rỗng)
+        string lineCode,
+        string plantCode,
         List<PointResult> points)
     {
         var zipPath = Path.Combine(
@@ -305,33 +310,61 @@ public class AoiUploadService
                     CompressionLevel.NoCompression); // STORE mode
         }
 
-        // Tạo meta.json
+        // Một CAPTURE cho mỗi điểm đo; captureId là KHOÁ JOIN sang images[].
+        // "result" chỉ nhận "OK"|"NG" ở MỌI cấp — NTF là cờ bool RIÊNG ("ntf").
+        var captures = points.Select(p => new
+        {
+            captureId  = p.CaptureId,
+            captureName = p.Name,
+            result = p.Result,          // "OK" | "NG"
+            ntf = p.Ntf,
+            components = new[] {
+                new { componentId = $"{p.CaptureId}-C1", result = p.Result, ntf = p.Ntf, value = p.Value }
+            }
+        }).ToList();
+
+        // Server CUỘN phán quyết TỪ CÂY. "summary" dưới đây được LƯU NGUYÊN VĂN để
+        // đối chiếu và gắn cờ lệch — nó KHÔNG BAO GIỜ là nguồn của overallResult
+        // hay của ok/ng count. Khai sai summary không đổi phán quyết, chỉ để lại
+        // một cờ lệch trong nhật ký gói.
+        var ng = captures.Count(c => c.result == "NG");
+        var ntf = captures.Count(c => c.ntf);
+        var grp = new { total = captures.Count, pass = captures.Count - ng, ng, ntf };
+        var one = new { total = 1, pass = ng > 0 ? 0 : 1, ng = ng > 0 ? 1 : 0, ntf = ntf > 0 ? 1 : 0 };
+
+        // Tạo meta.json — CÂY v2.0 + images[]
         var meta = new
         {
-            serialNumber,
-            productModel,
-            factory = factoryCode,
-            line = "",
-            machine = _machineCode,
-            startedAt = DateTime.UtcNow.ToString("o"),
-            finishedAt = DateTime.UtcNow.ToString("o"),
-            summary = new
+            schemaVersion = "2.0",
+            identity = new
             {
-                totalPoints = points.Count,
-                ok = points.Count(p => p.Result == "OK"),
-                ng = points.Count(p => p.Result == "NG")
+                station = _machineCode, machine = _machineCode, line = lineCode,
+                plant = plantCode, country = "VN",
+                solutionName = "PCBA-SOL", appVersion = "1.0.0"
             },
-            // "measurements" — server BẮT BUỘC trường này (dù rỗng). Đặt tên "points"
-            // ở đây (tên trường JSON cũ) sẽ khiến server từ chối gói (invalid_type) vì
-            // thiếu "measurements" — gói không bao giờ commit được, dù retry.
-            measurements = points.Select(p => new
-            {
-                code = p.Code,
-                name = p.Name,
-                fileName = p.FileName,
-                result = p.Result,
-                value = p.Value
-            })
+            productId,
+            serialNumber,               // được phép RỖNG khi máy chưa gán serial
+            productModel,
+            overallResult = ng > 0 ? "NG" : "OK",
+            ntf = ntf > 0,
+            startedAt = DateTime.UtcNow.ToString("o"),
+            completedAt = DateTime.UtcNow.ToString("o"),
+            summary = new { surfaces = one, positions = one, captures = grp, components = grp },
+            surfaces = new[] {
+                new {
+                    name = "TOP", result = ng > 0 ? "NG" : "OK", ntf = ntf > 0,
+                    positions = new[] {
+                        new {
+                            positionId = "P01", result = ng > 0 ? "NG" : "OK", ntf = ntf > 0,
+                            captures
+                        }
+                    }
+                }
+            },
+            // ⚠ MỖI captureId PHẢI có thật trong cây, và MỖI fileName phải có tệp
+            // thật trong images/ — sai một trong hai ⇒ TỪ CHỐI CẢ GÓI (không âm
+            // thầm bỏ ảnh). sha256 là TUỲ CHỌN; nếu gửi thì server ĐỐI CHIẾU byte thật.
+            images = points.Select(p => new { captureId = p.CaptureId, fileName = p.FileName })
         };
 
         var metaEntry = zip.CreateEntry("meta.json",
@@ -435,9 +468,11 @@ public class AoiUploadService
     }
 }
 
+// CaptureId = khoá join ảnh ↔ cây (BẮT BUỘC, duy nhất trong gói, ≤ 64 ký tự).
+// Result chỉ nhận "OK"|"NG"; NTF là cờ bool RIÊNG.
 public record PointResult(
-    string Code, string Name, string FileName,
-    string Result, double? Value);
+    string CaptureId, string Name, string FileName,
+    string Result, bool Ntf, double? Value);
 
 public class UploadResult
 {
@@ -482,10 +517,12 @@ public class InspectionViewModel : INotifyPropertyChanged
         var inspectionId =
             $"INS-{DateTime.Now:yyyyMMdd-HHmmss}-{serialNumber}";
 
-        // Tạo ZIP package
+        // Tạo ZIP package (hợp đồng CÂY v2.0 — xem CreateZipPackage)
         var zipPath = _uploader.CreateZipPackage(
             imageFolder, serialNumber, productModel,
-            "FAC001", points);
+            productId: ConfigurationManager.AppSettings["ProductId"]!,
+            lineCode: "LINE-A", plantCode: "FAC001",
+            points: points);
 
         // Thêm vào queue
         _uploadQueue.Enqueue(new PendingUpload
@@ -738,22 +775,22 @@ record PendingUpload
                         <h4 className="font-semibold mb-2">Quy tắc đặt tên file ảnh</h4>
                         <ul className="list-disc space-y-1 pl-5">
                           <li>Tất cả ảnh nằm trong thư mục <code>images/</code></li>
-                          <li><code>fileName</code> trong <code>measurements</code> phải khớp với tên file thực tế trong ZIP</li>
+                          <li><code>images[].fileName</code> phải khớp tên tệp thực tế trong <code>images/</code> — thiếu tệp ⇒ TỪ CHỐI CẢ GÓI</li>
                           <li>Hỗ trợ định dạng: JPG, JPEG, PNG, BMP, TIFF</li>
-                          <li>Nên dùng tên <code>pointCode</code> làm tên file (vd: P01.jpg)</li>
-                          <li><code>result</code>: "OK" | "NG" | "NTF" (Not True Failure)</li>
+                          <li>Khoá nối ảnh ↔ cây là <code>images[].captureId</code>, KHÔNG phải tên tệp. Tên tệp đặt tự do (vd <code>P01.jpg</code>) nhưng phải khớp nguyên văn</li>
+                          <li><code>result</code> ở MỌI cấp chỉ nhận <code>"OK"</code> | <code>"NG"</code>. NTF là trường <code>ntf</code> (boolean) RIÊNG ở cùng cấp — gộp thành enum ba giá trị sẽ làm mất tổ hợp (một điểm NG mà đã xác nhận là NTF)</li>
                         </ul>
                       </div>
                       <div className="rounded-2xl border border-dashed border-blue-400/30 bg-blue-500/5 p-4 text-sm text-white/80">
-                        <h4 className="font-semibold text-blue-300 mb-2">Hướng sắp tới (đã quyết định, CHƯA triển khai — BG-85)</h4>
+                        <h4 className="font-semibold text-blue-300 mb-2">BG-85 ĐÃ TRIỂN KHAI (2026-09-02) — hình dạng phẳng đã NGỪNG được nhận</h4>
                         <p>
-                          <code>meta.json</code> sẽ hợp nhất thành CÙNG hình dạng với payload kết quả v2.0
+                          <code>meta.json</code> nay là CHÍNH hợp đồng payload kết quả v2.0
                           (<code>machineDataContractV2</code>: cây surfaces/positions/captures/components) cộng
                           thêm đúng một mảng <code>images[]</code> tham chiếu ảnh (nối bằng <code>captureId</code>).
-                          Cấu trúc <code>measurements[]</code>/<code>points[]</code> ở trên sẽ bị thay thế khi
-                          BG-85 hoàn tất, theo lộ trình di trú 3 giai đoạn (nhận cả hai hình dạng → đếm được →
-                          cắt hình dạng cũ). Bên tích hợp máy nên theo dõi trước khi đầu tư nhiều vào engine
-                          sinh <code>meta.json</code> hiện tại, để không phải viết lại hai lần.
+                          Hình dạng phẳng <code>measurements[]</code>/<code>points[]</code> KHÔNG còn parse được:
+                          gói sai hình dạng vào <code>status="failed"</code> và ở lại chờ retry — nó KHÔNG bị khoá
+                          vĩnh viễn, nhưng cũng KHÔNG BAO GIỜ tự commit được cho tới khi Agent gửi đúng cây.
+                          Engine sinh <code>meta.json</code> phải đổi trước khi nâng cấp server.
                         </p>
                       </div>
                     </CardContent>
@@ -879,8 +916,8 @@ record PendingUpload
                     <h4 className="mb-2 font-semibold">aoiPackage.getImage — Lấy ảnh (base64 qua tRPC)</h4>
                     <CodeBlock code={`const { data } = trpc.aoiPackage.getImage.useQuery({
   packageId: "INS-20260207-001",
-  pointCode: "P01",      // hoặc fileName
-  fileName: "P01.jpg",   // hoặc pointCode
+  pointCode: "cap-P01-001",  // = images[].captureId (BG-85), KHÔNG phải mã điểm đo cũ
+  fileName: "P01.jpg",       // hoặc pointCode — một trong hai
 });
 // Returns: { imageBase64, mimeType, fileName, fromCache }
 // Ảnh có watermark: SN, Machine, Time, User`} />
