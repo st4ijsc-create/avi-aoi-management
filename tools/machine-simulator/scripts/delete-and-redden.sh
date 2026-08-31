@@ -320,7 +320,7 @@ measure "D-0c-12 directory-listing swallow removed (W-HIGH-1)" "MUTANT-0C-SWALLO
 # The leaf name. Repointed for WS-HMI-0c's move to the machine-wide root: this row used to mutate
 # Path.Combine(AppContext.BaseDirectory, DirectoryName), which no longer exists — and the harness reported
 # MUTATION DID NOT LAND rather than a green, which is the whole reason that check is there.
-perl -0777 -pi -e 's/public const string DirectoryName = "hmi-tagmaps";/public const string DirectoryName = "hmi-tagmapz"; \/* MUTANT-0C-DIRNAME *\//' $TIS
+perl -0777 -pi -e 's/"ST4I", "sim", "hmi-tagmaps"/"ST4I", "sim", "hmi-tagmapz" \/* MUTANT-0C-DIRNAME *\//' $TIS
 measure "D-0c-13 tag-map leaf name typo'd" "MUTANT-0C-DIRNAME"
 
 # MED-3: the three schema-required-field presence checks, in the assembly that owns them.
@@ -339,5 +339,16 @@ measure "D-0c-17 ingestion service given its OWN store, not the registered one" 
 
 perl -0777 -pi -e 's/St4i\.EngineApi\.HmiModel\.TagMapStartupIngestion\.IngestAll\(/if \(false\) St4i.EngineApi.HmiModel.TagMapStartupIngestion.IngestAll( \/* MUTANT-0C-NOCALLSITE *\//' $PROG
 measure "D-0c-18 the feature's only production call site never runs" "MUTANT-0C-NOCALLSITE"
+
+# 🔴 F-1 — THE ARGUMENT, NOT JUST THE WRAPPER. D-0c-18 asks "was the loop entered"; this asks "did it have
+# anything to enter with". Truncating the bindings disables tag-map ingestion for every machine on every
+# host, and it left 1728 green INCLUDING D-0c-18's own pin, because the flag is set before the list is used.
+perl -0777 -pi -e 's/tagMapRegistry\.SnapshotBindings\(\)/tagMapRegistry.SnapshotBindings().Take(0) \/* MUTANT-0C-NOBINDINGS *\//' $PROG
+measure "D-0c-19 startup loop gets an EMPTY bindings list (F-1)" "MUTANT-0C-NOBINDINGS"
+
+# The kind each binding is ingested under. A wrong kind stores every tag with isBackedByDriver false.
+perl -0777 -pi -e 's/tagMapRegistry\.KindOf\(b\.InstanceId\)/"vendor.not.a.kind" \/* MUTANT-0C-KINDOF *\//' $PROG
+measure "D-0c-20 bindings ingested under the wrong connector kind (KindOf)" "MUTANT-0C-KINDOF"
+
 
 echo "=== sources restored ==="

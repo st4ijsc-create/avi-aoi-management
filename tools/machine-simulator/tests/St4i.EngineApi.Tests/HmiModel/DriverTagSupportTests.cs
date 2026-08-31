@@ -458,6 +458,20 @@ public sealed class DriverTagSupportTests
     /// <c>EveryKindAShippedConnectorFactoryReports_IsDeclared</c>'s job, and the non-emptiness guard below
     /// keeps this from passing over an empty list.</para>
     /// </summary>
+    /// <summary>Kind-appropriate settings that are known to BUILD a driver. Test data — see the loop.</summary>
+    private static readonly Dictionary<string, string> BuildableSettings = new(StringComparer.Ordinal)
+    {
+        [DriverKinds.Modbus] = Settings,
+        [DriverKinds.OpcUa] = """
+            {
+              "machineCode": "CJ-TAGSUPPORT-01",
+              "endpointUrl": "opc.tcp://127.0.0.1:4840",
+              "pollIntervalMs": 50,
+              "nodes": [ { "nodeId": "ns=2;s=Temperature", "metric": "temperature", "unit": "C" } ]
+            }
+            """,
+    };
+
     [Fact]
     public void EveryDeclaredKind_CanActuallyBeBuiltByTheRealDispatch_NotJustTheOnesSomebodyListed()
     {
@@ -467,6 +481,17 @@ public sealed class DriverTagSupportTests
 
         foreach (var kind in DriverTagSupport.DeclaredKinds)
         {
+            // Building a connector needs kind-APPROPRIATE settings — that is inherent, not a shortcut: a
+            // Modbus blob cannot produce an OPC-UA driver. This table is TEST DATA, not a second truth
+            // side; a declared kind with no entry fails below rather than being skipped, which is what
+            // forces whoever declares a new kind to demonstrate that a driver can be built for it.
+            if (!BuildableSettings.TryGetValue(kind, out var settings))
+            {
+                unbuildable.Add($"{kind} (no sample settings in this test — add one, and if you cannot " +
+                                "write settings that build a driver, the kind does not belong in DeclaredKinds)");
+                continue;
+            }
+
             var configPath = Path.Combine(
                 Path.GetTempPath(), "st4i-tagsupport-q", Guid.NewGuid().ToString("N"), "connectors.json");
             Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
@@ -474,7 +499,7 @@ public sealed class DriverTagSupportTests
             try
             {
                 File.WriteAllText(configPath,
-                    $$"""[ { "id": "quantified-probe", "kind": "{{kind}}", "settings": {{Settings}} } ]""");
+                    $$"""[ { "id": "quantified-probe", "kind": "{{kind}}", "settings": {{settings}} } ]""");
 
                 var registered = ConnectorsJsonRegistration.RegisterAll(
                     ConnectorsConfig.Load(configPath, logWarning: _ => { }),
@@ -483,7 +508,20 @@ public sealed class DriverTagSupportTests
                     registry,
                     NullLogger.Instance);
 
-                if (registered != 1 || registry.RegisteredIds.Count != 1) unbuildable.Add(kind);
+                if (registered != 1 || registry.RegisteredIds.Count != 1)
+                {
+                    unbuildable.Add($"{kind} (no dispatch arm)");
+                }
+                // 🔴 F-4 — REGISTERING IS NOT BUILDING, and this test's name claimed the stronger thing.
+                // ConnectorRegistry.Register never calls IConnectorFactory.TryCreate: it normalises Kind and
+                // writes a dictionary entry. So a factory whose TryCreate returns false unconditionally
+                // registers perfectly, and this test used to pass while NOTHING in the build could construct
+                // a driver for that kind — CanBack answering true for a kind that can never read anything.
+                // TryCreateDriver is the call that actually asks the factory.
+                else if (!registry.TryCreateDriver(registry.RegisteredIds[0], out _, out var driverError))
+                {
+                    unbuildable.Add($"{kind} (dispatch arm exists, but TryCreate refused: {driverError})");
+                }
             }
             finally
             {

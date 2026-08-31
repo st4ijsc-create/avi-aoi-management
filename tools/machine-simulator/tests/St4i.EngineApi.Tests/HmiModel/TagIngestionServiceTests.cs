@@ -19,7 +19,12 @@ namespace St4i.EngineApi.Tests.HmiModel;
 /// rule's single-site design exists to prevent. (3) They do NOT measure the HTTP surface: no route is
 /// mapped, no request is made; <c>GET /v1/tags</c> is <c>HmiTagEndpointsTests</c>' subject. (4) They do NOT
 /// measure the <c>Program.cs</c> startup wiring — see <c>TagIngestionWiringTests</c> for the composition
-/// root, and the swallow that protects connector registration lives there, not here.</para>
+/// root. 🔴 <b>The rest of that sentence was RETRACTED: it read "and the swallow that protects connector
+/// registration lives there, not here", and BOTH swallows are pinned in THIS file</b> —
+/// <c>The_startup_loop_swallows_a_failure_it_cannot_foresee_…</c> and
+/// <c>An_unreadable_tag_map_directory_does_not_stop_the_host</c>. The sentence survived
+/// <c>1dd7bf46</c> moving the loop out of <c>Program.cs</c>, which is the same stale-pointer defect the
+/// class comment on <c>TagIngestionService</c> records.</para>
 ///
 /// <para>The store used throughout is a REAL <c>TagNamespaceStore</c> behind the REAL
 /// <c>CanonicalizingTagNamespaceStore</c> — the same pair DI hands out — because the central proposition

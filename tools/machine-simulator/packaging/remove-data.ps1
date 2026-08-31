@@ -177,6 +177,7 @@
   every HMI screen those maps drive. The connectors still run and the machines still produce - the maps
   are not a safety or control artefact - but the screens do not come back until somebody re-authors the
   files. Copy the directory out first if the site is being rebuilt rather than retired.
+
 .PARAMETER HmiTagsDir
   Task 5, WS-HMI-0a - the declared HMI tag-namespace store (ST4I_HMI_TAGS_DIR), holding the flat tag
   index and documents `tag-namespaces.db` persists (one per machine code, each a `path`-keyed set of

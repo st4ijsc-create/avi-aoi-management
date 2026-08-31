@@ -62,6 +62,17 @@ public sealed record IngestResult(bool Ok, int TagCount, int BackedCount, IReadO
 /// </summary>
 public sealed class TagIngestionService
 {
+
+    /// <summary>
+    /// The environment variable relocating the tag-map directory. Its NAME is derived, not chosen: README
+    /// §15.9's rule is <c>ST4I_</c> + the leaf uppercased with <c>-</c> → <c>_</c> + <c>_DIR</c>, and
+    /// <c>PerHostDataRootsTests</c> enforces that the two agree, so this constant and
+    /// the leaf of <see cref="DefaultRoot"/> cannot drift apart.
+    /// </summary>
+    public const string EnvVarDir = "ST4I_HMI_TAGMAPS_DIR";
+
+    /// <summary>The default tag-map root: <c>%ProgramData%\ST4I\sim\hmi-tagmaps</c> — a SIBLING of
+    /// <c>hmi-model</c> and <c>hmi-tags</c>, which is where the documents it feeds end up.</summary>
     /// <summary>
     /// The leaf directory tag maps live in — one <c>{machineCode}.json</c> per machine, under the
     /// machine-wide root as <c>%ProgramData%\ST4I\sim\hmi-tagmaps</c>.
@@ -87,25 +98,19 @@ public sealed class TagIngestionService
     /// the rest of the operator's data. See README §26.6 for what that costs an operator, stated as a
     /// decision rather than left to be discovered.</para>
     /// </summary>
-    public const string DirectoryName = "hmi-tagmaps";
-
-    /// <summary>
-    /// The environment variable relocating the tag-map directory. Its NAME is derived, not chosen: README
-    /// §15.9's rule is <c>ST4I_</c> + the leaf uppercased with <c>-</c> → <c>_</c> + <c>_DIR</c>, and
-    /// <c>PerHostDataRootsTests</c> enforces that the two agree, so this constant and
-    /// <see cref="DirectoryName"/> cannot drift apart.
-    /// </summary>
-    public const string EnvVarDir = "ST4I_HMI_TAGMAPS_DIR";
-
-    /// <summary>The default tag-map root: <c>%ProgramData%\ST4I\sim\hmi-tagmaps</c> — a SIBLING of
-    /// <c>hmi-model</c> and <c>hmi-tags</c>, which is where the documents it feeds end up.</summary>
-    /// <remarks>🔴 The leaf is spelled as a LITERAL here rather than as <see cref="DirectoryName"/>, and
+    /// <remarks>🔴 The leaf is spelled as a LITERAL, and
     /// that is required rather than sloppy: <c>PerHostDataRootsTests</c> derives the machine-wide directory
     /// population by scanning <c>src/</c> for the literal triple <c>"ST4I", "sim", "&lt;name&gt;"</c>, so a
     /// constant reference here makes this leaf invisible to it — measured, the derived count stayed at 18
     /// and the guard reported every one of the seven count sentences as wrong instead of reporting the
     /// missing directory. The two spellings cannot drift: <c>TagIngestionWiringTests</c> asserts this value
-    /// equals the same path composed from <see cref="DirectoryName"/>.</remarks>
+    /// asserts the env-var name derives from this path's own leaf, so the two cannot drift.
+    ///
+    /// <para>🔴 There is no <c>DirectoryName</c> constant any more. There was one, and it had no production
+    /// consumer at all — the census needs the literal here, so the constant was referenced only by tests
+    /// and by a sweep row, which meant that row was mutating a DEAD constant while its label claimed to be
+    /// typo-ing the tag-map leaf name. Computed-but-unconsumed, inside the branch built to find exactly
+    /// that. One spelling now, and it is the one production reads.</para></remarks>
     public static readonly string DefaultRoot = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ST4I", "sim", "hmi-tagmaps");
 
@@ -268,11 +273,20 @@ public static class TagMapStartupIngestion
     /// makes any of it run, which is the same defect class as the <c>dispense_program</c> lesson the
     /// workstream was built around: complete, correct, and connected to nothing.</para>
     ///
-    /// <para>An absent <c>tag-maps/</c> folder is the normal state, so a real startup produces no
-    /// observable side effect to assert on; and the folder lives in <c>AppContext.BaseDirectory</c>, which
-    /// this assembly's own D-1 review (I-3) records as the shared artifact directory a test must not write
-    /// to. A flag set by the call itself is what remains. It is <c>internal</c>, write-once, and carries no
-    /// behaviour.</para>
+    /// <para>An absent tag-map folder is the normal state, so a startup on a machine that has declared
+    /// nothing produces no observable side effect, and this flag is what remains for THAT case. It is
+    /// <c>internal</c>, write-once, and carries no behaviour.</para>
+    ///
+    /// <para>🔴 <b>RETRACTED — this paragraph used to justify the flag by claiming a stronger test was
+    /// impossible, and it stopped being true in the commit that moved tag maps machine-wide.</b> It read:
+    /// <i>"the folder lives in <c>AppContext.BaseDirectory</c>, which this assembly's own D-1 review (I-3)
+    /// records as the shared artifact directory a test must not write to."</i> The folder is
+    /// <c>%ProgramData%\ST4I\sim\hmi-tagmaps</c> now, behind <c>ST4I_HMI_TAGMAPS_DIR</c>, which
+    /// <c>TestRunTempRoot</c> redirects per test run — so a test CAN write one, and
+    /// <c>TagIngestionWiringTests.Startup_ingests_a_tag_map_for_a_machine_a_connector_is_actually_bound_to</c>
+    /// does. That is not a footnote: this flag alone could not see <c>SnapshotBindings()</c> being replaced
+    /// by an empty list, because it is set BEFORE the list is consumed. The stronger test was the one
+    /// actually needed, and the retracted sentence told the next author it could not be written.</para>
     ///
     /// <para><b>Why "ever", not a count or the last directory:</b> tests call <see cref="IngestAll"/>
     /// directly with temp directories, in parallel with host boots in other collections, so a counter or a
