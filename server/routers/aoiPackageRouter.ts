@@ -1022,6 +1022,22 @@ export const aoiPackageRouter = router({
           // ĐIỂM GỌI qua closure nên mỗi đường thấy đúng giá trị nó vừa đặt.
           const buildRecord = (absIdx: number, point: any) => {
             const rp = resolvedPoints[absIdx];
+            // ★★★ Pha 1F Task 5 (BG-82 ⛔, review lượt 7 C-1) — `result` là
+            // `.optional()` ở payload nhưng cột `measurement_results.result` là
+            // NOT NULL, nên một lá KHÔNG khai `result` vẫn buộc phải ghi
+            // "NTF" (dòng `effectiveResult` dưới). Từ đây trở đi, cột `result`
+            // KHÔNG còn phân biệt được "máy khai NTF thật" với "máy không
+            // khai gì cả" — cả hai đều đọc ra "NTF". Ghi lại sự thật đó TRƯỚC
+            // khi ép mặc định, vào hai cột PHỤ đã có sẵn từ Pha 1A/1B
+            // (`ntf`/`ntfSource`, cùng quy ước với `ingestCayKetQua.ts:170`):
+            //   ntfSource = NULL      → máy KHÔNG khai phán quyết cho lá này
+            //                            (kể cả khi cột `result` buộc mang "NTF").
+            //   ntfSource = "machine" → máy khai NTF THẬT.
+            // `correctResult` (inspectionRouters.ts) đọc đúng cột này để không
+            // còn tính các lá "bị ép NTF" vào header khi một điểm KHÁC được
+            // sửa — gốc rễ của BG-82 (thao tác chất lượng bình thường làm hồ
+            // sơ xấu đi, ghi vào bảng WORM).
+            const coKhaiPhanQuyet = point.result === "OK" || point.result === "NG" || point.result === "NTF";
             let effectiveResult = (point.result || "NTF") as "OK" | "NG" | "NTF";
             let specGateRemark: string | undefined;
             if (rp.gateDef) {
@@ -1038,6 +1054,11 @@ export const aoiPackageRouter = router({
               measuredValue: rp.isNumeric ? rp.measuredStr : null,
               measuredValueText: rp.measuredStr,
               result: effectiveResult,
+              // BG-82: xem chú thích `coKhaiPhanQuyet` ở trên — dùng `point.result`
+              // GỐC (trước ép mặc định), spec gate chỉ hạ OK→NG, không bao giờ
+              // tạo ra NTF nên không ảnh hưởng tín hiệu nguồn NTF ở đây.
+              ntf: coKhaiPhanQuyet ? point.result === "NTF" : null,
+              ntfSource: coKhaiPhanQuyet && point.result === "NTF" ? "machine" : null,
               imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
               remark: specGateRemark ?? (point.remark || `${rp.pointName}${rp.measuredVal !== undefined ? ` (${rp.measuredVal}${point.unit || ''})` : ''}`),
               createdAt: inspectionTime,

@@ -746,22 +746,72 @@ Respond in JSON format:
       const originalResult = result.result;
 
       // Update the measurement result
+      // ★★★ Pha 1F Task 5 (BG-82 ⛔, review lượt 7 C-1) — NGƯỜI vừa xác lập
+      // phán quyết cho dòng này một cách TƯỜNG MINH, nên nó không còn là
+      // "máy không khai" nữa: ghi ntf/ntfSource='human' khi giá trị mới là
+      // NTF, và xoá (null) khi không phải — đối xứng với cách ingest ghi
+      // 'machine' (aoiPackageRouter.ts, hàm buildRecord). KHÔNG ghi lại tín
+      // hiệu này ở đây thì một dòng người vừa sửa thành NTF sẽ bị CHÍNH lỗ
+      // BG-82 loại khỏi header ở một lượt correctResult SAU, trên một điểm
+      // KHÁC của cùng bo — tái phát đúng lỗ vừa vá.
       await dbInstance.update(measurementResults).set({
         result: input.result,
+        ntf: input.result === "NTF",
+        ntfSource: input.result === "NTF" ? "human" : null,
         remark: input.reason ? `[Corrected by ${ctx.user.name}] ${input.reason}` : result.remark,
       }).where(eq(measurementResults.id, input.id));
 
-      // Recalculate overall inspection result
+      // Recalculate overall inspection result — đọc lại TOÀN BỘ dòng đo (dòng
+      // vừa UPDATE ở trên đã phản ánh giá trị MỚI vì SELECT chạy SAU UPDATE).
+      // Một lượt duyệt DUY NHẤT tính đồng thời hasNG/hasNTF/nguồn NTF — tránh
+      // hai công thức "dòng này có phải NTF thật không" lệch nhau.
       const allResults = await db.getMeasurementResultsByInspection(result.inspectionId);
-      const hasNG = allResults.some(r => r.id === input.id ? input.result === "NG" : r.result === "NG");
-      const hasNTF = allResults.some(r => r.id === input.id ? input.result === "NTF" : r.result === "NTF");
+      let hasNG = false;
+      let ntfCoMay = false;
+      let ntfCoNguoi = false;
+      for (const r of allResults) {
+        const laDongDangSua = r.id === input.id;
+        const ketQuaHienTai = laDongDangSua ? input.result : r.result;
+        if (ketQuaHienTai === "NG") hasNG = true;
+        if (ketQuaHienTai !== "NTF") continue;
+        // BG-82 ⛔ — TRƯỚC bản vá, dòng này tự động tính là NTF THẬT chỉ vì cột
+        // `result` đọc ra "NTF". Nhưng `measurement_results.result` là NOT
+        // NULL nên một lá máy KHÔNG hề khai phán quyết (manifest ảnh thuần,
+        // xem `metaJsonSchema` — `result` `.optional()` ở CẢ HAI nhánh) cũng
+        // bị ép ghi "NTF" tại `aoiPackageRouter.ts` (buildRecord). Hệ quả đo
+        // được (review lượt 7): sửa MỘT điểm KHÁC thành OK ⇒ các lá "bị ép
+        // NTF" còn lại (chưa ai đụng tới) vẫn đọc `result==="NTF"` ⇒ header bị
+        // lật OK→NTF — một thao tác chất lượng BÌNH THƯỜNG làm hồ sơ XẤU ĐI,
+        // ghi vào bảng WORM (`product_inspections`). SAU bản vá: chỉ tính là
+        // NTF khi có NGUỒN thật (`ntfSource !== null` — 'machine' từ ingest
+        // hoặc 'human' từ chính lượt sửa này/một lượt correctResult trước đó).
+        const nguon = laDongDangSua ? "human" : r.ntfSource;
+        if (nguon === null || nguon === undefined) continue; // NTF BỊ ÉP — không tính
+        if (nguon === "machine" || nguon === "both") ntfCoMay = true;
+        if (nguon === "human" || nguon === "both") ntfCoNguoi = true;
+      }
+      const hasNTF = ntfCoMay || ntfCoNguoi;
 
       let overallResult: "OK" | "NG" | "NTF" = "OK";
       if (hasNG) overallResult = "NG";
       else if (hasNTF) overallResult = "NTF";
 
+      // BG-82 — mở rộng bất biến BG-41 (db/inspection.ts:805) sang
+      // correctResult: header NTF PHẢI có nguồn (machine/human/both), KHÔNG
+      // BAO GIỜ để NULL (mệnh đề 4). Tính lại TỪ ĐẦU theo trạng thái CÁC DÒNG
+      // hiện tại — không cộng dồn CASE như `updateProductInspectionNTF` (hàm
+      // đó CHỈ đi một chiều luôn-hoá-NTF; `correctResult` có thể đổi header
+      // sang bất kỳ verdict nào, kể cả rời khỏi NTF, nên phải XOÁ nguồn cũ khi
+      // không còn NTF thay vì để nó đứng lại lỗi thời).
+      const ntfSource: "machine" | "human" | "both" | null =
+        overallResult !== "NTF" ? null
+        : ntfCoMay && ntfCoNguoi ? "both"
+        : ntfCoMay ? "machine"
+        : "human";
+
       await dbInstance.update(productInspections).set({
         overallResult,
+        ntfSource,
       }).where(eq(productInspections.id, result.inspectionId));
 
       // W7-B (doc 27 V2) — harvest the correction as a structured label

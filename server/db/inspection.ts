@@ -914,6 +914,10 @@ export async function getMeasurementResultsByInspection(inspectionId: number) {
     measuredValue: measurementResults.measuredValue,
     measuredValueText: measurementResults.measuredValueText,
     result: measurementResults.result,
+    // Pha 1F Task 5 (BG-82 ⛔) — `correctResult` (inspectionRouters.ts) cần cột
+    // này để phân biệt dòng "NTF thật" (ntfSource khác NULL) với dòng "NTF bị
+    // ép" vì `result` NOT NULL (ntfSource NULL, xem aoiPackageRouter.ts buildRecord).
+    ntfSource: measurementResults.ntfSource,
     imageUrl: measurementResults.imageUrl,
     imageKey: measurementResults.imageKey,
     remark: measurementResults.remark,
