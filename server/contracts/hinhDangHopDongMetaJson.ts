@@ -388,7 +388,23 @@ export const BANG_HINH_DANG: readonly HinhDangMetaJson[] = [
         }],
       }],
     },
-    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NTF" }, tongDiem: 1, ok: 0, ng: 0 },
+    // ★★★ I-1 (review lượt 8) — `ok` SỬA 0 → 1 SAU KHI CỔNG TÍCH HỢP ĐƯỢC KHÔI
+    // PHỤC VÀ ĐO THẬT. Con số 0 cũ là một LỜI KHAI CHƯA AI ĐỐI CHIẾU (đúng
+    // triệu chứng I-1: cổng đọc bảng này bị xoá cùng lô BG-85), và báo cáo
+    // review lượt 8 §M-9 lặp lại nó như thể đã biết ("`demNhom` xếp capture NTF
+    // vào `ntf`, không vào `pass` lẫn `ng`").
+    // SỰ THẬT ĐO ĐƯỢC: trong hợp đồng v2, `result` ở MỌI cấp chỉ nhận `OK|NG`
+    // (`z.enum(["OK","NG"])`) — NTF là CỜ BOOL riêng. `rolledResult` của capture
+    // là `rollupVerdict(components).result`, mà `rollupVerdict` chỉ trả "NTF"
+    // khi một CON có `result === "NTF"` — điều KHÔNG THỂ xảy ra ở đường v2. Nên
+    // capture NTF-do-CỜ vẫn có `rolledResult === "OK"` ⇒ rơi vào `pass` ⇒
+    // `okCount = 1`, trong khi `verdictLuuTru` của bo vẫn là NTF (cầu nối cờ →
+    // enum lưu trữ nằm ở `rollupVerdict.ts`, không ở phép đếm).
+    // Hệ quả kèm theo: nhánh `ntf` của `demNhom` là mã CHẾT trên đường v2, và
+    // `okCount + ngCount === totalPoints` LUÔN ĐÚNG ở đó — ngược lại điều M-9
+    // khẳng định. Câu hỏi CÒN MỞ (không phải việc của lô vá này): một bo có
+    // verdict NTF mà cột báo cáo ghi `okCount=1` có phải điều ta MUỐN không.
+    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NTF" }, tongDiem: 1, ok: 1, ng: 0 },
   },
   {
     ten: "honHopOkNgNhieuCapture",
@@ -412,6 +428,32 @@ export const BANG_HINH_DANG: readonly HinhDangMetaJson[] = [
       }],
     },
     kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NG" }, tongDiem: 2, ok: 1, ng: 1 },
+  },
+  {
+    ten: "serialRongVanPhaiGhiDuoc_C1",
+    lyDo:
+      "★★★ C-1 (review lượt 8) — `serialNumber: \"\"` là hình dạng HỢP ĐỒNG CHẤP NHẬN " +
+      "(`machineDataContractV2` CỐ Ý không `.min(1)`: máy chưa gán serial vẫn gửi bo THẬT; " +
+      "DB test đã có 99 hàng serial rỗng). Trước bản vá C-1, cửa ZIP bọc toàn bộ khối ghi " +
+      "trong `if (metaData.serialNumber)` ⇒ chuỗi rỗng là falsy ⇒ bo NG commit THÀNH CÔNG " +
+      "mà KHÔNG để lại hàng `product_inspections` nào. Hình dạng này khoá lại điều ngược lại: " +
+      "cây NG + serial rỗng PHẢI ghi được, verdict NG, cột báo cáo đếm đủ.",
+    meta: {
+      identity: identityToiThieu(),
+      productId: "HD-PID-SR",
+      serialNumber: "",
+      overallResult: "NG",
+      ntf: false,
+      summary: { surfaces: nhom(1, 0, 1, 0), positions: nhom(1, 0, 1, 0), captures: nhom(1, 0, 1, 0), components: nhom(1, 0, 1, 0) },
+      surfaces: [{
+        name: "TOP", result: "NG", ntf: false,
+        positions: [{
+          positionId: "P01", result: "NG", ntf: false,
+          captures: [{ captureId: "HD-SR-CAP-01", result: "NG", ntf: false, components: [{ componentId: "HD-SR-COMP-01", result: "NG", ntf: false }] }],
+        }],
+      }],
+    },
+    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NG" }, tongDiem: 1, ok: 0, ng: 1 },
   },
   {
     ten: "capGoiThatKemImagesJoinDungCaptureId",

@@ -86,14 +86,15 @@ Ví dụ nặng nhất: bảng miễn trừ census WAL ký lý do *"mutation do 
 | **BG-77** | Bản vá BG-68 **phụ thuộc một lỗi có sẵn**: `measurements[] \|\| points[]` (mảng rỗng là truthy) | |
 | **BG-53** | Hai nơi gọi `inferAoiOverallResult` nuôi **hai đầu vào khác nhau** | |
 | **BG-54** | `presign` thiếu kiểm `pkg.machineId` ⇒ **rò chuỗi tenant** + chiếm chỗ `packageId` | nguy hiểm **ngay hôm nay**, cờ TẮT |
-| **BG-55** | ZIP `serialNumber` rỗng ⇒ `success:true` + `committed` + **0 bo** | mất bo **im lặng**; 0/250 gói hiện có |
+| **BG-55** | ✅ **ĐÃ VÁ 2026-08-31** (C-1, review lượt 8, commit `2d340335`): bỏ cổng `if (metaData.serialNumber)` ở `aoiPackageRouter.commit` — điều kiện ghi nay là "có cây hợp lệ", hội tụ theo `packageId`. Hook WIP cũng thôi gác bằng serial | lưới `aoiPackageSerialRongVanGhi.test.ts` (4 ca) + hình dạng `serialRongVanPhaiGhiDuoc_C1` trong `BANG_HINH_DANG` chạy qua cổng tích hợp SỐNG |
+| **BG-92** | **Spec-gate `evaluatePointResult` KHÔNG có điểm gọi trên đường v2** (cửa ZIP mất nó ở `df20b31c`; `submitInspectionTreeV2` chưa bao giờ có) ⇒ linh kiện ngoài giới hạn mà máy khai OK sẽ được ghi OK. Chưa nối được vì cây v2 chỉ mang `componentExtId`, còn cổng cần `pointDefId` — ánh xạ đó là dữ liệu **Khối B**. Phải đóng **CÙNG Đ-19** | `evaluatePointResult` còn **1** điểm gọi sản xuất (đường v1.x phẳng); `isPointLimitEvalEnabled()` mặc định **ON**; 294/296 gói `committed` mang hình dạng phẳng ⇒ cổng vẫn đang sống trên hình dạng sinh ra dữ liệu hôm nay |
 | **BG-57** | Cổng chặn máy cũ **không phát tín hiệu đếm được** ⇒ câu hỏi *"còn bao nhiêu máy gửi hình dạng phẳng?"* **không trả lời được từ mã** — mà đó là điều kiện tiên quyết để dám bật cờ | |
 
 ### ★ GHI NỢ — có ghi chép, không chặn
 
 **Nợ hạ tầng test:** BG-15 (**32 file** dọn dẹp WORM **no-op câm**) · BG-63 (`aoiPackageInlineGate` rò **~90 hàng**, làm trôi baseline "N gói committed") · BG-61 (chưa đo tick ở quy mô 20.000) · BG-47 (trần gắn với interval, chưa có lưới canh chéo).
 
-**Nợ nhất quán:** BG-44 (bất đồng chỉ mục 0272 ↔ `idempotencyKey`) · BG-45 (`dungKhoaKhuTrungV2` khi `startedAt` vắng ⇒ **trùng khoá**) · BG-46 (`processStoreForward` **cùng lỗ** phân loại, bán kính nhỏ hơn) · BG-58 · BG-59 · BG-60.
+**Nợ nhất quán:** BG-44 (bất đồng chỉ mục 0272 ↔ `idempotencyKey`) · BG-45 (`dungKhoaKhuTrungV2` khi `startedAt` vắng ⇒ **trùng khoá**) · BG-46 (`processStoreForward` **cùng lỗ** phân loại, bán kính nhỏ hơn) · BG-58 · BG-59 · ~~BG-60~~ ✅ **ĐÃ VÁ**: nửa `commit` ở `cc322bca` (BG-87), nửa `presign` ở I-7/review lượt 8 (mig 0346 — lời khai presign được LƯU rồi đối chiếu trên byte thật ở tuyến upload + backstop `commit`; hai tài liệu hướng máy sửa theo).
 
 **Nợ khảo sát/chữ nghĩa:** BG-5 · BG-6 · BG-12 · BG-16 · BG-19 · BG-29 · BG-30 · BG-32 · BG-33 · BG-34 · BG-38 · BG-48 · BG-49 · BG-56 · BG-62.
 

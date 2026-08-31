@@ -21,9 +21,30 @@ export interface NutKetQua {
  * Mảng rỗng trả OK/false/null, KHÔNG ném lỗi: một capture không có component nào là
  * hình dạng HỢP LỆ trong payload máy (đèn chụp mà vùng không có linh kiện).
  *
- * ⚠ Hàm này KHÔNG chạy spec-gate. Thứ tự bắt buộc ở tầng gọi (spec §4.3):
- * chạy `evaluatePointResult` cho TỪNG component TRƯỚC, rồi mới cuộn lên. Cuộn trước
- * rồi mới gate sẽ để cấp trên chốt OK trong khi cấp lá đã bị nâng thành NG.
+ * ⚠ Hàm này KHÔNG chạy spec-gate — và ĐỌC KỸ ĐOẠN NÀY trước khi tin câu tiếp theo.
+ *
+ * Thứ tự ĐÚNG theo spec §4.3 là: chạy `evaluatePointResult` cho TỪNG component
+ * TRƯỚC, rồi mới cuộn lên (cuộn trước rồi mới gate sẽ để cấp trên chốt OK trong
+ * khi cấp lá đã bị nâng thành NG).
+ *
+ * ★★★ I-5 (review lượt 8) — SỰ THẬT HÔM NAY: **KHÔNG đường v2 nào tuân theo thứ
+ * tự đó.** `evaluatePointResult` còn ĐÚNG MỘT điểm gọi sản xuất
+ * (`machineApiRouters.ts`, đường v1.x PHẲNG); cửa ZIP mất nó ở `df20b31c`
+ * (BG-85) và `submitInspectionTreeV2` chưa bao giờ có. Bản chú thích trước đây
+ * viết như một MỆNH LỆNH đã được thi hành — đó là L-3 (khai quá) chồng lên L-2
+ * (cơ chế tồn tại nhưng chưa nối): người đọc sau sẽ tin rằng linh kiện ngoài
+ * giới hạn mà máy khai OK đã bị nâng thành NG ở đường v2. KHÔNG.
+ *
+ * Vì sao chưa nối được (không phải "quên"): `evaluatePointResult` cần một
+ * `pointDefId` để tra giới hạn, còn cây v2 chỉ mang `componentExtId`. Ánh xạ
+ * `componentExtId → pointDefId` là dữ liệu của **Khối B** (`Đ-19`:
+ * `measurement_results.pointDefId` NOT NULL ⇒ cấp component CHƯA ghi được;
+ * `measurement_results` nối cây hiện = 0 hàng). Không có ánh xạ đó, cổng không
+ * có gì để tra và sẽ chỉ là một lời gọi rỗng trông như bảo đảm.
+ *
+ * ⇒ NỢ CÓ MÃ: **BG-92** (docs/superpowers/specs/2026-08-31-aoi-backlog-toan-canh.md
+ * §3) — "nối lại spec-gate cho đường v2/cửa ZIP, CÙNG lúc với Đ-19". Ai đóng
+ * Đ-19 mà không đóng BG-92 thì đã bỏ lại đúng lớp bảo vệ này.
  */
 export function rollupVerdict(
   con: readonly NutKetQua[],

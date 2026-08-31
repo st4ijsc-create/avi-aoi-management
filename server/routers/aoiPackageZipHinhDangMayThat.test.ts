@@ -214,10 +214,27 @@ describe("★★★ mẫu meta.json THẬT của máy (images[]) — commit lặ
     await expect(caller.commit({ apiKey: API_KEY, packageId })).rejects.toThrow();
 
     const d = await db.getDb();
-    // "SN123456" là serialNumber trong mẫu máy thật — vì parse thất bại NGAY
-    // ở metaJsonSchema.parse(), commit KHÔNG BAO GIỜ chạm tới bước ghi
-    // product_inspections cho serial này.
-    const rows = await d!.select().from(productInspections).where(eq(productInspections.serialNumber, "SN123456"));
-    expect(rows.length, "meta.json sai hình dạng ⇒ 0 hàng product_inspections được tạo cho serial mẫu").toBe(0);
+    // ★★★ SỬA 2026-08-31 (lô vá review lượt 8) — TRƯỚC bản sửa này, ca đo bằng
+    //     SELECT … WHERE "serialNumber" = 'SN123456'   → kỳ vọng 0
+    // trên TOÀN DB. Phép đo đó ĐỎ VĨNH VIỄN kể từ khi DB test có 2 hàng mang
+    // đúng serial ấy — đo được: id 110092 (`aoi-pkg:BG73-PKG-1788158795363-shape`)
+    // và id 110126 (`aoi-pkg:P1F-T4-PKG-1788158795457-mau-may-that`), để lại bởi
+    // một lượt chạy dưới mã CŨ (thời hợp đồng PHẲNG, khi mẫu máy thật CÒN parse
+    // được). `product_inspections` là WORM — avi_app KHÔNG có DELETE (mig 0279)
+    // ⇒ hai hàng đó KHÔNG BAO GIỜ biến mất.
+    // Đã kiểm chứng đây KHÔNG phải hồi quy của lô vá: chạy ca này trên
+    // `git show HEAD:server/routers/aoiPackageRouter.ts` (mã chưa vá) cũng ĐỎ
+    // với đúng "expected 2 to be +0".
+    // Cái ca này MUỐN nói là "lượt commit VỪA RỒI không tạo hàng nào" — nên nó
+    // phải hỏi theo GÓI NÀY, không theo một serial mà cả DB dùng chung. Sổ
+    // idempotency `aoi-pkg:<packageId>` là khoá của chính gói vừa commit (đã
+    // mang STAMP), nên phép đo mới nói ĐÚNG điều nó định nói và không thể bị
+    // lịch sử WORM làm cho vô nghĩa. Cùng lớp lỗi L-4 ("đo trên hình dạng CÓ
+    // trong DB test thay vì hành vi đang xét"), chỉ ở chiều ngược lại.
+    const rows = await d!
+      .select()
+      .from(productInspections)
+      .where(eq(productInspections.idempotencyKey, `aoi-pkg:${packageId}`));
+    expect(rows.length, "meta.json sai hình dạng ⇒ 0 hàng product_inspections được tạo CHO GÓI NÀY").toBe(0);
   });
 });
