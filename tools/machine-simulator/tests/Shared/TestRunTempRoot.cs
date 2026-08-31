@@ -401,6 +401,18 @@ internal static class TestRunTempRoot
                          // without this line a WebApplicationFactory<Program> boot would ingest whatever tag
                          // maps happen to sit on the machine running the suite — an outcome decided by the host.
                          ("ST4I_HMI_TAGMAPS_DIR", "hmi-tagmaps"),
+                         // WS-HMI-2 Task 1, fix round 1 — the FOURTH HMI leaf, added the day
+                         // HmiScreenStore's EnvVarDir/DefaultRoot/ResolveRoot triple landed in src/, same
+                         // day as the other three HMI leaves' own precedent (WS-HMI-0a Task 5,
+                         // ST4I_HMI_MODEL_DIR/ST4I_HMI_TAGS_DIR two entries above) rather than waiting for
+                         // the DI registration WS-HMI-2 Task 2/3 add later. Harmless today — nothing in
+                         // src/ resolves IHmiScreenStore yet, so no WebApplicationFactory<Program> boot
+                         // constructs one — but the redirect has to exist BEFORE the leak becomes possible,
+                         // not after a census finds it, which is the whole lesson the pair above and
+                         // ST4I_HMI_TAGMAPS_DIR were each added to teach. Without this line, the moment
+                         // Task 2/3 registers the seam, every boot in every suite starts resolving it
+                         // against the REAL %ProgramData%\ST4I\sim\hmi-screens.
+                         ("ST4I_HMI_SCREENS_DIR", "hmi-screens"),
                      })
             {
                 if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variable)))

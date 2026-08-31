@@ -31,10 +31,18 @@ public sealed record ScreenLayout(int Cols, int Rows, string Breakpoint);
 /// WS-HMI-0a, Important 4). Câu trên là chính xác vào ngày viết, và nó là chỗ review chỉ ra sự bất đối
 /// xứng: hai hợp đồng kia có bộ kiểm C#, hợp đồng NÀY — hợp đồng nói luật §5 trực tiếp nhất — thì không,
 /// nên <c>new ScreenWidget("b1", "command-button", rect, PolicyAction: null)</c> đi lọt. Từ 2026-08-30
-/// đã có <see cref="ContractInvariants.Validate(HmiScreenDocument)"/>.
-/// <b>Cái KHÔNG đổi, và phải đọc cho đúng:</b> vẫn CHƯA CÓ store .NET nào ghi một tài liệu màn hình, nên
-/// <see cref="ContractInvariants.ThrowIfInvalid(HmiScreenDocument)"/> chưa có người gọi. Bộ kiểm tồn tại;
-/// một CỬA GHI có gác thì chưa. Đừng đọc cái thứ nhất thành cái thứ hai.</para></summary>
+/// đã có <see cref="ContractInvariants.Validate(HmiScreenDocument)"/>.</para>
+///
+/// <para>📎 🔴 <b>"CÁI KHÔNG ĐỔI ... MỘT CỬA GHI CÓ GÁC THÌ CHƯA" — RÚT, WS-HMI-2 Task 1, giữ nguyên
+/// văn.</b> Đoạn ngay trên từng đọc: <i>"Cái KHÔNG đổi, và phải đọc cho đúng: vẫn CHƯA CÓ store .NET nào
+/// ghi một tài liệu màn hình, nên <see cref="ContractInvariants.ThrowIfInvalid(HmiScreenDocument)"/> chưa
+/// có người gọi. Bộ kiểm tồn tại; một CỬA GHI có gác thì chưa. Đừng đọc cái thứ nhất thành cái thứ
+/// hai."</i> Đúng tới hết <c>34fb998a</c>. SAI từ <c>30c4fd62</c>:
+/// <c>St4i.EngineApi.HmiModel.HmiScreenStore</c> ghi <see cref="HmiScreenDocument"/> thật, và
+/// <c>PutAsync</c> của nó gọi <see cref="ContractInvariants.ThrowIfInvalid(HmiScreenDocument)"/> làm câu
+/// lệnh đầu tiên. Giờ đọc đúng là NGƯỢC LẠI: bộ kiểm tồn tại, VÀ một cửa ghi có gác cũng đã có — chỉ là
+/// cửa ấy (<c>HmiScreenStore</c>) chưa có đăng ký DI/route nào đưa engine đang chạy tới nó (dự kiến
+/// WS-HMI-2 Task 2/3).</para></summary>
 public sealed record ScreenWidget(
     string Id,
     string Kind,

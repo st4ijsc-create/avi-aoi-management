@@ -75,9 +75,18 @@ public sealed class ContractViolationException : Exception
 /// <c>1..48</c> của schema, cho <c>bindings</c> có tham chiếu tới một <c>component</c> có thật, hay cho
 /// bất kỳ chuỗi enum nào (<c>theme</c>, <c>breakpoint</c>, <c>kind</c>, <c>tone</c>, <c>dataType</c>) là
 /// thành viên hợp lệ. Những thứ ấy schema thi hành và <c>web/contract-tests/validate.mjs</c> chạy; ở phía
-/// .NET chúng KHÔNG được thi hành. <b>Và không có store .NET nào ghi
-/// <see cref="HmiScreenDocument"/></b> — <see cref="ThrowIfInvalid(HmiScreenDocument)"/> tồn tại nhưng
-/// CHƯA CÓ AI GỌI; nó là cửa cho WS-HMI-0b, không phải một cửa đang gác cái gì hôm nay.</para>
+/// .NET chúng KHÔNG được thi hành.</para>
+///
+/// <para>📎 🔴 <b>"VÀ KHÔNG CÓ STORE .NET NÀO GHI <c>HmiScreenDocument</c>… CHƯA CÓ AI GỌI" — RÚT
+/// WS-HMI-2 Task 1, giữ nguyên văn.</b> Câu ngay trên (bản trước đoạn này) đọc: <i>"Và không có store
+/// .NET nào ghi <see cref="HmiScreenDocument"/> — <see cref="ThrowIfInvalid(HmiScreenDocument)"/> tồn
+/// tại nhưng CHƯA CÓ AI GỌI; nó là cửa cho WS-HMI-0b, không phải một cửa đang gác cái gì hôm nay."</i>
+/// Đúng tới hết <c>34fb998a</c>. SAI từ <c>30c4fd62</c>:
+/// <c>St4i.EngineApi.HmiModel.HmiScreenStore.PutAsync</c> gọi <see cref="ThrowIfInvalid(HmiScreenDocument)"/>
+/// làm câu lệnh ĐẦU TIÊN của nó, trước khi mở kết nối. Cửa đã gắn vào tường. <b>Cái vẫn CHƯA đổi, nói
+/// ra để không lệch sang cực kia:</b> <c>HmiScreenStore</c> chưa có đăng ký DI trong <c>Program.cs</c> và
+/// chưa có route nào gọi tới nó (dự kiến WS-HMI-2 Task 2/3) — nên bộ kiểm này đã canh cửa THẬT, nhưng
+/// engine đang chạy vẫn chưa đi qua cửa ấy hôm nay.</para>
 /// </summary>
 public static class ContractInvariants
 {
@@ -534,9 +543,10 @@ public static class ContractInvariants
     /// <see cref="Validate(ComponentModelDocument)"/>'s exact pre-fix hole — same mechanism, same missing
     /// guard, same bare <see cref="NullReferenceException"/> from <c>foreach (var w in doc.Widgets)</c>.
     /// Fixed alongside <see cref="Validate(TagNamespaceDocument)"/> while the reasoning was in front of the
-    /// fix, even though no .NET store writes an <see cref="HmiScreenDocument"/> today (see this class's own
-    /// remarks on <see cref="ThrowIfInvalid(HmiScreenDocument)"/>) — cheaper to close now than to leave for
-    /// whichever task builds that store to rediscover.</para>
+    /// fix, even though no .NET store wrote an <see cref="HmiScreenDocument"/> AT THE TIME (🔴 WS-HMI-2
+    /// Task 1 built that store; see this class's own remarks on
+    /// <see cref="ThrowIfInvalid(HmiScreenDocument)"/> for the current state) — cheaper to close then than
+    /// to leave for whichever task built that store to rediscover.</para>
     ///
     /// <para>🔴 <b>Fix round 3 — element-NULL depth (round 2) was not element-FIELD depth.</b> Re-review #2
     /// measured <c>new ScreenWidget(Id: null, Kind: null, Rect: null)</c> passing at 0 violations.
@@ -561,10 +571,24 @@ public static class ContractInvariants
     /// <para>🔴 <b>THE BOUNDARY FOR THIS OVERLOAD — one criterion, and the ONE tie-break it needs, both
     /// stated rather than left to be inferred field by field.</b> The criterion is the same one
     /// <see cref="Validate(ComponentModelDocument)"/> states in full: (a) crashes something at a write door
-    /// or in <c>ModelIntegrity.Check</c>, or (b) silently disables a §5 gate. <b>Clause (a) is VACUOUS for
-    /// this whole overload</b> — no .NET store writes an <see cref="HmiScreenDocument"/>, so no field can be
-    /// shown to crash a door that does not exist, and reading that vacuum as "checked" for <c>Id</c> and as
-    /// "not checked" for <c>Rect</c> is precisely the incoherence above. The tie is therefore broken ONCE,
+    /// or in <c>ModelIntegrity.Check</c>, or (b) silently disables a §5 gate.
+    ///
+    /// <para>📎 🔴 <b>"CLAUSE (a) IS VACUOUS FOR THIS WHOLE OVERLOAD" — RETRACTED, WS-HMI-2 Task 1, kept
+    /// verbatim because the TIE-BREAK it produced is still the rule in force.</b> The next clause used to
+    /// read: <i>"Clause (a) is VACUOUS for this whole overload — no .NET store writes an
+    /// <see cref="HmiScreenDocument"/>, so no field can be shown to crash a door that does not exist, and
+    /// reading that vacuum as 'checked' for <c>Id</c> and as 'not checked' for <c>Rect</c> is precisely the
+    /// incoherence above."</i> True through <c>34fb998a</c>; false from <c>30c4fd62</c> on —
+    /// <c>St4i.EngineApi.HmiModel.HmiScreenStore.PutAsync</c> is now exactly such a write door, and every
+    /// field this overload requires (<c>ScreenId</c>, <c>Title</c>, <c>Theme</c>, <c>Layout</c>/
+    /// <c>Breakpoint</c>, <c>Widgets</c>, per-widget <c>Id</c>/<c>Kind</c>/<c>Rect</c>) is now genuinely
+    /// bound as a SQL parameter or serialised at that door — clause (a) is no longer vacuous for a single
+    /// one of them. <b>What survives unchanged is the TIE-BREAK itself</b> — every non-nullable field of
+    /// the frozen record is required, stated below — because the store's arrival only makes clause (a)
+    /// affirm the same direction the tie-break already chose; it does not ask this method to choose a
+    /// different set of required fields, only to stop calling the reason for them hypothetical.</para>
+    ///
+    /// The tie is therefore broken ONCE,
     /// for the WHOLE overload, in one direction: <b>every field the frozen record declares NON-NULLABLE is
     /// required</b> — <c>ScreenId</c>, <c>Title</c>, <c>Theme</c>, <c>Layout</c> (and its
     /// <see cref="ScreenLayout.Breakpoint"/>), <c>Widgets</c>, and per widget <c>Id</c>, <c>Kind</c>,
@@ -647,10 +671,17 @@ public static class ContractInvariants
     /// <summary>Như <see cref="Validate(HmiScreenDocument)"/> nhưng ném <see cref="ContractViolationException"/>
     /// mang toàn bộ vi phạm thay vì trả về danh sách.
     ///
-    /// <para>🔴 <b>CHƯA CÓ AI GỌI HÀM NÀY</b>, và điều đó được viết ra thay vì để người đọc suy: không có
-    /// store .NET nào lưu <see cref="HmiScreenDocument"/> hôm nay, nên đây là một CỬA CHƯA GẮN VÀO TƯỜNG.
-    /// Nó tồn tại để WS-HMI-0b gọi ở đúng chỗ hai anh em của nó đang được gọi (<c>PutAsync</c> của store),
-    /// chứ không phải để ai đó đọc sự tồn tại của nó thành "màn hình đã được gác".</para></summary>
+    /// <para>📎 🔴 <b>"CHƯA CÓ AI GỌI HÀM NÀY" — RÚT, WS-HMI-2 Task 1, giữ nguyên văn.</b> Đoạn này từng
+    /// đọc: <i>"CHƯA CÓ AI GỌI HÀM NÀY, và điều đó được viết ra thay vì để người đọc suy: không có store
+    /// .NET nào lưu <see cref="HmiScreenDocument"/> hôm nay, nên đây là một CỬA CHƯA GẮN VÀO TƯỜNG. Nó tồn
+    /// tại để WS-HMI-0b gọi ở đúng chỗ hai anh em của nó đang được gọi (<c>PutAsync</c> của store), chứ
+    /// không phải để ai đó đọc sự tồn tại của nó thành 'màn hình đã được gác'."</i> Đúng tới hết
+    /// <c>34fb998a</c>. SAI từ <c>30c4fd62</c>: <c>St4i.EngineApi.HmiModel.HmiScreenStore.PutAsync</c> gọi
+    /// hàm này làm câu lệnh ĐẦU TIÊN của nó — cửa đã gắn vào tường, đúng vị trí đoạn trên dự đoán (cùng
+    /// chỗ hai anh em nó, <c>ComponentModelStore</c>/<c>TagNamespaceStore</c>'s <c>PutAsync</c>, đã gọi từ
+    /// trước). Cái vẫn CHƯA đổi: <c>HmiScreenStore</c> chưa có đăng ký DI, chưa có route — nên "màn hình
+    /// đã được gác" đúng ở CỬA STORE, chưa đúng ở "engine đang chạy phục vụ request thật" (dự kiến
+    /// WS-HMI-2 Task 2/3).</para></summary>
     public static void ThrowIfInvalid(HmiScreenDocument doc)
     {
         var v = Validate(doc);

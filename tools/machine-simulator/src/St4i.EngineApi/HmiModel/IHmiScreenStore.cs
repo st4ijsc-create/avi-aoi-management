@@ -13,8 +13,13 @@ namespace St4i.EngineApi.HmiModel;
 public interface IHmiScreenStore
 {
     /// <summary>Đọc một màn hình. <paramref name="version"/> là <see langword="null"/> ⇒ phiên bản HIỆN
-    /// HÀNH (theo con trỏ, không nhất thiết là số lớn nhất — <see cref="RollbackAsync"/> có thể trỏ con
-    /// trỏ về một phiên bản đã tồn tại từ trước qua một phiên bản MỚI nối thêm); khác <see langword="null"/>
+    /// HÀNH (theo con trỏ). 🔴 <b>Fix round 1 — sửa lại cho đúng: con trỏ LUÔN LÀ số phiên bản LỚN NHẤT
+    /// đang tồn tại, không phải "không nhất thiết" như bản trước từng viết.</b>
+    /// <see cref="RollbackAsync"/> không bao giờ trỏ con trỏ lùi về một phiên bản cũ tại chỗ — nó NỐI
+    /// THÊM tài liệu ở phiên bản cũ thành một phiên bản MỚI (số lớn hơn mọi số đang có) rồi mới trỏ con
+    /// trỏ tới đó, đúng như <see cref="RollbackAsync"/> tự khai. Vì <see cref="PutAsync"/> cũng không
+    /// bao giờ ghi đè, con trỏ và "số lớn nhất" là MỘT, luôn luôn, cho mọi cài đặt tôn trọng hợp đồng
+    /// này — không phải một sự tình cờ của một cài đặt cụ thể. Khác <see langword="null"/>
     /// ⇒ đúng phiên bản đó. Trả <see langword="null"/> nếu màn hình (hoặc phiên bản) không tồn tại — một
     /// màn hình chưa khai là trạng thái hợp lệ, không phải lỗi.</summary>
     Task<HmiScreenDocument?> GetAsync(string screenId, int? version = null, CancellationToken ct = default);
@@ -42,6 +47,8 @@ public interface IHmiScreenStore
 /// <summary>Một mục trong lịch sử phiên bản của một màn hình. <paramref name="SavedAtUtc"/> là chuỗi ISO-8601
 /// UTC (cùng khuôn <c>updated_at</c> của <see cref="ComponentModelStore"/>/<see cref="TagNamespaceStore"/>).
 /// <paramref name="IsCurrent"/> đúng cho ĐÚNG MỘT phần tử của danh sách <see cref="IHmiScreenStore.ListVersionsAsync"/>
-/// trả về cho một màn hình đã tồn tại — phần tử mà con trỏ hiện hành đang trỏ tới, không nhất thiết là
-/// phần tử có <see cref="Version"/> lớn nhất (xem <see cref="IHmiScreenStore.RollbackAsync"/>).</summary>
+/// trả về cho một màn hình đã tồn tại — phần tử mà con trỏ hiện hành đang trỏ tới. 🔴 <b>Fix round 1 —
+/// đó LUÔN LÀ phần tử có <see cref="Version"/> lớn nhất</b> (xem lý do tại
+/// <see cref="IHmiScreenStore.GetAsync"/>'s doc comment; bản trước của câu này nói ngược lại và bị
+/// rút).</summary>
 public sealed record ScreenVersionInfo(int Version, string SavedAtUtc, bool IsCurrent);

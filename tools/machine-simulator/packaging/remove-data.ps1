@@ -30,6 +30,15 @@
   of "record of what the machine currently shows" `hmi-model`/`hmi-tags` already are, not a
   `products`/`ecosystem`-style recipe an operator authored outside the product.
 
+  THE TRIGGER, STATED NOW SO IT DOES NOT HAVE TO BE GUESSED WHEN TASK 2/3 WIRE THIS SEAM: neither at
+  startup nor at first WRITE. `HmiScreenStore`'s constructor calls `Directory.CreateDirectory(root)`
+  unconditionally, so once something registers `IHmiScreenStore` as an `AddSingleton<T>(sp => new …)`
+  factory and a route takes it as a handler parameter, the directory appears on the FIRST DI
+  RESOLUTION of the seam - the first request to ANY route that resolves it, including a GET that
+  returns 404, never on the first `PutAsync`. That is the identical third trigger the paragraph above
+  already documents for `hmi-model`/`hmi-tags` ("created on first resolution, which no endpoint
+  performs until WS-HMI-0b") - not a new timing, the same one, one leaf later.
+
   DECLARES, NOT "GOES ON TO CREATE" - CORRECTED 2026-08-30 (whole-branch review of WS-HMI-0a, Important
   2), OLD SENTENCE KEPT VERBATIM. The sentence above read "it has no idea this exe/service, once running,
   goes on to create 18 directories under %ProgramData%\ST4I\sim\". REGISTRATION OF A FACTORY SINGLETON IS
@@ -43,8 +52,10 @@
   WS-HMI-0b TASK 4, 2026-08-31 - THAT RESOLUTION NOW HAPPENS, and the paragraph above is kept verbatim
   because its MECHANISM is still exactly right; only its "no endpoint exists" precondition expired.
   WS-HMI-0b's HmiModelEndpoints/HmiTagEndpoints take IComponentModelStore/ITagNamespaceStore as handler
-  parameters, so ASP.NET resolves both seams and both stores get constructed. EIGHTEEN of the nineteen are
-  created by a running engine now - but EACH on the FIRST REQUEST TO A ROUTE THAT RESOLVES THAT STORE,
+  parameters, so ASP.NET resolves both seams and both stores get constructed. EIGHTEEN of the TWENTY are
+  created by a running engine now (WS-HMI-2 Task 1 moved the denominator nineteen -> twenty without
+  moving the numerator: `hmi-screens` has no DI registration yet, so it is not among the eighteen) -
+  but EACH on the FIRST REQUEST TO A ROUTE THAT RESOLVES THAT STORE,
   never at startup, and never as a pair. The two are INDEPENDENT lazy factories (no ValidateOnBuild, no
   eager construction): /v1/components* and /v1/component-types create hmi-model; /v1/tags* creates
   hmi-tags; PUT /v1/components/{code} and GET /v1/components/{code}/integrity create both, because they
@@ -56,13 +67,15 @@
   asked the other question - not a partial deployment and not a fault. An absent directory here is an
   unasked engine.
 
-  WHY THIS SCRIPT STILL LISTS ALL NINETEEN, and why that is not a contradiction: a purge tool has to
+  WHY THIS SCRIPT STILL LISTS ALL TWENTY, and why that is not a contradiction: a purge tool has to
   cover what MAY exist, not what must. Both leaves are relocatable, both are purged IF PRESENT, and every
   $subdirs entry already tolerates an absent directory (see the Step 2 loop). An operator who has run a
-  WS-HMI-0b build, or a machine upgraded from one, will have them; a machine on this exact commit will
-  not. Listing them is correct in both cases; claiming the engine creates them is correct in neither.
+  WS-HMI-0b build, or a machine upgraded from one, will have hmi-model/hmi-tags; a machine on this exact
+  commit will not, and none has hmi-screens yet (WS-HMI-2 Task 1 declares it; nothing resolves it until
+  Task 2/3). Listing them is correct in every case; claiming the engine creates them is correct in none
+  of the three today.
 
-  IT DECLARES NINETEEN AND PURGES SEVENTEEN. Two of the nineteen - `products` and `ecosystem`, holding the
+  IT DECLARES TWENTY AND PURGES EIGHTEEN. Two of the twenty - `products` and `ecosystem`, holding the
   four files products.json / recipes.json / ecosystem-products.json / ecosystem-recipes.json - are
   DELIBERATELY KEPT, by the owner's ruling of 2026-08-23(b), and are listed separately in the banner
   this script prints. The reason, in the owner's words: CONFIGURATION AN OPERATOR AUTHORED IS NOT
@@ -179,7 +192,13 @@
   St4i.EngineApi ingests at startup to build each machine's tag namespace.
 
   PURGED, not kept - and that is an OWNER RULING, not an oversight. It is the one leaf on this list the
-  engine only ever READS; the other eighteen it writes. That made it a genuine question whether it
+  engine only ever READS; the other NINETEEN are WRITE stores by design (README §15.9's WRITES/READS
+  table). WS-HMI-2 Task 1 moved this count eighteen -> nineteen without moving the partition it draws:
+  `hmi-screens` is one of the nineteen by DESIGN (its `PutAsync` is the only thing that ever touches
+  `hmi-screens.db`), but like `hmi-model`/`hmi-tags` before WS-HMI-0b it is not ACTUALLY written by a
+  running engine at this commit either - nothing resolves `IHmiScreenStore` yet. So today there are
+  really three cases at this leaf, not two: `hmi-tagmaps` is READ, eighteen of the rest are WRITTEN, and
+  `hmi-screens` is neither, dormant until Task 2/3 wire it. That made it a genuine question whether it
   belonged with `products`/`ecosystem` under the 2026-08-23(b) keep exemption, since a tag map is
   engineering configuration a person authored rather than data the product generated. The owner ruled
   PURGE: a decommissioning wipe removes it.
@@ -197,10 +216,12 @@
 
 .PARAMETER HmiScreensDir
   WS-HMI-2 Task 1 - the declared HMI screen-editor store (ST4I_HMI_SCREENS_DIR), holding `hmi-screens.db`
-  (one APPENDED row per version per screenId, plus a current-version pointer - rollback, spec §7, reads
-  the old version back and appends it again rather than deleting anything). PURGED, not kept, same
-  reasoning as -HmiModelDir/-HmiTagsDir: it records what the machine's HMI currently shows, not a
-  recipe/product definition an operator authored outside the product.
+  (an APPENDED row per version per screenId, plus a current-version pointer - rollback, spec §7, reads
+  the old version back and appends it again rather than deleting anything). The DIRECTORY itself is not
+  created by a write, though: see .DESCRIPTION's "THE TRIGGER" paragraph for the first-DI-resolution
+  timing this store shares with -HmiModelDir/-HmiTagsDir. PURGED, not kept, same reasoning as those two:
+  it records what the machine's HMI currently shows, not a recipe/product definition an operator
+  authored outside the product.
 
 .EXAMPLE
   .\packaging\remove-data.ps1 -WhatIf
@@ -328,7 +349,7 @@
       ONE population. The beside-the-binary population is empty, and PerHostDataRootsTests pins it at
       exactly zero rather than merely quantifying over it.
   What SURVIVES unretracted is the shape of the warning, in a new subject: this script still reads only
-  its OWN shell's environment, so a deployment that relocated any of the nineteen through the service's
+  its OWN shell's environment, so a deployment that relocated any of the twenty through the service's
   registry Environment value still needs the matching -XxxDir passed by hand.
 
   TASK BF-1 - THE KEPT LIST, AND WHY A THIRD STATUS WAS NEEDED RATHER THAN A SILENT OMISSION. Moving
