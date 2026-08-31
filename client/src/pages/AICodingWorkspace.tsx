@@ -102,7 +102,7 @@ import { lamSachMocChoHienThi } from "@shared/aiCodingMoc";
 // ★★★ 2026-08-23 · UX (B1) — gợi ý mở đầu THEO DỰ ÁN (một bảng, khoá theo id; id lạ ⇒ ẩn gợi ý).
 import { goiYTheoDuAn, MAC_DINH_KHAM_PHA } from "@/lib/goiYDuAn";
 import { dongTab, moTab } from "@/lib/aiCodingTabs";
-import { timDongKhop, chiSoKhopKeTiep, viTriKhopTrongChuoi } from "@/lib/aiCodingTimTep";
+import { timDongKhop, chiSoKhopKeTiep, viTriKhopTrongChuoi, thoatRegex } from "@/lib/aiCodingTimTep";
 // ★★★ 2026-08-23 · UX (D2) — lọc nhiễu cây tệp ở TẦNG HIỂN THỊ (ảnh/log/nhị phân gom sau một nút).
 import { chiaTepHienThi } from "@/lib/cayTepHienThi";
 // ★ UX (B2) — tooltip cho ba huy hiệu quyền; provider đã bọc cả App (App.tsx).
@@ -508,6 +508,17 @@ export default function AICodingWorkspace() {
     } catch { /* ignore */ }
   }, [projectId, khoaLuuTheoUser]);
 
+  /**
+   * ★ 2026-08-31 · ĐỢT A (UX H5) — BÀN LÀM VIỆC SỐNG QUA RELOAD. Transcript đã lưu DB từ doc 79,
+   * nhưng F5 vẫn mất sạch tab/tệp/panel — nửa bàn làm việc bay hơi. Lưu {openTabs, selectedPath,
+   * duoiChat} vào localStorage KHOÁ THEO user+DỰ ÁN (cùng khuôn `khoaLuuTheoUser` ở trên): đổi dự
+   * án nay KHÔI PHỤC đúng bàn của dự án ấy thay vì đóng trắng. Chỉ TRẠNG THÁI XEM — 0 nội dung
+   * tệp, 0 thẻ duyệt, 0 vòng tự động được hồi sinh (ba thứ ấy có lý do an toàn riêng để chết).
+   * Khôi phục qua ref cờ MỘT-LẦN-MỖI-DỰ-ÁN để không giật lại thao tác người dùng vừa làm.
+   */
+  const khoaBanLamViec = user?.id != null ? `repoWs.ban.u${user.id}.${projectId}` : null;
+  const duAnDaKhoiPhucRef = useRef<string | null>(null);
+
   // ══════════════════════════════════════════════════════════════════════════════════════════
   // ★★★ doc 79 · DANH SÁCH PHIÊN — trạng thái + ba bất biến, đọc trước khi sửa
   // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -690,6 +701,29 @@ export default function AICodingWorkspace() {
    * ô nhập xuống dưới nếp gấp (bài học `khungVuaManHinh`).
    */
   const [duoiChat, setDuoiChat] = useState<"dong" | "terminal" | "problems">("dong");
+
+  // ★ ĐỢT A (UX H5) — KHÔI PHỤC bàn làm việc của dự án (một lần mỗi projectId; xem docblock khoá).
+  useEffect(() => {
+    if (!projectId || khoaBanLamViec === null || duAnDaKhoiPhucRef.current === projectId) return;
+    duAnDaKhoiPhucRef.current = projectId;
+    try {
+      const tho = localStorage.getItem(khoaBanLamViec);
+      if (!tho) return;
+      const ban = JSON.parse(tho) as { tabs?: unknown; tep?: unknown; duoi?: unknown };
+      if (Array.isArray(ban.tabs) && ban.tabs.every((x) => typeof x === "string")) {
+        setOpenTabs(ban.tabs.slice(0, 12));
+        if (typeof ban.tep === "string" && ban.tabs.includes(ban.tep)) setSelectedPath(ban.tep);
+      }
+      if (ban.duoi === "terminal" || ban.duoi === "problems") setDuoiChat(ban.duoi);
+    } catch { /* hỏng dữ liệu lưu ⇒ bàn trắng, không vỡ trang */ }
+  }, [projectId, khoaBanLamViec]);
+  // ★ ĐỢT A — LƯU (mỗi thay đổi; try/catch vì localStorage có thể đầy/bị chặn).
+  useEffect(() => {
+    if (!projectId || khoaBanLamViec === null) return;
+    try {
+      localStorage.setItem(khoaBanLamViec, JSON.stringify({ tabs: openTabs, tep: selectedPath, duoi: duoiChat }));
+    } catch { /* ignore */ }
+  }, [openTabs, selectedPath, duoiChat, projectId, khoaBanLamViec]);
   const [streamTool, setStreamTool] = useState<ToolResultPayload | null>(null);
   /**
    * ★ LÔ 3 — MỐC-NHẬN của `streamTool` (đã định dạng), đóng dấu ngay trong `onToolResult`.
@@ -1088,8 +1122,21 @@ export default function AICodingWorkspace() {
 
   // ★★★ CURSOR-PARITY — TÌM TOÀN REPO: gọi endpoint `grep` ĐÃ CÓ (trả {matches:{path,line,text}}). CHỈ chạy
   //   ở chế độ "tim" + từ khoá ≥2 ký tự (server chặn min 1, nhưng ≥2 tránh kết quả nhiễu + gọi thừa).
+  /**
+   * ★ 2026-08-31 · ĐỢT A (đánh giá UX H4) — HAI CÔNG TẮC cho tìm-repo, sửa hai lời-nói-dối-ngầm:
+   *   • server LUÔN chạy regex mà không ai nói (gõ `a+b` ra kết quả khó hiểu) ⇒ mặc định nay là
+   *     TÌM NGUYÊN VĂN (client tự thoát regex — `thoatRegex` thuần), bật `.*` mới là regex thật;
+   *   • server nhận `ignoreCase` từ đầu mà client không gửi (mặc-định-cứng phân biệt hoa/thường,
+   *     NGƯỢC với tìm-trong-tệp) ⇒ nút `Aa` cho người dùng quyết, mặc định KHÔNG phân biệt.
+   */
+  const [timPhanBietHoa, setTimPhanBietHoa] = useState(false);
+  const [timBangRegex, setTimBangRegex] = useState(false);
   const grepRepoQ = trpc.repoWorkspace.grep.useQuery(
-    { pattern: tuKhoaRepoTre.trim(), projectId, lang, maxResults: 100 },
+    {
+      pattern: timBangRegex ? tuKhoaRepoTre.trim() : thoatRegex(tuKhoaRepoTre.trim()),
+      ignoreCase: !timPhanBietHoa,
+      projectId, lang, maxResults: 100,
+    },
     { enabled: cheDoCay === "tim" && !!projectId && tuKhoaRepoTre.trim().length >= 2, staleTime: 30_000 },
   );
   const ketQuaGrep = grepRepoQ.data?.ok ? grepRepoQ.data.data?.matches ?? [] : [];
@@ -1962,8 +2009,29 @@ export default function AICodingWorkspace() {
                     onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setCheDoCay("cay"); } }}
                     placeholder={t("repoWs.search.placeholder", "Tìm trong TOÀN repo…  (Ctrl+Shift+F)")}
                     aria-label={t("repoWs.search.placeholder", "Tìm trong TOÀN repo…  (Ctrl+Shift+F)")}
-                    className="h-7 w-full rounded-md border bg-background pl-6 pr-2 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                    className="h-7 w-full rounded-md border bg-background pl-6 pr-12 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                   />
+                  {/* ★ ĐỢT A (UX H4) — hai công tắc kiểu VSCode, nằm TRONG ô tìm (pr-12 chừa chỗ). */}
+                  <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      data-tim-hoa
+                      aria-pressed={timPhanBietHoa}
+                      onClick={() => setTimPhanBietHoa((v) => !v)}
+                      title={t("repoWs.search.caseToggle", "Phân biệt hoa/thường")}
+                      aria-label={t("repoWs.search.caseToggle", "Phân biệt hoa/thường")}
+                      className={cn("rounded px-1 font-mono text-[10px] leading-5", timPhanBietHoa ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted")}
+                    >Aa</button>
+                    <button
+                      type="button"
+                      data-tim-regex
+                      aria-pressed={timBangRegex}
+                      onClick={() => setTimBangRegex((v) => !v)}
+                      title={t("repoWs.search.regexToggle", "Dùng biểu thức chính quy (regex)")}
+                      aria-label={t("repoWs.search.regexToggle", "Dùng biểu thức chính quy (regex)")}
+                      className={cn("rounded px-1 font-mono text-[10px] leading-5", timBangRegex ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted")}
+                    >.*</button>
+                  </div>
                 </div>
               )}
             </div>
@@ -2634,6 +2702,8 @@ export default function AICodingWorkspace() {
                   dangGui={isStreaming}
                   onChayNhanh={(g) => handleSend(t(g.khoa, g.macDinh))}
                   luotSong={dangChayLenhSong ? songQ.data ?? null : null}
+                  onChayLai={(lenh) => handleSend(t("repoWs.terminal.rerunPrompt", "chạy {{lenh}}", { lenh }))}
+                  onXoaLichSu={() => setLenhDaChay([])}
                 />
               ) : (
                 <BangProblems

@@ -19398,7 +19398,9 @@
       "count": "{{n}} kết quả",
       "truncatedNone": "⚠ Phạm vi quét bị CẮT ({{n}} tệp đã quét) — chưa phải cả repo.",
       "truncatedTime": "⚠ BẢN CẮT vì hết giờ: mới quét {{n}} tệp — kết quả CHƯA đầy đủ, thu hẹp bằng thư mục để quét trọn.",
-      "truncatedCap": "⚠ BẢN CẮT: chạm trần quét/kết quả ({{n}} tệp đã quét) — có thể còn khớp chưa hiện."
+      "truncatedCap": "⚠ BẢN CẮT: chạm trần quét/kết quả ({{n}} tệp đã quét) — có thể còn khớp chưa hiện.",
+      "caseToggle": "Phân biệt hoa/thường",
+      "regexToggle": "Dùng biểu thức chính quy (regex)"
     },
     "suaChon": {
       "m0": "Trong tệp `{{path}}`, sửa ĐÚNG đoạn mã đã bôi đen dưới đây:",
@@ -19523,7 +19525,12 @@
       "liveRunning": "đang chạy · {{giay}}",
       "liveDone": "vừa xong · {{giay}}",
       "liveTrimmed": "… đã cắt phần đầu — đây là đuôi mới nhất.",
-      "liveWaiting": "(chưa có đầu ra — tiến trình vừa khởi động)"
+      "liveWaiting": "(chưa có đầu ra — tiến trình vừa khởi động)",
+      "clear": "Xoá lịch sử",
+      "clearHint": "Chỉ xoá hiển thị ở đây — sổ kiểm toán server giữ nguyên.",
+      "copyOut": "Chép đầu ra",
+      "rerun": "Chạy lại (qua cửa duyệt)",
+      "rerunPrompt": "chạy {{lenh}}"
     },
     "pane": {
       "tablist": "Chọn khung",

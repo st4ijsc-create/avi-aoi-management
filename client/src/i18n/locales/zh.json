@@ -19426,7 +19426,9 @@
       "count": "{{n}} 条结果",
       "truncatedNone": "⚠ 扫描范围被截断（已扫描 {{n}} 个文件）——尚未覆盖整个仓库。",
       "truncatedTime": "⚠ 因超时截断：仅扫描了 {{n}} 个文件——结果不完整，请按目录缩小范围以完整扫描。",
-      "truncatedCap": "⚠ 截断：已达扫描/结果上限（已扫描 {{n}} 个文件）——可能还有未显示的匹配。"
+      "truncatedCap": "⚠ 截断：已达扫描/结果上限（已扫描 {{n}} 个文件）——可能还有未显示的匹配。",
+      "caseToggle": "区分大小写",
+      "regexToggle": "使用正则表达式"
     },
     "suaChon": {
       "m0": "在文件 `{{path}}` 中，精确修改下面选中的代码：",
@@ -19551,7 +19553,12 @@
       "liveRunning": "运行中 · {{giay}}",
       "liveDone": "刚完成 · {{giay}}",
       "liveTrimmed": "… 已截去开头——这是最新的尾部输出。",
-      "liveWaiting": "（暂无输出——进程刚启动）"
+      "liveWaiting": "（暂无输出——进程刚启动）",
+      "clear": "清除历史",
+      "clearHint": "仅清除此处显示——服务器审计日志不变。",
+      "copyOut": "复制输出",
+      "rerun": "重新运行（经审批门）",
+      "rerunPrompt": "运行 {{lenh}}"
     },
     "pane": {
       "tablist": "选择面板",

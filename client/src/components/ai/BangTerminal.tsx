@@ -41,7 +41,7 @@
  */
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { CheckCircle2, Clock, Loader2, Play, Terminal, XCircle } from "lucide-react";
+import { CheckCircle2, Clock, Copy, Loader2, Play, RotateCcw, Terminal, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { GoiYDuAn } from "@/lib/goiYDuAn";
@@ -93,10 +93,21 @@ interface BangTerminalProps {
    * dữ liệu server đã che + đã cap; ở đây chỉ gập `\r` (ngữ nghĩa terminal) và vẽ.
    */
   luotSong?: LuotSong | null;
+  /**
+   * ★ 2026-08-31 · ĐỢT A (UX H3) — CHẠY LẠI một lượt cũ. Callback về TRANG dựng câu "chạy <lệnh>"
+   * qua ĐÚNG `handleSend` → model → propose → **cùng thẻ duyệt HITL** như nút chạy-nhanh — bảng
+   * vẫn 0 mutation, không đường chạy thẳng nào mọc ở đây. Vắng ⇒ không nút (tương thích ngược).
+   */
+  onChayLai?: (lenh: string) => void;
+  /** ★ ĐỢT A — XOÁ lịch sử lượt lệnh (chỉ trạng thái HIỂN THỊ ở trang; sổ audit server không đổi). */
+  onXoaLichSu?: () => void;
 }
 
-export function BangTerminal({ luotLenh, goiYNhanh, dangGui, onChayNhanh, luotSong }: BangTerminalProps): React.JSX.Element {
+export function BangTerminal({ luotLenh, goiYNhanh, dangGui, onChayNhanh, luotSong, onChayLai, onXoaLichSu }: BangTerminalProps): React.JSX.Element {
   const { t } = useTranslation();
+
+  /** ★ ĐỢT A — chép đầu ra MỘT lượt vào clipboard (hành động hiển thị, 0 tRPC; lỗi ⇒ im lặng an toàn). */
+  const chepDauRa = (dauRa: string) => { void navigator.clipboard?.writeText(dauRa).catch(() => {}); };
 
   /**
    * Tự cuộn ĐÁY khối sống — terminal xem từ đáy. Ref-callback INLINE cố ý (KHÔNG useCallback):
@@ -130,6 +141,19 @@ export function BangTerminal({ luotLenh, goiYNhanh, dangGui, onChayNhanh, luotSo
           >
             {t("repoWs.terminal.count", "{{n}} lệnh", { n: luotLenh.length })}
           </span>
+        )}
+        {onXoaLichSu && luotLenh.length > 0 && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            data-xoa-lich-su
+            onClick={onXoaLichSu}
+            className={cn("h-6 shrink-0 px-1.5 text-[10px] text-muted-foreground", luotLenh.length === 0 && "hidden")}
+            title={t("repoWs.terminal.clearHint", "Chỉ xoá hiển thị ở đây — sổ kiểm toán server giữ nguyên.")}
+          >
+            {t("repoWs.terminal.clear", "Xoá lịch sử")}
+          </Button>
         )}
       </div>
 
@@ -232,6 +256,28 @@ export function BangTerminal({ luotLenh, goiYNhanh, dangGui, onChayNhanh, luotSo
                   {lt.lenh}
                 </code>
                 <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{lt.luc}</span>
+                {/* ★ ĐỢT A (UX H3) — chép đầu ra · chạy lại (qua HITL, xem docblock prop). */}
+                {lt.dauRa !== "" && (
+                  <button
+                    type="button"
+                    data-chep-dau-ra
+                    onClick={() => chepDauRa(lt.dauRa)}
+                    title={t("repoWs.terminal.copyOut", "Chép đầu ra")}
+                    aria-label={t("repoWs.terminal.copyOut", "Chép đầu ra")}
+                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted"
+                  ><Copy className="size-3" /></button>
+                )}
+                {onChayLai && (
+                  <button
+                    type="button"
+                    data-chay-lai
+                    disabled={dangGui}
+                    onClick={() => onChayLai(lt.lenh)}
+                    title={t("repoWs.terminal.rerun", "Chạy lại (qua cửa duyệt)")}
+                    aria-label={t("repoWs.terminal.rerun", "Chạy lại (qua cửa duyệt)")}
+                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted disabled:opacity-50"
+                  ><RotateCcw className="size-3" /></button>
+                )}
                 {lt.nguon === "vong_tu_dong" && (
                   <span
                     data-tu-vong

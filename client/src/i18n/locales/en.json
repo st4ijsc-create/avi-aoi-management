@@ -19418,7 +19418,9 @@
       "count": "{{n}} results",
       "truncatedNone": "⚠ Scan scope was CUT ({{n}} files scanned) — not the whole repo yet.",
       "truncatedTime": "⚠ PARTIAL due to deadline: only {{n}} files scanned — results are incomplete, narrow by folder for a full scan.",
-      "truncatedCap": "⚠ PARTIAL: hit scan/result cap ({{n}} files scanned) — more matches may exist."
+      "truncatedCap": "⚠ PARTIAL: hit scan/result cap ({{n}} files scanned) — more matches may exist.",
+      "caseToggle": "Match case",
+      "regexToggle": "Use regular expression"
     },
     "suaChon": {
       "m0": "In file `{{path}}`, edit EXACTLY the selected code below:",
@@ -19543,7 +19545,12 @@
       "liveRunning": "running · {{giay}}",
       "liveDone": "just finished · {{giay}}",
       "liveTrimmed": "… beginning trimmed — this is the latest tail.",
-      "liveWaiting": "(no output yet — the process just started)"
+      "liveWaiting": "(no output yet — the process just started)",
+      "clear": "Clear history",
+      "clearHint": "Clears this view only — the server audit log is unchanged.",
+      "copyOut": "Copy output",
+      "rerun": "Re-run (via approval gate)",
+      "rerunPrompt": "run {{lenh}}"
     },
     "pane": {
       "tablist": "Choose pane",

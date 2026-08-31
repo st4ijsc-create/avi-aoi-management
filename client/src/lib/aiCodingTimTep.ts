@@ -14,6 +14,15 @@
  */
 
 /**
+ * ★ 2026-08-31 · ĐỢT A (UX H4) — thoát mọi ký tự regex để một từ khoá người-gõ thành phép TÌM
+ * NGUYÊN VĂN. `grep_repo` server LUÔN biên dịch `new RegExp(mau)`; trước đây client gửi nguyên văn
+ * nên `a+b`/`x(y)` âm thầm là regex. THUẦN — lưới hỏi thẳng (aiCodingWorkspaceUx §H4).
+ */
+export function thoatRegex(chuoi: string): string {
+  return chuoi.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
  * Số dòng (1-based) của các dòng CÓ CHỨA `tuKhoa` (không phân biệt hoa/thường), theo thứ tự xuất hiện.
  * `tuKhoa` rỗng / không phải chuỗi ⇒ `[]`. Tách CRLF lẫn LF (`\r?\n`). Một dòng khớp nhiều lần vẫn tính
  * ĐÚNG MỘT (đây là điều hướng theo DÒNG, không theo cụm).
