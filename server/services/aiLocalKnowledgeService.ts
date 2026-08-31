@@ -11,6 +11,10 @@ import {
   type ClientActionDirective,
   type ToolLoopProgress,
   type ToolLoopResult,
+  // ★★★ PDCA vòng 5 — kiểu trả về của `tryExecuteToolLoop`, dùng để dựng ĐÚNG hình dạng "không tool
+  // nào khớp" khi gate `route === "vscode"` bỏ qua lượt gọi thật (xem `KHONG_TOOL_VSCODE` cạnh
+  // `streamAnswer`). Chỉ nhập KIỂU — không mở cạnh nhập lúc chạy nào mới.
+  type TryExecuteToolLoopResult,
 } from "./aiLocalTools";
 /**
  * ★★★ doc 79 · TRỤC 1 (C) — bộ chọn tool LẬP TRÌNH TẤT ĐỊNH, dùng LẠI NGUYÊN VẸN để hỏi
@@ -5469,6 +5473,63 @@ function codingErrorMessage(language: KbLanguage, toolName: string | null, error
   return `Tool \`${t}\` gặp lỗi khi chạy: ${error}. Đây là lỗi thực thi THẬT, không phải một lượt từ chối vì chính sách.`;
 }
 
+/**
+ * ★★★ PDCA vòng 5 (server, gốc rễ ĐO ĐƯỢC — `.superpowers/sdd/2026-08-30-vscode-extension-dot-d/
+ * pdca5-report.md`) — GATE: câu hỏi từ EXTENSION VSCODE (`context.route === "vscode"`) KHÔNG được
+ * đi vào vòng tool VẬN HÀNH của `streamAnswer`.
+ *
+ * ─── GỐC RỄ ĐO ĐƯỢC (không phải giả thuyết) ──────────────────────────────────────────────────────
+ * `tryExecuteToolLoop` chạy VÔ ĐIỀU KIỆN trên MỌI câu hỏi, TRƯỚC KHI biết câu hỏi có "cần dữ liệu
+ * vận hành" hay không. Bộ chọn của nó (`aiLocalTools/intentClassifier.ts`) hiểu NHẦM đoạn giáo cụ
+ * `avi-tool` mà extension tự dạy (dạy `doc_tep`/`liet_ke`/`grep` — HOÀN TOÀN client-side, xem
+ * `vscode-extension/src/loi/dayGiaoThucDoc.ts`) thành một câu hỏi vận hành THẬT, rồi chạy một tool
+ * NATIVE có thật nhưng SAI NGỮ CẢNH (`get_ng_compare`, `read_file` trên hộp cát của MÁY CHỦ, không
+ * phải workspace của dev…). Đo live (6 biến thể POST thẳng `/api/ai/local-kb/stream`): một đoạn dẫn
+ * 403 KÝ TỰ, không kèm ví dụ JSON nào, đã đủ kích hoạt. Hậu quả đo được: chân trang trích dẫn tool
+ * lạ 9/9 tác vụ, lãng phí ~1-8 giây/câu hỏi (một lượt suy luận chọn-tool + một lượt tool THẬT chạy
+ * trên CSDL, cho một câu hỏi không hề cần chúng).
+ *
+ * ─── VÌ SAO `route === "vscode"` LÀ TRƯỜNG TIN ĐƯỢC (đo, không đoán) ─────────────────────────────
+ * `route` KHÔNG phải trường mới: `KbQueryContext.route` và `parseContext` (aiLocalKnowledgeApi.ts)
+ * đã nhận nó cho MỌI caller từ trước. Đọc mã xác nhận: extension gửi `route: "vscode"` trong MỌI
+ * request, từ ĐÚNG MỘT điểm (`vscode-extension/src/loi/yeuCau.ts::dungYeuCauStream`, dòng
+ * `context.route = "vscode"` — áp dụng cho CẢ HAI chế độ local/server của extension). Một trang WEB
+ * không thể VÔ TÌNH trùng giá trị: mọi trang web gửi `route: location` (đường dẫn wouter hiện tại,
+ * LUÔN bắt đầu bằng `/` — xem `AILocalChatBubble.tsx`/`useKbChatStream.ts`), và `"vscode"` không
+ * phải một URL path hợp lệ.
+ *
+ * ★ ĐÂY KHÔNG PHẢI MỘT TRƯỜNG BẢO MẬT, và không cần phải là: gate chỉ tắt một NHÁNH ĐỊNH TUYẾN (bỏ
+ * qua vòng tool đọc dữ liệu vận hành) — không mở/đóng RBAC, không cấp thêm quyền đọc/ghi nào. Nếu
+ * MỘT client web tự xưng `route:"vscode"` để né vòng tool: hậu quả tối đa là CHÍNH họ mất tính năng
+ * tool-augmented (câu trả lời kém đi, ít dữ liệu sống hơn) — không gì MỚI được phép chạy; không có
+ * `pendingAction`/từ chối RBAC nào "bị bỏ qua" bởi gate này (không chạy tool ⇒ không có gì để chờ
+ * duyệt hay từ chối cả). Cùng mức tin cậy đã áp dụng từ trước cho `context.codingMode` (một cờ
+ * client-khai khác đổi hẳn cả nhánh xử lý, xem điều kiện `codingMode === true` ngay phía trên hàm
+ * này) — `route` không "đặc biệt nguy hiểm" hơn.
+ *
+ * ─── VÌ SAO CHỈ GATE `streamAnswer`, KHÔNG GATE `answerQuestion` ─────────────────────────────────
+ * Extension CHỈ gọi `/api/ai/local-kb/stream` → `streamAnswer` (xác nhận: `vscode-extension/src/
+ * mang/dongSse.ts` chỉ có MỘT `fetch`, tới `/stream`; không một lời gọi `/ask` nào trong toàn bộ mã
+ * extension). Gate `answerQuestion` sẽ là một đổi KHÔNG THỂ đo LIVE qua đường thật của bản vá này —
+ * cố tình để nguyên, ghi CÒN MỞ trong báo cáo (không phải quên).
+ *
+ * ─── ĐƯỜNG WEB (route là URL path bất kỳ, hoặc vắng) — Y HỆT HÔM NAY ─────────────────────────────
+ * `KHONG_TOOL_VSCODE` mô phỏng ĐÚNG hình dạng "không tool nào khớp" mà `tryExecuteTool` vẫn trả từ
+ * trước (xem reason `NO_TRIGGER_MATCH`, `intentClassifier.ts`) — mọi điểm đọc `toolExec.*` bên dưới
+ * xử lý ca này giống hệt một câu hỏi không cần tool hôm nay, không cần thêm một nhánh mã mới nào ở
+ * phía sau. Nhánh `route !== "vscode"` giữ NGUYÊN VẸN mã cũ (xem `else` trong thân hàm) — đó là điều
+ * kiện để "đường web không đổi" là một khẳng định về MÃ, không chỉ một kỳ vọng về hành vi.
+ */
+const KHONG_TOOL_VSCODE: TryExecuteToolLoopResult = {
+  result: null,
+  pendingAction: null,
+  clientAction: null,
+  denied: undefined,
+  error: undefined,
+  decision: { tool: null, args: {}, reason: "VSCODE_ROUTE_SKIP", clarifyMessage: null },
+  loop: null,
+};
+
 export async function* streamAnswer(
   question: string,
   topK = 5,
@@ -5498,40 +5559,48 @@ export async function* streamAnswer(
   const now = Date.now();
 
   // Real-time tool first (live DB state — must NOT be cached).
-  // ★ G2-C — chạy vòng lặp và PHÁT trạng thái trung gian NGAY khi nó xảy ra. Một generator không
-  // `yield` được từ trong callback, nên tiến độ đi qua một hàng chờ + một lời hứa "đánh thức";
-  // vòng while dưới đây rút hàng chờ cho tới khi lượt tool xong. Không có nó thì người dùng ngồi
-  // nhìn màn hình đứng im tới `AI_TOOL_LOOP_MAX_MS` — đúng thứ brief cấm.
-  const hangCho: ToolLoopProgress[] = [];
-  let danhThuc: (() => void) | null = null;
-  let toolXong = false;
-  const loiHuaTool = tryExecuteToolLoop(question, context, execCtx, (ev) => {
-    hangCho.push(ev);
-    danhThuc?.();
-  });
-  // `then(ok, err)` KHÔNG được để lại một nhánh reject chưa ai bắt (unhandled rejection giết
-  // tiến trình dưới Node ≥15). `await loiHuaTool` phía dưới mới là nơi lỗi thật sự được xử lý.
-  void loiHuaTool.then(
-    () => {},
-    () => {},
-  ).then(() => {
-    toolXong = true;
-    danhThuc?.();
-  });
-  while (true) {
-    while (hangCho.length > 0) {
-      const ev = hangCho.shift()!;
-      yield { type: "tool_loop", round: ev.round, phase: ev.phase, toolName: ev.tool, elapsedMs: ev.elapsedMs, stop: ev.stop };
-    }
-    if (toolXong) break;
-    await new Promise<void>((r) => {
-      danhThuc = () => {
-        danhThuc = null;
-        r();
-      };
+  // ★★★ PDCA vòng 5 — GATE `route === "vscode"` đứng NGAY TRƯỚC lượt suy luận chọn-tool đầu tiên
+  // (xem docblock lớn phía trên hàm này cho lý lẽ đầy đủ). Nhánh `else` là mã CŨ, KHÔNG đổi một
+  // dòng nào — đó là điều kiện để "đường web (route khác 'vscode')" là một phép đo A/B sạch.
+  let toolExec: TryExecuteToolLoopResult;
+  if (context?.route === "vscode") {
+    toolExec = KHONG_TOOL_VSCODE;
+  } else {
+    // ★ G2-C — chạy vòng lặp và PHÁT trạng thái trung gian NGAY khi nó xảy ra. Một generator không
+    // `yield` được từ trong callback, nên tiến độ đi qua một hàng chờ + một lời hứa "đánh thức";
+    // vòng while dưới đây rút hàng chờ cho tới khi lượt tool xong. Không có nó thì người dùng ngồi
+    // nhìn màn hình đứng im tới `AI_TOOL_LOOP_MAX_MS` — đúng thứ brief cấm.
+    const hangCho: ToolLoopProgress[] = [];
+    let danhThuc: (() => void) | null = null;
+    let toolXong = false;
+    const loiHuaTool = tryExecuteToolLoop(question, context, execCtx, (ev) => {
+      hangCho.push(ev);
+      danhThuc?.();
     });
+    // `then(ok, err)` KHÔNG được để lại một nhánh reject chưa ai bắt (unhandled rejection giết
+    // tiến trình dưới Node ≥15). `await loiHuaTool` phía dưới mới là nơi lỗi thật sự được xử lý.
+    void loiHuaTool.then(
+      () => {},
+      () => {},
+    ).then(() => {
+      toolXong = true;
+      danhThuc?.();
+    });
+    while (true) {
+      while (hangCho.length > 0) {
+        const ev = hangCho.shift()!;
+        yield { type: "tool_loop", round: ev.round, phase: ev.phase, toolName: ev.tool, elapsedMs: ev.elapsedMs, stop: ev.stop };
+      }
+      if (toolXong) break;
+      await new Promise<void>((r) => {
+        danhThuc = () => {
+          danhThuc = null;
+          r();
+        };
+      });
+    }
+    toolExec = await loiHuaTool;
   }
-  const toolExec = await loiHuaTool;
   const toolResult = toolExec.result;
   const loop = toolExec.loop;
   const clarifyMessage = toolExec.decision.clarifyMessage ?? null;
