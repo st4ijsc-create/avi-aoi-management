@@ -105,7 +105,7 @@ const VI_DU: readonly ViDuMetaJson[] = [
   {
     ten: 'AoiPackageSection.tsx — "meta.json schema" (trang API docs CHẠY TRONG SẢN PHẨM)',
     file: DUONG_AOI_PACKAGE_SECTION,
-    trich: (nd) => trichJsonCanBang(nd, nd.indexOf('meta.json schema — "measurements" BẮT BUỘC')),
+    trich: (nd) => trichJsonCanBang(nd, nd.indexOf("meta.json schema — BG-85")),
   },
   {
     ten: "docs/examples/meta.json.example (mẫu ĐÚNG — đối chứng dương, không thuộc năm nơi bị sửa)",
@@ -118,24 +118,26 @@ const VI_DU: readonly ViDuMetaJson[] = [
     trich: (nd) => nd,
   },
   {
-    ten: 'API_REFERENCE.md — "meta.json Structure (UNIFIED...)" (đối chứng dương, đã đúng từ trước)',
+    // BG-85 — heading đổi tên (hợp nhất "UNIFIED" + "Legacy" thành MỘT mục
+    // duy nhất, xem docs/API_REFERENCE.md §11.2) — anchor cập nhật theo.
+    ten: 'API_REFERENCE.md — "meta.json Structure (BG-85...)" (đối chứng dương, ĐÃ SỬA sang hợp đồng cây)',
     file: DUONG_API_REFERENCE,
-    trich: (nd) => trichJsonCanBang(nd, nd.indexOf("**meta.json Structure (UNIFIED - đồng bộ với submitInspection):**")),
+    trich: (nd) => trichJsonCanBang(nd, nd.indexOf("**meta.json Structure (BG-85, 2026-09-02")),
   },
   {
-    ten: 'API_REFERENCE.md:781 khu vực — "Legacy meta.json" (tên trường cũ, ĐÃ SỬA khoá mảng)',
-    file: DUONG_API_REFERENCE,
-    trich: (nd) => trichJsonCanBang(nd, nd.indexOf("**Legacy meta.json (tên trường cũ vẫn hỗ trợ")),
-  },
-  {
-    ten: "UNIFIED_API_STRUCTURE.md:112 khu vực — §4.2 Cấu trúc legacy (ĐÃ SỬA thành ví dụ đầy đủ)",
+    // BG-85 — heading + nội dung §4.2 viết lại: JSON đầu tiên sau heading là ví
+    // dụ hình dạng PHẲNG CŨ (cố ý minh hoạ cái KHÔNG còn được nhận — không phải
+    // "ví dụ dùng được", nên KHÔNG neo vào đó); neo vào cây tương đương ĐÚNG SAU nó.
+    ten: "UNIFIED_API_STRUCTURE.md:112 khu vực — §4.2 Cấu trúc legacy (ĐÃ SỬA thành cây tương đương)",
     file: DUONG_UNIFIED,
-    trich: (nd) => trichJsonCanBang(nd, nd.indexOf("### 4.2. Cấu trúc legacy (Old - Vẫn hỗ trợ)")),
+    trich: (nd) => trichJsonCanBang(nd, nd.indexOf("Cấu trúc CÂY tối thiểu tương đương")),
   },
   {
-    ten: "UNIFIED_API_STRUCTURE.md:337 khu vực — §9 Legacy meta.json (ĐÃ SỬA khoá mảng)",
+    // Cùng lý do §4.2 — JSON đầu tiên sau heading là ví dụ hình dạng cũ cố ý
+    // minh hoạ cái bị TỪ CHỐI; neo vào "Hình dạng CÂY tương đương" theo SAU nó.
+    ten: "UNIFIED_API_STRUCTURE.md:337 khu vực — §9 Legacy meta.json (ĐÃ SỬA thành cây tương đương)",
     file: DUONG_UNIFIED,
-    trich: (nd) => trichJsonCanBang(nd, nd.indexOf("### Legacy meta.json (tên trường cũ vẫn hoạt động)")),
+    trich: (nd) => trichJsonCanBang(nd, nd.indexOf("**Hình dạng CÂY tương đương (hình dạng THẬT SỰ được chấp nhận hôm nay):**")),
   },
   {
     ten: "UNIFIED_API_STRUCTURE.md — §6.1 AOI Package - meta.json (đối chứng dương, đã đúng từ trước)",
@@ -201,28 +203,33 @@ describe("§2 — MỆNH ĐỀ 2: CHỐNG TỰ THOẢ — bộ trích phải tì
   });
 });
 
-describe("§3 — TỰ KIỂM: pipeline này THẬT SỰ bắt được hình dạng points[]-only (không chỉ tình cờ xanh)", () => {
-  it("payload chỉ có points[] (KHÔNG có measurements) ⇒ metaJsonSchema TỪ CHỐI — đúng lỗi BG-85 mà lưới này canh", () => {
+describe("§3 — TỰ KIỂM: pipeline này THẬT SỰ bắt được hình dạng PHẲNG cũ (không chỉ tình cờ xanh) — BG-85 thay hình dạng points[]-only mà Task 7 từng canh", () => {
+  it("payload PHẲNG cũ (serialNumber/productModel/measurements[], KHÔNG có surfaces) ⇒ metaJsonSchema TỪ CHỐI — đúng lỗi BG-85 mà lưới này canh", () => {
     const hinhDangHongTruocBanVa = {
       serialNumber: "SN-TU-KIEM",
       productModel: "PM-TU-KIEM",
-      points: [{ code: "P1", fileName: "p1.jpg", result: "OK" }],
-      // KHÔNG có "measurements" — ĐÚNG hình dạng cả năm nơi từng dạy TRƯỚC Task 7.
+      measurements: [{ fileName: "p1.jpg", result: "OK" }],
+      // KHÔNG có "surfaces"/"ntf"/"summary"/"identity" — hình dạng phẳng cũ mà
+      // TOÀN BỘ tài liệu từng dạy TRƯỚC BG-85 (kể cả sau khi Task 7 sửa xong).
     };
     const r = metaJsonSchema.safeParse(hinhDangHongTruocBanVa);
     expect(
       r.success,
-      "nếu dòng này ĐỎ nghĩa là metaJsonSchema đã đổi hành vi (KHÔNG thuộc phạm vi Task 7 — " +
-        "chỉ sửa tài liệu, không sửa metaJsonSchema) — báo cáo lại, ĐỪNG tự sửa production.",
+      "nếu dòng này ĐỎ nghĩa là metaJsonSchema đã đổi hành vi (KHÔNG thuộc phạm vi việc cập nhật tài liệu — " +
+        "báo cáo lại, ĐỪNG tự sửa production).",
     ).toBe(false);
   });
 
-  it("cùng payload, GẮN THÊM measurements:[] rỗng ⇒ parse được — chứng minh CHÍNH XÁC field còn thiếu là measurements", () => {
+  it("cùng serial/model, GẮN THÊM cây surfaces[] + identity/ntf/summary tối thiểu ⇒ parse được — chứng minh CHÍNH XÁC field còn thiếu là cây, không phải một trường lẻ", () => {
     const hinhDangDaSua = {
+      identity: { station: "TK-ST", machine: "TK-MC", line: "TK-LN", plant: "TK-PL", country: "VN", solutionName: "TK-SOL", appVersion: "1.0.0" },
+      productId: "TK-PID",
       serialNumber: "SN-TU-KIEM",
       productModel: "PM-TU-KIEM",
-      points: [{ code: "P1", fileName: "p1.jpg", result: "OK" }],
-      measurements: [],
+      overallResult: "OK",
+      ntf: false,
+      summary: { surfaces: { total: 0, pass: 0, ng: 0, ntf: 0 }, positions: { total: 0, pass: 0, ng: 0, ntf: 0 }, captures: { total: 0, pass: 0, ng: 0, ntf: 0 }, components: { total: 0, pass: 0, ng: 0, ntf: 0 } },
+      surfaces: [],
     };
     const r = metaJsonSchema.safeParse(hinhDangDaSua);
     expect(r.success, r.success ? "" : JSON.stringify((r as { error?: unknown }).error)).toBe(true);

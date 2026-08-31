@@ -727,99 +727,70 @@ package.zip
     └── image_003.jpg
 ```
 
-**meta.json Structure (UNIFIED - đồng bộ với submitInspection):**
+**meta.json Structure (BG-85, 2026-09-02 — MỘT hợp đồng, hai đường vận chuyển):**
+
+`meta.json` KHÔNG còn là một hợp đồng riêng — nó là **chính** payload kết quả v2.0
+(`machineDataContractV2`: cây `surfaces[].positions[].captures[].components[]`) mà
+`submitInspection` (đường trực tiếp) nhận, cộng thêm **đúng một** trường `images[]`
+(tham chiếu ảnh — `captureId` là khoá join sang `captures[]` trong CHÍNH cây đó).
+
 ```json
 {
-  "machineCode": "AOI-LINE1-01",
-  "inspectionId": "INS-20240115-001",
-  
+  "identity": {
+    "station": "AIC-LINE1-01", "machine": "AOI-LINE1-01", "line": "LINE-3",
+    "plant": "FACTORY-HN", "country": "VN", "solutionName": "PCB-V2-SOLUTION", "appVersion": "1.0.0"
+  },
+  "productId": "b3f1c2a0-1111-4a2b-9c3d-000000000001",
   "serialNumber": "SN-20240115-001",
   "productModel": "PCB-V2-Standard",
-  "batchNumber": "BATCH-2024-001",
-  
-  "inspectionTime": "2024-01-15T10:30:00Z",
-  "startedAt": "2024-01-15T10:30:00Z",
-  "finishedAt": "2024-01-15T10:32:30Z",
-  "cycleTime": 150.5,
-  
-  "companyCode": "COMPANY-A",
-  "factoryCode": "FACTORY-HN",
-  "workshopCode": "WORKSHOP-SMT",
-  "lineCode": "LINE-3",
-  "stageCode": "STAGE-AOI",
-  
-  "productionOrderCode": "PO-2024-0115-001",
-  "operatorId": "OP-0023",
-  
   "overallResult": "NG",
-  
-  "measurements": [
+  "ntf": false,
+  "startedAt": "2024-01-15T10:30:00.000",
+  "completedAt": "2024-01-15T10:32:30.400",
+
+  "summary": {
+    "surfaces":   { "total": 1, "pass": 0, "ng": 1, "ntf": 0 },
+    "positions":  { "total": 1, "pass": 0, "ng": 1, "ntf": 0 },
+    "captures":   { "total": 2, "pass": 1, "ng": 1, "ntf": 0 },
+    "components": { "total": 2, "pass": 1, "ng": 1, "ntf": 0 }
+  },
+
+  "surfaces": [
     {
-      "pointId": "POINT-001",
-      "pointCode": "R1-IC1-PIN1",
-      "name": "IC1 Pin 1 Resistance",
-      "fileName": "image_001.jpg",
-      "result": "OK",
-      "measuredValue": 1023.5,
-      "unit": "Ω",
-      "remark": "In spec"
-    },
-    {
-      "pointId": "POINT-002",
-      "pointCode": "R2-IC2-PIN5",
-      "name": "IC2 Pin 5 Resistance",
-      "fileName": "image_002.jpg",
-      "result": "NG",
-      "measuredValue": 0,
-      "unit": "Ω",
-      "remark": "Short circuit - Replace IC2"
+      "name": "TOP", "result": "NG", "ntf": false,
+      "positions": [
+        {
+          "positionId": "P01", "result": "NG", "ntf": false,
+          "captures": [
+            {
+              "captureId": "cap-R1-IC1-PIN1", "captureName": "IC1 Pin 1 Resistance", "result": "OK", "ntf": false,
+              "components": [{ "componentId": "comp-R1-IC1-PIN1", "result": "OK", "ntf": false, "value": "1023.5" }]
+            },
+            {
+              "captureId": "cap-R2-IC2-PIN5", "captureName": "IC2 Pin 5 Resistance", "result": "NG", "ntf": false,
+              "components": [{ "componentId": "comp-R2-IC2-PIN5", "result": "NG", "ntf": false, "value": "0", "errorDesc": "Short circuit - Replace IC2" }]
+            }
+          ]
+        }
+      ]
     }
   ],
-  
-  "summary": {
-    "totalPoints": 2,
-    "ok": 1,
-    "ng": 1,
-    "ntf": 0
-  }
+
+  "images": [
+    { "captureId": "cap-R1-IC1-PIN1", "fileName": "image_001.jpg" },
+    { "captureId": "cap-R2-IC2-PIN5", "fileName": "image_002.jpg" }
+  ]
 }
 ```
 
-**Legacy meta.json (tên trường cũ vẫn hỗ trợ — mảng đo lường PHẢI mang tên `measurements`, xem cảnh báo dưới):**
-```json
-{
-  "inspectionId": "INS-20240115-001",
-  "serialNumber": "SN-20240115-001",
-  "productModel": "PCB-V2-Standard",
-  "factory": "FACTORY-HN",
-  "line": "LINE-3",
-  "machineCode": "AOI-LINE1-01",
-  "startedAt": "2024-01-15T10:30:00Z",
-  "finishedAt": "2024-01-15T10:32:30Z",
-  "measurements": [
-    {
-      "code": "R1",
-      "name": "Resistance 1",
-      "fileName": "image_001.jpg",
-      "result": "OK",
-      "value": 1023.5,
-      "unit": "Ω"
-    }
-  ],
-  "summary": {
-    "totalPoints": 1,
-    "ok": 1,
-    "ng": 0
-  }
-}
-```
-
-⚠️ **`points[]` (tên trường cũ của mảng đo lường) KHÔNG được server chấp nhận khi
-đứng MỘT MÌNH.** `measurements` là trường **bắt buộc** trên MỌI gói (có thể là mảng
-rỗng `[]`, nhưng không được vắng mặt) — kể cả gói dùng tên trường cũ khác (`factory`,
-`line`, `code`, `value`) vẫn phải đặt mảng đo lường dưới khoá `measurements`, không
-phải `points`. Một gói chỉ gửi `points[]` mà thiếu `measurements` bị server từ chối
-(`invalid_type`) và không bao giờ commit được, dù retry bao nhiêu lần.
+⚠️ **Hợp đồng PHẲNG cũ (`measurements[]`/`points[]`, không có `surfaces`) KHÔNG còn
+được server chấp nhận.** `identity`/`productId`/`ntf`/`summary`/`surfaces` đều **bắt
+buộc** — thiếu bất kỳ trường nào ở trên bị từ chối (`invalid_type`). Gói **không** bị
+khoá vĩnh viễn (`'dead'`) vì lệch hình dạng — nó ở lại `'failed'` chờ retry, nhưng sẽ
+**không bao giờ tự commit được** cho tới khi Agent gửi đúng hình dạng CÂY ở trên. Mọi
+`images[].captureId` **phải khớp đúng** một `captureId` có thật trong `surfaces[]` —
+không khớp thì **cả gói** bị từ chối, không âm thầm bỏ ảnh; mọi `images[].fileName`
+phải có tệp thật trong thư mục `images/` của ZIP.
 
 ### 11.3 aoiPackage.commit
 Xác nhận package đã upload hoàn tất và parse dữ liệu.

@@ -286,3 +286,37 @@ export const machineDataContractV2 = z.object({
 });
 
 export type MachineDataContractV2 = z.infer<typeof machineDataContractV2>;
+
+/**
+ * BG-85 (`docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md` §4) — ĐÚNG
+ * MỘT trường `meta.json` (gói ZIP) cộng thêm so với payload trực tiếp v2.0:
+ * mảng tham chiếu ảnh. `captureId` là KHOÁ JOIN sang
+ * `surfaces[].positions[].captures[].captureId` ở CHÍNH hợp đồng này —
+ * `aoiPackageRouter.metaJsonSchema` ráp field này vào bằng `.extend()`, KHÔNG
+ * chép lại một hợp đồng riêng (đúng lý do BG-85 tồn tại — xem docblock file đó).
+ *
+ * ⚠ CỐ Ý BỎ `surface`/`positionId` (có trong mẫu máy thật hôm nay,
+ * `D:\SOURCES\AOIData\aoipackage-meta-sample.json`) — cả hai SUY được từ
+ * `captureId` bằng cách đi ngược cây (capture → position → surface). Giữ lại
+ * là tạo NGUỒN SỰ THẬT THỨ HAI cho cùng một thông tin — đúng lớp lỗi bảy lượt
+ * review vừa dọn (BG-42/BG-68/BG-76, xem §2 chuẩn gói ảnh).
+ *
+ * `.max()` theo ĐÚNG quy ước "khớp cột thật/vệ sinh" của file này:
+ *   - `captureId`  .max(64)  — PHẢI khớp `captureV2.captureId` (cùng khoá join,
+ *     hai phía lệch trần là tạo ra hai "sức chứa" khác nhau cho CÙNG một giá trị).
+ *   - `fileName`   .max(255) — quy ước "đường dẫn/tên tệp" 255 dùng xuyên suốt
+ *     schema này (`captureName`, `componentName`…), KHÔNG khớp cột DB nào (ảnh
+ *     không có bảng package_images cho hình dạng cây — xem "mối lo" báo cáo BG-85).
+ *   - `captureName?` .max(255) — VỆ SINH, cùng con số `captureV2.captureName`.
+ *   - `sha256?`     .max(128) — VỆ SINH, cùng con số `presignCoreObject.sha256`
+ *     (dư sức SHA-256 hex thật 64 ký tự). Kiểm nội dung băm là Task 2 (BG-87),
+ *     KHÔNG thuộc BG-85 — trường này chỉ được NHẬN ở đây, chưa bị đối chiếu byte thật.
+ */
+export const imageRefSchema = z.object({
+  captureId: z.string().trim().min(1).max(64),
+  fileName: z.string().min(1).max(255),
+  captureName: z.string().max(255).optional(),
+  sha256: z.string().max(128).optional(),
+});
+
+export type ImageRef = z.infer<typeof imageRefSchema>;

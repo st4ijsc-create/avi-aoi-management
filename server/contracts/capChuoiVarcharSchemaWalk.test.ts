@@ -39,9 +39,12 @@ import { duyetTimTruongChuoi, kiemTraToanBoTruongChuoi } from "./capChuoiVarchar
 const MIEN_TRU_MDC_V2 = new Set([
   "surfaces[].positions[].captures[].components[].errorDesc", // measurement_results.errorDesc là `text`, không giới hạn thật.
 ]);
-const MIEN_TRU_META_JSON = new Set([
-  "measurements[].remark", // measurement_results.remark là `text`, không giới hạn thật.
-]);
+// BG-85 — metaJsonSchema = machineDataContractV2.extend({images}) — CÙNG một
+// đối tượng, cộng đúng MỘT trường mới (images[]) mà TẤT CẢ lá chuỗi của nó đều
+// có `.max()` (imageRefSchema, machineDataContractV2.ts) ⇒ miễn trừ giống HỆT
+// MDC v2 (chỉ errorDesc) — KHÔNG còn `measurements[].remark` (hợp đồng phẳng
+// cũ đã xoá, xem docblock metaJsonSchema).
+const MIEN_TRU_META_JSON = MIEN_TRU_MDC_V2;
 
 // Chụp nội dung HAI file nguồn NGAY khi module này nạp — đột biến ở §2/§3 chỉ
 // dựng schema MỚI trong bộ nhớ (`.extend()`, không `writeFileSync`), nên bản
@@ -60,10 +63,12 @@ describe("§1 — kiemTraToanBoTruongChuoi (DUYỆT SCHEMA) XANH trên CẢ HAI 
     expect(duyetTimTruongChuoi(machineDataContractV2)).toHaveLength(31);
   });
 
-  it("metaJsonSchema (cửa ZIP) — 0 lỗi (đúng 1 miễn trừ: measurements[].remark)", () => {
+  it("metaJsonSchema (cửa ZIP) — 0 lỗi (đúng 1 miễn trừ: errorDesc — CÙNG miễn trừ MDC v2, không còn measurements[].remark)", () => {
     const r = kiemTraToanBoTruongChuoi(metaJsonSchema, "metaJsonSchema", MIEN_TRU_META_JSON);
     expect(r.loi, r.loi.join("\n")).toEqual([]);
-    expect(duyetTimTruongChuoi(metaJsonSchema)).toHaveLength(31);
+    // BG-85 — 31 lá của machineDataContractV2 + 4 lá mới của images[] (captureId/
+    // fileName/captureName/sha256, imageRefSchema) = 35. Đổi số này là một lời khai.
+    expect(duyetTimTruongChuoi(metaJsonSchema)).toHaveLength(35);
   });
 
   it("KHÔNG miễn trừ nào là thừa — mỗi mục trong MIEN_TRU_* phải khớp ĐÚNG một lá max:null thật của schema (chống miễn trừ ma)", () => {
@@ -112,18 +117,18 @@ describe("§3 — ★★★ ĐỘT BIẾN (b): THÊM trường chuỗi MỚI kh�
     expect(r.loi).toEqual(["[metaJsonSchema] thongSoAgentChuaTungCo: THIẾU .max()"]);
   });
 
-  it("trường MỚI lồng SÂU trong mảng ('measurements[].truongMoiSau') KHÔNG .max() cũng bị bắt — walker đệ quy đúng qua ZodArray/ZodObject lồng nhau, không chỉ cấp gốc", () => {
+  it("trường MỚI lồng SÂU trong mảng ('images[].truongMoiSau') KHÔNG .max() cũng bị bắt — walker đệ quy đúng qua ZodArray/ZodObject lồng nhau, không chỉ cấp gốc", () => {
     const dotBien = metaJsonSchema.extend({
-      measurements: z.array(
+      images: z.array(
         z.object({
-          pointId: z.string().max(50).optional(),
+          captureId: z.string().max(64),
           fileName: z.string().max(255),
           truongMoiSau: z.string().optional(), // MỚI — cố ý KHÔNG .max()
         }),
-      ),
+      ).optional(),
     });
     const r = kiemTraToanBoTruongChuoi(dotBien, "metaJsonSchema", MIEN_TRU_META_JSON);
-    expect(r.loi).toEqual(["[metaJsonSchema] measurements[].truongMoiSau: THIẾU .max()"]);
+    expect(r.loi).toEqual(["[metaJsonSchema] images[].truongMoiSau: THIẾU .max()"]);
   });
 });
 

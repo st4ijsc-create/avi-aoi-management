@@ -27,25 +27,12 @@ import {
   packageImages,
   uploadQueueMetrics,
   machines,
-  productInspections,
   packageActivityLogs,
-  measurementResults,
   InsertProductInspection,
-  InsertMeasurementResult,
 } from "../../drizzle/schema";
 import JSZip from "jszip";
 import fs from "fs";
 import path from "path";
-import {
-  resolveOrCreateMeasurementPointDefId,
-  assertValidPointDefId,
-} from "../services/measurementPointResolver";
-import type { PointDefCache } from "./_shared";
-// W2-A / doc 35 D2 — same server-side spec gate the canonical ingest applies
-// (machineApiRouters.processInspectionSubmission). The ZIP commit path does its
-// OWN measurement_results inserts and must not store a machine "OK" that its
-// point-def limits say is NG.
-import { evaluatePointResult, isPointLimitEvalEnabled } from "../services/pointResultEvaluator";
 // ★★★ 2026-08-18 — mã tenant của một hàng ĐƯỢC GHI suy từ MÁY ĐÃ XÁC THỰC, không từ `meta.json`;
 // khoá lưu trữ gói cũng do máy chủ sinh theo chuỗi phân cấp ấy.
 import { macTenantChoGhi, khoaLuuTruGoi } from "./phamViGhiMay";
@@ -60,15 +47,22 @@ import { macTenantChoGhi, khoaLuuTruGoi } from "./phamViGhiMay";
 // machineApiRouters.ts (export có chủ ý) — không chép lại logic đọc header.
 import { authenticateMachine } from "../services/machineAuthService";
 import { machineHeaderKey } from "./machineApiRouters";
-// BG-42 (Pha 1D) — `inferAoiOverallResult` để `explicitResult` thắng VÔ ĐIỀU
-// KIỆN trên lời khai máy, ngược hẳn đường v2.0 (đóng bằng `verdictXauHon` ở
-// Pha 1C cho Đ-21). DÙNG LẠI hàm chung, KHÔNG chép logic "xấu hơn thắng"
-// thành bản thứ ba trong file này.
-import { verdictXauHon } from "@shared/rollupVerdict";
 // Pha 1D Task 5 (BG-52 ⛔) — phân loại lỗi VĨNH VIỄN/TẠM THỜI cho chốt chặn retry
 // vô hạn ở cửa ZIP (commit). DÙNG LẠI nguyên hàm đã có ở đường WAL inspection —
 // KHÔNG viết bản thứ hai (đúng chỉ dẫn brief).
 import { isPermanentSubmitError } from "../services/inspection/inspectionStoreForward";
+// ════════════════════════════════════════════════════════════════════════════
+// BG-85 (docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md) — MỘT hợp
+// đồng, hai đường vận chuyển. `metaJsonSchema` (bên dưới) = `machineDataContractV2`
+// + `images[]`, KHÔNG còn là một schema phẳng song song. Cửa ZIP dùng THẲNG
+// `dichCayKetQua`/`laHinhDangCayV2` — CÙNG bộ dịch/vị từ đường trực tiếp v2.0
+// (`server/routers/machineApiRouters.ts` submitInspectionTreeV2), KHÔNG viết
+// bản chép tay thứ hai của luật cuộn/nhận-diện-hình-dạng.
+// ════════════════════════════════════════════════════════════════════════════
+import { machineDataContractV2, imageRefSchema, type MachineDataContractV2 } from "../contracts/machineDataContractV2";
+import { laHinhDangCayV2 } from "../contracts/machineDataContract";
+import { dichCayKetQua, type CayDaDich, type CaptureDaDich, type ComponentDaDich } from "../services/ingestCayKetQua";
+import type { ResultVerdict } from "@shared/rollupVerdict";
 
 // ============================================================
 // Image Cache Configuration
@@ -395,200 +389,114 @@ async function getOrExtractImage(
 }
 
 // ============================================================
-// Meta.json schema - Đồng bộ với submitInspection API
+// Meta.json schema — BG-85: MỘT hợp đồng, hai đường vận chuyển
+// (docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md §3-4)
 // ============================================================
 /**
- * Pha 1D Task 5 (BG-52 ⛔) — trước bản vá này, `metaJsonSchema` có **0 trường
- * `.max()`** trong khi 6 trường (`serialNumber`/`productModel`/`batchNumber`/
- * `productionOrderCode`/`stageCode`/`operatorId`) ghi NGUYÊN VĂN vào cột
- * `varchar` của `product_inspections` — đúng lớp lỗi BG-9/BG-27 mà
- * `machineDataContractV2` (đường v2.0) đã đóng, nhưng cửa ZIP chưa từng được vá.
- * Sau bản vá `.max()` này, một payload quá cỡ bị TỪ CHỐI ở cửa hợp đồng
- * (`metaJsonSchema.parse()` ném, `commit` bắt ở `:catch`) thay vì rơi tới Postgres
- * `[22001] value too long for type character varying(n)` — thông điệp không nêu
- * tên trường, kỹ sư hiện trường không đọc nổi.
+ * ★★★ BG-85 — TRƯỚC bản vá này, `metaJsonSchema` là một schema PHẲNG viết tay
+ * SONG SONG với `machineDataContractV2` (đường trực tiếp v2.0) — hai hợp đồng
+ * cho CÙNG một khái niệm ("kết quả kiểm tra một sản phẩm"), lệch hình dạng
+ * hoàn toàn (phẳng `measurements[]`/`points[]` ở đây, cây
+ * `surfaces[].positions[].captures[].components[]` ở kia). Cái giá của việc
+ * để hai hợp đồng tách rời đã trả qua bảy lượt review: `inferAoiOverallResult`
+ * là bản logic cuộn verdict CHÉP TAY THỨ HAI (BG-42/BG-53), cửa ZIP cuộn
+ * verdict từ `summary` MÁY TỰ KHAI thay vì dữ liệu (BG-68), `calculatedSummary`
+ * (`ngCount`) và `overallResult` cùng hàng nhưng hai nguồn (BG-76).
  *
- * `export` (đổi từ `const` nội bộ) CHỈ để `capChuoiVarcharScan.ts` (census
- * schema-walk) soi được đối tượng `ZodType` THẬT — không đổi ai import/dùng nó
- * để parse.
+ * Quyết định chủ dự án (spec trên, §1): `meta.json` trong gói ZIP KHÔNG còn là
+ * một hợp đồng riêng — nó là CHÍNH `machineDataContractV2` (payload kết quả
+ * v2.0 mà đường trực tiếp `submitInspection` nhận), cộng thêm ĐÚNG MỘT trường
+ * `images[]` (tham chiếu ảnh, `captureId` là khoá join sang
+ * `surfaces[].positions[].captures[].captureId` của CHÍNH hợp đồng này).
  *
- * HAI NHÓM, cùng khuôn `machineDataContractV2.ts` ("Vòng sửa 3"):
+ * `.extend()` TRÊN CHÍNH `machineDataContractV2` — KHÔNG chép trường: chép là
+ * DỰNG LẠI đúng hợp đồng song song mà bản vá này sinh ra để xoá.
  *
- * (A) KHỚP CỘT THẬT — số đo từ `information_schema.columns`, vai `avi_app`,
- *   kiểm 2026-08-30 — sai một ký tự là sai:
- *   - `serialNumber`/`productModel`/`batchNumber`/`productionOrderCode` →
- *     `product_inspections.*` varchar(100).
- *   - `stageCode`/`operatorId` → `product_inspections.*` varchar(50).
- *   - `measurements[]`/`points[]`: `pointId`/`pointCode`/`code` →
- *     `package_images.pointCode` varchar(50) (ba tên là BA nguồn ứng viên cho
- *     CÙNG một cột, `point.pointId || point.pointCode || point.code`, xem
- *     `aoiPackageRouter.ts` gần dòng "Insert package image records" — cả ba
- *     phải cùng trần với cột đích); `name` → `package_images.pointName`
- *     varchar(255); `fileName` → `package_images.fileName` varchar(255);
- *     `measuredValue`/`value` (nhánh chuỗi) → cột SIẾT HƠN trong HAI cột nó có
- *     thể chạm — `package_images.measurementValue` varchar(**100**, không
- *     phải `measurement_results.measuredValueText` varchar(255) — cùng giá trị
- *     `.toString()` ghi vào CẢ HAI bảng, lấy trần NHỎ HƠN để không vỡ cột nào).
+ * ⚠ HỆ QUẢ DI TRÚ (đo baseline THẬT trên mẫu máy hôm nay,
+ * `D:\SOURCES\AOIData\aoipackage-meta-sample.json`, TRƯỚC bản vá này):
+ *   - `metaJsonSchema` CŨ (phẳng): `safeParse` = false — thiếu `measurements`.
+ *   - `machineDataContractV2`: `safeParse` = false — thiếu `ntf`/`summary`/`surfaces`.
+ * Mẫu máy thật KHÔNG khớp CẢ HAI hợp đồng hôm nay (nó chỉ có `images[]`, không
+ * hề có cây) — hợp nhất KHÔNG làm nó tệ hơn (vẫn `'failed'`, retry được, không
+ * khoá `'dead'` — xem `laLoiVinhVienDemVaoNguongDeadZip`), và mở đúng MỘT
+ * đường mới: khi Agent (hoặc một phiên bản firmware sau này) gửi ĐỦ cây +
+ * `images[]`, gói ZIP giờ commit được qua CÙNG một đường `dichCayKetQua` mà
+ * `submitInspection` (đường trực tiếp) đang dùng — KHÔNG còn hai luật cuộn.
  *
- * (B) VỆ SINH — không khớp cột nào, hoặc khớp cột NHƯNG giá trị KHÔNG được ghi
- *   verbatim (bị suy lại/chỉ dùng đối chiếu) — `.max()` CHẶN PAYLOAD RÁC, số là
- *   hằng CHỌN (trừ khi ghi chú nói khác):
- *   - `machineCode`/`inspectionId` (gốc) — KHÔNG đọc ở đâu trong `commit`
- *     (đã grep `metaData?.machineCode`/`metaData?.inspectionId` — 0 kết quả) —
- *     `.max(100)`.
- *   - `startedAt`/`finishedAt` (gốc) — `startedAt` đi `new Date(...)` vào cột
- *     `timestamp` (KHÔNG PHẢI varchar, `22001` không áp dụng); `finishedAt`
- *     không đọc ở đâu hôm nay (chuẩn bị trước, cùng lý do `machineCode`) —
- *     ★★★ Pha 1F Task 6 (review lượt 7, C-2 ⛔) — BẢN VÁ NÀY nới `.max(40)` →
- *     `.max(64)`. Đây là LẦN THỨ BA trường này bị soát và LẦN ĐẦU được vá
- *     ĐÚNG: `:1009-1013` đọc `metaData?.inspectionTime ?? metaData?.startedAt`
- *     — `startedAt` là NGUỒN THẬT khi máy không gửi `inspectionTime` (schema
- *     tự khai `inspectionTime` là "Alias for startedAt" — nghĩa là `startedAt`
- *     mới là trường GỐC); mẫu máy THẬT
- *     (`D:\SOURCES\AOIData\aoipackage-meta-sample.json:17`) dùng ĐÚNG
- *     `startedAt`, KHÔNG hề khai `inspectionTime`. Trước bản vá này, chuỗi
- *     `DateTime.ToString()` 50 ký tự (`"Sun Aug 30 2026 14:26:51 GMT+0700
- *     (Indochina Time)"`) làm `startedAt`/`finishedAt` bị `.max(40)` từ chối
- *     — MỘT issue `too_big` duy nhất ⇒ đếm VĨNH VIỄN (`laLoiVinhVienDemVaoNguongDeadZip`)
- *     ⇒ `'dead'` sau `nguongLoiVinhVienZip()` lượt, dù `inspectionTime` (cùng
- *     payload, khác tên trường) ĐÃ được nhận từ BG-72/BG-91. VÌ SAO LỌT HAI
- *     LẦN TRƯỚC: vòng 1 (BG-72) chỉ vá đường v1.x; vòng 2 (BG-91) quét lại
- *     với tiêu chí "trường này có alias bên v1.x không?" — `startedAt` KHÔNG
- *     có alias ở v1.x (`submitInspectionCoreObject` không khai trường này) ⇒
- *     tiêu chí đó CẤU TRÚC KHÔNG THỂ tìm ra nó. Tiêu chí ĐÚNG (dùng cho bản
- *     vá này): "trần hiện tại có ≥ độ dài định dạng `new Date()` chấp nhận
- *     không?" — không phụ thuộc việc trường có alias ở đâu. `.max(64)` — cùng
- *     con số, cùng lý lẽ đã dùng cho `inspectionTime`, dư 14 ký tự trên mẫu
- *     dài nhất đã đo (50). Census `capChuoiThoiGianCensus.test.ts`
- *     (`capChuoiVarcharScan.ts`, `kiemTraTranThoiGian`) canh MỌI trường thời
- *     gian của MỌI hợp đồng ingest theo ĐÚNG tiêu chí này, không riêng hai
- *     trường ở đây — chống đúng lớp lỗi "vá theo alias" đã lọt hai lần.
- *   - `inspectionTime` — ★★★ BG-72 (Pha 1F Task 2 ⛔, lượt soát thứ hai) — KHÁC
- *     `startedAt`/`finishedAt`: trường này là "Alias for startedAt
- *     (submitInspection compat)" — TỰ NHẬN cố ý khớp `inspectionTime` của
- *     `submitInspectionCoreObject` (`machineApiRouters.ts`, đường v1.x). Bản
- *     vá BG-72 đầu tiên chỉ nới `.max(64)` ở v1.x, BỎ SÓT alias này ở cửa ZIP
- *     — cùng payload `DateTime.ToString()` 45-50 ký tự, hai đường hai số phận:
- *     v1.x NHẬN, ZIP ném `ZodError` (`code:"too_big"`) → ĐẾM VĨNH VIỄN (đúng
- *     lớp lỗi BG-64 xếp `.max()` vi phạm là vĩnh viễn) → `'dead'` sau
- *     `nguongLoiVinhVienZip()` lượt — NẶNG HƠN BG-73 (BG-73 để gói `'failed'`
- *     retry được; ca này gói CHẾT THẬT vì một trường KHÔNG liên quan gì đến
- *     hình dạng `measurements[]`). `.max(64)` — cùng con số, cùng lý lẽ đã
- *     dùng cho v1.x.
- *   - `companyCode`/`factoryCode`/`factory`/`workshopCode`/`lineCode`/`line`
- *     (gốc) — KHÔNG ghi verbatim: `macTenantCommit` (`phamViGhiMay.ts`) chỉ
- *     dùng chúng để ĐỐI CHIẾU với chuỗi SUY TỪ MÁY, giá trị THẬT ghi xuống
- *     luôn là bản suy. `.max(50)` khớp sức chứa `factories.code`/
- *     `workshops.code`/`production_lines.code`/`corporates.code` (đo avi_app,
- *     đều varchar(50)) — không phải rủi ro `22001` nhưng vẫn chặn payload rác
- *     trôi vào so sánh/log.
- *   - `measurements[].unit`/`points[].unit` — chỉ nội suy vào `remark` (text,
- *     không giới hạn), không có cột đích riêng — `.max(50)` (nhãn đơn vị ngắn).
- *
- * NGOẠI LỆ DUY NHẤT — `measurements[].remark`: cột đích
- * `measurement_results.remark` là `text`, KHÔNG có `character_maximum_length`
- * (đã kiểm avi_app, NULL = không giới hạn thật) — KHÔNG thêm `.max()`, cùng lý
- * do `errorDesc` bị loại trừ ở `machineDataContractV2.ts`. Census
- * (`capChuoiVarcharScan.ts`, danh sách miễn trừ theo schema) biết loại trừ
- * đúng MỘT trường này, không phải cả cây `measurements[]`.
+ * Hình dạng PHẲNG cũ (`measurements[]`/`points[]`, không `surfaces`) — hình
+ * dạng đã sinh ra 262 gói `committed` hiện có — cũng KHÔNG còn parse được qua
+ * schema hợp nhất này (thiếu `surfaces`/`summary`/`identity`/`ntf` bắt buộc) ⇒
+ * cùng số phận: `'failed'`, retry được, KHÔNG khoá `'dead'` (Bước 6, đường di
+ * trú — nhận diện hình dạng bằng `laHinhDangCayV2`, KHÔNG thêm vị từ thứ hai).
+ * Gói `committed` CŨ trong DB KHÔNG bị đụng tới (`commit` chỉ ghi khi PARSE
+ * MỚI thành công — không có tác vụ nào chạy lại trên hàng đã có).
  */
-export const metaJsonSchema = z.object({
-  // Machine identification (backward compatible)
-  machineCode: z.string().max(100).optional(),
-  inspectionId: z.string().max(100).optional(), // Internal inspection ID from agent
-
-  // Product information (REQUIRED)
-  serialNumber: z.string().max(100), // Số serial sản phẩm — product_inspections.serialNumber varchar(100)
-  productModel: z.string().max(100), // Model sản phẩm — product_inspections.productModel varchar(100)
-  batchNumber: z.string().max(100).optional(), // Số lô — product_inspections.batchNumber varchar(100)
-
-  // Inspection timing
-  startedAt: z.string().max(64).optional(), // ISO datetime — Pha 1F Task 6 (C-2 ⛔): TRƯỜNG GỐC thật (":1009" đọc inspectionTime ?? startedAt), nới từ .max(40), xem docblock trên
-  finishedAt: z.string().max(64).optional(), // ISO datetime — Pha 1F Task 6: cùng con số/lý lẽ startedAt, xem docblock trên
-  inspectionTime: z.string().max(64).optional(), // Alias for startedAt (submitInspection compat) — BG-72: khớp .max(64) của submitInspectionCoreObject.inspectionTime (machineApiRouters.ts), xem docblock trên
-  cycleTime: z.number().optional(), // Thời gian chu kỳ (giây)
-
-  // Overall result
-  overallResult: z.enum(["OK", "NG", "NTF"]).optional(), // Kết quả tổng thể
-
-  // Enterprise hierarchy (top-down) - Đồng bộ với submitInspection
-  companyCode: z.string().max(50).optional(), // Mã tập đoàn/công ty
-  factoryCode: z.string().max(50).optional(), // Mã nhà máy (alias: factory)
-  factory: z.string().max(50).optional(), // Backward compatible
-  workshopCode: z.string().max(50).optional(), // Mã nhà xưởng
-  lineCode: z.string().max(50).optional(), // Mã dây chuyền (alias: line)
-  line: z.string().max(50).optional(), // Backward compatible
-  stageCode: z.string().max(50).optional(), // Mã công đoạn — product_inspections.stageCode varchar(50)
-
-  // Production context
-  productionOrderCode: z.string().max(100).optional(), // Mã lệnh sản xuất — product_inspections.productionOrderCode varchar(100)
-  operatorId: z.string().max(50).optional(), // Mã công nhân vận hành — product_inspections.operatorId varchar(50)
-
-  // Measurement data - Đồng bộ với submitInspection measurements
-  measurements: z.array(z.object({
-    pointId: z.string().max(50).optional(), // ID điểm đo (submitInspection compat) — package_images.pointCode varchar(50)
-    pointCode: z.string().max(50).optional(), // Mã điểm đo (backward compatible) — cùng cột trên
-    code: z.string().max(50).optional(), // Alias for pointCode — cùng cột trên
-    name: z.string().max(255).optional(), // Tên điểm đo — package_images.pointName varchar(255)
-    fileName: z.string().max(255), // Tên file ảnh trong ZIP — package_images.fileName varchar(255)
-    result: z.enum(["OK", "NG", "NTF"]).optional(), // Kết quả
-    measuredValue: z.union([z.number(), z.string().max(100)]).optional(), // Giá trị đo — package_images.measurementValue varchar(100) (trần SIẾT HƠN — xem docblock)
-    value: z.union([z.number(), z.string().max(100)]).optional(), // Alias — cùng cột trên
-    unit: z.string().max(50).optional(), // Đơn vị
-    remark: z.string().optional(), // Ghi chú — measurement_results.remark là `text`, KHÔNG `.max()` (xem docblock)
-  })),
-
-  // Legacy fields (backward compatible)
-  points: z.array(z.object({
-    code: z.string().max(50), // package_images.pointCode varchar(50)
-    name: z.string().max(255).optional(), // package_images.pointName varchar(255)
-    fileName: z.string().max(255), // package_images.fileName varchar(255)
-    result: z.enum(["OK", "NG", "NTF"]).optional(),
-    value: z.union([z.number(), z.string().max(100)]).optional(), // package_images.measurementValue varchar(100)
-    unit: z.string().max(50).optional(),
-  })).optional(),
-
-  // Summary (auto-calculated if not provided)
-  summary: z.object({
-    totalPoints: z.number(),
-    ok: z.number(),
-    ng: z.number(),
-    ntf: z.number().optional(),
-  }).optional(),
+export const metaJsonSchema = machineDataContractV2.extend({
+  images: z.array(imageRefSchema).optional(),
 });
 
+export type MetaJson = z.infer<typeof metaJsonSchema>;
+
 // ============================================================
-// Overall-result inference (Task 9 / PHẦN 2) — thuần, không I/O, test trực tiếp
-// được từ aoiPackageIngestHopNhat.test.ts.
+// BG-85 — bốn nhóm ĐẾM ĐƯỢC TỪ CÂY, dùng để đối chiếu với `summary` MÁY TỰ
+// KHAI (bất biến 3, §4 chuẩn gói ảnh) — KHÔNG dùng để quyết định verdict.
 // ============================================================
+type BonNhom = MachineDataContractV2["summary"];
+
+function demNhom(nodes: ReadonlyArray<{ rolledResult: ResultVerdict }>): BonNhom["surfaces"] {
+  let pass = 0, ng = 0, ntf = 0;
+  for (const n of nodes) {
+    if (n.rolledResult === "NG") ng++;
+    else if (n.rolledResult === "NTF") ntf++;
+    else pass++;
+  }
+  return { total: nodes.length, pass, ng, ntf };
+}
+
+function demNhomComponent(nodes: ReadonlyArray<ComponentDaDich>): BonNhom["components"] {
+  let pass = 0, ng = 0, ntf = 0;
+  for (const n of nodes) {
+    // Cờ `ntf` thắng — cùng ưu tiên `dichComponent` (ingestCayKetQua.ts) dùng
+    // để gán `ntfSource`: máy đánh dấu ntf ở lá là tín hiệu MẠNH hơn `result`.
+    if (n.ntf) ntf++;
+    else if (n.result === "NG") ng++;
+    else pass++;
+  }
+  return { total: nodes.length, pass, ng, ntf };
+}
+
 /**
- * Suy `overallResult` của một gói ZIP AOI, đối chiếu lời khai `meta.json` với
- * cuộn tính TỪ `summary`.
- *
- * Trước sửa (task-9-report.md PHẦN 2, lỗi 1), cả hai nơi dùng biểu thức
- * `metaData.overallResult || (summary?.ng > 0 ? "NG" : "OK")` — KHÔNG nhánh
- * nào trả "NTF". Bản vá đó thêm nhánh NTF nhưng vẫn để `explicitResult` THẮNG
- * VÔ ĐIỀU KIỆN — đúng hình dạng Đ-21 mà Pha 1C vừa đóng cho đường v2.0 bằng
- * `verdictXauHon`: gói khai `OK` với `summary.ng = 3` vẫn ghi `OK` (BG-42).
- * Sau Pha 1C, đường ZIP là đường DUY NHẤT còn để lời khai thắng — cùng sản
- * phẩm, hai đường ingest xử lý ngược nhau.
- *
- * Quy tắc mới: cuộn từ `summary` trước (có NG → NG; không NG mà có NTF →
- * NTF; không cả hai → OK), rồi lấy XẤU HƠN giữa cuộn đó và `explicitResult`
- * (nếu có khai) qua `verdictXauHon` — cùng hàm chung đường v2.0 đang dùng,
- * không viết bản chép tay thứ ba. `explicitResult` vẫn có tác dụng khi nó
- * XẤU HƠN cuộn (VD: máy khai NG nhưng summary rỗng ⇒ vẫn NG — máy biết thứ
- * nó không gửi lên), chỉ KHÔNG còn được phép làm NHẸ đi một cuộn tệ hơn.
+ * Đếm bốn nhóm (surfaces/positions/captures/components) THẬT SỰ có trong cây
+ * đã dịch — hàm THUẦN, không I/O. Dùng để đối chiếu với `metaData.summary`
+ * (lời khai của máy) — KHÔNG dùng để quyết định verdict (đó luôn là
+ * `cay.verdictLuuTru`, bất biến 3).
  */
-export function inferAoiOverallResult(input: {
-  explicitResult?: "OK" | "NG" | "NTF" | null;
-  ngCount?: number | null;
-  ntfCount?: number | null;
-}): "OK" | "NG" | "NTF" {
-  const cuonTuSummary: "OK" | "NG" | "NTF" =
-    (input.ngCount ?? 0) > 0 ? "NG" : (input.ntfCount ?? 0) > 0 ? "NTF" : "OK";
-  if (input.explicitResult) return verdictXauHon(input.explicitResult, cuonTuSummary);
-  return cuonTuSummary;
+export function demBonNhomTuCay(cay: CayDaDich): BonNhom {
+  const positions = cay.surfaces.flatMap((s) => s.positions);
+  const captures = positions.flatMap((p) => p.captures);
+  const components = captures.flatMap((c) => c.components);
+  return {
+    surfaces: demNhom(cay.surfaces),
+    positions: demNhom(positions),
+    captures: demNhom(captures),
+    components: demNhomComponent(components),
+  };
+}
+
+/**
+ * true = CÓ lệch giữa `summary` máy khai và số đếm THẬT từ cây, ở ÍT NHẤT một
+ * trong bốn nhóm/bốn chỉ số (total/pass/ng/ntf). Dùng để GẮN CỜ (log cảnh báo),
+ * KHÔNG dùng để từ chối gói — bất biến 3 chỉ đòi verdict KHÔNG được lấy từ
+ * `summary`, không đòi `summary` phải khớp tuyệt đối (máy có thể tính sai mà
+ * vẫn là một gói hợp lệ về mặt cấu trúc).
+ */
+export function coLechSummary(khai: BonNhom, tinhDuoc: BonNhom): boolean {
+  const nhom: Array<keyof BonNhom> = ["surfaces", "positions", "captures", "components"];
+  return nhom.some((n) => {
+    const a = khai[n];
+    const b = tinhDuoc[n];
+    return a.total !== b.total || a.pass !== b.pass || a.ng !== b.ng || a.ntf !== b.ntf;
+  });
 }
 
 /**
@@ -884,298 +792,170 @@ export const aoiPackageRouter = router({
             metaData = metaJsonSchema.parse(JSON.parse(metaContent));
           }
 
-          // ★★★ 2026-08-18 — MÃ TENANT SUY TỪ MÁY ĐÃ XÁC THỰC, KHÔNG LẤY TỪ `meta.json`.
-          // `meta.json` nằm TRONG chính tệp ZIP mà máy vừa tải lên — nó là lời tự khai ở dạng
-          // thuần khiết nhất. Hai chỗ ghi dưới đây dùng nó: bản ghi kiểm mới
-          // (`product_inspections`) và hàng gói (`inspection_packages`, bảng CÓ RLS
-          // `app_tenant_allows("factoryCode", NULL)` ⇒ `factoryCode` NULL = **mọi nhà máy đều
-          // thấy** sau mig 0327; đo được 160/160 gói trong CSDL test đang là NULL).
-          // Lời khai vẫn được NHẬN, nhưng chỉ để ĐỐI CHIẾU — lệch ⇒ `machine_tenant_claim_mismatch`.
-          const macTenantCommit = await macTenantChoGhi(machine, {
-            corporateCode: metaData?.companyCode,
-            factoryCode: metaData?.factoryCode ?? metaData?.factory,
-            workshopCode: metaData?.workshopCode,
-            lineCode: metaData?.lineCode ?? metaData?.line,
-          });
+          // BG-85 — `metaJsonSchema` GIỜ LÀ `machineDataContractV2` + `images[]`
+          // (xem docblock tại chỗ khai schema): `surfaces` bắt buộc ⇒ MỌI lượt
+          // `.parse()` thành công đều là hình dạng CÂY. Khẳng định tường minh
+          // bằng ĐÚNG vị từ đường trực tiếp v2.0 dùng — Bước 6 (đường di trú)
+          // cấm thêm vị từ thứ hai.
+          if (metaData && !laHinhDangCayV2(metaData)) {
+            throw new Error(
+              "BẤT THƯỜNG: metaJsonSchema.parse() thành công nhưng laHinhDangCayV2()===false " +
+                "— hợp đồng đã đổi hình dạng theo cách chỗ này chưa cập nhật kịp.",
+            );
+          }
 
-          // Count images in ZIP
+          // ★★★ 2026-08-18 — MÃ TENANT SUY TỪ MÁY ĐÃ XÁC THỰC, KHÔNG LẤY TỪ `meta.json`.
+          // BG-85: hợp đồng v2.0 KHÔNG mang companyCode/factoryCode/workshopCode/
+          // lineCode để đối chiếu (khác hợp đồng phẳng cũ đã xoá) — CÙNG
+          // `submitInspectionTreeV2` (đường trực tiếp, machineApiRouters.ts):
+          // `khai` luôn rỗng, không có lời tự khai nào để so.
+          const macTenantCommit = await macTenantChoGhi(machine, {});
+
+          // Count images in ZIP — đếm THEO Ổ ĐĨA (không đổi), độc lập với
+          // images[] khai trong meta.json.
           const imageFiles = Object.keys(zip.files).filter(
             (name) => name.startsWith("images/") && !name.endsWith("/")
           );
 
-          // Normalize measurements - support both measurements and points (backward compat)
-          const normalizedMeasurements = metaData?.measurements || metaData?.points || [];
-
-          // ★★★ BG-68 (Pha 1E Task 2 ⛔) — đếm NG/NTF THẬT từ measurements[].result,
-          // KHÔNG BAO GIỜ từ metaData.summary. `summary` là lời khai THỨ HAI của
-          // CHÍNH MÁY, trong CÙNG tệp meta.json, CÙNG ZIP — không phải dữ liệu độc
-          // lập. Trước bản vá này, cả `inferredOverall` (header board-mới) lẫn
-          // `finalOverallResult` (package row + hook WIP) suy verdict từ
-          // `metaData.summary?.ng`/`calculatedSummary.ng` (calculatedSummary ưu
-          // tiên `metaData.summary` khi có — xem dưới), nên `verdictXauHon(khai,
-          // khai)` chỉ so hai lời khai của MỘT nguồn với nhau: một máy khai NHẤT
-          // QUÁN SAI (`overallResult:"OK"` + `summary.ng:0` + `measurements[]` có
-          // `result:"NG"`) đi lọt hoàn toàn. Đúng lỗ mà `614245c0` vừa đóng cho
-          // đường v1.x (`machineApiRouters.ts`, cuộn từ `measurementResults` THẬT
-          // qua `rollupVerdict`) — vẫn mở nguyên ở cửa ZIP.
-          // Đếm này nuôi CẢ HAI nơi suy overallResult bên dưới (header board-mới
-          // ở khối `metaData?.serialNumber` VÀ `finalOverallResult`) — không còn
-          // nơi nào đọc `metaData.summary` để quyết định VERDICT. Phạm vi cố ý hẹp:
-          // `calculatedSummary` (totalPoints/ok/ng lưu vào `inspection_packages`
-          // để BÁO CÁO) giữ nguyên hành vi cũ — chỉ overallResult mới bắt buộc
-          // cuộn từ dữ liệu thật (BG-68 chỉ canh verdict, không mở rộng sang các
-          // cột đếm báo cáo).
-          //
-          // ★★★ Pha 1F Task 1 (BG-78 ⛔) — `!p.result ||` coi một điểm đo KHÔNG
-          // khai `result` là NTF. Nhưng `result` là `.optional()` ở CẢ HAI nhánh
-          // (`measurements[]`/`points[]`, metaJsonSchema :454/:466) và cột đích
-          // `package_images.result` NULLABLE (drizzle/schema/inspection.ts:513)
-          // ⇒ manifest ảnh không kèm phán quyết từng điểm là HÌNH DẠNG HỢP LỆ,
-          // KHÔNG phải "máy khai NTF". Trước bản vá: bo TỐT (mọi điểm đo đều
-          // thiếu `result`) bị hồ sơ hoá thành `overallResult=NTF` — vào hàng
-          // đợi xác nhận NTF như lỗi giả, ghi vào bảng WORM. Sau bản vá: chỉ
-          // đếm điểm ĐÃ KHAI `NTF`; điểm thiếu `result` KHÔNG sinh phán quyết
-          // nào (không rơi vào ok/ng/ntf) — chống-siết-ngược: điểm khai NTF
-          // THẬT vẫn được đếm bình thường.
-          const ngNtfThat = {
-            ng: normalizedMeasurements.filter((p) => p.result === "NG").length,
-            ntf: normalizedMeasurements.filter((p) => p.result === "NTF").length,
-          };
-
-          // ── P0-A data-integrity: resolve REAL measurement-point definition ids ──
-          // Resolve the product model (by code) so auto-provisioned point defs are
-          // anchored to it. Caches are shared across all inserts in this commit.
-          const resolvedProductModel = metaData?.productModel
-            ? await db.getProductModelByCode(metaData.productModel.trim())
-            : undefined;
-          const mpResolverProductCache: PointDefCache = new Map();
-          const mpResolverMachineCache: PointDefCache = new Map();
-          const resolvePointDefId = (rawCode: string | undefined) =>
-            resolveOrCreateMeasurementPointDefId(rawCode, {
-              productModelId: resolvedProductModel?.id,
-              machineId: machine.id,
-              productCache: mpResolverProductCache,
-              machineCache: mpResolverMachineCache,
-              autoCreate: true,
-            });
-
-          // W2-A / doc 35 D2 — spec gate. resolvePointDefId() warms the shared
-          // caches with the FULL point-def row (incl. limits/criteria), so after
-          // resolving the id we can read the def back to gate the stored result.
-          // Auto-provisioned defs carry no limits ⇒ pass-through (like canonical).
-          const pointLimitEvalOn = isPointLimitEvalEnabled();
-          const resolvePointDefRecord = (rawCode: string | undefined) => {
-            const normalized = (rawCode ?? "").trim();
-            if (!normalized) return null;
-            return (
-              mpResolverProductCache.get(normalized) ??
-              mpResolverMachineCache.get(normalized) ??
-              null
-            );
-          };
-          // Count points the spec gate downgraded OK→NG so the inspection's
-          // overallResult can be reconciled to NG after the inserts (mirrors the
-          // canonical serverDowngradeCount → reconcileInspectionOverallNG path).
-          let zipDowngradeCount = 0;
-
-          // ── P1-A (doc 38 R-2b): pre-resolve point-def ids ONCE, outside tx ──
-          // Each measurement-insert branch below used to call
-          // `await resolvePointDefId(code)` per row (a DB round-trip + possible
-          // auto-create INSIDE the write loop). Resolve every image-bearing
-          // measurement ONCE here, keyed by its ABSOLUTE index (the same index
-          // the branches use for the `Point_N` fallback code). Point-def
-          // auto-creation is idempotent master-data and intentionally stays
-          // OUTSIDE the atomic result-write transaction. The spec-gate EVAL is
-          // kept inline per branch so OK→NG is only counted for rows that are
-          // actually (re)written with a result (the imageUrl-only UPDATE path is
-          // NOT gated — unchanged behavior).
-          const pointsWithImages = normalizedMeasurements.filter((point) => point.fileName);
-          const resolvedPoints: Array<{
-            pointCode: string;
-            pointName: string;
-            pointDefId: number;
-            gateDef: any | null;
-            measuredVal: any;
-            measuredStr: string | null;
-            isNumeric: boolean;
-          }> = [];
-          for (let k = 0; k < pointsWithImages.length; k++) {
-            const point = pointsWithImages[k] as any;
-            const pointCode = point.pointId || point.pointCode || point.code || `Point_${k + 1}`;
-            const pointName = point.name || pointCode;
-            const measuredVal =
-              point.measuredValue !== undefined ? point.measuredValue : point.value;
-            const measuredStr =
-              measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
-            const isNumeric =
-              measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== "";
-            const pointDefId = await resolvePointDefId(pointCode);
-            assertValidPointDefId(
-              pointDefId,
-              `AOI commit (pkg=${pkg.packageId}, point=${pointCode})`,
-            );
-            const gateDef = pointLimitEvalOn ? resolvePointDefRecord(pointCode) : null;
-            resolvedPoints.push({ pointCode, pointName, pointDefId, gateDef, measuredVal, measuredStr, isNumeric });
-          }
-
-          // Outer-scope values needed AFTER persistInspectionAtomic / the tx below
-          // (logging/hooks/return).
+          // Outer-scope values needed AFTER the tree branch (logging/hooks/return).
           let linkedInspectionId: number | undefined;
           let createdInspection = false;
           let finalOverallResult: "OK" | "NG" | "NTF" = "OK";
+          let cay: CayDaDich | null = null;
+          let lechSummary = false;
+          // Cột báo cáo (`inspection_packages.totalPoints/okCount/ngCount`) —
+          // đếm CAPTURES (cấp gần nhất với "một điểm kiểm tra có ảnh") từ CÂY
+          // đã dịch — KHÔNG từ `summary` khai (bất biến 3). Không có `metaData`
+          // (thiếu meta.json trong ZIP) ⇒ fallback đúng số ảnh vật lý đếm được.
+          let demTuCayBaoCao = { total: imageFiles.length, ok: 0, ng: 0 };
+          let resolvedProductModel: Awaited<ReturnType<typeof db.getProductModelByCode>> | undefined;
+          // captureId → capture ĐÃ DỊCH (rolledResult…) — dùng để chọn ảnh đại
+          // diện cho inline AI gate (thay `normalizedMeasurements` cũ). Chỉ có
+          // giá trị SAU khi `dichCayKetQua` chạy (dưới đây) — invariant 1 dùng
+          // MỘT Set riêng, xây từ payload THÔ, không phụ thuộc bước dịch.
+          const capturesTrongCay = new Map<string, CaptureDaDich>();
 
-          // Fix timezone: shift to "fake UTC" so Drizzle stores local time in
-          // timestamp without time zone. Tính MỘT LẦN — dùng lại cho cả header
-          // (board mới) lẫn measurement rows (board mới VÀ board tái dùng). An
-          // toàn khi `metaData` null: `pointsWithImages` rỗng nên `buildRecord`
-          // dưới đây không bao giờ thực sự chạy.
-          const rawInspTime = metaData?.inspectionTime
-            ? new Date(metaData.inspectionTime)
-            : metaData?.startedAt
-            ? new Date(metaData.startedAt)
-            : new Date();
-          const inspectionTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
+          if (metaData) {
+            resolvedProductModel = metaData.productModel
+              ? await db.getProductModelByCode(metaData.productModel.trim())
+              : undefined;
 
-          // Build one measurement_results row from a pre-resolved point
-          // (pointDefId/gateDef resolved OUTSIDE any transaction above). The
-          // spec-gate EVAL runs here so `zipDowngradeCount` is only bumped for
-          // rows we actually (re)write with a result. Dùng chung cho CẢ đường
-          // board-mới (persistInspectionAtomic bên dưới) LẪN đường tái dùng
-          // (trong transaction cuối) — `linkedInspectionId` được đọc tại THỜI
-          // ĐIỂM GỌI qua closure nên mỗi đường thấy đúng giá trị nó vừa đặt.
-          const buildRecord = (absIdx: number, point: any) => {
-            const rp = resolvedPoints[absIdx];
-            // ★★★ Pha 1F Task 5 (BG-82 ⛔, review lượt 7 C-1) — `result` là
-            // `.optional()` ở payload nhưng cột `measurement_results.result` là
-            // NOT NULL, nên một lá KHÔNG khai `result` vẫn buộc phải ghi
-            // "NTF" (dòng `effectiveResult` dưới). Từ đây trở đi, cột `result`
-            // KHÔNG còn phân biệt được "máy khai NTF thật" với "máy không
-            // khai gì cả" — cả hai đều đọc ra "NTF". Ghi lại sự thật đó TRƯỚC
-            // khi ép mặc định, vào hai cột PHỤ đã có sẵn từ Pha 1A/1B
-            // (`ntf`/`ntfSource`, cùng quy ước với `ingestCayKetQua.ts:170`):
-            //   ntfSource = NULL      → máy KHÔNG khai phán quyết cho lá này
-            //                            (kể cả khi cột `result` buộc mang "NTF").
-            //   ntfSource = "machine" → máy khai NTF THẬT.
-            // `correctResult` (inspectionRouters.ts) đọc đúng cột này để không
-            // còn tính các lá "bị ép NTF" vào header khi một điểm KHÁC được
-            // sửa — gốc rễ của BG-82 (thao tác chất lượng bình thường làm hồ
-            // sơ xấu đi, ghi vào bảng WORM).
-            const coKhaiPhanQuyet = point.result === "OK" || point.result === "NG" || point.result === "NTF";
-            let effectiveResult = (point.result || "NTF") as "OK" | "NG" | "NTF";
-            let specGateRemark: string | undefined;
-            if (rp.gateDef) {
-              const evalRes = evaluatePointResult(rp.gateDef as any, { measuredValue: rp.measuredVal as any }, effectiveResult);
-              effectiveResult = evalRes.result;
-              if (evalRes.overridden) {
-                zipDowngradeCount++;
-                specGateRemark = `Spec gate: ${evalRes.violations.join("; ")}`.slice(0, 480);
+            const capIdsTrongCayTho = new Set<string>();
+            for (const s of metaData.surfaces) {
+              for (const p of s.positions) {
+                for (const c of p.captures) capIdsTrongCayTho.add(c.captureId);
               }
             }
-            return {
-              inspectionId: linkedInspectionId!,
-              pointDefId: rp.pointDefId,
-              measuredValue: rp.isNumeric ? rp.measuredStr : null,
-              measuredValueText: rp.measuredStr,
-              result: effectiveResult,
-              // BG-82: xem chú thích `coKhaiPhanQuyet` ở trên — dùng `point.result`
-              // GỐC (trước ép mặc định), spec gate chỉ hạ OK→NG, không bao giờ
-              // tạo ra NTF nên không ảnh hưởng tín hiệu nguồn NTF ở đây.
-              ntf: coKhaiPhanQuyet ? point.result === "NTF" : null,
-              ntfSource: coKhaiPhanQuyet && point.result === "NTF" ? "machine" : null,
-              imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
-              remark: specGateRemark ?? (point.remark || `${rp.pointName}${rp.measuredVal !== undefined ? ` (${rp.measuredVal}${point.unit || ''})` : ''}`),
-              createdAt: inspectionTime,
-            };
-          };
+            const images = metaData.images ?? [];
 
-          // ── Task 9 (PHẦN 1) — header + measurements của một board MỚI đi qua
-          // `persistInspectionAtomic`, KHÔNG còn tự INSERT thẳng vào bảng
-          // `productInspections` qua `tx`. Lối (a) (xem task-9-report.md): gọi TRƯỚC khi mở transaction
-          // ở dưới, vì `persistInspectionAtomic` tự mở `db.transaction()` CỦA
-          // RIÊNG NÓ trên một kết nối khác — gọi nó BÊN TRONG một transaction khác
-          // sẽ không khiến nó tham gia transaction đó, nên rollback ngoài sẽ
-          // KHÔNG hoàn tác nó. Đánh đổi: mất tính nguyên tử giữa (header+
-          // measurements) và (package_images+trạng thái gói) — nhưng ĐƯỢC sổ
-          // idempotency claim-first của nó, nên một lần retry của CÙNG
-          // `pkg.packageId` hội tụ về đúng MỘT inspection thay vì tự chép lại
-          // giao thức claim (điều task này sinh ra để xoá).
-          if (metaData?.serialNumber) {
-            // Try to find existing inspection (đọc trước khi ghi — một lượt commit
-            // ĐỒNG THỜI thật của CÙNG package vẫn bị chặn ở dưới bởi chính sổ
-            // idempotency claim-first của `persistInspectionAtomic`, không phải bởi
-            // SELECT này).
-            const inspections = await database
-              .select()
-              .from(productInspections)
-              .where(
-                and(
-                  eq(productInspections.machineId, machine.id),
-                  eq(productInspections.serialNumber, metaData.serialNumber)
-                )
-              )
-              .orderBy(desc(productInspections.createdAt))
-              .limit(1);
-
-            if (inspections.length > 0) {
-              linkedInspectionId = inspections[0].id;
-            } else {
-              // ── NEW inspection: reserve the surrogate id FIRST (mirrors the
-              // machineApiRouters PA-A path) so the measurement rows below can
-              // carry it, then persist header+measurements ATOMICALLY in ONE call.
-              const reservedId = await db.reserveInspectionId();
-              linkedInspectionId = reservedId;
-
-              const newMeasurementRows: InsertMeasurementResult[] = [];
-              for (let idx = 0; idx < pointsWithImages.length; idx++) {
-                newMeasurementRows.push(buildRecord(idx, pointsWithImages[idx] as any));
+            // ★★★ BG-85/BG-86 Bước 4, bất biến 1 — mọi `images[].captureId`
+            // PHẢI tồn tại trong cây. Không tồn tại ⇒ TỪ CHỐI CẢ GÓI — không
+            // âm thầm bỏ ảnh (đây LÀ lý do bất biến này tồn tại: một ảnh không
+            // join được là dấu hiệu payload hỏng, không phải "ảnh thừa vô hại").
+            // `appError("BAD_REQUEST", ...)` ⇒ TRPCError code nằm trong
+            // `PERMANENT_TRPC_CODES` (inspectionStoreForward.ts) ⇒
+            // `laLoiVinhVienDemVaoNguongDeadZip` xếp VĨNH VIỄN (đúng: thử lại
+            // NGUYÊN VĂN cùng ZIP sẽ luôn lệch y hệt — khác lớp lỗi BG-73/hình
+            // dạng cũ, nơi một SCHEMA rộng hơn ở server có thể tự cứu gói).
+            for (const img of images) {
+              if (!capIdsTrongCayTho.has(img.captureId)) {
+                throw appError(
+                  "BAD_REQUEST",
+                  "INVALID_VALUE",
+                  { field: "images[].captureId" },
+                  `TỪ CHỐI gói: images[].captureId="${img.captureId}" (fileName="${img.fileName}") không ` +
+                    `tồn tại trong cây surfaces[].positions[].captures[] — ảnh không nối được vào bo, ` +
+                    `KHÔNG âm thầm bỏ ảnh (bất biến 1, §4 chuẩn gói ảnh).`,
+                );
               }
+            }
+            // Bất biến 2 — mọi `images[].fileName` PHẢI có tệp thật trong
+            // `images/` của ZIP. Thiếu ⇒ từ chối, cùng lý do phân loại VĨNH VIỄN
+            // ở trên. (Fallback tên trần `zip.file(fileName)` ở đường ĐỌC ảnh
+            // — `getOrExtractImage` — KHÔNG bị đụng ở đây, đó là Task 2/BG-87.)
+            for (const img of images) {
+              if (!zip.file(`images/${img.fileName}`)) {
+                throw appError(
+                  "BAD_REQUEST",
+                  "INVALID_VALUE",
+                  { field: "images[].fileName" },
+                  `TỪ CHỐI gói: images[].fileName="${img.fileName}" không có tệp thật trong images/ của ` +
+                    `ZIP (bất biến 2, §4 chuẩn gói ảnh).`,
+                );
+              }
+            }
 
-              // Determine overall result — xem inferAoiOverallResult (PHẦN 2, lỗi 1)
-              // + BG-68 (ngNtfThat, đếm THẬT từ measurements[].result — KHÔNG còn
-              // đọc metaData.summary để suy verdict, xem docblock tại chỗ khai báo).
-              const inferredOverall = inferAoiOverallResult({
-                explicitResult: metaData.overallResult ?? null,
-                ngCount: ngNtfThat.ng,
-                ntfCount: ngNtfThat.ntf,
-              });
+            // ── dịch cây + verdict — bất biến 3: verdict LUÔN cuộn từ CÂY,
+            // `summary` (metaData.summary) chỉ đối chiếu + gắn cờ lệch dưới
+            // đây, KHÔNG BAO GIỜ là nguồn quyết định overallResult. DÙNG THẲNG
+            // `dichCayKetQua` — CÙNG bộ dịch đường trực tiếp v2.0 dùng, không
+            // viết bản chép tay thứ hai của luật cuộn (đúng lý do BG-85 tồn tại).
+            cay = dichCayKetQua(metaData);
+            for (const s of cay.surfaces) {
+              for (const p of s.positions) {
+                for (const c of p.captures) capturesTrongCay.set(c.captureId, c);
+              }
+            }
+            finalOverallResult = cay.verdictLuuTru;
+            const demDuocTuCay = demBonNhomTuCay(cay);
+            lechSummary = coLechSummary(metaData.summary, demDuocTuCay);
+            demTuCayBaoCao = {
+              total: demDuocTuCay.captures.total,
+              ok: demDuocTuCay.captures.pass,
+              ng: demDuocTuCay.captures.ng,
+            };
 
+            // ── Ghi header + cây, CÙNG một transaction vật lý qua
+            // `persistInspectionAtomic({..., cay})` — mirror ĐÚNG
+            // `submitInspectionTreeV2` (đường trực tiếp): KHÔNG ghi
+            // `measurement_results` cấp component (Đ-19, chưa nối — xem "mối
+            // lo" báo cáo BG-85), KHÔNG tự tìm "inspection đã có cho serial
+            // này" (khác đường FLAT cũ) — mỗi packageId hội tụ về ĐÚNG MỘT
+            // inspection qua sổ idempotency `aoi-pkg:${pkg.packageId}`, một
+            // packageId KHÁC (VD gói mặt-dưới của cùng board) luôn tạo header
+            // MỚI thay vì gộp vào serial trùng — phạm vi HẸP HƠN đường FLAT cũ,
+            // khai rõ trong báo cáo, không âm thầm bỏ qua.
+            if (metaData.serialNumber) {
+              const rawInspTime = metaData.completedAt
+                ? new Date(metaData.completedAt)
+                : metaData.startedAt
+                ? new Date(metaData.startedAt)
+                : new Date();
+              const inspectionTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
+
+              const reservedId = await db.reserveInspectionId();
+              const insertOutcome: { duplicate: boolean } = { duplicate: false };
               const newInspectionData: InsertProductInspection & { id: number } = {
                 id: reservedId,
                 machineId: machine.id,
                 serialNumber: metaData.serialNumber,
-                productModel: metaData.productModel || null,
-                batchNumber: metaData.batchNumber || null,
-
-                // Enterprise hierarchy — SUY TỪ MÁY (xem `macTenantCommit` ở trên).
-                // ⚠ `stageCode` KHÔNG suy được (không phải nút phân cấp) ⇒ nguyên văn lời khai.
+                productModelId: resolvedProductModel?.id,
+                productModel: resolvedProductModel?.code || metaData.productModel?.trim() || null,
+                // Cột `originalResultEnum` chỉ nhận OK/NG — payload v2.0 TỰ giới
+                // hạn `overallResult` ở OK/NG (không NTF ở cấp khai máy) nên ghi
+                // THẲNG lời khai gốc, KHÔNG cần `toOriginalResult` (mirror
+                // `submitInspectionTreeV2`, không chép một công thức thứ ba).
+                originalResult: metaData.overallResult,
+                overallResult: finalOverallResult,
                 corporateCode: macTenantCommit.corporateCode ?? null,
                 factoryCode: macTenantCommit.factoryCode ?? null,
                 workshopCode: macTenantCommit.workshopCode ?? null,
                 lineCode: macTenantCommit.lineCode ?? null,
-                stageCode: metaData.stageCode || null,
-
-                // Production context
-                productionOrderCode: metaData.productionOrderCode || null,
-                operatorId: metaData.operatorId || null,
-
-                overallResult: inferredOverall,
-                // PHẦN 2 lỗi 2: originalResultEnum chỉ nhận OK/NG — NTF suy từ
-                // overall phải hạ về NG (cái máy báo TRƯỚC khi người xác nhận NTF).
-                originalResult: toOriginalResult(inferredOverall),
-                inspectionTime: inspectionTime,
-                cycleTime: metaData.cycleTime ? String(metaData.cycleTime) : null,
+                inspectionTime,
+                ntfSource: cay.ntfSource ?? undefined,
+                machineProductIndex: metaData.machineProductIndex ?? undefined,
+                summaryCounts: metaData.summary,
                 createdAt: inspectionTime,
                 updatedAt: inspectionTime,
-                // Sổ idempotency (doc 51 P1) tái dùng nguyên giao thức — packageId
-                // là UNIQUE (drizzle/schema/inspection.ts:364) ⇒ khoá ổn định qua
-                // mọi lần retry của CÙNG một gói.
+                // Sổ idempotency (doc 51 P1) — packageId UNIQUE ⇒ khoá ổn định
+                // qua mọi lần retry của CÙNG một gói.
                 idempotencyKey: `aoi-pkg:${pkg.packageId}`,
               };
 
               const persisted = await db.persistInspectionAtomic(
                 newInspectionData,
-                newMeasurementRows,
-                { promoteOverallToNg: zipDowngradeCount > 0 },
+                [],
+                { cay, outcome: insertOutcome },
               );
               linkedInspectionId = persisted.id;
               createdInspection = !persisted.duplicate;
@@ -1184,163 +964,42 @@ export const aoiPackageRouter = router({
                   `[AOI commit] persistInspectionAtomic reported duplicate for package ` +
                     `${pkg.packageId} (idempotency key hit) → existing inspectionId=${persisted.id}`,
                 );
-                // Measurements vừa build KHÔNG được ghi (persistInspectionAtomic bỏ
-                // qua chúng khi duplicate) — nhánh tái dùng bên dưới tự đếm lại từ
-                // đầu trên các record ĐÃ tồn tại, nên đếm của lượt này không được
-                // rò sang đó.
-                zipDowngradeCount = 0;
               }
             }
           }
 
-          // Calculate summary from measurements if not provided — CHỈ dùng cho
-          // các cột BÁO CÁO (totalPoints/okCount/ngCount lưu vào
-          // `inspection_packages`, xem :~1140 dưới). KHÔNG dùng cho verdict —
-          // BG-68 tách hẳn hai việc: đếm này vẫn được phép ưu tiên lời khai
-          // `metaData.summary` (phạm vi cố ý hẹp, xem docblock `ngNtfThat`), còn
-          // verdict luôn cuộn từ `ngNtfThat` (đo thật) ở dưới.
-          //
-          // ★★★ Pha 1F Task 1 (BG-78 ⛔) — CÙNG biểu thức sai với `ngNtfThat`
-          // (xem docblock ở đó, `!p.result || p.result === 'NTF'`) từng sống ở
-          // đây TRƯỚC cả Pha 1E. `.ntf` không được ghi vào cột DB nào hiện tại
-          // (chỉ `totalPoints`/`ok`/`ng` được đọc xuống `inspection_packages`
-          // ở :~1220) nhưng sửa CÙNG lúc để hai nơi đếm NTF trong file này
-          // không còn LỆCH CÔNG THỨC — tránh việc sau này một task khác (BG-76,
-          // hợp nhất hai chỗ) vô tình CHÉP LẠI biểu thức sai từ đây.
-          const calculatedSummary = metaData?.summary || {
-            totalPoints: normalizedMeasurements.length,
-            ok: normalizedMeasurements.filter(p => p.result === 'OK').length,
-            ng: normalizedMeasurements.filter(p => p.result === 'NG').length,
-            ntf: normalizedMeasurements.filter(p => p.result === 'NTF').length,
-          };
-
-          // Determine overall result (assigns the outer-scope var used by the
-          // post-commit WIP hook below). Cùng hàm thuần với header — BG-68: dùng
-          // `ngNtfThat` (đếm THẬT từ measurements[].result, tính MỘT LẦN ở trên)
-          // thay vì `calculatedSummary.ng/ntf` — biểu thức cũ đọc lại đúng lời
-          // khai `metaData.summary` khi máy CÓ gửi summary (dù summary đó nhất
-          // quán SAI với measurements[]), để lọt đúng lỗ BG-68 mô tả.
-          finalOverallResult = inferAoiOverallResult({
-            explicitResult: metaData?.overallResult ?? null,
-            ngCount: ngNtfThat.ng,
-            ntfCount: ngNtfThat.ntf,
-          });
-
-          // ── Phần ghi còn lại, VẪN MỘT transaction: package images + (CHỈ đường
-          // tái dùng) đồng bộ measurement/thăng hạng spec-gate + trạng thái
-          // gói→committed. Header+measurements của board MỚI đã commit nguyên tử
-          // ở TRÊN qua persistInspectionAtomic.
-          await database.transaction(async (tx) => {
-            // Insert package image records
-            if (normalizedMeasurements.length > 0) {
-              const imageRecords = normalizedMeasurements.map((point: any) => ({
-                packageId: pkg.id,
-                pointCode: point.pointId || point.pointCode || point.code || 'UNKNOWN',
-                pointName: point.name || null,
-                fileName: point.fileName,
-                result: point.result as "OK" | "NG" | "NTF" | undefined,
-                measurementValue: (point.measuredValue || point.value)?.toString() || null,
-              }));
-
-              if (imageRecords.length > 0) {
-                await tx.insert(packageImages).values(imageRecords);
-              }
-            }
-
-            // Create or update measurement results with image URLs pointing to AOI
-            // package images — CHỈ cho đường TÁI DÙNG (một inspection đã có sẵn,
-            // tìm thấy ở SELECT trên HOẶC được persistInspectionAtomic báo là
-            // duplicate). Đường board-MỚI đã ghi measurements nguyên tử cùng header
-            // qua persistInspectionAtomic rồi.
-            if (!createdInspection && linkedInspectionId && pointsWithImages.length > 0) {
-              const existingRecords = await tx
-                .select({ id: measurementResults.id, remark: measurementResults.remark })
-                .from(measurementResults)
-                .where(eq(measurementResults.inspectionId, linkedInspectionId))
-                .orderBy(measurementResults.id);
-
-              if (existingRecords.length > 0) {
-                // Batch UPDATE existing rows' imageUrl by index order (was one
-                // UPDATE per row): pair id↔url via a VALUES list so it runs as
-                // a SINGLE statement (each id/url is a bound scalar param).
-                const updateCount = Math.min(existingRecords.length, pointsWithImages.length);
-                if (updateCount > 0) {
-                  const pairs = [];
-                  for (let i = 0; i < updateCount; i++) {
-                    const url = `/api/aoi/image/${pkg.packageId}/${pointsWithImages[i].fileName}`;
-                    pairs.push(sql`(${existingRecords[i].id}::int, ${url}::text)`);
-                  }
-                  await tx.execute(sql`
-                    UPDATE ${measurementResults} AS mr
-                    SET "imageUrl" = data.image_url
-                    FROM (VALUES ${sql.join(pairs, sql`, `)}) AS data(id, image_url)
-                    WHERE mr.id = data.id
-                  `);
-                }
-
-                // Insert any extra AOI measurements beyond existing count
-                if (pointsWithImages.length > existingRecords.length) {
-                  const extraRecords = [];
-                  for (let realIdx = existingRecords.length; realIdx < pointsWithImages.length; realIdx++) {
-                    extraRecords.push(buildRecord(realIdx, pointsWithImages[realIdx] as any));
-                  }
-                  await tx.insert(measurementResults).values(extraRecords);
-                }
-              } else {
-                // Existing inspection but no measurement records yet — insert all
-                const measurementRecords = [];
-                for (let idx = 0; idx < pointsWithImages.length; idx++) {
-                  measurementRecords.push(buildRecord(idx, pointsWithImages[idx] as any));
-                }
-                await tx.insert(measurementResults).values(measurementRecords);
-              }
-
-              // W2-A / doc 35 D2 — spec-gate overall-NG promotion cho đường TÁI
-              // DÙNG (giống reconcileInspectionOverallNG: chỉ lật header đang OK
-              // sang NG; idempotent). Thăng hạng của đường board-MỚI đã chạy BÊN
-              // TRONG persistInspectionAtomic (`promoteOverallToNg`) rồi.
-              if (zipDowngradeCount > 0) {
-                await tx
-                  .update(productInspections)
-                  .set({ overallResult: "NG", updatedAt: new Date() })
-                  .where(and(
-                    eq(productInspections.id, linkedInspectionId),
-                    eq(productInspections.overallResult, "OK"),
-                  ));
-                console.warn(`[AOI commit] spec-gate downgraded ${zipDowngradeCount} point(s) → inspection ${linkedInspectionId} overall promoted to NG`);
-              }
-            }
-
-            // Update package record → committed (atomic with the writes above)
-            await tx
-              .update(inspectionPackages)
-              .set({
-                status: "committed",
-                inspectionId: linkedInspectionId || null,
-                serialNumber: metaData?.serialNumber || null,
-                productModel: metaData?.productModel || null,
-                // ⚠ `inspection_packages` là bảng CÓ RLS (`app_tenant_allows("factoryCode", NULL)`):
-                // một `factoryCode` NULL ở đây nghĩa là gói ảnh này hiện ra với MỌI nhà máy sau
-                // mig 0327. Nên nó suy từ máy, không lấy từ `meta.json` — xem `macTenantCommit`.
-                factoryCode: macTenantCommit.factoryCode ?? null,
-                lineCode: macTenantCommit.lineCode ?? null,
-                overallResult: finalOverallResult,
-                totalPoints: calculatedSummary.totalPoints,
-                okCount: calculatedSummary.ok,
-                ngCount: calculatedSummary.ng,
-                imageCount: imageFiles.length,
-                inspectionTime: metaData?.inspectionTime
-                  ? new Date(metaData.inspectionTime)
-                  : metaData?.startedAt
-                  ? new Date(metaData.startedAt)
-                  : null,
-                metaJson: metaData as any,
-                committedAt: new Date(),
-                uploadedAt: new Date(),
-                updatedAt: new Date(),
-              })
-              .where(eq(inspectionPackages.id, pkg.id));
-          });
+          // Update package record → committed. KHÔNG còn insert `package_images`
+          // ở nhánh cây (mối lo, xem báo cáo BG-85: `pointCode` varchar(50) <
+          // `captureId` cho phép tới 64 ký tự — ghi có nguy cơ cắt cụt âm thầm,
+          // ngoài phạm vi bốn mệnh đề của task này).
+          await database
+            .update(inspectionPackages)
+            .set({
+              status: "committed",
+              inspectionId: linkedInspectionId || null,
+              serialNumber: metaData?.serialNumber || null,
+              productModel: metaData?.productModel || null,
+              // ⚠ `inspection_packages` là bảng CÓ RLS (`app_tenant_allows("factoryCode", NULL)`):
+              // một `factoryCode` NULL ở đây nghĩa là gói ảnh này hiện ra với MỌI nhà máy sau
+              // mig 0327. Nên nó suy từ máy, không lấy từ `meta.json` — xem `macTenantCommit`.
+              factoryCode: macTenantCommit.factoryCode ?? null,
+              lineCode: macTenantCommit.lineCode ?? null,
+              overallResult: finalOverallResult,
+              totalPoints: demTuCayBaoCao.total,
+              okCount: demTuCayBaoCao.ok,
+              ngCount: demTuCayBaoCao.ng,
+              imageCount: imageFiles.length,
+              inspectionTime: metaData?.completedAt
+                ? new Date(metaData.completedAt)
+                : metaData?.startedAt
+                ? new Date(metaData.startedAt)
+                : null,
+              metaJson: metaData as any,
+              committedAt: new Date(),
+              uploadedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(inspectionPackages.id, pkg.id));
 
           // Log: commit_success
           const commitDuration = Date.now() - commitStartTime;
@@ -1349,16 +1008,22 @@ export const aoiPackageRouter = router({
             packageId: pkg.packageId,
             machineId: machine.id,
             event: "commit_success",
-            message: `Package committed successfully — ${imageFiles.length} images, ${metaData?.summary?.totalPoints || imageFiles.length} points${createdInspection ? ', inspection created' : ', linked to existing inspection'}`,
+            message: `Package committed successfully — ${imageFiles.length} images, ${demTuCayBaoCao.total} captures${createdInspection ? ', inspection created' : linkedInspectionId ? ', duplicate (idempotent retry)' : ', no serialNumber (no inspection linked)'}`,
             source: "agent",
             durationMs: commitDuration,
-            detail: `Serial: ${metaData?.serialNumber || 'N/A'}, Model: ${metaData?.productModel || 'N/A'}, Result: ${metaData?.summary?.ng && metaData.summary.ng > 0 ? 'NG' : 'OK'}, Inspection ID: ${linkedInspectionId || 'none'}${createdInspection ? ' (NEW)' : ' (EXISTING)'}`,
+            detail: `Serial: ${metaData?.serialNumber || 'N/A'}, Model: ${metaData?.productModel || 'N/A'}, Result: ${finalOverallResult}, Inspection ID: ${linkedInspectionId || 'none'}${createdInspection ? ' (NEW)' : ''}`,
             metadata: {
               imageCount: imageFiles.length,
               serialNumber: metaData?.serialNumber,
-              overallResult: metaData?.summary?.ng && metaData.summary.ng > 0 ? 'NG' : 'OK',
+              overallResult: finalOverallResult,
               linkedInspectionId,
               createdInspection,
+              // BG-85 bất biến 3 — verdict LUÔN cuộn từ cây; hai trường dưới đây
+              // CHỈ là cờ đối chiếu/quan sát, KHÔNG hề ảnh hưởng verdict đã ghi
+              // ở trên — đo được bằng SELECT trên chính cột này.
+              verdictSource: "tree" as const,
+              treeDeclaredMismatch: cay?.declaredMismatch ?? null,
+              summaryDeclaredMismatch: lechSummary,
             },
           });
 
@@ -1408,13 +1073,15 @@ export const aoiPackageRouter = router({
               ingestInspectionToWip({
                 inspectionId: linkedInspectionId,
                 serialNumber: metaData.serialNumber,
-                lotNumber: metaData.batchNumber ?? null,
+                // BG-85: hợp đồng v2.0 không mang batchNumber/cycleTime (trường
+                // riêng của hợp đồng phẳng cũ, đã xoá) — không có gì để suy.
+                lotNumber: null,
                 overallResult: finalOverallResult,
                 machineId: machine.id,
                 stationId: machine.stationId ?? null,
                 productModelId: resolvedProductModel?.id ?? null,
                 productCode: metaData.productModel ?? null,
-                cycleTimeSec: metaData.cycleTime ?? null,
+                cycleTimeSec: null,
               }).catch((e2) => {
                 console.error("[wipIngest] post-commit ingest failed:", (e2 as any)?.message ?? e2);
               });
@@ -1426,16 +1093,18 @@ export const aoiPackageRouter = router({
           // V1/V5/V18 (doc 27 Đợt 7.1 — W7-A): INLINE AI quality gate on the
           // package ingest path. Flag-gated (AI_INLINE_GATE_ENABLED, default
           // OFF) fire-and-forget via setImmediate — the commit ACK is never
-          // delayed. Gate image = the first NG measurement's file from the
-          // already-loaded ZIP (else the first with a file), extracted lazily
-          // INSIDE the hook. Per-machine/product enablement, the AI-down
-          // circuit breaker and the NEEDS_REVIEW fallback live inside
-          // runInlineQualityGate (same write shape as the on-demand UI path).
+          // delayed. BG-85: gate image chọn qua `images[]`/`captureId` (thay
+          // `normalizedMeasurements` cũ) — ưu tiên ảnh của capture NG, không
+          // có thì lấy ảnh ĐẦU TIÊN, extracted lazily INSIDE the hook.
+          // Per-machine/product enablement, the AI-down circuit breaker and the
+          // NEEDS_REVIEW fallback live inside runInlineQualityGate (same write
+          // shape as the on-demand UI path).
           try {
             const inlineGateOn = (process.env.AI_INLINE_GATE_ENABLED ?? "false").toLowerCase() === "true";
-            if (inlineGateOn && linkedInspectionId) {
-              const withFile = normalizedMeasurements.filter((p) => p.fileName);
-              const gatePoint = withFile.find((p) => p.result === "NG") ?? withFile[0];
+            if (inlineGateOn && linkedInspectionId && metaData) {
+              const anhTrongMeta = metaData.images ?? [];
+              const anhNg = anhTrongMeta.find((img) => capturesTrongCay.get(img.captureId)?.rolledResult === "NG");
+              const gatePoint = anhNg ?? anhTrongMeta[0];
               const gateFileName = gatePoint?.fileName;
               if (gateFileName) {
                 const gateInspectionId = linkedInspectionId;
@@ -1475,7 +1144,7 @@ export const aoiPackageRouter = router({
             packageId: pkg.packageId,
             inspectionId: linkedInspectionId,
             imageCount: imageFiles.length,
-            totalPoints: metaData?.summary?.totalPoints || imageFiles.length,
+            totalPoints: demTuCayBaoCao.total,
           };
         } catch (err: any) {
           // Log: commit_fail

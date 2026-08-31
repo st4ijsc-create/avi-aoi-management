@@ -112,8 +112,11 @@ describe("★★★ §2 — CHỐNG TỰ THOẢ: dân số trường thời gian
     expect(dem).toEqual({
       // machineDataContractV2: startedAt/completedAt ở CẢ BỐN cấp (gốc, position, capture, component) = 8
       machineDataContractV2: 8,
-      // metaJsonSchema: startedAt, finishedAt, inspectionTime = 3
-      metaJsonSchema: 3,
+      // BG-85 — metaJsonSchema = machineDataContractV2.extend({images}) — images[]
+      // KHÔNG có trường thời gian nào (captureId/fileName/captureName/sha256) ⇒
+      // CÙNG 8 trường thời gian của machineDataContractV2, không còn 3 trường
+      // startedAt/finishedAt/inspectionTime riêng của hợp đồng phẳng cũ (đã xoá).
+      metaJsonSchema: 8,
       // submitInspectionCoreObject: inspectionTime, serverReceivedAt = 2
       submitInspectionCoreObject: 2,
       // submitProcessResultCoreObject: ts, serverReceivedAt = 2
@@ -244,18 +247,19 @@ describe("★★★ §4 — ĐỘT BIẾN BẮT BUỘC: THÊM một trường th
     expect(r.soTruongThoiGian).toBe(truongThoiGianThat(machineDataContractV2).length); // KHÔNG tăng — trường mới bị bỏ qua đúng như thiết kế
   });
 
-  it("trường thời gian MỚI lồng SÂU trong mảng ('measurements[].checkedAt') cũng bị bắt — walker đệ quy đúng qua ZodArray lồng nhau", () => {
+  it("trường thời gian MỚI lồng SÂU trong mảng ('images[].checkedAt') cũng bị bắt — walker đệ quy đúng qua ZodArray lồng nhau", () => {
     const dotBien = (metaJsonSchema as any).extend({
-      measurements: z.array(
+      images: z.array(
         z.object({
+          captureId: z.string().max(64),
           fileName: z.string().max(255),
           checkedAt: z.string().max(40).optional(), // MỚI — cố ý trần thấp
         }),
-      ),
+      ).optional(),
     });
     const r = kiemTraTranThoiGian(dotBien, "metaJsonSchema");
     expect(r.loi).toEqual([
-      `[metaJsonSchema] measurements[].checkedAt: .max(40) < ${TRAN_TOI_THIEU_THOI_GIAN} — nhỏ hơn định dạng ` +
+      `[metaJsonSchema] images[].checkedAt: .max(40) < ${TRAN_TOI_THIEU_THOI_GIAN} — nhỏ hơn định dạng ` +
         `DateTime.ToString() dài nhất đã đo (50 ký tự, dư margin tới ${TRAN_TOI_THIEU_THOI_GIAN})`,
     ]);
   });

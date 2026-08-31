@@ -1,23 +1,17 @@
 /**
  * Pha 1E Task 2 (BG-65 + BG-68 ⛔) — "cửa ZIP nói dối ở hai chỗ".
  *
- * ── BG-68 (NẶNG NHẤT CẢ PHA) — header overallResult cuộn từ LỜI KHAI, không từ
- * DỮ LIỆU ─────────────────────────────────────────────────────────────────────
- * TRƯỚC bản vá: `inferAoiOverallResult({ngCount, ntfCount})` được gọi với
- * `ngCount = metaData.summary?.ng` (đường board-mới) hoặc `calculatedSummary.ng`
- * — mà `calculatedSummary` LẠI ưu tiên `metaData.summary` khi máy CÓ gửi nó
- * (`aoiPackageRouter.ts`, biểu thức `metaData?.summary || {đếm thật}`). `summary`
- * là LỜI KHAI THỨ HAI của CHÍNH máy, trong CÙNG tệp `meta.json`, trong CÙNG ZIP —
- * không phải dữ liệu độc lập. `verdictXauHon(khai, khai)` chỉ bắt được máy TỰ MÂU
- * THUẪN — máy khai NHẤT QUÁN SAI (`overallResult:"OK"` + `summary.ng:0` +
- * `measurements[]` có `result:"NG"`) đi lọt HOÀN TOÀN. Đúng lỗ mà `614245c0` vừa
- * đóng cho đường v1.x (`machineApiRouters.ts`, cuộn từ `measurementResults` THẬT
- * qua `rollupVerdict`) — vẫn mở nguyên ở cửa ZIP TRƯỚC bản vá này.
- * SAU bản vá: cả hai nơi suy overallResult (header board-mới VÀ
- * `finalOverallResult`/package row) đọc `ngNtfThat` — đếm THẬT từ
- * `measurements[].result` (tính MỘT LẦN, xem `aoiPackageRouter.ts` ngay sau khai
- * báo `normalizedMeasurements`) — KHÔNG còn đọc `metaData.summary` để quyết định
- * verdict.
+ * ── BG-85 (2026-09-02) — describe BG-68 XOÁ, KHÔNG hoàn nguyên ──────────────
+ * BG-68 pin hành vi của `calculatedSummary`/`inferAoiOverallResult` — CẢ HAI
+ * đã XOÁ khỏi `aoiPackageRouter.ts` (BG-85: verdict LUÔN cuộn từ
+ * `dichCayKetQua(...).verdictLuuTru`, `summary` khai chỉ còn dùng để ĐỐI CHIẾU/
+ * GẮN CỜ — `coLechSummary`/`demBonNhomTuCay` — KHÔNG BAO GIỜ là nguồn quyết
+ * định). Kịch bản BG-68 ("measurements[] có NG nhưng summary.ng=0, verdict đọc
+ * summary nên bỏ sót") KHÔNG THỂ tái hiện được nữa bằng hợp đồng cây: không có
+ * đường mã nào còn đọc `summary` để quyết định verdict — đây LÀ bằng chứng
+ * "BG-68 tự tan", không phải lập luận. Bất biến 3 (verdict-từ-cây,
+ * summary-chỉ-đối-chiếu) được canh lại đầy đủ ở
+ * `aoiPackageBienBg85.test.ts` (lưới mới BG-85).
  *
  * ── BG-65 — trạng thái CUỐI 'dead' KHÔNG cuối ───────────────────────────────
  * TRƯỚC bản vá: tuyến PUT `/api/aoi/upload/:packageId` (`server/_core/index.ts`)
@@ -137,104 +131,6 @@ async function taoGoi(suffix: string, storageKey: string): Promise<number> {
   return pkg.id;
 }
 
-/** Ghi một ZIP HỢP LỆ (meta.json + images/) lên đĩa local, trả về packageId đã tạo hàng DB. */
-async function ghiZipHopLeVaTaoGoi(suffix: string, meta: Record<string, unknown>): Promise<{ packageId: string; pkgDbId: number }> {
-  const packageId = `BG65-68-PKG-${STAMP}-${suffix}`;
-  const storageKey = `aoi-packages/${packageId}.zip`;
-  const filePath = path.join(process.env.LOCAL_STORAGE_DIR!, storageKey);
-  const zip = new JSZip();
-  zip.file("meta.json", JSON.stringify(meta));
-  const measurements = (meta.measurements as Array<{ fileName: string }>) ?? [];
-  for (const m of measurements) {
-    zip.file(`images/${m.fileName}`, Buffer.from(`fake-image-${m.fileName}`));
-  }
-  const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
-  await fsp.mkdir(path.dirname(filePath), { recursive: true });
-  await fsp.writeFile(filePath, zipBuffer);
-
-  const d = await db.getDb();
-  const [pkg] = await d!
-    .insert(inspectionPackages)
-    .values({ machineId, packageId, storageKey, status: "uploaded" })
-    .returning({ id: inspectionPackages.id });
-  packageDbIds.push(pkg.id);
-  return { packageId, pkgDbId: pkg.id };
-}
-
-describe("BG-68 ⛔ — header overallResult cuộn từ measurements[].result THẬT (mệnh đề 1-3, đo bằng SELECT)", () => {
-  it("mệnh đề 1: khai OK + summary.ng=0 NHƯNG measurements[] có NG (máy khai NHẤT QUÁN SAI) ⇒ header ghi NG", async () => {
-    const serial = `BG68-SN-${STAMP}-1`;
-    const { packageId, pkgDbId } = await ghiZipHopLeVaTaoGoi("m1", {
-      serialNumber: serial,
-      productModel: `BG68-PM-${STAMP}`,
-      overallResult: "OK",
-      measurements: [
-        { pointId: "P1", fileName: "p1.jpg", result: "OK", measuredValue: 1 },
-        { pointId: "P2", fileName: "p2.jpg", result: "NG", measuredValue: 2 },
-      ],
-      // LỜI KHAI THỨ HAI — cố ý NHẤT QUÁN SAI với measurements[] ở trên (BG-68).
-      summary: { totalPoints: 2, ok: 2, ng: 0 },
-    });
-    const caller = aoiPackageRouter.createCaller({ user: null } as never);
-    const ket = await caller.commit({ apiKey: API_KEY, packageId });
-    expect(ket.success).toBe(true);
-    const inspectionId = (ket as { inspectionId: number | null }).inspectionId;
-    expect(inspectionId, "phải tạo được inspection mới (serialNumber mới hoàn toàn)").toBeTruthy();
-    if (inspectionId) inspectionIds.push(inspectionId);
-
-    const d = (await db.getDb())!;
-    const [inspRow] = await d.select().from(productInspections).where(eq(productInspections.id, inspectionId!));
-    const [pkgRow] = await d.select().from(inspectionPackages).where(eq(inspectionPackages.id, pkgDbId));
-    expect(inspRow.overallResult, "SELECT product_inspections.overallResult (header) — TRƯỚC bản vá: 'OK' sai; SAU: 'NG'").toBe("NG");
-    expect(pkgRow.overallResult, "SELECT inspection_packages.overallResult (package row) cũng phải NG").toBe("NG");
-  });
-
-  it("mệnh đề 2 (CHỐNG HỒI QUY): khai OK + summary.ng=0 + measurements[] TOÀN OK ⇒ vẫn OK", async () => {
-    const serial = `BG68-SN-${STAMP}-2`;
-    const { packageId, pkgDbId } = await ghiZipHopLeVaTaoGoi("m2", {
-      serialNumber: serial,
-      productModel: `BG68-PM-${STAMP}`,
-      overallResult: "OK",
-      measurements: [
-        { pointId: "P1", fileName: "p1.jpg", result: "OK", measuredValue: 1 },
-        { pointId: "P2", fileName: "p2.jpg", result: "OK", measuredValue: 2 },
-      ],
-      summary: { totalPoints: 2, ok: 2, ng: 0 },
-    });
-    const caller = aoiPackageRouter.createCaller({ user: null } as never);
-    const ket = await caller.commit({ apiKey: API_KEY, packageId });
-    const inspectionId = (ket as { inspectionId: number | null }).inspectionId;
-    if (inspectionId) inspectionIds.push(inspectionId);
-
-    const d = (await db.getDb())!;
-    const [inspRow] = await d.select().from(productInspections).where(eq(productInspections.id, inspectionId!));
-    const [pkgRow] = await d.select().from(inspectionPackages).where(eq(inspectionPackages.id, pkgDbId));
-    expect(inspRow.overallResult, "SELECT — measurements[] toàn OK ⇒ header PHẢI vẫn OK").toBe("OK");
-    expect(pkgRow.overallResult).toBe("OK");
-  });
-
-  it("mệnh đề 3 (CHỐNG HỒI QUY): khai NG ⇒ vẫn NG bất kể measurements/summary nói gì", async () => {
-    const serial = `BG68-SN-${STAMP}-3`;
-    const { packageId, pkgDbId } = await ghiZipHopLeVaTaoGoi("m3", {
-      serialNumber: serial,
-      productModel: `BG68-PM-${STAMP}`,
-      overallResult: "NG",
-      measurements: [{ pointId: "P1", fileName: "p1.jpg", result: "OK", measuredValue: 1 }],
-      summary: { totalPoints: 1, ok: 1, ng: 0 },
-    });
-    const caller = aoiPackageRouter.createCaller({ user: null } as never);
-    const ket = await caller.commit({ apiKey: API_KEY, packageId });
-    const inspectionId = (ket as { inspectionId: number | null }).inspectionId;
-    if (inspectionId) inspectionIds.push(inspectionId);
-
-    const d = (await db.getDb())!;
-    const [inspRow] = await d.select().from(productInspections).where(eq(productInspections.id, inspectionId!));
-    const [pkgRow] = await d.select().from(inspectionPackages).where(eq(inspectionPackages.id, pkgDbId));
-    expect(inspRow.overallResult, "SELECT — máy khai NG PHẢI luôn thắng, kể cả measurements/summary sạch").toBe("NG");
-    expect(pkgRow.overallResult).toBe("NG");
-  });
-});
-
 describe("BG-65 ⛔ — trạng thái CUỐI 'dead' không sống lại qua vòng Agent thật presign → upload → commit (mệnh đề 4-5, đo bằng SELECT)", () => {
   it("mệnh đề 4: presign THẬT → 3 lượt commit lỗi VĨNH VIỄN (⇒ 'dead') → upload-gate (laGoiDaChet, HÀM THẬT route dùng) chặn → commit lại vẫn từ chối — SELECT xác nhận status KHÔNG rời 'dead'", async () => {
     const packageId = `BG65-PKG-${STAMP}-dead`;
@@ -319,16 +215,28 @@ describe("BG-65 ⛔ — trạng thái CUỐI 'dead' không sống lại qua vòn
     // "Agent" sửa lỗi: ghi ZIP HỢP LỆ vào ĐÚNG storageKey (mô phỏng bước upload
     // thành công của vòng thật — storagePut+UPDATE mà tuyến Express thực hiện
     // không đổi trong bản vá này, chỉ thêm cổng chặn 'dead').
+    // BG-85 — meta.json giờ là hợp đồng CÂY (machineDataContractV2 + images[]),
+    // KHÔNG còn measurements[]/points[] phẳng.
     const serial = `BG65-SN-${STAMP}-retry`;
     const zip = new JSZip();
     zip.file(
       "meta.json",
       JSON.stringify({
+        identity: { station: "BG65-ST", machine: "BG65-MC", line: "BG65-LN", plant: "BG65-PL", country: "VN", solutionName: "BG65-SOL", appVersion: "1.0.0" },
+        productId: `BG65-PID-${STAMP}`,
         serialNumber: serial,
         productModel: `BG65-PM-${STAMP}`,
         overallResult: "OK",
-        measurements: [{ pointId: "P1", fileName: "p1.jpg", result: "OK", measuredValue: 1 }],
-        summary: { totalPoints: 1, ok: 1, ng: 0 },
+        ntf: false,
+        summary: { surfaces: { total: 1, pass: 1, ng: 0, ntf: 0 }, positions: { total: 1, pass: 1, ng: 0, ntf: 0 }, captures: { total: 1, pass: 1, ng: 0, ntf: 0 }, components: { total: 1, pass: 1, ng: 0, ntf: 0 } },
+        surfaces: [{
+          name: "TOP", result: "OK", ntf: false,
+          positions: [{
+            positionId: "P01", result: "OK", ntf: false,
+            captures: [{ captureId: "BG65-CAP-01", result: "OK", ntf: false, components: [{ componentId: "BG65-COMP-01", result: "OK", ntf: false }] }],
+          }],
+        }],
+        images: [{ captureId: "BG65-CAP-01", fileName: "p1.jpg" }],
       }),
     );
     zip.file("images/p1.jpg", Buffer.from("bg65-retry-fake-image"));

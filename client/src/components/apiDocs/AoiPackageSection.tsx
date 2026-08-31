@@ -90,42 +90,62 @@ Headers: X-API-Key: machine-api-key
 //     ├── P02.jpg
 //     └── ...
 
-// meta.json schema — "measurements" BẮT BUỘC (server từ chối gói thiếu trường này, kể cả khi mảng rỗng []):
+// meta.json schema — BG-85 (2026-09-02): CHÍNH payload kết quả v2.0
+// (machineDataContractV2 — cây surfaces[].positions[].captures[].components[])
+// CỘNG THÊM đúng một trường "images[]" (tham chiếu ảnh, captureId là khoá
+// join sang captures[] trong cây). "identity"/"productId"/"ntf"/"summary"/
+// "surfaces" đều BẮT BUỘC — server từ chối gói thiếu bất kỳ trường nào ở trên:
 {
+  "identity": {
+    "station": "AIC-01", "machine": "AOI-01", "line": "LINE-A",
+    "plant": "FAC001", "country": "VN", "solutionName": "PCBA-SOL", "appVersion": "1.0.0"
+  },
+  "productId": "b3f1c2a0-1111-4a2b-9c3d-000000000001",
   "serialNumber": "SN-20260207-001",
   "productModel": "PCBA-REV3",
-  "factory": "FAC001",
-  "line": "LINE-A",
-  "machine": "AOI-01",
-  "startedAt": "2026-02-07T10:00:00Z",
-  "finishedAt": "2026-02-07T10:00:15Z",
+  "overallResult": "NG",
+  "ntf": false,
+  "startedAt": "2026-02-07T10:00:00.000",
+  "completedAt": "2026-02-07T10:00:15.000",
   "summary": {
-    "totalPoints": 12,
-    "ok": 11,
-    "ng": 1
+    "surfaces":   { "total": 1, "pass": 0, "ng": 1, "ntf": 0 },
+    "positions":  { "total": 1, "pass": 0, "ng": 1, "ntf": 0 },
+    "captures":   { "total": 2, "pass": 1, "ng": 1, "ntf": 0 },
+    "components": { "total": 2, "pass": 1, "ng": 1, "ntf": 0 }
   },
-  "measurements": [
+  "surfaces": [
     {
-      "pointCode": "P01",
-      "name": "Connector A",
-      "fileName": "P01.jpg",
-      "result": "OK",
-      "measuredValue": 0.25
-    },
-    {
-      "pointCode": "P02",
-      "name": "IC U3",
-      "fileName": "P02.jpg",
-      "result": "NG",
-      "measuredValue": 0.52
+      "name": "TOP", "result": "NG", "ntf": false,
+      "positions": [
+        {
+          "positionId": "P01", "result": "NG", "ntf": false,
+          "captures": [
+            {
+              "captureId": "cap-P01-001", "captureName": "Connector A", "result": "OK", "ntf": false,
+              "components": [{ "componentId": "comp-P01-001", "result": "OK", "ntf": false, "value": 0.25 }]
+            },
+            {
+              "captureId": "cap-P02-001", "captureName": "IC U3", "result": "NG", "ntf": false,
+              "components": [{ "componentId": "comp-P02-001", "result": "NG", "ntf": false, "value": 0.52 }]
+            }
+          ]
+        }
+      ]
     }
+  ],
+  "images": [
+    { "captureId": "cap-P01-001", "fileName": "P01.jpg" },
+    { "captureId": "cap-P02-001", "fileName": "P02.jpg" }
   ]
 }
 
-// ⚠ "points[]" (tên trường cũ) KHÔNG được server chấp nhận khi đứng MỘT MÌNH —
-// "measurements" là trường BẮT BUỘC trên MỌI gói (dù rỗng []). Một gói chỉ gửi
-// "points[]" mà thiếu "measurements" sẽ bị từ chối (invalid_type) và KHÔNG BAO
-// GIỜ commit được — dù retry bao nhiêu lần.`;
+// ⚠ Hợp đồng PHẲNG cũ ("measurements[]"/"points[]", không có "surfaces") KHÔNG
+// còn được server chấp nhận — thiếu "surfaces"/"ntf"/"summary"/"identity" bắt
+// buộc sẽ bị từ chối (invalid_type). Gói KHÔNG bị khoá vĩnh viễn ('dead') vì
+// hình dạng sai — nó ở lại chờ retry, nhưng KHÔNG BAO GIỜ tự commit được cho
+// tới khi Agent gửi đúng hình dạng CÂY ở trên. Mỗi "images[].captureId" PHẢI
+// khớp đúng một "captureId" có thật trong cây "surfaces[]" — không khớp ⇒ CẢ
+// GÓI bị từ chối (không âm thầm bỏ ảnh).`;
 
   const aoiQueueMetricsExample = `POST ${endpointBase}/aoiPackage.reportQueueMetrics
 Headers: X-API-Key: machine-api-key

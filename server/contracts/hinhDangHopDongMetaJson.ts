@@ -37,12 +37,26 @@
 // KHÔNG có DB/fs trong file này (trừ `layHinhDangMauMayThat`, tách riêng, đọc
 // LAZY — không chặn import của mọi test khác nếu đường dẫn máy thật vắng mặt
 // trên một máy CI nào đó không có ổ `D:\SOURCES\AOIData`).
+//
+// ── BG-85 (2026-09-02) — CẬP NHẬT theo hợp đồng MỚI, KHÔNG hoàn nguyên ──────
+// `metaJsonSchema` không còn là schema PHẲNG (`measurements[]`/`points[]`) —
+// nó là `machineDataContractV2` (cây `surfaces[].positions[].captures[].
+// components[]`) + `images[]`. `BANG_HINH_DANG` bên dưới viết LẠI HOÀN TOÀN
+// theo hình dạng CÂY. Máy (1) `duyetTruongOptional`/`duongVangMat` KHÔNG đổi
+// — cả hai schema-shape-agnostic theo thiết kế, chỉ đệ quy CẤU TRÚC zod thật.
+//
+// Hình dạng `biDanhPointsRongThayMeasurements_BG77` (đường `points[]`/
+// `measurements[]` chọn nhầm mảng rỗng) đã BỊ XOÁ — không phải bỏ sót: khái
+// niệm "hai mảng đo lường cùng cấp, chọn nhầm cái rỗng" KHÔNG CÒN TỒN TẠI
+// trong hợp đồng cây (chỉ có MỘT cây `surfaces[]`, không có mảng thay thế
+// song song) — đây CHÍNH LÀ bằng chứng "BG-77 tự tan" mà báo cáo BG-85 yêu
+// cầu: không phải lập luận, mà là KHÔNG THỂ VIẾT LẠI được payload tái hiện
+// lỗi đó bằng hợp đồng mới.
 import { z, ZodError } from "zod";
 import { readFileSync } from "node:fs";
 import {
   metaJsonSchema,
   laLoiVinhVienDemVaoNguongDeadZip,
-  inferAoiOverallResult,
 } from "../routers/aoiPackageRouter";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -266,11 +280,13 @@ export interface KyVongChapNhan {
   loai: "chapNhan";
   /** `product_inspections.overallResult` / `inspection_packages.overallResult` kỳ vọng — xem `KyVongOverallResult`. */
   overallResult: KyVongOverallResult;
-  /** `inspection_packages.totalPoints` kỳ vọng (đếm MỌI lá, kể cả lá thiếu result). */
+  /** BG-85 — `inspection_packages.totalPoints` kỳ vọng. Đếm CAPTURES (cấp gần
+   *  nhất với "một điểm kiểm tra có ảnh" trong cây) — KHÔNG còn đếm "lá đo
+   *  lường" của hợp đồng phẳng cũ (khái niệm đó không còn tồn tại). */
   tongDiem: number;
-  /** `inspection_packages.okCount` kỳ vọng. */
+  /** `inspection_packages.okCount` kỳ vọng — số captures rolledResult==="OK". */
   ok: number;
-  /** `inspection_packages.ngCount` kỳ vọng. */
+  /** `inspection_packages.ngCount` kỳ vọng — số captures rolledResult==="NG". */
   ng: number;
 }
 
@@ -296,196 +312,233 @@ export interface HinhDangMetaJson {
   ungCuVienKhongTrongDbTest?: boolean;
 }
 
+/** `identity` tối thiểu hợp lệ — dùng chung cho mọi fixture cây bên dưới, tránh chép tay 7 trường mỗi lần. */
+function identityToiThieu() {
+  return {
+    station: "HD-STATION", machine: "HD-MACHINE", line: "HD-LINE",
+    plant: "HD-PLANT", country: "VN", solutionName: "HD-SOLUTION", appVersion: "1.0.0",
+  };
+}
+/** Nhóm 4 chỉ số total/pass/ng/ntf — dùng cho `summary` (bốn nhóm surfaces/positions/captures/components). */
+function nhom(total: number, pass: number, ng: number, ntf: number) {
+  return { total, pass, ng, ntf };
+}
+
 /**
- * Mười hình dạng THUẦN (không fs/DB) — phủ cả năm hạng mục brief Task 4 yêu
- * cầu tối thiểu, cộng thêm các ca chống-hồi-quy Đ-21/BG-68 trên CHÍNH cửa ZIP
- * (khác `machineDataContractV2`/`submitInspectionCoreObject`, nơi Đ-21 đã
- * được đóng ở Pha 1C/1E — bảng này đo LẠI trên `metaJsonSchema`, đường
- * KHÔNG được hai pha đó chạm tới theo cùng bộ test).
+ * BG-85 — bảng hình dạng THUẦN (không fs/DB), viết LẠI HOÀN TOÀN theo hợp đồng
+ * CÂY (`machineDataContractV2` + `images[]`). Phủ: (A) mọi trường `.optional()`
+ * VẮNG MẶT (một nhánh THẬT, không mảng rỗng — coverage KHÔNG vacuous), (B) NTF
+ * thật qua cờ `ntf` component, (C) hỗn hợp OK/NG nhiều capture, (D) hợp đồng
+ * LỆCH HÌNH DẠNG (thiếu `surfaces`/`ntf`/`summary` bắt buộc — phân loại lỗi),
+ * (E) varchar quá cỡ (một mình too_big ⇒ vĩnh viễn) VÀ trộn too_big+thiếu
+ * trường (không đếm), (F) chuỗi ngày-giờ dài `.max(64)` vẫn được nhận (BG-91,
+ * áp dụng ĐỀU cho cả bốn cấp thời gian trong hợp đồng cây — không riêng gốc).
  *
- * ⚠ Mẫu meta.json máy THẬT (BG-73) KHÔNG nằm trong bảng này — nó cần đọc
- * file (`layHinhDangMauMayThat`, bên dưới) nên tách riêng để KHÔNG buộc mọi
- * import của bảng này phụ thuộc một đường dẫn tuyệt đối chỉ tồn tại trên máy
- * có ổ `D:\SOURCES\AOIData`.
+ * ⚠ Mẫu meta.json máy THẬT (BG-73) KHÔNG nằm trong bảng này — xem
+ * `layHinhDangMauMayThat` bên dưới (đọc file LAZY).
  */
 export const BANG_HINH_DANG: readonly HinhDangMetaJson[] = [
-  // ── (A) BG-78 — mọi trường .optional() VẮNG MẶT ─────────────────────────
+  // ── (A) mọi trường .optional() VẮNG MẶT — MỘT nhánh thật (không mảng rỗng) ──
   {
     ten: "toiThieuMoiTruongOptionalVangMat",
-    lyDo: "C-1/BG-78 — payload TỐI THIỂU hợp lệ: overallResult, mọi trường phân cấp, VÀ result của lá đều VẮNG MẶT. Lá thiếu result KHÔNG được sinh phán quyết nào (Task 1).",
+    lyDo:
+      "BG-85 — payload TỐI THIỂU hợp lệ theo hợp đồng CÂY: type/apiKey/productModel/machineProductIndex/" +
+      "startedAt/completedAt/images (gốc) VÀ captureName/index/componentName/value/lowerLimit/upperLimit/" +
+      "errorCode/errorDesc/startedAt/completedAt (mọi cấp con) đều VẮNG MẶT trên MỘT nhánh THẬT (không phải " +
+      "mảng rỗng — coverage cho `duongVangMat` không vacuous, xem docblock hàm đó).",
     meta: {
+      identity: identityToiThieu(),
+      productId: "HD-PID-TT",
       serialNumber: "HD-TT-SN",
-      productModel: "HD-TT-PM",
-      measurements: [{ fileName: "tt-1.jpg" }], // KHÔNG result/pointId/pointCode/code/name/measuredValue/value/unit/remark
+      overallResult: "OK",
+      ntf: false,
+      summary: { surfaces: nhom(1, 1, 0, 0), positions: nhom(1, 1, 0, 0), captures: nhom(1, 1, 0, 0), components: nhom(1, 1, 0, 0) },
+      surfaces: [{
+        name: "TOP", result: "OK", ntf: false,
+        positions: [{
+          positionId: "P01", result: "OK", ntf: false,
+          captures: [{
+            captureId: "HD-TT-CAP-01", result: "OK", ntf: false,
+            components: [{ componentId: "HD-TT-COMP-01", result: "OK", ntf: false }],
+          }],
+        }],
+      }],
     },
-    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "OK" }, tongDiem: 1, ok: 0, ng: 0 },
-    ungCuVienKhongTrongDbTest: false, // hình dạng "tối thiểu" hợp lý là có thể trùng với dữ liệu test có sẵn — không dùng làm bằng chứng "không có trong DB test"
+    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "OK" }, tongDiem: 1, ok: 1, ng: 0 },
+    ungCuVienKhongTrongDbTest: false, // hình dạng "tối thiểu" hợp lý có thể trùng dữ liệu test có sẵn
   },
   {
-    ten: "ntfThatChongSietNguoc",
-    lyDo: "BG-78 mệnh đề 2 — lá khai NTF THẬT (không phải thiếu result) vẫn phải cuộn NTF, không được bản vá vá quá tay.",
+    ten: "ntfThatTuCoNguoiXacNhanChuaXacNhan",
+    lyDo: "Cờ `ntf` THẬT tại lá (component) — không phải suy đoán từ result thiếu — phải cuộn NTF lên toàn cây (rollupVerdict, NG>NTF>OK) rồi verdictLuuTru đưa verdict lưu trữ về NTF dù overallResult khai OK.",
     meta: {
+      identity: identityToiThieu(),
+      productId: "HD-PID-NTF",
       serialNumber: "HD-NTF-SN",
-      productModel: "HD-NTF-PM",
-      overallResult: "NTF",
-      measurements: [{ fileName: "ntf-1.jpg", result: "NTF" }],
+      overallResult: "OK",
+      ntf: false,
+      summary: { surfaces: nhom(1, 0, 0, 1), positions: nhom(1, 0, 0, 1), captures: nhom(1, 0, 0, 1), components: nhom(1, 0, 0, 1) },
+      surfaces: [{
+        name: "TOP", result: "OK", ntf: true,
+        positions: [{
+          positionId: "P01", result: "OK", ntf: true,
+          captures: [{
+            captureId: "HD-NTF-CAP-01", result: "OK", ntf: true,
+            components: [{ componentId: "HD-NTF-COMP-01", result: "OK", ntf: true }],
+          }],
+        }],
+      }],
     },
     kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NTF" }, tongDiem: 1, ok: 0, ng: 0 },
   },
   {
-    ten: "honHopBaLoaiKetQuaTrongMotGoi",
-    lyDo: "Tổ hợp OK + NG + lá-thiếu-result trong CÙNG một gói — calculatedSummary (báo cáo) phải khớp overallResult (verdict) dù công thức đếm khác nhau về mặt VỊ TRÍ mã (Task 1 mệnh đề 4).",
+    ten: "honHopOkNgNhieuCapture",
+    lyDo: "Hai capture trong CÙNG một gói, một OK một NG — cột báo cáo (totalPoints/okCount/ngCount, đếm CAPTURES) phải khớp overallResult (verdict cuộn từ cây) dù công thức đếm khác VỊ TRÍ mã.",
     meta: {
+      identity: identityToiThieu(),
+      productId: "HD-PID-HH",
       serialNumber: "HD-HH-SN",
-      productModel: "HD-HH-PM",
-      measurements: [
-        { fileName: "hh-1.jpg", result: "OK" },
-        { fileName: "hh-2.jpg", result: "NG" },
-        { fileName: "hh-3.jpg" }, // thiếu result
-      ],
+      overallResult: "OK",
+      ntf: false,
+      summary: { surfaces: nhom(1, 0, 1, 0), positions: nhom(1, 0, 1, 0), captures: nhom(2, 1, 1, 0), components: nhom(2, 1, 1, 0) },
+      surfaces: [{
+        name: "TOP", result: "NG", ntf: false,
+        positions: [{
+          positionId: "P01", result: "NG", ntf: false,
+          captures: [
+            { captureId: "HD-HH-CAP-OK", result: "OK", ntf: false, components: [{ componentId: "HD-HH-COMP-OK", result: "OK", ntf: false }] },
+            { captureId: "HD-HH-CAP-NG", result: "NG", ntf: false, components: [{ componentId: "HD-HH-COMP-NG", result: "NG", ntf: false }] },
+          ],
+        }],
+      }],
     },
-    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NG" }, tongDiem: 3, ok: 1, ng: 1 },
+    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NG" }, tongDiem: 2, ok: 1, ng: 1 },
   },
-
-  // ── (B) Bí danh cũ points[] thay measurements[] — BG-77 (CHƯA SỬA, deferred sau Pha 1F) ──
   {
-    ten: "biDanhPointsRongThayMeasurements_BG77",
+    ten: "capGoiThatKemImagesJoinDungCaptureId",
     lyDo:
-      "★ BG-77 (backlog toàn cảnh §3, GHI RÕ 'còn mở SAU Pha 1F' — KHÔNG sửa trong task này, chủ dự án " +
-      "đã DUYỆT treo qua kế hoạch Pha 1F). `measurements: []` (mảng RỖNG nhưng CÓ MẶT, vì measurements " +
-      "KHÔNG .optional()) cùng `points[]` mang dữ liệu NG thật. Biểu thức SẢN XUẤT " +
-      "`metaData?.measurements || metaData?.points || []` chọn `measurements` vì MẢNG RỖNG LÀ TRUTHY " +
-      "trong JS — `points[]` bị bỏ qua HOÀN TOÀN dù có dữ liệu NG. `kyVong.overallResult` dùng " +
-      "`ghiNhanNoDaDuyet` (KHÔNG `khangDinh`) — cổng GHI NHẬN hành vi hiện tại (OK) là nợ ĐÃ DUYỆT treo, " +
-      "KHÔNG khẳng định đó là đúng; `hanhViDung` khai rõ giá trị ngữ nghĩa đúng (NG). Nếu BG-77 được vá " +
-      "sau này, hàng SELECT sẽ tự lệch khỏi `hanhViHienTai` và ca này tự ĐỎ — đúng lúc đó đổi biến thể " +
-      "sang `khangDinh` (không phải một 'lý do' viết sẵn không ai kiểm — bài học `ntfSource`/BG-91).",
+      "★★★ BG-85 — kịch bản CỐT LÕI của chuẩn gói ảnh: cây ĐẦY ĐỦ + `images[]` " +
+      "tham chiếu ĐÚNG `captureId` có trong cây (khoá join, §4 chuẩn gói ảnh), " +
+      "MỖI ảnh mang cả `captureName`/`sha256` (hai trường optional còn lại của " +
+      "ImageRef — census 'đủ đường .optional()' cần MỘT hình dạng chứng minh " +
+      "chúng CÓ MẶT, không chỉ vắng mặt ở hình dạng tối thiểu).",
     meta: {
-      serialNumber: "HD-BG77-SN",
-      productModel: "HD-BG77-PM",
-      measurements: [],
-      points: [{ code: "P1", fileName: "bg77-1.jpg", result: "NG" }],
+      identity: identityToiThieu(),
+      productId: "HD-PID-IMG",
+      serialNumber: "HD-IMG-SN",
+      overallResult: "OK",
+      ntf: false,
+      summary: { surfaces: nhom(1, 1, 0, 0), positions: nhom(1, 1, 0, 0), captures: nhom(1, 1, 0, 0), components: nhom(1, 1, 0, 0) },
+      surfaces: [{
+        name: "TOP", result: "OK", ntf: false,
+        positions: [{
+          positionId: "P01", result: "OK", ntf: false,
+          captures: [{ captureId: "HD-IMG-CAP-01", result: "OK", ntf: false, components: [{ componentId: "HD-IMG-COMP-01", result: "OK", ntf: false }] }],
+        }],
+      }],
+      images: [{ captureId: "HD-IMG-CAP-01", fileName: "top-p01-default.jpg", captureName: "Default", sha256: "a".repeat(64) }],
     },
-    kyVong: {
-      loai: "chapNhan",
-      overallResult: {
-        dang: "ghiNhanNoDaDuyet",
-        hanhViHienTai: "OK",
-        hanhViDung: "NG",
-        maBacklog: "BG-77",
-        lyDoDuyet: "docs/superpowers/specs/2026-08-31-aoi-backlog-toan-canh.md §3 + plan Pha 1F 'Còn mở sau Pha 1F: … BG-77'",
-        // ★★★ I-1 — luật ĐÚNG cho BG-77: gộp CẢ HAI mảng `measurements`/`points`
-        // (bug thật là `measurements[] || points[]` chỉ chọn MỘT theo độ rỗng,
-        // KHÔNG phải "measurements luôn thắng") rồi áp CÙNG công thức ưu tiên
-        // production (`inferAoiOverallResult`, worse-wins NG>NTF>OK) — không
-        // chép tay một bản thứ hai của luật ưu tiên đó.
-        tinhHanhViDung: (meta) => {
-          const m = meta as {
-            measurements?: Array<{ result?: string }>;
-            points?: Array<{ result?: string }>;
-            overallResult?: "OK" | "NG" | "NTF";
-          };
-          const gopDung = [...(m.measurements ?? []), ...(m.points ?? [])];
-          return inferAoiOverallResult({
-            explicitResult: m.overallResult ?? null,
-            ngCount: gopDung.filter((p) => p.result === "NG").length,
-            ntfCount: gopDung.filter((p) => p.result === "NTF").length,
-          });
-        },
-      },
-      tongDiem: 0, ok: 0, ng: 0,
-    },
-    ungCuVienKhongTrongDbTest: true,
+    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "OK" }, tongDiem: 1, ok: 1, ng: 0 },
   },
 
-  // ── (C) Mảng RỖNG ở mọi cấp — Đ-21 (đã đóng ở Pha 1C cho verdictXauHon, đo LẠI trên metaJsonSchema/cửa ZIP) ──
+  // ── (B) Đ-21 (worse-wins) đo LẠI trên hợp đồng CÂY, cả hai chiều ─────────
   {
-    ten: "mangRongVaLoiKhaiNgThang_D21_chieuThuan",
-    lyDo: "Đ-21 (chiều thuận, cửa ZIP) — measurements RỖNG (cuộn=OK) nhưng overallResult khai 'NG' ⇒ XẤU HƠN phải thắng ⇒ NG. Trước Pha 1C: lời khai 'OK' có thể LÀM NHẸ một cuộn tệ hơn — đây là chiều NGƯỢC, chống hồi quy cho chiều 'lời khai làm NẶNG lên'.",
+    ten: "cayRongVaLoiKhaiNgThang_D21_chieuThuan",
+    lyDo: "Đ-21 (chiều thuận) — surfaces:[] RỖNG (cuộn=OK, mảng RỖNG là hợp lệ theo `machineDataContractV2`) nhưng overallResult khai 'NG' ⇒ verdictXauHon(khai, cuộn) phải lấy XẤU HƠN ⇒ NG — lời khai cấp bo KHÔNG được cuộn rỗng làm nhẹ đi.",
     meta: {
+      identity: identityToiThieu(),
+      productId: "HD-PID-D21A",
       serialNumber: "HD-D21A-SN",
-      productModel: "HD-D21A-PM",
       overallResult: "NG",
-      measurements: [],
+      ntf: false,
+      summary: { surfaces: nhom(0, 0, 0, 0), positions: nhom(0, 0, 0, 0), captures: nhom(0, 0, 0, 0), components: nhom(0, 0, 0, 0) },
+      surfaces: [],
     },
     kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NG" }, tongDiem: 0, ok: 0, ng: 0 },
   },
   {
-    ten: "cuonTuMeasurementsNangHonLoiKhaiOk_D21_chieuNguoc",
-    lyDo: "Đ-21 (chiều ngược) — lời khai overallResult:'OK' KHÔNG được phép làm nhẹ một cuộn measurements[] có NG thật. Đúng lớp lỗi gốc Đ-21/Đ-22 (bo TỐT giả — máy khai OK nhưng dữ liệu thật NG).",
+    ten: "cuonTuCayNangHonLoiKhaiOk_D21_chieuNguoc",
+    lyDo: "Đ-21 (chiều ngược) — lời khai overallResult:'OK' KHÔNG được phép làm NHẸ một cuộn cây có NG thật (bo TỐT giả — máy khai OK nhưng dữ liệu thật NG).",
     meta: {
+      identity: identityToiThieu(),
+      productId: "HD-PID-D21B",
       serialNumber: "HD-D21B-SN",
-      productModel: "HD-D21B-PM",
       overallResult: "OK",
-      measurements: [{ fileName: "d21b-1.jpg", result: "NG" }],
+      ntf: false,
+      summary: { surfaces: nhom(1, 0, 1, 0), positions: nhom(1, 0, 1, 0), captures: nhom(1, 0, 1, 0), components: nhom(1, 0, 1, 0) },
+      surfaces: [{
+        name: "TOP", result: "NG", ntf: false,
+        positions: [{
+          positionId: "P01", result: "NG", ntf: false,
+          captures: [{ captureId: "HD-D21B-CAP-01", result: "NG", ntf: false, components: [{ componentId: "HD-D21B-COMP-01", result: "NG", ntf: false }] }],
+        }],
+      }],
     },
     kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NG" }, tongDiem: 1, ok: 0, ng: 1 },
   },
 
-  // ── (D) Hợp đồng LỆCH HÌNH DẠNG — phân loại lỗi (mệnh đề 2) ──────────────
+  // ── (C) Hợp đồng LỆCH HÌNH DẠNG — phân loại lỗi (mệnh đề 2) ──────────────
   {
-    ten: "hopDongCuChiCoPointsKhongCoMeasurements",
+    ten: "hopDongThieuSurfacesBatBuoc",
     lyDo:
-      "★★★ PHÁT HIỆN MỚI của cổng này — 'points[] tương thích ngược' (comment tại chỗ khai schema: " +
-      "'Legacy fields (backward compatible)') KHÔNG thật sự tương thích: `measurements` là trường BẮT BUỘC " +
-      "(không `.optional()`), nên một máy CŨ chỉ gửi `points[]` (không gửi `measurements` — kể cả mảng rỗng) " +
-      "KHÔNG BAO GIỜ qua được `metaJsonSchema.parse()`. Cùng LỚP LỖI BG-73 (ZodError lệch hình dạng) nhưng " +
-      "KHÁC NGUYÊN NHÂN — chưa có mã BG riêng, xem 'mối lo' trong báo cáo Task 4.",
+      "★★★ BG-85 — hình dạng PHẲNG cũ (`measurements[]`/`points[]`, không `surfaces`) — chính hình dạng đã " +
+      "sinh ra 262 gói `committed` hiện có — KHÔNG còn parse được qua hợp đồng hợp nhất (thiếu `surfaces`/" +
+      "`ntf`/`summary`/`identity` bắt buộc). ZodError nhiều issue `invalid_type` (KHÔNG chỉ `too_big`) ⇒ " +
+      "KHÔNG đếm vĩnh viễn — gói ở lại 'failed', retry được, KHÔNG khoá 'dead' (Bước 6, đường di trú).",
     meta: {
-      serialNumber: "HD-PTSONLY-SN",
-      productModel: "HD-PTSONLY-PM",
-      points: [{ code: "P1", fileName: "ptsonly-1.jpg", result: "NG" }],
-      // KHÔNG có `measurements` — kể cả mảng rỗng.
+      serialNumber: "HD-PHANG-SN",
+      productModel: "HD-PHANG-PM",
+      measurements: [{ fileName: "phang-1.jpg", result: "NG" }],
+      // KHÔNG có `surfaces`/`ntf`/`summary`/`identity`/`productId` — hình dạng phẳng cũ.
     },
     kyVong: { loai: "tuChoi", vinhVien: false },
     ungCuVienKhongTrongDbTest: true,
   },
   {
     ten: "varcharQuaCoChiMotLoiToCo",
-    lyDo: "Đối chứng phân loại VĨNH VIỄN thật trên CHÍNH metaJsonSchema (Task 2's §1 dùng schema TỔNG HỢP riêng cho ca này — đây là ca THẬT trên schema production): serialNumber vượt .max(100) ⇒ MỘT issue too_big duy nhất ⇒ đếm vào ngưỡng dead (đúng lý do BG-64 — quá cỡ không sửa được bằng retry).",
+    lyDo: "Đối chứng phân loại VĨNH VIỄN thật trên CHÍNH metaJsonSchema: serialNumber vượt .max(100) ⇒ MỘT issue too_big duy nhất ⇒ đếm vào ngưỡng dead (đúng lý do BG-64 — quá cỡ không sửa được bằng retry). Mọi trường bắt buộc KHÁC đều hợp lệ, để lỗi too_big là issue DUY NHẤT.",
     meta: {
+      identity: identityToiThieu(),
+      productId: "HD-PID-QC",
       serialNumber: "S".repeat(150),
-      productModel: "HD-QC-PM",
-      measurements: [{ fileName: "qc-1.jpg" }],
+      overallResult: "OK",
+      ntf: false,
+      summary: { surfaces: nhom(0, 0, 0, 0), positions: nhom(0, 0, 0, 0), captures: nhom(0, 0, 0, 0), components: nhom(0, 0, 0, 0) },
+      surfaces: [],
     },
     kyVong: { loai: "tuChoi", vinhVien: true },
   },
   {
     ten: "tronLoiToCoVaLechHinhDang",
-    lyDo: "Đối chứng TRỘN (Task 2's §1 dùng schema riêng — đây là ca THẬT): serialNumber quá cỡ (too_big) VÀ productModel vắng (invalid_type, bắt buộc) trong CÙNG một lượt parse ⇒ KHÔNG PHẢI toàn bộ too_big ⇒ KHÔNG đếm (tạm thời) — payload này còn SỬA ĐƯỢC (thiếu một trường), không phải 'không bao giờ vừa cột'.",
+    lyDo: "Đối chứng TRỘN: serialNumber quá cỡ (too_big) VÀ `identity` vắng (invalid_type, bắt buộc) trong CÙNG một lượt parse ⇒ KHÔNG PHẢI toàn bộ too_big ⇒ KHÔNG đếm (tạm thời) — payload này còn SỬA ĐƯỢC (thiếu một trường), không phải 'không bao giờ vừa cột'.",
     meta: {
+      productId: "HD-PID-TRON",
       serialNumber: "S".repeat(150),
-      measurements: [{ fileName: "tron-1.jpg" }],
-      // KHÔNG có productModel (bắt buộc).
+      overallResult: "OK",
+      ntf: false,
+      summary: { surfaces: nhom(0, 0, 0, 0), positions: nhom(0, 0, 0, 0), captures: nhom(0, 0, 0, 0), components: nhom(0, 0, 0, 0) },
+      surfaces: [],
+      // KHÔNG có `identity` (bắt buộc).
     },
     kyVong: { loai: "tuChoi", vinhVien: false },
   },
   {
-    ten: "ngayGioDaiThatDuocNhanOCuaZip_BG91_daVa",
+    ten: "ngayGioDaiThatDuocNhanOMoiCap_BG91",
     lyDo:
-      "★★★ BG-91 — cổng này TỰ PHÁT HIỆN lỗ này lần đầu (BG-72 chỉ được vá ở đường v1.x, " +
-      "`submitInspectionCoreObject.inspectionTime`/`.serverReceivedAt` .max(40)→.max(64); cửa ZIP " +
-      "`metaJsonSchema.inspectionTime` CÒN NGUYÊN .max(40) — cùng chuỗi DateTime.ToString() 50 ký tự bị " +
-      "TỪ CHỐI ở ZIP trong khi v1.x đã nhận, và bị đếm VĨNH VIỄN (too_big) ⇒ khoá 'dead' sau N lượt, " +
-      "NẶNG HƠN BG-73). Đã VÁ ở `6082df2f` (`.max(40)`→`.max(64)` tại `metaJsonSchema.inspectionTime`, " +
-      "cùng con số/lý lẽ v1.x) — xem `aoiPackageZipInspectionTimeDaiThat.test.ts` (Task 2, 5 ca). " +
-      "Hình dạng này giờ KHẲNG ĐỊNH (`khangDinh`, không phải ghi nhận) hành vi ĐÚNG: chuỗi 50 ký tự " +
-      "ĐƯỢC CHẤP NHẬN, gói commit THÀNH CÔNG ngay lượt đầu, KHÔNG hề chạm 'failed'/'dead'. " +
-      "★ BÀI HỌC ĐÃ TRẢ GIÁ (2026-08-30): trước bản sửa NÀY, hình dạng này mã hoá HÀNH VI CŨ (bị từ chối) " +
-      "làm kỳ vọng — khi BG-91 được vá, cổng ĐỎ và trông giống một hồi quy do bản vá gây ra, trong khi " +
-      "thực ra cổng đang bắt ĐÚNG một hành vi giờ đã đổi. `KyVongOverallResult.khangDinh` chỉ nên dùng " +
-      "cho hành vi ĐÃ XÁC NHẬN đúng — không phải 'hôm nay nó đang chạy vậy'.",
+      "★★★ BG-91 — `DateTime.ToString()` mặc định của Agent C# dài tới 50 ký tự vẫn là ngày hợp lệ " +
+      "(`new Date()` parse được). Hợp đồng CÂY áp `.max(64)` ĐỀU cho `startedAt`/`completedAt` ở CẢ BỐN cấp " +
+      "(gốc/position/capture/component, xem `machineDataContractV2.ts` 'Vòng sửa 3') — hình dạng này khẳng " +
+      "định chuỗi dài đó ĐƯỢC NHẬN ở cấp GỐC, gói commit THÀNH CÔNG ngay lượt đầu.",
     meta: {
+      identity: identityToiThieu(),
+      productId: "HD-PID-DT50",
       serialNumber: "HD-DT50-SN",
-      productModel: "HD-DT50-PM",
-      measurements: [{ fileName: "dt50-1.jpg" }],
-      inspectionTime: "Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)", // 50 ký tự, new Date() parse được — ĐƯỢC CHẤP NHẬN sau 6082df2f (.max(64))
+      overallResult: "OK",
+      ntf: false,
+      startedAt: "Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)", // 50 ký tự, new Date() parse được
+      summary: { surfaces: nhom(0, 0, 0, 0), positions: nhom(0, 0, 0, 0), captures: nhom(0, 0, 0, 0), components: nhom(0, 0, 0, 0) },
+      surfaces: [],
     },
-    kyVong: {
-      loai: "chapNhan",
-      overallResult: { dang: "khangDinh", overallResult: "OK" },
-      tongDiem: 1, ok: 0, ng: 0,
-    },
+    kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "OK" }, tongDiem: 0, ok: 0, ng: 0 },
     ungCuVienKhongTrongDbTest: true,
   },
 ] as const;
@@ -506,9 +559,12 @@ export function layHinhDangMauMayThat(): HinhDangMetaJson {
   return {
     ten: "mauMetaJsonMayThat_BG73",
     lyDo:
-      "BG-73 ⛔ — mẫu meta.json THẬT của máy AOI (images[], KHÔNG measurements[]/points[]). " +
-      "ZodError một issue invalid_type (thiếu measurements) ⇒ KHÔNG đếm vào ngưỡng dead " +
-      "(laLoiVinhVienDemVaoNguongDeadZip, Task 2) — gói ở lại 'failed' vô thời hạn, retry vẫn mở.",
+      "BG-73/BG-85 ⛔ — mẫu meta.json THẬT của máy AOI (images[] + các trường gốc phẳng: serialNumber/" +
+      "productModel/overallResult/startedAt/completedAt — KHÔNG hề có cây surfaces[]/ntf/summary/identity). " +
+      "TRƯỚC BG-85: ZodError một issue invalid_type (thiếu measurements, hợp đồng phẳng cũ). SAU BG-85: " +
+      "ZodError NHIỀU issue invalid_type (thiếu ntf/summary/surfaces — hợp đồng cây) — CÙNG KẾT LUẬN " +
+      "(KHÔNG đếm vào ngưỡng dead, laLoiVinhVienDemVaoNguongDeadZip), KHÁC LÝ DO: hợp nhất hợp đồng KHÔNG " +
+      "làm mẫu máy thật tệ hơn (vẫn 'failed' vô thời hạn, retry vẫn mở) — xem baseline Bước 1, báo cáo BG-85.",
     meta,
     kyVong: { loai: "tuChoi", vinhVien: false },
     ungCuVienKhongTrongDbTest: true,

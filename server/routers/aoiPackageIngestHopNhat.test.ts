@@ -11,26 +11,24 @@
  *      im lặng đọc ra chuỗi rỗng và mọi `expect(SOURCE).not.toMatch(...)` ở §1
  *      sẽ XANH GIẢ — "0 vi phạm" vì không có gì để đọc, không phải vì không có
  *      vi phạm).
- * §5 — `inferAoiOverallResult` / `toOriginalResult` (PHẦN 2): hai hàm THUẦN sinh
- *      ra để vá lỗi "NTF biến mất" và "ép kiểu vỡ INSERT", test trực tiếp —
- *      không cần DB, không cần mock tRPC.
  *
- * ĐỘT BIẾN BẮT BUỘC (task-9-report.md): bỏ nhánh NTF khỏi `inferAoiOverallResult`
- * (luôn trả OK/NG) → ca "không NG, có NTF → NTF" ở §5a phải ĐỎ; hoàn tác → xanh.
- *
- * §5c — BG-42 (Pha 1D task 4): `inferAoiOverallResult` từng để `explicitResult`
- * thắng VÔ ĐIỀU KIỆN (return ngay khi có, bất kể summary nói gì) — đúng hình
- * dạng Đ-21 mà Pha 1C đã đóng cho đường v2.0. Sau sửa, hàm lấy XẤU HƠN giữa
- * `explicitResult` và cuộn-từ-summary qua `verdictXauHon` (shared/rollupVerdict.ts).
- * ĐỘT BIẾN BẮT BUỘC: hoàn nguyên dòng đầu hàm về `if (input.explicitResult)
- * return input.explicitResult;` (bỏ qua verdictXauHon) → mệnh đề 1 ở §5c
- * ("khai OK với summary.ng>0 → NG") phải ĐỎ (kỳ vọng NG nhưng hàm trả OK);
- * hoàn tác → xanh lại.
+ * ── BG-85 (2026-09-02) — §5 (inferAoiOverallResult) XOÁ, KHÔNG hoàn nguyên ──
+ * `inferAoiOverallResult` — bản logic cuộn verdict CHÉP TAY THỨ HAI mà §5a/§5c
+ * pin xuống (bao gồm chính đột biến BG-42 mà §5c canh: "explicitResult thắng
+ * vô điều kiện") — đã bị XOÁ khỏi `aoiPackageRouter.ts` (BG-85, đường ZIP nay
+ * dùng THẲNG `dichCayKetQua`/`cay.verdictLuuTru`, CÙNG bộ dịch đường trực tiếp
+ * v2.0 — không còn "hàm thuần suy verdict" đứng riêng để test đơn vị). Đây LÀ
+ * bằng chứng "BG-42 tự tan": không phải lập luận — hàm sinh ra bug đó đã biến
+ * mất, và §5a/§5c (test PIN hành vi của hàm đó, kể cả ca đột biến BG-42) không
+ * còn gì để trỏ vào. `toOriginalResult` (PHẦN 2 lỗi 2) VẪN CÒN (không bị xoá —
+ * ngoài phạm vi tường minh của BG-85) nhưng đường ZIP không còn gọi nó nữa (v2.0
+ * tự giới hạn `overallResult` OK/NG ở cấp khai máy — ghi thẳng, không cần quy
+ * đổi NTF→NG) — giữ lại §5b để không mất phủ cho một hàm THUẦN vẫn export.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { inferAoiOverallResult, toOriginalResult } from "./aoiPackageRouter";
+import { toOriginalResult } from "./aoiPackageRouter";
 
 const SOURCE_PATH = join(__dirname, "aoiPackageRouter.ts");
 const SOURCE = readFileSync(SOURCE_PATH, "utf-8");
@@ -55,46 +53,12 @@ describe("aoiPackageRouter — hợp nhất đường ghi ZIP vào persistInspec
     expect(SOURCE).toMatch(/idempotencyKey:\s*`aoi-pkg:\$\{pkg\.packageId\}`/);
   });
 
-  describe("§5a inferAoiOverallResult (PHẦN 2 lỗi 1 — NTF từng bị nuốt thành OK)", () => {
-    it("có NG → NG, bất kể NTF có mặt hay không", () => {
-      expect(inferAoiOverallResult({ ngCount: 2, ntfCount: 5 })).toBe("NG");
-      expect(inferAoiOverallResult({ ngCount: 1, ntfCount: 0 })).toBe("NG");
-    });
-
-    it("không NG, có NTF → NTF — ĐÂY LÀ CA LỖI CŨ (từng suy nhầm thành OK)", () => {
-      expect(inferAoiOverallResult({ ngCount: 0, ntfCount: 3 })).toBe("NTF");
-      expect(inferAoiOverallResult({ ntfCount: 1 })).toBe("NTF");
-    });
-
-    it("không NG, không NTF → OK", () => {
-      expect(inferAoiOverallResult({ ngCount: 0, ntfCount: 0 })).toBe("OK");
-      expect(inferAoiOverallResult({})).toBe("OK");
-    });
-
-    it("explicitResult NTF/NG với summary sạch (hoặc nhẹ hơn) → giữ nguyên lời khai", () => {
-      expect(inferAoiOverallResult({ explicitResult: "NTF", ngCount: 0, ntfCount: 0 })).toBe("NTF");
-      expect(inferAoiOverallResult({ explicitResult: "NG", ntfCount: 9 })).toBe("NG");
-    });
+  it("★★★ BG-85 — `inferAoiOverallResult` KHÔNG còn được ĐỊNH NGHĨA/GỌI trong nguồn (bằng chứng 'BG-42 tự tan' — không phải lập luận; tên hàm vẫn có thể xuất hiện trong MỘT dòng comment giải thích lịch sử, đó KHÔNG phải hộ tiêu thụ)", () => {
+    expect(SOURCE).not.toMatch(/\bfunction inferAoiOverallResult\s*\(/);
+    expect(SOURCE).not.toMatch(/inferAoiOverallResult\(\{/); // không còn LỜI GỌI nào
   });
 
-  describe("§5c BG-42 — explicitResult KHÔNG còn thắng vô điều kiện, dùng verdictXauHon với cuộn-từ-summary", () => {
-    it("mệnh đề 1: gói khai OK với summary.ng>0 → ghi NG (Đ-21; TRƯỚC sửa hàm trả OK)", () => {
-      expect(inferAoiOverallResult({ explicitResult: "OK", ngCount: 3, ntfCount: 0 })).toBe("NG");
-      expect(inferAoiOverallResult({ explicitResult: "OK", ngCount: 9, ntfCount: 9 })).toBe("NG");
-    });
-
-    it("mệnh đề 2 (CHỐNG HỒI QUY): gói khai OK với summary.ng=0 → vẫn OK", () => {
-      expect(inferAoiOverallResult({ explicitResult: "OK", ngCount: 0, ntfCount: 0 })).toBe("OK");
-      expect(inferAoiOverallResult({ explicitResult: "OK", ngCount: 0, ntfCount: 3 })).toBe("NTF");
-    });
-
-    it("mệnh đề 3 (CHỐNG HỒI QUY): gói khai NG → vẫn NG, bất kể summary nói gì", () => {
-      expect(inferAoiOverallResult({ explicitResult: "NG", ngCount: 0, ntfCount: 0 })).toBe("NG");
-      expect(inferAoiOverallResult({ explicitResult: "NG", ngCount: 0, ntfCount: 9 })).toBe("NG");
-    });
-  });
-
-  describe("§5b toOriginalResult (PHẦN 2 lỗi 2 — NTF từng lọt xuống originalResultEnum và vỡ INSERT)", () => {
+  describe("§5b toOriginalResult (PHẦN 2 lỗi 2 — NTF từng lọt xuống originalResultEnum và vỡ INSERT) — VẪN CÒN, ngoài phạm vi xoá của BG-85", () => {
     it("NTF → NG (originalResultEnum chỉ nhận OK/NG, drizzle/schema/enums.ts:59)", () => {
       expect(toOriginalResult("NTF")).toBe("NG");
     });

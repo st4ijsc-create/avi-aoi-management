@@ -417,7 +417,10 @@ const DANH_SACH_SCHEMA_INGEST: readonly MucSchemaIngest[] = [
   { ten: "syncEdgeResultsCoreObject", schema: syncEdgeResultsCoreObject,
     mienTru: new Set(["results[].inputReference"]) },
   { ten: "presignCoreObject", schema: presignCoreObject, mienTru: new Set() },
-  { ten: "metaJsonSchema", schema: metaJsonSchema, mienTru: new Set(["measurements[].remark"]) },
+  // BG-85 — metaJsonSchema = machineDataContractV2.extend({images}), CÙNG miễn
+  // trừ MDC v2 (measurements[].remark thuộc hợp đồng phẳng cũ, đã xoá).
+  { ten: "metaJsonSchema", schema: metaJsonSchema,
+    mienTru: new Set(["surfaces[].positions[].captures[].components[].errorDesc"]) },
 ];
 
 describe("§1 — DANH SÁCH ĐẦY ĐỦ 6 schema (6 cửa ingest) — walker XANH trên cả sáu", () => {

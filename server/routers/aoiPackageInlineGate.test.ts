@@ -56,22 +56,33 @@ const OK_INFERENCE = {
   status: "COMPLETED" as const,
 };
 
-/** Build a package ZIP (meta.json + images/) on local storage; returns packageId. */
+/** Build a package ZIP (meta.json + images/) on local storage; returns packageId.
+ *  BG-85 — meta.json is now the TREE contract (machineDataContractV2 + images[]),
+ *  not the old flat measurements[] shape. The inline-gate hook picks the NG
+ *  capture's image via `images[]`/`captureId` (see aoiPackageRouter.ts). */
 async function seedPackage(suffix: string): Promise<{ packageId: string; serial: string }> {
   const packageId = `W7A-PKG-${STAMP}-${suffix}`;
   const serial = `SN-W7A-PKG-${STAMP}-${suffix}`;
+  const captureId = `W7A-CAP-${STAMP}-${suffix}`;
   const zip = new JSZip();
   zip.file(
     "meta.json",
     JSON.stringify({
+      identity: { station: "W7A-ST", machine: "W7A-MC", line: "W7A-LN", plant: "W7A-PL", country: "VN", solutionName: "W7A-SOL", appVersion: "1.0.0" },
+      productId: `W7A-PID-${STAMP}-${suffix}`,
       serialNumber: serial,
       productModel: PM_CODE,
       overallResult: "NG",
-      inspectionTime: new Date().toISOString(),
-      measurements: [
-        { pointId: POINT_CODE, fileName: "p1.jpg", result: "NG", measuredValue: 1.23 },
-      ],
-      summary: { totalPoints: 1, ok: 0, ng: 1 },
+      ntf: false,
+      summary: { surfaces: { total: 1, pass: 0, ng: 1, ntf: 0 }, positions: { total: 1, pass: 0, ng: 1, ntf: 0 }, captures: { total: 1, pass: 0, ng: 1, ntf: 0 }, components: { total: 1, pass: 0, ng: 1, ntf: 0 } },
+      surfaces: [{
+        name: "TOP", result: "NG", ntf: false,
+        positions: [{
+          positionId: "P01", result: "NG", ntf: false,
+          captures: [{ captureId, result: "NG", ntf: false, components: [{ componentId: `${POINT_CODE}-COMP`, result: "NG", ntf: false }] }],
+        }],
+      }],
+      images: [{ captureId, fileName: "p1.jpg" }],
     }),
   );
   zip.file("images/p1.jpg", Buffer.from(IMAGE_MARKER));
@@ -130,7 +141,13 @@ afterAll(async () => {
     if (inspectionIds.length > 0) {
       await d.delete(measurementResults).where(inArray(measurementResults.inspectionId, inspectionIds));
       await d.delete(aiQualityGateResults).where(inArray(aiQualityGateResults.inspectionId, inspectionIds));
-      await d.delete(productInspections).where(inArray(productInspections.id, inspectionIds));
+      // BG-85 — KHÔNG xoá `product_inspections` (WORM, avi_app không có quyền
+      // DELETE trên bảng này, migration 0279) — bản vá NÀY khiến `commit` thật
+      // sự tạo được inspection (trước đây meta.json cũ không parse nổi qua
+      // hợp đồng cây nên nhánh này gần như không chạy tới), lộ ra một lượt
+      // DELETE trái phép có sẵn trong file test — sửa CÙNG quy ước WORM-safe
+      // mọi file test khác trong module này đã dùng (chỉ dọn measurement_results/
+      // inspection_packages/package_activity_logs, KHÔNG đụng product_inspections).
     }
     if (packageDbIds.length > 0) {
       await d.delete(packageImages).where(inArray(packageImages.packageId, packageDbIds));

@@ -97,16 +97,21 @@ describe("★★★ mệnh đề 3 (nửa đầu) — bộ sinh KHÔNG được 
   });
 
   it("danh sách KHÔNG rỗng và chứa các đường TOP-LEVEL đã biết chắc chắn tồn tại (đối chứng thủ công, không chỉ tin bộ đếm)", () => {
-    for (const p of ["machineCode", "overallResult", "companyCode", "points", "summary"]) {
+    // BG-85 — metaJsonSchema = machineDataContractV2 + images[]: các đường
+    // TOP-LEVEL optional giờ đến từ machineDataContractV2 (type/apiKey/
+    // productModel/machineProductIndex/startedAt/completedAt/schemaVersion) +
+    // trường MỚI (images) — KHÔNG còn machineCode/companyCode/points/summary
+    // (hợp đồng phẳng cũ đã xoá; `summary` giờ BẮT BUỘC, không optional).
+    for (const p of ["type", "apiKey", "productModel", "machineProductIndex", "images"]) {
       expect(TAT_CA_OPTIONAL, `thiếu đường đã biết chắc chắn: ${p}`).toContain(p);
     }
-    for (const p of ["measurements.[].result", "measurements.[].pointId", "points.[].name"]) {
+    for (const p of ["images.[].captureName", "images.[].sha256", "surfaces.[].positions.[].captures.[].captureName", "surfaces.[].positions.[].captures.[].components.[].value"]) {
       expect(TAT_CA_OPTIONAL, `thiếu đường lồng đã biết chắc chắn: ${p}`).toContain(p);
     }
   });
 
-  it("★★★ BẮT BUỘC hai trường bắt buộc (serialNumber/productModel/measurements) KHÔNG bị liệt kê nhầm là optional", () => {
-    for (const p of ["serialNumber", "productModel", "measurements", "measurements.[].fileName"]) {
+  it("★★★ BẮT BUỘC các trường bắt buộc (serialNumber/surfaces/ntf/overallResult/identity/images[].captureId/images[].fileName) KHÔNG bị liệt kê nhầm là optional", () => {
+    for (const p of ["serialNumber", "surfaces", "ntf", "overallResult", "identity", "images.[].captureId", "images.[].fileName"]) {
       expect(TAT_CA_OPTIONAL, `${p} là BẮT BUỘC, không được xuất hiện trong danh sách optional`).not.toContain(p);
     }
   });
@@ -205,13 +210,13 @@ describe("★★★ §4 — kỷ luật KyVongOverallResult: 'ghiNhanNoDaDuyet' 
   // ca đó XANH, vì trước bản sửa này KHÔNG có gì ghim SỐ LƯỢNG/TÊN các hình
   // dạng dùng biến thể "ghi nhận nợ". Tập rỗng/dài ra âm thầm là chính lỗ đó.
   // ══════════════════════════════════════════════════════════════════════
-  it("★★★ GHIM đúng TẬP hình dạng dùng 'ghiNhanNoDaDuyet' hôm nay — thêm/bớt MỘT hình dạng (kể cả chuyển từ 'khangDinh' sang) là một LỜI KHAI, không phải bảo trì im lặng", () => {
+  it("★★★ GHIM đúng TẬP hình dạng dùng 'ghiNhanNoDaDuyet' hôm nay — BG-85: TẬP RỖNG (BG-77 tự tan, xem docblock hinhDangHopDongMetaJson.ts) — thêm lại MỘT hình dạng vào đây là một LỜI KHAI, không phải bảo trì im lặng", () => {
     expect(
       GHI_NHAN_NO.map((h) => h.ten).sort(),
       "tập hình dạng 'ghiNhanNoDaDuyet' đã đổi — nếu bạn vừa CHUYỂN một hình dạng từ 'khangDinh' sang " +
         "đây để né đỏ, đây chính là lưới được dựng ra để bắt điều đó; sửa danh sách này CHỈ khi thật sự " +
         "có một nợ MỚI đã được chủ dự án duyệt treo (kèm mục backlog CÓ THẬT — xem §5 bên dưới).",
-    ).toEqual(["biDanhPointsRongThayMeasurements_BG77"]);
+    ).toEqual([]);
   });
 
   it("mọi hình dạng 'ghiNhanNoDaDuyet': hanhViHienTai KHÁC hanhViDung — nếu bằng nhau, phải dùng 'khangDinh' thay vì 'ghi nhận nợ' một giá trị đã đúng", () => {
@@ -288,9 +293,9 @@ describe("★★★ §4 — kỷ luật KyVongOverallResult: 'ghiNhanNoDaDuyet' 
     }
   });
 
-  it("★★★ ĐÚNG BÀI HỌC BG-91 — hình dạng inspectionTime-dài-ở-cửa-ZIP nay dùng 'khangDinh' (đã vá ở 6082df2f), KHÔNG còn 'ghiNhanNoDaDuyet'", () => {
-    const shape = BANG_HINH_DANG.find((h) => h.ten === "ngayGioDaiThatDuocNhanOCuaZip_BG91_daVa");
-    expect(shape, "hình dạng BG-91 phải tồn tại (đổi tên từ …BiTuChoiOCuaZip_KHAC_v1x)").toBeTruthy();
+  it("★★★ ĐÚNG BÀI HỌC BG-91 — hình dạng chuỗi ngày-giờ dài ở cửa ZIP nay dùng 'khangDinh' (đã vá ở 6082df2f, áp dụng lại cho hợp đồng cây BG-85), KHÔNG còn 'ghiNhanNoDaDuyet'", () => {
+    const shape = BANG_HINH_DANG.find((h) => h.ten === "ngayGioDaiThatDuocNhanOMoiCap_BG91");
+    expect(shape, "hình dạng BG-91 phải tồn tại").toBeTruthy();
     expect(shape!.kyVong.loai).toBe("chapNhan");
     if (shape!.kyVong.loai === "chapNhan") {
       expect(shape!.kyVong.overallResult.dang, "BG-91 đã vá — kỳ vọng phải là khangDinh, không phải ghi nhận nợ").toBe("khangDinh");

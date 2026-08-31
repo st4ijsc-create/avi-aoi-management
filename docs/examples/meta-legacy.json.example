@@ -1,41 +1,50 @@
 {
-  "inspectionId": "INS-20240115-001",
-  "serialNumber": "SN-20240115-001",
+  "_note": "BG-85 (2026-09-02): khong con hop dong 'legacy' rieng - meta.json trong goi ZIP la CHINH machineDataContractV2 (cay surfaces[].positions[].captures[].components[]) cong images[]. Vi du duoi day la hinh dang TOI THIEU hop le duy nhat con duoc chap nhan.",
+  "identity": {
+    "station": "AIC-MA3",
+    "machine": "ASSY-04",
+    "line": "JUNIPER",
+    "plant": "FAC-HN",
+    "country": "VN",
+    "solutionName": "MODEL-X-SOLUTION",
+    "appVersion": "1.0.0"
+  },
+  "productId": "b3f1c2a0-1111-4a2b-9c3d-000000000002",
+  "serialNumber": "SN-20240115-002",
   "productModel": "PCB-V2-Standard",
-  "factory": "FACTORY-HN",
-  "line": "LINE-3",
-  "machineCode": "AOI-LINE1-01",
-  "startedAt": "2024-01-15T10:30:00Z",
-  "finishedAt": "2024-01-15T10:32:30Z",
-  "measurements": [
+  "overallResult": "OK",
+  "ntf": false,
+  "summary": {
+    "surfaces":   { "total": 1, "pass": 1, "ng": 0, "ntf": 0 },
+    "positions":  { "total": 1, "pass": 1, "ng": 0, "ntf": 0 },
+    "captures":   { "total": 1, "pass": 1, "ng": 0, "ntf": 0 },
+    "components": { "total": 1, "pass": 1, "ng": 0, "ntf": 0 }
+  },
+  "surfaces": [
     {
-      "code": "R1",
-      "name": "Resistance 1",
-      "fileName": "image_001.jpg",
+      "name": "TOP",
       "result": "OK",
-      "value": 1023.5,
-      "unit": "Ω"
-    },
-    {
-      "code": "R2",
-      "name": "Resistance 2",
-      "fileName": "image_002.jpg",
-      "result": "NG",
-      "value": 0,
-      "unit": "Ω"
-    },
-    {
-      "code": "CAP1",
-      "name": "Capacitor 15",
-      "fileName": "image_003.jpg",
-      "result": "OK",
-      "value": 10.2,
-      "unit": "μF"
+      "ntf": false,
+      "positions": [
+        {
+          "positionId": "P01",
+          "result": "OK",
+          "ntf": false,
+          "captures": [
+            {
+              "captureId": "a1b2c3d4-0000-4000-8000-000000002011",
+              "result": "OK",
+              "ntf": false,
+              "components": [
+                { "componentId": "a1b2c3d4-0000-4000-8000-000000020111", "result": "OK", "ntf": false }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
-  "summary": {
-    "totalPoints": 3,
-    "ok": 2,
-    "ng": 1
-  }
+  "images": [
+    { "captureId": "a1b2c3d4-0000-4000-8000-000000002011", "fileName": "TOP_P01_Default.jpg" }
+  ]
 }
