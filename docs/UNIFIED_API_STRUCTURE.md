@@ -344,9 +344,22 @@ package.zip
     └── image_003.jpg
 ```
 
-- **meta.json**: Chứa `measurements[].fileName`
-- **images/**: Folder chứa các file ảnh
+- **meta.json**: Chứa `images[].fileName` (BG-85 — KHÔNG còn `measurements[].fileName`, xem §4.2)
+- **images/**: Folder chứa các file ảnh — **đường dẫn DUY NHẤT** server tìm ảnh (BG-88/BG-87:
+  fallback tên trần ở gốc gói đã bị bỏ, ảnh đặt sai chỗ ⇒ 404 khi đọc lại)
 - **Image URL**: `/api/aoi/image/{packageId}/{fileName}`
+
+#### Chuẩn nén (BG-88, nguồn: `docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md` §5)
+
+| Mục | Chuẩn |
+|---|---|
+| Định dạng | ZIP, DEFLATE |
+| Mức nén | 6 (mặc định) — chỉ áp dụng cho `meta.json`; ảnh đã nén sẵn nên nén lại tốn CPU mà lợi <2% byte |
+| Ảnh | **STORE** (không nén lại) — `CompressionLevel.NoCompression` nếu dùng `System.IO.Compression` của .NET |
+| Trần kích thước gói | **200MB**, chặn cứng ở `presign` (trước khi tải byte nào lên) |
+
+Xem ví dụ C# tạo gói đúng chuẩn (per-entry compression) tại
+[`docs/examples/CSharp_API_Examples.md`](./examples/CSharp_API_Examples.md#aoi-package-upload).
 
 ### 8.2. submitInspection (Base64 inline)
 

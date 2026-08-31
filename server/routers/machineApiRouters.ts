@@ -137,6 +137,9 @@ import { machineDataContractV2 } from "../contracts/machineDataContractV2";
 // không đẻ bản thứ hai trôi khỏi bản gốc (xem chú thích tại định nghĩa).
 import { loiMayChuaNangCap, laHinhDangCayV2, dungKhoaKhuTrungV2 } from "../contracts/machineDataContract";
 import { dichCayKetQua, type MachinePayloadV2 } from "../services/ingestCayKetQua";
+// Việc 1 (BG-89) — tín hiệu ĐẾM ĐƯỢC hai hình dạng ingest, ghi qua `audit_logs` CÓ SẴN (tái
+// dùng người-ghi-sổ dùng chung, KHÔNG thêm bảng/migration). Xem `ghiTinHieuHinhDangIngest`.
+import { logCrudOperation, AUDIT_ACTIONS, ENTITY_TYPES } from "../services/auditTrailService";
 // Pha 1D Task 6 (món nợ cuối trước Khối B) — đường v1.x dùng LẠI đúng bộ hàm cuộn dùng
 // chung với đường v2.0 (ingestCayKetQua.ts) và đường ZIP (aoiPackageRouter.ts). KHÔNG
 // viết bản chép tay thứ tư — xem docblock tại nơi dùng (khoảng dòng ~2050).
@@ -3317,6 +3320,104 @@ function ingestRejectLegacyMachineEnabled(): boolean {
 }
 
 /**
+ * ★★★ Việc 1 (BG-89, docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md §7.2) — LƯỢT GHI
+ * ĐANG BAY của tín hiệu đếm hình dạng ingest. Rỗng ngoài lúc test đang đợi một lượt ghi hoàn
+ * tất — `ghiTinHieuHinhDangIngest` tự xoá phần tử của mình khỏi tập này khi ghi xong (thành
+ * công hay thất bại đều xoá, xem `.finally`).
+ *
+ * Dùng CHO TEST (qua `choTinHieuHinhDangIngestGhiXong`) để chờ đúng lượt ghi bất đồng bộ đã
+ * kích hoạt — KHÔNG dùng `setTimeout`/sleep đoán giờ.
+ */
+const ingestShapeSignalGhiDangBay = new Set<Promise<unknown>>();
+
+/**
+ * ★★★ Việc 1 (BG-89) — tín hiệu ĐẾM ĐƯỢC cho hai hình dạng ingest (v1.x/v1.1 phẳng ↔ v2.0 cây),
+ * ghi vào bảng `audit_logs` CÓ SẴN qua `logCrudOperation` (auditTrailService.ts) — KHÔNG thêm
+ * bảng/migration mới (đúng kỷ luật Task 2 vừa áp dụng: tận dụng chỗ sẵn có).
+ *
+ * ★ ĐO LIVE: `audit_logs` CŨNG WORM cho vai `avi_app` (`REVOKE UPDATE, DELETE ON audit_logs
+ * FROM avi_app`, drizzle/0224_avi_app_least_privilege_worm.sql:64) — một tác dụng phụ TỐT cho
+ * một sổ đếm: không ai (kể cả một bug ở nơi khác) xoá/sửa được hàng đã ghi bằng vai ứng dụng.
+ *
+ * VÌ SAO GHI Ở ĐÂY, KHÔNG PHẢI Ở NƠI GỌI (`submitInspection`/`submitInspectionBatch`):
+ * `quyetDinhPhienBanIngest` là MỘT điểm quyết định DÙNG CHUNG (xem docblock hàm đó) — gắn tín
+ * hiệu ngay tại đây tự động phủ CẢ HAI cửa đã gác hôm nay, và bất kỳ cửa nào nối vào đây trong
+ * tương lai (vd `commit` nếu BG-39 gđ2 được vá) sẽ được đếm MIỄN PHÍ mà không cần sửa lại điểm
+ * ghi — đúng bài học `cuaIngestScan.ts` đã ghi: cắt/đếm mà quên một cửa thì không phải cắt/đếm.
+ *
+ * ★ GHI Ở CẢ HAI TRẠNG THÁI CỜ: hàm gọi CHỖ NÀY (xem `quyetDinhPhienBanIngest` bên dưới) TRƯỚC
+ * khi biết có ném `loiMayChuaNangCap` hay không — một máy cũ vẫn được ĐẾM dù bị TỪ CHỐI (cờ BẬT)
+ * hay được NHẬN (cờ TẮT, mặc định hôm nay). Nếu chỉ đếm nhánh "được nhận", câu hỏi "còn bao
+ * nhiêu máy gửi hình dạng cũ?" sẽ CÂM đúng lúc cờ bật — đúng lúc câu trả lời cần THẬT nhất.
+ *
+ * ★ FIRE-AND-FORGET có chủ đích, KHÔNG await: `quyetDinhPhienBanIngest` là điểm quyết định
+ * ĐỒNG BỘ dùng trong `.transform()` của MỌI schema `.input()` ingest hôm nay — biến nó thành
+ * async sẽ đổi kiểu trả về của hai schema `.input()` liên quan, kéo theo rủi ro hồi quy trên
+ * ~20 file test đang gọi `submitInspection`/`submitInspectionBatch` qua router thật. Một lượt
+ * ghi tín hiệu ĐẾM chậm/lỗi KHÔNG được phép làm chậm/rớt một lượt ingest THẬT — cùng nguyên tắc
+ * `void backfillInspections().catch(() => undefined)` đã dùng trong chính file này.
+ *
+ * KHÔNG TỰ TRA CỨU DANH TÍNH MÁY: hàm này chạy TRƯỚC `authenticateMachine` (xác thực nằm trong
+ * thân `.mutation()`, sau khi `.input()` đã parse xong) — cố tình KHÔNG tự thêm một lượt tra
+ * CSDL ở đây (thêm round-trip vào đường quyết định phiên bản, có thể lệch với xác thực THẬT
+ * ngay sau đó). Định danh ghi lại là LỜI MÁY TỰ KHAI (`machineCode` cho v1.x, `identity.machine`
+ * cho v2.0) — đủ để người vận hành lọc theo tên máy, KHÔNG phải một FK đã xác thực.
+ *
+ * KHÔNG NÉM RA NGOÀI: `logCrudOperation` tự bọc try/catch (auditTrailService.ts) và trả
+ * `{id:-1}` khi CSDL lỗi/không sẵn sàng — một tín hiệu đếm mất không được phép làm rớt một lượt
+ * ingest THẬT. `.catch()` ở đây là lớp phòng thủ THỨ HAI (vd CSDL bị mock thiếu `createAuditLog`
+ * trong các test file mock `../db` toàn phần — ném `TypeError` đồng bộ NGAY TRONG try của
+ * `logCrudOperation`, vẫn bị bắt ở đó, `.catch()` này chỉ chặn phần còn sót nếu có).
+ */
+function ghiTinHieuHinhDangIngest(hinhDang: "v1" | "v2", raw: unknown): void {
+  const r = raw !== null && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const machineCode =
+    typeof r.machineCode === "string" && r.machineCode.trim() !== "" ? r.machineCode : undefined;
+  const identity =
+    r.identity !== null && typeof r.identity === "object" ? (r.identity as Record<string, unknown>) : undefined;
+  const identityMachine =
+    identity && typeof identity.machine === "string" && identity.machine.trim() !== ""
+      ? identity.machine
+      : undefined;
+  const tenMayTuKhai = machineCode ?? identityMachine ?? "(máy không khai machineCode/identity.machine)";
+  const schemaVersionKhai = typeof r.schemaVersion === "string" ? r.schemaVersion : null;
+
+  const luot = logCrudOperation(
+    { source: "api" },
+    {
+      action: hinhDang === "v2" ? AUDIT_ACTIONS.INGEST_SHAPE_V2 : AUDIT_ACTIONS.INGEST_SHAPE_LEGACY,
+      entityType: ENTITY_TYPES.MACHINE,
+      entityName: tenMayTuKhai,
+      details: {
+        operation: hinhDang === "v2" ? "INGEST_SHAPE_V2" : "INGEST_SHAPE_LEGACY",
+        metadata: {
+          hinhDang,
+          coCoCheCatMayCuDangBat: ingestRejectLegacyMachineEnabled(),
+          schemaVersionKhai,
+        },
+      },
+      status: "success",
+    },
+  ).catch((err) => {
+    console.error(
+      "[ghiTinHieuHinhDangIngest] ghi tín hiệu đếm hình dạng ingest thất bại (KHÔNG chặn ingest thật):",
+      err,
+    );
+  });
+  ingestShapeSignalGhiDangBay.add(luot);
+  void luot.finally(() => ingestShapeSignalGhiDangBay.delete(luot));
+}
+
+/**
+ * ★★★ CHỈ DÙNG CHO TEST — đợi MỌI lượt ghi tín hiệu đếm hình dạng ingest (`ghiTinHieuHinhDangIngest`)
+ * đang bay hoàn tất, trước khi SELECT lại `audit_logs`. Không đoán bằng sleep: đợi ĐÚNG promise đã
+ * kích hoạt qua chính route dưới kiểm tra (xem `cuaIngestCensus.test.ts`/lưới Task 3 BG-89).
+ */
+export async function choTinHieuHinhDangIngestGhiXong(): Promise<void> {
+  await Promise.all(ingestShapeSignalGhiDangBay);
+}
+
+/**
  * ★★★ Pha 1C Task 3 (BG-21 ⛔) — MỘT điểm quyết định phiên bản, DÙNG CHUNG cho mọi cửa ingest có
  * hình dạng thuộc `machineDataContract` (phẳng v1.x/v1.1 ↔ cây v2.0).
  *
@@ -3339,9 +3440,15 @@ function ingestRejectLegacyMachineEnabled(): boolean {
  * `cuaIngestCensus.test.ts` (BG-31) quét TOÀN BỘ `machineApiRouter` bằng AST và đòi MỌI cửa nhận
  * dữ liệu kiểm tra từ máy (`submit*`/`sync*Result*`) hoặc gọi được tới hàm này, hoặc có tên trong
  * `MIEN_TRU_QUYET_DINH_PHIEN_BAN` kèm lý do — không cửa nào được im lặng đứng ngoài cả hai.
+ *
+ * ★★★ Việc 1 (BG-89) — TRƯỚC khi quyết định NHẬN/TỪ CHỐI, gọi `ghiTinHieuHinhDangIngest` (đếm
+ * cả hai hình dạng, ở CẢ HAI trạng thái cờ — xem docblock hàm đó). Đặt TRƯỚC nhánh `throw` để một
+ * máy cũ bị từ chối (cờ BẬT) vẫn được ĐẾM, không chỉ máy cũ được nhận (cờ TẮT).
  */
 function quyetDinhPhienBanIngest(raw: unknown): "v2" | "v1" {
-  if (laHinhDangCayV2(raw)) return "v2";
+  const laCay = laHinhDangCayV2(raw);
+  ghiTinHieuHinhDangIngest(laCay ? "v2" : "v1", raw);
+  if (laCay) return "v2";
   if (ingestRejectLegacyMachineEnabled()) {
     const declared =
       raw && typeof raw === "object" && typeof (raw as { schemaVersion?: unknown }).schemaVersion === "string"

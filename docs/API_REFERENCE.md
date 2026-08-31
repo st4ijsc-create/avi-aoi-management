@@ -727,6 +727,19 @@ package.zip
     └── image_003.jpg
 ```
 
+**Chuẩn nén gói (BG-88, 2026-09-02, nguồn:
+[`docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md`](../docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md) §5):**
+
+| Mục | Chuẩn | Ghi chú |
+|---|---|---|
+| Định dạng | **ZIP**, thuật toán **DEFLATE** | thư viện `JSZip` phía server đọc được; hầu hết thư viện ZIP client (kể cả `System.IO.Compression` của .NET) đều tương thích |
+| Mức nén | **6** (mặc định) | áp dụng cho `meta.json` — ảnh đã nén sẵn nên nén thêm gần như không giảm byte mà tốn CPU máy. .NET không có tham số "mức 0-9" công khai; `CompressionLevel.Optimal` (mặc định của `ZipArchive`) là lựa chọn ĐÚNG, không cần chỉnh thêm |
+| Ảnh (`images/*`) | **KHÔNG nén lại** — dùng **STORE** | ảnh đã là JPEG/PNG (đã nén ở tầng ảnh); nén lại bằng DEFLATE tốn CPU máy, giảm dưới 2% byte. Ở .NET: `archive.CreateEntry(name, CompressionLevel.NoCompression)` |
+| Trần kích thước gói | **200 MB** (cứng, phía server) | `sizeBytes` vượt trần bị **từ chối NGAY Ở `presign`**, trước khi máy kịp tải byte nào lên. Nguồn: giới hạn body `express.raw` (chống DoS bộ nhớ) — xem `tranByteGoiZip()` trong mã server |
+| Đường dẫn ảnh | **`images/<fileName>` là đường dẫn DUY NHẤT** | server **không còn** dò tìm ảnh ở gốc gói (fallback tên trần đã bị **bỏ** — trước đây `zip.file(imagePath) \|\| zip.file(fileName)`, nay chỉ còn một đường). Đặt sai chỗ ⇒ `commit` báo lỗi 404 nêu rõ đường mong đợi |
+
+⚠ **Hai điều bên tích hợp máy PHẢI biết:** (1) gói trên 200MB sẽ bị từ chối ngay lúc xin phép tải lên (`presign`), không phải sau khi tốn thời gian tải cả gói lên rồi mới báo lỗi; (2) mọi ảnh PHẢI nằm trong thư mục `images/` — không còn cách nào khác để server tìm thấy ảnh.
+
 **meta.json Structure (BG-85, 2026-09-02 — MỘT hợp đồng, hai đường vận chuyển):**
 
 `meta.json` KHÔNG còn là một hợp đồng riêng — nó là **chính** payload kết quả v2.0

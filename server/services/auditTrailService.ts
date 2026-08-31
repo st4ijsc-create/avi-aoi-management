@@ -158,7 +158,16 @@ export const AUDIT_ACTIONS = {
   INSPECT_NTF: "inspection_ntf_confirm",
   INSPECT_ACKNOWLEDGE: "inspection_acknowledge",
   INSPECT_ARCHIVE: "inspection_archive",
-  
+
+  // ★★★ Việc 1 (BG-89, docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md §7.2) — tín hiệu
+  // ĐẾM ĐƯỢC cho hai hình dạng payload máy gửi (v1.x/v1.1 phẳng ↔ v2.0 cây), ghi bởi
+  // `quyetDinhPhienBanIngest` (server/routers/machineApiRouters.ts) — MỘT điểm quyết định dùng
+  // chung cho `submitInspection`/`submitInspectionBatch`. Trả lời câu hỏi vận hành "còn bao
+  // nhiêu máy gửi hình dạng cũ?" bằng SELECT/COUNT trên `audit_logs`, không phải suy đoán từ
+  // trạng thái cờ `INGEST_REJECT_LEGACY_MACHINE_ENABLED`.
+  INGEST_SHAPE_LEGACY: "ingest_shape_legacy",
+  INGEST_SHAPE_V2: "ingest_shape_v2",
+
   // Reports
   REPORT_GENERATE: "report_generate",
   REPORT_EXPORT: "report_export",

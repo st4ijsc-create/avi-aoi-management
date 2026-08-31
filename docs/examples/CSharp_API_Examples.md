@@ -354,10 +354,27 @@ namespace AviAoiClient.Services
 
 ### Step 1: Create ZIP Package
 
+⚠ **BG-85 (2026-09-02) — `meta.json` KHÔNG còn là hợp đồng phẳng riêng.** Nó nay là
+**chính** payload kết quả v2.0 (cây `surfaces[].positions[].captures[].components[]`)
+**cộng đúng một** mảng `images[]` tham chiếu ảnh (`captureId` là khoá join sang
+`captures[]` trong CÙNG cây đó). Hình dạng `measurements[]`/`points[]` phẳng cũ **không
+còn được server chấp nhận** cho gói ZIP — xem
+[UNIFIED_API_STRUCTURE.md](../UNIFIED_API_STRUCTURE.md), mục "4.2. Cấu trúc legacy (BG-85...)".
+
+⚠ **BG-88 (2026-09-02) — chuẩn nén.** `ZipFile.CreateFromDirectory(...)` (API cũ, đã bỏ
+dưới đây) không cho điều khiển nén THEO TỪNG ENTRY — nó nén MỌI thứ, kể cả ảnh đã nén sẵn
+(tốn CPU máy, giảm <2% byte). Dùng `ZipArchive` + `CreateEntry(name, CompressionLevel)`
+trực tiếp: `meta.json` dùng `CompressionLevel.Optimal` (DEFLATE, tương đương mức 6 zlib —
+.NET không có tham số "mức 0-9" công khai, `Optimal` là lựa chọn ĐÚNG); ảnh dùng
+`CompressionLevel.NoCompression` (STORE — không nén lại). Xem
+[UNIFIED_API_STRUCTURE.md](../UNIFIED_API_STRUCTURE.md), mục "8.1. AOI Package (ZIP upload)"
+cho bảng chuẩn đầy đủ (định dạng/mức nén/trần 200MB/đường dẫn `images/` duy nhất).
+
 ```csharp
 using System;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Text;
 using Newtonsoft.Json;
 
@@ -365,94 +382,133 @@ namespace AviAoiClient.Services
 {
     public class PackageBuilder
     {
-        public string CreateAoiPackage(InspectionData data, string[] imagePaths, string outputPath)
+        /// Trần kích thước gói phía server — vượt trần bị TỪ CHỐI ở `presign`, TRƯỚC khi
+        /// máy kịp tải byte nào lên (BG-87/BG-88). 200MB, khớp `tranByteGoiZip()` phía server.
+        private const long TRAN_KICH_THUOC_GOI_BYTES = 200L * 1024 * 1024;
+
+        public string CreateAoiPackage(ApiConfig config, InspectionData data, string[] imagePaths, string outputPath)
         {
             try
             {
-                // Create temp directory
-                string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-                Directory.CreateDirectory(tempDir);
-                string imagesDir = Path.Combine(tempDir, "images");
-                Directory.CreateDirectory(imagesDir);
+                if (File.Exists(outputPath)) File.Delete(outputPath);
 
-                // Create meta.json (UNIFIED STRUCTURE)
+                // ── images[] — mảng tham chiếu ảnh. `fileName` là đường dẫn TƯƠNG ĐỐI
+                // trong images/ (KHÔNG chứa "..", KHÔNG tuyệt đối) — đây là ĐƯỜNG DUY
+                // NHẤT server tìm ảnh (BG-87: fallback tên trần ở gốc gói đã bị bỏ).
+                var imageRefs = imagePaths
+                    .Select((path, idx) => new { captureId = $"CAP-{idx + 1:D3}", fileName = $"image_{idx + 1:D3}.jpg" })
+                    .ToArray();
+
+                // ── meta.json — CÂY 4 CẤP, ví dụ TỐI THIỂU một surface/position, mỗi ảnh
+                // là một capture. `result` ở MỌI cấp CHỈ "OK"/"NG" (KHÔNG có "NTF" trong
+                // enum này) — NTF là cờ `ntf` bool RIÊNG song song với `result`; một phép
+                // đo NTF ánh xạ result="OK" + ntf=true, KHÔNG PHẢI result="NTF".
+                var components = data.Measurements.Select(m => new
+                {
+                    componentId = m.PointCode ?? m.PointId,
+                    result = m.Result == "NG" ? "NG" : "OK",
+                    ntf = m.Result == "NTF",
+                    value = m.MeasuredValue?.ToString(),
+                }).ToArray();
+                bool coNg = components.Any(c => c.result == "NG");
+
                 var metaData = new
                 {
-                    machineCode = data.MachineCode,
-                    inspectionId = $"INS-{DateTime.UtcNow:yyyyMMdd-HHmmss}",
-                    
-                    // Product info
+                    schemaVersion = "2.0",
+                    apiKey = config.ApiKey,
+                    identity = new
+                    {
+                        station = config.MachineCode,
+                        machine = config.MachineCode,
+                        line = data.LineCode,
+                        plant = data.FactoryCode,
+                        country = "VN",
+                        solutionName = "InspectProAOI",
+                        appVersion = "1.0.0",
+                    },
+                    productId = Guid.NewGuid().ToString(),
                     serialNumber = data.SerialNumber,
                     productModel = data.ProductModel,
-                    batchNumber = data.BatchNumber,
-                    
-                    // Timing
-                    inspectionTime = data.InspectionTime.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                    startedAt = data.InspectionTime.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                    finishedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                    cycleTime = data.CycleTime,
-                    
-                    // Enterprise hierarchy (UNIFIED)
-                    companyCode = data.CompanyCode,
-                    factoryCode = data.FactoryCode,
-                    workshopCode = data.WorkshopCode,
-                    lineCode = data.LineCode,
-                    stageCode = data.StageCode,
-                    
-                    // Production context (UNIFIED)
-                    productionOrderCode = data.ProductionOrderCode,
-                    operatorId = data.OperatorId,
-                    
-                    // Overall result
-                    overallResult = data.OverallResult,
-                    
-                    // Measurements (UNIFIED STRUCTURE)
-                    measurements = data.Measurements.Select((m, idx) => new
-                    {
-                        pointId = m.PointId,
-                        pointCode = m.PointCode,
-                        name = m.Name ?? m.PointCode,
-                        fileName = $"image_{idx + 1:D3}.jpg",
-                        result = m.Result,
-                        measuredValue = m.MeasuredValue,
-                        unit = m.Unit,
-                        remark = m.Remark
-                    }).ToArray(),
-                    
-                    // Summary
+                    overallResult = data.OverallResult == "NG" ? "NG" : "OK",
+                    ntf = data.Measurements.Any(m => m.Result == "NTF"),
+                    startedAt = data.InspectionTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                    completedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
                     summary = new
                     {
-                        totalPoints = data.Measurements.Count,
-                        ok = data.Measurements.Count(m => m.Result == "OK"),
-                        ng = data.Measurements.Count(m => m.Result == "NG"),
-                        ntf = data.Measurements.Count(m => m.Result == "NTF")
-                    }
+                        surfaces = new { total = 1, pass = coNg ? 0 : 1, ng = coNg ? 1 : 0, ntf = 0 },
+                        positions = new { total = 1, pass = coNg ? 0 : 1, ng = coNg ? 1 : 0, ntf = 0 },
+                        captures = new { total = imageRefs.Length, pass = imageRefs.Length, ng = 0, ntf = 0 },
+                        components = new
+                        {
+                            total = components.Length,
+                            pass = components.Count(c => c.result == "OK"),
+                            ng = components.Count(c => c.result == "NG"),
+                            ntf = components.Count(c => c.ntf),
+                        },
+                    },
+                    surfaces = new object[]
+                    {
+                        new
+                        {
+                            name = "TOP",
+                            result = coNg ? "NG" : "OK",
+                            ntf = false,
+                            positions = new object[]
+                            {
+                                new
+                                {
+                                    positionId = "P01",
+                                    result = coNg ? "NG" : "OK",
+                                    ntf = false,
+                                    captures = imageRefs.Select(img => (object)new
+                                    {
+                                        captureId = img.captureId,
+                                        result = "OK",
+                                        ntf = false,
+                                        components,
+                                    }).ToArray(),
+                                },
+                            },
+                        },
+                    },
+                    images = imageRefs,
                 };
 
-                // Write meta.json
                 string metaJson = JsonConvert.SerializeObject(metaData, Formatting.Indented);
-                File.WriteAllText(Path.Combine(tempDir, "meta.json"), metaJson, Encoding.UTF8);
 
-                // Copy images
-                for (int i = 0; i < imagePaths.Length; i++)
+                using (var zipStream = new FileStream(outputPath, FileMode.Create))
+                using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create))
                 {
-                    if (File.Exists(imagePaths[i]))
+                    // meta.json PHẢI ở GỐC gói, tên CHÍNH XÁC "meta.json" (phân biệt hoa
+                    // thường) — DEFLATE, CompressionLevel.Optimal (≈ mức 6 zlib, xem
+                    // ghi chú BG-88 phía trên).
+                    var metaEntry = archive.CreateEntry("meta.json", CompressionLevel.Optimal);
+                    using (var writer = new StreamWriter(metaEntry.Open(), new UTF8Encoding(false)))
+                        writer.Write(metaJson);
+
+                    // Ảnh — STORE (KHÔNG nén lại, đã là JPEG/PNG nén sẵn). MỌI ảnh nằm
+                    // trong images/<fileName>, khớp NGUYÊN VĂN images[].fileName ở trên.
+                    for (int i = 0; i < imagePaths.Length; i++)
                     {
-                        string destFileName = $"image_{i + 1:D3}.jpg";
-                        File.Copy(imagePaths[i], Path.Combine(imagesDir, destFileName), true);
+                        if (!File.Exists(imagePaths[i])) continue;
+                        var entry = archive.CreateEntry($"images/{imageRefs[i].fileName}", CompressionLevel.NoCompression);
+                        using var entryStream = entry.Open();
+                        using var fileStream = File.OpenRead(imagePaths[i]);
+                        fileStream.CopyTo(entryStream);
                     }
                 }
 
-                // Create ZIP
-                if (File.Exists(outputPath))
-                    File.Delete(outputPath);
+                long kichThuocGoi = new FileInfo(outputPath).Length;
+                if (kichThuocGoi > TRAN_KICH_THUOC_GOI_BYTES)
+                {
+                    // Báo LỖI Ở ĐÂY (phía máy) tốt hơn để server từ chối ở presign — máy
+                    // biết ngay, không tốn một round-trip mạng cho một gói chắc chắn bị từ chối.
+                    throw new InvalidOperationException(
+                        $"Gói {kichThuocGoi:N0} byte vượt trần {TRAN_KICH_THUOC_GOI_BYTES:N0} byte (200MB) — " +
+                        "server sẽ từ chối ở presign. Giảm số ảnh/độ phân giải hoặc chia nhỏ gói.");
+                }
 
-                ZipFile.CreateFromDirectory(tempDir, outputPath);
-
-                // Cleanup
-                Directory.Delete(tempDir, true);
-
-                Console.WriteLine($"✅ Package created: {outputPath}");
+                Console.WriteLine($"✅ Package created: {outputPath} ({kichThuocGoi:N0} bytes)");
                 return outputPath;
             }
             catch (Exception ex)
@@ -955,7 +1011,7 @@ namespace AviAoiClient.Examples
                 string[] images = { @"C:\Images\sample.jpg" };
                 string packagePath = Path.Combine(Path.GetTempPath(), $"package_{i}.zip");
                 
-                packageBuilder.CreateAoiPackage(inspection, images, packagePath);
+                packageBuilder.CreateAoiPackage(config, inspection, images, packagePath);
 
                 // Upload
                 await packageService.UploadPackageAsync(packagePath);

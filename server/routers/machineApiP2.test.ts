@@ -252,14 +252,26 @@ describe("CASE #8 — serial-collision soft detect (QĐ#3)", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// Task 3 (BG-89, 2026-09-02) — `db.createAuditLog` nay CŨNG được gọi bởi tín hiệu ĐẾM
+// hình dạng ingest (`ghiTinHieuHinhDangIngest`, action `ingest_shape_legacy`/`ingest_shape_v2`)
+// — MỘT tín hiệu ĐỘC LẬP, KHÔNG gated bởi `INGEST_REQUEST_AUDIT_ENABLED`, ghi ở `.input()`
+// TRƯỚC `auditInspectionSubmission` (ghi trong thân `.mutation()`, action
+// `machine.inspection.submit`). Từ đây, `db.createAuditLog` không còn là "chỉ §5.6 gọi" — ba ca
+// dưới đây LỌC theo `action` để tiếp tục canh ĐÚNG mệnh đề của MÌNH (§5.6), không lẫn với tín
+// hiệu ĐẾM hình dạng của Task 3 (canh riêng ở `dangKyTinHieuHinhDangIngestBg89.test.ts`).
+function goiAuditTheoHanhDong(hanhDong: string) {
+  return (db.createAuditLog as ReturnType<typeof vi.fn>).mock.calls.filter(([arg]) => arg?.action === hanhDong);
+}
+
 describe("§5.6 — request-level ingest audit", () => {
   it("★ flag ON → audit row written after submit (who/what/when, no payload)", async () => {
     process.env.INGEST_REQUEST_AUDIT_ENABLED = "true";
     const caller = machineApiRouter.createCaller(ctx());
     const res = await caller.submitInspection(payload({ serialNumber: "SN-AUDIT", overallResult: "NG" }));
 
-    expect(db.createAuditLog).toHaveBeenCalledTimes(1);
-    expect(db.createAuditLog).toHaveBeenCalledWith(
+    const goi = goiAuditTheoHanhDong("machine.inspection.submit");
+    expect(goi).toHaveLength(1);
+    expect(goi[0][0]).toEqual(
       expect.objectContaining({
         action: "machine.inspection.submit",
         entityType: "product_inspection",
@@ -274,10 +286,10 @@ describe("§5.6 — request-level ingest audit", () => {
     );
   });
 
-  it("flag OFF (default) → NO audit row (perf-safe default)", async () => {
+  it("flag OFF (default) → NO audit row TỪ §5.6 (perf-safe default) — tín hiệu ĐẾM hình dạng (BG-89, KHÔNG gated) vẫn ghi riêng, đó là hành vi ĐÚNG Ý ĐỊNH, không phải hồi quy của §5.6", async () => {
     const caller = machineApiRouter.createCaller(ctx());
     await caller.submitInspection(payload());
-    expect(db.createAuditLog).not.toHaveBeenCalled();
+    expect(goiAuditTheoHanhDong("machine.inspection.submit")).toHaveLength(0);
   });
 
   it("duplicate submission is also audited (flag on) with duplicate:true", async () => {
@@ -286,8 +298,8 @@ describe("§5.6 — request-level ingest audit", () => {
     const p = payload({ serialNumber: "SN-AUDIT-DUP" });
     await caller.submitInspection(p);
     await caller.submitInspection(p); // duplicate
-    expect(db.createAuditLog).toHaveBeenCalledTimes(2);
-    const secondCall = (db.createAuditLog as ReturnType<typeof vi.fn>).mock.calls[1][0];
-    expect(secondCall.details.duplicate).toBe(true);
+    const goi = goiAuditTheoHanhDong("machine.inspection.submit");
+    expect(goi).toHaveLength(2);
+    expect(goi[1][0].details.duplicate).toBe(true);
   });
 });
