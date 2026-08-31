@@ -155,6 +155,22 @@ describe("§phím-tắt — PHÍM TẮT TOÀN KHUNG (Đợt 3 UX)", () => {
     expect(src).toContain("phanGiaiPhimTatKhung({");
     expect(src).toContain('addEventListener("keydown"');
   });
+
+  it("★★★ 2026-08-31 PDCA (T11): nghe ở pha CAPTURE + stopPropagation — Ctrl+K không được rơi vào palette toàn-app", () => {
+    // Đo thật trước bản vá: bôi đen 86 ký tự + Ctrl+K ⇒ palette DashboardLayout mở (nó cũng nghe
+    // Ctrl+K ở document, chạy TRƯỚC vì listener trang re-register theo deps), focus dialog NUỐT
+    // selection (86→0) nên ô sửa-đoạn không bao giờ mở. Capture trên document chạy trước MỌI bubble
+    // bất kể thứ tự đăng ký + stopPropagation chặn sự kiện tới layout — vá bằng CẤU TẠO.
+    // Đột biến: gỡ cờ `true` (về bubble) hoặc gỡ stopPropagation ⇒ ĐỎ ngay đây; và cặp add/remove
+    // phải CÙNG cờ (lệch là rò listener).
+    const src = doc(TRANG);
+    expect(src).toContain('addEventListener("keydown", onKey, true)');
+    expect(src).toContain('removeEventListener("keydown", onKey, true)');
+    expect(src).toContain("e.stopPropagation();");
+    // Lớp ĐỘC LẬP thứ hai ở DashboardLayout: nhường khi bề mặt khác đã nhận phím.
+    const layout = doc("client/src/components/DashboardLayout.tsx");
+    expect(layout).toContain("if (e.defaultPrevented) return;");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════

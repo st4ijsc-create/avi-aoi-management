@@ -241,6 +241,13 @@ function DashboardLayoutContent({
   const [launcherOpen, setLauncherOpen] = useState(false);
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // ★ 2026-08-31 · PDCA vòng 1 (T11) — NHƯỜNG bề mặt đã nhận phím: một trang "editor surface"
+      // (vd /ai-coding-workspace: Ctrl+K = sửa-đoạn-chọn kiểu Cursor) preventDefault ở pha capture;
+      // toggle palette đè lên nó là hai handler tranh một phím — đo thật: dialog mở, focus nuốt
+      // selection (86→0) trước khi handler trang kịp đọc. Lớp CHÍNH của bản vá là capture+
+      // stopPropagation ở trang (sự kiện thường không tới được đây); dòng này là lớp ĐỘC LẬP thứ
+      // hai cho mọi thứ tự listener khác — hai lớp phải cùng chặn, không che nhau.
+      if (e.defaultPrevented) return;
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.key.toLowerCase() === "k") {
         e.preventDefault();

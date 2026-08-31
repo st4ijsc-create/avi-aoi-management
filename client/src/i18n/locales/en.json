@@ -19415,7 +19415,10 @@
       "loading": "Searching…",
       "none": "No results found.",
       "results": "Repo-wide search results",
-      "count": "{{n}} results"
+      "count": "{{n}} results",
+      "truncatedNone": "⚠ Scan scope was CUT ({{n}} files scanned) — not the whole repo yet.",
+      "truncatedTime": "⚠ PARTIAL due to deadline: only {{n}} files scanned — results are incomplete, narrow by folder for a full scan.",
+      "truncatedCap": "⚠ PARTIAL: hit scan/result cap ({{n}} files scanned) — more matches may exist."
     },
     "suaChon": {
       "m0": "In file `{{path}}`, edit EXACTLY the selected code below:",

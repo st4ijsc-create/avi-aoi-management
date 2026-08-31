@@ -201,11 +201,52 @@ export const repoWorkspaceRouter = router({
       z.object({
         path: z.string().max(1024).optional(),
         depth: z.number().int().min(1).max(3).optional(),
+        /**
+         * ★ 2026-08-31 · PDCA vòng 1 (T03/T10) — CHỈ MỤC PHẲNG cho Ctrl+P/@-mention. Đo trên UI
+         * thật: chỉ mục cũ (tool `list_files` depth:3, trần 300 mục) vắng `client/src/lib/*` ⇒ gõ
+         * tên tệp phổ biến KHÔNG mở được. `phang:true` đi nhánh `duyetTepDocDuoc` — ĐÚNG walker mà
+         * `grep_repo` tin dùng (một nguồn luật cấm/đuôi, trần kép tệp+hạn-chót, không symlink) —
+         * trả MỌI tệp đọc-được của cây làm chỉ mục. Thuần BỔ SUNG vào thủ tục ĐÃ CÓ (không thêm
+         * thủ tục mới ⇒ `phamViDocCensus` không đổi — cùng khuôn `cauHinhVong` doc 81).
+         * ⚠ RBAC fail-closed ngay dưới — nhánh này KHÔNG đi qua tool nên phải tự hỏi
+         *   `checkPermission`, cùng bit `ai_repo_read/canView` với chính tool ấy.
+         */
+        phang: z.boolean().optional(),
         lang: langSchema.optional(),
         projectId: projectIdSchema,
       }),
     )
     .query(async ({ input, ctx }) => {
+      if (input.phang === true) {
+        const userId = Number((ctx as any).user?.id);
+        const role = String((ctx as any).user?.role ?? "");
+        let cho = false;
+        try {
+          cho = await checkPermission(userId, role, "ai_repo_read", "canView");
+        } catch {
+          cho = false;
+        }
+        if (!Number.isInteger(userId) || userId <= 0 || !cho) {
+          return { ok: false, note: "PERMISSION_DENIED", summary: null, data: null };
+        }
+        const goc = phanGiaiGoc(input.projectId);
+        if (!goc.ok) return { ok: false, note: "PROJECT_NOT_FOUND", summary: null, data: null };
+        const { duyetTepDocDuoc, gocHopCat, TRAN_TEP_PHANG, HAN_CHOT_PHANG_MS } = await import(
+          "../services/aiLocalTools/repoSandbox"
+        );
+        const kq = duyetTepDocDuoc(goc.goc ?? gocHopCat(), "", TRAN_TEP_PHANG, Date.now() + HAN_CHOT_PHANG_MS);
+        return {
+          ok: true,
+          note: null,
+          summary: null,
+          data: {
+            path: "",
+            count: kq.tep.length,
+            truncated: kq.hetGio || kq.hetTran,
+            entries: kq.tep.map((p) => ({ path: p, kind: "file" as const, bytes: null })),
+          },
+        };
+      }
       return runReadTool<ListFilesData>(
         "list_files",
         { path: input.path, depth: input.depth },

@@ -762,15 +762,17 @@ export default function AICodingWorkspace() {
   /**
    * (C) @-mention: danh sách đường-dẫn KHỚP đang hiện, mục đang tô (điều hướng ↑/↓), và vị trí dấu
    * `@` trong ô nhập (chèn đè lên đoạn nào). `dsTepDuAn` là danh sách tệp dự án đã phẳng.
-   * ⚠ v1: `list_files` depth 3, cắt theo TRẦN LIỆT KÊ của hộp cát (cờ `truncated`) — tệp sâu hơn 3
-   *   mức hoặc quá trần sẽ KHÔNG có trong gợi ý. Chỉ `kind==="file"`; đường dẫn TƯƠNG ĐỐI.
+   * ★ 2026-08-31 · PDCA vòng 1 (T03/T10) — nguồn đổi từ `depth:3` (trần 300 mục — đo thật: gõ
+   *   "dauRaSong"/"@lenhSong" ⇒ 0 gợi ý vì tệp 4 đoạn vắng chỉ mục) sang `phang:true`: server duyệt
+   *   TOÀN cây bằng đúng walker của grep (trần 12.000 tệp + hạn chót — xem `TRAN_TEP_PHANG`).
+   *   Chỉ `kind==="file"`; đường dẫn TƯƠNG ĐỐI; staleTime 5' (chỉ mục to hơn, đừng nạp lại mỗi phút).
    */
   const [dsKhop, setDsKhop] = useState<string[]>([]);
   const [chiSoChon, setChiSoChon] = useState(0);
   const viTriAtRef = useRef<number | null>(null);
   const dsTepQ = trpc.repoWorkspace.listFiles.useQuery(
-    { path: "", depth: 3, projectId },
-    { enabled: !!projectId, staleTime: 60_000 },
+    { path: "", phang: true, projectId },
+    { enabled: !!projectId, staleTime: 5 * 60_000 },
   );
   const dsTepDuAn = useMemo(
     () => (dsTepQ.data?.data?.entries ?? []).filter((e) => e.kind === "file").map((e) => e.path),
@@ -923,6 +925,18 @@ export default function AICodingWorkspace() {
       const hd = phanGiaiPhimTatKhung({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, trongONhap, dangStream: isStreaming });
       if (hd === "bo_qua") return;
       e.preventDefault();
+      /**
+       * ★★★ 2026-08-31 · PDCA vòng 1 (T11) — DỪNG LAN TRUYỀN cho phím trang SỞ HỮU. Đo thật: bôi
+       * đen 86 ký tự + Ctrl+K ⇒ ô sửa-đoạn KHÔNG mở, palette toàn-app MỞ, và selection đo được
+       * 86→0 ngay tại thời điểm handler này đọc — `DashboardLayout` cũng nghe Ctrl+K ở `document`
+       * (VÔ ĐIỀU KIỆN), chạy TRƯỚC (listener này re-register theo deps nên rơi xuống cuối hàng),
+       * mở dialog (focus nuốt selection) rồi mới tới lượt ta. Vá bằng CẤU TẠO, không bằng thứ tự:
+       * nghe ở PHA CAPTURE (đăng ký `true` ở dưới — capture trên `document` chạy trước MỌI bubble
+       * bất kể thứ tự đăng ký) + `stopPropagation()` cho đúng các phím đã khớp — sự kiện không bao
+       * giờ tới listener của layout. Trang này là một "editor surface": nó sở hữu Ctrl+P/F/K y như
+       * VSCode ghi đè phím trình duyệt; palette vẫn còn nút ⌘K ở header để bấm chuột.
+       */
+      e.stopPropagation();
       if (hd === "terminal") setDuoiChat((v) => (v === "terminal" ? "dong" : "terminal"));
       else if (hd === "mo_nhanh") { if (hep) setKhungHep("tep"); requestAnimationFrame(() => oLocCayRef.current?.focus()); }
       else if (hd === "tim_trong_tep") {
@@ -960,8 +974,9 @@ export default function AICodingWorkspace() {
       else if (hd === "gui") void handleSendRef.current?.();
       else if (hd === "dung_stream") stopKbStream();
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    // ⚠ CAPTURE (`true`) — cặp add/remove phải CÙNG cờ, lệch là rò listener (xem khối T11 ở trên).
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
   }, [hep, isStreaming, stopKbStream, selectedPath, pendingDiff, pendingBatch, t]);
 
   // ★★★ 2026-08-25 · ĐỢT 2 (C) — chèn ĐƯỜNG DẪN SẠCH (KHÔNG kèm `@`) vào ô nhập; DÙNG CHUNG cho chuột
@@ -1964,12 +1979,31 @@ export default function AICodingWorkspace() {
                   ) : grepRepoQ.isLoading ? (
                     <div className="px-2 py-2 text-xs text-muted-foreground">{t("repoWs.search.loading", "Đang tìm…")}</div>
                   ) : ketQuaGrep.length === 0 ? (
-                    <div className="px-2 py-2 text-xs text-muted-foreground">{t("repoWs.search.none", "Không thấy kết quả nào.")}</div>
+                    <div className="px-2 py-2 text-xs text-muted-foreground">
+                      {t("repoWs.search.none", "Không thấy kết quả nào.")}
+                      {/* ★ PDCA vòng 1 (T05) — BẢN CẮT phải nói ra CẢ khi 0 kết quả: "không thấy" trên
+                          một phạm vi bị cắt KHÔNG phải "repo không có" (GREP_DEADLINE cùng lý lẽ). */}
+                      {grepRepoQ.data?.data?.truncated === true && (
+                        <span data-grep-cat className="mt-1 block text-[10px] text-amber-700 dark:text-amber-400">
+                          {t("repoWs.search.truncatedNone", "⚠ Phạm vi quét bị CẮT ({{n}} tệp đã quét) — chưa phải cả repo.", { n: grepRepoQ.data?.data?.scanned ?? 0 })}
+                        </span>
+                      )}
+                    </div>
                   ) : (
                     /* ★★★ CURSOR-PARITY (đuôi dài) — GOM THEO TỆP: header (tệp + thư mục + số khớp) rồi các
                        dòng khớp thụt vào (dòng + đoạn text). Sạch hơn danh sách phẳng khi nhiều tệp. */
                     <div aria-label={t("repoWs.search.results", "Kết quả tìm toàn repo")}>
                       <div className="px-2 pb-0.5 text-[10px] font-medium text-muted-foreground">{t("repoWs.search.count", "{{n}} kết quả", { n: ketQuaGrep.length })}</div>
+                      {/* ★ PDCA vòng 1 (T05) — server khai BẢN CẮT trong `data.truncated` nhưng UI cũ
+                          NUỐT lời khai ấy: người dùng thấy "1 kết quả" như thể đã quét hết (đo thật —
+                          tìm "StreamingSecretRedactor" ra 1/≥5 tệp mà không một dấu hiệu nào). */}
+                      {grepRepoQ.data?.data?.truncated === true && (
+                        <div data-grep-cat className="mx-2 mb-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-[10px] leading-snug text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                          {grepRepoQ.data?.data?.timedOut
+                            ? t("repoWs.search.truncatedTime", "⚠ BẢN CẮT vì hết giờ: mới quét {{n}} tệp — kết quả CHƯA đầy đủ, thu hẹp bằng thư mục để quét trọn.", { n: grepRepoQ.data?.data?.scanned ?? 0 })
+                            : t("repoWs.search.truncatedCap", "⚠ BẢN CẮT: chạm trần quét/kết quả ({{n}} tệp đã quét) — có thể còn khớp chưa hiện.", { n: grepRepoQ.data?.data?.scanned ?? 0 })}
+                        </div>
+                      )}
                       {ketQuaGrepGom.map(([path, matches]) => {
                         const cat = path.lastIndexOf("/");
                         const ten = cat >= 0 ? path.slice(cat + 1) : path;

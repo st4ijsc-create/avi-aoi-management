@@ -19395,7 +19395,10 @@
       "loading": "Đang tìm…",
       "none": "Không thấy kết quả nào.",
       "results": "Kết quả tìm toàn repo",
-      "count": "{{n}} kết quả"
+      "count": "{{n}} kết quả",
+      "truncatedNone": "⚠ Phạm vi quét bị CẮT ({{n}} tệp đã quét) — chưa phải cả repo.",
+      "truncatedTime": "⚠ BẢN CẮT vì hết giờ: mới quét {{n}} tệp — kết quả CHƯA đầy đủ, thu hẹp bằng thư mục để quét trọn.",
+      "truncatedCap": "⚠ BẢN CẮT: chạm trần quét/kết quả ({{n}} tệp đã quét) — có thể còn khớp chưa hiện."
     },
     "suaChon": {
       "m0": "Trong tệp `{{path}}`, sửa ĐÚNG đoạn mã đã bôi đen dưới đây:",

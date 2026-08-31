@@ -241,6 +241,19 @@ export const TEN_TEP_CHO_PHEP: ReadonlySet<string> = new Set([
   ".gitignore",
   ".editorconfig",
   ".gitattributes",
+  // ★ 2026-08-31 · PDCA vòng 1 (T02b) — đo trên UI thật: mở `.prettierrc` bị DENIED_EXT
+  // "(không có đuôi)" trong khi VSCode/Cursor mở được mọi tệp cấu hình văn bản. Bổ sung các
+  // basename cấu hình PHỔ BIẾN, thuần văn bản, không mang bí mật theo cấu tạo.
+  // ⚠ CỐ Ý VẮNG MẶT: `.npmrc` (mang được `_authToken` — một dòng registry token là một bí mật
+  //   thật) và mọi họ `.env*` (đã cấm ở `KHUON_TEP_CAM`, hai lớp phải ĐỘC LẬP cùng chặn).
+  ".prettierrc",
+  ".prettierignore",
+  ".dockerignore",
+  ".eslintrc",
+  ".nvmrc",
+  "dockerfile",
+  "makefile",
+  "license",
 ]);
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -264,8 +277,22 @@ export const TRAN_BYTE_MOI_PHIEN = 1_048_576;
 export const CUA_SO_NGAN_SACH_MS = 15 * 60_000;
 /** Số mục tối đa `list_files` trả về trong MỘT lượt. */
 export const TRAN_MUC_LIET_KE = 300;
-/** Số tệp tối đa `grep_repo` được MỞ trong một lượt (trần công việc, khác trần kết quả). */
-export const TRAN_TEP_QUET = 600;
+/**
+ * Số tệp tối đa `grep_repo` được MỞ trong một lượt (trần công việc, khác trần kết quả).
+ * ★ 2026-08-31 · PDCA vòng 1 (T05) — 600 là một BẢN CẮT che gần hết repo: đo thật, cây nhìn-thấy
+ * của hộp cát có ~7.616 tệp, và một lượt tìm "StreamingSecretRedactor" (có ≥5 tệp nguồn khớp) trả
+ * đúng 1 kết quả vì quét dừng ở tệp thứ 600. Nâng lên 9.000 để phủ trọn cây hiện tại (+dư); cầu
+ * chì CPU THẬT vẫn là `HAN_GIO_GREP_MS` — quá hạn thì trả bản cắt CÓ KHAI, đúng như cũ.
+ */
+export const TRAN_TEP_QUET = 9_000;
+/**
+ * ★ 2026-08-31 · PDCA vòng 1 — trần cho CHỈ MỤC PHẲNG (`listFiles phang:true`, Ctrl+P/@-mention).
+ * Đo thật: cây nhìn-thấy ~7.616 tệp ⇒ 12.000 phủ trọn + dư; hạn chót 3s là cầu chì thời gian
+ * (cùng khuôn trần-kép của `duyetTepDocDuoc`). Vượt trần/hạn ⇒ `truncated:true` — client PHẢI
+ * hiện cờ, không được im lặng (bài "bản cắt không khai là lời nói dối").
+ */
+export const TRAN_TEP_PHANG = 12_000;
+export const HAN_CHOT_PHANG_MS = 3_000;
 /** Số kết quả tối đa `grep_repo` trả về. */
 export const TRAN_KET_QUA_GREP = 80;
 /** Hạn giờ cho một lượt `grep_repo`. Quét cả repo có thể lâu tuỳ ổ đĩa ⇒ trả BẢN CẮT, không treo. */
