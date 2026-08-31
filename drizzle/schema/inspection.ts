@@ -473,6 +473,12 @@ export const inspectionPackages = pgTable("inspection_packages", {
   // File info
   fileSizeBytes: bigint("fileSizeBytes", { mode: "number" }),
   imageCount: integer("imageCount").default(0),
+  // I-7 (review lượt 8, migration 0346) — `sha256` Agent khai ở BƯỚC PRESIGN,
+  // lưu chữ THƯỜNG đã `.trim()`. Byte ZIP chưa tồn tại lúc presign nên không
+  // kiểm được tại chỗ; cột này là cách đối chiếu nó ở đúng khoảnh khắc byte
+  // thật xuất hiện (tuyến PUT /api/aoi/upload lượt ĐẦU, và `commit` làm
+  // backstop). NULL = Agent không khai (tuỳ chọn, nguyên tắc di trú §7/Đ-20).
+  sha256Presign: varchar("sha256Presign", { length: 128 }),
   
   // Status tracking
   status: packageStatusEnum("status").default("pending").notNull(),

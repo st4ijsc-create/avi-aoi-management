@@ -4821,6 +4821,31 @@ async function startServer() {
         });
       }
 
+      // ★★★ I-7 (review lượt 8) — `sha256` khai ở PRESIGN được ĐỐI CHIẾU TẠI
+      // ĐÂY, trên byte ZIP THẬT vừa nhận, TRƯỚC `storagePut`/UPDATE. Đây là
+      // khoảnh khắc SỚM NHẤT lời khai đó kiểm được (ở bước `presign` byte chưa
+      // tồn tại) — và `presign` là nơi DUY NHẤT hai tài liệu hướng máy dạy đặt
+      // `sha256`, nên trước bản vá này một Agent làm ĐÚNG tài liệu nhận 0 kiểm
+      // toàn vẹn trong khi tài liệu gọi trường đó là "integrity check" (bẫy §6
+      // chuẩn gói ảnh: "trường trông như bảo đảm toàn vẹn mà không phải còn
+      // nguy hiểm hơn không có trường"). `pkg.sha256Presign` đã được chuẩn hoá
+      // chữ THƯỜNG lúc ghi (aoiPackageRouter.presign, migration 0346).
+      // `!isRetry` — HOÀN TOÀN cùng lý do đã viết cho `sizeBytes` ngay trên:
+      // một retry hợp lệ (sửa ZIP rồi tải lại) đổi digest một cách CHÍNH ĐÁNG,
+      // và `presign` lặp không cập nhật lại cột này.
+      if (!isRetry && pkg.sha256Presign) {
+        const { createHash } = await import("node:crypto");
+        const shaThuc = createHash("sha256").update(zipBuffer).digest("hex");
+        if (shaThuc !== pkg.sha256Presign) {
+          return res.status(400).json({
+            success: false,
+            message:
+              `sha256 Agent khai ở presign ("${pkg.sha256Presign}") không khớp sha256 THẬT của byte ZIP nhận ` +
+              `được ("${shaThuc}") — dữ liệu có thể đã hỏng khi truyền. Gói KHÔNG được lưu; tải lại ZIP.`,
+          });
+        }
+      }
+
       // Store the ZIP file
       const { storagePut } = await import("../storage");
       const storageKey = pkg.storageKey || `aoi/${machine.code}/${new Date().toISOString().slice(0, 10).replace(/-/g, "/")}/${packageId}.zip`;

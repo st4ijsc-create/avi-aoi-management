@@ -599,12 +599,29 @@ export function toOriginalResult(overall: "OK" | "NG" | "NTF"): "OK" | "NG" {
  * thống tệ hơn", Đ-20). ⚠ TUỲ CHỌN KHÔNG ĐƯỢC tạo cảm giác "đã kiểm": một gói
  * KHÔNG gửi `sha256` không hề an toàn hơn/kém hơn một gói gửi SAI — cả hai
  * đều không có bảo đảm toàn vẹn từ trường này; chỉ gói gửi ĐÚNG mới có bảo
- * đảm THẬT. `sha256` khai ở ĐÂY (presign, TRƯỚC khi byte tồn tại) KHÔNG được
- * lưu lại để đối chiếu sau (không thêm cột DB cho việc này — ngoài phạm vi
- * task) — muốn được KIỂM THẬT, Agent phải khai LẠI `sha256` ở lượt gọi
- * `commit` (trường đã có sẵn ở `commit`'s input, xem docblock tại đó), thời
- * điểm byte ZIP thật đã tồn tại trên máy chủ để băm và so. `.max(128)` dư sức
- * SHA-256 hex thật (64 ký tự), chặn payload rác.
+ * đảm THẬT. `.max(128)` dư sức SHA-256 hex thật (64 ký tự), chặn payload rác.
+ *
+ * ★★★ I-7 (review lượt 8) — `sha256` khai Ở ĐÂY GIỜ ĐƯỢC KIỂM THẬT. TRƯỚC bản
+ * vá này nó "nhận rồi vứt" (không lưu, không so, không cả log) — đúng cái bẫy
+ * §6 chuẩn gói ảnh TỰ GỌI TÊN: *"trường trông như bảo đảm toàn vẹn mà không
+ * phải còn nguy hiểm hơn không có trường"* — và tệ hơn, `presign` là nơi DUY
+ * NHẤT hai tài liệu hướng máy (`docs/CSHARP_CLIENT_UPLOAD_GUIDE.md` và tab
+ * Presign của `client/src/components/apiDocs/AoiPackageSection.tsx`, chỗ còn
+ * gọi thẳng nó là "integrity check") dạy đặt nó ⇒ một Agent làm ĐÚNG tài liệu
+ * công bố nhận 0 kiểm toàn vẹn trong khi tin rằng mình có.
+ * KHÔNG kiểm được NGAY tại đây (byte ZIP chưa tồn tại ở bước presign), nên lời
+ * khai được LƯU vào `inspection_packages."sha256Presign"` (migration 0346,
+ * chuẩn hoá `.trim().toLowerCase()`) rồi đối chiếu ở đúng khoảnh khắc byte
+ * thật xuất hiện:
+ *   · `PUT /api/aoi/upload/:packageId` (server/_core/index.ts) — lượt tải ĐẦU
+ *     sau presign (`!isRetry`, CÙNG điều kiện đã dùng cho `sizeBytes`);
+ *   · `commit` — backstop cho gói `status==='pending'` (đường ghi thẳng vào
+ *     storage, không đi qua Express).
+ * Agent vẫn được khai LẠI `sha256` ở `commit` — trường độc lập, kiểm độc lập.
+ * ⚠ Một lượt `presign` LẶP cho gói đã tồn tại KHÔNG cập nhật `sha256Presign`
+ * (nhánh trả-về-sớm bên dưới) — CÙNG hành vi `fileSizeBytes` vốn có, và cũng
+ * là lý do hai phép đối chiếu chỉ chạy ở lượt tải ĐẦU: một retry HỢP LỆ (sửa
+ * ZIP rồi tải lại) đổi cả kích thước lẫn digest một cách CHÍNH ĐÁNG.
  *
  * `sizeBytes` — TRẦN CỨNG `tranByteGoiZip()` (xem docblock hàm đó ngay phía
  * trên `demSoLoiVinhVienTuLichSu`): từ chối NGAY ở đây nếu Agent khai một con
@@ -719,6 +736,12 @@ export const aoiPackageRouter = router({
         packageId: input.inspectionId,
         storageKey: objectKey,
         fileSizeBytes: input.sizeBytes,
+        // I-7 — LƯU lời khai `sha256` để đối chiếu khi byte thật xuất hiện
+        // (xem docblock `presignCoreObject`). Chuẩn hoá về chữ thường đã trim
+        // NGAY tại chỗ ghi: Agent .NET (`Convert.ToHexString`) trả HOA, digest
+        // máy chủ luôn thường — hoa/thường KHÔNG phải "lệch nội dung", và
+        // chuẩn hoá một lần ở đây tốt hơn nhớ chuẩn hoá ở hai chỗ so.
+        sha256Presign: input.sha256?.trim().toLowerCase() || null,
         status: "pending",
         machineCode: machineRecord.code,
         presignExpiresAt: expiresAt,
@@ -935,17 +958,42 @@ export const aoiPackageRouter = router({
           // phía máy chủ luôn chữ thường, nhưng Agent .NET (`Convert.
           // ToHexString`) mặc định trả HOA — không được coi hoa/thường khác
           // nhau là "lệch nội dung".
-          if (input.sha256) {
-            const shaZipThuc = createHash("sha256").update(zipBuffer).digest("hex");
-            if (shaZipThuc.toLowerCase() !== input.sha256.trim().toLowerCase()) {
-              throw appError(
-                "BAD_REQUEST",
-                "INVALID_VALUE",
-                { field: "sha256" },
-                `TỪ CHỐI gói: sha256 Agent khai ("${input.sha256}") không khớp sha256 THẬT của byte ZIP ` +
-                  `nhận được ("${shaZipThuc}") — dữ liệu có thể đã hỏng khi truyền/lưu. Tải lại ZIP và commit lại.`,
-              );
-            }
+          // ★★★ I-7 (review lượt 8) — HAI lời khai `sha256` độc lập, kiểm CẢ
+          // HAI nếu có mặt. Tính MỘT LẦN digest thật rồi so với từng lời khai.
+          const shaZipThuc =
+            input.sha256 || pkg.sha256Presign
+              ? createHash("sha256").update(zipBuffer).digest("hex").toLowerCase()
+              : null;
+
+          //   (3a) `input.sha256` — Agent khai LẠI ngay tại lượt `commit` này.
+          if (input.sha256 && shaZipThuc !== input.sha256.trim().toLowerCase()) {
+            throw appError(
+              "BAD_REQUEST",
+              "INVALID_VALUE",
+              { field: "sha256" },
+              `TỪ CHỐI gói: sha256 Agent khai ("${input.sha256}") không khớp sha256 THẬT của byte ZIP ` +
+                `nhận được ("${shaZipThuc}") — dữ liệu có thể đã hỏng khi truyền/lưu. Tải lại ZIP và commit lại.`,
+            );
+          }
+
+          //   (3b) `pkg.sha256Presign` — lời khai từ BƯỚC PRESIGN, lưu trên
+          //   hàng (migration 0346). Đây là nơi DUY NHẤT hai tài liệu hướng máy
+          //   dạy đặt `sha256`, nên không kiểm nó = để bảo đảm toàn vẹn của
+          //   phần lớn Agent thành GIẢ. Kiểm CHỈ khi gói CHƯA từng đi qua tuyến
+          //   upload (`status==='pending'`) — hoàn toàn cùng lý do (2b) ở trên:
+          //   tuyến `PUT /api/aoi/upload/:packageId` đã đối chiếu Ở ĐÓ cho lượt
+          //   tải ĐẦU, còn sau một RETRY hợp lệ (sửa ZIP rồi tải lại) thì digest
+          //   presign cũ đã lỗi thời một cách chính đáng — so tiếp sẽ từ chối
+          //   NHẦM. Nhánh này vì thế phủ đúng đường ghi thẳng vào storage,
+          //   không đi qua Express.
+          if (pkg.status === "pending" && pkg.sha256Presign && shaZipThuc !== pkg.sha256Presign) {
+            throw appError(
+              "BAD_REQUEST",
+              "INVALID_VALUE",
+              { field: "sha256" },
+              `TỪ CHỐI gói: sha256 Agent khai ở presign ("${pkg.sha256Presign}") không khớp sha256 THẬT của ` +
+                `byte ZIP nhận được ("${shaZipThuc}") — dữ liệu có thể đã hỏng khi truyền/lưu. Tải lại ZIP và commit lại.`,
+            );
           }
 
           const zip = await JSZip.loadAsync(zipBuffer);

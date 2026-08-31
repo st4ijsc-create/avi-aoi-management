@@ -71,7 +71,11 @@ Headers: X-API-Key: machine-api-key
 
 {
   "apiKey": "MCH-API-xxxx",
-  "packageId": "INS-20260207-001"
+  "packageId": "INS-20260207-001",
+  // Tuỳ chọn, ĐỘC LẬP với lời khai ở presign — khai thì server băm/đếm lại
+  // byte ZIP đã lưu và so; lệch ⇒ từ chối commit.
+  "sizeBytes": 15728640,
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }`;
 
   const aoiCommitResponse = `{
@@ -631,8 +635,8 @@ record PendingUpload
                         <ul className="list-disc space-y-1 pl-5">
                           <li><code>apiKey</code> hoặc <code>machineCode</code> — xác thực máy (ít nhất 1 trong 2)</li>
                           <li><code>inspectionId</code> — ID duy nhất cho package (từ Agent)</li>
-                          <li><code>sizeBytes</code> — kích thước ZIP dự kiến (bytes)</li>
-                          <li><code>sha256</code> — (optional) hash SHA-256 cho integrity check</li>
+                          <li><code>sizeBytes</code> — số byte CHÍNH XÁC của ZIP. Vượt trần (mặc định 200MB, cấu hình <code>AOI_PACKAGE_ZIP_MAX_BYTES</code>) ⇒ từ chối ngay tại presign, trước khi tốn một lượt tải</li>
+                          <li><code>sha256</code> — (tuỳ chọn) SHA-256 hex của TOÀN BỘ tệp ZIP, hoa/thường đều được. Máy chủ LƯU lời khai này rồi băm lại byte ZIP thật ở bước upload — lệch ⇒ HTTP 400, gói KHÔNG được lưu. Không gửi ⇒ gói đó không có phép kiểm toàn vẹn nào (chỉ còn đối chiếu <code>sizeBytes</code>)</li>
                         </ul>
                       </div>
                     </CardContent>
@@ -700,10 +704,11 @@ record PendingUpload
                       <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 text-sm text-white/80">
                         <h4 className="font-semibold mb-2">Xử lý khi commit</h4>
                         <ul className="list-disc space-y-1 pl-5">
-                          <li>Parse <code>meta.json</code> từ ZIP để lấy serialNumber, productModel, measurements</li>
-                          <li>Tự động tạo <code>package_images</code> records cho từng điểm đo</li>
-                          <li>Link tới <code>product_inspections</code> nếu trùng serialNumber + machineId</li>
-                          <li>Đếm OK/NG từ summary hoặc danh sách measurements</li>
+                          <li>Parse <code>meta.json</code> từ ZIP theo hợp đồng CÂY <code>surfaces[].positions[].captures[].components[]</code> + <code>images[]</code> (hình dạng phẳng <code>measurements[]</code> cũ KHÔNG còn parse được)</li>
+                          <li>Tạo <code>package_images</code> cho từng phần tử <code>images[]</code> đã thẩm định (<code>pointCode</code> = <code>captureId</code>, <code>result</code> = phán quyết cuộn từ cây)</li>
+                          <li>Tạo <code>product_inspections</code> cho MỌI gói có <code>meta.json</code> hợp lệ — kể cả khi <code>serialNumber</code> RỖNG. Hội tụ theo <code>packageId</code> (khoá idempotency <code>aoi-pkg:&lt;packageId&gt;</code>), KHÔNG gộp theo serial trùng</li>
+                          <li>Đếm OK/NG và phán quyết <code>overallResult</code> LUÔN cuộn từ CÂY. <code>summary</code> máy khai chỉ được lưu nguyên văn + gắn cờ lệch, KHÔNG BAO GIỜ là nguồn</li>
+                          <li><code>images[].captureId</code> không có trong cây, hoặc <code>images[].fileName</code> không có tệp thật trong <code>images/</code> ⇒ TỪ CHỐI CẢ GÓI (không âm thầm bỏ ảnh)</li>
                           <li>Nếu lỗi parse → status = "failed" với errorMessage</li>
                         </ul>
                       </div>

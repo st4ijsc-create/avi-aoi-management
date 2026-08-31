@@ -16,9 +16,19 @@ Content-Type: application/json
   "apiKey": "YOUR_API_KEY",
   "inspectionId": "unique-inspection-id",
   "sizeBytes": 12345678,
-  "sha256": "optional-file-hash"
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
 ```
+
+**`sha256` (tuỳ chọn) — được KIỂM THẬT:** SHA-256 hex của **toàn bộ tệp ZIP**
+sắp tải lên (hoa/thường đều được — máy chủ so không phân biệt). Máy chủ lưu lời
+khai này và **băm lại byte ZIP thật** ở Bước 2; lệch ⇒ **HTTP 400 và gói KHÔNG
+được lưu**. Không gửi ⇒ không có phép kiểm toàn vẹn nào cho gói đó (chỉ còn đối
+chiếu `sizeBytes`) — không gửi *không* an toàn hơn gửi sai.
+
+**`sizeBytes` (bắt buộc):** số byte CHÍNH XÁC của tệp ZIP. Vượt trần (mặc định
+200 MB, cấu hình bằng `AOI_PACKAGE_ZIP_MAX_BYTES`) ⇒ bị từ chối ngay tại bước
+presign, trước khi tốn một lượt tải.
 
 **Response:**
 ```json
@@ -50,7 +60,11 @@ x-api-key: YOUR_API_KEY
   - `x-api-key` HOẶC `x-machine-code`
   - `Content-Length`
 - **Body**: Binary data của file ZIP (không encode base64)
-- **Kích thước tối đa**: 200MB
+- **Kích thước tối đa**: mặc định 200 MB — trần THẬT do `AOI_PACKAGE_ZIP_MAX_BYTES`
+  quyết định (cùng một con số cho `presign`, tuyến upload này và `commit`).
+- **Toàn vẹn**: nếu Bước 1 có khai `sha256`, máy chủ băm lại byte nhận được ở
+  ĐÂY và trả **400** khi lệch — gói không được lưu. Cũng trả **400** nếu số byte
+  thật khác `sizeBytes` đã khai.
 
 ### Bước 3: Commit Package
 ```http
@@ -59,9 +73,16 @@ Content-Type: application/json
 
 {
   "apiKey": "YOUR_API_KEY",
-  "packageId": "unique-inspection-id"
+  "packageId": "unique-inspection-id",
+  "sizeBytes": 12345678,
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
 ```
+
+`sizeBytes` và `sha256` ở bước này **tuỳ chọn và độc lập** với lời khai ở Bước 1:
+khai thì máy chủ băm/đếm lại byte ZIP đã lưu và so; lệch ⇒ từ chối commit. Khai
+ở Bước 1 là đủ cho vòng `presign → upload → commit` chuẩn; khai lại ở đây chỉ
+thêm một lớp kiểm cho đường tải ZIP vào storage **không** đi qua Bước 2.
 
 ## Phương thức 2: Single Image Upload
 
