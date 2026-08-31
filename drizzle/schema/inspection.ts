@@ -507,7 +507,11 @@ export const packageImages = pgTable("package_images", {
   packageId: integer("packageId").notNull(),               // FK -> inspection_packages.id
   
   // Point info from meta.json
-  pointCode: varchar("pointCode", { length: 50 }).notNull(),
+  // I-6 (review lượt 8, migration 0345) — varchar(50) → varchar(64): sau BG-85,
+  // khoá nhận diện "điểm kiểm tra có ảnh" là `images[].captureId` của hợp đồng
+  // CÂY, khai `.max(64)` khớp `inspection_captures.captureExtId varchar(64)`.
+  // Con số 50 là di sản mã điểm đo (`MP001`) của hợp đồng PHẲNG đã xoá.
+  pointCode: varchar("pointCode", { length: 64 }).notNull(),
   pointName: varchar("pointName", { length: 255 }),
   fileName: varchar("fileName", { length: 255 }).notNull(), // e.g. "MP001.jpg"
   result: overallResultEnum("result"),

@@ -1172,10 +1172,50 @@ export const aoiPackageRouter = router({
             }
           }
 
-          // Update package record → committed. KHÔNG còn insert `package_images`
-          // ở nhánh cây (mối lo, xem báo cáo BG-85: `pointCode` varchar(50) <
-          // `captureId` cho phép tới 64 ký tự — ghi có nguy cơ cắt cụt âm thầm,
-          // ngoài phạm vi bốn mệnh đề của task này).
+          // ════════════════════════════════════════════════════════════════
+          // ★★★ I-6 (review lượt 8) — GHI LẠI `package_images` TỪ `images[]`
+          // ĐÃ THẨM ĐỊNH. BG-85 bỏ hẳn INSERT này với lý do "`pointCode`
+          // varchar(50) < `captureId` cho phép tới 64 ⇒ nguy cơ cắt cụt âm
+          // thầm" — mối lo ĐÚNG, cách xử lý SAI: bỏ ghi làm `getPackage`/
+          // `getPackageImages` trả RỖNG và `getImage({pointCode})` mất bảng
+          // tra `pointCode → fileName`, tức người phán mất ảnh NG để nhìn.
+          // Đo được: 2 gói `committed` hình dạng cây trong `aoi_management_test`
+          // có `imageCount>0` mà 0 hàng `package_images`.
+          // Migration 0345 nới cột lên varchar(64) = ĐÚNG trần hợp đồng
+          // (`imageRefSchema.captureId .max(64)`) ⇒ không còn phải chọn giữa
+          // "cắt cụt âm thầm" và "không ghi gì".
+          //
+          // Nguồn dữ liệu là `images[]` ĐÃ QUA bất biến 1 + 2 ở trên (captureId
+          // tồn tại trong cây; fileName có tệp thật trong `images/`), nên mọi
+          // hàng ghi ra đều nối được cả hai chiều — không có hàng mồ côi.
+          // `result` lấy `rolledResult` của CHÍNH capture đó (cuộn từ cây), KHÔNG
+          // lấy `result` máy khai: cùng bất biến 3 áp cho cột báo cáo.
+          // `measurementValue` để NULL — hợp đồng cây mang trị đo ở cấp
+          // COMPONENT, gán bừa một trị nào đó vào hàng cấp capture là bịa.
+          //
+          // DELETE-rồi-INSERT trong MỘT transaction: phép ghi này phải chịu
+          // được một lượt `commit` lặp (gói `failed` giữa chừng rồi retry) mà
+          // không nhân đôi hàng. `package_images` KHÔNG phải bảng WORM —
+          // `avi_app` có đủ SELECT/INSERT/UPDATE/DELETE (đo bằng
+          // information_schema.role_table_grants), khác `product_inspections`.
+          // ════════════════════════════════════════════════════════════════
+          const anhDaThamDinh = metaData?.images ?? [];
+          if (metaData) {
+            const hangAnh = anhDaThamDinh.map((img) => ({
+              packageId: pkg.id,
+              pointCode: img.captureId,
+              pointName: img.captureName ?? null,
+              fileName: img.fileName,
+              result: capturesTrongCay.get(img.captureId)?.rolledResult,
+              measurementValue: null,
+            }));
+            await database.transaction(async (tx) => {
+              await tx.delete(packageImages).where(eq(packageImages.packageId, pkg.id));
+              if (hangAnh.length > 0) await tx.insert(packageImages).values(hangAnh);
+            });
+          }
+
+          // Update package record → committed.
           await database
             .update(inspectionPackages)
             .set({
@@ -1238,6 +1278,19 @@ export const aoiPackageRouter = router({
           // Embed-at-ingest (Phase A2/A4): queue DINOv2 visual embeddings for this
           // inspection's images. Non-blocking + flag-gated (AOI_EMBEDDING_ENABLED);
           // never throws — must not affect commit success.
+          //
+          // ⚠ I-6 (review lượt 8) — LỜI KHAI PHẢI ĐÚNG SỰ THẬT HÔM NAY: worker
+          // (`aoiImageEmbeddingWorker.ts`) chọn ứng viên bằng
+          // `measurement_results WHERE inspectionId=? AND imageUrl IS NOT NULL`.
+          // Đường ZIP hình dạng CÂY KHÔNG ghi `measurement_results` cấp
+          // component (Đ-19, chưa nối — chờ ánh xạ `componentExtId → pointDefId`
+          // của Khối B), nên với gói cây, truy vấn đó trả 0 hàng và cả chuỗi
+          // embed → anomaly → escalation VL KHÔNG chạy. Lệnh xếp hàng dưới đây
+          // vì thế là một no-op CÓ CHỦ ĐÍCH cho gói cây: giữ nguyên để khi Khối
+          // B nối `measurement_results` thì đường này sống lại mà không phải
+          // nhớ thêm một chỗ. `package_images` (vừa khôi phục ở trên) KHÔNG
+          // phải nguồn của worker — bảng đó phục vụ đường ĐỌC ảnh của người
+          // dùng, không phải đường embedding.
           try {
             if (linkedInspectionId) {
               const { enqueueAoiImageEmbedding } = await import("../services/aoiImageEmbeddingWorker");
