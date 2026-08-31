@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using St4i.Connector.Abstractions;
@@ -27,14 +28,19 @@ namespace St4i.EngineApi.Tests.HmiModel;
 /// side against it in <b>both directions</b> — a declared kind with no factory, and a factory whose kind is
 /// undeclared, are each a failing test.</para>
 ///
-/// <para><b>Why the truth side is anchored on a production assembly.</b> The obvious spelling —
-/// scan <c>AppDomain.CurrentDomain.GetAssemblies()</c> — was measured first and rejected: it finds
-/// twenty-odd <see cref="IConnectorFactory"/> test doubles in this very assembly
+/// <para><b>Why the truth side excludes test-support assemblies by what they LINK, not where they live.</b>
+/// The obvious spelling — scan <c>AppDomain.CurrentDomain.GetAssemblies()</c> — was measured first and
+/// rejected: it finds twenty-odd <see cref="IConnectorFactory"/> test doubles in this very assembly
 /// (<c>MapReadingFakeFactory</c>, <c>AlwaysRefusesFactory</c>, <c>ThrowingKindFactory</c>, …), several
-/// reporting <c>Modbus</c>, so the truth side would have been contaminated by the tests that are supposed
-/// to be checking it. Walking the reference closure of a PRODUCTION anchor instead is structural rather
-/// than nominal: a product assembly cannot reference a test assembly, so no double can enter, and the rule
-/// needs no ".Tests" name matching to maintain.</para>
+/// reporting <c>Modbus</c>.
+///
+/// <para>🔴 The replacement — "walk a production anchor's closure, because a product assembly cannot
+/// reference a test assembly" — was DEFEATED, and the second attack was silent: a fake reporting
+/// <c>DriverKinds.Modbus</c> in <c>src/St4i.Connector.Conformance</c>, a <c>src/</c> assembly carrying an
+/// xunit reference for test support, contaminated the closure and left every test here green. The
+/// <c>src/</c>-versus-<c>tests/</c> convention the argument rested on is one this repository already
+/// breaks. See <see cref="ExistsToSupportTests"/> for the property that replaced it and the residue it
+/// still carries.</para></para>
 /// </summary>
 public sealed class DriverTagSupportTests
 {
@@ -43,16 +49,51 @@ public sealed class DriverTagSupportTests
     // ---------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// Every concrete <see cref="IConnectorFactory"/> this PRODUCT ships, found by walking the reference
-    /// closure of the assembly that owns the kind→factory dispatch.
+    /// 🔴 <b>The signal that an assembly exists to support TESTS, and therefore may not supply the truth
+    /// side: it references a test framework.</b>
+    ///
+    /// <para>This replaced "the assembly is not the test assembly", which a reviewer defeated twice. The
+    /// first attack added a <c>ProjectReference</c> from <c>St4i.EngineApi</c> to
+    /// <c>St4i.EdgeCore.Tests</c>; that reddened, but only by luck — those doubles report exotic kinds, so
+    /// direction 2 caught them and direction 1 would not have. The second attack was SILENT: a fake
+    /// reporting <c>DriverKinds.Modbus</c> placed in <c>src/St4i.Connector.Conformance</c> — a
+    /// <c>src/</c> assembly that carries an xunit <c>PackageReference</c> for test support — left all
+    /// eighteen tests in this file green, <c>Assert.DoesNotContain</c> included. The old defence rested on
+    /// a location convention (<c>src/</c> versus <c>tests/</c>) that this repository already breaks.</para>
+    ///
+    /// <para><b>Why this signal and not a name.</b> It is a property of what the assembly IS rather than
+    /// where it sits or what it is called: an assembly that links a test framework is one whose types exist
+    /// to be exercised, and a factory declared there is a fixture whatever its namespace. Measured against
+    /// this tree, <c>src/St4i.Connector.Conformance</c> is the ONE <c>src/</c> assembly it excludes — the
+    /// exact hole the second attack used. It is not a perfect oracle (a double in a framework-free helper
+    /// assembly would still pass) and <c>TheReflectedFactoryPopulation_…</c> below states that residue
+    /// rather than implying none exists.</para>
     /// </summary>
-    private static IReadOnlyList<Type> ShippedFactoryTypes()
+    private static bool ExistsToSupportTests(Assembly assembly) =>
+        assembly.GetReferencedAssemblies().Any(r =>
+            r.Name is { } name &&
+            (name.StartsWith("xunit", StringComparison.OrdinalIgnoreCase) ||
+             name.StartsWith("nunit", StringComparison.OrdinalIgnoreCase) ||
+             name.StartsWith("Microsoft.VisualStudio.TestPlatform", StringComparison.OrdinalIgnoreCase) ||
+             name.StartsWith("MSTest", StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>
+    /// Every product assembly reachable from this test run — the anchor's reference closure UNIONED with
+    /// every <c>St4i*.dll</c> beside the test binary, minus everything that exists to support tests.
+    ///
+    /// <para>🔴 <b>The union closes LOW-7.</b> A single anchor's closure sees only what that anchor
+    /// references, so a factory in a product assembly the anchor does not reference would be invisible and
+    /// BOTH directional tests would pass vacuously about it. The deployed-directory scan catches assemblies
+    /// the closure walk misses; the source census in <c>EveryConnectorFactoryDeclaredInSrc_…</c> catches
+    /// what neither sees.</para>
+    /// </summary>
+    private static IReadOnlyList<Assembly> ProductAssemblies()
     {
-        var closure = new HashSet<Assembly>();
+        var found = new HashSet<Assembly>();
 
         void Walk(Assembly assembly)
         {
-            if (!closure.Add(assembly)) return;
+            if (!found.Add(assembly)) return;
             foreach (var reference in assembly.GetReferencedAssemblies()
                          .Where(r => r.Name!.StartsWith("St4i", StringComparison.Ordinal)))
             {
@@ -61,18 +102,28 @@ public sealed class DriverTagSupportTests
             }
         }
 
-        // The anchor is the assembly under test, which is also the one holding RegisterAll's dispatch.
         Walk(typeof(DriverTagSupport).Assembly);
 
-        Assert.DoesNotContain(typeof(DriverTagSupportTests).Assembly, closure);
+        foreach (var dll in Directory.EnumerateFiles(AppContext.BaseDirectory, "St4i*.dll"))
+        {
+            try { Walk(Assembly.LoadFrom(dll)); }
+            catch (Exception ex) when (ex is FileNotFoundException or BadImageFormatException) { }
+        }
 
-        return closure
+        return found.Where(a => !ExistsToSupportTests(a)).ToList();
+    }
+
+    /// <summary>
+    /// Every concrete <see cref="IConnectorFactory"/> this PRODUCT ships.
+    /// </summary>
+    private static IReadOnlyList<Type> ShippedFactoryTypes() =>
+        ProductAssemblies()
             .SelectMany(a => a.GetTypes())
             .Where(t => typeof(IConnectorFactory).IsAssignableFrom(t)
                         && t is { IsAbstract: false, IsInterface: false, IsGenericTypeDefinition: false })
+            .Distinct()
             .OrderBy(t => t.FullName, StringComparer.Ordinal)
             .ToList();
-    }
 
     /// <summary>
     /// The <see cref="IConnectorFactory.Kind"/> each shipped factory REPORTS — read off the property, never
@@ -176,13 +227,106 @@ public sealed class DriverTagSupportTests
         Assert.True(kinds.Count > 0,
             $"found {types.Count} shipped factory types but zero readable kinds among them.");
 
-        // The population is 3 types collapsing to 2 kinds, and that collapse is load-bearing rather than
-        // incidental: ModbusConnectorFactory (TCP) and ModbusRtuConnectorFactory (RS-485) both report
-        // DriverKinds.Modbus — one id for the protocol, not one per transport. Asserting types > kinds keeps
-        // a future de-duplication bug in the helper (returning types instead of distinct kinds) visible.
+        // No assembly supplying the truth side may be one that exists to support tests. Asserted as the
+        // PROPERTY over the whole population rather than as "the test assembly is absent", which was a list
+        // of one and had the same weakness as a count — it named the contaminant a reviewer had already
+        // used instead of the class it belongs to, and the second attack simply used a different assembly.
+        var contaminated = ProductAssemblies().Where(ExistsToSupportTests).Select(a => a.GetName().Name).ToList();
+        Assert.True(contaminated.Count == 0,
+            "these assemblies supplied the truth side and link a test framework, so a fixture in one of them " +
+            $"can decide what this product 'ships': {string.Join(", ", contaminated)}.");
+
+        // 🔴 The residue, stated rather than implied: this excludes assemblies that LINK a test framework.
+        // A double declared in a product assembly that links none would still enter. Nothing here detects
+        // that, and the census below is what would catch it arriving in src/.
+    }
+
+    /// <summary>
+    /// The de-duplication, split out of the non-emptiness guard above because it is a different claim
+    /// (LOW-9). The population is 3 types collapsing to 2 kinds, and that collapse is load-bearing:
+    /// <c>ModbusConnectorFactory</c> (TCP) and <c>ModbusRtuConnectorFactory</c> (RS-485) both report
+    /// <c>DriverKinds.Modbus</c> — one id for the protocol, not one per transport. It lived inside
+    /// <c>TheReflectedFactoryPopulation_IsNonEmpty_…</c>, where deleting a Modbus factory reddened a test
+    /// whose NAME says it is about the empty set, sending the next reader to the wrong question.
+    ///
+    /// <para>Does not measure: which transports exist — only that at least two shipped factory types agree
+    /// on one kind id, which is what a de-duplication bug in the helper would break.</para>
+    /// </summary>
+    [Fact]
+    public void TwoShippedFactoryTypesShareOneKindId_SoTheHelperMustDeduplicate()
+    {
+        var types = ShippedFactoryTypes();
+        var kinds = ShippedFactoryKinds();
+
         Assert.True(types.Count > kinds.Count,
             $"expected the shipped factory types ({types.Count}) to outnumber the distinct kinds they report " +
             $"({kinds.Count}), because two Modbus transports share one kind id.");
+    }
+
+    /// <summary>
+    /// 🔴 <b>LOW-7 — the census that catches a factory reflection cannot see.</b> Both directional tests
+    /// are quantified over the REFLECTED population, so a factory in a product assembly this test project
+    /// does not reference is invisible and both directions pass vacuously about it. This walks
+    /// <c>src/</c> instead and requires every declared implementation to be one the reflected set found.
+    ///
+    /// <para>Does not measure: whether a type it finds is CORRECT — only that it is visible. A factory
+    /// declared in a test-support assembly is excluded from BOTH sides by the same rule
+    /// (<see cref="ExistsToSupportTests"/>), so the two sides cannot disagree merely about fixtures.</para>
+    /// </summary>
+    [Fact]
+    public void EveryConnectorFactoryDeclaredInSrc_IsOneTheReflectedPopulationCanSee()
+    {
+        var srcRoot = Path.Combine(MachineSimulatorRoot(), "src");
+        var declaration = new Regex(
+            @"^\s*(?:public|internal)\s+(?:sealed\s+)?(?:partial\s+)?class\s+(?<name>\w+)\s*:\s*[^{]*\bIConnectorFactory\b",
+            RegexOptions.Multiline);
+
+        var testSupportProjects = Directory
+            .EnumerateFiles(srcRoot, "*.csproj", SearchOption.AllDirectories)
+            .Where(p => File.ReadAllText(p).Contains("xunit", StringComparison.OrdinalIgnoreCase))
+            .Select(p => Path.GetDirectoryName(p)!)
+            .ToList();
+
+        var declaredInSrc = Directory
+            .EnumerateFiles(srcRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(f => !testSupportProjects.Any(d => f.StartsWith(d + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
+            .SelectMany(f => declaration.Matches(File.ReadAllText(f)).Select(m => m.Groups["name"].Value))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.NotEmpty(declaredInSrc);
+
+        var reflected = ShippedFactoryTypes().Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
+        var invisible = declaredInSrc.Where(n => !reflected.Contains(n)).ToList();
+
+        Assert.True(invisible.Count == 0,
+            $"these IConnectorFactory implementations are declared in src/ but the reflected population " +
+            $"cannot see them: {string.Join(", ", invisible)}. Both directional tests are therefore silent " +
+            "about them. Add a reference so this test project can load the assembly, or move the factory.");
+    }
+
+    private static string MachineSimulatorRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "README.md")) &&
+                File.Exists(Path.Combine(dir.FullName, "fleet.json")) &&
+                Directory.Exists(Path.Combine(dir.FullName, "src")))
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException(
+            "Could not locate tools/machine-simulator (README.md + fleet.json + src/) by walking up from " +
+            $"\"{AppContext.BaseDirectory}\". Fix this walk — do NOT weaken the assertion above to make the " +
+            "census findable.");
     }
 
     // ---------------------------------------------------------------------------------------------------
@@ -213,6 +357,13 @@ public sealed class DriverTagSupportTests
     [Theory]
     [InlineData(DriverKinds.Modbus)]
     [InlineData(DriverKinds.OpcUa)]
+    // 🔴 LOW-6 — a NON-canonical spelling, which every other row lacked. `fleet.json` has always accepted
+    // any casing, so "modbus" is an ordinary connectors.json value; without this row, deleting the fold at
+    // ConnectorsConfig's dispatch leaves CanBack("modbus") answering true for a connector the real dispatch
+    // SKIPPED, and the two sides disagree with the whole theory still green. Same defect class as Task 2's
+    // B6, found by the same reasoning and closed with one row.
+    [InlineData("modbus")]
+    [InlineData("OpcUA")]
     [InlineData(DriverKinds.Mqtt)]
     [InlineData(DriverKinds.HotFolderAoi)]
     [InlineData(DriverKinds.Simulated)]
@@ -222,17 +373,40 @@ public sealed class DriverTagSupportTests
         // The template this is copied from (St4i.EdgeCore.Tests/UnconsumedConfigKindsTests) does not stop at
         // comparing two tables: it drives the REAL SimulatorFactory and observes whether the store it was
         // handed was ever reached. The equivalent observation here is whether the real connectors.json
-        // dispatch can construct a factory for this kind and get it into a registry. Reflection alone would
+        // path can construct a factory for this kind and get it into a registry. Reflection alone would
         // only prove a type with that Kind exists somewhere in the closure; this proves the production path
         // that turns an operator's config into a live connector reaches it.
+        //
+        // 🔴 LOW-6 — this goes through ConnectorsConfig.Load, not straight to RegisterAll with a
+        // hand-built entry. The kind an operator TYPES is folded exactly once, by
+        // `DriverKinds.Normalize(kind)` inside Load (ConnectorsConfig.cs:190); the dispatch downstream
+        // switches on the already-canonical value. Constructing ConnectorConfigEntry directly skipped that
+        // fold, so the two non-canonical rows above failed against a path production never takes — and,
+        // worse, deleting the fold would have left every row green. Load takes an explicit path, so this
+        // writes a temp file rather than touching AppContext.BaseDirectory, the shared artifact directory
+        // this assembly's D-1 review (I-3) records as racing the whole suite.
+        var configPath = Path.Combine(Path.GetTempPath(), "st4i-tagsupport", Guid.NewGuid().ToString("N"), "connectors.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
         var registry = new ConnectorRegistry();
+        int registered;
+        try
+        {
+            File.WriteAllText(configPath,
+                $$"""[ { "id": "tag-support-probe", "kind": "{{kind}}", "settings": {{Settings}} } ]""");
 
-        var registered = ConnectorsJsonRegistration.RegisterAll(
-            new[] { new ConnectorConfigEntry("tag-support-probe", kind, Settings) },
-            new ModbusOptions { Enabled = true, Host = "127.0.0.1", Port = 15020 },
-            new OpcUaOptions(),
-            registry,
-            NullLogger.Instance);
+            var entries = ConnectorsConfig.Load(configPath, logWarning: _ => { });
+
+            registered = ConnectorsJsonRegistration.RegisterAll(
+                entries,
+                new ModbusOptions { Enabled = true, Host = "127.0.0.1", Port = 15020 },
+                new OpcUaOptions(),
+                registry,
+                NullLogger.Instance);
+        }
+        finally
+        {
+            try { Directory.Delete(Path.GetDirectoryName(configPath)!, recursive: true); } catch (IOException) { }
+        }
 
         var theDispatchBuiltAConnector = registered == 1;
 

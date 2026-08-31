@@ -186,13 +186,26 @@ public static class ContractInvariants
     /// <c>ModelIntegrity.IsPathPrefix</c>), plus <see cref="TagDescriptor.EngMin"/>,
     /// <see cref="TagDescriptor.EngMax"/> and <see cref="TagSource.Scale"/> when NON-FINITE (see the
     /// non-finite rule stated on <see cref="Validate(ComponentModelDocument)"/>). Under (b):
-    /// <see cref="TagDescriptor.Access"/>. <b>Named and deliberately NOT checked:</b>
-    /// <see cref="TagDescriptor.DataType"/>, <see cref="TagDescriptor.Source"/> and
-    /// <see cref="TagSource.Kind"/> — each is declared non-nullable by its record and each CAN arrive null
-    /// from the same missing-field mechanism, but none is dereferenced by this method or by the store in a
-    /// way that throws (the store writes the whole document as one JSON blob), and none gates another §5
-    /// check. Closing that is full JSON-Schema-shape validation, the same deliberate non-fix the sibling
-    /// overload declares.</para></summary>
+    /// <see cref="TagDescriptor.Access"/>.
+    ///
+    /// <para>🔴 <b>RETRACTED 2026-08-31 (WS-HMI-0c, MED-3), kept verbatim because the reasoning it
+    /// records is still correct about the question it asked.</b> This paragraph used to continue:
+    /// <i>"Named and deliberately NOT checked: <see cref="TagDescriptor.DataType"/>,
+    /// <see cref="TagDescriptor.Source"/> and <see cref="TagSource.Kind"/> — each is declared non-nullable
+    /// by its record and each CAN arrive null from the same missing-field mechanism, but none is
+    /// dereferenced by this method or by the store in a way that throws (the store writes the whole
+    /// document as one JSON blob), and none gates another §5 check."</i>
+    ///
+    /// <para>Every clause of that is true, and its criterion was CRASH-SAFETY — will a null throw here or
+    /// silently skip a §5 gate. What it did not ask is whether a document the FROZEN SCHEMA FORBIDS can be
+    /// stored and served, and it could: an entry omitting <c>source</c> parsed, compiled, drew zero
+    /// violations, threw nothing, and serialised with <c>source</c> absent, so a schema-invalid namespace
+    /// reached the store and the read routes — through a real ingestion path once WS-HMI-0c Task 4 landed.
+    /// All three are now checked for PRESENCE. That is still not full JSON-Schema validation (no patterns,
+    /// no enum membership, no <c>additionalProperties</c>, no conditional <c>engMin</c>/<c>engMax</c>
+    /// rule), which remains the deliberate non-fix the sibling overload declares — it is the same
+    /// required-field-presence class as the checks above, extended to the fields that were left out of
+    /// it.</para></para></summary>
     public static IReadOnlyList<string> Validate(TagNamespaceDocument doc)
     {
         var v = new List<string>();
@@ -224,6 +237,38 @@ public static class ContractInvariants
                 v.Add($"tags[{i}]: path thiếu (null/rỗng) — path là khoá chính của tag_index, bắt buộc phải có");
             if (string.IsNullOrWhiteSpace(t.Access))
                 v.Add($"tags[{i}]: access thiếu (null/rỗng) — access rỗng âm thầm bỏ qua luật §5 (rw ⇒ policyAction)");
+
+            // 🔴 WS-HMI-0c, MED-3 — the REMAINING schema-REQUIRED fields. `dataType`, `source` and
+            // `source.kind` are in the frozen schema's `required` lists (a tag requires path/dataType/
+            // access/source/isBackedByDriver; every arm of the source union requires kind), and every one
+            // of them CAN arrive null from the same missing-field mechanism the three checks above exist
+            // for: a non-nullable C# record property does not survive System.Text.Json on an absent field.
+            //
+            // WHY THIS CLASS'S OWN DISCLOSURE SAID OTHERWISE, AND WHY THAT ANSWER HAS CHANGED. The
+            // paragraph in this method's remarks named these three as "deliberately NOT checked", and its
+            // criterion was CRASH-SAFETY: does a null here throw at the door, or silently skip a §5 gate?
+            // For all three the answer was no — the store writes the document as one JSON blob and
+            // dereferences none of them. That reasoning was correct for the question it asked.
+            //
+            // MED-3 asked a different question: can a document the frozen schema FORBIDS be stored and
+            // served? It could. An entry omitting `source` parsed, compiled, drew zero violations, threw
+            // nothing, and serialised with `source` absent — so a schema-invalid namespace reached the
+            // store and the read routes, and after WS-HMI-0c Task 4 it did so through a real ingestion
+            // path rather than only a hand-built record. "Nothing crashes" and "the document is valid" are
+            // two different properties, and this class is the only door that can answer the second.
+            //
+            // 🔴 WHAT THIS IS NOT: full JSON-Schema validation, which the disclosure rightly calls a
+            // deliberate non-fix. No pattern is checked, no enum membership, no additionalProperties, no
+            // conditional engMin/engMax rule. This is REQUIRED-FIELD PRESENCE and nothing else — the same
+            // narrow class the three checks above already enforce, extended to the fields that were left
+            // out of it. The schema stays the authority; this is the .NET side agreeing with it about
+            // which fields must exist.
+            if (string.IsNullOrWhiteSpace(t.DataType))
+                v.Add($"tags[{i}]: dataType thiếu (null/rỗng) — schema bắt buộc; một tag không kiểu không đọc được");
+            if (t.Source is null)
+                v.Add($"tags[{i}]: source thiếu (null) — schema bắt buộc; một tag không nguồn không nói được giá trị đến từ đâu");
+            else if (string.IsNullOrWhiteSpace(t.Source.Kind))
+                v.Add($"tags[{i}]: source.kind thiếu (null/rỗng) — schema bắt buộc ở MỌI nhánh của union source");
 
             // 🔴 Fix round 4, MEDIUM-1 — IsNullOrWhiteSpace, the ONE predicate this class asks about a
             // missing required string, at EVERY site. Round 3 adopted it at the two fields a finding used

@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using St4i.Connector.Abstractions.Models;
 using St4i.EngineApi.HmiModel;
 using St4i.Hmi.Contracts;
@@ -70,6 +72,19 @@ public sealed class TagIngestionServiceTests : IDisposable
 
         public Task<TagDescriptor?> FindTagAsync(string path, CancellationToken ct = default)
             => _inner.FindTagAsync(path, ct);
+    }
+
+    /// <summary>Captures what the startup loop logged. A pure recorder — it decides nothing.</summary>
+    private sealed class RecordingLogger : ILogger
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception)));
     }
 
     /// <summary>A store that fails every write, for the "an unexpected store failure is reported, not
@@ -468,6 +483,265 @@ public sealed class TagIngestionServiceTests : IDisposable
     // -------------------------------------------------------------------------------------------------
     // Ruling S-3.
     // -------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 🔴 <b>MED-3 — a schema-required field missing from an entry is refused at the write door.</b> Before
+    /// this, an entry omitting <c>source</c> parsed, compiled, drew ZERO violations, threw nothing and
+    /// serialised with <c>source</c> absent, so a namespace the frozen schema forbids was stored and served
+    /// — through this very ingestion path. <c>ContractInvariants</c> now checks the remaining required
+    /// fields for presence, which is where it closes because that door is the one EVERY producer passes:
+    /// closing it in the builder would have left <c>PUT /v1/tags</c> open to the identical document.
+    ///
+    /// <para>Does not measure: full schema validity. Presence only — no pattern, no enum membership, no
+    /// <c>additionalProperties</c>. A tag whose <c>dataType</c> is <c>"xyzzy"</c> still passes, and that
+    /// remains the deliberate non-fix <c>ContractInvariants</c> declares.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("source", """{ "path": "oven/temp", "dataType": "float", "engMin": 0, "engMax": 300, "access": "r" }""")]
+    [InlineData("dataType", """{ "path": "oven/temp", "engMin": 0, "engMax": 300, "access": "r", "source": { "kind": "modbus", "unitId": 1, "register": 1 } }""")]
+    [InlineData("source.kind", """{ "path": "oven/temp", "dataType": "float", "engMin": 0, "engMax": 300, "access": "r", "source": { "unitId": 1, "register": 1 } }""")]
+    public async Task A_tag_map_omitting_a_schema_required_field_is_refused_at_the_write_door(
+        string missingField, string tagObject)
+    {
+        var store = RealStore();
+        var service = new TagIngestionService(store);
+
+        await service.IngestAsync("AOI-01", DriverKinds.Modbus, Map("AOI-01", ModbusTag("oven/ok", 40001)));
+        var before = Json(await store.GetAsync("AOI-01"));
+
+        var result = await service.IngestAsync("AOI-01", DriverKinds.Modbus, Map("AOI-01", tagObject));
+
+        Assert.False(result.Ok, $"a tag omitting '{missingField}' was accepted; the schema requires it.");
+        Assert.Contains(result.Errors, e => e.Contains(missingField.Split('.')[^1], StringComparison.Ordinal));
+        Assert.Equal(before, Json(await store.GetAsync("AOI-01")));
+    }
+
+    /// <summary>
+    /// 🔴 <b>LOW-5 — ruling S-5 is closed by a CALL, not by a method existing.</b>
+    /// <c>TagMapDeclaration.CanonicalMachineCode()</c> shipped with its doc comment instructing "Tasks 2
+    /// and 4 must call this for any grouping or same-machine comparison" and ZERO production callers: Task 2
+    /// legitimately makes no such comparison, and Task 4 made one but reached past the method to
+    /// <c>MachineCodeIdentity</c> directly. The rule was obeyed and the seam it was supposed to run through
+    /// was dead — the same computed-but-unconsumed shape this workstream keeps finding, one file away from
+    /// two reports that each named it about their own type.
+    ///
+    /// <para>A behavioural test cannot see this: comparing canonical identities directly gives byte-identical
+    /// answers, so every ingestion test stays green either way. What distinguishes them is whether the seam
+    /// is USED, and that is a fact about source, so this is a source census — the same instrument
+    /// <c>PerHostDataRootsTests</c> uses for the same reason.</para>
+    ///
+    /// <para>Does not measure: that the call is in the RIGHT place, or that its result is used correctly —
+    /// <c>A_declaration_differing_only_in_spelling_is_the_same_machine</c> and its sweep rows do that. This
+    /// measures only that the seam is not dead.</para>
+    /// </summary>
+    [Fact]
+    public void CanonicalMachineCode_has_at_least_one_production_caller()
+    {
+        var srcRoot = Path.Combine(MachineSimulatorRoot(), "src");
+
+        var callers = Directory
+            .EnumerateFiles(srcRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            // The declaration itself is not a caller.
+            .Where(f => !f.EndsWith("TagMapDeclaration.cs", StringComparison.Ordinal))
+            .Where(f => File.ReadAllText(f).Contains("CanonicalMachineCode()", StringComparison.Ordinal))
+            .Select(f => Path.GetRelativePath(srcRoot, f).Replace('\\', '/'))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(callers.Count > 0,
+            "TagMapDeclaration.CanonicalMachineCode() has no production caller. Its own doc comment tells " +
+            "Tasks 2 and 4 to use it for every same-machine comparison, so an uncalled method means either " +
+            "a comparison is reaching past it to MachineCodeIdentity (which is what LOW-5 found) or the " +
+            "instruction is obsolete. Do not delete this test to make the method's absence acceptable — " +
+            "either restore the call or retract the instruction it enforces.");
+    }
+
+    private static string MachineSimulatorRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "README.md")) &&
+                File.Exists(Path.Combine(dir.FullName, "fleet.json")) &&
+                Directory.Exists(Path.Combine(dir.FullName, "src")))
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException(
+            "Could not locate tools/machine-simulator (README.md + fleet.json + src/) by walking up from " +
+            $"\"{AppContext.BaseDirectory}\". Fix this walk — do NOT weaken the census to make it run.");
+    }
+
+    // -------------------------------------------------------------------------------------------------
+    // The startup loop, which Task 4's sweep proved was unreachable while it lived inline in Program.cs.
+    // -------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// <b>The swallow, pinned.</b> Task 4's sweep rows P2 and P3 were GREEN: removing the swallow and
+    /// typo-ing the folder name each reddened nothing, because the loop resolved its own directory from
+    /// <c>AppContext.BaseDirectory</c> and no test could reach it. Extracting it so the directory is a
+    /// PARAMETER is what makes this test possible at all.
+    ///
+    /// <para>A store that throws on every write makes every machine's ingestion fail. The loop must
+    /// complete, return zero, and not propagate — because by the time it runs the connectors are
+    /// registered and a throw here would take a running line down over a screen definition.</para>
+    ///
+    /// <para>Does not measure: what the operator sees. Nothing surfaces the refusal outside a log line —
+    /// that is the open item this task's report names, not something this test closes.</para>
+    /// </summary>
+    /// <para>🔴 TWO earlier versions of this test could not fail, and both are worth recording because they
+    /// are different mistakes. The first used <c>AlwaysFailingStore</c>, whose throw <c>IngestAsync</c>
+    /// catches internally and converts to <c>Ok: false</c> — so the exception never reached the loop's
+    /// <c>catch</c> and the sweep row that removes it stayed GREEN. The second created a DIRECTORY named
+    /// <c>AOI-01.json</c>, which <c>Directory.EnumerateFiles</c> does not return at all, so the machine was
+    /// simply treated as having no map. The failure has to originate outside <c>IngestAsync</c> AND survive
+    /// the file enumeration: a real file, held open with <c>FileShare.None</c>, makes
+    /// <c>File.ReadAllText</c> throw <c>IOException</c> from inside the loop — the unforeseen-I/O shape the
+    /// swallow exists for.</para>
+    [Fact]
+    public void The_startup_loop_swallows_a_failure_it_cannot_foresee_so_a_bad_map_cannot_break_registration()
+    {
+        var dir = TempDir();
+        var locked = Path.Combine(dir, "AOI-01.json");
+        File.WriteAllText(locked, Map("AOI-01", ModbusTag("oven/temp", 40001)));
+        File.WriteAllText(Path.Combine(dir, "AOI-02.json"), Map("AOI-02", ModbusTag("oven/temp", 40002)));
+
+        var log = new RecordingLogger();
+
+        using (new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var ingested = TagMapStartupIngestion.IngestAll(
+                dir,
+                new[] { ("modbus-1", (string?)"AOI-01", (string?)DriverKinds.Modbus),
+                        ("modbus-2", (string?)"AOI-02", (string?)DriverKinds.Modbus) },
+                new TagIngestionService(RealStore()),
+                log);
+
+            // The unreadable one was swallowed and named; the OTHER machine still got its namespace, which
+            // is the whole point — one bad map disables only itself.
+            Assert.Equal(1, ingested);
+        }
+
+        Assert.Contains(log.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("AOI-01", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// An UNBOUND connector is skipped before anything is attempted for it — it names no machine, so there
+    /// is no namespace to attach a map to. Asserted on the LOG rather than on the return value, because
+    /// both the guarded and unguarded versions return zero: without the guard, the lookup is attempted with
+    /// a null code, throws, and is swallowed into an error line. Silence is the observable difference.
+    ///
+    /// <para>Does not measure: that an unbound connector is otherwise healthy — the registry's concern.</para>
+    /// </summary>
+    [Fact]
+    public void An_unbound_connector_is_skipped_silently_rather_than_failing_into_the_swallow()
+    {
+        var log = new RecordingLogger();
+
+        var ingested = TagMapStartupIngestion.IngestAll(
+            TempDir(),
+            new[] { ("modbus-1", (string?)null, (string?)DriverKinds.Modbus) },
+            new TagIngestionService(RealStore()),
+            log);
+
+        Assert.Equal(0, ingested);
+        Assert.DoesNotContain(log.Entries, e => e.Level == LogLevel.Error);
+    }
+
+    /// <summary>
+    /// The loop's happy path and its §5-bis arm in one: a bound machine with a map is ingested, a bound
+    /// machine WITHOUT one is skipped silently, and an UNBOUND connector is skipped because it names no
+    /// machine to attach a namespace to.
+    ///
+    /// <para>Does not measure: the order machines are processed in — nothing depends on it.</para>
+    /// </summary>
+    [Fact]
+    public async Task The_startup_loop_ingests_bound_machines_that_have_a_map_and_skips_the_rest()
+    {
+        var dir = TempDir();
+        File.WriteAllText(Path.Combine(dir, "AOI-01.json"), Map("AOI-01", ModbusTag("oven/temp", 40001)));
+
+        var store = RealStore();
+
+        var ingested = TagMapStartupIngestion.IngestAll(
+            dir,
+            new[] { ("modbus-1", (string?)"AOI-01", (string?)DriverKinds.Modbus),
+                    ("modbus-2", (string?)"AOI-99", (string?)DriverKinds.Modbus),   // bound, no map file
+                    ("modbus-3", (string?)null,     (string?)DriverKinds.Modbus) }, // unbound
+            new TagIngestionService(store),
+            NullLogger.Instance);
+
+        Assert.Equal(1, ingested);
+        Assert.NotNull(await store.GetAsync("AOI-01"));
+        Assert.Null(await store.GetAsync("AOI-99"));
+    }
+
+    /// <summary>
+    /// The map file is found by CANONICAL machine code, not by the filesystem's own case rules. A
+    /// per-binding <c>Path.Combine(dir, code + ".json")</c> probe would resolve <c>aoi-01.json</c> for
+    /// machine <c>AOI-01</c> on Windows and silently not on Linux — a lookup decided by the volume the
+    /// product is installed on rather than by this codebase's identity rule.
+    ///
+    /// <para>Does not measure: behaviour on a case-sensitive filesystem — this suite runs on Windows. What
+    /// it measures is that the lookup never asks the filesystem to match, which is what makes the two
+    /// platforms agree.</para>
+    /// </summary>
+    /// <para>🔴 The first version wrote <c>aoi-01.json</c> and bound <c>AOI-01</c>, which does not
+    /// discriminate: the INDEX key is canonical either way, so a raw <c>TryGetValue(machineCode)</c> found
+    /// it too and the sweep row that removes the canonicalisation stayed GREEN. The BINDING side is what
+    /// has to be non-canonical for the lookup to be the thing under test.</para>
+    [Theory]
+    [InlineData("AOI-01.json", "aoi-01")]
+    [InlineData("aoi-01.json", "AOI-01")]
+    [InlineData("  aoi-01  .json", "AOI-01")]
+    public async Task A_map_file_is_matched_to_its_machine_by_canonical_code(string fileName, string boundCode)
+    {
+        var dir = TempDir();
+        File.WriteAllText(Path.Combine(dir, fileName), Map(boundCode, ModbusTag("oven/temp", 40001)));
+
+        var store = RealStore();
+
+        var ingested = TagMapStartupIngestion.IngestAll(
+            dir,
+            new[] { ("modbus-1", (string?)boundCode, (string?)DriverKinds.Modbus) },
+            new TagIngestionService(store),
+            NullLogger.Instance);
+
+        Assert.Equal(1, ingested);
+        Assert.NotNull(await store.GetAsync("AOI-01"));
+    }
+
+    /// <summary>
+    /// An absent tag-map folder is the ordinary state of an install that has never declared one: zero
+    /// ingestions, no throw. This is what keeps Task 4's startup change byte-identical for every existing
+    /// deployment.
+    ///
+    /// <para>Also pins the production folder NAME (sweep row P3, previously green): a typo in
+    /// <c>ResolveDirectory</c> now reddens here rather than shipping.</para>
+    ///
+    /// <para>Does not measure: that the folder is absent in a real install — only that absence is handled.</para>
+    /// </summary>
+    [Fact]
+    public void An_absent_tag_map_folder_ingests_nothing_and_throws_nothing()
+    {
+        var ingested = TagMapStartupIngestion.IngestAll(
+            Path.Combine(TempDir(), "does-not-exist"),
+            new[] { ("modbus-1", (string?)"AOI-01", (string?)DriverKinds.Modbus) },
+            new TagIngestionService(RealStore()),
+            NullLogger.Instance);
+
+        Assert.Equal(0, ingested);
+
+        Assert.Equal(
+            Path.Combine(AppContext.BaseDirectory, "tag-maps"),
+            TagMapStartupIngestion.ResolveDirectory());
+    }
 
     /// <summary>
     /// Ruling S-3, asserted structurally rather than promised in a comment: the service has exactly one

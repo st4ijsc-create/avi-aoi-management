@@ -266,10 +266,17 @@ public sealed class TagNamespaceBuilderTests
     /// real is not the same as being readable by address, and <c>DriverKinds.IsFabricated</c> is
     /// <see langword="false"/> for Mqtt precisely because those are two different questions.</para>
     /// </summary>
+    /// <para>🔴 INFO-11 — the <c>HotFolderAoi</c> row was REMOVED rather than fixed. It paired that
+    /// connector with a source kind spelled <c>"HotFolderAoi"</c>, and the frozen schema's source union has
+    /// exactly five arms — <c>modbus</c>, <c>opcua</c>, <c>mqtt</c>, <c>simulated</c>, <c>derived</c> — none
+    /// of which is that. The row therefore asserted about a document the schema cannot express, which is a
+    /// weaker claim than it looked: it would have passed for the wrong reason. There is no coherent
+    /// HotFolderAoi row to write, because the schema gives that connector no source arm to match; its
+    /// unbacked-ness is covered by
+    /// <c>No_tag_is_backed_when_the_connector_kind_cannot_back_however_complete_the_declaration</c>.</para>
     [Theory]
     [InlineData(DriverKinds.Mqtt, "mqtt")]
     [InlineData(DriverKinds.Simulated, "simulated")]
-    [InlineData(DriverKinds.HotFolderAoi, "HotFolderAoi")]
     public void A_declaration_whose_sources_match_its_connector_exactly_is_still_unbacked_on_a_kind_that_cannot_back(
         string driverKind, string sourceKind)
     {
@@ -378,8 +385,15 @@ public sealed class TagNamespaceBuilderTests
     /// Task 1 preserves a missing <c>source</c> as null rather than inventing one, so a null source
     /// reaches the builder. Fail closed.
     ///
-    /// <para>Does not measure: §5 or schema validity — such a document is refused at the write door, and
-    /// the builder's job is to compile it truthfully, not to reject it.</para>
+    /// <para>Does not measure: §5 or schema validity. The builder's job is to compile truthfully, not to
+    /// reject — the write door judges. <b>🔴 An earlier version of this sentence asserted such a document
+    /// "is refused at the write door", and at the time that was FALSE:</b>
+    /// <c>ContractInvariants.Validate(TagNamespaceDocument)</c> said in its own words that
+    /// <c>TagDescriptor.Source</c> was "deliberately NOT checked", so a source-less entry parsed, compiled,
+    /// drew zero violations and was stored and served as a schema-invalid namespace. The claim is true now
+    /// because MED-3 made it true, not because it was re-worded —
+    /// <c>TagIngestionServiceTests.A_tag_map_omitting_a_schema_required_field_is_refused_at_the_write_door</c>
+    /// is the measurement.</para>
     /// </summary>
     [Fact]
     public void A_tag_that_declares_no_source_at_all_is_not_backed()
@@ -462,5 +476,74 @@ public sealed class TagNamespaceBuilderTests
     public void A_null_declaration_is_refused_rather_than_compiled_into_a_null_document()
     {
         Assert.Throws<ArgumentNullException>(() => TagNamespaceBuilder.Build(null!, DriverKinds.Modbus));
+    }
+
+    /// <summary>
+    /// 🔴 <b>LOW-10 — the pin that actually covers the case carry-forward S-6 is named for.</b>
+    ///
+    /// <para>The test above asserts an unrecognised <c>policyAction</c> is COPIED, which reddens against a
+    /// consumer that refuses or rewrites the value. It does not redden against the consumer S-6 is
+    /// actually about: one that READS <c>policyAction</c>, resolves it to an authorisation decision
+    /// recorded somewhere else, and FAILS OPEN on a value it does not recognise. That consumer leaves the
+    /// copied string untouched, so every assertion above stays green while the door it opened is
+    /// ungated — which is the whole of S-6.</para>
+    ///
+    /// <para>What can be measured without a consumer to test is ARRIVAL: this is a census of every
+    /// production file that mentions the field. All four non-contract mentions below are carriers — two
+    /// endpoints that serialise documents, the declaration record, and this builder's own copy. The day a
+    /// fifth file appears, this reddens and whoever added it has to decide the fail-closed question S-6
+    /// reserves, at the moment the decision is being made rather than after a review finds it.</para>
+    ///
+    /// <para>Does not measure: whether an existing file's mention is still only a carry. A file already on
+    /// this list could start deciding, and this census would not see it — the same limit
+    /// <c>PerHostDataRootsTests</c> states about its own store-versus-read split. Narrowing that needs a
+    /// consumer to exist first.</para>
+    /// </summary>
+    [Fact]
+    public void No_production_file_outside_the_contracts_assembly_has_become_a_policyAction_consumer()
+    {
+        var srcRoot = Path.Combine(MachineSimulatorRoot(), "src");
+
+        var carriersByDesign = new[]
+        {
+            "St4i.EngineApi/Endpoints/HmiModelEndpoints.cs",   // serialises documents that carry the field
+            "St4i.EngineApi/Endpoints/HmiTagEndpoints.cs",     // ditto
+            "St4i.EngineApi/HmiModel/TagMapDeclaration.cs",    // declares the field on TagMapEntry
+            "St4i.EngineApi/HmiModel/TagNamespaceBuilder.cs",  // copies it, entry -> descriptor
+        };
+
+        var mentions = Directory
+            .EnumerateFiles(srcRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(f => File.ReadAllText(f).Contains("olicyAction", StringComparison.Ordinal))
+            .Select(f => Path.GetRelativePath(srcRoot, f).Replace('\\', '/'))
+            // The contracts assembly OWNS the field and its §5 rule; it is the one place allowed to decide
+            // anything about it, which is exactly what "no consumer OUTSIDE the contracts assembly" means.
+            .Where(f => !f.StartsWith("St4i.Hmi.Contracts/", StringComparison.Ordinal))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(carriersByDesign.OrderBy(f => f, StringComparer.Ordinal).ToArray(), mentions);
+    }
+
+    private static string MachineSimulatorRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "README.md")) &&
+                File.Exists(Path.Combine(dir.FullName, "fleet.json")) &&
+                Directory.Exists(Path.Combine(dir.FullName, "src")))
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException(
+            "Could not locate tools/machine-simulator (README.md + fleet.json + src/) by walking up from " +
+            $"\"{AppContext.BaseDirectory}\". Fix this walk — do NOT weaken the census to make it run.");
     }
 }

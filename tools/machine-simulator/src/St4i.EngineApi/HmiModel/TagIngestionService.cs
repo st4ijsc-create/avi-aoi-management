@@ -147,7 +147,15 @@ public sealed class TagIngestionService
         // The identity rule. Before the build, so a map belonging to another machine is refused without
         // ever being compiled into a document that could be stored by a later edit to this method.
         if (!string.IsNullOrWhiteSpace(declaration!.MachineCode) &&
-            !MachineCodeIdentity.SameIdentity(declaration.MachineCode, machineCode))
+            // 🔴 LOW-5 — through TagMapDeclaration.CanonicalMachineCode(), which until this fix round had
+            // ZERO production callers. Ruling S-5 looked closed because the method existed and its doc
+            // comment said "Tasks 2 and 4 must call this for any same-machine comparison" — and Task 4
+            // honoured the RULE (it compared canonical identities) while calling MachineCodeIdentity
+            // directly, so what shipped was an uncalled method with an instruction nobody had followed.
+            // That is the computed-but-unconsumed shape both the Task 2 and Task 3 reports named for their
+            // own types, sitting unnoticed one file away. Canonicalize is idempotent, so passing an
+            // already-canonical string to SameIdentity is exact, not merely harmless.
+            !MachineCodeIdentity.SameIdentity(declaration.CanonicalMachineCode(), machineCode))
         {
             return Failed(
                 $"the tag map declares machineCode '{declaration.MachineCode}' but the connector that " +
@@ -192,4 +200,157 @@ public sealed class TagIngestionService
 
     private static IngestResult Failed(string error) =>
         new(Ok: false, TagCount: 0, BackedCount: 0, Errors: new[] { error });
+}
+
+/// <summary>
+/// WS-HMI-0c Task 4 — the startup loop that reads the tag-map folder and feeds
+/// <see cref="TagIngestionService"/>, extracted from <c>Program.cs</c> so it can be tested.
+///
+/// <para>🔴 <b>WHY IT IS A TYPE AND NOT TEN LINES IN THE COMPOSITION ROOT.</b> It WAS ten lines in
+/// <c>Program.cs</c>, and the Task 4 sweep measured what that cost: removing the swallow reddened nothing
+/// (row P2) and typo-ing the folder name reddened nothing (row P3), because no test could reach a loop that
+/// resolved its own directory from <c>AppContext.BaseDirectory</c> — the shared artifact directory this
+/// repository's D-1 review (I-3) records as racing the whole suite. That is the same hole, with the same
+/// cause and the same fix, that D-1 found when a ~40-line connectors.json dispatch lived inside a DI lambda
+/// where no test could reach it; <c>ConnectorsJsonRegistration</c> is that extraction and this is its
+/// twin. Taking the directory as a PARAMETER is the whole of the fix: a test passes a temp folder.</para>
+/// </summary>
+public static class TagMapStartupIngestion
+{
+    /// <summary>The folder tag maps are read from in a real run: <c>tag-maps/</c> beside the binary. Kept
+    /// separate from <see cref="IngestAll"/> so the loop takes a directory a test can choose, while the
+    /// production path still has exactly one place that decides where that directory is.</summary>
+    public static string ResolveDirectory() =>
+        Path.Combine(AppContext.BaseDirectory, TagIngestionService.DirectoryName);
+
+    /// <summary>
+    /// Ingests one <c>{machineCode}.json</c> per bound connector, and returns how many succeeded.
+    /// </summary>
+    /// <param name="directory">Where the maps live. An absent directory is the ordinary state of an install
+    /// that has never declared one, and yields zero ingestions and no error.</param>
+    /// <param name="bindings">The connector bindings, as
+    /// <c>ConnectorRegistry.SnapshotBindings()</c> reports them, paired with each instance's kind. Passed
+    /// as data rather than as the registry so this type needs no <c>St4i.EdgeCore</c> type in its
+    /// signature and a test needs no registry to drive it.</param>
+    /// <remarks>
+    /// 🔴 <b>THE SWALLOW, AND WHAT IT COSTS.</b> This is one of exactly TWO places in this workstream that
+    /// swallow an exception; the other is <c>AssetRegistryStore.UpsertAsync</c>, and the reasoning is
+    /// identical: a machine must still RUN when its HMI namespace is broken. By the time this runs the
+    /// connector is registered, polling a real device and writing historian rows — letting a malformed JSON
+    /// file abort startup would take a working production line down over a screen definition.
+    ///
+    /// <para><b>THE PRICE, stated plainly rather than left to be discovered:</b> an operator whose tag map
+    /// is malformed gets a machine that runs and a screen that never appears, and the only trace is a log
+    /// line. Nothing in the UI says the map was refused — <c>GET /v1/tags</c> returns the previous
+    /// namespace or an empty one, indistinguishable from a machine nobody has declared tags for. The cheap
+    /// way to close that, NOT built here because it is a contract change: carry the last
+    /// <see cref="IngestResult"/> per machine and expose it on the tag-namespace response or
+    /// <c>GET /v1/capabilities</c>, so the refusal reaches somebody already looking.</para>
+    /// </remarks>
+    public static int IngestAll(
+        string directory,
+        IReadOnlyList<(string InstanceId, string? MachineCode, string? DriverKind)> bindings,
+        TagIngestionService service,
+        ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(bindings);
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        var maps = IndexMapFiles(directory, logger);
+        var ingested = 0;
+
+        foreach (var (instanceId, machineCode, driverKind) in bindings)
+        {
+            // An UNBOUND connector names no machine, so there is no namespace to attach a map to. Skipping
+            // is not a failure: the connector runs, it simply has no HMI identity to declare tags for.
+            if (string.IsNullOrWhiteSpace(machineCode)) continue;
+
+            try
+            {
+                if (!maps.TryGetValue(MachineCodeIdentity.Canonicalize(machineCode), out var path))
+                {
+                    // §5-bis — a connector that declares no tag map is VALID. It contributes nothing, and
+                    // in particular does not reach the store, so it cannot erase a namespace an engineer
+                    // already established for this machine through PUT /v1/tags.
+                    continue;
+                }
+
+                var result = service.IngestAsync(machineCode, driverKind, File.ReadAllText(path))
+                    .GetAwaiter().GetResult();
+
+                if (result.Ok)
+                {
+                    ingested++;
+                    logger.LogInformation(
+                        "Machine '{MachineCode}': ingested {TagCount} tag(s) from '{TagMapPath}', {BackedCount} of " +
+                        "them backed by a real driver.", machineCode, result.TagCount, path, result.BackedCount);
+                }
+                else
+                {
+                    // EVERY violation on one line, because an operator told about one of five errors fixes
+                    // the file five restarts in a row.
+                    logger.LogError(
+                        "Machine '{MachineCode}': tag map '{TagMapPath}' was REFUSED and the previously stored HMI " +
+                        "namespace for this machine is UNCHANGED. The connector is registered and the machine runs " +
+                        "normally; only its HMI screen is affected. {ViolationCount} problem(s): {Violations}",
+                        machineCode, path, result.Errors.Count, string.Join(" | ", result.Errors));
+                }
+            }
+            catch (Exception ex)
+            {
+                // 🔴 THE SWALLOW. See the remarks above for why it exists and what it costs. Total, and
+                // deliberately so: IngestAsync already converts every failure it can foresee into a result,
+                // so anything arriving here is unforeseen — an I/O error reading the file, a permission
+                // change mid-boot — and the one thing that must not happen is that it reaches the host and
+                // stops a line.
+                logger.LogError(ex,
+                    "Machine '{MachineCode}': HMI tag ingestion failed unexpectedly and was skipped. The connector " +
+                    "is registered and the machine runs normally; its HMI namespace is unchanged.", machineCode);
+            }
+        }
+
+        return ingested;
+    }
+
+    /// <summary>
+    /// Enumerated ONCE and keyed by canonical machine code rather than probed with
+    /// <c>Path.Combine(dir, code + ".json")</c> per binding. A machine code is a case-INSENSITIVE identity
+    /// and file-name case sensitivity is a property of the FILESYSTEM — so a per-binding probe would find
+    /// <c>aoi-01.json</c> for machine <c>AOI-01</c> on Windows and silently not find it on Linux. Same
+    /// lookup on both, decided by this codebase's identity rule rather than by the volume it is installed on.
+    /// </summary>
+    private static Dictionary<string, string> IndexMapFiles(string directory, ILogger logger)
+    {
+        var maps = new Dictionary<string, string>(StringComparer.Ordinal);
+        try
+        {
+            if (!Directory.Exists(directory)) return maps;
+
+            foreach (var file in Directory.EnumerateFiles(directory, "*.json"))
+            {
+                var key = MachineCodeIdentity.Canonicalize(Path.GetFileNameWithoutExtension(file));
+                if (string.IsNullOrWhiteSpace(key)) continue;
+
+                if (!maps.TryAdd(key, file))
+                {
+                    logger.LogWarning(
+                        "Two tag-map files in '{TagMapDir}' name the same machine '{MachineCode}' (they differ " +
+                        "only in spelling); '{Winner}' is used and '{Ignored}' is ignored. Machine codes are a " +
+                        "case-insensitive identity — rename one of the files.",
+                        directory, key, maps[key], file);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // An unreadable directory disables tag ingestion for this run and nothing else. Same "one bad
+            // source disables only itself" posture every other startup config load has.
+            logger.LogError(ex,
+                "Tag-map directory '{TagMapDir}' could not be listed — no HMI tag namespace is ingested this run. " +
+                "Every connector still registers and every machine still runs.", directory);
+        }
+
+        return maps;
+    }
 }

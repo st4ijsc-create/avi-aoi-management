@@ -7,8 +7,17 @@ namespace St4i.EngineApi.HmiModel;
 /// tag, i.e. whether <c>TagDescriptor.IsBackedByDriver</c> is allowed to be <see langword="true"/> for a
 /// tag whose source names that kind.
 ///
-/// <para><b>Why this type exists at all.</b> <c>isBackedByDriver</c> is one word that a UI shows an
-/// operator to mean "this number came off the machine". The blueprint's own lesson block records the trap
+/// <para><b>Why this type exists at all.</b> <c>isBackedByDriver</c> is the field that will let a UI tell
+/// an operator whether a number came off the machine or was manufactured.
+/// <b>🔴 Nothing renders it today — measured, 2026-08-31: the only occurrence in <c>web/</c> is the type
+/// declaration <c>web/src/contracts/tagNamespace.ts:43</c>.</b> An earlier version of this sentence said a
+/// UI "shows" it, which was the <c>dispense_program</c> shape asserted as fact in the doc comment of the
+/// type built to prevent it. What is true is narrower and is the reason this type is still worth having:
+/// the flag is computed, stored and served, so the day a screen reads it the answer it gets is one this
+/// codebase derived rather than one a connector asserted about itself — and until that day, the honest
+/// description of the flag is "correct and unread".</para>
+///
+/// <para>The blueprint's own lesson block records the trap
 /// this repository has already paid for once: <c>dispense_program</c> and <c>weld_profile</c> were fully
 /// declared, domain-checked, persisted, and served over a real route — and no simulator ever read them.
 /// Every mechanical signal said the feature worked; the only thing missing was the part that used it.
@@ -56,8 +65,12 @@ public static class DriverTagSupport
     /// ships, and fails in BOTH directions — a kind listed here with no factory behind it, and a factory
     /// whose kind nobody added here, are each a red test rather than a silent divergence.
     ///
-    /// <para>Ordinal-sorted so the comparison against a sorted reflected set is order-insensitive by
-    /// construction rather than by the test remembering to sort.</para>
+    /// <para>🔴 An earlier version of this paragraph claimed the list is "ordinal-sorted so the comparison
+    /// is order-insensitive by construction". That bought nothing and was removed: every comparison against
+    /// this list — <see cref="CanBack"/>'s <c>Contains</c>, and both directions in
+    /// <c>DriverTagSupportTests</c> — is a SET operation that never looks at order, so the sort could be
+    /// reversed without any test noticing. The order below is alphabetical because that is a pleasant way
+    /// to read two entries, and for no other reason.</para>
     /// </summary>
     public static IReadOnlyList<string> DeclaredKinds { get; } = new[]
     {
@@ -81,9 +94,16 @@ public static class DriverTagSupport
     /// pieces of code happen to tolerate it: <see cref="DriverKinds.Normalize"/> returns a null/empty id
     /// unchanged rather than throwing, and <c>Contains</c> compares a null against the list without
     /// dereferencing it. The guard makes this method's fail-closed contract its own rather than a
-    /// consequence of a collaborator's null tolerance. <c>CanBack_FailsClosedOnAMissingKind</c> pins the
-    /// BEHAVIOUR — including a regression in that tolerance — but it does not pin this LINE, and this
-    /// paragraph exists so nobody later reads the sweep's green D6 row as evidence the line is dead.</para>
+    /// consequence of a collaborator's null tolerance.
+    ///
+    /// <para>🔴 <b>An earlier version of this paragraph claimed
+    /// <c>CanBack_FailsClosedOnAMissingKind</c> pins that tolerance "including a regression in it". That
+    /// was false and is worth stating as a correction rather than deleting.</b> Making
+    /// <see cref="DriverKinds.Normalize"/> throw on a blank id leaves that test GREEN — precisely because
+    /// the guard below returns first, so the named test can never reach the code whose regression it was
+    /// claimed to catch. The guard and the claimed detection are mutually exclusive by construction. What
+    /// the test really pins is the ANSWER for a blank kind; the guard's own line is unpinned (row D6), and
+    /// the protection it buys against a collaborator becoming null-hostile is real but unmeasured.</para></para>
     ///
     /// <para>A third-party kind also answers <see langword="false"/>. That is a statement about this
     /// build, not a judgment about the connector: <c>ConnectorsJsonRegistration.RegisterAll</c> has no

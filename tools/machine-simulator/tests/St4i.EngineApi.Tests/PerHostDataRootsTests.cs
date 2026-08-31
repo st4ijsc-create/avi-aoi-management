@@ -841,6 +841,16 @@ public sealed class PerHostDataRootsTests
             ["src/St4i.EdgeService/EdgeConnectors.cs"] = ReadOnly,            // connectors.json
             ["src/St4iMachineSimulator/Services/FleetService.cs"] = ReadOnly, // fleet.json
 
+            // 🔴 WS-HMI-0c Task 4 (fix round) — tag-maps/{machineCode}.json, one hand-authored file per
+            // machine, READ at startup and never written. Deliberately paired with NO relocation variable,
+            // which is what keeps the variable population above EMPTY: BF-1's rule is that a directory
+            // WITH one must be derivable from the machine-wide root, and the first version of this feature
+            // had both a beside-the-binary default and an ST4I_HMI_TAGMAPS_DIR, which this guard and
+            // TestHarnessIsolationTests both refused. The machine-wide alternative is real and was built,
+            // but it needs a keep-versus-purge classification in remove-data.ps1 — owner ruling
+            // 2026-08-23(b) territory — so it is with the owner rather than in this table.
+            ["src/St4i.EngineApi/HmiModel/TagIngestionService.cs"] = ReadOnly, // tag-maps/{machineCode}.json
+
             ["src/St4i.DesktopShell/MainWindow.xaml.cs"] = NotAStore,         // engine exe path; its writes are per-USER %LOCALAPPDATA%
             ["src/St4i.EngineApi/Program.cs"] = NotAStore,                    // connectors.json read + wwwroot (packaged web UI)
             ["src/St4i.EngineApi/ServiceHost/ServiceInstallVerbs.cs"] = NotAStore, // Environment.ProcessPath -> the service binPath for sc.exe

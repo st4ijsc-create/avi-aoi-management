@@ -10,8 +10,12 @@ namespace St4i.EngineApi.HmiModel;
 /// <para>The compilation itself is almost a copy: a <see cref="TagMapEntry"/> is field-for-field a
 /// <see cref="TagDescriptor"/> minus one flag. That one flag is the entire reason this type exists.</para>
 ///
-/// <para><b><c>isBackedByDriver</c> is computed here, never carried.</b> It is the word an operator reads
-/// as "this number came off the machine", and Task 1 deliberately left it out of the declaration so a
+/// <para><b><c>isBackedByDriver</c> is computed here, never carried.</b> It is the field that will let a UI
+/// tell an operator whether a number came off the machine — <b>🔴 nothing renders it today, measured
+/// 2026-08-31: the sole occurrence in <c>web/</c> is the type declaration
+/// <c>web/src/contracts/tagNamespace.ts:43</c></b>. An earlier version of this sentence asserted a UI reads
+/// it, which was the very shape the lesson block below describes, claimed as fact in the type built to
+/// prevent it. Task 1 deliberately left the flag out of the declaration so a
 /// connector could not assert it about itself. The blueprint's lesson block records what the alternative
 /// looks like: <c>dispense_program</c> and <c>weld_profile</c> were declared in full, domain-checked,
 /// persisted and served over a real route for months, and nothing read them. Every mechanical signal was
