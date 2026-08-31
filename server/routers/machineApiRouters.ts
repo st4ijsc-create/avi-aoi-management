@@ -2957,6 +2957,17 @@ const processWaveformSchema = z.object({
 // lượt sửa này — chỉ machineCode/apiKey/ts/serverReceivedAt còn thiếu `.max()`,
 // cùng lý do (SO KHỚP/timestamp, không INSERT verbatim) + cùng con số đã chọn
 // cho các trường CÙNG TÊN ở `submitInspectionCoreObject`.
+// ★★★ Pha 1F Task 6 (review lượt 7, C-2 ⛔) — `ts`/`serverReceivedAt` nới
+// `.max(40)` → `.max(64)`, cùng lý lẽ `startedAt`/`completedAt` của
+// `machineDataContractV2`/`metaJsonSchema`: MỌI trường thời gian của MỌI hợp
+// đồng ingest phải chịu được `DateTime.ToString()` mặc định (dài tới 50 ký
+// tự) — tiêu chí quét MỚI, không phải "có bằng chứng too_big hôm nay không".
+// `refineProcessTime` (bên dưới) VẪN đòi `ts` có offset UTC tường minh
+// (`hasExplicitUtcOffset`) nên `DateTime.ToString()` mặc định (không có
+// offset dạng `+07:00`/`Z`) KHÔNG qua được cửa này hôm nay dù `.max()` đã
+// nới — bản vá này PHÒNG NGỪA cùng lớp lỗi, không phải đóng một lỗ `too_big`
+// đã đo LIVE ở đây (khác `startedAt`/`finishedAt` của `metaJsonSchema`, nơi
+// lỗ đã đo LIVE).
 export const submitProcessResultCoreObject = z.object({
   schemaVersion: z.string().max(20).optional(), // log-only provenance (shared w/ inspection feed)
   machineCode: z.string().max(50).optional(),   // OR authenticate via Authorization header
@@ -2966,8 +2977,9 @@ export const submitProcessResultCoreObject = z.object({
   result: z.enum(PROCESS_RESULT_VALUES),
   // ISO-8601. OPTIONAL: absent ⇒ server stamps now() + timeSource='server'. When
   // PRESENT it MUST be parseable AND carry an explicit UTC offset (refine below).
-  // .max(40) — Pha 1E Task 3 (BG-69), timestamp column, không phải varchar.
-  ts: z.string().max(40).optional(),
+  // .max(64) — Pha 1F Task 6 (C-2 ⛔): nới từ .max(40), timestamp column,
+  // không phải varchar — xem docblock trên.
+  ts: z.string().max(64).optional(),
   recipe: z
     .object({
       code: z.string().trim().min(1).max(128),
@@ -2984,8 +2996,8 @@ export const submitProcessResultCoreObject = z.object({
   productionOrderCode: z.string().trim().max(80).optional(),
   lotCode: z.string().trim().max(80).optional(),
   // ── SERVER-STAMPED, carried through the WAL (a machine cannot forge them) ──
-  // .max(40) — Pha 1E Task 3 (BG-69), cùng lý do `ts` ở trên.
-  serverReceivedAt: z.string().max(40).optional(),
+  // .max(64) — Pha 1F Task 6 (C-2 ⛔): nới từ .max(40), cùng lý do `ts` ở trên.
+  serverReceivedAt: z.string().max(64).optional(),
   timeSource: z.enum(["device", "server"]).optional(),
 });
 
@@ -2999,8 +3011,11 @@ export const submitProcessResultCoreObject = z.object({
  * (đo avi_app, 2026-08-30) TRƯỚC lượt sửa này — không đổi. `machineCode`/
  * `apiKey` — VỆ SINH, cùng lý do + cùng con số hai trường CÙNG TÊN ở
  * `submitInspectionCoreObject`. `inferredAt` (nhánh chuỗi) — VỆ SINH:
- * `edge_inference_sync.inferredAt` là cột `timestamp` (không phải varchar),
- * `.max(40)` cùng lý do `ts`/`serverReceivedAt` ở `submitProcessResultCoreObject`.
+ * `edge_inference_sync.inferredAt` là cột `timestamp` (không phải varchar).
+ * ★★★ Pha 1F Task 6 (review lượt 7, C-2 ⛔) — `.max(40)` → `.max(64)`, cùng
+ * lý lẽ `ts`/`serverReceivedAt` ở `submitProcessResultCoreObject` (tiêu chí
+ * quét MỚI: trần phải chịu được `DateTime.ToString()` mặc định, không phải
+ * "có bằng chứng too_big hôm nay không").
  * `results[].inputReference` — MIỄN TRỪ có chủ đích: cột đích
  * `edge_inference_sync.inputReference` là `text` (đo avi_app, NULL = không
  * giới hạn thật), cùng lớp lý do `errorDesc`/`measurements[].remark`.
@@ -3022,7 +3037,7 @@ export const syncEdgeResultsCoreObject = z.object({
     confidence: z.number(),
     topLabel: z.string().max(100),
     processingTimeMs: z.number().int().nonnegative().optional(),
-    inferredAt: z.union([z.string().max(40), z.date()]),
+    inferredAt: z.union([z.string().max(64), z.date()]), // Pha 1F Task 6 (C-2 ⛔): nới từ .max(40), xem docblock trên
     inspectionId: z.number().int().positive().optional(),
   })).max(500),
 });

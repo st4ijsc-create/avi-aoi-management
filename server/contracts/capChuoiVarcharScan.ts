@@ -155,18 +155,18 @@ export const KIEM_KE_CAP_CHUOI: readonly MucCapChuoi[] = [
   { ten: "identity.country", duongDan: ["identity", "country"], max: 200, nguon: "ve-sinh", ghiChu: "vào hàm băm khoá khử trùng, không có cột đích" },
   { ten: "identity.solutionName", duongDan: ["identity", "solutionName"], max: 200, nguon: "ve-sinh", ghiChu: "vào hàm băm khoá khử trùng, không có cột đích" },
   { ten: "identity.appVersion", duongDan: ["identity", "appVersion"], max: 200, nguon: "ve-sinh", ghiChu: "vào hàm băm khoá khử trùng, không có cột đích" },
-  { ten: "startedAt", duongDan: ["startedAt"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp (product_inspections.inspectionTime), không phải varchar" },
-  { ten: "completedAt", duongDan: ["completedAt"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp, không phải varchar" },
-  { ten: "surfaces[].positions[].startedAt", duongDan: ["surfaces", "[]", "positions", "[]", "startedAt"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp (inspection_positions.startedAt), không phải varchar" },
-  { ten: "surfaces[].positions[].completedAt", duongDan: ["surfaces", "[]", "positions", "[]", "completedAt"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp, không phải varchar" },
-  { ten: "surfaces[].positions[].captures[].startedAt", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "startedAt"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp (inspection_captures.startedAt), không phải varchar" },
-  { ten: "surfaces[].positions[].captures[].completedAt", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "completedAt"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp, không phải varchar" },
+  { ten: "startedAt", duongDan: ["startedAt"], max: 64, nguon: "ve-sinh", ghiChu: "đi timestamp (product_inspections.inspectionTime), không phải varchar — Pha 1F Task 6 (C-2 ⛔): nới từ 40, xem docblock máyDataContractV2.ts" },
+  { ten: "completedAt", duongDan: ["completedAt"], max: 64, nguon: "ve-sinh", ghiChu: "đi timestamp, không phải varchar — Pha 1F Task 6: nới từ 40" },
+  { ten: "surfaces[].positions[].startedAt", duongDan: ["surfaces", "[]", "positions", "[]", "startedAt"], max: 64, nguon: "ve-sinh", ghiChu: "đi timestamp (inspection_positions.startedAt), không phải varchar — Pha 1F Task 6: nới từ 40" },
+  { ten: "surfaces[].positions[].completedAt", duongDan: ["surfaces", "[]", "positions", "[]", "completedAt"], max: 64, nguon: "ve-sinh", ghiChu: "đi timestamp, không phải varchar — Pha 1F Task 6: nới từ 40" },
+  { ten: "surfaces[].positions[].captures[].startedAt", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "startedAt"], max: 64, nguon: "ve-sinh", ghiChu: "đi timestamp (inspection_captures.startedAt), không phải varchar — Pha 1F Task 6: nới từ 40" },
+  { ten: "surfaces[].positions[].captures[].completedAt", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "completedAt"], max: 64, nguon: "ve-sinh", ghiChu: "đi timestamp, không phải varchar — Pha 1F Task 6: nới từ 40" },
   { ten: "surfaces[].positions[].captures[].components[].componentName", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "componentName"], max: 255, nguon: "ve-sinh", ghiChu: "chưa có cột đích (Khối B) — quy ước 'tên' 255" },
   { ten: "surfaces[].positions[].captures[].components[].value", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "value"], max: 255, nguon: "ve-sinh", ghiChu: "nhánh chuỗi — đối xứng measuredValueText varchar(255), chưa xác nhận cột" },
   { ten: "surfaces[].positions[].captures[].components[].lowerLimit", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "lowerLimit"], max: 255, nguon: "ve-sinh", ghiChu: "không có cột kết quả nào — đối xứng value" },
   { ten: "surfaces[].positions[].captures[].components[].upperLimit", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "upperLimit"], max: 255, nguon: "ve-sinh", ghiChu: "không có cột kết quả nào — đối xứng value" },
-  { ten: "surfaces[].positions[].captures[].components[].startedAt", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "startedAt"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp, không phải varchar" },
-  { ten: "surfaces[].positions[].captures[].components[].completedAt", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "completedAt"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp, không phải varchar" },
+  { ten: "surfaces[].positions[].captures[].components[].startedAt", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "startedAt"], max: 64, nguon: "ve-sinh", ghiChu: "đi timestamp, không phải varchar — Pha 1F Task 6: nới từ 40" },
+  { ten: "surfaces[].positions[].captures[].components[].completedAt", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "completedAt"], max: 64, nguon: "ve-sinh", ghiChu: "đi timestamp, không phải varchar — Pha 1F Task 6: nới từ 40" },
 ];
 
 /**
@@ -217,8 +217,8 @@ export const KIEM_KE_META_JSON: readonly MucCapChuoi[] = [
   // ── Nhóm (B) vệ sinh — KHÔNG khớp cột nào, hoặc khớp NHƯNG không ghi verbatim ──
   { ten: "machineCode", duongDan: ["machineCode"], max: 100, nguon: "ve-sinh", ghiChu: "không đọc ở đâu trong commit — chỉ parse" },
   { ten: "inspectionId", duongDan: ["inspectionId"], max: 100, nguon: "ve-sinh", ghiChu: "không đọc ở đâu trong commit — chỉ parse" },
-  { ten: "startedAt", duongDan: ["startedAt"], max: 40, nguon: "ve-sinh", ghiChu: "đi timestamp qua new Date(), không phải varchar" },
-  { ten: "finishedAt", duongDan: ["finishedAt"], max: 40, nguon: "ve-sinh", ghiChu: "không đọc ở đâu trong commit hôm nay — chuẩn bị trước, cùng quy ước ngày-giờ" },
+  { ten: "startedAt", duongDan: ["startedAt"], max: 64, nguon: "ve-sinh", ghiChu: "đi timestamp qua new Date(), không phải varchar — ★★★ Pha 1F Task 6 (review lượt 7, C-2 ⛔): TRƯỜNG GỐC THẬT (':1009' đọc inspectionTime ?? startedAt, mẫu máy thật KHÔNG khai inspectionTime), nới từ .max(40) — xem docblock tại chỗ khai schema" },
+  { ten: "finishedAt", duongDan: ["finishedAt"], max: 64, nguon: "ve-sinh", ghiChu: "không đọc ở đâu trong commit hôm nay — chuẩn bị trước, cùng quy ước ngày-giờ. Pha 1F Task 6 (C-2 ⛔): nới từ .max(40), cùng lý do startedAt" },
   { ten: "inspectionTime", duongDan: ["inspectionTime"], max: 64, nguon: "ve-sinh", ghiChu: "đi timestamp qua new Date(), không phải varchar — BG-72 (lượt 2): alias CỦA submitInspectionCoreObject.inspectionTime (v1.x) — PHẢI khớp .max(64), lượt vá BG-72 đầu tiên bỏ sót cửa ZIP" },
   { ten: "companyCode", duongDan: ["companyCode"], max: 50, nguon: "ve-sinh", ghiChu: "chỉ đối chiếu qua macTenantChoGhi (không ghi verbatim) — khớp corporates.code varchar(50)" },
   { ten: "factoryCode", duongDan: ["factoryCode"], max: 50, nguon: "ve-sinh", ghiChu: "chỉ đối chiếu — khớp factories.code varchar(50)" },
@@ -608,4 +608,100 @@ export function kiemTraToanBoTruongChuoi(
     }
   }
   return { loi, soTruongDaXet: phatHien.length };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Pha 1F Task 6 (review lượt 7, C-2 ⛔) — CENSUS TRẦN THỜI GIAN: tiêu chí MỚI.
+// ════════════════════════════════════════════════════════════════════════════
+//
+// ── VÌ SAO LƯỚI NÀY TỒN TẠI (đọc trước khi sửa) ───────────────────────────────
+// Cùng một hồi quy ("trần .max() nhỏ hơn định dạng DateTime.ToString() dài
+// nhất mà new Date() vẫn parse được") đã bị vá NỬA ĐƯỜNG BA LẦN liên tiếp:
+//   1. BG-72 (Pha 1F Task 2) — chỉ vá đường v1.x (submitInspectionCoreObject).
+//   2. BG-91 (lượt soát thứ hai) — quét lại cửa ZIP, nhưng CHỈ theo tiêu chí
+//      "trường này có alias bên v1.x không?" — vá được `inspectionTime` (CÓ
+//      alias `submitInspectionCoreObject.inspectionTime`), BỎ SÓT `startedAt`/
+//      `finishedAt` (KHÔNG có alias — v1.x không hề khai hai trường này).
+//   3. Review lượt 7 (C-2 ⛔, Task 6 NÀY) — đo LIVE: `startedAt` mới là trường
+//      GỐC THẬT (`aoiPackageRouter.ts:1009` đọc `inspectionTime ?? startedAt`,
+//      mẫu máy thật KHÔNG khai `inspectionTime`) — bị `.max(40)` từ chối, đếm
+//      VĨNH VIỄN, khoá gói `'dead'`.
+// Gốc rễ: tiêu chí "có alias không" là một câu hỏi VỀ CẤU TRÚC hợp đồng, không
+// phải về RỦI RO THẬT. Một trường có thể mang giá trị thời gian dài mà KHÔNG
+// hề có alias ở bất kỳ đường nào khác — `startedAt` chính là ví dụ đó.
+//
+// ⇒ Lưới này đổi câu hỏi: KHÔNG hỏi "trường này có alias không", mà hỏi
+// TRỰC TIẾP trên MỌI trường chuỗi của MỌI hợp đồng ingest: "tên trường này có
+// DẠNG một trường thời gian không (laTenTruongThoiGian), và nếu có, trần của
+// nó có ≥ TRAN_TOI_THIEU_THOI_GIAN không?" — không cần biết trước danh sách
+// trường, không cần alias, không cần bằng chứng "too_big đã đo hôm nay".
+//
+// ── TỰ TẤN CÔNG TIÊU CHÍ CỦA CHÍNH LƯỚI NÀY (bắt buộc theo brief Task 6) ──────
+// `laTenTruongThoiGian` là một HEURISTIC THEO TÊN (kết thúc bằng "At"/"Time",
+// hoặc đúng bằng "ts") — KHÔNG PHẢI một phép chứng minh cấu trúc như
+// `duyetTimTruongChuoi` (nơi "ZodString" là một SỰ THẬT về kiểu, không phải
+// suy đoán). Nó CHẮC CHẮN bỏ sót một trường mang giá trị thời gian nhưng đặt
+// tên KHÔNG theo quy ước này (vd một trường tên "khi", "moment", "stamp",
+// "dateStr" nếu tương lai có ai đặt tên khác quy ước hiện hành). Đây là giới
+// hạn THẬT, không che giấu — ghi rõ trong report Task 6, KHÔNG tự nhận "đã
+// quét hết mọi trường thời gian có thể có", chỉ nhận "đã quét hết mọi trường
+// khớp quy ước đặt tên ĐANG DÙNG trong sáu hợp đồng ingest hôm nay (startedAt/
+// completedAt/finishedAt/inspectionTime/serverReceivedAt/inferredAt/ts)" — và
+// MỖI trường mới khớp quy ước đó, dù thêm vào schema nào trong sáu, tự động bị
+// bắt (không cần sửa bảng nào — xem đột biến (b) ở `capChuoiThoiGianCensus.test.ts`).
+export const TRAN_TOI_THIEU_THOI_GIAN = 64;
+
+const HAU_TO_TEN_TRUONG_THOI_GIAN = /(?:At|Time)$/;
+
+/**
+ * Tên trường (LÁ CUỐI của đường dẫn, không phải cả đường) có DẠNG một trường
+ * mang giá trị thời gian không — quy ước ĐANG DÙNG trong sáu hợp đồng ingest:
+ * kết thúc bằng "At" (`startedAt`/`completedAt`/`finishedAt`/`serverReceivedAt`/
+ * `inferredAt`) hoặc "Time" (`inspectionTime`), hoặc đúng bằng "ts"
+ * (`submitProcessResultCoreObject.ts`). Phân biệt hoa/thường có chủ đích:
+ * "At"/"Time" viết hoa chữ cái đầu đúng quy ước camelCase của dự án — một
+ * trường như "format"/"rate" (kết thúc bằng "at"/"te" THƯỜNG) KHÔNG khớp.
+ */
+export function laTenTruongThoiGian(tenTruong: string): boolean {
+  return tenTruong === "ts" || HAU_TO_TEN_TRUONG_THOI_GIAN.test(tenTruong);
+}
+
+/** Lá cuối của một đường dạng "surfaces[].positions[].startedAt" → "startedAt". */
+function tenLaCuoi(duongDan: string): string {
+  const buoc = duongDan.split(".");
+  return buoc[buoc.length - 1];
+}
+
+/**
+ * Census TRẦN THỜI GIAN cho MỘT schema gốc: duyệt TOÀN BỘ lá chuỗi
+ * (`duyetTimTruongChuoi` — cùng bộ duyệt CẤU TRÚC dùng cho
+ * `kiemTraToanBoTruongChuoi`, không phải một bộ duyệt riêng), lọc theo
+ * `laTenTruongThoiGian`, rồi đòi MỖI trường khớp có `.max()` VÀ
+ * `.max() >= TRAN_TOI_THIEU_THOI_GIAN`. Trường không khớp tên (không phải
+ * trường thời gian) KHÔNG bị đòi hỏi gì — lưới này không thay thế
+ * `kiemTraToanBoTruongChuoi` (đòi MỌI trường chuỗi CÓ `.max()`, bất kể giá
+ * trị), nó SIẾT THÊM một lớp cho ĐÚNG nhóm trường thời gian.
+ */
+export function kiemTraTranThoiGian(
+  goc: z.ZodTypeAny,
+  tenSchema: string,
+): { loi: string[]; soTruongThoiGian: number } {
+  const phatHien = duyetTimTruongChuoi(goc);
+  const loi: string[] = [];
+  let soTruongThoiGian = 0;
+  for (const { duongDan, max } of phatHien) {
+    if (!laTenTruongThoiGian(tenLaCuoi(duongDan))) continue;
+    soTruongThoiGian++;
+    if (max === null) {
+      loi.push(
+        `[${tenSchema}] ${duongDan}: trường THỜI GIAN không có .max() (kỳ vọng ≥${TRAN_TOI_THIEU_THOI_GIAN})`,
+      );
+    } else if (max < TRAN_TOI_THIEU_THOI_GIAN) {
+      loi.push(
+        `[${tenSchema}] ${duongDan}: .max(${max}) < ${TRAN_TOI_THIEU_THOI_GIAN} — nhỏ hơn định dạng ` +
+          `DateTime.ToString() dài nhất đã đo (50 ký tự, dư margin tới ${TRAN_TOI_THIEU_THOI_GIAN})`,
+      );
+    }
+  }
+  return { loi, soTruongThoiGian };
 }

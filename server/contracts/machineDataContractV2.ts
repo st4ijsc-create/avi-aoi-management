@@ -91,8 +91,22 @@
  *   - `startedAt`/`completedAt` (CẢ BỐN cấp: bo/position/capture/component)
  *     → luôn đi qua `new Date(...)`/`toDateOrUndefined` vào cột
  *     `timestamp without time zone` (KHÔNG PHẢI `varchar`) — `22001` không
- *     áp dụng ở đây. `.max(40)` chỉ để chặn chuỗi rác khổng lồ vào bộ phân
- *     tích ngày giờ, dư sức cho ISO-8601 dài nhất có múi giờ (~30 ký tự).
+ *     áp dụng ở đây. ★★★ Pha 1F Task 6 (review lượt 7, C-2 ⛔) — `.max(40)`
+ *     → `.max(64)`: cùng trường/cùng Agent C# đã đo hồi quy thật ở
+ *     `startedAt`/`finishedAt` của `metaJsonSchema` (cửa ZIP, xem docblock
+ *     `aoiPackageRouter.ts`) — một `DateTime.ToString()` mặc định dài tới 50
+ *     ký tự vẫn là ngày hợp lệ (`new Date()` parse được), `.max(40)` từ chối
+ *     NHẦM. Review lượt 7 chỉ đo được `too_big@startedAt` ở CỬA ZIP (chưa có
+ *     bằng chứng LIVE cho MDC v2 hôm nay), nhưng đây CHÍNH LÀ hợp đồng sẽ
+ *     TRỞ THÀNH `meta.json` sau BG-85 (`docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md`)
+ *     — vá theo tiêu chí MỚI ("trần có ≥ độ dài `new Date()` chấp nhận
+ *     không?", không phải "có bằng chứng too_big hôm nay không?") ngay bây
+ *     giờ để bản vá BG-85 không phải quay lại đây lần nữa. Áp dụng ĐỀU cho
+ *     cả bốn cấp (không chỉ cấp gốc) — cùng Agent, cùng định dạng, không có
+ *     lý do để một cấp an toàn còn cấp khác không. `.max(64)` dư 14 ký tự
+ *     trên mẫu dài nhất đã đo (50) — census `capChuoiThoiGianCensus.test.ts`
+ *     (`capChuoiVarcharScan.ts`, `kiemTraTranThoiGian`) canh trần này ≥64
+ *     trên MỌI trường thời gian của MỌI hợp đồng ingest, không riêng đây.
  *
  * NGOẠI LỆ DUY NHẤT — `errorDesc` (lá): cột đích `measurement_results.errorDesc`
  * là `text`, KHÔNG có `character_maximum_length` (đã kiểm `information_schema`,
@@ -154,11 +168,12 @@ const componentV2 = z.object({
   // (character_maximum_length = NULL, đã kiểm avi_app) — không giới hạn thật
   // để khớp. Thêm trần ở đây là siết bịa một con số không khớp cột nào cả.
   errorDesc: z.string().nullable().optional(),
-  // .max(40) — VỆ SINH: đi `timestamp without time zone` qua `toDateOrUndefined`,
-  // không phải `varchar` — `22001` không áp dụng. Chặn chuỗi rác vào bộ phân
-  // tích ngày giờ; dư sức cho ISO-8601 dài nhất (~30 ký tự có múi giờ).
-  startedAt: z.string().max(40).optional(),
-  completedAt: z.string().max(40).optional(),
+  // .max(64) — VỆ SINH: đi `timestamp without time zone` qua `toDateOrUndefined`,
+  // không phải `varchar` — `22001` không áp dụng. Pha 1F Task 6 (C-2 ⛔): nới
+  // từ .max(40) — DateTime.ToString() mặc định dài tới 50 ký tự vẫn là ngày
+  // hợp lệ, xem docblock đầu file.
+  startedAt: z.string().max(64).optional(),
+  completedAt: z.string().max(64).optional(),
 });
 
 // ── Cấp 3: capture (HookCapture, HookContracts.cs:41-50) ────────────────────
@@ -175,10 +190,10 @@ const captureV2 = z.object({
   index: z.number().int().nonnegative().optional(),
   result: z.enum(["OK", "NG"]),
   ntf: z.boolean(),
-  // .max(40) — VỆ SINH, cùng lý do startedAt/completedAt ở componentV2: đích
-  // là `timestamp`, không phải `varchar`.
-  startedAt: z.string().max(40).optional(),
-  completedAt: z.string().max(40).optional(),
+  // .max(64) — VỆ SINH, cùng lý do startedAt/completedAt ở componentV2: đích
+  // là `timestamp`, không phải `varchar`. Pha 1F Task 6 (C-2 ⛔): nới từ .max(40).
+  startedAt: z.string().max(64).optional(),
+  completedAt: z.string().max(64).optional(),
   // RỖNG là hợp lệ (đèn chụp vùng không có component) — KHÔNG .min(1).
   components: z.array(componentV2),
 });
@@ -194,10 +209,10 @@ const positionV2 = z.object({
   positionNumber: z.number().int().nonnegative().optional(),
   result: z.enum(["OK", "NG"]),
   ntf: z.boolean(),
-  // .max(40) — VỆ SINH, cùng lý do ở componentV2/captureV2: đích là
-  // `timestamp`, không phải `varchar`.
-  startedAt: z.string().max(40).optional(),
-  completedAt: z.string().max(40).optional(),
+  // .max(64) — VỆ SINH, cùng lý do ở componentV2/captureV2: đích là
+  // `timestamp`, không phải `varchar`. Pha 1F Task 6 (C-2 ⛔): nới từ .max(40).
+  startedAt: z.string().max(64).optional(),
+  completedAt: z.string().max(64).optional(),
   captures: z.array(captureV2),
 });
 
@@ -253,11 +268,14 @@ export const machineDataContractV2 = z.object({
   ntf: z.boolean(),
   // null khi máy không gửi (HookProduct.MachineProductIndex).
   machineProductIndex: z.number().int().nullable().optional(),
-  // .max(40) — VỆ SINH: đi `new Date(...)` → `product_inspections.inspectionTime`
+  // .max(64) — VỆ SINH: đi `new Date(...)` → `product_inspections.inspectionTime`
   // (`timestamp without time zone`, KHÔNG PHẢI `varchar`) qua `submitInspectionTreeV2`.
-  // `22001` không áp dụng; trần chỉ chặn chuỗi rác vào bộ phân tích ngày giờ.
-  startedAt: z.string().max(40).optional(),
-  completedAt: z.string().max(40).optional(),
+  // `22001` không áp dụng. Pha 1F Task 6 (C-2 ⛔): nới từ .max(40) — cùng lý
+  // do/con số `startedAt`/`finishedAt` của `metaJsonSchema` (cửa ZIP, đọc
+  // ĐÚNG trường này khi máy không gửi `inspectionTime` — xem docblock
+  // `aoiPackageRouter.ts`).
+  startedAt: z.string().max(64).optional(),
+  completedAt: z.string().max(64).optional(),
   summary: z.object({
     surfaces: summaryGroupV2,
     positions: summaryGroupV2,

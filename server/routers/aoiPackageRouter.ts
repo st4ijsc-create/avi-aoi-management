@@ -439,7 +439,30 @@ async function getOrExtractImage(
  *   - `startedAt`/`finishedAt` (gốc) — `startedAt` đi `new Date(...)` vào cột
  *     `timestamp` (KHÔNG PHẢI varchar, `22001` không áp dụng); `finishedAt`
  *     không đọc ở đâu hôm nay (chuẩn bị trước, cùng lý do `machineCode`) —
- *     `.max(40)`, dư sức ISO-8601 dài nhất có múi giờ.
+ *     ★★★ Pha 1F Task 6 (review lượt 7, C-2 ⛔) — BẢN VÁ NÀY nới `.max(40)` →
+ *     `.max(64)`. Đây là LẦN THỨ BA trường này bị soát và LẦN ĐẦU được vá
+ *     ĐÚNG: `:1009-1013` đọc `metaData?.inspectionTime ?? metaData?.startedAt`
+ *     — `startedAt` là NGUỒN THẬT khi máy không gửi `inspectionTime` (schema
+ *     tự khai `inspectionTime` là "Alias for startedAt" — nghĩa là `startedAt`
+ *     mới là trường GỐC); mẫu máy THẬT
+ *     (`D:\SOURCES\AOIData\aoipackage-meta-sample.json:17`) dùng ĐÚNG
+ *     `startedAt`, KHÔNG hề khai `inspectionTime`. Trước bản vá này, chuỗi
+ *     `DateTime.ToString()` 50 ký tự (`"Sun Aug 30 2026 14:26:51 GMT+0700
+ *     (Indochina Time)"`) làm `startedAt`/`finishedAt` bị `.max(40)` từ chối
+ *     — MỘT issue `too_big` duy nhất ⇒ đếm VĨNH VIỄN (`laLoiVinhVienDemVaoNguongDeadZip`)
+ *     ⇒ `'dead'` sau `nguongLoiVinhVienZip()` lượt, dù `inspectionTime` (cùng
+ *     payload, khác tên trường) ĐÃ được nhận từ BG-72/BG-91. VÌ SAO LỌT HAI
+ *     LẦN TRƯỚC: vòng 1 (BG-72) chỉ vá đường v1.x; vòng 2 (BG-91) quét lại
+ *     với tiêu chí "trường này có alias bên v1.x không?" — `startedAt` KHÔNG
+ *     có alias ở v1.x (`submitInspectionCoreObject` không khai trường này) ⇒
+ *     tiêu chí đó CẤU TRÚC KHÔNG THỂ tìm ra nó. Tiêu chí ĐÚNG (dùng cho bản
+ *     vá này): "trần hiện tại có ≥ độ dài định dạng `new Date()` chấp nhận
+ *     không?" — không phụ thuộc việc trường có alias ở đâu. `.max(64)` — cùng
+ *     con số, cùng lý lẽ đã dùng cho `inspectionTime`, dư 14 ký tự trên mẫu
+ *     dài nhất đã đo (50). Census `capChuoiThoiGianCensus.test.ts`
+ *     (`capChuoiVarcharScan.ts`, `kiemTraTranThoiGian`) canh MỌI trường thời
+ *     gian của MỌI hợp đồng ingest theo ĐÚNG tiêu chí này, không riêng hai
+ *     trường ở đây — chống đúng lớp lỗi "vá theo alias" đã lọt hai lần.
  *   - `inspectionTime` — ★★★ BG-72 (Pha 1F Task 2 ⛔, lượt soát thứ hai) — KHÁC
  *     `startedAt`/`finishedAt`: trường này là "Alias for startedAt
  *     (submitInspection compat)" — TỰ NHẬN cố ý khớp `inspectionTime` của
@@ -480,8 +503,8 @@ export const metaJsonSchema = z.object({
   batchNumber: z.string().max(100).optional(), // Số lô — product_inspections.batchNumber varchar(100)
 
   // Inspection timing
-  startedAt: z.string().max(40).optional(), // ISO datetime
-  finishedAt: z.string().max(40).optional(), // ISO datetime
+  startedAt: z.string().max(64).optional(), // ISO datetime — Pha 1F Task 6 (C-2 ⛔): TRƯỜNG GỐC thật (":1009" đọc inspectionTime ?? startedAt), nới từ .max(40), xem docblock trên
+  finishedAt: z.string().max(64).optional(), // ISO datetime — Pha 1F Task 6: cùng con số/lý lẽ startedAt, xem docblock trên
   inspectionTime: z.string().max(64).optional(), // Alias for startedAt (submitInspection compat) — BG-72: khớp .max(64) của submitInspectionCoreObject.inspectionTime (machineApiRouters.ts), xem docblock trên
   cycleTime: z.number().optional(), // Thời gian chu kỳ (giây)
 
