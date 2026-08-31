@@ -1844,6 +1844,13 @@ app.MapHmiModelEndpoints();
 // because the two share the seam and the Operator-reads/Engineer-writes tier; see HmiTagEndpoints.cs for
 // why its two read routes answer "I don't have that" differently (§5-bis empty vs 404).
 app.MapHmiTagEndpoints();
+// WS-HMI-2 Task 3 — the screen HTTP surface over Task 1/2's IHmiScreenStore seam (registered above):
+// GET /v1/screens, GET /v1/screens/{screenId}[?version=N], PUT /v1/screens/{screenId},
+// GET /v1/screens/{screenId}/versions, POST /v1/screens/{screenId}/rollback. Same Operator-reads/
+// Engineer-writes tier as the two surfaces directly above — see HmiScreenEndpoints.cs for why its
+// by-id GET answers "never declared" with 404 where its two siblings above answer empty-200 (§5-bis
+// applies to a machine's declared state, not to a screen document nobody ever authored).
+app.MapHmiScreenEndpoints();
 // WS-HMI-0b Task 3 — WS /v1/hmi/changes. A second WebSocket ROUTE, not a second realtime MECHANISM: same
 // transport and the same client library as /v1/inspector/stream, one more URL, so the web branch still
 // speaks one realtime dialect. The existing stream could not carry these events — its frame is the frozen

@@ -237,6 +237,14 @@ public sealed class RbacPolicyTests
         // would 404 every multi-segment tag, i.e. every real one — moves this row and is caught here too.
         new("/v1/tags", new[] { "GET" }, Policies.Operator),
         new("/v1/tags/by-path/{**path}", new[] { "GET" }, Policies.Operator),
+        // WS-HMI-2 Task 3 — the screen read surface (HmiScreenEndpoints.cs). Same tier as the component-
+        // tree/tag-namespace reads above: reading a declared screen, its version history, or a specific
+        // past version touches no device. GET /v1/screens/{screenId} answers 404 for a screen nobody ever
+        // authored (never empty-200 — see that file's own doc comment for why §5-bis does not apply the
+        // same way here), but that is a status-code decision, not a policy-tier one.
+        new("/v1/screens", new[] { "GET" }, Policies.Operator),
+        new("/v1/screens/{screenId}", new[] { "GET" }, Policies.Operator),
+        new("/v1/screens/{screenId}/versions", new[] { "GET" }, Policies.Operator),
         // WS-HMI-0b Task 3 — WS /v1/hmi/changes, the HMI change lane. Methods empty for the same reason
         // /v1/inspector/stream's row is: a WebSocket upgrade is registered with app.Map and carries no HTTP
         // method restriction. Operator, NOT Engineer like the inspector stream: subscribing is a read, and
@@ -261,6 +269,12 @@ public sealed class RbacPolicyTests
         // exposes is a configuration authority, not a device authority. Nothing in this workstream writes
         // to a DEVICE — the routes that do (setpoint/command) are separately gated below.
         new("/v1/tags/{machineCode}", new[] { "PUT" }, Policies.Engineer),
+        // WS-HMI-2 Task 3 — the two screen writes. Engineer, never Admin, for the identical reason as
+        // PUT /v1/components/{machineCode} and PUT /v1/tags/{machineCode} above: authoring or restoring a
+        // screen document is a configuration authority, not a device authority — nothing in this
+        // workstream writes to a device.
+        new("/v1/screens/{screenId}", new[] { "PUT" }, Policies.Engineer),
+        new("/v1/screens/{screenId}/rollback", new[] { "POST" }, Policies.Engineer),
         new("/v1/machines/{code}/setpoint", new[] { "POST" }, Policies.Engineer),
         new("/v1/machines/{code}/sync-config", new[] { "POST" }, Policies.Engineer),
         new("/v1/mode", new[] { "PUT" }, Policies.Engineer),
