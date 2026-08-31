@@ -19536,7 +19536,11 @@
       "quickRunLabel": "Quick run",
       "quickRunHint": "Only commands on the project's allow-list.",
       "quickRunNone": "This project has no suggested commands yet.",
-      "fromLoop": "from the auto loop"
+      "fromLoop": "from the auto loop",
+      "liveRunning": "running · {{giay}}",
+      "liveDone": "just finished · {{giay}}",
+      "liveTrimmed": "… beginning trimmed — this is the latest tail.",
+      "liveWaiting": "(no output yet — the process just started)"
     },
     "pane": {
       "tablist": "Choose pane",

@@ -829,6 +829,31 @@ export default function AICodingWorkspace() {
     vongRef.current = { ...vongRef.current, ...patch };
     setVong({ ...vongRef.current });
   }, []);
+  /**
+   * ★★★ 2026-08-29 · ĐUÔI SỐNG — poll đầu ra lệnh ĐANG CHẠY (`repoWorkspace.dauRaSong`, ~800ms)
+   * cho khối sống của `BangTerminal`, đúng lúc `confirmAction`/`chayKiemChung` còn đang CHẶN.
+   *
+   *   • CHỈ poll khi thật sự có lệnh chạy: một lượt duyệt `run_command` đang chờ mutation, hoặc
+   *     vòng tự động ở pha `chay_test`. Poll thường trực là gửi ~4.500 request/giờ để hỏi "có gì
+   *     không" vào một sổ trống — cái giá không mua được gì.
+   *   • `enabled: false` KHÔNG xoá `songQ.data` (react-query giữ cache) ⇒ lúc truyền prop phải
+   *     `dangChayLenhSong ? … : null`, nếu không khối sống "vừa xong" ở lại vĩnh viễn cạnh chính
+   *     lượt ấy trong lịch sử — hai lời khai cho một lệnh.
+   *   • Cạnh LÊN của điều kiện ⇒ tự mở tab Terminal nếu vỏ dưới đang GẬP (mẫu VSCode: chạy task là
+   *     terminal hiện). Đang xem "Vấn đề" thì TÔN TRỌNG — không giật tab người ta đang đọc.
+   */
+  const dangChayLenhSong =
+    (confirmM.isPending && pending?.tool === "run_command") || vong.pha === "chay_test";
+  const songQ = trpc.repoWorkspace.dauRaSong.useQuery(undefined, {
+    enabled: dangChayLenhSong,
+    refetchInterval: dangChayLenhSong ? 800 : false,
+    staleTime: 0,
+    gcTime: 0,
+  });
+  useEffect(() => {
+    if (dangChayLenhSong) setDuoiChat((v) => (v === "dong" ? "terminal" : v));
+  }, [dangChayLenhSong]);
+
   const dungVong = useCallback((lyDo: LyDoDungVong, chiTiet: string | null = null) => {
     datVong({ dangChay: false, pha: "nghi", lyDoDung: lyDo, chiTietDung: chiTiet });
   }, [datVong]);
@@ -2574,6 +2599,7 @@ export default function AICodingWorkspace() {
                   goiYNhanh={goiYTheoDuAn(projectId)}
                   dangGui={isStreaming}
                   onChayNhanh={(g) => handleSend(t(g.khoa, g.macDinh))}
+                  luotSong={dangChayLenhSong ? songQ.data ?? null : null}
                 />
               ) : (
                 <BangProblems

@@ -916,6 +916,15 @@ export interface TuyChonChay {
   goc?: string;
   /** Chỉ dùng trong lưới: thay `process.env` nguồn để đo phép lọc mà không phải bẩn tiến trình. */
   envNguon?: NodeJS.ProcessEnv;
+  /**
+   * ★★★ 2026-08-29 · ĐUÔI SỐNG — quan sát viên TỪNG CHUNK stdout/stderr, gọi NGAY khi byte tới
+   * (trước mọi phép cắt/che của `BoDemDauRa`/`hoanTat`). Chỉ để HIỂN THỊ tiến trình sống ở panel
+   * Terminal; kết quả CHÍNH THỨC (đã cắt + đã che) vẫn là `KetQuaChayLenh.dauRa` — hai lời khai,
+   * một nguồn sự thật. ⚠ Chunk đưa ra đây là THÔ CHƯA CHE: người nhận BẮT BUỘC tự che trước khi
+   * cho rời tiến trình server (xem `lenhSong.ts` — `StreamingSecretRedactor` per-entry). Callback
+   * ném lỗi KHÔNG được giết lượt chạy — bộ chạy nuốt lỗi của quan sát viên.
+   */
+  onDoan?: (doan: string) => void;
 }
 
 /**
@@ -995,8 +1004,16 @@ export function chayLenhTrongHopCat(spec: LenhDaPhanGiai, tuyChon: TuyChonChay):
 
     con.stdout?.setEncoding("utf8");
     con.stderr?.setEncoding("utf8");
-    con.stdout?.on("data", (c: string) => bo.them(c));
-    con.stderr?.on("data", (c: string) => bo.them(c));
+    // ĐUÔI SỐNG: quan sát viên nhận chunk THÔ trước bộ đệm; lỗi của nó bị nuốt — một panel hiển thị
+    // sập không được phép giết một lượt build 4 phút đang chạy thật (bất biến "quan sát ≠ can thiệp").
+    const quanSat = (c: string) => {
+      if (tuyChon.onDoan) {
+        try { tuyChon.onDoan(c); } catch { /* quan sát viên không được giết lượt chạy */ }
+      }
+      bo.them(c);
+    };
+    con.stdout?.on("data", quanSat);
+    con.stderr?.on("data", quanSat);
     con.stdout?.on("error", () => {});
     con.stderr?.on("error", () => {});
 

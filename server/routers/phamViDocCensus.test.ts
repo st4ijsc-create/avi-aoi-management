@@ -214,7 +214,24 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  * như `themDuAn` (đã khai ở khối trên) nhưng KHÔNG ghi gì và KHÔNG mở nội dung tệp — chỉ
  * `readdirSync` tên thư mục, fail-closed ở `duyetThuMuc.ts`, đo tại `quanLyDuAnRepo.test.ts` §5.
  */
-const GHIM = { A: 363, B: 8, C: 469, D: 1097, S: 286, tong: 2223 } as const;
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-08-29 (ĐUÔI SỐNG panel Terminal) — **tong: 2223 → 2222.** Phép quy trách nhiệm ĐẦY ĐỦ,
+ * đo bằng CHÍNH BỘ QUÉT trên hai cây (per-key diff `f9be9fd6 → HEAD`, không đếm regex — lượt đếm
+ * `.mutation(` bằng regex của chính lượt này đã khai SAI +1 cho `machineApiRouters` và bị bộ quét
+ * bác; "phép đếm thô ≠ kiểm kê", đúng bài doc 78):
+ *       +1  **LƯỢT NÀY** — `repoWorkspace.dauRaSong` (query) → **C 469 → 470**: đọc SỔ RAM
+ *           `lenhSong.ts` (đuôi đầu-ra lệnh đang chạy, đã che per-chunk) — 0 bảng, 0 tệp, 0 tiến
+ *           trình; khoá duy nhất là `ctx.user.id` từ phiên (KHÔNG input) nên còn CHẶT hơn tenant:
+ *           phạm vi CHỦ SỞ HỮU, đo tại `lenhSong.test.ts §2`.
+ *       −2  **NỢ CÓ SẴN** (trôi từ sau mốc ghim `f9be9fd6`, phát hiện ở lượt này): HAI mutation
+ *           seed `seedDataRouter.seedInspections` + `seedDataRouter.seedWorkstationAnalytics`
+ *           (dashboardStatsRouters.ts) đã bị XOÁ khỏi mã — **D 1097 → 1095** — khớp đợt nối
+ *           payload v2.0 vào ingest THẬT (fb0ffe25: đường seed giả nhường chỗ cho ingest thật).
+ * ★ **NHÓM (A) VẪN 363, B/S KHÔNG đổi** — lượt này không mở một lượt đọc tenant không lọc nào.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+const GHIM = { A: 363, B: 8, C: 470, D: 1095, S: 286, tong: 2222 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

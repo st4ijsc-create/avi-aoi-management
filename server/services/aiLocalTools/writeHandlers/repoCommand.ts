@@ -92,6 +92,8 @@ import {
 // chặn-chắc-chắn (client khoá nút Xác nhận) + `[DANH_SACH_LENH]` cho bảng lệnh (client gấp lại sau
 // nút "Xem cả danh sách"). MỘT nguồn ở `shared/` — client đọc bằng đúng cặp hàm này.
 import { danhDauDanhSachLenh, danhDauMaChan } from "@shared/aiCodingTuChoi";
+// ★★★ 2026-08-29 · ĐUÔI SỐNG — sổ đầu-ra-đang-chạy cho panel Terminal poll (xem docblock lenhSong.ts).
+import { batDauLenhSong, ketThucLenhSong, noiDauRaSong } from "../lenhSong";
 import {
   TRAN_BYTE_MOI_PHIEN,
   gocHopCat,
@@ -570,7 +572,26 @@ export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
     }
 
     const hanGio = hanGioThucTe(pq.hanGioMs, p.timeoutMs);
-    const kq = await chayLenhTrongHopCat(pq.spec, { hanGioMs: hanGio, goc });
+    /**
+     * ★★★ 2026-08-29 · ĐUÔI SỐNG — công bố đầu ra ĐANG CHẠY vào sổ `lenhSong` để panel Terminal
+     * poll xem realtime (`repoWorkspace.dauRaSong`). Chỉ khi có `ctx.actionId` (luồn từ
+     * `confirmAction` — phủ CẢ người-bấm-duyệt LẪN vòng tự động, hai đường cùng qua cửa ấy).
+     * Chunk THÔ đi thẳng vào sổ; sổ tự che per-chunk (`StreamingSecretRedactor` — xem docblock
+     * `lenhSong.ts` cho lý do KHÔNG che-lúc-đọc). `finally` đóng lượt để một lượt ném lỗi không
+     * để lại entry "đang chạy" ma treo vĩnh viễn trên UI.
+     */
+    const khoaSong = ctx.actionId && ctx.user ? { userId: ctx.user.id, actionId: ctx.actionId } : null;
+    let kq: Awaited<ReturnType<typeof chayLenhTrongHopCat>>;
+    if (khoaSong) batDauLenhSong(khoaSong.userId, khoaSong.actionId, pq.nhan);
+    try {
+      kq = await chayLenhTrongHopCat(pq.spec, {
+        hanGioMs: hanGio,
+        goc,
+        ...(khoaSong ? { onDoan: (d: string) => noiDauRaSong(khoaSong.userId, khoaSong.actionId, d) } : {}),
+      });
+    } finally {
+      if (khoaSong) ketThucLenhSong(khoaSong.userId, khoaSong.actionId);
+    }
 
     const data: DuLieuChay = {
       command: pq.nhan,

@@ -208,6 +208,47 @@ describe("§7 `dangGui` KHOÁ nút chạy-nhanh", () => {
   });
 });
 
+describe("§9 ĐUÔI SỐNG — lượt ĐANG CHẠY (2026-08-29)", () => {
+  const SONG: import("@/lib/dauRaSong").LuotSong = {
+    lenh: "pnpm build",
+    dauRa: "transforming (1)\rtransforming (57)\rtransforming (110)",
+    dangChay: true,
+    msTroi: 7500,
+    catDau: false,
+  };
+
+  it("★★★ có `luotSong` ⇒ khối `data-luot-song` + nhãn `liveRunning` + đầu ra ĐÃ GẬP \\r (chỉ khung cuối)", () => {
+    const html = veBang({ luotSong: SONG, goiYNhanh: [] });
+    expect(html).toContain("data-luot-song");
+    expect(html).toContain("data-song-dang-chay");
+    expect(html).toContain(esc(tThat("repoWs.terminal.liveRunning", "đang chạy · {{giay}}", { giay: "7s" })));
+    // Gập \r theo ngữ nghĩa terminal: một dòng progress cập nhật, KHÔNG phải ba phiên bản nối nhau.
+    expect(html).toContain("transforming (110)");
+    expect(html).not.toContain("transforming (1)\rtransforming");
+    expect(html).not.toContain("‹THIẾU:");
+  });
+
+  it("★★★ vắng/`null` ⇒ KHÔNG khối sống nào — tương thích ngược từng byte với bảng cũ", () => {
+    expect(veBang({ goiYNhanh: [] })).not.toContain("data-luot-song");
+    expect(veBang({ luotSong: null, goiYNhanh: [] })).not.toContain("data-luot-song");
+  });
+
+  it("★★ `dangChay:false` (chờ mutation vớt nốt) ⇒ nhãn `liveDone`, không spinner", () => {
+    const html = veBang({ luotSong: { ...SONG, dangChay: false, msTroi: 83_000 }, goiYNhanh: [] });
+    expect(html).toContain("data-song-da-xong");
+    expect(html).not.toContain("data-song-dang-chay");
+    expect(html).toContain(esc(tThat("repoWs.terminal.liveDone", "vừa xong · {{giay}}", { giay: "1m 23s" })));
+  });
+
+  it("★ `catDau:true` ⇒ câu 'đã cắt phần đầu'; đầu ra rỗng ⇒ câu `liveWaiting` (khối vẫn hiện)", () => {
+    const co = veBang({ luotSong: { ...SONG, catDau: true }, goiYNhanh: [] });
+    expect(co).toContain("data-song-cat-dau");
+    expect(co).toContain(esc(VI.repoWs.terminal.liveTrimmed));
+    const rong = veBang({ luotSong: { ...SONG, dauRa: "" }, goiYNhanh: [] });
+    expect(rong).toContain(esc(VI.repoWs.terminal.liveWaiting));
+  });
+});
+
 describe("§8 MÃ THOÁT · QUÁ HẠN · THỜI LƯỢNG", () => {
   it("★★★ hiện mã thoát và thời lượng của từng lượt", () => {
     const html = veBang({ goiYNhanh: [] });

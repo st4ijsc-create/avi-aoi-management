@@ -19516,7 +19516,11 @@
       "quickRunLabel": "Chạy nhanh",
       "quickRunHint": "Chỉ lệnh trong danh sách trắng của dự án.",
       "quickRunNone": "Dự án này chưa có lệnh gợi ý.",
-      "fromLoop": "từ vòng tự động"
+      "fromLoop": "từ vòng tự động",
+      "liveRunning": "đang chạy · {{giay}}",
+      "liveDone": "vừa xong · {{giay}}",
+      "liveTrimmed": "… đã cắt phần đầu — đây là đuôi mới nhất.",
+      "liveWaiting": "(chưa có đầu ra — tiến trình vừa khởi động)"
     },
     "pane": {
       "tablist": "Chọn khung",

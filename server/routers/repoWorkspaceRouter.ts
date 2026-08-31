@@ -66,6 +66,8 @@ import {
   xoaPhien as dbXoaPhien,
 } from "../db/aiCodingSessions";
 import { RE_ID_DU_AN, RE_ID_PHIEN, GIOI_HAN_PHIEN } from "@shared/aiCodingSession";
+// ★★★ 2026-08-29 · ĐUÔI SỐNG — sổ RAM đầu-ra-đang-chạy (đã che per-chunk), khoá theo userId.
+import { docLenhSong } from "../services/aiLocalTools/lenhSong";
 
 // Cùng cổng giấy phép với aiCopilotRouter (MOD_AI, mặc định pass-through). Xác thực do middleware lo.
 const protectedProcedure = moduleProcedure("MOD_AI");
@@ -295,6 +297,23 @@ export const repoWorkspaceRouter = router({
       batTool: codingToolLoopEnabled(),
       tranTool: tranVongLapTrinh(),
     };
+  }),
+
+  /**
+   * ★★★ 2026-08-29 · ĐUÔI SỐNG — đầu ra của lượt `run_command` ĐANG CHẠY của CHÍNH người hỏi,
+   * cho panel Terminal poll (~800ms) xem realtime trong lúc `confirmAction` còn đang chặn.
+   *
+   * Ba ràng buộc giữ cho tuyến này KHÔNG phải một mặt tiếp xúc mới đúng nghĩa:
+   *   • KHÔNG input — khoá duy nhất là `ctx.user.id` từ phiên đã xác thực. Client không gửi được
+   *     actionId/userId nào ⇒ không có gì để giả; người A không có đường tới entry của người B.
+   *   • CHỈ đọc sổ RAM (`lenhSong.ts`) — 0 truy vấn DB, 0 tệp, 0 tiến trình. Chữ trong sổ đã qua
+   *     `StreamingSecretRedactor` TRƯỚC khi vào đuôi (xem docblock lenhSong.ts).
+   *   • Đây là kênh HIỂN THỊ: kết quả chính thức của lệnh vẫn về theo đường `confirmAction` cũ.
+   */
+  dauRaSong: protectedProcedure.query(({ ctx }) => {
+    const userId = Number((ctx as any).user?.id);
+    if (!Number.isFinite(userId)) return null;
+    return docLenhSong(userId);
   }),
 
   /**

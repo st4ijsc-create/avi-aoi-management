@@ -19544,7 +19544,11 @@
       "quickRunLabel": "快速运行",
       "quickRunHint": "仅限项目白名单中的命令。",
       "quickRunNone": "该项目暂无建议命令。",
-      "fromLoop": "来自自动循环"
+      "fromLoop": "来自自动循环",
+      "liveRunning": "运行中 · {{giay}}",
+      "liveDone": "刚完成 · {{giay}}",
+      "liveTrimmed": "… 已截去开头——这是最新的尾部输出。",
+      "liveWaiting": "（暂无输出——进程刚启动）"
     },
     "pane": {
       "tablist": "选择面板",
