@@ -207,8 +207,23 @@ export async function runAoiInspectionEmbedding(
         skip++;
         continue;
       }
-      const f = zip.file(`images/${fileName}`) || zip.file(fileName);
+      // ★★★ I-3 (review lượt 8) — MỘT đường dẫn, MỘT chỗ tìm. Fallback tên
+      // trần `|| zip.file(fileName)` đã bị bỏ ở BA chỗ trong `cc322bca`
+      // (BG-87 Task 2: `getOrExtractImage`, closure `getImage` của inline AI
+      // gate, REST `GET /api/aoi/image/:packageId/:fileName`) — CHỖ NÀY là chỗ
+      // thứ TƯ, bị sót, và nó dùng CÙNG ZIP mà `commit` vừa thẩm định. Lời khai
+      // "một đường dẫn duy nhất" của BG-87 vì thế từng SAI với toàn tuyến.
+      // Bất biến 2 ở `commit` đã cưỡng chế `images/<fileName>` PHẢI tồn tại khi
+      // GHI, nên khi ĐỌC không được phép đi tìm ở một chỗ thứ hai: một ảnh chỉ
+      // có ở gốc gói là dấu hiệu gói được dựng SAI chuẩn, không phải "biến thể
+      // vô hại" đáng tự cứu (§3 chuẩn gói ảnh).
+      // Census toàn repo canh bất biến này: `aoiZipMotDuongDanCensus.test.ts`.
+      const f = zip.file(`images/${fileName}`);
       if (!f) {
+        console.warn(
+          `[aoiEmbed] mr#${r.id}: KHÔNG có "images/${fileName}" trong ZIP gói ${job.packageId} — bỏ qua ảnh này ` +
+            `(KHÔNG còn tìm tên trần ở gốc gói: một đường dẫn duy nhất, BG-87/I-3).`,
+        );
         skip++;
         continue;
       }
