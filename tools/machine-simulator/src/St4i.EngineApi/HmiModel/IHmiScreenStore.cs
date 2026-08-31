@@ -37,10 +37,19 @@ public interface IHmiScreenStore
     Task<IReadOnlyList<ScreenVersionInfo>> ListVersionsAsync(string screenId, CancellationToken ct = default);
 
     /// <summary>Đưa phiên bản <paramref name="toVersion"/> trở thành hiện hành, bằng cách đọc tài liệu ở
-    /// phiên bản đó rồi <see cref="PutAsync"/> nó — NỐI THÊM một phiên bản mới, KHÔNG BAO GIỜ xoá lịch sử.
-    /// Trả về số phiên bản mới đó. Ném <see cref="ArgumentOutOfRangeException"/> nếu
-    /// <paramref name="toVersion"/> không tồn tại cho <paramref name="screenId"/>; thông điệp nêu rõ các số
-    /// phiên bản có thật.</summary>
+    /// phiên bản đó rồi NỐI THÊM nó thành một phiên bản mới, KHÔNG BAO GIỜ xoá lịch sử. Trả về số phiên
+    /// bản mới đó. Ném <see cref="ArgumentOutOfRangeException"/> nếu <paramref name="toVersion"/> không
+    /// tồn tại cho <paramref name="screenId"/>; thông điệp nêu rõ các số phiên bản có thật.
+    ///
+    /// <para>📎 🔴 <b>"RỒI <see cref="PutAsync"/> NÓ" — RÚT, WS-HMI-2 Task 2 fix round 2 (review HIGH-1),
+    /// giữ nguyên văn ở trên.</b> Đúng cho tới hết <c>ff0c3bcf</c>, khi hợp đồng CHỈ có một cách nối thêm.
+    /// Sai từ khi <see cref="ContractInvariants.Validate(HmiScreenDocument)"/> bắt đầu kiểm pattern của
+    /// <c>screenId</c> (cùng đợt sửa này): nối thêm bằng cách gọi <see cref="PutAsync"/> nghĩa là VALIDATE
+    /// LẠI một tài liệu HỆ THỐNG ĐÃ CHẤP NHẬN theo luật ngày đó — một luật xiết chặt SAU khi hàng đó được
+    /// ghi sẽ khoá cứng mọi lần khôi phục sau này, mãi mãi. Đúng đọc bây giờ: nối thêm bằng CÙNG cơ chế ghi
+    /// (một hàng <c>(screenId, version)</c> mới, con trỏ dời tới đó) nhưng KHÔNG re-validate nội dung —
+    /// xem <c>HmiScreenStore.RollbackAsync</c>/<c>AppendVersionAsync</c>'s doc comment cho cơ chế đầy đủ.
+    /// <see cref="PutAsync"/> cho tác giả MỚI không đổi: vẫn validate không điều kiện.</para></summary>
     Task<int> RollbackAsync(string screenId, int toVersion, CancellationToken ct = default);
 }
 

@@ -1099,4 +1099,66 @@ public class ContractInvariantsTests
 
         Assert.Single(violations, v => v.Contains("screenId", StringComparison.OrdinalIgnoreCase));
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // WS-HMI-2 Task 2 fix round 2 (review MED-2) — .NET's `$` (unlike ECMA-262's, the dialect
+    // web/contract-tests/validate.mjs and every browser use) matches immediately BEFORE a trailing `\n`
+    // at the end of the string, not only at the true end. Measured before the fix:
+    // ScreenId="line-overview\n" (any valid id plus a trailing newline) drew ZERO violations here, and
+    // HmiScreenStore.PutAsync stored and round-tripped it — a document the frozen schema rejects,
+    // accepted by the .NET side alone. Fixed by using \z, which has no such exception. The Theory below
+    // re-checks every boundary already agreed before this one-character fix, so the fix is proven not to
+    // have moved any of them.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A_ScreenId_With_A_Trailing_Newline_Is_A_Violation()
+    {
+        var doc = Screen(new ScreenWidget("w1", "readout", Rect())) with { ScreenId = "line-overview\n" };
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("screenId", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData("a")]        // single character
+    [InlineData("-abc")]     // leading hyphen — the pattern's character class has no position rule
+    [InlineData("abc-")]     // trailing hyphen
+    [InlineData("ab--cd")]   // double/consecutive hyphen
+    [InlineData("12345")]    // digits only, no letters
+    public void Control_A_ScreenId_At_These_Boundaries_Still_Matches_The_Pattern_After_The_z_Fix(string screenId)
+    {
+        var doc = Screen(new ScreenWidget("w1", "readout", Rect())) with { ScreenId = screenId };
+
+        Assert.Empty(ContractInvariants.Validate(doc));
+    }
+
+    /// <summary>The schema declares no <c>maxLength</c> for <c>screenId</c> — a long, otherwise-valid id
+    /// must still pass. Re-checked here specifically because a length boundary is the shape most likely to
+    /// expose an unrelated regression from swapping the anchor.</summary>
+    [Fact]
+    public void Control_A_512_Character_ScreenId_Matching_The_Pattern_Still_Passes_After_The_z_Fix()
+    {
+        var doc = Screen(new ScreenWidget("w1", "readout", Rect())) with { ScreenId = new string('a', 512) };
+
+        Assert.Empty(ContractInvariants.Validate(doc));
+    }
+
+    /// <summary>Empty/whitespace/null never reach the pattern check at all (the <c>else if</c> above) —
+    /// re-checked here as boundaries in their OWN right, not only as the tie-break test above, so a future
+    /// reordering that changed reachability would still be caught by a test whose name says what it is
+    /// checking.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void Control_Blank_Or_Null_ScreenId_Boundaries_Still_Report_Only_The_Missing_Field_Violation(string? screenId)
+    {
+        var doc = Screen(new ScreenWidget("w1", "readout", Rect())) with { ScreenId = screenId! };
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Single(violations, v => v.Contains("screenId", StringComparison.OrdinalIgnoreCase));
+    }
 }

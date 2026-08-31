@@ -25,11 +25,21 @@ namespace St4i.EngineApi.HmiModel;
 /// new one and moves the pointer.
 ///
 /// <b><see cref="RollbackAsync"/> is not a delete-forward operation.</b> It does not move the pointer
-/// backward and drop what came after — it reads the document AT the target version and calls
-/// <see cref="PutAsync"/> with it, which APPENDS that document as a brand-new version and moves the pointer
-/// to the new (highest) version number. History before, during and after a rollback is exactly the same set
-/// of rows; only the pointer and the row count change. A caller who rolls back to version 1 twice in a row
-/// gets TWO new versions (each a copy of version 1's document), not one.
+/// backward and drop what came after — it reads the document AT the target version and APPENDS it as a
+/// brand-new version, moving the pointer to the new (highest) version number. History before, during and
+/// after a rollback is exactly the same set of rows; only the pointer and the row count change. A caller
+/// who rolls back to version 1 twice in a row gets TWO new versions (each a copy of version 1's
+/// document), not one.
+///
+/// <para>🔴 <b>"CALLS <see cref="PutAsync"/> WITH IT" — RETRACTED, WS-HMI-2 Task 2 fix round 2 (review
+/// HIGH-1), kept verbatim above ("calls PutAsync with it, which APPENDS...").</b> True through this
+/// branch's <c>ff0c3bcf</c>. False once <see cref="ContractInvariants.Validate(HmiScreenDocument)"/>
+/// started checking <c>screenId</c>'s pattern (this same round): a document PutAsync had already
+/// accepted, under whatever rule applied the day it was written, could fail a rule tightened afterwards —
+/// bricking every future rollback of that row. <see cref="RollbackAsync"/> now appends through a private
+/// <c>AppendVersionAsync</c> that skips <see cref="ContractInvariants"/> entirely — see that method's own
+/// doc comment for the full reasoning. <see cref="PutAsync"/> itself is UNCHANGED for new authorship: it
+/// still validates unconditionally, before this or any other line in this class runs.</para>
 ///
 /// <b>Same deliberate throw-vs-swallow choice as <see cref="TagNamespaceStore"/>:</b> <see cref="PutAsync"/>
 /// throws rather than swallows, both for a disk failure and for <see cref="ContractViolationException"/>,
@@ -198,8 +208,43 @@ public sealed class HmiScreenStore : IHmiScreenStore
         // ComponentModelStore. A rejected document must not leave a half-open connection behind, and it
         // must not touch the database at all: a subsequent GetAsync/ListVersionsAsync for the same screenId
         // has to come back exactly as it was before this call — no new version, no moved pointer.
+        //
+        // 🔴 THIS CHECK RUNS FOR NEW AUTHORSHIP ONLY — WS-HMI-2 Task 2 fix round 2 (review HIGH-1). It did
+        // NOT used to matter which caller reached this line, because there was only one: an engineer
+        // saving an edit. That stopped being true the moment ContractInvariants.Validate(HmiScreenDocument)
+        // started checking screenId's pattern (this same round's carried ruling) — RollbackAsync used to
+        // call THIS method too, which means a document ACCEPTED before that pattern check existed would
+        // fail it on every future restore, forever. Measured red before the fix below: seed a row through
+        // this exact door before the pattern check (`ScreenId="MyScreen"` — the schema forbids uppercase,
+        // and nothing in this class rejected it until this round), then roll it back — every attempt threw
+        // ContractViolationException, disk untouched, no way to recover a version that was legitimately
+        // written. See AppendVersionAsync's own doc comment for the fix and RollbackAsync's for how it uses
+        // it.
         ContractInvariants.ThrowIfInvalid(doc);
 
+        return await AppendVersionAsync(doc, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>The actual write — INSERT a new version row, move the current-version pointer. NO
+    /// <see cref="ContractInvariants"/> call here; that is <see cref="PutAsync"/>'s job, run once, before
+    /// this method is ever reached.
+    ///
+    /// <para>🔴 <b>WHY THIS EXISTS AS ITS OWN METHOD — WS-HMI-2 Task 2 fix round 2 (review HIGH-1), NOT a
+    /// refactor for its own sake.</b> <see cref="RollbackAsync"/> calls THIS, never
+    /// <see cref="PutAsync"/> — the one behavioural change this split makes. The reasoning, stated as the
+    /// review gave it: <see cref="ContractInvariants"/> guards a WRITE DOOR against a CLIENT AUTHORING a
+    /// document. A rollback is not new authorship — it restores a document THE SYSTEM ALREADY ACCEPTED,
+    /// at whatever rule applied the day it was written. Re-running today's rules against yesterday's
+    /// accepted content is not a safety check; it is a way to make a validation rule tightened AFTER a row
+    /// was written brick every future recovery of that row, forever, with no way back short of hand-editing
+    /// SQLite. <b>What this deliberately does NOT do: weaken <see cref="PutAsync"/> for new authorship.</b>
+    /// Every NEW document — from an engineer's builder save, or from any future WS-HMI-2 Task 3 endpoint —
+    /// still goes through <see cref="PutAsync"/> and is validated against TODAY'S rules, unconditionally,
+    /// exactly as before. Only the CONTENT OF AN OLD, ALREADY-ACCEPTED VERSION being copied forward by
+    /// <see cref="RollbackAsync"/> skips re-validation, because it is not new content — it is the same
+    /// bytes this store already served from <c>screens</c> a moment earlier.</para></summary>
+    private async Task<int> AppendVersionAsync(HmiScreenDocument doc, CancellationToken ct)
+    {
         var json = JsonSerializer.Serialize(doc, HmiContractJson.Options);
         var nowIso = ToIso(DateTimeOffset.UtcNow);
 
@@ -255,9 +300,19 @@ public sealed class HmiScreenStore : IHmiScreenStore
     }
 
     /// <summary>See <see cref="IHmiScreenStore.RollbackAsync"/>. Reads the document AT
-    /// <paramref name="toVersion"/> and calls <see cref="PutAsync"/> with it — an ordinary APPEND, not a
+    /// <paramref name="toVersion"/> and appends it as a new version — an ordinary APPEND, not a
     /// pointer-move-backward, so the version this call reads from can never itself be lost even if it is
-    /// rolled back to again later.</summary>
+    /// rolled back to again later.
+    ///
+    /// <para>🔴 <b>Calls <see cref="AppendVersionAsync"/>, NOT <see cref="PutAsync"/> — WS-HMI-2 Task 2 fix
+    /// round 2 (review HIGH-1).</b> This used to call <see cref="PutAsync"/>, which re-validates the
+    /// restored document against <see cref="ContractInvariants"/> — CORRECT the day this method was
+    /// written (no rule existed that a previously-accepted document could fail), and WRONG from the moment
+    /// this round's <c>screenId</c> pattern check landed: a document accepted under yesterday's looser
+    /// rule would fail today's on every restore attempt, forever. See <see cref="AppendVersionAsync"/>'s
+    /// own doc comment for the full reasoning and for why <see cref="PutAsync"/> itself is UNCHANGED — new
+    /// authorship is still validated, unconditionally; only a RESTORE of already-accepted content is
+    /// exempt.</para></summary>
     public async Task<int> RollbackAsync(string screenId, int toVersion, CancellationToken ct = default)
     {
         var target = await GetAsync(screenId, toVersion, ct).ConfigureAwait(false);
@@ -272,7 +327,7 @@ public sealed class HmiScreenStore : IHmiScreenStore
                 $"Màn hình '{screenId}' không có phiên bản {toVersion}. Phiên bản có thật: {available}.");
         }
 
-        return await PutAsync(target, ct).ConfigureAwait(false);
+        return await AppendVersionAsync(target, ct).ConfigureAwait(false);
     }
 
     // ─────────────────────────────────────────────────────────────────────

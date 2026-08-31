@@ -48,17 +48,19 @@ namespace St4i.EngineApi.HmiModel;
 /// <para>🔴 <b>THE PROPERTY THIS SEAM NOW ESTABLISHES — every identity the seam NAMES, the seam can SERVE —
 /// closed as a property (review MED-1), not left paired with a decision that did not survive its own
 /// probe.</b> A previous version of this file argued <see cref="ListScreenIdsAsync"/> forwarding verbatim
-/// and <see cref="GetAsync"/> having no canonical-miss fallback were a SAFE PAIRING. Measured, with a raw
-/// <c>new HmiScreenStore(dir)</c>-written row <c>"  padded-screen  "</c> seeded directly (bypassing
-/// <see cref="ContractInvariants"/> entirely, which is exactly how such a row would exist — a build from
-/// before this round, or a direct database write, not a live C# write path): the list named
-/// <c>"  padded-screen  "</c>, and <see cref="GetAsync"/>/<see cref="ListVersionsAsync"/> BOTH answered
-/// "never declared" for the exact string the list had just handed back, while
-/// <see cref="RollbackAsync"/> threw naming a THIRD spelling (the canonicalised one) that matched neither.
-/// Three methods, three different answers, for one row. <b>The argument was wrong because decision (2) —
-/// no output canonicalisation — bought nothing: decision (1), no fallback, was the entire cause</b>, and
-/// removing (2) alone (canonicalise-and-dedupe the list) would have made the list LIE (report a clean
-/// canonical name for a row nothing could then serve), which is worse. Closed here the way
+/// and <see cref="GetAsync"/> having no canonical-miss fallback were a SAFE PAIRING. Measured, with a REAL
+/// row this store's own API can produce — <c>key == doc.ScreenId == "  padded-screen  "</c>, written
+/// before this round's <see cref="ContractInvariants"/> pattern check existed (see
+/// <c>ContractInvariantsTests</c>/<c>HmiScreenStoreTests</c> for how such a row is reproduced honestly:
+/// a raw SQLite insert bypassing every C# write door, not a shape only a flawed test double could seed):
+/// the OLD, fallback-free <see cref="ListScreenIdsAsync"/> reported the raw stored spelling verbatim, and
+/// <see cref="GetAsync"/>/<see cref="ListVersionsAsync"/>/<see cref="RollbackAsync"/> each canonicalised
+/// their OWN lookup key before asking the inner store — so a caller who read the list and then asked for
+/// EXACTLY the spelling it had just returned got "never declared" (or, for <see cref="RollbackAsync"/>,
+/// an exception naming the SAME "no such version" shape) from every one of them. <b>The argument was wrong
+/// because decision (2) — no output canonicalisation — bought nothing: decision (1), no fallback, was the
+/// entire cause</b>, and removing (2) alone (canonicalise-and-dedupe the list) would have made the list LIE
+/// (report a clean canonical name for a row nothing could then serve), which is worse. Closed here the way
 /// <see cref="CanonicalizingComponentModelStore.GetAsync"/> already closes it for machine codes — see that
 /// method's own doc comment for the re-review it defends against, now measured for screens too:
 /// <see cref="ListScreenIdsAsync"/> canonicalises AND de-duplicates its output (so the list only ever
@@ -69,20 +71,40 @@ namespace St4i.EngineApi.HmiModel;
 /// already-canonicalised list could never find a non-canonical row) and retry under whichever spelling the
 /// row actually lives at.</para>
 ///
-/// <para>🔴 <b>WHAT THE FALLBACK DOES NOT DO — <see cref="RollbackAsync"/>'s residual, named rather than
-/// assumed away.</b> <see cref="HmiScreenStore.RollbackAsync"/> reads and re-<c>PutAsync</c>s entirely
-/// through its OWN (raw) <c>GetAsync</c>/<c>PutAsync</c> — so forwarding a RESOLVED raw spelling to
-/// <c>_inner.RollbackAsync</c> makes the call SUCCEED (the property above holds: the identity is served),
-/// but the NEW version it appends is written under that SAME raw, non-canonical spelling, not migrated to
-/// canonical — because the raw store's own <c>PutAsync</c> does not go back through this decorator. This
-/// is the identical shape <c>CanonicalMachineCodeStores.cs</c>'s own guarantee section accepts for a direct
-/// <c>ComponentModelStore</c> caller: airtight for SERVING an identity through DI, not a promise to REWRITE
-/// a row's storage key. A screen rolled back through this path stays reachable at every spelling
-/// <see cref="GetAsync"/> already resolves; it does not become a canonical row by being rolled back.
-/// Self-healing the key would mean re-implementing <see cref="HmiScreenStore.RollbackAsync"/>'s own
-/// version-history and error-message logic here, duplicating business logic this decorator exists to wrap
-/// rather than replace — judged the wrong trade for a residual that, after the paragraph above, requires a
-/// row already on disk from before this round shipped.</para>
+/// <para>🔴 <b>WHAT THE FALLBACK DOES — <see cref="RollbackAsync"/>'s actual behaviour, described rather
+/// than what a previous draft of this paragraph expected — WS-HMI-2 Task 2 fix round 2 (review MED-3).</b>
+/// A previous version claimed the resolved retry "appends its new version under the resolved, still-
+/// non-canonical spelling", stated as though that were the whole story. Measured, on a REAL row this
+/// store's own API can actually produce (<c>key == doc.ScreenId</c>, an invariant every write method below
+/// maintains — see the next paragraph): before this round's separate HIGH-1 fix
+/// (<c>HmiScreenStore.RollbackAsync</c>/<c>AppendVersionAsync</c>), the resolved retry did not append
+/// ANYTHING — it re-validated the restored document against <see cref="ContractInvariants"/> via
+/// <c>PutAsync</c> and THREW, leaving disk byte-identical. That is now fixed at the SOURCE
+/// (<c>HmiScreenStore.AppendVersionAsync</c> restores without re-validating, because a restore is not new
+/// authorship — see that method's own doc comment), and its effect here is: the resolved retry SUCCEEDS,
+/// and because <c>AppendVersionAsync</c>'s SQL key is always derived FROM <c>doc.ScreenId</c> — which, for
+/// any REAL row, equals the key the row was found under — the new version lands under that SAME spelling.
+/// A screen rolled back through this path stays reachable at every spelling <see cref="GetAsync"/> already
+/// resolves; it does not become canonical by being rolled back, and it does not fork into a second
+/// lineage either.</para>
+///
+/// <para>🔴 <b>THE ASSUMPTION THIS RESTS ON, NAMED RATHER THAN LEFT IMPLICIT.</b> The paragraph above is
+/// true because <c>key == doc.ScreenId</c> for every row <see cref="HmiScreenStore"/>'s OWN write methods
+/// (<c>PutAsync</c>, and the <c>AppendVersionAsync</c> both <c>PutAsync</c> and <c>RollbackAsync</c> now
+/// share) can ever produce — the SQL primary key is always bound FROM the document's own field, never
+/// supplied independently, so this store cannot write a row where they disagree. This decorator does not
+/// enforce that invariant; it relies on the raw store never breaking it, the same assumption
+/// <c>CanonicalMachineCodeStores.cs</c> names for its own two seams. <b>It does NOT hold against a row a
+/// caller manufactures by direct SQL that deliberately sets <c>screens.screen_id</c> to something other
+/// than the JSON <c>document</c>'s own <c>screenId</c> field</b> — that is not a non-canonical spelling,
+/// it is the store's OWN key⇄field invariant broken from outside its entire API surface, and this decorator
+/// was never able to promise anything about a row already in that state. Measured, for the record rather
+/// than left to be assumed: such a row's resolved retry appends under the FIELD's spelling (not the key it
+/// was found at, and not necessarily canonical either), leaving the ORIGINAL key's lineage orphaned and a
+/// second <c>screen_current</c> row alongside it — <c>ListVersionsAsync</c> and <c>GetAsync</c> can then
+/// disagree about which row is "current" for what looks like one identity. That is a description of
+/// pre-existing corruption, not a new defect this decorator introduces; the fix for it is a migration that
+/// repairs the key⇄field invariant, not a change to this file.</para>
 ///
 /// <para><b>The empty string, named rather than left to be inferred.</b>
 /// <see cref="ScreenIdentity.Canonicalize"/> mirrors <see cref="MachineCodeIdentity.Canonicalize"/>'s
@@ -99,11 +121,15 @@ namespace St4i.EngineApi.HmiModel;
 ///
 /// <para><b>The guarantee, at the strength it actually has.</b> Every screen written through DI — which is
 /// every screen any HTTP handler or background job can write, because the raw store is never registered —
-/// is stored under its trimmed, pattern-valid <c>screenId</c>, and every read through DI resolves that
-/// same identity NO MATTER which spelling of it (canonical, or a raw non-canonical spelling a row happens
-/// to be stored under) a caller supplies — the list, the document, and every version-history read agree.
-/// What is NOT covered — a rolled-back row's storage key staying non-canonical — is stated above rather
-/// than left to be discovered.</para>
+/// is stored under its trimmed, pattern-valid <c>screenId</c>. For any row THIS STORE'S OWN API ever
+/// produces — DI-written, or written by a direct <see cref="HmiScreenStore"/> caller bypassing DI but still
+/// going through <c>PutAsync</c>/<c>RollbackAsync</c> — every read through DI resolves that same identity
+/// no matter which spelling of it (canonical, or a raw non-canonical spelling a row happens to be stored
+/// under) a caller supplies, and the list, the document, and every version-history read agree. That claim
+/// is SCOPED to this store's own API surface, stated so, rather than left to read as universal: it does
+/// NOT extend to a row that reached disk by a channel outside this store's methods entirely and broke the
+/// key⇄field invariant those methods maintain — see the assumption paragraph above for what that residue
+/// looks like.</para>
 /// </summary>
 internal static class ScreenIdentity
 {

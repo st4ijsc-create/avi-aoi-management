@@ -92,7 +92,7 @@ public sealed class ContractViolationException : Exception
 /// <see cref="Validate(TagNamespaceDocument)"/> thay vì ở một builder: đây là cửa MỌI producer .NET đi
 /// qua, kể cả một caller gọi thẳng store mà không qua builder/endpoint nào; đóng ở một lớp trên sẽ để cửa
 /// ấy mở. <b>Vì sao KHÔNG mở rộng sang trường nào khác</b> — không <c>widget.id</c>, dù nó mang pattern
-/// giống hệt trong schema: <see cref="St4i.EngineApi.HmiModel.CanonicalizingHmiScreenStore"/> (WS-HMI-2
+/// giống hệt trong schema: <c>St4i.EngineApi.HmiModel.CanonicalizingHmiScreenStore</c> (WS-HMI-2
 /// Task 2) là lý do luật này tồn tại NGAY BÂY GIỜ — nó trim khoảng trắng của <c>screenId</c> nhưng KHÔNG
 /// sửa hoa/thường, với lý do hoa/thường là một VI PHẠM hợp đồng cần TỪ CHỐI chứ không phải hai cách viết
 /// một định danh cần GỘP; thiếu luật này, quyết định "từ chối, không gộp" đó không có gì thi hành. Mở
@@ -174,8 +174,20 @@ public static class ContractInvariants
     /// <summary>WS-HMI-2 Task 2 fix round 1 — LOẠI LUẬT THỨ BA (xem doc-comment đầu file). Ghim với
     /// <c>hmi-screen.schema.json</c> → <c>properties.screenId.pattern</c>, ĐÚNG MỘT trường —
     /// <c>widget.id</c> mang pattern giống hệt trong schema nhưng KHÔNG được thi hành ở đây, có chủ ý
-    /// (xem "CÁI CÒN LẠI CHƯA KIỂM" ở doc-comment đầu file).</summary>
-    private static readonly Regex ScreenIdPattern = new("^[a-z0-9-]+$", RegexOptions.Compiled);
+    /// (xem "CÁI CÒN LẠI CHƯA KIỂM" ở doc-comment đầu file).
+    ///
+    /// <para>🔴 <b><c>\z</c>, KHÔNG PHẢI <c>$</c> — WS-HMI-2 Task 2 fix round 2 (review MED-2), sửa một
+    /// KÝ TỰ vì .NET và ECMA-262 không đồng ý về ký tự đó.</b> Đo được trước khi sửa: đầu vào
+    /// <c>"line-overview\n"</c> (một id hợp lệ cộng một dòng mới ở cuối) qua <c>Validate</c> với 0 vi
+    /// phạm — pattern <c>^[a-z0-9-]+$</c> của .NET khớp NGAY TRƯỚC một <c>\n</c> ở cuối chuỗi (hành vi
+    /// tài liệu hoá của <c>Regex</c>, không phải lỗi), trong khi <c>$</c> của ECMA-262 (bộ mà
+    /// <c>web/contract-tests/validate.mjs</c> và mọi trình duyệt dùng) không có ngoại lệ đó — nên tập hợp
+    /// .NET chấp nhận là TẬP CON THẬT SỰ RỘNG HƠN tập ECMA-262 chấp nhận, và
+    /// <c>HmiScreenStore.PutAsync</c> lưu + đọc lại nguyên vẹn một tài liệu mà phía web sẽ từ chối.
+    /// <c>\z</c> khớp ĐÚNG cuối chuỗi, không có ngoại lệ <c>\n</c> — đóng khoảng lệch mà không đổi bất kỳ
+    /// biên nào khác (một ký tự, khoảng trắng đầu/cuối/hyphen đôi, chỉ số, 512 ký tự, chuỗi rỗng — xem
+    /// <c>ContractInvariantsTests</c> cho từng biên được đo lại sau khi sửa).</para></summary>
+    private static readonly Regex ScreenIdPattern = new("^[a-z0-9-]+\\z", RegexOptions.Compiled);
 
     /// <summary>Kiểm một <see cref="TagNamespaceDocument"/>: (1) mọi tag <c>access == "rw"</c>
     /// phải có <see cref="TagDescriptor.PolicyAction"/> (luật §5); (2) mọi <see cref="TagDescriptor.Path"/>
