@@ -33,7 +33,7 @@ import os from "node:os";
 import path from "node:path";
 import { promises as fsp } from "node:fs";
 import JSZip from "jszip";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, lte, sql } from "drizzle-orm";
 import { aoiPackageRouter } from "./aoiPackageRouter";
 import * as db from "../db";
 import {
@@ -53,7 +53,32 @@ let machineId: number;
 const packageDbIds: number[] = [];
 const inspectionIds: number[] = [];
 
+/**
+ * ★ RANH GIỚI cho MỆNH ĐỀ 3 — `inspection_packages.id` cao nhất ĐANG CÓ ngay
+ * TRƯỚC khi file này chạy ca đầu tiên. Mọi hàng do file này (hoặc do một tệp
+ * test khác chạy SONG SONG trong cùng lượt vitest) tạo ra đều mang id LỚN HƠN
+ * ⇒ lọc `id <= ranh giới` cho ra ĐÚNG tập "gói `committed` HIỆN CÓ" mà mệnh đề
+ * 3 phát biểu.
+ *
+ * Vì sao phải có ranh giới này (sửa 2026-08-31, lô vá review lượt 8): hai lượt
+ * SELECT của mệnh đề 3 trước đây quét TOÀN BẢNG và chú thích khẳng định "không
+ * có tác vụ nền/migration nào chạy giữa hai lần SELECT". Câu đó KHÔNG đúng dưới
+ * `vitest run` mặc định — các tệp test chạy SONG SONG, và bất kỳ tệp nào commit
+ * một gói giữa hai lượt SELECT sẽ làm mệnh đề 3 ĐỎ vì một lý do KHÔNG liên quan
+ * gì tới điều nó muốn canh (đo được: thêm `aoiPackageSerialRongVanGhi.test.ts`
+ * vào cùng lượt chạy làm nó đỏ; chạy một mình thì xanh). Một cổng đỏ vì hàng
+ * xóm là một cổng sẽ bị người sau tắt đi.
+ */
+let ranhGioiIdGoiTruocKhiChay = 0;
+
 beforeAll(async () => {
+  const dTruoc = await db.getDb();
+  if (dTruoc) {
+    const [maxRow] = await dTruoc
+      .select({ maxId: sql<number | null>`max(${inspectionPackages.id})` })
+      .from(inspectionPackages);
+    ranhGioiIdGoiTruocKhiChay = Number(maxRow?.maxId ?? 0);
+  }
   machineId = await db.createMachine({
     stationId: 1,
     code: `BG85-BIEN-${STAMP}`,
@@ -350,16 +375,20 @@ describe("BG-85 mệnh đề 1 — gói hình dạng CÂY + images[] hợp lệ 
 // Mệnh đề 3 — CHỐNG HỒI QUY: gói `committed` HIỆN CÓ không đổi verdict.
 // ════════════════════════════════════════════════════════════════════════════
 describe("BG-85 mệnh đề 3 ★ CHỐNG HỒI QUY — gói 'committed' HIỆN CÓ không đổi verdict sau bản vá này", () => {
-  it("SELECT toàn bộ inspection_packages.status='committed' TRƯỚC/SAU khi chạy các ca ở trên — số lượng và (id,overallResult) khớp NGUYÊN VĂN (bản vá KHÔNG chạm hàng cũ)", async () => {
+  it("SELECT các gói inspection_packages.status='committed' CÓ TRƯỚC lượt chạy này — số lượng và (id,overallResult) khớp NGUYÊN VĂN qua hai lượt SELECT (bản vá KHÔNG chạm hàng cũ)", async () => {
     const d = (await db.getDb())!;
-    // Chụp NGAY BÂY GIỜ (sau khi mọi ca invariant/mệnh-đề-1 ở trên đã chạy) —
-    // đây LÀ tập "gói committed hiện có" mà mệnh đề 3 phải chứng minh không đổi
-    // khi chạy LẠI cùng SELECT lần nữa (không có tác vụ nền/migration nào chạy
-    // giữa hai lần SELECT trong MỘT lượt test).
+    // Chụp tập gói `committed` CÓ TRƯỚC file này (`id <= ranhGioiIdGoiTruocKhiChay`,
+    // đo ở `beforeAll`) — đây LÀ tập "gói committed hiện có" mà mệnh đề 3 phải
+    // chứng minh không đổi. Ranh giới id loại HẲN mọi hàng do lượt chạy hiện tại
+    // sinh ra, kể cả của các tệp test chạy SONG SONG — xem docblock ranh giới.
+    const loc = and(
+      eq(inspectionPackages.status, "committed"),
+      lte(inspectionPackages.id, ranhGioiIdGoiTruocKhiChay),
+    );
     const chup1 = await d
       .select({ id: inspectionPackages.id, overallResult: inspectionPackages.overallResult })
       .from(inspectionPackages)
-      .where(eq(inspectionPackages.status, "committed"))
+      .where(loc)
       .orderBy(inspectionPackages.id);
 
     expect(chup1.length, "phải có gói 'committed' để đo — 0 gói nghĩa là DB test rỗng, phép đo vô nghĩa").toBeGreaterThan(0);
@@ -367,7 +396,7 @@ describe("BG-85 mệnh đề 3 ★ CHỐNG HỒI QUY — gói 'committed' HIỆN
     const chup2 = await d
       .select({ id: inspectionPackages.id, overallResult: inspectionPackages.overallResult })
       .from(inspectionPackages)
-      .where(eq(inspectionPackages.status, "committed"))
+      .where(loc)
       .orderBy(inspectionPackages.id);
 
     expect(chup2.length, `SELECT lần 2 — số gói 'committed' PHẢI khớp lần 1 (đo được: ${chup1.length})`).toBe(chup1.length);

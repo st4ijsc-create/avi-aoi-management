@@ -1101,56 +1101,74 @@ export const aoiPackageRouter = router({
             // packageId KHÁC (VD gói mặt-dưới của cùng board) luôn tạo header
             // MỚI thay vì gộp vào serial trùng — phạm vi HẸP HƠN đường FLAT cũ,
             // khai rõ trong báo cáo, không âm thầm bỏ qua.
-            if (metaData.serialNumber) {
-              const rawInspTime = metaData.completedAt
-                ? new Date(metaData.completedAt)
-                : metaData.startedAt
-                ? new Date(metaData.startedAt)
-                : new Date();
-              const inspectionTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
+            //
+            // ★★★ C-1 ⛔ (review lượt 8) — GHI VÔ ĐIỀU KIỆN. Trước bản vá này
+            // toàn bộ khối dưới đây bị bọc trong `if (metaData.serialNumber)`.
+            // Cổng đó là DI SẢN của hợp đồng PHẲNG cũ, nơi serial LÀ khoá đi
+            // tìm "inspection đã có" — sau BG-85 khoá hội tụ là `packageId`
+            // (`idempotencyKey` ngay dưới), serial KHÔNG còn là khoá join nào
+            // nữa, nên cổng mất hết lý do tồn tại nhưng vẫn ở lại. Hậu quả đo
+            // được: `serialNumber: ""` là hình dạng HỢP LỆ theo hợp đồng
+            // (`machineDataContractV2.ts` CỐ Ý không `.min(1)` — máy chưa gán
+            // serial vẫn gửi bo thật; DB đã có 99 hàng serial rỗng) nhưng ""
+            // là falsy ⇒ một bo NG commit "thành công" mà KHÔNG để lại hàng
+            // `product_inspections` nào ⇒ biến mất khỏi yield/cảnh báo/ERP.
+            // Điều kiện ĐÚNG là "có cây hợp lệ" (`if (metaData)` bao ngoài),
+            // và đó CHÍNH LÀ điều kiện đường trực tiếp v2.0 dùng
+            // (`machineApiRouters.ts` — ghi vô điều kiện, idempotencyKey luôn
+            // đặt). ĐỪNG khôi phục cổng này; nếu cần chặn serial rỗng thì chặn
+            // Ở HỢP ĐỒNG, và hướng đó đã bị chủ dự án BÁC (BG-73 hướng (a)).
+            const rawInspTime = metaData.completedAt
+              ? new Date(metaData.completedAt)
+              : metaData.startedAt
+              ? new Date(metaData.startedAt)
+              : new Date();
+            const inspectionTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
 
-              const reservedId = await db.reserveInspectionId();
-              const insertOutcome: { duplicate: boolean } = { duplicate: false };
-              const newInspectionData: InsertProductInspection & { id: number } = {
-                id: reservedId,
-                machineId: machine.id,
-                serialNumber: metaData.serialNumber,
-                productModelId: resolvedProductModel?.id,
-                productModel: resolvedProductModel?.code || metaData.productModel?.trim() || null,
-                // Cột `originalResultEnum` chỉ nhận OK/NG — payload v2.0 TỰ giới
-                // hạn `overallResult` ở OK/NG (không NTF ở cấp khai máy) nên ghi
-                // THẲNG lời khai gốc, KHÔNG cần `toOriginalResult` (mirror
-                // `submitInspectionTreeV2`, không chép một công thức thứ ba).
-                originalResult: metaData.overallResult,
-                overallResult: finalOverallResult,
-                corporateCode: macTenantCommit.corporateCode ?? null,
-                factoryCode: macTenantCommit.factoryCode ?? null,
-                workshopCode: macTenantCommit.workshopCode ?? null,
-                lineCode: macTenantCommit.lineCode ?? null,
-                inspectionTime,
-                ntfSource: cay.ntfSource ?? undefined,
-                machineProductIndex: metaData.machineProductIndex ?? undefined,
-                summaryCounts: metaData.summary,
-                createdAt: inspectionTime,
-                updatedAt: inspectionTime,
-                // Sổ idempotency (doc 51 P1) — packageId UNIQUE ⇒ khoá ổn định
-                // qua mọi lần retry của CÙNG một gói.
-                idempotencyKey: `aoi-pkg:${pkg.packageId}`,
-              };
+            const reservedId = await db.reserveInspectionId();
+            const insertOutcome: { duplicate: boolean } = { duplicate: false };
+            const newInspectionData: InsertProductInspection & { id: number } = {
+              id: reservedId,
+              machineId: machine.id,
+              serialNumber: metaData.serialNumber,
+              productModelId: resolvedProductModel?.id,
+              productModel: resolvedProductModel?.code || metaData.productModel?.trim() || null,
+              // Cột `originalResultEnum` chỉ nhận OK/NG — payload v2.0 TỰ giới
+              // hạn `overallResult` ở OK/NG (không NTF ở cấp khai máy) nên ghi
+              // THẲNG lời khai gốc, KHÔNG cần `toOriginalResult` (mirror
+              // `submitInspectionTreeV2`, không chép một công thức thứ ba).
+              originalResult: metaData.overallResult,
+              overallResult: finalOverallResult,
+              corporateCode: macTenantCommit.corporateCode ?? null,
+              factoryCode: macTenantCommit.factoryCode ?? null,
+              workshopCode: macTenantCommit.workshopCode ?? null,
+              lineCode: macTenantCommit.lineCode ?? null,
+              inspectionTime,
+              ntfSource: cay.ntfSource ?? undefined,
+              machineProductIndex: metaData.machineProductIndex ?? undefined,
+              summaryCounts: metaData.summary,
+              createdAt: inspectionTime,
+              updatedAt: inspectionTime,
+              // Sổ idempotency (doc 51 P1) — packageId UNIQUE ⇒ khoá ổn định
+              // qua mọi lần retry của CÙNG một gói. ĐÂY là thứ chặn đếm trùng
+              // (BG-23), KHÔNG phải serial — chỉ số duy nhất trong `product_
+              // inspections` canh theo serial (`uq_inspection_natural`) đã
+              // MIỄN TRỪ serial rỗng bằng `WHERE serialNumber <> ''`.
+              idempotencyKey: `aoi-pkg:${pkg.packageId}`,
+            };
 
-              const persisted = await db.persistInspectionAtomic(
-                newInspectionData,
-                [],
-                { cay, outcome: insertOutcome },
+            const persisted = await db.persistInspectionAtomic(
+              newInspectionData,
+              [],
+              { cay, outcome: insertOutcome },
+            );
+            linkedInspectionId = persisted.id;
+            createdInspection = !persisted.duplicate;
+            if (persisted.duplicate) {
+              console.warn(
+                `[AOI commit] persistInspectionAtomic reported duplicate for package ` +
+                  `${pkg.packageId} (idempotency key hit) → existing inspectionId=${persisted.id}`,
               );
-              linkedInspectionId = persisted.id;
-              createdInspection = !persisted.duplicate;
-              if (persisted.duplicate) {
-                console.warn(
-                  `[AOI commit] persistInspectionAtomic reported duplicate for package ` +
-                    `${pkg.packageId} (idempotency key hit) → existing inspectionId=${persisted.id}`,
-                );
-              }
             }
           }
 
@@ -1194,7 +1212,11 @@ export const aoiPackageRouter = router({
             packageId: pkg.packageId,
             machineId: machine.id,
             event: "commit_success",
-            message: `Package committed successfully — ${imageFiles.length} images, ${demTuCayBaoCao.total} captures${createdInspection ? ', inspection created' : linkedInspectionId ? ', duplicate (idempotent retry)' : ', no serialNumber (no inspection linked)'}`,
+            // C-1: nhánh "no inspection linked" KHÔNG còn nghĩa "thiếu
+            // serialNumber" (cổng đó đã bỏ) — nó chỉ còn xảy ra khi ZIP KHÔNG
+            // có `meta.json` (M-8, nợ có sẵn trước lô này). Câu chữ phải nói
+            // đúng lý do, không đổ cho một cổng đã không còn tồn tại.
+            message: `Package committed successfully — ${imageFiles.length} images, ${demTuCayBaoCao.total} captures${createdInspection ? ', inspection created' : linkedInspectionId ? ', duplicate (idempotent retry)' : ', no meta.json in ZIP (no inspection linked)'}`,
             source: "agent",
             durationMs: commitDuration,
             detail: `Serial: ${metaData?.serialNumber || 'N/A'}, Model: ${metaData?.productModel || 'N/A'}, Result: ${finalOverallResult}, Inspection ID: ${linkedInspectionId || 'none'}${createdInspection ? ' (NEW)' : ''}`,
@@ -1253,12 +1275,21 @@ export const aoiPackageRouter = router({
           // AOI-package inspection. Fire-and-forget + fully guarded (the service
           // never throws) so it can never affect commit success/idempotency, and
           // does NOT touch the P0-A resolver/assert nor the P0-D gate logic above.
+          //
+          // ★★★ C-1 (review lượt 8) — cổng CHỈ còn `linkedInspectionId`. Điều
+          // kiện cũ `&& metaData?.serialNumber` là hộ tiêu thụ THỨ HAI của cùng
+          // di sản "serial là khoá": nó bỏ luôn cả phần KHÔNG cần serial (bump
+          // production order, line-balance metrics) cho mọi bo serial-rỗng.
+          // `ingestInspectionToWip` nhận `serialNumber: string | null` và TỰ gác
+          // từng bước con cần serial (`if (input.serialNumber)` — WIP unit,
+          // dwell, ERP outbox) ⇒ chuyển quyết định về đúng nơi biết luật, thay
+          // vì chặn cả gói ở tầng gọi.
           try {
-            if (linkedInspectionId && metaData?.serialNumber) {
+            if (linkedInspectionId) {
               const { ingestInspectionToWip } = await import("../services/wipIngestService");
               ingestInspectionToWip({
                 inspectionId: linkedInspectionId,
-                serialNumber: metaData.serialNumber,
+                serialNumber: metaData?.serialNumber ?? null,
                 // BG-85: hợp đồng v2.0 không mang batchNumber/cycleTime (trường
                 // riêng của hợp đồng phẳng cũ, đã xoá) — không có gì để suy.
                 lotNumber: null,
@@ -1266,7 +1297,7 @@ export const aoiPackageRouter = router({
                 machineId: machine.id,
                 stationId: machine.stationId ?? null,
                 productModelId: resolvedProductModel?.id ?? null,
-                productCode: metaData.productModel ?? null,
+                productCode: metaData?.productModel ?? null,
                 cycleTimeSec: null,
               }).catch((e2) => {
                 console.error("[wipIngest] post-commit ingest failed:", (e2 as any)?.message ?? e2);
