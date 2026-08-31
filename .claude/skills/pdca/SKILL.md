@@ -36,6 +36,11 @@ Trước khi tin bất kỳ con số nào, kiểm tra:
       đọc lại bằng chính API vừa ghi rồi kết luận "tệp không đổi" từ `"" === ""`.)
 - [ ] **Có ai đang sửa dở vùng này không?** `git status` vùng liên quan. Vùng bẩn của tiến trình
       khác ⇒ **ghi lại, KHÔNG đụng**.
+- [ ] ★★★ **Có CACHE nào ở giữa không?** Đã dính: `answerCache` TTL **10 phút** không phân biệt
+      nguồn gọi ⇒ hai lượt đo liên tiếp **trông như hai mẫu độc lập nhưng là một cache-hit**. Cache
+      vô hiệu hoá đúng kỹ thuật "chạy ≥2 lượt để loại nhiễu" mà skill này khuyên dùng. Tìm mọi lớp
+      đệm trên đường đo (bộ nhớ tiến trình, HTTP, CDN, memo hoá) và **vô hiệu hoặc restart giữa các
+      mẫu**. Bằng chứng mẫu độc lập: thời gian lượt sau **không** rơi đột ngột xuống gần 0.
 
 Ghi vào báo cáo trạng thái hệ đo **trước và sau**, để chứng minh nó đã đổi thật.
 
