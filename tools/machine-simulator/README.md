@@ -6670,3 +6670,130 @@ validate bỏ qua trong im lặng: một `command-button` không có `policyActi
 vậy (`if`/`then` trần; `then` không có `if` anh em; `$ref` có anh em; `items` dạng tuple;
 `additionalProperties` dạng mảng) nay bị **TỪ CHỐI thay vì được thi hành** — đúng posture của file ấy — và
 mỗi vị trí có một bài test đã được nhìn thấy bắn.)*
+
+---
+
+## 26. WS-HMI-0c — tag ingestion: real tags from connectors / Nạp tag thật từ connector
+
+**Branch `feat/hmi-ws0c-tag-ingestion`. Delivered 2026-08-31.** WS-HMI-0a built the stores, 0b opened them
+over HTTP, and 0c is the first workstream in which a **connector** puts something in them.
+
+### 26.1 What it delivers
+
+| Piece | What it is |
+|---|---|
+| `TagMapDeclaration` / `TagMapEntry` | A connector's declaration of the tags it can back, one document per machine, keyed by `machineCode`. Field-for-field a `TagDescriptor` **minus** `isBackedByDriver` — the omission is the design: that flag is the answer this codebase computes, not a claim a connector makes about itself. The parser reports a **position** (line, column, and the JSON path, e.g. `$.entries[1337].dataType`) because an "invalid JSON" message for a 2 000-entry map tells an engineer only what they already knew. |
+| `DriverTagSupport.CanBack(kind)` | Whether this build can construct a connector of that kind at all. Held against a truth side derived by **reflection over the `IConnectorFactory` implementations the product ships**, failing in **both** directions. |
+| `TagNamespaceBuilder.Build(decl, kind)` | Compiles a declaration into a `TagNamespaceDocument`, computing `isBackedByDriver` per tag. |
+| `TagIngestionService.IngestAsync` | `parse → identity → build → validate-and-save`, returning `IngestResult(Ok, TagCount, BackedCount, Errors)`. Never throws for an ingestion failure. |
+| `TagMapStartupIngestion.IngestAll` | The startup loop, run after every connector source has registered. |
+
+### 26.2 `isBackedByDriver` takes TWO conditions, and the second is not in the plan
+
+A tag is reported as driver-backed only when **both** hold:
+
+1. `DriverTagSupport.CanBack(connectorKind)` — this build can construct a connector of that kind. A kind
+   with no address-read path yields `false` **however complete the declaration is**.
+2. the tag's own `source.kind` names that same connector kind.
+
+Condition 2 was added during 0c because the frozen schema's source union has five arms — `modbus`,
+`opcua`, `mqtt`, `simulated`, `derived` — so a document may legally pair a **Modbus connector** with a
+**`derived`** tag (a value computed from an expression) or a `simulated` one (manufactured outright).
+Reporting either as driver-backed because the *connector* happens to be Modbus is exactly the false claim
+this workstream exists to prevent. It needs no lookup table: the schema's source kinds are the lowercase
+spellings of the driver kinds they name, and `DriverKinds.Normalize` already folds them. Condition 2 only
+ever moves an answer from `true` to `false`, so it cannot widen the flag.
+
+### 26.3 🔴 CORRECTION — `CanBack("Simulated")` is `false` UNCONDITIONALLY, not demo-gated
+
+The plan said `simulated` would be `true` **only under `ST4I_DEMO_ENABLED`**. **That decision was about a
+path that does not exist.** Measured: there is **no `SimulatedConnectorFactory` in any build**.
+`SimulatedDriver` is constructed directly by the in-process fleet paths (`FleetCore.cs:3889`,
+`EdgeAgentPipelines.cs:210`) and is never dispatched to from a connector kind, so
+`ConnectorsJsonRegistration.RegisterAll`'s switch has exactly two arms and `Simulated` falls to `_ => null`.
+The demo gate decides which machines a roster spins up; it does not give a kind a factory. There is
+therefore **no build in which this answer differs**, and adding a `DemoModeGate` branch would have been a
+branch no build could take — and the wrong answer anyway, since a simulated reading is manufactured.
+
+The correction is recorded here, not merely the value, because the next author would otherwise re-derive
+the same wrong gate from the same plan sentence.
+
+### 26.4 What is NOT there — measured 2026-08-31, and this is the important half
+
+- **Nothing reads the tag namespace.** `grep -rn "/v1/tags" web/src/` returns exactly one hit, and it is a
+  doc comment about a WebSocket flag. The browser runtime still obtains values by **regex-parsing a display
+  string** (`TagValueSource.ts` → `parseKeyMetric`), which is the very gap §2.2 of the design spec
+  describes. 0c fills the namespace; **no consumer drains it**.
+- **No editor.** Nothing writes a component tree or a screen document from a UI.
+- **No runtime binding.** §3.3's indirect binding (`{component}` → `tagPrefix`) exists as frozen types and
+  pure functions with unit tests; nothing fetches `/v1/components` to resolve one against a real model.
+- **One of fifteen widget kinds has ever rendered in a product route.** `web/screens/*.json` — the three
+  documents `Hmi.tsx` ships — contain **`faceplate` only**. The other fourteen (`alarm-banner`,
+  `alarm-list`, `command-button`, `gauge`, `kpi-tile`, `label`, `line-state`, `log`, `readout`,
+  `setpoint-input`, `sheet`, `state-badge`, `status-lamp`, `trend`) have implementations and registry
+  entries and have never been on a screen a person opened.
+- **`isBackedByDriver` is computed, stored, served — and not rendered.** One occurrence in `web/`: the type
+  declaration at `web/src/contracts/tagNamespace.ts:43`.
+
+### 26.5 🔴 S-6 IS STILL OPEN — the first `policyAction` consumer MUST fail closed
+
+Nothing in this codebase resolves `policyAction` to an authorisation decision. It is declared, carried,
+validated for **presence**, stored and served — and read by nobody. **§5 therefore remains a PRESENCE rule,
+not a MEMBERSHIP rule: `"xyzzy"` passes the write door and sits on disk, inert.**
+
+**When a consumer is built, an unrecognised `policyAction` must REFUSE.** It must never fall through to a
+default or down-grade to a lower privilege. This is stated here, in the row a 0c-successor actually reads,
+because a consumer that fails OPEN is invisible to every test that exists today: it would leave the copied
+string untouched and satisfy every current assertion.
+`TagNamespaceBuilderTests.No_production_file_outside_the_contracts_assembly_has_become_a_policyAction_consumer`
+is a census of the four carrier files — the day a fifth production file mentions the field it reddens, and
+forces this decision at the moment it is being made.
+
+### 26.6 🔴 OPEN OWNER DECISION — where tag maps live
+
+Tag maps ship **beside the binary** (`tag-maps/{machineCode}.json`, next to `connectors.json` and
+`fleet.json`) with **no relocation environment variable**. That pairing is deliberate: BF-1's rule is that a
+directory which *has* an `ST4I_*_DIR` must be derivable from the machine-wide root, and
+`PerHostDataRootsTests` + `TestHarnessIsolationTests` both refuse a variable with a beside-the-binary
+default.
+
+**The cost, stated so nobody discovers it in the field: a publish REPLACES that directory, so hand-authored
+tag maps are destroyed by every upgrade** — exactly as a hand-edited `connectors.json` is today.
+
+The machine-wide alternative (`%ProgramData%\ST4I\sim\hmi-tagmaps`) was built and reverted: it requires a
+**keep-versus-purge classification in `packaging/remove-data.ps1`**, and that is owner ruling
+**2026-08-23(b)** territory — whether a hand-authored tag map is operator configuration that survives
+decommissioning, like `ecosystem`/`products`, or generated data a wipe removes. **This is with the owner and
+is not resolved here.**
+
+### 26.7 The swallow, and what it costs an operator
+
+A bad tag map must never break connector registration — the same reasoning `AssetRegistryStore.UpsertAsync`
+is built on: a machine must still RUN when its HMI namespace is broken. `TagMapStartupIngestion.IngestAll`
+therefore swallows, and this is **one of exactly two swallows in the workstream**.
+
+**The price:** an operator whose tag map is malformed gets **a machine that runs and a screen that never
+appears**, and the only trace is a log line. Nothing in the UI says the map was refused — `GET /v1/tags`
+returns the previous namespace or an empty one, indistinguishable from a machine nobody has declared tags
+for.
+
+**The named fix that was NOT built:** the `IngestResult` is already computed and structured
+(`Ok`/`TagCount`/`BackedCount`/`Errors`). Carrying the last outcome per machine and exposing it on the
+tag-namespace response or `GET /v1/capabilities` would put the refusal where somebody is already looking. It
+is a contract change, which is why it is a recommendation rather than code.
+
+### 26.8 A schema hole 0c closed, and one residue it did not
+
+**Closed:** an entry omitting `source` used to parse, compile, draw **zero** violations, throw nothing, and
+serialise with `source` absent — so a namespace the frozen schema forbids was stored and served.
+`ContractInvariants.Validate(TagNamespaceDocument)` now checks the remaining schema-**required** fields for
+presence (`dataType`, `source`, `source.kind`). It closes at that door because that door is the one
+**every** producer passes; closing it in the builder would have healed ingestion and left `PUT /v1/tags`
+open to the identical document. This is presence only — still **not** full JSON-Schema validation, which
+remains that class's declared non-fix.
+
+**Residue:** the guard that stops a test fixture supplying the truth side excludes assemblies that **link a
+test framework** (measured: `src/St4i.Connector.Conformance` is the one `src/` assembly it excludes, and it
+is the hole a reviewer used to contaminate the truth side silently). A double declared in a product assembly
+that links **no** test framework **would still enter**. The `src/` census
+`EveryConnectorFactoryDeclaredInSrc_IsOneTheReflectedPopulationCanSee` is what would catch it arriving.

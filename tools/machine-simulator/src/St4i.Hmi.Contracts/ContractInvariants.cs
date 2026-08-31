@@ -205,7 +205,7 @@ public static class ContractInvariants
     /// no enum membership, no <c>additionalProperties</c>, no conditional <c>engMin</c>/<c>engMax</c>
     /// rule), which remains the deliberate non-fix the sibling overload declares — it is the same
     /// required-field-presence class as the checks above, extended to the fields that were left out of
-    /// it.</para></para></summary>
+    /// it.</para></para></para></summary>
     public static IReadOnlyList<string> Validate(TagNamespaceDocument doc)
     {
         var v = new List<string>();

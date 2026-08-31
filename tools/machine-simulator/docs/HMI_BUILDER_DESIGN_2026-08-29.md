@@ -61,6 +61,30 @@ Machine Edition đã **không còn là "simulator"**. Theo ledger §0-bis của 
 
 **Kết luận đo được:** khoảng trống lớn nhất **không phải editor** — mà là **không có mô hình dữ liệu để editor bind vào**. Vì vậy `WS-HMI-0` (Spine) là gốc, không phải phần phụ.
 
+> 📎 🔴 **ĐÍNH CHÍNH 2026-08-31 (WS-HMI-0c Task 5) — HÀNG THỨ BA CỦA BẢNG TRÊN NÓI QUÁ. Giữ nguyên văn,
+> không xoá, vì lý do bên dưới.**
+>
+> **Câu cũ, nguyên văn:**
+> `| **KHÔNG có mô hình tag/điểm dữ liệu.** `mapping/*.json` tự khai là placeholder, chỉ chứa `unitMap` | [mapping/screwdrive.json](../mapping/screwdrive.json) — `"not yet consulted by the runtime pipeline"` |`
+>
+> **Phép đo bác nó** (đo lại từ mã ngày 2026-08-31, không chép từ kế hoạch):
+>
+> | Đo cái gì | Kết quả |
+> |---|---|
+> | Runtime có đọc `mapping/*.json` không | **CÓ.** `src/St4i.EdgeCore/Fleet/FleetCore.cs:3262` dựng `MappingDirectory = Path.Combine(AppContext.BaseDirectory, "mapping")`; `src/St4i.EdgeCore/Mapping/MappingProfileResolver.cs:155` gọi `MappingProfile.FromJson(json)` trên file phân giải được |
+> | File chứa gì | `Name`, `DeviceClass`, `DefaultStepType`, `DefaultRecipeCode`, `UnitMap` (`MappingProfile.cs:16-50`) — **không chỉ** `unitMap` |
+> | `UnitMap` có được dùng không | **CÓ.** `src/St4i.EdgeCore/Mapping/Normalizer.cs:289` đổi đơn vị qua nó. `mapping/dispensing.json`, `mapping/iot-sensor.json`, `mapping/mqtt-iot.json` đều khai `"C": "°C"` — số đọc THẬT đang được chuẩn hoá qua đường này |
+> | `_note` trong `screwdrive.json` nói gì | Nguyên văn: `"Future-extensibility placeholder — not yet consulted by the runtime pipeline (doc 62 §11 P2 'Mapping UI')"`. Nó tự giới hạn vào năng lực **Mapping UI**, không nói `UnitMap` chết. Bảng trên trích cụt vế trong ngoặc và biến một ghi chú hẹp thành một tuyên bố rộng |
+>
+> **Câu đúng:** `mapping/*.json` **đang được runtime đọc và dùng**. Nó **chuẩn hoá số đọc** — đổi đơn vị,
+> điền `stepType`/`recipeCode` mặc định — chứ **không** phải bản đồ địa chỉ tag. Khoảng trống thật là:
+> **chưa có tầng trả lời "thanh ghi/node nào là tag nào"**, và đó là thứ WS-HMI-0 thêm vào **bên cạnh**
+> `MappingProfile`.
+>
+> **Vì sao không xoá câu cũ:** ai đọc bảng này hôm nay sẽ kết luận `mapping/` là mã chết và xoá nó — và sẽ
+> làm mất chuẩn hoá đơn vị của mọi máy đang chạy. Đính chính phải nằm cạnh câu sai, chứ không phải ở một
+> tài liệu khác.
+
 ### 2.3 Đối chiếu thị trường (nghiên cứu 29/08/2026)
 
 Bốn nền tảng chiếm ~80% triển khai SCADA: Ignition, AVEVA System Platform, Rockwell FactoryTalk (View SE + Optix), Siemens WinCC Unified. Xu hướng 2026: **Perspective và Optix kéo khách khỏi runtime HMI Windows-only** vì khách muốn mở HMI từ trình duyệt/tablet mà không mua license panel — xác nhận quyết định #3.
@@ -132,6 +156,30 @@ API mới: ~~`GET/POST/PUT /v1/components`, `GET /v1/component-types`~~.
 ### 3.2 Tầng ② — Tag Namespace (SPINE)
 
 Thay `mapping/*.json` placeholder bằng **compiler thật**. Mỗi tag:
+
+> 📎 🔴 **ĐÍNH CHÍNH 2026-08-31 (WS-HMI-0c Task 5) — CÂU MỞ ĐẦU MỤC NÀY NÓI QUÁ. Giữ nguyên văn, không xoá.**
+>
+> **Câu cũ, nguyên văn:** `Thay `mapping/*.json` placeholder bằng **compiler thật**.`
+> **Cùng một sai lầm, ở nhãn sơ đồ §3:** `② TAG NAMESPACE  (.NET — SPINE, thay mapping/*.json placeholder)`
+>
+> **Phép đo bác nó:** xem bảng đính chính ở cuối §2.2. Tóm tắt: `FleetCore.cs:3262` +
+> `MappingProfileResolver.cs:155` đọc file thật; `Normalizer.cs:289` áp `UnitMap`; ba file trong `mapping/`
+> khai `"C": "°C"`. Nó không phải placeholder và không phải bản đồ địa chỉ.
+>
+> **Câu đúng:** WS-HMI-0 **THÊM** một tầng tag namespace **BÊN CẠNH** `MappingProfile`, không thay nó. Hai
+> tầng trả lời hai câu khác nhau — `MappingProfile` trả lời *"số này mang đơn vị gì"*, tag namespace trả lời
+> *"thanh ghi/node nào là tag nào"*. Không gộp, không xoá.
+>
+> **Đã thi hành như một ràng buộc, không chỉ một ghi chú:** cả bốn task của WS-HMI-0c đều mang
+> `MappingProfile`, `MappingProfileResolver`, `FleetCore`, `EdgeAgentPipelines` trong danh sách **ngoài phạm
+> vi**, với lệnh "dừng và báo" nếu chạm phải. Không file nào trong bốn file đó bị sửa bởi 0c.
+>
+> **Một sắc thái mà bảng ở §2.2 không có chỗ để nói:** `EdgeAgentPipelines` **cố ý KHÔNG** dùng
+> `MappingProfileResolver` — nó dùng MỘT `fallbackProfile` dùng chung, và ghi rõ lý do tại
+> `src/St4i.EdgeCore/Engine/EdgeAgentPipelines.cs:131-135`: `St4i.EdgeService.csproj` không ship thư mục
+> `mapping/`, nên nối resolver vào đó sẽ tạo đúng loại suy giảm âm thầm mà blueprint §9.4 gọi là đáng sợ. Vậy
+> "runtime đọc `mapping/*.json`" đúng cho **host FleetCore**, và **không** đúng cho **edge agent** — và sự
+> khác biệt ấy là một quyết định có chủ ý, không phải một lỗ hổng.
 
 | Trường | Ví dụ |
 |---|---|
