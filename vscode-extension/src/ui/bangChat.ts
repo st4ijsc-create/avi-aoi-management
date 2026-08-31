@@ -54,6 +54,13 @@ import { vanBanHetTranConDoDang } from "../loi/khoiDoDang";
 // dùng THẤY (webview tích luỹ token của MỌI vòng, không riêng vòng cuối). Xem docblock
 // `xoaRacGiaoThuc.ts`.
 import { vanBanKhongRacGiaoThuc } from "../loi/xoaRacGiaoThuc";
+// ★★★ PDCA vòng 4 (round 4, `pdca5-report.md`) — vòng tool VẬN HÀNH của máy chủ (hoàn toàn ĐỘC LẬP
+// với giao thức `avi-tool` ở trên) chạy NHẦM trên câu hỏi đã được dạy giao thức (đo LIVE: bất kỳ đoạn
+// dạy nào, kể cả một câu 403 ký tự không kèm ví dụ, cũng đủ), rồi DÁN một dòng trích dẫn tool THẬT
+// (`get_ng_compare`, `read_file`…) vào cuối câu trả lời — 9/11 tác vụ vòng 3 dính, kể cả các tác vụ
+// đang ĐẠT. Không vá được gốc rễ (nằm ở máy chủ, xem docblock); lọc HẬU QUẢ hiển thị là an toàn vì
+// hai mẫu văn bản này CHỈ do `server/services/ai/dataCitation.ts` phát ra. Xem `xoaTrichDanToolLa.ts`.
+import { vanBanKhongTrichDanToolLa } from "../loi/xoaTrichDanToolLa";
 // ★★★ ĐỢT D / TASK 5 — @-mention: gõ "@" trong ô nhập, chọn một tệp, tệp đó được đọc qua ĐÚNG
 // đường tool `doc_tep` (Task 2/3) — không dựng một đường đọc riêng. `locDanhSachMention` (THUẦN)
 // lọc danh sách theo chữ đang gõ; xem docblock của nó cho vì sao KHÔNG chạm ký tự `@`.
@@ -694,9 +701,13 @@ export class BangChat {
       // kiểm NHÁNH KIA").
       const vanBanNen = degradedCuoi ? traLoiCuoi : vanBanTichLuy;
       const vanBanDaLocSach = vanBanKhongRacGiaoThuc(vanBanNen);
+      // ★★★ PDCA vòng 4 — CHUỖI TIẾP theo SAU `vanBanDaLocSach`, áp lên chính kết quả đó (đúng thứ
+      // webview lẽ ra sẽ hiển thị nếu không có ghi đè `het_tran`). `null` khi không có trích dẫn nào
+      // ⇒ rơi ĐÚNG về fallback cũ (khuôn "vá xong phải kiểm NHÁNH KIA", giống `vanBanDaLocSach` ở trên).
+      const vanBanKhongTrichDan = vanBanKhongTrichDanToolLa(vanBanDaLocSach ?? vanBanNen);
       void this.panel.webview.postMessage({
         loai: "hoan_tat",
-        vanBanCuoi: vanBanCuoiThayThe ?? vanBanDaLocSach ?? (degradedCuoi ? traLoiCuoi : null),
+        vanBanCuoi: vanBanCuoiThayThe ?? vanBanKhongTrichDan ?? vanBanDaLocSach ?? (degradedCuoi ? traLoiCuoi : null),
         canhBao: canhBaoCuoi,
       });
       // Lịch sử NGOÀI (`this.lichSu`, dùng cho MỌI câu hỏi sau này) chỉ giữ câu hỏi GỐC + câu trả
