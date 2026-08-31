@@ -423,3 +423,119 @@ export function quetCuaIngest(duong: string, ma: string, tuyChon?: TuyChonQuetCu
 
   return { cua, mu };
 }
+
+/**
+ * ★★★ Pha 1F Task 8 (I-3) — bằng chứng CHẶT cho "cửa `tenCua` có gọi
+ * `<tenSchema>.parse(...)`/`.safeParse(...)` THẬT", KHÁC HẲN `dinhDanhCaThan`
+ * (định danh `tenSchema` xuất hiện Ở ĐÂU ĐÓ trong thân thủ tục).
+ *
+ * Đo được TRƯỚC hàm này tồn tại: `capChuoiVarcharDuongIngestMacDinh.test.ts`
+ * §0d khẳng định `dinhDanhCaThan.has("metaJsonSchema") === true` cho `commit`
+ * làm bằng chứng "commit còn dùng metaJsonSchema" — nhưng đột biến SỐNG xoá
+ * `metaJsonSchema.parse(...)` (aoiPackageRouter.ts:884) mà GIỮ khai báo kiểu
+ * `let metaData: z.infer<typeof metaJsonSchema> | null = null;` (:857) khiến
+ * khẳng định đó VẪN đúng — `z.infer<typeof X>` là một TYPE QUERY, một node
+ * AST THẬT tham chiếu định danh `X`, không phải một dòng chú giải; `dinhDanhCaThan`
+ * (quét MỌI định danh trong subtree, không phân biệt vị trí cú pháp) không
+ * phân biệt được nó với một lời gọi `.parse()` thật. Hàm này hẹp hơn CÓ CHỦ
+ * ĐÍCH: chỉ nhận một CALL EXPRESSION khớp mẫu `tenSchema.parse(...)` hoặc
+ * `tenSchema.safeParse(...)` — một type query hay một biến trùng tên KHÔNG
+ * làm nó trả `true`.
+ *
+ * CÙNG bao đóng "tới được qua khai báo cấp file" (`quetMotCay`/hàng đợi) như
+ * `taphopDinhDanhTiepCan`/`coDuongToiQuyetDinh` — nếu `.parse()` được gọi
+ * trong một hàm helper cấp file được cửa này tham chiếu, vẫn tính.
+ *
+ * Ném lỗi (không trả `false` im lặng) nếu không tìm thấy router/cửa — mất
+ * mục tiêu phải ồn ào, không được đọc nhầm thành "không có lời gọi .parse()".
+ */
+export function coLoiGoiParseTrenSchema(
+  duong: string,
+  ma: string,
+  tenCua: string,
+  tenSchema: string,
+  tuyChon?: TuyChonQuetCuaIngest,
+): boolean {
+  const tenBienRouter = tuyChon?.tenBienRouter ?? TEN_BIEN_ROUTER;
+  const laTenCua = tuyChon?.laTenCua ?? laTenCuaIngest;
+  const sf = ts.createSourceFile(duong, ma, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+
+  const khaiBao = new Map<string, ts.Node>();
+  for (const st of sf.statements) {
+    if (ts.isVariableStatement(st)) {
+      for (const d of st.declarationList.declarations) {
+        if (ts.isIdentifier(d.name) && d.initializer !== undefined) khaiBao.set(d.name.text, d.initializer);
+      }
+    } else if (ts.isFunctionDeclaration(st) && st.name !== undefined && st.body !== undefined) {
+      khaiBao.set(st.name.text, st.body);
+    }
+  }
+
+  let routerObj: ts.ObjectLiteralExpression | null = null;
+  for (const st of sf.statements) {
+    if (!ts.isVariableStatement(st)) continue;
+    for (const d of st.declarationList.declarations) {
+      if (ts.isIdentifier(d.name) && d.name.text === tenBienRouter && d.initializer !== undefined) {
+        routerObj = objRouter(d.initializer);
+      }
+    }
+  }
+  if (routerObj === null) {
+    throw new Error(`${duong} — không tìm thấy \`const ${tenBienRouter} = router({…})\` — bộ suy mất mục tiêu`);
+  }
+
+  let target: ts.Node | null = null;
+  for (const p of routerObj.properties) {
+    if (!ts.isPropertyAssignment(p)) continue;
+    const ten = ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) ? p.name.text : null;
+    if (ten !== null && laTenCua(ten) && ten === tenCua) {
+      target = p.initializer;
+      break;
+    }
+  }
+  if (target === null) {
+    throw new Error(`${duong} — không tìm thấy cửa "${tenCua}" trong \`${tenBienRouter}\` — bộ suy mất mục tiêu`);
+  }
+
+  const daTham = new Set<string>();
+  const hangDoi: ts.Node[] = [target];
+  let i = 0;
+  while (i < hangDoi.length) {
+    const node = hangDoi[i++];
+    if (node === undefined) continue;
+    let timThayGoiParse = false;
+    const dinhDanh = new Set<string>();
+    const di = (x: ts.Node): void => {
+      if (timThayGoiParse) return;
+      if (
+        ts.isCallExpression(x) &&
+        ts.isPropertyAccessExpression(x.expression) &&
+        (x.expression.name.text === "parse" || x.expression.name.text === "safeParse") &&
+        ts.isIdentifier(x.expression.expression) &&
+        x.expression.expression.text === tenSchema
+      ) {
+        timThayGoiParse = true;
+        return;
+      }
+      if (ts.isPropertyAccessExpression(x)) {
+        di(x.expression);
+        return;
+      }
+      if ((ts.isPropertyAssignment(x) || ts.isPropertySignature(x)) && x.name !== undefined) {
+        if (ts.isPropertyAssignment(x)) di(x.initializer);
+        return;
+      }
+      if (ts.isIdentifier(x)) dinhDanh.add(x.text);
+      ts.forEachChild(x, di);
+    };
+    di(node);
+    if (timThayGoiParse) return true;
+    for (const id of dinhDanh) {
+      if (daTham.has(id)) continue;
+      daTham.add(id);
+      const khai = khaiBao.get(id);
+      if (khai !== undefined) hangDoi.push(khai);
+    }
+  }
+  return false;
+}

@@ -29,6 +29,7 @@
  * cổng ở TẦNG VERDICT (chạy commit thật, SELECT thật) nằm ở file tích hợp.
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import { z } from "zod";
 import {
   duyetTruongOptional,
@@ -197,6 +198,22 @@ describe("★★★ §4 — kỷ luật KyVongOverallResult: 'ghiNhanNoDaDuyet' 
   );
   const GHI_NHAN_NO = HINH_DANG_CHAP_NHAN.filter((h) => h.kyVong.overallResult.dang === "ghiNhanNoDaDuyet");
 
+  // ══════════════════════════════════════════════════════════════════════
+  // ★★★ Pha 1F Task 8 (I-1) — GHIM chống "rửa lỗi": người review đột biến
+  // SỐNG bắt được — hoàn nguyên bản vá T1 trong MÃ SẢN XUẤT + đổi MỘT hình
+  // dạng từ `khangDinh` sang `ghiNhanNoDaDuyet` (kèm `maBacklog` bịa) — làm
+  // ca đó XANH, vì trước bản sửa này KHÔNG có gì ghim SỐ LƯỢNG/TÊN các hình
+  // dạng dùng biến thể "ghi nhận nợ". Tập rỗng/dài ra âm thầm là chính lỗ đó.
+  // ══════════════════════════════════════════════════════════════════════
+  it("★★★ GHIM đúng TẬP hình dạng dùng 'ghiNhanNoDaDuyet' hôm nay — thêm/bớt MỘT hình dạng (kể cả chuyển từ 'khangDinh' sang) là một LỜI KHAI, không phải bảo trì im lặng", () => {
+    expect(
+      GHI_NHAN_NO.map((h) => h.ten).sort(),
+      "tập hình dạng 'ghiNhanNoDaDuyet' đã đổi — nếu bạn vừa CHUYỂN một hình dạng từ 'khangDinh' sang " +
+        "đây để né đỏ, đây chính là lưới được dựng ra để bắt điều đó; sửa danh sách này CHỈ khi thật sự " +
+        "có một nợ MỚI đã được chủ dự án duyệt treo (kèm mục backlog CÓ THẬT — xem §5 bên dưới).",
+    ).toEqual(["biDanhPointsRongThayMeasurements_BG77"]);
+  });
+
   it("mọi hình dạng 'ghiNhanNoDaDuyet': hanhViHienTai KHÁC hanhViDung — nếu bằng nhau, phải dùng 'khangDinh' thay vì 'ghi nhận nợ' một giá trị đã đúng", () => {
     for (const h of GHI_NHAN_NO) {
       const kv = h.kyVong.overallResult as Extract<typeof h.kyVong.overallResult, { dang: "ghiNhanNoDaDuyet" }>;
@@ -212,6 +229,49 @@ describe("★★★ §4 — kỷ luật KyVongOverallResult: 'ghiNhanNoDaDuyet' 
       const kv = h.kyVong.overallResult as Extract<typeof h.kyVong.overallResult, { dang: "ghiNhanNoDaDuyet" }>;
       expect(kv.maBacklog, `"${h.ten}": maBacklog phải khớp /^BG-\\d+$/`).toMatch(/^BG-\d+$/);
       expect(kv.lyDoDuyet.length, `"${h.ten}": lyDoDuyet không được rỗng`).toBeGreaterThan(10);
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ★★★ Pha 1F Task 8 (I-1) — đóng lỗ "hanhViDung khai sai ngữ nghĩa": đột
+  // biến SỐNG đã đổi `hanhViDung` "NG"→"NTF" và cổng CŨ vẫn 49/49 XANH, vì
+  // trước bản sửa này KHÔNG có gì đối chiếu `hanhViDung` với luật thật — chỉ
+  // có phép so BẤT ĐẲNG với `hanhViHienTai` (mà "NTF" cũng khác "OK", nên vẫn
+  // qua). `tinhHanhViDung` (bắt buộc ở TẦNG KIỂU, xem `hinhDangHopDongMetaJson.ts`)
+  // là bằng chứng THẬT — một hàm THUẦN tái dùng `inferAoiOverallResult`
+  // (production).
+  // ══════════════════════════════════════════════════════════════════════
+  it("★★★ I-1 — mọi hình dạng 'ghiNhanNoDaDuyet': hanhViDung khai KHỚP kết quả tính từ tinhHanhViDung(meta) (LUẬT THẬT) — không phải một chuỗi tự khai đứng riêng", () => {
+    for (const h of GHI_NHAN_NO) {
+      const kv = h.kyVong.overallResult as Extract<typeof h.kyVong.overallResult, { dang: "ghiNhanNoDaDuyet" }>;
+      const tinhDuoc = kv.tinhHanhViDung(h.meta);
+      expect(
+        tinhDuoc,
+        `"${h.ten}": hanhViDung khai "${kv.hanhViDung}" nhưng tinhHanhViDung(meta) tính ra "${tinhDuoc}" — ` +
+          `một trong hai đang SAI (đúng lỗ mà đột biến "NG"→"NTF" đã bắt được ở lượt review trước).`,
+      ).toBe(kv.hanhViDung);
+    }
+  });
+
+  it("★ ĐỘT BIẾN TỰ KIỂM — tinhHanhViDung KHÔNG được là một hằng số nguỵ trang (trả cứng hanhViDung bất kể input): trên một biến thể 'sạch' (không NG/NTF/overallResult khai nào) PHẢI tính ra 'OK' — cùng hợp đồng inferAoiOverallResult(ngCount:0, ntfCount:0, explicitResult:null)", () => {
+    for (const h of GHI_NHAN_NO) {
+      const kv = h.kyVong.overallResult as Extract<typeof h.kyVong.overallResult, { dang: "ghiNhanNoDaDuyet" }>;
+      const metaSach = structuredClone(h.meta) as Record<string, unknown>;
+      delete metaSach.overallResult;
+      for (const tenMang of ["measurements", "points"] as const) {
+        const mang = metaSach[tenMang];
+        if (Array.isArray(mang)) {
+          for (const phanTu of mang) {
+            if (phanTu && typeof phanTu === "object") delete (phanTu as Record<string, unknown>).result;
+          }
+        }
+      }
+      const ketSach = kv.tinhHanhViDung(metaSach);
+      expect(
+        ketSach,
+        `"${h.ten}": tinhHanhViDung trên biến thể KHÔNG NG/NTF nào phải trả "OK" — nếu không, hàm nghi ngờ ` +
+          `là một hằng số nguỵ trang (luôn trả "${kv.hanhViDung}" bất kể dữ liệu vào).`,
+      ).toBe("OK");
     }
   });
 
@@ -235,5 +295,50 @@ describe("★★★ §4 — kỷ luật KyVongOverallResult: 'ghiNhanNoDaDuyet' 
     if (shape!.kyVong.loai === "chapNhan") {
       expect(shape!.kyVong.overallResult.dang, "BG-91 đã vá — kỳ vọng phải là khangDinh, không phải ghi nhận nợ").toBe("khangDinh");
     }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// §5 ★★★ MỚI (Pha 1F Task 8, I-2) — maBacklog PHẢI trỏ một mục CÓ THẬT trong
+// backlog toàn cảnh, không chỉ khớp regex hình dạng chuỗi `/^BG-\d+$/`. Đo
+// được TRƯỚC bản sửa này: đột biến "BG-77"→"BG-9999" (mã KHÔNG tồn tại) qua
+// được 49/49 — §4 chỉ kiểm HÌNH DẠNG chuỗi, không kiểm LIÊN KẾT tới một mục
+// nợ thật. `docs/superpowers/specs/2026-08-31-aoi-backlog-toan-canh.md` là
+// tệp PHÂN TÍCH ĐƯỢC (đọc + regex mọi mã `BG-<số>` xuất hiện trong đó) —
+// hoàn toàn canh được, như brief yêu cầu.
+// ════════════════════════════════════════════════════════════════════════════
+describe("★★★ §5 — I-2: maBacklog PHẢI trỏ một mục CÓ THẬT trong backlog toàn cảnh", () => {
+  const DUONG_BACKLOG_TOAN_CANH = new URL(
+    "../../docs/superpowers/specs/2026-08-31-aoi-backlog-toan-canh.md",
+    import.meta.url,
+  );
+  const NOI_DUNG_BACKLOG_TOAN_CANH = readFileSync(DUONG_BACKLOG_TOAN_CANH, "utf8");
+  const MA_BACKLOG_TON_TAI = new Set(
+    Array.from(NOI_DUNG_BACKLOG_TOAN_CANH.matchAll(/BG-\d+/g), (m) => m[0]),
+  );
+
+  const HINH_DANG_CHAP_NHAN = BANG_HINH_DANG.filter(
+    (h): h is typeof h & { kyVong: { loai: "chapNhan" } } => h.kyVong.loai === "chapNhan",
+  );
+  const GHI_NHAN_NO = HINH_DANG_CHAP_NHAN.filter((h) => h.kyVong.overallResult.dang === "ghiNhanNoDaDuyet");
+
+  it(`docs/superpowers/specs/2026-08-31-aoi-backlog-toan-canh.md đọc được, có ≥30 mã BG- phân biệt (đo được: ${MA_BACKLOG_TON_TAI.size}) — chống tự thoả (đường dẫn sai/tệp rỗng ⇒ tập rỗng ⇒ MỌI maBacklog đều "không tồn tại", lưới sẽ đỏ SAI LÝ DO)`, () => {
+    expect(MA_BACKLOG_TON_TAI.size).toBeGreaterThanOrEqual(30);
+  });
+
+  it("★★★ mọi maBacklog trong BANG_HINH_DANG khớp một mã CÓ THẬT trong backlog toàn cảnh (vd 'BG-9999' khớp /^BG-\\d+$/ nhưng KHÔNG xuất hiện trong tài liệu ⇒ phải ĐỎ ở đây)", () => {
+    for (const h of GHI_NHAN_NO) {
+      const kv = h.kyVong.overallResult as Extract<typeof h.kyVong.overallResult, { dang: "ghiNhanNoDaDuyet" }>;
+      expect(
+        MA_BACKLOG_TON_TAI.has(kv.maBacklog),
+        `"${h.ten}": maBacklog "${kv.maBacklog}" KHÔNG xuất hiện trong ` +
+          `docs/superpowers/specs/2026-08-31-aoi-backlog-toan-canh.md — không phải một mục nợ có thật, ` +
+          `chỉ là một chuỗi khớp hình dạng "BG-<số>".`,
+      ).toBe(true);
+    }
+  });
+
+  it("★ ĐỐI CHỨNG — 'BG-9999' (mã bịa dùng trong đột biến review) KHÔNG có trong tập đọc được từ tài liệu (chứng minh lưới PHÂN BIỆT được, không tự thoả toàn bộ)", () => {
+    expect(MA_BACKLOG_TON_TAI.has("BG-9999")).toBe(false);
   });
 });

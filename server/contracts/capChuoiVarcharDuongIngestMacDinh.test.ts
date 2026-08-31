@@ -89,7 +89,13 @@ import {
   machineApiRouter,
 } from "../routers/machineApiRouters";
 import { presignCoreObject, metaJsonSchema, aoiPackageRouter } from "../routers/aoiPackageRouter";
-import { quetCuaIngest, laTenCuaIngest, laTenCuaIngestZip, TEN_BIEN_ROUTER_ZIP } from "../routers/cuaIngestScan";
+import {
+  quetCuaIngest,
+  laTenCuaIngest,
+  laTenCuaIngestZip,
+  TEN_BIEN_ROUTER_ZIP,
+  coLoiGoiParseTrenSchema,
+} from "../routers/cuaIngestScan";
 
 const MAU_MAY_THAT = "D:\\SOURCES\\AOIData\\dashboard-sample.json";
 
@@ -177,9 +183,141 @@ describe("§0d — ★★★ commit ↔ metaJsonSchema: GIỚI HẠN THẬT, đo
     ).toBe(false);
   });
 
-  it("commit — dinhDanhCaThan (TOÀN THÂN thủ tục) CÓ nhắc tới metaJsonSchema — bằng chứng YẾU HƠN (chỉ 'còn dùng ở đâu đó', không phải 'chưa hề bị sửa hình dạng')", () => {
+  it("commit — dinhDanhCaThan (TOÀN THÂN thủ tục) CÓ nhắc tới metaJsonSchema — bằng chứng YẾU (chỉ 'định danh còn xuất hiện đâu đó', KHÔNG phân biệt được một type query `z.infer<typeof metaJsonSchema>` với một lời gọi `.parse()` thật — xem §0d2 ngay dưới cho phép đo LIVE của giới hạn này; §0d3 là bằng chứng CHẶT thay thế)", () => {
     const cua = QUET_CUA.find((c) => c.ten === "commit");
     expect(cua!.dinhDanhCaThan.has("metaJsonSchema")).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// §0d2 — ★★★ Pha 1F Task 8 (I-3) — ĐO LIVE giới hạn của §0d (dinhDanhCaThan):
+// xoá lời gọi `.parse()` thật nhưng GIỮ type annotation `z.infer<typeof
+// metaJsonSchema>` ⇒ bằng chứng CŨ vẫn "xanh giả", trong khi hàm MỚI
+// (`coLoiGoiParseTrenSchema`, §0d3) phải ĐỎ. Đúng đột biến người review đã
+// chạy tay và bắt được: "xoá metaJsonSchema.parse(...) ⇒ VẪN true".
+// ════════════════════════════════════════════════════════════════════════════
+describe("§0d2 — ĐỘT BIẾN: xoá .parse() thật, GIỮ type query z.infer<typeof metaJsonSchema>", () => {
+  const NEO = "metaData = metaJsonSchema.parse(JSON.parse(metaContent));";
+  const viTri = NOI_DUNG_AOI_PACKAGE_GOC.indexOf(NEO);
+  const maDotBien =
+    viTri > -1
+      ? NOI_DUNG_AOI_PACKAGE_GOC.slice(0, viTri) +
+        "metaData = JSON.parse(metaContent) as z.infer<typeof metaJsonSchema>; // BỎ QUA VALIDATION — chỉ ép kiểu" +
+        NOI_DUNG_AOI_PACKAGE_GOC.slice(viTri + NEO.length)
+      : NOI_DUNG_AOI_PACKAGE_GOC;
+
+  it("điểm neo `metaData = metaJsonSchema.parse(...)` còn tồn tại trên mã thật — bộ suy đã đổi neo?", () => {
+    expect(viTri).toBeGreaterThan(-1);
+  });
+
+  it("★ ĐỐI CHỨNG — bằng chứng CŨ (dinhDanhCaThan) vẫn 'xanh giả' trên mã đã mất .parse(): type query z.infer<typeof metaJsonSchema> (dòng khai `let metaData`, KHÔNG bị đột biến này chạm tới) vẫn đủ để dinhDanhCaThan.has('metaJsonSchema') === true", () => {
+    const laiQuet = quetCuaIngest("server/routers/aoiPackageRouter.ts", maDotBien, {
+      tenBienRouter: TEN_BIEN_ROUTER_ZIP,
+      laTenCua: laTenCuaIngestZip,
+    });
+    const cua = laiQuet.cua.find((c) => c.ten === "commit");
+    expect(cua, "không tìm thấy cửa commit sau đột biến").toBeDefined();
+    expect(
+      cua!.dinhDanhCaThan.has("metaJsonSchema"),
+      "ĐÚNG lỗ được báo cáo: mất .parse() nhưng dinhDanhCaThan vẫn true vì type annotation còn nguyên",
+    ).toBe(true);
+  });
+
+  it("★★★ bằng chứng MỚI (coLoiGoiParseTrenSchema) PHẢI ĐỎ: không còn CALL EXPRESSION .parse()/.safeParse() nào trên metaJsonSchema trong commit", () => {
+    expect(
+      coLoiGoiParseTrenSchema("server/routers/aoiPackageRouter.ts", maDotBien, "commit", "metaJsonSchema", {
+        tenBienRouter: TEN_BIEN_ROUTER_ZIP,
+        laTenCua: laTenCuaIngestZip,
+      }),
+    ).toBe(false);
+  });
+
+  it("mã thật KHÔNG hề bị đụng bởi đột biến trong chính test này (đọc lại đĩa, so nguyên văn)", () => {
+    expect(readFileSync(DUONG_AOI_PACKAGE, "utf8")).toBe(NOI_DUNG_AOI_PACKAGE_GOC);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// §0d3 — ★★★ bằng chứng CHẶT THẬT (thay thế §0d cho lời khai "commit gọi
+// .parse() trên metaJsonSchema"): CALL EXPRESSION .parse()/.safeParse() thật.
+// ════════════════════════════════════════════════════════════════════════════
+describe("§0d3 — ★★★ commit CÓ lời gọi metaJsonSchema.parse(...)/.safeParse(...) THẬT (bằng chứng CHẶT — CALL EXPRESSION, không phải 'định danh xuất hiện đâu đó')", () => {
+  it("mã THẬT hôm nay: coLoiGoiParseTrenSchema(commit, metaJsonSchema) === true", () => {
+    expect(
+      coLoiGoiParseTrenSchema(
+        "server/routers/aoiPackageRouter.ts",
+        NOI_DUNG_AOI_PACKAGE_GOC,
+        "commit",
+        "metaJsonSchema",
+        { tenBienRouter: TEN_BIEN_ROUTER_ZIP, laTenCua: laTenCuaIngestZip },
+      ),
+    ).toBe(true);
+  });
+
+  it("★ ĐỐI CHỨNG — đổi lời gọi sang MỘT SCHEMA KHÁC (không phải metaJsonSchema) ⇒ coLoiGoiParseTrenSchema('metaJsonSchema') phải ĐỎ (chống 'vá quá tay' — hàm không được trả true cho BẤT KỲ .parse() nào, chỉ cho đúng schema hỏi tới)", () => {
+    const NEO = "metaJsonSchema.parse(JSON.parse(metaContent))";
+    const viTri = NOI_DUNG_AOI_PACKAGE_GOC.indexOf(NEO);
+    expect(viTri, "không tìm thấy điểm neo — bộ suy đã đổi neo?").toBeGreaterThan(-1);
+    const maDotBien =
+      NOI_DUNG_AOI_PACKAGE_GOC.slice(0, viTri) +
+      "schemaKhongLienQuanGiCa.parse(JSON.parse(metaContent))" +
+      NOI_DUNG_AOI_PACKAGE_GOC.slice(viTri + NEO.length);
+
+    expect(
+      coLoiGoiParseTrenSchema("server/routers/aoiPackageRouter.ts", maDotBien, "commit", "metaJsonSchema", {
+        tenBienRouter: TEN_BIEN_ROUTER_ZIP,
+        laTenCua: laTenCuaIngestZip,
+      }),
+    ).toBe(false);
+
+    expect(readFileSync(DUONG_AOI_PACKAGE, "utf8")).toBe(NOI_DUNG_AOI_PACKAGE_GOC);
+  });
+
+  it("★ ĐỐI CHỨNG — safeParse() cũng được nhận diện (không chỉ parse())", () => {
+    const NEO = "metaData = metaJsonSchema.parse(JSON.parse(metaContent));";
+    const viTri = NOI_DUNG_AOI_PACKAGE_GOC.indexOf(NEO);
+    expect(viTri).toBeGreaterThan(-1);
+    const maDotBien =
+      NOI_DUNG_AOI_PACKAGE_GOC.slice(0, viTri) +
+      "{ const r = metaJsonSchema.safeParse(JSON.parse(metaContent)); if (r.success) metaData = r.data; }" +
+      NOI_DUNG_AOI_PACKAGE_GOC.slice(viTri + NEO.length);
+
+    expect(
+      coLoiGoiParseTrenSchema("server/routers/aoiPackageRouter.ts", maDotBien, "commit", "metaJsonSchema", {
+        tenBienRouter: TEN_BIEN_ROUTER_ZIP,
+        laTenCua: laTenCuaIngestZip,
+      }),
+    ).toBe(true);
+
+    expect(readFileSync(DUONG_AOI_PACKAGE, "utf8")).toBe(NOI_DUNG_AOI_PACKAGE_GOC);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// §0b2 — ★★★ Pha 1F Task 8 (I-3) — GHIM chống PHÌNH sổ miễn AST-level. Đo được
+// TRƯỚC bản sửa này: `CUA_TOI_TEN_SCHEMA` map một cửa tới `[]` (mảng RỖNG) để
+// nói "cửa này KHÔNG bị buộc kiểm ở .input()" (hôm nay chỉ `commit`, vì
+// metaJsonSchema chỉ được parse TRONG thân .mutation(), không phải .input()).
+// §0b/§1 chỉ so bằng `new Set(Object.values(...).flat())` — flatten một mảng
+// RỖNG KHÔNG đổi kích thước tập hợp, nên thêm MỘT cửa miễn MỚI (`{ten: []}`)
+// không đổi `tenSchemaMongDoi.size` (vẫn 6) và trôi qua §0b/§1 im lặng — đo
+// được: thêm `submitProcessResultBatch: []` làm số cửa miễn 1→2 mà
+// `expect(size).toBe(6)` VẪN PASS. Cùng kỹ thuật GHIM_MIEN_TRU của
+// `cuaIngestCensus.test.ts` (danh sách TÊN cụ thể, so bằng `.toEqual` — không
+// chỉ đếm kích thước một tập đã bị nén).
+// ════════════════════════════════════════════════════════════════════════════
+describe("§0b2 — ★★★ GHIM chống phình sổ miễn AST-level (CUA_TOI_TEN_SCHEMA ánh xạ tới [])", () => {
+  it("đúng TẬP TÊN cửa map tới [] (không bị buộc kiểm .input()) — thêm/bớt một cửa vào tập này là một LỜI KHAI, không phải một ô trống vô hại (flatten không bắt được)", () => {
+    const cuaMienAstLevel = Object.entries(CUA_TOI_TEN_SCHEMA)
+      .filter(([, danhSachSchema]) => danhSachSchema.length === 0)
+      .map(([ten]) => ten)
+      .sort();
+    expect(
+      cuaMienAstLevel,
+      "tập cửa miễn kiểm AST-level (map tới []) đã đổi — nếu bạn vừa THÊM một cửa vào đây để né §0c, " +
+        "đây chính là lưới được dựng ra để bắt điều đó (§0b/§1 flatten-size không bắt được vì mảng rỗng " +
+        "không đổi kích thước tập hợp).",
+    ).toEqual(["commit"]);
   });
 });
 

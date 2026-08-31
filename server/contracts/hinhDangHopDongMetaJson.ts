@@ -42,6 +42,7 @@ import { readFileSync } from "node:fs";
 import {
   metaJsonSchema,
   laLoiVinhVienDemVaoNguongDeadZip,
+  inferAoiOverallResult,
 } from "../routers/aoiPackageRouter";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -204,6 +205,22 @@ export function duongVangMat(data: unknown, duongDan: string): boolean {
  * Chỉ dùng `khangDinh` cho MỘT giá trị mà tôi có bằng chứng ĐÂY LÀ ĐÚNG
  * (hành vi đã được kiểm chứng đúng — mã sản xuất khớp ngữ nghĩa mong muốn),
  * KHÔNG BAO GIỜ dùng nó chỉ vì "hôm nay nó đang chạy vậy".
+ *
+ * ★★★ Pha 1F Task 8 (I-1) — SỬA SAU KHI ĐỘT BIẾN SỐNG BẮT ĐƯỢC: chốt cũ chỉ
+ * canh `hanhViHienTai !== hanhViDung` (BẤT ĐẲNG THỨC, hai giá trị TỰ KHAI) —
+ * người review đổi `hanhViDung` "NG"→"NTF" (sai ngữ nghĩa, "NTF" vẫn khác
+ * "OK") và cổng vẫn 49/49 XANH: không có gì đối chiếu `hanhViDung` với LUẬT
+ * THẬT, chỉ có nó khác `hanhViHienTai`. `tinhHanhViDung` đóng đúng lỗ đó —
+ * một hàm THUẦN, PHẢI tái dùng một hàm suy verdict production THẬT đã export
+ * (`inferAoiOverallResult`, KHÔNG viết công thức ưu tiên NG>NTF>OK một bản
+ * chép tay thứ hai) cho phần CỘNG DỒN/ƯU TIÊN — chỉ được viết logic CỤC BỘ
+ * cho đúng PHẦN bị bug bỏ sót (ví dụ BG-77: gộp CẢ HAI mảng thay vì chọn MỘT
+ * theo độ rỗng). Bắt buộc ở TẦNG KIỂU (không phải optional) — một
+ * `ghiNhanNoDaDuyet` MỚI không có `tinhHanhViDung` không qua được
+ * `npm run check`, không chỉ "quên" một dòng lưới. `hinhDangHopDongMetaJson.test.ts`
+ * §4 gọi `tinhHanhViDung(meta)` và so với `hanhViDung` khai — lệch ⇒ ĐỎ, cộng
+ * một ca tự-kiểm chống "hàm trả hằng số nguỵ trang" (biến thể `meta` KHÔNG
+ * NG/NTF nào phải luôn tính ra "OK", cùng hợp đồng `inferAoiOverallResult`).
  */
 export type KyVongOverallResult =
   | { dang: "khangDinh"; overallResult: "OK" | "NG" | "NTF" }
@@ -211,12 +228,21 @@ export type KyVongOverallResult =
       dang: "ghiNhanNoDaDuyet";
       /** Giá trị cổng ĐO ĐƯỢC hôm nay — cổng so khớp cái NÀY (giữ xanh). */
       hanhViHienTai: "OK" | "NG" | "NTF";
-      /** Giá trị ĐÚNG theo ngữ nghĩa — KHÔNG dùng để assert, chỉ để khai rõ khoảng cách. */
+      /** Giá trị ĐÚNG theo ngữ nghĩa — KHÔNG dùng để assert TRỰC TIẾP, nhưng
+       *  PHẢI khớp `tinhHanhViDung(meta)` (lưới `hinhDangHopDongMetaJson.test.ts`
+       *  §4 canh) — không còn là một chuỗi tự khai đứng một mình. */
       hanhViDung: "OK" | "NG" | "NTF";
-      /** Mã backlog theo dõi nợ này — dạng "BG-NN", ví dụ "BG-77". */
+      /** Mã backlog theo dõi nợ này — dạng "BG-NN", ví dụ "BG-77". PHẢI trỏ một
+       *  mục CÓ THẬT trong `docs/superpowers/specs/2026-08-31-aoi-backlog-toan-canh.md`
+       *  (lưới canh bằng cách đọc + phân tích tệp đó, không chỉ khớp regex hình
+       *  dạng chuỗi — "BG-9999" khớp regex nhưng KHÔNG tồn tại trong tài liệu ⇒ ĐỎ). */
       maBacklog: string;
       /** Ai/ở đâu đã duyệt treo nợ này — một câu, trích dẫn được. */
       lyDoDuyet: string;
+      /** ★★★ Hàm THUẦN tính `hanhViDung` từ CHÍNH `meta` bằng LUẬT THẬT — xem
+       *  khối chú thích lớn phía trên `KyVongOverallResult`. Đây là bằng chứng
+       *  "đây là đúng theo tính toán", thay cho một chuỗi người viết tự khai. */
+      tinhHanhViDung: (meta: Record<string, unknown>) => "OK" | "NG" | "NTF";
     };
 
 /** Giá trị cổng THẬT SỰ phải đo được HÔM NAY (dùng để `expect(...).toBe(...)`).
@@ -348,6 +374,24 @@ export const BANG_HINH_DANG: readonly HinhDangMetaJson[] = [
         hanhViDung: "NG",
         maBacklog: "BG-77",
         lyDoDuyet: "docs/superpowers/specs/2026-08-31-aoi-backlog-toan-canh.md §3 + plan Pha 1F 'Còn mở sau Pha 1F: … BG-77'",
+        // ★★★ I-1 — luật ĐÚNG cho BG-77: gộp CẢ HAI mảng `measurements`/`points`
+        // (bug thật là `measurements[] || points[]` chỉ chọn MỘT theo độ rỗng,
+        // KHÔNG phải "measurements luôn thắng") rồi áp CÙNG công thức ưu tiên
+        // production (`inferAoiOverallResult`, worse-wins NG>NTF>OK) — không
+        // chép tay một bản thứ hai của luật ưu tiên đó.
+        tinhHanhViDung: (meta) => {
+          const m = meta as {
+            measurements?: Array<{ result?: string }>;
+            points?: Array<{ result?: string }>;
+            overallResult?: "OK" | "NG" | "NTF";
+          };
+          const gopDung = [...(m.measurements ?? []), ...(m.points ?? [])];
+          return inferAoiOverallResult({
+            explicitResult: m.overallResult ?? null,
+            ngCount: gopDung.filter((p) => p.result === "NG").length,
+            ntfCount: gopDung.filter((p) => p.result === "NTF").length,
+          });
+        },
       },
       tongDiem: 0, ok: 0, ng: 0,
     },
