@@ -254,11 +254,15 @@ describe("CASE #8 — serial-collision soft detect (QĐ#3)", () => {
 // ════════════════════════════════════════════════════════════════════════════
 // Task 3 (BG-89, 2026-09-02) — `db.createAuditLog` nay CŨNG được gọi bởi tín hiệu ĐẾM
 // hình dạng ingest (`ghiTinHieuHinhDangIngest`, action `ingest_shape_legacy`/`ingest_shape_v2`)
-// — MỘT tín hiệu ĐỘC LẬP, KHÔNG gated bởi `INGEST_REQUEST_AUDIT_ENABLED`, ghi ở `.input()`
-// TRƯỚC `auditInspectionSubmission` (ghi trong thân `.mutation()`, action
-// `machine.inspection.submit`). Từ đây, `db.createAuditLog` không còn là "chỉ §5.6 gọi" — ba ca
-// dưới đây LỌC theo `action` để tiếp tục canh ĐÚNG mệnh đề của MÌNH (§5.6), không lẫn với tín
-// hiệu ĐẾM hình dạng của Task 3 (canh riêng ở `dangKyTinHieuHinhDangIngestBg89.test.ts`).
+// — MỘT tín hiệu ĐỘC LẬP, KHÔNG gated bởi `INGEST_REQUEST_AUDIT_ENABLED`. Từ đây,
+// `db.createAuditLog` không còn là "chỉ §5.6 gọi" — ba ca dưới đây LỌC theo `action` để tiếp tục
+// canh ĐÚNG mệnh đề của MÌNH (§5.6), không lẫn với tín hiệu ĐẾM hình dạng của Task 3 (canh riêng
+// ở `dangKyTinHieuHinhDangIngestBg89.test.ts`).
+// ★ CẬP NHẬT (I-4, review lượt 8, 2026-08-31): tín hiệu đếm KHÔNG còn ghi ở `.input()` nữa —
+// nó ghi trong thân `.mutation()`, NGAY SAU `authenticateMachine` thành công (ghi trước xác thực
+// là mở một đường ghi WORM cho người gọi chưa xác thực). Nó vẫn ghi TRƯỚC
+// `auditInspectionSubmission` (action `machine.inspection.submit`), nên phép LỌC theo `action`
+// của ba ca dưới đây vẫn là thứ giữ chúng nói đúng về §5.6.
 function goiAuditTheoHanhDong(hanhDong: string) {
   return (db.createAuditLog as ReturnType<typeof vi.fn>).mock.calls.filter(([arg]) => arg?.action === hanhDong);
 }

@@ -155,3 +155,50 @@ Tôi đo `audit_logs` ra `ingest_shape_legacy=93 · ingest_shape_v2=18` rồi kh
 ⚠ Ràng buộc Đ-27 mạnh thêm: điều kiện cắt của §7 (*"về 0 ở mọi cửa"*) hiện **chưa có phép đo nào chạm tới** — không phải "gần đạt".
 
 **Còn mở sau pha này:** BG-39 gđ2 (gác cửa ZIP) · Đ-19 + **Khối B** · BG-36 · BG-70/71/74/75/77/83/90/93…99 · §6 giao thức version · §3.6 dọn mồ côi · **Khối C** · **Khối D**.
+
+---
+
+## Đ-29 — số đếm ĐỨNG TRÊN một bảng mà người NGOÀI ghi được (I-4, review lượt 8)
+
+Đ-27 hỏi *"tín hiệu có phủ hết cửa không?"*, Đ-28 hỏi *"con số nói về tập nào?"*. Cả hai đều
+là câu hỏi về **PHẠM VI**. Câu thứ ba, không ai hỏi cho tới review lượt 8:
+
+> **Ai được phép viết vào chỗ chứa con số, và ai dọn được nó?**
+
+**Đo được (trước bản vá):** `ghiTinHieuHinhDangIngest` gọi từ `quyetDinhPhienBanIngest`, hàm này
+chạy trong `.transform()` của `.input()` — tRPC parse `.input()` **trước** thân `.mutation()`, nơi
+`authenticateMachine` mới chạy; `submitInspection`/`submitInspectionBatch` đều là
+`publicProcedure`. Chính lưới BG-89 chứng minh điều đó: **4/9 ca dùng "credential GIẢ"** và vẫn
+**đòi** hàng được ghi. Quyền của `avi_app` trên `audit_logs` (đo `information_schema.
+role_table_grants`, `current_user='avi_app'`) = **`INSERT`, `SELECT`** — WORM, mig `0224`.
+
+⇒ Ba hệ quả, không cái nào là suy đoán:
+1. `entityName` là **lời máy tự khai chưa xác thực** ⇒ con số **giả mạo được** ⇒ nó không trả lời
+   được đúng câu nó sinh ra để trả lời;
+2. một người gọi **không có credential nào** ghi được số hàng **không giới hạn** vào một bảng
+   **ứng dụng không dọn được**;
+3. trần tốc độ HTTP khoá theo credential đọc từ **BODY** và chỉ kiểm **CÓ MẶT**, không kiểm
+   **HỢP LỆ** ⇒ xoay vòng credential giả là bỏ qua trần.
+
+**Bản vá (2026-08-31):** `quyetDinhPhienBanIngest` trở lại **THUẦN** — một vị từ trả lời một câu
+hỏi, không kèm ghi sổ. Điểm ghi dời vào **thân `.mutation()`, NGAY SAU `authenticateMachine`
+thành công** (và sau `enforceMachineIngestRateLimit`, khoá theo `keyId`/`machine.id` ĐÃ XÁC THỰC),
+ở **ba** nơi: hai nhánh của `submitInspection` + `submitInspectionBatch`. `entityName` nay là
+`machines.code` đọc từ CSDL, `entityId` là FK máy thật. Hình dạng dùng là **giá trị
+`quyetDinhPhienBanIngest` TRẢ VỀ** mang xuống nguyên vẹn — không suy lại lần hai
+(`submitInspectionBatchRouterInputSchema` nay trả `{hinhDangIngest, duLieu}`).
+
+**Đánh đổi, khai rõ vì nó làm con số NHỎ ĐI:** lượt hỏng xác thực, lượt hỏng zod, lượt v1.x bị
+`loiMayChuaNangCap` từ chối khi **cờ BẬT** (ném trong `.input()`, trước xác thực), và lượt bị đệm
+vào WAL vì CSDL sập (kể cả khi phát lại) — **không** được đếm. Docblock cũ khai ngược lại
+("★ GHI Ở CẢ HAI TRẠNG THÁI CỜ") và câu đó **đã bị xoá**, không để lại làm bẫy. Chấp nhận được vì
+câu hỏi này được hỏi để **quyết định có bật cờ hay không**, tức khi cờ còn TẮT (mặc định hôm nay);
+và một máy chưa xác thực không phải một MÁY THẬT. `§B`/`§C` của
+`dangKyTinHieuHinhDangIngestBg89.test.ts` ghim **cả hai chiều** bằng SELECT thật.
+
+**Chưa đóng:** tăng trưởng dài hạn của `audit_logs` — **BG-93** (partition + vai riêng có
+`DELETE`; ⚠ **không** cấp `DELETE` cho `avi_app`, **không** viết `DELETE` từ mã ứng dụng).
+
+⚠ Ràng buộc Đ-27/Đ-28 **giữ nguyên** và nay có thêm một vế: con số cũ (`legacy=93`) không chỉ
+thiếu cửa ZIP và không chỉ là lưu lượng test — nó còn **ghi được bởi bất kỳ ai**. Mọi hàng
+`ingest_shape_*` có TRƯỚC bản vá này phải bị coi là **không xác thực nguồn gốc**.

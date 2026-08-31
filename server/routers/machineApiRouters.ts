@@ -1391,6 +1391,14 @@ export async function processInspectionSubmission(
     // Doc 51 P3 batch-1 — skip the per-item machine-heartbeat write. The batch
     // path stamps the heartbeat ONCE (200 boards ⇒ 1 heartbeat write, not 200).
     skipHeartbeat?: boolean;
+    // ★★★ I-4 (review lượt 8) — móc chạy NGAY SAU khi danh tính máy đã được XÁC THỰC (và sau
+    // trần tốc độ, nếu bật). Sinh ra cho ĐÚNG một việc: cửa `submitInspection` ghi tín hiệu ĐẾM
+    // hình dạng ingest (`ghiTinHieuHinhDangIngest`) mà KHÔNG phải xác thực lần thứ hai chỉ để
+    // biết mình đang nói về máy nào. ⚠ CỐ Ý không có nơi gọi nào khác truyền móc này: đường
+    // BATCH tự đếm MỘT lần ở cấp request (không phải per-item), và đường PHÁT LẠI từ WAL không
+    // đếm (phát lại không phải một lượt gửi MỚI). Đồng bộ, không await — xem docblock
+    // `ghiTinHieuHinhDangIngest`.
+    sauXacThuc?: (auth: MachineAuthResult) => void;
   },
 ): Promise<{ success: true; inspectionId: number; duplicate?: boolean }> {
       // Validate machine — per-machine scoped key (Authorization header or apiKey
@@ -1408,6 +1416,9 @@ export async function processInspectionSubmission(
       // and the batch path enforces the limit itself — once PER inspection —
       // before dispatching each item, so it never double-counts here).
       if (opts?.rateLimit) enforceMachineIngestRateLimit(auth);
+      // ★★★ I-4 — danh tính máy nay là THẬT (đã tra CSDL, đã qua scope check) và lượt gọi đã
+      // trả token trần tốc độ. Đây là khoảnh khắc SỚM NHẤT mà một lượt ghi sổ đếm là hợp lệ.
+      opts?.sauXacThuc?.(auth);
 
       // ══ 2026-08-18 — MÃ TENANT SUY TỪ MÁY, KHÔNG LẤY TỪ JSON ═══════════════
       // Đặt NGAY ĐÂY, trước mọi tác dụng phụ (heartbeat, biến thể, commissioning):
@@ -3339,55 +3350,70 @@ const ingestShapeSignalGhiDangBay = new Set<Promise<unknown>>();
  * FROM avi_app`, drizzle/0224_avi_app_least_privilege_worm.sql:64) — một tác dụng phụ TỐT cho
  * một sổ đếm: không ai (kể cả một bug ở nơi khác) xoá/sửa được hàng đã ghi bằng vai ứng dụng.
  *
- * VÌ SAO GHI Ở ĐÂY, KHÔNG PHẢI Ở NƠI GỌI (`submitInspection`/`submitInspectionBatch`):
- * `quyetDinhPhienBanIngest` là MỘT điểm quyết định DÙNG CHUNG (xem docblock hàm đó) — gắn tín
- * hiệu ngay tại đây tự động phủ CẢ HAI cửa đã gác hôm nay, và bất kỳ cửa nào nối vào đây trong
- * tương lai (vd `commit` nếu BG-39 gđ2 được vá) sẽ được đếm MIỄN PHÍ mà không cần sửa lại điểm
- * ghi — đúng bài học `cuaIngestScan.ts` đã ghi: cắt/đếm mà quên một cửa thì không phải cắt/đếm.
+ * ⚠⚠⚠ ĐIỂM GHI ĐÃ DỜI (I-4, review lượt 8, 2026-08-31) — ĐỌC TRƯỚC KHI DỜI LẠI.
+ * Bản đầu gọi hàm này TỪ `quyetDinhPhienBanIngest`, tức trong `.transform()` của `.input()`,
+ * tức **TRƯỚC** `authenticateMachine` (xác thực nằm trong thân `.mutation()`); cả hai cửa ingest
+ * là `publicProcedure`. Lý lẽ khi ấy — "một điểm quyết định dùng chung phủ mọi cửa MIỄN PHÍ" —
+ * đúng về mặt PHỦ, nhưng nó mua cái phủ đó bằng ba thứ ĐO ĐƯỢC:
+ *   (a) `entityName` là LỜI MÁY TỰ KHAI chưa xác thực ⇒ số đếm GIẢ MẠO ĐƯỢC ⇒ nó không trả lời
+ *       được đúng câu nó sinh ra để trả lời ("còn bao nhiêu MÁY THẬT gửi hình dạng cũ?");
+ *   (b) người gọi KHÔNG CÓ credential nào ghi được số hàng KHÔNG GIỚI HẠN vào `audit_logs` —
+ *       bảng WORM cho vai `avi_app` (mig 0224) ⇒ **ứng dụng không dọn được** hàng nào đã ghi;
+ *   (c) chuỗi tự khai > 255 ký tự làm INSERT ném `22001` và bị `.catch()` nuốt ⇒ đếm HỤT đúng
+ *       những payload dị dạng nhất.
+ * Nay hàm nhận MÁY ĐÃ XÁC THỰC và chỉ được gọi từ trong thân `.mutation()`, NGAY SAU
+ * `authenticateMachine` thành công. `entityName` là `machines.code` đọc từ CSDL (không phải lời
+ * khai), `entityId` là FK máy thật ⇒ (a) và (c) đóng theo CẤU TẠO. (b) đóng vì không có
+ * credential hợp lệ thì không có hàng nào.
  *
- * ★ GHI Ở CẢ HAI TRẠNG THÁI CỜ: hàm gọi CHỖ NÀY (xem `quyetDinhPhienBanIngest` bên dưới) TRƯỚC
- * khi biết có ném `loiMayChuaNangCap` hay không — một máy cũ vẫn được ĐẾM dù bị TỪ CHỐI (cờ BẬT)
- * hay được NHẬN (cờ TẮT, mặc định hôm nay). Nếu chỉ đếm nhánh "được nhận", câu hỏi "còn bao
- * nhiêu máy gửi hình dạng cũ?" sẽ CÂM đúng lúc cờ bật — đúng lúc câu trả lời cần THẬT nhất.
+ * ★ ĐÁNH ĐỔI KHAI RÕ — cái MẤT khi dời: lượt hỏng XÁC THỰC, lượt hỏng ZOD, và lượt v1.x bị
+ * `loiMayChuaNangCap` TỪ CHỐI khi cờ `INGEST_REJECT_LEGACY_MACHINE_ENABLED` BẬT (phép từ chối
+ * ném trong `.input()`, trước xác thực) nay **KHÔNG** được đếm. Bản trước khai ngược lại
+ * ("★ GHI Ở CẢ HAI TRẠNG THÁI CỜ") — câu đó nay SAI và đã bị xoá, không để lại làm bẫy cho
+ * người đọc sau. Chấp nhận được vì câu hỏi này được hỏi để QUYẾT ĐỊNH có bật cờ hay không, tức
+ * khi cờ còn TẮT (mặc định hôm nay); và một máy chưa xác thực không phải một MÁY THẬT.
+ * ⚠ Còn mất một thứ nữa, khai luôn: lượt ingest bị đệm vào WAL vì CSDL sập (xác thực cũng cần
+ * CSDL nên nó hỏng TRƯỚC) không được đếm, và lượt PHÁT LẠI từ WAL cũng không (backfill gọi
+ * `processInspectionSubmission` KHÔNG kèm `sauXacThuc`) — cố ý: phát lại không phải một lượt
+ * gửi MỚI, đếm nó là đếm hai lần cùng một bo.
+ * `§C`/`§B` của `dangKyTinHieuHinhDangIngestBg89.test.ts` GHIM cả hai chiều bằng SELECT thật.
  *
- * ★ FIRE-AND-FORGET có chủ đích, KHÔNG await: `quyetDinhPhienBanIngest` là điểm quyết định
- * ĐỒNG BỘ dùng trong `.transform()` của MỌI schema `.input()` ingest hôm nay — biến nó thành
- * async sẽ đổi kiểu trả về của hai schema `.input()` liên quan, kéo theo rủi ro hồi quy trên
- * ~20 file test đang gọi `submitInspection`/`submitInspectionBatch` qua router thật. Một lượt
- * ghi tín hiệu ĐẾM chậm/lỗi KHÔNG được phép làm chậm/rớt một lượt ingest THẬT — cùng nguyên tắc
+ * ★ TRẦN TĂNG TRƯỞNG: điểm gọi của `submitInspection` nằm SAU `enforceMachineIngestRateLimit`
+ * (khoá theo `keyId`/`machine.id` ĐÃ XÁC THỰC — machineAuthService.ts), nên số hàng ghi được
+ * bị chặn bởi đúng trần ingest per-máy, KHÔNG còn bởi một trần đọc credential từ BODY mà chỉ
+ * kiểm CÓ MẶT (`rateLimitConfig.credentialKey`) — xoay vòng credential giả nay không ghi được
+ * hàng nào. `submitInspectionBatch` ghi MỘT hàng cho CẢ batch (trần per-item nằm trong vòng lặp).
+ * ⚠ Vẫn CHƯA có retention/partition cho `audit_logs` — nợ **BG-93**, xem backlog toàn cảnh §3.
+ *
+ * ★ FIRE-AND-FORGET có chủ đích, KHÔNG await: một lượt ghi tín hiệu ĐẾM chậm/lỗi KHÔNG được
+ * phép làm chậm/rớt một lượt ingest THẬT — cùng nguyên tắc
  * `void backfillInspections().catch(() => undefined)` đã dùng trong chính file này.
- *
- * KHÔNG TỰ TRA CỨU DANH TÍNH MÁY: hàm này chạy TRƯỚC `authenticateMachine` (xác thực nằm trong
- * thân `.mutation()`, sau khi `.input()` đã parse xong) — cố tình KHÔNG tự thêm một lượt tra
- * CSDL ở đây (thêm round-trip vào đường quyết định phiên bản, có thể lệch với xác thực THẬT
- * ngay sau đó). Định danh ghi lại là LỜI MÁY TỰ KHAI (`machineCode` cho v1.x, `identity.machine`
- * cho v2.0) — đủ để người vận hành lọc theo tên máy, KHÔNG phải một FK đã xác thực.
  *
  * KHÔNG NÉM RA NGOÀI: `logCrudOperation` tự bọc try/catch (auditTrailService.ts) và trả
  * `{id:-1}` khi CSDL lỗi/không sẵn sàng — một tín hiệu đếm mất không được phép làm rớt một lượt
  * ingest THẬT. `.catch()` ở đây là lớp phòng thủ THỨ HAI (vd CSDL bị mock thiếu `createAuditLog`
  * trong các test file mock `../db` toàn phần — ném `TypeError` đồng bộ NGAY TRONG try của
  * `logCrudOperation`, vẫn bị bắt ở đó, `.catch()` này chỉ chặn phần còn sót nếu có).
+ *
+ * @param hinhDang HÌNH DẠNG **ĐÃ QUYẾT ĐỊNH** bởi `quyetDinhPhienBanIngest` và mang tới đây
+ *   nguyên vẹn (`parsedInput.kind` / `hinhDangIngest`). ⚠ ĐỪNG suy lại bằng `laHinhDangCayV2`
+ *   ở đây: một nguồn sự thật thứ hai là cách hai con số bắt đầu lệch nhau mà không ai biết.
+ * @param may Máy **ĐÃ XÁC THỰC** (`auth.machine`) — nguồn DUY NHẤT của `entityName`/`entityId`.
+ * @param schemaVersionKhai `schemaVersion` máy khai, lấy từ payload **ĐÃ QUA ZOD** (bị hợp đồng
+ *   chặn độ dài), giữ lại vì nó là một phần của thứ đang được đếm.
  */
-function ghiTinHieuHinhDangIngest(hinhDang: "v1" | "v2", raw: unknown): void {
-  const r = raw !== null && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const machineCode =
-    typeof r.machineCode === "string" && r.machineCode.trim() !== "" ? r.machineCode : undefined;
-  const identity =
-    r.identity !== null && typeof r.identity === "object" ? (r.identity as Record<string, unknown>) : undefined;
-  const identityMachine =
-    identity && typeof identity.machine === "string" && identity.machine.trim() !== ""
-      ? identity.machine
-      : undefined;
-  const tenMayTuKhai = machineCode ?? identityMachine ?? "(máy không khai machineCode/identity.machine)";
-  const schemaVersionKhai = typeof r.schemaVersion === "string" ? r.schemaVersion : null;
-
+function ghiTinHieuHinhDangIngest(
+  hinhDang: "v1" | "v2",
+  may: { id: number; code: string },
+  schemaVersionKhai: string | null,
+): void {
   const luot = logCrudOperation(
     { source: "api" },
     {
       action: hinhDang === "v2" ? AUDIT_ACTIONS.INGEST_SHAPE_V2 : AUDIT_ACTIONS.INGEST_SHAPE_LEGACY,
       entityType: ENTITY_TYPES.MACHINE,
-      entityName: tenMayTuKhai,
+      entityId: may.id,
+      entityName: may.code,
       details: {
         operation: hinhDang === "v2" ? "INGEST_SHAPE_V2" : "INGEST_SHAPE_LEGACY",
         metadata: {
@@ -3441,13 +3467,18 @@ export async function choTinHieuHinhDangIngestGhiXong(): Promise<void> {
  * dữ liệu kiểm tra từ máy (`submit*`/`sync*Result*`) hoặc gọi được tới hàm này, hoặc có tên trong
  * `MIEN_TRU_QUYET_DINH_PHIEN_BAN` kèm lý do — không cửa nào được im lặng đứng ngoài cả hai.
  *
- * ★★★ Việc 1 (BG-89) — TRƯỚC khi quyết định NHẬN/TỪ CHỐI, gọi `ghiTinHieuHinhDangIngest` (đếm
- * cả hai hình dạng, ở CẢ HAI trạng thái cờ — xem docblock hàm đó). Đặt TRƯỚC nhánh `throw` để một
- * máy cũ bị từ chối (cờ BẬT) vẫn được ĐẾM, không chỉ máy cũ được nhận (cờ TẮT).
+ * ★★★ HÀM NÀY THUẦN — MỘT vị từ trả lời MỘT câu hỏi ("payload này hình dạng nào, và có được
+ * nhận không?"), KHÔNG kèm tác dụng phụ nào. Việc 1 (BG-89) từng gắn `ghiTinHieuHinhDangIngest`
+ * ngay tại đây; I-4 (review lượt 8) đã DỜI nó ra: hàm này chạy trong `.transform()` của
+ * `.input()`, tức TRƯỚC `authenticateMachine`, nên mọi lượt ghi CSDL đặt ở đây là một lượt ghi
+ * CHƯA XÁC THỰC vào bảng `audit_logs` **WORM** (mig 0224 — `avi_app` không có DELETE). Điểm ghi
+ * nay nằm trong thân `.mutation()` của hai cửa ingest, NGAY SAU xác thực thành công; hình dạng
+ * mà nơi ghi dùng là ĐÚNG GIÁ TRỊ hàm này TRẢ VỀ, không suy lại lần hai.
+ * ⚠ Ai muốn thêm tác dụng phụ vào đây phải trả lời trước: nó chạy cho người gọi CHƯA XÁC THỰC
+ * nào? `dangKyTinHieuHinhDangIngestBg89.test.ts` §D canh sự THUẦN này và sẽ ĐỎ.
  */
 function quyetDinhPhienBanIngest(raw: unknown): "v2" | "v1" {
   const laCay = laHinhDangCayV2(raw);
-  ghiTinHieuHinhDangIngest(laCay ? "v2" : "v1", raw);
   if (laCay) return "v2";
   if (ingestRejectLegacyMachineEnabled()) {
     const declared =
@@ -3541,10 +3572,19 @@ const submitInspectionRouterInputSchema = z.unknown().transform((raw): SubmitIns
  * phân loại TRANSIENT và bị đệm vào WAL rồi thử lại MÃI MÃI thay vì bị từ chối thẳng. Đặt ở
  * `.input()` cho lỗi thoát qua đúng đường `createInputMiddleware` → `TRPCError(BAD_REQUEST)` —
  * CÙNG cơ chế, CÙNG loại lỗi với `submitInspection`.
+ *
+ * ★★★ I-4 — transform nay TRẢ VỀ hình dạng đã quyết định kèm dữ liệu đã parse
+ * (`{hinhDangIngest, duLieu}`) thay vì vứt giá trị trả về đi. Thân `.mutation()` cần biết hình
+ * dạng để ghi tín hiệu ĐẾM sau khi xác thực xong, và nó phải dùng LẠI quyết định này chứ không
+ * gọi `laHinhDangCayV2` lần thứ hai — hai nguồn sự thật là cách hai con số bắt đầu lệch nhau.
+ * Chữ ký client-facing KHÔNG đổi (`.input()` vẫn nhận `unknown`); chỉ kiểu ĐẦU RA nội bộ đổi,
+ * và nó chỉ có đúng một hộ tiêu thụ ngay bên dưới.
+ * ⚠ Thứ tự định trị giữ NGUYÊN: `quyetDinhPhienBanIngest` (có thể ném `loiMayChuaNangCap`) chạy
+ * TRƯỚC `.parse()`, đúng như trước bản vá.
  */
 const submitInspectionBatchRouterInputSchema = z.unknown().transform((raw) => {
-  quyetDinhPhienBanIngest(raw);
-  return submitInspectionBatchInputSchema.parse(raw);
+  const hinhDangIngest = quyetDinhPhienBanIngest(raw);
+  return { hinhDangIngest, duLieu: submitInspectionBatchInputSchema.parse(raw) };
 });
 
 /**
@@ -3571,7 +3611,10 @@ const submitInspectionBatchRouterInputSchema = z.unknown().transform((raw) => {
  */
 async function submitInspectionTreeV2(
   payload: MachinePayloadV2,
-  opts: { headerKey?: string | null },
+  // `sauXacThuc`: xem docblock cùng tên ở `processInspectionSubmission` — cùng mục đích, cùng
+  // vị trí gọi (sau xác thực + sau trần tốc độ), để nhánh v2.0 và nhánh v1.x đếm ở ĐÚNG một
+  // khoảnh khắc như nhau.
+  opts: { headerKey?: string | null; sauXacThuc?: (auth: MachineAuthResult) => void },
 ): Promise<{ success: true; inspectionId: number; duplicate?: boolean }> {
   const auth = await authenticateMachine({
     apiKey: payload.apiKey,
@@ -3580,6 +3623,7 @@ async function submitInspectionTreeV2(
   });
   const machine = auth.machine;
   enforceMachineIngestRateLimit(auth);
+  opts.sauXacThuc?.(auth);
 
   // Mã tenant SUY từ máy đã xác thực (★★★ 2026-08-18) — hợp đồng v2.0 không mang
   // companyCode/factoryCode/workshopCode/lineCode để đối chiếu (khác v1.x), nên `khai`
@@ -3675,7 +3719,15 @@ export const machineApiRouter = router({
       if (parsedInput.kind === "v2") {
         const v2Payload = parsedInput.data;
         try {
-          const result = await submitInspectionTreeV2(v2Payload, { headerKey });
+          const result = await submitInspectionTreeV2(v2Payload, {
+            headerKey,
+            // ★★★ Việc 1 (BG-89) + I-4 — tín hiệu ĐẾM hình dạng ingest, ghi NGAY SAU
+            // `authenticateMachine` thành công (móc `sauXacThuc`), KHÔNG ở `.input()` nữa.
+            // Hình dạng dùng là `parsedInput.kind` — ĐÚNG giá trị `quyetDinhPhienBanIngest`
+            // đã quyết định, không suy lại.
+            sauXacThuc: (auth) =>
+              ghiTinHieuHinhDangIngest(parsedInput.kind, auth.machine, v2Payload.schemaVersion),
+          });
           // Doc 2026-08-29 (WAL cho cây v2.0, Task 2) — ĐỐI XỨNG với nhánh v1.x bên dưới
           // (dòng ~markSubmissionApplied(computeSubmissionKey(walPayload))): ledger THÀNH
           // CÔNG live để một bản SAO đang nằm trong hàng đợi (payload gửi lại trước khi DB
@@ -3752,7 +3804,15 @@ export const machineApiRouter = router({
         apiKey: payload.apiKey ?? headerKey ?? undefined,
       };
       try {
-        const result = await processInspectionSubmission(payload, { headerKey, rateLimit: true });
+        const result = await processInspectionSubmission(payload, {
+          headerKey,
+          rateLimit: true,
+          // ★★★ Việc 1 (BG-89) + I-4 — xem nhánh v2.0 phía trên. `parsedInput.kind` ở đây là
+          // "v1" (nhánh v2.0 đã `return` trước), tức ĐÚNG giá trị `quyetDinhPhienBanIngest`
+          // trả về cho payload này.
+          sauXacThuc: (auth) =>
+            ghiTinHieuHinhDangIngest(parsedInput.kind, auth.machine, input.schemaVersion ?? null),
+        });
         if (inspectionStoreForwardEnabled()) {
           // Ledger the live success so a queued duplicate of the SAME submission
           // (machine retry captured while the DB flapped) dedupes on backfill.
@@ -3810,7 +3870,10 @@ export const machineApiRouter = router({
   // ════════════════════════════════════════════════════════════════════════════
   submitInspectionBatch: publicProcedure
     .input(submitInspectionBatchRouterInputSchema)
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input: goiVao, ctx }) => {
+      // I-4 — `.input()` nay trả `{hinhDangIngest, duLieu}`; `input` bên dưới GIỮ NGUYÊN nghĩa
+      // cũ (payload batch đã parse) để phần thân không đổi một dòng nào ngoài điểm ghi tín hiệu.
+      const { hinhDangIngest, duLieu: input } = goiVao;
       const headerKey = machineHeaderKey(ctx);
       // AUTH ONCE for the whole batch (the throughput point). Throws
       // UNAUTHORIZED/FORBIDDEN or DbUnavailableError exactly like the single path;
@@ -3824,6 +3887,12 @@ export const machineApiRouter = router({
         endpoint: "submitInspectionBatch",
       });
       const machine = auth.machine;
+      // ★★★ Việc 1 (BG-89) + I-4 — tín hiệu ĐẾM hình dạng ingest: NGAY SAU xác thực thành công,
+      // MỘT hàng cho CẢ batch (không phải một hàng mỗi item — trần tốc độ per-item nằm trong
+      // `runItem` bên dưới, còn câu hỏi "máy này gửi hình dạng nào" chỉ có MỘT câu trả lời cho
+      // cả request). Hình dạng là giá trị `quyetDinhPhienBanIngest` đã quyết định ở `.input()`,
+      // mang xuống nguyên vẹn — KHÔNG suy lại từ `input`.
+      ghiTinHieuHinhDangIngest(hinhDangIngest, machine, null);
 
       // ONE heartbeat for the batch (per-item heartbeat is suppressed below).
       // Best-effort — a heartbeat write must not fail the ingest.
