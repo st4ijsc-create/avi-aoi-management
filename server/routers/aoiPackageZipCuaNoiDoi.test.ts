@@ -62,6 +62,7 @@ import * as db from "../db";
 import {
   inspectionPackages,
   packageActivityLogs,
+  packageImages,
   productInspections,
   measurementResults,
 } from "../../drizzle/schema";
@@ -91,6 +92,10 @@ afterAll(async () => {
       await d.delete(measurementResults).where(inArray(measurementResults.inspectionId, inspectionIds));
     }
     if (packageDbIds.length > 0) {
+      // I-6 (review lượt 8) — `commit` GHI LẠI `package_images` cho gói hình dạng cây.
+      // Dọn TRƯỚC `inspection_packages` (khoá ngoại mềm `packageId` → `inspection_packages.id`):
+      // xoá gói trước sẽ để lại hàng ảnh MỒ CÔI — bảng đó đã có 774 hàng như thế.
+      await d.delete(packageImages).where(inArray(packageImages.packageId, packageDbIds));
       await d.delete(packageActivityLogs).where(inArray(packageActivityLogs.packageDbId, packageDbIds));
       await d.delete(inspectionPackages).where(inArray(inspectionPackages.id, packageDbIds));
     }
