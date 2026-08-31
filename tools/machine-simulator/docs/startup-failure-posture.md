@@ -815,13 +815,14 @@ written, the population has three classes, not one:
   live-settings overwrite arm. Three lines above it the file states the silence in its own words: *"Never
   logged — none of these three are secrets, but there's no reason to echo config back into a log sink
   either."*
-* **String — 29 names.** Every one resolves through the identical `string.IsNullOrWhiteSpace(x) ? default
+* **String — 31 names.** Every one resolves through the identical `string.IsNullOrWhiteSpace(x) ? default
   : x`, so a value the operator supplied but the code cannot use is discarded to a built-in default with
-  nothing said. Sixteen relocatable roots — `ST4I_WAL_DIR`, `ST4I_SETTINGS_DIR`, `ST4I_MACHINE_CONFIG_DIR`,
+  nothing said. Eighteen relocatable roots — `ST4I_WAL_DIR`, `ST4I_SETTINGS_DIR`, `ST4I_MACHINE_CONFIG_DIR`,
   `ST4I_PRODUCTS_DIR`, `ST4I_IDENTITY_DIR`, `ST4I_CREDS_DIR`, `ST4I_SITELINK_DIR`,
   `ST4I_BRIDGE_SPOOL_DIR`, `ST4I_OPCUA_PKI_DIR`, `ST4I_ALARMS_DIR`, `ST4I_NOTIFICATIONS_DIR`,
   `ST4I_ASSETS_DIR`, `ST4I_SECURITY_DIR`, `ST4I_ECOSYSTEM_DIR`, `ST4I_CONNECTOR_CONFIG_DIR`,
-  `ST4I_HISTORIAN_DIR` — where a typo silently puts the store back under `%ProgramData%\ST4I\sim\*`; twelve
+  `ST4I_HISTORIAN_DIR`, `ST4I_HMI_MODEL_DIR`, `ST4I_HMI_TAGS_DIR` — where a typo silently puts the store
+  back under `%ProgramData%\ST4I\sim\*`; twelve
   non-root strings — `ST4I_UNS_SITE`, `ST4I_UNS_AREA`, `ST4I_UNS_LINE`, `ST4I_UNS_CELL` (the UNS topic
   address, so a blank one silently republishes every message under `site/area/line/cell`),
   `ST4I_MODBUS_HOST`, `ST4I_MODBUS_MAP`, `ST4I_OPCUA_ENDPOINT`, `ST4I_OPCUA_MAP`,
@@ -829,7 +830,16 @@ written, the population has three classes, not one:
   `ASPNETCORE_URLS`, whose test is `is null` rather than `IsNullOrWhiteSpace`, so `ASPNETCORE_URLS=""`
   silently suppresses the `http://localhost:5199` default.
 
-⇒ **At least 46 environment-variable NAMES answer to the sentence, not seventeen.**
+⇒ **At least 48 environment-variable NAMES answer to the sentence, not seventeen.**
+
+> 📎 🔴 **WS-HMI-0b Task 4, 2026-08-31 — the three counts above moved, and this is the debt the owner
+> assigned to 0b rather than parking.** Was: *"29 names … Sixteen relocatable roots … at least 46"*. Now
+> 31 / eighteen / 48, because WS-HMI-0a's `ST4I_HMI_MODEL_DIR` and `ST4I_HMI_TAGS_DIR` are relocatable
+> roots answering the same sentence and were missing from the enumeration. **This one was short by two
+> NAMES, not by a number** — the list above names every root, so an author who only edited the numeral
+> would have left a list that disagrees with its own count. That is why it was carried as an owner
+> decision rather than swept with the other ten: the other ten are numerals, and this is prose an operator
+> reads to decide which variables they may set.
 
 🔴 **AND ITEM 56's OWN "SEVENTEEN" DOES NOT SURVIVE — retracted here, by the task sent to execute it.**
 Three reasons, and the first is the one worth carrying forward: **17 = 9 + 8 adds a count of SITES to a
@@ -863,7 +873,7 @@ channel was threaded, and no behaviour changed. The delegation row for item 56 p
 is derived from the measured failure, and the measured failure here is a **domain claim narrower than the
 sentence above it** — a document defect, which a document fixes. Threading a channel would change the
 signature of five `public static` parameterless factories used at ten production call sites, and to cover
-the shape as written it would have to reach the sixteen `ST4I_*_DIR` roots, which are the subject of item
+the shape as written it would have to reach the eighteen `ST4I_*_DIR` roots, which are the subject of item
 30 — **still awaiting the owner**. So the wide fix is not available to a delegated task, and the narrow one
 would leave the domain claim exactly as short as it was. Both directions stated: nothing here loses data,
 nothing here is silent in a dangerous direction *for a valid value*, and the defaults are published.

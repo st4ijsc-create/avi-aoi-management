@@ -224,6 +224,26 @@ public sealed class RbacPolicyTests
         // GET /v1/assets/GET /v1/site above; the two mutations (create/delete) are Engineer below, same tier
         // as PUT /v1/site and PUT /v1/assets/{code}/lifecycle.
         new("/v1/connectors/configured", new[] { "GET" }, Policies.Operator),
+        // WS-HMI-0b Task 1 — the component-tree HTTP surface (HmiModelEndpoints.cs). Same tier as
+        // GET /v1/assets/GET /v1/site above: none of these four writes to a device, so Operator is enough.
+        new("/v1/components", new[] { "GET" }, Policies.Operator),
+        new("/v1/components/{machineCode}", new[] { "GET" }, Policies.Operator),
+        new("/v1/components/{machineCode}/integrity", new[] { "GET" }, Policies.Operator),
+        new("/v1/component-types", new[] { "GET" }, Policies.Operator),
+        // WS-HMI-0b Task 2 — the tag-namespace read surface (HmiTagEndpoints.cs). Same tier and the same
+        // reason as the component-tree reads directly above: reading a machine's declared tag namespace
+        // touches no device. The by-path route is a CATCH-ALL ({**path}) because a tag path contains '/';
+        // the pattern below is its RawText verbatim, so a silent change to a conventional {path} — which
+        // would 404 every multi-segment tag, i.e. every real one — moves this row and is caught here too.
+        new("/v1/tags", new[] { "GET" }, Policies.Operator),
+        new("/v1/tags/by-path/{**path}", new[] { "GET" }, Policies.Operator),
+        // WS-HMI-0b Task 3 — WS /v1/hmi/changes, the HMI change lane. Methods empty for the same reason
+        // /v1/inspector/stream's row is: a WebSocket upgrade is registered with app.Map and carries no HTTP
+        // method restriction. Operator, NOT Engineer like the inspector stream: subscribing is a read, and
+        // what it carries — a machine code and a tag count — is strictly less than GET /v1/tags?machine=
+        // already returns at Operator. Gating a notification higher than the data it points at would be a
+        // difference with no reason behind it. Nothing on this lane writes to a device, so never Admin.
+        new("/v1/hmi/changes", Array.Empty<string>(), Policies.Operator),
 
         // Engineer
         // Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — a setpoint
@@ -231,6 +251,16 @@ public sealed class RbacPolicyTests
         // but sits beside the OTHER Engineer-gated connector/config mutations (including the one that
         // declares a point writable at all — POST /v1/connectors' own save gate) rather than the lower
         // Operator tier (whose existing actions never touch a device at all).
+        // WS-HMI-0b Task 1 — the one write in the component-tree surface. Engineer, never Admin: per this
+        // task's brief, nothing in this workstream writes to a DEVICE — it declares/reads a component tree,
+        // the same tier of authority as the config-mutation routes below, not the setpoint/command routes
+        // that actually reach a machine.
+        new("/v1/components/{machineCode}", new[] { "PUT" }, Policies.Engineer),
+        // WS-HMI-0b Task 2 — the one write in the tag-namespace surface. Engineer, never Admin, for the
+        // identical reason as PUT /v1/components/{machineCode} above: declaring which tags a machine
+        // exposes is a configuration authority, not a device authority. Nothing in this workstream writes
+        // to a DEVICE — the routes that do (setpoint/command) are separately gated below.
+        new("/v1/tags/{machineCode}", new[] { "PUT" }, Policies.Engineer),
         new("/v1/machines/{code}/setpoint", new[] { "POST" }, Policies.Engineer),
         new("/v1/machines/{code}/sync-config", new[] { "POST" }, Policies.Engineer),
         new("/v1/mode", new[] { "PUT" }, Policies.Engineer),

@@ -27,7 +27,23 @@
   resolves IComponentModelStore or ITagNamespaceStore, because no endpoint exists until WS-HMI-0b. A
   running engine at this commit therefore never constructs either store and neither directory is created.
   The honest form: DECLARED AND REGISTERED; CREATED ON FIRST RESOLUTION, WHICH NO ENDPOINT PERFORMS UNTIL
-  WS-HMI-0b. SIXTEEN of the eighteen are what a running engine actually creates today.
+  WS-HMI-0b.
+
+  WS-HMI-0b TASK 4, 2026-08-31 - THAT RESOLUTION NOW HAPPENS, and the paragraph above is kept verbatim
+  because its MECHANISM is still exactly right; only its "no endpoint exists" precondition expired.
+  WS-HMI-0b's HmiModelEndpoints/HmiTagEndpoints take IComponentModelStore/ITagNamespaceStore as handler
+  parameters, so ASP.NET resolves both seams and both stores get constructed. EIGHTEEN of the eighteen are
+  created by a running engine now - but EACH on the FIRST REQUEST TO A ROUTE THAT RESOLVES THAT STORE,
+  never at startup, and never as a pair. The two are INDEPENDENT lazy factories (no ValidateOnBuild, no
+  eager construction): /v1/components* and /v1/component-types create hmi-model; /v1/tags* creates
+  hmi-tags; PUT /v1/components/{code} and GET /v1/components/{code}/integrity create both, because they
+  read the tag namespace to report referential integrity.
+
+  WHAT THAT MEANS FOR AN OPERATOR STANDING AT A MACHINE, which is the only reason this paragraph is here:
+  finding ONE of these two directories absent is NORMAL. A host that has served tag traffic and no
+  component traffic has hmi-tags and no hmi-model, and that is a correctly working install that was never
+  asked the other question - not a partial deployment and not a fault. An absent directory here is an
+  unasked engine.
 
   WHY THIS SCRIPT STILL LISTS ALL EIGHTEEN, and why that is not a contradiction: a purge tool has to
   cover what MAY exist, not what must. Both leaves are relocatable, both are purged IF PRESENT, and every
@@ -277,7 +293,7 @@
       ONE population. The beside-the-binary population is empty, and PerHostDataRootsTests pins it at
       exactly zero rather than merely quantifying over it.
   What SURVIVES unretracted is the shape of the warning, in a new subject: this script still reads only
-  its OWN shell's environment, so a deployment that relocated any of the sixteen through the service's
+  its OWN shell's environment, so a deployment that relocated any of the eighteen through the service's
   registry Environment value still needs the matching -XxxDir passed by hand.
 
   TASK BF-1 - THE KEPT LIST, AND WHY A THIRD STATUS WAS NEEDED RATHER THAN A SILENT OMISSION. Moving

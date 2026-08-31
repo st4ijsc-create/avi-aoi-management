@@ -20,7 +20,7 @@ namespace St4i.EdgeCore.Tests.Historian;
 /// constructors as an explicit argument. With the seam open there are three readers of one variable, so the
 /// question "who wins" has to be answered rather than assumed — it is the shape item 65 had to pay for. The
 /// answer is the <c>explicit path &gt; environment variable &gt; default</c> order F-1 established for all
-/// sixteen machine-wide roots: <b>the composition root's explicit argument wins</b>, and the store's own env
+/// eighteen machine-wide roots: <b>the composition root's explicit argument wins</b>, and the store's own env
 /// read answers for every other construction site. <c>AnExplicitDirectory_BeatsTheVariable_…</c> is that
 /// assertion, and it is why <c>Program.cs</c> did not have to change.</para>
 ///

@@ -141,6 +141,26 @@ export interface Health {
 export interface Capabilities {
   demoEnabled: boolean
   mode: TransportMode
+
+  /**
+   * WS-HMI-0a: the component-model / tag-namespace STORES exist in this build.
+   * WS-HMI-0b: the HTTP + WebSocket surface over them is OPEN.
+   *
+   * Two flags, not one, because they genuinely diverged in a shipped state: WS-HMI-0a released the stores
+   * with no route able to reach them, so a client that conflated them would have fetched a component tree
+   * from an endpoint that did not exist. See `docs/HMI_API_CONTRACT.md`.
+   *
+   * Declared here at WS-HMI-0b Task 4 fix wave because the contract document tells this branch to gate on
+   * them and they were absent from this interface — a gate the client cannot read is not a gate. Both are
+   * unconditionally `true` today (no license tier exists to turn either off); WS-E License/Edition is where
+   * they get a real gate, without moving where they are reported.
+   *
+   * There is deliberately NO third flag for `WS /v1/hmi/changes`: the lane cannot be absent while
+   * `hmiApiEnabled` is true, and a flag that can never disagree with another only teaches a client to
+   * branch on a distinction that does not exist.
+   */
+  hmiModelEnabled: boolean
+  hmiApiEnabled: boolean
 }
 
 // ─────────────────────────────────────────────────────────────────────────

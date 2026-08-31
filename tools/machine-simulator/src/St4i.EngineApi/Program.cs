@@ -442,15 +442,48 @@ builder.Services.AddSingleton<St4i.EngineApi.AssetRegistry.IAssetRegistry>(sp =>
 // reads either seam yet — that is WS-HMI-0b's job, and this task deliberately does not add one (see this
 // task's brief: "Không thêm endpoint nào — API là WS-HMI-0b"). Registering the seam now, endpoint-free, is
 // what lets 0b depend on DI resolution instead of constructing its own store.
+// WS-HMI-0b Task 1, fix round 3 (HIGH-A) — IComponentModelStore/ITagNamespaceStore resolve to the
+// CANONICALIZING decorators (CanonicalMachineCodeStores.cs), never to ComponentModelStore/TagNamespaceStore
+// directly. This is the structural half of the HIGH-A fix: every current and future caller that takes
+// IComponentModelStore/ITagNamespaceStore as a parameter gets machine-code case-normalization for free,
+// because there is no code path in this composition root that hands out the raw, case-sensitive-keyed
+// store to an HTTP handler. See that file's own doc comment for the full rationale.
 var hmiModelDir = Environment.GetEnvironmentVariable(St4i.EngineApi.HmiModel.ComponentModelStore.EnvVarDir);
 builder.Services.AddSingleton<St4i.EngineApi.HmiModel.IComponentModelStore>(
-    _ => new St4i.EngineApi.HmiModel.ComponentModelStore(
-        string.IsNullOrWhiteSpace(hmiModelDir) ? null : hmiModelDir));
+    _ => new St4i.EngineApi.HmiModel.CanonicalizingComponentModelStore(
+        new St4i.EngineApi.HmiModel.ComponentModelStore(
+            string.IsNullOrWhiteSpace(hmiModelDir) ? null : hmiModelDir)));
 
 var hmiTagsDir = Environment.GetEnvironmentVariable(St4i.EngineApi.HmiModel.TagNamespaceStore.EnvVarDir);
-builder.Services.AddSingleton<St4i.EngineApi.HmiModel.ITagNamespaceStore>(
-    _ => new St4i.EngineApi.HmiModel.TagNamespaceStore(
+// WS-HMI-0b Task 2, fix round 2 — ONE raw TagNamespaceStore instance, shared by the canonicalizing
+// decorator and by the read-only collision query, and constructed LAZILY so that merely booting the host
+// still does not create the database (the previous inline `new` inside the factory had that property and
+// losing it would change startup behaviour for every test that asserts a directory is untouched).
+//
+// 🔴 The raw store is deliberately a LOCAL, never an AddSingleton: Task 1's structural fix is that DI hands
+// out ONLY the canonicalizing decorator, never the case-sensitive-keyed store, so a future handler cannot
+// obtain the raw one even by asking for it by type. The collision query is registered instead — a
+// read-only, SELECT-only diagnostic seam that cannot be mistaken or substituted for a store.
+var rawTagNamespaceStore = new Lazy<St4i.EngineApi.HmiModel.TagNamespaceStore>(
+    () => new St4i.EngineApi.HmiModel.TagNamespaceStore(
         string.IsNullOrWhiteSpace(hmiTagsDir) ? null : hmiTagsDir));
+
+builder.Services.AddSingleton<St4i.EngineApi.HmiModel.ITagNamespaceStore>(
+    _ => new St4i.EngineApi.HmiModel.CanonicalizingTagNamespaceStore(rawTagNamespaceStore.Value));
+
+// Takes the path FROM the store rather than re-deriving the file name, so the two cannot point at
+// different databases. See TagIndexCollisionQuery.cs for why a bulk SQL read exists at all and what pins
+// it against the frozen store's schema.
+builder.Services.AddSingleton<St4i.EngineApi.HmiModel.ITagIndexCollisionQuery>(
+    _ => new St4i.EngineApi.HmiModel.SqliteTagIndexCollisionQuery(rawTagNamespaceStore.Value.DbPath));
+
+// WS-HMI-0b Task 3 — the HMI change lane's fan-out. Deliberately NOT St4i.EdgeCore.Infrastructure.EventBus:
+// publishing there would put HMI rows in front of every inspector subscriber and inside both Export files,
+// which is the commitment InspectorStream.cs:217-219 froze — and it would do so while the frame's bytes
+// stayed identical, which is why the separation is structural rather than a convention. See
+// HmiModelEvents.cs for the full reasoning and for what this lane commits to.
+builder.Services.AddSingleton<St4i.EngineApi.HmiModel.IHmiChangeBus>(
+    _ => new St4i.EngineApi.HmiModel.HmiChangeBus());
 
 // GĐ3 sub-4 LC-1 (.superpowers/sdd/2026-07-27-giaidoan3-alarms-linecontroller-blueprint/task-1-brief.md) —
 // the alarm backbone: a durable SQLite store (alarms.db) for the ISA-18.2 alarm model (raise/clear/ack/
@@ -1782,6 +1815,20 @@ app.MapHistorianEndpoints();
 app.MapAuditEndpoints();
 app.MapUserEndpoints();
 app.MapAssetEndpoints();
+// WS-HMI-0b Task 1 — the component-tree HTTP surface over WS-HMI-0a's IComponentModelStore/
+// ITagNamespaceStore (both registered above, WS-HMI-0a Task 5). Same "store-backed resource, Operator
+// reads / Engineer writes" shape as MapAssetEndpoints directly above.
+app.MapHmiModelEndpoints();
+// WS-HMI-0b Task 2 — the tag-namespace HTTP surface over the same ITagNamespaceStore seam (GET /v1/tags,
+// GET /v1/tags/by-path/{**path}, PUT /v1/tags/{machineCode}). Registered next to MapHmiModelEndpoints
+// because the two share the seam and the Operator-reads/Engineer-writes tier; see HmiTagEndpoints.cs for
+// why its two read routes answer "I don't have that" differently (§5-bis empty vs 404).
+app.MapHmiTagEndpoints();
+// WS-HMI-0b Task 3 — WS /v1/hmi/changes. A second WebSocket ROUTE, not a second realtime MECHANISM: same
+// transport and the same client library as /v1/inspector/stream, one more URL, so the web branch still
+// speaks one realtime dialect. The existing stream could not carry these events — its frame is the frozen
+// ApiTraceEvent — see HmiChangeStream.cs for the measurement and the decision.
+app.MapHmiChangeStream();
 // GP-5 (task-5-brief.md item 3) — GET /v1/connectors: visibility for a configured-but-not-started connector.
 app.MapConnectorEndpoints();
 app.MapMachineWriteEndpoints();

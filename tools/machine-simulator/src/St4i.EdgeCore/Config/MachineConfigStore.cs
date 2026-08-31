@@ -91,7 +91,7 @@ public sealed class MachineConfigStore
     /// <para>📎 <b>THE PARAGRAPH ABOVE IS RETRACTED, 2026-08-23 (BF-1), verbatim.</b> The literal is
     /// unchanged and always was derivable — <c>machine-config</c> → <c>ST4I_MACHINE_CONFIG_DIR</c> — but
     /// there was no such directory for it to be derivable FROM until the owner's 2026-08-23(a) ruling created
-    /// one. There are now SIXTEEN machine-wide directories and SIXTEEN <c>ST4I_*_DIR</c> variables, the
+    /// one. There are now EIGHTEEN machine-wide directories and EIGHTEEN <c>ST4I_*_DIR</c> variables, the
     /// beside-the-binary variable population is EMPTY, and the two-populations reading this paragraph taught
     /// is the thing to unlearn. 🔴 The emptiness is asserted rather than assumed, because an empty set
     /// satisfies every universal claim made about it: <c>PerHostDataRootsTests</c> pins the partition's

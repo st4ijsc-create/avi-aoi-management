@@ -120,7 +120,7 @@ public sealed class SqliteHistorianStore : IHistorianStore
     /// which reads it and threads the value into this constructor as an EXPLICIT argument. There are three
     /// readers now (that one, this store and <see cref="OeeSettingsStore"/>), and the precedence that decides
     /// between them is the <c>explicit path &gt; environment variable &gt; default</c> order F-1 established
-    /// for all sixteen machine-wide roots: <b><c>Program.cs</c>'s explicit argument WINS</b>, and this store's
+    /// for all eighteen machine-wide roots: <b><c>Program.cs</c>'s explicit argument WINS</b>, and this store's
     /// own env read is what answers for every OTHER construction site — <c>new SqliteHistorianStore()</c>
     /// with no argument, which no host performs today and which every direct-construction test does.</para>
     ///
