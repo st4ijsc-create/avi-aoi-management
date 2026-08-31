@@ -56,6 +56,21 @@ describe("dungVanBanDayGiaoThucDoc", () => {
     expect(v).toContain("Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại");
     expect(v).toContain("ĐỪNG trả lời");
   });
+
+  it("★★★ PDCA vòng 3 — nhánh ghi đè THỨ HAI cho yêu cầu VIẾT MÃ MỚI (không cần đọc tệp)", () => {
+    // ★★★ Đo LIVE (`pdca4-gta.cjs`, ablation bật/tắt TOÀN BỘ khối dạy): với teaching CŨ (chỉ có
+    // nhánh ĐỌC), 0/3 câu "viết hàm mới" giao được mã — 1/3 lạc vào vòng đọc tìm một tệp KHÔNG TỒN
+    // TẠI, 2/3 trả nguyên văn câu mẫu bị cấm vì điều kiện ghi-đè nhánh ĐỌC không khớp (không có tệp
+    // nào để "cần nội dung"). Ca này khoá lại nhánh ghi đè THỨ HAI, riêng cho ca "viết mã mới, không
+    // cần đọc tệp" — không được lẫn vào/thay thế nhánh ĐỌC ở trên.
+    const v = dungVanBanDayGiaoThucDoc();
+    expect(v).toContain("VIẾT MỘT ĐOẠN MÃ/HÀM HOÀN TOÀN MỚI");
+    expect(v).toContain("viết THẲNG đoạn mã được yêu cầu");
+    // Nhánh ĐỌC vẫn nguyên vẹn — đây là một câu THÊM, không phải câu THAY (★ khuôn "vá xong phải
+    // kiểm NHÁNH KIA").
+    expect(v).toContain("doc_tep");
+    expect(v).toContain("CHỈ MỘT khối");
+  });
 });
 
 describe("nhacLaiCuoiCauHoi", () => {
@@ -69,6 +84,15 @@ describe("nhacLaiCuoiCauHoi", () => {
     // Không được chứa ví dụ JSON đầy đủ (đó là việc của `dungVanBanDayGiaoThucDoc`) — câu nhắc chỉ
     // là một câu văn ngắn.
     expect(v).not.toContain("doc_tep");
+    expect(v.length).toBeLessThan(300);
+  });
+
+  it("★★★ PDCA vòng 3 — cũng nhắc lại nhánh \"viết mã MỚI\" ở CUỐI câu hỏi, cùng lý do trọng số vị trí", () => {
+    // Đúng lý do đã đo cho nhánh ĐỌC (LỖI 1): một chỉ dẫn chỉ nằm ở ĐẦU prompt thua luật máy chủ ở
+    // phần lớn lượt — nhánh "viết mã MỚI" (LỖ HỔNG THỨ HAI) cũng cần một bản nhắc NGẮN ở cuối, gần
+    // điểm sinh chữ nhất, không chỉ dạy một lần ở đầu.
+    const v = nhacLaiCuoiCauHoi();
+    expect(v).toContain("viết mã MỚI");
     expect(v.length).toBeLessThan(300);
   });
 

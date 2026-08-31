@@ -40,6 +40,25 @@
  * phần lớn lượt (10/11) — chỉ thắng khi câu hỏi "gợi hành động" mạnh (grep) hơn là "hỏi tri thức".
  * Vá: nói THẲNG luật đang bị ghi đè, và nhắc lại ở CUỐI câu hỏi (gần điểm sinh chữ nhất — vị trí có
  * trọng số cao hơn một hướng dẫn nằm ở đầu prompt), xem `nhanLaiCuoiCauHoi` (`yeuCau.ts`).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ PDCA vòng 3 (`pdca4-report.md`) — LỖ HỔNG THỨ HAI: CÂU GHI ĐÈ CHỈ CHE MỘT NỬA TRƯỜNG HỢP.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Pareto #2 của vòng 1 (T07 — "viết mã mới bị kéo vào vòng tìm-tệp"): ABLATION đo LIVE (bật/tắt
+ * TOÀN BỘ khối dạy này, 3 câu "viết hàm mới" mỗi phía, tên hàm DUY NHẤT mỗi lần — script
+ * `pdca4-gta.cjs`) cho `laLuotToolSearch` = BẬT **[true,false,false]** (1/3 lạc vào vòng đọc, tìm
+ * một tệp KHÔNG TỒN TẠI như `"src/utils/math.ts"` do chính model bịa ra) vs TẮT **[false,false,
+ * false]** (0/3) — NHƯNG con số quan trọng hơn là **giao được mã: BẬT 0/3, TẮT 2/3**. Đọc kỹ 2/3
+ * câu BẬT không lạc vào tìm-tệp: chúng cũng KHÔNG giao mã — trả nguyên văn câu mẫu bị cấm ("Tôi
+ * không có thông tin chính xác..."). Vì sao câu ghi-đè phía trên KHÔNG chặn được câu mẫu đó ở đây:
+ * điều kiện kích hoạt của nó là "câu hỏi CẦN biết NỘI DUNG một tệp/thư mục CỤ THỂ" — một yêu cầu
+ * viết hàm HOÀN TOÀN MỚI không khớp điều kiện đó (không có tệp nào để cần nội dung), nên câu ghi đè
+ * không áp dụng, và model rơi thẳng về luật gốc của máy chủ (trả câu mẫu khi KB không khớp). Đây
+ * KHÔNG PHẢI cùng một lỗ với LỖI 1 — LỖI 1 vá "cần đọc mà không dám đọc", lỗ này là "không cần đọc
+ * gì cả mà cũng không dám TRẢ LỜI". Vá: thêm MỘT nhánh ghi đè THỨ HAI, dành riêng cho yêu cầu viết
+ * mã mới không cần tệp tham chiếu — cả ở đầu (`dungVanBanDayGiaoThucDoc`) LẪN cuối câu hỏi
+ * (`nhacLaiCuoiCauHoi`, cùng lý do trọng số vị trí đã đo ở LỖI 1). KHÔNG đụng nhánh ĐỌC hiện có —
+ * đây là một câu THÊM, không phải một câu THAY.
  */
 import { NHAN_HANG_RAO } from "./khoiAviTool";
 
@@ -72,6 +91,13 @@ export function dungVanBanDayGiaoThucDoc(): string {
     "",
     "Mỗi lượt trả lời CHỈ MỘT khối (một yêu cầu đọc). Nếu bạn ĐÃ có đủ nội dung cần thiết (đọc rồi, " +
       "hoặc câu hỏi không cần đọc tệp nào), trả lời bình thường — KHÔNG phát khối này.",
+    "",
+    "QUAN TRỌNG THỨ HAI — CA KHÁC, CŨNG GHI ĐÈ \"NGUYÊN TẮC TRẢ LỜI\" Ở TRÊN: nếu câu hỏi bên dưới " +
+      "yêu cầu VIẾT MỘT ĐOẠN MÃ/HÀM HOÀN TOÀN MỚI (chưa tồn tại ở đâu cả — không phải sửa, không " +
+      "phải tìm, không cần đọc một tệp cụ thể nào để trả lời), đây CŨNG KHÔNG PHẢI ca \"ngữ cảnh " +
+      "không liên quan\" — ĐỪNG trả lời câu mẫu \"Tôi không có thông tin chính xác...\", và ĐỪNG " +
+      "phát khối đọc tệp ở trên để đi tìm một tệp không tồn tại. Hãy viết THẲNG đoạn mã được yêu " +
+      "cầu ngay trong câu trả lời này.",
   ].join("\n");
 }
 
@@ -86,6 +112,7 @@ export function nhacLaiCuoiCauHoi(): string {
   return (
     "\n\n(Nhắc lại: nếu câu hỏi trên cần nội dung một tệp bạn chưa có, hãy phát khối ```" +
     NHAN_HANG_RAO +
-    "``` như đã hướng dẫn — ĐỪNG trả lời \"không có thông tin\".)"
+    "``` như đã hướng dẫn; nếu câu hỏi là yêu cầu viết mã MỚI (không cần đọc tệp), hãy viết THẲNG " +
+    "mã đó — cả hai ca ĐỪNG trả lời \"không có thông tin\".)"
   );
 }
