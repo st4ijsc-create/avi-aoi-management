@@ -113,6 +113,18 @@ export function bam(s: string): string {
   return createHash("sha256").update(s, "utf8").digest("hex");
 }
 
+/**
+ * ★★★ 2026-09-01 · ĐỢT C — SỔ BĂM-SAU-GHI-HITL (RAM, theo tiến trình). Khoá `goc::relPath` → băm
+ * sha256 của byte mà lượt `apply_diff` ĐÃ QUA NGƯỜI DUYỆT vừa ghi. Người tiêu thụ DUY NHẤT là
+ * miễn-trừ-hẹp trong `phanQuyet` (xem khối lý lẽ tại đó): tệp git-bẩn nhưng băm đĩa ≡ sổ ⇒ toàn bộ
+ * độ bẩn là sản phẩm HITL ⇒ lượt HITL kế tiếp được đi. Restart ⇒ sổ rỗng ⇒ nghiêm về TỪ CHỐI.
+ */
+const soBamHITL = new Map<string, string>();
+/** Chỉ dùng trong lưới — dọn sổ giữa hai ca. */
+export function _xoaSoBamHITL(): void {
+  soBamHITL.clear();
+}
+
 export function trich(text: string): string {
   const che = redactSecretsOnly(text).text;
   return che.length > TRICH ? `${che.slice(0, TRICH)}\n…(${che.length} ký tự)` : che;
@@ -417,7 +429,26 @@ export async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQu
     }
     khongGit = true;
   } else if (!git.sach) {
-    return { ok: false, ma: "FILE_DIRTY", chiTiet: `${confined.target.relPath} [git: ${git.trangThai}]` };
+    /**
+     * ★★★ 2026-09-01 · ĐỢT C — **MIỄN TRỪ HẸP THEO BĂM cho chuỗi lượt HITL liên tiếp.**
+     *
+     * Đo trên UI thật (PDCA): lượt `apply_diff` thứ HAI vào cùng tệp LUÔN chết `FILE_DIRTY`, vì
+     * chính lượt thứ nhất làm tệp git-bẩn — tức vòng *ghi → test → sửa TIẾP* và nút Hoàn tác đều
+     * nghẽn ở lượt 2, và câu từ chối bắt người dùng commit giữa HAI bước của MỘT phiên sửa.
+     *
+     * Miễn trừ CHỈ mở khi `bamTruoc` (băm đĩa HIỆN TẠI — đã chứng minh ≡ băm `original` ở cửa
+     * BASE_MISMATCH ngay trên) ĐÚNG BẰNG băm mà lượt ghi HITL TRƯỚC vừa đặt vào sổ `soBamHITL`.
+     * Nghĩa là: TOÀN BỘ độ bẩn của tệp là sản phẩm của một lượt đã qua người duyệt, không một
+     * byte NGƯỜI nào chen giữa. Ai đó sửa tay tệp sau lượt AI ⇒ băm đĩa lệch sổ ⇒ nhánh này ĐÓNG
+     * và `FILE_DIRTY` từ chối y như trước — sự cố 2026-08-18 (mất 123 dòng chưa commit) vẫn bị
+     * chặn nguyên hàng rào, vì độ bẩn ấy KHÔNG do HITL tạo và không bao giờ khớp sổ.
+     * ⚠ Sổ là RAM theo tiến trình: restart server ⇒ sổ rỗng ⇒ nghiêm về phía TỪ CHỐI (an toàn).
+     * ⚠ `applyDiffBatch` CHƯA vào sổ — lượt lô vẫn chịu luật cũ (ghi thẳng ở docblock nó, đợt sau).
+     */
+    const mienHITL = soBamHITL.get(`${goc}::${confined.target.relPath}`) === bamTruoc;
+    if (!mienHITL) {
+      return { ok: false, ma: "FILE_DIRTY", chiTiet: `${confined.target.relPath} [git: ${git.trangThai}]` };
+    }
   }
 
   return {
@@ -619,6 +650,10 @@ export const applyDiffTool: Tool<ThamSo, DuLieuApDung> = {
     }
 
     tieuNganSach(khoa, res.bytes);
+    // ★ 2026-09-01 · ĐỢT C — vào sổ băm-sau-ghi-HITL (miễn-trừ-hẹp cho lượt HITL kế tiếp; xem
+    //   docblock `soBamHITL`). `p.modified` là byte THẬT đã ghi (kể cả sau chọn-khối — confirmAction
+    //   đã thay `argsJson.modified` bằng bản chiếu trước khi execute chạy).
+    soBamHITL.set(`${goc}::${pq.relPath}`, bam(p.modified));
 
     /**
      * ★★★ ĐỢT 3 (2026-08-23) — DẤU **CHỌN KHỐI** do server đóng, không phải client.
