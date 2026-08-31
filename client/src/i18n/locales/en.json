@@ -19422,6 +19422,16 @@
       "caseToggle": "Match case",
       "regexToggle": "Use regular expression"
     },
+    "suaTay": {
+      "enter": "Edit file (creates a proposal you approve)",
+      "truncated": "File was truncated on load — manual edit disabled (a proposal would delete the unloaded tail).",
+      "hint": "Edit directly, then Create proposal — your change becomes a DIFF awaiting your approval; nothing is written directly.",
+      "propose": "Create proposal",
+      "sending": "Creating…",
+      "cancel": "Cancel",
+      "unchanged": "No changes yet.",
+      "failed": "Could not create proposal ({{ma}})."
+    },
     "suaChon": {
       "m0": "In file `{{path}}`, edit EXACTLY the selected code below:",
       "m1": "Request: {{yeuCau}}",

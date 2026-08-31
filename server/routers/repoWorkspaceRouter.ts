@@ -341,6 +341,42 @@ export const repoWorkspaceRouter = router({
   }),
 
   /**
+   * ★★★ 2026-08-31 · ĐỢT C (UX H2) — **SỬA TAY = MỘT ĐỀ XUẤT DIFF.** Người dùng gõ trực tiếp trong
+   * Trình xem (chế độ sửa) rồi bấm "Tạo đề xuất"; tuyến này biến buffer thành MỘT lượt `apply_diff`
+   * qua ĐÚNG `executeDecision` → `proposeAction` — tức trả về một thẻ duyệt HITL y hệt diff của
+   * model. BA điều giữ cho tuyến này KHÔNG phải một đường ghi mới:
+   *   • Nó CHỈ ĐỀ XUẤT: không nhánh nào gọi `confirmAction`/handler ghi — byte chỉ rời ra đĩa khi
+   *     người bấm Duyệt ở thẻ (client vẫn đúng MỘT điểm gọi `confirmM.mutateAsync`).
+   *   • RBAC + phán quyết đường/đuôi/hộp cát là của CHÍNH tool `apply_diff` (propose từ chối ⇒
+   *     `denied` — tuyến chỉ chuyển tiếp, không nới một luật nào).
+   *   • Chống TOCTOU giữ nguyên: `original` client gửi sẽ bị `execute()` đối chiếu băm với đĩa lúc
+   *     Duyệt (`FILE_DIRTY`/`BASE_MISMATCH`) — buffer cũ thì lượt ghi TỪ CHỐI, không ghi đè mù.
+   */
+  deXuatSuaTay: protectedProcedure
+    .input(
+      z.object({
+        path: z.string().min(1).max(1024),
+        original: z.string().max(200_000),
+        modified: z.string().max(200_000),
+        lang: langSchema.optional(),
+        projectId: projectIdSchema,
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const goc = phanGiaiGoc(input.projectId);
+      if (!goc.ok) return { ok: false as const, note: "PROJECT_NOT_FOUND", message: null, pendingAction: null };
+      const outcome = await executeDecision(
+        { tool: "apply_diff", args: { path: input.path, original: input.original, modified: input.modified } },
+        execCtxFrom(ctx, input.lang ?? "vi", goc.goc ?? undefined),
+      );
+      if (outcome.denied) return { ok: false as const, note: "DENIED", message: outcome.denied.message, pendingAction: null };
+      if (outcome.error || !outcome.pendingAction) {
+        return { ok: false as const, note: outcome.error ?? "NO_PENDING", message: null, pendingAction: null };
+      }
+      return { ok: true as const, note: null, message: null, pendingAction: outcome.pendingAction };
+    }),
+
+  /**
    * ★★★ 2026-08-29 · ĐUÔI SỐNG — đầu ra của lượt `run_command` ĐANG CHẠY của CHÍNH người hỏi,
    * cho panel Terminal poll (~800ms) xem realtime trong lúc `confirmAction` còn đang chặn.
    *

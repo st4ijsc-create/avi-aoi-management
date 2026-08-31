@@ -519,6 +519,16 @@ export default function AICodingWorkspace() {
   const khoaBanLamViec = user?.id != null ? `repoWs.ban.u${user.id}.${projectId}` : null;
   const duAnDaKhoiPhucRef = useRef<string | null>(null);
 
+  /**
+   * ★★★ 2026-08-31 · ĐỢT C (UX H2) — SỬA TAY = MỘT ĐỀ XUẤT DIFF. `dangSuaTay` bật chế độ sửa của
+   * Trình xem (textarea v1 — CodeMirror để đợt sau); "Tạo đề xuất" gửi buffer qua
+   * `repoWorkspace.deXuatSuaTay` → server dựng MỘT lượt `apply_diff` pending → trang nạp vào ĐÚNG
+   * thẻ duyệt hiện có (setPending/setPendingDiff — cùng đường với diff của model). KHÔNG một byte
+   * nào rời trình duyệt ngoài đường đã kiểm toán; Duyệt/Hủy vẫn là hai nút cũ.
+   */
+  const [dangSuaTay, setDangSuaTay] = useState(false);
+  const [banSua, setBanSua] = useState("");
+
   // ══════════════════════════════════════════════════════════════════════════════════════════
   // ★★★ doc 79 · DANH SÁCH PHIÊN — trạng thái + ba bất biến, đọc trước khi sửa
   // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -854,6 +864,8 @@ export default function AICodingWorkspace() {
 
   const confirmM = trpc.aiCopilot.confirmAction.useMutation();
   const cancelM = trpc.aiCopilot.cancelAction.useMutation();
+  // ★ ĐỢT C — đề xuất sửa tay (CHỈ propose; ghi vẫn qua confirmM duy nhất — xem docblock dangSuaTay).
+  const deXuatSuaTayM = trpc.repoWorkspace.deXuatSuaTay.useMutation();
 
   // ── ★★★ doc 79 · VÒNG TỰ ĐỘNG — cấu hình từ SERVER (không đoán) + bộ chạy kiểm chứng ──
   const cauHinhVongQ = trpc.repoWorkspace.cauHinhVong.useQuery(undefined, { staleTime: 5 * 60_000 });
@@ -1277,6 +1289,34 @@ export default function AICodingWorkspace() {
    *     đường cũ của ba nút gợi ý (chat → propose → NGƯỜI DUYỆT → chạy). Không có lệnh gợi ý ⇒ không
    *     làm gì (ribbon đã ẩn nút khi `coTheChayKiemChung` là false — nhưng đây là chốt thứ hai).
    */
+  /**
+   * ★ ĐỢT C — GỬI đề xuất sửa tay. `original` là bản SERVER vừa nạp (fileQ) — nếu đĩa đã đổi khi
+   * người bấm Duyệt, `execute()` từ chối bằng băm TOCTOU (FILE_DIRTY/BASE_MISMATCH), không ghi mù.
+   */
+  const guiDeXuatSuaTay = useCallback(async () => {
+    const original = fileReply?.data?.content ?? "";
+    if (!selectedPath || !fileReply?.ok || banSua === original) return;
+    let r: Awaited<ReturnType<typeof deXuatSuaTayM.mutateAsync>> | null = null;
+    try {
+      r = await deXuatSuaTayM.mutateAsync({ path: selectedPath, original, modified: banSua, lang, projectId });
+    } catch (e) {
+      toast.error(mapTrpcError(e));
+      return;
+    }
+    if (!r.ok || !r.pendingAction) {
+      toast.error(r.message ?? t("repoWs.suaTay.failed", "Không tạo được đề xuất ({{ma}}).", { ma: r.note ?? "?" }));
+      return;
+    }
+    const pa = r.pendingAction as unknown as KbPendingAction;
+    setPending(pa);
+    setActionState("pending");
+    setPendingDiff({ action: pa, args: { path: selectedPath, original, modified: banSua } });
+    setDangSuaTay(false);
+  }, [selectedPath, fileReply, banSua, lang, projectId, deXuatSuaTayM, t]);
+
+  // Đổi tệp/dự án ⇒ thoát chế độ sửa (buffer thuộc về tệp CŨ — giữ lại là dán nhầm nội dung).
+  useEffect(() => { setDangSuaTay(false); }, [selectedPath, projectId]);
+
   const lamMoiCay = useCallback(() => {
     void utils.repoWorkspace.listFiles.invalidate();
   }, [utils]);
@@ -2203,7 +2243,17 @@ export default function AICodingWorkspace() {
                   </div>
                   {selectedPath && (
                     <>
-                      <Button variant="ghost" size="icon" className="ml-1 h-6 w-6 shrink-0" data-nut-copy onClick={copyTepHienTai} disabled={!fileReply?.ok || !fileReply.data?.content} title={t("repoWs.viewer.copy", "Sao chép nội dung tệp")}>
+                      {/* ★ ĐỢT C (UX H2) — vào chế độ SỬA TAY. Khoá khi tệp bị CẮT (buffer thiếu đuôi
+                          ⇒ đề xuất sẽ XOÁ phần chưa nạp) hoặc đang có diff chờ duyệt. */}
+                      <Button
+                        variant="ghost" size="icon" className="ml-1 h-6 w-6 shrink-0" data-nut-sua-tay
+                        disabled={!fileReply?.ok || !fileReply.data?.content || fileReply.data?.truncated === true || dangSuaTay || coDiffChoDuyet}
+                        onClick={() => { setBanSua(fileReply?.data?.content ?? ""); setDangSuaTay(true); }}
+                        title={fileReply?.data?.truncated ? t("repoWs.suaTay.truncated", "Tệp bị cắt bớt khi nạp — không sửa tay được (đề xuất sẽ xoá phần chưa nạp).") : t("repoWs.suaTay.enter", "Sửa tệp (tạo đề xuất, bạn duyệt)")}
+                      >
+                        <Wand2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" data-nut-copy onClick={copyTepHienTai} disabled={!fileReply?.ok || !fileReply.data?.content} title={t("repoWs.viewer.copy", "Sao chép nội dung tệp")}>
                         <Copy className="h-3.5 w-3.5" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => fileQ.refetch()} title={t("repoWs.tree.refresh", "Làm mới")}>
@@ -2326,13 +2376,43 @@ export default function AICodingWorkspace() {
                       {fileReply?.data?.redacted && <Badge variant="secondary" className="text-[10px]">{t("repoWs.viewer.redacted", "Đã che bí mật")}</Badge>}
                       {fileReply?.data?.truncated && <Badge variant="secondary" className="text-[10px]">{t("repoWs.viewer.truncated", "Đã cắt bớt")}</Badge>}
                     </div>
-                    {/* ★★★ 2026-08-25 · UX (Đợt 1 A) — TrinhXemMa: tô cú pháp (Streamdown/Shiki) +
+                    {dangSuaTay ? (
+                      /* ★ ĐỢT C (UX H2) — CHẾ ĐỘ SỬA TAY (textarea v1). Gửi ⇒ `guiDeXuatSuaTay` →
+                         thẻ duyệt apply_diff HIỆN NGAY khung này; không một đường ghi thẳng nào. */
+                      <div data-sua-tay className="flex min-h-0 flex-col gap-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                          <Wand2 className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          {t("repoWs.suaTay.hint", "Sửa trực tiếp rồi bấm Tạo đề xuất — thay đổi thành một DIFF chờ bạn duyệt, không ghi thẳng.")}
+                        </div>
+                        <textarea
+                          data-o-sua-tay
+                          value={banSua}
+                          onChange={(e) => setBanSua(e.target.value)}
+                          spellCheck={false}
+                          className="min-h-[320px] w-full flex-1 resize-y rounded-md border bg-background p-2 font-mono text-[12px] leading-snug focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          aria-label={t("repoWs.suaTay.enter", "Sửa tệp (tạo đề xuất, bạn duyệt)")}
+                        />
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" data-gui-sua-tay className="h-7 px-3 text-xs" disabled={deXuatSuaTayM.isPending || banSua === (fileReply?.data?.content ?? "")} onClick={() => void guiDeXuatSuaTay()}>
+                            {deXuatSuaTayM.isPending ? t("repoWs.suaTay.sending", "Đang tạo…") : t("repoWs.suaTay.propose", "Tạo đề xuất")}
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 px-3 text-xs" onClick={() => setDangSuaTay(false)}>
+                            {t("repoWs.suaTay.cancel", "Hủy")}
+                          </Button>
+                          {banSua === (fileReply?.data?.content ?? "") && (
+                            <span className="text-[10px] text-muted-foreground">{t("repoWs.suaTay.unchanged", "Chưa có thay đổi nào.")}</span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                    /* ★★★ 2026-08-25 · UX (Đợt 1 A) — TrinhXemMa: tô cú pháp (Streamdown/Shiki) +
                         GUTTER số dòng THẬT (`[data-so-dong]`) + cuộn ngang, thay `<pre>` trơn. `preRef`
                         bọc nó để effect cuộn tìm được ô `[data-so-dong={dongMucTieu}]`. Hàng huy hiệu
-                        (bytes/redacted/truncated) phía trên GIỮ NGUYÊN. */}
+                        (bytes/redacted/truncated) phía trên GIỮ NGUYÊN. */
                     <div ref={preRef} className="min-w-0">
                       <TrinhXemMa noiDung={fileReply?.data?.content ?? ""} duongDan={selectedPath ?? ""} dongMucTieu={dongMucTieu} />
                     </div>
+                    )}
                   </>
                 )}
               </div>

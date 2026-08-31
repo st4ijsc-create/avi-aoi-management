@@ -19402,6 +19402,16 @@
       "caseToggle": "Phân biệt hoa/thường",
       "regexToggle": "Dùng biểu thức chính quy (regex)"
     },
+    "suaTay": {
+      "enter": "Sửa tệp (tạo đề xuất, bạn duyệt)",
+      "truncated": "Tệp bị cắt bớt khi nạp — không sửa tay được (đề xuất sẽ xoá phần chưa nạp).",
+      "hint": "Sửa trực tiếp rồi bấm Tạo đề xuất — thay đổi thành một DIFF chờ bạn duyệt, không ghi thẳng.",
+      "propose": "Tạo đề xuất",
+      "sending": "Đang tạo…",
+      "cancel": "Hủy",
+      "unchanged": "Chưa có thay đổi nào.",
+      "failed": "Không tạo được đề xuất ({{ma}})."
+    },
     "suaChon": {
       "m0": "Trong tệp `{{path}}`, sửa ĐÚNG đoạn mã đã bôi đen dưới đây:",
       "m1": "Yêu cầu: {{yeuCau}}",

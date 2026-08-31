@@ -87,4 +87,8 @@ Vòng 1 đã sửa độ phủ + cờ bản cắt. Còn lại về TRẢI NGHI�
 - **Đợt C (cần chủ dự án duyệt kiến trúc):** SỬA TAY = ĐỀ XUẤT DIFF (CodeMirror → HITL) ·
   hoàn tác sau áp · thay thế hàng loạt qua thẻ duyệt lô · model selector + cost.
 
-*Trạng thái thực thi: Đợt A bắt đầu ngay sau tài liệu này (cùng nhánh `feat/hmi-dep`).*
+*Trạng thái thực thi: Đợt A XONG (`14c0a4a5`). Đợt C lõi — SỬA TAY = ĐỀ XUẤT DIFF — ĐÃ CHẠY:
+`repoWorkspace.deXuatSuaTay` (chỉ propose) + chế độ sửa textarea v1 ở Trình xem; live-verify
+2026-08-31 đi trọn vòng sửa→thẻ duyệt→Duyệt & ghi→byte vào đĩa (chính dòng này được ghi bằng
+đúng tính năng ấy). Còn lại của C: CodeMirror thay textarea · hoàn tác sau áp · thay thế hàng
+loạt · model selector — đợt kế.*
