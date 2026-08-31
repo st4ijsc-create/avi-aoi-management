@@ -278,9 +278,56 @@ public class EnumSpellingContractTests
         new("web/src/routes/MachineDetail.tsx", SiteShape.TsRecordConst, "CLASS_ICON", ["DeviceClass"],
             "the header icon component; a missing member yields undefined and React renders nothing where "
             + "the machine's figure belongs"),
-        new("web/src/routes/Hmi.tsx", SiteShape.TsRecordConst, "SCHEMATIC_READOUT_FLEX", ["DeviceClass"],
-            "the schematic/readout width split; a missing member destructures undefined and the HMI panel "
-            + "throws rather than degrading"),
+        // 🔴 THE ENTRY BELOW IS RETRACTED, 2026-08-31, AND KEPT VERBATIM rather than quietly re-spelled,
+        // because the mirror MOVED and "a different string is in the registry now" is not what the next
+        // reader needs to learn:
+        //
+        //     new("web/src/routes/Hmi.tsx", SiteShape.TsRecordConst, "SCHEMATIC_READOUT_FLEX", ["DeviceClass"],
+        //         "the schematic/readout width split; a missing member destructures undefined and the HMI panel "
+        //         + "throws rather than degrading"),
+        //
+        // WS-HMI-1 Task 5 DELETED `const SCHEMATIC_READOUT_FLEX` from `Hmi.tsx`, deliberately and
+        // correctly: the proportions are now `schematicFlex`/`readoutFlex` inside each
+        // `web/screens/*-overview.json`'s own `widgets[0].props`, read by
+        // `hmi-runtime/widgets/faceplate.tsx`, and the constant survives in `Hmi.tsx` only inside that
+        // file's retraction comments. So the entry above did not rot through anybody's carelessness — it
+        // rotted because its INPUT changed while its own code did not, on a branch that "touched no .NET"
+        // and therefore never ran this suite. The anchor failing with "expected exactly one a
+        // `const SCHEMATIC_READOUT_FLEX` declaration, found 0" is this registry doing exactly what
+        // pointing by NAME is for, and the run that caught it named the replacement too: Fact 5 saw
+        // `SCREEN_DOCS` by its `Record<DeviceClass, …>` annotation and Fact 5b saw it by its keys alone.
+        //
+        // 🔴 AND THE PART WORTH WRITING DOWN, BECAUSE THE OBVIOUS READING IS THAT tsc ALREADY DOES THIS.
+        // It does ONE LINK of a two-link chain. `machine.class` is typed `DeviceClass` (api.ts:250) and
+        // the table is annotated `Record<DeviceClass, HmiScreenDocument>`, so the compiler really does
+        // enforce SCREEN_DOCS's key set exactly — a missing key is an error, an extra one an
+        // excess-property error — AGAINST THE HAND-WRITTEN TS UNION at api.ts:54. Nothing in a browser
+        // build checks that union against the C# enum; the only thing in this repository that does is the
+        // FIRST entry in this registry, whose own text already says a member absent there "makes the
+        // compiler ACCEPT the tables below while they are incomplete". The real chain is therefore:
+        // compiled enum -> (checked here, by reflection) -> api.ts's union -> (checked by tsc) ->
+        // this table. Registering the table is not a second copy of the tsc link; it is what stops the
+        // chain having an unchecked JOINT.
+        //   - The ANNOTATION is checked by nothing. `Record<string, HmiScreenDocument>` or
+        //     `Partial<Record<DeviceClass, …>>` compiles clean and drops the tsc link SILENTLY, and that
+        //     is not a hypothetical here: `KIND_DOT` and `VERDICT_META` are BOTH `Record<string, …>`
+        //     today, which is the whole reason Fact 5b had to be re-indexed on keys. This entry pins the
+        //     keys against the COMPILED enum, so the assertion outlives the annotation.
+        //   - And tsc's link is about TYPES, never about the bytes on the wire. `machineDetail` is a bare
+        //     `request<MachineDetail>` cast (api.ts:585) with no runtime narrowing, so a class the server
+        //     really emits and the union does not name arrives at this lookup as an ordinary string with
+        //     every compiler on both sides green.
+        new("web/src/routes/Hmi.tsx", SiteShape.TsRecordConst, "SCREEN_DOCS", ["DeviceClass"],
+            "which JSON screen document describes this machine's operator panel — and this is the site in "
+            + "the registry that fails WORST rather than degrading. `SCREEN_DOCS[machine.class]` is handed "
+            + "straight to `<ScreenRenderer doc={…}>` (Hmi.tsx:277) and ScreenRenderer's first statement "
+            + "is `const { layout, widgets } = doc`, so a missing member yields undefined and that "
+            + "destructure throws. The only error boundary anywhere in web/src is ScreenRenderer's own "
+            + "WidgetErrorBoundary, which wraps each WIDGET from inside the component that just threw and "
+            + "so cannot catch it, and nothing stands between `Hmi` and `createRoot` (App.tsx, main.tsx): "
+            + "React unmounts the whole root, leaving a blank kiosk and taking the HALT and RESET buttons "
+            + "in the sibling control rail with it, for a machine whose only fault is that its class "
+            + "reached the enum and not this table"),
         new("web/src/components/hmi/SchematicPanel.tsx", SiteShape.TsRecordConst, "FIG_KEY", ["DeviceClass"],
             "the schematic figure's accessible caption key; a missing member leaves the drawing without the "
             + "name a screen reader announces"),
