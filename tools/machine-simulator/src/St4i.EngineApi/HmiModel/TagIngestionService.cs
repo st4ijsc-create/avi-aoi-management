@@ -47,9 +47,18 @@ public sealed record IngestResult(bool Ok, int TagCount, int BackedCount, IReadO
 /// statement — "this machine has no tags" — and is stored, replacing whatever was there. Absence is not a
 /// claim; an empty declaration is.</para>
 ///
-/// <para>This class never throws for an ingestion failure and never logs: it reports. The swallow that
-/// keeps a bad map from taking a machine down lives at the call site in <c>Program.cs</c>, where the
-/// logger is, and is documented there.</para>
+/// <para><see cref="TagIngestionService"/> itself never throws for an ingestion failure and never logs: it
+/// reports. <b>The swallowing happens in <see cref="TagMapStartupIngestion"/>, further down THIS file —
+/// there are TWO of them, <c>IngestAll</c>'s per-machine catch and <c>IndexMapFiles</c>' directory catch —
+/// and each is documented at its own site.</b></para>
+///
+/// <para>🔴 <b>An earlier version of the paragraph above said the swallow "lives at the call site in
+/// `Program.cs`, where the logger is, and is documented there". That was false when it was written and is
+/// corrected rather than deleted.</b> `1dd7bf46` moved the loop OUT of <c>Program.cs</c> — for the good
+/// reason that no test could reach it while it resolved its own directory from
+/// <c>AppContext.BaseDirectory</c> — and left this sentence pointing at the emptied file:
+/// <c>Program.cs</c> has no <c>catch</c> anywhere in its ingestion block, and the logger is a parameter,
+/// not something the call site owns. A reader following that sentence arrived nowhere.</para>
 /// </summary>
 public sealed class TagIngestionService
 {
@@ -224,6 +233,30 @@ public static class TagMapStartupIngestion
         Path.Combine(AppContext.BaseDirectory, TagIngestionService.DirectoryName);
 
     /// <summary>
+    /// 🔴 <b>Set the first time <see cref="IngestAll"/> runs against the PRODUCTION directory — the only
+    /// evidence a test can have that the feature is still connected to startup at all.</b>
+    ///
+    /// <para>The whole-branch sweep gave the composition root a row and it came back GREEN: wrapping
+    /// <c>Program.cs</c>'s call in <c>if (false)</c> — disabling the feature's ONLY production call site —
+    /// reddened nothing across the whole suite. Every piece of WS-HMI-0c was pinned except the line that
+    /// makes any of it run, which is the same defect class as the <c>dispense_program</c> lesson the
+    /// workstream was built around: complete, correct, and connected to nothing.</para>
+    ///
+    /// <para>An absent <c>tag-maps/</c> folder is the normal state, so a real startup produces no
+    /// observable side effect to assert on; and the folder lives in <c>AppContext.BaseDirectory</c>, which
+    /// this assembly's own D-1 review (I-3) records as the shared artifact directory a test must not write
+    /// to. A flag set by the call itself is what remains. It is <c>internal</c>, write-once, and carries no
+    /// behaviour.</para>
+    ///
+    /// <para><b>Why "ever", not a count or the last directory:</b> tests call <see cref="IngestAll"/>
+    /// directly with temp directories, in parallel with host boots in other collections, so a counter or a
+    /// last-value would race. This is only ever set by a run against <see cref="ResolveDirectory"/>, which
+    /// only the composition root passes — so a concurrent unit test cannot set it, and a build whose call
+    /// site is disabled can never set it from any test at all.</para>
+    /// </summary>
+    internal static bool HasRunAgainstTheProductionDirectory { get; private set; }
+
+    /// <summary>
     /// Ingests one <c>{machineCode}.json</c> per bound connector, and returns how many succeeded.
     /// </summary>
     /// <param name="directory">Where the maps live. An absent directory is the ordinary state of an install
@@ -233,9 +266,13 @@ public static class TagMapStartupIngestion
     /// as data rather than as the registry so this type needs no <c>St4i.EdgeCore</c> type in its
     /// signature and a test needs no registry to drive it.</param>
     /// <remarks>
-    /// 🔴 <b>THE SWALLOW, AND WHAT IT COSTS.</b> This is one of exactly TWO places in this workstream that
-    /// swallow an exception; the other is <c>AssetRegistryStore.UpsertAsync</c>, and the reasoning is
-    /// identical: a machine must still RUN when its HMI namespace is broken. By the time this runs the
+    /// 🔴 <b>THE PER-MACHINE SWALLOW, AND WHAT IT COSTS.</b> <b>This file contains TWO swallows — this one
+    /// and <see cref="IndexMapFiles"/>'s directory catch — and an earlier version of this paragraph said
+    /// "one of exactly TWO places in this workstream", counting this one and
+    /// <c>AssetRegistryStore.UpsertAsync</c> in another workstream while missing the second one twenty
+    /// lines below it. Corrected: THREE places swallow, two of them here.</b> The reasoning is the same as
+    /// <c>AssetRegistryStore.UpsertAsync</c>'s: a machine must still RUN when its HMI namespace is broken.
+    /// By the time this runs the
     /// connector is registered, polling a real device and writing historian rows — letting a malformed JSON
     /// file abort startup would take a working production line down over a screen definition.
     ///
@@ -252,12 +289,43 @@ public static class TagMapStartupIngestion
         IReadOnlyList<(string InstanceId, string? MachineCode, string? DriverKind)> bindings,
         TagIngestionService service,
         ILogger logger)
+        => IngestAll(directory, bindings, service, logger, listFiles: null);
+
+    /// <summary>
+    /// The overload the tests drive, with the directory listing injectable.
+    ///
+    /// <para>🔴 <b>It exists for ONE reason: the directory swallow in <see cref="IndexMapFiles"/> could not
+    /// otherwise be reached by any test.</b> To trigger it for real an operator has to make the folder
+    /// unreadable, and the only portable way to arrange that in a test is an ACL DENY — measured to work on
+    /// this machine, and not something to rely on across every host that runs this suite, since a process
+    /// holding backup privilege bypasses it and the test would then pass having measured nothing.</para>
+    ///
+    /// <para><b>What the injected lambda proves, and what it does not.</b> It proves the STRUCTURAL
+    /// property that matters: the listing call is INSIDE the try. Move the enumeration out and the thrown
+    /// exception escapes and the pin reddens. It does NOT prove that a real ACL denial throws the same
+    /// type — nothing here asserts that, and the lambda is a pure thrower rather than a re-implementation
+    /// of enumeration, so it cannot certify itself.</para>
+    /// </summary>
+    internal static int IngestAll(
+        string directory,
+        IReadOnlyList<(string InstanceId, string? MachineCode, string? DriverKind)> bindings,
+        TagIngestionService service,
+        ILogger logger,
+        Func<string, IEnumerable<string>>? listFiles)
     {
         ArgumentNullException.ThrowIfNull(bindings);
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(logger);
 
-        var maps = IndexMapFiles(directory, logger);
+        // See HasRunAgainstTheProductionDirectory: this is the only evidence that the composition root
+        // still calls this at all. Compared against ResolveDirectory() so a test passing a temp folder
+        // cannot set it.
+        if (string.Equals(directory, ResolveDirectory(), StringComparison.OrdinalIgnoreCase))
+        {
+            HasRunAgainstTheProductionDirectory = true;
+        }
+
+        var maps = IndexMapFiles(directory, logger, listFiles);
         var ingested = 0;
 
         foreach (var (instanceId, machineCode, driverKind) in bindings)
@@ -320,14 +388,15 @@ public static class TagMapStartupIngestion
     /// <c>aoi-01.json</c> for machine <c>AOI-01</c> on Windows and silently not find it on Linux. Same
     /// lookup on both, decided by this codebase's identity rule rather than by the volume it is installed on.
     /// </summary>
-    private static Dictionary<string, string> IndexMapFiles(string directory, ILogger logger)
+    private static Dictionary<string, string> IndexMapFiles(
+        string directory, ILogger logger, Func<string, IEnumerable<string>>? listFiles)
     {
         var maps = new Dictionary<string, string>(StringComparer.Ordinal);
         try
         {
-            if (!Directory.Exists(directory)) return maps;
+            if (listFiles is null && !Directory.Exists(directory)) return maps;
 
-            foreach (var file in Directory.EnumerateFiles(directory, "*.json"))
+            foreach (var file in listFiles?.Invoke(directory) ?? Directory.EnumerateFiles(directory, "*.json"))
             {
                 var key = MachineCodeIdentity.Canonicalize(Path.GetFileNameWithoutExtension(file));
                 if (string.IsNullOrWhiteSpace(key)) continue;
@@ -344,8 +413,33 @@ public static class TagMapStartupIngestion
         }
         catch (Exception ex)
         {
-            // An unreadable directory disables tag ingestion for this run and nothing else. Same "one bad
-            // source disables only itself" posture every other startup config load has.
+            // 🔴 THE DIRECTORY SWALLOW — THE ONE WITH THE WIDER BLAST RADIUS, AND THE ONE THAT WENT
+            // UNMEASURED THE LONGEST.
+            //
+            // WHY IT IS MORE DANGEROUS THAN THE PER-MACHINE SWALLOW ABOVE. That one loses ONE machine's
+            // screen. This one is reached before any machine is considered, from a method called at the top
+            // of IngestAll, which Program.cs calls from a TOP-LEVEL STATEMENT with nothing above it to
+            // catch. So without this catch, a permission change on `tag-maps/` — an operator tightening an
+            // ACL, an installer running as a different principal, an antivirus lock — propagates out of
+            // IndexMapFiles, out of IngestAll, out of Program.cs, and THE HOST DOES NOT START. Every
+            // machine on that box stops, not one screen. A directory that is merely unreadable must never
+            // be able to do that.
+            //
+            // WHAT IT COSTS AN OPERATOR, stated as plainly as the per-machine one. If the directory cannot
+            // be listed, EVERY machine on the host silently keeps whatever namespace it already had, and
+            // `GET /v1/tags?machine=` answers exactly as it would for a machine nobody had ever declared
+            // tags for. The only trace is the single Error line below. It is the same indistinguishability
+            // README §26.7 describes, multiplied by the whole fleet: an operator who fixes a permission and
+            // restarts sees screens reappear with no explanation of why they were gone.
+            //
+            // THE NAMED FIX THAT IS NOT BUILT, same shape as the per-machine one: IngestAll already returns
+            // a count and this method already knows it produced ZERO entries because listing FAILED rather
+            // than because the directory was absent. Distinguishing those two in the return value — and
+            // surfacing "tag ingestion is degraded" on GET /v1/capabilities — would separate "nobody has
+            // declared tags" from "I could not read the folder". That is a contract change, so it is named
+            // here rather than done.
+            //
+            // Pinned by TagIngestionServiceTests.An_unreadable_tag_map_directory_does_not_stop_the_host.
             logger.LogError(ex,
                 "Tag-map directory '{TagMapDir}' could not be listed — no HMI tag namespace is ingested this run. " +
                 "Every connector still registers and every machine still runs.", directory);

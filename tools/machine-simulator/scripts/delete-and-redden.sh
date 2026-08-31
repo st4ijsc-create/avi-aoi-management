@@ -86,9 +86,30 @@ EV=src/St4i.EngineApi/HmiModel/HmiModelEvents.cs
 CMC=src/St4i.EngineApi/HmiModel/CanonicalMachineCodeStores.cs
 HCS=src/St4i.EngineApi/Hubs/HmiChangeStream.cs
 PROG=src/St4i.EngineApi/Program.cs
-SOURCES="$HTE $HME $TIQ $EV $CMC $HCS $PROG"
 
-FILTER='FullyQualifiedName~HmiTagEndpointsTests|FullyQualifiedName~TagIndexCollisionQueryTests|FullyQualifiedName~CanonicalMachineCodeStoresTests|FullyQualifiedName~TagNamespaceStoreTests|FullyQualifiedName~HmiModelEndpointsTests|FullyQualifiedName~HmiModelWiringTests|FullyQualifiedName~RbacPolicyTests|FullyQualifiedName~HmiModelEventsTests'
+# 🔴 WS-HMI-0c WHOLE-BRANCH REVIEW — THE SAME HOLE, ONE WORKSTREAM LATER.
+# SOURCES contained NONE of the four files WS-HMI-0c adds and FILTER none of its five test classes: the
+# harness ran 158 of 1721 tests and none of 0c's 100, while that branch's closing report published a
+# "42 of 45 rows red" table produced by an ad-hoc script that exists in no file, so nobody could re-run it.
+# A sweep is only evidence for the files it can mutate; a table nobody can reproduce is not evidence at all.
+# Both are fixed here, in the committed harness, because the instrument is the thing nobody checks.
+TMD=src/St4i.EngineApi/HmiModel/TagMapDeclaration.cs
+DTS=src/St4i.EngineApi/HmiModel/DriverTagSupport.cs
+TNB=src/St4i.EngineApi/HmiModel/TagNamespaceBuilder.cs
+TIS=src/St4i.EngineApi/HmiModel/TagIngestionService.cs
+# In a DIFFERENT project (St4i.Hmi.Contracts). It is here because WS-HMI-0c's MED-3 fix put three
+# schema-required-field checks in it and they are exercised through this suite's store.
+CI=src/St4i.Hmi.Contracts/ContractInvariants.cs
+
+SOURCES="$HTE $HME $TIQ $EV $CMC $HCS $PROG $TMD $DTS $TNB $TIS $CI"
+
+FILTER='FullyQualifiedName~HmiTagEndpointsTests|FullyQualifiedName~TagIndexCollisionQueryTests|FullyQualifiedName~CanonicalMachineCodeStoresTests|FullyQualifiedName~TagNamespaceStoreTests|FullyQualifiedName~HmiModelEndpointsTests|FullyQualifiedName~HmiModelWiringTests|FullyQualifiedName~RbacPolicyTests|FullyQualifiedName~HmiModelEventsTests|FullyQualifiedName~TagMapDeclarationTests|FullyQualifiedName~DriverTagSupportTests|FullyQualifiedName~TagNamespaceBuilderTests|FullyQualifiedName~TagIngestionServiceTests|FullyQualifiedName~TagIngestionWiringTests'
+
+# Where the suite's assemblies are deployed — used by the STALE BUILD check in measure().
+OUTDIR="$(pwd)/tests/St4i.EngineApi.Tests/bin/Debug/net10.0-windows"
+
+# The assembly a mutated source compiles into, as deployed beside the test binary.
+built_dll_for() { echo "$OUTDIR/$(echo "$1" | cut -d/ -f2).dll"; }
 
 BK="$(mktemp -d)"
 for f in $SOURCES; do cp "$f" "$BK/$(basename "$f")"; done
@@ -101,14 +122,32 @@ trap 'restore; rm -rf "$BK"' EXIT
 # BEFORE the test run. If it is absent the mutation did not land, and the row is reported as
 # a non-measurement instead of as a green.
 measure() {
-  local label="$1" sentinel="$2" out summary
+  local label="$1" sentinel="$2" out summary mutated dll
   if ! grep -qF -- "$sentinel" $SOURCES; then
     echo "### $label => MUTATION DID NOT LAND (sentinel '$sentinel' absent) — NOT A MEASUREMENT"
     restore
     return
   fi
 
+  # Which source currently carries the sentinel — the file whose assembly must be rebuilt below.
+  mutated=$(grep -lF -- "$sentinel" $SOURCES | head -1)
+
   out=$(dotnet test "$TESTS" --filter "$FILTER" 2>&1)
+
+  # 🔴 STALE BUILD — the deepest non-measurement this repository has hit, and it came from a harness.
+  # WS-HMI-0c's ad-hoc sweep restored sources with a copy that PRESERVED mtime, so a restored file looked
+  # OLDER than the DLL built from the mutated source; MSBuild's up-to-date check then skipped recompiling
+  # and later rows ran against an EARLIER row's mutated binary. It produced a confident false diagnosis
+  # (that the C# compiler had dropped an `else if` branch) that was nearly shipped as a source change.
+  # This harness restores with `cp`, which does not preserve mtime, so it is not exposed to that — but a
+  # green row is only evidence if the binary under test contains the mutation, and that is worth checking
+  # rather than reasoning about.
+  dll=$(built_dll_for "$mutated")
+  if [ -f "$dll" ] && [ ! "$dll" -nt "$mutated" ]; then
+    echo "### $label => STALE BUILD ($(basename "$dll") is not newer than $mutated) — NOT A MEASUREMENT"
+    restore
+    return
+  fi
   if echo "$out" | grep -q "error CS"; then
     echo "### $label => MUTATION DID NOT COMPILE — NOT A MEASUREMENT"
     echo "$out" | grep -m2 "error CS" | sed 's/\[.*//' | sed 's/^/      /'
@@ -230,5 +269,72 @@ measure "C10 change lane authorisation removed" "MUTANT-WS-ANON"
 
 perl -0777 -pi -e 's/bus\.Changed \+= OnChanged;/\/* MUTANT-WS-NOSUB *\//' $HCS
 measure "C11 change lane never subscribes to the bus" "MUTANT-WS-NOSUB"
+
+# ── WS-HMI-0c ───────────────────────────────────────────────────────────────────────────
+# Added by the 0c whole-branch review. Every line below was LOAD-BEARING WITH NO ROW: the branch shipped
+# with its own files outside SOURCES entirely.
+
+perl -0777 -pi -e 's/if \(string\.IsNullOrWhiteSpace\(connectorKind\)\) return false;/if (false) return false; \/* MUTANT-0C-BLANKKIND *\//' $DTS
+measure "D-0c-1 CanBack blank-kind guard removed (known-redundant; expected GREEN)" "MUTANT-0C-BLANKKIND"
+
+perl -0777 -pi -e 's/return DeclaredKinds\.Contains\(normalized, StringComparer\.Ordinal\);/return true; \/* MUTANT-0C-CANBACK-ALL *\//' $DTS
+measure "D-0c-2 CanBack answers true for every kind" "MUTANT-0C-CANBACK-ALL"
+
+perl -0777 -pi -e 's/DriverKinds\.Normalize\(connectorKind\)/connectorKind \/* MUTANT-0C-NOFOLD *\//' $DTS
+measure "D-0c-3 CanBack stops folding casing" "MUTANT-0C-NOFOLD"
+
+perl -0777 -pi -e 's/IsBackedByDriver: thisKindCanBackAnything && SourceNamesTheConnectorsOwnKind\(entry\.Source, connectorKind\)/IsBackedByDriver: true \/* MUTANT-0C-FLAG-TRUE *\//' $TNB
+measure "D-0c-4 isBackedByDriver always true" "MUTANT-0C-FLAG-TRUE"
+
+perl -0777 -pi -e 's/IsBackedByDriver: thisKindCanBackAnything && SourceNamesTheConnectorsOwnKind/IsBackedByDriver: SourceNamesTheConnectorsOwnKind \/* MUTANT-0C-NO-CANBACK *\/ /' $TNB
+measure "D-0c-5 flag drops the CanBack condition" "MUTANT-0C-NO-CANBACK"
+
+perl -0777 -pi -e 's/public string CanonicalMachineCode\(\) => MachineCodeIdentity\.Canonicalize\(MachineCode\);/public string CanonicalMachineCode() => MachineCode; \/* MUTANT-0C-RAWCODE *\//' $TMD
+measure "D-0c-6 CanonicalMachineCode returns the raw field" "MUTANT-0C-RAWCODE"
+
+perl -0777 -pi -e 's/decl = parsed\.Entries is null \? parsed with \{ Entries = Array\.Empty<TagMapEntry>\(\) \} : parsed;/decl = parsed; \/* MUTANT-0C-NULLENTRIES *\//' $TMD
+measure "D-0c-7 parser stops normalising a null entries list" "MUTANT-0C-NULLENTRIES"
+
+perl -0777 -pi -e 's/!MachineCodeIdentity\.SameIdentity\(declaration\.CanonicalMachineCode\(\), machineCode\)/false \/* MUTANT-0C-NOIDENTITY *\//' $TIS
+measure "D-0c-8 declaration-vs-binding identity check removed" "MUTANT-0C-NOIDENTITY"
+
+perl -0777 -pi -e 's/Errors: ex\.Violations\)/Errors: new[] { ex.Violations[0] }) \/* MUTANT-0C-FIRSTONLY *\//' $TIS
+measure "D-0c-9 only the FIRST section-5 violation is reported" "MUTANT-0C-FIRSTONLY"
+
+perl -0777 -pi -e 's/BackedCount: document\.Tags\.Count\(t => t\.IsBackedByDriver\)/BackedCount: document.Tags.Count \/* MUTANT-0C-BACKEDCOUNT *\//' $TIS
+measure "D-0c-10 BackedCount reports TagCount" "MUTANT-0C-BACKEDCOUNT"
+
+# The per-machine swallow.
+# NOTE: anchored on ASCII only. The comment below the catch starts with a 4-byte emoji, and `\x{1f534}`
+# in a perl regex over a byte-slurped file matches nothing — the same class of silent non-match as the CRLF
+# regexes that defeated three earlier sweeps. `[^\n]{0,8}` steps over whatever those bytes are.
+perl -0777 -pi -e 's/            catch \(Exception ex\)\r?\n            \{\r?\n                \/\/ [^\n]{0,8}THE SWALLOW\./            catch (Exception ex) when (false) \/* MUTANT-0C-SWALLOW1 *\/\n            {\n                \/\/ THE SWALLOW./s' $TIS
+measure "D-0c-11 per-machine swallow removed" "MUTANT-0C-SWALLOW1"
+
+# 🔴 THE DIRECTORY-LISTING SWALLOW — W-HIGH-1. Wholly unmeasured before this round: `when (false)` on it
+# left the entire suite green, while removing it lets a permission change on tag-maps/ propagate out of a
+# top-level statement in Program.cs and STOP THE HOST — every machine on the box, not one screen.
+perl -0777 -pi -e 's/        catch \(Exception ex\)\r?\n        \{\r?\n            \/\/ [^\n]{0,8}THE DIRECTORY SWALLOW/        catch (Exception ex) when (false) \/* MUTANT-0C-SWALLOW2 *\/\n        {\n            \/\/ THE DIRECTORY SWALLOW/s' $TIS
+measure "D-0c-12 directory-listing swallow removed (W-HIGH-1)" "MUTANT-0C-SWALLOW2"
+
+perl -0777 -pi -e 's/Path\.Combine\(AppContext\.BaseDirectory, TagIngestionService\.DirectoryName\)/Path.Combine(AppContext.BaseDirectory, "tagmaps") \/* MUTANT-0C-DIRNAME *\//' $TIS
+measure "D-0c-13 tag-map folder name typo'd" "MUTANT-0C-DIRNAME"
+
+# MED-3: the three schema-required-field presence checks, in the assembly that owns them.
+perl -0777 -pi -e 's/if \(t\.Source is null\)/if (false) \/* MUTANT-0C-NOSOURCE *\//' $CI
+measure "D-0c-14 ContractInvariants stops checking source presence" "MUTANT-0C-NOSOURCE"
+
+perl -0777 -pi -e 's/if \(string\.IsNullOrWhiteSpace\(t\.DataType\)\)/if (false) \/* MUTANT-0C-NODATATYPE *\//' $CI
+measure "D-0c-15 ContractInvariants stops checking dataType presence" "MUTANT-0C-NODATATYPE"
+
+perl -0777 -pi -e 's/else if \(string\.IsNullOrWhiteSpace\(t\.Source\.Kind\)\)/else if (false) \/* MUTANT-0C-NOKIND *\//' $CI
+measure "D-0c-16 ContractInvariants stops checking source.kind presence" "MUTANT-0C-NOKIND"
+
+# The composition root: the DI registration and the feature's ONLY production call site.
+perl -0777 -pi -e 's/builder\.Services\.AddSingleton<St4i\.EngineApi\.HmiModel\.TagIngestionService>\(\);/builder.Services.AddSingleton(_ => new St4i.EngineApi.HmiModel.TagIngestionService(new St4i.EngineApi.HmiModel.CanonicalizingTagNamespaceStore(new St4i.EngineApi.HmiModel.TagNamespaceStore(null)))); \/* MUTANT-0C-DI-OTHERSTORE *\//' $PROG
+measure "D-0c-17 ingestion service given its OWN store, not the registered one" "MUTANT-0C-DI-OTHERSTORE"
+
+perl -0777 -pi -e 's/St4i\.EngineApi\.HmiModel\.TagMapStartupIngestion\.IngestAll\(/if \(false\) St4i.EngineApi.HmiModel.TagMapStartupIngestion.IngestAll( \/* MUTANT-0C-NOCALLSITE *\//' $PROG
+measure "D-0c-18 the feature's only production call site never runs" "MUTANT-0C-NOCALLSITE"
 
 echo "=== sources restored ==="

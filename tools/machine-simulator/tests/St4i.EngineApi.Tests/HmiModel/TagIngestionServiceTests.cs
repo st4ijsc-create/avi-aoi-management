@@ -545,7 +545,20 @@ public sealed class TagIngestionServiceTests : IDisposable
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
             // The declaration itself is not a caller.
             .Where(f => !f.EndsWith("TagMapDeclaration.cs", StringComparison.Ordinal))
-            .Where(f => File.ReadAllText(f).Contains("CanonicalMachineCode()", StringComparison.Ordinal))
+            // 🔴 COMMENT LINES ARE EXCLUDED, and that is the whole difference between this test working and
+            // not. The first version matched the file's raw text, so the paragraph EXPLAINING LOW-5 — which
+            // names `CanonicalMachineCode()` twice — kept the census green after the call itself was
+            // removed. Measured: restoring the exact LOW-5 regression left this test passing. A census that
+            // is satisfied by its own explanation measures nothing; the doc comment for LOW-5 must not be
+            // able to stand in for the call it describes.
+            .Where(f => File.ReadLines(f).Any(line =>
+            {
+                var code = line.TrimStart();
+                return !code.StartsWith("//", StringComparison.Ordinal)
+                       && !code.StartsWith("///", StringComparison.Ordinal)
+                       && !code.StartsWith("*", StringComparison.Ordinal)
+                       && code.Contains("CanonicalMachineCode()", StringComparison.Ordinal);
+            }))
             .Select(f => Path.GetRelativePath(srcRoot, f).Replace('\\', '/'))
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToList();
@@ -629,6 +642,37 @@ public sealed class TagIngestionServiceTests : IDisposable
         }
 
         Assert.Contains(log.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("AOI-01", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 🔴 <b>W-HIGH-1 — the directory swallow, which was WHOLLY unmeasured: `when (false)` on it left the
+    /// whole suite green.</b> It is the more dangerous of this file's two swallows. The per-machine one
+    /// loses one machine's screen; this one is reached before any machine is considered, from a method
+    /// called at the top of <c>IngestAll</c>, which <c>Program.cs</c> invokes from a TOP-LEVEL STATEMENT
+    /// with nothing above it to catch — so without it an unreadable <c>tag-maps/</c> folder stops the HOST,
+    /// and every machine on the box goes with it.
+    ///
+    /// <para>Does not measure: that a real ACL denial throws. Nothing here changes a permission — see the
+    /// internal overload's own doc comment for why an ACL-based test would be the kind that passes having
+    /// measured nothing on a host whose process bypasses DENY. What this measures is the structural
+    /// property: the listing call is inside the try, and a throw from it does not escape
+    /// <c>IngestAll</c>.</para>
+    /// </summary>
+    [Fact]
+    public void An_unreadable_tag_map_directory_does_not_stop_the_host()
+    {
+        var log = new RecordingLogger();
+
+        var ingested = TagMapStartupIngestion.IngestAll(
+            TempDir(),
+            new[] { ("modbus-1", (string?)"AOI-01", (string?)DriverKinds.Modbus) },
+            new TagIngestionService(RealStore()),
+            log,
+            listFiles: _ => throw new UnauthorizedAccessException("access to the tag-map directory is denied"));
+
+        Assert.Equal(0, ingested);
+        Assert.Contains(log.Entries, e =>
+            e.Level == LogLevel.Error && e.Message.Contains("could not be listed", StringComparison.Ordinal));
     }
 
     /// <summary>

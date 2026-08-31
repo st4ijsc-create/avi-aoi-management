@@ -374,6 +374,61 @@ public class ContractInvariantsTests
     // same "the mechanism is not specific to one document type" observation.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// 🔴 <b>WS-HMI-0c MED-3 — the schema-required-field presence checks, pinned in the assembly that OWNS
+    /// them.</b> They were added during 0c and every test that exercised them lived in
+    /// <c>St4i.EngineApi.Tests</c>, so this assembly — the one whose <c>Validate</c> the rule belongs to —
+    /// had nothing to say about its own behaviour.
+    ///
+    /// <para>Before the fix, an entry omitting <c>source</c> parsed, compiled, drew ZERO violations, threw
+    /// nothing, and serialised with <c>source</c> absent: a document the frozen schema FORBIDS was stored
+    /// and served. This class's own disclosure had named these three as "deliberately NOT checked" on a
+    /// crash-safety criterion, which was true of the question it asked and silent on this one.</para>
+    ///
+    /// <para>Does not measure: full schema validity. Presence only — no pattern, no enum membership, no
+    /// <c>additionalProperties</c>. A <c>dataType</c> of <c>"xyzzy"</c> still passes here, and that remains
+    /// this class's declared non-fix.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("dataType")]
+    [InlineData("source")]
+    [InlineData("source.kind")]
+    public void A_schema_required_field_missing_from_a_tag_is_a_violation(string missing)
+    {
+        var source = missing switch
+        {
+            "source" => null,
+            "source.kind" => new TagSource(null!, UnitId: 1, Register: 1),
+            _ => new TagSource("modbus", UnitId: 1, Register: 1),
+        };
+
+        var doc = new TagNamespaceDocument(1, "M1", new[]
+        {
+            new TagDescriptor("M1/oven/temp", missing == "dataType" ? null! : "float",
+                "C", 0, 300, null, "r", null, source!, false),
+        });
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains(missing.Split('.')[^1], StringComparison.Ordinal));
+    }
+
+    /// <summary>A fully-populated tag draws no violation from the checks above — so the theory is measuring
+    /// the missing field rather than something the fixture always trips.
+    ///
+    /// <para>Does not measure: the §5 policyAction rule, which has its own tests in this file.</para></summary>
+    [Fact]
+    public void A_tag_with_every_schema_required_field_present_draws_no_presence_violation()
+    {
+        var doc = new TagNamespaceDocument(1, "M1", new[]
+        {
+            new TagDescriptor("M1/oven/temp", "float", "C", 0, 300, null, "r", null,
+                new TagSource("modbus", UnitId: 1, Register: 1), false),
+        });
+
+        Assert.Empty(ContractInvariants.Validate(doc));
+    }
+
     [Fact]
     public void A_null_Tags_on_a_TagNamespaceDocument_is_a_violation_not_a_NullReferenceException()
     {

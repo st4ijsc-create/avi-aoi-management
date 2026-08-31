@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
+using St4i.Connector.Abstractions.Models;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
@@ -206,6 +207,109 @@ public sealed class HmiTagEndpointsTests
         Assert.Equal("SCRW-01", back!.MachineCode);
         Assert.Equal(2, back.Tags.Count);
         Assert.Contains(back.Tags, t => t.Path == "SCRW-01/spindle/torque" && t.Access == "rw");
+    }
+
+    /// <summary>
+    /// 🔴 <b>MED-3 at the WRITE DOOR — the half that made "close it in ContractInvariants, not the
+    /// builder" the right decision, and that had no test.</b> The reasoning for closing it there was that
+    /// this route and the ingestion path are two producers passing one door; closing it in the builder
+    /// would have healed ingestion and left THIS open to the identical document. That argument was made and
+    /// then not measured here.
+    ///
+    /// <para>Does not measure: full schema validity over HTTP — presence only, same scope as the checks
+    /// themselves.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("dataType", """{"path":"MED3-01/oven/temp","engMin":0,"engMax":300,"access":"r","source":{"kind":"modbus","unitId":1,"register":1}}""")]
+    [InlineData("source", """{"path":"MED3-01/oven/temp","dataType":"float","engMin":0,"engMax":300,"access":"r"}""")]
+    [InlineData("kind", """{"path":"MED3-01/oven/temp","dataType":"float","engMin":0,"engMax":300,"access":"r","source":{"unitId":1,"register":1}}""")]
+    public async Task Put_ATagMissingASchemaRequiredField_Is400_AndLeavesNothingBehind(string missing, string tagJson)
+    {
+        var (factory, engineer, operatorClient) = await NewFactoryWithUsersAsync($"med3-{missing.ToLowerInvariant()}");
+        await using var _f = factory;
+        using var engineerC = engineer;
+        using var operatorC = operatorClient;
+
+        var body = $$"""{"schemaVersion":1,"machineCode":"MED3-01","tags":[{{tagJson}}]}""";
+
+        using (var put = await engineerC.PutAsync("/v1/tags/MED3-01",
+                   new StringContent(body, Encoding.UTF8, "application/json")))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+            Assert.Contains(missing, await put.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        // P2 — a rejected body leaves no record.
+        using var get = await operatorC.GetAsync("/v1/tags?machine=MED3-01");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        var served = await get.Content.ReadFromJsonAsync<TagNamespaceDocument>(HmiContractJson.Options);
+        Assert.Empty(served!.Tags);
+    }
+
+    /// <summary>
+    /// 🔴 <b>WS-HMI-0c acceptance criterion 1, and the JOIN that both halves passing could not prove.</b>
+    /// Ingestion and the read route were each pinned, separately, against the store seam — and the join
+    /// between them was not: replacing <c>Program.cs</c>'s by-type registration of
+    /// <c>TagIngestionService</c> with a factory handing it a DIFFERENT
+    /// <c>CanonicalizingTagNamespaceStore</c> over a DIFFERENT directory left the whole suite green, while
+    /// ingestion logged success into a database no route reads and <c>GET /v1/tags?machine=</c> answered
+    /// empty-200 for every ingested machine — indistinguishable from "nobody declared tags", the exact
+    /// confusion README §26.7 exists to warn about.
+    ///
+    /// <para>This drives the REAL <c>TagIngestionService</c> resolved from the REAL host's DI, then reads
+    /// back over HTTP as an Operator, in one pass. It also asserts <c>isBackedByDriver</c> in BOTH
+    /// polarities on ONE document: the <c>modbus</c>-sourced tag is backed, the <c>derived</c> one is not,
+    /// on the same Modbus connector — so a build that hard-coded the flag either way fails here.</para>
+    ///
+    /// <para>Does not measure: the startup loop that finds tag-map FILES. No <c>tag-maps/</c> directory is
+    /// involved — <c>TagMapStartupIngestion</c> is pinned separately in
+    /// <c>TagIngestionServiceTests</c>. This is the service-to-route join, which is the half that was
+    /// unguarded.</para>
+    /// </summary>
+    [Fact]
+    public async Task Ingested_ThenGet_ServesTheSameNamespaceOverHttp_WithTheFlagTrueAndFalsePerTag()
+    {
+        var (factory, engineer, operatorClient) = await NewFactoryWithUsersAsync("ingest-join");
+        await using var _f = factory;
+        using var engineerC = engineer;
+        using var operatorC = operatorClient;
+
+        var ingestion = factory.Services.GetRequiredService<TagIngestionService>();
+
+        var tagMap = """
+            { "schemaVersion": 1, "machineCode": "JOIN-01", "entries": [
+              { "path": "JOIN-01/oven/temp", "dataType": "float", "unit": "C", "engMin": 0, "engMax": 300,
+                "access": "r", "source": { "kind": "modbus", "unitId": 1, "register": 40001 } },
+              { "path": "JOIN-01/oven/degF", "dataType": "float", "unit": "F", "engMin": 0, "engMax": 600,
+                "access": "r", "source": { "kind": "derived", "expr": "JOIN-01/oven/temp * 1.8 + 32" } } ] }
+            """;
+
+        var result = await ingestion.IngestAsync("JOIN-01", DriverKinds.Modbus, tagMap);
+        Assert.True(result.Ok, string.Join(" | ", result.Errors));
+        Assert.Equal(2, result.TagCount);
+        Assert.Equal(1, result.BackedCount);
+
+        using var get = await operatorC.GetAsync("/v1/tags?machine=JOIN-01");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+
+        var served = await get.Content.ReadFromJsonAsync<TagNamespaceDocument>(HmiContractJson.Options);
+        Assert.NotNull(served);
+        Assert.Equal("JOIN-01", served!.MachineCode);
+        Assert.Equal(2, served.Tags.Count);
+
+        var backed = Assert.Single(served.Tags, t => t.Path == "JOIN-01/oven/temp");
+        Assert.True(backed.IsBackedByDriver, "a modbus-sourced tag on a Modbus connector must be served as backed.");
+
+        var notBacked = Assert.Single(served.Tags, t => t.Path == "JOIN-01/oven/degF");
+        Assert.False(notBacked.IsBackedByDriver,
+            "a derived tag is computed from an expression — no driver reads it, whatever the connector is.");
+
+        // The single-tag route resolves it too, so the ingested document reached the tag INDEX and not only
+        // the document table.
+        using var byPath = await operatorC.GetAsync("/v1/tags/by-path/JOIN-01/oven/temp");
+        Assert.Equal(HttpStatusCode.OK, byPath.StatusCode);
+        var one = await byPath.Content.ReadFromJsonAsync<TagDescriptor>(HmiContractJson.Options);
+        Assert.True(one!.IsBackedByDriver);
     }
 
     /// <summary>🔴 The trap the brief names by name: a tag <c>path</c> CONTAINS <c>/</c>, so the route must

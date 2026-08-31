@@ -306,6 +306,23 @@ public sealed class DriverTagSupportTests
             $"these IConnectorFactory implementations are declared in src/ but the reflected population " +
             $"cannot see them: {string.Join(", ", invisible)}. Both directional tests are therefore silent " +
             "about them. Add a reference so this test project can load the assembly, or move the factory.");
+
+        // 🔴 THE OTHER DIRECTION, and its absence was a real hole. This census asked only src → reflected,
+        // so an assembly belonging to NO csproj and NO source file — `St4i.Ghost2.dll`, built elsewhere and
+        // dropped into the test output directory — was admitted to the truth side and this test, named in
+        // every document as the backstop, PASSED. One-directional, like everything else this workstream has
+        // had to fix. A shipped factory must correspond to a type declared in src/; if it does not, nothing
+        // in this repository can review the code that is deciding what the product "ships".
+        var unaccounted = ShippedFactoryTypes()
+            .Where(t => !declaredInSrc.Contains(t.Name, StringComparer.Ordinal))
+            .Select(t => $"{t.Assembly.GetName().Name}::{t.FullName}")
+            .ToList();
+
+        Assert.True(unaccounted.Count == 0,
+            "these IConnectorFactory implementations are supplying the truth side but are declared in NO " +
+            $"source file under src/: {string.Join(", ", unaccounted)}. An assembly that belongs to no " +
+            "project in this repository must not decide what this product ships — it cannot be reviewed, " +
+            "and it is exactly how a stale or hand-dropped DLL contaminates the population.");
     }
 
     private static string MachineSimulatorRoot()
@@ -416,6 +433,69 @@ public sealed class DriverTagSupportTests
         // and the effect had come apart — assert the side effect too, the way the template asserts the store
         // was reached rather than trusting the factory's return value.
         Assert.Equal(theDispatchBuiltAConnector, registry.RegisteredIds.Count == 1);
+    }
+
+    /// <summary>
+    /// 🔴 <b>The same behavioural check, QUANTIFIED over <see cref="DriverTagSupport.DeclaredKinds"/>
+    /// instead of listed — the fix for the contamination route the eight hand-written rows above left
+    /// open.</b>
+    ///
+    /// <para>A reviewer added an <c>IConnectorFactory</c> reporting <c>"vendor.ghost.press"</c> to
+    /// <c>src/St4i.EngineApi</c> — a product assembly linking no test framework, so
+    /// <see cref="ExistsToSupportTests"/> does not exclude it — and added that kind to
+    /// <c>DeclaredKinds</c>. Everything stayed green: the reflected truth side saw the factory, so both
+    /// directional tests agreed, and the behavioural theory never noticed because <b>it only ever asks
+    /// about kinds someone typed into an <c>[InlineData]</c></b>. A list was standing where a property
+    /// belongs, which is the shape this workstream keeps finding.</para>
+    ///
+    /// <para>This asserts the property directly: <b>EVERY kind this build declares backable must be one the
+    /// real <c>connectors.json</c> path can actually build a connector for.</b> A declared kind whose only
+    /// factory is a fake now fails here, because the fake is not reachable from the dispatch — it is not in
+    /// <c>ConnectorsJsonRegistration</c>'s switch, and nothing can put it there without a code change that
+    /// this test then measures.</para>
+    ///
+    /// <para>Does not measure: kinds that are NOT declared — the reverse direction is
+    /// <c>EveryKindAShippedConnectorFactoryReports_IsDeclared</c>'s job, and the non-emptiness guard below
+    /// keeps this from passing over an empty list.</para>
+    /// </summary>
+    [Fact]
+    public void EveryDeclaredKind_CanActuallyBeBuiltByTheRealDispatch_NotJustTheOnesSomebodyListed()
+    {
+        Assert.NotEmpty(DriverTagSupport.DeclaredKinds);
+
+        var unbuildable = new List<string>();
+
+        foreach (var kind in DriverTagSupport.DeclaredKinds)
+        {
+            var configPath = Path.Combine(
+                Path.GetTempPath(), "st4i-tagsupport-q", Guid.NewGuid().ToString("N"), "connectors.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+            var registry = new ConnectorRegistry();
+            try
+            {
+                File.WriteAllText(configPath,
+                    $$"""[ { "id": "quantified-probe", "kind": "{{kind}}", "settings": {{Settings}} } ]""");
+
+                var registered = ConnectorsJsonRegistration.RegisterAll(
+                    ConnectorsConfig.Load(configPath, logWarning: _ => { }),
+                    new ModbusOptions { Enabled = true, Host = "127.0.0.1", Port = 15020 },
+                    new OpcUaOptions(),
+                    registry,
+                    NullLogger.Instance);
+
+                if (registered != 1 || registry.RegisteredIds.Count != 1) unbuildable.Add(kind);
+            }
+            finally
+            {
+                try { Directory.Delete(Path.GetDirectoryName(configPath)!, recursive: true); } catch (IOException) { }
+            }
+        }
+
+        Assert.True(unbuildable.Count == 0,
+            $"DriverTagSupport.DeclaredKinds says a tag may be backed by {string.Join(", ", unbuildable)}, but the " +
+            "real connectors.json path builds no connector for those kinds — so CanBack answers true for a kind " +
+            "this product cannot actually read. If a factory for it exists, it is not reachable from " +
+            "ConnectorsJsonRegistration's dispatch; if the factory is a test fixture, it does not belong in src/.");
     }
 
     // ---------------------------------------------------------------------------------------------------

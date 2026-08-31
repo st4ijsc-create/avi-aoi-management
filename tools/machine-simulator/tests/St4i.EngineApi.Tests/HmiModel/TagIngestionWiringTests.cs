@@ -81,7 +81,13 @@ public sealed class TagIngestionWiringTests
                 .GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic),
             f => typeof(ITagNamespaceStore).IsAssignableFrom(f.FieldType));
 
-        Assert.IsType<CanonicalizingTagNamespaceStore>(storeField.GetValue(service));
+        // 🔴 IDENTITY, not type. Asserting `IsType<CanonicalizingTagNamespaceStore>` was satisfied by ANY
+        // canonicalising store — including a second one over a DIFFERENT directory. Measured: replacing
+        // Program.cs's by-type registration with a factory handing the service its own store left the whole
+        // suite green while ingestion wrote to a database no route reads, and GET /v1/tags answered
+        // empty-200 for every ingested machine. The property is that the ingestion door and the read routes
+        // are the SAME OBJECT, and only reference equality says that.
+        Assert.Same(resolved, storeField.GetValue(service));
     }
 
     /// <summary>
@@ -133,5 +139,35 @@ public sealed class TagIngestionWiringTests
 
         using var response = await client.GetAsync("/v1/capabilities");
         response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>
+    /// 🔴 <b>The feature's ONLY production call site, which had no pin at all — found by giving the
+    /// composition root a sweep row and watching it come back GREEN.</b> Wrapping <c>Program.cs</c>'s
+    /// <c>TagMapStartupIngestion.IngestAll(...)</c> in <c>if (false)</c> disabled every part of WS-HMI-0c
+    /// that a user could reach, and the entire suite stayed green: parser, flag, builder, service and
+    /// startup loop were each pinned, and the line that makes any of them RUN was not. That is the
+    /// <c>dispense_program</c> shape one level up — complete, correct, and connected to nothing.
+    ///
+    /// <para>Booting the host is the assertion: an absent <c>tag-maps/</c> folder is the normal state, so
+    /// startup leaves no namespace behind to look for, and the folder itself is in
+    /// <c>AppContext.BaseDirectory</c>, which this assembly's D-1 review (I-3) records as the shared
+    /// artifact directory a test must not write to.</para>
+    ///
+    /// <para>Does not measure: that anything was INGESTED — nothing is, because no map exists. It measures
+    /// that the loop was entered with the production directory, which is precisely what a disabled call
+    /// site removes.</para>
+    /// </summary>
+    [Fact]
+    public async Task Startup_actually_calls_the_tag_map_ingestion_loop()
+    {
+        await using var factory = await CreateFactoryAsync().ConfigureAwait(false);
+        _ = factory.Server;
+
+        Assert.True(TagMapStartupIngestion.HasRunAgainstTheProductionDirectory,
+            "no host boot in this test run has called TagMapStartupIngestion.IngestAll with " +
+            $"'{TagMapStartupIngestion.ResolveDirectory()}'. Program.cs's call site is the only place that " +
+            "passes it, so WS-HMI-0c is not wired into startup — every other test in this branch can pass " +
+            "with the whole feature disconnected.");
     }
 }

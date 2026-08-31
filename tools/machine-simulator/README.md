@@ -6720,10 +6720,13 @@ the same wrong gate from the same plan sentence.
 
 ### 26.4 What is NOT there — measured 2026-08-31, and this is the important half
 
-- **Nothing reads the tag namespace.** `grep -rn "/v1/tags" web/src/` returns exactly one hit, and it is a
-  doc comment about a WebSocket flag. The browser runtime still obtains values by **regex-parsing a display
-  string** (`TagValueSource.ts` → `parseKeyMetric`), which is the very gap §2.2 of the design spec
-  describes. 0c fills the namespace; **no consumer drains it**.
+- **Nothing reads the tag namespace.** `grep -rn "/v1/tags" web/src/` returns **zero** hits.
+  *(🔴 Corrected: this line previously said "exactly one hit, and it is a doc comment about a WebSocket
+  flag" — a published, reproducible command whose stated output was wrong. The one hit is for
+  `/v1/hmi/changes`, a different string, in `web/src/lib/api.ts`. A README that prints a command and the
+  wrong answer teaches a reader not to run it.)* The browser runtime still obtains values by
+  **regex-parsing a display string** (`TagValueSource.ts` → `parseKeyMetric`), which is the very gap §2.2
+  of the design spec describes. 0c fills the namespace; **no consumer drains it**.
 - **No editor.** Nothing writes a component tree or a screen document from a UI.
 - **No runtime binding.** §3.3's indirect binding (`{component}` → `tagPrefix`) exists as frozen types and
   pure functions with unit tests; nothing fetches `/v1/components` to resolve one against a real model.
@@ -6769,13 +6772,40 @@ is not resolved here.**
 ### 26.7 The swallow, and what it costs an operator
 
 A bad tag map must never break connector registration — the same reasoning `AssetRegistryStore.UpsertAsync`
-is built on: a machine must still RUN when its HMI namespace is broken. `TagMapStartupIngestion.IngestAll`
-therefore swallows, and this is **one of exactly two swallows in the workstream**.
+is built on: a machine must still RUN when its HMI namespace is broken. **`TagMapStartupIngestion` contains
+TWO swallows, not one**, and they have different blast radii.
+
+*(🔴 Corrected: this section previously said "one of exactly two swallows in the workstream", counting the
+per-machine catch and `AssetRegistryStore.UpsertAsync` in another workstream — and missing the second one
+twenty lines below it in the same file. There are three: two here, one there.)*
+
+**(a) The per-machine swallow** (`IngestAll`). One machine's map fails; that machine keeps whatever
+namespace it had and every other machine still ingests.
 
 **The price:** an operator whose tag map is malformed gets **a machine that runs and a screen that never
 appears**, and the only trace is a log line. Nothing in the UI says the map was refused — `GET /v1/tags`
 returns the previous namespace or an empty one, indistinguishable from a machine nobody has declared tags
 for.
+
+**(b) The directory-listing swallow** (`IndexMapFiles`) — **the one with the wider blast radius, and the
+one that went unmeasured longest.** It is reached before any machine is considered, from a method called at
+the top of `IngestAll`, which `Program.cs` invokes from a **top-level statement with nothing above it to
+catch**. Without it, a permission change on `tag-maps/` — an operator tightening an ACL, an installer
+running as a different principal, an antivirus lock — propagates out and **the host does not start**.
+Every machine on that box stops, not one screen.
+
+**Its price:** if the directory cannot be listed, **every** machine on the host silently keeps whatever
+namespace it had, and `GET /v1/tags?machine=` answers exactly as it would for a machine nobody ever
+declared tags for. It is the same indistinguishability as (a), multiplied by the whole fleet: an operator
+who fixes the permission and restarts sees screens reappear with no explanation of why they were gone.
+
+**Its named-but-unbuilt fix:** `IndexMapFiles` already knows it produced zero entries because listing
+**failed** rather than because the directory was **absent** — those two are indistinguishable in the return
+value today. Separating them, and surfacing "tag ingestion is degraded" on `GET /v1/capabilities`, would
+tell an operator the difference. A contract change, so it is named rather than done.
+
+Both are pinned: `The_startup_loop_swallows_a_failure_it_cannot_foresee_…` and
+`An_unreadable_tag_map_directory_does_not_stop_the_host`.
 
 **The named fix that was NOT built:** the `IngestResult` is already computed and structured
 (`Ok`/`TagCount`/`BackedCount`/`Errors`). Carrying the last outcome per machine and exposing it on the
@@ -6792,8 +6822,20 @@ presence (`dataType`, `source`, `source.kind`). It closes at that door because t
 open to the identical document. This is presence only — still **not** full JSON-Schema validation, which
 remains that class's declared non-fix.
 
-**Residue:** the guard that stops a test fixture supplying the truth side excludes assemblies that **link a
-test framework** (measured: `src/St4i.Connector.Conformance` is the one `src/` assembly it excludes, and it
-is the hole a reviewer used to contaminate the truth side silently). A double declared in a product assembly
-that links **no** test framework **would still enter**. The `src/` census
-`EveryConnectorFactoryDeclaredInSrc_IsOneTheReflectedPopulationCanSee` is what would catch it arriving.
+**The truth side was contaminated three times, and each route is now closed as a property rather than as a
+case.** Worth recording together, because the three attacks are the same mistake at three depths:
+
+1. **The test assembly itself.** Closed by excluding assemblies that **link a test framework** — a fact
+   about what an assembly *is*, not where it sits. Measured: `src/St4i.Connector.Conformance` is the one
+   `src/` assembly this excludes, and it is the hole the second attack used, so a `src/`-versus-`tests/`
+   convention would not have held.
+2. **A fake in a product assembly that links no test framework.** It survived because the behavioural pin
+   was **eight hand-written `[InlineData]` rows** — a list standing where a property belongs. Closed by
+   `EveryDeclaredKind_CanActuallyBeBuiltByTheRealDispatch_NotJustTheOnesSomebodyListed`, which quantifies
+   over `DeclaredKinds`: every kind this build declares backable must be one the real `connectors.json`
+   path can actually build a connector for.
+3. **An assembly belonging to no `.csproj` and no source file** — a DLL built elsewhere and dropped into
+   the test output directory. The `src/` census every document named as the backstop **passed**, because it
+   asked src→reflected and never reflected→src. It is bidirectional now: a factory supplying the truth side
+   that is declared in no file under `src/` fails, because an assembly no project in this repository owns
+   cannot be reviewed and must not decide what the product ships.

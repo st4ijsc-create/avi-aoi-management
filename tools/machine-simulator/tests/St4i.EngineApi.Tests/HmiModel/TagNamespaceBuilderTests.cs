@@ -504,10 +504,15 @@ public sealed class TagNamespaceBuilderTests
     {
         var srcRoot = Path.Combine(MachineSimulatorRoot(), "src");
 
+        // 🔴 THE TWO WRITE ENDPOINTS ARE NO LONGER EXEMPT, and that was the hole. Both were on this list
+        // because they "serialise documents that carry the field" — but measured, NEITHER mentions it in
+        // CODE: the only occurrences in HmiTagEndpoints.cs and HmiModelEndpoints.cs are comment lines. So
+        // the census exempted precisely the two files a fail-open consumer would most naturally be written
+        // into, and one added there left the suite green. Comment lines are now stripped before matching
+        // (same rule as the LOW-5 caller census), which drops both endpoints off this list entirely — and
+        // means a consumer added to either of them arrives as a NEW entry and reddens.
         var carriersByDesign = new[]
         {
-            "St4i.EngineApi/Endpoints/HmiModelEndpoints.cs",   // serialises documents that carry the field
-            "St4i.EngineApi/Endpoints/HmiTagEndpoints.cs",     // ditto
             "St4i.EngineApi/HmiModel/TagMapDeclaration.cs",    // declares the field on TagMapEntry
             "St4i.EngineApi/HmiModel/TagNamespaceBuilder.cs",  // copies it, entry -> descriptor
         };
@@ -516,7 +521,14 @@ public sealed class TagNamespaceBuilderTests
             .EnumerateFiles(srcRoot, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
-            .Where(f => File.ReadAllText(f).Contains("olicyAction", StringComparison.Ordinal))
+            .Where(f => File.ReadLines(f).Any(line =>
+            {
+                var code = line.TrimStart();
+                return !code.StartsWith("//", StringComparison.Ordinal)
+                       && !code.StartsWith("///", StringComparison.Ordinal)
+                       && !code.StartsWith("*", StringComparison.Ordinal)
+                       && code.Contains("olicyAction", StringComparison.Ordinal);
+            }))
             .Select(f => Path.GetRelativePath(srcRoot, f).Replace('\\', '/'))
             // The contracts assembly OWNS the field and its §5 rule; it is the one place allowed to decide
             // anything about it, which is exactly what "no consumer OUTSIDE the contracts assembly" means.
