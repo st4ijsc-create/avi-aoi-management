@@ -1828,8 +1828,23 @@ export default function AICodingWorkspace() {
   }
 
   const busyConfirm = confirmM.isPending || cancelM.isPending;
-  /** Số vấn đề của lượt lệnh MỚI NHẤT — huy hiệu tab "Vấn đề" (panel Problems đọc cùng nguồn này). */
-  const soVanDe = lenhDaChay[lenhDaChay.length - 1]?.diaDiemLoi.length ?? 0;
+  /**
+   * ★ 2026-09-01 · ĐỢT B (UX H3) — Problems TÍCH LUỸ theo NGỮ NGHĨA NGUỒN của VSCode: giữ địa điểm
+   * lỗi của lượt MỚI NHẤT cho MỖI LỆNH distinct (per-source replace). Trước: chỉ đọc lượt cuối —
+   * chạy `git status` xong là 40 lỗi tsc của lượt trước BIẾN MẤT khỏi panel dù chưa sửa gì. Nay:
+   * cùng lệnh chạy lại XANH ⇒ lỗi cũ của lệnh ấy tự rút (đã sửa thật); lệnh KHÁC không đè nhau.
+   * ⚠ Phân-mức warning CHƯA làm: parser `aiCodingLoiViTri` cố ý loại warning và có lưới ghim đúng
+   *   chỗ đó — đổi hợp đồng ấy là việc riêng một đợt, không nhét vào đây.
+   */
+  const diaDiemTichLuy = useMemo(() => {
+    const theoLenh = new Map<string, LuotLenh["diaDiemLoi"]>();
+    for (let i = lenhDaChay.length - 1; i >= 0; i--) {
+      const lt = lenhDaChay[i]!;
+      if (!theoLenh.has(lt.lenh)) theoLenh.set(lt.lenh, lt.diaDiemLoi);
+    }
+    return [...theoLenh.values()].flat();
+  }, [lenhDaChay]);
+  const soVanDe = diaDiemTichLuy.length;
   /**
    * ★ UX (C2) — TÍN HIỆU THẬT "chỉ CHẠY, KHÔNG ghi đĩa" cho thẻ duyệt `run_command`. Server đặt một
    * ô `preview.changes` `{ field:"ghiDia", newValue:"chi_hoi_kiem_tra" | "ghi_de_ma_nguon" }` (xem
@@ -2870,7 +2885,7 @@ export default function AICodingWorkspace() {
                 />
               ) : (
                 <BangProblems
-                  diaDiem={lenhDaChay[lenhDaChay.length - 1]?.diaDiemLoi ?? []}
+                  diaDiem={diaDiemTichLuy}
                   tepDangChon={selectedPath}
                   onMoTep={moTepTuVanDe}
                 />
