@@ -5921,6 +5921,19 @@ async function startServer() {
     console.error("[DbRequirements] init failed:", (err as any)?.message || err);
   }
 
+  // C-1 (review Khối C lượt 9) — BG-97 (snapshot-gate v2) TẮT im lặng: cờ
+  // `SPEC_GATE_SNAPSHOT_ENABLED` không tồn tại trong `.env` chạy thật, và không có
+  // gì trong mã/cấu hình/cổng nói cho ai biết. KHÔNG đổi mặc định cờ (quyết định
+  // của chủ dự án) — chỉ làm trạng thái TẮT ồn ào: cảnh báo MỘT LẦN lúc boot nếu
+  // cờ tắt VÀ đã có điểm cây mang lịch sử giới hạn (điều kiện tiền đề đã đủ hôm
+  // nay theo review). Non-fatal — một lượt đọc DB hỏng không chặn khởi động.
+  try {
+    const { canhBaoCongSnapshotTat } = await import("../services/gioiHanLucDoCayV2");
+    await canhBaoCongSnapshotTat();
+  } catch (err) {
+    console.error("[BG-97] canhBaoCongSnapshotTat init failed:", (err as any)?.message || err);
+  }
+
   // Doc 27 Đợt 7 W7-D (gap V4) — AI model availability honesty: ONE consolidated
   // startup line (which manifest models are present/missing + the embedding tier
   // actually in effect) + a db_feature_status row ('ai_models') so the admin

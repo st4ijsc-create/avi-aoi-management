@@ -56,6 +56,10 @@ import {
   type PointLimitSnapshot,
   type PointLimitSource,
 } from "./pointResultEvaluator";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { getDb } from "../db/connection";
+import { measurementPointDefs, measurementPointVersions } from "../../drizzle/schema";
+import logger from "../logger";
 
 /** Số mẫu điểm được chấm theo SNAPSHOT giữ lại để chẩn đoán — đủ nhận ra mẫu, không phình log. */
 const SO_MAU_SNAPSHOT = 10;
@@ -70,6 +74,52 @@ const SO_MAU_SNAPSHOT = 10;
 export function laCongSnapshotBat(): boolean {
   const s = String(process.env.SPEC_GATE_SNAPSHOT_ENABLED ?? "").trim().toLowerCase();
   return s === "true" || s === "1" || s === "yes" || s === "on";
+}
+
+/**
+ * ★★★ C-1 (review Khối C lượt 9) — "cờ TẮT im lặng" — cảnh báo LÚC BOOT, một lần.
+ *
+ * Cổng canh duy nhất giữa "bo tốt" và "hạ oan" là `SPEC_GATE_SNAPSHOT_ENABLED`
+ * — một biến môi trường KHÔNG TỒN TẠI trong `.env` đang chạy hôm nay (đo được).
+ * Không có startup-warning, không census, không lưới nào ĐỎ khi cờ tắt — một
+ * dòng ledger KHÔNG phải một cổng (đúng khuôn L-2 tầng vận hành mà review lượt
+ * 9 §1 nêu). Hàm này KHÔNG đổi mặc định cờ (ràng buộc brief) — nó chỉ làm
+ * trạng thái TẮT **ồn ào**: nếu cờ tắt VÀ đã có ≥1 điểm cây (`captureRowId IS
+ * NOT NULL`, `deletedAt IS NULL`) mang lịch sử giới hạn trong
+ * `measurement_point_versions`, in cảnh báo kèm SỐ ĐO thật (N điểm) — vì điều
+ * kiện tiền đề của C-1 (bo tồn kho/WAL + một lượt siết) đã ĐỦ trên máy này
+ * ngay hôm nay theo báo cáo review (26 hàng version, 6/16 điểm cây có giới hạn).
+ *
+ * BEST-EFFORT: một lượt đọc DB hỏng (mất kết nối lúc boot…) KHÔNG được chặn
+ * khởi động — chỉ log lỗi, cùng kỷ luật "không side-effect nào làm hỏng boot"
+ * của mọi startup-check khác trong `server/_core/index.ts`.
+ */
+export async function canhBaoCongSnapshotTat(): Promise<void> {
+  if (laCongSnapshotBat()) return; // cờ đã bật ⇒ không phải trạng thái C-1 cảnh báo
+  try {
+    const d = await getDb();
+    if (!d) return;
+    const hang = await d
+      .select({
+        n: sql<number>`COUNT(DISTINCT ${measurementPointVersions.pointDefId})`,
+      })
+      .from(measurementPointVersions)
+      .innerJoin(measurementPointDefs, eq(measurementPointDefs.id, measurementPointVersions.pointDefId))
+      .where(and(isNotNull(measurementPointDefs.captureRowId), isNull(measurementPointDefs.deletedAt)));
+    const n = Number(hang[0]?.n ?? 0);
+    if (n <= 0) return; // 0 điểm cây có lịch sử giới hạn ⇒ điều kiện tiền đề C-1 CHƯA đủ hôm nay
+    const dong =
+      `[BG-97] SPEC_GATE_SNAPSHOT_ENABLED TẮT: bo v2 phát lại/ZIP muộn chấm theo giới hạn ` +
+      `ĐANG SỐNG (không phải giới hạn lúc bo được đo) — ${n} điểm cây đã có lịch sử giới hạn. ` +
+      `Xem SPEC_GATE_SNAPSHOT_ENABLED trong .env.example trước khi lên thật.`;
+    console.warn(dong);
+    logger.warn(
+      { flag: "SPEC_GATE_SNAPSHOT_ENABLED", enabled: false, diemCayCoLichSuGioiHan: n },
+      "[BG-97] snapshot-gate v2 TẮT trong khi điểm cây đã mang lịch sử giới hạn",
+    );
+  } catch (err) {
+    console.error("[BG-97] canhBaoCongSnapshotTat: lượt đọc kiểm tra thất bại (không chặn boot):", (err as any)?.message || err);
+  }
 }
 
 /**

@@ -65,6 +65,8 @@ import {
 } from "@/components/productModels/types";
 import { ProductListPanel } from "@/components/products/ProductListPanel";
 import { ProductDialogsHost } from "@/components/products/ProductDialogsHost";
+// I-1 (vòng sửa 9, Khối C review lượt 9) — xem khối hằng số FIELD_* ngay dưới `sanitizeCriteria`.
+import { POINT_LIMIT_SPEC } from "@shared/pointLimitSpec";
 
 /** Drop incomplete criteria rows and coerce numeric bounds to strings for the API. */
 function sanitizeCriteria(items: PointCriteriaItem[]): PointCriteriaItem[] {
@@ -89,6 +91,44 @@ function sanitizeCriteria(items: PointCriteriaItem[]): PointCriteriaItem[] {
     };
   });
 }
+
+/**
+ * I-1 (vòng sửa 9, Khối C) — Task 14 (`86bdf1fd`) chỉ gỡ *interface* `MeasurementPoint` chép tay
+ * (BG-107) rồi khai "đã di trú", nhưng BỐN khối DỮ LIỆU bên dưới (hydrate `measurementPoints`,
+ * `populatePointForm`, payload `handleSavePoint`, `handleSaveAsTemplate`) vẫn liệt kê tay 18 tên
+ * cột giới hạn — review lượt 9 đo được, tệp chỉ thoát census §3 nhờ bắc cầu 1 bậc (import kiểu
+ * `MeasurementPoint` từ `types.ts`), không phải vì đã suy từ spec THẬT.
+ *
+ * Sửa: 18 tên cột suy TỪ VỊ TRÍ trong `POINT_LIMIT_SPEC` (`shared/pointLimitSpec.ts`) — mỗi hằng
+ * số dưới đây giữ ĐÚNG kiểu literal của TS (không phải `string` chung) vì lấy trực tiếp một PHẦN
+ * TỬ của mảng khai bằng `as const` (`POINT_LIMIT_SPEC[i].field`), KHÔNG gõ lại chuỗi tên field lần
+ * hai — bốn khối bên dưới dùng các hằng số này qua object-key TÍNH TOÁN (`[FIELD_X]: …`) hoặc
+ * truy cập thuộc tính tính toán (`point[FIELD_X]`).
+ * ⚠ VỊ TRÍ PHẢI khớp thứ tự khai trong `POINT_LIMIT_SPEC` — census §1/§2 khoá TẬP 18 field, KHÔNG
+ * khoá THỨ TỰ mảng; đây là một giả định thêm CỦA RIÊNG khối này (không phải một bất biến được lưới
+ * nào canh). Đổi TẬP field (thêm/bớt) ở spec sẽ làm `tsc` đỏ ngay (khoá không còn hợp lệ trên
+ * `MeasurementPoint`); đổi THỨ TỰ (không đổi tập) sẽ KHÔNG tự báo lỗi — chỉ lặng lẽ sai Ý NGHĨA
+ * (hằng số `FIELD_HEIGHT_MIN` trỏ nhầm sang field khác nhưng vẫn hợp kiểu) — nếu ai đổi thứ tự
+ * khai trong `shared/pointLimitSpec.ts`, sửa lại đúng vị trí tương ứng dưới đây.
+ */
+const FIELD_LOWER_LIMIT = POINT_LIMIT_SPEC[0].field;
+const FIELD_UPPER_LIMIT = POINT_LIMIT_SPEC[1].field;
+const FIELD_UNIT = POINT_LIMIT_SPEC[2].field;
+const FIELD_HEIGHT_MIN = POINT_LIMIT_SPEC[3].field;
+const FIELD_HEIGHT_MAX = POINT_LIMIT_SPEC[4].field;
+const FIELD_AREA_MIN = POINT_LIMIT_SPEC[5].field;
+const FIELD_AREA_MAX = POINT_LIMIT_SPEC[6].field;
+const FIELD_VOLUME_MIN = POINT_LIMIT_SPEC[7].field;
+const FIELD_VOLUME_MAX = POINT_LIMIT_SPEC[8].field;
+const FIELD_COPLANARITY_MAX = POINT_LIMIT_SPEC[9].field;
+const FIELD_WARPAGE_MAX = POINT_LIMIT_SPEC[10].field;
+const FIELD_VOID_PCT_MAX = POINT_LIMIT_SPEC[11].field;
+const FIELD_OFFSET_X_MAX = POINT_LIMIT_SPEC[12].field;
+const FIELD_OFFSET_Y_MAX = POINT_LIMIT_SPEC[13].field;
+const FIELD_TILT_MAX = POINT_LIMIT_SPEC[14].field;
+const FIELD_THICKNESS_MIN = POINT_LIMIT_SPEC[15].field;
+const FIELD_THICKNESS_MAX = POINT_LIMIT_SPEC[16].field;
+const FIELD_CRITERIA = POINT_LIMIT_SPEC[17].field;
 
 /**
  * Doc 43 Đợt 5 — tóm tắt ngưỡng của 1 điểm đo cho cột bảng (không cần i18n).
@@ -1132,9 +1172,13 @@ export default function ProductModels() {
         name: p.name,
         description: p.description || undefined,
         measurementType: p.measurementType,
-        unit: p.unit || undefined,
-        lowerLimit: p.lowerLimit || undefined,
-        upperLimit: p.upperLimit || undefined,
+        // I-1 (vòng sửa 9) — TẬP CON 3 field 1D suy TỪ POINT_LIMIT_SPEC (khoá tính toán qua
+        // FIELD_*, xem docblock đầu file); CHỈ 3 field này cần chuẩn hoá falsy→undefined ở đây,
+        // 15 field 3D/GD&T còn lại đến NGUYÊN TRẠNG qua `...(p as any)` phía trên — hành vi giữ y
+        // hệt trước bản vá.
+        [FIELD_UNIT]: (p as any)[FIELD_UNIT] || undefined,
+        [FIELD_LOWER_LIMIT]: (p as any)[FIELD_LOWER_LIMIT] || undefined,
+        [FIELD_UPPER_LIMIT]: (p as any)[FIELD_UPPER_LIMIT] || undefined,
         nominalValue: p.nominalValue || undefined,
         positionX: p.positionX,
         positionY: p.positionY,
@@ -1166,9 +1210,14 @@ export default function ProductModels() {
     setPointDescription(point.description || "");
     setPointType(point.measurementType);
     setPointMeasurementTypeCode(point.measurementTypeCode || "");
-    setPointUnit(point.unit || "");
-    setPointLowerLimit(point.lowerLimit || "");
-    setPointUpperLimit(point.upperLimit || "");
+    // I-1 (vòng sửa 9) — 17 field chuỗi + trường tiêu chí dạng mảng (phần tử cuối POINT_LIMIT_SPEC)
+    // đọc qua `point[FIELD_X]` (khoá tính toán, xem docblock FIELD_* đầu file) — KHÔNG gõ tay tên
+    // field lần hai. Setter (`setPointHeightMin`…) giữ NGUYÊN — tên đã an toàn (viết hoa chữ đầu
+    // field) vì mỗi field sống trong một `useState` RIÊNG, không có cách gọi setter theo tên lúc
+    // runtime.
+    setPointUnit(point[FIELD_UNIT] || "");
+    setPointLowerLimit(point[FIELD_LOWER_LIMIT] || "");
+    setPointUpperLimit(point[FIELD_UPPER_LIMIT] || "");
     setPointNominalValue(point.nominalValue || "");
     setPointToleranceMode((point.toleranceMode as ToleranceMode) || "range");
     setPointTolPlus(point.tolPlus || "");
@@ -1177,27 +1226,27 @@ export default function ProductModels() {
     setPointMaterialCondition((point.materialCondition as MaterialCondition) || "");
     setPointFitClass(point.fitClass || "");
     setPointPositionZ(point.positionZ || "");
-    setPointHeightMin(point.heightMin || "");
-    setPointHeightMax(point.heightMax || "");
+    setPointHeightMin(point[FIELD_HEIGHT_MIN] || "");
+    setPointHeightMax(point[FIELD_HEIGHT_MAX] || "");
     setPointHeightNominal(point.heightNominal || "");
     setPointHeightUnit(point.heightUnit || "");
-    setPointAreaMin(point.areaMin || "");
-    setPointAreaMax(point.areaMax || "");
+    setPointAreaMin(point[FIELD_AREA_MIN] || "");
+    setPointAreaMax(point[FIELD_AREA_MAX] || "");
     setPointAreaNominal(point.areaNominal || "");
     setPointAreaUnit(point.areaUnit || "");
-    setPointVolumeMin(point.volumeMin || "");
-    setPointVolumeMax(point.volumeMax || "");
+    setPointVolumeMin(point[FIELD_VOLUME_MIN] || "");
+    setPointVolumeMax(point[FIELD_VOLUME_MAX] || "");
     setPointVolumeNominal(point.volumeNominal || "");
     setPointVolumeUnit(point.volumeUnit || "");
-    setPointCoplanarityMax(point.coplanarityMax || "");
-    setPointWarpageMax(point.warpageMax || "");
-    setPointVoidPctMax(point.voidPctMax || "");
-    setPointOffsetXMax(point.offsetXMax || "");
-    setPointOffsetYMax(point.offsetYMax || "");
-    setPointTiltMax(point.tiltMax || "");
-    setPointThicknessMin(point.thicknessMin || "");
-    setPointThicknessMax(point.thicknessMax || "");
-    setPointCriteria(Array.isArray(point.criteria) ? (point.criteria as PointCriteriaItem[]) : []);
+    setPointCoplanarityMax(point[FIELD_COPLANARITY_MAX] || "");
+    setPointWarpageMax(point[FIELD_WARPAGE_MAX] || "");
+    setPointVoidPctMax(point[FIELD_VOID_PCT_MAX] || "");
+    setPointOffsetXMax(point[FIELD_OFFSET_X_MAX] || "");
+    setPointOffsetYMax(point[FIELD_OFFSET_Y_MAX] || "");
+    setPointTiltMax(point[FIELD_TILT_MAX] || "");
+    setPointThicknessMin(point[FIELD_THICKNESS_MIN] || "");
+    setPointThicknessMax(point[FIELD_THICKNESS_MAX] || "");
+    setPointCriteria(Array.isArray(point[FIELD_CRITERIA]) ? (point[FIELD_CRITERIA] as PointCriteriaItem[]) : []);
     setPointComponentCode(point.componentCode || "");
     setPointRefDesignator(point.refDesignator || "");
     setPointReferenceImageUrl(point.referenceImageUrl || "");
@@ -1903,9 +1952,14 @@ export default function ProductModels() {
       description: pointDescription || undefined,
       measurementType: pointType,
       measurementTypeCode: pointMeasurementTypeCode || undefined,
-      unit: pointUnit || undefined,
-      lowerLimit: pointLowerLimit || undefined,
-      upperLimit: pointUpperLimit || undefined,
+      // I-1 (vòng sửa 9) — 17 field chuỗi + trường tiêu chí dạng mảng của POINT_LIMIT_SPEC gán
+      // qua khoá TÍNH TOÁN `[FIELD_X]` (xem docblock FIELD_* đầu file) — KHÔNG gõ tay tên field
+      // lần hai. Field KHÔNG thuộc spec (nominalValue, toleranceMode, heightNominal, heightUnit,
+      // …) giữ khoá tay như cũ — chúng không phải 18 cột spec-gate chấm bằng (xem
+      // `shared/pointLimitSpec.ts`).
+      [FIELD_UNIT]: pointUnit || undefined,
+      [FIELD_LOWER_LIMIT]: pointLowerLimit || undefined,
+      [FIELD_UPPER_LIMIT]: pointUpperLimit || undefined,
       nominalValue: pointNominalValue || undefined,
       toleranceMode: pointToleranceMode,
       tolPlus: pointTolPlus || undefined,
@@ -1917,28 +1971,28 @@ export default function ProductModels() {
       materialCondition: (pointMaterialCondition || undefined) as MaterialCondition | undefined,
       fitClass: pointFitClass || undefined,
       positionZ: pointPositionZ || undefined,
-      heightMin: pointHeightMin || undefined,
-      heightMax: pointHeightMax || undefined,
+      [FIELD_HEIGHT_MIN]: pointHeightMin || undefined,
+      [FIELD_HEIGHT_MAX]: pointHeightMax || undefined,
       heightNominal: pointHeightNominal || undefined,
       heightUnit: pointHeightUnit || undefined,
-      areaMin: pointAreaMin || undefined,
-      areaMax: pointAreaMax || undefined,
+      [FIELD_AREA_MIN]: pointAreaMin || undefined,
+      [FIELD_AREA_MAX]: pointAreaMax || undefined,
       areaNominal: pointAreaNominal || undefined,
       areaUnit: pointAreaUnit || undefined,
-      volumeMin: pointVolumeMin || undefined,
-      volumeMax: pointVolumeMax || undefined,
+      [FIELD_VOLUME_MIN]: pointVolumeMin || undefined,
+      [FIELD_VOLUME_MAX]: pointVolumeMax || undefined,
       volumeNominal: pointVolumeNominal || undefined,
       volumeUnit: pointVolumeUnit || undefined,
-      coplanarityMax: pointCoplanarityMax || undefined,
-      warpageMax: pointWarpageMax || undefined,
-      voidPctMax: pointVoidPctMax || undefined,
-      offsetXMax: pointOffsetXMax || undefined,
-      offsetYMax: pointOffsetYMax || undefined,
-      tiltMax: pointTiltMax || undefined,
-      thicknessMin: pointThicknessMin || undefined,
-      thicknessMax: pointThicknessMax || undefined,
+      [FIELD_COPLANARITY_MAX]: pointCoplanarityMax || undefined,
+      [FIELD_WARPAGE_MAX]: pointWarpageMax || undefined,
+      [FIELD_VOID_PCT_MAX]: pointVoidPctMax || undefined,
+      [FIELD_OFFSET_X_MAX]: pointOffsetXMax || undefined,
+      [FIELD_OFFSET_Y_MAX]: pointOffsetYMax || undefined,
+      [FIELD_TILT_MAX]: pointTiltMax || undefined,
+      [FIELD_THICKNESS_MIN]: pointThicknessMin || undefined,
+      [FIELD_THICKNESS_MAX]: pointThicknessMax || undefined,
       // Doc 31 MP6 — send only complete criteria rows; [] clears them.
-      criteria: sanitizeCriteria(pointCriteria),
+      [FIELD_CRITERIA]: sanitizeCriteria(pointCriteria),
       componentCode: pointComponentCode.trim() || undefined,
       refDesignator: pointRefDesignator.trim() || undefined,
       positionX: point.positionX,
@@ -2128,9 +2182,12 @@ export default function ProductModels() {
       name: p.name,
       description: p.description,
       measurementType: p.measurementType,
-      unit: p.unit,
-      lowerLimit: p.lowerLimit,
-      upperLimit: p.upperLimit,
+      // I-1 (vòng sửa 9) — TẬP CON 3 field 1D (mẫu chỉ lưu ngưỡng cổ điển, không 3D/GD&T — hành
+      // vi GIỮ NGUYÊN trước bản vá) suy TỪ POINT_LIMIT_SPEC qua khoá tính toán FIELD_* (xem
+      // docblock đầu file), KHÔNG gõ tay tên field lần hai.
+      [FIELD_UNIT]: p[FIELD_UNIT],
+      [FIELD_LOWER_LIMIT]: p[FIELD_LOWER_LIMIT],
+      [FIELD_UPPER_LIMIT]: p[FIELD_UPPER_LIMIT],
       nominalValue: p.nominalValue,
       positionX: p.positionX,
       positionY: p.positionY,

@@ -30,23 +30,32 @@
  * `development` ⇒ `assertThresholdEditAllowed` quyết định `direct` — dạy giới
  * hạn đi thẳng, đúng phạm vi mệnh đề này.
  *
- * ── CỜ SNAPSHOT v2 (`SPEC_GATE_SNAPSHOT_ENABLED`) — KHÔNG ĐỘNG, VẪN TẮT ──────
- * Ràng buộc an toàn TUYỆT ĐỐI của brief: không đổi mặc định cờ nào. Với cờ TẮT,
- * MỌI linh kiện tra ra được (`banDo`) chấm theo giới hạn ĐANG SỐNG tại lúc bo
- * "tới" server (`giaiGioiHanTaiNeo` không chạy — xem `submitInspectionTreeV2`),
- * KHÔNG tái dựng theo lịch sử. Đây ĐÚNG cho phép đo mệnh đề 3: bo SAU được đẩy
- * SAU khi dạy xong, nên "giới hạn đang sống" CHÍNH LÀ giới hạn vừa dạy — không
- * cần ngữ nghĩa snapshot-tại-neo (BG-97) để chứng minh mệnh đề này. `theoSnapshot`
- * phải là 0 ở cả hai lượt đẩy — lưới dưới đo, không giả định.
+ * ── CỜ SNAPSHOT v2 (`SPEC_GATE_SNAPSHOT_ENABLED`) — BƯỚC 1-3: KHÔNG ĐỘNG, VẪN TẮT ──
+ * Ràng buộc an toàn TUYỆT ĐỐI của brief: không đổi MẶC ĐỊNH cờ nào (`.env`/
+ * `.env.example` không đổi ở đây). BƯỚC 1-3 (mệnh đề 3 GỐC) chạy với cờ TẮT
+ * (mặc định), MỌI linh kiện tra ra được (`banDo`) chấm theo giới hạn ĐANG SỐNG
+ * tại lúc bo "tới" server, KHÔNG tái dựng theo lịch sử — `theoSnapshot` phải là
+ * 0 ở cả hai lượt đẩy, lưới đo, không giả định.
+ *
+ * ── ★★★ C-1 (review Khối C lượt 9) — MỆNH ĐỀ 3 THAM SỐ HOÁ CẢ HAI TRẠNG THÁI ──
+ * BƯỚC 1-3 CHỈ chứng minh "cổng chấm" — KHÔNG chứng minh "chấm ĐÚNG THEO GIỚI
+ * HẠN LÚC BO ĐƯỢC ĐO" (điều BG-97 tồn tại để bảo đảm). BƯỚC 4 + hai mệnh đề
+ * "MỆNH ĐỀ 3 · cờ BẬT/TẮT" bên dưới đo lại CHÍNH chuỗi thật này (cùng sản
+ * phẩm, cùng 3 điểm đã dạy) với cờ **OVERRIDE TRONG TEST** (`process.env.
+ * SPEC_GATE_SNAPSHOT_ENABLED = "true"`, khôi phục trong `finally`) — KHÔNG
+ * đổi `.env`/`.env.example`, KHÔNG đổi mặc định thật của tiến trình server.
+ * Bằng chứng C-1: một bo THẬT SỰ tốt lúc nó được đo, nếu SIẾT giới hạn xảy ra
+ * TRƯỚC lúc nó được GHI, bị **hạ oan** khi cờ TẮT (mặc định) và **không** bị
+ * hạ oan khi cờ BẬT — trên đúng đường "cổng ra" mà Task 12 tuyên bố nghiệm thu.
  *
  * ── DEDUP — TẠI SAO "ĐẨY LẠI CÙNG FILE" KHÔNG PHẢI "ĐẨY LẠI CÙNG BO" ─────────
  * `dungKhoaKhuTrungV2` băm (identity + productId + startedAt). Đẩy NGUYÊN VĂN
  * cùng payload hai lần sẽ hội tụ về CÙNG MỘT inspection (đúng thiết kế khử
  * trùng — xem `capComponentGhiThat.db.test.ts` mệnh đề 6), và lượt hai sẽ KHÔNG
- * chấm lại gì cả. Lưới này đẩy file THẬT hai lần với `productId`/`serialNumber`
- * đổi hậu tố (TRUOC/SAU) — mọi trường CÒN LẠI (surfaces/value/lowerLimit/
- * upperLimit/result…) giữ NGUYÊN VĂN từ đĩa, đọc bằng `JSON.parse`, không gõ
- * tay một con số nào.
+ * chấm lại gì cả. Lưới này đẩy file THẬT nhiều lần với `productId`/`serialNumber`
+ * đổi hậu tố (TRUOC/SAU/MDE3B_BAT/MDE3B_TAT) — mọi trường CÒN LẠI (surfaces/
+ * value/lowerLimit/upperLimit/result…) giữ NGUYÊN VĂN từ đĩa, đọc bằng
+ * `JSON.parse`, không gõ tay một con số nào.
  *
  * ── WORM và dấu chân để lại (ĐỌC TRƯỚC KHI SỬA) ─────────────────────────────
  * `product_inspections`/`audit_logs` là WORM — `avi_app` KHÔNG có DELETE. Lưới
@@ -61,15 +70,16 @@
  * Chạy trên `aoi_management_test` qua `vitest.setup.ts` guard, vai `avi_app`.
  * Mọi con số kèm `current_database()` (luật Đ-28).
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promises as fsp } from "node:fs";
 import postgres from "postgres";
-import { machineApiRouter } from "../routers/machineApiRouters";
+import { machineApiRouter, submitInspectionTreeV2 } from "../routers/machineApiRouters";
 import { measurementPointRouter } from "../routers/productRouters";
 import { issueMachineKey } from "../services/machineAuthService";
+import { canhBaoCongSnapshotTat } from "../services/gioiHanLucDoCayV2";
 import type { TrpcContext } from "../_core/context";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -84,6 +94,12 @@ const CAN_DUOI_RONG = "9";
 const CAN_TREN_RONG = "11";
 const CAN_DUOI_HEP = "0";
 const CAN_TREN_HEP = "2";
+/**
+ * ★★★ C-1 — cận SIẾT của BƯỚC 4: dat2 (trị THẬT 10.0) đang ở [9;11] (BƯỚC 2).
+ * Siết upper xuống 9.8 ⇒ 10.0 RA NGOÀI [9;9.8] theo luật MỚI, vẫn TRONG [9;11]
+ * theo luật LÚC BO ĐƯỢC ĐO — đúng cận cần để phân biệt hai trạng thái cờ.
+ */
+const CAN_TREN_SIET = "9.8";
 
 let sql: ReturnType<typeof postgres>;
 let tenDb = "(chưa đo)";
@@ -132,11 +148,13 @@ function mauKetQua(): any {
 /**
  * Đẩy `dashboard-sample.json` NGUYÊN VĂN, chỉ đổi bốn trường bắt buộc để (a) máy
  * xác thực được (`apiKey`), (b) trỏ đúng sản phẩm riêng của lưới này
- * (`productModel`), (c) tránh khử trùng hai lượt TRƯỚC/SAU về CÙNG một bo
- * (`productId`/`serialNumber` đổi hậu tố). `surfaces`/`value`/`lowerLimit`/
+ * (`productModel`), (c) tránh khử trùng nhiều lượt về CÙNG một bo (`productId`/
+ * `serialNumber` đổi hậu tố theo `nhan`). `surfaces`/`value`/`lowerLimit`/
  * `upperLimit`/`result`/thời gian… giữ NGUYÊN — đây CHÍNH LÀ file thật.
+ * `nhan` nhận chuỗi bất kỳ (không còn khoá cứng `"TRUOC"|"SAU"`) — C-1 dùng
+ * thêm `MDE3B_BAT`/`MDE3B_TAT` cho hai nhánh cờ của mệnh đề 3 tham số hoá.
  */
-function payloadKetQuaThat(nhan: "TRUOC" | "SAU"): any {
+function payloadKetQuaThat(nhan: string): any {
   const raw = mauKetQua();
   raw.apiKey = apiKey;
   raw.productModel = MA_SP;
@@ -427,5 +445,126 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       // cách không phải điều test này muốn chứng minh) — dán số cụ thể.
       expect(kq.mayTuMauThuan.tong, `[${tenDb}] mayTuMauThuan.tong = tổng lá máy khai (48), không phụ thuộc cây dạy`).toBe(48);
     }, 180_000);
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ★★★ C-1 (review Khối C lượt 9) — MỆNH ĐỀ 3 THAM SỐ HOÁ CẢ HAI TRẠNG THÁI CỜ.
+    // Xem docblock đầu file cho lý do BƯỚC 1-3 (cờ TẮT) KHÔNG đủ làm bằng chứng
+    // "chấm theo giới hạn lúc đo" — chỉ chứng minh "cổng chấm". Ba bài dưới đây
+    // dùng CHÍNH điểm `dat2` đã dạy ở BƯỚC 2 ([9;11], trị thật 10.0 ⇒ ĐẠT).
+    // ══════════════════════════════════════════════════════════════════════════
+    let lucDoTruocSiet: Date;
+
+    it("BƯỚC 4 (SIẾT SAU KHI BO ĐÃ ĐO) — nền cho mệnh đề 3 hai trạng thái: siết dat2 [9;11] → [9;9.8]", async () => {
+      // Mốc "bo được đo" — ĐẶT TRƯỚC lượt siết dưới đây. Hai mệnh đề kế tiếp
+      // (BẬT/TẮT) dùng CHÍNH mốc này làm `opts.serverReceivedAt` của "bo cũ" —
+      // chỉ CỜ khác nhau, mọi thứ khác giữ nguyên (cùng nguyên lý mệnh đề 7/7B
+      // của `server/db/specGateCayV2.db.test.ts`, áp lại trên dữ liệu THẬT của
+      // cổng ra thay vì payload tổng hợp).
+      lucDoTruocSiet = new Date();
+
+      const [truocSiet] = await sql<{ upperLimit: string | null }[]>`
+        SELECT "upperLimit"::text AS "upperLimit" FROM measurement_point_defs WHERE id = ${idDaDay.dat2}`;
+      expect(Number(truocSiet.upperLimit), `[${tenDb}] dat2 phải đang ở upper=${CAN_TREN_RONG} (BƯỚC 2)`).toBe(Number(CAN_TREN_RONG));
+
+      const res = await callerAdmin().setLimitsBatch({
+        items: [{ id: idDaDay.dat2, lowerLimit: CAN_DUOI_RONG, upperLimit: CAN_TREN_SIET }],
+        changeReason: "Khoi C menh de 3 hai trang thai (C-1) - siet SAU khi bo da duoc do",
+      });
+      expect(res.updated, `[${tenDb}] phải siết được đúng 1 điểm`).toBe(1);
+
+      const [{ tren }] = await sql<{ tren: string }[]>`
+        SELECT "upperLimit"::text AS tren FROM measurement_point_defs WHERE id = ${idDaDay.dat2}`;
+      expect(Number(tren), `[${tenDb}] giới hạn ĐANG SỐNG nay siết còn ${CAN_TREN_SIET}`).toBe(Number(CAN_TREN_SIET));
+    }, 60_000);
+
+    it("MỆNH ĐỀ 3 · cờ BẬT (override trong test) — bo cũ (nhận TRƯỚC lượt siết) phát lại vẫn ĐẠT: chấm theo giới hạn LÚC ĐO, không hạ oan", async () => {
+      const truocCo = process.env.SPEC_GATE_SNAPSHOT_ENABLED;
+      process.env.SPEC_GATE_SNAPSHOT_ENABLED = "true";
+      try {
+        // Cửa TRỰC TIẾP gọi thẳng `submitInspectionTreeV2` (exported, cùng con
+        // đường sản xuất duy nhất có thể đặt `serverReceivedAt` khác "bây giờ" —
+        // xem docblock hàm đó / `ensureInspectionWalWired`) với mốc TRƯỚC lượt
+        // siết ở BƯỚC 4 — mô phỏng "bo tồn kho/WAL phát lại muộn" mà C-1 mô tả.
+        const payload = payloadKetQuaThat("MDE3B_BAT");
+        const kq: any = await submitInspectionTreeV2(payload, { serverReceivedAt: lucDoTruocSiet });
+        expect(kq.success).toBe(true);
+        boDaGhi.push(kq.inspectionId);
+        // eslint-disable-next-line no-console
+        console.log(`[congRaKhoiC] [${tenDb}] MỆNH ĐỀ 3 · BẬT — specGate=${JSON.stringify(kq.specGate)}`);
+
+        const hang = await hangCua(kq.inspectionId);
+        const hDat2 = hang.find((h) => h.componentExtId === maTheoThuTu[2])!;
+        expect(
+          hDat2.result,
+          `[${tenDb}] ★ MỆNH ĐỀ 3 (cờ BẬT) — 10.0 trong [9;11] LÚC BO ĐƯỢC ĐO ⇒ vẫn OK dù giới hạn ĐANG SỐNG đã bị siết xuống [9;${CAN_TREN_SIET}]`,
+        ).toBe("OK");
+        expect(hDat2.remark ?? "", `[${tenDb}] đã chấm THẬT (không phải bỏ cổng) ⇒ dấu ĐẠT`).toContain("[SG:DAT");
+      } finally {
+        if (truocCo === undefined) delete process.env.SPEC_GATE_SNAPSHOT_ENABLED;
+        else process.env.SPEC_GATE_SNAPSHOT_ENABLED = truocCo;
+      }
+    }, 120_000);
+
+    it("★★★ MỆNH ĐỀ 3 · cờ TẮT (mặc định, KHÔNG bị brief này đổi — bằng chứng C-1) — CÙNG bo cũ phát lại bị TRƯỢT: chấm theo giới hạn ĐANG SỐNG, hạ oan một bo TỐT", async () => {
+      expect(
+        process.env.SPEC_GATE_SNAPSHOT_ENABLED,
+        "nhánh này PHẢI chạy với cờ TẮT (mặc định thật của tiến trình, không bị mệnh đề trên làm rò rỉ)",
+      ).toBeFalsy();
+
+      // Y HỆT mệnh đề BẬT ở trên — CÙNG mốc `serverReceivedAt` (TRƯỚC lượt siết ở
+      // BƯỚC 4), chỉ khác CỜ. Bo này THẬT SỰ tốt lúc nó được đo (10.0 ∈ [9;11]).
+      const payload = payloadKetQuaThat("MDE3B_TAT");
+      const kq: any = await submitInspectionTreeV2(payload, { serverReceivedAt: lucDoTruocSiet });
+      expect(kq.success).toBe(true);
+      boDaGhi.push(kq.inspectionId);
+      // eslint-disable-next-line no-console
+      console.log(`[congRaKhoiC] [${tenDb}] ★★★ MỆNH ĐỀ 3 · TẮT (C-1) — specGate=${JSON.stringify(kq.specGate)}`);
+
+      const hang = await hangCua(kq.inspectionId);
+      const hDat2 = hang.find((h) => h.componentExtId === maTheoThuTu[2])!;
+      expect(
+        hDat2.result,
+        `[${tenDb}] ★★★ C-1 — cờ TẮT chấm theo giới hạn ĐANG SỐNG [9;${CAN_TREN_SIET}] dù bo được đo LÚC [9;11] còn hiệu lực ⇒ 10.0 bị hạ NG OAN (hạ oan một bo TỐT)`,
+      ).toBe("NG");
+      expect(hDat2.remark ?? "", `[${tenDb}] phải nêu ĐÍCH DANH vi phạm`).toContain("Spec gate");
+    }, 120_000);
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ★★★ C-1 — `canhBaoCongSnapshotTat()` (startup warning) đo bằng DB THẬT.
+    // Tới đây BƯỚC 2 + BƯỚC 4 đã tạo ≥4 hàng `measurement_point_versions` cho
+    // điểm cây (captureRowId IS NOT NULL) của MÁY này — điều kiện tiền đề để
+    // hàm cảnh báo. Không seed fixture riêng: dùng lại CHÍNH trạng thái DB mà
+    // các bước trên vừa dựng, đúng tinh thần "đo trên dữ liệu thật" của file này.
+    // ══════════════════════════════════════════════════════════════════════════
+    it("C-1 — canhBaoCongSnapshotTat() CẢNH BÁO khi cờ TẮT và đã có điểm cây mang lịch sử giới hạn", async () => {
+      expect(process.env.SPEC_GATE_SNAPSHOT_ENABLED, "nhánh này đo với cờ TẮT (mặc định, không bị mệnh đề trên làm rò rỉ)").toBeFalsy();
+      const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await canhBaoCongSnapshotTat();
+        const dongCanhBao = spy.mock.calls.map((c) => String(c[0])).filter((s) => s.includes("[BG-97]"));
+        expect(
+          dongCanhBao.length,
+          `[${tenDb}] cờ TẮT + BƯỚC 2/4 vừa tạo hàng measurement_point_versions cho điểm cây ⇒ PHẢI cảnh báo`,
+        ).toBeGreaterThan(0);
+        expect(dongCanhBao[0]).toMatch(/SPEC_GATE_SNAPSHOT_ENABLED TẮT/);
+      } finally {
+        spy.mockRestore();
+      }
+    }, 30_000);
+
+    it("C-1 — canhBaoCongSnapshotTat() KHÔNG cảnh báo khi cờ BẬT (override trong test)", async () => {
+      const truocCo = process.env.SPEC_GATE_SNAPSHOT_ENABLED;
+      process.env.SPEC_GATE_SNAPSHOT_ENABLED = "true";
+      const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await canhBaoCongSnapshotTat();
+        const dongCanhBao = spy.mock.calls.map((c) => String(c[0])).filter((s) => s.includes("[BG-97]"));
+        expect(dongCanhBao.length, "cờ BẬT ⇒ không phải trạng thái C-1 cảnh báo, dù có bao nhiêu hàng lịch sử").toBe(0);
+      } finally {
+        spy.mockRestore();
+        if (truocCo === undefined) delete process.env.SPEC_GATE_SNAPSHOT_ENABLED;
+        else process.env.SPEC_GATE_SNAPSHOT_ENABLED = truocCo;
+      }
+    }, 30_000);
   },
 );
