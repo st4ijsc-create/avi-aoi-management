@@ -73,3 +73,29 @@ Không có bước một thì bước hai **không có gì để join**. Mọi k
 Chọn (b) đồng nghĩa bắt máy nhận UUID của hệ — **mâu thuẫn với dữ liệu mẫu đang có**.
 
 ⚠ Đây là quyết định của chủ dự án vì nó định đoạt ai là nguồn sự thật, không phải một lựa chọn kỹ thuật thuần tuý.
+
+---
+
+## 7. QUYẾT ĐỊNH CỦA CHỦ DỰ ÁN (2026-09-03) — hướng (a): **máy đẩy cây dạy lên**
+
+> Máy dạy xong thì **đẩy** cây cấu hình + **UUID của chính nó** lên hệ sinh thái. Hệ soi gương máy.
+
+Quyết định này **khớp với bằng chứng đo được** ở §2: payload kết quả đã mang UUID do máy sinh, và hệ buộc phải nhận đúng UUID đó mới join được.
+
+### Hệ quả kỹ thuật — sinh ra việc, theo thứ tự
+
+| # | Việc | Vì sao bắt buộc |
+|---|---|---|
+| **B-1** | **Hợp đồng** cho cây dạy của máy (`surfaces[].positions[].captures[].components[]` + `roi`, `templateImagePath`, `markerWidth/Height`, `relX/relY`) | §4 đo được: **0 endpoint** nhận hình dạng này. Chưa có hợp đồng thì chưa có cửa. |
+| **B-2** | **Cửa ingest cấu hình** (`.mutation`, máy → hệ), xác thực bằng `authenticateMachine` | Chiều hiện có là `.query()` — đi ngược. ⚠ Đặt điểm ghi **sau** xác thực ngay từ đầu; bài học I-4 vừa trả giá. |
+| **B-3** | **Ghi `measurement_point_defs`**: `componentExtId` = `components[].id`, `captureRowId` nối lên cây | §3: cả hai cột hiện **0 hàng** ở cả hai DB. Đây là thứ đổ đầy khoá nối. |
+| **B-4** | **Mở khoá cấp component** — ghi `measurement_results` với `inspectionCaptureRowId` + `componentExtId` (**Đ-19**) | §1: bảng và cột đã sẵn từ mig 0340; chỉ thiếu đường ghi. |
+| **B-5** | **Nối lại spec-gate `evaluatePointResult`** trên đường v2 (**BG-92**) | Sau B-3 mới tra được `pointDefId` từ `componentExtId`. Trước đó **không thể** — đó là lý do BG-92 phải đóng cùng Đ-19. |
+| **B-6** | **Version per-máy per-version** cho cây dạy | Yêu cầu gốc của chủ dự án; và không có version thì không biết kết quả thuộc bản dạy nào. |
+
+### Ràng buộc mang sang từ 8 lượt review
+
+- ⚠ **Nhận diện theo HÌNH DẠNG**, dùng lại vị từ đã có — **không** thêm vị từ thứ hai (lớp lỗi "hai nguồn sự thật" đã tốn 8 lượt để dọn).
+- ⚠ **Điểm ghi nằm SAU xác thực.** `entityId` phải là FK máy thật, không phải nhãn máy tự khai (I-4).
+- ⚠ **Không cắt đường cũ trước khi đường mới chứng minh chạy** (Đ-20).
+- ⚠ Mọi lưới phải **đỏ được**; mọi con số DB kèm `current_database()` (Đ-28).
