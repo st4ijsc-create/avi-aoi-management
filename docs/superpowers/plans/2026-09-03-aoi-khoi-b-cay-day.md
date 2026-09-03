@@ -1,0 +1,239 @@
+# Khối B — cây dạy từ máy: hợp đồng, cửa, đường ghi, mở khoá cấp component
+
+> **Cho người thực thi:** dùng skill `superpowers:subagent-driven-development`. Các bước dùng checkbox `- [ ]`.
+
+**Mục tiêu:** Máy đẩy cây dạy (surfaces → positions → captures → components) lên hệ sinh thái; hệ ghi vào bốn bảng **đã có sẵn**; khoá nối `componentExtId` được đổ đầy ⇒ mở khoá ghi cấp component (**Đ-19**) và nối lại spec-gate (**BG-92**).
+
+**Nền đo được (ĐỌC TRƯỚC):** `docs/superpowers/specs/2026-09-03-aoi-khoi-b-nen-do-duoc.md`
+**Quyết định chủ dự án:** hướng **(a) máy đẩy cây dạy lên** — hệ soi gương máy.
+**Mẫu thật:** `D:\SOURCES\AOIData\template-sync-sample.json` — 2 surface · 4 position · 8 capture · 16 component.
+
+---
+
+## Vì sao khối này nhỏ hơn vẻ ngoài
+
+**Tầng lưu trữ ĐÃ CÓ SẴN.** Đo được: bốn bảng khớp mẫu gần như từng trường, tất cả **0 hàng**.
+
+| Cấu hình máy | Bảng đích | Cột khoá |
+|---|---|---|
+| `surfaces[].surfaceId` | `product_surfaces` | `surfaceExtId` |
+| `positions[].positionId` (`"P01"`) | `product_positions` | `positionId` + FK `surfaceRowId` |
+| `captures[].id` (UUID) | `product_captures` | `captureExtId` + FK `positionRowId` |
+| `components[].id` (UUID) | `measurement_point_defs` | `componentExtId` + FK `captureRowId` + `roiX/roiY/roiWidth/roiHeight` |
+
+⇒ **Không cần migration mới** cho Task 1–4. Thiếu **cửa** và **đường ghi**, không thiếu chỗ chứa.
+
+---
+
+## Global Constraints
+
+- **Mã, chú thích, tên test, thông điệp lỗi: TIẾNG VIỆT.**
+- **KHÔNG đổi mặc định** `INSPECTION_STORE_FORWARD_ENABLED`, `INGEST_REJECT_LEGACY_MACHINE_ENABLED`, `CONFIG_SYNC_GENERIC_ENABLED`.
+- **Nghiệm thu DB bằng vai `avi_app`**, **không bao giờ** bằng `aoi` (superuser + BYPASSRLS làm mọi phép đo quyền xanh giả).
+- `product_inspections` và `audit_logs` là **WORM** — `avi_app` **KHÔNG có DELETE**. **Đừng** viết `DELETE ... .catch(() => {})` (32 tệp test đang làm thế, tất cả là no-op câm).
+- ⚠ `data/inspection-store-forward*.jsonl` là **tệp THẬT** (dead-letter 101 mục, 7.4 MB) — đừng ghi vào. Cần thì trỏ `INSPECTION_STORE_FORWARD_FILE` sang tệp tạm.
+- **Mọi con số đo từ DB phải khai kèm `current_database()`** (luật Đ-28). Hai DB: `aoi_management` (dev, gần rỗng) và `aoi_management_test`.
+- **Điểm ghi nằm SAU `authenticateMachine`**; `entityId` là FK máy thật, không phải nhãn máy tự khai — bài học I-4 vừa trả giá.
+- **Mọi lưới phải chứng minh ĐỎ ĐƯỢC.** Hoàn tác đột biến rồi kiểm `git status --short` sạch **trước khi** commit.
+- ⚠ **NHỚ COMMIT.** Đã ba lần công việc suýt mất vì báo "XONG" mà không commit.
+- **Câu hỏi bắt buộc trong mọi báo cáo:** *"bản vá này chuyển thứ gì từ lớp nào sang lớp nào, và ai đang phụ thuộc vào phân lớp cũ?"*
+- Cây làm việc **dùng chung** — đừng đụng `client/src/**` (trừ `AoiPackageSection.tsx`), `knowledge/**`, `server/services/aiLocalTools/**`, `vscode-extension/**`, `server/routers/repoWorkspaceRouter.ts`, `server/routers/phamViDocCensus.test.ts`, `server/services/vram/**`.
+
+---
+
+## ⚠ Bẫy khoá nối — đọc kỹ trước Task 2
+
+Bốn cấp **KHÔNG** nối cùng một kiểu. Đây là bản sửa của §2 nền sau khi đo đủ bốn cấp:
+
+| Cấp | Cấu hình có | Kết quả có | Nối bằng |
+|---|---|---|---|
+| surface | `surfaceId` (UUID) + `surfaceName` | **chỉ `name`** | **TÊN** |
+| position | `id` (UUID) **+** `positionId` = `"P01"` | **chỉ `positionId`** | **MÃ `"P01"`** |
+| capture | `id` (UUID) | `captureId` (UUID) | **UUID** |
+| component | `id` (UUID) | `componentId` (UUID) | **UUID** |
+
+⚠ Ở cấp position, cấu hình mang **hai** khoá còn kết quả chỉ mang **một**. **Nối bằng `id` sẽ LUÔN trượt, im lặng.**
+⚠ Hai cấp trên nối bằng tên/mã nên **yếu hơn**: đổi tên mặt hoặc đổi mã vị trí là **đứt nối**. Chọn **một** khoá cho mỗi cấp và ghi rõ trong chú thích.
+
+---
+
+## Task 1 (B-1) — hợp đồng cây dạy
+
+**Files:** tạo `server/contracts/machineTemplateContract.ts` · lưới cùng thư mục.
+
+**Produces:** `machineTemplateContract` (zod object) và kiểu `MachineTemplate`.
+
+- [ ] **Bước 1: Đo TRƯỚC.** In khoá bốn cấp của mẫu thật, chép nguyên văn vào báo cáo. Đây là baseline.
+
+- [ ] **Bước 2:** Khai hợp đồng đúng **các trường mẫu thật có**:
+
+```
+componentTemplate = {
+  id            : string 1..64      // UUID may sinh -> measurement_point_defs.componentExtId
+  componentName : string max 255
+  description   : string max 1000   (optional)
+  roi           : { x: number, y: number, width: number, height: number }
+  templateImagePath : string max 1000 (optional)
+}
+
+captureTemplate = {
+  id                : string 1..64  // UUID -> product_captures.captureExtId
+  name              : string max 255
+  templateImagePath : string max 1000 (optional)
+  components        : componentTemplate[]
+}
+
+positionTemplate = {
+  id            : string 1..64      // UUID - KHONG dung de noi ket qua
+  positionId    : string 1..64      // "P01" - DAY moi la khoa noi ket qua
+  positionIndex : number
+  name          : string max 255
+  shape         : string max 50     (optional)
+  markerWidth   : number (optional)
+  markerHeight  : number (optional)
+  relX          : number (optional)
+  relY          : number (optional)
+  templateImagePath : string max 1000 (optional)
+  captures      : captureTemplate[]
+}
+
+surfaceTemplate = {
+  surfaceId   : string 1..64        // UUID -> product_surfaces.surfaceExtId
+  surfaceName : string max 100      // khoa noi ket qua (ket qua chi co `name`)
+  surfaceTemplateImagePath : string max 1000 (optional)
+  positions   : positionTemplate[]
+}
+
+machineTemplateContract = { surfaces: surfaceTemplate[] }
+```
+
+⚠ **Mọi trường chuỗi PHẢI có `.max()`** khớp cột đích — census `capChuoiVarcharScan` sẽ soi; thiếu là **đỏ**.
+Cột đích đã kiểm: `surfaceName` varchar(100) · `componentName`/`name` varchar(255) · `surfaceExtId`/`captureExtId`/`componentExtId` varchar(64).
+⚠ **KHÔNG** thêm trường mà mẫu thật không có — thêm là tạo hợp đồng rộng hơn hiện thực.
+
+- [ ] **Bước 3:** Lưới — mẫu thật `safeParse` = **true**, đếm đúng **2 / 4 / 8 / 16** phần tử bốn cấp.
+- [ ] **Bước 4:** Lưới — thiếu `components` ⇒ **từ chối**; `roi` thiếu `width` ⇒ **từ chối**.
+- [ ] **Bước 5: Đột biến** — bỏ `.max()` của `componentName` ⇒ census phải **ĐỎ**. Chép nguyên văn dòng đỏ, rồi hoàn tác.
+- [ ] **Bước 6: Commit.**
+
+**Ba mệnh đề:** mẫu thật parse được, đủ 2/4/8/16 · thiếu trường bắt buộc bị từ chối · mọi trường chuỗi có `.max()` khớp cột thật.
+
+---
+
+## Task 2 (B-2 + B-3) — cửa ingest cấu hình, và ghi bốn bảng
+
+**Files:** `server/routers/machineApiRouters.ts` (thêm `.mutation`) · `server/db/` · lưới.
+
+**Consumes:** `machineTemplateContract` từ Task 1.
+
+- [ ] **Bước 1:** Thêm `.mutation()` nhận `machineTemplateContract` + `productModelCode`.
+⚠ **`authenticateMachine` chạy TRƯỚC mọi tác dụng phụ.** Không ghi gì trong `.input()` — đó đúng lỗi I-4 vừa vá.
+
+- [ ] **Bước 2:** Ghi bốn bảng theo đúng ánh xạ đã đo (dùng nguyên văn):
+
+```
+surfaces[]   -> product_surfaces
+                 surfaceExtId = surfaceId
+                 surfaceName
+                 templateImageUrl = surfaceTemplateImagePath
+                 orderIndex = thu tu trong mang
+
+positions[]  -> product_positions
+                 surfaceRowId = FK hang surface vua ghi
+                 positionId, positionIndex, name, shape
+                 markerWidth, markerHeight, relX, relY
+
+captures[]   -> product_captures
+                 positionRowId = FK hang position vua ghi
+                 captureExtId = id
+                 captureName  = name
+                 captureIndex = thu tu trong mang
+
+components[] -> measurement_point_defs
+                 captureRowId   = FK hang capture vua ghi
+                 componentExtId = id
+                 name = componentName
+                 description
+                 roiX = roi.x, roiY = roi.y, roiWidth = roi.width, roiHeight = roi.height
+```
+
+- [ ] **Bước 3: Đẩy LẠI phải hội tụ, không nhân bản.** Cùng máy + cùng `productModelCode` + cùng cây ⇒ **cùng số hàng**, không tăng.
+Khoá hội tụ theo cấp: `(productModelId, surfaceExtId)` → `(surfaceRowId, positionId)` → `(positionRowId, captureExtId)` → `(captureRowId, componentExtId)`.
+
+- [ ] **Bước 4: Cây co lại.** Bản dạy mới **bỏ** một component ⇒ quyết định và **ghi rõ**: xoá mềm hay giữ?
+⚠ `measurement_point_defs` **có** cột `deletedAt` — dùng nó. **Đừng DELETE cứng**: kết quả cũ đang trỏ vào.
+
+- [ ] **Bước 5: Đột biến** — bỏ bước ghi `componentExtId` ⇒ lưới phải **ĐỎ**. Chép nguyên văn.
+- [ ] **Bước 6: Commit.**
+
+**Bốn mệnh đề (đo bằng `SELECT`, mỗi con số kèm `current_database()`):**
+1. Đẩy mẫu thật ⇒ `product_surfaces` = 2 · `product_positions` = 4 · `product_captures` = 8 · `measurement_point_defs` **+16 hàng có `componentExtId`**.
+2. Đẩy **lại cùng cây** ⇒ số hàng **không đổi**.
+3. Chưa xác thực / sai apiKey ⇒ **0 hàng**. Lưới này phải **đỏ được** trên mã chưa vá.
+4. `captureRowId` của 16 hàng point-def **trỏ đúng** `product_captures` tương ứng.
+
+---
+
+## Task 3 (B-4) — mở khoá ghi cấp component (Đ-19)
+
+**Files:** `server/routers/aoiPackageRouter.ts`, `server/db/inspection.ts` · lưới.
+
+- [ ] **Bước 1:** Khi ghi kết quả v2, với mỗi phần tử `components[]` của mỗi capture ⇒ ghi **một hàng** `measurement_results`:
+`inspectionCaptureRowId` = FK hàng `inspection_captures` vừa ghi · `componentExtId` = `componentId` · `ntf` · `ntfSource` · `errorCode` · `errorDesc` · `startedAt` · `completedAt` · `measuredValue` / `measuredValueText`.
+⚠ Nhánh **số** đi `measuredValue` (decimal); nhánh **chuỗi không parse được số** đi `measuredValueText` varchar(255) — **mẫu hành vi của nhánh v1.x**, dùng lại, đừng phát minh.
+
+- [ ] **Bước 2:** Verdict vẫn cuộn từ **cây** như hôm nay. Task này **chỉ thêm hàng**, **không đổi** verdict của bất kỳ gói nào.
+- [ ] **Bước 3: Đột biến** — bỏ ghi `inspectionCaptureRowId` ⇒ lưới **ĐỎ**.
+- [ ] **Bước 4: Commit.**
+
+**Ba mệnh đề:**
+1. Gói cây có 16 component ⇒ **16 hàng** `measurement_results` có **cả hai** cột `inspectionCaptureRowId` và `componentExtId`.
+2. **CHỐNG HỒI QUY:** verdict của mọi gói `committed` hiện có **không đổi**.
+3. Component `ntf = true` ⇒ hàng mang `ntf = true`, không bị san phẳng.
+
+---
+
+## Task 4 (B-5) — nối lại spec-gate `evaluatePointResult` (BG-92)
+
+**Files:** `shared/rollupVerdict.ts`, đường ghi v2 · lưới.
+
+**⚠ Task này KHÔNG thể làm trước Task 2** — `pointDefId` chỉ tra được sau khi `componentExtId` có dữ liệu. Đây là lý do BG-92 phải đóng cùng Đ-19.
+
+- [ ] **Bước 1:** Tra `pointDefId` từ `componentExtId` (join `measurement_point_defs`), rồi chạy `evaluatePointResult` như đường v1.x đang làm.
+- [ ] **Bước 2: Không tra được thì sao?** Component chưa có bản dạy ⇒ **quyết định và ghi rõ**: giữ nguyên lời khai của máy, hay gắn cờ?
+⚠ **Đừng âm thầm bỏ qua** — đó đúng lớp lỗi BG-68 (cuộn verdict từ lời khai).
+- [ ] **Bước 3:** Sửa chú thích `shared/rollupVerdict.ts:24-26` và `:39-40` cho khớp hành vi mới; **gỡ** nhãn nợ BG-92 nếu đã đóng thật.
+- [ ] **Bước 4: Đột biến** — linh kiện **ngoài giới hạn** mà máy khai `OK` ⇒ lưới phải bắt được. Chép nguyên văn.
+- [ ] **Bước 5: Commit.**
+
+**Ba mệnh đề:**
+1. Linh kiện có `value` **ngoài** `lowerLimit`/`upperLimit` đã dạy mà máy khai `OK` ⇒ **bị bắt**. Đây là đường **bo XẤU đi lọt** hôm nay.
+2. Linh kiện **chưa có bản dạy** ⇒ hành vi **đã khai rõ**, không âm thầm.
+3. **CHỐNG HỒI QUY:** đường v1.x **không đổi hành vi**.
+
+---
+
+## Task 5 (B-6) — version per-máy per-bản-dạy
+
+**Files:** cửa của Task 2 + lưới · có thể cần migration.
+
+- [ ] **Bước 1: Đo TRƯỚC.** `product_*` và `measurement_point_defs` **đã có** cột version nào chưa? (đã thấy `deletedAtVersion`, `variantId`). Đo rồi mới quyết có cần migration.
+- [ ] **Bước 2:** Mỗi lần đẩy cây ⇒ một **phiên bản bản dạy**, gắn máy + model. Kết quả phải tra được *"bo này chấm theo bản dạy nào"*.
+- [ ] **Bước 3:** Chỉ thêm **cột nullable** nếu đụng hypertable nén. Migration **phải** tái dùng cầu chì `scripts/apply-migration-0338.mjs:74-84` (đọc `rolsuper`/`rolbypassrls`, từ chối chạy bằng superuser) và **không** chứa DELETE dữ liệu lịch sử.
+- [ ] **Bước 4: Commit.**
+
+**Hai mệnh đề:** hai bản dạy khác nhau cùng máy ⇒ phân biệt được · kết quả cũ vẫn trỏ đúng bản dạy cũ.
+
+---
+
+## Cổng ra
+
+- [ ] Mẫu thật đẩy được ⇒ **2 / 4 / 8 / 16** hàng đúng bốn bảng, `componentExtId` **khác 0**.
+- [ ] Đẩy lại **không nhân bản**; cây co lại **không xoá cứng**.
+- [ ] Chưa xác thực ⇒ **0 hàng**, lưới đỏ được.
+- [ ] Gói kết quả v2 ⇒ `measurement_results` có **cả hai** cột Khối B (**Đ-19 đóng**).
+- [ ] Linh kiện ngoài giới hạn mà máy khai OK ⇒ **bị bắt** (**BG-92 đóng**).
+- [ ] **CHỐNG HỒI QUY:** verdict mọi gói `committed` hiện có **không đổi**; đường v1.x không đổi.
+- [ ] `npm run check` sạch · census `.max()` và census cửa ingest xanh.
+
+**Còn mở sau khối này:** BG-39 gđ2 + tín hiệu đếm cửa ZIP (**R-BG89-1**, Đ-27) · BG-93 retention `audit_logs` · BG-94 lưới lời văn · BG-36 dead-letter · **Khối C** (UI sản phẩm) · **Khối D** (gộp màn + Playwright, cần tài khoản test).
