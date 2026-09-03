@@ -481,6 +481,13 @@ describe.skipIf(!DB_URL || !CO_MAU)(
     }, 60_000);
 
     it("MỆNH ĐỀ 3 · cờ BẬT (override trong test) — bo cũ (nhận TRƯỚC lượt siết) phát lại vẫn ĐẠT: chấm theo giới hạn LÚC ĐO, không hạ oan", async () => {
+      // ★★★ Đối chứng (review lượt 9, vòng 2 — coordinator) — `lucDoTruocSiet`
+      // là `let` gán Ở BƯỚC 4 (`it` trước); chạy CA NÀY riêng lẻ (vd `-t "MỆNH
+      // ĐỀ 3 · cờ BẬT"`) mà KHÔNG chạy trọn `describe` sẽ nhận `undefined` —
+      // cầu chì này biến một phép đo PHỤ THUỘC THỨ TỰ ngầm thành một khẳng
+      // định RÕ, đỏ đúng câu thay vì đỏ mơ hồ ở downstream.
+      expect(lucDoTruocSiet, "phải chạy trọn describe — mốc gán ở BƯỚC 4").toBeInstanceOf(Date);
+
       const truocCo = process.env.SPEC_GATE_SNAPSHOT_ENABLED;
       process.env.SPEC_GATE_SNAPSHOT_ENABLED = "true";
       try {
@@ -494,6 +501,25 @@ describe.skipIf(!DB_URL || !CO_MAU)(
         boDaGhi.push(kq.inspectionId);
         // eslint-disable-next-line no-console
         console.log(`[congRaKhoiC] [${tenDb}] MỆNH ĐỀ 3 · BẬT — specGate=${JSON.stringify(kq.specGate)}`);
+
+        // ★★★ Đối chứng (review lượt 9, vòng 2) — TRƯỚC bản vá này, `kq.specGate`
+        // CHỈ được console.log, không `expect` nào chạm `dat`/`truot`/`haCap`/…
+        // (khác CHÍNH mệnh đề 3 gốc ở BƯỚC 1/3, dùng `toEqual` đầy đủ) — một
+        // fixture đổi (vd leaf `…010121` OK→NG) hoặc cách đếm đổi vẫn XANH
+        // trong khi số liệu trong báo cáo (đã đưa chủ dự án) SAI. `toEqual`
+        // (KHÔNG phải `toMatchObject` — đòi ĐỦ, không chỉ MỘT PHẦN) + cùng
+        // phép cộng-tổng mà BƯỚC 1/3 đã dùng, để hai ca CỜ này canh CHẶT
+        // NGANG HÀNG với mệnh đề 3 gốc, không phải một chuẩn yếu hơn.
+        expect(kq.specGate.dat + kq.specGate.truot + kq.specGate.chuaDay + kq.specGate.khongGioiHan + kq.specGate.tatCong)
+          .toBe(kq.specGate.tong);
+        expect(
+          kq.specGate,
+          `[current_database()=${tenDb}] MỆNH ĐỀ 3 · cờ BẬT — bo cũ phát lại chấm theo giới hạn LÚC ĐO [9;11] (2 đạt, 1 trượt, 0 hạ cấp — snapshot tái dựng ĐÚNG 1/16)`,
+        ).toEqual({
+          batCong: true, tong: 48, dat: 2, truot: 1, haCap: 0,
+          chuaDay: 32, khongGioiHan: 13, tatCong: 0,
+          theoSnapshot: 1, theoSong: 15,
+        });
 
         const hang = await hangCua(kq.inspectionId);
         const hDat2 = hang.find((h) => h.componentExtId === maTheoThuTu[2])!;
@@ -509,6 +535,12 @@ describe.skipIf(!DB_URL || !CO_MAU)(
     }, 120_000);
 
     it("★★★ MỆNH ĐỀ 3 · cờ TẮT (mặc định, KHÔNG bị brief này đổi — bằng chứng C-1) — CÙNG bo cũ phát lại bị TRƯỢT: chấm theo giới hạn ĐANG SỐNG, hạ oan một bo TỐT", async () => {
+      // ★★★ Đối chứng (review lượt 9, vòng 2 — coordinator) — cùng lý do ở ca
+      // BẬT phía trên: `lucDoTruocSiet` gán Ở BƯỚC 4, chạy ca này riêng lẻ sẽ
+      // nhận `undefined` — cầu chì biến phép đo phụ thuộc thứ tự thành một
+      // khẳng định rõ.
+      expect(lucDoTruocSiet, "phải chạy trọn describe — mốc gán ở BƯỚC 4").toBeInstanceOf(Date);
+
       expect(
         process.env.SPEC_GATE_SNAPSHOT_ENABLED,
         "nhánh này PHẢI chạy với cờ TẮT (mặc định thật của tiến trình, không bị mệnh đề trên làm rò rỉ)",
@@ -522,6 +554,21 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       boDaGhi.push(kq.inspectionId);
       // eslint-disable-next-line no-console
       console.log(`[congRaKhoiC] [${tenDb}] ★★★ MỆNH ĐỀ 3 · TẮT (C-1) — specGate=${JSON.stringify(kq.specGate)}`);
+
+      // ★★★ Đối chứng (review lượt 9, vòng 2) — cùng lý do ca BẬT ở trên: đây
+      // là con số ĐÃ ĐƯA CHỦ DỰ ÁN để quyết định bật cờ (`haCap:1` = một bo TỐT
+      // bị hạ oan) — PHẢI là một `expect` đầy đủ (`toEqual`, không `toMatchObject`),
+      // không phải một dòng log không ai canh.
+      expect(kq.specGate.dat + kq.specGate.truot + kq.specGate.chuaDay + kq.specGate.khongGioiHan + kq.specGate.tatCong)
+        .toBe(kq.specGate.tong);
+      expect(
+        kq.specGate,
+        `[current_database()=${tenDb}] ★★★ MỆNH ĐỀ 3 · cờ TẮT (C-1) — CÙNG bo (10.0∈[9;11] lúc đo) chấm theo giới hạn ĐANG SỐNG [9;${CAN_TREN_SIET}] ⇒ 1 hạ cấp oan (haCap:1, đây LÀ lý lẽ cho chủ dự án bật cờ)`,
+      ).toEqual({
+        batCong: true, tong: 48, dat: 1, truot: 2, haCap: 1,
+        chuaDay: 32, khongGioiHan: 13, tatCong: 0,
+        theoSnapshot: 0, theoSong: 16,
+      });
 
       const hang = await hangCua(kq.inspectionId);
       const hDat2 = hang.find((h) => h.componentExtId === maTheoThuTu[2])!;
