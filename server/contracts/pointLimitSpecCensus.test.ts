@@ -74,12 +74,45 @@
 // khai trong báo cáo Task 7 vòng sửa 2, coordinator quyết định hướng xử lý
 // (gán ticket/allowlist hay giao sửa). Xem `NO_DA_BIET`/`MIEN_TRU_KIEN_TRUC`
 // dưới — `BulkImportDialog.tsx` CỐ Ý không có mặt ở đó.
+//
+// ── BỔ SUNG vòng sửa 2 (cùng ngày) — Task 8 báo: nợ hoá thạch qua wrapper ──
+// Task 8 (`fc232773`) rút BỐN bản `touchesLimits` chép tay thành MỘT hàm dùng
+// chung `touchesApprovalLimitFields` (`server/utils/measurementPointLimitGate.ts`,
+// suy TỪ `APPROVAL_LIMIT_FIELDS`), và bốn hộ tiêu thụ (`measurementPointImport.ts`,
+// `productRouters.ts`, `dataRouters.ts`, `writeHandlers/measurementPoint.ts`)
+// import HÀM ĐÓ — không import THẲNG `pointLimitSpec`. §3 (regex trực tiếp)
+// không nhận ra "đọc spec qua một lớp bọc" là "đọc spec" ⇒ `measurementPointImport.ts`
+// (17/18 field) tiếp tục bị bắt DÙ ĐÃ suy từ spec cho phần `touchesLimits` —
+// BG-104 (đặt ra để tạm-nhịn nợ ĐANG SỬA) sẽ KHÔNG BAO GIỜ tự đóng, và test
+// permanent "(b) XÁC NHẬN nợ" sẽ KHÔNG BAO GIỜ đỏ dù nợ đã hết — đúng nghịch lý
+// mà cơ chế tự-hết-hạn (Task 7 vòng 1/2) SINH RA để tránh.
+//
+// Sửa: `daDocSpec()` nhận IMPORT BẮC CẦU đúng MỘT BẬC — file X được coi "đọc
+// spec" nếu (a) X import thẳng `pointLimitSpec`, HOẶC (b) X import một module Y
+// (resolve theo đường dẫn import THẬT — relative hoặc alias `@shared/`/`@/` —
+// đọc file Y trên đĩa) mà Y tự import thẳng `pointLimitSpec`. CHỈ một bậc — Y
+// import Z import spec thì KHÔNG tính (đo trực tiếp, không suy diễn xa hơn;
+// một bậc là đủ cho khuôn "hàm dùng chung 1 lớp" đang thấy, và giữ mệnh đề
+// dễ kiểm bằng mắt — sâu hơn thì census chính nó cũng cần một cổng riêng).
+//
+// ⚠ Đây là exemption CẤP FILE, không phải CẤP KHỐI: nếu X vừa đọc spec bắc cầu
+// (cho MỘT mục đích, vd gate `touchesLimits`) VỪA có một khối chép tay THẬT SỰ
+// khác trong CHÍNH NÓ (vd zod schema đầu vào của MỘT thủ tục, không liên quan
+// gate) thì X vẫn THOÁT toàn bộ — census không phân biệt được hai việc trong
+// cùng file. Đo được TRÊN THỰC TẾ 2026-09-03 (`server/routers/productRouters.ts`
+// 18/18, `server/utils/measurementPointImport.ts` 17/18): CẢ HAI đều có một
+// khối chép tay THẬT SỰ RIÊNG (zod input `measurementPoint.update` ở
+// `productRouters.ts`; zod schema hàng nhập CSV ở `measurementPointImport.ts`)
+// KHÔNG LIÊN QUAN đến `touchesApprovalLimitFields` — bắc cầu làm chúng thoát
+// §3 dù khối chép tay đó CHƯA hề được sửa. Đây là GIỚI HẠN THẬT của quy tắc
+// bắc cầu 1 bậc (khai rõ theo yêu cầu coordinator, không giấu) — không phải lỗi
+// triển khai, là đánh đổi cố ý (mịn hơn = quét cấp AST, ngoài phạm vi Task 7).
 import { describe, it, expect } from "vitest";
 import type { PointLimitSource } from "../services/pointResultEvaluator";
 import { measurementPointDefs } from "../../drizzle/schema";
 import { POINT_LIMIT_SPEC, LIMIT_FIELDS } from "../../shared/pointLimitSpec";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 
 describe("§1 — POINT_LIMIT_SPEC ↔ measurementPointDefs (cột THẬT trong DB)", () => {
   it("★★★ dân số đã xét — GHIM 18 (đổi số này là một lời khai, không phải bảo trì im lặng)", () => {
@@ -241,10 +274,15 @@ const NGUONG_CHEP_TAY = 6;
  * root-relative (từ vòng sửa 2 — vòng 1 dùng đường dẫn relative-tới-`server/`).
  */
 const NO_DA_BIET: Record<string, string> = {
+  // ⚠ BG-104 (`server/utils/measurementPointImport.ts`) ĐÃ GỠ vòng sửa 2 —
+  // đúng thiết kế tự-hết-hạn: sau khi nhận import BẮC CẦU (xem `daDocSpec()`),
+  // file này KHÔNG còn bị mệnh đề quét bắt (đo được 2026-09-03: `daDocSpec()`
+  // = true qua `server/utils/measurementPointLimitGate.ts`, import trực tiếp
+  // `APPROVAL_LIMIT_FIELDS`). Test permanent "(b)" cũ ĐÃ XOÁ theo đúng chỉ dẫn
+  // — KHÔNG viết lại nếu nợ tái xuất hiện mà không đo trước, thêm dòng MỚI.
   "server/routers/productRouters.ts":
-    "Task 8 — zod input `measurementPoint.update` + `touchesLimits` (mở từ brief Task 7 gốc; agent khác đang giữ file này, Task 7 KHÔNG được chạm).",
-  "server/utils/measurementPointImport.ts":
-    "BG-104 — Task 8 (gate `touchesLimits` riêng), đang chạy. Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(b) XÁC NHẬN nợ BG-104' bên dưới) — Task 8 đóng thì xoá dòng này VÀ xoá test đó.",
+    "Task 8 — zod input `measurementPoint.update` (đầu vào `z.object({...})` khoảng dòng 1244-1275, KHÔNG suy từ spec — vẫn khai tay từng field) là gap CÒN MỞ, mở từ brief Task 7 gốc; agent khác đang giữ file này, Task 7 KHÔNG được chạm. " +
+      "⚠ Vòng sửa 2: file này giờ CŨNG daDocSpec()=true qua bắc cầu (import touchesApprovalLimitFields cho `touchesLimits`, đã đóng) — dòng allowlist này về mặt CƠ CHẾ §3 đã dư (file thoát dù không có dòng này), NHƯNG giữ lại để không xoá âm thầm chứng cứ 'zod input schema vẫn hand-copy' — gap đó KHÔNG liên quan touchesLimits và KHÔNG được đo lại tự-hết-hạn được nữa (bắc cầu 1 bậc là miễn trừ CẤP FILE, không phân biệt được hai việc trong cùng file — xem giới hạn khai ở docblock BỔ SUNG vòng sửa 2).",
   // ── Vòng sửa 2 — BG-107, ba file client reviewer grep độc lập bắt SỐNG ─────
   // ⚠ Đường dẫn ĐO LẠI, không chép nguyên văn brief: coordinator khai
   // "client/src/pages/productModels/types.ts" — SAI, file thật ở
@@ -263,12 +301,69 @@ const MIEN_TRU_KIEN_TRUC: Record<string, string> = {
     "Định nghĩa `PointLimitSource` — §2 ở trên đã đối chiếu trực tiếp (compile-time `satisfies` + runtime). Bắt buộc file này import chính spec suy TỪ nó là vòng ngược chiều.",
 };
 
+/** File thật trên đĩa import THẲNG `pointLimitSpec` (đọc dòng `import`, không đoán). */
+function importThangSpec(noiDung: string): boolean {
+  return /from\s+["'][^"']*pointLimitSpec["']/.test(noiDung);
+}
+
+/**
+ * Suy đường dẫn IMPORT (chuỗi sau `from`) của file `tuFile` thành một đường
+ * dẫn TUYỆT ĐỐI trên đĩa (thử `.ts`/`.tsx`/`index.ts`/`index.tsx`), hoặc `null`
+ * nếu KHÔNG phải import cục bộ (gói `node_modules`, vd `"zod"`/`"drizzle-orm"`)
+ * hoặc không resolve được file nào. Hỗ trợ đúng ba kiểu import repo này dùng:
+ * relative (`./x`, `../x`), alias `@shared/x` (`shared/x`), alias `@/x`
+ * (`client/src/x`, xem `tsconfig.json` paths).
+ */
+function suyDuongDanImport(specifier: string, tuFile: string): string | null {
+  let goc: string;
+  if (specifier.startsWith(".")) {
+    goc = resolve(dirname(tuFile), specifier);
+  } else if (specifier.startsWith("@shared/")) {
+    goc = join(GOC_REPO, "shared", specifier.slice("@shared/".length));
+  } else if (specifier.startsWith("@/")) {
+    goc = join(GOC_REPO, "client/src", specifier.slice("@/".length));
+  } else {
+    return null; // gói node_modules hoặc alias khác — không cục bộ, không resolve.
+  }
+  for (const ung of [`${goc}.ts`, `${goc}.tsx`, join(goc, "index.ts"), join(goc, "index.tsx")]) {
+    try {
+      if (statSync(ung).isFile()) return ung;
+    } catch {
+      // không tồn tại — thử ứng viên tiếp theo.
+    }
+  }
+  return null;
+}
+
+/**
+ * File `duongFile` (nội dung `noiDung`) được coi "ĐÃ ĐỌC SPEC" nếu import
+ * THẲNG `pointLimitSpec`, HOẶC import một module mà module đó import THẲNG
+ * `pointLimitSpec` (bắc cầu ĐÚNG MỘT BẬC — xem docblock "BỔ SUNG vòng sửa 2").
+ * ⚠ Miễn trừ CẤP FILE — xem cảnh báo giới hạn ở docblock đầu file.
+ */
+function daDocSpec(duongFile: string, noiDung: string): boolean {
+  if (importThangSpec(noiDung)) return true;
+  const specifiers = [...noiDung.matchAll(/from\s+["']([^"']+)["']/g)].map((m) => m[1]);
+  for (const sp of specifiers) {
+    const duongY = suyDuongDanImport(sp, duongFile);
+    if (!duongY) continue;
+    let noiDungY: string;
+    try {
+      noiDungY = readFileSync(duongY, "utf8");
+    } catch {
+      continue;
+    }
+    if (importThangSpec(noiDungY)) return true;
+  }
+  return false;
+}
+
 /**
  * Quét `server/` + `shared/` + `client/src/` (trừ `node_modules`, `dist`,
  * `*.test.ts`/`*.test.tsx`, `*.d.ts`, và `DUONG_TU_LOAI_TRU`), trả về file có
- * ≥`NGUONG_CHEP_TAY` field của `LIMIT_FIELDS` co-occur mà KHÔNG import
- * `pointLimitSpec` — trừ các đường dẫn trong `boQua`. Đường dẫn trả về LUÔN
- * root-relative, dùng `/` (không phụ thuộc hệ điều hành).
+ * ≥`NGUONG_CHEP_TAY` field của `LIMIT_FIELDS` co-occur mà CHƯA `daDocSpec()`
+ * (trực tiếp hoặc bắc cầu một bậc) — trừ các đường dẫn trong `boQua`. Đường
+ * dẫn trả về LUÔN root-relative, dùng `/` (không phụ thuộc hệ điều hành).
  */
 function quetChepTayGioiHan(boQua: ReadonlySet<string>): { duong: string; soField: number }[] {
   const tep: string[] = [];
@@ -279,8 +374,7 @@ function quetChepTayGioiHan(boQua: ReadonlySet<string>): { duong: string; soFiel
     if (DUONG_TU_LOAI_TRU.has(duongTuongDoi)) continue;
     if (boQua.has(duongTuongDoi)) continue;
     const src = readFileSync(duong, "utf8");
-    // Đã suy từ spec ⇒ có dòng `import { ... } from ".../pointLimitSpec"`.
-    if (/from\s+["'][^"']*pointLimitSpec["']/.test(src)) continue;
+    if (daDocSpec(duong, src)) continue;
     let soField = 0;
     for (const field of LIMIT_FIELDS) {
       if (new RegExp(`\\b${field}\\b`).test(src)) soField++;
@@ -297,22 +391,30 @@ describe("§3 — MỆNH ĐỀ QUÉT: không còn bản chép tay MỚI ngoài �
     const ket = quetChepTayGioiHan(boQuaHomNay);
     expect(
       ket,
-      `phát hiện file chép tay ≥${NGUONG_CHEP_TAY}/18 field, chưa import pointLimitSpec, chưa khai ở NO_DA_BIET/MIEN_TRU_KIEN_TRUC: ${JSON.stringify(ket)}. ` +
-        `Nếu tên KHÔNG nằm trong danh sách đã biết (productRouters.ts/measurementPointImport.ts/ba file BG-107) — ĐỪNG tự thêm allowlist, khai trong báo cáo Task 7 để coordinator quyết định (xem docblock VÒNG SỬA 2).`,
+      `phát hiện file chép tay ≥${NGUONG_CHEP_TAY}/18 field, chưa đọc pointLimitSpec (trực tiếp hoặc bắc cầu 1 bậc), chưa khai ở NO_DA_BIET/MIEN_TRU_KIEN_TRUC: ${JSON.stringify(ket)}. ` +
+        `Nếu tên KHÔNG nằm trong danh sách đã biết (productRouters.ts/ba file BG-107) — ĐỪNG tự thêm allowlist, khai trong báo cáo Task 7 để coordinator quyết định (xem docblock VÒNG SỬA 2 + BỔ SUNG vòng sửa 2).`,
     ).toEqual([]);
   });
 
-  it("(b) XÁC NHẬN nợ 'server/utils/measurementPointImport.ts' (BG-104) CÒN THẬT hôm nay — Task 8 đóng thì test này sẽ ĐỎ, đúng lúc đó xoá NO_DA_BIET tương ứng và xoá CHÍNH test này", () => {
-    const boQuaTruMPI = new Set([...boQuaHomNay].filter((p) => p !== "server/utils/measurementPointImport.ts"));
-    const ket = quetChepTayGioiHan(boQuaTruMPI);
-    const duongs = ket.map((k) => k.duong);
-    expect(
-      duongs,
-      "mệnh đề quét KHÔNG còn bắt được server/utils/measurementPointImport.ts — nợ BG-104 có thể đã hết (Task 8 xong); nếu đúng, xoá dòng NO_DA_BIET và xoá test này",
-    ).toContain("server/utils/measurementPointImport.ts");
-  });
+  // ⚠ KHÔNG còn test "(b) BG-104" — đã XOÁ đúng thiết kế tự-hết-hạn (xem chú
+  // thích tại chỗ BG-104 từng nằm trong NO_DA_BIET, ngay phía trên). Viết lại
+  // một test tương tự CHO CÙNG file mà không đo lại lý do là đúng lỗi "nợ hoá
+  // thạch" mà bản vá này sinh ra để tránh.
+  //
+  // Đột biến MÔ TẢ (không chạy — coordinator yêu cầu mô tả, không cần sửa đĩa
+  // thật): giả sử `server/utils/measurementPointLimitGate.ts` bị đổi thành chép
+  // TAY 18 tên field (thay vì `import { APPROVAL_LIMIT_FIELDS } from "@shared/pointLimitSpec"`).
+  // Khi đó (a) chính `measurementPointLimitGate.ts` có `soField>=6` VÀ
+  // `importThangSpec()` = false ⇒ bị §3 bắt TRỰC TIẾP, đúng tên; (b) với MỌI
+  // file X import nó (`measurementPointImport.ts`/`productRouters.ts`/…),
+  // `daDocSpec(X)` đọc LẠI nội dung `measurementPointLimitGate.ts` TRÊN ĐĨA tại
+  // thời điểm quét (không cache, không đoán) — nội dung đó không còn khớp
+  // `importThangSpec()` ⇒ `daDocSpec(X)` = false ⇒ X TÁI XUẤT HIỆN trong danh
+  // sách bắt (nếu soField(X) vẫn ≥6, đúng trường hợp `measurementPointImport.ts`/
+  // `productRouters.ts` hôm nay). Tức KHÔNG có file nào "sạch lây" nhờ một lần
+  // import — mỗi lần quét đọc THẬT trạng thái Y, không ghim kết quả cũ.
 
-  // (c) — cùng khuôn (b), MỘT test mỗi file BG-107: Task 14 thường di trú CẢ
+  // (c) — cùng khuôn BG-104 cũ, MỘT test mỗi file BG-107: Task 14 thường di trú CẢ
   // BA cùng lúc (tách shell ProductModels là một khối), nhưng tách riêng để
   // nếu ai đó di trú DỞ DANG (chỉ 1-2/3 file) thì đúng NHỮNG file còn lại vẫn
   // báo chuông, không im lặng theo file đã xong.
