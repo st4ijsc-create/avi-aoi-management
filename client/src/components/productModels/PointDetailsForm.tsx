@@ -3,10 +3,21 @@
  * PURE RELOCATION: the page still owns all state/queries/mutations/handlers and threads
  * them 1:1 as props (names unchanged); `t`/`user` are re-derived from hooks locally, as in
  * the sibling components/products/* dialogs. Identical JSX/handlers — no behavior change.
+ *
+ * Khối C Task 14 (BG-107) — props đọc/ghi 17 cột giới hạn dạng chuỗi (`pointLowerLimit`,
+ * `setPointLowerLimit`, …) TRƯỚC đây khai tay từng tên (khớp NGUYÊN VĂN `shared/pointLimitSpec.ts`
+ * — đúng lớp lỗi `pointLimitSpecCensus.test.ts` §3 bắt). Tên field giờ suy TỪ `LIMIT_FIELDS`
+ * qua khoá mẫu (template literal) `point${Capitalize<F>}`/`setPoint${Capitalize<F>}` — khớp
+ * ĐÚNG quy ước đặt tên state đã dùng ở đây từ trước (đối chiếu tay, không đoán). `criteria`
+ * (kiểu khác — mảng, không phải chuỗi) giữ khai tay `pointCriteria`/`setPointCriteria` như cũ.
+ * ⚠ KHÔNG cắt bớt field nào form đang hiện — Task 14 chỉ đổi NGUỒN tên cột (từ gõ tay sang
+ * spec), KHÔNG đổi TẬP cột form hiển thị (form v1.x cố ý hiện đủ 18, kể cả các trường 3D
+ * chưa dùng nhiều — quyết định "hiện bao nhiêu cột" là của tab Cây dạy, không phải form này).
  */
 
 import type { Dispatch, SetStateAction, ChangeEvent } from "react";
 import { type RouterOutputs, mapCatalogCategoryToLegacyType, type MaterialCondition, type MeasurementPoint, type ToleranceMode } from "./types";
+import { LIMIT_FIELDS } from "@shared/pointLimitSpec";
 import { useAuth } from "@/_core/hooks/useAuth";
 import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
 import { PendingSuggestionCard } from "./PendingSuggestionCard";
@@ -28,7 +39,24 @@ import { AlertTriangle, Copy, Image as ImageIcon, MousePointer, Save, Trash2, X 
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-interface PointDetailsFormProps {
+/**
+ * 17/18 field giới hạn DẠNG CHUỖI của `LIMIT_FIELDS` (loại "criteria" — kiểu
+ * khác, khai tay riêng bên dưới). Suy nghiêm ngặt bằng `Exclude` — nếu spec
+ * thêm/bớt field, khoá mẫu dưới đây tự khớp, không cần sửa tay.
+ */
+type TenFieldGioiHanChuoi = Exclude<(typeof LIMIT_FIELDS)[number], "criteria">;
+
+/** Props ĐỌC — `pointLowerLimit`, `pointHeightMin`, … suy từ tên field spec. */
+type CacGiaTriGioiHanChuoi = {
+  [F in TenFieldGioiHanChuoi as `point${Capitalize<F>}`]: string;
+};
+
+/** Props GHI — `setPointLowerLimit`, `setPointHeightMin`, … cùng khuôn. */
+type CacSetterGioiHanChuoi = {
+  [F in TenFieldGioiHanChuoi as `setPoint${Capitalize<F>}`]: Dispatch<SetStateAction<string>>;
+};
+
+interface PointDetailsFormProps extends CacGiaTriGioiHanChuoi, CacSetterGioiHanChuoi {
   confirmDeletePoint: () => void;
   handleDuplicatePoint: () => void;
   handlePointImageUpload: (e: ChangeEvent<HTMLInputElement>) => void;
@@ -39,52 +67,35 @@ interface PointDetailsFormProps {
   measurementInstruments: RouterOutputs["measurementInstrument"]["list"] | undefined;
   measurementPoints: MeasurementPoint[];
   measurementTypeCatalog: RouterOutputs["measurementTypeCatalog"]["list"] | undefined;
-  pointAreaMax: string;
-  pointAreaMin: string;
   pointAreaNominal: string;
   pointAreaUnit: string;
   pointCode: string;
   pointComponentCode: string;
-  pointCoplanarityMax: string;
   pointCriteria: PointCriteriaItem[];
   pointCropHeight: number;
   pointCropWidth: number;
   pointDatumRefsInput: string;
   pointDescription: string;
   pointFitClass: string;
-  pointHeightMax: string;
-  pointHeightMin: string;
   pointHeightNominal: string;
   pointHeightUnit: string;
-  pointLowerLimit: string;
   pointMaterialCondition: MaterialCondition | "";
   pointMeasurementTypeCode: string;
   pointName: string;
   pointNominalValue: string;
-  pointOffsetXMax: string;
-  pointOffsetYMax: string;
   pointPositionZ: string;
   pointPreferredInstrumentId: number | undefined;
   pointPreferredSamplingPlanId: number | undefined;
   pointProductViewId: number | undefined;
   pointRefDesignator: string;
   pointReferenceImageUrl: string;
-  pointThicknessMax: string;
-  pointThicknessMin: string;
-  pointTiltMax: string;
   pointTolMinus: string;
   pointTolPlus: string;
   pointToleranceMode: ToleranceMode;
   pointType: MeasurementPoint["measurementType"];
-  pointUnit: string;
-  pointUpperLimit: string;
   pointValidation: ReturnType<typeof useFormValidation<{ code: string; name: string; lowerLimit: string; upperLimit: string }>>;
-  pointVoidPctMax: string;
-  pointVolumeMax: string;
-  pointVolumeMin: string;
   pointVolumeNominal: string;
   pointVolumeUnit: string;
-  pointWarpageMax: string;
   pointWorkstationId: number | undefined;
   productViews: RouterOutputs["productView"]["listByProduct"] | undefined;
   refetchPoints: () => void;
@@ -92,51 +103,34 @@ interface PointDetailsFormProps {
   saveWillRequireApproval: boolean;
   selectedPointIndex: number | null;
   setImageSourceMode: Dispatch<SetStateAction<"upload" | "auto-crop">>;
-  setPointAreaMax: Dispatch<SetStateAction<string>>;
-  setPointAreaMin: Dispatch<SetStateAction<string>>;
   setPointAreaNominal: Dispatch<SetStateAction<string>>;
   setPointAreaUnit: Dispatch<SetStateAction<string>>;
   setPointCode: Dispatch<SetStateAction<string>>;
   setPointComponentCode: Dispatch<SetStateAction<string>>;
-  setPointCoplanarityMax: Dispatch<SetStateAction<string>>;
   setPointCriteria: Dispatch<SetStateAction<PointCriteriaItem[]>>;
   setPointCropHeight: Dispatch<SetStateAction<number>>;
   setPointCropWidth: Dispatch<SetStateAction<number>>;
   setPointDatumRefsInput: Dispatch<SetStateAction<string>>;
   setPointDescription: Dispatch<SetStateAction<string>>;
   setPointFitClass: Dispatch<SetStateAction<string>>;
-  setPointHeightMax: Dispatch<SetStateAction<string>>;
-  setPointHeightMin: Dispatch<SetStateAction<string>>;
   setPointHeightNominal: Dispatch<SetStateAction<string>>;
   setPointHeightUnit: Dispatch<SetStateAction<string>>;
-  setPointLowerLimit: Dispatch<SetStateAction<string>>;
   setPointMaterialCondition: Dispatch<SetStateAction<MaterialCondition | "">>;
   setPointMeasurementTypeCode: Dispatch<SetStateAction<string>>;
   setPointName: Dispatch<SetStateAction<string>>;
   setPointNominalValue: Dispatch<SetStateAction<string>>;
-  setPointOffsetXMax: Dispatch<SetStateAction<string>>;
-  setPointOffsetYMax: Dispatch<SetStateAction<string>>;
   setPointPositionZ: Dispatch<SetStateAction<string>>;
   setPointPreferredInstrumentId: Dispatch<SetStateAction<number | undefined>>;
   setPointPreferredSamplingPlanId: Dispatch<SetStateAction<number | undefined>>;
   setPointProductViewId: Dispatch<SetStateAction<number | undefined>>;
   setPointRefDesignator: Dispatch<SetStateAction<string>>;
   setPointReferenceImageUrl: Dispatch<SetStateAction<string>>;
-  setPointThicknessMax: Dispatch<SetStateAction<string>>;
-  setPointThicknessMin: Dispatch<SetStateAction<string>>;
-  setPointTiltMax: Dispatch<SetStateAction<string>>;
   setPointTolMinus: Dispatch<SetStateAction<string>>;
   setPointTolPlus: Dispatch<SetStateAction<string>>;
   setPointToleranceMode: Dispatch<SetStateAction<ToleranceMode>>;
   setPointType: Dispatch<SetStateAction<MeasurementPoint["measurementType"]>>;
-  setPointUnit: Dispatch<SetStateAction<string>>;
-  setPointUpperLimit: Dispatch<SetStateAction<string>>;
-  setPointVoidPctMax: Dispatch<SetStateAction<string>>;
-  setPointVolumeMax: Dispatch<SetStateAction<string>>;
-  setPointVolumeMin: Dispatch<SetStateAction<string>>;
   setPointVolumeNominal: Dispatch<SetStateAction<string>>;
   setPointVolumeUnit: Dispatch<SetStateAction<string>>;
-  setPointWarpageMax: Dispatch<SetStateAction<string>>;
   setPointWorkstationId: Dispatch<SetStateAction<number | undefined>>;
   showCoatingSection: boolean;
   showCoplanaritySection: boolean;

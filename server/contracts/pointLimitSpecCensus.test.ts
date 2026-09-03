@@ -284,18 +284,21 @@ const NO_DA_BIET: Record<string, string> = {
     "Task 8 — zod input `measurementPoint.update` (đầu vào `z.object({...})` khoảng dòng 1244-1275, KHÔNG suy từ spec — vẫn khai tay từng field) là gap CÒN MỞ, mở từ brief Task 7 gốc; agent khác đang giữ file này, Task 7 KHÔNG được chạm. " +
       "⚠ Vòng sửa 2: file này giờ CŨNG daDocSpec()=true qua bắc cầu (import touchesApprovalLimitFields cho `touchesLimits`, đã đóng) — dòng allowlist này về mặt CƠ CHẾ §3 đã dư (file thoát dù không có dòng này), NHƯNG giữ lại để không xoá âm thầm chứng cứ 'zod input schema vẫn hand-copy' — gap đó KHÔNG liên quan touchesLimits và KHÔNG được đo lại tự-hết-hạn được nữa (bắc cầu 1 bậc là miễn trừ CẤP FILE, không phân biệt được hai việc trong cùng file — xem giới hạn khai ở docblock BỔ SUNG vòng sửa 2).",
   // ── Vòng sửa 2 — BG-107, ba file client reviewer grep độc lập bắt SỐNG ─────
-  // ⚠ Đường dẫn ĐO LẠI, không chép nguyên văn brief: coordinator khai
-  // "client/src/pages/productModels/types.ts" — SAI, file thật ở
-  // `client/src/components/productModels/types.ts` (đã xác nhận bằng `find`).
-  "client/src/pages/ProductModels.tsx":
-    "BG-107 — di trú ở Task 14 (tách shell ProductModels). Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(c) XÁC NHẬN nợ BG-107' bên dưới).",
-  "client/src/components/productModels/types.ts":
-    "BG-107 — di trú ở Task 14 (tách shell ProductModels). Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(c) XÁC NHẬN nợ BG-107' bên dưới).",
-  "client/src/components/productModels/PointDetailsForm.tsx":
-    "BG-107 — di trú ở Task 14 (tách shell ProductModels). Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(c) XÁC NHẬN nợ BG-107' bên dưới).",
-  // ── Ruling coordinator R-KC-7 (2026-09-03): file thứ TƯ, vòng sửa 2 nới quét ra client/ bắt SỐNG (10/18, cột map CSV/Excel). Agent Task 7 KHÔNG tự allowlist — đúng chỉ đạo — khai để coordinator quyết. Cùng lớp BG-107, di trú ở Task 14.
+  // ⚠ Task 14 (2026-09-04) ĐÃ DI TRÚ 3/4 file BG-107 gốc — xoá 3 dòng allowlist
+  // + 3 test "(c)" tương ứng đúng thiết kế tự-hết-hạn (khuôn BG-104):
+  //   - `client/src/pages/ProductModels.tsx` — bỏ interface `MeasurementPoint`
+  //     local (khai tay y hệt bản sao `types.ts`), import từ
+  //     `@/components/productModels/types` (bắc cầu 1 bậc → spec).
+  //   - `client/src/components/productModels/types.ts` — `MeasurementPoint`
+  //     giờ suy 18 field từ `LIMIT_FIELDS` (import THẲNG `@shared/pointLimitSpec`).
+  //   - `client/src/components/productModels/PointDetailsForm.tsx` — props
+  //     đọc/ghi 17 field chuỗi suy từ `LIMIT_FIELDS` qua khoá mẫu
+  //     `point${Capitalize<F>}`/`setPoint${Capitalize<F>}` (import THẲNG spec).
+  // Dòng đỏ nguyên văn TRƯỚC khi gỡ (test "(c)" của cả 3, đo 2026-09-04) — chép
+  // trong báo cáo Task 14, không lặp lại ở đây để tránh trôi khỏi nguồn gốc.
+  // ── Ruling coordinator R-KC-7 (2026-09-03), tinh chỉnh R-KC-8: file thứ TƯ — cùng lớp BG-107 NHƯNG là bảng ánh xạ HEADER Excel/CSV (alias EN/VI), di trú cần thiết kế alias-map (BG-110), KHÔNG phải đổi 1 dòng. Task 14 di trú 3 tệp đơn ở trên; GIỮ NGUYÊN allowlist này.
   "client/src/components/BulkImportDialog.tsx":
-    "BG-107 — di trú ở Task 14 (tách shell ProductModels). Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(c) XÁC NHẬN nợ BG-107' bên dưới).",
+    "BG-107/R-KC-8 — bảng ánh xạ HEADER Excel/CSV (alias EN/VI), di trú cần thiết kế alias-map (BG-110), ngoài phạm vi Task 14. Xác nhận CÒN bị mệnh đề quét bắt 2026-09-04 (xem test '(c) XÁC NHẬN nợ BG-107' bên dưới).",
 };
 
 /** File KHÔNG phải bản sao — nó LÀ đích tham chiếu mà §2 đã so trực tiếp (spec suy THEO nó, không phải ngược lại). Miễn trừ VĨNH VIỄN, không phải nợ. */
@@ -417,14 +420,13 @@ describe("§3 — MỆNH ĐỀ QUÉT: không còn bản chép tay MỚI ngoài �
   // `productRouters.ts` hôm nay). Tức KHÔNG có file nào "sạch lây" nhờ một lần
   // import — mỗi lần quét đọc THẬT trạng thái Y, không ghim kết quả cũ.
 
-  // (c) — cùng khuôn BG-104 cũ, MỘT test mỗi file BG-107: Task 14 thường di trú CẢ
-  // BA cùng lúc (tách shell ProductModels là một khối), nhưng tách riêng để
-  // nếu ai đó di trú DỞ DANG (chỉ 1-2/3 file) thì đúng NHỮNG file còn lại vẫn
-  // báo chuông, không im lặng theo file đã xong.
+  // (c) — cùng khuôn BG-104 cũ, MỘT test mỗi file BG-107 CÒN nợ. Task 14
+  // (2026-09-04) đã di trú 3/4 file gốc (`ProductModels.tsx`/`types.ts`/
+  // `PointDetailsForm.tsx`) — 3 test (c) tương ứng ĐÃ XOÁ đúng thiết kế
+  // tự-hết-hạn (dòng đỏ nguyên văn trước khi gỡ: chép trong báo cáo Task 14).
+  // Chỉ còn `BulkImportDialog.tsx` (R-KC-8 — di trú cần alias-map, ngoài phạm
+  // vi Task 14, xem `NO_DA_BIET` ở trên).
   for (const duongBG107 of [
-    "client/src/pages/ProductModels.tsx",
-    "client/src/components/productModels/types.ts",
-    "client/src/components/productModels/PointDetailsForm.tsx",
     "client/src/components/BulkImportDialog.tsx",
   ] as const) {
     it(`(c) XÁC NHẬN nợ '${duongBG107}' (BG-107) CÒN THẬT hôm nay — Task 14 di trú xong file này thì test sẽ ĐỎ, đúng lúc đó xoá dòng NO_DA_BIET tương ứng và xoá CHÍNH test này`, () => {

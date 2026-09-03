@@ -3,44 +3,27 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useSetCopilotContext } from "@/contexts/AiCopilotContext";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
+import { PermissionGate } from "@/components/PermissionGate";
 import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
+import { DataTable } from "@/components/DataTable";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 // Doc 43 Đợt 3 — tab-hoá cột chi tiết (Điểm đo / Thông tin SP / Phát hành / Nền tảng).
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
-import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreVertical, MoreHorizontal, ChevronDown, Copy, Image as ImageIcon, FileSpreadsheet, Download, Layers, CheckSquare, Square, FileText, Paperclip, Rocket, Grid3X3, Sparkles, Crosshair, AlertTriangle, TreePine } from "lucide-react";
+import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreHorizontal, ChevronDown, Image as ImageIcon, FileSpreadsheet, Download, Layers, CheckSquare, Square, FileText, Paperclip, Rocket, Grid3X3, Sparkles, Crosshair, TreePine } from "lucide-react";
 import { useSearch, useLocation } from "wouter";
-// Doc 31 UX1 (WD-1) — mount the previously-orphaned fiducial CRUD tab (0 importers).
-import { ProductFiducialsTab } from "@/components/product-fiducials/ProductFiducialsTab";
-// W3-C (doc 27 §2 M9) — inspection-program release workflow panel (Phát hành chương trình)
-import ProgramReleasePanel from "@/components/program-release/ProgramReleasePanel";
-// W8-B (doc 29 §2 — M12b) — panel N-up definition editor (Panel nhiều board)
-import PanelDefinitionPanel from "@/components/panel/PanelDefinitionPanel";
 // Doc 31 PM5/UX8 — per-product golden-samples panel (surfacing + capture deep-link)
 import ProductGoldenSamplesPanel from "@/components/products/ProductGoldenSamplesPanel";
 // Doc 31 UX2/PM9/UX7 — product readiness score + checklist + cross-links.
-import ProductReadinessPanel, { ProductReadinessBadge, type ReadinessData } from "@/components/products/ProductReadinessPanel";
-import { BulkImportDialog } from "@/components/BulkImportDialog";
-// Doc 31 MP5/PM4 (Đợt C) — generic centroid / pick-place importer.
-import { CentroidImportDialog } from "@/components/products/CentroidImportDialog";
-import { EditProductDialog } from "@/components/products/EditProductDialog";
-import { CloneProductDialog } from "@/components/products/CloneProductDialog";
-import { PointTemplateDialog } from "@/components/products/PointTemplateDialog";
-// Wave 2 đường A (Task 3) — đề xuất ngưỡng hàng loạt cho N điểm đã chọn (xem trước, không duyệt hàng loạt).
-import { BatchSuggestDialog } from "@/components/productModels/BatchSuggestDialog";
+import ProductReadinessPanel, { type ReadinessData } from "@/components/products/ProductReadinessPanel";
 // Doc 31 MP6 (decision #2) — pass/fail criteria + per-point lighting recipe editors.
 import { PointCriteriaEditor, type PointCriteriaItem } from "@/components/products/PointCriteriaEditor";
 import { PointLightingEditor } from "@/components/products/PointLightingEditor";
@@ -50,89 +33,38 @@ import { ProductPackageButtons } from "@/components/ProductPackageButtons";
 import MeasurementPointCanvas, { type CanvasGeometry, type CanvasPointShape } from "@/components/measurement-point-canvas/MeasurementPointCanvas";
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoMeasurementPoints } from "@/components/EmptyState";
-import { DataTable } from "@/components/DataTable";
-// Doc 42 Đợt 4A (APPLY-B) — thanh nhập/xuất danh sách sản phẩm (Excel/CSV).
-import { ImportExportBar } from "@/components/patterns";
-// Task 13 — MỘT nguồn sự thật cho spec cột (trước: PRODUCT_IO_COLUMNS riêng ở
-// đây + PRODUCT_IMPORT_COLUMNS/PRODUCT_EXPORT_COLUMNS riêng ở productRouters.ts,
-// khớp 10/10 nhưng không cổng nào canh lệch).
-import { PRODUCT_COLUMN_SPEC } from "@shared/productColumnSpec";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
 import { useFormShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { ValidationMessage } from "@/components/ValidationMessage";
-import { DeleteConfirmDialog } from "@/components/ConfirmDialog";
 // Doc 42 Đợt 0.5 — bộ dịch lỗi tRPC dùng chung (FORBIDDEN/CONFLICT/zod → tiếng Việt).
 import { toastTrpcError, mapTrpcError } from "@/lib/trpcErrors";
-import { CreateProductDialog } from "@/components/productModels/CreateProductDialog";
 import { PointDetailsForm } from "@/components/productModels/PointDetailsForm";
 import { ProductInfoTab } from "@/components/productModels/ProductInfoTab";
 import { ProductReleaseTab } from "@/components/productModels/ProductReleaseTab";
 import { ProductFoundationTab } from "@/components/productModels/ProductFoundationTab";
-import { MsaStudyDialog } from "@/components/productModels/MsaStudyDialog";
 // doc 55 Item 3 / PV3-UI — product-variant master-data admin tab.
 import { ProductVariantsTab } from "@/components/products/ProductVariantsTab";
 // Khối C Task 10 (QĐ-4) — tab "Cây dạy": đọc cây dạy giới hạn qua appRouter.cayDay (Task 9).
 import { TeachTreeTab } from "@/components/products/teach/TeachTreeTab";
 
-interface MeasurementPoint {
-  id?: number;
-  code: string;
-  name: string;
-  description?: string;
-  measurementType: "DIMENSION" | "VISUAL" | "ELECTRICAL" | "POSITION" | "COLOR" | "SURFACE" | "OTHER";
-  unit?: string;
-  lowerLimit?: string;
-  upperLimit?: string;
-  nominalValue?: string;
-  positionX: number;
-  positionY: number;
-  radius: number;
-  shape?: CanvasPointShape;
-  geometry?: CanvasGeometry;
-  orderIndex: number;
-  referenceImageUrl?: string;
-  cropWidth: number; // Chiều rộng vùng cắt ảnh mẫu
-  cropHeight: number; // Chiều cao vùng cắt ảnh mẫu
-  workstationId?: number;
-  preferredInstrumentId?: number;
-  preferredSamplingPlanId?: number;
-  measurementTypeCode?: string;
-  toleranceMode?: "min_only" | "max_only" | "range" | "bilateral";
-  tolPlus?: string;
-  tolMinus?: string;
-  datumRefs?: string[];
-  materialCondition?: "MMC" | "LMC" | "RFS";
-  fitClass?: string;
-  positionZ?: string;
-  heightMin?: string;
-  heightMax?: string;
-  heightNominal?: string;
-  heightUnit?: string;
-  areaMin?: string;
-  areaMax?: string;
-  areaNominal?: string;
-  areaUnit?: string;
-  volumeMin?: string;
-  volumeMax?: string;
-  volumeNominal?: string;
-  volumeUnit?: string;
-  coplanarityMax?: string;
-  warpageMax?: string;
-  voidPctMax?: string;
-  offsetXMax?: string;
-  offsetYMax?: string;
-  tiltMax?: string;
-  thicknessMin?: string;
-  thicknessMax?: string;
-  // Doc 31 MP1/PM6 — component linkage (Pareto-by-package chain).
-  componentCode?: string;
-  refDesignator?: string;
-  // Doc 31 MP6 — structured pass/fail criteria (jsonb, evaluated at ingest).
-  criteria?: PointCriteriaItem[];
-}
+// Khối C Task 14 (BG-107) — `MeasurementPoint`/`ProductModel`/`ToleranceMode`/
+// `MaterialCondition`/`mapCatalogCategoryToLegacyType` TRƯỚC đây khai TAY, y hệt
+// (byte-for-byte) bản sao ở `components/productModels/types.ts` (đúng lớp lỗi
+// "doc 48 R4" tự thú: "duplicated VERBATIM from ProductModels.tsx"). Đổi sang
+// import MỘT nguồn — trang không còn giữ bản sao riêng, và `MeasurementPoint`
+// giờ suy 18 cột giới hạn từ `shared/pointLimitSpec.ts` (qua `types.ts`), không
+// còn khai tay 18 tên cột lần hai (BG-107, census §3).
+import {
+  type MeasurementPoint,
+  type ProductModel,
+  type ToleranceMode,
+  type MaterialCondition,
+  mapCatalogCategoryToLegacyType,
+} from "@/components/productModels/types";
+import { ProductListPanel } from "@/components/products/ProductListPanel";
+import { ProductDialogsHost } from "@/components/products/ProductDialogsHost";
 
 /** Drop incomplete criteria rows and coerce numeric bounds to strings for the API. */
 function sanitizeCriteria(items: PointCriteriaItem[]): PointCriteriaItem[] {
@@ -158,9 +90,6 @@ function sanitizeCriteria(items: PointCriteriaItem[]): PointCriteriaItem[] {
   });
 }
 
-type ToleranceMode = "min_only" | "max_only" | "range" | "bilateral";
-type MaterialCondition = "MMC" | "LMC" | "RFS";
-
 /**
  * Doc 43 Đợt 5 — tóm tắt ngưỡng của 1 điểm đo cho cột bảng (không cần i18n).
  * Ưu tiên khoảng [dưới … trên], rồi danh định ± dung sai, else "—".
@@ -177,45 +106,6 @@ function thresholdSummaryOf(p: MeasurementPoint): string {
     return `${p.nominalValue}${unit}`;
   }
   return "—";
-}
-
-interface ProductModel {
-  id: number;
-  code: string;
-  name: string;
-  description?: string | null;
-  category?: string | null;
-  productLine?: string | null;
-  variant?: string | null;
-  revision?: string | null;
-  clonedFromId?: number | null;
-  lifecycleStatus: "development" | "active" | "eol" | "archived";
-  targetYieldRate?: string | null;
-  minYieldRate?: string | null;
-  referenceImageUrl?: string | null;
-  imageWidth?: number | null;
-  imageHeight?: number | null;
-  imageDisplayMode?: string | null;
-}
-
-function mapCatalogCategoryToLegacyType(category?: string): MeasurementPoint["measurementType"] {
-  switch ((category || "").toUpperCase()) {
-    case "DIMENSION":
-    case "GD_T":
-      return "DIMENSION";
-    case "ELECTRICAL":
-      return "ELECTRICAL";
-    case "POSITION":
-      return "POSITION";
-    case "COLOR":
-      return "COLOR";
-    case "SURFACE":
-      return "SURFACE";
-    case "OTHER":
-      return "OTHER";
-    default:
-      return "VISUAL";
-  }
 }
 
 // Doc 43 Đợt 3 — 4 tab cột chi tiết + đồng bộ ?tab= URL (deep-link, reload giữ tab).
@@ -2426,256 +2316,28 @@ export default function ProductModels() {
       <ErrorBoundary>
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Product List — thu gọn còn 1/4 (danh sách sản phẩm ít cần rộng) */}
-        <Card className="lg:col-span-1">
-          {/* doc 46 B3 — flex-wrap + min-w-0 so the action buttons wrap below the
-              title instead of overflowing this narrow (lg:col-span-1) column at
-              ≤1600px; previously the "Add" CTA spilled past the card edge and was
-              painted over by the adjacent col-span-3 detail card (unclickable). */}
-          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-lg">{t("products.productList")}</CardTitle>
-                <ViewOnlyBadge module="settings_products" />
-              </div>
-              <CardDescription>{t("products.selectToManage")}</CardDescription>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-            {/* Doc 31 UX1 (WD-1) — start the guided product setup wizard (the route
-                is itself permission-guarded, so no extra write-action gate here). */}
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1"
-              onClick={() => setLocation("/product-onboarding")}
-            >
-              <Sparkles className="h-4 w-4" />
-              {t("products.startGuidedSetup", "Guided setup")}
-            </Button>
-            <CreateProductDialog
-              createProductMutation={createProductMutation} handleCreateProduct={handleCreateProduct} handleImageUpload={handleImageUpload}
-              isCreateDialogOpen={isCreateDialogOpen} newProductCategory={newProductCategory} newProductCode={newProductCode}
-              newProductDescription={newProductDescription} newProductDisplayMode={newProductDisplayMode} newProductLifecycle={newProductLifecycle}
-              newProductLine={newProductLine} newProductMinYield={newProductMinYield} newProductName={newProductName}
-              newProductRevision={newProductRevision} newProductTargetYield={newProductTargetYield} newProductVariant={newProductVariant}
-              productValidation={productValidation} setIsCreateDialogOpen={setIsCreateDialogOpen} setNewProductCategory={setNewProductCategory}
-              setNewProductCode={setNewProductCode} setNewProductDescription={setNewProductDescription} setNewProductDisplayMode={setNewProductDisplayMode}
-              setNewProductLifecycle={setNewProductLifecycle} setNewProductLine={setNewProductLine} setNewProductMinYield={setNewProductMinYield}
-              setNewProductName={setNewProductName} setNewProductRevision={setNewProductRevision} setNewProductTargetYield={setNewProductTargetYield}
-              setNewProductVariant={setNewProductVariant} uploadedImageUrl={uploadedImageUrl}
-            />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {/* Search and Filter Controls */}
-            <div className="space-y-3 mb-4">
-              {/* Search Bar */}
-              <div className="relative">
-                <Input
-                  placeholder={t("products.searchByCodeOrName")}
-                  value={productSearchQuery}
-                  onChange={(e) => setProductSearchQuery(e.target.value)}
-                  className="pr-8"
-                />
-                {productSearchQuery && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
-                    onClick={() => setProductSearchQuery("")}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-              
-              {/* Filter and Sort Row */}
-              <div className="flex gap-2">
-                {/* Lifecycle Filter */}
-                <Select value={productLifecycleFilter} onValueChange={(val: any) => setProductLifecycleFilter(val)}>
-                  <SelectTrigger className="w-35">
-                    <SelectValue placeholder={t("common.status")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t("common.all")}</SelectItem>
-                    <SelectItem value="development">{t("products.development")}</SelectItem>
-                    <SelectItem value="active">{t("products.active")}</SelectItem>
-                    <SelectItem value="eol">EOL</SelectItem>
-                    <SelectItem value="archived">{t("products.archived")}</SelectItem>
-                  </SelectContent>
-                </Select>
-                
-                {/* Sort Dropdown */}
-                <Select value={`${productSortBy}-${productSortOrder}`} onValueChange={(val) => {
-                  const [sortBy, sortOrder] = val.split("-") as [typeof productSortBy, typeof productSortOrder];
-                  setProductSortBy(sortBy);
-                  setProductSortOrder(sortOrder);
-                }}>
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder={t("products.sortPlaceholder")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="createdAt-desc">{t("products.newestFirst")}</SelectItem>
-                    <SelectItem value="createdAt-asc">{t("products.oldestFirst")}</SelectItem>
-                    <SelectItem value="name-asc">{t("products.nameAZ")}</SelectItem>
-                    <SelectItem value="name-desc">{t("products.nameZA")}</SelectItem>
-                    <SelectItem value="code-asc">{t("products.codeAZ")}</SelectItem>
-                    <SelectItem value="code-desc">{t("products.codeZA")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              {/* Active Filters Badge */}
-              {(productSearchQuery || productLifecycleFilter !== "all") && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Badge variant="secondary" className="gap-1">
-                    {t("common.filtered")}
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => {
-                      setProductSearchQuery("");
-                      setProductLifecycleFilter("all");
-                    }}
-                  >
-                    {t("history.clearFilters")}
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* Doc 42 Đợt 4A (APPLY-B) — nhập/xuất danh sách sản phẩm. Xuất/Tải mẫu cho
-                mọi người; "Nhập" chỉ hiện khi có quyền tạo (onImport = undefined nếu không). */}
-            <div className="mb-4">
-              <ImportExportBar
-                entityLabel={t("products.entityLabel", "sản phẩm")}
-                fileBaseName="san_pham"
-                columns={[...PRODUCT_COLUMN_SPEC]}
-                onExport={handleExportProducts}
-                onImport={canImportProducts ? handleImportProducts : undefined}
-              />
-            </div>
-
-            {/* Doc 42 Đợt 2 (D2) — danh sách sản phẩm dùng DataTable: skeleton khi tải,
-                phân trang, empty-state có CTA. Search/lọc/sắp xếp vẫn do controls phía
-                trên điều khiển server-side (query productModel.list). */}
-            <DataTable<ProductModel>
-              data={(productModels ?? []) as unknown as ProductModel[]}
-              getRowId={(p) => p.id}
-              loading={productModels === undefined}
-              paginated
-              pageSize={8}
-              onRowClick={(product) => {
-                setSelectedProduct(product);
-                setIsEditMode(false);
-                resetPointForm();
-                // Doc 43 Đợt 3 — ghi ?product= (giữ tab hiện tại) để reload giữ nguyên
-                // sản phẩm + tab. Preselect chỉ auto-chọn 1 lần nên không gây vòng lặp.
-                const params = new URLSearchParams(onboardingSearch);
-                params.set("product", String(product.id));
-                setLocation(`/products?${params.toString()}`, { replace: true });
-              }}
-              emptyState={
-                productSearchQuery || productLifecycleFilter !== "all" ? (
-                  <EmptyState
-                    variant="no-results"
-                    compact
-                    title={t("products.noMatchingProducts", "Không có sản phẩm khớp")}
-                    description={t("products.tryDifferentSearch", "Thử đổi từ khoá hoặc bộ lọc.")}
-                  />
-                ) : (
-                  <EmptyState
-                    variant="no-data"
-                    compact
-                    title={t("products.noProductsYet")}
-                    description={t("products.clickAddToCreate")}
-                    actionLabel={t("common.add")}
-                    onAction={() => setIsCreateDialogOpen(true)}
-                  />
-                )
-              }
-              columns={[
-                {
-                  id: "product",
-                  header: t("products.product", "Sản phẩm"),
-                  cell: (product) => {
-                    const isSelected = selectedProduct?.id === product.id;
-                    const updatedAt = (product as { updatedAt?: string | Date | null }).updatedAt;
-                    return (
-                      <div
-                        className={`flex items-start gap-3 -mx-1 rounded-md px-2 py-1 ${
-                          isSelected ? "bg-primary/5" : ""
-                        }`}
-                      >
-                        <div className="p-2 rounded-lg bg-primary/10 shrink-0">
-                          <Package className="h-5 w-5 text-primary" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{product.name}</p>
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-sm text-muted-foreground truncate">{product.code}</p>
-                            {product.revision && (
-                              <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
-                                {t("products.revShort")} {product.revision}
-                              </Badge>
-                            )}
-                          </div>
-                          {/* Doc 31 UX2/PM9 — config-completeness badge (batched, no N+1) */}
-                          <div className="mt-1">
-                            <ProductReadinessBadge readiness={readinessById.get(product.id)} />
-                          </div>
-                          {updatedAt && (
-                            <p className="text-[11px] text-muted-foreground mt-1">
-                              {t("common.updated", "Cập nhật")}: {new Date(updatedAt).toLocaleDateString("vi-VN")}
-                            </p>
-                          )}
-                        </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedProduct(product);
-                              openEditProductDialog(product as unknown as ProductModel);
-                            }}>
-                              <Edit className="h-4 w-4 mr-2" />
-                              {t("common.edit")}
-                            </DropdownMenuItem>
-                            <PermissionGate module="settings_products" action="canCreate">
-                              <DropdownMenuItem onClick={(e) => {
-                                e.stopPropagation();
-                                openCloneProductDialog(product as unknown as ProductModel);
-                              }}>
-                                <Copy className="h-4 w-4 mr-2" />
-                                {t("products.clone")}
-                              </DropdownMenuItem>
-                            </PermissionGate>
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedProduct(product);
-                                setIsDeleteProductDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              {t("common.delete")}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    );
-                  },
-                },
-              ]}
-            />
-          </CardContent>
-        </Card>
+        <ProductListPanel
+          selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} setIsEditMode={setIsEditMode}
+          resetPointForm={resetPointForm} onboardingSearch={onboardingSearch} setLocation={setLocation}
+          productSearchQuery={productSearchQuery} setProductSearchQuery={setProductSearchQuery}
+          productLifecycleFilter={productLifecycleFilter} setProductLifecycleFilter={setProductLifecycleFilter}
+          productSortBy={productSortBy} setProductSortBy={setProductSortBy}
+          productSortOrder={productSortOrder} setProductSortOrder={setProductSortOrder}
+          productModels={productModels} readinessById={readinessById} canImportProducts={canImportProducts}
+          handleExportProducts={handleExportProducts} handleImportProducts={handleImportProducts}
+          setIsDeleteProductDialogOpen={setIsDeleteProductDialogOpen}
+          openEditProductDialog={openEditProductDialog} openCloneProductDialog={openCloneProductDialog}
+          createProductMutation={createProductMutation} handleCreateProduct={handleCreateProduct} handleImageUpload={handleImageUpload}
+          isCreateDialogOpen={isCreateDialogOpen} newProductCategory={newProductCategory} newProductCode={newProductCode}
+          newProductDescription={newProductDescription} newProductDisplayMode={newProductDisplayMode} newProductLifecycle={newProductLifecycle}
+          newProductLine={newProductLine} newProductMinYield={newProductMinYield} newProductName={newProductName}
+          newProductRevision={newProductRevision} newProductTargetYield={newProductTargetYield} newProductVariant={newProductVariant}
+          productValidation={productValidation} setIsCreateDialogOpen={setIsCreateDialogOpen} setNewProductCategory={setNewProductCategory}
+          setNewProductCode={setNewProductCode} setNewProductDescription={setNewProductDescription} setNewProductDisplayMode={setNewProductDisplayMode}
+          setNewProductLifecycle={setNewProductLifecycle} setNewProductLine={setNewProductLine} setNewProductMinYield={setNewProductMinYield}
+          setNewProductName={setNewProductName} setNewProductRevision={setNewProductRevision} setNewProductTargetYield={setNewProductTargetYield}
+          setNewProductVariant={setNewProductVariant} uploadedImageUrl={uploadedImageUrl}
+        />
 
         {/* Measurement Point Editor — mở rộng 3/4 để phần điểm đo to hơn */}
         <Card className="lg:col-span-3">
@@ -3321,46 +2983,11 @@ export default function ProductModels() {
       </ErrorBoundary>
       </DashboardLayout>
 
-      {/* W3-C (doc 27 §2 M9) — Phát hành chương trình (inspection-program release workflow) */}
-      <Dialog open={isProgramReleaseOpen} onOpenChange={setIsProgramReleaseOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>{t("programRelease.title")}{selectedProduct ? ` — ${selectedProduct.name}` : ""}</DialogTitle>
-            <DialogDescription>{t("programRelease.desc")}</DialogDescription>
-          </DialogHeader>
-          {selectedProduct && isProgramReleaseOpen && (
-            <ProgramReleasePanel productModelId={selectedProduct.id} />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Doc 31 UX1 (WD-1) — Fiducial marks editor (mounts the orphaned ProductFiducialsTab) */}
-      <Dialog open={isFiducialsOpen} onOpenChange={setIsFiducialsOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{t("products.fiducialsButton", "Fiducials")}{selectedProduct ? ` — ${selectedProduct.name}` : ""}</DialogTitle>
-            <DialogDescription>{t("products.fiducialsDesc", "Alignment fiducial marks used to register the board before inspection.")}</DialogDescription>
-          </DialogHeader>
-          {selectedProduct && isFiducialsOpen && (
-            <ProductFiducialsTab productModelId={selectedProduct.id} />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* W8-B (doc 29 §2 — M12b) — Panel N-up definition editor */}
-      <Dialog open={isPanelDefOpen} onOpenChange={setIsPanelDefOpen}>
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{t("panelDef.title")}{selectedProduct ? ` — ${selectedProduct.name}` : ""}</DialogTitle>
-            <DialogDescription>{t("panelDef.desc")}</DialogDescription>
-          </DialogHeader>
-          {selectedProduct && isPanelDefOpen && (
-            <PanelDefinitionPanel productModelId={selectedProduct.id} />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <MsaStudyDialog
+      <ProductDialogsHost
+        selectedProduct={selectedProduct}
+        isProgramReleaseOpen={isProgramReleaseOpen} setIsProgramReleaseOpen={setIsProgramReleaseOpen}
+        isFiducialsOpen={isFiducialsOpen} setIsFiducialsOpen={setIsFiducialsOpen}
+        isPanelDefOpen={isPanelDefOpen} setIsPanelDefOpen={setIsPanelDefOpen}
         addMsaObservationMutation={addMsaObservationMutation} batchAddMsaObservationsMutation={batchAddMsaObservationsMutation} completeMsaStudyMutation={completeMsaStudyMutation}
         generateMsaMatrixMutation={generateMsaMatrixMutation} handleAddMsaObservation={handleAddMsaObservation} handleApplyMsaCsvMapping={handleApplyMsaCsvMapping}
         handleApplyMsaPreset={handleApplyMsaPreset} handleBatchImportMsaObservations={handleBatchImportMsaObservations} handleCompleteMsaStudy={handleCompleteMsaStudy}
@@ -3378,7 +3005,7 @@ export default function ProductModels() {
         msaPartCount={msaPartCount} msaPartLabel={msaPartLabel} msaStudyCode={msaStudyCode}
         msaStudyData={msaStudyData} msaStudyName={msaStudyName} msaSuggestBaseValue={msaSuggestBaseValue}
         msaTrialCount={msaTrialCount} msaTrialNo={msaTrialNo} msaWizardStep={msaWizardStep}
-        selectedProduct={selectedProduct} setIsMsaDialogOpen={setIsMsaDialogOpen} setMsaAutoAddNext={setMsaAutoAddNext}
+        setIsMsaDialogOpen={setIsMsaDialogOpen} setMsaAutoAddNext={setMsaAutoAddNext}
         setMsaBatchInput={setMsaBatchInput} setMsaBatchSkipDuplicates={setMsaBatchSkipDuplicates} setMsaCsvColumnMap={setMsaCsvColumnMap}
         setMsaCsvHasHeader={setMsaCsvHasHeader} setMsaCsvPresetName={setMsaCsvPresetName} setMsaCsvSourceKey={setMsaCsvSourceKey}
         setMsaInstrumentId={setMsaInstrumentId} setMsaMatrixBaseValue={setMsaMatrixBaseValue} setMsaMatrixNoisePct={setMsaMatrixNoisePct}
@@ -3387,172 +3014,49 @@ export default function ProductModels() {
         setMsaPartLabel={setMsaPartLabel} setMsaStudyCode={setMsaStudyCode} setMsaStudyName={setMsaStudyName}
         setMsaSuggestBaseValue={setMsaSuggestBaseValue} setMsaTrialCount={setMsaTrialCount} setMsaTrialNo={setMsaTrialNo}
         setMsaWizardStep={setMsaWizardStep} startMsaStudyMutation={startMsaStudyMutation}
-      />
-
-      {/* Edit Product Dialog — Doc 31 UX4 (WE-3): extracted to components/products/EditProductDialog */}
-      <EditProductDialog
-        open={isEditProductDialogOpen}
-        onOpenChange={setIsEditProductDialogOpen}
-        code={editProductCode} setCode={setEditProductCode}
-        name={editProductName} setName={setEditProductName}
-        description={editProductDescription} setDescription={setEditProductDescription}
-        category={editProductCategory} setCategory={setEditProductCategory}
-        line={editProductLine} setLine={setEditProductLine}
-        variant={editProductVariant} setVariant={setEditProductVariant}
-        lifecycle={editProductLifecycle} setLifecycle={setEditProductLifecycle}
-        revision={editProductRevision} setRevision={setEditProductRevision}
-        targetYield={editProductTargetYield} setTargetYield={setEditProductTargetYield}
-        minYield={editProductMinYield} setMinYield={setEditProductMinYield}
-        displayMode={editProductDisplayMode} setDisplayMode={setEditProductDisplayMode}
-        imageUrl={editProductImageUrl}
-        currentImageUrl={selectedProduct?.referenceImageUrl}
-        onImageUpload={handleEditImageUpload}
-        onSave={handleUpdateProduct}
-        isSaving={updateProductMutation.isPending}
-      />
-
-      {/* Delete Product Confirmation */}
-      <DeleteConfirmDialog
-        open={isDeleteProductDialogOpen}
-        onOpenChange={setIsDeleteProductDialogOpen}
-        itemType={t("products.productItemType")}
-        itemName={selectedProduct?.name}
-        onConfirm={handleDeleteProduct}
-        isLoading={deleteProductMutation.isPending}
-      />
-
-      {/* Clone Product Dialog — Doc 31 PM1 (WC-2) · UX4 (WE-3): extracted to components/products/CloneProductDialog */}
-      <CloneProductDialog
-        open={isCloneProductDialogOpen}
-        onOpenChange={setIsCloneProductDialogOpen}
-        sourceProduct={cloneSourceProduct}
-        newCode={cloneNewCode} setNewCode={setCloneNewCode}
-        newName={cloneNewName} setNewName={setCloneNewName}
-        newRevision={cloneNewRevision} setNewRevision={setCloneNewRevision}
-        copyMappings={cloneCopyMappings} setCopyMappings={setCloneCopyMappings}
-        onClone={handleCloneProduct}
-        isCloning={cloneProductMutation.isPending}
-      />
-
-      {/* Delete Point Confirmation */}
-      <DeleteConfirmDialog
-        open={isDeletePointDialogOpen}
-        onOpenChange={setIsDeletePointDialogOpen}
-        itemType={t("products.pointItemType")}
-        itemName={selectedPointIndex !== null ? measurementPoints[selectedPointIndex]?.name : undefined}
-        onConfirm={handleDeletePoint}
-        isLoading={deletePointMutation.isPending}
-      />
-
-      {/* Doc 31 UX3 — optimistic-lock conflict: reload vs overwrite-anyway */}
-      <AlertDialog open={pointConflict !== null} onOpenChange={(o) => { if (!o) setPointConflict(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-warning" />
-              {t("products.conflict.title", "Điểm đo đã bị thay đổi")}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(
-                "products.conflict.body",
-                "Một người khác đã thay đổi điểm đo này kể từ khi bạn mở. Tải lại để xem thay đổi của họ, hoặc ghi đè bằng thay đổi của bạn.",
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {pointConflict && (() => {
-            const fields: Array<[string, string]> = [
-              ["code", t("products.pointCode", "Code")],
-              ["name", t("common.name", "Name")],
-              ["lowerLimit", t("products.lowerLimit", "Lower limit")],
-              ["upperLimit", t("products.upperLimit", "Upper limit")],
-              ["nominalValue", t("products.nominalValue", "Nominal")],
-              ["componentCode", t("products.componentCode", "Component")],
-              ["refDesignator", t("products.refDesignator", "RefDes")],
-              ["positionX", "X"],
-              ["positionY", "Y"],
-              ["radius", t("products.radius", "Radius")],
-            ];
-            const norm = (v: any) => (v === null || v === undefined ? "" : String(v));
-            const changed = fields.filter(([k]) => norm(pointConflict.current[k]) !== norm((pointConflict.loaded as any)[k]));
-            if (changed.length === 0) return null;
-            return (
-              <div className="rounded-md border border-border/60 bg-muted/30 p-2 text-xs">
-                <p className="font-medium mb-1">{t("products.conflict.theirChanges", "Thay đổi của người khác:")}</p>
-                <ul className="space-y-0.5">
-                  {changed.map(([k, label]) => (
-                    <li key={k} className="flex items-center gap-1">
-                      <span className="text-muted-foreground w-24 shrink-0">{label}</span>
-                      <span className="line-through text-destructive/80">{norm((pointConflict.loaded as any)[k]) || "—"}</span>
-                      <span className="text-muted-foreground">→</span>
-                      <span className="text-success font-medium">{norm(pointConflict.current[k]) || "—"}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })()}
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setPointConflict(null)}>
-              {t("common.cancel", "Hủy")}
-            </AlertDialogCancel>
-            <Button variant="outline" onClick={handleReloadConflict} disabled={isSavingPoint}>
-              {t("products.conflict.reload", "Tải lại")}
-            </Button>
-            <Button variant="destructive" onClick={handleOverwriteConflict} disabled={isSavingPoint}>
-              {t("products.conflict.overwrite", "Ghi đè")}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Bulk Import Dialog */}
-      {selectedProduct && (
-        <BulkImportDialog
-          open={isBulkImportDialogOpen}
-          onOpenChange={setIsBulkImportDialogOpen}
-          productModelId={selectedProduct.id}
-          productModelName={selectedProduct.name}
-          onSuccess={() => {
-            refetchPoints();
-          }}
-        />
-      )}
-
-      {/* Doc 31 MP5/PM4 (Đợt C) — centroid / pick-place import wizard */}
-      {selectedProduct && (
-        <CentroidImportDialog
-          open={isCentroidImportOpen}
-          onOpenChange={setIsCentroidImportOpen}
-          productModelId={selectedProduct.id}
-          productModelName={selectedProduct.name}
-          onSuccess={() => {
-            refetchPoints();
-          }}
-        />
-      )}
-
-      {/* Template Dialog — Doc 31 UX4 (WE-3): extracted to components/products/PointTemplateDialog */}
-      <PointTemplateDialog
-        open={isTemplateDialogOpen}
-        onOpenChange={setIsTemplateDialogOpen}
-        name={templateName} setName={setTemplateName}
-        category={templateCategory} setCategory={setTemplateCategory}
-        description={templateDescription} setDescription={setTemplateDescription}
-        isSaving={isSavingTemplate}
-        pointCount={measurementPoints.length}
+        isEditProductDialogOpen={isEditProductDialogOpen} setIsEditProductDialogOpen={setIsEditProductDialogOpen}
+        editProductCode={editProductCode} setEditProductCode={setEditProductCode}
+        editProductName={editProductName} setEditProductName={setEditProductName}
+        editProductDescription={editProductDescription} setEditProductDescription={setEditProductDescription}
+        editProductCategory={editProductCategory} setEditProductCategory={setEditProductCategory}
+        editProductLine={editProductLine} setEditProductLine={setEditProductLine}
+        editProductVariant={editProductVariant} setEditProductVariant={setEditProductVariant}
+        editProductLifecycle={editProductLifecycle} setEditProductLifecycle={setEditProductLifecycle}
+        editProductRevision={editProductRevision} setEditProductRevision={setEditProductRevision}
+        editProductTargetYield={editProductTargetYield} setEditProductTargetYield={setEditProductTargetYield}
+        editProductMinYield={editProductMinYield} setEditProductMinYield={setEditProductMinYield}
+        editProductDisplayMode={editProductDisplayMode} setEditProductDisplayMode={setEditProductDisplayMode}
+        editProductImageUrl={editProductImageUrl}
+        handleEditImageUpload={handleEditImageUpload}
+        handleUpdateProduct={handleUpdateProduct}
+        updateProductMutation={updateProductMutation}
+        isDeleteProductDialogOpen={isDeleteProductDialogOpen} setIsDeleteProductDialogOpen={setIsDeleteProductDialogOpen}
+        handleDeleteProduct={handleDeleteProduct} deleteProductMutation={deleteProductMutation}
+        isCloneProductDialogOpen={isCloneProductDialogOpen} setIsCloneProductDialogOpen={setIsCloneProductDialogOpen}
+        cloneSourceProduct={cloneSourceProduct}
+        cloneNewCode={cloneNewCode} setCloneNewCode={setCloneNewCode}
+        cloneNewName={cloneNewName} setCloneNewName={setCloneNewName}
+        cloneNewRevision={cloneNewRevision} setCloneNewRevision={setCloneNewRevision}
+        cloneCopyMappings={cloneCopyMappings} setCloneCopyMappings={setCloneCopyMappings}
+        handleCloneProduct={handleCloneProduct} cloneProductMutation={cloneProductMutation}
+        isDeletePointDialogOpen={isDeletePointDialogOpen} setIsDeletePointDialogOpen={setIsDeletePointDialogOpen}
+        selectedPointIndex={selectedPointIndex}
+        handleDeletePoint={handleDeletePoint} deletePointMutation={deletePointMutation}
+        pointConflict={pointConflict} setPointConflict={setPointConflict}
+        handleReloadConflict={handleReloadConflict} handleOverwriteConflict={handleOverwriteConflict} isSavingPoint={isSavingPoint}
+        isBulkImportDialogOpen={isBulkImportDialogOpen} setIsBulkImportDialogOpen={setIsBulkImportDialogOpen}
+        isCentroidImportOpen={isCentroidImportOpen} setIsCentroidImportOpen={setIsCentroidImportOpen}
+        refetchPoints={refetchPoints}
+        isTemplateDialogOpen={isTemplateDialogOpen} setIsTemplateDialogOpen={setIsTemplateDialogOpen}
+        templateName={templateName} setTemplateName={setTemplateName}
+        templateCategory={templateCategory} setTemplateCategory={setTemplateCategory}
+        templateDescription={templateDescription} setTemplateDescription={setTemplateDescription}
+        isSavingTemplate={isSavingTemplate}
         templates={templates}
-        onSaveAsTemplate={handleSaveAsTemplate}
-        onApplyTemplate={handleApplyTemplate}
-        onDeleteTemplate={(id) => deleteTemplateMutation.mutate({ id })}
-      />
-
-      {/* Wave 2 đường A (Task 3) — đề xuất ngưỡng hàng loạt cho N điểm đã chọn.
-          Vòng sửa 1 (review Task 3, Minor #3) — bỏ prop currentUserId chết (dialog
-          này chỉ ĐỀ XUẤT, không DUYỆT, nên không cần biết ai đang thao tác). */}
-      <BatchSuggestDialog
-        open={isBatchSuggestOpen}
-        pointDefIds={Array.from(selectedPointIds)}
-        onClose={() => setIsBatchSuggestOpen(false)}
+        handleSaveAsTemplate={handleSaveAsTemplate}
+        handleApplyTemplate={handleApplyTemplate}
+        deleteTemplateMutation={deleteTemplateMutation}
+        isBatchSuggestOpen={isBatchSuggestOpen} selectedPointIds={selectedPointIds} setIsBatchSuggestOpen={setIsBatchSuggestOpen}
       />
     </>
   );
