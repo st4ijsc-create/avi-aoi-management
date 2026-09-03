@@ -53,10 +53,49 @@ function walkTs(dir: string): string[] {
 }
 
 /**
- * Trả lại các dòng của file với dòng COMMENT bị xoá trắng (giữ nguyên SỐ DÒNG để báo lỗi
- * trỏ đúng chỗ) — cùng thuật toán `demChuoiTran()`: comment DÒNG (`//`, `*` — kể cả dòng
- * tiếp theo trong khối `/** … *‍/`) và comment KHỐI (`/* … *‍/`, có thể trải NHIỀU DÒNG)
- * đều bị loại trước khi so khớp mẫu.
+ * Xoá (các) đoạn `/* … *‍/` khỏi MỘT dòng, GIỮ mã trước/sau đoạn đó — kể cả khi dòng đang
+ * tiếp nối một khối đã mở từ dòng TRƯỚC (`dangTrongKhoi=true`) và/hoặc có NHIỀU cặp
+ * `/* … *‍/` trên CÙNG một dòng (lặp tới khi hết cặp).
+ *
+ * ⚠ FIX review 2026-09-03 (Important): bản đầu blank CẢ DÒNG bất cứ khi nào dòng (trimmed)
+ * bắt đầu bằng `/*`, kể cả khi `*‍/` đóng NGAY trên dòng đó — mã đứng SAU `*‍/` (vd
+ * `/* eslint-disable *‍/ const x = d.getTimezoneOffset() * 60000;`) bị xoá theo, không bao
+ * giờ được quét. Hàm này thay bằng một vòng quét thật: chỉ mask đúng đoạn từ `/*` tới `*‍/`
+ * gần nhất, phần còn lại của dòng (trước/giữa/sau) được GIỮ để so khớp tiếp.
+ *
+ * Nếu một khối MỞ mà KHÔNG đóng trên dòng đang xét, phần còn lại của dòng (không có mã ở
+ * đó — nó vẫn đang ở trong khối) bị bỏ và trả `blockOpen=true` cho dòng kế — giữ NGUYÊN
+ * hành vi trước đây cho trường hợp khối trải nhiều dòng.
+ */
+function boCacKhoiTrenDong(line: string, dangTrongKhoi: boolean): { text: string; blockOpen: boolean } {
+  let s = line;
+  let out = "";
+  let inBlock = dangTrongKhoi;
+  for (;;) {
+    if (inBlock) {
+      const end = s.indexOf("*/");
+      if (end === -1) return { text: out, blockOpen: true };
+      s = s.slice(end + 2);
+      inBlock = false;
+      continue;
+    }
+    const open = s.indexOf("/*");
+    if (open === -1) {
+      out += s;
+      return { text: out, blockOpen: false };
+    }
+    out += s.slice(0, open);
+    s = s.slice(open + 2);
+    inBlock = true;
+  }
+}
+
+/**
+ * Trả lại các dòng của file với dòng/đoạn COMMENT bị xoá trắng (giữ nguyên SỐ DÒNG để báo
+ * lỗi trỏ đúng chỗ) — cùng thuật toán `demChuoiTran()` cho comment DÒNG (`//`, và dòng tiếp
+ * nối bắt đầu bằng bare `*` trong khối `/** … *‍/`), cộng thêm `boCacKhoiTrenDong()` cho
+ * comment KHỐI (`/* … *‍/`, có thể trải NHIỀU DÒNG HOẶC đóng ngay trên cùng một dòng — xem
+ * docblock của hàm đó cho lý do cần tách riêng).
  */
 function dongMaKhongComment(filePath: string): string[] {
   const lines = readFileSync(filePath, "utf8").split("\n");
@@ -65,13 +104,15 @@ function dongMaKhongComment(filePath: string): string[] {
   for (const ln of lines) {
     const tr = ln.trim();
     if (inBlock) {
-      if (tr.includes("*/")) inBlock = false;
-      out.push("");
+      const ket = boCacKhoiTrenDong(ln, true);
+      inBlock = ket.blockOpen;
+      out.push(ket.text);
       continue;
     }
     if (tr.startsWith("/*")) {
-      if (!tr.includes("*/")) inBlock = true;
-      out.push("");
+      const ket = boCacKhoiTrenDong(ln, false);
+      inBlock = ket.blockOpen;
+      out.push(ket.text);
       continue;
     }
     if (tr.startsWith("//") || tr.startsWith("*")) {
@@ -135,6 +176,27 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
       );
       const bat = quetFakeUtc().filter((h) => h.file.endsWith("__fakeUtcCensusProbe.tmp.ts"));
       expect(bat.length, "thước KHÔNG bắt được mồi vừa bơm ⇒ nó đang mù, không phải sạch thật").toBe(1);
+    } finally {
+      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+    }
+  });
+
+  it("★★★ fuse hình dạng inline-block (review 2026-09-03): `/* … */ <mã>` CÙNG DÒNG phải bị bắt", () => {
+    // Bản đầu của `dongMaKhongComment` blank CẢ DÒNG khi trimmed bắt đầu `/*` — kể cả khi
+    // `*/` đóng NGAY trên dòng đó, xoá mất mã đứng sau. Chưa có dòng nào hình dạng này
+    // trong server/** hôm nay, nhưng cổng tự nhận là BẤT BIẾN thì phải THẬT SỰ bắt được
+    // hình dạng này, không chỉ "chưa gặp phải". Mồi: `/* mồi */ <mã chứa công thức>`.
+    const P = join(SERVER_ROOT, "utils", "__fakeUtcCensusProbeInlineBlock.tmp.ts");
+    try {
+      writeFileSync(
+        P,
+        `/* eslint-disable */ export const moiFakeUtcInline = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000);\n`,
+      );
+      const bat = quetFakeUtc().filter((h) => h.file.endsWith("__fakeUtcCensusProbeInlineBlock.tmp.ts"));
+      expect(
+        bat.length,
+        "thước blank CẢ DÒNG khi khối /* … */ đóng cùng dòng ⇒ bỏ lọt mã đứng sau */ (lỗ soundness)",
+      ).toBe(1);
     } finally {
       try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
