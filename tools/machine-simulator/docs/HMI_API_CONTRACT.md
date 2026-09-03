@@ -127,9 +127,17 @@ const ws = new WebSocket(`${location.origin.replace(/^http/, "ws")}/v1/hmi/chang
 | `Policies.Engineer` | the two writes |
 | `Admin` | **never** — nothing in this workstream writes to a device |
 
-Subscribing to changes is a read, and what it carries (a machine code, a tag count) is strictly less than
-`GET /v1/tags?machine=` already returns at Operator, so gating the notification above the data it points at
-would have been a difference with no reason behind it.
+Subscribing to changes is a read. What it carries — a machine code and (for `"tagNamespace"`) a tag count for
+a component/tag-namespace event, or a screenId and version for a `"screen"` event, §5's field table has the
+exact shape — is, in every case, strictly less than the corresponding read route already returns at Operator
+(`GET /v1/tags?machine=`, or `GET /v1/screens` / `GET /v1/screens/{screenId}`), so gating the notification
+above the data it points at would have been a difference with no reason behind it.
+
+> 🔴 **Corrected 2026-09-04 (WS-HMI-2 Task 4 fix round 1).** This paragraph used to name only "a machine
+> code, a tag count" — true when written, before the change lane carried a third event kind. A `"screen"`
+> event carries neither; it carries a screenId and a version instead. The correction above widens the claim
+> to cover all three kinds rather than silently keeping a sentence that was falsified the day `"screen"`
+> shipped.
 
 ## 2-bis. The request and response bodies are FROZEN CONTRACTS — read them there, not here
 
@@ -208,14 +216,32 @@ generated one.** WebSocket, `Policies.Operator`, server-push only.
 // one JSON message per change
 { "at": "2026-08-31T09:12:44.7120000+00:00", "change": "tagNamespace",  "machineCode": "AOI-01", "tagCount": 128 }
 { "at": "2026-08-31T09:13:02.0040000+00:00", "change": "componentModel","machineCode": "AOI-01" }
+{ "at": "2026-09-04T10:00:00.0000000+00:00", "change": "screen",       "screenId": "line-overview", "version": 3 }
 ```
+
+> 🔴 **`"screen"` added 2026-09-04 (WS-HMI-2 Task 4 fix round 1).** This lane grew a third `change` value —
+> published once for a successful `PUT /v1/screens/{screenId}` and once for a successful
+> `POST /v1/screens/{screenId}/rollback` — before this section, or the field table below, said so. It was
+> never a wire-shape change to the two kinds above (confirmed by direct serialisation of both commits'
+> code, byte-for-byte identical); it was this document silently falling behind the code it exists to speak
+> for instead. Documented here, at the point a web developer would actually look, rather than only in a C#
+> XML doc comment — §2-bis of this same file tells you that comment is *not* the contract.
+
+**Every field below is qualified as present or absent — never assume a field exists just because it is not
+explicitly marked absent.**
 
 | Field | Committed |
 |---|---|
-| `at` | wall-clock time the change was announced |
-| `change` | discriminator. **OPEN SET** — treat an unrecognised value as "something changed for this machine, re-read", never as an error |
-| `machineCode` | always the **canonical** spelling, identical to what `GET` and the `PUT` echo report |
+| `at` | **always present** — wall-clock time the change was announced |
+| `change` | **always present** — discriminator. **OPEN SET**: `"componentModel"`, `"tagNamespace"`, `"screen"` today, and more may be added without notice — treat an unrecognised value as "something changed, re-read", never as an error |
+| `machineCode` | present only for `"componentModel"`/`"tagNamespace"`; **absent**, not `null`, for `"screen"`. When present, always the **canonical** spelling, identical to what `GET` and the `PUT` echo report |
 | `tagCount` | present only for `"tagNamespace"`; **absent**, not `null`, otherwise |
+| `screenId` | present only for `"screen"`; **absent**, not `null`, otherwise. When present, always the **canonical** spelling, identical to what `GET /v1/screens/{screenId}` and the `PUT`/rollback echo report |
+| `version` | present only for `"screen"`; **absent**, not `null`, otherwise. For a rollback this is the **new** version the rollback produced (the highest version now on file), **never** the version the request asked to restore *to* |
+
+**A client that reads `machineCode` unconditionally (`e.machineCode.toUpperCase()`, a cache keyed by machine
+code, a `switch` with a default branch assuming it exists) will see `undefined` the first time a `"screen"`
+event arrives.** Check `change` first, the same way you already must for `tagCount`.
 
 **What it commits to.** An event is published only **after** the store accepted the write. A request that
 does not return `2xx` publishes **nothing** — a client that hears "changed", re-reads and finds nothing

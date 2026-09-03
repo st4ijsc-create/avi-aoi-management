@@ -102,17 +102,30 @@ namespace St4i.EngineApi.Endpoints;
 /// <para>📎 🔴 <b>"THIS TASK DOES NOT PUBLISH AN <see cref="HmiModelChangedEvent"/>" — RÚT, WS-HMI-2 Task 4,
 /// giữ nguyên văn ở trên.</b> Đúng cho tới hết <c>0e0514d5</c>. <c>HmiModelEvents.ScreenChanged</c> now
 /// exists, and both <see cref="PutAsync"/> and <see cref="RollbackAsync"/> call
-/// <see cref="IHmiChangeBus.Publish"/> with it — one line dropped into the ordering Task 3 shaped for
-/// exactly this, unchanged: build the response value first, run whatever else comes after, publish, then
-/// <c>return</c> LAST. <see cref="PutAsync"/> publishes <c>HmiModelEvents.ScreenChanged(screenId, version)</c>
-/// where <c>version</c> is what <c>store.PutAsync</c> returned. <see cref="RollbackAsync"/> publishes the
-/// SAME factory call with the NEW version <c>store.RollbackAsync</c> returned — never <c>body.ToVersion</c>,
-/// the version the caller asked to restore — because a subscriber that re-reads after a rollback sees the
-/// restored CONTENT sitting at the new, highest version number, and an event naming the old target would
-/// send that re-read looking at the wrong row. Both publishes pass the RAW <c>screenId</c> parameter, not a
-/// pre-canonicalised one — <c>HmiModelEvents.ScreenChanged</c> canonicalises internally, the one place this
-/// rule cannot be forgotten at a call site, same shape <c>ComponentModelChanged</c>/<c>TagNamespaceChanged</c>
-/// already use for machine codes.</para>
+/// <see cref="IHmiChangeBus.Publish"/> with it. <see cref="PutAsync"/> publishes
+/// <c>HmiModelEvents.ScreenChanged(screenId, version)</c> where <c>version</c> is what
+/// <c>store.PutAsync</c> returned. <see cref="RollbackAsync"/> publishes the SAME factory call with the NEW
+/// version <c>store.RollbackAsync</c> returned — never <c>body.ToVersion</c>, the version the caller asked
+/// to restore — because a subscriber that re-reads after a rollback sees the restored CONTENT sitting at
+/// the new, highest version number, and an event naming the old target would send that re-read looking at
+/// the wrong row. Both publishes pass the RAW <c>screenId</c> parameter, not a pre-canonicalised one —
+/// <c>HmiModelEvents.ScreenChanged</c> canonicalises internally, the one place this rule cannot be forgotten
+/// at a call site, same shape <c>ComponentModelChanged</c>/<c>TagNamespaceChanged</c> already use for
+/// machine codes.</para>
+///
+/// <para>📎 🔴 <b>"...one line dropped into the ordering Task 3 shaped for exactly this, unchanged: build
+/// the response value first, run whatever else comes after, publish, then <c>return</c> LAST" — RÚT for
+/// <see cref="RollbackAsync"/> specifically, WS-HMI-2 Task 4 fix round 1 (review INFO), giữ nguyên văn ở
+/// trên.</b> True for <see cref="PutAsync"/> still — nothing between its store call and its response can
+/// throw, so the response-first ordering costs nothing and is kept. FALSE for <see cref="RollbackAsync"/>
+/// as of this fix round: its publish now sits IMMEDIATELY after <c>store.RollbackAsync</c> commits, BEFORE
+/// the post-commit <c>WidgetCount</c> read, not after building the response. The write's own doc comment
+/// (<c>HmiModelChangedEvent</c>) commits only to "published only AFTER the store has accepted the write" —
+/// under the old ordering, a rollback that committed and was then cancelled while decorating its own
+/// response with <c>WidgetCount</c> announced NOTHING, silently breaking that commitment on a lane with no
+/// backfill to recover the miss. See <see cref="RollbackAsync"/>'s own doc comment at the publish call for
+/// the full reasoning, including why moving it earlier does not reopen the hazard the old ordering
+/// guarded against.</para>
 /// </summary>
 public static class HmiScreenEndpoints
 {
@@ -202,7 +215,10 @@ public static class HmiScreenEndpoints
         }
 
         // Response built BEFORE anything else that could run — see this class's own doc comment for why the
-        // publish sits here, second-to-last, with `return` last and nothing that can throw after it.
+        // publish sits here, second-to-last, with `return` last and nothing that can throw after it. Note
+        // this covers `Publish` itself, not the `HmiModelEvents.ScreenChanged(...)` argument evaluated to
+        // build its call — see RollbackAsync's own publish-site comment below for why that factory call is
+        // total by construction and does not need a second catch here.
         var response = Results.Ok(new PutScreenResultDto(ScreenIdentity.Canonicalize(screenId), version, body.Widgets.Count));
         changes.Publish(HmiModelEvents.ScreenChanged(screenId, version));
         return response;
@@ -255,19 +271,60 @@ public static class HmiScreenEndpoints
             return WriteBusy();
         }
 
+        // 🔴 THE PUBLISH SITS HERE, IMMEDIATELY AFTER THE COMMIT — deliberately BEFORE the widgetCount
+        // read below, not after it like PutAsync's — WS-HMI-2 Task 4 fix round 1 (review INFO). The fact
+        // being announced is "screenId is now at version", which is already true and fixed the instant
+        // store.RollbackAsync returns; WidgetCount is decoration for THIS caller's own response only, read
+        // from a SEPARATE call that can be cancelled. The previous ordering (publish after that read) meant
+        // a rollback that committed and was then cancelled while decorating its own response announced
+        // NOTHING — a real, committed change silently unpublished on a lane with no backfill to recover it.
+        // Publishing here closes that: the announcement now depends only on the write that already
+        // succeeded, never on best-effort decoration of one caller's own reply.
+        //
+        // This does put the widgetCount read's own `throw;` (below) AFTER the publish, which looks at first
+        // glance like a second breach of "nothing that can throw runs after the publish" — it is not the
+        // same hazard PutAsync's ordering guards against. That rule exists to stop an ACTIVE caller being
+        // told 500 (failure) for a change that just succeeded and was announced — see HmiChangeBus.Publish's
+        // own doc comment. The ONLY exception that can still escape past this point is
+        // OperationCanceledException, and by definition a cancelled caller is not present to be told
+        // anything, true or false — the same distinction HmiChangeBus.Publish's own doc comment draws for a
+        // SUBSCRIBER'S cancellation applies here to the CALLER'S: there is no live listener left to receive
+        // a false "failure", so publishing before that possible throw trades a purely theoretical breach of
+        // the letter of the ordering rule for closing a real, measured gap in what the rule exists to
+        // protect.
+        //
+        // 🔴 A SECOND, NARROWER TOTALITY THIS RELIES ON — WS-HMI-2 Task 4 fix round 1 (review INFO), named
+        // rather than left implicit. `HmiChangeBus.Publish`'s own total-catch wraps SUBSCRIBER invocations
+        // only; the argument `HmiModelEvents.ScreenChanged(screenId, version)` is evaluated BEFORE `Publish`
+        // is entered, so a throw from constructing the event itself is not caught by anything. That factory
+        // is total BY CONSTRUCTION, not by luck: `ScreenIdentity.Canonicalize` is `Trim()` on a possibly-null
+        // string (returns the input unchanged rather than throwing when null/blank — see that method's own
+        // doc comment), `DateTimeOffset.UtcNow` cannot throw, and the record constructor assigns four already-
+        // validated values with no further computation. Pinned directly, for every adjacent factory sharing
+        // this same shape, by
+        // <c>HmiModelEventsTests.The_change_event_factories_cannot_throw_for_any_screenId_or_machine_code</c>
+        // — deliberately NOT fixed by wrapping the evaluation in a second try/catch here: that would either
+        // duplicate `Publish`'s own swallow (hiding a genuine bug in OUR code, which should fail loudly in
+        // development, behind the same blanket that must protect a write from a THIRD PARTY subscriber) or
+        // require a new `Publish(Func<HmiModelChangedEvent>)` overload that blurs "a hostile subscriber
+        // misbehaved" and "our own event failed to build" into one indistinguishable, silently-dropped
+        // outcome. Keeping construction outside the catch keeps those two failure classes distinguishable;
+        // total-by-construction is what makes that safe to do.
+        changes.Publish(HmiModelEvents.ScreenChanged(screenId, version));
+
         // WidgetCount is read from the CONTENT of the version just appended, not from the request body — a
         // rollback request carries no widget list at all. `version` is the number RollbackAsync just
         // returned (the NEW, highest version — never toVersion), so this GET always finds a row, UNLESS it
         // throws.
         //
-        // 🔴 THE ROLLBACK ITSELF HAS ALREADY COMMITTED by the time this line runs — store.RollbackAsync
-        // above already returned successfully. A throw from THIS read must never turn a write that
-        // succeeded into a response reporting failure: the caller would see 500 for a rollback that, on
-        // disk, worked. Total by design, the same shape as HmiChangeBus.Publish and
-        // HmiTagEndpoints.DescribeClaimedPathsAsync's own catches — a best-effort WidgetCount is never more
-        // important than the fact that the version number it decorates is real.
-        // OperationCanceledException still propagates: the caller going away is not this read's failure to
-        // paper over.
+        // 🔴 THE ROLLBACK ITSELF HAS ALREADY COMMITTED (and, as of this fix round, already ANNOUNCED) by the
+        // time this line runs. A throw from THIS read must never turn a write that succeeded into a response
+        // reporting failure: the caller would see 500 for a rollback that, on disk, worked. Total by design,
+        // the same shape as HmiChangeBus.Publish and HmiTagEndpoints.DescribeClaimedPathsAsync's own catches
+        // — a best-effort WidgetCount is never more important than the fact that the version number it
+        // decorates is real. OperationCanceledException still propagates: the caller going away is not this
+        // read's failure to paper over, and — see the publish-ordering note above — is no longer this
+        // read's failure to un-announce either.
         int widgetCount;
         try
         {
@@ -283,13 +340,10 @@ public static class HmiScreenEndpoints
             widgetCount = 0;
         }
 
-        // Response built before anything else that could run — same rule, same reason as PutAsync above.
         // `version` here is the NEW version RollbackAsync just returned, never body.ToVersion — see this
         // class's own doc comment for why a subscriber that re-reads must land on the row the rollback
-        // actually produced.
-        var response = Results.Ok(new PutScreenResultDto(ScreenIdentity.Canonicalize(screenId), version, widgetCount));
-        changes.Publish(HmiModelEvents.ScreenChanged(screenId, version));
-        return response;
+        // actually produced. (The event carrying it was already published above.)
+        return Results.Ok(new PutScreenResultDto(ScreenIdentity.Canonicalize(screenId), version, widgetCount));
     }
 
     /// <summary>Removes .NET's own runtime-appended framing (<c>" (Parameter 'toVersion')\r\nActual

@@ -820,6 +820,41 @@ public sealed class HmiModelEventsTests
         Assert.Null(e.TagCount);
     }
 
+    /// <summary>🔴 WS-HMI-2 Task 4 fix round 1 (review Shape B #2) — the property
+    /// <see cref="HmiModelEvents.ScreenChanged"/>'s canonicalisation ACTUALLY buys, driven end to end
+    /// through HTTP rather than asserted only against a direct factory call. A route segment carrying
+    /// leading/trailing spaces is accepted (<c>CanonicalizingHmiScreenStore</c> trims before the store's SQL
+    /// parameter ever binds it — Task 2's own guarantee), and the event this write publishes must name the
+    /// screen the SAME way <c>GET /v1/screens</c> and the PUT's own echo do — not the 404 a previous version
+    /// of this comment incorrectly claimed was reachable (see <c>HmiModelEvents.cs</c>'s own retraction at
+    /// the <c>ScreenId</c> parameter doc).</summary>
+    [Fact]
+    public async Task A_screen_put_through_a_padded_route_emits_the_canonical_screenId_matching_GET()
+    {
+        var (factory, engineer, _, _) = await NewFactoryWithUsersAsync("screen-put-padded");
+        await using var _f = factory;
+        using var engineerC = engineer;
+        using var recorder = new Recorder(factory.Services.GetRequiredService<IHmiChangeBus>());
+
+        // %20 either side of the route segment — ASP.NET Core decodes it before binding `screenId`.
+        var put = await engineerC.PutAsJsonAsync(
+            "/v1/screens/%20%20pad-01%20%20", Screen("pad-01", "v1"), HmiContractJson.Options);
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+        var putResult = await put.Content.ReadFromJsonAsync<PutScreenResultDto>(HmiContractJson.Options);
+        Assert.Equal("pad-01", putResult!.ScreenId);
+
+        var e = Assert.Single(recorder.Events);
+        Assert.Equal(HmiModelEvents.ScreenChangeKind, e.Change);
+        Assert.Equal("pad-01", e.ScreenId);
+
+        // The same canonical spelling GET actually serves it under — the property that matters to a
+        // subscriber, as opposed to the unreachable 404 the retracted comment named.
+        using var get = await engineerC.GetAsync("/v1/screens/pad-01");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        var listed = await (await engineerC.GetAsync("/v1/screens")).Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
+        Assert.Contains("pad-01", listed);
+    }
+
     /// <summary>🔴 The property the brief names by name: a rollback's event carries the NEW version
     /// <c>RollbackAsync</c> appended (3, after two prior <c>PUT</c>s), never <c>toVersion</c> (1) — the
     /// version the caller asked to restore TO. A subscriber that re-reads on this event finds the restored
@@ -872,6 +907,13 @@ public sealed class HmiModelEventsTests
 
         // malformed JSON — refused by RequestDelegateFactory's own body binding before the handler, and
         // therefore before changes.Publish, is ever reached at all.
+        //
+        // 🔴 EVIDENCE, NOT A GUARD — WS-HMI-2 Task 4 fix round 1 (review INFO), labelled so a coverage
+        // sweep does not misread this row's green as protection against a Task 4 regression. No line this
+        // task's commit touches can ever redden this row: the handler is never entered, so no mutation to
+        // HmiScreenEndpoints.cs — including hoisting the publish to the handler's first statement — changes
+        // this row's outcome. It demonstrates the property is reachable through this door; it does not
+        // stand guard over it.
         { "screen-400-malformed-json", "/v1/screens/fail-scr-03", "{ this is not valid json" },
     };
 
@@ -1001,5 +1043,81 @@ public sealed class HmiModelEventsTests
         }
 
         Assert.Empty(recorder.Events);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // 🔴 WS-HMI-2 Task 4 fix round 1 (review INFO) — the publish-ordering DECISION for RollbackAsync, and
+    // the factory totality both handlers' ordering silently depends on. See HmiScreenEndpoints.RollbackAsync
+    // and HmiModelEvents' own class summary for the reasoning; these two tests are what makes each a
+    // measured property rather than a comment.
+    // ═════════════════════════════════════════════════════════════════════
+
+    private sealed class RollbackSucceedsButPostCommitReadIsCancelledStore : IHmiScreenStore
+    {
+        public Task<HmiScreenDocument?> GetAsync(string screenId, int? version = null, CancellationToken ct = default) =>
+            throw new OperationCanceledException("simulated caller-went-away during the post-commit read");
+
+        public Task<int> PutAsync(HmiScreenDocument doc, CancellationToken ct = default) =>
+            throw new NotSupportedException("not exercised by this test");
+
+        public Task<IReadOnlyList<string>> ListScreenIdsAsync(CancellationToken ct = default) =>
+            throw new NotSupportedException("not exercised by this test");
+
+        public Task<IReadOnlyList<ScreenVersionInfo>> ListVersionsAsync(string screenId, CancellationToken ct = default) =>
+            throw new NotSupportedException("not exercised by this test");
+
+        // The rollback itself succeeds — this is what "already committed" means for this test.
+        public Task<int> RollbackAsync(string screenId, int toVersion, CancellationToken ct = default) =>
+            Task.FromResult(9);
+    }
+
+    /// <summary>🔴 Pins the fix-round-1 ordering decision directly: a rollback that commits and is then
+    /// cancelled during its OWN post-commit <c>WidgetCount</c> read still announces the change. Drives
+    /// <see cref="HmiScreenEndpoints.RollbackAsync"/> directly (internal, this assembly has
+    /// InternalsVisibleTo) with a store whose <c>RollbackAsync</c> succeeds and whose <c>GetAsync</c> — the
+    /// post-commit read — throws <see cref="OperationCanceledException"/>, the exact shape a real cancelled
+    /// caller produces, and a REAL <see cref="HmiChangeBus"/> so the assertion is on the bus's actual
+    /// delivery, never a mock's call count. Before this fix round the publish sat AFTER this read, so this
+    /// scenario would have left <c>recorder.Events</c> empty despite the write having genuinely
+    /// committed.</summary>
+    [Fact]
+    public async Task A_rollback_that_commits_and_is_then_cancelled_during_its_post_commit_read_still_emits_the_event()
+    {
+        var bus = new HmiChangeBus();
+        using var recorder = new Recorder(bus);
+        var store = new RollbackSucceedsButPostCommitReadIsCancelledStore();
+
+        // The caller never gets a response — cancellation propagates, same as any other cancelled request
+        // in this codebase (RollbackAsync's own doc comment: "the caller going away is not this read's
+        // failure to paper over").
+        await Assert.ThrowsAsync<OperationCanceledException>(() => HmiScreenEndpoints.RollbackAsync(
+            "cancelled-during-widgetcount", new RollbackRequestDto(1), store, bus, CancellationToken.None));
+
+        // ...but the write really committed (RollbackAsync returned 9), and the lane was told regardless.
+        var e = Assert.Single(recorder.Events);
+        Assert.Equal(HmiModelEvents.ScreenChangeKind, e.Change);
+        Assert.Equal("cancelled-during-widgetcount", e.ScreenId);
+        Assert.Equal(9, e.Version);
+    }
+
+    /// <summary>🔴 Pins the totality <c>HmiModelEvents.cs</c>'s own class summary claims for all three
+    /// factories: each is evaluated as the ARGUMENT to <see cref="IHmiChangeBus.Publish"/>, outside
+    /// <see cref="HmiChangeBus.Publish"/>'s own total-catch (which wraps SUBSCRIBER invocations only), so a
+    /// throw while BUILDING an event would escape uncaught between a write that already succeeded and the
+    /// response. Driven with adversarial strings a runtime caller could still hand these methods despite
+    /// their non-nullable compile-time signatures (a route segment or a deserialized field is not a
+    /// compile-time guarantee) — null via a null-forgiving cast, empty, whitespace-only, a very long string,
+    /// and one carrying embedded Unicode.</summary>
+    [Fact]
+    public void The_change_event_factories_cannot_throw_for_any_screenId_or_machine_code()
+    {
+        string?[] adversarial = { null, "", "   ", new string('x', 10_000), "wíth-ünïcödé-éè" };
+
+        foreach (var input in adversarial)
+        {
+            Assert.Null(Record.Exception(() => HmiModelEvents.ComponentModelChanged(input!)));
+            Assert.Null(Record.Exception(() => HmiModelEvents.TagNamespaceChanged(input!, 0)));
+            Assert.Null(Record.Exception(() => HmiModelEvents.ScreenChanged(input!, 0)));
+        }
     }
 }

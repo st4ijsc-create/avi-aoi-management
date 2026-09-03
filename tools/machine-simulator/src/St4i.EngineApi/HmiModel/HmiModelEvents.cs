@@ -36,8 +36,21 @@ namespace St4i.EngineApi.HmiModel;
 ///   choose an open set here; inflating it to two is how a sound decision gets reversed later by someone who
 ///   checks the justification and finds it overstated. WS-HMI-2 Task 4 adds <see cref="ScreenChangeKind"/>
 ///   as a THIRD member of this same open set, without editing either mirror — that is the property this
-///   lane's openness exists to buy, and it is what <c>St4i.Connector.Abstractions.Tests</c> stays green
-///   proves, not merely what this comment claims.</description></item>
+///   lane's openness exists to buy. 🔴 <b>Retracted claim, WS-HMI-2 Task 4 fix round 1 (review LOW):</b> a
+///   previous version of this sentence cited <c>St4i.Connector.Abstractions.Tests</c> staying green as
+///   what PROVES that, rather than merely claims it. Measured and wrong: that suite has exactly one
+///   <c>ProjectReference</c> (<c>St4i.Connector.Abstractions</c> itself — its own doc comment says it
+///   "cannot see St4i.EdgeCore or St4i.EngineApi"), and its mirror registry
+///   (<c>EnumSpellingContractTests</c>) is keyed on the exported ENUM TYPES of that one assembly.
+///   <see cref="ScreenChangeKind"/> is a <c>const string</c> in <c>St4i.EngineApi</c> — that suite cannot
+///   reference it, let alone scan for it, and its 161 would have stayed 161 under any edit to this lane's
+///   discriminator, including deleting both web mirrors outright. The open-set claim itself remains true —
+///   grepped: <c>web/src</c> contains no occurrence of <c>componentModel</c>/<c>tagNamespace</c>/
+///   <c>screen</c> as a value of this lane's discriminator, no TypeScript mirror of
+///   <see cref="HmiModelChangedEvent"/>, and no consumer of <c>WS /v1/hmi/changes</c> anywhere under
+///   <c>web/</c> — but the grep, not that suite, is the evidence, and the next author who adds a fourth
+///   kind should re-run the grep, not check that an unrelated assembly's test count held
+///   steady.</description></item>
 ///   <item><description><b>NOT committed:</b> delivery order between two different machines, timing, or
 ///   coalescing. Two writes may produce two events or, in a future revision, one; a consumer that re-reads
 ///   current state on any event is correct under every such change, and one that counts events is
@@ -76,9 +89,17 @@ namespace St4i.EngineApi.HmiModel;
 /// knows what it is.</param>
 /// <param name="ScreenId">The CANONICAL screenId — the same spelling <c>GET</c> and the <c>PUT</c>/rollback
 /// echo report — for <see cref="HmiModelEvents.ScreenChangeKind"/> only; <see langword="null"/> for every
-/// other change. A subscriber told about <c>"  my-screen  "</c> for a screen served as <c>"my-screen"</c>
-/// would land on the 404 this field exists to prevent, the same failure shape <paramref name="MachineCode"/>
-/// already guards against for machine codes.</param>
+/// other change. 🔴 <b>Retracted claim, WS-HMI-2 Task 4 fix round 1 (review LOW):</b> a previous version of
+/// this sentence said a subscriber told about a non-canonical spelling "would land on the 404 this field
+/// exists to prevent" — measured, and false: <c>GET /v1/screens/%20%20my-screen%20%20</c> answers <b>200</b>,
+/// not 404, because <c>CanonicalizingHmiScreenStore.GetAsync</c> canonicalises the key and, on a miss,
+/// resolves the identity against the raw stored ids (Task 2's own MED-1 fix) — there is no reachable 404 for
+/// this to prevent, unlike the §5-bis empty-document failure <paramref name="MachineCode"/>'s own remark
+/// names, which IS reachable. The canonicalisation here is still worth having, for the property it actually
+/// buys: this field is guaranteed to equal the spelling <c>GET /v1/screens</c> lists and the <c>PUT</c>/
+/// rollback echo reports, so a subscriber comparing the event against either never sees a spurious mismatch
+/// — pinned by <c>HmiModelEventsTests.A_screen_put_through_a_padded_route_emits_the_canonical_screenId_
+/// matching_GET</c>.</param>
 /// <param name="Version">The version number the write just produced, for
 /// <see cref="HmiModelEvents.ScreenChangeKind"/> only; <see langword="null"/> for every other change. For a
 /// rollback this is the NEW version <c>RollbackAsync</c> appended, never <c>toVersion</c> — a subscriber
@@ -94,7 +115,24 @@ public sealed record HmiModelChangedEvent(
 
 /// <summary>Builds the three events this workstream announces. Factories rather than raw constructor calls
 /// at the call sites, so canonicalisation happens in ONE place and cannot be forgotten at a third
-/// endpoint.</summary>
+/// endpoint.
+///
+/// <para>🔴 <b>TOTAL BY CONSTRUCTION — WS-HMI-2 Task 4 fix round 1 (review INFO), named because a call
+/// site relies on it without stating it.</b> Every endpoint calls a factory here as the ARGUMENT to
+/// <see cref="IHmiChangeBus.Publish"/>, which means the call is evaluated BEFORE <c>Publish</c> is
+/// entered — outside <see cref="HmiChangeBus.Publish"/>'s own total-catch, which wraps SUBSCRIBER
+/// invocations only. A throw from building the event itself would therefore escape uncaught, between a
+/// write that already succeeded and the response — exactly the shape <c>HmiChangeBus.Publish</c>'s own
+/// doc comment calls "strictly worse than announcing a change that did not happen". None of the three
+/// factories below can take that path: each canonicalises with <c>Trim()</c>-only helpers
+/// (<c>MachineCodeIdentity.Canonicalize</c>/<c>ScreenIdentity.Canonicalize</c>) that return blank/null
+/// input UNCHANGED rather than throwing, calls <see cref="DateTimeOffset.UtcNow"/> (cannot throw), and
+/// assigns already-validated values to a record constructor with no further computation. Pinned directly
+/// — not merely reasoned about — by
+/// <c>HmiModelEventsTests.The_change_event_factories_cannot_throw_for_any_screenId_or_machine_code</c>,
+/// which drives all three with adversarial strings (null, empty, whitespace-only, very long, embedded
+/// Unicode) and asserts none of them throw.</para>
+/// </summary>
 public static class HmiModelEvents
 {
     /// <summary>The <see cref="HmiModelChangedEvent.Change"/> value for a component-tree write.</summary>
