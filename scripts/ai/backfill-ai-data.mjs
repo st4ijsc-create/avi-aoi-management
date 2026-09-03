@@ -274,8 +274,19 @@ for (let z = 0; z < zips.length; z++) {
     if (!mp.fileName) { summary.skippedAoi++; continue; }
     const imageUrl = `/api/aoi/image/${encodeURIComponent(pkgId)}/${encodeURIComponent(mp.fileName)}`;
     if (existingUrls.has(imageUrl)) { summary.skippedAoi++; continue; }
-    const f = zip.file(`images/${mp.fileName}`) || zip.file(mp.fileName);
-    if (!f) { summary.skippedAoi++; continue; }
+    // ★★★ I-3 (review lượt 8, đóng nốt vòng 9) — MỘT ĐƯỜNG DẪN DUY NHẤT.
+    // Fallback `|| zip.file(mp.fileName)` ở đây là CỬA THỨ HAI để tìm CÙNG một
+    // ảnh: đường ghi (`commit`, bất biến 2) chỉ chấp nhận `images/<fileName>`,
+    // nên đường ĐỌC rộng hơn đường GHI là mở lại đúng lớp lỗi BG-87 đã đóng ở
+    // ba chỗ khác. Đây là chỗ thứ NĂM — census `aoiZipMotDuongDanCensus.test.ts`
+    // mù nó theo CẤU TẠO (chỉ soi `server/**`, chỉ `.ts`) cho tới vòng 9.
+    // Thất bại nay NÓI RA thay vì tự cứu im lặng.
+    const f = zip.file(`images/${mp.fileName}`);
+    if (!f) {
+      log(`  SKIP ảnh ${pkgId}/${mp.fileName}: không có images/${mp.fileName} trong ZIP (đường dẫn ảnh DUY NHẤT)`);
+      summary.skippedAoi++;
+      continue;
+    }
     try {
       const buf = Buffer.from(await f.async("uint8array"));
       const emb = await extractEmbedding(modelId, buf); // REAL DINOv2 ONNX inference

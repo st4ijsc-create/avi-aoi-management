@@ -161,8 +161,19 @@ async function resolveImageBuffer(row) {
         if (zipCache.size > 8) zipCache.clear();
         zipCache.set(packageId, zip);
       }
-      const f = zip.file(`images/${fileName}`) || zip.file(fileName);
-      if (!f) return null;
+      // ★★★ I-3 (review lượt 8, đóng nốt vòng 9) — MỘT ĐƯỜNG DẪN DUY NHẤT.
+      // Fallback `|| zip.file(fileName)` ở đây là CỬA THỨ HAI để tìm CÙNG một
+      // ảnh: đường ghi (`commit`, bất biến 2) chỉ chấp nhận `images/<fileName>`,
+      // nên đường ĐỌC rộng hơn đường GHI là mở lại đúng lớp lỗi BG-87 đã đóng ở
+      // ba chỗ khác. Đây là chỗ thứ SÁU — census
+      // `aoiZipMotDuongDanCensus.test.ts` mù nó theo CẤU TẠO (chỉ soi
+      // `server/**`, chỉ `.ts`) cho tới vòng 9. Thất bại nay NÓI RA thay vì tự
+      // cứu im lặng.
+      const f = zip.file(`images/${fileName}`);
+      if (!f) {
+        console.warn(`[reembed] BỎ QUA ${packageId}/${fileName}: không có images/${fileName} trong ZIP (đường dẫn ảnh DUY NHẤT)`);
+        return null;
+      }
       return Buffer.from(await f.async("uint8array"));
     }
     return null;
