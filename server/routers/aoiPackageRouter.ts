@@ -67,6 +67,11 @@ import { laHinhDangCayV2 } from "../contracts/machineDataContract";
 import { dichCayKetQua, type CayDaDich, type CaptureDaDich } from "../services/ingestCayKetQua";
 // Khối B Task 4 (BG-92) — cổng spec cho đường CÂY v2, CÙNG hàm mà cửa trực tiếp dùng.
 import { congSpecTuBanDay } from "../services/specGateCayV2";
+// ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — cổng "máy tự mâu thuẫn", HAI nguồn KHÁC
+// cổng bản-dạy ở trên (chỉ so máy với CHÍNH máy, không đọc bản dạy). CÙNG hàm mà cửa
+// trực tiếp v2.0 dùng (`machineApiRouters.ts submitInspectionTreeV2`) — không chép
+// bản thứ hai. Xem docblock đầu `../services/mayTuMauThuan.ts`.
+import { taoDemMayTuMauThuan } from "../services/mayTuMauThuan";
 // BG-99 (Task 5) — chuỗi thời gian TRẦN máy khai đọc bằng ĐÚNG MỘT luật (trần = UTC)
 // ở mọi điểm ingest. `mocDoTuChuoi` (BG-97, chỗ ở CŨ của luật này) đã XOÁ — hết caller
 // sản xuất sau khi Task 5 đổi neo spec-gate của cửa ZIP sang `inspection_packages.createdAt`.
@@ -1177,6 +1182,11 @@ export const aoiPackageRouter = router({
             // Task 5 (BG-97 phơi counters) — xem cùng trường ở `submitInspectionTreeV2`.
             theoSnapshot: number; theoSong: number;
           } | undefined;
+          // ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — kết luận cổng "máy tự mâu thuẫn" của
+          // lượt commit này. KHÁC HẲN `thongKeSpecGate` ở trên (nguồn KỸ SƯ đã dạy): đây
+          // chỉ so `value`/`result` máy khai với `lowerLimit`/`upperLimit` MÁY TỰ KHAI kèm
+          // CHÍNH lá đó — không đọc bản dạy, không đổi verdict/remark.
+          let thongKeMayTuMauThuan: { tong: number; mauThuan: number } | undefined;
           // Cột báo cáo (`inspection_packages.totalPoints/okCount/ngCount`) —
           // đếm CAPTURES (cấp gần nhất với "một điểm kiểm tra có ảnh") từ CÂY
           // đã dịch — KHÔNG từ `summary` khai (bất biến 3). ★★★ M-8 — trị khởi
@@ -1293,7 +1303,11 @@ export const aoiPackageRouter = router({
               machine.id, metaData, resolvedProductModel?.id, { lucDo: mocDo },
             );
             const congSpec = congSpecTuBanDay(traBanDay);
-            cay = dichCayKetQua(metaData, { cong: congSpec });
+            // ★★★ Khối C Task 13 (BG-98) — bộ đếm MỚI cho ĐÚNG lượt commit này, TÁCH
+            // HẲN khỏi `congSpec` (cùng quy tắc "cổng mới mỗi bo" — xem docblock
+            // `dichCayKetQua`). KHÔNG đọc bản dạy, KHÔNG đổi verdict/remark.
+            const demMauThuan = taoDemMayTuMauThuan();
+            cay = dichCayKetQua(metaData, { cong: congSpec, demMauThuan });
             for (const s of cay.surfaces) {
               for (const p of s.positions) {
                 for (const c of p.captures) capturesTrongCay.set(c.captureId, c);
@@ -1428,6 +1442,20 @@ export const aoiPackageRouter = router({
               // `tkCong` (cổng OK/NG không biết NGUỒN của giới hạn nó vừa dùng).
               theoSnapshot: traBanDay.theoSnapshot, theoSong: traBanDay.theoSong,
             };
+            // ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — MÁY TỰ MÂU THUẪN, cổng KHÁC hẳn
+            // cổng bản-dạy ở trên (không đọc bản dạy, không đổi verdict/remark).
+            // `mauThuan > 0` là lỗi PIPELINE của máy: `value` ngoài chính
+            // `lowerLimit`/`upperLimit` máy gửi kèm mà máy vẫn kết `OK`.
+            const tkMauThuan = demMauThuan.thongKe;
+            if (tkMauThuan.mauThuan > 0) {
+              console.warn(
+                `[AOI commit] MÁY TỰ MÂU THUẪN: ${tkMauThuan.mauThuan}/${tkMauThuan.tong} linh ` +
+                  `kiện value NGOÀI giới hạn MÁY TỰ KHAI kèm kết quả mà máy vẫn kết OK · ` +
+                  `máy=${machine.code} gói=${pkg.packageId} inspectionId=${persisted.id} · ` +
+                  `mẫu: ${tkMauThuan.mau.join(" | ")}`,
+              );
+            }
+            thongKeMayTuMauThuan = { tong: tkMauThuan.tong, mauThuan: tkMauThuan.mauThuan };
             thongKeCapComponent = persisted.thongKeComponent;
             if (thongKeCapComponent && thongKeCapComponent.chuaDay > 0) {
               console.warn(
@@ -1715,6 +1743,10 @@ export const aoiPackageRouter = router({
             // = KHÔNG KẾT LUẬN ĐƯỢC. Bốn trường RIÊNG — gộp chúng vào `dat` là đúng thứ
             // "giấy vô can giả" mà brief Task 4 cấm.
             specGate: thongKeSpecGate,
+            // ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — cổng "MÁY TỰ MÂU THUẪN", HAI
+            // nguồn KHÁC `specGate` ở trên. `mau` (mẫu chẩn đoán) CỐ Ý không trả ở đây
+            // — cùng cách `specGate` không trả `mauTruot` — chỉ hai con số đếm được.
+            mayTuMauThuan: thongKeMayTuMauThuan,
           };
         } catch (err: any) {
           // Log: commit_fail

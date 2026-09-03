@@ -53,7 +53,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import os from "node:os";
 import path from "node:path";
 import { promises as fsp } from "node:fs";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import JSZip from "jszip";
 import { eq, inArray } from "drizzle-orm";
@@ -311,5 +311,122 @@ describe("BG-65 census — tuyến upload THẬT phải gọi laGoiDaChet( trư�
     expect(viTriGate, "laGoiDaChet( phải xuất hiện trong vùng tuyến").toBeGreaterThan(-1);
     expect(viTriGhi, "storagePut( phải xuất hiện trong vùng tuyến").toBeGreaterThan(-1);
     expect(viTriGate).toBeLessThan(viTriGhi);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// Khối C Task 13 (BG-98, spec QĐ-8), vòng sửa 1 — census QUÊN LẦN THỨ TƯ.
+//
+// Cùng LỚP LỖI đã xảy ra BA lần trước ở đúng cửa này: Đ-27 (evaluatePointResult
+// mất khỏi cửa ZIP ở `df20b31c`, BG-85), rồi Task 3 Khối B (cấp component chưa
+// nối ở cửa ZIP), rồi chính Task 13 vòng 0 (cổng "máy tự mâu thuẫn" chỉ bơm vào
+// `submitInspectionTreeV2`, CÂM ở `aoiPackageRouter.ts commit` — review vòng 1
+// bắt lại). BA lần cùng một hình dạng ("thêm cổng mới, chỉ nối MỘT trong HAI
+// cửa v2.0") nghĩa là lưới theo-task không đủ — cần một BẤT BIẾN CẤU TRÚC độc
+// lập với việc ai đang sửa gì: MỌI lời gọi `dichCayKetQua(` trong
+// `server/routers/**` phải mang `demMauThuan`.
+//
+// Kỹ thuật: CÙNG khuôn `vungTuyenUploadZip` ở trên (đọc nguồn thật, cắt đúng
+// vùng bằng mốc văn bản) — không dùng bộ suy AST nặng (`quetDuongGhiInspection`
+// ở `ghiInspectionWalCensus.test.ts`) vì ở đây chỉ cần "chuỗi con có mặt trong
+// đúng lời gọi", không cần hiểu luồng điều khiển. `server/routers/` là thư mục
+// PHẲNG (không thư mục con) nên `readdirSync` không cần đệ quy.
+// ══════════════════════════════════════════════════════════════════════════
+const THU_MUC_ROUTERS = __dirname; // file này đã nằm trong server/routers
+const CAC_TEP_ROUTERS_SAN_XUAT = readdirSync(THU_MUC_ROUTERS)
+  .filter((ten) => ten.endsWith(".ts") && !ten.endsWith(".test.ts"))
+  .sort();
+const NGUON_TEP_ROUTERS = new Map<string, string>(
+  CAC_TEP_ROUTERS_SAN_XUAT.map((ten) => [ten, readFileSync(join(THU_MUC_ROUTERS, ten), "utf-8")]),
+);
+
+/**
+ * Trích NGUYÊN VĂN từng lời gọi `dichCayKetQua(...)` trong `source` — dò độ sâu
+ * ngoặc tròn cân bằng từ dấu `(` mở đầu tới dấu `)` khớp lại (chịu được lời gọi
+ * nhiều dòng, object literal `{}` lồng bên trong không ảnh hưởng vì chỉ đếm
+ * `(`/`)`). KHÔNG khớp `function dichCayKetQua(` (định nghĩa) vì định nghĩa đó
+ * sống ở `server/services/ingestCayKetQua.ts`, ngoài phạm vi quét.
+ */
+function timLoiGoiDichCayKetQua(source: string): string[] {
+  const doanGoi: string[] = [];
+  const MOC = "dichCayKetQua(";
+  let tuViTri = 0;
+  while (true) {
+    const idx = source.indexOf(MOC, tuViTri);
+    if (idx === -1) break;
+    let doSau = 1;
+    let i = idx + MOC.length;
+    while (i < source.length && doSau > 0) {
+      if (source[i] === "(") doSau++;
+      else if (source[i] === ")") doSau--;
+      i++;
+    }
+    doanGoi.push(source.slice(idx, i));
+    tuViTri = i;
+  }
+  return doanGoi;
+}
+
+function layTatCaLoiGoi(nguon: Map<string, string>): { tep: string; doanGoi: string }[] {
+  const ket: { tep: string; doanGoi: string }[] = [];
+  for (const [tep, ma] of nguon) {
+    for (const doanGoi of timLoiGoiDichCayKetQua(ma)) ket.push({ tep, doanGoi });
+  }
+  return ket;
+}
+
+const TAT_CA_LOI_GOI = layTatCaLoiGoi(NGUON_TEP_ROUTERS);
+
+describe("Khối C Task 13 (BG-98) census — mọi lời gọi dichCayKetQua( trong server/routers/** phải mang demMauThuan", () => {
+  it("chống đọc-thư-mục-rỗng: quét được > 150 file production (.ts, không .test.ts) trong server/routers", () => {
+    // Đo thật (2026-09-03): 210 file production trong server/routers (390 tổng trừ
+    // *.test.ts/*.db.test.ts). Trần 150 chừa dư địa cho tăng/giảm số file tự nhiên,
+    // chỉ canh việc readdirSync trả về gần-rỗng (thư mục sai/đường dẫn hỏng).
+    expect(CAC_TEP_ROUTERS_SAN_XUAT.length).toBeGreaterThan(150);
+  });
+
+  it("cầu chì trích đoạn: số lời gọi trích được KHỚP số lần chuỗi 'dichCayKetQua(' xuất hiện thô trong toàn bộ nguồn đã quét", () => {
+    const demTho = [...NGUON_TEP_ROUTERS.values()].reduce(
+      (tong, ma) => tong + (ma.match(/dichCayKetQua\(/g)?.length ?? 0),
+      0,
+    );
+    expect(TAT_CA_LOI_GOI.length, "bộ trích ngoặc-cân-bằng lệch với đếm thô — logic trích đã hỏng?").toBe(demTho);
+    expect(TAT_CA_LOI_GOI.length, "0 lời gọi tìm được — census đang canh một tập rỗng (giấy vô can giả)").toBeGreaterThanOrEqual(2);
+  });
+
+  it("ĐÚNG hai cửa v2.0 hôm nay mang lời gọi: machineApiRouters.ts (trực tiếp) + aoiPackageRouter.ts (ZIP)", () => {
+    const tepMangLoiGoi = [...new Set(TAT_CA_LOI_GOI.map((g) => g.tep))].sort();
+    expect(tepMangLoiGoi).toEqual(["aoiPackageRouter.ts", "machineApiRouters.ts"]);
+  });
+
+  it("★★★ BẤT BIẾN: MỌI lời gọi dichCayKetQua( trong server/routers/** phải mang demMauThuan — cấm cửa mới CÂM (quên lần thứ 4)", () => {
+    const thieu = TAT_CA_LOI_GOI.filter((g) => !g.doanGoi.includes("demMauThuan"));
+    expect(
+      thieu.map((g) => `${g.tep}: ${g.doanGoi}`),
+      "lời gọi dichCayKetQua( sau đây KHÔNG bơm demMauThuan — cổng máy-tự-mâu-thuẫn (BG-98) sẽ CÂM ở cửa này",
+    ).toEqual([]);
+  });
+
+  it("★★★ ĐỘT BIẾN THẬT: gỡ demMauThuan khỏi lời gọi cửa ZIP ⇒ census phải ĐỎ (không chạm đĩa)", () => {
+    const goc = NGUON_TEP_ROUTERS.get("aoiPackageRouter.ts")!;
+    const DONG_GOC = "cay = dichCayKetQua(metaData, { cong: congSpec, demMauThuan });";
+    expect(goc.includes(DONG_GOC), "không tìm thấy dòng gọi ĐÃ VÁ — bộ suy đã đổi neo?").toBe(true);
+
+    const DONG_DOT_BIEN = "cay = dichCayKetQua(metaData, { cong: congSpec });";
+    const maDotBien = goc.replace(DONG_GOC, DONG_DOT_BIEN);
+    expect(maDotBien).not.toBe(goc);
+
+    const loiGoiDotBien = timLoiGoiDichCayKetQua(maDotBien);
+    const thieuSauDotBien = loiGoiDotBien.filter((doan) => !doan.includes("demMauThuan"));
+    expect(
+      thieuSauDotBien.length,
+      "đột biến bỏ demMauThuan PHẢI làm census bắt được — nếu đây là [] thì census KHÔNG canh được gì",
+    ).toBeGreaterThan(0);
+
+    // Đột biến chỉ sống trong biến `maDotBien` — chưa từng `writeFileSync`. Đọc lại
+    // đĩa xác nhận file thật không đổi (cùng kỹ thuật "cả hai đột biến KHÔNG chạm
+    // đĩa" ở mệnh đề BG-65 phía trên).
+    const docLai = readFileSync(join(THU_MUC_ROUTERS, "aoiPackageRouter.ts"), "utf-8");
+    expect(docLai).toBe(goc);
   });
 });
