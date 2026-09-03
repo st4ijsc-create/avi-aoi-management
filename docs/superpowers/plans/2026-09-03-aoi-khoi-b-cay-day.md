@@ -285,3 +285,38 @@ pointDefId :: integer   NOT NULL, KHONG CO DEFAULT
 *Giá nếu sai:* Đ-19 lùi một nhịp. *Giá nếu giữ R-KB-1:* hàng kết quả cấp component ghi khoá ngoại sai ngay từ hàng đầu tiên, và phải di trú.
 
 ⚠ Ràng buộc R-KB-1 vẫn giữ: **cấm bật cửa cây dạy ở môi trường nhiều hơn một máy** cho tới khi Task 5 xong.
+
+---
+
+## Ruling R-KB-3 (2026-09-03) — GỠ ràng buộc "cấm bật cửa khi có nhiều hơn một máy"
+
+R-KB-1 và R-KB-2 kèm ràng buộc: *cấm bật cửa cây dạy ở môi trường nhiều hơn một máy cho tới khi Task 5 xong.* **Task 5 xong (`5eb881bb`) và tôi đã tự kiểm chứng — gỡ ràng buộc.**
+
+**Phép đo, cả hai DB (`aoi_management` và `aoi_management_test`):**
+
+| Kiểm | Kết quả |
+|---|---|
+| migration `0347` vào sổ, `success` | **1 / 1** |
+| index gây ghi đè `uq_product_surfaces_model_name` | **0 — đã biến mất** |
+| bảng `machine_template_versions` | **có** |
+| `machineId` trên ba bảng `product_*` | **3 / 3** |
+| MỆNH ĐỀ 1 (M1 và M2 đẩy cây KHÁC cho CÙNG model ⇒ cả hai cùng sống) | **xanh** |
+
+⇒ Chiều máy có ở **cả bốn cấp**, cưỡng chế bằng **khoá ngoại ghép** + CHECK, nên hàng con không thể mang `machineId` khác cha. **Không còn chiều nửa vời** — đúng ràng buộc đã đặt cho Task 5.
+
+---
+
+## ⛔ BG-95 — migration TÁI CHẠY ĐƯỢC có thể PHỤC SINH ràng buộc mà migration sau đã cố tình bỏ
+
+**Task 5 tìm ra, không có trong kế hoạch của tôi.** Chạy lại `0338` (tái chạy được) **sau** `0347` **phục sinh** `uq_product_surfaces_model_name` ở cả hai DB — khôi phục đúng lỗ hai máy ghi đè nhau, **im lặng, mọi lưới vẫn xanh**.
+
+Task 5 đã guard `0338` và thêm lưới canh. **Nhưng phần còn lại chưa quét** — tôi đã đo bề mặt:
+
+| | |
+|---|---|
+| migration tái chạy được (`IF NOT EXISTS`) | **240** |
+| trong đó tạo UNIQUE index/constraint | **76** |
+
+⇒ Đây là **bất biến**, không phải một ca lẻ: *"không migration tái chạy được nào được tạo ràng buộc mà một migration SAU nó đã bỏ."* Cần census cưỡng chế, không phải sửa từng cặp.
+
+⚠ Lớp lỗi này tệ vì nó **không đỏ ở đâu cả**: schema đúng sau lần áp đầu, sai sau lần áp lại, và không lưới nào chạy migration hai lần.
