@@ -19604,6 +19604,13 @@
     "model": {
       "badge": "model: T{{tier}}",
       "tip": "The router USUALLY picks tier {{tier}}{{ten}} for task \"{{task}}\". The server chooses per difficulty + free VRAM — a very hard question may still be promoted, so this is a forecast, not a promise."
+    },
+    "outline": {
+      "toggle": "Symbols ({{n}}) — click to jump",
+      "ham": "fn",
+      "lop": "class",
+      "kieu": "type",
+      "hang": "const"
     }
   },
   "masterDataCol": {

@@ -134,6 +134,8 @@ import { TrinhXemMa } from "@/components/ai/TrinhXemMa";
 // ★ 2026-09-01 · ĐỢT C — editor CodeMirror có sẵn của engineering (số dòng + tô cú pháp) cho chế
 //   độ SỬA TAY. Chỉ là bề mặt NHẬP cục bộ — đường ghi vẫn duy nhất qua đề xuất + thẻ duyệt.
 import { CodeEditor } from "@/components/engineering/CodeEditor";
+// ★ 2026-09-03 · ĐỢT E2 — outline: bộ trích ký hiệu THUẦN (lưới + đột biến riêng).
+import { trichKyHieu } from "@/lib/kyHieuTep";
 // ★ 2026-09-01 · ĐỢT B — ba cột kéo-resize được (bề rộng tự lưu theo autoSaveId).
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 // Bộ đọc "đầu ra lệnh → ĐỊA ĐIỂM LỖI" DUY NHẤT (thuần, shared) — trang parse MỘT lần, panel dùng lại.
@@ -148,7 +150,7 @@ import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
   Repeat, CheckCircle2, OctagonX, Terminal, Search, X, ChevronUp, Wand2, Copy, Undo2,
-  WrapText, Maximize2, Minimize2,
+  WrapText, Maximize2, Minimize2, List,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -540,6 +542,11 @@ export default function AICodingWorkspace() {
    * hai lưới ghim canh); bật cờ này là lời xin tường minh, và panel đếm riêng hai mức.
    */
   const [hienCanhBao, setHienCanhBao] = useState(false);
+  /**
+   * ★ 2026-09-03 · ĐỢT E2 — OUTLINE của tệp đang xem. Mở/đóng bằng nút; bấm một mục ⇒ đặt
+   * `dongMucTieu` — tái dùng ĐÚNG cơ chế cuộn+tô của panel Vấn đề, không đẻ đường cuộn thứ hai.
+   */
+  const [outlineMo, setOutlineMo] = useState(false);
 
   const khoaBanLamViec = user?.id != null ? `repoWs.ban.u${user.id}.${projectId}` : null;
   const duAnDaKhoiPhucRef = useRef<string | null>(null);
@@ -1936,6 +1943,11 @@ export default function AICodingWorkspace() {
     return [...theoLenh.values()].flat();
   }, [lenhDaChay, hienCanhBao, dsTepDuAn]);
   const soVanDe = diaDiemTichLuy.length;
+  /** ★ E2 — ký hiệu của tệp ĐANG XEM. Thuần + memo theo nội dung: đổi tệp mới tính lại. */
+  const dsKyHieu = useMemo(
+    () => (fileReply?.ok ? trichKyHieu(fileReply.data?.content ?? "", selectedPath ?? "") : []),
+    [fileReply, selectedPath],
+  );
   /**
    * ★ UX (C2) — TÍN HIỆU THẬT "chỉ CHẠY, KHÔNG ghi đĩa" cho thẻ duyệt `run_command`. Server đặt một
    * ô `preview.changes` `{ field:"ghiDia", newValue:"chi_hoi_kiem_tra" | "ghi_de_ma_nguon" }` (xem
@@ -2523,6 +2535,18 @@ export default function AICodingWorkspace() {
                           {khungToiDa === "xem" ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
                         </Button>
                       )}
+                      {/* ★ E2 — OUTLINE: chỉ hiện nút khi tệp CÓ ký hiệu (0 mục ⇒ nút vô nghĩa). */}
+                      {dsKyHieu.length > 0 && (
+                        <Button
+                          variant="ghost" size="icon" data-nut-outline
+                          className={cn("h-6 w-6 shrink-0", outlineMo && "bg-primary/15 text-primary")}
+                          aria-pressed={outlineMo}
+                          onClick={() => setOutlineMo((v) => !v)}
+                          title={t("repoWs.outline.toggle", "Danh sách ký hiệu ({{n}}) — bấm để nhảy tới", { n: dsKyHieu.length })}
+                        >
+                          <List className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       {/* ★ D2 — NGẮT DÒNG. Tooltip KHAI đánh đổi: bật wrap ⇒ mất cột số dòng. */}
                       <Button
                         variant="ghost" size="icon" data-nut-ngat-dong
@@ -2614,6 +2638,34 @@ export default function AICodingWorkspace() {
                   );
                 })}
               </nav>
+            )}
+            {/* ★ E2 — BẢNG OUTLINE. Mỗi mục bấm ⇒ `dongMucTieu` (cùng đường cuộn+tô của panel Vấn đề).
+                Cao tối đa 40% khung + cuộn nội bộ: outline dài không được đẩy mã ra khỏi tầm nhìn. */}
+            {outlineMo && dsKyHieu.length > 0 && !coDiffChoDuyet && (
+              <div data-bang-outline className="max-h-[40%] shrink-0 overflow-y-auto border-b bg-muted/30 px-2 py-1">
+                {dsKyHieu.map((k, i) => (
+                  <button
+                    key={`${k.dong}:${i}`}
+                    type="button"
+                    data-ky-hieu
+                    data-loai={k.loai}
+                    onClick={() => { setDongMucTieu(k.dong); if (hep) setKhungHep("xem"); }}
+                    className="flex w-full items-baseline gap-1.5 rounded px-1 py-0.5 text-left hover:bg-muted"
+                  >
+                    <span className={cn(
+                      "shrink-0 rounded px-1 text-[9px] uppercase",
+                      k.loai === "lop" ? "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300"
+                        : k.loai === "kieu" ? "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300"
+                        : k.loai === "hang" ? "bg-muted text-muted-foreground"
+                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+                    )}>
+                      {t(`repoWs.outline.${k.loai}`, k.loai)}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{k.ten}</span>
+                    <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">{k.dong}</span>
+                  </button>
+                ))}
+              </div>
             )}
             {suaChonMo && !coDiffChoDuyet && selectedPath && (
               <div className="flex shrink-0 flex-col gap-1 border-b border-primary/30 bg-primary/5 px-2 py-1.5" data-sua-chon>

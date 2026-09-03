@@ -19584,6 +19584,13 @@
     "model": {
       "badge": "model: T{{tier}}",
       "tip": "Bộ định tuyến THƯỜNG dùng tầng {{tier}}{{ten}} cho tác vụ \"{{task}}\". Model do server chọn theo độ khó + VRAM còn trống — một câu rất khó vẫn có thể được nâng tầng, nên đây là dự báo, không phải cam kết."
+    },
+    "outline": {
+      "toggle": "Danh sách ký hiệu ({{n}}) — bấm để nhảy tới",
+      "ham": "hàm",
+      "lop": "lớp",
+      "kieu": "kiểu",
+      "hang": "hằng"
     }
   },
   "masterDataCol": {
