@@ -100,6 +100,13 @@ import {
   boQuaBuocHoi,
   type MucQuyen,
 } from "../loi/mucQuyen";
+// ★★★ ĐỢT H / TASK H3 — bộ nhớ dài hạn. `khoBoNho.ts` (THUẦN) chỉ biết lưu/đọc/xoá; tệp này CHỈ đọc
+// mục nhớ để đính vào câu hỏi (B4: đi thẳng vào `question` GỬI ĐI qua `dungYeuCauStream`, KHÔNG BAO
+// GIỜ đọc lại bằng `docYeuCauDoc`/`docDeXuatCucBo`) và xử lý đề xuất nhớ AI phát ra (`docDeXuatNho`,
+// CHỈ quét `traLoiCuoi` — văn bản model TỰ SINH, cùng nguyên tắc H2 đã dựng cho `docYeuCauDoc`).
+import { docDanhSachBoNho, themMucBoNho } from "../loi/khoBoNho";
+import { docDeXuatNho } from "../loi/deXuatNho";
+import { dungKhoWorkspaceState } from "./khoWorkspaceState";
 
 /** Đề xuất ghi CỤC BỘ đang chờ duyệt + mọi thứ đã ĐO tại thời điểm dựng thẻ (không đo lại lúc bấm,
  *  trừ băm đĩa — băm PHẢI đo lại trong `apBanVa` vì đó chính là phép chống xung đột). */
@@ -694,12 +701,14 @@ export class BangChat {
    * không mở đường ghi đĩa mới, census `CAM_TU` không canh nó) thành đúng hình dạng `KhoLuuTruTho`
    * tối giản mà `loi/khoHoiThoai.ts` (THUẦN) đòi hỏi. Đây là RANH GIỚI DUY NHẤT nơi `vscode` chạm
    * vào lớp lưu trữ — bản thân `khoHoiThoai.ts` không bao giờ thấy `context`.
+   *
+   * ★★★ ĐỢT H / TASK H3 — bản bọc THẬT nay sống ở `ui/khoWorkspaceState.ts` (dùng chung với lệnh
+   * "Nhớ điều này" ở `extension.ts` và khung xem/xoá bộ nhớ ở `boNhoQuanLy.ts`, cả hai không có một
+   * instance `BangChat` để gọi phương thức private này). Giữ NGUYÊN tên phương thức + chữ ký ở đây
+   * (mọi nơi gọi trong tệp này không đổi) — chỉ THÂN hàm đổi thành một lời gọi uỷ quyền.
    */
   private khoHoiThoaiTho(): KhoLuuTruTho {
-    return {
-      doc: <T>(khoa: string) => this.context.workspaceState.get<T>(khoa),
-      ghi: (khoa, giaTri) => this.context.workspaceState.update(khoa, giaTri),
-    };
+    return dungKhoWorkspaceState(this.context);
   }
 
   /**
@@ -1070,6 +1079,12 @@ export class BangChat {
           // Quản lý MCP server ngoài" — xem docblock `dsToolMcpDangCoSan`). Rỗng ⇒ `question` không
           // đổi (đã kiểm ở `yeuCau.unit.test.ts`).
           dsToolMcp: dsToolMcpDangCoSan(),
+          // ★★★ ĐỢT H / TASK H3 — mục nhớ dài hạn ĐÃ LƯU. Đây là DUY NHẤT chỗ nội dung mục nhớ chạm
+          // vào lượt hỏi — nó đi vào `question` GỬI ĐI (dữ liệu, giống ngữ cảnh/kết quả tool), KHÔNG
+          // BAO GIỜ được đọc lại bằng `docYeuCauDoc`/`docDeXuatCucBo` (hai hàm đó chỉ quét
+          // `traLoiCuoi` bên dưới, không quét biến này) — đúng nguyên tắc chống tiêm lệnh mà H2 đã
+          // dựng cho kết quả tool, dùng LẠI nguyên vẹn ở đây (B4).
+          dsBoNho: docDanhSachBoNho(this.khoHoiThoaiTho()),
         });
         let tt = trangThaiBanDau();
         const { hong } = await moDongSse({
@@ -1251,6 +1266,11 @@ export class BangChat {
       // ở trên — chỉ ở đây, ĐÚNG MỘT LẦN, y hệt đường Đợt C trước Task 3 (chỉ khác nguồn `traLoiCuoi`
       // là câu trả lời của LƯỢT CUỐI thay vì lượt duy nhất).
       if (cheDo.loai === "local") void this.xuLyDeXuatCucBo(traLoiCuoi);
+      // ★★★ ĐỢT H / TASK H3 / B5 — nhánh "AI đề xuất, người dùng duyệt". CÙNG nguồn `traLoiCuoi`
+      // (câu trả lời CUỐI, văn bản model TỰ SINH — KHÔNG BAO GIỜ kết quả tool/mục nhớ, xem docblock
+      // `docYeuCauDoc` ở trên), CÙNG điều kiện LOCAL với đường ghi tệp — bộ nhớ là một tính năng phía
+      // client (workspaceState), không có ý nghĩa gì cho chế độ SERVER.
+      if (cheDo.loai === "local") void this.xuLyDeXuatNho(traLoiCuoi);
     } catch (e) {
       // Huỷ lượt cũ là hành vi BÌNH THƯỜNG (người dùng hỏi câu mới) — không phải lỗi, không được
       // khai thành lỗi. Chỉ lỗi THẬT mới hiện lên.
@@ -1545,6 +1565,33 @@ export class BangChat {
       // ghi). Gửi chuỗi rỗng và để webview nói đúng điều đó, thay vì bịa ra một cái hạn.
       han: "",
     });
+  }
+
+  /**
+   * ★★★ ĐỢT H / TASK H3 / B5 — ĐỀ XUẤT NHỚ do AI phát ra: hỏi RÀNH MẠCH, chỉ ghi khi người dùng
+   * bấm DUYỆT. `vanBan` PHẢI là `traLoiCuoi` (văn bản model TỰ SINH ở lượt SSE này) — KHÔNG BAO GIỜ
+   * ngữ cảnh/mục nhớ/kết quả tool, cùng ranh giới `docYeuCauDoc` đã dựng ở vòng lặp Task 3.
+   *
+   * ★ NHÁNH KIA — người dùng bấm "Bỏ qua", đóng hộp thoại (Esc), hay bấm ra ngoài (VSCode trả
+   *   `undefined`): KHÔNG gọi `themMucBoNho` — hàm ghi không hề được gọi, đúng "từ chối ⇒ không ghi
+   *   gì cả" của B5. Chỉ nhánh CHỌN ĐÚNG NÚT "Nhớ" mới chạm tới lối ghi.
+   * ⚠ Chỉ xử lý đề xuất ĐẦU TIÊN nếu có nhiều khối trong cùng lượt — cùng khuôn `xuLyDeXuatCucBo`
+   *   (một lượt chỉ duyệt được MỘT thứ), tránh dựng chồng nhiều hộp thoại cho cùng một câu trả lời.
+   */
+  private async xuLyDeXuatNho(vanBan: string): Promise<void> {
+    const ds = docDeXuatNho(vanBan);
+    if (ds.length === 0) return;
+    const d = ds[0]!;
+
+    const chon = await vscode.window.showInformationMessage(
+      `AI Local đề xuất NHỚ (cho những lần hỏi sau): "${d.noiDung}"`,
+      "Nhớ",
+      "Bỏ qua",
+    );
+    if (chon !== "Nhớ") return; // Esc / "Bỏ qua" / bấm ra ngoài — KHÔNG ghi gì cả (nhánh kia của B5)
+
+    await themMucBoNho(this.khoHoiThoaiTho(), randomUUID(), d.noiDung, "ai_de_xuat_duyet");
+    void vscode.window.showInformationMessage("AI Local: đã nhớ.");
   }
 
   private async xemDiff(): Promise<void> {

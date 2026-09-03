@@ -14,6 +14,9 @@ import { hoTroThanhBenPhu, KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU } from "./lo
 // ★★★ ĐỢT H / TASK H2 / B5 — lệnh quản lý MCP server ngoài (liệt kê/bật-tắt/xem tool). Xem docblock
 // `ui/mcpQuanLy.ts` cho lý do đi đường QuickPick thay vì webview.
 import { chayQuanLyMcpNgoai } from "./ui/mcpQuanLy";
+// ★★★ ĐỢT H / TASK H3 — bộ nhớ dài hạn: lệnh "Nhớ điều này" (B5, nhánh người dùng chủ động) + bảng
+// xem/xoá (B2). Xem docblock `ui/boNhoQuanLy.ts`.
+import { BoNhoQuanLy, chayNhoDieuNay } from "./ui/boNhoQuanLy";
 
 async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("aviAiLocal");
@@ -187,6 +190,11 @@ export function activate(context: vscode.ExtensionContext): void {
     // `aviAiLocal.dangNhap`: một lệnh gọi lại lệnh này qua `executeCommand` (hiện chưa có, nhưng nếu
     // có trong tương lai) phải đợi được ĐÚNG lúc luồng thật xong, không phải "đã gọi lệnh".
     vscode.commands.registerCommand("aviAiLocal.mcpServers", () => chayQuanLyMcpNgoai(context)),
+    // ★★★ ĐỢT H / TASK H3 / B5 — nhánh "người dùng CHỦ ĐỘNG bảo nhớ". Cùng lý do trả promise (không
+    // `void`) đã ghi ở trên.
+    vscode.commands.registerCommand("aviAiLocal.nhoDieuNay", () => chayNhoDieuNay(context)),
+    // ★★★ ĐỢT H / TASK H3 / B2 — bảng xem/xoá bộ nhớ dài hạn.
+    vscode.commands.registerCommand("aviAiLocal.boNho", () => BoNhoQuanLy.moHoacHien(context)),
   );
 
   /**

@@ -23,6 +23,11 @@ import { dungVanBanDayGiaoThucDoc, nhacLaiCuoiCauHoi } from "./dayGiaoThucDoc";
 // Cmd+K) với ba tool đọc cục bộ ở trên. `dungVanBanDayMcpNgoai([])` trả CHUỖI RỖNG (xem docblock ở
 // đó) — khi không có tool MCP nào đã kết nối, `question` không đổi một ký tự nào so với trước H2.
 import { dungVanBanDayMcpNgoai, type MoTaToolMcp } from "./dayMcpDoc";
+// ★★★ ĐỢT H / TASK H3 — hiện bộ nhớ dài hạn ĐÃ CÓ + dạy giao thức đề xuất nhớ thêm, CÙNG điều kiện
+// chèn với MCP ở trên. `dungVanBanDayBoNho([])` trả CHUỖI RỖNG (xem docblock ở đó) — workspace chưa
+// từng dùng lệnh "AI Local: Nhớ điều này" thấy `question` không đổi một ký tự nào so với trước H3.
+import { dungVanBanDayBoNho } from "./dayBoNhoDoc";
+import type { MucBoNho } from "./khoBoNho";
 
 export type CheDoDuAn =
   | { loai: "local"; nhan: string }
@@ -71,6 +76,12 @@ export function dungYeuCauStream(dv: {
    * `dayMcpDoc.ts`) — người dùng chưa từng chạm H2 thấy `question` giống hệt trước khi H2 tồn tại.
    */
   dsToolMcp?: readonly MoTaToolMcp[];
+  /**
+   * ★★★ ĐỢT H / TASK H3 — mục nhớ dài hạn ĐÃ LƯU (`loi/khoBoNho.ts::docDanhSachBoNho`).
+   * `undefined`/rỗng ⇒ KHÔNG chèn gì (xem `dayBoNhoDoc.ts`) — workspace chưa từng dùng lệnh "AI
+   * Local: Nhớ điều này" thấy `question` giống hệt trước khi H3 tồn tại.
+   */
+  dsBoNho?: readonly MucBoNho[];
 }): Record<string, unknown> {
   const context: Record<string, unknown> = {
     route: "vscode",
@@ -93,6 +104,13 @@ export function dungYeuCauStream(dv: {
   const vanBanDayMcp = dungVanBanDayMcpNgoai(dsToolMcp);
   const phanDayMcp = vanBanDayMcp.length > 0 ? `${vanBanDayMcp}\n\n` : "";
 
+  // ★★★ ĐỢT H / TASK H3 — hiện bộ nhớ dài hạn + dạy đề xuất nhớ thêm, CÙNG điều kiện chèn (LOCAL,
+  // không Cmd+K) và CÙNG chỗ đứng (SAU MCP, TRƯỚC câu hỏi) với khối MCP ở trên. RỖNG khi
+  // `dv.dsBoNho` vắng/rỗng ⇒ dòng dưới không thêm ký tự nào.
+  const dsBoNho = dayGiaoThucDoc ? (dv.dsBoNho ?? []) : [];
+  const vanBanDayBoNho = dungVanBanDayBoNho(dsBoNho);
+  const phanDayBoNho = vanBanDayBoNho.length > 0 ? `${vanBanDayBoNho}\n\n` : "";
+
   // ★★★ LỖI 1, vòng đo lại thứ nhất — nhắc lại NGẮN ở CUỐI `question` (gần điểm sinh chữ nhất).
   // Đo LIVE: dạy MỘT LẦN ở đầu prompt thua luật "NGUYÊN TẮC TRẢ LỜI" máy chủ tự chèn ở 10/11 lượt
   // — xem docblock `dayGiaoThucDoc.ts`. KHÔNG áp cho SERVER (cùng lý do không dạy giao thức ở đó),
@@ -107,7 +125,7 @@ export function dungYeuCauStream(dv: {
   const nguCanhCoNhan =
     dv.nguCanh.trim().length > 0 ? `${nhanNguonNguCanh(dv.cheDo)}\n${dv.nguCanh}` : dv.nguCanh;
   const than = nguCanhCoNhan.trim().length > 0 ? `${nguCanhCoNhan}\n${dv.cauHoi}` : dv.cauHoi;
-  const question = `${phanDayGiaoThuc}${phanDayMcp}${than}${phanNhacLaiCuoi}`;
+  const question = `${phanDayGiaoThuc}${phanDayMcp}${phanDayBoNho}${than}${phanNhacLaiCuoi}`;
 
   return { question, history: dv.lichSu, userRole: dv.vaiTro, context };
 }

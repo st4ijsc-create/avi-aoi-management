@@ -81,6 +81,14 @@
       {
         "command": "aviAiLocal.mcpServers",
         "title": "AI Local: Quản lý MCP server ngoài"
+      },
+      {
+        "command": "aviAiLocal.nhoDieuNay",
+        "title": "AI Local: Nhớ điều này"
+      },
+      {
+        "command": "aviAiLocal.boNho",
+        "title": "AI Local: Bộ nhớ dài hạn"
       }
     ],
     "keybindings": [
