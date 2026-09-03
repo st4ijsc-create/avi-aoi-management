@@ -293,6 +293,9 @@ const NO_DA_BIET: Record<string, string> = {
     "BG-107 — di trú ở Task 14 (tách shell ProductModels). Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(c) XÁC NHẬN nợ BG-107' bên dưới).",
   "client/src/components/productModels/PointDetailsForm.tsx":
     "BG-107 — di trú ở Task 14 (tách shell ProductModels). Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(c) XÁC NHẬN nợ BG-107' bên dưới).",
+  // ── Ruling coordinator R-KC-7 (2026-09-03): file thứ TƯ, vòng sửa 2 nới quét ra client/ bắt SỐNG (10/18, cột map CSV/Excel). Agent Task 7 KHÔNG tự allowlist — đúng chỉ đạo — khai để coordinator quyết. Cùng lớp BG-107, di trú ở Task 14.
+  "client/src/components/BulkImportDialog.tsx":
+    "BG-107 — di trú ở Task 14 (tách shell ProductModels). Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(c) XÁC NHẬN nợ BG-107' bên dưới).",
 };
 
 /** File KHÔNG phải bản sao — nó LÀ đích tham chiếu mà §2 đã so trực tiếp (spec suy THEO nó, không phải ngược lại). Miễn trừ VĨNH VIỄN, không phải nợ. */
@@ -422,6 +425,7 @@ describe("§3 — MỆNH ĐỀ QUÉT: không còn bản chép tay MỚI ngoài �
     "client/src/pages/ProductModels.tsx",
     "client/src/components/productModels/types.ts",
     "client/src/components/productModels/PointDetailsForm.tsx",
+    "client/src/components/BulkImportDialog.tsx",
   ] as const) {
     it(`(c) XÁC NHẬN nợ '${duongBG107}' (BG-107) CÒN THẬT hôm nay — Task 14 di trú xong file này thì test sẽ ĐỎ, đúng lúc đó xoá dòng NO_DA_BIET tương ứng và xoá CHÍNH test này`, () => {
       const boQuaTru = new Set([...boQuaHomNay].filter((p) => p !== duongBG107));
