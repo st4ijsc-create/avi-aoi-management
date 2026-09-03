@@ -29,6 +29,7 @@ import { sql } from "drizzle-orm";
 // ★★★ Vé ảnh ngắn hạn — chủ DUY NHẤT của phép ký là `_core/anhKyUrl`. Xem khối chú thích tại mỗi
 //     lời gọi `kyAnhTrongThan` bên dưới để biết vì sao ký ở BIÊN phản hồi chứ không từng trường.
 import { kyAnhTrongThan } from "../_core/anhKyUrl";
+import { docGioTuongNhaMay } from "../utils/factoryTime";
 // Canonical KPI math + factory-timezone bucketing (doc 27 decision #4, gaps A2/A3/A4).
 import {
   finalYield,
@@ -55,19 +56,14 @@ function parseIntParam(val: unknown): number | undefined {
   return isNaN(n) ? undefined : n;
 }
 
-// Helper: parse date query param — returns a "fake UTC" Date for timestamp without time zone.
-// drizzle-orm calls toISOString() (UTC) when serializing, but our columns store LOCAL time.
-// Shift so UTC representation = local time to avoid timezone offset in queries.
+// Helper: parse date query param — val is a user-typed date/time, read as
+// FACTORY wall-clock time (FACTORY_TZ, default Asia/Ho_Chi_Minh) and converted
+// to the real UTC instant via `docGioTuongNhaMay` (BG-96, spec Khối C QĐ-1).
+// Replaces the old fake-UTC trick (`d.getTime() - d.getTimezoneOffset()*60000`),
+// which depended on the PROCESS's timezone, not the factory's.
 function parseDateParam(val: unknown, endOfDay = false): Date | undefined {
   if (val == null || val === "") return undefined;
-  let str = String(val);
-  if (str.endsWith('Z')) str = str.slice(0, -1);
-  // Date-only strings (e.g. "2026-04-03") are parsed as UTC midnight by JS spec.
-  // Append time component so they are parsed as LOCAL time instead.
-  if (!str.includes('T')) str += endOfDay ? 'T23:59:59.999' : 'T00:00:00';
-  const d = new Date(str);
-  if (isNaN(d.getTime())) return undefined;
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return docGioTuongNhaMay(String(val), endOfDay);
 }
 
 // Helper: clamp limit

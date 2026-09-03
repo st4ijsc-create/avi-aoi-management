@@ -263,3 +263,27 @@ export function dayKeyInZone(date: Date, timeZone: string = getFactoryTimezone()
   const dd = String(wc.day).padStart(2, "0");
   return `${wc.year}-${mm}-${dd}`;
 }
+
+/**
+ * BG-96 (spec Khối C QĐ-1) — đọc một chuỗi ngày/giờ NGƯỜI DÙNG gõ (giờ tường
+ * nhà máy) thành instant UTC THẬT, thay cho phép dịch fake-UTC cũ
+ * (`d.getTime() - d.getTimezoneOffset()*60000` — phụ thuộc TZ của PROCESS, không
+ * phải của nhà máy). Chuỗi có 'Z'/offset rõ ràng đi thẳng `new Date` (người gọi
+ * đã nói rõ hệ quy chiếu).
+ */
+export function docGioTuongNhaMay(dateStr: string, endOfDay = false): Date | undefined {
+  const s = String(dateStr).trim();
+  if (s === "") return undefined;
+  if (/Z$|[+-]\d{2}:?\d{2}$/.test(s)) { const d = new Date(s); return isNaN(d.getTime()) ? undefined : d; }
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?$/.exec(s);
+  if (!m) { const d = new Date(s); return isNaN(d.getTime()) ? undefined : d; }
+  const coGio = m[4] !== undefined;
+  const utc = wallClockToUtc({
+    year: +m[1], month: +m[2], day: +m[3],
+    hour: coGio ? +m[4] : endOfDay ? 23 : 0,
+    minute: coGio ? +m[5] : endOfDay ? 59 : 0,
+    second: coGio ? +(m[6] ?? 0) : endOfDay ? 59 : 0,
+  }, getFactoryTimezone());
+  const ms = coGio ? +(m[7]?.padEnd(3, "0") ?? 0) : endOfDay ? 999 : 0;
+  return new Date(utc.getTime() + ms);
+}

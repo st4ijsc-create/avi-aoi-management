@@ -21,6 +21,7 @@ import { uploadGuard } from "./uploadValidation";
 import { startOfflineMonitor } from "./offlineMonitor";
 import { initializeEmailTransporter } from "./email";
 import { finalYield } from "../utils/kpi";
+import { docGioTuongNhaMay } from "../utils/factoryTime";
 // W4-D (B7): initializeScheduledReports/Backups now start via backgroundJobs
 // (skipped when ROLE=api); only the shutdown hooks remain wired here.
 import { shutdownScheduledReports } from "../services/reportScheduler";
@@ -84,18 +85,13 @@ installConsoleBridge();
 assertVramEnforcementPolicy();
 
 
-/** Strip trailing Z so dates are always parsed as local time, not UTC */
-// drizzle-orm serializes Date via toISOString() (UTC representation).
-// Our "timestamp without time zone" columns store LOCAL time values.
-// Without compensation, toISOString() shifts dates by -N hours (e.g. -7 for UTC+7).
-// Fix: return a "fake UTC" Date whose UTC components equal the intended local time.
+// BG-96 (spec Khối C QĐ-1): dateStr is a user-typed date/time — read as FACTORY
+// wall-clock time (FACTORY_TZ, default Asia/Ho_Chi_Minh) and converted to the
+// real UTC instant via `docGioTuongNhaMay`. Replaces the old fake-UTC trick
+// (`d.getTime() - d.getTimezoneOffset()*60000`), which depended on the
+// PROCESS's timezone, not the factory's. Call sites already guard `isNaN`.
 function parseLocalDate(dateStr: string, endOfDay = false): Date {
-  let clean = dateStr.endsWith('Z') ? dateStr.slice(0, -1) : dateStr;
-  // Date-only strings (e.g. "2026-04-03") are parsed as UTC midnight by JS spec.
-  // Append time component so they are parsed as LOCAL time instead.
-  if (!clean.includes('T')) clean += endOfDay ? 'T23:59:59.999' : 'T00:00:00';
-  const d = new Date(clean);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return docGioTuongNhaMay(dateStr, endOfDay) ?? new Date(NaN);
 }
 
 const HTTPS_ENABLED = process.env.HTTPS_ENABLED === "true";
