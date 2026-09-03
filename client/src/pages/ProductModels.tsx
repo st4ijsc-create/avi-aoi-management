@@ -65,8 +65,9 @@ import {
 } from "@/components/productModels/types";
 import { ProductListPanel } from "@/components/products/ProductListPanel";
 import { ProductDialogsHost } from "@/components/products/ProductDialogsHost";
-// I-1 (vòng sửa 9, Khối C review lượt 9) — xem khối hằng số FIELD_* ngay dưới `sanitizeCriteria`.
-import { POINT_LIMIT_SPEC } from "@shared/pointLimitSpec";
+// I-1 (vòng sửa 9, Khối C review lượt 9), NEW-2 (vòng sửa 9, vòng 2) — xem khối
+// hằng số FIELD_* ngay dưới `sanitizeCriteria`.
+import { F } from "@shared/pointLimitSpec";
 
 /** Drop incomplete criteria rows and coerce numeric bounds to strings for the API. */
 function sanitizeCriteria(items: PointCriteriaItem[]): PointCriteriaItem[] {
@@ -99,36 +100,39 @@ function sanitizeCriteria(items: PointCriteriaItem[]): PointCriteriaItem[] {
  * cột giới hạn — review lượt 9 đo được, tệp chỉ thoát census §3 nhờ bắc cầu 1 bậc (import kiểu
  * `MeasurementPoint` từ `types.ts`), không phải vì đã suy từ spec THẬT.
  *
- * Sửa: 18 tên cột suy TỪ VỊ TRÍ trong `POINT_LIMIT_SPEC` (`shared/pointLimitSpec.ts`) — mỗi hằng
- * số dưới đây giữ ĐÚNG kiểu literal của TS (không phải `string` chung) vì lấy trực tiếp một PHẦN
- * TỬ của mảng khai bằng `as const` (`POINT_LIMIT_SPEC[i].field`), KHÔNG gõ lại chuỗi tên field lần
- * hai — bốn khối bên dưới dùng các hằng số này qua object-key TÍNH TOÁN (`[FIELD_X]: …`) hoặc
- * truy cập thuộc tính tính toán (`point[FIELD_X]`).
- * ⚠ VỊ TRÍ PHẢI khớp thứ tự khai trong `POINT_LIMIT_SPEC` — census §1/§2 khoá TẬP 18 field, KHÔNG
- * khoá THỨ TỰ mảng; đây là một giả định thêm CỦA RIÊNG khối này (không phải một bất biến được lưới
- * nào canh). Đổi TẬP field (thêm/bớt) ở spec sẽ làm `tsc` đỏ ngay (khoá không còn hợp lệ trên
- * `MeasurementPoint`); đổi THỨ TỰ (không đổi tập) sẽ KHÔNG tự báo lỗi — chỉ lặng lẽ sai Ý NGHĨA
- * (hằng số `FIELD_HEIGHT_MIN` trỏ nhầm sang field khác nhưng vẫn hợp kiểu) — nếu ai đổi thứ tự
- * khai trong `shared/pointLimitSpec.ts`, sửa lại đúng vị trí tương ứng dưới đây.
+ * ★★★ NEW-2 (review Khối C lượt 9, VÒNG 2, Important) — I-1 (trên) suy 18 tên TỪ VỊ TRÍ trong
+ * `POINT_LIMIT_SPEC` (`POINT_LIMIT_SPEC[i].field`). ĐÚNG hôm nay, nhưng CÂM: đổi TẬP field
+ * (thêm/bớt) ở spec làm `tsc` đỏ ngay (khoá không còn hợp lệ trên `MeasurementPoint`), NHƯNG đổi
+ * THỨ TỰ khai (không đổi tập) KHÔNG tự báo lỗi gì — `FIELD_HEIGHT_MIN` có thể lặng lẽ trỏ sang
+ * field KHÁC (vd `"areaMin"`) mà vẫn hợp kiểu TS, vì `POINT_LIMIT_SPEC[i].field` LUÔN cho ra một
+ * string literal thuộc union hợp lệ — chỉ SAI Ý NGHĨA, hai field bị hoán đổi giá trị cho nhau ở
+ * form UI mà không ai để ý (đo được: `pointLimitSpec.test.ts` § NEW-2 đã ghim lại hình dạng này).
+ *
+ * Sửa: 18 tên cột nay suy qua `F` (`shared/pointLimitSpec.ts`) — bản đồ TÊN→TÊN, mỗi khoá tự trỏ
+ * về CHÍNH NÓ (`F.heightMin === "heightMin"` LUÔN đúng bất kể `POINT_LIMIT_SPEC` khai field đó ở
+ * vị trí nào) — không còn đọc theo CHỈ SỐ mảng, hoán đổi thứ tự khai trong spec KHÔNG còn làm hằng
+ * số nào trỏ sai. Bốn khối bên dưới vẫn dùng các hằng số này qua object-key TÍNH TOÁN (`[FIELD_X]:
+ * …`) hoặc truy cập thuộc tính tính toán (`point[FIELD_X]`) — CHỈ nguồn của hằng số đổi, cách dùng
+ * ở hạ nguồn giữ nguyên.
  */
-const FIELD_LOWER_LIMIT = POINT_LIMIT_SPEC[0].field;
-const FIELD_UPPER_LIMIT = POINT_LIMIT_SPEC[1].field;
-const FIELD_UNIT = POINT_LIMIT_SPEC[2].field;
-const FIELD_HEIGHT_MIN = POINT_LIMIT_SPEC[3].field;
-const FIELD_HEIGHT_MAX = POINT_LIMIT_SPEC[4].field;
-const FIELD_AREA_MIN = POINT_LIMIT_SPEC[5].field;
-const FIELD_AREA_MAX = POINT_LIMIT_SPEC[6].field;
-const FIELD_VOLUME_MIN = POINT_LIMIT_SPEC[7].field;
-const FIELD_VOLUME_MAX = POINT_LIMIT_SPEC[8].field;
-const FIELD_COPLANARITY_MAX = POINT_LIMIT_SPEC[9].field;
-const FIELD_WARPAGE_MAX = POINT_LIMIT_SPEC[10].field;
-const FIELD_VOID_PCT_MAX = POINT_LIMIT_SPEC[11].field;
-const FIELD_OFFSET_X_MAX = POINT_LIMIT_SPEC[12].field;
-const FIELD_OFFSET_Y_MAX = POINT_LIMIT_SPEC[13].field;
-const FIELD_TILT_MAX = POINT_LIMIT_SPEC[14].field;
-const FIELD_THICKNESS_MIN = POINT_LIMIT_SPEC[15].field;
-const FIELD_THICKNESS_MAX = POINT_LIMIT_SPEC[16].field;
-const FIELD_CRITERIA = POINT_LIMIT_SPEC[17].field;
+const FIELD_LOWER_LIMIT = F.lowerLimit;
+const FIELD_UPPER_LIMIT = F.upperLimit;
+const FIELD_UNIT = F.unit;
+const FIELD_HEIGHT_MIN = F.heightMin;
+const FIELD_HEIGHT_MAX = F.heightMax;
+const FIELD_AREA_MIN = F.areaMin;
+const FIELD_AREA_MAX = F.areaMax;
+const FIELD_VOLUME_MIN = F.volumeMin;
+const FIELD_VOLUME_MAX = F.volumeMax;
+const FIELD_COPLANARITY_MAX = F.coplanarityMax;
+const FIELD_WARPAGE_MAX = F.warpageMax;
+const FIELD_VOID_PCT_MAX = F.voidPctMax;
+const FIELD_OFFSET_X_MAX = F.offsetXMax;
+const FIELD_OFFSET_Y_MAX = F.offsetYMax;
+const FIELD_TILT_MAX = F.tiltMax;
+const FIELD_THICKNESS_MIN = F.thicknessMin;
+const FIELD_THICKNESS_MAX = F.thicknessMax;
+const FIELD_CRITERIA = F.criteria;
 
 /**
  * Doc 43 Đợt 5 — tóm tắt ngưỡng của 1 điểm đo cho cột bảng (không cần i18n).

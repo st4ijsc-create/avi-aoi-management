@@ -82,6 +82,44 @@ export const LIMIT_FIELDS: readonly (typeof POINT_LIMIT_SPEC)[number]["field"][]
 export type PointLimitField = (typeof POINT_LIMIT_SPEC)[number]["field"];
 
 // ════════════════════════════════════════════════════════════════════════════
+// ★★★ NEW-2 (review Khối C lượt 9, vòng 2, Important) — BẢN ĐỒ KHOÁ→TÊN, thay
+// hẳn kiểu "hằng số suy từ VỊ TRÍ mảng" mà `client/src/pages/ProductModels.tsx`
+// (I-1, vòng sửa 9 lượt 1) đang dùng:
+//
+//   const FIELD_HEIGHT_MIN = POINT_LIMIT_SPEC[3].field;
+//   const FIELD_HEIGHT_MAX = POINT_LIMIT_SPEC[4].field;
+//
+// — ĐÚNG hôm nay (vị trí 3/4 đúng là heightMin/heightMax), nhưng CÂM khi ai đổi
+// THỨ TỰ khai trong `POINT_LIMIT_SPEC` (không đổi TẬP field — `tsc` KHÔNG báo
+// lỗi, vì `POINT_LIMIT_SPEC[i].field` vẫn cho ra MỘT string literal thuộc union
+// hợp lệ, chỉ SAI Ý NGHĨA): `FIELD_HEIGHT_MIN` có thể lặng lẽ trỏ sang
+// `"areaMin"` — hai field bị HOÁN ĐỔI giá trị cho nhau ở form UI, không ai để ý
+// vì cả hai vẫn "hợp kiểu". Đây là chính hình dạng NEW-2 mô tả.
+//
+// `F` neo bằng TÊN, không phải CHỈ SỐ — `F.heightMin` LUÔN bằng chuỗi
+// `"heightMin"` bất kể `POINT_LIMIT_SPEC` khai field đó ở vị trí nào (suy bằng
+// cách LẶP qua từng phần tử và dùng CHÍNH `field` của nó làm cả khoá lẫn giá
+// trị, không đọc `[i]`). Nơi dùng đổi `POINT_LIMIT_SPEC[3].field` thành
+// `F.heightMin` — cùng kiểu literal, cùng cách dùng (`[F.heightMin]: …`/
+// `point[F.heightMin]`), nhưng KHÔNG còn phụ thuộc thứ tự khai.
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * `F.lowerLimit === "lowerLimit"`, `F.heightMin === "heightMin"`, … cho cả 18
+ * field — đúng NGHĨA của `satisfies Record<PointLimitField, PointLimitField>`
+ * (mỗi khoá tự ánh xạ về CHÍNH NÓ), suy qua `Object.fromEntries` trên
+ * `LIMIT_FIELDS` (không liệt kê tay 18 dòng `key: "key"` — cùng nguyên tắc "một
+ * nguồn sự thật" mà `LIMIT_FIELDS`/`APPROVAL_LIMIT_FIELDS`/`MIN_MAX_PAIRS` đã
+ * theo). Ép kiểu sang dạng mapped-type (`{ [K in PointLimitField]: K }`) để giữ
+ * ĐỘ CHÍNH XÁC literal — `Object.fromEntries` tự thân chỉ suy ra
+ * `Record<string, string>`, không đủ hẹp cho lưới compile-time kiểu
+ * `F.x satisfies "x"`.
+ */
+export const F = Object.fromEntries(LIMIT_FIELDS.map((f) => [f, f])) as {
+  readonly [K in PointLimitField]: K;
+};
+
+// ════════════════════════════════════════════════════════════════════════════
 // ★★★ NEW-1 (review Khối C lượt 9, vòng 2, Important) — CÁC CẶP "cận dưới/cận
 // trên" SUY TỪ chính spec, không liệt kê tay ở nơi dùng (`measurementPointLimitGate.ts`
 // trước bản vá này chỉ hard-code ĐÚNG hai cặp: lowerLimit/upperLimit, heightMin/
