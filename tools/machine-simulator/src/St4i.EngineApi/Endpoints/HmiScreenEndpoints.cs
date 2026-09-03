@@ -71,7 +71,7 @@ namespace St4i.EngineApi.Endpoints;
 /// <c>INSERT</c> at all; it is blocked at <c>BEGIN</c> until the first commits or the wait exceeds
 /// <c>busy_timeout</c>. The primary-key constraint this store's own doc comment calls out as "a concurrency
 /// bug, not a case this store's contract asks it to paper over silently" therefore never fires on this path;
-/// the real contention error is <c>SQLITE_BUSY</c>, a completely different <c>SqliteErrorCode</c>.
+/// the real contention error is <c>SQLITE_BUSY</c>, a completely different <c>SqliteErrorCode</c>.</para>
 ///
 /// <para><b>What an operator sees instead of the 34-second blank, and why this and not something else:</b>
 /// <c>503 Service Unavailable</c> with an <see cref="ApiErrorDto"/> naming the store as busy and inviting a
@@ -89,7 +89,15 @@ namespace St4i.EngineApi.Endpoints;
 /// <c>rollback</c>, because <see cref="IHmiScreenStore.RollbackAsync"/> appends through the identical
 /// <c>BeginTransaction()</c> call path. NOT applied to the four read routes: none of them opens a
 /// transaction, and SQLite's WAL mode lets readers proceed without blocking on a writer's lock — there is no
-/// reachable <c>SQLITE_BUSY</c> on a read in this store to catch.</para></para>
+/// reachable <c>SQLITE_BUSY</c> on a read in this store TODAY, ON AN ALREADY-MIGRATED DATABASE — scoped
+/// deliberately, not left absolute: <c>HmiScreenStore.EnsureSchema()</c> DOES open <c>BEGIN IMMEDIATE</c>
+/// for any entry in its own <c>Migrations</c> ladder newer than the database's stored
+/// <c>PRAGMA user_version</c> (that store's own doc comment already anticipates "future screen-store schema
+/// changes append a new <c>(Version, Statements)</c> entry here"), and <see cref="IHmiScreenStore"/>'s DI
+/// registration is a LAZY factory — so the FIRST read route resolved after such a migration ships is what
+/// runs it, under a real writer, and would hit the exact uncaught 34-second path this class exists to close
+/// on the write side. Not fixed here (no migration exists today to fix it against); named so a future
+/// migration author reads this before assuming reads stay exempt forever.</para>
 ///
 /// <para>🔴 <b>THIS TASK DOES NOT PUBLISH AN <see cref="HmiModelChangedEvent"/>, AND THAT IS SCOPE, NOT AN
 /// OMISSION.</b> <c>HmiModelEvents.ScreenChanged</c> does not exist yet — it is WS-HMI-2 Task 4's own
@@ -232,11 +240,10 @@ public static class HmiScreenEndpoints
         catch (ArgumentOutOfRangeException ex)
         {
             // Thrown for BOTH "this screen was never declared" and "this screen exists but not at this
-            // version" — IHmiScreenStore.RollbackAsync's own contract does not distinguish them, and
-            // ex.Message (built by the store) already names the real version numbers, or says there are
-            // none. The current version pointer is untouched: nothing in the store's RollbackAsync writes
-            // anything before this throw.
-            return Results.NotFound(new ApiErrorDto(ex.Message));
+            // version" — IHmiScreenStore.RollbackAsync's own contract does not distinguish them. The current
+            // version pointer is untouched: nothing in the store's RollbackAsync writes anything before this
+            // throw.
+            return Results.NotFound(new ApiErrorDto(StripParameterFraming(ex.Message)));
         }
         catch (SqliteException ex) when (IsWriteLockBusy(ex))
         {
@@ -244,19 +251,63 @@ public static class HmiScreenEndpoints
         }
 
         // WidgetCount is read from the CONTENT of the version just appended, not from the request body — a
-        // rollback request carries no widget list at all. version is the number RollbackAsync just
-        // returned (the NEW, highest version — never toVersion), so this GET always finds a row.
-        var restored = await store.GetAsync(screenId, version, ct).ConfigureAwait(false);
-        var response = Results.Ok(new PutScreenResultDto(ScreenIdentity.Canonicalize(screenId), version, restored?.Widgets.Count ?? 0));
+        // rollback request carries no widget list at all. `version` is the number RollbackAsync just
+        // returned (the NEW, highest version — never toVersion), so this GET always finds a row, UNLESS it
+        // throws.
+        //
+        // 🔴 THE ROLLBACK ITSELF HAS ALREADY COMMITTED by the time this line runs — store.RollbackAsync
+        // above already returned successfully. A throw from THIS read must never turn a write that
+        // succeeded into a response reporting failure: the caller would see 500 for a rollback that, on
+        // disk, worked. Total by design, the same shape as HmiChangeBus.Publish and
+        // HmiTagEndpoints.DescribeClaimedPathsAsync's own catches — a best-effort WidgetCount is never more
+        // important than the fact that the version number it decorates is real.
+        // OperationCanceledException still propagates: the caller going away is not this read's failure to
+        // paper over.
+        int widgetCount;
+        try
+        {
+            var restored = await store.GetAsync(screenId, version, ct).ConfigureAwait(false);
+            widgetCount = restored?.Widgets.Count ?? 0;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            widgetCount = 0;
+        }
+
+        var response = Results.Ok(new PutScreenResultDto(ScreenIdentity.Canonicalize(screenId), version, widgetCount));
         return response;
+    }
+
+    /// <summary>Removes .NET's own runtime-appended framing (<c>" (Parameter 'toVersion')\r\nActual
+    /// value was 99."</c>, measured against a live response) from an
+    /// <see cref="ArgumentOutOfRangeException.Message"/> before it reaches a client. The AUTHORED sentence —
+    /// <see cref="HmiScreenStore.RollbackAsync"/>'s own message, naming the real version numbers or saying
+    /// there are none — always comes first in that message, so cutting at the first occurrence of the
+    /// framing's marker leaves the authored half untouched. Not a parse: a message carrying no such marker
+    /// (any other exception shape) passes through byte-for-byte, and this never throws.</summary>
+    private static string StripParameterFraming(string message)
+    {
+        var idx = message.IndexOf(" (Parameter", StringComparison.Ordinal);
+        return idx < 0 ? message : message[..idx];
     }
 
     /// <summary><c>SqliteErrorCode == 5</c> is <c>SQLITE_BUSY</c> — the write-lock-contention error this
     /// store's <c>BEGIN IMMEDIATE</c> raises from <c>BeginTransaction()</c> itself when another writer holds
     /// the lock past <c>busy_timeout</c>. NOT <c>SqliteErrorCode == 19</c> (<c>SQLITE_CONSTRAINT</c>, what
     /// <c>HmiTagEndpoints.IsPathAlreadyClaimed</c> matches) — see this class's own doc comment for why that
-    /// shape is unreachable on this store's write path and would be dead code here.</summary>
-    private static bool IsWriteLockBusy(SqliteException ex) => ex.SqliteErrorCode == 5;
+    /// shape is unreachable on this store's write path and would be dead code here. <c>internal</c>, not
+    /// <c>private</c>: WS-HMI-2 Task 3 fix round 1 (review MED-3) measured that the SPECIFICITY of
+    /// <c>== 5</c> — as opposed to any wider predicate that would launder a genuine
+    /// <c>SQLITE_CONSTRAINT</c>/<c>SQLITE_CORRUPT</c>/<c>SQLITE_READONLY</c> into "busy, retry" — was not
+    /// pinned by any test that exercised only the HTTP surface (a real non-busy write-path
+    /// <see cref="SqliteException"/> is not reproducible on demand through this store without corrupting a
+    /// real file). Exposed for a direct unit assertion instead:
+    /// <c>HmiScreenEndpointsTests.IsWriteLockBusy_IsTrueOnlyForSqliteErrorCode5</c>.</summary>
+    internal static bool IsWriteLockBusy(SqliteException ex) => ex.SqliteErrorCode == 5;
 
     /// <summary>See this class's own doc comment for the measurement and the reasoning behind 503 over 409
     /// or a bare 500. Same status <c>NotificationEndpoints.StoreUnavailable</c> already uses for "a

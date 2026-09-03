@@ -99,13 +99,55 @@ public sealed class ContractViolationException : Exception
 /// rộng sang các trường khác là trôi dần về một bộ validate JSON Schema tổng quát — điều đoạn "Giới hạn"
 /// ở đầu file này vẫn từ chối làm, trừ đúng một ngoại lệ được đặt tên ở đây.</para>
 ///
-/// <para>🔴 <b>CÁI CÒN LẠI CHƯA KIỂM, nói tên chứ không để người đọc tự suy:</b> không có bộ kiểm nào cho
-/// <c>screenId</c>/<c>widget.id</c> trùng nhau, cho <see cref="ScreenLayout"/> có nằm trong dải
-/// <c>1..48</c> của schema, cho <c>bindings</c> có tham chiếu tới một <c>component</c> có thật, hay cho
-/// bất kỳ chuỗi enum nào (<c>theme</c>, <c>breakpoint</c>, <c>kind</c>, <c>tone</c>, <c>dataType</c>) là
-/// thành viên hợp lệ — <c>widget.id</c>'s OWN pattern included, dù <c>screenId</c>'s giờ được kiểm (đoạn
-/// ngay trên). Những thứ ấy schema thi hành và <c>web/contract-tests/validate.mjs</c> chạy; ở phía
-/// .NET chúng KHÔNG được thi hành.</para>
+/// <para>🔴 <b>LOẠI LUẬT THỨ TƯ — KHOẢNG GIÁ TRỊ (RANGE), HAI TRƯỜNG, THÊM Ở WS-HMI-2 TASK 3 FIX ROUND 1
+/// (review, ruling đóng dải <c>layout.cols</c>/<c>layout.rows</c>).</b> Ngoài luật ĐỊNH DẠNG ở trên (đúng
+/// một trường, <c>screenId</c>), <see cref="Validate(HmiScreenDocument)"/> giờ kiểm một luật thứ tư, cũng
+/// hẹp có chủ ý: <c>layout.cols</c> và <c>layout.rows</c> phải nằm trong <c>[1..48]</c> — dải
+/// <c>contracts/hmi-screen.schema.json</c> → <c>$defs.layout.properties.cols/rows</c> đã đóng băng, khớp
+/// nguyên văn (<c>minimum: 1, maximum: 48</c>). <b>Vì sao ĐÚNG HAI trường này và không hơn — đo trên một
+/// trình duyệt thật, không suy đoán:</b> ba luật range-hoặc-enum khác đo được trên cùng tài liệu
+/// (<c>rect.col</c>/<c>row</c> âm, <c>rect.colSpan</c>/<c>rowSpan</c> bằng 0, <c>widget.kind</c> lạ) đều
+/// ĐÃ có một đường thoát an toàn phía web — <c>clampRectToLayout</c> kẹp <c>rect</c> về trong lưới và phát
+/// cảnh báo, một <c>kind</c> lạ hạ cấp thành một placeholder có tên (<c>role="alert"</c>) — nên cả ba đều
+/// SAI với schema nhưng KHÔNG câm lặng. <c>cols</c>/<c>rows</c> ngoài dải là trường hợp DUY NHẤT không có
+/// đường thoát: không gì kẹp được bản thân LAYOUT, vì <c>clampRectToLayout</c> và mọi phép kẹp khác đều
+/// chặn theo layout ĐÃ KHAI — một layout khai <c>cols: 999</c> làm mọi <c>rect</c> hoá ra "trong dải".
+/// Đóng đúng hai trường này là chỗ mua được nhiều nhất với rủi ro thấp nhất; <c>rect</c> và <c>kind</c> để
+/// nguyên, có chủ ý, vì cả hai đã suy biến CÓ NHÌN THẤY được — mở rộng sang chúng là trôi dần về một bộ
+/// validate JSON Schema tổng quát, đúng điều đoạn "Giới hạn" ở đầu file từ chối làm.</para>
+///
+/// <para>🔴 <b>VÌ SAO LUẬT NÀY KHÔNG CÓ CORPUS NÀO ĐỂ PHÁ, KHÁC LUẬT PATTERN CỦA <c>screenId</c> Ở TASK 2
+/// — đo lại trên một hàng thật, không suy diễn từ luật kia.</b> Luật pattern của <c>screenId</c> (Task 2)
+/// từng khoá cứng MỌI lần <c>rollback</c> của một hàng đã ghi trước ngày luật ấy có mặt, vì
+/// <c>HmiScreenStore.RollbackAsync</c> hồi đó gọi lại <c>HmiScreenStore.PutAsync</c> (re-
+/// validate nội dung cũ theo luật hôm nay). Từ WS-HMI-2 Task 2 fix round 2, <c>RollbackAsync</c> nối thêm
+/// qua <c>AppendVersionAsync</c>, KHÔNG gọi <see cref="ContractInvariants"/> — nên một hàng cũ mang
+/// <c>cols: 999</c> (ghi trước luật này có mặt, hoặc ghi thẳng bằng SQL bỏ qua mọi cửa .NET) vẫn
+/// <c>rollback</c> được sau khi luật này có mặt, y hệt cách một <c>screenId</c> hoa/thường sai vẫn
+/// <c>rollback</c> được sau Task 2. Đo trên hàng thật, không giả định:
+/// <c>HmiScreenStoreTests.RollbackAsync_RestoresAPreExistingRow_EvenIfItsLayoutColsWouldFailTodaysContractInvariantsRange</c>
+/// seed một hàng <c>cols: 999</c> bằng SQL thô, rồi <c>rollback</c> nó — thành công, nội dung nguyên vẹn.
+/// Một <c>PutAsync</c> MỚI với cùng <c>cols: 999</c> vẫn bị từ chối (kiểm soát âm, luật không bị nới cho
+/// tác giả mới).</para>
+///
+/// <para>📎 🔴 <b>"...CHO <see cref="ScreenLayout"/> CÓ NẰM TRONG DẢI 1..48 CỦA SCHEMA..." — RÚT MỘT
+/// PHẦN, WS-HMI-2 Task 3 fix round 1, giữ nguyên văn đoạn trước.</b> Đoạn "CÁI CÒN LẠI CHƯA KIỂM" từng đọc
+/// (giữ nguyên văn): <i>"không có bộ kiểm nào cho <c>screenId</c>/<c>widget.id</c> trùng nhau, cho
+/// <see cref="ScreenLayout"/> có nằm trong dải <c>1..48</c> của schema, cho <c>bindings</c> có tham chiếu
+/// tới một <c>component</c> có thật, hay cho bất kỳ chuỗi enum nào (<c>theme</c>, <c>breakpoint</c>,
+/// <c>kind</c>, <c>tone</c>, <c>dataType</c>) là thành viên hợp lệ — <c>widget.id</c>'s OWN pattern
+/// included, dù <c>screenId</c>'s giờ được kiểm (đoạn ngay trên)."</i> Đúng tới hết <c>be181938</c>. SAI
+/// MỘT PHẦN từ đợt sửa này: <c>layout.cols</c>/<c>layout.rows</c> giờ được kiểm (xem "LOẠI LUẬT THỨ TƯ"
+/// ngay dưới) — nhưng CHỈ hai trường ấy, không phải cả <see cref="ScreenLayout"/>. <b>Vẫn CHƯA kiểm, nói
+/// ra để không lệch sang cực kia:</b> <c>screenId</c>/<c>widget.id</c> trùng nhau, <c>bindings</c> tham
+/// chiếu tới một <c>component</c> có thật, bất kỳ chuỗi enum nào (<c>theme</c>, <c>breakpoint</c>,
+/// <c>kind</c>, <c>tone</c>, <c>dataType</c>), và <c>rect</c> có nằm trong lưới đã khai (<c>col</c>/
+/// <c>row</c> không âm, <c>colSpan</c>/<c>rowSpan</c> ≥ 1). Những thứ ấy schema thi hành và
+/// <c>web/contract-tests/validate.mjs</c> chạy; ở phía .NET chúng KHÔNG được thi hành — WS-HMI-2 Task 3's
+/// review đo trực tiếp trên một trình duyệt thật rằng ba trong bốn nhóm range-invalid đo được
+/// (<c>rect</c> âm, <c>colSpan</c>/<c>rowSpan</c> bằng 0, <c>kind</c> lạ) đã có đường thoát AN TOÀN phía
+/// web (kẹp lại và cảnh báo, hoặc hạ cấp thành một placeholder có tên); duy <c>cols</c>/<c>rows</c> ngoài
+/// dải là câm lặng — đó là luật thứ tư vừa đóng.</para>
 ///
 /// <para>📎 🔴 <b>"VÀ KHÔNG CÓ STORE .NET NÀO GHI <c>HmiScreenDocument</c>… CHƯA CÓ AI GỌI" — RÚT
 /// WS-HMI-2 Task 1, giữ nguyên văn.</b> Câu ngay trên (bản trước đoạn này) đọc: <i>"Và không có store
@@ -188,6 +230,14 @@ public static class ContractInvariants
     /// biên nào khác (một ký tự, khoảng trắng đầu/cuối/hyphen đôi, chỉ số, 512 ký tự, chuỗi rỗng — xem
     /// <c>ContractInvariantsTests</c> cho từng biên được đo lại sau khi sửa).</para></summary>
     private static readonly Regex ScreenIdPattern = new("^[a-z0-9-]+\\z", RegexOptions.Compiled);
+
+    /// <summary>WS-HMI-2 Task 3 fix round 1 — LOẠI LUẬT THỨ TƯ (xem doc-comment đầu file). Ghim với
+    /// <c>hmi-screen.schema.json</c> → <c>$defs.layout.properties.cols</c>/<c>rows</c>, khớp nguyên văn
+    /// (<c>minimum: 1, maximum: 48</c>) cho CẢ HAI trường.</summary>
+    private const int LayoutDimensionMin = 1;
+
+    /// <summary>Xem <see cref="LayoutDimensionMin"/>.</summary>
+    private const int LayoutDimensionMax = 48;
 
     /// <summary>Kiểm một <see cref="TagNamespaceDocument"/>: (1) mọi tag <c>access == "rw"</c>
     /// phải có <see cref="TagDescriptor.PolicyAction"/> (luật §5); (2) mọi <see cref="TagDescriptor.Path"/>
@@ -720,9 +770,26 @@ public static class ContractInvariants
         if (string.IsNullOrWhiteSpace(doc.Theme))
             v.Add("theme: thiếu trường bắt buộc (null/rỗng) — bắt buộc phải có");
         if (doc.Layout is null)
+        {
             v.Add("layout: thiếu trường bắt buộc (null) — một màn hình không khai lưới đặt widget không phải tài liệu hợp lệ");
-        else if (string.IsNullOrWhiteSpace(doc.Layout.Breakpoint))
-            v.Add("layout: breakpoint thiếu (null/rỗng) — bắt buộc phải có");
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(doc.Layout.Breakpoint))
+                v.Add("layout: breakpoint thiếu (null/rỗng) — bắt buộc phải có");
+
+            // WS-HMI-2 Task 3 fix round 1 — LOẠI LUẬT THỨ TƯ (xem doc-comment đầu file). cols/rows ngoài
+            // [1..48] là trường hợp DUY NHẤT trong bốn nhóm range-invalid đo được mà runtime KHÔNG có
+            // đường thoát an toàn cho: rect âm/colSpan 0/kind lạ đều kẹp-và-cảnh-báo hoặc hạ cấp có tên
+            // phía web; một layout sai thì không gì kẹp được chính LAYOUT, vì mọi phép kẹp khác chặn theo
+            // layout ĐÃ KHAI.
+            if (doc.Layout.Cols < LayoutDimensionMin || doc.Layout.Cols > LayoutDimensionMax)
+                v.Add($"layout: cols={doc.Layout.Cols} ngoài dải bắt buộc [{LayoutDimensionMin}..{LayoutDimensionMax}] mà " +
+                      "contracts/hmi-screen.schema.json đã đóng băng cho trường này");
+            if (doc.Layout.Rows < LayoutDimensionMin || doc.Layout.Rows > LayoutDimensionMax)
+                v.Add($"layout: rows={doc.Layout.Rows} ngoài dải bắt buộc [{LayoutDimensionMin}..{LayoutDimensionMax}] mà " +
+                      "contracts/hmi-screen.schema.json đã đóng băng cho trường này");
+        }
 
         if (doc.Widgets is null)
         {

@@ -1161,4 +1161,76 @@ public class ContractInvariantsTests
 
         Assert.Single(violations, v => v.Contains("screenId", StringComparison.OrdinalIgnoreCase));
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // WS-HMI-2 Task 3 fix round 1 (review, ruling) — LOẠI LUẬT THỨ TƯ: layout.cols/rows ∈ [1..48]. Before
+    // this round, measured over a real browser: cols:999 mis-renders SILENTLY (every grid track computes
+    // to 0px, a widget past the first few columns lands outside the host with no console warning and no
+    // clamp — clampRectToLayout clamps a rect against the DECLARED layout, and a layout of 999 makes every
+    // rect "in range"). The other three range-invalid shapes (negative rect, colSpan/rowSpan 0, an unknown
+    // kind) all already degrade visibly on the web side and are deliberately left unenforced here — this
+    // is the one range violation with no safety net anywhere else in the stack.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(999)]   // the review's own reproduction
+    [InlineData(49)]    // one past the boundary
+    [InlineData(0)]     // below the minimum
+    [InlineData(-5)]    // negative
+    public void A_layout_Cols_Outside_1_48_Is_A_Violation(int cols)
+    {
+        var doc = Screen(new ScreenWidget("w1", "readout", Rect())) with { Layout = new ScreenLayout(cols, 8, "panel") };
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("cols", StringComparison.OrdinalIgnoreCase) &&
+                                          v.Contains(cols.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(999)]
+    [InlineData(49)]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public void A_layout_Rows_Outside_1_48_Is_A_Violation(int rows)
+    {
+        var doc = Screen(new ScreenWidget("w1", "readout", Rect())) with { Layout = new ScreenLayout(12, rows, "panel") };
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("rows", StringComparison.OrdinalIgnoreCase) &&
+                                          v.Contains(rows.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal));
+    }
+
+    /// <summary>The positive control this property needs, at BOTH ends of the frozen schema's closed
+    /// interval — a regex-style off-by-one (`&lt;=`/`&gt;=` swapped for `&lt;`/`&gt;`) would reject a
+    /// legitimately boundary-valued layout while this test's siblings above stayed green, since they only
+    /// probe values already outside the range.</summary>
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(48, 48)]
+    [InlineData(1, 48)]
+    [InlineData(48, 1)]
+    public void Control_Layout_Cols_And_Rows_At_The_1_And_48_Boundaries_Are_Not_Violations(int cols, int rows)
+    {
+        var doc = Screen(new ScreenWidget("w1", "readout", Rect())) with { Layout = new ScreenLayout(cols, rows, "panel") };
+
+        Assert.Empty(ContractInvariants.Validate(doc));
+    }
+
+    /// <summary>No interaction with §5's conditional rules, measured rather than assumed — a document
+    /// carrying BOTH an out-of-range layout AND a §5 policyAction gap must report BOTH violations, not have
+    /// one gate silently swallow the other (the two live in separate branches of <c>Validate</c>, but nothing
+    /// short of running them together proves neither short-circuits the other).</summary>
+    [Fact]
+    public void A_layout_Range_Violation_And_A_Section5_Violation_On_One_Document_Both_Report()
+    {
+        var doc = Screen(new ScreenWidget("b1", "command-button", Rect(), PolicyAction: null))
+            with { Layout = new ScreenLayout(999, 8, "panel") };
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Contains(violations, v => v.Contains("cols", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(violations, v => v.Contains("policyAction", StringComparison.Ordinal));
+    }
 }

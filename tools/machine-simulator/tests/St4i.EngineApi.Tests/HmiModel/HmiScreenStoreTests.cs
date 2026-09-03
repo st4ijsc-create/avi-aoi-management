@@ -298,6 +298,50 @@ public class HmiScreenStoreTests : IDisposable
         Assert.Empty(await store.ListScreenIdsAsync());
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // WS-HMI-2 Task 3 fix round 1 (review, ruling) — ContractInvariants.Validate(HmiScreenDocument) gained
+    // a layout.cols/rows range rule this round. The reviewer's own claim ("no corpus it can brick, because
+    // RollbackAsync now goes through AppendVersionAsync, which validates nothing") is asserted to be
+    // verified, not merely relied on — these two tests measure it on a REAL legacy-invalid row, mirroring
+    // HIGH-1's own screenId-pattern pair above exactly.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RollbackAsync_RestoresAPreExistingRow_EvenIfItsLayoutColsWouldFailTodaysContractInvariantsRange()
+    {
+        // Does NOT measure the decorator's canonical-miss fallback — same scope note as the screenId-
+        // pattern sibling above. Seeds cols:999 (the review's own reproduction — every grid track renders
+        // at 0px and a widget past the first few columns lands outside the host, silently) at the SAME
+        // spelling it is rolled back at, bypassing ContractInvariants entirely, the only way to reproduce a
+        // row written before this round's range rule existed (or by direct SQL, bypassing every C# door).
+        var store = NewStore();
+        var legacy = Screen("legacy-layout", "legacy title") with { Layout = new ScreenLayout(999, 8, "panel") };
+        await SeedRawRowBypassingContractInvariantsAsync(store.DbPath, legacy, version: 1);
+
+        var newVersion = await store.RollbackAsync("legacy-layout", toVersion: 1);
+
+        Assert.Equal(2, newVersion);
+        var restored = await store.GetAsync("legacy-layout");
+        Assert.Equal("legacy title", restored!.Title);
+        Assert.Equal(999, restored.Layout.Cols);
+        var versions = await store.ListVersionsAsync("legacy-layout");
+        Assert.Equal(new[] { 1, 2 }, versions.Select(v => v.Version).ToArray());
+    }
+
+    [Fact]
+    public async Task PutAsync_StillRejectsANewDocumentWithLayoutColsAbove48_TheRangeRuleFixDoesNotWeakenThis()
+    {
+        // The negative control the range rule needs, same shape as the screenId-pattern negative control
+        // above: whatever makes rollback survive a rule introduced after the row was written must NOT
+        // weaken validation for NEW authorship through the same door.
+        var store = NewStore();
+        var freshlyAuthored = Screen("legacy-layout", "brand new") with { Layout = new ScreenLayout(999, 8, "panel") };
+
+        await Assert.ThrowsAsync<ContractViolationException>(() => store.PutAsync(freshlyAuthored));
+
+        Assert.Empty(await store.ListScreenIdsAsync());
+    }
+
     /// <summary>Writes a version row and moves the current-version pointer by RAW SQLite INSERT, bypassing
     /// <see cref="HmiScreenStore.PutAsync"/> — and therefore <see cref="ContractInvariants"/> — entirely.
     /// Mirrors <see cref="HmiScreenStore"/>'s own migration schema (<c>screens</c>/<c>screen_current</c>)

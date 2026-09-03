@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
@@ -287,6 +288,14 @@ public sealed class HmiScreenEndpointsTests
             Assert.Equal(HttpStatusCode.NotFound, rollback.StatusCode);
             var error = await rollback.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
             Assert.False(string.IsNullOrWhiteSpace(error!.Error));
+            // The store's own authored sentence survives (names the real version numbers)...
+            Assert.Contains("99", error.Error, StringComparison.Ordinal);
+            Assert.Contains("1", error.Error, StringComparison.Ordinal);
+            // ...but WS-HMI-2 Task 3 fix round 1 (review LOW-4) strips .NET's own runtime-appended
+            // framing — a raw ArgumentOutOfRangeException.Message reads like a leaked stack-trace
+            // fragment (measured live: ".\r\nActual value was 99." tacked on the end).
+            Assert.DoesNotContain("Parameter", error.Error, StringComparison.Ordinal);
+            Assert.DoesNotContain("Actual value", error.Error, StringComparison.Ordinal);
         }
 
         // The current version pointer did not move — still version 1, still the only row.
@@ -660,5 +669,222 @@ public sealed class HmiScreenEndpointsTests
         // P2 — the contended write left nothing behind either.
         using var get = await eng.GetAsync("/v1/screens/busy-screen");
         Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // WS-HMI-2 Task 3 fix round 1 (review MED-1) — the route/body screenId-mismatch guard compares via
+    // ScreenIdentity.SameIdentity (Ordinal, no case fold), and this task's own review measured that
+    // widening it to StringComparison.OrdinalIgnoreCase leaves all 52 tests from round 0 green: a
+    // case-differing body silently stopped being a 409 and became a 400 §5 pattern violation instead —
+    // WS-HMI-0b HIGH-1's "two identities were named" signal lost with no red test. Case-differing was the
+    // one gap in the mismatch coverage: every existing test used either the SAME spelling or a WHOLLY
+    // DIFFERENT id, never two spellings of what OrdinalIgnoreCase would call "the same" identity.
+    // ═════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Put_WithScreenIdInBodyDifferingOnlyByCaseFromRoute_Gets409_NotACasefoldedMatch()
+    {
+        var (factory, _, engineerC, _) = await NewFactoryWithUsersAsync("case-mismatch");
+        await using var _f = factory;
+        using var eng = engineerC;
+
+        // A body ScreenId that differs from the route ONLY in case. screenId identity does not fold case
+        // (unlike machine-code identity) — see CanonicalScreenStore.cs's own doc comment for the measured
+        // reason — so this must be refused as a genuine mismatch, exactly like a wholly different id would
+        // be, not silently treated as "the same screen, different spelling".
+        var body = Screen("case-line", "x") with { ScreenId = "CASE-LINE" };
+
+        using var put = await eng.PutAsJsonAsync("/v1/screens/case-line", body, HmiContractJson.Options);
+
+        Assert.Equal(HttpStatusCode.Conflict, put.StatusCode);
+        var error = await put.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
+        Assert.Contains("CASE-LINE", error!.Error, StringComparison.Ordinal);
+        Assert.Contains("case-line", error.Error, StringComparison.Ordinal);
+
+        // Nothing was written under either spelling.
+        using var get = await eng.GetAsync("/v1/screens/case-line");
+        Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // WS-HMI-2 Task 3 fix round 1 (review MED-2) — rollback's WidgetCount is read from the CONTENT of the
+    // version just appended. The review measured TWO ways this could be unpinned and stay green: (M11)
+    // reading a HARDCODED version instead of the one RollbackAsync actually returned, and (M12) a hardcoded
+    // constant. Both survived because the round-0 rollback test happened to roll back TO version 1 — the
+    // one number a hardcoded read could coincidentally match — and rolled a 1-widget document back onto a
+    // 1-widget document, so the two candidate widget counts were indistinguishable by construction. This
+    // test uses THREE versions with THREE different widget counts, none of them 1, and rolls back to the
+    // MIDDLE one — so a hardcoded "read version 1" answers wrong, a hardcoded "-1" answers wrong, and only
+    // "read the CONTENT of the version actually restored" answers right.
+    // ═════════════════════════════════════════════════════════════════════
+
+    private static HmiScreenDocument ScreenWithWidgets(string screenId, string title, int widgetCount) => new(
+        1, screenId, title, null, "isa101", new ScreenLayout(12, 8, "panel"),
+        Enumerable.Range(0, widgetCount).Select(i => new ScreenWidget($"w{i}", "label", Rect(row: i))).ToArray());
+
+    [Fact]
+    public async Task Rollback_ToANonLatestVersion_WidgetCountReflectsTheRestoredContent()
+    {
+        var (factory, _, engineerC, operatorClient) = await NewFactoryWithUsersAsync("rollback-count");
+        await using var _f = factory;
+        using var eng = engineerC;
+        using var op = operatorClient;
+
+        await PutOkAsync(eng, "wc-line", ScreenWithWidgets("wc-line", "v1", widgetCount: 1));
+        await PutOkAsync(eng, "wc-line", ScreenWithWidgets("wc-line", "v2", widgetCount: 2));
+        await PutOkAsync(eng, "wc-line", ScreenWithWidgets("wc-line", "v3", widgetCount: 3));
+
+        // Roll back to version 2 (2 widgets) — appended as version 4. A hardcoded "read version 1" would
+        // report 1; a hardcoded constant would report something fixed; only the real content of version 2
+        // reports 2.
+        using var rollback = await eng.PostAsJsonAsync(
+            "/v1/screens/wc-line/rollback", new RollbackRequestDto(2), HmiContractJson.Options);
+        Assert.Equal(HttpStatusCode.OK, rollback.StatusCode);
+        var result = await rollback.Content.ReadFromJsonAsync<PutScreenResultDto>(HmiContractJson.Options);
+        Assert.Equal(4, result!.Version);
+        Assert.Equal(2, result.WidgetCount);
+
+        using var get = await op.GetAsync("/v1/screens/wc-line");
+        var back = await get.Content.ReadFromJsonAsync<HmiScreenDocument>(HmiContractJson.Options);
+        Assert.Equal("v2", back!.Title);
+        Assert.Equal(2, back.Widgets.Count);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // WS-HMI-2 Task 3 fix round 1 (review LOW-1) — PUT with no screenId in the body fills it from the
+    // route and stores a real document at 200. The review measured that deleting this fill-in leaves round-
+    // 0's suite green, because the P1 theory's own doc comment declares its screenId-null/blank rows
+    // "accept 200 or 400" — an intentionally loose assertion for a sweep whose job is "never 500", not a
+    // pin of this specific behaviour. Pinned directly here.
+    // ═════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Put_WithNoScreenIdInTheBody_Gets200_AndIsStoredUnderTheRouteId()
+    {
+        var (factory, _, engineerC, operatorClient) = await NewFactoryWithUsersAsync("noid");
+        await using var _f = factory;
+        using var eng = engineerC;
+        using var op = operatorClient;
+
+        const string body = """
+            {"schemaVersion":1,"title":"filled from route","theme":"isa101",
+             "layout":{"cols":12,"rows":8,"breakpoint":"panel"},
+             "widgets":[{"id":"w1","kind":"label","rect":{"col":0,"row":0,"colSpan":2,"rowSpan":1}}]}
+            """;
+
+        using (var put = await eng.PutAsync("/v1/screens/noid-line",
+                   new StringContent(body, Encoding.UTF8, "application/json")))
+        {
+            Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+            var result = await put.Content.ReadFromJsonAsync<PutScreenResultDto>(HmiContractJson.Options);
+            Assert.Equal("noid-line", result!.ScreenId);
+            Assert.Equal(1, result.Version);
+        }
+
+        using var get = await op.GetAsync("/v1/screens/noid-line");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        var back = await get.Content.ReadFromJsonAsync<HmiScreenDocument>(HmiContractJson.Options);
+        Assert.Equal("noid-line", back!.ScreenId);
+        Assert.Equal("filled from route", back.Title);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // WS-HMI-2 Task 3 fix round 1 (review MED-3) — SqliteErrorCode == 5 (SQLITE_BUSY) specificity, direct.
+    // The review's finding: widening the predicate to `>= 0` (or any wider set) left the HTTP-level busy
+    // test green, because that test only proves "busy → 503"; nothing on the HTTP surface can prove
+    // "not-busy → not-503" without corrupting a real database file on demand. IsWriteLockBusy is now
+    // internal specifically so this can be asserted directly, against constructed SqliteException values —
+    // Microsoft.Data.Sqlite.SqliteException(string, int) and (string, int, int) are public constructors,
+    // confirmed by a standalone compile probe before writing this test.
+    // ═════════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData(5, true)]    // SQLITE_BUSY — the one code this predicate must accept.
+    [InlineData(19, false)]  // SQLITE_CONSTRAINT — HmiTagEndpoints.IsPathAlreadyClaimed's code, a DIFFERENT hazard.
+    [InlineData(11, false)]  // SQLITE_CORRUPT — the exact "laundered into a transient status" hazard the review named.
+    [InlineData(8, false)]   // SQLITE_READONLY — named alongside SQLITE_CORRUPT in the review's finding.
+    [InlineData(0, false)]   // SQLITE_OK — the boundary a `>= 0` mutation would wrongly accept.
+    public void IsWriteLockBusy_IsTrueOnlyForSqliteErrorCode5(int sqliteErrorCode, bool expected)
+    {
+        var ex = new SqliteException("probe", sqliteErrorCode);
+
+        Assert.Equal(expected, HmiScreenEndpoints.IsWriteLockBusy(ex));
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // WS-HMI-2 Task 3 fix round 1 (review LOW-3) — the post-commit GetAsync inside RollbackAsync sits
+    // OUTSIDE both catches. The rollback itself has already committed by the time that read runs; a throw
+    // from it must not turn a write that succeeded into a response reporting failure. Not reachable through
+    // the real store in normal operation (the row RollbackAsync just appended is always readable a moment
+    // later) — this is the ONE double in this file, and deliberately so: proving the wrap actually works
+    // requires a store that fails exactly where the real one cannot be made to on demand. Calls the handler
+    // DIRECTLY (internal, this assembly has InternalsVisibleTo — see AssemblyInfo.cs) rather than through
+    // HTTP: no factory, no auth pipeline, because the property under test is entirely inside this one
+    // method and everything else in this file already proves the real store/pipeline/decorator end to end.
+    // ═════════════════════════════════════════════════════════════════════
+
+    private sealed class RollbackSucceedsButReadThrowsStore : IHmiScreenStore
+    {
+        public Task<HmiScreenDocument?> GetAsync(string screenId, int? version = null, CancellationToken ct = default) =>
+            throw new InvalidOperationException("simulated post-commit read failure");
+
+        public Task<int> PutAsync(HmiScreenDocument doc, CancellationToken ct = default) =>
+            throw new NotSupportedException("not exercised by this test");
+
+        public Task<IReadOnlyList<string>> ListScreenIdsAsync(CancellationToken ct = default) =>
+            throw new NotSupportedException("not exercised by this test");
+
+        public Task<IReadOnlyList<ScreenVersionInfo>> ListVersionsAsync(string screenId, CancellationToken ct = default) =>
+            throw new NotSupportedException("not exercised by this test");
+
+        // The rollback itself succeeds — this is what "already committed" means for this test.
+        public Task<int> RollbackAsync(string screenId, int toVersion, CancellationToken ct = default) =>
+            Task.FromResult(7);
+    }
+
+    [Fact]
+    public async Task Rollback_WhenThePostCommitReadThrows_StillReturns200WithTheRealVersion_NotA500()
+    {
+        var store = new RollbackSucceedsButReadThrowsStore();
+
+        var result = await HmiScreenEndpoints.RollbackAsync(
+            "whatever-screen", new RollbackRequestDto(1), store, CancellationToken.None);
+
+        var ok = Assert.IsType<Ok<PutScreenResultDto>>(result);
+        Assert.NotNull(ok.Value);
+        // The version RollbackAsync actually returned survives — the fact that matters most, even though
+        // the read that would have named the widget count failed.
+        Assert.Equal(7, ok.Value!.Version);
+        Assert.Equal(0, ok.Value.WidgetCount);
+    }
+
+    [Fact]
+    public async Task Rollback_WhenThePostCommitReadIsCancelled_StillPropagatesTheCancellation()
+    {
+        // The negative control LOW-3's fix needs: OperationCanceledException must NOT be swallowed into a
+        // degraded 200 the way every other exception is — a cancelled caller gets no response at all, same
+        // as every other cancelled request in this codebase.
+        var store = new ThrowsOperationCanceledOnGetStore();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            HmiScreenEndpoints.RollbackAsync("whatever-screen", new RollbackRequestDto(1), store, CancellationToken.None));
+    }
+
+    private sealed class ThrowsOperationCanceledOnGetStore : IHmiScreenStore
+    {
+        public Task<HmiScreenDocument?> GetAsync(string screenId, int? version = null, CancellationToken ct = default) =>
+            throw new OperationCanceledException("simulated caller-went-away");
+
+        public Task<int> PutAsync(HmiScreenDocument doc, CancellationToken ct = default) =>
+            throw new NotSupportedException("not exercised by this test");
+
+        public Task<IReadOnlyList<string>> ListScreenIdsAsync(CancellationToken ct = default) =>
+            throw new NotSupportedException("not exercised by this test");
+
+        public Task<IReadOnlyList<ScreenVersionInfo>> ListVersionsAsync(string screenId, CancellationToken ct = default) =>
+            throw new NotSupportedException("not exercised by this test");
+
+        public Task<int> RollbackAsync(string screenId, int toVersion, CancellationToken ct = default) =>
+            Task.FromResult(7);
     }
 }
