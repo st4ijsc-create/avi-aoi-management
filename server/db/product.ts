@@ -43,6 +43,11 @@ import { GENESIS_HASH } from "../utils/genealogyChain";
 // `shared/pointLimitSpec.ts`. `updateMeasurementPointLimitsBatch` whitelist
 // theo mảng này, không chép tay danh sách cột.
 import { APPROVAL_LIMIT_FIELDS } from "@shared/pointLimitSpec";
+// BG-113 (review Khối C lượt 9, I-2) — phòng thủ KÉP với gate cùng tên ở router
+// (productRouters.ts `setLimitsBatch`): hàm này là lớp GHI THẬT (FOR UPDATE
+// trong transaction) nên không tin một mình lớp gọi, đúng kỷ luật đã áp cho
+// APPROVAL_LIMIT_FIELDS whitelist ở dưới.
+import { assertCapGioiHanHopLe, gopCapGioiHanDonGian } from "../utils/measurementPointLimitGate";
 
 // ============ PRODUCT MODEL FUNCTIONS ============
 export async function createProductModel(data: InsertProductModel) {
@@ -2086,6 +2091,18 @@ export async function updateMeasurementPointLimitsBatch(
         );
       }
 
+      // ★★★ BG-113 (review Khối C lượt 9, I-2) — PHÒNG THỦ KÉP với gate cùng
+      // tên ở router (`productRouters.ts setLimitsBatch`): `previous` ở đây là
+      // hàng đọc TRONG TRANSACTION (FOR UPDATE), sát thời điểm ghi hơn lượt đọc
+      // ở router — đúng kỷ luật "hàm này không tin một mình lớp gọi" đã áp cho
+      // whitelist `APPROVAL_LIMIT_FIELDS` ngay bên dưới.
+      assertCapGioiHanHopLe(
+        gopCapGioiHanDonGian(
+          { lowerLimit: previous.lowerLimit, upperLimit: previous.upperLimit, heightMin: previous.heightMin, heightMax: previous.heightMax },
+          { lowerLimit: rawFields.lowerLimit, upperLimit: rawFields.upperLimit, heightMin: rawFields.heightMin, heightMax: rawFields.heightMax },
+        ),
+      );
+
       // Snapshot PRE-edit state — mirror updateMeasurementPointDef 1:1 (cùng cột,
       // cùng thứ tự: đọc max(version) → stamp productPointsConfigVersion → insert).
       const [{ maxVersion }] = await tx
@@ -3928,6 +3945,53 @@ export function apDungVariantPatch<T extends object>(base: T, patchJson: unknown
     }
   }
   return { ...base, ...safe };
+}
+
+/**
+ * ★★★ BG-113/I-3 (review Khối C lượt 9) — snapshot TRƯỚC MỘT LƯỢT OVERRIDE biến
+ * thể, ghi vào CHÍNH bảng `measurement_point_versions` mà snapshot-gate BG-97
+ * đọc cho base point-def (`pointDefId = basePointDefId`). Trước bản vá này,
+ * `productVariantRouter.setOverride` đổi giới hạn (qua `patchJson`) mà KHÔNG để
+ * lại hàng lịch sử nào — snapshot-gate không thể tái dựng lượt override TRƯỚC
+ * một lần sửa, một bo cũ luôn bị chấm theo override MỚI (hạ oan, cùng lớp lỗi
+ * C-1 nhưng ở nguồn giới hạn THỨ HAI).
+ *
+ * ⚠ PHẠM VI THẬT — TRAIL, CHƯA phải tích hợp snapshot-gate ĐẦY ĐỦ theo variant:
+ * `resolveGateLimitsForBoard`/`giaiGioiHanTaiLucDo` tái dựng theo `pointDefId`
+ * CHUNG (không phân biệt `variantId` — history của base point và history của
+ * MỌI override trên nó SỐNG CHUNG một chuỗi `version` tăng dần). Một hàng do
+ * hàm này ghi VẪN được cơ chế đó ĐỌC (đúng bảng, đúng `pointDefId`), nhưng nó
+ * không tự biết "áp dụng lại override này CHỈ cho đúng variant đó" — dùng
+ * `snapshotJson` để CHỨNG MINH giới hạn LÚC ĐÓ nếu có người cần tra tay, KHÔNG
+ * khai đây là snapshot-gate hoàn chỉnh cho variant (đúng như review lượt 9 đã
+ * khai "rủi ro còn lại I-3" ngay cả SAU bản vá — không giấu giới hạn của nó).
+ */
+export async function recordVariantOverrideVersion(
+  basePointDefId: number,
+  hieuLucTruocOverride: Record<string, unknown>,
+  options?: { changedBy?: number | null; changeReason?: string | null },
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError();
+  const stampConfigVersion = await measurementPointVersionsHasConfigVersionColumn(db);
+  const [{ maxVersion }] = await db
+    .select({ maxVersion: sql<number>`COALESCE(MAX(${measurementPointVersions.version}), 0)` })
+    .from(measurementPointVersions)
+    .where(eq(measurementPointVersions.pointDefId, basePointDefId));
+  const nextVersion = Number(maxVersion ?? 0) + 1;
+  const versionRow: Record<string, unknown> = {
+    pointDefId: basePointDefId,
+    version: nextVersion,
+    snapshotJson: hieuLucTruocOverride,
+    changedBy: options?.changedBy ?? null,
+    changeReason: options?.changeReason ?? "productVariant.setOverride",
+  };
+  // `productPointsConfigVersion` (0282) khai "phiên bản SẢN PHẨM lúc snapshot" —
+  // KHÔNG có ý nghĩa rõ ràng ở đây (override thuộc VARIANT, không phải bump toàn
+  // sản phẩm) ⇒ để null có chủ ý: reconstruction rơi về nhánh INSTANT (P1), an
+  // toàn, KHÔNG khoá nhầm VERSION-EXACT (0282) vào một con số không đúng nghĩa.
+  if (stampConfigVersion) versionRow.productPointsConfigVersion = null;
+  await db.insert(measurementPointVersions).values(versionRow as typeof measurementPointVersions.$inferInsert);
 }
 
 /**

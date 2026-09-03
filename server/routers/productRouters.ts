@@ -38,7 +38,7 @@ import {
 } from "../services/thresholdGovernanceService";
 // Task 8 Khối C (QĐ-5) — `touchesLimits` SUY từ POINT_LIMIT_SPEC, MỘT hàm dùng
 // chung với `measurementPointImport.ts` (xem docblock trong file đó).
-import { touchesApprovalLimitFields } from "../utils/measurementPointLimitGate";
+import { touchesApprovalLimitFields, assertCapGioiHanHopLe, gopCapGioiHanDonGian } from "../utils/measurementPointLimitGate";
 // Doc 31 MP1/PM6 — BOM-driven componentCode backfill (lights up Pareto-by-package).
 import { backfillComponentCodesFromBom } from "../services/componentLinkBackfill";
 // Doc 31 MP3 (WB-2) — __UNMAPPED__ unmatched-rate metric + remap helpers.
@@ -1383,6 +1383,19 @@ export const measurementPointRouter = router({
       data.lowerLimit = legacyLimits.lowerLimit;
       data.upperLimit = legacyLimits.upperLimit;
 
+      // ★★★ BG-113 (review Khối C lượt 9, I-2) — khoảng RỖNG (lowerLimit >
+      // upperLimit, hoặc heightMin > heightMax) làm 100% trị đo của điểm đó
+      // TRƯỢT (`pointResultEvaluator.ts`, hai vế min/max ĐỘC LẬP). Kiểm trên
+      // giá trị ĐÃ MERGE (legacyLimits — SAU derive tolerance-mode, đúng cái sẽ
+      // ghi xuống DB — KHÔNG kiểm `rest.lowerLimit`/`rest.upperLimit` một mình:
+      // patch chỉ gửi upperLimit mới thấp hơn lowerLimit HIỆN CÓ vẫn phải chặn).
+      assertCapGioiHanHopLe({
+        lowerLimit: legacyLimits.lowerLimit,
+        upperLimit: legacyLimits.upperLimit,
+        heightMin: rest.heightMin ?? existingPoint.heightMin ?? undefined,
+        heightMax: rest.heightMax ?? existingPoint.heightMax ?? undefined,
+      });
+
       // P1: derive legacy x/y/r from supplied geometry (for any shape).
       if (rest.geometry) {
         const anchor = deriveLegacyAnchor(rest.geometry as MeasurementGeometry);
@@ -1602,6 +1615,21 @@ export const measurementPointRouter = router({
           "SCOPE_MISMATCH",
           { entity: "measurementPoint", parent: "productModel" },
           "All items in measurementPoint.setLimitsBatch must belong to the same product model",
+        );
+      }
+
+      // ★★★ BG-113 (review Khối C lượt 9, I-2) — MỖI item kiểm trên khoảng ĐÃ
+      // MERGE với hàng HIỆN CÓ (`foundById`, đọc ở trên) — patch một item chỉ
+      // gửi `upperLimit` mới thấp hơn `lowerLimit` hiện có của ĐÚNG điểm đó vẫn
+      // phải chặn. Chạy TRƯỚC cửa duyệt ngưỡng (fail sớm, không tốn một lượt
+      // gọi `assertThresholdEditAllowed` cho một batch chắc chắn sẽ bị từ chối).
+      for (const item of items) {
+        const hienCo = foundById.get(item.id)!; // luôn có mặt — `missing` đã kiểm ở trên
+        assertCapGioiHanHopLe(
+          gopCapGioiHanDonGian(
+            { lowerLimit: hienCo.lowerLimit, upperLimit: hienCo.upperLimit, heightMin: hienCo.heightMin, heightMax: hienCo.heightMax },
+            { lowerLimit: item.lowerLimit, upperLimit: item.upperLimit, heightMin: item.heightMin, heightMax: item.heightMax },
+          ),
         );
       }
 

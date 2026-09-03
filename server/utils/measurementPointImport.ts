@@ -25,7 +25,7 @@ import {
 // APPROVAL_LIMIT_FIELDS, MỘT hàm dùng chung với `productRouters.ts` (trước bản
 // vá: bản chép tay ở ĐÂY thiếu 9/18 cột của POINT_LIMIT_SPEC + `unit` gán vô
 // điều kiện bên dưới → bulk-import trên sản phẩm live lách hàng đợi duyệt).
-import { touchesApprovalLimitFields } from "./measurementPointLimitGate";
+import { touchesApprovalLimitFields, loiCapGioiHanSauMerge } from "./measurementPointLimitGate";
 
 export const LEGACY_MEASUREMENT_TYPES = [
   "DIMENSION",
@@ -142,6 +142,14 @@ export interface BuildInsertResult {
   row: InsertMeasurementPointDef;
   /** True when limit-bearing fields were stripped because the product is live (gate). */
   limitsStripped: boolean;
+  /**
+   * BG-113 (review Khối C lượt 9, I-2) — set khi `lowerLimit > upperLimit` và/hoặc
+   * `heightMin > heightMax` bị GATE strip (chỉ cặp vi phạm, không phải cả hàng —
+   * mirror hành vi `limitsStripped` cho SẢN PHẨM LIVE, nhưng ở đây là vì DỮ LIỆU
+   * SAI, không phải vì lifecycle). `undefined` khi khoảng hợp lệ (hoặc đã bị
+   * `limitsStripped` xoá trước rồi — không có gì để kiểm).
+   */
+  rangeError?: string;
 }
 
 /**
@@ -249,5 +257,43 @@ export function buildInsertFromImportPoint(
     coplanarityMax: strip ? undefined : dec(point.coplanarityMax),
   };
 
-  return { row, limitsStripped: strip };
+  // ★★★ BG-113 (review Khối C lượt 9, I-2) — điểm ghi thứ 4/5: bulk-import
+  // KHÔNG kiểm `lowerLimit ≤ upperLimit`/`heightMin ≤ heightMax` trước bản vá,
+  // nên một sheet xuất ngược cột (USL trước LSL) ghi thẳng khoảng RỖNG ⇒ 100%
+  // trị đo của điểm đó TRƯỢT (`pointResultEvaluator.ts`). Kiểm trên `row` SAU
+  // strip: nếu `gateLive` đã xoá cặp field đó (`strip=true`), giá trị là
+  // `undefined` ⇒ `loiCapGioiHanSauMerge` tự bỏ qua so sánh — không kiểm hai
+  // lần. KHÔNG merge với "hiện có": `buildInsertFromImportPoint` luôn tạo hàng
+  // MỚI (`bulkCreateMeasurementPoints` là INSERT thuần, 0 upsert) nên không có
+  // giá trị hiện có nào để merge — khác 4 call site kia.
+  const loiKhoang = loiCapGioiHanSauMerge({
+    lowerLimit: row.lowerLimit,
+    upperLimit: row.upperLimit,
+    heightMin: row.heightMin,
+    heightMax: row.heightMax,
+  });
+  let rangeError: string | undefined;
+  if (loiKhoang.length > 0) {
+    rangeError = `${point.code}: ${loiKhoang.join("; ")}`;
+    // Xoá CHỈ cặp vi phạm — không xoá toàn hàng (name/geometry/componentCode…
+    // vẫn nhập được; kỹ sư sửa lại đúng cặp giới hạn qua UI/hàng đợi duyệt).
+    if (row.lowerLimit !== undefined && row.upperLimit !== undefined) {
+      const lo = Number(row.lowerLimit);
+      const up = Number(row.upperLimit);
+      if (Number.isFinite(lo) && Number.isFinite(up) && lo > up) {
+        row.lowerLimit = undefined;
+        row.upperLimit = undefined;
+      }
+    }
+    if (row.heightMin !== undefined && row.heightMax !== undefined) {
+      const hMin = Number(row.heightMin);
+      const hMax = Number(row.heightMax);
+      if (Number.isFinite(hMin) && Number.isFinite(hMax) && hMin > hMax) {
+        row.heightMin = undefined;
+        row.heightMax = undefined;
+      }
+    }
+  }
+
+  return { row, limitsStripped: strip, rangeError };
 }

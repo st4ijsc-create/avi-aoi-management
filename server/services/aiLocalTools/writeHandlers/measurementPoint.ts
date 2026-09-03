@@ -40,7 +40,7 @@ import type { AuditChangeField } from "../../auditTrailService";
 // `set_spec_limits` (`../../writeHandlers.ts`) — cùng gate, cùng khuôn
 // "chặn = trả action_result note, KHÔNG throw" (tool HITL, không phải router).
 import { resolveThresholdEditGate, type ThresholdGateResult } from "../../thresholdGovernanceService";
-import { touchesApprovalLimitFields } from "../../../utils/measurementPointLimitGate";
+import { touchesApprovalLimitFields, loiCapGioiHanSauMerge, gopCapGioiHanDonGian } from "../../../utils/measurementPointLimitGate";
 
 function gateBlocked(gate: ThresholdGateResult): boolean {
   return gate.decision === "requires_approval" && gate.enforced;
@@ -307,6 +307,33 @@ export const updateMeasurementPointTool: Tool<UpdateMpParams, { ok: boolean }> =
           textSummary: msg,
           note: msg,
         };
+      }
+
+      // ★★★ BG-113 (review Khối C lượt 9, I-2) — vùng aiLocalTools/**: phiên
+      // AI-coding, brief CHỈ cho thêm MỘT lời gọi gate, không sửa gì khác
+      // (khai rõ ở đây). Kiểm khoảng ĐÃ MERGE (patch đè lên `before` — patch
+      // chỉ đổi MỘT cận vẫn phải chặn nếu mâu thuẫn với cận HIỆN CÓ) — trả
+      // `action_result` HITL (không throw), đúng khuôn `gateBlocked` ở trên.
+      if (before) {
+        const loiKhoang = loiCapGioiHanSauMerge(
+          gopCapGioiHanDonGian(
+            { lowerLimit: before.lowerLimit, upperLimit: before.upperLimit },
+            { lowerLimit: patch.lowerLimit, upperLimit: patch.upperLimit },
+          ),
+        );
+        if (loiKhoang.length > 0) {
+          const msg = loiKhoang.join("; ");
+          return {
+            type: "action_result",
+            title:
+              ctx.lang === "en" ? `Measurement point update blocked (invalid limit range)`
+              : ctx.lang === "zh" ? `测量点更新已阻止（限值范围无效）`
+              : `Cập nhật điểm đo bị chặn (khoảng giới hạn không hợp lệ)`,
+            data: { ok: false },
+            textSummary: msg,
+            note: msg,
+          };
+        }
       }
     }
 

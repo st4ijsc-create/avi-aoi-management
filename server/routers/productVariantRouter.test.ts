@@ -17,6 +17,7 @@
  * the variant bump → override tests fail; drop the table guard → PRECONDITION tests fail.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { TRPCError } from "@trpc/server";
 
 // ── db (index) mock — only the helpers the router calls. Hoisted so the (also
 // hoisted) vi.mock factory can reference it. ──
@@ -36,11 +37,30 @@ const h = vi.hoisted(() => ({
   removeVariantOverride: vi.fn(async () => undefined),
   bumpVariantPointsConfigVersion: vi.fn(async () => ({ variantId: 10, productModelId: 1, code: "V1", version: 2 })),
   createAuditLog: vi.fn(async () => ({ id: 1 })),
+  // BG-113/I-3 (review Khối C lượt 9) — `setOverride` nay gọi thêm ba hàm này
+  // (whitelist patchJson + cửa duyệt ngưỡng + ghi version, xem productVariantRouter.ts).
+  // Mock ĐƠN GIẢN (không dùng logic thật — logic thật đã có lưới riêng ở
+  // apDungVariantPatch.test.ts) để lưới ROUTER này chỉ canh WIRING, không canh DB.
+  apDungVariantPatch: vi.fn((base: any, patch: any) => ({ ...base, ...(patch && typeof patch === "object" ? patch : {}) })),
+  recordVariantOverrideVersion: vi.fn(async () => undefined),
 }));
 vi.mock("../db", () => h);
 // accessControl.checkPermission reads getDb() from ../db/connection — null ⇒ a
 // non-admin is denied (isAdmin=false) so the RBAC test resolves without a real DB.
 vi.mock("../db/connection", () => ({ getDb: vi.fn(async () => null) }));
+// BG-113/I-3 — setOverride(action:'override') nay gọi assertThresholdEditAllowed
+// (cùng khuôn measurementPointWritePath.test.ts) — mặc định KHÔNG chặn (decision
+// 'direct') để các mệnh đề WIRING sẵn có không phải biết gì về cửa duyệt ngưỡng.
+const thresholdGateSpy = vi.fn(async () => ({
+  decision: "direct" as const,
+  productModelId: 1,
+  lifecycleStatus: "development",
+  hasReleasedProgram: false,
+  enforced: true,
+}));
+vi.mock("../services/thresholdGovernanceService", () => ({
+  assertThresholdEditAllowed: (...a: any[]) => thresholdGateSpy(...a),
+}));
 
 import { productVariantRouter } from "./productVariantRouter";
 
@@ -71,6 +91,18 @@ beforeEach(() => {
   h.removeVariantOverride.mockResolvedValue(undefined);
   h.bumpVariantPointsConfigVersion.mockResolvedValue({ variantId: 10, productModelId: 1, code: "V1", version: 2 } as any);
   h.createAuditLog.mockResolvedValue({ id: 1 });
+  // BG-113/I-3 — mockReset() ở trên xoá luôn IMPLEMENTATION (không chỉ lịch sử
+  // gọi) của hai mock mới ⇒ phải gán lại, cùng khuôn mọi mock khác ở trên.
+  h.apDungVariantPatch.mockImplementation((base: any, patch: any) => ({ ...base, ...(patch && typeof patch === "object" ? patch : {}) }));
+  h.recordVariantOverrideVersion.mockResolvedValue(undefined);
+  thresholdGateSpy.mockReset();
+  thresholdGateSpy.mockResolvedValue({
+    decision: "direct" as const,
+    productModelId: 1,
+    lifecycleStatus: "development",
+    hasReleasedProgram: false,
+    enforced: true,
+  } as any);
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -227,11 +259,97 @@ describe("PV3 — setOverride / removeOverride", () => {
     expect(h.bumpVariantPointsConfigVersion).toHaveBeenCalledWith(10);
   });
 
+  // ══════════════════════════════════════════════════════════════════════
+  // ★★★ BG-113/I-3 (review Khối C lượt 9) — patchJson KHÔNG còn nhận BẤT KỲ
+  // khoá nào (trước bản vá: `z.record(z.string(), z.unknown())`), gọi cửa
+  // duyệt ngưỡng, và ghi version TRƯỚC khi override.
+  // ══════════════════════════════════════════════════════════════════════
+  it("★★★ ĐỘT BIẾN THẬT (I-3): patchJson mang khoá NGOÀI APPROVAL_LIMIT_FIELDS ({id: 999}) ⇒ BAD_REQUEST, KHÔNG ghi gì", async () => {
+    h.getVariantById.mockResolvedValueOnce(euVariant as any);
+    h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
+    await expect(
+      admin.setOverride({ variantId: 10, basePointDefId: 3, action: "override", patchJson: { upperLimit: "5", id: 999 } as any }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(h.setVariantPointOverride, "zod .strict() phải chặn TRƯỚC khi thân thủ tục chạy").not.toHaveBeenCalled();
+    expect(h.recordVariantOverrideVersion).not.toHaveBeenCalled();
+  });
+
+  it("patchJson mang MỘT khoá phi-giới-hạn khác (deletedAt) ⇒ cũng BAD_REQUEST — không chỉ khoá 'id'", async () => {
+    h.getVariantById.mockResolvedValueOnce(euVariant as any);
+    h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
+    await expect(
+      admin.setOverride({ variantId: 10, basePointDefId: 3, action: "override", patchJson: { deletedAt: null } as any }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("★★★ setOverride(action:'override') gọi assertThresholdEditAllowed(basePointDefId) — sản phẩm live+enforced ⇒ FORBIDDEN, KHÔNG ghi", async () => {
+    h.getVariantById.mockResolvedValueOnce(euVariant as any);
+    h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
+    // Mock thay THẲNG assertThresholdEditAllowed (không phải resolveThresholdEditGate
+    // bên trong nó) ⇒ mô phỏng "bị chặn" bằng REJECT trực tiếp, cùng tinh thần
+    // `measurementPointWritePath.test.ts` (gateSpy.mockRejectedValue) — PHẢI là một
+    // TRPCError THẬT (không phải Error thường gắn thêm `.code`): tRPC chỉ giữ
+    // nguyên `.code` khi lỗi ném ra LÀ instance TRPCError, ngược lại nó bọc thành
+    // INTERNAL_SERVER_ERROR ở lớp resolveMiddleware.
+    thresholdGateSpy.mockRejectedValueOnce(new TRPCError({ code: "FORBIDDEN", message: "FORBIDDEN — would block" }));
+    await expect(
+      admin.setOverride({ variantId: 10, basePointDefId: 3, action: "override", patchJson: { upperLimit: "5" } }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(h.setVariantPointOverride).not.toHaveBeenCalled();
+    expect(h.recordVariantOverrideVersion, "cửa duyệt ngưỡng phải chặn TRƯỚC bước ghi version").not.toHaveBeenCalled();
+  });
+
+  it("★★★ setOverride(action:'override') ghi version TRƯỚC khi ghi đè — snapshot = hiệu lực TRƯỚC lượt này (base, KHÔNG có override cũ)", async () => {
+    h.getVariantById.mockResolvedValueOnce(euVariant as any);
+    h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
+    h.getVariantOverrides.mockResolvedValueOnce([]); // chưa có override nào trước đó cho điểm này
+    await admin.setOverride({ variantId: 10, basePointDefId: 3, action: "override", patchJson: { upperLimit: "5" } });
+    expect(h.recordVariantOverrideVersion).toHaveBeenCalledWith(
+      3,
+      expect.objectContaining({ id: 3 }), // apDungVariantPatch(basePoint, null) ⇒ chính basePoint
+      expect.objectContaining({ changedBy: 5 }),
+    );
+  });
+
+  it("setOverride ghi version với hiệu lực TRƯỚC = base + override CŨ đã merge (apDungVariantPatch) — không phải base trơ", async () => {
+    h.getVariantById.mockResolvedValueOnce(euVariant as any);
+    h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
+    h.getVariantOverrides.mockResolvedValueOnce([
+      { basePointDefId: 3, action: "override", patchJson: { upperLimit: "77" } } as any,
+    ]);
+    await admin.setOverride({ variantId: 10, basePointDefId: 3, action: "override", patchJson: { upperLimit: "5" } });
+    // apDungVariantPatch(basePoint, {upperLimit:"77"}) (mock đơn giản: spread) ⇒ hiệu lực TRƯỚC mang upperLimit CŨ "77".
+    expect(h.recordVariantOverrideVersion).toHaveBeenCalledWith(3, expect.objectContaining({ upperLimit: "77" }), expect.anything());
+  });
+
+  it("★★★ BG-113 (I-2, đường ghi thứ SÁU) — patch chỉ đổi upperLimit thấp hơn lowerLimit HIỆN CÓ (base) ⇒ BAD_REQUEST, KHÔNG ghi override/version nào", async () => {
+    h.getVariantById.mockResolvedValueOnce(euVariant as any);
+    h.getMeasurementPointDefById.mockResolvedValueOnce({ ...basePoint, lowerLimit: "9", upperLimit: "11" } as any);
+    h.getVariantOverrides.mockResolvedValueOnce([]); // 0 override cũ ⇒ hiệu lực TRƯỚC = chính base
+    await expect(
+      admin.setOverride({ variantId: 10, basePointDefId: 3, action: "override", patchJson: { upperLimit: "0.5" } }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(h.recordVariantOverrideVersion, "gate phải chặn TRƯỚC bước ghi version").not.toHaveBeenCalled();
+    expect(h.setVariantPointOverride, "gate phải chặn TRƯỚC bước ghi override").not.toHaveBeenCalled();
+  });
+
+  it("BG-113 (I-2, đường thứ SÁU) — patch đổi CẢ hai cận nhưng vẫn hợp lệ ([9;11] → [1;20]) ⇒ KHÔNG bị chặn oan", async () => {
+    h.getVariantById.mockResolvedValueOnce(euVariant as any);
+    h.getMeasurementPointDefById.mockResolvedValueOnce({ ...basePoint, lowerLimit: "9", upperLimit: "11" } as any);
+    h.getVariantOverrides.mockResolvedValueOnce([]);
+    await expect(
+      admin.setOverride({ variantId: 10, basePointDefId: 3, action: "override", patchJson: { lowerLimit: "1", upperLimit: "20" } }),
+    ).resolves.toEqual({ id: 7 });
+  });
+
   it("'exclude' stores no patch", async () => {
     h.getVariantById.mockResolvedValueOnce(euVariant as any);
     h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
     await admin.setOverride({ variantId: 10, basePointDefId: 3, action: "exclude" });
     expect(h.setVariantPointOverride).toHaveBeenCalledWith(expect.objectContaining({ action: "exclude", patchJson: null }));
+    // 'exclude' không mang giá trị số để duyệt/snapshot — KHÔNG gọi cửa duyệt ngưỡng/ghi version.
+    expect(thresholdGateSpy).not.toHaveBeenCalled();
+    expect(h.recordVariantOverrideVersion).not.toHaveBeenCalled();
   });
 
   it("'override' without a patch → BAD_REQUEST", async () => {

@@ -339,6 +339,11 @@ export const bulkImportRouter = router({
       const rows = [];
       let limitsStrippedCount = 0;
       const strippedCodes: string[] = [];
+      // BG-113 (review Khối C lượt 9, I-2) — điểm ghi thứ 4/5 (bulk-import):
+      // `rangeError` (từ `buildInsertFromImportPoint`) là một cặp giới hạn
+      // (lowerLimit>upperLimit hoặc heightMin>heightMax) đã bị GATE xoá vì
+      // ngược khoảng — nêu ĐÍCH DANH mã điểm, không âm thầm import khoảng RỖNG.
+      const rangeErrors: string[] = [];
       for (let i = 0; i < input.points.length; i++) {
         const p = input.points[i];
         const legacyType = await resolveLegacyType(p.measurementTypeCode, p.measurementType);
@@ -354,6 +359,7 @@ export const bulkImportRouter = router({
           limitsStrippedCount++;
           strippedCodes.push(p.code);
         }
+        if (built.rangeError) rangeErrors.push(built.rangeError);
         rows.push(built.row);
       }
 
@@ -362,7 +368,7 @@ export const bulkImportRouter = router({
       // product is live. Surfaced in the dialog so the engineer routes limits
       // through approval instead of assuming they imported.
       const skipped = limitsStrippedCount;
-      const errors = [...result.errors];
+      const errors = [...result.errors, ...rangeErrors];
       if (skipped > 0) {
         errors.push(
           `${skipped} point(s) imported WITHOUT limits — product is live; set limits via the Threshold Approvals queue. ` +

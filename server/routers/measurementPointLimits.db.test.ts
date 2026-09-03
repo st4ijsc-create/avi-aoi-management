@@ -31,6 +31,10 @@ const id = {
   liveProduct: 0, liveA: 0, liveB: 0,
   devProduct: 0, devA: 0, devB: 0, devC: 0,
   otherProduct: 0, otherA: 0,
+  // BG-113 (review Khối C lượt 9, I-2) — điểm RIÊNG cho §4, có sẵn lowerLimit/
+  // upperLimit/heightMin/heightMax hợp lệ ([1;10]/[1;10]) để đo mệnh đề "merge
+  // với hiện có" — KHÔNG dùng chung devA/B/C (đã có state cụ thể từ §1/§2).
+  devD: 0, devE: 0,
 };
 
 // ctx admin — bỏ qua checkPermission (role==='admin' short-circuit, xem
@@ -85,6 +89,20 @@ describe.skipIf(!DB_URL)("Task 8 Khối C — touchesLimits suy từ spec + setL
       VALUES (${id.devProduct}, ${"PT-DC-" + RUN}, 'Dev C', 'DIMENSION', 30, 30, '1.000000') RETURNING id`;
     id.devC = dc.id;
 
+    // BG-113 (I-2) §4 — hai điểm RIÊNG, có sẵn [lowerLimit;upperLimit] và
+    // [heightMin;heightMax] HỢP LỆ, dùng để đo "patch chỉ đổi MỘT cận, mâu
+    // thuẫn với cận HIỆN CÓ vẫn phải chặn" (khác devA/B/C — không có cận nào).
+    const [dd] = await sql`
+      INSERT INTO measurement_point_defs
+        ("productModelId", code, name, "measurementType", "positionX", "positionY", "lowerLimit", "upperLimit", "heightMin", "heightMax")
+      VALUES (${id.devProduct}, ${"PT-DD-" + RUN}, 'Dev D', 'DIMENSION', 40, 40, '1.000000', '10.000000', '1.000000', '10.000000') RETURNING id`;
+    id.devD = dd.id;
+    const [de] = await sql`
+      INSERT INTO measurement_point_defs
+        ("productModelId", code, name, "measurementType", "positionX", "positionY", "lowerLimit", "upperLimit")
+      VALUES (${id.devProduct}, ${"PT-DE-" + RUN}, 'Dev E', 'DIMENSION', 50, 50, '1.000000', '10.000000') RETURNING id`;
+    id.devE = de.id;
+
     // Sản phẩm KHÁC (development, để không lẫn gate) — dùng để đo BAD_REQUEST
     // khi một batch trộn hai productModelId.
     const [op] = await sql`
@@ -100,7 +118,7 @@ describe.skipIf(!DB_URL)("Task 8 Khối C — touchesLimits suy từ spec + setL
   afterAll(async () => {
     await safe(async () => {
       await sql`DELETE FROM measurement_point_versions WHERE "pointDefId" IN (
-        ${id.liveA}, ${id.liveB}, ${id.devA}, ${id.devB}, ${id.devC}, ${id.otherA}
+        ${id.liveA}, ${id.liveB}, ${id.devA}, ${id.devB}, ${id.devC}, ${id.otherA}, ${id.devD}, ${id.devE}
       )`;
     });
     await safe(async () => { await sql`DELETE FROM measurement_point_defs WHERE "productModelId" IN (${id.liveProduct}, ${id.devProduct}, ${id.otherProduct})`; });
@@ -221,6 +239,54 @@ describe.skipIf(!DB_URL)("Task 8 Khối C — touchesLimits suy từ spec + setL
       const specFields = new Set(APPROVAL_LIMIT_FIELDS);
       // batchSchemaFields là APPROVAL_LIMIT_FIELDS TRỪ "criteria" (loại có chủ ý — xem docblock setLimitsBatch).
       expect([...specFields].filter((f) => f !== "criteria").sort()).toEqual([...batchSchemaFields].sort());
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★★★ BG-113 (review Khối C lượt 9, I-2) — 0/5 đường ghi giới hạn kiểm
+  // `lower ≤ upper` trước bản vá này. §4 đo HAI đường (update/setLimitsBatch)
+  // trên CSDL THẬT: patch chỉ đổi MỘT cận mâu thuẫn với cận HIỆN CÓ (không đổi
+  // trong patch này) vẫn phải bị chặn — chứng minh gate hoạt động SAU KHI MERGE,
+  // không chỉ kiểm riêng patch. Ba đường còn lại (`product.ts` phòng thủ kép,
+  // bulk-import, AI Copilot) đo ở lưới THUẦN (`measurementPointLimitGate.test.ts`)
+  // + census điểm gọi (`server/contracts/limitRangeGateCensus.test.ts`).
+  // ══════════════════════════════════════════════════════════════════════════
+  describe("§4 — BG-113: gate lowerLimit≤upperLimit / heightMin≤heightMax (DB thật)", () => {
+    it("★★★ measurementPoint.update — patch CHỈ gửi upperLimit mới thấp hơn lowerLimit HIỆN CÓ ⇒ BAD_REQUEST, KHÔNG ghi", async () => {
+      const [before] = await sql`SELECT "lowerLimit", "upperLimit" FROM measurement_point_defs WHERE id = ${id.devD}`;
+      expect(Number(before.lowerLimit)).toBe(1); // nền [1;10] từ beforeAll
+      await expect(caller.update({ id: id.devD, upperLimit: "0.5" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      const [after] = await sql`SELECT "lowerLimit", "upperLimit" FROM measurement_point_defs WHERE id = ${id.devD}`;
+      expect(after.upperLimit, "gate phải chặn TRƯỚC khi UPDATE chạy — không ghi khoảng rỗng").toBe(before.upperLimit);
+    });
+
+    it("measurementPoint.update — heightMin > heightMax (đã merge) ⇒ BAD_REQUEST, KHÔNG ghi", async () => {
+      const [before] = await sql`SELECT "heightMin", "heightMax" FROM measurement_point_defs WHERE id = ${id.devD}`;
+      await expect(caller.update({ id: id.devD, heightMax: "0.5" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      const [after] = await sql`SELECT "heightMin", "heightMax" FROM measurement_point_defs WHERE id = ${id.devD}`;
+      expect(after.heightMax).toBe(before.heightMax);
+    });
+
+    it("ĐỐI CHỨNG — measurementPoint.update với khoảng HỢP LỆ vẫn ghi bình thường (gate không chặn oan)", async () => {
+      const res = await caller.update({ id: id.devD, upperLimit: "15" }); // [1;15] — hợp lệ
+      expect(res).toEqual({ success: true });
+      const [after] = await sql`SELECT "upperLimit" FROM measurement_point_defs WHERE id = ${id.devD}`;
+      expect(Number(after.upperLimit)).toBe(15);
+    });
+
+    it("★★★ setLimitsBatch — MỘT item patch chỉ đổi upperLimit thấp hơn lowerLimit HIỆN CÓ ⇒ BAD_REQUEST, KHÔNG ghi item nào trong batch", async () => {
+      const [beforeE] = await sql`SELECT "upperLimit" FROM measurement_point_defs WHERE id = ${id.devE}`;
+      const [beforeC] = await sql`SELECT "heightMax" FROM measurement_point_defs WHERE id = ${id.devC}`;
+      // devE nền [1;10] (beforeAll) — patch upperLimit=0.5 mâu thuẫn với lowerLimit=1
+      // HIỆN CÓ; devC (nền heightMax hợp lệ, KHÔNG mâu thuẫn) đứng CẠNH trong CÙNG
+      // batch — phải KHÔNG bị ghi (transaction, giống mệnh đề NOT_FOUND ở §2).
+      await expect(
+        caller.setLimitsBatch({ items: [{ id: id.devE, upperLimit: "0.5" }, { id: id.devC, heightMax: "8" }] }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      const [afterE] = await sql`SELECT "upperLimit" FROM measurement_point_defs WHERE id = ${id.devE}`;
+      const [afterC] = await sql`SELECT "heightMax" FROM measurement_point_defs WHERE id = ${id.devC}`;
+      expect(afterE.upperLimit).toBe(beforeE.upperLimit);
+      expect(afterC.heightMax, "item KHÁC trong CÙNG batch (hợp lệ riêng nó) cũng không được ghi — batch là MỘT transaction").toBe(beforeC.heightMax);
     });
   });
 });

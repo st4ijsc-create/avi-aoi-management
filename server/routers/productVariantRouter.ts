@@ -34,9 +34,35 @@ import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import * as db from "../db";
 import type { ProductVariant, VariantPointOverride } from "../../drizzle/schema";
+// ★★★ BG-113/I-3 (review Khối C lượt 9) — `setOverride.patchJson` là nguồn giới
+// hạn THỨ HAI ngoài `POINT_LIMIT_SPEC`/`APPROVAL_LIMIT_FIELDS`: whitelist khoá
+// (schema), cửa duyệt ngưỡng (assertThresholdEditAllowed), và ghi version
+// (db.recordVariantOverrideVersion) — xem docblock tại chỗ dùng bên dưới.
+import { APPROVAL_LIMIT_FIELDS } from "@shared/pointLimitSpec";
+import { assertThresholdEditAllowed } from "../services/thresholdGovernanceService";
+import { assertCapGioiHanHopLe, gopCapGioiHanDonGian } from "../utils/measurementPointLimitGate";
 
 // ── Reserved code for the model's inheritance root — never manually creatable. ──
 const BASE_VARIANT_CODE = "BASE";
+
+/**
+ * ★★★ BG-113/I-3 (review Khối C lượt 9) — WHITELIST khoá `patchJson` của
+ * `setOverride`, SUY từ `APPROVAL_LIMIT_FIELDS` (MỘT nguồn, `shared/
+ * pointLimitSpec.ts` — không chép tay danh sách cột lần nữa). TRƯỚC bản vá:
+ * `z.record(z.string(), z.unknown())` nhận BẤT KỲ khoá nào — một patch
+ * `{deletedAt: null}`/`{id: 999}` đi thẳng vào `gateLimits` qua
+ * `apDungVariantPatch` (chỉ lọc khoá ĐỊNH DANH, không lọc khoá LẠ khác).
+ *
+ * Đo được (review lượt 9): client (`ProductVariantsTab.tsx`) hôm nay CHỈ gửi
+ * `lowerLimit`/`upperLimit`/`nominalValue` — tập con của `APPROVAL_LIMIT_FIELDS`
+ * — nên whitelist này KHÔNG cắt bất kỳ hành vi thật nào đang chạy. `.strict()`
+ * từ chối khoá lạ (bao gồm khoá phi-giới-hạn) — `variant_point_overrides` =
+ * 0 hàng hôm nay (đo được) nên không có bằng chứng cần thêm khoá phi-giới-hạn
+ * nào; mở rộng sau nếu một nhu cầu THẬT xuất hiện, không đoán trước.
+ */
+const variantOverridePatchSchema = z
+  .object(Object.fromEntries(APPROVAL_LIMIT_FIELDS.map((f) => [f, z.unknown().optional()])))
+  .strict();
 
 /**
  * Assert migration 0286 landed. Cheap (cached probe) — throws a clean, actionable
@@ -338,7 +364,8 @@ export const productVariantRouter = router({
       variantId: z.number().int().positive(),
       basePointDefId: z.number().int().positive(),
       action: overrideActionSchema,
-      patchJson: z.record(z.string(), z.unknown()).optional(),
+      // BG-113/I-3 — whitelist APPROVAL_LIMIT_FIELDS (xem docblock hằng số ở trên).
+      patchJson: variantOverridePatchSchema.optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       await assertVariantTableAvailable();
@@ -377,6 +404,59 @@ export const productVariantRouter = router({
           { operation: "overrideBaseVariantPoint" },
           "Chỉ được ghi đè điểm đo chung (base) — không phải điểm riêng của biến thể",
         );
+      }
+
+      // ★★★ BG-113/I-3 (review Khối C lượt 9) — (b) CỬA DUYỆT NGƯỠNG, như 5 đường
+      // ghi giới hạn khác (measurementPoint.update/setLimitsBatch/bulk-import/AI
+      // Copilot). CHỈ khi action='override' — patchJson (sau whitelist ở trên)
+      // luôn là field thuộc APPROVAL_LIMIT_FIELDS, tức LUÔN "chạm giới hạn";
+      // 'exclude' không mang giá trị số nào để duyệt (chỉ ẩn điểm khỏi variant).
+      if (input.action === "override") {
+        await assertThresholdEditAllowed(input.basePointDefId);
+      }
+
+      // ★★★ BG-113/I-3 — (c) GHI VERSION trước khi ghi đè, TRÊN CHÍNH bảng
+      // `measurement_point_versions` mà snapshot-gate BG-97 đọc (xem docblock
+      // `db.recordVariantOverrideVersion` cho phạm vi THẬT/giới hạn đã biết).
+      // Snapshot là hiệu lực TRƯỚC lượt này: base + override CŨ (nếu có, dùng
+      // LẠI `apDungVariantPatch` — Task 6, cùng công thức mà đường CHẤM dùng ở
+      // `machineApiRouters.ts`), không phải base trơ — một override THAY một
+      // override khác vẫn phải để lại đúng trạng thái đã mất.
+      if (input.action === "override") {
+        const overridesHienCo = await db.getVariantOverrides(input.variantId);
+        const ovHienCo = overridesHienCo.find((o) => o.basePointDefId === input.basePointDefId);
+        const hieuLucTruoc = db.apDungVariantPatch(
+          basePoint as unknown as Record<string, unknown>,
+          ovHienCo?.action === "override" ? ovHienCo.patchJson : null,
+        );
+
+        // ★★★ BG-113 (I-2, đường ghi giới hạn THỨ SÁU) — patchJson biến thể có thể
+        // mang lowerLimit/upperLimit/heightMin/heightMax (whitelist ở trên cho phép)
+        // ⇒ CÙNG lỗ "0 kiểm lower ≤ upper" mà 5 đường kia đã vá. Kiểm trên khoảng ĐÃ
+        // MERGE: hiệu lực TRƯỚC override (base + override CŨ, vừa tính ở trên cho
+        // bước ghi version) đè bởi patch MỚI — patch chỉ đổi MỘT cận vẫn phải chặn
+        // nếu mâu thuẫn với cận HIỆN CÓ (đúng nguyên tắc I-2).
+        assertCapGioiHanHopLe(
+          gopCapGioiHanDonGian(
+            {
+              lowerLimit: hieuLucTruoc.lowerLimit,
+              upperLimit: hieuLucTruoc.upperLimit,
+              heightMin: hieuLucTruoc.heightMin,
+              heightMax: hieuLucTruoc.heightMax,
+            },
+            {
+              lowerLimit: input.patchJson?.lowerLimit,
+              upperLimit: input.patchJson?.upperLimit,
+              heightMin: input.patchJson?.heightMin,
+              heightMax: input.patchJson?.heightMax,
+            },
+          ),
+        );
+
+        await db.recordVariantOverrideVersion(input.basePointDefId, hieuLucTruoc, {
+          changedBy: ctx.user.id,
+          changeReason: `productVariant.setOverride (variant #${input.variantId})`,
+        });
       }
 
       const id = await db.setVariantPointOverride({
