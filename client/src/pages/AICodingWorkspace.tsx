@@ -536,6 +536,14 @@ export default function AICodingWorkspace() {
    */
   const [ngatDong, setNgatDong] = useState(false);
   const [thuMucTim, setThuMucTim] = useState("");
+  /**
+   * ★ 2026-09-04 — LOẠI TRỪ thư mục cho tìm-toàn-repo (nốt nửa còn lại của H4). Nhiều mục ngăn bằng
+   * dấu phẩy; server chỉ dùng nó để BỎ BỚT khỏi danh sách đã lọc qua hộp cát — không nới gì.
+   * ⚠ NỢ ĐÃ KHAI: hai khoá i18n (`search.exclude`, `search.excludeHint`) chưa vào `locales/*.json`
+   *   vì ba tệp ấy đang bị KHOÁ bởi dòng việc Khối C (cảnh báo liên-phiên 2026-09-04). Chuỗi đi qua
+   *   `t(khoá, mặc-định)` nên tiếng Việt hiện đúng ngay; en/zh tạm hiện bản Việt cho tới khi mở khoá.
+   */
+  const [loaiTruTim, setLoaiTruTim] = useState("");
   const [khungToiDa, setKhungToiDa] = useState<"tep" | "xem" | "chat" | null>(null);
   /**
    * ★ 2026-09-03 · ĐỢT E1 — có XIN cảnh báo hay không. Parser mặc định CHỈ trả lỗi (hợp đồng cũ,
@@ -1241,6 +1249,10 @@ export default function AICodingWorkspace() {
       ignoreCase: !timPhanBietHoa,
       // ★ D3 — phạm vi: rỗng ⇒ cả repo (đường cũ); có ⇒ chỉ quét dưới thư mục ấy (server phán quyết lại).
       ...(thuMucTim.trim() ? { path: thuMucTim.trim() } : {}),
+      // ★ 2026-09-04 — LOẠI TRỪ: tách theo dấu phẩy, bỏ mục rỗng, trần 8 (khớp schema server).
+      ...(loaiTruTim.trim()
+        ? { loaiTru: loaiTruTim.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 8) }
+        : {}),
       projectId, lang, maxResults: 100,
     },
     { enabled: cheDoCay === "tim" && !!projectId && tuKhoaRepoTre.trim().length >= 2, staleTime: 30_000 },
@@ -2337,6 +2349,18 @@ export default function AICodingWorkspace() {
                   onChange={(e) => setThuMucTim(e.target.value)}
                   placeholder={t("repoWs.search.scope", "Trong thư mục… (vd server/routers) — trống = cả repo")}
                   aria-label={t("repoWs.search.scope", "Trong thư mục… (vd server/routers) — trống = cả repo")}
+                  className="mt-1 h-6 w-full rounded-md border bg-background px-2 text-[11px] placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+              )}
+              {/* ★ 2026-09-04 — LOẠI TRỪ (nốt nửa còn lại của H4: đã có "trong thư mục", nay có "trừ"). */}
+              {cheDoCay === "tim" && (
+                <input
+                  type="text"
+                  data-loai-tru-tim
+                  value={loaiTruTim}
+                  onChange={(e) => setLoaiTruTim(e.target.value)}
+                  placeholder={t("repoWs.search.exclude", "Trừ thư mục… (nhiều mục cách nhau dấu phẩy)")}
+                  aria-label={t("repoWs.search.exclude", "Trừ thư mục… (nhiều mục cách nhau dấu phẩy)")}
                   className="mt-1 h-6 w-full rounded-md border bg-background px-2 text-[11px] placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
               )}

@@ -304,6 +304,8 @@ export const repoWorkspaceRouter = router({
       z.object({
         pattern: z.string().min(1).max(200),
         path: z.string().max(1024).optional(),
+        /** ★ 2026-09-04 — LOẠI TRỪ thư mục (chỉ THU HẸP phạm vi quét; xem docblock ở `grep_repo`). */
+        loaiTru: z.array(z.string().min(1).max(256)).max(8).optional(),
         ignoreCase: z.boolean().optional(),
         maxResults: z.number().int().min(1).max(200).optional(),
         lang: langSchema.optional(),
@@ -316,6 +318,7 @@ export const repoWorkspaceRouter = router({
         {
           pattern: input.pattern,
           path: input.path,
+          loaiTru: input.loaiTru,
           ignoreCase: input.ignoreCase,
           maxResults: input.maxResults,
         },

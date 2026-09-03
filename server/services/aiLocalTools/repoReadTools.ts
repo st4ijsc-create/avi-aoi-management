@@ -364,6 +364,19 @@ const thamSoGrep = z
   .object({
     pattern: z.string().min(1).max(200),
     path: z.string().max(1024).optional(),
+    /**
+     * ★ 2026-09-04 — **LOẠI TRỪ thư mục (chỉ THU HẸP).** Mỗi mục là một TIỀN TỐ đường tương đối;
+     * tệp nào có đường bắt đầu bằng một trong số đó thì không được quét.
+     *
+     * ⚠ Vì sao an toàn theo cấu tạo: nó chỉ BỎ BỚT khỏi danh sách mà `duyetTepDocDuoc` đã lọc qua
+     *   mọi hàng rào hộp cát. Không một tệp nào lọt thêm vì tham số này — nới quyền là điều nó
+     *   KHÔNG làm được, kể cả khi người gọi bịa đường (`../`, tuyệt đối): đường bịa chỉ khiến phép
+     *   so tiền tố không khớp, tức không loại gì cả.
+     * ⚠ So khớp trên đường ĐÃ CHUẨN HOÁ dấu `/` (walker luôn trả dạng ấy) và có ranh giới đoạn:
+     *   `client/src` KHÔNG được loại `client/srcX`. Trần 8 mục để một lượt gọi không thành danh sách
+     *   loại trừ dài vô hạn.
+     */
+    loaiTru: z.array(z.string().min(1).max(256)).max(8).optional(),
     ignoreCase: z.boolean().optional(),
     maxResults: z.number().int().min(1).max(TRAN_KET_QUA_GREP).optional(),
     __authCtx: authCtxParam,
@@ -435,11 +448,19 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
     }
 
     const duyet = duyetTepDocDuoc(goc, batDau, TRAN_TEP_QUET, hanChot);
+    // ★ 2026-09-04 — LOẠI TRỪ (chỉ thu hẹp; xem docblock `loaiTru`). Chuẩn hoá dấu + bỏ `/` thừa,
+    //   rồi so theo RANH GIỚI ĐOẠN để `client/src` không nuốt `client/srcX`.
+    const tienToLoai = (Array.isArray(raw.loaiTru) ? (raw.loaiTru as string[]) : [])
+      .map((x) => String(x).split("\\").join("/").split("/").filter(Boolean).join("/"))
+      .filter((x) => x.length > 0);
+    const dsQuet = tienToLoai.length === 0
+      ? duyet.tep
+      : duyet.tep.filter((rel) => !tienToLoai.some((t) => rel === t || rel.startsWith(`${t}/`)));
     const matches: KetQuaGrep[] = [];
     let quet = 0;
     let hetGio = duyet.hetGio;
 
-    for (const rel of duyet.tep) {
+    for (const rel of dsQuet) {
       if (matches.length >= tranKetQua) break;
       if (Date.now() >= hanChot) {
         hetGio = true;
