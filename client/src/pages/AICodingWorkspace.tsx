@@ -539,9 +539,10 @@ export default function AICodingWorkspace() {
   /**
    * ★ 2026-09-04 — LOẠI TRỪ thư mục cho tìm-toàn-repo (nốt nửa còn lại của H4). Nhiều mục ngăn bằng
    * dấu phẩy; server chỉ dùng nó để BỎ BỚT khỏi danh sách đã lọc qua hộp cát — không nới gì.
-   * ⚠ NỢ ĐÃ KHAI: hai khoá i18n (`search.exclude`, `search.excludeHint`) chưa vào `locales/*.json`
-   *   vì ba tệp ấy đang bị KHOÁ bởi dòng việc Khối C (cảnh báo liên-phiên 2026-09-04). Chuỗi đi qua
-   *   `t(khoá, mặc-định)` nên tiếng Việt hiện đúng ngay; en/zh tạm hiện bản Việt cho tới khi mở khoá.
+   * ★ 2026-09-04 — NỢ ĐÃ TRẢ: khoá `repoWs.search.exclude` nay có đủ ở vi/en/zh (Khối C mở khoá ba
+   *   tệp locale). ⚠ Đính chính lời khai cũ của chính khối này: nó ghi "HAI khoá
+   *   (`search.exclude`, `search.excludeHint`)" — sai, chỉ có MỘT khoá được dùng; `excludeHint`
+   *   chưa từng tồn tại trong mã. Đếm bằng `grep t("repoWs.search.` thay vì bằng trí nhớ.
    */
   const [loaiTruTim, setLoaiTruTim] = useState("");
   const [khungToiDa, setKhungToiDa] = useState<"tep" | "xem" | "chat" | null>(null);

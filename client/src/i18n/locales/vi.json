@@ -19407,7 +19407,8 @@
       "truncatedCap": "⚠ BẢN CẮT: chạm trần quét/kết quả ({{n}} tệp đã quét) — có thể còn khớp chưa hiện.",
       "caseToggle": "Phân biệt hoa/thường",
       "regexToggle": "Dùng biểu thức chính quy (regex)",
-      "scope": "Trong thư mục… (vd server/routers) — trống = cả repo"
+      "scope": "Trong thư mục… (vd server/routers) — trống = cả repo",
+      "exclude": "Trừ thư mục… (nhiều mục cách nhau dấu phẩy)"
     },
     "suaTay": {
       "enter": "Sửa tệp (tạo đề xuất, bạn duyệt)",

@@ -19435,7 +19435,8 @@
       "truncatedCap": "⚠ 截断：已达扫描/结果上限（已扫描 {{n}} 个文件）——可能还有未显示的匹配。",
       "caseToggle": "区分大小写",
       "regexToggle": "使用正则表达式",
-      "scope": "在文件夹中…（例如 server/routers）——留空 = 整个仓库"
+      "scope": "在文件夹中…（例如 server/routers）——留空 = 整个仓库",
+      "exclude": "排除文件夹…（用逗号分隔）"
     },
     "suaTay": {
       "enter": "编辑文件（生成提案，由您审批）",
