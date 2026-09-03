@@ -1233,8 +1233,13 @@ export interface ComponentCayDay {
  * `for (const raw of def.criteria)` của `evaluatePointResult` — mảng rỗng không lặp
  * gì, `evaluated` không bao giờ bật vì nó) nên được coi là NULL ở đây; giữ nguyên
  * mảng thì stringify để khớp kiểu `string|null` chung với 17 cột còn lại.
+ *
+ * ⚠ EXPORT (Task 12, QĐ-7): `server/services/productReadinessService.ts` dùng
+ * LẠI đúng hàm này để đếm hàng cây trong hạng mục readiness `limits` — "hai con
+ * số trên hai màn phải khớp bằng cấu tạo" áp dụng CẢ cho readiness, không chỉ
+ * `cayDayRouter`. KHÔNG viết lại logic này ở nơi khác.
  */
-function tinhGioiHan(row: Record<string, unknown>): { gioiHan: Record<string, string | null>; coGioiHan: boolean } {
+export function tinhGioiHan(row: Record<string, unknown>): { gioiHan: Record<string, string | null>; coGioiHan: boolean } {
   const gioiHan: Record<string, string | null> = {};
   for (const m of POINT_LIMIT_SPEC) {
     const v = row[m.field];
@@ -1252,8 +1257,12 @@ function tinhGioiHan(row: Record<string, unknown>): { gioiHan: Record<string, st
   return { gioiHan, coGioiHan };
 }
 
-/** Chiếu đủ 18 cột `POINT_LIMIT_SPEC` thành một object `{field: column}` cho `.select()`. */
-function chieuGioiHan() {
+/**
+ * Chiếu đủ 18 cột `POINT_LIMIT_SPEC` thành một object `{field: column}` cho `.select()`.
+ * EXPORT cùng lý do với `tinhGioiHan` ở trên — Task 12 dùng lại để `.select()` hàng
+ * cây trong `productReadinessService.ts`.
+ */
+export function chieuGioiHan() {
   return Object.fromEntries(
     POINT_LIMIT_SPEC.map((m) => [m.field, measurementPointDefs[m.field as keyof typeof measurementPointDefs]]),
   ) as { [K in (typeof POINT_LIMIT_SPEC)[number]["field"]]: (typeof measurementPointDefs)[K] };
