@@ -36,6 +36,9 @@ import {
   assertThresholdEditAllowed,
   type ThresholdGateResult,
 } from "../services/thresholdGovernanceService";
+// Task 8 Khối C (QĐ-5) — `touchesLimits` SUY từ POINT_LIMIT_SPEC, MỘT hàm dùng
+// chung với `measurementPointImport.ts` (xem docblock trong file đó).
+import { touchesApprovalLimitFields } from "../utils/measurementPointLimitGate";
 // Doc 31 MP1/PM6 — BOM-driven componentCode backfill (lights up Pareto-by-package).
 import { backfillComponentCodesFromBom } from "../services/componentLinkBackfill";
 // Doc 31 MP3 (WB-2) — __UNMAPPED__ unmatched-rate metric + remap helpers.
@@ -1312,13 +1315,11 @@ export const measurementPointRouter = router({
       // owning product is in `development` (and has no released program); on a live
       // product it must go through the approval queue. Non-limit edits (name/shape/
       // position/…) are never gated. The audit row below records every direct edit.
-      const touchesLimits =
-        rest.lowerLimit !== undefined ||
-        rest.upperLimit !== undefined ||
-        rest.nominalValue !== undefined ||
-        rest.toleranceMode !== undefined ||
-        rest.tolPlus !== undefined ||
-        rest.tolMinus !== undefined;
+      // Task 8 Khối C — SUY từ APPROVAL_LIMIT_FIELDS (shared/pointLimitSpec.ts),
+      // không chép tay danh sách cột (trước bản vá chỉ 6/22 field — 16 field 3D/GD&T
+      // như heightMax/coplanarityMax/… lách gate hoàn toàn, lỗ 3D mà Task 8 Bước 1
+      // dựng lưới ĐỎ để bắt).
+      const touchesLimits = touchesApprovalLimitFields(rest as Record<string, unknown>);
       let thresholdGate: ThresholdGateResult | null = null;
       if (touchesLimits) {
         // Throws FORBIDDEN (→ approval queue) when the product is live + enforced.
@@ -1530,6 +1531,128 @@ export const measurementPointRouter = router({
         console.warn("audit log failed (measurementPoint.update)", err);
       }
       return { success: true };
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Task 8 Khối C (QĐ-5) — ghi giới hạn cho NHIỀU điểm đo cùng lúc, MỘT lần bump
+  // pointsConfigVersion. Tái dùng `update` ở trên cho sửa-1-điểm; đây là batch
+  // cho dialog "dạy giới hạn theo lô" (Task 11 gọi qua canvas + bảng).
+  //
+  // Field limit ở đây là TẬP CON của APPROVAL_LIMIT_FIELDS — KHÔNG gồm `criteria`
+  // (jsonb, cấu trúc mỗi điểm một khác, không có nghĩa "đặt cùng giá trị cho N
+  // điểm"; batch giới hạn scalar/numeric mới có nghĩa "áp cùng một số cho N điểm
+  // đã chọn"). `criteria` vẫn sửa được qua `update` từng điểm — không phải một lỗ,
+  // là biên phạm vi có chủ ý.
+  // ══════════════════════════════════════════════════════════════════════════
+  setLimitsBatch: protectedProcedure.use(requirePermission("settings_measurement_points", "canEdit"))
+    .input(z.object({
+      items: z.array(z.object({
+        id: z.number().int().positive(),
+        // ⚠ Cùng KIỂU với `update` ở trên — cột numeric ở DB đi qua dưới dạng
+        // chuỗi (tránh Postgres làm tròn/ép kiểu im lặng khi client gửi number).
+        unit: z.string().optional(),
+        lowerLimit: z.string().optional(),
+        upperLimit: z.string().optional(),
+        nominalValue: z.string().optional(),
+        toleranceMode: toleranceModeSchema.optional(),
+        tolPlus: z.string().optional(),
+        tolMinus: z.string().optional(),
+        heightMin: z.string().optional(),
+        heightMax: z.string().optional(),
+        areaMin: z.string().optional(),
+        areaMax: z.string().optional(),
+        volumeMin: z.string().optional(),
+        volumeMax: z.string().optional(),
+        coplanarityMax: z.string().optional(),
+        warpageMax: z.string().optional(),
+        voidPctMax: z.string().optional(),
+        offsetXMax: z.string().optional(),
+        offsetYMax: z.string().optional(),
+        tiltMax: z.string().optional(),
+        thicknessMin: z.string().optional(),
+        thicknessMax: z.string().optional(),
+      })).min(1).max(200),
+      changeReason: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { items, changeReason } = input;
+      const ids = items.map((it) => it.id);
+
+      // Lọc tenant theo PHIÊN (phamViCua(ctx)), KHÔNG theo input — điểm ngoài
+      // phạm vi tenant của người gọi đơn giản không có mặt trong `found`, xử lý
+      // giống hệt "không tồn tại" (không lộ thông tin tồn tại-nhưng-không-thấy).
+      const found = await db.getMeasurementPointDefsByIds(ids, phamViCua(ctx));
+      const foundById = new Map(found.map((p) => [p.id, p]));
+      const missing = ids.filter((id) => !foundById.has(id));
+      if (missing.length > 0) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "measurementPoint" },
+          `Measurement point(s) not found: ${missing.join(", ")}`,
+        );
+      }
+      // Mọi id phải cùng productModelId — batch này chỉ có MỘT cửa duyệt ngưỡng
+      // (gọi bên dưới) và MỘT lần bump; trộn hai sản phẩm sẽ bump nhầm version
+      // của sản phẩm kia hoặc bỏ sót gate của nó.
+      const productModelIds = new Set(found.map((p) => p.productModelId));
+      if (productModelIds.size > 1) {
+        throw appError(
+          "BAD_REQUEST",
+          "SCOPE_MISMATCH",
+          { entity: "measurementPoint", parent: "productModel" },
+          "All items in measurementPoint.setLimitsBatch must belong to the same product model",
+        );
+      }
+
+      // Cửa duyệt ngưỡng — MỘT lần cho cả batch (cùng productModelId ⇒ cùng
+      // lifecycleStatus/gate quyết định). Throws FORBIDDEN (→ hàng đợi duyệt) khi
+      // sản phẩm live + enforced (mirror measurementPoint.update).
+      const thresholdGate = await assertThresholdEditAllowed(items[0].id);
+
+      // updateMeasurementPointLimitsBatch tự lo: FOR UPDATE từng hàng, snapshot
+      // measurement_point_versions TRƯỚC khi ghi (BG-97 — bo cũ vẫn chấm theo
+      // limit lúc đo), UPDATE chỉ field thuộc APPROVAL_LIMIT_FIELDS, MỘT lần bump
+      // pointsConfigVersion trong CÙNG transaction (mirror deleteMeasurementPointDef).
+      const result = await db.updateMeasurementPointLimitsBatch(items, {
+        changedBy: ctx.user.id,
+        changeReason: changeReason ?? null,
+      });
+
+      // Bump đã chạy TRONG transaction ở trên — KHÔNG gọi bumpAndNotifyPointsConfig
+      // ở đây (sẽ bump hai lần). Chỉ notify best-effort, machines poll nếu lỡ.
+      try {
+        publishPointsConfigChanged(result.code, result.pointsConfigVersion);
+      } catch (err) {
+        console.warn("[Task 8 Khối C] publishPointsConfigChanged failed after setLimitsBatch (machines will pick it up on next poll)", err);
+      }
+
+      // Doc 31 OP2 — mirror measurementPoint.update: mọi lần sửa giới hạn trực
+      // tiếp để lại một hàng audit mang gate decision.
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "threshold.directEditBatch",
+          entityType: "product",
+          entityId: result.productModelId,
+          details: {
+            pointIds: ids,
+            updated: result.updated,
+            pointsConfigVersion: result.pointsConfigVersion,
+            lifecycleStatus: thresholdGate.lifecycleStatus,
+            gateDecision: thresholdGate.decision,
+            gateEnforced: thresholdGate.enforced,
+            hasReleasedProgram: thresholdGate.hasReleasedProgram,
+            changeReason: changeReason ?? null,
+          },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (threshold.directEditBatch)", err);
+      }
+
+      return { updated: result.updated, pointsConfigVersion: result.pointsConfigVersion };
     }),
 
   // Doc 31 MP1/PM6 — fill empty componentCode on a product's points from its BOM

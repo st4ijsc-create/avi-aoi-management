@@ -39,6 +39,10 @@ import {
 } from "../../drizzle/schema";
 import { measurementResults, productInspections } from "../../drizzle/schema/inspection";
 import { GENESIS_HASH } from "../utils/genealogyChain";
+// Task 8 Khối C (QĐ-5) — MỘT nguồn 18+4 cột giới hạn, xem docblock
+// `shared/pointLimitSpec.ts`. `updateMeasurementPointLimitsBatch` whitelist
+// theo mảng này, không chép tay danh sách cột.
+import { APPROVAL_LIMIT_FIELDS } from "@shared/pointLimitSpec";
 
 // ============ PRODUCT MODEL FUNCTIONS ============
 export async function createProductModel(data: InsertProductModel) {
@@ -814,6 +818,25 @@ export async function getMeasurementPointDefById(id: number, scope?: PhamViNguoi
     .where(and(eq(measurementPointDefs.id, id), isNull(measurementPointDefs.deletedAt), ...(cong ? [cong] : [])))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Task 8 Khối C — tra NHIỀU điểm đo theo id, lọc tenant theo **phiên** (`scope`),
+ * không theo input. Dùng để router `setLimitsBatch` kiểm "mọi id có tồn tại +
+ * cùng `productModelId`" TRƯỚC khi gọi cửa duyệt ngưỡng — hàng nào ngoài phạm
+ * vi tenant hoặc đã xoá mềm đơn giản KHÔNG xuất hiện trong kết quả (không lộ
+ * "tồn tại nhưng bạn không thấy").
+ */
+export async function getMeasurementPointDefsByIds(ids: number[], scope?: PhamViNguoiXem) {
+  const db = await getDb();
+  if (!db || ids.length === 0) return [];
+  const cong = await congSanPhamTheoPhamVi(measurementPointDefs.productModelId, scope);
+  return db.select().from(measurementPointDefs)
+    .where(and(
+      inArray(measurementPointDefs.id, ids),
+      isNull(measurementPointDefs.deletedAt),
+      ...(cong ? [cong] : []),
+    ));
 }
 
 /**
@@ -1987,6 +2010,137 @@ export async function updateMeasurementPointDef(
     await tx.update(measurementPointDefs)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(measurementPointDefs.id, id));
+  });
+}
+
+/** Một hàng trong batch: id + BẤT KỲ tập con nào của `APPROVAL_LIMIT_FIELDS`. */
+export type LimitsBatchItem = { id: number } & Partial<Record<(typeof APPROVAL_LIMIT_FIELDS)[number], unknown>>;
+
+export interface LimitsBatchResult {
+  updated: number;
+  productModelId: number;
+  /** product_models.code — publishPointsConfigChanged broadcasts theo mã này. */
+  code: string;
+  /** Version SAU khi bump — mọi hàng trong batch cùng chia sẻ MỘT version mới. */
+  pointsConfigVersion: number;
+}
+
+/**
+ * Task 8 Khối C (QĐ-5) — ghi giới hạn cho NHIỀU điểm đo trong MỘT transaction,
+ * MỘT lần bump `pointsConfigVersion` (không phải một lần bump mỗi điểm — 3 điểm
+ * cùng sản phẩm ⇒ version +1, không phải +3).
+ *
+ * ⚠ BG-97 (snapshot-gate): mirror NGUYÊN VĂN {@link updateMeasurementPointDef}
+ * (FOR UPDATE + snapshot AI vào `measurement_point_versions` TRƯỚC khi UPDATE,
+ * cùng cột kể cả stamp `productPointsConfigVersion` 0282) — KHÔNG được UPDATE
+ * thẳng bỏ qua bước ghi lịch sử, nếu không bo đã chấm TRƯỚC lần sửa này sẽ bị
+ * spec-gate tái dựng và chấm lại theo limit MỚI (xem review BG-97 trong ledger).
+ *
+ * Mỗi hàng khoá `FOR UPDATE` riêng (không khoá cả bảng) — hai batch chạm những
+ * điểm KHÁC nhau vẫn chạy song song; hai batch chạm CÙNG điểm serialize đúng như
+ * hai editor đơn lẻ tranh nhau (mirror `updateMeasurementPointDef`).
+ *
+ * UPDATE chỉ ghi các khoá thuộc `APPROVAL_LIMIT_FIELDS` (đọc từ
+ * `shared/pointLimitSpec.ts`, không nhận field lạ dù caller có gửi kèm) — phòng
+ * thủ kép với zod input phía router.
+ *
+ * Ném lỗi (không nuốt) khi: một id không tồn tại/đã xoá mềm (NOT_FOUND — hàng đã
+ * bị xoá giữa lúc router kiểm tra và lúc transaction này chạy), các id KHÁC
+ * `productModelId` (router đã kiểm trước nhưng đo lại ở đây cho chắc — không tin
+ * một mình lớp gọi), hoặc sản phẩm đã bị xoá mềm lúc bump (bump trả `null`).
+ */
+export async function updateMeasurementPointLimitsBatch(
+  items: LimitsBatchItem[],
+  options?: { changedBy?: number | null; changeReason?: string | null },
+): Promise<LimitsBatchResult> {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError();
+  if (items.length === 0) {
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "items" }, "items rỗng");
+  }
+
+  const stampConfigVersion = await measurementPointVersionsHasConfigVersionColumn(db);
+
+  return db.transaction(async (tx) => {
+    let productModelId: number | null = null;
+    let updated = 0;
+
+    for (const item of items) {
+      const { id, ...rawFields } = item;
+
+      const [previous] = await tx.select().from(measurementPointDefs)
+        .where(and(eq(measurementPointDefs.id, id), isNull(measurementPointDefs.deletedAt)))
+        .for("update")
+        .limit(1);
+      if (!previous) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `Measurement point ${id} not found`);
+      }
+      if (productModelId === null) {
+        productModelId = previous.productModelId;
+      } else if (productModelId !== previous.productModelId) {
+        throw appError(
+          "BAD_REQUEST",
+          "SCOPE_MISMATCH",
+          { entity: "measurementPoint", parent: "productModel" },
+          `Measurement point ${id} does not belong to the same product model as the rest of the batch`,
+        );
+      }
+
+      // Snapshot PRE-edit state — mirror updateMeasurementPointDef 1:1 (cùng cột,
+      // cùng thứ tự: đọc max(version) → stamp productPointsConfigVersion → insert).
+      const [{ maxVersion }] = await tx
+        .select({ maxVersion: sql<number>`COALESCE(MAX(${measurementPointVersions.version}), 0)` })
+        .from(measurementPointVersions)
+        .where(eq(measurementPointVersions.pointDefId, id));
+      const nextVersion = Number(maxVersion ?? 0) + 1;
+
+      let productPointsConfigVersion: number | null = null;
+      if (stampConfigVersion) {
+        try {
+          const [pm] = await tx
+            .select({ v: productModels.pointsConfigVersion })
+            .from(productModels)
+            .where(eq(productModels.id, previous.productModelId))
+            .limit(1);
+          productPointsConfigVersion = pm?.v != null ? Number(pm.v) : null;
+        } catch {
+          productPointsConfigVersion = null; // best-effort — never fail the edit
+        }
+      }
+
+      const versionRow: Record<string, unknown> = {
+        pointDefId: id,
+        version: nextVersion,
+        snapshotJson: previous as unknown as Record<string, any>,
+        changedBy: options?.changedBy ?? null,
+        changeReason: options?.changeReason ?? null,
+      };
+      if (stampConfigVersion) {
+        versionRow.productPointsConfigVersion = productPointsConfigVersion;
+      }
+      await tx.insert(measurementPointVersions).values(versionRow as typeof measurementPointVersions.$inferInsert);
+
+      // Phòng thủ kép: chỉ đưa vào SET các khoá thuộc APPROVAL_LIMIT_FIELDS —
+      // dù zod input phía router đã whitelist, hàm này không tin một mình lớp gọi.
+      const limitFields: Record<string, unknown> = {};
+      for (const f of APPROVAL_LIMIT_FIELDS) {
+        const v = (rawFields as Record<string, unknown>)[f];
+        if (v !== undefined) limitFields[f] = v;
+      }
+      await tx.update(measurementPointDefs)
+        .set({ ...limitFields, updatedAt: new Date() })
+        .where(eq(measurementPointDefs.id, id));
+      updated++;
+    }
+
+    // productModelId không thể null ở đây — items.length > 0 đã bảo đảm vòng lặp
+    // chạy ít nhất một lần và gán trước khi tới đây.
+    const bump = await bumpPointsConfigVersion(productModelId as number, tx as unknown as PointsBumpExecutor);
+    if (!bump) {
+      throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model ${productModelId} not found (deleted?)`);
+    }
+
+    return { updated, productModelId: productModelId as number, code: bump.code, pointsConfigVersion: bump.version };
   });
 }
 

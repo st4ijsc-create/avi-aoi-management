@@ -21,6 +21,11 @@ import {
   deriveLegacyAnchor,
   type MeasurementGeometry,
 } from "../lib/measurementGeometry";
+// Task 8 Khối C (QĐ-5, Task 7 review F2) — `touchesLimits` SUY từ
+// APPROVAL_LIMIT_FIELDS, MỘT hàm dùng chung với `productRouters.ts` (trước bản
+// vá: bản chép tay ở ĐÂY thiếu 9/18 cột của POINT_LIMIT_SPEC + `unit` gán vô
+// điều kiện bên dưới → bulk-import trên sản phẩm live lách hàng đợi duyệt).
+import { touchesApprovalLimitFields } from "./measurementPointLimitGate";
 
 export const LEGACY_MEASUREMENT_TYPES = [
   "DIMENSION",
@@ -190,20 +195,14 @@ export function buildInsertFromImportPoint(
   // A live product must not receive imported limits directly (decision #4 /
   // B.6): strip every limit-bearing field so approved limits are only set via
   // the approval queue. Geometry, name, componentCode, 3D window etc. still import.
-  const touchesLimits =
-    point.lowerLimit !== undefined ||
-    point.upperLimit !== undefined ||
-    point.nominalValue !== undefined ||
-    point.toleranceMode !== undefined ||
-    point.tolPlus !== undefined ||
-    point.tolMinus !== undefined ||
-    point.heightMin !== undefined ||
-    point.heightMax !== undefined ||
-    point.volumeMin !== undefined ||
-    point.volumeMax !== undefined ||
-    point.areaMin !== undefined ||
-    point.areaMax !== undefined ||
-    point.coplanarityMax !== undefined;
+  // Task 8 Khối C — suy từ APPROVAL_LIMIT_FIELDS (shared/pointLimitSpec.ts),
+  // MỘT hàm dùng chung với productRouters.ts (xem import ở đầu file). Trước bản
+  // vá danh sách chép tay ở đây thiếu `unit`/`warpageMax`/`voidPctMax`/
+  // `offsetXMax`/`offsetYMax`/`tiltMax`/`thicknessMin`/`thicknessMax` (8 field
+  // không tồn tại trong `DeepImportPoint` nên vô hại HÔM NAY) và `unit` (field
+  // CÓ tồn tại, gán vô điều kiện bên dưới — lỗ thật: một sheet chỉ đổi `unit`
+  // trên sản phẩm live ghi thẳng, lách hàng đợi duyệt).
+  const touchesLimits = touchesApprovalLimitFields(point as Record<string, unknown>);
   const strip = gateLive && touchesLimits;
 
   const row: InsertMeasurementPointDef = {
@@ -213,7 +212,10 @@ export function buildInsertFromImportPoint(
     description: point.description,
     measurementType: legacyType,
     measurementTypeCode: point.measurementTypeCode,
-    unit: point.unit,
+    // `unit` là một trong APPROVAL_LIMIT_FIELDS (đơn vị của giới hạn 1D) — phải
+    // qua cùng gate như lowerLimit/upperLimit, KHÔNG gán vô điều kiện (lỗ Task 7
+    // review F2: trước bản vá field này ghi thẳng kể cả trên sản phẩm live).
+    unit: strip ? undefined : point.unit,
     positionX,
     positionY,
     radius,

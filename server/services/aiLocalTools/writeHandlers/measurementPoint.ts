@@ -22,6 +22,7 @@ import {
   createMeasurementPointDef,
   updateMeasurementPointDef,
 } from "../../../db/product";
+import { createAuditLog } from "../../../db/system";
 import {
   registerTool,
   type ActionPreview,
@@ -30,6 +31,33 @@ import {
   type ToolLang,
 } from "../toolRegistry";
 import type { AuditChangeField } from "../../auditTrailService";
+// Task 8 Khối C — ĐÃ TÌM RA khi vá `touchesLimits`: tool này gọi thẳng
+// `updateMeasurementPointDef` (KHÔNG qua `measurementPoint.update` tRPC), nên
+// bản vá touchesLimits ở `productRouters.ts` KHÔNG chạm tới nó — trước bản vá
+// dưới đây, AI Copilot ghi lowerLimit/upperLimit/nominalValue/unit lên một
+// SẢN PHẨM LIVE mà KHÔNG hề qua `assertThresholdEditAllowed`/`resolveThresholdEditGate`
+// (0 tham chiếu tới cửa duyệt trong toàn file, trước khi vá). Mirror MẪU
+// `set_spec_limits` (`../../writeHandlers.ts`) — cùng gate, cùng khuôn
+// "chặn = trả action_result note, KHÔNG throw" (tool HITL, không phải router).
+import { resolveThresholdEditGate, type ThresholdGateResult } from "../../thresholdGovernanceService";
+import { touchesApprovalLimitFields } from "../../../utils/measurementPointLimitGate";
+
+function gateBlocked(gate: ThresholdGateResult): boolean {
+  return gate.decision === "requires_approval" && gate.enforced;
+}
+
+function gateBlockMessage(gate: ThresholdGateResult, lang: ToolLang): string {
+  const why = gate.hasReleasedProgram ? "has a released inspection program" : `is '${gate.lifecycleStatus}'`;
+  switch (lang) {
+    case "en":
+      return `Blocked: the product ${why} — threshold changes require approval. Submit the new limits via the Threshold Approvals queue.`;
+    case "zh":
+      return `已阻止：该产品${gate.hasReleasedProgram ? "已发布检测程序" : `处于 '${gate.lifecycleStatus}' 状态`}——修改规格限需审批。请通过阈值审批队列提交。`;
+    case "vi":
+    default:
+      return `Đã chặn: sản phẩm ${gate.hasReleasedProgram ? "đã có chương trình phát hành" : `đang ở trạng thái '${gate.lifecycleStatus}'`} — thay đổi ngưỡng phải qua duyệt. Gửi giới hạn mới qua hàng đợi Duyệt ngưỡng.`;
+  }
+}
 
 function toStr(n: number | null | undefined): string | undefined {
   return n === null || n === undefined || Number.isNaN(n) ? undefined : String(n);
@@ -219,6 +247,16 @@ async function previewUpdateMp(p: UpdateMpParams, ctx: ToolExecContext): Promise
   if (p.nominalValue !== undefined && !numEq(current.nominalValue as string | null, p.nominalValue)) {
     changes.push({ field: "nominalValue", oldValue: current.nominalValue ?? null, newValue: toStr(p.nominalValue) ?? null, displayName: "Target" });
   }
+  // Task 8 Khối C — surface the lifecycle gate in the dry-run (mirror set_spec_limits
+  // ở writeHandlers.ts) khi bản vá này chạm giới hạn; execute() là cửa CỨNG.
+  if (touchesApprovalLimitFields(p as Record<string, unknown>)) {
+    try {
+      const gate = await resolveThresholdEditGate(p.id);
+      if (gateBlocked(gate)) warnings.push(gateBlockMessage(gate, ctx.lang));
+    } catch {
+      // gate resolution is best-effort in preview; execute() is the hard gate.
+    }
+  }
   return {
     entityType: "measurement_point",
     entityId: current.id,
@@ -247,7 +285,71 @@ export const updateMeasurementPointTool: Tool<UpdateMpParams, { ok: boolean }> =
     if (p.upperLimit !== undefined) patch.upperLimit = toStr(p.upperLimit);
     if (p.lowerLimit !== undefined) patch.lowerLimit = toStr(p.lowerLimit);
     if (p.nominalValue !== undefined) patch.nominalValue = toStr(p.nominalValue);
+
+    // Task 8 Khối C — HARD gate (mirror set_spec_limits): một sản phẩm live +
+    // enforced chặn thay-đổi-giới-hạn trực tiếp, kể cả khi AI Copilot gọi.
+    // Trước bản vá: KHÔNG có gate nào ở đây — ghi thẳng luôn.
+    const touchesLimits = touchesApprovalLimitFields(patch);
+    let gate: ThresholdGateResult | null = null;
+    let before: Awaited<ReturnType<typeof getMeasurementPointDefById>> | null = null;
+    if (touchesLimits) {
+      before = (await getMeasurementPointDefById(p.id)) ?? null;
+      gate = await resolveThresholdEditGate(p.id);
+      if (gateBlocked(gate)) {
+        const msg = gateBlockMessage(gate, ctx.lang);
+        return {
+          type: "action_result",
+          title:
+            ctx.lang === "en" ? `Measurement point update blocked (needs approval)`
+            : ctx.lang === "zh" ? `测量点更新已阻止（需审批）`
+            : `Cập nhật điểm đo bị chặn (cần duyệt)`,
+          data: { ok: false },
+          textSummary: msg,
+          note: msg,
+        };
+      }
+    }
+
     await updateMeasurementPointDef(p.id, patch as any, { changedBy: ctx.user.id, changeReason: "AI Copilot" });
+
+    // Doc 31 OP2 — mirror set_spec_limits: mọi lần sửa giới hạn trực tiếp (kể
+    // cả từ AI Copilot) để lại một hàng audit mang gate decision.
+    if (touchesLimits && gate) {
+      try {
+        await createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "threshold.directEdit",
+          entityType: "measurement_point_def",
+          entityId: p.id,
+          entityName: before?.code ?? undefined,
+          details: {
+            source: "aiCopilot.update_measurement_point",
+            productModelId: before?.productModelId ?? null,
+            lifecycleStatus: gate.lifecycleStatus,
+            gateDecision: gate.decision,
+            gateEnforced: gate.enforced,
+            hasReleasedProgram: gate.hasReleasedProgram,
+            before: {
+              lowerLimit: before?.lowerLimit ?? null,
+              upperLimit: before?.upperLimit ?? null,
+              nominalValue: before?.nominalValue ?? null,
+            },
+            after: {
+              lowerLimit: patch.lowerLimit ?? null,
+              upperLimit: patch.upperLimit ?? null,
+              nominalValue: patch.nominalValue ?? null,
+            },
+            changeReason: "AI Copilot",
+          },
+          status: "success",
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("audit log failed (aiCopilot threshold.directEdit — update_measurement_point)", err);
+      }
+    }
+
     return {
       type: "action_result",
       title: `Đã cập nhật điểm đo #${p.id}`,

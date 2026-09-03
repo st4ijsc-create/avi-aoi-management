@@ -239,7 +239,12 @@ describe("create_measurement_point", () => {
 });
 
 describe("update_measurement_point", () => {
-  it("execute calls db with changedBy + changeReason", async () => {
+  it("execute calls db with changedBy + changeReason (development product — gate allows)", async () => {
+    // upperLimit is a limit field ⇒ Task 8 hard gate now runs first.
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "direct", productModelId: 5, lifecycleStatus: "development",
+      hasReleasedProgram: false, enforced: true,
+    });
     const p = await proposeAction(tool("update_measurement_point"), { id: 12, name: "Đổi tên", upperLimit: 10 }, ctx(ADMIN));
     expect(updateMeasurementPointDef).not.toHaveBeenCalled();
     const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
@@ -247,9 +252,77 @@ describe("update_measurement_point", () => {
     expect(updateMeasurementPointDef).toHaveBeenCalledWith(12, expect.objectContaining({ name: "Đổi tên", upperLimit: "10" }), expect.objectContaining({ changedBy: 1, changeReason: "AI Copilot" }));
   });
 
+  it("name-only edit (non-limit) NEVER consults the gate", async () => {
+    const p = await proposeAction(tool("update_measurement_point"), { id: 12, name: "Chỉ đổi tên" }, ctx(ADMIN));
+    const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
+    expect(c.status).toBe("executed");
+    expect(resolveThresholdEditGate).not.toHaveBeenCalled();
+    expect(updateMeasurementPointDef).toHaveBeenCalledWith(12, expect.objectContaining({ name: "Chỉ đổi tên" }), expect.anything());
+  });
+
   it("zod requires at least one updatable field", () => {
     const r = (tool("update_measurement_point").parameters as any).safeParse({ id: 12 });
     expect(r.success).toBe(false);
+  });
+});
+
+// Task 8 Khối C — TRƯỚC bản vá, `update_measurement_point` gọi thẳng
+// `updateMeasurementPointDef` KHÔNG hề qua `resolveThresholdEditGate`: một AI
+// Copilot có thể ghi lowerLimit/upperLimit/nominalValue/unit lên một sản phẩm
+// LIVE mà không có cửa duyệt nào — bản vá này mirror ĐÚNG khuôn `set_spec_limits`
+// ngay dưới (cùng file, cùng gate, cùng chỗ AI đã học "trước đây db fn này an
+// toàn gọi thẳng").
+describe("update_measurement_point — Task 8 Khối C lifecycle gate (mirror set_spec_limits)", () => {
+  const upCtx = ctx(ADMIN);
+
+  it("development product + limit field → applies + writes threshold.directEdit audit", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "direct", productModelId: 5, lifecycleStatus: "development",
+      hasReleasedProgram: false, enforced: true,
+    });
+    const res = await tool("update_measurement_point").execute!({ id: 12, lowerLimit: 1, upperLimit: 9 }, upCtx);
+    expect((res.data as any).ok).toBe(true);
+    expect(updateMeasurementPointDef).toHaveBeenCalledWith(
+      12,
+      expect.objectContaining({ lowerLimit: "1", upperLimit: "9" }),
+      expect.objectContaining({ changedBy: 1, changeReason: "AI Copilot" }),
+    );
+    expect(systemCreateAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "threshold.directEdit",
+      details: expect.objectContaining({ source: "aiCopilot.update_measurement_point", gateDecision: "direct" }),
+    }));
+  });
+
+  it("active (LIVE) product + limit field → BLOCKS: ok:false, honest message, NO db write, NO throw", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "requires_approval", productModelId: 5, lifecycleStatus: "active",
+      hasReleasedProgram: false, enforced: true,
+    });
+    const res = await tool("update_measurement_point").execute!({ id: 12, upperLimit: 9 }, upCtx);
+    expect((res.data as any).ok).toBe(false);
+    expect(res.note ?? res.textSummary).toMatch(/approval|duyệt/i);
+    expect(updateMeasurementPointDef).not.toHaveBeenCalled();
+    expect(systemCreateAuditLog).not.toHaveBeenCalledWith(expect.objectContaining({ action: "threshold.directEdit" }));
+  });
+
+  it("active (LIVE) product + `unit` ONLY → ALSO blocks (unit is a limit field, not exempt)", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "requires_approval", productModelId: 5, lifecycleStatus: "active",
+      hasReleasedProgram: false, enforced: true,
+    });
+    const res = await tool("update_measurement_point").execute!({ id: 12, unit: "mm" }, upCtx);
+    expect((res.data as any).ok).toBe(false);
+    expect(updateMeasurementPointDef).not.toHaveBeenCalled();
+  });
+
+  it("break-glass (enforced=false) → passes through even on an active product", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "requires_approval", productModelId: 5, lifecycleStatus: "active",
+      hasReleasedProgram: false, enforced: false,
+    });
+    const res = await tool("update_measurement_point").execute!({ id: 12, upperLimit: 9 }, upCtx);
+    expect((res.data as any).ok).toBe(true);
+    expect(updateMeasurementPointDef).toHaveBeenCalled();
   });
 });
 

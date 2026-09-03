@@ -7,6 +7,10 @@ import * as db from "../db";
 import * as cachedStats from "../functions/cachedStatistics";
 import { MACHINE_TYPES } from "../constants/machineTypes";
 import { resolveThresholdEditGate } from "../services/thresholdGovernanceService";
+// Task 8 Khối C (QĐ-5) — `touchesLimits` SUY từ POINT_LIMIT_SPEC, hàm dùng
+// chung với productRouters.ts/measurementPointImport.ts (một gate thứ BA phát
+// hiện chép tay ở đây khi vá Task 8 — xem docblock trong file gốc).
+import { touchesApprovalLimitFields } from "../utils/measurementPointLimitGate";
 
 // doc 54 P0.3 — bulk-import RBAC unify: import* were adminProcedure (single-admin
 // bottleneck at rollout). Gate them on the SAME per-entity permission as the single-row
@@ -264,10 +268,11 @@ export const importRouter = router({
               // #4). Bulk import normally happens at setup on `development` products;
               // on a live/released product the limit overwrite is BLOCKED (skipped
               // with a clear message) so approved limits aren't silently replaced.
-              const touchesLimits =
-                item.upperLimit !== undefined ||
-                item.lowerLimit !== undefined ||
-                item.nominalValue !== undefined;
+              // Task 8 Khối C — SUY từ APPROVAL_LIMIT_FIELDS, MỘT hàm dùng chung với
+              // productRouters.ts/measurementPointImport.ts (trước bản vá chỉ chép tay
+              // 3/22 field — `unit` LÀ một field giới hạn nhưng KHÔNG được canh, một
+              // sheet chỉ đổi `unit` trên sản phẩm live ghi thẳng, lách hàng đợi duyệt).
+              const touchesLimits = touchesApprovalLimitFields(item as Record<string, unknown>);
               const gate = touchesLimits ? await resolveThresholdEditGate(existing.id) : null;
               if (gate && gate.decision === "requires_approval" && gate.enforced) {
                 results.skipped++;
