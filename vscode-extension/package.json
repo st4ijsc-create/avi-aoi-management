@@ -77,6 +77,10 @@
         "command": "aviAiLocal.lichSu",
         "title": "AI Local: Lịch sử",
         "icon": "$(history)"
+      },
+      {
+        "command": "aviAiLocal.mcpServers",
+        "title": "AI Local: Quản lý MCP server ngoài"
       }
     ],
     "keybindings": [
@@ -133,6 +137,12 @@
           ],
           "default": "vi",
           "description": "Ngôn ngữ trả lời."
+        },
+        "aviAiLocal.mcpServers": {
+          "type": "object",
+          "scope": "machine",
+          "default": {},
+          "description": "MCP server ngoài mà AI Local được phép gọi ra (khuôn mcpServers quen thuộc). Mỗi khoá là tên server, giá trị mang command/args/cwd/env. KHÔNG cho workspace ghi đè (bài học Đợt A: aviAiLocal.serverUrl thiếu scope từng để một repo thù địch chiếm đường dữ liệu qua .vscode/settings.json) — sửa ở User Settings, phạm vi Máy. Mỗi server phải được người dùng DUYỆT lần đầu (hộp thoại xác nhận trước khi tiến trình được chạy)."
         }
       }
     }

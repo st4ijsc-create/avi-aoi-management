@@ -97,6 +97,14 @@ const may = vi.hoisted(() => ({
    *  Promise reject vào `trpcAuthMeKetQua` — tránh cảnh báo unhandled-rejection nếu không ai await
    *  nó kịp trong cùng tick. */
   trpcAuthMeLoiMang: false,
+  // ★★★ ĐỢT H / TASK H2 — mô phỏng lớp điều phối MCP ngoài. CÙNG LÝ DO với `../mang/toolCucBo` ở
+  // trên: `hoi()` không cần chạm `vscode`/spawn tiến trình thật để lưới đo đúng chỗ nó chịu trách
+  // nhiệm (gọi ĐÚNG hàm khi model xin, nối kết quả vào vòng kế). Hành vi THẬT của `goiToolMcpNgoai`
+  // (hàng rào duyệt, che bí mật, cắt trần) đã có lưới riêng ở `mang/mcpDieuPhoi.unit.test.ts`.
+  dsToolMcpMoPhong: [] as Array<{ server: string; tool: string; moTa: string }>,
+  /** Lời gọi `goiToolMcpNgoai` — dùng để khẳng định ĐÚNG server/tool/dauVao model đã yêu cầu. */
+  goiToolMcpDaGoi: [] as Array<{ server: string; tool: string; dauVao: Record<string, unknown> }>,
+  ketQuaGoiToolMcpMoPhong: "KẾT QUẢ TỪ MCP SERVER NGOÀI \"demo\" · tool \"ping\" — pong",
 }));
 
 /**
@@ -130,6 +138,20 @@ vi.mock("../mang/toolCucBo", () => ({
   danhSachTepGoiY: async () => {
     may.dsTepGoiYSoLanGoi++;
     return may.dsTepGoiYMoPhong ?? [];
+  },
+}));
+
+/**
+ * ★★★ ĐỢT H / TASK H2 — mô phỏng `mang/mcpDieuPhoi.ts`. `goiToolMcpNgoai` LUÔN trả một CHUỖI (đúng
+ * hình dạng thật — hàm thật không bao giờ ném, đã định dạng qua `dinhDangKetQuaMcpNgoai`); ghi lại
+ * lời gọi để lưới khẳng định ĐÚNG yêu cầu model phát ra đã tới được lớp điều phối.
+ */
+vi.mock("../mang/mcpDieuPhoi", () => ({
+  phuThuocThat: () => ({}),
+  dsToolMcpDangCoSan: () => may.dsToolMcpMoPhong,
+  goiToolMcpNgoai: async (_pt: unknown, y: { server: string; tool: string; dauVao: Record<string, unknown> }) => {
+    may.goiToolMcpDaGoi.push(y);
+    return may.ketQuaGoiToolMcpMoPhong;
   },
 }));
 
@@ -342,6 +364,9 @@ beforeEach(() => {
   may.dsTepGoiYMoPhong = undefined;
   may.chayToolCucBoMoPhong = undefined;
   may.dsTepGoiYSoLanGoi = 0;
+  may.dsToolMcpMoPhong = [];
+  may.goiToolMcpDaGoi = [];
+  may.ketQuaGoiToolMcpMoPhong = 'KẾT QUẢ TỪ MCP SERVER NGOÀI "demo" · tool "ping" — pong';
 });
 
 describe("quenDeXuat — xoá trạng thái VÔ ĐIỀU KIỆN (Minor)", () => {
@@ -492,6 +517,76 @@ describe("hoi — H3(a) (review toàn nhánh 2026-08-30): vòng ≥2 KHÔNG đư
     const qVong2 = String(may.thanGoi[1].question);
     expect(qVong2, `question vòng 2: ${qVong2}`).toContain(cauHoiGoc);
     expect(qVong2).toContain("KẾT QUẢ TOOL");
+  });
+});
+
+describe("hoi — ĐỢT H / TASK H2: vòng tác nhân gọi được MCP server ngoài", () => {
+  it("★★★ model phát khối mcp_goi ⇒ ĐÚNG server/tool/dauVao tới goiToolMcpNgoai, kết quả nối vào vòng KẾ TIẾP (KHÔNG tự sinh yêu cầu mới)", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    may.dsToolMcpMoPhong = [{ server: "demo", tool: "ping", moTa: "kiểm tra sống" }];
+    may.hangDoiSse = [
+      // Vòng 1 — model xin gọi tool MCP.
+      async (dv) => {
+        dv.nhan({
+          type: "token",
+          token: '```avi-tool\n{"tool":"mcp_goi","args":{"server":"demo","tool":"ping","dauVao":{"a":1}}}\n```',
+        });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+      // Vòng 2 — model trả lời bình thường sau khi có kết quả tool, KHÔNG xin đọc thêm ⇒ dừng.
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Server còn sống, đây là câu trả lời." });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Server demo còn sống không?" });
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+
+    // (a) ĐÚNG một lời gọi, ĐÚNG đối số model đã yêu cầu.
+    expect(may.goiToolMcpDaGoi).toEqual([{ server: "demo", tool: "ping", dauVao: { a: 1 } }]);
+
+    // (b) kết quả (đã được lớp điều phối định dạng) xuất hiện ở QUESTION của vòng KẾ TIẾP, không
+    // phải bị vứt đi hay lặp lại vô hạn.
+    expect(may.thanGoi.length, `phải đúng 2 lượt gọi SSE; thực tế: ${may.thanGoi.length}`).toBe(2);
+    const qVong2 = String(may.thanGoi[1].question);
+    expect(qVong2).toContain(may.ketQuaGoiToolMcpMoPhong);
+    expect(qVong2).toContain("Server demo còn sống không?"); // câu hỏi gốc vẫn còn (H3(a))
+
+    // (c) HÀNG RÀO KIẾN TRÚC B3 — vòng lặp KHÔNG rơi vào một vòng thứ ba: model vòng 2 không phát
+    // khối mcp_goi nào, nên `goiToolMcpNgoai` KHÔNG bị gọi thêm lần nữa dù kết quả tool ở vòng 1 nằm
+    // ngay trong `question` của vòng 2 (đã đi qua `dinhDangKetQuaMcpNgoai` phía thật, tự vô hiệu hoá
+    // avi-tool giả mạo — ở đây xác nhận số LẦN GỌI đúng 1, không leo thang).
+    expect(may.goiToolMcpDaGoi.length).toBe(1);
+  });
+
+  it("★★ NHÁNH KIA — model KHÔNG phát khối mcp_goi ⇒ goiToolMcpNgoai KHÔNG được gọi (dsToolMcp có sẵn cũng không ép gọi)", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    may.dsToolMcpMoPhong = [{ server: "demo", tool: "ping", moTa: "x" }];
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Trả lời suông, không cần tool nào." });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Chào" });
+    for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.goiToolMcpDaGoi).toEqual([]);
+    expect(may.thanGoi).toHaveLength(1);
+    // ★ đối chứng dsToolMcp CÓ được truyền vào yeuCau (dạy giao thức xuất hiện) — chứng minh nhánh
+    // "không dùng" không phải do dsToolMcpDangCoSan rỗng mà là do model không yêu cầu.
+    expect(String(may.thanGoi[0].question)).toContain('server "demo"');
   });
 });
 

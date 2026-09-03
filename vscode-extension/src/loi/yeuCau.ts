@@ -19,6 +19,10 @@
  * `cauHoiSuaChon.ts` (Cmd+K) đã dạy cho hai tool GHI.
  */
 import { dungVanBanDayGiaoThucDoc, nhacLaiCuoiCauHoi } from "./dayGiaoThucDoc";
+// ★★★ ĐỢT H / TASK H2 — dạy giao thức gọi MCP server ngoài, CÙNG điều kiện chèn (LOCAL, không
+// Cmd+K) với ba tool đọc cục bộ ở trên. `dungVanBanDayMcpNgoai([])` trả CHUỖI RỖNG (xem docblock ở
+// đó) — khi không có tool MCP nào đã kết nối, `question` không đổi một ký tự nào so với trước H2.
+import { dungVanBanDayMcpNgoai, type MoTaToolMcp } from "./dayMcpDoc";
 
 export type CheDoDuAn =
   | { loai: "local"; nhan: string }
@@ -61,6 +65,12 @@ export function dungYeuCauStream(dv: {
    * cạnh tranh với nó.
    */
   laCmdK?: boolean;
+  /**
+   * ★★★ ĐỢT H / TASK H2 — tool MCP ngoài ĐÃ KẾT NỐI (qua lệnh "AI Local: Quản lý MCP server ngoài",
+   * `mang/mcpDieuPhoi.ts::dsToolMcpDangCoSan`). `undefined`/rỗng ⇒ KHÔNG chèn gì (xem
+   * `dayMcpDoc.ts`) — người dùng chưa từng chạm H2 thấy `question` giống hệt trước khi H2 tồn tại.
+   */
+  dsToolMcp?: readonly MoTaToolMcp[];
 }): Record<string, unknown> {
   const context: Record<string, unknown> = {
     route: "vscode",
@@ -77,6 +87,12 @@ export function dungYeuCauStream(dv: {
   // ★★★ H3(b) — cũng KHÔNG chèn cho Cmd+K (`dv.laCmdK`), xem docblock tham số ở trên.
   const phanDayGiaoThuc = dayGiaoThucDoc ? `${dungVanBanDayGiaoThucDoc()}\n\n` : "";
 
+  // ★★★ ĐỢT H / TASK H2 — dạy giao thức `mcp_goi` NGAY SAU ba tool đọc cục bộ, CÙNG điều kiện chèn
+  // (LOCAL, không Cmd+K). RỖNG khi `dv.dsToolMcp` vắng/rỗng ⇒ dòng dưới không thêm ký tự nào.
+  const dsToolMcp = dayGiaoThucDoc ? (dv.dsToolMcp ?? []) : [];
+  const vanBanDayMcp = dungVanBanDayMcpNgoai(dsToolMcp);
+  const phanDayMcp = vanBanDayMcp.length > 0 ? `${vanBanDayMcp}\n\n` : "";
+
   // ★★★ LỖI 1, vòng đo lại thứ nhất — nhắc lại NGẮN ở CUỐI `question` (gần điểm sinh chữ nhất).
   // Đo LIVE: dạy MỘT LẦN ở đầu prompt thua luật "NGUYÊN TẮC TRẢ LỜI" máy chủ tự chèn ở 10/11 lượt
   // — xem docblock `dayGiaoThucDoc.ts`. KHÔNG áp cho SERVER (cùng lý do không dạy giao thức ở đó),
@@ -91,7 +107,7 @@ export function dungYeuCauStream(dv: {
   const nguCanhCoNhan =
     dv.nguCanh.trim().length > 0 ? `${nhanNguonNguCanh(dv.cheDo)}\n${dv.nguCanh}` : dv.nguCanh;
   const than = nguCanhCoNhan.trim().length > 0 ? `${nguCanhCoNhan}\n${dv.cauHoi}` : dv.cauHoi;
-  const question = `${phanDayGiaoThuc}${than}${phanNhacLaiCuoi}`;
+  const question = `${phanDayGiaoThuc}${phanDayMcp}${than}${phanNhacLaiCuoi}`;
 
   return { question, history: dv.lichSu, userRole: dv.vaiTro, context };
 }

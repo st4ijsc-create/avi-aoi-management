@@ -45,6 +45,13 @@ import { apBanVa } from "./apBanVa";
 import { docYeuCauDoc, type YeuCauDoc } from "../loi/yeuCauDoc";
 import { chayToolCucBo, danhSachTepGoiY } from "../mang/toolCucBo";
 import { buocKeTiep } from "../loi/vongTacNhan";
+// ★★★ ĐỢT H / TASK H2 — vòng tác nhân gọi thêm MCP server ngoài. `docYeuCauMcpNgoai` dùng CHUNG
+// `tachKhoiAviTool` với `docYeuCauDoc` (không chép regex hàng rào — xem `loi/yeuCauMcp.ts`).
+// `goiToolMcpNgoai` LUÔN trả một chuỗi ĐÃ ĐI QUA `dinhDangKetQuaMcpNgoai` (che bí mật + vô hiệu hoá
+// avi-tool giả mạo + cắt theo trần, B3+B4) — TUYỆT ĐỐI không có nhánh nào ở đây được phép ghép
+// nguyên văn kết quả MCP vào `cauHoiVong` mà bỏ qua hàm đó.
+import { docYeuCauMcpNgoai, type YeuCauMcp } from "../loi/yeuCauMcp";
+import { goiToolMcpNgoai, dsToolMcpDangCoSan, phuThuocThat } from "../mang/mcpDieuPhoi";
 import { TRAN_VONG_MAC_DINH } from "../../../shared/aiCodingLoop";
 // ★★★ PDCA vòng 2 — thay JSON thô bằng câu tiếng Việt khi vòng lặp dừng vì het_tran giữa lúc còn
 // khối `avi-tool` dở dang (T09, `pdca1-report.md`). Xem docblock `khoiDoDang.ts`.
@@ -123,6 +130,11 @@ function nhanYeuCauDoc(y: YeuCauDoc): string {
   if (y.loai === "doc_tep") return `đọc tệp "${y.path}"`;
   if (y.loai === "liet_ke") return `liệt kê thư mục "${y.path}"`;
   return y.path ? `tìm "${y.mau}" trong "${y.path}"` : `tìm "${y.mau}"`;
+}
+
+/** ★★★ ĐỢT H / TASK H2 — cùng vai trò với `nhanYeuCauDoc`, cho một yêu cầu gọi tool MCP ngoài. */
+function nhanYeuCauMcpNgoai(y: YeuCauMcp): string {
+  return `gọi tool "${y.tool}" trên MCP server "${y.server}"`;
 }
 
 /**
@@ -1054,6 +1066,10 @@ export class BangChat {
           vaiTro: "engineer",
           cheDo,
           laCmdK,
+          // ★★★ ĐỢT H / TASK H2 — tool MCP ngoài ĐÃ KẾT NỐI (rỗng nếu chưa từng dùng lệnh "AI Local:
+          // Quản lý MCP server ngoài" — xem docblock `dsToolMcpDangCoSan`). Rỗng ⇒ `question` không
+          // đổi (đã kiểm ở `yeuCau.unit.test.ts`).
+          dsToolMcp: dsToolMcpDangCoSan(),
         });
         let tt = trangThaiBanDau();
         const { hong } = await moDongSse({
@@ -1113,10 +1129,17 @@ export class BangChat {
         if (cheDo.loai !== "local") break;
 
         const yeuCau = docYeuCauDoc(traLoiCuoi);
+        // ★★★ ĐỢT H / TASK H2 — CÙNG NGUỒN: `traLoiCuoi` là văn bản MODEL VỪA TỰ SINH RA ở lượt SSE
+        // này, chưa qua bất kỳ định dạng/che nào. Đây là ĐIỂM DUY NHẤT trong cả vòng lặp nơi văn bản
+        // được quét tìm yêu cầu MỚI (đọc lẫn gọi MCP) — kết quả tool (cục bộ lẫn MCP, xem `doanKetQua`
+        // dưới) không bao giờ đi qua `docYeuCauDoc`/`docYeuCauMcpNgoai` một lần nữa; nó chỉ trở thành
+        // INPUT của `cauHoiVong` cho lượt hỏi KẾ TIẾP. Đây chính là hàng rào KIẾN TRÚC chống tiêm lệnh
+        // (B3) mà `loi/mcpAnToan.ts` nói tới — không phải một cờ bật/tắt có thể quên.
+        const yeuCauMcp = docYeuCauMcpNgoai(traLoiCuoi);
         const buoc = buocKeTiep({
           vong,
           tran: TRAN_VONG_MAC_DINH,
-          coYeuCauDoc: yeuCau.length > 0,
+          coYeuCauDoc: yeuCau.length > 0 || yeuCauMcp.length > 0,
           biHuy: dieuKhien.signal.aborted,
           coLoi: tt.daBaoLoi,
         });
@@ -1149,6 +1172,17 @@ export class BangChat {
           });
           const kq = await chayToolCucBo(y, dsGoc);
           doanKetQua.push(kq.ok ? kq.ketQua : `LỖI: ${kq.lyDo}`);
+        }
+        // ★★★ ĐỢT H / TASK H2 — gọi từng yêu cầu MCP ngoài. `goiToolMcpNgoai` LUÔN trả một chuỗi đã
+        // đi qua `dinhDangKetQuaMcpNgoai` (che bí mật + vô hiệu hoá avi-tool giả mạo + cắt trần, B3+B4)
+        // — không có nhánh "lỗi ⇒ nối nguyên văn" nào tách riêng như `chayToolCucBo` ở trên, vì hàm
+        // đó tự định dạng CẢ hai nhánh ok/lỗi giống nhau (khác `KetQuaToolCucBo` cục bộ).
+        for (const y of yeuCauMcp) {
+          void this.panel.webview.postMessage({
+            loai: "thong_bao",
+            thongDiep: `vòng ${vong}/${TRAN_VONG_MAC_DINH} — đang ${nhanYeuCauMcpNgoai(y)}`,
+          });
+          doanKetQua.push(await goiToolMcpNgoai(phuThuocThat(this.context), y));
         }
         /**
          * ★★★ H3(a) (review toàn nhánh 2026-08-30) — GIỮ câu hỏi GỐC, đừng THAY hẳn bằng kết quả

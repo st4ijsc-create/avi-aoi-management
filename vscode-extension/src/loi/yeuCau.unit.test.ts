@@ -177,3 +177,43 @@ describe("dungYeuCauStream — H3(b) (review toàn nhánh 2026-08-30): `laCmdK` 
     expect(String(t.question)).not.toContain(dungVanBanDayGiaoThucDoc());
   });
 });
+
+// ★★★ ĐỢT H / TASK H2 — dsToolMcp: PHẢI giữ nguyên hành vi cũ khi vắng mặt (kiểm NHÁNH KIA).
+describe("dungYeuCauStream — Đợt H / Task H2 (dsToolMcp)", () => {
+  it("★★★ dsToolMcp VẮNG MẶT ⇒ question giống hệt byte-đúng so với trước H2 (đối chứng chính)", () => {
+    const conH2 = dungYeuCauStream({ ...CHUNG, cheDo: { loai: "local", nhan: "x" } });
+    const coH2NhungRong = dungYeuCauStream({ ...CHUNG, cheDo: { loai: "local", nhan: "x" }, dsToolMcp: [] });
+    expect(conH2.question).toBe(coH2NhungRong.question);
+  });
+
+  it("★★★ LOCAL + có tool MCP đã kết nối ⇒ question chứa văn bản dạy mcp_goi", () => {
+    const t = dungYeuCauStream({
+      ...CHUNG,
+      cheDo: { loai: "local", nhan: "x" },
+      dsToolMcp: [{ server: "demo", tool: "get_weather", moTa: "lấy thời tiết" }],
+    });
+    const q = String(t.question);
+    expect(q).toContain('server "demo"');
+    expect(q).toContain('tool "get_weather"');
+    expect(q).toContain("mcp_goi");
+  });
+
+  it("★★ SERVER ⇒ KHÔNG dạy mcp_goi dù có truyền dsToolMcp (cùng lý do không dạy giao thức đọc ở SERVER)", () => {
+    const t = dungYeuCauStream({
+      ...CHUNG,
+      cheDo: { loai: "server", projectId: "csharp", nhan: "Demo" },
+      dsToolMcp: [{ server: "demo", tool: "get_weather", moTa: "x" }],
+    });
+    expect(String(t.question)).not.toContain("mcp_goi");
+  });
+
+  it("★★ Cmd+K ⇒ KHÔNG dạy mcp_goi (cùng lý do không dạy giao thức đọc ở Cmd+K)", () => {
+    const t = dungYeuCauStream({
+      ...CHUNG,
+      cheDo: { loai: "local", nhan: "x" },
+      laCmdK: true,
+      dsToolMcp: [{ server: "demo", tool: "get_weather", moTa: "x" }],
+    });
+    expect(String(t.question)).not.toContain("mcp_goi");
+  });
+});

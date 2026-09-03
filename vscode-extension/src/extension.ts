@@ -11,6 +11,9 @@ import { dungCauHoiSuaChon } from "./loi/cauHoiSuaChon";
 import { duongTuongDoiTrongWorkspace } from "./loi/chanGhi";
 import { duocPhepRoiMay } from "./loi/nguCanh";
 import { hoTroThanhBenPhu, KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU } from "./loi/thanhBenPhu";
+// ★★★ ĐỢT H / TASK H2 / B5 — lệnh quản lý MCP server ngoài (liệt kê/bật-tắt/xem tool). Xem docblock
+// `ui/mcpQuanLy.ts` cho lý do đi đường QuickPick thay vì webview.
+import { chayQuanLyMcpNgoai } from "./ui/mcpQuanLy";
 
 async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("aviAiLocal");
@@ -180,6 +183,10 @@ export function activate(context: vscode.ExtensionContext): void {
      */
     vscode.commands.registerCommand("aviAiLocal.chatMoi", () => BangChat.thanhBenDangMo()?.chatMoi()),
     vscode.commands.registerCommand("aviAiLocal.lichSu", () => BangChat.thanhBenDangMo()?.moLichSu()),
+    // ★★★ ĐỢT H / TASK H2 / B5 — trả về promise của cả luồng (không `void`), cùng lý do đã ghi ở
+    // `aviAiLocal.dangNhap`: một lệnh gọi lại lệnh này qua `executeCommand` (hiện chưa có, nhưng nếu
+    // có trong tương lai) phải đợi được ĐÚNG lúc luồng thật xong, không phải "đã gọi lệnh".
+    vscode.commands.registerCommand("aviAiLocal.mcpServers", () => chayQuanLyMcpNgoai(context)),
   );
 
   /**

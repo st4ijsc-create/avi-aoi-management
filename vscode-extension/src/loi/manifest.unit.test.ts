@@ -31,6 +31,22 @@ describe("manifest extension", () => {
     for (const k of khoa) expect(k.startsWith("aviAiLocal.")).toBe(true);
   });
 
+  /**
+   * ★★★ ĐỢT H / TASK H2 / B1 — `aviAiLocal.mcpServers` PHẢI `scope: "machine"`, KHÔNG cho workspace
+   * ghi đè. Bài học Đợt A đã trả giá: `aviAiLocal.serverUrl` từng thiếu `scope`, để một repo thù
+   * địch sửa `.vscode/settings.json` là chiếm được đường dữ liệu (mật khẩu + cookie). Với
+   * `mcpServers` cái giá còn nặng hơn — thiếu `scope` nghĩa là một repo thù địch có thể tự thêm một
+   * server MCP (một TIẾN TRÌNH SẼ ĐƯỢC CHẠY) vào cấu hình chỉ bằng cách commit một tệp
+   * `.vscode/settings.json`.
+   */
+  it("★★★ aviAiLocal.mcpServers PHẢI scope:\"machine\" — workspace KHÔNG được ghi đè", () => {
+    expect(manifest.contributes.configuration.properties["aviAiLocal.mcpServers"]?.scope).toBe("machine");
+  });
+
+  it("★ ĐỐI CHỨNG — aviAiLocal.serverUrl vẫn scope:\"machine\" (bài học Đợt A không bị hoàn tác)", () => {
+    expect(manifest.contributes.configuration.properties["aviAiLocal.serverUrl"]?.scope).toBe("machine");
+  });
+
   it("★★★ KHÔNG lệnh nào trong Command Palette tự nó GHI/ÁP/DUYỆT — mọi lượt ghi phải qua thẻ duyệt", () => {
     /**
      * ⚠ TIÊU ĐỀ CŨ NÓI SAI TỪ ĐỢT C (sửa 2026-08-30): nó viết "Đợt A KHÔNG khai lệnh nào mang nghĩa
