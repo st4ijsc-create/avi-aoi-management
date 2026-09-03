@@ -67,6 +67,8 @@ import { laHinhDangCayV2 } from "../contracts/machineDataContract";
 import { dichCayKetQua, type CayDaDich, type CaptureDaDich } from "../services/ingestCayKetQua";
 // Khối B Task 4 (BG-92) — cổng spec cho đường CÂY v2, CÙNG hàm mà cửa trực tiếp dùng.
 import { congSpecTuBanDay } from "../services/specGateCayV2";
+// BG-97 — hàm THUẦN đưa chuỗi thời gian máy gửi về cùng khung với `changedAt`.
+import { mocDoTuChuoi } from "../services/gioiHanLucDoCayV2";
 import type { ResultVerdict } from "@shared/rollupVerdict";
 
 // ============================================================
@@ -1270,8 +1272,16 @@ export const aoiPackageRouter = router({
             // xuống NG. CÙNG hàm tra + CÙNG cổng mà đường trực tiếp v2.0 dùng
             // (`db.traBanDayChoCay` + `congSpecTuBanDay`) — không chép bản thứ hai,
             // vì hai bản chép tay là đúng cách BG-42 ra đời.
+            // ★★★ BG-97 — MỐC "bo được đo", tính TRƯỚC lượt tra. `null` (máy không gửi
+            // mốc nào) ⇒ BỎ đường snapshot thay vì neo vào `new Date()`, vì `new Date()`
+            // làm lượt phát lại chấm theo giới hạn của LÚC PHÁT LẠI. CÙNG hàm với cửa
+            // trực tiếp — `mocDoTuChuoi` đưa chuỗi TRẦN về cùng khung với `changedAt`,
+            // KHÔNG phải `new Date(chuỗi trần)` (phụ thuộc múi giờ server — bẫy BG-96).
+            // ⚠ KHÔNG thay `rawInspTime`/`inspectionTime` bên dưới — giữ nguyên byte.
+            const mocDo: Date | null =
+              mocDoTuChuoi(metaData.completedAt) ?? mocDoTuChuoi(metaData.startedAt);
             const traBanDay = await db.traBanDayChoCay(
-              machine.id, metaData, resolvedProductModel?.id,
+              machine.id, metaData, resolvedProductModel?.id, { lucDo: mocDo },
             );
             const congSpec = congSpecTuBanDay(traBanDay);
             cay = dichCayKetQua(metaData, { cong: congSpec });

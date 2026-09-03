@@ -32,7 +32,17 @@ import { UNSCOPED_LABELS, type ScopeEmptyReason, type ScopeLabels, scopeLabelsOf
 import type { CayDaDich, SurfaceDaDich, PositionDaDich, CaptureDaDich } from "../services/ingestCayKetQua";
 // Khối B Task 3 (B-4, Đ-19) — tra `pointDefId` cho cấp component. Import MỘT CHIỀU:
 // `cayDay.ts` không import ngược file này (đã kiểm), nên không có vòng.
-import { khoaCapComponent, traPointDefCapComponent, type KetQuaTraPointDef } from "./cayDay";
+import {
+  khoaCapComponent,
+  napLichSuGioiHanTheoDiem,
+  traPointDefCapComponent,
+  type KetQuaTraPointDef,
+} from "./cayDay";
+// BG-97 — hàm THUẦN (0 I/O) neo giới hạn vào lúc bo được đo. Nhập THẲNG module đúng
+// nguyên tắc Task 3 ("hàm THUẦN đi thẳng module; hàm ĐỌC CSDL đi qua barrel để lưới
+// mock được"). `gioiHanLucDoCayV2.ts` chỉ import `pointResultEvaluator` (cũng thuần,
+// 0 import) nên không có vòng.
+import { giaiGioiHanTaiLucDo, laCongSnapshotBat } from "../services/gioiHanLucDoCayV2";
 import { verdictLuuTru } from "../../shared/rollupVerdict";
 
 // ============ LIST PROJECTION (doc 27 gap B9) ============
@@ -415,11 +425,42 @@ export interface CayCoKhoaTra {
  * hai trường có mặt y hệt ở payload thô. Nếu vẫn buộc `CayDaDich` thì hai cửa phải
  * dịch cây HAI LẦN (một lần để lấy khoá, một lần để chấm), và bản dịch thứ hai là
  * chỗ `dungKhoaKhuTrungV2` có thể bắt đầu băm một payload khác.
+ *
+ * ── ★★★ BG-97 — `opts.lucDo`: MỐC "BO ĐƯỢC ĐO", CHỌN CÓ CHỦ Ý ────────────────
+ * Khi `SPEC_GATE_SNAPSHOT_ENABLED` BẬT và `lucDo` có mặt, `gioiHan` trả về là giới hạn
+ * **TẠI `lucDo`** (tái dựng từ `measurement_point_versions`), không phải giới hạn đang
+ * sống. Cờ TẮT (mặc định) ⇒ trả nguyên hành vi Task 4, **0 lượt đọc DB thêm**.
+ *
+ * ⚠⚠ **MỐC NÀO, VÀ VÌ SAO — BG-96 CHẮN ĐƯỜNG Ở ĐÂY.** Hai cửa v2 truyền
+ * `mocDoTuChuoi(completedAt) ?? mocDoTuChuoi(startedAt)`, và `null` khi máy không gửi
+ * cái nào. Ba quyết định, theo thứ tự quan trọng:
+ *   1. **WAL phát lại phải cho CÙNG kết quả.** Đây là mệnh đề 2 của BG-97. Mốc phải nằm
+ *      TRONG payload, vì WAL (`inspectionStoreForward`) chỉ lưu payload — `ProcessFn`
+ *      nhận đúng một tham số. Mọi mốc lấy từ đồng hồ (`new Date()`) làm lượt phát lại
+ *      chấm theo giới hạn của **lúc phát lại**, tức tái tạo chính lỗ BG-97. Đường v1.x
+ *      giải bài này bằng `input.serverReceivedAt` (trường hợp đồng, đi cùng payload qua
+ *      WAL); hợp đồng v2.0 **không có** trường đó, nên `completedAt/startedAt` là mốc
+ *      DUY NHẤT bền qua WAL. Không gửi cái nào ⇒ `null` ⇒ **BỎ** đường snapshot (chấm
+ *      theo LIVE) — cố ý, thay vì lấy `new Date()` cho có.
+ *   2. **HỆ QUY CHIẾU, đo được, không suy đoán** (xem `mocDoTuChuoi`): drizzle đọc cột
+ *      `timestamp` không múi giờ bằng cách nối `+0000`, còn `new Date("…T11:00:00.000")`
+ *      (chuỗi TRẦN) lại hiểu theo múi giờ **hệ điều hành SERVER** — đo được:
+ *      `2026-09-03T04:00:00.000Z` trên máy `+07:00`. Đem hai bên so thẳng thì verdict
+ *      phụ thuộc `TZ` của máy chủ: đổi `TZ` là đổi verdict, IM LẶNG — đúng bẫy BG-96.
+ *      `mocDoTuChuoi` hiểu chuỗi trần là **giờ tường UTC**, cùng luật với `changedAt`.
+ *   3. **KHÔNG so header với cây, và KHÔNG đụng `inspectionTime`.** `rawInspTime`/
+ *      `localInspTime` ở hai cửa giữ NGUYÊN cách tính cũ (doc 51 P1) — bản vá này chỉ
+ *      THÊM một mốc riêng, không đổi một byte nào của cột thời gian đã ghi.
+ * ⚠ Giá phải trả, khai rõ: mốc vẫn là **đồng hồ của MÁY**. Máy gửi giờ ĐỊA PHƯƠNG mà
+ * không kèm múi giờ ⇒ neo lệch đúng bằng múi giờ của máy đó (lỗi đồng hồ máy, hệ không
+ * tự sửa được). Lối ra là hợp đồng v2.0 mang `serverReceivedAt`/`pointsConfigVersion`
+ * như v1.x. Xem báo cáo BG-97 §mối-lo.
  */
 export async function traBanDayChoCay(
   machineId: number,
   cay: CayCoKhoaTra,
   productModelId?: number | null,
+  opts?: { lucDo?: Date | null },
 ): Promise<KetQuaTraPointDef> {
   const khoa: { captureExtId: string; componentExtId: string }[] = [];
   for (const s of cay.surfaces) {
@@ -431,7 +472,35 @@ export async function traBanDayChoCay(
       }
     }
   }
-  return traPointDefCapComponent({ machineId, productModelId, khoa });
+  const tra = await traPointDefCapComponent({ machineId, productModelId, khoa });
+
+  // ★★★ BG-97 — NEO GIỚI HẠN VÀO **LÚC BO ĐƯỢC ĐO**.
+  // Cờ TẮT (mặc định, KHÔNG đổi) hoặc không có mốc ⇒ trả NGUYÊN đối tượng cũ: 0 lượt
+  // đọc DB thêm, hành vi giống Task 4 tới từng byte. Đó là vì sao mệnh đề "verdict bo
+  // cũ không đổi" đúng theo cấu tạo chứ không theo may mắn.
+  if (!laCongSnapshotBat()) return tra;
+  const lucDo = opts?.lucDo;
+  if (!(lucDo instanceof Date) || !Number.isFinite(lucDo.getTime())) return tra;
+  if (tra.banDo.size === 0) return tra;
+
+  const lichSu = await napLichSuGioiHanTheoDiem([...tra.banDo.values()]);
+  if (lichSu.size === 0) return tra; // không điểm nào từng bị sửa ⇒ LIVE là giới hạn thời kỳ đó
+  const giai = giaiGioiHanTaiLucDo({
+    banDo: tra.banDo,
+    gioiHanSong: tra.gioiHan,
+    lichSu,
+    lucDo,
+  });
+  if (giai.theoSnapshot > 0) {
+    // ⚠ KHÔNG ÂM THẦM: một bo chấm theo giới hạn KHÁC giới hạn đang sống là chuyện
+    // người vận hành phải thấy được — đây chính là ca "bo tồn kho / WAL phát lại".
+    console.warn(
+      `[traBanDayChoCay] BG-97 SNAPSHOT-GATE: ${giai.theoSnapshot}/${giai.theoSnapshot + giai.theoSong} ` +
+        `linh kiện chấm theo giới hạn TẠI ${lucDo.toISOString()} (không phải giới hạn đang sống) ` +
+        `· máy=${machineId} · mẫu: ${giai.mauSnapshot.join(" | ")}`,
+    );
+  }
+  return { ...tra, gioiHan: giai.gioiHan };
 }
 
 /**

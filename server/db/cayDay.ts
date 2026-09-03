@@ -115,7 +115,7 @@ import { createHash } from "node:crypto";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
-import { measurementPointDefs } from "../../drizzle/schema";
+import { measurementPointDefs, measurementPointVersions } from "../../drizzle/schema";
 import {
   productSurfaces,
   productPositions,
@@ -128,7 +128,7 @@ import type { MachineTemplate } from "../contracts/machineTemplateContract";
 // (0 I/O), nhưng `import type` bị xoá lúc biên dịch nên file này không nhận thêm
 // một phụ thuộc runtime nào, và `specGateCayV2.ts` (import ngược `khoaCapComponent`
 // từ đây) không tạo vòng chạy.
-import type { PointLimitSource } from "../services/pointResultEvaluator";
+import type { PointLimitSnapshot, PointLimitSource } from "../services/pointResultEvaluator";
 
 /** Loại đo mặc định cho một component của cây dạy — xem docblock đầu file. */
 export const LOAI_DO_MAC_DINH_CAY_DAY = "VISUAL" as const;
@@ -899,4 +899,79 @@ export async function traPointDefCapComponent(opts: {
   }
 
   return { banDo, gioiHan, mayCoBanDay, khoaNhapNhang: [...nhapNhang] };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// BG-97 — LỊCH SỬ SỬA GIỚI HẠN, NẠP MỘT LƯỢT CHO CẢ BO
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ★★★ Nạp `measurement_point_versions` cho NHIỀU point-def trong **MỘT** `SELECT`.
+ *
+ * Đây là nguồn snapshot mà `giaiGioiHanTaiLucDo` (`server/services/gioiHanLucDoCayV2.ts`)
+ * tái dựng giới hạn "lúc bo được đo". Người ghi các hàng này là `updateMeasurementPointDef`
+ * (`server/db/product.ts`): mỗi lượt kỹ sư sửa một điểm đo, nó chụp hàng **TRƯỚC KHI SỬA**
+ * vào `snapshotJson` và đóng dấu `changedAt = now()`.
+ *
+ * ── ⚠ VÌ SAO KHÔNG DÙNG LẠI `loadPointLimitSnapshots` CỦA v1.x ──────────────
+ * Hàm đó (`server/routers/machineApiRouters.ts`) tra **MỘT** `pointDefId` mỗi lượt, có
+ * cache theo submission. Đúng cho v1.x: nó chỉ chạy cho bo **ĐÃ BIẾT là STALE**, thường
+ * là 0 lượt. Một bo CÂY có 16–48 lá (đo mẫu máy thật: 16 và 48) ⇒ bê nguyên sang v2 là
+ * **N+1 trên đường ingest nóng** — đúng thứ mà docblock `traPointDefCapComponent` và khối
+ * variant-override của v1.x đều ghi thành văn là phải tránh.
+ * ⚠⚠ PHÉP **CHỌN** giới hạn thì **KHÔNG** chép: cả hai đường gọi CÙNG một hàm thuần
+ * `resolveGateLimitsForBoard` (`server/services/pointResultEvaluator.ts`). Thứ trùng lặp
+ * ở đây chỉ là câu `SELECT`, và nó **hẹp hơn** bản v1.x một cách có chủ ý (xem dưới).
+ *
+ * ── CỐ Ý KHÔNG chiếu cột 0282 `productPointsConfigVersion` ──────────────────
+ * Đường v2 **không có** `pointsConfigVersion` để khai (`machineDataContractV2` không mang
+ * trường đó — đo 2026-09-03), nên `giaiGioiHanTaiLucDo` luôn truyền `declaredVersion: null`
+ * và nhánh VERSION-EXACT không bao giờ chạy ⇒ cột đó **không được đọc**. Không chiếu nó
+ * cũng có nghĩa file này KHÔNG cần phép dò cột có-điều-kiện của v1.x (migration 0282 được
+ * bảo vệ), tức bớt đúng một chỗ có thể hỏng.
+ *
+ * ⚠ BEST-EFFORT như v1.x: một lượt đọc hỏng ⇒ bản đồ RỖNG ⇒ mọi điểm rơi về giới hạn
+ * ĐANG SỐNG (hành vi TRƯỚC BG-97), **không bao giờ** làm hỏng lượt ingest. Đây là chiều
+ * an toàn: mất phần bảo vệ mới, không mất bo.
+ */
+export async function napLichSuGioiHanTheoDiem(
+  pointDefIds: readonly number[],
+): Promise<Map<number, PointLimitSnapshot[]>> {
+  const ket = new Map<number, PointLimitSnapshot[]>();
+  const ids = [...new Set(pointDefIds)].filter((x) => Number.isFinite(x));
+  if (ids.length === 0) return ket;
+  try {
+    const d = await getDb();
+    if (!d) return ket;
+    const hang = await d
+      .select({
+        pointDefId: measurementPointVersions.pointDefId,
+        changedAt: measurementPointVersions.changedAt,
+        snapshotJson: measurementPointVersions.snapshotJson,
+      })
+      .from(measurementPointVersions)
+      .where(inArray(measurementPointVersions.pointDefId, ids));
+    for (const h of hang) {
+      // ⚠ `changedAt` không phải `Date` (hàng hỏng/driver lạ) ⇒ BỎ, chứ không
+      // `new Date(...)` bừa: `resolveLimitsAtInstant` lọc đúng vị từ này, và một
+      // `Invalid Date` lọt vào sẽ làm phép chọn im lặng trả sai.
+      if (!(h.changedAt instanceof Date) || !Number.isFinite(h.changedAt.getTime())) continue;
+      const arr = ket.get(h.pointDefId);
+      const s: PointLimitSnapshot = {
+        changedAt: h.changedAt,
+        limits: (h.snapshotJson ?? {}) as PointLimitSource,
+        productPointsConfigVersion: null,
+      };
+      if (arr) arr.push(s);
+      else ket.set(h.pointDefId, [s]);
+    }
+  } catch (err) {
+    console.warn(
+      `[cayDay] BG-97 — nạp lịch sử giới hạn HỎNG cho ${ids.length} point-def ` +
+        `(cổng rơi về giới hạn ĐANG SỐNG, KHÔNG chặn ingest):`,
+      (err as Error)?.message ?? err,
+    );
+    return new Map();
+  }
+  return ket;
 }

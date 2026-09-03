@@ -41,6 +41,8 @@ import { tachTriDo } from "../db/inspection";
 // module (cùng nguyên tắc dòng trên): `db.traBanDayChoCay` mới là hàm ĐỌC CSDL và
 // nó vẫn đi qua barrel `../db` để lưới mock được.
 import { congSpecTuBanDay } from "../services/specGateCayV2";
+// BG-97 — hàm THUẦN đưa chuỗi thời gian máy gửi về cùng khung với `changedAt`.
+import { mocDoTuChuoi } from "../services/gioiHanLucDoCayV2";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
 import {
   authenticateMachine,
@@ -3707,7 +3709,21 @@ async function submitInspectionTreeV2(
   // `dichCayKetQua` cuộn lên bốn cấp (cuộn trước rồi mới chấm sẽ để cấp bo chốt OK
   // trong khi lá đã bị hạ thành NG). Vì vậy lượt tra chạy trên PAYLOAD THÔ — cùng bộ
   // khoá, cùng hàm `db.traBanDayChoCay` (xem `CayCoKhoaTra`).
-  const traBanDay = await db.traBanDayChoCay(machine.id, payload, productModelRecord?.id);
+  // ★★★ BG-97 — MỐC "bo được đo", tính TRƯỚC lượt tra vì `traBanDayChoCay` cần nó để
+  // neo giới hạn. `null` khi máy không gửi mốc nào ⇒ đường snapshot bị BỎ (chấm theo
+  // giới hạn đang sống), CỐ Ý: lấy `new Date()` thay thế sẽ làm lượt WAL phát lại chấm
+  // theo giới hạn của LÚC PHÁT LẠI — chính lỗ BG-97. Xem docblock `traBanDayChoCay`.
+  // ⚠⚠ `mocDoTuChuoi` là một HỆ QUY CHIẾU RIÊNG, KHÔNG phải `rawInspTime` bên dưới:
+  // nó đưa chuỗi TRẦN của máy về cùng khung với `measurement_point_versions.changedAt`
+  // (drizzle đọc cột `timestamp` bằng cách nối `+0000`). Dùng `new Date(chuỗi trần)`
+  // ở đây làm verdict phụ thuộc múi giờ HỆ ĐIỀU HÀNH server — bẫy BG-96, im lặng.
+  // ⚠ KHÔNG đụng `rawInspTime`/`localInspTime` bên dưới: cột `inspectionTime` giữ NGUYÊN.
+  const mocDo: Date | null =
+    mocDoTuChuoi(payload.completedAt) ?? mocDoTuChuoi(payload.startedAt);
+
+  const traBanDay = await db.traBanDayChoCay(machine.id, payload, productModelRecord?.id, {
+    lucDo: mocDo,
+  });
   const congSpec = congSpecTuBanDay(traBanDay);
 
   const cay = dichCayKetQua(payload, { cong: congSpec });
