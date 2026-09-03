@@ -356,10 +356,10 @@ const gioiHanProjection = Object.fromEntries(
 
 ## Cổng ra
 
-- [ ] Lưới bất biến BG-96 xanh và ĐÃ TỪNG ĐỎ trên mã cũ (nguyên văn trong báo cáo); census fake-UTC xanh + đột biến đỏ.
-- [ ] Kịch bản WAL "siết limit rồi phát lại" chấm theo limit CŨ, remark chứng minh; cờ tắt ⇒ hành vi cũ; v1 không đổi.
-- [ ] Dạy giới hạn qua UI thật (hoặc caller tRPC) → đẩy lại mẫu kết quả thật ⇒ `specGate.dat + truot > 0` lần đầu trên đường v2 (trước đó `khongGioiHan` 100%) — dán số trước/sau kèm `current_database()`.
-- [ ] Sửa 3D trên sản phẩm live đi qua hàng đợi duyệt (lưới Task 8 bước 1).
-- [ ] `npm run check` = 0 · `npm run check:tests` = 0 · `i18n:check` xanh · `viStringCoverage` xanh · các census hiện hành xanh.
+- [x] Lưới bất biến BG-96 xanh và ĐÃ TỪNG ĐỎ trên mã cũ (nguyên văn trong báo cáo); census fake-UTC xanh + đột biến đỏ. — Task 1-3 `aedd3096`→`2f37e9d2`; BG-99 siết bất biến `dff2e531`; census theo-dòng ghi nợ BG-100.
+- [x] Kịch bản WAL "siết limit rồi phát lại" chấm theo limit CŨ, remark chứng minh; cờ tắt ⇒ hành vi cũ; v1 không đổi. — BG-97 `c98781db` + neo mốc-nhận-server `dff2e531`; review đo neo tất định (`ProcessFn` 1 điểm gọi, luôn `enqueuedAt`); WAL hỏng đĩa → BG-101.
+- [x] Dạy giới hạn qua UI thật (hoặc caller tRPC) → đẩy lại mẫu kết quả thật ⇒ `specGate.dat + truot > 0` lần đầu trên đường v2 (trước đó `khongGioiHan` 100%) — dán số trước/sau kèm `current_database()`. — `343f8af9` `congRaKhoiC.db.test.ts`, `aoi_management_test`: TRƯỚC dat 0/truot 0/chuaDay 32/khongGioiHan 16 → SAU dạy 3: dat **2**/truot **1**/chuaDay 32/khongGioiHan 13; `mayTuMauThuan` {48,0} không đổi; versions 0→3; đột biến bỏ dạy ⇒ `expected 0 to be greater than 0`. BG-112: 32/48 lệch fixture.
+- [x] Sửa 3D trên sản phẩm live đi qua hàng đợi duyệt (lưới Task 8 bước 1). — `fc232773`: 4/4 điểm gọi có gate + version (review grep 14 `.update(measurementPointDefs)`, 0 lách). ⚠ "đi qua hàng đợi" = bị CHẶN (FORBIDDEN), không tự ghi hàng đợi — BG-111.
+- [x] `npm run check` = 0 · `npm run check:tests` = 0 · `i18n:check` xanh · `viStringCoverage` xanh · các census hiện hành xanh. — Đo 2026-09-04 lúc không ai ghi: `check` 0 · `check:tests` **1** (`bangTerminal.unit.test.ts:73`, có sẵn `2cb1f771` phiên AI-coding, KHÔNG Khối C) · `i18n:check` 0 mới · `viStringCoverage` 8/8 · census §3 xanh sau BG-107 ×3 di trú. `rcaActionSuggester.test.ts` lỗi nạp = mock `aiLocalTools/toolRegistry`, Khối C không chạm.
 - [ ] Ảnh tab Cây dạy đã TỰ MỞ XEM.
-- [ ] Cập nhật backlog toàn cảnh: đánh dấu BG-96/97/98 + Đ-19-phần-giới-hạn; ghi nợ mới nếu phát sinh.
+- [x] Cập nhật backlog toàn cảnh: đánh dấu BG-96/97/98 + Đ-19-phần-giới-hạn; ghi nợ mới nếu phát sinh. — `f86a323e` (BG-95..106, 4 đóng) · `8d7e9c6e`/`a7f8664a`/`581a3849` (BG-107/110) · `df10a8c7` (108/109) · `ef997a87` (111) · `c2fe2c78` (112) · `71346e52` (113) · `f434d8dd` (114) · `3ab189cd` (115) · `e4e61326` (Đ-19 + BG-92 ĐÓNG, §5 sửa).
