@@ -86,6 +86,10 @@ vi.mock("../db", () => {
     // (validate() XANH ⇔ ingest THẬT nhận) không đổi một chút nào.
     traBanDayChoCay: vi.fn(async () => ({
       banDo: new Map<string, number>(),
+      // Khối B Task 4 (BG-92) — spec-gate đọc `gioiHan` từ CHÍNH kết quả tra này.
+      // Bản đồ RỖNG = "chưa dạy" ⇒ cổng trả `chuaDay`, KHÔNG trả "đạt" (đó là cả
+      // điểm của Task 4), nên mọi mệnh đề cũ của file này giữ nguyên nghĩa.
+      gioiHan: new Map<string, PointLimitSource>(),
       mayCoBanDay: false,
       khoaNhapNhang: [] as string[],
     })),
@@ -127,6 +131,8 @@ import { machineContractRouter } from "./machineContractRouter";
 import { LATEST_MACHINE_CONTRACT_VERSION, LATEST_PROCESS_CONTRACT_VERSION } from "../contracts/machineDataContract";
 import * as db from "../db";
 import type { TrpcContext } from "../_core/context";
+// Khối B Task 4 (BG-92) — kiểu giới hạn đã dạy mà `traBanDayChoCay` nay cũng trả về.
+import type { PointLimitSource } from "../services/pointResultEvaluator";
 
 const MACHINE = { id: 777, code: "AOI-MC-01", name: "AOI MC", stationId: 1, isActive: true };
 

@@ -34,8 +34,20 @@
 // rỗng 100%), lá gắn `ntfSource: "machine"` khi `ntf === true`, và `null` khi
 // không NTF. Nguồn "human"/"both" KHÔNG được suy đoán ở đường v2.0 — đường
 // v2.0 không mang luồng người xác nhận tại thời điểm ingest.
+//
+// ── ★★★ Khối B Task 4 (BG-92) — SPEC-GATE CHẠY Ở ĐÂY, TRƯỚC MỌI PHÉP CUỘN ────
+// `opts.cong` (tuỳ chọn) là cổng spec (`./specGateCayV2`). Nó chấm TỪNG lá bằng
+// giới hạn ĐÃ DẠY và có thể HẠ `OK` của máy xuống `NG` **trước khi** `rollupVerdict`
+// chạy ở cấp capture. Thứ tự đó là điều kiện để cổng có tác dụng: cuộn trước rồi
+// mới chấm sẽ để cấp trên chốt OK trong khi cấp lá đã bị nâng thành NG (đúng cảnh
+// báo trong docblock `shared/rollupVerdict.ts`). Ở đây nó là HỆ QUẢ CẤU TẠO —
+// `dichCapture` gọi `cong.cham` rồi mới gọi `rollupVerdict(components)`.
+// ⚠ Hàm vẫn KHÔNG chạm DB: cổng được BƠM VÀO (`opts.cong`), phép tra bản dạy nằm ở
+// NƠI GỌI. `import type { CongSpecCayV2 }` bị xoá lúc biên dịch nên tính chất "0
+// import DB" của file này KHÔNG đổi. Không truyền `opts.cong` ⇒ hành vi y hệt trước.
 import { rollupVerdict, verdictLuuTru, verdictXauHon, type NtfSource, type ResultVerdict } from "@shared/rollupVerdict";
 import type { MachineDataContractV2 } from "../contracts/machineDataContractV2";
+import type { CongSpecCayV2 } from "./specGateCayV2";
 
 /** Tên kiểu theo đúng chữ ký brief yêu cầu — alias của hợp đồng v2.0 đã zod-parse. */
 export type MachinePayloadV2 = MachineDataContractV2;
@@ -61,6 +73,17 @@ export interface ComponentDaDich {
   errorDesc: string | null;
   startedAt?: string;
   completedAt?: string;
+  /**
+   * ★ Khối B Task 4 (BG-92) — dấu vết của spec-gate cho CHÍNH lá này, ghi thẳng vào
+   * `measurement_results.remark` (xem `ghiCayKetQua`). Ba giá trị có nghĩa:
+   *   · `"Spec gate: …"`  — TRƯỢT (cùng tiền tố đường v1.x ⇒ một câu SELECT bắt cả hai đường)
+   *   · `"[SG:DAT]"`      — ĐÃ CHẤM bằng giới hạn đã dạy và ĐẠT
+   *   · `"[SG:KHONG_KL]"` — tra ra bản dạy nhưng KHÔNG chấm được gì ⇒ **không kết luận**
+   * `null` = cổng tắt, hoặc linh kiện CHƯA DẠY (khi đó Task 3 cũng không ghi hàng nào).
+   * Không có nhãn ở hàng thì "đã kiểm và đạt" và "chưa kiểm gì" trông y hệt nhau
+   * trên bảng — đúng hình dạng "giấy vô can giả" mà task này tồn tại để không tạo ra.
+   */
+  ghiChuCong: string | null;
 }
 
 /**
@@ -160,11 +183,24 @@ function coLech(
   return declaredResult !== cuon.result || declaredNtf !== cuon.ntf;
 }
 
-function dichComponent(c: RawComponent): ComponentDaDich {
+function dichComponent(
+  c: RawComponent,
+  captureExtId: string,
+  cong?: CongSpecCayV2,
+): ComponentDaDich {
+  // ★★★ BG-92 — CHẤM TRƯỚC, CUỘN SAU. `cong.cham` chỉ hạ OK→NG (monotonic, thừa kế
+  // `evaluatePointResult`), nên `result` vẫn nằm trong `"OK" | "NG"` của hợp đồng v2.0.
+  // ⚠ `value` là trị đo THÔ máy gửi; `lowerLimit`/`upperLimit` MÁY KHAI ở lá CỐ Ý
+  // KHÔNG được đưa vào cổng — chấm lời khai bằng chính lời khai là một cổng rỗng.
+  const cham = cong?.cham(captureExtId, {
+    componentId: c.componentId,
+    result: c.result,
+    value: c.value ?? null,
+  });
   return {
     componentId: c.componentId,
     componentName: c.componentName,
-    result: c.result,
+    result: cham?.result ?? c.result,
     ntf: c.ntf,
     // Xem chú thích đầu file — v2.0 chỉ có cờ `ntf` tại lá, nguồn luôn là "machine".
     ntfSource: c.ntf ? "machine" : null,
@@ -175,13 +211,17 @@ function dichComponent(c: RawComponent): ComponentDaDich {
     errorDesc: c.errorDesc ?? null,
     startedAt: c.startedAt,
     completedAt: c.completedAt,
+    ghiChuCong: cham?.ghiChu ?? null,
   };
 }
 
-function dichCapture(cap: RawCapture): CaptureDaDich {
+function dichCapture(cap: RawCapture, cong?: CongSpecCayV2): CaptureDaDich {
   // components: [] rỗng là hình dạng HỢP LỆ (đèn chụp vùng không có linh kiện) —
   // rollupVerdict([]) trả {result:"OK", ntf:false, ntfSource:null}, KHÔNG ném lỗi.
-  const components = cap.components.map(dichComponent);
+  // ⚠⚠ ĐỘT BIẾN BẮT BUỘC BG-92: đổi `dichComponent(c, cap.captureId, cong)` thành
+  // `dichComponent(c, cap.captureId)` (bỏ cổng) ⇒ linh kiện ngoài giới hạn đã dạy mà
+  // máy khai OK lại đi lọt — đúng hành vi TRƯỚC bản vá. Lưới phải ĐỎ.
+  const components = cap.components.map((c) => dichComponent(c, cap.captureId, cong));
   const cuon = rollupVerdict(components);
   return {
     captureId: cap.captureId,
@@ -199,8 +239,8 @@ function dichCapture(cap: RawCapture): CaptureDaDich {
   };
 }
 
-function dichPosition(pos: RawPosition): PositionDaDich {
-  const captures = pos.captures.map(dichCapture);
+function dichPosition(pos: RawPosition, cong?: CongSpecCayV2): PositionDaDich {
+  const captures = pos.captures.map((c) => dichCapture(c, cong));
   // Cuộn từ CÁI ĐÃ CUỘN của capture (rolledResult/rolledNtf), không phải result/ntf
   // máy khai ở capture — xem giải thích đầu file.
   const cuon = rollupVerdict(
@@ -221,8 +261,8 @@ function dichPosition(pos: RawPosition): PositionDaDich {
   };
 }
 
-function dichSurface(surf: RawSurface): SurfaceDaDich {
-  const positions = surf.positions.map(dichPosition);
+function dichSurface(surf: RawSurface, cong?: CongSpecCayV2): SurfaceDaDich {
+  const positions = surf.positions.map((p) => dichPosition(p, cong));
   const cuon = rollupVerdict(
     positions.map((p) => ({ result: p.rolledResult, ntf: p.rolledNtf, ntfSource: p.ntfSource })),
   );
@@ -242,9 +282,22 @@ function dichSurface(surf: RawSurface): SurfaceDaDich {
  * Dịch payload máy v2.0 (đã qua `machineDataContractV2.parse()`) thành cây 4 cấp
  * sẵn sàng ghi DB. Hàm THUẦN: không đọc/ghi DB, không đồng hồ, không số ngẫu nhiên
  * — cùng input luôn cho cùng output.
+ *
+ * ★★★ `opts.cong` (Khối B Task 4, BG-92) — cổng spec (`./specGateCayV2`), BƠM VÀO từ
+ * nơi gọi. Vắng ⇒ hành vi ĐÚNG BẰNG bản trước bản vá (không lời gọi nào). Có ⇒ từng
+ * lá bị chấm bằng giới hạn ĐÃ DẠY **trước** khi cuộn, nên một `OK` bị hạ xuống `NG`
+ * sẽ cuộn lên đủ bốn cấp và vào `product_inspections.overallResult`.
+ * ⚠ Tính THUẦN được giữ theo nghĩa "cùng input cho cùng output": cổng có bộ đếm
+ * (`cong.thongKe`) nên nó CÓ TRẠNG THÁI — trạng thái đó thuộc về đối tượng cổng do
+ * nơi gọi tạo cho ĐÚNG MỘT lượt ingest, không phải trạng thái toàn cục của module.
+ * Gọi hàm này hai lần với CÙNG một cổng sẽ cộng dồn bộ đếm — cố ý, và là lý do mỗi
+ * cửa dựng cổng MỚI cho mỗi bo.
  */
-export function dichCayKetQua(payload: MachinePayloadV2): CayDaDich {
-  const surfaces = payload.surfaces.map(dichSurface);
+export function dichCayKetQua(
+  payload: MachinePayloadV2,
+  opts?: { cong?: CongSpecCayV2 },
+): CayDaDich {
+  const surfaces = payload.surfaces.map((s) => dichSurface(s, opts?.cong));
   // Cuộn TỪ CÁC SURFACE (đã cuộn), KHÔNG lấy lại overallResult/ntf máy khai ở
   // cấp payload — đây vẫn là "cuộn-từ-lá" như trước Pha 1C.
   const cuon = rollupVerdict(

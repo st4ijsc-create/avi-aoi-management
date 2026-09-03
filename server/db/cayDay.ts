@@ -124,6 +124,11 @@ import {
   type MachineTemplateVersion,
 } from "../../drizzle/schema/productConfigTree";
 import type { MachineTemplate } from "../contracts/machineTemplateContract";
+// Khối B Task 4 (BG-92) — CHỈ nhập KIỂU: `pointResultEvaluator` là module THUẦN
+// (0 I/O), nhưng `import type` bị xoá lúc biên dịch nên file này không nhận thêm
+// một phụ thuộc runtime nào, và `specGateCayV2.ts` (import ngược `khoaCapComponent`
+// từ đây) không tạo vòng chạy.
+import type { PointLimitSource } from "../services/pointResultEvaluator";
 
 /** Loại đo mặc định cho một component của cây dạy — xem docblock đầu file. */
 export const LOAI_DO_MAC_DINH_CAY_DAY = "VISUAL" as const;
@@ -726,6 +731,18 @@ export interface KetQuaTraPointDef {
   /** `khoaCapComponent(...)` → `measurement_point_defs.id`. Thiếu khoá = CHƯA DẠY. */
   readonly banDo: ReadonlyMap<string, number>;
   /**
+   * ★★★ Khối B Task 4 (BG-92) — `khoaCapComponent(...)` → **giới hạn ĐÃ DẠY** của
+   * chính point-def đó, cho spec-gate (`server/services/specGateCayV2.ts`).
+   *
+   * ⚠ CÙNG KHOÁ, CÙNG `SELECT`, CÙNG hàng với `banDo` — cố ý: "tra ra `pointDefId`"
+   * và "tra ra giới hạn" KHÔNG THỂ lệch nhau, không thể lọc theo hai bộ điều kiện
+   * khác nhau, và không cần một lượt đọc DB thứ hai. `banDo.has(k)` ⇔ `gioiHan.has(k)`
+   * (lưới ghim bất biến này) — nên `gioiHan.get(k) === undefined` nghĩa là **CHƯA DẠY**,
+   * KHÔNG phải "dạy rồi mà không có giới hạn". Ca thứ hai là một object có mặt với
+   * mọi trường NULL, và `evaluatePointResult` trả `evaluated:false` cho nó.
+   */
+  readonly gioiHan: ReadonlyMap<string, PointLimitSource>;
+  /**
    * Máy này đã dạy **sản phẩm đang chạy** chưa (khi `productModelId` biết được;
    * không biết thì lùi về "máy này từng dạy gì chưa").
    * Phân biệt HAI nhánh mà Task 3 xử lý KHÁC NHAU (xem `ghiCayKetQua`):
@@ -809,7 +826,7 @@ export async function traPointDefCapComponent(opts: {
   const capIds = [...new Set(opts.khoa.map((k) => k.captureExtId))];
   const compIds = [...new Set(opts.khoa.map((k) => k.componentExtId))];
   if (capIds.length === 0 || compIds.length === 0) {
-    return { banDo: new Map(), mayCoBanDay, khoaNhapNhang: [] };
+    return { banDo: new Map(), gioiHan: new Map(), mayCoBanDay, khoaNhapNhang: [] };
   }
 
   const hang = await d
@@ -817,6 +834,29 @@ export async function traPointDefCapComponent(opts: {
       pointDefId: measurementPointDefs.id,
       captureExtId: productCaptures.captureExtId,
       componentExtId: measurementPointDefs.componentExtId,
+      // ★★★ Khối B Task 4 (BG-92) — GIỚI HẠN ĐÃ DẠY, lấy trong CHÍNH lượt SELECT
+      // này. Một lượt đọc thứ hai (dù cùng khoá) là cách hai bộ lọc bắt đầu lệch
+      // nhau; và `pointDefId` không kèm giới hạn thì spec-gate không có gì để tra.
+      // ⚠ Danh sách cột PHẢI phủ `PointLimitSource` — thiếu một cột ở đây là một
+      // chiều giới hạn KHÔNG BAO GIỜ được chấm, và không lưới nào đỏ vì hàng vẫn ghi.
+      lowerLimit: measurementPointDefs.lowerLimit,
+      upperLimit: measurementPointDefs.upperLimit,
+      unit: measurementPointDefs.unit,
+      heightMin: measurementPointDefs.heightMin,
+      heightMax: measurementPointDefs.heightMax,
+      areaMin: measurementPointDefs.areaMin,
+      areaMax: measurementPointDefs.areaMax,
+      volumeMin: measurementPointDefs.volumeMin,
+      volumeMax: measurementPointDefs.volumeMax,
+      coplanarityMax: measurementPointDefs.coplanarityMax,
+      warpageMax: measurementPointDefs.warpageMax,
+      voidPctMax: measurementPointDefs.voidPctMax,
+      offsetXMax: measurementPointDefs.offsetXMax,
+      offsetYMax: measurementPointDefs.offsetYMax,
+      tiltMax: measurementPointDefs.tiltMax,
+      thicknessMin: measurementPointDefs.thicknessMin,
+      thicknessMax: measurementPointDefs.thicknessMax,
+      criteria: measurementPointDefs.criteria,
     })
     .from(measurementPointDefs)
     .innerJoin(productCaptures, eq(productCaptures.id, measurementPointDefs.captureRowId))
@@ -836,6 +876,10 @@ export async function traPointDefCapComponent(opts: {
     ));
 
   const banDo = new Map<string, number>();
+  // ⚠ ĐỔ ĐẦY TRONG CÙNG VÒNG LẶP với `banDo`, và XOÁ ở CÙNG nhánh nhập nhằng —
+  // hai bản đồ phải sống chết cùng nhau. Một cặp khoá bị bỏ khỏi `banDo` mà còn
+  // trong `gioiHan` sẽ làm spec-gate chấm một linh kiện KHÔNG có hàng nào được ghi.
+  const gioiHan = new Map<string, PointLimitSource>();
   const nhapNhang = new Set<string>();
   for (const h of hang) {
     if (h.componentExtId == null) continue; // không thể (vị từ IN đã lọc) — phòng kiểu
@@ -844,10 +888,15 @@ export async function traPointDefCapComponent(opts: {
     if (daCo !== undefined && daCo !== h.pointDefId) {
       nhapNhang.add(k);
       banDo.delete(k);
+      gioiHan.delete(k);
       continue;
     }
-    if (!nhapNhang.has(k)) banDo.set(k, h.pointDefId);
+    if (!nhapNhang.has(k)) {
+      banDo.set(k, h.pointDefId);
+      const { pointDefId: _id, captureExtId: _cap, componentExtId: _comp, ...gh } = h;
+      gioiHan.set(k, gh);
+    }
   }
 
-  return { banDo, mayCoBanDay, khoaNhapNhang: [...nhapNhang] };
+  return { banDo, gioiHan, mayCoBanDay, khoaNhapNhang: [...nhapNhang] };
 }

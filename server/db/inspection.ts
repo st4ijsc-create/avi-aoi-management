@@ -379,6 +379,23 @@ export function tachTriDo(
 }
 
 /**
+ * Hình dạng TỐI THIỂU để gom khoá tra bản dạy: đúng `captureId` + `componentId`.
+ * CẢ `CayDaDich` (cây đã dịch) LẪN `MachineDataContractV2` (payload thô đã zod-parse)
+ * đều thoả kiểu này theo cấu tạo — nên `traBanDayChoCay` chạy được ở CẢ HAI phía của
+ * `dichCayKetQua`, và Task 4 gọi nó TRƯỚC bước dịch (xem docblock bên dưới).
+ */
+export interface CayCoKhoaTra {
+  readonly surfaces: readonly {
+    readonly positions: readonly {
+      readonly captures: readonly {
+        readonly captureId: string;
+        readonly components: readonly { readonly componentId: string }[];
+      }[];
+    }[];
+  }[];
+}
+
+/**
  * ★★★ Khối B Task 3 — TIỆN ÍCH MỘT LƯỢT cho cả hai cửa v2.0: gom mọi cặp
  * `(captureId, componentId)` của cây kết quả rồi tra bản dạy của **máy ĐÃ XÁC THỰC**.
  *
@@ -390,10 +407,18 @@ export function tachTriDo(
  * ⚠ `productModelId` — TRUYỀN VÀO KHI PHÂN GIẢI ĐƯỢC. Xem `traPointDefCapComponent`:
  * một máy dạy HAI sản phẩm bằng cây clone (cùng bộ GUID) mà thiếu lọc này thì mọi
  * cặp khoá đều NHẬP NHẰNG và bo không ghi được hàng nào — đo được, không giả định.
+ *
+ * ★★★ Khối B Task 4 (BG-92) — THAM SỐ `cay` NAY NHẬN **CẢ PAYLOAD THÔ** (kiểu
+ * {@link CayCoKhoaTra}, nới rộng chứ không đổi: `CayDaDich` vẫn thoả). Lý do là THỨ
+ * TỰ: spec-gate phải chấm lá **trước** khi `dichCayKetQua` cuộn, nên phép tra bản dạy
+ * phải chạy **trước** `dichCayKetQua` — mà bản đồ khoá chỉ cần `captureId`/`componentId`,
+ * hai trường có mặt y hệt ở payload thô. Nếu vẫn buộc `CayDaDich` thì hai cửa phải
+ * dịch cây HAI LẦN (một lần để lấy khoá, một lần để chấm), và bản dịch thứ hai là
+ * chỗ `dungKhoaKhuTrungV2` có thể bắt đầu băm một payload khác.
  */
 export async function traBanDayChoCay(
   machineId: number,
-  cay: CayDaDich,
+  cay: CayCoKhoaTra,
   productModelId?: number | null,
 ): Promise<KetQuaTraPointDef> {
   const khoa: { captureExtId: string; componentExtId: string }[] = [];
@@ -512,6 +537,15 @@ export async function ghiCayKetQua(
             startedAt: toDateOrUndefined(k.startedAt),
             completedAt: toDateOrUndefined(k.completedAt),
             ...tachTriDo(k.value),
+            // ★★★ Khối B Task 4 (BG-92) — DẤU VẾT SPEC-GATE Ở CHÍNH HÀNG. Ba trạng
+            // thái của cổng phải ĐẾM ĐƯỢC bằng một câu `SELECT` trên đĩa, không chỉ
+            // trong bộ nhớ tiến trình: `Spec gate: …` (TRƯỢT, cùng tiền tố đường v1.x),
+            // `[SG:DAT]` (đã chấm, đạt), `[SG:KHONG_KL]` (tra ra bản dạy mà không chấm
+            // được gì ⇒ KHÔNG KẾT LUẬN). `null` = cổng tắt. Linh kiện CHƯA DẠY không
+            // có hàng nào ở đây cả — nó được đếm ở `ThongKeCapComponent.chuaDay` và
+            // (nhánh máy đã dạy) vào sổ WORM `ghiSoLechCayDay`.
+            // ⚠ Bỏ dòng này ⇒ "đã kiểm và ĐẠT" trông y hệt "chưa kiểm gì" trên bảng.
+            remark: k.ghiChuCong ?? undefined,
           });
           tk.daGhi += 1;
         }

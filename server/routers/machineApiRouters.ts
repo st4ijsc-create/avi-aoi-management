@@ -37,6 +37,10 @@ import { ghiCayDay, demDiemDoTheoNeo } from "../db/cayDay";
 // mock KHÔNG có tác dụng gì. Ngược lại `db.traBanDayChoCay` CỐ Ý ở lại barrel: nó
 // ĐỌC CSDL, nên lưới phải mock được nó.
 import { tachTriDo } from "../db/inspection";
+// Khối B Task 4 (BG-92) — cổng spec cho đường CÂY v2. Hàm THUẦN ⇒ nhập TRỰC TIẾP
+// module (cùng nguyên tắc dòng trên): `db.traBanDayChoCay` mới là hàm ĐỌC CSDL và
+// nó vẫn đi qua barrel `../db` để lưới mock được.
+import { congSpecTuBanDay } from "../services/specGateCayV2";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
 import {
   authenticateMachine,
@@ -3665,6 +3669,15 @@ async function submitInspectionTreeV2(
   duplicate?: boolean;
   /** Khối B Task 3 (Đ-19) — số hàng cấp component ghi được / số linh kiện chưa dạy. */
   capComponent?: { tong: number; daGhi: number; chuaDay: number; mayCoBanDay: boolean };
+  /**
+   * Khối B Task 4 (BG-92) — kết luận của spec-gate, BA TRẠNG THÁI tách rời.
+   * `dat`/`truot` = đã chấm được. `chuaDay`/`khongGioiHan`/`tatCong` = KHÔNG KẾT
+   * LUẬN ĐƯỢC, và **không** được cộng vào `dat` ở bất kỳ hộ đọc nào.
+   */
+  specGate: {
+    batCong: boolean; tong: number; dat: number; truot: number; haCap: number;
+    chuaDay: number; khongGioiHan: number; tatCong: number;
+  };
 }> {
   const auth = await authenticateMachine({
     apiKey: payload.apiKey,
@@ -3688,7 +3701,16 @@ async function submitInspectionTreeV2(
 
   await db.updateMachineHeartbeat(machine.id);
 
-  const cay = dichCayKetQua(payload);
+  // ★★★ Khối B Task 3 (Đ-19) + Task 4 (BG-92) — tra bản dạy CỦA CHÍNH MÁY NÀY cho mọi
+  // cặp `(captureId, componentId)` TRƯỚC khi dịch cây. Phép ĐỌC, ngoài mọi transaction.
+  // ⚠ THỨ TỰ LÀ BẮT BUỘC, KHÔNG PHẢI SỞ THÍCH: spec-gate phải chấm TỪNG LÁ trước khi
+  // `dichCayKetQua` cuộn lên bốn cấp (cuộn trước rồi mới chấm sẽ để cấp bo chốt OK
+  // trong khi lá đã bị hạ thành NG). Vì vậy lượt tra chạy trên PAYLOAD THÔ — cùng bộ
+  // khoá, cùng hàm `db.traBanDayChoCay` (xem `CayCoKhoaTra`).
+  const traBanDay = await db.traBanDayChoCay(machine.id, payload, productModelRecord?.id);
+  const congSpec = congSpecTuBanDay(traBanDay);
+
+  const cay = dichCayKetQua(payload, { cong: congSpec });
 
   const rawInspTime = payload.completedAt
     ? new Date(payload.completedAt)
@@ -3701,11 +3723,6 @@ async function submitInspectionTreeV2(
 
   const reservedInspectionId = await db.reserveInspectionId();
   const insertOutcome: CreateInspectionOutcome = { duplicate: false };
-
-  // ★★★ Khối B Task 3 (Đ-19) — tra bản dạy CỦA CHÍNH MÁY NÀY cho mọi cặp
-  // `(captureId, componentId)` TRƯỚC khi mở transaction. Phép ĐỌC: giữ ngoài tx để
-  // không kéo dài khoá ghi; kết quả đi xuống `ghiCayKetQua` qua `opts.tra`.
-  const traBanDay = await db.traBanDayChoCay(machine.id, cay, productModelRecord?.id);
 
   const persisted = await db.persistInspectionAtomic(
     {
@@ -3736,6 +3753,26 @@ async function submitInspectionTreeV2(
     [],
     { cay, outcome: insertOutcome, tra: traBanDay },
   );
+
+  // ★★★ BG-92 — SPEC-GATE NÓI RA CẢ BA TRẠNG THÁI. `truot > 0` là bo XẤU vừa bị chặn
+  // (trước bản vá nó đi lọt); `chuaDay`/`khongGioiHan` là "KHÔNG KẾT LUẬN ĐƯỢC" —
+  // KHÔNG phải "đạt". Ghi ở mức `warn` khi cổng không kết luận được điều gì cả: một
+  // cổng chạy trên tập rỗng mà im lặng chính là giấy vô can giả.
+  const tkCong = congSpec.thongKe;
+  if (tkCong.truot > 0) {
+    console.warn(
+      `[submitInspection][v2.0] SPEC-GATE: ${tkCong.truot}/${tkCong.tong} linh kiện VI PHẠM ` +
+        `giới hạn đã dạy (${tkCong.haCap} lần HẠ OK→NG) · máy=${machine.code} ` +
+        `inspectionId=${persisted.id} · mẫu: ${tkCong.mauTruot.join(" | ")}`,
+    );
+  }
+  if (tkCong.batCong && tkCong.dat + tkCong.truot === 0 && tkCong.tong > 0) {
+    console.warn(
+      `[submitInspection][v2.0] SPEC-GATE KHÔNG KẾT LUẬN ĐƯỢC gì: ${tkCong.tong} linh kiện — ` +
+        `${tkCong.chuaDay} chưa dạy, ${tkCong.khongGioiHan} đã dạy mà bản dạy CHƯA CÓ giới hạn ` +
+        `· máy=${machine.code} inspectionId=${persisted.id}`,
+    );
+  }
 
   // ⚠ KHÔNG ÂM THẦM: mọi linh kiện không tra ra `pointDefId` đều có mặt ở đây, và
   // hàng `audit_logs` (nhánh máy ĐÃ dạy) đã được ghi TRONG chính transaction trên.
@@ -3772,6 +3809,20 @@ async function submitInspectionTreeV2(
           mayCoBanDay: persisted.thongKeComponent.mayCoBanDay,
         }
       : undefined,
+    // ★★★ Khối B Task 4 (BG-92) — BA TRẠNG THÁI CỦA SPEC-GATE, trả TẬN CỬA. Máy (và
+    // lưới nghiệm thu) đọc được ngay rằng cổng đã kết luận gì: `dat` + `truot` là số
+    // linh kiện THỰC SỰ được chấm; `chuaDay` + `khongGioiHan` là số linh kiện KHÔNG
+    // KẾT LUẬN ĐƯỢC — và chúng nằm ở BỐN trường KHÁC NHAU, không gộp vào `dat`.
+    specGate: {
+      batCong: congSpec.thongKe.batCong,
+      tong: congSpec.thongKe.tong,
+      dat: congSpec.thongKe.dat,
+      truot: congSpec.thongKe.truot,
+      haCap: congSpec.thongKe.haCap,
+      chuaDay: congSpec.thongKe.chuaDay,
+      khongGioiHan: congSpec.thongKe.khongGioiHan,
+      tatCong: congSpec.thongKe.tatCong,
+    },
   };
 }
 

@@ -66,6 +66,10 @@ vi.mock("../db", () => {
     // NGUYÊN mọi mệnh đề cũ của nó: 0 hàng cấp component, verdict không đổi.
     traBanDayChoCay: vi.fn(async () => ({
       banDo: new Map<string, number>(),
+      // Khối B Task 4 (BG-92) — spec-gate đọc `gioiHan` từ CHÍNH kết quả tra này.
+      // Bản đồ RỖNG = "chưa dạy" ⇒ cổng trả `chuaDay`, KHÔNG trả "đạt" (đó là cả
+      // điểm của Task 4), nên mọi mệnh đề cũ của file này giữ nguyên nghĩa.
+      gioiHan: new Map<string, PointLimitSource>(),
       mayCoBanDay: false,
       khoaNhapNhang: [] as string[],
     })),
@@ -107,6 +111,8 @@ vi.mock("../services/integration/outboxProducers", () => ({ publishToOutbox: vi.
 import { machineApiRouter } from "./machineApiRouters";
 import * as db from "../db";
 import type { TrpcContext } from "../_core/context";
+// Khối B Task 4 (BG-92) — kiểu giới hạn đã dạy mà `traBanDayChoCay` nay cũng trả về.
+import type { PointLimitSource } from "../services/pointResultEvaluator";
 import os from "node:os";
 import path from "node:path";
 import { promises as fs } from "node:fs";

@@ -21,30 +21,48 @@ export interface NutKetQua {
  * Mảng rỗng trả OK/false/null, KHÔNG ném lỗi: một capture không có component nào là
  * hình dạng HỢP LỆ trong payload máy (đèn chụp mà vùng không có linh kiện).
  *
- * ⚠ Hàm này KHÔNG chạy spec-gate — và ĐỌC KỸ ĐOẠN NÀY trước khi tin câu tiếp theo.
+ * ⚠ Hàm này KHÔNG chạy spec-gate — nó chỉ CUỘN. Cổng chạy Ở NGOÀI, TRƯỚC hàm này.
  *
  * Thứ tự ĐÚNG theo spec §4.3 là: chạy `evaluatePointResult` cho TỪNG component
  * TRƯỚC, rồi mới cuộn lên (cuộn trước rồi mới gate sẽ để cấp trên chốt OK trong
  * khi cấp lá đã bị nâng thành NG).
  *
- * ★★★ I-5 (review lượt 8) — SỰ THẬT HÔM NAY: **KHÔNG đường v2 nào tuân theo thứ
- * tự đó.** `evaluatePointResult` còn ĐÚNG MỘT điểm gọi sản xuất
- * (`machineApiRouters.ts`, đường v1.x PHẲNG); cửa ZIP mất nó ở `df20b31c`
- * (BG-85) và `submitInspectionTreeV2` chưa bao giờ có. Bản chú thích trước đây
- * viết như một MỆNH LỆNH đã được thi hành — đó là L-3 (khai quá) chồng lên L-2
- * (cơ chế tồn tại nhưng chưa nối): người đọc sau sẽ tin rằng linh kiện ngoài
- * giới hạn mà máy khai OK đã bị nâng thành NG ở đường v2. KHÔNG.
+ * ★★★ BG-92 **ĐÃ ĐÓNG** (Khối B Task 4, 2026-09-03) — và đây là phần phải đọc kỹ,
+ * vì bản chú thích ở ĐÚNG chỗ này đã hai lần khai KHÔNG khớp hành vi.
  *
- * Vì sao chưa nối được (không phải "quên"): `evaluatePointResult` cần một
- * `pointDefId` để tra giới hạn, còn cây v2 chỉ mang `componentExtId`. Ánh xạ
- * `componentExtId → pointDefId` là dữ liệu của **Khối B** (`Đ-19`:
- * `measurement_results.pointDefId` NOT NULL ⇒ cấp component CHƯA ghi được;
- * `measurement_results` nối cây hiện = 0 hàng). Không có ánh xạ đó, cổng không
- * có gì để tra và sẽ chỉ là một lời gọi rỗng trông như bảo đảm.
+ * SỰ THẬT ĐO ĐƯỢC HÔM NAY — thứ tự trên được thi hành ở **CẢ BA** đường ghi:
+ *   · v1.x PHẲNG — `machineApiRouters.processInspectionSubmission` (không đổi).
+ *   · v2.0 trực tiếp — `submitInspectionTreeV2` (kể cả lượt PHÁT LẠI từ WAL, vì
+ *     `ensureInspectionWalWired` gọi thẳng chính hàm đó).
+ *   · v2.0 cửa ZIP — `aoiPackageRouter.commit` (cửa đã mất cổng ở `df20b31c`/BG-85).
+ * Hai đường v2 đi qua `dichCayKetQua(payload, { cong })`
+ * (`server/services/ingestCayKetQua.ts`): `dichCapture` gọi `cong.cham` cho từng lá
+ * **rồi mới** gọi `rollupVerdict(components)` — thứ tự là HỆ QUẢ CẤU TẠO, không phải
+ * quy ước mà nơi gọi phải nhớ. Cổng sống ở `server/services/specGateCayV2.ts`; ánh xạ
+ * `componentExtId → pointDefId` (+ giới hạn) do `traPointDefCapComponent` cung cấp,
+ * lọc theo **máy đã xác thực VÀ sản phẩm** (Khối B Task 2/3/5 — trước đó không có
+ * ánh xạ này nên cổng không có gì để tra).
  *
- * ⇒ NỢ CÓ MÃ: **BG-92** (docs/superpowers/specs/2026-08-31-aoi-backlog-toan-canh.md
- * §3) — "nối lại spec-gate cho đường v2/cửa ZIP, CÙNG lúc với Đ-19". Ai đóng
- * Đ-19 mà không đóng BG-92 thì đã bỏ lại đúng lớp bảo vệ này.
+ * ⚠⚠ PHẦN **CHƯA** NỐI — nêu ĐÍCH DANH, vì "đã nối spec-gate" nói trống là L-3:
+ *  1. **Giới hạn phải do NGƯỜI soạn.** Hợp đồng cây dạy
+ *     (`machineTemplateContract.componentTemplate`) KHÔNG mang trường giới hạn nào,
+ *     nên point-def do máy đẩy cây tạo ra có MỌI cột giới hạn NULL. Cổng trả trạng
+ *     thái **"không kết luận được"** cho chúng — KHÔNG phải "đạt". Đo 2026-09-03:
+ *     16/16 point-def sinh từ mẫu máy thật có `lowerLimit` NULL.
+ *  2. **Hôm nay chưa máy nào dạy.** `machine_template_versions` = 0 và
+ *     `product_captures` = 0 ở CẢ HAI DB (vai `avi_app`) ⇒ 100% linh kiện "chưa dạy"
+ *     ⇒ cổng ĐANG kết luận 0 linh kiện. Nó nói ra điều đó (`specGate.chuaDay`,
+ *     `remark='[SG:KHONG_KL]'`, `console.warn`) thay vì trả xanh — đó là khác biệt
+ *     giữa một cổng thật và một GIẤY VÔ CAN GIẢ.
+ *  3. **Đường v2 KHÔNG có snapshot-gate và KHÔNG có variant override.** v1.x chấm
+ *     theo bản cấu hình bo được đo dưới (`SPEC_GATE_SNAPSHOT_ENABLED`, doc 51 P1/P2)
+ *     và áp `variant_point_overrides` (doc 55 Item 3); đường v2 chấm theo giới hạn
+ *     ĐANG SỐNG, không snapshot, không variant. Bo v2 tồn kho lâu rồi bị siết limit
+ *     sẽ bị chấm theo limit MỚI.
+ *  4. **Các chiều 3D/SPI/X-ray chưa bao giờ chấm được ở v2.** Lá v2.0 chỉ mang
+ *     `value`; `valueHeight/valueVolume/valueVoidPct/…` không có trong hợp đồng, nên
+ *     dù bản dạy có `heightMin/volumeMax/…` thì `evaluatePointResult` vẫn bỏ qua
+ *     chúng. Chỉ cổng 1D (`lowerLimit`/`upperLimit`) và `criteria` chạy được.
  */
 export function rollupVerdict(
   con: readonly NutKetQua[],
@@ -94,11 +112,16 @@ export function rollupVerdict(
  *
  * CỐ Ý TÁCH KHỎI `rollupVerdict`: cuộn cây và ánh xạ bảng chữ cái là hai việc khác nhau.
  *
- * ⚠ CHƯA nối vào đường ingest thật (`server/db/inspection.ts` / `aoiPackageRouter.ts`) —
- * tính tới vòng sửa 1, hàm này chỉ xuất hiện trong hai file test (đã kiểm bằng grep toàn
- * repo). Lỗ 6,55% VẪN MỞ trên production cho tới khi Task 4/5 của Pha 1B nối dây gọi hàm
- * này. Test xanh ở đây KHÔNG chứng minh đường ghi thật đã an toàn — cùng khuôn "test xanh
- * gây hiểu nhầm" mà Pha 1A đã dính với `loiMayChuaNangCap`.
+ * ⚠ ĐÍNH CHÍNH (Khối B Task 4, 2026-09-03) — bản chú thích cũ ở đúng chỗ này viết
+ * *"CHƯA nối vào đường ingest thật … hàm này chỉ xuất hiện trong hai file test"*. Câu đó
+ * ĐÃ SAI kể từ Pha 1B/1C: `grep` toàn repo hôm nay cho ba điểm gọi SẢN XUẤT —
+ * `server/services/ingestCayKetQua.ts` (hai lần: lời khai cấp bo và cuộn-từ-lá) và
+ * `server/db/inspection.ts:ghiCayKetQua` (cấp component, Khối B Task 3). Lỗ 6,55% ở
+ * cấp bo đã đóng trên cả hai cửa v2.
+ * ⚠ Giữ nguyên bài học của câu cũ, vì nó vẫn đúng ở dạng tổng quát: **test xanh ở đây
+ * KHÔNG chứng minh đường ghi thật an toàn** — nghiệm thu phải là `SELECT` trên bo ghi
+ * qua CỬA thật (`server/db/capComponentGhiThat.db.test.ts`,
+ * `server/db/specGateCayV2.db.test.ts`), không phải lưới đơn vị của file này.
  */
 export function verdictLuuTru(x: { result: ResultVerdict; ntf: boolean }): ResultVerdict {
   if (x.result === "NG") return "NG"; // NG thắng NTF — luật cuộn đã chốt với chủ dự án

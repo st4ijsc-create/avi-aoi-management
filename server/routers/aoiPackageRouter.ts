@@ -65,6 +65,8 @@ import { isPermanentSubmitError } from "../services/inspection/inspectionStoreFo
 import { machineDataContractV2, imageRefSchema, type MachineDataContractV2 } from "../contracts/machineDataContractV2";
 import { laHinhDangCayV2 } from "../contracts/machineDataContract";
 import { dichCayKetQua, type CayDaDich, type CaptureDaDich } from "../services/ingestCayKetQua";
+// Khối B Task 4 (BG-92) — cổng spec cho đường CÂY v2, CÙNG hàm mà cửa trực tiếp dùng.
+import { congSpecTuBanDay } from "../services/specGateCayV2";
 import type { ResultVerdict } from "@shared/rollupVerdict";
 
 // ============================================================
@@ -1163,6 +1165,12 @@ export const aoiPackageRouter = router({
           let lechSummary = false;
           // Khối B Task 3 — đếm cấp component của lượt commit này (xem `ThongKeCapComponent`).
           let thongKeCapComponent: db.ThongKeCapComponent | undefined;
+          // Khối B Task 4 (BG-92) — kết luận spec-gate của lượt commit này. BA trạng
+          // thái tách rời; `chuaDay`/`khongGioiHan` KHÔNG BAO GIỜ được cộng vào `dat`.
+          let thongKeSpecGate: {
+            batCong: boolean; tong: number; dat: number; truot: number; haCap: number;
+            chuaDay: number; khongGioiHan: number; tatCong: number;
+          } | undefined;
           // Cột báo cáo (`inspection_packages.totalPoints/okCount/ngCount`) —
           // đếm CAPTURES (cấp gần nhất với "một điểm kiểm tra có ảnh") từ CÂY
           // đã dịch — KHÔNG từ `summary` khai (bất biến 3). ★★★ M-8 — trị khởi
@@ -1255,7 +1263,18 @@ export const aoiPackageRouter = router({
             // đây, KHÔNG BAO GIỜ là nguồn quyết định overallResult. DÙNG THẲNG
             // `dichCayKetQua` — CÙNG bộ dịch đường trực tiếp v2.0 dùng, không
             // viết bản chép tay thứ hai của luật cuộn (đúng lý do BG-85 tồn tại).
-            cay = dichCayKetQua(metaData);
+            // ★★★ Khối B Task 3 (Đ-19) + Task 4 (BG-92) — tra bản dạy của MÁY ĐÃ
+            // XÁC THỰC, rồi dựng cổng spec, rồi mới dịch cây. THỨ TỰ BẮT BUỘC: cổng
+            // chấm TỪNG LÁ trước khi `dichCayKetQua` cuộn lên bốn cấp — cuộn trước
+            // rồi mới chấm sẽ để `finalOverallResult` chốt OK trong khi lá đã bị hạ
+            // xuống NG. CÙNG hàm tra + CÙNG cổng mà đường trực tiếp v2.0 dùng
+            // (`db.traBanDayChoCay` + `congSpecTuBanDay`) — không chép bản thứ hai,
+            // vì hai bản chép tay là đúng cách BG-42 ra đời.
+            const traBanDay = await db.traBanDayChoCay(
+              machine.id, metaData, resolvedProductModel?.id,
+            );
+            const congSpec = congSpecTuBanDay(traBanDay);
+            cay = dichCayKetQua(metaData, { cong: congSpec });
             for (const s of cay.surfaces) {
               for (const p of s.positions) {
                 for (const c of p.captures) capturesTrongCay.set(c.captureId, c);
@@ -1351,11 +1370,6 @@ export const aoiPackageRouter = router({
               idempotencyKey: `aoi-pkg:${pkg.packageId}`,
             };
 
-            // ★★★ Khối B Task 3 (Đ-19) — tra bản dạy CỦA MÁY ĐÃ XÁC THỰC trước khi mở
-            // transaction, rồi truyền xuống `ghiCayKetQua` qua `opts.tra`. CÙNG hàm mà
-            // đường trực tiếp v2.0 dùng (`db.traBanDayChoCay`) — không chép bản thứ hai.
-            const traBanDay = await db.traBanDayChoCay(machine.id, cay, resolvedProductModel?.id);
-
             const persisted = await db.persistInspectionAtomic(
               newInspectionData,
               [],
@@ -1366,6 +1380,29 @@ export const aoiPackageRouter = router({
             // ⚠ KHÔNG ÂM THẦM — xem `ghiSoLechCayDay`. Nhánh "máy ĐÃ dạy mà khai linh
             // kiện ngoài cây" đã vào `audit_logs` TRONG chính transaction trên; dòng này
             // là kênh thứ hai (nhật ký vận hành) cho CẢ HAI nhánh.
+            // ★★★ BG-92 — CỔNG SPEC NÓI RA CẢ BA TRẠNG THÁI (xem `specGateCayV2.ts`).
+            // `truot > 0` = bo XẤU vừa bị chặn ở cửa ZIP — đúng cửa mà BG-85 đã đánh
+            // rơi `evaluatePointResult` ở `df20b31c`.
+            const tkCong = congSpec.thongKe;
+            if (tkCong.truot > 0) {
+              console.warn(
+                `[AOI commit] SPEC-GATE: ${tkCong.truot}/${tkCong.tong} linh kiện VI PHẠM giới hạn ` +
+                  `đã dạy (${tkCong.haCap} lần HẠ OK→NG) · máy=${machine.code} gói=${pkg.packageId} ` +
+                  `inspectionId=${persisted.id} · mẫu: ${tkCong.mauTruot.join(" | ")}`,
+              );
+            }
+            if (tkCong.batCong && tkCong.dat + tkCong.truot === 0 && tkCong.tong > 0) {
+              console.warn(
+                `[AOI commit] SPEC-GATE KHÔNG KẾT LUẬN ĐƯỢC gì: ${tkCong.tong} linh kiện — ` +
+                  `${tkCong.chuaDay} chưa dạy, ${tkCong.khongGioiHan} đã dạy mà bản dạy CHƯA CÓ ` +
+                  `giới hạn · máy=${machine.code} gói=${pkg.packageId} inspectionId=${persisted.id}`,
+              );
+            }
+            thongKeSpecGate = {
+              batCong: tkCong.batCong, tong: tkCong.tong, dat: tkCong.dat, truot: tkCong.truot,
+              haCap: tkCong.haCap, chuaDay: tkCong.chuaDay,
+              khongGioiHan: tkCong.khongGioiHan, tatCong: tkCong.tatCong,
+            };
             thongKeCapComponent = persisted.thongKeComponent;
             if (thongKeCapComponent && thongKeCapComponent.chuaDay > 0) {
               console.warn(
@@ -1645,6 +1682,11 @@ export const aoiPackageRouter = router({
                   mayCoBanDay: thongKeCapComponent.mayCoBanDay,
                 }
               : undefined,
+            // ★★★ Khối B Task 4 (BG-92) — BA TRẠNG THÁI của spec-gate, y hệt cửa trực
+            // tiếp v2.0. `dat`/`truot` = đã chấm được; `chuaDay`/`khongGioiHan`/`tatCong`
+            // = KHÔNG KẾT LUẬN ĐƯỢC. Bốn trường RIÊNG — gộp chúng vào `dat` là đúng thứ
+            // "giấy vô can giả" mà brief Task 4 cấm.
+            specGate: thongKeSpecGate,
           };
         } catch (err: any) {
           // Log: commit_fail
