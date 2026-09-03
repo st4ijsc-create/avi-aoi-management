@@ -65,6 +65,11 @@ import { vanBanKhongTrichDanToolLa } from "../loi/xoaTrichDanToolLa";
 // đường tool `doc_tep` (Task 2/3) — không dựng một đường đọc riêng. `locDanhSachMention` (THUẦN)
 // lọc danh sách theo chữ đang gõ; xem docblock của nó cho vì sao KHÔNG chạm ký tự `@`.
 import { locDanhSachMention } from "../loi/locMention";
+// ★★★ ĐỢT F / TASK 2 — lưu hội thoại BỀN qua `context.workspaceState`. `khoHoiThoai.ts` (THUẦN,
+// không biết `vscode`) chỉ biết lưu/đọc; tệp này bơm một `KhoLuuTruTho` bọc quanh `workspaceState`
+// (xem `khoHoiThoaiTho()`) và là nơi DUY NHẤT quyết định LÚC NÀO lưu/khôi phục — không nhân bản
+// logic chat vào tệp kia.
+import { luuHoiThoai, docHoiThoaiGanNhat, type KhoLuuTruTho } from "../loi/khoHoiThoai";
 
 /** Đề xuất ghi CỤC BỘ đang chờ duyệt + mọi thứ đã ĐO tại thời điểm dựng thẻ (không đo lại lúc bấm,
  *  trừ băm đĩa — băm PHẢI đo lại trong `apBanVa` vì đó chính là phép chống xung đột). */
@@ -150,6 +155,13 @@ interface VatChuaChat {
 export class BangChat {
   private static hienTai: BangChat | undefined;
   private lichSu: LuotChat[] = [];
+  // ★★★ ĐỢT F / TASK 2 — mã ĐỊNH DANH của hội thoại đang mở trong `workspaceState`. `undefined`
+  // nghĩa là "chưa từng lưu lượt nào của hội thoại NÀY" — `luuHoiThoaiHienTai()` tự sinh một mã
+  // MỚI ở lần lưu ĐẦU TIÊN, còn `khoiPhucHoiThoaiGanNhat()` gán LẠI mã của bản ghi đã đọc được, để
+  // các lượt lưu SAU đó UPSERT tiếp vào ĐÚNG hội thoại vừa khôi phục thay vì đẻ ra một bản ghi mới
+  // — nếu không, mỗi lần mở lại VSCode sẽ sinh thêm một hội thoại "mới" dù người dùng chỉ tiếp tục
+  // đúng một cuộc trò chuyện, nhanh chóng chiếm hết trần B3 bằng các mảnh vỡ của CÙNG một hội thoại.
+  private maHoiThoaiHienTai: string | undefined;
   private huy: AbortController | undefined;
   private dsDuAn: MucDuAn[] = [];
   private duAnChon: string | undefined;
@@ -228,6 +240,9 @@ export class BangChat {
         // nên "san_sang" không được mặc định giữ nguyên markup "chưa đăng nhập" tĩnh của HTML ban
         // đầu (xem docblock `daDangNhap` ở `htmlBang.ts`).
         void this.guiTrangThaiDangNhap();
+        // ★★★ ĐỢT F / TASK 2 / B5 — khôi phục hội thoại GẦN NHẤT ngay khi khung vừa mở, để một
+        // VSCode vừa đóng/mở lại không làm mất cuộc trò chuyện đang dở.
+        this.khoiPhucHoiThoaiGanNhat();
         return;
       }
       // ★★★ ĐỔI DỰ ÁN ⇒ VỨT ĐỀ XUẤT ĐANG CHỜ. Thẻ duyệt mang nhãn nguồn của dự án nó SINH RA; để
@@ -501,6 +516,58 @@ export class BangChat {
   private async guiTrangThaiDangNhap(): Promise<void> {
     const tt = await this.trangThaiDangNhap();
     void this.panel.webview.postMessage({ loai: "trang_thai_dang_nhap", ...tt });
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 2 / B2 — bọc `context.workspaceState` (API của VSCode, hoàn toàn KHÁC `fs`:
+   * không mở đường ghi đĩa mới, census `CAM_TU` không canh nó) thành đúng hình dạng `KhoLuuTruTho`
+   * tối giản mà `loi/khoHoiThoai.ts` (THUẦN) đòi hỏi. Đây là RANH GIỚI DUY NHẤT nơi `vscode` chạm
+   * vào lớp lưu trữ — bản thân `khoHoiThoai.ts` không bao giờ thấy `context`.
+   */
+  private khoHoiThoaiTho(): KhoLuuTruTho {
+    return {
+      doc: <T>(khoa: string) => this.context.workspaceState.get<T>(khoa),
+      ghi: (khoa, giaTri) => this.context.workspaceState.update(khoa, giaTri),
+    };
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 2 / B5 — khôi phục hội thoại GẦN NHẤT khi khung vừa mở.
+   *
+   * ★ NHÁNH KIA (kho rỗng / hỏng / sai kiểu): `docHoiThoaiGanNhat` (THUẦN, có lưới riêng) tự hấp
+   *   thụ MỌI hình dạng lạ và trả `undefined` — KHÔNG BAO GIỜ ném lỗi ra tới đây, nên nhánh dưới
+   *   chỉ cần kiểm `undefined`, không cần `try/catch` riêng: khung mở BÌNH THƯỜNG (trắng, như trước
+   *   khi có Task 2) trong CẢ hai trường hợp "chưa từng lưu gì" lẫn "dữ liệu cũ đọc không nổi".
+   * ⚠ Chỉ khôi phục khi `this.lichSu` còn RỖNG — phòng trường hợp "san_sang" chạy lần thứ hai (dù
+   *   chưa quan sát thấy trong VSCode thật, không có gì đảm bảo tuyệt đối là KHÔNG xảy ra) đè một
+   *   cuộc trò chuyện ĐANG DIỄN RA bằng dữ liệu cũ trên đĩa.
+   */
+  private khoiPhucHoiThoaiGanNhat(): void {
+    if (this.lichSu.length > 0) return;
+    const ganNhat = docHoiThoaiGanNhat(this.khoHoiThoaiTho());
+    if (!ganNhat) return;
+    this.lichSu = [...ganNhat.luot];
+    this.maHoiThoaiHienTai = ganNhat.ma;
+    if (ganNhat.luot.length > 0) {
+      void this.panel.webview.postMessage({
+        loai: "khoi_phuc_hoi_thoai",
+        luot: ganNhat.luot.map((l) => ({ vaiTro: l.role, noiDung: l.content })),
+      });
+    }
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 2 — lưu hội thoại đang mở SAU MỖI lượt hỏi/đáp xong (gọi từ cuối `hoi()`,
+   * ngay sau khi `this.lichSu` vừa được nối thêm lượt mới). Sinh mã định danh MỚI ở lần lưu ĐẦU
+   * TIÊN của khung này (`maHoiThoaiHienTai` còn `undefined`); mọi lần lưu SAU đó UPSERT vào ĐÚNG
+   * bản ghi cũ — xem docblock của field `maHoiThoaiHienTai`.
+   *
+   * Không tự làm gì thêm ở đây: che bí mật, sinh tiêu đề, và cắt trần dung lượng đều nằm TRỌN vẹn
+   * trong `luuHoiThoai` (`loi/khoHoiThoai.ts`) — tệp này chỉ quyết định LÚC NÀO lưu.
+   */
+  private async luuHoiThoaiHienTai(): Promise<void> {
+    this.maHoiThoaiHienTai ??= randomUUID();
+    await luuHoiThoai(this.khoHoiThoaiTho(), this.maHoiThoaiHienTai, this.lichSu);
   }
 
   /**
@@ -809,6 +876,14 @@ export class BangChat {
       // một lượt hỏi mới của người dùng; nhét chúng vào đây sẽ phình lịch sử mọi câu hỏi SAU này
       // bằng nguyên văn kết quả `liet_ke`/`grep` của một câu hỏi đã xong từ lâu.
       this.lichSu.push({ role: "user", content: cauHoi }, { role: "assistant", content: traLoiCuoi });
+      // ★★★ ĐỢT F / TASK 2 — lưu BỀN ngay sau khi lịch sử NGOÀI vừa nối lượt mới, cho CẢ LOCAL lẫn
+      // SERVER (đóng VSCode giữa một cuộc trò chuyện SERVER cũng không nên mất nó). Lỗi ghi
+      // (`workspaceState` hỏng, hết dung lượng đĩa…) KHÔNG được làm rớt câu trả lời người dùng vừa
+      // nhận — bắt riêng, chỉ NÓI RA, không ném lại cho `catch` ngoài biến một lỗi lưu thành một lỗi
+      // "hỏi thất bại".
+      void this.luuHoiThoaiHienTai().catch((e: unknown) => {
+        console.error("AI Local: lưu hội thoại bền thất bại", e);
+      });
       // ★★★ ĐỢT C — đường ghi CỤC BỘ, dựa trên câu trả lời CUỐI của vòng lặp (sau khi đã đọc xong
       // mọi yêu cầu ĐỌC của model, nếu có). Đề xuất GHI KHÔNG được xử lý bên trong vòng lặp Task 3
       // ở trên — chỉ ở đây, ĐÚNG MỘT LẦN, y hệt đường Đợt C trước Task 3 (chỉ khác nguồn `traLoiCuoi`

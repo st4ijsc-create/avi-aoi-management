@@ -261,8 +261,13 @@ class PhanTuGia {
   addEventListener(loai: string, h: (e: unknown) => void): void {
     (this.nghe[loai] ??= []).push(h);
   }
-  appendChild(): void {
-    /* DOM giả không dựng cây thật — script chỉ cần lời gọi không ném */
+  // ★★★ ĐỢT F / TASK 2 — TRACK con để lưới khôi phục hội thoại đo được NỘI DUNG bong bóng đã vẽ
+  // (nhãn + chữ), không chỉ đo "có gọi appendChild hay không". Mảng RỖNG mặc định giữ NGUYÊN hành
+  // vi cũ cho mọi ca không đọc `con` (DOM giả vẫn "nghèo" — không dựng cây THẬT, chỉ ghi lại quan hệ
+  // cha/con nông để soi được).
+  con: PhanTuGia[] = [];
+  appendChild(c?: PhanTuGia): void {
+    if (c) this.con.push(c);
   }
   /** Mô phỏng một cú BẤM CHUỘT thật (kể cả khi nút đang `disabled` — trình duyệt tự chặn, ta thì
    *  cố ý KHÔNG chặn, để đo chính hàng rào trong script chứ không đo hộ trình duyệt). */
@@ -557,5 +562,38 @@ describe("webview — H3(b): cờ `tuLenh` đánh dấu ĐÚNG lượt đến t�
     expect(hoi).toHaveLength(2);
     expect(hoi[0].tuLenh).toBe(true);
     expect(hoi[1].tuLenh).not.toBe(true);
+  });
+});
+
+/**
+ * ★★★ ĐỢT F / TASK 2 / B5 — khôi phục hội thoại: KẾT CỤC người dùng THẤY (bong bóng vẽ lại trong
+ * khung), không chỉ "đã gửi tin đúng hình dạng". Cùng khuôn CHẠY THẬT script với hai nhóm ca trên.
+ */
+describe("webview — 'khoi_phuc_hoi_thoai' vẽ lại ĐÚNG bong bóng đã có trước khi đóng VSCode", () => {
+  it("★★★ NHIỀU lượt user/assistant ⇒ MỖI lượt một bong bóng, ĐÚNG nhãn, ĐÚNG THỨ TỰ", () => {
+    const w = chayWebview();
+    w.banTin({
+      loai: "khoi_phuc_hoi_thoai",
+      luot: [
+        { vaiTro: "user", noiDung: "Câu hỏi từ phiên trước" },
+        { vaiTro: "assistant", noiDung: "Trả lời từ phiên trước" },
+        { vaiTro: "user", noiDung: "Câu hỏi thứ hai" },
+      ],
+    });
+
+    const bongBong = w.nut("hoi-thoai").con;
+    expect(bongBong).toHaveLength(3);
+    // Mỗi bong bóng (`d` trong `themLuot`) có ĐÚNG hai con: nhãn (`t`) rồi tới nội dung (`c`).
+    expect(bongBong[0]!.con.map((x) => x.textContent)).toEqual(["Bạn", "Câu hỏi từ phiên trước"]);
+    expect(bongBong[1]!.con.map((x) => x.textContent)).toEqual(["AI Local", "Trả lời từ phiên trước"]);
+    expect(bongBong[2]!.con.map((x) => x.textContent)).toEqual(["Bạn", "Câu hỏi thứ hai"]);
+  });
+
+  it("★ NHÁNH KIA — mảng `luot` RỖNG (hoặc thiếu hẳn) ⇒ KHÔNG vẽ bong bóng nào, KHÔNG ném lỗi", () => {
+    const w = chayWebview();
+    expect(() => w.banTin({ loai: "khoi_phuc_hoi_thoai", luot: [] })).not.toThrow();
+    expect(w.nut("hoi-thoai").con).toHaveLength(0);
+    expect(() => w.banTin({ loai: "khoi_phuc_hoi_thoai" })).not.toThrow();
+    expect(w.nut("hoi-thoai").con).toHaveLength(0);
   });
 });

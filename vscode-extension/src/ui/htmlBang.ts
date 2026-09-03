@@ -363,6 +363,11 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       tenTaiKhoan.hidden = !daDangNhap;
       nutDangXuat.hidden = !daDangNhap;
       tenTaiKhoan.textContent = daDangNhap ? (m.tenTaiKhoan || "") : "";
+    } else if (m.loai === "khoi_phuc_hoi_thoai") {
+      // ★★★ ĐỢT F / TASK 2 / B5 — khung vừa mở, extension vừa đọc được hội thoại GẦN NHẤT từ
+      // \`workspaceState\`: vẽ lại từng lượt bằng ĐÚNG \`themLuot\` mà \`gui()\`/luồng token dùng, để
+      // người dùng thấy đúng chỗ họ dừng lại — không chỉ khôi phục NGẦM trong bộ nhớ của extension.
+      for (const l of m.luot || []) themLuot(l.vaiTro === "user" ? "Bạn" : "AI Local", l.noiDung);
     }
     hoiThoai.scrollTop = hoiThoai.scrollHeight;
   });

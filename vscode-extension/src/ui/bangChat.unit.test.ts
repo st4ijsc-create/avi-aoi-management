@@ -43,6 +43,12 @@ const may = vi.hoisted(() => ({
   dangNhapThanhCong: true,
   /** Tên tài khoản mà một lượt đăng nhập THÀNH CÔNG sẽ đặt vào `globalState`. */
   tenSauDangNhap: "nguoi_dung_thu",
+  // ★★★ ĐỢT F / TASK 2 — túi giả cho `context.workspaceState` (KHÁC `globalState`: đây là nơi
+  // `khoHoiThoai.ts` lưu hội thoại, xem docblock `KHOA_HOI_THOAI`). Cùng khuôn Map-giả với
+  // `globalState` ở trên, chỉ khác TÊN để hai thứ không lẫn vào nhau trong lưới.
+  workspaceState: {} as Record<string, unknown>,
+  /** ★★★ Ép `workspaceState.update` giả ném lỗi — xem docblock ở chỗ dùng trong `moBang()`. */
+  ghiWorkspaceStateThatBai: false,
 }));
 
 /**
@@ -137,6 +143,7 @@ vi.mock("vscode", () => ({
 import { BangChat } from "./bangChat";
 import { dungVanBanDayGiaoThucDoc, nhacLaiCuoiCauHoi } from "../loi/dayGiaoThucDoc";
 import { LoiHttp } from "../loi/loiHttp";
+import { KHOA_HOI_THOAI, type HoiThoai } from "../loi/khoHoiThoai";
 
 /** Kho đề xuất giả — chỉ cần `quen()` để `quenDeXuat` gọi được. */
 const khoGia = { quen: () => undefined, moDiff: async () => undefined, moDiffCucBo: async () => undefined };
@@ -160,6 +167,18 @@ function moBang(): Record<string, unknown> {
           else may.globalState[k] = v;
         },
       },
+      // ★★★ ĐỢT F / TASK 2 — `workspaceState` giả, ĐÚNG chữ ký `Memento` thật (`get` ĐỒNG BỘ,
+      // `update` trả Promise) mà `khoHoiThoaiTho()` trong `bangChat.ts` bọc lại thành `KhoLuuTruTho`.
+      workspaceState: {
+        get: (k: string, mm: unknown) => (k in may.workspaceState ? may.workspaceState[k] : mm),
+        update: async (k: string, v: unknown) => {
+          // ★★★ NHÁNH KIA của bản vá "lỗi lưu không được làm rớt câu trả lời" — cho phép lưới ép
+          // `update` NÉM LỖI (đĩa đầy/hỏng…) để đo `bangChat.ts` có nuốt lỗi ĐÚNG chỗ hay không.
+          if (may.ghiWorkspaceStateThatBai) throw new Error("giả lập: ghi workspaceState thất bại");
+          if (v === undefined) delete may.workspaceState[k];
+          else may.workspaceState[k] = v;
+        },
+      },
     } as never,
     khoGia as never,
   );
@@ -178,6 +197,7 @@ beforeEach(() => {
   may.hangDoiSse = [];
   may.thanGoi = [];
   may.globalState = {};
+  may.workspaceState = {};
   may.lenhGoi = [];
   may.dangNhapThanhCong = true;
   may.tenSauDangNhap = "nguoi_dung_thu";
@@ -802,5 +822,147 @@ describe("ĐỢT F / TASK 1 — trạng thái đăng nhập tự đồng bộ", 
     const tt = may.daGui.filter((m) => m.loai === "trang_thai_dang_nhap");
     expect(tt.length).toBeGreaterThan(0);
     expect(tt[tt.length - 1]).toMatchObject({ daDangNhap: false });
+  });
+});
+
+/**
+ * ★★★ ĐỢT F / TASK 2 — lưu hội thoại BỀN qua `workspaceState`. `loi/khoHoiThoai.unit.test.ts` đã
+ * đo THUẦN mọi hàng rào (che bí mật, cắt trần, hình dạng lạ) — nhóm ca dưới đây đo riêng phần MÀ
+ * CHỈ `bangChat.ts` mới có: đúng LÚC NÀO lưu (sau `hoi()`), đúng KHOÁ nào bị chạm trong
+ * `workspaceState` giả, và việc KHÔI PHỤC ở "san_sang" thật sự đổ ra webview + tiếp tục ĐÚNG bản
+ * ghi cũ ở lượt hỏi kế tiếp (UPSERT, không đẻ bản ghi thứ hai).
+ */
+describe("ĐỢT F / TASK 2 — lưu hội thoại BỀN qua workspaceState", () => {
+  /** Một lượt hỏi ĐƠN GIẢN, không xin đọc gì thêm ⇒ dừng sau ĐÚNG một vòng SSE (buocKeTiep trả
+   *  "khong_con_tool" vì `traLoiCuoi` không mang khối ```avi-tool```). */
+  function hangDoiMotVongDonGian(traLoi: string): typeof may.hangDoiSse {
+    return [
+      async (dv) => {
+        dv.nhan({ type: "token", token: traLoi });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+  }
+
+  it("★★★ sau MỘT lượt hỏi/đáp thành công ⇒ workspaceState[KHOA_HOI_THOAI] có ĐÚNG một hội thoại", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    may.hangDoiSse = hangDoiMotVongDonGian("Đây là câu trả lời.");
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Hàm tinhThue ở đâu?" });
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+
+    const luu = may.workspaceState[KHOA_HOI_THOAI] as HoiThoai[] | undefined;
+    expect(luu, `phải có mục lưu trong workspaceState; hiện có các khoá: ${JSON.stringify(Object.keys(may.workspaceState))}`).toBeDefined();
+    expect(luu).toHaveLength(1);
+    expect(luu![0]!.tieuDe).toBe("Hàm tinhThue ở đâu?");
+    expect(luu![0]!.luot).toEqual([
+      { role: "user", content: "Hàm tinhThue ở đâu?" },
+      { role: "assistant", content: "Đây là câu trả lời." },
+    ]);
+  });
+
+  it("★★★ HAI lượt hỏi LIÊN TIẾP trong CÙNG một khung ⇒ UPSERT — vẫn ĐÚNG MỘT hội thoại, không đẻ bản ghi thứ hai", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    may.hangDoiSse = [...hangDoiMotVongDonGian("Trả lời 1"), ...hangDoiMotVongDonGian("Trả lời 2")];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Câu hỏi đầu" });
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Câu hỏi thứ hai" });
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+
+    const luu = may.workspaceState[KHOA_HOI_THOAI] as HoiThoai[] | undefined;
+    expect(luu).toHaveLength(1);
+    expect(luu![0]!.luot).toHaveLength(4); // hai lượt hỏi × (user+assistant)
+    // Tiêu đề vẫn của câu hỏi ĐẦU (nguồn tiêu đề là lượt user ĐẦU TIÊN, không đổi theo lượt sau).
+    expect(luu![0]!.tieuDe).toBe("Câu hỏi đầu");
+  });
+
+  it("★★★ B5: 'san_sang' với workspaceState đã có SẴN một hội thoại ⇒ webview nhận 'khoi_phuc_hoi_thoai' ĐÚNG các lượt", async () => {
+    const hoiThoaiCu: HoiThoai = {
+      ma: "phien-cu",
+      tieuDe: "Hội thoại từ trước",
+      thoiDiem: 111,
+      luot: [
+        { role: "user", content: "Câu hỏi từ phiên trước" },
+        { role: "assistant", content: "Trả lời từ phiên trước" },
+      ],
+    };
+    may.workspaceState[KHOA_HOI_THOAI] = [hoiThoaiCu];
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const khoiPhuc = may.daGui.filter((m) => m.loai === "khoi_phuc_hoi_thoai");
+    expect(khoiPhuc).toHaveLength(1);
+    expect(khoiPhuc[0]!.luot).toEqual([
+      { vaiTro: "user", noiDung: "Câu hỏi từ phiên trước" },
+      { vaiTro: "assistant", noiDung: "Trả lời từ phiên trước" },
+    ]);
+  });
+
+  it("★★★ B5 NHÁNH KIA: workspaceState RỖNG ⇒ 'san_sang' KHÔNG gửi 'khoi_phuc_hoi_thoai', KHÔNG ném lỗi, khung vẫn mở", async () => {
+    moBang();
+    may.daGui = [];
+    expect(() => may.nhanTin?.({ loai: "san_sang" })).not.toThrow();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.daGui.filter((m) => m.loai === "khoi_phuc_hoi_thoai")).toEqual([]);
+    // Khung vẫn hoạt động bình thường sau đó — không "chết" vì nhánh khôi phục.
+    expect(may.daGui.some((m) => m.loai === "trang_thai_dang_nhap")).toBe(true);
+  });
+
+  it("★★★ B5 NHÁNH KIA: workspaceState HỎNG (sai kiểu hoàn toàn) ⇒ vẫn mở bình thường, KHÔNG ném lỗi", async () => {
+    may.workspaceState[KHOA_HOI_THOAI] = "dữ liệu của một phiên bản trước — hình dạng hoàn toàn khác";
+    moBang();
+    may.daGui = [];
+    expect(() => may.nhanTin?.({ loai: "san_sang" })).not.toThrow();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.daGui.filter((m) => m.loai === "khoi_phuc_hoi_thoai")).toEqual([]);
+  });
+
+  it("★★★ KHÔI PHỤC rồi hỏi TIẾP ⇒ UPSERT vào ĐÚNG hội thoại vừa khôi phục, không đẻ bản ghi thứ hai", async () => {
+    /**
+     * ★★★ Đây là lý do trường `maHoiThoaiHienTai` phải được GÁN LẠI từ bản ghi khôi phục (không chỉ
+     * sinh mới): nếu không, mỗi lần mở lại VSCode và hỏi tiếp một câu sẽ đẻ thêm MỘT hội thoại
+     * "mới" trong kho dù người dùng chỉ đang tiếp tục đúng một cuộc trò chuyện — nhanh chóng vụn
+     * một cuộc trò chuyện DÀI thành nhiều mảnh rời trong "Lịch sử" (Task 3).
+     */
+    const hoiThoaiCu: HoiThoai = {
+      ma: "phien-cu",
+      tieuDe: "Hội thoại từ trước",
+      thoiDiem: 111,
+      luot: [
+        { role: "user", content: "Câu hỏi từ phiên trước" },
+        { role: "assistant", content: "Trả lời từ phiên trước" },
+      ],
+    };
+    may.workspaceState[KHOA_HOI_THOAI] = [hoiThoaiCu];
+    // ★★★ `dsDuAn`/`duAnChon` KHÔNG được gán TAY ở ca này (khác các ca khác trong tệp): "san_sang"
+    // (bắt buộc phải bắn để kích hoạt khôi phục) tự gọi `napDuAn()` — hàm đó GHI ĐÈ `this.dsDuAn`
+    // NGAY KHI cookie async xong, nên gán tay TRƯỚC "san_sang" sẽ bị `napDuAn()` xoá mất SAU lưng.
+    // Đặt `thuMucWorkspace` để `napDuAn()` TỰ dựng đúng mục "local:C:\\ws" — không có cuộc đua nào.
+    may.thuMucWorkspace = ["C:\\ws"];
+    moBang();
+    may.nhanTin?.({ loai: "san_sang" });
+    await new Promise((r) => setTimeout(r, 0));
+    may.daGui = [];
+    may.hangDoiSse = hangDoiMotVongDonGian("Trả lời câu tiếp theo");
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "Câu hỏi tiếp theo" });
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+
+    const luu = may.workspaceState[KHOA_HOI_THOAI] as HoiThoai[] | undefined;
+    expect(luu, "vẫn phải đúng MỘT hội thoại — UPSERT vào bản ghi đã khôi phục, không đẻ bản ghi thứ hai").toHaveLength(1);
+    expect(luu![0]!.ma).toBe("phien-cu");
+    expect(luu![0]!.luot).toHaveLength(4); // 2 lượt cũ + 2 lượt mới
   });
 });
