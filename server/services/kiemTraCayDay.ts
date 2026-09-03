@@ -60,10 +60,16 @@ function timTrung(danhSach: readonly string[]): string[] {
  *
  * | Khoá kiểm                    | Vì sao PHẢI duy nhất                                    |
  * |------------------------------|---------------------------------------------------------|
- * | `surfaceName` toàn cây       | `uq_product_surfaces_model_name` (productModelId, surfaceName) |
+ * | `surfaceName` toàn cây       | `uq_product_surfaces_model_may_name` (productModelId, **machineId**, surfaceName) — Task 5 (0347) thêm chiều máy; trong MỘT payload của MỘT máy thì phạm vi kiểm không đổi |
  * | `positionId` trong mỗi surface | `uq_product_positions_surface_posid`                   |
  * | `capture.id` trong mỗi position | `uq_product_captures_position_extid`                  |
- * | `component.id` **TOÀN CÂY**  | (a) `uq_point_defs_product_variant_code` — `code` = `componentExtId`, duy nhất theo **productModelId**, KHÔNG theo capture; (b) Task 4 tra `pointDefId` **từ `componentExtId`** — trùng id ⇒ join RA HAI HÀNG, verdict lấy hàng nào là ngẫu nhiên. |
+ * | `component.id` **TOÀN CÂY**  | (a) `uq_point_defs_cay_may_code` (Task 5, 0347) — `code` = `componentExtId`, duy nhất theo **(productModelId, variant, machineId)**, KHÔNG theo capture; (b) Task 4 tra `pointDefId` **từ `componentExtId`** — trùng id ⇒ join RA HAI HÀNG, verdict lấy hàng nào là ngẫu nhiên. |
+ *
+ * ⚠ Task 5 (0347) — index (a) TRƯỚC đây là `uq_point_defs_product_variant_code`,
+ * KHÔNG có chiều máy. Hai máy dạy CÙNG sản phẩm với CÙNG bộ UUID linh kiện (clone
+ * bản dạy từ máy A sang máy B) sẽ vỡ `23505` ở đó. Nay hàng CÂY đi index riêng có
+ * `COALESCE("machineId",0)`, còn `uq_point_defs_product_variant_code` thu về đúng
+ * hàng PHẲNG (`captureRowId IS NULL`) — nghĩa cũ giữ nguyên cho 100% hàng đang sống.
  *
  * ⚠ Ba khoá đầu chỉ cần duy nhất TRONG PHẠM VI CHA; riêng `component.id` phải duy
  * nhất TOÀN CÂY — phạm vi RỘNG HƠN chỗ nó được ghi. Đây không phải phòng thủ dư:

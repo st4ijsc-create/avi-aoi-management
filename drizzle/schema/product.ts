@@ -247,6 +247,11 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   roiY: integer("roiY"),
   roiWidth: integer("roiWidth"),
   roiHeight: integer("roiHeight"),
+  // Khối B Task 5 (0347) — `machine_template_versions(id)` đã ghi hàng này lần CUỐI.
+  // Soft ref (cùng lý do vòng import với `captureRowId` ở trên). NULL = điểm đo phẳng
+  // cũ / hàng chưa qua cửa cây dạy. ⚠ Cột này nói bản HIỆN TẠI; muốn biết một bo CŨ
+  // chấm theo bản nào thì tra KHOẢNG `[pushedAt, supersededAt)` của sổ bản dạy.
+  templateVersionId: integer("templateVersionId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -266,9 +271,20 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   //   0286 is guarded and keeps the old index when pre-existing duplicates block the
   //   swap. All writers use bare ON CONFLICT DO NOTHING so they behave identically
   //   either way.
+  // ⚠ Khối B Task 5 (0347) SIẾT VỊ TỪ, KHÔNG đổi tên: thêm `"captureRowId" IS NULL`
+  // ⇒ index này nay chỉ phủ hàng PHẲNG. Đo được: 100% hàng đang sống ở CẢ HAI DB
+  // (110 / 2.892) là hàng phẳng, nên nghĩa trên dữ liệu thật KHÔNG đổi một chút nào.
+  // Hàng CÂY có index riêng `uq_point_defs_cay_may_code` bên dưới, có thêm chiều MÁY —
+  // hai máy dạy cùng sản phẩm rất hay mang CÙNG bộ UUID linh kiện (clone bản dạy), và
+  // nếu để chung một index thì máy thứ hai vỡ `23505` ở một index KHÔNG AI NHẮM.
   uniqueIndex("uq_point_defs_product_variant_code")
     .on(table.productModelId, sql`COALESCE("variantId", 0)`, table.code)
-    .where(sql`${table.deletedAt} IS NULL`),
+    .where(sql`${table.deletedAt} IS NULL AND ${table.captureRowId} IS NULL`),
+  uniqueIndex("uq_point_defs_cay_may_code")
+    .on(table.productModelId, sql`COALESCE("variantId", 0)`, sql`COALESCE("machineId", 0)`, table.code)
+    .where(sql`${table.deletedAt} IS NULL AND ${table.captureRowId} IS NOT NULL`),
+  index("idx_point_defs_template_version").on(table.templateVersionId)
+    .where(sql`${table.templateVersionId} IS NOT NULL`),
   index("idx_point_defs_last_modified").on(table.lastModifiedAt),
   index("idx_point_defs_product_modified").on(table.productModelId, table.lastModifiedAt),
   index("idx_point_defs_image_hash").on(table.imageHash),

@@ -92,11 +92,27 @@ async function applyTo(rawUrl, label) {
     if (!modelThat) {
       throw new Error(`nghiem thu KHONG CHAY DUOC: bang product_models rong tren "${label}", khong co id that de probe`);
     }
+    // ⚠ Migration 0347 (Khối B Task 5) làm `product_surfaces."machineId"` NOT NULL —
+    // probe cũ (chỉ productModelId + surfaceName) sẽ vỡ `23502` nếu 0347 đã áp. Lấy
+    // một máy THẬT y như đã lấy một product model THẬT: không hard-code, và probe
+    // vẫn chạy được trên DB CHƯA áp 0347 (cột chưa có thì bỏ qua).
+    const [mayThat] = await appSql`SELECT id FROM machines ORDER BY id LIMIT 1`;
+    const coCotMay = (await appSql`
+      SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'product_surfaces' AND column_name = 'machineId'`).length > 0;
+    if (coCotMay && !mayThat) {
+      throw new Error(`nghiem thu KHONG CHAY DUOC: 0347 da ap (product_surfaces.machineId NOT NULL) nhung bang machines rong tren "${label}"`);
+    }
     await appSql`DELETE FROM product_surfaces WHERE "surfaceName" = ${PROBE_SURFACE_NAME}`;
-    const [inserted] = await appSql`
-      INSERT INTO product_surfaces ("productModelId", "surfaceName")
-      VALUES (${modelThat.id}, ${PROBE_SURFACE_NAME})
-      RETURNING id`;
+    const [inserted] = coCotMay
+      ? await appSql`
+          INSERT INTO product_surfaces ("productModelId", "machineId", "surfaceName")
+          VALUES (${modelThat.id}, ${mayThat.id}, ${PROBE_SURFACE_NAME})
+          RETURNING id`
+      : await appSql`
+          INSERT INTO product_surfaces ("productModelId", "surfaceName")
+          VALUES (${modelThat.id}, ${PROBE_SURFACE_NAME})
+          RETURNING id`;
     if (!inserted?.id) {
       throw new Error(`verification failed: avi_app INSERT vao product_surfaces khong tra ve id`);
     }

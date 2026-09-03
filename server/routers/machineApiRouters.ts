@@ -5503,9 +5503,14 @@ export const machineApiRouter = router({
         );
       }
 
-      // ── (4) GHI — một transaction, bốn bảng ───────────────────────────────────
+      // ── (4) GHI — một transaction, bốn bảng + sổ bản dạy ──────────────────────
+      // ⚠⚠ Task 5 — `machineId` là `machine.id`, tức id máy TRẢ VỀ TỪ
+      // `authenticateMachine` ở bước (0), KHÔNG phải `input.machineCode` (nhãn máy
+      // TỰ KHAI trong payload). Đúng bài học I-4: `entityId` phải là khoá ngoại máy
+      // THẬT. Đây cũng là lý do dòng này KHÔNG THỂ dời lên trước bước (0).
       const ketQua = await ghiCayDay({
         productModelId: productModel.id,
+        machineId: machine.id,
         cay: input.template,
         phienBanLucXoa: Number(productModel.pointsConfigVersion ?? 1),
       });

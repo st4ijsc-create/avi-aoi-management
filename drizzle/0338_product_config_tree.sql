@@ -21,8 +21,22 @@ CREATE TABLE IF NOT EXISTS product_surfaces (
   "createdAt"         timestamp NOT NULL DEFAULT now(),
   "updatedAt"         timestamp NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX IF NOT EXISTS uq_product_surfaces_model_name
-  ON product_surfaces ("productModelId", "surfaceName");
+-- ⚠⚠ SỬA 2026-09-03 (Khối B Task 5): migration **0347** THAY index này bằng
+-- `uq_product_surfaces_model_may_name` (productModelId, **machineId**, surfaceName).
+-- File 0338 vẫn RE-RUNNABLE (`scripts/apply-migration-0338.mjs` còn được dùng), và
+-- một lượt chạy lại 0338 SAU 0347 sẽ DỰNG LẠI index cũ — đo được, không phải giả
+-- định: chạy lại 0338 lúc 2026-09-03 đã phục sinh nó ở CẢ HAI DB. Index cũ sống lại
+-- nghĩa là hai máy dạy cùng một product model lại GHI ĐÈ NHAU, IM LẶNG. Guard dưới
+-- đây làm cho 0338 nhường 0347, và chỉ dựng index cũ trên DB CHƯA có bản thay.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'uq_product_surfaces_model_may_name') THEN
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_product_surfaces_model_name
+      ON product_surfaces ("productModelId", "surfaceName");
+  ELSE
+    RAISE NOTICE '[0338] bo qua uq_product_surfaces_model_name: 0347 da thay bang uq_product_surfaces_model_may_name (co chieu MAY)';
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS product_positions (
   id                  serial PRIMARY KEY,

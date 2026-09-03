@@ -22,7 +22,7 @@
  *
  * | Cấp       | Kế hoạch khai           | Unique index THẬT                                          |
  * |-----------|-------------------------|------------------------------------------------------------|
- * | surface   | (productModelId, surfaceExtId) | ❌ **KHÔNG TỒN TẠI** — chỉ có `uq_product_surfaces_model_name` (productModelId, **surfaceName**) |
+ * | surface   | (productModelId, surfaceExtId) | ❌ **KHÔNG TỒN TẠI** — chỉ có `uq_product_surfaces_model_name` (productModelId, **surfaceName**). ⚠ Task 5 (0347) THAY nó bằng `uq_product_surfaces_model_may_name` (productModelId, **machineId**, surfaceName) |
  * | position  | (surfaceRowId, positionId)     | ✅ `uq_product_positions_surface_posid`               |
  * | capture   | (positionRowId, captureExtId)  | ✅ `uq_product_captures_position_extid`               |
  * | component | (captureRowId, componentExtId) | ✅ `uq_point_defs_capture_component` (PARTIAL: cả hai NOT NULL và `deletedAt IS NULL`) |
@@ -32,7 +32,7 @@
  * đây, khai rõ để không ai đọc nhầm là "đã hội tụ theo extId ở tầng DB":
  *   1. SELECT hàng theo `(productModelId, surfaceExtId)` — hội tụ theo **extId**
  *      ở TẦNG ỨNG DỤNG (đây là thứ giữ đúng hàng khi máy ĐỔI TÊN một mặt).
- *   2. Không thấy ⇒ INSERT `ON CONFLICT (productModelId, surfaceName) DO UPDATE`
+ *   2. Không thấy ⇒ INSERT `ON CONFLICT (productModelId, machineId, surfaceName) DO UPDATE`
  *      — hội tụ theo **TÊN** ở TẦNG DB (đây là khoá DB thật sự cưỡng chế, VÀ là
  *      khoá mà KẾT QUẢ nối bằng: payload kết quả chỉ mang `name`, không mang
  *      `surfaceId`).
@@ -41,8 +41,11 @@
  * UPDATE, không phải hai hàng. Cái KHÔNG có bảo đảm là "hai extId khác nhau,
  * cùng một `surfaceName`": lúc đó hàng thứ hai sẽ GHI ĐÈ `surfaceExtId` của hàng
  * thứ nhất. Cửa chặn ca này bằng phép kiểm trùng `surfaceName` TRONG payload
- * (`machineApiRouters.ts`), nhưng KHÔNG chặn được giữa HAI lượt đẩy khác nhau —
- * đó là nợ thật, thuộc Task 5 (version per-máy per-bản-dạy).
+ * (`machineApiRouters.ts`), nhưng KHÔNG chặn được giữa HAI lượt đẩy khác nhau
+ * CỦA CÙNG MỘT MÁY. ⚠ Task 5 (0347) THU HẸP nợ này chứ không xoá nó: hai lượt đẩy
+ * của HAI MÁY khác nhau nay KHÔNG còn đụng nhau (khoá có `machineId`); còn lại
+ * đúng ca "cùng máy, đổi `surfaceExtId` mà giữ nguyên `surfaceName`", và ca đó
+ * nay sinh một PHIÊN BẢN mới (checksum đổi) nên nó ĐỂ LẠI DẤU VẾT tra được.
  *
  * ════════════════════════════════════════════════════════════════════════════
  * ★★★ SÁU CỘT NOT NULL của `measurement_point_defs` mà cây dạy KHÔNG có
@@ -70,11 +73,46 @@
  * ra hai chỗ, đúng lớp lỗi "hai nguồn sự thật" dự án này đã tốn 8 lượt review để
  * dọn. Hệ quả PHẢI biết: với hàng cây dạy, `shape='circle'` + `radius=20` là
  * **DI SẢN VÔ NGHĨA**, đừng đọc chúng — đọc `roi*`.
- * ⚠ `machineId` CỐ Ý để NULL: ba cấp trên (`product_surfaces/positions/captures`)
- * KHÔNG có chiều máy nào, nên gắn máy ở riêng cấp bốn tạo một chiều nửa vời.
- * Chiều "bản dạy nào của máy nào" là Task 5.
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ Task 5 (0347) — CHIỀU **MÁY** VÀ CHIỀU **PHIÊN BẢN** (nợ Task 2 bàn giao)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Task 2 CỐ Ý để `machineId` NULL vì ba cấp trên KHÔNG có chiều máy nào, và gắn
+ * máy ở riêng cấp bốn là một "chiều NỬA VỜI" (hai nguồn sự thật về phạm vi).
+ * Quyết định đó ĐÚNG — migration 0347 không lật nó, nó đóng CẢ BỐN CẤP cùng lúc:
+ *
+ *   product_surfaces."machineId"        NOT NULL   ← GỐC của chiều máy
+ *   product_positions."machineId"       NOT NULL   ← FK GHÉP (surfaceRowId, machineId)
+ *   product_captures."machineId"        NOT NULL   ← FK GHÉP (positionRowId, machineId)
+ *   measurement_point_defs."machineId"  (nullable, vì điểm PHẲNG cũ không có máy)
+ *                                       ← FK GHÉP (captureRowId, machineId)
+ *                                       + CHECK `ck_point_defs_cay_phai_co_may`
+ *
+ * ⇒ Một hàng con KHÔNG THỂ mang `machineId` khác cha nó (`23503`, ĐỎ TO). Đó là
+ *   khác biệt giữa "thêm một cột máy vào ba bảng" (ba lời khai có thể lệch nhau)
+ *   và "một chiều máy DUY NHẤT hiện diện ở bốn cấp".
+ * ⚠ Cấp 2/3 KHÔNG thêm `machineId` vào khoá hội tụ: `surfaceRowId`/`positionRowId`
+ *   ĐÃ thuộc phạm vi một máy, nên `machineId` ở đó là HÀM của cột kia.
+ * ⚠ Cấp 4 có index RIÊNG cho hàng cây (`uq_point_defs_cay_may_code`, có
+ *   `COALESCE("machineId",0)`). Không có nó thì máy thứ hai dạy CÙNG sản phẩm với
+ *   CÙNG bộ UUID linh kiện (clone bản dạy) sẽ vỡ `23505` ở
+ *   `uq_point_defs_product_variant_code` — một index KHÔNG AI NHẮM.
+ *
+ * ── PHIÊN BẢN: `machine_template_versions`, phạm vi `(máy, model)` ───────────
+ * Mỗi lượt đẩy tra `checksum` của cây với BẢN HIỆN HÀNH:
+ *   · trùng   ⇒ KHÔNG sinh phiên bản, chỉ chạm `lastSeenAt` (giữ bất biến HỘI TỤ
+ *              Task 2 dựng; một máy khởi động lại và đẩy lại cây y hệt là chuyện
+ *              thường, không được đẻ ra một phiên bản mỗi lần).
+ *   · khác    ⇒ đóng khoảng bản cũ (`supersededAt = now()`) và mở bản mới
+ *              (`version + 1`, `previousVersionId` = bản cũ). KHÔNG xoá hàng nào.
+ * `snapshot` (jsonb) giữ cây NGUYÊN VĂN lúc đẩy. Đây là thứ DUY NHẤT trả lời được
+ * *"bo CŨ chấm theo bản dạy nào"*: hàng `measurement_point_defs` bị lượt đẩy sau
+ * GHI ĐÈ TẠI CHỖ (giá của bất biến hội tụ), nên không chụp lại thì nghĩa của dữ
+ * liệu ĐÃ GHI sẽ đổi khi đẩy bản mới. Tra bằng `traBanDayTaiThoiDiem` (KHOẢNG
+ * `[pushedAt, supersededAt)`) — KHÔNG thêm cột nào vào `measurement_results`, vốn
+ * là hypertable ĐÃ NÉN (đo `timescaledb_information.hypertables`).
  */
-import { and, eq, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, desc, eq, gt, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { measurementPointDefs } from "../../drizzle/schema";
@@ -82,6 +120,8 @@ import {
   productSurfaces,
   productPositions,
   productCaptures,
+  machineTemplateVersions,
+  type MachineTemplateVersion,
 } from "../../drizzle/schema/productConfigTree";
 import type { MachineTemplate } from "../contracts/machineTemplateContract";
 
@@ -100,6 +140,40 @@ export interface KetQuaGhiCayDay {
   readonly components: number;
   /** Số điểm đo bị XOÁ MỀM vì biến mất khỏi một capture CÓ TRONG payload. */
   readonly componentsXoaMem: number;
+  /** `machine_template_versions.id` mà lượt đẩy này ghi vào. */
+  readonly templateVersionId: number;
+  /** `machine_template_versions.version` — đơn điệu theo `(máy, model)`. */
+  readonly templateVersion: number;
+  /**
+   * `true` = lượt đẩy này SINH một phiên bản mới (checksum khác bản hiện hành);
+   * `false` = cây Y HỆT bản hiện hành, chỉ chạm `lastSeenAt`. ⚠ Đây là chỗ brief
+   * bị phép đo sửa — xem docblock đầu file.
+   */
+  readonly phienBanMoi: boolean;
+  /** sha256 ổn định của cây — khoá chống-đẻ-phiên-bản. */
+  readonly checksum: string;
+}
+
+/**
+ * sha256 ỔN ĐỊNH (khoá sắp xếp) của cây dạy.
+ *
+ * ⚠ `stableStringify` ở đây là BẢN SAO THỨ SÁU trong repo (`machineRecipe.ts`,
+ * `configDriftService.ts`, `schemaRegistry.ts`, `inspectionProgramService.ts`,
+ * `mappingAsCode.ts`). CỐ Ý theo quy ước đang có thay vì kéo cả
+ * `inspectionProgramService` (audit + goldenSample + faiGate) vào một module `db/`.
+ * Nợ khai rõ: một `shared/stableStringify.ts` sẽ đúng hơn, nhưng gộp 6 bản sao là
+ * một lượt việc riêng, không phải việc của Task 5.
+ */
+function chuoiOnDinh(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(chuoiOnDinh).join(",")}]`;
+  const obj = value as Record<string, unknown>;
+  return `{${Object.keys(obj).sort().map((k) => `${JSON.stringify(k)}:${chuoiOnDinh(obj[k])}`).join(",")}}`;
+}
+
+/** sha256 của cây dạy — hai cây khác nhau ⇒ hai checksum khác nhau. */
+export function bamCayDay(cay: MachineTemplate): string {
+  return createHash("sha256").update(chuoiOnDinh(cay), "utf8").digest("hex");
 }
 
 /**
@@ -142,14 +216,19 @@ function soThapPhan(v: number | undefined): string | undefined {
 async function ghiSurface(
   tx: TxCayDay,
   productModelId: number,
+  machineId: number,
   thuTu: number,
   s: MachineTemplate["surfaces"][number],
 ): Promise<number> {
+  // ⚠⚠ `machineId` PHẢI có trong mệnh đề WHERE này. Không có nó, máy B đẩy cùng
+  // `surfaceExtId` sẽ tìm thấy hàng của máy A rồi UPDATE ĐÈ LÊN — đúng lỗ mà Task 5
+  // sinh ra để bịt, và cái lỗ đó nằm ở TẦNG ỨNG DỤNG chứ không ở index.
   const daCo = await tx
     .select({ id: productSurfaces.id })
     .from(productSurfaces)
     .where(and(
       eq(productSurfaces.productModelId, productModelId),
+      eq(productSurfaces.machineId, machineId),
       eq(productSurfaces.surfaceExtId, s.surfaceId),
     ))
     .limit(1);
@@ -169,9 +248,11 @@ async function ghiSurface(
 
   const [hang] = await tx
     .insert(productSurfaces)
-    .values({ productModelId, surfaceExtId: s.surfaceId, ...giaTri })
+    .values({ productModelId, machineId, surfaceExtId: s.surfaceId, ...giaTri })
     .onConflictDoUpdate({
-      target: [productSurfaces.productModelId, productSurfaces.surfaceName],
+      // Đích = `uq_product_surfaces_model_may_name` (0347). Bỏ `machineId` khỏi đây
+      // là `42P10` (không còn index nào khớp) — ĐỎ TO, không im lặng.
+      target: [productSurfaces.productModelId, productSurfaces.machineId, productSurfaces.surfaceName],
       set: { surfaceExtId: s.surfaceId, ...giaTri },
     })
     .returning({ id: productSurfaces.id });
@@ -182,6 +263,7 @@ async function ghiSurface(
 async function ghiPosition(
   tx: TxCayDay,
   surfaceRowId: number,
+  machineId: number,
   p: MachineTemplate["surfaces"][number]["positions"][number],
 ): Promise<number> {
   const giaTri = {
@@ -198,7 +280,9 @@ async function ghiPosition(
   };
   const [hang] = await tx
     .insert(productPositions)
-    .values({ surfaceRowId, positionId: p.positionId, ...giaTri })
+    // `machineId` KHÔNG phải một lời khai thứ hai: FK GHÉP `fk_positions_surface_may`
+    // (0347) làm cho một giá trị khác cha là `23503`.
+    .values({ surfaceRowId, machineId, positionId: p.positionId, ...giaTri })
     .onConflictDoUpdate({
       target: [productPositions.surfaceRowId, productPositions.positionId],
       set: giaTri,
@@ -211,6 +295,7 @@ async function ghiPosition(
 async function ghiCapture(
   tx: TxCayDay,
   positionRowId: number,
+  machineId: number,
   thuTu: number,
   c: MachineTemplate["surfaces"][number]["positions"][number]["captures"][number],
 ): Promise<number> {
@@ -222,7 +307,7 @@ async function ghiCapture(
   };
   const [hang] = await tx
     .insert(productCaptures)
-    .values({ positionRowId, captureExtId: c.id, ...giaTri })
+    .values({ positionRowId, machineId, captureExtId: c.id, ...giaTri })
     .onConflictDoUpdate({
       target: [productCaptures.positionRowId, productCaptures.captureExtId],
       set: giaTri,
@@ -244,6 +329,8 @@ async function ghiCapture(
 async function ghiComponent(
   tx: TxCayDay,
   productModelId: number,
+  machineId: number,
+  templateVersionId: number,
   captureRowId: number,
   thuTu: number,
   k: MachineTemplate["surfaces"][number]["positions"][number]["captures"][number]["components"][number],
@@ -262,6 +349,11 @@ async function ghiComponent(
     orderIndex: thuTu,
     lastModifiedAt: new Date(),
     updatedAt: new Date(),
+    // ⚠⚠ Task 5 — hai cột này PHẢI nằm trong `giaTri` (dùng cho CẢ insert LẪN update):
+    // một hàng đã tồn tại từ lượt đẩy trước mà không được cập nhật `templateVersionId`
+    // sẽ khai SAI bản dạy nào ghi nó lần cuối, và lời khai sai đó không có cổng nào bắt.
+    machineId,
+    templateVersionId,
   };
   await tx
     .insert(measurementPointDefs)
@@ -336,6 +428,118 @@ async function xoaMemComponentBienMat(
 type TxCayDay = Parameters<Parameters<NonNullable<Awaited<ReturnType<typeof getDb>>>["transaction"]>[0]>[0];
 
 /**
+ * ★★★ MỞ (hoặc TÁI DÙNG) một bản dạy cho `(máy, model)` — trong CÙNG transaction
+ * với cây, TRƯỚC khi ghi hàng nào.
+ *
+ * Ba nhánh, mỗi nhánh một quyết định khai rõ:
+ *
+ *  (1) CHƯA CÓ bản nào  ⇒ mở `version = 1`.
+ *  (2) checksum TRÙNG bản hiện hành ⇒ **KHÔNG sinh phiên bản mới**, chỉ chạm
+ *      `lastSeenAt`. ⚠ Đây là chỗ brief bị phép đo sửa: brief viết *"mỗi lượt đẩy
+ *      ⇒ một phiên bản"*, nhưng chính brief cũng đòi *"đẩy lại cùng cây cùng máy ⇒
+ *      số hàng không đổi"*. Một máy khởi động lại và đẩy lại cây Y HỆT là chuyện
+ *      thường; sinh phiên bản mỗi lượt sẽ làm sổ phình vô hạn mà KHÔNG một nghĩa
+ *      nào đổi, và biến `traBanDayTaiThoiDiem` thành một hàng khác nhau mỗi phút.
+ *      `checksum` chính là cơ chế `inspection_program_releases` (0182) đã lập cho
+ *      đúng việc này ("stable sha256 for dedup/diff/tamper-evidence").
+ *  (3) checksum KHÁC ⇒ ĐÓNG khoảng bản cũ (`supersededAt = now()`) rồi MỞ bản mới
+ *      (`version + 1`, `previousVersionId` = bản cũ). **KHÔNG XOÁ HÀNG NÀO** — sổ
+ *      này append-only, đúng như `inspection_program_releases`.
+ *
+ * ⚠ `uq_mtv_hien_hanh` (partial unique trên `(machineId, productModelId) WHERE
+ *   supersededAt IS NULL`) là cầu chì: nếu bước (3) quên đóng bản cũ thì INSERT bản
+ *   mới vỡ `23505` — ĐỎ TO, chứ không phải hai bản "hiện hành" cùng lúc.
+ * ⚠ `SELECT … FOR UPDATE` khoá bản hiện hành: hai lượt đẩy ĐỒNG THỜI của cùng một
+ *   máy phải nối đuôi nhau, không được cùng đọc `version = N` rồi cùng ghi `N+1`.
+ */
+async function moBanDay(
+  tx: TxCayDay,
+  opts: { machineId: number; productModelId: number; checksum: string; cay: MachineTemplate },
+): Promise<{ id: number; version: number; moi: boolean }> {
+  const [hienHanh] = await tx
+    .select({
+      id: machineTemplateVersions.id,
+      version: machineTemplateVersions.version,
+      checksum: machineTemplateVersions.checksum,
+    })
+    .from(machineTemplateVersions)
+    .where(and(
+      eq(machineTemplateVersions.machineId, opts.machineId),
+      eq(machineTemplateVersions.productModelId, opts.productModelId),
+      isNull(machineTemplateVersions.supersededAt),
+    ))
+    .limit(1)
+    .for("update");
+
+  // (2) Cây Y HỆT bản hiện hành — không có gì mới để ghi vào sổ.
+  if (hienHanh && hienHanh.checksum === opts.checksum) {
+    // ⚠ `now()` của DB, KHÔNG phải `new Date()`: `pushedAt` lấy DEFAULT now(), nên
+    // mọi dấu thời gian của sổ này phải đến từ CÙNG MỘT đồng hồ. Trộn hai đồng hồ
+    // vào một khoảng `[pushedAt, supersededAt)` là cách tạo ra khoảng ÂM mà không
+    // lỗi nào ném (bài học lệch múi giờ doc 51 P1 của chính repo này).
+    await tx
+      .update(machineTemplateVersions)
+      .set({ lastSeenAt: sql`now()`, updatedAt: sql`now()` })
+      .where(eq(machineTemplateVersions.id, hienHanh.id));
+    return { id: hienHanh.id, version: hienHanh.version, moi: false };
+  }
+
+  // (3) Cây ĐỔI — đóng khoảng bản cũ TRƯỚC khi mở bản mới (`uq_mtv_hien_hanh`).
+  if (hienHanh) {
+    await tx
+      .update(machineTemplateVersions)
+      .set({ supersededAt: sql`now()`, updatedAt: sql`now()` })
+      .where(eq(machineTemplateVersions.id, hienHanh.id));
+  }
+
+  // Số phiên bản đơn điệu theo `(máy, model)` — kể cả bản đã bị đóng khoảng, vì
+  // `uq_mtv_may_model_version` phủ MỌI hàng, không riêng bản hiện hành.
+  const [cao] = await tx
+    .select({ v: machineTemplateVersions.version })
+    .from(machineTemplateVersions)
+    .where(and(
+      eq(machineTemplateVersions.machineId, opts.machineId),
+      eq(machineTemplateVersions.productModelId, opts.productModelId),
+    ))
+    .orderBy(desc(machineTemplateVersions.version))
+    .limit(1);
+
+  const dem = demCapCay(opts.cay);
+  const [moi] = await tx
+    .insert(machineTemplateVersions)
+    .values({
+      machineId: opts.machineId,
+      productModelId: opts.productModelId,
+      version: (cao?.v ?? 0) + 1,
+      checksum: opts.checksum,
+      surfaceCount: dem.surfaces,
+      positionCount: dem.positions,
+      captureCount: dem.captures,
+      componentCount: dem.components,
+      // BẤT BIẾN — cây NGUYÊN VĂN. Không được đọc lại từ bảng sau này.
+      snapshot: opts.cay,
+      previousVersionId: hienHanh?.id ?? null,
+    })
+    .returning({ id: machineTemplateVersions.id, version: machineTemplateVersions.version });
+  return { id: moi.id, version: moi.version, moi: true };
+}
+
+/** Đếm bốn cấp của một cây — dùng cho cột thống kê của sổ bản dạy. */
+function demCapCay(cay: MachineTemplate): {
+  surfaces: number; positions: number; captures: number; components: number;
+} {
+  let positions = 0, captures = 0, components = 0;
+  for (const s of cay.surfaces) {
+    positions += s.positions.length;
+    for (const p of s.positions) {
+      captures += p.captures.length;
+      for (const c of p.captures) components += c.components.length;
+    }
+  }
+  return { surfaces: cay.surfaces.length, positions, captures, components };
+}
+
+/**
  * Ghi TOÀN BỘ cây dạy trong **MỘT transaction**.
  *
  * ⚠ Một transaction là bắt buộc, không phải cho gọn: ghi từng cấp ở lượt riêng
@@ -349,13 +553,28 @@ type TxCayDay = Parameters<Parameters<NonNullable<Awaited<ReturnType<typeof getD
  */
 export async function ghiCayDay(opts: {
   productModelId: number;
+  /** ⚠ `auth.machine.id` — id máy ĐÃ XÁC THỰC, KHÔNG phải nhãn máy tự khai (I-4). */
+  machineId: number;
   cay: MachineTemplate;
   phienBanLucXoa: number | null;
 }): Promise<KetQuaGhiCayDay> {
   const d = await getDb();
   if (!d) throw new DbUnavailableError();
 
+  const checksum = bamCayDay(opts.cay);
+
   return d.transaction(async (tx) => {
+    // ── (0) PHIÊN BẢN TRƯỚC, TRONG CÙNG TRANSACTION ────────────────────────
+    // Trước mọi hàng cây, vì `templateVersionId` phải đi vào chính các hàng đó.
+    // Cùng transaction: một phiên bản không có cây (hoặc một cây không có phiên
+    // bản) là đúng cái trạng thái nửa vời mà `ghiCayDay` sinh ra để tránh.
+    const banDay = await moBanDay(tx, {
+      machineId: opts.machineId,
+      productModelId: opts.productModelId,
+      checksum,
+      cay: opts.cay,
+    });
+
     let soSurface = 0;
     let soPosition = 0;
     let soCapture = 0;
@@ -363,19 +582,21 @@ export async function ghiCayDay(opts: {
     let soXoaMem = 0;
 
     for (const [iSurface, surface] of opts.cay.surfaces.entries()) {
-      const surfaceRowId = await ghiSurface(tx, opts.productModelId, iSurface, surface);
+      const surfaceRowId = await ghiSurface(tx, opts.productModelId, opts.machineId, iSurface, surface);
       soSurface += 1;
 
       for (const position of surface.positions) {
-        const positionRowId = await ghiPosition(tx, surfaceRowId, position);
+        const positionRowId = await ghiPosition(tx, surfaceRowId, opts.machineId, position);
         soPosition += 1;
 
         for (const [iCapture, capture] of position.captures.entries()) {
-          const captureRowId = await ghiCapture(tx, positionRowId, iCapture, capture);
+          const captureRowId = await ghiCapture(tx, positionRowId, opts.machineId, iCapture, capture);
           soCapture += 1;
 
           for (const [iComponent, component] of capture.components.entries()) {
-            await ghiComponent(tx, opts.productModelId, captureRowId, iComponent, component);
+            await ghiComponent(
+              tx, opts.productModelId, opts.machineId, banDay.id, captureRowId, iComponent, component,
+            );
             soComponent += 1;
           }
 
@@ -395,6 +616,87 @@ export async function ghiCayDay(opts: {
       captures: soCapture,
       components: soComponent,
       componentsXoaMem: soXoaMem,
+      templateVersionId: banDay.id,
+      templateVersion: banDay.version,
+      phienBanMoi: banDay.moi,
+      checksum,
     };
   });
+}
+
+/**
+ * ★★★ Tra **BẢN DẠY ĐANG HIỆU LỰC** của `(máy, model)` tại một THỜI ĐIỂM.
+ *
+ * Đây là câu trả lời cho *"bo này chấm theo bản dạy nào?"* — và là lý do sổ bản
+ * dạy dùng KHOẢNG `[pushedAt, supersededAt)` thay vì một cột trên hàng kết quả:
+ * `measurement_results` là hypertable **ĐÃ NÉN** (đo `timescaledb_information.
+ * hypertables`: `measurement_results[NEN]`), nên thêm cột vào đó là thứ Task 5
+ * phải tránh. Một `product_inspections` chỉ cần mang sẵn `machineId` +
+ * `productModelId` + thời điểm — cả ba đã có — là tra được.
+ *
+ * ⚠ Hàng trả về mang `snapshot` BẤT BIẾN: đó là cây NGUYÊN VĂN lúc đẩy, KHÔNG
+ * phải các hàng `measurement_point_defs` hiện tại (chúng đã bị lượt đẩy sau ghi
+ * đè tại chỗ). Đọc ROI/giới hạn của một bo CŨ thì đọc `snapshot`, đừng đọc bảng.
+ *
+ * `null` = tại thời điểm đó máy chưa từng đẩy bản dạy nào cho sản phẩm này.
+ *
+ * ⚠⚠ MÚI GIỜ — ĐỌC TRƯỚC KHI NỐI TASK 3. Ba cột thời gian của sổ này là
+ * `timestamp WITHOUT time zone` và đều do `now()` của DB đóng dấu. Đo được
+ * 2026-09-03: `current_setting('TimeZone')` của **cả hai** DB là `Etc/UTC`, nên
+ * `now()` và một `Date` của Node rơi vào CÙNG một frame, và `opts.luc` là một
+ * `Date` bình thường thì so đúng.
+ * ⚠ Hai cái bẫy đã đo, đừng đạp lại:
+ *   (a) **ĐỪNG đọc một cột timestamp ra rồi bind lại nó.** postgres.js đọc một
+ *       `timestamp` naive bằng cách hiểu nó theo múi giờ CLIENT, rồi khi bind lại
+ *       thì ghi ra UTC ⇒ lệch đúng bằng offset client. Đo: `pushedAt <= (giá trị
+ *       vừa đọc ra của CHÍNH NÓ)` trả về **0 hàng** trên máy `+07:00`.
+ *   (b) `product_inspections` ghi thời gian qua phép **dịch "fake UTC"** cố ý
+ *       (doc 51 P1, `machineApiRouters.ts`). Nếu DB nào đó KHÔNG chạy `Etc/UTC`,
+ *       hai bên sẽ lệch. Task 3 nối vào đây phải ĐO lại `current_setting('TimeZone')`
+ *       trước khi tin phép so này, đừng thừa kế lời khai.
+ */
+export async function traBanDayTaiThoiDiem(opts: {
+  machineId: number;
+  productModelId: number;
+  luc: Date;
+}): Promise<MachineTemplateVersion | null> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+  const hang = await d
+    .select()
+    .from(machineTemplateVersions)
+    .where(and(
+      eq(machineTemplateVersions.machineId, opts.machineId),
+      eq(machineTemplateVersions.productModelId, opts.productModelId),
+      // ⚠ Toán tử drizzle, KHÔNG phải `sql\`… <= ${date}\``: template thô bind Date
+      // thành `timestamptz` (oid 1184) và postgres.js ném `ERR_INVALID_ARG_TYPE`
+      // ngay ở tầng Bind — đo được, không suy đoán.
+      lte(machineTemplateVersions.pushedAt, opts.luc),
+      or(
+        isNull(machineTemplateVersions.supersededAt),
+        gt(machineTemplateVersions.supersededAt, opts.luc),
+      ),
+    ))
+    .orderBy(desc(machineTemplateVersions.version))
+    .limit(1);
+  return hang[0] ?? null;
+}
+
+/** Bản dạy HIỆN HÀNH của `(máy, model)` — `supersededAt IS NULL`. */
+export async function traBanDayHienHanh(opts: {
+  machineId: number;
+  productModelId: number;
+}): Promise<MachineTemplateVersion | null> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+  const hang = await d
+    .select()
+    .from(machineTemplateVersions)
+    .where(and(
+      eq(machineTemplateVersions.machineId, opts.machineId),
+      eq(machineTemplateVersions.productModelId, opts.productModelId),
+      isNull(machineTemplateVersions.supersededAt),
+    ))
+    .limit(1);
+  return hang[0] ?? null;
 }
