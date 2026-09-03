@@ -172,6 +172,9 @@ import { logCrudOperation, AUDIT_ACTIONS, ENTITY_TYPES } from "../services/audit
 // chung với đường v2.0 (ingestCayKetQua.ts) và đường ZIP (aoiPackageRouter.ts). KHÔNG
 // viết bản chép tay thứ tư — xem docblock tại nơi dùng (khoảng dòng ~2050).
 import { rollupVerdict, verdictXauHon, type NutKetQua, type ResultVerdict } from "@shared/rollupVerdict";
+// Task 7 Khối C (QĐ-3) vòng sửa 1 — MỘT nguồn 18 cột giới hạn cho `projectSyncPoint`
+// (khoảng dòng ~2727), thay cho khối chép tay reviewer grep độc lập bắt được.
+import { POINT_LIMIT_SPEC } from "@shared/pointLimitSpec";
 // Doc 2026-08-29 (WAL cho cây v2.0, §QĐ-WAL-A) — `dungKhoaKhuTrungV2` CHUYỂN sang
 // `contracts/machineDataContract.ts` (xem doc-comment tại đó) để `inspectionStoreForward.ts`
 // dùng được mà không tạo vòng import với file này. Re-export lại để giữ NGUYÊN bề mặt
@@ -2725,6 +2728,20 @@ export async function processInspectionSubmission(
 /** Project one measurement_point_defs row into the machine sync payload (geometry-
  *  complete). `lighting` is the point's illumination recipe rows (may be empty). */
 function projectSyncPoint(p: Record<string, any>, lighting: any[] = []): Record<string, unknown> {
+  // Task 7 Khối C (QĐ-3) vòng sửa 1 — 18 field giới hạn (unit/lowerLimit/
+  // upperLimit + khối 3D/GD&T/criteria) suy từ MỘT nguồn `shared/pointLimitSpec.ts`,
+  // thay cho 18 dòng chép tay trước đây. Reviewer grep độc lập bắt được đây là
+  // bản chép tay thứ ba ngoài vùng canh của `pointLimitSpecCensus.test.ts` §1/§2
+  // (schema DB + `PointLimitSource`) — file này giờ IMPORT spec nên nằm ngoài
+  // diện "chép tay" của §3 (mệnh đề quét mới). `?? null` giữ nguyên hành vi cũ
+  // của khối 3D (đã có từ trước); áp dụng thêm cho unit/lowerLimit/upperLimit
+  // là TƯƠNG ĐƯƠNG với hành vi cũ trên dữ liệu THẬT — cột NULL từ drizzle luôn
+  // đọc ra `null`, không bao giờ `undefined`, nên `p.unit` và `p.unit ?? null`
+  // cùng giá trị ở CẢ hai đường gọi (`buildModelEntry`/`deltaSyncPoints`, đều
+  // SELECT nguyên hàng, không pick thưa).
+  const gioiHanSyncPoint = Object.fromEntries(
+    POINT_LIMIT_SPEC.map((m) => [m.field, p[m.field] ?? null]),
+  ) as Record<(typeof POINT_LIMIT_SPEC)[number]["field"], unknown>;
   const base: Record<string, unknown> = {
     id: p.id,
     code: p.code,
@@ -2733,9 +2750,7 @@ function projectSyncPoint(p: Record<string, any>, lighting: any[] = []): Record<
     measurementType: p.measurementType,
     // Fine-grained catalog type (SOLDER/XRAY/POSITION/…).
     measurementTypeCode: p.measurementTypeCode ?? null,
-    unit: p.unit,
-    lowerLimit: p.lowerLimit,
-    upperLimit: p.upperLimit,
+    ...gioiHanSyncPoint,
     nominalValue: p.nominalValue,
     positionX: p.positionX,
     positionY: p.positionY,
@@ -2750,24 +2765,11 @@ function projectSyncPoint(p: Record<string, any>, lighting: any[] = []): Record<
     // P1: shape + geometry (additive) — the fields getPoints previously omitted.
     shape: p.shape ?? "circle",
     geometry: p.geometry ?? null,
-    // 3D/solder/xray/position limits + criteria (same limits the server gates with).
+    // positionZ/heightNominal: KHÔNG nằm trong POINT_LIMIT_SPEC (không phải field
+    // spec-gate chấm bằng — positionZ là toạ độ, heightNominal là danh nghĩa/hiển
+    // thị) nên vẫn khai tay, giữ nguyên hành vi cũ.
     positionZ: p.positionZ ?? null,
-    heightMin: p.heightMin ?? null,
-    heightMax: p.heightMax ?? null,
     heightNominal: p.heightNominal ?? null,
-    areaMin: p.areaMin ?? null,
-    areaMax: p.areaMax ?? null,
-    volumeMin: p.volumeMin ?? null,
-    volumeMax: p.volumeMax ?? null,
-    coplanarityMax: p.coplanarityMax ?? null,
-    warpageMax: p.warpageMax ?? null,
-    voidPctMax: p.voidPctMax ?? null,
-    offsetXMax: p.offsetXMax ?? null,
-    offsetYMax: p.offsetYMax ?? null,
-    tiltMax: p.tiltMax ?? null,
-    thicknessMin: p.thicknessMin ?? null,
-    thicknessMax: p.thicknessMax ?? null,
-    criteria: p.criteria ?? null,
     // Multi-shot lighting recipe for this point (may be []).
     lighting: (lighting ?? []).map((l: any) => ({
       shotIndex: l.shotIndex,

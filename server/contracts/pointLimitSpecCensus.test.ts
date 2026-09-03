@@ -19,10 +19,40 @@
 // §3 ghi lại bằng chứng ĐỘT BIẾN thật (Task 7 Bước 4 của brief): bỏ
 // `thicknessMax` khỏi `POINT_LIMIT_SPEC` trên đĩa, chạy lưới này, chép nguyên
 // văn dòng đỏ, rồi hoàn tác — xem báo cáo Task 7 để có dòng đỏ nguyên văn.
+//
+// ════════════════════════════════════════════════════════════════════════════
+// VÒNG SỬA 1 (2026-09-03) — F3: §1/§2 canh HAI MỤC TIÊU CỐ ĐỊNH, không QUÉT
+// ════════════════════════════════════════════════════════════════════════════
+// Reviewer grep độc lập (không phải §1/§2 ở trên) bắt được HAI bản chép tay
+// SỐNG khác, ngoài vùng canh của census: `server/services/productPackageService.ts`
+// (`POINT_COPY_COLS`, đủ 18/18) và `server/routers/machineApiRouters.ts`
+// (`projectSyncPoint`, đủ 18/18) — cả hai đã sửa trong vòng này (suy từ spec).
+// Lý do §1/§2 mù với hai file đó: chúng chỉ so `POINT_LIMIT_SPEC` với ĐÚNG hai
+// đích cố định (`measurementPointDefs`, `PointLimitSource`) — một bản chép tay
+// MỚI ở một file bất kỳ KHÔNG đụng vào hai đích đó thì không bao giờ đỏ. Đây
+// CHÍNH LÀ lỗ mà `cayDay.ts` (trước Task 7) tự tố, tái diễn lần thứ 8 (L-1) ở
+// dự án này theo lời nhắc của reviewer.
+//
+// §3 dưới đây là một BẤT BIẾN — QUÉT `server/**/*.ts` thật trên đĩa mỗi lần
+// chạy, không phải một danh sách tên file cố định — nên nó bắt được cả file
+// chép tay MỚI trong tương lai, không chỉ hai file đã biết hôm nay.
+//
+// ⚠ F3 — HAI CƠ CHẾ BỔ SUNG NHAU, KHÔNG THAY NHAU:
+//   §2 (`satisfies Record<...>`)  — bắt lệch KIỂU, CHỈ dưới `tsc`/`npm run
+//                                    check:tests` (test file bị `tsconfig.json`
+//                                    loại trừ nên KHÔNG được `npm run check`
+//                                    canh — xem `tsconfig.tests.json`).
+//   §3 (quét chuỗi bằng regex)     — bắt lệch VĂN BẢN (một khối liệt kê tay ở
+//                                    MỘT FILE BẤT KỲ), CHỈ dưới `vitest` (đọc
+//                                    nội dung file trên đĩa lúc chạy) — `tsc`
+//                                    không thấy gì sai vì 18 dòng `x: p.x` vẫn
+//                                    biên dịch hoàn hảo, đó CHÍNH LÀ lỗ.
 import { describe, it, expect } from "vitest";
 import type { PointLimitSource } from "../services/pointResultEvaluator";
 import { measurementPointDefs } from "../../drizzle/schema";
 import { POINT_LIMIT_SPEC, LIMIT_FIELDS } from "../../shared/pointLimitSpec";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative, resolve, sep } from "node:path";
 
 describe("§1 — POINT_LIMIT_SPEC ↔ measurementPointDefs (cột THẬT trong DB)", () => {
   it("★★★ dân số đã xét — GHIM 18 (đổi số này là một lời khai, không phải bảo trì im lặng)", () => {
@@ -107,5 +137,101 @@ describe("§2 — POINT_LIMIT_SPEC ↔ PointLimitSource (kiểu spec-gate THẬT
       "criteria",
     ];
     expect([...LIMIT_FIELDS].sort()).toEqual([...KHOA_POINT_LIMIT_SOURCE_DA_DOI_CHIEU].sort());
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// §3 — MỆNH ĐỀ QUÉT: server/**/*.ts không còn bản chép tay NGOÀI vùng canh §1/§2
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Gốc quét = `server/` (thư mục cha của `server/contracts/`, nơi file này sống). */
+const GOC_QUET = resolve(__dirname, "..");
+
+function danhSachTepTs(dir: string, out: string[]): void {
+  for (const ten of readdirSync(dir)) {
+    if (ten === "node_modules") continue;
+    const duong = join(dir, ten);
+    const tt = statSync(duong);
+    if (tt.isDirectory()) danhSachTepTs(duong, out);
+    else if (ten.endsWith(".ts") && !ten.endsWith(".test.ts") && !ten.endsWith(".d.ts")) out.push(duong);
+  }
+}
+
+/**
+ * Ngưỡng "chép tay": số field PHÂN BIỆT trong 18 field của `LIMIT_FIELDS` xuất
+ * hiện dạng TỪ NGUYÊN (`\bfield\b`, không khớp một phần của tên khác) trong
+ * MỘT file. Đo THẬT trên `server/**\/*.ts` (2026-09-03, trước khi vá vòng này):
+ * có một khoảng trống RÕ giữa "chép tay thật" và "nhắc lẻ tẻ không phải chép
+ * tay" — 5 file ở mức 10-18 field (`machineApiRouters.ts`, `productRouters.ts`,
+ * `pointResultEvaluator.ts`, `productPackageService.ts` = 18; `measurementPointImport.ts`
+ * = 10), rồi RỚT THẲNG xuống ≤4 (`masterDataRouter.ts`, `stationAnalysisRouter.ts`,
+ * `productReadinessService.ts`, … — chỉ nhắc 1-4 field cho việc khác, không phải
+ * chép cả khối). KHÔNG file nào rơi vào khoảng 5-9. N=6 nằm giữa khoảng trống
+ * đó — chọn 6 (không phải 5 hay 10) để có biên an toàn cả hai phía.
+ */
+const NGUONG_CHEP_TAY = 6;
+
+/**
+ * File ĐÃ BIẾT chép tay một khối giới hạn nhưng KHÔNG PHẢI của Task 7 — canh
+ * riêng bằng ticket, KHÔNG xoá âm thầm khi nó biến mất (xem test "XÁC NHẬN nợ"
+ * bên dưới — hễ nợ hết thật thì XOÁ dòng tương ứng Ở ĐÂY).
+ */
+const NO_DA_BIET: Record<string, string> = {
+  "routers/productRouters.ts":
+    "Task 8 — zod input `measurementPoint.update` + `touchesLimits` (mở từ brief Task 7 gốc; agent khác đang giữ file này, Task 7 KHÔNG được chạm).",
+  "utils/measurementPointImport.ts":
+    "BG-104 — Task 8 (gate `touchesLimits` riêng), đang chạy. Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(b) XÁC NHẬN nợ' bên dưới) — Task 8 đóng thì xoá dòng này VÀ xoá test đó.",
+};
+
+/** File KHÔNG phải bản sao — nó LÀ đích tham chiếu mà §2 đã so trực tiếp (spec suy THEO nó, không phải ngược lại). Miễn trừ VĨNH VIỄN, không phải nợ. */
+const MIEN_TRU_KIEN_TRUC: Record<string, string> = {
+  "services/pointResultEvaluator.ts":
+    "Định nghĩa `PointLimitSource` — §2 ở trên đã đối chiếu trực tiếp (compile-time `satisfies` + runtime). Bắt buộc file này import chính spec suy TỪ nó là vòng ngược chiều.",
+};
+
+/**
+ * Quét toàn bộ `server/**\/*.ts` (trừ `*.test.ts`/`*.d.ts`), trả về file có
+ * ≥`NGUONG_CHEP_TAY` field của `LIMIT_FIELDS` co-occur mà KHÔNG import
+ * `pointLimitSpec` — trừ các đường dẫn trong `boQua`. Đường dẫn trả về LUÔN
+ * dùng `/` (không phụ thuộc hệ điều hành).
+ */
+function quetChepTayGioiHan(boQua: ReadonlySet<string>): { duong: string; soField: number }[] {
+  const tep: string[] = [];
+  danhSachTepTs(GOC_QUET, tep);
+  const ket: { duong: string; soField: number }[] = [];
+  for (const duong of tep) {
+    const duongTuongDoi = relative(GOC_QUET, duong).split(sep).join("/");
+    if (boQua.has(duongTuongDoi)) continue;
+    const src = readFileSync(duong, "utf8");
+    // Đã suy từ spec ⇒ có dòng `import { ... } from ".../pointLimitSpec"`.
+    if (/from\s+["'][^"']*pointLimitSpec["']/.test(src)) continue;
+    let soField = 0;
+    for (const field of LIMIT_FIELDS) {
+      if (new RegExp(`\\b${field}\\b`).test(src)) soField++;
+    }
+    if (soField >= NGUONG_CHEP_TAY) ket.push({ duong: duongTuongDoi, soField });
+  }
+  return ket.sort((a, b) => a.duong.localeCompare(b.duong));
+}
+
+describe("§3 — MỆNH ĐỀ QUÉT: không còn bản chép tay MỚI ngoài §1/§2", () => {
+  const boQuaHomNay = new Set([...Object.keys(NO_DA_BIET), ...Object.keys(MIEN_TRU_KIEN_TRUC)]);
+
+  it("★★★ QUÉT THẬT trên server/**/*.ts: 0 file chép tay ngoài nợ đã biết + miễn trừ kiến trúc", () => {
+    const ket = quetChepTayGioiHan(boQuaHomNay);
+    expect(
+      ket,
+      `phát hiện file chép tay ≥${NGUONG_CHEP_TAY}/18 field, chưa import pointLimitSpec, chưa khai ở NO_DA_BIET/MIEN_TRU_KIEN_TRUC: ${JSON.stringify(ket)}`,
+    ).toEqual([]);
+  });
+
+  it("(b) XÁC NHẬN nợ 'utils/measurementPointImport.ts' (BG-104) CÒN THẬT hôm nay — Task 8 đóng thì test này sẽ ĐỎ, đúng lúc đó xoá NO_DA_BIET tương ứng và xoá CHÍNH test này", () => {
+    const boQuaTruMPI = new Set([...boQuaHomNay].filter((p) => p !== "utils/measurementPointImport.ts"));
+    const ket = quetChepTayGioiHan(boQuaTruMPI);
+    const duongs = ket.map((k) => k.duong);
+    expect(
+      duongs,
+      "mệnh đề quét KHÔNG còn bắt được utils/measurementPointImport.ts — nợ BG-104 có thể đã hết (Task 8 xong); nếu đúng, xoá dòng NO_DA_BIET và xoá test này",
+    ).toContain("utils/measurementPointImport.ts");
   });
 });
