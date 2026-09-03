@@ -32,6 +32,9 @@ import { spcConfigRouter, workstationSpcRouter, correlationRouter, spcRuleViolat
 // ─── Extracted domain router imports ─────────────────────────────────────────
 import { factoryRouter, factoryZoneRouter, workshopRouter, lineRouter, stationRouter, machineRouter } from "./routers/hierarchyRouters";
 import { productModelRouter, measurementPointRouter, productMachineMappingRouter, productCategoryRouter, productDocumentRouter, fiducialMarkRouter, measurementTypeCatalogRouter, defectCatalogRouter, measurementInstrumentRouter, samplingPlanRouter, productViewRouter, msaWizardRouter, instrumentCalibrationRouter, instrumentMsaRecordRouter, mpLightingProfileRouter, measurementSamplesRouter, spcAlertsRouter, mpDefectStatsRouter, msaAdvancedRouter, cadImportRouter } from "./routers/productRouters";
+// Khối C Task 9 (QĐ-6) — đường ĐỌC cây dạy (surface→position→capture→component)
+// kèm trạng thái giới hạn; tiêu thụ bởi tab "Cây dạy" (Task 10/11).
+import { cayDayRouter } from "./routers/cayDayRouter";
 import { productVariantRouter } from "./routers/productVariantRouter"; // doc 55 Item 3 / PV3: product-variant master-data admin
 import { inspectionRouter, measurementResultRouter } from "./routers/inspectionRouters";
 import { layoutRouter } from "./routers/layoutRouters";
@@ -417,6 +420,8 @@ export const appRouter = router({
   samplingPlan: samplingPlanRouter,
   productView: productViewRouter,
   msaWizard: msaWizardRouter,
+  // Khối C Task 9 (QĐ-6) — đọc cây dạy (máy, model) kèm giới hạn + phiên bản.
+  cayDay: cayDayRouter,
   // P4.A G19 + G17
   instrumentCalibration: instrumentCalibrationRouter,
   instrumentMsaRecord: instrumentMsaRecordRouter,

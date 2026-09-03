@@ -115,7 +115,7 @@ import { createHash } from "node:crypto";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
-import { measurementPointDefs, measurementPointVersions } from "../../drizzle/schema";
+import { measurementPointDefs, measurementPointVersions, machines } from "../../drizzle/schema";
 import {
   productSurfaces,
   productPositions,
@@ -132,6 +132,11 @@ import type { PointLimitSnapshot, PointLimitSource } from "../services/pointResu
 // Task 7 Khối C (QĐ-3) — MỘT nguồn sự thật cho 18 cột giới hạn, thay cho danh
 // sách chép tay trước đây (xem docblock `shared/pointLimitSpec.ts`).
 import { POINT_LIMIT_SPEC } from "@shared/pointLimitSpec";
+// Task 9 Khối C (QĐ-6) — CHỈ nhập KIỂU (như `pointResultEvaluator` ở trên): không có
+// vòng import thật giữa `hierarchy.ts` và file này (đo bằng grep, 2026-09-03), nhưng
+// `type` giữ nguyên quy ước `product.ts` đã theo — các HÀM runtime của `hierarchy.ts`
+// (`trongPhamVi`/`idsTrongPhamVi`) vẫn nhập ĐỘNG (`await import`) ở nơi dùng.
+import type { PhamViNguoiXem } from "./hierarchy";
 
 /** Loại đo mặc định cho một component của cây dạy — xem docblock đầu file. */
 export const LOAI_DO_MAC_DINH_CAY_DAY = "VISUAL" as const;
@@ -990,4 +995,369 @@ export async function napLichSuGioiHanTheoDiem(
     return new Map();
   }
   return ket;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Khối C — Task 9 (QĐ-6): BỐN HÀM ĐỌC cho `cayDayRouter` — chưa từng có procedure
+// đọc cây nào trước bản vá này (spec, mục "Đường đọc").
+// ════════════════════════════════════════════════════════════════════════════
+//
+// ⚠⚠ PHẠM VI TENANT — CÙNG KHUÔN `getMeasurementPointDefsByMachine` (`server/db/
+// product.ts`), KHÔNG lọc theo cột client tự khai. `machineId`/`captureRowId` đến
+// từ `input` là LỜI TỰ KHAI của người gọi — mỗi hàm dưới đây tra máy THẬT của đối
+// tượng rồi kiểm `trongPhamVi("machine", …)` TRƯỚC khi đọc bất cứ gì, không suy
+// phạm vi từ chính `input`. Đây là bài học `pham-vi-tenant-dot-lon` (hàng rào lọc
+// theo cột TỰ KHAI mua được 0 gì).
+// ⚠ Ngoài phạm vi ⇒ trả hình dạng RỖNG (mảng rỗng / cây rỗng / đếm 0), KHÔNG phân
+// biệt "không tồn tại" khỏi "có thật nhưng của tenant khác" — cùng khuôn
+// `productRouters.getReadiness` (`db.sanPhamTrongPhamVi` ⇒ `null`). Một câu riêng
+// cho "tồn tại nhưng bạn không thấy" là một oracle rò rỉ.
+
+/** Một máy đã dạy cây cho sản phẩm, kèm bản dạy hiện hành (nếu có). */
+export interface MayCoBanDayCayDay {
+  readonly machineId: number;
+  readonly machineCode: string;
+  readonly machineName: string;
+  readonly banDayHienHanh: { version: number; checksum: string; pushedAt: Date } | null;
+}
+
+/**
+ * `cayDayRouter.listMachinesForProduct` — máy nào đã dạy cây cho MỘT sản phẩm.
+ *
+ * ⚠ Nguồn "máy nào có cây" = `product_surfaces` (GỐC của chiều máy, Task 5 0347),
+ * KHÔNG suy từ `measurement_point_defs`: `ghiCayDay` ghi cả cây trong MỘT
+ * transaction nên surface luôn có mặt cùng lúc với component, và surface là cấp
+ * RẺ nhất (2 hàng so với 16 ở mẫu chuẩn) để dò "những máy nào".
+ * ⚠ Lọc phạm vi TRƯỚC khi đọc `product_surfaces`, không đọc rồi lọc: `idsTrongPhamVi`
+ * trả `null` = toàn quyền (không thêm cổng), `[]` = phạm vi RỖNG (trả `[]` ngay,
+ * không query gì thêm — "0 gán nhà máy" không phải "quên lọc").
+ */
+export async function traMayCoBanDay(opts: {
+  productModelId: number;
+  scope?: PhamViNguoiXem;
+}): Promise<MayCoBanDayCayDay[]> {
+  const d = await getDb();
+  if (!d) return [];
+
+  const { idsTrongPhamVi } = await import("./hierarchy");
+  const idsPv = await idsTrongPhamVi("machine", opts.scope);
+  if (idsPv !== null && idsPv.length === 0) return [];
+
+  const hangSurface = await d
+    .select({ machineId: productSurfaces.machineId })
+    .from(productSurfaces)
+    .where(and(
+      eq(productSurfaces.productModelId, opts.productModelId),
+      idsPv !== null ? inArray(productSurfaces.machineId, idsPv) : undefined,
+    ));
+  if (hangSurface.length === 0) return [];
+  const ids = [...new Set(hangSurface.map((h) => h.machineId))];
+
+  const hangMachine = await d
+    .select({ id: machines.id, code: machines.code, name: machines.name })
+    .from(machines)
+    .where(inArray(machines.id, ids));
+
+  const ketQua: MayCoBanDayCayDay[] = [];
+  for (const m of hangMachine) {
+    // N+1 nhỏ, có chủ đích: số máy dạy CÙNG một sản phẩm hiếm khi quá vài đơn vị
+    // (khác `getTree`, nơi N là số capture — hàng chục — nên phải gộp một SELECT).
+    const banDay = await traBanDayHienHanh({ machineId: m.id, productModelId: opts.productModelId });
+    ketQua.push({
+      machineId: m.id,
+      machineCode: m.code,
+      machineName: m.name,
+      banDayHienHanh: banDay
+        ? { version: banDay.version, checksum: banDay.checksum, pushedAt: banDay.pushedAt }
+        : null,
+    });
+  }
+  return ketQua;
+}
+
+/** Một capture trong cây — KHÔNG kèm component (payload to, tra riêng bằng `traComponentTheoCapture`). */
+export interface CayDayCapture {
+  readonly id: number;
+  readonly captureExtId: string;
+  readonly captureName: string | null;
+  readonly soComponent: number;
+}
+/** Một position trong cây. */
+export interface CayDayPosition {
+  readonly id: number;
+  readonly positionId: string;
+  readonly name: string | null;
+  readonly captures: readonly CayDayCapture[];
+}
+/** Một surface (mặt) trong cây. */
+export interface CayDaySurface {
+  readonly id: number;
+  readonly surfaceName: string;
+  readonly positions: readonly CayDayPosition[];
+}
+
+/**
+ * `cayDayRouter.getTree` — cây surface→position→capture của MỘT `(sản phẩm, máy)`.
+ * KHÔNG kèm component (spec QĐ-6: "tránh payload to") — `soComponent` là ĐẾM, còn
+ * danh sách component thật tra riêng qua `traComponentTheoCapture(captureRowId)`.
+ *
+ * ⚠ `machineId` là TỰ KHAI ⇒ chặn ở trục MÁY TRƯỚC khi đọc hàng nào (không đọc rồi
+ * mới kiểm). Ba cấp dưới (position/capture) KHÔNG lọc lại `machineId` — bất biến
+ * khoá ngoại GHÉP (`fk_positions_surface_may`/`fk_captures_position_may`, mig 0347,
+ * xem docblock đầu file) đã bảo đảm một hàng con không thể mang máy khác cha, nên
+ * lọc gốc ở `product_surfaces` là đủ.
+ * ⚠ Bốn lượt SELECT (surface/position/capture/đếm-component), KHÔNG N+1 theo capture:
+ * đếm `soComponent` gộp MỘT `GROUP BY` cho toàn bộ capture của cây, đúng lý do QĐ-6
+ * tách `getTree` khỏi `listComponents`.
+ */
+export async function traCayDay(opts: {
+  productModelId: number;
+  machineId: number;
+  scope?: PhamViNguoiXem;
+}): Promise<{ surfaces: CayDaySurface[] }> {
+  const rong = { surfaces: [] as CayDaySurface[] };
+  const { trongPhamVi } = await import("./hierarchy");
+  if (!(await trongPhamVi("machine", opts.machineId, opts.scope))) return rong;
+
+  const d = await getDb();
+  if (!d) return rong;
+
+  const hangSurface = await d
+    .select({ id: productSurfaces.id, surfaceName: productSurfaces.surfaceName })
+    .from(productSurfaces)
+    .where(and(
+      eq(productSurfaces.productModelId, opts.productModelId),
+      eq(productSurfaces.machineId, opts.machineId),
+    ))
+    .orderBy(productSurfaces.orderIndex, productSurfaces.id);
+  if (hangSurface.length === 0) return rong;
+  const surfaceIds = hangSurface.map((s) => s.id);
+
+  const hangPosition = await d
+    .select({
+      id: productPositions.id,
+      surfaceRowId: productPositions.surfaceRowId,
+      positionId: productPositions.positionId,
+      name: productPositions.name,
+    })
+    .from(productPositions)
+    .where(inArray(productPositions.surfaceRowId, surfaceIds))
+    .orderBy(productPositions.positionIndex, productPositions.id);
+  const positionIds = hangPosition.map((p) => p.id);
+
+  const hangCapture = positionIds.length > 0
+    ? await d
+        .select({
+          id: productCaptures.id,
+          positionRowId: productCaptures.positionRowId,
+          captureExtId: productCaptures.captureExtId,
+          captureName: productCaptures.captureName,
+        })
+        .from(productCaptures)
+        .where(inArray(productCaptures.positionRowId, positionIds))
+        .orderBy(productCaptures.captureIndex, productCaptures.id)
+    : [];
+  const captureIds = hangCapture.map((c) => c.id);
+
+  const demComponent = captureIds.length > 0
+    ? await d
+        .select({ captureRowId: measurementPointDefs.captureRowId, n: sql<number>`count(*)::int` })
+        .from(measurementPointDefs)
+        .where(and(
+          inArray(measurementPointDefs.captureRowId, captureIds),
+          isNull(measurementPointDefs.deletedAt),
+        ))
+        .groupBy(measurementPointDefs.captureRowId)
+    : [];
+  const soComponentTheoCapture = new Map<number, number>();
+  for (const r of demComponent) {
+    if (r.captureRowId != null) soComponentTheoCapture.set(r.captureRowId, Number(r.n));
+  }
+
+  const capturesTheoPosition = new Map<number, CayDayCapture[]>();
+  for (const c of hangCapture) {
+    const arr = capturesTheoPosition.get(c.positionRowId) ?? [];
+    arr.push({
+      id: c.id,
+      captureExtId: c.captureExtId,
+      captureName: c.captureName,
+      soComponent: soComponentTheoCapture.get(c.id) ?? 0,
+    });
+    capturesTheoPosition.set(c.positionRowId, arr);
+  }
+
+  const positionsTheoSurface = new Map<number, CayDayPosition[]>();
+  for (const p of hangPosition) {
+    const arr = positionsTheoSurface.get(p.surfaceRowId) ?? [];
+    arr.push({
+      id: p.id,
+      positionId: p.positionId,
+      name: p.name,
+      captures: capturesTheoPosition.get(p.id) ?? [],
+    });
+    positionsTheoSurface.set(p.surfaceRowId, arr);
+  }
+
+  return {
+    surfaces: hangSurface.map((s) => ({
+      id: s.id,
+      surfaceName: s.surfaceName,
+      positions: positionsTheoSurface.get(s.id) ?? [],
+    })),
+  };
+}
+
+/** Point-def cấp component, kèm trạng thái giới hạn suy từ `POINT_LIMIT_SPEC`. */
+export interface ComponentCayDay {
+  readonly id: number;
+  readonly componentExtId: string | null;
+  readonly name: string;
+  readonly roiX: number | null;
+  readonly roiY: number | null;
+  readonly roiWidth: number | null;
+  readonly roiHeight: number | null;
+  readonly updatedAt: Date;
+  readonly coGioiHan: boolean;
+  readonly gioiHan: Record<string, string | null>;
+}
+
+/**
+ * MỘT nguồn phân loại "có giới hạn" — dùng CHUNG `traComponentTheoCapture` VÀ
+ * `traThongKeGioiHan` (QĐ-6: "số trên UI và số cổng chấm không thể lệch"). Đọc
+ * TRỰC TIẾP từ `POINT_LIMIT_SPEC` (Task 7, QĐ-3) — KHÔNG chép tay danh sách cột.
+ *
+ * ⚠ Trừ `unit`: bản thân đơn vị không phải một giới hạn — cùng ngữ nghĩa `judge()`
+ * của `evaluatePointResult` (`pointResultEvaluator.ts`), nơi `evaluated=true` chỉ
+ * bật khi có `min`/`max` thật, không bao giờ chỉ vì có `unit`.
+ * ⚠ `criteria` là jsonb mảng: một mảng RỖNG không phải "có tiêu chí" (đúng vòng lặp
+ * `for (const raw of def.criteria)` của `evaluatePointResult` — mảng rỗng không lặp
+ * gì, `evaluated` không bao giờ bật vì nó) nên được coi là NULL ở đây; giữ nguyên
+ * mảng thì stringify để khớp kiểu `string|null` chung với 17 cột còn lại.
+ */
+function tinhGioiHan(row: Record<string, unknown>): { gioiHan: Record<string, string | null>; coGioiHan: boolean } {
+  const gioiHan: Record<string, string | null> = {};
+  for (const m of POINT_LIMIT_SPEC) {
+    const v = row[m.field];
+    if (v === null || v === undefined) {
+      gioiHan[m.field] = null;
+      continue;
+    }
+    if (m.field === "criteria") {
+      gioiHan[m.field] = Array.isArray(v) && v.length > 0 ? JSON.stringify(v) : null;
+      continue;
+    }
+    gioiHan[m.field] = String(v);
+  }
+  const coGioiHan = POINT_LIMIT_SPEC.some((m) => m.field !== "unit" && gioiHan[m.field] !== null);
+  return { gioiHan, coGioiHan };
+}
+
+/** Chiếu đủ 18 cột `POINT_LIMIT_SPEC` thành một object `{field: column}` cho `.select()`. */
+function chieuGioiHan() {
+  return Object.fromEntries(
+    POINT_LIMIT_SPEC.map((m) => [m.field, measurementPointDefs[m.field as keyof typeof measurementPointDefs]]),
+  ) as { [K in (typeof POINT_LIMIT_SPEC)[number]["field"]]: (typeof measurementPointDefs)[K] };
+}
+
+/**
+ * `cayDayRouter.listComponents` — point-def cấp COMPONENT của MỘT capture, kèm
+ * trạng thái giới hạn (`coGioiHan`/`gioiHan`).
+ *
+ * ⚠ `captureRowId` là TỰ KHAI ⇒ tra MÁY THẬT của chính capture đó (không tin
+ * `productModelId` từ input, vì input này còn không có trường đó) rồi chặn ở trục
+ * MÁY TRƯỚC khi đọc component nào — capture không tồn tại hoặc máy ngoài phạm vi
+ * đều trả `[]`, không phân biệt được (cùng khuôn "rỗng" của các hàm trên).
+ */
+export async function traComponentTheoCapture(opts: {
+  captureRowId: number;
+  scope?: PhamViNguoiXem;
+}): Promise<ComponentCayDay[]> {
+  const d = await getDb();
+  if (!d) return [];
+
+  const [capture] = await d
+    .select({ machineId: productCaptures.machineId })
+    .from(productCaptures)
+    .where(eq(productCaptures.id, opts.captureRowId))
+    .limit(1);
+  if (!capture) return [];
+
+  const { trongPhamVi } = await import("./hierarchy");
+  if (!(await trongPhamVi("machine", capture.machineId, opts.scope))) return [];
+
+  const hang = await d
+    .select({
+      id: measurementPointDefs.id,
+      componentExtId: measurementPointDefs.componentExtId,
+      name: measurementPointDefs.name,
+      roiX: measurementPointDefs.roiX,
+      roiY: measurementPointDefs.roiY,
+      roiWidth: measurementPointDefs.roiWidth,
+      roiHeight: measurementPointDefs.roiHeight,
+      updatedAt: measurementPointDefs.updatedAt,
+      ...chieuGioiHan(),
+    })
+    .from(measurementPointDefs)
+    .where(and(
+      eq(measurementPointDefs.captureRowId, opts.captureRowId),
+      isNull(measurementPointDefs.deletedAt),
+    ))
+    .orderBy(measurementPointDefs.orderIndex, measurementPointDefs.id);
+
+  return hang.map((h) => {
+    const { gioiHan, coGioiHan } = tinhGioiHan(h as unknown as Record<string, unknown>);
+    return {
+      id: h.id,
+      componentExtId: h.componentExtId,
+      name: h.name,
+      roiX: h.roiX,
+      roiY: h.roiY,
+      roiWidth: h.roiWidth,
+      roiHeight: h.roiHeight,
+      updatedAt: h.updatedAt,
+      coGioiHan,
+      gioiHan,
+    };
+  });
+}
+
+/**
+ * `cayDayRouter.thongKeGioiHan` — đếm `daDay`/`chuaCoGioiHan` cho MỘT `(sản phẩm,
+ * máy)`, dùng ĐÚNG `tinhGioiHan` mà `traComponentTheoCapture` dùng (một nguồn phân
+ * loại — QĐ-6: "số trên UI và số cổng chấm không thể lệch").
+ *
+ * ⚠ Đếm bằng cách kéo cột giới hạn về rồi phân loại ở tầng ứng dụng (không phải một
+ * `count(*) FILTER` viết tay lần thứ hai): một cây thật có vài chục đến trăm component
+ * (mẫu chuẩn: 16), không phải hàng nghìn — phí đường truyền nhỏ hơn RỦI RO hai luật
+ * phân loại trôi khỏi nhau mà không cổng nào canh (đúng bài học docblock đầu file
+ * về danh sách cột chép tay).
+ */
+export async function traThongKeGioiHan(opts: {
+  productModelId: number;
+  machineId: number;
+  scope?: PhamViNguoiXem;
+}): Promise<{ tongComponent: number; daDay: number; chuaCoGioiHan: number }> {
+  const rong = { tongComponent: 0, daDay: 0, chuaCoGioiHan: 0 };
+  const { trongPhamVi } = await import("./hierarchy");
+  if (!(await trongPhamVi("machine", opts.machineId, opts.scope))) return rong;
+
+  const d = await getDb();
+  if (!d) return rong;
+
+  const hang = await d
+    .select(chieuGioiHan())
+    .from(measurementPointDefs)
+    .innerJoin(productCaptures, eq(productCaptures.id, measurementPointDefs.captureRowId))
+    .where(and(
+      eq(measurementPointDefs.productModelId, opts.productModelId),
+      eq(productCaptures.machineId, opts.machineId),
+      isNotNull(measurementPointDefs.captureRowId),
+      isNull(measurementPointDefs.deletedAt),
+    ));
+
+  let daDay = 0;
+  for (const h of hang) {
+    if (tinhGioiHan(h as unknown as Record<string, unknown>).coGioiHan) daDay += 1;
+  }
+  return { tongComponent: hang.length, daDay, chuaCoGioiHan: hang.length - daDay };
 }
