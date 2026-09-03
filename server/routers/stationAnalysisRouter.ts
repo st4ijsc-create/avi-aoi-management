@@ -177,7 +177,7 @@ export const stationAnalysisRouter = router({
       };
 
       const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;
-      const fy = t > 0 ? Math.round(((ok + ntf) / t) * 10000) / 100 : 0;
+      const fy = Math.round(finalYield({ ok, ntf, total: t }) * 100) / 100;
       const retest = t > 0 ? Math.round((ntf / t) * 10000) / 100 : 0;
 
       // Previous period yield change

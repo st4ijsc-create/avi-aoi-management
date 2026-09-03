@@ -29,6 +29,13 @@ const MIEN_TRU_FILE = new Set<string>([
   "server/utils/kpi.ts",
   "server/utils/kpiCongThucCensus.test.ts",
   "server/utils/kpi.test.ts",
+  // Cổng PARITY MV↔truy-vấn-sống: bản chất của nó là phát biểu công thức ĐỘC LẬP để so
+  // với MV — bắt nó dùng helper là làm phép so mất tính độc lập (helper sai thì cả hai
+  // vế cùng sai và parity vẫn xanh). Thước mở rộng 2026-08-24 tố tiêu đề `it(...)` của
+  // nó — tiêu đề MÔ TẢ công thức, không TÍNH công thức.
+  "server/db/mvYieldParity.db.test.ts",
+  // shared/kpiYield.ts là NƠI Ở THẬT của công thức (kpi.ts chỉ re-export).
+  "shared/kpiYield.ts",
 ]);
 
 /** Mỗi gốc quét kèm phần mở rộng file được coi là "mã" ở gốc đó. */
@@ -53,7 +60,10 @@ const MIEN_TRU_DONG: Array<{ file: string; dong: number; lyDo: string }> = [
   { file: "server/routers/productionDashboardRouter.ts", dong: 245, lyDo: "FPY proxy (prevFPY, kỳ trước) — cùng họ với :236, KHÁC lỗi" },
   { file: "server/routers/stationAnalysisRouter.ts",      dong: 179, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng họ với :814" },
   { file: "server/services/aiExecutiveReport.ts",          dong: 202, lyDo: "FPY proxy (biến fpy trong gatherKpis) — cùng họ, KHÁC lỗi" },
-  { file: "server/_core/index.ts",                          dong: 3698, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:179" },
+  // ⚠ 3698 → 3699 (2026-08-24): dòng fy ngay dưới được di trú sang finalYield() và file
+  // nhận thêm MỘT dòng import ở đầu ⇒ mọi số dòng phía dưới lệch +1. Miễn trừ theo số
+  // dòng GIÒN trước chính loại sửa mà cổng này khuyến khích — cập nhật phải đi CÙNG commit.
+  { file: "server/_core/index.ts",                          dong: 3699, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:179" },
 
   // aiInspectionAnalytics.ts: `pass` ở BỐN dòng này KHÔNG phải OK-only — nó là
   // COUNT(*) FILTER (WHERE finalYieldPassCondSql(...)) tính Ở SQL, tức đã CHÍNH LÀ
@@ -95,9 +105,23 @@ const TIEN_TO_THU_NHAN = String.raw`(?:[A-Za-z_$][\w$]*\.)?`;
 function veChia(danhSachTen: string): string {
   return String.raw`(?:Number\(\s*)?${TIEN_TO_THU_NHAN}\b(?:${danhSachTen})\b(?:\s*\))?`;
 }
+/**
+ * Tên vế NTF trong tử số dạng TỔNG — `(ok + ntf) / total`.
+ *
+ * ⚠ Thêm 2026-08-24, sau khi ĐỘT BIẾN SỐNG SÓT ở cổng ra Pha 0: bơm nguyên văn
+ * `((ok + ntf) / total) * 100` vào `cachedStatistics.ts` mà cổng vẫn xanh. Regex cũ chỉ
+ * bắt tử số MỘT định danh (`ok / total`), trong khi công thức final-yield chuẩn — thứ cả
+ * cổng này sinh ra để gom về `kpi.ts` — có tử số là TỔNG. Người tái phạm nhiều khả năng
+ * viết đúng hình dạng tổng, tức cổng mù đúng ca dễ xảy ra nhất.
+ * ⇒ Cùng lớp lỗi "lưới đo một hình dạng không tồn tại" đã trả giá ở VRAM Pha 7 — chỉ
+ *   khác chiều: ở đây lưới đo hình dạng HẸP HƠN hình dạng thật của món nợ.
+ */
+const TEN_NTF = "ntfCount|ntfQuantity|ntf|falseCalls|falseCall";
 const HINH_DANG_CAM = new RegExp(
   String.raw`\(\s*\(?\s*` +
     veChia(TEN_OK) +
+    // Tử số dạng TỔNG (tuỳ chọn): `+ ntf`, có thể đóng ngoặc trước dấu chia.
+    String.raw`(?:\s*\+\s*` + veChia(TEN_NTF) + String.raw`\s*\)?)?` +
     String.raw`\s*\/\s*` +
     veChia(TEN_TOTAL) +
     String.raw`\s*\)?\s*\*\s*(100|1000|10000)`,

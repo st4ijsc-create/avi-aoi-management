@@ -234,7 +234,7 @@ export const productionDashboardRouter = router({
         const ng = Number(stats.ng) || 0;
         const ntf = Number(stats.ntf) || 0;
         const firstPassYield = total > 0 ? Math.round((ok / total) * 10000) / 100 : 0;
-        const finalYield = total > 0 ? Math.round(((ok + ntf) / total) * 10000) / 100 : 0;
+        const finalYield = Math.round(finalYieldPct({ ok, ntf, total }) * 100) / 100;
         const retestRate = total > 0 ? Math.round((ntf / total) * 10000) / 100 : 0;
 
         // Compute yield change from previous period
@@ -424,7 +424,7 @@ export const productionDashboardRouter = router({
           ng,
           ntf,
           fpy: total > 0 ? Math.round((ok / total) * 10000) / 100 : 0,
-          finalYield: total > 0 ? Math.round(((ok + ntf) / total) * 10000) / 100 : 0,
+          finalYield: Math.round(finalYieldPct({ ok, ntf, total }) * 100) / 100,
         };
       });
     }),

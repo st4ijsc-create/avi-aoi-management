@@ -20,6 +20,7 @@ import { initializeSocket } from "./socket";
 import { uploadGuard } from "./uploadValidation";
 import { startOfflineMonitor } from "./offlineMonitor";
 import { initializeEmailTransporter } from "./email";
+import { finalYield } from "../utils/kpi";
 // W4-D (B7): initializeScheduledReports/Backups now start via backgroundJobs
 // (skipped when ROLE=api); only the shutdown hooks remain wired here.
 import { shutdownScheduledReports } from "../services/reportScheduler";
@@ -3696,7 +3697,7 @@ async function startServer() {
       const ntf = Number(stats[0]?.ntf) || 0;
 
       const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;
-      const fy = t > 0 ? Math.round(((ok + ntf) / t) * 10000) / 100 : 0;
+      const fy = Math.round(finalYield({ ok, ntf, total: t }) * 100) / 100;
       const retest = t > 0 ? Math.round((ntf / t) * 10000) / 100 : 0;
 
       // Previous period yield change

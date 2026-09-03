@@ -4,6 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import * as db from "../db";
 import { invokeLLM } from "../_core/llm";
+import { finalYield } from "../utils/kpi";
 
 // ============ INSPECTION ROUTER ============
 export const inspectionRouter = router({
@@ -216,7 +217,7 @@ export const inspectionRouter = router({
         const total = s.okCount + s.ngCount + s.ntfCount;
         return {
           date: s.date,
-          yieldRate: total > 0 ? ((s.okCount + s.ntfCount) / total * 100) : 0,
+          yieldRate: finalYield({ ok: s.okCount, ntf: s.ntfCount, total }),
           total,
           okCount: s.okCount,
           ngCount: s.ngCount,
