@@ -57,6 +57,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import JSZip from "jszip";
 import { eq, inArray } from "drizzle-orm";
+import ts from "typescript";
 import { aoiPackageRouter, laGoiDaChet } from "./aoiPackageRouter";
 import * as db from "../db";
 import {
@@ -355,9 +356,23 @@ describe("BG-65 census — tuyến upload THẬT phải gọi laGoiDaChet( trư�
 //     `function`") — KHÔNG dùng type-checker, cùng kỷ luật "AST/vị từ cú pháp,
 //     không phải regex toàn văn bản" của `cuaIngestScan.ts`.
 // ══════════════════════════════════════════════════════════════════════════
+// ── ★★★ Vòng sửa lượt 9, VÒNG 2 (I-5.2c residual) — MỞ RỘNG phạm vi quét sang
+// `server/routes/` + `server/db/` ─────────────────────────────────────────
+// Vòng sửa 9 lượt 1 (I-5.2b) đã đóng lỗ "cửa thứ ba mọc ở server/services/**"
+// bằng cách mở quét sang thư mục đó. Review lượt 9 vòng 2 chỉ ra HAI thư mục
+// production KHÁC vẫn NGOÀI phạm vi: `server/routes/` (13 file, ĐO ĐƯỢC
+// 2026-09-04 — khác `server/routers/`, tên gần giống, dễ nhầm là "đã quét
+// rồi") và `server/db/` (41 file — nơi các hàm ghi DB cấp thấp sống, một cửa
+// ingest có thể gọi `dichCayKetQua(` trực tiếp từ một hàm `db/*.ts` mà không
+// qua router/service nào). ĐO ĐƯỢC hôm nay: 0 lời gọi `dichCayKetQua(` thật ở
+// CẢ HAI thư mục — mở rộng không đổi kết luận "ĐÚNG hai cửa" hôm nay, nhưng
+// đóng đúng lớp lỗi "thêm cửa mới CÂM, chỉ đổi TẦNG" mà census này tồn tại để
+// chặn — TẦNG kế tiếp sau services/ chính là routes/ và db/.
 const THU_MUC_ROUTERS = __dirname; // file này đã nằm trong server/routers
 const THU_MUC_SERVER = path.join(THU_MUC_ROUTERS, "..");
 const THU_MUC_SERVICES = path.join(THU_MUC_SERVER, "services");
+const THU_MUC_ROUTES = path.join(THU_MUC_SERVER, "routes");
+const THU_MUC_DB = path.join(THU_MUC_SERVER, "db");
 
 const CAC_TEP_ROUTERS_SAN_XUAT = readdirSync(THU_MUC_ROUTERS)
   .filter((ten) => ten.endsWith(".ts") && !ten.endsWith(".test.ts"))
@@ -389,10 +404,23 @@ const CAC_TEP_SERVICES_SAN_XUAT = quetTepTsDeQuy(THU_MUC_SERVICES, THU_MUC_SERVE
 const NGUON_TEP_SERVICES = new Map<string, string>(
   CAC_TEP_SERVICES_SAN_XUAT.map((rel) => [rel, readFileSync(path.join(THU_MUC_SERVER, rel), "utf-8")]),
 );
-/** Hợp nhất, khoá TIỀN TỐ theo thư mục gốc (`routers/…` / `services/…`) — tránh đụng tên giữa hai cây. */
+// ★★★ Vòng sửa 9, VÒNG 2 (I-5.2c residual) — CÙNG khuôn services/ ở trên,
+// cho `server/routes/` và `server/db/` (tiền tố "routes/…"/"db/…", đường
+// tương đối so với `server/`).
+const CAC_TEP_ROUTES_SAN_XUAT = quetTepTsDeQuy(THU_MUC_ROUTES, THU_MUC_SERVER).sort();
+const NGUON_TEP_ROUTES = new Map<string, string>(
+  CAC_TEP_ROUTES_SAN_XUAT.map((rel) => [rel, readFileSync(path.join(THU_MUC_SERVER, rel), "utf-8")]),
+);
+const CAC_TEP_DB_SAN_XUAT = quetTepTsDeQuy(THU_MUC_DB, THU_MUC_SERVER).sort();
+const NGUON_TEP_DB = new Map<string, string>(
+  CAC_TEP_DB_SAN_XUAT.map((rel) => [rel, readFileSync(path.join(THU_MUC_SERVER, rel), "utf-8")]),
+);
+/** Hợp nhất, khoá TIỀN TỐ theo thư mục gốc (`routers/…`/`services/…`/`routes/…`/`db/…`) — tránh đụng tên giữa các cây. */
 const NGUON_TEP_QUET = new Map<string, string>([
   ...[...NGUON_TEP_ROUTERS].map(([ten, ma]) => [`routers/${ten}`, ma] as const),
   ...NGUON_TEP_SERVICES,
+  ...NGUON_TEP_ROUTES,
+  ...NGUON_TEP_DB,
 ]);
 
 /**
@@ -508,13 +536,121 @@ function coTruyenDemMauThuanThat(doanGoi: string): boolean {
   return gtri !== "undefined" && gtri !== "null";
 }
 
-describe("Khối C Task 13 (BG-98) census — mọi lời gọi dichCayKetQua( trong server/routers/** + server/services/** phải mang demMauThuan THẬT", () => {
-  it("chống đọc-thư-mục-rỗng: quét được > 150 file production trong server/routers VÀ > 300 trong server/services", () => {
+// ══════════════════════════════════════════════════════════════════════════
+// ★★★ Vòng sửa lượt 9, VÒNG 2 (I-5.2c residual) — AST: `demMauThuan` PHẢI là
+// một định danh trỏ tới một khai báo KHÔNG PHẢI `undefined`.
+//
+// `coTruyenDemMauThuanThat` ở trên (regex trên đoạn văn bản đã trích) coi dạng
+// viết tắt `{ demMauThuan }` LUÔN hợp lệ — tự khai giới hạn: "không đuổi theo
+// biến thể gán `undefined` cho MỘT biến tên `demMauThuan` rồi truyền dạng viết
+// tắt". Review lượt 9 vòng 2 chỉ đích danh hình dạng đó là lỗ CÒN MỞ:
+//
+//   const demMauThuan = undefined;
+//   …
+//   cay = dichCayKetQua(metaData, { cong: congSpec, demMauThuan }); // hợp lệ
+//                                                                    // theo
+//                                                                    // regex!
+//
+// Cổng máy-tự-mâu-thuẫn (BG-98) CÂM ở cửa này, census cũ vẫn XANH.
+//
+// Hàm dưới đây thay bằng AST THẬT: với mỗi CallExpression `dichCayKetQua(`,
+// tìm property `demMauThuan` trong object-literal đối số — PropertyAssignment
+// (`demMauThuan: X`) hoặc ShorthandPropertyAssignment (`demMauThuan`, giá trị
+// CHÍNH LÀ định danh `demMauThuan`). Nếu giá trị là một Identifier, tìm MỌI
+// khai báo biến (`const`/`let`/`var`) CÙNG TÊN trong CÙNG file — nếu BẤT KỲ
+// khai báo nào có initializer là `undefined` (hoặc HOÀN TOÀN không có
+// initializer, `let x;` cũng ngầm `undefined`) ⇒ KHÔNG hợp lệ.
+//
+// ⚠ GIỚI HẠN ĐÃ BIẾT (khai rõ, cùng kỷ luật `quetBg99AstTuVanBan`/BG-99):
+// đây KHÔNG phải phân giải phạm vi (scope) đầy đủ bằng type-checker — tìm
+// MỌI khai báo cùng TÊN trong file, không chỉ khai báo "gần nhất theo phạm
+// vi từ vựng". Bảo thủ theo hướng AN TOÀN HƠN (dễ báo lỗi thừa hơn là bỏ
+// sót) — đủ để đóng ĐÚNG hình dạng brief đòi (một file thường chỉ có MỘT
+// biến tên `demMauThuan`).
+// ══════════════════════════════════════════════════════════════════════════
+
+interface KetQuaDemMauThuanAst {
+  /** `false` nếu hoàn toàn không tìm thấy CallExpression nào (không nên xảy ra — caller đã biết có lời gọi). */
+  coLoiGoi: boolean;
+  /** `false` nếu thiếu khoá `demMauThuan`, hoặc giá trị trỏ tới một khai báo `undefined`. */
+  hopLe: boolean;
+  dong: number;
+  vanBanDong: string;
+}
+
+/** `true` nếu biểu thức là định danh `undefined` (TS không có `UndefinedKeyword` — `undefined` là một Identifier toàn cục). */
+function laBieuThucUndefined(expr: ts.Expression | undefined): boolean {
+  return expr !== undefined && ts.isIdentifier(expr) && expr.text === "undefined";
+}
+
+/** `true` nếu CÓ khai báo biến tên `ten` trong `sf` với initializer là `undefined` (hoặc KHÔNG có initializer nào — ngầm `undefined`). */
+function coKhaiBaoUndefinedCungTen(sf: ts.SourceFile, ten: string): boolean {
+  let tim = false;
+  const di = (n: ts.Node): void => {
+    if (tim) return;
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === ten) {
+      if (n.initializer === undefined || laBieuThucUndefined(n.initializer)) tim = true;
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return tim;
+}
+
+/** Xét MỘT object-literal đối số của `dichCayKetQua(` — trả `hopLe`/`coKhoa` cho property `demMauThuan`. */
+function xetDoiTuongDemMauThuan(sf: ts.SourceFile, obj: ts.ObjectLiteralExpression): { coKhoa: boolean; hopLe: boolean } {
+  for (const prop of obj.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === "demMauThuan") {
+      const v = prop.initializer;
+      if (laBieuThucUndefined(v)) return { coKhoa: true, hopLe: false };
+      if (ts.isIdentifier(v) && coKhaiBaoUndefinedCungTen(sf, v.text)) return { coKhoa: true, hopLe: false };
+      return { coKhoa: true, hopLe: true };
+    }
+    if (ts.isShorthandPropertyAssignment(prop) && prop.name.text === "demMauThuan") {
+      if (coKhaiBaoUndefinedCungTen(sf, "demMauThuan")) return { coKhoa: true, hopLe: false };
+      return { coKhoa: true, hopLe: true };
+    }
+  }
+  return { coKhoa: false, hopLe: false };
+}
+
+/** Quét MỘT file (nguyên văn, CHƯA strip comment — AST tự bỏ qua comment) — trả một mục cho MỖI lời gọi `dichCayKetQua(` THẬT (không phải định nghĩa hàm). */
+function quetDemMauThuanAst(relFile: string, source: string): KetQuaDemMauThuanAst[] {
+  const sf = ts.createSourceFile(relFile, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const ket: KetQuaDemMauThuanAst[] = [];
+  const di = (n: ts.Node): void => {
+    if (
+      ts.isCallExpression(n) &&
+      ts.isIdentifier(n.expression) &&
+      n.expression.text === "dichCayKetQua"
+    ) {
+      const objArg = n.arguments.find((a): a is ts.ObjectLiteralExpression => ts.isObjectLiteralExpression(a));
+      const dong = sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+      const rawLines = source.split("\n");
+      const vanBanDong = (rawLines[dong - 1] ?? "").trim();
+      if (objArg === undefined) {
+        ket.push({ coLoiGoi: true, hopLe: false, dong, vanBanDong });
+      } else {
+        const { coKhoa, hopLe } = xetDoiTuongDemMauThuan(sf, objArg);
+        ket.push({ coLoiGoi: true, hopLe: coKhoa && hopLe, dong, vanBanDong });
+      }
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return ket;
+}
+
+describe("Khối C Task 13 (BG-98) census — mọi lời gọi dichCayKetQua( trong server/routers/** + server/services/** + server/routes/** + server/db/** phải mang demMauThuan THẬT", () => {
+  it("chống đọc-thư-mục-rỗng: quét được > 150 file production trong server/routers, > 300 trong server/services, > 5 trong server/routes, > 20 trong server/db", () => {
     // Đo thật (2026-09-04): 210 file production trong server/routers; 667 file
-    // production (đệ quy) trong server/services. Trần chừa dư địa cho tăng/giảm
-    // tự nhiên, chỉ canh việc readdirSync trả về gần-rỗng (thư mục/đường dẫn hỏng).
+    // production (đệ quy) trong server/services; 13 trong server/routes; 41
+    // trong server/db. Trần chừa dư địa cho tăng/giảm tự nhiên, chỉ canh việc
+    // readdirSync trả về gần-rỗng (thư mục/đường dẫn hỏng).
     expect(CAC_TEP_ROUTERS_SAN_XUAT.length).toBeGreaterThan(150);
     expect(CAC_TEP_SERVICES_SAN_XUAT.length).toBeGreaterThan(300);
+    expect(CAC_TEP_ROUTES_SAN_XUAT.length, "server/routes/ (vòng sửa 9 vòng 2, I-5.2c) gần-rỗng — đường dẫn đổi?").toBeGreaterThan(5);
+    expect(CAC_TEP_DB_SAN_XUAT.length, "server/db/ (vòng sửa 9 vòng 2, I-5.2c) gần-rỗng — đường dẫn đổi?").toBeGreaterThan(20);
   });
 
   it("cầu chì trích đoạn: số lời gọi trích được KHỚP số lần MOC xuất hiện (đã strip comment, trừ định nghĩa) trong toàn bộ nguồn đã quét", () => {
@@ -609,5 +745,62 @@ describe("Khối C Task 13 (BG-98) census — mọi lời gọi dichCayKetQua( t
 
     const docLai = readFileSync(join(THU_MUC_ROUTERS, "aoiPackageRouter.ts"), "utf-8");
     expect(docLai).toBe(goc);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★★★ Vòng sửa lượt 9, VÒNG 2 (I-5.2c residual) — AST đóng lỗ "alias `undefined`
+  // rồi truyền dạng viết tắt" mà `coTruyenDemMauThuanThat` (regex) tự khai KHÔNG
+  // đuổi theo. Chạy trên TOÀN BỘ `NGUON_TEP_QUET` (routers+services+routes+db).
+  // ══════════════════════════════════════════════════════════════════════════
+  it("★★★ BẤT BIẾN (AST): MỌI lời gọi dichCayKetQua( — demMauThuan KHÔNG được trỏ tới một khai báo undefined", () => {
+    const thieu: string[] = [];
+    for (const [tep, ma] of NGUON_TEP_QUET) {
+      for (const h of quetDemMauThuanAst(tep, ma)) {
+        if (!h.hopLe) thieu.push(`${tep}:${h.dong}: ${h.vanBanDong}`);
+      }
+    }
+    expect(
+      thieu,
+      "AST bắt được lời gọi demMauThuan trỏ tới undefined (trực tiếp HOẶC qua định danh alias) — cổng máy-tự-mâu-thuẫn (BG-98) sẽ CÂM ở (các) cửa này",
+    ).toEqual([]);
+  });
+
+  it("★★★ ĐỘT BIẾN THẬT (I-5.2c residual): const demMauThuan = undefined; … { demMauThuan } (dạng viết tắt) — regex CŨ MÙ, AST MỚI phải bắt (không chạm đĩa)", () => {
+    const goc = NGUON_TEP_ROUTERS.get("aoiPackageRouter.ts")!;
+    const DONG_GOC = "cay = dichCayKetQua(metaData, { cong: congSpec, demMauThuan });";
+    expect(goc.includes(DONG_GOC), "không tìm thấy dòng gọi ĐÃ VÁ — bộ suy đã đổi neo?").toBe(true);
+
+    // Đột biến: THÊM một khai báo `const demMauThuan = undefined;` NGAY TRƯỚC
+    // lời gọi — biến `demMauThuan` (tham số thật của hàm bao quanh, đã hợp lệ
+    // TRƯỚC đột biến) bị MỘT khai báo cục bộ CÙNG TÊN che khuất (shadow), gán
+    // `undefined` — dạng viết tắt `{ demMauThuan }` giờ ĐỌC NHẦM biến rỗng đó.
+    const DONG_DOT_BIEN = "const demMauThuan = undefined; cay = dichCayKetQua(metaData, { cong: congSpec, demMauThuan });";
+    const maDotBien = goc.replace(DONG_GOC, DONG_DOT_BIEN);
+    expect(maDotBien).not.toBe(goc);
+
+    // Cầu chì: regex CŨ (coTruyenDemMauThuanThat) MÙ hình dạng này — dạng viết
+    // tắt LUÔN "hợp lệ" với nó, bất kể biến đó có bị gán undefined ở đâu hay
+    // không (đúng giới hạn đã khai của chính hàm đó).
+    const loiGoiDotBienChuoi = timLoiGoiDichCayKetQua(maDotBien);
+    const thieuTheoRegexCu = loiGoiDotBienChuoi.filter((doan) => !coTruyenDemMauThuanThat(doan));
+    expect(thieuTheoRegexCu.length, "cầu chì: regex CŨ phải MÙ trước đột biến này — nếu nó tự bắt được thì phép thử AST dưới đây không chứng minh gì mới").toBe(0);
+
+    // AST MỚI phải bắt được.
+    const hitAst = quetDemMauThuanAst("routers/aoiPackageRouter.ts", maDotBien).filter((h) => !h.hopLe);
+    expect(
+      hitAst.length,
+      "AST PHẢI bắt được: demMauThuan (dạng viết tắt) trỏ tới khai báo cục bộ `const demMauThuan = undefined;` — đúng lỗ I-5.2c residual review lượt 9 vòng 2",
+    ).toBeGreaterThan(0);
+
+    // Đột biến chỉ sống trong biến `maDotBien` — chưa từng `writeFileSync`.
+    const docLai = readFileSync(join(THU_MUC_ROUTERS, "aoiPackageRouter.ts"), "utf-8");
+    expect(docLai).toBe(goc);
+  });
+
+  it("fuse AST: demMauThuan trỏ tới một định danh KHÔNG PHẢI undefined (biến thường/tham số) — KHÔNG bị bắt oan", () => {
+    const gia = "export async function xuLyThuong(demMauThuan: unknown, cong: unknown) {\n  const cay = dichCayKetQua(payload, { cong, demMauThuan });\n  return cay;\n}\n";
+    const ket = quetDemMauThuanAst("services/__gia_lap_hop_le.ts", gia);
+    expect(ket.length, "phải thấy đúng 1 lời gọi mô phỏng").toBe(1);
+    expect(ket[0]!.hopLe, "demMauThuan là THAM SỐ (không phải biến undefined) — không được bắt oan").toBe(true);
   });
 });
