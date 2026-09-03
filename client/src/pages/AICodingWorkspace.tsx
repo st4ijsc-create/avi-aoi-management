@@ -90,7 +90,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { phanQuyetPhimNhap, phanGiaiPhimTatKhung, tuGianChieuCao, TRAN_CAO_O_NHAP_PX } from "@/lib/aiCodingInput";
 // ★★★ 2026-08-23 — trần chiều cao khung ĐO ĐƯỢC (hằng `8.5rem` cũ sai ở cả ba cỡ màn; xem tệp).
-import { tinhChieuCaoVua, xepMotKhung } from "@/lib/khungVuaManHinh";
+import { tinhChieuCaoVua, xepMotKhung, SAN_KHUNG_PX } from "@/lib/khungVuaManHinh";
 import {
   bamChuoi, catLoiChoPrompt, chuanHoaDauRa, daBiTuChoiGhi, deXuatLapLai, ketLuanTest, maTuChoiGhi,
   quyetDinhTiep, type LyDoDungVong,
@@ -2213,7 +2213,7 @@ export default function AICodingWorkspace() {
             className="min-h-0 flex-1"
           >
           {/* ── 1. CÂY TỆP ── */}
-          <ResizablePanel defaultSize={19} minSize={12} className={cn("min-w-0", hep && khungHep !== "tep" && "hidden", !hep && khungToiDa !== null && khungToiDa !== "tep" && "hidden")}>
+          <ResizablePanel defaultSize={19} minSize={12} style={{ minWidth: SAN_KHUNG_PX.tep }} className={cn("min-w-0", hep && khungHep !== "tep" && "hidden", !hep && khungToiDa !== null && khungToiDa !== "tep" && "hidden")}>
           <div className="flex h-full min-h-0 flex-col overflow-hidden border-r">
             {/* Bộ chọn DỰ ÁN (doc 79 · TRỤC 2) — tham khảo "Select folder" của Claude Code. Client
                 giữ + gửi MỘT id; server tra danh sách TRẮNG .env để ra gốc (không nhận đường dẫn). */}
@@ -2528,7 +2528,7 @@ export default function AICodingWorkspace() {
           <ResizableHandle className={cn((hep || khungToiDa !== null) && "hidden")} />
 
           {/* ── 2. TRÌNH XEM + DIFF ── */}
-          <ResizablePanel defaultSize={48} minSize={25} className={cn("min-w-0", hep && khungHep !== "xem" && "hidden", !hep && khungToiDa !== null && khungToiDa !== "xem" && "hidden")}>
+          <ResizablePanel defaultSize={48} minSize={25} style={{ minWidth: SAN_KHUNG_PX.xem }} className={cn("min-w-0", hep && khungHep !== "xem" && "hidden", !hep && khungToiDa !== null && khungToiDa !== "xem" && "hidden")}>
           <div className="flex h-full min-h-0 flex-col overflow-hidden border-r">
             <div className="flex items-center gap-2 border-b px-3 py-1.5">
               {coDiffChoDuyet ? (
@@ -2882,7 +2882,7 @@ export default function AICodingWorkspace() {
           <ResizableHandle className={cn((hep || khungToiDa !== null) && "hidden")} />
 
           {/* ── 3. HỘI THOẠI TÁC NHÂN ── */}
-          <ResizablePanel defaultSize={33} minSize={20} className={cn("min-w-0", hep && khungHep !== "chat" && "hidden", !hep && khungToiDa !== null && khungToiDa !== "chat" && "hidden")}>
+          <ResizablePanel defaultSize={33} minSize={20} style={{ minWidth: SAN_KHUNG_PX.chat }} className={cn("min-w-0", hep && khungHep !== "chat" && "hidden", !hep && khungToiDa !== null && khungToiDa !== "chat" && "hidden")}>
           <div className="flex h-full min-h-0 flex-col overflow-hidden">
             <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-1.5">
               <Bot className="h-4 w-4 text-primary" />

@@ -130,6 +130,29 @@ describe("§3 BA SÀN PHẢI KHỚP `grid-cols` CỦA TRANG — hai chỗ, một
      *     là mở lại đúng lỗi 82px (cột bị nuốt), và ô này ĐỎ.
      */
     expect(trang).toContain("<ResizablePanelGroup");
+    /**
+     * ★★★ 2026-09-04 — **KHÔI PHỤC "HAI CHỖ, MỘT SỰ THẬT"** (tự soi sau trao đổi liên-phiên về lớp
+     * lỗi *"canh xong quên ca mới / chuẩn bị TỤT"*).
+     *
+     * Bản viết lại ngày 2026-09-01 của tôi đã đánh mất đúng thứ mệnh đề CŨ mua được: mệnh đề cũ đọc
+     * ba con số trong `grid-cols` của TRANG và so TỪNG SỐ với `SAN_KHUNG_PX` — tức nó RÀNG BUỘC hai
+     * nguồn. Bản mới chỉ hỏi "có `minSize` và ≥ 10 không", nên không còn dòng nào nối trang với hằng.
+     * Hệ quả ĐO ĐƯỢC (không phải lo xa): `minSize` là PHẦN TRĂM, nên ở đúng ngưỡng ba-khung 920px,
+     * `minSize={25}` cho cột Xem = **230px < sàn 320px** — chính lớp lỗi "cột bị bóp" mà mệnh đề cũ
+     * sinh ra để chặn (bản cũ đo được 82px), và không lưới nào đỏ.
+     * ⇒ Trang nay đặt sàn bằng CSS `minWidth` lấy THẲNG từ `SAN_KHUNG_PX` (phần trăm không diễn tả
+     *   được sàn pixel). Ba dòng dưới canh đúng mối nối ấy: đổi hằng mà quên trang ⇒ ĐỎ; xoá
+     *   `minWidth` để "cho kéo thoải mái" ⇒ ĐỎ.
+     */
+    for (const khoa of ["tep", "xem", "chat"] as const) {
+      expect(
+        trang.includes(`minWidth: SAN_KHUNG_PX.${khoa}`),
+        `Panel "${khoa}" phải lấy sàn TỪ \`SAN_KHUNG_PX.${khoa}\` — chép số vào trang là làm hai sự thật`,
+      ).toBe(true);
+    }
+    expect(trang, "sàn phải ĐẾN TỪ hằng, không phải số viết tay trong style").toContain(
+      'from "@/lib/khungVuaManHinh"',
+    );
     expect(trang).toContain('autoSaveId="repoWs.beRongKhung"');
     const minSizes = [...trang.matchAll(/<ResizablePanel[^>]*minSize=\{(\d+)\}/g)].map((m) => Number(m[1]));
     expect(minSizes.length, "phải có ĐỦ BA Panel mang minSize").toBe(3);
