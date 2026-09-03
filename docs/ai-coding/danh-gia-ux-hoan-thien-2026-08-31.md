@@ -87,8 +87,21 @@ Vòng 1 đã sửa độ phủ + cờ bản cắt. Còn lại về TRẢI NGHI�
 - **Đợt C (cần chủ dự án duyệt kiến trúc):** SỬA TAY = ĐỀ XUẤT DIFF (CodeMirror → HITL) ·
   hoàn tác sau áp · thay thế hàng loạt qua thẻ duyệt lô · model selector + cost.
 
-*Trạng thái thực thi: Đợt A XONG (`14c0a4a5`). Đợt C lõi — SỬA TAY = ĐỀ XUẤT DIFF — ĐÃ CHẠY:
-`repoWorkspace.deXuatSuaTay` (chỉ propose) + chế độ sửa textarea v1 ở Trình xem; live-verify
-2026-08-31 đi trọn vòng sửa→thẻ duyệt→Duyệt & ghi→byte vào đĩa (chính dòng này được ghi bằng
-đúng tính năng ấy). Còn lại của C: CodeMirror thay textarea · hoàn tác sau áp · thay thế hàng
-loạt · model selector — đợt kế.*
+*Trạng thái thực thi (cập nhật 2026-09-03) — **Đợt A, B, C đã chạy hết các mục đã lên lịch**:*
+
+- *Đợt A (`14c0a4a5`): toggle Aa/`.*` · bàn làm việc sống qua reload · terminal copy/chạy-lại/xoá.*
+- *Đợt C lõi (`2dd31a9a`): SỬA TAY = ĐỀ XUẤT DIFF (`deXuatSuaTay` chỉ-propose → thẻ duyệt cũ).*
+- *Đợt C tiếp (`ee539e0f`): Ctrl+G · Hoàn tác sau áp (đề xuất NGƯỢC qua HITL).*
+- *Gỡ nghẽn (`cfdac724`): miễn-trừ-hẹp theo băm cho hàng rào tệp-bẩn — chuỗi HITL liên tiếp
+  (undo, vòng ghi→test→sửa-tiếp) hết bị `FILE_DIRTY` chặn; người chen một byte ⇒ hàng rào đóng lại.*
+- *Đợt kế 1-4 (`531ec71b`, `1cf52c26`): batch vào cùng sổ băm (cửa ghi chung) · CodeMirror thay
+  textarea (legacy-modes có sẵn, 0 gói mới) · ba cột kéo-resize tự lưu · Problems tích luỹ per-lệnh.*
+- *Mục 5 (`5c7303d7`): THAY THẾ HÀNG LOẠT = một đề xuất lô (`deXuatThayTheLo`) — nghiệm thu HTTP
+  trọn vòng: propose → confirm → đĩa đổi thật.*
+- *Mục 6 (`8472bf42`): **model HIỂN THỊ, không phải CHỌN** — `RouteInput` không có trường ép model
+  và đó là thiết kế (VRAM broker); huy hiệu `model: T<tier>` + tooltip nói đúng mức chắc chắn.*
+
+*CÒN LẠI trong lộ trình (chưa lên lịch): phân-mức warning cho Problems (đổi hợp đồng parser
+`aiCodingLoiViTri` — có lưới ghim, phải là một đợt riêng) · include/exclude glob cho tìm kiếm ·
+outline/minimap/folding · maximize khung · word-wrap (gutter căn theo dòng-logic; bật wrap là lệch
+số dòng — cần render từng-dòng trước).*
