@@ -47,6 +47,33 @@
 //                                    nội dung file trên đĩa lúc chạy) — `tsc`
 //                                    không thấy gì sai vì 18 dòng `x: p.x` vẫn
 //                                    biên dịch hoàn hảo, đó CHÍNH LÀ lỗ.
+//
+// ════════════════════════════════════════════════════════════════════════════
+// VÒNG SỬA 2 (2026-09-03) — F3 vẫn NỬA VỜI: gốc quét cứng `server/`
+// ════════════════════════════════════════════════════════════════════════════
+// `GOC_QUET` vòng sửa 1 = `resolve(__dirname, "..")` = `server/` — BẤT BIẾN
+// thật (đệ quy đĩa thật) nhưng KHÔNG BAO GIỜ chạm `shared/`/`client/src/`, dù
+// chính `LIMIT_FIELDS` mà nó quét theo được IMPORT từ `shared/`. Không phải
+// giả thuyết: reviewer grep độc lập bắt SỐNG `client/src/pages/ProductModels.tsx`,
+// `client/src/components/productModels/types.ts` (⚠ ĐƯỜNG DẪN reviewer khai
+// "pages/productModels/types.ts" SAI — đo lại: file thật nằm ở
+// `components/productModels/`, không phải `pages/productModels/`; dùng đường
+// dẫn ĐO ĐƯỢC, không dùng nguyên văn brief) và
+// `client/src/components/productModels/PointDetailsForm.tsx` — cả ba chép tay
+// ĐỦ 18/18 field, ngoài tầm §3.
+//
+// Đo lại SAU khi mở `GOC_QUET` ra repo root + quét `server/`, `shared/`,
+// `client/src/` (thêm `.tsx`, trước đó §3 CHỈ nhặt `.ts` — một lỗ THỨ HAI:
+// `ProductModels.tsx`/`PointDetailsForm.tsx` là `.tsx`, "foo.tsx".endsWith(".ts")
+// = false trong JS, nên dù có mở gốc quét mà không thêm `.tsx` thì hai file đó
+// VẪN lọt) phát hiện THÊM một file ngoài 3 file reviewer nêu:
+// `client/src/components/BulkImportDialog.tsx` (10/18 field, cột map CSV/Excel
+// giới hạn cho import hàng loạt — chép tay THẬT, không phải chú thích/prose).
+// Theo đúng chỉ đạo cho file Task 10 (`TeachTreeTab.tsx`, xem dưới): file MỚI
+// phát hiện mà KHÔNG được xác nhận rõ thì KHÔNG tự allowlist — để §3 ĐỎ và
+// khai trong báo cáo Task 7 vòng sửa 2, coordinator quyết định hướng xử lý
+// (gán ticket/allowlist hay giao sửa). Xem `NO_DA_BIET`/`MIEN_TRU_KIEN_TRUC`
+// dưới — `BulkImportDialog.tsx` CỐ Ý không có mặt ở đó.
 import { describe, it, expect } from "vitest";
 import type { PointLimitSource } from "../services/pointResultEvaluator";
 import { measurementPointDefs } from "../../drizzle/schema";
@@ -141,66 +168,115 @@ describe("§2 — POINT_LIMIT_SPEC ↔ PointLimitSource (kiểu spec-gate THẬT
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// §3 — MỆNH ĐỀ QUÉT: server/**/*.ts không còn bản chép tay NGOÀI vùng canh §1/§2
+// §3 — MỆNH ĐỀ QUÉT: server/ + shared/ + client/src/ không còn bản chép tay
+//      NGOÀI vùng canh §1/§2
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Gốc quét = `server/` (thư mục cha của `server/contracts/`, nơi file này sống). */
-const GOC_QUET = resolve(__dirname, "..");
+/** Gốc repo (thư mục cha của `server/`, hai cấp trên `server/contracts/`). */
+const GOC_REPO = resolve(__dirname, "../..");
+
+/**
+ * Ba gốc quét THẬT (root-relative) — KHÔNG quét toàn bộ repo (đích `docs/`,
+ * `knowledge/`, `scripts/`, `vscode-extension/`, `drizzle/`, … không liên
+ * quan đến hộ tiêu thụ 18 cột giới hạn). `client/src` — không phải `client` —
+ * vì `client/` còn chứa `index.html`/config, không phải mã tiêu thụ.
+ */
+const CAC_GOC_QUET = ["server", "shared", "client/src"] as const;
+
+/** File tự loại trừ — CHÍNH `shared/pointLimitSpec.ts` liệt kê nguyên văn 18
+ *  field (đó là ĐỊNH NGHĨA spec, không phải một bản sao — quét chính nó ra
+ *  chính nó là vòng lặp vô nghĩa, không phải một "chép tay"). */
+const DUONG_TU_LOAI_TRU = new Set(["shared/pointLimitSpec.ts"]);
 
 function danhSachTepTs(dir: string, out: string[]): void {
   for (const ten of readdirSync(dir)) {
-    if (ten === "node_modules") continue;
+    if (ten === "node_modules" || ten === "dist") continue;
     const duong = join(dir, ten);
     const tt = statSync(duong);
-    if (tt.isDirectory()) danhSachTepTs(duong, out);
-    else if (ten.endsWith(".ts") && !ten.endsWith(".test.ts") && !ten.endsWith(".d.ts")) out.push(duong);
+    if (tt.isDirectory()) {
+      danhSachTepTs(duong, out);
+      continue;
+    }
+    // .ts VÀ .tsx — vòng sửa 1 CHỈ nhặt ".ts" (`"foo.tsx".endsWith(".ts")` = false
+    // trong JS) nên mọi component React (.tsx) lọt lưới HOÀN TOÀN; đúng lớp file
+    // ba bản chép tay client bị bắt hôm nay đều mang.
+    const laTs = ten.endsWith(".ts") && !ten.endsWith(".d.ts");
+    const laTsx = ten.endsWith(".tsx");
+    if (!laTs && !laTsx) continue;
+    if (ten.endsWith(".test.ts") || ten.endsWith(".test.tsx")) continue;
+    out.push(duong);
   }
 }
 
 /**
  * Ngưỡng "chép tay": số field PHÂN BIỆT trong 18 field của `LIMIT_FIELDS` xuất
- * hiện dạng TỪ NGUYÊN (`\bfield\b`, không khớp một phần của tên khác) trong
- * MỘT file. Đo THẬT trên `server/**\/*.ts` (2026-09-03, trước khi vá vòng này):
- * có một khoảng trống RÕ giữa "chép tay thật" và "nhắc lẻ tẻ không phải chép
- * tay" — 5 file ở mức 10-18 field (`machineApiRouters.ts`, `productRouters.ts`,
- * `pointResultEvaluator.ts`, `productPackageService.ts` = 18; `measurementPointImport.ts`
- * = 10), rồi RỚT THẲNG xuống ≤4 (`masterDataRouter.ts`, `stationAnalysisRouter.ts`,
- * `productReadinessService.ts`, … — chỉ nhắc 1-4 field cho việc khác, không phải
- * chép cả khối). KHÔNG file nào rơi vào khoảng 5-9. N=6 nằm giữa khoảng trống
- * đó — chọn 6 (không phải 5 hay 10) để có biên an toàn cả hai phía.
+ * hiện dạng TỪ NGUYÊN (`\bfield\b`) trong MỘT file.
+ *
+ * ĐO LẠI vòng sửa 2 (2026-09-03) trên tập MỞ RỘNG `server/`+`shared/`+`client/src/`
+ * (có `.tsx`, không có `shared/pointLimitSpec.ts`) — khác vòng 1 (chỉ `server/`),
+ * khoảng trống KHÔNG còn sạch tuyệt đối như trước: có 3 file rơi ĐÚNG vào 5,
+ * mép dưới khoảng nghi vấn coordinator nêu (5-9):
+ *   - `shared/rollupVerdict.ts` (5) — ĐÃ KIỂM TỪNG DÒNG: cả 5 field chỉ xuất
+ *     hiện trong DOCBLOCK (văn xuôi giải thích hành vi, dòng ~51/64-65), không
+ *     một dòng CODE nào gán/khai field đó — KHÔNG phải chép tay.
+ *   - `client/src/components/products/teach/ComponentLimitsTable.tsx` (5) và
+ *     `teachTreeLogic.ts` (5) — Task 10 (đang chạy): cả hai dùng ĐÚNG 5 field
+ *     (`lowerLimit/upperLimit/unit/heightMin/heightMax`) làm MỘT TẬP CON đại
+ *     diện cho bảng xem trước UI (KHÔNG phải chép lại 18 field spec-gate), và
+ *     `teachTreeLogic.ts` dòng ~14/24 CHỦ ĐỘNG NHẮC ĐẾN `POINT_LIMIT_SPEC`
+ *     trong docblock (không phải mù tịt về spec) — khác hẳn 5 file 10-18 field
+ *     kia (chép ĐỦ hoặc GẦN ĐỦ 18 field vào một khối dữ liệu thật: object
+ *     literal / interface / cột map CSV).
+ * ⇒ KHÔNG file nào rơi vào 6-9 (khoảng trống 6-9 CÒN NGUYÊN). Ba file ở mức 5
+ * đều đã kiểm bằng tay và xác nhận KHÔNG phải "chép tay toàn khối" — giữ N=6
+ * là quyết định LẠI có kiểm chứng lần này, không phải giữ theo quán tính. Nếu
+ * lần đo sau có file ở 5 KHÔNG giải thích được bằng lý do trên, hạ N xuống 5.
  */
 const NGUONG_CHEP_TAY = 6;
 
 /**
  * File ĐÃ BIẾT chép tay một khối giới hạn nhưng KHÔNG PHẢI của Task 7 — canh
  * riêng bằng ticket, KHÔNG xoá âm thầm khi nó biến mất (xem test "XÁC NHẬN nợ"
- * bên dưới — hễ nợ hết thật thì XOÁ dòng tương ứng Ở ĐÂY).
+ * bên dưới — hễ nợ hết thật thì XOÁ dòng tương ứng Ở ĐÂY). Đường dẫn LUÔN
+ * root-relative (từ vòng sửa 2 — vòng 1 dùng đường dẫn relative-tới-`server/`).
  */
 const NO_DA_BIET: Record<string, string> = {
-  "routers/productRouters.ts":
+  "server/routers/productRouters.ts":
     "Task 8 — zod input `measurementPoint.update` + `touchesLimits` (mở từ brief Task 7 gốc; agent khác đang giữ file này, Task 7 KHÔNG được chạm).",
-  "utils/measurementPointImport.ts":
-    "BG-104 — Task 8 (gate `touchesLimits` riêng), đang chạy. Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(b) XÁC NHẬN nợ' bên dưới) — Task 8 đóng thì xoá dòng này VÀ xoá test đó.",
+  "server/utils/measurementPointImport.ts":
+    "BG-104 — Task 8 (gate `touchesLimits` riêng), đang chạy. Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(b) XÁC NHẬN nợ BG-104' bên dưới) — Task 8 đóng thì xoá dòng này VÀ xoá test đó.",
+  // ── Vòng sửa 2 — BG-107, ba file client reviewer grep độc lập bắt SỐNG ─────
+  // ⚠ Đường dẫn ĐO LẠI, không chép nguyên văn brief: coordinator khai
+  // "client/src/pages/productModels/types.ts" — SAI, file thật ở
+  // `client/src/components/productModels/types.ts` (đã xác nhận bằng `find`).
+  "client/src/pages/ProductModels.tsx":
+    "BG-107 — di trú ở Task 14 (tách shell ProductModels). Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(c) XÁC NHẬN nợ BG-107' bên dưới).",
+  "client/src/components/productModels/types.ts":
+    "BG-107 — di trú ở Task 14 (tách shell ProductModels). Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(c) XÁC NHẬN nợ BG-107' bên dưới).",
+  "client/src/components/productModels/PointDetailsForm.tsx":
+    "BG-107 — di trú ở Task 14 (tách shell ProductModels). Xác nhận CÒN bị mệnh đề quét bắt 2026-09-03 (xem test '(c) XÁC NHẬN nợ BG-107' bên dưới).",
 };
 
 /** File KHÔNG phải bản sao — nó LÀ đích tham chiếu mà §2 đã so trực tiếp (spec suy THEO nó, không phải ngược lại). Miễn trừ VĨNH VIỄN, không phải nợ. */
 const MIEN_TRU_KIEN_TRUC: Record<string, string> = {
-  "services/pointResultEvaluator.ts":
+  "server/services/pointResultEvaluator.ts":
     "Định nghĩa `PointLimitSource` — §2 ở trên đã đối chiếu trực tiếp (compile-time `satisfies` + runtime). Bắt buộc file này import chính spec suy TỪ nó là vòng ngược chiều.",
 };
 
 /**
- * Quét toàn bộ `server/**\/*.ts` (trừ `*.test.ts`/`*.d.ts`), trả về file có
+ * Quét `server/` + `shared/` + `client/src/` (trừ `node_modules`, `dist`,
+ * `*.test.ts`/`*.test.tsx`, `*.d.ts`, và `DUONG_TU_LOAI_TRU`), trả về file có
  * ≥`NGUONG_CHEP_TAY` field của `LIMIT_FIELDS` co-occur mà KHÔNG import
  * `pointLimitSpec` — trừ các đường dẫn trong `boQua`. Đường dẫn trả về LUÔN
- * dùng `/` (không phụ thuộc hệ điều hành).
+ * root-relative, dùng `/` (không phụ thuộc hệ điều hành).
  */
 function quetChepTayGioiHan(boQua: ReadonlySet<string>): { duong: string; soField: number }[] {
   const tep: string[] = [];
-  danhSachTepTs(GOC_QUET, tep);
+  for (const goc of CAC_GOC_QUET) danhSachTepTs(join(GOC_REPO, goc), tep);
   const ket: { duong: string; soField: number }[] = [];
   for (const duong of tep) {
-    const duongTuongDoi = relative(GOC_QUET, duong).split(sep).join("/");
+    const duongTuongDoi = relative(GOC_REPO, duong).split(sep).join("/");
+    if (DUONG_TU_LOAI_TRU.has(duongTuongDoi)) continue;
     if (boQua.has(duongTuongDoi)) continue;
     const src = readFileSync(duong, "utf8");
     // Đã suy từ spec ⇒ có dòng `import { ... } from ".../pointLimitSpec"`.
@@ -217,21 +293,42 @@ function quetChepTayGioiHan(boQua: ReadonlySet<string>): { duong: string; soFiel
 describe("§3 — MỆNH ĐỀ QUÉT: không còn bản chép tay MỚI ngoài §1/§2", () => {
   const boQuaHomNay = new Set([...Object.keys(NO_DA_BIET), ...Object.keys(MIEN_TRU_KIEN_TRUC)]);
 
-  it("★★★ QUÉT THẬT trên server/**/*.ts: 0 file chép tay ngoài nợ đã biết + miễn trừ kiến trúc", () => {
+  it("★★★ QUÉT THẬT trên server/+shared/+client/src/: 0 file chép tay ngoài nợ đã biết + miễn trừ kiến trúc", () => {
     const ket = quetChepTayGioiHan(boQuaHomNay);
     expect(
       ket,
-      `phát hiện file chép tay ≥${NGUONG_CHEP_TAY}/18 field, chưa import pointLimitSpec, chưa khai ở NO_DA_BIET/MIEN_TRU_KIEN_TRUC: ${JSON.stringify(ket)}`,
+      `phát hiện file chép tay ≥${NGUONG_CHEP_TAY}/18 field, chưa import pointLimitSpec, chưa khai ở NO_DA_BIET/MIEN_TRU_KIEN_TRUC: ${JSON.stringify(ket)}. ` +
+        `Nếu tên KHÔNG nằm trong danh sách đã biết (productRouters.ts/measurementPointImport.ts/ba file BG-107) — ĐỪNG tự thêm allowlist, khai trong báo cáo Task 7 để coordinator quyết định (xem docblock VÒNG SỬA 2).`,
     ).toEqual([]);
   });
 
-  it("(b) XÁC NHẬN nợ 'utils/measurementPointImport.ts' (BG-104) CÒN THẬT hôm nay — Task 8 đóng thì test này sẽ ĐỎ, đúng lúc đó xoá NO_DA_BIET tương ứng và xoá CHÍNH test này", () => {
-    const boQuaTruMPI = new Set([...boQuaHomNay].filter((p) => p !== "utils/measurementPointImport.ts"));
+  it("(b) XÁC NHẬN nợ 'server/utils/measurementPointImport.ts' (BG-104) CÒN THẬT hôm nay — Task 8 đóng thì test này sẽ ĐỎ, đúng lúc đó xoá NO_DA_BIET tương ứng và xoá CHÍNH test này", () => {
+    const boQuaTruMPI = new Set([...boQuaHomNay].filter((p) => p !== "server/utils/measurementPointImport.ts"));
     const ket = quetChepTayGioiHan(boQuaTruMPI);
     const duongs = ket.map((k) => k.duong);
     expect(
       duongs,
-      "mệnh đề quét KHÔNG còn bắt được utils/measurementPointImport.ts — nợ BG-104 có thể đã hết (Task 8 xong); nếu đúng, xoá dòng NO_DA_BIET và xoá test này",
-    ).toContain("utils/measurementPointImport.ts");
+      "mệnh đề quét KHÔNG còn bắt được server/utils/measurementPointImport.ts — nợ BG-104 có thể đã hết (Task 8 xong); nếu đúng, xoá dòng NO_DA_BIET và xoá test này",
+    ).toContain("server/utils/measurementPointImport.ts");
   });
+
+  // (c) — cùng khuôn (b), MỘT test mỗi file BG-107: Task 14 thường di trú CẢ
+  // BA cùng lúc (tách shell ProductModels là một khối), nhưng tách riêng để
+  // nếu ai đó di trú DỞ DANG (chỉ 1-2/3 file) thì đúng NHỮNG file còn lại vẫn
+  // báo chuông, không im lặng theo file đã xong.
+  for (const duongBG107 of [
+    "client/src/pages/ProductModels.tsx",
+    "client/src/components/productModels/types.ts",
+    "client/src/components/productModels/PointDetailsForm.tsx",
+  ] as const) {
+    it(`(c) XÁC NHẬN nợ '${duongBG107}' (BG-107) CÒN THẬT hôm nay — Task 14 di trú xong file này thì test sẽ ĐỎ, đúng lúc đó xoá dòng NO_DA_BIET tương ứng và xoá CHÍNH test này`, () => {
+      const boQuaTru = new Set([...boQuaHomNay].filter((p) => p !== duongBG107));
+      const ket = quetChepTayGioiHan(boQuaTru);
+      const duongs = ket.map((k) => k.duong);
+      expect(
+        duongs,
+        `mệnh đề quét KHÔNG còn bắt được ${duongBG107} — nợ BG-107 (phần file này) có thể đã hết; nếu đúng, xoá dòng NO_DA_BIET và xoá test này`,
+      ).toContain(duongBG107);
+    });
+  }
 });
