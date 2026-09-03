@@ -19560,6 +19560,17 @@
       "jumpFileLine": "Mở {{tep}} tại dòng {{dong}}",
       "jumpFileOnly": "Mở {{tep}}",
       "unresolvedLocation": "Không xác định được vị trí — xem Terminal."
+    },
+    "thayThe": {
+      "open": "Thay thế hàng loạt…",
+      "placeholder": "Thay bằng… (để trống = xoá)",
+      "run": "Thay trong {{n}} tệp",
+      "sending": "Đang tạo…",
+      "cancel": "Hủy",
+      "hint": "Tạo một DIFF cho mỗi tệp, bạn duyệt rồi mới ghi.",
+      "capped": "⚠ Có {{tong}} tệp khớp — một lô chỉ duyệt được {{tran}} tệp; {{con}} tệp còn lại phải làm lượt sau.",
+      "noChange": "Không tệp nào đổi (tệp bị cắt/có chỗ che bí mật bị bỏ qua).",
+      "failed": "Không tạo được đề xuất ({{ma}})."
     }
   },
   "masterDataCol": {

@@ -19588,6 +19588,17 @@
       "jumpFileLine": "打开 {{tep}} 第 {{dong}} 行",
       "jumpFileOnly": "打开 {{tep}}",
       "unresolvedLocation": "无法定位 — 请查看终端。"
+    },
+    "thayThe": {
+      "open": "批量替换…",
+      "placeholder": "替换为…（留空 = 删除）",
+      "run": "在 {{n}} 个文件中替换",
+      "sending": "生成中…",
+      "cancel": "取消",
+      "hint": "为每个文件生成一个 DIFF，经您审批后才写入。",
+      "capped": "⚠ 共 {{tong}} 个文件匹配——一批只能审阅 {{tran}} 个；其余 {{con}} 个需另一轮。",
+      "noChange": "没有文件被更改（被截断/含脱敏内容的文件已跳过）。",
+      "failed": "无法生成提案（{{ma}}）。"
     }
   },
   "masterDataCol": {

@@ -81,6 +81,9 @@ const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
  */
 const projectIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional();
 
+/** ★ 2026-09-03 — ký tự có nghĩa trong regex, dùng cho phép thoát của `deXuatThayTheLo`. */
+const KY_TU_REGEX: ReadonlySet<string> = new Set([".", "*", "+", "?", "^", "$", "{", "}", "(", ")", "|", "[", "]", "\\"]);
+
 /**
  * Dựng `ToolExecContext` từ ctx tRPC — danh tính là ctx.user (server tự đọc, KHÔNG tin client).
  * `projectRoot` (nếu có) đã được phân giải server-side từ một projectId trong danh sách trắng.
@@ -352,6 +355,92 @@ export const repoWorkspaceRouter = router({
    *   • Chống TOCTOU giữ nguyên: `original` client gửi sẽ bị `execute()` đối chiếu băm với đĩa lúc
    *     Duyệt (`FILE_DIRTY`/`BASE_MISMATCH`) — buffer cũ thì lượt ghi TỪ CHỐI, không ghi đè mù.
    */
+  /**
+   * ★★★ 2026-09-03 · ĐỢT KẾ mục 5 — **THAY THẾ HÀNG LOẠT = MỘT ĐỀ XUẤT LÔ.** Người dùng tìm toàn
+   * repo, gõ chuỗi thay, bấm "Thay tất cả": tuyến này đọc từng tệp TRONG hộp cát, tự tính bản
+   * `modified`, rồi dựng MỘT lượt `apply_diff_batch` qua `executeDecision` → `proposeAction` ⇒ trả
+   * về đúng thẻ duyệt LÔ đã có (mỗi tệp một tab diff, người bấm Duyệt mới ghi).
+   *
+   * BỐN ràng buộc giữ cho nó KHÔNG phải một đường ghi mới:
+   *   • CHỈ ĐỀ XUẤT — không nhánh nào gọi `confirmAction`; trần 8 tệp/lô là của chính tool lô
+   *     (`TRAN_TEP_MOI_LO`), tức trần "một người đọc nổi bao nhiêu diff", không phải trần token.
+   *   • Server ĐỌC nội dung, client KHÔNG gửi byte nào của tệp — client chỉ gửi ĐƯỜNG + hai chuỗi.
+   *   • ⚠ Nguồn đọc là `moTepTrongHopCat` (**ĐÃ che bí mật**, cùng cửa với `read_file`): ta KHÔNG
+   *     mở một đường đọc-không-che thứ hai chỉ để tiện. Hệ quả phải khai: tệp chứa chuỗi TRÔNG
+   *     GIỐNG bí mật sẽ có `original` mang chỗ che ⇒ băm lệch đĩa ⇒ `BASE_MISMATCH` lúc Duyệt
+   *     (fail-closed, đúng chiều an toàn — xem docblock `applyDiff.ts`).
+   *   • Regex do NGƯỜI gõ chỉ chạy khi bật cờ; mặc định `tim` bị thoát thành phép tìm NGUYÊN VĂN.
+   */
+  deXuatThayTheLo: protectedProcedure
+    .input(
+      z.object({
+        tim: z.string().min(1).max(200),
+        thay: z.string().max(200),
+        regex: z.boolean().optional(),
+        phanBietHoa: z.boolean().optional(),
+        /** Đường TƯƠNG ĐỐI, do client lấy từ kết quả `grep` — server vẫn phán quyết lại từng đường. */
+        duongDan: z.array(z.string().min(1).max(1024)).min(1).max(8),
+        lang: langSchema.optional(),
+        projectId: projectIdSchema,
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const userId = Number((ctx as any).user?.id);
+      const role = String((ctx as any).user?.role ?? "");
+      let cho = false;
+      try {
+        cho = await checkPermission(userId, role, "ai_repo_read", "canView");
+      } catch {
+        cho = false;
+      }
+      if (!Number.isInteger(userId) || userId <= 0 || !cho) {
+        return { ok: false as const, note: "PERMISSION_DENIED", message: null, soTep: 0, pendingAction: null };
+      }
+      const goc = phanGiaiGoc(input.projectId);
+      if (!goc.ok) return { ok: false as const, note: "PROJECT_NOT_FOUND", message: null, soTep: 0, pendingAction: null };
+
+      const { moTepTrongHopCat } = await import("../services/aiLocalTools/repoSandbox");
+      // Thoát ký tự đặc biệt bằng BẢNG TƯỜNG MINH (không dùng regex-literal: chuỗi thoát của nó
+      // đọc sai một backslash là lặng lẽ đổi nghĩa char-class). `regex:true` ⇒ dùng nguyên văn.
+      const co =
+        input.regex === true
+          ? input.tim
+          : [...input.tim].map((c) => (KY_TU_REGEX.has(c) ? "\\" + c : c)).join("");
+      let re: RegExp;
+      try {
+        re = new RegExp(co, input.phanBietHoa === true ? "g" : "gi");
+      } catch {
+        return { ok: false as const, note: "REGEX_INVALID", message: null, soTep: 0, pendingAction: null };
+      }
+
+      const files: Array<{ path: string; original: string; modified: string }> = [];
+      for (const duong of input.duongDan) {
+        const kq = moTepTrongHopCat(duong, { goc: goc.goc ?? undefined, khoaNganSach: `u:${userId}` });
+        // ⚠ BỎ QUA thay vì giết cả lô: tệp bị hộp cát từ chối, hết ngân sách, **bị CẮT** (buffer
+        //   thiếu đuôi ⇒ đề xuất sẽ xoá phần chưa nạp) hoặc **CÓ chỗ che bí mật** (băm chắc chắn
+        //   lệch đĩa ⇒ BASE_MISMATCH lúc Duyệt). Mời người duyệt một thứ chắc chắn trượt là nói dối.
+        if (!kq.ok || kq.catBot || kq.daChe) continue;
+        re.lastIndex = 0;
+        const moi = kq.noiDung.replace(re, input.thay);
+        if (moi !== kq.noiDung) files.push({ path: kq.relPath, original: kq.noiDung, modified: moi });
+      }
+      if (files.length === 0) {
+        return { ok: false as const, note: "NO_CHANGE", message: null, soTep: 0, pendingAction: null };
+      }
+
+      const outcome = await executeDecision(
+        { tool: "apply_diff_batch", args: { files } },
+        execCtxFrom(ctx, input.lang ?? "vi", goc.goc ?? undefined),
+      );
+      if (outcome.denied) {
+        return { ok: false as const, note: "DENIED", message: outcome.denied.message, soTep: files.length, pendingAction: null };
+      }
+      if (outcome.error || !outcome.pendingAction) {
+        return { ok: false as const, note: outcome.error ?? "NO_PENDING", message: null, soTep: files.length, pendingAction: null };
+      }
+      return { ok: true as const, note: null, message: null, soTep: files.length, pendingAction: outcome.pendingAction };
+    }),
+
   deXuatSuaTay: protectedProcedure
     .input(
       z.object({

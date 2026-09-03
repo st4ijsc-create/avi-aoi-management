@@ -1189,6 +1189,51 @@ export default function AICodingWorkspace() {
   }, [ketQuaGrep]);
 
   /**
+   * ★★★ 2026-09-03 · ĐỢT KẾ mục 5 — THAY THẾ HÀNG LOẠT. Ô "thay bằng" + nút chạy trên ĐÚNG tập tệp
+   * mà kết quả tìm hiện có; gọi `deXuatThayTheLo` (server đọc trong hộp cát, tự dựng `apply_diff_batch`)
+   * rồi nạp kết quả vào ĐÚNG thẻ duyệt LÔ đã có ⇒ ghi vẫn qua một cửa `confirmM` duy nhất.
+   * ⚠ Trần 8 tệp/lô là của chính tool lô ("một người đọc nổi bao nhiêu diff") — client CẮT danh
+   *   sách gửi đi ở đúng con số ấy và NÓI RA số tệp bị bỏ, không im lặng cắt.
+   */
+  const TRAN_TEP_LO = 8;
+  const [thayBang, setThayBang] = useState("");
+  const [oThayMo, setOThayMo] = useState(false);
+  const deXuatThayTheLoM = trpc.repoWorkspace.deXuatThayTheLo.useMutation();
+  const tepSeThay = useMemo(() => ketQuaGrepGom.map(([p]) => p).slice(0, TRAN_TEP_LO), [ketQuaGrepGom]);
+  const guiThayTheLo = useCallback(async () => {
+    if (tepSeThay.length === 0 || !tuKhoaRepoTre.trim()) return;
+    let r: Awaited<ReturnType<typeof deXuatThayTheLoM.mutateAsync>> | null = null;
+    try {
+      r = await deXuatThayTheLoM.mutateAsync({
+        tim: tuKhoaRepoTre.trim(),
+        thay: thayBang,
+        regex: timBangRegex,
+        phanBietHoa: timPhanBietHoa,
+        duongDan: tepSeThay,
+        lang,
+        projectId,
+      });
+    } catch (e) { toast.error(mapTrpcError(e)); return; }
+    if (!r.ok || !r.pendingAction) {
+      toast.error(
+        r.note === "NO_CHANGE"
+          ? t("repoWs.thayThe.noChange", "Không tệp nào đổi (tệp bị cắt/có chỗ che bí mật bị bỏ qua).")
+          : r.message ?? t("repoWs.thayThe.failed", "Không tạo được đề xuất ({{ma}}).", { ma: r.note ?? "?" }),
+      );
+      return;
+    }
+    const pa = r.pendingAction as unknown as KbPendingAction;
+    const files = ((pa.args?.files as unknown[]) ?? []).map((f) => {
+      const x = (f ?? {}) as { path?: string; original?: string; modified?: string };
+      return { path: x.path ?? "", original: x.original ?? "", modified: x.modified ?? "" };
+    });
+    setPending(pa);
+    setActionState("pending");
+    setPendingBatch({ action: pa, files });
+    setOThayMo(false);
+  }, [tepSeThay, tuKhoaRepoTre, thayBang, timBangRegex, timPhanBietHoa, lang, projectId, deXuatThayTheLoM, t]);
+
+  /**
    * `tuVong` có mặt ⇔ lượt này do VÒNG TỰ ĐỘNG phát, không phải người gõ. Hai khác biệt:
    *   • **KHÔNG** đặt lại trạng thái vòng (một lượt người gõ thì có — câu hỏi mới = ý định mới);
    *   • gửi kèm `codingEditPath` GHIM tệp đang sửa. ⚠ Chỉ gửi ĐƯỜNG DẪN; nội dung tệp do server đọc
@@ -2147,6 +2192,58 @@ export default function AICodingWorkspace() {
                       className={cn("rounded px-1 font-mono text-[10px] leading-5", timBangRegex ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted")}
                     >.*</button>
                   </div>
+                </div>
+              )}
+              {/* ★ 2026-09-03 · mục 5 — THAY THẾ HÀNG LOẠT: mở bằng nút ⇄; chạy trên ĐÚNG tập tệp của
+                  kết quả tìm hiện có, kết quả là một THẺ DUYỆT LÔ (không ghi thẳng). */}
+              {cheDoCay === "tim" && ketQuaGrepGom.length > 0 && (
+                <div className="mt-1">
+                  {!oThayMo ? (
+                    <button
+                      type="button"
+                      data-mo-thay-the
+                      onClick={() => setOThayMo(true)}
+                      className="text-[10px] text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      {t("repoWs.thayThe.open", "Thay thế hàng loạt…")}
+                    </button>
+                  ) : (
+                    <div className="flex flex-col gap-1 rounded-md border border-primary/30 bg-primary/5 p-1.5">
+                      <input
+                        type="text"
+                        data-o-thay-bang
+                        value={thayBang}
+                        onChange={(e) => setThayBang(e.target.value)}
+                        placeholder={t("repoWs.thayThe.placeholder", "Thay bằng… (để trống = xoá)")}
+                        aria-label={t("repoWs.thayThe.placeholder", "Thay bằng… (để trống = xoá)")}
+                        className="h-7 w-full rounded border bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          data-gui-thay-the
+                          className="h-6 px-2 text-[11px]"
+                          disabled={deXuatThayTheLoM.isPending || tepSeThay.length === 0 || coDiffChoDuyet}
+                          onClick={() => void guiThayTheLo()}
+                        >
+                          {deXuatThayTheLoM.isPending
+                            ? t("repoWs.thayThe.sending", "Đang tạo…")
+                            : t("repoWs.thayThe.run", "Thay trong {{n}} tệp", { n: tepSeThay.length })}
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setOThayMo(false)}>
+                          {t("repoWs.thayThe.cancel", "Hủy")}
+                        </Button>
+                      </div>
+                      {ketQuaGrepGom.length > tepSeThay.length && (
+                        <p data-thay-the-cat className="text-[10px] leading-snug text-amber-700 dark:text-amber-400">
+                          {t("repoWs.thayThe.capped", "⚠ Có {{tong}} tệp khớp — một lô chỉ duyệt được {{tran}} tệp; {{con}} tệp còn lại phải làm lượt sau.", { tong: ketQuaGrepGom.length, tran: tepSeThay.length, con: ketQuaGrepGom.length - tepSeThay.length })}
+                        </p>
+                      )}
+                      <p className="text-[10px] leading-snug text-muted-foreground">
+                        {t("repoWs.thayThe.hint", "Tạo một DIFF cho mỗi tệp, bạn duyệt rồi mới ghi.")}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

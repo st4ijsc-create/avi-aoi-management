@@ -19580,6 +19580,17 @@
       "jumpFileLine": "Open {{tep}} at line {{dong}}",
       "jumpFileOnly": "Open {{tep}}",
       "unresolvedLocation": "Location not resolved — see Terminal."
+    },
+    "thayThe": {
+      "open": "Replace across files…",
+      "placeholder": "Replace with… (empty = delete)",
+      "run": "Replace in {{n}} files",
+      "sending": "Creating…",
+      "cancel": "Cancel",
+      "hint": "Creates one DIFF per file; nothing is written until you approve.",
+      "capped": "⚠ {{tong}} files match — one batch can only be reviewed for {{tran}} files; the remaining {{con}} need another pass.",
+      "noChange": "No file changed (truncated / secret-redacted files are skipped).",
+      "failed": "Could not create proposal ({{ma}})."
     }
   },
   "masterDataCol": {
