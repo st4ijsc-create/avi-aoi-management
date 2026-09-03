@@ -189,6 +189,20 @@ export function soBacktickRao(noiDung: string): number {
  *     ngoài màn ⇒ lệch chiều cao với gutter lúc cuộn.
  * Hậu quả tệ nhất nếu bản sau đổi thuộc tính: THẨM MỸ (số CSS + tiêu đề hiện lại), không vỡ chức năng.
  */
+/**
+ * ★ 2026-09-03 · D2 — CSS cho chế độ NGẮT DÒNG. Chỉ hai thuộc tính, và cả hai đều cần:
+ *   • `white-space: pre-wrap` — Streamdown/Shiki đặt `pre` (không wrap); `pre-wrap` giữ khoảng
+ *     trắng đầu dòng (thụt lề mã) mà vẫn cho xuống dòng khi hết bề ngang;
+ *   • `word-break: break-word` — một chuỗi DÀI không có khoảng trắng (URL, base64) vẫn tràn ngang
+ *     dù có `pre-wrap`; thiếu dòng này thì "wrap" chỉ đúng với mã có dấu cách.
+ */
+const CSS_NGAT_DONG = `
+[data-trinh-xem-ma] [data-ma][data-ngat-dong="true"] [data-streamdown="code-block-body"] code,
+[data-trinh-xem-ma] [data-ma][data-ngat-dong="true"] [data-streamdown="code-block-body"] pre{
+  white-space:pre-wrap !important; word-break:break-word !important;
+}
+`;
+
 const CSS_GHI_DE = `
 [data-trinh-xem-ma] [data-streamdown="code-block"]{
   margin:0 !important; border:0 !important; border-radius:0 !important;
@@ -215,6 +229,7 @@ export function TrinhXemMa({
   noiDung,
   duongDan,
   dongMucTieu = null,
+  ngatDong = false,
 }: {
   /** Nội dung tệp (server đã đọc, có thể đã cắt/che). */
   noiDung: string;
@@ -222,6 +237,17 @@ export function TrinhXemMa({
   duongDan: string;
   /** Dòng cần TÔ SÁNG (mở từ panel Vấn đề). `null` ⇒ không tô. KHÔNG tự cuộn. */
   dongMucTieu?: number | null;
+  /**
+   * ★ 2026-09-03 · ĐỢT D2 — NGẮT DÒNG (word-wrap). Mặc định TẮT (giữ hành vi cũ từng byte).
+   *
+   * ⚠⚠ ĐÁNH ĐỔI PHẢI KHAI, KHÔNG ĐƯỢC GIẤU: gutter số dòng ở đây là một cột DOM RIÊNG, mỗi dòng
+   * LOGIC một ô cao `leading-6`. Bật wrap làm một dòng logic chiếm NHIỀU dòng hình ⇒ hai cột lệch
+   * nhau ngay dòng dài đầu tiên, và khi ấy **số dòng hiển thị là một lời khai SAI** (tệ hơn hẳn
+   * việc không có số dòng). Nên khi `ngatDong` bật, gutter **ẨN** — trang phải nói ra điều đó ở
+   * tooltip của nút. Muốn có cả hai thì phải render TỪNG DÒNG bằng một tầng editor (CodeMirror
+   * read-only) — một đợt kiến trúc riêng, không nhét vào đây.
+   */
+  ngatDong?: boolean;
 }): React.JSX.Element {
   const lang = suyNgonNgu(duongDan);
   const noiDungChuan = chuanHoaNoiDung(noiDung);
@@ -232,10 +258,15 @@ export function TrinhXemMa({
   return (
     <div data-trinh-xem-ma className="min-w-0 text-[13px]">
       <style>{CSS_GHI_DE}</style>
+      {/* ★ D2 — CSS wrap chỉ nạp KHI bật: ghi đè `white-space` mà Streamdown đặt (`pre`). Tách khỏi
+          `CSS_GHI_DE` để tắt wrap là KHÔNG còn một dòng CSS nào của nó trong cây. */}
+      {ngatDong && <style>{CSS_NGAT_DONG}</style>}
       <div className="flex min-w-0 py-2">
-        {/* ── GUTTER: số dòng THẬT (nguồn sự thật, tô-sáng được từng dòng). KHÔNG cuộn ngang. ── */}
+        {/* ── GUTTER: số dòng THẬT (nguồn sự thật, tô-sáng được từng dòng). KHÔNG cuộn ngang.
+            ⚠ ẨN khi `ngatDong` — xem docblock prop: gutter căn theo dòng LOGIC, wrap làm nó nói dối. ── */}
         <div
           data-gutter
+          hidden={ngatDong}
           aria-hidden="true"
           className="shrink-0 select-none border-r border-border/60 pr-3 pl-3 text-right font-mono tabular-nums text-muted-foreground/60"
         >
@@ -257,8 +288,9 @@ export function TrinhXemMa({
             );
           })}
         </div>
-        {/* ── MÃ: Streamdown tô cú pháp. `overflow-x-auto` + (qua CSS) `white-space:pre` ⇒ cuộn ngang, KHÔNG wrap. ── */}
-        <div data-ma className="min-w-0 flex-1 overflow-x-auto pl-3">
+        {/* ── MÃ: Streamdown tô cú pháp. `overflow-x-auto` + (qua CSS) `white-space:pre` ⇒ cuộn ngang,
+            KHÔNG wrap — trừ khi `ngatDong` bật (khi ấy CSS ghi đè `pre-wrap`, xem `CSS_NGAT_DONG`). ── */}
+        <div data-ma data-ngat-dong={ngatDong ? "true" : undefined} className={cn("min-w-0 flex-1 pl-3", ngatDong ? "overflow-x-hidden" : "overflow-x-auto")}>
           <Streamdown mode="static" controls={false}>
             {fenced}
           </Streamdown>

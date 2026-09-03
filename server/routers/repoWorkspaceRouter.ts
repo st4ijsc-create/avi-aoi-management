@@ -72,7 +72,26 @@ import { docLenhSong } from "../services/aiLocalTools/lenhSong";
 // Cùng cổng giấy phép với aiCopilotRouter (MOD_AI, mặc định pass-through). Xác thực do middleware lo.
 const protectedProcedure = moduleProcedure("MOD_AI");
 
-const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
+/**
+ * ★★★ 2026-09-03 — **NGÔN NGỮ PHẢI FAIL-SAFE, KHÔNG FAIL-CLOSED.** (Lỗi THẬT, đo được trên trình
+ * duyệt sạch ngày 2026-09-03; có sẵn từ trước, không phải của một lượt vá nào.)
+ *
+ * `i18n.language` của trình duyệt là **BCP-47**: `"en-US"`, `"vi-VN"`, `"zh-CN"`. Client cũ ép kiểu
+ * `(i18n.language as "vi"|"en"|"zh")` — một cast **DỐI**: nó không đổi giá trị, chỉ tắt lời cảnh
+ * báo của TypeScript. Với `z.enum` cứng, `"en-US"` ⇒ **input invalid** ⇒ tRPC ném trước khi vào
+ * handler ⇒ **mọi thủ tục repoWorkspace mang `lang` chết câm** với người dùng có locale `en-US`
+ * (đo được: tìm-toàn-repo trả "No results found" trong khi server chưa hề chạy một lượt quét nào).
+ *
+ * ⇒ Nới ở CỔNG, không ở nơi dùng: cắt về hai ký tự đầu, ngoài tập thì lùi `"vi"`. Ngôn ngữ hiển thị
+ *   sai là một phiền toái; **cả tính năng chết vì hậu tố vùng** là một sự cố. Client cũng đã được
+ *   chuẩn hoá cùng lượt (hai lớp ĐỘC LẬP, không lớp nào che lớp kia).
+ * ⚠ Đây KHÔNG phải chỗ nới cho dữ liệu khác: chỉ ngôn ngữ HIỂN THỊ mới được lùi âm thầm — mọi
+ *   tham số quyết định hành vi (đường dẫn, projectId, nội dung) vẫn fail-closed như cũ.
+ */
+export const langSchema = z.preprocess((v) => {
+  const s = String(v ?? "").toLowerCase().slice(0, 2);
+  return s === "en" || s === "zh" ? s : "vi";
+}, z.enum(["vi", "en", "zh"]));
 
 /**
  * ★★★ doc 79 · TRỤC 2 — id dự án. **Client CHỈ gửi id**, KHÔNG BAO GIỜ đường dẫn; server tra danh

@@ -148,6 +148,7 @@ import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
   Repeat, CheckCircle2, OctagonX, Terminal, Search, X, ChevronUp, Wand2, Copy, Undo2,
+  WrapText, Maximize2, Minimize2,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -521,6 +522,20 @@ export default function AICodingWorkspace() {
    * tệp, 0 thẻ duyệt, 0 vòng tự động được hồi sinh (ba thứ ấy có lý do an toàn riêng để chết).
    * Khôi phục qua ref cờ MỘT-LẦN-MỖI-DỰ-ÁN để không giật lại thao tác người dùng vừa làm.
    */
+  /**
+   * ★ 2026-09-03 · ĐỢT D — ba tuỳ chọn HIỂN THỊ (không đụng dữ liệu, không đường ghi nào):
+   *   • `ngatDong` (D2): word-wrap cho Trình xem. Bật ⇒ `TrinhXemMa` ẨN gutter số dòng — đánh đổi
+   *     KHAI RA ở tooltip (gutter căn theo dòng LOGIC; wrap làm nó nói dối). Lưu theo user+dự án
+   *     cùng khoá bàn-làm-việc để F5 không mất.
+   *   • `thuMucTim` (D3): giới hạn phạm vi tìm-repo. `grep` server ĐÃ nhận tham số `path` từ đầu —
+   *     client chỉ chưa gửi bao giờ. Rỗng ⇒ cả repo (hành vi cũ).
+   *   • `khungToiDa` (D4): phóng to MỘT khung. Dùng `hidden` ở cấp Panel — CÙNG cơ chế với chế độ
+   *     một-khung của màn hẹp, nên không đẻ đường bố cục thứ hai.
+   */
+  const [ngatDong, setNgatDong] = useState(false);
+  const [thuMucTim, setThuMucTim] = useState("");
+  const [khungToiDa, setKhungToiDa] = useState<"tep" | "xem" | "chat" | null>(null);
+
   const khoaBanLamViec = user?.id != null ? `repoWs.ban.u${user.id}.${projectId}` : null;
   const duAnDaKhoiPhucRef = useRef<string | null>(null);
 
@@ -731,21 +746,22 @@ export default function AICodingWorkspace() {
     try {
       const tho = localStorage.getItem(khoaBanLamViec);
       if (!tho) return;
-      const ban = JSON.parse(tho) as { tabs?: unknown; tep?: unknown; duoi?: unknown };
+      const ban = JSON.parse(tho) as { tabs?: unknown; tep?: unknown; duoi?: unknown; wrap?: unknown };
       if (Array.isArray(ban.tabs) && ban.tabs.every((x) => typeof x === "string")) {
         setOpenTabs(ban.tabs.slice(0, 12));
         if (typeof ban.tep === "string" && ban.tabs.includes(ban.tep)) setSelectedPath(ban.tep);
       }
       if (ban.duoi === "terminal" || ban.duoi === "problems") setDuoiChat(ban.duoi);
+      if (typeof ban.wrap === "boolean") setNgatDong(ban.wrap); // ★ D2 — tuỳ chọn xem, sống qua F5
     } catch { /* hỏng dữ liệu lưu ⇒ bàn trắng, không vỡ trang */ }
   }, [projectId, khoaBanLamViec]);
   // ★ ĐỢT A — LƯU (mỗi thay đổi; try/catch vì localStorage có thể đầy/bị chặn).
   useEffect(() => {
     if (!projectId || khoaBanLamViec === null) return;
     try {
-      localStorage.setItem(khoaBanLamViec, JSON.stringify({ tabs: openTabs, tep: selectedPath, duoi: duoiChat }));
+      localStorage.setItem(khoaBanLamViec, JSON.stringify({ tabs: openTabs, tep: selectedPath, duoi: duoiChat, wrap: ngatDong }));
     } catch { /* ignore */ }
-  }, [openTabs, selectedPath, duoiChat, projectId, khoaBanLamViec]);
+  }, [openTabs, selectedPath, duoiChat, ngatDong, projectId, khoaBanLamViec]);
   const [streamTool, setStreamTool] = useState<ToolResultPayload | null>(null);
   /**
    * ★ LÔ 3 — MỐC-NHẬN của `streamTool` (đã định dạng), đóng dấu ngay trong `onToolResult`.
@@ -1154,7 +1170,15 @@ export default function AICodingWorkspace() {
     if (hep) setKhungHep("xem");
   }, [hep]);
 
-  const lang = (i18n.language as "vi" | "en" | "zh") ?? "vi";
+  /**
+   * ★ 2026-09-03 — CHUẨN HOÁ ngôn ngữ, không CAST. `i18n.language` là BCP-47 (`"en-US"`), nên bản
+   * cũ `(… as "vi"|"en"|"zh")` chỉ tắt cảnh báo TS mà vẫn gửi `"en-US"` lên server ⇒ input invalid
+   * ⇒ mọi thủ tục repoWorkspace chết câm (xem docblock `langSchema` phía server).
+   */
+  const lang: "vi" | "en" | "zh" = (() => {
+    const hai = (i18n.language ?? "").toLowerCase().slice(0, 2);
+    return hai === "en" ? "en" : hai === "zh" ? "zh" : "vi";
+  })();
 
   // ★★★ CURSOR-PARITY — TÌM TOÀN REPO: gọi endpoint `grep` ĐÃ CÓ (trả {matches:{path,line,text}}). CHỈ chạy
   //   ở chế độ "tim" + từ khoá ≥2 ký tự (server chặn min 1, nhưng ≥2 tránh kết quả nhiễu + gọi thừa).
@@ -1167,10 +1191,13 @@ export default function AICodingWorkspace() {
    */
   const [timPhanBietHoa, setTimPhanBietHoa] = useState(false);
   const [timBangRegex, setTimBangRegex] = useState(false);
+
   const grepRepoQ = trpc.repoWorkspace.grep.useQuery(
     {
       pattern: timBangRegex ? tuKhoaRepoTre.trim() : thoatRegex(tuKhoaRepoTre.trim()),
       ignoreCase: !timPhanBietHoa,
+      // ★ D3 — phạm vi: rỗng ⇒ cả repo (đường cũ); có ⇒ chỉ quét dưới thư mục ấy (server phán quyết lại).
+      ...(thuMucTim.trim() ? { path: thuMucTim.trim() } : {}),
       projectId, lang, maxResults: 100,
     },
     { enabled: cheDoCay === "tim" && !!projectId && tuKhoaRepoTre.trim().length >= 2, staleTime: 30_000 },
@@ -2086,7 +2113,7 @@ export default function AICodingWorkspace() {
             className="min-h-0 flex-1"
           >
           {/* ── 1. CÂY TỆP ── */}
-          <ResizablePanel defaultSize={19} minSize={12} className={cn("min-w-0", hep && khungHep !== "tep" && "hidden")}>
+          <ResizablePanel defaultSize={19} minSize={12} className={cn("min-w-0", hep && khungHep !== "tep" && "hidden", !hep && khungToiDa !== null && khungToiDa !== "tep" && "hidden")}>
           <div className="flex h-full min-h-0 flex-col overflow-hidden border-r">
             {/* Bộ chọn DỰ ÁN (doc 79 · TRỤC 2) — tham khảo "Select folder" của Claude Code. Client
                 giữ + gửi MỘT id; server tra danh sách TRẮNG .env để ra gốc (không nhận đường dẫn). */}
@@ -2212,6 +2239,18 @@ export default function AICodingWorkspace() {
                     >.*</button>
                   </div>
                 </div>
+              )}
+              {/* ★ D3 — GIỚI HẠN PHẠM VI TÌM. `grep` server nhận `path` từ đầu; rỗng ⇒ cả repo. */}
+              {cheDoCay === "tim" && (
+                <input
+                  type="text"
+                  data-thu-muc-tim
+                  value={thuMucTim}
+                  onChange={(e) => setThuMucTim(e.target.value)}
+                  placeholder={t("repoWs.search.scope", "Trong thư mục… (vd server/routers) — trống = cả repo")}
+                  aria-label={t("repoWs.search.scope", "Trong thư mục… (vd server/routers) — trống = cả repo")}
+                  className="mt-1 h-6 w-full rounded-md border bg-background px-2 text-[11px] placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
               )}
               {/* ★ 2026-09-03 · mục 5 — THAY THẾ HÀNG LOẠT: mở bằng nút ⇄; chạy trên ĐÚNG tập tệp của
                   kết quả tìm hiện có, kết quả là một THẺ DUYỆT LÔ (không ghi thẳng). */}
@@ -2374,10 +2413,10 @@ export default function AICodingWorkspace() {
           </div>
 
           </ResizablePanel>
-          <ResizableHandle className={cn(hep && "hidden")} />
+          <ResizableHandle className={cn((hep || khungToiDa !== null) && "hidden")} />
 
           {/* ── 2. TRÌNH XEM + DIFF ── */}
-          <ResizablePanel defaultSize={48} minSize={25} className={cn("min-w-0", hep && khungHep !== "xem" && "hidden")}>
+          <ResizablePanel defaultSize={48} minSize={25} className={cn("min-w-0", hep && khungHep !== "xem" && "hidden", !hep && khungToiDa !== null && khungToiDa !== "xem" && "hidden")}>
           <div className="flex h-full min-h-0 flex-col overflow-hidden border-r">
             <div className="flex items-center gap-2 border-b px-3 py-1.5">
               {coDiffChoDuyet ? (
@@ -2458,7 +2497,33 @@ export default function AICodingWorkspace() {
                           <Undo2 className="h-3.5 w-3.5" />
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" data-nut-copy onClick={copyTepHienTai} disabled={!fileReply?.ok || !fileReply.data?.content} title={t("repoWs.viewer.copy", "Sao chép nội dung tệp")}>
+                      {/* ★ D4 — PHÓNG TO khung Trình xem (chỉ khi màn RỘNG; màn hẹp vốn đã một-khung).
+                          Dùng CÙNG cơ chế `hidden` cấp Panel với chế độ một-khung ⇒ không đẻ đường
+                          bố cục thứ hai; bề rộng đã kéo được `autoSaveId` giữ nguyên khi thu lại. */}
+                      {!hep && (
+                        <Button
+                          variant="ghost" size="icon" data-nut-toi-da
+                          className={cn("h-6 w-6 shrink-0", khungToiDa === "xem" && "bg-primary/15 text-primary")}
+                          aria-pressed={khungToiDa === "xem"}
+                          onClick={() => setKhungToiDa((v) => (v === "xem" ? null : "xem"))}
+                          title={khungToiDa === "xem" ? t("repoWs.viewer.restore", "Thu về ba khung") : t("repoWs.viewer.maximize", "Phóng to khung Trình xem")}
+                        >
+                          {khungToiDa === "xem" ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                        </Button>
+                      )}
+                      {/* ★ D2 — NGẮT DÒNG. Tooltip KHAI đánh đổi: bật wrap ⇒ mất cột số dòng. */}
+                      <Button
+                        variant="ghost" size="icon" data-nut-ngat-dong
+                        className={cn("h-6 w-6 shrink-0", ngatDong && "bg-primary/15 text-primary")}
+                        aria-pressed={ngatDong}
+                        onClick={() => setNgatDong((v) => !v)}
+                        title={ngatDong
+                          ? t("repoWs.viewer.wrapOff", "Tắt ngắt dòng (bật lại cột số dòng)")
+                          : t("repoWs.viewer.wrapOn", "Ngắt dòng — cột số dòng sẽ ẩn (nó căn theo dòng logic, wrap làm nó sai)")}
+                      >
+                        <WrapText className="h-3.5 w-3.5" />
+                      </Button>
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" data-nut-copy onClick={copyTepHienTai} disabled={!fileReply?.ok || !fileReply.data?.content} title={t("repoWs.viewer.copy", "Sao chép nội dung tệp")}>
                         <Copy className="h-3.5 w-3.5" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => fileQ.refetch()} title={t("repoWs.tree.refresh", "Làm mới")}>
@@ -2505,6 +2570,39 @@ export default function AICodingWorkspace() {
             {/* ★★★ 2026-08-27 · CURSOR-PARITY — Ô-LỆNH SỬA ĐOẠN CHỌN (Cmd+K). Gửi ⇒ dựng câu hỏi có bối cảnh
                 (đoạn bôi đen + yêu cầu) qua `handleSend` → model → apply_diff → CỬA DUYỆT (thẻ hiện ngay ở
                 khung này). KHÔNG ghi thẳng. Enter gửi · Esc đóng. */}
+            {/* ★ 2026-09-03 · D1 — BREADCRUMB đường tệp BẤM ĐƯỢC. Bấm một đoạn ⇒ đổ chính đường đó vào
+                ô LỌC cây (Ctrl+P) — dùng lại cơ chế mở-nhanh đã có, không đẻ đường điều hướng thứ hai;
+                đoạn CUỐI (tên tệp) là chữ trơn vì nó chính là thứ đang mở. */}
+            {selectedPath && !coDiffChoDuyet && (
+              <nav data-breadcrumb-tep aria-label={t("repoWs.viewer.breadcrumb", "Đường dẫn tệp")} className="flex shrink-0 flex-wrap items-center gap-0.5 border-b px-3 py-1 text-[10px] text-muted-foreground">
+                {selectedPath.split("/").map((doan, i, mang) => {
+                  const cuoi = i === mang.length - 1;
+                  return (
+                    <span key={i} className="flex items-center gap-0.5">
+                      {i > 0 && <span aria-hidden className="opacity-50">/</span>}
+                      {cuoi ? (
+                        <span className="font-medium text-foreground">{doan}</span>
+                      ) : (
+                        <button
+                          type="button"
+                          data-breadcrumb-doan
+                          onClick={() => {
+                            const duong = mang.slice(0, i + 1).join("/");
+                            setCheDoCay("cay");
+                            setLocCay(duong);
+                            if (hep) setKhungHep("tep");
+                            requestAnimationFrame(() => oLocCayRef.current?.focus());
+                          }}
+                          className="rounded px-0.5 hover:bg-muted hover:text-foreground"
+                        >
+                          {doan}
+                        </button>
+                      )}
+                    </span>
+                  );
+                })}
+              </nav>
+            )}
             {suaChonMo && !coDiffChoDuyet && selectedPath && (
               <div className="flex shrink-0 flex-col gap-1 border-b border-primary/30 bg-primary/5 px-2 py-1.5" data-sua-chon>
                 <div className="flex items-center gap-1.5 text-[11px] font-medium text-primary">
@@ -2619,7 +2717,7 @@ export default function AICodingWorkspace() {
                         bọc nó để effect cuộn tìm được ô `[data-so-dong={dongMucTieu}]`. Hàng huy hiệu
                         (bytes/redacted/truncated) phía trên GIỮ NGUYÊN. */
                     <div ref={preRef} className="min-w-0">
-                      <TrinhXemMa noiDung={fileReply?.data?.content ?? ""} duongDan={selectedPath ?? ""} dongMucTieu={dongMucTieu} />
+                      <TrinhXemMa noiDung={fileReply?.data?.content ?? ""} duongDan={selectedPath ?? ""} dongMucTieu={dongMucTieu} ngatDong={ngatDong} />
                     </div>
                     )}
                   </>
@@ -2629,10 +2727,10 @@ export default function AICodingWorkspace() {
           </div>
 
           </ResizablePanel>
-          <ResizableHandle className={cn(hep && "hidden")} />
+          <ResizableHandle className={cn((hep || khungToiDa !== null) && "hidden")} />
 
           {/* ── 3. HỘI THOẠI TÁC NHÂN ── */}
-          <ResizablePanel defaultSize={33} minSize={20} className={cn("min-w-0", hep && khungHep !== "chat" && "hidden")}>
+          <ResizablePanel defaultSize={33} minSize={20} className={cn("min-w-0", hep && khungHep !== "chat" && "hidden", !hep && khungToiDa !== null && khungToiDa !== "chat" && "hidden")}>
           <div className="flex h-full min-h-0 flex-col overflow-hidden">
             <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-1.5">
               <Bot className="h-4 w-4 text-primary" />

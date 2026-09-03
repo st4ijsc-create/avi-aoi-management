@@ -19378,7 +19378,12 @@
       "copy": "Sao chép nội dung tệp",
       "gotoLine": "Nhảy tới dòng:",
       "copied": "Đã sao chép nội dung tệp.",
-      "copyFail": "Không sao chép được (trình duyệt chặn clipboard)."
+      "copyFail": "Không sao chép được (trình duyệt chặn clipboard).",
+      "wrapOn": "Ngắt dòng — cột số dòng sẽ ẩn (nó căn theo dòng logic, wrap làm nó sai)",
+      "wrapOff": "Tắt ngắt dòng (bật lại cột số dòng)",
+      "maximize": "Phóng to khung Trình xem",
+      "restore": "Thu về ba khung",
+      "breadcrumb": "Đường dẫn tệp"
     },
     "find": {
       "placeholder": "Tìm trong tệp…",
@@ -19401,7 +19406,8 @@
       "truncatedTime": "⚠ BẢN CẮT vì hết giờ: mới quét {{n}} tệp — kết quả CHƯA đầy đủ, thu hẹp bằng thư mục để quét trọn.",
       "truncatedCap": "⚠ BẢN CẮT: chạm trần quét/kết quả ({{n}} tệp đã quét) — có thể còn khớp chưa hiện.",
       "caseToggle": "Phân biệt hoa/thường",
-      "regexToggle": "Dùng biểu thức chính quy (regex)"
+      "regexToggle": "Dùng biểu thức chính quy (regex)",
+      "scope": "Trong thư mục… (vd server/routers) — trống = cả repo"
     },
     "suaTay": {
       "enter": "Sửa tệp (tạo đề xuất, bạn duyệt)",

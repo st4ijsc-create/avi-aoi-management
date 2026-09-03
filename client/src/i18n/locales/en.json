@@ -19398,7 +19398,12 @@
       "closeTab": "Close {{ten}}",
       "copy": "Copy file contents",
       "copied": "File contents copied.",
-      "copyFail": "Couldn't copy (browser blocked clipboard)."
+      "copyFail": "Couldn't copy (browser blocked clipboard).",
+      "wrapOn": "Word wrap — the line-number column will hide (it tracks logical lines; wrapping makes it lie)",
+      "wrapOff": "Turn off word wrap (restores line numbers)",
+      "maximize": "Maximize the viewer pane",
+      "restore": "Back to three panes",
+      "breadcrumb": "File path"
     },
     "find": {
       "placeholder": "Find in file…",
@@ -19421,7 +19426,8 @@
       "truncatedTime": "⚠ PARTIAL due to deadline: only {{n}} files scanned — results are incomplete, narrow by folder for a full scan.",
       "truncatedCap": "⚠ PARTIAL: hit scan/result cap ({{n}} files scanned) — more matches may exist.",
       "caseToggle": "Match case",
-      "regexToggle": "Use regular expression"
+      "regexToggle": "Use regular expression",
+      "scope": "In folder… (e.g. server/routers) — empty = whole repo"
     },
     "suaTay": {
       "enter": "Edit file (creates a proposal you approve)",
