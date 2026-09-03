@@ -337,7 +337,7 @@ const inspectionTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneO
 
 ⚠ Đây là nợ **có sẵn** (doc 51 P1), không do Khối B sinh ra. Nhưng Khối B vừa làm nó **quan trọng hơn**: trước đây cấp cây không ghi thời gian, nay có.
 
-**Ràng buộc:** Task 4 và mọi việc sau **không được** so thời gian giữa header và cây cho tới khi BG-96 đóng.
+**BG-96 ĐÃ ĐÓNG (2026-09-03)** — xem plan Khối C Task 1-3 (`.superpowers/sdd/2026-09-03-aoi-khoi-c-gioi-han/`, commit `aedd3096`/`86b0e889`/`118d5322`/`db10d08f`). Header và cây nay CÙNG một hệ quy chiếu UTC thật; lưới bất biến DB thật `server/routers/thoiGianMotHeQuyChieu.db.test.ts` canh, và `server/utils/fakeUtcCensus.test.ts` khoá vĩnh viễn việc công thức fake-UTC tái sinh ở `server/**`. Ràng buộc "không được so thời gian giữa header và cây" ở trên KHÔNG còn hiệu lực.
 
 ---
 
