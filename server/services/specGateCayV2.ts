@@ -53,6 +53,19 @@
 // ⚠ Trị `lowerLimit`/`upperLimit` mà MÁY gửi kèm TỪNG KẾT QUẢ (`ComponentDaDich`)
 // CỐ Ý KHÔNG được dùng làm nguồn giới hạn: máy khai `OK` cũng chính là máy khai
 // giới hạn — chấm lời khai bằng chính lời khai là một cổng rỗng. Xem báo cáo Task 4.
+//
+// ── ⚠⚠⚠ KHỐI C TASK 6 (BG-97) — v2 CHẤM THEO BASE VARIANT ────────────────────
+// v2 chấm theo BASE variant — hợp đồng v2 không mang `variantCode` nên không phân
+// giải được variant; KHÔNG đếm per-bo được (không biết bo thuộc variant nào mà
+// không thêm truy vấn) — lệch spec QĐ-2.6 phần "đếm", khai tại đây và trong báo cáo.
+// Đo được (2026-09-03): `machineDataContractV2` (`server/contracts/machineDataContractV2.ts`)
+// 0 trường `variantCode`; `cayDay.ts` (`ghiComponent`) 0 lần chạm `variantId` khi ghi
+// điểm-đo từ cây dạy của máy ⇒ MỌI point-def sinh từ đường v2 đều là BASE
+// (`variantId IS NULL`), và `traPointDefCapComponent` không lọc theo variant. Vì vậy
+// `variant_point_overrides` (Task 6 v1, `apDungVariantPatch`) KHÔNG được áp ở đây —
+// không phải quên nối, mà là hợp đồng v2 hôm nay không có gì để nối. Ngày hợp đồng
+// mọc trường `variantCode`, cầu chì này phải đỏ (đo lại `machineDataContractV2`,
+// `cayDay.ts`) trước khi coi v2 "chấm đúng variant".
 import {
   evaluatePointResult,
   isPointLimitEvalEnabled,

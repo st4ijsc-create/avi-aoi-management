@@ -41,6 +41,11 @@ import { tachTriDo } from "../db/inspection";
 // module (cùng nguyên tắc dòng trên): `db.traBanDayChoCay` mới là hàm ĐỌC CSDL và
 // nó vẫn đi qua barrel `../db` để lưới mock được.
 import { congSpecTuBanDay } from "../services/specGateCayV2";
+// Khối C Task 6 — MỘT hàm merge patch variant (Doc 55 Item 3), thay khối inline
+// shallow-merge THÔ từng ở đây (không lọc khoá bảo vệ, trôi khỏi bản trong
+// `mergeEffectivePoints`). Hàm THUẦN ⇒ nhập TRỰC TIẾP module, cùng nguyên tắc các
+// dòng import trên (không qua barrel `../db`).
+import { apDungVariantPatch } from "../db/product";
 // ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — cổng "máy tự mâu thuẫn", HAI nguồn KHÁC
 // cổng bản-dạy ở trên (chỉ so máy với CHÍNH máy, không đọc bản dạy). Xem docblock
 // đầu `../services/mayTuMauThuan.ts`.
@@ -2069,11 +2074,10 @@ export async function processInspectionSubmission(
             if (variantOv.action === "exclude") {
               gateLimits = null; // not in the variant's effective set → skip the gate
             } else if (variantOv.action === "override" && gateLimits) {
-              const patch =
-                variantOv.patchJson && typeof variantOv.patchJson === "object"
-                  ? (variantOv.patchJson as Record<string, unknown>)
-                  : {};
-              gateLimits = { ...gateLimits, ...patch } as PointLimitSource;
+              // Khối C Task 6 — dùng CHUNG apDungVariantPatch (lọc khoá bảo vệ),
+              // trước đây shallow-merge THÔ tại chỗ: patch có thể ghi đè
+              // id/deletedAt/... của point-def gốc.
+              gateLimits = apDungVariantPatch(gateLimits, variantOv.patchJson);
             }
           }
           if (gateLimits) {

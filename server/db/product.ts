@@ -3763,6 +3763,19 @@ const VARIANT_PATCH_PROTECTED_KEYS = new Set<string>([
   "createdAt", "updatedAt", "deletedAt", "deletedAtVersion", "lastModifiedAt",
 ]);
 
+/** Doc 55 Item 3 — MỘT bản merge patch variant (lọc khoá bảo vệ). Trước 2026-09-03
+ * đường ingest v1 shallow-merge THÔ (machineApiRouters.ts) còn mergeEffectivePoints
+ * lọc — hai bản đã trôi khỏi nhau; nay cùng gọi hàm này. */
+export function apDungVariantPatch<T extends object>(base: T, patchJson: unknown): T {
+  const safe: Record<string, unknown> = {};
+  if (patchJson && typeof patchJson === "object") {
+    for (const [k, v] of Object.entries(patchJson as Record<string, unknown>)) {
+      if (!VARIANT_PATCH_PROTECTED_KEYS.has(k)) safe[k] = v;
+    }
+  }
+  return { ...base, ...safe };
+}
+
 /**
  * PURE merge (no DB) — the effective point set a variant inspects:
  *   {base points} − {base points a variant EXCLUDES}
@@ -3783,14 +3796,7 @@ export function mergeEffectivePoints(input: EffectivePointsInput): MeasurementPo
     if (!ov) { out.push(bp); continue; }
     if (ov.action === "exclude") continue; // variant drops this base point
     if (ov.action === "override") {
-      const patch = (ov.patchJson && typeof ov.patchJson === "object")
-        ? (ov.patchJson as Record<string, unknown>)
-        : {};
-      const safePatch: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(patch)) {
-        if (!VARIANT_PATCH_PROTECTED_KEYS.has(k)) safePatch[k] = v;
-      }
-      out.push({ ...bp, ...safePatch } as MeasurementPointDef);
+      out.push(apDungVariantPatch(bp, ov.patchJson));
       continue;
     }
     out.push(bp); // unknown action — conservative: keep the base point unmodified

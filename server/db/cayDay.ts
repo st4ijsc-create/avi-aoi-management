@@ -129,6 +129,9 @@ import type { MachineTemplate } from "../contracts/machineTemplateContract";
 // một phụ thuộc runtime nào, và `specGateCayV2.ts` (import ngược `khoaCapComponent`
 // từ đây) không tạo vòng chạy.
 import type { PointLimitSnapshot, PointLimitSource } from "../services/pointResultEvaluator";
+// Task 7 Khối C (QĐ-3) — MỘT nguồn sự thật cho 18 cột giới hạn, thay cho danh
+// sách chép tay trước đây (xem docblock `shared/pointLimitSpec.ts`).
+import { POINT_LIMIT_SPEC } from "@shared/pointLimitSpec";
 
 /** Loại đo mặc định cho một component của cây dạy — xem docblock đầu file. */
 export const LOAI_DO_MAC_DINH_CAY_DAY = "VISUAL" as const;
@@ -846,34 +849,25 @@ export async function traPointDefCapComponent(opts: {
     };
   }
 
+  // ★★★ Khối B Task 4 (BG-92) — GIỚI HẠN ĐÃ DẠY, lấy trong CHÍNH lượt SELECT
+  // này. Một lượt đọc thứ hai (dù cùng khoá) là cách hai bộ lọc bắt đầu lệch
+  // nhau; và `pointDefId` không kèm giới hạn thì spec-gate không có gì để tra.
+  // ⚠ Task 7 Khối C (QĐ-3) — trước bản vá danh sách cột này chép TAY, và dòng
+  // cảnh báo ở đây từng đọc "thiếu một cột ở đây là một chiều giới hạn KHÔNG
+  // BAO GIỜ được chấm, và không lưới nào đỏ vì hàng vẫn ghi". Giờ dựng THẲNG từ
+  // `POINT_LIMIT_SPEC` (MỘT nguồn sự thật, canh bằng
+  // `server/contracts/pointLimitSpecCensus.test.ts`) — thiếu cột là spec thiếu,
+  // và spec thiếu thì census đỏ.
+  const gioiHanProjection = Object.fromEntries(
+    POINT_LIMIT_SPEC.map((m) => [m.field, measurementPointDefs[m.field as keyof typeof measurementPointDefs]]),
+  ) as { [K in (typeof POINT_LIMIT_SPEC)[number]["field"]]: (typeof measurementPointDefs)[K] };
+
   const hang = await d
     .select({
       pointDefId: measurementPointDefs.id,
       captureExtId: productCaptures.captureExtId,
       componentExtId: measurementPointDefs.componentExtId,
-      // ★★★ Khối B Task 4 (BG-92) — GIỚI HẠN ĐÃ DẠY, lấy trong CHÍNH lượt SELECT
-      // này. Một lượt đọc thứ hai (dù cùng khoá) là cách hai bộ lọc bắt đầu lệch
-      // nhau; và `pointDefId` không kèm giới hạn thì spec-gate không có gì để tra.
-      // ⚠ Danh sách cột PHẢI phủ `PointLimitSource` — thiếu một cột ở đây là một
-      // chiều giới hạn KHÔNG BAO GIỜ được chấm, và không lưới nào đỏ vì hàng vẫn ghi.
-      lowerLimit: measurementPointDefs.lowerLimit,
-      upperLimit: measurementPointDefs.upperLimit,
-      unit: measurementPointDefs.unit,
-      heightMin: measurementPointDefs.heightMin,
-      heightMax: measurementPointDefs.heightMax,
-      areaMin: measurementPointDefs.areaMin,
-      areaMax: measurementPointDefs.areaMax,
-      volumeMin: measurementPointDefs.volumeMin,
-      volumeMax: measurementPointDefs.volumeMax,
-      coplanarityMax: measurementPointDefs.coplanarityMax,
-      warpageMax: measurementPointDefs.warpageMax,
-      voidPctMax: measurementPointDefs.voidPctMax,
-      offsetXMax: measurementPointDefs.offsetXMax,
-      offsetYMax: measurementPointDefs.offsetYMax,
-      tiltMax: measurementPointDefs.tiltMax,
-      thicknessMin: measurementPointDefs.thicknessMin,
-      thicknessMax: measurementPointDefs.thicknessMax,
-      criteria: measurementPointDefs.criteria,
+      ...gioiHanProjection,
     })
     .from(measurementPointDefs)
     .innerJoin(productCaptures, eq(productCaptures.id, measurementPointDefs.captureRowId))
