@@ -237,3 +237,27 @@ Khoá hội tụ theo cấp: `(productModelId, surfaceExtId)` → `(surfaceRowId
 - [ ] `npm run check` sạch · census `.max()` và census cửa ingest xanh.
 
 **Còn mở sau khối này:** BG-39 gđ2 + tín hiệu đếm cửa ZIP (**R-BG89-1**, Đ-27) · BG-93 retention `audit_logs` · BG-94 lưới lời văn · BG-36 dead-letter · **Khối C** (UI sản phẩm) · **Khối D** (gộp màn + Playwright, cần tài khoản test).
+
+---
+
+## Ruling R-KB-1 (2026-09-03) — ĐỔI THỨ TỰ: Task 3 → Task 5 → Task 4
+
+**Phát hiện của Task 2 (`ac8d5ab2`, mối lo #3), đã tự kiểm chứng:**
+
+| Bảng | Chiều máy |
+|---|---|
+| `product_surfaces` / `product_positions` / `product_captures` | **KHÔNG CÓ** |
+| `measurement_point_defs` | **có `machineId`** |
+
+Người làm Task 2 **cố ý** để `machineId` NULL, lý do ghi tại `server/db/cayDay.ts`: *"ba cấp trên không có chiều máy nào, nên gắn máy ở riêng cấp bốn tạo một chiều nửa vời."* **Đó là quyết định đúng** — một chiều nửa vời sinh hai nguồn sự thật về phạm vi, tệ hơn không có chiều nào.
+
+**Nhưng hệ quả là thật:** hai máy đẩy cây cho **cùng một product model** sẽ **ghi đè nhau im lặng**.
+
+**Vì sao điều đó chặn Task 4 chứ không chặn Task 3:**
+- **Task 3** chỉ ghi lại *"máy khai gì"*, nối vào hàng capture của chính lượt đó. Cây dạy sai **không** làm hỏng nó.
+- **Task 4** chấm linh kiện **theo giới hạn đã dạy**. Nếu máy B ghi đè bản dạy của máy A thì bo của máy A bị chấm bằng giới hạn của máy B ⇒ **cả hai chiều đều hỏng**: bo xấu đi lọt **và** bo tốt bị đánh trượt. Đó là đúng thứ Khối B sinh ra để chặn.
+
+**Ruling:** làm **Task 3** (Đ-19, không phụ thuộc), rồi **Task 5** (chiều máy + version), rồi **Task 4** (BG-92).
+*Giá nếu sai:* Task 4 lùi một nhịp. *Giá nếu KHÔNG đổi:* spec-gate chạy trên bản dạy có thể của máy khác — một cổng an toàn **cho câu trả lời sai mà vẫn xanh**, đúng lớp lỗi tệ nhất trong dự án này.
+
+⚠ Ràng buộc kèm theo: **cấm bật cửa cây dạy ở môi trường có nhiều hơn một máy** cho tới khi Task 5 xong.
