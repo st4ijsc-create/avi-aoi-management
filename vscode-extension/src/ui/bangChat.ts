@@ -22,7 +22,7 @@ import { dungHtmlBang } from "./htmlBang";
 import { dungNguCanh } from "../loi/nguCanh";
 import { dungYeuCauStream, type CheDoDuAn, type LuotChat } from "../loi/yeuCau";
 import { moDongSse } from "../mang/dongSse";
-import { KHOA_COOKIE } from "../loi/dangNhap";
+import { KHOA_COOKIE, KHOA_TEN_TAI_KHOAN } from "../loi/dangNhap";
 import { gopDanhSachDuAn, type MucDuAn } from "../loi/duAn";
 import { goiTruyVanTrpc } from "../mang/trpc";
 import { laLoi401 } from "../loi/loiHttp";
@@ -223,6 +223,11 @@ export class BangChat {
         this.daSanSang = true;
         void this.napDuAn();
         this.guiCauHoiDangCho();
+        // ★★★ ĐỢT F / TASK 1 — phản ánh trạng thái đăng nhập THẬT ngay khi webview vừa mở: cookie
+        // có thể đã tồn tại từ một phiên VSCode TRƯỚC (SecretStorage sống qua nhiều lần mở lại),
+        // nên "san_sang" không được mặc định giữ nguyên markup "chưa đăng nhập" tĩnh của HTML ban
+        // đầu (xem docblock `daDangNhap` ở `htmlBang.ts`).
+        void this.guiTrangThaiDangNhap();
         return;
       }
       // ★★★ ĐỔI DỰ ÁN ⇒ VỨT ĐỀ XUẤT ĐANG CHỜ. Thẻ duyệt mang nhãn nguồn của dự án nó SINH RA; để
@@ -253,6 +258,11 @@ export class BangChat {
       // ★★★ TASK 4 — nút Dừng. Tên loại tin CỐ Ý khác "huy" (huỷ ĐỀ XUẤT GHI, một khái niệm hoàn
       // toàn khác) — hai nút không được lẫn vào nhau.
       if (m.loai === "dung_hoi") { this.dungVongHienTai(); return; }
+      // ★★★ ĐỢT F / TASK 1 — nút "Đăng nhập"/"Đăng xuất" trong khung. Webview chỉ báo Ý ĐỊNH; đường
+      // đăng nhập THẬT vẫn ĐÚNG MỘT nơi (`aviAiLocal.dangNhap`, `extension.ts`) — không viết luồng
+      // thứ hai ở đây, không tự hỏi tài khoản/mật khẩu trong lớp này.
+      if (m.loai === "dangNhap") { void this.thucHienDangNhap(); return; }
+      if (m.loai === "dangXuat") { void this.thucHienDangXuat(); return; }
     });
   }
 
@@ -471,6 +481,48 @@ export class BangChat {
     this.dsDuAn = gopDanhSachDuAn(local, server);
     this.duAnChon = this.duAnChon ?? this.dsDuAn[0]?.id;
     void this.panel.webview.postMessage({ loai: "duAn", ds: this.dsDuAn });
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 1 — trạng thái đăng nhập THẬT, đọc từ đúng HAI nơi mà `extension.ts` ghi CÙNG
+   * LÚC lúc đăng nhập/đăng xuất: cookie phiên (`KHOA_COOKIE`, SecretStorage — quyết định CÓ/KHÔNG
+   * đăng nhập, đúng nguồn sự thật mà `napDuAn`/`hoi` đã dùng) và tên tài khoản (`KHOA_TEN_TAI_KHOAN`,
+   * `globalState` — KHÔNG phải bí mật, chỉ để HIỂN THỊ). MỘT hàm DUY NHẤT tính trạng thái này, gọi
+   * ở CẢ lúc "san_sang" LẪN sau khi lệnh đăng nhập/đăng xuất chạy xong — để hai đường đó không thể
+   * khai lệch nhau (một chỗ nói "đã đăng nhập", chỗ kia vẫn hiện nút "Đăng nhập").
+   */
+  private async trangThaiDangNhap(): Promise<{ daDangNhap: boolean; tenTaiKhoan: string }> {
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    if (!cookie) return { daDangNhap: false, tenTaiKhoan: "" };
+    return { daDangNhap: true, tenTaiKhoan: this.context.globalState.get<string>(KHOA_TEN_TAI_KHOAN, "") };
+  }
+
+  /** Đọc trạng thái thật (trên) rồi báo cho webview — dùng chung cho "san_sang" và sau đăng nhập/xuất. */
+  private async guiTrangThaiDangNhap(): Promise<void> {
+    const tt = await this.trangThaiDangNhap();
+    void this.panel.webview.postMessage({ loai: "trang_thai_dang_nhap", ...tt });
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 1 / B2+B3 — nút "Đăng nhập" trong khung. Gọi ĐÚNG lệnh `aviAiLocal.dangNhap`
+   * đã đăng ký ở `extension.ts` (KHÔNG viết luồng đăng nhập thứ hai) — lệnh đó tự hỏi tài
+   * khoản/mật khẩu qua `showInputBox({password:true})` (mật khẩu KHÔNG BAO GIỜ đi qua webview) và
+   * tự báo lỗi qua `showErrorMessage` nếu sai/huỷ/mất mạng.
+   *
+   * ⚠⚠⚠ `await` LỆNH XONG, KHÔNG PHẢI "đã gọi lệnh" — `extension.ts` đăng ký lệnh này trả về CHÍNH
+   * promise của luồng đăng nhập (không `void` nó) đúng vì lý do này: nếu chỉ bắn lệnh rồi đọc lại
+   * trạng thái NGAY, ta sẽ đọc trạng thái CŨ (người dùng còn chưa kịp gõ xong tài khoản/mật khẩu) —
+   * đúng lớp lỗi "khai kết cục mà không đọc kết cục" mà dự án này đã trả giá nhiều lần.
+   */
+  private async thucHienDangNhap(): Promise<void> {
+    await vscode.commands.executeCommand("aviAiLocal.dangNhap");
+    await this.guiTrangThaiDangNhap();
+  }
+
+  /** ★★★ B5 — NHÁNH KIA của đăng nhập: nút "Đăng xuất" đưa khung quay lại trạng thái có nút "Đăng nhập". */
+  private async thucHienDangXuat(): Promise<void> {
+    await vscode.commands.executeCommand("aviAiLocal.dangXuat");
+    await this.guiTrangThaiDangNhap();
   }
 
   /**
@@ -822,6 +874,12 @@ export class BangChat {
           loai: "loi",
           thongDiep: "Phiên đăng nhập hết hạn — đã xoá phiên cũ. Chạy lệnh 'AI Local: Đăng nhập' để vào lại.",
         });
+        // ★★★ ĐỢT F / TASK 1 — cookie vừa bị xoá Ở TRÊN nhưng vùng tài khoản trong khung (nút "Đăng
+        // xuất"/tên tài khoản) vẫn đứng yên nếu không ai báo lại: người dùng thấy khung trông như
+        // còn đăng nhập trong khi mọi câu hỏi tiếp theo đều 401 y hệt. Đồng bộ NGAY, không đợi
+        // người dùng tự đóng/mở lại view — đúng "nhánh kia" của B3 cho một phiên chết GIỮA CHỪNG,
+        // không chỉ lúc chủ động bấm "Đăng xuất".
+        void this.guiTrangThaiDangNhap();
         return;
       }
       // ★ CÙNG LÝ LẼ với nhánh huỷ ở trên: lỗi THẬT cũng không đảm bảo là `Error` (một chuỗi trần

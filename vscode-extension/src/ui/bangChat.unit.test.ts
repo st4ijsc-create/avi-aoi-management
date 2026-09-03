@@ -31,6 +31,18 @@ const may = vi.hoisted(() => ({
   >,
   /** ★★★ H3 — thân POST (`dungYeuCauStream(...)`) của TỪNG lượt gọi SSE, theo đúng thứ tự vòng. */
   thanGoi: [] as Array<Record<string, unknown>>,
+  // ★★★ ĐỢT F / TASK 1 — mô phỏng CẶP nơi `extension.ts` ghi CÙNG LÚC lúc đăng nhập/đăng xuất
+  // (`context.globalState`, tên tài khoản — KHÔNG phải bí mật, `may.cookie` ở trên đã đóng vai
+  // SecretStorage). Bản giả `commands.executeCommand` bên dưới tự ĐỔI hai biến này để mô phỏng
+  // ĐÚNG những gì lệnh `aviAiLocal.dangNhap`/`aviAiLocal.dangXuat` thật làm SAU KHI chạy xong —
+  // lưới này đo bangChat.ts ĐỌC LẠI trạng thái sau khi lệnh xong, không đo bản thân extension.ts.
+  globalState: {} as Record<string, unknown>,
+  /** Lệnh nào đã được `vscode.commands.executeCommand` gọi, ĐÚNG THỨ TỰ. */
+  lenhGoi: [] as string[],
+  /** Đăng nhập lần tới có "thành công" không (huỷ/sai mật khẩu ⇒ false, KHÔNG đổi cookie/tên). */
+  dangNhapThanhCong: true,
+  /** Tên tài khoản mà một lượt đăng nhập THÀNH CÔNG sẽ đặt vào `globalState`. */
+  tenSauDangNhap: "nguoi_dung_thu",
 }));
 
 /**
@@ -63,9 +75,38 @@ vi.mock("../mang/toolCucBo", () => ({
   danhSachTepGoiY: async () => [],
 }));
 
+/**
+ * ★★★ ĐỢT F / TASK 1 — không mock được TRƯỚC (không tệp lưới nào ở đây từng bơm "san_sang", nên
+ * `napDuAn()` chưa từng chạy trong lưới này). Thêm ca "đã đăng nhập" cho `trang_thai_dang_nhap`
+ * (cookie CÓ giá trị) sẽ kéo `napDuAn()` gọi THẬT `goiTruyVanTrpc` → `fetch` mạng thật nếu không
+ * chặn ở đây — đúng lớp "lưới không hermetic" mà `../mang/dongSse` ở trên đã né cho SSE. Trả danh
+ * sách RỖNG: đủ để `napDuAn` không ném, không liên quan gì tới trục đo của nhóm ca đăng nhập.
+ */
+vi.mock("../mang/trpc", () => ({
+  goiTruyVanTrpc: async () => ({ projects: [] }),
+}));
+
 vi.mock("vscode", () => ({
   ViewColumn: { Beside: 2 },
   Uri: { file: (p: string) => ({ fsPath: p, toString: () => `file://${p}` }) },
+  // ★★★ ĐỢT F / TASK 1 — bản giả TỐI THIỂU của `aviAiLocal.dangNhap`/`aviAiLocal.dangXuat`. Lưới
+  // này KHÔNG đo `extension.ts` (đã có lưới riêng ở `extension.unit.test.ts`) — nó chỉ cần một
+  // hàm mô phỏng ĐÚNG hai điều đo được ở mã thật: (1) `executeCommand` trả về ĐÚNG promise của cả
+  // luồng lệnh (không resolve sớm), (2) đăng nhập thành công ghi CẢ cookie LẪN tên tài khoản, đăng
+  // xuất xoá CẢ HAI.
+  commands: {
+    executeCommand: async (id: string) => {
+      may.lenhGoi.push(id);
+      if (id === "aviAiLocal.dangNhap" && may.dangNhapThanhCong) {
+        may.cookie = "cookie-gia";
+        may.globalState["aviAiLocal.tenTaiKhoan"] = may.tenSauDangNhap;
+      } else if (id === "aviAiLocal.dangXuat") {
+        may.cookie = undefined;
+        delete may.globalState["aviAiLocal.tenTaiKhoan"];
+      }
+      return undefined;
+    },
+  },
   window: {
     createWebviewPanel: () => ({
       webview: {
@@ -95,13 +136,31 @@ vi.mock("vscode", () => ({
 
 import { BangChat } from "./bangChat";
 import { dungVanBanDayGiaoThucDoc, nhacLaiCuoiCauHoi } from "../loi/dayGiaoThucDoc";
+import { LoiHttp } from "../loi/loiHttp";
 
 /** Kho đề xuất giả — chỉ cần `quen()` để `quenDeXuat` gọi được. */
 const khoGia = { quen: () => undefined, moDiff: async () => undefined, moDiffCucBo: async () => undefined };
 
 function moBang(): Record<string, unknown> {
   BangChat.moHoacHien(
-    { secrets: { get: async () => may.cookie, delete: async () => undefined } } as never,
+    {
+      secrets: {
+        get: async () => may.cookie,
+        delete: async () => {
+          may.cookie = undefined;
+        },
+      },
+      // ★★★ ĐỢT F / TASK 1 — `globalState` giả, đọc/ghi đúng cùng túi `may.globalState` mà
+      // `commands.executeCommand` giả ở trên đổi. `get` PHẢI đồng bộ (đúng chữ ký `Memento.get`
+      // thật) — `trangThaiDangNhap()` trong `bangChat.ts` không `await` nó.
+      globalState: {
+        get: (k: string, mm: unknown) => (k in may.globalState ? may.globalState[k] : mm),
+        update: async (k: string, v: unknown) => {
+          if (v === undefined) delete may.globalState[k];
+          else may.globalState[k] = v;
+        },
+      },
+    } as never,
     khoGia as never,
   );
   // Instance nằm ở field tĩnh `hienTai` — lưới này cố ý soi TRẠNG THÁI RIÊNG, vì thứ cần đo chính
@@ -118,6 +177,10 @@ beforeEach(() => {
   may.thuMucWorkspace = [];
   may.hangDoiSse = [];
   may.thanGoi = [];
+  may.globalState = {};
+  may.lenhGoi = [];
+  may.dangNhapThanhCong = true;
+  may.tenSauDangNhap = "nguoi_dung_thu";
 });
 
 describe("quenDeXuat — xoá trạng thái VÔ ĐIỀU KIỆN (Minor)", () => {
@@ -610,5 +673,134 @@ describe("hoi — PDCA vòng 2 (round 2): ca khong_con_tool sau ≥1 vòng tool 
     expect(vb).not.toContain("avi-tool");
     expect(vb).not.toContain('"tool":"doc_tep"');
     expect(vb).toContain("Tệp này nhạy cảm, không thể đọc.");
+  });
+});
+
+/**
+ * ★★★ ĐỢT F / TASK 1 — ĐĂNG NHẬP NGAY TRONG KHUNG, tầng `bangChat.ts` (phần webview đo ở
+ * `htmlBang.unit.test.ts`). Trục đo là KẾT CỤC: không chỉ "đã gọi lệnh
+ * `aviAiLocal.dangNhap`/`aviAiLocal.dangXuat`" mà là "khung tự đổi ĐÚNG trạng thái sau khi lệnh đó
+ * chạy XONG" — đúng lớp lỗi chữ ký của dự án ("khai kết cục mà không đọc kết cục").
+ */
+describe("ĐỢT F / TASK 1 — trạng thái đăng nhập tự đồng bộ", () => {
+  it("★★★ 'san_sang' lúc CHƯA đăng nhập ⇒ báo daDangNhap:false", async () => {
+    may.cookie = undefined;
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const tt = may.daGui.filter((m) => m.loai === "trang_thai_dang_nhap");
+    expect(tt).toHaveLength(1);
+    expect(tt[0]).toMatchObject({ daDangNhap: false, tenTaiKhoan: "" });
+  });
+
+  it("★★★ NHÁNH KIA: mở lại view với cookie đã có TỪ PHIÊN TRƯỚC ⇒ 'san_sang' báo daDangNhap:true kèm ĐÚNG tên tài khoản đã lưu", async () => {
+    // ★★ Đây chính là ca "khung tự biết mình đã đăng nhập" mà không cần một cú bấm nào trong
+    // phiên NÀY — cookie + tên tài khoản tới từ SecretStorage/globalState của một lần đăng nhập
+    // TRƯỚC (VSCode restart, hoặc mở lại view sau khi ẩn). Không có bước này thì người dùng đã
+    // đăng nhập vẫn thấy nút "Đăng nhập" mỗi lần mở lại.
+    may.cookie = "cookie-cu";
+    may.globalState["aviAiLocal.tenTaiKhoan"] = "an_da_dang_nhap_truoc";
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const tt = may.daGui.filter((m) => m.loai === "trang_thai_dang_nhap");
+    expect(tt).toHaveLength(1);
+    expect(tt[0]).toMatchObject({ daDangNhap: true, tenTaiKhoan: "an_da_dang_nhap_truoc" });
+  });
+
+  it("★★★ B2+B3: bấm 'Đăng nhập' ⇒ gọi ĐÚNG lệnh 'aviAiLocal.dangNhap' đã đăng ký, KHÔNG một lệnh nào khác", async () => {
+    may.cookie = undefined;
+    moBang();
+    may.daGui = [];
+    may.lenhGoi = [];
+
+    may.nhanTin?.({ loai: "dangNhap" });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.lenhGoi).toEqual(["aviAiLocal.dangNhap"]);
+  });
+
+  it("★★★ B3: đăng nhập THÀNH CÔNG ⇒ khung tự báo daDangNhap:true kèm tên tài khoản — KẾT CỤC, không phải chỉ 'đã gọi lệnh'", async () => {
+    may.cookie = undefined;
+    may.dangNhapThanhCong = true;
+    may.tenSauDangNhap = "ky_su_binh";
+    moBang();
+    may.daGui = [];
+
+    may.nhanTin?.({ loai: "dangNhap" });
+    // `thucHienDangNhap` đợi `executeCommand` XONG rồi mới đọc lại trạng thái — nhường vài nhịp.
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const tt = may.daGui.filter((m) => m.loai === "trang_thai_dang_nhap");
+    expect(tt.length).toBeGreaterThan(0);
+    expect(tt[tt.length - 1]).toMatchObject({ daDangNhap: true, tenTaiKhoan: "ky_su_binh" });
+  });
+
+  it("★★ NHÁNH KIA của B3: đăng nhập BỊ HUỶ/SAI (chayDangNhap KHÔNG đặt cookie) ⇒ khung vẫn báo daDangNhap:false, không đoán thành công", async () => {
+    may.cookie = undefined;
+    may.dangNhapThanhCong = false; // mô phỏng Esc/sai mật khẩu/2FA/mất mạng — `chayDangNhap` không lưu gì
+    moBang();
+    may.daGui = [];
+
+    may.nhanTin?.({ loai: "dangNhap" });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.lenhGoi).toEqual(["aviAiLocal.dangNhap"]);
+    const tt = may.daGui.filter((m) => m.loai === "trang_thai_dang_nhap");
+    expect(tt.length).toBeGreaterThan(0);
+    expect(tt[tt.length - 1]).toMatchObject({ daDangNhap: false });
+  });
+
+  it("★★★ B5 nhánh kia: bấm 'Đăng xuất' ⇒ gọi ĐÚNG lệnh 'aviAiLocal.dangXuat', khung quay lại trạng thái CHƯA đăng nhập", async () => {
+    may.cookie = "cookie-gia";
+    may.globalState["aviAiLocal.tenTaiKhoan"] = "ky_su_binh";
+    moBang();
+    may.daGui = [];
+    may.lenhGoi = [];
+
+    may.nhanTin?.({ loai: "dangXuat" });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.lenhGoi).toEqual(["aviAiLocal.dangXuat"]);
+    const tt = may.daGui.filter((m) => m.loai === "trang_thai_dang_nhap");
+    expect(tt.length).toBeGreaterThan(0);
+    expect(tt[tt.length - 1]).toMatchObject({ daDangNhap: false, tenTaiKhoan: "" });
+  });
+
+  it("★★★ phiên chết GIỮA CHỪNG (401) ⇒ khung TỰ đồng bộ về daDangNhap:false, không đợi đóng/mở lại view", async () => {
+    /**
+     * ★★★ Đây là "nhánh kia" của chính chỗ vừa vá: cookie không chỉ mất khi người dùng CHỦ ĐỘNG
+     * bấm "Đăng xuất" (ca trên) — nó còn bị chính `hoi()` xoá khi máy chủ trả 401 giữa một lượt
+     * hỏi (spec §5.1, đã có TỪ TRƯỚC Đợt F). Không đồng bộ lại vùng tài khoản ở đây thì khung vẫn
+     * hiện tên tài khoản + nút "Đăng xuất" cho một phiên ĐÃ CHẾT — một ngõ cụt khác đội lốt "đã
+     * đăng nhập".
+     */
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.cookie = "cookie-gia";
+    may.globalState["aviAiLocal.tenTaiKhoan"] = "ky_su_binh";
+    may.daGui = [];
+    may.hangDoiSse = [
+      async () => {
+        throw new LoiHttp(401, "phiên hết hạn");
+      },
+    ];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "câu hỏi bất kỳ" });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const tt = may.daGui.filter((m) => m.loai === "trang_thai_dang_nhap");
+    expect(tt.length).toBeGreaterThan(0);
+    expect(tt[tt.length - 1]).toMatchObject({ daDangNhap: false });
   });
 });

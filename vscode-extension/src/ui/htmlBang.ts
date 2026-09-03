@@ -1,9 +1,23 @@
 /**
  * Khung HTML của bảng trò chuyện. THUẦN (không import `vscode`) để lưới đo được CSP.
  * Script chỉ chạy bằng `nonce` — không `unsafe-inline`, không nguồn ngoài (nhà máy offline).
+ *
+ * ★★★ ĐỢT F / TASK 1 — `daDangNhap` quyết định markup BAN ĐẦU của vùng đăng nhập (nút "Đăng nhập"
+ * hiện hay ẩn ngay từ HTML tĩnh — xem `htmlBang.unit.test.ts`). Đây CHỈ là trạng thái LÚC DỰNG
+ * TRANG; `bangChat.ts` tự sửa lại NGAY qua tin `trang_thai_dang_nhap` sau khi webview báo
+ * "san_sang" (đúng chỗ nó cũng nạp danh sách dự án) — vì `context.secrets.get` (đọc cookie) là
+ * BẤT ĐỒNG BỘ, constructor của `BangChat` không thể biết trạng thái thật TRƯỚC khi gán
+ * `webview.html`. Rơi về `false` (chưa đăng nhập) là lựa chọn AN TOÀN: nút "Đăng nhập" hiện ra
+ * ngay, không bao giờ dựng một khung trông như "đã đăng nhập" khi chưa chắc chắn.
+ *
+ * ⚠⚠⚠ TÊN TÀI KHOẢN (`#ten-tai-khoan`) KHÔNG BAO GIỜ được đưa vào `dv` để chép thẳng vào chuỗi HTML
+ * này — mọi tệp khác trong `dungHtmlBang` chỉ nhận dữ liệu ĐỘNG qua `postMessage` rồi gán
+ * `textContent` (an toàn khỏi chèn HTML); một tham số chuỗi ghép trực tiếp vào template này phá vỡ
+ * kỷ luật đó và mở một đường tiêm HTML mới. Tên tài khoản luôn tới qua tin `trang_thai_dang_nhap`.
  */
-export function dungHtmlBang(dv: { nonce: string }): string {
+export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): string {
   const n = dv.nonce;
+  const daDangNhap = dv.daDangNhap === true;
   return `<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -13,6 +27,8 @@ export function dungHtmlBang(dv: { nonce: string }): string {
 <style nonce="${n}">
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
          margin: 0; padding: 8px; display: flex; flex-direction: column; height: 100vh; }
+  #vung-tai-khoan { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+  #ten-tai-khoan { opacity: .8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #o-du-an { width: 100%; margin-bottom: 8px; background: var(--vscode-dropdown-background);
              color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border);
              padding: 4px; }
@@ -43,6 +59,16 @@ export function dungHtmlBang(dv: { nonce: string }): string {
 </style>
 </head>
 <body>
+<!-- ★★★ ĐỢT F / TASK 1 — đăng nhập NGAY TRONG KHUNG. Trước đợt này, "chưa đăng nhập" chỉ hiện một
+     dòng lỗi rồi BỎ MẶC (không nút, không ô) — người dùng không biết bảng lệnh ở đâu. Ba phần tử
+     dưới đây LUÔN có mặt trong DOM (đúng khuôn #nut-dung / #the-duyet đã dùng cho mọi trạng thái
+     "mặc định ẩn" khác trong tệp này) — chỉ thuộc tính hidden đổi, KHÔNG BAO GIỜ dựng lại HTML,
+     để một câu hỏi đang gõ dở trong #o-nhap không bị mất khi trạng thái đăng nhập đổi (B4). -->
+<div id="vung-tai-khoan">
+  <button id="nut-dang-nhap"${daDangNhap ? " hidden" : ""}>Đăng nhập</button>
+  <span id="ten-tai-khoan"${daDangNhap ? "" : " hidden"}></span>
+  <button id="nut-dang-xuat"${daDangNhap ? "" : " hidden"}>Đăng xuất</button>
+</div>
 <select id="o-du-an" title="Chọn dự án"></select>
 <div id="hoi-thoai"></div>
 <div id="the-duyet" hidden>
@@ -104,6 +130,18 @@ export function dungHtmlBang(dv: { nonce: string }): string {
   // \`postMessage\`, đúng nguyên tắc "webview chỉ hiển thị + chuyển tiếp" đã áp cho thẻ duyệt.
   const nutDung = document.getElementById("nut-dung");
   nutDung.addEventListener("click", () => vscode.postMessage({ loai: "dung_hoi" }));
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ ĐỢT F / TASK 1 — ĐĂNG NHẬP NGAY TRONG KHUNG. Webview chỉ CHUYỂN TIẾP ý định bấm nút —
+  // đúng nguyên tắc "hiển thị + chuyển tiếp" đã áp cho thẻ duyệt và nút Dừng. Nó KHÔNG BAO GIỜ tự
+  // hỏi tài khoản/mật khẩu: phía extension gọi ĐÚNG lệnh \`aviAiLocal.dangNhap\` đã đăng ký (dùng
+  // \`showInputBox({password:true})\` sẵn có) — mật khẩu không bao giờ chạm tới webview này.
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  const nutDangNhap = document.getElementById("nut-dang-nhap");
+  const tenTaiKhoan = document.getElementById("ten-tai-khoan");
+  const nutDangXuat = document.getElementById("nut-dang-xuat");
+  nutDangNhap.addEventListener("click", () => vscode.postMessage({ loai: "dangNhap" }));
+  nutDangXuat.addEventListener("click", () => vscode.postMessage({ loai: "dangXuat" }));
 
   // ══════════════════════════════════════════════════════════════════════════════════════════
   // ★★★ TASK 5 — @-MENTION. Webview chỉ (1) phát hiện vị trí "@..." đang gõ, (2) hỏi extension
@@ -312,6 +350,19 @@ export function dungHtmlBang(dv: { nonce: string }): string {
       const vt = viTriMention();
       if (!vt) { anMenuMention(); }
       else hienMenuMention(m.ds || []);
+    } else if (m.loai === "trang_thai_dang_nhap") {
+      // ★★★ ĐỢT F / TASK 1 / B3 — KẾT CỤC người dùng thấy: khung TỰ đổi sang trạng thái đã đăng
+      // nhập ngay khi tin này tới, KHÔNG cần đóng/mở lại view. Extension gửi tin này (1) ngay sau
+      // "san_sang" (phản ánh trạng thái THẬT — có thể đã đăng nhập từ phiên VSCode trước) và (2)
+      // sau khi lệnh đăng nhập/đăng xuất chạy XONG (không phải "đã gọi lệnh").
+      // ★★★ B4 — CHỈ đổi ba phần tử của vùng tài khoản, TUYỆT ĐỐI KHÔNG chạm \`oNhap.value\`: đây là
+      // lý do câu hỏi đang gõ dở không bao giờ mất khi trạng thái đăng nhập đổi (không có bản dựng
+      // lại HTML nào ở đây, chỉ đổi thuộc tính \`hidden\`/\`textContent\` của DOM đang sống).
+      const daDangNhap = m.daDangNhap === true;
+      nutDangNhap.hidden = daDangNhap;
+      tenTaiKhoan.hidden = !daDangNhap;
+      nutDangXuat.hidden = !daDangNhap;
+      tenTaiKhoan.textContent = daDangNhap ? (m.tenTaiKhoan || "") : "";
     }
     hoiThoai.scrollTop = hoiThoai.scrollHeight;
   });

@@ -105,6 +105,136 @@ describe("dungHtmlBang", () => {
 });
 
 /**
+ * ★★★ ĐỢT F / TASK 1 — B1: markup TĨNH của vùng đăng nhập phải khác nhau theo `dv.daDangNhap`.
+ * Đây là lưới ĐỎ TRƯỚC KHI CÀI theo đúng khuôn B1 của kế hoạch — chạy trước khi sửa `htmlBang.ts`.
+ */
+describe("dungHtmlBang — ĐỢT F / TASK 1 / B1: vùng đăng nhập", () => {
+  it("★★★ CHƯA đăng nhập ⇒ HTML chứa nút 'Đăng nhập' Ở TRẠNG THÁI HIỆN (không mang `hidden`)", () => {
+    const html = dungHtmlBang({ nonce: "N", daDangNhap: false });
+    expect(html).toContain('<button id="nut-dang-nhap">Đăng nhập</button>');
+  });
+
+  it("★★★ NHÁNH KIA: ĐÃ đăng nhập ⇒ nút 'Đăng nhập' KHÔNG hiện (đúng khuôn `hidden` đã dùng cho #nut-dung/#the-duyet)", () => {
+    const html = dungHtmlBang({ nonce: "N", daDangNhap: true });
+    // KHÔNG chỉ đo "có mặt" — đo ĐÚNG dạng "hiện ra được cho người dùng bấm": bản không-hidden phải
+    // vắng mặt hoàn toàn khi đã đăng nhập.
+    expect(html).not.toContain('<button id="nut-dang-nhap">Đăng nhập</button>');
+    expect(html).toContain('<button id="nut-dang-nhap" hidden>Đăng nhập</button>');
+  });
+
+  it("★ không truyền `daDangNhap` (mặc định) ⇒ rơi về nhánh AN TOÀN 'chưa đăng nhập'", () => {
+    // Constructor của BangChat không thể biết trạng thái thật TRƯỚC khi gán `webview.html` (đọc
+    // cookie là bất đồng bộ) — rơi về "chưa đăng nhập" là lựa chọn fail-closed đúng khuôn `cheDoHienTai`.
+    const html = dungHtmlBang({ nonce: "N" });
+    expect(html).toContain('<button id="nut-dang-nhap">Đăng nhập</button>');
+  });
+
+  it("★★ đã đăng nhập ⇒ vùng tên tài khoản + nút Đăng xuất SẴN CÓ trong DOM (không hidden)", () => {
+    const html = dungHtmlBang({ nonce: "N", daDangNhap: true });
+    expect(html).toContain('<span id="ten-tai-khoan"></span>');
+    expect(html).toContain('<button id="nut-dang-xuat">Đăng xuất</button>');
+  });
+
+  it("★★ chưa đăng nhập ⇒ vùng tên tài khoản + nút Đăng xuất có mặt nhưng ẨN", () => {
+    const html = dungHtmlBang({ nonce: "N", daDangNhap: false });
+    expect(html).toContain('<span id="ten-tai-khoan" hidden></span>');
+    expect(html).toContain('<button id="nut-dang-xuat" hidden>Đăng xuất</button>');
+  });
+});
+
+/**
+ * ★★★ ĐỢT F / TASK 1 / B6 — mật khẩu KHÔNG BAO GIỜ chạm webview. Hai trục đo:
+ *   (1) không có PHẦN TỬ nào để nhập mật khẩu (thực ra: không có `<input>` nào hết — toàn bộ ô
+ *       nhập của khung chat là MỘT `<textarea id="o-nhap">` cho câu hỏi, không phải form đăng nhập);
+ *   (2) dù `dv` bị truyền THÊM một trường trông như mật khẩu (test cố tình ép qua `as never` vì
+ *       kiểu TypeScript của `dungHtmlBang` không hề khai trường đó), hàm THUẦN này cũng không có
+ *       chỗ nào đọc/in nó ra — chỉ `nonce` và `daDangNhap` được đưa vào chuỗi HTML.
+ * ⚠ KHÔNG cấm chuỗi "mật khẩu"/"password" TRẦN: docblock của `htmlBang.ts` cố ý GIẢI THÍCH vì sao
+ *   mật khẩu không đi qua đây (yêu cầu bình luận nói VÌ SAO của cả dự án) — cấm cả chuỗi sẽ biến
+ *   một bình luận đúng đắn thành lỗi lưới. Trục đo đúng là HÀNH VI (phần tử/giá trị), không phải
+ *   một từ khoá xuất hiện trong bình luận giải thích.
+ */
+describe("dungHtmlBang — ĐỢT F / TASK 1 / B6: mật khẩu không qua webview", () => {
+  it("★★★ KHÔNG có phần tử <input> nào trong HTML dựng ra (cả hai trạng thái đăng nhập)", () => {
+    expect(dungHtmlBang({ nonce: "N", daDangNhap: false })).not.toContain("<input");
+    expect(dungHtmlBang({ nonce: "N", daDangNhap: true })).not.toContain("<input");
+  });
+
+  it("★★★ KHÔNG có thuộc tính type=\"password\" ở bất kỳ đâu", () => {
+    expect(dungHtmlBang({ nonce: "N", daDangNhap: false })).not.toMatch(/type=["']password["']/i);
+    expect(dungHtmlBang({ nonce: "N", daDangNhap: true })).not.toMatch(/type=["']password["']/i);
+  });
+
+  it("★★★ CỐ TÌNH truyền thêm một trường trông như mật khẩu vào `dv` ⇒ HTML dựng ra vẫn KHÔNG in nó ra", () => {
+    // `as never` để vượt qua TypeScript — mô phỏng đúng câu hỏi census muốn trả lời: "dù có ai đó
+    // (nhầm lẫn hoặc cố ý) nhét thêm một trường mật khẩu vào tham số, hàm này có LỠ in nó ra không?"
+    const html = dungHtmlBang({ nonce: "N", daDangNhap: true, matKhau: "MAT_KHAU_THAT_KHONG_DUOC_LO" } as never);
+    expect(html).not.toContain("MAT_KHAU_THAT_KHONG_DUOC_LO");
+  });
+});
+
+/**
+ * ★★★ ĐỢT F / TASK 1 / B3+B4+B5 — KẾT CỤC thật, chạy script THẬT của webview (cùng khuôn "CHỐNG
+ * BẤM HAI LẦN"/"nút Dừng"/"@-mention" ở trên). Đây là lớp lỗi chữ ký của dự án: "khai kết cục mà
+ * không đọc kết cục" — nên nhóm ca này đo DOM THẬT đổi (thuộc tính `hidden`, `textContent`), không
+ * chỉ đo "đã gửi đúng tin nhắn".
+ */
+describe("webview — ĐỢT F / TASK 1: khung TỰ đổi trạng thái đăng nhập, không cần đóng/mở lại", () => {
+  it("★★★ B3: nhận `trang_thai_dang_nhap` (đã đăng nhập) ⇒ ẨN nút Đăng nhập, HIỆN tên tài khoản + nút Đăng xuất", () => {
+    // ⚠ Trạng thái `hidden` BAN ĐẦU của DOM giả (`PhanTuGia.hidden = false` mặc định, xem docblock
+    //   `PhanTuGia`) không mô phỏng thuộc tính `hidden` tĩnh trong HTML — cái đó đã có lưới riêng
+    //   ("dungHtmlBang — B1" ở trên). Ca này CHỈ đo phần ĐỘNG: script phải TỰ đổi ba phần tử khi
+    //   nhận tin, không đoán qua trạng thái mặc định của DOM giả.
+    const w = chayWebview();
+    w.banTin({ loai: "trang_thai_dang_nhap", daDangNhap: true, tenTaiKhoan: "ky_su_an" });
+
+    expect(w.nut("nut-dang-nhap").hidden).toBe(true);
+    expect(w.nut("ten-tai-khoan").hidden).toBe(false);
+    expect(w.nut("ten-tai-khoan").textContent).toBe("ky_su_an");
+    expect(w.nut("nut-dang-xuat").hidden).toBe(false);
+  });
+
+  it("★★★ B5 nhánh kia: nhận `trang_thai_dang_nhap` (đã đăng xuất) ⇒ khung quay lại HIỆN nút Đăng nhập, ẨN tên tài khoản + nút Đăng xuất", () => {
+    const w = chayWebview();
+    // Bắt đầu từ trạng thái ĐÃ đăng nhập để chắc chắn đo được một cú CHUYỂN NGƯỢC, không phải tình
+    // cờ khớp trạng thái ban đầu của DOM giả.
+    w.banTin({ loai: "trang_thai_dang_nhap", daDangNhap: true, tenTaiKhoan: "ky_su_an" });
+    expect(w.nut("nut-dang-nhap").hidden).toBe(true);
+
+    w.banTin({ loai: "trang_thai_dang_nhap", daDangNhap: false, tenTaiKhoan: "" });
+
+    expect(w.nut("nut-dang-nhap").hidden).toBe(false);
+    expect(w.nut("ten-tai-khoan").hidden).toBe(true);
+    expect(w.nut("ten-tai-khoan").textContent).toBe("");
+    expect(w.nut("nut-dang-xuat").hidden).toBe(true);
+  });
+
+  it("★★★ B4: câu hỏi đang GÕ DỞ trong ô nhập KHÔNG bị mất khi trạng thái đăng nhập đổi", () => {
+    const w = chayWebview();
+    const oNhap = w.nut("o-nhap");
+    oNhap.value = "câu hỏi đang gõ dở, chưa bấm Gửi";
+
+    w.banTin({ loai: "trang_thai_dang_nhap", daDangNhap: true, tenTaiKhoan: "ky_su_an" });
+
+    expect(oNhap.value).toBe("câu hỏi đang gõ dở, chưa bấm Gửi");
+  });
+
+  it("★★ bấm nút 'Đăng nhập' ⇒ extension nhận ĐÚNG MỘT tin `dangNhap`", () => {
+    const w = chayWebview();
+    w.nut("nut-dang-nhap").bam();
+    expect(w.daGui.filter((m) => m.loai === "dangNhap")).toHaveLength(1);
+  });
+
+  it("★★ bấm nút 'Đăng xuất' ⇒ extension nhận ĐÚNG MỘT tin `dangXuat`, KHÔNG lẫn với `dangNhap`", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "trang_thai_dang_nhap", daDangNhap: true, tenTaiKhoan: "ky_su_an" });
+    w.nut("nut-dang-xuat").bam();
+    expect(w.daGui.filter((m) => m.loai === "dangXuat")).toHaveLength(1);
+    expect(w.daGui.filter((m) => m.loai === "dangNhap")).toHaveLength(0);
+  });
+});
+
+/**
  * ★★★ CHỐNG BẤM HAI LẦN — LƯỚI **CHẠY THẬT** SCRIPT CỦA WEBVIEW, KHÔNG SOI CHỮ.
  *
  * ⚠ Mọi ca ở trên khẳng định HTML **CHỨA** một chuỗi nào đó — đo CƠ CHẾ, không đo KẾT CỤC. Với một

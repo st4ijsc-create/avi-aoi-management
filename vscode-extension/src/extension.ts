@@ -3,7 +3,7 @@
  */
 import * as vscode from "vscode";
 import { dangNhap } from "./mang/dangNhap";
-import { KHOA_COOKIE } from "./loi/dangNhap";
+import { KHOA_COOKIE, KHOA_TEN_TAI_KHOAN } from "./loi/dangNhap";
 import { BangChat } from "./ui/bangChat";
 import { BangChatViewProvider, MA_VIEW_THANH_BEN } from "./ui/bangChatView";
 import { KhoDeXuat, SCHEME } from "./ui/diffDeXuat";
@@ -36,6 +36,10 @@ async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
       return;
     }
     await context.secrets.store(KHOA_COOKIE, cookie);
+    // ★★★ ĐỢT F / TASK 1 — `globalState`, KHÔNG PHẢI SecretStorage: tên tài khoản không phải bí
+    // mật, chỉ để khung chat HIỂN THỊ (xem `bangChat.ts#trangThaiDangNhap`). Ghi CÙNG LÚC với cookie
+    // ở trên để hai giá trị không bao giờ lệch nhau (một cái có, một cái không).
+    await context.globalState.update(KHOA_TEN_TAI_KHOAN, ket.ten || ten);
     void vscode.window.showInformationMessage(`AI Local: đã đăng nhập (${ket.ten || ten}).`);
   } catch (e) {
     void vscode.window.showErrorMessage(`Không nối được máy chủ: ${(e as Error).message}`);
@@ -148,9 +152,16 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("aviAiLocal.moBangChat", () => BangChat.moHoacHien(context, khoDeXuat)),
-    vscode.commands.registerCommand("aviAiLocal.dangNhap", () => void chayDangNhap(context)),
+    // ★★★ ĐỢT F / TASK 1 — TRẢ VỀ PROMISE, KHÔNG `void` NÓ. `bangChat.ts` (nút "Đăng nhập" trong
+    // khung) gọi lệnh này qua `executeCommand` rồi ĐỢI nó xong để đọc lại trạng thái đăng nhập thật
+    // và tự cập nhật giao diện (B3) — `void chayDangNhap(context)` (bản cũ) khiến hàm callback trả
+    // `undefined` NGAY LẬP TỨC thay vì trả promise của luồng đăng nhập, nên `executeCommand` sẽ
+    // resolve TRƯỚC KHI người dùng kịp gõ xong tài khoản/mật khẩu — bên gọi tưởng đã xong mà chưa.
+    vscode.commands.registerCommand("aviAiLocal.dangNhap", () => chayDangNhap(context)),
     vscode.commands.registerCommand("aviAiLocal.dangXuat", async () => {
       await context.secrets.delete(KHOA_COOKIE);
+      // Xoá CÙNG LÚC với cookie — cùng lý do đã ghi CÙNG LÚC lúc đăng nhập (xem `chayDangNhap`).
+      await context.globalState.update(KHOA_TEN_TAI_KHOAN, undefined);
       void vscode.window.showInformationMessage("AI Local: đã đăng xuất.");
     }),
     vscode.commands.registerCommand("aviAiLocal.suaDoanChon", () => void chaySuaDoanChon(context, khoDeXuat)),

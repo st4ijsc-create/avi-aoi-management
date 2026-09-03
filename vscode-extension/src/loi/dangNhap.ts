@@ -9,6 +9,14 @@ export const TEN_COOKIE = "app_session_id";
 /** Khoá cất cookie phiên trong SecretStorage. Khai MỘT chỗ — mọi tệp khác import từ đây. */
 export const KHOA_COOKIE = "aviAiLocal.cookie";
 
+/**
+ * ★★★ ĐỢT F / TASK 1 — khoá cất TÊN TÀI KHOẢN trong `globalState` (KHÔNG phải SecretStorage: tên
+ * tài khoản không phải bí mật, chỉ dùng để HIỂN THỊ trong khung chat sau khi đăng nhập — xem
+ * `bangChat.ts#trangThaiDangNhap`). Khai chung MỘT chỗ với `KHOA_COOKIE` vì hai giá trị này luôn
+ * đổi CÙNG LÚC (đăng nhập ghi cả hai, đăng xuất xoá cả hai — `extension.ts`).
+ */
+export const KHOA_TEN_TAI_KHOAN = "aviAiLocal.tenTaiKhoan";
+
 export type KetQuaDangNhap =
   | { loai: "ok"; ten: string }
   | { loai: "can2fa" }
