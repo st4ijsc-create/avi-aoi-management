@@ -3,14 +3,15 @@
  *
  * Tab "Cây dạy" của `ProductModels.tsx`: chọn MÁY đã dạy sản phẩm này → xem cây
  * surface→position→capture (`getTree`) → chọn một capture → xem bảng linh kiện của capture đó
- * (`ComponentLimitsTable`, đọc `listComponents`). ĐỌC-CHỈ — mọi ghi giới hạn vẫn qua
- * `measurementPoint.update`/`setLimitsBatch` (QĐ-5), Task 11 gắn dialog (R-KC-1: canvas nằm
- * TRONG dialog đó, KHÔNG ở tab này).
+ * (`ComponentLimitsTable`, đọc `listComponents`). Đường ĐỌC-CHỈ như cũ — mọi ghi giới hạn qua
+ * `measurementPoint.setLimitsBatch` (QĐ-5, Task 8), gọi từ `ComponentLimitsDialog` (Task 11,
+ * R-KC-1: canvas nằm TRONG dialog đó, KHÔNG ở tab này — tab chỉ giữ state "đang sửa hàng nào").
  *
  * Ba quyết định chủ dự án (2026-09-03) hiện thực ở đây:
- *   1. Nguồn giới hạn = kỹ sư dạy trên hệ — bảng chỉ ĐỌC, nút "Dạy giới hạn" là chỗ trống.
+ *   1. Nguồn giới hạn = kỹ sư dạy trên hệ — bảng ĐỌC, nút "Dạy giới hạn" mở `ComponentLimitsDialog`
+ *      (Task 11 nối — trước đó là no-op).
  *   2. Bảng chỉ phơi 5 cột giới hạn ĐANG DÙNG (xem `teachTreeLogic.ts`).
- *   3. Bảng là màn chính; canvas KHÔNG nhúng ở đây (Task 11 mở trong dialog).
+ *   3. Bảng là màn chính; canvas KHÔNG nhúng ở đây (nằm trong `ComponentLimitsDialog`).
  *
  * ⚠ BG-105 — nhãn trạng thái "đã dạy / chưa dạy" là phân loại CẤU HÌNH (`coGioiHan`), KHÔNG
  * phải "bo này chấm được không" (spec-gate, trục khác — xem `teachTreeLogic.ts` đầu file).
@@ -32,7 +33,8 @@ import {
 } from "@/components/ui/accordion";
 import { EmptyState } from "@/components/EmptyState";
 import { ComponentLimitsTable } from "./ComponentLimitsTable";
-import { layMayMacDinh } from "./teachTreeLogic";
+import { ComponentLimitsDialog } from "./ComponentLimitsDialog";
+import { layMayMacDinh, type ComponentLimitsRow } from "./teachTreeLogic";
 
 export interface TeachTreeTabProps {
   productModelId: number;
@@ -42,6 +44,8 @@ export function TeachTreeTab({ productModelId }: TeachTreeTabProps) {
   const { t } = useTranslation();
   const [selectedMachineId, setSelectedMachineId] = useState<number | null>(null);
   const [selectedCaptureRowId, setSelectedCaptureRowId] = useState<number | null>(null);
+  // Task 11 — hàng (đơn hoặc chọn-nhiều) đang mở dialog "Dạy giới hạn". `null` = dialog đóng.
+  const [dangSuaRows, setDangSuaRows] = useState<ComponentLimitsRow[] | null>(null);
 
   const machinesQuery = trpc.cayDay.listMachinesForProduct.useQuery(
     { productModelId },
@@ -177,11 +181,24 @@ export function TeachTreeTab({ productModelId }: TeachTreeTabProps) {
         <ComponentLimitsTable
           captureRowId={selectedCaptureRowId}
           stats={statsQuery.data ?? null}
-          // Task 11 nối dialog dạy giới hạn thật — Task 10 chỉ ĐỌC (spec QĐ-4).
-          onEdit={() => {}}
-          onBatchEdit={() => {}}
+          onEdit={(row) => setDangSuaRows([row])}
+          onBatchEdit={(rows) => setDangSuaRows(rows)}
         />
       )}
+
+      {/* Task 11 (R-KC-1) — dialog dạy giới hạn (đơn + hàng loạt), canvas TRONG dialog, không ở
+          tab này. `captureRowId`/`machineId` neo vào lựa chọn HIỆN TẠI của tab để invalidate đúng
+          truy vấn Task 9 sau khi lưu (`keHoachLamMoiSauLuu`, `componentLimitsDialogLogic.ts`). */}
+      <ComponentLimitsDialog
+        rows={dangSuaRows ?? []}
+        captureRowId={selectedCaptureRowId ?? 0}
+        productModelId={productModelId}
+        machineId={selectedMachineId ?? 0}
+        open={dangSuaRows != null}
+        onOpenChange={(o) => {
+          if (!o) setDangSuaRows(null);
+        }}
+      />
     </div>
   );
 }

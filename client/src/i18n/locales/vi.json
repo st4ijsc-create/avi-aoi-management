@@ -19938,5 +19938,22 @@
     "unit": "Đơn vị",
     "heightMin": "Cao tối thiểu",
     "heightMax": "Cao tối đa"
+  },
+  "teachLimits": {
+    "tieuDeDon": "Dạy giới hạn — {{ten}}",
+    "tieuDeHangLoat": "Dạy giới hạn hàng loạt ({{n}} linh kiện)",
+    "moTaDon": "Nhập giới hạn cho linh kiện này. Hình học (vị trí/ROI) do máy dạy — không sửa ở đây.",
+    "moTaHangLoat": "Giá trị bạn nhập sẽ áp dụng cho TẤT CẢ {{n}} linh kiện đã chọn — bỏ trống trường nào thì trường đó GIỮ NGUYÊN theo từng linh kiện.",
+    "khongCoAnh": "Máy chưa gửi ảnh/toạ độ ROI tham chiếu cho linh kiện này.",
+    "canDuyetTieuDe": "Chưa lưu",
+    "canDuyetLifecycle": "Chưa lưu — sản phẩm đang hoạt động, thay đổi giới hạn phải qua hàng đợi duyệt ngưỡng",
+    "canDuyetChuongTrinh": "Chưa lưu — sản phẩm đã có chương trình kiểm phát hành, thay đổi giới hạn phải qua hàng đợi duyệt ngưỡng",
+    "errSoKhongHopLe": "Không phải một số hợp lệ",
+    "errDonViQuaDai": "Đơn vị tối đa 20 ký tự",
+    "errFormKhongHopLe": "Sửa các trường đang báo lỗi trước khi lưu",
+    "errChuaNhapGi": "Chưa nhập trường nào để lưu",
+    "lyDoDoi": "Lý do đổi (không bắt buộc)",
+    "luuHangLoat": "Lưu cho {{n}} linh kiện",
+    "daLuu": "Đã lưu {{soDiem}} điểm"
   }
 }

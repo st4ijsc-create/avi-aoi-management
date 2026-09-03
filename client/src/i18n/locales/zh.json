@@ -19966,5 +19966,22 @@
     "unit": "单位",
     "heightMin": "最小高度",
     "heightMax": "最大高度"
+  },
+  "teachLimits": {
+    "tieuDeDon": "示教限值 — {{ten}}",
+    "tieuDeHangLoat": "批量示教限值（{{n}} 个元件）",
+    "moTaDon": "为该元件输入限值。几何信息（位置/ROI）由设备示教，此处不可编辑。",
+    "moTaHangLoat": "您输入的值将应用于所有已选的 {{n}} 个元件——留空的字段将保持每个元件原有值不变。",
+    "khongCoAnh": "设备尚未发送该元件的参考图像/ROI 坐标。",
+    "canDuyetTieuDe": "尚未保存",
+    "canDuyetLifecycle": "尚未保存——产品处于在产状态，限值更改必须经过阈值审批队列",
+    "canDuyetChuongTrinh": "尚未保存——产品已有已发布的检测程序，限值更改必须经过阈值审批队列",
+    "errSoKhongHopLe": "不是有效数字",
+    "errDonViQuaDai": "单位最多 20 个字符",
+    "errFormKhongHopLe": "请先修正有错误提示的字段再保存",
+    "errChuaNhapGi": "未输入任何要保存的字段",
+    "lyDoDoi": "更改原因（可选）",
+    "luuHangLoat": "保存至 {{n}} 个元件",
+    "daLuu": "已保存 {{soDiem}} 个点"
   }
 }
