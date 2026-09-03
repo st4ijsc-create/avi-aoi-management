@@ -713,4 +713,20 @@ describe("webview — ĐỢT F / TASK 3 / B4: 'khoi_phuc_hoi_thoai' THAY THẾ n
     expect(w.nut("the-duyet").hidden).toBe(true);
     expect(w.nut("nut-dung").hidden).toBe(true);
   });
+
+  /**
+   * ★★★ BẢN VÁ (2026-09-03, phán quyết cùng Đợt F / Task 4) — "Lịch sử" KHÔNG được xoá câu đang gõ
+   * dở: Task 1 đã đặt nguyên tắc "câu hỏi đang gõ dở KHÔNG được mất"; xem lại một hội thoại cũ rồi
+   * quay ra mà mất nháp là phá đúng nguyên tắc đó. Ca này là NHÁNH KIA của ca "chat_moi xoá HẾT ...
+   * câu gõ dở" ở describe B3 phía trên — cùng một hành động của người dùng (đang gõ dở một câu),
+   * hai lối vào khác nhau, hai kết cục PHẢI khác nhau.
+   */
+  it("★★★ NHÁNH KIA của 'chat_moi': đang gõ dở một câu ⇒ chọn 'Lịch sử' ⇒ nháp CÒN NGUYÊN", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "câu đang gõ dở, chưa bấm Gửi";
+
+    w.banTin({ loai: "khoi_phuc_hoi_thoai", luot: [{ vaiTro: "user", noiDung: "Câu hỏi B" }] });
+
+    expect(w.nut("o-nhap").value).toBe("câu đang gõ dở, chưa bấm Gửi");
+  });
 });

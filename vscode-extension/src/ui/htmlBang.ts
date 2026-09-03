@@ -280,19 +280,24 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
    * SỰ trắng) VÀ "Lịch sử" (B4 — khung sắp vẽ lại nội dung của MỘT HỘI THOẠI KHÁC). Xoá bong bóng
    * của phiên VỪA RỜI trước khi (có thể) vẽ bong bóng mới — không thì hai cuộc hội thoại chồng lên
    * nhau trên cùng một khung. Đóng luôn thẻ duyệt/nút Dừng còn treo của phiên CŨ: cả hai đều thuộc
-   * về phiên vừa rời, không thuộc phiên mới/phiên vừa chọn. Xoá luôn câu đang gõ dở trong ô nhập —
-   * đúng nghĩa "phiên trắng"/"chuyển sang hội thoại khác", KHÁC hẳn tin \`trang_thai_dang_nhap\`
-   * (Task 1 / B4) chỉ đổi trạng thái đăng nhập trong khi hội thoại vẫn nguyên — hai tin khác mục
-   * đích nên được phép khác hành vi với ô nhập.
+   * về phiên vừa rời, không thuộc phiên mới/phiên vừa chọn.
+   *
+   * ★★★ BẢN VÁ (2026-09-03, phán quyết cùng Đợt F / Task 4) — \`xoaCauDangGo\` tách RIÊNG hành vi
+   * với ô nhập giữa hai nơi gọi hàm này: "Chat mới" (\`chat_moi\`) truyền \`true\` — bắt đầu phiên MỚI
+   * hợp lý đi kèm khung TRẮNG THẬT, kể cả câu đang gõ dở. "Lịch sử" (\`khoi_phuc_hoi_thoai\`) truyền
+   * \`false\` — Task 1 đã đặt nguyên tắc "câu hỏi đang gõ dở KHÔNG được mất" (xem hàng rào B4 ở nhánh
+   * \`trang_thai_dang_nhap\` bên dưới); xem lại một hội thoại cũ rồi quay ra mà nháp đang gõ đã biến
+   * mất là phá đúng nguyên tắc đó — người dùng chỉ đang XEM, không hề chủ động "rời phiên" như
+   * "Chat mới".
    */
-  function xoaKhungChoPhienKhac() {
+  function xoaKhungChoPhienKhac(xoaCauDangGo) {
     hoiThoai.innerHTML = "";
     khoiTraLoi = null;
     theDuyet.hidden = true;
     moKhoaNutDuyet();
     nutDung.hidden = true;
     anMenuMention();
-    oNhap.value = "";
+    if (xoaCauDangGo) oNhap.value = "";
   }
 
   window.addEventListener("message", (e) => {
@@ -384,8 +389,9 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       nutDangXuat.hidden = !daDangNhap;
       tenTaiKhoan.textContent = daDangNhap ? (m.tenTaiKhoan || "") : "";
     } else if (m.loai === "chat_moi") {
-      // ★★★ ĐỢT F / TASK 3 / B3 — "Chat mới": khung TRẮNG, không còn dấu vết gì của phiên cũ.
-      xoaKhungChoPhienKhac();
+      // ★★★ ĐỢT F / TASK 3 / B3 — "Chat mới": khung TRẮNG, không còn dấu vết gì của phiên cũ, KỂ CẢ
+      // câu đang gõ dở (\`true\` — xem docblock \`xoaKhungChoPhienKhac\`, bản vá 2026-09-03).
+      xoaKhungChoPhienKhac(true);
     } else if (m.loai === "khoi_phuc_hoi_thoai") {
       // ★★★ ĐỢT F / TASK 2 / B5 (khởi động) + TASK 3 / B4 ("Lịch sử") — DÙNG CHUNG một tin: khởi
       // động khi khung vừa mở (đọc hội thoại GẦN NHẤT từ \`workspaceState\`) VÀ khi người dùng chọn
@@ -394,7 +400,10 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // trước thì bong bóng của hai hội thoại chồng lên nhau). Vẽ lại từng lượt bằng ĐÚNG \`themLuot\`
       // mà \`gui()\`/luồng token dùng, để người dùng thấy đúng những gì đã có, không chỉ khôi phục
       // NGẦM trong bộ nhớ của extension.
-      xoaKhungChoPhienKhac();
+      // ★★★ BẢN VÁ (2026-09-03) — \`false\`: KHÔNG xoá câu đang gõ dở. Người dùng chỉ đang XEM một
+      // hội thoại cũ (hay khung vừa khởi động, lúc \`o-nhap\` chắc chắn còn rỗng) — không phải chủ
+      // động "rời phiên" như "Chat mới", nên nháp đang gõ (nếu có) phải CÒN NGUYÊN sau khi xem xong.
+      xoaKhungChoPhienKhac(false);
       for (const l of m.luot || []) themLuot(l.vaiTro === "user" ? "Bạn" : "AI Local", l.noiDung);
     }
     hoiThoai.scrollTop = hoiThoai.scrollHeight;
