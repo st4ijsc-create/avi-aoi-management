@@ -89,6 +89,12 @@ const MIEN_TRU: Readonly<Record<string, string>> = {
 const GHIM_TEN_CUA = [
   "submitInspection",
   "submitInspectionBatch",
+  // ★ Khối B Task 2 (2026-09-03) — cửa ĐẨY CÂY DẠY (cấu hình máy → hệ). Vị từ
+  //   `laTenCuaIngest` (`/^submit/i`) BẮT nó, đúng như thiết kế: một cửa `submit*`
+  //   MỚI không được phép ra đời NGOÀI census. Nó thuộc HỌ HỢP ĐỒNG KHÁC
+  //   (`machineTemplateContract`) nên nằm ở sổ miễn trừ điểm-quyết-định-phiên-bản
+  //   kèm lý do — xem `MIEN_TRU_QUYET_DINH_PHIEN_BAN.submitMachineTemplate`.
+  "submitMachineTemplate",
   "submitProcessResult",
   "submitProcessResultBatch",
   "syncEdgeResults",
@@ -99,8 +105,9 @@ const GHIM_TEN_CUA = [
 /** Hai cửa PHẢI gác thẳng (thuộc đúng hợp đồng cutover v1.x-phẳng/v2.0-cây). */
 const GHIM_DA_GAC = ["submitInspection", "submitInspectionBatch"].sort();
 
-/** Năm cửa MIỄN TRỪ có lý do (ba hợp đồng khác / `presign` không payload / `commit` LỖ THẬT CHƯA VÁ). */
+/** SÁU cửa MIỄN TRỪ có lý do (BỐN hợp đồng khác — kể cả cây DẠY của Khối B / `presign` không payload / `commit` LỖ THẬT CHƯA VÁ). */
 const GHIM_MIEN_TRU = [
+  "submitMachineTemplate",
   "submitProcessResult",
   "submitProcessResultBatch",
   "syncEdgeResults",

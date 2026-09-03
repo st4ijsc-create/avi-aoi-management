@@ -386,13 +386,15 @@ export const KIEM_KE_PRESIGN: readonly MucCapChuoi[] = [
  * `KIEM_KE_SUBMIT_INSPECTION_CORE`. **KHÔNG có miễn trừ** — mọi lá chuỗi đều có
  * `.max()`, kể cả các lá đi cột `text` (chúng lấy trần VỆ SINH 1000, xem dưới).
  *
- * ⚠ ĐÂY LÀ HỢP ĐỒNG CHƯA CÓ CỬA. Task 1 chỉ khai hình dạng; `.mutation()` tiêu
- * thụ nó là Task 2. Vì vậy bảng này CỐ Ý **không** được thêm vào
- * `DANH_SACH_SCHEMA_INGEST`/`CUA_TOI_TEN_SCHEMA`
- * (`capChuoiVarcharDuongIngestMacDinh.test.ts`): hai danh sách đó được đối
- * chiếu với tập cửa THẬT do `quetCuaIngest` quét ra từ AST router — thêm vào
- * khi chưa có cửa sẽ làm §0b ĐỎ vì một lý do SAI. **Task 2 phải thêm** khi cửa
- * ra đời; lưới tiêu thụ hôm nay là `machineTemplateContract.test.ts`.
+ * ★ CỬA ĐÃ RA ĐỜI (Task 2, 2026-09-03): `machineApiRouter.submitMachineTemplate`
+ * (`.input(submitMachineTemplateCoreObject)`, trường `template` mang NGUYÊN VĂN
+ * `machineTemplateContract`). Vì vậy hai danh sách
+ * `CUA_TOI_TEN_SCHEMA`/`DANH_SACH_SCHEMA_INGEST`
+ * (`capChuoiVarcharDuongIngestMacDinh.test.ts`) NAY ĐÃ có `machineTemplateContract`
+ * và `submitMachineTemplateCoreObject` — 6 schema → **8**. Cảnh báo của Task 1
+ * ("bảng này CỐ Ý chưa vào danh sách vì CHƯA CÓ CỬA; thêm sớm sẽ làm §0b ĐỎ vì lý
+ * do SAI") ĐÃ ĐƯỢC THỰC THI, không còn là việc treo. Lưới tiêu thụ: cả
+ * `machineTemplateContract.test.ts` LẪN census đường ingest.
  *
  * (A) KHỚP CỘT THẬT — đo `information_schema.columns`, vai **`avi_app`**,
  *     2026-09-03, CÙNG con số ở CẢ HAI DB (`current_database()` =

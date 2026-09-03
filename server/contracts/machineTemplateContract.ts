@@ -9,9 +9,10 @@
  * `machineApiRouters.ts` (configSync) gần như toàn `.query()` ⇒ **máy KÉO cấu
  * hình TỪ hệ**. Quyết định của chủ dự án 2026-09-03 chọn hướng (a): **máy dạy
  * xong thì ĐẨY cây + UUID của CHÍNH NÓ lên, hệ soi gương máy**. File này chỉ
- * là HỢP ĐỒNG (hình dạng) — **chưa có cửa nào tiêu thụ**; cửa `.mutation()` và
- * đường ghi bốn bảng là Task 2. Đừng suy ra từ file này rằng đường ghi đã tồn
- * tại.
+ * là HỢP ĐỒNG (hình dạng). ★ Task 2 (2026-09-03) ĐÃ mở cửa tiêu thụ:
+ * `machineApiRouter.submitMachineTemplate` (`server/routers/machineApiRouters.ts`,
+ * `.input(submitMachineTemplateCoreObject)`) + đường ghi bốn bảng
+ * `ghiCayDay` (`server/db/cayDay.ts`).
  *
  * ── ⚠ BẪY KHOÁ NỐI — BỐN CẤP KHÔNG NỐI CÙNG MỘT KIỂU ───────────────────────
  * Đo đủ bốn cấp trên HAI mẫu thật (`template-sync-sample.json` = cấu hình,
@@ -78,18 +79,37 @@ import { z } from "zod";
  * Bốn trường BẮT BUỘC: mẫu thật có đủ 16/16, và ROI thiếu một cạnh không dựng
  * được vùng kiểm nào — thiếu là lỗi hợp đồng, không phải chỗ để suy đoán.
  *
- * ⚠ Cột đích `measurement_point_defs.roiX/roiY/roiWidth/roiHeight` là `integer`.
- * Hợp đồng nhận `z.number()` (KHÔNG `.int()`) vì mẫu thật chỉ chứng minh được
- * "16/16 giá trị là số nguyên", KHÔNG chứng minh được "máy không bao giờ gửi số
- * lẻ". Hệ quả PHẢI biết ở Task 2: Postgres **làm tròn im lặng** khi ghi số lẻ
- * vào cột `integer` — nếu muốn chặn, chặn ở ĐƯỜNG GHI và khai rõ, đừng để lớp
- * này âm thầm quyết định.
+ * ⚠⚠⚠ SIẾT Ở TASK 2 (Khối B, B-2/B-3) — `z.number().int()`, KHÔNG còn `z.number()`.
+ * Cột đích `measurement_point_defs.roiX/roiY/roiWidth/roiHeight` là `integer`.
+ * Task 1 để `z.number()` và ghi lại quyết định cho ĐƯỜNG GHI; Task 2 (cửa
+ * `submitMachineTemplate` + `ghiCayDay`) đã quyết: **TỪ CHỐI số lẻ tại CỬA**.
+ * Lý do đo được, không phải sở thích:
+ *   · Postgres **làm tròn IM LẶNG** khi ghi `12.5` vào cột `integer` (thành 12
+ *     — làm tròn về SỐ CHẴN, `12.5→12` nhưng `13.5→14`): máy khai một ROI, hệ
+ *     lưu một ROI KHÁC, không lỗi nào được ném. Đúng lớp "trường trông như bảo
+ *     đảm mà không phải".
+ *   · Mẫu máy thật có **64 giá trị `roi`, 0 giá trị lẻ** ⇒ siết BÂY GIỜ không
+ *     từ chối một payload thật nào đang tồn tại. Siết SAU (khi đã có máy gửi số
+ *     lẻ) mới là đổi hợp đồng gây đau.
+ * ⚠ Đây là chỗ DUY NHẤT chặn: `ghiCayDay` KHÔNG kiểm lại `Number.isInteger` —
+ * nếu ai nới `.int()` ở đây, số lẻ sẽ đi thẳng xuống Postgres và bị làm tròn im
+ * lặng trở lại. Lưới ghim: `machineTemplateContract.test.ts` §2 (`roi.x = 12.5`
+ * ⇒ TỪ CHỐI) và `cayDayGhiThat.db.test.ts`.
  */
+const soNguyenRoi = (ten: string) =>
+  z.number().int({
+    message:
+      `roi.${ten} phải là SỐ NGUYÊN (pixel tuyệt đối). Cột đích ` +
+      `measurement_point_defs.roi${ten === "x" ? "X" : ten === "y" ? "Y" : ten === "width" ? "Width" : "Height"} ` +
+      `là integer — số lẻ sẽ bị Postgres LÀM TRÒN IM LẶNG, hệ sẽ lưu một ROI KHÁC ` +
+      `với ROI máy khai mà không lỗi nào được ném.`,
+  });
+
 export const roiTemplate = z.object({
-  x: z.number(),
-  y: z.number(),
-  width: z.number(),
-  height: z.number(),
+  x: soNguyenRoi("x"),
+  y: soNguyenRoi("y"),
+  width: soNguyenRoi("width"),
+  height: soNguyenRoi("height"),
 });
 
 /**
@@ -109,10 +129,9 @@ export const componentTemplate = z.object({
   // (B) VỆ SINH: cột đích `measurement_point_defs.description` là `text`.
   description: z.string().max(1000).optional(),
   roi: roiTemplate,
-  // (B) VỆ SINH. ⚠ Ánh xạ ghi của kế hoạch Task 2 KHÔNG mang trường này sang
-  // cột nào (ứng viên duy nhất: `measurement_point_defs.referenceImageUrl`,
-  // `text`). Khai ở đây để hợp đồng KHỚP mẫu thật; Task 2 phải quyết định ghi
-  // hay bỏ, và khai rõ — đừng để nó rơi im lặng.
+  // (B) VỆ SINH. ★ Task 2 QUYẾT: GHI, vào `measurement_point_defs.referenceImageUrl`
+  // (`text`) — bảng ánh xạ của kế hoạch bỏ sót trường này, Task 1 phát hiện.
+  // Xem `ghiCayDay` (`server/db/cayDay.ts`).
   templateImagePath: z.string().max(1000).optional(),
 });
 
@@ -127,9 +146,8 @@ export const captureTemplate = z.object({
   id: z.string().trim().min(1).max(64),
   // (A) KHỚP CỘT: `product_captures.captureName` varchar(255).
   name: z.string().max(255),
-  // (B) VỆ SINH: `product_captures.templateImageUrl` là `text`. ⚠ Ánh xạ Task 2
-  // trong kế hoạch KHÔNG liệt kê trường này dù cột tồn tại — cùng mối lo với
-  // `componentTemplate.templateImagePath`.
+  // (B) VỆ SINH: `product_captures.templateImageUrl` là `text`. ★ Task 2 QUYẾT:
+  // GHI (bảng ánh xạ của kế hoạch bỏ sót; cột tồn tại).
   templateImagePath: z.string().max(1000).optional(),
   // Mảng BẮT BUỘC (thiếu `components` ⇒ TỪ CHỐI). Mảng RỖNG vẫn hợp lệ: một
   // capture không dạy linh kiện nào là hình dạng thật (cùng quy ước
@@ -171,8 +189,8 @@ export const positionTemplate = z.object({
   // PIXEL TUYỆT ĐỐI). Mẫu thật 4/4 có, nhưng giữ `.optional()` đúng bảng khai.
   relX: z.number().optional(),
   relY: z.number().optional(),
-  // (B) VỆ SINH: `product_positions.templateImageUrl` là `text`. ⚠ Ánh xạ Task 2
-  // trong kế hoạch KHÔNG liệt kê trường này dù cột tồn tại.
+  // (B) VỆ SINH: `product_positions.templateImageUrl` là `text`. ★ Task 2 QUYẾT:
+  // GHI (bảng ánh xạ của kế hoạch bỏ sót; cột tồn tại).
   templateImagePath: z.string().max(1000).optional(),
   captures: z.array(captureTemplate),
 });
@@ -202,10 +220,14 @@ export const surfaceTemplate = z.object({
  * đầu vào của **CỬA** ở Task 2, KHÔNG phải của cây — để ở đây là khai một
  * trường mẫu thật không có.
  *
- * ⚠ `surfaces: []` RỖNG hiện HỢP LỆ ở tầng hợp đồng (mẫu thật không chứng minh
- * được điều ngược lại). Task 2 phải tự quyết: một lần đẩy cây rỗng nghĩa là
- * "xoá sạch bản dạy" hay "payload hỏng"? Đây là quyết định của ĐƯỜNG GHI, phải
- * khai rõ ở đó — hợp đồng không âm thầm quyết hộ.
+ * ⚠ `surfaces: []` RỖNG vẫn HỢP LỆ ở tầng hợp đồng (mẫu thật không chứng minh
+ * được điều ngược lại) — GIỮ NGUYÊN có chủ đích. ★ Task 2 đã quyết ở **CỬA**,
+ * không ở đây: `submitMachineTemplate` **TỪ CHỐI** `surfaces: []`
+ * (`CAY_DAY_RONG`, xem `machineApiRouters.ts`). Lý do để phép từ chối ở cửa chứ
+ * không ở hợp đồng: hợp đồng mô tả HÌNH DẠNG máy gửi được; "cây rỗng nghĩa là
+ * gì" là một quyết định của ĐƯỜNG GHI (nó mới biết cây rỗng sẽ xoá mềm cái gì).
+ * Ai muốn một cửa khác chấp nhận cây rỗng (vd. một cửa 'xoá bản dạy' tường
+ * minh) không phải nới hợp đồng.
  */
 export const machineTemplateContract = z.object({
   surfaces: z.array(surfaceTemplate),

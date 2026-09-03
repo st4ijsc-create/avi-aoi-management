@@ -153,6 +153,51 @@ describe("§2 — THIẾU TRƯỜNG BẮT BUỘC ⇒ TỪ CHỐI", () => {
     expect(duong).toContain("surfaces.0.positions.0.captures.0.components.0.roi.width");
   });
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★★★ Khối B Task 2 (Bước 3) — `roi.*` là SỐ NGUYÊN, chặn Ở CỬA HỢP ĐỒNG.
+  // ══════════════════════════════════════════════════════════════════════════
+  // Cột đích `measurement_point_defs.roiX/roiY/roiWidth/roiHeight` là `integer`.
+  // Postgres LÀM TRÒN IM LẶNG số lẻ ⇒ hệ lưu một ROI KHÁC ROI máy khai, không lỗi
+  // nào ném. Mẫu máy thật có 64 giá trị `roi`, 0 giá trị lẻ (ca đối chứng cuối) ⇒
+  // siết bây giờ KHÔNG từ chối payload thật nào.
+  it("★★★ `roi.x = 12.5` ⇒ TỪ CHỐI, nêu đúng đường VÀ nói rõ vì sao (làm tròn im lặng)", () => {
+    const p = mauThat();
+    p.surfaces[0].positions[0].captures[0].components[0].roi.x = 12.5;
+    const r = machineTemplateContract.safeParse(p);
+    expect(r.success).toBe(false);
+    const issues = (r as any).error.issues;
+    expect(issues.map((i: any) => i.path.join("."))).toContain(
+      "surfaces.0.positions.0.captures.0.components.0.roi.x",
+    );
+    const thongDiep = issues.map((i: any) => i.message).join(" | ");
+    expect(thongDiep).toContain("SỐ NGUYÊN");
+    expect(thongDiep).toContain("LÀM TRÒN IM LẶNG");
+  });
+
+  it("cả BỐN cạnh `roi` đều siết số nguyên (không phải chỉ `x`)", () => {
+    for (const canh of ["x", "y", "width", "height"] as const) {
+      const p = mauThat();
+      p.surfaces[0].positions[0].captures[0].components[0].roi[canh] = 1.5;
+      const r = machineTemplateContract.safeParse(p);
+      expect(r.success, `roi.${canh} = 1.5 phải bị TỪ CHỐI`).toBe(false);
+      expect((r as any).error.issues.map((i: any) => i.path.join("."))).toContain(
+        `surfaces.0.positions.0.captures.0.components.0.roi.${canh}`,
+      );
+    }
+  });
+
+  it("ĐỐI CHỨNG — mẫu máy THẬT có 64 giá trị `roi`, 0 giá trị lẻ (siết này không từ chối máy nào đang chạy)", () => {
+    const p = mauThat();
+    const giaTri: number[] = [];
+    for (const s of p.surfaces)
+      for (const v of s.positions)
+        for (const c of v.captures)
+          for (const k of c.components) giaTri.push(k.roi.x, k.roi.y, k.roi.width, k.roi.height);
+    expect(giaTri.length).toBe(64);
+    expect(giaTri.filter((g) => !Number.isInteger(g))).toEqual([]);
+    expect(machineTemplateContract.safeParse(p).success).toBe(true);
+  });
+
   it("thiếu `roi` cả cụm ⇒ từ chối", () => {
     const p = mauThat();
     delete p.surfaces[0].positions[0].captures[0].components[0].roi;

@@ -26,6 +26,11 @@ import {
   inspectionIdempotencyKeys,
 } from "../../drizzle/schema";
 import { requirePermission } from "../_core/accessControl";
+// ★★★ Khối B Task 2 (B-2/B-3) — CỬA INGEST CẤU HÌNH: hợp đồng CÂY DẠY (Task 1,
+// commit `7088b433`), phép kiểm THUẦN ở cửa, và đường ghi bốn bảng.
+import { machineTemplateContract } from "../contracts/machineTemplateContract";
+import { kiemTraCayDay } from "../services/kiemTraCayDay";
+import { ghiCayDay, demDiemDoTheoNeo } from "../db/cayDay";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
 import {
   authenticateMachine,
@@ -3057,6 +3062,33 @@ export const syncEdgeResultsCoreObject = z.object({
 });
 
 /**
+ * ★★★ Khối B — Task 2 (B-2): hình dạng `.input()` của cửa **ĐẨY CÂY DẠY** (máy → hệ).
+ *
+ * Export vì census `capChuoiVarcharDuongIngestMacDinh.test.ts` soi nó (cùng khuôn
+ * `submitInspectionCoreObject`/`submitProcessResultCoreObject`/`presignCoreObject`/
+ * `syncEdgeResultsCoreObject`): MỌI lá chuỗi phải có `.max()` khớp cột đích.
+ *
+ * ⚠ `.refine()` (đòi apiKey HOẶC machineCode) đặt TẠI `.input(...)`, KHÔNG bọc vào
+ * hằng này — đúng tiền lệ `presignCoreObject`, để census còn `.shape` mà đối chiếu
+ * THAM CHIẾU OBJECT (§0f), không chỉ đối chiếu TÊN.
+ *
+ * Sức chứa đo `information_schema.columns`, vai **`avi_app`**, 2026-09-03, CÙNG con
+ * số ở CẢ HAI DB `current_database()='aoi_management'` và `='aoi_management_test'`:
+ *   `productModelCode` → `product_models.code` **varchar(100)** (NOT NULL).
+ *   `machineCode` → `machines.code` varchar(50) · `apiKey` VỆ SINH 256 (chỉ SO KHỚP
+ *   qua `authenticateMachine`, KHÔNG INSERT) — cùng con số hai cửa kia đang dùng.
+ *
+ * `template` là **NGUYÊN VĂN** `machineTemplateContract` (Task 1) — KHÔNG `.extend()`,
+ * KHÔNG bọc: một hình dạng thứ hai cho cùng cây dạy là đúng lớp "hai nguồn sự thật".
+ */
+export const submitMachineTemplateCoreObject = z.object({
+  machineCode: z.string().max(50).optional(),
+  apiKey: z.string().max(256).optional(),
+  productModelCode: z.string().trim().min(1).max(100),
+  template: machineTemplateContract,
+});
+
+/**
  * API-10 — `ts` validation. Unlike the inspection feed's FLAGGED offset rule, the
  * process feed ALWAYS requires an explicit UTC offset when a ts is sent (and it
  * must parse). Reused by both the single and the batch item schema.
@@ -3501,6 +3533,17 @@ function quyetDinhPhienBanIngest(raw: unknown): "v2" | "v1" {
  * `quyetDinhPhienBanIngest`.
  */
 export const MIEN_TRU_QUYET_DINH_PHIEN_BAN: Readonly<Record<string, string>> = {
+  submitMachineTemplate:
+    "Khối B Task 2 — cửa ĐẨY CÂY DẠY (CẤU HÌNH máy → hệ), hợp đồng `machineTemplateContract` " +
+    "(`server/contracts/machineTemplateContract.ts`). Payload KHÔNG BAO GIỜ mang `measurements` " +
+    "(hình dạng phẳng v1.x) lẫn `surfaces[].positions[].captures[].components[].result` (hình " +
+    "dạng cây KẾT QUẢ v2.0) — nó mang `roi`/`markerWidth`/`relX`/`templateImagePath`, tức TOẠ ĐỘ " +
+    "DẠY, không có một trường KẾT QUẢ nào. Cờ INGEST_REJECT_LEGACY_MACHINE_ENABLED nói về cutover " +
+    "phẳng→cây của dữ liệu KIỂM TRA; ép cửa này qua `quyetDinhPhienBanIngest` sẽ TỪ CHỐI 100% " +
+    "lượt gọi HỢP LỆ ngay khi cờ BẬT (payload không có `surfaces[].result` nên `laHinhDangCayV2` " +
+    "trả false ⇒ bị coi là máy cũ) — sai đúng mục tiêu của cờ. Cùng lý lẽ `syncEdgeResults`. " +
+    "⚠ Cửa này VẪN nằm TRONG census `.max()` đường ingest (`DANH_SACH_SCHEMA_INGEST`) — miễn trừ " +
+    "chỉ áp cho ĐIỂM QUYẾT ĐỊNH PHIÊN BẢN, không phải một lối ra khỏi mọi census.",
   submitProcessResult:
     "Hợp đồng \"process feed\" (`MACHINE_PROCESS_CONTRACT_VERSIONS`, doc 56/57 — xem " +
     "`server/contracts/machineDataContract.ts`) là HỌ HỢP ĐỒNG KHÁC, có registry RIÊNG chỉ " +
@@ -5363,6 +5406,119 @@ export const machineApiRouter = router({
         machineId: machine.id,
         machineCode: machine.code,
         productModels,
+      };
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ★★★ Khối B — Task 2 (B-2 + B-3): CỬA INGEST CẤU HÌNH — máy ĐẨY CÂY DẠY lên hệ.
+  //     Chiều: **AOI Machine → Server** (NGƯỢC với `configSyncGeneric` bên trên, gần
+  //     như toàn `.query()` = máy KÉO cấu hình TỪ hệ). Quyết định của chủ dự án
+  //     2026-09-03 chọn hướng (a): máy dạy xong thì đẩy cây + UUID của CHÍNH NÓ lên,
+  //     hệ soi gương máy — vì payload KẾT QUẢ đã mang UUID do máy sinh, hệ buộc phải
+  //     nhận đúng UUID đó mới join được (nền đo được §6/§7).
+  //
+  // ⚠⚠⚠ VÌ SAO CỬA NÀY LÀ MẮT XÍCH: `measurement_point_defs.componentExtId` đo được
+  //     **0/110** (`aoi_management`) và **0/2834** (`aoi_management_test`) — cột nối
+  //     tồn tại ở CẢ HAI phía và CHƯA hàng nào được ghi ở bên nào. Task 3 (Đ-19) và
+  //     Task 4 (BG-92) KHÔNG có gì để join cho tới khi cửa này đổ đầy nó.
+  //
+  // ⚠⚠⚠ XÁC THỰC TRƯỚC MỌI TÁC DỤNG PHỤ — bài học **I-4** vừa trả giá ở chính file
+  //     này: `ghiTinHieuHinhDangIngest` từng được gọi trong `.transform()` của
+  //     `.input()`, tức TRƯỚC `authenticateMachine`, ghi hàng do người CHƯA XÁC THỰC
+  //     điều khiển vào `audit_logs` — bảng **WORM** (`avi_app` không có DELETE, mig
+  //     0224) nên ứng dụng không dọn được. Ở đây `.input()` KHÔNG có `.transform()`,
+  //     KHÔNG có `.superRefine()` chạm CSDL: mọi phép kiểm nội dung là hàm THUẦN
+  //     (`kiemTraCayDay`) và chỉ chạy SAU dòng `authenticateMachine` bên dưới.
+  //
+  // ⚠ KHÔNG đi qua `quyetDinhPhienBanIngest`: cây DẠY không thuộc họ hợp đồng
+  //   `machineDataContract` (phẳng v1.x ↔ cây kết quả v2.0). Miễn trừ được KÝ tường
+  //   minh trong `MIEN_TRU_QUYET_DINH_PHIEN_BAN` kèm lý do — census
+  //   `cuaIngestCensus.test.ts` sẽ ĐỎ nêu đúng tên nếu ai gỡ dòng đó.
+  //
+  // ⚠ KHÔNG bump `product_models.pointsConfigVersion`: bump là RA LỆNH cho MỌI máy
+  //   đang ánh xạ tới model này tải lại điểm đo (`checkPointsVersion`/`deltaSyncPoints`).
+  //   Một lượt đẩy cây dạy KHÔNG được kéo theo một đợt đồng bộ toàn phân xưởng mà
+  //   không ai yêu cầu. Chiều "bản dạy nào đang hiện hành" là **Task 5**.
+  // ══════════════════════════════════════════════════════════════════════════════
+  submitMachineTemplate: publicProcedure
+    .input(submitMachineTemplateCoreObject.refine((data) => data.apiKey || data.machineCode, {
+      message: 'Either apiKey or machineCode must be provided',
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // ── (0) XÁC THỰC. Không một byte nào được ghi trước dòng này. ───────────────
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "ingest:write",
+        endpoint: "submitMachineTemplate",
+      });
+
+      // ── (1) Phép kiểm THUẦN trên cây (cây rỗng · trùng khoá · trần) ────────────
+      const kiem = kiemTraCayDay(input.template);
+      if (kiem.loi.length > 0) {
+        // ⚠ `field` PHẢI là một literal ĐÃ CÓ khoá i18n ở CẢ BA ngôn ngữ — cổng
+        // `appErrorParamsCoverage.test.ts` canh việc đó và sẽ ĐỎ nêu đúng tên. Khoá
+        // chính xác hơn (`errors.field.template`) đòi sửa `client/src/i18n/locales/*`,
+        // mà lượt việc này bị CẤM chạm `client/src/**` — nên dùng `payload` (đã có
+        // khoá, "dữ liệu payload") và để câu THẬT ở `fallbackMessage`, thứ máy và log
+        // đọc. NỢ khai rõ: một khoá riêng cho `template` sẽ chính xác hơn.
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "payload" },
+          `Cây dạy không ghi được (máy ${machine.code}): ` + kiem.loi.join(" | "),
+        );
+      }
+
+      // ── (2) Sản phẩm đích ─────────────────────────────────────────────────────
+      const productModel = await db.getProductModelByCode(input.productModelCode.trim());
+      if (!productModel) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "productModel" },
+          `Product model '${input.productModelCode}' not found`,
+        );
+      }
+
+      // ── (3) BẤT BIẾN "không trộn điểm PHẲNG với điểm CÂY" ──────────────────────
+      // `server/db/cayCauHinhBatBien.db.test.ts` khai: một sản phẩm HOẶC đã chuyển
+      // sang cây, HOẶC còn phẳng — nửa vời là "nguồn của lỗi phân giải KHÔNG THỂ
+      // CHẨN ĐOÁN". Cửa này là đường ghi ĐẦU TIÊN tạo được điểm neo cây, nên nó
+      // phải tự chặn. Từ chối, KHÔNG tự xoá mềm điểm phẳng: xoá điểm đo đang chạy
+      // vì một lượt đẩy cấu hình là một quyết định của NGƯỜI, không phải của cửa.
+      const neo = await demDiemDoTheoNeo(productModel.id);
+      if (neo.phang > 0) {
+        // ⚠ `field: "code"` chứ không phải `"productModelCode"` — cùng lý do i18n ở trên.
+        throw appError(
+          "PRECONDITION_FAILED",
+          "INVALID_VALUE",
+          { field: "code" },
+          `Sản phẩm '${productModel.code}' đang có ${neo.phang} điểm đo PHẲNG còn sống ` +
+            `(captureRowId IS NULL). Nhận cây dạy vào đây sẽ tạo trạng thái NỬA VỜI (vừa phẳng ` +
+            `vừa cây) mà bất biến cấu hình cấm — engine phân giải sẽ đọc đúng cho nửa này, sai ` +
+            `cho nửa kia, không tín hiệu nào báo. Hãy chuyển ${neo.phang} điểm phẳng đó đi ` +
+            `(xoá mềm hoặc di trú) TRƯỚC, bằng một thao tác có người duyệt.`,
+        );
+      }
+
+      // ── (4) GHI — một transaction, bốn bảng ───────────────────────────────────
+      const ketQua = await ghiCayDay({
+        productModelId: productModel.id,
+        cay: input.template,
+        phienBanLucXoa: Number(productModel.pointsConfigVersion ?? 1),
+      });
+
+      await db.updateMachineHeartbeat(machine.id);
+
+      return {
+        success: true,
+        machineId: machine.id,
+        machineCode: machine.code,
+        productModelId: productModel.id,
+        productModelCode: productModel.code,
+        ...ketQua,
       };
     }),
 

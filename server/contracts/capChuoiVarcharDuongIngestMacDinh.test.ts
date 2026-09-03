@@ -86,8 +86,11 @@ import {
   submitInspectionCoreObject,
   submitProcessResultCoreObject,
   syncEdgeResultsCoreObject,
+  // ★ Khối B Task 2 — cửa THỨ TÁM (`submitMachineTemplate`, cây DẠY máy → hệ).
+  submitMachineTemplateCoreObject,
   machineApiRouter,
 } from "../routers/machineApiRouters";
+import { machineTemplateContract } from "./machineTemplateContract";
 import { presignCoreObject, metaJsonSchema, aoiPackageRouter } from "../routers/aoiPackageRouter";
 import {
   quetCuaIngest,
@@ -131,6 +134,14 @@ const QUET_CUA = [...QUET_MACHINE.cua, ...QUET_ZIP.cua];
 const CUA_TOI_TEN_SCHEMA: Readonly<Record<string, readonly string[]>> = {
   submitInspection: ["submitInspectionCoreObject", "machineDataContractV2"],
   submitInspectionBatch: ["submitInspectionCoreObject"],
+  // ★★★ Khối B Task 2 (2026-09-03) — cửa ĐẨY CÂY DẠY. HAI tên: hình dạng bọc của
+  // chính cửa (`apiKey`/`machineCode`/`productModelCode`) VÀ hợp đồng cây dạy đặt
+  // NGUYÊN VĂN vào trường `template`. Task 1 CỐ Ý chưa thêm `KIEM_KE_CAY_DAY` vào
+  // đây vì lúc đó CHƯA CÓ CỬA — §0b đối chiếu với tập cửa THẬT quét từ AST, thêm
+  // sớm sẽ ĐỎ vì một lý do SAI. Cửa ra đời ⇒ thêm, nếu không hợp đồng cây dạy nằm
+  // NGOÀI census đường ingest, đúng lớp lỗi BG-69 (census soi 2 schema, bỏ lọt cửa
+  // thứ ba).
+  submitMachineTemplate: ["submitMachineTemplateCoreObject", "machineTemplateContract"],
   submitProcessResult: ["submitProcessResultCoreObject"],
   submitProcessResultBatch: ["submitProcessResultCoreObject"],
   syncEdgeResults: ["syncEdgeResultsCoreObject"],
@@ -138,17 +149,17 @@ const CUA_TOI_TEN_SCHEMA: Readonly<Record<string, readonly string[]>> = {
   commit: [],
 };
 
-describe("§0a — CẦU CHÌ: census cửa (quetCuaIngest) tìm được ≥7 cửa (chống 'xanh vì quét trúng 0 thứ')", () => {
+describe("§0a — CẦU CHÌ: census cửa (quetCuaIngest) tìm được ≥8 cửa (chống 'xanh vì quét trúng 0 thứ')", () => {
   it("không có ô mù (gộp cả hai lượt quét)", () => {
     expect([...QUET_MACHINE.mu, ...QUET_ZIP.mu]).toEqual([]);
   });
 
-  it("tìm được ĐÚNG 7 cửa — cùng con số GHIM_TEN_CUA của cuaIngestCensus.test.ts", () => {
-    expect(QUET_CUA.length).toBe(7);
+  it("tìm được ĐÚNG 8 cửa — cùng con số GHIM_TEN_CUA của cuaIngestCensus.test.ts", () => {
+    expect(QUET_CUA.length).toBe(8);
   });
 });
 
-describe("§0b — ★★★ CUA_TOI_TEN_SCHEMA khớp ĐÚNG tập cửa THẬT (không phải bảy cái tên đoán tay)", () => {
+describe("§0b — ★★★ CUA_TOI_TEN_SCHEMA khớp ĐÚNG tập cửa THẬT (không phải tám cái tên đoán tay)", () => {
   it("khoá của CUA_TOI_TEN_SCHEMA === tập tên cửa mà quetCuaIngest tìm được", () => {
     expect(Object.keys(CUA_TOI_TEN_SCHEMA).sort()).toEqual(QUET_CUA.map((c) => c.ten).sort());
   });
@@ -417,20 +428,25 @@ const DANH_SACH_SCHEMA_INGEST: readonly MucSchemaIngest[] = [
   { ten: "syncEdgeResultsCoreObject", schema: syncEdgeResultsCoreObject,
     mienTru: new Set(["results[].inputReference"]) },
   { ten: "presignCoreObject", schema: presignCoreObject, mienTru: new Set() },
+  // ★★★ Khối B Task 2 — cửa ĐẨY CÂY DẠY. KHÔNG miễn trừ nào ở CẢ HAI: mọi lá chuỗi
+  // của `machineTemplateContract` đã có `.max()` từ Task 1 (kể cả các lá đi cột
+  // `text`, lấy trần VỆ SINH 1000), và ba lá của hình dạng bọc khớp cột thật/vệ sinh.
+  { ten: "submitMachineTemplateCoreObject", schema: submitMachineTemplateCoreObject, mienTru: new Set() },
+  { ten: "machineTemplateContract", schema: machineTemplateContract, mienTru: new Set() },
   // BG-85 — metaJsonSchema = machineDataContractV2.extend({images}), CÙNG miễn
   // trừ MDC v2 (measurements[].remark thuộc hợp đồng phẳng cũ, đã xoá).
   { ten: "metaJsonSchema", schema: metaJsonSchema,
     mienTru: new Set(["surfaces[].positions[].captures[].components[].errorDesc"]) },
 ];
 
-describe("§1 — DANH SÁCH ĐẦY ĐỦ 6 schema (6 cửa ingest) — walker XANH trên cả sáu", () => {
-  it("★★★ BG-80: tập TÊN SCHEMA trong DANH_SACH_SCHEMA_INGEST == tập SUY RA từ CUA_TOI_TEN_SCHEMA (§0) + 'metaJsonSchema' (payload ZIP của commit, ngoài .input()) — KHÔNG còn là hằng số 6 đứng một mình", () => {
+describe("§1 — DANH SÁCH ĐẦY ĐỦ 8 schema (8 cửa ingest) — walker XANH trên cả tám", () => {
+  it("★★★ BG-80: tập TÊN SCHEMA trong DANH_SACH_SCHEMA_INGEST == tập SUY RA từ CUA_TOI_TEN_SCHEMA (§0) + 'metaJsonSchema' (payload ZIP của commit, ngoài .input()) — KHÔNG còn là hằng số 8 đứng một mình", () => {
     const tuCuaToiSchema = new Set(Object.values(CUA_TOI_TEN_SCHEMA).flat());
     const tenSchemaMongDoi = new Set([...tuCuaToiSchema, "metaJsonSchema"]);
     expect(DANH_SACH_SCHEMA_INGEST.map((x) => x.ten).sort()).toEqual([...tenSchemaMongDoi].sort());
     // Con số 6 giờ là một KẾT QUẢ suy ra, không phải một lời khai đứng riêng —
     // nhưng vẫn hiển thị tường minh cho người đọc lỗi khi con số đổi:
-    expect(tenSchemaMongDoi.size, "đổi số này là một lời khai (thêm/bớt cửa ingest) — sửa CUA_TOI_TEN_SCHEMA (§0) trước, DANH_SACH_SCHEMA_INGEST sẽ tự đối chiếu theo").toBe(6);
+    expect(tenSchemaMongDoi.size, "đổi số này là một lời khai (thêm/bớt cửa ingest) — sửa CUA_TOI_TEN_SCHEMA (§0) trước, DANH_SACH_SCHEMA_INGEST sẽ tự đối chiếu theo").toBe(8);
   });
 
   for (const { ten, schema, mienTru } of DANH_SACH_SCHEMA_INGEST) {
