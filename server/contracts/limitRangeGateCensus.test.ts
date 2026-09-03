@@ -2,7 +2,7 @@
 //
 // ★★★ BG-113 (review Khối C lượt 9, I-2 + I-3) — census đếm ĐIỂM GỌI của gate
 // khoảng giới hạn (`assertCapGioiHanHopLe`/`loiCapGioiHanSauMerge`,
-// `server/utils/measurementPointLimitGate.ts`) trên ĐÚNG SÁU đường ghi
+// `server/utils/measurementPointLimitGate.ts`) trên ĐÚNG BẢY đường ghi
 // lowerLimit/upperLimit/heightMin/heightMax hôm nay:
 //   1. `productRouters.ts` — `measurementPoint.update`
 //   2. `productRouters.ts` — `measurementPoint.setLimitsBatch`
@@ -10,13 +10,32 @@
 //   4. `utils/measurementPointImport.ts` — `buildInsertFromImportPoint` (bulk import)
 //   5. `aiLocalTools/writeHandlers/measurementPoint.ts` — `update_measurement_point.execute`
 //   6. `routers/productVariantRouter.ts` — `setOverride` (I-3 — nguồn giới hạn THỨ HAI,
-//      patchJson biến thể cũng có thể mang lowerLimit/upperLimit ⇒ CÙNG lỗ I-2)
+//      patchJson biến thể cũng có thể mang lowerLimit/upperLimit ⇒ CÙNG lỗ I-2. NEW-4
+//      (vòng 2): vùng này NAY BAO CẢ hai action `override`/`exclude` — MỘT lời gọi
+//      gate KHÔNG ĐIỀU KIỆN che cả hai, xem ★ dưới)
+//   7. `routers/productVariantRouter.ts` — `removeOverride` (NEW-4, review lượt 9 vòng 2,
+//      BG-125 — gỡ một override/exclude TRƯỚC bản vá đi thẳng qua, 0 gate/0 version)
+//
+// ★ NEW-4 ĐỘ LỆCH SO VỚI BRIEF (khai rõ, cùng khuôn round 1 nâng NGUONG_CHEP_TAY_DA_CREDIT
+// 3→4): brief round 2 gợi ý census đếm TÁM điểm (tách `setOverride` action='override' và
+// action='exclude' thành HAI vùng riêng). Bản vá này KHÔNG tách — `setOverride` gọi gate
+// (b)/(c) MỘT LẦN, KHÔNG điều kiện theo `action`, đúng NGUYÊN NHÂN GỐC mà NEW-4 tồn tại để
+// vá: exclude từng SỐNG SÓT vì nó là một NHÁNH RIÊNG có thể lệch khỏi nhánh override (đúng
+// hệt lớp lỗi "hai nhánh trôi xa nhau" mà BG-113/I-2 đã thấy ở năm đường ghi khác). Giữ HAI
+// vùng riêng cho hai action sẽ TÁI TẠO chính rủi ro đó cho vòng sửa kế — một nhánh có thể lại
+// mất gate mà nhánh kia vẫn còn. MỘT lời gọi canh CẢ hai action là bản vá AN TOÀN HƠN đúng
+// nghĩa, không phải một lối tắt — 7 điểm là ĐÚNG VÀ ĐỦ cho kiến trúc đã chọn, không phải 8.
 //
 // Kỹ thuật: CÙNG khuôn `vungTuyenUploadZip`/`aoiPackageZipCuaNoiDoi.test.ts` — đọc
 // nguồn THẬT, cắt đúng VÙNG bằng hai mốc văn bản (mở đầu procedure liên quan → mốc
 // kết thúc trước lời gọi HẠ NGUỒN kế tiếp), rồi hỏi "vùng đó có nhắc tên MỘT trong
-// hai hàm gate không". KHÔNG dùng AST nặng — sáu vùng đều đủ hẹp và mốc đủ riêng để
+// hai hàm gate không". KHÔNG dùng AST nặng — bảy vùng đều đủ hẹp và mốc đủ riêng để
 // một quét chuỗi con là chính xác (đối chứng bằng cầu chì "0 vùng chồng lấn" §2).
+// ⚠ `setOverride` VÀ `removeOverride` dùng CHUNG hai chuỗi mốc nguyên văn
+// (`assertThresholdEditAllowed(input.basePointDefId);` / `db.recordVariantOverrideVersion`)
+// — entry #6 dùng CẶP MỐC ĐÓ (indexOf tìm occurrence ĐẦU trong file, đúng của setOverride vì
+// nó đứng TRƯỚC removeOverride); entry #7 PHẢI dùng mốc KHÁC, riêng cho removeOverride
+// (không thể tái dùng cặp mốc của #6 — indexOf sẽ lại trúng vùng của #6).
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -34,12 +53,15 @@ interface DiemGate {
 }
 
 /**
- * ★★★ SÁU điểm gọi — brief I-3 đòi rõ: "Census I-2 phải đếm đường này [variant
- * setOverride] là thứ 6". Thêm/bớt một đường ghi giới hạn KHÔNG tự động vào danh
- * sách này (đây là sổ TAY, như MIEN_TRU_CUA_INGEST_ZIP) — đúng và ĐỦ hôm nay theo
- * review lượt 9 §I-2/I-3; một đường ghi thứ bảy xuất hiện SAU review này sẽ KHÔNG
- * bị census bắt cho tới khi ai đó thêm nó vào đây — hạn chế đã biết, khai rõ (cùng
- * lớp "sổ tay hữu hạn" mà mọi census kiểu allowlist trong repo này mang).
+ * ★★★ BẢY điểm gọi — brief I-3 đòi rõ: "Census I-2 phải đếm đường này [variant
+ * setOverride] là thứ 6"; brief NEW-4 (vòng 2) đòi thêm `removeOverride` là thứ 7
+ * (xem ★ NEW-4 ĐỘ LỆCH SO VỚI BRIEF ở đầu file — 7, không phải 8 brief gợi ý, vì
+ * `setOverride` gộp action='override'/'exclude' vào MỘT lời gọi gate, không tách
+ * hai vùng). Thêm/bớt một đường ghi giới hạn KHÔNG tự động vào danh sách này (đây
+ * là sổ TAY, như MIEN_TRU_CUA_INGEST_ZIP) — đúng và ĐỦ hôm nay theo review lượt 9
+ * §I-2/I-3/NEW-4; một đường ghi thứ tám xuất hiện SAU review này sẽ KHÔNG bị census
+ * bắt cho tới khi ai đó thêm nó vào đây — hạn chế đã biết, khai rõ (cùng lớp "sổ
+ * tay hữu hạn" mà mọi census kiểu allowlist trong repo này mang).
  */
 const DIEM_GATE: readonly DiemGate[] = [
   {
@@ -73,10 +95,19 @@ const DIEM_GATE: readonly DiemGate[] = [
     mocKetThuc: "await updateMeasurementPointDef(p.id, patch as any",
   },
   {
-    ten: "routers/productVariantRouter.ts#setOverride (I-3 — nguồn giới hạn thứ hai)",
+    ten: "routers/productVariantRouter.ts#setOverride (I-3 — nguồn giới hạn thứ hai; NEW-4 — CẢ override VÀ exclude)",
     tep: "routers/productVariantRouter.ts",
     mocBatDau: "await assertThresholdEditAllowed(input.basePointDefId);",
     mocKetThuc: "await db.recordVariantOverrideVersion",
+  },
+  {
+    // NEW-4 (review Khối C lượt 9, vòng 2, BG-125) — mốc RIÊNG (không trùng cặp
+    // mốc của setOverride ở trên — hai chuỗi gate/version verbatim lặp lại trong
+    // CẢ HAI thủ tục, `indexOf` sẽ trúng vùng của setOverride nếu tái dùng).
+    ten: "routers/productVariantRouter.ts#removeOverride (NEW-4, BG-125)",
+    tep: "routers/productVariantRouter.ts",
+    mocBatDau: "remove a point override (variant re-inherits the base point)",
+    mocKetThuc: "await db.removeVariantOverride(input.variantId, input.basePointDefId);",
   },
 ];
 
@@ -108,8 +139,8 @@ function quetTatCa(nguon: Map<string, string> = NGUON_TEP): { diem: DiemGate; co
   });
 }
 
-describe("BG-113 census — gate khoảng giới hạn (lowerLimit≤upperLimit/heightMin≤heightMax) trên ĐÚNG 6 đường ghi", () => {
-  it("cầu chì 1: cả sáu mốc phải cắt được vùng KHÔNG RỖNG (không thì đang canh chuỗi rỗng)", () => {
+describe("BG-113 census — gate khoảng giới hạn (lowerLimit≤upperLimit/heightMin≤heightMax) trên ĐÚNG 7 đường ghi", () => {
+  it("cầu chì 1: cả bảy mốc phải cắt được vùng KHÔNG RỖNG (không thì đang canh chuỗi rỗng)", () => {
     for (const d of DIEM_GATE) {
       const ma = NGUON_TEP.get(d.tep)!;
       const vung = catVung(ma, d);
@@ -117,7 +148,7 @@ describe("BG-113 census — gate khoảng giới hạn (lowerLimit≤upperLimit/
     }
   });
 
-  it("cầu chì 2: sáu vùng cắt được KHÔNG trùng lặp lẫn nhau trong CÙNG một file (mốc đủ riêng)", () => {
+  it("cầu chì 2: bảy vùng cắt được KHÔNG trùng lặp lẫn nhau trong CÙNG một file (mốc đủ riêng)", () => {
     const theoTep = new Map<string, string[]>();
     for (const d of DIEM_GATE) {
       const ma = NGUON_TEP.get(d.tep)!;
@@ -136,16 +167,16 @@ describe("BG-113 census — gate khoảng giới hạn (lowerLimit≤upperLimit/
     }
   });
 
-  it("★★★ BẤT BIẾN: cả SÁU điểm ghi giới hạn đều gọi gate — không đường nào ghi lowerLimit/upperLimit mà 0 kiểm khoảng", () => {
+  it("★★★ BẤT BIẾN: cả BẢY điểm ghi giới hạn đều gọi gate — không đường nào ghi lowerLimit/upperLimit mà 0 kiểm khoảng", () => {
     const ket = quetTatCa();
     const thieu = ket.filter((k) => !k.coGate).map((k) => k.diem.ten);
     if (thieu.length) console.error("[BG-113] thiếu gate ở:", thieu);
     expect(thieu, "đường ghi giới hạn sau đây KHÔNG gọi assertCapGioiHanHopLe/loiCapGioiHanSauMerge").toEqual([]);
   });
 
-  it("đúng SÁU điểm được canh — không phải 5 (I-2) cũng không phải 7+ (một đường ghi ẩn danh lọt lưới)", () => {
-    expect(DIEM_GATE.length).toBe(6);
-    expect(quetTatCa().length).toBe(6);
+  it("đúng BẢY điểm được canh — không phải 6 (I-2/I-3) cũng không phải 8+ (một đường ghi ẩn danh lọt lưới)", () => {
+    expect(DIEM_GATE.length).toBe(7);
+    expect(quetTatCa().length).toBe(7);
   });
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -153,9 +184,9 @@ describe("BG-113 census — gate khoảng giới hạn (lowerLimit≤upperLimit/
   // đường ⇒ census phải ĐỎ ĐÚNG đường đó, KHÔNG đỏ toàn bộ (chứng minh census phân
   // biệt được TỪNG điểm, không chỉ "có lỗi ở đâu đó").
   // ══════════════════════════════════════════════════════════════════════════
-  for (const bi of [0, 1, 2, 3, 4, 5]) {
+  for (const bi of [0, 1, 2, 3, 4, 5, 6]) {
     const d = DIEM_GATE[bi];
-    it(`★★★ ĐỘT BIẾN: bỏ gate ở "${d.ten}" ⇒ census ĐỎ ĐÚNG đường này, 5 đường còn lại vẫn XANH`, () => {
+    it(`★★★ ĐỘT BIẾN: bỏ gate ở "${d.ten}" ⇒ census ĐỎ ĐÚNG đường này, 6 đường còn lại vẫn XANH`, () => {
       const nguonDotBien = new Map(NGUON_TEP);
       const goc = nguonDotBien.get(d.tep)!;
       const vungGoc = catVung(goc, d);

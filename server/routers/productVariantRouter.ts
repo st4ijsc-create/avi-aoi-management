@@ -408,12 +408,14 @@ export const productVariantRouter = router({
 
       // ★★★ BG-113/I-3 (review Khối C lượt 9) — (b) CỬA DUYỆT NGƯỠNG, như 5 đường
       // ghi giới hạn khác (measurementPoint.update/setLimitsBatch/bulk-import/AI
-      // Copilot). CHỈ khi action='override' — patchJson (sau whitelist ở trên)
-      // luôn là field thuộc APPROVAL_LIMIT_FIELDS, tức LUÔN "chạm giới hạn";
-      // 'exclude' không mang giá trị số nào để duyệt (chỉ ẩn điểm khỏi variant).
-      if (input.action === "override") {
-        await assertThresholdEditAllowed(input.basePointDefId);
-      }
+      // Copilot).
+      // ★★★ NEW-4 (review lượt 9, vòng 2, BG-125) — TRƯỚC bản vá này cửa CHỈ đứng
+      // khi `action==='override'`; `'exclude'` đi thẳng qua, 0 gate. Lý do cũ ("exclude
+      // không mang giá trị số nào để duyệt") SAI Ở CHỖ: loại hẳn một điểm khỏi cổng
+      // của một biến thể LIVE là một thay đổi ngưỡng TRIỆT ĐỂ HƠN nới một cận số —
+      // điểm đó không còn ai chấm nữa, bo XẤU lọt qua êm (BG-125). Cửa nay đứng cho
+      // CẢ HAI action.
+      await assertThresholdEditAllowed(input.basePointDefId);
 
       // ★★★ BG-113/I-3 — (c) GHI VERSION trước khi ghi đè, TRÊN CHÍNH bảng
       // `measurement_point_versions` mà snapshot-gate BG-97 đọc (xem docblock
@@ -421,45 +423,55 @@ export const productVariantRouter = router({
       // Snapshot là hiệu lực TRƯỚC lượt này: base + override CŨ (nếu có, dùng
       // LẠI `apDungVariantPatch` — Task 6, cùng công thức mà đường CHẤM dùng ở
       // `machineApiRouters.ts`), không phải base trơ — một override THAY một
-      // override khác vẫn phải để lại đúng trạng thái đã mất.
-      if (input.action === "override") {
-        const overridesHienCo = await db.getVariantOverrides(input.variantId);
-        const ovHienCo = overridesHienCo.find((o) => o.basePointDefId === input.basePointDefId);
-        const hieuLucTruoc = db.apDungVariantPatch(
-          basePoint as unknown as Record<string, unknown>,
-          ovHienCo?.action === "override" ? ovHienCo.patchJson : null,
-        );
+      // override khác (hay một `exclude` xoá mất một override cũ) vẫn phải để lại
+      // đúng trạng thái đã mất.
+      // ★★★ NEW-4 — GHI VERSION nay chạy cho CẢ HAI action, cùng lý do cửa (b) ở trên:
+      // `exclude` xoá hiệu lực số của điểm khỏi biến thể mà TRƯỚC bản vá không để
+      // lại dấu vết nào trong `measurement_point_versions` — 0 version, đúng lớp lỗi
+      // "đường ghi ẩn danh" mà I-3 đã vá cho `override`.
+      const overridesHienCo = await db.getVariantOverrides(input.variantId);
+      const ovHienCo = overridesHienCo.find((o) => o.basePointDefId === input.basePointDefId);
+      const hieuLucTruoc = db.apDungVariantPatch(
+        basePoint as unknown as Record<string, unknown>,
+        ovHienCo?.action === "override" ? ovHienCo.patchJson : null,
+      );
 
-        // ★★★ BG-113 (I-2, đường ghi giới hạn THỨ SÁU) — patchJson biến thể có thể
-        // mang lowerLimit/upperLimit/heightMin/heightMax (whitelist ở trên cho phép)
-        // ⇒ CÙNG lỗ "0 kiểm lower ≤ upper" mà 5 đường kia đã vá. Kiểm trên khoảng ĐÃ
-        // MERGE: hiệu lực TRƯỚC override (base + override CŨ, vừa tính ở trên cho
-        // bước ghi version) đè bởi patch MỚI — patch chỉ đổi MỘT cận vẫn phải chặn
-        // nếu mâu thuẫn với cận HIỆN CÓ (đúng nguyên tắc I-2).
-        assertCapGioiHanHopLe(
-          gopCapGioiHanDonGian(
-            {
-              lowerLimit: hieuLucTruoc.lowerLimit,
-              upperLimit: hieuLucTruoc.upperLimit,
-              heightMin: hieuLucTruoc.heightMin,
-              heightMax: hieuLucTruoc.heightMax,
-            },
-            {
-              lowerLimit: input.patchJson?.lowerLimit,
-              upperLimit: input.patchJson?.upperLimit,
-              heightMin: input.patchJson?.heightMin,
-              heightMax: input.patchJson?.heightMax,
-            },
-          ),
-        );
+      // ★★★ BG-113 (I-2, đường ghi giới hạn THỨ SÁU) — patchJson biến thể có thể
+      // mang lowerLimit/upperLimit/heightMin/heightMax (whitelist ở trên cho phép)
+      // ⇒ CÙNG lỗ "0 kiểm lower ≤ upper" mà 5 đường kia đã vá. Kiểm trên khoảng ĐÃ
+      // MERGE: hiệu lực TRƯỚC override (base + override CŨ, vừa tính ở trên cho
+      // bước ghi version) đè bởi patch MỚI — patch chỉ đổi MỘT cận vẫn phải chặn
+      // nếu mâu thuẫn với cận HIỆN CÓ (đúng nguyên tắc I-2).
+      // ★★★ NEW-4 (CÙNG điểm gọi thứ 6/census, `limitRangeGateCensus` — override VÀ
+      // exclude gộp một vùng) — `exclude` không mang patch số
+      // nào ⇒ merge với `{}` (RỖNG, không đổi gì) — một lượt kiểm KHÔNG-ĐỔI, nhưng
+      // CÙNG một đường mã bảo vệ tất cả ghi vào `measurement_point_versions` qua
+      // router này, đúng khuôn census `limitRangeGateCensus` (8 điểm).
+      assertCapGioiHanHopLe(
+        gopCapGioiHanDonGian(
+          {
+            lowerLimit: hieuLucTruoc.lowerLimit,
+            upperLimit: hieuLucTruoc.upperLimit,
+            heightMin: hieuLucTruoc.heightMin,
+            heightMax: hieuLucTruoc.heightMax,
+          },
+          input.action === "override"
+            ? {
+                lowerLimit: input.patchJson?.lowerLimit,
+                upperLimit: input.patchJson?.upperLimit,
+                heightMin: input.patchJson?.heightMin,
+                heightMax: input.patchJson?.heightMax,
+              }
+            : {},
+        ),
+      );
 
-        // NEW-3 (review lượt 9, vòng 2) — `variantId` BẮT BUỘC (không còn suy từ
-        // chuỗi `changeReason` tự do): hàm tự gắn tiền tố `[VARIANT:<id>]`.
-        await db.recordVariantOverrideVersion(input.basePointDefId, input.variantId, hieuLucTruoc, {
-          changedBy: ctx.user.id,
-          changeReason: "productVariant.setOverride",
-        });
-      }
+      // NEW-3 (review lượt 9, vòng 2) — `variantId` BẮT BUỘC (không còn suy từ
+      // chuỗi `changeReason` tự do): hàm tự gắn tiền tố `[VARIANT:<id>]`.
+      await db.recordVariantOverrideVersion(input.basePointDefId, input.variantId, hieuLucTruoc, {
+        changedBy: ctx.user.id,
+        changeReason: input.action === "override" ? "productVariant.setOverride" : "productVariant.setOverride(exclude)",
+      });
 
       const id = await db.setVariantPointOverride({
         variantId: input.variantId,
@@ -505,6 +517,42 @@ export const productVariantRouter = router({
       if (!variant) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
+
+      // ★★★ NEW-4 (review lượt 9, vòng 2, BG-125) — CÙNG cửa/version như `setOverride`:
+      // TRƯỚC bản vá này, gỡ một override (số HOẶC `exclude`) đi thẳng qua — 0 gate,
+      // 0 version, y hệt lỗ mà I-3 đã vá cho `setOverride`. Gỡ MỘT `exclude` trên biến
+      // thể LIVE hoàn tác chính lượt loại-điểm-khỏi-cổng — cùng mức nghiêm trọng cần
+      // duyệt như tạo ra nó. Snapshot ghi lại hiệu lực TRƯỚC lượt gỡ (base + override
+      // sắp mất, cùng `apDungVariantPatch`) — để lại đúng trạng thái đã mất.
+      const basePoint = await db.getMeasurementPointDefById(input.basePointDefId);
+      if (!basePoint) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Không tìm thấy điểm đo gốc");
+      }
+      await assertThresholdEditAllowed(input.basePointDefId);
+
+      const overridesHienCo = await db.getVariantOverrides(input.variantId);
+      const ovHienCo = overridesHienCo.find((o) => o.basePointDefId === input.basePointDefId);
+      const hieuLucTruoc = db.apDungVariantPatch(
+        basePoint as unknown as Record<string, unknown>,
+        ovHienCo?.action === "override" ? ovHienCo.patchJson : null,
+      );
+      // NEW-4 (đường ghi giới hạn thứ BẢY/census, `limitRangeGateCensus`) — gỡ override
+      // không mang patch số nào ⇒ merge với `{}` (không đổi gì), cùng lý do đã ghi ở `setOverride`.
+      assertCapGioiHanHopLe(
+        gopCapGioiHanDonGian(
+          {
+            lowerLimit: hieuLucTruoc.lowerLimit,
+            upperLimit: hieuLucTruoc.upperLimit,
+            heightMin: hieuLucTruoc.heightMin,
+            heightMax: hieuLucTruoc.heightMax,
+          },
+          {},
+        ),
+      );
+      await db.recordVariantOverrideVersion(input.basePointDefId, input.variantId, hieuLucTruoc, {
+        changedBy: ctx.user.id,
+        changeReason: "productVariant.removeOverride",
+      });
 
       await db.removeVariantOverride(input.variantId, input.basePointDefId);
 

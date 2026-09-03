@@ -350,9 +350,36 @@ describe("PV3 — setOverride / removeOverride", () => {
     h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
     await admin.setOverride({ variantId: 10, basePointDefId: 3, action: "exclude" });
     expect(h.setVariantPointOverride).toHaveBeenCalledWith(expect.objectContaining({ action: "exclude", patchJson: null }));
-    // 'exclude' không mang giá trị số để duyệt/snapshot — KHÔNG gọi cửa duyệt ngưỡng/ghi version.
-    expect(thresholdGateSpy).not.toHaveBeenCalled();
-    expect(h.recordVariantOverrideVersion).not.toHaveBeenCalled();
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ★★★ NEW-4 (review Khối C lượt 9, vòng 2, BG-125) — TRƯỚC bản vá này 'exclude'
+  // đi qua 0 gate, 0 version (lý do cũ: "không mang giá trị số để duyệt/snapshot").
+  // Sai: loại hẳn một điểm khỏi cổng của một biến thể LIVE là thay đổi ngưỡng còn
+  // TRIỆT ĐỂ HƠN nới một cận số — bo XẤU lọt qua êm. Nay 'exclude' đi qua CÙNG cửa
+  // + ghi version như 'override'.
+  // ══════════════════════════════════════════════════════════════════════
+  it("★★★ NEW-4: 'exclude' NAY gọi CẢ cửa duyệt ngưỡng LẪN ghi version — KHÔNG còn đi qua trắng", async () => {
+    h.getVariantById.mockResolvedValueOnce(euVariant as any);
+    h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
+    h.getVariantOverrides.mockResolvedValueOnce([]);
+    await admin.setOverride({ variantId: 10, basePointDefId: 3, action: "exclude" });
+    expect(thresholdGateSpy, "NEW-4 — cửa duyệt ngưỡng PHẢI đứng cho 'exclude'").toHaveBeenCalledWith(3);
+    expect(h.recordVariantOverrideVersion, "NEW-4 — 'exclude' PHẢI để lại version, hiệu lực TRƯỚC lượt loại điểm").toHaveBeenCalledWith(
+      3,
+      10,
+      expect.objectContaining({ id: 3 }), // apDungVariantPatch(basePoint, null) ⇒ chính basePoint (0 override cũ)
+      expect.objectContaining({ changedBy: 5 }),
+    );
+  });
+
+  it("★★★ NEW-4: 'exclude' trên sản phẩm LIVE (cửa duyệt ngưỡng chặn) ⇒ FORBIDDEN, KHÔNG ghi override/version", async () => {
+    h.getVariantById.mockResolvedValueOnce(euVariant as any);
+    h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
+    thresholdGateSpy.mockRejectedValueOnce(new TRPCError({ code: "FORBIDDEN", message: "FORBIDDEN — would block" }));
+    await expect(admin.setOverride({ variantId: 10, basePointDefId: 3, action: "exclude" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(h.setVariantPointOverride, "cửa duyệt ngưỡng phải chặn TRƯỚC bước ghi override").not.toHaveBeenCalled();
+    expect(h.recordVariantOverrideVersion, "cửa duyệt ngưỡng phải chặn TRƯỚC bước ghi version").not.toHaveBeenCalled();
   });
 
   it("'override' without a patch → BAD_REQUEST", async () => {
@@ -381,10 +408,43 @@ describe("PV3 — setOverride / removeOverride", () => {
 
   it("removeOverride deletes + bumps the variant", async () => {
     h.getVariantById.mockResolvedValueOnce(euVariant as any);
+    h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
+    h.getVariantOverrides.mockResolvedValueOnce([]);
     const res = await admin.removeOverride({ variantId: 10, basePointDefId: 3 });
     expect(res).toEqual({ success: true });
     expect(h.removeVariantOverride).toHaveBeenCalledWith(10, 3);
     expect(h.bumpVariantPointsConfigVersion).toHaveBeenCalledWith(10);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ★★★ NEW-4 (review Khối C lượt 9, vòng 2, BG-125) — TRƯỚC bản vá `removeOverride`
+  // đi thẳng qua: 0 gate, 0 version — y hệt lỗ mà I-3 đã vá cho `setOverride`. Gỡ
+  // một override (kể cả 'exclude') hoàn tác chính lượt thay-đổi-ngưỡng đã tạo ra
+  // nó ⇒ cần cùng mức bảo vệ.
+  // ══════════════════════════════════════════════════════════════════════
+  it("★★★ NEW-4: removeOverride NAY gọi cửa duyệt ngưỡng + ghi version, hiệu lực TRƯỚC = override sắp mất", async () => {
+    h.getVariantById.mockResolvedValueOnce(euVariant as any);
+    h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
+    h.getVariantOverrides.mockResolvedValueOnce([
+      { basePointDefId: 3, action: "override", patchJson: { upperLimit: "77" } } as any,
+    ]);
+    await admin.removeOverride({ variantId: 10, basePointDefId: 3 });
+    expect(thresholdGateSpy, "NEW-4 — cửa duyệt ngưỡng PHẢI đứng cho removeOverride").toHaveBeenCalledWith(3);
+    // apDungVariantPatch(basePoint, {upperLimit:"77"}) (mock đơn giản: spread) ⇒ hiệu lực TRƯỚC mang upperLimit "77" sắp mất.
+    expect(h.recordVariantOverrideVersion).toHaveBeenCalledWith(3, 10, expect.objectContaining({ upperLimit: "77" }), expect.objectContaining({ changedBy: 5 }));
+    // Version PHẢI ghi TRƯỚC khi xoá — thứ tự lời gọi mock chứng minh (không so timestamp).
+    const iVersion = h.recordVariantOverrideVersion.mock.invocationCallOrder[0];
+    const iXoa = h.removeVariantOverride.mock.invocationCallOrder[0];
+    expect(iVersion, "ghi version phải xảy ra TRƯỚC xoá — nếu không, hiệu lực TRƯỚC không còn đọc được").toBeLessThan(iXoa);
+  });
+
+  it("★★★ NEW-4: removeOverride trên sản phẩm LIVE (cửa duyệt ngưỡng chặn) ⇒ FORBIDDEN, KHÔNG xoá/ghi version", async () => {
+    h.getVariantById.mockResolvedValueOnce(euVariant as any);
+    h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
+    thresholdGateSpy.mockRejectedValueOnce(new TRPCError({ code: "FORBIDDEN", message: "FORBIDDEN — would block" }));
+    await expect(admin.removeOverride({ variantId: 10, basePointDefId: 3 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(h.removeVariantOverride).not.toHaveBeenCalled();
+    expect(h.recordVariantOverrideVersion).not.toHaveBeenCalled();
   });
 });
 
