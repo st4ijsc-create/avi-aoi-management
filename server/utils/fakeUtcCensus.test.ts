@@ -33,11 +33,24 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const SERVER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Công thức fake-UTC bị khai tử. Đọc kỹ: đây LÀ đích canh, không phải chuỗi mồi. */
-const RE_FAKE_UTC = /getTimezoneOffset\(\)\s*\*\s*60000/;
+/**
+ * Công thức fake-UTC bị khai tử. Đọc kỹ: đây LÀ đích canh, không phải chuỗi mồi.
+ *
+ * ★★★ Vòng sửa 9 (I-5.4, review lượt 9 §6-4) — bản gốc chỉ khớp `* 60000` (một số
+ * nguyên); biến thể CÙNG NGHĨA, CÙNG DÒNG `* 60 * 1000` (vd
+ * `d.getTimezoneOffset() * 60 * 1000`) tách phép nhân làm hai bước, tính ra ĐÚNG
+ * 60000 nhưng lách qua bản gốc — census vẫn XANH trong khi công thức fake-UTC tái
+ * sinh. Regex nay khớp CẢ HAI dạng cùng dòng. ⚠ Chưa đóng lớp "đa dòng / qua biến
+ * trung gian" (`MS_PER_MIN`, `6e4`…) — ledger đã ghi nhận đó là BG-100, một lớp
+ * lỗi KHÁC (cần theo dữ liệu qua biến, không phải một regex một dòng); vá ở đây
+ * chỉ đóng đúng biến thể `* 60 * 1000` mà review lượt 9 đo được là MỘT DÒNG,
+ * KHÔNG qua biến trung gian — cùng lớp với bản gốc `* 60000`.
+ */
+const RE_FAKE_UTC = /getTimezoneOffset\(\)\s*\*\s*(?:60000|60\s*\*\s*1000)/;
 
 function walkTs(dir: string): string[] {
   const out: string[] = [];
@@ -202,6 +215,23 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
     }
   });
 
+  it("★★★ vòng sửa 9 (I-5.4): biến thể `* 60 * 1000` (tách phép nhân, CÙNG DÒNG, CÙNG NGHĨA 60000) phải bị bắt", () => {
+    const P = join(SERVER_ROOT, "utils", "__fakeUtcCensusProbe60x1000.tmp.ts");
+    try {
+      writeFileSync(
+        P,
+        `export const moiFakeUtc60x1000 = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60 * 1000);\n`,
+      );
+      const bat = quetFakeUtc().filter((h) => h.file.endsWith("__fakeUtcCensusProbe60x1000.tmp.ts"));
+      expect(
+        bat.length,
+        "bản GỐC chỉ khớp `* 60000` — `* 60 * 1000` cùng dòng lách qua, đúng lỗ I-5.4 review lượt 9",
+      ).toBe(1);
+    } finally {
+      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+    }
+  });
+
   it("ba file mang bẫy đã biết KHÔNG được tính là nợ (comment loại trừ đúng)", () => {
     const ket = quetFakeUtc();
     const trongBaFile = ket.filter((h) => FILE_CO_COMMENT_BAY.includes(h.file));
@@ -240,6 +270,20 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
  * `dateFrom`/`dateTo` là bộ lọc NGƯỜI VẬN HÀNH gõ trên UI, không phải chuỗi máy khai).
  * Dòng đó phải mang `bg99-ok: <lý do>` NGUYÊN VĂN trên CÙNG DÒNG để được miễn — không
  * phải dòng trên/dòng dưới, tránh miễn nhầm một dòng vi phạm THẬT đứng cạnh.
+ *
+ * ── ★★★ Vòng sửa lượt 9 (I-5.1, review lượt 9 §6-1) — MÙ ĐÚNG DÒNG NÓ SINH RA ĐỂ
+ *    BẢO VỆ ─────────────────────────────────────────────────────────────────────────
+ * Quét theo-dòng ở trên đòi `completedAt|startedAt|inspectionTime` xuất hiện TRÊN
+ * CHÍNH DÒNG có `new Date(...)`. Một hàm HELPER cấp file với tham số đặt tên KHÁC
+ * (vd `toDateOrUndefined(iso: string | undefined)`, thân hàm chỉ có `new Date(iso)`)
+ * không hề nhắc ba từ khoá đó trên dòng của nó — dù MỌI lời gọi nó trong file đều
+ * truyền `p.startedAt`/`c.completedAt`/… `quetBg99Ast` (bên dưới) đóng đúng lỗ này
+ * bằng AST (`ts.createSourceFile`, cùng khuôn `cuaIngestScan.ts`): tìm mọi
+ * `new Date(<định danh>)` mà định danh là THAM SỐ kiểu `string` của một hàm cấp
+ * file có TÊN, rồi tra xem hàm đó có được GỌI ở đâu trong CÙNG file với một đối số
+ * nhắc một trong ba từ khoá không — nếu có, dòng `new Date(...)` bên trong hàm đó
+ * là ĐỎ, bất kể tên tham số. `quetBg99()` hợp nhất kết quả của cả hai thước (dòng-
+ * thẳng + AST), khử trùng theo (file, dòng).
  */
 const FILE_INGEST_BG99 = [
   "routers/machineApiRouters.ts",
@@ -257,7 +301,130 @@ const RE_MIEN_TRU_BG99 = /bg99-ok:/;
 
 interface Bg99Hit { file: string; line: number; text: string }
 
-/** Quét DANH SÁCH file tương đối `SERVER_ROOT` (mặc định bốn file ingest thật). */
+/** Một hàm CẤP FILE có TÊN (function declaration, hoặc `const NAME = (...) => …`/`function(...)`). */
+interface HamCapFileBg99 {
+  readonly ten: string;
+  readonly node: ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
+}
+
+function thuHamCapFileBg99(sf: ts.SourceFile): HamCapFileBg99[] {
+  const ra: HamCapFileBg99[] = [];
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name !== undefined && st.body !== undefined) {
+      ra.push({ ten: st.name.text, node: st });
+    } else if (ts.isVariableStatement(st)) {
+      for (const d of st.declarationList.declarations) {
+        if (
+          ts.isIdentifier(d.name) &&
+          d.initializer !== undefined &&
+          (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))
+        ) {
+          ra.push({ ten: d.name.text, node: d.initializer });
+        }
+      }
+    }
+  }
+  return ra;
+}
+
+/** Hàm cấp file (function/arrow/function-expression) BAO QUANH GẦN NHẤT của `node` — đi ngược `.parent`. */
+function timHamBaoQuanhGanNhatBg99(
+  node: ts.Node,
+): ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression | null {
+  let n: ts.Node | undefined = node.parent;
+  while (n !== undefined) {
+    if (ts.isFunctionDeclaration(n) || ts.isArrowFunction(n) || ts.isFunctionExpression(n)) return n;
+    n = n.parent;
+  }
+  return null;
+}
+
+/**
+ * ★★★ Vòng sửa 9 (I-5.1) — quét AST một file NGUYÊN VĂN (không cần đọc đĩa, cho
+ * phép lưới đột biến chạy trên một biến thể ĐÃ CHÈN đột biến hoàn toàn TRONG BỘ
+ * NHỚ). Xem docblock ở trên cho thuật toán đầy đủ.
+ *
+ * ⚠ GIỚI HẠN ĐÃ BIẾT (cùng lớp với `cuaIngestScan.ts`): chỉ theo được hàm CẤP FILE
+ * CÓ TÊN — một arrow ẩn danh lồng trực tiếp (callback không tên) không tự đặt tên
+ * thì KHÔNG resolve được "ai gọi nó" nên bị BỎ QUA (không flag, không phải xác nhận
+ * sạch) — an toàn theo hướng ít dương tính giả hơn; hình dạng ẩn danh chưa xuất
+ * hiện ở bốn file ingest hôm nay (đo được). Chỉ xử lý đối số là MỘT ĐỊNH DANH trực
+ * tiếp (`new Date(iso)`) — biểu thức phức tạp hơn (`new Date(a.b)`, số học…) ngoài
+ * phạm vi thước này (được thước dòng-thẳng ở trên phủ một phần qua từ khoá cùng dòng).
+ */
+function quetBg99AstTuVanBan(rel: string, raw: string): Bg99Hit[] {
+  const ket: Bg99Hit[] = [];
+  const sf = ts.createSourceFile(rel, raw, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const hams = thuHamCapFileBg99(sf);
+  const tenNguoc = new Map<ts.Node, string>(hams.map((h) => [h.node, h.ten]));
+
+  const diCacNewDate: ts.NewExpression[] = [];
+  const di = (n: ts.Node): void => {
+    if (
+      ts.isNewExpression(n) &&
+      ts.isIdentifier(n.expression) &&
+      n.expression.text === "Date" &&
+      n.arguments !== undefined &&
+      n.arguments.length === 1
+    ) {
+      diCacNewDate.push(n);
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+
+  const rawLines = raw.split("\n");
+  for (const call of diCacNewDate) {
+    const arg = call.arguments![0];
+    if (!ts.isIdentifier(arg)) continue; // chỉ định danh trực tiếp — xem giới hạn ở docblock
+    const ham = timHamBaoQuanhGanNhatBg99(call);
+    if (ham === null) continue;
+    const tenHam = tenNguoc.get(ham);
+    if (tenHam === undefined) continue; // hàm ẩn danh/lồng — không resolve được người gọi
+
+    const param = ham.parameters.find((p) => ts.isIdentifier(p.name) && p.name.text === arg.text);
+    if (param === undefined || param.type === undefined) continue;
+    const kieuVanBan = param.type.getText(sf);
+    if (!/string/.test(kieuVanBan) || /\bDate\b/.test(kieuVanBan)) continue; // "không phải số/Date"
+
+    // Có lời gọi NÀO tới `tenHam` trong CÙNG file mang một trong ba từ khoá không?
+    let coLoiGoiKeyword = false;
+    const diGoi = (n: ts.Node): void => {
+      if (coLoiGoiKeyword) return;
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === tenHam) {
+        for (const a of n.arguments) {
+          if (RE_TU_KHOA_MAY.test(a.getText(sf))) {
+            coLoiGoiKeyword = true;
+            break;
+          }
+        }
+      }
+      ts.forEachChild(n, diGoi);
+    };
+    diGoi(sf);
+    if (!coLoiGoiKeyword) continue;
+
+    const dong = sf.getLineAndCharacterOfPosition(call.getStart(sf)).line + 1;
+    const dongVanBan = rawLines[dong - 1] ?? "";
+    if (RE_MIEN_TRU_BG99.test(dongVanBan)) continue;
+    ket.push({ file: rel, line: dong, text: dongVanBan.trim() });
+  }
+  return ket;
+}
+
+function quetBg99Ast(relFiles: readonly string[], goc: string): Bg99Hit[] {
+  const ket: Bg99Hit[] = [];
+  for (const rel of relFiles) {
+    const full = join(goc, rel);
+    if (!existsSync(full)) continue;
+    ket.push(...quetBg99AstTuVanBan(rel, readFileSync(full, "utf8")));
+  }
+  return ket;
+}
+
+/** Quét DANH SÁCH file tương đối `SERVER_ROOT` (mặc định bốn file ingest thật) — hợp nhất thước
+ * dòng-thẳng (từ khoá cùng dòng) VÀ thước AST (theo lời gọi, vòng sửa 9/I-5.1), khử trùng theo
+ * (file, dòng). */
 function quetBg99(relFiles: readonly string[] = FILE_INGEST_BG99, goc: string = SERVER_ROOT): Bg99Hit[] {
   const ket: Bg99Hit[] = [];
   for (const rel of relFiles) {
@@ -269,6 +436,9 @@ function quetBg99(relFiles: readonly string[] = FILE_INGEST_BG99, goc: string = 
         ket.push({ file: rel, line: i + 1, text: ln.trim() });
       }
     });
+  }
+  for (const h of quetBg99Ast(relFiles, goc)) {
+    if (!ket.some((g) => g.file === h.file && g.line === h.line)) ket.push(h);
   }
   return ket;
 }
@@ -329,6 +499,78 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     } finally {
       try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
     }
+  });
+
+  it("★★★ vòng sửa 9 (I-5.1) — AST bắt được `new Date(iso)` khi tham số KHÔNG tên completedAt/startedAt/inspectionTime nhưng MỌI lời gọi hàm đều truyền một trong ba trường đó", () => {
+    const relProbe = "utils/__bg99AstProbe.tmp.ts";
+    const P = join(SERVER_ROOT, relProbe);
+    try {
+      writeFileSync(
+        P,
+        [
+          "function toDateOrUndefinedMoPhong(iso: string | undefined): Date | undefined {",
+          "  return iso === undefined ? undefined : new Date(iso);",
+          "}",
+          "export const dungThuBg99Ast = (p: { startedAt?: string }) => toDateOrUndefinedMoPhong(p.startedAt);",
+          "",
+        ].join("\n"),
+      );
+      const bat = quetBg99([relProbe]);
+      expect(
+        bat.length,
+        "thước theo-dòng-cùng-từ-khoá KHÔNG thấy hình dạng này (tham số tên `iso`, không phải completedAt/startedAt/inspectionTime) — thước AST phải bắt được bằng cách theo lời gọi",
+      ).toBe(1);
+    } finally {
+      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+    }
+  });
+
+  it("fuse AST: hàm CÙNG hình dạng (tham số string, `new Date(param)`) nhưng KHÔNG hề được gọi với từ khoá nào — KHÔNG bị bắt", () => {
+    const relProbe = "utils/__bg99AstProbeKhongLienQuan.tmp.ts";
+    const P = join(SERVER_ROOT, relProbe);
+    try {
+      writeFileSync(
+        P,
+        [
+          "function chuyenChuoiKhongLienQuanBg99(s: string | undefined): Date | undefined {",
+          "  return s === undefined ? undefined : new Date(s);",
+          "}",
+          "export const dungThuKhongLienQuan = (x: { label?: string }) => chuyenChuoiKhongLienQuanBg99(x.label);",
+          "",
+        ].join("\n"),
+      );
+      const bat = quetBg99([relProbe]);
+      expect(
+        bat.length,
+        "hàm này không hề được gọi với completedAt/startedAt/inspectionTime — không phải hình dạng BG-99, không nên đỏ (tránh dương tính giả tràn lan)",
+      ).toBe(0);
+    } finally {
+      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+    }
+  });
+
+  it("★★★ ĐỘT BIẾN THẬT (I-5.1, review lượt 9 §6-1): inspection.ts quay lại `new Date(iso)` trong toDateOrUndefined ⇒ census AST PHẢI bắt (không chạm đĩa)", () => {
+    const rel = "db/inspection.ts";
+    const goc = readFileSync(join(SERVER_ROOT, rel), "utf8");
+    const DONG_GOC = "  return iso === undefined ? undefined : docGioMay(iso) ?? undefined;";
+    expect(
+      goc.includes(DONG_GOC),
+      "không tìm thấy thân toDateOrUndefined ĐÃ VÁ (BG-99 Task 5) — bộ suy đã đổi neo?",
+    ).toBe(true);
+
+    const DONG_DOT_BIEN = "  return iso === undefined ? undefined : new Date(iso);";
+    const maDotBien = goc.replace(DONG_GOC, DONG_DOT_BIEN);
+    expect(maDotBien).not.toBe(goc);
+
+    const bat = quetBg99AstTuVanBan(rel, maDotBien);
+    expect(
+      bat.length,
+      "đột biến quay lại new Date(iso) thô trong toDateOrUndefined PHẢI bị census AST bắt — tham số tên `iso`, không khớp từ khoá cùng dòng, chỉ AST-theo-lời-gọi mới thấy được (đúng lỗ §6-1 review lượt 9: 'census mù đúng dòng nó sinh ra để bảo vệ')",
+    ).toBeGreaterThan(0);
+
+    // Đột biến chỉ sống trong biến `maDotBien` — chưa từng `writeFileSync`.
+    const docLai = readFileSync(join(SERVER_ROOT, rel), "utf8");
+    expect(docLai).toBe(goc);
   });
 
   it("★★★ BẤT BIẾN: 0 dòng MÃ đọc chuỗi thời gian MÁY bằng `new Date(...)` thô trong 4 file ingest", () => {

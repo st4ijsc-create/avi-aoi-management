@@ -268,6 +268,34 @@ function danhSachTepTs(dir: string, out: string[]): void {
 const NGUONG_CHEP_TAY = 6;
 
 /**
+ * ★★★ Vòng sửa lượt 9 (I-5.3, review lượt 9 §6-3 + BG-115) — NGƯỠNG THỨ HAI cho
+ * file ĐÃ ĐƯỢC CREDIT (`daDocSpec()` = true). TRƯỚC bản vá này, một file đã credit
+ * bị BỎ QUA HOÀN TOÀN (`if (daDocSpec(...)) continue;`) — KHÔNG đếm `soField` dù
+ * bao nhiêu field co-occur, kể cả 18/18. Đột biến A của review (nối một khối chép
+ * tay 18 field ĐỦ vào `ProductModels.tsx`, vốn đã credit qua bắc cầu) giữ §3 XANH
+ * — đúng lỗ "cổng canh miễn-trừ (allow-list bắc cầu) thay vì bất biến".
+ *
+ * ── SỐ ĐO ĐƯỢC, KHÔNG PHẢI SỐ BG-115 GỢI Ý ("VD ≤3") ─────────────────────────
+ * BG-115 gợi ý "≤3" dựa trên ĐÚNG HAI ca đo lúc đó (`productRouters.ts`,
+ * `ProductModels.tsx`). Áp `≤3` THẬT trên toàn `server/+shared/+client/src/`
+ * (2026-09-04, SAU khi I-2/I-3 vòng sửa 9 thêm gate `assertCapGioiHanHopLe`/
+ * `loiCapGioiHanSauMerge` — tham số CHÍNH XÁC 4 tên `lowerLimit/upperLimit/
+ * heightMin/heightMax`, xem `CapGioiHan`) cho ra **10 file dương tính giả**, BA
+ * TRONG ĐÓ LÀ CHÍNH lời gọi gate I-2/I-3 vừa thêm (`server/db/product.ts`,
+ * `server/routers/productVariantRouter.ts`, `server/routers/machineApiRouters.ts`
+ * — mỗi nơi build đúng MỘT object `{lowerLimit,upperLimit,heightMin,heightMax}`,
+ * KHÔNG phải chép tay). `4` — KHỚP ĐÚNG arity của `CapGioiHan`, khớp gợi ý dự
+ * phòng của coordinator cho `ProductModels.tsx` ("cân nhắc ngưỡng ≤4") — xoá
+ * SẠCH ba dương tính giả gate I-2/I-3 (đều dừng ở đúng 4 tên phân biệt) VÀ làm
+ * `ProductModels.tsx` (4 tên đo được, đã kiểm từng dòng — KHÔNG phải một khối)
+ * tự nhiên KHÔNG bị bắt — không cần allowlist tạm cho nó nữa. Một khối chép tay
+ * THẬT (≥5, đúng lớp Đột biến A của review — 18/18 hoặc bất kỳ số nào >4) vẫn bị
+ * bắt bình thường — xem các file CÒN bị bắt ở ngưỡng `4` trong `NO_DA_BIET_DA_CREDIT`
+ * / `MIEN_TRU_KIEN_TRUC` bên dưới, mỗi file kèm lý do đo được riêng.
+ */
+const NGUONG_CHEP_TAY_DA_CREDIT = 4;
+
+/**
  * File ĐÃ BIẾT chép tay một khối giới hạn nhưng KHÔNG PHẢI của Task 7 — canh
  * riêng bằng ticket, KHÔNG xoá âm thầm khi nó biến mất (xem test "XÁC NHẬN nợ"
  * bên dưới — hễ nợ hết thật thì XOÁ dòng tương ứng Ở ĐÂY). Đường dẫn LUÔN
@@ -301,15 +329,101 @@ const NO_DA_BIET: Record<string, string> = {
     "BG-107/R-KC-8 — bảng ánh xạ HEADER Excel/CSV (alias EN/VI), di trú cần thiết kế alias-map (BG-110), ngoài phạm vi Task 14. Xác nhận CÒN bị mệnh đề quét bắt 2026-09-04 (xem test '(c) XÁC NHẬN nợ BG-107' bên dưới).",
 };
 
-/** File KHÔNG phải bản sao — nó LÀ đích tham chiếu mà §2 đã so trực tiếp (spec suy THEO nó, không phải ngược lại). Miễn trừ VĨNH VIỄN, không phải nợ. */
+/**
+ * ★★★ Vòng sửa lượt 9 (I-5.3) — allowlist RIÊNG cho file ĐÃ CREDIT
+ * (`daDocSpec()`=true) nhưng vượt `NGUONG_CHEP_TAY_DA_CREDIT`. TÁCH khỏi
+ * `NO_DA_BIET` (dành cho file CHƯA credit) vì lý do bị bắt khác hẳn: đây không
+ * phải "chưa đọc spec", mà là "đã đọc spec nhưng vẫn còn nhắc TÊN field ở nhiều
+ * chỗ hơn ngưỡng cho phép" — hai câu hỏi khác nhau, hai sổ khác nhau.
+ *
+ * ⚠ RỖNG hôm nay (2026-09-04) — không phải bỏ quên, đo được: brief vòng sửa 9
+ * (I-5.3) chỉ đạo "khôi phục allowlist BG-107 cho ProductModels.tsx", NHƯNG ở
+ * ngưỡng `4` đo được ĐÚNG (xem docblock `NGUONG_CHEP_TAY_DA_CREDIT` — ngưỡng `3`
+ * mà BG-115 gợi ý gây 10 dương tính giả trên toàn repo, kể cả 3 điểm gọi CHÍNH
+ * gate I-2/I-3 vòng sửa 9 vừa thêm), `ProductModels.tsx` co-occur ĐÚNG 4 tên —
+ * KHÔNG vượt ngưỡng — không cần allowlist tạm nữa. Phép đo bác chỉ đạo brief
+ * ⇒ theo phép đo (đúng luật "Phép đo bác brief ⇒ theo phép đo, khai rõ"), khai
+ * trong báo cáo Task này. Hạ tầng dict giữ lại cho nợ TƯƠNG LAI (file thật sự
+ * chép tay đang nấp sau credit, chưa xác nhận được là kiến trúc vĩnh viễn).
+ */
+const NO_DA_BIET_DA_CREDIT: Record<string, string> = {};
+
+/** File KHÔNG phải bản sao — nó LÀ đích tham chiếu mà §2 đã so trực tiếp (spec suy THEO nó, không phải ngược lại), HOẶC một file mà TOÀN BỘ mục đích là xử lý/hiển thị TỪNG field riêng lẻ (form/row-builder toàn trường, không phải một khối chép — không thể "gộp" các lần nhắc tên field lại mà không phá vỡ chức năng). Miễn trừ VĨNH VIỄN, không phải nợ. */
 const MIEN_TRU_KIEN_TRUC: Record<string, string> = {
   "server/services/pointResultEvaluator.ts":
     "Định nghĩa `PointLimitSource` — §2 ở trên đã đối chiếu trực tiếp (compile-time `satisfies` + runtime). Bắt buộc file này import chính spec suy TỪ nó là vòng ngược chiều.",
+  // ── Vòng sửa lượt 9 (I-5.3) — BỐN file ĐÃ credit vẫn vượt NGUONG_CHEP_TAY_DA_CREDIT
+  // (4) SAU khi bỏ comment (`boComment`) — đo TỪNG DÒNG 2026-09-04, cả bốn đều là
+  // "toàn bộ mục đích của file LÀ xử lý per-field", không phải một khối chép giấu.
+  "client/src/components/productModels/PointDetailsForm.tsx":
+    "18/18 field — nhưng ĐÃ suy props TỪ LIMIT_FIELDS (khoá `point${Capitalize<F>}`/`setPoint${Capitalize<F>}`, " +
+      "xác nhận lại ở review lượt 9 §I-1: 'kiểm từng dòng, đúng'). Mỗi field vẫn cần MỘT <Label>/<Input>/validate/i18n-key " +
+      "RIÊNG trong JSX (không thể vòng-lặp-hoá UI form mà không phá cấu trúc hiển thị) ⇒ tên field xuất hiện nhiều " +
+      "chỗ THẬT SỰ, không phải chép tay object literal.",
+  "server/utils/measurementPointImport.ts":
+    "10/18 field (sau bỏ comment) — hàm `buildInsertFromImportPoint` là ROW-BUILDER cho TOÀN BỘ cột giới hạn của " +
+      "InsertMeasurementPointDef (bulk import): mỗi field có một dòng `strip ? undefined : dec(point.X)` RIÊNG (gate " +
+      "BG-113/I-2 mới thêm SAU đột biến, xem `loiCapGioiHanSauMerge`) — không phải chép tay tên cột mà TÍNH TOÁN " +
+      "per-field thật. `touchesLimits` đã suy từ `touchesApprovalLimitFields` (BG-104, tự-hết-hạn xong) từ trước.",
+  "client/src/components/products/teach/ComponentLimitsDialog.tsx":
+    "5/18 field (lowerLimit/upperLimit/unit/heightMin/heightMax) — dialog 'dạy giới hạn TRÊN HỆ' (Task 11), MỘT TẬP " +
+      "CON CỐ Ý đại diện cho form nhập nhanh (không phải toàn bộ 18 cột spec-gate) — đã ghi rõ trong chính docblock " +
+      "đầu file đó. Cùng lớp lý do đã xác nhận cho `teachTreeLogic.ts` (xem docblock `NGUONG_CHEP_TAY` phía trên).",
+  "client/src/components/products/teach/teachTreeLogic.ts":
+    "5/18 field — CÙNG tập con `TEN_COT_HIEN_THI` (lowerLimit/upperLimit/unit/heightMin/heightMax) cho bảng xem " +
+      "trước UI cây dạy — đã xác nhận trong docblock `NGUONG_CHEP_TAY` (vòng sửa 2): 'KHÔNG phải chép lại 18 field " +
+      "spec-gate'. Tái xuất hiện ở vòng sửa 9 CHỈ vì ngưỡng credited MỚI (4) — không phải một file mới, không phải " +
+      "hành vi mới.",
 };
 
-/** File thật trên đĩa import THẲNG `pointLimitSpec` (đọc dòng `import`, không đoán). */
+/** File thật trên đĩa CÓ DÒNG import từ `pointLimitSpec` (đọc dòng `import`, không đoán) — CHƯA đòi hỏi đã DÙNG. */
 function importThangSpec(noiDung: string): boolean {
   return /from\s+["'][^"']*pointLimitSpec["']/.test(noiDung);
+}
+
+/**
+ * ★★★ Vòng sửa lượt 9 (I-5.3) — trích các ĐỊNH DANH được import từ dòng
+ * `import {...} from ".../pointLimitSpec"` (chịu được `import type`, đổi tên
+ * `as`). Trả `[]` nếu không trích được theo dạng named-import (side-effect
+ * import trần `import ".../pointLimitSpec";` — hiếm, không có định danh nào để
+ * đòi "có dùng").
+ */
+function tenDinhDanhImportSpec(noiDung: string): string[] {
+  const m = noiDung.match(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["'][^"']*pointLimitSpec["']/);
+  if (!m) return [];
+  return m[1]
+    .split(",")
+    .map((s) => s.replace(/^\s*type\s+/, "").trim())
+    .map((s) => (s.includes(" as ") ? s.split(" as ")[1]!.trim() : s))
+    .filter(Boolean);
+}
+
+/**
+ * ★★★ Vòng sửa lượt 9 (I-5.3, review lượt 9 §6-3 Đột biến B) — file THẬT SỰ đọc
+ * spec: CÓ dòng import từ `pointLimitSpec` VÀ ÍT NHẤT MỘT định danh import đó
+ * XUẤT HIỆN NGOÀI chính (các) dòng import — không chỉ một import TRANG TRÍ để
+ * qua mặt census. Đo được (review): thêm
+ * `import { LIMIT_FIELDS } from "@shared/pointLimitSpec";` KHÔNG DÙNG vào một
+ * file chép tay 18 field MỚI giữ `daDocSpec()` cũ (chỉ đòi "có dòng import")
+ * XANH — `importThangSpec()` đo "tệp có NHẮC TÊN module spec trong một câu
+ * `from`", KHÔNG đo "tệp suy từ spec". Hàm này thay thế `importThangSpec` ở
+ * MỌI chỗ census dùng để quyết định "đã đọc spec".
+ */
+function importThangSpecThatDuocDung(noiDung: string): boolean {
+  if (!importThangSpec(noiDung)) return false;
+  const ten = tenDinhDanhImportSpec(noiDung);
+  if (ten.length === 0) return true; // side-effect import trần — không có định danh để đòi "dùng"
+  // Bỏ MỌI COMMENT trước (kể cả comment CUỐI DÒNG ngay sau câu import — nếu
+  // không, một dòng như `import {X} from "..."; // giải thích KHÔNG dùng X` sẽ
+  // tự nhắc lại chữ `X` trong chính lời giải thích và đánh lừa phép kiểm "dùng
+  // ngoài import" — đo được khi viết fuse test §6-3 Đột biến B của chính hàm
+  // này), RỒI mới bỏ MỌI dòng `import ...;` (kể cả nhiều dòng, dừng ở dấu `;`
+  // đầu tiên) và hỏi định danh còn xuất hiện Ở PHẦN CÒN LẠI không — "chỉ nằm
+  // trong chính câu import (hoặc một comment nhắc tên nó)" ⇒ trang trí, không
+  // phải dùng thật. Dùng `boComment` (khai bên dưới, hoisted — cùng module).
+  const khongComment = boComment(noiDung);
+  const khongCoDongImport = khongComment.replace(/^\s*import\b[^;]*;?/gm, "");
+  return ten.some((t) => new RegExp(`\\b${t}\\b`).test(khongCoDongImport));
 }
 
 /**
@@ -348,7 +462,7 @@ function suyDuongDanImport(specifier: string, tuFile: string): string | null {
  * ⚠ Miễn trừ CẤP FILE — xem cảnh báo giới hạn ở docblock đầu file.
  */
 function daDocSpec(duongFile: string, noiDung: string): boolean {
-  if (importThangSpec(noiDung)) return true;
+  if (importThangSpecThatDuocDung(noiDung)) return true;
   const specifiers = [...noiDung.matchAll(/from\s+["']([^"']+)["']/g)].map((m) => m[1]);
   for (const sp of specifiers) {
     const duongY = suyDuongDanImport(sp, duongFile);
@@ -359,46 +473,103 @@ function daDocSpec(duongFile: string, noiDung: string): boolean {
     } catch {
       continue;
     }
-    if (importThangSpec(noiDungY)) return true;
+    // ★★★ I-5.3 — Y (module bắc cầu) cũng phải THẬT SỰ dùng spec, không chỉ nhắc
+    // tên nó trong một câu `from` trang trí — cùng đòi hỏi như bậc trực tiếp.
+    if (importThangSpecThatDuocDung(noiDungY)) return true;
   }
   return false;
 }
 
 /**
  * Quét `server/` + `shared/` + `client/src/` (trừ `node_modules`, `dist`,
- * `*.test.ts`/`*.test.tsx`, `*.d.ts`, và `DUONG_TU_LOAI_TRU`), trả về file có
- * ≥`NGUONG_CHEP_TAY` field của `LIMIT_FIELDS` co-occur mà CHƯA `daDocSpec()`
- * (trực tiếp hoặc bắc cầu một bậc) — trừ các đường dẫn trong `boQua`. Đường
- * dẫn trả về LUÔN root-relative, dùng `/` (không phụ thuộc hệ điều hành).
+ * `*.test.ts`/`*.test.tsx`, `*.d.ts`, và `DUONG_TU_LOAI_TRU`) — trừ các đường
+ * dẫn trong `boQua`. Đường dẫn trả về LUÔN root-relative, dùng `/` (không phụ
+ * thuộc hệ điều hành).
+ *
+ * ★★★ Vòng sửa lượt 9 (I-5.3, review §6-3) — file ĐÃ `daDocSpec()` KHÔNG còn
+ * được BỎ QUA HOÀN TOÀN như trước (`if (daDocSpec) continue;` — lỗ mà Đột biến
+ * A của review khai thác: nối một khối chép tay 18/18 field ĐỦ vào một file đã
+ * credit, census cũ vẫn XANH vì không hề đếm `soField` của file đó). Nay MỌI
+ * file đều được đếm `soField`, chỉ NGƯỠNG khác nhau: file CHƯA credit dùng
+ * `NGUONG_CHEP_TAY` (6, giữ nguyên); file ĐÃ credit dùng
+ * `NGUONG_CHEP_TAY_DA_CREDIT` (4, chặt hơn hẳn — một file đã đọc spec mà vẫn
+ * nhắc >4 tên field là dấu hiệu một khối chép tay ĐANG NẤP sau credit).
  */
-function quetChepTayGioiHan(boQua: ReadonlySet<string>): { duong: string; soField: number }[] {
+/**
+ * ★★★ Vòng sửa lượt 9 (I-5.3) — xoá comment `//` VÀ khối `/* … *‍/` trước khi đếm
+ * `soField` (không cần giữ số dòng). ĐO ĐƯỢC: `client/src/components/productModels/
+ * types.ts` co-occur 2 tên spec (`lowerLimit`/`upperLimit`) NHƯNG cả hai chỉ nằm
+ * trong MỘT dòng docblock liệt kê tên 18 field bằng VĂN XUÔI (giải thích "18 field
+ * spec-gate, nay đến từ CacCotGioiHan") — không một dòng CODE nào khai/gán field
+ * đó. Cùng khuôn `fakeUtcCensus.test.ts#dongMaKhongComment`/BG-96, viết lại độc
+ * lập ở đây (không import chéo giữa hai tệp *.test.ts).
+ */
+function boComment(src: string): string {
+  return src
+    .split("\n")
+    .map((dong) => {
+      const tr = dong.trim();
+      if (tr.startsWith("//") || tr.startsWith("*") || tr.startsWith("/**")) return "";
+      // Comment `//` Ở CUỐI DÒNG (vd `import {X} from "...";  // giải thích`) —
+      // cắt từ `//` trở đi. Đơn giản hoá CÓ CHỦ Ý (không phân biệt `//` trong
+      // chuỗi ký tự, vd URL "http://…") — cùng đánh đổi mà mọi census regex khác
+      // trong repo này chấp nhận (không phải AST); đo được KHÔNG có case đó xuất
+      // hiện gần tên field trong sáu file bị canh hôm nay.
+      const iCuoiDong = dong.indexOf("//");
+      return iCuoiDong === -1 ? dong : dong.slice(0, iCuoiDong);
+    })
+    .join("\n")
+    .replace(/\/\*[\s\S]*?\*\//g, ""); // khối /* … */ (kể cả trải nhiều dòng, đã qua lọc dòng-bắt-đầu-bằng-* ở trên cho ca thường gặp)
+}
+
+/** Đếm `soField` co-occur (SAU KHI bỏ comment — xem `boComment`) + `daCredit` cho
+ * MỘT file — tách riêng để lưới đột biến gọi lại được ĐÚNG logic này trên một
+ * chuỗi đã sửa trong bộ nhớ, không cần đi qua `quetChepTayGioiHan` (vốn luôn đọc
+ * đĩa thật). ⚠ `daDocSpec` vẫn nhận `src` NGUYÊN VĂN (import luôn ở đầu dòng code
+ * thật, không cần bỏ comment để tìm nó). */
+function phanTichMotTep(duong: string, src: string): { soField: number; daCredit: boolean } {
+  const daCredit = daDocSpec(duong, src);
+  const srcKhongComment = boComment(src);
+  let soField = 0;
+  for (const field of LIMIT_FIELDS) {
+    if (new RegExp(`\\b${field}\\b`).test(srcKhongComment)) soField++;
+  }
+  return { soField, daCredit };
+}
+
+/** `true` nếu (soField, daCredit) của một file VƯỢT ngưỡng tương ứng (đã credit dùng ngưỡng chặt hơn). */
+function vuotNguong(pt: { soField: number; daCredit: boolean }): boolean {
+  return pt.daCredit ? pt.soField > NGUONG_CHEP_TAY_DA_CREDIT : pt.soField >= NGUONG_CHEP_TAY;
+}
+
+function quetChepTayGioiHan(boQua: ReadonlySet<string>): { duong: string; soField: number; daCredit: boolean }[] {
   const tep: string[] = [];
   for (const goc of CAC_GOC_QUET) danhSachTepTs(join(GOC_REPO, goc), tep);
-  const ket: { duong: string; soField: number }[] = [];
+  const ket: { duong: string; soField: number; daCredit: boolean }[] = [];
   for (const duong of tep) {
     const duongTuongDoi = relative(GOC_REPO, duong).split(sep).join("/");
     if (DUONG_TU_LOAI_TRU.has(duongTuongDoi)) continue;
     if (boQua.has(duongTuongDoi)) continue;
     const src = readFileSync(duong, "utf8");
-    if (daDocSpec(duong, src)) continue;
-    let soField = 0;
-    for (const field of LIMIT_FIELDS) {
-      if (new RegExp(`\\b${field}\\b`).test(src)) soField++;
-    }
-    if (soField >= NGUONG_CHEP_TAY) ket.push({ duong: duongTuongDoi, soField });
+    const pt = phanTichMotTep(duong, src);
+    if (vuotNguong(pt)) ket.push({ duong: duongTuongDoi, ...pt });
   }
   return ket.sort((a, b) => a.duong.localeCompare(b.duong));
 }
 
 describe("§3 — MỆNH ĐỀ QUÉT: không còn bản chép tay MỚI ngoài §1/§2", () => {
-  const boQuaHomNay = new Set([...Object.keys(NO_DA_BIET), ...Object.keys(MIEN_TRU_KIEN_TRUC)]);
+  const boQuaHomNay = new Set([
+    ...Object.keys(NO_DA_BIET),
+    ...Object.keys(MIEN_TRU_KIEN_TRUC),
+    ...Object.keys(NO_DA_BIET_DA_CREDIT),
+  ]);
 
-  it("★★★ QUÉT THẬT trên server/+shared/+client/src/: 0 file chép tay ngoài nợ đã biết + miễn trừ kiến trúc", () => {
+  it("★★★ QUÉT THẬT trên server/+shared/+client/src/: 0 file chép tay ngoài nợ đã biết + miễn trừ kiến trúc (kể cả file ĐÃ credit vượt ngưỡng chặt)", () => {
     const ket = quetChepTayGioiHan(boQuaHomNay);
     expect(
       ket,
-      `phát hiện file chép tay ≥${NGUONG_CHEP_TAY}/18 field, chưa đọc pointLimitSpec (trực tiếp hoặc bắc cầu 1 bậc), chưa khai ở NO_DA_BIET/MIEN_TRU_KIEN_TRUC: ${JSON.stringify(ket)}. ` +
-        `Nếu tên KHÔNG nằm trong danh sách đã biết (productRouters.ts/ba file BG-107) — ĐỪNG tự thêm allowlist, khai trong báo cáo Task 7 để coordinator quyết định (xem docblock VÒNG SỬA 2 + BỔ SUNG vòng sửa 2).`,
+      `phát hiện file chép tay (≥${NGUONG_CHEP_TAY}/18 field nếu CHƯA đọc spec, >${NGUONG_CHEP_TAY_DA_CREDIT}/18 nếu ĐÃ đọc spec), chưa khai ở NO_DA_BIET/MIEN_TRU_KIEN_TRUC/NO_DA_BIET_DA_CREDIT: ${JSON.stringify(ket)}. ` +
+        `Nếu tên KHÔNG nằm trong danh sách đã biết — ĐỪNG tự thêm allowlist, khai trong báo cáo để coordinator quyết định (xem docblock VÒNG SỬA 2 + BỔ SUNG vòng sửa 2 + I-5.3 vòng sửa 9).`,
     ).toEqual([]);
   });
 
@@ -420,12 +591,17 @@ describe("§3 — MỆNH ĐỀ QUÉT: không còn bản chép tay MỚI ngoài �
   // `productRouters.ts` hôm nay). Tức KHÔNG có file nào "sạch lây" nhờ một lần
   // import — mỗi lần quét đọc THẬT trạng thái Y, không ghim kết quả cũ.
 
-  // (c) — cùng khuôn BG-104 cũ, MỘT test mỗi file BG-107 CÒN nợ. Task 14
-  // (2026-09-04) đã di trú 3/4 file gốc (`ProductModels.tsx`/`types.ts`/
+  // (c) — cùng khuôn BG-104 cũ, MỘT test mỗi file BG-107 CÒN nợ (chưa credit).
+  // Task 14 (2026-09-04) đã di trú 3/4 file gốc (`ProductModels.tsx`/`types.ts`/
   // `PointDetailsForm.tsx`) — 3 test (c) tương ứng ĐÃ XOÁ đúng thiết kế
-  // tự-hết-hạn (dòng đỏ nguyên văn trước khi gỡ: chép trong báo cáo Task 14).
-  // Chỉ còn `BulkImportDialog.tsx` (R-KC-8 — di trú cần alias-map, ngoài phạm
-  // vi Task 14, xem `NO_DA_BIET` ở trên).
+  // tự-hết-hạn. Chỉ còn `BulkImportDialog.tsx` (R-KC-8 — di trú cần alias-map,
+  // ngoài phạm vi Task 14, xem `NO_DA_BIET` ở trên).
+  //
+  // ★ Vòng sửa 9 (I-5.3) — `ProductModels.tsx` KHÔNG tái xuất hiện: ở ngưỡng
+  // `NGUONG_CHEP_TAY_DA_CREDIT` ĐO ĐƯỢC ĐÚNG (4, không phải `3` BG-115 chỉ gợi
+  // ý), co-occur đo được của nó (4) KHÔNG vượt ngưỡng ⇒ không cần allowlist tạm
+  // (`NO_DA_BIET_DA_CREDIT` RỖNG hôm nay — xem docblock tại chỗ khai). `(c')`
+  // dưới đây là hạ tầng cho lần tới dict đó có entry, không phải test đang chạy.
   for (const duongBG107 of [
     "client/src/components/BulkImportDialog.tsx",
   ] as const) {
@@ -439,4 +615,72 @@ describe("§3 — MỆNH ĐỀ QUÉT: không còn bản chép tay MỚI ngoài �
       ).toContain(duongBG107);
     });
   }
+
+  // (c') — vòng sửa 9 (I-5.3) — MỘT test mỗi file trong `NO_DA_BIET_DA_CREDIT`
+  // CÒN nợ (đã credit nhưng vẫn vượt ngưỡng chặt `NGUONG_CHEP_TAY_DA_CREDIT`).
+  // CLIENT di trú xong (soField ≤ 3) thì test này ĐỎ — đúng lúc đó xoá dòng
+  // allowlist tương ứng và xoá CHÍNH test này (cùng thiết kế tự-hết-hạn BG-104).
+  for (const duongDaCredit of Object.keys(NO_DA_BIET_DA_CREDIT)) {
+    it(`(c') XÁC NHẬN nợ '${duongDaCredit}' (đã credit, vẫn vượt ngưỡng ${NGUONG_CHEP_TAY_DA_CREDIT}) CÒN THẬT hôm nay — CLIENT di trú xong (soField ≤ ${NGUONG_CHEP_TAY_DA_CREDIT}) thì test này ĐỎ, đúng lúc đó xoá dòng NO_DA_BIET_DA_CREDIT và xoá CHÍNH test này`, () => {
+      const boQuaTru = new Set([...boQuaHomNay].filter((p) => p !== duongDaCredit));
+      const ket = quetChepTayGioiHan(boQuaTru);
+      const duongs = ket.map((k) => k.duong);
+      expect(
+        duongs,
+        `mệnh đề quét KHÔNG còn bắt được ${duongDaCredit} — nợ (phần file này) có thể đã hết; nếu đúng, xoá dòng NO_DA_BIET_DA_CREDIT và xoá test này`,
+      ).toContain(duongDaCredit);
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★★★ ĐỘT BIẾN THẬT (I-5.3, review lượt 9 §6-3) — MÔ PHỎNG TRONG BỘ NHỚ, 0 byte
+  // chạm đĩa: đo trên NỘI DUNG THẬT của `ProductModels.tsx` đã đọc ở trên, KHÔNG
+  // ghi đè file.
+  // ══════════════════════════════════════════════════════════════════════════
+  const DUONG_PM = "client/src/pages/ProductModels.tsx";
+  const NOI_DUNG_PM_THAT = readFileSync(join(GOC_REPO, DUONG_PM), "utf8");
+
+  it("★★★ ĐỘT BIẾN A (§6-3): thêm 7 tên field MỚI vào ProductModels.tsx (đã credit) ⇒ vượt ngưỡng chặt, census phải ĐỎ", () => {
+    const truoc = phanTichMotTep(DUONG_PM, NOI_DUNG_PM_THAT);
+    expect(truoc.daCredit, "ProductModels.tsx phải ĐÃ credit hôm nay (bắc cầu qua types.ts) — nếu không, đột biến này không đo đúng lỗ §6-3").toBe(true);
+    expect(vuotNguong(truoc), `soField hôm nay (${truoc.soField}) phải TRONG ngưỡng cho phép — nếu đã đỏ sẵn thì đột biến dưới đây không chứng minh được gì mới`).toBe(false);
+
+    // 7 tên KHÔNG có mặt hôm nay trong ProductModels.tsx (đo trước — tránh đếm
+    // trùng field đã co-occur sẵn, giữ đúng nghĩa "+7 tên MỚI").
+    const BAY_TEN_MOI = ["heightMin", "heightMax", "areaMin", "areaMax", "volumeMin", "volumeMax", "coplanarityMax"] as const;
+    for (const t of BAY_TEN_MOI) {
+      expect(new RegExp(`\\b${t}\\b`).test(NOI_DUNG_PM_THAT), `[cầu chì] "${t}" đã có mặt sẵn — chọn lại 7 tên thật sự MỚI`).toBe(false);
+    }
+    // ★ Nối bằng MÃ THẬT (object literal), KHÔNG PHẢI comment — nếu chỉ bơm mồi
+    // vào một dòng `//`, chính `boComment()` (được thêm vòng sửa 9 để đóng lỗ
+    // `types.ts` co-occur-trong-docblock) sẽ xoá nó, khiến đột biến KHÔNG đột
+    // biến gì (đo được — thất bại lần đầu viết test này, giữ lại bài học).
+    const noiDungDotBien = `${NOI_DUNG_PM_THAT}\nconst BG113_DOT_BIEN_S6_3 = { ${BAY_TEN_MOI.map((t) => `${t}: null`).join(", ")} };\n`;
+    const sau = phanTichMotTep(DUONG_PM, noiDungDotBien);
+    expect(sau.soField, "soField phải tăng đúng 7").toBe(truoc.soField + 7);
+    expect(sau.daCredit, "vẫn credit — đột biến không đụng dòng import").toBe(true);
+    expect(vuotNguong(sau), "sau đột biến PHẢI vượt ngưỡng chặt — nếu vẫn false thì census KHÔNG canh được gì").toBe(true);
+
+    // Đột biến chỉ sống trong biến `noiDungDotBien` — chưa từng ghi đĩa.
+    const docLai = readFileSync(join(GOC_REPO, DUONG_PM), "utf8");
+    expect(docLai).toBe(NOI_DUNG_PM_THAT);
+  });
+
+  it("★★★ ĐỘT BIẾN B (§6-3): import spec KHÔNG DÙNG (trang trí) trên một file chép tay MỚI ⇒ vẫn bị bắt (không credit giả)", () => {
+    // Mô phỏng ĐÚNG hình dạng Đột biến B của review: một file MỚI hoàn toàn chép
+    // tay đủ field, kèm MỘT dòng import spec nhưng KHÔNG hề dùng định danh đó ở
+    // đâu khác trong file — "trang trí" để qua mặt daDocSpec() cũ.
+    const TEN_GIA = "server/contracts/__gia_lap_dot_bien_b.ts";
+    const NOI_DUNG_GIA =
+      `import { LIMIT_FIELDS } from "@shared/pointLimitSpec"; // KHÔNG dùng LIMIT_FIELDS ở đâu khác\n` +
+      `export const row = {\n` +
+      LIMIT_FIELDS.map((f) => `  ${f}: null,`).join("\n") +
+      `\n};\n`;
+    // Cầu chì: bản GIẢ ĐỊNH này thật sự có dòng import (importThangSpec cũ sẽ tin nó).
+    expect(importThangSpec(NOI_DUNG_GIA)).toBe(true);
+    const pt = phanTichMotTep(TEN_GIA, NOI_DUNG_GIA);
+    expect(pt.daCredit, "import KHÔNG DÙNG không được tính là 'đã đọc spec' — nếu true thì §6-3 Đột biến B vẫn qua mặt được census").toBe(false);
+    expect(pt.soField).toBe(LIMIT_FIELDS.length); // đủ 18/18
+    expect(vuotNguong(pt), "0 credit ⇒ dùng ngưỡng THƯỜNG (6) — 18 ≥ 6 ⇒ phải bị bắt").toBe(true);
+  });
 });
