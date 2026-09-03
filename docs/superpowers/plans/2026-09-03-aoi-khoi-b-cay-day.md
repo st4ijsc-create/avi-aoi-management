@@ -320,3 +320,21 @@ Task 5 đã guard `0338` và thêm lưới canh. **Nhưng phần còn lại chư
 ⇒ Đây là **bất biến**, không phải một ca lẻ: *"không migration tái chạy được nào được tạo ràng buộc mà một migration SAU nó đã bỏ."* Cần census cưỡng chế, không phải sửa từng cặp.
 
 ⚠ Lớp lỗi này tệ vì nó **không đỏ ở đâu cả**: schema đúng sau lần áp đầu, sai sau lần áp lại, và không lưới nào chạy migration hai lần.
+
+---
+
+## BG-96 — header và cây lệch ĐÚNG 7 GIỜ trong cùng một request
+
+**Task 3 đo được, tôi đã xác nhận tại nguồn.**
+
+`server/routers/aoiPackageRouter.ts:1320`:
+```js
+const inspectionTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
+```
+⇒ `product_inspections.inspectionTime` bị dịch **"fake UTC"** (+7h ở UTC+7), trong khi `startedAt`/`completedAt` **cấp cây** ghi **thô**. Cùng một request, hai mốc thời gian **lệch đúng một offset**.
+
+**Chưa nổ:** 0/435 hàng capture có `startedAt` (máy chưa gửi timing per-cấp). **Sẽ nổ** ngay khi máy bắt đầu gửi — và khi đó mọi truy vấn nối bo với cấp dưới theo thời gian đều sai lệch một offset, **im lặng**.
+
+⚠ Đây là nợ **có sẵn** (doc 51 P1), không do Khối B sinh ra. Nhưng Khối B vừa làm nó **quan trọng hơn**: trước đây cấp cây không ghi thời gian, nay có.
+
+**Ràng buộc:** Task 4 và mọi việc sau **không được** so thời gian giữa header và cây cho tới khi BG-96 đóng.
