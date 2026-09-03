@@ -41,8 +41,10 @@ import { tachTriDo } from "../db/inspection";
 // module (cùng nguyên tắc dòng trên): `db.traBanDayChoCay` mới là hàm ĐỌC CSDL và
 // nó vẫn đi qua barrel `../db` để lưới mock được.
 import { congSpecTuBanDay } from "../services/specGateCayV2";
-// BG-97 — hàm THUẦN đưa chuỗi thời gian máy gửi về cùng khung với `changedAt`.
-import { mocDoTuChuoi } from "../services/gioiHanLucDoCayV2";
+// BG-99 (Task 5) — chuỗi thời gian TRẦN máy khai đọc bằng ĐÚNG MỘT luật (trần = UTC)
+// ở mọi điểm ingest. `mocDoTuChuoi` (BG-97, chỗ ở CŨ của luật này) đã XOÁ — hết caller
+// sản xuất sau khi Task 5 đổi neo spec-gate sang mốc-nhận-server (xem `submitInspectionTreeV2`).
+import { docGioMay } from "../utils/factoryTime";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
 import {
   authenticateMachine,
@@ -943,7 +945,10 @@ function refineInspectionTime(
   //     insert time and was classified TRANSIENT, so the payload was buffered to
   //     the WAL and retried FOREVER (a poison entry that can never succeed). A
   //     clean BAD_REQUEST is strictly better — no machine that works today fails.
-  if (Number.isNaN(new Date(data.inspectionTime).getTime())) {
+  // BG-99 (Task 5) — route through `docGioMay`, the SAME rule the write path
+  // (`rawInspTime` below) actually uses, instead of a raw `new Date(...)` that would
+  // silently apply a different (TZ-dependent) parse rule than what gets persisted.
+  if (docGioMay(data.inspectionTime) === null) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["inspectionTime"],
@@ -1072,9 +1077,16 @@ export function machineHeaderKey(ctx: unknown): string | null {
  * hình dạng).
  */
 export function ensureInspectionWalWired(): void {
-  walSetProcessFn(async (payload) => {
+  walSetProcessFn(async (payload, meta) => {
     if (laHinhDangCayV2(payload)) {
-      const ketQua = await submitInspectionTreeV2(payload as unknown as MachinePayloadV2, {});
+      // ★★★ Task 5 (BG-97 → BG-99) — neo spec-gate của lượt PHÁT LẠI là mốc XẾP HÀNG
+      // của MỤC WAL này (`meta.enqueuedAt`), KHÔNG phải đồng hồ lúc phát lại và KHÔNG
+      // phải `payload.completedAt/startedAt` (đồng hồ máy — spec QĐ-2 đã loại). Xem
+      // docblock `mocDo` trong `submitInspectionTreeV2` và `ProcessFn`
+      // (`inspectionStoreForward.ts`).
+      const ketQua = await submitInspectionTreeV2(payload as unknown as MachinePayloadV2, {
+        serverReceivedAt: meta?.enqueuedAt,
+      });
       return { inspectionId: ketQua.inspectionId };
     }
     return processInspectionSubmission(payload as SubmitInspectionInput);
@@ -1121,6 +1133,11 @@ export async function inspectionAlreadyPersisted(input: SubmitInspectionInput): 
   // Cutover 2026-09-03 (Khối C QĐ-1, BG-96) — KHÔNG dịch "fake UTC" nữa; `inspectionTime`
   // là UTC thật, cùng hệ quy chiếu mà đường ghi dùng (xem chú thích lớn ở
   // processInspectionSubmission).
+  // BG-99 (Task 5) — tra bằng ĐÚNG luật `docGioMay` mà `rawInspTime` dùng lúc GHI
+  // (trần = UTC): một chuỗi trần tra bằng `new Date(...)` thô ở đây có thể lệch khỏi
+  // giá trị đã ghi bởi TZ hệ điều hành server ⇒ dedup tra TRẬT, tạo hàng trùng khi WAL
+  // backfill. `?? new Date()` chỉ chạm tới khi `input.inspectionTime` (đã kiểm non-empty
+  // ở trên) là rác không parse được — cùng lối thoát mà `rawInspTime` dùng.
   const rows = await dbi
     .select({ id: productInspections.id })
     .from(productInspections)
@@ -1128,7 +1145,7 @@ export async function inspectionAlreadyPersisted(input: SubmitInspectionInput): 
       drizzleAnd(
         drizzleEq(productInspections.machineId, auth.machine.id),
         drizzleEq(productInspections.serialNumber, input.serialNumber),
-        drizzleEq(productInspections.inspectionTime, new Date(input.inspectionTime)),
+        drizzleEq(productInspections.inspectionTime, docGioMay(input.inspectionTime) ?? new Date()),
       ),
     )
     .limit(1);
@@ -1554,7 +1571,13 @@ export async function processInspectionSubmission(
       // getDbStorageTimezone` vẫn mặc định UTC, nay khớp THẬT với dữ liệu, không phải
       // khớp CÓ ĐIỀU KIỆN như trước). serverReceivedAt + signed skew + timeSource bên
       // dưới vẫn giữ nguyên — vẫn cần để THẤY lệch đồng hồ máy, không liên quan cutover này.
-      const rawInspTime = input.inspectionTime ? new Date(input.inspectionTime) : new Date();
+      // ★★★ BG-99 (Task 5) — MỘT LỖ KHÁC, CÙNG HỌ: cutover trên bỏ phép DỊCH "fake UTC",
+      // nhưng chuỗi TRẦN máy gửi (không hậu tố "Z", mẫu thật `"2026-08-18T09:30:00.150"`)
+      // vẫn bị `new Date(...)` đọc theo TZ HỆ ĐIỀU HÀNH SERVER — CHÍNH tội BG-96 tái sinh
+      // qua đường khác. `docGioMay` áp luật CHUNG toàn đường ingest: trần = UTC (khớp
+      // đúng luật drizzle dùng khi đọc cột `timestamp` không múi giờ trở lại — nối
+      // "+0000"), có offset thì tôn trọng nguyên văn. Xem `server/utils/factoryTime.ts`.
+      const rawInspTime = docGioMay(input.inspectionTime) ?? new Date();
 
       // ══ Doc 51 P1 (CASE #3) — PROVENANCE + CLOCK-SKEW ══════════════════════
       // serverReceivedAt/timeSource are normally stamped by the mutation from the
@@ -3650,13 +3673,30 @@ const submitInspectionBatchRouterInputSchema = z.unknown().transform((raw) => {
  * KHÔNG phải `computeSubmissionKey` — xem §QĐ-WAL-A) và ACK
  * `{success:true, queued:true, submissionId}`; lỗi VĨNH VIỄN (xác thực/hợp đồng) vẫn ném
  * NGUYÊN VĂN như hàm này luôn làm — không đổi gì Ở ĐÂY, chỉ đổi Ở NƠI GỌI.
+ *
+ * ★★★ EXPORT có chủ ý (Task 5, BG-97/BG-99) — hai hộ gọi ngoài module:
+ * `ensureInspectionWalWired` (WAL phát lại, dưới đây, truyền `opts.serverReceivedAt =
+ * meta.enqueuedAt`) và lưới DB `server/db/specGateCayV2.db.test.ts` (mệnh đề 7 —
+ * "cửa trực tiếp" cần bơm `opts.serverReceivedAt` THẲNG để mô phỏng một board nhận
+ * SỚM hơn "bây giờ", việc mà `caller().submitInspection(...)` qua tRPC KHÔNG cho làm
+ * — đúng theo thiết kế: máy không được tự khai mốc-nhận-server của chính nó).
  */
-async function submitInspectionTreeV2(
+export async function submitInspectionTreeV2(
   payload: MachinePayloadV2,
-  // `sauXacThuc`: xem docblock cùng tên ở `processInspectionSubmission` — cùng mục đích, cùng
-  // vị trí gọi (sau xác thực + sau trần tốc độ), để nhánh v2.0 và nhánh v1.x đếm ở ĐÚNG một
-  // khoảnh khắc như nhau.
-  opts: { headerKey?: string | null; sauXacThuc?: (auth: MachineAuthResult) => void },
+  opts: {
+    headerKey?: string | null;
+    // `sauXacThuc`: xem docblock cùng tên ở `processInspectionSubmission` — cùng mục đích, cùng
+    // vị trí gọi (sau xác thực + sau trần tốc độ), để nhánh v2.0 và nhánh v1.x đếm ở ĐÚNG một
+    // khoảnh khắc như nhau.
+    sauXacThuc?: (auth: MachineAuthResult) => void;
+    /**
+     * ★★★ Task 5 (BG-97 → BG-99, spec QĐ-2) — NEO của spec-gate snapshot (xem `mocDo`
+     * bên dưới). `undefined` (đa số lượt gọi tRPC trực tiếp) ⇒ `mocDo ≈ new Date()`
+     * (chấm theo giới hạn ĐANG SỐNG — đúng ý nghĩa "bo LIVE, đo NGAY BÂY GIỜ"). WAL
+     * phát lại truyền `enqueuedAt` của mục hàng đợi — xem `ensureInspectionWalWired`.
+     */
+    serverReceivedAt?: Date;
+  },
 ): Promise<{
   success: true;
   inspectionId: number;
@@ -3671,6 +3711,11 @@ async function submitInspectionTreeV2(
   specGate: {
     batCong: boolean; tong: number; dat: number; truot: number; haCap: number;
     chuaDay: number; khongGioiHan: number; tatCong: number;
+    /** Task 5 (BG-97 phơi counters) — trong `dat`+`truot`: bao nhiêu chấm bằng giới hạn
+     * TÁI DỰNG (`theoSnapshot`) so với giới hạn ĐANG SỐNG (`theoSong`). Cả hai `0` khi
+     * cổng snapshot không áp dụng (cờ tắt / không có lịch sử sửa). */
+    theoSnapshot: number;
+    theoSong: number;
   };
 }> {
   const auth = await authenticateMachine({
@@ -3681,6 +3726,22 @@ async function submitInspectionTreeV2(
   const machine = auth.machine;
   enforceMachineIngestRateLimit(auth);
   opts.sauXacThuc?.(auth);
+
+  // ★★★ Task 5 (BG-97 → BG-99, spec QĐ-2) — NEO của spec-gate snapshot: MỐC MÁY CHỦ
+  // NHẬN ĐƯỢC PAYLOAD, đặt MỘT LẦN ngay đây (sau xác thực + trần tốc độ, không gọi lại
+  // ở dưới). ĐÂY LÀ RULING, KHÔNG PHẢI TIỆN LỢI: bản đầu (BG-97, commit `c98781db`) neo
+  // bằng `mocDoTuChuoi(payload.completedAt) ?? mocDoTuChuoi(payload.startedAt)` — ĐỒNG
+  // HỒ MÁY. Controller LOẠI phương án đó (spec QĐ-2): máy không tin được (skew 6h có
+  // thật — `assessClockSkew`), và chiều nguy hiểm là đồng hồ máy CHẬM ⇒ một bo MỚI (đo
+  // bây giờ, máy khai giờ cũ) bị chấm theo limit CŨ ⇒ bo XẤU đi lọt — máy hỏng đồng hồ
+  // (hay bị chỉnh tay) có thể tạo ra chính hình dạng tấn công này ÂM THẦM.
+  // `opts.serverReceivedAt` KHÔNG có mặt ở lượt gọi tRPC trực tiếp thông thường (không
+  // trường nào trong hợp đồng máy cho phép máy tự khai nó) ⇒ `mocDo ≈ new Date()` —
+  // đúng ý nghĩa "board LIVE, đo ngay bây giờ" ⇒ chấm theo giới hạn ĐANG SỐNG. Chỉ WAL
+  // phát lại (`ensureInspectionWalWired`, dưới) truyền giá trị khác `undefined`
+  // (`enqueuedAt` của mục hàng đợi) — vẫn TẤT ĐỊNH qua phát lại vì `enqueuedAt` được
+  // persist trong entry, không đọc đồng hồ lúc phát lại (mệnh đề 2 của BG-97 còn nguyên).
+  const mocDo: Date = opts.serverReceivedAt ?? new Date();
 
   // Mã tenant SUY từ máy đã xác thực (★★★ 2026-08-18) — hợp đồng v2.0 không mang
   // companyCode/factoryCode/workshopCode/lineCode để đối chiếu (khác v1.x), nên `khai`
@@ -3700,18 +3761,8 @@ async function submitInspectionTreeV2(
   // ⚠ THỨ TỰ LÀ BẮT BUỘC, KHÔNG PHẢI SỞ THÍCH: spec-gate phải chấm TỪNG LÁ trước khi
   // `dichCayKetQua` cuộn lên bốn cấp (cuộn trước rồi mới chấm sẽ để cấp bo chốt OK
   // trong khi lá đã bị hạ thành NG). Vì vậy lượt tra chạy trên PAYLOAD THÔ — cùng bộ
-  // khoá, cùng hàm `db.traBanDayChoCay` (xem `CayCoKhoaTra`).
-  // ★★★ BG-97 — MỐC "bo được đo", tính TRƯỚC lượt tra vì `traBanDayChoCay` cần nó để
-  // neo giới hạn. `null` khi máy không gửi mốc nào ⇒ đường snapshot bị BỎ (chấm theo
-  // giới hạn đang sống), CỐ Ý: lấy `new Date()` thay thế sẽ làm lượt WAL phát lại chấm
-  // theo giới hạn của LÚC PHÁT LẠI — chính lỗ BG-97. Xem docblock `traBanDayChoCay`.
-  // ⚠⚠ `mocDoTuChuoi` là một HỆ QUY CHIẾU RIÊNG, KHÔNG phải `rawInspTime` bên dưới:
-  // nó đưa chuỗi TRẦN của máy về cùng khung với `measurement_point_versions.changedAt`
-  // (drizzle đọc cột `timestamp` bằng cách nối `+0000`). Dùng `new Date(chuỗi trần)`
-  // ở đây làm verdict phụ thuộc múi giờ HỆ ĐIỀU HÀNH server — bẫy BG-96, im lặng.
-  const mocDo: Date | null =
-    mocDoTuChuoi(payload.completedAt) ?? mocDoTuChuoi(payload.startedAt);
-
+  // khoá, cùng hàm `db.traBanDayChoCay` (xem `CayCoKhoaTra`). `mocDo` (neo giới hạn) đã
+  // tính Ở TRÊN, ngay sau xác thực — xem chú thích lớn tại chỗ đặt nó.
   const traBanDay = await db.traBanDayChoCay(machine.id, payload, productModelRecord?.id, {
     lucDo: mocDo,
   });
@@ -3720,14 +3771,14 @@ async function submitInspectionTreeV2(
   const cay = dichCayKetQua(payload, { cong: congSpec });
 
   // ⚠ Cutover 2026-09-03 (Khối C QĐ-1, BG-96) — bỏ dịch "fake UTC": cột `inspectionTime`
-  // (dưới) và `mocDo`/cây (trên) nay CÙNG một hệ quy chiếu UTC thật. Trước cutover CHỈ
-  // `inspectionTime` bị dịch còn `mocDo`/cây thì không — đó CHÍNH LÀ bẫy BG-96 (lệch 7h
-  // trong CÙNG một request). Xem chú thích lớn ở processInspectionSubmission.
-  const rawInspTime = payload.completedAt
-    ? new Date(payload.completedAt)
-    : payload.startedAt
-      ? new Date(payload.startedAt)
-      : new Date();
+  // (dưới) nay là UTC thật. ⚠⚠ BG-99 (Task 5) — chuỗi TRẦN đọc bằng `docGioMay` (trần =
+  // UTC), KHÔNG `new Date(chuỗi trần)` thô (phụ thuộc TZ hệ điều hành server — bẫy BG-96
+  // tái sinh qua đường khác, đã đo được trên chính máy chạy lưới này: `Asia/Bangkok`).
+  // ⚠ KHÁC `mocDo` Ở TRÊN: `rawInspTime` là NGUỒN CỦA CỘT `inspectionTime` (lời khai máy
+  // giữ nguyên, kể cả khi lệch xa "bây giờ") — KHÔNG phải neo spec-gate. Task 5 tách hẳn
+  // hai khái niệm: "máy nói nó đo lúc nào" (rawInspTime, không đổi ý nghĩa) khác "server
+  // nhận payload lúc nào" (mocDo, quyết định giới hạn nào áp dụng).
+  const rawInspTime = docGioMay(payload.completedAt) ?? docGioMay(payload.startedAt) ?? new Date();
 
   const reservedInspectionId = await db.reserveInspectionId();
   const insertOutcome: CreateInspectionOutcome = { duplicate: false };
@@ -3830,6 +3881,11 @@ async function submitInspectionTreeV2(
       chuaDay: congSpec.thongKe.chuaDay,
       khongGioiHan: congSpec.thongKe.khongGioiHan,
       tatCong: congSpec.thongKe.tatCong,
+      // Task 5 (BG-97 phơi counters) — nguồn THẬT là `traBanDay` (kết quả
+      // `db.traBanDayChoCay`), KHÔNG phải `congSpec.thongKe` (cổng OK/NG không biết gì
+      // về NGUỒN của giới hạn nó vừa dùng).
+      theoSnapshot: traBanDay.theoSnapshot,
+      theoSong: traBanDay.theoSong,
     },
   };
 }

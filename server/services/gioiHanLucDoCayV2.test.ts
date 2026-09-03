@@ -13,7 +13,7 @@
  *     trường chọn biến thể (xem mệnh đề cuối).
  */
 import { describe, it, expect } from "vitest";
-import { giaiGioiHanTaiLucDo, laCongSnapshotBat, mocDoTuChuoi } from "./gioiHanLucDoCayV2";
+import { giaiGioiHanTaiLucDo, laCongSnapshotBat } from "./gioiHanLucDoCayV2";
 import type { PointLimitSnapshot, PointLimitSource } from "./pointResultEvaluator";
 import { khoaCapComponent } from "../db/cayDay";
 import { machineDataContractV2 } from "../contracts/machineDataContractV2";
@@ -111,45 +111,11 @@ describe("BG-97 — giaiGioiHanTaiLucDo (THUẦN)", () => {
   });
 });
 
-describe("BG-97 — mocDoTuChuoi: cùng HỆ QUY CHIẾU với `changedAt` (bẫy BG-96)", () => {
-  it("chuỗi TRẦN được hiểu là giờ tường UTC — KHÔNG theo múi giờ hệ điều hành server", () => {
-    // Đây là dòng phân biệt bản vá đúng với bản vá "lệch một offset, im lặng". drizzle
-    // đọc cột `timestamp` không múi giờ bằng cách nối `+0000`; hàm này áp CÙNG luật.
-    expect(mocDoTuChuoi("2026-09-03T11:00:00.000")?.toISOString()).toBe("2026-09-03T11:00:00.000Z");
-    expect(mocDoTuChuoi("2026-09-03T11:00:00")?.toISOString()).toBe("2026-09-03T11:00:00.000Z");
-  });
-
-  it("chuỗi CÓ múi giờ được tôn trọng nguyên văn (khác dịch 'fake UTC' vốn dịch vô điều kiện)", () => {
-    expect(mocDoTuChuoi("2026-09-03T11:00:00.000Z")?.toISOString()).toBe("2026-09-03T11:00:00.000Z");
-    expect(mocDoTuChuoi("2026-09-03T18:00:00.000+07:00")?.toISOString()).toBe("2026-09-03T11:00:00.000Z");
-    expect(mocDoTuChuoi("2026-09-03T06:00:00.000-0500")?.toISOString()).toBe("2026-09-03T11:00:00.000Z");
-  });
-
-  it("thiếu / rác ⇒ null ⇒ cửa BỎ đường snapshot, KHÔNG neo bừa vào `new Date()`", () => {
-    expect(mocDoTuChuoi(undefined)).toBeNull();
-    expect(mocDoTuChuoi(null)).toBeNull();
-    expect(mocDoTuChuoi("   ")).toBeNull();
-    expect(mocDoTuChuoi("khong-phai-ngay")).toBeNull();
-  });
-
-  it("KHÔNG phụ thuộc múi giờ hệ điều hành: kết quả bằng nhau dù đổi process.env.TZ", () => {
-    // ⚠ `process.env.TZ` chỉ có tác dụng với `Date` tạo SAU khi gán (Node đọc lại tz).
-    const truoc = process.env.TZ;
-    try {
-      process.env.TZ = "Asia/Ho_Chi_Minh";
-      const a = mocDoTuChuoi("2026-09-03T11:00:00.000")!.getTime();
-      process.env.TZ = "UTC";
-      const b = mocDoTuChuoi("2026-09-03T11:00:00.000")!.getTime();
-      process.env.TZ = "America/New_York";
-      const c = mocDoTuChuoi("2026-09-03T11:00:00.000")!.getTime();
-      expect(b, "đổi TZ của máy chủ KHÔNG được đổi mốc — đổi mốc là đổi verdict, im lặng").toBe(a);
-      expect(c, "đổi TZ của máy chủ KHÔNG được đổi mốc — đổi mốc là đổi verdict, im lặng").toBe(a);
-    } finally {
-      if (truoc === undefined) delete process.env.TZ;
-      else process.env.TZ = truoc;
-    }
-  });
-});
+// ⚠ Task 5 (BG-99) — mô tả cũ "BG-97 — mocDoTuChuoi: cùng HỆ QUY CHIẾU với `changedAt`
+// (bẫy BG-96)" đã XOÁ khỏi đây: `mocDoTuChuoi` hết caller sản xuất (Task 5 đổi neo sang
+// mốc-nhận-server) nên hàm đã bị xoá khỏi `gioiHanLucDoCayV2.ts`. Luật "chuỗi TRẦN = UTC"
+// mà nó áp KHÔNG mất đi — di trú nguyên văn thành `docGioMay`
+// (`server/utils/factoryTime.ts`), lưới thuần của nó là `server/utils/docGioMay.test.ts`.
 
 describe("BG-97 — CẦU CHÌ: biến thể (doc 55 Item 3) chưa KHOÁ ĐƯỢC ở đường v2", () => {
   /**

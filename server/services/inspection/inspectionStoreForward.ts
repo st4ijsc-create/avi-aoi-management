@@ -391,8 +391,23 @@ const metrics: InspectionStoreForwardMetrics = {
 
 // ── injected pipeline (router wires the real submit path; tests mock it) ─────
 
-/** Re-run the FULL submit pipeline for a buffered payload. Throws on failure. */
-export type ProcessFn = (payload: BufferedSubmission) => Promise<{ inspectionId: number }>;
+/**
+ * Re-run the FULL submit pipeline for a buffered payload. Throws on failure.
+ *
+ * ★★★ Task 5 (BG-97 → BG-99, spec QĐ-2) — second param `meta.enqueuedAt`: the moment
+ * THIS entry was queued (`WalEntry.enqueuedAt`, persisted verbatim in the WAL file —
+ * survives a restart via `restoreInspectionWal`). The v2.0 tree wiring
+ * (`ensureInspectionWalWired`, machineApiRouters.ts) threads it through as
+ * `submitInspectionTreeV2`'s `opts.serverReceivedAt`, so a replay grades the board
+ * against the limits live AT ENQUEUE TIME, not at replay time — the machine's own
+ * declared `completedAt`/`startedAt` is no longer trusted as the gate anchor (spec
+ * QĐ-2: machine clocks are not trustworthy, see `assessClockSkew`). Optional so every
+ * OTHER `setProcessFn` caller (v1.x path, tests) stays source-compatible unchanged.
+ */
+export type ProcessFn = (
+  payload: BufferedSubmission,
+  meta?: { enqueuedAt?: Date },
+) => Promise<{ inspectionId: number }>;
 /** Return true when this submission ALREADY has a persisted inspection row. */
 export type DedupFn = (payload: BufferedSubmission) => Promise<boolean>;
 
@@ -963,7 +978,9 @@ export async function backfillInspections(): Promise<{
       }
 
       try {
-        await processFn(entry.payload);
+        // Task 5 (BG-99) — mốc XẾP HÀNG của MỤC NÀY, không phải đồng hồ lúc phát lại
+        // (xem docblock `ProcessFn`).
+        await processFn(entry.payload, { enqueuedAt: new Date(entry.enqueuedAt) });
       } catch (err) {
         const ket = await xuLyLoiPhatLai(entry, err);
         if (ket === "deadLetter") {

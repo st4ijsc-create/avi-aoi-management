@@ -758,6 +758,20 @@ export interface KetQuaTraPointDef {
    * IM LẶNG, đúng thứ Task này tồn tại để không làm.
    */
   readonly khoaNhapNhang: readonly string[];
+  /**
+   * ★★★ Task 5 (BG-97 phơi counters) — số điểm chấm bằng giới hạn TÁI DỰNG từ
+   * `measurement_point_versions` (bo cũ, limit đã đổi sau lúc bo được đo). Mặc định
+   * `0` ở ĐÂY (hàm này không biết gì về cổng snapshot) — `traBanDayChoCay`
+   * (`server/db/inspection.ts`) GHI ĐÈ hai trường này bằng kết quả THẬT của
+   * `giaiGioiHanTaiLucDo` khi cổng snapshot áp dụng.
+   */
+  readonly theoSnapshot: number;
+  /**
+   * Số điểm chấm bằng giới hạn ĐANG SỐNG. Mặc định bằng `banDo.size` — đúng NGHĨA:
+   * không chạy cổng snapshot thì MỌI điểm tra ra đều chấm theo giới hạn đang sống
+   * (hành vi Task 4, trước BG-97).
+   */
+  readonly theoSong: number;
 }
 
 /**
@@ -826,7 +840,10 @@ export async function traPointDefCapComponent(opts: {
   const capIds = [...new Set(opts.khoa.map((k) => k.captureExtId))];
   const compIds = [...new Set(opts.khoa.map((k) => k.componentExtId))];
   if (capIds.length === 0 || compIds.length === 0) {
-    return { banDo: new Map(), gioiHan: new Map(), mayCoBanDay, khoaNhapNhang: [] };
+    return {
+      banDo: new Map(), gioiHan: new Map(), mayCoBanDay, khoaNhapNhang: [],
+      theoSnapshot: 0, theoSong: 0,
+    };
   }
 
   const hang = await d
@@ -898,7 +915,12 @@ export async function traPointDefCapComponent(opts: {
     }
   }
 
-  return { banDo, gioiHan, mayCoBanDay, khoaNhapNhang: [...nhapNhang] };
+  return {
+    banDo, gioiHan, mayCoBanDay, khoaNhapNhang: [...nhapNhang],
+    // Mặc định "mọi điểm tra ra ⇒ chấm theo giới hạn ĐANG SỐNG" — `traBanDayChoCay`
+    // ghi đè bằng kết quả `giaiGioiHanTaiLucDo` khi cổng snapshot thực sự chạy.
+    theoSnapshot: 0, theoSong: banDo.size,
+  };
 }
 
 // ════════════════════════════════════════════════════════════════════════════

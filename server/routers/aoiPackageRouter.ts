@@ -67,8 +67,10 @@ import { laHinhDangCayV2 } from "../contracts/machineDataContract";
 import { dichCayKetQua, type CayDaDich, type CaptureDaDich } from "../services/ingestCayKetQua";
 // Khối B Task 4 (BG-92) — cổng spec cho đường CÂY v2, CÙNG hàm mà cửa trực tiếp dùng.
 import { congSpecTuBanDay } from "../services/specGateCayV2";
-// BG-97 — hàm THUẦN đưa chuỗi thời gian máy gửi về cùng khung với `changedAt`.
-import { mocDoTuChuoi } from "../services/gioiHanLucDoCayV2";
+// BG-99 (Task 5) — chuỗi thời gian TRẦN máy khai đọc bằng ĐÚNG MỘT luật (trần = UTC)
+// ở mọi điểm ingest. `mocDoTuChuoi` (BG-97, chỗ ở CŨ của luật này) đã XOÁ — hết caller
+// sản xuất sau khi Task 5 đổi neo spec-gate của cửa ZIP sang `inspection_packages.createdAt`.
+import { docGioMay } from "../utils/factoryTime";
 import type { ResultVerdict } from "@shared/rollupVerdict";
 
 // ============================================================
@@ -1172,6 +1174,8 @@ export const aoiPackageRouter = router({
           let thongKeSpecGate: {
             batCong: boolean; tong: number; dat: number; truot: number; haCap: number;
             chuaDay: number; khongGioiHan: number; tatCong: number;
+            // Task 5 (BG-97 phơi counters) — xem cùng trường ở `submitInspectionTreeV2`.
+            theoSnapshot: number; theoSong: number;
           } | undefined;
           // Cột báo cáo (`inspection_packages.totalPoints/okCount/ngCount`) —
           // đếm CAPTURES (cấp gần nhất với "một điểm kiểm tra có ảnh") từ CÂY
@@ -1272,14 +1276,19 @@ export const aoiPackageRouter = router({
             // xuống NG. CÙNG hàm tra + CÙNG cổng mà đường trực tiếp v2.0 dùng
             // (`db.traBanDayChoCay` + `congSpecTuBanDay`) — không chép bản thứ hai,
             // vì hai bản chép tay là đúng cách BG-42 ra đời.
-            // ★★★ BG-97 — MỐC "bo được đo", tính TRƯỚC lượt tra. `null` (máy không gửi
-            // mốc nào) ⇒ BỎ đường snapshot thay vì neo vào `new Date()`, vì `new Date()`
-            // làm lượt phát lại chấm theo giới hạn của LÚC PHÁT LẠI. CÙNG hàm với cửa
-            // trực tiếp — `mocDoTuChuoi` đưa chuỗi TRẦN về cùng khung với `changedAt`,
-            // KHÔNG phải `new Date(chuỗi trần)` (phụ thuộc múi giờ server — bẫy BG-96).
-            // ⚠ KHÔNG thay `rawInspTime` bên dưới: cột `inspectionTime` giữ nguyên.
-            const mocDo: Date | null =
-              mocDoTuChuoi(metaData.completedAt) ?? mocDoTuChuoi(metaData.startedAt);
+            // ★★★ Task 5 (BG-97 → BG-99, spec QĐ-2) — NEO của spec-gate là mốc GÓI ZIP
+            // ĐƯỢC TẠO (`inspection_packages.createdAt`, `defaultNow()` lúc presign),
+            // KHÔNG PHẢI `metaData.completedAt/startedAt` (đồng hồ máy — bản đầu BG-97,
+            // commit `c98781db`, neo bằng nó; controller LOẠI phương án đó, spec QĐ-2: máy
+            // không tin được, xem docblock `mocDo` trong `submitInspectionTreeV2`,
+            // machineApiRouters.ts). `pkg.createdAt` là mốc gói được TẠO ở bước presign —
+            // MỘT Agent upload chậm (mạng yếu, ZIP lớn) vẫn neo đúng lúc nó bắt đầu gửi,
+            // không bị đẩy tới lúc `commit` thực sự chạy. Đọc lại từ chính `pkg` đã SELECT
+            // ở đầu mutation (không round-trip DB riêng — cột `createdAt` đã có sẵn trong
+            // lượt đọc đó).
+            // ⚠ KHÔNG thay `rawInspTime` bên dưới: cột `inspectionTime` là lời khai MÁY,
+            // giữ nguyên ý nghĩa, chỉ đổi LUẬT ĐỌC CHUỖI (docGioMay — xem chỗ đó).
+            const mocDo: Date = pkg.createdAt;
             const traBanDay = await db.traBanDayChoCay(
               machine.id, metaData, resolvedProductModel?.id, { lucDo: mocDo },
             );
@@ -1341,14 +1350,15 @@ export const aoiPackageRouter = router({
             // (`machineApiRouters.ts` — ghi vô điều kiện, idempotencyKey luôn
             // đặt). ĐỪNG khôi phục cổng này; nếu cần chặn serial rỗng thì chặn
             // Ở HỢP ĐỒNG, và hướng đó đã bị chủ dự án BÁC (BG-73 hướng (a)).
-            const rawInspTime = metaData.completedAt
-              ? new Date(metaData.completedAt)
-              : metaData.startedAt
-              ? new Date(metaData.startedAt)
-              : new Date();
+            // BG-99 (Task 5) — `docGioMay`: chuỗi TRẦN máy khai = UTC, KHÔNG `new
+            // Date(chuỗi trần)` thô (phụ thuộc TZ hệ điều hành server — bẫy BG-96 tái
+            // sinh qua đường khác). `rawInspTime` là lời khai MÁY (cột `inspectionTime`),
+            // KHÁC `mocDo` ở trên (mốc gói được tạo — neo spec-gate).
+            const rawInspTime = docGioMay(metaData.completedAt) ?? docGioMay(metaData.startedAt) ?? new Date();
             // Cutover 2026-09-03 (Khối C QĐ-1, BG-96) — bỏ dịch "fake UTC"; `inspectionTime`/
-            // `createdAt`/`updatedAt` dưới đây ghi THẲNG `rawInspTime` (UTC thật), cùng hệ quy
-            // chiếu với `mocDo`/cây ở trên và với đường trực tiếp v2.0 (machineApiRouters.ts).
+            // `createdAt`/`updatedAt` dưới đây ghi THẲNG `rawInspTime` (UTC thật SAU
+            // `docGioMay` — trần đọc là UTC), cùng hệ quy chiếu với `mocDo`/cây ở trên và
+            // với đường trực tiếp v2.0 (machineApiRouters.ts).
 
             const reservedId = await db.reserveInspectionId();
             const insertOutcome: { duplicate: boolean } = { duplicate: false };
@@ -1414,6 +1424,9 @@ export const aoiPackageRouter = router({
               batCong: tkCong.batCong, tong: tkCong.tong, dat: tkCong.dat, truot: tkCong.truot,
               haCap: tkCong.haCap, chuaDay: tkCong.chuaDay,
               khongGioiHan: tkCong.khongGioiHan, tatCong: tkCong.tatCong,
+              // Task 5 (BG-97 phơi counters) — nguồn THẬT là `traBanDay`, không phải
+              // `tkCong` (cổng OK/NG không biết NGUỒN của giới hạn nó vừa dùng).
+              theoSnapshot: traBanDay.theoSnapshot, theoSong: traBanDay.theoSong,
             };
             thongKeCapComponent = persisted.thongKeComponent;
             if (thongKeCapComponent && thongKeCapComponent.chuaDay > 0) {
@@ -1494,10 +1507,13 @@ export const aoiPackageRouter = router({
               okCount: demTuCayBaoCao.ok,
               ngCount: demTuCayBaoCao.ng,
               imageCount: imageFiles.length,
+              // BG-99 (Task 5) — CÙNG luật `docGioMay` mà `rawInspTime` dùng ở trên (trần
+              // = UTC). Bản đầu đọc `new Date(chuỗi trần)` thô ở ĐÚNG chỗ này — một bản
+              // chép tay THỨ HAI của phép tính `rawInspTime`, lệch TZ độc lập với bản trên.
               inspectionTime: metaData?.completedAt
-                ? new Date(metaData.completedAt)
+                ? docGioMay(metaData.completedAt)
                 : metaData?.startedAt
-                ? new Date(metaData.startedAt)
+                ? docGioMay(metaData.startedAt)
                 : null,
               metaJson: metaData as any,
               committedAt: new Date(),
@@ -1831,8 +1847,10 @@ export const aoiPackageRouter = router({
       if (input.productModel) conditions.push(eq(inspectionPackages.productModel, input.productModel));
       if (input.status) conditions.push(eq(inspectionPackages.status, input.status));
       if (input.overallResult) conditions.push(eq(inspectionPackages.overallResult, input.overallResult));
-      if (input.dateFrom) conditions.push(gte(inspectionPackages.inspectionTime, new Date(input.dateFrom)));
-      if (input.dateTo) conditions.push(lte(inspectionPackages.inspectionTime, new Date(input.dateTo)));
+      // dateFrom/dateTo: bộ lọc NGƯỜI VẬN HÀNH gõ trên UI (protectedProcedure), KHÔNG
+      // phải chuỗi thời gian MÁY khai trên đường ingest — ngoài phạm vi BG-99.
+      if (input.dateFrom) conditions.push(gte(inspectionPackages.inspectionTime, new Date(input.dateFrom))); // bg99-ok: dateFrom la bo loc UI nguoi go, khong phai chuoi may khai
+      if (input.dateTo) conditions.push(lte(inspectionPackages.inspectionTime, new Date(input.dateTo))); // bg99-ok: dateTo la bo loc UI nguoi go, khong phai chuoi may khai
 
       const where = conditions.length > 0 ? and(...conditions) : undefined;
       const offset = (input.page - 1) * input.pageSize;

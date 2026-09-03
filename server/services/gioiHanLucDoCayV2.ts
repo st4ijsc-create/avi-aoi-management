@@ -72,39 +72,28 @@ export function laCongSnapshotBat(): boolean {
   return s === "true" || s === "1" || s === "yes" || s === "on";
 }
 
-/** Chuỗi thời gian có mang múi giờ (`Z`, `+07:00`, `-0500`) hay không. */
-const CO_MUI_GIO = /(?:Z|[+-]\d{2}:?\d{2})$/i;
-
 /**
- * ★★★ BG-96 — ĐƯA MỐC "BO ĐƯỢC ĐO" VỀ CÙNG HỆ QUY CHIẾU VỚI `changedAt`.
+ * ★★★ Task 5 (BG-97 → BG-99, spec QĐ-2) — NGUỒN CỦA `lucDo` NAY LÀ MỐC-NHẬN-SERVER,
+ * KHÔNG PHẢI ĐỒNG HỒ MÁY.
  *
- * ⚠ Đây là dòng mà brief BG-97 cảnh báo "chọn nhầm ⇒ lệch một offset, IM LẶNG".
- * HAI PHÉP ĐO (2026-09-03, không suy đoán — xem báo cáo BG-97 §mốc):
- *   · drizzle đọc cột `timestamp` KHÔNG múi giờ bằng cách **nối `+0000`**, nên
- *     `measurement_point_versions.changedAt` về JS mang ĐÚNG giờ tường UTC mà Postgres
- *     (`current_setting('TimeZone')='Etc/UTC'` ở CẢ HAI DB) đóng dấu.
- *   · `new Date("2026-09-03T11:00:00.000")` (chuỗi TRẦN, đúng hình dạng máy thật gửi —
- *     `D:\SOURCES\AOIData\dashboard-sample.json`) trả `2026-09-03T04:00:00.000Z` trên
- *     máy `+07:00`: JS hiểu chuỗi trần theo múi giờ **HỆ ĐIỀU HÀNH CỦA MÁY CHỦ**.
- * ⇒ So thẳng hai bên thì verdict phụ thuộc múi giờ MÁY CHỦ — một đại lượng không liên
- * quan tới cả đồng hồ máy lẫn đồng hồ DB. Đổi `TZ` của server là đổi verdict, im lặng.
+ * Hàm `mocDoTuChuoi` từng sống ở đây (đọc `completedAt`/`startedAt` MÁY khai làm mốc
+ * "bo được đo") đã bị XOÁ: spec QĐ-2 loại hẳn phương án neo bằng đồng hồ máy — máy
+ * không tin được (skew 6h có thật, xem `assessClockSkew`), và chiều nguy hiểm là đồng
+ * hồ máy CHẬM ⇒ bo mới bị chấm theo limit CŨ ⇒ bo xấu đi lọt. Luật `docGioMay` (chuỗi
+ * TRẦN = UTC) mà `mocDoTuChuoi` từng áp NAY chuyển sang chỗ dùng CHUNG toàn đường ingest
+ * (`server/utils/factoryTime.ts`), vì nó không còn riêng của spec-gate: BG-99 áp cùng
+ * luật cho MỌI điểm đọc chuỗi thời gian máy (cột `inspectionTime`, cấp cây, dedup…).
  *
- * ⇒ **LUẬT Ở ĐÂY:** chuỗi KHÔNG mang múi giờ được hiểu là **giờ tường UTC** — ĐÚNG luật
- * drizzle áp cho `changedAt`, nên hai bên vào cùng một hệ quy chiếu và múi giờ server
- * rơi ra khỏi phép so. Chuỗi CÓ mang múi giờ được tôn trọng nguyên văn (khác dịch
- * "fake UTC" của `inspectionTime`, vốn dịch VÔ ĐIỀU KIỆN và do đó làm hỏng chuỗi có `Z`).
- * ⚠ Hàm này **KHÔNG** thay `rawInspTime`/`localInspTime` ở hai cửa: cột `inspectionTime`
- * giữ NGUYÊN cách tính cũ (doc 51 P1), không một byte nào của nó đổi vì BG-97.
- * ⚠ Nợ còn lại, khai rõ: nếu máy gửi giờ ĐỊA PHƯƠNG mà không kèm múi giờ thì mốc lệch
- * đúng bằng múi giờ của MÁY — lỗi đồng hồ máy, hệ không tự sửa được. Lối ra là hợp đồng
- * v2.0 mang `serverReceivedAt`/`pointsConfigVersion` như v1.x. Xem báo cáo BG-97.
+ * `lucDo` (tham số của {@link giaiGioiHanTaiLucDo} bên dưới) nay được ba cửa tính TỪ
+ * MỐC MÁY CHỦ NHẬN ĐƯỢC PAYLOAD, theo từng đường (xem `server/db/inspection.ts` ở
+ * `traBanDayChoCay`, và nơi gọi ở `machineApiRouters.ts`/`aoiPackageRouter.ts`):
+ *   · Trực tiếp — `serverReceivedAt ?? now()` (đặt một lần, ngay sau xác thực).
+ *   · WAL phát lại — `enqueuedAt` của mục WAL (persist trong payload đã buffer, TẤT ĐỊNH
+ *     qua phát lại, KHÔNG đọc đồng hồ lúc phát lại).
+ *   · Cửa ZIP — `inspection_packages.createdAt` (mốc gói được TẠO, không phải commit).
+ * File NÀY (`giaiGioiHanTaiLucDo`) không đổi: nó vẫn nhận `lucDo: Date` đã giải quyết
+ * sẵn, không quan tâm nguồn — đúng ranh giới trách nhiệm cũ.
  */
-export function mocDoTuChuoi(s: string | null | undefined): Date | null {
-  const t = typeof s === "string" ? s.trim() : "";
-  if (t.length === 0) return null;
-  const d = new Date(CO_MUI_GIO.test(t) ? t : `${t}Z`);
-  return Number.isFinite(d.getTime()) ? d : null;
-}
 
 /** Kết quả giải giới hạn cho CẢ BO — cùng bộ khoá `khoaCapComponent` với đầu vào. */
 export interface KetQuaGiaiGioiHan {

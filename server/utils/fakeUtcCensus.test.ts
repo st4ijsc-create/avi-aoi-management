@@ -30,7 +30,7 @@
  * chỉ có một cách duy nhất đi qua: strip đúng comment CŨ và vẫn thấy mã MỚI.
  */
 import { describe, it, expect } from "vitest";
-import { readdirSync, readFileSync, statSync, writeFileSync, unlinkSync } from "node:fs";
+import { readdirSync, readFileSync, statSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -212,6 +212,128 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
   it("★★★ BẤT BIẾN: 0 dòng MÃ chứa công thức fake-UTC trong toàn bộ server/**", () => {
     const ket = quetFakeUtc();
     if (ket.length) console.error("[BG-96] fake-UTC tái sinh ở:", ket);
+    expect(ket).toEqual([]);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════
+// BG-99 (Khối C, Task 5) — census cấm chuỗi thời gian TRẦN của MÁY bị đọc bằng HAI luật
+// khác nhau trong cùng một request.
+// ══════════════════════════════════════════════════════════════════════════════════
+/**
+ * Chuỗi thời gian TRẦN của máy (không hậu tố múi giờ, mẫu thật
+ * `"2026-08-18T09:30:00.150"`) từng bị đọc bằng HAI luật khác nhau trong cùng một
+ * request: `docGioMay`/`mocDoTuChuoi` (trần = UTC) ở một số điểm vs `new Date(...)` thô
+ * (trần = TZ hệ điều hành PROCESS — chính tội BG-96 bằng đường khác) ở các điểm còn
+ * lại. Task 5 hợp nhất cả bốn file ingest về ĐÚNG MỘT luật (`docGioMay`,
+ * `server/utils/factoryTime.ts`). Census này khoá trạng thái đó VĨNH VIỄN: một
+ * `new Date(...)` CÓ ĐỐI SỐ, trên cùng dòng MÃ nhắc một trong ba trường máy khai
+ * (`completedAt`/`startedAt`/`inspectionTime`), trong bốn file ingest — là ĐỎ.
+ *
+ * ── VÌ SAO "CÓ ĐỐI SỐ" ─────────────────────────────────────────────────────────────
+ * `new Date()` TRẦN (không đối số) không đọc bất kỳ chuỗi nào — nó là lối thoát AN TOÀN
+ * `docGioMay(...) ?? new Date()` dùng ở khắp bốn file sau bản vá này. Một quét không
+ * phân biệt sẽ đỏ GIẢ trên chính bản vá đúng.
+ *
+ * ── MIỄN TRỪ `bg99-ok:` ─────────────────────────────────────────────────────────────
+ * Một số dòng khớp mẫu vì lý do KHÁC BG-99 (vd `inspection_packages.listPackages`:
+ * `dateFrom`/`dateTo` là bộ lọc NGƯỜI VẬN HÀNH gõ trên UI, không phải chuỗi máy khai).
+ * Dòng đó phải mang `bg99-ok: <lý do>` NGUYÊN VĂN trên CÙNG DÒNG để được miễn — không
+ * phải dòng trên/dòng dưới, tránh miễn nhầm một dòng vi phạm THẬT đứng cạnh.
+ */
+const FILE_INGEST_BG99 = [
+  "routers/machineApiRouters.ts",
+  "routers/aoiPackageRouter.ts",
+  "db/inspection.ts",
+  "services/ingestCayKetQua.ts",
+];
+
+/** `new Date(` với đối số THẬT ngay sau — loại trừ `new Date()` trần (an toàn). */
+const RE_NEW_DATE_CO_DOI_SO = /new Date\(\s*[^)\s]/;
+/** Ba trường thời gian MÁY khai trên đường ingest (brief BG-99). */
+const RE_TU_KHOA_MAY = /completedAt|startedAt|inspectionTime/;
+/** Miễn trừ CÓ LÝ DO — phải nằm TRÊN CHÍNH DÒNG bị canh. */
+const RE_MIEN_TRU_BG99 = /bg99-ok:/;
+
+interface Bg99Hit { file: string; line: number; text: string }
+
+/** Quét DANH SÁCH file tương đối `SERVER_ROOT` (mặc định bốn file ingest thật). */
+function quetBg99(relFiles: readonly string[] = FILE_INGEST_BG99, goc: string = SERVER_ROOT): Bg99Hit[] {
+  const ket: Bg99Hit[] = [];
+  for (const rel of relFiles) {
+    const full = join(goc, rel);
+    if (!existsSync(full)) continue; // cầu chì 1 dưới đây canh việc file biến mất
+    const lines = dongMaKhongComment(full);
+    lines.forEach((ln, i) => {
+      if (RE_NEW_DATE_CO_DOI_SO.test(ln) && RE_TU_KHOA_MAY.test(ln) && !RE_MIEN_TRU_BG99.test(ln)) {
+        ket.push({ file: rel, line: i + 1, text: ln.trim() });
+      }
+    });
+  }
+  return ket;
+}
+
+describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai luật khác nhau (4 file ingest)", () => {
+  it("cầu chì 1: bốn file ingest phải TỒN TẠI — không thì đang canh tập rỗng", () => {
+    for (const rel of FILE_INGEST_BG99) {
+      expect(
+        existsSync(join(SERVER_ROOT, rel)),
+        `${rel} không tồn tại — đường dẫn đổi, cập nhật FILE_INGEST_BG99`,
+      ).toBe(true);
+    }
+  });
+
+  it("★★★ fuse chống-vacuity: mồi `new Date(x.completedAt)` ở DÒNG MÃ phải bị bắt", () => {
+    const relProbe = "utils/__bg99CensusProbe.tmp.ts";
+    const P = join(SERVER_ROOT, relProbe);
+    try {
+      writeFileSync(
+        P,
+        `export const moiBg99 = (x: { completedAt?: string }) => new Date(x.completedAt);\n`,
+      );
+      const bat = quetBg99([relProbe]);
+      expect(bat.length, "thước KHÔNG bắt được mồi vừa bơm ⇒ nó đang mù, không phải sạch thật").toBe(1);
+    } finally {
+      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+    }
+  });
+
+  it("fuse: `new Date()` TRẦN (không đối số — lối thoát `docGioMay(...) ?? new Date()`) KHÔNG bị bắt", () => {
+    const relProbe = "utils/__bg99CensusProbeBareNewDate.tmp.ts";
+    const P = join(SERVER_ROOT, relProbe);
+    try {
+      writeFileSync(
+        P,
+        `export const moiBg99Bare = (completedAt?: string) => new Date();\n`,
+      );
+      const bat = quetBg99([relProbe]);
+      expect(
+        bat.length,
+        "new Date() trần không đọc chuỗi máy nào — bắt nó là đỏ GIẢ trên chính lối thoát an toàn",
+      ).toBe(0);
+    } finally {
+      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+    }
+  });
+
+  it("fuse: dòng mang `bg99-ok: <lý do>` được MIỄN TRỪ đúng", () => {
+    const relProbe = "utils/__bg99CensusProbeExempt.tmp.ts";
+    const P = join(SERVER_ROOT, relProbe);
+    try {
+      writeFileSync(
+        P,
+        `export const moiBg99Exempt = (x: { completedAt?: string }) => new Date(x.completedAt); // bg99-ok: mo phong bo loc UI\n`,
+      );
+      const bat = quetBg99([relProbe]);
+      expect(bat.length, "dòng có bg99-ok: kèm lý do phải được miễn trừ").toBe(0);
+    } finally {
+      try { unlinkSync(P); } catch { /* đã xoá, hoặc chưa kịp tạo */ }
+    }
+  });
+
+  it("★★★ BẤT BIẾN: 0 dòng MÃ đọc chuỗi thời gian MÁY bằng `new Date(...)` thô trong 4 file ingest", () => {
+    const ket = quetBg99();
+    if (ket.length) console.error("[BG-99] đọc chuỗi thời gian máy KHÔNG qua docGioMay ở:", ket);
     expect(ket).toEqual([]);
   });
 });

@@ -44,6 +44,9 @@ import {
 // 0 import) nên không có vòng.
 import { giaiGioiHanTaiLucDo, laCongSnapshotBat } from "../services/gioiHanLucDoCayV2";
 import { verdictLuuTru } from "../../shared/rollupVerdict";
+// BG-99 (Task 5) — chuỗi thời gian TRẦN máy khai (`startedAt`/`completedAt` cấp cây)
+// đọc bằng ĐÚNG MỘT luật (trần = UTC) với mọi điểm ingest khác — xem `toDateOrUndefined`.
+import { docGioMay } from "../utils/factoryTime";
 
 // ============ LIST PROJECTION (doc 27 gap B9) ============
 /**
@@ -163,9 +166,21 @@ async function insertInspectionHeader(
   return { id: existingId, duplicate: true };
 }
 
-/** `undefined` khi máy không khai (ISO string) — Date khi có. `''`/thiếu trường ⇒ undefined. */
+/**
+ * `undefined` khi máy không khai (ISO string) — Date khi có. `''`/thiếu trường ⇒ undefined.
+ *
+ * ★★★ BG-99 (Task 5) — ruột đổi sang `docGioMay` (chuỗi TRẦN = UTC, KHÔNG phải TZ hệ
+ * điều hành server — bẫy BG-96 bằng đường khác), CHỮ KÝ GIỮ NGUYÊN. Trước bản vá, ba
+ * điểm gọi (`startedAt`/`completedAt` cấp position/capture/component) đọc bằng
+ * `new Date(iso)` thô — LUẬT KHÁC với cột `inspectionTime` header (đã qua `docGioMay`
+ * từ Task 1/BG-96) trong CÙNG một request, đúng lớp lỗi BG-96 lặp lại ở cấp cây. Chuỗi
+ * KHÔNG parse được (rác) nay trả `undefined` thay vì một `Invalid Date` lọt xuống cột
+ * timestamp — hành vi ĐÚNG hơn, không phải tình cờ: hợp đồng v2.0 không kiểm parseable
+ * cho các trường này (`z.string().max(64).optional()`, khác `inspectionTime` v1.x có
+ * `superRefine`), nên "không parse được" là hình dạng THẬT có thể xảy ra.
+ */
 function toDateOrUndefined(iso: string | undefined): Date | undefined {
-  return iso === undefined ? undefined : new Date(iso);
+  return iso === undefined ? undefined : docGioMay(iso) ?? undefined;
 }
 
 /**
@@ -431,30 +446,35 @@ export interface CayCoKhoaTra {
  * **TẠI `lucDo`** (tái dựng từ `measurement_point_versions`), không phải giới hạn đang
  * sống. Cờ TẮT (mặc định) ⇒ trả nguyên hành vi Task 4, **0 lượt đọc DB thêm**.
  *
- * ⚠⚠ **MỐC NÀO, VÀ VÌ SAO — BG-96 CHẮN ĐƯỜNG Ở ĐÂY.** Hai cửa v2 truyền
- * `mocDoTuChuoi(completedAt) ?? mocDoTuChuoi(startedAt)`, và `null` khi máy không gửi
- * cái nào. Ba quyết định, theo thứ tự quan trọng:
- *   1. **WAL phát lại phải cho CÙNG kết quả.** Đây là mệnh đề 2 của BG-97. Mốc phải nằm
- *      TRONG payload, vì WAL (`inspectionStoreForward`) chỉ lưu payload — `ProcessFn`
- *      nhận đúng một tham số. Mọi mốc lấy từ đồng hồ (`new Date()`) làm lượt phát lại
- *      chấm theo giới hạn của **lúc phát lại**, tức tái tạo chính lỗ BG-97. Đường v1.x
- *      giải bài này bằng `input.serverReceivedAt` (trường hợp đồng, đi cùng payload qua
- *      WAL); hợp đồng v2.0 **không có** trường đó, nên `completedAt/startedAt` là mốc
- *      DUY NHẤT bền qua WAL. Không gửi cái nào ⇒ `null` ⇒ **BỎ** đường snapshot (chấm
- *      theo LIVE) — cố ý, thay vì lấy `new Date()` cho có.
- *   2. **HỆ QUY CHIẾU, đo được, không suy đoán** (xem `mocDoTuChuoi`): drizzle đọc cột
- *      `timestamp` không múi giờ bằng cách nối `+0000`, còn `new Date("…T11:00:00.000")`
- *      (chuỗi TRẦN) lại hiểu theo múi giờ **hệ điều hành SERVER** — đo được:
- *      `2026-09-03T04:00:00.000Z` trên máy `+07:00`. Đem hai bên so thẳng thì verdict
- *      phụ thuộc `TZ` của máy chủ: đổi `TZ` là đổi verdict, IM LẶNG — đúng bẫy BG-96.
- *      `mocDoTuChuoi` hiểu chuỗi trần là **giờ tường UTC**, cùng luật với `changedAt`.
- *   3. **KHÔNG so header với cây, và KHÔNG đụng `inspectionTime`.** `rawInspTime`/
- *      `localInspTime` ở hai cửa giữ NGUYÊN cách tính cũ (doc 51 P1) — bản vá này chỉ
- *      THÊM một mốc riêng, không đổi một byte nào của cột thời gian đã ghi.
- * ⚠ Giá phải trả, khai rõ: mốc vẫn là **đồng hồ của MÁY**. Máy gửi giờ ĐỊA PHƯƠNG mà
- * không kèm múi giờ ⇒ neo lệch đúng bằng múi giờ của máy đó (lỗi đồng hồ máy, hệ không
- * tự sửa được). Lối ra là hợp đồng v2.0 mang `serverReceivedAt`/`pointsConfigVersion`
- * như v1.x. Xem báo cáo BG-97 §mối-lo.
+ * ⚠⚠ **MỐC NÀO, VÀ VÌ SAO — Task 5 (BG-99, spec QĐ-2) ĐỔI NGUỒN.** Bản đầu (BG-97,
+ * commit `c98781db`) truyền `mocDoTuChuoi(completedAt) ?? mocDoTuChuoi(startedAt)` —
+ * NEO BẰNG ĐỒNG HỒ MÁY. Controller ruling (spec QĐ-2) LOẠI phương án đó: máy không tin
+ * được (skew 6h có thật, xem `assessClockSkew` — `machineApiRouters.ts`), và chiều nguy
+ * hiểm là đồng hồ máy CHẬM ⇒ bo MỚI (đo bây giờ, máy khai giờ cũ) bị chấm theo limit CŨ
+ * ⇒ bo XẤU đi lọt — đúng hình dạng tấn công mà một máy hỏng đồng hồ (hoặc bị chỉnh tay)
+ * có thể tạo ra ÂM THẦM.
+ *
+ * **NEO NAY LÀ MỐC MÁY CHỦ NHẬN ĐƯỢC PAYLOAD**, ba cửa tính khác nhau (không đổi hàm
+ * này — `lucDo` vẫn là `Date` đã giải quyết sẵn, chỉ đổi NƠI GỌI):
+ *   · Trực tiếp (`submitInspectionTreeV2`) — `opts.serverReceivedAt ?? new Date()`, đặt
+ *     MỘT LẦN ngay sau xác thực. Không truyền `opts` (đa số lượt gọi tRPC) ⇒ mốc ≈ NGAY
+ *     LÚC NHẬN — đúng ý nghĩa "lúc bo được đo" cho một board LIVE thật.
+ *   · WAL phát lại — `enqueuedAt` của MỤC WAL (`entry.enqueuedAt`, ghi lúc `bufferSubmission`
+ *     xếp hàng, persist trong payload đã buffer). VẪN giữ mệnh đề 2 của BG-97 ("WAL phát
+ *     lại phải cho CÙNG kết quả"): `enqueuedAt` BẤT BIẾN theo entry, không đọc đồng hồ
+ *     lúc phát lại — chỉ đổi CÁI GÌ được coi là "lúc bo được đo" (mốc XẾP HÀNG, không
+ *     phải mốc máy tự khai).
+ *   · Cửa ZIP (`aoiPackageRouter.commit`) — `inspection_packages.createdAt` (mốc GÓI
+ *     được TẠO ở bước presign, không phải lúc commit — một Agent upload chậm vẫn neo
+ *     đúng lúc nó BẮT ĐẦU gửi, không bị đẩy tới lúc mạng ổn định).
+ * `completedAt`/`startedAt` KHÔNG CÒN được đọc để neo giới hạn ở CẢ BA cửa — chúng vẫn
+ * là NGUỒN của cột `inspectionTime`/cấp cây (đường HOÀN TOÀN KHÁC, không đổi vì Task 5),
+ * qua `docGioMay` (BG-99, chuỗi TRẦN = UTC — xem `toDateOrUndefined` ở trên).
+ *
+ * ⚠ Nợ CŨ (BG-97 báo cáo, "lối ra là hợp đồng v2.0 mang `serverReceivedAt`") NAY ĐÃ
+ * ĐÓNG mà KHÔNG cần đổi hợp đồng v2.0: `serverReceivedAt` là một trường của `opts`
+ * (nội bộ, do server tự đặt), không phải trường payload máy khai — máy không có gì để
+ * gửi thêm, và không có gì để giả mạo.
  */
 export async function traBanDayChoCay(
   machineId: number,
@@ -500,7 +520,10 @@ export async function traBanDayChoCay(
         `· máy=${machineId} · mẫu: ${giai.mauSnapshot.join(" | ")}`,
     );
   }
-  return { ...tra, gioiHan: giai.gioiHan };
+  // Task 5 (BG-97 phơi counters) — GHI ĐÈ hai trường mặc định của `tra` bằng kết quả
+  // THẬT của `giaiGioiHanTaiLucDo`: đây là lượt DUY NHẤT trong hàm này mà cổng snapshot
+  // thực sự chạy, nên chỉ ở đây `theoSnapshot`/`theoSong` mới khác mặc định.
+  return { ...tra, gioiHan: giai.gioiHan, theoSnapshot: giai.theoSnapshot, theoSong: giai.theoSong };
 }
 
 /**

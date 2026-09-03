@@ -66,6 +66,11 @@ import JSZip from "jszip";
 import postgres from "postgres";
 import { machineApiRouter } from "../routers/machineApiRouters";
 import { aoiPackageRouter } from "../routers/aoiPackageRouter";
+// ★★★ Task 5 (BG-97 → BG-99) — EXPORT có chủ ý ở machineApiRouters.ts: lưới này cần bơm
+// `opts.serverReceivedAt` THẲNG cho mệnh đề 7 (cửa trực tiếp) — việc mà `caller().
+// submitInspection(...)` qua tRPC KHÔNG cho làm (đúng thiết kế: máy không được tự khai
+// mốc-nhận-server của chính nó). Xem docblock export tại nơi định nghĩa.
+import { submitInspectionTreeV2 } from "../routers/machineApiRouters";
 import { issueMachineKey } from "../services/machineAuthService";
 import {
   NHAN_CONG_DAT, NHAN_CONG_KHONG_KET_LUAN, TIEN_TO_CONG_CHUNG, TIEN_TO_CONG_TRUOT,
@@ -78,7 +83,9 @@ import type { TrpcContext } from "../_core/context";
 import { updateMeasurementPointDef } from "./product";
 import { ensureInspectionWalWired } from "../routers/machineApiRouters";
 import {
-  bufferSubmission,
+  // Task 5 (BG-99) — mệnh đề 8 nạp một dòng WAL VIẾT TAY (enqueuedAt backdated) thay vì
+  // `bufferSubmission` (luôn đóng dấu `Date.now()`) — xem docblock tại chỗ dùng.
+  restoreInspectionWal,
   backfillInspections,
   _resetInspectionStoreForward,
 } from "../services/inspection/inspectionStoreForward";
@@ -417,6 +424,9 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       expect(kq.specGate, `[current_database()=${tenDb}] cổng phải NÓI RA nó chấm được gì`).toEqual({
         batCong: true, tong: 16, dat: 2, truot: 1, haCap: 1,
         chuaDay: 0, khongGioiHan: 13, tatCong: 0,
+        // Task 5 — cờ snapshot TẮT (mặc định) ⇒ MỌI điểm tra ra (16) chấm theo giới hạn
+        // ĐANG SỐNG, 0 điểm tái dựng từ lịch sử.
+        theoSnapshot: 0, theoSong: 16,
       });
 
       // ── (b) HÀNG trên đĩa — SELECT lại, không tin giá trị cửa trả về.
@@ -460,6 +470,10 @@ describe.skipIf(!DB_URL || !CO_MAU)(
           .toEqual({
             batCong: false, tong: 16, dat: 0, truot: 0, haCap: 0,
             chuaDay: 0, khongGioiHan: 0, tatCong: 16,
+            // `POINT_LIMIT_EVAL_ENABLED=false` là cổng KHÁC `SPEC_GATE_SNAPSHOT_ENABLED`
+            // (vẫn TẮT mặc định ở mệnh đề này) — `traBanDayChoCay` vẫn chạy, chỉ chấm
+            // theo giới hạn ĐANG SỐNG như luôn.
+            theoSnapshot: 0, theoSong: 16,
           });
 
         const hang = await hangCua(kq.inspectionId);
@@ -495,6 +509,9 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       expect(sg, `[${tenDb}] 17 linh kiện: 2 đạt · 1 trượt · 1 chưa dạy · 13 chưa soạn giới hạn`).toEqual({
         batCong: true, tong: 17, dat: 2, truot: 1, haCap: 1,
         chuaDay: 1, khongGioiHan: 13, tatCong: 0,
+        // `chuaDay` (1) không tra ra pointDefId ⇒ KHÔNG vào `banDo`/`gioiHan` — chỉ 16
+        // (17-1) đi vào phép giải neo, cả 16 đều chấm theo giới hạn ĐANG SỐNG.
+        theoSnapshot: 0, theoSong: 16,
       });
 
       // ★★★ ĐIỀU KHOẢN TRUNG TÂM CỦA TASK: linh kiện CHƯA DẠY mang trị NGOÀI giới hạn
@@ -575,6 +592,7 @@ describe.skipIf(!DB_URL || !CO_MAU)(
         expect(ket.specGate, `[current_database()=${tenDb}] cửa ZIP phải kết luận Y HỆT cửa trực tiếp`).toEqual({
           batCong: true, tong: 16, dat: 2, truot: 1, haCap: 1,
           chuaDay: 0, khongGioiHan: 13, tatCong: 0,
+          theoSnapshot: 0, theoSong: 16,
         });
 
         // ⚠ Bằng chứng cuối lấy bằng SELECT lại đĩa, KHÔNG lấy giá trị `commit()` trả về.
@@ -590,7 +608,8 @@ describe.skipIf(!DB_URL || !CO_MAU)(
     }, 180_000);
 
     // ══════════════════════════════════════════════════════════════════════════
-    // ★★★ BG-97 — ĐƯỜNG v2 CHẤM THEO GIỚI HẠN **LÚC BO ĐƯỢC ĐO**
+    // ★★★ BG-97 → Task 5 (BG-99, spec QĐ-2) — ĐƯỜNG v2 CHẤM THEO GIỚI HẠN **LÚC SERVER
+    // NHẬN ĐƯỢC PAYLOAD** (KHÔNG PHẢI LÚC MÁY TỰ KHAI).
     //
     // Nền chung của bốn mệnh đề dưới đây, dựng MỘT LẦN ở mệnh đề 7 rồi dùng lại:
     //   ① kỹ sư soạn `[1;10]` cho linh kiện #3 (UI điểm đo — hợp đồng cây dạy KHÔNG
@@ -598,11 +617,26 @@ describe.skipIf(!DB_URL || !CO_MAU)(
     //   ② kỹ sư **SIẾT** xuống `[1;3]` qua CHÍNH `updateMeasurementPointDef` ⇒ một hàng
     //      `measurement_point_versions` THẬT ra đời (`snapshotJson` = hàng trước khi sửa,
     //      `changedAt = now()`);
-    //   ③ một bo được đo TRƯỚC lượt siết (`LUC_DO_CU`) mang trị `5` — TỐT theo luật cũ,
+    //   ③ một bo NHẬN ĐƯỢC (server) TRƯỚC lượt siết mang trị `5` — TỐT theo luật cũ,
     //      TRƯỢT theo luật mới.
     // Trước BG-97 bo đó bị **HẠ OAN**. Đó là con số bốn mệnh đề này đo.
+    //
+    // ⚠⚠⚠ TASK 5 ĐỔI CÁCH BƠM NEO — KHÔNG ĐỔI ĐIỀU ĐƯỢC KHẲNG ĐỊNH. Bản BG-97 gốc bơm
+    // neo bằng `luc` (payload.completedAt/startedAt — ĐỒNG HỒ MÁY): `caller().
+    // submitInspection(...)` qua tRPC đọc được nó vì `submitInspectionTreeV2` từng NEO
+    // BẰNG NÓ. Controller ruling (spec QĐ-2) LOẠI phương án đó — neo nay là MỐC MÁY CHỦ
+    // NHẬN ĐƯỢC PAYLOAD, và máy KHÔNG có trường nào để tự khai mốc đó (đúng thiết kế:
+    // không cho máy tự chứng minh nó "nhận được sớm hơn"). Hệ quả: mệnh đề 7 KHÔNG THỂ
+    // còn mô phỏng "bo cũ" qua `caller().submitInspection(...)` — cửa TRỰC TIẾP dưới đây
+    // gọi THẲNG `submitInspectionTreeV2` (exported, xem import ở đầu file) với
+    // `opts.serverReceivedAt` được ĐẶT TAY, đúng con đường SẢN XUẤT DUY NHẤT có thể tạo
+    // ra `serverReceivedAt` khác "bây giờ" (`ensureInspectionWalWired`, mệnh đề 8) — lưới
+    // này bơm THẲNG giá trị đó thay vì phải dựng cả một vòng WAL cho mệnh đề vốn không
+    // cần chứng minh lại cơ chế WAL (đã có mệnh đề 8 riêng). Cửa ZIP neo bằng
+    // `inspection_packages.createdAt` (mốc gói được TẠO) — lưới INSERT hàng gói với
+    // `"createdAt"` backdated THẲNG, mô phỏng một Agent tạo gói SỚM rồi commit TRỄ.
     // ══════════════════════════════════════════════════════════════════════════
-    it("MỆNH ĐỀ 7 — bo đo TRƯỚC lượt siết ⇒ chấm theo giới hạn LÚC ĐO, KHÔNG bị hạ oan (CẢ HAI cửa)", async () => {
+    it("MỆNH ĐỀ 7 — bo NHẬN ĐƯỢC TRƯỚC lượt siết ⇒ chấm theo giới hạn LÚC ĐÓ, KHÔNG bị hạ oan (CẢ HAI cửa)", async () => {
       const truocCo = process.env.SPEC_GATE_SNAPSHOT_ENABLED;
       process.env.SPEC_GATE_SNAPSHOT_ENABLED = "true";
       try {
@@ -628,14 +662,21 @@ describe.skipIf(!DB_URL || !CO_MAU)(
           SELECT "upperLimit"::text AS tren FROM measurement_point_defs WHERE id = ${idPdSiet}`;
         expect(Number(ht.tren), `[${tenDb}] giới hạn ĐANG SỐNG nay là bản đã siết`).toBe(Number(CAN_TREN_SIET));
 
-        // ── ③ CỬA TRỰC TIẾP — bo đo TRƯỚC lượt siết.
-        const kq: any = await caller().submitInspection(
-          ketQua("G97", { triTheoIdx: { 3: TRI_GIUA }, luc: LUC_DO_CU }),
+        // ── ③ CỬA TRỰC TIẾP — server "nhận" payload TRƯỚC lượt siết (opts.serverReceivedAt
+        //      đặt tay = LUC_DO_CU). `payload.completedAt/startedAt` vẫn đặt (đi vào cột
+        //      `inspectionTime`, KHÔNG còn ảnh hưởng neo) — giữ `luc: LUC_DO_CU` để cột đó
+        //      mang một giá trị nhất quán với tên biến, dù không còn là NGUỒN của phép chấm.
+        const kq: any = await submitInspectionTreeV2(
+          ketQua("G97", { triTheoIdx: { 3: TRI_GIUA }, luc: LUC_DO_CU }) as any,
+          { serverReceivedAt: new Date(`${LUC_DO_CU}Z`) },
         );
         boDaGhi.push(kq.inspectionId);
-        expect(kq.specGate, `[${tenDb}] ★ bo cũ phải chấm theo giới hạn LÚC ĐO ⇒ 4 đạt, 0 trượt`).toEqual({
+        expect(kq.specGate, `[${tenDb}] ★ bo cũ phải chấm theo giới hạn LÚC ĐÓ ⇒ 4 đạt, 0 trượt`).toEqual({
           batCong: true, tong: 16, dat: 4, truot: 0, haCap: 0,
           chuaDay: 0, khongGioiHan: 12, tatCong: 0,
+          // ★ Đúng MỘT điểm (linh kiện #3) có lịch sử sửa — nó tái dựng từ snapshot; 15
+          // điểm còn lại (đã dạy, có hoặc không giới hạn) không hề bị sửa ⇒ theo sống.
+          theoSnapshot: 1, theoSong: 15,
         });
         // Bất biến phân hoạch của Task 4 KHÔNG được hỏng vì bản vá này.
         expect(
@@ -648,13 +689,16 @@ describe.skipIf(!DB_URL || !CO_MAU)(
         const h3 = hang.find((h) => h.componentExtId === maTheoThuTu[3])!;
         expect(
           h3.result,
-          `[${tenDb}] ★ LỖ BG-97: trị ${TRI_GIUA} TỐT theo luật lúc đo [${CAN_DUOI};${CAN_TREN}] — không được hạ oan`,
+          `[${tenDb}] ★ LỖ BG-97: trị ${TRI_GIUA} TỐT theo luật lúc đó [${CAN_DUOI};${CAN_TREN}] — không được hạ oan`,
         ).toBe("OK");
         expect(h3.remark, `[${tenDb}] đã chấm THẬT (không phải bỏ cổng) ⇒ dấu ĐẠT`).toBe(NHAN_CONG_DAT);
         const bo = await boCua(kq.inspectionId);
         expect(bo.overallResult, `[${tenDb}] bo TỐT vẫn phải lưu OK`).toBe("OK");
 
-        // ── ③b CỬA ZIP — mốc thời gian tính RIÊNG ở mỗi cửa, nên phải đo RIÊNG.
+        // ── ③b CỬA ZIP — neo bằng `inspection_packages.createdAt` (mốc gói được TẠO),
+        //      backdated THẲNG trong INSERT — mô phỏng một Agent tạo gói SỚM (trước lượt
+        //      siết) rồi `commit` TRỄ (bây giờ). Mốc thời gian tính RIÊNG ở mỗi cửa, nên
+        //      phải đo RIÊNG (đúng nguyên văn khẳng định gốc, chỉ đổi CÁCH bơm).
         process.env.STORAGE_MODE = "local";
         process.env.LOCAL_STORAGE_DIR = THU_MUC_ZIP;
         try {
@@ -669,8 +713,8 @@ describe.skipIf(!DB_URL || !CO_MAU)(
           await fsp.mkdir(path.dirname(filePath), { recursive: true });
           await fsp.writeFile(filePath, await zip.generateAsync({ type: "nodebuffer" }));
           const [pkg] = await sql<{ id: number }[]>`
-            INSERT INTO inspection_packages ("machineId", "packageId", "storageKey", status)
-            VALUES (${ids.machine}, ${packageId}, ${storageKey}, 'uploaded') RETURNING id`;
+            INSERT INTO inspection_packages ("machineId", "packageId", "storageKey", status, "createdAt")
+            VALUES (${ids.machine}, ${packageId}, ${storageKey}, 'uploaded', ${new Date(`${LUC_DO_CU}Z`)}) RETURNING id`;
           goiDaGhi.push(pkg.id);
 
           const ket: any = await aoiPackageRouter
@@ -680,6 +724,7 @@ describe.skipIf(!DB_URL || !CO_MAU)(
           expect(ket.specGate, `[${tenDb}] cửa ZIP phải neo mốc Y HỆT cửa trực tiếp`).toEqual({
             batCong: true, tong: 16, dat: 4, truot: 0, haCap: 0,
             chuaDay: 0, khongGioiHan: 12, tatCong: 0,
+            theoSnapshot: 1, theoSong: 15,
           });
           const hz = (await hangCua(ket.inspectionId)).find((h) => h.componentExtId === maTheoThuTu[3])!;
           expect(hz.result, `[${tenDb}] cửa ZIP cũng KHÔNG được hạ oan bo cũ`).toBe("OK");
@@ -709,6 +754,7 @@ describe.skipIf(!DB_URL || !CO_MAU)(
           .toEqual({
             batCong: true, tong: 16, dat: 3, truot: 1, haCap: 1,
             chuaDay: 0, khongGioiHan: 12, tatCong: 0,
+            theoSnapshot: 0, theoSong: 16,
           });
         const h3 = (await hangCua(kq.inspectionId)).find((h) => h.componentExtId === maTheoThuTu[3])!;
         expect(h3.result, `[${tenDb}] ★ ĐÂY LÀ CÚ HẠ OAN mà BG-97 tồn tại để chặn`).toBe("NG");
@@ -722,29 +768,58 @@ describe.skipIf(!DB_URL || !CO_MAU)(
     }, 180_000);
 
     // ══════════════════════════════════════════════════════════════════════════
-    it("MỆNH ĐỀ 8 — WAL PHÁT LẠI: kết quả BẰNG lúc bo được đo, KHÔNG phụ thuộc lúc phát lại", async () => {
+    it("MỆNH ĐỀ 8 — WAL PHÁT LẠI: kết quả BẰNG lúc mục ĐƯỢC XẾP HÀNG, KHÔNG phụ thuộc lúc phát lại", async () => {
       // Ca đắt nhất của BG-97: dead-letter đang giữ **101 mục**, có mục 6 tuần. Mốc neo
-      // phải nằm TRONG payload — WAL chỉ lưu payload — nếu không, lượt phát lại chấm theo
+      // phải nằm TRONG entry WAL (`enqueuedAt`) — nếu không, lượt phát lại chấm theo
       // giới hạn của LÚC PHÁT LẠI và lỗ BG-97 mọc lại qua một cửa khác.
+      //
+      // ⚠⚠⚠ TASK 5 (BG-99) ĐỔI CÁCH BƠM NEO — KHÔNG ĐỔI ĐIỀU ĐƯỢC KHẲNG ĐỊNH.
+      // `bufferSubmission(payload)` luôn đóng dấu `enqueuedAt = Date.now()` (mục MỚI xếp
+      // hàng NGAY BÂY GIỜ — sau lượt siết của mệnh đề 7, chạy trước) — dùng nó ở đây sẽ
+      // chứng minh NGƯỢC LẠI điều mệnh đề này tồn tại để chứng minh. Ghi THẲNG một dòng
+      // WAL vào tệp tạm với `enqueuedAt` BACKDATED rồi `restoreInspectionWal()` nạp lại —
+      // CHÍNH cơ chế phục sinh sau restart mà `enqueuedAt` được PERSIST NGUYÊN VĂN, đúng
+      // mô phỏng "một mục đã nằm hàng đợi từ LUC_DO_CU, tiến trình khởi động lại, rồi mới
+      // rút ra" — hình dạng THẬT của "dead-letter 101 mục, có mục 6 tuần" mà brief gốc nói.
       const truocCo = process.env.SPEC_GATE_SNAPSHOT_ENABLED;
       const truocBat = process.env.INSPECTION_STORE_FORWARD_ENABLED;
       const truocTep = process.env.INSPECTION_STORE_FORWARD_FILE;
+      const truocTuoi = process.env.INSPECTION_STORE_FORWARD_MAX_AGE_MS;
       process.env.SPEC_GATE_SNAPSHOT_ENABLED = "true";
       process.env.INSPECTION_STORE_FORWARD_ENABLED = "true";
       // ⚠ TỆP TẠM. `data/inspection-store-forward*.jsonl` là tệp THẬT (7,4 MB) — cấm ghi.
       process.env.INSPECTION_STORE_FORWARD_FILE = WAL_TAM;
+      // ⚠ `LUC_DO_CU` cách "bây giờ" HƠN 72h (mặc định `maxAgeMs()`) — nếu không nới trần
+      // này, `backfillInspections()` VỨT mục vì "quá tuổi" TRƯỚC KHI processFn kịp chạy
+      // (đo được: `dropped 1 submission(s) past max age`), che mất chính điều mệnh đề này
+      // canh. Nới hẳn: mệnh đề đo NEO SPEC-GATE, không đo cửa sổ tuổi WAL (đã có lưới
+      // riêng — `inspectionStoreForward.test.ts`).
+      process.env.INSPECTION_STORE_FORWARD_MAX_AGE_MS = String(365 * 24 * 60 * 60 * 1000);
       try {
         expect(idPdSiet, "mệnh đề 7 phải chạy trước").toBeGreaterThan(0);
         _resetInspectionStoreForward();
         ensureInspectionWalWired(); // ⚠ SAU reset: reset gỡ processFn về hàm ném lỗi.
 
         const serial = `${RUN}-G97W`;
-        const payload = ketQua(serial, { triTheoIdx: { 3: TRI_GIUA }, luc: LUC_DO_CU });
-        const dem = await bufferSubmission(payload);
-        expect(dem.buffered, "payload phải vào được hàng đợi WAL").toBe(true);
+        // ★★★ TDD ca (a) — `luc: LUC_DO_MOI` là ĐỒNG HỒ MÁY KHAI BỪA (tương lai, SAU lượt
+        // siết), CỐ Ý KHÁC `enqueuedAtBackdated` (T0, TRƯỚC lượt siết) bên dưới. Đây LÀ
+        // điểm phân biệt mã CŨ (BG-97, neo bằng `payload.completedAt` ⇒ sẽ đọc LUC_DO_MOI
+        // ⇒ chấm LIVE ⇒ mệnh đề dưới ĐỎ) với mã MỚI (Task 5, neo bằng `enqueuedAt` của
+        // MỤC WAL ⇒ đọc LUC_DO_CU ⇒ chấm theo giới hạn TẠI T0 ⇒ XANH). Nếu payload khai
+        // ĐÚNG LUC_DO_CU thì hai mã cho CÙNG kết quả — không phân biệt được gì.
+        const payload = ketQua(serial, { triTheoIdx: { 3: TRI_GIUA }, luc: LUC_DO_MOI });
+        const enqueuedAtBackdated = new Date(`${LUC_DO_CU}Z`).getTime();
+        await fsp.mkdir(path.dirname(WAL_TAM), { recursive: true });
+        await fsp.writeFile(
+          WAL_TAM,
+          JSON.stringify({ enqueuedAt: enqueuedAtBackdated, attempts: 0, payload }) + "\n",
+          "utf8",
+        );
+        const soDaNap = await restoreInspectionWal();
+        expect(soDaNap, "phải nạp lại đúng MỘT mục từ tệp WAL backdated").toBe(1);
 
         const bf = await backfillInspections();
-        expect(bf.drained, `backfill phải rút đúng mục vừa xếp — nguyên văn: ${JSON.stringify(bf)}`).toBe(1);
+        expect(bf.drained, `backfill phải rút đúng mục vừa nạp — nguyên văn: ${JSON.stringify(bf)}`).toBe(1);
 
         // ⚠ Bằng chứng lấy bằng SELECT trên đĩa, KHÔNG lấy giá trị hàm trả về.
         const [bo] = await sql<{ id: number; luu: string; khai: string | null }[]>`
@@ -758,7 +833,8 @@ describe.skipIf(!DB_URL || !CO_MAU)(
         const h3 = (await hangCua(bo.id)).find((h) => h.componentExtId === maTheoThuTu[3])!;
         expect(
           h3.result,
-          `[${tenDb}] ★ phát lại HÔM NAY một bo đo lúc ${LUC_DO_CU} phải cho ĐÚNG kết quả của lúc đó`,
+          `[${tenDb}] ★ phát lại HÔM NAY một mục XẾP HÀNG lúc ${LUC_DO_CU} phải chấm theo giới hạn ` +
+            `TẠI ${LUC_DO_CU} — MẶC DÙ máy khai (sai) đã đo lúc ${LUC_DO_MOI}`,
         ).toBe("OK");
         expect(h3.remark, `[${tenDb}] và phải là "đã chấm", không phải "bỏ cổng"`).toBe(NHAN_CONG_DAT);
         expect(bo.luu, `[${tenDb}] bo TỐT trong WAL không được biến thành NG khi rút hàng đợi`).toBe("OK");
@@ -771,27 +847,39 @@ describe.skipIf(!DB_URL || !CO_MAU)(
         else process.env.INSPECTION_STORE_FORWARD_ENABLED = truocBat;
         if (truocTep === undefined) delete process.env.INSPECTION_STORE_FORWARD_FILE;
         else process.env.INSPECTION_STORE_FORWARD_FILE = truocTep;
+        if (truocTuoi === undefined) delete process.env.INSPECTION_STORE_FORWARD_MAX_AGE_MS;
+        else process.env.INSPECTION_STORE_FORWARD_MAX_AGE_MS = truocTuoi;
       }
     }, 180_000);
 
     // ══════════════════════════════════════════════════════════════════════════
-    it("MỆNH ĐỀ 9 — snapshot-gate KHÔNG phải 'luôn dùng giới hạn cũ': bo đo SAU lượt siết vẫn TRƯỢT; v1.x không đổi", async () => {
+    it("MỆNH ĐỀ 9 — snapshot-gate KHÔNG phải 'luôn dùng giới hạn cũ': bo NHẬN ĐƯỢC SAU lượt siết vẫn TRƯỢT; v1.x không đổi", async () => {
       const truocCo = process.env.SPEC_GATE_SNAPSHOT_ENABLED;
       process.env.SPEC_GATE_SNAPSHOT_ENABLED = "true";
       try {
         expect(idPdSiet, "mệnh đề 7 phải chạy trước").toBeGreaterThan(0);
 
-        // ── (a) BO ĐO SAU LƯỢT SIẾT ⇒ luật MỚI áp dụng. Nếu bản vá biến thành "luôn lấy
-        //        snapshot" thì mệnh đề này ĐỎ — và cổng sẽ tha bổng mọi bo mới sau mỗi
-        //        lượt siết spec, một cách tinh vi để cổng chết mà vẫn xanh.
+        // ── (a) BO NHẬN ĐƯỢC SAU LƯỢT SIẾT ⇒ luật MỚI áp dụng. Nếu bản vá biến thành
+        //        "luôn lấy snapshot" thì mệnh đề này ĐỎ — cổng sẽ tha bổng mọi bo mới sau
+        //        mỗi lượt siết spec, một cách tinh vi để cổng chết mà vẫn xanh.
+        //        ⚠ Task 5 (BG-99) — `luc: LUC_DO_MOI` KHÔNG còn là nguồn của neo (máy
+        //        không tự khai được `serverReceivedAt` qua `caller().submitInspection`):
+        //        `caller()` đi qua tRPC → `submitInspectionTreeV2` không nhận opts →
+        //        `mocDo ≈ new Date()` (LUÔN sau lượt siết, đã chạy TRƯỚC trong mệnh đề 7)
+        //        ⇒ khẳng định GIỮ NGUYÊN GIÁ TRỊ dù cơ chế khác: "gửi ngay bây giờ, sau khi
+        //        spec đã siết ⇒ chấm theo luật MỚI" là đúng SỰ THẬT VẬN HÀNH của một board
+        //        LIVE thật (không phải giả lập máy khai một mốc xa tương lai).
         const moi: any = await caller().submitInspection(
           ketQua("G97N", { triTheoIdx: { 3: TRI_GIUA }, luc: LUC_DO_MOI }),
         );
         boDaGhi.push(moi.inspectionId);
-        expect(moi.specGate, `[current_database()=${tenDb}] bo đo SAU lượt siết ⇒ chấm theo giới hạn MỚI`)
+        expect(moi.specGate, `[current_database()=${tenDb}] bo NHẬN ĐƯỢC SAU lượt siết ⇒ chấm theo giới hạn MỚI`)
           .toEqual({
             batCong: true, tong: 16, dat: 3, truot: 1, haCap: 1,
             chuaDay: 0, khongGioiHan: 12, tatCong: 0,
+            // Không snapshot nào có `changedAt >= mocDo` (tightening đã xảy ra TRƯỚC
+            // "bây giờ") ⇒ MỌI điểm rơi vào nhánh `missing` ⇒ theo sống, y hệt mệnh đề 1.
+            theoSnapshot: 0, theoSong: 16,
           });
 
         // ── (b) ĐƯỜNG v1.x KHÔNG ĐỔI HÀNH VI khi cờ BẬT. v1.x chỉ vào đường snapshot khi
@@ -817,45 +905,97 @@ describe.skipIf(!DB_URL || !CO_MAU)(
     }, 180_000);
 
     // ══════════════════════════════════════════════════════════════════════════
-    it("MỆNH ĐỀ 10 — BẪY BG-96: mốc phải cùng HỆ QUY CHIẾU với `changedAt` (lệch một offset = im lặng)", async () => {
-      // ⚠ VÌ SAO CẦN MỆNH ĐỀ RIÊNG. Mệnh đề 7/8/9 dùng khoảng cách một THÁNG giữa lúc bo
-      // được đo và lượt siết, nên chúng KHÔNG phân biệt được sai lệch **một múi giờ** —
-      // đúng thứ brief BG-97 cảnh báo: "chọn nhầm ⇒ lệch một offset, IM LẶNG". Mệnh đề
-      // này đặt bo cách lượt siết đúng NĂM PHÚT, nên một offset (±7 giờ trên máy chạy
-      // lưới) là quá đủ để lật kết luận.
+    it("MỆNH ĐỀ 10 — RANH GIỚI HẸP: neo 5 PHÚT SAU lượt siết vẫn chấm theo giới hạn MỚI (không lệch dù margin hẹp)", async () => {
+      // ⚠ VÌ SAO CẦN MỆNH ĐỀ RIÊNG. Mệnh đề 7/8/9 dùng khoảng cách một THÁNG giữa neo và
+      // lượt siết — không đủ nhạy để bắt một lỗi RANH GIỚI hẹp trong phép so
+      // `changedAt >= lucDo` (`resolveGateLimitsForBoard`/`giaiGioiHanTaiLucDo`), vd một
+      // lỗi làm tròn/mất độ chính xác vài giây-phút khi đọc `changedAt` từ DB. Mệnh đề
+      // này đặt neo cách lượt siết đúng NĂM PHÚT.
       //
-      // HAI PHÉP ĐO NỀN (2026-09-03, đo thẳng, không suy đoán):
-      //   · drizzle đọc cột `timestamp` KHÔNG múi giờ bằng cách nối `+0000`
-      //     ⇒ `changedAt` = giờ tường UTC mà Postgres (`TimeZone=Etc/UTC`) đóng dấu.
-      //   · `new Date("2026-09-03T11:00:00.000")` = `2026-09-03T04:00:00.000Z` trên máy
-      //     `+07:00` ⇒ chuỗi TRẦN bị hiểu theo múi giờ HỆ ĐIỀU HÀNH SERVER.
-      // ⇒ Nếu ai đó neo bằng `new Date(chuỗi trần)`, mốc lùi về quá khứ đúng một offset,
-      //   lượt siết trở thành "xảy ra SAU khi bo được đo", và bo dưới đây được tha bổng
-      //   theo giới hạn CŨ ⇒ mệnh đề này ĐỎ. `mocDoTuChuoi` hiểu chuỗi trần là giờ tường
-      //   UTC, cùng luật với `changedAt`, nên múi giờ server rơi ra khỏi phép so.
-      // ⚠ KHAI RÕ GIỚI HẠN: trên máy chủ chạy đúng `UTC` (offset = 0) hai cách tính trùng
-      //   nhau ⇒ mệnh đề này XANH cả hai đường. Nó là cầu chì cho máy chủ LỆCH múi giờ
-      //   (máy chạy lưới này: DB `Etc/UTC`, hệ điều hành `+07:00` — đo được ở trên).
+      // ⚠⚠⚠ TASK 5 (BG-99) THU HẸP PHẠM VI MỆNH ĐỀ NÀY — ĐO ĐƯỢC, KHÔNG PHẢI GIẢ ĐỊNH.
+      // Bản BG-97 gốc canh MỘT LỚP LỖI CỤ THỂ: neo bằng `new Date(chuỗi TRẦN máy khai)`
+      // đọc theo TZ HỆ ĐIỀU HÀNH SERVER (bẫy BG-96) làm verdict phụ thuộc TZ server —
+      // ĐO ĐƯỢC trên máy chạy lưới này (`Asia/Bangkok`, +07:00): một offset 7 giờ đủ lật
+      // "5 phút sau" thành "gần 7 giờ trước" lượt siết. Sau Task 5, lớp lỗi đó KHÔNG THỂ
+      // TÁI SINH Ở ĐÂY THEO CẤU TẠO: neo của cửa trực tiếp là `opts.serverReceivedAt` —
+      // một `Date` do server tự đặt (`?? new Date()`), KHÔNG BAO GIỜ đọc bất kỳ chuỗi máy
+      // khai nào (xem docblock `mocDo` trong `submitInspectionTreeV2`). Mệnh đề này vì
+      // vậy KHÔNG CÒN đo được lỗ trần-chuỗi-lệch-TZ Ở TẦNG NEO SPEC-GATE — lỗ đó nay được
+      // canh ở TẦNG KHÁC, cho ĐƯỜNG GHI `inspectionTime` (KHÔNG phải neo spec-gate):
+      // `server/utils/docGioMay.test.ts` (thuần) + `thoiGianMotHeQuyChieu.db.test.ts`
+      // mệnh đề "completedAt TRẦN đọc lại ĐÚNG UTC" (DB thật). Giá trị CÒN LẠI của mệnh
+      // đề này: RANH GIỚI CHÍNH XÁC của phép so thời điểm với margin hẹp — một regression
+      // thật, khác lớp lỗi ban đầu.
       const truocCo = process.env.SPEC_GATE_SNAPSHOT_ENABLED;
       process.env.SPEC_GATE_SNAPSHOT_ENABLED = "true";
       try {
         expect(idPdSiet, "mệnh đề 7 phải chạy trước — lượt siết đóng dấu changedAt=now()").toBeGreaterThan(0);
-        // Chuỗi giờ TRẦN (không hậu tố "Z"), đúng hình dạng máy thật gửi, mang giờ tường
-        // UTC của thời điểm NĂM PHÚT SAU lượt siết ⇒ bo này PHẢI bị chấm theo luật MỚI.
-        const sauSiet = new Date(Date.now() + 5 * 60_000).toISOString().slice(0, 23);
-        const kq: any = await caller().submitInspection(
-          ketQua("G97TZ", { triTheoIdx: { 3: TRI_GIUA }, luc: sauSiet }),
+        // `serverReceivedAt` là một `Date` THẬT, không phải chuỗi — bơm THẲNG qua
+        // `submitInspectionTreeV2` (exported), đúng con đường sản xuất DUY NHẤT có thể
+        // đặt `opts.serverReceivedAt` khác `undefined` ngoài WAL (mệnh đề 8).
+        const sauSiet = new Date(Date.now() + 5 * 60_000);
+        const kq: any = await submitInspectionTreeV2(
+          ketQua("G97TZ", { triTheoIdx: { 3: TRI_GIUA } }) as any,
+          { serverReceivedAt: sauSiet },
         );
         boDaGhi.push(kq.inspectionId);
         expect(
           kq.specGate,
-          `[current_database()=${tenDb}] bo đo 5 PHÚT SAU lượt siết ⇒ phải chấm theo giới hạn MỚI (1 trượt)`,
+          `[current_database()=${tenDb}] neo 5 PHÚT SAU lượt siết ⇒ phải chấm theo giới hạn MỚI (1 trượt)`,
         ).toEqual({
           batCong: true, tong: 16, dat: 3, truot: 1, haCap: 1,
           chuaDay: 0, khongGioiHan: 12, tatCong: 0,
+          theoSnapshot: 0, theoSong: 16,
         });
         const h3 = (await hangCua(kq.inspectionId)).find((h) => h.componentExtId === maTheoThuTu[3])!;
-        expect(h3.result, `[${tenDb}] lệch một offset là đủ để tha bổng bo này — và đó là im lặng`).toBe("NG");
+        expect(h3.result, `[${tenDb}] margin hẹp (5 phút) không được lật kết luận`).toBe("NG");
+        expect(h3.remark ?? "").toContain(TIEN_TO_CONG_TRUOT);
+      } finally {
+        if (truocCo === undefined) delete process.env.SPEC_GATE_SNAPSHOT_ENABLED;
+        else process.env.SPEC_GATE_SNAPSHOT_ENABLED = truocCo;
+      }
+    }, 180_000);
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ★★★ Task 5 (BG-99, spec QĐ-2) — TDD ca (b) của task-5-brief.md. KHÔNG PHẢI một
+    // trong 24 mệnh đề BG-97 gốc — mệnh đề MỚI, viết ra để chứng minh trực tiếp RULING
+    // trung tâm của Task 5.
+    //
+    // ⚠⚠⚠ ĐÃ TỪNG ĐỎ (xác nhận bằng git stash + chạy lại trên mã BG-97 gốc, `c98781db`
+    // — xem task-5-report.md cho output nguyên văn): trên mã đó, `submitInspectionTreeV2`
+    // neo bằng `mocDoTuChuoi(payload.completedAt) ?? mocDoTuChuoi(payload.startedAt)`, nên
+    // một board khai `completedAt=LUC_DO_CU` (TRƯỚC lượt siết) qua ĐÚNG bề mặt công khai
+    // (`caller().submitInspection`, KHÔNG opts nội bộ nào) được neo vào LUC_DO_CU và chấm
+    // theo giới hạn CŨ (`dat:4, truot:0` — object mong đợi bên dưới KHÔNG khớp).
+    // ══════════════════════════════════════════════════════════════════════════
+    it("Task 5 (case b) — cửa trực tiếp KHÔNG opts ⇒ mocDo≈now ⇒ chấm LIVE dù máy khai thời điểm CŨ", async () => {
+      const truocCo = process.env.SPEC_GATE_SNAPSHOT_ENABLED;
+      process.env.SPEC_GATE_SNAPSHOT_ENABLED = "true";
+      try {
+        expect(idPdSiet, "mệnh đề 7 phải chạy trước — lượt siết đóng dấu changedAt=now()").toBeGreaterThan(0);
+        // Payload khai `completedAt`/`startedAt` = LUC_DO_CU (TRƯỚC lượt siết) — ĐÚNG hình
+        // dạng brief đòi ("đồng hồ máy khai giờ cũ"), gửi qua BỀ MẶT CÔNG KHAI (không opts,
+        // KHÔNG `submitInspectionTreeV2` trực tiếp — đây LÀ điểm của ca này: chứng minh
+        // đường THẬT mà một máy sẽ đi qua, không phải một lối tắt nội bộ của lưới).
+        const kq: any = await caller().submitInspection(
+          ketQua("G97-CASEB", { triTheoIdx: { 3: TRI_GIUA }, luc: LUC_DO_CU }),
+        );
+        boDaGhi.push(kq.inspectionId);
+        expect(
+          kq.specGate,
+          `[current_database()=${tenDb}] ★ máy khai "đo TRƯỚC lượt siết" qua cửa CÔNG KHAI — ` +
+            `KHÔNG được tin: phải chấm LIVE (đã siết), giống MỌI board live khác — ĐÂY LÀ` +
+            `RULING trung tâm của Task 5 (spec QĐ-2)`,
+        ).toEqual({
+          batCong: true, tong: 16, dat: 3, truot: 1, haCap: 1,
+          chuaDay: 0, khongGioiHan: 12, tatCong: 0,
+          theoSnapshot: 0, theoSong: 16,
+        });
+        const h3 = (await hangCua(kq.inspectionId)).find((h) => h.componentExtId === maTheoThuTu[3])!;
+        expect(
+          h3.result,
+          `[${tenDb}] lời khai "đo lúc cũ" của máy KHÔNG được cứu bo này khỏi luật MỚI`,
+        ).toBe("NG");
         expect(h3.remark ?? "").toContain(TIEN_TO_CONG_TRUOT);
       } finally {
         if (truocCo === undefined) delete process.env.SPEC_GATE_SNAPSHOT_ENABLED;

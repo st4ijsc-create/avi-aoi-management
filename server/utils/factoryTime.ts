@@ -287,3 +287,43 @@ export function docGioTuongNhaMay(dateStr: string, endOfDay = false): Date | und
   const ms = coGio ? +(m[7]?.padEnd(3, "0") ?? 0) : endOfDay ? 999 : 0;
   return new Date(utc.getTime() + ms);
 }
+
+/** Chuỗi thời gian có mang múi giờ (`Z`, `+07:00`, `-0500`) hay không — dùng bởi `docGioMay`. */
+const CO_MUI_GIO_MAY = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+/**
+ * ★★★ BG-99 (Khối C, ruling controller 2026-09-03, Task 5) — đọc một chuỗi thời gian
+ * do MÁY AOI/AVI khai trên đường ingest (`completedAt`/`startedAt`/`inspectionTime` của
+ * `machineDataContractV2`/v1.x) thành một instant UTC thật. Di trú nguyên luật từ
+ * `mocDoTuChuoi` (BG-97, `server/services/gioiHanLucDoCayV2.ts`, đã XOÁ ở Task 5 vì hết
+ * caller sản xuất) lên đây — chỗ dùng CHUNG cho MỌI điểm đọc chuỗi thời gian máy, không
+ * riêng spec-gate.
+ *
+ * ⚠⚠⚠ ĐỪNG NHẦM VỚI `docGioTuongNhaMay` Ở TRÊN — HAI HÀM, HAI LUẬT, HAI NGUỒN CHUỖI
+ * KHÁC NHAU:
+ *   · `docGioTuongNhaMay` đọc chuỗi NGƯỜI VẬN HÀNH GÕ (bộ lọc ngày trên UI báo cáo) —
+ *     chuỗi TRẦN được hiểu là giờ tường **NHÀ MÁY** (`FACTORY_TZ`), đúng trực giác người
+ *     dùng ("tôi lọc theo ngày 03/09 giờ nhà máy tôi").
+ *   · `docGioMay` (hàm NÀY) đọc chuỗi MÁY AOI/AVI TỰ GỬI trong payload ingest — chuỗi
+ *     TRẦN được hiểu là giờ tường **UTC**, KHÔNG phải factory TZ, KHÔNG phải TZ hệ điều
+ *     hành server. Lý do (BG-96/BG-97/BG-99, xem báo cáo Task 5):
+ *       1. Đây CHÍNH LÀ luật mà drizzle áp cho cột `timestamp` KHÔNG múi giờ khi đọc về
+ *          (`measurement_point_versions.changedAt`, `product_inspections.inspectionTime`
+ *          — nối "+0000"). Đưa chuỗi máy khai về CÙNG hệ quy chiếu với các cột đó là điều
+ *          kiện để mọi phép so ("bo được đo lúc nào so với lượt sửa giới hạn nào", "header
+ *          lệch cây bao nhiêu") không phụ thuộc TZ của tiến trình đọc/ghi.
+ *       2. Máy gửi giờ ĐỊA PHƯƠNG mà không kèm múi giờ sẽ hiện ra thành SKEW ĐO ĐƯỢC qua
+ *          `assessClockSkew` (`machineApiRouters.ts`) thay vì bị TZ hệ điều hành server
+ *          âm thầm nuốt (đổi TZ server = đổi kết quả đọc, không tiếng động — bẫy BG-96).
+ * Gọi NHẦM hàm ở một trong hai chỗ là lỗi IM LẶNG (lệch một offset, không ném lỗi nào).
+ *
+ * Chuỗi CÓ múi giờ ('Z', '+07:00', '-0500') được tôn trọng NGUYÊN VĂN. `null`/`undefined`/
+ * rỗng/không parse được ⇒ `null` — người gọi tự quyết định lối thoát (KHÔNG bịa
+ * `new Date()` ở đây; xem các nơi gọi để biết mỗi đường xử lý `null` thế nào).
+ */
+export function docGioMay(s: string | null | undefined): Date | null {
+  const t = typeof s === "string" ? s.trim() : "";
+  if (t.length === 0) return null;
+  const d = new Date(CO_MUI_GIO_MAY.test(t) ? t : `${t}Z`);
+  return Number.isFinite(d.getTime()) ? d : null;
+}

@@ -97,8 +97,51 @@ function payloadLech60s(): Record<string, unknown> {
   return p;
 }
 
+/**
+ * ★★★ BG-99 (Task 5) — payload THỨ HAI: `completedAt` TRẦN (KHÔNG hậu tố "Z"), đúng
+ * hình dạng máy thật gửi. `payloadLech60s()` ở trên CỐ Ý mang "Z" tường minh nên KHÔNG
+ * đo được lỗ BG-99 (chuỗi có múi giờ được tôn trọng nguyên văn ở CẢ hai luật cũ/mới —
+ * chỉ chuỗi TRẦN mới phân biệt được `docGioMay` với `new Date(...)` thô).
+ */
+function payloadTranKhongZ(): Record<string, unknown> {
+  const p = mauHopLe();
+  delete p.productModel;
+  p.apiKey = API_KEY;
+  p.identity = { ...p.identity, station: `${RUN}-ST2`, machine: `${RUN}-MC2`, line: `${RUN}-LN2` };
+  p.productId = `${RUN}-PROD-2`;
+  p.serialNumber = `${RUN}-SN-2`;
+  p.overallResult = "OK";
+  p.ntf = false;
+  // KHÔNG hậu tố "Z" — đây LÀ điều mệnh đề dưới canh.
+  p.startedAt = "2026-09-03T01:59:00.000";
+  p.completedAt = "2026-09-03T02:00:00.000";
+  p.summary = {
+    surfaces: { total: 1, pass: 1, ng: 0, ntf: 0 },
+    positions: { total: 1, pass: 1, ng: 0, ntf: 0 },
+    captures: { total: 1, pass: 1, ng: 0, ntf: 0 },
+    components: { total: 1, pass: 1, ng: 0, ntf: 0 },
+  };
+  p.surfaces = [{
+    name: "TOP", result: "OK", ntf: false,
+    positions: [{
+      positionId: "P01", positionNumber: 1, result: "OK", ntf: false,
+      captures: [{
+        captureId: `${RUN}-C2`, captureName: "Default", index: 0, result: "OK", ntf: false,
+        startedAt: "2026-09-03T01:59:00.000",
+        components: [{
+          componentId: `${RUN}-COMP2`, componentName: "R12",
+          result: "OK", ntf: false, value: "10", lowerLimit: "9", upperLimit: "11",
+        }],
+      }],
+    }],
+  }];
+  return p;
+}
+
 describe.skipIf(!DB_URL)("BG-96 — header và cây CÙNG hệ quy chiếu (UTC thật, KHÔNG fake-UTC)", () => {
   let inspectionId: number;
+  /** BG-99 — bo thứ hai, chuỗi `completedAt` TRẦN (không hậu tố "Z"). */
+  let inspectionId2: number;
 
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
@@ -115,12 +158,20 @@ describe.skipIf(!DB_URL)("BG-96 — header và cây CÙNG hệ quy chiếu (UTC 
     const r = (await caller().submitInspection(payloadLech60s())) as KetQuaSubmit;
     expect(r.success, `submitInspection thất bại — nguyên văn: ${JSON.stringify(r)}`).toBe(true);
     inspectionId = r.inspectionId;
+
+    // BG-99 (Task 5) — bo THỨ HAI, riêng cho mệnh đề chuỗi TRẦN dưới đây.
+    const r2 = (await caller().submitInspection(payloadTranKhongZ())) as KetQuaSubmit;
+    expect(r2.success, `submitInspection (trần) thất bại — nguyên văn: ${JSON.stringify(r2)}`).toBe(true);
+    inspectionId2 = r2.inspectionId;
   });
 
   afterAll(async () => {
     if (!sql) return;
     if (inspectionId) {
       await sql`DELETE FROM inspection_surfaces WHERE "inspectionId" = ${inspectionId}`;
+    }
+    if (inspectionId2) {
+      await sql`DELETE FROM inspection_surfaces WHERE "inspectionId" = ${inspectionId2}`;
     }
     // ⚠ product_inspections LÀ WORM (migration 0279) — CỐ Ý ĐỂ LẠI hàng board (xem docblock
     // đầu file). KHÔNG viết DELETE FROM product_inspections rồi .catch(() => {}) ở đây.
@@ -156,5 +207,23 @@ describe.skipIf(!DB_URL)("BG-96 — header và cây CÙNG hệ quy chiếu (UTC 
     expect(cap, "không tìm thấy hàng cây — cây không được ghi").toBeTruthy();
     const diffMs = new Date(header.iso).getTime() - new Date(cap.iso).getTime();
     expect(diffMs, `nguyên văn: header=${header.iso} cap=${cap.iso}`).toBe(60_000);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════════════
+  // ★★★ BG-99 (Task 5, BỔ SUNG BẮT BUỘC) — chuỗi TRẦN (không hậu tố "Z") phải đọc bằng
+  // ĐÚNG MỘT luật (trần = UTC, `docGioMay`) ở đường ghi header. Trước bản vá,
+  // `rawInspTime = input.inspectionTime ? new Date(input.inspectionTime) : new Date()`
+  // đọc chuỗi trần theo TZ HỆ ĐIỀU HÀNH SERVER (đo được: máy chạy lưới này
+  // `Intl.DateTimeFormat().resolvedOptions().timeZone` = `Asia/Bangkok`, +07:00) — mệnh
+  // đề dưới đây ĐỎ trên mã đó: `"2026-09-03T02:00:00.000"` bị đọc thành
+  // `"2026-09-02T19:00:00.000Z"` (lùi 7 giờ), KHÔNG khớp `"2026-09-03T02:00:00.000Z"`
+  // mà bất biến đòi — bất kể TZ tiến trình chạy lưới là gì.
+  // ══════════════════════════════════════════════════════════════════════════════════
+  it("BG-99 — completedAt TRẦN (không hậu tố Z) đọc lại ĐÚNG UTC, bất kể TZ tiến trình", async () => {
+    const [header] = await sql<{ iso: string }[]>`
+      SELECT to_char("inspectionTime", ${ISO_FMT}) AS iso
+      FROM product_inspections WHERE id = ${inspectionId2}`;
+    expect(header, "không tìm thấy header bo #2 (trần) — submitInspection không ghi tới DB thật").toBeTruthy();
+    expect(header.iso).toBe("2026-09-03T02:00:00.000Z");
   });
 });
