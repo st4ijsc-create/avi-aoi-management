@@ -177,3 +177,27 @@ Hôm nay mọi đề xuất ghi đều qua thẻ duyệt. Người dùng muốn 
 2. **Chưa tạo được tệp mới** (nợ có chủ ý từ Đợt C).
 3. **Tệp EOL lẫn lộn bị từ chối** (fail-closed, đúng thiết kế).
 4. **Model bịa phạm vi công việc** — một phần ở tầng trọng số, prompt/định tuyến không tới được.
+
+---
+
+# PHÁN QUYẾT 2026-09-04 — BỎ Task H1, đi thẳng H2
+
+**Đo trước khi làm** (`mcpServer.ts` dòng 95+ so với `toolCucBo.ts` dòng 339+):
+
+| MCP server phơi ra | Extension ĐÃ CÓ | Phạm vi |
+|---|---|---|
+| `avi_read_file` | `doc_tep` | MCP: hộp cát **máy chủ** (`AI_REPO_SANDBOX_ROOTS`) · Extension: **workspace máy lập trình viên** |
+| `avi_list_files` | `liet_ke` | như trên |
+| `avi_grep_repo` | `grep` | như trên |
+| `avi_list_projects` | ô chọn dự án (đã có ở G1) | — |
+
+⇒ **Trùng năng lực, khác phạm vi — và phạm vi của MCP server kém hữu ích hơn** cho người đang mở
+dự án trong VSCode. Nối vào chỉ tạo **đường thứ hai cho cùng một việc**, đúng thứ "hai bản sao của
+một sự thật" mà dự án này chống suốt (đã cắn ở `daBiTuChoiGhi`, `MA_GHI_MOT_PHAN`, `NHAN_HANG_RAO`).
+
+**Task H1 BỎ.** Ghi lại đây để người sau không tưởng là quên. Nếu về sau extension cần đọc hộp cát
+máy chủ (ví dụ chế độ SERVER muốn tự đọc), hãy mở lại món này **kèm lý do đo được**, đừng mở vì
+"cho đủ bộ".
+
+★ Yêu cầu gốc của người dùng — *"gọi plugin"* — là **MCP client** (H2), thứ **chưa tồn tại**. Đó
+mới là món đáng làm.
