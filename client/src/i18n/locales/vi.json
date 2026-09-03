@@ -19911,5 +19911,32 @@
   },
   "cellTwin": {
     "maySo": "Máy #{{id}}"
+  },
+  "teachTree": {
+    "tab": "Cây dạy",
+    "chuaCoMay": "Chưa máy nào dạy sản phẩm này",
+    "chuaCoMayDesc": "Chưa máy nào đẩy cây dạy (submitMachineTemplate) cho sản phẩm này — chưa có gì để xem.",
+    "chonMay": "Chọn máy",
+    "banDay": "Bản dạy v{{version}}",
+    "chuaCoBanDayHienHanh": "Chưa có bản dạy hiện hành",
+    "caySurface": "Cây bản dạy",
+    "cayRong": "Cây dạy rỗng cho máy này",
+    "bangLinhKien": "Linh kiện trong capture",
+    "captureRong": "Capture này chưa có linh kiện",
+    "thongKe": "Tiến độ dạy: {{daDay}}/{{tong}}",
+    "componentExtId": "Mã linh kiện",
+    "tenLinhKien": "Tên linh kiện",
+    "trangThai": "Trạng thái",
+    "daDay": "Đã dạy giới hạn",
+    "chuaCoGioiHan": "Chưa dạy",
+    "dayGioiHanComingSoon": "Dạy giới hạn (sắp có)",
+    "dayGioiHanHangLoat": "Dạy giới hạn ({{n}})"
+  },
+  "pointLimits": {
+    "lowerLimit": "Cận dưới",
+    "upperLimit": "Cận trên",
+    "unit": "Đơn vị",
+    "heightMin": "Cao tối thiểu",
+    "heightMax": "Cao tối đa"
   }
 }

@@ -21,7 +21,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
-import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreVertical, MoreHorizontal, ChevronDown, Copy, Image as ImageIcon, FileSpreadsheet, Download, Layers, CheckSquare, Square, FileText, Paperclip, Rocket, Grid3X3, Sparkles, Crosshair, AlertTriangle } from "lucide-react";
+import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreVertical, MoreHorizontal, ChevronDown, Copy, Image as ImageIcon, FileSpreadsheet, Download, Layers, CheckSquare, Square, FileText, Paperclip, Rocket, Grid3X3, Sparkles, Crosshair, AlertTriangle, TreePine } from "lucide-react";
 import { useSearch, useLocation } from "wouter";
 // Doc 31 UX1 (WD-1) — mount the previously-orphaned fiducial CRUD tab (0 importers).
 import { ProductFiducialsTab } from "@/components/product-fiducials/ProductFiducialsTab";
@@ -74,6 +74,8 @@ import { ProductFoundationTab } from "@/components/productModels/ProductFoundati
 import { MsaStudyDialog } from "@/components/productModels/MsaStudyDialog";
 // doc 55 Item 3 / PV3-UI — product-variant master-data admin tab.
 import { ProductVariantsTab } from "@/components/products/ProductVariantsTab";
+// Khối C Task 10 (QĐ-4) — tab "Cây dạy": đọc cây dạy giới hạn qua appRouter.cayDay (Task 9).
+import { TeachTreeTab } from "@/components/products/teach/TeachTreeTab";
 
 interface MeasurementPoint {
   id?: number;
@@ -218,7 +220,8 @@ function mapCatalogCategoryToLegacyType(category?: string): MeasurementPoint["me
 
 // Doc 43 Đợt 3 — 4 tab cột chi tiết + đồng bộ ?tab= URL (deep-link, reload giữ tab).
 // doc 55 Item 3 / PV3-UI — thêm tab "variants" (Biến thể) quản lý biến thể sản phẩm.
-const PRODUCT_DETAIL_TABS = ["points", "info", "release", "foundation", "variants"] as const;
+// Khối C Task 10 (QĐ-4) — thêm tab "teach" (Cây dạy): đọc cây dạy giới hạn qua appRouter.cayDay.
+const PRODUCT_DETAIL_TABS = ["points", "info", "release", "foundation", "variants", "teach"] as const;
 
 export default function ProductModels() {
   const { t } = useTranslation();
@@ -2870,6 +2873,11 @@ export default function ProductModels() {
                     <Layers className="h-4 w-4" />
                     {t("products.variants.tab", "Biến thể")}
                   </TabsTrigger>
+                  {/* Khối C Task 10 (QĐ-4) — Cây dạy (đọc bản dạy giới hạn của máy) */}
+                  <TabsTrigger value="teach" className="h-7 gap-1.5 text-xs">
+                    <TreePine className="h-4 w-4" />
+                    {t("teachTree.tab", "Cây dạy")}
+                  </TabsTrigger>
                 </TabsList>
 
                 {/* ① Điểm đo — canvas + point list + form (màn làm việc chính) */}
@@ -3291,6 +3299,11 @@ export default function ProductModels() {
               {/* ⑤ Biến thể — product-variant master-data (doc 55 Item 3 / PV3-UI) */}
               <TabsContent value="variants" className="space-y-4 mt-2">
                 <ProductVariantsTab productModelId={selectedProduct.id} productName={selectedProduct.name} />
+              </TabsContent>
+
+              {/* ⑥ Cây dạy — Khối C Task 10 (QĐ-4): đọc bản dạy giới hạn theo máy (appRouter.cayDay) */}
+              <TabsContent value="teach" className="space-y-4 mt-2">
+                <TeachTreeTab productModelId={selectedProduct.id} />
               </TabsContent>
               </Tabs>
 

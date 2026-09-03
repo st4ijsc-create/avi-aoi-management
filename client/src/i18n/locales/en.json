@@ -19931,5 +19931,32 @@
   },
   "cellTwin": {
     "maySo": "Machine #{{id}}"
+  },
+  "teachTree": {
+    "tab": "Teach tree",
+    "chuaCoMay": "No machine has taught this product yet",
+    "chuaCoMayDesc": "No machine has pushed a teach tree (submitMachineTemplate) for this product yet — nothing to show.",
+    "chonMay": "Select machine",
+    "banDay": "Taught version v{{version}}",
+    "chuaCoBanDayHienHanh": "No current taught version",
+    "caySurface": "Teach tree",
+    "cayRong": "Teach tree is empty for this machine",
+    "bangLinhKien": "Components in this capture",
+    "captureRong": "This capture has no components yet",
+    "thongKe": "Teaching progress: {{daDay}}/{{tong}}",
+    "componentExtId": "Component ID",
+    "tenLinhKien": "Component name",
+    "trangThai": "Status",
+    "daDay": "Limit taught",
+    "chuaCoGioiHan": "Not taught",
+    "dayGioiHanComingSoon": "Teach limit (coming soon)",
+    "dayGioiHanHangLoat": "Teach limit ({{n}})"
+  },
+  "pointLimits": {
+    "lowerLimit": "Lower limit",
+    "upperLimit": "Upper limit",
+    "unit": "Unit",
+    "heightMin": "Min height",
+    "heightMax": "Max height"
   }
 }

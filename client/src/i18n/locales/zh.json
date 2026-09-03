@@ -19939,5 +19939,32 @@
   },
   "cellTwin": {
     "maySo": "设备 #{{id}}"
+  },
+  "teachTree": {
+    "tab": "示教树",
+    "chuaCoMay": "还没有设备为此产品示教",
+    "chuaCoMayDesc": "还没有设备为此产品推送示教树（submitMachineTemplate）——暂无可查看内容。",
+    "chonMay": "选择设备",
+    "banDay": "示教版本 v{{version}}",
+    "chuaCoBanDayHienHanh": "尚无当前示教版本",
+    "caySurface": "示教树",
+    "cayRong": "该设备的示教树为空",
+    "bangLinhKien": "该 capture 中的元件",
+    "captureRong": "该 capture 尚无元件",
+    "thongKe": "示教进度：{{daDay}}/{{tong}}",
+    "componentExtId": "元件编号",
+    "tenLinhKien": "元件名称",
+    "trangThai": "状态",
+    "daDay": "已示教限值",
+    "chuaCoGioiHan": "未示教",
+    "dayGioiHanComingSoon": "示教限值（即将推出）",
+    "dayGioiHanHangLoat": "批量示教限值（{{n}}）"
+  },
+  "pointLimits": {
+    "lowerLimit": "下限",
+    "upperLimit": "上限",
+    "unit": "单位",
+    "heightMin": "最小高度",
+    "heightMax": "最大高度"
   }
 }
