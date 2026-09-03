@@ -161,3 +161,44 @@ Vá hai lớp độc lập (server `langSchema` fail-safe + client chuẩn hoá 
 
 **Vẫn KHÔNG LÀM (lý do không đổi):** minimap · code folding — đòi kiểm soát từng dòng ở tầng
 editor, tức thay Trình xem bằng CodeMirror read-only; đó là một đợt kiến trúc riêng.
+
+---
+
+## PDCA VÒNG 2 — ĐO LẠI ĐƯỜNG CƠ SỞ (2026-09-03)
+
+*Vòng 1 đo 61,5% rồi vá 4 gốc; sau đó thêm A/C/D/E/F. **Chưa ai đo lại kết cục tổng thể** — đây là
+phép đo ấy, chạy **đúng bộ 13 tác vụ gốc** (để so trực tiếp) + 11 tác vụ cho tính năng mới.*
+
+**Bước 0 (MSA):** 10 tệp nguồn mới hơn bundle (dòng việc AOI song song) ⇒ rebuild + restart, đo lại
+`nguồn-mới-hơn-dist = 0`. Trình duyệt **SẠCH** (locale mặc định `en-US` — chính điều kiện đã phơi ra
+lỗi câm `lang` ở đợt trước).
+
+### Kết quả — 13 tác vụ GỐC
+
+| | Vòng 1 | Vòng 2 |
+|---|---|---|
+| ĐẠT | 8 | **13** |
+| SAI | 4 (T02b·T03·T05·T10) | **0** |
+| HỎNG | 1 (T11) | **0** |
+| CHẶN-ĐÚNG | 1 (T13) | 1 (T13 — vẫn từ chối lệnh phá hoại) |
+| **Tỉ lệ kết cục đúng** | **61,5%** | **100%** |
+
+Năm mục từng đỏ đều lật xanh và đo được bằng con số: dotfile mở được · Ctrl+P thấy tệp 4 đoạn ·
+tìm-toàn-repo 54 kết quả (trước: 1) · @-mention tệp sâu · Ctrl+K mở ô sửa-đoạn (palette im).
+
+### Kết quả — 11 tác vụ TÍNH NĂNG MỚI: **11/11 ĐẠT**
+
+breadcrumb (`client/src/lib` → bấm ⇒ lọc `client/src`) · word-wrap (gutter 1→0→1, `pre-wrap`) ·
+outline (4 ký hiệu đúng dòng) · maximize (594→1240→594) · phím Alt tab (Alt+[ đổi tệp, Alt+W 3→2,
+**Ctrl+W không đụng gì**) · huy hiệu token (`4.7k↓ 592↑`) · huy hiệu model (`T1`) · sửa tay
+(CodeMirror → thẻ duyệt đúng nội dung → HỦY) · thay thế lô ("Replace in 5 files") · giới hạn thư mục
+(17 → 14) · công tắc cảnh báo.
+
+### ★★★ Phát hiện của vòng này KHÔNG nằm ở sản phẩm mà ở THIẾT BỊ ĐO
+
+**4 lần phép đo cho ÂM TÍNH GIẢ, 0 lần là lỗi thật:** T11 thiếu một cú click vào editor trước khi
+bôi đen · T12 selector `/Session/i` khớp nhầm nút **"New session"** trước "Session history" · N3 dùng
+sai tên thuộc tính (`data-outline` thay vì `data-bang-outline`) · T08 nhịp lấy mẫu 1s bỏ lỡ lệnh chạy
+2s. Nếu tin lượt đo đầu, báo cáo này đã liệt kê **4 lỗi không tồn tại** và tôi đã đi "sửa" thứ không
+hỏng. ⇒ **Luật rút ra: một kết cục ĐỎ phải được một phép đo ĐỘC LẬP xác nhận trước khi được gọi là
+lỗi** — đúng đối xứng với luật cũ "một kết cục XANH chưa chứng minh gì".
