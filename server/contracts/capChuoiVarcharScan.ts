@@ -379,6 +379,64 @@ export const KIEM_KE_PRESIGN: readonly MucCapChuoi[] = [
     ghiChu: "inspection_packages.sha256Presign varchar(128) — I-7/mig 0346: presign INSERT nguyên văn (đã chuẩn hoá chữ thường), rồi ĐỐI CHIẾU với byte ZIP THẬT ở tuyến PUT upload và ở backstop 'pending' của commit. N-4: KHÔNG còn là 'khai báo nhưng không đọc'" },
 ];
 
+/**
+ * Khối B Task 1 (B-1) — KIỂM KÊ ĐẦY ĐỦ 15 lá chuỗi của `machineTemplateContract`
+ * (`server/contracts/machineTemplateContract.ts`) — hợp đồng **CÂY DẠY** mà máy
+ * ĐẨY LÊN. Bảng THỨ TƯ cùng khuôn `KIEM_KE_CAP_CHUOI`/`KIEM_KE_META_JSON`/
+ * `KIEM_KE_SUBMIT_INSPECTION_CORE`. **KHÔNG có miễn trừ** — mọi lá chuỗi đều có
+ * `.max()`, kể cả các lá đi cột `text` (chúng lấy trần VỆ SINH 1000, xem dưới).
+ *
+ * ⚠ ĐÂY LÀ HỢP ĐỒNG CHƯA CÓ CỬA. Task 1 chỉ khai hình dạng; `.mutation()` tiêu
+ * thụ nó là Task 2. Vì vậy bảng này CỐ Ý **không** được thêm vào
+ * `DANH_SACH_SCHEMA_INGEST`/`CUA_TOI_TEN_SCHEMA`
+ * (`capChuoiVarcharDuongIngestMacDinh.test.ts`): hai danh sách đó được đối
+ * chiếu với tập cửa THẬT do `quetCuaIngest` quét ra từ AST router — thêm vào
+ * khi chưa có cửa sẽ làm §0b ĐỎ vì một lý do SAI. **Task 2 phải thêm** khi cửa
+ * ra đời; lưới tiêu thụ hôm nay là `machineTemplateContract.test.ts`.
+ *
+ * (A) KHỚP CỘT THẬT — đo `information_schema.columns`, vai **`avi_app`**,
+ *     2026-09-03, CÙNG con số ở CẢ HAI DB (`current_database()` =
+ *     `'aoi_management'` và `'aoi_management_test'`).
+ *     ★ `shape` = varchar(**20**): kế hoạch Khối B viết "max 50" — SỐ ĐO BÁC BỎ.
+ * (B) VỆ SINH — cột đích `text` (không có sức chứa thật để khớp) hoặc KHÔNG có
+ *     cột đích. Trần do task này CHỌN, không phải đo từ DB.
+ */
+export const KIEM_KE_CAY_DAY: readonly MucCapChuoi[] = [
+  // ── Nhóm (A) khớp cột THẬT ──────────────────────────────────────────────
+  { ten: "surfaces[].surfaceId", duongDan: ["surfaces", "[]", "surfaceId"], max: 64, nguon: "db",
+    ghiChu: "product_surfaces.surfaceExtId varchar(64)" },
+  { ten: "surfaces[].surfaceName", duongDan: ["surfaces", "[]", "surfaceName"], max: 100, nguon: "db",
+    ghiChu: "product_surfaces.surfaceName varchar(100) NOT NULL — CŨNG là khoá nối kết quả (kết quả chỉ có `name`)" },
+  { ten: "surfaces[].positions[].positionId", duongDan: ["surfaces", "[]", "positions", "[]", "positionId"], max: 64, nguon: "db",
+    ghiChu: "product_positions.positionId varchar(64) — khoá nối kết quả ở cấp position (mã \"P01\", KHÔNG phải UUID)" },
+  { ten: "surfaces[].positions[].name", duongDan: ["surfaces", "[]", "positions", "[]", "name"], max: 255, nguon: "db",
+    ghiChu: "product_positions.name varchar(255)" },
+  { ten: "surfaces[].positions[].shape", duongDan: ["surfaces", "[]", "positions", "[]", "shape"], max: 20, nguon: "db",
+    ghiChu: "product_positions.shape varchar(20) — ★ kế hoạch Khối B khai \"max 50\", đo lại bằng avi_app ra 20 ở CẢ HAI DB" },
+  { ten: "surfaces[].positions[].captures[].id", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "id"], max: 64, nguon: "db",
+    ghiChu: "product_captures.captureExtId varchar(64) — UUID, khoá nối kết quả ở cấp capture" },
+  { ten: "surfaces[].positions[].captures[].name", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "name"], max: 255, nguon: "db",
+    ghiChu: "product_captures.captureName varchar(255)" },
+  { ten: "surfaces[].positions[].captures[].components[].id", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "id"], max: 64, nguon: "db",
+    ghiChu: "measurement_point_defs.componentExtId varchar(64) — UUID, khoá mở Đ-19/BG-92 (hôm nay 0 hàng có giá trị)" },
+  { ten: "surfaces[].positions[].captures[].components[].componentName", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "componentName"], max: 255, nguon: "db",
+    ghiChu: "measurement_point_defs.name varchar(255) NOT NULL" },
+
+  // ── Nhóm (B) vệ sinh — cột đích `text`, hoặc KHÔNG có cột đích ───────────
+  { ten: "surfaces[].surfaceTemplateImagePath", duongDan: ["surfaces", "[]", "surfaceTemplateImagePath"], max: 1000, nguon: "ve-sinh",
+    ghiChu: "product_surfaces.templateImageUrl là `text` — mẫu thật dài nhất 137 ký tự" },
+  { ten: "surfaces[].positions[].id", duongDan: ["surfaces", "[]", "positions", "[]", "id"], max: 64, nguon: "ve-sinh",
+    ghiChu: "KHÔNG có cột đích — UUID này KHÔNG dùng để nối kết quả (kết quả chỉ mang positionId); trần 64 là quy ước UUID" },
+  { ten: "surfaces[].positions[].templateImagePath", duongDan: ["surfaces", "[]", "positions", "[]", "templateImagePath"], max: 1000, nguon: "ve-sinh",
+    ghiChu: "product_positions.templateImageUrl là `text` — ⚠ ánh xạ ghi của kế hoạch Task 2 chưa liệt kê trường này" },
+  { ten: "surfaces[].positions[].captures[].templateImagePath", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "templateImagePath"], max: 1000, nguon: "ve-sinh",
+    ghiChu: "product_captures.templateImageUrl là `text` — ⚠ cùng mối lo: ánh xạ Task 2 chưa liệt kê" },
+  { ten: "surfaces[].positions[].captures[].components[].description", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "description"], max: 1000, nguon: "ve-sinh",
+    ghiChu: "measurement_point_defs.description là `text` — không có sức chứa thật để khớp" },
+  { ten: "surfaces[].positions[].captures[].components[].templateImagePath", duongDan: ["surfaces", "[]", "positions", "[]", "captures", "[]", "components", "[]", "templateImagePath"], max: 1000, nguon: "ve-sinh",
+    ghiChu: "ứng viên duy nhất measurement_point_defs.referenceImageUrl (`text`) — ⚠ ánh xạ Task 2 chưa liệt kê" },
+];
+
 export interface KetQuaKiemKe {
   /** Mỗi phần tử: một trường ĐỎ — thiếu `.max()` hoặc lệch số. */
   loi: string[];
