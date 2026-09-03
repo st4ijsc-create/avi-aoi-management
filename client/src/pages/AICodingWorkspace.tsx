@@ -1199,6 +1199,13 @@ export default function AICodingWorkspace() {
   const [thayBang, setThayBang] = useState("");
   const [oThayMo, setOThayMo] = useState(false);
   const deXuatThayTheLoM = trpc.repoWorkspace.deXuatThayTheLo.useMutation();
+  /**
+   * ★ 2026-09-03 · mục 6 — HUY HIỆU MODEL. Đường coding để BỘ ĐỊNH TUYẾN + VRAM broker chọn model
+   * (không có trường ép model — xem docblock `modelDangDung` ở router), nên đây là HIỂN THỊ chứ
+   * không phải cần gạt: nói cho người dùng biết họ đang nói với ai, và nói ĐÚNG mức chắc chắn
+   * ("thường dùng" — một câu rất khó vẫn có thể được nâng tầng).
+   */
+  const modelQ = trpc.repoWorkspace.modelDangDung.useQuery(undefined, { staleTime: 5 * 60_000 });
   const tepSeThay = useMemo(() => ketQuaGrepGom.map(([p]) => p).slice(0, TRAN_TEP_LO), [ketQuaGrepGom]);
   const guiThayTheLo = useCallback(async () => {
     if (tepSeThay.length === 0 || !tuKhoaRepoTre.trim()) return;
@@ -1974,6 +1981,18 @@ export default function AICodingWorkspace() {
                   : t("repoWs.badgeTip.execOff", "Tài khoản KHÔNG có quyền CHẠY LỆNH (ai_repo_exec) — gợi ý chạy test bị ẩn; server vẫn chặn nếu gọi thẳng.")}
               </TooltipContent>
             </Tooltip>
+            {modelQ.data && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" data-huy-hieu-model className="cursor-help text-[10px]">
+                    {t("repoWs.model.badge", "model: T{{tier}}", { tier: modelQ.data.tier })}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[300px] text-xs">
+                  {t("repoWs.model.tip", "Bộ định tuyến THƯỜNG dùng tầng {{tier}}{{ten}} cho tác vụ \"{{task}}\". Model do server chọn theo độ khó + VRAM còn trống — một câu rất khó vẫn có thể được nâng tầng, nên đây là dự báo, không phải cam kết.", { tier: modelQ.data.tier, task: modelQ.data.task, ten: modelQ.data.modelId ? ` (${modelQ.data.modelId})` : modelQ.data.modelSau ? ` (${modelQ.data.modelSau})` : "" })}
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </div>
 

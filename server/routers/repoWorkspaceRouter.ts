@@ -371,6 +371,33 @@ export const repoWorkspaceRouter = router({
    *     (fail-closed, đúng chiều an toàn — xem docblock `applyDiff.ts`).
    *   • Regex do NGƯỜI gõ chỉ chạy khi bật cờ; mặc định `tim` bị thoát thành phép tìm NGUYÊN VĂN.
    */
+  /**
+   * ★★★ 2026-09-03 · ĐỢT KẾ mục 6 — **MODEL: HIỂN THỊ, KHÔNG PHẢI CHỌN.** (Đổi phạm vi có chủ đích
+   * so với "model selector" kiểu Cursor — lý do đo được, ghi ở đây để người sau không "sửa lại".)
+   *
+   * Đường sinh chữ của workspace là `streamCodingModel` → `planInference` → `route()`: model do BỘ
+   * ĐỊNH TUYẾN chọn theo tác vụ/độ khó + VRAM broker. `RouteInput` **không có trường ép model** —
+   * và đó là thiết kế, không phải thiếu sót: ép model từ client sẽ đi vòng đúng bộ điều phối mà
+   * dòng việc VRAM (9 pha) dựng ra để một card 32 GB không bị hai model 30B cùng đòi chỗ.
+   * ⇒ Thứ người dùng thật sự thiếu là *"tôi đang nói với model nào"* — một câu HỎI, không phải một
+   *   cái cần gạt. Tuyến này trả lời đúng câu ấy: gọi `route()` (hàm THUẦN — 0 tiến trình, 0 VRAM,
+   *   0 lượt inference) với cùng `task` mà đường coding dùng, rồi trả tier + modelId.
+   * ⚠ Là DỰ BÁO cho một lượt điển hình: `route()` còn nhìn ĐỘ KHÓ của chính câu hỏi, nên một câu
+   *   rất khó có thể được nâng tầng. Nhãn UI phải nói "thường dùng", đừng hứa chắc.
+   */
+  modelDangDung: protectedProcedure.query(async () => {
+    const { route, activeRouterProfile } = await import("../services/aiModelRouter");
+    const task = process.env.AI_CODING_MODEL_TASK === "code" ? "code" : "chat";
+    const qd = route({ task: task as never, text: "" });
+    return {
+      task,
+      tier: qd.tier,
+      modelId: qd.modelId ?? null,
+      /** Model SÂU đang cấu hình (GGUF_DEFAULT_MODEL) — cái tên người vận hành nhận ra. */
+      modelSau: activeRouterProfile().deepModel ?? null,
+    };
+  }),
+
   deXuatThayTheLo: protectedProcedure
     .input(
       z.object({

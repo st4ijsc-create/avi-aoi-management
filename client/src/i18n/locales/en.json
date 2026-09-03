@@ -19591,6 +19591,10 @@
       "capped": "⚠ {{tong}} files match — one batch can only be reviewed for {{tran}} files; the remaining {{con}} need another pass.",
       "noChange": "No file changed (truncated / secret-redacted files are skipped).",
       "failed": "Could not create proposal ({{ma}})."
+    },
+    "model": {
+      "badge": "model: T{{tier}}",
+      "tip": "The router USUALLY picks tier {{tier}}{{ten}} for task \"{{task}}\". The server chooses per difficulty + free VRAM — a very hard question may still be promoted, so this is a forecast, not a promise."
     }
   },
   "masterDataCol": {

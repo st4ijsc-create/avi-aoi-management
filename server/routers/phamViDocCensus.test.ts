@@ -231,7 +231,38 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  * ★ **NHÓM (A) VẪN 363, B/S KHÔNG đổi** — lượt này không mở một lượt đọc tenant không lọc nào.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
-const GHIM = { A: 363, B: 8, C: 470, D: 1095, S: 286, tong: 2222 } as const;
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-03 — **ĐÍNH CHÍNH: "BỘ QUÉT BẤT ỔN" LÀ MỘT CHẨN ĐOÁN SAI CỦA TÔI.** `{C:470, D:1095,
+ * tong:2222}` ở trên là con số **ĐO SAI**, và cách nó sai đáng ghi lại hơn chính con số.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Ngày 2026-08-31 tôi đo 2222, ghim, rồi vài chục phút sau cùng một cây đo ra 2224 — stash sạch
+ * mọi bản vá vẫn 2224. Tôi kết luận "bộ quét bất ổn, +2 D trùng-khoá (Map khử trùng nên per-key
+ * diff mù)" và treo món này lại. **Cả hai vế đều sai**, đo được ngày 2026-09-03:
+ *   • ĐẾM KHOÁ TRÙNG: 2.227 thủ tục / **2.227 khoá duy nhất** ⇒ KHÔNG có mục nào đếm hai lần.
+ *   • QUÉT CHÍNH CÂY COMMIT `2cb1f771` (git archive — cây SẠCH, không phải worktree): ra
+ *     `{C:470, D:1097, tong:2224}` — **ổn định tuyệt đối** qua mọi lượt chạy.
+ * ⇒ Bộ quét luôn đúng. Thứ đổi giữa hai lần đo là **ĐĨA**: bộ quét đọc `server/**` trên hệ tệp,
+ *   còn worktree này có **tiến trình khác đang sửa dở** (phiên AOI/extension chạy song song). Hai
+ *   thủ tục D của họ chưa nằm trên đĩa lúc 21:27 và đã có lúc 21:55. Con số ghim 2222 vì thế là
+ *   một phép đo trên **cây đang chuyển động**, không phải một lời khai về commit nào cả.
+ *
+ * ⇒ **KHUÔN cho người sau: đo census trên cây của MỘT COMMIT (`git archive` ra thư mục tạm), đừng
+ *   bao giờ đo trên worktree dùng chung.** Một con số ghim rút từ worktree bẩn sẽ đỏ ngẫu nhiên và
+ *   dạy người đọc thói quen tệ nhất: sửa GHIM cho xanh.
+ *
+ * ★ Phép quy trách nhiệm ĐẦY ĐỦ cho con số mới, bằng per-key diff `2cb1f771` → worktree (ĐÚNG 3
+ *   dòng, không dư một đơn vị):
+ *       C 470 → **471**: `repoWorkspace.modelDangDung` (query THUẦN — gọi `route()` để nói người
+ *         dùng đang nói với model nào; 0 bảng, 0 tiến trình, 0 VRAM).
+ *       D 1097 → **1099**: `repoWorkspace.deXuatSuaTay` + `repoWorkspace.deXuatThayTheLo` — hai
+ *         mutation CHỈ-ĐỀ-XUẤT của đường sửa-tay/thay-thế-lô (phạm vi ĐỌC không áp cho mutation).
+ *       A/B/S **KHÔNG đổi** — lượt này không mở một lượt đọc tenant không lọc nào.
+ * ⚠ Con số dưới đây là của cây `2cb1f771` + đúng ba thủ tục ấy. Nhánh này có nhiều dòng việc song
+ *   song; khi dòng khác commit thêm thủ tục, ô này sẽ đỏ — hãy quy trách nhiệm bằng per-key diff
+ *   trên cây COMMIT như trên, rồi mới ghim.
+ */
+const GHIM = { A: 363, B: 8, C: 471, D: 1099, S: 286, tong: 2227 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

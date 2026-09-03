@@ -19571,6 +19571,10 @@
       "capped": "⚠ Có {{tong}} tệp khớp — một lô chỉ duyệt được {{tran}} tệp; {{con}} tệp còn lại phải làm lượt sau.",
       "noChange": "Không tệp nào đổi (tệp bị cắt/có chỗ che bí mật bị bỏ qua).",
       "failed": "Không tạo được đề xuất ({{ma}})."
+    },
+    "model": {
+      "badge": "model: T{{tier}}",
+      "tip": "Bộ định tuyến THƯỜNG dùng tầng {{tier}}{{ten}} cho tác vụ \"{{task}}\". Model do server chọn theo độ khó + VRAM còn trống — một câu rất khó vẫn có thể được nâng tầng, nên đây là dự báo, không phải cam kết."
     }
   },
   "masterDataCol": {
