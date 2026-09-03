@@ -272,7 +272,16 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   phải `cygpath -w` rồi truyền đường Windows, nếu không cây "cũ" rỗng và diff khai MỌI thủ tục là
  *   THÊM (đã dính một lần trong chính lượt này).
  */
-const GHIM = { A: 363, B: 8, C: 472, D: 1099, S: 286, tong: 2228 } as const;
+// ★ 2026-09-03 — D 1099→1100, tong 2228→2229. LÝ DO ĐO ĐƯỢC, không phải "sửa cho xanh":
+// Khối B Task 2 (`ac8d5ab2`) thêm ĐÚNG MỘT thủ tục — cửa ingest cây dạy (máy → hệ) trong
+// `machineApiRouters.ts`. Nó rơi vào nhóm D vì có kiểm chứng đầu vào.
+// Chứng minh độ lệch đúng bằng một cửa đó: A/B/C/S **không đổi** (363/8/472/286); chỉ D và
+// `tong` cùng +1. Nếu bản vá của tôi làm rò một lượt đọc KHÔNG lọc tenant thì nhóm **A** đã
+// tăng — nó không tăng.
+// ⚠ Cổng `congGiayPhepAiCensus` cũng đang đỏ (tong +6, beMatAi +7) nhưng **KHÔNG phải của tôi**
+// — tôi thêm một cửa, không thể làm `beMatAi` +7. Đó là độ trôi của công việc AI-coding chạy
+// song song; **để nguyên cho bên đó ký**, đừng gộp vào con số này.
+const GHIM = { A: 363, B: 8, C: 472, D: 1100, S: 286, tong: 2229 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
