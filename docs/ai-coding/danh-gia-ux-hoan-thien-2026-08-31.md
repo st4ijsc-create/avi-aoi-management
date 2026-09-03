@@ -105,3 +105,36 @@ Vòng 1 đã sửa độ phủ + cờ bản cắt. Còn lại về TRẢI NGHI�
 `aiCodingLoiViTri` — có lưới ghim, phải là một đợt riêng) · include/exclude glob cho tìm kiếm ·
 outline/minimap/folding · maximize khung · word-wrap (gutter căn theo dòng-logic; bật wrap là lệch
 số dòng — cần render từng-dòng trước).*
+
+---
+
+## LỊCH HOÀN TẤT PHẦN CÒN LẠI (lập 2026-09-03)
+
+*Xếp theo RỦI RO tăng dần, không theo độ hấp dẫn: mỗi đợt phải xanh + nghiệm thu sống rồi mới sang
+đợt sau. Mục nào bị đo bác bỏ thì DỪNG và khai, không "làm cho có".*
+
+### Đợt D — rẻ và chắc (không đụng hợp đồng dữ liệu nào)
+| # | Việc | Vì sao rẻ |
+|---|---|---|
+| D1 | **Breadcrumb đường tệp bấm được** | thuần hiển thị; bấm đoạn ⇒ dùng lại `openFile`/lọc cây |
+| D2 | **Word-wrap toggle** | đánh đổi KHAI RA: bật wrap ⇒ ẩn gutter (gutter căn theo dòng-logic) |
+| D3 | **Giới hạn tìm theo thư mục** | `grep` server ĐÃ nhận tham số `path`; client chỉ chưa gửi |
+| D4 | **Maximize/thu khung** | `ResizablePanelGroup` đã có; dùng handle mệnh lệnh |
+
+### Đợt E — đụng hợp đồng, phải sửa lưới ghim cùng lượt
+| # | Việc | Rủi ro cần canh |
+|---|---|---|
+| E1 | **Phân mức lỗi/cảnh báo cho Problems** | `aiCodingLoiViTri` CỐ Ý loại `warning` và **có lưới ghim đúng chỗ đó** ⇒ phải thêm trường `mucDo`, giữ mặc định chỉ-lỗi, và VIẾT LẠI lưới ấy thành lời khai mới |
+| E2 | **Outline (danh sách ký hiệu) nhẹ** | regex khai báo cho ts/js/cs — chỉ nhận khuôn HẸP, thà thiếu còn hơn trỏ sai |
+
+### Đợt F — phải KHẢO SÁT trước, có thể kết luận KHÔNG LÀM
+| # | Việc | Câu hỏi phải trả lời trước khi code |
+|---|---|---|
+| F1 | Ctrl+W / Ctrl+Tab | trình duyệt có cho `preventDefault` không? (memory ghi Ctrl+Tab **không** được) — nếu không, đề xuất phím khác hoặc khai là bất khả |
+| F2 | Nhảy `tệp:dòng` từ lỗi trong CHAT | transcript render bằng Streamdown; chèn link có phá markdown/nhãn tin cậy không? |
+| F3 | Đồng hồ token/chi phí lượt | server có phát token usage ra đường SSE này không, hay chỉ ghi metrics? |
+
+### KHÔNG LÀM (quyết định có lý do, để người sau khỏi hỏi lại)
+- **Minimap · code folding**: Trình xem dựng bằng Streamdown/Shiki nguyên khối + gutter DOM riêng.
+  Hai tính năng này đòi kiểm soát từng dòng ở tầng editor ⇒ phải thay trình xem bằng CodeMirror
+  read-only. Đó là một đợt kiến trúc riêng, và giá trị thấp hơn hẳn mọi mục trên bảng này.
