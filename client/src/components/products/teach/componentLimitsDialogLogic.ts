@@ -66,6 +66,13 @@ export function laChuoiSoHopLe(gia: string): boolean {
   return RE_SO_HOP_LE.test(s);
 }
 
+/** Parse một chuỗi ĐÃ hợp lệ theo `laChuoiSoHopLe` — rỗng hoặc sai định dạng ⇒ `null` (không bịa số). */
+function soHopLeHoacNull(gia: string): number | null {
+  const s = gia.trim();
+  if (s === "" || !RE_SO_HOP_LE.test(s)) return null;
+  return Number(s);
+}
+
 /** `measurement_point_defs.unit` varchar(20) — chặn ở client, đừng để Postgres 22001 là lần đầu người dùng biết. */
 export function laDonViHopLe(gia: string): boolean {
   return gia.trim().length <= 20;
@@ -77,7 +84,15 @@ export interface LoiTruongForm {
   readonly macDinh: string;
 }
 
-/** Kiểm toàn bộ form — trả DANH SÁCH lỗi (rỗng = form hợp lệ, sẵn sàng gửi). */
+/**
+ * Kiểm toàn bộ form — trả DANH SÁCH lỗi (rỗng = form hợp lệ, sẵn sàng gửi).
+ *
+ * Vòng sửa 1 (review, Minor #1) — thêm so sánh CHÉO `lowerLimit ≤ upperLimit` và
+ * `heightMin ≤ heightMax` khi CẢ HAI đã là số hợp lệ (bỏ qua khi một trong hai rỗng/sai định
+ * dạng — lỗi định dạng ở trên đã đủ, không chồng thêm lỗi khó hiểu). Đây là kiểm CLIENT-SIDE
+ * — server (`measurementPoint.update`/`setLimitsBatch`) KHÔNG tự kiểm điều này, ghi nợ **BG-113**
+ * (chung cho cả hai mutation, ngoài phạm vi Task 11 — không sửa server ở vòng này).
+ */
 export function kiemTraForm(gia: FormGioiHan): LoiTruongForm[] {
   const loi: LoiTruongForm[] = [];
   for (const truong of TRUONG_SO) {
@@ -88,6 +103,27 @@ export function kiemTraForm(gia: FormGioiHan): LoiTruongForm[] {
   if (!laDonViHopLe(gia.unit)) {
     loi.push({ truong: "unit", khoa: "teachLimits.errDonViQuaDai", macDinh: "Đơn vị tối đa 20 ký tự" });
   }
+
+  const lower = soHopLeHoacNull(gia.lowerLimit);
+  const upper = soHopLeHoacNull(gia.upperLimit);
+  if (lower != null && upper != null && lower > upper) {
+    loi.push({
+      truong: "upperLimit",
+      khoa: "teachLimits.errCanDuoiLonHonCanTren",
+      macDinh: "Cận dưới phải nhỏ hơn hoặc bằng cận trên",
+    });
+  }
+
+  const hMin = soHopLeHoacNull(gia.heightMin);
+  const hMax = soHopLeHoacNull(gia.heightMax);
+  if (hMin != null && hMax != null && hMin > hMax) {
+    loi.push({
+      truong: "heightMax",
+      khoa: "teachLimits.errCaoMinLonHonMax",
+      macDinh: "Cao tối thiểu phải nhỏ hơn hoặc bằng cao tối đa",
+    });
+  }
+
   return loi;
 }
 
@@ -108,6 +144,44 @@ export function layTruongDaNhap(gia: FormGioiHan): Partial<Record<TenTruongForm,
 
 export function soTruongDaNhap(gia: FormGioiHan): number {
   return Object.keys(layTruongDaNhap(gia)).length;
+}
+
+/**
+ * ★★★ Vòng sửa 1 (review — Important, race dữ liệu thật) ★★★
+ *
+ * TRƯỚC vòng sửa: chế độ đơn đổi từ điểm A sang điểm B trong khi `measurementPoint.getById(B)`
+ * còn đang tải — `gia` KHÔNG được reset (chỉ nhánh hàng loạt gọi `setGia(FORM_RONG)`), và nút Lưu
+ * chỉ khoá theo `dangLuu`/`rows.length===0`/`loiForm`/`soTruongDaNhap` — KHÔNG khoá theo việc
+ * `getById` đang tải. Nếu người dùng bấm Lưu ngay trong cửa sổ đó, `gia` vẫn mang giá trị CỦA A
+ * (hợp lệ, `soTruongDaNhap>0`) trong khi `rows[0].id` đã là B ⇒ `xayInputSetLimitsBatch` ghi giá
+ * trị của A LÊN B. Mã cũ tương đương biểu thức (chép nguyên văn để đối chiếu — xem test
+ * "[HỒI QUY]" trong `componentLimitsDialog.unit.test.ts`):
+ *
+ *     const duocLuuMaCu = rows.length > 0 && loiForm.length === 0 && soTruongDaNhap > 0;
+ *
+ * — biểu thức này KHÔNG có khái niệm "đang tải chi tiết điểm khác", nên LUÔN true trong cửa sổ
+ * race, dù `gia` đang mang dữ liệu của điểm SAI.
+ *
+ * SAU vòng sửa — hai lớp phòng thủ, cả hai đều bắt buộc (không phải chọn một):
+ *   (a) `ComponentLimitsDialog.tsx`: effect reset `gia = FORM_RONG` được gọi LUÔN LUÔN khi tập
+ *       `rows` đổi (kể cả đơn — bỏ điều kiện `if (!donMode)` cũ), NGAY LẬP TỨC, không đợi
+ *       `getById` trả về — nên trong cửa sổ tải, `gia` rỗng ⇒ `soTruongDaNhap===0` đã tự chặn.
+ *   (b) HÀM NÀY: chặn CỨNG bất kể `gia` đang chứa gì, chỉ dựa vào tín hiệu tải
+ *       (`dangTaiChiTietDon` — đơn mode: `chiTietQuery.isFetching`; hàng loạt: luôn `false`, không
+ *       phụ thuộc `getById`) — phòng khi (a) có lỗ hổng thứ tự effect trong tương lai. Nút Lưu VÀ
+ *       `handleLuu` đều gọi đúng hàm này — một nguồn quyết định, không lặp lại điều kiện hai nơi.
+ */
+export function coTheLuu(opts: {
+  readonly soHang: number;
+  readonly loiForm: readonly LoiTruongForm[];
+  readonly soTruongDaNhap: number;
+  readonly dangTaiChiTietDon: boolean;
+}): boolean {
+  if (opts.soHang === 0) return false;
+  if (opts.dangTaiChiTietDon) return false;
+  if (opts.loiForm.length > 0) return false;
+  if (opts.soTruongDaNhap === 0) return false;
+  return true;
 }
 
 /**

@@ -19949,7 +19949,7 @@
     "trangThai": "Status",
     "daDay": "Limit taught",
     "chuaCoGioiHan": "Not taught",
-    "dayGioiHanComingSoon": "Teach limit (coming soon)",
+    "dayGioiHanComingSoon": "Teach limit",
     "dayGioiHanHangLoat": "Teach limit ({{n}})"
   },
   "pointLimits": {
@@ -19970,8 +19970,12 @@
     "canDuyetChuongTrinh": "Not saved — the product already has a released inspection program; limit changes must go through the threshold approval queue",
     "errSoKhongHopLe": "Not a valid number",
     "errDonViQuaDai": "Unit is at most 20 characters",
+    "errCanDuoiLonHonCanTren": "Lower limit must be less than or equal to the upper limit",
+    "errCaoMinLonHonMax": "Min height must be less than or equal to max height",
     "errFormKhongHopLe": "Fix the fields showing errors before saving",
     "errChuaNhapGi": "No field entered to save",
+    "errDangTaiChiTiet": "Loading point data — wait for it to finish before saving",
+    "hangLoatAnCanvas": "Multiple points selected — each has its own reference image, the canvas only shows in single-edit mode.",
     "lyDoDoi": "Reason for change (optional)",
     "luuHangLoat": "Save for {{n}} components",
     "daLuu": "Saved {{soDiem}} point(s)"

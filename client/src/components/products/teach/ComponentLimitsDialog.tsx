@@ -29,6 +29,16 @@
  *
  * Sau lưu THÀNH CÔNG: invalidate `cayDay.listComponents` + `cayDay.thongKeGioiHan` (Task 9) —
  * KHÔNG tự sửa state cục bộ (đúng luật "không hai nguồn sự thật", `keHoachLamMoiSauLuu`).
+ *
+ * ── Vòng sửa 1 (review) ─────────────────────────────────────────────────────────────────────
+ * Important (race dữ liệu thật) — xem docblock `coTheLuu` (`componentLimitsDialogLogic.ts`): đổi
+ * điểm A→B ở chế độ đơn trong lúc `getById(B)` đang tải trước đây KHÔNG chặn Lưu, có thể ghi giá
+ * trị của A lên B. Vá bằng HAI lớp: (a) `gia` reset NGAY khi tập `rows` đổi (kể cả đơn); (b) Lưu
+ * khoá cứng qua `coTheLuu` (đơn: `chiTietQuery.isFetching`).
+ * Minor: (1) `kiemTraForm` thêm so sánh `lowerLimit ≤ upperLimit`/`heightMin ≤ heightMax` khi cả
+ * hai đã là số hợp lệ (server-side là nợ BG-113, không sửa ở vòng này); (2) hàng loạt hiện một
+ * dòng giải thích vì sao canvas ẩn; (3) tooltip "Dạy giới hạn (sắp có)" ở `ComponentLimitsTable.tsx`
+ * bỏ "(sắp có)" — nút đã hoạt động thật từ Task 11.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -68,6 +78,7 @@ import {
   thongBaoCanDuyet,
   keHoachLamMoiSauLuu,
   diemCayDayChoCanvas,
+  coTheLuu,
   type KetQuaCanDuyet,
 } from "./componentLimitsDialogLogic";
 
@@ -113,16 +124,17 @@ export function ComponentLimitsDialog({
     { enabled: open && donMode && diemDau != null },
   );
 
-  // Mở dialog (hoặc đổi tập rows) ⇒ nạp lại form. Đơn: TIỀN ĐIỀN từ giá trị hiện tại (đây là một
-  // TRÌNH SỬA, không phải patch rời rạc). Hàng loạt: BẮT ĐẦU RỖNG — các component có thể đang giữ
+  // Mở dialog (hoặc đổi tập rows) ⇒ nạp lại form. LUÔN reset `gia` NGAY LẬP TỨC ở đây — kể cả đơn
+  // (vòng sửa 1, Important: đổi từ điểm A sang điểm B trước đây KHÔNG reset `gia` cho đơn, để giá
+  // trị của A còn hiển thị/gửi được trong lúc `getById(B)` đang tải — xem `coTheLuu` trong
+  // `componentLimitsDialogLogic.ts`). Đơn sẽ được TIỀN ĐIỀN lại từ giá trị B ở effect dưới, ngay
+  // khi `chiTietQuery.data` cho B về tới. Hàng loạt giữ RỖNG luôn — các component có thể đang giữ
   // giá trị KHÁC NHAU, tiền điền một giá trị bất kỳ sẽ trông như "giá trị chung" giả.
   useEffect(() => {
     if (!open) return;
     setCanDuyet(null);
     setLyDoDoi("");
-    if (!donMode) {
-      setGia(FORM_RONG);
-    }
+    setGia(FORM_RONG);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, donMode, rows.map((r) => r.id).join(",")]);
 
@@ -141,6 +153,11 @@ export function ComponentLimitsDialog({
 
   const loiForm = useMemo(() => kiemTraForm(gia), [gia]);
   const soTruong = soTruongDaNhap(gia);
+  // Vòng sửa 1 (b) — đơn mode: khoá Lưu trong SUỐT lúc `getById` đang tải/tải lại (không riêng
+  // lần đầu) — `isFetching` là tập CHA của `isLoading`, bắt cả trường hợp revisit-cache-nhưng-
+  // đang-refetch-nền. Hàng loạt không phụ thuộc `getById` ⇒ luôn `false`.
+  const dangTaiChiTietDon = donMode && chiTietQuery.isFetching;
+  const duocLuu = coTheLuu({ soHang: rows.length, loiForm, soTruongDaNhap: soTruong, dangTaiChiTietDon });
 
   const luuMutation = trpc.measurementPoint.setLimitsBatch.useMutation({
     onSuccess: (res) => {
@@ -170,6 +187,13 @@ export function ComponentLimitsDialog({
 
   const handleLuu = () => {
     if (rows.length === 0) return;
+    // Vòng sửa 1 (b) — kiểm lại TRỰC TIẾP ở đây (không chỉ dựa vào `disabled` trên nút): nút bị
+    // khoá khi đang tải, nhưng đây là lưới an toàn thứ hai bằng ĐÚNG hàm `coTheLuu` (một nguồn
+    // quyết định, không lặp điều kiện hai nơi).
+    if (dangTaiChiTietDon) {
+      toast.error(t("teachLimits.errDangTaiChiTiet", "Đang tải dữ liệu điểm — đợi tải xong rồi lưu"));
+      return;
+    }
     if (loiForm.length > 0) {
       toast.error(t("teachLimits.errFormKhongHopLe", "Sửa các trường đang báo lỗi trước khi lưu"));
       return;
@@ -178,6 +202,7 @@ export function ComponentLimitsDialog({
       toast.error(t("teachLimits.errChuaNhapGi", "Chưa nhập trường nào để lưu"));
       return;
     }
+    if (!duocLuu) return; // phòng thủ cuối — không nên tới đây nếu ba nhánh trên đã bắt hết
     setCanDuyet(null);
     const input = xayInputSetLimitsBatch(
       rows.map((r) => r.id),
@@ -229,12 +254,22 @@ export function ComponentLimitsDialog({
         </DialogHeader>
 
         {!donMode && (
-          <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-md border bg-muted/30 p-2">
-            {rows.map((r) => (
-              <Badge key={r.id} variant="outline">
-                {r.componentExtId ?? r.name}
-              </Badge>
-            ))}
+          <div className="space-y-1.5">
+            <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-md border bg-muted/30 p-2">
+              {rows.map((r) => (
+                <Badge key={r.id} variant="outline">
+                  {r.componentExtId ?? r.name}
+                </Badge>
+              ))}
+            </div>
+            {/* Vòng sửa 1 (Minor #2) — giải thích vì sao canvas không hiện ở hàng loạt (R-KC-1 cho
+                phép "highlight nhiều điểm HOẶC ẩn"; chọn ẩn vì mỗi component có ảnh tham chiếu riêng). */}
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "teachLimits.hangLoatAnCanvas",
+                "Chọn nhiều điểm — mỗi điểm có ảnh tham chiếu riêng, canvas chỉ hiện khi sửa đơn.",
+              )}
+            </p>
           </div>
         )}
 
@@ -312,7 +347,7 @@ export function ComponentLimitsDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={dangLuu}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={handleLuu} disabled={dangLuu || rows.length === 0}>
+          <Button onClick={handleLuu} disabled={dangLuu || !duocLuu}>
             {dangLuu && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
             {donMode
               ? t("common.save")

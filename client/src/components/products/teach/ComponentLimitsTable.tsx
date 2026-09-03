@@ -90,7 +90,7 @@ export function ComponentLimitsTable({ captureRowId, stats, onEdit, onBatchEdit 
           size="sm"
           variant="ghost"
           disabled={!canEdit}
-          title={t("teachTree.dayGioiHanComingSoon", "Dạy giới hạn (sắp có)")}
+          title={t("teachTree.dayGioiHanComingSoon", "Dạy giới hạn")}
           onClick={() => onEdit(r)}
         >
           <Pencil className="h-4 w-4" />
@@ -117,7 +117,7 @@ export function ComponentLimitsTable({ captureRowId, stats, onEdit, onBatchEdit 
             size="sm"
             variant="outline"
             disabled={!canEdit || selectedIds.length === 0}
-            title={t("teachTree.dayGioiHanComingSoon", "Dạy giới hạn (sắp có)")}
+            title={t("teachTree.dayGioiHanComingSoon", "Dạy giới hạn")}
             onClick={() => onBatchEdit(rows.filter((r) => selectedIds.includes(r.id)))}
           >
             <GraduationCap className="h-4 w-4 mr-1.5" />

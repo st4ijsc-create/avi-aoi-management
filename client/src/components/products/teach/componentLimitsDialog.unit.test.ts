@@ -20,6 +20,7 @@ import {
   thongBaoCanDuyet,
   keHoachLamMoiSauLuu,
   diemCayDayChoCanvas,
+  coTheLuu,
   type FormGioiHan,
 } from "./componentLimitsDialogLogic";
 
@@ -82,6 +83,38 @@ describe("kiemTraForm", () => {
     const loi = kiemTraForm(gia({ heightMax: "x", unit: "a".repeat(25) }));
     const truongLoi = loi.map((l) => l.truong).sort();
     expect(truongLoi).toEqual(["heightMax", "unit"]);
+  });
+
+  // Vòng sửa 1 (Minor #1) — so sánh CHÉO lowerLimit≤upperLimit / heightMin≤heightMax.
+  it("lowerLimit > upperLimit (cả hai hợp lệ) ⇒ lỗi gắn ở upperLimit", () => {
+    const loi = kiemTraForm(gia({ lowerLimit: "10", upperLimit: "5" }));
+    expect(loi).toEqual([
+      { truong: "upperLimit", khoa: "teachLimits.errCanDuoiLonHonCanTren", macDinh: "Cận dưới phải nhỏ hơn hoặc bằng cận trên" },
+    ]);
+  });
+
+  it("lowerLimit === upperLimit ⇒ hợp lệ (biên ≤, không phải <)", () => {
+    expect(kiemTraForm(gia({ lowerLimit: "5", upperLimit: "5" }))).toEqual([]);
+  });
+
+  it("heightMin > heightMax (cả hai hợp lệ) ⇒ lỗi gắn ở heightMax", () => {
+    const loi = kiemTraForm(gia({ heightMin: "3", heightMax: "1" }));
+    expect(loi).toEqual([
+      { truong: "heightMax", khoa: "teachLimits.errCaoMinLonHonMax", macDinh: "Cao tối thiểu phải nhỏ hơn hoặc bằng cao tối đa" },
+    ]);
+  });
+
+  it("KHÔNG so sánh chéo khi một trong hai trống hoặc sai định dạng — tránh chồng lỗi", () => {
+    expect(kiemTraForm(gia({ lowerLimit: "10" }))).toEqual([]); // upperLimit trống — chưa có gì để so
+    const loiSaiDinhDang = kiemTraForm(gia({ lowerLimit: "abc", upperLimit: "1" }));
+    expect(loiSaiDinhDang).toHaveLength(1);
+    expect(loiSaiDinhDang[0].truong).toBe("lowerLimit"); // chỉ lỗi định dạng, không thêm lỗi so sánh
+  });
+
+  it("lowerLimit>upperLimit và heightMin>heightMax cùng lúc ⇒ CẢ HAI lỗi xuất hiện", () => {
+    const loi = kiemTraForm(gia({ lowerLimit: "9", upperLimit: "1", heightMin: "9", heightMax: "1" }));
+    const truongLoi = loi.map((l) => l.truong).sort();
+    expect(truongLoi).toEqual(["heightMax", "upperLimit"]);
   });
 });
 
@@ -255,5 +288,75 @@ describe("diemCayDayChoCanvas — hình học THẬT của cây dạy là roi* (
       roiHeight: 10,
     });
     expect(diem?.code).toBe("FALLBACK");
+  });
+});
+
+describe("coTheLuu — Vòng sửa 1 (Important): chặn race đổi điểm A→B trong lúc getById(B) đang tải", () => {
+  it("hàng loạt: không phụ thuộc getById ⇒ chỉ cần form hợp lệ + có nội dung", () => {
+    const g = gia({ lowerLimit: "1" });
+    expect(
+      coTheLuu({ soHang: 3, loiForm: kiemTraForm(g), soTruongDaNhap: soTruongDaNhap(g), dangTaiChiTietDon: false }),
+    ).toBe(true);
+  });
+
+  it("0 hàng ⇒ luôn false (không có gì để lưu)", () => {
+    expect(coTheLuu({ soHang: 0, loiForm: [], soTruongDaNhap: 1, dangTaiChiTietDon: false })).toBe(false);
+  });
+
+  it("đơn, đang tải chi tiết (getById đang chạy) ⇒ CHẶN dù form hợp lệ và có nội dung", () => {
+    const g = gia({ lowerLimit: "1", upperLimit: "2" });
+    expect(
+      coTheLuu({ soHang: 1, loiForm: kiemTraForm(g), soTruongDaNhap: soTruongDaNhap(g), dangTaiChiTietDon: true }),
+    ).toBe(false);
+  });
+
+  it("đơn, tải xong (không còn dangTaiChiTietDon) + form hợp lệ + có nội dung ⇒ cho lưu", () => {
+    const g = gia({ lowerLimit: "1", upperLimit: "2" });
+    expect(
+      coTheLuu({ soHang: 1, loiForm: kiemTraForm(g), soTruongDaNhap: soTruongDaNhap(g), dangTaiChiTietDon: false }),
+    ).toBe(true);
+  });
+
+  /**
+   * ★★★ Kịch bản RACE đúng như review mô tả: chế độ đơn, đang sửa điểm A (đã nhập 2 trường hợp
+   * lệ), người dùng đổi mục tiêu sang điểm B trong khi `measurementPoint.getById(B)` CÒN ĐANG TẢI.
+   *
+   * `duocLuuMaCu` bên dưới là biểu thức CHÉP NGUYÊN VĂN cửa gác của `ComponentLimitsDialog.tsx`
+   * TRƯỚC vòng sửa 1 (xem `handleLuu`/nút Lưu ở commit `0d570915`): chỉ `rows.length>0`,
+   * `loiForm.length===0`, `soTruongDaNhap>0` — HOÀN TOÀN không biết "có đang tải điểm khác hay
+   * không". Trong cửa sổ race, `gia` vẫn là dữ liệu CỦA A (không bị mã cũ reset cho đơn) ⇒ biểu
+   * thức này ĐÚNG (cho phép lưu) — đây là dòng ĐỎ (bug): bấm Lưu lúc này sẽ ghi giá trị của A lên
+   * B (`rows[0].id` đã là B, nhưng `gia` vẫn của A).
+   */
+  it("[HỒI QUY] mã CŨ (trước vòng sửa 1) KHÔNG chặn Lưu khi đổi A→B trong lúc B đang tải ⇒ RACE", () => {
+    const giaConLaiCuaA = gia({ lowerLimit: "1", upperLimit: "2" }); // "còn lại" của A — mã cũ không reset
+    const loiFormA = kiemTraForm(giaConLaiCuaA);
+    const soTruongA = soTruongDaNhap(giaConLaiCuaA);
+
+    // Dòng ĐỎ — chép nguyên văn cửa gác CŨ (không có khái niệm "đang tải điểm khác"):
+    const duocLuuMaCu = loiFormA.length === 0 && soTruongA > 0; // (rows.length>0 giả định luôn đúng ở đây)
+    expect(duocLuuMaCu).toBe(true); // BUG đã đo: mã cũ CHO PHÉP lưu dù đang giữa A→B
+
+    // Mã MỚI (`coTheLuu`, có `dangTaiChiTietDon`) PHẢI chặn đúng tình huống này.
+    const duocLuuMaMoi = coTheLuu({
+      soHang: 1,
+      loiForm: loiFormA,
+      soTruongDaNhap: soTruongA,
+      dangTaiChiTietDon: true, // getById(B) đang tải — tín hiệu mã cũ không có
+    });
+    expect(duocLuuMaMoi).toBe(false);
+  });
+
+  it("form có lỗi (dù không đang tải) ⇒ vẫn chặn", () => {
+    const g = gia({ lowerLimit: "abc" });
+    expect(
+      coTheLuu({ soHang: 1, loiForm: kiemTraForm(g), soTruongDaNhap: soTruongDaNhap(g), dangTaiChiTietDon: false }),
+    ).toBe(false);
+  });
+
+  it("chưa nhập trường nào (dù không đang tải) ⇒ vẫn chặn", () => {
+    expect(
+      coTheLuu({ soHang: 1, loiForm: kiemTraForm(FORM_RONG), soTruongDaNhap: soTruongDaNhap(FORM_RONG), dangTaiChiTietDon: false }),
+    ).toBe(false);
   });
 });
