@@ -19,6 +19,11 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * THỨ TỰ BẤT BIẾN — MỖI BƯỚC CÓ MỘT LÝ DO, ĐỔI THỨ TỰ LÀ MỞ LẠI ĐÚNG MỘT LỖ
  * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 0. **ĐỢT G / TASK G3 — MỨC QUYỀN** (`loi/mucQuyen.ts#duocPhepGhiTheoMucQuyen`). `chi_doc` ⇒ DỪNG
+ *    NGAY, TRƯỚC CẢ bước 1 — không một phép `realpath`, một lượt đọc đĩa, hay một lời gọi mạng nào
+ *    được chạm tới cho một lượt đã biết chắc sẽ bị từ chối. Đây là HÀNG RÀO THẬT của "Chỉ đọc" —
+ *    không phải việc ẩn nút ở webview (trang trí, dễ vỡ vì một lỗi vẽ giao diện); nó sống Ở ĐÂY vì
+ *    đây là điểm ghi DUY NHẤT, có census canh (mục "1" bên dưới).
  * 1. **Giải đường THẬT** (`giaiDuongThat`, R-C5) — trước MỌI phép so ranh giới. `duocPhepGhi` so
  *    bằng `path.relative`, tức thao tác CHUỖI: một symlink/junction trong workspace trỏ ra ngoài
  *    lọt qua nguyên vẹn nếu không giải trước. Giải CẢ đường đích LẪN các thư mục workspace — giải
@@ -90,6 +95,7 @@ import { duocPhepGhi } from "../loi/chanGhi";
 import { giaiDuongThat } from "../loi/duongThat";
 import { eolLanLon } from "../loi/eolLanLon";
 import { ghepBanVa } from "../loi/ghepBanVa";
+import { chuanHoaMucQuyen, duocPhepGhiTheoMucQuyen, type MucQuyen } from "../loi/mucQuyen";
 import { tomTatDiff } from "../loi/tomTatDiff";
 import { goiBatDauApClient, goiChotApClient } from "../mang/duyetGhi";
 
@@ -107,6 +113,13 @@ export interface DauVaoApBanVa {
   nhanWorkspace: string;
   serverUrl: string;
   cookie: string;
+  /**
+   * ★★★ ĐỢT G / TASK G3 — mức quyền HIỆN TẠI của workspace (BƯỚC 0 dưới đây). Giá trị THÔ, CHƯA
+   * kiểm — `apBanVa` tự `chuanHoaMucQuyen` nó (fail-closed: một giá trị lạ rơi về mức mặc định AN
+   * TOÀN "hoi_truoc_khi_ghi", KHÔNG BAO GIỜ tự nới thành "tu_ghi") vì đây là ĐIỂM GHI DUY NHẤT và
+   * không được tin rằng ai đó đã kiểm hộ giá trị này trước khi gọi tới.
+   */
+  mucQuyen: MucQuyen;
 }
 
 export interface KetQuaApBanVa {
@@ -155,6 +168,24 @@ async function thayToanBoNoiDung(
 }
 
 export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
+  // ── BƯỚC 0: MỨC QUYỀN (Đợt G / Task G3) — HÀNG RÀO THẬT, không phải trang trí giao diện ──────
+  /**
+   * ★★★ ĐẶT TRƯỚC CẢ BƯỚC 1. "Chỉ đọc" phải chặn ở ĐIỂM GHI DUY NHẤT — không phải chỉ ẩn nút
+   * "Ghi vào workspace" ở webview. Một webview lỗi (vẽ nhầm mức đang chọn), một lời gọi
+   * `apDungCucBo` tới từ một đường khác sau này, hay một đề xuất TỰ ĐỘNG (Đợt H) đều phải bị chặn
+   * ở ĐÂY — bất kể chúng có đi qua đúng đường webview hôm nay hay không. Đặt Ở ĐẦU (trước cả
+   * `giaiDuongThat`) để một lượt chắc chắn bị từ chối không tốn một phép `realpath`/đọc đĩa/gọi
+   * mạng nào — cùng tinh thần với bước 3b (EOL lẫn lộn): dừng sớm nhất có thể khi kết cục đã biết
+   * trước.
+   * ⚠ `chuanHoaMucQuyen` (không phải ép kiểu thẳng `dv.mucQuyen`) — fail-closed LẦN THỨ HAI ngay
+   *   trên chính đầu vào của điểm ghi: một giá trị lạ (nếu một ngày nào đó lọt qua được lớp kiểm ở
+   *   `ui/bangChat.ts`) rơi về mức mặc định AN TOÀN "hoi_truoc_khi_ghi", KHÔNG BAO GIỜ tự nới
+   *   thành "tu_ghi".
+   */
+  const mucQuyen = chuanHoaMucQuyen(dv.mucQuyen);
+  const quyenGhi = duocPhepGhiTheoMucQuyen(mucQuyen);
+  if (!quyenGhi.ok) return { ok: false, thongDiep: `KHÔNG GHI — ${quyenGhi.lyDo}` };
+
   // ── BƯỚC 1: giải đường THẬT (R-C5) ─────────────────────────────────────────────────────────
   const that = giaiDuongThat(dv.duongTuyetDoi);
   if (!that.ok) return { ok: false, thongDiep: `KHÔNG GHI — ${that.lyDo}` };

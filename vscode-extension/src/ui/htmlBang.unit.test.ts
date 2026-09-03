@@ -1075,3 +1075,67 @@ describe("webview — ĐỢT G / TASK G2 / B3: thanh ngữ cảnh — nhãn kh�
     expect(w.nut("tk-ky-tu").textContent).toBe("Ký tự lịch sử: 250");
   });
 });
+
+/**
+ * ★★★ ĐỢT G / TASK G3 / B4 — MARKUP TĨNH của ô chọn mức quyền: đúng BA \`<option>\`, mặc định AN
+ * TOÀN "Hỏi trước khi ghi" được \`selected\` NGAY TỪ HTML TĨNH (trước khi bất kỳ script nào chạy).
+ */
+describe("dungHtmlBang — ĐỢT G / TASK G3 / B4: markup ô chọn mức quyền", () => {
+  const html = dungHtmlBang({ nonce: "N" });
+
+  it("★★★ có ĐÚNG BA option với giá trị khớp `MucQuyen`", () => {
+    expect(html).toContain('id="o-muc-quyen"');
+    expect(html).toContain('<option value="chi_doc">Chỉ đọc</option>');
+    expect(html).toContain('<option value="hoi_truoc_khi_ghi" selected>Hỏi trước khi ghi</option>');
+    expect(html).toContain('<option value="tu_ghi">Tự ghi trong workspace</option>');
+  });
+
+  it("★★★ MẶC ĐỊNH TĨNH là 'hoi_truoc_khi_ghi' — AN TOÀN LÀ MẶC ĐỊNH, không phải 'tu_ghi'", () => {
+    // Đúng MỘT thuộc tính `selected` trong cả markup — và nó phải rơi đúng vào mức an toàn.
+    const soLanSelected = (html.match(/ selected(?=[ >])/g) ?? []).length;
+    expect(soLanSelected).toBe(1);
+    expect(html).toMatch(/<option value="hoi_truoc_khi_ghi" selected>/);
+    expect(html).not.toMatch(/<option value="tu_ghi" selected>/);
+    expect(html).not.toMatch(/<option value="chi_doc" selected>/);
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G3 / B4 — WEBVIEW: KẾT CỤC thật (chạy script THẬT, cùng khuôn "CHỐNG BẤM HAI
+ * LẦN"/"@-mention" ở trên) cho ô chọn mức quyền.
+ *
+ * ⚠ Webview KHÔNG PHẢI hàng rào (xem ghi chú tại markup \`#o-muc-quyen\` trong \`htmlBang.ts\`) — lưới
+ *   ở đây chỉ đo đúng phần việc của webview: CHUYỂN TIẾP ý định đổi mức, và HIỂN THỊ mức được
+ *   extension xác nhận. Hàng rào THẬT (mức "Chỉ đọc" chặn tại điểm ghi) có lưới RIÊNG trên đĩa THẬT
+ *   ở \`ui/apBanVa.mucQuyen.unit.test.ts\`.
+ */
+describe("webview — ĐỢT G / TASK G3 / B4: ô chọn mức quyền", () => {
+  it("★★★ đổi ô chọn ⇒ extension nhận ĐÚNG MỘT tin 'dat_muc_quyen' mang giá trị vừa chọn", () => {
+    const w = chayWebview();
+    w.nut("o-muc-quyen").value = "tu_ghi";
+    w.nut("o-muc-quyen").kichHoat("change", { target: { value: "tu_ghi" } });
+
+    const tin = w.daGui.filter((m) => m.loai === "dat_muc_quyen");
+    expect(tin).toHaveLength(1);
+    expect(tin[0].mucQuyen).toBe("tu_ghi");
+  });
+
+  it("★★★ nhận 'muc_quyen' HỢP LỆ ⇒ ô chọn cập nhật ĐÚNG giá trị extension xác nhận", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "muc_quyen", mucQuyen: "chi_doc" });
+    expect(w.nut("o-muc-quyen").value).toBe("chi_doc");
+
+    w.banTin({ loai: "muc_quyen", mucQuyen: "tu_ghi" });
+    expect(w.nut("o-muc-quyen").value).toBe("tu_ghi");
+  });
+
+  it("★ NHÁNH KIA — 'muc_quyen' mang giá trị KHÔNG HỢP LỆ (tin giả mạo/webview khác lỗi) ⇒ BỊ BỎ QUA, ô chọn GIỮ NGUYÊN", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "muc_quyen", mucQuyen: "chi_doc" });
+    expect(w.nut("o-muc-quyen").value).toBe("chi_doc");
+
+    w.banTin({ loai: "muc_quyen", mucQuyen: "vo_han_quyen_luc" });
+    // Giá trị TRƯỚC ĐÓ phải còn nguyên — một chuỗi lạ không được phép đổi ô chọn.
+    expect(w.nut("o-muc-quyen").value).toBe("chi_doc");
+  });
+});

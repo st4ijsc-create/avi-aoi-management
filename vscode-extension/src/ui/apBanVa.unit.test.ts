@@ -198,6 +198,11 @@ function dauVao(ghiDe: Partial<Parameters<typeof apBanVa>[0]> = {}): Parameters<
     nhanWorkspace: "C:\\ws",
     serverUrl: "http://may-chu-gia",
     cookie: "cookie-gia",
+    // ★★★ ĐỢT G / TASK G3 — mọi ca trong tệp này đo THỨ TỰ BẤT BIẾN của bước 1 trở đi; mặc định
+    // "hoi_truoc_khi_ghi" giữ NGUYÊN hành vi đã có trước Task G3 (KHÔNG bị chặn ở BƯỚC 0 mới thêm).
+    // Lưới RIÊNG cho BƯỚC 0 (mức "chi_doc" chặn, "tu_ghi" vẫn qua đủ hàng rào) nằm ở
+    // `apBanVa.mucQuyen.unit.test.ts` — đo trên ĐĨA THẬT, không lặp lại ở đây.
+    mucQuyen: "hoi_truoc_khi_ghi",
     ...ghiDe,
   };
 }

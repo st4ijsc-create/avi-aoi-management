@@ -80,6 +80,19 @@ import {
   type KhoLuuTruTho,
   type HoiThoai,
 } from "../loi/khoHoiThoai";
+// ★★★ ĐỢT G / TASK G3 — ba mức quyền (chế độ tự trị). Vị từ THUẦN sống ở `loi/mucQuyen.ts`; tệp
+// này CHỈ đọc/ghi `workspaceState` (RANH GIỚI DUY NHẤT nơi `vscode` chạm vào lớp lưu trữ, cùng
+// khuôn `khoHoiThoaiTho()`) và gọi lại ĐÚNG hai hàm `duocPhepGhiTheoMucQuyen`/`boQuaBuocHoi` mà
+// `ui/apBanVa.ts` (HÀNG RÀO THẬT, BƯỚC 0) cũng gọi — không một bản quyết định thứ hai nào ở đây.
+import {
+  MUC_QUYEN_MAC_DINH,
+  KHOA_MUC_QUYEN,
+  chuanHoaMucQuyen,
+  laMucQuyenHopLe,
+  duocPhepGhiTheoMucQuyen,
+  boQuaBuocHoi,
+  type MucQuyen,
+} from "../loi/mucQuyen";
 
 /** Đề xuất ghi CỤC BỘ đang chờ duyệt + mọi thứ đã ĐO tại thời điểm dựng thẻ (không đo lại lúc bấm,
  *  trừ băm đĩa — băm PHẢI đo lại trong `apBanVa` vì đó chính là phép chống xung đột). */
@@ -214,6 +227,11 @@ export class BangChat {
   // Đổi dự án PHẢI xoá bộ nhớ đệm này (xem nhánh `doi_du_an` trong constructor) — danh sách tệp của
   // dự án CŨ mà hiện ra dropdown của dự án MỚI là gợi ý sai workspace.
   private dsTepMention: string[] | undefined;
+  // ★★★ ĐỢT G / TASK G3 / B4 — mức quyền HIỆN TẠI của workspace. Khởi ở mặc định AN TOÀN
+  // (`MUC_QUYEN_MAC_DINH`, "hoi_truoc_khi_ghi") NGAY từ khi field được khai — trước cả khi
+  // `napMucQuyen()` (gọi lúc "san_sang") có cơ hội đọc `workspaceState` — cùng lý lẽ "rơi về an
+  // toàn khi chưa biết" đã áp cho `daDangNhap` ở Task 1.
+  private mucQuyenHienTai: MucQuyen = MUC_QUYEN_MAC_DINH;
 
   private constructor(
     private readonly panel: VatChuaChat,
@@ -256,6 +274,10 @@ export class BangChat {
         // (Cmd+K), xem `htmlBang.ts`. Đây là cách DUY NHẤT `hoi()` biết một lượt hỏi có mang giao
         // thức Cmd+K hay không — nội dung `cauHoi` tới đây trông giống hệt một câu gõ tay.
         tuLenh?: unknown;
+        // ★★★ ĐỢT G / TASK G3 / B4 — giá trị THÔ từ ô chọn mức quyền. `unknown` cố ý: webview chỉ
+        // có 3 lựa chọn tĩnh trong `<select>`, nhưng KHÔNG được tin nguyên văn — `datMucQuyen` tự
+        // kiểm bằng `laMucQuyenHopLe` trước khi dùng.
+        mucQuyen?: unknown;
       }) => {
       if (m.loai === "san_sang") {
         this.daSanSang = true;
@@ -269,6 +291,10 @@ export class BangChat {
         // ★★★ ĐỢT F / TASK 2 / B5 — khôi phục hội thoại GẦN NHẤT ngay khi khung vừa mở, để một
         // VSCode vừa đóng/mở lại không làm mất cuộc trò chuyện đang dở.
         this.khoiPhucHoiThoaiGanNhat();
+        // ★★★ ĐỢT G / TASK G3 / B4 — nạp mức quyền đã lưu (nếu có) rồi báo cho webview NGAY, để ô
+        // chọn vẽ đúng mức thật thay vì mãi hiện mặc định tĩnh của markup.
+        this.napMucQuyen();
+        void this.panel.webview.postMessage({ loai: "muc_quyen", mucQuyen: this.mucQuyenHienTai });
         return;
       }
       // ★★★ ĐỔI DỰ ÁN ⇒ VỨT ĐỀ XUẤT ĐANG CHỜ. Thẻ duyệt mang nhãn nguồn của dự án nó SINH RA; để
@@ -307,6 +333,8 @@ export class BangChat {
       // thứ hai ở đây, không tự hỏi tài khoản/mật khẩu trong lớp này.
       if (m.loai === "dangNhap") { void this.thucHienDangNhap(); return; }
       if (m.loai === "dangXuat") { void this.thucHienDangXuat(); return; }
+      // ★★★ ĐỢT G / TASK G3 / B4 — người dùng đổi mức quyền ở ô chọn.
+      if (m.loai === "dat_muc_quyen") { void this.datMucQuyen(m.mucQuyen); return; }
     });
   }
 
@@ -660,6 +688,39 @@ export class BangChat {
       doc: <T>(khoa: string) => this.context.workspaceState.get<T>(khoa),
       ghi: (khoa, giaTri) => this.context.workspaceState.update(khoa, giaTri),
     };
+  }
+
+  /**
+   * ★★★ ĐỢT G / TASK G3 / B4 — nạp mức quyền đã lưu (nếu có) khi khung vừa mở.
+   *
+   * ⚠ Dùng LẠI `khoHoiThoaiTho()` — cái tên là LỊCH SỬ (Task 2 dựng nó cho hội thoại trước), nhưng
+   * bản bọc `workspaceState` bên trong nó KHÔNG gắn riêng với bất kỳ khoá nào (`doc<T>(khoa)`,
+   * `ghi(khoa, giaTri)` nhận khoá làm THAM SỐ) — một khoá THỨ HAI (`KHOA_MUC_QUYEN`) dùng lại được
+   * NGUYÊN VẸN, không cần dựng một bản bọc `workspaceState` thứ hai cho cùng một `context`.
+   *
+   * `chuanHoaMucQuyen` (THUẦN, có lưới riêng ở `loi/mucQuyen.unit.test.ts`) tự hấp thụ MỌI hình
+   * dạng lạ (kho rỗng/hỏng) và rơi về `MUC_QUYEN_MAC_DINH` — KHÔNG BAO GIỜ rơi về `tu_ghi`, đúng
+   * nguyên tắc an toàn-là-mặc-định (B4).
+   */
+  private napMucQuyen(): void {
+    this.mucQuyenHienTai = chuanHoaMucQuyen(this.khoHoiThoaiTho().doc<unknown>(KHOA_MUC_QUYEN));
+  }
+
+  /**
+   * ★★★ ĐỢT G / TASK G3 / B4 — người dùng đổi mức quyền ở ô chọn.
+   *
+   * ⚠ Validate LẠI ở đây (`laMucQuyenHopLe`), KHÔNG tin nguyên văn một chuỗi từ webview: dù webview
+   *   chỉ có ba lựa chọn tĩnh trong `<select>`, một webview lỗi/một tin bị giả mạo mang một chuỗi
+   *   lạ không được phép trở thành mức quyền THẬT — hình dạng lạ bị BỎ QUA HOÀN TOÀN (không tự đoán
+   *   thành mức gần đúng nào), giữ nguyên mức đang áp dụng.
+   */
+  private async datMucQuyen(gt: unknown): Promise<void> {
+    if (!laMucQuyenHopLe(gt)) return;
+    this.mucQuyenHienTai = gt;
+    await this.khoHoiThoaiTho().ghi(KHOA_MUC_QUYEN, gt);
+    // Xác nhận lại cho webview ĐÚNG giá trị vừa ÁP DỤNG (không phải giá trị vừa gửi lên) — nếu về
+    // sau `napMucQuyen`/`chuanHoaMucQuyen` đổi luật, hai phía không lệch nhau.
+    void this.panel.webview.postMessage({ loai: "muc_quyen", mucQuyen: this.mucQuyenHienTai });
   }
 
   /**
@@ -1309,6 +1370,23 @@ export class BangChat {
     }
     const d = ds[0];
 
+    /**
+     * ★★★ ĐỢT G / TASK G3 / B2 — LỚP UI, KHÔNG PHẢI HÀNG RÀO THẬT. Hàng rào thật là BƯỚC 0 của
+     * `ui/apBanVa.ts`, gọi ĐÚNG hàm THUẦN `duocPhepGhiTheoMucQuyen` này (không một bản quyết định
+     * thứ hai). Ở mức "Chỉ đọc", MỌI đề xuất ghi sẽ CHẮC CHẮN bị `apBanVa` từ chối — báo thẳng ở
+     * đây để khỏi làm việc thừa (giải đường, đọc đĩa, băm, dựng thẻ) cho một lượt đã biết trước kết
+     * cục, và để người dùng không thấy một thẻ duyệt có nút "Ghi vào workspace" mà bấm vào chắc
+     * chắn thất bại — dù có ẩn nút hay không, `apBanVa` vẫn là nơi QUYẾT ĐỊNH cuối cùng.
+     */
+    const quyenGhi = duocPhepGhiTheoMucQuyen(this.mucQuyenHienTai);
+    if (!quyenGhi.ok) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Model đề xuất sửa "${d.path}" nhưng bị chặn: ${quyenGhi.lyDo}`,
+      });
+      return;
+    }
+
     const goc = this.thuMucHoiHienTai;
     if (!goc) {
       void this.panel.webview.postMessage({
@@ -1409,6 +1487,20 @@ export class BangChat {
       bot,
     };
     this.nhanNguonHienTai = nhanNguonTheDuyet({ loai: "local", nhan: goc });
+
+    /**
+     * ★★★ ĐỢT G / TASK G3 / B3 — mức "Tự ghi": BỎ BƯỚC HỎI (không dựng thẻ, không đợi cú bấm),
+     * nhưng đi qua ĐÚNG `apDungCucBo()` — hàm ĐÓ gọi `apBanVa` với TOÀN BỘ hàng rào giữ nguyên
+     * (`duocPhepGhi`/`camGhiRieng`/`duongThat`/fail-closed EOL lẫn lộn/kiểm toán TRƯỚC-SAU, xem
+     * `loi/mucQuyen.ts#boQuaBuocHoi`). "Tự trị" ở đây CHỈ có nghĩa "khỏi phải bấm" — KHÔNG có nghĩa
+     * "khỏi kiểm tra": `apDungCucBo()` còn tự kiểm LẠI chế độ (`cheDoHienTai()`) và cookie đăng
+     * nhập, đúng NHƯ MỘT cú bấm thật, vì đây CHÍNH LÀ đường gọi mà một cú bấm thật đi qua.
+     */
+    if (boQuaBuocHoi(this.mucQuyenHienTai)) {
+      await this.apDungCucBo();
+      return;
+    }
+
     void this.panel.webview.postMessage({
       loai: "the_duyet",
       nhanNguon: this.nhanNguonHienTai,
@@ -1490,6 +1582,10 @@ export class BangChat {
         nhanWorkspace: cb.thuMucWorkspace,
         serverUrl: cfg.get<string>("serverUrl", "http://localhost:3000"),
         cookie,
+        // ★★★ ĐỢT G / TASK G3 / B2 — HÀNG RÀO THẬT nằm ở BƯỚC 0 của `apBanVa` (gọi
+        // `duocPhepGhiTheoMucQuyen`), không phải ở đây. Truyền mức HIỆN TẠI xuống để nó tự kiểm —
+        // đây là điểm ghi DUY NHẤT nên nó không được tin bất kỳ ai đã kiểm hộ trước.
+        mucQuyen: this.mucQuyenHienTai,
       });
       thongDiep = kq.thongDiep;
     } catch (e) {

@@ -37,8 +37,14 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
 <style nonce="${n}">
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
          margin: 0; padding: 8px; display: flex; flex-direction: column; height: 100vh; }
-  /* ĐỢT G / TASK G1 / B2 — góc khung, không còn chiếm nguyên một hàng như nút to cũ. */
-  #vung-tai-khoan { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+  /* ĐỢT G / TASK G1 / B2 — góc khung, không còn chiếm nguyên một hàng như nút to cũ.
+     ĐỢT G / TASK G3 / B4 — nay CHIA HAI ĐẦU: ô chọn mức quyền bên TRÁI, icon tài khoản bên PHẢI. */
+  #vung-tai-khoan { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  /* ĐỢT G / TASK G3 / B4 — ô chọn mức quyền (chế độ tự trị). Chữ NHỎ, giống thanh trạng thái ngữ
+     cảnh — đây là một cấu hình PHỤ, không phải hành động chính của khung. */
+  #vung-muc-quyen { display: flex; align-items: center; gap: 4px; font-size: 11px; opacity: .9; }
+  #o-muc-quyen { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground);
+                 border: 1px solid var(--vscode-dropdown-border); font-size: 11px; padding: 2px 4px; }
   /* B2+B4 — nút ICON dùng chung: nền trong suốt, chỉ nổi lên khi hover/focus, giống nút icon gốc
      của VSCode (không phải nút hành động to như trước). #nut-gui ghi đè nền ở dưới vì nó vẫn là
      hành động CHÍNH của hàng nhập — icon nhỏ nhưng không "vô hình" như nút tài khoản (phụ). */
@@ -104,6 +110,26 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
      chỉ title/aria-label/lớp CSS đổi, KHÔNG BAO GIỜ dựng lại HTML, để một câu hỏi đang gõ dở
      trong #o-nhap không bị mất khi trạng thái đăng nhập đổi (B4, xem xử lý tin trang_thai_dang_nhap). -->
 <div id="vung-tai-khoan">
+  <!-- ★★★ ĐỢT G / TASK G3 / B4 — Ô CHỌN MỨC QUYỀN (chế độ tự trị). ⚠⚠⚠ ĐÂY LÀ MỘT CỔNG THÊM,
+       KHÔNG PHẢI HÀNG RÀO: webview CHỈ báo Ý ĐỊNH đổi mức (\`dat_muc_quyen\`) và HIỂN THỊ mức đang áp
+       (\`muc_quyen\`, do extension gửi lại sau khi tự kiểm bằng \`laMucQuyenHopLe\`) — đúng nguyên tắc
+       "hiển thị + chuyển tiếp" đã áp cho thẻ duyệt/nút Dừng/@-mention. HÀNG RÀO THẬT của mức
+       "Chỉ đọc" nằm ở BƯỚC 0 của \`ui/apBanVa.ts\` (điểm ghi DUY NHẤT) — một webview lỗi vẽ SAI mức
+       đang chọn ở đây KHÔNG mở được đường ghi nào, vì \`apBanVa\` không tin bất kỳ ai đã kiểm hộ.
+       Mặc định TĨNH của \`<select>\` là "Hỏi trước khi ghi" (option có \`selected\`) — AN TOÀN LÀ MẶC
+       ĐỊNH cho tới khi tin \`muc_quyen\` đầu tiên (đọc từ \`workspaceState\`, hoặc mặc định an toàn nếu
+       kho rỗng/hỏng — xem \`bangChat.ts#napMucQuyen\`) tới ghi đè \`.value\`. SVG nội tuyến, CÙNG CÁCH
+       G1/G2 đã chọn cho các icon khác — CSP webview không có \`font-src\`. -->
+  <div id="vung-muc-quyen" title="Mức quyền ghi tệp của AI — quyết định AI được tự ý sửa đĩa của bạn tới đâu">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+      <path d="M8 1 2.3 3.2v3.9c0 3.9 2.5 7.3 5.7 8.4 3.2-1.1 5.7-4.5 5.7-8.4V3.2L8 1Zm0 1.6 4.2 1.6v3.9c0 3.2-1.9 5.9-4.2 6.8-2.3-.9-4.2-3.6-4.2-6.8V4.2L8 2.6Z" />
+    </svg>
+    <select id="o-muc-quyen" aria-label="Mức quyền ghi tệp của AI">
+      <option value="chi_doc">Chỉ đọc</option>
+      <option value="hoi_truoc_khi_ghi" selected>Hỏi trước khi ghi</option>
+      <option value="tu_ghi">Tự ghi trong workspace</option>
+    </select>
+  </div>
   <button id="nut-tai-khoan" class="nut-icon"${daDangNhap ? " data-da-dang-nhap=\"true\"" : ""}
           title="${daDangNhap ? "Đăng xuất" : "Đăng nhập"}"
           aria-label="${daDangNhap ? "Đăng xuất" : "Đăng nhập"}">
@@ -219,6 +245,16 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   let daDangNhapHienTai = nutTaiKhoan.dataset.daDangNhap === "true";
   nutTaiKhoan.addEventListener("click", () =>
     vscode.postMessage({ loai: daDangNhapHienTai ? "dangXuat" : "dangNhap" }));
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ ĐỢT G / TASK G3 / B4 — Ô CHỌN MỨC QUYỀN. Webview chỉ báo Ý ĐỊNH (\`dat_muc_quyen\`) và hiển
+  // thị mức đang áp (\`muc_quyen\`, xử lý bên dưới) — KHÔNG tự quyết mức nào là hợp lệ; đó là việc
+  // của \`laMucQuyenHopLe\` phía extension. HÀNG RÀO THẬT của "Chỉ đọc" nằm ở \`apBanVa.ts\`, KHÔNG
+  // phải ở đây — xem ghi chú tại markup \`#o-muc-quyen\`.
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  const oMucQuyen = document.getElementById("o-muc-quyen");
+  oMucQuyen.addEventListener("change", (e) =>
+    vscode.postMessage({ loai: "dat_muc_quyen", mucQuyen: e.target.value }));
 
   // ══════════════════════════════════════════════════════════════════════════════════════════
   // ★★★ TASK 5 — @-MENTION. Webview chỉ (1) phát hiện vị trí "@..." đang gõ, (2) hỏi extension
@@ -568,6 +604,15 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       const nhanTaiKhoan = daDangNhap ? (m.tenTaiKhoan || "Đã đăng nhập") + " — bấm để đăng xuất" : "Đăng nhập";
       nutTaiKhoan.title = nhanTaiKhoan;
       nutTaiKhoan.setAttribute("aria-label", nhanTaiKhoan);
+    } else if (m.loai === "muc_quyen") {
+      // ★★★ ĐỢT G / TASK G3 / B4 — extension gửi tin này NGAY sau "san_sang" (mức đã lưu, hoặc
+      // mặc định AN TOÀN nếu kho rỗng/hỏng) và SAU MỖI lần "dat_muc_quyen" (xác nhận giá trị THẬT
+      // đã áp — không phải giá trị vừa gửi lên, phòng khi hai bên lệch nhau). Chỉ gán khi hợp lệ:
+      // một chuỗi lạ ở đây (webview lỗi khác đang chạy?) không được phép làm ô chọn hiện một mức
+      // KHÔNG có trong ba \`<option>\` tĩnh.
+      if (m.mucQuyen === "chi_doc" || m.mucQuyen === "hoi_truoc_khi_ghi" || m.mucQuyen === "tu_ghi") {
+        oMucQuyen.value = m.mucQuyen;
+      }
     } else if (m.loai === "chat_moi") {
       // ★★★ ĐỢT F / TASK 3 / B3 — "Chat mới": khung TRẮNG, không còn dấu vết gì của phiên cũ, KỂ CẢ
       // câu đang gõ dở (\`true\` — xem docblock \`xoaKhungChoPhienKhac\`, bản vá 2026-09-03).

@@ -225,6 +225,7 @@ import { BangChat } from "./bangChat";
 import { dungVanBanDayGiaoThucDoc, nhacLaiCuoiCauHoi } from "../loi/dayGiaoThucDoc";
 import { LoiHttp } from "../loi/loiHttp";
 import { KHOA_HOI_THOAI, TRAN_SO_HOI_THOAI, type HoiThoai } from "../loi/khoHoiThoai";
+import { KHOA_MUC_QUYEN } from "../loi/mucQuyen";
 
 /** Kho đề xuất giả — chỉ cần `quen()` để `quenDeXuat` gọi được. */
 const khoGia = { quen: () => undefined, moDiff: async () => undefined, moDiffCucBo: async () => undefined };
@@ -1612,5 +1613,81 @@ describe("ĐỢT G / TASK G2 / B4: cảnh báo TRƯỚC khi kho Lịch sử ch�
     const daLuu = may.workspaceState[KHOA_HOI_THOAI] as HoiThoai[];
     expect(daLuu.some((h) => h.ma === "cu-0")).toBe(false);
     expect(daLuu.some((h) => h.ma === "moi")).toBe(true);
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G3 / B4 — NẠP/LƯU MỨC QUYỀN QUA `workspaceState`.
+ *
+ * Chỉ đo LỚP ĐIỀU PHỐI (đọc/ghi `workspaceState`, gửi/nhận tin `muc_quyen`/`dat_muc_quyen`) — bằng
+ * ĐÚNG bản giả `vscode` TỐI THIỂU đã có sẵn ở đầu tệp này (không cần đĩa/mạng/`apBanVa`). Lớp HÀNG
+ * RÀO THẬT (B2: "chi_doc" chặn tại điểm ghi) và lớp TỪNG HÀNG RÀO ở "tu_ghi" (B3) đã có lưới riêng,
+ * đo trên đĩa THẬT, ở `ui/apBanVa.mucQuyen.unit.test.ts` — cố ý KHÔNG lặp lại ở đây. Lớp "tu_ghi bỏ
+ * bước hỏi" (B3, quyết định có tự gọi `apDungCucBo()` hay dựng thẻ) đo ở
+ * `ui/bangChat.mucQuyen.unit.test.ts` (tệp RIÊNG, có bản giả `vscode` CỦA RIÊNG NÓ — xem docblock ở
+ * đó cho lý do KHÔNG mở rộng bản giả tối thiểu ở đây).
+ */
+describe("ĐỢT G / TASK G3 / B4 — nạp mức quyền khi 'san_sang'", () => {
+  it("★★★ LƯỚI BẮT BUỘC — workspaceState RỖNG (chưa từng lưu) ⇒ 'muc_quyen' báo 'hoi_truoc_khi_ghi' (mặc định AN TOÀN)", async () => {
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const tin = may.daGui.filter((m) => m.loai === "muc_quyen");
+    expect(tin).toHaveLength(1);
+    expect(tin[0]!.mucQuyen).toBe("hoi_truoc_khi_ghi");
+  });
+
+  it("★★★ LƯỚI BẮT BUỘC — workspaceState HỎNG (hình dạng của một phiên bản trước/số/chuỗi lạ) ⇒ CŨNG rơi về 'hoi_truoc_khi_ghi', KHÔNG BAO GIỜ 'tu_ghi'", async () => {
+    for (const gtHong of [123, null, "TU_GHI", { mucQuyen: "tu_ghi" }, ["tu_ghi"]]) {
+      may.workspaceState = {};
+      may.workspaceState[KHOA_MUC_QUYEN] = gtHong;
+      moBang();
+      may.daGui = [];
+      may.nhanTin?.({ loai: "san_sang" });
+      await new Promise((r) => setTimeout(r, 0));
+
+      const tin = may.daGui.filter((m) => m.loai === "muc_quyen");
+      expect(tin, `đầu vào hỏng ${JSON.stringify(gtHong)}`).toHaveLength(1);
+      expect(tin[0]!.mucQuyen, `đầu vào hỏng ${JSON.stringify(gtHong)}`).toBe("hoi_truoc_khi_ghi");
+      expect(tin[0]!.mucQuyen).not.toBe("tu_ghi");
+    }
+  });
+
+  it("★ NHÁNH KIA — workspaceState mang ĐÚNG một mức hợp lệ ⇒ giữ NGUYÊN, không bị ép về mặc định", async () => {
+    may.workspaceState[KHOA_MUC_QUYEN] = "chi_doc";
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const tin = may.daGui.filter((m) => m.loai === "muc_quyen");
+    expect(tin).toHaveLength(1);
+    expect(tin[0]!.mucQuyen).toBe("chi_doc");
+  });
+});
+
+describe("ĐỢT G / TASK G3 / B4 — người dùng đổi mức quyền ('dat_muc_quyen')", () => {
+  it("★★★ giá trị HỢP LỆ ⇒ LƯU vào workspaceState VÀ xác nhận lại đúng giá trị đó", async () => {
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "dat_muc_quyen", mucQuyen: "tu_ghi" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.workspaceState[KHOA_MUC_QUYEN]).toBe("tu_ghi");
+    const tin = may.daGui.filter((m) => m.loai === "muc_quyen");
+    expect(tin).toHaveLength(1);
+    expect(tin[0]!.mucQuyen).toBe("tu_ghi");
+  });
+
+  it("★★★ NHÁNH KIA — giá trị KHÔNG HỢP LỆ (webview lỗi/tin giả mạo) ⇒ BỎ QUA HOÀN TOÀN, KHÔNG ghi, KHÔNG gửi lại tin nào", async () => {
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "dat_muc_quyen", mucQuyen: "vo_han_quyen_luc" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.workspaceState[KHOA_MUC_QUYEN]).toBeUndefined();
+    expect(may.daGui.filter((m) => m.loai === "muc_quyen")).toEqual([]);
   });
 });
