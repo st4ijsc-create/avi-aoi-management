@@ -19585,7 +19585,10 @@
       "empty": "No errors from the latest run",
       "jumpFileLine": "Open {{tep}} at line {{dong}}",
       "jumpFileOnly": "Open {{tep}}",
-      "unresolvedLocation": "Location not resolved — see Terminal."
+      "unresolvedLocation": "Location not resolved — see Terminal.",
+      "countCa": "{{loi}} errors · {{canh}} warnings",
+      "toggleWarn": "Also show warnings — errors only by default",
+      "warnShort": "⚠ warnings"
     },
     "thayThe": {
       "open": "Replace across files…",

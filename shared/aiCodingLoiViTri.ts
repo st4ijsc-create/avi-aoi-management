@@ -68,6 +68,28 @@ export interface DiaDiemLoi {
   cot: number | null;
   /** Câu mô tả lỗi (thô, chưa dịch — component tự dịch/hiển thị sau). Luôn có, kể cả khi `tep` null. */
   thongDiep: string;
+  /**
+   * ★ 2026-09-03 · ĐỢT E1 — MỨC ĐỘ. `"loi"` cho mọi mục của đường CŨ (mặc định), `"canhBao"` chỉ
+   * sinh khi người gọi BẬT `gomCanhBao` (xem `TuyChonPhanTich`). Trường này **bắt buộc** chứ không
+   * optional: một mục không biết mình là lỗi hay cảnh báo sẽ được panel vẽ như lỗi — đúng lời khai
+   * sai mà đợt này sinh ra để chấm dứt.
+   */
+  mucDo: "loi" | "canhBao";
+}
+
+/**
+ * ★★★ 2026-09-03 · ĐỢT E1 — **CẢNH BÁO LÀ THỨ PHẢI XIN, KHÔNG PHẢI THỨ TỰ ĐẾN.**
+ *
+ * Hợp đồng CŨ (và hai lưới ghim §1/§CS-warning) nói: `warning TS…`/`warning CS…` KHÔNG sinh mục lỗi.
+ * Lý lẽ ấy vẫn đúng nguyên: panel "Vấn đề" là danh sách *"chỗ phải sửa để build xanh"*, trộn cảnh
+ * báo vào làm huy hiệu đếm nói dối về mức nghiêm trọng.
+ * ⇒ Đợt này **KHÔNG nới hai regex cũ** (nới là làm hai lưới ấy đỏ — và chúng đúng). Thay vào đó:
+ * hai regex RỜI cho cảnh báo, chỉ chạy khi bật cờ, mục sinh ra mang `mucDo:"canhBao"`. Mặc định
+ * (`gomCanhBao` vắng) đường cũ chạy y hệt TỪNG BYTE.
+ */
+export interface TuyChonPhanTich {
+  /** `true` ⇒ nhận thêm `warning TS…`/`warning CS…` thành mục `mucDo:"canhBao"`. Mặc định: KHÔNG. */
+  gomCanhBao?: boolean;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -96,6 +118,14 @@ const RE_TSC = /^(?<tep>[^\s(][^(]*?)\((?<dong>\d+),(?<cot>\d+)\):\s+(?<msg>erro
  *     phải bắt: `warning CS…` KHÔNG phải một mục lỗi để nhảy tới.
  */
 const RE_CSC = /^(?<tep>[^\s(][^(]*?)\((?<dong>\d+),(?<cot>\d+)\):\s+(?<msg>error\s+CS\d+\b.*)$/;
+
+/**
+ * ★ ĐỢT E1 — KHUÔN CẢNH BÁO, **hai regex RỜI** (đúng luật của file: "một regex thông minh cho cả
+ * sáu là cách chắc chắn để nới nhầm"). Thân y hệt `RE_TSC`/`RE_CSC`, chỉ đổi `error` → `warning`.
+ * Chúng CHỈ chạy ở nhánh `gomCanhBao`; không một điểm gọi nào của đường cũ chạm tới.
+ */
+const RE_TSC_CANHBAO = /^(?<tep>[^\s(][^(]*?)\((?<dong>\d+),(?<cot>\d+)\):\s+(?<msg>warning\s+TS\d+\b.*)$/;
+const RE_CSC_CANHBAO = /^(?<tep>[^\s(][^(]*?)\((?<dong>\d+),(?<cot>\d+)\):\s+(?<msg>warning\s+CS\d+\b.*)$/;
 
 /**
  * vitest — KHUNG STACK: `❯ <đường>:<dòng>:<cột>` (thường thụt đầu dòng vài dấu cách).
@@ -201,11 +231,36 @@ export function giaiDuongTuyetDoiTheoHauTo(abs: string, dsTep: readonly string[]
  *
  * @param dsTepDuAn danh sách tệp CÓ THẬT trong cây workspace (tương đối, `/`). Rỗng ⇒ hành xử Y HỆT v1.
  */
-export function phanTichLoiViTri(dauRa: string, dsTepDuAn: readonly string[] = []): DiaDiemLoi[] {
+export function phanTichLoiViTri(
+  dauRa: string,
+  dsTepDuAn: readonly string[] = [],
+  tuyChon: TuyChonPhanTich = {},
+): DiaDiemLoi[] {
   if (typeof dauRa !== "string" || dauRa.length === 0) return [];
 
   const ket: DiaDiemLoi[] = [];
   for (const raw of dauRa.split(/\r?\n/)) {
+    // ★ E1 — 0) CẢNH BÁO (opt-in). Đặt TRƯỚC các khuôn lỗi vì hai regex cảnh báo hẹp hơn hẳn
+    //   (đòi đúng chữ `warning`), nên không mục lỗi nào bị chúng nuốt; và đặt trong `if` nên khi
+    //   cờ tắt thì đường cũ không chạy thêm MỘT phép khớp nào.
+    if (tuyChon.gomCanhBao === true) {
+      const wt = RE_TSC_CANHBAO.exec(raw) ?? RE_CSC_CANHBAO.exec(raw);
+      if (wt?.groups) {
+        const tep = wt.groups.tep.trim();
+        // Đường tuyệt đối (bản build C#) ⇒ giải hậu tố như nhánh lỗi; không giải được ⇒ giữ tep:null
+        // để panel hiện chữ mà KHÔNG dựng một liên kết dối (cùng luật với `RE_CSC`).
+        const duong = laDuongTuyetDoiChuoi(tep) ? giaiDuongTuyetDoiTheoHauTo(tep, dsTepDuAn) : tep;
+        ket.push({
+          tep: duong,
+          dong: duong === null ? null : Number(wt.groups.dong),
+          cot: duong === null ? null : Number(wt.groups.cot),
+          thongDiep: duong === null ? raw.trim() : wt.groups.msg.trim(),
+          mucDo: "canhBao",
+        });
+        continue;
+      }
+    }
+
     // 1) tsc — vị trí ĐẦY ĐỦ, đường tương đối.
     const t = RE_TSC.exec(raw);
     if (t?.groups) {
@@ -214,6 +269,7 @@ export function phanTichLoiViTri(dauRa: string, dsTepDuAn: readonly string[] = [
         dong: Number(t.groups.dong),
         cot: Number(t.groups.cot),
         thongDiep: t.groups.msg.trim(),
+        mucDo: "loi",
       });
       continue;
     }
@@ -226,11 +282,11 @@ export function phanTichLoiViTri(dauRa: string, dsTepDuAn: readonly string[] = [
       const cot = Number(c.groups.cot);
       const msg = c.groups.msg.trim();
       if (!laDuongTuyetDoiChuoi(tep)) {
-        ket.push({ tep, dong, cot, thongDiep: msg });
+        ket.push({ tep, dong, cot, thongDiep: msg, mucDo: "loi" });
       } else {
         const giai = giaiDuongTuyetDoiTheoHauTo(tep, dsTepDuAn);
-        if (giai !== null) ket.push({ tep: giai, dong, cot, thongDiep: msg });
-        else ket.push({ tep: null, dong: null, cot: null, thongDiep: raw.trim() });
+        if (giai !== null) ket.push({ tep: giai, dong, cot, thongDiep: msg, mucDo: "loi" });
+        else ket.push({ tep: null, dong: null, cot: null, thongDiep: raw.trim(), mucDo: "loi" });
       }
       continue;
     }
@@ -243,6 +299,7 @@ export function phanTichLoiViTri(dauRa: string, dsTepDuAn: readonly string[] = [
         dong: Number(vs.groups.dong),
         cot: Number(vs.groups.cot),
         thongDiep: raw.trim(),
+        mucDo: "loi",
       });
       continue;
     }
@@ -250,7 +307,7 @@ export function phanTichLoiViTri(dauRa: string, dsTepDuAn: readonly string[] = [
     // 4) vitest — dòng tổng kết `FAIL path` (biết tệp, CHƯA biết dòng).
     const vf = RE_VITEST_FAIL.exec(raw);
     if (vf?.groups) {
-      ket.push({ tep: vf.groups.tep, dong: null, cot: null, thongDiep: raw.trim() });
+      ket.push({ tep: vf.groups.tep, dong: null, cot: null, thongDiep: raw.trim(), mucDo: "loi" });
       continue;
     }
 
@@ -259,9 +316,9 @@ export function phanTichLoiViTri(dauRa: string, dsTepDuAn: readonly string[] = [
     if (dn?.groups) {
       const giai = giaiDuongTuyetDoiTheoHauTo(dn.groups.tep, dsTepDuAn);
       if (giai !== null) {
-        ket.push({ tep: giai, dong: Number(dn.groups.dong), cot: null, thongDiep: raw.trim() });
+        ket.push({ tep: giai, dong: Number(dn.groups.dong), cot: null, thongDiep: raw.trim(), mucDo: "loi" });
       } else {
-        ket.push({ tep: null, dong: null, cot: null, thongDiep: raw.trim() });
+        ket.push({ tep: null, dong: null, cot: null, thongDiep: raw.trim(), mucDo: "loi" });
       }
       continue;
     }
@@ -276,9 +333,10 @@ export function phanTichLoiViTri(dauRa: string, dsTepDuAn: readonly string[] = [
           dong: Number(wa.groups.dong),
           cot: wa.groups.cot != null ? Number(wa.groups.cot) : null,
           thongDiep: raw.trim(),
+        mucDo: "loi",
         });
       } else {
-        ket.push({ tep: null, dong: null, cot: null, thongDiep: raw.trim() });
+        ket.push({ tep: null, dong: null, cot: null, thongDiep: raw.trim(), mucDo: "loi" });
       }
       continue;
     }

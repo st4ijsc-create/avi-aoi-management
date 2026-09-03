@@ -36,7 +36,7 @@ describe("§1 — tsc (`npm run check` / `check:tests`): vị trí ĐẦY ĐỦ,
       dong: 13,
       cot: 7,
       thongDiep:
-        "error TS2353: Object literal may only specify known properties, and 'ceiling' does not exist in type 'HeadroomInput'.",
+        "error TS2353: Object literal may only specify known properties, and 'ceiling' does not exist in type 'HeadroomInput'.", mucDo: "loi",
     });
     expect(r[1].tep).toBe("client/src/pages/SessionManagement.tsx");
     expect(r[1].dong).toBe(195);
@@ -45,7 +45,7 @@ describe("§1 — tsc (`npm run check` / `check:tests`): vị trí ĐẦY ĐỦ,
       tep: "server/_core/dataErrorStringCensus.test.ts",
       dong: 96,
       cot: 41,
-      thongDiep: "error TS7006: Parameter 'row' implicitly has an 'any' type.",
+      thongDiep: "error TS7006: Parameter 'row' implicitly has an 'any' type.", mucDo: "loi",
     });
   });
 
@@ -272,7 +272,7 @@ describe("§6 — csc (`dotnet build`): lỗi C# bấm-được; tuyệt đối 
       tep: "src/Calculator.cs",
       dong: 23,
       cot: 16,
-      thongDiep: "error CS0103: The name 'x' does not exist",
+      thongDiep: "error CS0103: The name 'x' does not exist", mucDo: "loi",
     });
   });
 
@@ -399,5 +399,48 @@ describe("§9 — hỗn hợp CÓ cây: .NET giải được, tsc/vitest KHÔNG 
     expect(r).toHaveLength(2);
     expect(r[0]).toMatchObject({ tep: "server/a.ts", dong: 3, cot: 1 });
     expect(r[1].tep).toBeNull();
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ 2026-09-03 · ĐỢT E1 — **NHÁNH CẢNH BÁO (opt-in).** Ba bất biến, và bất biến ĐẦU quan trọng
+ * nhất: hợp đồng CŨ không đổi một chữ. §1/§CS-warning ở trên vẫn canh "mặc định KHÔNG nuốt
+ * warning"; khối này canh phần THÊM.
+ *
+ * ĐỘT BIẾN PHẢI BẮT ĐƯỢC:
+ *   • bỏ điều kiện `tuyChon.gomCanhBao === true` (luôn nhận cảnh báo) ⇒ §E1.1 ĐỎ;
+ *   • gắn `mucDo:"loi"` cho mục cảnh báo (trộn hai mức) ⇒ §E1.2 ĐỎ;
+ *   • nới `RE_TSC`/`RE_CSC` cũ thành `(?:error|warning)` ⇒ §1/§CS-warning ở trên ĐỎ (không phải ở đây).
+ */
+describe("§E1 — CẢNH BÁO chỉ đến khi được XIN", () => {
+  const TSC_WARN = "client/src/App.tsx(1,10): warning TS6133: 'React' is declared but its value is never read.";
+  const CSC_WARN = "src/Calculator.cs(42,13): warning CS0168: The variable 'x' is declared but never used";
+  const TSC_ERR = "server/x.ts(13,7): error TS2353: Object literal may only specify known properties.";
+
+  it("★★★ §E1.1 — MẶC ĐỊNH (không truyền tuỳ chọn) ⇒ cảnh báo KHÔNG sinh mục nào", () => {
+    expect(phanTichLoiViTri(TSC_WARN)).toEqual([]);
+    expect(phanTichLoiViTri(CSC_WARN)).toEqual([]);
+    // …và truyền tuỳ chọn RỖNG / cờ false cũng vậy (mặc định phải là một, không phải hai).
+    expect(phanTichLoiViTri(TSC_WARN, [], {})).toEqual([]);
+    expect(phanTichLoiViTri(TSC_WARN, [], { gomCanhBao: false })).toEqual([]);
+  });
+
+  it("★★★ §E1.2 — BẬT cờ ⇒ cảnh báo thành mục `mucDo:'canhBao'`, vị trí ĐẦY ĐỦ", () => {
+    expect(phanTichLoiViTri(TSC_WARN, [], { gomCanhBao: true })).toEqual([
+      { tep: "client/src/App.tsx", dong: 1, cot: 10, thongDiep: "warning TS6133: 'React' is declared but its value is never read.", mucDo: "canhBao" },
+    ]);
+    expect(phanTichLoiViTri(CSC_WARN, [], { gomCanhBao: true })).toEqual([
+      { tep: "src/Calculator.cs", dong: 42, cot: 13, thongDiep: "warning CS0168: The variable 'x' is declared but never used", mucDo: "canhBao" },
+    ]);
+  });
+
+  it("★★★ §E1.3 — LẪN LỘN: lỗi vẫn là `loi`, cảnh báo vẫn là `canhBao`, đủ CẢ HAI và đúng thứ tự", () => {
+    const ra = phanTichLoiViTri(`${TSC_ERR}\n${TSC_WARN}`, [], { gomCanhBao: true });
+    expect(ra.map((x) => x.mucDo)).toEqual(["loi", "canhBao"]);
+    expect(ra.map((x) => x.tep)).toEqual(["server/x.ts", "client/src/App.tsx"]);
+    // Cùng đầu ra ấy, cờ TẮT ⇒ chỉ còn ĐÚNG mục lỗi (bất biến cũ, đo lại tại chỗ lẫn lộn).
+    const tat = phanTichLoiViTri(`${TSC_ERR}\n${TSC_WARN}`);
+    expect(tat.map((x) => x.mucDo)).toEqual(["loi"]);
   });
 });

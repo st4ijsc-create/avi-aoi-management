@@ -61,6 +61,13 @@ export function nhanNhayTep(tep: string, dong: number | null, t: HamDich): strin
 }
 
 interface BangProblemsProps {
+  /**
+   * ★ 2026-09-03 · ĐỢT E1 — cờ + công tắc "hiện cảnh báo". Panel KHÔNG tự lọc: trang là nơi gọi
+   * parser (một lần, một nguồn) nên nó cũng là nơi quyết định có xin cảnh báo hay không. Ở đây chỉ
+   * VẼ công tắc và báo lên — đúng ranh giới thuần-hiển-thị của tệp này.
+   */
+  hienCanhBao?: boolean;
+  onDoiHienCanhBao?: (bat: boolean) => void;
   /** Địa điểm lỗi đã phân tích, theo THỨ TỰ xuất hiện (parser không khử trùng lặp ở v1). */
   diaDiem: readonly DiaDiemLoi[];
   /** Tệp ĐANG mở ở Trình xem — mục nào trùng đường được tô nổi (thuần thẩm mỹ). */
@@ -69,7 +76,7 @@ interface BangProblemsProps {
   onMoTep: (tep: string, dong: number | null) => void;
 }
 
-export function BangProblems({ diaDiem, tepDangChon, onMoTep }: BangProblemsProps): React.JSX.Element {
+export function BangProblems({ diaDiem, tepDangChon, onMoTep, hienCanhBao, onDoiHienCanhBao }: BangProblemsProps): React.JSX.Element {
   const { t } = useTranslation();
 
   return (
@@ -78,8 +85,31 @@ export function BangProblems({ diaDiem, tepDangChon, onMoTep }: BangProblemsProp
         <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-xs font-medium">{t("repoWs.problems.title", "Vấn đề")}</span>
         <span data-so-dem className="ml-auto shrink-0 text-[10px] tabular-nums text-muted-foreground">
-          {t("repoWs.problems.count", "{{n}} vấn đề", { n: diaDiem.length })}
+          {(() => {
+            // ★ E1 — ĐẾM RIÊNG hai mức: một con số gộp làm huy hiệu nói dối về mức nghiêm trọng
+            //   (3 lỗi ≠ 3 cảnh báo). Chỉ nêu cảnh báo khi thật sự có mục nào.
+            const soLoi = diaDiem.filter((d) => d.mucDo !== "canhBao").length;
+            const soCanh = diaDiem.length - soLoi;
+            return soCanh > 0
+              ? t("repoWs.problems.countCa", "{{loi}} lỗi · {{canh}} cảnh báo", { loi: soLoi, canh: soCanh })
+              : t("repoWs.problems.count", "{{n}} vấn đề", { n: soLoi });
+          })()}
         </span>
+        {onDoiHienCanhBao && (
+          <button
+            type="button"
+            data-bat-canh-bao
+            aria-pressed={hienCanhBao === true}
+            onClick={() => onDoiHienCanhBao(hienCanhBao !== true)}
+            title={t("repoWs.problems.toggleWarn", "Hiện cả cảnh báo (warning) — mặc định chỉ hiện lỗi")}
+            className={cn(
+              "shrink-0 rounded px-1 text-[10px]",
+              hienCanhBao === true ? "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            {t("repoWs.problems.warnShort", "⚠ cảnh báo")}
+          </button>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-1">
@@ -119,6 +149,7 @@ export function BangProblems({ diaDiem, tepDangChon, onMoTep }: BangProblemsProp
                 key={i}
                 type="button"
                 data-loi-nut
+                data-muc-do={d.mucDo}
                 onClick={() => onMoTep(tep, d.dong)}
                 aria-current={dangMo ? "true" : undefined}
                 aria-label={nhan}
@@ -128,7 +159,7 @@ export function BangProblems({ diaDiem, tepDangChon, onMoTep }: BangProblemsProp
                   dangMo && "bg-muted",
                 )}
               >
-                <ArrowUpRight className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+                <ArrowUpRight className={cn("mt-0.5 h-3 w-3 shrink-0", d.mucDo === "canhBao" ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[11px] leading-snug">{d.thongDiep}</span>
                   <span

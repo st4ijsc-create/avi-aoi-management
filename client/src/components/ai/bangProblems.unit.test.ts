@@ -55,9 +55,9 @@ function ve(diaDiem: readonly DiaDiemLoi[], tepDangChon: string | null = null): 
   );
 }
 
-const TSC: DiaDiemLoi = { tep: "server/x.ts", dong: 12, cot: 7, thongDiep: "error TS2353: object literal" };
-const FAIL: DiaDiemLoi = { tep: "scripts/b.test.ts", dong: null, cot: null, thongDiep: "FAIL scripts/b.test.ts > suite" };
-const ABS: DiaDiemLoi = { tep: null, dong: null, cot: null, thongDiep: "at x (D:\\proj\\x.test.js:10:9)" };
+const TSC: DiaDiemLoi = { tep: "server/x.ts", dong: 12, cot: 7, thongDiep: "error TS2353: object literal" , mucDo: "loi" };
+const FAIL: DiaDiemLoi = { tep: "scripts/b.test.ts", dong: null, cot: null, thongDiep: "FAIL scripts/b.test.ts > suite" , mucDo: "loi" };
+const ABS: DiaDiemLoi = { tep: null, dong: null, cot: null, thongDiep: "at x (D:\\proj\\x.test.js:10:9)" , mucDo: "loi" };
 
 describe("§1 ĐẦU MỤC — tiêu đề + số đếm", () => {
   it("★★★ tiêu đề từ vi.json và số đếm `.count` với n = số mục", () => {
@@ -110,7 +110,7 @@ describe("§4 MỤC KHÔNG TỆP (đường tuyệt đối) — KHÔNG bấm đ�
 
 describe("§5 TÔ NỔI mục đang mở (tepDangChon khớp) — và CHỈ nó", () => {
   it("★ đúng MỘT mục khớp mang `aria-current=\"true\"`", () => {
-    const other: DiaDiemLoi = { tep: "server/y.ts", dong: 3, cot: 1, thongDiep: "error TS1005: ;" };
+    const other: DiaDiemLoi = { tep: "server/y.ts", dong: 3, cot: 1, thongDiep: "error TS1005: ;", mucDo: "loi" };
     const html = ve([TSC, other], "server/y.ts");
     expect((html.match(/aria-current="true"/g) ?? []).length).toBe(1);
   });
@@ -126,5 +126,41 @@ describe("§6 RỖNG ⇒ câu `.empty`", () => {
     expect(html).toContain(esc(VI.repoWs.problems.empty));
     expect(html).not.toContain("data-loi-nut");
     expect(html).toContain("0 vấn đề");
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ 2026-09-03 · ĐỢT E1 — **PHÂN MỨC hiển thị.** Panel là nơi DUY NHẤT người dùng đọc con số
+ * "còn bao nhiêu vấn đề", nên một con số GỘP (3 lỗi + 3 cảnh báo = "6 vấn đề") là một lời khai sai
+ * về mức nghiêm trọng. Khối này ghim: đếm TÁCH khi có cảnh báo · mục mang `data-muc-do` đúng mức ·
+ * công tắc chỉ hiện khi trang truyền callback (panel vẫn THUẦN hiển thị).
+ */
+describe("§7 PHÂN MỨC lỗi/cảnh báo", () => {
+  const WARN: DiaDiemLoi = { tep: "client/src/App.tsx", dong: 1, cot: 10, thongDiep: "warning TS6133: unused", mucDo: "canhBao" };
+
+  it("★★★ có cảnh báo ⇒ đếm TÁCH hai mức (không gộp thành một con số)", () => {
+    const html = ve([TSC, WARN]);
+    expect(html).toContain("1 lỗi");
+    expect(html).toContain("1 cảnh báo");
+  });
+
+  it("★★★ mỗi mục mang `data-muc-do` ĐÚNG mức của nó", () => {
+    const html = ve([TSC, WARN]);
+    expect((html.match(/data-muc-do="loi"/g) ?? []).length).toBe(1);
+    expect((html.match(/data-muc-do="canhBao"/g) ?? []).length).toBe(1);
+  });
+
+  it("★ CHỈ lỗi ⇒ giữ NGUYÊN câu đếm cũ (tương thích ngược từng chữ)", () => {
+    expect(ve([TSC])).toContain("1 vấn đề");
+    expect(ve([TSC])).not.toContain("cảnh báo");
+  });
+
+  it("★★ công tắc chỉ hiện khi trang đưa callback — panel không tự quyết", () => {
+    expect(ve([TSC])).not.toContain("data-bat-canh-bao");
+    const coCongTac = renderToStaticMarkup(
+      createElement(BangProblems, { diaDiem: [TSC], tepDangChon: null, onMoTep: () => {}, hienCanhBao: false, onDoiHienCanhBao: () => {} } as Props),
+    );
+    expect(coCongTac).toContain("data-bat-canh-bao");
   });
 });

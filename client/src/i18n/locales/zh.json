@@ -19593,7 +19593,10 @@
       "empty": "最近一次运行没有错误",
       "jumpFileLine": "打开 {{tep}} 第 {{dong}} 行",
       "jumpFileOnly": "打开 {{tep}}",
-      "unresolvedLocation": "无法定位 — 请查看终端。"
+      "unresolvedLocation": "无法定位 — 请查看终端。",
+      "countCa": "{{loi}} 个错误 · {{canh}} 个警告",
+      "toggleWarn": "同时显示警告——默认仅显示错误",
+      "warnShort": "⚠ 警告"
     },
     "thayThe": {
       "open": "批量替换…",

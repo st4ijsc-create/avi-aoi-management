@@ -19565,7 +19565,10 @@
       "empty": "Không có lỗi nào từ lần chạy gần nhất",
       "jumpFileLine": "Mở {{tep}} tại dòng {{dong}}",
       "jumpFileOnly": "Mở {{tep}}",
-      "unresolvedLocation": "Không xác định được vị trí — xem Terminal."
+      "unresolvedLocation": "Không xác định được vị trí — xem Terminal.",
+      "countCa": "{{loi}} lỗi · {{canh}} cảnh báo",
+      "toggleWarn": "Hiện cả cảnh báo (warning) — mặc định chỉ hiện lỗi",
+      "warnShort": "⚠ cảnh báo"
     },
     "thayThe": {
       "open": "Thay thế hàng loạt…",

@@ -535,6 +535,11 @@ export default function AICodingWorkspace() {
   const [ngatDong, setNgatDong] = useState(false);
   const [thuMucTim, setThuMucTim] = useState("");
   const [khungToiDa, setKhungToiDa] = useState<"tep" | "xem" | "chat" | null>(null);
+  /**
+   * ★ 2026-09-03 · ĐỢT E1 — có XIN cảnh báo hay không. Parser mặc định CHỈ trả lỗi (hợp đồng cũ,
+   * hai lưới ghim canh); bật cờ này là lời xin tường minh, và panel đếm riêng hai mức.
+   */
+  const [hienCanhBao, setHienCanhBao] = useState(false);
 
   const khoaBanLamViec = user?.id != null ? `repoWs.ban.u${user.id}.${projectId}` : null;
   const duAnDaKhoiPhucRef = useRef<string | null>(null);
@@ -1919,10 +1924,17 @@ export default function AICodingWorkspace() {
     const theoLenh = new Map<string, LuotLenh["diaDiemLoi"]>();
     for (let i = lenhDaChay.length - 1; i >= 0; i--) {
       const lt = lenhDaChay[i]!;
-      if (!theoLenh.has(lt.lenh)) theoLenh.set(lt.lenh, lt.diaDiemLoi);
+      if (theoLenh.has(lt.lenh)) continue;
+      /**
+       * ★ E1 — PARSE LẠI theo cờ cảnh báo, từ `dauRa` THÔ đã lưu của chính lượt ấy. Vì sao không
+       * dùng `lt.diaDiemLoi` sẵn có: nó được parse LÚC CHẠY với cờ lúc đó, nên bật "hiện cảnh báo"
+       * sau khi lệnh chạy xong sẽ chẳng hiện gì — một công tắc không điều khiển được quá khứ là
+       * một công tắc hỏng. `lt.diaDiemLoi` VẪN giữ nguyên cho bảng Terminal (hợp đồng cũ không đổi).
+       */
+      theoLenh.set(lt.lenh, hienCanhBao ? phanTichLoiViTri(lt.dauRa, dsTepDuAn, { gomCanhBao: true }) : lt.diaDiemLoi);
     }
     return [...theoLenh.values()].flat();
-  }, [lenhDaChay]);
+  }, [lenhDaChay, hienCanhBao, dsTepDuAn]);
   const soVanDe = diaDiemTichLuy.length;
   /**
    * ★ UX (C2) — TÍN HIỆU THẬT "chỉ CHẠY, KHÔNG ghi đĩa" cho thẻ duyệt `run_command`. Server đặt một
@@ -3102,6 +3114,8 @@ export default function AICodingWorkspace() {
                   diaDiem={diaDiemTichLuy}
                   tepDangChon={selectedPath}
                   onMoTep={moTepTuVanDe}
+                  hienCanhBao={hienCanhBao}
+                  onDoiHienCanhBao={setHienCanhBao}
                 />
               )}
             </div>
