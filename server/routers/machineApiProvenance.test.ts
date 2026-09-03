@@ -277,12 +277,9 @@ describe("CASE #3 — clock skew", () => {
     expect(row.clockSkewFlagged).toBe(true);
     expect(row.timeSkewSeconds).toBe(6 * 3600);
     expect(row.timeSource).toBe("machine_utc");
-    // serverReceivedAt = giờ SERVER nhận (áp cùng phép dịch fake-UTC như
-    // inspectionTime), KHÔNG phải giờ máy khai.
-    const expectedLocalRecv = new Date(
-      serverNow.getTime() - serverNow.getTimezoneOffset() * 60000,
-    );
-    expect((row.serverReceivedAt as Date).toISOString()).toBe(expectedLocalRecv.toISOString());
+    // serverReceivedAt = giờ SERVER nhận, ghi THÔ (cutover 2026-09-03, BG-96 — KHÔNG còn
+    // phép dịch "fake UTC"), KHÔNG phải giờ máy khai.
+    expect((row.serverReceivedAt as Date).toISOString()).toBe(serverNow.toISOString());
   });
 
   it("máy lệch 6h VỀ QUÁ KHỨ → skew ÂM (giữ dấu: chạy chậm ≠ chạy trước)", async () => {

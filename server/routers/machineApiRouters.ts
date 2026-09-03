@@ -1118,9 +1118,9 @@ export async function inspectionAlreadyPersisted(input: SubmitInspectionInput): 
   // Cái được: câu "Database not available" không còn là một chuỗi tự do trôi nổi, và cổng
   // `rawErrorCensus` giữ được bất biến "0 chỗ ném thô họ DB" trên TOÀN server.
   if (!dbi) throw new DbUnavailableError();
-  // Same "fake UTC" shift the insert path applies (see processInspectionSubmission).
-  const raw = new Date(input.inspectionTime);
-  const local = new Date(raw.getTime() - raw.getTimezoneOffset() * 60000);
+  // Cutover 2026-09-03 (Khối C QĐ-1, BG-96) — KHÔNG dịch "fake UTC" nữa; `inspectionTime`
+  // là UTC thật, cùng hệ quy chiếu mà đường ghi dùng (xem chú thích lớn ở
+  // processInspectionSubmission).
   const rows = await dbi
     .select({ id: productInspections.id })
     .from(productInspections)
@@ -1128,7 +1128,7 @@ export async function inspectionAlreadyPersisted(input: SubmitInspectionInput): 
       drizzleAnd(
         drizzleEq(productInspections.machineId, auth.machine.id),
         drizzleEq(productInspections.serialNumber, input.serialNumber),
-        drizzleEq(productInspections.inspectionTime, local),
+        drizzleEq(productInspections.inspectionTime, new Date(input.inspectionTime)),
       ),
     )
     .limit(1);
@@ -1543,21 +1543,18 @@ export async function processInspectionSubmission(
       }
 
       // Create inspection record
-      // Fix timezone: Drizzle ORM serializes Date via .toISOString() (UTC),
-      // but timestamp without time zone strips Z → stores UTC value.
-      // Shift to "fake UTC" so PostgreSQL stores local time.
-      //
-      // ⚠ Doc 51 P1 (CASE #3) — THIS SHIFT IS LEFT IN PLACE ON PURPOSE. It is
-      // process-TZ dependent and the read layer (server/utils/kpi.ts
-      // getDbStorageTimezone) defaults to assuming UTC, so the two only agree when
-      // FACTORY_DB_STORAGE_TZ is set to the server's zone. Removing the shift here
-      // would silently re-interpret EVERY historical row (22,995 on dev) that was
-      // written WITH it — a data-corruption event dressed as a bug fix. The cutover
-      // needs its own migration (rewrite stored values + flip FACTORY_DB_STORAGE_TZ
-      // atomically); see the doc 51 P1 report. What P1 adds is the ability to SEE
-      // the problem: serverReceivedAt + signed skew + timeSource, below.
+      // ⚠ Cutover 2026-09-03 (Khối C QĐ-1, BG-96) — bỏ hẳn phép dịch "fake UTC" từng áp
+      // Ở ĐÂY (doc 51 P1 CASE #3, xem lịch sử git nếu cần bản cũ). Lý do bỏ: header
+      // (`inspectionTime`) và cây (`inspection_captures.startedAt` v.v. — LUÔN ghi thô,
+      // `server/db/inspection.ts`) lệch nhau đúng MỘT offset múi giờ trong CÙNG một
+      // request (BG-96) — chỉ header từng bị dịch, cây thì không. Quyết định chủ dự án
+      // (spec Khối C QĐ-1): dữ liệu test được phép làm lại, MỌI cột thời gian họ
+      // inspection nay là UTC thật; `FACTORY_DB_STORAGE_TZ` giữ mặc định UTC (không cần
+      // đặt bằng múi giờ máy chủ nữa — read layer `server/utils/kpi.ts
+      // getDbStorageTimezone` vẫn mặc định UTC, nay khớp THẬT với dữ liệu, không phải
+      // khớp CÓ ĐIỀU KIỆN như trước). serverReceivedAt + signed skew + timeSource bên
+      // dưới vẫn giữ nguyên — vẫn cần để THẤY lệch đồng hồ máy, không liên quan cutover này.
       const rawInspTime = input.inspectionTime ? new Date(input.inspectionTime) : new Date();
-      const localInspTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
 
       // ══ Doc 51 P1 (CASE #3) — PROVENANCE + CLOCK-SKEW ══════════════════════
       // serverReceivedAt/timeSource are normally stamped by the mutation from the
@@ -1582,14 +1579,9 @@ export async function processInspectionSubmission(
           serverReceivedAt,
         });
       }
-      // serverReceivedAt is stored with the SAME fake-UTC shift as inspectionTime.
-      // Not because the shift is right — because a column in a different time base
-      // than the one it is compared against is worse than a consistently-wrong one.
-      // Both move together at cutover. timeSkewSeconds is a DURATION, so it is
-      // immune to all of this: it stays correct across the cutover either way.
-      const localServerReceivedAt = new Date(
-        serverReceivedAt.getTime() - serverReceivedAt.getTimezoneOffset() * 60000,
-      );
+      // Cutover 2026-09-03 (BG-96) — serverReceivedAt ghi THÔ (UTC thật), cùng hệ quy
+      // chiếu với inspectionTime ở trên; không còn "dịch cùng nhau" vì không còn dịch.
+      // timeSkewSeconds là một DURATION nên không hề bị ảnh hưởng bởi cutover này.
 
       // ══ Doc 51 P1 (CASE #12) — CONFIG VERSION PIN ══════════════════════════
       // Which thresholds graded this board? Unanswerable until now: the machine's
@@ -1709,11 +1701,11 @@ export async function processInspectionSubmission(
         operatorUserId: operatorUserId ?? undefined,
         panelSerial: input.panelId,
         boardIndex: input.boardIndex,
-        inspectionTime: localInspTime,
+        inspectionTime: rawInspTime,
         cycleTime: input.cycleTime ? String(input.cycleTime) : undefined,
         // Doc 51 P1 (0275) — provenance. Written on EVERY row, flags off or on:
         // the measurement is what makes CASE #3 / CASE #12 visible at all.
-        serverReceivedAt: localServerReceivedAt,
+        serverReceivedAt,
         timeSkewSeconds: skew.skewSeconds,
         clockSkewFlagged: skew.flagged,
         timeSource,
@@ -1758,7 +1750,7 @@ export async function processInspectionSubmission(
         console.warn(
           `[submitInspection] duplicate submission ignored (idempotency key hit) — ` +
             `machine=${machine.code} serial=${input.serialNumber} ` +
-            `inspectionTime=${localInspTime.toISOString()} → existing inspectionId=${inspectionId}`,
+            `inspectionTime=${rawInspTime.toISOString()} → existing inspectionId=${inspectionId}`,
         );
         // Doc 51 P2 (§5.6) — the retry is still a request worth auditing (default OFF).
         auditInspectionSubmission({
@@ -2236,7 +2228,7 @@ export async function processInspectionSubmission(
           console.warn(
             `[submitInspection] duplicate submission ignored (single-tx path) — ` +
               `machine=${machine.code} serial=${input.serialNumber} ` +
-              `inspectionTime=${localInspTime.toISOString()} → existing inspectionId=${inspectionId}`,
+              `inspectionTime=${rawInspTime.toISOString()} → existing inspectionId=${inspectionId}`,
           );
           auditInspectionSubmission({
             machineId: machine.id,
@@ -2366,7 +2358,7 @@ export async function processInspectionSubmission(
           overallResult: input.overallResult,
           productModelId: productModelRecord?.id ?? null,
           productionOrderCode: input.productionOrderCode ?? null,
-          inspectionTime: localInspTime.toISOString(),
+          inspectionTime: rawInspTime.toISOString(),
         },
         idempotencyKey: `qr-${inspectionId}`,
         // Cùng nguồn với hàng đã ghi: sự kiện ERP đi ra ngoài KHÔNG được mang một mã tập đoàn
@@ -2400,7 +2392,7 @@ export async function processInspectionSubmission(
       // one throttled alert. Opt-in (one extra read/board on the hot path). This
       // is NOT an idempotency retry: same machine + same key already short-circuited.
       if (serialCollisionDetectEnabled()) {
-        const since = new Date(localInspTime.getTime() - serialCollisionWindowSeconds() * 1000);
+        const since = new Date(rawInspTime.getTime() - serialCollisionWindowSeconds() * 1000);
         const otherMachineId = await findCollidingSerialMachine({
           serialNumber: input.serialNumber,
           machineId: machine.id,
@@ -3717,7 +3709,6 @@ async function submitInspectionTreeV2(
   // nó đưa chuỗi TRẦN của máy về cùng khung với `measurement_point_versions.changedAt`
   // (drizzle đọc cột `timestamp` bằng cách nối `+0000`). Dùng `new Date(chuỗi trần)`
   // ở đây làm verdict phụ thuộc múi giờ HỆ ĐIỀU HÀNH server — bẫy BG-96, im lặng.
-  // ⚠ KHÔNG đụng `rawInspTime`/`localInspTime` bên dưới: cột `inspectionTime` giữ NGUYÊN.
   const mocDo: Date | null =
     mocDoTuChuoi(payload.completedAt) ?? mocDoTuChuoi(payload.startedAt);
 
@@ -3728,14 +3719,15 @@ async function submitInspectionTreeV2(
 
   const cay = dichCayKetQua(payload, { cong: congSpec });
 
+  // ⚠ Cutover 2026-09-03 (Khối C QĐ-1, BG-96) — bỏ dịch "fake UTC": cột `inspectionTime`
+  // (dưới) và `mocDo`/cây (trên) nay CÙNG một hệ quy chiếu UTC thật. Trước cutover CHỈ
+  // `inspectionTime` bị dịch còn `mocDo`/cây thì không — đó CHÍNH LÀ bẫy BG-96 (lệch 7h
+  // trong CÙNG một request). Xem chú thích lớn ở processInspectionSubmission.
   const rawInspTime = payload.completedAt
     ? new Date(payload.completedAt)
     : payload.startedAt
       ? new Date(payload.startedAt)
       : new Date();
-  // Cùng dịch "fake UTC" mà nhánh v1.x áp dụng (xem chú thích lớn ở
-  // processInspectionSubmission) — để cột đọc nhất quán giữa hai nhánh.
-  const localInspTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
 
   const reservedInspectionId = await db.reserveInspectionId();
   const insertOutcome: CreateInspectionOutcome = { duplicate: false };
@@ -3754,7 +3746,7 @@ async function submitInspectionTreeV2(
       factoryCode: macTenant.factoryCode,
       workshopCode: macTenant.workshopCode,
       lineCode: macTenant.lineCode,
-      inspectionTime: localInspTime,
+      inspectionTime: rawInspTime,
       ntfSource: cay.ntfSource ?? undefined,
       machineProductIndex: payload.machineProductIndex ?? undefined,
       summaryCounts: payload.summary,
@@ -3807,7 +3799,7 @@ async function submitInspectionTreeV2(
     console.warn(
       `[submitInspection][v2.0] duplicate submission ignored (natural key hit) — ` +
         `machine=${machine.code} serial=${payload.serialNumber} ` +
-        `inspectionTime=${localInspTime.toISOString()} → existing inspectionId=${persisted.id}`,
+        `inspectionTime=${rawInspTime.toISOString()} → existing inspectionId=${persisted.id}`,
     );
   }
 

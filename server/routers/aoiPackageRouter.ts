@@ -1277,7 +1277,7 @@ export const aoiPackageRouter = router({
             // làm lượt phát lại chấm theo giới hạn của LÚC PHÁT LẠI. CÙNG hàm với cửa
             // trực tiếp — `mocDoTuChuoi` đưa chuỗi TRẦN về cùng khung với `changedAt`,
             // KHÔNG phải `new Date(chuỗi trần)` (phụ thuộc múi giờ server — bẫy BG-96).
-            // ⚠ KHÔNG thay `rawInspTime`/`inspectionTime` bên dưới — giữ nguyên byte.
+            // ⚠ KHÔNG thay `rawInspTime` bên dưới: cột `inspectionTime` giữ nguyên.
             const mocDo: Date | null =
               mocDoTuChuoi(metaData.completedAt) ?? mocDoTuChuoi(metaData.startedAt);
             const traBanDay = await db.traBanDayChoCay(
@@ -1346,7 +1346,9 @@ export const aoiPackageRouter = router({
               : metaData.startedAt
               ? new Date(metaData.startedAt)
               : new Date();
-            const inspectionTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
+            // Cutover 2026-09-03 (Khối C QĐ-1, BG-96) — bỏ dịch "fake UTC"; `inspectionTime`/
+            // `createdAt`/`updatedAt` dưới đây ghi THẲNG `rawInspTime` (UTC thật), cùng hệ quy
+            // chiếu với `mocDo`/cây ở trên và với đường trực tiếp v2.0 (machineApiRouters.ts).
 
             const reservedId = await db.reserveInspectionId();
             const insertOutcome: { duplicate: boolean } = { duplicate: false };
@@ -1366,12 +1368,12 @@ export const aoiPackageRouter = router({
               factoryCode: macTenantCommit.factoryCode ?? null,
               workshopCode: macTenantCommit.workshopCode ?? null,
               lineCode: macTenantCommit.lineCode ?? null,
-              inspectionTime,
+              inspectionTime: rawInspTime,
               ntfSource: cay.ntfSource ?? undefined,
               machineProductIndex: metaData.machineProductIndex ?? undefined,
               summaryCounts: metaData.summary,
-              createdAt: inspectionTime,
-              updatedAt: inspectionTime,
+              createdAt: rawInspTime,
+              updatedAt: rawInspTime,
               // Sổ idempotency (doc 51 P1) — packageId UNIQUE ⇒ khoá ổn định
               // qua mọi lần retry của CÙNG một gói. ĐÂY là thứ chặn đếm trùng
               // (BG-23), KHÔNG phải serial — chỉ số duy nhất trong `product_
