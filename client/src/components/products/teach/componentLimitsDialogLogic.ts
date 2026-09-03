@@ -147,6 +147,38 @@ export function soTruongDaNhap(gia: FormGioiHan): number {
 }
 
 /**
+ * M-5 (vòng sửa 9) — chế độ ĐƠN tiền điền ĐỦ 5 trường từ `chiTietQuery.data` (xem
+ * `ComponentLimitsDialog.tsx`), nên `layTruongDaNhap` (chỉ lọc "có nội dung") coi CẢ 5 trường là
+ * "đã nhập" ngay cả khi người dùng KHÔNG sửa gì — mở dialog rồi bấm Lưu ngay gửi nguyên 5 giá trị
+ * cũ lên `setLimitsBatch`, khiến server ghi thêm một hàng `measurement_point_versions` + bump
+ * `pointsConfigVersion` VÔ ÍCH (giới hạn không hề đổi).
+ *
+ * Hàm này lọc thêm một lớp: chỉ giữ trường có nội dung (`layTruongDaNhap`) VÀ giá trị (đã trim)
+ * KHÁC với `giaGoc` (bộ giá trị lúc VỪA TẢI — chụp lại NGAY khi `chiTietQuery.data` về, xem
+ * `ComponentLimitsDialog.tsx`). `giaGoc === null` (hàng loạt — N component có thể mang giá trị
+ * KHÁC NHAU, không có "giá trị đã tải" chung nào để so, xem docblock `ComponentLimitsDialog.tsx`)
+ * ⇒ giữ NGUYÊN hành vi cũ của `layTruongDaNhap` (mọi trường có nội dung đều gửi).
+ */
+export function layTruongThayDoi(
+  gia: FormGioiHan,
+  giaGoc: FormGioiHan | null,
+): Partial<Record<TenTruongForm, string>> {
+  const nhap = layTruongDaNhap(gia);
+  if (giaGoc === null) return nhap;
+  const ra: Partial<Record<TenTruongForm, string>> = {};
+  for (const truong of TEN_TRUONG_FORM) {
+    const v = nhap[truong];
+    if (v === undefined) continue; // trống — không đổi, đã lọc ở layTruongDaNhap
+    if (v !== giaGoc[truong].trim()) ra[truong] = v;
+  }
+  return ra;
+}
+
+export function soTruongThayDoi(gia: FormGioiHan, giaGoc: FormGioiHan | null): number {
+  return Object.keys(layTruongThayDoi(gia, giaGoc)).length;
+}
+
+/**
  * ★★★ Vòng sửa 1 (review — Important, race dữ liệu thật) ★★★
  *
  * TRƯỚC vòng sửa: chế độ đơn đổi từ điểm A sang điểm B trong khi `measurementPoint.getById(B)`
@@ -188,13 +220,18 @@ export function coTheLuu(opts: {
  * `ids` (1 phần tử = đơn, N phần tử = hàng loạt) + MỘT bộ giá trị form áp cho tất cả →
  * input thật của `measurementPoint.setLimitsBatch`. `changeReason` rỗng ⇒ bỏ hẳn khỏi input
  * (khớp `.optional()`, tránh gửi chuỗi rỗng vô nghĩa vào audit log).
+ *
+ * M-5 (vòng sửa 9) — `giaGoc` (mặc định `null`, TƯƠNG THÍCH NGƯỢC với lời gọi cũ) là bộ giá trị
+ * lúc vừa tải cho chế độ đơn — có `giaGoc` ⇒ CHỈ trường thật sự đổi mới vào `items` (xem
+ * `layTruongThayDoi`), tránh sinh version + bump vô ích khi người dùng Lưu mà không sửa gì.
  */
 export function xayInputSetLimitsBatch(
   ids: readonly number[],
   gia: FormGioiHan,
   changeReason: string,
+  giaGoc: FormGioiHan | null = null,
 ): SetLimitsBatchInput {
-  const truong = layTruongDaNhap(gia);
+  const truong = layTruongThayDoi(gia, giaGoc);
   const items: SetLimitsBatchItem[] = ids.map((id) => ({ id, ...truong }));
   const reason = changeReason.trim();
   return reason ? { items, changeReason: reason } : { items };

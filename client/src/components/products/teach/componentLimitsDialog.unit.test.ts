@@ -13,6 +13,8 @@ import {
   kiemTraForm,
   layTruongDaNhap,
   soTruongDaNhap,
+  layTruongThayDoi,
+  soTruongThayDoi,
   xayInputSetLimitsBatch,
   ketQuaThanhCong,
   docLoiCanDuyetNguong,
@@ -144,6 +146,46 @@ describe("layTruongDaNhap / soTruongDaNhap — CHỈ trường có nội dung, K
   });
 });
 
+describe("layTruongThayDoi / soTruongThayDoi — M-5 (vòng sửa 9): CHỈ trường THẬT SỰ đổi so với giaGoc", () => {
+  it("giaGoc null (hàng loạt) ⇒ rơi về hành vi CŨ của layTruongDaNhap, không đổi", () => {
+    const g = gia({ lowerLimit: "1", upperLimit: "9" });
+    expect(layTruongThayDoi(g, null)).toEqual(layTruongDaNhap(g));
+    expect(soTruongThayDoi(g, null)).toBe(soTruongDaNhap(g));
+  });
+
+  it("[KỊCH BẢN M-5] đơn tiền điền ĐỦ 5 trường, mở → Lưu NGAY không sửa gì ⇒ 0 trường thay đổi", () => {
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9", unit: "mm", heightMin: "0", heightMax: "5" });
+    // gia hiện tại Y HỆT giaGoc (người dùng chưa gõ gì) — đúng tình huống "mở → Lưu ngay".
+    expect(layTruongThayDoi(daTai, daTai)).toEqual({});
+    expect(soTruongThayDoi(daTai, daTai)).toBe(0);
+  });
+
+  it("chỉ MỘT trong 5 trường tiền điền bị sửa ⇒ CHỈ trường đó vào kết quả", () => {
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9", unit: "mm", heightMin: "0", heightMax: "5" });
+    const hienTai = { ...daTai, upperLimit: "10" }; // sửa đúng 1 trường
+    expect(layTruongThayDoi(hienTai, daTai)).toEqual({ upperLimit: "10" });
+    expect(soTruongThayDoi(hienTai, daTai)).toBe(1);
+  });
+
+  it("gõ lại ĐÚNG giá trị cũ (có khoảng trắng thừa) ⇒ vẫn coi là KHÔNG đổi (so sánh sau trim)", () => {
+    const daTai = gia({ lowerLimit: "1" });
+    const hienTai = gia({ lowerLimit: "  1  " });
+    expect(layTruongThayDoi(hienTai, daTai)).toEqual({});
+  });
+
+  it("xoá một trường tiền điền về rỗng ⇒ KHÔNG vào kết quả (rỗng = 'không đổi' theo layTruongDaNhap, không phải 'xoá')", () => {
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9" });
+    const hienTai = { ...daTai, upperLimit: "" };
+    expect(layTruongThayDoi(hienTai, daTai)).toEqual({});
+  });
+
+  it("trường vốn RỖNG ở giaGoc, người dùng nhập mới ⇒ ĐƯỢC tính là đổi", () => {
+    const daTai = gia({ lowerLimit: "1" }); // unit rỗng lúc tải
+    const hienTai = { ...daTai, unit: "mm" };
+    expect(layTruongThayDoi(hienTai, daTai)).toEqual({ unit: "mm" });
+  });
+});
+
 describe("xayInputSetLimitsBatch — form → items setLimitsBatch", () => {
   it("ĐƠN (1 id) ⇒ items có ĐÚNG 1 phần tử, đúng field đã nhập", () => {
     const input = xayInputSetLimitsBatch([42], gia({ lowerLimit: "1", upperLimit: "9" }), "");
@@ -172,6 +214,32 @@ describe("xayInputSetLimitsBatch — form → items setLimitsBatch", () => {
 
     const coLyDo = xayInputSetLimitsBatch([1], FORM_RONG, "  đổi theo SPI mới  ");
     expect(coLyDo.changeReason).toBe("đổi theo SPI mới");
+  });
+
+  // M-5 (vòng sửa 9) — Test bắt buộc theo brief: "mở → Lưu ngay ⇒ 0 item / không gọi mutation".
+  // `luuMutation.mutate` chỉ được gọi từ `ComponentLimitsDialog.tsx` (không test được ở đây, repo
+  // không có jsdom/@testing-library/react — xem docblock đầu file) NHƯNG `items` rỗng ở input xây
+  // được bằng hàm THUẦN này là điều kiện CẦN: component không có gì để gửi thì việc gọi/không gọi
+  // mutation chỉ còn là "gọi mutation với 0 field thay đổi", ý nghĩa hành vi giống hệt "không gọi".
+  it("[KỊCH BẢN M-5] giaGoc = gia (mở → Lưu ngay, không sửa gì) ⇒ item KHÔNG mang field nào ngoài id", () => {
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9", unit: "mm", heightMin: "0", heightMax: "5" });
+    const input = xayInputSetLimitsBatch([42], daTai, "", daTai);
+    expect(input.items).toHaveLength(1);
+    expect(input.items[0]).toEqual({ id: 42 });
+  });
+
+  it("giaGoc bỏ qua (không truyền) ⇒ TƯƠNG THÍCH NGƯỢC, hành vi y hệt trước M-5", () => {
+    const g = gia({ lowerLimit: "1", upperLimit: "9" });
+    const cu = xayInputSetLimitsBatch([1], g, "");
+    const moi = xayInputSetLimitsBatch([1], g, "", null);
+    expect(cu).toEqual(moi);
+  });
+
+  it("giaGoc có, CHỈ 1/5 trường đổi ⇒ item CHỈ mang đúng field đó", () => {
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9", unit: "mm", heightMin: "0", heightMax: "5" });
+    const hienTai = { ...daTai, heightMax: "8" };
+    const input = xayInputSetLimitsBatch([7], hienTai, "", daTai);
+    expect(input.items[0]).toEqual({ id: 7, heightMax: "8" });
   });
 });
 

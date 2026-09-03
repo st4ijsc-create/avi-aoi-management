@@ -8,7 +8,7 @@
  * xem cảnh báo BG-105 ở `teachTreeLogic.ts`. Thanh đầu bảng hiện `thongKeGioiHan` (đếm TOÀN
  * CÂY của `(sản phẩm, máy)`, do `TeachTreeTab` truyền xuống) — bảng này KHÔNG tự đếm lại.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { useCanWrite } from "@/components/PermissionGate";
@@ -47,6 +47,16 @@ export function ComponentLimitsTable({ captureRowId, stats, onEdit, onBatchEdit 
   );
   const rows = mapComponentRows(componentsQuery.data ?? []);
   const [selectedIds, setSelectedIds] = useState<Array<string | number>>([]);
+
+  // M-3 (vòng sửa 9) — `TeachTreeTab.tsx` mount bảng này KHÔNG có `key={captureRowId}`, nên
+  // `selectedIds` (state cục bộ) SỐNG SÓT qua lần đổi capture: chọn 2 ở capture A rồi bấm sang
+  // capture B ⇒ nút vẫn hiện "Dạy giới hạn (2)" (đếm theo id CŨ của A) trong khi `rows` đã là của
+  // B — bấm mở dialog thì `rows.filter(r => selectedIds.includes(r.id))` trả RỖNG (một point-def
+  // chỉ thuộc đúng một capture) ⇒ dialog mở 0 linh kiện, lệch với số trên nút. Xoá lựa chọn NGAY
+  // khi `captureRowId` đổi — cùng họ với race A→B mà vòng sửa 1 (Task 11) đã vá cho chế độ đơn.
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [captureRowId]);
 
   const columns: DataTableColumn<ComponentLimitsRow>[] = [
     {
@@ -90,7 +100,7 @@ export function ComponentLimitsTable({ captureRowId, stats, onEdit, onBatchEdit 
           size="sm"
           variant="ghost"
           disabled={!canEdit}
-          title={t("teachTree.dayGioiHanComingSoon", "Dạy giới hạn")}
+          title={t("teachTree.dayGioiHanTooltip", "Dạy giới hạn")}
           onClick={() => onEdit(r)}
         >
           <Pencil className="h-4 w-4" />
@@ -117,7 +127,7 @@ export function ComponentLimitsTable({ captureRowId, stats, onEdit, onBatchEdit 
             size="sm"
             variant="outline"
             disabled={!canEdit || selectedIds.length === 0}
-            title={t("teachTree.dayGioiHanComingSoon", "Dạy giới hạn")}
+            title={t("teachTree.dayGioiHanTooltip", "Dạy giới hạn")}
             onClick={() => onBatchEdit(rows.filter((r) => selectedIds.includes(r.id)))}
           >
             <GraduationCap className="h-4 w-4 mr-1.5" />

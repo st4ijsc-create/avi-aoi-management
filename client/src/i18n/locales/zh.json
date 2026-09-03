@@ -19957,7 +19957,7 @@
     "trangThai": "状态",
     "daDay": "已示教限值",
     "chuaCoGioiHan": "未示教",
-    "dayGioiHanComingSoon": "示教限值",
+    "dayGioiHanTooltip": "示教限值",
     "dayGioiHanHangLoat": "批量示教限值（{{n}}）"
   },
   "pointLimits": {
@@ -19982,6 +19982,7 @@
     "errCaoMinLonHonMax": "最小高度必须小于或等于最大高度",
     "errFormKhongHopLe": "请先修正有错误提示的字段再保存",
     "errChuaNhapGi": "未输入任何要保存的字段",
+    "errKhongDoiGi": "没有字段与已保存的值不同",
     "errDangTaiChiTiet": "正在加载该点的数据——请等待加载完成后再保存",
     "hangLoatAnCanvas": "已选择多个点——每个点都有各自的参考图像，画布仅在单点编辑模式下显示。",
     "lyDoDoi": "更改原因（可选）",

@@ -19929,7 +19929,7 @@
     "trangThai": "Trạng thái",
     "daDay": "Đã dạy giới hạn",
     "chuaCoGioiHan": "Chưa dạy",
-    "dayGioiHanComingSoon": "Dạy giới hạn",
+    "dayGioiHanTooltip": "Dạy giới hạn",
     "dayGioiHanHangLoat": "Dạy giới hạn ({{n}})"
   },
   "pointLimits": {
@@ -19954,6 +19954,7 @@
     "errCaoMinLonHonMax": "Cao tối thiểu phải nhỏ hơn hoặc bằng cao tối đa",
     "errFormKhongHopLe": "Sửa các trường đang báo lỗi trước khi lưu",
     "errChuaNhapGi": "Chưa nhập trường nào để lưu",
+    "errKhongDoiGi": "Chưa có trường nào thay đổi so với giá trị đã lưu",
     "errDangTaiChiTiet": "Đang tải dữ liệu điểm — đợi tải xong rồi lưu",
     "hangLoatAnCanvas": "Chọn nhiều điểm — mỗi điểm có ảnh tham chiếu riêng, canvas chỉ hiện khi sửa đơn.",
     "lyDoDoi": "Lý do đổi (không bắt buộc)",

@@ -70,7 +70,7 @@ import {
   type FormGioiHan,
   type TenTruongForm,
   kiemTraForm,
-  soTruongDaNhap,
+  soTruongThayDoi,
   xayInputSetLimitsBatch,
   ketQuaThanhCong,
   docLoiCanDuyetNguong,
@@ -110,6 +110,11 @@ export function ComponentLimitsDialog({
   const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [gia, setGia] = useState<FormGioiHan>(FORM_RONG);
+  // M-5 (vòng sửa 9) — giá trị ĐÃ TẢI của form đơn, chụp lại NGAY khi `chiTietQuery.data` về (xem
+  // effect dưới) — baseline để `layTruongThayDoi`/`soTruongThayDoi` chỉ gửi trường THẬT SỰ đổi.
+  // `null` ở hàng loạt (không có "giá trị đã tải" chung — N component có thể khác nhau) VÀ trong
+  // lúc đơn đang tải/chưa tải (tránh so `gia` MỚI với baseline CŨ của điểm trước).
+  const [giaGoc, setGiaGoc] = useState<FormGioiHan | null>(null);
   const [lyDoDoi, setLyDoDoi] = useState("");
   const [canDuyet, setCanDuyet] = useState<KetQuaCanDuyet | null>(null);
 
@@ -135,24 +140,31 @@ export function ComponentLimitsDialog({
     setCanDuyet(null);
     setLyDoDoi("");
     setGia(FORM_RONG);
+    setGiaGoc(null); // M-5 — không baseline nào tin được cho tới khi chiTietQuery.data mới về.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, donMode, rows.map((r) => r.id).join(",")]);
 
   useEffect(() => {
     if (!open || !donMode || !chiTietQuery.data) return;
     const d = chiTietQuery.data as Record<string, unknown>;
-    setGia({
+    const daTai: FormGioiHan = {
       lowerLimit: docChuoi(d.lowerLimit),
       upperLimit: docChuoi(d.upperLimit),
       unit: docChuoi(d.unit),
       heightMin: docChuoi(d.heightMin),
       heightMax: docChuoi(d.heightMax),
-    });
+    };
+    setGia(daTai);
+    setGiaGoc(daTai); // M-5 — baseline = ĐÚNG giá trị vừa tiền điền, để so sánh trước khi Lưu.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, donMode, chiTietQuery.data]);
 
   const loiForm = useMemo(() => kiemTraForm(gia), [gia]);
-  const soTruong = soTruongDaNhap(gia);
+  // M-5 (vòng sửa 9) — đơn: chỉ đếm trường THẬT SỰ đổi so với `giaGoc` (đếm cả 5 trường tiền điền
+  // dù không sửa gì sẽ cho phép Lưu vô ích — sinh version + bump `pointsConfigVersion`, xem
+  // `layTruongThayDoi`). Hàng loạt: `giaGoc` luôn `null` ⇒ hàm rơi về hành vi CŨ (đếm mọi trường
+  // có nội dung), không đổi.
+  const soTruong = soTruongThayDoi(gia, giaGoc);
   // Vòng sửa 1 (b) — đơn mode: khoá Lưu trong SUỐT lúc `getById` đang tải/tải lại (không riêng
   // lần đầu) — `isFetching` là tập CHA của `isLoading`, bắt cả trường hợp revisit-cache-nhưng-
   // đang-refetch-nền. Hàng loạt không phụ thuộc `getById` ⇒ luôn `false`.
@@ -199,7 +211,14 @@ export function ComponentLimitsDialog({
       return;
     }
     if (soTruong === 0) {
-      toast.error(t("teachLimits.errChuaNhapGi", "Chưa nhập trường nào để lưu"));
+      // M-5 (vòng sửa 9) — đơn + đã có baseline (đã tiền điền) ⇒ "0 trường thay đổi" nghĩa là
+      // KHÁC với "chưa nhập gì" (form CÓ giá trị, chỉ là giống hệt lúc tải) — nói đúng để người
+      // dùng không thắc mắc "tôi nhập rồi mà sao báo chưa nhập".
+      const khoa = donMode && giaGoc !== null ? "teachLimits.errKhongDoiGi" : "teachLimits.errChuaNhapGi";
+      const macDinh = donMode && giaGoc !== null
+        ? "Chưa có trường nào thay đổi so với giá trị đã lưu"
+        : "Chưa nhập trường nào để lưu";
+      toast.error(t(khoa, macDinh));
       return;
     }
     if (!duocLuu) return; // phòng thủ cuối — không nên tới đây nếu ba nhánh trên đã bắt hết
@@ -208,6 +227,7 @@ export function ComponentLimitsDialog({
       rows.map((r) => r.id),
       gia,
       lyDoDoi,
+      giaGoc,
     );
     luuMutation.mutate(input);
   };

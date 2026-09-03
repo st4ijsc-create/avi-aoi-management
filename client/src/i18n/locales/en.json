@@ -19949,7 +19949,7 @@
     "trangThai": "Status",
     "daDay": "Limit taught",
     "chuaCoGioiHan": "Not taught",
-    "dayGioiHanComingSoon": "Teach limit",
+    "dayGioiHanTooltip": "Teach limit",
     "dayGioiHanHangLoat": "Teach limit ({{n}})"
   },
   "pointLimits": {
@@ -19974,6 +19974,7 @@
     "errCaoMinLonHonMax": "Min height must be less than or equal to max height",
     "errFormKhongHopLe": "Fix the fields showing errors before saving",
     "errChuaNhapGi": "No field entered to save",
+    "errKhongDoiGi": "No field has changed from the saved value",
     "errDangTaiChiTiet": "Loading point data — wait for it to finish before saving",
     "hangLoatAnCanvas": "Multiple points selected — each has its own reference image, the canvas only shows in single-edit mode.",
     "lyDoDoi": "Reason for change (optional)",
