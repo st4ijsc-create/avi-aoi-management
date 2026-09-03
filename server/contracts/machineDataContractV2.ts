@@ -305,12 +305,22 @@ export type MachineDataContractV2 = z.infer<typeof machineDataContractV2>;
  *   - `captureId`  .max(64)  — PHẢI khớp `captureV2.captureId` (cùng khoá join,
  *     hai phía lệch trần là tạo ra hai "sức chứa" khác nhau cho CÙNG một giá trị).
  *   - `fileName`   .max(255) — quy ước "đường dẫn/tên tệp" 255 dùng xuyên suốt
- *     schema này (`captureName`, `componentName`…), KHÔNG khớp cột DB nào (ảnh
- *     không có bảng package_images cho hình dạng cây — xem "mối lo" báo cáo BG-85).
- *   - `captureName?` .max(255) — VỆ SINH, cùng con số `captureV2.captureName`.
- *   - `sha256?`     .max(128) — VỆ SINH, cùng con số `presignCoreObject.sha256`
- *     (dư sức SHA-256 hex thật 64 ký tự). Kiểm nội dung băm là Task 2 (BG-87),
- *     KHÔNG thuộc BG-85 — trường này chỉ được NHẬN ở đây, chưa bị đối chiếu byte thật.
+ *     schema này (`captureName`, `componentName`…). ★★★ N-5 (re-review lượt 8)
+ *     — CÂU CŨ Ở ĐÂY NAY SAI: nó viết *"KHÔNG khớp cột DB nào (ảnh không có
+ *     bảng package_images cho hình dạng cây)"*. I-6 (review lượt 8, mig 0345)
+ *     đã NỐI LẠI đường ghi đó: `commit` INSERT `images[]` đã thẩm định vào
+ *     `package_images`, nên `fileName` KHỚP CỘT THẬT
+ *     `package_images."fileName" varchar(255)` — đo `information_schema`, vai
+ *     `avi_app`, 2026-09-03: varchar(255) ở CẢ HAI DB (`aoi_management`,
+ *     `aoi_management_test`). Cùng lô đó nới `package_images."pointCode"` lên
+ *     varchar(64) (khớp `captureV2.captureId .max(64)`).
+ *   - `captureName?` .max(255) — khớp `package_images."pointName" varchar(255)`
+ *     (đo cùng lượt trên) qua `img.captureName` ở `commit`.
+ *   - `sha256?`     .max(128) — cùng con số `presignCoreObject.sha256`. ★★★ N-5
+ *     — CÂU CŨ *"trường này chỉ được NHẬN ở đây, chưa bị đối chiếu byte thật"*
+ *     SAI TỪ BG-87: `aoiPackageRouter.commit` băm NGUYÊN VĂN nội dung ảnh trong
+ *     ZIP và so với lời khai này; lệch ⇒ TỪ CHỐI gói (`images[].sha256`). Lưới:
+ *     `aoiPackageBaLoToanVenBg87.test.ts` mệnh đề 1 (sha256 CẤP-ẢNH).
  */
 export const imageRefSchema = z.object({
   captureId: z.string().trim().min(1).max(64),

@@ -233,7 +233,28 @@ export const productInspections = pgTable("product_inspections", {
   //     global, not per-chunk.
   //   • PARTIAL (serialNumber <> ''): legacy/empty-serial rows are EXEMPT so a
   //     pre-existing batch of blank serials can never collide with each other.
-  //     New ingest can't create them anyway (submitInspection zod min(1)).
+  //     ★★★ N-3 (re-review lượt 8) — CÂU CŨ Ở ĐÂY NAY SAI: nó viết *"New ingest
+  //     can't create them anyway (submitInspection zod min(1))"*. KHÔNG CÒN
+  //     ĐÚNG, ở CẢ HAI đường v2:
+  //       · `machineDataContractV2.serialNumber` CỐ Ý không `.min(1)` (serial
+  //         rỗng là hình dạng THẬT khi máy chưa gán serial) ⇒ đường trực tiếp
+  //         v2.0 sinh hàng serial-rỗng từ trước;
+  //       · C-1 (review lượt 8) bỏ cổng `if (metaData.serialNumber)` ở cửa ZIP
+  //         ⇒ cửa đó nay CŨNG sinh. Đo: `product_inspections` có
+  //         `serialNumber=''` = 188/45 679 trong `aoi_management_test`
+  //         (`current_database()`, vai `avi_app`) và ĐANG TĂNG.
+  //     ĐO LẠI 2026-09-03 (vai `avi_app`, kèm `current_database()`):
+  //         `aoi_management`      : 0/0 (DB dev rỗng hoàn toàn)
+  //         `aoi_management_test` : `serialNumber=''` = **197 / 45 780**
+  //       (re-review lượt 8 đo 188/45 679; review lượt 8 đo 99/44 596) ⇒ đường
+  //       ghi này SỐNG và đang tăng, không phải một khả năng lý thuyết.
+  //     HỆ QUẢ PHẢI ĐỌC KÈM (N-2, nợ chưa đóng): hàng serial-rỗng THOÁT HOÀN
+  //     TOÀN khoá tự nhiên này ⇒ lớp khử trùng DUY NHẤT còn lại cho chúng là sổ
+  //     idempotency `aoi-pkg:<packageId>` (`inspection_idempotency_keys`), mà
+  //     khoá đó suy từ `packageId` chứ KHÔNG từ nội dung. Cùng một bo gửi lại
+  //     dưới một `packageId` MỚI ⇒ HAI hàng ⇒ đếm hai lần. Đây là mặt ĐẾM
+  //     TRÙNG, không phải mặt TỪ CHỐI (chỉ mục RIÊNG PHẦN nên không có nguy cơ
+  //     23505).
   //   • App side: createProductInspection uses ON CONFLICT DO NOTHING and
   //     resolves the existing row — inert (harmless no-op) if the DB index is
   //     not in force yet (0272 records 'partial' in db_feature_status then).

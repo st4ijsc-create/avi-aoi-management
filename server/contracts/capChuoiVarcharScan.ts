@@ -193,6 +193,35 @@ export const KIEM_KE_CAP_CHUOI: readonly MucCapChuoi[] = [
  * `'dead'` sau `nguongLoiVinhVienZip()` lượt (nặng hơn BG-73: gói CHẾT THẬT,
  * không phải kẹt `'failed'`). Đã nới `.max(64)` khớp lại — xem docblock đầy
  * đủ tại `metaJsonSchema.inspectionTime` (`aoiPackageRouter.ts`).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ⛔ M-2 + N-6 (re-review lượt 8) — ĐỌC TRƯỚC KHI TIN BẢNG NÀY.
+ * ══════════════════════════════════════════════════════════════════════════
+ * BẢNG NÀY MÔ TẢ MỘT HỢP ĐỒNG ĐÃ CHẾT, VÀ KHÔNG CÓ HỘ TIÊU THỤ NÀO.
+ *
+ * 1. **Hình dạng đã đổi.** `metaJsonSchema` hôm nay là `machineDataContractV2`
+ *    (cây `surfaces[]/positions[]/captures[]/components[]`) `.extend({images})`
+ *    — BG-85. Các trường `measurements[]`/`points[]`/`stageCode`/`operatorId`…
+ *    liệt kê dưới đây thuộc hợp đồng PHẲNG đã bị XOÁ; chúng KHÔNG còn tồn tại
+ *    trong schema nào. Câu mở đầu "kiểm kê ĐẦY ĐỦ 30 trường chuỗi của
+ *    `metaJsonSchema`" vì thế đúng vào ngày viết, sai từ BG-85.
+ * 2. **0 hộ tiêu thụ.** Grep toàn repo (2026-09-03): `KIEM_KE_META_JSON` chỉ
+ *    xuất hiện trong CHÍNH tệp này (một khai báo + ba lần nhắc trong chú
+ *    thích). Không lưới nào chạy nó ⇒ **không ai đỏ được** dù mọi con số ở đây
+ *    sai. Đây là lý do M-2/N-6 tồn tại được qua nhiều lượt review.
+ * 3. **Số SAI đã sửa ở lượt này.** Bốn hàng ứng viên `pointCode` ghi `max: 50`
+ *    kèm nhãn `nguon: "db"` và ghi chú "package_images.pointCode varchar(50)".
+ *    Migration 0345 (I-6) đã nới cột lên **varchar(64)**. Đo lại
+ *    `information_schema.columns`, vai `avi_app`, 2026-09-03:
+ *      `current_database()='aoi_management'`      → `pointCode` = varchar(**64**)
+ *      `current_database()='aoi_management_test'` → `pointCode` = varchar(**64**)
+ *    Đã sửa 50 → 64 ở bốn hàng đó. `pointName`/`fileName` đo được vẫn
+ *    varchar(255) — giữ nguyên.
+ * ⇒ QUYẾT ĐỊNH: GIỮ bảng (xoá một export là một thay đổi hành vi cần lượt
+ *   riêng), nhưng nó KHÔNG được coi là nguồn sự thật. Ai cần kiểm kê cửa ZIP
+ *   hôm nay phải đọc `KIEM_KE_CAP_CHUOI` (machineDataContractV2) — bảng CÓ hộ
+ *   tiêu thụ. NỢ: hoặc nối một lưới tiêu thụ cho bảng này trên hợp đồng CÂY,
+ *   hoặc xoá nó. Đừng "sửa cột về 50" theo bảng này — cột đúng là 64.
  */
 export const KIEM_KE_META_JSON: readonly MucCapChuoi[] = [
   // ── Nhóm (A) khớp cột THẬT ────────────────────────────────────────────────
@@ -202,14 +231,14 @@ export const KIEM_KE_META_JSON: readonly MucCapChuoi[] = [
   { ten: "stageCode", duongDan: ["stageCode"], max: 50, nguon: "db", ghiChu: "product_inspections.stageCode varchar(50)" },
   { ten: "productionOrderCode", duongDan: ["productionOrderCode"], max: 100, nguon: "db", ghiChu: "product_inspections.productionOrderCode varchar(100)" },
   { ten: "operatorId", duongDan: ["operatorId"], max: 50, nguon: "db", ghiChu: "product_inspections.operatorId varchar(50)" },
-  { ten: "measurements[].pointId", duongDan: ["measurements", "[]", "pointId"], max: 50, nguon: "db", ghiChu: "package_images.pointCode varchar(50) (1/3 nguồn ứng viên — xem docblock schema)" },
-  { ten: "measurements[].pointCode", duongDan: ["measurements", "[]", "pointCode"], max: 50, nguon: "db", ghiChu: "package_images.pointCode varchar(50) (2/3 nguồn ứng viên)" },
-  { ten: "measurements[].code", duongDan: ["measurements", "[]", "code"], max: 50, nguon: "db", ghiChu: "package_images.pointCode varchar(50) (3/3 nguồn ứng viên)" },
+  { ten: "measurements[].pointId", duongDan: ["measurements", "[]", "pointId"], max: 64, nguon: "db", ghiChu: "package_images.pointCode varchar(64) — N-6: mig 0345 nới 50→64, đo avi_app 2026-09-03 ở CẢ HAI DB (1/3 nguồn ứng viên — xem docblock schema)" },
+  { ten: "measurements[].pointCode", duongDan: ["measurements", "[]", "pointCode"], max: 64, nguon: "db", ghiChu: "package_images.pointCode varchar(64) — N-6, cùng cột trên (2/3 nguồn ứng viên)" },
+  { ten: "measurements[].code", duongDan: ["measurements", "[]", "code"], max: 64, nguon: "db", ghiChu: "package_images.pointCode varchar(64) — N-6, cùng cột trên (3/3 nguồn ứng viên)" },
   { ten: "measurements[].name", duongDan: ["measurements", "[]", "name"], max: 255, nguon: "db", ghiChu: "package_images.pointName varchar(255)" },
   { ten: "measurements[].fileName", duongDan: ["measurements", "[]", "fileName"], max: 255, nguon: "db", ghiChu: "package_images.fileName varchar(255)" },
   { ten: "measurements[].measuredValue", duongDan: ["measurements", "[]", "measuredValue"], max: 100, nguon: "db", ghiChu: "package_images.measurementValue varchar(100) — SIẾT HƠN measurement_results.measuredValueText(255), xem docblock schema" },
   { ten: "measurements[].value", duongDan: ["measurements", "[]", "value"], max: 100, nguon: "db", ghiChu: "package_images.measurementValue varchar(100) — cùng cột trên" },
-  { ten: "points[].code", duongDan: ["points", "[]", "code"], max: 50, nguon: "db", ghiChu: "package_images.pointCode varchar(50) (đường points[] tương thích ngược)" },
+  { ten: "points[].code", duongDan: ["points", "[]", "code"], max: 64, nguon: "db", ghiChu: "package_images.pointCode varchar(64) — N-6, cùng cột trên (đường points[] tương thích ngược)" },
   { ten: "points[].name", duongDan: ["points", "[]", "name"], max: 255, nguon: "db", ghiChu: "package_images.pointName varchar(255)" },
   { ten: "points[].fileName", duongDan: ["points", "[]", "fileName"], max: 255, nguon: "db", ghiChu: "package_images.fileName varchar(255)" },
   { ten: "points[].value", duongDan: ["points", "[]", "value"], max: 100, nguon: "db", ghiChu: "package_images.measurementValue varchar(100)" },
@@ -266,11 +295,15 @@ export const KIEM_KE_META_JSON: readonly MucCapChuoi[] = [
  * nhưng `.max(40)` từ chối trên đường v1.x BẬN NHẤT. Nới `.max(40)` →
  * `.max(64)` (xem docblock tại `submitInspectionCoreObject.inspectionTime`/
  * `.serverReceivedAt`, `machineApiRouters.ts`, cho bằng chứng đo được đầy đủ +
- * lý do). `startedAt`/`completedAt` ở `KIEM_KE_CAP_CHUOI`
- * (machineDataContractV2, đường v2.0 cây) và `startedAt`/`finishedAt`/
- * `inspectionTime` ở `KIEM_KE_META_JSON` (cửa ZIP) GIỮ NGUYÊN 40 — brief
- * Pha 1F Task 2 đo CHỈ hai trường này (v1.x) hồi quy, không mở rộng sang
- * hai schema kia.
+ * lý do).
+ * ★★★ M-2 (re-review lượt 8) — CÂU CŨ Ở ĐÂY NAY SAI: nó viết
+ * *"`startedAt`/`completedAt` ở `KIEM_KE_CAP_CHUOI` … và `startedAt`/
+ * `finishedAt`/`inspectionTime` ở `KIEM_KE_META_JSON` (cửa ZIP) GIỮ NGUYÊN
+ * 40"*. Đúng khi viết (Pha 1F Task 2 chỉ nới v1.x), nhưng **Pha 1F Task 6
+ * (C-2 ⛔) đã nới CẢ NĂM trường đó lên 64 sau đó** — đọc ngay trong hai bảng
+ * dưới: `:158`, `:159`, `:249`, `:250`, `:251` đều `max: 64`. Một câu trong
+ * docblock nói ngược lại chính bảng cách nó vài dòng là đúng lớp lỗi lô này
+ * dọn: nơi cất "sự thật" mà lượt review sau sẽ ĐỌC và TIN.
  */
 export const KIEM_KE_SUBMIT_INSPECTION_CORE: readonly MucCapChuoi[] = [
   // ── Nhóm (A) khớp cột THẬT ──────────────────────────────────────────────
@@ -315,17 +348,35 @@ export const KIEM_KE_SUBMIT_INSPECTION_CORE: readonly MucCapChuoi[] = [
  *   `presign` INSERT trường này NGUYÊN VĂN làm `packageId`, TRƯỚC KHI
  *   `metaJsonSchema` (Pha 1D Task 5) kịp soi bất kỳ trường nào của `meta.json`.
  * (B) VỆ SINH — `apiKey`/`machineCode` (so khớp qua authenticateMachine, cùng
- *   con số hai trường cùng tên ở `submitInspectionCoreObject`); `sha256`
- *   (khai báo nhưng KHÔNG hề được đọc ở đâu trong `aoiPackageRouter.ts` — đã
- *   grep `input.sha256`, 0 kết quả ngoài khai báo — `.max(128)` dư sức
- *   SHA-256 hex thật 64 ký tự).
+ *   con số hai trường cùng tên ở `submitInspectionCoreObject`).
+ *
+ * ★★★ N-4 (re-review lượt 8) — LỜI KHAI CŨ Ở ĐÂY NAY SAI, viết lại cho đúng
+ * hôm nay. Câu cũ xếp `sha256` vào nhóm (B) với lý do *"khai báo nhưng KHÔNG hề
+ * được đọc ở đâu trong `aoiPackageRouter.ts` — đã grep `input.sha256`, 0 kết
+ * quả ngoài khai báo"*. I-7 (mig 0346) đã làm câu đó sai NGAY TRONG CÙNG LÔ VÁ
+ * viết nó. Đo lại hôm nay (grep `input.sha256` trong `aoiPackageRouter.ts`):
+ * **5 kết quả mã** — `:763` (N-1: presign gọi LẠI làm mới lời khai), `:830`
+ * (presign INSERT vào cột), `:1050`/`:1055`/`:1060` (commit băm byte thật rồi
+ * so). Cộng thêm hai điểm ĐỌC CỘT ngoài file: `_core/index.ts:4843/:4846`
+ * (tuyến PUT upload) và `aoiPackageRouter.ts` nhánh (3b) của `commit`.
+ * ⇒ `sha256` nay thuộc nhóm (A): nó ĐI THẲNG vào cột
+ * `inspection_packages."sha256Presign" varchar(128)` (đo `information_schema`,
+ * vai `avi_app`, 2026-09-03: `character varying(128)` ở CẢ HAI DB
+ * `aoi_management` và `aoi_management_test`) — `.max(128)` khớp cột, không còn
+ * là "dư sức cho 64 ký tự hex".
+ * ⚠ Lưới tiêu thụ (`capChuoiVarcharDuongIngestMacDinh.test.ts` §2b) chỉ kiểm
+ * con số `.max()`, KHÔNG kiểm `ghiChu`/`nguon` của hàng này ⇒ nó XANH trên một
+ * lời khai sai suốt một lượt review. Đó là lý do lời khai phải được sửa BẰNG
+ * TAY ở đây, và là một mối lo đã ghi: chú thích trong bảng kiểm kê không có
+ * cổng nào canh.
  */
 export const KIEM_KE_PRESIGN: readonly MucCapChuoi[] = [
   { ten: "inspectionId", duongDan: ["inspectionId"], max: 100, nguon: "db",
     ghiChu: "inspection_packages.packageId varchar(100) — INSERT nguyên văn, lỗ 22001 THẬT trước Task 3" },
   { ten: "apiKey", duongDan: ["apiKey"], max: 256, nguon: "ve-sinh", ghiChu: "so khớp qua authenticateMachine, không INSERT" },
   { ten: "machineCode", duongDan: ["machineCode"], max: 50, nguon: "ve-sinh", ghiChu: "so khớp qua authenticateMachine, khớp sức chứa machines.code varchar(50)" },
-  { ten: "sha256", duongDan: ["sha256"], max: 128, nguon: "ve-sinh", ghiChu: "khai báo nhưng không đọc ở đâu — dư sức SHA-256 hex thật (64 ký tự)" },
+  { ten: "sha256", duongDan: ["sha256"], max: 128, nguon: "db",
+    ghiChu: "inspection_packages.sha256Presign varchar(128) — I-7/mig 0346: presign INSERT nguyên văn (đã chuẩn hoá chữ thường), rồi ĐỐI CHIẾU với byte ZIP THẬT ở tuyến PUT upload và ở backstop 'pending' của commit. N-4: KHÔNG còn là 'khai báo nhưng không đọc'" },
 ];
 
 export interface KetQuaKiemKe {

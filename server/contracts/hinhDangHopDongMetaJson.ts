@@ -225,16 +225,35 @@ export function duongVangMat(data: unknown, duongDan: string): boolean {
  * người review đổi `hanhViDung` "NG"→"NTF" (sai ngữ nghĩa, "NTF" vẫn khác
  * "OK") và cổng vẫn 49/49 XANH: không có gì đối chiếu `hanhViDung` với LUẬT
  * THẬT, chỉ có nó khác `hanhViHienTai`. `tinhHanhViDung` đóng đúng lỗ đó —
- * một hàm THUẦN, PHẢI tái dùng một hàm suy verdict production THẬT đã export
- * (`inferAoiOverallResult`, KHÔNG viết công thức ưu tiên NG>NTF>OK một bản
- * chép tay thứ hai) cho phần CỘNG DỒN/ƯU TIÊN — chỉ được viết logic CỤC BỘ
- * cho đúng PHẦN bị bug bỏ sót (ví dụ BG-77: gộp CẢ HAI mảng thay vì chọn MỘT
- * theo độ rỗng). Bắt buộc ở TẦNG KIỂU (không phải optional) — một
- * `ghiNhanNoDaDuyet` MỚI không có `tinhHanhViDung` không qua được
- * `npm run check`, không chỉ "quên" một dòng lưới. `hinhDangHopDongMetaJson.test.ts`
- * §4 gọi `tinhHanhViDung(meta)` và so với `hanhViDung` khai — lệch ⇒ ĐỎ, cộng
- * một ca tự-kiểm chống "hàm trả hằng số nguỵ trang" (biến thể `meta` KHÔNG
- * NG/NTF nào phải luôn tính ra "OK", cùng hợp đồng `inferAoiOverallResult`).
+ * một hàm THUẦN, PHẢI tái dùng hàm suy verdict PRODUCTION THẬT (KHÔNG viết
+ * công thức ưu tiên NG > NTF > OK một bản chép tay thứ hai) cho phần CỘNG
+ * DỒN/ƯU TIÊN — chỉ được viết logic CỤC BỘ cho đúng PHẦN bị bug bỏ sót (ví dụ
+ * BG-77: gộp CẢ HAI mảng thay vì chọn MỘT theo độ rỗng).
+ *
+ * ★★★ M-5 (re-review lượt 8) — MỆNH LỆNH CŨ Ở ĐÂY KHÔNG THI HÀNH ĐƯỢC, sửa
+ * lại. Hai dòng cũ chỉ đích danh `inferAoiOverallResult` làm hàm phải tái
+ * dùng. BG-85 đã XOÁ hàm đó: grep toàn repo hôm nay = **0 định nghĩa, 0 lời
+ * gọi** (chỉ còn tên trong chú thích lịch sử và trong hai `expect(...).not.
+ * toMatch(...)` của `aoiPackageIngestHopNhat.test.ts:57-58` — hai dòng CANH
+ * cho nó ở lại đã chết). Một mệnh lệnh trỏ vào hàm không tồn tại thì người
+ * đọc sau hoặc bỏ qua nó, hoặc DỰNG LẠI hàm đã bị cố ý xoá.
+ * ⇒ NGUỒN ĐÚNG HÔM NAY: `dichCayKetQua` (`server/services/ingestCayKetQua.ts`)
+ *   cho phép cuộn cây, và `rollupVerdict`/`verdictLuuTru`
+ *   (`shared/rollupVerdict.ts`) cho luật ưu tiên NG > NTF > OK + cầu nối cờ
+ *   `ntf` → enum lưu trữ. Đó CHÍNH LÀ đường mà `aoiPackageRouter.commit` dùng
+ *   (`finalOverallResult = cay.verdictLuuTru`), nên tái dùng chúng là tái dùng
+ *   production thật.
+ * ⚠ Trạng thái đo được: tập `ghiNhanNoDaDuyet` hiện **RỖNG** (mọi hình dạng
+ *   trong `BANG_HINH_DANG` dùng `khangDinh`), nên §4 của lưới chạy trên tập
+ *   rỗng — nó GHIM một quy tắc cho tương lai, không chứng minh gì hôm nay.
+ *   Câu này ở đây để lượt sau không đọc "§4 xanh" thành "§4 đã kiểm".
+ *
+ * Bắt buộc ở TẦNG KIỂU (không phải optional) — một `ghiNhanNoDaDuyet` MỚI
+ * không có `tinhHanhViDung` không qua được `npm run check`, không chỉ "quên"
+ * một dòng lưới. `hinhDangHopDongMetaJson.test.ts` §4 gọi `tinhHanhViDung(meta)`
+ * và so với `hanhViDung` khai — lệch ⇒ ĐỎ, cộng một ca tự-kiểm chống "hàm trả
+ * hằng số nguỵ trang" (biến thể `meta` KHÔNG NG/NTF nào phải luôn tính ra "OK",
+ * cùng luật `rollupVerdict`: không con nào NG/NTF ⇒ cuộn ra OK).
  */
 export type KyVongOverallResult =
   | { dang: "khangDinh"; overallResult: "OK" | "NG" | "NTF" }

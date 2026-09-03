@@ -243,8 +243,10 @@ describe("★★★ §4 — kỷ luật KyVongOverallResult: 'ghiNhanNoDaDuyet' 
   // trước bản sửa này KHÔNG có gì đối chiếu `hanhViDung` với luật thật — chỉ
   // có phép so BẤT ĐẲNG với `hanhViHienTai` (mà "NTF" cũng khác "OK", nên vẫn
   // qua). `tinhHanhViDung` (bắt buộc ở TẦNG KIỂU, xem `hinhDangHopDongMetaJson.ts`)
-  // là bằng chứng THẬT — một hàm THUẦN tái dùng `inferAoiOverallResult`
-  // (production).
+  // là bằng chứng THẬT — một hàm THUẦN tái dùng LUẬT CUỘN PRODUCTION
+  // (`rollupVerdict`/`verdictLuuTru`, NG > NTF > OK). ***M-5 (re-review lượt 8):
+  // câu cũ ở đây chỉ đích danh `inferAoiOverallResult` — hàm đã bị BG-85
+  // XOÁ (grep: 0 định nghĩa, 0 lời gọi). Xem docblock `KyVongOverallResult`.
   // ══════════════════════════════════════════════════════════════════════
   it("★★★ I-1 — mọi hình dạng 'ghiNhanNoDaDuyet': hanhViDung khai KHỚP kết quả tính từ tinhHanhViDung(meta) (LUẬT THẬT) — không phải một chuỗi tự khai đứng riêng", () => {
     for (const h of GHI_NHAN_NO) {
@@ -258,7 +260,7 @@ describe("★★★ §4 — kỷ luật KyVongOverallResult: 'ghiNhanNoDaDuyet' 
     }
   });
 
-  it("★ ĐỘT BIẾN TỰ KIỂM — tinhHanhViDung KHÔNG được là một hằng số nguỵ trang (trả cứng hanhViDung bất kể input): trên một biến thể 'sạch' (không NG/NTF/overallResult khai nào) PHẢI tính ra 'OK' — cùng hợp đồng inferAoiOverallResult(ngCount:0, ntfCount:0, explicitResult:null)", () => {
+  it("★ ĐỘT BIẾN TỰ KIỂM — tinhHanhViDung KHÔNG được là một hằng số nguỵ trang (trả cứng hanhViDung bất kể input): trên một biến thể 'sạch' (không NG/NTF/overallResult khai nào) PHẢI tính ra 'OK' — cùng luật rollupVerdict: không con nào NG/NTF ⇒ cuộn ra OK", () => {
     for (const h of GHI_NHAN_NO) {
       const kv = h.kyVong.overallResult as Extract<typeof h.kyVong.overallResult, { dang: "ghiNhanNoDaDuyet" }>;
       const metaSach = structuredClone(h.meta) as Record<string, unknown>;
