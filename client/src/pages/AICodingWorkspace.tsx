@@ -1276,6 +1276,21 @@ export default function AICodingWorkspace() {
    * ("thường dùng" — một câu rất khó vẫn có thể được nâng tầng).
    */
   const modelQ = trpc.repoWorkspace.modelDangDung.useQuery(undefined, { staleTime: 5 * 60_000 });
+  /**
+   * ★ 2026-09-03 · ĐỢT F3 — TOKEN CỦA LƯỢT VỪA RỒI. Đọc lại từ sổ `ai_gateway_metrics` (SSE không
+   * mang token — xem docblock `tokenLuotCuoi` phía server). Refetch ở CẠNH XUỐNG của `isStreaming`:
+   * lượt vừa xong thì `plan.record()` đã ghi sổ, hỏi lúc ấy mới có số; hỏi liên tục là vô ích.
+   */
+  const tokenQ = trpc.repoWorkspace.tokenLuotCuoi.useQuery(undefined, { enabled: false, gcTime: 0 });
+  const dangStreamTruocRef = useRef(false);
+  useEffect(() => {
+    if (dangStreamTruocRef.current && !isStreaming) {
+      // Chờ một nhịp: `plan.record()` chạy ở đuôi generator, có thể sau khi SSE đóng.
+      const h = setTimeout(() => { void tokenQ.refetch(); }, 900);
+      return () => clearTimeout(h);
+    }
+    dangStreamTruocRef.current = isStreaming;
+  }, [isStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
   const tepSeThay = useMemo(() => ketQuaGrepGom.map(([p]) => p).slice(0, TRAN_TEP_LO), [ketQuaGrepGom]);
   const guiThayTheLo = useCallback(async () => {
     if (tepSeThay.length === 0 || !tuKhoaRepoTre.trim()) return;
@@ -2063,6 +2078,24 @@ export default function AICodingWorkspace() {
                   : t("repoWs.badgeTip.execOff", "Tài khoản KHÔNG có quyền CHẠY LỆNH (ai_repo_exec) — gợi ý chạy test bị ẩn; server vẫn chặn nếu gọi thẳng.")}
               </TooltipContent>
             </Tooltip>
+            {tokenQ.data && (tokenQ.data.tokensIn > 0 || tokenQ.data.tokensOut > 0) && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" data-huy-hieu-token className="cursor-help text-[10px] tabular-nums">
+                    {t("repoWs.model.tokens", "{{vao}}↓ {{ra}}↑", {
+                      vao: tokenQ.data.tokensIn >= 1000 ? `${(tokenQ.data.tokensIn / 1000).toFixed(1)}k` : tokenQ.data.tokensIn,
+                      ra: tokenQ.data.tokensOut >= 1000 ? `${(tokenQ.data.tokensOut / 1000).toFixed(1)}k` : tokenQ.data.tokensOut,
+                    })}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[300px] text-xs">
+                  {t("repoWs.model.tokensTip", "Lượt VỪA RỒI: {{vao}} token vào · {{ra}} token ra · {{giay}}s ({{model}}). Ngữ cảnh vào càng lớn thì model local càng chậm — đây là con số của lượt gần nhất, không phải tổng phiên.", {
+                    vao: tokenQ.data.tokensIn, ra: tokenQ.data.tokensOut,
+                    giay: (tokenQ.data.latencyMs / 1000).toFixed(1), model: tokenQ.data.model,
+                  })}
+                </TooltipContent>
+              </Tooltip>
+            )}
             {modelQ.data && (
               <Tooltip>
                 <TooltipTrigger asChild>

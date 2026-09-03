@@ -138,3 +138,26 @@ số dòng — cần render từng-dòng trước).*
 - **Minimap · code folding**: Trình xem dựng bằng Streamdown/Shiki nguyên khối + gutter DOM riêng.
   Hai tính năng này đòi kiểm soát từng dòng ở tầng editor ⇒ phải thay trình xem bằng CodeMirror
   read-only. Đó là một đợt kiến trúc riêng, và giá trị thấp hơn hẳn mọi mục trên bảng này.
+
+---
+
+## KẾT LỊCH — Đợt D/E/F ĐÃ CHẠY HẾT (chốt 2026-09-03)
+
+| Mục | Trạng thái | Bằng chứng sống |
+|---|---|---|
+| D1 breadcrumb | **XONG** | 3 đoạn `client/src/lib`; bấm "src" ⇒ ô lọc = `client/src` |
+| D2 word-wrap | **XONG** | gutter 1→0, `white-space:pre-wrap`, sống qua F5, tắt lại gutter về |
+| D3 giới hạn thư mục tìm | **XONG** | cả repo 25 · `server/services/ai` **23 = khớp grep hệ thống** |
+| D4 maximize khung | **XONG** | 594→1240px, cây ẩn, handle ẩn, thu lại 594 |
+| E1 phân mức lỗi/cảnh báo | **XONG** | mở rộng KHÔNG đổi hợp đồng cũ (2 lưới ghim vẫn xanh) + 3 ca mới |
+| E2 outline ký hiệu | **XONG** | `kyHieuTep` + lưới riêng |
+| F1 phím tab | **XONG (đổi phím có lý do)** | Alt+W/[/] chạy; **Ctrl+W/Ctrl+Tab bất khả ở web** ⇒ lưới ÂM ghim quyết định |
+| F2 nhảy tệp:dòng từ chat | **XONG** | dán 2 dòng lỗi ⇒ 2 nút; bấm ⇒ mở tệp + tô sáng dòng 42 |
+| F3 đồng hồ token | **XONG (đổi đường có lý do)** | SSE không mang token ⇒ đọc lại sổ `ai_gateway_metrics`; huy hiệu `4.5k↓ 49↑` |
+
+**Phát hiện ngoài kế hoạch, đã vá:** `lang="en-US"` (BCP-47) làm **mọi thủ tục `repoWorkspace` chết
+câm** với trình duyệt locale không phải mã trần — lỗi có sẵn, chỉ lộ ra khi đo trên trình duyệt sạch.
+Vá hai lớp độc lập (server `langSchema` fail-safe + client chuẩn hoá thật) + lưới 5 ca có đột biến.
+
+**Vẫn KHÔNG LÀM (lý do không đổi):** minimap · code folding — đòi kiểm soát từng dòng ở tầng
+editor, tức thay Trình xem bằng CodeMirror read-only; đó là một đợt kiến trúc riêng.

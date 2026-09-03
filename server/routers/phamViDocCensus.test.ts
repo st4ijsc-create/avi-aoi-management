@@ -262,7 +262,17 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   song; khi dòng khác commit thêm thủ tục, ô này sẽ đỏ — hãy quy trách nhiệm bằng per-key diff
  *   trên cây COMMIT như trên, rồi mới ghim.
  */
-const GHIM = { A: 363, B: 8, C: 471, D: 1099, S: 286, tong: 2227 } as const;
+/**
+ * ★ 2026-09-03 · ĐỢT F3 — **C 471 → 472** (`tong` 2227 → 2228). Quy trách nhiệm bằng per-key diff
+ * trên cây COMMIT (đúng khuôn đã ghi ở khối trên — `git archive` HEAD ra thư mục tạm, KHÔNG đo trên
+ * worktree dùng chung): **ĐÚNG MỘT dòng** `repoWorkspace.tokenLuotCuoi -> C`.
+ * Nó là query THUẦN-ĐỌC sổ `ai_gateway_metrics` (bảng vận hành, KHÔNG thuộc tenant) và lọc cứng
+ * `userId = ctx.user.id` — phạm vi CHỦ SỞ HỮU, chặt hơn tenant. A/B/D/S không đổi một đơn vị.
+ * ⚠ GOTCHA của phép đo này: trong Git Bash `/tmp` **không** là `/tmp` mà Node (Windows) thấy —
+ *   phải `cygpath -w` rồi truyền đường Windows, nếu không cây "cũ" rỗng và diff khai MỌI thủ tục là
+ *   THÊM (đã dính một lần trong chính lượt này).
+ */
+const GHIM = { A: 363, B: 8, C: 472, D: 1099, S: 286, tong: 2228 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

@@ -19584,7 +19584,9 @@
     },
     "model": {
       "badge": "model: T{{tier}}",
-      "tip": "Bộ định tuyến THƯỜNG dùng tầng {{tier}}{{ten}} cho tác vụ \"{{task}}\". Model do server chọn theo độ khó + VRAM còn trống — một câu rất khó vẫn có thể được nâng tầng, nên đây là dự báo, không phải cam kết."
+      "tip": "Bộ định tuyến THƯỜNG dùng tầng {{tier}}{{ten}} cho tác vụ \"{{task}}\". Model do server chọn theo độ khó + VRAM còn trống — một câu rất khó vẫn có thể được nâng tầng, nên đây là dự báo, không phải cam kết.",
+      "tokens": "{{vao}}↓ {{ra}}↑",
+      "tokensTip": "Lượt VỪA RỒI: {{vao}} token vào · {{ra}} token ra · {{giay}}s ({{model}}). Ngữ cảnh vào càng lớn thì model local càng chậm — đây là con số của lượt gần nhất, không phải tổng phiên."
     },
     "outline": {
       "toggle": "Danh sách ký hiệu ({{n}}) — bấm để nhảy tới",

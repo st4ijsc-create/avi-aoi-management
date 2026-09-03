@@ -404,6 +404,57 @@ export const repoWorkspaceRouter = router({
    * ⚠ Là DỰ BÁO cho một lượt điển hình: `route()` còn nhìn ĐỘ KHÓ của chính câu hỏi, nên một câu
    *   rất khó có thể được nâng tầng. Nhãn UI phải nói "thường dùng", đừng hứa chắc.
    */
+  /**
+   * ★★★ 2026-09-03 · ĐỢT F3 — **ĐỒNG HỒ TOKEN CỦA LƯỢT VỪA RỒI.** Khảo sát trước khi code (đúng
+   * lịch đã hẹn) cho ra một sự thật quyết định đường đi:
+   *   • Sự kiện SSE `done` **KHÔNG mang token**; `streamCodingModel` là `AsyncGenerator<string>` —
+   *     nó chỉ yield CHỮ, còn token nằm trong closure rồi đi thẳng vào `plan.record()`.
+   *   ⇒ Muốn đẩy token qua SSE thì phải đổi kiểu generator lõi — thứ mà CLI, MCP, vòng tự động và
+   *     đường chat cùng dùng. Một con số hiển thị KHÔNG đáng để đụng hợp đồng ấy.
+   *   ⇒ Nên: ĐỌC LẠI từ sổ `ai_gateway_metrics` (nơi `plan.record()` vừa ghi). Không một byte nào
+   *     của đường sinh chữ phải đổi.
+   *
+   * ⚠ PHẠM VI CHỦ SỞ HỮU: chỉ hàng của CHÍNH `ctx.user.id`. Token của người khác là dấu vết công
+   *   việc của họ — cùng luật với `dauRaSong`.
+   * ⚠ CỬA SỔ 10 PHÚT: bảng chỉ có index trên `createdAt`, nên lọc theo thời gian là thứ giữ cho
+   *   truy vấn không quét ngược vô hạn khi một tài khoản im lặng lâu. Ngoài cửa sổ ⇒ `null` (UI ẩn
+   *   huy hiệu) — thà không nói còn hơn nói về một lượt của hôm qua như thể vừa xong.
+   * ⚠ Đây là lời khai VỀ QUÁ KHỨ GẦN, không phải đồng hồ chạy: nó trả lời "lượt vừa rồi tốn bao
+   *   nhiêu", còn "đang chạy bao lâu" thì đồng hồ elapsed của trang đã trả lời từ đợt trước.
+   */
+  tokenLuotCuoi: protectedProcedure.query(async ({ ctx }) => {
+    const userId = Number((ctx as any).user?.id);
+    if (!Number.isInteger(userId) || userId <= 0) return null;
+    const { getDb } = await import("../db");
+    const db = await getDb();
+    if (!db) return null;
+    const { sql } = await import("drizzle-orm");
+    try {
+      const r: any = await db.execute(sql`
+        SELECT "tokensIn", "tokensOut", "latencyMs", "model", "tier", "task", "createdAt"
+        FROM ai_gateway_metrics
+        WHERE "userId" = ${userId}
+          AND "createdAt" > NOW() - INTERVAL '10 minutes'
+          AND "outcome" = 'ok'
+        ORDER BY "createdAt" DESC
+        LIMIT 1
+      `);
+      const h = r.rows?.[0] ?? r[0];
+      if (!h) return null;
+      return {
+        tokensIn: Number(h.tokensIn ?? 0),
+        tokensOut: Number(h.tokensOut ?? 0),
+        latencyMs: Number(h.latencyMs ?? 0),
+        model: String(h.model ?? ""),
+        tier: Number(h.tier ?? 0),
+        task: String(h.task ?? ""),
+      };
+    } catch {
+      // Sổ hỏng/không có bảng ⇒ im lặng ẨN huy hiệu. Một đồng hồ phụ không được làm hỏng trang.
+      return null;
+    }
+  }),
+
   modelDangDung: protectedProcedure.query(async () => {
     const { route, activeRouterProfile } = await import("../services/aiModelRouter");
     const task = process.env.AI_CODING_MODEL_TASK === "code" ? "code" : "chat";

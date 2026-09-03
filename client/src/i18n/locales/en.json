@@ -19604,7 +19604,9 @@
     },
     "model": {
       "badge": "model: T{{tier}}",
-      "tip": "The router USUALLY picks tier {{tier}}{{ten}} for task \"{{task}}\". The server chooses per difficulty + free VRAM — a very hard question may still be promoted, so this is a forecast, not a promise."
+      "tip": "The router USUALLY picks tier {{tier}}{{ten}} for task \"{{task}}\". The server chooses per difficulty + free VRAM — a very hard question may still be promoted, so this is a forecast, not a promise.",
+      "tokens": "{{vao}}↓ {{ra}}↑",
+      "tokensTip": "LAST turn: {{vao}} tokens in · {{ra}} out · {{giay}}s ({{model}}). A bigger input context makes the local model slower — this is the most recent turn, not the session total."
     },
     "outline": {
       "toggle": "Symbols ({{n}}) — click to jump",
