@@ -261,3 +261,27 @@ Người làm Task 2 **cố ý** để `machineId` NULL, lý do ghi tại `serve
 *Giá nếu sai:* Task 4 lùi một nhịp. *Giá nếu KHÔNG đổi:* spec-gate chạy trên bản dạy có thể của máy khác — một cổng an toàn **cho câu trả lời sai mà vẫn xanh**, đúng lớp lỗi tệ nhất trong dự án này.
 
 ⚠ Ràng buộc kèm theo: **cấm bật cửa cây dạy ở môi trường có nhiều hơn một máy** cho tới khi Task 5 xong.
+
+---
+
+## Ruling R-KB-2 (2026-09-03) — SỬA R-KB-1: thứ tự đúng là **Task 5 → Task 3 → Task 4**
+
+**R-KB-1 tôi vừa ghi ở trên có một lập luận SAI.** Tôi viết: *"Task 3 chỉ ghi lại máy khai gì… cây dạy sai KHÔNG làm hỏng nó."*
+
+**Phép đo bác bỏ** (`current_database()='aoi_management_test'`, vai `avi_app`) — `measurement_results` có **5 cột NOT NULL**, trong đó:
+
+```
+pointDefId :: integer   NOT NULL, KHONG CO DEFAULT
+```
+
+⇒ **Không có `pointDefId` thì KHÔNG ghi được một hàng nào.** `pointDefId` trỏ vào `measurement_point_defs` — tức **chính bản dạy**. Task 3 **phụ thuộc hoàn toàn** vào dữ liệu dạy, không phải "độc lập" như tôi khai.
+
+**Hai hệ quả tôi đã bỏ sót:**
+
+1. **Linh kiện máy khai mà CHƯA TỪNG được dạy thì không có chỗ ghi.** Đây là câu thiết kế bắt buộc của Task 3, không phải chi tiết phụ: bỏ qua im lặng ⇒ mất dữ liệu (đúng lớp C-1 vừa vá); tự tạo point-def ⇒ bản dạy bị máy tự ghi, phá đúng mô hình "hệ soi gương máy" mà chủ dự án chốt.
+2. **Chiều máy phải có TRƯỚC Task 3, không phải chỉ trước Task 4.** Nếu bản dạy còn dùng chung theo model, hàng kết quả của máy A sẽ khoá ngoại vào point-def **có thể của máy B** — và ghi sai **ngay lúc ghi**, không phải lúc chấm. Sửa sau nghĩa là phải di trú những hàng đã ghi sai.
+
+**Ruling:** **Task 5** (chiều máy + version) → **Task 3** (Đ-19) → **Task 4** (BG-92).
+*Giá nếu sai:* Đ-19 lùi một nhịp. *Giá nếu giữ R-KB-1:* hàng kết quả cấp component ghi khoá ngoại sai ngay từ hàng đầu tiên, và phải di trú.
+
+⚠ Ràng buộc R-KB-1 vẫn giữ: **cấm bật cửa cây dạy ở môi trường nhiều hơn một máy** cho tới khi Task 5 xong.
