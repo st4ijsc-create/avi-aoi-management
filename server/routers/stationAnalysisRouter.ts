@@ -28,13 +28,15 @@ import {
 } from "../utils/spc";
 import { finalYield } from "../utils/kpi";
 
-/** Fake-UTC: shift a Date so its UTC components equal local time.
- *  Drizzle calls .toISOString() which emits UTC — this trick makes
- *  the UTC string match the local timestamp stored in PostgreSQL
- *  `timestamp without time zone` columns.  */
-function toFakeUtc(d: Date): Date {
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-}
+// BG-96 (2026-09-03, spec Khối C QĐ-1): sau cutover, `productInspections.inspectionTime`
+// lưu UTC THẬT (không còn "fake UTC"), và mọi `startDate`/`endDate` trong router này khai
+// `z.date()` — qua transformer `superjson` (server/_core/trpc.ts), giá trị tới tay handler
+// đã là một `Date` = một instant thật, KHÔNG phải chuỗi cần "đọc". Vì vậy so thẳng
+// `input.startDate`/`input.endDate` với cột (không còn hàm `toFakeUtc` dịch qua TZ tiến
+// trình server — đó chính là phép dịch SAI duy nhất, không phải giá trị đầu vào).
+// Ngữ nghĩa "nửa đêm" của cửa sổ = nửa đêm theo đồng hồ CLIENT dựng Date (trùng giờ nhà máy
+// khi operator ở VN) — KHÔNG đi qua `FACTORY_TZ`; đây là giới hạn đã biết, không phải bug
+// Task 2 (xem task-2-report.md mục "Concerns").
 
 /**
  * Chuỗi yield theo bucket (giờ/ngày) — đầu vào của biểu đồ kiểm soát SPC.
@@ -136,8 +138,8 @@ export const stationAnalysisRouter = router({
       }
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Build previous period query if date range provided
@@ -148,8 +150,8 @@ export const stationAnalysisRouter = router({
         const prevStart = new Date(prevEnd.getTime() - duration);
         const prevCond: SQL[] = [
           inArray(productInspections.machineId, machineIds),
-          gte(productInspections.inspectionTime, toFakeUtc(prevStart)),
-          lte(productInspections.inspectionTime, toFakeUtc(prevEnd)),
+          gte(productInspections.inspectionTime, prevStart),
+          lte(productInspections.inspectionTime, prevEnd),
           ...(input.productModelId ? [eq(productInspections.productModelId, input.productModelId)] : []),
         ];
         prevQueryPromise = database.select({
@@ -221,8 +223,8 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return [];
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const rows = await database.select({
@@ -282,8 +284,8 @@ export const stationAnalysisRouter = router({
         eq(measurementResults.result, 'NG'),
         inArray(productInspections.machineId, machineIds),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const byType = await database.select({
@@ -431,8 +433,8 @@ export const stationAnalysisRouter = router({
         eq(measurementResults.pointDefId, input.measurementPointDefId),
         isNotNull(measurementResults.measuredValue),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const rawData = await database.select({
@@ -589,8 +591,8 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return { points: [], mean: 0, ucl: 100, lcl: 0, stddev: 0, cpk: 0, ppk: 0 };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const dailyRows = await database.select({
@@ -722,8 +724,8 @@ export const stationAnalysisRouter = router({
         inArray(productInspections.machineId, machineIds),
         eq(productInspections.overallResult, 'NG'),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const inspections = await database.select({
@@ -795,8 +797,8 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return { alerts: [], patterns: [], recommendations: [] };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Get overall stats
@@ -849,8 +851,8 @@ export const stationAnalysisRouter = router({
         eq(measurementResults.result, 'NG'),
         inArray(productInspections.machineId, machineIds),
       ];
-      if (input.startDate) ngConditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) ngConditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) ngConditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) ngConditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) ngConditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const topDefects = await database.select({
@@ -1049,8 +1051,8 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return { bins: [], stats: { mean: 0, median: 0, mode: 0, stddev: 0, skewness: 0, kurtosis: 0, n: 0, min: 0, max: 0 } };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const dailyRows = await database.select({
@@ -1153,8 +1155,8 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return { points: [], correlation: 0, rSquared: 0, trendLine: { slope: 0, intercept: 0 } };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Hourly data: total output (X) vs NG rate (Y)
@@ -1225,8 +1227,8 @@ export const stationAnalysisRouter = router({
         eq(measurementResults.result, 'NG'),
         inArray(productInspections.machineId, machineIds),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const rows = await database.select({
@@ -1294,8 +1296,8 @@ export const stationAnalysisRouter = router({
         eq(measurementResults.result, 'NG'),
         inArray(productInspections.machineId, machineIds),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Get top defect
@@ -1331,8 +1333,8 @@ export const stationAnalysisRouter = router({
       })
         .from(productInspections)
         .where(and(inArray(productInspections.machineId, machineIds),
-          ...(input.startDate ? [gte(productInspections.inspectionTime, toFakeUtc(input.startDate))] : []),
-          ...(input.endDate ? [lte(productInspections.inspectionTime, toFakeUtc(input.endDate))] : []),
+          ...(input.startDate ? [gte(productInspections.inspectionTime, input.startDate)] : []),
+          ...(input.endDate ? [lte(productInspections.inspectionTime, input.endDate)] : []),
           ...(input.productModelId ? [eq(productInspections.productModelId, input.productModelId)] : [])))
         .groupBy(sql`shift`);
 
@@ -1346,8 +1348,8 @@ export const stationAnalysisRouter = router({
         .from(productInspections)
         .innerJoin(machines, eq(productInspections.machineId, machines.id))
         .where(and(inArray(productInspections.machineId, machineIds),
-          ...(input.startDate ? [gte(productInspections.inspectionTime, toFakeUtc(input.startDate))] : []),
-          ...(input.endDate ? [lte(productInspections.inspectionTime, toFakeUtc(input.endDate))] : []),
+          ...(input.startDate ? [gte(productInspections.inspectionTime, input.startDate)] : []),
+          ...(input.endDate ? [lte(productInspections.inspectionTime, input.endDate)] : []),
           ...(input.productModelId ? [eq(productInspections.productModelId, input.productModelId)] : [])))
         .groupBy(machines.code, machines.name);
 
@@ -1432,8 +1434,8 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return { byMachine: [], byShift: [], byDay: [] };
 
       const baseCond: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) baseCond.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) baseCond.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) baseCond.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) baseCond.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) baseCond.push(eq(productInspections.productModelId, input.productModelId));
 
       // By Machine
@@ -1530,8 +1532,8 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return { anomalies: [], forecast: [], clusters: [], insights: [], processCapability: null };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Fetch daily yields
@@ -1742,8 +1744,8 @@ export const stationAnalysisRouter = router({
 
       // Date filters for inspections
       const dateConds: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) dateConds.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) dateConds.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) dateConds.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) dateConds.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) dateConds.push(eq(productInspections.productModelId, input.productModelId));
 
       // Get the product model for this station (most used product)
