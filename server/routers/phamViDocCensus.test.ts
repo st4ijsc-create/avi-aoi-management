@@ -281,7 +281,13 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ⚠ Cổng `congGiayPhepAiCensus` cũng đang đỏ (tong +6, beMatAi +7) nhưng **KHÔNG phải của tôi**
 // — tôi thêm một cửa, không thể làm `beMatAi` +7. Đó là độ trôi của công việc AI-coding chạy
 // song song; **để nguyên cho bên đó ký**, đừng gộp vào con số này.
-const GHIM = { A: 363, B: 8, C: 472, D: 1100, S: 286, tong: 2229 } as const;
+// ★ 2026-09-03 (lần 2) — D 1100→1101, S 286→290, tong 2229→2234. LÝ DO ĐO ĐƯỢC:
+// Khối C Task 8 (`fc232773`) thêm ĐÚNG MỘT mutation `measurementPoint.setLimitsBatch` (nhóm D,
+// có kiểm chứng đầu vào + gate giới hạn). Khối C Task 9 (`35a63b45`) thêm ĐÚNG BỐN query
+// `cayDay.*` (nhóm S, đã lọc tenant theo phiên — review đo tenant A + machineId của B ⇒ rỗng).
+// Chứng minh: A/B/C KHÔNG ĐỔI (363/8/472); D +1 và S +4 khớp từng thủ tục; tong +5 = 1+4.
+// Task 9 tự đo D=1101 khi Task 8 CHƯA commit ⇒ +1 D không thể là của Task 9 (0 `.mutation(`).
+const GHIM = { A: 363, B: 8, C: 472, D: 1101, S: 290, tong: 2234 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
