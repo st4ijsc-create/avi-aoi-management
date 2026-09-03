@@ -115,7 +115,7 @@ vi.mock("./auditTrailService", () => ({
   },
   ENTITY_TYPES: { AI_ACTION: "ai_action" },
   createAuditContext: () => ({ userId: 1, source: "web" }),
-  logCrudOperation: (...a: unknown[]) => logCrudOperation(...a),
+  logCrudOperation: (...a: unknown[]) => (logCrudOperation as (...x: unknown[]) => unknown)(...a),
   logUpdate: vi.fn(async () => {}),
 }));
 

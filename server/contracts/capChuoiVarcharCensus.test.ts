@@ -52,8 +52,9 @@ function apDungGiaTri(mau: any, duongDan: MucCapChuoi["duongDan"], gia: string):
  * dùng ở đường sản xuất.
  */
 function boMax(node: z.ZodTypeAny): z.ZodTypeAny {
-  if (node instanceof z.ZodOptional) return z.optional(boMax(node.unwrap()));
-  if (node instanceof z.ZodNullable) return z.nullable(boMax(node.unwrap()));
+  // zod v4: .unwrap() khai kiểu $ZodType (internals) — cast về ZodTypeAny, hành vi không đổi.
+  if (node instanceof z.ZodOptional) return z.optional(boMax(node.unwrap() as z.ZodTypeAny));
+  if (node instanceof z.ZodNullable) return z.nullable(boMax(node.unwrap() as z.ZodTypeAny));
   if (node instanceof z.ZodUnion) {
     const options = (node.options as z.ZodTypeAny[]).map((o) => (o instanceof z.ZodString ? z.string() : o));
     return z.union(options as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]);

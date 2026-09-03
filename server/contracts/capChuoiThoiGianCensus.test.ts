@@ -162,8 +162,9 @@ function tachDuongDanThanhBuoc(duongDan: string): string[] {
 
 /** Hạ trần một lá `ZodString`/nhánh chuỗi của `ZodUnion` xuống `moi` — GIỮ optional/nullable bọc ngoài. */
 function datMaxGiuVo(node: z.ZodTypeAny, moi: number): z.ZodTypeAny {
-  if (node instanceof z.ZodOptional) return z.optional(datMaxGiuVo(node.unwrap(), moi));
-  if (node instanceof z.ZodNullable) return z.nullable(datMaxGiuVo(node.unwrap(), moi));
+  // zod v4: .unwrap() khai kiểu $ZodType (internals) — cast về ZodTypeAny, hành vi không đổi.
+  if (node instanceof z.ZodOptional) return z.optional(datMaxGiuVo(node.unwrap() as z.ZodTypeAny, moi));
+  if (node instanceof z.ZodNullable) return z.nullable(datMaxGiuVo(node.unwrap() as z.ZodTypeAny, moi));
   if (node instanceof z.ZodUnion) {
     const options = (node.options as z.ZodTypeAny[]).map((o) => (o instanceof z.ZodString ? z.string().max(moi) : o));
     return z.union(options as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]);

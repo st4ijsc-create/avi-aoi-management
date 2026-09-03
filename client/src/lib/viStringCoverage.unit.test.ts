@@ -49,15 +49,21 @@ import { demHinhDangBa } from "../../../scripts/viStringScan.mjs";
  * tuyến bằng tiếng Anh + mô tả bằng tiếng Việt. Đó là tài liệu, không phải nhãn giao
  * diện, nên chủ dự án chốt để lại (2026-08-16). Xem `ALLOWED_RAW_VI_APIDOCS` bên dưới:
  * nợ này bị GIAM trong thư mục ApiDocs, thêm chuỗi trần ở bất kỳ đâu khác vẫn ĐỎ.
+ *
+ * `410 → 415` (2026-09-03) — CẢ NĂM chuỗi mới đều là tài liệu tham chiếu API, đúng nhóm
+ * chủ dự án đã chốt để sau: **+4** `AutomationProcessFeedSection.tsx` (file MỚI — spec
+ * ST4I Process Feed v1, commit `a69ed50e`) · **+1** đợt mở rộng `AoiPackageSection.tsx`
+ * (+141 dòng, sau `79d9ff45`). Đo lại đủ 8 file: 415/415 nằm TRỌN trong nhóm ApiDocs,
+ * nhãn vận hành vẫn 0 — trần dưới đây nâng CÙNG số nên hai cổng vẫn không bù trừ được.
  */
-const ALLOWED_RAW_VI_STRINGS = 410;
+const ALLOWED_RAW_VI_STRINGS = 415;
 
 /**
  * Trần riêng cho nhóm ApiDocs. Tồn tại để hai con số không thể bù trừ cho nhau:
  * nếu ai đó dịch bớt ApiDocs mà thêm nhãn trần vào màn vận hành, tổng vẫn 410 và
  * cổng trên sẽ xanh — chính là lớp lỗi "ngân sách tự thoả" đã trả giá ở Pha 7.
  */
-const ALLOWED_RAW_VI_APIDOCS = 410;
+const ALLOWED_RAW_VI_APIDOCS = 415; // 410 → 415 cùng đợt 2026-09-03 — xem chú thích ở trần tổng.
 
 const CLIENT_SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LOCALES = resolve(CLIENT_SRC, "i18n/locales");

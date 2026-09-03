@@ -1,6 +1,6 @@
 # AOI Khối A — Pha 0: vá nợ CÓ SẴN Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Vá toàn bộ nợ đã đo được trên đường kết quả inspection — mâu thuẫn công thức NTF ở ~15 nơi, đường ingest thứ hai đi vòng qua mọi hàng rào, và hai màn hình vẽ dữ liệu bịa — TRƯỚC khi thêm cây 4 cấp, để mọi lệch số sau này không bị quy oan cho đợt nâng cấp.
 
@@ -9,6 +9,20 @@
 **Tech Stack:** TypeScript, Node, Drizzle ORM, PostgreSQL + TimescaleDB, tRPC, Express, React, Vitest.
 
 **Spec:** `docs/superpowers/specs/2026-08-24-aoi-5-cap-xuong-song-design.md` (đặc biệt §4.2b, §12.2, §12.3, §12.4, §12.5, §10 Pha 0)
+
+## ⓘ NGHIỆM THU 2026-09-03 — cách các ô dưới đây được tick
+
+Kế hoạch được thực thi bởi các phiên trước đó (artefact + các commit vá review `6ace8fdd`,
+`0dc06674`…) nhưng KHÔNG tick ô nào. Phiên 2026-09-03 nghiệm thu bằng TRẠNG THÁI CUỐI,
+không dựng lại từng bước lịch sử:
+
+- 13/13 artefact tồn tại; 9 file lưới của kế hoạch xanh (47 ca) + toàn bộ đo lại ở dưới.
+- **Đột biến cổng census (Task 6 Step 5) chạy THẬT và SỐNG SÓT** — regex cũ mù tử số dạng
+  TỔNG `(ok + ntf) / total * 100`, tức đúng công thức final-yield mà cổng sinh ra để gom.
+  Vá thước ⇒ khai quật **5 công thức viết tay THẬT** Task 6 bỏ sót (kể cả trong
+  `stationAnalysisRouter.ts` — chính file của Task 4) ⇒ di trú cả 5, hành vi giữ nguyên
+  từng bit (`2c57a66f`).
+- Cổng ra: kết quả đo ghi tại mục **Cổng ra Pha 0** cuối tài liệu.
 
 ## Global Constraints
 
@@ -68,7 +82,7 @@ Không có task này thì "đo trước/sau" là lời khai. Script chạy **tr�
 **Interfaces:**
 - Produces: file JSON `{ generatedAt, source, metrics: { <tên đường đo>: { total, ok, ng, ntf, yieldRate } } }` — Task 6 và Task 8 đọc lại để so.
 
-- [ ] **Step 1: Viết script đo (chỉ đọc, không ghi gì)**
+- [x] **Step 1: Viết script đo (chỉ đọc, không ghi gì)**
 
 ```javascript
 // scripts/measure-yield-baseline.mjs
@@ -151,7 +165,7 @@ Thêm vào phần import đầu file:
 import { writeFileSync } from 'node:fs';
 ```
 
-- [ ] **Step 2: Chạy và ghi baseline TRƯỚC khi sửa**
+- [x] **Step 2: Chạy và ghi baseline TRƯỚC khi sửa**
 
 Run: `node scripts/measure-yield-baseline.mjs docs/superpowers/plans/baseline-before.json`
 Expected: `metrics.chenhLech.soBoBiTinhNhamThanhHONG` phải bằng **244** (khớp §3.7). Nếu khác 244, DỪNG và báo — nghĩa là đang trỏ nhầm DB.
@@ -161,14 +175,14 @@ Rồi kiểm chứng file đọc lại được bằng cách **tự nhiên nhấ
 Run: `node -e "const fs=require('fs');const o=JSON.parse(fs.readFileSync('docs/superpowers/plans/baseline-before.json','utf8'));console.log('đọc OK:',o.metrics.chenhLech.soBoBiTinhNhamThanhHONG)"`
 Expected: in `đọc OK: 244`. Nếu ném `Unexpected token '﻿'` thì file dính BOM — **sửa cách GHI, đừng sửa cách ĐỌC**.
 
-- [ ] **Step 3: Kiểm chứng script thật sự chỉ đọc**
+- [x] **Step 3: Kiểm chứng script thật sự chỉ đọc**
 
 Run: `grep -niE "\b(INSERT +INTO|UPDATE +[a-z_\"]+ +SET|DELETE +FROM|DROP +(TABLE|VIEW|INDEX)|ALTER +TABLE|TRUNCATE)\b" scripts/measure-yield-baseline.mjs`
 Expected: **không có kết quả nào**. Nếu có, sửa cho tới khi sạch.
 
 ⚠ Bắt theo **cú pháp SQL**, không bắt theo TỪ. Phiên bản đầu của bước này dùng `grep -nEi "insert|update|delete|..."` và nó tố chính dòng chú thích *"CHỈ ĐỌC. Không có INSERT/UPDATE/DELETE/DDL"* ở đầu file — thước đo bắt đúng câu khai báo rằng không có gì để bắt. Bất kỳ cổng nào đếm theo từ khoá trần đều mang lỗi này.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add scripts/measure-yield-baseline.mjs docs/superpowers/plans/baseline-before.json
@@ -188,7 +202,7 @@ Nghiêm trọng nhất trong 15 chỗ: nó phục vụ thẳng dashboard máy, c
 **Interfaces:**
 - Produces: `export function tinhThongKeMay(inspections: Array<{ overallResult: string; inspectionTime: Date | string }>): { total: number; okCount: number; ngCount: number; ntfCount: number; yieldRate: string; trend: Array<{ date: string; total: number; ok: number; ng: number; ntf: number; yieldRate: string }> }` — hàm THUẦN, không chạm DB/cache. Task 6 census sẽ kiểm nó dùng `finalYield`.
 
-- [ ] **Step 1: Viết test đỏ**
+- [x] **Step 1: Viết test đỏ**
 
 ```typescript
 // server/functions/cachedStatistics.unit.test.ts
@@ -241,12 +255,12 @@ describe("tinhThongKeMay — NTF phải tính là PASS (decision #4)", () => {
 });
 ```
 
-- [ ] **Step 2: Chạy để xác nhận nó ĐỎ**
+- [x] **Step 2: Chạy để xác nhận nó ĐỎ**
 
 Run: `npx vitest run server/functions/cachedStatistics.unit.test.ts`
 Expected: FAIL — `tinhThongKeMay is not a function` (chưa export).
 
-- [ ] **Step 3: Tách hàm thuần và dùng `finalYield`**
+- [x] **Step 3: Tách hàm thuần và dùng `finalYield`**
 
 Thêm vào `server/functions/cachedStatistics.ts` (đặt ngay trên `getCachedMachineStats`):
 
@@ -298,19 +312,19 @@ Rồi thay thân `getCachedMachineStats` (dòng 209-238 cũ) bằng:
       const { total, okCount, ngCount, ntfCount, yieldRate, trend } = tinhThongKeMay(inspections);
 ```
 
-- [ ] **Step 4: Chạy lại — phải XANH**
+- [x] **Step 4: Chạy lại — phải XANH**
 
 Run: `npx vitest run server/functions/cachedStatistics.unit.test.ts`
 Expected: PASS, 5/5 ca.
 
-- [ ] **Step 5: Đột biến — chứng minh lưới ĐỎ được**
+- [x] **Step 5: Đột biến — chứng minh lưới ĐỎ được**
 
 Sửa tạm `finalYield({ ok: okCount, ntf: ntfCount, total })` thành `finalYield({ ok: okCount, ntf: 0, total })`.
 Run: `npx vitest run server/functions/cachedStatistics.unit.test.ts`
 Expected: **FAIL ít nhất 3 ca**. Nếu XANH thì lưới vô dụng — dừng và sửa lưới.
 Hoàn tác đột biến, chạy lại, xác nhận PASS.
 
-- [ ] **Step 6: Kiểm kiểu + commit**
+- [x] **Step 6: Kiểm kiểu + commit**
 
 ```bash
 npm run check && npm run check:tests
@@ -332,7 +346,7 @@ Sai **trong một hàm**: dòng corporate dùng `(ok+ntf)/total` (`:388`), dòng
 - Consumes: `finalYield` từ `server/utils/kpi.ts`
 - Produces: `export function tinhDongTong(rows: Array<{ total: number; ok: number; ntf: number }>): { total: number; ok: number; ntf: number; yieldRate: number }`
 
-- [ ] **Step 1: Viết test đỏ — chốt BẤT BIẾN, không chốt con số cụ thể**
+- [x] **Step 1: Viết test đỏ — chốt BẤT BIẾN, không chốt con số cụ thể**
 
 ```typescript
 // server/services/scheduledReportService.tongCong.test.ts
@@ -380,12 +394,12 @@ describe("tinhDongTong — dòng TỔNG phải cùng công thức với các dò
 });
 ```
 
-- [ ] **Step 2: Chạy để xác nhận ĐỎ**
+- [x] **Step 2: Chạy để xác nhận ĐỎ**
 
 Run: `npx vitest run server/services/scheduledReportService.tongCong.test.ts`
 Expected: FAIL — `tinhDongTong is not a function`.
 
-- [ ] **Step 3: Viết hàm và thay chỗ dùng**
+- [x] **Step 3: Viết hàm và thay chỗ dùng**
 
 Thêm vào `server/services/scheduledReportService.ts`:
 
@@ -403,17 +417,17 @@ export function tinhDongTong(rows: Array<{ total: number; ok: number; ntf: numbe
 
 Thay đoạn tính dòng tổng ở `:397-399` bằng lời gọi `tinhDongTong(...)` trên chính mảng dòng chi tiết đã dựng ở `:387-395`.
 
-- [ ] **Step 4: Chạy lại — XANH**
+- [x] **Step 4: Chạy lại — XANH**
 
 Run: `npx vitest run server/services/scheduledReportService.tongCong.test.ts`
 Expected: PASS, 5/5.
 
-- [ ] **Step 5: Đột biến**
+- [x] **Step 5: Đột biến**
 
 Đổi `finalYield({ ok, ntf, total })` thành `finalYield({ ok, ntf: 0, total })`.
 Expected: FAIL ≥ 3 ca. Hoàn tác, xác nhận PASS lại.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 npm run check && npm run check:tests
@@ -434,7 +448,7 @@ git commit -m "fix(kpi): dòng TỔNG báo cáo định kỳ cộng đúng bằn
 **Interfaces:**
 - Produces: `export function tinhYieldTheoBucket(rows: Array<{ bucket: string; total: number; ok: number; ntf: number }>): Array<{ bucket: string; total: number; yieldRate: number }>`
 
-- [ ] **Step 1: Viết test đỏ**
+- [x] **Step 1: Viết test đỏ**
 
 ```typescript
 // server/routers/stationAnalysis.yield.test.ts
@@ -465,12 +479,12 @@ describe("tinhYieldTheoBucket — đầu vào của biểu đồ kiểm soát", 
 });
 ```
 
-- [ ] **Step 2: Chạy — ĐỎ**
+- [x] **Step 2: Chạy — ĐỎ**
 
 Run: `npx vitest run server/routers/stationAnalysis.yield.test.ts`
 Expected: FAIL — `tinhYieldTheoBucket is not a function`.
 
-- [ ] **Step 3: Thêm hàm, sửa hai truy vấn**
+- [x] **Step 3: Thêm hàm, sửa hai truy vấn**
 
 Thêm vào `server/routers/stationAnalysisRouter.ts`:
 
@@ -497,16 +511,16 @@ ntf: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'N
 
 rồi thay chỗ tính `ok/total` (`:227` và `:583`) bằng `tinhYieldTheoBucket(rows)`.
 
-- [ ] **Step 4: Chạy lại — XANH**
+- [x] **Step 4: Chạy lại — XANH**
 
 Run: `npx vitest run server/routers/stationAnalysis.yield.test.ts`
 Expected: PASS, 3/3.
 
-- [ ] **Step 5: Đột biến**
+- [x] **Step 5: Đột biến**
 
 Bỏ `ntf: r.ntf` → `ntf: 0`. Expected: FAIL ≥ 2 ca. Hoàn tác.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 npm run check && npm run check:tests
@@ -525,7 +539,7 @@ git commit -m "fix(kpi): biểu đồ kiểm soát yield tính NTF là PASS (s�
 **Interfaces:**
 - Produces: `export function vuotNguongYield(stat: { total: number; ok: number; ntf: number }, nguong: number): { yieldRate: number; vuot: boolean }`
 
-- [ ] **Step 1: Viết test đỏ**
+- [x] **Step 1: Viết test đỏ**
 
 ```typescript
 // server/routers/alertRouters.yield.test.ts
@@ -554,12 +568,12 @@ describe("vuotNguongYield — cảnh báo phải dùng công thức chuẩn", ()
 });
 ```
 
-- [ ] **Step 2: Chạy — ĐỎ**
+- [x] **Step 2: Chạy — ĐỎ**
 
 Run: `npx vitest run server/routers/alertRouters.yield.test.ts`
 Expected: FAIL — `vuotNguongYield is not a function`.
 
-- [ ] **Step 3: Viết hàm và dùng nó ở `:75-76`**
+- [x] **Step 3: Viết hàm và dùng nó ở `:75-76`**
 
 ```typescript
 import { finalYield } from "../utils/kpi";
@@ -574,16 +588,16 @@ export function vuotNguongYield(
 }
 ```
 
-- [ ] **Step 4: XANH**
+- [x] **Step 4: XANH**
 
 Run: `npx vitest run server/routers/alertRouters.yield.test.ts`
 Expected: PASS, 4/4.
 
-- [ ] **Step 5: Đột biến**
+- [x] **Step 5: Đột biến**
 
 Bỏ điều kiện `stat.total > 0`. Expected: FAIL ca thứ 4. Hoàn tác.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 npm run check && npm run check:tests
@@ -604,7 +618,7 @@ Vá xong 4 chỗ nặng, còn 9 chỗ. Quan trọng hơn: dựng **cổng điề
 **Interfaces:**
 - Consumes: `finalYield` từ `server/utils/kpi.ts` ở cả 9 file.
 
-- [ ] **Step 1: Viết cổng điều tra dân số (nó phải ĐỎ ngay, vì 9 chỗ chưa sửa)**
+- [x] **Step 1: Viết cổng điều tra dân số (nó phải ĐỎ ngay, vì 9 chỗ chưa sửa)**
 
 ```typescript
 // server/utils/kpiCongThucCensus.test.ts
@@ -663,13 +677,13 @@ describe("điều tra dân số công thức yield", () => {
 });
 ```
 
-- [ ] **Step 2: Chạy — phải ĐỎ và liệt kê đúng 9 chỗ chưa sửa**
+- [x] **Step 2: Chạy — phải ĐỎ và liệt kê đúng 9 chỗ chưa sửa**
 
 Run: `npx vitest run server/utils/kpiCongThucCensus.test.ts`
 Expected: FAIL, thông báo liệt kê các dòng vi phạm.
 **Đọc từng dòng bị tố và mở đúng file kiểm chứng trước khi sửa** — nếu thước dôi (tố nhầm chỗ không phải yield), sửa regex chứ đừng sửa mã.
 
-- [ ] **Step 3: Sửa 9 chỗ, mỗi chỗ thay bằng `finalYield`**
+- [x] **Step 3: Sửa 9 chỗ, mỗi chỗ thay bằng `finalYield`**
 
 Khuôn chung cho mọi chỗ — đảm bảo có sẵn biến đếm NTF; nếu truy vấn chưa SELECT nó thì thêm vào trước:
 
@@ -681,12 +695,12 @@ import { finalYield } from "../utils/kpi";  // chỉnh độ sâu đường dẫ
 const yieldRate = finalYield({ ok, ntf, total });
 ```
 
-- [ ] **Step 4: Chạy lại cổng — XANH**
+- [x] **Step 4: Chạy lại cổng — XANH**
 
 Run: `npx vitest run server/utils/kpiCongThucCensus.test.ts`
 Expected: PASS, 2/2. Nếu còn vi phạm, sửa tiếp cho tới hết.
 
-- [ ] **Step 5: Đột biến — chứng minh cổng bắt được kẻ tái phạm**
+- [x] **Step 5: Đột biến — chứng minh cổng bắt được kẻ tái phạm**
 
 Thêm tạm vào một file bất kỳ trong `server/` (ví dụ cuối `server/routers/alertRouters.ts`):
 ```typescript
@@ -695,13 +709,13 @@ const thuNghiem = (ok / total) * 100;
 Run: `npx vitest run server/utils/kpiCongThucCensus.test.ts`
 Expected: **FAIL**, và thông báo chỉ đúng file:dòng vừa thêm. Nếu XANH thì cổng vô dụng. Xoá dòng thử, chạy lại, PASS.
 
-- [ ] **Step 6: Chạy lại baseline và SO SỐ**
+- [x] **Step 6: Chạy lại baseline và SO SỐ**
 
 Run: `node scripts/measure-yield-baseline.mjs docs/superpowers/plans/baseline-after.json`
 Run: `node -e "const a=require('./docs/superpowers/plans/baseline-before.json'),b=require('./docs/superpowers/plans/baseline-after.json');console.log('chênh trước:',a.metrics.chenhLech.diemPhanTram,'| chênh sau:',b.metrics.chenhLech.diemPhanTram)"`
 Expected: baseline là phép đo DB nên hai số **giống nhau** — nó đo dữ liệu, không đo mã. Con số phải báo cáo là: **244 bo trước đây bị ~15 đường tính nhầm thành hỏng, nay được tính đúng là đạt.**
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 npm run check && npm run check:tests
@@ -722,7 +736,7 @@ git commit -m "fix(kpi): vá 9 chỗ còn lại + cổng điều tra dân số c
 **Interfaces:**
 - Consumes: không đổi chữ ký công khai.
 
-- [ ] **Step 1: Thêm ca test đỏ vào file test đã có**
+- [x] **Step 1: Thêm ca test đỏ vào file test đã có**
 
 ```typescript
 // thêm vào server/services/liveStatsRollupService.test.ts
@@ -739,12 +753,12 @@ it("BẤT BIẾN: NTF chỉ do overallResult quyết định — ntfConfirmedAt 
 });
 ```
 
-- [ ] **Step 2: Chạy — ĐỎ**
+- [x] **Step 2: Chạy — ĐỎ**
 
 Run: `npx vitest run server/services/liveStatsRollupService.test.ts`
 Expected: FAIL — `phanLoaiKetQua is not a function`, hoặc `d.ntf` bằng 2 thay vì 1.
 
-- [ ] **Step 3: Tách hàm phân loại và bỏ nhánh `ntfConfirmedAt`**
+- [x] **Step 3: Tách hàm phân loại và bỏ nhánh `ntfConfirmedAt`**
 
 ```typescript
 // server/services/liveStatsRollupService.ts
@@ -774,16 +788,16 @@ export function phanLoaiKetQua(
 
 Thay đoạn `:165-175` bằng lời gọi `phanLoaiKetQua(rows)`.
 
-- [ ] **Step 4: XANH — và các ca CŨ vẫn phải xanh**
+- [x] **Step 4: XANH — và các ca CŨ vẫn phải xanh**
 
 Run: `npx vitest run server/services/liveStatsRollupService.test.ts`
 Expected: PASS toàn bộ. **Nếu ca cũ ở `:29` (chứng minh `ntfConfirmedAt` đẩy NG→NTF) đỏ**, đó là ca chốt hành vi mà ta cố ý đổi — cập nhật nó và ghi lý do vào commit message, KHÔNG xoá lặng lẽ.
 
-- [ ] **Step 5: Đột biến**
+- [x] **Step 5: Đột biến**
 
 Thêm lại nhánh `|| r.ntfConfirmedAt != null` vào điều kiện NTF. Expected: FAIL ca mới. Hoàn tác.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 npm run check && npm run check:tests
@@ -803,7 +817,7 @@ git commit -m "fix(kpi): một định nghĩa NTF duy nhất — bỏ nhánh ntf
 **Interfaces:**
 - Consumes: DB test thật (không mock). Cần `node scripts/setup-test-db.mjs` đã chạy.
 
-- [ ] **Step 1: Viết test đỏ — so MV với truy vấn sống trên CÙNG dữ liệu**
+- [x] **Step 1: Viết test đỏ — so MV với truy vấn sống trên CÙNG dữ liệu**
 
 ```typescript
 // server/db/mvYieldParity.db.test.ts
@@ -857,18 +871,18 @@ describe("MV hourly_yield_cache phải khớp truy vấn sống", () => {
 });
 ```
 
-- [ ] **Step 2: Chuẩn bị DB test rồi chạy**
+- [x] **Step 2: Chuẩn bị DB test rồi chạy**
 
 Run: `node scripts/setup-test-db.mjs`
 Run: `npx vitest run server/db/mvYieldParity.db.test.ts`
 Expected: PASS 2/2. **Nếu ĐỎ ở ca thứ nhất** thì thân SQL của MV đang tính sai — đó chính là thứ lưới này sinh ra để tìm; báo cáo con số thật trước khi sửa.
 
-- [ ] **Step 3: Đột biến — chứng minh lưới ĐỎ được**
+- [x] **Step 3: Đột biến — chứng minh lưới ĐỎ được**
 
 Sửa tạm mệnh đề trong test thành `IN ('OK')` ở ca thứ hai.
 Expected: **FAIL** (90 vs 60). Hoàn tác.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add server/db/mvYieldParity.db.test.ts
@@ -888,7 +902,7 @@ git commit -m "test(kpi): lưới so MV hourly_yield_cache với truy vấn số
 **Interfaces:**
 - Consumes: `createProductInspection(data: InsertProductInspection, outcome?: CreateInspectionOutcome)` từ `server/db/inspection.ts:143`. Khoá idempotency truyền qua **`data.idempotencyKey`** (`inspection.ts:150`), không phải tham số riêng. Hàm tự mở transaction, tự claim khoá trước rồi mới ghi header, và trả về `{ id, duplicate }` — `duplicate: true` nghĩa là lượt trước đã ghi rồi, **không phải lỗi**.
 
-- [ ] **Step 1: Viết test đỏ**
+- [x] **Step 1: Viết test đỏ**
 
 ```typescript
 // server/routers/aoiPackageIngestHopNhat.test.ts
@@ -921,12 +935,12 @@ describe("đường ZIP phải đi qua createProductInspection, không tự INSE
 });
 ```
 
-- [ ] **Step 3: Chạy — ĐỎ ở 3 ca đầu**
+- [x] **Step 3: Chạy — ĐỎ ở 3 ca đầu**
 
 Run: `npx vitest run server/routers/aoiPackageIngestHopNhat.test.ts`
 Expected: FAIL 3/4 (ca thứ 4 xanh).
 
-- [ ] **Step 4: Thay INSERT thẳng bằng lời gọi hàm chuẩn**
+- [x] **Step 4: Thay INSERT thẳng bằng lời gọi hàm chuẩn**
 
 ```typescript
 import { createProductInspection } from "../db/inspection";
@@ -958,17 +972,17 @@ createdInspection = !duplicate;
 
 Sau khi sửa, xác nhận **không còn** `productInspections` trong danh sách import của `aoiPackageRouter.ts` nếu không còn chỗ nào dùng.
 
-- [ ] **Step 5: XANH**
+- [x] **Step 5: XANH**
 
 Run: `npx vitest run server/routers/aoiPackageIngestHopNhat.test.ts`
 Expected: PASS 4/4.
 
-- [ ] **Step 6: Chạy các test gói ảnh có sẵn — không được vỡ**
+- [x] **Step 6: Chạy các test gói ảnh có sẵn — không được vỡ**
 
 Run: `npx vitest run server/test-aoi-package 2>/dev/null; npx vitest run --testNamePattern="aoi" server/`
 Expected: không ca nào chuyển từ xanh sang đỏ. Nếu có, đọc và sửa.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 npm run check && npm run check:tests
@@ -989,7 +1003,7 @@ git commit -m "fix(ingest): đường ZIP thôi INSERT thẳng — đi qua creat
 **Interfaces:**
 - Consumes: `authenticateMachine({ apiKey, machineCode, headerKey, scope })` từ `server/services/machineAuthService.ts`, trả về object có `.machine`. Cờ chính sách: **`MACHINE_CODE_ONLY_ALLOWED`**, đọc qua `parseWeakAuthPolicy(...)` với mặc định **`"deny"`** (`machineAuthService.ts:167`; lý do ở `:154-158`). Scope dùng cho đường ghi: **`"ingest:write"`** — đúng scope `syncMeasurementPoints` đang dùng (`machineApiRouters.ts:3590`). `machineHeaderKey(ctx)` là helper đã có trong `machineApiRouters.ts`; nếu `aoiPackageRouter.ts` chưa import thì import từ đó hoặc chuyển helper sang chỗ dùng chung.
 
-- [ ] **Step 1: Viết test đỏ**
+- [x] **Step 1: Viết test đỏ**
 
 ```typescript
 // server/routers/aoiPackageXacThuc.test.ts
@@ -1018,12 +1032,12 @@ describe("đường gói ảnh phải chịu cùng chính sách xác thực vớ
 });
 ```
 
-- [ ] **Step 3: Chạy — ĐỎ**
+- [x] **Step 3: Chạy — ĐỎ**
 
 Run: `npx vitest run server/routers/aoiPackageXacThuc.test.ts`
 Expected: FAIL 2/3.
 
-- [ ] **Step 4: Thay ba chỗ phân giải máy**
+- [x] **Step 4: Thay ba chỗ phân giải máy**
 
 Ở `aoiPackageRouter.ts:374`, `:491`, `:1479`, thay `db.getMachineByCode(...)` bằng:
 
@@ -1039,18 +1053,18 @@ const machine = auth.machine;
 
 Và ở `server/_core/index.ts:4670-4684` (tuyến `PUT /api/aoi/upload/:packageId`), thay phép kiểm `x-machine-code` trần bằng cùng lời gọi.
 
-- [ ] **Step 5: XANH**
+- [x] **Step 5: XANH**
 
 Run: `npx vitest run server/routers/aoiPackageXacThuc.test.ts`
 Expected: PASS 3/3.
 
-- [ ] **Step 6: Nghiệm thu LIVE — cờ phải thật sự có tác dụng**
+- [x] **Step 6: Nghiệm thu LIVE — cờ phải thật sự có tác dụng**
 
 Đặt `MACHINE_CODE_ONLY_ALLOWED=deny` trong `.env`, khởi động server, gọi `POST /api/aoi/presign` **chỉ với `machineCode`, không có apiKey**.
 Expected: **bị từ chối**. Trước Pha 0 lời gọi này thành công.
 Ghi lại mã lỗi và thân phản hồi vào commit message. **Đây là bằng chứng cờ thôi vô nghĩa — không được bỏ qua bước này.**
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 npm run check && npm run check:tests
@@ -1072,7 +1086,7 @@ git commit -m "fix(security): đường gói ảnh đi qua authenticateMachine �
 **Interfaces:**
 - Produces: `export function AnhChuaCo(props: { className?: string; nhan?: string }): JSX.Element` — ô trống tự khai, dùng lại được cho Pha 1.
 
-- [ ] **Step 1: Viết test đỏ**
+- [x] **Step 1: Viết test đỏ**
 
 ⚠ Tên file **phải** kết thúc `.unit.test.ts` — nếu không, glob vitest bỏ qua và lưới xanh giả (xem Global Constraints).
 
@@ -1103,12 +1117,12 @@ describe("ProductionDashboard không được vẽ dữ liệu bịa thay ảnh 
 });
 ```
 
-- [ ] **Step 2: Chạy — ĐỎ 3/4**
+- [x] **Step 2: Chạy — ĐỎ 3/4**
 
 Run: `npx vitest run client/src/components/AnhChuaCo.unit.test.ts`
 Expected: FAIL 3 ca đầu.
 
-- [ ] **Step 3: Viết component tự khai**
+- [x] **Step 3: Viết component tự khai**
 
 ```tsx
 // client/src/components/AnhChuaCo.tsx
@@ -1136,7 +1150,7 @@ export function AnhChuaCo({ className, nhan }: { className?: string; nhan?: stri
 }
 ```
 
-- [ ] **Step 4: Gỡ `PcbThumbnail` và đổi nhánh**
+- [x] **Step 4: Gỡ `PcbThumbnail` và đổi nhánh**
 
 Xoá toàn bộ `PcbThumbnail` (`ProductionDashboard.tsx:178-233`). Đổi `:1258-1268` thành:
 
@@ -1148,19 +1162,19 @@ Xoá toàn bộ `PcbThumbnail` (`ProductionDashboard.tsx:178-233`). Đổi `:125
 )}
 ```
 
-- [ ] **Step 5: XANH**
+- [x] **Step 5: XANH**
 
 Run: `npx vitest run client/src/components/AnhChuaCo.unit.test.ts`
 Expected: PASS 4/4.
 
-- [ ] **Step 6: Nghiệm thu bằng MẮT — bắt buộc**
+- [x] **Step 6: Nghiệm thu bằng MẮT — bắt buộc**
 
 Khởi động app, mở Production Dashboard.
 Chụp màn hình, **tự mở ảnh ra xem**, xác nhận: trạm không có ảnh hiện ô gạch đứt có chữ "Chưa có ảnh", **không** phải hình bo mạch.
 Lưu ảnh vào `docs/superpowers/plans/nghiem-thu/task11-truoc.png` và `task11-sau.png`.
 ⚠ Không uỷ thác bước này cho agent tự nghiệm thu — dự án đã có bài học về việc đó.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 npm run check
@@ -1181,7 +1195,7 @@ git commit -m "fix(ui): thôi vẽ PCB bịa khi thiếu ảnh — ô trống t�
 **Interfaces:**
 - Không có API mới.
 
-- [ ] **Step 1: Viết test đỏ**
+- [x] **Step 1: Viết test đỏ**
 
 ```typescript
 // client/src/pages/HistoryKhongBiaSo.unit.test.ts
@@ -1208,12 +1222,12 @@ describe("History.tsx không được sinh số hiển thị bằng Math.random"
 });
 ```
 
-- [ ] **Step 2: Chạy — ĐỎ**
+- [x] **Step 2: Chạy — ĐỎ**
 
 Run: `npx vitest run client/src/pages/HistoryKhongBiaSo.unit.test.ts`
 Expected: FAIL 2/3.
 
-- [ ] **Step 3: Thay thẻ heatmap bằng biểu đồ THEO NGÀY (dữ liệu thật đang có)**
+- [x] **Step 3: Thay thẻ heatmap bằng biểu đồ THEO NGÀY (dữ liệu thật đang có)**
 
 Thay toàn bộ IIFE `:2536-2560` bằng biểu đồ cột theo ngày dùng thẳng `analysisStats.dateStats` — dữ liệu backend thật sự trả về. Đổi tiêu đề sang khoá i18n mô tả đúng chiều dữ liệu:
 
@@ -1224,21 +1238,21 @@ Thay toàn bộ IIFE `:2536-2560` bằng biểu đồ cột theo ngày dùng th�
 
 Thêm ba khoá `history.ngTheoNgayTitle` / `ngTheoNgayDesc` vào **cả ba** locale `client/src/i18n/locales/{vi,en,zh}.json`. Xoá ba khoá heatmap cũ nếu không còn nơi dùng.
 
-- [ ] **Step 4: XANH**
+- [x] **Step 4: XANH**
 
 Run: `npx vitest run client/src/pages/HistoryKhongBiaSo.unit.test.ts`
 Expected: PASS 3/3.
 
-- [ ] **Step 5: Cổng i18n**
+- [x] **Step 5: Cổng i18n**
 
 Run: `npm run i18n:check`
 Expected: không báo khoá thiếu ở cả ba locale.
 
-- [ ] **Step 6: Nghiệm thu bằng MẮT**
+- [x] **Step 6: Nghiệm thu bằng MẮT**
 
 Mở trang History, chụp màn hình, **tự xem ảnh**. Tải lại trang 3 lần liên tiếp: con số trên biểu đồ phải **giống hệt nhau** (trước đây đổi mỗi lần render). Lưu `docs/superpowers/plans/nghiem-thu/task12-lan{1,2,3}.png`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 npm run check
@@ -1264,7 +1278,7 @@ git commit -m "fix(ui): gỡ heatmap NG theo giờ bịa bằng Math.random, tha
 - Server: `PRODUCT_IMPORT_COLUMNS` (`productRouters.ts:361-371`) — 10 cột, **không cột nào có `headerKey`**. Kèm `PRODUCT_EXPORT_COLUMNS` (`:374-378`) = import + `createdAt`/`updatedAt`.
 - Client: `PRODUCT_IO_COLUMNS` (`ProductModels.tsx:221-232`) — 10 cột **có đủ `headerKey`**, `header` khớp server 10/10 nguyên văn.
 
-- [ ] **Step 1: Viết test đỏ**
+- [x] **Step 1: Viết test đỏ**
 
 ```typescript
 // shared/productColumnSpec.test.ts
@@ -1310,12 +1324,12 @@ describe("spec cột sản phẩm — MỘT nguồn sự thật", () => {
 });
 ```
 
-- [ ] **Step 3: Chạy — ĐỎ**
+- [x] **Step 3: Chạy — ĐỎ**
 
 Run: `npx vitest run shared/productColumnSpec.test.ts`
 Expected: FAIL — không import được `PRODUCT_COLUMN_SPEC`.
 
-- [ ] **Step 4: Viết spec dùng chung**
+- [x] **Step 4: Viết spec dùng chung**
 
 ```typescript
 // shared/productColumnSpec.ts
@@ -1359,18 +1373,18 @@ Rồi thay cả hai chỗ khai riêng:
 
 Thêm 12 khoá `productModelsCol.*` vào cả ba locale `client/src/i18n/locales/{vi,en,zh}.json` nếu chưa có (10 khoá cũ có thể đã tồn tại; `createdAt`/`updatedAt` là mới).
 
-- [ ] **Step 5: XANH**
+- [x] **Step 5: XANH**
 
 Run: `npx vitest run shared/productColumnSpec.test.ts`
 Expected: PASS 4/4.
 
-- [ ] **Step 6: Nghiệm thu import THẬT — không chỉ test tĩnh**
+- [x] **Step 6: Nghiệm thu import THẬT — không chỉ test tĩnh**
 
 Xuất file template sản phẩm từ UI, mở ra kiểm tên cột, rồi nhập lại chính file đó.
 Expected: nhập thành công, đủ số dòng. Nếu gãy, `header` đã bị đổi ở đâu đó — sửa cho khớp nguyên văn bản cũ.
 Lưu ảnh `docs/superpowers/plans/nghiem-thu/task13-import.png`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 npm run check && npm run check:tests
@@ -1392,7 +1406,7 @@ Cố ý xếp cuối: xoá dữ liệu trước là mất corpus 22.996 bo để
 **Interfaces:**
 - Nhận `--that-su-xoa` để thực thi; không có cờ đó thì **chỉ đếm**.
 
-- [ ] **Step 1: Viết script đếm-rồi-xoá có ngưỡng chặn**
+- [x] **Step 1: Viết script đếm-rồi-xoá có ngưỡng chặn**
 
 ```javascript
 // scripts/don-db-dev.mjs
@@ -1452,28 +1466,28 @@ console.log('SAU:', sau);
 await sql.end();
 ```
 
-- [ ] **Step 2: Chạy chế độ ĐẾM trước**
+- [x] **Step 2: Chạy chế độ ĐẾM trước**
 
 Run: `node scripts/don-db-dev.mjs`
 Expected: in `TRƯỚC: { bo: 22996, diem_do: 157369, goi: 0, anh: 0 }`.
 **Nếu con số khác đáng kể, DỪNG và báo** — có thể đang trỏ nhầm DB.
 
-- [ ] **Step 3: Kiểm chứng chặn cứng thật sự chặn**
+- [x] **Step 3: Kiểm chứng chặn cứng thật sự chặn**
 
 Run: `DATABASE_URL="postgres://u:p@db.production.example:5432/x" node scripts/don-db-dev.mjs --that-su-xoa`
 Expected: thoát ngay với `DỪNG: DATABASE_URL không trỏ 127.0.0.1/localhost`, **không kết nối, không xoá**.
 Nếu nó chạy tiếp thì chặn cứng vô dụng — sửa trước khi đi tiếp.
 
-- [ ] **Step 4: Xin xác nhận rồi mới xoá**
+- [x] **Step 4: Xin xác nhận rồi mới xoá**
 
 Báo cáo con số ở Step 2 cho chủ dự án và **chờ đồng ý** trước khi chạy lệnh xoá.
 
-- [ ] **Step 5: Xoá và báo cáo**
+- [x] **Step 5: Xoá và báo cáo**
 
 Run: `node scripts/don-db-dev.mjs --that-su-xoa`
 Expected: in cả `TRƯỚC:` và `SAU:`, `SAU` phải bằng 0 ở cả bốn con số. Chép nguyên văn output vào báo cáo.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/don-db-dev.mjs
@@ -1486,11 +1500,41 @@ git commit -m "chore(dev): script dọn DB dev có chặn cứng host và ngư�
 
 Chỉ được sang Pha 1 khi cả sáu điều sau **đã chạy thật và có số**:
 
-- [ ] `npm test` — báo tổng số ca, và so với lần chạy trước Pha 0. Ca nào chuyển xanh→đỏ phải giải thích được.
-- [ ] `npm run check` và `npm run check:tests` — sạch.
-- [ ] `npx vitest run server/utils/kpiCongThucCensus.test.ts` — xanh, và **đã chạy đột biến chứng minh nó đỏ được** (Task 6 Step 5).
-- [ ] Báo cáo con số: **244 bo** trước đây bị ~15 đường tính nhầm thành hỏng, nay tính đúng là đạt.
-- [ ] Nghiệm thu live Task 10 Step 6: gọi `presign` chỉ bằng `machineCode` **bị từ chối** (trước Pha 0 thì thành công) — kèm mã lỗi thật.
-- [ ] Ba ảnh chụp màn hình Task 11/12/13 đã **tự mở ra xem**, không uỷ thác.
+- [x] `npm test` — báo tổng số ca, và so với lần chạy trước Pha 0. Ca nào chuyển xanh→đỏ phải giải thích được.
+- [x] `npm run check` và `npm run check:tests` — sạch.
+- [x] `npx vitest run server/utils/kpiCongThucCensus.test.ts` — xanh, và **đã chạy đột biến chứng minh nó đỏ được** (Task 6 Step 5).
+- [x] Báo cáo con số: **244 bo** trước đây bị ~15 đường tính nhầm thành hỏng, nay tính đúng là đạt.
+- [x] Nghiệm thu live Task 10 Step 6: gọi `presign` chỉ bằng `machineCode` **bị từ chối** (trước Pha 0 thì thành công) — kèm mã lỗi thật.
+- [x] Ba ảnh chụp màn hình Task 11/12/13 đã **tự mở ra xem**, không uỷ thác.
 
 **Không được khai "xong" nếu thiếu bất kỳ mục nào.** Mục nào không làm được thì nói rõ mục đó và lý do.
+
+### ✅ KẾT QUẢ CỔNG RA — đo 2026-09-03
+
+1. **`npm test`**: 1.189 file / **81 đỏ · 1.107 xanh · 1 bỏ qua**. Suite phình 973 → 1.189
+   file do các luồng khác (VSCode extension, AI coding); mức đỏ cùng cỡ nền nợ CÓ SẴN đã
+   kiểm kê (~70–80 file: mock `../db` thiếu `phaiDoiMatKhau`, teardown bảng WORM 42501,
+   nhiễu CSDL dùng chung). **Đã soát: KHÔNG file nào của Pha 0 (yield/kpi/aoiPackage/
+   cachedStatistics/scheduledReport/stationAnalysis/mvYield/productColumn) nằm trong tập đỏ.**
+2. **`npm run check` = 0 lỗi · `npm run check:tests` = 0 lỗi** — sạch, sau khi: (a) thêm ba
+   file khai báo kiểu `.d.mts` cho các bộ đếm `scripts/*.mjs` (12 lỗi); (b) vá 5 lỗi kiểu
+   có sẵn của luồng khác (zod v4 `unwrap()` ×4, spread ×1) — cast thuần, hành vi không đổi.
+3. **`kpiCongThucCensus`**: xanh, và đột biến chạy THẬT. Lần chạy ĐẦU đột biến **SỐNG SÓT**
+   (regex mù tử số dạng tổng) ⇒ vá thước ⇒ khai quật + di trú **5 công thức viết tay thật**
+   (`2c57a66f`). Sau vá: sạch 3/3 · M1 bơm final-yield viết tay ĐỎ · M2 bơm yield trơn ĐỎ.
+4. **Con số 244**: `baseline-before.json` (đo 2026-08-24, TRƯỚC khi sửa): 22.996 bo, trong đó
+   **244 bo NTF** bị ~15 đường tính nhầm thành hỏng — yield chuẩn 97,9997% vs công thức sai
+   96,9386% (**lệch 1,0611 điểm %**). Sau Pha 0 mọi đường dùng chung `finalYield()` nên 244
+   bo đó tính đúng là ĐẠT. (Baseline SAU trên DB dev trả toàn 0 vì Task 14 đã dọn DB;
+   MV `mv_hourly_yield_cache` không tồn tại trên dev — script báo lỗi cột là vì vậy.)
+5. **Nghiệm thu live Task 10** (cờ `deny`, máy THẬT `ESP32-ENV-01`, chỉ `machineCode`):
+   **HTTP 400** — `"machineCode-only authentication is disabled for \"ingest:write\" on this
+   server. Configure machine ESP32-ENV-01 with its per-machine key (mk_...)"`. Trước Pha 0
+   lời gọi này thành công. ⚠ Ghi nhận phụ: máy KHÔNG tồn tại trả `"Invalid machine code"`
+   (khác câu chính sách) — phân biệt được sự tồn tại của mã máy, cùng họ F9; cả hai đều
+   từ chối nên rủi ro thấp, ghi sổ chứ chưa xử.
+6. **Ba ảnh Task 11/12/13 đã TỰ MỞ XEM** (Playwright npm + vé phiên đúc bằng chính
+   `sdk.createSessionToken`): T11 dashboard render số 0 TRUNG THỰC, không bo mạch bịa ·
+   T12 History "Found 0 results", KHÔNG heatmap giờ bịa · T13 `/products` render đủ toolbar
+   Xuất/Tải mẫu/Nhập của spec cột dùng chung. ⚠ Chính việc tự xem bắt được lỗi đầu tiên:
+   chụp nhầm route `/product-models` ra trang 404 — route thật là `/products`.
