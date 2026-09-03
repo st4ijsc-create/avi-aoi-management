@@ -165,6 +165,20 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.window.showInformationMessage("AI Local: đã đăng xuất.");
     }),
     vscode.commands.registerCommand("aviAiLocal.suaDoanChon", () => void chaySuaDoanChon(context, khoDeXuat)),
+    /**
+     * ★★★ ĐỢT F / TASK 3 — nút "Chat mới"/"Lịch sử" ở `view/title` của khung thanh bên (xem
+     * `package.json`, `menus.view/title`, `when: "view == aviAiLocal.bangChat"`). Hai lệnh này
+     * KHÔNG tự làm gì — chúng chỉ tìm ĐÚNG instance `BangChat` đang sống trong thanh bên
+     * (`BangChat.thanhBenDangMo()`, xem `ui/bangChat.ts`) rồi gọi phương thức đã có trên đó. Không
+     * viết logic chat/kho thứ hai ở đây.
+     *
+     * `thanhBenDangMo()` chỉ trả `undefined` khi VSCode CHƯA BAO GIỜ resolve khung thanh bên —
+     * nhưng `view/title` chỉ VẼ hai nút này khi view ĐANG HIỂN THỊ (tức đã resolve), nên trên
+     * thực tế `undefined` không xảy ra ở đường bấm nút thật; optional chaining vẫn giữ lại để một
+     * lời gọi lệnh từ nơi khác (bảng lệnh, ví dụ) không ném lỗi nếu view chưa từng mở.
+     */
+    vscode.commands.registerCommand("aviAiLocal.chatMoi", () => BangChat.thanhBenDangMo()?.chatMoi()),
+    vscode.commands.registerCommand("aviAiLocal.lichSu", () => BangChat.thanhBenDangMo()?.moLichSu()),
   );
 
   /**

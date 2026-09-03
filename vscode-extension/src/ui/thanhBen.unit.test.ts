@@ -24,6 +24,8 @@ const manifest = JSON.parse(readFileSync(join(GOC, "package.json"), "utf8")) as 
   contributes?: {
     viewsContainers?: { activitybar?: Array<{ id: string; title: string; icon: string }> };
     views?: Record<string, Array<{ id: string; type?: string }>>;
+    commands?: Array<{ command: string; title: string; icon?: string }>;
+    menus?: { "view/title"?: Array<{ command: string; when?: string; group?: string }> };
   };
 };
 
@@ -62,5 +64,64 @@ describe("thanh bên — ba mối nối bằng chuỗi", () => {
   it("★ icon dùng `currentColor` để theo theme sáng/tối (màu cứng ⇒ tàng hình ở một theme)", () => {
     const icon = manifest.contributes!.viewsContainers!.activitybar![0].icon;
     expect(readFileSync(join(GOC, icon), "utf8")).toContain("currentColor");
+  });
+});
+
+/**
+ * ★★★ ĐỢT F / TASK 3 / B2 — MỞ RỘNG lưới ba-mối-nối cho thanh công cụ đầu khung (`menus.view/title`,
+ * nút "Chat mới"/"Lịch sử"). Đây là hai mối nối bằng chuỗi THÊM MÀ `tsc` KHÔNG bắt được lệch:
+ *   4. mọi `when: "view == X"` trong `view/title`  ==  `view == ${MA_VIEW_THANH_BEN}` NGUYÊN VĂN
+ *   5. mọi `command` trong `view/title`  ==  một chuỗi THẬT SỰ được `registerCommand(...)` trong
+ *      `extension.ts` (không chỉ khai trong `contributes.commands` — VSCode KHÔNG đòi hai danh sách
+ *      này khớp nhau, nút vẫn VẼ RA dù lệnh chưa từng được đăng ký, chỉ là BẤM VÀO KHÔNG LÀM GÌ và
+ *      VSCode tự log một lỗi "command not found" mà không ai để ý tới console đó).
+ *
+ * Lệch (4) ⇒ nút hiện ở SAI khung (hoặc không hiện ở đâu cả nếu `when` trỏ một view không tồn tại).
+ * Lệch (5) ⇒ nút hiện ĐÚNG chỗ nhưng bấm vào KHÔNG LÀM GÌ — đúng lớp lỗi "khai mà không đọc kết
+ * cục" dự án này đã trả giá nhiều lần, chỉ khác lần này là "khai một nút mà không đăng ký nó".
+ */
+describe("thanh bên — ĐỢT F / TASK 3: view/title (Chat mới + Lịch sử)", () => {
+  const dsMenu = () => manifest.contributes?.menus?.["view/title"] ?? [];
+
+  it("★★★ có ÍT NHẤT hai mục trong view/title (Chat mới + Lịch sử)", () => {
+    expect(dsMenu().length).toBeGreaterThanOrEqual(2);
+    const lenh = dsMenu().map((m) => m.command);
+    expect(lenh).toContain("aviAiLocal.chatMoi");
+    expect(lenh).toContain("aviAiLocal.lichSu");
+  });
+
+  it("★★★ MỐI NỐI 4 — mọi `when` trong view/title khớp NGUYÊN VĂN `view == <MA_VIEW_THANH_BEN>`", async () => {
+    const { MA_VIEW_THANH_BEN } = await import("./bangChatView");
+    expect(dsMenu().length).toBeGreaterThan(0); // không lặng lẽ xanh trên một mảng rỗng
+    for (const m of dsMenu()) {
+      expect(m.when, `mục "${m.command}" có when="${m.when}"`).toBe(`view == ${MA_VIEW_THANH_BEN}`);
+    }
+  });
+
+  it("★★★ MỐI NỐI 5 — mọi `command` trong view/title THẬT SỰ được `registerCommand(...)` trong extension.ts", () => {
+    const maNguon = readFileSync(join(GOC, "src", "extension.ts"), "utf8");
+    const daDangKy = new Set(
+      Array.from(maNguon.matchAll(/registerCommand\(\s*["']([^"']+)["']/g), (m) => m[1]),
+    );
+    expect(dsMenu().length).toBeGreaterThan(0);
+    for (const m of dsMenu()) {
+      expect(daDangKy.has(m.command), `lệnh "${m.command}" KHÔNG thấy registerCommand trong extension.ts`).toBe(
+        true,
+      );
+    }
+  });
+
+  it("★★ cả hai mục đứng trong group \"navigation\" (đầu khung, cạnh icon container)", () => {
+    for (const id of ["aviAiLocal.chatMoi", "aviAiLocal.lichSu"]) {
+      const m = dsMenu().find((x) => x.command === id);
+      expect(m, `thiếu mục view/title cho "${id}"`).toBeDefined();
+      expect(m!.group).toBe("navigation");
+    }
+  });
+
+  it("★★ hai lệnh khai ĐÚNG codicon: chatMoi = $(add), lichSu = $(history)", () => {
+    const ds = manifest.contributes?.commands ?? [];
+    expect(ds.find((c) => c.command === "aviAiLocal.chatMoi")?.icon).toBe("$(add)");
+    expect(ds.find((c) => c.command === "aviAiLocal.lichSu")?.icon).toBe("$(history)");
   });
 });

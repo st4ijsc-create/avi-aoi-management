@@ -275,6 +275,26 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
 
   document.getElementById("nut-huy").addEventListener("click", () => vscode.postMessage({ loai: "huy" }));
 
+  /**
+   * ★★★ ĐỢT F / TASK 3 — dọn khung cho MỘT PHIÊN KHÁC: dùng CHUNG cho "Chat mới" (B3 — khung THỰC
+   * SỰ trắng) VÀ "Lịch sử" (B4 — khung sắp vẽ lại nội dung của MỘT HỘI THOẠI KHÁC). Xoá bong bóng
+   * của phiên VỪA RỜI trước khi (có thể) vẽ bong bóng mới — không thì hai cuộc hội thoại chồng lên
+   * nhau trên cùng một khung. Đóng luôn thẻ duyệt/nút Dừng còn treo của phiên CŨ: cả hai đều thuộc
+   * về phiên vừa rời, không thuộc phiên mới/phiên vừa chọn. Xoá luôn câu đang gõ dở trong ô nhập —
+   * đúng nghĩa "phiên trắng"/"chuyển sang hội thoại khác", KHÁC hẳn tin \`trang_thai_dang_nhap\`
+   * (Task 1 / B4) chỉ đổi trạng thái đăng nhập trong khi hội thoại vẫn nguyên — hai tin khác mục
+   * đích nên được phép khác hành vi với ô nhập.
+   */
+  function xoaKhungChoPhienKhac() {
+    hoiThoai.innerHTML = "";
+    khoiTraLoi = null;
+    theDuyet.hidden = true;
+    moKhoaNutDuyet();
+    nutDung.hidden = true;
+    anMenuMention();
+    oNhap.value = "";
+  }
+
   window.addEventListener("message", (e) => {
     const m = e.data;
     if (m.loai === "token" && khoiTraLoi) khoiTraLoi.textContent += m.chu;
@@ -363,10 +383,18 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       tenTaiKhoan.hidden = !daDangNhap;
       nutDangXuat.hidden = !daDangNhap;
       tenTaiKhoan.textContent = daDangNhap ? (m.tenTaiKhoan || "") : "";
+    } else if (m.loai === "chat_moi") {
+      // ★★★ ĐỢT F / TASK 3 / B3 — "Chat mới": khung TRẮNG, không còn dấu vết gì của phiên cũ.
+      xoaKhungChoPhienKhac();
     } else if (m.loai === "khoi_phuc_hoi_thoai") {
-      // ★★★ ĐỢT F / TASK 2 / B5 — khung vừa mở, extension vừa đọc được hội thoại GẦN NHẤT từ
-      // \`workspaceState\`: vẽ lại từng lượt bằng ĐÚNG \`themLuot\` mà \`gui()\`/luồng token dùng, để
-      // người dùng thấy đúng chỗ họ dừng lại — không chỉ khôi phục NGẦM trong bộ nhớ của extension.
+      // ★★★ ĐỢT F / TASK 2 / B5 (khởi động) + TASK 3 / B4 ("Lịch sử") — DÙNG CHUNG một tin: khởi
+      // động khi khung vừa mở (đọc hội thoại GẦN NHẤT từ \`workspaceState\`) VÀ khi người dùng chọn
+      // một hội thoại cũ ở "Lịch sử". Xoá TRƯỚC khi vẽ: vô hại lúc khởi động (#hoi-thoai đã trắng
+      // sẵn) và BẮT BUỘC lúc "Lịch sử" (khung có thể đang hiện nội dung của phiên VỪA RỜI — không xoá
+      // trước thì bong bóng của hai hội thoại chồng lên nhau). Vẽ lại từng lượt bằng ĐÚNG \`themLuot\`
+      // mà \`gui()\`/luồng token dùng, để người dùng thấy đúng những gì đã có, không chỉ khôi phục
+      // NGẦM trong bộ nhớ của extension.
+      xoaKhungChoPhienKhac();
       for (const l of m.luot || []) themLuot(l.vaiTro === "user" ? "Bạn" : "AI Local", l.noiDung);
     }
     hoiThoai.scrollTop = hoiThoai.scrollHeight;

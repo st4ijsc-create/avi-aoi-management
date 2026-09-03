@@ -27,6 +27,13 @@ const may = vi.hoisted(() => ({
   tepDangMo: undefined as string | undefined,
   doanChon: "let a = 1;",
   chonRong: false,
+  /**
+   * ★★★ ĐỢT F / TASK 3 — instance THANH BÊN giả mà `BangChat.thanhBenDangMo()` trả về. `undefined`
+   * mô phỏng "VSCode chưa từng resolve view thanh bên" (nhánh kia của hai lệnh nút "Chat mới"/"Lịch
+   * sử") — lưới này đo ĐÚNG một thứ: extension.ts gọi phương thức nào trên instance nào, không đo
+   * lại bản thân `chatMoi()`/`moLichSu()` (đã có lưới riêng ở `bangChat.unit.test.ts`).
+   */
+  thanhBenGia: undefined as undefined | { chatMoi: () => Promise<void>; moLichSu: () => Promise<void> },
 }));
 
 vi.mock("vscode", () => {
@@ -93,6 +100,8 @@ vi.mock("./ui/bangChat", () => ({
         may.cauHoiDaGui.push(c);
       },
     }),
+    // ★★★ ĐỢT F / TASK 3 — bản giả tối thiểu cho hai lệnh nút "Chat mới"/"Lịch sử".
+    thanhBenDangMo: () => may.thanhBenGia,
   },
 }));
 vi.mock("./ui/diffDeXuat", () => ({
@@ -122,6 +131,7 @@ beforeEach(() => {
   may.tepDangMo = undefined;
   may.doanChon = "let a = 1;";
   may.chonRong = false;
+  may.thanhBenGia = undefined;
 });
 
 describe("Cmd+K — đường dẫn đưa cho model (F3)", () => {
@@ -261,5 +271,47 @@ describe("Cmd+K — H1: hàng rào GỬI ở mức TỆP (review toàn nhánh 20
 
     expect(may.cauHoiDaGui).toHaveLength(1);
     expect(may.cauHoiDaGui[0]).toContain("let a = 1;");
+  });
+});
+
+/**
+ * ★★★ ĐỢT F / TASK 3 — hai lệnh nút "Chat mới"/"Lịch sử" ở `view/title` (xem `package.json`,
+ * `thanhBen.unit.test.ts` canh phần đăng ký-đúng-tên bằng chuỗi). Lưới ở ĐÂY đo phần chuỗi đó
+ * KHÔNG canh được: extension.ts phải gọi ĐÚNG PHƯƠNG THỨC trên ĐÚNG instance (`BangChat.thanhBenDangMo()`),
+ * không phải một luồng nào khác — và NHÁNH KIA khi chưa có view thanh bên nào mở.
+ */
+describe("ĐỢT F / TASK 3 — lệnh 'aviAiLocal.chatMoi' / 'aviAiLocal.lichSu'", () => {
+  it("★★★ aviAiLocal.chatMoi gọi ĐÚNG BangChat.thanhBenDangMo().chatMoi()", async () => {
+    const chatMoi = vi.fn(async () => undefined);
+    may.thanhBenGia = { chatMoi, moLichSu: vi.fn(async () => undefined) };
+    activate({ subscriptions: [], secrets: {} } as never);
+
+    expect(may.lenh.has("aviAiLocal.chatMoi")).toBe(true);
+    await may.lenh.get("aviAiLocal.chatMoi")!();
+
+    expect(chatMoi).toHaveBeenCalledTimes(1);
+    expect(may.thanhBenGia.moLichSu).not.toHaveBeenCalled();
+  });
+
+  it("★★★ aviAiLocal.lichSu gọi ĐÚNG BangChat.thanhBenDangMo().moLichSu()", async () => {
+    const moLichSu = vi.fn(async () => undefined);
+    may.thanhBenGia = { chatMoi: vi.fn(async () => undefined), moLichSu };
+    activate({ subscriptions: [], secrets: {} } as never);
+
+    expect(may.lenh.has("aviAiLocal.lichSu")).toBe(true);
+    await may.lenh.get("aviAiLocal.lichSu")!();
+
+    expect(moLichSu).toHaveBeenCalledTimes(1);
+    expect(may.thanhBenGia.chatMoi).not.toHaveBeenCalled();
+  });
+
+  it("★ NHÁNH KIA — CHƯA có view thanh bên nào mở (thanhBenDangMo() trả undefined) ⇒ bấm nút KHÔNG ném lỗi", async () => {
+    // `?.` short-circuit trả THẲNG `undefined` (KHÔNG phải một Promise) khi chưa có instance —
+    // đo đúng điều đó thay vì `.resolves` (chỉ hợp khi tay cầm THẬT SỰ là một Promise).
+    may.thanhBenGia = undefined;
+    activate({ subscriptions: [], secrets: {} } as never);
+
+    expect(() => may.lenh.get("aviAiLocal.chatMoi")!()).not.toThrow();
+    expect(() => may.lenh.get("aviAiLocal.lichSu")!()).not.toThrow();
   });
 });

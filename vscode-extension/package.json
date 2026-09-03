@@ -49,6 +49,16 @@
       {
         "command": "aviAiLocal.suaDoanChon",
         "title": "AI Local: Sửa đoạn đang chọn (hỏi AI)"
+      },
+      {
+        "command": "aviAiLocal.chatMoi",
+        "title": "AI Local: Chat mới",
+        "icon": "$(add)"
+      },
+      {
+        "command": "aviAiLocal.lichSu",
+        "title": "AI Local: Lịch sử",
+        "icon": "$(history)"
       }
     ],
     "keybindings": [
@@ -58,6 +68,20 @@
         "when": "editorTextFocus"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "aviAiLocal.chatMoi",
+          "when": "view == aviAiLocal.bangChat",
+          "group": "navigation"
+        },
+        {
+          "command": "aviAiLocal.lichSu",
+          "when": "view == aviAiLocal.bangChat",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "AI Local",
       "properties": {

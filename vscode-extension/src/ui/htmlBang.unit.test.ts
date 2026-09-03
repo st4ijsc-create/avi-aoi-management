@@ -248,7 +248,6 @@ class PhanTuGia {
   disabled = false;
   textContent = "";
   value = "";
-  innerHTML = "";
   className = "";
   scrollTop = 0;
   scrollHeight = 0;
@@ -268,6 +267,19 @@ class PhanTuGia {
   con: PhanTuGia[] = [];
   appendChild(c?: PhanTuGia): void {
     if (c) this.con.push(c);
+  }
+  // ★★★ ĐỢT F / TASK 3 — `innerHTML` PHẢI mô phỏng ĐÚNG hành vi trình duyệt thật khi script gán
+  // chuỗi RỖNG: xoá SẠCH cây con (`xoaKhungChoPhienKhac` trong htmlBang.ts dựa vào đúng hiệu ứng
+  // này để dọn `#hoi-thoai` trước khi vẽ lại). Script thật CHỈ BAO GIỜ gán `innerHTML = ""` (dọn
+  // trước khi dựng lại bằng `appendChild`) — không có chỗ nào gán một chuỗi HTML có nội dung, nên
+  // không cần một trình phân tích HTML giả ở đây; một getter/setter tối giản là đủ trung thực.
+  private _innerHTML = "";
+  get innerHTML(): string {
+    return this._innerHTML;
+  }
+  set innerHTML(v: string) {
+    this._innerHTML = v;
+    if (v === "") this.con = [];
   }
   /** Mô phỏng một cú BẤM CHUỘT thật (kể cả khi nút đang `disabled` — trình duyệt tự chặn, ta thì
    *  cố ý KHÔNG chặn, để đo chính hàng rào trong script chứ không đo hộ trình duyệt). */
@@ -595,5 +607,110 @@ describe("webview — 'khoi_phuc_hoi_thoai' vẽ lại ĐÚNG bong bóng đã c�
     expect(w.nut("hoi-thoai").con).toHaveLength(0);
     expect(() => w.banTin({ loai: "khoi_phuc_hoi_thoai" })).not.toThrow();
     expect(w.nut("hoi-thoai").con).toHaveLength(0);
+  });
+});
+
+/**
+ * ★★★ ĐỢT F / TASK 3 / B3 — "Chat mới": KẾT CỤC là khung TRẮNG, kể cả khi phiên vừa rời còn treo
+ * bong bóng, thẻ duyệt, nút Dừng đang hiện, hoặc một câu đang gõ dở. Cùng khuôn CHẠY THẬT script.
+ */
+describe("webview — ĐỢT F / TASK 3 / B3: tin 'chat_moi' xoá SẠCH khung", () => {
+  it("★★★ có bong bóng + thẻ duyệt đang mở + nút Dừng đang hiện + câu gõ dở ⇒ 'chat_moi' xoá HẾT", () => {
+    const w = chayWebview();
+    // Dựng một "phiên đang sống": một lượt hỏi đã gửi (2 bong bóng: Bạn + AI Local rỗng), nút Dừng
+    // đang hiện (gui() bật nó), rồi một thẻ duyệt đang mở.
+    w.nut("o-nhap").value = "câu hỏi cũ";
+    w.nut("nut-gui").bam();
+    w.banTin({
+      loai: "the_duyet",
+      nhanNguon: "LOCAL · C:\\ws",
+      nhanNut: "Ghi vào workspace",
+      duong: "a.ts",
+      tomTat: "+1 / −0",
+      han: "",
+    });
+    expect(w.nut("hoi-thoai").con.length).toBeGreaterThan(0);
+    expect(w.nut("the-duyet").hidden).toBe(false);
+    expect(w.nut("nut-dung").hidden).toBe(false);
+    // Một câu MỚI đang gõ dở, chưa gửi — phải bị xoá vì đây là phiên TRẮNG, không phải trạng thái
+    // đăng nhập đổi (khác hẳn hàng rào B4 của Task 1, xem docblock `xoaKhungChoPhienKhac`).
+    w.nut("o-nhap").value = "câu đang gõ dở, chưa bấm Gửi";
+
+    w.banTin({ loai: "chat_moi" });
+
+    expect(w.nut("hoi-thoai").con).toHaveLength(0);
+    expect(w.nut("the-duyet").hidden).toBe(true);
+    expect(w.nut("nut-dung").hidden).toBe(true);
+    expect(w.nut("o-nhap").value).toBe("");
+  });
+
+  it("★ 'chat_moi' không ném lỗi khi khung ĐÃ trắng sẵn (rảnh, chưa hỏi gì)", () => {
+    const w = chayWebview();
+    expect(() => w.banTin({ loai: "chat_moi" })).not.toThrow();
+    expect(w.nut("hoi-thoai").con).toHaveLength(0);
+  });
+
+  it("★★ nút duyệt đang KHOÁ (chống bấm hai lần) từ phiên cũ ⇒ 'chat_moi' cũng MỞ KHOÁ lại", () => {
+    // Nếu không mở khoá, một phiên MỚI mà lỡ nhận một thẻ duyệt MỚI (không nên xảy ra, nhưng đây là
+    // hàng rào phòng thủ) sẽ thấy nút Duyệt bị khoá bởi quyết định của phiên đã rời từ lâu.
+    const w = chayWebview();
+    w.banTin({ loai: "the_duyet", nhanNguon: "LOCAL · C:\\ws", nhanNut: "Ghi vào workspace", duong: "a.ts", tomTat: "+1 / −0", han: "" });
+    w.nut("nut-duyet").bam();
+    expect(w.nut("nut-duyet").disabled).toBe(true);
+
+    w.banTin({ loai: "chat_moi" });
+
+    expect(w.nut("nut-duyet").disabled).toBe(false);
+  });
+});
+
+/**
+ * ★★★ ĐỢT F / TASK 3 / B4 — "Lịch sử": chọn một hội thoại khác PHẢI THAY THẾ nội dung đang hiện,
+ * không nối thêm vào nó — nếu không, hai cuộc hội thoại không liên quan chồng lên nhau trên cùng
+ * một khung và người dùng không thể phân biệt đâu là hội thoại vừa chọn.
+ */
+describe("webview — ĐỢT F / TASK 3 / B4: 'khoi_phuc_hoi_thoai' THAY THẾ nội dung phiên cũ", () => {
+  it("★★★ đang hiện hội thoại A ⇒ chọn hội thoại B ⇒ khung chỉ còn ĐÚNG nội dung của B, không lẫn A", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "khoi_phuc_hoi_thoai", luot: [{ vaiTro: "user", noiDung: "Câu hỏi của phiên A" }] });
+    expect(w.nut("hoi-thoai").con).toHaveLength(1);
+
+    w.banTin({
+      loai: "khoi_phuc_hoi_thoai",
+      luot: [
+        { vaiTro: "user", noiDung: "Câu hỏi của phiên B" },
+        { vaiTro: "assistant", noiDung: "Trả lời của phiên B" },
+      ],
+    });
+
+    const bongBong = w.nut("hoi-thoai").con;
+    expect(bongBong).toHaveLength(2);
+    expect(bongBong.map((b) => b.con.map((x) => x.textContent))).toEqual([
+      ["Bạn", "Câu hỏi của phiên B"],
+      ["AI Local", "Trả lời của phiên B"],
+    ]);
+    // Không còn dấu vết nào của phiên A trong khung.
+    expect(bongBong.some((b) => b.con.some((x) => x.textContent === "Câu hỏi của phiên A"))).toBe(false);
+  });
+
+  it("★ nạp một hội thoại khác cũng đóng thẻ duyệt/nút Dừng còn treo của phiên vừa rời", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "câu hỏi cũ";
+    w.nut("nut-gui").bam();
+    w.banTin({
+      loai: "the_duyet",
+      nhanNguon: "LOCAL · C:\\ws",
+      nhanNut: "Ghi vào workspace",
+      duong: "a.ts",
+      tomTat: "+1 / −0",
+      han: "",
+    });
+    expect(w.nut("the-duyet").hidden).toBe(false);
+    expect(w.nut("nut-dung").hidden).toBe(false);
+
+    w.banTin({ loai: "khoi_phuc_hoi_thoai", luot: [{ vaiTro: "user", noiDung: "Câu hỏi B" }] });
+
+    expect(w.nut("the-duyet").hidden).toBe(true);
+    expect(w.nut("nut-dung").hidden).toBe(true);
   });
 });

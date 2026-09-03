@@ -69,7 +69,7 @@ import { locDanhSachMention } from "../loi/locMention";
 // không biết `vscode`) chỉ biết lưu/đọc; tệp này bơm một `KhoLuuTruTho` bọc quanh `workspaceState`
 // (xem `khoHoiThoaiTho()`) và là nơi DUY NHẤT quyết định LÚC NÀO lưu/khôi phục — không nhân bản
 // logic chat vào tệp kia.
-import { luuHoiThoai, docHoiThoaiGanNhat, type KhoLuuTruTho } from "../loi/khoHoiThoai";
+import { luuHoiThoai, docHoiThoaiGanNhat, docDanhSachHoiThoai, type KhoLuuTruTho, type HoiThoai } from "../loi/khoHoiThoai";
 
 /** Đề xuất ghi CỤC BỘ đang chờ duyệt + mọi thứ đã ĐO tại thời điểm dựng thẻ (không đo lại lúc bấm,
  *  trừ băm đĩa — băm PHẢI đo lại trong `apBanVa` vì đó chính là phép chống xung đột). */
@@ -152,8 +152,19 @@ interface VatChuaChat {
   readonly onDidDispose: vscode.Event<void>;
 }
 
+/** ★★★ TASK 3 — một mục QuickPick của "Lịch sử", mang theo NGUYÊN VẸN `HoiThoai` nó đại diện (đọc
+ *  lại lúc CHỌN thay vì đọc theo chỉ số/mã trong một danh sách có thể đã đổi giữa lúc mở QuickPick
+ *  và lúc bấm chọn — VSCode không đảm bảo thứ tự chọn tới NGAY sau khi liệt kê xong). */
+interface MucLichSu extends vscode.QuickPickItem {
+  hoiThoai: HoiThoai;
+}
+
 export class BangChat {
   private static hienTai: BangChat | undefined;
+  // ★★★ TASK 3 — instance ĐANG SỐNG của khung THANH BÊN (khác `hienTai`, singleton của bảng NỔI
+  // CŨ). Hai nút "Chat mới"/"Lịch sử" ở `view/title` (`extension.ts`) cần một cách để tìm ĐÚNG
+  // instance đang hiển thị trong thanh hoạt động — đây là nơi DUY NHẤT giữ tham chiếu đó.
+  private static thanhBenHienTai: BangChat | undefined;
   private lichSu: LuotChat[] = [];
   // ★★★ ĐỢT F / TASK 2 — mã ĐỊNH DANH của hội thoại đang mở trong `workspaceState`. `undefined`
   // nghĩa là "chưa từng lưu lượt nào của hội thoại NÀY" — `luuHoiThoaiHienTai()` tự sinh một mã
@@ -215,6 +226,11 @@ export class BangChat {
       // kiện `hienTai` sẽ xoá NHẦM tham chiếu tới một bảng NỔI đang mở — `moHoacHien` lần sau tưởng
       // chưa có bảng nào, tạo bảng THỨ HAI thay vì hiện lại bảng cũ.
       if (BangChat.hienTai === this) BangChat.hienTai = undefined;
+      // ★★★ TASK 3 — CÙNG hàng rào: chỉ xoá `thanhBenHienTai` nếu CHÍNH instance này đang giữ chỗ
+      // đó. VSCode có thể resolve LẠI view (đóng/mở view, restart extension host) và tạo một
+      // instance MỚI trước khi instance CŨ kịp dispose — vô điều kiện xoá ở đây sẽ xoá NHẦM tham
+      // chiếu của instance mới, khiến hai nút "Chat mới"/"Lịch sử" mất tác dụng ngay sau khi mở lại.
+      if (BangChat.thanhBenHienTai === this) BangChat.thanhBenHienTai = undefined;
     });
     // KHÔNG nạp danh sách dự án ở đây. `postMessage` có thể chạy TRƯỚC khi script trong webview
     // kịp đăng ký `addEventListener("message", …)` ⇒ danh sách rơi mất mà không có lỗi nào — ô
@@ -408,7 +424,17 @@ export class BangChat {
    * view (thường chỉ một lần mỗi phiên VSCode nhờ `retainContextWhenHidden`, xem nơi đăng ký).
    */
   static choView(webviewView: vscode.WebviewView, context: vscode.ExtensionContext, khoDeXuat: KhoDeXuat): BangChat {
-    return new BangChat(webviewView, context, khoDeXuat, () => webviewView.show?.(true));
+    const bc = new BangChat(webviewView, context, khoDeXuat, () => webviewView.show?.(true));
+    // ★★★ TASK 3 — ghi lại instance MỚI NHẤT của thanh bên NGAY sau khi dựng xong, để hai lệnh
+    // "Chat mới"/"Lịch sử" (`extension.ts`) luôn tìm đúng instance đang hiển thị.
+    BangChat.thanhBenHienTai = bc;
+    return bc;
+  }
+
+  /** ★★★ TASK 3 — instance ĐANG MỞ của khung thanh bên, dùng bởi hai lệnh nút "Chat mới"/"Lịch sử"
+   *  ở `view/title` (`extension.ts`). `undefined` chỉ khi VSCode CHƯA từng resolve view đó. */
+  static thanhBenDangMo(): BangChat | undefined {
+    return BangChat.thanhBenHienTai;
   }
 
   /**
@@ -590,6 +616,93 @@ export class BangChat {
   private async thucHienDangXuat(): Promise<void> {
     await vscode.commands.executeCommand("aviAiLocal.dangXuat");
     await this.guiTrangThaiDangNhap();
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 3 / B3 — "Chat mới": lưu hội thoại đang có (nếu có ít nhất một lượt) vào kho
+   * bền (Task 2), rồi mở một phiên TRẮNG trong CÙNG một khung.
+   *
+   * ★ NHÁNH KIA — hội thoại RỖNG (chưa hỏi câu nào, ví dụ bấm "Chat mới" hai lần liên tiếp): KHÔNG
+   *   lưu một mục rỗng vào lịch sử. Không viết lại hàng rào đó ở đây — `luuHoiThoaiHienTai()` gọi
+   *   thẳng `luuHoiThoai` (`loi/khoHoiThoai.ts`), và hàm đó ĐÃ tự chặn `luotTho.length === 0` (xem
+   *   docblock ở đó); gọi `luuHoiThoaiHienTai()` vô điều kiện ở đây là an toàn — một mục rỗng không
+   *   giúp ích gì và chỉ chiếm một suất trong trần B3 của `apDungTranDungLuong`.
+   *
+   * ★ CÂU HỎI ĐANG CHẠY DỞ — huỷ SẠCH bằng `this.huy?.abort()` **KHÔNG KÈM LÝ DO**, tức đúng cơ chế
+   *   "huỷ NGẦM" đã có sẵn ở ĐẦU `hoi()` khi một câu hỏi MỚI đè lên câu hỏi cũ (`this.huy?.abort();`
+   *   không tham số) — CỐ Ý KHÁC `LY_DO_NGUOI_DUNG_DUNG` (dành riêng cho nút "Dừng", nơi `catch` của
+   *   `hoi()` CHỦ Ý báo lại "Đã dừng — ở vòng N." cho người dùng đang nhìn ĐÚNG cuộc hội thoại đó).
+   *   Ở đây người dùng đã RỜI khỏi hội thoại cũ để mở một phiên MỚI — một bong bóng "Đã dừng" lạc
+   *   vào giữa khung TRẮNG vừa mở còn tệ hơn im lặng (đúng lớp lỗi Đợt A đã trả giá, xem docblock
+   *   nhánh `catch` của `hoi()`). Huỷ không kèm lý do khiến nhánh `catch` rơi về nhánh SILENT có sẵn
+   *   (không `postMessage` gì) — và quan trọng hơn: nhánh đó KHÔNG BAO GIỜ đụng `this.lichSu`/lưu
+   *   bền (chỉ nhánh hoàn tất BÌNH THƯỜNG trong `try` của `hoi()` mới làm việc đó, SAU khi vòng lặp
+   *   `break` một cách bình thường) — nên dù luồng SSE cũ vẫn còn "bay" khi hàm này return, nó không
+   *   có cách nào ghi vào `this.lichSu` đã bị reset bên dưới. Chọn "dừng" thay vì "chặn cho tới khi
+   *   xong": người dùng bấm "Chat mới" muốn NGAY một phiên trắng, không phải đợi xong một câu trả
+   *   lời họ không còn quan tâm đọc.
+   */
+  public async chatMoi(): Promise<void> {
+    this.huy?.abort();
+    try {
+      await this.luuHoiThoaiHienTai();
+    } catch (e) {
+      // Lỗi LƯU không được chặn việc mở phiên mới — cùng nguyên tắc "lỗi lưu không làm rớt câu trả
+      // lời" đã áp ở cuối `hoi()`.
+      console.error("AI Local: lưu hội thoại bền thất bại (Chat mới)", e);
+    }
+    this.lichSu = [];
+    this.maHoiThoaiHienTai = undefined;
+    this.quenDeXuat();
+    void this.panel.webview.postMessage({ loai: "chat_moi" });
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 3 / B4 — "Lịch sử": liệt kê hội thoại đã lưu (tiêu đề + thời điểm), chọn một
+   * mục ⇒ nạp lại ĐÚNG hội thoại đó vào khung.
+   *
+   * ★ NHÁNH KIA — kho RỖNG: `showInformationMessage` tử tế, TUYỆT ĐỐI KHÔNG mở `showQuickPick` với
+   *   một danh sách trắng — một QuickPick trắng không nói được VÌ SAO trắng ("chưa hỏi gì lần nào"
+   *   và "dữ liệu cũ hỏng, bị `docDanhSachHoiThoai` lọc sạch" trông giống hệt nhau trước một danh
+   *   sách rỗng), trong khi một câu chữ rõ ràng thì không mập mờ.
+   *
+   * ★★★ KẾT CỤC (không chỉ "đã gọi showQuickPick"): gán LẠI `this.lichSu` VÀ `this.maHoiThoaiHienTai`
+   *   từ ĐÚNG bản ghi vừa chọn — không phải theo chỉ số trong danh sách (`MucLichSu.hoiThoai` mang
+   *   nguyên `HoiThoai` đã chọn, đọc trực tiếp từ đó) — rồi `postMessage({loai:"khoi_phuc_hoi_thoai"})`.
+   *   Tin này CHÍNH là tin B5 (Task 2) đã dùng lúc khung vừa mở — KHÔNG dựng một đường vẽ lại thứ
+   *   hai; `htmlBang.ts` giờ XOÁ khung TRƯỚC khi vẽ (xem đó) nên tái dùng ở đây thay THẾ nội dung cũ
+   *   thay vì nối thêm. Gán lại `maHoiThoaiHienTai` để một lượt hỏi TIẾP THEO UPSERT vào ĐÚNG bản
+   *   ghi vừa mở lại, không đẻ thêm một bản ghi thứ ba cho cùng một cuộc trò chuyện.
+   *
+   * ★ CÂU HỎI ĐANG CHẠY DỞ — huỷ SẠCH, CÙNG LÝ LẼ với `chatMoi()` (xem docblock ở đó): không huỷ
+   *   TRƯỚC khi đổi `this.maHoiThoaiHienTai` thì một luồng SSE mồ côi của phiên VỪA RỜI có thể hoàn
+   *   tất SAU khi trường đó đã trỏ sang mã của hội thoại VỪA CHỌN — `luuHoiThoaiHienTai()` của nó sẽ
+   *   UPSERT (tức GHI ĐÈ) đúng bản ghi người dùng vừa mở lại bằng nội dung của một câu hỏi hoàn toàn
+   *   không liên quan. Huỷ TRƯỚC khi gán lại loại trừ khả năng đó bằng CẤU TRÚC, không phải may rủi
+   *   về thời điểm.
+   */
+  public async moLichSu(): Promise<void> {
+    const ds = docDanhSachHoiThoai(this.khoHoiThoaiTho());
+    if (ds.length === 0) {
+      void vscode.window.showInformationMessage("AI Local: chưa có hội thoại nào được lưu.");
+      return;
+    }
+    const muc = await vscode.window.showQuickPick<MucLichSu>(
+      [...ds]
+        .sort((a, b) => b.thoiDiem - a.thoiDiem)
+        .map((h) => ({ label: h.tieuDe, description: new Date(h.thoiDiem).toLocaleString(), hoiThoai: h })),
+      { placeHolder: "Chọn một hội thoại để nạp lại vào khung" },
+    );
+    if (!muc) return; // Esc / bấm ra ngoài — huỷ lặng lẽ, giữ nguyên phiên đang mở
+
+    this.huy?.abort();
+    this.lichSu = [...muc.hoiThoai.luot];
+    this.maHoiThoaiHienTai = muc.hoiThoai.ma;
+    this.quenDeXuat();
+    void this.panel.webview.postMessage({
+      loai: "khoi_phuc_hoi_thoai",
+      luot: muc.hoiThoai.luot.map((l) => ({ vaiTro: l.role, noiDung: l.content })),
+    });
   }
 
   /**
