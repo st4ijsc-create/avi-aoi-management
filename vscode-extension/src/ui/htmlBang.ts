@@ -10,10 +10,20 @@
  * `webview.html`. Rơi về `false` (chưa đăng nhập) là lựa chọn AN TOÀN: nút "Đăng nhập" hiện ra
  * ngay, không bao giờ dựng một khung trông như "đã đăng nhập" khi chưa chắc chắn.
  *
- * ⚠⚠⚠ TÊN TÀI KHOẢN (`#ten-tai-khoan`) KHÔNG BAO GIỜ được đưa vào `dv` để chép thẳng vào chuỗi HTML
- * này — mọi tệp khác trong `dungHtmlBang` chỉ nhận dữ liệu ĐỘNG qua `postMessage` rồi gán
- * `textContent` (an toàn khỏi chèn HTML); một tham số chuỗi ghép trực tiếp vào template này phá vỡ
- * kỷ luật đó và mở một đường tiêm HTML mới. Tên tài khoản luôn tới qua tin `trang_thai_dang_nhap`.
+ * ★★★ ĐỢT G / TASK G1 / B2 (2026-09-03) — vùng tài khoản đổi từ BA phần tử (nút to + tên + nút
+ * đăng xuất, chiếm nguyên một hàng — đúng ảnh người dùng gửi kèm lời phàn nàn "mất thẩm mỹ") sang
+ * MỘT icon nhỏ `#nut-tai-khoan` ở góc khung, hai vai trò tuỳ trạng thái (chưa đăng nhập ⇒ bấm để
+ * đăng nhập; đã đăng nhập ⇒ bấm để đăng xuất, tên tài khoản nằm ở TOOLTIP `title`/`aria-label`).
+ * SVG NỘI TUYẾN, không phải codicon font: CSP của webview này là `default-src 'none'` và KHÔNG có
+ * `font-src` — nạp font codicon cần thêm `<link>` trỏ `asWebviewUri` (đòi `vscode`), mà tệp này
+ * THUẦN theo đúng kỷ luật ở trên. Một ô vuông trống vì font lỡ không nạp còn xấu hơn nút to cũ; SVG
+ * là markup tĩnh, chạy được dưới CSP hiện có mà không phải nới thêm directive nào.
+ *
+ * ⚠⚠⚠ TÊN TÀI KHOẢN KHÔNG BAO GIỜ được đưa vào `dv` để chép thẳng vào chuỗi HTML này — mọi tệp khác
+ * trong `dungHtmlBang` chỉ nhận dữ liệu ĐỘNG qua `postMessage` rồi gán `textContent`/`title` (an
+ * toàn khỏi chèn HTML); một tham số chuỗi ghép trực tiếp vào template này phá vỡ kỷ luật đó và mở
+ * một đường tiêm HTML mới. Tên tài khoản luôn tới qua tin `trang_thai_dang_nhap`, kể cả khi nó chỉ
+ * đi vào `title`/`aria-label` của `#nut-tai-khoan` thay vì `textContent` của một `<span>` riêng.
  */
 export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): string {
   const n = dv.nonce;
@@ -27,8 +37,23 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
 <style nonce="${n}">
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
          margin: 0; padding: 8px; display: flex; flex-direction: column; height: 100vh; }
-  #vung-tai-khoan { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
-  #ten-tai-khoan { opacity: .8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* ĐỢT G / TASK G1 / B2 — góc khung, không còn chiếm nguyên một hàng như nút to cũ. */
+  #vung-tai-khoan { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+  /* B2+B4 — nút ICON dùng chung: nền trong suốt, chỉ nổi lên khi hover/focus, giống nút icon gốc
+     của VSCode (không phải nút hành động to như trước). #nut-gui ghi đè nền ở dưới vì nó vẫn là
+     hành động CHÍNH của hàng nhập — icon nhỏ nhưng không "vô hình" như nút tài khoản (phụ). */
+  .nut-icon { display: inline-flex; align-items: center; justify-content: center;
+              padding: 4px; border-radius: 4px; background: transparent;
+              color: var(--vscode-foreground); border: none; cursor: pointer; }
+  .nut-icon:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); }
+  /* B2 — trạng thái ĐÃ đăng nhập tô icon một màu khác biệt (không chỉ dựa vào tooltip) — "hiện
+     trạng thái bằng màu" như kế hoạch đòi, không riêng chữ ẩn trong title. */
+  #nut-tai-khoan.da-dang-nhap { color: var(--vscode-charts-green, var(--vscode-foreground)); }
+  #nut-gui { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  #nut-gui:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
+  /* B3 — ẨN ở chế độ LOCAL (script bật lại hidden=false NGAY khi danh sách dự án có ít nhất một
+     mục SERVER — xem xử lý tin "duAn"). Mặc định ẨN ở markup tĩnh để tránh một cú chớp ô-chọn-rỗng
+     trước khi tin đầu tiên tới. */
   #o-du-an { width: 100%; margin-bottom: 8px; background: var(--vscode-dropdown-background);
              color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border);
              padding: 4px; }
@@ -60,16 +85,21 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
 </head>
 <body>
 <!-- ★★★ ĐỢT F / TASK 1 — đăng nhập NGAY TRONG KHUNG. Trước đợt này, "chưa đăng nhập" chỉ hiện một
-     dòng lỗi rồi BỎ MẶC (không nút, không ô) — người dùng không biết bảng lệnh ở đâu. Ba phần tử
-     dưới đây LUÔN có mặt trong DOM (đúng khuôn #nut-dung / #the-duyet đã dùng cho mọi trạng thái
-     "mặc định ẩn" khác trong tệp này) — chỉ thuộc tính hidden đổi, KHÔNG BAO GIỜ dựng lại HTML,
-     để một câu hỏi đang gõ dở trong #o-nhap không bị mất khi trạng thái đăng nhập đổi (B4). -->
+     dòng lỗi rồi BỎ MẶC (không nút, không ô) — người dùng không biết bảng lệnh ở đâu.
+     ★★★ ĐỢT G / TASK G1 / B2 — nay MỘT nút icon (#nut-tai-khoan) LUÔN có mặt trong DOM (đúng
+     khuôn #nut-dung / #the-duyet đã dùng cho mọi trạng thái "đổi tại chỗ" khác trong tệp này) —
+     chỉ title/aria-label/lớp CSS đổi, KHÔNG BAO GIỜ dựng lại HTML, để một câu hỏi đang gõ dở
+     trong #o-nhap không bị mất khi trạng thái đăng nhập đổi (B4, xem xử lý tin trang_thai_dang_nhap). -->
 <div id="vung-tai-khoan">
-  <button id="nut-dang-nhap"${daDangNhap ? " hidden" : ""}>Đăng nhập</button>
-  <span id="ten-tai-khoan"${daDangNhap ? "" : " hidden"}></span>
-  <button id="nut-dang-xuat"${daDangNhap ? "" : " hidden"}>Đăng xuất</button>
+  <button id="nut-tai-khoan" class="nut-icon"${daDangNhap ? " data-da-dang-nhap=\"true\"" : ""}
+          title="${daDangNhap ? "Đăng xuất" : "Đăng nhập"}"
+          aria-label="${daDangNhap ? "Đăng xuất" : "Đăng nhập"}">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+      <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 1.2c-2.73 0-6.2 1.37-6.2 4.1v.7h12.4v-.7c0-2.73-3.47-4.1-6.2-4.1Z" />
+    </svg>
+  </button>
 </div>
-<select id="o-du-an" title="Chọn dự án"></select>
+<select id="o-du-an" title="Chọn dự án" hidden></select>
 <div id="hoi-thoai"></div>
 <div id="the-duyet" hidden>
   <div class="nhan">Đề xuất ghi tệp</div>
@@ -94,7 +124,13 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
        và chuyển tiếp lựa chọn, đúng nguyên tắc đã áp cho thẻ duyệt. -->
   <div id="mention-ds" hidden></div>
   <textarea id="o-nhap" rows="2" placeholder="Hỏi AI Local… (Ctrl+Enter để gửi, @ để chèn tệp)"></textarea>
-  <button id="nut-gui">Gửi</button>
+  <!-- ĐỢT G / TASK G1 / B4 — icon nhỏ gọn thay chữ "Gửi"; aria-label GIỮ nhãn cho trình đọc màn
+       hình (nhỏ gọn không đồng nghĩa vô danh) — hành vi bấm/Ctrl+Enter không đổi (vẫn gọi gui()). -->
+  <button id="nut-gui" class="nut-icon" title="Gửi (Ctrl+Enter)" aria-label="Gửi (Ctrl+Enter)">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+      <path d="M1.2 1.4 14.8 8 1.2 14.6l2.6-6.1H9.5V7.5H3.8Z" />
+    </svg>
+  </button>
   <!-- TASK 4 — nút DỪNG. MẶC ĐỊNH ẨN: chỉ có ý nghĩa khi một lượt hỏi đang chạy (đang chờ SSE
        hoặc đang giữa vòng lặp tác nhân), không phải lúc rảnh. Hàm gui() hiện nó khi bắn câu hỏi;
        nơi DUY NHẤT ẩn lại là lúc nhận được tín hiệu 'lượt này đã xong' (hoan_tat/loi) — xem dưới. -->
@@ -137,11 +173,15 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   // hỏi tài khoản/mật khẩu: phía extension gọi ĐÚNG lệnh \`aviAiLocal.dangNhap\` đã đăng ký (dùng
   // \`showInputBox({password:true})\` sẵn có) — mật khẩu không bao giờ chạm tới webview này.
   // ══════════════════════════════════════════════════════════════════════════════════════════
-  const nutDangNhap = document.getElementById("nut-dang-nhap");
-  const tenTaiKhoan = document.getElementById("ten-tai-khoan");
-  const nutDangXuat = document.getElementById("nut-dang-xuat");
-  nutDangNhap.addEventListener("click", () => vscode.postMessage({ loai: "dangNhap" }));
-  nutDangXuat.addEventListener("click", () => vscode.postMessage({ loai: "dangXuat" }));
+  const nutTaiKhoan = document.getElementById("nut-tai-khoan");
+  // ★★★ ĐỢT G / TASK G1 / B2 — MỘT nút hai vai trò: bấm nghĩa là đăng nhập hay đăng xuất tuỳ
+  // TRẠNG THÁI HIỆN TẠI (tin \`trang_thai_dang_nhap\` GẦN NHẤT quyết định, xem xử lý bên dưới).
+  // Khởi từ ĐÚNG markup TĨNH ban đầu (\`data-da-dang-nhap\` do \`dungHtmlBang\` dựng theo \`dv\`) —
+  // không đoán \`false\` cứng ở đây, để hàm vẫn ĐÚNG cho đầu vào \`daDangNhap:true\` dù constructor
+  // của BangChat hiếm khi truyền nó (luôn rơi về an toàn — xem docblock đầu tệp).
+  let daDangNhapHienTai = nutTaiKhoan.dataset.daDangNhap === "true";
+  nutTaiKhoan.addEventListener("click", () =>
+    vscode.postMessage({ loai: daDangNhapHienTai ? "dangXuat" : "dangNhap" }));
 
   // ══════════════════════════════════════════════════════════════════════════════════════════
   // ★★★ TASK 5 — @-MENTION. Webview chỉ (1) phát hiện vị trí "@..." đang gõ, (2) hỏi extension
@@ -318,11 +358,22 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     } else if (m.loai === "duAn") {
       const o = document.getElementById("o-du-an");
       o.innerHTML = "";
+      let coDuAnServer = false;
       for (const d of m.ds) {
         const opt = document.createElement("option");
         opt.value = d.id; opt.textContent = d.nhan;
         o.appendChild(opt);
+        if (d.loai === "server") coDuAnServer = true;
       }
+      // ★★★ ĐỢT G / TASK G1 / B3 — ẨN ô chọn khi danh sách CHỈ TOÀN thư mục LOCAL: VSCode đã trỏ
+      // đúng workspace rồi, hiện lại ô này là thừa (đúng lời người dùng đo được ở PHẦN 0 kế hoạch
+      // Đợt G). GIỮ hiện ngay khi có ÍT NHẤT một dự án SERVER trong danh sách: ở đó "chọn dự án" là
+      // một lựa chọn THẬT (không có workspace nào để suy ra) — kể cả khi mục ĐANG chọn hiện là một
+      // thư mục LOCAL, người dùng vẫn cần ô này để chuyển SANG một dự án SERVER khác. Quyết định
+      // theo TOÀN DANH SÁCH (không theo riêng mục đang chọn) để tránh một cái bẫy: nếu ẩn/hiện theo
+      // mục đang chọn, chọn một mục LOCAL trong danh sách hỗn hợp sẽ ẩn mất chính ô cho phép chọn
+      // LẠI một dự án SERVER — không có đường quay lại.
+      o.hidden = !coDuAnServer;
     } else if (m.loai === "the_duyet") {
       // Chữ hiển thị (nhãn nguồn, chữ trên nút ghi, tóm tắt +N/-M hay "Tạo tệp mới") do EXTENSION
       // dựng sẵn — webview chỉ đặt textContent, không tự suy luận gì thêm.
@@ -380,14 +431,18 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // nhập ngay khi tin này tới, KHÔNG cần đóng/mở lại view. Extension gửi tin này (1) ngay sau
       // "san_sang" (phản ánh trạng thái THẬT — có thể đã đăng nhập từ phiên VSCode trước) và (2)
       // sau khi lệnh đăng nhập/đăng xuất chạy XONG (không phải "đã gọi lệnh").
-      // ★★★ B4 — CHỈ đổi ba phần tử của vùng tài khoản, TUYỆT ĐỐI KHÔNG chạm \`oNhap.value\`: đây là
-      // lý do câu hỏi đang gõ dở không bao giờ mất khi trạng thái đăng nhập đổi (không có bản dựng
-      // lại HTML nào ở đây, chỉ đổi thuộc tính \`hidden\`/\`textContent\` của DOM đang sống).
+      // ★★★ B4 — CHỈ đổi thuộc tính của \`#nut-tai-khoan\`, TUYỆT ĐỐI KHÔNG chạm \`oNhap.value\`: đây
+      // là lý do câu hỏi đang gõ dở không bao giờ mất khi trạng thái đăng nhập đổi (không có bản
+      // dựng lại HTML nào ở đây, chỉ đổi \`title\`/\`aria-label\`/lớp CSS của DOM đang sống).
+      // ★★★ ĐỢT G / TASK G1 / B2 — tên tài khoản CHỈ đi vào \`title\`/\`aria-label\` (tooltip qua
+      // thuộc tính, không phải \`textContent\` của một phần tử hiện ra) — vẫn tới qua ĐÚNG tin này,
+      // không tiêm vào HTML tĩnh (giữ nguyên kỷ luật đã ghi ở docblock đầu tệp).
       const daDangNhap = m.daDangNhap === true;
-      nutDangNhap.hidden = daDangNhap;
-      tenTaiKhoan.hidden = !daDangNhap;
-      nutDangXuat.hidden = !daDangNhap;
-      tenTaiKhoan.textContent = daDangNhap ? (m.tenTaiKhoan || "") : "";
+      daDangNhapHienTai = daDangNhap;
+      nutTaiKhoan.classList.toggle("da-dang-nhap", daDangNhap);
+      const nhanTaiKhoan = daDangNhap ? (m.tenTaiKhoan || "Đã đăng nhập") + " — bấm để đăng xuất" : "Đăng nhập";
+      nutTaiKhoan.title = nhanTaiKhoan;
+      nutTaiKhoan.setAttribute("aria-label", nhanTaiKhoan);
     } else if (m.loai === "chat_moi") {
       // ★★★ ĐỢT F / TASK 3 / B3 — "Chat mới": khung TRẮNG, không còn dấu vết gì của phiên cũ, KỂ CẢ
       // câu đang gõ dở (\`true\` — xem docblock \`xoaKhungChoPhienKhac\`, bản vá 2026-09-03).

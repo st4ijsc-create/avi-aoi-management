@@ -59,6 +59,20 @@ const may = vi.hoisted(() => ({
   quickPickSoLanGoi: 0,
   /** Thông báo đã gửi qua `showInformationMessage`, ĐÚNG THỨ TỰ. */
   thongBaoInfo: [] as string[],
+  /**
+   * ★★★ ĐỢT G / TASK G1 / B1 — đáp ứng giả cho `goiTruyVanTrpc(..., "auth.me")`, dùng để kiểm
+   * TRA THẬT cookie còn hiệu lực hay không (khác `repoWorkspace.listProjects`, luôn trả `{projects:
+   * []}` bất kể đầu vào — xem mock `../mang/trpc` bên dưới). Mặc định TRUTHY (một hồ sơ người dùng
+   * giả) để MỌI ca cũ trong tệp này (đa số bắt đầu với `may.cookie = "cookie-gia"` ở `beforeEach`)
+   * tiếp tục coi cookie là HỢP LỆ mà không phải sửa lại — chỉ nhóm ca B1 mới đặt nó về `null` để mô
+   * phỏng "auth.me RÀNH MẠCH nói phiên đã hết" (200 kèm `json:null`, KHÔNG phải một lỗi mạng).
+   */
+  trpcAuthMeKetQua: { id: 1, name: "nguoi_dung_thu" } as unknown,
+  /** ★★★ B1 — ép mock `auth.me` NÉM lỗi mạng (thay vì trả `null`) — mô phỏng "KHÔNG BIẾT" (máy chủ
+   *  không nối được), khác hẳn "BIẾT LÀ SAI" (`trpcAuthMeKetQua = null`). Cờ riêng thay vì gán một
+   *  Promise reject vào `trpcAuthMeKetQua` — tránh cảnh báo unhandled-rejection nếu không ai await
+   *  nó kịp trong cùng tick. */
+  trpcAuthMeLoiMang: false,
 }));
 
 /**
@@ -98,8 +112,18 @@ vi.mock("../mang/toolCucBo", () => ({
  * chặn ở đây — đúng lớp "lưới không hermetic" mà `../mang/dongSse` ở trên đã né cho SSE. Trả danh
  * sách RỖNG: đủ để `napDuAn` không ném, không liên quan gì tới trục đo của nhóm ca đăng nhập.
  */
+/**
+ * ★★★ ĐỢT G / TASK G1 / B1 — MỞ RỘNG mock để phân biệt hai lời gọi `goiTruyVanTrpc` khác nhau:
+ * `repoWorkspace.listProjects` (napDuAn, không liên quan trục B1) vẫn trả `{projects: []}` như cũ;
+ * `auth.me` (kiểm cookie còn hiệu lực, B1 mới) trả `may.trpcAuthMeKetQua` — TRUTHY mặc định (cookie
+ * hợp lệ), các ca B1 tự đặt về `null` để mô phỏng phiên đã hết mà KHÔNG phải một lỗi mạng.
+ */
 vi.mock("../mang/trpc", () => ({
-  goiTruyVanTrpc: async () => ({ projects: [] }),
+  goiTruyVanTrpc: async (_serverUrl: string, _cookie: string, ten: string) => {
+    if (ten !== "auth.me") return { projects: [] };
+    if (may.trpcAuthMeLoiMang) throw new Error("ECONNREFUSED — máy chủ không nối được");
+    return may.trpcAuthMeKetQua;
+  },
 }));
 
 vi.mock("vscode", () => ({
@@ -274,6 +298,8 @@ beforeEach(() => {
   may.quickPickMucGanNhat = [];
   may.quickPickSoLanGoi = 0;
   may.thongBaoInfo = [];
+  may.trpcAuthMeKetQua = { id: 1, name: "nguoi_dung_thu" };
+  may.trpcAuthMeLoiMang = false;
 });
 
 describe("quenDeXuat — xoá trạng thái VÔ ĐIỀU KIỆN (Minor)", () => {
@@ -803,6 +829,57 @@ describe("ĐỢT F / TASK 1 — trạng thái đăng nhập tự đồng bộ", 
     const tt = may.daGui.filter((m) => m.loai === "trang_thai_dang_nhap");
     expect(tt).toHaveLength(1);
     expect(tt[0]).toMatchObject({ daDangNhap: true, tenTaiKhoan: "an_da_dang_nhap_truoc" });
+  });
+
+  /**
+   * ★★★ ĐỢT G / TASK G1 / B1 — BA NHÁNH của "kiểm cookie còn hiệu lực THẬT": (1) không cookie — ca
+   * "'san_sang' lúc CHƯA đăng nhập" ở trên; (2) cookie HỢP LỆ — ca "NHÁNH KIA" ở trên (mock
+   * `auth.me` mặc định trả một hồ sơ giả TRUTHY); (3) cookie HẾT HẠN/BỊ TỪ CHỐI — nhóm ca dưới đây.
+   * Trước bản vá này, `trangThaiDangNhap()` chỉ kiểm SỰ CÓ MẶT của cookie trong SecretStorage — một
+   * cookie đã chết trên máy chủ (đăng xuất từ máy khác, hết TTL, bị admin thu hồi) vẫn được khai
+   * "đã đăng nhập" mà không hề hỏi máy chủ một câu nào. Đây đúng lớp lỗi "khai kết cục mà không đọc
+   * kết cục" áp cho chính TRẠNG THÁI ĐĂNG NHẬP.
+   */
+  it("★★★ NHÁNH THỨ BA của B1: cookie CÓ trong SecretStorage nhưng máy chủ RÀNH MẠCH nói phiên đã hết (auth.me ⇒ null) ⇒ 'san_sang' báo daDangNhap:false, KHÔNG bị khai nhầm 'đã đăng nhập'", async () => {
+    may.cookie = "cookie-het-han";
+    may.globalState["aviAiLocal.tenTaiKhoan"] = "ten_cua_phien_cu";
+    may.trpcAuthMeKetQua = null; // auth.me trả 200 kèm json:null — RÀNH MẠCH, không phải lỗi mạng
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const tt = may.daGui.filter((m) => m.loai === "trang_thai_dang_nhap");
+    expect(tt).toHaveLength(1);
+    expect(tt[0]).toMatchObject({ daDangNhap: false, tenTaiKhoan: "" });
+  });
+
+  it("★★ NHÁNH KIA của ca trên: cookie hết hạn phải bị XOÁ khỏi SecretStorage — không chỉ ẩn ở giao diện, để lượt hỏi kế tiếp không lặp lại đúng một vòng kiểm tra vô nghĩa với cùng cookie chết", async () => {
+    may.cookie = "cookie-het-han";
+    may.trpcAuthMeKetQua = null;
+    moBang();
+    may.nhanTin?.({ loai: "san_sang" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.cookie).toBeUndefined();
+  });
+
+  it("★ lỗi MẠNG khi kiểm auth.me (khác hẳn phiên bị từ chối RÀNH MẠCH) KHÔNG bị coi là cookie sai — vẫn báo daDangNhap:true, cookie KHÔNG bị xoá oan", async () => {
+    // ★★★ Phân biệt "KHÔNG BIẾT" (mất mạng/máy chủ tắt) với "BIẾT LÀ SAI" (auth.me trả null rành
+    // mạch) — chỉ nhánh SAU mới được đăng xuất. Buộc đăng nhập lại vì máy chủ tắt tạm thời là một
+    // cái giá vô lý mà LOCAL (không cần máy chủ) không đòi hỏi.
+    may.cookie = "cookie-con-song";
+    may.globalState["aviAiLocal.tenTaiKhoan"] = "ky_su_binh";
+    may.trpcAuthMeLoiMang = true;
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const tt = may.daGui.filter((m) => m.loai === "trang_thai_dang_nhap");
+    expect(tt).toHaveLength(1);
+    expect(tt[0]).toMatchObject({ daDangNhap: true, tenTaiKhoan: "ky_su_binh" });
+    expect(may.cookie).toBe("cookie-con-song");
   });
 
   it("★★★ B2+B3: bấm 'Đăng nhập' ⇒ gọi ĐÚNG lệnh 'aviAiLocal.dangNhap' đã đăng ký, KHÔNG một lệnh nào khác", async () => {

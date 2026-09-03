@@ -525,16 +525,63 @@ export class BangChat {
   }
 
   /**
+   * ★★★ ĐỢT G / TASK G1 / B1 — kiểm cookie CÒN HIỆU LỰC THẬT bằng một lượt gọi `auth.me`, không
+   * chỉ đoán qua sự CÓ MẶT của nó trong SecretStorage. `auth.me` (`server/routers.ts`) là
+   * `publicProcedure` — nó KHÔNG BAO GIỜ ném 401: một phiên hết hạn/bị thu hồi trả THẲNG
+   * `200 {json:null}` (đúng docblock `_core/publicUser.ts`), một phiên còn sống trả hồ sơ người
+   * dùng đã lọc. Đây là câu trả lời RÀNH MẠCH trong THÂN đáp ứng — không như
+   * `repoWorkspace.listProjects` (còn vướng cổng giấy phép/RBAC module qua `moduleProcedure`, có
+   * thể 403 dù phiên còn sống thật) — nên không cần phân biệt theo MÃ TRẠNG THÁI HTTP ở đây, chỉ
+   * cần đọc THÂN đáp ứng.
+   *
+   * ⚠⚠⚠ Lỗi MẠNG (máy chủ không nối được, DNS, sự cố 500…) là chuyện KHÁC hẳn "cookie sai" — đây là
+   * "KHÔNG BIẾT", không phải "biết là sai". Coi lỗi mạng là "còn hiệu lực" (rơi về AN TOÀN theo
+   * hướng KHÔNG đăng xuất oan một phiên có thể vẫn tốt) — LOCAL vẫn dùng được không cần máy chủ
+   * (xem `napDuAn`), nên buộc đăng nhập lại chỉ vì máy chủ tắt tạm thời là một cái giá vô lý mà
+   * kế hoạch không đòi trả. Chỉ khi máy chủ RÀNH MẠCH nói "không có ai" (`auth.me` ⇒ `null`) mới
+   * kết luận cookie hết hạn.
+   */
+  private async cookieConHieuLuc(cookie: string): Promise<boolean> {
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    const serverUrl = cfg.get<string>("serverUrl", "http://localhost:3000");
+    try {
+      const nguoiDung = await goiTruyVanTrpc(serverUrl, cookie, "auth.me");
+      return nguoiDung != null;
+    } catch {
+      return true; // không nối được máy chủ — KHÔNG đủ bằng chứng để kết luận cookie sai
+    }
+  }
+
+  /**
    * ★★★ ĐỢT F / TASK 1 — trạng thái đăng nhập THẬT, đọc từ đúng HAI nơi mà `extension.ts` ghi CÙNG
    * LÚC lúc đăng nhập/đăng xuất: cookie phiên (`KHOA_COOKIE`, SecretStorage — quyết định CÓ/KHÔNG
    * đăng nhập, đúng nguồn sự thật mà `napDuAn`/`hoi` đã dùng) và tên tài khoản (`KHOA_TEN_TAI_KHOAN`,
    * `globalState` — KHÔNG phải bí mật, chỉ để HIỂN THỊ). MỘT hàm DUY NHẤT tính trạng thái này, gọi
    * ở CẢ lúc "san_sang" LẪN sau khi lệnh đăng nhập/đăng xuất chạy xong — để hai đường đó không thể
    * khai lệch nhau (một chỗ nói "đã đăng nhập", chỗ kia vẫn hiện nút "Đăng nhập").
+   *
+   * ★★★ ĐỢT G / TASK G1 / B1 — CÓ cookie không còn đủ để khai "đã đăng nhập". Bản Đợt F chỉ kiểm sự
+   * CÓ MẶT (`if (!cookie) return false; else return true`) — một cookie đã HẾT HẠN trên máy chủ (bị
+   * người dùng đăng xuất từ máy khác, hết TTL phiên, bị admin thu hồi…) vẫn còn nằm nguyên trong
+   * SecretStorage của VSCode và sẽ bị khai NHẦM là "đã đăng nhập". Đây đúng lớp lỗi chữ ký của dự án
+   * này — "khai một kết cục mà không đọc kết cục" — áp dụng cho chính TRẠNG THÁI ĐĂNG NHẬP thay vì
+   * một lượt ghi. `cookieConHieuLuc` ở trên đọc KẾT CỤC thật từ máy chủ trước khi khai.
    */
   private async trangThaiDangNhap(): Promise<{ daDangNhap: boolean; tenTaiKhoan: string }> {
     const cookie = await this.context.secrets.get(KHOA_COOKIE);
     if (!cookie) return { daDangNhap: false, tenTaiKhoan: "" };
+    if (!(await this.cookieConHieuLuc(cookie))) {
+      // ★★★ NHÁNH KIA của B1 — máy chủ RÀNH MẠCH nói phiên này không còn: xoá cookie chết NGAY,
+      // đúng luật đã áp cho 401 giữa lượt hỏi (xem `catch` của `hoi()` bên dưới, spec §5.1), để
+      // không đâu trong khung còn khai "đã đăng nhập" cho một phiên đã hết hạn — và để lượt hỏi kế
+      // tiếp không lặp lại đúng một vòng kiểm tra vô nghĩa với cùng cookie chết. Xoá CẢ tên tài
+      // khoản đã lưu — `dangNhap.ts` khai rõ hai giá trị này "luôn đổi CÙNG LÚC" (đăng nhập ghi cả
+      // hai, đăng xuất xoá cả hai); một cookie chết bị dọn mà tên cũ còn sót lại là đúng mảnh vụn
+      // trạng thái mà kỷ luật đó muốn tránh, dù tên tài khoản không phải bí mật.
+      await this.context.secrets.delete(KHOA_COOKIE);
+      await this.context.globalState.update(KHOA_TEN_TAI_KHOAN, undefined);
+      return { daDangNhap: false, tenTaiKhoan: "" };
+    }
     return { daDangNhap: true, tenTaiKhoan: this.context.globalState.get<string>(KHOA_TEN_TAI_KHOAN, "") };
   }
 

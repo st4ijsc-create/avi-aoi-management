@@ -105,40 +105,76 @@ describe("dungHtmlBang", () => {
 });
 
 /**
- * ★★★ ĐỢT F / TASK 1 — B1: markup TĨNH của vùng đăng nhập phải khác nhau theo `dv.daDangNhap`.
- * Đây là lưới ĐỎ TRƯỚC KHI CÀI theo đúng khuôn B1 của kế hoạch — chạy trước khi sửa `htmlBang.ts`.
+ * ★★★ ĐỢT G / TASK G1 / B2 — markup TĨNH của vùng đăng nhập: MỘT icon (`#nut-tai-khoan`), không
+ * còn ba phần tử (nút to + tên + nút đăng xuất) của Đợt F. `title`/`aria-label` phải khác nhau
+ * theo `dv.daDangNhap` NGAY từ HTML tĩnh, và tên tài khoản (chưa biết ở thời điểm dựng trang) KHÔNG
+ * BAO GIỜ xuất hiện — nó chỉ tới sau qua tin `trang_thai_dang_nhap` (xem nhóm ca "webview" dưới).
  */
-describe("dungHtmlBang — ĐỢT F / TASK 1 / B1: vùng đăng nhập", () => {
-  it("★★★ CHƯA đăng nhập ⇒ HTML chứa nút 'Đăng nhập' Ở TRẠNG THÁI HIỆN (không mang `hidden`)", () => {
+describe("dungHtmlBang — ĐỢT G / TASK G1 / B2: icon tài khoản", () => {
+  it("★★★ CHƯA đăng nhập ⇒ nút tài khoản có title/aria-label 'Đăng nhập'", () => {
     const html = dungHtmlBang({ nonce: "N", daDangNhap: false });
-    expect(html).toContain('<button id="nut-dang-nhap">Đăng nhập</button>');
+    expect(html).toContain('id="nut-tai-khoan"');
+    expect(html).toMatch(/id="nut-tai-khoan"[^>]*title="Đăng nhập"/);
+    expect(html).toMatch(/id="nut-tai-khoan"[^>]*aria-label="Đăng nhập"/);
   });
 
-  it("★★★ NHÁNH KIA: ĐÃ đăng nhập ⇒ nút 'Đăng nhập' KHÔNG hiện (đúng khuôn `hidden` đã dùng cho #nut-dung/#the-duyet)", () => {
+  it("★★★ NHÁNH KIA: ĐÃ đăng nhập ⇒ title/aria-label đổi sang 'Đăng xuất' (chưa có tên tài khoản ở markup tĩnh)", () => {
     const html = dungHtmlBang({ nonce: "N", daDangNhap: true });
-    // KHÔNG chỉ đo "có mặt" — đo ĐÚNG dạng "hiện ra được cho người dùng bấm": bản không-hidden phải
-    // vắng mặt hoàn toàn khi đã đăng nhập.
-    expect(html).not.toContain('<button id="nut-dang-nhap">Đăng nhập</button>');
-    expect(html).toContain('<button id="nut-dang-nhap" hidden>Đăng nhập</button>');
+    expect(html).toMatch(/id="nut-tai-khoan"[^>]*title="Đăng xuất"/);
+    expect(html).toMatch(/id="nut-tai-khoan"[^>]*aria-label="Đăng xuất"/);
+    expect(html).not.toContain('title="Đăng nhập"');
   });
 
   it("★ không truyền `daDangNhap` (mặc định) ⇒ rơi về nhánh AN TOÀN 'chưa đăng nhập'", () => {
     // Constructor của BangChat không thể biết trạng thái thật TRƯỚC khi gán `webview.html` (đọc
     // cookie là bất đồng bộ) — rơi về "chưa đăng nhập" là lựa chọn fail-closed đúng khuôn `cheDoHienTai`.
     const html = dungHtmlBang({ nonce: "N" });
-    expect(html).toContain('<button id="nut-dang-nhap">Đăng nhập</button>');
+    expect(html).toMatch(/id="nut-tai-khoan"[^>]*title="Đăng nhập"/);
   });
 
-  it("★★ đã đăng nhập ⇒ vùng tên tài khoản + nút Đăng xuất SẴN CÓ trong DOM (không hidden)", () => {
+  it("★★ chỉ MỘT phần tử cho vùng tài khoản — không còn nút to/span tên/nút đăng xuất riêng của Đợt F", () => {
     const html = dungHtmlBang({ nonce: "N", daDangNhap: true });
-    expect(html).toContain('<span id="ten-tai-khoan"></span>');
-    expect(html).toContain('<button id="nut-dang-xuat">Đăng xuất</button>');
+    expect(html).not.toContain('id="nut-dang-nhap"');
+    expect(html).not.toContain('id="ten-tai-khoan"');
+    expect(html).not.toContain('id="nut-dang-xuat"');
   });
 
-  it("★★ chưa đăng nhập ⇒ vùng tên tài khoản + nút Đăng xuất có mặt nhưng ẨN", () => {
-    const html = dungHtmlBang({ nonce: "N", daDangNhap: false });
-    expect(html).toContain('<span id="ten-tai-khoan" hidden></span>');
-    expect(html).toContain('<button id="nut-dang-xuat" hidden>Đăng xuất</button>');
+  it("★★ nút tài khoản KHÔNG mang `hidden` ở bất kỳ trạng thái nào — nó LUÔN hiện (chỉ đổi title/aria-label)", () => {
+    expect(dungHtmlBang({ nonce: "N", daDangNhap: false })).not.toMatch(/id="nut-tai-khoan"[^>]*hidden/);
+    expect(dungHtmlBang({ nonce: "N", daDangNhap: true })).not.toMatch(/id="nut-tai-khoan"[^>]*hidden/);
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G1 / B3 — ô chọn dự án (`#o-du-an`) mặc định ẨN trong markup TĨNH: tránh một cú
+ * chớp ô-chọn-rỗng trước khi tin "duAn" đầu tiên tới (script tự bật lại `hidden` đúng lúc — xem
+ * nhóm ca "webview" dưới).
+ */
+describe("dungHtmlBang — ĐỢT G / TASK G1 / B3: ô chọn dự án mặc định ẨN", () => {
+  it("★★★ markup tĩnh: #o-du-an mang `hidden`", () => {
+    const html = dungHtmlBang({ nonce: "N" });
+    expect(html).toMatch(/<select id="o-du-an"[^>]*\bhidden\b/);
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G1 / B4 — nút Gửi thu nhỏ thành icon nhưng PHẢI giữ `aria-label`: nhỏ gọn không
+ * đồng nghĩa vô danh với trình đọc màn hình (yêu cầu tường minh của kế hoạch).
+ */
+describe("dungHtmlBang — ĐỢT G / TASK G1 / B4: nút Gửi có aria-label", () => {
+  it("★★★ #nut-gui mang aria-label khẳng định được bằng chữ (không rỗng)", () => {
+    const html = dungHtmlBang({ nonce: "N" });
+    const m = html.match(/<button id="nut-gui"[^>]*aria-label="([^"]+)"/);
+    expect(m).not.toBeNull();
+    expect(m![1].trim().length).toBeGreaterThan(0);
+  });
+
+  it("★★ #nut-gui không còn chữ 'Gửi' TRẦN làm nội dung nút (đã thành icon) nhưng vẫn còn trong nhãn", () => {
+    const html = dungHtmlBang({ nonce: "N" });
+    const than = html.match(/<button id="nut-gui"[^>]*>([\s\S]*?)<\/button>/);
+    expect(than).not.toBeNull();
+    expect(than![1]).not.toContain(">Gửi<");
+    expect(html).toMatch(/id="nut-gui"[^>]*aria-label="[^"]*Gửi/);
   });
 });
 
@@ -179,37 +215,33 @@ describe("dungHtmlBang — ĐỢT F / TASK 1 / B6: mật khẩu không qua webvi
  * không đọc kết cục" — nên nhóm ca này đo DOM THẬT đổi (thuộc tính `hidden`, `textContent`), không
  * chỉ đo "đã gửi đúng tin nhắn".
  */
-describe("webview — ĐỢT F / TASK 1: khung TỰ đổi trạng thái đăng nhập, không cần đóng/mở lại", () => {
-  it("★★★ B3: nhận `trang_thai_dang_nhap` (đã đăng nhập) ⇒ ẨN nút Đăng nhập, HIỆN tên tài khoản + nút Đăng xuất", () => {
-    // ⚠ Trạng thái `hidden` BAN ĐẦU của DOM giả (`PhanTuGia.hidden = false` mặc định, xem docblock
-    //   `PhanTuGia`) không mô phỏng thuộc tính `hidden` tĩnh trong HTML — cái đó đã có lưới riêng
-    //   ("dungHtmlBang — B1" ở trên). Ca này CHỈ đo phần ĐỘNG: script phải TỰ đổi ba phần tử khi
-    //   nhận tin, không đoán qua trạng thái mặc định của DOM giả.
+describe("webview — ĐỢT G / TASK G1 / B2: khung TỰ đổi trạng thái đăng nhập, không cần đóng/mở lại", () => {
+  it("★★★ nhận `trang_thai_dang_nhap` (đã đăng nhập) ⇒ tooltip mang TÊN tài khoản, lớp 'da-dang-nhap' bật", () => {
     const w = chayWebview();
     w.banTin({ loai: "trang_thai_dang_nhap", daDangNhap: true, tenTaiKhoan: "ky_su_an" });
 
-    expect(w.nut("nut-dang-nhap").hidden).toBe(true);
-    expect(w.nut("ten-tai-khoan").hidden).toBe(false);
-    expect(w.nut("ten-tai-khoan").textContent).toBe("ky_su_an");
-    expect(w.nut("nut-dang-xuat").hidden).toBe(false);
+    const nut = w.nut("nut-tai-khoan");
+    expect(nut.title).toContain("ky_su_an");
+    expect(nut.getAttribute("aria-label")).toContain("ky_su_an");
+    expect(nut.classList.contains("da-dang-nhap")).toBe(true);
   });
 
-  it("★★★ B5 nhánh kia: nhận `trang_thai_dang_nhap` (đã đăng xuất) ⇒ khung quay lại HIỆN nút Đăng nhập, ẨN tên tài khoản + nút Đăng xuất", () => {
+  it("★★★ NHÁNH KIA: nhận `trang_thai_dang_nhap` (đã đăng xuất) ⇒ tooltip quay về 'Đăng nhập', lớp 'da-dang-nhap' tắt", () => {
     const w = chayWebview();
     // Bắt đầu từ trạng thái ĐÃ đăng nhập để chắc chắn đo được một cú CHUYỂN NGƯỢC, không phải tình
     // cờ khớp trạng thái ban đầu của DOM giả.
     w.banTin({ loai: "trang_thai_dang_nhap", daDangNhap: true, tenTaiKhoan: "ky_su_an" });
-    expect(w.nut("nut-dang-nhap").hidden).toBe(true);
+    expect(w.nut("nut-tai-khoan").classList.contains("da-dang-nhap")).toBe(true);
 
     w.banTin({ loai: "trang_thai_dang_nhap", daDangNhap: false, tenTaiKhoan: "" });
 
-    expect(w.nut("nut-dang-nhap").hidden).toBe(false);
-    expect(w.nut("ten-tai-khoan").hidden).toBe(true);
-    expect(w.nut("ten-tai-khoan").textContent).toBe("");
-    expect(w.nut("nut-dang-xuat").hidden).toBe(true);
+    const nut = w.nut("nut-tai-khoan");
+    expect(nut.title).toBe("Đăng nhập");
+    expect(nut.getAttribute("aria-label")).toBe("Đăng nhập");
+    expect(nut.classList.contains("da-dang-nhap")).toBe(false);
   });
 
-  it("★★★ B4: câu hỏi đang GÕ DỞ trong ô nhập KHÔNG bị mất khi trạng thái đăng nhập đổi", () => {
+  it("★★★ B4 (kỷ luật giữ nguyên từ Đợt F): câu hỏi đang GÕ DỞ trong ô nhập KHÔNG bị mất khi trạng thái đăng nhập đổi", () => {
     const w = chayWebview();
     const oNhap = w.nut("o-nhap");
     oNhap.value = "câu hỏi đang gõ dở, chưa bấm Gửi";
@@ -219,18 +251,71 @@ describe("webview — ĐỢT F / TASK 1: khung TỰ đổi trạng thái đăng 
     expect(oNhap.value).toBe("câu hỏi đang gõ dở, chưa bấm Gửi");
   });
 
-  it("★★ bấm nút 'Đăng nhập' ⇒ extension nhận ĐÚNG MỘT tin `dangNhap`", () => {
+  it("★★★ CHƯA đăng nhập ⇒ bấm icon tài khoản ⇒ extension nhận ĐÚNG MỘT tin `dangNhap`, KHÔNG phải `dangXuat`", () => {
     const w = chayWebview();
-    w.nut("nut-dang-nhap").bam();
+    w.nut("nut-tai-khoan").bam();
     expect(w.daGui.filter((m) => m.loai === "dangNhap")).toHaveLength(1);
+    expect(w.daGui.filter((m) => m.loai === "dangXuat")).toHaveLength(0);
   });
 
-  it("★★ bấm nút 'Đăng xuất' ⇒ extension nhận ĐÚNG MỘT tin `dangXuat`, KHÔNG lẫn với `dangNhap`", () => {
+  it("★★★ ĐÃ đăng nhập ⇒ bấm CHÍNH icon đó ⇒ extension nhận ĐÚNG MỘT tin `dangXuat`, KHÔNG lẫn với `dangNhap`", () => {
+    // ★★★ MỘT nút, HAI vai trò: cùng phần tử `#nut-tai-khoan` — hành vi bấm phải tự đổi theo trạng
+    // thái GẦN NHẤT mà `trang_thai_dang_nhap` báo, không phải một nút thứ hai được lộ ra.
     const w = chayWebview();
     w.banTin({ loai: "trang_thai_dang_nhap", daDangNhap: true, tenTaiKhoan: "ky_su_an" });
-    w.nut("nut-dang-xuat").bam();
+    w.nut("nut-tai-khoan").bam();
     expect(w.daGui.filter((m) => m.loai === "dangXuat")).toHaveLength(1);
     expect(w.daGui.filter((m) => m.loai === "dangNhap")).toHaveLength(0);
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G1 / B3 — ô chọn dự án (`#o-du-an`): KẾT CỤC thật của tin "duAn", chạy script
+ * THẬT. Trục đo: ẨN khi danh sách CHỈ TOÀN local (không có gì để chọn — VSCode đã trỏ workspace),
+ * GIỮ HIỆN khi có ít nhất một dự án SERVER (lựa chọn THẬT, không suy ra được từ workspace).
+ */
+describe("webview — ĐỢT G / TASK G1 / B3: ô chọn dự án ẨN ở LOCAL, GIỮ ở SERVER", () => {
+  it("★★★ danh sách CHỈ TOÀN local (một thư mục workspace) ⇒ #o-du-an ẨN", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "duAn", ds: [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }] });
+    expect(w.nut("o-du-an").hidden).toBe(true);
+  });
+
+  it("★★★ NHÁNH KIA: danh sách CÓ một dự án SERVER (dù có thêm local) ⇒ #o-du-an HIỆN", () => {
+    const w = chayWebview();
+    w.banTin({
+      loai: "duAn",
+      ds: [
+        { id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" },
+        { id: "server:p1", nhan: "SERVER · dự án 1", loai: "server" },
+      ],
+    });
+    expect(w.nut("o-du-an").hidden).toBe(false);
+  });
+
+  it("★★ KHÔNG cái bẫy: chọn một mục LOCAL trong danh sách hỗn hợp KHÔNG tự ẩn lại ô chọn", () => {
+    // Nếu ẩn/hiện theo MỤC ĐANG CHỌN (thay vì theo toàn danh sách), người dùng chọn một thư mục
+    // LOCAL trong danh sách hỗn hợp sẽ mất luôn đường quay lại chọn dự án SERVER — xem docblock
+    // `htmlBang.ts` nhánh "duAn". Danh sách "duAn" (KHÔNG đổi) không kèm sự kiện "change" nào ở đây
+    // vì #o-du-an chỉ tự đổi `hidden` khi NHẬN một danh sách mới, không khi người dùng đổi lựa chọn.
+    const w = chayWebview();
+    w.banTin({
+      loai: "duAn",
+      ds: [
+        { id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" },
+        { id: "server:p1", nhan: "SERVER · dự án 1", loai: "server" },
+      ],
+    });
+    expect(w.nut("o-du-an").hidden).toBe(false);
+    w.nut("o-du-an").value = "local:C:\\ws";
+    w.nut("o-du-an").kichHoat("change", { target: { value: "local:C:\\ws" } });
+    expect(w.nut("o-du-an").hidden).toBe(false);
+  });
+
+  it("★ danh sách RỖNG ⇒ #o-du-an ẨN (không có gì để chọn)", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "duAn", ds: [] });
+    expect(w.nut("o-du-an").hidden).toBe(true);
   });
 });
 
@@ -251,6 +336,29 @@ class PhanTuGia {
   className = "";
   scrollTop = 0;
   scrollHeight = 0;
+  // ★★★ ĐỢT G / TASK G1 / B2 — script thật đọc `dataset.daDangNhap` (từ `data-da-dang-nhap` của
+  // markup TĨNH) và ghi `title`/`aria-label`/lớp `da-dang-nhap` thay vì `hidden`/`textContent` của
+  // BA phần tử riêng như bản Đợt F cũ. Đối tượng RỖNG mặc định (không phải `undefined`) — script
+  // đọc `nutTaiKhoan.dataset.daDangNhap === "true"` phải chạy được kể cả khi thuộc tính chưa từng
+  // được đặt (đúng hành vi `DOMStringMap` thật: khoá vắng mặt đọc ra `undefined`, không ném lỗi).
+  dataset: Record<string, string> = {};
+  title = "";
+  private thuocTinh: Record<string, string> = {};
+  setAttribute(k: string, v: string): void {
+    this.thuocTinh[k] = v;
+  }
+  getAttribute(k: string): string | undefined {
+    return this.thuocTinh[k];
+  }
+  private lopCss = new Set<string>();
+  classList = {
+    toggle: (ten: string, bat?: boolean): void => {
+      const batThat = bat === undefined ? !this.lopCss.has(ten) : bat;
+      if (batThat) this.lopCss.add(ten);
+      else this.lopCss.delete(ten);
+    },
+    contains: (ten: string): boolean => this.lopCss.has(ten),
+  };
   // TASK 5 — vị trí con trỏ trong ô nhập, dùng cho lưới @-mention (`viTriMention` trong htmlBang.ts
   // đọc `selectionStart` để biết đang gõ "@..." ở đâu). `undefined` mặc định — script thật rơi về
   // cuối chuỗi khi thiếu, đúng hành vi một textarea thật lúc mới gõ xong.
