@@ -64,7 +64,7 @@ import { isPermanentSubmitError } from "../services/inspection/inspectionStoreFo
 // ════════════════════════════════════════════════════════════════════════════
 import { machineDataContractV2, imageRefSchema, type MachineDataContractV2 } from "../contracts/machineDataContractV2";
 import { laHinhDangCayV2 } from "../contracts/machineDataContract";
-import { dichCayKetQua, type CayDaDich, type CaptureDaDich, type ComponentDaDich } from "../services/ingestCayKetQua";
+import { dichCayKetQua, type CayDaDich, type CaptureDaDich } from "../services/ingestCayKetQua";
 import type { ResultVerdict } from "@shared/rollupVerdict";
 
 // ============================================================
@@ -490,23 +490,49 @@ export type MetaJson = z.infer<typeof metaJsonSchema>;
 // ============================================================
 type BonNhom = MachineDataContractV2["summary"];
 
-function demNhom(nodes: ReadonlyArray<{ rolledResult: ResultVerdict }>): BonNhom["surfaces"] {
+/**
+ * ★★★ N-7 (re-review lượt 8) — MỘT ĐỊNH NGHĨA "ntf" CHO CẢ BỐN CẤP.
+ *
+ * TRƯỚC bản vá có HAI hàm đếm với HAI định nghĩa khác nhau cho cùng chữ "ntf",
+ * chạy TRONG CÙNG một phép cuộn:
+ *   · cấp component: đếm **cờ `ntf`** của nút.
+ *   · surfaces/positions/captures: đếm theo `rolledResult`, mà `rolledResult`
+ *     trên đường v2 KHÔNG BAO GIỜ là `"NTF"` — hợp đồng máy khai
+ *     `result: z.enum(["OK","NG"])` ở MỌI cấp, và `rollupVerdict` chỉ trả
+ *     `"NTF"` khi một CON có `result === "NTF"`. ⇒ nhánh `ntf` ở ba cấp trên là
+ *     **mã CHẾT**: chúng KHÔNG THỂ đếm ra `ntf > 0` dù cây nói gì.
+ * Hệ quả đo được: một máy khai `summary` ĐÚNG THEO CHÍNH CÂY NÓ GỬI vẫn bị
+ * `coLechSummary` trả `true` ⇒ `summaryDeclaredMismatch = true` cho **100%**
+ * gói NTF — cờ sinh ra để soi đúng loại bo đáng để ý nhất thành nhiễu 100%
+ * trên chính loại bo đó.
+ *
+ * VÌ SAO KHÔNG chọn "bỏ `ntf` khỏi phép so cho 3 cấp trên": phép đo bác bỏ.
+ * Lời khai NTF trung thực CHUẨN của dự án (`BANG_HINH_DANG`, hình dạng
+ * `ntfThatTuCoNguoiXacNhanChuaXacNhan`) khai `{total:1, pass:0, ng:0, ntf:1}`
+ * ở CẢ BỐN nhóm; số đếm cũ cho ba cấp trên là `pass:1, ntf:0` ⇒ bỏ riêng `ntf`
+ * khỏi phép so vẫn còn **`pass` lệch** ⇒ cờ vẫn nổ. Đóng bằng cách đó phải bỏ
+ * luôn `pass`, tức moi ruột bộ dò.
+ *
+ * VÌ SAO đếm CỜ là đúng thứ để đếm: máy có cờ `Ntf` ở MỌI cấp
+ * (`HookPosition.Ntf`, `HookCapture.Ntf`, `HookComponent.Ntf`; `surfaces[].ntf`
+ * là worst-case rollup của generator — `D:\SOURCES\AOIData\
+ * sync-json-samples-reference.md`), và `summary` của nó là *"tự tính
+ * (generator) — Đếm total/pass/ng/ntf **từng cấp**"*. Máy đếm cờ từng cấp; phép
+ * so của máy chủ nay đếm CÙNG thứ đó. Đọc `ntf` KHAI TẠI NÚT (không phải
+ * `rolledNtf`) là cố ý: `summary` là lời khai của máy về CHÍNH cây nó gửi, nên
+ * bộ dò phải so với cây đó chứ không với một giá trị máy chủ tự suy thêm.
+ *
+ * ⚠ Ưu tiên cờ `ntf` TRƯỚC `NG` — giữ NGUYÊN thứ tự `demNhomComponent` cũ đã
+ * dùng ở lá (cùng ưu tiên `dichComponent` dùng khi gán `ntfSource`). ĐÂY LÀ
+ * PHÉP ĐẾM ĐỂ ĐỐI CHIẾU LỜI KHAI, KHÔNG phải luật cuộn verdict: luật cuộn
+ * (NG > NTF > OK, `rollupVerdict`/`verdictLuuTru`) không bị hàm này đụng tới, và
+ * `overallResult` ghi xuống DB vẫn LUÔN là `cay.verdictLuuTru` (bất biến 3).
+ */
+function demNhomTheoCo(nodes: ReadonlyArray<{ ntf: boolean; ketQua: ResultVerdict }>): BonNhom["surfaces"] {
   let pass = 0, ng = 0, ntf = 0;
   for (const n of nodes) {
-    if (n.rolledResult === "NG") ng++;
-    else if (n.rolledResult === "NTF") ntf++;
-    else pass++;
-  }
-  return { total: nodes.length, pass, ng, ntf };
-}
-
-function demNhomComponent(nodes: ReadonlyArray<ComponentDaDich>): BonNhom["components"] {
-  let pass = 0, ng = 0, ntf = 0;
-  for (const n of nodes) {
-    // Cờ `ntf` thắng — cùng ưu tiên `dichComponent` (ingestCayKetQua.ts) dùng
-    // để gán `ntfSource`: máy đánh dấu ntf ở lá là tín hiệu MẠNH hơn `result`.
     if (n.ntf) ntf++;
-    else if (n.result === "NG") ng++;
+    else if (n.ketQua === "NG") ng++;
     else pass++;
   }
   return { total: nodes.length, pass, ng, ntf };
@@ -522,11 +548,13 @@ export function demBonNhomTuCay(cay: CayDaDich): BonNhom {
   const positions = cay.surfaces.flatMap((s) => s.positions);
   const captures = positions.flatMap((p) => p.captures);
   const components = captures.flatMap((c) => c.components);
+  // N-7 — MỘT hàm, bốn cấp. Ba cấp trên lấy `rolledResult` (kết quả ĐÃ CUỘN của
+  // nút) làm phán quyết; lá không có gì để cuộn nên lấy `result` của chính nó.
   return {
-    surfaces: demNhom(cay.surfaces),
-    positions: demNhom(positions),
-    captures: demNhom(captures),
-    components: demNhomComponent(components),
+    surfaces: demNhomTheoCo(cay.surfaces.map((s) => ({ ntf: s.ntf, ketQua: s.rolledResult }))),
+    positions: demNhomTheoCo(positions.map((p) => ({ ntf: p.ntf, ketQua: p.rolledResult }))),
+    captures: demNhomTheoCo(captures.map((c) => ({ ntf: c.ntf, ketQua: c.rolledResult }))),
+    components: demNhomTheoCo(components.map((c) => ({ ntf: c.ntf, ketQua: c.result }))),
   };
 }
 
@@ -1234,9 +1262,24 @@ export const aoiPackageRouter = router({
             finalOverallResult = cay.verdictLuuTru;
             const demDuocTuCay = demBonNhomTuCay(cay);
             lechSummary = coLechSummary(metaData.summary, demDuocTuCay);
+            // ★★★ N-7 — CỘT BÁO CÁO GIỮ NGUYÊN NGHĨA, VÀ NGHĨA ĐÓ NAY ĐƯỢC KHAI
+            // TƯỜNG MINH: `okCount` = "số capture ĐẠT", trong đó **NTF LÀ ĐẠT**
+            // — cùng lời khai `shared/kpiYield.ts`
+            // `FINAL_YIELD_PASS_RESULTS = ["OK","NTF"]` đang áp cho final yield.
+            // Trước N-7, `captures.pass` TÌNH CỜ đã gộp sẵn capture NTF-do-cờ
+            // (vì ba cấp trên đếm theo `rolledResult`, không bao giờ là "NTF");
+            // sau N-7 phép đếm tách `ntf` ra bucket riêng, nên phải cộng LẠI Ở
+            // ĐÂY để con số ghi xuống `inspection_packages` KHÔNG đổi cho bất kỳ
+            // gói nào — kể cả gói NTF. Nhờ vậy `okCount + ngCount ===
+            // totalPoints` vẫn ĐÚNG và không hàng nào đã ghi bị đọc lại theo một
+            // nghĩa khác. Đây là cách hiểu (A) trong tranh chấp M-9; cách hiểu
+            // (B) ("okCount = số capture KHÔNG cần xem lại") đòi một cột
+            // `ntfCount` mà `inspection_packages` KHÔNG CÓ (đo
+            // `information_schema`) — chọn (B) mà không thêm cột là bỏ con số
+            // NTF vào hư không. Nợ: nếu sau này thêm `ntfCount`, đây là chỗ đổi.
             demTuCayBaoCao = {
               total: demDuocTuCay.captures.total,
-              ok: demDuocTuCay.captures.pass,
+              ok: demDuocTuCay.captures.pass + demDuocTuCay.captures.ntf,
               ng: demDuocTuCay.captures.ng,
             };
 

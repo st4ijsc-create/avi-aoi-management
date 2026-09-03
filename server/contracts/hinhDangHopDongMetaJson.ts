@@ -397,13 +397,23 @@ export const BANG_HINH_DANG: readonly HinhDangMetaJson[] = [
     // (`z.enum(["OK","NG"])`) — NTF là CỜ BOOL riêng. `rolledResult` của capture
     // là `rollupVerdict(components).result`, mà `rollupVerdict` chỉ trả "NTF"
     // khi một CON có `result === "NTF"` — điều KHÔNG THỂ xảy ra ở đường v2. Nên
-    // capture NTF-do-CỜ vẫn có `rolledResult === "OK"` ⇒ rơi vào `pass` ⇒
-    // `okCount = 1`, trong khi `verdictLuuTru` của bo vẫn là NTF (cầu nối cờ →
-    // enum lưu trữ nằm ở `rollupVerdict.ts`, không ở phép đếm).
-    // Hệ quả kèm theo: nhánh `ntf` của `demNhom` là mã CHẾT trên đường v2, và
-    // `okCount + ngCount === totalPoints` LUÔN ĐÚNG ở đó — ngược lại điều M-9
-    // khẳng định. Câu hỏi CÒN MỞ (không phải việc của lô vá này): một bo có
-    // verdict NTF mà cột báo cáo ghi `okCount=1` có phải điều ta MUỐN không.
+    // capture NTF-do-CỜ vẫn có `rolledResult === "OK"`, trong khi
+    // `verdictLuuTru` của bo là NTF (cầu nối cờ → enum lưu trữ nằm ở
+    // `rollupVerdict.ts`, không ở phép đếm).
+    // ★★★ N-7 (re-review lượt 8) — CÂU CŨ Ở ĐÂY NAY SAI, sửa lại cho đúng hôm
+    // nay: *"nhánh `ntf` của `demNhom` là mã CHẾT trên đường v2"* đúng cho tới
+    // khi N-7 đóng. `demNhom`/`demNhomComponent` đã được gộp thành MỘT hàm
+    // `demNhomTheoCo` đếm **cờ `ntf` khai tại nút** ở CẢ BỐN cấp (lý do đầy đủ ở
+    // docblock hàm đó, `aoiPackageRouter.ts`) — nên bốn nhóm nay đếm ra
+    // `{total:1, pass:0, ng:0, ntf:1}`, KHỚP `summary` khai ở trên, và
+    // `coLechSummary` thôi nổ cờ cho 100% gói NTF trung thực.
+    // `ok: 1` DƯỚI ĐÂY KHÔNG ĐỔI, và nay là một quyết định ĐƯỢC KHAI chứ không
+    // còn là hệ quả tình cờ: cột báo cáo `okCount` = "số capture ĐẠT" với NTF
+    // LÀ đạt (`ok = captures.pass + captures.ntf` tại `commit`, cùng lời khai
+    // `shared/kpiYield.ts` `FINAL_YIELD_PASS_RESULTS = ["OK","NTF"]`), nên
+    // `okCount + ngCount === totalPoints` VẪN đúng. Câu hỏi CÒN MỞ (cách hiểu
+    // (B) của M-9): muốn `okCount` nghĩa "số capture KHÔNG cần xem lại" thì
+    // phải thêm cột `ntfCount` — `inspection_packages` chưa có.
     kyVong: { loai: "chapNhan", overallResult: { dang: "khangDinh", overallResult: "NTF" }, tongDiem: 1, ok: 1, ng: 0 },
   },
   {
