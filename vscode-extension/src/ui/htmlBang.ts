@@ -359,21 +359,28 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       const o = document.getElementById("o-du-an");
       o.innerHTML = "";
       let coDuAnServer = false;
+      let soGocLocal = 0;
       for (const d of m.ds) {
         const opt = document.createElement("option");
         opt.value = d.id; opt.textContent = d.nhan;
         o.appendChild(opt);
         if (d.loai === "server") coDuAnServer = true;
+        else soGocLocal++;
       }
-      // ★★★ ĐỢT G / TASK G1 / B3 — ẨN ô chọn khi danh sách CHỈ TOÀN thư mục LOCAL: VSCode đã trỏ
-      // đúng workspace rồi, hiện lại ô này là thừa (đúng lời người dùng đo được ở PHẦN 0 kế hoạch
-      // Đợt G). GIỮ hiện ngay khi có ÍT NHẤT một dự án SERVER trong danh sách: ở đó "chọn dự án" là
-      // một lựa chọn THẬT (không có workspace nào để suy ra) — kể cả khi mục ĐANG chọn hiện là một
-      // thư mục LOCAL, người dùng vẫn cần ô này để chuyển SANG một dự án SERVER khác. Quyết định
-      // theo TOÀN DANH SÁCH (không theo riêng mục đang chọn) để tránh một cái bẫy: nếu ẩn/hiện theo
-      // mục đang chọn, chọn một mục LOCAL trong danh sách hỗn hợp sẽ ẩn mất chính ô cho phép chọn
-      // LẠI một dự án SERVER — không có đường quay lại.
-      o.hidden = !coDuAnServer;
+      // ★★★ ĐỢT G / TASK G1 / B3 (bản vá NHÁNH KIA, 2026-09-03) — ẨN ô chọn CHỈ khi vừa (a) danh
+      // sách toàn LOCAL VÀ (b) ĐÚNG MỘT gốc local. GIỮ hiện ngay khi có ÍT NHẤT một dự án SERVER
+      // (lựa chọn THẬT, không suy ra được từ workspace) HOẶC khi có TỪ HAI gốc LOCAL trở lên.
+      //
+      // Lý do "một gốc thì ẩn, nhiều gốc thì hiện" KHÔNG PHẢI thẩm mỹ — nó bám theo đúng cách
+      // \`bangChat.ts\` DÙNG mục đang chọn: \`thuMucLocalDangChon()\` tôn trọng \`duAnChon\` khi nó bắt
+      // đầu bằng "local:" (chỉ rơi về \`workspaceFolders[0]\` lúc CHƯA chọn gì), và \`dsGocDoc()\` đặt
+      // gốc đang chọn lên ĐẦU làm GỐC ƯU TIÊN cho cả ba tool đọc lẫn \`giaiDuongDeXuat\` ở đường ghi
+      // (xem docblock hai hàm đó). Với ĐÚNG MỘT gốc local, "gốc ưu tiên" luôn là gốc duy nhất — ô
+      // chọn không đổi được gì, ẩn là đúng (VSCode đã trỏ workspace rồi). Với TỪ HAI gốc local trở
+      // lên (workspace đa thư mục), ô chọn quyết định GỐC NÀO được ưu tiên khi một đường model khai
+      // khớp nhiều gốc — một chức năng THẬT, ẩn đi là lấy mất nó (các gốc còn lại vẫn là dự phòng
+      // nên không thảm hoạ, nhưng vẫn là mất chức năng — đúng điều Đợt G ban đầu bỏ sót).
+      o.hidden = !coDuAnServer && soGocLocal <= 1;
     } else if (m.loai === "the_duyet") {
       // Chữ hiển thị (nhãn nguồn, chữ trên nút ghi, tóm tắt +N/-M hay "Tạo tệp mới") do EXTENSION
       // dựng sẵn — webview chỉ đặt textContent, không tự suy luận gì thêm.

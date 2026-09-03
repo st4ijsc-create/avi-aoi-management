@@ -271,17 +271,38 @@ describe("webview — ĐỢT G / TASK G1 / B2: khung TỰ đổi trạng thái �
 
 /**
  * ★★★ ĐỢT G / TASK G1 / B3 — ô chọn dự án (`#o-du-an`): KẾT CỤC thật của tin "duAn", chạy script
- * THẬT. Trục đo: ẨN khi danh sách CHỈ TOÀN local (không có gì để chọn — VSCode đã trỏ workspace),
- * GIỮ HIỆN khi có ít nhất một dự án SERVER (lựa chọn THẬT, không suy ra được từ workspace).
+ * THẬT. Trục đo, BA nhánh (bản vá NHÁNH KIA 2026-09-03 — luật cũ "toàn local ⇒ luôn ẩn" bỏ sót
+ * workspace ĐA GỐC: `bangChat.ts#thuMucLocalDangChon`/`#dsGocDoc` dùng chính mục ĐANG CHỌN làm GỐC
+ * ƯU TIÊN cho cả đọc lẫn ghi khi có nhiều gốc — ẩn ô chọn trong trường hợp đó lấy đi một chức năng
+ * THẬT, không chỉ trang trí):
+ *   1. ĐÚNG MỘT gốc LOCAL (không có SERVER) ⇒ ẨN — ô chọn không đổi được gì (chỉ một lựa chọn).
+ *   2. HAI gốc LOCAL trở lên (không có SERVER) ⇒ HIỆN — chọn gốc nào ưu tiên là một quyết định THẬT.
+ *   3. Có ÍT NHẤT một dự án SERVER (bất kể số gốc local) ⇒ HIỆN — lựa chọn THẬT, không suy ra được
+ *      từ workspace.
  */
 describe("webview — ĐỢT G / TASK G1 / B3: ô chọn dự án ẨN ở LOCAL, GIỮ ở SERVER", () => {
-  it("★★★ danh sách CHỈ TOÀN local (một thư mục workspace) ⇒ #o-du-an ẨN", () => {
+  it("★★★ NHÁNH 1: ĐÚNG MỘT gốc LOCAL (một thư mục workspace) ⇒ #o-du-an ẨN", () => {
     const w = chayWebview();
     w.banTin({ loai: "duAn", ds: [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }] });
     expect(w.nut("o-du-an").hidden).toBe(true);
   });
 
-  it("★★★ NHÁNH KIA: danh sách CÓ một dự án SERVER (dù có thêm local) ⇒ #o-du-an HIỆN", () => {
+  it("★★★ NHÁNH 2 (bản vá NHÁNH KIA): HAI gốc LOCAL trở lên, KHÔNG có SERVER ⇒ #o-du-an HIỆN", () => {
+    // Workspace ĐA GỐC toàn local: `dsGocDoc()`/`thuMucLocalDangChon()` (bangChat.ts) tôn trọng mục
+    // ĐANG CHỌN làm gốc ưu tiên cho cả ba tool đọc lẫn đường ghi — ẩn ô chọn ở đây lấy đi đúng chức
+    // năng đó (các gốc còn lại vẫn là dự phòng nên không thảm hoạ, nhưng vẫn là mất mát thật).
+    const w = chayWebview();
+    w.banTin({
+      loai: "duAn",
+      ds: [
+        { id: "local:C:\\ws-a", nhan: "LOCAL · C:\\ws-a", loai: "local" },
+        { id: "local:C:\\ws-b", nhan: "LOCAL · C:\\ws-b", loai: "local" },
+      ],
+    });
+    expect(w.nut("o-du-an").hidden).toBe(false);
+  });
+
+  it("★★★ NHÁNH 3: danh sách CÓ một dự án SERVER (dù có thêm local) ⇒ #o-du-an HIỆN", () => {
     const w = chayWebview();
     w.banTin({
       loai: "duAn",
