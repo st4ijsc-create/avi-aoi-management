@@ -32,7 +32,18 @@ componentExtId · ntf · ntfSource · errorCode · errorDesc · startedAt · com
 | capture | `id` = `…000000001011` | `captureId` = `…000000001011` |
 | component | `id` = `…000000010111` | `componentId` = `…000000010111` |
 
-**Trùng khít.** Máy dùng **cùng một UUID** cho cùng một thực thể ở cả hai chiều ⇒ phép nối `componentId → pointDefId` là **join trực tiếp**, không cần bảng ánh xạ, không cần quy ước đặt tên.
+**Trùng khít — nhưng CHỈ ở hai cấp sâu.** ⚠ Câu đầu tôi viết ở đây (*"máy dùng cùng một UUID cho cùng một thực thể ở cả hai chiều"*) **khai quá**; đo đủ bốn cấp mới ra sự thật:
+
+| Cấp | Cấu hình có | Kết quả có | Nối bằng |
+|---|---|---|---|
+| surface | `surfaceId` (UUID) + `surfaceName` | **chỉ `name`** — KHÔNG có `surfaceId` | **TÊN** |
+| position | `id` (UUID) + `positionId`=`"P01"` | **chỉ `positionId`**=`"P01"` | **MÃ `"P01"`**, KHÔNG phải UUID |
+| capture | `id` (UUID) | `captureId` (UUID) | **UUID** ✅ |
+| component | `id` (UUID) | `componentId` (UUID) | **UUID** ✅ |
+
+⇒ Hai cấp sâu — **đúng hai cấp mà Đ-19/BG-92 cần** — nối bằng UUID, không cần bảng ánh xạ. Hai cấp trên nối bằng **tên/mã**, yếu hơn: đổi tên mặt hoặc đổi mã vị trí là **đứt nối**.
+
+⚠ **Bẫy cho người thực thi B-3:** ở cấp position, cấu hình mang **hai** khoá (`id` UUID và `positionId` `"P01"`); kết quả **chỉ** mang `positionId`. Nối bằng `id` sẽ **luôn trượt**. Đây đúng lớp lỗi "hai nguồn sự thật" — chọn **một** khoá cho mỗi cấp và ghi rõ.
 
 Và cột đích **đã có sẵn ở cả hai phía**: `measurement_point_defs.componentExtId` (phía dạy) ↔ `measurement_results.componentExtId` (phía kết quả).
 
