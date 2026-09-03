@@ -19481,7 +19481,8 @@
       "writeRejected": "写入被拒绝 [{{ma}}] — 磁盘上的文件未改变。",
       "cmdRejected": "命令未完成 [{{ma}}]——详情：",
       "cmdRejectedToast": "命令被拦截 [{{ma}}]——详情见对话。",
-      "rejectedGeneric": "被拒绝 [{{ma}}]——详情见对话。"
+      "rejectedGeneric": "被拒绝 [{{ma}}]——详情见对话。",
+      "jumpTitle": "打开 {{tep}}"
     },
     "toolLoop": {
       "running": "读码循环 — 第 {{round}}/{{tran}} 轮"

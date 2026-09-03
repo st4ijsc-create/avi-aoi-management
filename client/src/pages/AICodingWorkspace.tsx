@@ -150,7 +150,7 @@ import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
   Repeat, CheckCircle2, OctagonX, Terminal, Search, X, ChevronUp, Wand2, Copy, Undo2,
-  WrapText, Maximize2, Minimize2, List,
+  WrapText, Maximize2, Minimize2, List, ArrowUpRight,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -547,6 +547,13 @@ export default function AICodingWorkspace() {
    * `dongMucTieu` — tái dùng ĐÚNG cơ chế cuộn+tô của panel Vấn đề, không đẻ đường cuộn thứ hai.
    */
   const [outlineMo, setOutlineMo] = useState(false);
+  /**
+   * ★ ĐỢT F1 — REF cho ba phím TAB. Effect phím tắt đăng ký theo deps CŨ, còn `openTabs`/`openFile`/
+   * `dongTabTep` khai SAU nó; bắt closure trực tiếp là dùng danh sách tab CŨ (đúng lớp lỗi mà
+   * `handleSendRef`/`dsTepDuAnRef` trong file này đã tồn tại để tránh). Gán trong render — an toàn,
+   * cùng khuôn với hai ref kia.
+   */
+  const dieuHuongTabRef = useRef<{ tabs: readonly string[]; hienTai: string | null; mo: (p: string) => void; dong: (p: string) => void } | null>(null);
 
   const khoaBanLamViec = user?.id != null ? `repoWs.ban.u${user.id}.${projectId}` : null;
   const duAnDaKhoiPhucRef = useRef<string | null>(null);
@@ -1008,7 +1015,7 @@ export default function AICodingWorkspace() {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       const trongONhap = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-      const hd = phanGiaiPhimTatKhung({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, trongONhap, dangStream: isStreaming });
+      const hd = phanGiaiPhimTatKhung({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, altKey: e.altKey, trongONhap, dangStream: isStreaming });
       if (hd === "bo_qua") return;
       e.preventDefault();
       /**
@@ -1066,6 +1073,26 @@ export default function AICodingWorkspace() {
           if (Number.isInteger(n) && n >= 1) {
             if (hep) setKhungHep("xem");
             setDongMucTieu(n);
+          }
+        }
+      }
+      /**
+       * ★ ĐỢT F1 — ba phím TAB (Alt+W · Alt+[ · Alt+]). Đóng tab dùng lại ĐÚNG `dongTab` thuần đã
+       * có (nó tự chọn tab kế bên phải, hết thì bên trái) — không viết lại luật chọn tab lần hai.
+       * Chuyển tab: xoay VÒNG trong `openTabs`; 0/1 tab ⇒ không làm gì (không nháy màn hình).
+       */
+      else if (hd === "dong_tab") {
+        const dh = dieuHuongTabRef.current;
+        if (dh?.hienTai) dh.dong(dh.hienTai);
+      }
+      else if (hd === "tab_truoc" || hd === "tab_sau") {
+        const dh = dieuHuongTabRef.current;
+        if (dh && dh.tabs.length > 1 && dh.hienTai) {
+          const i = dh.tabs.indexOf(dh.hienTai);
+          if (i >= 0) {
+            const buoc = hd === "tab_sau" ? 1 : -1;
+            const ke = dh.tabs[(i + buoc + dh.tabs.length) % dh.tabs.length]!;
+            dh.mo(ke);
           }
         }
       }
@@ -1169,6 +1196,10 @@ export default function AICodingWorkspace() {
       if (kq.active === null) setDongMucTieu(null); // đóng tab cuối ⇒ không còn tệp ⇒ bỏ dòng-đích
     }
   }, [openTabs, selectedPath]);
+  // ★ F1 — gán REF điều hướng tab (xem docblock `dieuHuongTabRef`). Gán trong render, sau khi cả
+  //   `openFile` lẫn `dongTabTep` đã tồn tại — effect phím tắt chỉ đọc `.current`, luôn là bản MỚI.
+  dieuHuongTabRef.current = { tabs: openTabs, hienTai: selectedPath, mo: openFile, dong: dongTabTep };
+
 
   /**
    * ★★★ 2026-08-24 — mở tệp TỪ PANEL PROBLEMS: đặt cả tệp LẪN dòng đích, và (màn hẹp) nhảy sang
@@ -2889,6 +2920,46 @@ export default function AICodingWorkspace() {
                            so được), mọi câu cũ hơn nhận bộ KHÔNG neo — xem docblock `viTriNeo`. */
                         <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="static" components={i === viTriNeo ? boKhoiCoNeo : boKhoiKhongNeo}>{lamSachMocChoHienThi(m.content)}</Streamdown></div>
                       )}
+                      {/* ★★★ 2026-09-03 · ĐỢT F2 — NHẢY `tệp:dòng` TỪ CHAT (CẢ HAI VAI). Stack trace/lỗi build
+                          thường nằm NGAY TRONG hội thoại (người dùng dán vào, hoặc model chép lại),
+                          và cho tới nay muốn nhảy tới chỗ ấy phải tự tìm trong cây.
+                          ⚠ KHÔNG chèn link vào markdown: `Streamdown` render nội dung ấy và LÔ 3 gắn
+                            nhãn tin-cậy vào khối mã — chèn thẻ vào giữa là đụng cả hai. Thay vào đó
+                            vẽ một DÃY NÚT DƯỚI tin nhắn, dùng ĐÚNG bộ đọc `phanTichLoiViTri` và
+                            đúng `moTepTuVanDe` của panel Vấn đề (một nguồn, một đường nhảy).
+                          ⚠ Chỉ lấy mục CÓ `tep` (bấm được) và khử trùng lặp theo `tệp:dòng`.
+                          ⚠⚠ ÁP CHO CẢ HAI VAI (đo live 2026-09-03 bắt): bản đầu chỉ gắn vào tin
+                            nhắn TRỢ LÝ, mà ca CHÍNH lại là người dùng **DÁN** stack trace vào ô
+                            nhập — đúng tình huống mà mục H3 của bản đánh giá nêu tên. */}
+                      {(() => {
+                        const noi = phanTichLoiViTri(m.content, dsTepDuAn)
+                          .filter((d): d is typeof d & { tep: string } => d.tep !== null);
+                        if (noi.length === 0) return null;
+                        const daCo = new Set<string>();
+                        const duy = noi.filter((d) => {
+                          const k = `${d.tep}:${d.dong ?? ""}`;
+                          if (daCo.has(k)) return false;
+                          daCo.add(k);
+                          return true;
+                        }).slice(0, 8);
+                        return (
+                          <div data-nhay-tu-chat className="mt-1.5 flex flex-wrap gap-1">
+                            {duy.map((d, k) => (
+                              <button
+                                key={k}
+                                type="button"
+                                data-nut-nhay-chat
+                                onClick={() => moTepTuVanDe(d.tep, d.dong)}
+                                title={t("repoWs.chat.jumpTitle", "Mở {{tep}}", { tep: d.tep })}
+                                className="inline-flex max-w-full items-center gap-1 rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                              >
+                                <ArrowUpRight className="h-3 w-3 shrink-0" />
+                                <span className="min-w-0 truncate">{d.dong !== null ? `${baseName(d.tep)}:${d.dong}` : baseName(d.tep)}</span>
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                     {m.role === "user" && <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary"><User className="h-3.5 w-3.5" /></div>}
                   </div>

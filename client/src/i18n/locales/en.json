@@ -19473,7 +19473,8 @@
       "writeRejected": "The write was REJECTED [{{ma}}] — the file on disk is unchanged.",
       "cmdRejected": "The command did NOT complete [{{ma}}] — details:",
       "cmdRejectedToast": "Command blocked [{{ma}}] — see the conversation for details.",
-      "rejectedGeneric": "Refused [{{ma}}] — see the conversation for details."
+      "rejectedGeneric": "Refused [{{ma}}] — see the conversation for details.",
+      "jumpTitle": "Open {{tep}}"
     },
     "toolLoop": {
       "running": "Code-reading loop — round {{round}}/{{tran}}"

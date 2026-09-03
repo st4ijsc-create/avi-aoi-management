@@ -52,7 +52,10 @@ export function phanQuyetPhimNhap(e: PhimNhap): PhanQuyetPhimNhap {
 // được bằng một lượt render CẢ trang ⇒ trên thực tế không đo, một đột biến đổi phím sống sót. Ở đây
 // thuần ⇒ lưới đơn vị đo thẳng "phím X + bối cảnh Y ⇒ hành động Z".
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-export type PhimTatKhung = "terminal" | "mo_nhanh" | "tim_trong_tep" | "tim_repo" | "sua_chon" | "nhay_dong" | "gui" | "dung_stream" | "bo_qua";
+export type PhimTatKhung =
+  | "terminal" | "mo_nhanh" | "tim_trong_tep" | "tim_repo" | "sua_chon" | "nhay_dong"
+  | "dong_tab" | "tab_truoc" | "tab_sau"
+  | "gui" | "dung_stream" | "bo_qua";
 
 export interface PhimTat {
   key: string;
@@ -60,6 +63,8 @@ export interface PhimTat {
   metaKey?: boolean;
   /** Shift — PHÂN BIỆT Ctrl+F (tìm-trong-tệp) với Ctrl+Shift+F (tìm-toàn-repo), như VSCode. */
   shiftKey?: boolean;
+  /** Alt — mang ba phím TAB (xem docblock `phanGiaiPhimTatKhung`: Ctrl+W/Ctrl+Tab là phím TRÌNH DUYỆT). */
+  altKey?: boolean;
   /** Con trỏ đang ở trong một ô nhập (input/textarea/select)? Quyết định `gui`/`dung_stream` KIÊNG nể. */
   trongONhap: boolean;
   /** Có một lượt stream đang chạy? (Esc chỉ cắt khi ĐANG chạy.) */
@@ -90,6 +95,24 @@ export function phanGiaiPhimTatKhung(e: PhimTat): PhimTatKhung {
   // ★ 2026-08-31 · ĐỢT B (UX H1) — Ctrl/Cmd+G nhảy-tới-dòng (chuẩn VSCode); tái dùng đúng cơ chế
   //   cuộn+tô của `dongMucTieu` (panel Vấn đề) — không đẻ đường cuộn thứ hai.
   if (mod && (e.key === "g" || e.key === "G")) return "nhay_dong";
+  /**
+   * ★★★ 2026-09-03 · ĐỢT F1 — **BA PHÍM TAB DÙNG `Alt`, KHÔNG DÙNG Ctrl+W / Ctrl+Tab.**
+   *
+   * VSCode dùng `Ctrl+W` (đóng tab) và `Ctrl+Tab` (chuyển tab). Trên WEB cả hai là **phím TRÌNH
+   * DUYỆT GIỮ CHỖ**: Chrome/Firefox xử lý chúng ở tầng trình duyệt TRƯỚC khi trang thấy sự kiện,
+   * nên `preventDefault` không cứu được — bấm Ctrl+W là mất luôn tab trình duyệt (và cả phiên làm
+   * việc chưa lưu). Repo đã ghi kết luận này từ đợt CURSOR-PARITY trước cho Ctrl+Tab.
+   * ⚠ Phép thử trong trình duyệt TỰ ĐỘNG HOÁ (Playwright) cho thấy trang "bắt được" hai phím ấy —
+   *   đó là **thiết bị đo mù**: phím do CDP bơm thẳng vào renderer, không đi qua tầng trình duyệt
+   *   thật. Đừng dựa vào phép đo đó để kết luận là chặn được.
+   * ⇒ Chọn `Alt+W` (đóng tab tệp) và `Alt+[` / `Alt+]` (tab trước/sau) — không phím nào bị trình
+   *   duyệt giữ, và `Alt+chữ` trong Chrome không mở menu (chỉ `Alt` đơn mới).
+   */
+  if (e.altKey === true && !mod) {
+    if (e.key === "w" || e.key === "W") return "dong_tab";
+    if (e.key === "[") return "tab_truoc";
+    if (e.key === "]") return "tab_sau";
+  }
   if (mod && e.key === "Enter" && !e.trongONhap) return "gui";
   if (e.key === "Escape" && !e.trongONhap && e.dangStream) return "dung_stream";
   return "bo_qua";

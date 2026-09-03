@@ -156,6 +156,32 @@ describe("§phím-tắt — PHÍM TẮT TOÀN KHUNG (Đợt 3 UX)", () => {
     expect(src).toContain('addEventListener("keydown"');
   });
 
+  /**
+   * ★★★ 2026-09-03 · ĐỢT F1 — BA PHÍM TAB dùng `Alt`. Ca ÂM ở đây quan trọng hơn ca dương: nếu ai
+   * "sửa cho giống VSCode" bằng cách đổi sang Ctrl+W/Ctrl+Tab thì trên web đó là phím TRÌNH DUYỆT
+   * (đóng tab trình duyệt / chuyển tab trình duyệt) — người dùng mất cả phiên làm việc.
+   */
+  it("★★★ Alt+W ⇒ đóng tab · Alt+[ / Alt+] ⇒ chuyển tab", () => {
+    expect(P({ key: "w", altKey: true, trongONhap: false, dangStream: false })).toBe("dong_tab");
+    expect(P({ key: "W", altKey: true, trongONhap: false, dangStream: false })).toBe("dong_tab");
+    expect(P({ key: "[", altKey: true, trongONhap: false, dangStream: false })).toBe("tab_truoc");
+    expect(P({ key: "]", altKey: true, trongONhap: false, dangStream: false })).toBe("tab_sau");
+  });
+
+  it("★★★ ÂM: Ctrl+W / Ctrl+Tab KHÔNG được nhận (phím TRÌNH DUYỆT giữ chỗ — chặn không nổi)", () => {
+    expect(P({ key: "w", ctrlKey: true, trongONhap: false, dangStream: false })).toBe("bo_qua");
+    expect(P({ key: "Tab", ctrlKey: true, trongONhap: false, dangStream: false })).toBe("bo_qua");
+    expect(P({ key: "w", metaKey: true, trongONhap: false, dangStream: false })).toBe("bo_qua");
+    // Alt+Ctrl+W cũng KHÔNG: có `mod` là đã sang địa phận trình duyệt/hệ điều hành.
+    expect(P({ key: "w", altKey: true, ctrlKey: true, trongONhap: false, dangStream: false })).toBe("bo_qua");
+  });
+
+  it("★★ Alt + phím khác ⇒ bỏ qua (không nuốt tổ hợp gõ dấu của bộ gõ)", () => {
+    for (const k of ["a", "e", "1", "ArrowLeft", "Enter"]) {
+      expect(P({ key: k, altKey: true, trongONhap: true, dangStream: false }), k).toBe("bo_qua");
+    }
+  });
+
   it("★★★ 2026-08-31 PDCA (T11): nghe ở pha CAPTURE + stopPropagation — Ctrl+K không được rơi vào palette toàn-app", () => {
     // Đo thật trước bản vá: bôi đen 86 ký tự + Ctrl+K ⇒ palette DashboardLayout mở (nó cũng nghe
     // Ctrl+K ở document, chạy TRƯỚC vì listener trang re-register theo deps), focus dialog NUỐT

@@ -19453,7 +19453,8 @@
       "writeRejected": "Lượt ghi bị TỪ CHỐI [{{ma}}] — tệp trên đĩa KHÔNG đổi.",
       "cmdRejected": "Lệnh KHÔNG hoàn thành [{{ma}}] — chi tiết:",
       "cmdRejectedToast": "Lệnh bị chặn [{{ma}}] — xem chi tiết trong hội thoại.",
-      "rejectedGeneric": "Bị từ chối [{{ma}}] — xem chi tiết trong hội thoại."
+      "rejectedGeneric": "Bị từ chối [{{ma}}] — xem chi tiết trong hội thoại.",
+      "jumpTitle": "Mở {{tep}}"
     },
     "toolLoop": {
       "running": "Vòng đọc mã — lượt {{round}}/{{tran}}"
