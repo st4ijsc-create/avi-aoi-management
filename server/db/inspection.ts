@@ -19,6 +19,8 @@ import {
   inspectionSurfaces,
   inspectionPositions,
   inspectionCaptures,
+  // Khối B Task 3 — sổ WORM ghi CỜ LỆCH "máy khai linh kiện NGOÀI cây nó đã dạy".
+  auditLogs,
 } from "../../drizzle/schema";
 import { getUserCorporateAssignments, getUserFactoryAssignments } from "./auth";
 // ⚠ CHỈ nhập KIỂU (`import type`) — bị xoá lúc biên dịch, nên không tạo vòng import
@@ -28,6 +30,10 @@ import { UNSCOPED_LABELS, type ScopeEmptyReason, type ScopeLabels, scopeLabelsOf
 // Pha 1B Task 5 — bộ dịch THUẦN payload v2.0 → cây 4 cấp (Task 4). Type-only: không tạo
 // phụ thuộc runtime vòng (ingestCayKetQua.ts không import ngược lại file này).
 import type { CayDaDich, SurfaceDaDich, PositionDaDich, CaptureDaDich } from "../services/ingestCayKetQua";
+// Khối B Task 3 (B-4, Đ-19) — tra `pointDefId` cho cấp component. Import MỘT CHIỀU:
+// `cayDay.ts` không import ngược file này (đã kiểm), nên không có vòng.
+import { khoaCapComponent, traPointDefCapComponent, type KetQuaTraPointDef } from "./cayDay";
+import { verdictLuuTru } from "../../shared/rollupVerdict";
 
 // ============ LIST PROJECTION (doc 27 gap B9) ============
 /**
@@ -267,7 +273,7 @@ async function upsertInspectionCapture(
   inspectionId: number,
   inspectionTime: Date,
   c: CaptureDaDich,
-): Promise<number> {
+): Promise<{ id: number; moi: boolean }> {
   const inserted = await runner
     .insert(inspectionCaptures)
     .values({
@@ -290,7 +296,7 @@ async function upsertInspectionCapture(
     .returning({ id: inspectionCaptures.id });
 
   const newId = inserted[0]?.id;
-  if (newId !== undefined) return newId;
+  if (newId !== undefined) return { id: newId, moi: true };
 
   const existing = await runner
     .select({ id: inspectionCaptures.id })
@@ -307,15 +313,122 @@ async function upsertInspectionCapture(
         `nhưng không tìm lại được hàng đã có (positionRowId=${positionRowId}) — bất thường.`,
     );
   }
-  return existingId;
+  // `moi: false` = hàng ĐÃ CÓ (gửi lại cùng bo). Cấp component ĐI THEO quyết định
+  // này, KHÔNG tự nghĩ ra một luật khử trùng thứ hai: `measurement_results` KHÔNG
+  // có ràng buộc duy nhất nào ở cặp (inspectionCaptureRowId, componentExtId) —
+  // hypertable ĐÃ NÉN, mọi unique index buộc phải mang cột phân mảnh — nên nếu ghi
+  // vô điều kiện thì một lượt phát lại sẽ NHÂN BẢN đúng những hàng mà ba cấp trên
+  // vừa khử trùng xong.
+  return { id: existingId, moi: false };
+}
+
+/** Số mẫu `captureId/componentId` giữ lại để chẩn đoán — đủ để nhận ra mẫu, không đủ để phình sổ. */
+const SO_MAU_CHUA_DAY = 20;
+
+/**
+ * `audit_logs.action` của cờ lệch cấp component. Hằng số EXPORT để lưới tra bằng
+ * đúng chuỗi mã ghi ra — một literal chép tay ở lưới là cách lưới xanh khi mã đổi.
+ * varchar(100), giữ ngắn và ổn định.
+ */
+export const HANH_DONG_LECH_CAY_DAY = "ingest.cay.component_chua_day";
+
+/**
+ * Khối B Task 3 — kết quả ĐẾM ĐƯỢC của một lượt ghi cấp component. Trả về cho
+ * caller ĐỂ NÓ KHÔNG THỂ IM LẶNG: mọi nhánh "không ghi được" đều có một con số ở
+ * đây, và cả hai cửa v2.0 (trực tiếp + ZIP) đều phải làm gì đó với nó.
+ */
+export interface ThongKeCapComponent {
+  /** Tổng số `components[]` trong cây (KHÔNG phụ thuộc tra được hay không). */
+  tong: number;
+  /** Số hàng `measurement_results` THẬT SỰ ghi ra. */
+  daGhi: number;
+  /** Số linh kiện KHÔNG tra ra `pointDefId` ⇒ không có hàng nào. */
+  chuaDay: number;
+  /** Trong đó, số linh kiện tra ra NHIỀU HƠN MỘT point-def (xem `khoaNhapNhang`). */
+  nhapNhang: number;
+  /** Bỏ qua vì capture cha ĐÃ CÓ (gửi lại cùng bo) — không phải lỗi, là khử trùng. */
+  boQuaCaptureDaCo: number;
+  /**
+   * Máy đã dạy SẢN PHẨM ĐANG CHẠY chưa (phạm vi `(máy, sản phẩm)` khi phân giải được
+   * mã sản phẩm) — phân biệt "cửa chưa mở" với "LỆCH THẬT". Xem `traPointDefCapComponent`.
+   */
+  mayCoBanDay: boolean;
+  /** Tối đa {@link SO_MAU_CHUA_DAY} mẫu `captureId/componentId` chưa dạy. */
+  mauChuaDay: string[];
+}
+
+/**
+ * Tách một trị đo THÔ về đúng hai cột của `measurement_results`:
+ * `measuredValue` (decimal) cho nhánh SỐ, `measuredValueText` (varchar 255) cho
+ * nhánh chuỗi KHÔNG parse được số.
+ *
+ * ⚠ ĐÂY LÀ MẪU HÀNH VI CỦA NHÁNH v1.x, TÁCH RA CHỨ KHÔNG PHÁT MINH LẠI:
+ * nguyên văn khối `Route measuredValue to the correct DB column based on type`
+ * trong `server/routers/machineApiRouters.ts` (đường v1.x PHẲNG), nay CẢ HAI
+ * đường gọi chung một hàm. Chuỗi rỗng `""` cố ý đi nhánh TEXT (`Number("")` là
+ * `0`, không phải `NaN` — bỏ vế `rawValue !== ''` sẽ biến "máy không đo được" thành
+ * "đo được 0").
+ */
+export function tachTriDo(
+  rawValue: string | number | null | undefined,
+): { measuredValue?: string; measuredValueText?: string } {
+  if (rawValue === undefined || rawValue === null) return {};
+  const num = Number(rawValue);
+  if (!isNaN(num) && rawValue !== "") return { measuredValue: String(num) };
+  return { measuredValueText: String(rawValue) };
+}
+
+/**
+ * ★★★ Khối B Task 3 — TIỆN ÍCH MỘT LƯỢT cho cả hai cửa v2.0: gom mọi cặp
+ * `(captureId, componentId)` của cây kết quả rồi tra bản dạy của **máy ĐÃ XÁC THỰC**.
+ *
+ * Gọi TRƯỚC `persistInspectionAtomic` (phép ĐỌC, không cần nằm trong tx ghi) và
+ * truyền kết quả xuống qua `opts.tra`. Hai cửa (`submitInspectionTreeV2` trực tiếp
+ * và `aoiPackageRouter` ZIP) dùng CHUNG hàm này — hai bản chép tay là cách hai cửa
+ * bắt đầu tra theo hai khoá khác nhau.
+ *
+ * ⚠ `productModelId` — TRUYỀN VÀO KHI PHÂN GIẢI ĐƯỢC. Xem `traPointDefCapComponent`:
+ * một máy dạy HAI sản phẩm bằng cây clone (cùng bộ GUID) mà thiếu lọc này thì mọi
+ * cặp khoá đều NHẬP NHẰNG và bo không ghi được hàng nào — đo được, không giả định.
+ */
+export async function traBanDayChoCay(
+  machineId: number,
+  cay: CayDaDich,
+  productModelId?: number | null,
+): Promise<KetQuaTraPointDef> {
+  const khoa: { captureExtId: string; componentExtId: string }[] = [];
+  for (const s of cay.surfaces) {
+    for (const p of s.positions) {
+      for (const c of p.captures) {
+        for (const k of c.components) {
+          khoa.push({ captureExtId: c.captureId, componentExtId: k.componentId });
+        }
+      }
+    }
+  }
+  return traPointDefCapComponent({ machineId, productModelId, khoa });
 }
 
 /**
  * Pha 1B Task 5 (BG-11 ⛔, §3.6) — ghi CÂY 3 cấp `surface → position → capture` đã dịch
  * bởi `dichCayKetQua` (Task 4, `server/services/ingestCayKetQua.ts`) vào ba bảng cây.
- * KHÔNG ghi cấp component/measurement — cấp đó thuộc `measurement_results` hiện có, ghi
- * bởi CÙNG transaction ở caller (xem `persistInspectionAtomic` — truyền `opts.cay` để tự
- * gọi hàm này bằng đúng `tx` của nó, KHÔNG mở transaction riêng).
+ *
+ * ★★★ KHỐI B TASK 3 (B-4, Đ-19) — HÀM NÀY NAY GHI CẢ CẤP THỨ TƯ (component) vào
+ * `measurement_results`, trong CÙNG `tx`. Trước bản vá này docblock ghi "KHÔNG ghi cấp
+ * component" và đó là SỰ THẬT: `pointDefId` là `NOT NULL KHÔNG DEFAULT` nên chưa có ánh
+ * xạ `componentExtId → pointDefId` thì không ghi nổi một hàng. Task 2 (`ac8d5ab2`) đổ đầy
+ * `componentExtId` và Task 5 (`5eb881bb`) dựng chiều MÁY ⇒ ánh xạ tra được.
+ *
+ * ⚠ VÌ SAO ghi Ở ĐÂY chứ không truyền qua `measurementRows` của `persistInspectionAtomic`:
+ * `inspectionCaptureRowId` chỉ tồn tại SAU khi capture cha được ghi, mà `measurementRows`
+ * bị insert TRƯỚC `ghiCayKetQua`. Ghi ở đây thì khoá ngoại đúng là HỆ QUẢ CẤU TẠO, không
+ * phải một phép nối lại ở tầng trên.
+ *
+ * ⚠ Linh kiện KHÔNG tra ra `pointDefId` (chưa từng được dạy) ⇒ **KHÔNG ghi hàng, và ĐẾM
+ * VÀO {@link ThongKeCapComponent}** — xem docblock `traPointDefCapComponent` và báo cáo
+ * Task 3 cho hai hướng BỊ CẤM (bỏ qua im lặng ⇒ lớp C-1; tự tạo point-def ⇒ nguồn sự thật
+ * thứ hai cho bản dạy). Hàm này KHÔNG BAO GIỜ ném vì thiếu bản dạy: bo vẫn phải vào sổ,
+ * verdict vẫn cuộn từ cây.
  *
  * ⚠ BẮT BUỘC chạy trong CÙNG transaction với việc ghi header `product_inspections` — nếu
  * ghi ở một lượt riêng, một lỗi giữa chừng (mất kết nối, vi phạm ràng buộc ở position/
@@ -337,7 +450,15 @@ export async function ghiCayKetQua(
   inspectionId: number,
   inspectionTime: Date,
   cay: CayDaDich,
-): Promise<void> {
+  opts?: { tra?: KetQuaTraPointDef },
+): Promise<ThongKeCapComponent> {
+  const tk: ThongKeCapComponent = {
+    tong: 0, daGhi: 0, chuaDay: 0, nhapNhang: 0, boQuaCaptureDaCo: 0,
+    mayCoBanDay: opts?.tra?.mayCoBanDay ?? false,
+    mauChuaDay: [],
+  };
+  const hangComponent: InsertMeasurementResult[] = [];
+
   for (const surface of cay.surfaces) {
     const surfaceRowId = await upsertInspectionSurface(runner, inspectionId, inspectionTime, surface);
     for (const position of surface.positions) {
@@ -345,10 +466,63 @@ export async function ghiCayKetQua(
         runner, surfaceRowId, inspectionId, inspectionTime, position,
       );
       for (const capture of position.captures) {
-        await upsertInspectionCapture(runner, positionRowId, inspectionId, inspectionTime, capture);
+        const cap = await upsertInspectionCapture(
+          runner, positionRowId, inspectionId, inspectionTime, capture,
+        );
+        for (const k of capture.components) {
+          tk.tong += 1;
+          if (!cap.moi) { tk.boQuaCaptureDaCo += 1; continue; }
+          const khoa = khoaCapComponent(capture.captureId, k.componentId);
+          const pointDefId = opts?.tra?.banDo.get(khoa);
+          if (pointDefId === undefined) {
+            if (opts?.tra?.khoaNhapNhang.includes(khoa)) tk.nhapNhang += 1;
+            tk.chuaDay += 1;
+            if (tk.mauChuaDay.length < SO_MAU_CHUA_DAY) {
+              tk.mauChuaDay.push(`${capture.captureId}/${k.componentId}`);
+            }
+            continue;
+          }
+          hangComponent.push({
+            inspectionId,
+            // ⚠⚠ ĐÂY LÀ CỘT ĐỘT BIẾN BẮT BUỘC CỦA TASK 3. Bỏ dòng này ⇒ hàng ghi ra
+            // KHÔNG nối được vào cây kết quả: `inspection_captures` có N capture mà
+            // 0 hàng `measurement_results` trỏ tới — đúng hình dạng Đ-19 trước bản vá.
+            // Đo 2026-09-03 (đột biến ĐÃ CHẠY, đã hoàn tác): lưới ĐỎ 4/7 ca lúc đó, dòng đỏ
+            // nguyên văn `[aoi_management_test] 16 component ⇒ 16 hàng measurement_results:
+            // expected +0 to be 16 // Object.is equality` (và `[aoi_management_test] cửa ZIP
+            // ⇒ 16 hàng measurement_results: expected +0 to be 16` — CẢ HAI cửa cùng đỏ).
+            inspectionCaptureRowId: cap.id,
+            componentExtId: k.componentId,
+            pointDefId,
+            // Cột `result` là `overallresultenum` NOT NULL. Hợp đồng v2.0 ở lá chỉ có
+            // `OK|NG` + cờ `ntf` RIÊNG ⇒ dùng `verdictLuuTru` — CÙNG cầu nối hai bảng
+            // chữ cái mà cấp bo đã dùng, không chép công thức thứ hai. Một linh kiện
+            // `OK + ntf` KHÔNG bị hạ xuống `OK` (đó là lỗ 6,55% ở cấp bo, cùng lớp).
+            result: verdictLuuTru({ result: k.result, ntf: k.ntf }),
+            // …và cờ THÔ vẫn giữ nguyên cột riêng: `result` và `ntf` là hai tín hiệu
+            // độc lập (rollupVerdict, dòng 16-19). San phẳng một trong hai là mất dữ kiện.
+            ntf: k.ntf,
+            ntfSource: k.ntfSource ?? undefined,
+            errorCode: k.errorCode ?? undefined,
+            errorDesc: k.errorDesc ?? undefined,
+            // CÙNG phép dịch mà ba cấp trên dùng (`toDateOrUndefined`) — KHÔNG phải
+            // phép dịch "fake UTC" của `product_inspections.inspectionTime`. Xem
+            // báo cáo Task 3 §múi giờ: hai quy ước KHÁC NHAU tồn tại song song trong
+            // repo này, và hàng con phải khớp hàng CHA của nó (capture), không khớp header.
+            startedAt: toDateOrUndefined(k.startedAt),
+            completedAt: toDateOrUndefined(k.completedAt),
+            ...tachTriDo(k.value),
+          });
+          tk.daGhi += 1;
+        }
       }
     }
   }
+
+  if (hangComponent.length > 0) {
+    await runner.insert(measurementResults).values(hangComponent);
+  }
+  return tk;
 }
 
 export async function createProductInspection(
@@ -515,12 +689,26 @@ export async function reserveInspectionId(): Promise<number> {
 export async function persistInspectionAtomic(
   data: InsertProductInspection & { id: number },
   measurementRows: InsertMeasurementResult[],
-  opts?: { promoteOverallToNg?: boolean; outcome?: CreateInspectionOutcome; cay?: CayDaDich },
-): Promise<{ id: number; duplicate: boolean }> {
+  opts?: {
+    promoteOverallToNg?: boolean;
+    outcome?: CreateInspectionOutcome;
+    cay?: CayDaDich;
+    /**
+     * Khối B Task 3 — bản đồ `(captureExtId, componentExtId) → pointDefId` do
+     * `traPointDefCapComponent` tra TRƯỚC transaction (một SELECT, ngoài tx: tra
+     * bản dạy là phép ĐỌC, không cần nằm trong cùng khoá ghi). Vắng ⇒ KHÔNG hàng
+     * cấp component nào được ghi, và `thongKeComponent.chuaDay === tong` nói rõ
+     * điều đó thay vì im lặng.
+     */
+    tra?: KetQuaTraPointDef;
+  },
+): Promise<{ id: number; duplicate: boolean; thongKeComponent?: ThongKeCapComponent }> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
 
   const idempotencyKey = data.idempotencyKey?.trim() || undefined;
+
+  let thongKeComponent: ThongKeCapComponent | undefined;
 
   const { id, duplicate } = await db.transaction(async (tx) => {
     // ── 1) LEDGER CLAIM (only when the machine sent an explicit key) ───────────
@@ -585,8 +773,12 @@ export async function persistInspectionAtomic(
       await tx.insert(measurementResults).values(measurementRows);
     }
     // Pha 1B Task 5 (BG-11) — cây kết quả, CÙNG tx với header + measurements ở trên.
+    // Khối B Task 3 (Đ-19) — và cấp COMPONENT của chính cây đó, cũng trong tx này.
     if (opts?.cay) {
-      await ghiCayKetQua(tx, header.id, data.inspectionTime as Date, opts.cay);
+      thongKeComponent = await ghiCayKetQua(
+        tx, header.id, data.inspectionTime as Date, opts.cay, { tra: opts.tra },
+      );
+      await ghiSoLechCayDay(tx, header.id, data.machineId, thongKeComponent);
     }
     if (opts?.promoteOverallToNg) {
       await tx
@@ -623,7 +815,55 @@ export async function persistInspectionAtomic(
       .catch(() => {});
   }
 
-  return { id, duplicate };
+  return { id, duplicate, thongKeComponent };
+}
+
+/**
+ * ★★★ Khối B Task 3 — CỜ LỆCH cấp component, ghi vào `audit_logs` (WORM: `avi_app`
+ * chỉ có INSERT/SELECT — đo `information_schema.role_table_grants`, cả hai DB).
+ *
+ * ⚠ CHỈ ghi khi **máy ĐÃ có bản dạy** mà vẫn khai linh kiện ngoài cây đó. Đây là
+ * quyết định trung tâm của Task này, và lý do là ĐO ĐƯỢC, không phải khẩu vị:
+ *
+ *  · Nhánh "máy CHƯA dạy gì" (`mayCoBanDay === false`) — đo 2026-09-03 bằng
+ *    `avi_app`: `machine_template_versions` = **0 hàng** và `product_captures` =
+ *    **0 hàng** ở CẢ HAI DB (`aoi_management`, `aoi_management_test`). Tức HÔM NAY
+ *    100% máy rơi vào nhánh này. Ghi một hàng WORM cho MỖI BO ở nhánh đó = nhân đôi
+ *    `audit_logs` bằng một tin nhắn KHÔNG đổi (BG-93 retention còn đang mở). Nhánh
+ *    này vẫn KHÔNG im lặng: `ThongKeCapComponent` trả về tận cửa, hai router
+ *    `console.warn`, và độ chênh đo được thẳng từ dữ liệu (`inspection_captures`
+ *    có N hàng mà 0 hàng `measurement_results` nối vào).
+ *  · Nhánh "máy ĐÃ dạy nhưng khai linh kiện NGOÀI cây" — LỆCH THẬT giữa hai lời
+ *    khai của CÙNG một máy, có người phải xử, và số lượng bị chặn tự nhiên (chỉ
+ *    những máy đã đẩy cây rồi trôi). Đây là hàng đáng nằm trong sổ WORM.
+ *
+ * ⚠ TẠI SAO KHÔNG TỪ CHỐI GÓI: xem báo cáo Task 3 §quyết định — từ chối trên nền
+ * "0 bản dạy" là từ chối 100% bo v2.0 ngay ngày bật, tức một sự cố ngừng ingest,
+ * xấu hơn hẳn cái lỗ nó vá. Và khác lớp C-1: bo VẪN vào sổ, verdict VẪN cuộn từ
+ * cây, bo NG vẫn hiện ở mọi bảng yield — chỉ thiếu hàng LÁ.
+ */
+async function ghiSoLechCayDay(
+  runner: InsertRunner,
+  inspectionId: number,
+  machineId: number | null | undefined,
+  tk: ThongKeCapComponent,
+): Promise<void> {
+  if (!tk.mayCoBanDay || tk.chuaDay === 0) return;
+  await runner.insert(auditLogs).values({
+    action: HANH_DONG_LECH_CAY_DAY,
+    entityType: "inspection",
+    entityId: inspectionId,
+    entityName: `inspection#${inspectionId}`,
+    status: "failure",
+    details: JSON.stringify({
+      machineId: machineId ?? null,
+      tong: tk.tong,
+      daGhi: tk.daGhi,
+      chuaDay: tk.chuaDay,
+      nhapNhang: tk.nhapNhang,
+      mauChuaDay: tk.mauChuaDay,
+    }),
+  });
 }
 
 /**

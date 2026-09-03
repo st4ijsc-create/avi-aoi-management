@@ -112,7 +112,7 @@
  * là hypertable ĐÃ NÉN (đo `timescaledb_information.hypertables`).
  */
 import { createHash } from "node:crypto";
-import { and, desc, eq, gt, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { measurementPointDefs } from "../../drizzle/schema";
@@ -699,4 +699,155 @@ export async function traBanDayHienHanh(opts: {
     ))
     .limit(1);
   return hang[0] ?? null;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Khối B — Task 3 (B-4, Đ-19): TRA `pointDefId` CHO CẤP COMPONENT
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Khoá tra một linh kiện trong bản dạy: `captureExtId` + `componentExtId`.
+ *
+ * ⚠ VÌ SAO KHÔNG KHOÁ THEO `positionId`: đo mẫu máy THẬT
+ * (`D:\SOURCES\AOIData\template-sync-sample.json`, 2026-09-03) — `positionId`
+ * LẶP giữa hai surface (`TOP/P01` và `BOTTOM/P01`), còn 8/8 `captureExtId` là
+ * GUID DUY NHẤT. Khoá theo position sẽ nhập nhằng ngay trên mẫu chuẩn.
+ * ⚠ VÌ SAO CẶP NÀY chứ không riêng `componentExtId`: `uq_point_defs_capture_component`
+ * (0340) là ràng buộc DUY NHẤT ở cấp component, và nó khoá theo ĐÚNG cặp này —
+ * tra bằng cùng khoá mà DB cưỡng chế thì "nhiều hơn một kết quả" là chuyện KHÔNG
+ * THỂ xảy ra trong phạm vi một capture.
+ */
+export function khoaCapComponent(captureExtId: string, componentExtId: string): string {
+  return `${captureExtId}\u0000${componentExtId}`;
+}
+
+/** Kết quả một lượt tra bản dạy cho cả bo. */
+export interface KetQuaTraPointDef {
+  /** `khoaCapComponent(...)` → `measurement_point_defs.id`. Thiếu khoá = CHƯA DẠY. */
+  readonly banDo: ReadonlyMap<string, number>;
+  /**
+   * Máy này đã dạy **sản phẩm đang chạy** chưa (khi `productModelId` biết được;
+   * không biết thì lùi về "máy này từng dạy gì chưa").
+   * Phân biệt HAI nhánh mà Task 3 xử lý KHÁC NHAU (xem `ghiCayKetQua`):
+   * `false` = cửa cấp component CHƯA MỞ cho máy này; `true` = máy ĐÃ dạy nhưng
+   * khai một linh kiện NGOÀI cây nó dạy — LỆCH THẬT, đáng ghi sổ.
+   */
+  readonly mayCoBanDay: boolean;
+  /**
+   * Khoá tra ra NHIỀU HƠN MỘT point-def ⇒ CỐ Ý bỏ khỏi `banDo`. Chỉ xảy ra khi
+   * một máy có hai `product_captures` khác position mà TRÙNG `captureExtId` —
+   * `uq_product_captures_position_extid` chỉ duy nhất theo `(positionRowId,
+   * captureExtId)`, không theo máy. Đoán bừa một trong hai = ghi khoá ngoại sai
+   * IM LẶNG, đúng thứ Task này tồn tại để không làm.
+   */
+  readonly khoaNhapNhang: readonly string[];
+}
+
+/**
+ * ★★★ Tra `measurement_point_defs.id` cho từng cặp `(captureExtId, componentExtId)`
+ * của MỘT máy ĐÃ XÁC THỰC. Đây là thứ mở khoá Đ-19: `measurement_results.pointDefId`
+ * là `integer NOT NULL KHÔNG DEFAULT` (đo `information_schema` bằng `avi_app`,
+ * 2026-09-03, cả hai DB) ⇒ tra không ra thì KHÔNG ghi được hàng nào.
+ *
+ * ⚠⚠ LỌC MÁY ĐI QUA `product_captures."machineId"`, **KHÔNG** qua
+ * `measurement_point_defs."machineId"`. Đây không phải sở thích:
+ * `measurement_point_defs.machineId` mang HAI NGHĨA sau Task 5 (điểm PHẲNG: "gắn
+ * máy nào"; hàng CÂY: "máy nào dạy") và **không cổng nào canh** — chỉ có chú thích
+ * phân biệt (mối lo Task 5 bàn giao). `product_captures.machineId` chỉ có MỘT
+ * nghĩa, `NOT NULL`, và được khoá ngoại GHÉP `fk_captures_position_may` +
+ * `fk_positions_surface_may` (0347) buộc bằng đúng máy của surface gốc — không
+ * hàng con nào mang máy khác cha mà sống sót. Đi đường này thì "lấy đúng nghĩa
+ * hàng cây" là HỆ QUẢ CẤU TẠO, không phải một lời hứa.
+ *
+ * ⚠ `deletedAt IS NULL` + `captureRowId IS NOT NULL`: linh kiện đã bị cây co lại
+ * xoá mềm KHÔNG được tra ra (kết quả mới không được trỏ vào bản dạy đã chết), và
+ * điểm đo PHẲNG cũ (`captureRowId IS NULL`, 39/2.761 hàng sống ở hai DB) không
+ * bao giờ lọt vào đường cây.
+ *
+ * ⚠⚠ `productModelId` — LỌC THỨ HAI, BẮT BUỘC KHI BIẾT. Không phải phòng thủ giả
+ * định: `uq_product_captures_position_extid` chỉ duy nhất theo `(positionRowId,
+ * captureExtId)`, nên MỘT máy dạy HAI sản phẩm bằng cây CLONE (cùng bộ GUID
+ * capture/component — theo báo cáo Task 5 là "ca thường gặp NHẤT ở phân xưởng")
+ * cho ra HAI point-def cho cùng một cặp khoá. Đo được 2026-09-03: lượt chạy
+ * `vitest run server/` SONG SONG với `cayDayChieuMay.db.test.ts` (cùng hai máy,
+ * cùng mẫu máy thật, khác product model) làm cửa ZIP tra ra `chuaDay = 16/16` —
+ * nhánh nhập nhằng bên dưới nổ đúng như thiết kế, và đó là bằng chứng khoá
+ * `(máy, capture, component)` KHÔNG đủ. `null`/`undefined` = bo không phân giải
+ * được mã sản phẩm ⇒ lọc theo máy thôi, và cặp nhập nhằng bị BỎ (đếm vào
+ * `khoaNhapNhang`) chứ không đoán bừa.
+ *
+ * KHÔNG có khoá nào ⇒ trả bản đồ rỗng nhưng VẪN đo `mayCoBanDay` (một bo không
+ * có linh kiện nào vẫn phải phân biệt được hai nhánh).
+ */
+export async function traPointDefCapComponent(opts: {
+  machineId: number;
+  productModelId?: number | null;
+  khoa: readonly { captureExtId: string; componentExtId: string }[];
+}): Promise<KetQuaTraPointDef> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  // ⚠ PHẠM VI CỦA `mayCoBanDay` là `(máy, sản phẩm)` khi biết sản phẩm, KHÔNG phải
+  // máy-toàn-cục. Lý do là chính lý lẽ chống-phình-sổ của `ghiSoLechCayDay`: một máy
+  // đã dạy sản phẩm A rồi chạy sản phẩm B CHƯA DẠY thì mọi bo B đều "lệch", và
+  // machine-toàn-cục sẽ ghi một hàng WORM cho MỖI bo B. Câu hỏi đúng là "máy này đã
+  // dạy CÁI ĐANG CHẠY chưa", không phải "máy này từng dạy gì chưa".
+  const coBanDay = await d
+    .select({ id: measurementPointDefs.id })
+    .from(measurementPointDefs)
+    .innerJoin(productCaptures, eq(productCaptures.id, measurementPointDefs.captureRowId))
+    .where(and(
+      eq(productCaptures.machineId, opts.machineId),
+      isNull(measurementPointDefs.deletedAt),
+      typeof opts.productModelId === "number"
+        ? eq(measurementPointDefs.productModelId, opts.productModelId)
+        : undefined,
+    ))
+    .limit(1);
+  const mayCoBanDay = coBanDay.length > 0;
+
+  const capIds = [...new Set(opts.khoa.map((k) => k.captureExtId))];
+  const compIds = [...new Set(opts.khoa.map((k) => k.componentExtId))];
+  if (capIds.length === 0 || compIds.length === 0) {
+    return { banDo: new Map(), mayCoBanDay, khoaNhapNhang: [] };
+  }
+
+  const hang = await d
+    .select({
+      pointDefId: measurementPointDefs.id,
+      captureExtId: productCaptures.captureExtId,
+      componentExtId: measurementPointDefs.componentExtId,
+    })
+    .from(measurementPointDefs)
+    .innerJoin(productCaptures, eq(productCaptures.id, measurementPointDefs.captureRowId))
+    .where(and(
+      eq(productCaptures.machineId, opts.machineId),
+      isNotNull(measurementPointDefs.captureRowId),
+      isNull(measurementPointDefs.deletedAt),
+      // ⚠ ĐỘT BIẾN ĐÃ CHẠY (2026-09-03, đã hoàn tác): bỏ ba dòng dưới ⇒ MỆNH ĐỀ 8 ĐỎ,
+      // nguyên văn `[aoi_management_test] bo khai T3B phải tra ĐÚNG bản dạy T3B, không
+      // nhập nhằng: expected { tong: 16, daGhi: +0, …(2) } to deeply equal
+      // { tong: 16, daGhi: 16, …(2) }`.
+      typeof opts.productModelId === "number"
+        ? eq(measurementPointDefs.productModelId, opts.productModelId)
+        : undefined,
+      inArray(productCaptures.captureExtId, capIds),
+      inArray(measurementPointDefs.componentExtId, compIds),
+    ));
+
+  const banDo = new Map<string, number>();
+  const nhapNhang = new Set<string>();
+  for (const h of hang) {
+    if (h.componentExtId == null) continue; // không thể (vị từ IN đã lọc) — phòng kiểu
+    const k = khoaCapComponent(h.captureExtId, h.componentExtId);
+    const daCo = banDo.get(k);
+    if (daCo !== undefined && daCo !== h.pointDefId) {
+      nhapNhang.add(k);
+      banDo.delete(k);
+      continue;
+    }
+    if (!nhapNhang.has(k)) banDo.set(k, h.pointDefId);
+  }
+
+  return { banDo, mayCoBanDay, khoaNhapNhang: [...nhapNhang] };
 }

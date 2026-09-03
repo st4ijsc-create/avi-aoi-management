@@ -60,6 +60,15 @@ vi.mock("../db", () => {
     createProductInspection: vi.fn(async () => 4242),
     // v2.0 (Task 6) đi qua hai hàm này.
     reserveInspectionId: vi.fn(async () => nextReservedId++),
+    // Khối B Task 3 (Đ-19) — `submitInspectionTreeV2` tra bản dạy TRƯỚC khi ghi.
+    // Giả lập "máy CHƯA dạy gì" (bản đồ rỗng) = ĐÚNG trạng thái nền đo được
+    // 2026-09-03 (`machine_template_versions` 0 hàng ở cả hai DB) ⇒ file này giữ
+    // NGUYÊN mọi mệnh đề cũ của nó: 0 hàng cấp component, verdict không đổi.
+    traBanDayChoCay: vi.fn(async () => ({
+      banDo: new Map<string, number>(),
+      mayCoBanDay: false,
+      khoaNhapNhang: [] as string[],
+    })),
     persistInspectionAtomic: vi.fn(
       async (
         data: Record<string, unknown>,

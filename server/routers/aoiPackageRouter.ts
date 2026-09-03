@@ -1161,6 +1161,8 @@ export const aoiPackageRouter = router({
           let finalOverallResult: "OK" | "NG" | "NTF" = "OK";
           let cay: CayDaDich | null = null;
           let lechSummary = false;
+          // Khối B Task 3 — đếm cấp component của lượt commit này (xem `ThongKeCapComponent`).
+          let thongKeCapComponent: db.ThongKeCapComponent | undefined;
           // Cột báo cáo (`inspection_packages.totalPoints/okCount/ngCount`) —
           // đếm CAPTURES (cấp gần nhất với "một điểm kiểm tra có ảnh") từ CÂY
           // đã dịch — KHÔNG từ `summary` khai (bất biến 3). ★★★ M-8 — trị khởi
@@ -1349,13 +1351,31 @@ export const aoiPackageRouter = router({
               idempotencyKey: `aoi-pkg:${pkg.packageId}`,
             };
 
+            // ★★★ Khối B Task 3 (Đ-19) — tra bản dạy CỦA MÁY ĐÃ XÁC THỰC trước khi mở
+            // transaction, rồi truyền xuống `ghiCayKetQua` qua `opts.tra`. CÙNG hàm mà
+            // đường trực tiếp v2.0 dùng (`db.traBanDayChoCay`) — không chép bản thứ hai.
+            const traBanDay = await db.traBanDayChoCay(machine.id, cay, resolvedProductModel?.id);
+
             const persisted = await db.persistInspectionAtomic(
               newInspectionData,
               [],
-              { cay, outcome: insertOutcome },
+              { cay, outcome: insertOutcome, tra: traBanDay },
             );
             linkedInspectionId = persisted.id;
             createdInspection = !persisted.duplicate;
+            // ⚠ KHÔNG ÂM THẦM — xem `ghiSoLechCayDay`. Nhánh "máy ĐÃ dạy mà khai linh
+            // kiện ngoài cây" đã vào `audit_logs` TRONG chính transaction trên; dòng này
+            // là kênh thứ hai (nhật ký vận hành) cho CẢ HAI nhánh.
+            thongKeCapComponent = persisted.thongKeComponent;
+            if (thongKeCapComponent && thongKeCapComponent.chuaDay > 0) {
+              console.warn(
+                `[AOI commit] cấp component: ghi ${thongKeCapComponent.daGhi}/${thongKeCapComponent.tong} hàng — ` +
+                  `${thongKeCapComponent.chuaDay} linh kiện CHƯA CÓ BẢN DẠY` +
+                  (thongKeCapComponent.nhapNhang > 0 ? ` (trong đó ${thongKeCapComponent.nhapNhang} nhập nhằng)` : "") +
+                  ` · máy=${machine.code} mayCoBanDay=${thongKeCapComponent.mayCoBanDay}` +
+                  ` · gói=${pkg.packageId} inspectionId=${persisted.id} · mẫu: ${thongKeCapComponent.mauChuaDay.join(", ")}`,
+              );
+            }
             if (persisted.duplicate) {
               console.warn(
                 `[AOI commit] persistInspectionAtomic reported duplicate for package ` +
@@ -1614,6 +1634,17 @@ export const aoiPackageRouter = router({
             inspectionId: linkedInspectionId,
             imageCount: imageFiles.length,
             totalPoints: demTuCayBaoCao.total,
+            // Khối B Task 3 (Đ-19) — ĐẾM ĐƯỢC TẬN CỬA (trường THÊM, không sửa
+            // trường cũ nào). Agent đẩy gói đọc được ngay rằng nó vừa khai N linh
+            // kiện chưa có bản dạy — đó là tín hiệu "hãy đẩy cây dạy lên".
+            capComponent: thongKeCapComponent
+              ? {
+                  tong: thongKeCapComponent.tong,
+                  daGhi: thongKeCapComponent.daGhi,
+                  chuaDay: thongKeCapComponent.chuaDay,
+                  mayCoBanDay: thongKeCapComponent.mayCoBanDay,
+                }
+              : undefined,
           };
         } catch (err: any) {
           // Log: commit_fail

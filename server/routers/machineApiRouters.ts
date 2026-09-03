@@ -31,6 +31,12 @@ import { requirePermission } from "../_core/accessControl";
 import { machineTemplateContract } from "../contracts/machineTemplateContract";
 import { kiemTraCayDay } from "../services/kiemTraCayDay";
 import { ghiCayDay, demDiemDoTheoNeo } from "../db/cayDay";
+// Khối B Task 3 — hàm THUẦN (không chạm DB) tách trị đo về hai cột. Nhập TRỰC TIẾP
+// từ module, KHÔNG qua barrel `../db`: ~9 lưới `vi.mock("../db")` liệt kê export
+// tường minh, và một hàm thuần đi qua barrel sẽ bắt tất cả chúng phải khai thêm một
+// mock KHÔNG có tác dụng gì. Ngược lại `db.traBanDayChoCay` CỐ Ý ở lại barrel: nó
+// ĐỌC CSDL, nên lưới phải mock được nó.
+import { tachTriDo } from "../db/inspection";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
 import {
   authenticateMachine,
@@ -1939,18 +1945,13 @@ export async function processInspectionSubmission(
         }
         assertValidPointDefId(resolvedPointDefId, `submitInspection (machine=${machine.code}, point=${pointCode})`);
 
-        // Route measuredValue to the correct DB column based on type
-        const rawValue = measurement.measuredValue;
-        let numericValue: string | undefined = undefined;
-        let textValue: string | undefined = undefined;
-        if (rawValue !== undefined && rawValue !== null) {
-          const num = Number(rawValue);
-          if (!isNaN(num) && rawValue !== '') {
-            numericValue = String(num); // decimal column accepts numeric string
-          } else {
-            textValue = String(rawValue); // non-numeric → measuredValueText
-          }
-        }
+        // Route measuredValue to the correct DB column based on type.
+        // ⚠ Khối B Task 3 — khối này TỪNG nằm inline ở đây; nay là `db.tachTriDo`
+        // (server/db/inspection.ts) để đường CÂY v2.0 dùng LẠI ĐÚNG mẫu hành vi này
+        // thay vì chép một bản thứ hai. Hàm là bản TÁCH NGUYÊN VĂN — cùng vế
+        // `rawValue !== ''`, cùng `String(num)`, cùng `undefined` khi không có trị.
+        const { measuredValue: numericValue, measuredValueText: textValue } =
+          tachTriDo(measurement.measuredValue);
 
         // Image was already uploaded in the bounded-concurrency pre-pass above
         // (P1-2, doc 38 R-2b); read this row's pre-computed result by index.
@@ -3658,7 +3659,13 @@ async function submitInspectionTreeV2(
   // vị trí gọi (sau xác thực + sau trần tốc độ), để nhánh v2.0 và nhánh v1.x đếm ở ĐÚNG một
   // khoảnh khắc như nhau.
   opts: { headerKey?: string | null; sauXacThuc?: (auth: MachineAuthResult) => void },
-): Promise<{ success: true; inspectionId: number; duplicate?: boolean }> {
+): Promise<{
+  success: true;
+  inspectionId: number;
+  duplicate?: boolean;
+  /** Khối B Task 3 (Đ-19) — số hàng cấp component ghi được / số linh kiện chưa dạy. */
+  capComponent?: { tong: number; daGhi: number; chuaDay: number; mayCoBanDay: boolean };
+}> {
   const auth = await authenticateMachine({
     apiKey: payload.apiKey,
     headerKey: opts.headerKey,
@@ -3695,6 +3702,11 @@ async function submitInspectionTreeV2(
   const reservedInspectionId = await db.reserveInspectionId();
   const insertOutcome: CreateInspectionOutcome = { duplicate: false };
 
+  // ★★★ Khối B Task 3 (Đ-19) — tra bản dạy CỦA CHÍNH MÁY NÀY cho mọi cặp
+  // `(captureId, componentId)` TRƯỚC khi mở transaction. Phép ĐỌC: giữ ngoài tx để
+  // không kéo dài khoá ghi; kết quả đi xuống `ghiCayKetQua` qua `opts.tra`.
+  const traBanDay = await db.traBanDayChoCay(machine.id, cay, productModelRecord?.id);
+
   const persisted = await db.persistInspectionAtomic(
     {
       id: reservedInspectionId,
@@ -3722,8 +3734,21 @@ async function submitInspectionTreeV2(
       idempotencyKey: dungKhoaKhuTrungV2(payload),
     },
     [],
-    { cay, outcome: insertOutcome },
+    { cay, outcome: insertOutcome, tra: traBanDay },
   );
+
+  // ⚠ KHÔNG ÂM THẦM: mọi linh kiện không tra ra `pointDefId` đều có mặt ở đây, và
+  // hàng `audit_logs` (nhánh máy ĐÃ dạy) đã được ghi TRONG chính transaction trên.
+  const tk = persisted.thongKeComponent;
+  if (tk && tk.chuaDay > 0) {
+    console.warn(
+      `[submitInspection][v2.0] cấp component: ghi ${tk.daGhi}/${tk.tong} hàng — ` +
+        `${tk.chuaDay} linh kiện CHƯA CÓ BẢN DẠY` +
+        (tk.nhapNhang > 0 ? ` (trong đó ${tk.nhapNhang} nhập nhằng)` : "") +
+        ` · máy=${machine.code} mayCoBanDay=${tk.mayCoBanDay} inspectionId=${persisted.id}` +
+        ` · mẫu: ${tk.mauChuaDay.join(", ")}`,
+    );
+  }
 
   if (persisted.duplicate) {
     console.warn(
@@ -3733,7 +3758,21 @@ async function submitInspectionTreeV2(
     );
   }
 
-  return { success: true as const, inspectionId: persisted.id, duplicate: persisted.duplicate };
+  return {
+    success: true as const,
+    inspectionId: persisted.id,
+    duplicate: persisted.duplicate,
+    // Khối B Task 3 — ĐẾM ĐƯỢC TẬN CỬA. Máy đọc được ngay rằng nó vừa khai N linh
+    // kiện chưa dạy; trường phụ, KHÔNG đổi ba trường cũ (thêm, không sửa).
+    capComponent: persisted.thongKeComponent
+      ? {
+          tong: persisted.thongKeComponent.tong,
+          daGhi: persisted.thongKeComponent.daGhi,
+          chuaDay: persisted.thongKeComponent.chuaDay,
+          mayCoBanDay: persisted.thongKeComponent.mayCoBanDay,
+        }
+      : undefined,
+  };
 }
 
 export const machineApiRouter = router({
