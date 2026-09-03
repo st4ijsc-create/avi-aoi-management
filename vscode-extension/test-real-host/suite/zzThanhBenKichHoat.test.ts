@@ -63,26 +63,21 @@ describe("THANH BÊN — viewsContainers.activitybar + views (webview) trong hos
     console.log(`[thanh-ben] isActive TRƯỚC khi mở view lần đầu trong lượt chạy này: ${ext?.isActive}`);
   });
 
-  it("★★★ mở view bằng lệnh `<viewId>.focus` (đúng thao tác 'bấm icon') KHÔNG NÉM LỖI, và extension active=true SAU đó", async () => {
+  /**
+   * ★★★ Ca này TỪNG gọi `<viewId>.focus` trên view của THANH HOẠT ĐỘNG. Từ Task 4 (cặp vùng chứa
+   * `activitybar` ↔ `secondarySidebar` loại trừ nhau bằng `when`), trên VSCode đủ mới thì vùng
+   * `activitybar` **bị ẩn** — và focus một view nằm trong vùng chứa đang ẩn là **hành vi KHÔNG xác
+   * định**. Khẳng định lên hành vi không xác định là khẳng định lên hư không: nó đỏ/xanh theo thứ
+   * ta không kiểm soát, chứ không theo mã ta viết đúng hay sai.
+   *
+   * Phần focus đã chuyển sang ca "mở view Ở VÙNG CHỨA ĐANG HOẠT ĐỘNG" bên dưới — ca đó chọn vùng
+   * theo `vscode.version` THẬT của host, tức đo đúng thao tác người dùng thật làm. Ở đây giữ lại
+   * đúng phần vẫn đo được và vẫn đáng canh: id view khớp hằng số dùng trong mã.
+   */
+  it("★★★ id view của thanh hoạt động khớp hằng MA_VIEW_THANH_BEN dùng trong extension.ts", () => {
     const containerId = pkg.contributes!.viewsContainers!.activitybar![0].id;
     const viewId = pkg.contributes!.views![containerId][0].id;
     assert.equal(viewId, "aviAiLocal.bangChat", "id view lệch khỏi hằng số MA_VIEW_THANH_BEN dùng trong extension.ts");
-
-    // `<viewId>.focus` là lệnh CỐT LÕI do CHÍNH workbench sinh ra cho MỌI view đã khai trong
-    // manifest — tồn tại kể cả khi extension CHƯA active (đó chính là ý nghĩa của activation event
-    // `onView:<id>`: VSCode phải biết lệnh này tồn tại để activate extension khi người dùng bấm icon
-    // — không phải extension tự đăng ký ra lệnh đó).
-    await vscode.commands.executeCommand(`${viewId}.focus`);
-    // Nhường vài nhịp cho `resolveWebviewView` (bất đồng bộ, không có API public để await chính xác
-    // "view đã resolve xong").
-    await new Promise((r) => setTimeout(r, 2000));
-
-    const ext = vscode.extensions.getExtension(EXT_ID)!;
-    assert.equal(
-      ext.isActive,
-      true,
-      "mở view trong thanh bên KHÔNG kích hoạt extension (activationEvents thiếu onView, hoặc id view sai)",
-    );
   });
 
   it("★★ mở container bằng workbench.view.extension.<id> cũng KHÔNG ném lỗi (đường thứ hai người dùng có thể đi)", async () => {
