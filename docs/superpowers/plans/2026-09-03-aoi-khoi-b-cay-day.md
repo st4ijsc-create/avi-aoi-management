@@ -384,3 +384,48 @@ Không dùng chúng làm **nguồn giới hạn** là đúng (xem hướng (c) �
 > *"Máy có tự mâu thuẫn không?"* — `value` nằm ngoài `lowerLimit`/`upperLimit` **do chính máy khai** mà máy vẫn kết `OK`.
 
 Đó là lỗi **pipeline của máy**, bắt được mà **không cần** bản dạy. ⚠ **Đừng gộp** vào cổng bản-dạy — hai cổng, hai nguồn, hai ý nghĩa.
+
+---
+
+## ⛔ BG-99 — BG-96 đóng theo KHUÔN, chưa đóng theo BẤT BIẾN: 7 giờ tái sinh ngầm
+
+**Tìm ra ở khe giữa hai phiên chạy song song** — BG-97 (`c98781db`) cảnh báo, tôi đã tự đo và xác nhận. **Không phiên nào sở hữu lỗi này**, nên nó suýt không ai nhận.
+
+### Phép đo — cùng một chuỗi, hai luật đọc, trong cùng một request
+
+`server/routers/aoiPackageRouter.ts`:
+
+| Dòng | Đọc `metaData.completedAt` bằng | Nghĩa |
+|---|---|---|
+| **1282** | `mocDoTuChuoi(...)` (BG-97) | chuỗi trần = **giờ tường UTC** |
+| **1344** | `new Date(...)` (sau cutover BG-96) | theo **TZ của process Node** |
+
+Đo trên chính máy này (`Asia/Bangkok`, offset **−420**), với mẫu máy thật `"2026-08-18T09:30:00.150"`:
+
+```
+new Date(chuoi tran) -> 2026-08-18T02:30:00.150Z
+doc nhu gio tuong UTC -> 2026-08-18T09:30:00.150Z
+LECH = -420 phut = DUNG 7 GIO
+```
+
+⚠ Chú thích ở dòng 1350 khai `rawInspTime` là **"UTC thật"** — **sai** khi chuỗi trần và process không chạy UTC. Đó là **L-3** (chú thích khai quá) nằm ngay cạnh lỗi.
+
+### Vì sao census của họ không bắt
+
+`server/utils/fakeUtcCensus.test.ts` cưỡng chế:
+```js
+const RE_FAKE_UTC = /getTimezoneOffset\(\)\s*\*\s*60000/;
+```
+⇒ Chặn phép dịch **tường minh**, **không thấy** `new Date(chuỗi trần)` — cái tạo ra **cùng một sai số 7 giờ** bằng đường khác.
+
+**Đây là L-1 (canh DANH SÁCH thay vì BẤT BIẾN) — lần thứ SÁU trong dự án.** Bất biến đúng phải là:
+
+> *"Một chuỗi thời gian TRẦN (không hậu tố múi giờ) phải được đọc bằng **đúng MỘT** luật ở **mọi** nơi trong hệ."*
+
+⇒ Census phải cấm **mọi** `new Date(<chuỗi có thể trần>)` trên đường ingest, không chỉ cấm một khuôn regex.
+
+### Ruling — KHÔNG tự sửa tệp này
+
+Phiên Khối C đang chạy **trên cùng tệp** và sở hữu BG-96; BG-97 đã có một lần suýt mất công việc vì hai tác nhân ghi cùng lúc (`cp` đè trong cửa sổ vài giây). **Sửa đồng thời là tái tạo đúng rủi ro đó.**
+⇒ Ghi nợ, giao cho phiên sở hữu BG-96, **không** chỉnh `aoiPackageRouter.ts` từ phía tôi.
+*Giá nếu sai:* lỗi tồn thêm một nhịp — nhưng nó **chưa nổ** (0/435 hàng capture có `startedAt`), còn mất công việc thì **không hoàn lại được**.
