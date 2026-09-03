@@ -699,6 +699,64 @@ export const aoiPackageRouter = router({
               `Cần một gói ZIP MỚI (packageId khác) nếu payload đã được sửa.`,
           );
         }
+        // ★★★ N-1 (re-review lượt 8 ⛔) — LỜI KHAI TOÀN VẸN MỚI NHẤT THẮNG,
+        // CHỪNG NÀO BYTE CHƯA ĐƯỢC NHẬN.
+        //
+        // TRƯỚC bản vá này nhánh "gói đã tồn tại" trả presign cũ mà KHÔNG đụng
+        // `sha256Presign`/`fileSizeBytes` ⇒ chuỗi khoá VĨNH VIỄN một gói TỐT:
+        //   presign(sha=A) → upload hỏng/chưa chạy (`status` VẪN 'pending')
+        //   → Agent dựng lại ZIP (cùng nội dung, CÙNG `sizeBytes`, khác byte vì
+        //     mtime nằm trong local header) ⇒ digest B
+        //   → presign(sha=B) KHÔNG ghi gì → byte-của-B tới cửa: `isRetry` =
+        //     (`status==='uploaded'||'uploading'`) = FALSE ⇒ cổng I-7 chạy ⇒
+        //     B ≠ A ⇒ 400 ⇒ `status` VẪN 'pending' ⇒ lặp VÔ HẠN.
+        // Miễn trừ `!isRetry` của I-7 được viết cho "một RETRY hợp lệ đổi digest
+        // một cách chính đáng", nhưng nó khoá vào `'uploaded'` — TRẠNG THÁI MÀ
+        // MỘT LẦN DỰNG LẠI *TRƯỚC* UPLOAD KHÔNG BAO GIỜ CHẠM TỚI. Thông điệp
+        // lỗi hai cửa còn kê đơn "tải lại ZIP": tải lại bao nhiêu lần cũng 400,
+        // chỉ một `packageId` MỚI mới thoát ⇒ đây là bo TỐT bị CHẶN.
+        //
+        // Bán kính lúc vá = 0 (`sha256Presign IS NOT NULL` = 0/0 ở
+        // `aoi_management`, 0/296 ở `aoi_management_test`) — nhưng tài liệu I-2
+        // vừa DẠY MỌI AGENT gửi `sha256` ở presign, nên lỗi tự lên đạn đúng lúc
+        // bên tích hợp làm theo tài liệu.
+        //
+        // Phạm vi làm mới: gói CHƯA `'uploaded'` (nhánh `'committed'` đã trả về
+        // ở trên, `'dead'` đã ném ở trên) — tức `'pending' | 'uploading' |
+        // 'failed'`. Gói `'uploaded'` GIỮ NGUYÊN hành vi bảo vệ: ở đó byte THẬT
+        // đã tới và đã được đối chiếu bằng chính digest này; một lời khai
+        // presign MUỘN không được ghi đè lên bằng chứng nghiệm thu đó.
+        // ⚠ Không khai `sha256` ở lượt gọi này ⇒ cột về NULL. Đó là CỐ Ý và
+        // KHÔNG hạ mức bảo đảm: trường này 100% do Agent tự khai, nên một Agent
+        // muốn qua cổng chỉ cần khai một digest KHỚP — giữ lại một lời khai CŨ
+        // mà Agent đã bỏ không mua thêm được bảo đảm nào, chỉ mua thêm một cái
+        // bẫy khoá vĩnh viễn.
+        if (pkg.status !== "uploaded") {
+          const shaMoi = input.sha256?.trim().toLowerCase() || null;
+          await database
+            .update(inspectionPackages)
+            .set({ sha256Presign: shaMoi, fileSizeBytes: input.sizeBytes, updatedAt: new Date() })
+            .where(eq(inspectionPackages.id, pkg.id));
+          await logPackageActivity({
+            packageDbId: pkg.id,
+            packageId: pkg.packageId,
+            machineId: machine.id,
+            event: "presign",
+            message: `Presign gọi lại trên gói chưa upload (${pkg.status}) — làm mới lời khai toàn vẹn`,
+            source: "agent",
+            detail: `sha256Presign: ${pkg.sha256Presign ?? "NULL"} → ${shaMoi ?? "NULL"}, fileSizeBytes: ${pkg.fileSizeBytes ?? "NULL"} → ${input.sizeBytes}`,
+            fileSizeBytes: input.sizeBytes,
+            metadata: {
+              lamMoiLoiKhaiPresign: true,
+              trangThai: pkg.status,
+              sha256PresignCu: pkg.sha256Presign ?? null,
+              sha256PresignMoi: shaMoi,
+              fileSizeBytesCu: pkg.fileSizeBytes ?? null,
+              fileSizeBytesMoi: input.sizeBytes,
+            },
+          });
+        }
+
         // Return existing presign info for retry
         return {
           success: true,
@@ -986,6 +1044,13 @@ export const aoiPackageRouter = router({
           //   presign cũ đã lỗi thời một cách chính đáng — so tiếp sẽ từ chối
           //   NHẦM. Nhánh này vì thế phủ đúng đường ghi thẳng vào storage,
           //   không đi qua Express.
+          //   ★★★ N-1 (re-review lượt 8) — điều làm cổng này KHÔNG còn khoá
+          //   vĩnh viễn một gói TỐT: `presign` gọi lại trên gói chưa
+          //   `'uploaded'` nay LÀM MỚI `sha256Presign` (xem docblock N-1 ở
+          //   nhánh "gói đã tồn tại" của `presign`). Một Agent dựng lại ZIP
+          //   trước khi upload chỉ cần khai lại digest MỚI; trước bản vá đó,
+          //   `status` không bao giờ rời `'pending'` nên cổng này lặp lại mãi
+          //   trên một lời khai đã chết.
           if (pkg.status === "pending" && pkg.sha256Presign && shaZipThuc !== pkg.sha256Presign) {
             throw appError(
               "BAD_REQUEST",

@@ -4832,8 +4832,14 @@ async function startServer() {
       // nguy hiểm hơn không có trường"). `pkg.sha256Presign` đã được chuẩn hoá
       // chữ THƯỜNG lúc ghi (aoiPackageRouter.presign, migration 0346).
       // `!isRetry` — HOÀN TOÀN cùng lý do đã viết cho `sizeBytes` ngay trên:
-      // một retry hợp lệ (sửa ZIP rồi tải lại) đổi digest một cách CHÍNH ĐÁNG,
-      // và `presign` lặp không cập nhật lại cột này.
+      // một retry hợp lệ (sửa ZIP rồi tải lại) đổi digest một cách CHÍNH ĐÁNG.
+      // ★★★ N-1 (re-review lượt 8) — câu cũ ở đây viết *"và `presign` lặp không
+      // cập nhật lại cột này"*: mệnh đề đó CHÍNH LÀ cái bẫy, và nay đã SAI.
+      // `aoiPackageRouter.presign` LÀM MỚI `sha256Presign`/`fileSizeBytes` mỗi
+      // lượt gọi lại trên gói chưa `'uploaded'` (xem docblock N-1 tại chỗ ghi).
+      // Nhờ vậy một Agent dựng lại ZIP giữa presign và upload chỉ cần khai lại
+      // digest MỚI ở presign là đi qua được — trước đó `packageId` bị khoá VĨNH
+      // VIỄN vì `status` không bao giờ rời `'pending'` để `isRetry` thành true.
       if (!isRetry && pkg.sha256Presign) {
         const { createHash } = await import("node:crypto");
         const shaThuc = createHash("sha256").update(zipBuffer).digest("hex");
