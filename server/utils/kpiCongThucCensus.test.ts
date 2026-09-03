@@ -52,17 +52,19 @@ const MIEN_TRU_DONG: Array<{ file: string; dong: number; lyDo: string }> = [
   { file: "server/routers/productionDashboardRouter.ts", dong: 236, lyDo: "FPY proxy — lỗi KHÁC, sửa cần firstInspectionsSql" },
   { file: "server/routers/productionDashboardRouter.ts", dong: 426, lyDo: "FPY proxy — lỗi KHÁC" },
   { file: "server/routers/productionDashboardRouter.ts", dong: 474, lyDo: "FPY proxy — lỗi KHÁC" },
-  // ⚠ 814 → 816 (2026-09-03, BG-96 Task 2 follow-up): xoá hàm toFakeUtc + đổi doc-comment ở
-  // đầu file thêm 2 dòng ⇒ mọi số dòng phía dưới lệch +2. Dòng fpy ở đây KHÔNG đổi nội
-  // dung, chỉ dịch chuyển — cập nhật số dòng đi CÙNG commit theo đúng khuôn đã có ở dưới.
-  { file: "server/routers/stationAnalysisRouter.ts",     dong: 816, lyDo: "FPY proxy — lỗi KHÁC" },
+  // ⚠ 814 → 816 → 832 (2026-09-03, BG-96 Task 2 follow-up, HAI đợt vá liên tiếp trong cùng
+  // ngày): đợt 1 xoá hàm toFakeUtc + đổi doc-comment (+2 dòng); đợt 2 (Important-2, review)
+  // thêm import 4 helper factory-TZ + khối comment + 2 dòng `piLocalDay`/`piLocalHourOfDay`
+  // (+16 dòng). Dòng fpy ở đây KHÔNG đổi nội dung qua cả hai đợt, chỉ dịch chuyển — cập nhật
+  // số dòng đi CÙNG commit theo đúng khuôn đã có ở dưới.
+  { file: "server/routers/stationAnalysisRouter.ts",     dong: 832, lyDo: "FPY proxy — lỗi KHÁC" },
 
   // ── Đợt vá sau-review (2026-08-25) — thước mở rộng (tiền tố + tên ngắn) khai quật
   // thêm các chỗ TRƯỚC ĐÂY vô hình với thước cũ. Đọc từng dòng trước khi tin dòng này:
   // đây không phải chỗ giấu lỗi mới, là nợ ĐÃ XÁC MINH không phải final-yield-sai.
   { file: "server/routers/productionDashboardRouter.ts", dong: 245, lyDo: "FPY proxy (prevFPY, kỳ trước) — cùng họ với :236, KHÁC lỗi" },
-  // ⚠ 179 → 181 (2026-09-03, BG-96 Task 2 follow-up): cùng đợt dịch +2 dòng nêu ở :816 trên.
-  { file: "server/routers/stationAnalysisRouter.ts",      dong: 181, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng họ với :816" },
+  // ⚠ 179 → 181 → 197 (2026-09-03, BG-96 Task 2 follow-up, cùng hai đợt dịch nêu ở :832 trên).
+  { file: "server/routers/stationAnalysisRouter.ts",      dong: 197, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng họ với :832" },
   { file: "server/services/aiExecutiveReport.ts",          dong: 202, lyDo: "FPY proxy (biến fpy trong gatherKpis) — cùng họ, KHÁC lỗi" },
   // ⚠ 3698 → 3699 (2026-08-24): dòng fy ngay dưới được di trú sang finalYield() và file
   // nhận thêm MỘT dòng import ở đầu ⇒ mọi số dòng phía dưới lệch +1. Miễn trừ theo số
@@ -72,7 +74,7 @@ const MIEN_TRU_DONG: Array<{ file: string; dong: number; lyDo: string }> = [
   // import mới ở đầu file ⇒ lệch RÒNG -4 dòng. Bỏ sót lượt cập nhật này ở commit gốc của
   // Task 2 (chỉ phát hiện khi chạy lại cổng này ở đợt vá toFakeUtc) — bài học: MỌI sửa vào
   // `_core/index.ts` phải chạy cổng này trước khi commit, không chỉ cổng liên quan trực tiếp.
-  { file: "server/_core/index.ts",                          dong: 3695, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:181" },
+  { file: "server/_core/index.ts",                          dong: 3695, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
 
   // aiInspectionAnalytics.ts: `pass` ở BỐN dòng này KHÔNG phải OK-only — nó là
   // COUNT(*) FILTER (WHERE finalYieldPassCondSql(...)) tính Ở SQL, tức đã CHÍNH LÀ

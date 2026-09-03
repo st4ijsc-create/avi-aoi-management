@@ -26,7 +26,13 @@ import {
   computeHistogramBins,
   SPC_RULE_NAMES,
 } from "../utils/spc";
-import { finalYield } from "../utils/kpi";
+import {
+  finalYield,
+  factoryDateTruncSql,
+  factoryHourOfDaySql,
+  factoryDowSql,
+  factoryDayTextSql,
+} from "../utils/kpi";
 
 // BG-96 (2026-09-03, spec Khối C QĐ-1): sau cutover, `productInspections.inspectionTime`
 // lưu UTC THẬT (không còn "fake UTC"), và mọi `startDate`/`endDate` trong router này khai
@@ -37,6 +43,16 @@ import { finalYield } from "../utils/kpi";
 // Ngữ nghĩa "nửa đêm" của cửa sổ = nửa đêm theo đồng hồ CLIENT dựng Date (trùng giờ nhà máy
 // khi operator ở VN) — KHÔNG đi qua `FACTORY_TZ`; đây là giới hạn đã biết, không phải bug
 // Task 2 (xem task-2-report.md mục "Concerns").
+// BG-96 Important-2 (review 2026-09-03): việc so cửa sổ ở TRÊN chỉ là MỘT nửa câu chuyện —
+// mọi bucket ngày/giờ VÀ phân ca Morning/Afternoon/Night/DOW bên dưới đi qua
+// `piLocalDay`/`piLocalHourOfDay`/`factoryDowSql`/`factoryDayTextSql` (server/utils/kpi.ts,
+// cùng pattern `piLocalDay`/`piLocalHourOfDay` đã dùng ở server/routes/externalInspectionApi.ts)
+// — KHÔNG còn `date_trunc`/`extract` trần trên cột UTC thô.
+
+// Mirror của `piLocalDay`/`piLocalHourOfDay` ở externalInspectionApi.ts — ở đây cột là
+// PgColumn (đủ SQLWrapper cho `SqlExpr`), không cần bọc `sql\`pi."inspectionTime"\`` qua alias.
+const piLocalDay = () => factoryDateTruncSql('day', productInspections.inspectionTime);
+const piLocalHourOfDay = () => factoryHourOfDaySql(productInspections.inspectionTime);
 
 /**
  * Chuỗi yield theo bucket (giờ/ngày) — đầu vào của biểu đồ kiểm soát SPC.
@@ -228,7 +244,7 @@ export const stationAnalysisRouter = router({
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const rows = await database.select({
-        hour: sql<number>`extract(hour from ${productInspections.inspectionTime})`.as('hour'),
+        hour: piLocalHourOfDay().as('hour'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
@@ -596,7 +612,7 @@ export const stationAnalysisRouter = router({
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const dailyRows = await database.select({
-        day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
+        day: piLocalDay().as('day'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
@@ -818,7 +834,7 @@ export const stationAnalysisRouter = router({
 
       // Daily yield for trend analysis
       const dailyRows = await database.select({
-        day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
+        day: piLocalDay().as('day'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
@@ -837,7 +853,7 @@ export const stationAnalysisRouter = router({
 
       // Hourly pattern for shift analysis
       const hourlyRows = await database.select({
-        hour: sql<number>`extract(hour from ${productInspections.inspectionTime})`.as('hour'),
+        hour: piLocalHourOfDay().as('hour'),
         total: sql<number>`count(*)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
       })
@@ -1056,7 +1072,7 @@ export const stationAnalysisRouter = router({
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const dailyRows = await database.select({
-        day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
+        day: piLocalDay().as('day'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
@@ -1161,7 +1177,7 @@ export const stationAnalysisRouter = router({
 
       // Hourly data: total output (X) vs NG rate (Y)
       const hourlyRows = await database.select({
-        bucket: sql`date_trunc('hour', ${productInspections.inspectionTime})`.as('bucket'),
+        bucket: factoryDateTruncSql('hour', productInspections.inspectionTime).as('bucket'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
@@ -1233,7 +1249,7 @@ export const stationAnalysisRouter = router({
 
       const rows = await database.select({
         pointDefId: measurementResults.pointDefId,
-        day: sql<string>`to_char(date_trunc('day', ${productInspections.inspectionTime}), 'YYYY-MM-DD')`.as('day'),
+        day: sql<string>`${factoryDayTextSql(productInspections.inspectionTime)}`.as('day'),
         ngCount: sql<number>`count(*)`.as('ng_count'),
       })
         .from(measurementResults)
@@ -1325,8 +1341,8 @@ export const stationAnalysisRouter = router({
       // Get shift data for Man category
       const shiftRows = await database.select({
         shift: sql<string>`case
-          when extract(hour from ${productInspections.inspectionTime}) >= 6 and extract(hour from ${productInspections.inspectionTime}) < 14 then 'Morning'
-          when extract(hour from ${productInspections.inspectionTime}) >= 14 and extract(hour from ${productInspections.inspectionTime}) < 22 then 'Afternoon'
+          when ${piLocalHourOfDay()} >= 6 and ${piLocalHourOfDay()} < 14 then 'Morning'
+          when ${piLocalHourOfDay()} >= 14 and ${piLocalHourOfDay()} < 22 then 'Afternoon'
           else 'Night' end`.as('shift'),
         total: sql<number>`count(*)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
@@ -1456,8 +1472,8 @@ export const stationAnalysisRouter = router({
       // By Shift (Morning 6-14, Afternoon 14-22, Night 22-6)
       const byShift = await database.select({
         shift: sql<string>`case
-          when extract(hour from ${productInspections.inspectionTime}) >= 6 and extract(hour from ${productInspections.inspectionTime}) < 14 then 'Morning'
-          when extract(hour from ${productInspections.inspectionTime}) >= 14 and extract(hour from ${productInspections.inspectionTime}) < 22 then 'Afternoon'
+          when ${piLocalHourOfDay()} >= 6 and ${piLocalHourOfDay()} < 14 then 'Morning'
+          when ${piLocalHourOfDay()} >= 14 and ${piLocalHourOfDay()} < 22 then 'Afternoon'
           else 'Night' end`.as('shift'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
@@ -1471,7 +1487,7 @@ export const stationAnalysisRouter = router({
 
       // By Day of Week
       const byDay = await database.select({
-        dayOfWeek: sql<number>`extract(dow from ${productInspections.inspectionTime})`.as('dow'),
+        dayOfWeek: factoryDowSql(productInspections.inspectionTime).as('dow'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
@@ -1538,7 +1554,7 @@ export const stationAnalysisRouter = router({
 
       // Fetch daily yields
       const dailyRows = await database.select({
-        day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
+        day: piLocalDay().as('day'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
