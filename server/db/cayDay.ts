@@ -137,6 +137,11 @@ import { POINT_LIMIT_SPEC } from "@shared/pointLimitSpec";
 // `type` giữ nguyên quy ước `product.ts` đã theo — các HÀM runtime của `hierarchy.ts`
 // (`trongPhamVi`/`idsTrongPhamVi`) vẫn nhập ĐỘNG (`await import`) ở nơi dùng.
 import type { PhamViNguoiXem } from "./hierarchy";
+// M-6 (review Khối C lượt 9) — tái dùng probe cột 0282 (KHÔNG chép tay lần hai) để
+// snapshot TRƯỚC KHI XOÁ MỀM cùng đúng khuôn `updateMeasurementPointDef`/
+// `updateMeasurementPointLimitsBatch` (`server/db/product.ts`) — không vòng import
+// (đo: `product.ts` không import từ `cayDay.ts`).
+import { measurementPointVersionsHasConfigVersionColumn } from "./product";
 
 /** Loại đo mặc định cho một component của cây dạy — xem docblock đầu file. */
 export const LOAI_DO_MAC_DINH_CAY_DAY = "VISUAL" as const;
@@ -411,6 +416,16 @@ async function ghiComponent(
  * `measurement_point_defs.captureRowId` bị `SET NULL` (FK thật của mig 0338) ⇒
  * điểm đo mất neo IM LẶNG. Một hàng thừa ở ba cấp trên thì vô hại; một điểm đo
  * mất neo thì không.
+ *
+ * ★★★ M-6 (review Khối C lượt 9) — SNAPSHOT TRƯỚC KHI XOÁ MỀM. Trước bản vá
+ * này, UPDATE `deletedAt` chạy THẲNG, không để lại hàng `measurement_point_versions`
+ * nào — nếu component sắp bị xoá mềm MANG GIỚI HẠN kỹ sư đã dạy, giới hạn đó
+ * biến mất khỏi lịch sử VĨNH VIỄN: `giaiGioiHanTaiLucDo`/BG-97 không thể tái
+ * dựng "giới hạn của điểm này lúc nó CÒN SỐNG" cho một bo đã đo TRƯỚC khi cây
+ * co lại — snapshot-gate câm với đúng điểm cần nó nhất (điểm SẮP biến mất).
+ * Cùng đường version mà `updateMeasurementPointDef`/`updateMeasurementPointLimitsBatch`
+ * dùng (SELECT MAX(version)+1 → INSERT snapshotJson=hàng TRƯỚC khi đổi), chạy
+ * TRONG CÙNG transaction `tx` — atomic với chính UPDATE xoá mềm.
  */
 async function xoaMemComponentBienMat(
   tx: TxCayDay,
@@ -428,6 +443,32 @@ async function xoaMemComponentBienMat(
         eq(measurementPointDefs.captureRowId, captureRowId),
         isNull(measurementPointDefs.deletedAt),
       );
+
+  // M-6 — đọc TOÀN BỘ hàng SẮP xoá mềm TRƯỚC UPDATE (cùng điều kiện `dieuKien`,
+  // trong CÙNG transaction — không có gì chen vào giữa hai câu lệnh).
+  const sapXoa = await tx.select().from(measurementPointDefs).where(dieuKien);
+  if (sapXoa.length > 0) {
+    const stampConfigVersion = await measurementPointVersionsHasConfigVersionColumn(tx);
+    for (const hang of sapXoa) {
+      const [{ maxVersion }] = await tx
+        .select({ maxVersion: sql<number>`COALESCE(MAX(${measurementPointVersions.version}), 0)` })
+        .from(measurementPointVersions)
+        .where(eq(measurementPointVersions.pointDefId, hang.id));
+      const nextVersion = Number(maxVersion ?? 0) + 1;
+      const versionRow: Record<string, unknown> = {
+        pointDefId: hang.id,
+        version: nextVersion,
+        snapshotJson: hang as unknown as Record<string, any>,
+        changedBy: null, // máy (cây co lại), không phải kỹ sư — mirror ghiComponent (INSERT bằng máy).
+        changeReason: "Xoa mem - cay co lai (component bien mat khoi ban day moi)",
+      };
+      // `productPointsConfigVersion` (0282): không có ý nghĩa "phiên bản SẢN PHẨM
+      // lúc xoá" rõ ràng ở đây (mirror lý do NULL của `recordVariantOverrideVersion`,
+      // I-3) — để null có chủ ý, reconstruction rơi về nhánh INSTANT (P1), an toàn.
+      if (stampConfigVersion) versionRow.productPointsConfigVersion = null;
+      await tx.insert(measurementPointVersions).values(versionRow as typeof measurementPointVersions.$inferInsert);
+    }
+  }
 
   const daXoa = await tx
     .update(measurementPointDefs)

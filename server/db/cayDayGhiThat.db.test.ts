@@ -44,6 +44,7 @@ import { existsSync, readFileSync } from "node:fs";
 import postgres from "postgres";
 import { machineApiRouter } from "../routers/machineApiRouters";
 import { issueMachineKey } from "../services/machineAuthService";
+import { updateMeasurementPointDef } from "./product";
 import type { TrpcContext } from "../_core/context";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -291,6 +292,62 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       expect(cuoi, `[${tenDb}] 16 sống trở lại, bia mộ vẫn còn`).toEqual({
         surfaces: 2, positions: 4, captures: 8, comp_song: 16, comp_xoa_mem: 1,
       });
+    }, 60_000);
+
+    // ══════════════════════════════════════════════════════════════════════════
+    it("★★★ M-6 (review Khối C lượt 9) — DẠY giới hạn RỒI cây co lại xoá mềm điểm đó ⇒ measurement_point_versions PHẢI có hàng cuối (chứa giới hạn đã dạy) TRƯỚC deletedAt, không mất im lặng", async () => {
+      const mau = mauThat();
+      const capture = mau.surfaces[0].positions[0].captures[0];
+      const boDi = capture.components.pop(); // bỏ MỘT linh kiện khỏi MỘT capture — cây co lại ở BƯỚC 2
+      expect(boDi, "mẫu phải có linh kiện để bỏ").toBeDefined();
+
+      // BƯỚC 1 — đẩy cây ĐẦY ĐỦ (16 linh kiện), rồi DẠY giới hạn cho ĐÚNG linh
+      // kiện sắp bị cây co lại xoá mềm.
+      await caller().submitMachineTemplate({ apiKey, productModelCode: `CD-${RUN}`, template: mauThat() });
+      const [truocKhiXoa] = await sql<{ id: number }[]>`
+        SELECT id FROM measurement_point_defs
+         WHERE "productModelId" = ${ids.product} AND "componentExtId" = ${boDi.id} AND "deletedAt" IS NULL`;
+      expect(truocKhiXoa, `[${tenDb}] phải tìm được point-def của linh kiện sắp bị xoá mềm`).toBeDefined();
+      const idDiemDay = truocKhiXoa.id;
+
+      const CAN_DUOI_M6 = "1", CAN_TREN_M6 = "10";
+      await updateMeasurementPointDef(idDiemDay, { lowerLimit: CAN_DUOI_M6, upperLimit: CAN_TREN_M6 } as never, {
+        changeReason: "M-6 luoi: day gioi han TRUOC khi cay co lai xoa mem",
+      });
+      const [{ n: mpvTruocXoa }] = await sql<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM measurement_point_versions WHERE "pointDefId" = ${idDiemDay}`;
+      expect(mpvTruocXoa, `[${tenDb}] lượt DẠY phải để lại đúng 1 hàng lịch sử (snapshot TRƯỚC khi dạy — null)`).toBe(1);
+
+      // BƯỚC 2 — đẩy cây THIẾU đúng linh kiện đó ⇒ cây co lại, xoá mềm.
+      const ket = await caller().submitMachineTemplate({ apiKey, productModelCode: `CD-${RUN}`, template: mau });
+      expect(ket.componentsXoaMem, `[${tenDb}] đúng MỘT linh kiện bị xoá mềm (điểm vừa dạy giới hạn)`).toBe(1);
+
+      // ★★★ BẰNG CHỨNG M-6 — measurement_point_versions PHẢI có hàng THỨ HAI
+      // (snapshot NGAY TRƯỚC lúc xoá mềm), mang ĐÚNG giới hạn vừa dạy — không
+      // phải null, không phải bị bỏ qua.
+      const [{ n: mpvSauXoa }] = await sql<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM measurement_point_versions WHERE "pointDefId" = ${idDiemDay}`;
+      expect(mpvSauXoa, `[${tenDb}] xoá mềm PHẢI để lại thêm đúng 1 hàng lịch sử (2 tổng) — trước bản vá M-6 là 1 (mất im lặng)`).toBe(2);
+
+      const [hangCuoi] = await sql<{ snapshotJson: any; changedAt: Date; changeReason: string | null }[]>`
+        SELECT "snapshotJson", "changedAt", "changeReason" FROM measurement_point_versions
+         WHERE "pointDefId" = ${idDiemDay} ORDER BY version DESC LIMIT 1`;
+      expect(
+        Number(hangCuoi.snapshotJson.lowerLimit),
+        `[${tenDb}] snapshot NGAY TRƯỚC xoá mềm phải mang giới hạn ĐÃ DẠY (chứng minh chụp TRƯỚC deletedAt, không phải bản trơ)`,
+      ).toBe(Number(CAN_DUOI_M6));
+      expect(Number(hangCuoi.snapshotJson.upperLimit)).toBe(Number(CAN_TREN_M6));
+      expect(hangCuoi.changeReason ?? "", `[${tenDb}] lý do phải khai rõ đây là xoá mềm cây co lại, không lẫn với một lượt dạy khác`).toContain("Xoa mem");
+
+      // Đối chiếu THỜI ĐIỂM: version cuối phải KHÔNG SAU `deletedAt` của hàng đó
+      // (snapshot TRƯỚC/CÙNG lúc UPDATE, đúng thứ tự SELECT-rồi-UPDATE trong 1 tx).
+      const [hangXoa] = await sql<{ deletedAt: Date | null }[]>`
+        SELECT "deletedAt" FROM measurement_point_defs WHERE id = ${idDiemDay}`;
+      expect(hangXoa.deletedAt, `[${tenDb}] hàng phải THẬT SỰ đã bị xoá mềm`).not.toBeNull();
+      expect(
+        hangCuoi.changedAt.getTime(),
+        `[${tenDb}] measurement_point_versions.changedAt (snapshot) phải KHÔNG SAU measurement_point_defs.deletedAt`,
+      ).toBeLessThanOrEqual(hangXoa.deletedAt!.getTime());
     }, 60_000);
 
     // ══════════════════════════════════════════════════════════════════════════
