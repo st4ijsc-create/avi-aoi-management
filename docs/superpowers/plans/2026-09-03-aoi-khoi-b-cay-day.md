@@ -338,3 +338,49 @@ const inspectionTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneO
 ⚠ Đây là nợ **có sẵn** (doc 51 P1), không do Khối B sinh ra. Nhưng Khối B vừa làm nó **quan trọng hơn**: trước đây cấp cây không ghi thời gian, nay có.
 
 **Ràng buộc:** Task 4 và mọi việc sau **không được** so thời gian giữa header và cây cho tới khi BG-96 đóng.
+
+---
+
+## ⛔ Phát hiện quan trọng nhất của Khối B — cổng đã nối nhưng CHƯA CHẤM GÌ, vì bản dạy KHÔNG MANG GIỚI HẠN
+
+Task 4 (`cd93d494`) nối xong spec-gate trên **cả ba** đường ghi v2. **Nhưng nó đang kết luận trên 0 linh kiện**, và lý do nằm ở tầng dữ liệu, không phải tầng mã.
+
+**Phép đo (mẫu máy thật, tôi đã tự xác nhận):**
+
+| Mẫu | Trường giới hạn ở cấp component |
+|---|---|
+| `template-sync-sample.json` (**cấu hình / cây dạy**) | `id · componentName · description · roi · templateImagePath` ⇒ **KHÔNG CÓ CÁI NÀO** |
+| `dashboard-sample.json` (**kết quả**) | **48/48** component mang `lowerLimit` + `upperLimit` |
+
+⇒ Point-def do cây dạy tạo ra có **mọi cột giới hạn NULL** (đo: 16/16 trên mẫu thật). Cộng `machine_template_versions` = 0 ⇒ **cổng không có gì để so**.
+
+⚠ **Hợp đồng cây dạy (Task 1) KHÔNG sai** — nó soi đúng mẫu thật. Trường giới hạn **thật sự không có ở đó**. Đây không phải lỗi bỏ sót, mà là **tính chất của định dạng máy**.
+
+**Điểm sáng:** cổng **nói ra** rằng nó không kết luận được (`chuaDay` / `khongGioiHan`), thay vì trả xanh. Đó đúng thứ brief đòi — **không có giấy vô can giả**. Nhưng tín hiệu vẫn **chết** vì chưa màn nào hiển thị.
+
+### Giới hạn phải đến từ đâu — ba hướng, và hướng thứ ba bị loại
+
+| Hướng | Đánh giá |
+|---|---|
+| **(a)** Nới bản xuất cấu hình của **máy** để mang giới hạn | Cần bên làm máy đổi phần mềm. Mẫu thật hiện không có. |
+| **(b)** **Dạy giới hạn trên hệ sinh thái** — đúng màn quản lý sản phẩm + dialog điểm đo của **Khối C** | Khả thi ngay, không cần bên máy. |
+| **(c)** Lấy giới hạn từ chính lời khai kèm kết quả | ⛔ **LOẠI** — chấm lời khai bằng chính lời khai là **cổng rỗng**. Task 4 đã cố ý từ chối. |
+
+⇒ **Khối C không còn là việc giao diện.** Nó là **nguồn sự thật của giới hạn**, tức là thứ làm cho cổng an toàn BG-92 thực sự hoạt động. Thứ tự roadmap đổi theo phát hiện này.
+
+---
+
+## BG-97 — đường v2 chấm theo giới hạn ĐANG SỐNG, không snapshot, không variant override
+
+Task 4 tự khai. Đường **v1.x** có **cả hai** (`SPEC_GATE_SNAPSHOT_ENABLED` doc 51 P1/P2 · variant override doc 55 Item 3); đường **v2 không có cái nào**.
+
+⇒ Bo v2 nằm tồn kho hoặc trong **WAL** (dead-letter 101 mục) sẽ bị chấm theo limit **MỚI** ⇒ **hạ oan**.
+Chưa nổ vì cổng đang kết luận 0 linh kiện — nhưng **nổ cùng ngày** giới hạn được đổ đầy. ⚠ Phải đóng **trước** khi Khối C bơm giới hạn vào.
+
+## BG-98 — máy gửi giới hạn kèm MỌI kết quả (48/48) mà hệ vứt đi
+
+Không dùng chúng làm **nguồn giới hạn** là đúng (xem hướng (c) ở trên). Nhưng chúng cho phép một phép kiểm **khác lớp**, dùng được **ngay hôm nay** kể cả khi chưa ai dạy giới hạn:
+
+> *"Máy có tự mâu thuẫn không?"* — `value` nằm ngoài `lowerLimit`/`upperLimit` **do chính máy khai** mà máy vẫn kết `OK`.
+
+Đó là lỗi **pipeline của máy**, bắt được mà **không cần** bản dạy. ⚠ **Đừng gộp** vào cổng bản-dạy — hai cổng, hai nguồn, hai ý nghĩa.
