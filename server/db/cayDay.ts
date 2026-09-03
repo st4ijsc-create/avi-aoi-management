@@ -780,6 +780,16 @@ export interface KetQuaTraPointDef {
    * (hành vi Task 4, trước BG-97).
    */
   readonly theoSong: number;
+  /**
+   * ★★★ I-4 (review Khối C lượt 9) — CÙNG khoá với `gioiHan`: `measurement_point_versions.id`
+   * đã dùng để tái dựng, hoặc `null` khi chấm theo giới hạn ĐANG SỐNG. Mặc định
+   * RỖNG ở ĐÂY (hàm này không biết gì về cổng snapshot) — `traBanDayChoCay`
+   * (`server/db/inspection.ts`) GHI ĐÈ bằng kết quả THẬT của `giaiGioiHanTaiLucDo`
+   * khi cổng snapshot áp dụng. `specGateCayV2.ts` đọc `gioiHanVersionId.get(khoa) ??
+   * null` — khoá KHÔNG có mặt (map rỗng, cờ tắt) và khoá có mặt với giá trị `null`
+   * (chấm theo LIVE) đều nghĩa `LIVE` như nhau ở phía đọc.
+   */
+  readonly gioiHanVersionId: ReadonlyMap<string, number | null>;
 }
 
 /**
@@ -850,7 +860,7 @@ export async function traPointDefCapComponent(opts: {
   if (capIds.length === 0 || compIds.length === 0) {
     return {
       banDo: new Map(), gioiHan: new Map(), mayCoBanDay, khoaNhapNhang: [],
-      theoSnapshot: 0, theoSong: 0,
+      theoSnapshot: 0, theoSong: 0, gioiHanVersionId: new Map(),
     };
   }
 
@@ -919,6 +929,9 @@ export async function traPointDefCapComponent(opts: {
     // Mặc định "mọi điểm tra ra ⇒ chấm theo giới hạn ĐANG SỐNG" — `traBanDayChoCay`
     // ghi đè bằng kết quả `giaiGioiHanTaiLucDo` khi cổng snapshot thực sự chạy.
     theoSnapshot: 0, theoSong: banDo.size,
+    // I-4 — RỖNG mặc định (hàm này không biết gì về cổng snapshot); phía đọc
+    // (`specGateCayV2.ts`) coi khoá vắng mặt = LIVE, giống hệt khoá có mặt với `null`.
+    gioiHanVersionId: new Map(),
   };
 }
 
@@ -966,6 +979,10 @@ export async function napLichSuGioiHanTheoDiem(
     if (!d) return ket;
     const hang = await d
       .select({
+        // ★★★ I-4 (review Khối C lượt 9) — nạp thêm `id` (PK, KHÁC `.version` —
+        // con số ĐÓ chỉ duy nhất TRONG một pointDefId): dùng để ghi
+        // `measurement_results.remark` dạng `[SG:DAT;v=<id>]`, xem `PointLimitSnapshot.id`.
+        id: measurementPointVersions.id,
         pointDefId: measurementPointVersions.pointDefId,
         changedAt: measurementPointVersions.changedAt,
         snapshotJson: measurementPointVersions.snapshotJson,
@@ -982,6 +999,7 @@ export async function napLichSuGioiHanTheoDiem(
         changedAt: h.changedAt,
         limits: (h.snapshotJson ?? {}) as PointLimitSource,
         productPointsConfigVersion: null,
+        id: h.id,
       };
       if (arr) arr.push(s);
       else ket.set(h.pointDefId, [s]);

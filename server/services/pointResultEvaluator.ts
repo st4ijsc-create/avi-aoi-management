@@ -475,6 +475,14 @@ export interface PointLimitSnapshot {
   /** The point def's previous state (measurement_point_versions.snapshotJson). */
   limits: PointLimitSource;
   /**
+   * ★★★ I-4 (review Khối C lượt 9) — measurement_point_versions.id (PK, KHÔNG phải
+   * `.version` — con số ĐÓ chỉ duy nhất TRONG một pointDefId, không phải toàn cục).
+   * Optional/`undefined` khi caller không cần audit "chấm bằng version nào" (v1.x
+   * không đọc trường này) — v2 (`napLichSuGioiHanTheoDiem`) LUÔN nạp nó, dùng để
+   * ghi `measurement_results.remark` dạng `[SG:DAT;v=<id>]` thay vì chỉ `[SG:DAT]`.
+   */
+  id?: number | null;
+  /**
    * Doc 51 P2 batch-2 (§12.2 #2, migration 0282) — the product's pointsConfigVersion
    * that `limits` were live UNDER (the last product version before the edit that
    * created this snapshot bumped it +1). Enables VERSION-EXACT reconstruction:
@@ -491,6 +499,8 @@ export interface SnapshotGateResolution {
   /** Limits to gate with, or `null` when the caller MUST skip the gate (basis "missing"). */
   limits: PointLimitSource | null;
   basis: SnapshotGateBasis;
+  /** I-4 — the picked snapshot's `measurement_point_versions.id`, or `null` when basis "missing" / the snapshot carried none. */
+  snapshotId?: number | null;
 }
 
 /**
@@ -526,7 +536,7 @@ export function resolveLimitsAtInstant(
     }
   }
   if (best === null) return { limits: null, basis: "missing" };
-  return { limits: best.limits ?? {}, basis: "snapshot" };
+  return { limits: best.limits ?? {}, basis: "snapshot", snapshotId: best.id ?? null };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -557,6 +567,8 @@ export interface GateLimitResolution {
   /** Limits to gate with, or `null` when the caller MUST skip the gate (basis "missing"). */
   limits: PointLimitSource | null;
   basis: GateLimitBasis;
+  /** I-4 — `measurement_point_versions.id` of the snapshot actually used, or `null` for basis "live"/"missing" (no snapshot involved). */
+  versionRowId?: number | null;
 }
 
 /**
@@ -590,14 +602,18 @@ export function resolveGateLimitsForBoard(args: {
           best = s;
         }
       }
-      if (best !== null) return { limits: best.limits ?? {}, basis: "version" };
+      if (best !== null) return { limits: best.limits ?? {}, basis: "version", versionRowId: best.id ?? null };
       // Stamped snapshots exist but none covers V ⇒ the point has not been edited
       // since version V ⇒ its live limits ARE the limits it had at V.
-      return { limits: liveLimits, basis: "live" };
+      return { limits: liveLimits, basis: "live", versionRowId: null };
     }
   }
 
   // FALLBACK — instant-based reconstruction (P1). Unchanged behaviour.
   const inst = resolveLimitsAtInstant(snapshots, atInstant);
-  return { limits: inst.limits, basis: inst.basis === "snapshot" ? "instant" : "missing" };
+  return {
+    limits: inst.limits,
+    basis: inst.basis === "snapshot" ? "instant" : "missing",
+    versionRowId: inst.basis === "snapshot" ? (inst.snapshotId ?? null) : null,
+  };
 }

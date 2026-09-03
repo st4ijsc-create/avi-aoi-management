@@ -155,6 +155,14 @@ export interface KetQuaGiaiGioiHan {
   theoSong: number;
   /** Tối đa {@link SO_MAU_SNAPSHOT} mẫu khoá được tái dựng — để log nói ra ĐIỂM NÀO. */
   mauSnapshot: string[];
+  /**
+   * ★★★ I-4 (review Khối C lượt 9) — CÙNG khoá với `gioiHan`: `measurement_point_versions.id`
+   * đã dùng để tái dựng giới hạn của khoá đó, hoặc `null` khi chấm theo giới hạn
+   * ĐANG SỐNG (không tái dựng). Cùng kích thước với `gioiHan` — mọi khoá LUÔN có
+   * mặt (kể cả `null`), giữ đúng bất biến "không mất khoá" của hàm này. Dùng để
+   * ghi `measurement_results.remark` dạng `[SG:DAT;v=<id|LIVE>]` (`specGateCayV2.ts`).
+   */
+  gioiHanVersionId: Map<string, number | null>;
 }
 
 /**
@@ -182,6 +190,7 @@ export function giaiGioiHanTaiLucDo(args: {
 }): KetQuaGiaiGioiHan {
   const { banDo, gioiHanSong, lichSu, lucDo } = args;
   const gioiHan = new Map<string, PointLimitSource>();
+  const gioiHanVersionId = new Map<string, number | null>();
   const mauSnapshot: string[] = [];
   let theoSnapshot = 0;
   let theoSong = 0;
@@ -201,6 +210,7 @@ export function giaiGioiHanTaiLucDo(args: {
     });
     if (r.basis === "instant" && r.limits) {
       gioiHan.set(khoa, r.limits);
+      gioiHanVersionId.set(khoa, r.versionRowId ?? null); // I-4 — id của snapshot đã dùng
       theoSnapshot += 1;
       // `khoaCapComponent` nối hai mã bằng ký tự NUL — đổi sang "/" để dòng log đọc được.
       if (mauSnapshot.length < SO_MAU_SNAPSHOT) mauSnapshot.push(khoa.replace("\u0000", "/"));
@@ -208,9 +218,10 @@ export function giaiGioiHanTaiLucDo(args: {
       // `missing` ⇒ KHÔNG lượt sửa nào sau lúc bo được đo ⇒ LIVE **là** giới hạn thời
       // kỳ đó. Xem khối chú thích đầu file về vì sao v2 ánh xạ khác v1.x ở đúng nhánh này.
       gioiHan.set(khoa, song);
+      gioiHanVersionId.set(khoa, null); // I-4 — LIVE, không tái dựng
       theoSong += 1;
     }
   }
 
-  return { gioiHan, theoSnapshot, theoSong, mauSnapshot };
+  return { gioiHan, theoSnapshot, theoSong, mauSnapshot, gioiHanVersionId };
 }

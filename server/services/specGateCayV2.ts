@@ -105,6 +105,31 @@ export const TIEN_TO_CONG_TRUOT = `${TIEN_TO_CONG_CHUNG}: `;
 /** Trần `remark` — cùng con số đường v1.x cắt (`.slice(0, 480)`), cột là `text`. */
 const TRAN_REMARK = 480;
 
+/**
+ * ★★★ I-4 (review Khối C lượt 9) — v2/ZIP không lưu "giới hạn nào đã chấm bo" (khác
+ * v1.x có `gateConfigVersion`). Ghi BASIS chấm vào CHÍNH `remark` đã có sẵn
+ * (KHÔNG thêm cột — `measurement_results` là hypertable nén, thêm cột tốn kém):
+ * `[SG:DAT;v=<versionId>]` khi chấm bằng giới hạn TÁI DỰNG từ `measurement_point_versions`
+ * (id hàng đó), `[SG:DAT;v=LIVE]` khi chấm theo giới hạn ĐANG SỐNG. `NHAN_CONG_DAT`
+ * ("[SG:DAT]" trơn) VẪN tồn tại — caller không truyền `traVersionId` cho
+ * `taoCongSpecCayV2` vẫn nhận nhãn cũ, không hồi quy.
+ */
+export function nhanCongDatTheoBasis(versionId: number | null | undefined): string {
+  const basis = versionId === null || versionId === undefined ? "LIVE" : String(versionId);
+  return `${NHAN_CONG_DAT.slice(0, -1)};v=${basis}]`;
+}
+
+/**
+ * I-4 — vị từ "đây có phải nhãn ĐẠT không", chấp nhận CẢ HAI dạng: `[SG:DAT]` trơn
+ * (caller cũ, chưa truyền `traVersionId`) và `[SG:DAT;v=<id|LIVE>]` (v2 SAU bản vá
+ * này). Lưới/nơi đọc nên dùng hàm này thay vì so `=== NHAN_CONG_DAT` — so cứng sẽ
+ * bỏ lọt hàng ĐẠT có basis kèm theo.
+ */
+export function laNhanCongDat(remark: string | null | undefined): boolean {
+  if (remark == null) return false;
+  return remark === NHAN_CONG_DAT || remark.startsWith(`${NHAN_CONG_DAT.slice(0, -1)};v=`);
+}
+
 /** Ba trạng thái + hai lý do "không kết luận", tất cả ĐẾM ĐƯỢC. */
 export interface ThongKeSpecGate {
   /** `POINT_LIMIT_EVAL_ENABLED` — mặc định BẬT. Task này KHÔNG đổi mặc định đó. */
@@ -158,6 +183,14 @@ export interface CongSpecCayV2 {
 }
 
 /**
+ * ★★★ I-4 (review Khối C lượt 9) — hộ tra "chấm bằng basis nào" cho MỘT khoá cấp
+ * component: `measurement_point_versions.id` khi tái dựng từ lịch sử, `null`/
+ * `undefined` khi chấm theo giới hạn ĐANG SỐNG (LIVE) — bao gồm cả trường hợp
+ * cổng snapshot không chạy (cờ tắt) hoặc `traVersionId` không được truyền.
+ */
+export type TraVersionIdDaDung = (captureExtId: string, componentExtId: string) => number | null | undefined;
+
+/**
  * ★★★ Dựng cổng. `traGioiHan` là hộ cung cấp giới hạn ĐÃ DẠY — bơm vào từ ngoài để
  * file này không chạm DB và lưới chấm được cổng mà không cần Postgres.
  *
@@ -165,8 +198,14 @@ export interface CongSpecCayV2 {
  * `NG`, KHÔNG BAO GIỜ nâng `NG` lên `OK`. Bất biến này giữ đúng lời hứa của
  * `verdictXauHon` (`shared/rollupVerdict.ts`): không tín hiệu nào được làm NHẸ tín
  * hiệu kia — đo trên 42.431 bo lịch sử, số lần `NG→OK` là 0.
+ *
+ * `traVersionId` (I-4, tuỳ chọn — mặc định LUÔN "LIVE" khi không truyền, GIỮ NGUYÊN
+ * hành vi `[SG:DAT]` cũ tới từng byte cho caller chưa nâng cấp) — khi có, nhãn ĐẠT
+ * mang thêm basis: `[SG:DAT;v=<id>]` (tái dựng từ version đó) hoặc `[SG:DAT;v=LIVE]`
+ * (chấm theo giới hạn đang sống). KHÔNG thêm cột DB (hypertable nén) — ghi vào
+ * CHÍNH `remark` đã có sẵn.
  */
-export function taoCongSpecCayV2(traGioiHan: TraGioiHanDaDay): CongSpecCayV2 {
+export function taoCongSpecCayV2(traGioiHan: TraGioiHanDaDay, traVersionId?: TraVersionIdDaDung): CongSpecCayV2 {
   const batCong = isPointLimitEvalEnabled();
   const quyDoiDonVi = isUnitConvertEnabled();
   const thongKe: ThongKeSpecGate = {
@@ -238,7 +277,10 @@ export function taoCongSpecCayV2(traGioiHan: TraGioiHanDaDay): CongSpecCayV2 {
 
       thongKe.dat += 1;
       if (kq.unitMismatch) thongKe.lechDonVi += 1;
-      return { result: la.result, ghiChu: NHAN_CONG_DAT };
+      // I-4 — traVersionId KHÔNG được truyền (caller cũ) ⇒ giữ NGUYÊN nhãn cũ, tới
+      // từng byte (không hồi quy). Có truyền ⇒ luôn gắn basis, kể cả LIVE.
+      if (traVersionId === undefined) return { result: la.result, ghiChu: NHAN_CONG_DAT };
+      return { result: la.result, ghiChu: nhanCongDatTheoBasis(traVersionId(captureExtId, la.componentId)) };
     },
   };
 }
@@ -255,6 +297,11 @@ export function taoCongSpecCayV2(traGioiHan: TraGioiHanDaDay): CongSpecCayV2 {
  */
 export function congSpecTuBanDay(tra: {
   readonly gioiHan: ReadonlyMap<string, PointLimitSource>;
+  /** I-4 — CÙNG khoá `gioiHan` (xem `KetQuaTraPointDef.gioiHanVersionId`, `server/db/cayDay.ts`). */
+  readonly gioiHanVersionId: ReadonlyMap<string, number | null>;
 }): CongSpecCayV2 {
-  return taoCongSpecCayV2((cap, comp) => tra.gioiHan.get(khoaCapComponent(cap, comp)));
+  return taoCongSpecCayV2(
+    (cap, comp) => tra.gioiHan.get(khoaCapComponent(cap, comp)),
+    (cap, comp) => tra.gioiHanVersionId.get(khoaCapComponent(cap, comp)) ?? null,
+  );
 }

@@ -73,7 +73,7 @@ import { aoiPackageRouter } from "../routers/aoiPackageRouter";
 import { submitInspectionTreeV2 } from "../routers/machineApiRouters";
 import { issueMachineKey } from "../services/machineAuthService";
 import {
-  NHAN_CONG_DAT, NHAN_CONG_KHONG_KET_LUAN, TIEN_TO_CONG_CHUNG, TIEN_TO_CONG_TRUOT,
+  NHAN_CONG_KHONG_KET_LUAN, TIEN_TO_CONG_CHUNG, TIEN_TO_CONG_TRUOT, laNhanCongDat,
 } from "../services/specGateCayV2";
 import type { TrpcContext } from "../_core/context";
 // BG-97 — lượt sửa giới hạn phải đi qua CHÍNH bộ ghi sản xuất (`updateMeasurementPointDef`)
@@ -145,6 +145,8 @@ const ids = {
 let apiKey = "";
 /** BG-97 — `measurement_point_defs.id` của linh kiện #3, cái bị SIẾT spec ở mệnh đề 7. */
 let idPdSiet = 0;
+/** I-4 — `measurement_point_versions.id` của hàng version do lượt siết ở mệnh đề 7 tạo ra. */
+let idVersionSiet = 0;
 /** GUID linh kiện theo THỨ TỰ DUYỆT cây dạy — 0 = TRƯỢT, 1 = ĐẠT, 2 = ĐẠT(máy khai NG). */
 let maTheoThuTu: string[] = [];
 /** captureExtId của linh kiện #0 — dùng để kiểm `remark` nêu đích danh chỗ nào. */
@@ -525,7 +527,10 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       expect(hang.length, `[${tenDb}] linh kiện chưa dạy KHÔNG có hàng nào (Task 3)`).toBe(16);
       expect(hang.some((h) => h.componentExtId === MA_LINH_KIEN_LA)).toBe(false);
       const dem = {
-        dat: hang.filter((h) => (h.remark ?? "") === NHAN_CONG_DAT).length,
+        // I-4 — laNhanCongDat chấp nhận CẢ HAI dạng nhãn ĐẠT ("[SG:DAT]" trơn VÀ
+        // "[SG:DAT;v=<id|LIVE>]" mang basis) — so `=== NHAN_CONG_DAT` sẽ bỏ lọt
+        // dạng có basis SAU bản vá I-4.
+        dat: hang.filter((h) => laNhanCongDat(h.remark)).length,
         truot: hang.filter((h) => (h.remark ?? "").startsWith(TIEN_TO_CONG_TRUOT)).length,
         khongKl: hang.filter((h) => (h.remark ?? "") === NHAN_CONG_KHONG_KET_LUAN).length,
       };
@@ -555,7 +560,9 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       const hang = await hangCua(kq.inspectionId);
       const h = hang.find((x) => x.componentExtId === maTheoThuTu[2])!;
       expect(h.result, `[${tenDb}] cổng KHÔNG được nâng NG của máy lên OK`).toBe("NG");
-      expect(h.remark, `[${tenDb}] đã chấm và không vi phạm ⇒ dấu ĐẠT (verdict máy vẫn thắng)`).toBe(NHAN_CONG_DAT);
+      // I-4 — laNhanCongDat chấp nhận CẢ "[SG:DAT]" trơn lẫn "[SG:DAT;v=<id|LIVE>]"
+      // (mệnh đề này đo tính MONOTONIC, không đo basis — xem mệnh đề 7/7B cho đó).
+      expect(laNhanCongDat(h.remark), `[${tenDb}] đã chấm và không vi phạm ⇒ dấu ĐẠT (verdict máy vẫn thắng)`).toBe(true);
       const bo = await boCua(kq.inspectionId);
       expect(bo.overallResult, `[${tenDb}] bo máy khai NG vẫn NG`).toBe("NG");
     }, 180_000);
@@ -653,11 +660,16 @@ describe.skipIf(!DB_URL || !CO_MAU)(
         await updateMeasurementPointDef(idPdSiet, { upperLimit: CAN_TREN_SIET } as never, {
           changeReason: "BG-97 luoi: siet spec SAU khi bo da duoc do",
         });
-        const [v] = await sql<{ n: number; cu: string | null }[]>`
-          SELECT count(*)::int AS n, max("snapshotJson"->>'upperLimit') AS cu
+        const [v] = await sql<{ n: number; cu: string | null; id: number | null }[]>`
+          SELECT count(*)::int AS n, max("snapshotJson"->>'upperLimit') AS cu, max(id) AS id
             FROM measurement_point_versions WHERE "pointDefId" = ${idPdSiet}`;
         expect(v.n, `[${tenDb}] lượt siết phải để lại ĐÚNG MỘT hàng lịch sử`).toBe(1);
         expect(Number(v.cu), `[${tenDb}] lịch sử phải giữ giới hạn TRƯỚC khi sửa`).toBe(Number(CAN_TREN));
+        // I-4 (review Khối C lượt 9) — id THẬT của hàng version vừa tạo, dùng để đo
+        // remark mang ĐÚNG basis `;v=<id>` (không phải chỉ "có gắn basis nào đó").
+        // Gán biến NGOÀI (khai ở đầu file) — mệnh đề 8/9 dưới đây dùng LẠI đúng id
+        // này (cùng lượt siết, không phải một biến giả lập riêng).
+        idVersionSiet = v.id!;
         const [ht] = await sql<{ tren: string }[]>`
           SELECT "upperLimit"::text AS tren FROM measurement_point_defs WHERE id = ${idPdSiet}`;
         expect(Number(ht.tren), `[${tenDb}] giới hạn ĐANG SỐNG nay là bản đã siết`).toBe(Number(CAN_TREN_SIET));
@@ -691,7 +703,13 @@ describe.skipIf(!DB_URL || !CO_MAU)(
           h3.result,
           `[${tenDb}] ★ LỖ BG-97: trị ${TRI_GIUA} TỐT theo luật lúc đó [${CAN_DUOI};${CAN_TREN}] — không được hạ oan`,
         ).toBe("OK");
-        expect(h3.remark, `[${tenDb}] đã chấm THẬT (không phải bỏ cổng) ⇒ dấu ĐẠT`).toBe(NHAN_CONG_DAT);
+        // ★★★ I-4 (review Khối C lượt 9) — remark PHẢI mang ĐÚNG versionId của hàng
+        // vừa siết ở ②, không chỉ nhãn ĐẠT trơn — đây LÀ bằng chứng "v2/ZIP nay lưu
+        // được giới hạn nào đã chấm bo".
+        expect(
+          h3.remark,
+          `[${tenDb}] đã chấm THẬT bằng snapshot #${idVersionSiet} (không phải bỏ cổng, không phải LIVE)`,
+        ).toBe(`[SG:DAT;v=${idVersionSiet}]`);
         const bo = await boCua(kq.inspectionId);
         expect(bo.overallResult, `[${tenDb}] bo TỐT vẫn phải lưu OK`).toBe("OK");
 
@@ -728,6 +746,9 @@ describe.skipIf(!DB_URL || !CO_MAU)(
           });
           const hz = (await hangCua(ket.inspectionId)).find((h) => h.componentExtId === maTheoThuTu[3])!;
           expect(hz.result, `[${tenDb}] cửa ZIP cũng KHÔNG được hạ oan bo cũ`).toBe("OK");
+          // I-4 — cửa ZIP (đường v2 thứ BA) cũng phải mang ĐÚNG versionId, không chỉ
+          // cửa trực tiếp — CÙNG snapshot #idVersionSiet vì cùng lượt siết ở ②.
+          expect(hz.remark, `[${tenDb}] cửa ZIP cũng phải ghi ĐÚNG basis snapshot`).toBe(`[SG:DAT;v=${idVersionSiet}]`);
         } finally {
           delete process.env.STORAGE_MODE;
           delete process.env.LOCAL_STORAGE_DIR;
@@ -761,6 +782,11 @@ describe.skipIf(!DB_URL || !CO_MAU)(
         expect(h3.remark ?? "").toContain(TIEN_TO_CONG_TRUOT);
         const bo = await boCua(kq.inspectionId);
         expect({ luu: bo.overallResult, khai: bo.originalResult }).toEqual({ luu: "NG", khai: "OK" });
+        // ★★★ I-4 (review Khối C lượt 9) — cờ TẮT ⇒ mọi hàng ĐẠT phải mang `;v=LIVE`
+        // (không tái dựng — snapshot-gate không chạy). linh kiện idx2 (giới hạn KHÔNG
+        // đổi, không liên quan lượt siết idx3) vẫn ĐẠT, và phải là LIVE ở nhánh này.
+        const h2 = (await hangCua(kq.inspectionId)).find((h) => h.componentExtId === maTheoThuTu[2])!;
+        expect(h2.remark, `[${tenDb}] cờ TẮT ⇒ basis LIVE, không phải versionId nào`).toBe("[SG:DAT;v=LIVE]");
       } finally {
         if (truocCo === undefined) delete process.env.SPEC_GATE_SNAPSHOT_ENABLED;
         else process.env.SPEC_GATE_SNAPSHOT_ENABLED = truocCo;
@@ -836,7 +862,9 @@ describe.skipIf(!DB_URL || !CO_MAU)(
           `[${tenDb}] ★ phát lại HÔM NAY một mục XẾP HÀNG lúc ${LUC_DO_CU} phải chấm theo giới hạn ` +
             `TẠI ${LUC_DO_CU} — MẶC DÙ máy khai (sai) đã đo lúc ${LUC_DO_MOI}`,
         ).toBe("OK");
-        expect(h3.remark, `[${tenDb}] và phải là "đã chấm", không phải "bỏ cổng"`).toBe(NHAN_CONG_DAT);
+        // I-4 — CÙNG snapshot #idVersionSiet mà mệnh đề 7 đã siết (WAL phát lại vẫn
+        // đọc ĐÚNG lịch sử đó, không phải "đã chấm" trơn).
+        expect(h3.remark, `[${tenDb}] và phải là "đã chấm" bằng ĐÚNG snapshot #${idVersionSiet}, không phải "bỏ cổng"`).toBe(`[SG:DAT;v=${idVersionSiet}]`);
         expect(bo.luu, `[${tenDb}] bo TỐT trong WAL không được biến thành NG khi rút hàng đợi`).toBe("OK");
       } finally {
         _resetInspectionStoreForward();

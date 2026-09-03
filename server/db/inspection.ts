@@ -523,7 +523,13 @@ export async function traBanDayChoCay(
   // Task 5 (BG-97 phơi counters) — GHI ĐÈ hai trường mặc định của `tra` bằng kết quả
   // THẬT của `giaiGioiHanTaiLucDo`: đây là lượt DUY NHẤT trong hàm này mà cổng snapshot
   // thực sự chạy, nên chỉ ở đây `theoSnapshot`/`theoSong` mới khác mặc định.
-  return { ...tra, gioiHan: giai.gioiHan, theoSnapshot: giai.theoSnapshot, theoSong: giai.theoSong };
+  return {
+    ...tra,
+    gioiHan: giai.gioiHan,
+    theoSnapshot: giai.theoSnapshot,
+    theoSong: giai.theoSong,
+    gioiHanVersionId: giai.gioiHanVersionId, // I-4 — basis chấm (versionId|LIVE) mỗi khoá
+  };
 }
 
 /**

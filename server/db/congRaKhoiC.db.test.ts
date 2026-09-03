@@ -422,11 +422,14 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       expect(hTruot.result, `[${tenDb}] 12.5 ngoài [9;11] ⇒ NG`).toBe("NG");
       expect(hTruot.remark ?? "", `[${tenDb}] remark phải nêu ĐÍCH DANH vi phạm`).toContain("Spec gate");
 
+      // I-4 (review Khối C lượt 9) — BƯỚC 3 chạy với cờ SNAPSHOT TẮT (docblock đầu
+      // file) ⇒ mọi nhãn ĐẠT phải mang basis `;v=LIVE` (chấm theo giới hạn đang
+      // sống, không tái dựng) — KHÔNG còn "[SG:DAT]" trơn.
       const hDat1 = theoExt.get(maTheoThuTu[1])!;
-      expect(hDat1.remark, `[${tenDb}] 1 trong [0;2] ⇒ ĐẠT`).toBe("[SG:DAT]");
+      expect(hDat1.remark, `[${tenDb}] 1 trong [0;2] ⇒ ĐẠT (cờ TẮT ⇒ LIVE)`).toBe("[SG:DAT;v=LIVE]");
 
       const hDat2 = theoExt.get(maTheoThuTu[2])!;
-      expect(hDat2.remark, `[${tenDb}] 10.0 trong [9;11] ⇒ ĐẠT`).toBe("[SG:DAT]");
+      expect(hDat2.remark, `[${tenDb}] 10.0 trong [9;11] ⇒ ĐẠT (cờ TẮT ⇒ LIVE)`).toBe("[SG:DAT;v=LIVE]");
 
       // 13 linh kiện KHÔNG được dạy vẫn phải "KHÔNG KẾT LUẬN", KHÔNG bị bắt oan.
       const khongKl = hang.filter((h) => (h.remark ?? "") === "[SG:KHONG_KL]");

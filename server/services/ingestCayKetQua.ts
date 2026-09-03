@@ -83,7 +83,11 @@ export interface ComponentDaDich {
    * ★ Khối B Task 4 (BG-92) — dấu vết của spec-gate cho CHÍNH lá này, ghi thẳng vào
    * `measurement_results.remark` (xem `ghiCayKetQua`). Ba giá trị có nghĩa:
    *   · `"Spec gate: …"`  — TRƯỢT (cùng tiền tố đường v1.x ⇒ một câu SELECT bắt cả hai đường)
-   *   · `"[SG:DAT]"`      — ĐÃ CHẤM bằng giới hạn đã dạy và ĐẠT
+   *   · `"[SG:DAT;v=<id|LIVE>]"` (I-4, review Khối C lượt 9) — ĐÃ CHẤM bằng giới hạn
+   *     đã dạy và ĐẠT; `v=` khai BASIS chấm: `LIVE` (giới hạn ĐANG SỐNG) hoặc id của
+   *     hàng `measurement_point_versions` đã tái dựng (bo cũ, cờ `SPEC_GATE_SNAPSHOT_ENABLED`
+   *     bật). Dạng cũ `"[SG:DAT]"` trơn không còn ghi ra ở ĐƯỜNG SẢN XUẤT (chỉ còn
+   *     là mặc định của `taoCongSpecCayV2` khi caller KHÔNG truyền `traVersionId`).
    *   · `"[SG:KHONG_KL]"` — tra ra bản dạy nhưng KHÔNG chấm được gì ⇒ **không kết luận**
    * `null` = cổng tắt, hoặc linh kiện CHƯA DẠY (khi đó Task 3 cũng không ghi hàng nào).
    * Không có nhãn ở hàng thì "đã kiểm và đạt" và "chưa kiểm gì" trông y hệt nhau
