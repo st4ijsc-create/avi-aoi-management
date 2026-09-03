@@ -847,8 +847,11 @@ public sealed class HmiScreenEndpointsTests
     {
         var store = new RollbackSucceedsButReadThrowsStore();
 
+        // WS-HMI-2 Task 4 added a required IHmiChangeBus parameter to this handler; a plain, unsubscribed
+        // HmiChangeBus is enough here — this test's own property is about the RESPONSE this handler builds
+        // when its post-commit read throws, not about who is listening on the change lane.
         var result = await HmiScreenEndpoints.RollbackAsync(
-            "whatever-screen", new RollbackRequestDto(1), store, CancellationToken.None);
+            "whatever-screen", new RollbackRequestDto(1), store, new HmiChangeBus(), CancellationToken.None);
 
         var ok = Assert.IsType<Ok<PutScreenResultDto>>(result);
         Assert.NotNull(ok.Value);
@@ -866,8 +869,10 @@ public sealed class HmiScreenEndpointsTests
         // as every other cancelled request in this codebase.
         var store = new ThrowsOperationCanceledOnGetStore();
 
+        // Same WS-HMI-2 Task 4 signature note as the test above — an unsubscribed bus is enough.
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
-            HmiScreenEndpoints.RollbackAsync("whatever-screen", new RollbackRequestDto(1), store, CancellationToken.None));
+            HmiScreenEndpoints.RollbackAsync(
+                "whatever-screen", new RollbackRequestDto(1), store, new HmiChangeBus(), CancellationToken.None));
     }
 
     private sealed class ThrowsOperationCanceledOnGetStore : IHmiScreenStore

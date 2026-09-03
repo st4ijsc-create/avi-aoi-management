@@ -21,9 +21,10 @@ namespace St4i.EngineApi.HmiModel;
 /// inherited from the older ruling's wording, so the next person is not left guessing which promise
 /// applies.</b>
 /// <list type="bullet">
-///   <item><description><b>Committed:</b> the four property names below and their meanings;
-///   <see cref="MachineCode"/> is always the CANONICAL spelling, the same name <c>GET</c>, the machine list
-///   and the <c>PUT</c> echo report; an event is published only AFTER the store has accepted the write.</description></item>
+///   <item><description><b>Committed:</b> the property names below and their meanings;
+///   <see cref="MachineCode"/> and <see cref="ScreenId"/> are always the CANONICAL spelling, the same name
+///   the corresponding <c>GET</c> and the corresponding <c>PUT</c> echo report; an event is published only
+///   AFTER the store has accepted the write.</description></item>
 ///   <item><description><b>Committed:</b> <see cref="Change"/> is the discriminator, and it is an OPEN set
 ///   of strings. A consumer must treat an unrecognised value as "something changed for this machine, and I
 ///   do not know what" and re-read, never as an error. That is the deliberate opposite of the inspector
@@ -33,7 +34,10 @@ namespace St4i.EngineApi.HmiModel;
 ///   <c>web/src/components/TraceTable.tsx</c>'s <c>KIND_DOT</c> is a <c>Record&lt;string,string&gt;</c> with
 ///   a <c>?? "bg-neutral"</c> fallback, and forces nothing. One closed published union is reason enough to
 ///   choose an open set here; inflating it to two is how a sound decision gets reversed later by someone who
-///   checks the justification and finds it overstated.</description></item>
+///   checks the justification and finds it overstated. WS-HMI-2 Task 4 adds <see cref="ScreenChangeKind"/>
+///   as a THIRD member of this same open set, without editing either mirror — that is the property this
+///   lane's openness exists to buy, and it is what <c>St4i.Connector.Abstractions.Tests</c> stays green
+///   proves, not merely what this comment claims.</description></item>
 ///   <item><description><b>NOT committed:</b> delivery order between two different machines, timing, or
 ///   coalescing. Two writes may produce two events or, in a future revision, one; a consumer that re-reads
 ///   current state on any event is correct under every such change, and one that counts events is
@@ -41,28 +45,55 @@ namespace St4i.EngineApi.HmiModel;
 ///   <item><description><b>NOT committed, and deliberately absent:</b> any replay. See
 ///   <see cref="HmiChangeBus"/> for the backfill rule and why this lane has no ring at all.</description></item>
 /// </list></para>
+///
+/// <para>🔴 <b>WHY <see cref="MachineCode"/>/<see cref="TagCount"/> AND <see cref="ScreenId"/>/
+/// <see cref="Version"/> SHARE ONE RECORD RATHER THAN A COMMON BASE OR A THIRD SHAPE — WS-HMI-2 Task 4.</b>
+/// A screen change carries no machine code and no tag count; a component/tag-namespace change carries no
+/// screenId and no version. Both pairs are nullable, and each is populated ONLY for the <see cref="Change"/>
+/// kind it belongs to — the same flat-union-keyed-on-a-discriminator shape <see cref="TagCount"/> already
+/// used before this task, extended rather than replaced, so a consumer already parsing this frame gains a
+/// field pair instead of a second frame shape to learn. <see cref="HmiContractJson"/>'s
+/// <c>DefaultIgnoreCondition = WhenWritingNull</c> is what keeps the two existing kinds' wire frames
+/// UNCHANGED by this addition — <see cref="ScreenId"/>/<see cref="Version"/> are declared AFTER
+/// <see cref="TagCount"/>, so on a <c>componentModel</c>/<c>tagNamespace</c> event they serialise as
+/// trailing nulls and are dropped, never inserted between existing properties.</para>
 /// </summary>
 /// <param name="At">Wall-clock time the change was announced. A real timestamp because it records something
 /// that already happened, not simulation state — the same reasoning <c>ApiTraceEvent.At</c> carries.</param>
-/// <param name="Change">Which document changed: <see cref="HmiModelEvents.ComponentModelChangeKind"/> or
-/// <see cref="HmiModelEvents.TagNamespaceChangeKind"/>. An OPEN set — see this type's own remarks.</param>
-/// <param name="MachineCode">The CANONICAL machine code. Never the spelling the caller's route happened to
-/// use: an event announcing <c>find-01</c> for a machine every read surface calls <c>FIND-01</c> would send
-/// a subscriber to a name that reads back as the §5-bis empty document, i.e. "nothing here" — the very
-/// "heard changed, re-read, found nothing" failure this lane exists to avoid.</param>
+/// <param name="Change">Which document changed: <see cref="HmiModelEvents.ComponentModelChangeKind"/>,
+/// <see cref="HmiModelEvents.TagNamespaceChangeKind"/>, or <see cref="HmiModelEvents.ScreenChangeKind"/>. An
+/// OPEN set — see this type's own remarks.</param>
+/// <param name="MachineCode">The CANONICAL machine code, for
+/// <see cref="HmiModelEvents.ComponentModelChangeKind"/>/<see cref="HmiModelEvents.TagNamespaceChangeKind"/>
+/// only; <see langword="null"/> for <see cref="HmiModelEvents.ScreenChangeKind"/>. Never the spelling the
+/// caller's route happened to use: an event announcing <c>find-01</c> for a machine every read surface calls
+/// <c>FIND-01</c> would send a subscriber to a name that reads back as the §5-bis empty document, i.e.
+/// "nothing here" — the very "heard changed, re-read, found nothing" failure this lane exists to avoid.</param>
 /// <param name="TagCount">How many tags the namespace now declares, for
 /// <see cref="HmiModelEvents.TagNamespaceChangeKind"/> only; <see langword="null"/> for every other change.
 /// A flat union keyed on <paramref name="Change"/>, the same shape <c>TagSource</c> uses in the frozen
 /// contracts — chosen over two record types so the lane carries ONE frame a consumer can parse before it
 /// knows what it is.</param>
+/// <param name="ScreenId">The CANONICAL screenId — the same spelling <c>GET</c> and the <c>PUT</c>/rollback
+/// echo report — for <see cref="HmiModelEvents.ScreenChangeKind"/> only; <see langword="null"/> for every
+/// other change. A subscriber told about <c>"  my-screen  "</c> for a screen served as <c>"my-screen"</c>
+/// would land on the 404 this field exists to prevent, the same failure shape <paramref name="MachineCode"/>
+/// already guards against for machine codes.</param>
+/// <param name="Version">The version number the write just produced, for
+/// <see cref="HmiModelEvents.ScreenChangeKind"/> only; <see langword="null"/> for every other change. For a
+/// rollback this is the NEW version <c>RollbackAsync</c> appended, never <c>toVersion</c> — a subscriber
+/// that re-reads sees the content the rollback restored, and the version number matches what that re-read
+/// will report.</param>
 public sealed record HmiModelChangedEvent(
     DateTimeOffset At,
     string Change,
-    string MachineCode,
-    int? TagCount);
+    string? MachineCode,
+    int? TagCount,
+    string? ScreenId = null,
+    int? Version = null);
 
-/// <summary>Builds the two events this workstream announces. Factories rather than raw constructor calls at
-/// the call sites, so canonicalisation happens in ONE place and cannot be forgotten at a third
+/// <summary>Builds the three events this workstream announces. Factories rather than raw constructor calls
+/// at the call sites, so canonicalisation happens in ONE place and cannot be forgotten at a third
 /// endpoint.</summary>
 public static class HmiModelEvents
 {
@@ -71,6 +102,13 @@ public static class HmiModelEvents
 
     /// <summary>The <see cref="HmiModelChangedEvent.Change"/> value for a tag-namespace write.</summary>
     public const string TagNamespaceChangeKind = "tagNamespace";
+
+    /// <summary>The <see cref="HmiModelChangedEvent.Change"/> value for a screen write (a <c>PUT</c> or a
+    /// successful rollback). WS-HMI-2 Task 4 — the third member of this lane's OPEN discriminator set, added
+    /// without touching <c>web/src/lib/inspector.ts</c> or <c>web/src/components/TraceTable.tsx</c>: neither
+    /// mirror names this lane's <c>change</c> values at all, which is the whole point of the set being
+    /// open.</summary>
+    public const string ScreenChangeKind = "screen";
 
     /// <summary>A component tree was (re)declared for <paramref name="machineCode"/>.</summary>
     public static HmiModelChangedEvent ComponentModelChanged(string machineCode) =>
@@ -82,6 +120,18 @@ public static class HmiModelEvents
     public static HmiModelChangedEvent TagNamespaceChanged(string machineCode, int tagCount) =>
         new(DateTimeOffset.UtcNow, TagNamespaceChangeKind,
             MachineCodeIdentity.Canonicalize(machineCode), tagCount);
+
+    /// <summary>A screen (<paramref name="screenId"/>) was written and is now at <paramref name="version"/>
+    /// — the version the write just PRODUCED. For a rollback, the caller passes the NEW version
+    /// <c>RollbackAsync</c> returned, never the <c>toVersion</c> it was asked to restore: this factory does
+    /// not know which of the two call sites it was invoked from and does not need to, but the value handed
+    /// to it must already be the right one. <paramref name="screenId"/> is canonicalised here, the one place
+    /// this lane's canonicalisation rule can never be forgotten at a call site — same reason
+    /// <see cref="ComponentModelChanged"/>/<see cref="TagNamespaceChanged"/> canonicalise the machine
+    /// code.</summary>
+    public static HmiModelChangedEvent ScreenChanged(string screenId, int version) =>
+        new(DateTimeOffset.UtcNow, ScreenChangeKind, MachineCode: null, TagCount: null,
+            ScreenId: ScreenIdentity.Canonicalize(screenId), Version: version);
 }
 
 /// <summary>Process-wide fan-out for <see cref="HmiModelChangedEvent"/>s. Deliberately NOT

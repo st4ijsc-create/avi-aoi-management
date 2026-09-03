@@ -99,16 +99,20 @@ namespace St4i.EngineApi.Endpoints;
 /// on the write side. Not fixed here (no migration exists today to fix it against); named so a future
 /// migration author reads this before assuming reads stay exempt forever.</para>
 ///
-/// <para>🔴 <b>THIS TASK DOES NOT PUBLISH AN <see cref="HmiModelChangedEvent"/>, AND THAT IS SCOPE, NOT AN
-/// OMISSION.</b> <c>HmiModelEvents.ScreenChanged</c> does not exist yet — it is WS-HMI-2 Task 4's own
-/// deliverable (<c>docs/plans/2026-08-31-hmi-ws2-editor-blueprint.md</c>, "Task 4: Sự kiện thay đổi màn hình
-/// trên kênh đã có"), which also modifies THIS file to add the publish call. Task 3's file list does not
-/// include <c>HmiModelEvents.cs</c>. What this file DOES do, ahead of that task, is shape both
-/// <see cref="PutAsync"/> and <see cref="RollbackAsync"/> the way WS-HMI-0b's rule requires once a publish
-/// exists — build the response value FIRST, then run whatever comes after, then <c>return</c> LAST — so Task
-/// 4 drops one <c>changes.Publish(...)</c> line in between without restructuring either handler. Today,
-/// with nothing to publish, that ordering has no observable effect of its own; it is here so the next task's
-/// diff is one line, not a rewrite.</para>
+/// <para>📎 🔴 <b>"THIS TASK DOES NOT PUBLISH AN <see cref="HmiModelChangedEvent"/>" — RÚT, WS-HMI-2 Task 4,
+/// giữ nguyên văn ở trên.</b> Đúng cho tới hết <c>0e0514d5</c>. <c>HmiModelEvents.ScreenChanged</c> now
+/// exists, and both <see cref="PutAsync"/> and <see cref="RollbackAsync"/> call
+/// <see cref="IHmiChangeBus.Publish"/> with it — one line dropped into the ordering Task 3 shaped for
+/// exactly this, unchanged: build the response value first, run whatever else comes after, publish, then
+/// <c>return</c> LAST. <see cref="PutAsync"/> publishes <c>HmiModelEvents.ScreenChanged(screenId, version)</c>
+/// where <c>version</c> is what <c>store.PutAsync</c> returned. <see cref="RollbackAsync"/> publishes the
+/// SAME factory call with the NEW version <c>store.RollbackAsync</c> returned — never <c>body.ToVersion</c>,
+/// the version the caller asked to restore — because a subscriber that re-reads after a rollback sees the
+/// restored CONTENT sitting at the new, highest version number, and an event naming the old target would
+/// send that re-read looking at the wrong row. Both publishes pass the RAW <c>screenId</c> parameter, not a
+/// pre-canonicalised one — <c>HmiModelEvents.ScreenChanged</c> canonicalises internally, the one place this
+/// rule cannot be forgotten at a call site, same shape <c>ComponentModelChanged</c>/<c>TagNamespaceChanged</c>
+/// already use for machine codes.</para>
 /// </summary>
 public static class HmiScreenEndpoints
 {
@@ -156,7 +160,7 @@ public static class HmiScreenEndpoints
     // any connection opens) → build the response → return. Nothing after the response is built can throw.
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PutAsync(
-        string screenId, HmiScreenDocument body, IHmiScreenStore store, CancellationToken ct)
+        string screenId, HmiScreenDocument body, IHmiScreenStore store, IHmiChangeBus changes, CancellationToken ct)
     {
         // `body` itself can never be null — HmiScreenDocument is a non-nullable complex parameter, so
         // RequestDelegateFactory already 400s an absent/literal-null/malformed-JSON body before this handler
@@ -197,9 +201,10 @@ public static class HmiScreenEndpoints
             return WriteBusy();
         }
 
-        // Response built BEFORE anything else that could run — see this class's own doc comment on why no
-        // event is published here yet, and on the ordering this leaves ready for Task 4.
+        // Response built BEFORE anything else that could run — see this class's own doc comment for why the
+        // publish sits here, second-to-last, with `return` last and nothing that can throw after it.
         var response = Results.Ok(new PutScreenResultDto(ScreenIdentity.Canonicalize(screenId), version, body.Widgets.Count));
+        changes.Publish(HmiModelEvents.ScreenChanged(screenId, version));
         return response;
     }
 
@@ -230,7 +235,7 @@ public static class HmiScreenEndpoints
     // endpoint's job to open a second one.
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> RollbackAsync(
-        string screenId, RollbackRequestDto body, IHmiScreenStore store, CancellationToken ct)
+        string screenId, RollbackRequestDto body, IHmiScreenStore store, IHmiChangeBus changes, CancellationToken ct)
     {
         int version;
         try
@@ -278,7 +283,12 @@ public static class HmiScreenEndpoints
             widgetCount = 0;
         }
 
+        // Response built before anything else that could run — same rule, same reason as PutAsync above.
+        // `version` here is the NEW version RollbackAsync just returned, never body.ToVersion — see this
+        // class's own doc comment for why a subscriber that re-reads must land on the row the rollback
+        // actually produced.
         var response = Results.Ok(new PutScreenResultDto(ScreenIdentity.Canonicalize(screenId), version, widgetCount));
+        changes.Publish(HmiModelEvents.ScreenChanged(screenId, version));
         return response;
     }
 

@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Endpoints;
@@ -18,7 +19,10 @@ namespace St4i.EngineApi.Tests.HmiModel;
 
 /// <summary>
 /// WS-HMI-0b Task 3 — change events for the component tree and the tag namespace, on their OWN realtime
-/// lane (<c>WS /v1/hmi/changes</c>).
+/// lane (<c>WS /v1/hmi/changes</c>). Extended by WS-HMI-2 Task 4 with the screen store's own change events
+/// (<c>PUT</c> and rollback), on the SAME lane and the SAME bus — see the "SCREEN EVENTS" region near the
+/// end of this file. Task 4 adds no new mechanism: it is the third caller of the ordering rule and the
+/// total-publish guarantee this file already measures for the first two.
 ///
 /// <para>🔴 <b>Why a second route rather than the existing stream — the decision this file measures.</b>
 /// The plan said "extend the running <c>WS /v1/inspector/stream</c>, do not build a second SSE channel".
@@ -44,6 +48,11 @@ namespace St4i.EngineApi.Tests.HmiModel;
 ///   subscriber does to a fast publisher. One writer, one subscriber, sequential.</description></item>
 ///   <item><description>It does NOT measure that a UI re-reads on being told. The event is a signal; what
 ///   a consumer does with it is WS-HMI-0c's.</description></item>
+///   <item><description>The screen-event tests added by WS-HMI-2 Task 4 do NOT re-measure
+///   <c>CanonicalizingHmiScreenStore</c>'s own non-canonical-spelling fallback (<c>HmiScreenStoreTests</c>
+///   owns that), and do NOT re-measure §5/409/404/503 as HTTP behaviours in their own right — those are
+///   <c>HmiScreenEndpointsTests</c>'. What is measured here is narrower and specific to this lane: for each
+///   of those doors, does a write that does not return 2xx leave the change bus untouched.</description></item>
 /// </list></para>
 /// </summary>
 [Collection(SecurityEnvVarTests.CollectionName)]
@@ -52,32 +61,42 @@ public sealed class HmiModelEventsTests
     private static readonly SemaphoreSlim EnvLock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync()
+    /// <summary>WS-HMI-2 Task 4 added <see cref="HmiScreenStore.EnvVarDir"/> to the set this isolates —
+    /// the screen-event tests need a real, per-factory <c>hmi-screens.db</c>, same reasoning as the two
+    /// env vars already here for the component/tag stores. Returns the screens directory too: the one new
+    /// test that needs to open a second, raw connection against that SAME database file
+    /// (<see cref="A_screen_put_refused_by_write_lock_contention_emits_nothing"/>) cannot derive it from the
+    /// factory any other way.</summary>
+    private static async Task<(WebApplicationFactory<Program> Factory, string ScreensDir)> CreateFactoryAsync()
     {
         var modelDir = Directory.CreateTempSubdirectory("st4i-hmi-ev-model-").FullName;
         var tagsDir = Directory.CreateTempSubdirectory("st4i-hmi-ev-tags-").FullName;
+        var screensDir = Directory.CreateTempSubdirectory("st4i-hmi-ev-screens-").FullName;
         var securityDir = Directory.CreateTempSubdirectory("st4i-hmi-ev-security-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevModel = Environment.GetEnvironmentVariable(ComponentModelStore.EnvVarDir);
         var prevTags = Environment.GetEnvironmentVariable(TagNamespaceStore.EnvVarDir);
+        var prevScreens = Environment.GetEnvironmentVariable(HmiScreenStore.EnvVarDir);
         var prevSecurity = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
             Environment.SetEnvironmentVariable(ComponentModelStore.EnvVarDir, modelDir);
             Environment.SetEnvironmentVariable(TagNamespaceStore.EnvVarDir, tagsDir);
+            Environment.SetEnvironmentVariable(HmiScreenStore.EnvVarDir, screensDir);
             Environment.SetEnvironmentVariable("ST4I_SECURITY_DIR", securityDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
             _ = factory.Server;
-            return factory;
+            return (factory, screensDir);
         }
         finally
         {
             Environment.SetEnvironmentVariable(ComponentModelStore.EnvVarDir, prevModel);
             Environment.SetEnvironmentVariable(TagNamespaceStore.EnvVarDir, prevTags);
+            Environment.SetEnvironmentVariable(HmiScreenStore.EnvVarDir, prevScreens);
             Environment.SetEnvironmentVariable("ST4I_SECURITY_DIR", prevSecurity);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
@@ -112,8 +131,26 @@ public sealed class HmiModelEventsTests
     private static async Task<(WebApplicationFactory<Program> Factory, HttpClient Engineer, HttpClient Operator, string OperatorCookie)>
         NewFactoryWithUsersAsync(string suffix)
     {
-        var factory = await CreateFactoryAsync().ConfigureAwait(false);
+        var (factory, _) = await CreateFactoryAsync().ConfigureAwait(false);
+        var (engineer, op, opCookie) = await BootstrapAndLoginAsync(factory, suffix).ConfigureAwait(false);
+        return (factory, engineer, op, opCookie);
+    }
 
+    /// <summary>Same bootstrap as <see cref="NewFactoryWithUsersAsync"/>, plus the screens directory the
+    /// SQLITE_BUSY test needs to open a second, raw connection against the real <c>hmi-screens.db</c> file —
+    /// see <see cref="CreateFactoryAsync"/>'s own doc comment for why that cannot be derived any other
+    /// way.</summary>
+    private static async Task<(WebApplicationFactory<Program> Factory, string ScreensDir, HttpClient Engineer, HttpClient Operator)>
+        NewFactoryWithUsersAndScreensDirAsync(string suffix)
+    {
+        var (factory, screensDir) = await CreateFactoryAsync().ConfigureAwait(false);
+        var (engineer, op, _) = await BootstrapAndLoginAsync(factory, suffix).ConfigureAwait(false);
+        return (factory, screensDir, engineer, op);
+    }
+
+    private static async Task<(HttpClient Engineer, HttpClient Operator, string OperatorCookie)>
+        BootstrapAndLoginAsync(WebApplicationFactory<Program> factory, string suffix)
+    {
         using (var bootstrapClient = factory.CreateClient())
         {
             using var bootstrap = await bootstrapClient.PostAsJsonAsync(
@@ -133,7 +170,7 @@ public sealed class HmiModelEventsTests
         var (engineer, _) = await LoginAsync(factory, $"ev-engineer-{suffix}", "EngineerPass123!").ConfigureAwait(false);
         var (op, opCookie) = await LoginAsync(factory, $"ev-operator-{suffix}", "OperatorPass123!").ConfigureAwait(false);
 
-        return (factory, engineer, op, opCookie);
+        return (engineer, op, opCookie);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -151,6 +188,17 @@ public sealed class HmiModelEventsTests
 
     private static TagNamespaceDocument ValidNs(string machineCode) =>
         new(1, machineCode, new[] { ReadTag($"{machineCode}/a"), ReadTag($"{machineCode}/b") });
+
+    /// <summary>Screen fixtures — same shape as <c>HmiScreenEndpointsTests.Screen</c>, duplicated rather
+    /// than shared for the same reason that file's own doc comment gives for duplicating ITS helpers from
+    /// its neighbours: each test class is private to its own isolation requirements.</summary>
+    private static WidgetRect Rect(int col = 0, int row = 0, int colSpan = 2, int rowSpan = 1) =>
+        new(col, row, colSpan, rowSpan);
+
+    private static HmiScreenDocument Screen(string screenId, string title) => new(
+        1, screenId, title, null, "isa101",
+        new ScreenLayout(12, 8, "panel"),
+        new[] { new ScreenWidget("w1", "label", Rect()) });
 
     /// <summary>Collects everything the lane publishes for the duration of a test, by subscribing to the
     /// SAME bus the WS route subscribes to. This measures the ENDPOINT's emission, which is what every
@@ -688,6 +736,22 @@ public sealed class HmiModelEventsTests
             new[] { "at", "change", "machineCode" },
             withoutCount.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
         Assert.Equal("componentModel", withoutCount.RootElement.GetProperty("change").GetString());
+
+        // 🔴 WS-HMI-2 Task 4 — the THIRD kind added to this record, pinned the same way as the two above,
+        // and proof by construction that adding it left THEIR frames alone: neither block above changed.
+        // A screen change carries screenId + version and neither machineCode nor tagCount — the exact
+        // mirror image of the two blocks above. The padded input also pins ScreenChanged's own
+        // canonicalisation (Trim, the ScreenIdentity rule — no case fold): the wire never carries the
+        // padding, the same guarantee MachineCode already gives ComponentModelChanged/TagNamespaceChanged.
+        var screenEvent = HmiModelEvents.ScreenChanged("  wire-03  ", 5);
+        using var screenDoc = JsonDocument.Parse(JsonSerializer.Serialize(screenEvent, HmiContractJson.Options));
+
+        Assert.Equal(
+            new[] { "at", "change", "screenId", "version" },
+            screenDoc.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal(HmiModelEvents.ScreenChangeKind, screenDoc.RootElement.GetProperty("change").GetString());
+        Assert.Equal("wire-03", screenDoc.RootElement.GetProperty("screenId").GetString());
+        Assert.Equal(5, screenDoc.RootElement.GetProperty("version").GetInt32());
     }
 
     /// <summary>...and the new lane is a genuinely separate mechanism, not a second publisher onto the old
@@ -720,5 +784,222 @@ public sealed class HmiModelEventsTests
         {
             inspectorBus.Traced -= OnTraced;
         }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // 🔴 SCREEN EVENTS — WS-HMI-2 Task 4. Same lane, same bus, same ordering rule, a THIRD caller of it —
+    // pinned as its own property rather than assumed to hold just because the first two callers do.
+    //
+    // 🔴 What this region does NOT re-measure: it does not re-prove HmiChangeBus.Publish is total (a
+    // throwing subscriber cannot fail the write or silence a later one) — that is a property of the BUS,
+    // already pinned above by A_subscriber_that_throws_cannot_turn_a_successful_write_into_a_failure against
+    // the component route, and the bus does not know or care which factory built the event it is handed.
+    // It does not re-measure §5/409/404/503 as HTTP behaviours (HmiScreenEndpointsTests owns those) or the
+    // screenId canonical-spelling fallback (HmiScreenStoreTests owns that) — only whether each of those
+    // doors, reached here for real, leaves the change bus untouched.
+    // ═════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task A_successful_screen_put_emits_exactly_one_event_carrying_the_canonical_screenId_and_version()
+    {
+        var (factory, engineer, _, _) = await NewFactoryWithUsersAsync("screen-put-one");
+        await using var _f = factory;
+        using var engineerC = engineer;
+        using var recorder = new Recorder(factory.Services.GetRequiredService<IHmiChangeBus>());
+
+        var put = await engineerC.PutAsJsonAsync(
+            "/v1/screens/evt-screen-01", Screen("evt-screen-01", "v1"), HmiContractJson.Options);
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+
+        var e = Assert.Single(recorder.Events);
+        Assert.Equal(HmiModelEvents.ScreenChangeKind, e.Change);
+        Assert.Equal("evt-screen-01", e.ScreenId);
+        Assert.Equal(1, e.Version);
+        // The mirror image of the componentModel/tagNamespace assertions above — this kind carries neither.
+        Assert.Null(e.MachineCode);
+        Assert.Null(e.TagCount);
+    }
+
+    /// <summary>🔴 The property the brief names by name: a rollback's event carries the NEW version
+    /// <c>RollbackAsync</c> appended (3, after two prior <c>PUT</c>s), never <c>toVersion</c> (1) — the
+    /// version the caller asked to restore TO. A subscriber that re-reads on this event finds the restored
+    /// CONTENT sitting at version 3; an event naming 1 would send that re-read looking at a row that still
+    /// holds whatever "two" last wrote.</summary>
+    [Fact]
+    public async Task A_successful_screen_rollback_emits_exactly_one_event_carrying_the_new_version_not_the_target()
+    {
+        var (factory, engineer, _, _) = await NewFactoryWithUsersAsync("screen-rollback-one");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        Assert.Equal(HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/screens/evt-rb-01", Screen("evt-rb-01", "v1"), HmiContractJson.Options)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/screens/evt-rb-01", Screen("evt-rb-01", "v2"), HmiContractJson.Options)).StatusCode);
+
+        // Recorder starts AFTER both PUTs, so the only event it can possibly see is the rollback's own.
+        using var recorder = new Recorder(factory.Services.GetRequiredService<IHmiChangeBus>());
+
+        var rollback = await engineerC.PostAsJsonAsync(
+            "/v1/screens/evt-rb-01/rollback", new RollbackRequestDto(1), HmiContractJson.Options);
+        Assert.Equal(HttpStatusCode.OK, rollback.StatusCode);
+        var result = await rollback.Content.ReadFromJsonAsync<PutScreenResultDto>(HmiContractJson.Options);
+        Assert.Equal(3, result!.Version);
+
+        var e = Assert.Single(recorder.Events);
+        Assert.Equal(HmiModelEvents.ScreenChangeKind, e.Change);
+        Assert.Equal("evt-rb-01", e.ScreenId);
+        Assert.Equal(3, e.Version);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // 🔴 The emit-nothing property, screen doors — evidence the property reaches THIS route family too, not
+    // the property itself (that is the theory's assertion, not the rows).
+    // ═════════════════════════════════════════════════════════════════════
+
+    public static TheoryData<string, string, string> ScreenFailingWrites() => new()
+    {
+        // §5 — a command-button widget with no policyAction.
+        { "screen-400-section5", "/v1/screens/fail-scr-01",
+          "{\"schemaVersion\":1,\"screenId\":\"fail-scr-01\",\"title\":\"x\",\"theme\":\"isa101\"," +
+          "\"layout\":{\"cols\":12,\"rows\":8,\"breakpoint\":\"panel\"}," +
+          "\"widgets\":[{\"id\":\"w1\",\"kind\":\"command-button\",\"rect\":{\"col\":0,\"row\":0,\"colSpan\":2,\"rowSpan\":1}}]}" },
+
+        // route/body screenId mismatch — 409 on this route family, not the sibling routes' 400.
+        { "screen-409-route-body", "/v1/screens/fail-scr-02",
+          "{\"schemaVersion\":1,\"screenId\":\"other-screen\",\"title\":\"x\",\"theme\":\"isa101\"," +
+          "\"layout\":{\"cols\":12,\"rows\":8,\"breakpoint\":\"panel\"},\"widgets\":[]}" },
+
+        // malformed JSON — refused by RequestDelegateFactory's own body binding before the handler, and
+        // therefore before changes.Publish, is ever reached at all.
+        { "screen-400-malformed-json", "/v1/screens/fail-scr-03", "{ this is not valid json" },
+    };
+
+    [Theory]
+    [MemberData(nameof(ScreenFailingWrites))]
+    public async Task A_screen_write_that_does_not_succeed_emits_nothing(string label, string url, string json)
+    {
+        var (factory, engineer, _, _) = await NewFactoryWithUsersAsync($"scr-fail-{label}");
+        await using var _f = factory;
+        using var engineerC = engineer;
+        using var recorder = new Recorder(factory.Services.GetRequiredService<IHmiChangeBus>());
+
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var put = await engineerC.PutAsync(url, content);
+
+        // Property, not list — see HmiModelEventsTests's own A_write_that_does_not_succeed_emits_nothing for
+        // why this guard says "not 2xx" and not a narrower range.
+        Assert.False((int)put.StatusCode is >= 200 and < 300,
+            $"[{label}] expected this write to be refused, but it answered {(int)put.StatusCode} — the test " +
+            "is only evidence for the emit-nothing property if the write genuinely failed.");
+        Assert.Empty(recorder.Events);
+    }
+
+    /// <summary>The 404 arm on an id nobody ever declared — IHmiScreenStore.RollbackAsync's own contract
+    /// does not distinguish "never declared" from "exists but not at this version" (both throw
+    /// ArgumentOutOfRangeException), so this alone is evidence for the door the brief names.</summary>
+    [Fact]
+    public async Task A_screen_rollback_on_an_undeclared_screen_emits_nothing()
+    {
+        var (factory, engineer, _, _) = await NewFactoryWithUsersAsync("scr-fail-404-undeclared");
+        await using var _f = factory;
+        using var engineerC = engineer;
+        using var recorder = new Recorder(factory.Services.GetRequiredService<IHmiChangeBus>());
+
+        var rollback = await engineerC.PostAsJsonAsync(
+            "/v1/screens/never-declared-evt/rollback", new RollbackRequestDto(1), HmiContractJson.Options);
+
+        Assert.Equal(HttpStatusCode.NotFound, rollback.StatusCode);
+        Assert.Empty(recorder.Events);
+    }
+
+    /// <summary>The other shape of the same 404 — a screen that DOES exist, rolled back to a version number
+    /// that never did. Kept alongside the row above rather than instead of it: the store's contract collapses
+    /// both into the same exception, but this is the literal shape the brief's own wording names.</summary>
+    [Fact]
+    public async Task A_screen_rollback_to_a_version_that_never_existed_emits_nothing()
+    {
+        var (factory, engineer, _, _) = await NewFactoryWithUsersAsync("scr-fail-404-version");
+        await using var _f = factory;
+        using var engineerC = engineer;
+
+        Assert.Equal(HttpStatusCode.OK,
+            (await engineerC.PutAsJsonAsync("/v1/screens/evt-404-line", Screen("evt-404-line", "only"), HmiContractJson.Options)).StatusCode);
+
+        using var recorder = new Recorder(factory.Services.GetRequiredService<IHmiChangeBus>());
+
+        var rollback = await engineerC.PostAsJsonAsync(
+            "/v1/screens/evt-404-line/rollback", new RollbackRequestDto(99), HmiContractJson.Options);
+
+        Assert.Equal(HttpStatusCode.NotFound, rollback.StatusCode);
+        Assert.Empty(recorder.Events);
+    }
+
+    /// <summary>The authorisation arm — an Operator is refused the write by policy, before this handler is
+    /// ever reached at all, which is a different mechanism from every row above.</summary>
+    [Fact]
+    public async Task A_screen_write_refused_by_authorisation_emits_nothing()
+    {
+        var (factory, _, op, _) = await NewFactoryWithUsersAsync("scr-fail-403");
+        await using var _f = factory;
+        using var operatorC = op;
+        using var recorder = new Recorder(factory.Services.GetRequiredService<IHmiChangeBus>());
+
+        var put = await operatorC.PutAsJsonAsync(
+            "/v1/screens/evt-forbid-01", Screen("evt-forbid-01", "x"), HmiContractJson.Options);
+
+        Assert.Equal(HttpStatusCode.Forbidden, put.StatusCode);
+        Assert.Empty(recorder.Events);
+    }
+
+    /// <summary>🔴 The 503 door — WS-HMI-2 Task 3's own addition to the non-2xx enumeration, absent from
+    /// this task's original brief (which predates SQLITE_BUSY mapping to 503) but real: a write that the
+    /// store never even started publishes nothing either. Reproduces write-lock contention the same way
+    /// <c>HmiScreenEndpointsTests.Put_WhileAnotherConnectionHoldsTheWriteLock_Gets503_NotA500_AfterTheStoreGivesUp</c>
+    /// does — a second, raw connection to the SAME <c>hmi-screens.db</c> file holds the write lock
+    /// (<c>BEGIN IMMEDIATE</c>, never committed) while a genuine <c>PUT</c> runs concurrently — driven
+    /// through the real store and the real HTTP pipeline, not a mocked exception. Does NOT measure the exact
+    /// wait duration; only what the caller sees once the store gives up (measured elsewhere at ~34s), bounded
+    /// by a generous 90-second budget so a genuine regression fails loudly instead of hanging the
+    /// suite.</summary>
+    [Fact]
+    public async Task A_screen_put_refused_by_write_lock_contention_emits_nothing()
+    {
+        var (factory, screensDir, engineer, _) = await NewFactoryWithUsersAndScreensDirAsync("scr-fail-503");
+        await using var _f = factory;
+        using var engineerC = engineer;
+        using var recorder = new Recorder(factory.Services.GetRequiredService<IHmiChangeBus>());
+
+        // Force IHmiScreenStore's lazy DI factory to run now, so hmi-screens.db exists on disk before a raw
+        // connection is opened against it below.
+        Assert.Equal(HttpStatusCode.OK, (await engineerC.GetAsync("/v1/screens")).StatusCode);
+
+        var dbPath = Path.Combine(screensDir, "hmi-screens.db");
+        using var blocker = new SqliteConnection($"Data Source={dbPath}");
+        await blocker.OpenAsync();
+        // Parameterless BeginTransaction() is BEGIN IMMEDIATE — takes the write lock immediately, held until
+        // Rollback() below, deliberately never committed.
+        using var blockTx = blocker.BeginTransaction();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        HttpResponseMessage response;
+        try
+        {
+            response = await engineerC.PutAsJsonAsync(
+                "/v1/screens/evt-busy-01", Screen("evt-busy-01", "x"), HmiContractJson.Options, cts.Token);
+        }
+        finally
+        {
+            // Release the lock regardless of outcome, so the database is left usable for whatever runs
+            // after this test.
+            blockTx.Rollback();
+        }
+
+        using (response)
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        }
+
+        Assert.Empty(recorder.Events);
     }
 }
