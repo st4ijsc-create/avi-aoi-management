@@ -1063,10 +1063,44 @@ export const aoiPackageRouter = router({
 
           const zip = await JSZip.loadAsync(zipBuffer);
           const metaFile = zip.file("meta.json");
-          if (metaFile) {
-            const metaContent = await metaFile.async("string");
-            metaData = metaJsonSchema.parse(JSON.parse(metaContent));
+          // ★★★ M-8 (re-review lượt 8) — THIẾU `meta.json` ⇒ TỪ CHỐI, KHÔNG
+          // `committed` im lặng.
+          //
+          // Đây là HÌNH DẠNG CUỐI CÙNG còn lại của ĐÚNG lớp lỗi C-1: "commit
+          // thành công, không bo nào được ghi, Agent nghe THÀNH CÔNG". Trước
+          // bản vá: `metaData` ở lại null ⇒ không nhánh nào ghi đè
+          // `finalOverallResult` (khởi tạo `"OK"`), 0 `product_inspections`,
+          // 0 `package_images` (khối I-6 nằm trong `if (metaData)`),
+          // `demTuCayBaoCao` rơi về `{total: <số ảnh>, ok:0, ng:0}` — mà hàng
+          // vẫn chuyển `'committed'` với `overallResult='OK'`.
+          //
+          // HỘ TIÊU THỤ ĐÃ ĐO TRƯỚC KHI ĐỔI (vai `avi_app`, kèm
+          // `current_database()` — luật Đ-28): `aoi_management` 0 gói;
+          // `aoi_management_test` 296 gói, TẤT CẢ `committed`, `metaJson IS
+          // NULL` = 0 ⇒ KHÔNG gói hợp lệ nào đang CỐ Ý không mang manifest.
+          // Một gói không manifest không thể thoả bất biến 1/2 (§4 chuẩn gói
+          // ảnh): không serial, không cây kết quả, không `images[]` — nên từ
+          // chối không lấy mất năng lực nào.
+          //
+          // ⚠ Cách chữa được kê PHẢI thi hành được (bài học N-1): gói ở lại
+          // `'failed'` ⇒ CÙNG `packageId` vẫn `presign`/upload/`commit` lại
+          // được với ZIP có `meta.json` (và `presign` gọi lại nay còn LÀM MỚI
+          // lời khai toàn vẹn — N-1). Chỉ sau `nguongLoiVinhVienZip()` lượt lỗi
+          // vĩnh viễn LIÊN TIẾP gói mới thành `'dead'`, và thông điệp lúc đó kê
+          // đúng cách chữa còn lại (`packageId` MỚI) — đó là thiết kế BG-52 có
+          // sẵn, không phải một ngõ cụt mới.
+          if (!metaFile) {
+            throw appError(
+              "BAD_REQUEST",
+              "INVALID_VALUE",
+              { field: "meta.json" },
+              `TỪ CHỐI gói: ZIP không có tệp \`meta.json\` — không có manifest thì máy chủ KHÔNG ghi được bo ` +
+                `nào (0 product_inspections, 0 package_images), nên một lượt commit "thành công" ở đây sẽ là ` +
+                `lời báo thành công RỖNG. Tải lên lại gói với \`meta.json\` ở GỐC ZIP rồi commit lại.`,
+            );
           }
+          const metaContent = await metaFile.async("string");
+          metaData = metaJsonSchema.parse(JSON.parse(metaContent));
 
           // BG-85 — `metaJsonSchema` GIỜ LÀ `machineDataContractV2` + `images[]`
           // (xem docblock tại chỗ khai schema): `surfaces` bắt buộc ⇒ MỌI lượt
@@ -1101,8 +1135,10 @@ export const aoiPackageRouter = router({
           let lechSummary = false;
           // Cột báo cáo (`inspection_packages.totalPoints/okCount/ngCount`) —
           // đếm CAPTURES (cấp gần nhất với "một điểm kiểm tra có ảnh") từ CÂY
-          // đã dịch — KHÔNG từ `summary` khai (bất biến 3). Không có `metaData`
-          // (thiếu meta.json trong ZIP) ⇒ fallback đúng số ảnh vật lý đếm được.
+          // đã dịch — KHÔNG từ `summary` khai (bất biến 3). ★★★ M-8 — trị khởi
+          // tạo dưới đây TỪNG là con đường sống của gói thiếu `meta.json`
+          // ("committed" với 0 bo, `ok:0`); nay nhánh đó bị TỪ CHỐI ở trên nên
+          // đây chỉ còn là trị khởi tạo bị `dichCayKetQua` ghi đè ngay sau.
           let demTuCayBaoCao = { total: imageFiles.length, ok: 0, ng: 0 };
           let resolvedProductModel: Awaited<ReturnType<typeof db.getProductModelByCode>> | undefined;
           // captureId → capture ĐÃ DỊCH (rolledResult…) — dùng để chọn ảnh đại
@@ -1366,10 +1402,15 @@ export const aoiPackageRouter = router({
             machineId: machine.id,
             event: "commit_success",
             // C-1: nhánh "no inspection linked" KHÔNG còn nghĩa "thiếu
-            // serialNumber" (cổng đó đã bỏ) — nó chỉ còn xảy ra khi ZIP KHÔNG
-            // có `meta.json` (M-8, nợ có sẵn trước lô này). Câu chữ phải nói
-            // đúng lý do, không đổ cho một cổng đã không còn tồn tại.
-            message: `Package committed successfully — ${imageFiles.length} images, ${demTuCayBaoCao.total} captures${createdInspection ? ', inspection created' : linkedInspectionId ? ', duplicate (idempotent retry)' : ', no meta.json in ZIP (no inspection linked)'}`,
+            // serialNumber" (cổng đó đã bỏ) — nó từng chỉ còn xảy ra khi ZIP
+            // KHÔNG có `meta.json`. ★★★ M-8 (re-review lượt 8) đã ĐÓNG luôn
+            // đường đó: thiếu `meta.json` nay bị TỪ CHỐI trước khi tới đây, nên
+            // một lượt `commit_success` LUÔN có bo được ghi. Nhánh thứ ba giữ
+            // lại làm CẦU CHÌ: nếu nó xuất hiện trong nhật ký thì bất biến
+            // "commit thành công ⇔ có bo được ghi" đã gãy ở một đường chưa
+            // biết — câu chữ phải nói đúng thế, không đổ cho một nguyên nhân
+            // đã bị chặn.
+            message: `Package committed successfully — ${imageFiles.length} images, ${demTuCayBaoCao.total} captures${createdInspection ? ', inspection created' : linkedInspectionId ? ', duplicate (idempotent retry)' : ', ⚠ BẤT THƯỜNG: no inspection linked (M-8 đã chặn nhánh thiếu meta.json — bất biến bo-được-ghi đã gãy ở đường khác)'}`,
             source: "agent",
             durationMs: commitDuration,
             detail: `Serial: ${metaData?.serialNumber || 'N/A'}, Model: ${metaData?.productModel || 'N/A'}, Result: ${finalOverallResult}, Inspection ID: ${linkedInspectionId || 'none'}${createdInspection ? ' (NEW)' : ''}`,
