@@ -2096,10 +2096,24 @@ export async function updateMeasurementPointLimitsBatch(
       // hàng đọc TRONG TRANSACTION (FOR UPDATE), sát thời điểm ghi hơn lượt đọc
       // ở router — đúng kỷ luật "hàm này không tin một mình lớp gọi" đã áp cho
       // whitelist `APPROVAL_LIMIT_FIELDS` ngay bên dưới.
+      // ★★★ NEW-1 (review lượt 9, vòng 2) — CẢ NĂM cặp min/max, không chỉ hai
+      // (xem docblock `MIN_MAX_PAIRS`, `shared/pointLimitSpec.ts`).
       assertCapGioiHanHopLe(
         gopCapGioiHanDonGian(
-          { lowerLimit: previous.lowerLimit, upperLimit: previous.upperLimit, heightMin: previous.heightMin, heightMax: previous.heightMax },
-          { lowerLimit: rawFields.lowerLimit, upperLimit: rawFields.upperLimit, heightMin: rawFields.heightMin, heightMax: rawFields.heightMax },
+          {
+            lowerLimit: previous.lowerLimit, upperLimit: previous.upperLimit,
+            heightMin: previous.heightMin, heightMax: previous.heightMax,
+            areaMin: previous.areaMin, areaMax: previous.areaMax,
+            volumeMin: previous.volumeMin, volumeMax: previous.volumeMax,
+            thicknessMin: previous.thicknessMin, thicknessMax: previous.thicknessMax,
+          },
+          {
+            lowerLimit: rawFields.lowerLimit, upperLimit: rawFields.upperLimit,
+            heightMin: rawFields.heightMin, heightMax: rawFields.heightMax,
+            areaMin: rawFields.areaMin, areaMax: rawFields.areaMax,
+            volumeMin: rawFields.volumeMin, volumeMax: rawFields.volumeMax,
+            thicknessMin: rawFields.thicknessMin, thicknessMax: rawFields.thicknessMax,
+          },
         ),
       );
 

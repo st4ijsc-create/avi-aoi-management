@@ -38,9 +38,28 @@ import type { ProductVariant, VariantPointOverride } from "../../drizzle/schema"
 // hạn THỨ HAI ngoài `POINT_LIMIT_SPEC`/`APPROVAL_LIMIT_FIELDS`: whitelist khoá
 // (schema), cửa duyệt ngưỡng (assertThresholdEditAllowed), và ghi version
 // (db.recordVariantOverrideVersion) — xem docblock tại chỗ dùng bên dưới.
-import { APPROVAL_LIMIT_FIELDS } from "@shared/pointLimitSpec";
+import { APPROVAL_LIMIT_FIELDS, MIN_MAX_PAIRS } from "@shared/pointLimitSpec";
 import { assertThresholdEditAllowed } from "../services/thresholdGovernanceService";
-import { assertCapGioiHanHopLe, gopCapGioiHanDonGian } from "../utils/measurementPointLimitGate";
+import { assertCapGioiHanHopLe, gopCapGioiHanDonGian, type CapGioiHan } from "../utils/measurementPointLimitGate";
+
+/**
+ * ★★★ NEW-1 (review Khối C lượt 9, vòng 2, Important) — rút đúng các field tham
+ * gia MỘT cặp min/max (`MIN_MAX_PAIRS`, `shared/pointLimitSpec.ts`) từ một object
+ * bất kỳ (hàng DB hoặc `patchJson` đã qua whitelist) — dùng ở CẢ `setOverride`
+ * lẫn `removeOverride` để không lặp lại 10 tên field hai lần. TRƯỚC bản vá này
+ * hai điểm gọi chỉ đọc `lowerLimit`/`upperLimit` (hoặc thêm `heightMin`/`heightMax`
+ * ở setOverride) — area/volume/thickness đi qua trắng dù whitelist patchJson
+ * ĐÃ cho phép (SUY từ APPROVAL_LIMIT_FIELDS, không phải một khoá mới thêm).
+ */
+function layCapGioiHanTuDoi(obj: Record<string, unknown> | null | undefined): CapGioiHan {
+  const ket: CapGioiHan = {};
+  if (!obj) return ket;
+  for (const { min, max } of MIN_MAX_PAIRS) {
+    ket[min] = obj[min];
+    ket[max] = obj[max];
+  }
+  return ket;
+}
 
 // ── Reserved code for the model's inheritance root — never manually creatable. ──
 const BASE_VARIANT_CODE = "BASE";
@@ -437,32 +456,23 @@ export const productVariantRouter = router({
       );
 
       // ★★★ BG-113 (I-2, đường ghi giới hạn THỨ SÁU) — patchJson biến thể có thể
-      // mang lowerLimit/upperLimit/heightMin/heightMax (whitelist ở trên cho phép)
-      // ⇒ CÙNG lỗ "0 kiểm lower ≤ upper" mà 5 đường kia đã vá. Kiểm trên khoảng ĐÃ
-      // MERGE: hiệu lực TRƯỚC override (base + override CŨ, vừa tính ở trên cho
-      // bước ghi version) đè bởi patch MỚI — patch chỉ đổi MỘT cận vẫn phải chặn
-      // nếu mâu thuẫn với cận HIỆN CÓ (đúng nguyên tắc I-2).
+      // mang BẤT KỲ field nào thuộc APPROVAL_LIMIT_FIELDS (whitelist ở trên cho
+      // phép — bao gồm areaMin/areaMax/volumeMin/volumeMax/thicknessMin/thicknessMax,
+      // không chỉ lowerLimit/upperLimit/heightMin/heightMax) ⇒ CÙNG lỗ "0 kiểm
+      // min ≤ max" mà các đường kia đã vá. Kiểm trên khoảng ĐÃ MERGE: hiệu lực
+      // TRƯỚC override (base + override CŨ, vừa tính ở trên cho bước ghi version)
+      // đè bởi patch MỚI — patch chỉ đổi MỘT cận vẫn phải chặn nếu mâu thuẫn với
+      // cận HIỆN CÓ (đúng nguyên tắc I-2).
       // ★★★ NEW-4 (CÙNG điểm gọi thứ 6/census, `limitRangeGateCensus` — override VÀ
-      // exclude gộp một vùng) — `exclude` không mang patch số
-      // nào ⇒ merge với `{}` (RỖNG, không đổi gì) — một lượt kiểm KHÔNG-ĐỔI, nhưng
-      // CÙNG một đường mã bảo vệ tất cả ghi vào `measurement_point_versions` qua
-      // router này, đúng khuôn census `limitRangeGateCensus` (8 điểm).
+      // exclude gộp một vùng) — `exclude` không mang patch số nào ⇒ merge với `{}`
+      // (RỖNG, không đổi gì) — một lượt kiểm KHÔNG-ĐỔI, nhưng CÙNG một đường mã
+      // bảo vệ tất cả ghi vào `measurement_point_versions` qua router này.
+      // ★★★ NEW-1 — `layCapGioiHanTuDoi` rút CẢ NĂM cặp (10 field), không chỉ hai
+      // cặp hard-code trước đây — area/volume/thickness nay được kiểm.
       assertCapGioiHanHopLe(
         gopCapGioiHanDonGian(
-          {
-            lowerLimit: hieuLucTruoc.lowerLimit,
-            upperLimit: hieuLucTruoc.upperLimit,
-            heightMin: hieuLucTruoc.heightMin,
-            heightMax: hieuLucTruoc.heightMax,
-          },
-          input.action === "override"
-            ? {
-                lowerLimit: input.patchJson?.lowerLimit,
-                upperLimit: input.patchJson?.upperLimit,
-                heightMin: input.patchJson?.heightMin,
-                heightMax: input.patchJson?.heightMax,
-              }
-            : {},
+          layCapGioiHanTuDoi(hieuLucTruoc as unknown as Record<string, unknown>),
+          input.action === "override" ? layCapGioiHanTuDoi(input.patchJson ?? null) : {},
         ),
       );
 
@@ -538,16 +548,9 @@ export const productVariantRouter = router({
       );
       // NEW-4 (đường ghi giới hạn thứ BẢY/census, `limitRangeGateCensus`) — gỡ override
       // không mang patch số nào ⇒ merge với `{}` (không đổi gì), cùng lý do đã ghi ở `setOverride`.
+      // NEW-1 — `layCapGioiHanTuDoi` rút CẢ NĂM cặp, không chỉ hai cặp hard-code.
       assertCapGioiHanHopLe(
-        gopCapGioiHanDonGian(
-          {
-            lowerLimit: hieuLucTruoc.lowerLimit,
-            upperLimit: hieuLucTruoc.upperLimit,
-            heightMin: hieuLucTruoc.heightMin,
-            heightMax: hieuLucTruoc.heightMax,
-          },
-          {},
-        ),
+        gopCapGioiHanDonGian(layCapGioiHanTuDoi(hieuLucTruoc as unknown as Record<string, unknown>), {}),
       );
       await db.recordVariantOverrideVersion(input.basePointDefId, input.variantId, hieuLucTruoc, {
         changedBy: ctx.user.id,

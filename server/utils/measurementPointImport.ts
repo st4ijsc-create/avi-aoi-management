@@ -25,7 +25,10 @@ import {
 // APPROVAL_LIMIT_FIELDS, MỘT hàm dùng chung với `productRouters.ts` (trước bản
 // vá: bản chép tay ở ĐÂY thiếu 9/18 cột của POINT_LIMIT_SPEC + `unit` gán vô
 // điều kiện bên dưới → bulk-import trên sản phẩm live lách hàng đợi duyệt).
-import { touchesApprovalLimitFields, loiCapGioiHanSauMerge } from "./measurementPointLimitGate";
+import { touchesApprovalLimitFields, loiCapGioiHanSauMerge, type CapGioiHan } from "./measurementPointLimitGate";
+// NEW-1 (review Khối C lượt 9, vòng 2) — SUY cặp min/max từ spec thay vì liệt kê
+// tay lowerLimit/upperLimit/heightMin/heightMax ở dưới (xem docblock `MIN_MAX_PAIRS`).
+import { MIN_MAX_PAIRS } from "@shared/pointLimitSpec";
 
 export const LEGACY_MEASUREMENT_TYPES = [
   "DIMENSION",
@@ -257,40 +260,41 @@ export function buildInsertFromImportPoint(
     coplanarityMax: strip ? undefined : dec(point.coplanarityMax),
   };
 
-  // ★★★ BG-113 (review Khối C lượt 9, I-2) — điểm ghi thứ 4/5: bulk-import
-  // KHÔNG kiểm `lowerLimit ≤ upperLimit`/`heightMin ≤ heightMax` trước bản vá,
-  // nên một sheet xuất ngược cột (USL trước LSL) ghi thẳng khoảng RỖNG ⇒ 100%
-  // trị đo của điểm đó TRƯỢT (`pointResultEvaluator.ts`). Kiểm trên `row` SAU
-  // strip: nếu `gateLive` đã xoá cặp field đó (`strip=true`), giá trị là
-  // `undefined` ⇒ `loiCapGioiHanSauMerge` tự bỏ qua so sánh — không kiểm hai
-  // lần. KHÔNG merge với "hiện có": `buildInsertFromImportPoint` luôn tạo hàng
-  // MỚI (`bulkCreateMeasurementPoints` là INSERT thuần, 0 upsert) nên không có
-  // giá trị hiện có nào để merge — khác 4 call site kia.
-  const loiKhoang = loiCapGioiHanSauMerge({
-    lowerLimit: row.lowerLimit,
-    upperLimit: row.upperLimit,
-    heightMin: row.heightMin,
-    heightMax: row.heightMax,
-  });
+  // ★★★ BG-113 (review Khối C lượt 9, I-2) — điểm ghi thứ 4: bulk-import KHÔNG
+  // kiểm `lowerLimit ≤ upperLimit`/`heightMin ≤ heightMax` trước bản vá, nên một
+  // sheet xuất ngược cột (USL trước LSL) ghi thẳng khoảng RỖNG ⇒ 100% trị đo của
+  // điểm đó TRƯỢT (`pointResultEvaluator.ts`). Kiểm trên `row` SAU strip: nếu
+  // `gateLive` đã xoá cặp field đó (`strip=true`), giá trị là `undefined` ⇒
+  // `loiCapGioiHanSauMerge` tự bỏ qua so sánh — không kiểm hai lần. KHÔNG merge
+  // với "hiện có": `buildInsertFromImportPoint` luôn tạo hàng MỚI
+  // (`bulkCreateMeasurementPoints` là INSERT thuần, 0 upsert) nên không có giá
+  // trị hiện có nào để merge — khác các call site kia.
+  //
+  // ★★★ NEW-1 (review lượt 9, vòng 2) — lặp qua `MIN_MAX_PAIRS` (5 cặp) thay vì
+  // hard-code hai cặp: `row` mang areaMin/areaMax/volumeMin/volumeMax (xây ở
+  // trên) — trước bản vá này hai cặp đó đi qua trắng. `thicknessMin`/`thicknessMax`
+  // KHÔNG tồn tại trong `DeepImportPoint` (đo được, không phải bỏ sót của bản vá
+  // này) nên luôn `undefined` ở đây — vòng lặp tự bỏ qua, vô hại; sẽ TỰ được kiểm
+  // ngày `DeepImportPoint` có thêm hai field đó, không cần sửa lại file này.
+  const rowLikeCapGioiHan = row as unknown as CapGioiHan;
+  const loiKhoang = loiCapGioiHanSauMerge(
+    Object.fromEntries(MIN_MAX_PAIRS.flatMap((p) => [[p.min, rowLikeCapGioiHan[p.min]], [p.max, rowLikeCapGioiHan[p.max]]])) as CapGioiHan,
+  );
   let rangeError: string | undefined;
   if (loiKhoang.length > 0) {
     rangeError = `${point.code}: ${loiKhoang.join("; ")}`;
-    // Xoá CHỈ cặp vi phạm — không xoá toàn hàng (name/geometry/componentCode…
+    // Xoá CHỈ (các) cặp vi phạm — không xoá toàn hàng (name/geometry/componentCode…
     // vẫn nhập được; kỹ sư sửa lại đúng cặp giới hạn qua UI/hàng đợi duyệt).
-    if (row.lowerLimit !== undefined && row.upperLimit !== undefined) {
-      const lo = Number(row.lowerLimit);
-      const up = Number(row.upperLimit);
-      if (Number.isFinite(lo) && Number.isFinite(up) && lo > up) {
-        row.lowerLimit = undefined;
-        row.upperLimit = undefined;
-      }
-    }
-    if (row.heightMin !== undefined && row.heightMax !== undefined) {
-      const hMin = Number(row.heightMin);
-      const hMax = Number(row.heightMax);
-      if (Number.isFinite(hMin) && Number.isFinite(hMax) && hMin > hMax) {
-        row.heightMin = undefined;
-        row.heightMax = undefined;
+    for (const { min, max } of MIN_MAX_PAIRS) {
+      const vMin = rowLikeCapGioiHan[min];
+      const vMax = rowLikeCapGioiHan[max];
+      if (vMin !== undefined && vMax !== undefined) {
+        const lo = Number(vMin);
+        const hi = Number(vMax);
+        if (Number.isFinite(lo) && Number.isFinite(hi) && lo > hi) {
+          rowLikeCapGioiHan[min] = undefined;
+          rowLikeCapGioiHan[max] = undefined;
+        }
       }
     }
   }

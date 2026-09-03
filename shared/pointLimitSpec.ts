@@ -78,6 +78,60 @@ export const POINT_LIMIT_SPEC = [
 export const LIMIT_FIELDS: readonly (typeof POINT_LIMIT_SPEC)[number]["field"][] =
   POINT_LIMIT_SPEC.map((m) => m.field);
 
+/** Union kiểu literal của TÊN field — dùng cho mọi kiểu SUY từ spec (`MIN_MAX_PAIRS`, `F`…). */
+export type PointLimitField = (typeof POINT_LIMIT_SPEC)[number]["field"];
+
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★ NEW-1 (review Khối C lượt 9, vòng 2, Important) — CÁC CẶP "cận dưới/cận
+// trên" SUY TỪ chính spec, không liệt kê tay ở nơi dùng (`measurementPointLimitGate.ts`
+// trước bản vá này chỉ hard-code ĐÚNG hai cặp: lowerLimit/upperLimit, heightMin/
+// heightMax — dù `judge()`/`evaluatePointResult` (`pointResultEvaluator.ts`) chấm
+// CẢ NĂM cặp min/max của `PointLimitSource`. Hệ quả đo được: một sản phẩm dạy
+// `areaMin=10, areaMax=5` (khoảng RỖNG) ghi thẳng xuống DB — 0 lưới nào chặn —
+// và mọi trị đo area của điểm đó TRƯỢT 100% ở thời điểm CHẤM, không phải lúc dạy.
+//
+// QUY TẮC SUY: một field kết thúc bằng "Max" có một field "…Min" ĐỒNG TIỀN TỐ
+// CÙNG có mặt trong spec ⇒ một cặp. Bốn field *Max ĐƠN (coplanarityMax/
+// warpageMax/voidPctMax/offsetXMax/offsetYMax/tiltMax) không có vế Min đối xứng
+// trong spec ⇒ KHÔNG phải một cặp (không có gì để so `min ≤ max`) — GDT/coplanarity/
+// warpage/void chỉ có MỘT cận nghiệp vụ (không phải "quên vế kia").
+//
+// NGOẠI LỆ DUY NHẤT: `lowerLimit`/`upperLimit` KHÔNG theo quy ước hậu tố Min/Max
+// (đây là TÊN CỘT DB THẬT — cột 1D cổ điển nhất, đặt trước khi quy ước "*Min/*Max"
+// tồn tại — không đổi tên được). Cặp này gắn TAY, không phải một khoảng suy diễn
+// bỏ sót — là NGOẠI LỆ ĐẶT TÊN duy nhất của quy ước.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Một cặp "cận dưới/cận trên" cần kiểm `min ≤ max` — cả hai field PHẢI có mặt trong `POINT_LIMIT_SPEC`. */
+export interface CapGioiHanPair {
+  readonly min: PointLimitField;
+  readonly max: PointLimitField;
+}
+
+function suyCacCapTuHauTo(): CapGioiHanPair[] {
+  const boTruong = new Set<PointLimitField>(LIMIT_FIELDS);
+  const cap: CapGioiHanPair[] = [];
+  for (const f of LIMIT_FIELDS) {
+    if (!f.endsWith("Max")) continue;
+    const ungVienMin = `${f.slice(0, -3)}Min` as PointLimitField;
+    if (boTruong.has(ungVienMin)) cap.push({ min: ungVienMin, max: f });
+  }
+  return cap;
+}
+
+/**
+ * ĐÚNG NĂM cặp hôm nay: `lowerLimit`/`upperLimit` (ngoại lệ đặt tên, gắn tay) +
+ * bốn cặp suy được từ hậu tố (`heightMin`/`heightMax`, `areaMin`/`areaMax`,
+ * `volumeMin`/`volumeMax`, `thicknessMin`/`thicknessMax`). Thêm một cặp *Min/*Max
+ * MỚI vào `POINT_LIMIT_SPEC` ở trên tự động xuất hiện ở đây — KHÔNG cần sửa
+ * `measurementPointLimitGate.ts` hay bất kỳ call site nào (đúng ý đồ NEW-1: một
+ * cặp thêm sau không còn là "quên thêm gate" — nó suy tự động).
+ */
+export const MIN_MAX_PAIRS: readonly CapGioiHanPair[] = [
+  { min: "lowerLimit", max: "upperLimit" }, // ngoại lệ đặt tên — xem docblock trên
+  ...suyCacCapTuHauTo(),
+];
+
 /**
  * `LIMIT_FIELDS` + bốn field "giới hạn nghiệp vụ" không nằm trong
  * `PointLimitSource` — dùng cho `touchesLimits` (cửa duyệt ngưỡng), KHÔNG

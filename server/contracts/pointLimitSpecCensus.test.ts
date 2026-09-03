@@ -374,6 +374,17 @@ const MIEN_TRU_KIEN_TRUC: Record<string, string> = {
       "trước UI cây dạy — đã xác nhận trong docblock `NGUONG_CHEP_TAY` (vòng sửa 2): 'KHÔNG phải chép lại 18 field " +
       "spec-gate'. Tái xuất hiện ở vòng sửa 9 CHỈ vì ngưỡng credited MỚI (4) — không phải một file mới, không phải " +
       "hành vi mới.",
+  // ── Vòng sửa lượt 9, VÒNG 2 (NEW-1) — MỘT file MỚI vượt ngưỡng, do CHÍNH bản
+  // vá NEW-1 (không phải nợ CÓ SẴN, đo lại 2026-09-04 SAU khi thêm gate 5 cặp).
+  "server/db/product.ts":
+    "10/18 field (lowerLimit/upperLimit/heightMin/heightMax/areaMin/areaMax/volumeMin/volumeMax/thicknessMin/" +
+      "thicknessMax) — NEW-1 (review lượt 9, vòng 2, Important): gate `updateMeasurementPointLimitsBatch` " +
+      "(assertCapGioiHanHopLe/gopCapGioiHanDonGian) TRƯỚC bản vá chỉ liệt kê 4 field (đúng arity CapGioiHan cũ, " +
+      "trong ngưỡng); NEW-1 mở gate ra CẢ NĂM cặp min/max (area/volume/thickness từng đi qua trắng dù judge() chấm " +
+      "cả năm) ⇒ hai object literal (`previous`/`rawFields`) PHẢI liệt kê đủ 10 tên để merge đúng — per-field THẬT " +
+      "(không phải một khối chép tay giấu), CÙNG lớp lý do đã xác nhận cho `measurementPointImport.ts` ngay trên " +
+      "(row-builder/gate cần TỪNG field một, không gộp được). `limitRangeGateCensus.test.ts` (NEW-1) đã kiểm ĐỘC " +
+      "LẬP rằng đủ năm cặp — census này chỉ cần biết ĐÂY LÀ MỘT trong các điểm gọi đó, không phải chép tay mới.",
 };
 
 /** File thật trên đĩa CÓ DÒNG import từ `pointLimitSpec` (đọc dòng `import`, không đoán) — CHƯA đòi hỏi đã DÙNG. */

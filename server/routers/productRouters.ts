@@ -1389,11 +1389,22 @@ export const measurementPointRouter = router({
       // giá trị ĐÃ MERGE (legacyLimits — SAU derive tolerance-mode, đúng cái sẽ
       // ghi xuống DB — KHÔNG kiểm `rest.lowerLimit`/`rest.upperLimit` một mình:
       // patch chỉ gửi upperLimit mới thấp hơn lowerLimit HIỆN CÓ vẫn phải chặn).
+      // ★★★ NEW-1 (review lượt 9, vòng 2, Important) — TRƯỚC bản vá này CHỈ hai
+      // cặp (lowerLimit/upperLimit, heightMin/heightMax) được kiểm dù `judge()`
+      // (`pointResultEvaluator.ts`) chấm CẢ NĂM cặp — area/volume/thickness đi
+      // qua trắng, cùng lỗ RỖNG-KHOẢNG mà I-2 đã vá cho hai cặp kia. Nay merge +
+      // kiểm CẢ NĂM cặp trong `MIN_MAX_PAIRS` (`shared/pointLimitSpec.ts`).
       assertCapGioiHanHopLe({
         lowerLimit: legacyLimits.lowerLimit,
         upperLimit: legacyLimits.upperLimit,
         heightMin: rest.heightMin ?? existingPoint.heightMin ?? undefined,
         heightMax: rest.heightMax ?? existingPoint.heightMax ?? undefined,
+        areaMin: rest.areaMin ?? existingPoint.areaMin ?? undefined,
+        areaMax: rest.areaMax ?? existingPoint.areaMax ?? undefined,
+        volumeMin: rest.volumeMin ?? existingPoint.volumeMin ?? undefined,
+        volumeMax: rest.volumeMax ?? existingPoint.volumeMax ?? undefined,
+        thicknessMin: rest.thicknessMin ?? existingPoint.thicknessMin ?? undefined,
+        thicknessMax: rest.thicknessMax ?? existingPoint.thicknessMax ?? undefined,
       });
 
       // P1: derive legacy x/y/r from supplied geometry (for any shape).
@@ -1623,12 +1634,27 @@ export const measurementPointRouter = router({
       // gửi `upperLimit` mới thấp hơn `lowerLimit` hiện có của ĐÚNG điểm đó vẫn
       // phải chặn. Chạy TRƯỚC cửa duyệt ngưỡng (fail sớm, không tốn một lượt
       // gọi `assertThresholdEditAllowed` cho một batch chắc chắn sẽ bị từ chối).
+      // ★★★ NEW-1 (review lượt 9, vòng 2) — merge/kiểm CẢ NĂM cặp min/max (không
+      // chỉ lowerLimit/upperLimit/heightMin/heightMax) — area/volume/thickness
+      // đi qua trắng TRƯỚC bản vá này dù `judge()` chấm cả năm.
       for (const item of items) {
         const hienCo = foundById.get(item.id)!; // luôn có mặt — `missing` đã kiểm ở trên
         assertCapGioiHanHopLe(
           gopCapGioiHanDonGian(
-            { lowerLimit: hienCo.lowerLimit, upperLimit: hienCo.upperLimit, heightMin: hienCo.heightMin, heightMax: hienCo.heightMax },
-            { lowerLimit: item.lowerLimit, upperLimit: item.upperLimit, heightMin: item.heightMin, heightMax: item.heightMax },
+            {
+              lowerLimit: hienCo.lowerLimit, upperLimit: hienCo.upperLimit,
+              heightMin: hienCo.heightMin, heightMax: hienCo.heightMax,
+              areaMin: hienCo.areaMin, areaMax: hienCo.areaMax,
+              volumeMin: hienCo.volumeMin, volumeMax: hienCo.volumeMax,
+              thicknessMin: hienCo.thicknessMin, thicknessMax: hienCo.thicknessMax,
+            },
+            {
+              lowerLimit: item.lowerLimit, upperLimit: item.upperLimit,
+              heightMin: item.heightMin, heightMax: item.heightMax,
+              areaMin: item.areaMin, areaMax: item.areaMax,
+              volumeMin: item.volumeMin, volumeMax: item.volumeMax,
+              thicknessMin: item.thicknessMin, thicknessMax: item.thicknessMax,
+            },
           ),
         );
       }

@@ -127,6 +127,70 @@ function coGate(vung: string): boolean {
   return TEN_HAM_GATE.some((h) => vung.includes(h));
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// ★★★ NEW-1 (review Khối C lượt 9, vòng 2, Important) — census I-2/I-3/NEW-4 ở
+// trên chỉ đếm "vùng này CÓ gọi gate không" — MÙ với CÁI GÌ gate đó thực sự
+// kiểm. TRƯỚC bản vá NEW-1, `measurementPointLimitGate.ts` hard-code đúng HAI
+// cặp (lowerLimit/upperLimit, heightMin/heightMax) — CẢ BẢY điểm gọi có thể
+// "coGate=true" (census cũ XANH) mà area/volume/thickness vẫn đi qua trắng,
+// vì bản THÂN gate không kiểm chúng — một lưới XANH SAI Ý NGHĨA. Mục dưới đây
+// kiểm THÊM: vùng của MỖI điểm gọi (trừ miễn trừ đã khai) phải THAM CHIẾU đủ
+// field của CẢ NĂM cặp trong `MIN_MAX_PAIRS` (hoặc dùng đường suy-từ-spec
+// `MIN_MAX_PAIRS`/`layCapGioiHanTuDoi` — LUÔN đủ theo cấu tạo).
+// ══════════════════════════════════════════════════════════════════════════
+
+/** 10 field/5 cặp hôm nay — LIỆT KÊ TAY có chủ ý (đối chứng ĐỘC LẬP với
+ * `MIN_MAX_PAIRS`, không suy từ chính hằng số đang được kiểm — nếu suy từ đó,
+ * một đột biến xoá MỘT cặp khỏi `MIN_MAX_PAIRS` sẽ khiến DANH SÁCH KIỂM cũng
+ * co lại theo, và lưới này không bao giờ đỏ được). Đổi `POINT_LIMIT_SPEC`
+ * thêm cặp mới ⇒ SỬA CÓ CHỦ Ý danh sách này (cùng khuôn `NGUONG_CHEP_TAY_DA_CREDIT`). */
+const CAC_TRUONG_CAN_KIEM_DU = [
+  "lowerLimit", "upperLimit",
+  "heightMin", "heightMax",
+  "areaMin", "areaMax",
+  "volumeMin", "volumeMax",
+  "thicknessMin", "thicknessMax",
+] as const;
+
+/**
+ * Điểm gọi được MIỄN TRỪ khỏi yêu cầu "đủ năm cặp" — lý do PHẢI ghi ngay tại
+ * đây, không phải một khoảng trống ngầm định.
+ *
+ * `aiLocalTools/writeHandlers/measurementPoint.ts#update_measurement_point.execute`:
+ * (1) `aiLocalTools/**` là READ-ONLY ở vòng sửa 9 vòng 2 (ràng buộc brief —
+ * KHÔNG được sửa file này lượt này). (2) Ngay cả không có ràng buộc đó, miễn
+ * trừ này vẫn ĐÚNG VỀ KIẾN TRÚC: `UpdateMpParams` (input schema của tool) chỉ
+ * nhận `name`/`unit`/`lowerLimit`/`upperLimit`/`nominalValue` — heightMin/
+ * heightMax/area…/volume…/thickness… KHÔNG THỂ được set qua tool này (không
+ * tồn tại trong input schema, đo được 2026-09-04). Gate ở đây chỉ kiểm
+ * lowerLimit/upperLimit không phải một khoảng bỏ sót — nó khớp ĐÚNG phạm vi
+ * field mà tool CÓ THỂ ghi. Ngày tool được mở rộng nhận thêm field, người sửa
+ * PHẢI gỡ miễn trừ này VÀ mở rộng gate ở đó cùng lúc.
+ */
+const MIEN_TRU_DU_NAM_CAP: ReadonlySet<string> = new Set([
+  "aiLocalTools/writeHandlers/measurementPoint.ts#update_measurement_point.execute",
+]);
+
+/** `true` nếu vùng THAM CHIẾU đủ field của cả năm cặp — HOẶC dùng đường suy-từ-
+ * spec (`MIN_MAX_PAIRS.`/`MIN_MAX_PAIRS)`/`layCapGioiHanTuDoi(`), LUÔN đủ theo
+ * cấu tạo (mọi field `MIN_MAX_PAIRS` liệt kê được đưa vào merge/kiểm).
+ *
+ * ⚠ Regex CHỈ khớp CÚ PHÁP GỌI THẬT (`.`/`)` NGAY SAU tên, không qua backtick) —
+ * KHÔNG khớp một MENTION trong docblock/comment giải thích (vd "`MIN_MAX_PAIRS`,"
+ * — backtick đóng đứng giữa) — nếu không một dòng comment NHẮC TÊN suông sẽ làm
+ * PASS OAN một vùng liệt kê field TAY (không thật sự suy từ spec), và đột biến
+ * xoá field tay sẽ KHÔNG đỏ được (đã đo được khi viết lưới này lần đầu — sửa
+ * xong bằng regex này). */
+function dayDuNamCap(vung: string): boolean {
+  if (/MIN_MAX_PAIRS\.|MIN_MAX_PAIRS\)/.test(vung)) return true;
+  if (vung.includes("layCapGioiHanTuDoi(")) return true;
+  // ⚠ Đòi DẤU HAI CHẤM ngay sau tên field (`areaMin:`) — cú pháp KHOÁ object
+  // literal thật, không phải một MENTION trong văn xuôi comment (đo được: các
+  // dòng giải thích trong chính bản vá này viết "areaMin/areaMax" — không có
+  // dấu hai chấm — nên `includes(f)` trần sẽ PASS OAN một vùng chỉ NHẮC TÊN).
+  return CAC_TRUONG_CAN_KIEM_DU.every((f) => vung.includes(`${f}:`));
+}
+
 const NGUON_TEP = new Map<string, string>(
   [...new Set(DIEM_GATE.map((d) => d.tep))].map((tep) => [tep, readFileSync(join(SERVER_ROOT, tep), "utf8")]),
 );
@@ -178,6 +242,72 @@ describe("BG-113 census — gate khoảng giới hạn (lowerLimit≤upperLimit/
     expect(DIEM_GATE.length).toBe(7);
     expect(quetTatCa().length).toBe(7);
   });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★★★ NEW-1 (review Khối C lượt 9, vòng 2, Important) — census PHÍA TRÊN chỉ
+  // đếm "có gọi gate không" (MÙ với field). Mục dưới đây kiểm THÊM: field nào
+  // được đưa vào lời gọi đó — mỗi điểm gọi (trừ miễn trừ đã khai ở
+  // `MIEN_TRU_DU_NAM_CAP`) phải THAM CHIẾU đủ field của CẢ NĂM cặp min/max.
+  // ══════════════════════════════════════════════════════════════════════════
+  it("★★★ BẤT BIẾN NEW-1: mỗi điểm gọi (trừ miễn trừ) kiểm ĐỦ năm cặp min/max — không chỉ lowerLimit/upperLimit/heightMin/heightMax", () => {
+    const thieu: string[] = [];
+    for (const d of DIEM_GATE) {
+      if (MIEN_TRU_DU_NAM_CAP.has(d.ten)) continue;
+      const ma = NGUON_TEP.get(d.tep)!;
+      const vung = catVung(ma, d);
+      if (!dayDuNamCap(vung)) thieu.push(d.ten);
+    }
+    if (thieu.length) console.error("[NEW-1] thiếu field của một/nhiều cặp min/max ở:", thieu);
+    expect(thieu, "đường ghi giới hạn sau đây KHÔNG kiểm đủ năm cặp min/max (area/volume/thickness có thể đi qua trắng)").toEqual([]);
+  });
+
+  it("miễn trừ NEW-1 đúng MỘT điểm (aiLocalTools — read-only vòng 2 + input schema không mang field kia)", () => {
+    expect([...MIEN_TRU_DU_NAM_CAP]).toEqual(["aiLocalTools/writeHandlers/measurementPoint.ts#update_measurement_point.execute"]);
+    // Đối chứng: điểm miễn trừ ĐANG THẬT SỰ chưa đủ năm cặp — nếu nó ĐÃ đủ,
+    // miễn trừ này thừa (che một chỗ đã tốt) — cần biết TRẠNG THÁI THẬT.
+    const d = DIEM_GATE.find((x) => MIEN_TRU_DU_NAM_CAP.has(x.ten))!;
+    const vung = catVung(NGUON_TEP.get(d.tep)!, d);
+    expect(dayDuNamCap(vung), "điểm miễn trừ đang THẬT SỰ thiếu — nếu pass thì miễn trừ này đã thừa, phải gỡ").toBe(false);
+  });
+
+  // ── ĐỘT BIẾN THẬT (mô phỏng TRONG BỘ NHỚ): rút MỘT cặp (hoặc đường suy-từ-spec)
+  // khỏi vùng của MỘT điểm gọi ĐANG đủ năm cặp ⇒ bất biến NEW-1 phải ĐỎ ĐÚNG điểm
+  // đó. Hai KIỂU vùng cần hai KIỂU đột biến khác nhau: vùng liệt kê field TAY
+  // (productRouters.ts/db/product.ts) ⇒ xoá text "areaMin"/"areaMax"; vùng dùng
+  // đường suy-từ-spec (`measurementPointImport.ts`/`productVariantRouter.ts`) ⇒
+  // xoá CHÍNH cú pháp gọi đường đó (`MIN_MAX_PAIRS.`/`layCapGioiHanTuDoi(`) — xoá
+  // "areaMin" ở đó là vô nghĩa (chuỗi không hề xuất hiện, đã đo khi viết lưới lần
+  // đầu: `vungDotBien === vungGoc`, đột biến không đột biến gì cả). ──
+  for (const bi of [0, 1, 2, 3, 5, 6]) {
+    const d = DIEM_GATE[bi];
+    it(`★★★ ĐỘT BIẾN (NEW-1): rút đường-suy-từ-spec/field khỏi vùng "${d.ten}" ⇒ bất biến năm-cặp ĐỎ ĐÚNG đường này`, () => {
+      const ma = NGUON_TEP.get(d.tep)!;
+      const vungGoc = catVung(ma, d);
+      expect(dayDuNamCap(vungGoc), "vùng gốc phải ĐANG đủ năm cặp — nếu không thì đột biến không đột biến gì cả").toBe(true);
+
+      // ⚠ THỨ TỰ CÓ Ý NGHĨA: kiểm đường suy-từ-spec TRƯỚC "areaMin" trần — một
+      // vùng dùng `MIN_MAX_PAIRS`/`layCapGioiHanTuDoi` vẫn có thể NHẮC "areaMin"
+      // trong COMMENT giải thích (đo được: comment NEW-1 ở measurementPointImport.ts
+      // viết "row mang areaMin/areaMax…") — xoá text đó trong comment không đụng
+      // gì đến mã THẬT, phép thử sẽ SAI ĐƯỜNG mutate nếu ưu tiên nhánh field trần.
+      let vungDotBien: string;
+      if (vungGoc.includes("layCapGioiHanTuDoi(")) {
+        vungDotBien = vungGoc.split("layCapGioiHanTuDoi(").join("KHONG_DUNG_HELPER(");
+      } else if (/MIN_MAX_PAIRS\.|MIN_MAX_PAIRS\)/.test(vungGoc)) {
+        vungDotBien = vungGoc.replace(/MIN_MAX_PAIRS(\.|\))/g, "XXX$1");
+      } else if (vungGoc.includes("areaMin:")) {
+        vungDotBien = vungGoc.split("areaMin:").join("XXX:").split("areaMax:").join("XXX:");
+      } else {
+        throw new Error(`[${d.ten}] vùng không khớp KIỂU đột biến nào đã biết — bộ suy đột biến cần cập nhật`);
+      }
+      expect(vungDotBien, "đột biến phải THẬT SỰ đổi vùng — nếu không thì phép thử này không đo được gì").not.toBe(vungGoc);
+      expect(dayDuNamCap(vungDotBien), "sau đột biến, vùng KHÔNG còn đủ năm cặp").toBe(false);
+
+      // Đột biến chỉ sống trong biến cục bộ — chưa từng ghi đĩa.
+      const docLai = readFileSync(join(SERVER_ROOT, d.tep), "utf8");
+      expect(docLai, `[${d.ten}] file thật KHÔNG được đổi`).toBe(NGUON_TEP.get(d.tep));
+    });
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   // ★★★ ĐỘT BIẾN THẬT (mô phỏng TRONG BỘ NHỚ, 0 byte chạm đĩa): bỏ gate ở ĐÚNG MỘT

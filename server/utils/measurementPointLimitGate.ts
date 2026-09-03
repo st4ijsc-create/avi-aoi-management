@@ -21,7 +21,7 @@
  * sách cột lần thứ ba), cả hai nơi gọi CHUNG một hàm này.
  */
 import { z } from "zod";
-import { APPROVAL_LIMIT_FIELDS } from "@shared/pointLimitSpec";
+import { APPROVAL_LIMIT_FIELDS, MIN_MAX_PAIRS, type PointLimitField } from "@shared/pointLimitSpec";
 import { appError } from "../_core/appError";
 
 /**
@@ -61,14 +61,23 @@ export function touchesApprovalLimitFields(fields: Record<string, unknown>): boo
 // `patch.lowerLimit === undefined`, không có gì để so trong CHÍNH patch).
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Bốn trường có ngữ nghĩa "cận dưới/cận trên" trong `APPROVAL_LIMIT_FIELDS` — 14 cột
- * còn lại là *Max/*Min ĐƠN (không có cận đối để so) hoặc phi-số (`criteria`/`unit`/…). */
-export interface CapGioiHan {
-  lowerLimit?: unknown;
-  upperLimit?: unknown;
-  heightMin?: unknown;
-  heightMax?: unknown;
-}
+/**
+ * ★★★ NEW-1 (review Khối C lượt 9, vòng 2, Important) — TRƯỚC bản vá này, kiểu
+ * này hard-code ĐÚNG bốn field (hai cặp: lowerLimit/upperLimit, heightMin/
+ * heightMax) dù `MIN_MAX_PAIRS` (`shared/pointLimitSpec.ts`) khai NĂM cặp —
+ * area/volume/thickness đi qua trắng dù `judge()`/`evaluatePointResult`
+ * (`pointResultEvaluator.ts`) chấm CẢ NĂM. Nay các field SUY TỪ `MIN_MAX_PAIRS`
+ * (10 field — mỗi cặp 2 vế) thay vì liệt kê tay ở ĐÂY, để một cặp mới thêm vào
+ * spec tự động có mặt ở kiểu này mà không cần sửa file này.
+ */
+export type CapGioiHan = Partial<Record<PointLimitField, unknown>>;
+
+/** Tập field THAM GIA một cặp min/max nào đó (10 field/5 cặp hôm nay) — suy từ
+ * `MIN_MAX_PAIRS`, dùng để giới hạn phạm vi zod-shape/merge đúng NGHĨA của gate
+ * này (gate KHÔNG canh field phi-cặp như `unit`/`criteria`/`coplanarityMax`). */
+const CAC_TRUONG_TRONG_CAP: readonly PointLimitField[] = Array.from(
+  new Set(MIN_MAX_PAIRS.flatMap((p) => [p.min, p.max] as const)),
+);
 
 /** Chuỗi/number/`null`/`""`/`undefined` → number hoặc `null` (rỗng/không-số ⇒ bỏ qua so sánh). */
 function soHoacNull(v: unknown): number | null {
@@ -78,36 +87,26 @@ function soHoacNull(v: unknown): number | null {
 }
 
 /**
- * ★★★ Zod `.superRefine` DÙNG CHUNG (BG-113) — kiểm `lowerLimit ≤ upperLimit` và
- * `heightMin ≤ heightMax` trên một khoảng ĐÃ MERGE. Một cận rỗng (`null`/`""`/
- * vắng mặt) KHÔNG mâu thuẫn với cận kia — đúng ngữ nghĩa "chưa đặt giới hạn phía
- * đó", giữ nguyên hành vi hiện tại cho điểm chỉ có MỘT cận (min-only/max-only).
+ * ★★★ Zod `.superRefine` DÙNG CHUNG (BG-113, mở rộng NEW-1) — kiểm `min ≤ max`
+ * cho MỖI cặp trong `MIN_MAX_PAIRS` (5 cặp hôm nay) trên một khoảng ĐÃ MERGE.
+ * Một cận rỗng (`null`/`""`/vắng mặt) KHÔNG mâu thuẫn với cận kia — đúng ngữ
+ * nghĩa "chưa đặt giới hạn phía đó", giữ nguyên hành vi hiện tại cho điểm chỉ
+ * có MỘT cận (min-only/max-only). Lặp qua `MIN_MAX_PAIRS` (không hard-code
+ * từng cặp) — một cặp MỚI thêm vào spec tự động được kiểm ở đây.
  */
 export const capGioiHanSchema = z
-  .object({
-    lowerLimit: z.unknown().optional(),
-    upperLimit: z.unknown().optional(),
-    heightMin: z.unknown().optional(),
-    heightMax: z.unknown().optional(),
-  })
+  .object(Object.fromEntries(CAC_TRUONG_TRONG_CAP.map((f) => [f, z.unknown().optional()])) as Record<PointLimitField, z.ZodOptional<z.ZodUnknown>>)
   .superRefine((gopSau, ctx) => {
-    const lower = soHoacNull(gopSau.lowerLimit);
-    const upper = soHoacNull(gopSau.upperLimit);
-    if (lower !== null && upper !== null && lower > upper) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["upperLimit"],
-        message: `lowerLimit (${lower}) phải ≤ upperLimit (${upper})`,
-      });
-    }
-    const hMin = soHoacNull(gopSau.heightMin);
-    const hMax = soHoacNull(gopSau.heightMax);
-    if (hMin !== null && hMax !== null && hMin > hMax) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["heightMax"],
-        message: `heightMin (${hMin}) phải ≤ heightMax (${hMax})`,
-      });
+    for (const { min, max } of MIN_MAX_PAIRS) {
+      const loGT = soHoacNull((gopSau as CapGioiHan)[min]);
+      const caoGT = soHoacNull((gopSau as CapGioiHan)[max]);
+      if (loGT !== null && caoGT !== null && loGT > caoGT) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [max],
+          message: `${min} (${loGT}) phải ≤ ${max} (${caoGT})`,
+        });
+      }
     }
   });
 
@@ -125,10 +124,17 @@ export function loiCapGioiHanSauMerge(gopSau: CapGioiHan): string[] {
  * CÓ derive (`measurementPoint.update` — tolerance-mode có thể tính lại
  * lowerLimit/upperLimit từ nominal±tol) tự tính khoảng đã merge rồi gọi thẳng
  * `loiCapGioiHanSauMerge`/`assertCapGioiHanHopLe`, KHÔNG dùng hàm này.
+ *
+ * ★★★ NEW-1 — lặp qua `CAC_TRUONG_TRONG_CAP` (10 field/5 cặp, suy từ
+ * `MIN_MAX_PAIRS`) thay vì bốn field hard-code — merge nay bao CẢ area/volume/
+ * thickness, không chỉ lowerLimit/upperLimit/heightMin/heightMax.
  */
 export function gopCapGioiHanDonGian(hienCo: CapGioiHan, patch: CapGioiHan): CapGioiHan {
-  const g = (k: keyof CapGioiHan): unknown => (patch[k] !== undefined ? patch[k] : hienCo[k]);
-  return { lowerLimit: g("lowerLimit"), upperLimit: g("upperLimit"), heightMin: g("heightMin"), heightMax: g("heightMax") };
+  const ket: CapGioiHan = {};
+  for (const f of CAC_TRUONG_TRONG_CAP) {
+    ket[f] = patch[f] !== undefined ? patch[f] : hienCo[f];
+  }
+  return ket;
 }
 
 /** Ném `BAD_REQUEST`/`INVALID_VALUE` nếu khoảng ĐÃ MERGE không hợp lệ — dùng ở
@@ -139,7 +145,9 @@ export function assertCapGioiHanHopLe(gopSau: CapGioiHan): void {
     throw appError(
       "BAD_REQUEST",
       "INVALID_VALUE",
-      { field: "lowerLimit/upperLimit/heightMin/heightMax" },
+      // NEW-1 — `field` liệt kê ĐỦ 10 field/5 cặp (suy từ MIN_MAX_PAIRS), không
+      // còn hard-code bốn field cũ (che mất area/volume/thickness trong thông báo lỗi).
+      { field: CAC_TRUONG_TRONG_CAP.join("/") },
       `Khoảng giới hạn không hợp lệ: ${loi.join("; ")}`,
     );
   }
