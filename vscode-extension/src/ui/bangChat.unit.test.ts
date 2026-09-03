@@ -59,6 +59,30 @@ const may = vi.hoisted(() => ({
   quickPickSoLanGoi: 0,
   /** Thông báo đã gửi qua `showInformationMessage`, ĐÚNG THỨ TỰ. */
   thongBaoInfo: [] as string[],
+  // ★★★ ĐỢT G / TASK G2 / B1 — bộ chọn TỆP ĐÍNH KÈM (`moBoChonDinhKem`) đưa `showQuickPick` một
+  // mảng CHUỖI TRẦN (đường dẫn), khác hẳn `moLichSu()` (mảng `MucLichSu`, có `.label`) — mock bên
+  // dưới phân biệt hai luồng bằng HÌNH DẠNG phần tử đầu tiên, nên cần một cặp biến RIÊNG để không
+  // trộn lẫn với `quickPickMucGanNhat`/`quickPickChonChiSo` của "Lịch sử".
+  quickPickTepMucGanNhat: [] as string[],
+  /** Chỉ số mục CHỌN cho bộ chọn tệp đính kèm — `undefined` mô phỏng Esc/bấm ra ngoài. */
+  quickPickTepChonChiSo: undefined as number | undefined,
+  // ★★★ ĐỢT G / TASK G2 — cho phép TỪNG CA tự định nghĩa `danhSachTepGoiY` (mặc định `[]` không đủ
+  // để lưới bộ chọn đính kèm — nó cần một danh sách KHÔNG RỖNG để mở QuickPick).
+  dsTepGoiYMoPhong: undefined as string[] | undefined,
+  /**
+   * ★★★ ĐỢT G / TASK G2 / B1 — cho phép TỪNG CA ép `chayToolCucBo` từ chối MỘT đường cụ thể (mô
+   * phỏng lại ĐÚNG hình dạng `{ok:false,lyDo}` mà lớp thật (`mang/toolCucBo.ts`, đã có lưới riêng ở
+   * `toolCucBo.unit.test.ts`) trả về cho `.env`/khoá riêng) — để đo KẾT CỤC ở tầng `bangChat.ts`:
+   * nội dung bí mật không được phép lọt vào `question` gửi lên máy chủ, kể cả khi một đường bị cấm
+   * lọt được vào `tepMention` (bỏ qua bộ chọn, ví dụ do webview bị giả mạo). `undefined` ⇒ hành vi
+   * CŨ (luôn trả `ok:true`), không ca nào khác trong tệp này phải sửa lại.
+   */
+  chayToolCucBoMoPhong: undefined as
+    | undefined
+    | ((y: { loai: string; path?: string }) => { ok: true; ketQua: string } | { ok: false; lyDo: string }),
+  /** ★★★ B1 — số lần `danhSachTepGoiY` THẬT bị gọi, dùng để khẳng định "@-mention" và "đính kèm"
+   *  dùng CHUNG một lượt nạp lười, không phải hai lượt `findFiles` riêng cho cùng một câu hỏi. */
+  dsTepGoiYSoLanGoi: 0,
   /**
    * ★★★ ĐỢT G / TASK G1 / B1 — đáp ứng giả cho `goiTruyVanTrpc(..., "auth.me")`, dùng để kiểm
    * TRA THẬT cookie còn hiệu lực hay không (khác `repoWorkspace.listProjects`, luôn trả `{projects:
@@ -101,8 +125,12 @@ vi.mock("../mang/dongSse", () => ({
  * không mang bí mật nào — chỉ cần đủ để vòng lặp tác nhân đi tiếp sang vòng kế.
  */
 vi.mock("../mang/toolCucBo", () => ({
-  chayToolCucBo: async () => ({ ok: true, ketQua: "--- TỆP a.ts ---\nnội dung tệp giả" }),
-  danhSachTepGoiY: async () => [],
+  chayToolCucBo: async (y: { loai: string; path?: string }) =>
+    may.chayToolCucBoMoPhong?.(y) ?? { ok: true, ketQua: "--- TỆP a.ts ---\nnội dung tệp giả" },
+  danhSachTepGoiY: async () => {
+    may.dsTepGoiYSoLanGoi++;
+    return may.dsTepGoiYMoPhong ?? [];
+  },
 }));
 
 /**
@@ -167,10 +195,18 @@ vi.mock("vscode", () => ({
     activeTextEditor: undefined,
     // ★★★ ĐỢT F / TASK 3 — "Lịch sử" (`moLichSu()`). `undefined` khi `may.quickPickChonChiSo`
     // không đặt ⇒ mô phỏng Esc/bấm ra ngoài, KHÔNG chọn gì.
-    showQuickPick: async (items: Array<{ label: string; description?: string }>) => {
+    // ★★★ ĐỢT G / TASK G2 / B1 — MỘT bản giả `showQuickPick` dùng cho HAI luồng ("Lịch sử" — mảng
+    // `MucLichSu` có `.label`; bộ chọn đính kèm — mảng CHUỖI TRẦN đường dẫn). Phân biệt bằng HÌNH
+    // DẠNG phần tử đầu tiên thay vì đoán theo nơi gọi — cùng cách VSCode thật tự chọn overload.
+    showQuickPick: async (items: unknown[]) => {
       may.quickPickSoLanGoi++;
-      may.quickPickMucGanNhat = items;
-      return may.quickPickChonChiSo === undefined ? undefined : items[may.quickPickChonChiSo];
+      if (items.length > 0 && typeof items[0] === "string") {
+        may.quickPickTepMucGanNhat = items as string[];
+        return may.quickPickTepChonChiSo === undefined ? undefined : items[may.quickPickTepChonChiSo];
+      }
+      const dsMuc = items as Array<{ label: string; description?: string }>;
+      may.quickPickMucGanNhat = dsMuc;
+      return may.quickPickChonChiSo === undefined ? undefined : dsMuc[may.quickPickChonChiSo];
     },
     showInformationMessage: (s: string) => {
       may.thongBaoInfo.push(s);
@@ -188,7 +224,7 @@ vi.mock("vscode", () => ({
 import { BangChat } from "./bangChat";
 import { dungVanBanDayGiaoThucDoc, nhacLaiCuoiCauHoi } from "../loi/dayGiaoThucDoc";
 import { LoiHttp } from "../loi/loiHttp";
-import { KHOA_HOI_THOAI, type HoiThoai } from "../loi/khoHoiThoai";
+import { KHOA_HOI_THOAI, TRAN_SO_HOI_THOAI, type HoiThoai } from "../loi/khoHoiThoai";
 
 /** Kho đề xuất giả — chỉ cần `quen()` để `quenDeXuat` gọi được. */
 const khoGia = { quen: () => undefined, moDiff: async () => undefined, moDiffCucBo: async () => undefined };
@@ -300,6 +336,11 @@ beforeEach(() => {
   may.thongBaoInfo = [];
   may.trpcAuthMeKetQua = { id: 1, name: "nguoi_dung_thu" };
   may.trpcAuthMeLoiMang = false;
+  may.quickPickTepMucGanNhat = [];
+  may.quickPickTepChonChiSo = undefined;
+  may.dsTepGoiYMoPhong = undefined;
+  may.chayToolCucBoMoPhong = undefined;
+  may.dsTepGoiYSoLanGoi = 0;
 });
 
 describe("quenDeXuat — xoá trạng thái VÔ ĐIỀU KIỆN (Minor)", () => {
@@ -1333,5 +1374,243 @@ describe("ĐỢT F / TASK 3 / B4 — 'Lịch sử'", () => {
     const luuCuoi = may.workspaceState[KHOA_HOI_THOAI] as HoiThoai[];
     expect(luuCuoi).toHaveLength(1);
     expect(luuCuoi[0]).toEqual(hoiThoaiCu);
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G2 / B1 — ĐÍNH KÈM TỆP: dùng lại ĐÚNG một nguồn dữ liệu với @-mention (Task 5),
+ * không phải một hàng rào thứ hai. Xem `mang/toolCucBo.unit.test.ts` (".env"/khoá riêng KHÔNG xuất
+ * hiện trong `danhSachTepGoiY`, và `doc_tep` trên ".env" bị TỪ CHỐI mà KHÔNG hề mở tệp — `may.daDoc`
+ * rỗng) cho phép đo Ở TẦNG GATE THẬT; nhóm ca dưới đây đo Ở TẦNG TÍCH HỢP `bangChat.ts` — rằng lời
+ * từ chối đó thật sự CHẢY tới `question` gửi lên máy chủ, không có nhánh nào âm thầm thay bằng nội
+ * dung thật.
+ */
+describe("ĐỢT G / TASK G2 / B1: nút đính kèm tệp", () => {
+  it("★ workspace không có tệp nào ĐƯỢC PHÉP đính kèm ⇒ báo tin, KHÔNG mở QuickPick", async () => {
+    may.dsTepGoiYMoPhong = undefined; // ⇒ danhSachTepGoiY trả rỗng
+    moBang();
+    // ★ Handler của webview KHÔNG await lời gọi `moBoChonDinhKem()` (\`void\` — đúng khuôn mọi handler
+    // khác trong tệp này), nên \`await may.nhanTin?.(...)\` chỉ đợi HANDLER đồng bộ trả về, không đợi
+    // chuỗi \`await napDsTepMentionNeuChua() → await danhSachTepGoiY(...)\` bên trong xong. Nhường
+    // nhịp qua \`setTimeout\` (macrotask, xả HẾT hàng đợi microtask) để chuỗi đó chạy trọn trước khi đo.
+    await may.nhanTin?.({ loai: "xin_dinh_kem" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.quickPickSoLanGoi).toBe(0);
+    expect(may.thongBaoInfo.some((s) => s.includes("không có tệp nào"))).toBe(true);
+  });
+
+  it("★★★ danh sách đưa cho QuickPick là ĐÚNG danh sách đã gạn (nguồn @-mention) — chọn một tệp ⇒ webview nhận 'them_dinh_kem'", async () => {
+    may.dsTepGoiYMoPhong = ["src/A.ts", "src/B.ts"];
+    may.quickPickTepChonChiSo = 1;
+    moBang();
+
+    await may.nhanTin?.({ loai: "xin_dinh_kem" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.quickPickTepMucGanNhat).toEqual(["src/A.ts", "src/B.ts"]);
+    const themDinhKem = may.daGui.filter((m) => m.loai === "them_dinh_kem");
+    expect(themDinhKem).toHaveLength(1);
+    expect(themDinhKem[0]!.duong).toBe("src/B.ts");
+  });
+
+  it("★ Esc / bấm ra ngoài ⇒ KHÔNG gửi 'them_dinh_kem' nào (im lặng, không đính kèm gì)", async () => {
+    may.dsTepGoiYMoPhong = ["src/A.ts"];
+    may.quickPickTepChonChiSo = undefined; // Esc
+    moBang();
+
+    await may.nhanTin?.({ loai: "xin_dinh_kem" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.daGui.filter((m) => m.loai === "them_dinh_kem")).toEqual([]);
+  });
+
+  it("★★ 'xin_goi_y_mention' (@) rồi 'xin_dinh_kem' (nút) DÙNG CHUNG một lượt nạp — không hai lượt findFiles cho cùng một câu hỏi", async () => {
+    may.dsTepGoiYMoPhong = ["src/A.ts"];
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+
+    await may.nhanTin?.({ loai: "xin_goi_y_mention", truy: "" });
+    // Nhường nhịp TRỌN cho lượt nạp đầu xong hẳn (gán `this.dsTepMention`) TRƯỚC khi bắn lượt thứ
+    // hai — nếu không, hai lượt gọi liền nhau có thể ĐỀU chạy tới `danhSachTepGoiY` trước khi lượt
+    // đầu kịp gán xong, khiến ca này XANH bởi TRÙNG HỢP thời điểm chứ không phải vì cơ chế `??=`
+    // dùng chung bộ nhớ đệm — đúng bài học "đo may rủi thời điểm" mà dự án này đã trả giá nhiều lần.
+    await new Promise((r) => setTimeout(r, 0));
+    await may.nhanTin?.({ loai: "xin_dinh_kem" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.dsTepGoiYSoLanGoi).toBe(1);
+  });
+
+  it("★★★ KẾT CỤC: tepMention bị ép mang '.env' (bỏ qua bộ chọn — ví dụ webview bị giả mạo) ⇒ 'question' gửi máy chủ CHỈ mang lời TỪ CHỐI, không có đường nào âm thầm thay bằng nội dung thật", async () => {
+    /**
+     * ★★★ Mô phỏng LẠI đúng HÌNH DẠNG `{ok:false,lyDo}` mà lớp gate THẬT (`mang/toolCucBo.ts`) trả
+     * về cho một đường bị `duocPhepRoiMay` chặn (đã đo tận gốc với `.env` thật ở
+     * `toolCucBo.unit.test.ts`) — ca này đo lớp TÍCH HỢP: liệu `hoi()` có tôn trọng `kq.ok` khi ghép
+     * `tepMention` vào ngữ cảnh hay không. Nếu một bản vá sau này lỡ đổi
+     * `kq.ok ? kq.ketQua : "--- @…: KHÔNG đọc được — " + kq.lyDo + " ---"` thành đọc `kq.ketQua` VÔ
+     * ĐIỀU KIỆN, `kq.ketQua` trên một đối tượng `{ok:false}` là `undefined` — `question` sẽ mang
+     * chuỗi "undefined" thay vì câu từ chối, và ca này ĐỎ.
+     */
+    may.chayToolCucBoMoPhong = (y) => {
+      if (y.loai === "doc_tep" && y.path === ".env") {
+        return { ok: false, lyDo: "tệp cấu hình bí mật — không được rời máy" };
+      }
+      return { ok: true, ketQua: "nội dung tệp bình thường, không bí mật" };
+    };
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.hangDoiSse = hangDoiMotVongDonGian("đã nhận câu hỏi");
+
+    await may.nhanTin?.({ loai: "hoi", cauHoi: "đọc giúp cấu hình", tepMention: [".env"] });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(may.thanGoi).toHaveLength(1);
+    const question = String(may.thanGoi[0]!.question);
+    expect(question).toContain("KHÔNG đọc được");
+    expect(question).toContain("tệp cấu hình bí mật — không được rời máy");
+    expect(question).not.toContain("undefined");
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G2 / B3 — THANH TRẠNG THÁI NGỮ CẢNH: `bangChat.ts` phải gửi ĐÚNG hai con số ĐO
+ * ĐƯỢC THẬT (số lượt, tổng ký tự của `this.lichSu` — đúng đúng phần sẽ được RESEND làm `history` cho
+ * câu hỏi kế tiếp), KHÔNG BỊA. Phần vẽ nhãn/DOM ở webview có lưới riêng (`htmlBang.unit.test.ts`) —
+ * nhóm ca này chỉ đo phía EXTENSION tính đúng SỐ.
+ */
+describe("ĐỢT G / TASK G2 / B3: thống kê ngữ cảnh (soLuot/soKyTu) — đơn vị ĐO ĐƯỢC, không bịa", () => {
+  it("★★★ 'hoan_tat' sau MỘT lượt hỏi mang soLuot=1 và soKyTu = ĐÚNG tổng ký tự câu hỏi + câu trả lời", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.hangDoiSse = hangDoiMotVongDonGian("câu trả lời của model");
+
+    await may.nhanTin?.({ loai: "hoi", cauHoi: "câu hỏi đầu tiên" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const hoanTat = may.daGui.filter((m) => m.loai === "hoan_tat");
+    expect(hoanTat).toHaveLength(1);
+    expect(hoanTat[0]!.soLuot).toBe(1);
+    expect(hoanTat[0]!.soKyTu).toBe("câu hỏi đầu tiên".length + "câu trả lời của model".length);
+  });
+
+  it("★★ HAI lượt hỏi liên tiếp ⇒ soLuot TĂNG lên 2, soKyTu CỘNG DỒN (không phải reset về lượt vừa xong)", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.hangDoiSse = hangDoiMotVongDonGian("trả lời 1");
+    await may.nhanTin?.({ loai: "hoi", cauHoi: "hỏi 1" });
+    await new Promise((r) => setTimeout(r, 0));
+    may.hangDoiSse = hangDoiMotVongDonGian("trả lời 2");
+    await may.nhanTin?.({ loai: "hoi", cauHoi: "hỏi 2" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const hoanTat = may.daGui.filter((m) => m.loai === "hoan_tat");
+    expect(hoanTat).toHaveLength(2);
+    expect(hoanTat[1]!.soLuot).toBe(2);
+    expect(hoanTat[1]!.soKyTu).toBe(
+      "hỏi 1".length + "trả lời 1".length + "hỏi 2".length + "trả lời 2".length,
+    );
+  });
+
+  it("★ 'chat_moi' đưa soLuot/soKyTu về ĐÚNG 0 — khớp khung TRẮNG THẬT", async () => {
+    const bang = moBang();
+    bang.lichSu = [
+      { role: "user", content: "câu cũ" },
+      { role: "assistant", content: "trả lời cũ" },
+    ];
+
+    await (bang as unknown as { chatMoi: () => Promise<void> }).chatMoi();
+
+    const chatMoiMsg = may.daGui.filter((m) => m.loai === "chat_moi");
+    expect(chatMoiMsg).toHaveLength(1);
+    expect(chatMoiMsg[0]!.soLuot).toBe(0);
+    expect(chatMoiMsg[0]!.soKyTu).toBe(0);
+  });
+
+  it("★★★ 'khoi_phuc_hoi_thoai' (Lịch sử) mang soLuot/soKyTu ĐÚNG của hội thoại VỪA khôi phục — không phải 0, không phải của hội thoại khác", async () => {
+    const hoiThoaiA: HoiThoai = {
+      ma: "ma-a",
+      tieuDe: "A",
+      thoiDiem: 100,
+      luot: [
+        { role: "user", content: "câu A1" },
+        { role: "assistant", content: "trả lời A1" },
+        { role: "user", content: "câu A2" },
+        { role: "assistant", content: "trả lời A2" },
+      ],
+    };
+    may.workspaceState[KHOA_HOI_THOAI] = [hoiThoaiA];
+    const bang = moBangThanhBen();
+    may.daGui = [];
+    may.quickPickChonChiSo = 0;
+
+    await (bang as unknown as { moLichSu: () => Promise<void> }).moLichSu();
+
+    const khoiPhuc = may.daGui.filter((m) => m.loai === "khoi_phuc_hoi_thoai");
+    expect(khoiPhuc).toHaveLength(1);
+    expect(khoiPhuc[0]!.soLuot).toBe(2);
+    const tongKyTuMongDoi = hoiThoaiA.luot.reduce((s, l) => s + l.content.length, 0);
+    expect(khoiPhuc[0]!.soKyTu).toBe(tongKyTuMongDoi);
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G2 / B4 — CẢNH BÁO TRƯỚC KHI KHO "LỊCH SỬ" CHẠM TRẦN. Người dùng phải BIẾT
+ * TRƯỚC khi một hội thoại cũ bị `apDungTranDungLuong` (`khoHoiThoai.ts`) cắt, không phải phát hiện
+ * SAU khi nó đã biến mất khỏi "Lịch sử". Gọi thẳng `luuHoiThoaiHienTai` (như các ca "Lịch sử" ở trên
+ * gọi thẳng `moLichSu`) — không cần dựng cả một lượt SSE chỉ để đo đúng MỘT hàng rào dung lượng.
+ */
+describe("ĐỢT G / TASK G2 / B4: cảnh báo TRƯỚC khi kho Lịch sử chạm trần", () => {
+  function hoiThoaiCu(i: number): HoiThoai {
+    return {
+      ma: `cu-${i}`,
+      tieuDe: `cu ${i}`,
+      thoiDiem: i,
+      luot: [
+        { role: "user", content: "x" },
+        { role: "assistant", content: "y" },
+      ],
+    };
+  }
+
+  it("★ DƯỚI ngưỡng (lưu thêm KHÔNG cắt gì) ⇒ IM LẶNG, không cảnh báo", async () => {
+    may.workspaceState[KHOA_HOI_THOAI] = Array.from({ length: TRAN_SO_HOI_THOAI - 1 }, (_, i) => hoiThoaiCu(i));
+    const bang = moBangThanhBen();
+    bang.lichSu = [
+      { role: "user", content: "câu mới" },
+      { role: "assistant", content: "trả lời mới" },
+    ];
+    bang.maHoiThoaiHienTai = "moi";
+    may.daGui = [];
+
+    await (bang as unknown as { luuHoiThoaiHienTai: () => Promise<void> }).luuHoiThoaiHienTai();
+
+    expect(may.daGui.filter((m) => m.loai === "thong_bao")).toEqual([]);
+    expect((may.workspaceState[KHOA_HOI_THOAI] as HoiThoai[]).length).toBe(TRAN_SO_HOI_THOAI);
+  });
+
+  it("★★★ RANH GIỚI: lưu thêm khi kho ĐÃ ở trần ⇒ buộc cắt CŨ NHẤT ⇒ CẢNH BÁO trước/ngay khi lưu, ĐÚNG số lượng bị cắt", async () => {
+    may.workspaceState[KHOA_HOI_THOAI] = Array.from({ length: TRAN_SO_HOI_THOAI }, (_, i) => hoiThoaiCu(i));
+    const bang = moBangThanhBen();
+    bang.lichSu = [
+      { role: "user", content: "câu mới" },
+      { role: "assistant", content: "trả lời mới" },
+    ];
+    bang.maHoiThoaiHienTai = "moi";
+    may.daGui = [];
+
+    await (bang as unknown as { luuHoiThoaiHienTai: () => Promise<void> }).luuHoiThoaiHienTai();
+
+    const canhBao = may.daGui.filter((m) => m.loai === "thong_bao");
+    expect(canhBao).toHaveLength(1);
+    expect(String(canhBao[0]!.thongDiep)).toContain("1");
+    // Cảnh báo khớp ĐÚNG sự thật: hội thoại CŨ NHẤT ("cu-0") thật sự bị cắt, "moi" thì còn.
+    const daLuu = may.workspaceState[KHOA_HOI_THOAI] as HoiThoai[];
+    expect(daLuu.some((h) => h.ma === "cu-0")).toBe(false);
+    expect(daLuu.some((h) => h.ma === "moi")).toBe(true);
   });
 });

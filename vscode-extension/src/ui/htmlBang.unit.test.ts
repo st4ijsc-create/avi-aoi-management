@@ -859,3 +859,219 @@ describe("webview — ĐỢT F / TASK 3 / B4: 'khoi_phuc_hoi_thoai' THAY THẾ n
     expect(w.nut("o-nhap").value).toBe("câu đang gõ dở, chưa bấm Gửi");
   });
 });
+
+/**
+ * ★★★ ĐỢT G / TASK G2 / B1 — markup TĨNH của nút đính kèm + danh sách đính kèm + thanh ngữ cảnh.
+ * Bộ chọn THẬT (danh sách đã gạn + hộp thoại) nằm ở phía extension — xem lưới "webview" bên dưới
+ * cho KẾT CỤC (chạy thật script).
+ */
+describe("dungHtmlBang — ĐỢT G / TASK G2 / B1-B3: markup tĩnh", () => {
+  const html = dungHtmlBang({ nonce: "N" });
+
+  it("★★★ có nút đính kèm, danh sách đính kèm MẶC ĐỊNH ẨN, thanh ngữ cảnh với ba nhãn ban đầu", () => {
+    expect(html).toContain('id="nut-dinh-kem"');
+    expect(html).toMatch(/<div id="ds-dinh-kem"[^>]*\bhidden\b/);
+    expect(html).toContain('id="thanh-ngu-canh"');
+    expect(html).toContain('id="tk-luot"');
+    expect(html).toContain('id="tk-ky-tu"');
+    expect(html).toContain('id="tk-dinh-kem"');
+  });
+
+  it("★★★ nhãn của thanh ngữ cảnh nói RÕ đây KHÔNG phải số token (tránh hiểu nhầm là % ngữ cảnh model)", () => {
+    // ★★★ KHÔNG BỊA SỐ TOKEN — lưới khẳng định chính lời cảnh báo đó có mặt trên giao diện (title),
+    // không chỉ có mặt trong bình luận mã mà không ai nhìn thấy lúc dùng thật.
+    const m = html.match(/<div id="thanh-ngu-canh"\s+title="([^"]*)"/);
+    expect(m).not.toBeNull();
+    expect(m![1]).toContain("KHÔNG PHẢI số token");
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G2 / B1+B2 — ĐÍNH KÈM TỆP: KẾT CỤC thật, chạy THẬT script (cùng khuôn "CHỐNG BẤM
+ * HAI LẦN"/"@-mention" ở trên). Bộ chọn (hàng rào rời máy) không chạy được ở lớp webview THUẦN này —
+ * xem `bangChat.unit.test.ts` (mock `showQuickPick`) cho lưới đó; ở đây chỉ đo webview THẬT SỰ dựng
+ * danh sách/gỡ/hợp nhất `tepMention` đúng như KẾ HOẠCH B2 đòi.
+ */
+describe("webview — ĐỢT G / TASK G2 / B1+B2: danh sách tệp đính kèm", () => {
+  it("★★★ bấm nút đính kèm ⇒ extension nhận ĐÚNG MỘT tin 'xin_dinh_kem'", () => {
+    const w = chayWebview();
+    w.nut("nut-dinh-kem").bam();
+    expect(w.daGui.filter((m) => m.loai === "xin_dinh_kem")).toHaveLength(1);
+  });
+
+  it("★★★ nhận 'them_dinh_kem' ⇒ #ds-dinh-kem HIỆN, có ĐÚNG một mục mang tên tệp + nút gỡ", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "them_dinh_kem", duong: "src/A.ts" });
+
+    expect(w.nut("ds-dinh-kem").hidden).toBe(false);
+    const muc = w.nut("ds-dinh-kem").con;
+    expect(muc).toHaveLength(1);
+    // Mỗi mục có ĐÚNG hai con: nhãn (đường dẫn) rồi tới nút gỡ (đúng khuôn `themLuot`/thẻ duyệt).
+    expect(muc[0]!.con[0]!.textContent).toBe("src/A.ts");
+  });
+
+  it("★★ đính kèm CÙNG một đường dẫn hai lần ⇒ chỉ MỘT mục (khử trùng lặp, không đẻ hai chip)", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "them_dinh_kem", duong: "src/A.ts" });
+    w.banTin({ loai: "them_dinh_kem", duong: "src/A.ts" });
+    expect(w.nut("ds-dinh-kem").con).toHaveLength(1);
+  });
+
+  it("★★★ gỡ MỘT tệp giữa nhiều tệp ⇒ CHỈ tệp đó biến mất, các tệp khác còn nguyên", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "them_dinh_kem", duong: "src/A.ts" });
+    w.banTin({ loai: "them_dinh_kem", duong: "src/B.ts" });
+    w.banTin({ loai: "them_dinh_kem", duong: "src/C.ts" });
+    expect(w.nut("ds-dinh-kem").con).toHaveLength(3);
+
+    // Nút gỡ là con THỨ HAI của mục "src/B.ts" (chỉ số 1 trong danh sách ba mục).
+    const nutGoB = w.nut("ds-dinh-kem").con[1]!.con[1]!;
+    nutGoB.bam();
+
+    const conLai = w.nut("ds-dinh-kem").con.map((muc) => muc.con[0]!.textContent);
+    expect(conLai).toEqual(["src/A.ts", "src/C.ts"]);
+  });
+
+  it("★★★ B2 NHÁNH KIA: gỡ tệp CUỐI CÙNG ⇒ #ds-dinh-kem tự ẨN, KHÔNG để lại khung rỗng lơ lửng", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "them_dinh_kem", duong: "src/A.ts" });
+    expect(w.nut("ds-dinh-kem").hidden).toBe(false);
+
+    const nutGo = w.nut("ds-dinh-kem").con[0]!.con[1]!;
+    nutGo.bam();
+
+    expect(w.nut("ds-dinh-kem").hidden).toBe(true);
+    expect(w.nut("ds-dinh-kem").con).toHaveLength(0);
+  });
+
+  it("★★★ gửi câu hỏi ⇒ tepMention HỢP NHẤT @-mention (trong câu) VÀ tệp đính kèm (qua nút), khử trùng lặp", () => {
+    const w = chayWebview();
+    // Đính kèm "src/A.ts" qua NÚT.
+    w.banTin({ loai: "them_dinh_kem", duong: "src/A.ts" });
+    // @-mention "src/B.ts" NGAY TRONG câu hỏi — nguồn KHÁC, phải có mặt CÙNG "src/A.ts".
+    const oNhap = w.nut("o-nhap");
+    oNhap.value = "xem giúp @src/B";
+    oNhap.selectionStart = oNhap.value.length;
+    oNhap.kichHoat("input", {});
+    w.banTin({ loai: "goi_y_mention", ds: ["src/B.ts"] });
+    oNhap.kichHoat("keydown", { key: "Tab", preventDefault: () => undefined });
+
+    w.nut("nut-gui").bam();
+
+    const hoi = w.daGui.filter((m) => m.loai === "hoi");
+    expect(hoi).toHaveLength(1);
+    expect((hoi[0]!.tepMention as string[]).sort()).toEqual(["src/A.ts", "src/B.ts"]);
+  });
+
+  it("★ CÙNG một tệp đến từ CẢ HAI đường (đính kèm qua nút + @-mention trong câu) ⇒ tepMention chỉ mang nó MỘT LẦN", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "them_dinh_kem", duong: "src/A.ts" }); // đính kèm qua nút
+    const oNhap = w.nut("o-nhap");
+    oNhap.value = "@src/A"; // mention CHÍNH tệp đã đính kèm
+    oNhap.selectionStart = oNhap.value.length;
+    oNhap.kichHoat("input", {});
+    w.banTin({ loai: "goi_y_mention", ds: ["src/A.ts"] });
+    oNhap.kichHoat("keydown", { key: "Tab", preventDefault: () => undefined });
+
+    w.nut("nut-gui").bam();
+
+    const hoi = w.daGui.filter((m) => m.loai === "hoi");
+    expect(hoi[0]!.tepMention).toEqual(["src/A.ts"]); // KHÔNG phải ["src/A.ts", "src/A.ts"]
+  });
+
+  it("★★★ tệp đính kèm SỐNG QUA NHIỀU LƯỢT GỬI — khác @-mention (bị xoá sau MỖI lượt gửi)", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "them_dinh_kem", duong: "src/A.ts" });
+
+    w.nut("o-nhap").value = "câu hỏi 1";
+    w.nut("nut-gui").bam();
+    w.nut("o-nhap").value = "câu hỏi 2";
+    w.nut("nut-gui").bam();
+
+    const hoi = w.daGui.filter((m) => m.loai === "hoi");
+    expect(hoi).toHaveLength(2);
+    expect(hoi[0]!.tepMention).toEqual(["src/A.ts"]);
+    expect(hoi[1]!.tepMention).toEqual(["src/A.ts"]); // vẫn còn ở lượt THỨ HAI
+    // Danh sách hiển thị cũng còn nguyên — không tự gỡ sau khi gửi.
+    expect(w.nut("ds-dinh-kem").hidden).toBe(false);
+  });
+
+  it("★★ 'chat_moi' xoá SẠCH danh sách đính kèm (thuộc về phiên VỪA RỜI)", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "them_dinh_kem", duong: "src/A.ts" });
+    expect(w.nut("ds-dinh-kem").con).toHaveLength(1);
+
+    w.banTin({ loai: "chat_moi" });
+
+    expect(w.nut("ds-dinh-kem").hidden).toBe(true);
+    expect(w.nut("ds-dinh-kem").con).toHaveLength(0);
+  });
+
+  it("★★ 'khoi_phuc_hoi_thoai' (mở một hội thoại KHÁC ở Lịch sử) cũng xoá đính kèm của phiên vừa rời", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "them_dinh_kem", duong: "src/A.ts" });
+    expect(w.nut("ds-dinh-kem").con).toHaveLength(1);
+
+    w.banTin({ loai: "khoi_phuc_hoi_thoai", luot: [{ vaiTro: "user", noiDung: "câu hỏi hội thoại khác" }] });
+
+    expect(w.nut("ds-dinh-kem").hidden).toBe(true);
+    expect(w.nut("ds-dinh-kem").con).toHaveLength(0);
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G2 / B3 — THANH TRẠNG THÁI NGỮ CẢNH: nhãn phải khớp ĐÚNG thứ đang đếm. Ba ca
+ * đầu dùng BA GIÁ TRỊ KHÁC NHAU cho ba nguồn (lượt/ký tự/tệp đính kèm) rồi kiểm TỪNG span RIÊNG —
+ * nếu một bản vá lỡ đổi đơn vị đếm mà không đổi nhãn (hoặc gán NHẦM số của nguồn này cho nhãn của
+ * nguồn khác), một trong ba khẳng định dưới đây phải ĐỎ vì ba con số không hề trùng nhau.
+ */
+describe("webview — ĐỢT G / TASK G2 / B3: thanh ngữ cảnh — nhãn khớp ĐÚNG nguồn đang đếm", () => {
+  it("★★★ 'hoan_tat' mang soLuot/soKyTu ⇒ #tk-luot và #tk-ky-tu hiện ĐÚNG từng số, KHÔNG lẫn nhau", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: null, canhBao: null, soLuot: 7, soKyTu: 4213 });
+
+    expect(w.nut("tk-luot").textContent).toBe("Lượt hội thoại: 7");
+    expect(w.nut("tk-ky-tu").textContent).toBe("Ký tự lịch sử: 4213");
+    // ★ CHỐNG TỰ THOẢ: hai số 7 và 4213 KHÁC HẲN nhau — một bản vá lỡ gán CHÉO (soKyTu vào #tk-luot
+    // hay ngược lại) sẽ làm MỘT trong hai khẳng định trên đỏ, không thể tự thoả bằng cách trùng số.
+    expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 0"); // KHÔNG đổi — nguồn khác hẳn
+  });
+
+  it("★★★ đính kèm tệp ⇒ CHỈ #tk-dinh-kem đổi, #tk-luot/#tk-ky-tu KHÔNG bị đụng tới (độc lập nguồn)", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: null, canhBao: null, soLuot: 3, soKyTu: 99 });
+    w.banTin({ loai: "them_dinh_kem", duong: "src/A.ts" });
+    w.banTin({ loai: "them_dinh_kem", duong: "src/B.ts" });
+
+    expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 2");
+    expect(w.nut("tk-luot").textContent).toBe("Lượt hội thoại: 3");
+    expect(w.nut("tk-ky-tu").textContent).toBe("Ký tự lịch sử: 99");
+  });
+
+  it("★★ 'chat_moi' đưa CẢ BA về ĐÚNG 0 — khớp khung TRẮNG THẬT (kể cả đính kèm vừa có trước đó)", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: null, canhBao: null, soLuot: 5, soKyTu: 500 });
+    w.banTin({ loai: "them_dinh_kem", duong: "src/A.ts" });
+
+    w.banTin({ loai: "chat_moi", soLuot: 0, soKyTu: 0 });
+
+    expect(w.nut("tk-luot").textContent).toBe("Lượt hội thoại: 0");
+    expect(w.nut("tk-ky-tu").textContent).toBe("Ký tự lịch sử: 0");
+    expect(w.nut("tk-dinh-kem").textContent).toBe("Tệp đính kèm: 0");
+  });
+
+  it("★★★ 'khoi_phuc_hoi_thoai' mang thống kê của HỘI THOẠI VỪA MỞ — không phải 0, không phải của phiên trước", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: null, canhBao: null, soLuot: 9, soKyTu: 900 });
+
+    w.banTin({
+      loai: "khoi_phuc_hoi_thoai",
+      luot: [{ vaiTro: "user", noiDung: "câu hỏi cũ" }],
+      soLuot: 2,
+      soKyTu: 250,
+    });
+
+    expect(w.nut("tk-luot").textContent).toBe("Lượt hội thoại: 2");
+    expect(w.nut("tk-ky-tu").textContent).toBe("Ký tự lịch sử: 250");
+  });
+});

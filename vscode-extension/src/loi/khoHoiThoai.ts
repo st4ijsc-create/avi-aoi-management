@@ -164,6 +164,36 @@ export function apDungTranDungLuong(
   return giu;
 }
 
+/**
+ * ★★★ ĐỢT G / TASK G2 / B4 — DỰ ĐOÁN hội thoại nào sẽ bị TRẦN B3 CẮT nếu `hoiThoaiSapLuu` được lưu
+ * NGAY BÂY GIỜ, để gọi TRƯỚC lúc ghi thật. Người dùng phải BIẾT TRƯỚC khi hội thoại bị cắt, không
+ * phải phát hiện SAU khi đã mất — im lặng để `luuHoiThoai` tự cắt rồi mới có ai đó tình cờ nhận ra
+ * "Lịch sử" ngắn hơn hôm qua là đúng lớp lỗi "khai kết cục mà không đọc kết cục" mà dự án này đã trả
+ * giá nhiều lần, áp lên chính KHO LƯU TRỮ thay vì một lượt ghi đĩa.
+ *
+ * THUẦN — không I/O, chạy trên ĐÚNG dữ liệu mà `apDungTranDungLuong` (bên trên) sẽ dùng thật, nên
+ * không có đường nào để hai phép tính này trôi khỏi nhau.
+ *
+ * ★ RANH GIỚI: trả về mảng RỖNG khi lưu ngay bây giờ KHÔNG cắt gì (dưới ngưỡng ⇒ im lặng ở nơi gọi);
+ *   trả về danh sách các `HoiThoai` CŨ NHẤT sẽ bị cắt khi vượt trần (số HOẶC ký tự) — nơi gọi cảnh
+ *   báo đúng SỐ LƯỢNG đó, không đoán chung chung "sắp đầy".
+ * ⚠ Loại `hoiThoaiSapLuu` khỏi TẬP SO SÁNH (theo `ma`) trước khi tính: hội thoại ĐANG được lưu luôn
+ *   là MỚI NHẤT (thời điểm "bây giờ") nên `apDungTranDungLuong` không bao giờ cắt chính nó (xem
+ *   docblock hàm đó) — so nó với chính bản ghi CŨ cùng `ma` (nếu có, đang UPSERT) sẽ đếm nhầm một
+ *   hội thoại là "bị cắt" trong khi thực ra nó chỉ vừa được CẬP NHẬT.
+ */
+export function hoiThoaiSapBiCat(
+  dsHienCo: HoiThoai[],
+  hoiThoaiSapLuu: HoiThoai,
+  tranSo: number = TRAN_SO_HOI_THOAI,
+  tranKyTu: number = TRAN_TONG_KY_TU,
+): HoiThoai[] {
+  const hienCoKhacMa = dsHienCo.filter((h) => h.ma !== hoiThoaiSapLuu.ma);
+  const sauKhiLuu = apDungTranDungLuong([...hienCoKhacMa, hoiThoaiSapLuu], tranSo, tranKyTu);
+  const conLaiSauKhiLuu = new Set(sauKhiLuu.map((h) => h.ma));
+  return hienCoKhacMa.filter((h) => !conLaiSauKhiLuu.has(h.ma));
+}
+
 /** Che bí mật trong TOÀN BỘ `content` của mỗi lượt — trả về mảng LƯỢT MỚI, không đổi mảng gốc. */
 function cheBiMatLuot(luot: LuotChat[]): LuotChat[] {
   /**

@@ -8,6 +8,7 @@ import {
   laHoiThoaiHopLe,
   apDungTranDungLuong,
   dungHoiThoai,
+  hoiThoaiSapBiCat,
   docDanhSachHoiThoai,
   docHoiThoaiGanNhat,
   luuHoiThoai,
@@ -164,6 +165,68 @@ describe("apDungTranDungLuong — B3: giới hạn dung lượng, cắt CŨ NH�
     const ds = dsHoiThoaiDon(3);
     const ra = apDungTranDungLuong(ds, 999, 999);
     expect(ra.map((h) => h.ma)).toEqual(["m2", "m1", "m0"]);
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G2 / B4 — DỰ ĐOÁN hội thoại sẽ bị TRẦN CẮT nếu lưu NGAY BÂY GIỜ, để nơi gọi
+ * (`bangChat.luuHoiThoaiHienTai`) cảnh báo TRƯỚC khi cắt thật xảy ra. THUẦN, chạy trên ĐÚNG dữ
+ * liệu `apDungTranDungLuong` (đã có lưới ở trên) sẽ dùng — không phải một phép tính riêng có thể
+ * trôi khỏi hàm cắt thật.
+ */
+describe("hoiThoaiSapBiCat — B4: dự đoán cắt TRƯỚC khi lưu, ranh giới im lặng/cảnh báo", () => {
+  function hoiThoaiDon(ma: string, thoiDiem: number): HoiThoai {
+    return { ma, tieuDe: ma, thoiDiem, luot: [{ role: "user", content: "x" }] };
+  }
+
+  it("★★★ RANH GIỚI SỐ: dưới trần (lưu thêm KHÔNG cắt gì) ⇒ mảng RỖNG", () => {
+    const hienCo = Array.from({ length: 2 }, (_, i) => hoiThoaiDon(`cu-${i}`, i));
+    const sapLuu = hoiThoaiDon("moi", 100);
+    expect(hoiThoaiSapBiCat(hienCo, sapLuu, 3, 999)).toEqual([]);
+  });
+
+  it("★★★ RANH GIỚI SỐ: ĐÚNG BẰNG trần (lưu thêm vừa khít, không dư) ⇒ vẫn RỖNG — không cảnh báo oan", () => {
+    const hienCo = Array.from({ length: 2 }, (_, i) => hoiThoaiDon(`cu-${i}`, i));
+    const sapLuu = hoiThoaiDon("moi", 100);
+    expect(hoiThoaiSapBiCat(hienCo, sapLuu, 3, 999)).toEqual([]);
+  });
+
+  it("★★★ RANH GIỚI SỐ: VƯỢT trần đúng MỘT ⇒ trả về ĐÚNG hội thoại CŨ NHẤT sẽ bị cắt", () => {
+    const hienCo = Array.from({ length: 3 }, (_, i) => hoiThoaiDon(`cu-${i}`, i)); // cu-0 cũ nhất
+    const sapLuu = hoiThoaiDon("moi", 100);
+    const ra = hoiThoaiSapBiCat(hienCo, sapLuu, 3, 999);
+    expect(ra.map((h) => h.ma)).toEqual(["cu-0"]);
+  });
+
+  it("★★ RANH GIỚI KÝ TỰ: vượt trần ký tự ⇒ trả về hội thoại CŨ NHẤT bị cắt vì DUNG LƯỢNG, không phải vì SỐ", () => {
+    const hienCo = [hoiThoaiDon("cu-1", 1), hoiThoaiDon("cu-2", 2)]; // mỗi hội thoại 1 ký tự
+    const sapLuu = hoiThoaiDon("moi", 100); // +1 ký tự nữa = 3 ký tự, trần 2
+    const ra = hoiThoaiSapBiCat(hienCo, sapLuu, 999, 2);
+    expect(ra.map((h) => h.ma)).toEqual(["cu-1"]);
+  });
+
+  it("★ UPSERT (cùng `ma` với một bản ghi CŨ đã có) không tự tính là 'bị cắt' — chỉ là CẬP NHẬT", () => {
+    // Hội thoại "phien-1" đã tồn tại (ít lượt hơn) và ĐANG được lưu lại (nhiều lượt hơn) — không
+    // được đếm CHÍNH NÓ là một hội thoại "cũ" bị cắt bởi phiên bản MỚI của chính nó.
+    const banCu: HoiThoai = { ma: "phien-1", tieuDe: "cu", thoiDiem: 1, luot: [{ role: "user", content: "x" }] };
+    const banMoi: HoiThoai = {
+      ma: "phien-1",
+      tieuDe: "moi",
+      thoiDiem: 2,
+      luot: [
+        { role: "user", content: "x" },
+        { role: "assistant", content: "y" },
+      ],
+    };
+    expect(hoiThoaiSapBiCat([banCu], banMoi, 999, 999)).toEqual([]);
+  });
+
+  it("★★★ KHÔNG BAO GIỜ đưa CHÍNH hội thoại sắp lưu vào danh sách bị cắt (nó luôn là MỚI NHẤT)", () => {
+    const hienCo = Array.from({ length: 5 }, (_, i) => hoiThoaiDon(`cu-${i}`, i));
+    const sapLuu = hoiThoaiDon("moi", 999);
+    const ra = hoiThoaiSapBiCat(hienCo, sapLuu, 1, 999); // trần SỐ = 1 ⇒ mọi hội thoại cũ đều bị cắt
+    expect(ra.map((h) => h.ma).sort()).toEqual(["cu-0", "cu-1", "cu-2", "cu-3", "cu-4"]);
+    expect(ra.some((h) => h.ma === "moi")).toBe(false);
   });
 });
 

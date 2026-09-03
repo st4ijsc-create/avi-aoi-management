@@ -76,6 +76,19 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
                 border: 1px solid var(--vscode-dropdown-border); font-size: 12px; z-index: 10; }
   .mention-muc { padding: 4px 8px; cursor: pointer; }
   .mention-muc:hover { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.2)); }
+  /* ĐỢT G / TASK G2 / B2 — danh sách tệp ĐANG ĐÍNH KÈM, dưới hàng nhập. MẶC ĐỊNH ẨN trong markup
+     tĩnh (script tự bật lại khi có ít nhất một tệp — xem B2 "nhánh kia": gỡ hết ⇒ tự ẩn lại, không
+     để lại khung rỗng lơ lửng). */
+  #ds-dinh-kem { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .dinh-kem-muc { display: inline-flex; align-items: center; gap: 4px;
+                  background: var(--vscode-badge-background, rgba(128,128,128,.15));
+                  color: var(--vscode-badge-foreground, var(--vscode-foreground));
+                  border-radius: 4px; padding: 2px 6px; font-size: 12px; }
+  .dinh-kem-muc button { background: transparent; border: none; color: inherit; cursor: pointer;
+                          padding: 0 2px; font-size: 13px; line-height: 1; }
+  /* ĐỢT G / TASK G2 / B3 — thanh trạng thái NGỮ CẢNH: chữ NHỎ, mờ (phụ, không phải hành động) —
+     ba đơn vị ĐO ĐƯỢC THẬT, KHÔNG phải số token (xem \`title\` ở markup: nói rõ đơn vị đang đếm). */
+  #thanh-ngu-canh { font-size: 11px; opacity: .7; margin-top: 4px; }
   button { background: var(--vscode-button-background); color: var(--vscode-button-foreground);
            border: none; padding: 6px 12px; cursor: pointer; }
   /* Nút ghi đang chờ kết quả: phải THẤY ĐƯỢC là đang khoá, nếu không người dùng bấm tiếp vì nghĩ
@@ -123,6 +136,15 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
        trả về ít nhất một gợi ý. Nội dung (danh sách tệp) do EXTENSION dựng — webview chỉ hiển thị
        và chuyển tiếp lựa chọn, đúng nguyên tắc đã áp cho thẻ duyệt. -->
   <div id="mention-ds" hidden></div>
+  <!-- ĐỢT G / TASK G2 / B1 — nút "đính kèm tệp". Webview chỉ BÁO Ý ĐỊNH (\`xin_dinh_kem\`) — bộ chọn
+       THẬT (danh sách + hàng rào rời máy) nằm ở phía extension (\`bangChat.moBoChonDinhKem\`), đúng
+       nguyên tắc "hiển thị + chuyển tiếp" đã áp cho thẻ duyệt/nút Dừng/@-mention. SVG nội tuyến,
+       cùng cách G1 đã chọn cho icon tài khoản — CSP webview không có font-src. -->
+  <button id="nut-dinh-kem" class="nut-icon" title="Đính kèm tệp" aria-label="Đính kèm tệp trong workspace để gửi kèm câu hỏi">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true" focusable="false">
+      <path d="M11.3 4.6 6.4 9.5a1.9 1.9 0 1 0 2.7 2.7l4.6-4.6a3.4 3.4 0 1 0-4.8-4.8L3.8 7.9" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  </button>
   <textarea id="o-nhap" rows="2" placeholder="Hỏi AI Local… (Ctrl+Enter để gửi, @ để chèn tệp)"></textarea>
   <!-- ĐỢT G / TASK G1 / B4 — icon nhỏ gọn thay chữ "Gửi"; aria-label GIỮ nhãn cho trình đọc màn
        hình (nhỏ gọn không đồng nghĩa vô danh) — hành vi bấm/Ctrl+Enter không đổi (vẫn gọi gui()). -->
@@ -135,6 +157,21 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
        hoặc đang giữa vòng lặp tác nhân), không phải lúc rảnh. Hàm gui() hiện nó khi bắn câu hỏi;
        nơi DUY NHẤT ẩn lại là lúc nhận được tín hiệu 'lượt này đã xong' (hoan_tat/loi) — xem dưới. -->
   <button id="nut-dung" hidden>Dừng</button>
+</div>
+<!-- ĐỢT G / TASK G2 / B2 — danh sách tệp ĐANG ĐÍNH KÈM, DƯỚI ô nhập. MẶC ĐỊNH ẨN — script chỉ bật
+     lại khi có ít nhất một tệp (xem hàm \`veLaiDsDinhKem\`); gỡ hết ⇒ tự ẩn lại, không để lại khung
+     rỗng lơ lửng. -->
+<div id="ds-dinh-kem" hidden></div>
+<!-- ĐỢT G / TASK G2 / B3 — THANH TRẠNG THÁI NGỮ CẢNH. ★★★ KHÔNG BỊA SỐ TOKEN: ba đơn vị ĐO ĐƯỢC
+     THẬT (số lượt hội thoại, tổng ký tự lịch sử — chính phần sẽ được gửi lại làm "history" cho câu
+     hỏi kế tiếp, số tệp đính kèm) — mỗi nhãn nói ĐÚNG TÊN thứ nó đếm, không đoán ra một con số
+     token không đo được ở tầng extension. \`title\` nhắc lại đây KHÔNG phải kế toán token, phòng khi
+     ai đó lướt qua tưởng đây là % ngữ cảnh model. -->
+<div id="thanh-ngu-canh"
+     title="Đơn vị ĐO ĐƯỢC THẬT — ký tự, tệp, lượt — KHÔNG PHẢI số token (chưa đo được token thật ở tầng extension)">
+  <span id="tk-luot">Lượt hội thoại: 0</span> ·
+  <span id="tk-ky-tu">Ký tự lịch sử: 0</span> ·
+  <span id="tk-dinh-kem">Tệp đính kèm: 0</span>
 </div>
 <script nonce="${n}">
   const vscode = acquireVsCodeApi();
@@ -254,6 +291,64 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     vscode.postMessage({ loai: "xin_goi_y_mention", truy: vt.truy });
   });
 
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ ĐỢT G / TASK G2 / B1+B2 — NÚT ĐÍNH KÈM TỆP. Webview chỉ (1) báo Ý ĐỊNH bấm nút
+  // (\`xin_dinh_kem\`) và (2) giữ DANH SÁCH ĐƯỜNG DẪN SẠCH đã được extension xác nhận cho phép
+  // (\`them_dinh_kem\`) để hiển thị/gỡ — KHÔNG BAO GIỜ tự quyết tệp nào được phép rời máy, đúng
+  // nguyên tắc "hiển thị + chuyển tiếp" đã áp cho thẻ duyệt/@-mention. Bộ chọn THẬT (danh sách đã
+  // qua hàng rào + hộp thoại) nằm ở phía extension (\`bangChat.moBoChonDinhKem\`).
+  //
+  // ★ SỐNG QUA NHIỀU LƯỢT HỎI — khác \`mentionsHienTai\` (bị xoá NGAY sau mỗi lần gửi, vì nó gắn với
+  // CHÍNH văn bản câu hỏi vừa gõ): một tệp đã ĐÍNH KÈM chủ ý qua nút vẫn còn đó cho câu hỏi TIẾP
+  // THEO, tới khi người dùng tự gỡ hoặc mở một phiên khác ("Chat mới"/"Lịch sử" — xem
+  // \`xoaKhungChoPhienKhac\`, nơi mảng này bị xoá cùng lúc với bong bóng của phiên cũ).
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  const dsDinhKem = document.getElementById("ds-dinh-kem");
+  let tepDinhKemHienTai = [];
+
+  function veLaiDsDinhKem() {
+    dsDinhKem.innerHTML = "";
+    for (const duong of tepDinhKemHienTai) {
+      const dong = document.createElement("div");
+      dong.className = "dinh-kem-muc";
+      const nhan = document.createElement("span");
+      nhan.textContent = duong;
+      const nutGo = document.createElement("button");
+      nutGo.textContent = "×";
+      nutGo.title = "Gỡ tệp đính kèm này";
+      nutGo.setAttribute("aria-label", "Gỡ " + duong + " khỏi danh sách đính kèm");
+      nutGo.addEventListener("click", () => {
+        tepDinhKemHienTai = tepDinhKemHienTai.filter((d) => d !== duong);
+        veLaiDsDinhKem();
+      });
+      dong.appendChild(nhan);
+      dong.appendChild(nutGo);
+      dsDinhKem.appendChild(dong);
+    }
+    // ★ NHÁNH KIA (B2) — gỡ tệp CUỐI CÙNG ⇒ danh sách BIẾN MẤT GỌN, không để lại khung rỗng lơ lửng.
+    dsDinhKem.hidden = tepDinhKemHienTai.length === 0;
+    capNhatThanhNguCanh();
+  }
+
+  document.getElementById("nut-dinh-kem").addEventListener("click", () =>
+    vscode.postMessage({ loai: "xin_dinh_kem" }));
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ ĐỢT G / TASK G2 / B3 — THANH TRẠNG THÁI NGỮ CẢNH. \`thongKeHoiThoai\` (số lượt + tổng ký tự
+  // của LỊCH SỬ hội thoại) tới từ EXTENSION (đọc \`this.lichSu\` — nguồn sự thật, xem \`bangChat.ts\`);
+  // \`tepDinhKemHienTai.length\` là dữ liệu SỐNG ngay trong webview. ★★★ KHÔNG BỊA SỐ TOKEN — ba
+  // nhãn dưới đây phải khớp ĐÚNG thứ đang đếm, không đoán ra một con số token.
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  const tkLuot = document.getElementById("tk-luot");
+  const tkKyTu = document.getElementById("tk-ky-tu");
+  const tkDinhKem = document.getElementById("tk-dinh-kem");
+  let thongKeHoiThoai = { soLuot: 0, soKyTu: 0 };
+  function capNhatThanhNguCanh() {
+    tkLuot.textContent = "Lượt hội thoại: " + thongKeHoiThoai.soLuot;
+    tkKyTu.textContent = "Ký tự lịch sử: " + thongKeHoiThoai.soKyTu;
+    tkDinhKem.textContent = "Tệp đính kèm: " + tepDinhKemHienTai.length;
+  }
+
   function gui() {
     const cauHoi = oNhap.value.trim();
     if (!cauHoi) return;
@@ -262,7 +357,12 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     khoiTraLoi = themLuot("AI Local", "");
     nutDung.hidden = false;
     anMenuMention();
-    const tepMention = mentionsHienTai;
+    // ★★★ ĐỢT G / TASK G2 / B1+B2 — HỢP NHẤT hai nguồn tệp: @-mention gõ TRONG câu hỏi này
+    // (\`mentionsHienTai\`, dùng MỘT LẦN rồi xoá) và tệp đính kèm CHỦ Ý qua nút (\`tepDinhKemHienTai\`,
+    // SỐNG QUA nhiều lượt). Cả hai đi chung MỘT mảng \`tepMention\` — phía extension (\`hoi()\`,
+    // \`bangChat.ts\`) đọc CẢ HAI bằng đúng MỘT vòng lặp \`chayToolCucBo({loai:"doc_tep"...})\`, không
+    // có đường đọc thứ hai. \`Set\` khử trùng lặp — chọn CÙNG tệp qua cả hai đường không đọc nó hai lần.
+    const tepMention = [...new Set([...mentionsHienTai, ...tepDinhKemHienTai])];
     mentionsHienTai = [];
     // ★★★ H3(b) — đọc rồi RESET NGAY (không phải cờ dính): chỉ LƯỢT "hoi" NÀY được đánh dấu Cmd+K,
     // câu gõ tay kế tiếp (kể cả khi người dùng gõ ngay sau khi ô nhập vừa được Cmd+K đổ chữ vào,
@@ -338,6 +438,12 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     nutDung.hidden = true;
     anMenuMention();
     if (xoaCauDangGo) oNhap.value = "";
+    // ★★★ ĐỢT G / TASK G2 / B1 — tệp đính kèm thuộc về PHIÊN đang xem: rời sang "Chat mới" hay mở
+    // một hội thoại KHÁC ở "Lịch sử" đều phải xoá danh sách của phiên VỪA RỜI, cùng lý lẽ với thẻ
+    // duyệt/nút Dừng ở trên — một tệp đính kèm của hội thoại A tự động đi theo sang hội thoại B là
+    // một rò rỉ ngữ cảnh giữa hai cuộc trò chuyện không liên quan.
+    tepDinhKemHienTai = [];
+    veLaiDsDinhKem();
   }
 
   window.addEventListener("message", (e) => {
@@ -355,6 +461,18 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // Ẩn nút Dừng Ở ĐÂY, không đoán qua bất kỳ tín hiệu nào khác (token/thong_bao vẫn có thể bắn
       // giữa các vòng của MỘT lượt hỏi đang chạy — ẩn theo chúng sẽ ẩn nhầm lúc còn đang chạy).
       nutDung.hidden = true;
+      // ★★★ ĐỢT G / TASK G2 / B3 — thống kê ngữ cảnh của lượt VỪA XONG (extension đã tính trên
+      // \`this.lichSu\` THẬT — xem \`thongKeHoiThoaiHienTai\` ở \`bangChat.ts\`).
+      thongKeHoiThoai = { soLuot: m.soLuot ?? 0, soKyTu: m.soKyTu ?? 0 };
+      capNhatThanhNguCanh();
+    } else if (m.loai === "them_dinh_kem") {
+      // ★★★ ĐỢT G / TASK G2 / B1 — extension vừa xác nhận MỘT đường dẫn được phép đính kèm (đã qua
+      // ĐÚNG hàng rào @-mention dùng — xem \`bangChat.moBoChonDinhKem\`). Khử trùng lặp: chọn lại
+      // đúng tệp đã đính kèm không đẻ thêm một chip thứ hai.
+      if (!tepDinhKemHienTai.includes(m.duong)) {
+        tepDinhKemHienTai.push(m.duong);
+        veLaiDsDinhKem();
+      }
     } else if (m.loai === "duAn") {
       const o = document.getElementById("o-du-an");
       o.innerHTML = "";
@@ -454,6 +572,10 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // ★★★ ĐỢT F / TASK 3 / B3 — "Chat mới": khung TRẮNG, không còn dấu vết gì của phiên cũ, KỂ CẢ
       // câu đang gõ dở (\`true\` — xem docblock \`xoaKhungChoPhienKhac\`, bản vá 2026-09-03).
       xoaKhungChoPhienKhac(true);
+      // ★★★ ĐỢT G / TASK G2 / B3 — khung TRẮNG THẬT ⇒ thống kê cũng về ĐÚNG 0/0 (extension đã gửi
+      // \`soLuot:0, soKyTu:0\` kèm tin này — xem \`chatMoi()\` ở \`bangChat.ts\`).
+      thongKeHoiThoai = { soLuot: m.soLuot ?? 0, soKyTu: m.soKyTu ?? 0 };
+      capNhatThanhNguCanh();
     } else if (m.loai === "khoi_phuc_hoi_thoai") {
       // ★★★ ĐỢT F / TASK 2 / B5 (khởi động) + TASK 3 / B4 ("Lịch sử") — DÙNG CHUNG một tin: khởi
       // động khi khung vừa mở (đọc hội thoại GẦN NHẤT từ \`workspaceState\`) VÀ khi người dùng chọn
@@ -467,6 +589,10 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // động "rời phiên" như "Chat mới", nên nháp đang gõ (nếu có) phải CÒN NGUYÊN sau khi xem xong.
       xoaKhungChoPhienKhac(false);
       for (const l of m.luot || []) themLuot(l.vaiTro === "user" ? "Bạn" : "AI Local", l.noiDung);
+      // ★★★ ĐỢT G / TASK G2 / B3 — thống kê của ĐÚNG hội thoại vừa vẽ lại (extension gửi kèm
+      // \`soLuot\`/\`soKyTu\` của bản ghi vừa khôi phục — xem \`khoiPhucHoiThoaiGanNhat\`/\`moLichSu\`).
+      thongKeHoiThoai = { soLuot: m.soLuot ?? 0, soKyTu: m.soKyTu ?? 0 };
+      capNhatThanhNguCanh();
     }
     hoiThoai.scrollTop = hoiThoai.scrollHeight;
   });

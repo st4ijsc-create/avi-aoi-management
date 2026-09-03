@@ -69,7 +69,17 @@ import { locDanhSachMention } from "../loi/locMention";
 // không biết `vscode`) chỉ biết lưu/đọc; tệp này bơm một `KhoLuuTruTho` bọc quanh `workspaceState`
 // (xem `khoHoiThoaiTho()`) và là nơi DUY NHẤT quyết định LÚC NÀO lưu/khôi phục — không nhân bản
 // logic chat vào tệp kia.
-import { luuHoiThoai, docHoiThoaiGanNhat, docDanhSachHoiThoai, type KhoLuuTruTho, type HoiThoai } from "../loi/khoHoiThoai";
+import {
+  luuHoiThoai,
+  docHoiThoaiGanNhat,
+  docDanhSachHoiThoai,
+  dungHoiThoai,
+  hoiThoaiSapBiCat,
+  TRAN_SO_HOI_THOAI,
+  TRAN_TONG_KY_TU,
+  type KhoLuuTruTho,
+  type HoiThoai,
+} from "../loi/khoHoiThoai";
 
 /** Đề xuất ghi CỤC BỘ đang chờ duyệt + mọi thứ đã ĐO tại thời điểm dựng thẻ (không đo lại lúc bấm,
  *  trừ băm đĩa — băm PHẢI đo lại trong `apBanVa` vì đó chính là phép chống xung đột). */
@@ -283,6 +293,9 @@ export class BangChat {
         return;
       }
       if (m.loai === "xin_goi_y_mention") { void this.guiGoiYMention(typeof m.truy === "string" ? m.truy : ""); return; }
+      // ★★★ ĐỢT G / TASK G2 / B1 — nút "đính kèm tệp". KHÔNG một hàng rào thứ hai: xem
+      // `moBoChonDinhKem` (dùng lại đúng `danhSachTepGoiY` mà `guiGoiYMention` ở trên dùng).
+      if (m.loai === "xin_dinh_kem") { void this.moBoChonDinhKem(); return; }
       if (m.loai === "xem_diff") { void this.xemDiff(); return; }
       if (m.loai === "duyet") { void this.duyetDeXuat(); return; }
       if (m.loai === "huy") { void this.huyDeXuat(); return; }
@@ -366,19 +379,64 @@ export class BangChat {
   }
 
   /**
-   * ★★★ TASK 5 — trả lời webview cho một lượt gõ "@..." — nạp (LƯỜI, chỉ MỘT lần cho tới khi đổi
-   * dự án) danh sách tệp GỢI Ý đã qua hàng rào gửi (`danhSachTepGoiY`, tái dùng `locUngVien`), rồi
-   * lọc THEO CHỮ đang gõ bằng vị từ THUẦN `locDanhSachMention`. Extension quyết định NỘI DUNG dropdown
-   * — webview chỉ hiển thị, đúng nguyên tắc đã áp cho thẻ duyệt.
+   * ★★★ TASK 5 (+ĐỢT G / TASK G2 / B1) — nạp (LƯỜI, chỉ MỘT lần cho tới khi đổi dự án — xem nhánh
+   * `doi_du_an` ở constructor, nơi xoá `this.dsTepMention`) danh sách tệp GỢI Ý đã qua hàng rào gửi
+   * (`danhSachTepGoiY`, tái dùng `locUngVien` ⇒ `duocPhepRoiMay`/`duocPhepDoc`).
+   *
+   * ★★★ RÚT RA thành một hàm RIÊNG (trước đây logic nạp-lười này chỉ sống trong `guiGoiYMention`) để
+   * `moBoChonDinhKem` (B1, bên dưới) dùng CHUNG đúng một bộ nhớ đệm — hai tính năng "@-mention" và
+   * "nút đính kèm" đều hỏi CÙNG một câu "tệp nào được phép rời máy", nên chúng phải đi qua ĐÚNG MỘT
+   * lần nạp, không phải hai lượt `findFiles` riêng cho hai đường dữ liệu đáng lẽ là MỘT.
+   */
+  private async napDsTepMentionNeuChua(): Promise<string[]> {
+    this.dsTepMention ??= await danhSachTepGoiY(this.dsGocMention());
+    return this.dsTepMention;
+  }
+
+  /**
+   * ★★★ TASK 5 — trả lời webview cho một lượt gõ "@..." — lọc danh sách đã nạp THEO CHỮ đang gõ
+   * bằng vị từ THUẦN `locDanhSachMention`. Extension quyết định NỘI DUNG dropdown — webview chỉ hiển
+   * thị, đúng nguyên tắc đã áp cho thẻ duyệt.
    */
   private async guiGoiYMention(truy: string): Promise<void> {
-    if (!this.dsTepMention) {
-      this.dsTepMention = await danhSachTepGoiY(this.dsGocMention());
-    }
+    const ds = await this.napDsTepMentionNeuChua();
     void this.panel.webview.postMessage({
       loai: "goi_y_mention",
-      ds: locDanhSachMention(this.dsTepMention, truy),
+      ds: locDanhSachMention(ds, truy),
     });
+  }
+
+  /**
+   * ★★★ ĐỢT G / TASK G2 / B1 — nút "đính kèm tệp": mở BỘ CHỌN TỆP TRONG WORKSPACE.
+   *
+   * ★★★ MỘT ĐƯỜNG DỮ LIỆU RỜI MÁY DUY NHẤT, KHÔNG CỬA SAU — danh sách đưa cho `showQuickPick` đến
+   * từ ĐÚNG `napDsTepMentionNeuChua()` ở trên: CÙNG hàng rào (`duocPhepRoiMay`/`duocPhepDoc`, qua
+   * `danhSachTepGoiY` ⇒ `locUngVien`) mà dropdown "@" (Task 5) dùng. Một tệp KHÔNG được phép rời máy
+   * (`.env`, khoá riêng, `.git/**`, …) không bao giờ xuất hiện trong danh sách này — bị chặn Ở NGUỒN,
+   * TRƯỚC khi người dùng kịp thấy nó để chọn, không phải bị từ chối SAU khi đã bấm. Việc ĐỌC nội
+   * dung tệp được chọn cũng đi qua ĐÚNG một đường: mảng `duong` được `postMessage` về webview để
+   * webview thêm vào `tepDinhKemHienTai`, rồi gộp CHUNG với `mentionsHienTai` thành một `tepMention`
+   * duy nhất ở `gui()` (`htmlBang.ts`) — `hoi()` (bên dưới) đọc CẢ HAI nguồn bằng cùng một vòng lặp
+   * `chayToolCucBo({loai:"doc_tep"...})`, đúng đường mà Task 5 đã dựng. KHÔNG một hàm đọc thứ hai.
+   *
+   * ★ Dùng lại `locDanhSachMention` (THUẦN, Task 5) với truy vấn RỖNG để lấy TOÀN BỘ danh sách đã
+   *   nạp — cùng vị từ sắp/lọc mà dropdown "@" dùng, không phải một bộ sắp xếp thứ hai cho cùng một
+   *   danh sách.
+   */
+  private async moBoChonDinhKem(): Promise<void> {
+    const ds = await this.napDsTepMentionNeuChua();
+    if (ds.length === 0) {
+      void vscode.window.showInformationMessage(
+        "AI Local: không có tệp nào trong workspace được phép đính kèm (workspace rỗng, hoặc mọi tệp đều nhạy cảm/bị loại).",
+      );
+      return;
+    }
+    const goiY = locDanhSachMention(ds, "", ds.length);
+    const chon = await vscode.window.showQuickPick(goiY, {
+      placeHolder: "Chọn tệp trong workspace để đính kèm — nội dung tệp sẽ được GỬI kèm câu hỏi",
+    });
+    if (!chon) return; // Esc / bấm ra ngoài — không đính kèm gì, im lặng
+    void this.panel.webview.postMessage({ loai: "them_dinh_kem", duong: chon });
   }
 
   /**
@@ -625,8 +683,27 @@ export class BangChat {
       void this.panel.webview.postMessage({
         loai: "khoi_phuc_hoi_thoai",
         luot: ganNhat.luot.map((l) => ({ vaiTro: l.role, noiDung: l.content })),
+        // ★★★ ĐỢT G / TASK G2 / B3 — kèm THỐNG KÊ của ĐÚNG hội thoại vừa khôi phục, ngay trong tin
+        // vẽ lại — xem `thongKeHoiThoaiHienTai()`.
+        ...this.thongKeHoiThoaiHienTai(),
       });
     }
+  }
+
+  /**
+   * ★★★ ĐỢT G / TASK G2 / B3 — THANH TRẠNG THÁI NGỮ CẢNH: hai con số ĐO ĐƯỢC THẬT về `this.lichSu`
+   * — SỐ LƯỢT (mỗi câu hỏi + câu trả lời = một lượt, luôn ghép ĐÔI — xem cuối `hoi()`) và TỔNG KÝ
+   * TỰ (cộng dồn `content` mọi lượt). ★★★ KHÔNG PHẢI SỐ TOKEN — dự án này đã trả giá vì model bịa
+   * con số phạm vi công việc ("đã quét 600 tệp"); ta không lặp lại lỗi đó ở phía UI của mình. Đây
+   * ĐÚNG là phần `this.lichSu` sẽ được gửi NGUYÊN VẸN làm `history` cho câu hỏi KẾ TIẾP (xem
+   * `dungYeuCauStream`), nên "tổng ký tự" ở đây không phải một ước lượng — nó là kích thước THẬT
+   * của thứ sắp rời máy ở lượt hỏi sau.
+   */
+  private thongKeHoiThoaiHienTai(): { soLuot: number; soKyTu: number } {
+    return {
+      soLuot: Math.floor(this.lichSu.length / 2),
+      soKyTu: this.lichSu.reduce((tong, l) => tong + l.content.length, 0),
+    };
   }
 
   /**
@@ -637,9 +714,30 @@ export class BangChat {
    *
    * Không tự làm gì thêm ở đây: che bí mật, sinh tiêu đề, và cắt trần dung lượng đều nằm TRỌN vẹn
    * trong `luuHoiThoai` (`loi/khoHoiThoai.ts`) — tệp này chỉ quyết định LÚC NÀO lưu.
+   *
+   * ★★★ ĐỢT G / TASK G2 / B4 — CẢNH BÁO TRƯỚC KHI CẮT, không phải sau khi đã mất: `hoiThoaiSapBiCat`
+   * (THUẦN, `loi/khoHoiThoai.ts`) chạy trên ĐÚNG dữ liệu mà `luuHoiThoai` bên dưới sắp dùng THẬT, dự
+   * đoán những hội thoại CŨ NÀO sẽ bị trần B3 cắt NẾU lưu ngay bây giờ. Rỗng ⇒ im lặng (dưới ngưỡng,
+   * không việc gì phải làm ồn cho một lượt lưu bình thường). Có phần tử ⇒ báo TRƯỚC khi gọi
+   * `luuHoiThoai` thật — người dùng biết CHÍNH XÁC bao nhiêu hội thoại cũ sắp rời "Lịch sử", không
+   * phải tự phát hiện sau khi mở "Lịch sử" ra thấy ngắn hơn hôm qua.
    */
   private async luuHoiThoaiHienTai(): Promise<void> {
     this.maHoiThoaiHienTai ??= randomUUID();
+    if (this.lichSu.length > 0) {
+      const hoiThoaiSapLuu = dungHoiThoai(this.maHoiThoaiHienTai, this.lichSu);
+      const hienCo = docDanhSachHoiThoai(this.khoHoiThoaiTho());
+      const seBiCat = hoiThoaiSapBiCat(hienCo, hoiThoaiSapLuu);
+      if (seBiCat.length > 0) {
+        void this.panel.webview.postMessage({
+          loai: "thong_bao",
+          thongDiep:
+            `Kho "Lịch sử" đã CHẠM TRẦN lưu trữ (tối đa ${TRAN_SO_HOI_THOAI} hội thoại / ` +
+            `${TRAN_TONG_KY_TU.toLocaleString("vi")} ký tự) — ${seBiCat.length} hội thoại CŨ NHẤT ` +
+            `sẽ bị xoá khỏi "Lịch sử" khi lưu lượt này.`,
+        });
+      }
+    }
     await luuHoiThoai(this.khoHoiThoaiTho(), this.maHoiThoaiHienTai, this.lichSu);
   }
 
@@ -701,7 +799,9 @@ export class BangChat {
     this.lichSu = [];
     this.maHoiThoaiHienTai = undefined;
     this.quenDeXuat();
-    void this.panel.webview.postMessage({ loai: "chat_moi" });
+    // ★★★ ĐỢT G / TASK G2 / B3 — khung TRẮNG THẬT ⇒ thống kê cũng phải về ĐÚNG 0/0, không phải giữ
+    // số của phiên vừa rời (`thongKeHoiThoaiHienTai()` đọc `this.lichSu`, VỪA được xoá ở trên).
+    void this.panel.webview.postMessage({ loai: "chat_moi", ...this.thongKeHoiThoaiHienTai() });
   }
 
   /**
@@ -749,6 +849,9 @@ export class BangChat {
     void this.panel.webview.postMessage({
       loai: "khoi_phuc_hoi_thoai",
       luot: muc.hoiThoai.luot.map((l) => ({ vaiTro: l.role, noiDung: l.content })),
+      // ★★★ ĐỢT G / TASK G2 / B3 — thống kê của ĐÚNG hội thoại vừa chọn (`this.lichSu` vừa gán lại
+      // ở trên), không phải của hội thoại vừa RỜI.
+      ...this.thongKeHoiThoaiHienTai(),
     });
   }
 
@@ -1026,16 +1129,20 @@ export class BangChat {
       // webview lẽ ra sẽ hiển thị nếu không có ghi đè `het_tran`). `null` khi không có trích dẫn nào
       // ⇒ rơi ĐÚNG về fallback cũ (khuôn "vá xong phải kiểm NHÁNH KIA", giống `vanBanDaLocSach` ở trên).
       const vanBanKhongTrichDan = vanBanKhongTrichDanToolLa(vanBanDaLocSach ?? vanBanNen);
-      void this.panel.webview.postMessage({
-        loai: "hoan_tat",
-        vanBanCuoi: vanBanCuoiThayThe ?? vanBanKhongTrichDan ?? vanBanDaLocSach ?? (degradedCuoi ? traLoiCuoi : null),
-        canhBao: canhBaoCuoi,
-      });
       // Lịch sử NGOÀI (`this.lichSu`, dùng cho MỌI câu hỏi sau này) chỉ giữ câu hỏi GỐC + câu trả
       // lời CUỐI — các lượt "KẾT QUẢ TOOL" ở giữa là chi tiết THI CÔNG của một câu hỏi, không phải
       // một lượt hỏi mới của người dùng; nhét chúng vào đây sẽ phình lịch sử mọi câu hỏi SAU này
       // bằng nguyên văn kết quả `liet_ke`/`grep` của một câu hỏi đã xong từ lâu.
+      // ★★★ ĐỢT G / TASK G2 / B3 — nối TRƯỚC khi gửi `hoan_tat`, không phải SAU: tin `hoan_tat`
+      // giờ mang kèm `thongKeHoiThoaiHienTai()`, phải đọc `this.lichSu` SAU KHI lượt vừa xong đã vào
+      // đó — gửi trước rồi mới nối sẽ khai một con số THIẾU đúng lượt người dùng vừa nhận.
       this.lichSu.push({ role: "user", content: cauHoi }, { role: "assistant", content: traLoiCuoi });
+      void this.panel.webview.postMessage({
+        loai: "hoan_tat",
+        vanBanCuoi: vanBanCuoiThayThe ?? vanBanKhongTrichDan ?? vanBanDaLocSach ?? (degradedCuoi ? traLoiCuoi : null),
+        canhBao: canhBaoCuoi,
+        ...this.thongKeHoiThoaiHienTai(),
+      });
       // ★★★ ĐỢT F / TASK 2 — lưu BỀN ngay sau khi lịch sử NGOÀI vừa nối lượt mới, cho CẢ LOCAL lẫn
       // SERVER (đóng VSCode giữa một cuộc trò chuyện SERVER cũng không nên mất nó). Lỗi ghi
       // (`workspaceState` hỏng, hết dung lượng đĩa…) KHÔNG được làm rớt câu trả lời người dùng vừa
@@ -1097,6 +1204,10 @@ export class BangChat {
             loai: "hoan_tat",
             vanBanCuoi: vanBanKhongRacGiaoThuc(vanBanTichLuy),
             canhBao: null,
+            // ★★★ ĐỢT G / TASK G2 / B3 — lượt bị DỪNG GIỮA CHỪNG không hề vào `this.lichSu` (đúng,
+            // nó chưa xong) — thống kê ở đây vẫn ĐÚNG vì đọc thẳng `this.lichSu` hiện có, không phải
+            // một con số đoán riêng cho nhánh này.
+            ...this.thongKeHoiThoaiHienTai(),
           });
         }
         return;
