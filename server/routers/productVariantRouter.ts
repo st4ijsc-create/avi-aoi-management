@@ -453,9 +453,11 @@ export const productVariantRouter = router({
           ),
         );
 
-        await db.recordVariantOverrideVersion(input.basePointDefId, hieuLucTruoc, {
+        // NEW-3 (review lượt 9, vòng 2) — `variantId` BẮT BUỘC (không còn suy từ
+        // chuỗi `changeReason` tự do): hàm tự gắn tiền tố `[VARIANT:<id>]`.
+        await db.recordVariantOverrideVersion(input.basePointDefId, input.variantId, hieuLucTruoc, {
           changedBy: ctx.user.id,
-          changeReason: `productVariant.setOverride (variant #${input.variantId})`,
+          changeReason: "productVariant.setOverride",
         });
       }
 

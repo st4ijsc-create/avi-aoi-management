@@ -3963,11 +3963,61 @@ export function apDungVariantPatch<T extends object>(base: T, patchJson: unknown
  * hàm này ghi VẪN được cơ chế đó ĐỌC (đúng bảng, đúng `pointDefId`), nhưng nó
  * không tự biết "áp dụng lại override này CHỈ cho đúng variant đó" — dùng
  * `snapshotJson` để CHỨNG MINH giới hạn LÚC ĐÓ nếu có người cần tra tay, KHÔNG
- * khai đây là snapshot-gate hoàn chỉnh cho variant (đúng như review lượt 9 đã
- * khai "rủi ro còn lại I-3" ngay cả SAU bản vá — không giấu giới hạn của nó).
+ * khai đây là snapshot-gate hoàn chỉnh cho variant.
+ *
+ * ★★★ NEW-3 (review lượt 9, vòng 2) — ĐÃ VÁ chiều SAI mà mô tả "TRAIL" ở trên
+ * từng bỏ sót: bản gốc (`fa2769a3`) không hề đánh dấu hàng nó ghi là "của biến
+ * thể", nên MỘT bo BASE (mọi bo v2 hôm nay LUÔN base) có thể bị `resolveLimitsAtInstant`
+ * tái dựng NHẦM bằng giới hạn của một biến thể nó chưa từng thuộc về, khi cờ BẬT
+ * — sai cả hai chiều (đo được, xem `product.test-plumbing`/báo cáo NEW-3). Nay
+ * MỖI hàng hàm này ghi LUÔN mang tiền tố `[VARIANT:<id>]` (`tienToVersionBienThe`)
+ * — `napLichSuGioiHanTheoDiem` (v2, `cayDay.ts`) VÀ `loadPointLimitSnapshots`
+ * (v1.x, `machineApiRouters.ts`) đều LỌC BỎ hàng mang tiền tố này khi tái dựng
+ * cho một bo BASE (đúng thực tế hôm nay: v2 không có, v1.x cũng chưa phân giải
+ * `variantCode` khi gọi hai hàm này). Chuỗi base vì vậy SẠCH TRỞ LẠI — đúng
+ * trạng thái TRƯỚC `fa2769a3`.
  */
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★ NEW-3 (review Khối C lượt 9, vòng 2) — TÁCH CHUỖI VERSION base/biến thể.
+//
+// `recordVariantOverrideVersion` ghi giới hạn HIỆU LỰC CỦA BIẾN THỂ vào CHÍNH
+// chuỗi `measurement_point_versions` của điểm BASE (`pointDefId = basePointDefId`
+// — bảng này KHÔNG có cột `variantId` để tách theo cột, xem đo đạc dưới). Trước
+// bản vá này (`fa2769a3`), chuỗi base 100% SẠCH (0 hàng biến thể); SAU bản vá đó,
+// một hàng biến thể có thể NẰM XEN giữa các hàng base thật — `resolveLimitsAtInstant`
+// (`pointResultEvaluator.ts`, dùng CHUNG bởi v1.x `loadPointLimitSnapshots` VÀ v2
+// `napLichSuGioiHanTheoDiem`) không phân biệt được, nên khi cờ `SPEC_GATE_SNAPSHOT_ENABLED`
+// BẬT, một bo BASE (mọi bo v2 hôm nay LUÔN base — hợp đồng v2.0 không mang
+// `variantCode`) có thể bị tái dựng bằng giới hạn của một BIẾN THỂ nó chưa từng
+// thuộc về — sai CẢ HAI CHIỀU (override nới ⇒ bo xấu lọt; override siết ⇒ bo tốt
+// hạ oan).
+//
+// ── ĐO ĐƯỢC TRƯỚC KHI CHỌN CÁCH VÁ (2026-09-04, `aoi_management`) ────────────
+// `information_schema.columns` của `measurement_point_versions`: đúng 8 cột hiện
+// có (`id/pointDefId/version/snapshotJson/changedBy/changeReason/changedAt/
+// productPointsConfigVersion`), KHÔNG có `variantId`. `timescaledb_information.
+// hypertables` KHÔNG liệt kê bảng này ⇒ KHÔNG phải hypertable (thêm cột nullable
+// sẽ AN TOÀN nếu cần), nhưng brief ưu tiên "không migration nếu tránh được" —
+// đúng nguyên tắc cầu chì 0338 (hạn chế migration mới trong vòng sửa nhanh).
+//
+// ⇒ ĐÁNH DẤU BẰNG `changeReason` — tiền tố CẤU TRÚC `[VARIANT:<id>]` luôn ở ĐẦU
+// chuỗi (không phải một suffix tự do, dễ trôi) — hai hàm dưới đây là NGUỒN DUY
+// NHẤT cho tiền tố này (ghi ở `recordVariantOverrideVersion`, đọc/lọc ở
+// `napLichSuGioiHanTheoDiem`/`loadPointLimitSnapshots`), tránh chép tay chuỗi
+// định dạng ở nhiều nơi (đúng lớp lỗi BG-42 "bản logic thứ hai").
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Tiền tố CẤU TRÚC đánh dấu một hàng `measurement_point_versions` là snapshot
+ * HIỆU LỰC CỦA BIẾN THỂ (không phải của base). LUÔN ở đầu `changeReason`. */
+export function tienToVersionBienThe(variantId: number): string {
+  return `[VARIANT:${variantId}]`;
+}
+/** Khớp CHÍNH XÁC tiền tố `tienToVersionBienThe` tạo ra, ở ĐẦU chuỗi. */
+export const RE_TIEN_TO_VERSION_BIEN_THE = /^\[VARIANT:\d+\]/;
+
 export async function recordVariantOverrideVersion(
   basePointDefId: number,
+  variantId: number,
   hieuLucTruocOverride: Record<string, unknown>,
   options?: { changedBy?: number | null; changeReason?: string | null },
 ): Promise<void> {
@@ -3984,7 +4034,10 @@ export async function recordVariantOverrideVersion(
     version: nextVersion,
     snapshotJson: hieuLucTruocOverride,
     changedBy: options?.changedBy ?? null,
-    changeReason: options?.changeReason ?? "productVariant.setOverride",
+    // NEW-3 — tiền tố `[VARIANT:<id>]` LUÔN ở đầu, bất kể `options.changeReason`
+    // caller truyền gì — không tin caller tự nhớ gắn nhãn (đúng kỷ luật "MỘT
+    // nguồn sự thật" mà `apDungVariantPatch`/`APPROVAL_LIMIT_FIELDS` đã theo).
+    changeReason: `${tienToVersionBienThe(variantId)} ${options?.changeReason ?? "productVariant.setOverride"}`,
   };
   // `productPointsConfigVersion` (0282) khai "phiên bản SẢN PHẨM lúc snapshot" —
   // KHÔNG có ý nghĩa rõ ràng ở đây (override thuộc VARIANT, không phải bump toàn

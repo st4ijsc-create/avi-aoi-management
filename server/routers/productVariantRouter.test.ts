@@ -304,8 +304,11 @@ describe("PV3 — setOverride / removeOverride", () => {
     h.getMeasurementPointDefById.mockResolvedValueOnce(basePoint as any);
     h.getVariantOverrides.mockResolvedValueOnce([]); // chưa có override nào trước đó cho điểm này
     await admin.setOverride({ variantId: 10, basePointDefId: 3, action: "override", patchJson: { upperLimit: "5" } });
+    // NEW-3 (review lượt 9, vòng 2) — variantId (10) nay là tham số THỨ HAI bắt
+    // buộc (hàm tự gắn tiền tố [VARIANT:<id>], không tin caller nhớ gắn nhãn).
     expect(h.recordVariantOverrideVersion).toHaveBeenCalledWith(
       3,
+      10,
       expect.objectContaining({ id: 3 }), // apDungVariantPatch(basePoint, null) ⇒ chính basePoint
       expect.objectContaining({ changedBy: 5 }),
     );
@@ -319,7 +322,7 @@ describe("PV3 — setOverride / removeOverride", () => {
     ]);
     await admin.setOverride({ variantId: 10, basePointDefId: 3, action: "override", patchJson: { upperLimit: "5" } });
     // apDungVariantPatch(basePoint, {upperLimit:"77"}) (mock đơn giản: spread) ⇒ hiệu lực TRƯỚC mang upperLimit CŨ "77".
-    expect(h.recordVariantOverrideVersion).toHaveBeenCalledWith(3, expect.objectContaining({ upperLimit: "77" }), expect.anything());
+    expect(h.recordVariantOverrideVersion).toHaveBeenCalledWith(3, 10, expect.objectContaining({ upperLimit: "77" }), expect.anything());
   });
 
   it("★★★ BG-113 (I-2, đường ghi thứ SÁU) — patch chỉ đổi upperLimit thấp hơn lowerLimit HIỆN CÓ (base) ⇒ BAD_REQUEST, KHÔNG ghi override/version nào", async () => {

@@ -141,7 +141,7 @@ import type { PhamViNguoiXem } from "./hierarchy";
 // snapshot TRƯỚC KHI XOÁ MỀM cùng đúng khuôn `updateMeasurementPointDef`/
 // `updateMeasurementPointLimitsBatch` (`server/db/product.ts`) — không vòng import
 // (đo: `product.ts` không import từ `cayDay.ts`).
-import { measurementPointVersionsHasConfigVersionColumn } from "./product";
+import { measurementPointVersionsHasConfigVersionColumn, RE_TIEN_TO_VERSION_BIEN_THE } from "./product";
 
 /** Loại đo mặc định cho một component của cây dạy — xem docblock đầu file. */
 export const LOAI_DO_MAC_DINH_CAY_DAY = "VISUAL" as const;
@@ -1027,6 +1027,12 @@ export async function napLichSuGioiHanTheoDiem(
         pointDefId: measurementPointVersions.pointDefId,
         changedAt: measurementPointVersions.changedAt,
         snapshotJson: measurementPointVersions.snapshotJson,
+        // ★★★ NEW-3 (review lượt 9, vòng 2) — nạp `changeReason` để LỌC hàng
+        // biến thể (`recordVariantOverrideVersion` gắn tiền tố `[VARIANT:<id>]`)
+        // — v2 hôm nay LUÔN chấm bo BASE (hợp đồng v2.0 không mang `variantCode`),
+        // đọc phải hàng biến thể là tái dựng SAI cả hai chiều (xem docblock hàm
+        // `recordVariantOverrideVersion`, `server/db/product.ts`).
+        changeReason: measurementPointVersions.changeReason,
       })
       .from(measurementPointVersions)
       .where(inArray(measurementPointVersions.pointDefId, ids));
@@ -1035,6 +1041,9 @@ export async function napLichSuGioiHanTheoDiem(
       // `new Date(...)` bừa: `resolveLimitsAtInstant` lọc đúng vị từ này, và một
       // `Invalid Date` lọt vào sẽ làm phép chọn im lặng trả sai.
       if (!(h.changedAt instanceof Date) || !Number.isFinite(h.changedAt.getTime())) continue;
+      // NEW-3 — bo v2 LUÔN base ⇒ bỏ hàng đánh dấu là biến thể (KHÔNG lẫn vào
+      // chuỗi base). Đây là điểm ĐỌC/lọc — điểm GHI (đánh dấu) ở `recordVariantOverrideVersion`.
+      if (RE_TIEN_TO_VERSION_BIEN_THE.test(h.changeReason ?? "")) continue;
       const arr = ket.get(h.pointDefId);
       const s: PointLimitSnapshot = {
         changedAt: h.changedAt,

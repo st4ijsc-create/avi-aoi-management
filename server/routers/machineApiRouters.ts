@@ -46,6 +46,15 @@ import { congSpecTuBanDay } from "../services/specGateCayV2";
 // `mergeEffectivePoints`). Hàm THUẦN ⇒ nhập TRỰC TIẾP module, cùng nguyên tắc các
 // dòng import trên (không qua barrel `../db`).
 import { apDungVariantPatch } from "../db/product";
+// ★★★ NEW-3 (review lượt 9, vòng 2) — CÙNG lý do dòng import trên: `db.RE_TIEN_TO_VERSION_BIEN_THE`
+// (qua barrel `import * as db from "../db"`) TRỐNG trong bất kỳ test nào mock
+// nguyên module `"../db"` mà không liệt kê lại export này (đo được:
+// `machineApiVersionGate.test.ts` mock `../db` KHÔNG có `RE_TIEN_TO_VERSION_BIEN_THE`
+// ⇒ `db.RE_TIEN_TO_VERSION_BIEN_THE` là `undefined` ⇒ `.test(...)` NÉM lỗi, bị nuốt
+// bởi `try/catch` của `loadPointLimitSnapshots`, ÂM THẦM làm rỗng TOÀN BỘ lịch sử
+// snapshot của điểm đó — hỏng CẢ đường version-exact 0282, không chỉ nhánh NEW-3).
+// Hằng số này THUẦN (không cần mock) ⇒ nhập TRỰC TIẾP, không qua barrel.
+import { RE_TIEN_TO_VERSION_BIEN_THE } from "../db/product";
 // ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — cổng "máy tự mâu thuẫn", HAI nguồn KHÁC
 // cổng bản-dạy ở trên (chỉ so máy với CHÍNH máy, không đọc bản dạy). Xem docblock
 // đầu `../services/mayTuMauThuan.ts`.
@@ -1236,6 +1245,12 @@ async function loadPointLimitSnapshots(
       const projection: Record<string, unknown> = {
         changedAt: measurementPointVersions.changedAt,
         snapshotJson: measurementPointVersions.snapshotJson,
+        // ★★★ NEW-3 (review lượt 9, vòng 2) — CÙNG lỗ với v2 (`napLichSuGioiHanTheoDiem`,
+        // `server/db/cayDay.ts`): `recordVariantOverrideVersion` (I-3) ghi giới
+        // hạn HIỆU LỰC CỦA BIẾN THỂ vào ĐÚNG chuỗi `pointDefId` này. Đường v1.x ở
+        // đây cũng KHÔNG biết phân biệt base/biến thể (chưa phân giải `variantCode`
+        // khi gọi hàm này) ⇒ lọc theo CÙNG tiền tố cấu trúc, không chỉ vá riêng v2.
+        changeReason: measurementPointVersions.changeReason,
       };
       if (hasConfigVersionCol) {
         projection.productPointsConfigVersion = measurementPointVersions.productPointsConfigVersion;
@@ -1247,6 +1262,7 @@ async function loadPointLimitSnapshots(
         .orderBy(drizzleAsc(measurementPointVersions.changedAt));
       snaps = (rows as Array<Record<string, unknown>>)
         .filter((r) => r.changedAt instanceof Date)
+        .filter((r) => !RE_TIEN_TO_VERSION_BIEN_THE.test((r.changeReason as string | null) ?? ""))
         .map((r) => ({
           changedAt: r.changedAt as Date,
           limits: (r.snapshotJson ?? {}) as PointLimitSource,
