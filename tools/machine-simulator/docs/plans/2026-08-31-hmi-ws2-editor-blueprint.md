@@ -75,7 +75,7 @@ Bài học áp thẳng vào workstream này: **`Hmi.tsx` không truyền `compon
 
 | File | Trách nhiệm |
 |---|---|
-| `web/src/hmi-runtime/ScreenRenderer.tsx` | *Sửa*: nhận và truyền `components` |
+| `web/src/hmi-runtime/ScreenRenderer.tsx` | *Sửa*: **chuyển tiếp** `components` xuống widget. 🔴 *Đính chính 2026-09-03 (đo trước khi giao Task 5):* bản đầu viết "nhận và truyền" — SAI một nửa. `ScreenRenderer.tsx:20` **đã nhận** `components?: readonly ComponentNode[]` và dựng `resolve` từ nó ở `:122-123`. Thứ thiếu là `Hmi.tsx:277` **không truyền** prop ấy, và `WidgetProps` **không mang** nó. Đừng cài lại cái đã có. |
 | `web/src/hmi-runtime/widgetRegistry.ts` | *Sửa*: `WidgetProps` mang `components` |
 | `web/src/routes/Hmi.tsx` | *Sửa*: truyền `components` từ API |
 | `web/src/lib/hmiScreens.ts` | Client TanStack Query cho `/v1/screens` |
@@ -469,7 +469,7 @@ Kỳ vọng: đỏ — cả hai widget hiện `"—"`.
 
 - [ ] **Step 4: Nối dây**
 
-`WidgetProps` thêm `components?: ComponentModelDocument`. `ScreenRenderer` nhận prop `components` và truyền xuống; `resolve` dựng từ nó bằng `componentTagPrefixOf`. `Hmi.tsx` lấy `components` qua `useQuery` trên `GET /v1/components/{machineCode}` và truyền vào.
+`WidgetProps` thêm `components?: readonly ComponentNode[]` (cùng kiểu `ScreenRenderer` đã dùng — đọc `ScreenRenderer.tsx:20`, đừng khai kiểu thứ hai). `ScreenRenderer` **đã** nhận `components` và **đã** dựng `resolve` từ nó (`:122-123`); việc của task này ở đó chỉ là **chuyển tiếp** `components` vào `WidgetProps` khi render từng widget. `Hmi.tsx` lấy `components` qua `useQuery` trên `GET /v1/components/{machineCode}` và **truyền vào prop đang bị bỏ trống ở `:277`** — đó là dòng duy nhất khiến `{component}` chưa bao giờ phân giải trong sản phẩm.
 
 **`components` vắng mặt vẫn phải là trạng thái hợp lệ** (§5-bis): một máy chưa khai cây linh kiện vẫn render màn hình, các binding trực tiếp vẫn chạy, chỉ các binding `{component}` hiện chỗ giữ. Ghim điều đó.
 
