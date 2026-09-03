@@ -15,6 +15,24 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aviAiLocalThanhBen",
+          "title": "AI Local",
+          "icon": "media/thanh-ben.svg"
+        }
+      ]
+    },
+    "views": {
+      "aviAiLocalThanhBen": [
+        {
+          "id": "aviAiLocal.bangChat",
+          "name": "AI Local",
+          "type": "webview"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "aviAiLocal.moBangChat",

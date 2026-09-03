@@ -75,6 +75,11 @@ vi.mock("vscode", () => {
         may.thongBao.push(s);
         return Promise.resolve(undefined);
       },
+      // ★★★ THANH BÊN — `activate()` nay đăng ký thêm view provider cho khung chat trong thanh
+      // hoạt động (xem `extension.ts`). Lưới này đo đường CMD+K, không đo đường thanh bên, nên chỉ
+      // cần một bản giả TỐI THIỂU không ném lỗi — không có gì để `resolveWebviewView` gọi tới vì
+      // không ca nào ở đây làm view hiện lên.
+      registerWebviewViewProvider: () => ({ dispose: () => undefined }),
     },
     workspace,
   };

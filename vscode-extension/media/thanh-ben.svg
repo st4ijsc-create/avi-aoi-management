@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <!--
+    Icon thanh hoạt động (activity bar) cho "AI Local" — bong bóng trò chuyện với 3 chấm (đang gõ).
+    Quy ước icon activity bar của VSCode: canvas 24x24, đơn sắc, nét mảnh, dùng currentColor để
+    VSCode tự tô theo theme sáng/tối (VSCode áp mask CSS lên icon, không đọc màu tô cố định).
+    Tự vẽ tay — không tải từ mạng, không phụ thuộc ngoài.
+  -->
+  <path
+    d="M4.5 5.75C4.5 5.06 5.06 4.5 5.75 4.5h12.5c.69 0 1.25.56 1.25 1.25v9c0 .69-.56 1.25-1.25 1.25H10l-4.1 3.28a.5.5 0 0 1-.9-.31v-2.97h-.75c-.69 0-1.25-.56-1.25-1.25v-9Z"
+    stroke="currentColor"
+    stroke-width="1.3"
+    stroke-linejoin="round"
+  />
+  <circle cx="8.5" cy="10.25" r=".95" fill="currentColor" />
+  <circle cx="12" cy="10.25" r=".95" fill="currentColor" />
+  <circle cx="15.5" cy="10.25" r=".95" fill="currentColor" />
+</svg>

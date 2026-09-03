@@ -131,6 +131,22 @@ function nhanLyDoDungVong(lyDo: "het_tran" | "nguoi_dung_dung" | "loi", vong: nu
  */
 const LY_DO_NGUOI_DUNG_DUNG = "nguoi_dung_dung";
 
+/**
+ * ★★★ THANH BÊN — bề mặt webview TỐI THIỂU `BangChat` cần từ vật chứa của nó. `vscode.WebviewPanel`
+ * (bảng nổi, đường lệnh `aviAiLocal.moBangChat`/Ctrl+Alt+K CŨ) và `vscode.WebviewView` (khung trong
+ * thanh hoạt động, đường MỚI) đều khớp CẤU TRÚC này (TypeScript so cấu trúc, không so tên kiểu) —
+ * nên toàn bộ logic bên dưới (400+ dòng: hỏi/đáp, thẻ duyệt, @-mention, Cmd+K...) dùng CHUNG một
+ * lớp cho cả hai bề mặt. TUYỆT ĐỐI KHÔNG chép lớp này thành một bản thứ hai cho `WebviewView` — dự
+ * án đã trả giá nhiều lần cho hai bản sao của một sự thật (xem MEMORY, đợt PDCA vòng 1).
+ *
+ * Hai bề mặt CHỈ khác nhau ở cách "làm nó hiện lên" (`WebviewPanel.reveal()` vs `WebviewView.show()`)
+ * — đó là lý do có `lamHienRo` riêng trong constructor thay vì gọi thẳng một phương thức chung.
+ */
+interface VatChuaChat {
+  readonly webview: vscode.Webview;
+  readonly onDidDispose: vscode.Event<void>;
+}
+
 export class BangChat {
   private static hienTai: BangChat | undefined;
   private lichSu: LuotChat[] = [];
@@ -167,16 +183,26 @@ export class BangChat {
   private dsTepMention: string[] | undefined;
 
   private constructor(
-    private readonly panel: vscode.WebviewPanel,
+    private readonly panel: VatChuaChat,
     private readonly context: vscode.ExtensionContext,
     // Nay ĐÃ được đọc (xemDiff/duyet/huyDeXuat bên dưới) ⇒ `private` biên dịch sạch qua
     // `noUnusedLocals` (Task 3 phải để public vì lúc đó chưa ai đọc field này).
     private readonly khoDeXuat: KhoDeXuat,
+    // ★★★ THANH BÊN — `undefined` cho các bề mặt không có khái niệm "làm hiện lên" theo cách khác
+    // với việc VSCode tự quản (không dùng ở nhánh nào hiện tại, nhưng giữ optional để không ép MỌI
+    // nơi gọi constructor phải truyền một hàm rỗng).
+    private readonly lamHienRo?: () => void,
   ) {
     this.panel.webview.html = dungHtmlBang({ nonce: chuoiNgauNhien() });
     this.panel.onDidDispose(() => {
       this.huy?.abort();
-      BangChat.hienTai = undefined;
+      // ★★★ THANH BÊN — CHỈ xoá singleton của ĐƯỜNG CŨ (bảng NỔI) nếu CHÍNH instance này là
+      // `hienTai`. Trước khi có bề mặt thứ hai (`WebviewView`), điều kiện này luôn đúng (chỉ một
+      // instance từng tồn tại) nên hành vi CŨ không đổi. Từ khi thêm `choView` (khung thanh bên,
+      // KHÔNG đụng `hienTai`), một instance thanh-bên bị đóng (người dùng ẩn view) mà xoá vô điều
+      // kiện `hienTai` sẽ xoá NHẦM tham chiếu tới một bảng NỔI đang mở — `moHoacHien` lần sau tưởng
+      // chưa có bảng nào, tạo bảng THỨ HAI thay vì hiện lại bảng cũ.
+      if (BangChat.hienTai === this) BangChat.hienTai = undefined;
     });
     // KHÔNG nạp danh sách dự án ở đây. `postMessage` có thể chạy TRƯỚC khi script trong webview
     // kịp đăng ký `addEventListener("message", …)` ⇒ danh sách rơi mất mà không có lỗi nào — ô
@@ -331,7 +357,7 @@ export class BangChat {
 
   static moHoacHien(context: vscode.ExtensionContext, khoDeXuat: KhoDeXuat): BangChat {
     if (BangChat.hienTai) {
-      BangChat.hienTai.panel.reveal();
+      BangChat.hienTai.lamHienRo?.();
       return BangChat.hienTai;
     }
     const panel = vscode.window.createWebviewPanel(
@@ -340,8 +366,24 @@ export class BangChat {
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true },
     );
-    BangChat.hienTai = new BangChat(panel, context, khoDeXuat);
+    BangChat.hienTai = new BangChat(panel, context, khoDeXuat, () => panel.reveal());
     return BangChat.hienTai;
+  }
+
+  /**
+   * ★★★ THANH BÊN — lối vào MỚI: khung chat sống trong `WebviewView` của thanh hoạt động (như
+   * Copilot/Claude Code), thay vì chỉ một `WebviewPanel` nổi phải mở bằng lệnh/Ctrl+Alt+K. Dùng LẠI
+   * TOÀN BỘ lớp `BangChat` phía trên (constructor nhận `VatChuaChat`, `WebviewView` khớp cấu trúc) —
+   * KHÔNG một bản logic thứ hai nào ở đây, chỉ một lời gọi constructor với bề mặt khác.
+   *
+   * ⚠ CỐ Ý KHÔNG đụng `BangChat.hienTai` — field đó là singleton của ĐƯỜNG CŨ (bảng NỔI). Khung
+   *   thanh bên là một PHIÊN CHAT ĐỘC LẬP: mở cả hai (thanh bên + lệnh cũ) cùng lúc cho ra hai bảng
+   *   chat riêng biệt, không bảng nào ghi đè/đóng bảng kia — đúng yêu cầu "đường cũ vẫn chạy y hệt".
+   * `resolveWebviewView` (`bangChatView.ts`) gọi hàm này MỖI LẦN VSCode cần một instance mới cho
+   * view (thường chỉ một lần mỗi phiên VSCode nhờ `retainContextWhenHidden`, xem nơi đăng ký).
+   */
+  static choView(webviewView: vscode.WebviewView, context: vscode.ExtensionContext, khoDeXuat: KhoDeXuat): BangChat {
+    return new BangChat(webviewView, context, khoDeXuat, () => webviewView.show?.(true));
   }
 
   /**

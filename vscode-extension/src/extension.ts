@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import { dangNhap } from "./mang/dangNhap";
 import { KHOA_COOKIE } from "./loi/dangNhap";
 import { BangChat } from "./ui/bangChat";
+import { BangChatViewProvider, MA_VIEW_THANH_BEN } from "./ui/bangChatView";
 import { KhoDeXuat, SCHEME } from "./ui/diffDeXuat";
 import { dungCauHoiSuaChon } from "./loi/cauHoiSuaChon";
 import { duongTuongDoiTrongWorkspace } from "./loi/chanGhi";
@@ -153,6 +154,18 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.window.showInformationMessage("AI Local: đã đăng xuất.");
     }),
     vscode.commands.registerCommand("aviAiLocal.suaDoanChon", () => void chaySuaDoanChon(context, khoDeXuat)),
+  );
+
+  /**
+   * ★★★ THANH BÊN — lối vào NHÌN THẤY ĐƯỢC: icon ở thanh hoạt động (xem `viewsContainers` +
+   * `views` trong `package.json`) mở khung chat này. `retainContextWhenHidden: true` khớp hành vi
+   * bảng NỔI cũ (`moHoacHien` cũng bật cờ này) — ẩn/hiện lại view (thu gọn sidebar, đổi tab) không
+   * làm mất phiên chat đang gõ dở.
+   */
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(MA_VIEW_THANH_BEN, new BangChatViewProvider(context, khoDeXuat), {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
   );
 }
 
