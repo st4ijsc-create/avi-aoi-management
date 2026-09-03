@@ -88,11 +88,28 @@ describe("thanh bên — ba mối nối bằng chuỗi", () => {
 describe("thanh bên — ĐỢT F / TASK 3: view/title (Chat mới + Lịch sử)", () => {
   const dsMenu = () => manifest.contributes?.menus?.["view/title"] ?? [];
 
-  it("★★★ có ÍT NHẤT hai mục trong view/title (Chat mới + Lịch sử)", () => {
-    expect(dsMenu().length).toBeGreaterThanOrEqual(2);
+  /**
+   * ★★★ ĐỢT H / TASK H3 (vá 2026-09-04) — MỞ RỘNG danh sách BA lệnh, không còn đúng hai như Task 3.
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * VÌ SAO MỞ RỘNG ĐÚNG LƯỚI NÀY, KHÔNG DỰNG MỘT DESCRIBE RIÊNG
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Bài học người dùng ĐÃ TRẢ GIÁ MỘT LẦN: manifest thiếu `viewsContainers`/`views` ⇒ extension cài
+   * được, chạy tốt, MỌI lưới xanh — nhưng KHÔNG CÓ GÌ ĐỂ NHÌN THẤY. Bảng "Bộ nhớ dài hạn" (H3/B2)
+   * ban đầu chỉ vào được qua Bảng lệnh (Command Palette) — ĐÚNG hình dạng lỗi đó, chỉ nhẹ hơn một
+   * bậc: tính năng CÓ THẬT, có lưới, nhưng không ai TÌM RA nó từ khung chat. Một describe MỚI, TÁCH
+   * RIÊNG sẽ không buộc các phép đếm/tích Đề-các ĐÃ CÓ (dưới đây) phải lớn lên theo — tức có thể
+   * quên cập nhật `toHaveLength(...)` và lưới vẫn xanh trong khi thực ra "hai mối nối 4/5" chỉ mới
+   * canh HAI lệnh cũ, không canh lệnh mới. Mở rộng đúng TẬP BA LỆNH này buộc MỌI khẳng định đếm ở
+   * dưới phải đổi theo, nên một mục bị BỎ SÓT khỏi `view/title` (hoặc khỏi MỘT trong hai view id) sẽ
+   * làm phép đếm lệch NGAY LẬP TỨC, không cần nhớ thêm một ca lưới riêng.
+   */
+  const BA_LENH_VIEW_TITLE = ["aviAiLocal.chatMoi", "aviAiLocal.lichSu", "aviAiLocal.boNho"];
+
+  it("★★★ có ÍT NHẤT ba mục trong view/title (Chat mới + Lịch sử + Bộ nhớ)", () => {
+    expect(dsMenu().length).toBeGreaterThanOrEqual(3);
     const lenh = dsMenu().map((m) => m.command);
-    expect(lenh).toContain("aviAiLocal.chatMoi");
-    expect(lenh).toContain("aviAiLocal.lichSu");
+    for (const l of BA_LENH_VIEW_TITLE) expect(lenh).toContain(l);
   });
 
   it("★★★ MỐI NỐI 4 — mọi `when` trong view/title khớp NGUYÊN VĂN `view == <một trong hai MA_VIEW_...>`", async () => {
@@ -107,17 +124,20 @@ describe("thanh bên — ĐỢT F / TASK 3: view/title (Chat mới + Lịch sử
     }
   });
 
-  it("★★★ ĐỢT F / TASK 4 / B4 — mọi menu (Chat mới + Lịch sử) áp cho CẢ HAI view id, không riêng một bên", async () => {
-    // Lệch ⇒ thanh công cụ (nút Chat mới/Lịch sử) BIẾN MẤT ở vùng chứa còn lại — đúng cảnh báo
-    // trong kế hoạch Đợt F / Task 4 / B4. Đo bằng tích Đề-các: 2 lệnh × 2 view id = 4 mục.
+  it("★★★ ĐỢT F / TASK 4 / B4 — mọi menu (Chat mới + Lịch sử + Bộ nhớ) áp cho CẢ HAI view id, không riêng một bên", async () => {
+    // Lệch ⇒ thanh công cụ (nút Chat mới/Lịch sử/Bộ nhớ) BIẾN MẤT ở vùng chứa còn lại — đúng cảnh
+    // báo trong kế hoạch Đợt F / Task 4 / B4, và đúng bài học người dùng đã trả giá (H3, xem docblock
+    // `BA_LENH_VIEW_TITLE` ở trên): thiếu MỘT view id là nút biến mất Ở MỘT TRONG HAI vị trí, người
+    // dùng mở đúng vị trí thiếu thì coi như tính năng không tồn tại. Đo bằng tích Đề-các:
+    // 3 lệnh × 2 view id = 6 mục.
     const { MA_VIEW_THANH_BEN, MA_VIEW_THANH_BEN_PHU } = await import("./bangChatView");
-    for (const lenh of ["aviAiLocal.chatMoi", "aviAiLocal.lichSu"]) {
+    for (const lenh of BA_LENH_VIEW_TITLE) {
       for (const view of [MA_VIEW_THANH_BEN, MA_VIEW_THANH_BEN_PHU]) {
         const co = dsMenu().some((m) => m.command === lenh && m.when === `view == ${view}`);
         expect(co, `thiếu mục view/title cho lệnh "${lenh}" ở view "${view}"`).toBe(true);
       }
     }
-    expect(dsMenu()).toHaveLength(4);
+    expect(dsMenu()).toHaveLength(6);
   });
 
   it("★★★ MỐI NỐI 5 — mọi `command` trong view/title THẬT SỰ được `registerCommand(...)` trong extension.ts", () => {
@@ -133,18 +153,19 @@ describe("thanh bên — ĐỢT F / TASK 3: view/title (Chat mới + Lịch sử
     }
   });
 
-  it("★★ cả hai mục đứng trong group \"navigation\" (đầu khung, cạnh icon container)", () => {
-    for (const id of ["aviAiLocal.chatMoi", "aviAiLocal.lichSu"]) {
+  it("★★ cả ba mục đứng trong group \"navigation\" (đầu khung, cạnh icon container)", () => {
+    for (const id of BA_LENH_VIEW_TITLE) {
       const m = dsMenu().find((x) => x.command === id);
       expect(m, `thiếu mục view/title cho "${id}"`).toBeDefined();
       expect(m!.group).toBe("navigation");
     }
   });
 
-  it("★★ hai lệnh khai ĐÚNG codicon: chatMoi = $(add), lichSu = $(history)", () => {
+  it("★★ ba lệnh khai ĐÚNG codicon: chatMoi = $(add), lichSu = $(history), boNho = $(book)", () => {
     const ds = manifest.contributes?.commands ?? [];
     expect(ds.find((c) => c.command === "aviAiLocal.chatMoi")?.icon).toBe("$(add)");
     expect(ds.find((c) => c.command === "aviAiLocal.lichSu")?.icon).toBe("$(history)");
+    expect(ds.find((c) => c.command === "aviAiLocal.boNho")?.icon).toBe("$(book)");
   });
 });
 

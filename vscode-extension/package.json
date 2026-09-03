@@ -88,7 +88,8 @@
       },
       {
         "command": "aviAiLocal.boNho",
-        "title": "AI Local: Bộ nhớ dài hạn"
+        "title": "AI Local: Bộ nhớ dài hạn",
+        "icon": "$(book)"
       }
     ],
     "keybindings": [
@@ -111,12 +112,22 @@
           "group": "navigation"
         },
         {
+          "command": "aviAiLocal.boNho",
+          "when": "view == aviAiLocal.bangChat",
+          "group": "navigation"
+        },
+        {
           "command": "aviAiLocal.chatMoi",
           "when": "view == aviAiLocal.bangChatPhu",
           "group": "navigation"
         },
         {
           "command": "aviAiLocal.lichSu",
+          "when": "view == aviAiLocal.bangChatPhu",
+          "group": "navigation"
+        },
+        {
+          "command": "aviAiLocal.boNho",
           "when": "view == aviAiLocal.bangChatPhu",
           "group": "navigation"
         }
