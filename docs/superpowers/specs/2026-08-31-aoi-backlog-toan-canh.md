@@ -127,6 +127,8 @@ Ví dụ nặng nhất: bảng miễn trừ census WAL ký lý do *"mutation do 
 
 ---
 
+**Cập nhật 2026-09-04 (Khối C đóng):** ghi chú *"Khối D chặn vì không có tài khoản test"* **lỗi thời**. Task 12 Khối C đã mint vé phiên bằng `createSessionToken`+`ghiSoPhien` (server, không gate NODE_ENV) và `context().addCookies` (cookie `httpOnly` — `document.cookie` bị nuốt). `playwright.config.ts` chưa có `globalSetup`/`storageState` ⇒ Khối D bắt đầu bằng đúng hai thứ đó, dùng user audit có sẵn, không tạo tài khoản.
+
 ## 4. Hai thứ cần chủ dự án quyết
 
 **Tài khoản test cho Playwright (Khối D).** Hiện `e2e/login.spec.ts` **không thật sự đăng nhập**; không có `storageState`, không fixture, không biến `E2E_*`. Không có tài khoản thì **không nghiệm thu bằng mắt được** — mà đó là yêu cầu ban đầu.
