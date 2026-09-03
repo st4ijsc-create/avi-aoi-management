@@ -41,6 +41,10 @@ import { tachTriDo } from "../db/inspection";
 // module (cùng nguyên tắc dòng trên): `db.traBanDayChoCay` mới là hàm ĐỌC CSDL và
 // nó vẫn đi qua barrel `../db` để lưới mock được.
 import { congSpecTuBanDay } from "../services/specGateCayV2";
+// ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — cổng "máy tự mâu thuẫn", HAI nguồn KHÁC
+// cổng bản-dạy ở trên (chỉ so máy với CHÍNH máy, không đọc bản dạy). Xem docblock
+// đầu `../services/mayTuMauThuan.ts`.
+import { taoDemMayTuMauThuan } from "../services/mayTuMauThuan";
 // BG-99 (Task 5) — chuỗi thời gian TRẦN máy khai đọc bằng ĐÚNG MỘT luật (trần = UTC)
 // ở mọi điểm ingest. `mocDoTuChuoi` (BG-97, chỗ ở CŨ của luật này) đã XOÁ — hết caller
 // sản xuất sau khi Task 5 đổi neo spec-gate sang mốc-nhận-server (xem `submitInspectionTreeV2`).
@@ -3717,6 +3721,15 @@ export async function submitInspectionTreeV2(
     theoSnapshot: number;
     theoSong: number;
   };
+  /**
+   * ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — cổng "MÁY TỰ MÂU THUẪN". KHÁC HẲN
+   * `specGate` ở trên (nguồn KỸ SƯ): đây chỉ so `value`/`result` máy khai với
+   * `lowerLimit`/`upperLimit` MÁY TỰ KHAI kèm CHÍNH lá đó, không đọc bản dạy, và
+   * KHÔNG ảnh hưởng `overallResult`/`verdictLuuTru` ở trên — thuần tín hiệu chất
+   * lượng pipeline máy. `mauThuan` > 0 ⇒ có lá máy khai `value` ngoài chính giới
+   * hạn nó gửi mà vẫn kết `OK`. Xem `../services/mayTuMauThuan.ts`.
+   */
+  mayTuMauThuan: { tong: number; mauThuan: number };
 }> {
   const auth = await authenticateMachine({
     apiKey: payload.apiKey,
@@ -3767,8 +3780,12 @@ export async function submitInspectionTreeV2(
     lucDo: mocDo,
   });
   const congSpec = congSpecTuBanDay(traBanDay);
+  // ★★★ Khối C Task 13 (BG-98) — bộ đếm MỚI cho ĐÚNG lượt ingest này, TÁCH HẲN khỏi
+  // `congSpec` (cùng quy tắc "cổng mới mỗi bo" như `congSpec` ở trên — xem docblock
+  // `dichCayKetQua`). KHÔNG đọc bản dạy, KHÔNG đổi verdict/remark.
+  const demMauThuan = taoDemMayTuMauThuan();
 
-  const cay = dichCayKetQua(payload, { cong: congSpec });
+  const cay = dichCayKetQua(payload, { cong: congSpec, demMauThuan });
 
   // ⚠ Cutover 2026-09-03 (Khối C QĐ-1, BG-96) — bỏ dịch "fake UTC": cột `inspectionTime`
   // (dưới) nay là UTC thật. ⚠⚠ BG-99 (Task 5) — chuỗi TRẦN đọc bằng `docGioMay` (trần =
@@ -3833,6 +3850,19 @@ export async function submitInspectionTreeV2(
     );
   }
 
+  // ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — MÁY TỰ MÂU THUẪN, cổng KHÁC hẳn cổng
+  // bản-dạy ở trên (không đọc bản dạy, không đổi verdict/remark). `mauThuan > 0` là
+  // lỗi PIPELINE của máy: `value` ngoài chính `lowerLimit`/`upperLimit` máy gửi kèm
+  // mà máy vẫn kết `OK`.
+  const tkMauThuan = demMauThuan.thongKe;
+  if (tkMauThuan.mauThuan > 0) {
+    console.warn(
+      `[submitInspection][v2.0] MÁY TỰ MÂU THUẪN: ${tkMauThuan.mauThuan}/${tkMauThuan.tong} ` +
+        `linh kiện value NGOÀI giới hạn MÁY TỰ KHAI kèm kết quả mà máy vẫn kết OK · ` +
+        `máy=${machine.code} inspectionId=${persisted.id} · mẫu: ${tkMauThuan.mau.join(" | ")}`,
+    );
+  }
+
   // ⚠ KHÔNG ÂM THẦM: mọi linh kiện không tra ra `pointDefId` đều có mặt ở đây, và
   // hàng `audit_logs` (nhánh máy ĐÃ dạy) đã được ghi TRONG chính transaction trên.
   const tk = persisted.thongKeComponent;
@@ -3886,6 +3916,14 @@ export async function submitInspectionTreeV2(
       // về NGUỒN của giới hạn nó vừa dùng).
       theoSnapshot: traBanDay.theoSnapshot,
       theoSong: traBanDay.theoSong,
+    },
+    // ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — cổng "MÁY TỰ MÂU THUẪN", HAI nguồn
+    // KHÁC `specGate` ở trên (xem docblock chữ ký hàm). `mau` (mẫu chẩn đoán) CỐ Ý
+    // không trả ở đây — cùng cách `specGate.mauTruot` cũng chỉ đi vào log warn,
+    // không vào response — chỉ hai con số đếm được.
+    mayTuMauThuan: {
+      tong: demMauThuan.thongKe.tong,
+      mauThuan: demMauThuan.thongKe.mauThuan,
     },
   };
 }

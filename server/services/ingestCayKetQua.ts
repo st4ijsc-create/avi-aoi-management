@@ -48,6 +48,12 @@
 import { rollupVerdict, verdictLuuTru, verdictXauHon, type NtfSource, type ResultVerdict } from "@shared/rollupVerdict";
 import type { MachineDataContractV2 } from "../contracts/machineDataContractV2";
 import type { CongSpecCayV2 } from "./specGateCayV2";
+// ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — `opts.demMauThuan` (tuỳ chọn) là bộ ĐẾM
+// THUẦN, TÁCH HẲN khỏi `opts.cong`: cổng bên trên chấm bằng giới hạn KỸ SƯ đã dạy,
+// còn bộ đếm này chỉ so máy với CHÍNH máy (`lowerLimit`/`upperLimit` máy tự khai
+// kèm lá). Xem `./mayTuMauThuan.ts`. Không đổi `result`/`ghiChuCong` trả về — chỉ
+// đếm.
+import type { DemMayTuMauThuan } from "./mayTuMauThuan";
 
 /** Tên kiểu theo đúng chữ ký brief yêu cầu — alias của hợp đồng v2.0 đã zod-parse. */
 export type MachinePayloadV2 = MachineDataContractV2;
@@ -187,6 +193,7 @@ function dichComponent(
   c: RawComponent,
   captureExtId: string,
   cong?: CongSpecCayV2,
+  demMauThuan?: DemMayTuMauThuan,
 ): ComponentDaDich {
   // ★★★ BG-92 — CHẤM TRƯỚC, CUỘN SAU. `cong.cham` chỉ hạ OK→NG (monotonic, thừa kế
   // `evaluatePointResult`), nên `result` vẫn nằm trong `"OK" | "NG"` của hợp đồng v2.0.
@@ -197,6 +204,19 @@ function dichComponent(
     result: c.result,
     value: c.value ?? null,
   });
+
+  // ★★★ Khối C Task 13 (BG-98) — TÁCH HẲN khỏi lời gọi `cong.cham` ở trên: đọc
+  // `c.result`/`c.value` THÔ máy khai (KHÔNG phải `cham?.result` đã có thể bị cổng
+  // bản-dạy hạ cấp), đối chiếu với `c.lowerLimit`/`c.upperLimit` — cũng THÔ máy
+  // khai, trong CÙNG lá. Đây là hai nguồn khác nhau (spec QĐ-8), không được gộp.
+  demMauThuan?.dem(captureExtId, {
+    componentId: c.componentId,
+    result: c.result,
+    value: c.value ?? null,
+    lowerLimit: c.lowerLimit ?? null,
+    upperLimit: c.upperLimit ?? null,
+  });
+
   return {
     componentId: c.componentId,
     componentName: c.componentName,
@@ -215,13 +235,13 @@ function dichComponent(
   };
 }
 
-function dichCapture(cap: RawCapture, cong?: CongSpecCayV2): CaptureDaDich {
+function dichCapture(cap: RawCapture, cong?: CongSpecCayV2, demMauThuan?: DemMayTuMauThuan): CaptureDaDich {
   // components: [] rỗng là hình dạng HỢP LỆ (đèn chụp vùng không có linh kiện) —
   // rollupVerdict([]) trả {result:"OK", ntf:false, ntfSource:null}, KHÔNG ném lỗi.
   // ⚠⚠ ĐỘT BIẾN BẮT BUỘC BG-92: đổi `dichComponent(c, cap.captureId, cong)` thành
   // `dichComponent(c, cap.captureId)` (bỏ cổng) ⇒ linh kiện ngoài giới hạn đã dạy mà
   // máy khai OK lại đi lọt — đúng hành vi TRƯỚC bản vá. Lưới phải ĐỎ.
-  const components = cap.components.map((c) => dichComponent(c, cap.captureId, cong));
+  const components = cap.components.map((c) => dichComponent(c, cap.captureId, cong, demMauThuan));
   const cuon = rollupVerdict(components);
   return {
     captureId: cap.captureId,
@@ -239,8 +259,8 @@ function dichCapture(cap: RawCapture, cong?: CongSpecCayV2): CaptureDaDich {
   };
 }
 
-function dichPosition(pos: RawPosition, cong?: CongSpecCayV2): PositionDaDich {
-  const captures = pos.captures.map((c) => dichCapture(c, cong));
+function dichPosition(pos: RawPosition, cong?: CongSpecCayV2, demMauThuan?: DemMayTuMauThuan): PositionDaDich {
+  const captures = pos.captures.map((c) => dichCapture(c, cong, demMauThuan));
   // Cuộn từ CÁI ĐÃ CUỘN của capture (rolledResult/rolledNtf), không phải result/ntf
   // máy khai ở capture — xem giải thích đầu file.
   const cuon = rollupVerdict(
@@ -261,8 +281,8 @@ function dichPosition(pos: RawPosition, cong?: CongSpecCayV2): PositionDaDich {
   };
 }
 
-function dichSurface(surf: RawSurface, cong?: CongSpecCayV2): SurfaceDaDich {
-  const positions = surf.positions.map((p) => dichPosition(p, cong));
+function dichSurface(surf: RawSurface, cong?: CongSpecCayV2, demMauThuan?: DemMayTuMauThuan): SurfaceDaDich {
+  const positions = surf.positions.map((p) => dichPosition(p, cong, demMauThuan));
   const cuon = rollupVerdict(
     positions.map((p) => ({ result: p.rolledResult, ntf: p.rolledNtf, ntfSource: p.ntfSource })),
   );
@@ -292,12 +312,17 @@ function dichSurface(surf: RawSurface, cong?: CongSpecCayV2): SurfaceDaDich {
  * nơi gọi tạo cho ĐÚNG MỘT lượt ingest, không phải trạng thái toàn cục của module.
  * Gọi hàm này hai lần với CÙNG một cổng sẽ cộng dồn bộ đếm — cố ý, và là lý do mỗi
  * cửa dựng cổng MỚI cho mỗi bo.
+ *
+ * ★★★ `opts.demMauThuan` (Khối C Task 13, BG-98) — bộ ĐẾM riêng (`./mayTuMauThuan`),
+ * TÁCH HẲN khỏi `opts.cong`: so `value`/`result` máy khai với `lowerLimit`/`upperLimit`
+ * MÁY TỰ KHAI kèm CHÍNH lá đó — không đọc bản dạy, không đổi `result`/`ghiChuCong` trả
+ * về. Cùng quy tắc CÓ TRẠNG THÁI như `opts.cong`: dựng bộ đếm MỚI cho mỗi lượt ingest.
  */
 export function dichCayKetQua(
   payload: MachinePayloadV2,
-  opts?: { cong?: CongSpecCayV2 },
+  opts?: { cong?: CongSpecCayV2; demMauThuan?: DemMayTuMauThuan },
 ): CayDaDich {
-  const surfaces = payload.surfaces.map((s) => dichSurface(s, opts?.cong));
+  const surfaces = payload.surfaces.map((s) => dichSurface(s, opts?.cong, opts?.demMauThuan));
   // Cuộn TỪ CÁC SURFACE (đã cuộn), KHÔNG lấy lại overallResult/ntf máy khai ở
   // cấp payload — đây vẫn là "cuộn-từ-lá" như trước Pha 1C.
   const cuon = rollupVerdict(
