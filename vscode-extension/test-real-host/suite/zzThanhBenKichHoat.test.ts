@@ -19,14 +19,18 @@ import * as assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
+import { MA_VIEW_THANH_BEN, MA_VIEW_THANH_BEN_PHU, hoTroThanhBenPhu } from "../prodImports";
 
 const EXT_ROOT = join(__dirname, "..", "..");
 const pkg: {
   publisher: string;
   name: string;
   contributes?: {
-    viewsContainers?: { activitybar?: Array<{ id: string; title: string; icon: string }> };
-    views?: Record<string, Array<{ id: string; name: string; type?: string }>>;
+    viewsContainers?: {
+      activitybar?: Array<{ id: string; title: string; icon: string; when?: string }>;
+      secondarySidebar?: Array<{ id: string; title: string; icon: string; when?: string }>;
+    };
+    views?: Record<string, Array<{ id: string; name: string; type?: string; when?: string }>>;
     commands?: Array<{ command: string }>;
   };
 } = JSON.parse(readFileSync(join(EXT_ROOT, "package.json"), "utf8"));
@@ -94,5 +98,62 @@ describe("THANH BÊN — viewsContainers.activitybar + views (webview) trong hos
     await vscode.commands.executeCommand("aviAiLocal.moBangChat");
     // Dọn tab đã mở — bảng NỔI là một WebviewPanel, chiếm một tab editor.
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+  });
+});
+
+/**
+ * ★★★ ĐỢT F / TASK 4 (2026-09-03) — CẶP vùng chứa (secondarySidebar CHÍNH + activitybar LÙI, xem
+ * `package.json` + `loi/thanhBenPhu.ts`). Lưới `thanhBen.unit.test.ts` đã canh MANIFEST (chuỗi
+ * tĩnh); nhóm ca dưới đây đo KẾT CỤC trong extension host THẬT — thứ chỉ lộ ra khi VSCode thật đọc
+ * `when` và thật sự resolve view.
+ *
+ * ⚠ CHƯA CHẠY (ràng buộc B5 của kế hoạch: KHÔNG chạy `npm run test-that` khi người dùng đang làm
+ * việc — nó mở cửa sổ VSCode THẬT và từng làm treo extension host của họ). Viết ca vào đây và ĐỂ
+ * ĐÓ; người review sẽ xin phép người dùng rồi chạy `test-that` sau. Cùng khuôn "zz" (tên tệp) để
+ * Mocha nạp SAU các tệp khác, không đổi hành vi các ca trên.
+ */
+describe("ĐỢT F / TASK 4 — cặp vùng chứa thanh bên phụ/hoạt động trong host thật", function () {
+  this.timeout(30_000);
+
+  it("★★★ package.json khai ĐÚNG MỘT container secondarySidebar + ĐÚNG MỘT view webview bên trong nó, icon THẬT TRÊN ĐĨA", () => {
+    const containers = pkg.contributes?.viewsContainers?.secondarySidebar ?? [];
+    assert.equal(containers.length, 1, "kỳ vọng đúng một container secondarySidebar");
+    const containerId = containers[0].id;
+    assert.ok(containers[0].icon, "container secondarySidebar thiếu trường icon");
+    const iconAbs = join(EXT_ROOT, containers[0].icon);
+    assert.ok(existsSync(iconAbs), `icon khai "${containers[0].icon}" nhưng KHÔNG có tệp thật tại ${iconAbs}`);
+
+    const views = pkg.contributes?.views?.[containerId] ?? [];
+    assert.equal(views.length, 1, `kỳ vọng đúng một view khai dưới container "${containerId}"`);
+    assert.equal(views[0].type, "webview", "view phải khai type=webview để BangChat gắn được vào");
+    assert.equal(views[0].id, MA_VIEW_THANH_BEN_PHU, "id view secondarySidebar lệch khỏi hằng MA_VIEW_THANH_BEN_PHU");
+  });
+
+  it("★★★ hai `when` của viewsContainers (activitybar vs secondarySidebar) là PHỦ ĐỊNH CỦA NHAU", () => {
+    const whenActivitybar = pkg.contributes!.viewsContainers!.activitybar![0].when ?? "";
+    const whenPhu = pkg.contributes!.viewsContainers!.secondarySidebar![0].when ?? "";
+    assert.ok(whenActivitybar.length > 0 && !whenActivitybar.startsWith("!"), `activitybar.when="${whenActivitybar}"`);
+    assert.equal(whenPhu, `!${whenActivitybar}`, "secondarySidebar.when PHẢI là phủ định NGUYÊN VĂN của activitybar.when");
+  });
+
+  it("★★★ mở view Ở VÙNG CHỨA ĐANG HOẠT ĐỘNG (theo `vscode.version` THẬT của host này) KHÔNG NÉM LỖI, extension active=true SAU đó", async () => {
+    // ★★★ B1/B2 — dùng ĐÚNG hàm sản xuất (`hoTroThanhBenPhu`, cùng logic `extension.ts` dùng để
+    // `setContext` lúc `activate()`) để suy ra view id nào đang THỰC SỰ hiển thị trên host thật
+    // đang chạy lưới này — không đoán, không hard-code một trong hai.
+    const hoTro = hoTroThanhBenPhu(vscode.version);
+    const viewIdDangHoatDong = hoTro ? MA_VIEW_THANH_BEN_PHU : MA_VIEW_THANH_BEN;
+    console.log(
+      `[thanh-ben-phu] vscode.version=${vscode.version} hoTroThanhBenPhu=${hoTro} ⇒ mở view "${viewIdDangHoatDong}"`,
+    );
+
+    await vscode.commands.executeCommand(`${viewIdDangHoatDong}.focus`);
+    await new Promise((r) => setTimeout(r, 2000));
+
+    const ext = vscode.extensions.getExtension(EXT_ID)!;
+    assert.equal(
+      ext.isActive,
+      true,
+      `mở view "${viewIdDangHoatDong}" (vùng chứa đang hoạt động theo vscode.version=${vscode.version}) KHÔNG kích hoạt extension`,
+    );
   });
 });

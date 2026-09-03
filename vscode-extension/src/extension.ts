@@ -5,11 +5,12 @@ import * as vscode from "vscode";
 import { dangNhap } from "./mang/dangNhap";
 import { KHOA_COOKIE, KHOA_TEN_TAI_KHOAN } from "./loi/dangNhap";
 import { BangChat } from "./ui/bangChat";
-import { BangChatViewProvider, MA_VIEW_THANH_BEN } from "./ui/bangChatView";
+import { BangChatViewProvider, MA_VIEW_THANH_BEN, MA_VIEW_THANH_BEN_PHU } from "./ui/bangChatView";
 import { KhoDeXuat, SCHEME } from "./ui/diffDeXuat";
 import { dungCauHoiSuaChon } from "./loi/cauHoiSuaChon";
 import { duongTuongDoiTrongWorkspace } from "./loi/chanGhi";
 import { duocPhepRoiMay } from "./loi/nguCanh";
+import { hoTroThanhBenPhu, KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU } from "./loi/thanhBenPhu";
 
 async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("aviAiLocal");
@@ -182,13 +183,45 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   /**
-   * ★★★ THANH BÊN — lối vào NHÌN THẤY ĐƯỢC: icon ở thanh hoạt động (xem `viewsContainers` +
-   * `views` trong `package.json`) mở khung chat này. `retainContextWhenHidden: true` khớp hành vi
-   * bảng NỔI cũ (`moHoacHien` cũng bật cờ này) — ẩn/hiện lại view (thu gọn sidebar, đổi tab) không
-   * làm mất phiên chat đang gõ dở.
+   * ★★★ ĐỢT F / TASK 4 / B2 — context key TA tự đặt, quyết định người dùng thấy AI Local ở THANH
+   * BÊN PHỤ (secondarySidebar, chỗ họ để Claude Code — xem `package.json`
+   * `viewsContainers.secondarySidebar[0].when: "!${KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU}"`)
+   * hay LÙI về thanh hoạt động (activitybar, `when` KHÔNG có "!" — hai biểu thức PHỦ ĐỊNH của
+   * nhau, `thanhBen.unit.test.ts` canh cả cặp). Đặt SỚM trong `activate()`, TRƯỚC khi VSCode có
+   * dịp resolve bất kỳ view nào của extension — `when` được VSCode đọc lại mỗi khi context đổi,
+   * nhưng đặt trễ để lọt qua một khung hình đầu (sai vị trí thoáng qua) là không cần thiết khi ta
+   * hoàn toàn có thể đặt xong TRƯỚC.
+   *
+   * ★★★ B1 — ĐO ĐƯỢC, không đoán: xem docblock `hoTroThanhBenPhu` (`loi/thanhBenPhu.ts`) — ngưỡng
+   * 1.106 mirror ĐÚNG logic runtime của Claude Code (bản 2.1.259 đang cài trên máy đo), đọc thẳng
+   * từ `extension.js` đã build của nó, KHÔNG phải suy từ `engines.vscode` (chỉ là trần activate).
    */
+  void vscode.commands.executeCommand(
+    "setContext",
+    KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU,
+    !hoTroThanhBenPhu(vscode.version),
+  );
+
+  /**
+   * ★★★ THANH BÊN — lối vào NHÌN THẤY ĐƯỢC: icon ở thanh hoạt động HOẶC thanh bên phụ (tuỳ context
+   * key ở trên) mở khung chat này. `retainContextWhenHidden: true` khớp hành vi bảng NỔI cũ
+   * (`moHoacHien` cũng bật cờ này) — ẩn/hiện lại view (thu gọn sidebar, đổi tab) không làm mất phiên
+   * chat đang gõ dở.
+   *
+   * ★★★ ĐỢT F / TASK 4 / B3 — HAI view id (`MA_VIEW_THANH_BEN` cho bản LÙI ở activitybar,
+   * `MA_VIEW_THANH_BEN_PHU` cho bản CHÍNH ở secondarySidebar) ⇒ phải đăng ký CẢ HAI, nhưng dùng
+   * CHUNG một instance `boCungCap` — `BangChatViewProvider.resolveWebviewView` không đọc view id
+   * hay tự suy container nào, nên không có lý do gì để tạo hai instance (càng không phải hai lớp).
+   * Chỉ MỘT trong hai view thực sự được VSCode resolve tại một thời điểm (container kia bị `when`
+   * ẩn đi), nhưng cả hai vẫn cần một provider ĐÃ ĐĂNG KÝ sẵn — nếu không, container hợp lệ mà thiếu
+   * provider sẽ báo lỗi "no view registered" ngay khi VSCode thử mở nó.
+   */
+  const boCungCap = new BangChatViewProvider(context, khoDeXuat);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(MA_VIEW_THANH_BEN, new BangChatViewProvider(context, khoDeXuat), {
+    vscode.window.registerWebviewViewProvider(MA_VIEW_THANH_BEN, boCungCap, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+    vscode.window.registerWebviewViewProvider(MA_VIEW_THANH_BEN_PHU, boCungCap, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
   );

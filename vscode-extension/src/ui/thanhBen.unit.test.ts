@@ -19,11 +19,12 @@ import { join } from "node:path";
 
 vi.mock("vscode", () => ({ window: {}, commands: {}, workspace: {}, Uri: {} }));
 
+type MucContainer = { id: string; title: string; icon: string; when?: string };
 const GOC = join(__dirname, "..", "..");
 const manifest = JSON.parse(readFileSync(join(GOC, "package.json"), "utf8")) as {
   contributes?: {
-    viewsContainers?: { activitybar?: Array<{ id: string; title: string; icon: string }> };
-    views?: Record<string, Array<{ id: string; type?: string }>>;
+    viewsContainers?: { activitybar?: MucContainer[]; secondarySidebar?: MucContainer[] };
+    views?: Record<string, Array<{ id: string; type?: string; when?: string }>>;
     commands?: Array<{ command: string; title: string; icon?: string }>;
     menus?: { "view/title"?: Array<{ command: string; when?: string; group?: string }> };
   };
@@ -38,8 +39,12 @@ describe("thanh bên — ba mối nối bằng chuỗi", () => {
   });
 
   it("★★★ khoá của `views` KHỚP id của container (lệch ⇒ view mồ côi, icon rỗng)", () => {
-    const idContainer = manifest.contributes!.viewsContainers!.activitybar![0].id;
-    expect(Object.keys(manifest.contributes?.views ?? {})).toEqual([idContainer]);
+    // ★★★ ĐỢT F / TASK 4 — MỞ RỘNG: từ đây có HAI container (activitybar "lùi" + secondarySidebar
+    // "chính", xem describe TASK 4 dưới), nên `views` phải có ĐÚNG hai khoá, không nhiều không ít
+    // — so bằng TẬP HỢP (không quan tâm thứ tự) để không đỏ oan nếu ai đó đổi thứ tự khai báo.
+    const idActivitybar = manifest.contributes!.viewsContainers!.activitybar![0].id;
+    const idPhu = manifest.contributes!.viewsContainers!.secondarySidebar![0].id;
+    expect(new Set(Object.keys(manifest.contributes?.views ?? {}))).toEqual(new Set([idActivitybar, idPhu]));
   });
 
   it("★★★ `MA_VIEW_THANH_BEN` trong MÃ khớp NGUYÊN VĂN id trong MANIFEST", async () => {
@@ -90,12 +95,29 @@ describe("thanh bên — ĐỢT F / TASK 3: view/title (Chat mới + Lịch sử
     expect(lenh).toContain("aviAiLocal.lichSu");
   });
 
-  it("★★★ MỐI NỐI 4 — mọi `when` trong view/title khớp NGUYÊN VĂN `view == <MA_VIEW_THANH_BEN>`", async () => {
-    const { MA_VIEW_THANH_BEN } = await import("./bangChatView");
+  it("★★★ MỐI NỐI 4 — mọi `when` trong view/title khớp NGUYÊN VĂN `view == <một trong hai MA_VIEW_...>`", async () => {
+    // ★★★ ĐỢT F / TASK 4 / B4 — MỞ RỘNG: từ Task 4 có HAI view id sống song song (activitybar
+    // "lùi" + secondarySidebar "chính"). Mỗi mục `view/title` phải khớp NGUYÊN VĂN với MỘT TRONG
+    // HAI hằng — không còn đúng một hằng duy nhất như Task 3 nữa.
+    const { MA_VIEW_THANH_BEN, MA_VIEW_THANH_BEN_PHU } = await import("./bangChatView");
+    const dsHopLe = new Set([`view == ${MA_VIEW_THANH_BEN}`, `view == ${MA_VIEW_THANH_BEN_PHU}`]);
     expect(dsMenu().length).toBeGreaterThan(0); // không lặng lẽ xanh trên một mảng rỗng
     for (const m of dsMenu()) {
-      expect(m.when, `mục "${m.command}" có when="${m.when}"`).toBe(`view == ${MA_VIEW_THANH_BEN}`);
+      expect(dsHopLe.has(m.when ?? ""), `mục "${m.command}" có when="${m.when}"`).toBe(true);
     }
+  });
+
+  it("★★★ ĐỢT F / TASK 4 / B4 — mọi menu (Chat mới + Lịch sử) áp cho CẢ HAI view id, không riêng một bên", async () => {
+    // Lệch ⇒ thanh công cụ (nút Chat mới/Lịch sử) BIẾN MẤT ở vùng chứa còn lại — đúng cảnh báo
+    // trong kế hoạch Đợt F / Task 4 / B4. Đo bằng tích Đề-các: 2 lệnh × 2 view id = 4 mục.
+    const { MA_VIEW_THANH_BEN, MA_VIEW_THANH_BEN_PHU } = await import("./bangChatView");
+    for (const lenh of ["aviAiLocal.chatMoi", "aviAiLocal.lichSu"]) {
+      for (const view of [MA_VIEW_THANH_BEN, MA_VIEW_THANH_BEN_PHU]) {
+        const co = dsMenu().some((m) => m.command === lenh && m.when === `view == ${view}`);
+        expect(co, `thiếu mục view/title cho lệnh "${lenh}" ở view "${view}"`).toBe(true);
+      }
+    }
+    expect(dsMenu()).toHaveLength(4);
   });
 
   it("★★★ MỐI NỐI 5 — mọi `command` trong view/title THẬT SỰ được `registerCommand(...)` trong extension.ts", () => {
@@ -123,5 +145,110 @@ describe("thanh bên — ĐỢT F / TASK 3: view/title (Chat mới + Lịch sử
     const ds = manifest.contributes?.commands ?? [];
     expect(ds.find((c) => c.command === "aviAiLocal.chatMoi")?.icon).toBe("$(add)");
     expect(ds.find((c) => c.command === "aviAiLocal.lichSu")?.icon).toBe("$(history)");
+  });
+});
+
+/**
+ * ★★★ ĐỢT F / TASK 4 — đặt được ở ĐÚNG VỊ TRÍ Claude Code (thanh bên phụ / secondarySidebar).
+ *
+ * ĐO ĐƯỢC (B1, không đoán): manifest `anthropic.claude-code-2.1.259-win32-x64` (đang cài trên máy
+ * đo) khai CẶP `viewsContainers` loại trừ nhau — `activitybar` (khi
+ * `claude-code:doesNotSupportSecondarySidebar`) + `secondarySidebar` (khi PHỦ ĐỊNH của cùng khoá
+ * đó) — và context key ấy do CHÍNH Claude Code đặt lúc `activate()`, dựa trên phiên bản VSCode
+ * (ngưỡng đo được: major>1 || major===1 && minor>=106; xem `loi/thanhBenPhu.ts`). Đợt F mirror
+ * ĐÚNG khuôn đó bằng context key riêng `aviAiLocal:khongHoTroThanhBenPhu`.
+ *
+ * BA MỐI NỐI THÊM (6, 7, 8) mà `tsc` KHÔNG bắt được lệch, nối tiếp đánh số 4/5 ở Task 3:
+ *   6. context key trong `when` của CẢ HAI container (bỏ dấu "!" ở secondarySidebar) khớp NGUYÊN
+ *      VĂN `KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU` (`loi/thanhBenPhu.ts`) — chuỗi extension.ts
+ *      dùng để `setContext`.
+ *   7. `extension.ts` THẬT SỰ `registerWebviewViewProvider(...)` cho CẢ HAI view id (không chỉ
+ *      view id activitybar cũ) — lệch ⇒ container hợp lệ mà VSCode báo lỗi "no view registered".
+ *   8. hai biểu thức `when` của `viewsContainers` là PHỦ ĐỊNH CỦA NHAU — lệch ⇒ HAI icon AI Local
+ *      cùng hiện (khi cả hai context cùng đúng) hoặc KHÔNG icon nào hiện (khi cả hai cùng sai).
+ */
+describe("thanh bên — ĐỢT F / TASK 4: cặp vùng chứa (secondarySidebar CHÍNH + activitybar LÙI)", () => {
+  it("★★★ manifest KHAI một container ở thanh bên phụ (không có ⇒ không có bản 'CHÍNH' nào để lùi từ đó)", () => {
+    const ds = manifest.contributes?.viewsContainers?.secondarySidebar ?? [];
+    expect(ds.length).toBe(1);
+    expect(ds[0].id.length).toBeGreaterThan(0);
+    expect(ds[0].title.length).toBeGreaterThan(0);
+  });
+
+  it("★★★ `MA_VIEW_THANH_BEN_PHU` trong MÃ khớp NGUYÊN VĂN id view của container secondarySidebar", async () => {
+    const { MA_VIEW_THANH_BEN_PHU } = await import("./bangChatView");
+    const idContainer = manifest.contributes!.viewsContainers!.secondarySidebar![0].id;
+    const dsView = manifest.contributes!.views![idContainer];
+    expect(dsView.map((v) => v.id)).toContain(MA_VIEW_THANH_BEN_PHU);
+    expect(dsView[0]!.type).toBe("webview");
+  });
+
+  it("★★★ hai view id (activitybar vs secondarySidebar) KHÁC NHAU — trùng ⇒ VSCode từ chối đăng ký view thứ hai", async () => {
+    const { MA_VIEW_THANH_BEN, MA_VIEW_THANH_BEN_PHU } = await import("./bangChatView");
+    expect(MA_VIEW_THANH_BEN_PHU).not.toBe(MA_VIEW_THANH_BEN);
+  });
+
+  it("★★★ icon của CẢ HAI container trỏ tệp CÓ THẬT trên đĩa, là SVG dùng currentColor", () => {
+    for (const icon of [
+      manifest.contributes!.viewsContainers!.activitybar![0].icon,
+      manifest.contributes!.viewsContainers!.secondarySidebar![0].icon,
+    ]) {
+      const duong = join(GOC, icon);
+      expect(existsSync(duong), `icon "${icon}" không tồn tại trên đĩa`).toBe(true);
+      const noiDung = readFileSync(duong, "utf8");
+      expect(noiDung).toContain("<svg");
+      expect(noiDung).toContain("currentColor");
+    }
+  });
+
+  it("★★★ MỐI NỐI 6 — context key trong `when` khớp NGUYÊN VĂN với hằng `extension.ts` dùng để setContext", async () => {
+    const { KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU } = await import("../loi/thanhBenPhu");
+    const whenActivitybar = manifest.contributes!.viewsContainers!.activitybar![0].when;
+    const whenPhu = manifest.contributes!.viewsContainers!.secondarySidebar![0].when;
+    expect(whenActivitybar).toBe(KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU);
+    expect(whenPhu).toBe(`!${KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU}`);
+  });
+
+  it("★★★ MỐI NỐI 8 / B4 — hai `when` của viewsContainers là PHỦ ĐỊNH CỦA NHAU (không đoán từ chuỗi cứng)", () => {
+    // Đo bằng CẤU TRÚC (bóc dấu "!" rồi so phần còn lại), không phải so hai chuỗi cứng viết tay —
+    // một bản vá đổi TÊN context key ở cả hai nơi vẫn phải xanh, chỉ đỏ khi MỐI QUAN HỆ phủ định
+    // (không phải giá trị cụ thể) bị phá.
+    const whenActivitybar = manifest.contributes!.viewsContainers!.activitybar![0].when ?? "";
+    const whenPhu = manifest.contributes!.viewsContainers!.secondarySidebar![0].when ?? "";
+    expect(whenActivitybar.startsWith("!"), `activitybar.when="${whenActivitybar}" không nên có "!"`).toBe(false);
+    expect(whenPhu.startsWith("!"), `secondarySidebar.when="${whenPhu}" PHẢI có "!" (phủ định)`).toBe(true);
+    expect(whenPhu.slice(1)).toBe(whenActivitybar);
+    // Cùng khoá `when` ở `views[...][0]` (Claude Code cũng lặp lại `when` ở cả container LẪN view,
+    // xem B1) — lệch ⇒ container đúng vị trí nhưng view bên trong tự ẩn/hiện SAI theo context khác.
+    const idActivitybar = manifest.contributes!.viewsContainers!.activitybar![0].id;
+    const idPhu = manifest.contributes!.viewsContainers!.secondarySidebar![0].id;
+    expect(manifest.contributes!.views![idActivitybar][0]!.when).toBe(whenActivitybar);
+    expect(manifest.contributes!.views![idPhu][0]!.when).toBe(whenPhu);
+  });
+
+  it("★★★ MỐI NỐI 7 — extension.ts THẬT SỰ registerWebviewViewProvider CẢ HAI view id", async () => {
+    // ⚠ Khác MỐI NỐI 5 (Task 3): `registerCommand` nhận CHUỖI literal, còn
+    // `registerWebviewViewProvider` ở đây nhận HẰNG (`MA_VIEW_THANH_BEN`/`MA_VIEW_THANH_BEN_PHU`,
+    // import từ `bangChatView.ts`) — nên đo bằng TÊN định danh, không phải giá trị chuỗi của nó
+    // (dò theo giá trị sẽ không bao giờ khớp, vì mã nguồn không viết chuỗi "aviAiLocal.bangChat"
+    // trực tiếp ở lệnh gọi này).
+    const maNguon = readFileSync(join(GOC, "src", "extension.ts"), "utf8");
+    for (const ten of ["MA_VIEW_THANH_BEN", "MA_VIEW_THANH_BEN_PHU"]) {
+      const mau = new RegExp(`registerWebviewViewProvider\\(\\s*${ten}\\b`);
+      expect(mau.test(maNguon), `KHÔNG thấy registerWebviewViewProvider(${ten}, …) trong extension.ts`).toBe(true);
+    }
+    // Và HẰNG đó phải THẬT SỰ được import từ đúng module khai id (không phải một biến trùng tên
+    // định nghĩa lại ở nơi khác, thứ regex trên không phân biệt được).
+    expect(maNguon).toMatch(/import\s*\{[^}]*MA_VIEW_THANH_BEN_PHU[^}]*\}\s*from\s*["']\.\/ui\/bangChatView["']/);
+  });
+
+  it("★ extension.ts THẬT SỰ gọi setContext với ĐÚNG hằng context key (không phải chuỗi viết tay lệch)", async () => {
+    const { KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU } = await import("../loi/thanhBenPhu");
+    const maNguon = readFileSync(join(GOC, "src", "extension.ts"), "utf8");
+    expect(maNguon).toMatch(/executeCommand\(\s*["']setContext["']/);
+    expect(maNguon).toContain("KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU");
+    // Hằng số IMPORT từ `loi/thanhBenPhu.ts` — nếu tồn tại (đã xác nhận ở lưới thuần riêng), giá trị
+    // dùng ở đây LUÔN khớp vì cùng một hằng, không phải hai chuỗi viết tay có thể trôi dần.
+    expect(KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU.length).toBeGreaterThan(0);
   });
 });

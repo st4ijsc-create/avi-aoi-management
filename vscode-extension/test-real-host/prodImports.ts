@@ -19,3 +19,7 @@ export { duongTuongDoiTrongWorkspace, giaiDuongDeXuat, duocPhepGhi } from "../sr
 export { giaiDuongThat } from "../src/loi/duongThat";
 export { docDeXuatCucBo } from "../src/loi/deXuatCucBo";
 export { bamNoiDung } from "../src/loi/bamTep";
+// ★★★ ĐỢT F / TASK 4 — cặp view id thanh bên (activitybar "lùi" + secondarySidebar "chính") và
+// phép so sánh THUẦN quyết định vùng chứa nào đang hoạt động trên host THẬT đang chạy lưới.
+export { MA_VIEW_THANH_BEN, MA_VIEW_THANH_BEN_PHU } from "../src/ui/bangChatView";
+export { hoTroThanhBenPhu, KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU } from "../src/loi/thanhBenPhu";

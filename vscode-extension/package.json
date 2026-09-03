@@ -20,7 +20,16 @@
         {
           "id": "aviAiLocalThanhBen",
           "title": "AI Local",
-          "icon": "media/thanh-ben.svg"
+          "icon": "media/thanh-ben.svg",
+          "when": "aviAiLocal:khongHoTroThanhBenPhu"
+        }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "aviAiLocalThanhBenPhu",
+          "title": "AI Local",
+          "icon": "media/thanh-ben.svg",
+          "when": "!aviAiLocal:khongHoTroThanhBenPhu"
         }
       ]
     },
@@ -29,7 +38,16 @@
         {
           "id": "aviAiLocal.bangChat",
           "name": "AI Local",
-          "type": "webview"
+          "type": "webview",
+          "when": "aviAiLocal:khongHoTroThanhBenPhu"
+        }
+      ],
+      "aviAiLocalThanhBenPhu": [
+        {
+          "id": "aviAiLocal.bangChatPhu",
+          "name": "AI Local",
+          "type": "webview",
+          "when": "!aviAiLocal:khongHoTroThanhBenPhu"
         }
       ]
     },
@@ -78,6 +96,16 @@
         {
           "command": "aviAiLocal.lichSu",
           "when": "view == aviAiLocal.bangChat",
+          "group": "navigation"
+        },
+        {
+          "command": "aviAiLocal.chatMoi",
+          "when": "view == aviAiLocal.bangChatPhu",
+          "group": "navigation"
+        },
+        {
+          "command": "aviAiLocal.lichSu",
+          "when": "view == aviAiLocal.bangChatPhu",
           "group": "navigation"
         }
       ]

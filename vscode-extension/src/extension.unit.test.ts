@@ -34,6 +34,14 @@ const may = vi.hoisted(() => ({
    * lại bản thân `chatMoi()`/`moLichSu()` (đã có lưới riêng ở `bangChat.unit.test.ts`).
    */
   thanhBenGia: undefined as undefined | { chatMoi: () => Promise<void>; moLichSu: () => Promise<void> },
+  // ★★★ ĐỢT F / TASK 4 — phiên bản VSCode GIẢ mà `vscode.version` trả về; mỗi ca tự đặt để đo
+  // `hoTroThanhBenPhu` phản ánh đúng vào lệnh `setContext` mà `activate()` gọi.
+  phienBanVscode: "1.135.0",
+  /** Mọi lệnh `commands.executeCommand(...)` mà `activate()` gọi — dùng để đo `setContext`. */
+  executeCommandGoi: [] as unknown[][],
+  /** Mọi lệnh `window.registerWebviewViewProvider(id, provider)` — dùng để đo B3 (cả hai view id
+   *  phải được đăng ký, dùng CHUNG một instance provider). */
+  dangKyViewProvider: [] as Array<{ id: string; provider: unknown }>,
 }));
 
 vi.mock("vscode", () => {
@@ -59,10 +67,20 @@ vi.mock("vscode", () => {
   return {
     Uri: { file: (p: string) => ({ fsPath: p }) },
     ViewColumn: { Beside: 2 },
+    // ★★★ ĐỢT F / TASK 4 — `hoTroThanhBenPhu(vscode.version)` đọc trường này trong `activate()`.
+    get version() {
+      return may.phienBanVscode;
+    },
     commands: {
       registerCommand: (id: string, h: () => unknown) => {
         may.lenh.set(id, h);
         return { dispose: () => undefined };
+      },
+      // ★★★ ĐỢT F / TASK 4 / B2 — `activate()` gọi `executeCommand("setContext", ...)` để đặt
+      // context key quyết định vị trí (activitybar/secondarySidebar). Ghi lại nguyên văn tham số.
+      executeCommand: (...args: unknown[]) => {
+        may.executeCommandGoi.push(args);
+        return Promise.resolve(undefined);
       },
     },
     window: {
@@ -85,8 +103,12 @@ vi.mock("vscode", () => {
       // ★★★ THANH BÊN — `activate()` nay đăng ký thêm view provider cho khung chat trong thanh
       // hoạt động (xem `extension.ts`). Lưới này đo đường CMD+K, không đo đường thanh bên, nên chỉ
       // cần một bản giả TỐI THIỂU không ném lỗi — không có gì để `resolveWebviewView` gọi tới vì
-      // không ca nào ở đây làm view hiện lên.
-      registerWebviewViewProvider: () => ({ dispose: () => undefined }),
+      // không ca nào ở đây làm view hiện lên. ★★★ ĐỢT F / TASK 4 / B3 — ghi lại (id, provider) để
+      // describe "TASK 4" dưới đây đo CẢ HAI view id được đăng ký, dùng CHUNG một instance.
+      registerWebviewViewProvider: (id: string, provider: unknown) => {
+        may.dangKyViewProvider.push({ id, provider });
+        return { dispose: () => undefined };
+      },
     },
     workspace,
   };
@@ -114,6 +136,8 @@ vi.mock("./ui/diffDeXuat", () => ({
 }));
 
 import { activate } from "./extension";
+import { MA_VIEW_THANH_BEN, MA_VIEW_THANH_BEN_PHU } from "./ui/bangChatView";
+import { KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU } from "./loi/thanhBenPhu";
 
 async function bamCmdK(): Promise<void> {
   activate({ subscriptions: [], secrets: {} } as never);
@@ -132,6 +156,9 @@ beforeEach(() => {
   may.doanChon = "let a = 1;";
   may.chonRong = false;
   may.thanhBenGia = undefined;
+  may.phienBanVscode = "1.135.0";
+  may.executeCommandGoi = [];
+  may.dangKyViewProvider = [];
 });
 
 describe("Cmd+K — đường dẫn đưa cho model (F3)", () => {
@@ -313,5 +340,47 @@ describe("ĐỢT F / TASK 3 — lệnh 'aviAiLocal.chatMoi' / 'aviAiLocal.lichSu
 
     expect(() => may.lenh.get("aviAiLocal.chatMoi")!()).not.toThrow();
     expect(() => may.lenh.get("aviAiLocal.lichSu")!()).not.toThrow();
+  });
+});
+
+/**
+ * ★★★ ĐỢT F / TASK 4 — `activate()` phải (1) đặt ĐÚNG context key bằng ĐÚNG giá trị boolean tuỳ
+ * phiên bản VSCode (B2), và (2) đăng ký CẢ HAI view id, dùng CHUNG một instance provider (B3).
+ * `thanhBen.unit.test.ts` đo phần MANIFEST (chuỗi trong package.json); lưới ở ĐÂY đo phần MÃ chạy
+ * (đúng lệnh, đúng tham số, đúng số lần) — hai lớp không thể lẫn vào nhau.
+ */
+describe("ĐỢT F / TASK 4 — activate() đặt context key CẢ HAI view id thanh bên", () => {
+  it("★★★ VSCode 1.135.0 (hỗ trợ thanh bên phụ) ⇒ setContext(khoá, false) — KHÔNG bắt lùi về activitybar", () => {
+    may.phienBanVscode = "1.135.0";
+    activate({ subscriptions: [], secrets: {} } as never);
+
+    const goi = may.executeCommandGoi.find((a) => a[0] === "setContext");
+    expect(goi, "activate() không gọi executeCommand('setContext', ...)").toBeDefined();
+    expect(goi).toEqual(["setContext", KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU, false]);
+  });
+
+  it("★★★ NHÁNH KIA — VSCode 1.50.0 (dưới ngưỡng 1.106) ⇒ setContext(khoá, true) — BẮT LÙI về activitybar", () => {
+    may.phienBanVscode = "1.50.0";
+    activate({ subscriptions: [], secrets: {} } as never);
+
+    const goi = may.executeCommandGoi.find((a) => a[0] === "setContext");
+    expect(goi).toEqual(["setContext", KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU, true]);
+  });
+
+  it("★★★ CẢ HAI view id (activitybar + secondarySidebar) đều được registerWebviewViewProvider", () => {
+    activate({ subscriptions: [], secrets: {} } as never);
+
+    const ds = may.dangKyViewProvider.map((d) => d.id);
+    expect(ds).toContain(MA_VIEW_THANH_BEN);
+    expect(ds).toContain(MA_VIEW_THANH_BEN_PHU);
+    expect(ds).toHaveLength(2); // đúng hai lần — không đăng ký thừa, không thiếu.
+  });
+
+  it("★★★ dùng CHUNG một instance provider cho cả hai view id — KHÔNG chép lớp/instance thứ hai", () => {
+    activate({ subscriptions: [], secrets: {} } as never);
+
+    expect(may.dangKyViewProvider).toHaveLength(2);
+    const [a, b] = may.dangKyViewProvider;
+    expect(a!.provider).toBe(b!.provider); // NGUYÊN VĂN cùng một object, không chỉ "cùng hình dạng".
   });
 });
