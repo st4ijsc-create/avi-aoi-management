@@ -78,6 +78,21 @@ Giao diện web, cổng **admin/engineer + 2FA**. Các thao tác:
 ⚠ **Nhà máy KHÔNG có internet.** Nên với trang web: **tải trên máy có mạng trước**, mang tệp về,
 rồi nạp bằng `ingestDocumentJob`. `ingestUrlJob` chỉ dùng được ở nơi ra được mạng.
 
+★★★ **ĐÍNH CHÍNH (2026-09-04, sau Việc 8)** — bản trước của tài liệu này ngầm nói "tải lên Studio là
+xong", không phân biệt đường web/VSCode. **Câu đó SAI cho tới hôm nay**: tài liệu tải lên Studio
+**chỉ** tới được trợ lý đường **web** — trợ lý trong panel **VSCode** (route `vscode`) hoàn toàn
+KHÔNG thấy nó, vì Việc 1 (nối route vscode vào tài liệu hãng) vô tình cho route đó return SỚM, trước
+đoạn gộp Studio. Đã vá (Việc 8, `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-v8-report.md`)
+— **từ bản build này trở đi**, tài liệu Studio tới được CẢ HAI đường, với hai điều kiện:
+1. **Chỉ vai `admin`/`engineer`** thấy được tài liệu Studio qua trợ lý (cổng `canAccessStudioCorpus`,
+   quyết định sản phẩm 2026-07-29, giữ nguyên cho cả hai route) — vai khác (vd `operator`) dùng trợ lý
+   bình thường nhưng không nhận trích dẫn Studio.
+2. Route vscode áp **ngưỡng độ liên quan RIÊNG** (`0,5`, không gian nhúng mxbai — KHÁC ngưỡng `0,18`
+   đường web) để tránh nhồi tài liệu lạc đề vào panel lập trình — một tài liệu Studio phải khớp
+   **rõ ràng** với câu hỏi mới được trích dẫn qua VSCode, thay vì "cứ có gì trong kho cũng được nêu"
+   như đường web. Nếu hỏi qua VSCode mà không thấy tài liệu vừa nạp, thử một câu hỏi bám sát nội
+   dung/từ khoá của tài liệu hơn trước khi kết luận là lỗi.
+
 ---
 
 # 4. ★★★ Bốn quy tắc quyết định chất lượng

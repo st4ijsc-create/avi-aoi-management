@@ -85,12 +85,29 @@ function loaiSuKienCuaService(src: string): Set<string> {
   return ra;
 }
 
-/** Khối khai báo kiểu `StreamEvent`, cắt bằng `indexOf`/`slice` (CRLF-an toàn). */
+/**
+ * Khối khai báo kiểu `StreamEvent`, cắt bằng `indexOf`/`slice`.
+ *
+ * ★ VIỆC 8 (`task-v8-report.md`) — SỬA: dòng biên dưới TỪNG dùng `src.indexOf("\n\n", …)` (LF THUẦN)
+ *   — chỉ khớp một dòng trống nếu nó tình cờ là LF thuần trong một tệp CHỦ YẾU CRLF (git
+ *   `core.autocrlf=true` trên Windows chuyển `\n`→`\r\n` lúc checkout). Lưới TỰ NHẬN "CRLF-an toàn"
+ *   nhưng thật ra KHÔNG — nó sống sót nhờ một dòng trống LF-thuần TÌNH CỜ còn sót lại đâu đó trong
+ *   tệp (di sản của một công cụ sửa tệp trước đó), không phải vì logic đúng. Một biên tập bình
+ *   thường (chèn văn bản mới, tệp được ghi lại nguyên vẹn CRLF) đủ để dòng trống LF-thuần đó biến
+ *   mất và `cuoi` rơi về `-1` — ĐÃ ĐO ĐƯỢC: một bản vá Việc 8 hoàn toàn không đụng vùng
+ *   `StreamEvent` làm lưới này ĐỎ, xác nhận gốc rễ là biên dò-dòng-trống, không phải nội dung.
+ *   Regex `\r?\n\r?\n` chấp nhận CẢ HAI kiểu xuống dòng — vẫn `indexOf`-style (không dùng
+ *   `[\s\S]*?` đa dòng như cảnh báo cũ), chỉ đổi PHÉP DÒ dòng trống cho đúng ý đã tuyên bố.
+ */
 function khoiKieuStreamEvent(src: string): { dau: number; cuoi: number; than: string } {
   const dau = src.indexOf("export type StreamEvent =");
   expect(dau, "không tìm thấy khai báo StreamEvent").toBeGreaterThan(0);
   // Khối kết thúc ở dấu `;` đứng một mình đầu dòng — hợp kiểu này kết bằng `};` hoặc `;`.
-  const cuoi = src.indexOf("\n\n", src.indexOf("type: \"done\"", dau));
+  const tuDoneTro = src.indexOf('type: "done"', dau);
+  const reBlank = /\r?\n\r?\n/g;
+  reBlank.lastIndex = tuDoneTro >= 0 ? tuDoneTro : dau;
+  const m = tuDoneTro >= 0 ? reBlank.exec(src) : null;
+  const cuoi = m ? m.index : -1;
   expect(cuoi).toBeGreaterThan(dau);
   return { dau, cuoi, than: src.slice(dau, cuoi) };
 }

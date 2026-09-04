@@ -621,3 +621,65 @@ sạch hãng giữ nguyên **0/40**. Chi tiết: addendum cuối `task-v7-report
 `D:\SOURCES\AI Local\demo-iot\` — TCP + serial giả lập, dashboard SSE, chạy thật có output.
 Phần AI Local sinh nằm ở `csharp-reference/*.cs`; phần Node.js chạy thật do người viết, trừ một
 hàm CRC16 chuyển thể từ mã AI.
+
+## Việc 8 — vá lỗ hổng do CHÍNH Việc 1 gây ra: Training Studio không tới route vscode
+
+★★★ **Bối cảnh**: Việc 1 nối route vscode vào corpus tài liệu hãng (`retrieveProgrammingKnowledgeForVscode`)
+bằng cách cho nó **return SỚM**, trước khi chạm tới đoạn `retrieveKnowledge` gộp kho **Training
+Studio** (`kb_studio_chunks`, Wave 2). Hệ quả ngoài ý muốn: mọi tài liệu người dùng tải lên qua
+`/ai-training-studio` **không bao giờ** tới được trợ lý VSCode — dù mục 3 của tài liệu quy trình nạp
+từng ngầm nói "tải lên Studio là xong".
+
+★★★ **ĐÃ VÁ** (2026-09-04, `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-v8-report.md`)
+— `retrieveProgrammingKnowledgeForVscode` giờ **cũng** gọi `gatherStudioHits` (đúng choke-point sẵn
+có, không mở điểm gọi thứ hai lộn xộn), sau cổng bảo mật `canAccessStudioCorpus` (admin/engineer,
+y hệt cổng nhánh web) và **không** đụng `ensureDataLoaded()`/`knowledge/*` (đo bằng mock `node:fs`
+đếm lượt gọi — 0 lần, dù Studio đang hoạt động).
+
+**B1 (đo trước, đường cơ sở)**: nạp một tài liệu thử thật vào Studio (qua tRPC `kbStudio.
+ingestDocumentJob` thật — `AUTH_2FA_BAT_BUOC=0` trong `.env` khiến cổng 2FA của thủ tục này pass-
+through, quyết định sản phẩm đã ghi từ 2026-08-24, không phải lỗ hổng), rồi hỏi qua route vscode
+(server CHƯA vá) — **0 citation Studio**, model trả lời trung thực "không có thông tin". Cùng câu
+hỏi qua route web (đã nối Studio từ Wave 2) — **1 citation Studio, điểm 0,7326**, model trả lời
+đúng cả mã đánh dấu lẫn "mật khẩu bí mật" nhúng trong tài liệu thử. Xác nhận đúng lỗ hổng.
+
+**B2 — hai thang điểm khác nhau, ĐÃ ĐO, KHÔNG trộn bừa**: vendor (`searchProgrammingKb`) chấm điểm
+trong không gian **Qwen3-Embedding**; Studio (`gatherStudioHits`) chấm điểm bằng cosine thuần trong
+không gian **mxbai** (`GGUF_EMBED_MODEL` mặc định — `kbIngestService.ts` không truyền `modelId` khi
+nạp). Hai model khác nhau ⇒ không trộn/sắp chung theo điểm thô — hai ngưỡng riêng, nối theo thứ tự
+CỐ ĐỊNH (vendor trước, Studio sau), không sort lẫn hai nhóm.
+
+★★ **Lượt đầu SAI, tự bắt được bằng đo sống**: chọn `MIN_STUDIO_CITATION_SCORE = 0,18` (tái dùng số
+của nhánh web) — build+restart, đo lại bằng chính tài liệu thử: **BA chunk KHÔNG liên quan** (một
+quy trình bảo trì + một ảnh chụp màn hình, có sẵn trong DB từ một corpus test cũ) **lọt qua** với
+điểm 0,3134–0,4040, đứng lẫn cùng citation đúng (0,7303). Nguyên nhân: 0,18 mã hoá triết lý "giữ
+top-1 dù yếu" của nhánh web — **ngược** triết lý đã tuyên bố cho route vscode ("lạc miền ⇒ rỗng").
+Sửa: `MIN_STUDIO_CITATION_SCORE = 0,5` (giữa hai cụm đo được: nhiễu ≤0,4040 · đúng miền ≥0,7303).
+Build+restart lần hai, đo lại: Studio noise biến mất, citation đúng vẫn còn (0,7300). ⚠ N=1 câu hỏi
+thật — mẫu mỏng, cần thêm dữ liệu khi corpus Studio lớn hơn.
+
+**B3 (bốn nhánh kia)**: route web không đổi (`aiLocalKnowledge.progKbRouteGate.test.ts` không sửa,
+7/7 xanh); route vscode vẫn không thấy kho vận hành (đo lại `expect(fsReadFileSync).not.toHaveBeenCalled()`
+kể cả khi Studio đang hoạt động); Studio rỗng ⇒ y hệt trước (fail-safe có sẵn của `gatherStudioHits`);
+`MIN_PROG_KB_CITATION_SCORE=0,5` không đổi.
+
+**B4 (đo lại, `eval-vscode-route.mjs`)**: **8 ĐẠT/2 SAI/1 CHẶN-ĐÚNG không đổi** trước→sau (elapsedMs
+trung bình 4802ms→4722ms); nhiễm nhầm hãng **0/40 không đổi**; VSC-C1 (đối chứng "không rò kho vận
+hành") vẫn **0 citation**. Phép đo MỚI: tài liệu thử nạp qua Studio ⇒ hỏi qua route vscode ⇒ **1
+citation `sourceType:"studio"`, điểm 0,7300**, model trả lời đúng cả hai chi tiết bí mật của tài liệu.
+
+**B5 (ablation)**: 3 đột biến tầng mã (gỡ cổng `canAccessStudioCorpus` · khôi phục early-return cũ
+trước khi thử Studio · lùi ngưỡng về 0,18) — mỗi đột biến làm ĐÚNG ca lưới nhắm tới chuyển ĐỎ, hoàn
+nguyên xanh lại 100%. Lượt đo sống "trước" (server chưa vá, 0 citation Studio) đối chứng trực tiếp
+với lượt "sau" (1 citation, điểm 0,73) — tương đương một ablation sống, tránh restart server thật
+lần thứ ba (đúng tinh thần Việc 6: giảm số lần restart production).
+
+**B6**: build+restart TỔNG CỘNG hai lần (lần 1 vá chưa hiệu chỉnh ngưỡng, lần 2 sau khi B4 phát hiện
++ sửa ngưỡng) — health `200` cả hai lần, đo lại trên chính build đã deploy (không suy diễn từ mã
+nguồn).
+
+**CÒN MỞ**: ngưỡng `MIN_STUDIO_CITATION_SCORE=0,5` dựa trên N=1 câu hỏi thật — cần thêm mẫu khi
+corpus Studio lớn hơn; tổng citation route vscode có thể lên tới `vendor + topK` (không cắt chung một
+trần) — chưa quan sát thấy vấn đề thật (vendor hiếm khi đầy 5 slot ở ngưỡng 0,5) nhưng chưa đo tải
+lớn; corpus thử `task-v8-probe` còn lại trong DB Studio thật (nội dung vô hại, xoá được qua
+`kbStudio.deleteCorpus` — admin-only — nếu muốn dọn).

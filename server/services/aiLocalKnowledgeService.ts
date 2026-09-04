@@ -2343,6 +2343,85 @@ export function detectProgrammingVendors(question: string): string[] {
   return Array.from(found);
 }
 
+/**
+ * ★★★ VIỆC 8 (`docs/superpowers/specs/2026-09-04-ai-local-danh-gia-hien-trang-va-lo-trinh.md` §12,
+ * vá lỗ hổng do CHÍNH Việc 1 tạo ra) — route "vscode" giờ CŨNG trộn thêm kho **Training Studio**
+ * (`kb_studio_chunks`, nạp qua `/ai-training-studio`) vào kết quả tài liệu hãng ở trên, thay vì chỉ
+ * âm thầm phục vụ đường web như trước (`retrieveKnowledge` nhánh dưới, dòng ~2694). Tài liệu người
+ * dùng tải lên Studio TRƯỚC bản vá này không bao giờ tới được trợ lý VSCode — dù UI/tài liệu hướng
+ * dẫn nói ngược lại.
+ *
+ * ─── B1 (đo trước khi vá) — `gatherStudioHits` cần gì ────────────────────────────────────────────
+ * Chữ ký: `gatherStudioHits(queryEmbedding: number[], topK): Promise<StudioHit[]>`
+ * (`aiLocalKnowledgeStudio.ts`) — nhận VECTOR TRUY VẤN ĐÃ TÍNH SẴN (không tự nhúng lại), duyệt
+ * `listCorpora()` rồi `searchCorpus()` từng corpus (cosine THUẦN qua pgvector `<=>` hoặc brute-force
+ * — xem `kbVectorStore.ts:180`), fail-safe tuyệt đối (mọi lỗi ⇒ `[]`).
+ *
+ * ─── ★★★ B2 — HAI THANG ĐIỂM KHÔNG SO SÁNH ĐƯỢC, ĐÃ ĐO, KHÔNG TRỘN BỪA ──────────────────────────
+ * `searchProgrammingKb` (khối vendor phía trên) chấm điểm trong không gian **Qwen3-Embedding**
+ * (`aiProgrammingKnowledgeService.ts` dòng 9: "different embed model space (Qwen3-Embedding
+ * 1024-d, per manifest.embedModel)"), hybrid semantic×0.72 + keyword×0.28, ngưỡng 0,5 đã hiệu chỉnh
+ * BẰNG ĐO THẬT trên chính không gian đó (nhiễu ≤0,351 · đúng miền ≥0,7116 — xem docblock B5 ở trên).
+ *
+ * `gatherStudioHits`/`searchCorpus` chấm điểm bằng cosine THUẦN (không trộn keyword) trong không
+ * gian nhúng mà `kbIngestService.ts` dùng lúc nạp — `generateEmbeddings(pieces)` KHÔNG truyền
+ * `modelId` ⇒ `resolveEmbedModelBasename()` (mặc định toàn cục, `aiGgufEngine.ts`, mxbai-embed-large
+ * trừ khi `.env` đổi `GGUF_EMBED_MODEL`) — ĐÚNG không gian mà `embedQuestion()` dưới đây tính, nhưng
+ * KHÁC HẲN không gian Qwen3-Embedding của vendor. Hai model khác nhau ⇒ điểm 0,5 trong không gian
+ * này KHÔNG mang cùng ý nghĩa với 0,5 trong không gian kia — không có phép quy đổi nào đã đo.
+ *
+ * ⇒ QUYẾT ĐỊNH (đường AN TOÀN theo đúng brief — "giữ ngưỡng riêng cho mỗi nguồn, đừng trộn bừa"):
+ *   (a) HAI ngưỡng RIÊNG — vendor giữ nguyên 0,5 (không đổi). Studio KHÔNG tái dùng
+ *       `MIN_CITATION_SCORE = 0,18` của nhánh web (dòng ~2543) — ĐÃ THỬ (vòng đầu của bản vá này),
+ *       ĐO SỐNG (task-v8, POST thật `/api/ai/local-kb/stream`, corpus Studio thật lúc đó: 1 tài
+ *       liệu thử + 3 chunk có sẵn từ một corpus vận hành cũ "so-tay-bao-tri-w2") lộ ra 0,18 quá
+ *       lỏng CHO ĐÚNG KHÔNG GIAN NÀY: câu hỏi ĐÚNG tài liệu ghi 0,7303 (khớp), nhưng BA chunk
+ *       KHÔNG liên quan (quy trình thay vòi hút, ảnh chụp màn hình duyệt ngưỡng) vẫn lọt với
+ *       0,3134–0,4040 — TRÊN ngưỡng 0,18, dưới oan citation lạc đề vào prompt. `MIN_CITATION_SCORE
+ *       = 0,18` của nhánh web mã hoá ĐÚNG triết lý của nhánh ĐÓ ("giữ top-1 dù yếu, UI không rỗng")
+ *       — triết lý ngược hẳn với triết lý ĐÃ TUYÊN BỐ của chính route vscode (xem docblock
+ *       `MIN_PROG_KB_CITATION_SCORE` phía trên: "một câu hỏi lạc miền phải trả RỖNG, không phải
+ *       'top-1 yếu nhất'"). Tái dùng 0,18 ở đây là ÁP SAI TRIẾT LÝ của một nhánh khác, không chỉ
+ *       sai thang điểm. ⇒ `MIN_STUDIO_CITATION_SCORE = 0,5` — đặt GIỮA hai cụm ĐO ĐƯỢC (nhiễu
+ *       ≤0,4040 · đúng miền ≥0,7303), cùng biên độ an toàn với cách `MIN_PROG_KB_CITATION_SCORE`
+ *       đã chọn. ⚠ Trung thực: N=1 câu hỏi thật — mẫu MỎNG, không phải một dải đo rộng như vendor
+ *       (6 câu). Ghi rõ CÒN MỞ trong báo cáo: cần thêm mẫu khi corpus Studio lớn hơn.
+ *   (b) KHÔNG sắp-lại-theo-điểm hai nhóm chung một mảng (khác nhánh web, nơi hai nguồn CÙNG không
+ *       gian nên sort chung an toàn) — nối THEO THỨ TỰ CỐ ĐỊNH: vendor trước (nguồn đã hiệu chỉnh kỹ
+ *       hơn cho route này), Studio sau, mỗi nhóm giữ nguyên thứ tự nội bộ (đã sắp điểm giảm dần từ
+ *       chính hàm nguồn). Tránh đúng lớp lỗi "so hai số không cùng đơn vị rồi coi số lớn hơn là liên
+ *       quan hơn".
+ *   (c) `confidence` vẫn dùng công thức `(top1+top2)/1.6` hiện có của tệp này (đã áp dụng cho nhiều
+ *       cặp nguồn không cùng thang từ trước — ops hybrid/Studio cosine ở nhánh web) — một heuristic
+ *       thô đã có tiền lệ, không phải một phép so sánh khoa học giữa hai thang, nên tái dùng ở đây
+ *       không làm xấu đi tính nhất quán đã có.
+ *
+ * ─── Bảo toàn kỷ luật "choke-point DUY NHẤT" (`kbStudioAccess.ts` header) ─────────────────────────
+ * `gatherStudioHits`/`searchCorpus`/`kbVectorStore.ts` (Studio) vẫn CHỈ có MỘT người gọi
+ * (`gatherStudioHits`) — không import trực tiếp `kbVectorStore`/`kbStudioService` ở đây. Cổng AN
+ * TOÀN (`canAccessStudioCorpus`) LẶP LẠI Ở ĐÂY (không phải một điểm gọi lộn xộn thứ hai bỏ qua cổng)
+ * vì `retrieveProgrammingKnowledgeForVscode` là một NHÁNH EARLY-RETURN của `retrieveKnowledge` (dòng
+ * ~2451) — cổng gốc ở dòng ~2694 KHÔNG BAO GIỜ được thực thi cho route vscode, nên bỏ cổng ở đây
+ * nghĩa là Studio-cho-vscode chạy KHÔNG QUA cổng nào cả. `context?.callerRole` đến từ CÙNG một
+ * đường threading đã có (`streamAnswer`/`answerQuestion` gán `execCtx.user.role` — Final-fix round
+ * Task 6), không phải một trường mới.
+ *
+ * ─── ★★★ KHÔNG được kéo theo kho VẬN HÀNH (constraint cứng, giữ nguyên Việc 2) ───────────────────
+ * Nhánh dưới đây KHÔNG gọi `ensureDataLoaded()` — hàm đó đọc `knowledge/chunks.jsonl` +
+ * `knowledge/embeddings.jsonl` (162MB, kho vận hành), đúng thứ Việc 2 đã đo "0 lần gọi" cho route
+ * vscode (`aiLocalKnowledge.progKbRouteGate.test.ts` §A: `expect(fsReadFileSync).not.toHaveBeenCalled()`
+ * — mock TOÀN BỘ `node:fs`, không riêng `knowledge/*`). `embedQuestion()` (dùng dưới đây để có vector
+ * truy vấn cho Studio) là một lời gọi MODEL THUẦN (`aiGgufEngine.generateEmbedding`/`isGgufAvailable`,
+ * chính module đó ĐÃ bị mock toàn bộ trong lưới trên) — KHÔNG đọc `knowledge/*`, KHÔNG vi phạm bất
+ * biến đó. `gatherStudioHits` đọc bảng `kb_studio_chunks` qua Drizzle (Postgres), cũng KHÔNG chạm
+ * `knowledge/*`.
+ *
+ * ─── Studio rỗng / lỗi / caller không đủ quyền ⇒ hành vi Y HỆT TRƯỚC bản vá này ───────────────────
+ * `canAccessStudioCorpus` fail-closed (role thiếu/không nhận diện ⇒ false) ⇒ toàn khối Studio bị bỏ
+ * qua, kết quả = ĐÚNG hành vi vendor-only đã có. `gatherStudioHits` tự fail-safe `[]` khi corpus rỗng
+ * hoặc lỗi DB. Toàn khối Studio còn được bọc thêm MỘT lớp try/catch ở đây — một exception bất ngờ
+ * (vd `embedQuestion` ném lỗi lạ) không được làm rớt phần vendor đã tính xong ở trên.
+ */
 async function retrieveProgrammingKnowledgeForVscode(
   question: string,
   topK: number,
@@ -2377,15 +2456,18 @@ async function retrieveProgrammingKnowledgeForVscode(
   const detectedVendors = detectProgrammingVendors(question);
   const vendorFilter = detectedVendors.length === 1 ? detectedVendors[0] : undefined;
 
-  let result: Awaited<ReturnType<typeof searchProgrammingKb>>;
+  // ★★★ VIỆC 8 — TÁCH khỏi early-return cũ: trước bản vá, "vendor rỗng" trả `empty()` NGAY, không
+  // bao giờ thử Studio. Giờ vendor rỗng/lỗi chỉ để lại `vendorCitations=[]` — Studio vẫn được thử
+  // bên dưới TRƯỚC khi quyết định trả rỗng thật sự.
+  let vendorResult: Awaited<ReturnType<typeof searchProgrammingKb>> | null = null;
   try {
-    result = await searchProgrammingKb({ query: question, topK, vendor: vendorFilter });
+    vendorResult = await searchProgrammingKb({ query: question, topK, vendor: vendorFilter });
   } catch {
     // fail-safe: một corpus lập trình hỏng không được làm rơi cả lượt hỏi, và KHÔNG được
-    // rơi về kho vận hành (đó đúng là lỗi sai-miền Việc 1 phải sửa) — trả kết quả RỖNG.
-    return empty();
+    // rơi về kho vận hành (đó đúng là lỗi sai-miền Việc 1 phải sửa) — vendorResult ở lại null,
+    // Studio vẫn được thử bên dưới.
+    vendorResult = null;
   }
-  if (!result.enabled || result.citations.length === 0) return empty();
 
   // ★★★ B5 (đo THẬT) bắt được: câu hỏi VẬN HÀNH thuần (vd "OEE hôm nay của line 2 là bao nhiêu?")
   // vẫn nhận về 5 citation từ corpus lập trình — ĐÚNG kho (không lẫn kho vận hành, cấu trúc đã canh
@@ -2401,13 +2483,15 @@ async function retrieveProgrammingKnowledgeForVscode(
   // một câu hỏi lạc đề thường cách xa hơn nữa trong không gian ngữ nghĩa, nên ngưỡng này KHÔNG lỏng
   // hơn thực tế sản xuất.
   const MIN_PROG_KB_CITATION_SCORE = 0.5;
-  const keepIdx = result.citations
-    .map((c, i) => (c.score >= MIN_PROG_KB_CITATION_SCORE ? i : -1))
-    .filter((i) => i >= 0);
-  if (keepIdx.length === 0) return empty();
+  const keepIdx =
+    vendorResult && vendorResult.enabled
+      ? vendorResult.citations
+          .map((c, i) => (c.score >= MIN_PROG_KB_CITATION_SCORE ? i : -1))
+          .filter((i) => i >= 0)
+      : [];
 
   const citations: KbCitation[] = keepIdx.map((i) => {
-    const c = result.citations[i];
+    const c = vendorResult!.citations[i];
     return {
       id: c.id,
       sourcePath: c.sourcePath,
@@ -2422,7 +2506,44 @@ async function retrieveProgrammingKnowledgeForVscode(
       route: null,
     };
   });
-  const contexts = keepIdx.map((i) => result.chunks[i]?.text ?? "");
+  const contexts = keepIdx.map((i) => vendorResult!.chunks[i]?.text ?? "");
+  const rerankMs = vendorResult?.rerankMs ?? null;
+
+  // ★★★ VIỆC 8 — trộn thêm Training Studio. Xem docblock lớn ngay phía trên hàm này cho B1/B2 đầy
+  // đủ (chữ ký `gatherStudioHits`, vì sao HAI ngưỡng riêng, vì sao KHÔNG sort chung).
+  if (canAccessStudioCorpus(context?.callerRole)) {
+    try {
+      const qVec = await embedQuestion(question);
+      if (qVec) {
+        const { gatherStudioHits } = await import("./aiLocalKnowledgeStudio");
+        const studioHits = await gatherStudioHits(qVec, topK);
+        // ★★★ B2 — KHÔNG dùng MIN_CITATION_SCORE=0,18 của nhánh web (đã THỬ, đã ĐO SỐNG, đã BÁC
+        // BỎ — xem docblock lớn phía trên hàm này): 0,18 mã hoá triết lý "giữ top-1 dù yếu" của
+        // nhánh web, ngược triết lý "lạc miền ⇒ rỗng" đã tuyên bố cho route vscode. Ngưỡng RIÊNG,
+        // đặt giữa hai cụm ĐO ĐƯỢC trên chính không gian mxbai của Studio (nhiễu ≤0,4040 · đúng
+        // miền ≥0,7303, N=1 câu hỏi thật — mẫu mỏng, xem CÒN MỞ trong báo cáo).
+        const MIN_STUDIO_CITATION_SCORE = 0.5;
+        for (const h of studioHits) {
+          if (!(h.score >= MIN_STUDIO_CITATION_SCORE)) continue;
+          citations.push({
+            id: `studio:${h.corpus}:${h.id}`,
+            sourcePath: h.sourceRef,
+            title: h.sourceRef,
+            sourceType: "studio",
+            score: h.score,
+            route: null,
+            origin: "studio",
+          });
+          contexts.push(h.text);
+        }
+      }
+    } catch {
+      // fail-safe: nhánh Studio hỏng KHÔNG được làm rớt phần vendor đã tính xong ở trên.
+    }
+  }
+
+  if (citations.length === 0) return empty();
+
   const top1 = citations[0]?.score ?? 0;
   const top2 = citations[1]?.score ?? 0;
   const confidence = clamp01((top1 + top2) / 1.6);
@@ -2435,7 +2556,7 @@ async function retrieveProgrammingKnowledgeForVscode(
     confidence,
     citations,
     contexts,
-    rerankMs: result.rerankMs ?? null,
+    rerankMs,
   };
 }
 
