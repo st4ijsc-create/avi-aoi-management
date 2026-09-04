@@ -551,33 +551,33 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
     // which a narrower frame changes, and `tests/38-editor-drag.spec.ts` measures its pitch off the
     // grid the browser actually laid out rather than from a formula.
     //
-    // 🔴 HOW MUCH ROOM IS LEFT BESIDE THE CANVAS, MEASURED — task-11-review.md MED-2. Round 0 said
-    // "that headroom is finite" without a number, and a number was available. A FOURTH rail here has
-    // a budget of **65 px**: at `38-editor-drag.spec.ts`'s deliberately narrow 900×620 second pass
-    // the canvas frame is already down to 276 px, and its overlay-alignment assertion (`:393`,
-    // tolerance `< 0.5` px) survives the frame losing 77 px and fails at 78 — so a new rail of 65 px
-    // passes and 66 px fails, once its own 12 px `gap-3` is counted. Bisected on this host with a
-    // throwaway probe that swept the viewport width, which takes width off the frame exactly as a
-    // rail does.
+    // 🔴 HOW MUCH ROOM IS LEFT BESIDE THE CANVAS — task-11-review.md MED-2, ANSWERED AND THEN
+    // DISSOLVED. Fix round 1 measured a hard budget of 65 px for a fourth rail: at
+    // `38-editor-drag.spec.ts`'s deliberately narrow 900×620 second pass the canvas frame is down to
+    // 276 px, and its overlay-alignment assertion (`:393`, tolerance `< 0.5` px) survived the frame
+    // losing 77 px and failed at 78. Fix round 2 removed the cause, and re-measuring by the same
+    // method finds NO boundary at all: the frame was swept from 276 px down to 26 px — an overlay of
+    // zero width — with the worst hit-target-vs-cell divergence staying at exactly 0.000 px
+    // throughout. A new rail is no longer bounded by that assertion; it is bounded only by the canvas
+    // needing some area left to draw in.
     //
-    // 🔴 AND THE CAUSE IS NOT WHERE IT LOOKS, WHICH IS WHY THE NUMBER IS RECORDED RATHER THAN FIXED.
-    // The obvious reading — "the overlay's hit target is a `<button>` with an intrinsic minimum width
-    // the renderer's `<div>` cell does not have" — is BACKWARDS, and `min-width: 0` on that button
-    // was measured to move the boundary by exactly zero. At the failure point the OVERLAY's tracks
-    // are uniform (`7px` × 12) and the RENDERER's are not
-    // (`7.5px 6.89px 6.91px … 7.45px …`): both grids declare `repeat(n, 1fr)`, which is
-    // `minmax(auto, 1fr)`, so a track inflates to its content's MIN-CONTENT once the fair share falls
-    // below it. The renderer's cells hold real widgets (the two inflated columns are precisely the
-    // two holding a `label`); the overlay's hold empty buttons that contribute nothing. The overlay
-    // is the one that is right.
+    // 🔴 WHY THE FIRST DIAGNOSIS WAS WRONG, KEPT BECAUSE IT IS THE INSTRUCTIVE PART. The obvious
+    // reading — "the overlay's hit target is a `<button>` with an intrinsic minimum width the
+    // renderer's `<div>` cell does not have" — is BACKWARDS, and `min-width: 0` on that button was
+    // measured to move the boundary by exactly zero. At the old failure point the OVERLAY's tracks
+    // were uniform (`7px` × 12) and the RENDERER's were not
+    // (`7.5px 6.89px 6.91px … 7.45px …`, inflated at precisely the two columns holding a widget).
+    // Both grids declared `repeat(n, 1fr)`, which is `minmax(auto, 1fr)`, so a track floors at its
+    // content's MIN-CONTENT; the overlay's items are empty buttons contributing nothing, so the
+    // overlay was the one that was right all along.
     //
-    // The one-token fix is `minmax(0, 1fr)` in `ScreenRenderer.tsx`, and it was MEASURED: with it,
-    // the divergence never appears at all — swept to a 16 px frame with no failure. It is not applied
-    // here because that is an EXECUTABLE change to a file frozen for this task. Two things follow for
-    // whoever picks it up: `38`'s alignment pin currently conflates "the overlay drifted" with "the
-    // tracks got narrow", and, separately, a widget whose min-content exceeds its fair share silently
-    // widens its own column and narrows every other one, so the uniform cols×rows grid the contract
-    // describes stops being uniform — on the kiosk as much as in the editor.
+    // Fixed at the source in `ScreenRenderer.tsx` with `minmax(0, 1fr)` on both axes, authorised by
+    // the controller as an executable change to that frozen file, because the defect was the
+    // PRODUCT's and not the editor's: a widget whose min-content exceeded its fair share silently
+    // widened its own column and narrowed every other one, so the uniform cols×rows grid the frozen
+    // contract describes stopped being uniform — on the kiosk as much as here.
+    // `tests/41-hmi-grid-uniformity.spec.ts` is the pin that stops it coming back, and the mirror of
+    // that declaration on the overlay below is kept textually identical for the same reason.
     <div className="flex h-full min-h-0 w-full min-w-0 gap-3">
     {/*
       The layer tree, the canvas frame and the property panel, left to right. The tree reads the
@@ -624,8 +624,13 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
           // spec, which is where a divergence would actually show up.
           className="absolute inset-0 grid gap-2"
           style={{
-            gridTemplateColumns: `repeat(${Math.max(1, layout.cols)}, 1fr)`,
-            gridTemplateRows: `repeat(${Math.max(1, layout.rows)}, 1fr)`,
+            // 🔴 Task 11 fix round 2 — `minmax(0, 1fr)` here too, because this declaration is a MIRROR
+            // of `ScreenRenderer.tsx`'s and a mirror that differs in text is a mirror nobody can
+            // check by reading. The overlay's own items are empty buttons, so it computed uniform
+            // tracks either way — it was the renderer that inflated, and this line was never the
+            // defect. Kept identical so the next reader compares two strings, not two behaviours.
+            gridTemplateColumns: `repeat(${Math.max(1, layout.cols)}, minmax(0, 1fr))`,
+            gridTemplateRows: `repeat(${Math.max(1, layout.rows)}, minmax(0, 1fr))`,
           }}
           onPointerDown={(event) => {
             // Only a press on the overlay's own background clears the selection. A press on a hit

@@ -191,9 +191,31 @@ export function ScreenRenderer({ doc, source, components }: ScreenRendererProps)
       // pixel moves), but a real overflow risk at a narrower `ScreenBreakpoint`, where the flex row this
       // replaced always carried its own `min-w-0`.
       className="grid h-full w-full min-h-0 min-w-0 gap-2"
+      // 🔴 WS-HMI-2 TASK 11, FIX ROUND 2 — `minmax(0, 1fr)`, NOT `1fr`. Authorised by the controller
+      // as an executable change to this otherwise-frozen file, for this one token on each axis and
+      // nothing else, because what it fixes is a defect in the PRODUCT rather than an inconvenience
+      // to the editor.
+      //
+      // `1fr` is `minmax(auto, 1fr)`. The `auto` floor is a track's largest item MIN-CONTENT, so a
+      // widget whose content cannot break — a long unhyphenated caption, a wide readout — silently
+      // WIDENS ITS OWN TRACK and narrows every other one to pay for it. The document says twelve
+      // equal columns; the operator gets one fat column and eleven crowded neighbours, on the
+      // machine's own screen, with nothing on the page to say why. `minmax(0, 1fr)` drops the floor,
+      // so the tracks stay the uniform grid the frozen contract describes and content that does not
+      // fit overflows its own cell instead of moving everybody else's.
+      //
+      // MEASURED, not reasoned, before and after: a probe document with a 40-character unbreakable
+      // label in column 0 laid out as `[300, 22, 22, …]` px at 1280×720 under `1fr`, and as twelve
+      // equal tracks under this. `screens/demo/component-demo.json` — a document that ships — had a
+      // 478 px spread between its tallest and shortest ROW for the same reason, which is why both
+      // axes move here and not just the one the editor happened to surface.
+      //
+      // The three kiosk overview screens that carry visual baselines were measured to be ALREADY
+      // uniform (spread 0 on both axes), so no baseline moves; `tests/41-hmi-grid-uniformity.spec.ts`
+      // is the pin that stops this regressing, and it reddens by name if `1fr` comes back.
       style={{
-        gridTemplateColumns: `repeat(${Math.max(1, layout.cols)}, 1fr)`,
-        gridTemplateRows: `repeat(${Math.max(1, layout.rows)}, 1fr)`,
+        gridTemplateColumns: `repeat(${Math.max(1, layout.cols)}, minmax(0, 1fr))`,
+        gridTemplateRows: `repeat(${Math.max(1, layout.rows)}, minmax(0, 1fr))`,
       }}
     >
       {widgets.map((widget) => {
