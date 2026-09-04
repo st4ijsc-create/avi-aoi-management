@@ -241,25 +241,53 @@ test("widget CHỈ nhận resolve — không nhận cả mô hình linh kiện (
   assert.equal(widgetElements.length, 1, "kỳ vọng đúng MỘT phần tử <Widget widget={widget} …/> trong ScreenRenderer.tsx")
   const widgetElement = widgetElements[0]
 
-  // 🔴 task-5-review.md LOW-2 — TIGHTENED from "does not contain `components=`" to an EXACT attribute
-  // set. The name-only form caught re-adding the prop under its own name (measured: it did) but not
-  // the same model handed over under another name, e.g. `model={components}`. `tsc` closes most of
-  // that on its own — `WidgetProps` is a closed object type and JSX excess-property checking rejects
-  // an attribute it does not declare — so the only silent bypass was a RENAME on both sides at once,
-  // which the absence pin below (keyed on the name `components`) would also miss.
+  // 🔴 task-5-re-review.md N3 — RESTORED, and it must stay BESIDE the exact-set assertion below, not
+  // be replaced by it. Fix round 1 swapped this line out for the name-set comparison and thereby
+  // silently un-pinned the bound VALUE: measured by the re-reviewer, `resolve={brokenResolve}` passed
+  // 156/156 under the name-only form, where this assertion goes red. Nothing else under
+  // `runtime-tests/` pins that binding. The two assertions guard different things and neither implies
+  // the other — this one says the ONE prop a widget gets is bound to the resolver `RenderedWidget`
+  // actually built two lines above it (a `resolve` bound to something else is a widget reading through
+  // the wrong prefix); the set below says NOTHING ELSE is handed over. A repair that silently removes
+  // an earlier repair's pin is a named defect shape in this repository; this comment is here so the
+  // next edit to this test has to notice both.
+  assert.match(
+    widgetElement,
+    /\bresolve=\{resolve\}/,
+    "prop `resolve` không còn được nối vào chính `resolve` mà RenderedWidget dựng ngay phía trên — " +
+      "tập tên prop bên dưới KHÔNG bắt được lỗi này (nó chỉ so TÊN), và không bài nào khác trong runtime-tests/ ghim giá trị ấy"
+  )
+
+  // 🔴 task-5-review.md LOW-2 — added ALONGSIDE the value pin above (see N3), tightening "does not
+  // contain `components=`" into an EXACT attribute set. The name-only form caught re-adding the prop
+  // under its own name (measured: it did) but not the same model handed over under another name, e.g.
+  // `model={components}`. `tsc` closes most of that on its own — `WidgetProps` is a closed object type
+  // and JSX excess-property checking rejects an attribute it does not declare — so the only silent
+  // bypass was a RENAME on both sides at once, which the absence pin below (keyed on the name
+  // `components`) would also miss.
   //
   // Why this form is not the brittle one it looks like: it compares the set of attribute NAMES, so it
   // is indifferent to formatting, attribute order, and multi-line JSX (`[^>]` matches newlines). The
   // one thing that does break it is someone putting a `>` inside an attribute value — and that fails
   // LOUDLY on the `length === 1` assertion above with a message saying so, never silently green.
+  //
+  // 🔴 task-5-re-review.md, uncounted note — WHAT THIS REGEX ACTUALLY SEES, stated instead of claimed.
+  // `/(\w+)=\{/g` harvests only attributes whose value is a `{…}` EXPRESSION. A string-literal or
+  // boolean-shorthand attribute is invisible to it: measured, `debugTag="probe"` leaves this suite
+  // 156/156 green. That is acceptable and not a hole worth widening the regex for — a component model
+  // cannot be a string literal, so the scenario this pin exists for is covered — but the failure
+  // message must not promise more than the regex delivers, which is what it did. `tsc` is the backstop
+  // for the rest, and it is a real one: `debugTag="probe"` was reproduced as
+  // `TS2322: Property 'debugTag' does not exist on type 'IntrinsicAttributes & WidgetProps'`.
   const attributeNames = [...widgetElement.matchAll(/(\w+)=\{/g)].map((m) => m[1]).sort()
   assert.deepEqual(
     attributeNames,
     ["resolve", "source", "widget"],
-    "tập prop của <Widget …/> đã đổi. `resolve` là seam DUY NHẤT một widget có với mô hình linh kiện — " +
-      "thêm bất kỳ prop nào (dưới BẤT KỲ tên nào, kể cả một tên khác cho cùng mô hình ấy) chỉ hợp lệ khi " +
-      "có widget thực sự ĐỌC nó, và khi ấy bài này phải được sửa cùng commit với người đọc đó. " +
-      "Xem doc-comment của `resolve` trong widgetRegistry.ts"
+    "tập prop {biểu thức} của <Widget …/> đã đổi. `resolve` là seam DUY NHẤT một widget có với mô hình " +
+      "linh kiện — thêm một prop nhận GIÁ TRỊ BIỂU THỨC dưới bất kỳ tên nào (kể cả một tên khác cho chính " +
+      "mô hình ấy) chỉ hợp lệ khi có widget thực sự ĐỌC nó, và khi ấy bài này phải được sửa cùng commit " +
+      "với người đọc đó. Bài này KHÔNG thấy prop nhận chuỗi/boolean-shorthand (vd `debugTag=\"x\"`) — " +
+      "`tsc` mới là thứ chặn chúng (TS2322 trên WidgetProps). Xem doc-comment của `resolve` trong widgetRegistry.ts"
   )
   assert.doesNotMatch(
     widgetElement,

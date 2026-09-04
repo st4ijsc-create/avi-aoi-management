@@ -57,19 +57,36 @@ import { vi as viDict } from "../src/i18n/vi"
  *      `not.toHaveText("—")` assertions still pass and only the inequality catches it.
  *
  * NOT PINNED HERE — token SUBSTITUTION into a composed path. The demo binds the BARE token
- * `"{component}"`, so the resolved path is byte-identical to the tagPrefix, and a `resolveBinding`
- * rewritten to `() => tagPrefix` would pass every assertion in this file. Substitution IS executed at
- * `runtime-tests/bindings.test.mjs:105` — the line inside the test named `resolveBinding:
- * "{component}/torque" với prefix "SCRW-01/spindle" → "SCRW-01/spindle/torque"` (named as well as
- * numbered, so the reference survives the line moving), with the full `componentTagPrefixOf` +
- * `resolveBinding` pipeline over a real `ComponentNode` at `:115`. It stays a unit-level pin for a
- * reason no test in this file can route around:
- * `TagValueSource.ts`'s `readPath` is a closed switch whose only multi-member family is
- * `telemetry/{metric}` — the LEAF varies, the PREFIX is constant, the inverse of indirect binding's
- * shape. A prefix+leaf demo would resolve correctly and then read `undefined`, so the product cannot
- * yet DISPLAY a composed path at all. Closing that is a missing `TagValueSource` adapter (WS-HMI-0c's
- * tag namespace has the data; nothing reads it into this seam yet), not a missing wire — the wiring
- * this task added is shape-agnostic and needs no second job for the prefix+leaf case.
+ * `"{component}"`, so the resolved path is byte-identical to the tagPrefix, and the mutation these
+ * three tests cannot catch is: **`resolveBinding` stops substituting and returns `componentTagPrefix`
+ * for a `{component}` binding, while still passing a binding without the token through unchanged**
+ * (i.e. its final `return binding.replaceAll(COMPONENT_TOKEN, componentTagPrefix)` becomes
+ * `return componentTagPrefix`, both earlier branches untouched). Measured, not reasoned: **3 passed**.
+ *
+ * 🔴 That sentence is deliberately narrower than the one it replaces, which said a `resolveBinding`
+ * "rewritten to `() => tagPrefix`" would pass everything here (fix round 1; task-5-re-review.md N1).
+ * That was FALSE, and measuring it is how it was caught: a TOTAL rewrite also strips the
+ * pass-through branch, so `direct-cycles` — which declares no `component` and therefore has an
+ * `undefined` prefix — renders the em-dash placeholder and the §5-bis case below goes red on
+ * `toHaveText(/^\d/)`. Stated here rather than quietly narrowed, because a paragraph rewritten for
+ * overstating its own test is the last place a new overstatement should appear.
+ *
+ * Substitution IS executed at `runtime-tests/bindings.test.mjs:105`, the test named `resolveBinding:
+ * "{component}/torque" với prefix "SCRW-01/spindle" → "SCRW-01/spindle/torque"`, and the full
+ * `componentTagPrefixOf` + `resolveBinding` pipeline over a real `ComponentNode` at `:116`, the test
+ * named `componentTagPrefixOf + resolveBinding: pipeline đầy đủ qua ComponentNode thật (khớp fixture
+ * screwdrive-cell)`. Both are cited by NAME as well as line so the reference survives the line moving
+ * — the round-1 header cited the second as `:115`, which is a blank line.
+ *
+ * It stays a unit-level pin for a reason no test in this file can route around: `TagValueSource.ts`'s
+ * `readPath` is a closed switch whose only multi-member family is `telemetry/{metric}` — the LEAF
+ * varies, the PREFIX is constant, the inverse of indirect binding's shape. A prefix+leaf demo would
+ * resolve correctly and then read `undefined`, so the product cannot yet DISPLAY a composed path at
+ * all. Closing that is a missing `TagValueSource` adapter, not a missing wire — the wiring this task
+ * added is shape-agnostic and needs no second job for the prefix+leaf case. (WS-HMI-0c's tag namespace
+ * holds tag DEFINITIONS and their `source` addressing — `path`/`dataType`/`access`/`source`/
+ * `isBackedByDriver`, and `GET /v1/tags/by-path/{**path}` answers a descriptor. It has the PATHS, not
+ * the readings; an adapter would still have to go and read.)
  */
 
 const DEMO_MACHINE = "IOT-01"
