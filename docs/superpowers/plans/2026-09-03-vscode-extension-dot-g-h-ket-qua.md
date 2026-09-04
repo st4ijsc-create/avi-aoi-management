@@ -1,4 +1,4 @@
-# Đợt G/H — KẾT QUẢ Task H4 (nghiệm thu LIVE + đo)
+# Đợt G/H — KẾT QUẢ Task H4 (nghiệm thu LIVE + đo) + Task H5 (vá Pareto #1)
 
 Ngày đo: 2026-09-04, giờ +07. Kế hoạch: `docs/superpowers/plans/2026-09-03-vscode-extension-dot-g-h.md`
 (Task H4). Chi tiết đầy đủ (script, đường dẫn tệp thô): `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-h4-report.md`.
@@ -106,7 +106,78 @@ KHÔNG PHẢI lỗi hệ đo: request log cho thấy câu hỏi + khối dạy `
    TỪNG KÝ TỰ) — không phải cache (thời gian không rơi gần 0) nhưng đáng chú ý cho hiểu biết về độ
    biến thiên thật của model.
 
-## Đường dẫn
+## Đường dẫn (H4)
 
 Báo cáo chi tiết: `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-h4-report.md`.
 Toàn bộ output thô: `<scratchpad>/h4-*.json`, `h4-*.txt`, `h4-*-progress.log`, `h4-*-stdout.log`.
+
+---
+
+# Task H5 — vá Pareto #1 của H4 (`de_xuat_nho`/`mcp_goi` bị RAG-hijack)
+
+Ngày đo: 2026-09-04. Báo cáo chi tiết: `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-h5-report.md`.
+
+## Status: ĐÃ VÁ ĐÚNG đặc tả brief (B1-B7 đủ) — nhưng bản vá KHÔNG cải thiện chỉ số chính. ABLATION
+xác nhận đây là kết luận thật, không phải vá hỏng: gốc rễ nằm NGOÀI phạm vi `vscode-extension/`.
+
+## B1 (đo trước): `nhacLaiCuoiCauHoi()` (`dayGiaoThucDoc.ts`) TRƯỚC H5 chỉ phủ ba tool ĐỌC + nhánh
+"viết mã mới" — KHÔNG một chữ nào về `de_xuat_nho`/`mcp_goi`. Cả hai được dạy Ở ĐẦU `question`
+(`dayBoNhoDoc.ts`/`dayMcpDoc.ts`, có điều kiện `dsBoNho`/`dsToolMcp` không rỗng) nhưng CHƯA TỪNG
+được nhắc lại ở CUỐI như ba tool đọc đã có từ PDCA vòng 1.
+
+## B2 (vá): mở rộng `nhacLaiCuoiCauHoi(dv: { coMcp?: boolean; coBoNho?: boolean } = {})` — thêm câu
+nhắc CÓ ĐIỀU KIỆN cho từng kênh, dùng `TEN_TOOL_MCP` (đã có, `yeuCauMcp.ts`) và `TEN_TOOL_DE_XUAT_NHO`
+(MỚI thêm vào `deXuatNho.ts`, thay bản chép tay cũ) — không chép cú pháp lần thứ năm. Mặc định
+(không đối số) trả về chuỗi GIỐNG HỆT byte-đúng bản trước H5.
+
+## B3 (NHÁNH KIA — giao thức ĐỌC): 6 câu hỏi tái dùng từ H4 (T01,T02,T03,T08,T09,T11) — **5/6 ĐẠT,
+KHÔNG TỤT so với baseline H4 (cũng 5/6)**. T01 vẫn là ca không ổn định đã biết từ trước H5.
+
+## B4 (đo lại `de_xuat_nho`, 5 lượt SAU vá): **0/5 a · 0/5 b · 5/5 c — GIỐNG HỆT H4.** Request log
+xác nhận câu nhắc mới (`"tool":"de_xuat_nho"`) THẬT SỰ có trong `question` gửi đi — không phải lỗi
+hệ đo. Model vẫn trả lời một đoạn RAG lạc đề cố định (mô tả `knowledge/features/`) bất kể 5 câu hỏi
+khác nhau.
+
+## B5 (ABLATION — bắt buộc): gỡ đúng phần vừa thêm (`nhacLaiCuoiCauHoi()` không đối số), rebuild,
+chạy lại 3/5 câu M1-M3 — **0/3 c_bo_qua_giao_thuc, Y HỆT kết quả CÓ vá.** Request log xác nhận
+`question` ablation NGẮN HƠN ~207 ký tự và KHÔNG còn `de_xuat_nho` ở cuối — ablation thật sự tắt
+được phần vá. **Kết luận: câu nhắc cuối có tác dụng nhân quả BẰNG KHÔNG lên hành vi RAG-hijack
+này** — khác hẳn LỖI 1 (đọc tệp), nơi CÙNG kỹ thuật đưa tỉ lệ từ 1/11 lên 10/11. Đã hoàn nguyên
+đúng bản vá (SHA-256 `dist/extension.js` trở về khớp bản trước ablation), census 22/22 xanh lại.
+
+## Bổ sung — spot-check `mcp_goi` (3 lượt, không bắt buộc theo B4): **0/3**, câu nhắc xác nhận có
+tới model qua request log, nhưng thất bại theo một khuôn khác (câu từ chối ngắn thay vì đoạn RAG
+dài) — cùng kết luận: câu nhắc cuối không đủ sức thắng ở kênh MCP.
+
+## Diễn giải: LỖI 1 thắng vì bản vá trích dẫn NGUYÊN VĂN và ghi đè MỘT câu mẫu từ chối cụ thể của
+server. Nợ 2/T12 thất bại vì server TỔNG HỢP một câu trả lời đầy đủ theo khuôn RAG (không phải lặp
+một câu cố định) — không có "mục tiêu" cụ thể để một câu nhắc chung chung ghi đè. Gốc rễ thật nằm
+ở tầng ĐỊNH TUYẾN phía server (`server/aiLocalKnowledgeService.ts`, ngoài phạm vi
+`vscode-extension/` — cần vòng sau khác sở hữu để vá).
+
+## B6 (mẫu độc lập): 3 lượt CÙNG câu hỏi — 3031/2528/2538 ms, không lượt nào gần 0, nội dung khác
+nhau ở cả ba cặp. Server cùng PID/TTL=1 với phiên H4.
+
+## B7: `npx vitest run vscode-extension/src` (chạy từ ROOT, KHÔNG từ trong `vscode-extension/` —
+nếu không sẽ vô tình nạp vitest.config gốc và quét nhầm 16790 test toàn repo) — **58 file / 823 PASS**
+(817 + 6 lưới mới). `ext:check` sạch. Census **22/22**. `dist/extension.js` đồng bộ byte-đúng với
+extension đã cài (`~/.vscode/extensions/st4i.avi-ai-local-0.1.0/`).
+
+## Giữ bản vá lại dù không cải thiện chỉ số chính, vì: (1) không gây hồi quy đọc, (2) là điều kiện
+CẦN dù chưa ĐỦ — vòng sau vá gốc rễ server thì mảnh này đã sẵn sàng, (3) dọn một bản sao chép tay
+(`TEN_TOOL_DE_XUAT_NHO`) đang trôi khỏi nhau.
+
+## CÒN MỞ cho vòng sau
+1. ★★★ Gốc rễ thật (RAG-hijack) nằm ở `server/aiLocalKnowledgeService.ts` — NGOÀI phạm vi task
+   này. Cần đọc điều kiện chính xác khiến server tổng hợp câu trả lời theo khuôn "(1)(2)(3)(4)" từ
+   chunk KB "gần nhưng không liên quan" thay vì nhận diện câu hỏi là meta-instruction.
+2. T01 (đọc) vẫn không ổn định — hiện tượng cũ, chưa vá ở vòng nào.
+3. Spot-check MCP chỉ 3 mẫu (không đạt chuẩn ★★★ ≥5 vì B4 chỉ bắt buộc cho `de_xuat_nho`).
+4. Server vẫn `KB_QA_CACHE_TTL_MS=1` — khởi động lại không đặt biến này để về mặc định.
+
+## Đường dẫn (H5)
+
+Báo cáo chi tiết: `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-h5-report.md`.
+Mã đã sửa: `vscode-extension/src/loi/dayGiaoThucDoc.ts`, `dayBoNhoDoc.ts`, `deXuatNho.ts`,
+`yeuCau.ts`, `dayGiaoThucDoc.unit.test.ts`.
+Toàn bộ output thô: `<scratchpad>/h5-*.json`, `h5-*.cjs`, `h5-*-request-log.json`, `h5-*-tomtat.json`.
