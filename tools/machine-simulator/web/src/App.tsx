@@ -6,6 +6,7 @@ import { LanguageProvider, useT } from "@/i18n"
 import { FleetRuntimeProvider } from "@/lib/api"
 import { AuthProvider, useAuth, useBootstrapStatus } from "@/lib/auth"
 import Bootstrap from "@/routes/Bootstrap"
+import EditorRoute from "@/editor/EditorRoute"
 import Hmi from "@/routes/Hmi"
 import Login from "@/routes/Login"
 import TokensShowcase from "@/routes/_tokens"
@@ -92,6 +93,16 @@ function App() {
                       handed differs. */}
                   <Route path="/hmi/demo/:screenId" component={Hmi} />
                   <Route path="/hmi/:code" component={Hmi} />
+                  {/* WS-HMI-2 Task 8 — the screen BUILDER, mounted here for the same reason `/tokens`
+                      and the two routes above are: it renders its own full-height chrome and would be
+                      squeezed by <Shell>'s sidebar/topbar. It is behind <AuthGate> like everything
+                      else — `GET /v1/screens/{screenId}` needs an authenticated Operator session.
+                      Unlike `/hmi/demo/:screenId` directly above it, which resolves its document from
+                      a STATIC map bundled into the JS (`lib/hmiScreens.ts`), this route fetches the
+                      document over HTTP at render time — so a screen an engineer saved a minute ago
+                      opens here without a rebuild, which is the property `Hmi.tsx`'s own header names
+                      as still unmet for the three shipped operator screens. */}
+                  <Route path="/editor/:screenId" component={EditorRoute} />
                   <Route>
                     <Shell />
                   </Route>

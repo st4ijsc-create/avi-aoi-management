@@ -37,6 +37,12 @@ import {
 // pinned both ways against `contracts/component-model.schema.json`, and a second local copy of the
 // shape here would be a second source of truth that nothing keeps in step.
 import type { ComponentModelDocument } from "../contracts/componentModel.ts"
+// WS-HMI-2 Task 8 — the second Milestone-0 contract type this client reads off the wire (see
+// `endpoints.screen` below). Same rule as the line above: imported from the frozen contract, never
+// re-declared here. `src/editor/EditorRoute.tsx` hands the document straight to the runtime
+// `<ScreenRenderer>`, so a local re-typing would put a second shape between the wire and the renderer
+// that nothing keeps in step with `contracts/hmi-screen.schema.json`.
+import type { HmiScreenDocument } from "../contracts/hmiScreen.ts"
 
 /**
  * WS-D-D6 — dev no longer hardcodes `http://localhost:5199`: `vite.config.ts`'s own dev-server
@@ -632,6 +638,20 @@ const endpoints = {
   // handle and `useMachineComponents` below has no 404 special-case the way `useMachine` does.
   componentModel: (code: string) =>
     request<ComponentModelDocument>(`/v1/components/${encodeURIComponent(code)}`),
+
+  // WS-HMI-2 Task 8 — `GET /v1/screens/{screenId}`, the screen document the editor route
+  // (`src/editor/EditorRoute.tsx`) opens. Added HERE rather than as a second `fetch()` beside the
+  // editor for the reason `request<T>` is module-private in the first place: it is the one place
+  // `credentials: "include"` and the app-wide 401 → Login reaction are applied, and a hand-rolled
+  // fetch in a route file would carry neither.
+  //
+  // 🔴 This endpoint is the one member of the HMI family that answers **404 for an undeclared
+  // screen** — its two siblings (`/v1/components/{code}`, `/v1/tags?machine=`) answer an empty 200.
+  // `HmiScreenEndpoints`'s own doc comment states the distinction in full: "there is no such thing as
+  // a valid EMPTY screen", so a `screenId` nobody ever PUT is NOT FOUND rather than "loaded and
+  // empty". `useScreen` below is where that 404 stops being an error and becomes a named product
+  // state; nothing about it is inferred here.
+  screen: (screenId: string) => request<HmiScreenDocument>(`/v1/screens/${encodeURIComponent(screenId)}`),
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -738,6 +758,10 @@ const QUERY_KEYS = {
   // because it changes on a human's `PUT /v1/components/{code}`, not on the ~1s live poll: sharing the
   // machine key would drag a rarely-changing declaration document through a per-second refetch.
   components: (code: string) => ["hmi-components", code] as const,
+  // WS-HMI-2 Task 8 — a screen DOCUMENT, keyed by `screenId`. Not folded into `components(code)`:
+  // a screen is not owned by a machine at all (the same document can describe any number of them),
+  // so there is no machine code to key it by.
+  screen: (screenId: string) => ["hmi-screen", screenId] as const,
 }
 
 /**
@@ -919,6 +943,35 @@ export function useMachineComponents(code: string | undefined): UseQueryResult<C
     queryKey: QUERY_KEYS.components(code ?? ""),
     queryFn: () => endpoints.componentModel(code as string),
     enabled: code !== undefined && code.length > 0,
+  })
+}
+
+/**
+ * WS-HMI-2 Task 8 — `GET /v1/screens/{screenId}`, the document `/editor/{screenId}` opens.
+ *
+ * NOT polled, for the same reason `useMachineComponents` above is not: this reads a DECLARATION an
+ * engineer authors through `PUT /v1/screens/{screenId}`, not a measurement a machine produces. A 1s
+ * poll would be ~86 000 requests a day for a document that changes when a human saves it.
+ *
+ * 🔴 A confirmed 404 is NOT retried, and that is load-bearing rather than a network nicety. Plan
+ * §5-bis says an undeclared screen must reach a NAMED not-found state — never a blank page, never an
+ * error page — and TanStack Query's default `retry: 2` (set app-wide in `App.tsx`) would leave the
+ * route sitting in `isPending` through two backoff waits first, i.e. a spinner where a named answer
+ * belongs. Same shape, and the same reasoning, as `useMachine`'s own 404 branch above; the difference
+ * is only that `useMachine` ALSO stops its 1s poll, and this hook has no poll to stop.
+ *
+ * What this hook deliberately does NOT do is turn the 404 into `data: undefined` or into an empty
+ * document. `EditorRoute` has to tell "never declared" (404) apart from "the engine is unreachable"
+ * (anything else) to obey §5-bis, and flattening both into one falsy `data` is exactly how that
+ * distinction gets lost — so the error is left intact on the query and branched on there, by status.
+ */
+export function useScreen(screenId: string | undefined): UseQueryResult<HmiScreenDocument> {
+  return useQuery({
+    queryKey: QUERY_KEYS.screen(screenId ?? ""),
+    queryFn: () => endpoints.screen(screenId as string),
+    enabled: screenId !== undefined && screenId.length > 0,
+    retry: (failureCount, error) =>
+      error instanceof EngineApiError && error.status === 404 ? false : failureCount < 2,
   })
 }
 

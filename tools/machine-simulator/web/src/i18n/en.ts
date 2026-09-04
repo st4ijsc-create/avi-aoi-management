@@ -346,6 +346,29 @@ export const en: Dictionary = {
     description: "That route doesn't exist. Use the sidebar or press ⌘K to jump to a screen.",
   },
 
+  // WS-HMI-2 Task 8 — the HMI screen builder (`/editor/:screenId`, `src/editor/EditorRoute.tsx`).
+  editor: {
+    title: "HMI screen builder",
+    titleGloss: "TRÌNH DỰNG MÀN HÌNH",
+    screenIdLabel: "Screen id",
+    designMode:
+      "Design mode — this canvas draws with the runtime renderer itself, against fixed sample values, NOT data from a running machine.",
+    widgetCount: (vars: Vars) => `${vars.count} widgets`,
+    loading: {
+      title: "Loading the screen document…",
+      description: "Reading the document from GET /v1/screens.",
+    },
+    notDeclared: {
+      title: "No such screen yet",
+      description: (vars: Vars) =>
+        `No screen is declared with id ${vars.screenId}. The URL may be mistyped, or this screen has never been saved.`,
+      noId: "This URL carries no screen id.",
+    },
+    loadFailed: {
+      description: "The screen document could not be read. This is a connection failure, not an undeclared screen.",
+    },
+  },
+
   machineDetail: {
     back: "Back to dashboard",
     headerCycles: "Cycles",

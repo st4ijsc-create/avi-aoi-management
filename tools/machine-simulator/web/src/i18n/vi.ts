@@ -340,6 +340,33 @@ export const vi = {
     description: "Đường dẫn này không tồn tại. Dùng thanh bên hoặc nhấn ⌘K để tới một màn hình.",
   },
 
+  // WS-HMI-2 Task 8 — trình dựng màn hình HMI (`/editor/:screenId`, `src/editor/EditorRoute.tsx`).
+  // Render NGOÀI khung Shell, giống `/tokens` và hai route `/hmi/*`.
+  editor: {
+    title: "Trình dựng màn hình HMI",
+    titleGloss: "HMI SCREEN BUILDER",
+    screenIdLabel: "Mã màn hình",
+    // Câu trung thực bắt buộc: canvas vẽ bằng ĐÚNG bộ vẽ của runtime, nhưng giá trị là mẫu tĩnh
+    // (`EditorCanvas.tsx`'s `DESIGN_TIME_SNAPSHOT`), không phải số đo của máy nào. Xem doc-comment ở
+    // đó để biết vì sao `quality` không bị hạ xuống "stale" để trông có vẻ thật thà hơn.
+    designMode:
+      "Chế độ thiết kế — canvas dùng đúng bộ vẽ của runtime, với giá trị mẫu cố định, KHÔNG phải dữ liệu của máy đang chạy.",
+    widgetCount: (vars: Vars) => `${vars.count} widget`,
+    loading: {
+      title: "Đang tải tài liệu màn hình…",
+      description: "Đang đọc tài liệu từ GET /v1/screens.",
+    },
+    notDeclared: {
+      title: "Chưa có màn hình này",
+      description: (vars: Vars) =>
+        `Chưa có màn hình nào được khai với mã ${vars.screenId}. Có thể đường dẫn gõ sai, hoặc màn hình này chưa từng được lưu.`,
+      noId: "Đường dẫn không mang mã màn hình nào.",
+    },
+    loadFailed: {
+      description: "Không đọc được tài liệu màn hình. Đây là lỗi kết nối, không phải màn hình chưa khai.",
+    },
+  },
+
   machineDetail: {
     back: "Về bảng điều khiển",
     headerCycles: "Chu kỳ",
