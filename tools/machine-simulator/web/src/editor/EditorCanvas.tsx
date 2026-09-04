@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react"
 
 import type { HmiScreenDocument, ScreenLayout, ScreenWidget, WidgetRect } from "@/contracts/hmiScreen"
 import { clampRectToLayout } from "@/hmi-runtime/gridLayout"
@@ -266,6 +273,15 @@ function isTextEntry(target: EventTarget | null): boolean {
  * file states and `38-editor-drag.spec.ts` reads back out of `getComputedStyle`, and `var(--focus)` so
  * it is the same accent every other selection affordance in the app uses (see `index.css`'s token
  * block — never a hex literal in a component). */
+/** One cell in each direction, keyed by `KeyboardEvent.key`. A table rather than a switch so the set
+ * of keys this layer claims is readable in one line — everything else falls through to the page. */
+const ARROW_STEPS: Record<string, CellDelta | undefined> = {
+  ArrowLeft: { dCol: -1, dRow: 0 },
+  ArrowRight: { dCol: 1, dRow: 0 },
+  ArrowUp: { dCol: 0, dRow: -1 },
+  ArrowDown: { dCol: 0, dRow: 1 },
+}
+
 const SELECTION_OUTLINE: CSSProperties = {
   outline: "2px solid var(--focus)",
   outlineOffset: "-2px",
@@ -309,6 +325,14 @@ export type EditorCanvasProps = {
  * cannot be pressed. That is deliberate: at design time a widget is a thing you MOVE, and a canvas
  * where dragging a button sometimes fires it instead is the standard defect of editors that hit-test
  * through to live content.
+ *
+ * 🔴 FIX ROUND 1, task-9-review.md F1 — those hit targets are `<button>`s with `aria-label`s, and in
+ * round 0 their only handlers were pointer events: a keyboard or screen-reader user could focus
+ * "Select widget X", press Enter and get nothing. They are operable now — `Enter`/`Space` select,
+ * arrow keys nudge by one cell through the SAME `movedRect`/`resizedRect`/`applyEdit` the pointer path
+ * uses, so no clamp, minimum span, refusal rule or history behaves differently for a keyboard. See
+ * `nudge`. This is not full keyboard editing and does not claim to be; it is the operability the
+ * controls were already advertising.
  *
  * 🔴 `components` is NOT passed to `<ScreenRenderer>`, and its absence is a documented state rather
  * than an omission. `ScreenRendererProps.components` resolves `{component}` bindings through a
@@ -377,6 +401,11 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
     // widget is a drag of zero cells), and the browser tears the capture down for us if the pointer is
     // cancelled or the element unmounts.
     event.currentTarget.setPointerCapture(event.pointerId)
+    // `preventDefault()` above suppresses the focus a press would otherwise give a `<button>`, so it is
+    // given back explicitly: without it, clicking a widget and then pressing an arrow key would nudge
+    // whatever the browser happened to have focused instead — the pointer and keyboard paths have to
+    // agree about which control is live (F1).
+    event.currentTarget.focus()
     setCanvas((prev) => ({
       ...prev,
       selectedId: widget.id,
@@ -424,6 +453,42 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
 
   function cancelDrag(event: ReactPointerEvent<HTMLElement>) {
     setCanvas((prev) => (prev.drag && prev.drag.pointerId === event.pointerId ? { ...prev, drag: undefined } : prev))
+  }
+
+  /**
+   * The KEYBOARD half of the same two edits — 🔴 FIX ROUND 1, task-9-review.md F1.
+   *
+   * Round 0 put a `<button>` with an `aria-label` over every widget cell and gave it pointer handlers
+   * only. A keyboard or screen-reader user could focus "Select widget drag-me", press Enter, and get
+   * nothing: an affordance that announces itself and does not work, once per widget on the screen. The
+   * review's verdict was the right one — make them operable or stop giving them button semantics — and
+   * operable is the better answer, because the arithmetic for it already exists and is already pinned.
+   *
+   * An arrow key is a one-cell `delta` through the SAME `movedRect`/`resizedRect` the pointer path uses
+   * and the same `applyEdit`, so keyboard and mouse cannot diverge: the clamps, the minimum span, the
+   * no-op refusal at a grid edge and the single undo history are all inherited rather than re-stated.
+   * This is not full keyboard editing (there is no keyboard route to a widget's PROPERTIES, and Tab
+   * order is document order with no grouping) — it is the operability the buttons already claimed.
+   */
+  function nudge(widgetId: string, mode: DragMode, delta: CellDelta) {
+    setCanvas((prev) => {
+      const widget = prev.editor.doc.widgets.find((candidate) => candidate.id === widgetId)
+      if (!widget) return prev
+      const layoutNow = prev.editor.doc.layout
+      const base = placedRectOf(widget, layoutNow)
+      const rect = mode === "move" ? movedRect(base, delta, layoutNow) : resizedRect(base, delta, layoutNow)
+      return { ...prev, selectedId: widgetId, editor: applyEdit(prev.editor, { kind: "move", widgetId, rect }) }
+    })
+  }
+
+  /** Arrow keys nudge; `Enter`/`Space` reach `onClick`, which selects. Anything else is left to the
+   * page — in particular `Ctrl+Z`, which the window-level handler owns. */
+  function onControlKeyDown(event: ReactKeyboardEvent<HTMLElement>, widgetId: string, mode: DragMode) {
+    const step = ARROW_STEPS[event.key]
+    if (!step || event.ctrlKey || event.metaKey || event.altKey) return
+    // Without this the page scrolls under the engineer while the widget moves.
+    event.preventDefault()
+    nudge(widgetId, mode, step)
   }
 
   const dragging = canvas.drag
@@ -492,6 +557,11 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
                 onPointerMove={trackDrag}
                 onPointerUp={endDrag}
                 onPointerCancel={cancelDrag}
+                // `Enter`/`Space` on a focused `<button>` arrive here as a click. This is what makes the
+                // control do what its label says (F1); it is idempotent, so a mouse click running it
+                // after `beginDrag` already selected costs nothing.
+                onClick={() => setCanvas((prev) => ({ ...prev, selectedId: widget.id }))}
+                onKeyDown={(event) => onControlKeyDown(event, widget.id, "move")}
               />
             )
           })}
@@ -514,6 +584,7 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
               onPointerMove={trackDrag}
               onPointerUp={endDrag}
               onPointerCancel={cancelDrag}
+              onKeyDown={(event) => onControlKeyDown(event, selectedWidget.id, "resize")}
             />
           ) : null}
 

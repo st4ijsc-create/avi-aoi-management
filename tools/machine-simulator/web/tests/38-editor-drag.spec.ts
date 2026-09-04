@@ -377,6 +377,71 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     }
   })
 
+  test("the overlay's controls are operable by keyboard — they do what their labels say, through the same edits", async ({
+    page,
+  }) => {
+    // 🔴 FIX ROUND 1, task-9-review.md F1. Round 0 shipped a labelled `<button>` over every widget cell
+    // whose only handlers were pointer events: focusable, named, and inert. Nothing in the tree caught
+    // it — `00-visual-and-a11y.spec.ts` has no `/editor` entry and no axe pass runs on this route — so
+    // the gate is here, stated as behaviour rather than as an attribute.
+    await openCanvas(page)
+
+    // Reached the way a keyboard reaches it, and nothing is selected yet.
+    await hitTarget(page, DRAG_ID).focus()
+    await expect(hitTarget(page, DRAG_ID)).toBeFocused()
+    await expect(page.locator('[data-editor-selected="true"]')).toHaveCount(0)
+
+    // The label says "select". Enter must select.
+    await page.keyboard.press("Enter")
+    await expect(
+      hitTarget(page, DRAG_ID),
+      "Enter on a focused, labelled \"select widget\" button did nothing"
+    ).toHaveAttribute("data-editor-selected", "true")
+    await expect(page.locator(`[data-editor-resize="${DRAG_ID}"]`)).toBeVisible()
+    expect(await rectOnScreen(page, DRAG_ID), "selecting moved the widget").toEqual(DRAG_RECT)
+
+    // Arrow keys nudge by exactly one cell, in both axes and both directions.
+    await page.keyboard.press("ArrowRight")
+    await page.keyboard.press("ArrowRight")
+    await page.keyboard.press("ArrowDown")
+    expect(await rectOnScreen(page, DRAG_ID)).toEqual({ ...DRAG_RECT, col: DRAG_RECT.col + 2, row: DRAG_RECT.row + 1 })
+    await page.keyboard.press("ArrowLeft")
+    await page.keyboard.press("ArrowUp")
+    expect(await rectOnScreen(page, DRAG_ID)).toEqual({ ...DRAG_RECT, col: DRAG_RECT.col + 1 })
+
+    // The keyboard path goes through the SAME history — one Ctrl+Z undoes one nudge, not the lot.
+    await page.keyboard.press("Control+z")
+    expect(await rectOnScreen(page, DRAG_ID)).toEqual({ ...DRAG_RECT, col: DRAG_RECT.col + 1, row: DRAG_RECT.row + 1 })
+
+    // ...and the SAME clamp: held against the left edge, the widget stops at col 0 and the refusals
+    // that produces are the ordinary no-op kind, announced to nobody.
+    for (let i = 0; i < COLS + 3; i += 1) await page.keyboard.press("ArrowLeft")
+    for (let i = 0; i < ROWS + 3; i += 1) await page.keyboard.press("ArrowUp")
+    expect(await rectOnScreen(page, DRAG_ID), "the keyboard path is not clamped the way the pointer path is").toEqual({
+      ...DRAG_RECT,
+      col: 0,
+      row: 0,
+    })
+    await expect(page.locator("[role=alert]")).toHaveCount(0)
+
+    // The resize handle carries the other half of the same claim.
+    await page.locator(`[data-editor-resize="${DRAG_ID}"]`).focus()
+    await expect(page.locator(`[data-editor-resize="${DRAG_ID}"]`)).toBeFocused()
+    await page.keyboard.press("ArrowRight")
+    await page.keyboard.press("ArrowDown")
+    expect(
+      await rectOnScreen(page, DRAG_ID),
+      "arrow keys on the focused resize handle did not change the span"
+    ).toEqual({ col: 0, row: 0, colSpan: DRAG_RECT.colSpan + 1, rowSpan: DRAG_RECT.rowSpan + 1 })
+
+    // Minimum span 1, from the keyboard too.
+    for (let i = 0; i < COLS + 3; i += 1) await page.keyboard.press("ArrowLeft")
+    for (let i = 0; i < ROWS + 3; i += 1) await page.keyboard.press("ArrowUp")
+    expect(await rectOnScreen(page, DRAG_ID)).toEqual({ col: 0, row: 0, colSpan: 1, rowSpan: 1 })
+
+    expect(await rectOnScreen(page, BYSTANDER_ID)).toEqual(BYSTANDER_RECT)
+  })
+
   test("clicking a widget selects it and draws an outline; clicking the background clears it", async ({ page }) => {
     await openCanvas(page)
     const pitch = await measurePitch(page)
