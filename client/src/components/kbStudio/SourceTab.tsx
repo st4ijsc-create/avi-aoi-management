@@ -11,7 +11,18 @@
 import { useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { Upload, Link as LinkIcon, Loader2, X, CheckCircle2, XCircle, Clock } from "lucide-react";
+import {
+  Upload,
+  Link as LinkIcon,
+  Loader2,
+  X,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Info,
+  AlertTriangle,
+  ArrowRight,
+} from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +36,8 @@ import {
   isQueuedFileStillPending,
   formatAllowedTypesLabel,
   acceptsImageUploads,
+  KB_CORPUS_DOMAIN_SUGGESTIONS,
+  KB_STUDIO_REJECTED_EXTENSIONS_FOR_GUIDANCE,
 } from "./sourceTabLogic";
 
 export interface SourceTabProps {
@@ -59,6 +72,163 @@ function newFileId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Task V9 (2026-09-05) — "hệ thống cần cho tôi training và hướng dẫn tôi training" (yêu cầu
+ * nguyên văn chủ dự án). Trước bản vá này, SourceTab là công cụ TRẦN: chọn corpus, chọn tệp,
+ * bấm nút — không nói người dùng NÊN làm gì, VÌ SAO, hay làm sao BIẾT nó có tác dụng. Bảng này
+ * đưa nguyên nội dung quy trình đã viết sẵn ở
+ * docs/superpowers/specs/2026-09-04-ai-local-quy-trinh-nap-tri-thuc.md vào giao diện — không phát
+ * minh quy trình mới, chỉ hiển thị nó đúng lúc, đúng chỗ, kèm nút bấm tác dụng thật (đổ tên corpus
+ * gợi ý vào ô nhập bên dưới, không tự tạo corpus rỗng).
+ *
+ * Đặt NGAY TRONG SourceTab (không phải một tab "Hướng dẫn" riêng): danh sách gợi ý corpus ở
+ * Bước 1 cần gọi thẳng `setCorpus` của form bên dưới — tách ra một tab khác sẽ phải nâng state
+ * `corpus` lên KbStudioPage.tsx (tab cha, mỗi tab hiện tự quản state riêng, xem module doc của
+ * KbStudioPage.tsx) chỉ để một nút bấm đổi giá trị ô nhập ở một tab khác — không cân xứng với
+ * kích thước thay đổi.
+ *
+ * Định dạng "nhận được" hiển thị TRỰC TIẾP từ `allowedTypes` (chính mảng server trả về, ĐÃ là
+ * nguồn chống-trôi từ Task 6 review round 2 — xem `formatAllowedTypesLabel` trong
+ * sourceTabLogic.ts) — không chép tay lại. Định dạng "KHÔNG nhận"
+ * (`KB_STUDIO_REJECTED_EXTENSIONS_FOR_GUIDANCE`) buộc phải chép tay (server không phơi ra danh
+ * sách bị từ chối) nhưng có lưới `kbFormatGuidance.crossCheck.unit.test.ts` đối chiếu trực tiếp
+ * với `normalizeSourceType` thật của server — xem hằng số đó trong sourceTabLogic.ts.
+ *
+ * ★ Video KHÔNG được liệt kê là "nhận được" dù kbDocParser.ts/kbVideoTranscriber.ts có hỗ trợ ở
+ * tầng dịch vụ (có lưới riêng) — đã xác nhận bằng cách đọc mã: kbStudioRouter.ts (router mà
+ * SourceTab gọi) không có `ingestVideoJob`, và không có lời gọi `kbIngest.ingestVideo`/
+ * `videoIngestEnabled` nào trong toàn bộ client/ (đã grep). Nói "video nạp được" ở đây sẽ là một
+ * lời khai sai — người dùng thử sẽ chỉ nhận lỗi "định dạng không được nhận" vì đuôi tệp video
+ * thật (.mp4…) không map vào KbSourceType nào cả.
+ */
+function IngestGuidanceCard({
+  corpus,
+  setCorpus,
+  allowedTypes,
+  webIngestEnabled,
+}: {
+  corpus: string;
+  setCorpus: (value: string) => void;
+  allowedTypes: readonly string[];
+  webIngestEnabled: boolean;
+}) {
+  const showsImages = acceptsImageUploads(allowedTypes);
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Info className="h-4 w-4" />
+          Hướng dẫn tự nạp tài liệu
+        </CardTitle>
+        <CardDescription>
+          Bốn bước để tự đưa tài liệu vào AI Local — làm đúng thứ tự, hệ thống lo phần còn lại.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        <ol className="space-y-4">
+          <li>
+            <p className="font-medium text-foreground">1. Chọn corpus theo ĐÚNG miền</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Vì sao phải tách miền: đã đo được — trộn nhiều miền vào MỘT corpus khiến hỏi về web
+              lại lôi ra tài liệu PLC (5 trích dẫn điểm 0,85–0,91 từ tài liệu lạc đề). Rác trong
+              corpus làm câu trả lời TỆ ĐI, không phải trung tính — corpus càng nhiều tài liệu lạc
+              đề, càng nhiều câu trả lời bị kéo sai hướng.
+            </p>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {KB_CORPUS_DOMAIN_SUGGESTIONS.map((s) => (
+                <Button
+                  key={s.corpus}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setCorpus(s.corpus)}
+                  aria-label={`Điền tên corpus gợi ý "${s.corpus}" vào ô Tên corpus`}
+                >
+                  {s.label}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              Bấm một gợi ý chỉ ĐIỀN tên vào ô "Tên corpus" bên dưới (không tự tạo corpus rỗng) —
+              corpus chỉ thật sự tồn tại sau khi tài liệu đầu tiên được nạp vào nó.
+              {corpus && (
+                <span className="ml-1 text-foreground">
+                  Đang chọn: <span className="font-medium">{corpus}</span>
+                </span>
+              )}
+            </p>
+            <div className="rounded-lg border-2 border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2 mt-2 flex gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
+              <p className="text-xs text-amber-800 dark:text-amber-300">
+                Miền lập trình web/app (C#, React, Node.js, HTML, CSS, JavaScript): model{" "}
+                <span className="font-medium">đã biết sẵn</span> các ngôn ngữ này từ lúc huấn
+                luyện — nạp tài liệu cho miền này KHÔNG dạy thêm gì mà còn làm NHIỄU câu trả lời
+                (đã đo: 2/2 ca sai còn lại trong bộ đánh giá là câu hỏi ngoài miền tài liệu hãng bị
+                gán trích dẫn lạc đề). Đừng mất công tạo corpus cho miền này.
+              </p>
+            </div>
+          </li>
+
+          <li>
+            <p className="font-medium text-foreground">2. Chọn tệp</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Nhận: {formatAllowedTypesLabel(allowedTypes)}
+              {webIngestEnabled ? ", URL (dán link ở khung bên phải)" : ""}.
+              {showsImages && " Ảnh được model thị giác tự mô tả thành văn bản trước khi nạp."}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              KHÔNG nhận: {KB_STUDIO_REJECTED_EXTENSIONS_FOR_GUIDANCE.join(", ")} — chuyển sang
+              Markdown hoặc TXT trước khi nạp.
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Video (tự chép lời bằng whisper.cpp) đã có ở tầng dịch vụ nhưng{" "}
+              <span className="font-medium text-foreground">chưa nối vào màn hình này</span> —
+              đừng thử tải video lên đây, tệp sẽ bị từ chối.
+            </p>
+          </li>
+
+          <li>
+            <p className="font-medium text-foreground">3. Không cần chạy thêm gì</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Bấm "Tải lên & nạp" là XONG: hệ thống tự PARSE → CHIA NHỎ (chunk) → NHÚNG (embed) →
+              LƯU trong một lượt. Không có script nào phải tự chạy sau khi tải lên — đây là điểm
+              dễ hiểu lầm nhất vì nhiều tài liệu khác của dự án nói tới bước nhúng thủ công (đường
+              dòng lệnh, cho thư mục PDF theo hãng); đường Training Studio này KHÔNG cần bước đó.
+            </p>
+          </li>
+
+          <li>
+            <p className="font-medium text-foreground">4. Kiểm tra đã vào chưa</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Hỏi trợ lý AI Local một câu MÌNH BIẾT TRƯỚC đáp án, lấy thẳng từ tài liệu vừa nạp
+              (vd một giá trị thanh ghi, một mã lỗi cụ thể). Trả lời đúng và dẫn đúng tên tệp vừa
+              nạp = corpus sống. Trả lời chung chung hoặc không nhắc tới tài liệu = chưa vào hoặc
+              chưa nhúng.
+            </p>
+          </li>
+        </ol>
+
+        <div className="rounded-lg border-2 border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2.5 flex gap-2">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
+          <p className="text-xs text-amber-800 dark:text-amber-300">
+            <span className="font-medium">Cảnh báo PDF quét ảnh (scan):</span> bộ đọc PDF của hệ
+            thống không đọc được chữ trong ảnh — nó trả về RỖNG mà KHÔNG báo lỗi, nghĩa là có thể
+            nạp một corpus rỗng mà không hề biết. Sau khi tải lên, nhìn số đoạn (chunk) hiện ngay
+            bên dưới tên tệp — ra 0 hoặc rất thấp là dấu hiệu tài liệu chưa thật sự vào được.
+          </p>
+        </div>
+
+        <p className="text-xs text-muted-foreground flex items-center gap-1">
+          <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+          Kết quả sau khi nạp: số đoạn (chunk) hiện ngay dưới mỗi tệp bên dưới sau khi xong. Xem
+          lại đầy đủ (tên tài liệu, corpus, số đoạn, trạng thái, lỗi nếu có) ở tab "Tác vụ".
+        </p>
+      </CardContent>
+    </Card>
+  );
 }
 
 export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTypes }: SourceTabProps) {
@@ -226,6 +396,13 @@ export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTy
           <AlertDescription>{t("kbStudio.disabled.desc")}</AlertDescription>
         </Alert>
       )}
+
+      <IngestGuidanceCard
+        corpus={corpus}
+        setCorpus={setCorpus}
+        allowedTypes={allowedTypes}
+        webIngestEnabled={webIngestEnabled}
+      />
 
       <Card>
         <CardHeader className="pb-3">

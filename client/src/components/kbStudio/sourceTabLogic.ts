@@ -62,8 +62,11 @@ export function formatAllowedTypesLabel(allowedTypes: readonly string[]): string
  * recognises as images — kept in sync manually since client and server are separate builds.
  * Used ONLY to decide whether to show the "images are AI-described" hint below; it never
  * gates what the browser actually lets the user pick (that's `accept`, built straight from the
- * server-supplied `allowedTypes`) or what the server accepts. */
-const KNOWN_IMAGE_EXTENSIONS: readonly string[] = ["png", "jpg", "jpeg", "webp"];
+ * server-supplied `allowedTypes`) or what the server accepts.
+ * Exported (Task V9) so `kbFormatGuidance.crossCheck.unit.test.ts` can assert this manual mirror
+ * still matches the server's real `normalizeSourceType` — closes the "never verified
+ * programmatically" gap this doc comment used to just accept as a risk. */
+export const KNOWN_IMAGE_EXTENSIONS: readonly string[] = ["png", "jpg", "jpeg", "webp"];
 
 /**
  * True when the server's real `allowedTypes` currently include at least one image extension —
@@ -75,3 +78,41 @@ const KNOWN_IMAGE_EXTENSIONS: readonly string[] = ["png", "jpg", "jpeg", "webp"]
 export function acceptsImageUploads(allowedTypes: readonly string[]): boolean {
   return allowedTypes.some((ext) => KNOWN_IMAGE_EXTENSIONS.includes(ext));
 }
+
+/**
+ * Task V9 (in-UI training guidance) — gợi ý corpus theo ĐÚNG danh mục miền chủ dự án đã nêu
+ * (PLC ladder Mitsubishi/Omron, robot 6 trục Fanuc/Mitsubishi, cobot Techman). Đây là NHÃN GỢI Ý
+ * hiển thị trong SourceTab.tsx, không phải danh sách corpus đã tồn tại trên server — bấm vào một
+ * gợi ý chỉ ĐIỀN tên vào ô "Tên corpus" (giống gõ tay), KHÔNG gọi `createCorpus` và không tự tạo
+ * corpus rỗng hàng loạt. Corpus chỉ thực sự được đăng ký khi tài liệu đầu tiên được nạp vào (xem
+ * `SourceTab.tsx`'s "corpusHelp" / module doc: "corpus sẽ tự động đăng ký khi nạp lần đầu").
+ * Tên dùng gạch nối, nhất quán một khuôn `<miền>-<hãng>`.
+ */
+export interface KbCorpusDomainSuggestion {
+  /** Điền thẳng vào ô "Tên corpus" khi bấm — không khoảng trắng, không dấu. */
+  corpus: string;
+  /** Nhãn hiển thị trên nút gợi ý. */
+  label: string;
+}
+
+export const KB_CORPUS_DOMAIN_SUGGESTIONS: readonly KbCorpusDomainSuggestion[] = [
+  { corpus: "plc-ladder-mitsubishi", label: "PLC ladder — Mitsubishi" },
+  { corpus: "plc-ladder-omron", label: "PLC ladder — Omron" },
+  { corpus: "robot-fanuc", label: "Robot 6 trục — Fanuc" },
+  { corpus: "robot-mitsubishi", label: "Robot 6 trục — Mitsubishi" },
+  { corpus: "cobot-techman", label: "Cobot — Techman" },
+];
+
+/**
+ * Task V9 — định dạng tệp KHÔNG được `kbDocParser.normalizeSourceType` (server) nhận qua đường
+ * tải-tệp của Training Studio, dùng để hiển thị trong bảng hướng dẫn của SourceTab.tsx
+ * ("KHÔNG nhận: …"). Server không phơi ra một danh sách "bị từ chối" nào (chỉ có `allowedTypes`,
+ * danh sách ĐƯỢC nhận — xem `formatAllowedTypesLabel` ở trên, luôn lấy trực tiếp từ server, không
+ * bao giờ chép tay) nên đây buộc phải là hằng số chép tay. Để nó không TRÔI khỏi hành vi thật:
+ * `kbFormatGuidance.crossCheck.unit.test.ts` import THẲNG `normalizeSourceType` thật từ
+ * `server/services/kbDocParser.ts` (an toàn ở tầng TEST — vitest chạy client và server trong
+ * CÙNG một tiến trình node, xem vitest.config.ts; KHÔNG import vào bundle trình duyệt thật, client
+ * và server vẫn là hai bản build tách biệt như comment của `KNOWN_IMAGE_EXTENSIONS` ở trên đã nói)
+ * và khẳng định MỌI phần tử ở đây thật sự bị `KbUnsupportedTypeError` từ chối.
+ */
+export const KB_STUDIO_REJECTED_EXTENSIONS_FOR_GUIDANCE: readonly string[] = ["xlsx", "xls", "csv", "chm", "zip"];
