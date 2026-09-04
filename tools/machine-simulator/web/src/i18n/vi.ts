@@ -368,10 +368,12 @@ export const vi = {
       title: "Thuộc tính widget",
       empty: "Chưa chọn widget nào — bấm một widget trên canvas để mở thuộc tính của nó.",
       idLabel: "Mã widget",
-      // Không phải một thiếu sót được che đi: mã widget là ĐỊA CHỈ mà cả năm phép sửa cũ lẫn ba phép
-      // mới dùng để nhắm tới widget, và bộ từ vựng sửa của Task 10 không có phép đổi mã. Nói ra ở đây
-      // thay vì để một ô nhập không lưu được.
-      idReadOnly: "Mã là địa chỉ mọi phép sửa dùng để nhắm tới widget này, nên panel không đổi nó.",
+      // Không phải một thiếu sót được che đi: mã widget là ĐỊA CHỈ mọi phép sửa dùng để nhắm tới
+      // widget. 🔴 PHÁN QUYẾT CỦA CONTROLLER, 2026-09-04 (task-10-review.md F4): panel giữ mã CHỈ-ĐỌC,
+      // và phép ĐỔI TÊN thuộc CÂY LỚP (WS-HMI-2 Task 11) — đặt tên là việc của cây lớp. Câu này vì vậy
+      // CHỈ ĐƯỜNG chứ không chỉ từ chối: người dùng đọc xong biết đi đâu để đổi.
+      idReadOnly:
+        "Mã là địa chỉ mọi phép sửa dùng để nhắm tới widget này. Panel không đổi nó — đổi tên ở cây lớp bên trái.",
       kindLabel: "Loại widget",
       componentLabel: "Thành phần (component)",
       componentNone: "(chưa khai)",
@@ -409,6 +411,33 @@ export const vi = {
       policyNotResolved:
         "Panel chỉ CHỌN hành động khai trong tài liệu; nó không hỏi được PolicyEngine xem hành động ấy có được cấp phép hay không. Đây không phải một lời khẳng định về quyền.",
       refusal: (vars: Vars) => `Phép sửa bị từ chối (${vars.code}): ${vars.message}`,
+    },
+    // WS-HMI-2 Task 11 — CÂY LỚP: liệt kê, thêm, xoá, đổi thứ tự vẽ và ĐỔI TÊN widget.
+    //
+    // 🔴 KHÔNG có khoá nào ở đây liệt kê TÊN LOẠI widget. Menu "thêm" lấy danh sách loại từ CHÍNH
+    // `hmi-runtime/widgetRegistry.ts`, nên một loại mới xuất hiện trong menu ngay khi nó được đăng ký —
+    // một danh sách chép tay trong từ điển sẽ là bản sao thứ hai để lệch, và
+    // `tests/40-editor-layers.spec.ts` đỏ nếu ai đó dựng một danh sách như thế.
+    layers: {
+      title: "Cây lớp",
+      empty: "Màn hình này chưa có widget nào — thêm một widget bên dưới.",
+      // Thứ tự trong cây LÀ thứ tự trong tài liệu, và thứ tự trong tài liệu LÀ thứ tự vẽ: bộ vẽ đặt
+      // widget theo đúng thứ tự mảng, nên cái đứng SAU nằm ĐÈ LÊN cái đứng trước khi hai ô chồng nhau.
+      drawOrder: "Thứ tự trong danh sách là thứ tự vẽ: lớp đứng sau nằm ĐÈ LÊN lớp đứng trước khi hai ô chồng nhau.",
+      selectLayer: (vars: Vars) => `Chọn lớp ${vars.widgetId}`,
+      renameLabel: (vars: Vars) => `Đổi tên widget ${vars.widgetId}`,
+      renameHint: "Chữ thường, chữ số và gạch nối; phải khác mã của mọi widget khác trên màn hình.",
+      remove: (vars: Vars) => `Xoá widget ${vars.widgetId}`,
+      moveUp: (vars: Vars) => `Đưa ${vars.widgetId} xuống dưới lớp trước (vẽ sớm hơn)`,
+      moveDown: (vars: Vars) => `Đưa ${vars.widgetId} lên trên lớp sau (vẽ muộn hơn)`,
+      addTitle: "Thêm widget",
+      addKindLabel: "Loại widget mới",
+      addKindChoose: "— chọn loại —",
+      addButton: "Thêm",
+      // §5 ở đường THÊM, chứ không chỉ ở đường đổi loại của panel: một widget GHI không được sinh ra
+      // mà thiếu gate, nên nút Thêm bị khoá cho tới khi có hành động.
+      addPolicyRequired: (vars: Vars) =>
+        `Một "${vars.kind}" là đường GHI, nên lược đồ đóng băng bắt buộc phải có policyAction (bất biến §5: không có đường ghi nào thiếu gate). Chọn một hành động thì mới thêm được.`,
     },
     tagPicker: {
       title: "Chọn tag",

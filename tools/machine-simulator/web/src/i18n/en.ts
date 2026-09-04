@@ -365,7 +365,8 @@ export const en: Dictionary = {
       title: "Widget properties",
       empty: "No widget selected — click a widget on the canvas to open its properties.",
       idLabel: "Widget id",
-      idReadOnly: "The id is the address every edit uses to name this widget, so the panel does not change it.",
+      idReadOnly:
+        "The id is the address every edit uses to name this widget. The panel does not change it — rename it in the layer tree on the left.",
       kindLabel: "Widget kind",
       componentLabel: "Component",
       componentNone: "(not declared)",
@@ -397,6 +398,25 @@ export const en: Dictionary = {
       policyNotResolved:
         "The panel only CHOOSES the action the document declares; it cannot ask the PolicyEngine whether that action is permitted. This is not a claim about permission.",
       refusal: (vars: Vars) => `Edit refused (${vars.code}): ${vars.message}`,
+    },
+    // WS-HMI-2 Task 11 — the layer tree. See vi.ts at the same keys for why no key here names a
+    // widget kind: the add menu's vocabulary comes from `hmi-runtime/widgetRegistry.ts` itself.
+    layers: {
+      title: "Layers",
+      empty: "This screen declares no widgets yet — add one below.",
+      drawOrder: "List order is draw order: a layer further down is painted OVER the ones above it where their cells overlap.",
+      selectLayer: (vars: Vars) => `Select layer ${vars.widgetId}`,
+      renameLabel: (vars: Vars) => `Rename widget ${vars.widgetId}`,
+      renameHint: "Lowercase letters, digits and hyphens; must differ from every other widget id on this screen.",
+      remove: (vars: Vars) => `Delete widget ${vars.widgetId}`,
+      moveUp: (vars: Vars) => `Move ${vars.widgetId} under the previous layer (painted earlier)`,
+      moveDown: (vars: Vars) => `Move ${vars.widgetId} over the next layer (painted later)`,
+      addTitle: "Add a widget",
+      addKindLabel: "New widget kind",
+      addKindChoose: "— choose a kind —",
+      addButton: "Add",
+      addPolicyRequired: (vars: Vars) =>
+        `A "${vars.kind}" is a WRITE path, so the frozen schema requires a policyAction on it (invariant §5: no write path without a gate). Nothing is added until an action is chosen.`,
     },
     tagPicker: {
       title: "Pick a tag",

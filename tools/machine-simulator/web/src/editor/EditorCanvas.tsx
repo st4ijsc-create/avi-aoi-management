@@ -16,6 +16,7 @@ import { useT } from "@/i18n"
 import type { MachineDetail } from "@/lib/api"
 import { applyEdit, createEditorState, undo, type EditorEdit, type EditorRefusalCode, type EditorState } from "./editorState"
 import { gridPitch, movedRect, resizedRect, snapToCells, type CellDelta, type GridPitch } from "./gridGeometry"
+import { LayerTree } from "./LayerTree"
 import { PropertyPanel } from "./PropertyPanel"
 
 /**
@@ -510,17 +511,32 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
   }
 
   /**
-   * The property panel's way in — WS-HMI-2 Task 10.
+   * The way in for every control that is not a pointer on the canvas — the property panel
+   * (WS-HMI-2 Task 10) and the layer tree (Task 11).
    *
    * Deliberately the SAME `applyEdit` on the SAME `canvas.editor` the pointer path uses, with no
-   * second history and no panel-local document: an edit made in the panel and a drag made on the
-   * canvas share one undo stack, one no-op rule and one set of guards, and `Ctrl+Z` walks back through
-   * both in the order they happened. A refused edit returns the same `doc`/`past`/`future` references,
-   * so adopting the result unconditionally keeps the refusal legible to the effect above AND to the
-   * panel, which renders it.
+   * second history and no panel-local document: an edit made in the panel, a row deleted in the tree
+   * and a drag made on the canvas share one undo stack, one no-op rule and one set of guards, and
+   * `Ctrl+Z` walks back through all three in the order they happened. A refused edit returns the same
+   * `doc`/`past`/`future` references, so adopting the result unconditionally keeps the refusal legible
+   * to the effect above AND to the panel, which renders it.
+   *
+   * 🔴 ONE edit kind needs something more than that, and it is stated here rather than left to be
+   * discovered: `rename` changes the ADDRESS the selection is holding. `selectedId` is a widget id, so
+   * after an ACCEPTED rename it names a widget that no longer exists and the panel would blank out
+   * mid-keystroke. Re-pointed here, in the same `setCanvas` call, so no render ever sees the two out
+   * of step — and only when the edit was accepted (a refused rename must leave everything, selection
+   * included, exactly as it was) and only when the renamed widget is the selected one. This is the
+   * selection rule `PropertyPanel`'s header named as an open question when it argued rename needed a
+   * task of its own; it lives HERE because selection is the canvas's state, not the document's.
    */
-  function applyPanelEdit(edit: EditorEdit) {
-    setCanvas((prev) => ({ ...prev, editor: applyEdit(prev.editor, edit) }))
+  function applySessionEdit(edit: EditorEdit) {
+    setCanvas((prev) => {
+      const editor = applyEdit(prev.editor, edit)
+      const renamed =
+        edit.kind === "rename" && editor.lastRefusal === undefined && prev.selectedId === edit.widgetId
+      return { ...prev, editor, selectedId: renamed ? edit.newId : prev.selectedId }
+    })
   }
 
   const dragging = canvas.drag
@@ -528,12 +544,25 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
   const selectedWidget = edited.widgets.find((widget) => widget.id === canvas.selectedId)
 
   return (
-    // The canvas frame and the property panel side by side. The frame keeps `data-editor-canvas` and
-    // everything inside it is untouched — the renderer's own grid is measured against the kiosk's in
-    // `tests/37-editor-canvas.spec.ts` by TRACK COUNTS and absolute gutters, neither of which a
-    // narrower frame changes, and `tests/38-editor-drag.spec.ts` measures its pitch off the grid the
-    // browser actually laid out rather than from a formula.
+    // The layer tree, the canvas frame and the property panel side by side (WS-HMI-2 Task 11 added
+    // the first of the three; the sentence used to name two). The frame keeps `data-editor-canvas`
+    // and everything inside it is untouched — the renderer's own grid is measured against the
+    // kiosk's in `tests/37-editor-canvas.spec.ts` by TRACK COUNTS and absolute gutters, neither of
+    // which a narrower frame changes, and `tests/38-editor-drag.spec.ts` measures its pitch off the
+    // grid the browser actually laid out rather than from a formula. Both properties are what let a
+    // third rail be added beside the canvas without moving either file.
     <div className="flex h-full min-h-0 w-full min-w-0 gap-3">
+      {/*
+        The layer tree, the canvas frame and the property panel, left to right. The tree reads the
+        EDITED document (not the `doc` prop) so its order is the order `<ScreenRenderer>` is drawing
+        below — one list, one truth about draw order.
+      */}
+      <LayerTree
+        doc={edited}
+        selectedId={canvas.selectedId}
+        onSelect={(widgetId) => setCanvas((prev) => ({ ...prev, selectedId: widgetId }))}
+        onEdit={applySessionEdit}
+      />
     <div
       data-editor-canvas={edited.screenId}
       className="h-full min-h-0 min-w-0 flex-1 overflow-hidden border border-border-strong bg-surface-subtle p-3"
@@ -642,7 +671,7 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
     </div>
       <PropertyPanel
         widget={selectedWidget}
-        onEdit={applyPanelEdit}
+        onEdit={applySessionEdit}
         // Filtered HERE rather than in the panel, so `HARMLESS_REFUSALS` stays the one place that says
         // which codes are ordinary — the panel renders whatever it is handed.
         refusal={refusal && !HARMLESS_REFUSALS[refusal.code] ? refusal : undefined}

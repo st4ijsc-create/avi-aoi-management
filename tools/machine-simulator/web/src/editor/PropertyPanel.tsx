@@ -61,12 +61,21 @@ import { TagPicker } from "./TagPicker"
  * chooses read as a picker that authorises.
  *
  * ── WHAT IS DELIBERATELY NOT EDITABLE, AND WHY EACH ONE IS SAID OUT LOUD ─────────────────────────
- *   * `id` — it is the ADDRESS every edit uses to name a widget. There is no `set-id` edit, and one
- *     would need a uniqueness guard plus a rule for what happens to the selection, the undo history
- *     and any `component` reference mid-rename. Shown read-only with that sentence, rather than as a
- *     field that silently does nothing. 🔴 CONTROLLER RULING, 2026-09-04 (task-10-review.md F4):
- *     this stays read-only HERE, and RENAME MOVES TO TASK 11 — renaming is naming, and naming belongs
- *     with the layer tree. It is a scope decision on the record, not an undisclosed limit.
+ *   * `id` — it is the ADDRESS every edit uses to name a widget. 🔴 CONTROLLER RULING, 2026-09-04
+ *     (task-10-review.md F4): this stays read-only HERE, and RENAME MOVES TO TASK 11 — renaming is
+ *     naming, and naming belongs with the layer tree. It is a scope decision on the record, not an
+ *     undisclosed limit.
+ *
+ *     🔴 TASK 11 HAS LANDED, AND THE SENTENCE THAT STOOD HERE IS RETRACTED, KEPT VERBATIM:
+ *     *"There is no `set-id` edit, and one would need a uniqueness guard plus a rule for what happens
+ *     to the selection, the undo history and any `component` reference mid-rename."* There IS one now
+ *     (`rename`), it carries exactly that uniqueness guard beside the frozen id pattern, and the two
+ *     open questions were answered rather than inherited: the selection follows the widget
+ *     (`EditorCanvas` re-points it), the undo history is the same single one every other edit pushes
+ *     onto, and there is no `component` reference to fix because `component` names a node of the
+ *     MACHINE's component model, never another widget. What is unchanged is where the control lives:
+ *     the panel still shows `id` read-only and `editor.panel.idReadOnly` now says where to rename it,
+ *     rather than presenting a second box for the same field.
  *   * `component` — no edit kind reaches it either. It is shown because `TagPicker`'s `{component}/…`
  *     section depends on it, so an engineer needs to see what it says.
  *   * a `props` entry that is nested, an array, a boolean, or whose key shares a widget field's name
@@ -106,8 +115,16 @@ export type PropertyPanelProps = {
 
 /** A text/number field that commits ONCE — on blur, or on Enter — instead of on every keystroke. See
  * the header for why. `Escape` abandons the edit, which is what a field with a delayed commit owes
- * the person typing in it. */
-function CommitField({
+ * the person typing in it.
+ *
+ * 🔴 EXPORTED for WS-HMI-2 Task 11's `LayerTree`, whose rename box owes the engineer the same three
+ * behaviours for the same reasons — one edit per committed name rather than per keystroke (the undo
+ * stack is bounded at 100 whole documents), `Escape` abandons, and a REFUSED commit snaps the box
+ * back rather than leaving a name on screen the document does not carry. Re-typing those thirty lines
+ * beside the tree would be a second implementation of the F2 snap-back rule, which is the shape of
+ * duplication this tree has been paying for all week. Callers re-key it on the committed value so an
+ * accepted commit reloads the box. */
+export function CommitField({
   value,
   type,
   hook,
