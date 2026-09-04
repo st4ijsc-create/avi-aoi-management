@@ -376,6 +376,7 @@ export const en: Dictionary = {
       componentNoneOption: "— no component —",
       componentNoMachine:
         "Choose a machine in the tag picker (the … button on a binding row) before this machine's components can be listed. A screen document is not bound to any machine.",
+      componentLoading: (vars: Vars) => `Reading ${vars.machine}'s component tree…`,
       componentNoModel: (vars: Vars) =>
         `${vars.machine}'s component tree has not been read. The list below is empty for that reason, not because the machine declares no components.`,
       componentHint: (vars: Vars) =>
@@ -471,6 +472,14 @@ export const en: Dictionary = {
       rollbackIsCurrent: "This is already the current version — restoring to it would only add an identical copy.",
       rolledBack: (vars: Vars) =>
         `Restored: the old content was APPENDED as version ${vars.version} (no history entry is lost). The canvas was NOT reloaded — your unpublished edits are still here.`,
+      shadowsPanel: (vars: Vars) =>
+        `⚠ This publish REPLACES ${vars.machine}'s operator screen. There is no delete route, and rollback ` +
+        `cannot reach the shipped screen — use the restore button here if you need it back.`,
+      restoreShipped: (vars: Vars) => `Restore ${vars.machine}'s shipped screen`,
+      restoreNote: (vars: Vars) =>
+        `This PUBLISHES the shipped screen's content for ${vars.machine} as a NEW version under this id — ` +
+        `the store only appends, so the detour stays in the history instead of being erased. The document ` +
+        `you are editing on the canvas is untouched.`,
       refused: (vars: Vars) => `The engine REFUSED the publish (HTTP ${vars.status})`,
       rollbackRefused: (vars: Vars) => `The engine REFUSED the restore (HTTP ${vars.status})`,
       reason400:
@@ -520,6 +529,11 @@ export const en: Dictionary = {
         `No screen is declared with id ${vars.screenId}. The URL may be mistyped, or this screen has never been saved.`,
       noId: "This URL carries no screen id.",
       startNew: "Start building this screen",
+      shadowsPanel: (vars: Vars) =>
+        `⚠ This screen id IS ${vars.machine}'s operator panel. That machine currently shows its shipped ` +
+        `screen; publishing here REPLACES it for the operator, and the store only appends — there is no ` +
+        `delete route, and rollback only reaches versions OF THIS ID, which the shipped screen never was. ` +
+        `The way back is "restore the shipped screen" in the Publish panel.`,
     },
     loadFailed: {
       description: "The screen document could not be read. This is a connection failure, not an undeclared screen.",
@@ -1640,6 +1654,7 @@ export const en: Dictionary = {
   },
 
   hmi: {
+    screenLoading: "Reading this machine's screen document… the controls on the right still work.",
     entryButton: "Machine HMI",
     entryButtonAria: (vars: Vars) => `Open machine HMI for ${vars.code}`,
     back: "Back to machine detail",

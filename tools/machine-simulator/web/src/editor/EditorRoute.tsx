@@ -7,6 +7,7 @@ import { useT } from "@/i18n"
 import { EngineApiError, useScreen, useScreenVersions } from "@/lib/api"
 import { EditorCanvas } from "./EditorCanvas"
 import { createBlankScreen } from "./editorState"
+import { useShadowedPanel } from "./shadowedPanel"
 
 /**
  * WS-HMI-2 Task 8 — `/editor/:screenId`, the screen builder's shell.
@@ -204,6 +205,16 @@ export default function EditorRoute() {
    */
   const [draft, setDraft] = useState<HmiScreenDocument | undefined>(undefined)
   const [draftFor, setDraftFor] = useState<string | undefined>(screenId)
+  /**
+   * 🔴 FIX ROUND 1 (task-13-review.md HIGH-1) — WHOSE OPERATOR PANEL THIS SCREEN ID IS, if anyone's.
+   *
+   * `undefined` for every ordinary screen id, which is why nothing appears on this route for one.
+   * Non-`undefined` means the button below does not create a screen, it REPLACES a running machine's
+   * panel, permanently — the store has no DELETE and rollback cannot reach a document that was never
+   * one of this id's versions. An engineer who clicks "start building" had no way to know that before
+   * this round; now the state that offers the button also states the cost, and names the machine.
+   */
+  const shadowed = useShadowedPanel(screenId)
   if (draftFor !== screenId) {
     setDraftFor(screenId)
     setDraft(undefined)
@@ -273,14 +284,30 @@ export default function EditorRoute() {
             title={t("editor.notDeclared.title")}
             description={t("editor.notDeclared.description", { screenId })}
             action={
-              <button
-                type="button"
-                data-editor-start-new
-                className="border border-border-strong px-3 py-1.5 text-sm text-text-body hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
-                onClick={() => setDraft(createBlankScreen(screenId))}
-              >
-                {t("editor.notDeclared.startNew")}
-              </button>
+              <>
+                {/* 🔴 FIX ROUND 1 (HIGH-1) — the cost of the button, stated BEFORE it is pressed and
+                    naming the machine. `role="alert"` rather than `status`: an engineer about to
+                    replace a running machine's operator panel, irreversibly, must be interrupted —
+                    the same split `EditorNotice` already draws between an ordinary product state and
+                    a fault. Absent entirely for an ordinary screen id, so nothing cries wolf. */}
+                {shadowed ? (
+                  <p
+                    role="alert"
+                    data-editor-shadow-warning={shadowed.machineCode}
+                    className="max-w-md border border-status-fault bg-status-fault/10 px-3 py-2 text-sm text-danger-text"
+                  >
+                    {t("editor.notDeclared.shadowsPanel", { machine: shadowed.machineCode })}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  data-editor-start-new
+                  className="border border-border-strong px-3 py-1.5 text-sm text-text-body hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+                  onClick={() => setDraft(createBlankScreen(screenId))}
+                >
+                  {t("editor.notDeclared.startNew")}
+                </button>
+              </>
             }
           />
         ) : (

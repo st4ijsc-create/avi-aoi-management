@@ -181,3 +181,27 @@ function describeValue(value: unknown): string {
 function describeId(doc: Record<string, unknown>): string {
   return typeof doc.screenId === "string" ? `"${doc.screenId}"` : "(with no screenId)"
 }
+
+/**
+ * WS-HMI-2 Task 13 fix round 1 (task-13-review.md HIGH-1) — the INVERSE of `machineScreenId`, resolved
+ * against the live roster rather than by string surgery on the id.
+ *
+ * The editor needs it to answer "is this screenId somebody's operator panel, and whose?" before it
+ * lets an engineer replace one. Stripping the prefix would be wrong in two ways that matter: it would
+ * report a machine that is not in the roster (so the warning would name a machine that does not
+ * exist), and it would report the LOWERCASED code, when the spelling an engineer has to be shown is
+ * the roster's own (`AOI-01`, not `aoi-01`). Comparing DERIVED ids makes the roster the authority for
+ * both, and makes this function agree with `machineScreenId` by construction rather than by a second
+ * copy of the rule — including the case fold and the reserved prefix.
+ *
+ * Kept HERE, beside the forward direction and away from the shipped-document table, so it can be
+ * executed by `runtime-tests/screenJoin.test.mjs`: `editor/shadowedPanel.ts` imports JSON and Node
+ * cannot load such a module without an import attribute.
+ */
+export function machineForScreenId<T extends { code: string }>(
+  screenId: string | undefined,
+  machines: readonly T[] | undefined
+): T | undefined {
+  if (!screenId || !machines) return undefined
+  return machines.find((machine) => machineScreenId(machine.code) === screenId)
+}

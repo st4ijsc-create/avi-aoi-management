@@ -123,6 +123,78 @@ const BASELINE_MACHINES = [
   { code: "IOT-01", shippedScreen: "iot-overview", derivedId: "machine-iot-01" },
 ] as const
 
+/** A screen id that is NOT any machine's operator panel, and that nothing ever publishes — the
+ * negative control for the shadow warning. Without it, a warning that rendered unconditionally
+ * would pass every assertion about the warning appearing. */
+const NOT_A_PANEL_ID = "not-a-machine-panel"
+
+/** The one widget `web/screens/iot-overview.json` declares, and the accessible name its schematic
+ * renders under. Read as CONTENT rather than by `screenId`, because the restored document carries
+ * the PANEL's id (the write door refuses a body naming a different identity from the route) — so
+ * "the shipped screen is back" is a claim about what is drawn, not about what it is called. */
+const SHIPPED_IOT_WIDGET = "overview"
+const SHIPPED_IOT_SCHEMATIC = /IOT SENSOR NODE/
+
+type ProbeDocument = {
+  schemaVersion: 1
+  screenId: string
+  title: string
+  theme: string
+  layout: { cols: number; rows: number; breakpoint: string }
+  widgets: { id: string; kind: string; rect: { col: number; row: number; colSpan: number; rowSpan: number }; props?: Record<string, unknown> }[]
+}
+
+/** A document that is unmistakably NOT the shipped IoT screen — one label carrying a sentinel. */
+const SHADOW_SENTINEL = "SHADOWED-BY-A-PUBLISH"
+function shadowingDoc(screenId: string): ProbeDocument {
+  return {
+    schemaVersion: 1,
+    screenId,
+    title: screenId,
+    theme: "blueprint",
+    layout: { cols: 12, rows: 8, breakpoint: "panel" },
+    widgets: [
+      { id: "shadow-label", kind: "label", rect: { col: 0, row: 0, colSpan: 6, rowSpan: 1 }, props: { text: SHADOW_SENTINEL } },
+    ],
+  }
+}
+
+/** `PUT /v1/screens/{screenId}` — appends a version and makes it current. Fails LOUDLY with the
+ * engine's own words, so a refused precondition never reads as a product defect. */
+async function putScreen(request: APIRequestContext, doc: ProbeDocument): Promise<void> {
+  const res = await request.put(`${ENGINE_URL}/v1/screens/${doc.screenId}`, { data: doc })
+  if (!res.ok()) throw new Error(`PUT /v1/screens/${doc.screenId} failed: ${res.status()} ${await res.text()}`)
+}
+
+/** Every version row the engine holds for a screen. `GET .../versions` answers 200 with `[]` for a
+ * screen nobody declared, so "no versions" is data rather than an error. */
+async function versionsOf(request: APIRequestContext, screenId: string): Promise<{ version: number; isCurrent: boolean }[]> {
+  const res = await request.get(`${ENGINE_URL}/v1/screens/${screenId}/versions`)
+  if (!res.ok()) throw new Error(`GET /v1/screens/${screenId}/versions failed: ${res.status()}`)
+  return (await res.json()) as { version: number; isCurrent: boolean }[]
+}
+
+/**
+ * Records the SEQUENCE of `data-hmi-screen` values the page actually goes through, de-duplicated,
+ * sampled every 4 ms from before the app boots.
+ *
+ * 🔴 This exists because a settled-state assertion cannot see the defect it is here for. Both of the
+ * acceptance journey's screen assertions auto-retry, so a page that renders the WRONG document for a
+ * few hundred milliseconds and then corrects itself passes them — which is exactly what the reviewer
+ * measured when they cut the screen-area wait (task-13-review.md MEDIUM-1): both tests stayed green
+ * while an operator got a frame of a screen nobody authored for that machine. Sampling is the only
+ * instrument that can tell those two builds apart.
+ */
+const SCREEN_SAMPLER = `
+  window.__hmiScreenSequence = [];
+  setInterval(() => {
+    const el = document.querySelector("[data-hmi-screen]");
+    const value = el ? el.getAttribute("data-hmi-screen") : "(none)";
+    const seen = window.__hmiScreenSequence;
+    if (seen[seen.length - 1] !== value) seen.push(value);
+  }, 4);
+`
+
 async function putComponentModel(request: APIRequestContext): Promise<void> {
   const res = await request.put(`${ENGINE_URL}/v1/components/${MACHINE}`, { data: COMPONENT_MODEL })
   if (!res.ok()) {
@@ -308,11 +380,25 @@ test.describe("WS-HMI-2 acceptance — an engineer builds a machine's screen, an
       .toBe("two-distinct-values")
 
     // ── 1. The engineer opens the editor for a machine that has no screen ────────────────────────
+    // 🔴 FIX ROUND 1 (task-13-review.md HIGH-1) — NEGATIVE CONTROL FIRST. An ordinary screen id that
+    // is nobody's operator panel must say NOTHING about shadowing one; without this, a warning
+    // rendered unconditionally would satisfy every assertion below it.
+    await page.goto(`/editor/${NOT_A_PANEL_ID}`)
+    await expect(page.getByRole("heading", { name: viDict.editor.notDeclared.title, level: 2 })).toBeVisible()
+    await expect(page.locator("[data-editor-shadow-warning]")).toHaveCount(0)
+    await expect(page.locator("[data-editor-start-new]")).toBeVisible()
+
     await page.goto(`/editor/${SCREEN_ID}`)
     // §5-bis's named not-found state — not a blank page, not an error page — and, since this task, a
     // way forward out of it.
     await expect(page.getByRole("heading", { name: viDict.editor.notDeclared.title, level: 2 })).toBeVisible()
     await expect(page.locator("[data-editor-current-version]")).toHaveAttribute("data-editor-current-version", "")
+
+    // 🔴 …and THIS id is a machine's operator panel, so the state that offers the button also states
+    // what the button costs, and names the machine. Publishing here does not create a screen — it
+    // replaces what an operator is looking at, and the store has no delete.
+    await expect(page.locator(`[data-editor-shadow-warning="${MACHINE}"]`)).toBeVisible()
+    await expect(page.locator("[data-editor-shadow-warning]")).toContainText(MACHINE)
 
     await page.locator("[data-editor-start-new]").click()
 
@@ -358,6 +444,10 @@ test.describe("WS-HMI-2 acceptance — an engineer builds a machine's screen, an
     expect(await rowOnScreen(page, "w-1"), "the drag did not land one whole cell down").toBe(1)
 
     // ── 4. Publish ──────────────────────────────────────────────────────────────────────────────
+    // 🔴 FIX ROUND 1 (HIGH-1) — the warning is at the CONTROL too, not only on the page the engineer
+    // passed through several minutes ago, and only while `head` is undefined: this is the publish
+    // that does the shadowing.
+    await expect(page.locator(`[data-publish-shadow-warning="${MACHINE}"]`)).toBeVisible()
     await page.locator("[data-publish-button]").click()
     await expect(page.locator("[data-publish-version]")).toHaveAttribute("data-publish-version", "1")
     // A SECOND, independent witness: the route header reads the engine's version list back, through a
@@ -406,5 +496,152 @@ test.describe("WS-HMI-2 acceptance — an engineer builds a machine's screen, an
     await expect(renderedCell(page, "w-2")).not.toHaveAttribute("title", /.+/)
     expect(await rowOnScreen(page, "w-1")).toBe(1)
     expect(await rowOnScreen(page, "w-2")).toBe(3)
+  })
+
+  test("🔴 a publish that shadows a machine's shipped panel has a way back, and it appends rather than deletes", async ({
+    page,
+    request,
+  }) => {
+    /**
+     * task-13-review.md HIGH-1. Task 13 turned `/editor/machine-{code}` from a named dead end into a
+     * working "start building" flow, and in doing so made it possible to replace a running machine's
+     * operator panel permanently: the store has no DELETE route, and `rollback` restores an earlier
+     * VERSION OF THIS ID — the shipped document was never one, because the id did not exist until
+     * somebody published. So the way back had to be built out of the machinery that does exist.
+     *
+     * The shadow is established through the API on purpose: the thing under test is the RECOVERY, not
+     * the publish, and the acceptance journey above already proves an engineer can do the publishing
+     * half with a mouse.
+     */
+    await putScreen(request, shadowingDoc(SCREEN_ID))
+
+    // The operator's panel really is shadowed — the sentinel is on screen and the shipped IoT
+    // faceplate is not. Without this the restore below could "succeed" against nothing.
+    await page.goto(`/hmi/${MACHINE}`)
+    await expect(page.getByRole("heading", { name: MACHINE, level: 1 })).toBeVisible()
+    await expect(page.getByText(SHADOW_SENTINEL)).toBeVisible()
+    await expect(page.locator(`[data-hmi-widget="${SHIPPED_IOT_WIDGET}"]`)).toHaveCount(0)
+
+    const before = await versionsOf(request, SCREEN_ID)
+    const shadowingVersion = Math.max(...before.map((row) => row.version))
+
+    await page.goto(`/editor/${SCREEN_ID}`)
+    await expect(page.locator(`[data-editor-canvas="${SCREEN_ID}"]`)).toBeVisible()
+
+    // The way back NAMES the machine it is about to serve, and it is offered only because something
+    // is published — before that there would be nothing to undo.
+    const restore = page.locator(`[data-publish-restore-shipped="${MACHINE}"]`)
+    await expect(restore).toBeVisible()
+    await expect(page.locator("[data-publish-restore-note]")).toContainText(MACHINE)
+    // …and the "you are about to shadow this panel" warning is gone, because that already happened.
+    await expect(page.locator("[data-publish-shadow-warning]")).toHaveCount(0)
+
+    await restore.click()
+    await expect(page.locator("[data-publish-version]")).toHaveAttribute(
+      "data-publish-version",
+      String(shadowingVersion + 1)
+    )
+
+    // 🔴 IT APPENDED. The version that shadowed the panel is still in the history, and the restore is
+    // a NEW version on top of it — the property the whole store is built on, and the reason recovery
+    // did not need a DELETE route.
+    const after = await versionsOf(request, SCREEN_ID)
+    expect(after.map((row) => row.version)).toContain(shadowingVersion)
+    expect(after.length).toBe(before.length + 1)
+    expect(after.find((row) => row.isCurrent)?.version).toBe(shadowingVersion + 1)
+
+    // And the operator has their screen back — asserted as CONTENT, because the restored document
+    // necessarily carries the PANEL's id (the write door refuses a body naming another identity), so
+    // `data-hmi-screen` still reads the panel id. Recovery is content restoration, not un-publishing;
+    // the store cannot un-publish and this test does not pretend otherwise.
+    await page.goto(`/hmi/${MACHINE}`)
+    await expect(page.locator(`[data-hmi-screen="${SCREEN_ID}"]`)).toBeVisible()
+    await expect(page.locator(`[data-hmi-widget="${SHIPPED_IOT_WIDGET}"]`)).toBeVisible()
+    await expect(page.getByRole("img", { name: SHIPPED_IOT_SCHEMATIC })).toBeVisible()
+    await expect(page.getByText(SHADOW_SENTINEL)).toHaveCount(0)
+  })
+
+  test("🔴 a slow or failing screen store delays ONE REGION — never the nameplate, the log or the HALT controls — and no frame shows a screen nobody authored for this machine", async ({
+    page,
+    request,
+  }) => {
+    /**
+     * task-13-review.md MEDIUM-1 and MEDIUM-2, in one test because they are two halves of one
+     * decision.
+     *
+     * MEDIUM-2: round 0 held the WHOLE kiosk behind this fetch — nameplate, system log, control rail,
+     * HALT and its reset — and `useScreen` retries a non-404 twice at 1 s and 2 s, so the store's own
+     * documented busy answer (503, `SQLITE_BUSY`) blanked an operator panel for about three seconds.
+     * Nothing about a screen document may be able to hide a HALT reset.
+     *
+     * MEDIUM-1: the wait itself had no test at all, and the reviewer's cut of it came back GREEN,
+     * because every assertion that could have seen it auto-retries past the transient. The sampler is
+     * the instrument that can: with the wait cut and the request slowed, the reviewer measured
+     * `["(none)", "iot-overview", "machine-iot-02"]` — a real frame of the machine's CLASS document on
+     * a panel that has its own published screen — against `["(none)", "machine-iot-02"]` with it.
+     */
+    await putScreen(request, shadowingDoc(SCREEN_ID))
+
+    await page.addInitScript(SCREEN_SAMPLER)
+
+    // ── (a) SLOW: the store answers, late ───────────────────────────────────────────────────────
+    await page.route(`**/v1/screens/${SCREEN_ID}`, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      await route.continue()
+    })
+    // (a1) THE SAMPLE. Deliberately asserts NOTHING about the placeholder first: this half has to stay
+    // able to fail on a build where the placeholder was renamed or removed, because the defect it
+    // measures is the WRONG FRAME, not the presence of a spinner. Everything here is read after the
+    // page has settled, off a record taken while it was not.
+    await page.goto(`/hmi/${MACHINE}`)
+    await expect(page.locator(`[data-hmi-screen="${SCREEN_ID}"]`)).toBeVisible()
+
+    const sequence = (await page.evaluate(() => (window as unknown as { __hmiScreenSequence: string[] }).__hmiScreenSequence)) ?? []
+    expect(sequence.length, "the sampler never ran — this test would measure nothing").toBeGreaterThan(1)
+    expect(
+      sequence,
+      `the operator saw a screen nobody authored for ${MACHINE} before the published one arrived: ${JSON.stringify(sequence)}`
+    ).not.toContain("iot-overview")
+    expect(sequence).toContain(SCREEN_ID)
+
+    // (a2) THE SCOPE. Same slow route, a fresh navigation: the screen area is the ONLY thing waiting,
+    // and it says so by name — while the nameplate, the control rail and HALT are already on screen.
+    // Asserted WHILE the placeholder is up, so this is a co-occurrence rather than "they turned up
+    // eventually": the page-level gate this replaced made the placeholder itself absent, which is what
+    // reddens the first line.
+    await page.goto(`/hmi/${MACHINE}`)
+    await expect(
+      page.locator("[data-kiosk-screen-pending]"),
+      "no screen-area placeholder exists while the store is still answering — so the wait is not scoped " +
+        "to the screen area, and whatever IS waiting is holding back the whole kiosk with it"
+    ).toBeVisible()
+    await expect(page.getByRole("heading", { name: MACHINE, level: 1 })).toBeVisible()
+    await expect(page.getByTestId("control-rail")).toBeVisible()
+    await expect(page.getByRole("button", { name: viDict.hmi.controls.estop })).toBeVisible()
+    await expect(page.locator("[data-hmi-screen]")).toHaveCount(0)
+    await expect(page.locator(`[data-hmi-screen="${SCREEN_ID}"]`)).toBeVisible()
+
+    await page.unroute(`**/v1/screens/${SCREEN_ID}`)
+
+    // ── (b) FAILING: the store answers 503, its own documented busy reply ───────────────────────
+    await page.route(`**/v1/screens/${SCREEN_ID}`, (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "the screen store is busy with another write" }),
+      })
+    )
+    await page.goto(`/hmi/${MACHINE}`)
+
+    // The safety controls are on screen WHILE the store is still failing and retrying.
+    await expect(page.locator("[data-kiosk-screen-pending]")).toBeVisible()
+    await expect(page.getByTestId("control-rail")).toBeVisible()
+    await expect(page.getByRole("button", { name: viDict.hmi.controls.estop })).toBeVisible()
+
+    // …and once the retries are spent the panel degrades to the SHIPPED screen rather than staying
+    // blank. A store failure costs this machine its published screen, never its panel.
+    await expect(page.locator('[data-hmi-screen="iot-overview"]')).toBeVisible()
+    await expect(page.getByRole("button", { name: viDict.hmi.controls.estop })).toBeVisible()
+    await page.unroute(`**/v1/screens/${SCREEN_ID}`)
   })
 })

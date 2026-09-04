@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react"
 import type { PolicyAction } from "@/contracts/tagNamespace"
 import type { ScreenWidget, WidgetKind, WidgetRect } from "@/contracts/hmiScreen"
 import { useT } from "@/i18n"
-import { useMachineComponents } from "@/lib/api"
+import { useFleetRoster, useMachineComponents } from "@/lib/api"
 import {
   POLICY_ACTION_VALUES,
   POLICY_REQUIRED_WIDGET_KINDS,
@@ -247,6 +247,9 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
   // `TagPicker`'s own call is, so no request is made until a machine is chosen. Same hook, same key,
   // same cache entry as the picker's — one fetch serves both surfaces.
   const components = useMachineComponents(machineCode.length > 0 ? machineCode : undefined)
+  // WS-HMI-2 Task 13 fix round 1 (LOW-4) — the same roster the tag picker lists, same query key,
+  // same cache entry: the component section needs its own machine chooser (see the note beside it).
+  const roster = useFleetRoster()
 
   if (forWidgetId !== widget?.id) {
     setForWidgetId(widget?.id)
@@ -487,6 +490,35 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
         <span data-panel-component className="font-mono text-sm text-text-strong">
           {widget.component ?? t("editor.panel.componentNone")}
         </span>
+        {/*
+          🔴 FIX ROUND 1 (task-13-review.md LOW-4) — THE MACHINE CHOOSER IS HERE TOO, and it is the
+          SAME `machineCode` the tag picker sets. Round 0 had only one way to set it — the picker —
+          and the picker only opens from a binding ROW, so a widget with no bindings could never be
+          given a `component` at all: a dead end inside the very feature this task opened. Two
+          controls, ONE piece of state, so changing either changes both and there is no second answer
+          to "which machine am I working against".
+
+          It is a `<select>` over the live roster rather than a text box for the reason the picker's
+          own is: a mistyped code must not be able to look like a machine that simply has no
+          components declared yet.
+        */}
+        <label className="flex items-center gap-1">
+          <span className="hmi-micro w-16 shrink-0">{t("editor.tagPicker.machineLabel")}</span>
+          <select
+            data-panel-component-machine
+            aria-label={t("editor.tagPicker.machineLabel")}
+            className="h-7 w-full min-w-0 border border-border-strong bg-surface-muted px-1.5 text-sm"
+            value={machineCode}
+            onChange={(event) => setMachineCode(event.target.value)}
+          >
+            <option value="">{t("editor.tagPicker.machineChoose")}</option>
+            {(roster.data?.machines ?? []).map((tile) => (
+              <option key={tile.code} value={tile.code}>
+                {tile.code}
+              </option>
+            ))}
+          </select>
+        </label>
         {machineCode.length === 0 ? (
           <span data-panel-component-no-machine className="hmi-micro normal-case text-text-muted">
             {t("editor.panel.componentNoMachine")}
@@ -526,7 +558,17 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
                 </option>
               ))}
             </select>
-            {components.data === undefined ? (
+            {/* 🔴 FIX ROUND 1 (task-13-review.md LOW-3) — THREE states, not two. Round 0 chose the
+                note by `components.data === undefined`, which is true BOTH while the query is in
+                flight AND when the machine declares nothing — so during the fetch the panel said the
+                tree "has not been read", a loading state wearing a not-declared sentence. This file
+                insists elsewhere on telling exactly these two apart (see the policy section), and
+                collapsing them here was the one place it did not. */}
+            {components.isPending ? (
+              <span data-panel-component-loading className="hmi-micro normal-case text-text-muted">
+                {t("editor.panel.componentLoading", { machine: machineCode })}
+              </span>
+            ) : components.data === undefined ? (
               <span data-panel-component-nomodel className="hmi-micro normal-case text-text-muted">
                 {t("editor.panel.componentNoModel", { machine: machineCode })}
               </span>

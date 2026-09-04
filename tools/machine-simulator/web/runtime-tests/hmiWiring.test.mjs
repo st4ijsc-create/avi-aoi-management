@@ -43,19 +43,39 @@ import { fileURLToPath } from "node:url"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const HMI_TSX_PATH = join(HERE, "..", "src", "routes", "Hmi.tsx")
+// 🔴 WS-HMI-2 Task 13, vòng sửa 1 (task-13-review.md HIGH-1) — ba `import` JSON đã CHUYỂN sang
+// module này. Lý do nằm ở chính `shippedScreens.ts`: trình soạn thảo nay cần ĐÚNG ba tài liệu ấy để
+// trả lại màn hình ship sẵn cho một máy bị một lượt xuất bản che mất, và một BẢNG THỨ HAI dựng từ
+// cùng ba tệp chính là khuyết tật "hai chỗ phải giữ đồng bộ" mà cả nhánh này đang dọn. Bài kiểm
+// KHÔNG bị nới: nó đọc ba `import` ở địa chỉ MỚI **và** kiểm rằng `Hmi.tsx` vẫn `import` module ấy
+// — chuỗi mà một lần hoàn tác WS-HMI-1 Task 5 sẽ phá vẫn được kiểm từ đầu đến cuối, chỉ dài thêm
+// một mắt xích.
+const SHIPPED_PATH = join(HERE, "..", "src", "hmi-runtime", "shippedScreens.ts")
 
 // 🔴 CRLF — cùng lý do mọi bài đọc source text bằng regex trong kho này đã ghi: core.autocrlf=true,
 // một checkout mới nhận \r\n, và regex bên dưới hard-code \n.
 const src = readFileSync(HMI_TSX_PATH, "utf8").replace(/\r\n/g, "\n")
+const shippedSrc = readFileSync(SHIPPED_PATH, "utf8").replace(/\r\n/g, "\n")
 
 test("Hmi.tsx render <ScreenRenderer> — không phải bố cục viết tay", () => {
   assert.match(src, /<ScreenRenderer\b/, "Hmi.tsx không còn render <ScreenRenderer> — bố cục JSON đã bị gỡ hay chưa từng có")
 })
 
-test("Hmi.tsx import cả BA tài liệu screens/*-overview.json", () => {
+test("shippedScreens.ts import cả BA tài liệu screens/*-overview.json", () => {
   for (const file of ["screens/automation-overview.json", "screens/aoi-overview.json", "screens/iot-overview.json"]) {
-    assert.ok(src.includes(file), `Hmi.tsx thiếu import "${file}"`)
+    assert.ok(shippedSrc.includes(file), `shippedScreens.ts thiếu import "${file}"`)
   }
+})
+
+test("Hmi.tsx vẫn lấy ba tài liệu ấy TỪ shippedScreens.ts — mắt xích thứ hai của cùng một chuỗi", () => {
+  // Nửa còn lại của bài ngay trên, và nó cần cả hai. Bài kia một mình sẽ XANH nếu `Hmi.tsx` quay về
+  // bố cục viết tay và bỏ hẳn bảng tài liệu, vì `shippedScreens.ts` khi ấy vẫn còn nguyên ba `import`
+  // mà không ai đọc.
+  assert.match(
+    src,
+    /import\s*\{[^}]*\bSHIPPED_SCREEN_DOCS\b[^}]*\}\s*from\s*"[^"]*hmi-runtime\/shippedScreens"/,
+    "Hmi.tsx không còn import SHIPPED_SCREEN_DOCS từ hmi-runtime/shippedScreens — chuỗi tài liệu → route đã đứt"
+  )
 })
 
 test("Hmi.tsx KHÔNG tự import SchematicPanel/ReadoutGrid — hai component đó giờ chỉ được faceplate.tsx dùng", () => {

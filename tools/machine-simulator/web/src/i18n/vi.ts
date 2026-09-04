@@ -391,6 +391,10 @@ export const vi = {
       // tới khi ai đó chọn một máy. Nói thẳng chỗ chọn, chứ không hiện một ô rỗng không giải thích.
       componentNoMachine:
         "Chọn một máy trong bộ chọn tag (nút … ở một dòng binding) thì mới liệt kê được component của máy ấy. Tài liệu màn hình không gắn với máy nào.",
+      // 🔴 SỬA VÒNG 1 (task-13-review.md LOW-3) — ĐANG ĐỌC khác với CHƯA KHAI. Bản trước gộp hai
+      // trạng thái vào một câu, nên trong lúc truy vấn đang bay panel nói cây component "chưa đọc
+      // được" — một trạng thái tải mặc áo một trạng thái chưa khai báo.
+      componentLoading: (vars: Vars) => `Đang đọc cây component của ${vars.machine}…`,
       componentNoModel: (vars: Vars) =>
         `Chưa đọc được cây component của ${vars.machine}. Danh sách dưới đây rỗng vì thế, không phải vì máy không có linh kiện.`,
       componentHint: (vars: Vars) =>
@@ -516,6 +520,17 @@ export const vi = {
       // phiên bản MỚI, nên lịch sử không mất mục nào và con trỏ không bao giờ lùi.
       rolledBack: (vars: Vars) =>
         `Đã khôi phục: nội dung cũ được NỐI THÊM thành phiên bản ${vars.version} (lịch sử không mất mục nào). Canvas KHÔNG được nạp lại — các sửa chưa xuất bản của bạn vẫn còn.`,
+      // 🔴 SỬA VÒNG 1 (task-13-review.md HIGH-1) — cảnh báo cho lần xuất bản ĐẦU TIÊN lên một mã
+      // panel của máy, và đường về sau đó. Xem doc-comment của `PublishPanel.tsx` cho lý do vì sao
+      // đường về là một lượt XUẤT BẢN chứ không phải một route xoá hay một lần khôi phục.
+      shadowsPanel: (vars: Vars) =>
+        `⚠ Lượt xuất bản này THAY màn hình vận hành của máy ${vars.machine}. Không có đường xoá, và ` +
+        `khôi phục không với tới màn ship sẵn — hãy dùng nút khôi phục ở đây nếu cần trả lại.`,
+      restoreShipped: (vars: Vars) => `Khôi phục màn hình ship sẵn của ${vars.machine}`,
+      restoreNote: (vars: Vars) =>
+        `Nút này XUẤT BẢN nguyên nội dung màn ship sẵn của ${vars.machine} thành một phiên bản MỚI dưới ` +
+        `chính mã này — kho chỉ nối thêm, nên đường vòng vẫn nằm trong lịch sử thay vì bị xoá. Bản đang ` +
+        `sửa trên canvas KHÔNG bị đụng tới.`,
       refused: (vars: Vars) => `Máy chủ TỪ CHỐI xuất bản (HTTP ${vars.status})`,
       rollbackRefused: (vars: Vars) => `Máy chủ TỪ CHỐI khôi phục (HTTP ${vars.status})`,
       reason400:
@@ -573,6 +588,14 @@ export const vi = {
       // `/editor/new`: định danh lấy từ CHÍNH đường dẫn, nên không có chỗ thứ hai để hai định danh
       // lệch nhau (đúng thứ `PUT /v1/screens/{id}` trả 409 khi thân và đường dẫn gọi hai tên khác nhau).
       startNew: "Bắt đầu dựng màn hình này",
+      // 🔴 SỬA VÒNG 1 (task-13-review.md HIGH-1) — CÁI GIÁ của nút trên, nói TRƯỚC khi bấm và KỂ
+      // TÊN máy. Mã màn hình này là panel vận hành của một máy đang chạy: xuất bản ở đây không tạo
+      // ra một màn hình mới, nó THAY THẾ màn hình đang ship của máy ấy, và kho không có đường xoá.
+      shadowsPanel: (vars: Vars) =>
+        `⚠ Mã màn hình này LÀ panel vận hành của máy ${vars.machine}. Máy ấy đang hiển thị màn hình ship sẵn; ` +
+        `xuất bản ở đây THAY THẾ nó cho người vận hành, và kho chỉ nối thêm — không có route xoá, và ` +
+        `khôi phục chỉ với tới các phiên bản CỦA CHÍNH mã này, mà màn ship sẵn chưa bao giờ là một phiên bản. ` +
+        `Đường về là nút "Khôi phục màn hình ship sẵn" trong bảng Xuất bản.`,
     },
     loadFailed: {
       description: "Không đọc được tài liệu màn hình. Đây là lỗi kết nối, không phải màn hình chưa khai.",
@@ -1695,6 +1718,11 @@ export const vi = {
   // looking this SAME key up in the other dictionary (see `components/hmi/bilingual.ts`), the same
   // idiom Sidebar.tsx's `resolveLabel` already uses for nav gloss.
   hmi: {
+    // WS-HMI-2 Task 13, vòng sửa 1 (task-13-review.md MEDIUM-2) — chỉ VÙNG MÀN HÌNH chờ kho trả
+    // lời, không phải cả kiosk. Nameplate, nhật ký, và toàn bộ cột điều khiển (HALT + RESET) vẫn ở
+    // trên màn từ khung hình đầu tiên, dù kho có bận hay hỏng. Câu này nói rõ đang chờ THỨ GÌ, để
+    // một ô trống không bị đọc thành "máy mất kết nối".
+    screenLoading: "Đang đọc tài liệu màn hình của máy này… Các nút điều khiển bên phải vẫn dùng được.",
     entryButton: "Bảng điều khiển máy",
     entryButtonAria: (vars: Vars) => `Mở bảng điều khiển máy ${vars.code}`,
     back: "Về chi tiết máy",

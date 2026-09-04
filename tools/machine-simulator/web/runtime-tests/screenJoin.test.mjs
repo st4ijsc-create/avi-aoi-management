@@ -37,6 +37,7 @@ import { validate } from "../contract-tests/validate.mjs"
 import {
   MACHINE_SCREEN_ID_PREFIX,
   SCREEN_ID_PATTERN,
+  machineForScreenId,
   machineScreenId,
   renderableScreen,
   unrenderableReason,
@@ -139,6 +140,59 @@ test("FALSIFICATION CONTROL: the reserved prefix is genuinely part of the answer
   assert.notEqual(machineScreenId("IOT-01"), "iot-01")
 })
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// machineForScreenId — the inverse, and the roster is the authority (fix round 1, HIGH-1)
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+test("machineForScreenId finds the machine whose panel a screen id IS, in the ROSTER's own spelling", () => {
+  // The spelling matters and is the reason this is a roster lookup rather than a prefix strip: the
+  // editor has to warn an engineer that they are about to replace "AOI-01"'s panel, not "aoi-01"'s.
+  for (const machine of FLEET) {
+    const found = machineForScreenId(machineScreenId(machine.code), FLEET)
+    assert.equal(found?.code, machine.code, `${machine.code} did not resolve back to itself`)
+  }
+})
+
+test("a screen id that is nobody's panel resolves to undefined — the ordinary case, and the silent one", () => {
+  // Every screen id this repository's own suites actually PUT. If any of these resolved to a machine,
+  // the editor would warn about replacing an operator panel while editing an ordinary probe document.
+  for (const id of [
+    "component-demo",
+    "editor-canvas-probe",
+    "editor-canvas-overflow",
+    "editor-drag-probe",
+    "editor-properties-probe",
+    "editor-layers-probe",
+    "grid-uniformity-probe",
+    "iot-overview",
+    "aoi-overview",
+    "automation-overview",
+    "machine-",
+    "machine-no-such-code",
+  ]) {
+    assert.equal(machineForScreenId(id, FLEET), undefined, `"${id}" was resolved to a machine panel`)
+  }
+})
+
+test("the inverse agrees with the FORWARD direction on case, because it compares derived ids", () => {
+  // A roster whose codes are spelled differently still resolves, because both sides go through
+  // `machineScreenId`. A prefix strip would have had to re-implement the fold and could drift from it.
+  const oddRoster = [{ code: "aoi-01" }, { code: "Iot-02" }]
+  assert.equal(machineForScreenId("machine-aoi-01", oddRoster)?.code, "aoi-01")
+  assert.equal(machineForScreenId("machine-iot-02", oddRoster)?.code, "Iot-02")
+})
+
+test("no roster, or no id, is undefined rather than a throw", () => {
+  assert.equal(machineForScreenId("machine-aoi-01", undefined), undefined)
+  assert.equal(machineForScreenId(undefined, FLEET), undefined)
+  assert.equal(machineForScreenId("", FLEET), undefined)
+})
+
+test("FALSIFICATION CONTROL: the roster really is consulted — an EMPTY roster resolves nothing", () => {
+  // Without this, a `machineForScreenId` that simply stripped the prefix would pass every test above
+  // that uses the real roster.
+  assert.equal(machineForScreenId("machine-aoi-01", []), undefined)
+})
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // renderableScreen — the safety net, asserted BY REASON
 // ─────────────────────────────────────────────────────────────────────────────────────────────────

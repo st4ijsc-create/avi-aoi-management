@@ -10,6 +10,7 @@ import {
   type PutScreenResult,
   type ScreenVersionInfo,
 } from "@/lib/api"
+import { useShadowedPanel } from "./shadowedPanel"
 
 /**
  * WS-HMI-2 Task 12 — PUBLISH, VERSION HISTORY, PREVIEW AN OLD VERSION, ROLLBACK.
@@ -133,6 +134,26 @@ export function PublishPanel({
    * from somewhere else. Nothing was overwritten, but this document does not carry those changes.
    */
   const [overtaken, setOvertaken] = useState<{ landedAs: number; openedFrom: number } | undefined>(undefined)
+  /**
+   * 🔴 FIX ROUND 1 (task-13-review.md HIGH-1) — WHOSE OPERATOR PANEL THIS SCREEN ID IS.
+   *
+   * `undefined` for every ordinary screen id, and then nothing below renders. When it is set, this
+   * panel owes the engineer two things the product did not have:
+   *
+   *   * **before the first publish** — a warning naming the machine, because publishing here does not
+   *     create a screen, it REPLACES a running machine's panel. `head === undefined` is exactly "the
+   *     first publish", and after that the warning would be telling someone about a bridge already
+   *     crossed, so it is replaced by the way back rather than repeated.
+   *   * **once something IS published** — the way back. NOT a new endpoint and NOT a DELETE: the store
+   *     appends and that is the property everything else in this workstream rests on, so recovery is a
+   *     PUBLISH of the shipped document under this panel's id. The detour stays in the version history
+   *     instead of being erased from it, which is what an append-only store is for.
+   *
+   * Why rollback cannot do this job, stated so nobody reaches for it: `POST .../rollback` restores an
+   * earlier VERSION OF THIS SCREEN ID, and the shipped document was never a version of it — the id did
+   * not exist until somebody published. There is no version 1 to go back to.
+   */
+  const shadowed = useShadowedPanel(screenId)
 
   return (
     // 🔴 `w-full`, and it sits UNDER `PropertyPanel` inside the existing right rail rather than as a
@@ -152,6 +173,19 @@ export function PublishPanel({
         {dirty ? t("editor.publish.unsaved") : t("editor.publish.saved")}
       </p>
 
+      {/* 🔴 FIX ROUND 1 (HIGH-1) — the cost of the FIRST publish to a machine panel id, stated where
+          the button is, naming the machine. `role="alert"`, because this is not a status: after this
+          click that machine's operator panel is a document this session wrote, and the store has no
+          way to take it back. It disappears once `head` exists, replaced by the way back below. */}
+      {shadowed && head === undefined ? (
+        <p
+          role="alert"
+          data-publish-shadow-warning={shadowed.machineCode}
+          className="border border-status-fault bg-status-fault/10 px-1.5 py-1 text-xs text-danger-text"
+        >
+          {t("editor.publish.shadowsPanel", { machine: shadowed.machineCode })}
+        </p>
+      ) : null}
       <button
         type="button"
         data-publish-button
@@ -198,6 +232,52 @@ export function PublishPanel({
       ) : null}
 
       <Refusal what="publish" error={publish.error} />
+      {/* 🔴 FIX ROUND 1 (HIGH-1) — THE WAY BACK, and it is a PUBLISH like everything else here.
+
+          Offered only once something IS published (`head !== undefined`), because that is when this
+          machine's panel is actually shadowed; before that there is nothing to undo and a button
+          offering to "restore" would be theatre. Disabled during a preview for the same reason the
+          publish button is (task-12-review.md M1): a control must act on what the engineer is looking
+          at.
+
+          `onPublished` IS called, deliberately. It moves the canvas's dirty baseline onto the
+          document the engine just accepted — the shipped one — so a session carrying its own edits
+          correctly goes back to reading "unsaved changes". The alternative (leave the baseline alone)
+          would have the panel say "nothing unpublished" while the engine holds a different document,
+          which is the same class of lie the dirty flag exists to prevent. The CANVAS is untouched:
+          restoring the operator's screen must not destroy the work in progress that made it
+          necessary. */}
+      {shadowed && head !== undefined ? (
+        <>
+          <button
+            type="button"
+            data-publish-restore-shipped={shadowed.machineCode}
+            disabled={publish.isPending || previewVersion !== undefined}
+            title={previewVersion !== undefined ? t("editor.publish.readOnly", { version: previewVersion }) : undefined}
+            className="border border-border-strong bg-surface-subtle px-2 py-1 text-sm text-text-strong disabled:opacity-50"
+            onClick={() => {
+              const sent = shadowed.shippedDoc
+              const from = stoodOn
+              publish.mutate(sent, {
+                onSuccess: (result: PutScreenResult) => {
+                  setOvertaken(
+                    from !== undefined && result.version > from + 1
+                      ? { landedAs: result.version, openedFrom: from }
+                      : undefined
+                  )
+                  setStoodOn(result.version)
+                  onPublished(sent, result.version)
+                },
+              })
+            }}
+          >
+            {t("editor.publish.restoreShipped", { machine: shadowed.machineCode })}
+          </button>
+          <p data-publish-restore-note className="hmi-micro normal-case text-text-muted">
+            {t("editor.publish.restoreNote", { machine: shadowed.machineCode })}
+          </p>
+        </>
+      ) : null}
 
       {overtaken ? (
         <p

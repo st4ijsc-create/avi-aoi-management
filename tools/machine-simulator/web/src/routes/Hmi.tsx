@@ -26,6 +26,7 @@ import { useInspectorStream } from "@/lib/inspector"
 import { DEMO_MACHINE_CODE, resolveDemoScreen } from "@/lib/hmiScreens"
 import { ScreenRenderer } from "@/hmi-runtime/ScreenRenderer"
 import { machineScreenId, renderableScreen } from "@/hmi-runtime/publishedScreen"
+import { SHIPPED_SCREEN_DOCS } from "@/hmi-runtime/shippedScreens"
 import { createMachineDetailSource } from "@/hmi-runtime/TagValueSource"
 import type { HmiScreenDocument } from "@/contracts/hmiScreen"
 
@@ -47,20 +48,18 @@ import type { HmiScreenDocument } from "@/contracts/hmiScreen"
 // these three files' bytes into the JS output; editing `web/screens/*.json` on a deployed kiosk needs a
 // rebuild until something (this route, or a future WS-HMI-2 "publish" flow) actually fetches them from
 // disk at runtime instead. Named here explicitly rather than silently claimed — see task-5-report.md.
-import automationOverview from "../../screens/automation-overview.json"
-import aoiOverview from "../../screens/aoi-overview.json"
-import iotOverview from "../../screens/iot-overview.json"
-
-/**
- * The SHIPPED screen for each device class — and, since WS-HMI-2 Task 13, the FALLBACK rather than
- * the answer. See `resolveKioskScreen` below for what now comes first and why this table must stay
- * exactly as it is.
- */
-const SCREEN_DOCS: Record<DeviceClass, HmiScreenDocument> = {
-  Automation: automationOverview as HmiScreenDocument,
-  AoiAvi: aoiOverview as HmiScreenDocument,
-  Iot: iotOverview as HmiScreenDocument,
-}
+// 🔴 WS-HMI-2 Task 13 FIX ROUND 1 (task-13-review.md HIGH-1) — the three imports that used to sit
+// here moved to `hmi-runtime/shippedScreens.ts`, because the EDITOR now needs the same three
+// documents: publishing to a machine panel id shadows that machine's shipped screen permanently, so
+// the way back is a publish OF the shipped document, and the editor needs its bytes. A second table
+// built from the same three files would be the "two places to keep in step" defect this branch keeps
+// removing. `runtime-tests/hmiWiring.test.mjs` follows the move rather than being loosened: it reads
+// the three imports at their new address AND asserts this file still imports that module, so the
+// chain a revert of WS-HMI-1 Task 5 would break is still checked end to end.
+//
+// The SHIPPED screen for each device class is, since Task 13, the FALLBACK rather than the answer —
+// see `kioskDoc` below for what comes first and why this table must keep answering unchanged.
+const SCREEN_DOCS: Record<DeviceClass, HmiScreenDocument> = SHIPPED_SCREEN_DOCS
 
 let localEventSeq = 0
 function nextLocalId(): string {
@@ -227,16 +226,6 @@ export default function Hmi() {
     return <ErrorKiosk title={t("machineDetail.notFoundState.title")} description={screenId} />
   }
   if (isPending) return <LoadingKiosk />
-  // WS-HMI-2 Task 13 — wait for the STORE's answer before drawing anything, on the operator route.
-  // Not a nicety: without this, a machine that HAS a published screen would render its class's
-  // shipped document for one frame and then swap, i.e. an operator's panel would flash a screen
-  // nobody authored for that machine. The wait costs nothing extra — this query was started at the
-  // top of the component, in parallel with `useMachine`, so both are already in flight — and it
-  // cannot hang: `useScreen` does not retry a confirmed 404 (`lib/api.ts`), which is the answer this
-  // gate gets for every machine that has never been published to. Guarded on the id rather than on
-  // the query, because a DISABLED query stays `isPending` forever (the demo route, and any machine
-  // code that cannot make a legal screenId) and gating on that would be a spinner that never ends.
-  if (kioskScreenId !== undefined && publishedScreen.isPending) return <LoadingKiosk />
   if (isError) {
     const notFound = error instanceof EngineApiError && error.status === 404
     return notFound ? (
@@ -295,6 +284,42 @@ export default function Hmi() {
    * fallback, not asserted about it.
    */
   const kioskDoc = demoScreen ?? renderableScreen(publishedScreen.data) ?? SCREEN_DOCS[machine.class]
+
+  /**
+   * 🔴 WS-HMI-2 TASK 13 FIX ROUND 1 (task-13-review.md MEDIUM-2) — WHETHER THE SCREEN AREA MAY DRAW
+   * YET, AND WHY THIS IS NO LONGER A GATE ON THE WHOLE KIOSK.
+   *
+   * Round 0 returned `<LoadingKiosk/>` — a bare full-screen "Loading…" — from a page-level `if`
+   * placed ABOVE the machine-error branch. That withheld the NAMEPLATE, the alarm/system log and the
+   * whole control rail, HALT and its reset included, behind a fetch for a SCREEN DOCUMENT. The
+   * reviewer measured the cost on the path round 0 never considered: `useScreen` retries a non-404
+   * twice at 1 s and 2 s (`lib/api.ts`), and a transient 503 is the store's OWN documented busy
+   * answer (`HmiScreenEndpoints`, `SQLITE_BUSY`) — so a busy screen store blanked an operator panel,
+   * including its safety controls, for about three seconds. **Nothing about a screen document may
+   * ever be able to hide a HALT reset.** The trade was backwards: the panel blocked on a cosmetic
+   * question (WHICH document to draw) while withholding the controls an operator reaches for when
+   * something is wrong.
+   *
+   * Scoped to the screen area only. The kiosk chrome renders unconditionally from the first frame,
+   * and this flag decides one thing: whether the grid draws now, or a named placeholder holds its
+   * box until the store answers. The reason for waiting at all is unchanged and is NOT cosmetic:
+   * without it, a machine that HAS a published screen shows its CLASS document for a frame and then
+   * swaps — a screen nobody authored for that machine, on that machine's own panel. The reviewer
+   * reproduced exactly that by slowing the screens request to 800 ms and sampling every 4 ms:
+   * `["(none)", "iot-overview", "machine-iot-02"]` with this cut, `["(none)", "machine-iot-02"]`
+   * with it. `tests/43-editor-acceptance.spec.ts` now runs that sampler as a permanent pin.
+   *
+   * 🔴 THE ROUND-0 COMMENT CLAIMED THE WAIT "costs nothing extra … and it cannot hang". RETRACTED:
+   * true for a 404 and ONLY for a 404. A 404 settles in one round trip and is not retried; anything
+   * else spends ~3 s in retries before this resolves to the shipped screen. What is true now is
+   * narrower and is the property that matters: whatever the store does, it can only ever delay ONE
+   * REGION of the page, and the safety controls are never in it.
+   *
+   * Guarded on the id rather than on the query, because a DISABLED query stays `isPending` forever
+   * (the demo route, and any machine code that cannot make a legal screenId) and gating on that
+   * would be a placeholder that never resolves.
+   */
+  const screenAreaPending = kioskScreenId !== undefined && publishedScreen.isPending
 
   return (
     <div className="flex h-svh w-full flex-col overflow-hidden bg-surface-subtle text-text-body">
@@ -371,12 +396,29 @@ export default function Hmi() {
             {/* WS-HMI-2 Task 13 — `kioskDoc` (computed above, with the priority order and the
                 baseline argument written out there) replaced `demoScreen ?? SCREEN_DOCS[machine.class]`
                 here. That expression is the line this whole workstream turned out to be missing: the
-                editor published, and this panel read three documents compiled into the bundle. */}
-            <ScreenRenderer
-              doc={kioskDoc}
-              source={source}
-              components={componentModel.data?.components}
-            />
+                editor published, and this panel read three documents compiled into the bundle.
+
+                🔴 FIX ROUND 1 (MEDIUM-2) — the ONLY thing the screen-store fetch may hold back is
+                this one box. Everything outside this tabpanel — the nameplate, the tab rail, the
+                output card, the control rail with HALT and its reset, the system log — is already
+                mounted by the time this renders, whatever the store is doing. See
+                `screenAreaPending`'s own note for the measurement that condemned the page-level
+                gate this replaced. */}
+            {screenAreaPending ? (
+              <div
+                data-kiosk-screen-pending
+                role="status"
+                className="flex h-full w-full min-h-0 min-w-0 items-center justify-center"
+              >
+                <span className="hmi-micro">{t("hmi.screenLoading")}</span>
+              </div>
+            ) : (
+              <ScreenRenderer
+                doc={kioskDoc}
+                source={source}
+                components={componentModel.data?.components}
+              />
+            )}
           </div>
         ) : (
           <SettingsTab
