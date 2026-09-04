@@ -155,7 +155,17 @@ const DEFECT_PARETO_INTENT =
 const DEFECT_HEATMAP_INTENT =
   /(?<![\p{L}\p{N}_])(heatmap|bản\s*đồ\s*nhiệt|điểm\s*nóng\s*lỗi|vị\s*trí\s*lỗi|hotspot|defect\s*heatmap)(?![\p{L}\p{N}_])/iu;
 // Yield/FPY query (without forecast wording → query; with → forecast below).
-const YIELD_INTENT = /\b(yield|fpy|tỉ\s*lệ\s*đạt|tỷ\s*lệ\s*đạt|first\s*pass|tỉ\s*lệ\s*pass)\b/i;
+// ★★★ Đợt N / TASK N1 — gỡ alternative bare "yield" khỏi regex (xem docblock chi tiết ở
+// `analyticsTools.ts::analyticsQueryYield.triggers` + `task-n1-report.md`). Đây là NHÁNH THỨ HAI
+// của cùng gốc rễ: alternative này là một SHORTCUT REGEX chạy TRƯỚC `findToolByTriggers` — bỏ
+// "yield" khỏi mảng `triggers` (đã vá) KHÔNG chạm được nhánh này, vì nó không đọc `triggers` chút
+// nào (ĐO ĐƯỢC bằng ablation unit: `classifyToolIntent` trả `reason:"YIELD_QUERY_SHORTCUT"` — một
+// giá trị CHỈ nhánh này phát ra — cho ngữ cảnh mã có `yield`/`yield*`, dù mảng triggers đã gỡ).
+// "yield" trần là từ khoá JavaScript/TypeScript (`function*`/`yield`), xuất hiện dày đặc trong
+// CHÍNH mã nguồn dự án — vẫn khớp `\b` dù đây là generator, không phải câu hỏi nghiệp vụ. Câu hỏi
+// yield HỢP LỆ vẫn tới được tool qua "fpy"/"tỉ lệ đạt"/"tỷ lệ đạt"/"first pass"/"tỉ lệ pass" ở đây,
+// hoặc qua "yield trend"/"xu hướng yield"/"sản lượng đạt" ở `findToolByTriggers` (mảng triggers).
+const YIELD_INTENT = /\b(fpy|tỉ\s*lệ\s*đạt|tỷ\s*lệ\s*đạt|first\s*pass|tỉ\s*lệ\s*pass)\b/i;
 // SPC out-of-control.
 const SPC_INTENT =
   /\b(spc|out\s*of\s*control|vượt\s*kiểm\s*soát|ngoài\s*tầm\s*kiểm\s*soát|control\s*chart|biểu\s*đồ\s*kiểm\s*soát)\b/i;

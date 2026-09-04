@@ -581,8 +581,16 @@ const analyticsQueryYield: Tool<z.infer<typeof yieldParams>, YieldAnalyticsData 
   description:
     "Truy vấn yield/FPY theo ngày/tuần/tháng (lọc máy/nhà máy), kèm xu hướng tăng/giảm. READ-ONLY, RBAC analytics_oee.",
   parameters: yieldParams,
+  // ★★★ Đợt N / TASK N1 — gỡ trigger MỘT TỪ "yield" khỏi danh sách (cùng gốc rễ với `get_oee` ở
+  // `handlers.ts`, xem docblock ở đó + `task-n1-report.md`). "yield" còn NGUY HIỂM HƠN
+  // "performance"/"quality": nó là TỪ KHOÁ JavaScript/TypeScript (`function*`/`yield`) — xuất hiện
+  // dày đặc trong CHÍNH mã nguồn dự án này (vd `aiLocalKnowledgeService.ts::streamAnswer` có hàng
+  // chục lượt `yield`/`yield*`). ĐO SỐNG: ngữ cảnh mã trích nguyên văn từ `streamAnswer` (có
+  // `yield`) + câu hỏi "đọc code và tóm tắt tổng quan" ⇒ `analytics_query_yield` bị chọn nhầm, RBAC
+  // `analytics_oee` từ chối thật. Tool vẫn gọi được bằng "fpy", "tỉ lệ đạt", "tỷ lệ đạt", "tỉ lệ
+  // pass", "first pass", "yield trend", "xu hướng yield", "sản lượng đạt" (đều ≥2 từ, đặc trưng).
   triggers: [
-    "yield", "fpy", "tỉ lệ đạt", "tỷ lệ đạt", "tỉ lệ pass", "first pass",
+    "fpy", "tỉ lệ đạt", "tỷ lệ đạt", "tỉ lệ pass", "first pass",
     "yield trend", "xu hướng yield", "sản lượng đạt",
   ],
   kind: "read",

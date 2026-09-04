@@ -861,8 +861,26 @@ const getOee: Tool<z.infer<typeof oeeParams>, OeeItem[]> = {
   name: "get_oee",
   description: "Chỉ số OEE (Availability × Performance × Quality) gần đây của 1 máy hoặc toàn bộ.",
   parameters: oeeParams,
+  // ═════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ Đợt N / TASK N1 — GỠ "performance"/"quality" KHỎI DANH SÁCH TRIGGER (RBAC-misfire trên
+  // ngữ cảnh mã, không phải trên câu hỏi).
+  // ═════════════════════════════════════════════════════════════════════════════════════════
+  // GỐC RỄ ĐO ĐƯỢC (`.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-n1-report.md`): route
+  // `"vscode"` (đường LOCAL) đưa CẢ ngữ cảnh mã đính kèm (`nguCanh`, toàn bộ tệp đang mở) LẪN câu
+  // hỏi thật vào MỘT khối `than` duy nhất (`vscode-extension/src/loi/yeuCau.ts`), rồi khối đó đi
+  // thẳng vào `findToolByTriggers` (không tách nguồn). "performance"/"quality" là hai từ tiếng Anh
+  // PHỔ THÔNG trong bất kỳ comment/tên biến TypeScript nào — hoàn toàn không cần liên quan OEE.
+  // ĐO SỐNG: câu hỏi "Hãy đọc code và tóm tắt tổng quan về dự án hiện tại" + ngữ cảnh mã CHỈ có một
+  // dòng comment "// ... improve performance later" (không hề nhắc OEE/analytics) ⇒ `get_oee` được
+  // chọn ⇒ `rbacGate` từ chối THẬT (engineer1 xác nhận qua DB: 0 dòng `permissions` cho module
+  // `analytics_oee`) ⇒ người dùng nhận đúng câu "TỪ CHỐI VÌ THIẾU QUYỀN" — hoàn toàn lạc đề so với
+  // câu hỏi thật. Đây là quyết định RBAC THẬT (không phải RAG-hijack, không phải lịch sử hội thoại
+  // nhiễm) — cổng quyền đúng, nhưng TOOL bị chọn NHẦM.
+  // Vá: bỏ hai trigger MỘT TỪ tiếng Anh quá chung chung này — `get_oee` vẫn gọi được bằng "oee",
+  // "chỉ số oee", "hiệu suất tổng thể", "overall equipment", "hiệu quả thiết bị", "availability".
+  // KHÔNG bỏ "availability" (chưa có bằng chứng SỐNG nó gây lầm — xem CÒN MỞ trong báo cáo trên).
   triggers: [
-    "oee", "hiệu suất tổng thể", "availability", "performance", "quality",
+    "oee", "hiệu suất tổng thể", "availability",
     "chỉ số oee", "overall equipment", "hiệu quả thiết bị",
   ],
   kind: "read",
