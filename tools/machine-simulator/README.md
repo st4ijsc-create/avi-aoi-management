@@ -6927,7 +6927,7 @@ acceptance pass tells them apart.
 | Question | Answer | Why |
 |---|---|---|
 | Which screen does machine `X`'s kiosk read? | `machine-` + `X` lowercased (`IOT-02` → `machine-iot-02`) | A screen document is **not** bound to a machine — the frozen `HmiScreenDocument` has no machine field and cannot grow one — so the kiosk DERIVES the id. The reserved `machine-` prefix keeps every operator panel out of the flat namespace engineers author free-form ids in, so a screen someone happened to name after a machine code can never take over that machine's panel. Lowercased because `screenId` is constrained to `^[a-z0-9-]+$` while a MACHINE CODE has no case constraint at all and `MachineCodeIdentity` already folds it — the fold happens crossing from the second vocabulary into the first, and a `screenId` is never folded. |
-| Nothing published for that machine? | It renders exactly the document it shipped with | Invariant §5-bis. `GET /v1/screens/{id}` answers **404** for an id nobody declared (deliberate — there is no such thing as a valid EMPTY screen), and that 404 falls straight through to the shipped document. The 31 visual baselines cannot move because nothing in this repository ever writes `machine-scrw-01` / `machine-aoi-01` / `machine-iot-01` — a grep, not a hope. |
+| Nothing published for that machine? | It renders exactly the document it shipped with | Invariant §5-bis. `GET /v1/screens/{id}` answers **404** for an id nobody declared (deliberate — there is no such thing as a valid EMPTY screen), and that 404 falls straight through to the shipped document. The 31 visual baselines cannot move because nothing in this repository ever writes `machine-scrw-01` / `machine-aoi-01` / `machine-iot-01` — a grep, not a hope. 🔴 **Both halves of that, since only one of them is a guarantee:** they *could not* move, and the reason is a property of this repository's corpus that **nothing enforces** — the reserved prefix is a browser-side convention the write door knows nothing about. The day something does publish there, that machine's panel changes; see §27.5 for what that costs and how to get back, and note that the acceptance suite asserts the 404 precondition by machine name so the change is announced rather than discovered in a screenshot diff. |
 | A bad published document? | The shipped screen renders instead, with a console line naming the defect | `HmiScreenStore.AppendVersionAsync` restores **without re-validating** on the rollback path (deliberate: a restore is not new authorship), so a legacy row written under a laxer contract can be made current again. `renderableScreen` (`web/src/hmi-runtime/publishedScreen.ts`) rejects **only** the shapes that would make the renderer throw or collapse the grid; everything merely odd — an unknown widget kind, an out-of-range rect, an unresolved `{component}` — still takes the renderer's own degrade-in-place path, one widget at a time. |
 | `/hmi/demo/{screenId}`? | Reads no store, and makes no request | That URL NAMES a document. Answering it with a different one is the defect `web/tests/35-hmi-indirect-binding.spec.ts` exists to prevent. |
 
@@ -6961,7 +6961,9 @@ answers a composed path. That is a missing **adapter**, not a missing wire, and 
 * **No ISA-101 linter** (WS-HMI-4). None of the rules in the design document's §6 is enforced, and
   publishing is blocked by no score.
 * **No screen-pack import/export** (WS-HMI-5), and **no DELETE route** — the store only appends, so a
-  published `screenId` cannot be removed through the API.
+  published `screenId` cannot be removed through the API. 🔴 That is not only a WS-HMI-5 gap: since
+  Task 13 built the join, it is also what makes a publish to a machine's panel id irreversible. See
+  §27.5, which is where the consequence and the way back are written down.
 * **No title or theme editor.** A newly started screen takes its `screenId` as its `title` and
   `blueprint` as its theme, and an engineer cannot change either from the editor.
 * **S-6 remains OPEN**, measured on 2026-09-05 rather than assumed. The editor SELECTS a `policyAction`;
@@ -6975,7 +6977,66 @@ answers a composed path. That is a missing **adapter**, not a missing wire, and 
   permission. **The first consumer to be built must REFUSE an unrecognised action — never fall through to
   a default.**
 
-### 27.5 Where the proof lives
+### 27.5 🔴 Publishing to a machine's panel id is permanent — the cost, and the way back
+
+`/editor/machine-aoi-01` is a legal URL, and §27.1's join is exactly what turned it from a named
+dead end into a working "start building this screen" flow. An engineer who opens it, adds one widget
+and publishes has **replaced `AOI-01`'s operator panel** — and in this store's terms that is
+permanent:
+
+* there is **no DELETE route** (`HmiScreenEndpoints` maps five);
+* `POST .../rollback` appends **an earlier version of that same screen id**, and the shipped document
+  was never a version of `machine-aoi-01` — the id did not exist until somebody published;
+* the `machine-` prefix is a **browser-side convention**. Nothing at the write door reserves it,
+  nothing checks that the suffix names a real machine, and `PUT /v1/screens/{id}` is
+  `Policies.Engineer` like every other screen.
+
+**Closed with the machinery that already exists — no new endpoint, and no rule at the write door.** A
+write-door rule would put a browser-side naming convention into the engine's contract, where it would
+need a roster lookup on every publish and an answer for a machine that leaves the roster. What the
+editor gained instead is the two things it was missing:
+
+1. **It says so first.** Both the "no such screen yet" state and the Publish control carry a
+   `role="alert"` warning **naming the machine**, stating that publishing here replaces what an
+   operator is looking at and that the store has no delete. It appears only for a screen id that is a
+   roster machine's panel, so nothing cries wolf — and the acceptance suite carries the negative
+   control that proves it discriminates.
+2. **There is a way back, and it appends.** A "restore the shipped screen" action publishes the
+   shipped document's content as a **new version under that panel's id**. Recovery is content
+   restoration, not un-publishing: the store cannot un-publish, so the id keeps existing and the kiosk
+   keeps reading it — what changes is that its current version is once again exactly what
+   `web/screens/*-overview.json` holds. The detour stays in the version history instead of being
+   erased from it, which is what an append-only store is for. The restored document necessarily
+   carries the **panel's** id, because `PUT` answers 409 to a body naming a different identity from
+   the route — so "the shipped screen is back" is a claim about what is drawn, and the test asserts it
+   as content.
+
+**What is still true and is not fixed here:** nothing enforces the reserved namespace. §27.2's
+baseline argument is a property of *this repository's corpus at this commit* — nothing in it writes
+`machine-scrw-01` / `machine-aoi-01` / `machine-iot-01` — and not a guarantee the system makes about
+itself. The guard that does exist is a live one: the acceptance suite asserts the 404 precondition for
+all three baseline machines with a message that names the machine and its shipped screen, so the day
+somebody does publish there the suite says so by name instead of by a screenshot diff three specs
+later.
+
+### 27.6 The screen store can delay one region, and only one
+
+The kiosk waits for `GET /v1/screens/{id}` before drawing a screen document, because a machine that
+HAS a published screen would otherwise show its **class** document for a frame and then swap — a
+screen nobody authored for that machine, on that machine's own panel. Measured by sampling
+`data-hmi-screen` every 4 ms with the request slowed to 800 ms: `["(none)", "iot-overview",
+"machine-iot-02"]` without the wait, `["(none)", "machine-iot-02"]` with it.
+
+🔴 **The wait is scoped to the screen area and nothing else.** The nameplate, the tab rail, the output
+card, the system log and the whole control rail — **HALT and its reset included** — render
+unconditionally from the first frame. An earlier version of this gated the entire kiosk, and the cost
+was measured on the path that version had not considered: `useScreen` retries a non-404 twice at 1 s
+and 2 s, and a transient **503 is the store's own documented busy answer** (`SQLITE_BUSY`), so a busy
+screen store blanked an operator panel — safety controls and all — for about three seconds. Nothing
+about a screen document may ever be able to hide a HALT reset. A store failure costs this machine its
+published screen and falls back to the shipped one; it never costs the panel.
+
+### 27.7 Where the proof lives
 
 | Claim | Instrument |
 |---|---|
@@ -6984,3 +7045,5 @@ answers a composed path. That is a missing **adapter**, not a missing wire, and 
 | The join's arithmetic — the derived id, the renderability guard, the first document | `web/runtime-tests/screenJoin.test.mjs` |
 | The editor's canvas IS the runtime renderer | `web/tests/37-editor-canvas.spec.ts`'s differential |
 | Publish appends, rollback appends, a refusal reaches the control the user is looking at | `web/tests/42-editor-publish.spec.ts` |
+| A publish that shadows a machine's shipped panel warns first (with a negative control) and has a way back that appends | `web/tests/43-editor-acceptance.spec.ts` |
+| A slow or failing screen store delays one region only, and no frame shows a screen nobody authored for that machine | the same file, sampling `data-hmi-screen` during the transition |

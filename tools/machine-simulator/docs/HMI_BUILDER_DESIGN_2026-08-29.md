@@ -297,7 +297,7 @@ Thành phần editor: canvas (kéo/snap/căn/z-order/nhóm), property panel, **t
 
 **Nghiệm thu quyết định của tầng này:** viết lại **3 màn hard-code hiện tại thành JSON**, xoá bản React, **176 bài Playwright hiện có vẫn xanh** (gồm visual baseline). Nếu runtime không đủ mạnh làm việc này thì nó là đồ chơi, và ta biết điều đó ở tuần thứ 4 chứ không phải tháng thứ 6.
 
-#### 🔴 MỐI NỐI ⑤ ⟷ ③ — thêm mới WS-HMI-2 Task 13, 05/09/2026
+#### 🔴 MỐI NỐI ③ ⟷ ④ — thêm mới WS-HMI-2 Task 13, 05/09/2026 *(sửa vòng 1: tiêu đề trước ghi ⑤ ⟷ ③, sai — ⑤ là Governance & Safety ở §3.5, và chính câu đầu của mục này đã nói ③ và ④)*
 
 Tài liệu này mô tả tầng ③ (Builder) và tầng ④ (Runtime) như hai tầng chồng lên nhau và **không chỗ nào
 nói ai gọi ai**. Kết quả đo được, tại `20f78b8d`, sau MƯỜI HAI tác vụ của WS-HMI-2:
@@ -321,6 +321,37 @@ chúng. Đây đúng bài học WS-HMI-0c: *"cả hai nửa đều đã ghim" kh
 
 Bằng chứng: `web/tests/43-editor-acceptance.spec.ts` (một lượt liền: editor → publish → kiosk → dữ liệu
 sống) và `web/runtime-tests/screenJoin.test.mjs` (phần số học của mối nối).
+
+##### 🔴 CÁI GIÁ MỐI NỐI TẠO RA, VÀ ĐƯỜNG VỀ — thêm ở vòng sửa 1 (task-13-review.md HIGH-1)
+
+Mối nối trên biến `/editor/machine-aoi-01` từ một ngõ cụt có tên thành một luồng dựng màn hình chạy
+được. Hệ quả **không** được nêu ở vòng 0, và nó là hệ quả về AN TOÀN SẢN PHẨM: một kỹ sư mở URL ấy,
+thêm một widget rồi xuất bản là đã **THAY màn hình vận hành của `AOI-01`** — vĩnh viễn, theo nghĩa của
+chính kho này:
+
+* **không có route DELETE** (`HmiScreenEndpoints` map đúng năm route);
+* `POST .../rollback` nối thêm **một PHIÊN BẢN CỦA CHÍNH mã ấy**, mà màn ship sẵn chưa bao giờ là một
+  phiên bản của `machine-aoi-01` — mã ấy không tồn tại cho tới khi có người xuất bản;
+* tiền tố `machine-` là **quy ước PHÍA TRÌNH DUYỆT**. Cửa ghi không giữ chỗ cho nó, không kiểm hậu tố
+  có phải một máy thật, và `PUT /v1/screens/{id}` vẫn chỉ là `Policies.Engineer` như mọi màn khác.
+
+**Đã đóng bằng chính máy móc đang có, KHÔNG thêm endpoint và KHÔNG thêm luật ở cửa ghi.** Một luật ở
+cửa ghi sẽ đem một quy ước đặt tên của trình duyệt vào hợp đồng của engine, rồi đòi một lượt tra đội
+hình cho mỗi lần xuất bản và một câu trả lời cho máy rời khỏi đội hình. Thay vào đó trình soạn thảo
+được hai thứ nó thiếu:
+
+1. **NÓI TRƯỚC.** Trạng thái "chưa có màn hình này" và cả nút Xuất bản đều cảnh báo — `role="alert"`,
+   KỂ TÊN máy — rằng xuất bản ở đây không tạo màn hình mới mà thay màn hình người vận hành đang nhìn.
+   Chỉ hiện cho mã màn hình LÀ panel của một máy trong đội hình, nên không có chuyện kêu suông.
+2. **ĐƯỜNG VỀ.** Một nút xuất bản **nội dung màn ship sẵn** thành một phiên bản MỚI dưới chính mã ấy.
+   Khôi phục là trả lại NỘI DUNG, không phải huỷ-xuất-bản: kho không huỷ được, nên `machine-aoi-01`
+   vẫn tồn tại và kiosk vẫn đọc nó — thứ đổi là phiên bản hiện hành lại đúng bằng
+   `web/screens/aoi-overview.json`, và cả khúc đường vòng nằm nguyên trong lịch sử phiên bản thay vì
+   bị xoá khỏi đó. Đó chính là điều một kho chỉ-nối-thêm dùng để làm.
+
+Ghim: `web/tests/43-editor-acceptance.spec.ts` — cảnh báo (kèm ĐỐI CHỨNG ÂM trên một mã không phải
+panel của máy nào) và một bài đi hết vòng che-rồi-trả-lại, khẳng định phiên bản che khuất VẪN còn
+trong lịch sử sau khi khôi phục.
 
 ### 3.5 Tầng ⑤ — Governance & Safety
 
