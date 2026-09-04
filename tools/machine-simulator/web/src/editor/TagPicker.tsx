@@ -33,8 +33,17 @@ import { POLICY_ACTION_VALUES } from "./editorState"
  *     (`POLICY_ACTION_VALUES`); anything else renders through `unrecognisedAction`, which names the
  *     offending value and does not present it as a choice. Fail-closed on a value it does not
  *     recognise, exactly as S-6 requires of anything that implies permission;
- *   * the wording is "declares", never "permitted", and `editor.panel.policyNotResolved` states in
- *     the panel's own chrome that nothing here asks the PolicyEngine anything.
+ *   * the wording is "declares", never "permitted", and `editor.panel.policyNotResolved` is rendered
+ *     BY THIS COMPONENT, unconditionally, whenever the picker is open.
+ *
+ * 🔴 FIX ROUND 1, task-10-review.md F5. That second bullet used to say the disclaimer stood "in the
+ * panel's own chrome". It did not stand where it was needed: `PropertyPanel` renders it inside the
+ * policy `<Section>`, which exists only when the widget is a write kind or already declares an
+ * action — so for a plain `readout` (the exact widget the picker test opens) it was absent from the
+ * page entirely, while the picker was showing a tag's declared action three lines below. An S-6
+ * claim has to be true where it is relied on, so the sentence is rendered HERE too, on every open
+ * picker, rather than the report's account of it being softened. The i18n KEY is shared with the
+ * panel deliberately — one sentence, one meaning; a second key would be a second thing to drift.
  *
  * That is the honest reach. The engine's own gate speaks a DIFFERENT vocabulary
  * (`machine.setpoint.write` / `machine.command.invoke` — `Policy/MachineWriteGate.cs`), disjoint from
@@ -123,6 +132,11 @@ export function TagPicker({ machineCode, onMachineCodeChange, componentId, bindi
           ))}
         </select>
       </label>
+
+      {/* S-6, unconditional while the picker is open — see this file's header, fix round 1 F5. */}
+      <p data-tag-picker-not-resolved className="mt-2 text-xs text-text-muted">
+        {t("editor.panel.policyNotResolved")}
+      </p>
 
       {machineCode.length === 0 ? (
         <p data-tag-picker-no-machine className="mt-2 text-xs text-text-muted">

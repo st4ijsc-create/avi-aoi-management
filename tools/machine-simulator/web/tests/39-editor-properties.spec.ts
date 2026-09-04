@@ -31,9 +31,18 @@ import { vi as viDict } from "../src/i18n/vi"
  * step, which is only true if a single edit carried kind and action together — i.e. no intermediate
  * document ever existed in which the widget was a write kind without a gate.
  *
- * 🔴 IT IS NOT A CLAIM ABOUT SAVING. There is no save in the editor at this task (`PUT` is Task 12's),
- * so "cannot be saved" is not a sentence this file is entitled to. What is on screen and what is in
- * the in-memory document are what exist to be measured, and they are what is measured.
+ * 🔴 FIX ROUND 1, task-10-review.md F1 — THE PARAGRAPH THAT STOOD HERE IS RETRACTED, KEPT VERBATIM:
+ * *"IT IS NOT A CLAIM ABOUT SAVING. There is no save in the editor at this task (`PUT` is Task 12's),
+ * so 'cannot be saved' is not a sentence this file is entitled to."* It confused "the editor has no
+ * save BUTTON" with "the property is unmeasurable", while this very file already calls
+ * `PUT /v1/screens/{id}` in its own `beforeEach`. The write door is the §5 gate's OUTERMOST layer and
+ * it is reachable from here today, so it is pinned — see the test named "🔴 §5's outermost layer",
+ * which asserts BOTH halves (a 400 whose body names the widget, the kind and `policyAction`; and a
+ * 200 for a twin that differs by nothing but the gate) so a 400 for some unrelated reason cannot pass
+ * as this one.
+ *
+ * Still Task 12's, and still not claimed here: the editor's own save button, and the version/conflict
+ * handling around it.
  *
  * ── 🔴 S-6, AND WHAT REMAINS OPEN ────────────────────────────────────────────────────────────────
  * The panel and the picker both DISPLAY a `policyAction`, which could be read as "this action is
@@ -143,7 +152,10 @@ const PROBE_DOC: ProbeDocument = {
       kind: "readout",
       rect: { col: 3, row: 0, colSpan: 3, rowSpan: 1 },
       bindings: { value: "cycles" },
-      props: { label: READOUT_LABEL },
+      // `max` is here for the F2 pin (an emptied NUMBER box must not write 0). `widgets/readout.tsx`
+      // reads `label`/`labelEn`/`unit`/`valueType` and ignores it, so it changes nothing on screen —
+      // it exists to give the panel a numeric prop control to measure.
+      props: { label: READOUT_LABEL, max: 500 },
     },
     // The `{component}` subject.
     {
@@ -250,6 +262,34 @@ const PASS_RATE_READING = "0.9700"
 /** `shared.ts`'s `NO_DATA`, written out for the same reason. A tag path the design-time source cannot
  * answer produces exactly this. */
 const NO_DATA = "—"
+
+/** The widget id every write-door probe document uses — asserted to appear in the engine's own 400,
+ * so that refusal cannot be confused with one raised for a different widget or a different rule. */
+const WRITE_PROBE_WIDGET_ID = "gate-probe"
+
+/**
+ * A one-widget document for the write-door test, parameterised on the write kind and on whether it
+ * carries a gate. ONE function builds both halves on purpose: the refused document and the accepted
+ * one then differ by `policyAction` and by nothing else, which is what makes the 400/200 pair a
+ * differential rather than two unrelated observations.
+ */
+function writeWidgetDoc(screenId: string, kind: string, policyAction?: string): ProbeDocument {
+  const widget: ProbeWidget = {
+    id: WRITE_PROBE_WIDGET_ID,
+    kind,
+    rect: { col: 0, row: 0, colSpan: 2, rowSpan: 1 },
+    props: { label: "WRITE-DOOR-PROBE" },
+  }
+  if (policyAction !== undefined) widget.policyAction = policyAction
+  return {
+    schemaVersion: 1,
+    screenId,
+    title: "Write door probe",
+    theme: "isa101",
+    layout: { cols: 12, rows: 4, breakpoint: "panel" },
+    widgets: [widget],
+  }
+}
 
 async function putScreen(request: APIRequestContext, doc: ProbeDocument): Promise<void> {
   const res = await request.put(`${ENGINE_URL}/v1/screens/${doc.screenId}`, { data: doc })
@@ -382,9 +422,13 @@ test.describe("HMI screen editor — the property panel and the tag picker", () 
       "machine.setpoint",
       "machine.command",
     ])
-    // There is no text input anywhere in the group that could reach this field.
+    // 🔴 FIX ROUND 1, task-10-review.md F8 — the round-0 selector matched only an `<input>` CARRYING
+    // the hook or nested INSIDE it, while the sentence above it claimed "anywhere in the group". A
+    // free-text sibling under a different attribute, in the same section, would have passed. Scoped to
+    // the SECTION that contains the policy control, which is what the sentence actually says.
     await expect(
-      page.locator("[data-property-panel] input[data-panel-policy-action], [data-property-panel] [data-panel-policy-action] input")
+      page.locator("[data-property-panel] section:has([data-panel-policy-action]) input"),
+      "a text input sits in the same section as the policy control — the action has a free-text path"
     ).toHaveCount(0)
 
     // Choosing one commits BOTH, in a single edit.
@@ -485,6 +529,19 @@ test.describe("HMI screen editor — the property panel and the tag picker", () 
     await expect(page.locator('[data-tag-picker="value"]')).toBeVisible()
     await expect(page.locator("[data-tag-picker-no-machine]")).toHaveText(viDict.editor.tagPicker.noMachine)
 
+    // 🔴 FIX ROUND 1, task-10-review.md F5 — S-6's disclaimer has to be on screen HERE, in the exact
+    // scenario the report leaned on it for. `panel-readout` is a plain `readout`: it declares no
+    // action and is not a write kind, so the panel's policy section does not exist — asserted FIRST,
+    // otherwise this leg would pass for the wrong reason on a widget that happens to have one.
+    await expect(
+      page.locator("[data-panel-policy-action]"),
+      "panel-readout grew a policy section — this leg no longer measures the case F5 was about"
+    ).toHaveCount(0)
+    await expect(
+      page.locator("[data-tag-picker-not-resolved]"),
+      "the picker shows a tag's declared policyAction with nothing on the page saying permission was never resolved"
+    ).toHaveText(viDict.editor.panel.policyNotResolved)
+
     await page.locator("[data-tag-picker-machine]").selectOption(MACHINE)
 
     // Every declared tag is listed, by path.
@@ -561,7 +618,17 @@ test.describe("HMI screen editor — the property panel and the tag picker", () 
     // 🔴 AND THE LIMIT, MEASURED RATHER THAN PROMISED: no `TagValueSource` in this tree answers a
     // composed path, so the cell shows its named placeholder. The picker says so on screen; if a
     // future adapter closes that gap this assertion reddens, which is the point.
-    await expect(renderedCell(page, "panel-component").locator(".hmi-readout-value")).toHaveText(NO_DATA)
+    await expect(
+      renderedCell(page, "panel-component").locator(".hmi-readout-value"),
+      // 🔴 FIX ROUND 1, task-10-review.md F7 — this is the one INVERSION in the file, and round 0 left
+      // it with the default message, so a future engineer would read "Expected — / Received 31.4" as a
+      // regression and try to restore the placeholder.
+      "a composed {component}/leaf path now RESOLVES to a reading. That is a FEATURE landing, not a " +
+        "regression: some TagValueSource has learned to answer a composed path. Do not 'fix' this back " +
+        "— update this assertion to the value the new adapter produces, and retire " +
+        "editor.tagPicker.componentNote (the on-screen sentence saying it cannot resolve) in the " +
+        "same commit, or the picker will start lying to engineers."
+    ).toHaveText(NO_DATA)
     await expect(page.locator("[data-tag-picker-component-note]")).toHaveText(viDict.editor.tagPicker.componentNote)
   })
 
@@ -598,6 +665,138 @@ test.describe("HMI screen editor — the property panel and the tag picker", () 
     await page.keyboard.press("Control+z")
     await expect(renderedCell(page, "panel-label")).toHaveText(LABEL_TEXT)
     await expect(renderedCell(page, "panel-label")).toHaveCSS("grid-column-start", "1")
+  })
+
+  /**
+   * 🔴 FIX ROUND 1, task-10-review.md F1 — §5's OUTERMOST LAYER.
+   *
+   * The three layers this file already pins live in the browser: the panel's hold, `applyEdit`'s
+   * `policy-action-required`, and `widgetRefusal`'s mirror. This is the fourth and the last one an
+   * ungated widget would have to get past to become a stored document, and it is a different
+   * mechanism in a different language — `ContractInvariants.Validate(HmiScreenDocument)`, called by
+   * `HmiScreenStore.PutAsync` before anything is written.
+   *
+   * BOTH HALVES, and they are a differential rather than two observations: the refused document and
+   * the accepted one are built by the SAME function and differ by `policyAction` alone. A 400 for a
+   * malformed rect, a bad screenId or an unparseable body could not pass as this one, because the twin
+   * carrying every one of those same fields gets a 200.
+   *
+   * The 400's BODY is asserted too, on three tokens — the widget id, the kind, and the field name — so
+   * "some 400 happened" is not what makes this green.
+   */
+  test("🔴 §5's outermost layer: the write door REFUSES an ungated write widget and ACCEPTS its gated twin", async ({
+    request,
+  }) => {
+    for (const [kind, action] of [
+      ["command-button", "machine.command"],
+      ["setpoint-input", "machine.setpoint"],
+    ] as const) {
+      const ungatedId = `editor-properties-nogate-${kind}`
+      const gatedId = `editor-properties-gated-${kind}`
+
+      const refused = await request.put(`${ENGINE_URL}/v1/screens/${ungatedId}`, {
+        data: writeWidgetDoc(ungatedId, kind),
+      })
+      expect(
+        refused.status(),
+        `the write door STORED a "${kind}" widget with no policyAction — invariant §5's outermost layer is open`
+      ).toBe(400)
+      const body = await refused.text()
+      for (const token of [WRITE_PROBE_WIDGET_ID, kind, "policyAction"]) {
+        expect(
+          body,
+          `the 400 does not name "${token}", so it cannot be told apart from a 400 for some other reason: ${body}`
+        ).toContain(token)
+      }
+
+      // The twin: identical but for the gate. Without this half, a door that refused EVERY document
+      // would look exactly like a door that enforces §5.
+      const accepted = await request.put(`${ENGINE_URL}/v1/screens/${gatedId}`, {
+        data: writeWidgetDoc(gatedId, kind, action),
+      })
+      expect(
+        accepted.status(),
+        `the write door refused a GATED "${kind}" widget too, so the 400 above measures nothing about §5: ${await accepted.text()}`
+      ).toBe(200)
+    }
+  })
+
+  /**
+   * 🔴 FIX ROUND 1, task-10-review.md F2 — `Number("") === 0`, and `0` is an integer.
+   *
+   * Round 0's `commitRect` carried a comment saying an emptied box "keeps what it had until it says
+   * something legal". The reviewer measured the opposite: clearing the Column box wrote `col: 0` and
+   * moved the widget, with no refusal shown, and a `max: 500` prop became `0`. The comment is gone and
+   * the behaviour is fixed; this is the pin that keeps it fixed.
+   *
+   * The last leg is a CONTROL: a real number still commits. Without it, a field that had simply
+   * stopped working would satisfy everything above.
+   */
+  test("an emptied number box writes nothing and snaps back to the committed value", async ({ page }) => {
+    await openCanvas(page)
+    await selectWidget(page, "panel-readout")
+    // col 3 ⇒ grid-column-start 4. Deliberately not a widget at col 0, where writing 0 would be
+    // invisible and this test would pass by measuring nothing.
+    await expect(renderedCell(page, "panel-readout")).toHaveCSS("grid-column-start", "4")
+
+    const col = page.locator('[data-panel-rect="col"]')
+    await col.fill("")
+    await col.press("Enter")
+    await expect(
+      renderedCell(page, "panel-readout"),
+      "an emptied Column box wrote col: 0 and moved the widget"
+    ).toHaveCSS("grid-column-start", "4")
+    await expect(col, "the box kept a value the document does not carry").toHaveValue("3")
+
+    const max = page.locator('[data-panel-prop="max"]')
+    await expect(max).toHaveValue("500")
+    await max.fill("")
+    await max.press("Enter")
+    await expect(max, "an emptied number prop box wrote 0 over an authored value").toHaveValue("500")
+
+    // CONTROL — the field is refusing a blank, not simply dead.
+    await col.fill("5")
+    await col.press("Enter")
+    await expect(renderedCell(page, "panel-readout")).toHaveCSS("grid-column-start", "6")
+  })
+
+  /**
+   * 🔴 FIX ROUND 1, task-10-review.md F3 — a button labelled "Add" must not delete.
+   *
+   * Measured by the reviewer: typing the name of an EXISTING binding and pressing Add wiped that
+   * binding's authored path to `""`, with no warning. The ruling taken is EDIT, NOT CREATE — the
+   * existing row is opened for editing and its path is left exactly as authored, with a named notice
+   * saying which of the two things happened.
+   */
+  test("adding a binding whose name already exists opens that binding instead of wiping its path", async ({
+    page,
+  }) => {
+    await openCanvas(page)
+    await selectWidget(page, "panel-readout")
+    await expect(page.locator('[data-panel-binding-path="value"]')).toHaveValue("cycles")
+    await expect(renderedCell(page, "panel-readout").locator(".hmi-readout-value")).toHaveText(CYCLES_READING)
+
+    await page.locator("[data-panel-binding-new-name]").fill("value")
+    await page.locator("[data-panel-binding-add]").click()
+
+    // The authored path survives — on BOTH sides, the document (what the panel reads back) and the
+    // canvas (what the renderer drew). A wipe to "" would show as the widget's no-data placeholder.
+    await expect(
+      page.locator('[data-panel-binding-path="value"]'),
+      '"Add binding" destroyed an authored binding path'
+    ).toHaveValue("cycles")
+    await expect(
+      renderedCell(page, "panel-readout").locator(".hmi-readout-value"),
+      '"Add binding" destroyed an authored binding path — the canvas lost its reading'
+    ).toHaveText(CYCLES_READING)
+
+    // …and the engineer is TOLD which of the two things happened, rather than being left to notice.
+    await expect(page.locator("[data-panel-binding-duplicate]")).toHaveText(
+      viDict.editor.panel.bindingDuplicate({ name: "value" })
+    )
+    // No second row was created, and the picker opened on the row that already existed.
+    await expect(page.locator("[data-panel-binding-row='value']")).toHaveCount(1)
+    await expect(page.locator('[data-tag-picker="value"]')).toBeVisible()
   })
 
   test("a binding created from the panel is a real, named field the picker can fill in", async ({ page }) => {

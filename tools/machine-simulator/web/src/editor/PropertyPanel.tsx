@@ -31,9 +31,19 @@ import { TagPicker } from "./TagPicker"
  * such an edit would produce is one the frozen schema itself rejects. So a future panel bug cannot
  * write an ungated write widget through this vocabulary either.
  *
- * 🔴 SAVING IS TASK 12's. This file makes no claim about what reaches disk. The measurable claim
- * today is the one above: the panel cannot PRODUCE such a widget, and `applyEdit` refuses it if the
- * panel is bypassed.
+ * 🔴 FIX ROUND 1, task-10-review.md F1 — THE PARAGRAPH THAT STOOD HERE IS RETRACTED, KEPT VERBATIM:
+ * *"SAVING IS TASK 12's. This file makes no claim about what reaches disk. The measurable claim today
+ * is the one above: the panel cannot PRODUCE such a widget, and `applyEdit` refuses it if the panel
+ * is bypassed."* The first sentence conflated "the EDITOR has no save button" with "the property is
+ * unmeasurable", and the reviewer disproved it by measuring the write door directly:
+ * `PUT /v1/screens/{id}` answers **400** — `widget 'b1': kind='command-button' nhưng thiếu
+ * policyAction — §5 cấm đường ghi không gác` — for an ungated write widget and **200** for its gated
+ * twin. `tests/39-editor-properties.spec.ts` now pins BOTH halves, so §5's outermost layer is joined
+ * to the panel's.
+ *
+ * What IS still Task 12's is the editor's own save BUTTON and the version/conflict handling around it.
+ * The layers this file is part of are, outermost first: the write door (400), `applyEdit`
+ * (`policy-action-required`), `widgetRefusal` (`invalid-widget`), and the panel's hold.
  *
  * ── 🔴 S-6, AND WHAT REMAINS OPEN ────────────────────────────────────────────────────────────────
  * Two things here could be read as "this action is permitted", and both fail closed:
@@ -54,13 +64,17 @@ import { TagPicker } from "./TagPicker"
  *   * `id` — it is the ADDRESS every edit uses to name a widget. There is no `set-id` edit, and one
  *     would need a uniqueness guard plus a rule for what happens to the selection, the undo history
  *     and any `component` reference mid-rename. Shown read-only with that sentence, rather than as a
- *     field that silently does nothing.
+ *     field that silently does nothing. 🔴 CONTROLLER RULING, 2026-09-04 (task-10-review.md F4):
+ *     this stays read-only HERE, and RENAME MOVES TO TASK 11 — renaming is naming, and naming belongs
+ *     with the layer tree. It is a scope decision on the record, not an undisclosed limit.
  *   * `component` — no edit kind reaches it either. It is shown because `TagPicker`'s `{component}/…`
  *     section depends on it, so an engineer needs to see what it says.
  *   * a `props` entry that is nested, an array, a boolean, or whose key shares a widget field's name
  *     (`set-prop` refuses such a path by design — `out-of-scope-path`) or contains a `.` (which
  *     `set-prop` reads as a path separator). Shown read-only; a control that could only ever be
- *     refused is worse than a value you can read.
+ *     refused is worse than a value you can read. 🔴 CONTROLLER RULING, 2026-09-04
+ *     (task-10-review.md F4): nested and non-scalar props stay OUT OF THIS PLAN entirely. The panel
+ *     saying so on screen is the honest treatment, and `editor.panel.propReadOnly` is that sentence.
  *
  * ── WHY EVERY FIELD COMMITS ON BLUR/ENTER RATHER THAN ON EVERY KEYSTROKE ─────────────────────────
  * `editorState.ts`'s undo stack is bounded at 100 whole documents. A text field that emitted an edit
@@ -68,6 +82,15 @@ import { TagPicker } from "./TagPicker"
  * through it one character at a time. `CommitField` below therefore holds the typing locally and
  * emits once, and it is re-keyed on the committed value so an insertion made by the tag picker
  * replaces what is in the box.
+ *
+ * 🔴 FIX ROUND 1, task-10-review.md F2 — A COMMIT CAN NOW BE DECLINED, AND THE BOX SNAPS BACK. The
+ * round-0 comment beside `commitRect` claimed an emptied box "keeps what it had until it says
+ * something legal". It did not: `Number("") === 0` and `Number.isInteger(0)` is `true`, so clearing
+ * the Column box and pressing Enter wrote `col: 0` — measured by the reviewer as a widget jumping
+ * from `grid-column-start: 4` to `1`, with no refusal shown anywhere, and a `max: 500` prop silently
+ * becoming `0`. `onCommit` therefore RETURNS whether it emitted an edit, and `CommitField` restores
+ * the last committed value when it did not — which is what makes that sentence true on screen rather
+ * than only in a comment.
  */
 
 export type PropertyPanelProps = {
@@ -95,7 +118,10 @@ function CommitField({
   type: "text" | "number"
   hook: Record<string, string>
   label: string
-  onCommit: (raw: string) => void
+  /** Returns TRUE when it emitted an edit. FALSE means "I could not honestly write that" — the box
+   * then snaps back to the last committed value rather than leaving a number on screen that the
+   * document does not carry. See the header's F2 note. */
+  onCommit: (raw: string) => boolean
 }) {
   const [draft, setDraft] = useState(value)
   return (
@@ -106,11 +132,13 @@ function CommitField({
       className="h-7 w-full min-w-0 border border-border-strong bg-surface-muted px-1.5 text-sm"
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => onCommit(draft)}
+      onBlur={() => {
+        if (!onCommit(draft)) setDraft(value)
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault()
-          onCommit(draft)
+          if (!onCommit(draft)) setDraft(value)
         } else if (event.key === "Escape") {
           event.preventDefault()
           setDraft(value)
@@ -153,6 +181,8 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
   const [pendingKind, setPendingKind] = useState<WidgetKind | undefined>(undefined)
   const [pickerFor, setPickerFor] = useState<string | undefined>(undefined)
   const [newBindingName, setNewBindingName] = useState("")
+  /** The name "Add binding" was pressed with that already exists — see the F3 note at the button. */
+  const [duplicateName, setDuplicateName] = useState<string | undefined>(undefined)
   // NOT reset with the selection: an engineer laying out a screen is working against one machine, and
   // re-choosing it for every widget would make the picker useless.
   const [machineCode, setMachineCode] = useState("")
@@ -162,6 +192,7 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
     setPendingKind(undefined)
     setPickerFor(undefined)
     setNewBindingName("")
+    setDuplicateName(undefined)
   }
 
   if (!widget) {
@@ -197,8 +228,14 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
   }
 
   function chooseAction(next: string) {
-    if (!widget || next.length === 0) return
-    const action = next as PolicyAction
+    if (!widget) return
+    // 🔴 FIX ROUND 1, task-10-review.md F12 — A CAST IS NOT A CHECK. Round 0 did `next as PolicyAction`
+    // after an emptiness test, and leaned on "a native select can only emit an option value" plus
+    // `applyEdit`'s own enum check. Both are true and neither is this function's own guard; the panel's
+    // fail-closed posture rested at that one line on somebody else. `isRecognisedAction` is the
+    // membership helper this file already has, and it NARROWS, so there is no cast left to make.
+    if (!isRecognisedAction(next)) return
+    const action = next
     if (pendingKind !== undefined) {
       const held = pendingKind
       setPendingKind(undefined)
@@ -210,12 +247,17 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
     onEdit({ kind: "set-policy-action", widgetId: widget.id, policyAction: action })
   }
 
-  function commitRect(field: keyof WidgetRect, raw: string) {
-    if (!widget) return
+  function commitRect(field: keyof WidgetRect, raw: string): boolean {
+    if (!widget) return false
+    // 🔴 FIX ROUND 1, task-10-review.md F2 — THE BLANK CHECK MUST COME FIRST, BECAUSE `Number("")` IS
+    // `0` AND `Number.isInteger(0)` IS `true`. Without this line an emptied Column box committed
+    // `col: 0` — a legal edit nobody asked for, with no refusal anywhere to show for it. `trim()`
+    // rather than `length`, so a box holding only spaces is the same case.
+    if (raw.trim().length === 0) return false
     const value = Number(raw)
-    // Refuse to build an edit out of a half-typed or emptied box rather than sending one `applyEdit`
-    // will refuse: the field simply keeps what it had until it says something legal.
-    if (!Number.isInteger(value)) return
+    // Still refuses a half-typed box (`"1.5"`, `"-"`, `"1e"`) rather than sending an edit `applyEdit`
+    // would refuse. Returning `false` snaps the field back to the last committed value.
+    if (!Number.isInteger(value)) return false
     const base = widget.rect
     onEdit({
       kind: "move",
@@ -227,17 +269,26 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
         rowSpan: field === "rowSpan" ? value : base.rowSpan,
       },
     })
+    return true
   }
 
-  function commitProp(key: string, raw: string, wasNumber: boolean) {
-    if (!widget) return
+  function commitProp(key: string, raw: string, wasNumber: boolean): boolean {
+    if (!widget) return false
     if (!wasNumber) {
+      // A STRING prop may legitimately be emptied — `props.label = ""` is a real authored value the
+      // schema accepts. Only the NUMBER branch has a blank to refuse.
       onEdit({ kind: "set-prop", widgetId: widget.id, path: key, value: raw })
-      return
+      return true
     }
+    // 🔴 FIX ROUND 1, task-10-review.md F2 — same defect as `commitRect`, measured on a `max: 500`
+    // prop silently becoming `0`. A number prop whose box is emptied is not a zero; it is an
+    // unfinished edit, and turning a scale limit into 0 is exactly the kind of silent write a design
+    // surface must not make.
+    if (raw.trim().length === 0) return false
     const value = Number(raw)
-    if (!Number.isFinite(value)) return
+    if (!Number.isFinite(value)) return false
     onEdit({ kind: "set-prop", widgetId: widget.id, path: key, value })
+    return true
   }
 
   return (
@@ -362,7 +413,13 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
                 hook={{ "data-panel-binding-path": name }}
                 label={name}
                 value={String(bindings[name])}
-                onCommit={(raw) => onEdit({ kind: "set-binding", widgetId: widget.id, name, path: raw })}
+                onCommit={(raw) => {
+                  // Always emitted: `$defs/widget` constrains a binding's VALUE only by type, so `""`
+                  // is a legal path an author may deliberately clear to. `applyEdit` refuses a
+                  // re-write of the same value as a no-op, which is the right place for that rule.
+                  onEdit({ kind: "set-binding", widgetId: widget.id, name, path: raw })
+                  return true
+                }}
               />
               <button
                 type="button"
@@ -409,7 +466,23 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
             className="shrink-0 border border-border-strong px-1.5 py-0.5 text-xs"
             onClick={() => {
               const name = newBindingName
-              if (name.length === 0) return
+              // `trim()`, matching `applyEdit`'s own `bad-binding-name` rule — a button that builds an
+              // edit the guard refuses is a control that can only ever fail.
+              if (name.trim().length === 0) return
+              // 🔴 FIX ROUND 1, task-10-review.md F3 — A BUTTON LABELLED "ADD" MUST NOT DELETE. Round 0
+              // ran the `set-binding path: ""` line unconditionally, so typing the name of an EXISTING
+              // binding and pressing Add wiped that binding's authored path to `""` with no warning
+              // (measured: `bindings.value` "cycles" → ""). The ruling taken here is EDIT, NOT CREATE:
+              // the existing row is opened for editing and its path is left exactly as authored, with
+              // a named notice saying which of the two things just happened. Refusing outright was the
+              // alternative; this one is the same click count and destroys nothing either way.
+              if (Object.hasOwn(bindings, name)) {
+                setDuplicateName(name)
+                setNewBindingName("")
+                setPickerFor(name)
+                return
+              }
+              setDuplicateName(undefined)
               setNewBindingName("")
               setPickerFor(name)
               // Created EMPTY on purpose: the row has to exist before the picker can fill it in, and
@@ -420,6 +493,11 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
             {t("editor.panel.bindingAdd")}
           </button>
         </div>
+        {duplicateName === undefined ? null : (
+          <p data-panel-binding-duplicate role="status" className="text-xs text-text-body">
+            {t("editor.panel.bindingDuplicate", { name: duplicateName })}
+          </p>
+        )}
       </Section>
 
       <Section title={t("editor.panel.propsLabel")}>

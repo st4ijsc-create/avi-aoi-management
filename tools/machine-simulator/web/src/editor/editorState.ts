@@ -56,12 +56,20 @@
  *     disagree, and an undo stack full of documents that no longer round-trip is worse than a
  *     refused edit.
  *
- * (4) A BINDING NAME MUST BE A NON-EMPTY STRING (WS-HMI-2 Task 10). `$defs/widget`'s `bindings` is
+ * (4) A BINDING NAME MUST BE A NON-BLANK STRING (WS-HMI-2 Task 10). `$defs/widget`'s `bindings` is
  *     `{"type": "object", "additionalProperties": {"type": "string"}}` — it constrains the VALUES and
  *     says nothing about the KEYS, so `{"": "cycles"}` validates. It is still unreachable: every
  *     widget reads its bindings by a name it hardcodes (`bindings.value`, `bindings.series`, …), so
  *     an unnamed binding is a document the renderer can never consult, written by a picker whose
  *     "which field am I filling in?" answer was empty. Refused rather than stored.
+ *
+ *     🔴 FIX ROUND 1, task-10-review.md F6 — this said "NON-EMPTY" and checked `length === 0`, so
+ *     `"   "` was ACCEPTED. Measured by the reviewer: a binding named with three spaces produced a
+ *     row. The argument above applies identically to it — no widget hardcodes `bindings["   "]` — so
+ *     the rule now reads NON-BLANK and the check is `trim().length === 0`. This module is already
+ *     whitespace-aware where it matters most (a whitespace-only `policyAction` is refused, and its
+ *     corpus member names the .NET MEDIUM-1 defect class that came from exactly this distinction);
+ *     the asymmetry was with this module's own stated rule, not with the schema.
  *     `editorState.test.mjs` measures BOTH sides of this, as it does for (1) and (2): that the
  *     schema really does accept the empty key, and that this module really does not.
  *
@@ -606,6 +614,13 @@ function widgetRefusal(widget: unknown, where: string): string | undefined {
       return `${where}.policyAction: ${describe(action)} is not one of ${Object.keys(POLICY_ACTIONS).join(" | ")}`
     }
   } else if (requiresPolicyAction(kind)) {
+    // 🔴 TASK 10 REVIEW §1, RECORDED HERE BECAUSE THIS IS THE BRANCH IT IS ABOUT. §5 is enforced at
+    // THREE layers — the property panel's hold, `set-kind`'s `policy-action-required`, and this
+    // branch — and the reviewer measured each one individually pinned. But THIS one is pinned ONLY by
+    // Task 7's `WIDGET_CORPUS` members "command-button/setpoint-input THIẾU policyAction (bất biến
+    // §5)" in `editorState.test.mjs`, and by NOTHING in Task 10's three new corpora: `set-kind`'s own
+    // branch fires first, and `set-policy-action`/`set-binding` never construct an ungated write
+    // widget. Trim those two `add` members and this layer silently becomes the untested one.
     return `${where}: a "${kind}" widget must declare policyAction — invariant §5, enforced by the ` +
       `frozen schema's allOf/if/then: no write path without a gate`
   }
@@ -809,13 +824,14 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
     case "set-binding": {
       const index = indexOfWidget(doc, edit.widgetId)
       if (index < 0) return unknownWidget("set-binding", edit.widgetId)
-      if (typeof edit.name !== "string" || edit.name.length === 0) {
+      // 🔴 FIX ROUND 1, task-10-review.md F6 — `trim()`, not `length`. See header note (4).
+      if (typeof edit.name !== "string" || edit.name.trim().length === 0) {
         return refusal(
           "bad-binding-name",
-          `set-binding ${describe(edit.widgetId)}: name must be a non-empty string, got ` +
+          `set-binding ${describe(edit.widgetId)}: name must be a non-blank string, got ` +
             `${describe(edit.name)}. The frozen schema puts no constraint on a binding KEY, so this is ` +
             `the editor being stricter on purpose: every widget reads its bindings by a name it ` +
-            `hardcodes, so an unnamed one is a binding nothing can ever consult`
+            `hardcodes, so an unnamed or whitespace-only one is a binding nothing can ever consult`
         )
       }
       const widget = doc.widgets[index]

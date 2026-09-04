@@ -595,6 +595,16 @@ test("giá trị của bản sao viết tay KHỚP giá trị trong schema đón
 //
 // Mọi id ở đây đều KHÔNG có trên tài liệu demo, nên luật "id phải duy nhất" (nghiêm hơn schema)
 // không can thiệp vào phép đối chiếu này; luật ấy có bài riêng bên dưới.
+//
+// 🔴 ĐỪNG CẮT HAI THÀNH VIÊN CUỐI CÙNG CỦA CORPUS NÀY (task-10-review.md §1, ghi lại theo yêu cầu
+// của controller). Bất biến §5 được gác ở BA lớp — chốt giữ của panel thuộc tính, nhánh
+// `policy-action-required` trong `set-kind`, và nhánh §5 trong `widgetRefusal` — và reviewer đã đo
+// từng lớp một, riêng rẽ, là CÓ ghim. Nhưng lớp thứ ba CHỈ được ghim bởi hai thành viên
+// "command-button/setpoint-input THIẾU policyAction (bất biến §5)" ngay trong corpus NÀY, và KHÔNG
+// bởi bất kỳ corpus nào của Task 10 ở phần dưới file: nhánh riêng của `set-kind` bắn TRƯỚC, còn
+// `set-policy-action`/`set-binding` không bao giờ dựng ra một widget ghi thiếu gate. Cắt hai thành
+// viên ấy đi thì lớp thứ ba lặng lẽ trở thành lớp KHÔNG được đo. Đo, không suy: tắt nhánh ấy
+// (`} else if (false && requiresPolicyAction(kind)) {`) làm ĐỎ ĐÚNG hai bài này và không bài nào khác.
 const WIDGET_CORPUS = [
   ["tối thiểu hợp lệ", { id: "w-min", kind: "readout", rect: FRESH_RECT }],
   ["id chỉ toàn chữ số", { id: "0", kind: "label", rect: FRESH_RECT }],
@@ -1019,6 +1029,12 @@ test("một edit.kind KHÔNG NẰM TRONG EditorEdit bị TỪ CHỐI kèm tên n
 // 🔴 CÁI NÀY KHÔNG ĐO: rằng có một PANEL nào gọi ba phép sửa này, rằng panel ấy không có ô nhập tự do
 // cho `policyAction`, hay rằng đổi binding cập nhật canvas. Đó là mệnh đề về DOM và nằm ở
 // `tests/39-editor-properties.spec.ts` — `.tsx` không `import()` được dưới `node --test`.
+//
+// 🔴 VÀ CÁI NÀY CŨNG KHÔNG ĐO (task-10-review.md §1): nhánh §5 bên trong `widgetRefusal`. Không corpus
+// nào dưới đây chạm tới nó — `set-kind` có nhánh RIÊNG bắn trước, `set-policy-action` luôn ĐẶT một
+// action, `set-binding` không đụng tới `kind` lẫn `policyAction`. Lớp ấy được ghim bởi HAI thành viên
+// của `WIDGET_CORPUS` (phía `add`, ở phần trên file) và chỉ bởi chúng; ghi chú tương ứng đã đặt tại
+// đó. Ai mở rộng corpus ở đây mà tưởng mình đang phủ thêm lớp thứ ba thì đang tưởng nhầm.
 // ═════════════════════════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -1298,22 +1314,37 @@ test("🔴 §5: một widget ghi ĐÃ CÓ gate không mất gate qua bất kỳ 
 
 // ── chỗ NGHIÊM HƠN thứ TƯ: tên binding rỗng (đo CẢ HAI phía, như (1) và (2)) ─────────────────────
 
-test("set-binding với tên RỖNG bị TỪ CHỐI — nghiêm hơn schema CÓ CHỦ Ý, và schema thật sự CHO PHÉP khoá rỗng (đo, không suy)", () => {
-  // Phía SCHEMA: một bindings có khoá rỗng là HỢP LỆ. Nếu một ngày schema thêm ràng buộc lên KHOÁ,
-  // bài này đỏ và ghi chú nghiêm-hơn ở header `editorState.ts` phải được sửa.
-  const widget = { id: "w-empty-key", kind: "readout", rect: FRESH_RECT, bindings: { "": "cycles" } }
-  assert.deepEqual(
-    widgetErrors(widget),
-    [],
-    "schema đóng băng GIỜ ràng buộc KHOÁ của bindings — luật tên-binding-rỗng không còn là chỗ nghiêm hơn, hãy sửa doc comment ở đó"
-  )
+test("set-binding với tên RỖNG hoặc CHỈ-KHOẢNG-TRẮNG bị TỪ CHỐI — nghiêm hơn schema CÓ CHỦ Ý, và schema thật sự CHO PHÉP cả hai (đo, không suy)", () => {
+  // 🔴 SỬA VÒNG 1, task-10-review.md F6 — bản trước chỉ kiểm `""`. Reviewer ĐO được rằng `"   "` được
+  // NHẬN và sinh ra một dòng binding, trong khi lý lẽ của chính luật ("không widget nào hardcode
+  // `bindings["   "]`") áp dụng y hệt. Cả hai phía đều được đo lại ở đây.
+  //
+  // Phía SCHEMA: một bindings có khoá rỗng — HOẶC khoá chỉ-khoảng-trắng — là HỢP LỆ. Nếu một ngày
+  // schema thêm ràng buộc lên KHOÁ, bài này đỏ và ghi chú nghiêm-hơn ở header `editorState.ts` phải
+  // được sửa.
+  for (const key of ["", "   ", "\t"]) {
+    const widget = { id: "w-empty-key", kind: "readout", rect: FRESH_RECT, bindings: { [key]: "cycles" } }
+    assert.deepEqual(
+      widgetErrors(widget),
+      [],
+      `schema đóng băng GIỜ ràng buộc KHOÁ ${JSON.stringify(key)} của bindings — luật tên-binding-trống không còn là chỗ nghiêm hơn, hãy sửa doc comment ở đó`
+    )
+  }
 
   // Phía EDITOR: từ chối, bằng mã riêng, và không chạm vào tài liệu.
-  for (const name of ["", 0, null, undefined, 7, {}]) {
+  for (const name of ["", "   ", "\t", "\n", 0, null, undefined, 7, {}]) {
     const state = freshState()
     const next = applyEdit(state, { kind: "set-binding", widgetId: "direct-cycles", name, path: "cycles" })
     assertRefusedUnchanged(state, next, `set-binding name=${JSON.stringify(name) ?? typeof name}`, "bad-binding-name")
   }
+
+  // ...và ĐỐI CHỨNG, để "từ chối" ở trên không thể xanh bằng một guard từ chối MỌI tên: một tên có
+  // ký tự khoảng trắng NHƯNG không rỗng sau khi trim vẫn được NHẬN.
+  const state = freshState()
+  const ok = applyEdit(state, { kind: "set-binding", widgetId: "direct-cycles", name: " sub ", path: "statusText" })
+  assertAccepted(ok, "set-binding name=' sub '")
+  assert.equal(widgetOf(ok.doc, "direct-cycles").bindings[" sub "], "statusText")
+  assert.deepEqual(docErrors(ok.doc), [])
 })
 
 test("set-binding XOÁ trên một widget CHƯA CÓ bindings là no-op — KHÔNG dựng ra một bindings:{} rỗng", () => {

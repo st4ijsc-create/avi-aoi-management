@@ -380,6 +380,9 @@ export const en: Dictionary = {
       bindingPick: (vars: Vars) => `Pick a tag for binding "${vars.name}"`,
       bindingRemove: (vars: Vars) => `Remove binding "${vars.name}"`,
       bindingNewNameLabel: "New binding name",
+      // Fix round 1, task-10-review.md F3 — see vi.ts at the same key.
+      bindingDuplicate: (vars: Vars) =>
+        `Binding "${vars.name}" already exists on this widget, so the panel OPENED the existing row for editing instead of creating a new one — its authored path was NOT overwritten.`,
       bindingAdd: "Add binding",
       propsLabel: "Display properties",
       propsEmpty: "This widget declares no props yet.",

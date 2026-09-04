@@ -386,6 +386,10 @@ export const vi = {
       bindingPick: (vars: Vars) => `Chọn tag cho binding "${vars.name}"`,
       bindingRemove: (vars: Vars) => `Xoá binding "${vars.name}"`,
       bindingNewNameLabel: "Tên binding mới",
+      // 🔴 SỬA VÒNG 1, task-10-review.md F3 — nút nhãn "Thêm" KHÔNG được xoá. Khi tên đã tồn tại,
+      // panel MỞ dòng đang có để sửa thay vì tạo mới, và câu này nói rõ điều vừa xảy ra.
+      bindingDuplicate: (vars: Vars) =>
+        `Binding "${vars.name}" đã có sẵn trên widget này, nên panel MỞ dòng đang có để sửa thay vì tạo mới — đường dẫn đã khai KHÔNG bị ghi đè.`,
       bindingAdd: "Thêm binding",
       propsLabel: "Thuộc tính hiển thị (props)",
       propsEmpty: "Widget này chưa khai props nào.",
