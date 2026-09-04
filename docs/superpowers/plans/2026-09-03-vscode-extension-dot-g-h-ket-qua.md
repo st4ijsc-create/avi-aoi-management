@@ -181,3 +181,78 @@ Báo cáo chi tiết: `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-h
 Mã đã sửa: `vscode-extension/src/loi/dayGiaoThucDoc.ts`, `dayBoNhoDoc.ts`, `deXuatNho.ts`,
 `yeuCau.ts`, `dayGiaoThucDoc.unit.test.ts`.
 Toàn bộ output thô: `<scratchpad>/h5-*.json`, `h5-*.cjs`, `h5-*-request-log.json`, `h5-*-tomtat.json`.
+
+---
+
+# Task H6 — vá gốc rễ RAG-hijack PHÍA MÁY CHỦ (`route:"vscode"`)
+
+Ngày đo: 2026-09-04. Báo cáo chi tiết: `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-h6-report.md`.
+
+## Status: TÌM ĐÚNG + VÁ ĐÚNG gốc rễ B1 chỉ định (RAG-hijack ép khuôn liệt kê phía `retrieveKnowledge`)
+— ABLATION LIVE xác nhận nhân quả thật. `mcp_goi` cải thiện RÕ (0/3 → 2/3 a + 1/3 b). `de_xuat_nho`
+KHÔNG cải thiện về CÚ PHÁP (vẫn 0/5) dù nội dung thất bại đã đổi hẳn — nghi ngại giới hạn tầng model.
+
+## B1 (đo sống, không đoán): `classifyIntent(question)`/`retrieveKnowledge(question,…)` (ba lời gọi
+trong `streamAnswer`) nhận `question` ĐẦY ĐỦ (giáo cụ + câu hỏi thật) dù vòng 8 đã bóc giáo cụ cho
+NHÁNH TOOL. `VSCODE_GIAO_THUC_PREFIX` chứa nguyên văn "Liệt kê một thư mục:" — khớp `LIST_INTENT_RE`
+VÔ ĐIỀU KIỆN cho MỌI câu hỏi LOCAL không-Cmd+K ⇒ `intent:"list"` ép `VI_LIST_FORMAT` + citations
+trôi về `knowledge/features/**`. POST thật xác nhận: câu hỏi "Từ giờ trở đi hãy LUÔN dùng tiếng Việt
+trang trọng..." (không có "liệt kê") vẫn nhận `intent:"list"`, `confidence:1`, trả lời đúng khuôn
+"(1) Tổng số mục được liệt kê...".
+
+## B2 (vá, HAI vòng): Vòng 1 — `streamAnswer` dùng `cauHoiTruyVan` (= `thanThat` khi bóc được) cho
+`retrieveKnowledge`, KHÔNG đổi `question` truyền `generateWithOllamaStream` (model vẫn thấy giáo cụ
+đầy đủ) + `shouldUseLlm` thêm `|| laVscodeDaBocGiaoThuc` (bỏ ngưỡng độ tin KB cho route đã bóc,
+tránh model không bao giờ chạm được giáo cụ). Vòng 2 (phát hiện khi đo lại B4): `nhacLaiCuoiCauHoi`
+(H5) chèn thêm câu GIỮA khi có MCP/bộ nhớ ⇒ hậu tố server mirror cũ không còn khớp `endsWith` ⇒ bóc
+thất bại HOÀN TOÀN cho đúng lớp câu hỏi H4/H5 đo `de_xuat_nho`. Vá: liệt kê đủ 4 hình dạng hậu tố +
+hàm `bocKhoiTuyChonDauThan` bóc thêm hai khối DẠY tuỳ điều kiện (mốc ĐẦU/CUỐI tĩnh, bỏ qua phần
+GIỮA động).
+
+## B3 (web không đổi): `cauHoiTruyVan`/`laVscodeDaBocGiaoThuc` mặc định = `question`/`false`; với
+route khác "vscode", `shouldUseLlm` rút gọn về ĐÚNG công thức cũ (`|| false` no-op). Lưới đối chứng
+(`§E`/`§F`/`§G`) xác nhận route `/factory-command` với văn bản giáo cụ WRAPPED giống hệt vẫn cho
+`intent:"list"` — hành vi CŨ giữ nguyên.
+
+## B4 (đo lại):
+- `de_xuat_nho` (5 lượt, seed `dsBoNho`): **0/5 a · 0/5 b · 5/5 c — KHÔNG cải thiện cú pháp**, nhưng
+  `intent` không còn "list" và citations đổi khác (vẫn sai đề). Model bỏ qua chỉ dẫn cuối prompt dù
+  nó tới nơi nguyên vẹn (xác nhận qua `question` lưu thô).
+- `mcp_goi` (3 lượt, seed `dsToolMcp`): **2/3 a · 1/3 b (fence không đóng, JSON hợp lệ) · 0/3 c** —
+  cải thiện THẬT từ 0/3 (H5) / SAI 1/1 (H4).
+- ĐỌC (6 câu, vòng lặp ĐẦY ĐỦ trên sandbox MỚI `<scratchpad>/h6-ws`): **5/6 ĐẠT — KHÔNG TỤT** so
+  với H4 (5/6). Bộ câu hỏi MỚI (sandbox cũ không còn truy cập được), so bằng TỈ LỆ.
+
+## B5 (ABLATION): unit test (mutation mã thật) — vòng 1 tắt ⇒ 1/22 + 1/4 lưới ĐỎ; vòng 2 tắt ⇒ 4/23
+lưới ĐỎ; hoàn nguyên cả hai ⇒ xanh lại 100%. LIVE (bắt buộc) — tắt cả bản vá, rebuild, khởi động lại,
+đo lại B1 ⇒ **tụt về ĐÚNG đường cơ sở trước vá** (`intent:"list"`, `confidence:1`, citations
+`features/**`, byte-for-byte khớp B1 trước vá) — hoàn nguyên, rebuild, khởi động lại, xác nhận vá
+hoạt động lại.
+
+## B6 (mẫu độc lập): 3 lượt cùng câu hỏi — 7071/4796/5526 ms (không lượt nào gần 0), nội dung khác cả
+ba cặp — KHÔNG cache-hit dù `KB_QA_CACHE_TTL_MS=1`.
+
+## B7: bộ 52 tệp lưới liên quan `aiLocalKnowledgeService` — **5 ca đỏ, cả hai tệp census KHÔNG liên
+quan tới bản vá** (xác nhận bằng NHÂN QUẢ MỨC MÃ: `core.autocrlf=true` khiến một census LF-thuần
+luôn đỏ trên working tree Windows bất kể trạng thái mã; census file CLI/MCP đỏ vì thư mục khác hẳn
+`aiCodingCli/` chưa cập nhật — task này không chạm) — khớp cảnh báo brief "~5/1001 nợ có sẵn".
+
+## CÒN MỞ cho vòng sau
+1. ★★★ `de_xuat_nho` vẫn 0/5 sau khi vá TRỌN VẸN cơ chế RAG-hijack đã xác định bằng chứng — nghi
+   ngại đây là giới hạn tầng KHẢ NĂNG CHÚ Ý CỦA MODEL (chỉ dẫn nằm cuối một prompt dài, cạnh tranh
+   với "NGUYÊN TẮC TRẢ LỜI" + ngữ cảnh KB), không phải một lỗi định tuyến/prompt còn sót có bằng
+   chứng cụ thể để vá tiếp trong phạm vi "nhỏ nhất có thể". KHÔNG nhồi thêm vá đoán mò (đúng cảnh
+   báo H5: viết lại câu chữ mạnh hơn nhiều khả năng vẫn 0/N).
+2. `mcp_goi` cải thiện thật nhưng `de_xuat_nho` thì không — giả thuyết: câu hỏi MCP mang tính HÀNH
+   ĐỘNG rõ ràng hơn so với mệnh lệnh "hãy nhớ..." — chưa kiểm chứng thêm.
+3. Chưa đo LIVE riêng đường WEB bằng câu hỏi OEE thật (chỉ có bằng chứng mã + lưới đối chứng).
+4. Server đang chạy `KB_QA_CACHE_TTL_MS=1` — không phải mặc định.
+
+## Đường dẫn (H6)
+
+Báo cáo chi tiết: `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-h6-report.md`.
+Mã đã sửa: `server/services/aiLocalKnowledgeService.ts`.
+Lưới mới/mở rộng: `server/services/aiLocalKnowledge.vscodeRouteGate.test.ts`,
+`server/services/aiLocalKnowledge.h6VscodeShouldUseLlmBypass.test.ts` (mới).
+Sandbox đo ĐỌC: `<scratchpad>/h6-ws/**`. Toàn bộ output thô: `<scratchpad>/h6-*.cjs`, `h6-*-raw.json`,
+`h6-*-tomtat.json`.
