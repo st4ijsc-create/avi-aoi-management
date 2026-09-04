@@ -129,6 +129,37 @@ namespace St4i.EngineApi.Endpoints;
 /// </summary>
 public static class HmiScreenEndpoints
 {
+    /// <summary>
+    /// 🔴 SECURITY REVIEW MEDIUM-1 — the two audit actions this family records.
+    ///
+    /// <para><b>Neither screen write produced an audit record before this,</b> while fifteen other
+    /// endpoint families in this directory did, and the <c>screens</c> table has no author column. The
+    /// consequence the review names: an Engineer publishes to <c>machine-aoi-01</c>, every operator on
+    /// AOI-01 sees a different panel on the next load, and afterwards <b>no artefact anywhere names who
+    /// did it</b> — not the audit log, not the version history. This branch is the first HMI write whose
+    /// effect is what an operator sees on the machine in front of them, which is why the gap starts to
+    /// matter here.</para>
+    ///
+    /// <para><b>Named on the existing convention, not a new one:</b> <c>&lt;domain&gt;.&lt;thing&gt;
+    /// .&lt;verb&gt;</c>, the same shape as <c>machine.setpoint.write</c>, <c>asset.lifecycle.set</c> and
+    /// the rest.</para>
+    ///
+    /// <para>🔴 <b>WHY THE ENGINE DOES NOT RESOLVE THE MACHINE, and why <c>targetId</c> is enough.</b>
+    /// The <c>machine-</c> prefix is a BROWSER-side derivation (<c>web/src/hmi-runtime/publishedScreen.ts</c>
+    /// says so of itself), and the review's §3 ruling is that it must stay one: <c>Policies.Engineer</c>
+    /// is fleet-wide, so there is no per-machine authority for the engine to consult, and dragging a
+    /// roster lookup into this path would import exactly the coupling that ruling rejected — plus a story
+    /// for a machine that leaves the roster. It is also unnecessary: the screen id RECORDED here is
+    /// <c>machine-aoi-01</c> verbatim, so an investigator reading the row sees both that a machine panel
+    /// was the target and which machine, without the engine having to hold an opinion about the prefix.</para>
+    /// </summary>
+    internal const string PublishAction = "hmi.screen.publish";
+
+    /// <summary>See <see cref="PublishAction"/>. A separate action id rather than a flag on the same one,
+    /// because "restored an old version" and "published new authorship" are different acts and an
+    /// investigator filters on the action.</summary>
+    internal const string RollbackAction = "hmi.screen.rollback";
+
     public static void MapHmiScreenEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/v1/screens", ListAsync).RequireAuthorization(Policies.Operator);
@@ -173,7 +204,8 @@ public static class HmiScreenEndpoints
     // any connection opens) → build the response → return. Nothing after the response is built can throw.
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PutAsync(
-        string screenId, HmiScreenDocument body, IHmiScreenStore store, IHmiChangeBus changes, CancellationToken ct)
+        string screenId, HmiScreenDocument body, IHmiScreenStore store, IHmiChangeBus changes,
+        HttpContext context, AuditRecorder recorder, CancellationToken ct)
     {
         // `body` itself can never be null — HmiScreenDocument is a non-nullable complex parameter, so
         // RequestDelegateFactory already 400s an absent/literal-null/malformed-JSON body before this handler
@@ -214,6 +246,18 @@ public static class HmiScreenEndpoints
             return WriteBusy();
         }
 
+        // 🔴 SECURITY REVIEW MEDIUM-1 — the audit row, AFTER the write succeeded and BEFORE the response
+        // is built. `CancellationToken.None` deliberately, the same choice MachineWriteEndpoints makes for
+        // the same reason: the write has already happened, and a caller who walked away must not be the
+        // reason it went unrecorded. `AuditRecorder.RecordAsync` never throws (its own documented failure
+        // policy — a lost audit row must not fail the request it describes), so this does not breach the
+        // ordering rule the next comment states.
+        await recorder.RecordAsync(
+            context, PublishAction, "screen", ScreenIdentity.Canonicalize(screenId),
+            null,
+            new { version, widgetCount = body.Widgets.Count },
+            CancellationToken.None).ConfigureAwait(false);
+
         // Response built BEFORE anything else that could run — see this class's own doc comment for why the
         // publish sits here, second-to-last, with `return` last and nothing that can throw after it. Note
         // this covers `Publish` itself, not the `HmiModelEvents.ScreenChanged(...)` argument evaluated to
@@ -251,7 +295,8 @@ public static class HmiScreenEndpoints
     // endpoint's job to open a second one.
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> RollbackAsync(
-        string screenId, RollbackRequestDto body, IHmiScreenStore store, IHmiChangeBus changes, CancellationToken ct)
+        string screenId, RollbackRequestDto body, IHmiScreenStore store, IHmiChangeBus changes,
+        HttpContext context, AuditRecorder recorder, CancellationToken ct)
     {
         int version;
         try
@@ -311,6 +356,17 @@ public static class HmiScreenEndpoints
         // outcome. Keeping construction outside the catch keeps those two failure classes distinguishable;
         // total-by-construction is what makes that safe to do.
         changes.Publish(HmiModelEvents.ScreenChanged(screenId, version));
+
+        // 🔴 SECURITY REVIEW MEDIUM-1 — see PublishAction. `toVersion` is recorded ALONGSIDE the version
+        // the call produced, because "restored version 2" and "which produced version 9" are two different
+        // facts and an investigator needs both: the first is what the engineer asked for, the second is
+        // what the store now serves. `CancellationToken.None` for the reason PutAsync's own audit call
+        // states.
+        await recorder.RecordAsync(
+            context, RollbackAction, "screen", ScreenIdentity.Canonicalize(screenId),
+            null,
+            new { version, toVersion = body.ToVersion },
+            CancellationToken.None).ConfigureAwait(false);
 
         // WidgetCount is read from the CONTENT of the version just appended, not from the request body — a
         // rollback request carries no widget list at all. `version` is the number RollbackAsync just

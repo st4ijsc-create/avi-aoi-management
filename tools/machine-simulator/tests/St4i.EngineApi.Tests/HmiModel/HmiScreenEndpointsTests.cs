@@ -14,6 +14,8 @@ using St4i.EngineApi.HmiModel;
 using St4i.EngineApi.Tests.Auth;
 using St4i.Hmi.Contracts;
 using Xunit;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace St4i.EngineApi.Tests.HmiModel;
 
@@ -524,6 +526,172 @@ public sealed class HmiScreenEndpointsTests
         return dir!.FullName;
     }
 
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 SECURITY REVIEW MEDIUM-1 added `HttpContext` + `AuditRecorder` to both write handlers, so the
+    // tests below that call them DIRECTLY (rather than over HTTP) have to supply both. A recorder over a
+    // store that keeps nothing is right for these tests specifically: their subject is what the handler
+    // RETURNS when its post-commit read fails, and what reaches the change lane — not the audit row,
+    // which has its own tests over the real pipeline in HmiScreenEndpointsTests.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private sealed class DiscardingAuditStore : IAuditStore
+    {
+        public Task<AuditEntry> AppendAsync(AuditAppend e, CancellationToken ct) =>
+            Task.FromResult(new AuditEntry(
+                1, e.AtUtc, e.ActorUsername, e.ActorRole, e.Action, e.TargetType, e.TargetId,
+                e.OldValueJson, e.NewValueJson, e.CorrelationId, e.ClientIp, new string('0', 64), new string('0', 64)));
+
+        public Task<AuditPage> QueryAsync(
+            DateTimeOffset? from, DateTimeOffset? to, string? actor, string? action, string? target,
+            int limit, int offset, CancellationToken ct) =>
+            Task.FromResult(new AuditPage(Array.Empty<AuditEntry>(), 0, limit, offset));
+
+        public Task<AuditVerifyResult> VerifyChainAsync(CancellationToken ct) =>
+            throw new NotSupportedException("not exercised by these tests");
+    }
+
+    private static AuditRecorder DiscardingRecorder() =>
+        new(new DiscardingAuditStore(), NullLogger<AuditRecorder>.Instance);
+
+    // ═════════════════════════════════════════════════════════════════════
+    // 🔴 SECURITY REVIEW MEDIUM-1 — BOTH SCREEN WRITES PRODUCE AN AUDIT ROW.
+    //
+    // Neither did before. The review's scenario: an Engineer publishes to `machine-aoi-01`, every operator
+    // on AOI-01 sees a different panel on the next load, and afterwards no artefact anywhere names who did
+    // it — not the audit log, not the version history (the `screens` table has no author column and
+    // `ScreenVersionInfo` carries only version/savedAt/isCurrent). Fifteen other endpoint families in
+    // `src/St4i.EngineApi/Endpoints/` already record; this one now does too.
+    //
+    // Read back through `IAuditStore` rather than through `GET /v1/audit`, so the assertion is about the
+    // ROW that was written and not about the read endpoint's projection of it.
+    // ═════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Put_RecordsAnAuditRow_NamingTheActor_TheScreen_AndTheVersionItProduced()
+    {
+        var (factory, _, engineerC, _) = await NewFactoryWithUsersAsync("audit-put");
+        await using var _f = factory;
+        using var eng = engineerC;
+
+        // A MACHINE PANEL id, deliberately: the review's whole scenario is an operator panel being
+        // replaced, and the point of recording `targetId` verbatim is that the id itself names the machine.
+        var result = await PutOkAsync(eng, "machine-aoi-01", Screen("machine-aoi-01", "v1"));
+
+        var audit = factory.Services.GetRequiredService<IAuditStore>();
+        var page = await audit.QueryAsync(null, null, null, HmiScreenEndpoints.PublishAction, null, 50, 0, CancellationToken.None);
+
+        var row = Assert.Single(page.Items);
+        Assert.Equal("screen", row.TargetType);
+        Assert.Equal("machine-aoi-01", row.TargetId);
+        Assert.Equal("scr-engineer-audit-put", row.ActorUsername);
+        Assert.Equal(Roles.Engineer, row.ActorRole);
+        Assert.NotNull(row.NewValueJson);
+        Assert.Contains($"\"version\":{result.Version}", row.NewValueJson!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Rollback_RecordsAnAuditRow_CarryingBothTheVersionAskedFor_AndTheOneItProduced()
+    {
+        var (factory, _, engineerC, _) = await NewFactoryWithUsersAsync("audit-rollback");
+        await using var _f = factory;
+        using var eng = engineerC;
+
+        await PutOkAsync(eng, "audit-rb", Screen("audit-rb", "v1"));
+        await PutOkAsync(eng, "audit-rb", Screen("audit-rb", "v2"));
+
+        using (var rollback = await eng.PostAsJsonAsync(
+                   "/v1/screens/audit-rb/rollback", new RollbackRequestDto(1), HmiContractJson.Options))
+        {
+            Assert.Equal(HttpStatusCode.OK, rollback.StatusCode);
+        }
+
+        var audit = factory.Services.GetRequiredService<IAuditStore>();
+        var page = await audit.QueryAsync(null, null, null, HmiScreenEndpoints.RollbackAction, null, 50, 0, CancellationToken.None);
+
+        var row = Assert.Single(page.Items);
+        Assert.Equal("screen", row.TargetType);
+        Assert.Equal("audit-rb", row.TargetId);
+        Assert.Equal("scr-engineer-audit-rollback", row.ActorUsername);
+        // BOTH numbers: what was asked for, and what the store now serves. A rollback APPENDS, so they
+        // are never the same, and an investigator reading only one of them learns half the fact.
+        Assert.Contains("\"version\":3", row.NewValueJson!, StringComparison.Ordinal);
+        Assert.Contains("\"toVersion\":1", row.NewValueJson!, StringComparison.Ordinal);
+    }
+
+    /// <summary>The negative half, and it is not decoration: a recorder wired to fire on EVERY request
+    /// would satisfy both tests above. A refused publish changed nothing, so it must leave no row saying
+    /// it did.</summary>
+    [Fact]
+    public async Task ARefusedPut_RecordsNoAuditRow()
+    {
+        var (factory, _, engineerC, _) = await NewFactoryWithUsersAsync("audit-refused");
+        await using var _f = factory;
+        using var eng = engineerC;
+
+        const string body = """
+            {"schemaVersion":1,"screenId":"audit-refused","title":"x","theme":"isa101",
+             "layout":{"cols":12,"rows":8,"breakpoint":"panel"},
+             "widgets":[{"id":"w1","kind":"no-such-widget-kind","rect":{"col":0,"row":0,"colSpan":2,"rowSpan":1}}]}
+            """;
+
+        using (var put = await eng.PutAsync("/v1/screens/audit-refused",
+                   new StringContent(body, Encoding.UTF8, "application/json")))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+        }
+
+        var audit = factory.Services.GetRequiredService<IAuditStore>();
+        var page = await audit.QueryAsync(null, null, null, HmiScreenEndpoints.PublishAction, null, 50, 0, CancellationToken.None);
+        Assert.Empty(page.Items);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // 🔴 SECURITY REVIEW HIGH-1 — THE SIZE CAP, OVER THE REAL ROUTE.
+    // ═════════════════════════════════════════════════════════════════════
+
+    /// <summary>The refusing half at the HTTP door. The reviewer measured a 200 000-widget document
+    /// accepted with zero violations, stored in 291 ms and 15.8 MiB; this asserts the door now says no,
+    /// and that nothing was stored.
+    ///
+    /// <para>One past the cap rather than 200 000, deliberately: the boundary is the claim, and building a
+    /// 200 000-widget body in a test would spend seconds proving the same thing.</para></summary>
+    [Fact]
+    public async Task Put_AScreenPastTheWidgetCeiling_Gets400_AndStoresNothing()
+    {
+        var (factory, _, engineerC, operatorClient) = await NewFactoryWithUsersAsync("too-big");
+        await using var _f = factory;
+        using var eng = engineerC;
+        using var op = operatorClient;
+
+        var doc = ScreenWithWidgets("too-big", "oversized", ContractInvariants.MaxWidgetsPerScreen + 1);
+
+        using (var put = await eng.PutAsJsonAsync("/v1/screens/too-big", doc, HmiContractJson.Options))
+        {
+            var text = await put.Content.ReadAsStringAsync();
+            Assert.True(put.StatusCode == HttpStatusCode.BadRequest,
+                $"a document past the widget ceiling answered {(int)put.StatusCode}: {text}");
+            Assert.Contains(ContractInvariants.MaxWidgetsPerScreen.ToString(), text, StringComparison.Ordinal);
+        }
+
+        using var get = await op.GetAsync("/v1/screens/too-big");
+        Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+    }
+
+    /// <summary>The accepting half, EXACTLY at the cap — without which the refusal above is satisfied by a
+    /// cap set anywhere below it, including one that breaks every real screen.</summary>
+    [Fact]
+    public async Task Put_AScreenExactlyAtTheWidgetCeiling_Gets200()
+    {
+        var (factory, _, engineerC, _) = await NewFactoryWithUsersAsync("at-cap");
+        await using var _f = factory;
+        using var eng = engineerC;
+
+        var doc = ScreenWithWidgets("at-cap", "at the cap", ContractInvariants.MaxWidgetsPerScreen);
+        var result = await PutOkAsync(eng, "at-cap", doc);
+        Assert.Equal(ContractInvariants.MaxWidgetsPerScreen, result.WidgetCount);
+    }
+
     // ═════════════════════════════════════════════════════════════════════
     // RBAC end-to-end — a REAL logged-in Operator/Engineer over the REAL auth pipeline. NOT the metadata
     // census (RbacPolicyTests). No route here ever needs Admin.
@@ -974,7 +1142,8 @@ public sealed class HmiScreenEndpointsTests
         // HmiChangeBus is enough here — this test's own property is about the RESPONSE this handler builds
         // when its post-commit read throws, not about who is listening on the change lane.
         var result = await HmiScreenEndpoints.RollbackAsync(
-            "whatever-screen", new RollbackRequestDto(1), store, new HmiChangeBus(), CancellationToken.None);
+            "whatever-screen", new RollbackRequestDto(1), store, new HmiChangeBus(),
+            new DefaultHttpContext(), DiscardingRecorder(), CancellationToken.None);
 
         var ok = Assert.IsType<Ok<PutScreenResultDto>>(result);
         Assert.NotNull(ok.Value);
@@ -995,7 +1164,8 @@ public sealed class HmiScreenEndpointsTests
         // Same WS-HMI-2 Task 4 signature note as the test above — an unsubscribed bus is enough.
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
             HmiScreenEndpoints.RollbackAsync(
-                "whatever-screen", new RollbackRequestDto(1), store, new HmiChangeBus(), CancellationToken.None));
+                "whatever-screen", new RollbackRequestDto(1), store, new HmiChangeBus(),
+                new DefaultHttpContext(), DiscardingRecorder(), CancellationToken.None));
     }
 
     private sealed class ThrowsOperationCanceledOnGetStore : IHmiScreenStore

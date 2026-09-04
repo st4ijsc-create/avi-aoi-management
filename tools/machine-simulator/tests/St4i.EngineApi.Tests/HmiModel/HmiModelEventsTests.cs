@@ -14,6 +14,8 @@ using St4i.EngineApi.HmiModel;
 using St4i.EngineApi.Tests.Auth;
 using St4i.Hmi.Contracts;
 using Xunit;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace St4i.EngineApi.Tests.HmiModel;
 
@@ -1084,6 +1086,34 @@ public sealed class HmiModelEventsTests
     /// delivery, never a mock's call count. Before this fix round the publish sat AFTER this read, so this
     /// scenario would have left <c>recorder.Events</c> empty despite the write having genuinely
     /// committed.</summary>
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 SECURITY REVIEW MEDIUM-1 added `HttpContext` + `AuditRecorder` to both write handlers, so the
+    // tests below that call them DIRECTLY (rather than over HTTP) have to supply both. A recorder over a
+    // store that keeps nothing is right for these tests specifically: their subject is what the handler
+    // RETURNS when its post-commit read fails, and what reaches the change lane — not the audit row,
+    // which has its own tests over the real pipeline in HmiScreenEndpointsTests.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private sealed class DiscardingAuditStore : IAuditStore
+    {
+        public Task<AuditEntry> AppendAsync(AuditAppend e, CancellationToken ct) =>
+            Task.FromResult(new AuditEntry(
+                1, e.AtUtc, e.ActorUsername, e.ActorRole, e.Action, e.TargetType, e.TargetId,
+                e.OldValueJson, e.NewValueJson, e.CorrelationId, e.ClientIp, new string('0', 64), new string('0', 64)));
+
+        public Task<AuditPage> QueryAsync(
+            DateTimeOffset? from, DateTimeOffset? to, string? actor, string? action, string? target,
+            int limit, int offset, CancellationToken ct) =>
+            Task.FromResult(new AuditPage(Array.Empty<AuditEntry>(), 0, limit, offset));
+
+        public Task<AuditVerifyResult> VerifyChainAsync(CancellationToken ct) =>
+            throw new NotSupportedException("not exercised by these tests");
+    }
+
+    private static AuditRecorder DiscardingRecorder() =>
+        new(new DiscardingAuditStore(), NullLogger<AuditRecorder>.Instance);
+
     [Fact]
     public async Task A_rollback_that_commits_and_is_then_cancelled_during_its_post_commit_read_still_emits_the_event()
     {
@@ -1095,7 +1125,8 @@ public sealed class HmiModelEventsTests
         // in this codebase (RollbackAsync's own doc comment: "the caller going away is not this read's
         // failure to paper over").
         await Assert.ThrowsAsync<OperationCanceledException>(() => HmiScreenEndpoints.RollbackAsync(
-            "cancelled-during-widgetcount", new RollbackRequestDto(1), store, bus, CancellationToken.None));
+            "cancelled-during-widgetcount", new RollbackRequestDto(1), store, bus,
+            new DefaultHttpContext(), DiscardingRecorder(), CancellationToken.None));
 
         // ...but the write really committed (RollbackAsync returned 9), and the lane was told regardless.
         var e = Assert.Single(recorder.Events);
