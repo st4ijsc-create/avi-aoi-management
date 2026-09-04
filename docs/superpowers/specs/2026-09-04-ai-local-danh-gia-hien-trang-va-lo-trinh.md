@@ -1,0 +1,287 @@
+# AI Local cho lập trình viên — đánh giá hiện trạng, giới hạn, và lộ trình
+
+**Ngày:** 2026-09-04 · **Người viết:** phiên điều phối extension VSCode
+**Mục đích:** để chủ dự án nhìn thấy AI Local **làm được gì**, **đến đâu**, **cần gì tiếp**, và
+**huấn luyện thế nào** — rồi quyết định.
+
+> **Quy tắc của tài liệu này:** mọi con số đều **đo được**, kèm chỗ đo. Chỗ nào chưa đo, ghi thẳng
+> là **chưa đo**. Không có câu nào là ước lượng trình bày như sự thật.
+
+---
+
+# 1. Kết luận ngắn (đọc phần này là đủ để quyết định)
+
+**AI Local hôm nay là một trợ lý đọc-mã trong VSCode chạy được, nhưng đang phục vụ SAI KHO TRI THỨC.**
+
+Extension đã có gần đủ bộ khung của một công cụ như Claude Code: thanh bên, chat nhiều vòng, đọc
+tệp, `@`-mention, đính kèm, lịch sử, bộ nhớ, ba mức quyền, gọi plugin MCP, cửa duyệt trước khi ghi
+đĩa. **844 ca lưới xanh**, census an toàn **22/22**, chạy thật trong VSCode host (23+17 ca).
+
+Nhưng **tỉ lệ hoàn thành tác vụ đầu-cuối đo được chỉ 6/11 (≈55%)**, và gốc rễ **không phải model
+yếu** — mà là **lệch miền**:
+
+| | Extension phục vụ | Máy chủ biết |
+|---|---|---|
+| Dự án | **bất kỳ** repo đang mở trong VSCode | **chỉ** repo `avi-aoi-management` |
+| Ngôn ngữ | bất kỳ (đọc được cả `.cs`) | `.ts .tsx .js .mjs .cjs .sql` — **0 chunk C#** |
+| Miền | mã nguồn của lập trình viên | vận hành nhà máy + mã của repo này |
+
+Anh mở `machine-simulator` (C#/.NET) và hỏi "tóm tắt dự án" — **máy chủ không có một dòng nào về dự
+án đó**, nên nó trả lời bằng thứ nó có: tri thức nhà máy. Đó là lý do gốc của phần lớn câu trả lời
+sai, kể cả sự cố "từ chối quyền OEE" hôm nay.
+
+**Khuyến nghị: đừng huấn luyện model vội.** Việc đáng làm trước là **cho AI đúng ngữ cảnh** —
+rẻ hơn, nhanh hơn, và giải quyết đúng nguyên nhân đã đo được. Chi tiết ở §7-§8.
+
+---
+
+# 2. Hệ thống hiện tại — đo được
+
+## 2.1 Model và phần cứng
+
+| Thành phần | Giá trị đo được |
+|---|---|
+| Model sinh chữ | `qwen3-30b-a3b-instruct` (GGUF, llama.cpp) |
+| Model nhúng | `mxbai-embed-large` |
+| Phần cứng | RTX 5090 32GB · i7-12700KF · 48GB RAM |
+| Ràng buộc | 32GB VRAM ⇒ **một** instance 30B tại một thời điểm (đã đo ở các đợt VRAM) |
+
+## 2.2 Kho tri thức (RAG)
+
+**8.225 chunk · 173MB embeddings.** Thành phần đo được:
+
+| `sourceType` | Số chunk | Ghi chú |
+|---|---|---|
+| `doc` | 4.792 (58%) | từ `docs/` (4.593) + `apidocs/` |
+| `service` | 1.325 | mã `server/` |
+| `type` | 1.022 | kiểu TS |
+| `router` | 393 | |
+| `operational` | 193 | thẻ vận hành nhà máy |
+| `feature`/`domain`/`schema_table`/… | ~300 | |
+
+Theo thư mục gốc: `docs` 4.593 · `server` 2.432 · `knowledge` 525 · **`client` chỉ 241** ·
+`drizzle` 210 · `shared` 25.
+
+★ **Kho này là về CHÍNH repo `avi-aoi-management`**, và nghiêng nặng về **tài liệu + backend**.
+Frontend gần như vắng mặt (241/8.225 ≈ 3%).
+
+## 2.3 Đường sinh kho tri thức
+
+`scripts/ai-kb/extract-codebase-knowledge.mjs` → `kb:chunk` → `kb:embed`:
+
+- `ROOT = process.cwd()` ⇒ **quét đúng repo mà anh chạy lệnh trong đó** — pipeline **không gắn
+  cứng** vào repo này, nên **chạy được cho dự án khác** (điểm mấu chốt của §7).
+- `TARGET_DIRS = ["server","client","shared","drizzle"]` · `DOC_DIRS = ["docs","apidocs"]`
+- Đuôi nhận: `.ts .tsx .js .mjs .cjs .sql` — ★ **không có `.cs`, không có `.py`, `.java`, `.cpp`**
+- Đo xác nhận: `grep -c '\.cs"' knowledge/chunks.jsonl` ⇒ **0**
+
+## 2.4 Hạ tầng huấn luyện — **có thật**, không phải khung rỗng
+
+- `server/services/aiLlmFinetuneSidecar.ts` (**có lưới**) — LoRA fine-tune sidecar
+- `server/routers/kbStudioRouter.ts` phơi: `listCorpora` · `createCorpus` · `deleteCorpus` ·
+  `ingestDocumentJob` · `ingestUrlJob` · `corpusPreview` · **`startFinetune`**
+- Cổng: **admin/engineer + 2FA**, kỷ luật **không bao giờ tự kích hoạt bản mới**
+- ★ Docblock của chính nó đã ghi câu khung đúng: **"LoRA = phong cách, không phải sự kiện"**
+- ⚠ `ModelBuilderTab.tsx` phía client **CHƯA nối** vào endpoint này (nợ đã ghi rõ trong mã)
+
+---
+
+# 3. Extension làm được gì HÔM NAY
+
+Tất cả đều có lưới và phần lớn đã đo live.
+
+**Đọc và hiểu mã**
+- Ba tool CHỈ ĐỌC: `doc_tep` · `liet_ke` · `grep` — chạy trên **workspace đang mở**, **mọi ngôn ngữ**
+  (lưới của chính nó dùng `Calculator.cs`)
+- Vòng tác nhân nhiều lượt, trần 3 vòng, có nút Dừng cắt được thật
+- `@`-mention + nút đính kèm tệp; thanh trạng thái ngữ cảnh
+
+**Sửa mã (có cửa duyệt)**
+- Đề xuất diff → thẻ duyệt → ghi đĩa qua **đúng MỘT điểm ghi** (`apBanVa.ts`)
+- Ba mức quyền: **Chỉ đọc** · **Hỏi trước khi ghi** (mặc định) · **Tự ghi trong workspace**
+- Cmd+K sửa đoạn đang bôi đen
+
+**Hạ tầng**
+- Thanh bên (cả `activitybar` lẫn `secondarySidebar` như Claude Code)
+- Đăng nhập một lần, tự khôi phục phiên
+- Lịch sử hội thoại bền theo dự án; bộ nhớ dài hạn xem/xoá được
+- **MCP client**: gọi được plugin ngoài (đã bắt tay thật với `npx @modelcontextprotocol/server-everything`, 13 tool)
+
+**Hàng rào an toàn — chặn bằng KIẾN TRÚC, không bằng bộ lọc**
+- `.env`, khoá riêng, `.git/**` **không rời máy** qua bất kỳ đường nào (đã đo trên đĩa thật)
+- Kết quả tool ngoài và nội dung bộ nhớ **không bao giờ được quét tìm lệnh** ⇒ không tiêm lệnh được
+- `chi_doc` chặn tại **điểm ghi**, không phải ẩn nút; `tu_ghi` chỉ bỏ bước **hỏi**, không bỏ **hàng rào**
+- Tệp EOL lẫn lộn **fail-closed** (VSCode chuẩn hoá cả tệp lúc `save()`)
+
+---
+
+# 4. Làm được ĐẾN ĐÂU — số đo thật
+
+| Chỉ số | Giá trị | Nguồn |
+|---|---|---|
+| **Hoàn thành tác vụ đầu-cuối** | **6/11 (≈55%)** | H4, N=11, mẫu độc lập |
+| Tuân thủ giao thức ĐỌC | **5/6** | H4/H5/H6 |
+| Gọi tool MCP (`mcp_goi`) | **2/3 đúng + 1/3 gần đúng** | H6 |
+| Đề xuất nhớ (`de_xuat_nho`) | **0/5** | H4, H5, H6 — **chưa từng chạy** |
+| Rò rác giao thức ra giao diện | **0/42** | vòng PDCA 2 |
+| Tên tool lạ trong câu trả lời | **0/57** | vòng PDCA 7 |
+| Thời gian mỗi lượt (trung vị) | **3.792ms** (trước: 8.623ms) | vòng PDCA 6 |
+| Lưới đơn vị / census / host thật | **844 / 22-22 / 23+17** | hôm nay |
+
+★ Lịch sử con số đầu-cuối: đường cơ sở thật **1/11 (9%)** → vá rò giao thức **5/11** → vá tác vụ
+viết mã **7/11** → đo lại N=11 với mẫu độc lập **6/11**. Dao động 6↔7 nằm trong nhiễu của model
+(hai tác vụ đo được là **DAO ĐỘNG**, không ổn định).
+
+---
+
+# 5. Cần phải làm gì tiếp — theo thứ tự giá trị
+
+## 5.1 ★★★ Lệch miền tri thức (nguyên nhân gốc, chưa xử)
+
+**Triệu chứng đã gặp:** hỏi "tóm tắt dự án đang mở" ⇒ trả lời về quyền OEE nhà máy.
+
+**Bốn lần cùng một họ lỗi đã đo được** — giáo cụ hoặc mã của người dùng làm nhiễu bộ định tuyến
+phía máy chủ:
+1. `intentClassifier` hiểu giáo cụ thành câu hỏi vận hành ⇒ chạy tool nhà máy sai
+2. `boDauTiengViet` gộp **"kỹ"** và **"kỳ"** thành `"ky"` ⇒ trúng trigger `get_ng_compare`
+3. `"Liệt kê một thư mục:"` trong giáo cụ khớp `LIST_INTENT_RE` ⇒ ép **mọi** câu VSCode thành `intent:"list"`
+4. **Hôm nay:** `performance` / `quality` / `yield` là trigger của công cụ OEE — mà đó là **từ vựng
+   lập trình bình thường**. Một dòng `// improve performance later` trong mã anh là đủ kích hoạt.
+   ⚠ **Đã vá** (`90285e7a`) nhưng **chưa build lại `dist/index.js` trên cổng 3003** ⇒ anh vẫn gặp lỗi.
+
+**Ba rủi ro cùng loại đã ghi, chưa vá** (chưa có tái hiện thật): trigger `availability` ·
+`bottleneck` trần trong `LINE_BALANCE_INTENT` · va chạm `"yield trend"` với `get_defect_trend`.
+
+## 5.2 ★★ Kho tri thức không biết dự án của người dùng
+
+Anh mở `machine-simulator` (C#) — KB có **0 chunk C#**. AI chỉ biết dự án đó qua **ba tool đọc**
+của extension, tức phải đọc từng tệp một trong trần 3 vòng. Với một solution lớn, đó là **không đủ
+để "tóm tắt tổng quan"**.
+
+## 5.3 ★★ `de_xuat_nho` chưa từng chạy (0/5)
+
+Đã thử hai đường (dạy đầu prompt, nhắc cuối prompt) — **ablation cho thấy tác dụng bằng không**.
+Nghi giới hạn **tầng chú ý của model**, không phải định tuyến. **Chưa nên vá mò tiếp.**
+
+## 5.4 ★ Nợ cũ còn mở
+
+Cmd+K hiện thẻ duyệt **1/5** (nguyên nhân mới: va chạm `"lời"`/`"lỗi"` sau bỏ dấu ⇒ ép
+`intent:"troubleshoot"`) · chưa tạo được tệp mới · tệp EOL lẫn lộn bị từ chối theo thiết kế.
+
+---
+
+# 6. Huấn luyện thế nào — và **khi nào KHÔNG nên huấn luyện**
+
+## 6.1 Ba tầng "dạy", từ rẻ tới đắt
+
+| Tầng | Dạy được gì | Chi phí | Đảo ngược |
+|---|---|---|---|
+| **1. Ngữ cảnh / prompt** | quy tắc, giao thức, định dạng | phút | tức thì |
+| **2. RAG (kho tri thức)** | **SỰ KIỆN** về mã, tài liệu, quyết định | giờ | xoá corpus |
+| **3. LoRA fine-tune** | **PHONG CÁCH**, giọng văn, thói quen định dạng | ngày + VRAM | đổi bản model |
+
+★★★ **Nguyên tắc đã ghi sẵn trong mã dự án này:** *"LoRA = phong cách, không phải sự kiện."*
+Fine-tune **không** làm model biết mã của anh. Muốn nó biết mã ⇒ **RAG**, không phải LoRA.
+
+## 6.2 Vì sao **chưa** nên fine-tune bây giờ
+
+- Vấn đề đo được là **lệch miền** và **định tuyến sai** — cả hai **không** phải thứ LoRA sửa được.
+- 32GB VRAM đang đủ cho **một** instance 30B; huấn luyện sẽ tranh chấp tài nguyên với chính dịch vụ
+  đang chạy.
+- Chưa có **bộ đánh giá** để biết bản fine-tune tốt hơn hay tệ hơn. Huấn luyện mà không có thước đo
+  là đổi một hệ thống đo được lấy một hệ thống không đo được.
+- `ModelBuilderTab.tsx` **chưa nối** vào `startFinetune` ⇒ còn việc kỹ thuật trước khi bấm được.
+
+## 6.3 Khi nào **nên** fine-tune
+
+Khi cả ba điều sau đúng: (a) RAG đã đúng miền và tỉ lệ đầu-cuối đã ổn định trên **80%**;
+(b) vấn đề còn lại là **phong cách** (giọng văn, định dạng, thói quen tiếng Việt) chứ không phải
+kiến thức; (c) đã có bộ đánh giá ≥30 tác vụ để so bản cũ/bản mới.
+
+---
+
+# 7. Tài liệu huấn luyện lấy từ đâu
+
+## 7.1 Nguồn đã có sẵn, chỉ cần dùng đúng
+
+| Nguồn | Quy mô | Trạng thái |
+|---|---|---|
+| `docs/` + `apidocs/` của repo này | 4.792 chunk | ✅ đã trong KB |
+| Mã `server/`, `shared/`, `drizzle/` | 2.432 chunk | ✅ đã trong KB |
+| Mã `client/` | 241 chunk | ⚠ **thiếu nặng** (3%) |
+| Thẻ vận hành | 193 chunk | ✅ |
+| **Mã dự án KHÁC** (machine-simulator, C#) | **0** | ❌ **chưa có** |
+| KB Studio: `ingestDocumentJob` / `ingestUrlJob` | — | ✅ có sẵn, ít dùng |
+
+## 7.2 ★★★ Điểm mấu chốt: pipeline đã **repo-agnostic**
+
+`extract-codebase-knowledge.mjs` dùng `ROOT = process.cwd()`. Nghĩa là **chạy nó trong thư mục dự
+án nào thì nó học dự án đó** — không cần viết lại kiến trúc.
+
+Việc cần làm chỉ là **hai thứ nhỏ**:
+1. Thêm đuôi tệp: `.cs`, và các ngôn ngữ khác anh dùng
+2. Cho phép **nhiều corpus** (KB Studio đã có `createCorpus`) và chọn corpus theo workspace đang mở
+
+## 7.3 Nguồn nên bổ sung
+
+- **Tài liệu nội bộ** đã có trong `docs/handoff`, `docs/plans` của từng dự án
+- **Lịch sử quyết định**: các tệp `owner-decisions*.md` anh đang có trong machine-simulator
+- **Tài liệu chuẩn ngành** (ISA-101, OPC UA…) qua `ingestUrlJob` — ⚠ nhà máy **không có internet**,
+  nên phải tải về máy dev rồi nạp bằng `ingestDocumentJob`
+
+---
+
+# 8. Giải pháp tốt nhất — đề xuất theo thứ tự
+
+## Việc 0 — làm ngay hôm nay (phút)
+
+★ **Build lại `dist/index.js` và khởi động lại cổng 3003** để bản vá `90285e7a` có hiệu lực.
+Không làm thì anh vẫn gặp đúng lỗi từ chối quyền OEE. **Cần anh cho phép** vì đó là tiến trình
+đang phục vụ phiên của anh.
+
+## Việc 1 — cho AI biết dự án đang mở (giá trị cao nhất, chi phí trung bình)
+
+1. Thêm `.cs` (và ngôn ngữ khác) vào `SOURCE_EXT`
+2. Chạy `kb:extract` + `kb:chunk` + `kb:embed` **trong thư mục `machine-simulator`** ⇒ corpus riêng
+3. Extension gửi kèm **định danh workspace**; máy chủ chọn **đúng corpus**, và **không có corpus
+   thì không ghép KB** thay vì ghép nhầm kho nhà máy
+
+★ Đây là thứ trực tiếp sửa "hỏi về dự án, trả lời về OEE".
+
+## Việc 2 — tách hẳn hai miền (giá trị cao, chi phí thấp)
+
+Với `route:"vscode"`: **không** dùng bộ trigger công cụ nhà máy, **không** ghép KB vận hành khi độ
+liên quan dưới ngưỡng. Bốn sự cố ở §5.1 đều là cùng một nguyên nhân: **hai miền dùng chung một bộ
+định tuyến**. Vá từng trigger là **chữa triệu chứng**; tách miền là **chữa gốc**.
+
+## Việc 3 — dựng bộ đánh giá trước khi nghĩ tới huấn luyện
+
+≥30 tác vụ thật trên dự án thật, chấm theo **kết cục người dùng nhận được**, chạy được lặp lại.
+Không có thước này thì mọi cải tiến sau đều là lời khai.
+
+## Việc 4 — chỉ khi Việc 1-3 xong: cân nhắc LoRA cho **phong cách**
+
+Và chỉ khi đo được rằng phần còn thiếu là phong cách, không phải kiến thức.
+
+---
+
+# 9. Anh cần quyết định
+
+1. **Cho phép khởi động lại cổng 3003 bây giờ?** (Việc 0 — bản vá hôm nay chưa ăn nếu không)
+2. **Ưu tiên Việc 1 (nạp dự án của anh vào KB) hay Việc 2 (tách hai miền) trước?**
+   → Khuyến nghị của tôi: **Việc 2 trước** (rẻ hơn, sửa gốc bốn sự cố đã đo), rồi Việc 1.
+3. **Những dự án nào cần AI Local biết?** Cho tôi danh sách thư mục, tôi dựng corpus.
+4. **Có muốn tôi dựng bộ đánh giá 30 tác vụ (Việc 3) không?** — nó là điều kiện cần trước khi bàn
+   chuyện huấn luyện.
+
+---
+
+# 10. Phần CHƯA đo — nói thẳng
+
+- **Chưa nghiệm thu bằng mắt người dùng** cho Đợt G/H (đã cài, chờ anh dùng và phản hồi).
+- **Chưa đo** AI Local trên một dự án C# thật (chỉ có lưới với một tệp `Calculator.cs` tổng hợp).
+- **Chưa đo** chất lượng RAG sau khi nạp corpus mới — toàn bộ §8 Việc 1 là **đề xuất chưa kiểm**.
+- **Chưa biết** trần thực tế của `qwen3-30b` với ngữ cảnh mã lớn; trần 3 vòng đọc là **chọn**, chưa
+  phải kết quả tối ưu hoá.
+- Server đang chạy với `KB_QA_CACHE_TTL_MS` **không mặc định** ở một tiến trình (dùng cho đo) —
+  cần trả lại trước khi kết luận về hiệu năng thật.
