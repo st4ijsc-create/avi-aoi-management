@@ -360,6 +360,67 @@ export const en: Dictionary = {
     // two unnamed buttons. See `vi.ts` at the same keys.
     selectWidget: (vars: Vars) => `Select widget ${vars.widgetId}`,
     resizeWidget: (vars: Vars) => `Resize widget ${vars.widgetId}`,
+    // WS-HMI-2 Task 10 — the property panel and the tag picker. See vi.ts at the same keys.
+    panel: {
+      title: "Widget properties",
+      empty: "No widget selected — click a widget on the canvas to open its properties.",
+      idLabel: "Widget id",
+      idReadOnly: "The id is the address every edit uses to name this widget, so the panel does not change it.",
+      kindLabel: "Widget kind",
+      componentLabel: "Component",
+      componentNone: "(not declared)",
+      componentReadOnly: "The component field has no edit of its own at this task.",
+      rectLabel: "Grid cell",
+      rectCol: "Column",
+      rectRow: "Row",
+      rectColSpan: "Width",
+      rectRowSpan: "Height",
+      bindingsLabel: "Data bindings",
+      bindingsEmpty: "This widget declares no bindings yet.",
+      bindingPick: (vars: Vars) => `Pick a tag for binding "${vars.name}"`,
+      bindingRemove: (vars: Vars) => `Remove binding "${vars.name}"`,
+      bindingNewNameLabel: "New binding name",
+      bindingAdd: "Add binding",
+      propsLabel: "Display properties",
+      propsEmpty: "This widget declares no props yet.",
+      propReadOnly:
+        "The panel edits top-level string and number props only. Nested props, arrays, booleans and props that share a widget field's name are shown read-only.",
+      policyLabel: "Policy action",
+      policyChoose: "— choose an action —",
+      policyRequired: (vars: Vars) =>
+        `A "${vars.kind}" is a WRITE path, so the frozen schema requires a policyAction on it (invariant §5: no write path without a gate). The kind is not changed until an action is chosen.`,
+      policyUnrecognised: (vars: Vars) =>
+        `The document declares policyAction ${vars.value}, which is NOT in the screen contract's vocabulary. The panel does not accept it as a valid choice — pick an action below.`,
+      policyNotResolved:
+        "The panel only CHOOSES the action the document declares; it cannot ask the PolicyEngine whether that action is permitted. This is not a claim about permission.",
+      refusal: (vars: Vars) => `Edit refused (${vars.code}): ${vars.message}`,
+    },
+    tagPicker: {
+      title: "Pick a tag",
+      forBinding: (vars: Vars) => `filling in binding "${vars.name}"`,
+      close: "Close the tag picker",
+      machineLabel: "Machine",
+      machineChoose: "— choose a machine —",
+      noMachine: "Choose a machine to browse its tag namespace. A screen document is not bound to any machine.",
+      loading: "Reading the tag namespace…",
+      failed: "The tag namespace for this machine could not be read.",
+      empty: (vars: Vars) => `Machine ${vars.machine} has declared no tags yet.`,
+      backedYes: "driver-backed",
+      backedNo: "no driver",
+      backedLabel: "isBackedByDriver",
+      insert: (vars: Vars) => `Insert ${vars.path}`,
+      accessLabel: "access",
+      declaredAction: (vars: Vars) => `declares policyAction ${vars.action}`,
+      unrecognisedAction: (vars: Vars) => `declares policyAction ${vars.value} — OUTSIDE the contract's vocabulary`,
+      componentSection: (vars: Vars) => `Indirect paths through component "${vars.component}"`,
+      componentNoModel:
+        "This machine's component tree has not been read, so its component tags cannot be listed. Choose a machine that declares components above.",
+      componentUnknown: (vars: Vars) =>
+        `The chosen machine declares no component named "${vars.component}". Choose another machine, or fix this widget's component field.`,
+      componentNoneOnWidget: "This widget declares no component, so there is no {component}/… path to insert.",
+      componentNote:
+        "A {component}/… path is substituted with the component's tagPrefix by the renderer, but no value source answers a composed path yet, so the cell shows its named placeholder. That is a missing adapter, not a missing wire.",
+    },
     loading: {
       title: "Loading the screen document…",
       description: "Reading the document from GET /v1/screens.",

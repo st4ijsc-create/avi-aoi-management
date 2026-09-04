@@ -143,6 +143,13 @@ const ACCEPTED_EDITS = {
   },
   remove: { kind: "remove", widgetId: "kind-label" },
   reorder: { kind: "reorder", widgetId: "probe-a", toIndex: 5 },
+  // WS-HMI-2 Task 10 — ba phép sửa MỚI, thêm vào ĐÂY chứ không chỉ vào corpus riêng của chúng: mọi
+  // mệnh đề chung phía trên (không đột biến, giữ hợp lệ theo schema, CHỈ ghi vào doc.widgets) phải
+  // đúng cho tầm với mới y như cho năm phép cũ. Nếu chỉ thêm corpus riêng, ba phép này sẽ nằm ngoài
+  // đúng những bài đo phạm vi mà báo cáo Task 7 nêu là điều kiện để mở rộng tầm với.
+  "set-kind": { kind: "set-kind", widgetId: "kind-gauge", widgetKind: "trend" },
+  "set-policy-action": { kind: "set-policy-action", widgetId: "kind-command-button", policyAction: "machine.setpoint" },
+  "set-binding": { kind: "set-binding", widgetId: "kind-sheet", name: "value", path: "cycles" },
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -994,6 +1001,376 @@ test("một edit.kind KHÔNG NẰM TRONG EditorEdit bị TỪ CHỐI kèm tên n
   assert.ok(next.lastRefusal.message.includes("resize"), `lý do không nêu kind lạ: ${next.lastRefusal.message}`)
 })
 
+// ═════════════════════════════════════════════════════════════════════════════════════════════════
+// WS-HMI-2 TASK 10 — TẦM VỚI MỚI: set-kind, set-policy-action, set-binding
+//
+// Báo cáo Task 7 nêu ĐÍCH DANH điều kiện để mở rộng tầm với của bộ từ vựng sửa: tầm với mới phải có
+// GUARD RIÊNG **VÀ** THÀNH VIÊN RIÊNG trong ngữ liệu đối chiếu, TRONG CÙNG MỘT COMMIT. Phần này là
+// nửa thứ hai của điều kiện ấy.
+//
+// 🔴 PHÍA THỨ HAI CỦA PHÉP ĐỐI CHIẾU LÀ `hypotheticalDoc` NGAY DƯỚI ĐÂY, KHÔNG PHẢI `applyEdit`.
+// Hai corpus của Task 7 đối chiếu guard viết tay với `validate.mjs` trên MỘT MẢNH (một widget, một
+// rect). Ba phép sửa mới không nhận vào một mảnh — chúng BIẾN ĐỔI một widget đã có — nên phía thứ
+// hai phải tự dựng lại tài liệu KẾT QUẢ mà không hỏi module đang bị đo. `hypotheticalDoc` làm đúng
+// thế: nó đọc `edit` và `doc`, và không import gì từ `editorState.ts`. Nếu một ngày nào đó nó gọi
+// `applyEdit`, phép đối chiếu trở thành `x === x` — đúng khuyết tật "một phép kiểm không đo gì" mà
+// dòng công việc này đã bị bắt chín lần.
+//
+// 🔴 CÁI NÀY KHÔNG ĐO: rằng có một PANEL nào gọi ba phép sửa này, rằng panel ấy không có ô nhập tự do
+// cho `policyAction`, hay rằng đổi binding cập nhật canvas. Đó là mệnh đề về DOM và nằm ở
+// `tests/39-editor-properties.spec.ts` — `.tsx` không `import()` được dưới `node --test`.
+// ═════════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Tài liệu mà một `edit` SẼ tạo ra, dựng ĐỘC LẬP với `editorState.ts`.
+ *
+ * Cố ý viết theo cách "ngây thơ": trải object, gán trường, không guard nào. Đó chính là điều làm nó
+ * hữu ích — nó nói "nếu cứ thế mà ghi thì tài liệu sẽ ra sao", rồi `validate.mjs` trả lời tài liệu ấy
+ * có hợp lệ không, và bài kiểm khẳng định `applyEdit` NHẬN đúng khi và chỉ khi câu trả lời là CÓ.
+ */
+function hypotheticalDoc(doc, edit) {
+  const widgets = doc.widgets.map((w) => {
+    if (w.id !== edit.widgetId) return w
+    if (edit.kind === "set-kind") {
+      const next = { ...w, kind: edit.widgetKind }
+      if (edit.policyAction !== undefined) next.policyAction = edit.policyAction
+      return next
+    }
+    if (edit.kind === "set-policy-action") return { ...w, policyAction: edit.policyAction }
+    if (edit.kind === "set-binding") {
+      const bindings = { ...(w.bindings ?? {}) }
+      if (edit.path === undefined) delete bindings[edit.name]
+      else bindings[edit.name] = edit.path
+      return { ...w, bindings }
+    }
+    throw new Error(`hypotheticalDoc không biết edit.kind="${edit.kind}" — phép đối chiếu đã hỏng, không phải đã sạch`)
+  })
+  return { ...doc, widgets }
+}
+
+test("sàn cho phép đối chiếu MỚI: hypotheticalDoc THẬT SỰ dựng lại tài liệu, và nó KHÁC tài liệu nền", () => {
+  // Một phía thứ hai trả về nguyên tài liệu cũ sẽ làm mọi bài dưới đây xanh mà không đo gì.
+  const doc = demoDoc()
+  const changed = hypotheticalDoc(doc, { kind: "set-kind", widgetId: "kind-label", widgetKind: "sheet" })
+  assert.notDeepEqual(changed, doc, "hypotheticalDoc trả về tài liệu KHÔNG đổi — phía thứ hai của phép đối chiếu đã chết")
+  assert.equal(widgetOf(changed, "kind-label").kind, "sheet")
+  assert.equal(widgetOf(doc, "kind-label").kind, "label", "hypotheticalDoc đã ĐỘT BIẾN tài liệu đầu vào")
+  assert.throws(
+    () => hypotheticalDoc(doc, { kind: "move", widgetId: "probe-a" }),
+    /không biết/,
+    "hypotheticalDoc im lặng bỏ qua một edit.kind nó không dựng — một corpus mở rộng sau này sẽ xanh mà không đo gì"
+  )
+})
+
+// ── corpus ĐỐI CHIẾU: set-kind ───────────────────────────────────────────────────────────────────
+//
+// Không thành viên nào là no-op (mỗi thành viên đổi `kind` hoặc `policyAction` so với tài liệu nền),
+// nên luật "edit không đổi gì thì từ chối" không can thiệp vào phép đối chiếu.
+const SET_KIND_CORPUS = [
+  ["kind thường sang kind thường", { widgetId: "kind-label", widgetKind: "sheet" }, "invalid-widget"],
+  ["readout sang gauge", { widgetId: "direct-cycles", widgetKind: "gauge" }, "invalid-widget"],
+  [
+    "🔴 §5: sang setpoint-input KHÔNG kèm policyAction",
+    { widgetId: "kind-label", widgetKind: "setpoint-input" },
+    "policy-action-required",
+  ],
+  [
+    "🔴 §5: sang command-button KHÔNG kèm policyAction",
+    { widgetId: "kind-label", widgetKind: "command-button" },
+    "policy-action-required",
+  ],
+  [
+    "🔴 §5: sang setpoint-input KÈM policyAction hợp lệ",
+    { widgetId: "kind-label", widgetKind: "setpoint-input", policyAction: "machine.setpoint" },
+    "invalid-widget",
+  ],
+  [
+    "🔴 §5: sang command-button KÈM policyAction hợp lệ",
+    { widgetId: "kind-label", widgetKind: "command-button", policyAction: "machine.command" },
+    "invalid-widget",
+  ],
+  [
+    "🔴 §5: sang command-button trên widget ĐÃ CÓ sẵn policyAction (edit không mang action nào)",
+    { widgetId: "kind-setpoint-input", widgetKind: "command-button" },
+    "invalid-widget",
+  ],
+  [
+    "policyAction NGOÀI enum đóng băng (chuỗi tự do)",
+    { widgetId: "kind-label", widgetKind: "command-button", policyAction: "machine.write" },
+    "invalid-widget",
+  ],
+  [
+    "policyAction sai HOA/thường",
+    { widgetId: "kind-label", widgetKind: "command-button", policyAction: "Machine.Command" },
+    "invalid-widget",
+  ],
+  [
+    "policyAction là chuỗi RỖNG — 'có ghi gì đó' không phải là được cấp quyền",
+    { widgetId: "kind-label", widgetKind: "command-button", policyAction: "" },
+    "invalid-widget",
+  ],
+  [
+    "policyAction chỉ-khoảng-trắng — cùng lớp với dòng trên, và là đúng khuyết tật MEDIUM-1 phía .NET",
+    { widgetId: "kind-label", widgetKind: "command-button", policyAction: "  " },
+    "invalid-widget",
+  ],
+  ["policyAction KHÔNG phải chuỗi", { widgetId: "kind-label", widgetKind: "sheet", policyAction: 7 }, "invalid-widget"],
+  ["kind ngoài enum đóng băng", { widgetId: "kind-label", widgetKind: "no-such-kind" }, "invalid-widget"],
+  ["kind KHÔNG phải chuỗi", { widgetId: "kind-label", widgetKind: 42 }, "invalid-widget"],
+  ["kind là null", { widgetId: "kind-label", widgetKind: null }, "invalid-widget"],
+  [
+    "policyAction hợp lệ trên một kind KHÔNG bắt buộc nó (schema cho phép — guard không được nghiêm hơn)",
+    { widgetId: "kind-label", widgetKind: "readout", policyAction: "machine.command" },
+    "invalid-widget",
+  ],
+]
+
+for (const [why, fields, expectedCode] of SET_KIND_CORPUS) {
+  test(`set-kind · ${why}: applyEdit và validate.mjs ĐỒNG Ý về tài liệu KẾT QUẢ`, () => {
+    const edit = { kind: "set-kind", ...fields }
+    const state = freshState()
+    const would = hypotheticalDoc(state.doc, edit)
+    const errs = docErrors(would)
+    const schemaAccepts = errs.length === 0
+
+    const next = applyEdit(state, edit)
+    const editorAccepts = next.lastRefusal === undefined
+
+    assert.equal(
+      editorAccepts,
+      schemaAccepts,
+      schemaAccepts
+        ? `schema đóng băng NHẬN tài liệu kết quả, applyEdit TỪ CHỐI: ${next.lastRefusal?.code} — ${next.lastRefusal?.message}`
+        : `schema đóng băng TỪ CHỐI tài liệu kết quả (${errs.join("; ")}), applyEdit lại NHẬN`
+    )
+
+    if (schemaAccepts) {
+      assert.deepEqual(next.doc, would, "applyEdit nhận edit nhưng viết ra tài liệu KHÁC với tài liệu phía thứ hai dựng")
+      assert.deepEqual(docErrors(next.doc), [])
+    } else {
+      assertRefusedUnchanged(state, next, `set-kind · ${why}`, expectedCode)
+    }
+  })
+}
+
+// ── corpus ĐỐI CHIẾU: set-policy-action ──────────────────────────────────────────────────────────
+const SET_POLICY_CORPUS = [
+  ["đổi action trên một command-button", { widgetId: "kind-command-button", policyAction: "machine.setpoint" }],
+  ["đổi action trên một setpoint-input", { widgetId: "kind-setpoint-input", policyAction: "machine.command" }],
+  ["đặt action lên một kind KHÔNG bắt buộc nó (schema cho phép)", { widgetId: "kind-label", policyAction: "machine.command" }],
+  ["action ngoài enum", { widgetId: "kind-command-button", policyAction: "machine.command.invoke" }],
+  ["action RỖNG", { widgetId: "kind-command-button", policyAction: "" }],
+  ["action chỉ-khoảng-trắng", { widgetId: "kind-command-button", policyAction: " " }],
+  ["action sai HOA/thường", { widgetId: "kind-command-button", policyAction: "MACHINE.COMMAND" }],
+  ["action KHÔNG phải chuỗi", { widgetId: "kind-command-button", policyAction: 1 }],
+  ["action là null", { widgetId: "kind-command-button", policyAction: null }],
+]
+
+for (const [why, fields] of SET_POLICY_CORPUS) {
+  test(`set-policy-action · ${why}: applyEdit và validate.mjs ĐỒNG Ý về tài liệu KẾT QUẢ`, () => {
+    const edit = { kind: "set-policy-action", ...fields }
+    const state = freshState()
+    const would = hypotheticalDoc(state.doc, edit)
+    const errs = docErrors(would)
+    const schemaAccepts = errs.length === 0
+
+    const next = applyEdit(state, edit)
+    const editorAccepts = next.lastRefusal === undefined
+
+    assert.equal(
+      editorAccepts,
+      schemaAccepts,
+      schemaAccepts
+        ? `schema đóng băng NHẬN tài liệu kết quả, applyEdit TỪ CHỐI: ${next.lastRefusal?.code} — ${next.lastRefusal?.message}`
+        : `schema đóng băng TỪ CHỐI tài liệu kết quả (${errs.join("; ")}), applyEdit lại NHẬN`
+    )
+
+    if (schemaAccepts) {
+      assert.deepEqual(next.doc, would)
+    } else {
+      assertRefusedUnchanged(state, next, `set-policy-action · ${why}`, "invalid-widget")
+    }
+  })
+}
+
+// ── corpus ĐỐI CHIẾU: set-binding ────────────────────────────────────────────────────────────────
+//
+// `path: undefined` (xoá) KHÔNG có mặt ở đây với một widget CHƯA CÓ bindings: trường hợp ấy là một
+// no-op có chủ ý và có bài riêng ngay dưới corpus, vì luật no-op sẽ cắt trước phép đối chiếu.
+const SET_BINDING_CORPUS = [
+  ["ghi đè một binding đã có", { widgetId: "direct-cycles", name: "value", path: "passRate" }],
+  ["thêm một binding MỚI vào widget đã có bindings", { widgetId: "direct-cycles", name: "sub", path: "statusText" }],
+  ["thêm binding đầu tiên vào widget CHƯA CÓ bindings nào", { widgetId: "kind-sheet", name: "value", path: "cycles" }],
+  ["XOÁ một binding đã có", { widgetId: "direct-cycles", name: "value" }],
+  ["XOÁ binding CUỐI CÙNG — bindings còn lại là {} và schema NHẬN {}", { widgetId: "kind-log", name: "message" }],
+  ["đường dẫn tổng hợp {component}/leaf", { widgetId: "probe-a", name: "sub", path: "{component}/torque" }],
+  ["đường dẫn RỖNG (schema chỉ đòi 'là chuỗi', nên editor không được nghiêm hơn)", { widgetId: "direct-cycles", name: "value", path: "" }],
+  ["giá trị KHÔNG phải chuỗi", { widgetId: "direct-cycles", name: "value", path: 42 }],
+  ["giá trị là null", { widgetId: "direct-cycles", name: "value", path: null }],
+  ["giá trị là object", { widgetId: "direct-cycles", name: "value", path: { a: 1 } }],
+]
+
+for (const [why, fields] of SET_BINDING_CORPUS) {
+  test(`set-binding · ${why}: applyEdit và validate.mjs ĐỒNG Ý về tài liệu KẾT QUẢ`, () => {
+    const edit = { kind: "set-binding", ...fields }
+    const state = freshState()
+    const would = hypotheticalDoc(state.doc, edit)
+    const errs = docErrors(would)
+    const schemaAccepts = errs.length === 0
+
+    const next = applyEdit(state, edit)
+    const editorAccepts = next.lastRefusal === undefined
+
+    assert.equal(
+      editorAccepts,
+      schemaAccepts,
+      schemaAccepts
+        ? `schema đóng băng NHẬN tài liệu kết quả, applyEdit TỪ CHỐI: ${next.lastRefusal?.code} — ${next.lastRefusal?.message}`
+        : `schema đóng băng TỪ CHỐI tài liệu kết quả (${errs.join("; ")}), applyEdit lại NHẬN`
+    )
+
+    if (schemaAccepts) {
+      assert.deepEqual(next.doc, would, "applyEdit nhận edit nhưng viết ra tài liệu KHÁC với tài liệu phía thứ hai dựng")
+    } else {
+      assertRefusedUnchanged(state, next, `set-binding · ${why}`, "invalid-widget")
+    }
+  })
+}
+
+// ── §5, nói thẳng ra chứ không chỉ nằm trong corpus ──────────────────────────────────────────────
+
+for (const writeKind of ["setpoint-input", "command-button"]) {
+  test(`🔴 §5: KHÔNG có đường nào từ set-kind tạo ra một "${writeKind}" thiếu policyAction — và schema đóng băng cũng TỪ CHỐI đúng tài liệu ấy (đo, không suy)`, () => {
+    const state = freshState()
+    const edit = { kind: "set-kind", widgetId: "kind-label", widgetKind: writeKind }
+
+    // Phía SCHEMA: tài liệu mà edit ấy sẽ tạo ra là KHÔNG hợp lệ. Nếu một ngày schema bỏ luật
+    // allOf/if/then, bài này đỏ ở ĐÂY — trước khi ai kịp kết luận editor mới là chỗ sai.
+    const errs = docErrors(hypotheticalDoc(state.doc, edit))
+    assert.notDeepEqual(errs, [], `schema đóng băng GIỜ CHO PHÉP một "${writeKind}" không policyAction — luật §5 đã biến mất khỏi schema`)
+
+    // Phía EDITOR: từ chối, bằng mã RIÊNG mà panel switch được, và tài liệu KHÔNG đổi.
+    const next = applyEdit(state, edit)
+    assertRefusedUnchanged(state, next, `set-kind → ${writeKind} không action`, "policy-action-required")
+    assert.ok(
+      next.lastRefusal.message.includes("machine.setpoint") && next.lastRefusal.message.includes("machine.command"),
+      `lý do không NÊU RA hai giá trị hợp lệ, nên panel không có gì để hiển thị: ${next.lastRefusal.message}`
+    )
+    assert.equal(widgetOf(next.doc, "kind-label").kind, "label", "kind đã bị đổi dù edit bị từ chối")
+
+    // ...và cùng một edit, kèm một action HỢP LỆ, được NHẬN. Không có bài này thì "từ chối" ở trên
+    // xanh được bằng một guard từ chối MỌI set-kind.
+    const action = writeKind === "setpoint-input" ? "machine.setpoint" : "machine.command"
+    const ok = applyEdit(state, { ...edit, policyAction: action })
+    assertAccepted(ok, `set-kind → ${writeKind} kèm ${action}`)
+    assert.equal(widgetOf(ok.doc, "kind-label").kind, writeKind)
+    assert.equal(widgetOf(ok.doc, "kind-label").policyAction, action)
+    assert.deepEqual(docErrors(ok.doc), [])
+  })
+}
+
+test("🔴 §5: một widget ghi ĐÃ CÓ gate không mất gate qua bất kỳ phép sửa nào trong bộ từ vựng — không có edit nào XOÁ policyAction", () => {
+  // Không phải một lời hứa: đo bằng cách chạy MỌI hình dạng edit có thể nhắm vào trường ấy.
+  const state = freshState()
+  const attempts = [
+    ["set-prop path 'policyAction'", { kind: "set-prop", widgetId: "kind-command-button", path: "policyAction", value: undefined }],
+    ["set-prop path 'policyAction.x'", { kind: "set-prop", widgetId: "kind-command-button", path: "policyAction.x", value: 1 }],
+    ["set-binding tên 'policyAction'", { kind: "set-binding", widgetId: "kind-command-button", name: "policyAction", path: "" }],
+    ["set-kind giữ nguyên kind, action rỗng", { kind: "set-kind", widgetId: "kind-command-button", widgetKind: "command-button", policyAction: "" }],
+    ["set-policy-action rỗng", { kind: "set-policy-action", widgetId: "kind-command-button", policyAction: "" }],
+    ["set-policy-action undefined", { kind: "set-policy-action", widgetId: "kind-command-button", policyAction: undefined }],
+  ]
+  for (const [why, edit] of attempts) {
+    const next = applyEdit(state, edit)
+    const widget = widgetOf(next.doc, "kind-command-button")
+    assert.equal(
+      widget.policyAction,
+      "machine.command",
+      `"${why}" đã lấy mất gate của một widget ghi — bây giờ nó là ${JSON.stringify(widget.policyAction)}`
+    )
+    assert.equal(widget.kind, "command-button", `"${why}" đã đổi kind`)
+  }
+  // Bài chỉ có nghĩa nếu widget nền THẬT SỰ là một widget ghi có gate.
+  const base = widgetOf(state.doc, "kind-command-button")
+  assert.equal(base.kind, "command-button")
+  assert.equal(base.policyAction, "machine.command")
+})
+
+// ── chỗ NGHIÊM HƠN thứ TƯ: tên binding rỗng (đo CẢ HAI phía, như (1) và (2)) ─────────────────────
+
+test("set-binding với tên RỖNG bị TỪ CHỐI — nghiêm hơn schema CÓ CHỦ Ý, và schema thật sự CHO PHÉP khoá rỗng (đo, không suy)", () => {
+  // Phía SCHEMA: một bindings có khoá rỗng là HỢP LỆ. Nếu một ngày schema thêm ràng buộc lên KHOÁ,
+  // bài này đỏ và ghi chú nghiêm-hơn ở header `editorState.ts` phải được sửa.
+  const widget = { id: "w-empty-key", kind: "readout", rect: FRESH_RECT, bindings: { "": "cycles" } }
+  assert.deepEqual(
+    widgetErrors(widget),
+    [],
+    "schema đóng băng GIỜ ràng buộc KHOÁ của bindings — luật tên-binding-rỗng không còn là chỗ nghiêm hơn, hãy sửa doc comment ở đó"
+  )
+
+  // Phía EDITOR: từ chối, bằng mã riêng, và không chạm vào tài liệu.
+  for (const name of ["", 0, null, undefined, 7, {}]) {
+    const state = freshState()
+    const next = applyEdit(state, { kind: "set-binding", widgetId: "direct-cycles", name, path: "cycles" })
+    assertRefusedUnchanged(state, next, `set-binding name=${JSON.stringify(name) ?? typeof name}`, "bad-binding-name")
+  }
+})
+
+test("set-binding XOÁ trên một widget CHƯA CÓ bindings là no-op — KHÔNG dựng ra một bindings:{} rỗng", () => {
+  const state = freshState()
+  assert.equal(widgetOf(state.doc, "kind-sheet").bindings, undefined, "tài liệu nền đã có bindings ở đây — bài mất ý nghĩa")
+  const next = applyEdit(state, { kind: "set-binding", widgetId: "kind-sheet", name: "value" })
+  assertRefusedUnchanged(state, next, "set-binding xoá trên widget không bindings", "no-op")
+  assert.equal(widgetOf(next.doc, "kind-sheet").bindings, undefined)
+})
+
+test("set-binding ghi lại ĐÚNG giá trị đang có bị TỪ CHỐI là no-op — một bước hoàn tác chết là một bước bị đánh cắp", () => {
+  const state = freshState()
+  const current = widgetOf(state.doc, "direct-cycles").bindings.value
+  assert.equal(current, "cycles", "tài liệu nền đã đổi — bài mất ý nghĩa")
+  const next = applyEdit(state, { kind: "set-binding", widgetId: "direct-cycles", name: "value", path: current })
+  assertRefusedUnchanged(state, next, "set-binding ghi lại giá trị cũ", "no-op")
+})
+
+test("set-binding CHỈ chạm binding được nêu tên — các binding anh em và mọi trường khác của widget giữ nguyên", () => {
+  const state = freshState()
+  const before = widgetOf(state.doc, "kind-line-state")
+  assert.deepEqual(before.bindings, { state: "statusText", sub: "driftState" }, "tài liệu nền đã đổi — bài mất ý nghĩa")
+  const next = applyEdit(state, { kind: "set-binding", widgetId: "kind-line-state", name: "sub", path: "passRate" })
+  assertAccepted(next, "set-binding")
+  const after = widgetOf(next.doc, "kind-line-state")
+  assert.deepEqual(after.bindings, { state: "statusText", sub: "passRate" })
+  assert.equal(after.kind, before.kind)
+  assert.deepEqual(after.rect, before.rect)
+  assert.deepEqual(after.props, before.props)
+})
+
+test("ba phép sửa MỚI cũng KHÔNG đột biến state cũ, và undo trả lại đúng widget trước đó", () => {
+  for (const name of ["set-kind", "set-policy-action", "set-binding"]) {
+    const state = freshState()
+    const snapshot = JSON.parse(JSON.stringify(state.doc))
+    const next = applyEdit(state, ACCEPTED_EDITS[name])
+    assertAccepted(next, `applyEdit(${name})`)
+    assert.deepEqual(state.doc, snapshot, `${name} đã đột biến tài liệu của state cũ`)
+    assert.deepEqual(undo(next).doc, snapshot, `undo sau ${name} không trả lại tài liệu cũ`)
+    assert.deepEqual(docErrors(next.doc), [], `tài liệu sau ${name} KHÔNG hợp lệ`)
+  }
+})
+
+test("ba phép sửa MỚI nhắm tới widgetId KHÔNG TỒN TẠI bị TỪ CHỐI, kèm tên id sai", () => {
+  const edits = [
+    { kind: "set-kind", widgetId: "no-such-widget", widgetKind: "label" },
+    { kind: "set-policy-action", widgetId: "no-such-widget", policyAction: "machine.command" },
+    { kind: "set-binding", widgetId: "no-such-widget", name: "value", path: "cycles" },
+  ]
+  for (const edit of edits) {
+    const state = freshState()
+    const next = applyEdit(state, edit)
+    assertRefusedUnchanged(state, next, edit.kind, "unknown-widget")
+    assert.ok(next.lastRefusal.message.includes("no-such-widget"), `lý do không nêu id sai: ${next.lastRefusal.message}`)
+  }
+})
+
 // ── điều tra dân số MÃ TỪ CHỐI (sửa vòng 1, task-7-review.md §7.2) ────────────────────────────────
 //
 // Mỗi mã trong `EDITOR_REFUSAL_CODES` phải SINH RA ĐƯỢC từ một đầu vào thật. Cùng ý tưởng với
@@ -1022,6 +1399,11 @@ const REFUSAL_CASES = [
   ["path-blocked", () => applyEdit(freshState(), { kind: "set-prop", widgetId: "kind-label", path: "text.deep", value: 1 })],
   ["non-json-value", () => applyEdit(freshState(), { kind: "set-prop", widgetId: "probe-a", path: "x", value: undefined })],
   ["index-out-of-range", () => applyEdit(freshState(), { kind: "reorder", widgetId: "probe-a", toIndex: -1 })],
+  [
+    "policy-action-required",
+    () => applyEdit(freshState(), { kind: "set-kind", widgetId: "kind-label", widgetKind: "command-button" }),
+  ],
+  ["bad-binding-name", () => applyEdit(freshState(), { kind: "set-binding", widgetId: "kind-label", name: "", path: "cycles" })],
   ["nothing-to-undo", () => undo(freshState())],
   ["nothing-to-redo", () => redo(freshState())],
 ]

@@ -43,6 +43,7 @@ import type { ComponentModelDocument } from "../contracts/componentModel.ts"
 // `<ScreenRenderer>`, so a local re-typing would put a second shape between the wire and the renderer
 // that nothing keeps in step with `contracts/hmi-screen.schema.json`.
 import type { HmiScreenDocument } from "../contracts/hmiScreen.ts"
+import type { TagNamespaceDocument } from "../contracts/tagNamespace.ts"
 
 /**
  * WS-D-D6 — dev no longer hardcodes `http://localhost:5199`: `vite.config.ts`'s own dev-server
@@ -652,6 +653,20 @@ const endpoints = {
   // empty". `useScreen` below is where that 404 stops being an error and becomes a named product
   // state; nothing about it is inferred here.
   screen: (screenId: string) => request<HmiScreenDocument>(`/v1/screens/${encodeURIComponent(screenId)}`),
+
+  // WS-HMI-2 Task 10 — `GET /v1/tags?machine={code}`, the tag namespace the editor's tag picker
+  // browses. `TagNamespaceDocument` is the FROZEN contract type (`src/contracts/tagNamespace.ts`,
+  // pinned both ways against `contracts/tag-namespace.schema.json`), read off the wire here and
+  // nowhere else.
+  //
+  // 🔴 THE QUERY PARAMETER IS REQUIRED AND A BLANK ONE IS A 400, NOT "every machine" —
+  // `HmiTagEndpoints.GetByMachineAsync` says so in those words and has its own test for it
+  // (`GetByMachine_WithoutAUsableFilter_Gets400_NeverEveryMachine`), because a namespace is hundreds
+  // to thousands of flat tags PER MACHINE. `useTagNamespace` below therefore refuses to fire at all
+  // for a blank code rather than sending one and rendering the engine's complaint as an error state.
+  // An UNKNOWN but non-blank code is different and is not an error: §5-bis, this route answers 200
+  // with an empty document, never 404 — the same shape `/v1/components/{code}` uses.
+  tagNamespace: (code: string) => request<TagNamespaceDocument>(`/v1/tags?machine=${encodeURIComponent(code)}`),
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -762,6 +777,9 @@ const QUERY_KEYS = {
   // a screen is not owned by a machine at all (the same document can describe any number of them),
   // so there is no machine code to key it by.
   screen: (screenId: string) => ["hmi-screen", screenId] as const,
+  // WS-HMI-2 Task 10 — a machine's declared TAG NAMESPACE. Keyed like `components(code)` and for the
+  // same reason: it changes on a human's `PUT /v1/tags/{code}`, not on the ~1s live poll.
+  tags: (code: string) => ["hmi-tags", code] as const,
 }
 
 /**
@@ -972,6 +990,47 @@ export function useScreen(screenId: string | undefined): UseQueryResult<HmiScree
     enabled: screenId !== undefined && screenId.length > 0,
     retry: (failureCount, error) =>
       error instanceof EngineApiError && error.status === 404 ? false : failureCount < 2,
+  })
+}
+
+/**
+ * WS-HMI-2 Task 10 — `GET /v1/tags?machine={code}`, the namespace the editor's tag picker lists.
+ *
+ * NOT polled, for exactly the reason `useMachineComponents` above is not: this reads a DECLARATION an
+ * engineer authors through `PUT /v1/tags/{code}`, not a measurement a machine produces.
+ *
+ * `enabled` is gated on a NON-BLANK code, not merely a defined one. The endpoint answers 400 to a
+ * missing or whitespace-only `?machine=` on purpose (see `endpoints.tagNamespace`), so firing one
+ * would turn "the engineer has not chosen a machine yet" — an ordinary starting state — into a red
+ * error surface. A machine that exists but has declared nothing is the OTHER case and is NOT an
+ * error: it comes back 200 with `tags: []`, which the picker renders as a named empty state.
+ */
+export function useTagNamespace(code: string | undefined): UseQueryResult<TagNamespaceDocument> {
+  return useQuery({
+    queryKey: QUERY_KEYS.tags(code ?? ""),
+    queryFn: () => endpoints.tagNamespace(code as string),
+    enabled: code !== undefined && code.trim().length > 0,
+  })
+}
+
+/**
+ * WS-HMI-2 Task 10 — the fleet roster, fetched ONCE, for the tag picker's machine chooser.
+ *
+ * Same endpoint and same query key as `useFleet` above, deliberately WITHOUT its `refetchInterval`.
+ * A refetch interval in TanStack Query belongs to the OBSERVER, not to the cache entry, so this hook
+ * adds no poll of its own; on a page where `useFleet` is also mounted the two share one cache entry
+ * and that page's poll keeps this list fresh for free. The editor route renders outside `<Shell>` and
+ * mounts no `useFleet`, so there it is genuinely one request.
+ *
+ * A screen document is NOT bound to a machine — the frozen `HmiScreenDocument` has no machine field
+ * and cannot grow one — so the editor has to ASK which machine's namespace to browse. This is that
+ * question's answer list, and it is a list rather than a text box so that a mistyped code cannot look
+ * like a machine with no tags.
+ */
+export function useFleetRoster(): UseQueryResult<FleetSnapshot> {
+  return useQuery({
+    queryKey: QUERY_KEYS.fleet,
+    queryFn: endpoints.fleet,
   })
 }
 

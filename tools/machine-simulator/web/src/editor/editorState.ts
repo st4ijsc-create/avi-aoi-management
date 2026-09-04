@@ -56,6 +56,15 @@
  *     disagree, and an undo stack full of documents that no longer round-trip is worse than a
  *     refused edit.
  *
+ * (4) A BINDING NAME MUST BE A NON-EMPTY STRING (WS-HMI-2 Task 10). `$defs/widget`'s `bindings` is
+ *     `{"type": "object", "additionalProperties": {"type": "string"}}` — it constrains the VALUES and
+ *     says nothing about the KEYS, so `{"": "cycles"}` validates. It is still unreachable: every
+ *     widget reads its bindings by a name it hardcodes (`bindings.value`, `bindings.series`, …), so
+ *     an unnamed binding is a document the renderer can never consult, written by a picker whose
+ *     "which field am I filling in?" answer was empty. Refused rather than stored.
+ *     `editorState.test.mjs` measures BOTH sides of this, as it does for (1) and (2): that the
+ *     schema really does accept the empty key, and that this module really does not.
+ *
  * (3) A `set-prop` PATH WHOSE FIRST SEGMENT NAMES A WIDGET FIELD IS REFUSED — fix round 1,
  *     task-7-review.md §7.5. `path` is rooted at `props` (see the type below), but the natural
  *     assumption is that it is rooted at the WIDGET, because four of the five edits address the
@@ -74,11 +83,27 @@
  * `clampRectToLayout` before building the `move` edit; this module's job is the contract, not the
  * viewport.
  *
- * It does not edit `kind`, `bindings`, `component`, `policyAction`, `layout`, `theme`, `title` or
- * `screenId` — this task's `EditorEdit` union has no edit for them. Every edit writes only inside
- * `doc.widgets`, which is why `SCHEMA_MIRROR.handledKeywords` needs to cover only `$defs/widget` and
- * `$defs/rect`; `editorState.test.mjs` MEASURES that scope (every other top-level field of the
- * document comes back reference-identical) rather than assuming it.
+ * 🔴 WS-HMI-2 TASK 10 — THE PARAGRAPH BELOW IS RETRACTED IN PART, KEPT VERBATIM SO THE REASONING IS
+ * READABLE RATHER THAN REWRITTEN AWAY:
+ *
+ *     "It does not edit `kind`, `bindings`, `component`, `policyAction`, `layout`, `theme`, `title`
+ *      or `screenId` — this task's `EditorEdit` union has no edit for them."
+ *
+ * Three of those names moved: `kind`, `policyAction` and `bindings` are edited now, by
+ * `set-kind`, `set-policy-action` and `set-binding`. Task 7's own report named the condition for
+ * widening the reach and it is met in the same commit that widens it — each new edit builds the
+ * WIDGET IT WOULD PRODUCE and puts it through `widgetRefusal`, i.e. through the SAME hand-written
+ * mirror `add` already used, adding no second copy of any schema rule; and
+ * `editorState.test.mjs` gained a differential corpus per new edit that re-derives the resulting
+ * document independently and compares `applyEdit`'s answer against the real `validate.mjs`'s.
+ *
+ * `component`, `layout`, `theme`, `title` and `screenId` are still not editable here, and that is
+ * still a closed reach rather than a half-open one.
+ *
+ * WHAT DID NOT CHANGE: every edit still writes only inside `doc.widgets`, which is why
+ * `SCHEMA_MIRROR.handledKeywords` needs to cover only `$defs/widget` and `$defs/rect`;
+ * `editorState.test.mjs` MEASURES that scope (every other top-level field of the document comes back
+ * reference-identical) rather than assuming it, over the new edits too.
  */
 import type { HmiScreenDocument, ScreenWidget, WidgetKind, WidgetRect } from "../contracts/hmiScreen.ts"
 import type { PolicyAction } from "../contracts/tagNamespace.ts"
@@ -102,14 +127,49 @@ export type EditorEdit =
    * NOT rooted at the widget: `props` is the only sub-tree `contracts/hmi-screen.schema.json`
    * leaves unconstrained (`{"type": "object"}`), so a write confined to it cannot invalidate the
    * document by construction, and this module needs no second copy of the schema's rules to allow
-   * it. Reaching `kind`/`bindings`/`policyAction` needs its own edit kind with its own guards; this
-   * task's brief defines none, so the reach is closed rather than left half-open — and, since fix
-   * round 1, a path whose first segment names one of those fields is REFUSED (`out-of-scope-path`)
-   * rather than absorbed into `props` under the same name. */
+   * it. Reaching `kind`/`bindings`/`policyAction` needs its own edit kind with its own guards —
+   * 🔴 WS-HMI-2 Task 10 DEFINES THEM (the three members below), so the sentence that used to end
+   * "this task's brief defines none, so the reach is closed" is retracted for those three names. The
+   * boundary itself is unchanged and still enforced: a `set-prop` path whose first segment names one
+   * of those fields is REFUSED (`out-of-scope-path`) rather than absorbed into `props` under the
+   * same name, because `set-prop` is still rooted at `props` and a caller that meant the widget
+   * field now has a named edit to reach for. */
   | { kind: "set-prop"; widgetId: string; path: string; value: unknown }
   | { kind: "add"; widget: ScreenWidget }
   | { kind: "remove"; widgetId: string }
   | { kind: "reorder"; widgetId: string; toIndex: number }
+  /**
+   * WS-HMI-2 Task 10 — the property panel's kind picker, and the §5 gate that comes with it.
+   *
+   * `policyAction` is OPTIONAL on the edit and that is the whole design: omitted means "leave
+   * whatever the widget already declares alone", which is what changing a `readout` to a `gauge`
+   * wants. It is NOT a way to skip the gate. Setting `widgetKind` to one of the two WRITE kinds
+   * while the resulting widget would carry no `policyAction` is refused with its own code
+   * (`policy-action-required`) — the panel branches on that code to demand an action rather than
+   * to apologise — and the frozen schema's own `allOf`/`if`/`then` refuses the same document, which
+   * `editorState.test.mjs` measures rather than assumes.
+   *
+   * The action, when given, comes from `PolicyAction` — the frozen two-member enum. There is no
+   * free-text path to this field anywhere in the editor.
+   */
+  | { kind: "set-kind"; widgetId: string; widgetKind: WidgetKind; policyAction?: PolicyAction }
+  /** Changes ONLY the write gate, leaving `kind` alone — the panel's action picker on a widget that
+   * is already a write kind. There is no member for REMOVING a `policyAction`: the schema permits a
+   * gate on a non-write kind (harmless), and removing one from a write kind is precisely the
+   * document §5 forbids, so the edit that would do it is simply not in the vocabulary. */
+  | { kind: "set-policy-action"; widgetId: string; policyAction: PolicyAction }
+  /**
+   * Writes one entry of `widget.bindings` — the tag picker's destination.
+   *
+   * `path` omitted (or `undefined`) REMOVES the named binding; any other value must survive
+   * `$defs/widget`'s `bindings` rule (a name→string map), which is checked by running the widget
+   * this edit would produce through `widgetRefusal` rather than by restating the rule here.
+   *
+   * `name` must be a non-empty string. That is STRICTER than the frozen schema, which puts no
+   * constraint on a binding KEY at all and would happily store `{"": "cycles"}` — see strictness
+   * note (4) in the header, and the two-sided measurement in `editorState.test.mjs`.
+   */
+  | { kind: "set-binding"; widgetId: string; name: string; path?: string }
 
 /**
  * Why a call left the document unchanged, as something a caller can SWITCH ON.
@@ -148,6 +208,20 @@ export type EditorRefusalCode =
   | "non-json-value"
   /** A `reorder` `toIndex` outside `[0, widgets.length - 1]`. */
   | "index-out-of-range"
+  /**
+   * 🔴 INVARIANT §5, reached from the panel — WS-HMI-2 Task 10. A `set-kind` naming one of the two
+   * WRITE kinds while the widget would end up with no `policyAction`.
+   *
+   * Its OWN code rather than `invalid-widget`, because the two need different answers from the UI: a
+   * malformed widget is a defect in the layer that built the edit, whereas this one is an ordinary
+   * thing an engineer does — pick "command-button" from a list — that needs one more decision before
+   * it can be accepted. A panel that could only string-match the prose would either say nothing or
+   * say the wrong thing.
+   */
+  | "policy-action-required"
+  /** A `set-binding` `name` that is not a non-empty string — stricter than the schema, on purpose;
+   * see header strictness note (4). */
+  | "bad-binding-name"
   /** `undo` with an empty undo stack. */
   | "nothing-to-undo"
   /** `redo` with an empty redo stack. */
@@ -181,6 +255,8 @@ export const EDITOR_REFUSAL_CODES: Record<EditorRefusalCode, true> = {
   "path-blocked": true,
   "non-json-value": true,
   "index-out-of-range": true,
+  "policy-action-required": true,
+  "bad-binding-name": true,
   "nothing-to-undo": true,
   "nothing-to-redo": true,
 }
@@ -236,6 +312,19 @@ const POLICY_REQUIRED_KINDS: Record<Extract<WidgetKind, "setpoint-input" | "comm
   "command-button": true,
 }
 
+/**
+ * The §5 rule itself — "`kind` is one of the write kinds" — as ONE predicate with two callers.
+ *
+ * `widgetRefusal` uses it to mirror `$defs/widget`'s `allOf`/`if`/`then` for `add`; `set-kind`
+ * (WS-HMI-2 Task 10) uses it to refuse with its own code BEFORE the general mirror runs, so the
+ * property panel can branch on "you must choose an action" rather than on a sentence. Two refusal
+ * codes, one rule, one place — this repository's standing objection is to a second COPY of a rule,
+ * and there is none: change `POLICY_REQUIRED_KINDS` and both callers change with it.
+ */
+function requiresPolicyAction(kind: unknown): boolean {
+  return typeof kind === "string" && Object.hasOwn(POLICY_REQUIRED_KINDS, kind)
+}
+
 /** `additionalProperties: false` on `$defs/widget`, reached through `keyof ScreenWidget` so a field
  * added to the frozen type must be acknowledged here before it can be edited. Also the set of
  * first-path-segment names a `set-prop` REFUSES — see strictness note (3) in the header. */
@@ -260,6 +349,37 @@ const RECT_MINIMUM: Record<keyof WidgetRect, number> = { col: 0, row: 0, colSpan
  * this case. Nothing to work around on this side; noted so the difference is not read as an
  * oversight. */
 const WIDGET_ID_PATTERN = /^[a-z0-9-]+$/
+
+/**
+ * ── THE PROPERTY PANEL'S VOCABULARIES (WS-HMI-2 Task 10) ─────────────────────────────────────────
+ *
+ * The three lists a picker has to render, reached through `Object.keys` of the very records the
+ * guards above enforce — NOT retyped beside the JSX. The consequence is the one that matters and it
+ * is structural rather than promised: a panel built from these cannot offer a value `applyEdit` would
+ * refuse, and cannot fail to offer one it would accept, because there is only one list.
+ *
+ * `SCHEMA_MIRROR` below exposes the same key sets and is NOT what the panel reads — that object says
+ * of itself that nothing in the product reads it, and it stays true. These three are declared for the
+ * product, and `tests/39-editor-properties.spec.ts` compares what the panel actually RENDERS against
+ * the frozen schema file read from disk, so neither this module nor the panel is the only witness.
+ */
+export const WIDGET_KIND_VALUES: readonly WidgetKind[] = Object.keys(WIDGET_KINDS) as WidgetKind[]
+
+/** Every field name `$defs/widget`'s `additionalProperties: false` allows. The panel reads it for one
+ * narrow job: a `props` KEY that happens to share one of these names has no editable control, because
+ * `set-prop` refuses such a path (`out-of-scope-path`, header strictness note (3)) and a control that
+ * can only ever be refused is worse than a value shown read-only. */
+export const WIDGET_FIELD_NAMES: readonly string[] = Object.keys(WIDGET_KEYS)
+
+/** The frozen two-member `policyAction` enum, in schema order. There is no free-text path to this
+ * field anywhere in the editor: the panel renders exactly these as the options of a native
+ * `<select>`, and `applyEdit` refuses anything outside them regardless of what a caller sends. */
+export const POLICY_ACTION_VALUES: readonly PolicyAction[] = Object.keys(POLICY_ACTIONS) as PolicyAction[]
+
+/** The two kinds `$defs/widget`'s `allOf`/`if`/`then` makes `policyAction` REQUIRED for. The panel
+ * reads this to decide when to DEMAND an action before it will commit a kind change; `applyEdit`
+ * reads the same record to refuse the commit if the panel ever got it wrong. */
+export const POLICY_REQUIRED_WIDGET_KINDS: readonly WidgetKind[] = Object.keys(POLICY_REQUIRED_KINDS) as WidgetKind[]
 
 /**
  * 🔴 FIX ROUND 1, task-7-review.md §7.1 — the parity declaration that closes the mirror's residual
@@ -485,7 +605,7 @@ function widgetRefusal(widget: unknown, where: string): string | undefined {
     if (typeof action !== "string" || !Object.hasOwn(POLICY_ACTIONS, action)) {
       return `${where}.policyAction: ${describe(action)} is not one of ${Object.keys(POLICY_ACTIONS).join(" | ")}`
     }
-  } else if (Object.hasOwn(POLICY_REQUIRED_KINDS, kind)) {
+  } else if (requiresPolicyAction(kind)) {
     return `${where}: a "${kind}" widget must declare policyAction — invariant §5, enforced by the ` +
       `frozen schema's allOf/if/then: no write path without a gate`
   }
@@ -586,8 +706,9 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
             `"${segments[0]}", which is a WIDGET field, but set-prop is rooted at the widget's props. ` +
             `Applying it would have written props.${segments[0]} and left widget.${segments[0]} ` +
             `untouched — a green edit that does nothing you asked for. Editing ` +
-            `${Object.keys(WIDGET_KEYS).join("/")} needs its own edit kind with its own guards, which ` +
-            `this module does not yet define`
+            `${Object.keys(WIDGET_KEYS).join("/")} needs its own edit kind with its own guards: ` +
+            `kind and policyAction have set-kind/set-policy-action, bindings has set-binding, and ` +
+            `id/rect/component/props do not (rect has move, props IS this edit's own root)`
         )
       }
       const valueRefusal = jsonRefusal(
@@ -624,6 +745,96 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
       // Cloned so the caller cannot reach into the document — or into every undo snapshot that will
       // later share this object — by mutating the widget it just handed over.
       return { doc: { ...doc, widgets: [...doc.widgets, structuredClone(edit.widget)] } }
+    }
+
+    // ── WS-HMI-2 Task 10 — the three edits the property panel needs ─────────────────────────────
+    //
+    // All three share ONE shape, and the shape is the whole argument for widening the reach: build
+    // the widget this edit WOULD produce, then hand it to `widgetRefusal` — the same mirror `add`
+    // already used. No new copy of `$defs/widget` exists anywhere as a result, and a keyword the
+    // mirror cannot enforce still reddens `SCHEMA_MIRROR.handledKeywords`'s inventory pin exactly as
+    // it did before. The only rule stated a second time is the one the panel must BRANCH on (§5),
+    // and it is stated through the shared `requiresPolicyAction` rather than re-written.
+
+    case "set-kind": {
+      const index = indexOfWidget(doc, edit.widgetId)
+      if (index < 0) return unknownWidget("set-kind", edit.widgetId)
+      const widget = doc.widgets[index]
+      // Spread, not a canonical rebuild: assigning an EXISTING key leaves it in the position it
+      // already had, so an accepted edit does not churn the saved document's key order (the same
+      // property `move` states for `rect`). A `policyAction` the widget never had lands last, which
+      // is the only place a new key can go.
+      const candidate =
+        edit.policyAction === undefined
+          ? { ...widget, kind: edit.widgetKind }
+          : { ...widget, kind: edit.widgetKind, policyAction: edit.policyAction }
+
+      // 🔴 §5, BEFORE the general mirror, so the code the panel reads is the specific one. The mirror
+      // would refuse this same widget a line later with `invalid-widget`; both are correct, only one
+      // tells a UI what to ask the engineer for.
+      if (requiresPolicyAction(edit.widgetKind) && !Object.hasOwn(candidate, "policyAction")) {
+        return refusal(
+          "policy-action-required",
+          `set-kind ${describe(edit.widgetId)}: a "${edit.widgetKind}" widget is a WRITE path, so the ` +
+            `frozen schema requires a policyAction on it (invariant §5: no write path without a gate). ` +
+            `This widget declares none and this edit carries none, so the kind is NOT changed — choose ` +
+            `one of ${Object.keys(POLICY_ACTIONS).join(" | ")} and send both together`
+        )
+      }
+
+      const bad = widgetRefusal(candidate, `set-kind ${describe(edit.widgetId)}: widget`)
+      if (bad !== undefined) return refusal("invalid-widget", bad)
+      const widgets = doc.widgets.slice()
+      widgets[index] = candidate
+      return { doc: { ...doc, widgets } }
+    }
+
+    case "set-policy-action": {
+      const index = indexOfWidget(doc, edit.widgetId)
+      if (index < 0) return unknownWidget("set-policy-action", edit.widgetId)
+      const widget = doc.widgets[index]
+      const candidate = { ...widget, policyAction: edit.policyAction }
+      // Note what this refuses that may read as surprising and is deliberate: a widget whose STORED
+      // `kind` is not in the frozen enum (the write door accepts one — see
+      // `tests/37-editor-canvas.spec.ts` on `probe-kind`) cannot have its gate set here, because the
+      // widget this edit would produce is still not a `$defs/widget`. Fix the kind first; the panel
+      // offers exactly that.
+      const bad = widgetRefusal(candidate, `set-policy-action ${describe(edit.widgetId)}: widget`)
+      if (bad !== undefined) return refusal("invalid-widget", bad)
+      const widgets = doc.widgets.slice()
+      widgets[index] = candidate
+      return { doc: { ...doc, widgets } }
+    }
+
+    case "set-binding": {
+      const index = indexOfWidget(doc, edit.widgetId)
+      if (index < 0) return unknownWidget("set-binding", edit.widgetId)
+      if (typeof edit.name !== "string" || edit.name.length === 0) {
+        return refusal(
+          "bad-binding-name",
+          `set-binding ${describe(edit.widgetId)}: name must be a non-empty string, got ` +
+            `${describe(edit.name)}. The frozen schema puts no constraint on a binding KEY, so this is ` +
+            `the editor being stricter on purpose: every widget reads its bindings by a name it ` +
+            `hardcodes, so an unnamed one is a binding nothing can ever consult`
+        )
+      }
+      const widget = doc.widgets[index]
+      const current = isPlainObject(widget.bindings) ? widget.bindings : undefined
+      // Removing a binding from a widget that has no bindings MAP at all returns the document
+      // untouched, so `applyEdit`'s own no-op rule refuses it. Writing `bindings: {}` instead would
+      // be a change — a new key in the saved file — for an edit that removed nothing.
+      if (edit.path === undefined && current === undefined) return { doc }
+      const nextBindings: Record<string, unknown> = { ...(current ?? {}) }
+      if (edit.path === undefined) delete nextBindings[edit.name]
+      else nextBindings[edit.name] = edit.path
+      const candidate = { ...widget, bindings: nextBindings }
+      const bad = widgetRefusal(candidate, `set-binding ${describe(edit.widgetId)}: widget`)
+      if (bad !== undefined) return refusal("invalid-widget", bad)
+      const widgets = doc.widgets.slice()
+      // The cast is carried by the line above, not by optimism: `widgetRefusal` returning
+      // `undefined` IS the proof that every value in `nextBindings` is a string.
+      widgets[index] = candidate as ScreenWidget
+      return { doc: { ...doc, widgets } }
     }
 
     case "remove": {

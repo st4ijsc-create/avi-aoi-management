@@ -14,8 +14,9 @@ import { createMachineDetailSource } from "@/hmi-runtime/TagValueSource"
 import type { TagValueSource } from "@/hmi-runtime/TagValueSource"
 import { useT } from "@/i18n"
 import type { MachineDetail } from "@/lib/api"
-import { applyEdit, createEditorState, undo, type EditorRefusalCode, type EditorState } from "./editorState"
+import { applyEdit, createEditorState, undo, type EditorEdit, type EditorRefusalCode, type EditorState } from "./editorState"
 import { gridPitch, movedRect, resizedRect, snapToCells, type CellDelta, type GridPitch } from "./gridGeometry"
+import { PropertyPanel } from "./PropertyPanel"
 
 /**
  * WS-HMI-2 Task 8 — the editor's canvas. WS-HMI-2 Task 9 — the canvas that EDITS.
@@ -182,11 +183,19 @@ const DESIGN_TIME_SOURCE: TagValueSource = createMachineDetailSource(DESIGN_TIME
  *   * `nothing-to-undo` / `nothing-to-redo` — the bottom of the stack. An ordinary boundary, reached
  *     by holding `Ctrl+Z` one beat too long.
  *
- * Everything else means the layer built an edit the document cannot take, which is a defect in THIS
- * file rather than a user mistake. Clamping (`gridGeometry.ts`) is supposed to make every one of them
- * unreachable from a pointer, so the effect below reports them to the console instead of to the
- * engineer — a visible refusal surface belongs to the first task that can actually PRODUCE one from
- * the UI, and inventing one here would ship a message no test in this tree can make appear.
+ * Everything else means the layer built an edit the document cannot take. For the DRAG path that is
+ * a defect in THIS file rather than a user mistake — clamping (`gridGeometry.ts`) is supposed to make
+ * every one of them unreachable from a pointer — so the effect below still reports them to the
+ * console.
+ *
+ * 🔴 WS-HMI-2 TASK 10 — THE SENTENCE THAT USED TO END THIS PARAGRAPH IS RETRACTED, KEPT VERBATIM:
+ * *"a visible refusal surface belongs to the first task that can actually PRODUCE one from the UI, and
+ * inventing one here would ship a message no test in this tree can make appear."* That task is this
+ * one. The property panel puts real controls on the document — a kind picker, a policy-action picker,
+ * binding and prop fields — and those CAN reach refusals a clamp cannot pre-empt. So the same
+ * non-harmless refusal now goes to `<PropertyPanel refusal=…>` as well, which renders it as a named
+ * `role="alert"` with its code and its sentence. This set is unchanged and is still the single place
+ * that says which codes are ordinary; it is now consulted by two consumers instead of one.
  */
 const HARMLESS_REFUSALS: Partial<Record<EditorRefusalCode, true>> = {
   "no-op": true,
@@ -340,8 +349,17 @@ export type EditorCanvasProps = {
  * not bound to a machine — there is no code to fetch one for. `undefined` is exactly what that prop
  * documents as valid (plan §5-bis), so a `{component}` binding renders its named placeholder plus the
  * unresolved-binding warning in the cell's `title` tooltip, one widget at a time, while every direct
- * binding keeps working. WS-HMI-2 Task 10's tag picker is where a component model enters the editor,
- * because that is the task that has a machine to ask about.
+ * binding keeps working.
+ *
+ * 🔴 WS-HMI-2 TASK 10 ARRIVED AND THIS IS STILL TRUE — the round-8 sentence *"Task 10's tag picker is
+ * where a component model enters the editor"* was half right and the half it got wrong matters. A
+ * component model DOES enter the editor: `TagPicker` reads `GET /v1/components/{code}` to list the
+ * `{component}/…` paths a widget's component exposes. But it enters the PICKER, not the renderer, and
+ * the two are different claims. The machine the engineer picked to browse is not a machine this SCREEN
+ * is bound to — the frozen contract has no such field, and binding the canvas to whatever machine the
+ * picker last showed would make the drawing depend on an unrelated choice. `components` stays
+ * `undefined` here, so a `{component}` binding still draws its named placeholder on the canvas, and
+ * that limit is unchanged by this task.
  */
 export function EditorCanvas({ doc }: EditorCanvasProps) {
   const t = useT()
@@ -491,14 +509,34 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
     nudge(widgetId, mode, step)
   }
 
+  /**
+   * The property panel's way in — WS-HMI-2 Task 10.
+   *
+   * Deliberately the SAME `applyEdit` on the SAME `canvas.editor` the pointer path uses, with no
+   * second history and no panel-local document: an edit made in the panel and a drag made on the
+   * canvas share one undo stack, one no-op rule and one set of guards, and `Ctrl+Z` walks back through
+   * both in the order they happened. A refused edit returns the same `doc`/`past`/`future` references,
+   * so adopting the result unconditionally keeps the refusal legible to the effect above AND to the
+   * panel, which renders it.
+   */
+  function applyPanelEdit(edit: EditorEdit) {
+    setCanvas((prev) => ({ ...prev, editor: applyEdit(prev.editor, edit) }))
+  }
+
   const dragging = canvas.drag
   const preview = dragging ? previewRectOf(dragging, layout) : undefined
   const selectedWidget = edited.widgets.find((widget) => widget.id === canvas.selectedId)
 
   return (
+    // The canvas frame and the property panel side by side. The frame keeps `data-editor-canvas` and
+    // everything inside it is untouched — the renderer's own grid is measured against the kiosk's in
+    // `tests/37-editor-canvas.spec.ts` by TRACK COUNTS and absolute gutters, neither of which a
+    // narrower frame changes, and `tests/38-editor-drag.spec.ts` measures its pitch off the grid the
+    // browser actually laid out rather than from a formula.
+    <div className="flex h-full min-h-0 w-full min-w-0 gap-3">
     <div
       data-editor-canvas={edited.screenId}
-      className="h-full min-h-0 w-full min-w-0 overflow-hidden border border-border-strong bg-surface-subtle p-3"
+      className="h-full min-h-0 min-w-0 flex-1 overflow-hidden border border-border-strong bg-surface-subtle p-3"
     >
       {/*
         🔴 FIX ROUND 1, task-9-review.md F3 — a `<div hidden data-editor-document={JSON.stringify(doc)}>`
@@ -601,6 +639,14 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
           ) : null}
         </div>
       </div>
+    </div>
+      <PropertyPanel
+        widget={selectedWidget}
+        onEdit={applyPanelEdit}
+        // Filtered HERE rather than in the panel, so `HARMLESS_REFUSALS` stays the one place that says
+        // which codes are ordinary — the panel renders whatever it is handed.
+        refusal={refusal && !HARMLESS_REFUSALS[refusal.code] ? refusal : undefined}
+      />
     </div>
   )
 }

@@ -361,6 +361,80 @@ export const vi = {
     // `aria-label` thì với trình đọc màn hình chúng là hai nút không tên.
     selectWidget: (vars: Vars) => `Chọn widget ${vars.widgetId}`,
     resizeWidget: (vars: Vars) => `Đổi kích thước widget ${vars.widgetId}`,
+    // WS-HMI-2 Task 10 — panel thuộc tính và bộ chọn tag. MỌI chuỗi ở đây đều đi qua @t()@; không
+    // có chuỗi cứng nào trong @PropertyPanel.tsx@/@TagPicker.tsx@ ngoài tên trường của hợp đồng
+    // (@col@, @row@, @{component}@…), vốn là ĐỊNH DANH chứ không phải văn bản dịch được.
+    panel: {
+      title: "Thuộc tính widget",
+      empty: "Chưa chọn widget nào — bấm một widget trên canvas để mở thuộc tính của nó.",
+      idLabel: "Mã widget",
+      // Không phải một thiếu sót được che đi: mã widget là ĐỊA CHỈ mà cả năm phép sửa cũ lẫn ba phép
+      // mới dùng để nhắm tới widget, và bộ từ vựng sửa của Task 10 không có phép đổi mã. Nói ra ở đây
+      // thay vì để một ô nhập không lưu được.
+      idReadOnly: "Mã là địa chỉ mọi phép sửa dùng để nhắm tới widget này, nên panel không đổi nó.",
+      kindLabel: "Loại widget",
+      componentLabel: "Thành phần (component)",
+      componentNone: "(chưa khai)",
+      componentReadOnly: "Trường component chưa có phép sửa riêng ở tác vụ này.",
+      rectLabel: "Ô lưới",
+      rectCol: "Cột",
+      rectRow: "Hàng",
+      rectColSpan: "Rộng",
+      rectRowSpan: "Cao",
+      bindingsLabel: "Ràng buộc dữ liệu (bindings)",
+      bindingsEmpty: "Widget này chưa khai binding nào.",
+      bindingPick: (vars: Vars) => `Chọn tag cho binding "${vars.name}"`,
+      bindingRemove: (vars: Vars) => `Xoá binding "${vars.name}"`,
+      bindingNewNameLabel: "Tên binding mới",
+      bindingAdd: "Thêm binding",
+      propsLabel: "Thuộc tính hiển thị (props)",
+      propsEmpty: "Widget này chưa khai props nào.",
+      // Giới hạn THẬT của tác vụ này, nói thẳng thay vì để người dùng đoán vì sao một ô không sửa được.
+      propReadOnly:
+        "Panel chỉ sửa được prop kiểu chuỗi và số ở cấp một. Prop lồng nhau, mảng, boolean và prop trùng tên một trường của widget hiển thị ở dạng chỉ đọc.",
+      policyLabel: "Hành động chính sách (policyAction)",
+      policyChoose: "— chọn hành động —",
+      // 🔴 Cổng §5. Câu này xuất hiện ĐÚNG lúc người dùng chọn một kind ghi mà widget chưa có gate, và
+      // kind CHƯA được đổi cho tới khi có hành động — xem PropertyPanel.tsx.
+      policyRequired: (vars: Vars) =>
+        `Loại "${vars.kind}" là một ĐƯỜNG GHI, nên lược đồ đóng băng bắt buộc phải có policyAction (bất biến §5: không có đường ghi nào không được gác). Chọn một hành động thì loại mới được đổi.`,
+      // Fail-closed: một giá trị ngoài từ vựng của hợp đồng KHÔNG được hiển thị như một lựa chọn hợp lệ.
+      policyUnrecognised: (vars: Vars) =>
+        `Tài liệu đang khai policyAction ${vars.value}, KHÔNG thuộc từ vựng của hợp đồng màn hình. Panel không nhận nó là một lựa chọn hợp lệ — chọn lại một hành động bên dưới.`,
+      // S-6, nói rõ giới hạn: panel CHỌN, không PHÂN GIẢI.
+      policyNotResolved:
+        "Panel chỉ CHỌN hành động khai trong tài liệu; nó không hỏi được PolicyEngine xem hành động ấy có được cấp phép hay không. Đây không phải một lời khẳng định về quyền.",
+      refusal: (vars: Vars) => `Phép sửa bị từ chối (${vars.code}): ${vars.message}`,
+    },
+    tagPicker: {
+      title: "Chọn tag",
+      forBinding: (vars: Vars) => `đang điền cho binding "${vars.name}"`,
+      close: "Đóng bộ chọn tag",
+      machineLabel: "Máy",
+      machineChoose: "— chọn máy —",
+      // Tài liệu màn hình KHÔNG mang mã máy (hợp đồng đóng băng không có trường ấy), nên panel phải hỏi.
+      noMachine: "Chọn một máy để xem không gian tag của nó. Tài liệu màn hình không gắn với máy nào.",
+      loading: "Đang đọc không gian tag…",
+      failed: "Không đọc được không gian tag của máy này.",
+      empty: (vars: Vars) => `Máy ${vars.machine} chưa khai tag nào.`,
+      backedYes: "có driver",
+      backedNo: "chưa có driver",
+      backedLabel: "isBackedByDriver",
+      insert: (vars: Vars) => `Chèn ${vars.path}`,
+      accessLabel: "quyền",
+      declaredAction: (vars: Vars) => `khai policyAction ${vars.action}`,
+      unrecognisedAction: (vars: Vars) => `khai policyAction ${vars.value} — NGOÀI từ vựng của hợp đồng`,
+      componentSection: (vars: Vars) => `Đường dẫn gián tiếp qua component "${vars.component}"`,
+      componentNoModel:
+        "Chưa đọc được cây component của máy này, nên chưa liệt kê được tag của component. Chọn đúng máy đã khai component ở trên.",
+      componentUnknown: (vars: Vars) =>
+        `Máy đang chọn không khai component nào tên "${vars.component}". Chọn máy khác, hoặc sửa trường component của widget.`,
+      componentNoneOnWidget: "Widget này chưa khai component, nên không có đường dẫn {component}/… để chèn.",
+      // 🔴 Giới hạn ĐÃ BIẾT, ghi ở đây chứ không để người dùng tự phát hiện: chưa TagValueSource nào
+      // trả lời được một đường dẫn tổng hợp lúc chạy, nên binding kiểu này vẽ ra placeholder có tên.
+      componentNote:
+        "Đường dẫn {component}/… được bộ vẽ thay thế bằng tagPrefix của component lúc render, nhưng chưa nguồn giá trị nào trả lời đường dẫn ghép, nên ô sẽ hiện placeholder có tên. Đó là một bộ chuyển đổi còn thiếu, không phải một dây nối còn thiếu.",
+    },
     loading: {
       title: "Đang tải tài liệu màn hình…",
       description: "Đang đọc tài liệu từ GET /v1/screens.",
