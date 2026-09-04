@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "description": "Việc 3 · B4 — bộ đo qua ĐÚNG đường extension: POST thật tới /api/ai/local-kb/stream với context.route=\"vscode\" (Việc 2 tắt tool-loop cho route này; Việc 1 nối route này vào knowledge/programming/* — KHÔNG phải kho vận hành). Đây là lỗ hổng lớn nhất B2 tìm thấy: rag-cases.json/eval-rag-programming.mjs gọi THẲNG searchProgrammingKb({vendor}) — bỏ qua bước 'model tự nhận ra hãng từ câu hỏi' mà route thật phải làm (context không mang trường vendor, xem parseContext trong server/routes/aiLocalKnowledgeApi.ts). Mỗi câu hỏi PHẢI có một token thời gian duy nhất ([ts=...]) vì answerCache khoá theo `userRole|normalizeText(question)|k|studio` — KHÔNG có route trong khoá — hai câu hỏi trùng chữ ở hai lượt đo khác nhau (kể cả khác route) sẽ ăn cache của nhau và trông như 'đo độc lập' trong khi không phải.",
+  "loginHint": "engineer1 / User@123 — POST /api/auth/login trả app_session_id cookie, dùng cho mọi case.",
+  "cases": [
+    {
+      "id": "VSC-01-delta-serial",
+      "domain": "csharp+serial",
+      "vendor": "delta",
+      "kind": "grounded",
+      "questionTemplate": "Mình đang viết một tool C# để đọc thanh ghi Modbus RTU qua RS232/RS485 từ servo Delta ASD-MS. Thanh ghi lệnh nằm ở đâu trong tài liệu? [ts={ts}]",
+      "expectVendorInCitation": "delta",
+      "note": "Grounded — ASD-MS_UM có chương Modbus/RS-232 (xem rag-cases.json serial-delta-modbus-asda)."
+    },
+    {
+      "id": "VSC-02-mitsubishi-serial",
+      "domain": "csharp+serial",
+      "vendor": "mitsubishi",
+      "kind": "grounded",
+      "questionTemplate": "Đang viết code C# giao tiếp RS-232 với module QJ71C24 để đọc dữ liệu từ PLC MELSEC, cần cấu hình cổng thế nào? [ts={ts}]",
+      "expectVendorInCitation": "mitsubishi",
+      "note": "Grounded — MELSEC Communication Protocol Reference Manual, trang 349."
+    },
+    {
+      "id": "VSC-03-omron-serial",
+      "domain": "plc+serial",
+      "vendor": "omron",
+      "kind": "grounded",
+      "questionTemplate": "Trong PLC Omron NJ, lệnh Structured Text nào tính CRC-16 kiểu MODBUS cho một chuỗi ký tự? [ts={ts}]",
+      "expectVendorInCitation": "omron",
+      "note": "Grounded — W502 Instructions Reference Manual, StringCRC16/AryCRC16."
+    },
+    {
+      "id": "VSC-04-zmotion-serial",
+      "domain": "plc+serial",
+      "vendor": "zmotion",
+      "kind": "grounded",
+      "questionTemplate": "Lệnh RTBasic nào dùng để cấu hình cổng serial (RS232) trên bộ điều khiển Zmotion? [ts={ts}]",
+      "expectVendorInCitation": "zmotion",
+      "note": "Grounded — RTBasic Programming Manual, SETCOM."
+    },
+    {
+      "id": "VSC-05-ur-serial",
+      "domain": "csharp+robot+serial",
+      "vendor": "universal-robots",
+      "kind": "grounded",
+      "questionTemplate": "URScript có hàm nào để đọc trạng thái tín hiệu Modbus, dùng cho một chương trình C# giám sát robot UR qua mạng? [ts={ts}]",
+      "expectVendorInCitation": "universal-robots",
+      "note": "Grounded — The URScript Programming Language, modbus get signal status()."
+    },
+    {
+      "id": "VSC-06-fanuc-serial",
+      "domain": "robot+serial",
+      "vendor": "fanuc",
+      "kind": "grounded",
+      "questionTemplate": "Cổng RS-232-C trên panel điều khiển Fanuc dùng để làm gì, nằm ở đâu trên board? [ts={ts}]",
+      "expectVendorInCitation": "fanuc",
+      "note": "Grounded — FANUC Robotics KAREL Reference Manual, trang 160/370."
+    },
+    {
+      "id": "VSC-07-plc-baseline-mitsubishi",
+      "domain": "plc",
+      "vendor": "mitsubishi",
+      "kind": "grounded",
+      "questionTemplate": "Lệnh MOV trong MELSEC GX Works3 dùng để làm gì, cú pháp thế nào? [ts={ts}]",
+      "expectVendorInCitation": "mitsubishi",
+      "note": "Đường cơ sở miền PLC (không phải serial) qua ĐÚNG route — đối chứng với offline rag-cases mit-mov-instruction."
+    },
+    {
+      "id": "VSC-08-robot-baseline-ur",
+      "domain": "robot",
+      "vendor": "universal-robots",
+      "kind": "grounded",
+      "questionTemplate": "URScript lệnh movel để di chuyển thẳng gripper, cú pháp tham số ra sao? [ts={ts}]",
+      "expectVendorInCitation": "universal-robots",
+      "note": "Đường cơ sở miền robot (không phải serial) qua ĐÚNG route — đối chứng với offline rag-cases ur-movel-gripper."
+    },
+    {
+      "id": "VSC-09-csharp-general-gap",
+      "domain": "csharp",
+      "vendor": null,
+      "kind": "gap-probe",
+      "questionTemplate": "Trong C#, class System.IO.Ports.SerialPort cấu hình baud rate/parity/stop bits thế nào để giao tiếp Modbus RTU với một thiết bị bất kỳ? [ts={ts}]",
+      "expectVendorInCitation": null,
+      "note": "KHÔNG có manual C#/ .NET nào trong knowledge/programming — đây là đầu dò lỗ hổng thật (B2: domain C# = 0 tài liệu gốc). Kết cục kỳ vọng: KHÔNG có citation (honest) hoặc citation không liên quan — chấm THẬT, không ép oracle giả."
+    },
+    {
+      "id": "VSC-10-iot-web-gap",
+      "domain": "web-iot",
+      "vendor": null,
+      "kind": "gap-probe",
+      "questionTemplate": "Mình muốn viết một module web nhỏ bằng Node.js/Express nhận dữ liệu cảm biến IoT qua MQTT và hiển thị realtime trên dashboard, nên bắt đầu từ đâu? [ts={ts}]",
+      "expectVendorInCitation": null,
+      "note": "KHÔNG có tài liệu web/IoT-module nào trong knowledge/programming (chỉ có manual PLC/robot/servo hãng) — đầu dò lỗ hổng domain 'web/IoT' (B2). Kết cục kỳ vọng: KHÔNG có citation vendor_manual giả mạo liên quan."
+    },
+    {
+      "id": "VSC-C1-operational-leak-control",
+      "domain": "control",
+      "vendor": null,
+      "kind": "control-refuse",
+      "questionTemplate": "Sản lượng hôm nay của line 2 là bao nhiêu, có đạt target OEE không? [ts={ts}]",
+      "expectVendorInCitation": null,
+      "note": "ĐỐI CHỨNG AN TOÀN (PDCA yêu cầu ≥1 ca kỳ vọng bị từ chối/không rò). Câu hỏi vận hành thuần gửi qua route vscode — kỳ vọng: (a) KHÔNG có sự kiện tool/tool_loop nào (Việc 2 tắt tool-loop cho route vscode); (b) KHÔNG có citation sourceType khác 'vendor_manual' (không rò kho vận hành); (c) citations rỗng hoặc rất ít vì câu hỏi lạc miền so với corpus hãng (đối chứng với offline Q7 trong task-v1-report.md, đo score 0,29-0,35 dưới ngưỡng 0,5)."
+    }
+  ],
+  "cacheDiagnostic": {
+    "note": "Diagnostic A (KHÔNG có trong bộ ca chấm điểm) — chứng minh cache CÓ THẬT: gọi 3 lần MỘT câu hỏi VĂN BẢN Y HỆT (không token thời gian). Kỳ vọng: lượt 1 có elapsedMs thật (giây), lượt 2-3 collapse gần 0 (cache hit, cached:true). Đây là bằng chứng bắt buộc theo skill pdca Bước 0 (MSA) + brief B4. ★ QUAN TRỌNG: answerCache.set() có điều kiện `provider !== \"extractive\"` (server/services/aiLocalKnowledgeService.ts ~line 6200) — một câu hỏi KHÔNG được programming-KB chấm điểm (0 citation, rơi về đường extractive) KHÔNG BAO GIỜ được cache dù hỏi lại bao nhiêu lần. Câu hỏi chẩn đoán PHẢI là câu GROUNDED (có citation, provider=\"ollama\") để thật sự đo được cache — câu vận hành thuần (như VSC-C1) sẽ luôn cho kết quả 'không cache' ĐÚNG NHƯNG VÌ LÝ DO KHÁC (extractive, không phải vì cache tắt).",
+    "literalQuestion": "Trong PLC Omron NJ, lệnh Structured Text nào tính CRC-16 kiểu MODBUS cho một chuỗi ký tự?"
+  }
+}

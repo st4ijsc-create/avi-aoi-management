@@ -302,6 +302,61 @@ route vscode vẫn quét chung kho KB vận hành.
 ≥30 tác vụ thật trên dự án thật, chấm theo **kết cục người dùng nhận được**, chạy được lặp lại.
 Không có thước này thì mọi cải tiến sau đều là lời khai.
 
+★★★ **ĐÃ LÀM** (2026-09-04, `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-v3-report.md`)
+— B1 (đo trước khi thêm gì) phát hiện: **7/10 lệnh eval hiện có chạy được hôm nay** (toolcall
+regex 0,942 accuracy trên registry 83 tool — không phải 77 như README 08-16; rag-operational
+baseline hitRate@5 0,982/precision@5 0,493, ép CPU an toàn qua `GGUF_GPU=false` chiếm ĐÚNG 0 byte
+VRAM; GraphRAG lift +0,000 xác nhận lại 08-16). **3/10 KHÔNG chạy được, lý do cụ thể đã đo**:
+`--rerank` (model KHÁC model server đang giữ, GPU 97,5% đầy, mẫu con 2 ca không xong trong 120s
+trên CPU), `eval-codegen.mjs` đầy đủ (GGUF_CODE_MODEL≠LLAMA_SERVER_MODEL, cần thêm ~18-20GB VRAM
+không có), `eval-specialist.mjs` đầy đủ (an toàn VRAM vì dùng CHUNG model với server, nhưng 8 ca
+không mẫu-con-được và chiếm hàng chục phút hàng đợi suy luận của người dùng thật — cần xin phép).
+
+B2 (đối chiếu miền) phát hiện điều **quan trọng hơn cả 4 miền brief hỏi**: sau Việc 1+2, tool-loop
+tắt hẳn cho route vscode và corpus vận hành route vscode không còn đọc ⇒ **200/218 ca offline hiện
+có (`toolcall-cases.json` 82 + `codegen-cases.json` 29 + 4 bộ rag-operational* 92) đo một cơ chế
+route vscode KHÔNG CÒN CHẠM TỚI** — chỉ `rag-cases.json` đo đúng corpus, nhưng có `vendor` lọc sẵn
+mà route thật không nhận được từ client, bỏ qua bước "model tự đoán hãng". Bốn miền người dùng:
+**C# = 0 ca, Web/IoT module = 0 ca, RS232/serial = 0 ca thật** (case "serial" trong toolcall/rag-
+operational là tra cứu SỐ SERI sản phẩm, KHÔNG PHẢI giao tiếp cổng RS232 — nhầm lẫn thuật ngữ của
+brief, đã sửa); PLC/Robot phủ trung bình, Delta/Fanuc/Omron yếu nhất (2 ca RAG-only, 0 oracle sinh
+mã mỗi hãng), 4 ca "robot" (`robot-tm`) thực ra kiểm hãng **Techman**, ngoài 6 hãng brief nêu.
+
+B3: **+6 ca** vào `rag-cases.json` (15→21), một ca/hãng, miền RS232/serial — mỗi ca **verify tay**
+trên chunk thật (`docTitle`+trang+từ khoá xác nhận có trong `text`, không đoán từ tên tài liệu).
+Đo ngay: 20/21 hit (0,952), 1 miss thật (`serial-mitsubishi-rs232-melsec`, không sửa cho đẹp điểm).
+
+B4 (★★★ trọng tâm): bộ MỚI `scripts/ai-eval/eval-vscode-route.mjs` +
+`scripts/ai-eval/vscode-route-cases.json` — POST **thật** `/api/ai/local-kb/stream` qua login thật
+(`engineer1`/`User@123`) với `context:{route:"vscode", codingMode:false}` (khớp "chế độ LOCAL" thật
+của extension). Chấm theo SSE thật (citation + answer), không suy diễn từ mã. Chống cache
+(`answerCache` khoá KHÔNG có `route`, mỗi câu mang token `[ts=...]`) — bằng chứng mẫu độc lập: câu
+hỏi grounded lặp lại 3 lần KHÔNG token: 3567ms→28ms(cached:true)→13ms(cached:true). Bắt được MỘT
+bug trong chính harness mới (so khớp hãng "universal-robots" vs "Universal Robots" — đã sửa) và
+HAI phát hiện chất lượng KHÔNG bộ cũ nào bắt được (đều nhờ route thật KHÔNG lọc `vendor` sẵn):
+(a) câu hỏi UR ("URScript movel") nhận 5/5 citation từ tài liệu robot của **Delta** (hãng khác),
+score 0,747-0,775 — nhầm hãng thật; (b) câu hỏi web/IoT (gap-probe, không có nguồn thật) vẫn nhận 5
+citation Mitsubishi CPU manual **score 0,85-0,91**, TRÊN xa ngưỡng lọc 0,5 — model không dùng
+(trả lời trung thực "không có thông tin") nhưng citation vẫn đính kèm, có thể gây hiểu lầm nếu UI
+hiển thị như nguồn thật.
+
+B5 (đường cơ sở mới, lặp lại được — `node scripts/ai-eval/eval-vscode-route.mjs`): **11 ca — 7 ĐẠT
+/ 3 SAI / 1 CHẶN-ĐÚNG, elapsedMs trung bình 3.014ms** — con số ĐẦU TIÊN đo "kết cục người dùng nhận
+được qua route thật" (trước Việc 3: 0/218 ca cũ đo đúng cơ chế này, xem B2). ⚠ **Không đạt mốc "≥30
+tác vụ thật" của mục tiêu gốc bên trên** — quyết định có chủ đích: 11 ca route-thật (chất lượng ưu
+tiên hơn số lượng, mỗi ca cạnh tranh hàng đợi suy luận với người dùng thật đang dùng) + 21 ca
+`rag-cases.json` offline (không đi qua route, nhưng verify tay từng chunk) = 32 ca CÓ GROUNDING
+thật, nhưng chỉ 11/32 đi qua đúng đường HTTP. Vòng sau nên mở rộng bộ B4 (thêm ca cho Delta/Fanuc/
+Omron — hiện yếu nhất) nếu muốn chạm mốc 30 ca **qua route thật**.
+
+**CÒN MỞ**: ngưỡng `MIN_PROG_KB_CITATION_SCORE=0,5` không tổng quát hoá cho câu lạc-miền-kiểu-khác
+(phát hiện b ở trên); VSC-08 nhầm hãng UR↔Delta chưa vá; `eval-vscode-route.mjs` chưa có cổng CI
+(cố ý — gọi model 30B thật qua HTTP, không hợp CI tự động); nghi ngại chưa truy tới cùng:
+`eval-rag-programming.mjs` với `GGUF_GPU=false` (không ép lệch tên model) thoát êm exit 0 sau ~30s
+không in kết quả — không gây hại (đã kiểm GPU/server), nghi `vramBroker`/ước lượng VRAM có
+`process.exit()` trần hoặc một Promise không settle, chưa truy vì ngoài phạm vi và GPU đang chia
+sẻ với người dùng thật; đầy đủ trong `task-v3-report.md`.
+
 ## Việc 4 — chỉ khi Việc 1-3 xong: cân nhắc LoRA cho **phong cách**
 
 Và chỉ khi đo được rằng phần còn thiếu là phong cách, không phải kiến thức.
