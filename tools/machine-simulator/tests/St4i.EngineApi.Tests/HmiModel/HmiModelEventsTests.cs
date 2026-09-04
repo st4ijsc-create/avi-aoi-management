@@ -749,7 +749,11 @@ public sealed class HmiModelEventsTests
         Assert.Equal(
             new[] { "at", "change", "screenId", "version" },
             screenDoc.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
-        Assert.Equal(HmiModelEvents.ScreenChangeKind, screenDoc.RootElement.GetProperty("change").GetString());
+        // The literal, deliberately: this is the wire-shape test, and its neighbours pin "at/change/screenId/version",
+        // "wire-03" and 5 the same way. Asserting the constant here compared it to itself - GATE 1 row G4-6 renamed
+        // it to "screens" and 373/373 stayed green while the published contract still said "screen". A discriminator
+        // the web branch builds against is pinned by its spelling, or it is not pinned.
+        Assert.Equal("screen", screenDoc.RootElement.GetProperty("change").GetString());
         Assert.Equal("wire-03", screenDoc.RootElement.GetProperty("screenId").GetString());
         Assert.Equal(5, screenDoc.RootElement.GetProperty("version").GetInt32());
     }
