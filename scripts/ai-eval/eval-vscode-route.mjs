@@ -69,7 +69,10 @@ const SKIP_CACHE_DIAG = HAS_FLAG("--skip-cache-diagnostic");
 const CACHE_DIAG_ONLY = HAS_FLAG("--cache-diagnostic-only");
 const REQUEST_TIMEOUT_MS = Number(arg("--timeout-ms", "90000"));
 
-const CASES_PATH = path.join(__dirname, "vscode-route-cases.json");
+// ★ Việc 5 (2026-09-04): --cases-path cho phép nạp một bộ case KHÁC (vd. bộ câu hỏi demo IoT của
+// Việc 5, không dính tới baseline 11-case của Việc 3) mà không phải viết một script đo thứ hai.
+// Mặc định KHÔNG đổi ⇒ mọi lệnh gọi cũ (không truyền --cases-path) vẫn nạp đúng file cũ.
+const CASES_PATH = path.resolve(arg("--cases-path", path.join(__dirname, "vscode-route-cases.json")));
 
 function loadCases() {
   const raw = fs.readFileSync(CASES_PATH, "utf8");

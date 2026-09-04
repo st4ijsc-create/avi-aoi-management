@@ -361,6 +361,36 @@ sẻ với người dùng thật; đầy đủ trong `task-v3-report.md`.
 
 Và chỉ khi đo được rằng phần còn thiếu là phong cách, không phải kiến thức.
 
+## Việc 5 — dự án demo THẬT (App IoT: TCP + RS232) trên đúng miền người dùng cần
+
+★★★ **ĐÃ LÀM** (2026-09-04, `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-v5-report.md`)
+— app demo tại `D:\SOURCES\AI Local\demo-iot\` (ngoài repo) đọc một nguồn TCP giả lập + một nguồn
+"RS232 giả lập" (khung STX/CRC16/ETX qua TCP loopback — máy không có cổng RS232 vật lý/ảo, xem lý
+do trong report), in console + dashboard web thời gian thực; chạy thử THẬT, output THẬT đã dán
+trong report. **Phép đo (B2, phần giá trị nhất):** dùng lại `scripts/ai-eval/eval-vscode-route.mjs`
+(thêm cờ `--cases-path` ngược-tương-thích, KHÔNG viết bộ đo thứ hai) + 10 case mới
+(`vscode-route-cases-v5-iot-demo.json`) hỏi **"viết code giúp mình"** (khác 11 case cũ của Việc 3
+vốn hỏi "tài liệu nói gì") qua ĐÚNG route `vscode` thật. Kết cục đo được, **con số xấu ghi thẳng**:
+**0% mã dùng được ngay · 50% sửa nhỏ · 50% không dùng được (model từ chối) · 0% sai/bịa** (không có
+hallucination quan sát được trong 10 câu — model thà từ chối hơn bịa). ★★★ **Phát hiện gốc rễ MỚI,
+chưa từng đo ở Việc 1-3**: mọi câu trả lời route vscode (bất kể hỏi gì) bị cắt ở 599-822 ký tự vì
+Việc 2 ép `intent="general"` ⇒ `pickNumPredict()` dùng nhánh `KB_QA_NUM_PREDICT_GENERAL` (mặc định
+**220 token**, `.env` không override) — áp dụng cho CẢ câu hỏi xin sinh vài trăm dòng code. Đây là
+lý do KHÔNG câu nào trong 10 câu "dùng ngay" được, kể cả câu bắt đầu đúng hướng (đo tay `answer.
+length` khớp chính xác dự đoán từ ngân sách token, 10/10 case, không phải suy đoán). Trích dẫn: 2/5
+case `grounded` đúng hãng (Delta, Mitsubishi — có chi tiết cấu hình thật, vd P3-02=0AH trên ASD-MS,
+**chưa verify tay**), 2/5 SAI hãng (câu hỏi robot UR/Fanuc nhận nhầm citation Mitsubishi — biến thể
+MỚI của bug đã biết `VSC-08 nhầm hãng UR↔Delta`, giờ thấy là một họ lỗi rộng hơn robot nói chung),
+1/5 đúng hãng nhưng model không dùng (từ chối dù có ngữ cảnh); 5/5 case không-có-hãng-kỳ-vọng vẫn
+nhận citation nhiễu điểm cao (xác nhận LẶP LẠI phát hiện B4(b) của Việc 3 với mẫu mới, nhất quán
+100%). **AI mạnh**: Modbus TCP/RTU với hãng có tài liệu tốt (Delta, Mitsubishi) khi câu hỏi đúng
+dạng tra cứu ngắn. **AI yếu**: sinh code hoàn chỉnh nói chung (do trần token, không do thiếu kiến
+thức) · robot 2/2 hãng đã thử · nhất quán hoá xử lý miền-không-có-tài-liệu-hãng (4/5 vẫn viết code
+đúng dù nhiễu, 1/5 từ chối hoàn toàn không rõ lý do) · PLC có citation đúng vẫn từ chối viết code.
+**CÒN MỞ**: trần `KB_QA_NUM_PREDICT_GENERAL=220` cho route vscode CHƯA vá (ngoài phạm vi Việc 5 —
+đo, không vá server người dùng đang dùng thật mà không xin phép) — đây có lẽ là đòn bẩy giá trị cao
+nhất tiếp theo nếu mục tiêu là "AI Local sinh code dùng được", cao hơn cả việc thêm tài liệu hãng.
+
 ---
 
 # 9. Anh cần quyết định
