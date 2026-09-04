@@ -132,6 +132,16 @@ export interface KenhTienTrinhMcp {
   dong: () => void;
 }
 
+/** Kênh "chết ngay" — `dongDoc` kết thúc KHÔNG yield gì, khớp ĐÚNG nhánh có sẵn của
+ *  `chayPhienMcpNgoai` ("MCP server đóng kết nối trước khi trả lời xong", xem trên) mà mọi kiểu
+ *  spawn-thất-bại khác (ENOENT không đồng bộ) đã tự nhiên rơi vào. */
+async function* dongRongKhongYieldGi(): AsyncGenerator<Buffer> {
+  // cố ý rỗng — kết thúc ngay ở lần `next()` đầu tiên (`done: true`).
+}
+function kenhChet(): KenhTienTrinhMcp {
+  return { ghi: () => {}, dongDoc: dongRongKhongYieldGi(), dong: () => {} };
+}
+
 /**
  * ★★★ LỚP I/O THẬT DUY NHẤT gọi `child_process.spawn` cho MCP client. Không unit-test trực tiếp
  * (cùng lý do `moDongSse` không lưới `fetch` thật) — `chayPhienMcpNgoai` ở trên mang hết logic đáng đo.
@@ -141,34 +151,59 @@ export interface KenhTienTrinhMcp {
  *   `mcpServer.ts`), không phải giao thức; không đọc nó vẫn an toàn (không rò gì thêm), chỉ mất
  *   thông tin gỡ lỗi. Không được đọc nó rồi TRỘN vào kết quả tool — đó sẽ là đường lẫn lộn giao
  *   thức với lời kể, đúng bài học "stdout LÀ ĐƯỜNG ỐNG GIAO THỨC" của `mcpServer.ts`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT H / TASK H4 — `spawn()` CÓ THỂ NÉM ĐỒNG BỘ, KHÔNG CHỈ BẮN SỰ KIỆN 'error'.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Đo LIVE trên Windows (nghiệm thu Task H4, `npx.cmd` — giá trị `command` NHIỀU MCP client khác
+ * dùng làm mẫu Windows): `child_process.spawn("npx.cmd", ...)` KHÔNG shell:true NÉM ĐỒNG BỘ
+ * `Error: spawn EINVAL` NGAY TẠI lời gọi `spawn()` — KHÁC với ENOENT (lệnh không tồn tại) vốn chỉ
+ * bắn sự kiện `'error'` KHÔNG ĐỒNG BỘ (nhánh `cp.on("error", ...)` phía dưới xử lý đúng rồi). Một
+ * throw đồng bộ ở đây, KHÔNG bọc try/catch, biến thành PROMISE REJECT không được bắt ở BẤT KỲ tầng
+ * nào trên đường gọi thật (`mang/mcpDieuPhoi.ts#layDanhSachToolMcpNgoai`, `#goiToolMcpNgoai`,
+ * `ui/mcpQuanLy.ts#chayLamMoi` — không nơi nào có try/catch quanh `goiMotPhien`/`taoTienTrinhMcpNgoai`),
+ * và (khi cấu hình có NHIỀU server) làm ĐỨT NGANG vòng `for` đang duyệt các server KHÁC — một server
+ * cấu hình sai làm hỏng luôn việc kiểm tra các server BẬT hợp lệ khác trong CÙNG lượt "Kết nối".
+ * Vá: bọc `spawn()` trong try/catch, trả về `kenhChet()` khi ném — hành vi observable giống HỆT
+ * nhánh ENOENT đã có (rơi vào "MCP server đóng kết nối trước khi trả lời xong" ở `chayPhienMcpNgoai`,
+ * KHÔNG bao giờ throw ra ngoài) — không cần sửa gì ở `mcpDieuPhoi.ts`/`mcpQuanLy.ts`.
  */
 export function taoTienTrinhMcpNgoai(cfg: CauHinhMcpServer): KenhTienTrinhMcp {
-  const cp = spawn(cfg.lenh, cfg.doi, {
-    cwd: cfg.thuMuc,
-    env: { ...process.env, ...cfg.moi },
-    stdio: ["pipe", "pipe", "ignore"],
-    windowsHide: true,
-  });
-  cp.on("error", () => {
-    // Tiến trình không spawn được (lệnh không tồn tại…) — `chayPhienMcpNgoai` tự phát hiện qua đóng
-    // luồng/timeout, không cần xử lý gì thêm ở đây ngoài việc KHÔNG để lỗi này thoát thành một
-    // "unhandled error event" làm sập extension host.
-  });
-  return {
-    ghi: (s: string) => {
-      try {
-        cp.stdin.write(s);
-      } catch {
-        // Tiến trình có thể đã chết giữa chừng — `chayPhienMcpNgoai` sẽ tự phát hiện qua đóng luồng đọc.
-      }
-    },
-    dongDoc: cp.stdout,
-    dong: () => {
-      try {
-        cp.kill();
-      } catch {
-        // đã chết sẵn — vô hại
-      }
-    },
-  };
+  // ★ TOÀN BỘ thân hàm nằm trong try (không tách `spawn()` riêng ra ngoài rồi gán vào biến `let`
+  //   khai kiểu tay) — giữ NGUYÊN cách TypeScript suy luận kiểu overload hẹp
+  //   `ChildProcessWithoutNullStreams` (stdin/stdout KHÔNG `null`) từ đúng object `stdio` truyền vào
+  //   lời gọi trực tiếp; một `let cp: ReturnType<typeof spawn>` khai riêng sẽ rơi về overload rộng
+  //   nhất (`ChildProcess`, stdin/stdout CÓ THỂ `null`) và làm `tsc` đỏ ở `cp.stdin.write`/`cp.stdout`.
+  try {
+    const cp = spawn(cfg.lenh, cfg.doi, {
+      cwd: cfg.thuMuc,
+      env: { ...process.env, ...cfg.moi },
+      stdio: ["pipe", "pipe", "ignore"],
+      windowsHide: true,
+    });
+    cp.on("error", () => {
+      // Tiến trình không spawn được (lệnh không tồn tại…) — `chayPhienMcpNgoai` tự phát hiện qua đóng
+      // luồng/timeout, không cần xử lý gì thêm ở đây ngoài việc KHÔNG để lỗi này thoát thành một
+      // "unhandled error event" làm sập extension host.
+    });
+    return {
+      ghi: (s: string) => {
+        try {
+          cp.stdin.write(s);
+        } catch {
+          // Tiến trình có thể đã chết giữa chừng — `chayPhienMcpNgoai` sẽ tự phát hiện qua đóng luồng đọc.
+        }
+      },
+      dongDoc: cp.stdout,
+      dong: () => {
+        try {
+          cp.kill();
+        } catch {
+          // đã chết sẵn — vô hại
+        }
+      },
+    };
+  } catch {
+    return kenhChet();
+  }
 }

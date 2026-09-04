@@ -3,8 +3,8 @@
  * cùng khuôn `mang/dongSse.unit.test.ts`/`mcpGiaoThuc.test.ts §3`). Mỗi lưới ở đây khớp ĐÚNG một
  * hình dạng B2/B3 kế hoạch đòi.
  */
-import { describe, it, expect } from "vitest";
-import { chayPhienMcpNgoai } from "./mcpClient";
+import { describe, it, expect, vi } from "vitest";
+import { chayPhienMcpNgoai, taoTienTrinhMcpNgoai } from "./mcpClient";
 
 function dungGoi(id: number, result: unknown): string {
   return `${JSON.stringify({ jsonrpc: "2.0", id, result })}\n`;
@@ -138,5 +138,32 @@ describe("chayPhienMcpNgoai — B3: TRẦN KÍCH THƯỚC ĐẦU RA (streaming, 
     }
     const kq = await chayPhienMcpNgoai({ ghi: () => {}, dongDoc: luong(), method: "tools/list", params: {}, tranByte: 5000 });
     expect(kq.ok).toBe(true);
+  });
+});
+
+/**
+ * ★★★ ĐỢT H / TASK H4 — `taoTienTrinhMcpNgoai`: `spawn()` NÉM ĐỒNG BỘ (không chỉ bắn 'error') phải
+ * KHÔNG làm hàm này ném ra ngoài. Đo LIVE trên Windows thật (`npx.cmd` không shell:true) tái hiện
+ * đúng `Error: spawn EINVAL` NÉM ĐỒNG BỘ tại lời gọi `spawn()` — mock `node:child_process` ở đây để
+ * lưới chạy được trên MỌI hệ điều hành (không phụ thuộc hành vi spawn cụ thể của Windows).
+ */
+vi.mock("node:child_process", () => ({
+  spawn: vi.fn(() => {
+    throw Object.assign(new Error("spawn EINVAL"), { code: "EINVAL", errno: -4071, syscall: "spawn" });
+  }),
+}));
+
+describe("taoTienTrinhMcpNgoai — spawn() NÉM ĐỒNG BỘ (vd EINVAL trên Windows) KHÔNG được thoát ra ngoài", () => {
+  it("★★★ KHÔNG ném — trả về kênh 'chết' mà chayPhienMcpNgoai đọc được graceful (ok:false, KHÔNG throw)", async () => {
+    const cfg = { ten: "x", lenh: "npx.cmd", doi: ["-y", "pkg"], moi: {} };
+    // NHÁNH KIA của bản vá: TRƯỚC bản vá, dòng dưới đây NÉM ra ngoài (test đỏ) — sau bản vá, không ném.
+    expect(() => taoTienTrinhMcpNgoai(cfg)).not.toThrow();
+    const kenh = taoTienTrinhMcpNgoai(cfg);
+    // `chayPhienMcpNgoai` (đường gọi THẬT của `mcpDieuPhoi.ts#goiMotPhien`) phải đọc được kênh này
+    // mà KHÔNG throw, và phải kết luận rành mạch (không treo, không ok:true giả).
+    const kq = await chayPhienMcpNgoai({ ghi: kenh.ghi, dongDoc: kenh.dongDoc, method: "tools/list", params: {} });
+    expect(kq.ok).toBe(false);
+    expect(kq.loi).toMatch(/đóng kết nối/);
+    kenh.dong(); // không được ném dù tiến trình chưa từng thật sự tồn tại
   });
 });
