@@ -14,7 +14,7 @@
  * PROG_KB_ENABLED=off returns an empty well-formed result; citations carry page +
  * docTitle.
  */
-import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -83,6 +83,7 @@ import {
   getProgrammingKbStatus,
   reloadProgrammingKb,
   isProgrammingKbEnabled,
+  getProgrammingKbVendorSlugs,
 } from "./aiProgrammingKnowledgeService";
 
 beforeAll(() => {
@@ -231,5 +232,60 @@ describe("aiProgrammingKnowledgeService", () => {
     // restore for subsequent tests
     process.env.PROG_KB_DIR = prev;
     reloadProgrammingKb();
+  });
+
+  // ─── ★★★ Phản hồi chủ dự án 2026-09-04 (sau task-v7) — "danh sách hãng chép tay là bản sao thứ
+  // hai của một sự thật": `getProgrammingKbVendorSlugs()` phải đọc TỪ `manifest.json`, KHÔNG phải
+  // một bảng hằng ở nơi gọi (`aiLocalKnowledgeService.detectProgrammingVendors`). Dùng CHÍNH cây
+  // tmpDir thật (không mock fs) — viết một `manifest.json` KHÁC (hãng giả thêm vào, hoặc hỏng) rồi
+  // `reloadProgrammingKb()` để buộc đọc lại đĩa. KHÔNG đụng `knowledge/programming/manifest.json`
+  // thật của dự án — mọi thao tác ở đây chỉ chạm `tmpDir` (dọn ở `afterAll`).
+  describe("getProgrammingKbVendorSlugs — nguồn THẬT là manifest.json, fail-safe khi hỏng", () => {
+    afterEach(() => {
+      // mọi ca dưới đây tự ghi đè manifest.json trong tmpDir — khôi phục bản gốc (2 hãng) +
+      // reload, để không rò rỉ trạng thái sang các describe khác trong cùng tệp.
+      fs.writeFileSync(path.join(tmpDir, "manifest.json"), JSON.stringify(manifest), "utf8");
+      reloadProgrammingKb();
+    });
+
+    it("đọc đúng danh sách hãng từ manifest.json thật (fixture 2 hãng), viết thường", () => {
+      expect(getProgrammingKbVendorSlugs().sort()).toEqual(["mitsubishi", "zmotion"]);
+    });
+
+    it("★★★ hãng thứ ba thêm vào manifest.json (KHÔNG đụng tệp thật của dự án, không cần thư mục thật) ⇒ NHẬN ĐƯỢC ngay — chứng minh nguồn là manifest, không phải bảng tay", () => {
+      const withThirdVendor = {
+        ...manifest,
+        collections: [...manifest.collections, { vendor: "Acme-Robotics", docs: 1, chunks: 1, sourceDir: "acme-robotics" }],
+      };
+      fs.writeFileSync(path.join(tmpDir, "manifest.json"), JSON.stringify(withThirdVendor), "utf8");
+      reloadProgrammingKb();
+      expect(getProgrammingKbVendorSlugs().sort()).toEqual(["acme-robotics", "mitsubishi", "zmotion"]);
+    });
+
+    it("manifest.json BỊ XOÁ ⇒ mảng RỖNG, KHÔNG throw (an toàn = không lọc, không phải lỗi)", () => {
+      fs.rmSync(path.join(tmpDir, "manifest.json"));
+      reloadProgrammingKb();
+      expect(() => getProgrammingKbVendorSlugs()).not.toThrow();
+      expect(getProgrammingKbVendorSlugs()).toEqual([]);
+    });
+
+    it("manifest.json JSON HỎNG (không parse được) ⇒ mảng RỖNG, KHÔNG throw", () => {
+      fs.writeFileSync(path.join(tmpDir, "manifest.json"), "{ khong phai json hop le ][", "utf8");
+      reloadProgrammingKb();
+      expect(() => getProgrammingKbVendorSlugs()).not.toThrow();
+      expect(getProgrammingKbVendorSlugs()).toEqual([]);
+    });
+
+    it("manifest.json thiếu hẳn trường `collections` ⇒ mảng RỖNG, KHÔNG throw", () => {
+      fs.writeFileSync(path.join(tmpDir, "manifest.json"), JSON.stringify({ generatedAt: manifest.generatedAt }), "utf8");
+      reloadProgrammingKb();
+      expect(getProgrammingKbVendorSlugs()).toEqual([]);
+    });
+
+    it("`collections` không phải mảng (bị hỏng dạng khác) ⇒ mảng RỖNG, KHÔNG throw", () => {
+      fs.writeFileSync(path.join(tmpDir, "manifest.json"), JSON.stringify({ ...manifest, collections: "khong-phai-mang" }), "utf8");
+      reloadProgrammingKb();
+      expect(getProgrammingKbVendorSlugs()).toEqual([]);
+    });
   });
 });

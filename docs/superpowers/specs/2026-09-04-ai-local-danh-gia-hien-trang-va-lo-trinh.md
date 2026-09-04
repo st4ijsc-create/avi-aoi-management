@@ -606,6 +606,16 @@ ABLATION tầng mã (gỡ điều kiện ngữ cảnh Delta / gỡ nhánh chọn
 `task-v7-report.md`. Chi tiết đầy đủ, kể cả bảng before/after từng ca:
 `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-v7-report.md`.
 
+★★★ **Sửa tiếp (phản hồi chủ dự án, cùng ngày)**: danh sách 6 hãng ban đầu là **bảng chép tay** —
+đúng lớp lỗi "bản sao thứ hai của một sự thật" đã cắn dự án 4 lần trước. Vá: `detectProgrammingVendors`
+giờ đọc danh sách hãng ĐANG TỒN TẠI qua `getProgrammingKbVendorSlugs()` (nguồn = `manifest.json`,
+đọc rẻ — không chạm `chunks.jsonl`/`embeddings.jsonl` 162 MB — cache, fail-safe `[]` khi manifest
+thiếu/hỏng ⇒ không lọc, không throw). Luật NHẬN DIỆN "Delta" (ngữ cảnh thiết bị) giữ nguyên — đó là
+luật so khớp, không phải danh sách hãng. Lưới chống tái diễn hai chiều xác nhận: hãng thứ bảy chỉ
+thêm vào manifest (không đụng bảng alias tay) vẫn được nhận qua `genericVendorRegex`; đột biến quay
+lại bảng tay làm 4 ca lưới mới chuyển ĐỎ. Đo lại 11 ca sau build+restart: **8/2/1 không đổi**, độ
+sạch hãng giữ nguyên **0/40**. Chi tiết: addendum cuối `task-v7-report.md`.
+
 ## Demo IoT (Việc 5)
 
 `D:\SOURCES\AI Local\demo-iot\` — TCP + serial giả lập, dashboard SSE, chạy thật có output.

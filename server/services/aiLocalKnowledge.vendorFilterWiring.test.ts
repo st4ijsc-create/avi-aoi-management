@@ -30,8 +30,13 @@ vi.mock("node:fs", () => ({
 }));
 
 const searchProgrammingKb = vi.fn();
+// ★ Khớp `manifest.json` thật (6 hãng) — cần mock riêng vì `detectProgrammingVendors` giờ đọc
+// danh sách hãng qua `getProgrammingKbVendorSlugs()` thay vì một bảng chép tay (phản hồi chủ dự án
+// 2026-09-04, xem `aiLocalKnowledge.vendorDetect.test.ts` §E/§F cho lưới của chính cơ chế đọc động).
+const getProgrammingKbVendorSlugs = vi.fn(() => ["delta", "fanuc", "mitsubishi", "omron", "universal-robots", "zmotion"]);
 vi.mock("./aiProgrammingKnowledgeService", () => ({
   searchProgrammingKb: (...a: unknown[]) => searchProgrammingKb(...a),
+  getProgrammingKbVendorSlugs: () => getProgrammingKbVendorSlugs(),
 }));
 
 const generateEmbedding = vi.fn();

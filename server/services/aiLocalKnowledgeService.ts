@@ -190,7 +190,7 @@ import { canAccessStudioCorpus } from "./ai/kbStudioAccess";
 // corpus LẬP TRÌNH (tài liệu hãng PLC/robot/motion + SDK, doc 34 P1) — HOÀN TOÀN TÁCH biệt khỏi
 // kho vận hành nhà máy đọc bên dưới (`ensureDataLoaded`/`data.embeddings`). Xem
 // `retrieveProgrammingKnowledgeForVscode` cạnh `retrieveKnowledge`.
-import { searchProgrammingKb } from "./aiProgrammingKnowledgeService";
+import { searchProgrammingKb, getProgrammingKbVendorSlugs } from "./aiProgrammingKnowledgeService";
 // ★★★ TRÍCH DẪN NGUỒN DỮ LIỆU — `toolResult` CHƯA TỪNG được chuyển thành citation, nên một
 // con số trong câu trả lời không truy ngược được về hàng nào trong DB. Module lá thuần
 // (không import gì, không chạm DB); mọi luật an toàn — nhất là **`note` có mặt ⇒ KHÔNG
@@ -2242,28 +2242,53 @@ export function locKhoTheoTienTo<T extends { sourcePath: string }>(
  */
 
 /**
- * ★★★ B2 (đợt "lọc theo hãng đã có sẵn", brief `task-v7`) — bảng so khớp NGUYÊN TỪ cho năm hãng
- * "hiếm nghĩa" (không phải từ tiếng Anh/toán học thông dụng, brief đã xác nhận: Omron/Fanuc/Zmotion
- * "an toàn hơn nhiều"; Mitsubishi/Universal Robots cùng tầng — tên riêng đa âm tiết, không trùng từ
- * vựng lập trình). `\b…\b` = ranh giới từ, không phân biệt hoa/thường.
+ * ★★★ B2 (đợt "lọc theo hãng đã có sẵn", brief `task-v7` + phản hồi chủ dự án 2026-09-04) — bảng
+ * so khớp AN TOÀN HƠN nguyên-từ cho những hãng "hiếm nghĩa" (không phải từ tiếng Anh/toán học
+ * thông dụng — brief đã xác nhận: Omron/Fanuc/Zmotion "an toàn hơn nhiều"; Mitsubishi/Universal
+ * Robots cùng tầng). Đây là bảng LÀM GIÀU tuỳ chọn, KHÔNG phải danh sách hãng — danh sách hãng THẬT
+ * đọc động từ `manifest.json` (`getProgrammingKbVendorSlugs()` bên dưới, xem docblock
+ * `detectProgrammingVendors`). Một slug KHÔNG có trong bảng này (hãng mới, chưa ai sửa bảng tay)
+ * vẫn được nhận diện qua `genericVendorRegex()` — chỉ MẤT phần khớp-giàu (mã model, tên SDK riêng),
+ * không MẤT khả năng nhận diện.
  *
- * "universal-robots" khớp CỤM ĐẦY ĐỦ "universal robots" (khoảng trắng/gạch ngang/gạch dưới), HOẶC
- * mã model UR3/UR5/UR10/UR16(+"e") — HOẶC tên riêng phần mềm/SDK của hãng (URScript, PolyScope).
- * ⚠ CỐ Ý không khớp "UR" đứng một mình — hai ký tự, quá dễ trùng với chữ viết tắt khác.
+ * "universal-robots" khớp thêm mã model UR3/UR5/UR10/UR16(+"e") và tên riêng phần mềm/SDK của hãng
+ * (URScript, PolyScope) — generic fallback chỉ khớp được cụm "universal robots" đầy đủ, không biết
+ * các alias này. ⚠ CỐ Ý không khớp "UR" đứng một mình — hai ký tự, quá dễ trùng chữ viết tắt khác.
  */
-const VENDOR_WORD_PATTERNS: ReadonlyArray<{ slug: string; re: RegExp }> = [
-  { slug: "fanuc", re: /\bfanuc\b/i },
-  { slug: "omron", re: /\bomron\b/i },
-  { slug: "zmotion", re: /\bz-?motion\b/i },
-  { slug: "mitsubishi", re: /\bmitsubishi\b/i },
-  { slug: "universal-robots", re: /\buniversal[\s_-]?robots?\b|\bur\d{1,2}e?\b|\burscript\b|\bpolyscope\b/i },
-];
+const VENDOR_ALIAS_PATTERNS: Readonly<Record<string, RegExp>> = {
+  "universal-robots": /\buniversal[\s_-]?robots?\b|\bur\d{1,2}e?\b|\burscript\b|\bpolyscope\b/i,
+  zmotion: /\bz-?motion\b/i, // cho phép viết rời "Z-Motion"/"ZMotion", generic fallback chỉ khớp liền
+};
 
 /**
- * ★★★ "Delta" (hãng thứ sáu) KHÔNG nằm trong bảng trên — nó là TỪ TIẾNG ANH THÔNG DỤNG (delta = độ
- * chênh) VÀ là định danh JS/TS cực phổ biến (`const delta = t1 - t0`, `deltaTime`, `deltaX`). Dự án
- * này đã bị cắn BỐN lần vì khớp từ khoá quá lỏng (OEE `performance`/`quality`, `yield` = từ khoá JS,
- * gộp dấu "kỹ"↔"kỳ", văn bản giáo cụ khớp nhầm intent) — không lặp lại lần thứ năm ở đây.
+ * Hãng KHÔNG có alias riêng ở bảng trên (mới nạp, hoặc năm hãng "hiếm nghĩa" còn lại) — suy regex
+ * NGUYÊN TỪ trực tiếp từ CHÍNH slug đọc được ở manifest (tách theo khoảng trắng/gạch ngang/gạch
+ * dưới, cho phép ba dấu phân cách đó hoán đổi cho nhau khi so khớp, ranh giới từ ở hai đầu).
+ * Đây là lưới AN TOÀN CHUNG cho một hãng thứ bảy chưa ai viết luật riêng — không nhận diện được các
+ * BÍ DANH của hãng đó (mã model, tên SDK) nhưng LUÔN nhận diện được TÊN HÃNG viết nguyên văn.
+ */
+function genericVendorRegex(slug: string): RegExp | null {
+  const words = String(slug ?? "")
+    .split(/[\s_-]+/)
+    .map((w) => w.trim())
+    .filter((w) => w !== "")
+    .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (words.length === 0) return null;
+  return new RegExp(`\\b${words.join("[\\s_-]+")}\\b`, "i");
+}
+
+/**
+ * ★★★ "Delta" KHÔNG có mặt trong `VENDOR_ALIAS_PATTERNS`/`genericVendorRegex` — nó là TỪ TIẾNG ANH
+ * THÔNG DỤNG (delta = độ chênh) VÀ là định danh JS/TS cực phổ biến (`const delta = t1 - t0`,
+ * `deltaTime`, `deltaX`). Dự án này đã bị cắn BỐN lần vì khớp từ khoá quá lỏng (OEE
+ * `performance`/`quality`, `yield` = từ khoá JS, gộp dấu "kỹ"↔"kỳ", văn bản giáo cụ khớp nhầm
+ * intent) — không lặp lại lần thứ năm ở đây.
+ *
+ * ★ Chủ dự án (2026-09-04): "giữ nguyên phần ngữ cảnh của Delta — đó là LUẬT NHẬN DIỆN, không phải
+ * DANH SÁCH HÃNG, nó không trôi theo dữ liệu nên chép tay được." Bốn hằng số dưới đây do đó VẪN là
+ * hằng số hand-authored — CHỈ danh sách "delta có phải một hãng đang tồn tại hay không" (điều kiện
+ * `slug === "delta"` bên trong `detectProgrammingVendors`) mới đọc động từ manifest; luật NHẬN DIỆN
+ * khi nào một câu hỏi "nói tới Delta" thì không đổi.
  *
  * Nhận "delta" là hãng khi và CHỈ KHI một trong hai:
  *   (a) viết hoa ĐÚNG tên riêng — `Delta` (chữ Đ hoa, còn lại thường), so khớp PHÂN BIỆT hoa/thường;
@@ -2280,23 +2305,40 @@ const DELTA_DEVICE_CONTEXT_RE =
   /\b(plc|servo|asda|dvp|inverter|vfd|hmi|dop|ecma|drastudio|scada|ladder|encoder|automation)\b|motion controller|biến tần|bien tan/i;
 
 /**
- * B2 — vị từ nhận diện hãng THUẦN từ câu hỏi. KHÔNG đọc đĩa, KHÔNG gọi GPU/embedding — chỉ so khớp
- * chuỗi — nên lưới của hàm này (`aiLocalKnowledge.vendorDetect.test.ts`) chạy được mà không cần nạp
- * corpus 124.990 chunk (cùng lý do `export` như `locKhoTheoTienTo` ở trên).
+ * B2 — vị từ nhận diện hãng từ câu hỏi. ★ KHÔNG còn "thuần" theo nghĩa tuyệt đối (đọc
+ * `getProgrammingKbVendorSlugs()` phía `aiProgrammingKnowledgeService`, có thể chạm đĩa) — CỐ Ý,
+ * theo phản hồi chủ dự án: danh sách hãng phải đọc động từ `manifest.json` (nguồn thật, ghi bởi
+ * pipeline nạp), KHÔNG phải một bảng chép tay ở đây có thể trôi khỏi corpus thật khi hãng thứ bảy
+ * được nạp. Chi phí RẺ: `getProgrammingKbVendorSlugs()` chỉ đọc `manifest.json` (vài KB, KHÔNG
+ * phải `chunks.jsonl`/`embeddings.jsonl` 162 MB) và cache module-scope.
  *
- * Trả về DANH SÁCH slug hãng khớp được (0, 1, hoặc nhiều), đúng TÊN THƯ MỤC dưới
- * `knowledge/programming/` (`delta`/`fanuc`/`mitsubishi`/`omron`/`universal-robots`/`zmotion`) — vỏ
- * chữ không quan trọng ở đầu ra vì `collectionMatchesVendor`/`chunkMatchesFilters` phía
- * `aiProgrammingKnowledgeService` đều `.toLowerCase()` cả hai phía trước khi so khớp.
+ * Trả về DANH SÁCH slug hãng khớp được (0, 1, hoặc nhiều) — đúng những gì `manifest.json` liệt kê
+ * (vỏ chữ không quan trọng ở đầu ra vì `collectionMatchesVendor`/`chunkMatchesFilters` phía
+ * `aiProgrammingKnowledgeService` đều `.toLowerCase()` cả hai phía trước khi so khớp).
+ *
+ * ★★★ Fail-safe: `getProgrammingKbVendorSlugs()` KHÔNG BAO GIỜ throw (đã fail-safe ở phía nó) —
+ * manifest thiếu/hỏng ⇒ mảng RỖNG ⇒ vòng lặp dưới không chạy ⇒ hàm này trả `[]` cho MỌI câu hỏi,
+ * kể cả câu hỏi nêu đúng tên một hãng thật — đúng chủ ý: "chưa biết hãng nào tồn tại" phải rơi về
+ * KHÔNG LỌC (hành vi tìm-khắp AN TOÀN, y hệt trước khi tính năng lọc-theo-hãng tồn tại), không phải
+ * một lỗi cần xử lý riêng ở đây.
+ *
+ * `export` để lưới đo được (`aiLocalKnowledge.vendorDetect.test.ts`) mà không cần nạp corpus thật.
  */
 export function detectProgrammingVendors(question: string): string[] {
   const q = String(question ?? "");
   const found = new Set<string>();
-  for (const { slug, re } of VENDOR_WORD_PATTERNS) {
-    if (re.test(q)) found.add(slug);
-  }
-  if (DELTA_PROPER_NOUN_RE.test(q) || (DELTA_WORD_RE.test(q) && DELTA_DEVICE_CONTEXT_RE.test(q))) {
-    found.add("delta");
+  const knownVendorSlugs = getProgrammingKbVendorSlugs(); // nguồn thật = manifest.json, fail-safe []
+  for (const slugRaw of knownVendorSlugs) {
+    const slug = String(slugRaw ?? "").trim().toLowerCase();
+    if (slug === "") continue;
+    if (slug === "delta") {
+      if (DELTA_PROPER_NOUN_RE.test(q) || (DELTA_WORD_RE.test(q) && DELTA_DEVICE_CONTEXT_RE.test(q))) {
+        found.add("delta");
+      }
+      continue;
+    }
+    const re = VENDOR_ALIAS_PATTERNS[slug] ?? genericVendorRegex(slug);
+    if (re && re.test(q)) found.add(slug);
   }
   return Array.from(found);
 }

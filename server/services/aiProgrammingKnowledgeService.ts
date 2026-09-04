@@ -667,8 +667,55 @@ export function getProgrammingKbStatus(): ProgKbStatus {
 export function reloadProgrammingKb(): ProgKbStatus {
   dataCache = null;
   embedModelMismatchWarned = false;
+  manifestVendorSlugsCache = undefined;
   loadData(true);
   return getProgrammingKbStatus();
+}
+
+// ─── Vendor slug list — NGUỒN THẬT là `manifest.json`, không phải bảng chép tay ────────────────
+
+let manifestVendorSlugsCache: string[] | undefined;
+
+/**
+ * ★★★ Sửa theo phản hồi chủ dự án (2026-09-04, sau `task-v7-report.md`) — "danh sách hãng chép
+ * tay là bản sao thứ hai của một sự thật": dự án đã bị cắn đúng lớp lỗi này BỐN lần (`daBiTuChoiGhi`,
+ * `MA_GHI_MOT_PHAN`, `NHAN_HANG_RAO`, trigger OEE) — một bảng hằng liệt kê hãng ở NƠI GỌI sẽ TRÔI
+ * âm thầm khỏi corpus thật khi hãng thứ bảy được nạp mà không ai sửa bảng đó bằng tay.
+ *
+ * Trả về danh sách slug hãng ĐANG THẬT SỰ có trong corpus, đọc từ `manifest.json.collections[].vendor`
+ * (nguồn mà `ingest-manuals.mjs`/`embed-programming.mjs` GHI ra — không phải một bản sao). ★ CHỈ đọc
+ * `manifest.json` (vài KB) qua `loadManifest()` — KHÔNG đọc `chunks.jsonl`/`embeddings.jsonl` (162 MB,
+ * `loadData()` mới đọc những tệp đó) — nên rẻ, gọi được cho MỖI câu hỏi. Tái dùng `dataCache.manifest`
+ * khi corpus ĐÃ được nạp (đỡ đọc đĩa lần hai — `searchProgrammingKb` gọi `loadData()` ngay sau đằng
+ * nào); nếu chưa, đọc riêng + cache module-scope, cùng vòng đời với `reloadProgrammingKb()`.
+ *
+ * ★★★ Fail-safe (yêu cầu #4): `manifest.json` thiếu/hỏng/`collections` không phải mảng ⇒ mảng RỖNG,
+ * KHÔNG BAO GIỜ throw — người gọi (`aiLocalKnowledgeService.detectProgrammingVendors`) phải coi mảng
+ * rỗng là "chưa biết hãng nào tồn tại" ⇒ KHÔNG lọc (giữ hành vi tìm-khắp an toàn), không phải một lỗi
+ * cần xử lý riêng.
+ */
+export function getProgrammingKbVendorSlugs(): string[] {
+  try {
+    const manifest = dataCache?.manifest ?? loadManifest(progKbDir());
+    const collections = manifest?.collections;
+    if (!Array.isArray(collections)) {
+      if (manifestVendorSlugsCache === undefined) manifestVendorSlugsCache = [];
+      return manifestVendorSlugsCache;
+    }
+    const vendors = Array.from(
+      new Set(
+        collections
+          .map((c) => String(c?.vendor ?? "").trim().toLowerCase())
+          .filter((v) => v !== ""),
+      ),
+    );
+    manifestVendorSlugsCache = vendors;
+    return vendors;
+  } catch {
+    // Không throw — coi như "chưa biết hãng nào", tái dùng cache cũ nếu có (an toàn hơn rỗng
+    // đột ngột giữa một phiên đang chạy tốt), rỗng nếu chưa từng đọc được lần nào.
+    return manifestVendorSlugsCache ?? [];
+  }
 }
 
 /** Exposed for callers/tests that only need the enabled flag without a disk read. */
