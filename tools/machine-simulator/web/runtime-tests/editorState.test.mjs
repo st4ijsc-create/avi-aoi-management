@@ -150,6 +150,11 @@ const ACCEPTED_EDITS = {
   "set-kind": { kind: "set-kind", widgetId: "kind-gauge", widgetKind: "trend" },
   "set-policy-action": { kind: "set-policy-action", widgetId: "kind-command-button", policyAction: "machine.setpoint" },
   "set-binding": { kind: "set-binding", widgetId: "kind-sheet", name: "value", path: "cycles" },
+  // WS-HMI-2 Task 11 — phép sửa THỨ CHÍN, thêm vào ĐÂY vì đúng lý do Task 10 đã ghi ngay trên: mọi
+  // mệnh đề CHUNG phía trên (không đột biến, giữ hợp lệ theo schema, CHỈ ghi vào doc.widgets, undo trả
+  // lại nguyên trạng) phải đúng cho `rename` y như cho tám phép kia. Một corpus riêng mà không có dòng
+  // này sẽ để `rename` nằm ngoài đúng những bài đo phạm vi ấy.
+  rename: { kind: "rename", widgetId: "probe-b", newId: "probe-b-doi-ten" },
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1053,6 +1058,9 @@ function hypotheticalDoc(doc, edit) {
       return next
     }
     if (edit.kind === "set-policy-action") return { ...w, policyAction: edit.policyAction }
+    // WS-HMI-2 Task 11. Cố ý "ngây thơ" như ba nhánh anh em: gán thẳng `id`, không guard nào — rồi để
+    // `validate.mjs` nói tài liệu ấy có hợp lệ không.
+    if (edit.kind === "rename") return { ...w, id: edit.newId }
     if (edit.kind === "set-binding") {
       const bindings = { ...(w.bindings ?? {}) }
       if (edit.path === undefined) delete bindings[edit.name]
@@ -1252,6 +1260,158 @@ for (const [why, fields] of SET_BINDING_CORPUS) {
     }
   })
 }
+
+// ── corpus ĐỐI CHIẾU: rename (WS-HMI-2 Task 11) ──────────────────────────────────────────────────
+//
+// 🔴 ĐIỀU KIỆN TASK 7 ĐẶT RA CHO MỌI TẦM VỚI MỚI, ÁP DỤNG CHO `rename`: guard RIÊNG **và** thành viên
+// ngữ liệu đối chiếu RIÊNG, TRONG CÙNG MỘT COMMIT. Guard của `rename` là mẫu `id` của schema đóng băng
+// (với tới qua `widgetRefusal`, không gõ lại lần thứ hai — `SCHEMA_MIRROR.handledKeywords` vẫn kiểm kê
+// đúng từ khoá ấy theo ĐƯỜNG DẪN) và tính DUY NHẤT của id.
+//
+// Tính duy nhất KHÔNG nằm trong corpus này và không thể nằm: schema đóng băng CHO PHÉP hai widget trùng
+// id, nên với một thành viên như thế `schemaAccepts === true` còn editor thì từ chối — phép so
+// `editorAccepts === schemaAccepts` sẽ đỏ vì đúng cái nó không đo. Đó là chỗ "nghiêm hơn schema" thứ
+// NĂM, và nó được đo CẢ HAI PHÍA trong bài riêng ngay dưới corpus, đúng như `add` id trùng đã làm.
+const RENAME_CORPUS = [
+  ["tên hợp lệ: chữ thường và gạch nối", { widgetId: "probe-b", newId: "probe-b-doi-ten" }],
+  ["tên chỉ gồm CHỮ SỐ (mẫu cho phép, nên editor không được nghiêm hơn)", { widgetId: "probe-b", newId: "12345" }],
+  ["tên chỉ gồm GẠCH NỐI (cùng lý do)", { widgetId: "probe-b", newId: "---" }],
+  [
+    "đổi tên một widget GHI có gate — §5 không được rơi ra vì một lần đổi tên",
+    { widgetId: "kind-command-button", newId: "nut-lenh" },
+  ],
+  ["chữ HOA", { widgetId: "probe-b", newId: "Probe-B" }],
+  ["gạch DƯỚI", { widgetId: "probe-b", newId: "probe_b" }],
+  ["có KHOẢNG TRẮNG", { widgetId: "probe-b", newId: "probe b" }],
+  ["chỉ-khoảng-trắng", { widgetId: "probe-b", newId: "   " }],
+  ["chuỗi RỖNG — mẫu đòi ít nhất một ký tự", { widgetId: "probe-b", newId: "" }],
+  ["có DẤU CHẤM", { widgetId: "probe-b", newId: "probe.b" }],
+  [
+    "XUỐNG DÒNG ở cuối — `$` của JavaScript (không cờ m) neo ở cuối ĐẦU VÀO, nên cả hai phía cùng từ chối",
+    { widgetId: "probe-b", newId: "probe-b\n" },
+  ],
+  ["ký tự ngoài ASCII", { widgetId: "probe-b", newId: "probe-bê" }],
+  ["KHÔNG phải chuỗi (số)", { widgetId: "probe-b", newId: 7 }],
+  ["là null", { widgetId: "probe-b", newId: null }],
+  ["là undefined", { widgetId: "probe-b", newId: undefined }],
+  ["là object", { widgetId: "probe-b", newId: { id: "probe-c" } }],
+]
+
+for (const [why, fields] of RENAME_CORPUS) {
+  test(`rename · ${why}: applyEdit và validate.mjs ĐỒNG Ý về tài liệu KẾT QUẢ`, () => {
+    const edit = { kind: "rename", ...fields }
+    const state = freshState()
+    const would = hypotheticalDoc(state.doc, edit)
+    const errs = docErrors(would)
+    const schemaAccepts = errs.length === 0
+
+    const next = applyEdit(state, edit)
+    const editorAccepts = next.lastRefusal === undefined
+
+    assert.equal(
+      editorAccepts,
+      schemaAccepts,
+      schemaAccepts
+        ? `schema đóng băng NHẬN tài liệu kết quả, applyEdit TỪ CHỐI: ${next.lastRefusal?.code} — ${next.lastRefusal?.message}`
+        : `schema đóng băng TỪ CHỐI tài liệu kết quả (${errs.join("; ")}), applyEdit lại NHẬN`
+    )
+
+    if (schemaAccepts) {
+      assert.deepEqual(next.doc, would, "applyEdit nhận edit nhưng viết ra tài liệu KHÁC với tài liệu phía thứ hai dựng")
+      assert.deepEqual(docErrors(next.doc), [])
+    } else {
+      assertRefusedUnchanged(state, next, `rename · ${why}`, "invalid-widget")
+    }
+  })
+}
+
+// ── chỗ NGHIÊM HƠN thứ NĂM: đổi tên thành id ĐÃ CÓ (đo CẢ HAI phía, như (1)–(4)) ──────────────────
+
+test("rename sang một id widget KHÁC đang giữ bị TỪ CHỐI — nghiêm hơn schema CÓ CHỦ Ý, và schema thật sự CHO PHÉP trùng (đo, không suy)", () => {
+  const state = freshState()
+  const edit = { kind: "rename", widgetId: "probe-b", newId: "probe-a" }
+
+  // Phía SCHEMA, đo chứ không suy: tài liệu có HAI widget cùng id `probe-a` là HỢP LỆ. Nếu ngày nào
+  // `hmi-screen.schema.json` cấm id trùng, dòng này đỏ và ghi chú "nghiêm hơn schema" ở
+  // `editorState.ts` phải được sửa lại — cùng dây bẫy mà bài `add id TRÙNG` đã đặt cho `add`.
+  const would = hypotheticalDoc(state.doc, edit)
+  assert.deepEqual(
+    docErrors(would),
+    [],
+    "schema đóng băng GIỜ cấm id trùng — luật 'nghiêm hơn schema' của editorState.ts không còn là ngoại lệ, hãy sửa doc comment ở đó"
+  )
+  assert.equal(would.widgets.filter((w) => w.id === "probe-a").length, 2, "phía thứ hai không dựng ra tài liệu TRÙNG id — bài mất ý nghĩa")
+
+  // Phía EDITOR: từ chối, bằng ĐÚNG mã `add` dùng, và nêu đích danh cái tên đã bị chiếm.
+  const next = applyEdit(state, edit)
+  assertRefusedUnchanged(state, next, "rename sang id đã có", "duplicate-id")
+  assert.ok(next.lastRefusal.message.includes("probe-a"), `lý do không nêu đích danh id: ${next.lastRefusal.message}`)
+
+  // ...và ĐỐI CHỨNG, để "từ chối" ở trên không thể xanh bằng một guard từ chối MỌI rename: cùng widget,
+  // một cái tên chưa ai giữ, được NHẬN.
+  const ok = applyEdit(state, { kind: "rename", widgetId: "probe-b", newId: "probe-z" })
+  assertAccepted(ok, "rename sang id còn trống")
+  assert.equal(widgetOf(ok.doc, "probe-z").kind, "readout")
+})
+
+test("rename widget về ĐÚNG cái tên nó đang mang bị TỪ CHỐI là no-op — không phải duplicate-id với chính nó", () => {
+  // Nếu guard duy-nhất không loại trừ CHÍNH widget đang đổi tên, gõ lại cái tên hiện có sẽ báo "đã bị
+  // chiếm" — một câu vô nghĩa với người dùng, và một bước hoàn tác chết nếu nó được NHẬN.
+  const state = freshState()
+  const next = applyEdit(state, { kind: "rename", widgetId: "probe-b", newId: "probe-b" })
+  assertRefusedUnchanged(state, next, "rename về chính tên cũ", "no-op")
+})
+
+test("rename GIỮ NGUYÊN vị trí của widget trong mảng — đổi tên không phải đổi thứ tự vẽ", () => {
+  const state = freshState()
+  const before = idsOf(state.doc)
+  const index = before.indexOf("kind-gauge")
+  assert.ok(index > 0 && index < before.length - 1, "widget được chọn không nằm GIỮA mảng — bài mất ý nghĩa")
+
+  const next = applyEdit(state, { kind: "rename", widgetId: "kind-gauge", newId: "dong-ho" })
+  assertAccepted(next, "rename")
+
+  const after = idsOf(next.doc)
+  assert.equal(after[index], "dong-ho", `widget đổi tên đã rời khỏi vị trí ${index}`)
+  assert.deepEqual(
+    after,
+    before.map((id) => (id === "kind-gauge" ? "dong-ho" : id)),
+    "rename đã xáo trộn thứ tự tài liệu — thứ tự vẽ đổi vì một lần sửa chính tả"
+  )
+
+  // Và MỌI trường khác của chính widget ấy giữ nguyên: đổi tên là đổi ĐỊA CHỈ, không phải đổi nội dung.
+  const beforeWidget = widgetOf(state.doc, "kind-gauge")
+  const afterWidget = widgetOf(next.doc, "dong-ho")
+  for (const field of SCHEMA_MIRROR.widgetProperties) {
+    if (field === "id") continue
+    assert.deepEqual(afterWidget[field], beforeWidget[field], `rename đã thay đổi widget.${field}`)
+  }
+  // Mọi widget KHÁC phải là ĐÚNG object cũ.
+  for (const w of state.doc.widgets) {
+    if (w.id === "kind-gauge") continue
+    assert.equal(widgetOf(next.doc, w.id), w, `widget "${w.id}" bị dựng lại dù rename không chạm tới nó`)
+  }
+})
+
+test("rename nhắm tới widgetId KHÔNG TỒN TẠI bị TỪ CHỐI, kèm tên id sai", () => {
+  const state = freshState()
+  const next = applyEdit(state, { kind: "rename", widgetId: "no-such-widget", newId: "ten-moi" })
+  assertRefusedUnchanged(state, next, "rename", "unknown-widget")
+  assert.ok(next.lastRefusal.message.includes("no-such-widget"), `lý do không nêu id sai: ${next.lastRefusal.message}`)
+})
+
+test("sau rename, các phép sửa khác với tới widget bằng TÊN MỚI và KHÔNG với tới được tên cũ", () => {
+  // Mệnh đề "id là ĐỊA CHỈ" — nếu rename chỉ đổi một nhãn hiển thị mà không đổi địa chỉ, bài này đỏ.
+  const renamed = applyEdit(freshState(), { kind: "rename", widgetId: "probe-b", newId: "probe-z" })
+  assertAccepted(renamed, "rename")
+
+  const byOldName = applyEdit(renamed, { kind: "move", widgetId: "probe-b", rect: RECT(1, 1, 1, 1) })
+  assertRefusedUnchanged(renamed, byOldName, "move theo tên CŨ", "unknown-widget")
+
+  const byNewName = applyEdit(renamed, { kind: "move", widgetId: "probe-z", rect: RECT(1, 1, 1, 1) })
+  assertAccepted(byNewName, "move theo tên MỚI")
+  assert.deepEqual(widgetOf(byNewName.doc, "probe-z").rect, RECT(1, 1, 1, 1))
+})
 
 // ── §5, nói thẳng ra chứ không chỉ nằm trong corpus ──────────────────────────────────────────────
 

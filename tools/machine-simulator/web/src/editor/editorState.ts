@@ -46,7 +46,10 @@
  *     two widgets may share an `id` and still validate. But four of this module's five edits ADDRESS
  *     a widget BY id (`move`, `set-prop`, `remove`, `reorder`), so a duplicate id makes those edits
  *     ambiguous and undo/redo unreproducible. `add` therefore refuses an id already on the document.
- *     This is an EDITOR invariant, stated here rather than smuggled in.
+ *     This is an EDITOR invariant, stated here rather than smuggled in. 🔴 WS-HMI-2 Task 11 —
+ *     `rename` is the second edit that can create a duplicate and it is held to the SAME rule, by the
+ *     same code (`duplicate-id`), with the widget's own id excluded so renaming a widget to the name
+ *     it already carries is an ordinary no-op rather than a collision with itself.
  *
  * (2) EVERY VALUE WRITTEN INTO `props` MUST BE JSON. The schema declares `props` as bare
  *     `{"type": "object"}`, so `validate.mjs` never even descends into it — `props.x = undefined`,
@@ -127,8 +130,13 @@ import type { PolicyAction } from "../contracts/tagNamespace.ts"
  */
 export const UNDO_DEPTH_LIMIT = 100
 
-/** The five edits the visual editor can make. Each is data — serialisable, replayable, and carrying
- * no reference to any React component or DOM node. */
+/** The edits the visual editor can make. Each is data — serialisable, replayable, and carrying no
+ * reference to any React component or DOM node.
+ *
+ * 🔴 This said "the five edits" through Task 10, which added three, and Task 11, which added a
+ * ninth. The count is deleted rather than re-typed for a fourth time: a number written here is a
+ * second place to keep in step with the union below it, and `EDITOR_REFUSAL_CODES`'s census plus
+ * `editorState.test.mjs`'s `ACCEPTED_EDITS` are where the membership is actually held to account. */
 export type EditorEdit =
   | { kind: "move"; widgetId: string; rect: WidgetRect }
   /** `path` is dotted and rooted at the widget's `props` — `"label"`, `"thresholds.warn"`. It is
@@ -178,6 +186,36 @@ export type EditorEdit =
    * note (4) in the header, and the two-sided measurement in `editorState.test.mjs`.
    */
   | { kind: "set-binding"; widgetId: string; name: string; path?: string }
+  /**
+   * WS-HMI-2 Task 11 — the layer tree's rename, and the ONE edit that changes a widget's ADDRESS.
+   *
+   * 🔴 CONTROLLER RULING, 2026-09-04 (task-10-review.md F4): renaming is naming, and naming belongs
+   * with the layer tree, so it arrives here with Task 11 rather than with Task 10's property panel.
+   * `PropertyPanel` keeps `id` read-only and says on screen where the rename lives
+   * (`editor.panel.idReadOnly`), so the field is not a control that silently does nothing.
+   *
+   * TWO guards, and NEITHER is a new copy of a rule:
+   *
+   *   * the frozen schema's `$defs/widget.properties.id.pattern` — reached by building the widget
+   *     this edit WOULD produce and handing it to `widgetRefusal`, exactly as Task 10's three edits
+   *     do. `WIDGET_ID_PATTERN` is declared once, in this file, and `SCHEMA_MIRROR.handledKeywords`'s
+   *     inventory pin keeps it answerable to the schema file itself.
+   *   * UNIQUENESS — strictness note (1) in the header, and the same rule `add` enforces, for the
+   *     same reason: four edits address a widget BY id. Refused with `add`'s own `duplicate-id` code
+   *     so a consumer switches on ONE code for "that name is taken" regardless of which edit asked.
+   *     The widget's OWN id is not a duplicate of itself, so renaming a widget to the name it
+   *     already has falls through to `applyEdit`'s ordinary no-op rule rather than to this one.
+   *
+   * The widget keeps its POSITION in `doc.widgets`: a rename is not a reorder, and draw order must
+   * not change because someone corrected a spelling.
+   *
+   * What a rename does NOT rewrite is any reference to the old name, because the frozen contract has
+   * none: `component` names a node of the MACHINE's component model (`$defs/widget.properties
+   * .component`), not another widget, and nothing else in an `HmiScreenDocument` carries a widget id.
+   * The only thing that does hold one is the EDITOR's own selection, which lives in `EditorCanvas`
+   * and is re-pointed there — a UI concern, deliberately not smuggled into this module's data.
+   */
+  | { kind: "rename"; widgetId: string; newId: string }
 
 /**
  * Why a call left the document unchanged, as something a caller can SWITCH ON.
@@ -204,7 +242,9 @@ export type EditorRefusalCode =
   | "invalid-rect"
   /** The `widget` an `add` carries does not satisfy `$defs/widget`. */
   | "invalid-widget"
-  /** `add` named an `id` already on the document — stricter than the schema, on purpose. */
+  /** `add` or `rename` named an `id` already on the document — stricter than the schema, on purpose.
+   * One code for both, because "that name is taken" needs the same answer from a UI whichever edit
+   * asked; the message names the edit. */
   | "duplicate-id"
   /** A `set-prop` `path` that is not a non-empty dotted string. */
   | "bad-path"
@@ -722,8 +762,9 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
             `Applying it would have written props.${segments[0]} and left widget.${segments[0]} ` +
             `untouched — a green edit that does nothing you asked for. Editing ` +
             `${Object.keys(WIDGET_KEYS).join("/")} needs its own edit kind with its own guards: ` +
-            `kind and policyAction have set-kind/set-policy-action, bindings has set-binding, and ` +
-            `id/rect/component/props do not (rect has move, props IS this edit's own root)`
+            `kind and policyAction have set-kind/set-policy-action, bindings has set-binding, id has ` +
+            `rename (WS-HMI-2 Task 11), rect has move, props IS this edit's own root, and component ` +
+            `has none`
         )
       }
       const valueRefusal = jsonRefusal(
@@ -849,6 +890,41 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
       const widgets = doc.widgets.slice()
       // The cast is carried by the line above, not by optimism: `widgetRefusal` returning
       // `undefined` IS the proof that every value in `nextBindings` is a string.
+      widgets[index] = candidate as ScreenWidget
+      return { doc: { ...doc, widgets } }
+    }
+
+    // ── WS-HMI-2 Task 11 — the layer tree's rename ──────────────────────────────────────────────
+    //
+    // Same shape as the three above, and for the same reason: build the widget this edit WOULD
+    // produce, hand it to `widgetRefusal`. The frozen `id` pattern is therefore enforced by the one
+    // copy of it this file already carried, and `SCHEMA_MIRROR.handledKeywords` still accounts for
+    // that keyword by path. Uniqueness is the one thing `widgetRefusal` cannot answer — it is a
+    // property of the DOCUMENT, not of a widget — so it is checked here, exactly as `add` does.
+    case "rename": {
+      const index = indexOfWidget(doc, edit.widgetId)
+      if (index < 0) return unknownWidget("rename", edit.widgetId)
+      const widget = doc.widgets[index]
+      // Spread, not a rebuild: `id` is already the first key of every widget the contract describes,
+      // so assigning it leaves the saved document's key order alone (the property `move` and
+      // `set-kind` both state).
+      const candidate = { ...widget, id: edit.newId }
+      const bad = widgetRefusal(candidate, `rename ${describe(edit.widgetId)}: widget`)
+      if (bad !== undefined) return refusal("invalid-widget", bad)
+      // The widget's OWN id is not a collision with itself — otherwise re-typing the current name
+      // would be reported as "taken" instead of falling through to the no-op rule.
+      if (doc.widgets.some((other, i) => i !== index && other.id === edit.newId)) {
+        return refusal(
+          "duplicate-id",
+          `rename ${describe(edit.widgetId)}: a different widget already carries the id ` +
+            `${describe(edit.newId)}. The frozen schema permits duplicates; this editor does not, ` +
+            `because move/set-prop/remove/reorder all address a widget BY id and a duplicate makes ` +
+            `them ambiguous`
+        )
+      }
+      const widgets = doc.widgets.slice()
+      // Written at the SAME index: a rename is not a reorder, and draw order must not shift because
+      // someone corrected a spelling.
       widgets[index] = candidate as ScreenWidget
       return { doc: { ...doc, widgets } }
     }
