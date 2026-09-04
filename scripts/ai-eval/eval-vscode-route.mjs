@@ -259,11 +259,38 @@ function scoreCase(caseDef, result) {
     };
   }
 
-  // gap-probe — no oracle, just report facts.
-  return {
-    verdict: citations.length ? "SAI (có citation, không có nguồn thật)" : "HỎNG-ĐÚNG-Ý (0 citation, honest)",
-    reason: `${citations.length} citation — ${citations.map((c) => c.sourcePath).join(", ") || "(không có)"} · answer dài ${answer.length} ký tự`,
-  };
+  // gap-probe — no oracle for CITATIONS, nhưng CÓ oracle cho KẾT CỤC: câu hỏi gap-probe là câu hỏi
+  // lập trình phổ thông (C#/Node.js/...) NGOÀI miền tài liệu hãng — đúng ⇒ 0 citation VÀ có câu trả
+  // lời DÙNG ĐƯỢC (mã trong khối rào, không từ chối). ★★★ TASK V11 — trước bản vá này, rổ
+  // "HỎNG-ĐÚNG-Ý (0 citation, honest)" chấm THUẦN theo số citation — che mất một hồi quy THẬT: 0
+  // citation ĐÚNG, nhưng câu trả lời là khuôn từ chối "chưa có đủ thông tin" (0 mã, KHÔNG dùng
+  // được) — "honest" chỉ đúng về trích dẫn, KHÔNG đúng về kết cục người dùng nhận được. Chấm lại
+  // theo kết cục: có khối mã (```) · độ dài · có từ chối không · đúng ngôn ngữ không (so với
+  // `expectLanguage` của case, mặc định "vi" vì toàn bộ câu hỏi gap-probe hiện có đều tiếng Việt).
+  if (citations.length > 0) {
+    return {
+      verdict: "SAI (có citation, không có nguồn thật)",
+      reason: `${citations.length} citation — ${citations.map((c) => c.sourcePath).join(", ")} · answer dài ${answer.length} ký tự`,
+    };
+  }
+  const GAP_PROBE_REFUSAL_RE =
+    /(chưa có đủ thông tin|không có thông tin chính xác|chưa tìm thấy thông tin phù hợp|don't have enough information|couldn't find relevant information|don't have accurate information|没有找到|没有足够的信息)/i;
+  const hasCode = /```/.test(answer);
+  const isRefusal = GAP_PROBE_REFUSAL_RE.test(answer);
+  const expectLanguage = caseDef.expectLanguage ?? "vi";
+  const metaLang = meta?.language ?? null;
+  const languageOk = metaLang === expectLanguage;
+  const facts = `citations=0 · hasCode=${hasCode} · isRefusal=${isRefusal} · answer dài ${answer.length} ký tự · meta.language=${metaLang} (kỳ vọng ${expectLanguage}) · languageOk=${languageOk}`;
+  if (isRefusal) {
+    return { verdict: "HỎNG (từ chối oan — model thừa sức trả lời bằng kiến thức chung)", reason: facts };
+  }
+  if (!languageOk) {
+    return { verdict: "HỎNG (sai ngôn ngữ — câu hỏi tiếng Việt nhận trả lời ngôn ngữ khác)", reason: facts };
+  }
+  if (!hasCode) {
+    return { verdict: "SAI (trả lời nhưng không có khối mã dùng được)", reason: facts };
+  }
+  return { verdict: "ĐẠT (0 citation ĐÚNG + trả lời hữu ích, có mã, đúng ngôn ngữ)", reason: facts };
 }
 
 async function main() {

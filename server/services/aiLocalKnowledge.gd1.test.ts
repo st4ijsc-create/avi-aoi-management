@@ -43,4 +43,22 @@ describe("zh — detectLanguage", () => {
   it("still detects English", () => {
     expect(detectLanguage("machine status report")).toBe("en");
   });
+
+  // ★★★ TASK V11 — B3: kỹ sư gõ tiếng Việt KHÔNG DẤU (thói quen gõ nhanh, đặc biệt khi câu hỏi
+  // trộn thuật ngữ lập trình tiếng Anh — "Node.js", "MQTT", "broker") từng lọt qua CẢ HAI lưới cũ
+  // (không dấu ⇒ `viPattern` trượt; 9 cụm từ cố định của `viKeywords` không phủ hết) ⇒ rơi về "en"
+  // SAI, kéo theo trả lời tiếng Anh cho câu hỏi tiếng Việt. Đo SỐNG được trước khi vá:
+  // "Viet module Node.js ket noi MQTT broker va nhan message" -> "en". Xem
+  // `VI_PARTICLE_RE`/docblock cạnh `detectLanguage` cho danh sách từ nối đã chọn (loại các từ
+  // ngắn/mơ hồ trùng tiếng Anh hoặc viết tắt kỹ thuật: la/co/ai/ba/se/da/ra/the/do/can).
+  it("B3 — tiếng Việt KHÔNG DẤU lẫn thuật ngữ lập trình tiếng Anh vẫn nhận diện đúng \"vi\"", () => {
+    expect(detectLanguage("Viet module Node.js ket noi MQTT broker va nhan message")).toBe("vi");
+    expect(detectLanguage("Viet ham C# mo cong COM3 baud 9600 doc du lieu lien tuc")).toBe("vi");
+    expect(detectLanguage("toi muon viet mot Flask endpoint nhan file upload")).toBe("vi");
+  });
+
+  it("B3 đối chứng — câu tiếng Anh thật (không có từ nối tiếng Việt) vẫn nhận diện đúng \"en\"", () => {
+    expect(detectLanguage("Node.js Express MQTT broker module")).toBe("en");
+    expect(detectLanguage("How do I configure a REST API endpoint")).toBe("en");
+  });
 });

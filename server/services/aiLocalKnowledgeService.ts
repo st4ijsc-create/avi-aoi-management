@@ -804,6 +804,23 @@ export function detectLanguage(question: string): KbLanguage {
   const viKeywords = /(lam sao|huong dan|khac phuc|loi|du lieu|he thong|quan tri|nguoi dung|kiem tra)/i;
   if (viKeywords.test(normalizeText(question))) return "vi";
 
+  // \u2605\u2605\u2605 TASK V11 \u2014 B3 (ghi nh\u1eadn trong brief, kh\u00f4ng ph\u1ea3i m\u00f9): k\u1ef9 s\u01b0 g\u00f5 ti\u1ebfng Vi\u1ec7t KH\u00d4NG D\u1ea4U
+  // (b\u00e0n ph\u00edm/th\u00f3i quen g\u00f5 nhanh, \u0111\u1eb7c bi\u1ec7t ph\u1ed5 bi\u1ebfn khi c\u00e2u h\u1ecfi tr\u1ed9n nhi\u1ec1u thu\u1eadt ng\u1eef l\u1eadp tr\u00ecnh
+  // ti\u1ebfng Anh \u2014 "Node.js", "MQTT", "broker") l\u1ecdt qua C\u1ea2 HAI l\u01b0\u1edbi tr\u00ean: kh\u00f4ng d\u1ea5u \u21d2 `viPattern`
+  // (0 k\u00fd t\u1ef1 c\u00f3 d\u1ea5u) tr\u01b0\u1ee3t; 9 c\u1ee5m t\u1eeb c\u1ed1 \u0111\u1ecbnh c\u1ee7a `viKeywords` kh\u00f4ng ph\u1ee7 h\u1ebft m\u1ecdi c\u00e2u h\u1ecfi l\u1eadp
+  // tr\u00ecnh th\u1eadt \u21d2 `detectLanguage` r\u01a1i v\u1ec1 "en" \u2014 \u0110O S\u1ed0NG \u0111\u01b0\u1ee3c (`v11-lang-check.mjs`):
+  // "Viet module Node.js ket noi MQTT broker va nhan message" -> "en" (SAI, c\u00e2u h\u1ecfi n\u00e0y ti\u1ebfng
+  // Vi\u1ec7t kh\u00f4ng d\u1ea5u). V\u00e1: d\u00f9ng l\u1ea1i \u0110\u00daNG t\u1eadp t\u1eeb n\u1ed1i ti\u1ebfng Vi\u1ec7t-kh\u00f4ng-d\u1ea5u \u0111\u00e3 c\u00f3 s\u1eb5n \u1edf `STOP_WORDS`
+  // (khai b\u00e1o ngay tr\u00ean, d\u00f9ng cho `tokenize`) \u2014 nh\u01b0ng CH\u1ec8 gi\u1eef nh\u1eefng t\u1eeb KH\u00d4NG tr\u00f9ng ph\u1ea7n EN c\u1ee7a
+  // ch\u00ednh `STOP_WORDS` (vd "the"/"do"/"can" \u1edf C\u1ea2 hai ph\u1ea7n, gi\u1eef l\u1ea1i s\u1ebd k\u00e9o theo c\u00e2u ti\u1ebfng Anh
+  // th\u1eadt ch\u1ee9a "the"/"can" b\u1ecb ch\u1ea5m nh\u1ea7m "vi") v\u00e0 b\u1ecf th\u00eam v\u00e0i t\u1eeb NG\u1eaeN/m\u01a1 h\u1ed3 c\u00f3 th\u1ec3 l\u00e0 t\u1eeb ti\u1ebfng Anh
+  // th\u1eadt ho\u1eb7c t\u1eeb vi\u1ebft t\u1eaft k\u1ef9 thu\u1eadt (co\u2194"Co."/"CO", la\u2194"LA", ai\u2194"AI", ba\u2194"BA", se\u2194"SE", ra\u2194"RA",
+  // da\u2194"DA", the\u2194EN, do\u2194EN, can\u2194EN) \u2014 ch\u1ec9 c\u00f2n c\u00e1c t\u1eeb n\u1ed1i RI\u00caNG C\u1ee6A ti\u1ebfng Vi\u1ec7t, kh\u00f4ng \u0111\u1ee5ng h\u00e0ng
+  // v\u1edbi t\u1eeb/vi\u1ebft t\u1eaft ti\u1ebfng Anh ph\u1ed5 bi\u1ebfn trong c\u00e2u h\u1ecfi k\u1ef9 thu\u1eadt.
+  const VI_PARTICLE_RE =
+    /\b(khong|cua|voi|nhung|hoac|neu|dang|minh|toi|va|nao|gi|vao|muon|viet|duoc|hai|hon|nhu)\b/;
+  if (VI_PARTICLE_RE.test(normalizeText(question))) return "vi";
+
   return "en";
 }
 
@@ -1578,6 +1595,58 @@ function cauGhiChuVongLap(lang: KbLanguage, loop: ToolLoopResult): string {
   return `\n\n<sub>Đa bước: ${loop.rounds.length} lượt gọi tool (${ten}), ${loop.elapsedMs} ms.</sub>`;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ TASK V11 — REGRESSION do task-v10 (`49e12418`) gây ra, ĐO ĐƯỢC bằng KẾT CỤC (không phải cơ
+// chế): cổng `detectedVendors.length > 0` (retrieveProgrammingKnowledgeForVscode) đúng mục tiêu
+// "câu ngoài miền hãng KHÔNG nhận trích dẫn" — nhưng route vscode không có bất kỳ vòng tool nào
+// (KHONG_TOOL_VSCODE) và câu hỏi thô (không qua VSCODE_GIAO_THUC_PREFIX, `laVscodeDaBocGiaoThuc`
+// false — ca THẬT của bộ đo `eval-vscode-route.mjs`/probe trực tiếp HTTP) không tự nâng độ tin —
+// nên `citations.length===0` ⇒ `confidence=0` ⇒ `shouldUseLlm` (streamAnswer:~6430) / nhánh
+// `else if (retrieve.confidence>=0.30)` (answerQuestion:~3108) đều FALSE ⇒ LLM KHÔNG BAO GIỜ ĐƯỢC
+// GỌI ⇒ rơi thẳng `buildGracefulFallback` — một câu hỏi lập trình phổ thông ("viết hàm C# đọc
+// COM3", "viết module Node.js MQTT") nhận đúng khuôn từ chối "chưa có đủ thông tin", dù
+// `qwen3-30b` THỪA SỨC trả lời bằng kiến thức huấn luyện sẵn có, không cần citation nào.
+//
+// VÁ (BA phần, PHẢI đi cùng nhau — thiếu phần (3) thì (1)+(2) mở ra một hồi quy MỚI, ĐO ĐƯỢC):
+//   (1) `shouldUseLlm`/nhánh tương đương gọi LLM cho `route==="vscode"` khi KHÔNG khớp gate (3) —
+//       xem hai điểm sửa ở `streamAnswer`/`answerQuestion`.
+//   (2) Prompt rule #2 CÓ SẴN ("Nếu ngữ cảnh KHÔNG liên quan... trả lời đúng câu 'Tôi không có
+//       thông tin...'") — nếu (1) một mình, model NHIỀU KHẢ NĂNG vẫn tự lặp lại câu từ chối đó vì
+//       nhìn thấy "=== Ngữ cảnh từ knowledge base ===" RỖNG. `vscodeNoDocsGuidance` chèn một luật
+//       6 CÓ ĐIỀU KIỆN (chỉ khi route vscode + 0 citation + KHÔNG khớp gate (3)) NÓI RÕ luật 2
+//       không áp dụng cho câu hỏi LẬP TRÌNH chung — trả lời bằng kiến thức sẵn có, có ví dụ mã.
+//   (3) `LOOKS_LIKE_LIVE_FACTORY_DATA_RE`/`looksLikeLiveFactoryDataQuestion` — vành đai AN TOÀN
+//       ĐO ĐƯỢC LÀ CẦN THIẾT, không phải phòng xa lý thuyết: bản vá ĐẦU TIÊN của (1)+(2) (không có
+//       gate này) chạy `--only VSC-C1-operational-leak-control` (ca ĐỐI CHỨNG kỳ vọng từ chối,
+//       "Sản lượng hôm nay của line 2 là bao nhiêu, có đạt target OEE không?") và model — được
+//       luật 6 "cho phép trả lời bằng kiến thức chung" — đã BỊA một API/config KHÔNG CÓ THẬT
+//       (`GET /api/v1/line/{id}/performance`, trường `current_oee`/`target_oee`, tệp
+//       `line_config.json`) NGAY CẢ KHI phần cuối luật 6 đã nói rõ "câu hỏi vận hành thì luật 2
+//       VẪN áp dụng, không bịa số liệu" — model không tuân theo ranh giới trong câu chữ. Route
+//       vscode không có tool loop (Việc 2) nên KHÔNG có cách CƠ CHẾ nào khác chặn một câu hỏi vận
+//       hành trước khi tới LLM ngoài một gate ĐỨNG TRƯỚC lời gọi. Gate cố ý LỆCH VỀ AN TOÀN: lọt
+//       (false negative, một câu lập trình hiếm trùng từ vựng vận hành) chỉ mất phần CẢI THIỆN
+//       (rơi về `buildGracefulFallback` cũ, KHÔNG PHẢI hồi quy — đó CHÍNH LÀ hành vi trước task
+//       này); a lọt NGƯỢC (false positive, một câu vận hành thật đi qua) mới là rủi ro BỊA DỮ LIỆU
+//       — ĐÃ ĐO xác nhận gate chặn đúng ca VSC-C1 (xem báo cáo). KHÔNG import/tái dùng
+//       `intentClassifier.ts` (module đó CÓ CHỦ Ý không được route vscode chạm tới nữa từ Việc 2 —
+//       bốn sự cố trigger-quá-rộng cùng họ) — đây là một regex CỤC BỘ, HẸP, chỉ để QUYẾT ĐỊNH có
+//       nới luật 2 hay không, không định tuyến, không chạy tool nào.
+const LOOKS_LIKE_LIVE_FACTORY_DATA_RE =
+  /(?<![\p{L}\p{N}_])(oee|sản\s*lượng|san\s*luong|hiệu\s*suất\s*tổng\s*thể|overall\s*equipment|downtime|cảnh\s*báo|canh\s*bao|dây\s*chuyền|day\s*chuyen|tỷ\s*lệ\s*lỗi|ty\s*le\s*loi|defect\s*rate|ng\s*rate|\bcpk\b|\bspc\b|\bfpy\b|\bkpi\b)(?![\p{L}\p{N}_])/iu;
+export function looksLikeLiveFactoryDataQuestion(question: string): boolean {
+  return LOOKS_LIKE_LIVE_FACTORY_DATA_RE.test(question);
+}
+
+function vscodeNoDocsGuidance(route: string | undefined, retrieve: KbRetrieveResult): string {
+  if (route !== "vscode" || retrieve.citations.length > 0) return "";
+  if (looksLikeLiveFactoryDataQuestion(retrieve.question)) return "";
+  if (retrieve.language === "en") {
+    return '6. EXCEPTION TO RULE 2 (only when "Context from knowledge base" below is EMPTY): this is the CODING panel, not a factory-data query. If the question is a GENERAL PROGRAMMING request (write a function/module/snippet in a common language/framework, explain a programming concept, standard library/API syntax) that is outside the internal vendor-manual corpus, that is NORMAL — do NOT apply rule 2, and do NOT open your answer with "I don\'t have accurate information" or any hedge like it (not even as a first sentence before answering anyway) — answer normally and directly using your general programming knowledge, with code in ``` fences. BUT if the question asks for REAL FACTORY DATA (yield, OEE, a specific lot/machine, alerts, KPIs) and there is no "Real-time data" block above, rule 2 STILL applies in full — do not invent figures.';
+  }
+  return '6. NGOẠI LỆ CHO LUẬT 2 (chỉ khi mục "Ngữ cảnh từ knowledge base" dưới đây RỖNG): đây là panel LẬP TRÌNH, không phải hỏi số liệu nhà máy. Nếu câu hỏi là yêu cầu LẬP TRÌNH chung (viết hàm/module/đoạn mã bằng một ngôn ngữ/framework phổ biến, giải thích khái niệm lập trình, cú pháp thư viện/API chuẩn) mà không thuộc tài liệu hãng thiết bị nội bộ, đây là chuyện BÌNH THƯỜNG — ĐỪNG áp dụng luật 2, và ĐỪNG mở đầu câu trả lời bằng "Tôi không có thông tin chính xác..." hay bất kỳ câu rào đón nào tương tự (kể cả chỉ một câu mở đầu rồi mới trả lời tiếp) — hãy trả lời THẲNG, BÌNH THƯỜNG bằng kiến thức lập trình chung sẵn có của bạn, có ví dụ mã trong khối rào ```. NHƯNG nếu câu hỏi hỏi DỮ LIỆU VẬN HÀNH THỰC TẾ của nhà máy (sản lượng, OEE, lô/máy cụ thể, cảnh báo, KPI) mà không có khối "Dữ liệu thời gian thực" nào ở trên, luật 2 VẪN áp dụng nguyên vẹn — không được bịa số liệu.';
+}
+
 async function generateWithOllama(
   question: string,
   retrieve: KbRetrieveResult,
@@ -1620,6 +1689,7 @@ async function generateWithOllama(
     "3. Trả lời đúng trọng tâm câu hỏi hiện tại; bỏ qua phần ngữ cảnh không liên quan.",
     "4. Nếu có dữ liệu thời gian thực, ƯU TIÊN dùng nó; không bịa số liệu.",
     "5. TUYỆT ĐỐI KHÔNG lặp lại, sao chép, hoặc tóm tắt các câu trả lời trước trong Lịch sử hội thoại. Lịch sử CHỈ dùng để hiểu ngữ cảnh (ví dụ: đại từ, chủ đề đang nói tới). CHỈ trả lời cho 'Câu hỏi hiện tại' bên dưới, không nhắc lại nội dung cũ.",
+    vscodeNoDocsGuidance(route, retrieve),
     `Phân loại ý định: ${retrieve.intent}`,
     `Ngôn ngữ: ${retrieve.language}`,
     toolBlock,
@@ -1753,6 +1823,7 @@ export async function* generateWithOllamaStream(
     "3. Trả lời đúng trọng tâm câu hỏi hiện tại; bỏ qua phần ngữ cảnh không liên quan.",
     "4. Nếu có dữ liệu thời gian thực, ƯU TIÊN dùng nó; không bịa số liệu.",
     "5. TUYỆT ĐỐI KHÔNG lặp lại, sao chép, hoặc tóm tắt các câu trả lời trước trong Lịch sử hội thoại. Lịch sử CHỈ dùng để hiểu ngữ cảnh (ví dụ: đại từ, chủ đề đang nói tới). CHỈ trả lời cho 'Câu hỏi hiện tại' bên dưới, không nhắc lại nội dung cũ.",
+    vscodeNoDocsGuidance(route, retrieve),
     `Phân loại ý định: ${retrieve.intent}`,
     `Ngôn ngữ: ${retrieve.language}`,
     toolBlock,
@@ -3105,7 +3176,19 @@ export async function answerQuestion(
     // `force=true` so this fires even when intent=general (typical for
     // P2 operator-experienced live-data questions).
     answer = appendHintsFooter(answer, retrieve, true);
-  } else if (retrieve.confidence >= 0.30) {
+  } else if (
+    retrieve.confidence >= 0.30 ||
+    (kbContext?.route === "vscode" && !looksLikeLiveFactoryDataQuestion(question))
+  ) {
+    // ★★★ TASK V11 — NHÁNH KIA của `streamAnswer`'s `shouldUseLlm` (xem docblock lớn cạnh
+    // `vscodeNoDocsGuidance`). `/api/ai/local-kb/ask` (route KHÔNG dùng bởi extension hiện tại —
+    // `vscode-extension/src` chỉ gọi `/stream`, xem `dongSse.ts`) có CÙNG hình dạng lỗi: citations
+    // rỗng do cổng vendor (task-v10) ⇒ confidence 0 ⇒ nhánh này trước đây bị bỏ qua hoàn toàn cho
+    // route vscode. Vá phòng thủ CHO CẢ hai đường vào (không chỉ đường người dùng thật đang đi)
+    // để một điểm gọi `/ask` trong tương lai không tái dính đúng lớp lỗi này. Cùng gate
+    // `looksLikeLiveFactoryDataQuestion` với `streamAnswer` — xem docblock cạnh
+    // `LOOKS_LIKE_LIVE_FACTORY_DATA_RE` cho lý do (đo được: không gate ⇒ model bịa API/config vận
+    // hành không có thật cho câu hỏi vận hành 0-citation).
     try {
       const llmAnswer = await generateWithOllama(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route);
       if (llmAnswer) {
@@ -6427,8 +6510,30 @@ export async function* streamAnswer(
   // thấp" sẽ xoá luôn cơ hội đó (rơi thẳng về `buildGracefulFallback`/`buildExtractiveAnswer`,
   // không bao giờ chạm model), tệ hơn hẳn triệu chứng RAG-hijack đang vá. Không áp cho Cmd+K/route
   // khác "vscode" (`laVscodeDaBocGiaoThuc` mặc định `false`) — cổng giữ NGUYÊN hành vi cũ ở đó.
+  //
+  // ★★★ TASK V11 — REGRESSION task-v10 (`49e12418`): thêm `context?.route === "vscode"` làm điều
+  // kiện thứ TƯ. Gốc rễ đo được (xem docblock lớn cạnh `vscodeNoDocsGuidance`): route vscode không
+  // có tool loop (KHONG_TOOL_VSCODE, Việc 2) và câu hỏi thô không qua giáo cụ
+  // (`laVscodeDaBocGiaoThuc=false`, đúng hình dạng bộ đo/gọi HTTP trực tiếp) ⇒ cổng
+  // `detectedVendors.length>0` (task-v10, `retrieveProgrammingKnowledgeForVscode`) trả
+  // `citations=[]`/`confidence=0` cho MỌI câu hỏi ngoài miền tài liệu hãng — kể cả câu hỏi lập
+  // trình phổ thông model THỪA SỨC trả lời — nên LLM KHÔNG BAO GIỜ được gọi, rơi thẳng
+  // `buildGracefulFallback`. "Không trích dẫn" cho route vscode KHÔNG có nghĩa "không trả lời
+  // được" — luôn thử LLM, để prompt (`vscodeNoDocsGuidance`) tự quyết định trả lời bằng kiến thức
+  // chung hay giữ nguyên từ chối (câu hỏi vận hành). AN TOÀN: `toolKhongCoGiDeNoi` vẫn giữ nguyên
+  // ở vế `&&` sau — route vscode luôn có `toolResult=null` nên vị từ đó luôn `false` (không chặn).
+  //
+  // ★ `&& !looksLikeLiveFactoryDataQuestion(cauHoiTruyVan)` — KHÔNG chỉ dựa vào prompt rule 6 để
+  // giữ ranh giới (xem docblock cạnh `LOOKS_LIKE_LIVE_FACTORY_DATA_RE`): một câu hỏi khớp gate này
+  // KHÔNG được phép tới LLM khi 0 citation, dù rule 6 CÓ nói "luật 2 vẫn áp dụng" — model đã đo
+  // được là KHÔNG tuân theo ranh giới đó trong câu chữ (ca `VSC-C1-operational-leak-control` bịa
+  // API/config không có thật). Gate ở ĐÂY (trước khi gọi LLM) là lớp phòng thủ CƠ CHẾ, không phải
+  // chỉ dựa vào model đọc đúng chỉ dẫn.
   const shouldUseLlm =
-    (!!toolResult || retrieve.confidence >= 0.30 || laVscodeDaBocGiaoThuc) &&
+    (!!toolResult ||
+      retrieve.confidence >= 0.30 ||
+      laVscodeDaBocGiaoThuc ||
+      (context?.route === "vscode" && !looksLikeLiveFactoryDataQuestion(cauHoiTruyVan))) &&
     !toolKhongCoGiDeNoi(toolResult, loop?.rounds.length ?? 1);
 
   // G2-C — cùng phép bọc như `answerQuestion` (xem `bocDuLieuTool`).

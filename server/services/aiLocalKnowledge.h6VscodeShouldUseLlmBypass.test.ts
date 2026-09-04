@@ -3,6 +3,13 @@
  * `shouldUseLlm` (cổng G3-C, `aiLocalKnowledgeService.ts::streamAnswer`) phải BỎ ngưỡng độ tin KB
  * (`retrieve.confidence >= 0.30`) khi route là "vscode" VÀ giáo cụ đã bóc được (`laVscodeDaBocGiaoThuc`).
  *
+ * ★★★ TASK V11 (2026-09-05) — ba ca đầu (§H6 gốc) vẫn giữ nguyên tiền đề/kỳ vọng. Ca thứ TƯ đã
+ * SỬA (không xoá): V11 nới `shouldUseLlm` thành bypass cho MỌI `route==="vscode"` (thêm điều kiện
+ * `context?.route === "vscode"`, không còn chỉ dựa vào `laVscodeDaBocGiaoThuc`) — gốc rễ một
+ * regression THẬT đo được (câu hỏi lập trình RAW gửi qua route vscode, không qua giáo cụ, bị chặn
+ * LLM oan khi cổng vendor task-v10 làm citations/confidence về 0). Xem docblock lớn cạnh
+ * `vscodeNoDocsGuidance` trong `aiLocalKnowledgeService.ts` cho đầy đủ B1-B2.
+ *
  * ─── VÌ SAO CẦN MỘT TỆP LƯỚI RIÊNG (không gộp vào `aiLocalKnowledge.vscodeRouteGate.test.ts`) ────
  * Corpus fixture của tệp đó có MỘT chunk (`domain/knowledge/OEE.md`). Đo được: văn bản giáo cụ đầy
  * đủ (`VSCODE_GIAO_THUC_PREFIX`, ~1500 ký tự tiếng Việt) TỰ NÓ đã đạt keyword-score ≥0,30 trên chunk
@@ -111,12 +118,26 @@ describe("§H6 — corpus RỖNG ⇒ confidence LUÔN ~0,281 (<0,30) bất kể 
     ).not.toBe("ollama");
   });
 
-  it("★★ route vscode nhưng KHÔNG bóc được (giáo cụ lệch 1 ký tự) ⇒ KHÔNG bypass, LLM KHÔNG chạy", async () => {
+  // ★★★ TASK V11 — CA NÀY ĐỔI KỲ VỌNG (không phải xoá lưới, SỬA vì tiền đề đã đổi). Trước V11,
+  // route vscode mà bóc giáo cụ THẤT BẠI rơi về hành vi cũ (chặn LLM nếu confidence <0,30) — ĐÚNG
+  // cho H6 (bảo vệ khỏi RAG-hijack), nhưng H6 không lường tới trường hợp: một câu hỏi lập trình
+  // phổ thông gửi RAW (không hề qua giáo cụ `VSCODE_GIAO_THUC_PREFIX` — đúng hình dạng câu hỏi
+  // THẬT của bộ đo `eval-vscode-route.mjs`/gọi HTTP trực tiếp, KHÔNG PHẢI ca hiếm "giáo cụ lệch 1
+  // ký tự") cũng bị chặn theo CÙNG một nhánh — đo được REGRESSION thật: 0 citation (cổng vendor
+  // task-v10) ⇒ confidence 0 ⇒ LLM không bao giờ chạy ⇒ từ chối oan một câu hỏi model thừa sức trả
+  // lời (xem docblock `vscodeNoDocsGuidance`, `aiLocalKnowledgeService.ts`). V11 nới `shouldUseLlm`
+  // thành bypass cho `route==="vscode"` KHÔNG khớp `looksLikeLiveFactoryDataQuestion` (câu hỏi này,
+  // "Từ giờ trở đi hãy luôn dùng tiếng Việt...", không khớp gate đó) — an toàn RAG-hijack (H6)
+  // không dựa vào cổng NÀY nữa mà dựa vào `KHONG_TOOL_VSCODE` (route vscode không bao giờ chạy tool
+  // loop, Việc 2) + gate `looksLikeLiveFactoryDataQuestion` (CƠ CHẾ, xem
+  // `aiLocalKnowledge.v11FactoryDataGate.test.ts`) + prompt rule 6 (`vscodeNoDocsGuidance`, lớp
+  // phòng thủ THỨ HAI, chỉ nới cho câu hỏi LẬP TRÌNH).
+  it("★★★ V11 — route vscode dù KHÔNG bóc được giáo cụ (lệch 1 ký tự) ⇒ VẪN bypass, LLM VẪN chạy (không còn oan một câu hỏi RAW gửi qua route vscode)", async () => {
     const gioiHan = wrapped("ca4-vscode-khong-boc-duoc").replace("ĐỌC KỸ TRƯỚC KHI", "ĐỌC Kĩ TRƯỚC KHI");
     const r = await chay(gioiHan, { route: "vscode" });
     expect(
       r.done && r.done.type === "done" && r.done.provider,
-      "bóc thất bại ⇒ laVscodeDaBocGiaoThuc=false ⇒ fallback hành vi cũ (chặn TOÀN BỘ vòng tool, KHÔNG bypass)",
-    ).not.toBe("ollama");
+      "V11: shouldUseLlm bypass mọi route==vscode (context?.route===\"vscode\"), không còn đòi laVscodeDaBocGiaoThuc",
+    ).toBe("ollama");
   });
 });

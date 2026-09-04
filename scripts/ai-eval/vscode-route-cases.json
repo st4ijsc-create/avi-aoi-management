@@ -80,18 +80,20 @@
       "domain": "csharp",
       "vendor": null,
       "kind": "gap-probe",
+      "expectLanguage": "vi",
       "questionTemplate": "Trong C#, class System.IO.Ports.SerialPort cấu hình baud rate/parity/stop bits thế nào để giao tiếp Modbus RTU với một thiết bị bất kỳ? [ts={ts}]",
       "expectVendorInCitation": null,
-      "note": "KHÔNG có manual C#/ .NET nào trong knowledge/programming — đây là đầu dò lỗ hổng thật (B2: domain C# = 0 tài liệu gốc). Kết cục kỳ vọng: KHÔNG có citation (honest) hoặc citation không liên quan — chấm THẬT, không ép oracle giả."
+      "note": "KHÔNG có manual C#/ .NET nào trong knowledge/programming — đây là đầu dò lỗ hổng thật (B2: domain C# = 0 tài liệu gốc). ★★★ TASK V11 — kỳ vọng ĐÃ SỬA: 0 citation VÀ trả lời DÙNG ĐƯỢC (mã trong khối rào, không từ chối, đúng ngôn ngữ) — trước V11, 0 citation kèm khuôn từ chối 'chưa có đủ thông tin' từng bị chấm 'HỎNG-ĐÚNG-Ý (honest)' dù người dùng KHÔNG nhận được câu trả lời dùng được (regression thật của task-v10, xem task-v11-report.md). Chấm theo KẾT CỤC (scoreCase), không theo số citation nữa."
     },
     {
       "id": "VSC-10-iot-web-gap",
       "domain": "web-iot",
       "vendor": null,
       "kind": "gap-probe",
+      "expectLanguage": "vi",
       "questionTemplate": "Mình muốn viết một module web nhỏ bằng Node.js/Express nhận dữ liệu cảm biến IoT qua MQTT và hiển thị realtime trên dashboard, nên bắt đầu từ đâu? [ts={ts}]",
       "expectVendorInCitation": null,
-      "note": "KHÔNG có tài liệu web/IoT-module nào trong knowledge/programming (chỉ có manual PLC/robot/servo hãng) — đầu dò lỗ hổng domain 'web/IoT' (B2). Kết cục kỳ vọng: KHÔNG có citation vendor_manual giả mạo liên quan."
+      "note": "KHÔNG có tài liệu web/IoT-module nào trong knowledge/programming (chỉ có manual PLC/robot/servo hãng) — đầu dò lỗ hổng domain 'web/IoT' (B2). ★★★ TASK V11 — kỳ vọng ĐÃ SỬA: 0 citation VÀ trả lời DÙNG ĐƯỢC (mã trong khối rào, không từ chối, đúng ngôn ngữ) — xem ghi chú VSC-09 và task-v11-report.md."
     },
     {
       "id": "VSC-C1-operational-leak-control",
