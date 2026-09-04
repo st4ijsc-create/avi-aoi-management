@@ -119,7 +119,13 @@ export function dungYeuCauStream(dv: {
   //   rỗng bất kể chế độ), build lại, chạy 5 câu Step 2 ⇒ tỉ lệ tuân thủ SẬP về 0/5 (C_BO_QUA_GIAO_
   //   THUC cả năm) — y hệt baseline Task 6. Xác nhận số đẹp đến từ ĐÚNG hai dòng này, không phải
   //   nơi khác. Đã hoàn nguyên về đúng bản đã đo LIVE (10/11 A) sau khi ablation xong.
-  const phanNhacLaiCuoi = dayGiaoThucDoc ? nhacLaiCuoiCauHoi() : "";
+  // ★★★ ĐỢT H / TASK H5 — H4 đo `de_xuat_nho`/`mcp_goi` (dạy Ở ĐẦU, xem `phanDayMcp`/`phanDayBoNho`
+  //   trên) bị bỏ qua 0/5 và T12 SAI cùng nguyên nhân LỖI 1 (chỉ dẫn đầu prompt thua luật máy chủ).
+  //   `nhacLaiCuoiCauHoi` nay nhắc lại CẢ HAI ở cuối — CÙNG điều kiện đã dạy chúng (`dsToolMcp`/
+  //   `dsBoNho` không rỗng), không nhắc một khả năng KHÔNG áp dụng được cho lượt này.
+  const phanNhacLaiCuoi = dayGiaoThucDoc
+    ? nhacLaiCuoiCauHoi({ coMcp: dsToolMcp.length > 0, coBoNho: dsBoNho.length > 0 })
+    : "";
 
   // Chỉ dán nhãn khi THẬT SỰ có ngữ cảnh đính kèm — ngữ cảnh rỗng thì không đẻ khung/nhãn thừa.
   const nguCanhCoNhan =

@@ -14,6 +14,11 @@
  */
 import { tachKhoiAviTool } from "./khoiAviTool";
 
+/** Tên tool trong từ vựng `avi-tool` dành cho đề xuất nhớ — cùng khuôn `TEN_TOOL_MCP`
+ *  (`yeuCauMcp.ts`): MỘT hằng số xuất khẩu, dùng lại ở cả nơi DẠY (`dayBoNhoDoc.ts`) lẫn nơi nhắc
+ *  lại cuối câu hỏi (`dayGiaoThucDoc.ts`), không còn chép tay chuỗi "de_xuat_nho" ở nhiều nơi. */
+export const TEN_TOOL_DE_XUAT_NHO = "de_xuat_nho";
+
 export interface DeXuatNho {
   noiDung: string;
 }
@@ -22,7 +27,7 @@ export function docDeXuatNho(vanBan: string): DeXuatNho[] {
   const ketQua: DeXuatNho[] = [];
 
   for (const { tool, args } of tachKhoiAviTool(vanBan)) {
-    if (tool !== "de_xuat_nho") continue;
+    if (tool !== TEN_TOOL_DE_XUAT_NHO) continue;
     // Thiếu trường / sai kiểu / rỗng ⇒ bỏ qua khối này — một đề xuất nhớ SAI/RỖNG còn tệ hơn không
     // đề xuất (cùng nguyên tắc "không đoán" của `yeuCauDoc.ts`).
     if (typeof args.noiDung !== "string") continue;

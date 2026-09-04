@@ -59,8 +59,31 @@
  * mã mới không cần tệp tham chiếu — cả ở đầu (`dungVanBanDayGiaoThucDoc`) LẪN cuối câu hỏi
  * (`nhacLaiCuoiCauHoi`, cùng lý do trọng số vị trí đã đo ở LỖI 1). KHÔNG đụng nhánh ĐỌC hiện có —
  * đây là một câu THÊM, không phải một câu THAY.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT H / TASK H5 — LỖ HỔNG THỨ BA: `de_xuat_nho`/`mcp_goi` ĐƯỢC DẠY Ở ĐẦU, KHÔNG BAO GIỜ NHẮC
+ * LẠI Ở CUỐI ⇒ ĐO ĐƯỢC 0/5, RAG-HIJACK.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Đo H4 (`task-h4-report.md`): 5/5 lượt mời AI đề xuất nhớ (`de_xuat_nho`, dạy ở `dayBoNhoDoc.ts`)
+ * và T12 (gọi tool MCP đã kết nối, dạy ở `dayMcpDoc.ts`) đều bị model BỎ QUA HOÀN TOÀN — không chỉ
+ * "sai cú pháp", model KHÔNG HỀ trả lời câu hỏi thật, mà lạc sang một đoạn RAG tri thức vận hành
+ * gần-cố-định (mô tả cây thư mục `features/`) bất kể nội dung câu hỏi. Cùng CƠ CHẾ đã đo ở LỖI 1
+ * (trên): luật "NGUYÊN TẮC TRẢ LỜI" của máy chủ thắng khi chỉ dẫn chỉ đứng Ở ĐẦU `question` — khác
+ * LỖI 1 ở chỗ hai giao thức này CHƯA TỪNG có bản nhắc lại ở CUỐI câu hỏi, trong khi ba tool ĐỌC (và
+ * nhánh viết mã mới) đã có từ vòng đo lại thứ nhất. Vá: mở rộng `nhacLaiCuoiCauHoi` (ngay dưới) để
+ * nhắc CẢ hai — CÓ ĐIỀU KIỆN (chỉ khi `dayGiaoThucDoc` cũng đã dạy chúng ở đầu prompt, tức
+ * `dsToolMcp`/`dsBoNho` không rỗng, xem `yeuCau.ts`): một câu nhắc về MCP khi chưa có tool nào kết
+ * nối, hay về đề xuất nhớ khi chưa có mục nhớ nào, sẽ nhắc model về một khả năng KHÔNG áp dụng được
+ * lượt này — đúng bất biến "vá xong kiểm NHÁNH KIA" mà Task H2/H3 đã đặt cho phần DẠY, nay áp dụng
+ * lại cho phần NHẮC.
  */
 import { NHAN_HANG_RAO } from "./khoiAviTool";
+// ★★★ ĐỢT H / TASK H5 — nguồn DUY NHẤT cho hai tên tool được nhắc lại ở CUỐI câu hỏi bên dưới
+// (`nhacLaiCuoiCauHoi`): `TEN_TOOL_MCP` (nơi DẠY: `dayMcpDoc.ts`) và `TEN_TOOL_DE_XUAT_NHO` (nơi
+// DẠY: `dayBoNhoDoc.ts`). KHÔNG chép tay chuỗi "mcp_goi"/"de_xuat_nho" lần thứ năm ở đây — cùng
+// nguyên tắc đã áp cho `NHAN_HANG_RAO` (docblock module).
+import { TEN_TOOL_MCP } from "./yeuCauMcp";
+import { TEN_TOOL_DE_XUAT_NHO } from "./deXuatNho";
 
 /** Dựng MỘT ví dụ khối rào — dùng `JSON.stringify` thay vì gõ tay chuỗi JSON, cùng cách
  *  `cauHoiSuaChon.ts` đã làm cho tool GHI: tránh một lỗi đánh máy trong ví dụ khiến chính ví dụ
@@ -105,14 +128,45 @@ export function dungVanBanDayGiaoThucDoc(): string {
  * Câu nhắc NGẮN, đặt ở CUỐI `question` (gần điểm model bắt đầu sinh chữ nhất) — xem docblock ở
  * trên: một hướng dẫn nằm ở ĐẦU prompt thua luật "NGUYÊN TẮC TRẢ LỜI" của máy chủ ở 10/11 lượt đo
  * được; nhắc lại ngắn gọn NGAY TRƯỚC lúc model trả lời tăng trọng số của chỉ dẫn tại đúng vị trí mô
- * hình chú ý nhiều nhất. KHÔNG dạy lại cú pháp ở đây (đã dạy đủ ở `dungVanBanDayGiaoThucDoc`) — chỉ
- * nhắc ĐIỀU KIỆN kích hoạt, tránh trùng lặp nội dung làm loãng cả hai.
+ * hình chú ý nhiều nhất. KHÔNG dạy lại cú pháp ở đây (đã dạy đủ ở `dungVanBanDayGiaoThucDoc`/
+ * `dayMcpDoc.ts`/`dayBoNhoDoc.ts`) — chỉ nhắc ĐIỀU KIỆN kích hoạt, tránh trùng lặp nội dung làm
+ * loãng cả hai.
+ *
+ * ★★★ ĐỢT H / TASK H5 — `dv.coMcp`/`dv.coBoNho` CÓ ĐIỀU KIỆN, cùng bất biến "vá xong kiểm NHÁNH
+ * KIA" mà `dayMcpDoc.ts`/`dayBoNhoDoc.ts` đã đặt cho phần DẠY: người gọi (`yeuCau.ts`) chỉ bật cờ
+ * khi CHÍNH LƯỢT NÀY đã dạy MCP/bộ nhớ ở đầu prompt (`dsToolMcp`/`dsBoNho` không rỗng). Mặc định
+ * CẢ HAI `false` (tham số tuỳ chọn, có thể gọi `nhacLaiCuoiCauHoi()` không đối số) ⇒ chuỗi trả về
+ * GIỐNG HỆT byte-đúng bản trước H5 — người dùng chưa từng chạm MCP/bộ nhớ dài hạn không thấy một
+ * ký tự thừa nào (đối chứng bắt buộc B3: không được làm loãng giao thức ĐỌC đang chạy tốt).
  */
-export function nhacLaiCuoiCauHoi(): string {
-  return (
+export function nhacLaiCuoiCauHoi(dv: { coMcp?: boolean; coBoNho?: boolean } = {}): string {
+  const phanDoc =
     "\n\n(Nhắc lại: nếu câu hỏi trên cần nội dung một tệp bạn chưa có, hãy phát khối ```" +
     NHAN_HANG_RAO +
     "``` như đã hướng dẫn; nếu câu hỏi là yêu cầu viết mã MỚI (không cần đọc tệp), hãy viết THẲNG " +
-    "mã đó — cả hai ca ĐỪNG trả lời \"không có thông tin\".)"
-  );
+    "mã đó — cả hai ca ĐỪNG trả lời \"không có thông tin\".";
+
+  // ★★★ H5 — nhắc MCP CHỈ khi lượt này đã dạy `mcp_goi` ở đầu prompt (`dv.coMcp`). Tên tool tới từ
+  // `TEN_TOOL_MCP` (`yeuCauMcp.ts`) — KHÔNG chép tay "mcp_goi" ở đây.
+  const phanMcp = dv.coMcp
+    ? " Nếu câu hỏi trên hỏi về, hoặc yêu cầu dùng, một CÔNG CỤ NGOÀI (MCP) đã kết nối ở trên, " +
+      "đừng trả lời lạc đề — hãy phát khối ```" +
+      NHAN_HANG_RAO +
+      '``` với "tool":"' +
+      TEN_TOOL_MCP +
+      '" như đã hướng dẫn.'
+    : "";
+
+  // ★★★ H5 — nhắc đề xuất nhớ CHỈ khi lượt này đã dạy `de_xuat_nho` ở đầu prompt (`dv.coBoNho`).
+  // Tên tool tới từ `TEN_TOOL_DE_XUAT_NHO` (`deXuatNho.ts`) — KHÔNG chép tay "de_xuat_nho" ở đây.
+  const phanBoNho = dv.coBoNho
+    ? " Nếu câu hỏi trên là một điều đáng NHỚ LÂU DÀI (chưa có trong BỘ NHỚ DÀI HẠN ở trên) hoặc " +
+      "yêu cầu bạn ghi nhớ nó, đừng bỏ qua — hãy đề xuất bằng khối ```" +
+      NHAN_HANG_RAO +
+      '``` với "tool":"' +
+      TEN_TOOL_DE_XUAT_NHO +
+      '" như đã hướng dẫn.'
+    : "";
+
+  return `${phanDoc}${phanMcp}${phanBoNho})`;
 }

@@ -13,6 +13,8 @@ import { describe, it, expect } from "vitest";
 import { dungVanBanDayGiaoThucDoc, nhacLaiCuoiCauHoi } from "./dayGiaoThucDoc";
 import { docYeuCauDoc } from "./yeuCauDoc";
 import { NHAN_HANG_RAO } from "./khoiAviTool";
+import { TEN_TOOL_MCP } from "./yeuCauMcp";
+import { TEN_TOOL_DE_XUAT_NHO } from "./deXuatNho";
 
 describe("dungVanBanDayGiaoThucDoc", () => {
   it("★★★ ba ví dụ dạy đều là hàng rào THẬT — ĐÚNG parser thật (`docYeuCauDoc`) đọc được cả ba, không lệch cú pháp", () => {
@@ -98,5 +100,55 @@ describe("nhacLaiCuoiCauHoi", () => {
 
   it("★ hàm THUẦN — gọi hai lần cho kết quả giống hệt nhau", () => {
     expect(nhacLaiCuoiCauHoi()).toBe(nhacLaiCuoiCauHoi());
+  });
+});
+
+// ★★★ ĐỢT H / TASK H5 — H4 đo `de_xuat_nho`/`mcp_goi` (dạy Ở ĐẦU) bị bỏ qua 0/5 vì KHÔNG có bản
+// nhắc lại ở CUỐI câu hỏi như ba tool đọc đã có. Nhóm ca dưới đây khoá lại phần mở rộng đó.
+describe("nhacLaiCuoiCauHoi — ĐỢT H / TASK H5 (nhắc de_xuat_nho + mcp_goi ở cuối, CÓ ĐIỀU KIỆN)", () => {
+  it("★★★ KHÔNG đối số (hoặc cả hai cờ tắt) ⇒ GIỐNG HỆT byte-đúng bản TRƯỚC H5 — đối chứng NHÁNH KIA bắt buộc cho B3 (không loãng giao thức ĐỌC đang chạy tốt)", () => {
+    const truoc =
+      "\n\n(Nhắc lại: nếu câu hỏi trên cần nội dung một tệp bạn chưa có, hãy phát khối ```" +
+      NHAN_HANG_RAO +
+      "``` như đã hướng dẫn; nếu câu hỏi là yêu cầu viết mã MỚI (không cần đọc tệp), hãy viết THẲNG " +
+      "mã đó — cả hai ca ĐỪNG trả lời \"không có thông tin\".)";
+    expect(nhacLaiCuoiCauHoi()).toBe(truoc);
+    expect(nhacLaiCuoiCauHoi({})).toBe(truoc);
+    expect(nhacLaiCuoiCauHoi({ coMcp: false, coBoNho: false })).toBe(truoc);
+  });
+
+  it("★★★ coMcp:true ⇒ thêm câu nhắc mcp_goi, dùng ĐÚNG TEN_TOOL_MCP thật (không chép tay)", () => {
+    const v = nhacLaiCuoiCauHoi({ coMcp: true });
+    expect(v).toContain(TEN_TOOL_MCP);
+    expect(v).toContain("```" + NHAN_HANG_RAO + "```");
+    // Nhánh ĐỌC vẫn còn nguyên — đây là câu THÊM, không phải câu THAY (khuôn PDCA vòng 3).
+    expect(v).toContain("viết mã MỚI");
+    // Chưa bật bộ nhớ ⇒ không có tên tool đề xuất nhớ.
+    expect(v).not.toContain(TEN_TOOL_DE_XUAT_NHO);
+  });
+
+  it("★★★ coBoNho:true ⇒ thêm câu nhắc de_xuat_nho, dùng ĐÚNG TEN_TOOL_DE_XUAT_NHO thật (không chép tay)", () => {
+    const v = nhacLaiCuoiCauHoi({ coBoNho: true });
+    expect(v).toContain(TEN_TOOL_DE_XUAT_NHO);
+    expect(v).toContain("```" + NHAN_HANG_RAO + "```");
+    expect(v).not.toContain(TEN_TOOL_MCP);
+  });
+
+  it("★★ CẢ HAI bật ⇒ question chứa cả hai tên tool, không cái nào ghi đè cái nào", () => {
+    const v = nhacLaiCuoiCauHoi({ coMcp: true, coBoNho: true });
+    expect(v).toContain(TEN_TOOL_MCP);
+    expect(v).toContain(TEN_TOOL_DE_XUAT_NHO);
+  });
+
+  it("★ chuỗi kết thúc bằng đúng MỘT dấu ) đóng, không lệch cặp ngoặc dù bật/tắt cờ nào", () => {
+    for (const dv of [{}, { coMcp: true }, { coBoNho: true }, { coMcp: true, coBoNho: true }]) {
+      const v = nhacLaiCuoiCauHoi(dv);
+      expect(v.endsWith(")")).toBe(true);
+      expect(v.startsWith("\n\n(")).toBe(true);
+    }
+  });
+
+  it("★ hàm THUẦN với cùng tham số ⇒ kết quả giống hệt nhau", () => {
+    expect(nhacLaiCuoiCauHoi({ coMcp: true, coBoNho: true })).toBe(nhacLaiCuoiCauHoi({ coMcp: true, coBoNho: true }));
   });
 });

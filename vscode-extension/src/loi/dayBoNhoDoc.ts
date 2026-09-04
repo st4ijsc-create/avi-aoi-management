@@ -22,12 +22,13 @@
  *   SINH, không quét kết quả tool), dùng LẠI cho bộ nhớ.
  */
 import { NHAN_HANG_RAO } from "./khoiAviTool";
+import { TEN_TOOL_DE_XUAT_NHO } from "./deXuatNho";
 import type { MucBoNho } from "./khoBoNho";
 
 function khoiViDu(): string {
   return [
     "```" + NHAN_HANG_RAO,
-    JSON.stringify({ tool: "de_xuat_nho", args: { noiDung: "<một câu ngắn, đủ ý, KHÔNG chứa bí mật>" } }),
+    JSON.stringify({ tool: TEN_TOOL_DE_XUAT_NHO, args: { noiDung: "<một câu ngắn, đủ ý, KHÔNG chứa bí mật>" } }),
     "```",
   ].join("\n");
 }
