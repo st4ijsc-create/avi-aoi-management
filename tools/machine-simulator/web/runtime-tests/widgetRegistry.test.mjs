@@ -231,6 +231,17 @@ test('policyGate: một action KHÔNG thuộc từ vựng ("xyzzy") ⇒ disabled
   assert.match(String(gate.reason), /xyzzy/, "lý do phải nêu chính giá trị sai — không nêu thì tác giả không biết mình đã gõ gì")
   assert.match(String(gate.reason), /machine\.setpoint/, "lý do phải nêu cả từ vựng được chấp nhận")
   assert.match(String(gate.reason), /machine\.command/)
+  // 🔴 task-6-review.md LOW-2 — câu này TỪNG kết thúc bằng "an action the PolicyEngine has never heard
+  // of could never be granted", và đó là một khẳng định SAI: từ vựng của PolicyEngine là
+  // `machine.setpoint.write` / `machine.command.invoke` (`Policy/MachineWriteGate.cs:38,43`), còn của
+  // hợp đồng màn hình là `machine.setpoint` / `machine.command` — HAI TẬP RỜI NHAU, không có lớp ánh xạ
+  // nào trong cây. Tầng web không nhìn thấy từ vựng của engine, nên không được khẳng định gì về nó. Bài
+  // này giữ cho lời sửa ấy không lặng lẽ quay lại: thông điệp chỉ được nói về từ vựng của HỢP ĐỒNG.
+  assert.doesNotMatch(
+    String(gate.reason),
+    /PolicyEngine/,
+    'lý do cho một action LẠ đang khẳng định điều gì đó về PolicyEngine — tầng web không thấy từ vựng của engine (machine.setpoint.write / machine.command.invoke), và hai tập từ vựng hôm nay RỜI NHAU; chỉ được nói về từ vựng của hợp đồng màn hình'
+  )
 })
 
 test('policyGate: action RỖNG ("") và chỉ-khoảng-trắng ("  ", "\\t") ⇒ disabled=true — "có ghi gì đó" không phải là được cấp quyền', () => {
@@ -267,4 +278,81 @@ test("policyGate: lý do cho action LẠ KHÁC HẲN lý do cho action VẮNG M�
   )
   assert.match(String(absent.reason), /has no policyAction/)
   assert.doesNotMatch(String(unknown.reason), /has no policyAction/)
+})
+
+// ── 🔴 WS-HMI-2 Task 6 fix round 1 (task-6-review.md LOW-4): NỬA "KHAI BÁO" CỦA PHÉP GHIM PHỦ KIND ─
+// Hai bài dưới đây SỐNG Ở ĐÂY chứ không phải trong `tests/36-hmi-all-widget-kinds.spec.ts`, nơi chúng
+// ra đời. Cả hai KHÔNG cần `page` fixture nào — chúng chỉ đọc văn bản nguồn và một tệp JSON — nhưng ở
+// đó chúng chỉ chạy dưới `npx playwright test`, mất 10–13 phút tuỳ máy. Kịch bản cụ thể: một tác giả
+// thêm kind thứ mười sáu vào registry, chạy `npm run test:runtime` (0.2 giây, xanh), `tsc`, `oxlint`,
+// `check-contracts` — xanh hết — rồi mới biết mình quên đặt instance lên màn demo sau 13 phút, hoặc ở
+// CI. Bài THẬT SỰ cần trình duyệt (widget có VẼ ra gì không, có tụt xuống chỗ giữ lỗi không) ở lại
+// spec 36; hai bài này chuyển về đây, vào đúng tệp vốn đã đọc `widgetRegistry.ts` bằng đúng regex đó.
+//
+// Không thêm tệp *.test.mjs mới — thêm vào tệp CÓ SẴN, nên `package.json`'s `test:runtime` (danh sách
+// tên tệp tường minh, cố ý) và bài `testRuntimeScript.test.mjs` ghim nó đều không phải đổi.
+
+// web/runtime-tests → web/screens/demo/component-demo.json
+const DEMO_SCREEN_PATH = join(HERE, "..", "screens", "demo", "component-demo.json")
+
+/** Phép trích THỨ HAI, độc lập với `readRegisteredKinds` ở trên: mỗi mục registry có đúng một dòng
+ * `import { XWidget } from "./widgets/<tên>"`. Khác anchor, khác dòng, khác token — nên một khiếm
+ * khuyết ở riêng phép trích khoá không thể làm hai con số/hai tập cùng dịch chuyển. */
+function readWidgetModuleImports() {
+  const src = readNormalized(join(SRC, "hmi-runtime", "widgetRegistry.ts"))
+  return [...src.matchAll(/^import \{[^}]*\} from "\.\/widgets\/([^"]+)"$/gm)].map((x) => x[1])
+}
+
+test('floor: hai phép trích độc lập trên widgetRegistry.ts ra CÙNG MỘT TẬP tên kind, và không phép nào ra tập RỖNG', () => {
+  const kinds = readRegisteredKinds()
+  const imports = readWidgetModuleImports()
+
+  // Sàn trước, so sánh sau — hai tập RỖNG "bằng nhau" là đúng khuyết tật chữ ký của kho này.
+  assert.ok(
+    kinds.length > 0,
+    "trích được 0 khoá kind có ngoặc kép từ widgetRegistry.ts — phép trích đã hỏng, và bài KHAI BÁO ngay dưới sẽ lặp 0 lần rồi xanh mà không đo gì cả"
+  )
+  assert.ok(
+    imports.length > 0,
+    "trích được 0 dòng import ./widgets/… từ widgetRegistry.ts — phép đối chứng của sàn này tự nó đã hỏng"
+  )
+
+  // 🔴 task-6-review.md LOW-3 — so TẬP, không so SỐ LƯỢNG. Mọi khiếm khuyết MỘT PHÍA mà reviewer dựng
+  // (tám đột biến) đều đỏ với phép so số lượng, nhưng một CẶP BÙ TRỪ thì không: một khoá rơi khỏi phép
+  // trích ĐỒNG THỜI một dòng import thừa xuất hiện chỗ khác — hai con số vẫn là 15, tập kind thì sai
+  // một phần tử. Phép so tập dưới đây nêu ĐÍCH DANH kind lệch, theo cả hai chiều riêng biệt.
+  //
+  // Điều kiện phép so này dựa vào: TÊN TỆP module của mỗi widget bằng đúng chuỗi kind của nó
+  // (`"gauge": GaugeWidget` import từ `./widgets/gauge`) — đúng cho cả mười lăm mục hôm nay. Đây là
+  // cùng loại ràng buộc mà header của chính `widgetRegistry.ts` đã đặt ra vì một bài test (mọi khoá
+  // phải giữ ngoặc kép), nêu ra ở đây để một lần đổi tên tệp không trông giống một lỗi bí ẩn.
+  const importSet = new Set(imports)
+  const keySet = new Set(kinds)
+  assert.deepEqual(
+    {
+      keysWithoutModule: kinds.filter((k) => !importSet.has(k)).sort(),
+      modulesWithoutKey: imports.filter((m) => !keySet.has(m)).sort(),
+    },
+    { keysWithoutModule: [], modulesWithoutKey: [] },
+    `hai phép đọc độc lập của widgetRegistry.ts đang gọi tên NHỮNG KIND KHÁC NHAU — hoặc một mục được thêm mà thiếu import (hoặc ngược lại), hoặc một phép trích thôi không còn thấy thứ nó đọc, hoặc một module widget đã bị đổi tên khác chuỗi kind của nó`
+  )
+})
+
+test('mọi kind trong registry đều được KHAI BÁO ít nhất một lần trên screens/demo/component-demo.json', () => {
+  const registeredKinds = readRegisteredKinds()
+  assert.ok(registeredKinds.length > 0, 'trích được 0 kind — vòng lặp dưới sẽ chạy 0 lần và bài này xanh vô nghĩa')
+
+  const doc = JSON.parse(readFileSync(DEMO_SCREEN_PATH, "utf8"))
+  assert.ok(
+    Array.isArray(doc.widgets) && doc.widgets.length > 0,
+    "screens/demo/component-demo.json không khai widget nào — không có gì để đối chiếu, và bài này sẽ báo MỌI kind là thiếu vì một lý do sai"
+  )
+
+  const declared = new Set(doc.widgets.map((w) => w.kind))
+  const undrawn = registeredKinds.filter((kind) => !declared.has(kind)).sort()
+  assert.deepEqual(
+    undrawn,
+    [],
+    `đã đăng ký nhưng KHÔNG có mặt trên màn demo nào: ${undrawn.join(", ")} — thêm một instance vào web/screens/demo/component-demo.json; một kind không bao giờ được render là một kind không bao giờ được CHẠY. (Việc nó có VẼ ra gì thật không, và có tụt xuống chỗ giữ lỗi không, là bài tests/36-hmi-all-widget-kinds.spec.ts trong trình duyệt thật.)`
+  )
 })

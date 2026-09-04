@@ -38,31 +38,45 @@ import { expect, test } from "@playwright/test"
  * 🔴 That technique's known weakness is that a broken extraction returns an EMPTY list, every loop
  * below then iterates nothing, and the suite goes green while measuring nothing — this repository's
  * signature defect, found four separate times in the last day. `assertExtractionIsAlive()` is the
- * floor: it cross-checks the extracted key count against a SECOND, independent count over the same
- * file (one `./widgets/…` import per registry entry — a different regex reading different lines) and
- * fails if either side is zero, so "both sides agree on nothing" cannot pass. Every test below calls
- * it FIRST, so no single test in this file can go green vacuously.
+ * floor: it cross-checks the extracted key SET against a SECOND, independent reading of the same file
+ * (one `./widgets/…` import per registry entry — a different regex reading different lines), fails if
+ * either side is empty, and reports the symmetric difference BY NAME so "both sides agree on nothing"
+ * cannot pass and a real mismatch names the kind (task-6-review.md LOW-3 — it compared counts until
+ * fix round 1, which a compensating pair of mutations could have walked through). The one test below
+ * calls it FIRST, so this file cannot go green vacuously.
  *
  * FALSIFIED, not assumed: with the key regex `/^\s*"([^"]+)":/gm` replaced by one that matches nothing,
- * all three tests below go RED — "extracted 0 quoted kind keys …" — rather than green. Re-measured on
- * this tree; the literal output is in `task-6-report.md`.
+ * the test below goes RED — "extracted 0 quoted kind keys …" — rather than green. Re-measured on this
+ * tree after every fix-round-1 change; the literal output is in `task-6-report.md`.
  *
  * -- What this file measures, and what it does NOT -----------------------------------------------
- * MEASURED, in a real browser, on the real route:
- *   1. Every registry kind is declared by at least one widget in the demo document.
- *   2. That widget's grid cell is on screen and has DRAWN something into it (a rendered element, not
- *      an empty placed div).
- *   3. NOTHING on that screen degraded to `ScreenRenderer`'s named error placeholder — so "the cell is
- *      there" cannot be satisfied by an unregistered kind or a widget that threw, both of which render
- *      a visible `[data-hmi-widget-error]` box in the same cell.
- *   4. Every widget the document declares was actually placed (cell count === document widget count).
+ * 🔴 task-6-review.md LOW-4 — the DECLARATION half of this pin no longer lives here. "Every registry
+ * kind is declared at least once on the demo document" needs no browser at all, and behind a 10–13
+ * minute suite it told an author about a missing demo instance far too late. It moved to
+ * `runtime-tests/widgetRegistry.test.mjs` (the file that already reads `widgetRegistry.ts` with the
+ * same regex), where it runs in the 0.2-second gate, together with the same set-level floor. What is
+ * left here is the half that genuinely needs a page.
  *
- * NOT MEASURED HERE: that any widget draws the RIGHT thing — correct value, correct tone, correct
- * pixels, correct a11y tree. This is a coverage pin, not a per-widget acceptance test; `11-hmi.spec.ts`
- * and `00-visual-and-a11y.spec.ts` own pixels and axe for the three shipped screens, and the demo
- * screen deliberately has no baseline of its own (adding one would make an engineering scratch pad a
- * pixel contract). Also not measured: that `policyAction` means anything server-side — see
- * `task-6-report.md` for what the client-side gate does with an action it does not recognise.
+ * MEASURED, in a real browser, on the real route:
+ *   1. Each registry kind's widget cell is on screen and has DRAWN something into it (a rendered
+ *      element, not an empty placed div).
+ *   2. NOTHING on that screen degraded to `ScreenRenderer`'s named error placeholder — so "the cell is
+ *      there" cannot be satisfied by an unregistered kind or a widget that threw, both of which render
+ *      a visible `[data-hmi-widget-error]` box in the same cell. These two assertions are NOT
+ *      redundant: the reviewer made a real widget throw and watched (1) still pass — `WidgetPlaceholder`
+ *      is itself an element in that same cell — while (2) caught it.
+ *   3. Every widget the document declares was actually placed (cell count === document widget count).
+ *
+ * NOT MEASURED HERE, and the bar is deliberately low: that any widget draws the RIGHT thing — correct
+ * value, correct tone, correct pixels, correct a11y tree. A widget rendering only its `NO_DATA`
+ * em-dash skeleton counts as drawn, and with the fleet stopped six of the fifteen do exactly that
+ * (measured by the reviewer). The honest summary of this file is EXECUTED WITHOUT DEGRADING, not
+ * DISPLAYING LIVE DATA. It is a coverage pin, not a per-widget acceptance test; `11-hmi.spec.ts` and
+ * `00-visual-and-a11y.spec.ts` own pixels and axe for the three shipped screens, and the demo screen
+ * deliberately has no baseline of its own (adding one would make an engineering scratch pad a pixel
+ * contract). Also not measured: that `policyAction` means anything server-side — see
+ * `task-6-report.md` for what the client-side gate does with an action it does not recognise, and
+ * `shared.ts`'s own note on why the two vocabularies are disjoint today.
  *
  * -- The demo document's widget ids ---------------------------------------------------------------
  * The 14 widgets this task added are named `kind-<kind>` as a READABILITY convention, so a failure
@@ -111,6 +125,21 @@ function widgetModuleImports(source: string): string[] {
  * The floor. Returns the kind list only after proving the extraction actually read something and that
  * two independent readings of the registry agree — an empty list, or two readings that disagree, is a
  * broken pin, and a broken pin must be LOUD rather than an empty loop.
+ *
+ * 🔴 task-6-review.md LOW-3 — this compared the two COUNTS until fix round 1. Every single-sided
+ * defect the reviewer constructed went red on counts alone (eight mutations, all named in that
+ * review), but a COMPENSATING PAIR would not: one key dropping out of the key extraction while a
+ * spurious `./widgets/…` import line appears elsewhere leaves both numbers at 15 and the kind set
+ * wrong by one. It compares the two SETS now and reports the symmetric difference, so a mismatch
+ * names the kind instead of a number.
+ *
+ * That makes this floor depend on a real constraint the registry already satisfies: each widget's
+ * MODULE BASENAME equals its kind string (`"gauge": GaugeWidget` imported from `./widgets/gauge`),
+ * true for all fifteen entries today. This is the same category of constraint `widgetRegistry.ts`'s
+ * own header already imposes for a test's sake (every key stays quoted, or the extraction silently
+ * stops seeing it) — deliberate, and stated so a rename does not look like a mysterious failure. The
+ * message below names the convention, so a legitimate rename is a two-minute fix with a clear cause
+ * rather than a puzzle.
  */
 function assertExtractionIsAlive(): string[] {
   const kinds = registeredKinds(REGISTRY_SOURCE)
@@ -125,15 +154,24 @@ function assertExtractionIsAlive(): string[] {
   expect(
     imports.length,
     "extracted 0 `./widgets/…` imports from src/hmi-runtime/widgetRegistry.ts — the cross-check this " +
-      "floor depends on is itself broken, so `kinds.length === imports.length` below would compare two " +
-      "numbers that mean nothing"
+      "floor depends on is itself broken, so the set comparison below would compare a real set against " +
+      "an empty one and report every kind as missing for the wrong reason"
   ).toBeGreaterThan(0)
+
+  // Symmetric difference, both directions named separately — "these keys have no module" and "these
+  // modules have no key" are different defects and a single merged list would make the reader guess.
+  const importSet = new Set(imports)
+  const keySet = new Set(kinds)
+  const keysWithoutModule = kinds.filter((k) => !importSet.has(k)).sort()
+  const modulesWithoutKey = imports.filter((m) => !keySet.has(m)).sort()
   expect(
-    kinds.length,
-    `widgetRegistry.ts declares ${imports.length} widget imports but ${kinds.length} quoted kind keys ` +
-      `(keys: ${kinds.join(", ") || "(none)"}) — either an entry was added without its import (or vice ` +
-      `versa), or one of the two extractions has stopped seeing what it reads`
-  ).toBe(imports.length)
+    { keysWithoutModule, modulesWithoutKey },
+    `the two independent readings of widgetRegistry.ts name DIFFERENT kinds. Quoted keys with no ` +
+      `matching ./widgets/<kind> import: ${keysWithoutModule.join(", ") || "(none)"}. Imports with no ` +
+      `matching key: ${modulesWithoutKey.join(", ") || "(none)"}. Either an entry was added without ` +
+      `its import (or vice versa), or one extraction has stopped seeing what it reads, or a widget ` +
+      `module was renamed away from its kind string — this floor depends on those matching`
+  ).toEqual({ keysWithoutModule: [], modulesWithoutKey: [] })
   expect(new Set(kinds).size, `duplicate kind keys in widgetRegistry.ts: ${kinds.join(", ")}`).toBe(kinds.length)
 
   return kinds
@@ -150,35 +188,6 @@ function firstWidgetIdPerKind(): Map<string, string> {
 }
 
 test.describe("every registered widget kind is drawn in the product, pinned against the registry itself", () => {
-  test("the kind list is derived from widgetRegistry.ts, and an extraction that finds nothing is loud", () => {
-    // The floor itself, asserted as its own test so a failure NAMES the extraction rather than
-    // surfacing as a confusing coverage failure two tests down.
-    const kinds = assertExtractionIsAlive()
-
-    // Deliberately NOT a hardcoded 15 here: `runtime-tests/widgetRegistry.test.mjs` already owns the
-    // "exactly 15 today" pin against the frozen `WidgetKind` union, and a second copy of that number
-    // is a second thing to forget. What this file needs is only that the number is real and non-zero,
-    // which the floor establishes; the brief's own title says "fourteen" and the registry has fifteen,
-    // which is precisely why nothing here counts by hand.
-    expect(kinds).toContain("readout")
-  })
-
-  test("every widget kind in the registry is declared at least once on the demo screen document", () => {
-    const kinds = assertExtractionIsAlive()
-    expect(
-      DEMO_DOCUMENT.widgets.length,
-      "screens/demo/component-demo.json declares no widgets — the browser test below would then have " +
-        "nothing to look for and this file would measure nothing"
-    ).toBeGreaterThan(0)
-
-    const declared = new Set(DEMO_DOCUMENT.widgets.map((w) => w.kind))
-    const undrawn = kinds.filter((kind) => !declared.has(kind)).sort()
-    expect(
-      undrawn,
-      `registered but not on any demo screen: ${undrawn.join(", ")} — add an instance to ` +
-        `web/screens/demo/component-demo.json; a kind nothing ever renders is a kind nothing ever ran`
-    ).toEqual([])
-  })
 
   test("every widget kind in the registry actually draws on the demo screen, and none degrades to a placeholder", async ({
     page,

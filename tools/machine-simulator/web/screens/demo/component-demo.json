@@ -77,14 +77,19 @@
       "id": "kind-alarm-banner",
       "kind": "alarm-banner",
       "rect": { "col": 0, "row": 3, "colSpan": 6, "rowSpan": 1 },
-      "bindings": { "message": "statusText" }
+      "props": {
+        "__note": "NO BINDING, and that is measured rather than an omission. alarm-banner shows its message only while `active` resolves to boolean true or to a reading whose quality is \"bad\"; today no TagValueSource path can answer either. Its whole table (cycles, passRate, statusText, driftState, keyMetric, telemetry/{name}, code) returns numbers and strings, never a boolean, and the adapter deliberately never reports \"bad\" because MachineDetail carries no fault signal to base it on -- pinned by runtime-tests/tagValueSource.test.mjs. So this widget can only ever render its quiet default here, and it does. A `message` binding to statusText stood here until task-6-review.md LOW-1: the widget computes that value and then discards it unless `active` is truthy, so it could never reach the DOM. Removed rather than left looking wired. When a TagValueSource gains a boolean or a real quality signal, bind `active` and delete this note."
+      }
     },
     {
       "id": "kind-alarm-list",
       "kind": "alarm-list",
       "rect": { "col": 6, "row": 3, "colSpan": 6, "rowSpan": 1 },
       "bindings": { "drift": "driftState" },
-      "props": { "rows": [{ "id": "drift", "label": "Lệch cấu hình", "labelEn": "CONFIG DRIFT", "binding": "drift" }] }
+      "props": {
+        "rows": [{ "id": "drift", "label": "Lệch cấu hình", "labelEn": "CONFIG DRIFT", "binding": "drift" }],
+        "__note": "The row below IS live -- the binding is read on every render and the row is drawn -- but its RAISED state is unreachable from this document today, and that is measured, not assumed (task-6-review.md LOW-1). alarm-list raises a row only when its reading is boolean true or has quality \"bad\"; driftState is a string whose quality is \"good\" or \"stale\", and no TagValueSource path returns a boolean or ever reports \"bad\" (see kind-alarm-banner's note above for the same measurement). So the quiet row is the only state this screen can show. Left bound rather than removed: unlike the banner, this widget really does read the value and really does draw the row."
+      }
     },
     {
       "id": "kind-setpoint-input",

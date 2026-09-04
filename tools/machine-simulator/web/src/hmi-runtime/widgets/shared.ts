@@ -143,10 +143,25 @@ export function policyGate(widget: Pick<ScreenWidget, "kind"> & { policyAction?:
   }
   // Names the offending value (JSON-quoted, so a whitespace-only or empty action is VISIBLE rather
   // than rendering as a blank gap in the sentence) and names what was expected.
+  //
+  // 🔴 task-6-review.md LOW-2 — this sentence used to end "an action the PolicyEngine has never heard
+  // of could never be granted". That was FALSE, and it is corrected in place rather than quietly
+  // deleted. MEASURED: the engine's own action vocabulary is `machine.setpoint.write` /
+  // `machine.command.invoke` (`src/St4i.EngineApi/Policy/MachineWriteGate.cs:38,43`), the screen
+  // contract's is `machine.setpoint` / `machine.command`, and the two sets are DISJOINT with no
+  // translation layer anywhere in the tree. So the values this gate ACCEPTS are not, today, actions
+  // the PolicyEngine knows either — a reader who believed the old sentence would reasonably pass
+  // `widget.policyAction` straight to `POST /v1/machines/{code}/command` the day someone wires the
+  // dispatch, and send a string the engine does not recognise.
+  //
+  // What this gate can see from the web tier, and therefore the only thing this message now claims,
+  // is membership in the SCREEN CONTRACT's own vocabulary (`contracts/tagNamespace.ts`'s
+  // `PolicyAction`, pinned two-way against all three `contracts/*.schema.json` enums). Whether the
+  // two vocabularies should ever meet is an owner item; this string asserts nothing either way.
   return {
     disabled: true,
     reason: `disabled — this "${widget.kind}" widget declares policyAction ${JSON.stringify(action)}, which is not one of ${Object.keys(POLICY_ACTIONS)
       .map((known) => `"${known}"`)
-      .join(" | ")} — an action the PolicyEngine has never heard of could never be granted, so this control fails closed`,
+      .join(" | ")} — the vocabulary this screen contract defines. A value outside it names nothing this document could validly have declared, so this control fails closed`,
   }
 }
