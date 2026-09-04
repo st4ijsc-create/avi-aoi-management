@@ -248,6 +248,33 @@ Không làm thì anh vẫn gặp đúng lỗi từ chối quyền OEE. **Cần a
 
 ★ Đây là thứ trực tiếp sửa "hỏi về dự án, trả lời về OEE".
 
+★★★ **ĐÃ LÀM PHẦN "TÀI LIỆU HÃNG"** (2026-09-04, `.superpowers/sdd/2026-09-03-vscode-extension-
+dot-g/task-v1-report.md`) — **SỬA CHÍNH tài liệu này**: §7.1 ghi "Mã dự án KHÁC — 0 — ❌ chưa có" và
+§10 ghi "toàn bộ §8 Việc 1 là đề xuất chưa kiểm" **SAI cho phần tài liệu hãng** — B1 (đo trước khi
+sửa) phát hiện hạ tầng đa-corpus RIÊNG (`knowledge/programming/*`, `aiProgrammingKnowledgeService.ts`,
+doc 34 P1) **đã tồn tại từ commit `a75bc8f9`, TRƯỚC CẢ tài liệu này**, với 91.678 chunk đã embedding
+sẵn cho cả 6 hãng — brief mô tả hiện trạng như thể chưa có gì; đọc mã mới lộ ra khác. Việc thật đã
+làm ở vòng này: (a) B3 — nạp nốt 16 PDF còn thiếu (thêm vào đĩa sau lượt 07-05, phát hiện qua so
+khớp `sourcePath`) cho 4/6 hãng, **91.678 → 124.990 chunk (+36%), 53/53 PDF, 0 tệp scan/không đọc
+được** — 33.312 chunk mới CHƯA embed (quyết định có chủ đích, tránh tranh VRAM với người dùng đang
+dùng — xem CÒN MỞ #1 của report); (b) B4 — nối `route:"vscode"` (`retrieveKnowledge` trong
+`aiLocalKnowledgeService.ts`) vào `searchProgrammingKb` bằng MỘT gate ở đầu hàm, TRƯỚC
+`ensureDataLoaded()`, nên route vscode không chạm kho vận hành một byte nào (đo bằng spy trên
+`fs.readFileSync`, 0 lần gọi) — đóng đúng CÒN MỞ #5 mà Việc 2 để lại; (c) B5 — 6/6 câu hỏi thật
+("Modbus Delta", "SDK Universal Robots status", "RS232 C# Delta ASDA", "MELSERVO J4 error code",
+"EtherNet/IP Omron NJ", "FANUC KAREL variable") dẫn được citation ĐÚNG file/trang thật (keyword-only,
+score 0,716–0,922 — đo an toàn VRAM, không gọi GGUF), trước đó cấu trúc KHÔNG THỂ (kho vận hành 0
+chunk vendor); (d) phát hiện + vá thêm ngoài kế hoạch: câu hỏi vận hành thuần vẫn nhận NHIỄU điểm
+thấp (0,29–0,35) từ ĐÚNG corpus lập trình — thêm ngưỡng `MIN_PROG_KB_CITATION_SCORE=0.5` để trả RỖNG
+thay vì nhồi nhiễu; (e) B2 — `.cs .py .java .cpp .st .scl` đã thêm vào `SOURCE_EXT` của
+`extract-codebase-knowledge.mjs` (script `kb:chunk` cho kho VẬN HÀNH/repo-của-chính-nó, KHÁC corpus
+tài liệu hãng) — 0 chunk đổi trên CHÍNH repo này (0 tệp các đuôi đó), có tác dụng khi chạy script
+TRONG một repo C# khác (vd `machine-simulator` — CHƯA làm, xem dưới). Ablation 2 lượt (gate route +
+ngưỡng nhiễu) đều xác nhận load-bearing — chi tiết đầy đủ trong report. **CÒN MỞ, CHƯA LÀM**: mục 2/3
+ở trên (chạy `kb:extract` TRONG `machine-simulator`, chọn corpus theo workspace mở) **VẪN CHƯA LÀM**
+— phạm vi vòng này chỉ xử tài liệu HÃNG (PDF), không xử MÃ DỰ ÁN RIÊNG của người dùng; 33.312 chunk
+mới chưa embed; `dist/index.js` cổng 3003 chưa build lại (cần go-ahead, người dùng đang dùng thật).
+
 ## Việc 2 — tách hẳn hai miền (giá trị cao, chi phí thấp)
 
 Với `route:"vscode"`: **không** dùng bộ trigger công cụ nhà máy, **không** ghép KB vận hành khi độ

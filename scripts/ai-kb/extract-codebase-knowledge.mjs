@@ -9,7 +9,19 @@ const ROOT = process.cwd();
 const OUT_DIR = path.join(ROOT, "knowledge");
 const TARGET_DIRS = ["server", "client", "shared", "drizzle"];
 const DOC_DIRS = ["docs", "apidocs"];
-const SOURCE_EXT = new Set([".ts", ".tsx", ".js", ".mjs", ".cjs", ".sql"]);
+// ★★★ VIỆC 1 (`docs/superpowers/specs/2026-09-04-ai-local-danh-gia-hien-trang-va-lo-trinh.md` §7.2,
+// B2) — thêm đuôi cho "mã dự án KHÁC" người dùng lập trình thật (C# tool máy, PLC ST/SCL, robot).
+// Đo tác động trên CHÍNH repo này (`avi-aoi-management`, TypeScript thuần): 0 tệp .cs/.py/.java/
+// .cpp/.st/.scl dưới server/client/shared/drizzle ⇒ 0 chunk đổi — kết luận suy trực tiếp từ
+// `Set.has` trong `walkFiles` bên dưới, KHÔNG chạy `npm run kb:extract` thật (script ghi đè
+// `knowledge/*` — cấm chạm khi đang dirty bởi phiên khác, xem `git status`). Giá trị của đợt thêm
+// này nằm ở việc CHẠY LẠI script (repo-agnostic, `ROOT = process.cwd()`) TRONG một repo C#/PLC
+// khác (vd `machine-simulator`), không phải trong repo này — script vẫn không có bộ trích
+// `extractRouters`/`extractServices`/`extractTypes`/`extractSchemaTables` riêng cho các ngôn ngữ
+// này (đều là regex TS/tRPC/drizzle-specific, xem các hàm cùng tên) nên một lượt chạy trên repo C#
+// hôm nay chỉ ra `patterns.json` gần như toàn 0 — router/service/type inventory KHÔNG áp dụng cho
+// C#/PLC, chỉ `sourceFiles`/import-graph/kb:chunk (chunk theo tệp, ngôn ngữ-trung lập) hoạt động.
+const SOURCE_EXT = new Set([".ts", ".tsx", ".js", ".mjs", ".cjs", ".sql", ".cs", ".py", ".java", ".cpp", ".st", ".scl"]);
 const IGNORE_DIRS = new Set([
   "node_modules",
   "dist",

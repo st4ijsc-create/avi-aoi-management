@@ -186,6 +186,11 @@ import { isFeedbackRerankEnabled, computeFeedbackWeight, loadFeedbackNetRatings 
 // roleProcedure("admin","engineer").use(require2FA); Wave 2's gatherStudioHits wiring had no
 // role check at all).
 import { canAccessStudioCorpus } from "./ai/kbStudioAccess";
+// ★★★ VIỆC 1 (`docs/superpowers/specs/2026-09-04-ai-local-danh-gia-hien-trang-va-lo-trinh.md` §8) —
+// corpus LẬP TRÌNH (tài liệu hãng PLC/robot/motion + SDK, doc 34 P1) — HOÀN TOÀN TÁCH biệt khỏi
+// kho vận hành nhà máy đọc bên dưới (`ensureDataLoaded`/`data.embeddings`). Xem
+// `retrieveProgrammingKnowledgeForVscode` cạnh `retrieveKnowledge`.
+import { searchProgrammingKb } from "./aiProgrammingKnowledgeService";
 // ★★★ TRÍCH DẪN NGUỒN DỮ LIỆU — `toolResult` CHƯA TỪNG được chuyển thành citation, nên một
 // con số trong câu trả lời không truy ngược được về hàng nào trong DB. Module lá thuần
 // (không import gì, không chạm DB); mọi luật an toàn — nhất là **`note` có mặt ⇒ KHÔNG
@@ -2166,12 +2171,111 @@ export function locKhoTheoTienTo<T extends { sourcePath: string }>(
   });
 }
 
+/**
+ * ★★★ VIỆC 1 (`docs/superpowers/specs/2026-09-04-ai-local-danh-gia-hien-trang-va-lo-trinh.md` §8) —
+ * route "vscode" truy hồi từ CORPUS LẬP TRÌNH (`knowledge/programming/<vendor>/…` — tài liệu hãng
+ * PLC/robot/motion + SDK, doc 34 P1, `aiProgrammingKnowledgeService.searchProgrammingKb`), **KHÔNG**
+ * từ kho vận hành nhà máy (`data.embeddings` bên dưới, tức `knowledge/*.jsonl` cấp gốc + `docs/**`).
+ * Đúng nghi ngại Việc 2 để lại ở CÒN MỞ #5 ("route vscode vẫn quét CHUNG kho KB vận hành") — vá ở
+ * đây, cùng khuôn với gate `intent:"general"` cạnh trên: MỘT trường tin cậy (`context.route`),
+ * đặt Ở ĐẦU `retrieveKnowledge` — TRƯỚC `ensureDataLoaded()` — nên route vscode không tải/chấm điểm
+ * kho vận hành ở BẤT KỲ bước nào nữa (không phải "gọi rồi bỏ kết quả", là "không gọi").
+ *
+ * `searchProgrammingKb` tự trả kết quả RỖNG well-formed khi `PROG_KB_ENABLED` tắt hoặc corpus rỗng
+ * (xem docblock của chính nó) — nên "không có corpus phù hợp ⇒ không ghép KB nào" (yêu cầu của
+ * Việc 1, tránh đúng lỗi đã đo: ngữ cảnh SAI MIỀN còn tệ hơn không có ngữ cảnh) là hành vi TỰ NHIÊN
+ * của hàm đó, không cần thêm nhánh fallback nào ở đây — `citations`/`contexts` rỗng, `confidence` 0.
+ */
+async function retrieveProgrammingKnowledgeForVscode(
+  question: string,
+  topK: number,
+  context?: KbQueryContext,
+): Promise<KbRetrieveResult> {
+  const language = resolveLanguage(question, context);
+  const empty = (): KbRetrieveResult => ({
+    question,
+    intent: "general",
+    language,
+    entities: [],
+    confidence: 0,
+    citations: [],
+    contexts: [],
+    rerankMs: null,
+  });
+  let result: Awaited<ReturnType<typeof searchProgrammingKb>>;
+  try {
+    result = await searchProgrammingKb({ query: question, topK });
+  } catch {
+    // fail-safe: một corpus lập trình hỏng không được làm rơi cả lượt hỏi, và KHÔNG được
+    // rơi về kho vận hành (đó đúng là lỗi sai-miền Việc 1 phải sửa) — trả kết quả RỖNG.
+    return empty();
+  }
+  if (!result.enabled || result.citations.length === 0) return empty();
+
+  // ★★★ B5 (đo THẬT) bắt được: câu hỏi VẬN HÀNH thuần (vd "OEE hôm nay của line 2 là bao nhiêu?")
+  // vẫn nhận về 5 citation từ corpus lập trình — ĐÚNG kho (không lẫn kho vận hành, cấu trúc đã canh
+  // ở gate đầu `retrieveKnowledge`), nhưng NỘI DUNG là NHIỄU không liên quan (score đo được 0,32–0,35,
+  // so với 0,71–0,92 của 6 câu hỏi ĐÚNG miền cùng lượt đo — xem `task-v1-report.md` B5). Trộn nhiễu
+  // này vào `answerContext` vi phạm đúng nguyên tắc brief đặt ra: "không có corpus phù hợp ⇒ KHÔNG
+  // ghép KB nào cả, thà không có ngữ cảnh còn hơn ngữ cảnh SAI MIỀN" — ở đây là "lạc đề" bên trong
+  // ĐÚNG corpus, cùng một tinh thần. Ops KB (`retrieveKnowledge` nhánh dưới) LUÔN giữ top-1 dù yếu
+  // (`MIN_CITATION_SCORE=0.18`, để UI không rỗng) — route vscode KHÔNG áp dụng khoan dung đó: một
+  // câu hỏi lạc miền phải trả RỖNG, không phải "top-1 yếu nhất". Ngưỡng 0,5 đặt ở GIỮA hai cụm đo
+  // được (nhiễu ≤0,351 · đúng miền ≥0,7116) — biên rộng ở CẢ HAI phía. Đo bằng keyword-only (an toàn
+  // VRAM, xem B5) — CẬN DƯỚI của độ phân tách thật: khi embedding thật tham gia (0,72 trọng số),
+  // một câu hỏi lạc đề thường cách xa hơn nữa trong không gian ngữ nghĩa, nên ngưỡng này KHÔNG lỏng
+  // hơn thực tế sản xuất.
+  const MIN_PROG_KB_CITATION_SCORE = 0.5;
+  const keepIdx = result.citations
+    .map((c, i) => (c.score >= MIN_PROG_KB_CITATION_SCORE ? i : -1))
+    .filter((i) => i >= 0);
+  if (keepIdx.length === 0) return empty();
+
+  const citations: KbCitation[] = keepIdx.map((i) => {
+    const c = result.citations[i];
+    return {
+      id: c.id,
+      sourcePath: c.sourcePath,
+      title:
+        typeof c.page === "number" ? `${c.docTitle} (${c.vendor}, p.${c.page})` : `${c.docTitle} (${c.vendor})`,
+      // sourceType riêng cho citation lập trình — phân biệt rõ với mọi sourceType của kho vận hành
+      // (doc/service/type/router/operational/…) nên FE/log không thể lẫn hai miền.
+      sourceType: "vendor_manual",
+      score: c.score,
+      // Không có route điều hướng client cho tài liệu hãng (khác citation vận hành đã biết
+      // ALLOWED_CLIENT_ROUTES) — null là trung thực, FE render chữ thường, không bấm được.
+      route: null,
+    };
+  });
+  const contexts = keepIdx.map((i) => result.chunks[i]?.text ?? "");
+  const top1 = citations[0]?.score ?? 0;
+  const top2 = citations[1]?.score ?? 0;
+  const confidence = clamp01((top1 + top2) / 1.6);
+
+  return {
+    question,
+    intent: "general",
+    language,
+    entities: [],
+    confidence,
+    citations,
+    contexts,
+    rerankMs: result.rerankMs ?? null,
+  };
+}
+
 export async function retrieveKnowledge(
   question: string,
   topK = 5,
   context?: KbQueryContext,
   opts?: KbRetrieveOptions,
 ): Promise<KbRetrieveResult> {
+  // ★★★ VIỆC 1 — xem docblock của `retrieveProgrammingKnowledgeForVscode` ngay phía trên. Đặt Ở
+  // ĐÂY, trước `ensureDataLoaded()`, để route vscode không chạm kho vận hành một byte nào. Đường
+  // WEB (context?.route !== "vscode") rơi thẳng xuống logic cũ, KHÔNG đổi một dòng hành vi.
+  if (context?.route === "vscode") {
+    return retrieveProgrammingKnowledgeForVscode(question, topK, context);
+  }
   const data = ensureDataLoaded();
   const tokens = tokenize(question);
   // ★★★ VIỆC 2 (tách miền lập trình/vận hành, xem docblock lớn cạnh `KHONG_TOOL_VSCODE`/
