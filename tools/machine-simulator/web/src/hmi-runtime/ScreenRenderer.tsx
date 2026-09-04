@@ -121,11 +121,13 @@ function RenderedWidget({
   }
   const tagPrefix = componentTagPrefixOf(components, widget.component)
   const resolve = (binding: string) => resolveBinding(binding, tagPrefix)
-  // WS-HMI-2 Task 5 — `components` is forwarded to the widget as well as consumed here. `resolve`
-  // stays the ONE way a widget turns its own bindings into tag paths (nothing under `./widgets/*`
-  // re-derives a prefix from the model itself); this is for the widget that needs the model as DATA,
-  // and it is passed UNCHANGED — same array, same optionality — so there is no second shape of it.
-  return <Widget widget={widget} source={source} resolve={resolve} components={components} />
+  // 🔴 WS-HMI-2 Task 5, controller ruling — `components` is CONSUMED here (the two lines above) and
+  // deliberately NOT forwarded to the widget. The round-1 fix did forward it and no widget read it; an
+  // unread prop on `WidgetProps` is a false affordance, because `resolve` is exactly the seam that
+  // exists so a widget never holds the model and never repeats the id→tagPrefix lookup. See
+  // `widgetRegistry.ts`'s `resolve` doc comment for the full reasoning and for what re-adding it would
+  // have to come with.
+  return <Widget widget={widget} source={source} resolve={resolve} />
 }
 
 /**

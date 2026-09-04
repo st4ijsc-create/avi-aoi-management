@@ -13,7 +13,8 @@
 - **Màu trạng thái chỉ mang nghĩa trạng thái** (spec §2). "Có điều chỉnh tại máy" là trạng thái **bình thường**, không tô đỏ.
 - Trang không cuộn; panel cuộn trong. **Nút an toàn không bao giờ cuộn, không đổi chỗ** (spec §8, có test `12-hmi-safety-rail.spec.ts`).
 - Ngưỡng thị giác `0.00002` — không nới, không mở rộng mask.
-- Mỗi task: `npx tsc --noEmit` + `npm run build` sạch, `npm run test:e2e` xanh trên engine mới, axe AA sáng+tối 0 serious/critical.
+- Mỗi task: `npx tsc -b --force` + `npm run build` sạch, `npm run test:e2e` xanh trên engine mới, axe AA sáng+tối 0 serious/critical.
+- 🔴 **Dòng trên ghi `npx tsc --noEmit` cho tới WS-HMI-2 Task 5, và lệnh ấy KHÔNG ĐO GÌ CẢ — đo được, không suy diễn.** `web/tsconfig.json` là tsconfig kiểu *solution* (`"files": []` cộng ba `references`), nên `--noEmit` biên dịch project GỐC RỖNG rồi exit 0 mà không kiểm một tệp nguồn nào. Phép thử đã chạy: thả `const __PROBE_TYPE_ERROR__: number = "definitely not a number"` vào `web/src/`, `npx tsc --noEmit` exit **0**, `npx tsc -b --force` exit **2** kèm `error TS2322` đúng dòng ấy. `-b` là thứ `npm run build` dùng thật; `--force` để `.tsbuildinfo` không cho qua một cách im lặng. Ghi lý do ở đây cùng tinh thần hai comment `//test:runtime` / `//test:contracts` trong `web/package.json`: **một lệnh exit 0 trong khi không đo gì còn tệ hơn không có lệnh nào**, vì nó mua niềm tin mà không trả bằng phép đo — và đó đúng là khuyết tật hai comment kia tồn tại để chặn, chỉ dịch sang một lệnh khác.
 
 ---
 

@@ -186,12 +186,42 @@ test("màn demo cũng mang một binding TRỰC TIẾP — §5-bis cần một c
 // SOURCE TEXT — the prop is actually passed, and the shape is declared once
 // ─────────────────────────────────────────────────────────────────────────
 
-test("ScreenRenderer.tsx CHUYỂN TIẾP components xuống widget, không chỉ tự dùng nó", () => {
-  const src = readSource("src", "hmi-runtime", "ScreenRenderer.tsx")
-  assert.match(
-    src,
-    /<Widget\b[^>]*\bcomponents=\{components\}/,
-    "RenderedWidget không còn truyền components={components} vào widget — WidgetProps.components sẽ luôn undefined"
+test("widget CHỈ nhận resolve — không nhận cả mô hình linh kiện (ruling: một affordance sai còn tệ hơn một prop thừa)", () => {
+  // 🔴 Bài này ĐẢO CHIỀU so với bản round 1, theo ruling của controller. Round 1 ghim rằng
+  // `RenderedWidget` TRUYỀN `components={components}` xuống widget; không widget nào đọc nó. Một prop
+  // không ai đọc ở đây không chỉ là thừa — nó là một AFFORDANCE SAI: `resolve` tồn tại chính là để
+  // widget không bao giờ cầm mô hình và không bao giờ tự tra id→tagPrefix, nên đưa mô hình thô cho mọi
+  // widget là mời tác giả widget kế tiếp đi vòng qua cái seam ấy — một đường vòng sẽ qua được cả
+  // type-check lẫn review, và để lại HAI hiện thực cho MỘT luật. Widget nào thật sự cần mô hình như DỮ
+  // LIỆU thì thêm prop CÙNG người đọc nó trong cùng một commit. Bài này là thứ khiến việc lặng lẽ thêm
+  // lại prop ấy không thể xảy ra.
+  const renderer = readSource("src", "hmi-runtime", "ScreenRenderer.tsx")
+  // Lọc theo `widget={widget}` chứ không lấy khớp <Widget…/> ĐẦU TIÊN: file này có một doc-comment
+  // nhắc tới `<Widget .../>` bằng văn xuôi (giải thích vì sao error boundary phải là class component),
+  // và khớp đầu tiên chính là đoạn văn xuôi ấy — đo được, không phải phòng xa.
+  const widgetElements = [...renderer.matchAll(/<Widget\b[^>]*\/>/g)]
+    .map((m) => m[0])
+    .filter((el) => el.includes("widget={widget}"))
+  assert.equal(widgetElements.length, 1, "kỳ vọng đúng MỘT phần tử <Widget widget={widget} …/> trong ScreenRenderer.tsx")
+  const widgetElement = widgetElements[0]
+  assert.match(widgetElement, /\bresolve=\{resolve\}/, "widget phải nhận resolve — đó là seam duy nhất")
+  assert.doesNotMatch(
+    widgetElement,
+    /\bcomponents=/,
+    "ScreenRenderer đang truyền components xuống widget — xem widgetRegistry.ts's resolve doc comment: nếu có widget thật sự cần, prop phải về CÙNG người đọc nó"
+  )
+})
+
+test("WidgetProps KHÔNG khai components chừng nào chưa widget nào đọc nó", () => {
+  // Phía kia của cùng một luật, tách thành bài RIÊNG có chủ ý: hai chỗ có thể hỏng độc lập (ai đó khai
+  // lại kiểu mà không truyền, hoặc truyền mà không khai — cái sau tsc bắt được, cái trước thì không),
+  // và một bài gộp chỉ báo được cái hỏng ĐẦU TIÊN. Cả hai đều được kiểm chứng bằng cách phá thật: thêm
+  // lại prop làm ĐÚNG bài tương ứng đỏ, không bài nào khác.
+  const registry = readSource("src", "hmi-runtime", "widgetRegistry.ts")
+  assert.doesNotMatch(
+    registry,
+    /^\s*components\??:/m,
+    "WidgetProps khai một prop components — chỉ hợp lệ khi có widget thực sự ĐỌC nó, và khi đó bài này phải được sửa cùng lúc với người đọc ấy"
   )
 })
 
@@ -210,10 +240,11 @@ test("MỘT kiểu duy nhất cho components — readonly ComponentNode[], khôn
   // explains why the narrow shape was chosen deliberately. A second declaration of the same thing under
   // a different type is a defect here, not a preference — this test is what makes that enforceable
   // instead of advisory.
-  for (const file of [
-    ["src", "hmi-runtime", "ScreenRenderer.tsx"],
-    ["src", "hmi-runtime", "widgetRegistry.ts"],
-  ]) {
+  // 🔴 Round 2 (controller ruling): `widgetRegistry.ts` dropped out of this loop because it no longer
+  // declares a `components` prop AT ALL — the test directly above is what guards that absence, and this
+  // one keeps guarding the SHAPE wherever the prop does legitimately live. The rule itself is unchanged
+  // and NOT weakened: every surviving declaration must still read exactly `readonly ComponentNode[]`.
+  for (const file of [["src", "hmi-runtime", "ScreenRenderer.tsx"]]) {
     const src = readSource(...file)
     const declarations = [...src.matchAll(/^\s*components\??:\s*(.+)$/gm)].map((m) => m[1].trim())
     // At least one, and EVERY one spelled the same way. Not "exactly one": `ScreenRenderer.tsx`

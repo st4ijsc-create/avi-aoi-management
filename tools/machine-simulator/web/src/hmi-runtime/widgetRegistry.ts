@@ -22,7 +22,6 @@
  * FIFTEEN keys quoted, always — not because the strings need it, but because the pin does.
  */
 import type { ReactElement } from "react"
-import type { ComponentNode } from "../contracts/componentModel.ts"
 import type { ScreenWidget, WidgetKind } from "../contracts/hmiScreen.ts"
 import type { TagValueSource } from "./TagValueSource.ts"
 
@@ -47,24 +46,21 @@ export type WidgetProps = {
   source: TagValueSource
   /** Resolves an `{component}`-templated binding string to a concrete path — `bindings.ts` (Task 3) is
    * the real implementation; nothing in this file or `./widgets/*` depends on how it works, only on
-   * this signature. */
-  resolve: (binding: string) => string
-  /**
-   * WS-HMI-2 Task 5 — the component model this screen's widgets bind against, forwarded UNCHANGED from
-   * `ScreenRendererProps.components` (read that field's own doc comment in `ScreenRenderer.tsx`: it is
-   * the authority on the shape, and on why `ComponentNode[]` rather than the full
-   * `ComponentModelDocument` — a second declaration of the same thing under a different type would be a
-   * second source of truth, not a preference).
+   * this signature.
    *
-   * `resolve` above already carries everything a widget needs to turn ITS OWN `{component}` bindings
-   * into tag paths, so nothing under `./widgets/*` reads this today, and a widget that only reads
-   * values must keep using `resolve` rather than re-deriving a prefix from here — there would then be
-   * two implementations of one rule. What this exists for is the widget that needs the model as DATA
-   * rather than as a lookup: a `faceplate` drawing a component's own children, a future editor palette
-   * listing what a machine declares. `undefined`/omitted is a valid state at every level of this chain
-   * (plan §5-bis), so a reader must handle it rather than assume a screen always has one.
-   */
-  components?: readonly ComponentNode[]
+   * 🔴 WS-HMI-2 Task 5, controller ruling — this is the ONLY thing a widget gets of the component
+   * model, ON PURPOSE, and there is deliberately NO `components` prop beside it. That round-1 fix DID
+   * add one (`components?: readonly ComponentNode[]`, forwarded from `ScreenRendererProps.components`)
+   * and nothing under `./widgets/*` read it. An unread prop here is not merely unused, it is a FALSE
+   * AFFORDANCE: `resolve` exists precisely so a widget never holds the model and never does its own
+   * id→tagPrefix lookup, and handing every widget the raw model invites the next widget author to
+   * bypass that seam — a bypass that would type-check and pass review, leaving two implementations of
+   * one rule. A widget that genuinely needs the model as DATA (a `faceplate` drawing a component's own
+   * children, an editor palette listing what a machine declares) adds the prop TOGETHER WITH its
+   * consumer, in one commit — which is strictly better evidence than a prop waiting for a reason.
+   * `runtime-tests/screenRendererComponents.test.mjs` pins the absence, so re-adding it silently is not
+   * possible; re-adding it with a reader is two lines. */
+  resolve: (binding: string) => string
 }
 
 export type WidgetComponent = (props: WidgetProps) => ReactElement
