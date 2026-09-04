@@ -23,8 +23,10 @@ import { EditorCanvas } from "./EditorCanvas"
  * noticing. The real mechanism is a DECLARED one, on the endpoint itself:
  * `HmiScreenEndpoints.cs:135` maps this route with `.RequireAuthorization(Policies.Operator)`, and
  * `:136`'s `PUT` carries `.RequireAuthorization(Policies.Engineer)` — the read/write split named in
- * the next clause was always right, only the mechanism behind it was wrong. `RbacPolicyTests.cs:246`
- * pins both.
+ * the next clause was always right, only the mechanism behind it was wrong. Both rows are pinned by
+ * `RbacPolicyTests.cs`, at TWO line numbers: `:246` is the GET/Operator row and `:276` is the
+ * PUT/Engineer row. (Fix round 2, task-8-re-review.md finding 6 — round 1 cited `:246` alone and said
+ * it "pins both", which named one row for two claims.)
  *
  * ── THE THREE STATES, AND WHY 404 IS NOT ONE OF THE ERRORS ────────────────────────────────────────
  * `GET /v1/screens/{screenId}` is the one document endpoint in the HMI family that answers 404 for

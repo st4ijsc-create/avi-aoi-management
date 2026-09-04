@@ -23,30 +23,43 @@ import type { MachineDetail } from "@/lib/api"
  * behaviours, and with the runtime's two degrade sentences copied (two one-line edits) it passes all
  * three tests in `tests/37-editor-canvas.spec.ts`. So does a verbatim FORK of `ScreenRenderer.tsx`
  * dropped into this directory with `clampRectToLayout` deleted and the grid gap changed — a canvas
- * that provably lays screens out differently from the kiosk. No browser assertion can catch a fork: it
- * renders identically until it drifts, and the drift is invisible to a test that only reads the DOM
- * the fork produced.
+ * that provably lays screens out differently from the kiosk.
  *
- * The claim is therefore split across two files, and neither half is redundant:
+ * 🔴 FIX ROUND 2, task-8-re-review.md §6 — the round-1 paragraph continued: *"No browser assertion can
+ * catch a fork: it renders identically until it drifts, and the drift is invisible to a test that only
+ * reads the DOM the fork produced."* **RETRACTED, over-broad, and it was the stated reason round 1
+ * added no browser test.** A DIFFERENTIAL assertion catches a fork the moment it drifts — render the
+ * same document through the kiosk route and through the editor route and compare what the renderer
+ * produced. Impostor B's changed gap is a computed style on the container; that comparison reads it.
+ * The defensible sentence is *no browser assertion can catch a fork that has not yet drifted*, and
+ * that limit is narrower than it sounds: an undrifted copy is caught by the same test on the first day
+ * `ScreenRenderer` changes and the copy does not, which is the only day it can hurt anyone.
  *
- *   * `tests/37-editor-canvas.spec.ts` — the BEHAVIOURAL floor, in a real browser: a `label`'s
- *     `props.text` appears (so `widgetRegistry` dispatch really happened), a `readout` renders
- *     `Readout.tsx`'s own `.hmi-readout-value` row carrying a value that came through
- *     `TagValueSource` (so the whole binding→source→format pipeline really ran), an unknown `kind`
- *     degrades to the named placeholder, a widget that throws is caught per-widget while its siblings
- *     keep drawing, and a moved `rect` produces `col + 1` grid lines. What that file pins is that the
- *     canvas BEHAVES like the runtime renderer.
- *   * `runtime-tests/editorCanvasSeam.test.mjs` — the IDENTITY, structurally and two-sided: this file
- *     imports `ScreenRenderer` unaliased from `hmi-runtime/ScreenRenderer` and mounts it; nothing
- *     under `src/editor/` declares a widget-dispatch loop, grid arithmetic or an error boundary of its
- *     own, nor imports the runtime's parts outside a named allowlist; and the three DOM hooks a screen
- *     renderer must emit appear in EXACTLY ONE file in `web/src/`. Its own section 4 replays the three
- *     impostors through its scanners so it cannot go blind.
+ * The round-1 paragraph also ended with a "pincer" — *"an impostor must emit [the hooks] to be green
+ * [in the browser spec] … rename the hooks to slip the structural pin and the browser spec goes red;
+ * keep them and the structural pin does."* **RETRACTED, measured false**: impostor C kept all three
+ * hooks and the structural pin stayed green, because it attached them by spreading a helper's
+ * `"data-hmi-widget"` constant instead of writing a literal attribute — and one space before the `=`
+ * was enough on its own. No replacement general claim is offered here; each instrument states its own
+ * reach below.
  *
- * Together they are a pincer: every locator in the browser spec is built on `data-hmi-screen` /
- * `data-hmi-widget` / `data-hmi-widget-error`, so an impostor must emit them to be green there — and
- * the structural pin says only `ScreenRenderer.tsx` may emit them anywhere. Rename the hooks to slip
- * the structural pin and the browser spec goes red; keep them and the structural pin does.
+ * The claim is carried by three things, in descending order of what they prove:
+ *
+ *   1. **`tests/37-editor-canvas.spec.ts`'s DIFFERENTIAL** — the primary instrument. The same document
+ *      through the kiosk route and through this canvas; the container's theme, grid-track counts and
+ *      gaps, every cell's id, `title` and four computed grid lines, and the element tree of every
+ *      binding-free widget, compared. It does not care where a renderer lives or how it spells
+ *      anything — only whether the two paths produce the same thing.
+ *   2. **The same file's five behavioural assertions** — `props.text` on screen (so `widgetRegistry`
+ *      dispatch happened), `Readout.tsx`'s own `.hmi-readout-value` row carrying a value that came
+ *      through `TagValueSource`, the named placeholder for an unknown `kind`, a per-widget boundary
+ *      catching a real throw, `col + 1` grid lines. A floor on BEHAVIOUR; each one names, in place,
+ *      what it does not discriminate against.
+ *   3. **`runtime-tests/editorCanvasSeam.test.mjs`** — a cheap early warning, not a proof of identity,
+ *      and it says so about itself. AST queries, not substring scans: only `ScreenRenderer.tsx` may
+ *      NAME a renderer DOM hook or DISPATCH `widgetRegistry` anywhere in `web/src/`, and every
+ *      `doc`+`source` mount under `src/editor/` is `<ScreenRenderer>`. It runs in under a second,
+ *      which is its whole reason for existing beside a ten-minute browser suite.
  *
  * ── WHY THE DESIGN-TIME SOURCE IS THE RUNTIME ADAPTER, NOT A SECOND ONE ───────────────────────────
  * `ScreenRenderer` needs a `TagValueSource`, and an editor has no machine bound to it. The obvious

@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
+
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
 
 import { ENGINE_URL } from "./support/engine"
@@ -31,17 +35,35 @@ import { vi as viDict } from "../src/i18n/vi"
  * `clampRectToLayout` deleted and the grid gap changed — a canvas that provably lays screens out
  * differently from the kiosk — ALSO PASSED ALL THREE.
  *
- * So, stated at the width it actually holds: this file pins that the editor's canvas BEHAVES like the
- * runtime renderer. It does not, and cannot, pin that it IS the runtime renderer. No browser assertion
- * can: a fork renders identically until it drifts, and the drift is invisible to any test that only
- * reads the DOM the fork produced. The identity claim lives in
- * `runtime-tests/editorCanvasSeam.test.mjs`, a two-sided structural pin whose section 4 replays these
- * same impostors through its own scanners.
+ * ── 🔴 FIX ROUND 2 — TWO MORE SENTENCES FROM ROUND 1, RETRACTED HERE, QUOTED IN FULL ─────────────
+ * task-8-re-review.md §6. Round 1 corrected two false claims and introduced two more in the
+ * correction. Both stood in this header and both are quoted below before being replaced, because a
+ * paragraph rewritten for overstating is the last place a new overstatement should hide — and this
+ * workstream has now produced one three times running.
  *
- * The two files close it TOGETHER, and the composition is a pincer rather than a hopeful sum: every
- * locator below is built on `data-hmi-screen` / `data-hmi-widget` / `data-hmi-widget-error`, so any
- * impostor must emit those to be green here — and that pin asserts only `ScreenRenderer.tsx` emits
- * them anywhere in `web/src/`. Rename the hooks and this file goes red; keep them and that one does.
+ *   * RETRACTED: *"No browser assertion can [pin that it IS the runtime renderer]: a fork renders
+ *     identically until it drifts, and the drift is invisible to any test that only reads the DOM the
+ *     fork produced."* Over-broad, and it was the stated reason round 1 added no browser test. A
+ *     DIFFERENTIAL browser assertion — the same document through the kiosk route and through the
+ *     editor route, outputs compared — catches a fork the moment it drifts, which is the only moment
+ *     a fork can hurt anyone. The defensible sentence is: *no browser assertion can catch a fork that
+ *     has not yet drifted.* That test now exists, at the bottom of this file, and it is the PRIMARY
+ *     instrument for the identity claim.
+ *   * RETRACTED: *"The two files close it TOGETHER, and the composition is a pincer … every locator
+ *     below is built on `data-hmi-screen` / `data-hmi-widget` / `data-hmi-widget-error`, so any
+ *     impostor must emit those to be green here — and that pin asserts only `ScreenRenderer.tsx`
+ *     emits them anywhere in `web/src/`. Rename the hooks and this file goes red; keep them and that
+ *     one does."* **Measured false.** The reviewer's impostor C kept all three hooks and the
+ *     structural pin stayed green: it attached them by spreading `{...widgetHook(id)}` from a helper
+ *     holding a `"data-hmi-widget"` constant, which the round-1 pin's substring scan could not see —
+ *     and a single space, `data-hmi-screen ={x}`, was enough on its own. The second half of the
+ *     "pincer" was simply not true of the code that existed.
+ *
+ * **No replacement general claim is offered.** What is true is narrower and is stated per test, below
+ * and at the differential's own header: this file's first five assertions are a behavioural floor; the
+ * differential compares the editor's output against the runtime's own output for the same document;
+ * `runtime-tests/editorCanvasSeam.test.mjs` is a cheap early warning that runs in under a second. Each
+ * one says what it catches and what it does not.
  *
  * ── WHAT THE FIVE ASSERTIONS DO PIN, EACH AT ITS REAL WIDTH ───────────────────────────────────────
  * They are a BEHAVIOURAL FLOOR — the set of runtime behaviours the canvas must exhibit, each one
@@ -137,6 +159,158 @@ const UNKNOWN_KIND = "no-such-widget-kind"
  * bound value" is the thing being pinned.
  */
 const READOUT_VALUE = "128.0"
+
+/**
+ * ── THE DIFFERENTIAL: THE PRIMARY INSTRUMENT FOR THE CANVAS-IDENTITY CLAIM ───────────────────────
+ * WS-HMI-2 Task 8, fix round 2, task-8-re-review.md §9.
+ *
+ * Everything above measures the editor's canvas against a DESCRIPTION of the runtime's behaviour, and
+ * the re-review proved that is not enough: a second renderer that reuses `widgetRegistry` satisfies
+ * every such description, and a FORK satisfies them by construction. What no impostor can satisfy is a
+ * comparison against the runtime ITSELF.
+ *
+ * So: the SAME document is rendered through the kiosk route (`/hmi/demo/:screenId` →
+ * `routes/Hmi.tsx` → `<ScreenRenderer>` with a live `MachineDetail` source) and through the editor
+ * route (`/editor/:screenId` → `EditorCanvas` → `<ScreenRenderer>` with the design-time source), and
+ * what the RENDERER produced is compared.
+ *
+ * ── WHAT IS COMPARED, AND WHY IT IS THIS AND NOT A SCREENSHOT ────────────────────────────────────
+ * `ScreenRenderer`'s own output is a container plus one placed cell per widget. That is exactly the
+ * part that must not drift, and exactly the part that is independent of live values:
+ *   * the container: `data-theme`, `display`, the NUMBER of grid tracks on each axis, and the gaps;
+ *   * each cell, in document order: its id, its `title` (where the clamp and unresolved-`{component}`
+ *     warnings surface), and its four computed grid lines.
+ * Track COUNTS rather than track widths, because the two pages give the grid different physical widths
+ * — a kiosk tabpanel beside a control rail versus the editor's full-width frame — and a pixel
+ * comparison would fail for a reason that has nothing to do with the renderer. Gaps are absolute and
+ * are compared as computed pixels, which is what catches a fork that changed `gap-2` to `gap-6`.
+ *
+ * Widget SUBTREES are compared only for widgets the document gives no bindings and that are not
+ * `faceplate` — for those, both pages must produce the identical element/class tree. Bound widgets
+ * legitimately differ (live machine values on one side, the fabricated design-time snapshot on the
+ * other) and `faceplate` deliberately renders nothing in the editor (`EditorCanvas.tsx`'s
+ * `DESIGN_TIME_SNAPSHOT.code === ""`). Comparing their text would be measuring the value source, not
+ * the renderer.
+ *
+ * ── THE TWO PRECONDITIONS, AND WHY EACH IS NECESSARY ─────────────────────────────────────────────
+ *  1. `IOT-01` is given an EMPTY component model first. The demo document binds `{component}` on two
+ *     widgets; the kiosk resolves those through `GET /v1/components/IOT-01` while the editor has no
+ *     machine and passes `components` undefined. With a model declared, the kiosk resolves and the
+ *     editor does not, so the two `title` warnings differ — legitimately, and for a reason that is
+ *     about the component model rather than the renderer. Emptied, both sides take the identical
+ *     `componentTagPrefixOf(… ) === undefined` path (`35-hmi-indirect-binding.spec.ts` establishes
+ *     that an emptied tree and a never-declared machine are the same input downstream).
+ *  2. The demo document's own bytes are PUT to `/v1/screens/component-demo`, so the document the
+ *     editor fetches over HTTP is the document the kiosk imports statically. Read from the file rather
+ *     than retyped — a second copy would drift and the comparison would silently become vacuous.
+ *
+ * ── WHAT THIS CATCHES THAT NOTHING ELSE DID ──────────────────────────────────────────────────────
+ * A drifted fork. `task-8-re-review.md`'s impostor B — `ScreenRenderer.tsx` copied into `src/editor/`
+ * with `clampRectToLayout` deleted and `gap-2` changed to `gap-6` — passed all three tests above and
+ * every check in `runtime-tests/editorCanvasSeam.test.mjs` at the time it was built. Its changed gap
+ * is a computed-style difference on the container, and this test reads it.
+ *
+ * ── AND WHAT IT DOES NOT CATCH, STATED BEFORE ANYONE INFERS OTHERWISE ────────────────────────────
+ * A fork that has NOT yet drifted. A byte-identical copy renders byte-identical output, and no
+ * comparison of outputs can tell it from the original. That is the honest limit, and it is narrower
+ * than it sounds: the copy is caught by this same test on the first day `ScreenRenderer` changes and
+ * the copy does not — which is the only day the difference can hurt anyone.
+ * `runtime-tests/editorCanvasSeam.test.mjs` is the cheap early warning for the interval before that
+ * day; it is not a proof of identity and does not claim to be.
+ */
+const DEMO_SCREEN_ID = "component-demo"
+const DEMO_MACHINE = "IOT-01"
+
+/** The kiosk's own copy, read from disk — the same file `lib/hmiScreens.ts` imports statically. */
+const DEMO_DOCUMENT = JSON.parse(
+  readFileSync(join(dirname(dirname(fileURLToPath(import.meta.url))), "screens", "demo", "component-demo.json"), "utf8")
+) as ProbeDocument & { widgets: (ProbeWidget & { component?: string })[] }
+
+/** §5-bis's state, written explicitly rather than inherited from whatever `35-hmi-indirect-binding`
+ * left behind. See precondition 1 above for why the differential needs it. */
+const EMPTY_COMPONENT_MODEL = { schemaVersion: 1, machineCode: DEMO_MACHINE, components: [], types: [] }
+
+async function putComponentModel(request: APIRequestContext, doc: unknown): Promise<void> {
+  const res = await request.put(`${ENGINE_URL}/v1/components/${DEMO_MACHINE}`, { data: doc })
+  if (!res.ok()) throw new Error(`PUT /v1/components/${DEMO_MACHINE} failed: ${res.status()} ${await res.text()}`)
+}
+
+/** The widgets whose subtrees are legitimately comparable across the two paths — no bindings (so no
+ * live value reaches them) and not `faceplate` (which draws nothing in the editor, by design). */
+const STATIC_WIDGET_IDS = DEMO_DOCUMENT.widgets
+  .filter((w) => !w.bindings && w.kind !== "faceplate")
+  .map((w) => w.id)
+
+type RendererSignature = {
+  theme: string | null
+  display: string
+  columnTracks: number
+  rowTracks: number
+  columnGap: string
+  rowGap: string
+  cells: { id: string | null; title: string | null; colStart: string; colEnd: string; rowStart: string; rowEnd: string }[]
+  staticSubtrees: Record<string, string>
+}
+
+/** Everything `ScreenRenderer` itself is responsible for, read out of a live page. */
+async function rendererSignature(page: Page, screenId: string, staticIds: string[]): Promise<RendererSignature> {
+  return page.evaluate(
+    ([id, ids]) => {
+      const root = document.querySelector(`[data-hmi-screen="${id}"]`)
+      if (!root) throw new Error(`no [data-hmi-screen="${id}"] on this page`)
+      const rootStyle = getComputedStyle(root)
+      const structure = (el: Element): string => {
+        const cls = (el.getAttribute("class") ?? "").trim().split(/\s+/).filter(Boolean).sort().join(".")
+        const kids = Array.from(el.children).map(structure)
+        return `${el.tagName.toLowerCase()}${cls ? `.${cls}` : ""}${kids.length ? `(${kids.join(",")})` : ""}`
+      }
+      const cells = Array.from(root.querySelectorAll("[data-hmi-widget]")).map((el) => {
+        const s = getComputedStyle(el)
+        return {
+          id: el.getAttribute("data-hmi-widget"),
+          title: el.getAttribute("title"),
+          colStart: s.gridColumnStart,
+          colEnd: s.gridColumnEnd,
+          rowStart: s.gridRowStart,
+          rowEnd: s.gridRowEnd,
+        }
+      })
+      const staticSubtrees: Record<string, string> = {}
+      for (const widgetId of ids) {
+        const cell = root.querySelector(`[data-hmi-widget="${widgetId}"]`)
+        staticSubtrees[widgetId] = cell ? Array.from(cell.children).map(structure).join(",") : "(cell missing)"
+      }
+      return {
+        theme: root.getAttribute("data-theme"),
+        display: rootStyle.display,
+        // Track COUNTS, not widths — see this block's own header for why a pixel comparison would fail
+        // for a reason unrelated to the renderer.
+        columnTracks: rootStyle.gridTemplateColumns.split(" ").filter(Boolean).length,
+        rowTracks: rootStyle.gridTemplateRows.split(" ").filter(Boolean).length,
+        columnGap: rootStyle.columnGap,
+        rowGap: rootStyle.rowGap,
+        cells,
+        staticSubtrees,
+      }
+    },
+    [screenId, staticIds] as const
+  )
+}
+
+/** A document whose last widget hangs off the right edge and the bottom of its own declared grid —
+ * `clampRectToLayout`'s subject. `col + colSpan = 14 > cols = 12` and `row + rowSpan = 6 > rows = 4`. */
+const OVERFLOW_SCREEN_ID = "editor-canvas-overflow"
+const OVERFLOW_DOC: ProbeDocument = {
+  schemaVersion: 1,
+  screenId: OVERFLOW_SCREEN_ID,
+  title: "Canvas probe — rect ngoai luoi",
+  theme: "isa101",
+  layout: { cols: 12, rows: 4, breakpoint: "panel" },
+  widgets: [
+    { id: "fits", kind: "label", rect: { col: 0, row: 0, colSpan: 4, rowSpan: 1 }, props: { text: "IN-GRID" } },
+    { id: "overflows", kind: "label", rect: { col: 10, row: 3, colSpan: 4, rowSpan: 3 }, props: { text: "OUT-OF-GRID" } },
+  ],
+}
 
 type ProbeWidget = {
   id: string
@@ -408,5 +582,111 @@ test.describe("HMI screen editor — the canvas is the runtime renderer, and the
     await expect(page.locator('[data-hmi-widget="probe-removed"]')).toHaveCount(0)
 
     expect(pageErrors, "an error escaped a widget's boundary to the window").toEqual([])
+  })
+
+  test("the kiosk and the editor render the same document identically — the canvas compared against the runtime itself, not against a description of it", async ({
+    page,
+    request,
+  }) => {
+    // Precondition 1 — see this block's header: without it the two paths differ in the {component}
+    // warning for a reason that is about the component model, not the renderer.
+    await putComponentModel(request, EMPTY_COMPONENT_MODEL)
+    // Precondition 2 — the editor fetches over HTTP; the kiosk imports statically. Same bytes.
+    await putScreen(request, DEMO_DOCUMENT as ProbeDocument)
+
+    // Asserted, not assumed: a broken extraction here would compare two empty widget lists and pass.
+    expect(
+      STATIC_WIDGET_IDS.length,
+      "no widget in the demo document is binding-free — the subtree half of this comparison would measure nothing"
+    ).toBeGreaterThan(0)
+
+    await page.goto(`/hmi/demo/${DEMO_SCREEN_ID}`)
+    await expect(page.locator(`[data-hmi-screen="${DEMO_SCREEN_ID}"]`)).toBeVisible()
+    await expect(page.locator("[data-hmi-widget]")).toHaveCount(DEMO_DOCUMENT.widgets.length)
+    const kiosk = await rendererSignature(page, DEMO_SCREEN_ID, STATIC_WIDGET_IDS)
+
+    await page.goto(`/editor/${DEMO_SCREEN_ID}`)
+    await expect(page.locator(`[data-editor-canvas="${DEMO_SCREEN_ID}"]`)).toBeVisible()
+    await expect(page.locator(`[data-hmi-screen="${DEMO_SCREEN_ID}"]`)).toBeVisible()
+    await expect(page.locator("[data-hmi-widget]")).toHaveCount(DEMO_DOCUMENT.widgets.length)
+    const editor = await rendererSignature(page, DEMO_SCREEN_ID, STATIC_WIDGET_IDS)
+
+    // The floor for the comparison itself: a signature that read nothing would compare two empty
+    // objects and pass. Both must actually describe the grid this document declares.
+    expect(kiosk.display, "the kiosk's screen root is not a CSS grid — the signature read the wrong element").toBe("grid")
+    expect(kiosk.columnTracks).toBe(DEMO_DOCUMENT.layout.cols)
+    expect(kiosk.rowTracks).toBe(DEMO_DOCUMENT.layout.rows)
+    expect(kiosk.cells.length).toBe(DEMO_DOCUMENT.widgets.length)
+
+    expect(
+      editor,
+      "the editor's canvas and the kiosk produced DIFFERENT output for the same document. Compare the diff " +
+        "above: a changed gap, a changed grid line, a missing title warning or a different element tree means " +
+        "the two paths are no longer the same renderer — a fork that has drifted, or a second renderer. This " +
+        "is the assertion the canvas-identity claim rests on."
+    ).toEqual(kiosk)
+  })
+
+  test("a rect that overflows its own layout is clamped and says so, on the editor's canvas too", async ({
+    page,
+    request,
+  }) => {
+    // `clampRectToLayout` is one of the two behaviours `task-8-re-review.md`'s impostor B deleted from
+    // its fork, and the differential above cannot see it: the demo document has no out-of-grid widget,
+    // and the kiosk route can only render documents that ship in `lib/hmiScreens.ts`. Measured here on
+    // the editor path instead, against the renderer's own documented contract — never dropped, never
+    // allowed to overflow, and warned about where an engineer with no devtools open can see it.
+    await putScreen(request, OVERFLOW_DOC)
+    await page.goto(`/editor/${OVERFLOW_SCREEN_ID}`)
+    await expect(page.locator(`[data-hmi-screen="${OVERFLOW_SCREEN_ID}"]`)).toBeVisible()
+
+    const overflowing = page.locator('[data-hmi-widget="overflows"]')
+    await expect(overflowing).toBeVisible()
+    // cols = 12, rows = 4. `col: 10, colSpan: 4` clamps to `col: 10, colSpan: 2` (lines 11 → span 2);
+    // `row: 3, rowSpan: 3` clamps to `row: 3, rowSpan: 1` (line 4 → span 1).
+    await expect(overflowing).toHaveCSS("grid-column-start", "11")
+    await expect(overflowing).toHaveCSS("grid-column-end", "span 2")
+    await expect(overflowing).toHaveCSS("grid-row-start", "4")
+    await expect(overflowing).toHaveCSS("grid-row-end", "span 1")
+    // ...and the operator-visible half of the same behaviour.
+    await expect(overflowing).toHaveAttribute("title", /does not fit layout \{cols:12, rows:4\}/)
+
+    // The in-grid widget is untouched, so "clamped" cannot be satisfied by clamping everything.
+    const fits = page.locator('[data-hmi-widget="fits"]')
+    await expect(fits).toHaveCSS("grid-column-start", "1")
+    await expect(fits).toHaveCSS("grid-column-end", "span 4")
+    await expect(fits).not.toHaveAttribute("title", /.+/)
+  })
+
+  test("an engine failure is announced assertively; an undeclared screen is not", async ({ page, request }) => {
+    // task-8-re-review.md LOW-6 closure. The round-1 fix gave `EditorNotice` a required `role` and
+    // passed "alert" for the failure branch, but nothing asserted it, so a revert to "status" was
+    // invisible to every gate. `role="status"` is `aria-live="polite"`: a screen reader waits for a
+    // pause and may never interrupt. §5-bis's whole argument is that "nobody authored this screen" and
+    // "the engine is unreachable" are different in kind, and that difference has to survive into the
+    // accessibility tree or it only exists for people who can see the words.
+    const probe = await request.get(`${ENGINE_URL}/v1/screens/${UNDECLARED_SCREEN_ID}`)
+    expect(probe.status()).toBe(404)
+
+    await page.goto(`/editor/${UNDECLARED_SCREEN_ID}`)
+    await expect(page.getByRole("heading", { name: viDict.editor.notDeclared.title })).toBeVisible()
+    await expect(
+      page.locator("[data-editor-notice]"),
+      "an undeclared screen is an ordinary product state and must NOT interrupt as an alert"
+    ).toHaveAttribute("role", "status")
+
+    // Now the fault. Fulfilled in the browser rather than by breaking the engine, so this test cannot
+    // disturb any other spec in a suite that shares one engine process.
+    await page.route(`**/v1/screens/${UNDECLARED_SCREEN_ID}`, (route) =>
+      route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"probe"}' })
+    )
+    await page.goto(`/editor/${UNDECLARED_SCREEN_ID}`)
+    await expect(page.getByRole("heading", { name: viDict.common.connectivityError })).toBeVisible()
+    await expect(
+      page.locator("[data-editor-notice]"),
+      "an unreachable engine was announced through a polite live region — a fault is not a status"
+    ).toHaveAttribute("role", "alert")
+    // ...and it is genuinely the OTHER state, not the not-found one wearing a different role.
+    await expect(page.getByRole("heading", { name: viDict.editor.notDeclared.title })).toHaveCount(0)
   })
 })
