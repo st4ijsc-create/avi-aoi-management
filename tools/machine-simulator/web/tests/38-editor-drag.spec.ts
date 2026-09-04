@@ -21,43 +21,53 @@ import { ENGINE_URL } from "./support/engine"
  *
  * So every drag below is by a deliberately NON-INTEGER multiple of the cell pitch — 3.4 cells, 2.6
  * cells, 2.4 cells — and each case records, in place, the number a pixel-rounding implementation with
- * no grid would have written instead. Those numbers are MEASURED, not derived: on this suite's
- * 1280×720 viewport (`devices["Desktop Chrome"]` overrides the config's top-level 1440×900) the
- * overlay box is 898×576 and the pitch is 75.5 × 97.332 px.
+ * no grid would have written instead.
  *
- * 🔴 WS-HMI-2 TASK 10, FIX ROUND 2 (task-10-review.md F9), COMMENT-ONLY EDIT AUTHORISED BY THE
- * CONTROLLER — THE TWO WIDTH FIGURES ABOVE WERE STALE AND ARE CORRECTED. They read *"the overlay box
- * is 1230×576 and the pitch is 103.164 × 97.332 px"*, which was true when Task 9 measured it and
- * stopped being true when Task 10 put a 320 px property panel beside the canvas. Re-measured, not
- * recomputed: a throwaway probe read `[data-editor-overlay]`'s own box and derived the pitch the same
- * way `measurePitch` below does — `(left(ref-b) − left(ref-a)) / 6` off the RENDERER's placed cells —
- * at this suite's viewport, and printed `{overlayW: 898, overlayH: 576, pitchX: 75.5, pitchY:
- * 97.33203125, columnGap: "8px", panelW: 320}`. Only the two WIDTH figures moved; the height and the
- * row pitch are untouched, because the panel is a horizontal sibling and takes nothing off the
- * canvas's height.
+ * 🔴 WS-HMI-2 TASK 11, FIX ROUND 1 (task-11-review.md MED-1), COMMENT-ONLY EDIT AUTHORISED BY THE
+ * CONTROLLER — THE ABSOLUTE FIGURES THAT STOOD HERE ARE DELETED RATHER THAN RE-MEASURED A THIRD TIME.
  *
- * WHAT THESE NUMBERS DEPEND ON, so the next person who changes the panel does not have to rediscover
- * it: overlay width = viewport − `EditorRoute`'s `p-3` main padding (2×12) − `PropertyPanel`'s `w-80`
- * (320) − the frame/panel `gap-3` (12) − the canvas frame's own border (2×1) and `p-3` (2×12); pitch
- * = (overlay width + 8 px gutter) / 12 columns. **Every number in this paragraph and the one above it
- * is prose. No assertion in this file reads any of them** — `measurePitch` measures the grid the
- * browser actually laid out, precisely so a changed canvas width cannot move an expectation, which is
- * why every test here passed unchanged across Task 10 at both of its viewports. Change the panel width
- * and this comment goes stale again; nothing else does.
+ * They have now gone stale twice in two tasks. Task 9 measured the overlay at 1230×576 with a 103.164
+ * px column pitch; Task 10's 320 px property panel falsified that and `e3724ee3` re-measured it to
+ * 898×576 and 75.5 px; Task 11's 256 px layer tree falsified THAT one commit later, and the dependency
+ * formula written beside it — viewport minus the route padding, the panel, one gap and the frame's own
+ * border and padding — was short by the new rail and its second gap. Nothing caught either drift,
+ * because **no assertion in this file reads any of these numbers**: `measurePitch` measures the grid
+ * the browser actually laid out, precisely so a changed canvas width cannot move an expectation. That
+ * is why every test here passed unchanged across both tasks, at both of its viewports — and it is also
+ * why a number written here has no defender. A figure nothing reads is a liability: it is presented as
+ * a measurement, it is believed, and it is wrong on the next layout change.
+ *
+ * So this block now records the METHOD instead, which does not go stale:
+ *
+ *   * WHAT to measure — the overlay's own box (`[data-editor-overlay]`), the renderer's placed cells
+ *     (`[data-hmi-widget]`), and the overlay's computed `column-gap`.
+ *   * OFF WHICH ELEMENT — the RENDERER's cells, never the editor's overlay and never a formula: the
+ *     pitch is `(left(ref-b) − left(ref-a)) / REF_COLS_APART` and `(top(ref-c) − top(ref-a)) /
+ *     REF_ROWS_APART`, exactly as `measurePitch` below derives it, at whichever viewport is in force.
+ *     `ref-a`/`ref-b`/`ref-c` sit a known number of cells apart in `PROBE_DOC` for this purpose.
+ *   * WHAT IT DEPENDS ON — every horizontal sibling of the canvas inside `EditorCanvas`'s flex row,
+ *     each one's own `gap-3`, `EditorRoute`'s `p-3`, and the canvas frame's border and padding. Read
+ *     that row rather than trusting a list of terms here; the list is what went out of date.
+ *
+ * Anyone who needs today's figures can print them from a throwaway probe in a minute and will get
+ * TODAY's, which is strictly better than reading last week's from a comment. What is worth knowing
+ * without measuring is in `EditorCanvas.tsx` beside the rails themselves: how much width the canvas
+ * can still lose before the alignment test below stops passing, and why.
  *
  * (🔴 FIX ROUND 1, task-9-review.md F6 — round 0 wrote "≈105 px off a 1256 px overlay", arrived at by
  * arithmetic and presented as a measurement. Nothing in the argument depended on it, which is exactly
- * why it went unchecked. The Task 10 correction above is deliberately the same shape: re-measured
- * rather than re-derived.)
+ * why it went unchecked. Task 10's correction was the same shape, re-measured rather than re-derived;
+ * this one removes the shape instead, having watched it fail twice.)
  *
- * So "drag `drag-me` right by 3.4 cells" is a 256.7 px displacement, and an implementation that wrote
- * `col: base + Math.round(dx)` would produce `col: 258` — clamped to the far edge at `col: 8`, four
- * visible cells away from the `col: 4` asserted here. That is not a prediction: with `snapToCells`
- * reduced to `Math.round(px)` the mid-drag ghost reports `grid-column-start: "9"` where `"5"` is
- * expected — and that observation is UNCHANGED by the narrower canvas, because the runaway column is
- * clamped either way. The assertion also discriminates a WRONG pitch, not merely a missing one —
- * swapping the pitch for the bare track width (one gutter short per cell, 67.5 px here) still puts the
- * ghost at `"6"`: 256.7 / 67.5 rounds to 4 cells where 3.4 rounds to 3.
+ * So "drag `drag-me` right by 3.4 cells" is a displacement no whole number of pixels can express, and
+ * an implementation that wrote `col: base + Math.round(dx)` would produce a column hundreds of cells
+ * to the right — clamped to the far edge, visibly away from the `col: 4` asserted here. That is not a
+ * prediction: with `snapToCells` reduced to `Math.round(px)` the mid-drag ghost reports
+ * `grid-column-start: "9"` where `"5"` is expected — and that observation is UNCHANGED by a narrower
+ * canvas, because the runaway column is clamped either way. The assertion also discriminates a WRONG
+ * pitch, not merely a missing one: re-derive the same drag against the BARE TRACK WIDTH (one gutter
+ * short per cell) and 3.4 pitches round to 4 cells where the true pitch rounds to 3, so the ghost
+ * lands on a different column than the one the expectation below names.
  *
  * ── AND THE PITCH ITSELF IS NOT TAKEN FROM THE IMPLEMENTATION ────────────────────────────────────
  * `gridGeometry.ts` computes the pitch as `(width + gap) / cols`. If this file computed its drag

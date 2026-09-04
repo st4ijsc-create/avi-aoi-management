@@ -430,6 +430,27 @@ export const POLICY_ACTION_VALUES: readonly PolicyAction[] = Object.keys(POLICY_
 export const POLICY_REQUIRED_WIDGET_KINDS: readonly WidgetKind[] = Object.keys(POLICY_REQUIRED_KINDS) as WidgetKind[]
 
 /**
+ * The frozen `$defs/widget.properties.id.pattern`, as a string a UI can SHOW.
+ *
+ * 🔴 WS-HMI-2 TASK 11 FIX ROUND 1 (task-11-review.md LOW-4). The layer tree's rename box needs a hint
+ * saying what a legal id looks like, and the round-0 hint said it in PROSE — "lowercase letters,
+ * digits and hyphens", in two dictionaries, with nothing comparing either sentence to the schema. Three
+ * human-readable statements of a frozen rule that no pin could reach: exactly the drift this branch has
+ * spent the week closing everywhere else.
+ *
+ * So the hint INTERPOLATES this instead. There is still one regex in this file, `widgetRefusal` still
+ * reads it, `SCHEMA_MIRROR.widgetIdPattern` still exposes the same `.source` to the parity pin that
+ * holds it answerable to the schema file, and `tests/40-editor-layers.spec.ts` asserts that the string
+ * the RENDERED hint contains equals the pattern read from `contracts/hmi-screen.schema.json` on disk.
+ * Widen the frozen pattern and the sentence an engineer reads while typing widens with it.
+ *
+ * This is the one thing in this module's product-facing block that is a raw schema literal rather than
+ * a vocabulary. It is exported for the same reason the three lists above it are: so the UI cannot hold
+ * a second copy.
+ */
+export const WIDGET_ID_PATTERN_SOURCE: string = WIDGET_ID_PATTERN.source
+
+/**
  * 🔴 FIX ROUND 1, task-7-review.md §7.1 — the parity declaration that closes the mirror's residual
  * hole, plus the literal values the mirror enforces.
  *

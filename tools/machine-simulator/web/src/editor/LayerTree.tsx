@@ -7,6 +7,7 @@ import { widgetRegistry } from "@/hmi-runtime/widgetRegistry"
 import {
   POLICY_ACTION_VALUES,
   POLICY_REQUIRED_WIDGET_KINDS,
+  WIDGET_ID_PATTERN_SOURCE,
   type EditorEdit,
 } from "./editorState"
 import { CommitField } from "./PropertyPanel"
@@ -75,10 +76,15 @@ function freshRect(doc: HmiScreenDocument) {
 }
 
 /**
- * A widget id nothing on this document carries, matching the frozen schema's own
- * `^[a-z0-9-]+$` — the pattern is NOT restated here, it is satisfied by construction (a fixed
- * lowercase stem plus a decimal counter) and enforced for real by `applyEdit`'s `rename`/`add`
- * guards, which read the one copy of it in `editorState.ts`.
+ * A widget id nothing on this document carries.
+ *
+ * 🔴 FIX ROUND 1 (task-11-review.md LOW-4) — this comment used to quote the frozen id pattern while
+ * claiming in the same sentence that it was "NOT restated here", which was false as written. The
+ * pattern is not quoted now, and it never needed to be: the generated stem is a lowercase letter, a
+ * hyphen and a decimal counter, so it satisfies the rule by construction; `applyEdit`'s `add` guard
+ * enforces the rule for real off the one copy in `editorState.ts`; and the add test in
+ * `tests/40-editor-layers.spec.ts` asserts what this function actually produced against the pattern
+ * read from the schema file on disk, which is the only statement here that a drift could not survive.
  */
 function freshId(doc: HmiScreenDocument): string {
   const taken = new Set(doc.widgets.map((widget) => widget.id))
@@ -110,16 +116,25 @@ export function LayerTree({ doc, selectedId, onSelect, onEdit }: LayerTreeProps)
   const [kindToAdd, setKindToAdd] = useState("")
   const [actionToAdd, setActionToAdd] = useState("")
   /**
-   * How many rename COMMITS have been attempted. It is part of the rename box's `key`, and that is
-   * the whole reason it exists.
+   * How many rename COMMITS have been attempted. It is `CommitField`'s `reset` counter.
    *
    * `CommitField` snaps back only when `onCommit` returns FALSE, which means "I did not emit an
    * edit". A rename that IS emitted and is then REFUSED by `applyEdit` (a duplicate id, a name
    * outside the frozen pattern) is not that case — and without this, the box would sit there holding
-   * a name the document never took while the panel beside it explained the refusal. Re-keying on
-   * every attempt remounts the field from `widget.id`, i.e. from what the DOCUMENT says, which is the
+   * a name the document never took while the panel beside it explained the refusal. Bumping this on
+   * every attempt reloads the field from `widget.id`, i.e. from what the DOCUMENT says, which is the
    * right answer in both outcomes: the old name after a refusal, the new one after an acceptance.
    * Measured by `tests/40-editor-layers.spec.ts` — the assertion that caught its absence.
+   *
+   * 🔴 FIX ROUND 1 (task-11-review.md LOW-5) — round 0 did this by putting the counter in the field's
+   * `key`, which REMOUNTS the input and so destroys the caret: correcting a refused name meant
+   * clicking back into the box. `reset` is the same reload without the remount, so focus survives a
+   * refusal and the engineer can just fix the name. Both halves are pinned — the snap-back and the
+   * surviving focus — so a future edit that drops one to get the other reddens.
+   *
+   * A successful rename still remounts, and that is not this counter: the row's own
+   * `<li key={widget.id}>` changes when the id does. Focus is lost there, which is the outcome where
+   * the engineer is finished typing.
    *
    * The alternative was to make `onEdit` report acceptance back to this component. That would put a
    * return channel on a one-way "here is an edit" seam that `PropertyPanel` and the drag layer share,
@@ -226,14 +241,14 @@ export function LayerTree({ doc, selectedId, onSelect, onEdit }: LayerTreeProps)
 
               {/* Rename is offered on the SELECTED row only — see the header for why (the refusal a
                   duplicate or malformed name earns is rendered by the property panel, which is open
-                  on exactly that widget). `key` is the committed id, so an ACCEPTED rename reloads the
-                  box with the new name; a REFUSED one is what `CommitField`'s false return snaps
-                  back. */}
+                  on exactly that widget). `reset` reloads the box from the document after EVERY
+                  commit attempt without remounting it, which is what makes a refused name snap back
+                  while the caret stays where the engineer left it — see `renameAttempts`. */}
               {selected ? (
                 <>
                   <CommitField
-                    key={`${widget.id}:${renameAttempts}`}
                     value={widget.id}
+                    reset={renameAttempts}
                     type="text"
                     hook={{ "data-layer-rename": widget.id }}
                     label={t("editor.layers.renameLabel", { widgetId: widget.id })}
@@ -247,7 +262,9 @@ export function LayerTree({ doc, selectedId, onSelect, onEdit }: LayerTreeProps)
                       return true
                     }}
                   />
-                  <span className="hmi-micro normal-case text-text-muted">{t("editor.layers.renameHint")}</span>
+                  <span data-layer-rename-hint className="hmi-micro normal-case text-text-muted">
+                    {t("editor.layers.renameHint", { pattern: WIDGET_ID_PATTERN_SOURCE })}
+                  </span>
                 </>
               ) : null}
             </li>

@@ -129,18 +129,42 @@ export function CommitField({
   type,
   hook,
   label,
+  reset,
   onCommit,
 }: {
   value: string
   type: "text" | "number"
   hook: Record<string, string>
   label: string
+  /**
+   * 🔴 WS-HMI-2 TASK 11 FIX ROUND 1 (task-11-review.md LOW-5) — an OPTIONAL counter a caller bumps
+   * when it wants the box reloaded from `value` WITHOUT remounting it.
+   *
+   * It exists because there are two ways a committed value can fail to reach the document and only
+   * one of them is `onCommit` returning false. A commit that was EMITTED and then refused downstream
+   * (the layer tree's rename, refused by `applyEdit` for a duplicate id or an illegal name) returns
+   * true — it really did emit — yet the box must still show what the document says. The tree's first
+   * fix for that re-keyed the field, which remounts it and therefore destroys the caret, so
+   * correcting a refused name meant clicking back into the box. Bumping this instead keeps the same
+   * DOM node: the value snaps back AND the focus survives.
+   *
+   * React's own "adjust state when a prop changes" pattern, during render, no effect — the same
+   * device `EditorCanvas` uses for a changed `screenId` and `PropertyPanel` for a changed selection.
+   * Callers that do not pass it are unaffected: `undefined !== undefined` is false, so the branch
+   * never fires.
+   */
+  reset?: number
   /** Returns TRUE when it emitted an edit. FALSE means "I could not honestly write that" — the box
    * then snaps back to the last committed value rather than leaving a number on screen that the
    * document does not carry. See the header's F2 note. */
   onCommit: (raw: string) => boolean
 }) {
   const [draft, setDraft] = useState(value)
+  const [syncedTo, setSyncedTo] = useState(reset)
+  if (reset !== syncedTo) {
+    setSyncedTo(reset)
+    setDraft(value)
+  }
   return (
     <input
       {...hook}

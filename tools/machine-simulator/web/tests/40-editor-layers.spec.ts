@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
+import ts from "typescript"
 
 import { ENGINE_URL } from "./support/engine"
 import { vi as viDict } from "../src/i18n/vi"
@@ -312,25 +313,87 @@ test.describe("HMI screen editor — the layer tree", () => {
     expect(rendered[0], "the first option is not the placeholder — a kind would be pre-selected").toBe("")
     expect(rendered.slice(1)).toEqual(keys)
 
-    // ── half 2: this component does not CARRY a kind name at all ─────────────────────────────────
+    // ── half 2: NO module under `src/editor/` carries a kind name, except the one allowed to ─────
     // 🔴 THIS is the half that reddens against a hand-written list which happens to be correct today —
-    // half 1 cannot, because such a list renders identical options. Comments are stripped first (the
-    // component's own doc comment DISCUSSES the write kinds by name, in prose, which is exactly the
-    // sentence a reader needs); what is left is code.
-    const layerTreeSource = readNormalized(join(WEB, "src", "editor", "LayerTree.tsx"))
-      .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
-      .replace(/^\s*\/\/.*$/gm, "")
+    // half 1 cannot, because such a list renders identical options.
+    //
+    // 🔴 FIX ROUND 1, task-11-review.md LOW-3 AND the disclosed hole. Round 0 stripped comments with a
+    // line-leading-only `//` regex and scanned for double- and single-quoted names, which had two
+    // cracks the reviewer named: a TRAILING `// "label"` would have made the pin fire FALSELY, and a
+    // backtick-quoted kind name evaded it entirely. Both are gone: the scan is now over TypeScript's
+    // own parse of each file, collecting the text of every string and template literal, so comments
+    // are excluded by the parser rather than by a regex and all three quote forms are covered by
+    // construction. `scripts/check-test-budgets.mjs` already reaches for the same compiler for the
+    // same reason — a source claim that must not be defeated by where a character happens to sit.
+    //
+    // 🔴 AND THE CENSUS IS NOW THE WHOLE `src/editor/` DIRECTORY, not `LayerTree.tsx` alone. Round 0
+    // disclosed that a hand-written list moved into a sibling module and imported would satisfy the
+    // pin; the reviewer reproduced exactly that (`src/editor/tempKinds.ts` plus a dead
+    // `void widgetRegistry`) and the whole suite stayed green. A directory census closes it — the same
+    // instrument, and the same allowlist shape, `runtime-tests/editorCanvasSeam.test.mjs` uses for its
+    // own rules.
+    //
+    // WHAT REMAINS OPEN, stated rather than left to be found: a list placed OUTSIDE `src/editor/` and
+    // imported. That is a longer walk than the one that was disclosed, and half 1 still catches any
+    // such list on the day it drifts from the registry.
+    const CENSUS_DIR = join(WEB, "src", "editor")
+    // `editorState.ts` is allowed to name kinds, and the exemption is narrow and load-bearing rather
+    // than a convenience: its `WIDGET_KINDS` record is the compile-time mirror of the FROZEN
+    // `WidgetKind` union (`Record<WidgetKind, true>`, exhaustive in both directions), which is what
+    // `applyEdit`'s guards enforce and what `SCHEMA_MIRROR` holds answerable to the schema file. It is
+    // a checked copy of the CONTRACT, not a second copy of the registry.
+    const CENSUS_ALLOWED = "editorState.ts"
+    const kindLiteralsIn = (file: string): string[] => {
+      const sf = ts.createSourceFile(file, readNormalized(join(CENSUS_DIR, file)), ts.ScriptTarget.Latest, true)
+      const literals: string[] = []
+      const visit = (node: ts.Node): void => {
+        if (
+          ts.isStringLiteral(node) ||
+          ts.isNoSubstitutionTemplateLiteral(node) ||
+          node.kind === ts.SyntaxKind.TemplateHead ||
+          node.kind === ts.SyntaxKind.TemplateMiddle ||
+          node.kind === ts.SyntaxKind.TemplateTail
+        ) {
+          literals.push((node as ts.LiteralLikeNode).text)
+        }
+        node.forEachChild(visit)
+      }
+      visit(sf)
+      // The per-file floor: a parse that yielded nothing would report every file as clean.
+      expect(literals.length, `extracted 0 string literals from ${file} — the parse broke, not the file`).toBeGreaterThan(0)
+      return keys.filter((kind) => literals.includes(kind))
+    }
+
+    const censusFiles = readdirSync(CENSUS_DIR).filter((f) => f.endsWith(".ts") || f.endsWith(".tsx"))
+    expect(censusFiles.length, "the src/editor census found no files — it would pass over nothing").toBeGreaterThan(3)
     expect(
-      layerTreeSource.includes("widgetRegistry"),
+      censusFiles,
+      "the allowlisted file is not in the census — the exemption names something that is not there"
+    ).toContain(CENSUS_ALLOWED)
+    // The allowlist's own floor: if `editorState.ts` ever STOPS carrying kind literals, the exemption
+    // is covering nothing and should be deleted rather than left as a hole nobody is watching.
+    expect(
+      kindLiteralsIn(CENSUS_ALLOWED).length,
+      `${CENSUS_ALLOWED} no longer names any widget kind — the census exemption is now covering nothing, delete it`
+    ).toBeGreaterThan(0)
+
+    const offenders: Record<string, string[]> = {}
+    for (const file of censusFiles) {
+      if (file === CENSUS_ALLOWED) continue
+      const hits = kindLiteralsIn(file)
+      if (hits.length > 0) offenders[file] = hits.sort()
+    }
+    expect(
+      offenders,
+      "a module under src/editor/ writes widget-kind names out as string literals — the add menu's vocabulary would be a SECOND list beside the registry, and a second list is a thing to drift"
+    ).toEqual({})
+
+    // …and the component really does reach the registry, so "no kind names" cannot be satisfied by a
+    // menu that is simply empty.
+    expect(
+      readNormalized(join(CENSUS_DIR, "LayerTree.tsx")).includes("widgetRegistry"),
       "LayerTree.tsx does not mention widgetRegistry at all — whatever fills its menu, it is not the registry"
     ).toBe(true)
-    const typedOut = keys.filter(
-      (kind) => layerTreeSource.includes(`"${kind}"`) || layerTreeSource.includes(`'${kind}'`)
-    )
-    expect(
-      typedOut,
-      "LayerTree.tsx writes widget-kind names out as string literals — the add menu's vocabulary is a SECOND list beside the registry, and a second list is a thing to drift"
-    ).toEqual([])
   })
 
   test("adding a widget from the menu puts it on the canvas and at the end of the list, and Ctrl+Z takes it back off", async ({
@@ -523,6 +586,17 @@ test.describe("HMI screen editor — the layer tree", () => {
     await expect(page.locator(`[data-layer-rename="${oldId}"]`)).toHaveCount(0)
     await selectOnCanvas(page, oldId)
     await expect(page.locator(`[data-layer-rename="${oldId}"]`)).toHaveValue(oldId)
+    // 🔴 FIX ROUND 1, task-11-review.md LOW-4 — the hint an engineer reads WHILE TYPING carries the
+    // frozen pattern, interpolated from `editorState.ts`'s single regex, and it is compared here
+    // against `contracts/hmi-screen.schema.json` read from disk. Round 0 said "lowercase letters,
+    // digits and hyphens" in two dictionaries with nothing comparing either sentence to anything;
+    // widen the schema's pattern now and this assertion moves the sentence with it instead of leaving
+    // three prose copies quietly wrong.
+    await expect(page.locator("[data-layer-rename-hint]")).toContainText(SCHEMA_ID_PATTERN.source)
+    expect(
+      SCHEMA_ID_PATTERN.source.length,
+      "the schema's id pattern is empty — the containment check above would pass against anything"
+    ).toBeGreaterThan(2)
 
     await page.locator(`[data-layer-rename="${oldId}"]`).fill(newId)
     await page.locator(`[data-layer-rename="${oldId}"]`).press("Enter")
@@ -566,6 +640,15 @@ test.describe("HMI screen editor — the layer tree", () => {
     expect(await canvasIds(page)).toEqual(DOC_IDS)
     // The box does not keep a name the document never took.
     await expect(page.locator(`[data-layer-rename="${subject}"]`)).toHaveValue(subject)
+    // 🔴 FIX ROUND 1, task-11-review.md LOW-5 — THE CARET SURVIVES A REFUSAL. The snap-back above is
+    // implemented by reloading the field from the document after every commit attempt; round 0 did
+    // that by RE-KEYING the input, which remounts it and destroys the focus, so correcting a refused
+    // name meant clicking back into the box. Both halves are pinned, here and above: revert to the
+    // re-key and this assertion reddens, drop the reload entirely and the snap-back assertion does.
+    await expect(
+      page.locator(`[data-layer-rename="${subject}"]`),
+      "the rename box lost focus when the name was refused — the engineer has to click back in before they can correct it"
+    ).toBeFocused()
 
     // ── (b) a name another widget already carries ────────────────────────────────────────────────
     // The frozen schema PERMITS duplicate ids (`runtime-tests/editorState.test.mjs` measures that

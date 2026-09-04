@@ -426,7 +426,12 @@ export const vi = {
       drawOrder: "Thứ tự trong danh sách là thứ tự vẽ: lớp đứng sau nằm ĐÈ LÊN lớp đứng trước khi hai ô chồng nhau.",
       selectLayer: (vars: Vars) => `Chọn lớp ${vars.widgetId}`,
       renameLabel: (vars: Vars) => `Đổi tên widget ${vars.widgetId}`,
-      renameHint: "Chữ thường, chữ số và gạch nối; phải khác mã của mọi widget khác trên màn hình.",
+      // 🔴 SỬA VÒNG 1 (task-11-review.md LOW-4) — câu này TỪNG viết tay "Chữ thường, chữ số và gạch
+      // nối", tức một bản sao thứ ba của mẫu id đóng băng mà không phép ghim nào với tới. Giờ nó NỘI
+      // SUY `WIDGET_ID_PATTERN_SOURCE` — đúng một biểu thức chính quy trong `editorState.ts`, chính là
+      // cái `widgetRefusal` thi hành và `SCHEMA_MIRROR` đem đối chiếu với file schema.
+      renameHint: (vars: Vars) =>
+        `Mã phải khớp ${vars.pattern} — luật của chính lược đồ đóng băng — và phải khác mã của mọi widget khác trên màn hình.`,
       remove: (vars: Vars) => `Xoá widget ${vars.widgetId}`,
       moveUp: (vars: Vars) => `Đưa ${vars.widgetId} xuống dưới lớp trước (vẽ sớm hơn)`,
       moveDown: (vars: Vars) => `Đưa ${vars.widgetId} lên trên lớp sau (vẽ muộn hơn)`,

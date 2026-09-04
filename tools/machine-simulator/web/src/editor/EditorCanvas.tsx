@@ -549,20 +549,47 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
     // and everything inside it is untouched — the renderer's own grid is measured against the
     // kiosk's in `tests/37-editor-canvas.spec.ts` by TRACK COUNTS and absolute gutters, neither of
     // which a narrower frame changes, and `tests/38-editor-drag.spec.ts` measures its pitch off the
-    // grid the browser actually laid out rather than from a formula. Both properties are what let a
-    // third rail be added beside the canvas without moving either file.
+    // grid the browser actually laid out rather than from a formula.
+    //
+    // 🔴 HOW MUCH ROOM IS LEFT BESIDE THE CANVAS, MEASURED — task-11-review.md MED-2. Round 0 said
+    // "that headroom is finite" without a number, and a number was available. A FOURTH rail here has
+    // a budget of **65 px**: at `38-editor-drag.spec.ts`'s deliberately narrow 900×620 second pass
+    // the canvas frame is already down to 276 px, and its overlay-alignment assertion (`:393`,
+    // tolerance `< 0.5` px) survives the frame losing 77 px and fails at 78 — so a new rail of 65 px
+    // passes and 66 px fails, once its own 12 px `gap-3` is counted. Bisected on this host with a
+    // throwaway probe that swept the viewport width, which takes width off the frame exactly as a
+    // rail does.
+    //
+    // 🔴 AND THE CAUSE IS NOT WHERE IT LOOKS, WHICH IS WHY THE NUMBER IS RECORDED RATHER THAN FIXED.
+    // The obvious reading — "the overlay's hit target is a `<button>` with an intrinsic minimum width
+    // the renderer's `<div>` cell does not have" — is BACKWARDS, and `min-width: 0` on that button
+    // was measured to move the boundary by exactly zero. At the failure point the OVERLAY's tracks
+    // are uniform (`7px` × 12) and the RENDERER's are not
+    // (`7.5px 6.89px 6.91px … 7.45px …`): both grids declare `repeat(n, 1fr)`, which is
+    // `minmax(auto, 1fr)`, so a track inflates to its content's MIN-CONTENT once the fair share falls
+    // below it. The renderer's cells hold real widgets (the two inflated columns are precisely the
+    // two holding a `label`); the overlay's hold empty buttons that contribute nothing. The overlay
+    // is the one that is right.
+    //
+    // The one-token fix is `minmax(0, 1fr)` in `ScreenRenderer.tsx`, and it was MEASURED: with it,
+    // the divergence never appears at all — swept to a 16 px frame with no failure. It is not applied
+    // here because that is an EXECUTABLE change to a file frozen for this task. Two things follow for
+    // whoever picks it up: `38`'s alignment pin currently conflates "the overlay drifted" with "the
+    // tracks got narrow", and, separately, a widget whose min-content exceeds its fair share silently
+    // widens its own column and narrows every other one, so the uniform cols×rows grid the contract
+    // describes stops being uniform — on the kiosk as much as in the editor.
     <div className="flex h-full min-h-0 w-full min-w-0 gap-3">
-      {/*
-        The layer tree, the canvas frame and the property panel, left to right. The tree reads the
-        EDITED document (not the `doc` prop) so its order is the order `<ScreenRenderer>` is drawing
-        below — one list, one truth about draw order.
-      */}
-      <LayerTree
-        doc={edited}
-        selectedId={canvas.selectedId}
-        onSelect={(widgetId) => setCanvas((prev) => ({ ...prev, selectedId: widgetId }))}
-        onEdit={applySessionEdit}
-      />
+    {/*
+      The layer tree, the canvas frame and the property panel, left to right. The tree reads the
+      EDITED document (not the `doc` prop) so its order is the order `<ScreenRenderer>` is drawing
+      below — one list, one truth about draw order.
+    */}
+    <LayerTree
+      doc={edited}
+      selectedId={canvas.selectedId}
+      onSelect={(widgetId) => setCanvas((prev) => ({ ...prev, selectedId: widgetId }))}
+      onEdit={applySessionEdit}
+    />
     <div
       data-editor-canvas={edited.screenId}
       className="h-full min-h-0 min-w-0 flex-1 overflow-hidden border border-border-strong bg-surface-subtle p-3"

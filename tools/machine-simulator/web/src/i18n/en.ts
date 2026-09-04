@@ -407,7 +407,10 @@ export const en: Dictionary = {
       drawOrder: "List order is draw order: a layer further down is painted OVER the ones above it where their cells overlap.",
       selectLayer: (vars: Vars) => `Select layer ${vars.widgetId}`,
       renameLabel: (vars: Vars) => `Rename widget ${vars.widgetId}`,
-      renameHint: "Lowercase letters, digits and hyphens; must differ from every other widget id on this screen.",
+      // Fix round 1 (task-11-review.md LOW-4) — see vi.ts at the same key: the pattern is interpolated
+      // from the one regex in editorState.ts, never retyped.
+      renameHint: (vars: Vars) =>
+        `The id must match ${vars.pattern} — the frozen schema's own rule — and must differ from every other widget id on this screen.`,
       remove: (vars: Vars) => `Delete widget ${vars.widgetId}`,
       moveUp: (vars: Vars) => `Move ${vars.widgetId} under the previous layer (painted earlier)`,
       moveDown: (vars: Vars) => `Move ${vars.widgetId} over the next layer (painted later)`,
