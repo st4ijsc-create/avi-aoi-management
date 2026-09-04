@@ -402,22 +402,51 @@ public sealed class HmiScreenEndpointsTests
     }
 
     // ═════════════════════════════════════════════════════════════════════
-    // 🔴 WS-HMI-2 TASK 12 — THE PUBLISH DOOR REFUSES A WIDGET ID THE FROZEN SCHEMA REFUSES.
+    // 🔴 WS-HMI-2 TASK 12 — THE PUBLISH DOOR REFUSES A DOCUMENT THE FROZEN SCHEMA REFUSES.
     //
-    // Measured on this branch BEFORE the fix, over this exact route: `ContractInvariants` pattern-checked
-    // `screenId` but not `widget.id`, even though `contracts/hmi-screen.schema.json` declares the SAME
-    // pattern at both paths — so `PUT` stored documents `web/contract-tests/validate.mjs` rejects.
+    // Measured on this branch BEFORE the fix, over this exact route: a PUT carrying
+    // `kind: "no-such-widget-kind"` answered **200**, the row was stored, and a later GET handed it back —
+    // a document `web/contract-tests/validate.mjs` rejects, living in the store. `ContractInvariants` asked
+    // only whether `kind` was null/whitespace, and `widget.id` carried no pattern check at all even though
+    // the schema declares one identical to `screenId`'s.
     //
-    // 🔴 THE SIBLING HOLE — `widget.kind` outside the frozen fifteen-member enum — IS STILL OPEN, and that
-    // is a recorded decision rather than an omission. Closing it makes `web/tests/37-editor-canvas.spec.ts`
-    // red: that spec PUTs `kind: "no-such-widget-kind"` through this very route and then asserts the
-    // renderer degrades it, and that file is frozen. See `ContractInvariants`'s own file header and
-    // `.superpowers/sdd/2026-08-31-hmi-ws2-editor-blueprint/task-12-report.md`.
+    // The corpus test above (`No_client_authored_body_produces_a_500_...`) already sends
+    // `kind-unrecognised`, but it accepts 200 OR 400 by design — its subject is "never a 5xx", not "this
+    // one is refused". These say WHICH answer is correct, so relaxing the guard reddens something.
     // ═════════════════════════════════════════════════════════════════════
 
-    /// <summary>The refusal, plus the "every violation, not the first" contract measured on a body that
-    /// breaks the rule TWICE — the property the editor's publish surface depends on to show an engineer
-    /// everything they have to fix in one pass rather than one thing per round trip.</summary>
+    [Fact]
+    public async Task Put_AWidgetKindOutsideTheFrozenEnum_Gets400_AndStoresNothing()
+    {
+        var (factory, _, engineerC, operatorClient) = await NewFactoryWithUsersAsync("kind-enum");
+        await using var _f = factory;
+        using var eng = engineerC;
+        using var op = operatorClient;
+
+        const string body = """
+            {"schemaVersion":1,"screenId":"kind-enum","title":"x","theme":"isa101",
+             "layout":{"cols":12,"rows":8,"breakpoint":"panel"},
+             "widgets":[{"id":"w1","kind":"no-such-widget-kind","rect":{"col":0,"row":0,"colSpan":2,"rowSpan":1}}]}
+            """;
+
+        using (var put = await eng.PutAsync("/v1/screens/kind-enum",
+                   new StringContent(body, Encoding.UTF8, "application/json")))
+        {
+            var text = await put.Content.ReadAsStringAsync();
+            Assert.True(put.StatusCode == HttpStatusCode.BadRequest,
+                $"a widget kind outside contracts/hmi-screen.schema.json's own enum answered " +
+                $"{(int)put.StatusCode}: {text}. This route is the PUBLISH door of the screen builder — a " +
+                "document the frozen schema rejects must not reach the store.");
+            Assert.Contains("no-such-widget-kind", text, StringComparison.Ordinal);
+        }
+
+        using var get = await op.GetAsync("/v1/screens/kind-enum");
+        Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+    }
+
+    /// <summary>The id half, plus the "every violation, not the first" contract measured on a body that
+    /// breaks BOTH new rules at once — the property the editor's publish surface depends on to show an
+    /// engineer everything they have to fix in one pass rather than one thing per round trip.</summary>
     [Fact]
     public async Task Put_AWidgetIdTheFrozenPatternRefuses_Gets400_CarryingEveryViolationAtOnce()
     {
@@ -426,12 +455,12 @@ public sealed class HmiScreenEndpointsTests
         using var eng = engineerC;
         using var op = operatorClient;
 
-        // TWO widgets, two different illegal ids: an uppercase one and one carrying an underscore.
+        // TWO widgets, TWO different new rules: an uppercase id, and a kind that does not exist.
         const string body = """
             {"schemaVersion":1,"screenId":"widget-id","title":"x","theme":"isa101",
              "layout":{"cols":12,"rows":8,"breakpoint":"panel"},
              "widgets":[{"id":"Probe-A","kind":"label","rect":{"col":0,"row":0,"colSpan":2,"rowSpan":1}},
-                        {"id":"probe_b","kind":"label","rect":{"col":3,"row":0,"colSpan":2,"rowSpan":1}}]}
+                        {"id":"probe-b","kind":"widget-from-the-future","rect":{"col":3,"row":0,"colSpan":2,"rowSpan":1}}]}
             """;
 
         using (var put = await eng.PutAsync("/v1/screens/widget-id",
@@ -440,16 +469,19 @@ public sealed class HmiScreenEndpointsTests
             var text = await put.Content.ReadAsStringAsync();
             Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
             Assert.Contains("Probe-A", text, StringComparison.Ordinal);
-            Assert.Contains("probe_b", text, StringComparison.Ordinal);
+            Assert.Contains("widget-from-the-future", text, StringComparison.Ordinal);
         }
 
         using var get = await op.GetAsync("/v1/screens/widget-id");
         Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
     }
 
-    /// <summary>Control, and it is not decoration: a pattern check that also refused LEGAL ids would
-    /// satisfy the refusal above while bricking ordinary authoring, and nothing else here would notice.
-    /// Every kind the frozen enum declares is published under a legal id, over the real route.</summary>
+    /// <summary>Control, and it is not decoration: a membership check that admitted only SOME of the
+    /// fifteen kinds, or a pattern check that also refused LEGAL ids, would satisfy both refusals above
+    /// while bricking ordinary authoring — and nothing else here would notice. The kinds are read from the
+    /// SCHEMA FILE rather than from <c>ContractInvariants.KnownWidgetKinds</c>, deliberately: reading the
+    /// guard's own set to test the guard would be circular, and <c>SchemaEnumGuardPinTests</c> is where
+    /// those two are held equal.</summary>
     [Fact]
     public async Task Put_EveryKindTheFrozenEnumDeclares_Gets200_UnderALegalWidgetId()
     {

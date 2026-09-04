@@ -48,16 +48,19 @@ namespace St4i.Hmi.Contracts.Tests;
 ///
 /// <para>🔴 <b>WS-HMI-2 TASK 12 — FILE NÀY GIỜ GHIM HAI LOẠI LITERAL, KHÔNG CHỈ ENUM GÁC.</b> Tên
 /// file vẫn nói "Enum"; nội dung đã rộng hơn, và nói ra ở đây thay vì đổi tên file (một lần đổi tên là một
-/// lần mọi tham chiếu trong báo cáo/review của cả nhánh trỏ vào hư không). Bài mới:
+/// lần mọi tham chiếu trong báo cáo/review của cả nhánh trỏ vào hư không). Hai bài mới:
+/// <see cref="The_schemas_widget_kind_enum_names_exactly_the_set_ContractInvariants_admits"/> ghim TOÀN BỘ
+/// enum <c>kind</c> vào tập <c>ContractInvariants</c> NHẬN (không phải tập nó GÁC), và
 /// <see cref="The_schemas_two_lowercase_id_patterns_are_the_one_pattern_ContractInvariants_enforces"/>
-/// ghim một PATTERN — không phải một enum — vào HAI đường dẫn của cùng file schema.</para>
+/// ghim một PATTERN — không phải một enum — vào hai đường dẫn của cùng file schema.</para>
 ///
-/// <para>📎 🔴 <b>"(2) KHÔNG CÓ STORE NÀO GHI <c>HmiScreenDocument</c>" — RÚT, WS-HMI-2 TASK 12,
-/// giữ nguyên văn ngay dưới.</b> Sai từ <c>30c4fd62</c>: <c>HmiScreenStore.PutAsync</c> gọi
-/// <c>ThrowIfInvalid</c>, và từ <c>be181938</c> một route HTTP thật đi qua nó. <b>(1) thì vẫn ĐÚNG,
-/// kể cả cho <c>widget.kind</c></b> — Task 12 định đóng chỗ ấy, viết xong, đo xong, rồi rút lại vì nó
-/// làm đỏ một bài test đang bị đóng băng; xem đoạn cuối doc-comment của
-/// <c>ContractInvariants.Validate(HmiScreenDocument)</c>'s file header cho phép đo và các phương án.</para>
+/// <para>📎 🔴 <b>"(1) NÓ KHÔNG KIỂM TƯ CÁCH THÀNH VIÊN LÚC CHẠY" và "(2) KHÔNG CÓ STORE NÀO GHI
+/// <c>HmiScreenDocument</c>" — RÚT MỘT PHẦN, WS-HMI-2 TASK 12, giữ nguyên văn ngay dưới.</b> (1) vẫn đúng
+/// cho <c>access</c>/<c>role</c>/<c>policyAction</c>/<c>theme</c>/<c>breakpoint</c>, và SAI từ đợt này cho
+/// đúng MỘT trường: <c>widget.kind</c> — <c>Validate(HmiScreenDocument)</c> giờ hỏi "có hợp lệ không", vì
+/// cửa ấy là cửa PUBLISH của trình dựng màn hình. (2) sai từ <c>30c4fd62</c>:
+/// <c>HmiScreenStore.PutAsync</c> gọi <c>ThrowIfInvalid</c>, và từ <c>be181938</c> một route HTTP thật đi
+/// qua nó.</para>
 ///
 /// <para><b>Bộ test này KHÔNG đo cái gì:</b> (1) nó KHÔNG kiểm <i>tư cách thành viên</i> lúc chạy — một tài
 /// liệu mang <c>access: "rww"</c> vẫn đi qua <see cref="ContractInvariants"/> im lặng, vì bộ kiểm ấy hỏi
@@ -177,6 +180,54 @@ public class SchemaEnumGuardPinTests
                         "hmi-screen kind if"),
             ContractInvariants.WritableWidgetKinds.ToHashSet(StringComparer.Ordinal),
             Remedy);
+    }
+
+    /// <summary>
+    /// 🔴 <b>WS-HMI-2 TASK 12 — CỬA PUBLISH. Enum <c>kind</c> đầy đủ của schema == tập
+    /// <see cref="ContractInvariants.KnownWidgetKinds"/> mà cửa ghi NHẬN.</b>
+    ///
+    /// <para>Khác hai khẳng định ở trên và bắt một lỗi khác hẳn. Chúng hỏi "kind nào là ĐƯỜNG GHI";
+    /// bài này hỏi "kind nào TỒN TẠI". Cho tới <c>291fbd27</c>, <c>Validate(HmiScreenDocument)</c>
+    /// không hỏi câu thứ hai bao giờ — đo được: một <c>PUT</c> mang
+    /// <c>kind: "no-such-widget-kind"</c> nhận <c>200</c> và tài liệu ấy nằm lại trong kho, dù chính
+    /// <c>hmi-screen.schema.json</c> từ chối nó. Task 12 đóng chỗ đó bằng một tập viết ra trong C#, và
+    /// <b>bài này là điều kiện để tập ấy được phép tồn tại</b>: một danh sách mười lăm thành viên chép
+    /// tay mà không phép đối chiếu nào với tới chính là khuyết tật trôi lệch mà cả nhánh này đã đóng ở
+    /// mọi chỗ khác. Hai chiều, bằng TÊN: schema thêm một kind mà C# quên ⇒ đỏ; C# nhận một tên schema
+    /// không khai ⇒ đỏ.</para>
+    ///
+    /// <para><b>Và tập GHI ĐƯỢC phải là TẬP CON.</b> Không phải trang trí: nếu
+    /// <see cref="ContractInvariants.WritableWidgetKinds"/> chứa một tên ngoài
+    /// <see cref="ContractInvariants.KnownWidgetKinds"/> thì cửa ghi từ chối kind ấy TRƯỚC khi tới luật
+    /// §5, và luật §5 cho kind ấy trở thành mã chết mà không gì nói ra.</para>
+    /// </summary>
+    [Fact]
+    public void The_schemas_widget_kind_enum_names_exactly_the_set_ContractInvariants_admits()
+    {
+        var screen = Schema("hmi-screen.schema.json");
+        var declared = ConstOrEnum(
+            At(screen, "hmi-screen", "$defs", "widget", "properties", "kind"), "hmi-screen kind enum");
+
+        // Sàn trước mọi phép so: hai tập RỖNG cũng "bằng nhau", và đó là kiểu xanh-vì-không-đo-gì mà kho
+        // này đã bị bắt gặp nhiều lần.
+        Assert.NotEmpty(declared);
+        Assert.NotEmpty(ContractInvariants.KnownWidgetKinds);
+
+        AssertSameSet(
+            "hmi-screen $defs.widget.properties.kind (enum ⟷ ContractInvariants.KnownWidgetKinds)",
+            declared,
+            ContractInvariants.KnownWidgetKinds.ToHashSet(StringComparer.Ordinal),
+            "Sửa CẢ HAI bên trong một lần: enum `kind` của schema và KnownWidgetKinds ở đầu " +
+            "src/St4i.Hmi.Contracts/ContractInvariants.cs. Một bên đi trước bên kia nghĩa là cửa PUBLISH " +
+            "hoặc từ chối một widget hợp lệ, hoặc lưu một widget mà chính lược đồ từ chối.");
+
+        var writableNotKnown = ContractInvariants.WritableWidgetKinds
+            .Except(ContractInvariants.KnownWidgetKinds, StringComparer.Ordinal)
+            .OrderBy(s => s, StringComparer.Ordinal).ToList();
+        Assert.True(writableNotKnown.Count == 0,
+            $"WritableWidgetKinds nêu {string.Join(", ", writableNotKnown)}, mà KnownWidgetKinds không " +
+            "nhận — cửa ghi từ chối (những) kind ấy TRƯỚC khi luật §5 chạy, nên luật §5 cho chúng là mã " +
+            "chết. Tập ghi được phải là TẬP CON của tập tồn tại.");
     }
 
     /// <summary>

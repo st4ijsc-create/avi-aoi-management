@@ -149,16 +149,18 @@ public sealed class ContractViolationException : Exception
 /// web (kẹp lại và cảnh báo, hoặc hạ cấp thành một placeholder có tên); duy <c>cols</c>/<c>rows</c> ngoài
 /// dải là câm lặng — đó là luật thứ tư vừa đóng.</para>
 ///
-/// <para>🔴 <b>LOẠI LUẬT THỨ NĂM — ĐỊNH DẠNG, MỘT TRƯỜNG NỮA (<c>widget.id</c>), THÊM Ở WS-HMI-2
-/// TASK 12.</b> <see cref="Validate(HmiScreenDocument)"/> giờ kiểm <c>widget.id</c> có khớp
-/// <see cref="LowercaseIdPatternSource"/> — CÙNG pattern <c>screenId</c> đã khớp từ Task 2, đọc từ
-/// CÙNG một literal chứ không phải một bản chép thứ hai.</para>
+/// <para>🔴 <b>LOẠI LUẬT THỨ NĂM — TƯ CÁCH THÀNH VIÊN ENUM VÀ ĐỊNH DẠNG, ĐÚNG HAI TRƯỜNG CỦA
+/// <c>widget</c>, THÊM Ở WS-HMI-2 TASK 12.</b> <see cref="Validate(HmiScreenDocument)"/> giờ kiểm thêm
+/// <c>widget.kind</c> có thuộc <see cref="KnownWidgetKinds"/> (enum mười lăm thành viên của schema) và
+/// <c>widget.id</c> có khớp <see cref="LowercaseIdPatternSource"/> — cùng pattern <c>screenId</c> đã
+/// khớp từ Task 2, đọc từ CÙNG một literal chứ không phải một bản chép thứ hai.</para>
 ///
-/// <para>📎 🔴 <b>"KHÔNG <c>widget.id</c>, DÙ NÓ MANG PATTERN GIỐNG HỆT TRONG SCHEMA" — RÚT, WS-HMI-2
-/// TASK 12, giữ nguyên văn ở "LOẠI LUẬT THỨ BA" bên trên.</b> Câu ấy đúng cho tới hết
-/// <c>291fbd27</c>, và nó đứng trên lập luận: một tài liệu sai vẫn VẼ được — <c>rect</c> bị kẹp và
-/// cảnh báo, một <c>kind</c> lạ hạ cấp thành placeholder có tên — nên đóng thêm là trôi dần về một bộ
-/// validate JSON Schema tổng quát.
+/// <para>📎 🔴 <b>"KHÔNG <c>widget.id</c>, DÙ NÓ MANG PATTERN GIỐNG HỆT TRONG SCHEMA" và "<c>kind</c> ĐỂ
+/// NGUYÊN, CÓ CHỦ Ý, VÌ CẢ HAI ĐÃ SUY BIẾN CÓ NHÌN THẤY ĐƯỢC" — RÚT CẢ HAI, WS-HMI-2 TASK 12, giữ
+/// nguyên văn ở "LOẠI LUẬT THỨ BA" và "LOẠI LUẬT THỨ TƯ" bên trên.</b> Cả hai câu đúng cho tới hết
+/// <c>291fbd27</c>, và cả hai đứng trên CÙNG một lập luận: một tài liệu sai vẫn VẼ được — <c>rect</c>
+/// bị kẹp và cảnh báo, một <c>kind</c> lạ hạ cấp thành placeholder có tên — nên đóng thêm là trôi dần
+/// về một bộ validate JSON Schema tổng quát.
 ///
 /// <b>Cái đợt này đo được, và là lý do lập luận ấy không còn đủ:</b> nó là một lập luận về VIỆC VẼ, chưa
 /// bao giờ là một lập luận về VIỆC LƯU. Đo trực tiếp trước khi sửa: một <c>PUT /v1/screens/{id}</c> mang
@@ -177,26 +179,25 @@ public sealed class ContractViolationException : Exception
 /// <b>Cái KHÔNG đổi, nói ra để không lệch sang cực kia:</b> đây vẫn KHÔNG phải bộ validate JSON Schema.
 /// <c>rect</c> vẫn không bị kiểm dải, <c>theme</c>/<c>breakpoint</c>/<c>tone</c>/<c>dataType</c> vẫn
 /// không bị kiểm tư cách thành viên, id trùng nhau vẫn không bị kiểm, và <c>bindings</c> vẫn không được
-/// đối chiếu với một <c>component</c> có thật. Trường vừa đóng là MỘT trường của <c>widget</c> mà một
-/// CỬA PUBLISH đứng ngay trước, và <c>SchemaEnumGuardPinTests</c> ghim nó vào chính file schema —
-/// không có bản chép tay nào mà không có phép đối chiếu.</para>
+/// đối chiếu với một <c>component</c> có thật. Hai trường vừa đóng là hai trường của <c>widget</c> mà
+/// một CỬA PUBLISH đứng ngay trước, và <c>SchemaEnumGuardPinTests</c> ghim cả hai vào chính file
+/// schema — không có bản chép tay nào mà không có phép đối chiếu.</para>
 ///
-/// <para>🔴 <b>VÀ <c>widget.kind</c> VẪN CHƯA ĐƯỢC KIỂM TƯ CÁCH THÀNH VIÊN — DỪNG LẠI CÓ CHỦ Ý Ở
-/// WS-HMI-2 TASK 12, KHÔNG PHẢI BỎ SÓT. Đây là chỗ ghi lại lý do, để người sau không phải đo lại.</b>
-/// Task 12 đã VIẾT XONG phép kiểm ấy (một tập <c>KnownWidgetKinds</c> mười lăm thành viên, ghim hai
-/// chiều với <c>$defs.widget.properties.kind.enum</c> đọc từ đĩa) và đã ĐO nó chạy đúng — rồi rút lại,
-/// vì nó làm đỏ một bài test ĐANG BỊ ĐÓNG BĂNG:
-/// <c>web/tests/37-editor-canvas.spec.ts</c> <c>PUT</c> một tài liệu mang
-/// <c>kind: "no-such-widget-kind"</c> QUA CHÍNH ROUTE NÀY, rồi khẳng định bộ vẽ hạ cấp nó thành một
-/// placeholder có tên (<c>role="alert"</c>) — một trong NĂM khẳng định làm nên "canvas chính là bộ vẽ
-/// runtime", cái pin đã tốn ba vòng review và bốn bản mạo danh để dựng.
+/// <para>📎 🔴 <b>PHÁN QUYẾT CỦA CONTROLLER, WS-HMI-2 Task 12 vòng sửa 1 — GHI LẠI VÌ MỘT NGƯỜI CHỈ ĐỌC
+/// DIFF SẼ MỞ LẠI NÓ.</b> Phép kiểm <c>kind</c> này đã được viết, đo, RÚT LẠI một lần rồi mới đóng, vì
+/// nó làm đỏ <c>web/tests/37-editor-canvas.spec.ts</c> — bài test khi ấy lấy tài liệu <c>kind</c> lạ
+/// của nó bằng cách <c>PUT</c> qua CHÍNH cửa này, tức nó dùng KHUYẾT TẬT của cửa làm nguồn dữ liệu.
+/// Phán quyết: <b>hai tính chất chưa bao giờ mâu thuẫn — chỉ có KỸ THUẬT DỰNG FIXTURE là mâu thuẫn.</b>
+/// Cửa publish phải từ chối tài liệu mà lược đồ đóng băng từ chối; bộ vẽ phải hạ cấp một <c>kind</c> lạ
+/// thành placeholder có tên thay vì sập. Cả hai vẫn đúng; cái phải đổi là bài test thôi lấy khuyết tật
+/// của cái thứ nhất làm nguồn cho cái thứ hai. Một bài test an toàn dựa trên một khuyết tật sẽ hỏng
+/// đúng ngày khuyết tật được sửa.
 ///
-/// <b>Hai yêu cầu này xung đột trực tiếp và không có đường đi vòng:</b> khoảnh khắc cửa ghi từ chối một
-/// <c>kind</c> lạ, không client nào — kể cả một bài test — đưa được một tài liệu như thế vào kho, nên
-/// khẳng định ấy không còn nguồn dữ liệu. Mở lại đòi một QUYẾT ĐỊNH của controller về việc bài test kia
-/// lấy tài liệu suy biến từ đâu, chứ không phải thêm mã ở đây. Xem
-/// <c>.superpowers/sdd/2026-08-31-hmi-ws2-editor-blueprint/task-12-report.md</c> cho phép đo, các
-/// phương án, và cái giá của từng phương án.</para>
+/// <b>Và tính chất thứ hai VẪN CHỊU LỰC sau khi cửa đóng — cơ chế, không phải giả định:</b>
+/// <see cref="IHmiScreenStore.RollbackAsync"/> KHÔNG validate lại (một lần khôi phục không phải một
+/// lần sáng tác mới — WS-HMI-2 Task 2 fix round 2, HIGH-1), nên một hàng ghi TRƯỚC đợt sửa này vẫn
+/// khôi phục được và vẫn được phục vụ cho bộ vẽ. Placeholder hạ cấp là lưới an toàn cho đúng đường đó,
+/// và làm yếu nó đi chỉ vì cửa trước đã khoá là sai.</para>
 ///
 /// <para>📎 🔴 <b>"VÀ KHÔNG CÓ STORE .NET NÀO GHI <c>HmiScreenDocument</c>… CHƯA CÓ AI GỌI" — RÚT
 /// WS-HMI-2 Task 1, giữ nguyên văn.</b> Câu ngay trên (bản trước đoạn này) đọc: <i>"Và không có store
@@ -261,6 +262,25 @@ public static class ContractInvariants
     /// <c>hmi-screen.schema.json</c> → <c>$defs.widget.allOf[0].if</c>.</summary>
     public static readonly IReadOnlySet<string> WritableWidgetKinds =
         new HashSet<string>(StringComparer.Ordinal) { "setpoint-input", "command-button" };
+
+    /// <summary>WS-HMI-2 Task 12 — MỌI giá trị <c>widget.kind</c> mà schema đóng băng cho phép, tức tập
+    /// mà <see cref="Validate(HmiScreenDocument)"/> nhận; một <c>kind</c> ngoài tập này là một vi phạm,
+    /// không phải một widget lạ. Ghim HAI CHIỀU với <c>hmi-screen.schema.json</c> →
+    /// <c>$defs.widget.properties.kind.enum</c> bởi
+    /// <c>SchemaEnumGuardPinTests.The_schemas_widget_kind_enum_names_exactly_the_set_ContractInvariants_admits</c>:
+    /// một thành viên schema thêm mà quên ở đây, hoặc một tên ở đây mà schema không khai, đều đỏ BẰNG
+    /// TÊN. Đó là điều kiện để bản chép này tồn tại — kho này đã dành cả tuần đóng đúng hình dạng "một
+    /// danh sách đóng băng có bản sao thứ ba mà không phép đối chiếu nào với tới".
+    ///
+    /// <para>KHÁC <see cref="WritableWidgetKinds"/>: tập kia hỏi "kind này có phải đường GHI không" (và
+    /// là TẬP CON THẬT SỰ của tập này — cũng ghim ở cùng bài), tập này hỏi "kind này có tồn tại
+    /// không".</para></summary>
+    public static readonly IReadOnlySet<string> KnownWidgetKinds =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "readout", "status-lamp", "gauge", "trend", "alarm-banner", "alarm-list", "log", "faceplate",
+            "label", "sheet", "kpi-tile", "state-badge", "setpoint-input", "command-button", "line-state",
+        };
 
     /// <summary>WS-HMI-2 Task 2 fix round 1 — LOẠI LUẬT THỨ BA (xem doc-comment đầu file). Ghim với
     /// <c>hmi-screen.schema.json</c> → <c>properties.screenId.pattern</c>, ĐÚNG MỘT trường —
@@ -906,6 +926,11 @@ public static class ContractInvariants
                       "chữ số, và dấu gạch ngang");
             if (string.IsNullOrWhiteSpace(w.Kind))
                 v.Add($"widgets[{i}]: kind thiếu (null/rỗng) — kind rỗng âm thầm bỏ qua luật §5");
+            else if (!KnownWidgetKinds.Contains(w.Kind))
+                v.Add($"widgets[{i}]: kind '{w.Kind}' không thuộc enum mà contracts/hmi-screen.schema.json " +
+                      "đã đóng băng cho trường này — cửa ghi từ chối một tài liệu mà chính lược đồ từ chối, " +
+                      "chứ không lưu nó lại để bộ vẽ hạ cấp về sau. Các giá trị hợp lệ: " +
+                      string.Join(", ", KnownWidgetKinds.OrderBy(k => k, StringComparer.Ordinal)));
             // Fix round 4 — checked on the SAME criterion that requires `id` two lines above, which is the
             // whole point: round 3 excluded `rect` for a reason that disqualified `id` as well.
             if (w.Rect is null)

@@ -26,9 +26,10 @@ import {
  *
  *   * **400** — `ContractInvariants` rejected the document. Its message carries EVERY violation, not
  *     the first (`ContractViolationException`'s own constructor joins them with `" | "`), and this
- *     panel renders every one of them as its own line. WS-HMI-2 Task 12 also made that door tighter on
- *     the server: a `widget.id` that breaks the frozen pattern is now a refusal rather than a stored
- *     document, so a 400 here is reachable from more than §5.
+ *     panel renders every one of them as its own line. WS-HMI-2 Task 12 also made that door strictly
+ *     tighter on the server: a `widget.kind` outside the frozen enum and a `widget.id` that breaks the
+ *     frozen pattern are now refusals rather than stored documents, so a 400 here is reachable from
+ *     more than §5.
  *   * **409** — the body's `screenId` names a different screen from the route. The engine refuses
  *     rather than silently choosing one of the two identities, and says which two.
  *   * **503** — another writer holds the store's write lock. The request was well-formed and would

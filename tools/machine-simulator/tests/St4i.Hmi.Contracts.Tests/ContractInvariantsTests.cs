@@ -619,18 +619,44 @@ public class ContractInvariantsTests
     }
 
     // ═════════════════════════════════════════════════════════════════════
-    // 🔴 WS-HMI-2 TASK 12 — THE PUBLISH DOOR. `Validate(HmiScreenDocument)` now answers "is this
-    // widget id spelled the way the frozen schema demands", a question it deliberately did not ask before
-    // (see ContractInvariants' own header, and the paragraph there that RETRACTS the sentence declining to
-    // ask it).
+    // 🔴 WS-HMI-2 TASK 12 — THE PUBLISH DOOR. `Validate(HmiScreenDocument)` now answers "does this
+    // widget kind EXIST" and "is this widget id spelled the way the frozen schema demands", two questions
+    // it deliberately did not ask before (see ContractInvariants' own header, and the paragraph there that
+    // RETRACTS the two sentences declining to ask them). Measured before the fix: a `PUT /v1/screens/{id}`
+    // carrying `kind: "no-such-widget-kind"` answered 200 and the row stayed in the store.
     //
-    // The sibling question — "does this widget KIND exist" — is NOT asked, and the header records why it
-    // was written, measured and then withdrawn rather than forgotten.
-    //
-    // The PATTERN these check against is pinned to the schema file itself, at both of the paths that
-    // declare it, by SchemaEnumGuardPinTests; these measure that the check RUNS and refuses, which a
-    // parity pin cannot say.
+    // The SET and the PATTERN these check against are pinned to the schema file itself by
+    // SchemaEnumGuardPinTests; these measure that the checks RUN and refuse, which a parity pin cannot say.
     // ═════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void A_widget_kind_outside_the_frozen_enum_is_a_violation_not_a_stored_document()
+    {
+        var doc = Screen(new ScreenWidget("w1", "no-such-widget-kind", Rect()));
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Single(violations);
+        Assert.Contains("no-such-widget-kind", violations[0], StringComparison.Ordinal);
+    }
+
+    /// <summary>The near-miss, not just the obvious one: <c>"commandbutton"</c> is the typo
+    /// <c>Validate(HmiScreenDocument)</c>'s own doc comment used to name as the case it could NOT catch —
+    /// it is not in <c>WritableWidgetKinds</c>, so §5 skipped it, and nothing else looked. It is caught
+    /// now, and by the membership rule rather than by §5.</summary>
+    [Fact]
+    public void A_write_kind_TYPO_is_caught_by_membership_even_though_it_escapes_the_5_gate()
+    {
+        var doc = Screen(new ScreenWidget("b1", "commandbutton", Rect(), PolicyAction: null));
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Single(violations);
+        Assert.Contains("commandbutton", violations[0], StringComparison.Ordinal);
+        // …and NOT reported as a §5 violation, which would misname the fix: a typo is a spelling defect,
+        // not an ungated write path.
+        Assert.DoesNotContain("§5", violations[0], StringComparison.Ordinal);
+    }
 
     [Theory]
     [InlineData("Probe-A")]        // uppercase
@@ -670,6 +696,21 @@ public class ContractInvariantsTests
     {
         Assert.Equal("^[a-z0-9-]+\\z", ContractInvariants.AnchorAtEndOfString("^[a-z0-9-]+$"));
         Assert.Throws<ArgumentException>(() => ContractInvariants.AnchorAtEndOfString("^[a-z0-9-]+"));
+    }
+
+    /// <summary>Control for the two new rules: EVERY member of the frozen enum, paired with a legal id, is
+    /// accepted. A membership check that admitted only some of the fifteen would pass every refusal test
+    /// above and quietly brick thirteen widget kinds; nothing else here would notice.</summary>
+    [Fact]
+    public void Control_Every_kind_the_schema_declares_is_accepted_with_a_legal_id()
+    {
+        Assert.NotEmpty(ContractInvariants.KnownWidgetKinds);
+        foreach (var kind in ContractInvariants.KnownWidgetKinds)
+        {
+            var gated = ContractInvariants.WritableWidgetKinds.Contains(kind) ? "machine.command" : null;
+            var doc = Screen(new ScreenWidget("probe-a", kind, Rect(), PolicyAction: gated));
+            Assert.Empty(ContractInvariants.Validate(doc));
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
