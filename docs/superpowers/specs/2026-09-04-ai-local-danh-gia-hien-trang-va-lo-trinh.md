@@ -528,3 +528,58 @@ mã trước khi thực thi.** Agent đã kiểm và bác bỏ tiền đề củ
 2. `MIN_PROG_KB_CITATION_SCORE=0.5` là **một ngưỡng chọn**, chưa tối ưu hoá bằng đo.
 3. Việc 2 làm câu hỏi **vận hành** gõ trong panel VSCode **không còn được tool trả lời** — đúng chủ
    ý tách miền, nhưng là đánh đổi người dùng sẽ cảm nhận được.
+
+---
+
+# 12. Chốt phiên 2026-09-04 — số đo cuối
+
+## Nhúng: XONG
+
+**124.990 chunk, còn thiếu 0**, cả sáu hãng. (Bắt đầu phiên: 91.678.)
+
+★ Ba lần job chết giữa chừng vì **CUDA OOM** — không phải chunk quá khổ (đã đo: max 7.323 ký tự,
+Delta max 4.047 vẫn chạy trót lọt) mà là **tranh chấp GPU** với một agent đánh giá chạy song song.
+Khi card rảnh: **53 chunk/giây, 0 lỗi**.
+
+★★ **Lỗi thật trong `scripts/ai-kb/embed-programming.mjs`, CHƯA VÁ**: nó tự báo VRAM sai —
+in `free=27.2GB` trong khi `nvidia-smi` và Task Manager đều nói **~6GB**. Nó tin số của chính mình
+rồi lao vào OOM. Đo lại bằng nguồn độc lập trước khi tin bất kỳ con số VRAM nào của nó.
+
+★ CPU là đường lùi **không dùng được trong thực tế**: **0,2 chunk/giây** ⇒ ~14 giờ cho 10k chunk,
+so với ~3 phút trên GPU. Chênh **320 lần**.
+
+## Chất lượng đầu-cuối qua route vscode (bộ `eval-vscode-route.mjs`)
+
+| Mốc | ĐẠT | SAI | CHẶN-ĐÚNG |
+|---|---|---|---|
+| Sau Việc 1+2 (chưa nhúng đủ) | 7 | 3 | 1 |
+| **Sau nhúng đủ + vá trần token** | **8** | **2** | 1 |
+
+★ Ca **robot Universal Robots** chuyển từ SAI sang ĐẠT — chính ca trước đây nhận nhầm trích dẫn
+hãng khác. **Nhúng đủ sửa được lỗi nhầm hãng.**
+
+## Việc 6 — trần token: hồi quy do chính Việc 2 gây ra
+
+Việc 2 ép `intent="general"` cho route vscode ⇒ rơi vào `KB_QA_NUM_PREDICT_GENERAL=220` token ⇒
+**10/10 câu bị cắt ngang** ở 599–822 ký tự, kể cả câu xin viết hàng trăm dòng mã.
+
+Vá bằng `KB_QA_NUM_PREDICT_VSCODE=900` (commit `c27298e5`). Đo trước→sau:
+độ dài trung bình **714 → 1.464 ký tự**; **bị cắt 10/10 → 0/10**; mã **dùng ngay 0% → 20%**;
+sai/bịa **0% → 0%**. Thời gian: bỏ cold-start thì **gần như không đổi** (num_predict là trần trên,
+model tự dừng sớm).
+
+## CÒN MỞ — hai gốc rễ trần token KHÔNG sửa được
+
+1. ★★ **Câu ngoài miền tài liệu hãng vẫn được gắn trích dẫn không chống đỡ câu trả lời**
+   (C# tổng quát, web/IoT). Hành vi đúng phải là **không gắn trích dẫn nào** và trả lời bằng kiến
+   thức chung. Đây là 2/2 ca SAI còn lại.
+2. ★★ **Model từ chối trả lời dù đã trích đúng tài liệu** (quan sát ở ca PLC Omron). Chưa truy gốc.
+3. `embed-programming.mjs` báo VRAM sai (xem trên).
+4. Ba server thừa (cổng 3000/3001/3002) đã tắt theo yêu cầu chủ dự án — **MQTT (1883/8883) dừng
+   theo** vì cùng tiến trình. Bật lại nếu cần MQTT.
+
+## Demo IoT (Việc 5)
+
+`D:\SOURCES\AI Local\demo-iot\` — TCP + serial giả lập, dashboard SSE, chạy thật có output.
+Phần AI Local sinh nằm ở `csharp-reference/*.cs`; phần Node.js chạy thật do người viết, trừ một
+hàm CRC16 chuyển thể từ mã AI.
