@@ -618,6 +618,60 @@ public class ContractInvariantsTests
         Assert.Contains(ContractInvariants.Validate(doc), v => v.Contains("kind", StringComparison.OrdinalIgnoreCase));
     }
 
+    // ═════════════════════════════════════════════════════════════════════
+    // 🔴 WS-HMI-2 TASK 12 — THE PUBLISH DOOR. `Validate(HmiScreenDocument)` now answers "is this
+    // widget id spelled the way the frozen schema demands", a question it deliberately did not ask before
+    // (see ContractInvariants' own header, and the paragraph there that RETRACTS the sentence declining to
+    // ask it).
+    //
+    // The sibling question — "does this widget KIND exist" — is NOT asked, and the header records why it
+    // was written, measured and then withdrawn rather than forgotten.
+    //
+    // The PATTERN these check against is pinned to the schema file itself, at both of the paths that
+    // declare it, by SchemaEnumGuardPinTests; these measure that the check RUNS and refuses, which a
+    // parity pin cannot say.
+    // ═════════════════════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData("Probe-A")]        // uppercase
+    [InlineData("probe_a")]        // underscore
+    [InlineData("probe a")]        // space
+    [InlineData("probe.a")]        // dot
+    [InlineData("probe-á")]        // non-ASCII
+    public void A_widget_id_the_frozen_pattern_refuses_is_a_violation(string id)
+    {
+        var doc = Screen(new ScreenWidget(id, "readout", Rect()));
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Single(violations);
+        Assert.Contains(id, violations[0], StringComparison.Ordinal);
+    }
+
+    /// <summary>🔴 The <c>\z</c>-not-<c>$</c> trap, measured on <c>widget.id</c> the same way WS-HMI-2
+    /// Task 2 fix round 2 measured it on <c>screenId</c>: .NET's <c>$</c> matches immediately BEFORE a
+    /// trailing <c>\n</c>, ECMA-262's does not, so a guard written with <c>$</c> accepts a document
+    /// <c>web/contract-tests/validate.mjs</c> rejects. This is the falsification for
+    /// <c>ContractInvariants.AnchorAtEndOfString</c> being applied at all — delete the anchor swap and this
+    /// row goes green while the two sides disagree.</summary>
+    [Fact]
+    public void A_widget_id_with_a_trailing_newline_is_a_violation_because_dotNET_anchors_at_end_of_STRING()
+    {
+        var doc = Screen(new ScreenWidget("probe-a\n", "readout", Rect()));
+
+        Assert.Single(ContractInvariants.Validate(doc));
+    }
+
+    /// <summary>The anchor swap itself, both directions. A pattern that does not END in the ECMA anchor is
+    /// refused rather than silently mangled — this runs in a static initializer of a GUARD, so "wrong but
+    /// quiet" means the door is open for the life of the process.</summary>
+    [Fact]
+    public void AnchorAtEndOfString_swaps_the_ECMA_anchor_and_refuses_a_pattern_that_has_none()
+    {
+        Assert.Equal("^[a-z0-9-]+\\z", ContractInvariants.AnchorAtEndOfString("^[a-z0-9-]+$"));
+        Assert.Throws<ArgumentException>(() => ContractInvariants.AnchorAtEndOfString("^[a-z0-9-]+"));
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Controls — NOT guards. Each of these asserts that a WELL-FORMED document produces ZERO violations.
     // A control cannot fail by construction against any of the checks above (it would only fail if a check

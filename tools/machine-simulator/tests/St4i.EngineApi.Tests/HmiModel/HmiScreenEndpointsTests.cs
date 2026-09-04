@@ -402,6 +402,97 @@ public sealed class HmiScreenEndpointsTests
     }
 
     // ═════════════════════════════════════════════════════════════════════
+    // 🔴 WS-HMI-2 TASK 12 — THE PUBLISH DOOR REFUSES A WIDGET ID THE FROZEN SCHEMA REFUSES.
+    //
+    // Measured on this branch BEFORE the fix, over this exact route: `ContractInvariants` pattern-checked
+    // `screenId` but not `widget.id`, even though `contracts/hmi-screen.schema.json` declares the SAME
+    // pattern at both paths — so `PUT` stored documents `web/contract-tests/validate.mjs` rejects.
+    //
+    // 🔴 THE SIBLING HOLE — `widget.kind` outside the frozen fifteen-member enum — IS STILL OPEN, and that
+    // is a recorded decision rather than an omission. Closing it makes `web/tests/37-editor-canvas.spec.ts`
+    // red: that spec PUTs `kind: "no-such-widget-kind"` through this very route and then asserts the
+    // renderer degrades it, and that file is frozen. See `ContractInvariants`'s own file header and
+    // `.superpowers/sdd/2026-08-31-hmi-ws2-editor-blueprint/task-12-report.md`.
+    // ═════════════════════════════════════════════════════════════════════
+
+    /// <summary>The refusal, plus the "every violation, not the first" contract measured on a body that
+    /// breaks the rule TWICE — the property the editor's publish surface depends on to show an engineer
+    /// everything they have to fix in one pass rather than one thing per round trip.</summary>
+    [Fact]
+    public async Task Put_AWidgetIdTheFrozenPatternRefuses_Gets400_CarryingEveryViolationAtOnce()
+    {
+        var (factory, _, engineerC, operatorClient) = await NewFactoryWithUsersAsync("widget-id");
+        await using var _f = factory;
+        using var eng = engineerC;
+        using var op = operatorClient;
+
+        // TWO widgets, two different illegal ids: an uppercase one and one carrying an underscore.
+        const string body = """
+            {"schemaVersion":1,"screenId":"widget-id","title":"x","theme":"isa101",
+             "layout":{"cols":12,"rows":8,"breakpoint":"panel"},
+             "widgets":[{"id":"Probe-A","kind":"label","rect":{"col":0,"row":0,"colSpan":2,"rowSpan":1}},
+                        {"id":"probe_b","kind":"label","rect":{"col":3,"row":0,"colSpan":2,"rowSpan":1}}]}
+            """;
+
+        using (var put = await eng.PutAsync("/v1/screens/widget-id",
+                   new StringContent(body, Encoding.UTF8, "application/json")))
+        {
+            var text = await put.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+            Assert.Contains("Probe-A", text, StringComparison.Ordinal);
+            Assert.Contains("probe_b", text, StringComparison.Ordinal);
+        }
+
+        using var get = await op.GetAsync("/v1/screens/widget-id");
+        Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+    }
+
+    /// <summary>Control, and it is not decoration: a pattern check that also refused LEGAL ids would
+    /// satisfy the refusal above while bricking ordinary authoring, and nothing else here would notice.
+    /// Every kind the frozen enum declares is published under a legal id, over the real route.</summary>
+    [Fact]
+    public async Task Put_EveryKindTheFrozenEnumDeclares_Gets200_UnderALegalWidgetId()
+    {
+        var (factory, _, engineerC, _) = await NewFactoryWithUsersAsync("kind-palette");
+        await using var _f = factory;
+        using var eng = engineerC;
+
+        // Read from the schema file itself rather than retyped — `SchemaPin`/`ContractFixtures` are the
+        // Hmi.Contracts test project's, so this assembly walks the same file directly.
+        var schemaPath = Path.Combine(RepoRoot(), "contracts", "hmi-screen.schema.json");
+        using var schema = JsonDocument.Parse(File.ReadAllText(schemaPath));
+        var kinds = schema.RootElement
+            .GetProperty("$defs").GetProperty("widget").GetProperty("properties").GetProperty("kind")
+            .GetProperty("enum").EnumerateArray().Select(e => e.GetString()!).ToList();
+        Assert.NotEmpty(kinds);
+
+        foreach (var kind in kinds)
+        {
+            var gated = ContractInvariants.WritableWidgetKinds.Contains(kind) ? "machine.command" : null;
+            var doc = new HmiScreenDocument(
+                1, "kind-palette", "palette", null, "isa101", new ScreenLayout(12, 8, "panel"),
+                new[] { new ScreenWidget("probe-a", kind, Rect(), PolicyAction: gated) });
+
+            using var put = await eng.PutAsJsonAsync("/v1/screens/kind-palette", doc, HmiContractJson.Options);
+            Assert.True(put.StatusCode == HttpStatusCode.OK,
+                $"kind '{kind}' under the legal id 'probe-a' answered " +
+                $"{(int)put.StatusCode}: {await put.Content.ReadAsStringAsync()}");
+        }
+    }
+
+    /// <summary>Walks up from the test binary to the directory holding the solution file — the same device
+    /// <c>St4i.Hmi.Contracts.Tests</c>'s <c>ContractFixtures</c> uses, spelled here because that helper
+    /// lives in a different assembly.</summary>
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "St4iMachineSimulator.sln")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        return dir!.FullName;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
     // RBAC end-to-end — a REAL logged-in Operator/Engineer over the REAL auth pipeline. NOT the metadata
     // census (RbacPolicyTests). No route here ever needs Admin.
     // ═════════════════════════════════════════════════════════════════════

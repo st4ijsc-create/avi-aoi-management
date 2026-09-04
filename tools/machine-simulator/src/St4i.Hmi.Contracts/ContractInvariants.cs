@@ -149,6 +149,55 @@ public sealed class ContractViolationException : Exception
 /// web (kẹp lại và cảnh báo, hoặc hạ cấp thành một placeholder có tên); duy <c>cols</c>/<c>rows</c> ngoài
 /// dải là câm lặng — đó là luật thứ tư vừa đóng.</para>
 ///
+/// <para>🔴 <b>LOẠI LUẬT THỨ NĂM — ĐỊNH DẠNG, MỘT TRƯỜNG NỮA (<c>widget.id</c>), THÊM Ở WS-HMI-2
+/// TASK 12.</b> <see cref="Validate(HmiScreenDocument)"/> giờ kiểm <c>widget.id</c> có khớp
+/// <see cref="LowercaseIdPatternSource"/> — CÙNG pattern <c>screenId</c> đã khớp từ Task 2, đọc từ
+/// CÙNG một literal chứ không phải một bản chép thứ hai.</para>
+///
+/// <para>📎 🔴 <b>"KHÔNG <c>widget.id</c>, DÙ NÓ MANG PATTERN GIỐNG HỆT TRONG SCHEMA" — RÚT, WS-HMI-2
+/// TASK 12, giữ nguyên văn ở "LOẠI LUẬT THỨ BA" bên trên.</b> Câu ấy đúng cho tới hết
+/// <c>291fbd27</c>, và nó đứng trên lập luận: một tài liệu sai vẫn VẼ được — <c>rect</c> bị kẹp và
+/// cảnh báo, một <c>kind</c> lạ hạ cấp thành placeholder có tên — nên đóng thêm là trôi dần về một bộ
+/// validate JSON Schema tổng quát.
+///
+/// <b>Cái đợt này đo được, và là lý do lập luận ấy không còn đủ:</b> nó là một lập luận về VIỆC VẼ, chưa
+/// bao giờ là một lập luận về VIỆC LƯU. Đo trực tiếp trước khi sửa: một <c>PUT /v1/screens/{id}</c> mang
+/// <c>kind: "no-such-widget-kind"</c> nhận <c>200</c>, và tài liệu ấy NẰM LẠI trong kho — sau đó
+/// <c>web/contract-tests/validate.mjs</c> từ chối chính hàng đó, mọi consumer khác bộ vẽ React này từ
+/// chối nó, và <c>rollback</c> (vốn CỐ Ý không validate lại — xem
+/// <c>IHmiScreenStore.RollbackAsync</c>) sẽ nhân bản nó thành một phiên bản mới mãi mãi. "Suy biến có
+/// nhìn thấy được" bảo vệ MỘT người đọc màn hình ấy trên MỘT bộ vẽ; nó không bảo vệ cái kho.
+///
+/// <b>Và từ WS-HMI-2 Task 12 cửa này là CỬA PUBLISH của một trình dựng màn hình trực quan</b>
+/// (<c>web/src/editor/</c>): người ghi không còn là một producer .NET nội bộ mà là một kỹ sư bấm nút
+/// "Xuất bản". <c>editorState.ts</c>'s <c>applyEdit</c> đã từ chối đúng hai luật này ở phía client kể từ
+/// Task 7 — nên trước đợt sửa này, cửa server LỎNG HƠN cửa client, và mọi client KHÁC trình dựng ấy đi
+/// thẳng qua. Đó là hình dạng khuyết tật mà cả nhánh này đã đóng ở mọi chỗ khác.
+///
+/// <b>Cái KHÔNG đổi, nói ra để không lệch sang cực kia:</b> đây vẫn KHÔNG phải bộ validate JSON Schema.
+/// <c>rect</c> vẫn không bị kiểm dải, <c>theme</c>/<c>breakpoint</c>/<c>tone</c>/<c>dataType</c> vẫn
+/// không bị kiểm tư cách thành viên, id trùng nhau vẫn không bị kiểm, và <c>bindings</c> vẫn không được
+/// đối chiếu với một <c>component</c> có thật. Trường vừa đóng là MỘT trường của <c>widget</c> mà một
+/// CỬA PUBLISH đứng ngay trước, và <c>SchemaEnumGuardPinTests</c> ghim nó vào chính file schema —
+/// không có bản chép tay nào mà không có phép đối chiếu.</para>
+///
+/// <para>🔴 <b>VÀ <c>widget.kind</c> VẪN CHƯA ĐƯỢC KIỂM TƯ CÁCH THÀNH VIÊN — DỪNG LẠI CÓ CHỦ Ý Ở
+/// WS-HMI-2 TASK 12, KHÔNG PHẢI BỎ SÓT. Đây là chỗ ghi lại lý do, để người sau không phải đo lại.</b>
+/// Task 12 đã VIẾT XONG phép kiểm ấy (một tập <c>KnownWidgetKinds</c> mười lăm thành viên, ghim hai
+/// chiều với <c>$defs.widget.properties.kind.enum</c> đọc từ đĩa) và đã ĐO nó chạy đúng — rồi rút lại,
+/// vì nó làm đỏ một bài test ĐANG BỊ ĐÓNG BĂNG:
+/// <c>web/tests/37-editor-canvas.spec.ts</c> <c>PUT</c> một tài liệu mang
+/// <c>kind: "no-such-widget-kind"</c> QUA CHÍNH ROUTE NÀY, rồi khẳng định bộ vẽ hạ cấp nó thành một
+/// placeholder có tên (<c>role="alert"</c>) — một trong NĂM khẳng định làm nên "canvas chính là bộ vẽ
+/// runtime", cái pin đã tốn ba vòng review và bốn bản mạo danh để dựng.
+///
+/// <b>Hai yêu cầu này xung đột trực tiếp và không có đường đi vòng:</b> khoảnh khắc cửa ghi từ chối một
+/// <c>kind</c> lạ, không client nào — kể cả một bài test — đưa được một tài liệu như thế vào kho, nên
+/// khẳng định ấy không còn nguồn dữ liệu. Mở lại đòi một QUYẾT ĐỊNH của controller về việc bài test kia
+/// lấy tài liệu suy biến từ đâu, chứ không phải thêm mã ở đây. Xem
+/// <c>.superpowers/sdd/2026-08-31-hmi-ws2-editor-blueprint/task-12-report.md</c> cho phép đo, các
+/// phương án, và cái giá của từng phương án.</para>
+///
 /// <para>📎 🔴 <b>"VÀ KHÔNG CÓ STORE .NET NÀO GHI <c>HmiScreenDocument</c>… CHƯA CÓ AI GỌI" — RÚT
 /// WS-HMI-2 Task 1, giữ nguyên văn.</b> Câu ngay trên (bản trước đoạn này) đọc: <i>"Và không có store
 /// .NET nào ghi <see cref="HmiScreenDocument"/> — <see cref="ThrowIfInvalid(HmiScreenDocument)"/> tồn
@@ -229,7 +278,46 @@ public static class ContractInvariants
     /// <c>\z</c> khớp ĐÚNG cuối chuỗi, không có ngoại lệ <c>\n</c> — đóng khoảng lệch mà không đổi bất kỳ
     /// biên nào khác (một ký tự, khoảng trắng đầu/cuối/hyphen đôi, chỉ số, 512 ký tự, chuỗi rỗng — xem
     /// <c>ContractInvariantsTests</c> cho từng biên được đo lại sau khi sửa).</para></summary>
-    private static readonly Regex ScreenIdPattern = new("^[a-z0-9-]+\\z", RegexOptions.Compiled);
+    private static readonly Regex ScreenIdPattern = new(AnchorAtEndOfString(LowercaseIdPatternSource), RegexOptions.Compiled);
+
+    /// <summary>WS-HMI-2 Task 12 — <c>widget.id</c>'s pattern, which the schema declares at
+    /// <c>$defs.widget.properties.id.pattern</c> with the SAME text <c>properties.screenId.pattern</c>
+    /// carries. ĐÚNG MỘT <see cref="Regex"/>, không phải hai: hai đối tượng biên dịch từ cùng một literal
+    /// là hai chỗ để lệch mà không phép đối chiếu nào với tới, và
+    /// <c>SchemaEnumGuardPinTests.The_schemas_two_lowercase_id_patterns_are_the_one_pattern_ContractInvariants_enforces</c>
+    /// đọc CẢ HAI đường dẫn của schema và đỏ ngay ngày chúng khác nhau — lúc ấy tách làm hai là một
+    /// QUYẾT ĐỊNH có người đọc, không phải một sự trùng hợp đã hết hạn.</summary>
+    private static readonly Regex WidgetIdPattern = ScreenIdPattern;
+
+    /// <summary>Pattern id chữ thường, viết ở DẠNG CỦA SCHEMA (<c>$</c> của ECMA-262), vì đây là dạng
+    /// <c>SchemaEnumGuardPinTests</c> so BYTE-FOR-BYTE với <c>contracts/hmi-screen.schema.json</c> tại
+    /// <c>properties.screenId.pattern</c> VÀ <c>$defs.widget.properties.id.pattern</c>. Không phải dạng
+    /// .NET thi hành: <see cref="AnchorAtEndOfString"/> đổi <c>$</c> thành <c>\z</c> ngay dưới, và
+    /// <see cref="ScreenIdPattern"/>'s doc comment nêu vì sao một ký tự ấy là bắt buộc.
+    ///
+    /// <para><c>public</c> vì đúng một lý do: phép ghim phải đọc được nó. Không gì trong sản phẩm đọc
+    /// nó.</para></summary>
+    public const string LowercaseIdPatternSource = "^[a-z0-9-]+$";
+
+    /// <summary>Đổi neo cuối chuỗi của ECMA-262 (<c>$</c>) thành neo của .NET (<c>\z</c>) — xem
+    /// <see cref="ScreenIdPattern"/>'s doc comment cho phép đo đã buộc phải có phép đổi này.
+    ///
+    /// <para>NÉM khi chuỗi vào không kết thúc bằng <c>$</c>, thay vì trả về một pattern đã âm thầm hỏng:
+    /// hàm này chạy ở static initializer của một bộ GÁC, nên "sai mà im" nghĩa là cửa mở suốt vòng đời
+    /// tiến trình. Ghim hai chiều bởi
+    /// <c>ContractInvariantsTests.AnchorAtEndOfString_swaps_the_ECMA_anchor_and_refuses_a_pattern_that_has_none</c>.</para>
+    ///
+    /// <para><c>public</c>, không <c>internal</c>, vì đúng một lý do: <c>St4i.Hmi.Contracts</c> KHÔNG cấp
+    /// <c>InternalsVisibleTo</c> cho project test nào, và mở một suất cấp quyền mới chỉ để một bài test
+    /// gọi được một hàm thuần tuý là cái giá đắt hơn. Không gì trong sản phẩm gọi nó ngoài static
+    /// initializer ngay trên.</para></summary>
+    public static string AnchorAtEndOfString(string ecmaPattern) =>
+        ecmaPattern.EndsWith('$')
+            ? string.Concat(ecmaPattern.AsSpan(0, ecmaPattern.Length - 1), "\\z")
+            : throw new ArgumentException(
+                $"pattern '{ecmaPattern}' không kết thúc bằng neo '$' của ECMA-262, nên không có gì để đổi " +
+                "thành '\\z' — sửa literal ở LowercaseIdPatternSource thay vì nới hàm này.",
+                nameof(ecmaPattern));
 
     /// <summary>WS-HMI-2 Task 3 fix round 1 — LOẠI LUẬT THỨ TƯ (xem doc-comment đầu file). Ghim với
     /// <c>hmi-screen.schema.json</c> → <c>$defs.layout.properties.cols</c>/<c>rows</c>, khớp nguyên văn
@@ -808,6 +896,14 @@ public static class ContractInvariants
 
             if (string.IsNullOrWhiteSpace(w.Id))
                 v.Add($"widgets[{i}]: id thiếu (null/rỗng) — bắt buộc phải có");
+            // WS-HMI-2 Task 12 — LOẠI LUẬT THỨ NĂM (xem doc-comment đầu file, và đoạn RÚT của nó).
+            // `else if`, không phải một `if` thứ hai: một id RỖNG đã được nêu ngay trên, và nêu nó lần
+            // thứ hai là "id thiếu" cộng "id '' không khớp mẫu" cho cùng một khuyết tật — hai dòng cho
+            // một việc phải sửa. Cùng hình dạng `screenId` đã dùng từ Task 2.
+            else if (!WidgetIdPattern.IsMatch(w.Id))
+                v.Add($"widgets[{i}]: id '{w.Id}' không khớp mẫu bắt buộc \"{LowercaseIdPatternSource}\" mà " +
+                      "contracts/hmi-screen.schema.json đã đóng băng cho trường này — chỉ chữ thường a-z, " +
+                      "chữ số, và dấu gạch ngang");
             if (string.IsNullOrWhiteSpace(w.Kind))
                 v.Add($"widgets[{i}]: kind thiếu (null/rỗng) — kind rỗng âm thầm bỏ qua luật §5");
             // Fix round 4 — checked on the SAME criterion that requires `id` two lines above, which is the

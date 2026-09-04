@@ -46,6 +46,19 @@ namespace St4i.Hmi.Contracts.Tests;
 /// <see cref="The_schemas_own_if_conditions_name_exactly_the_sets_ContractInvariants_guards"/> là chiều
 /// đó, và nó là chiều mới.</para>
 ///
+/// <para>🔴 <b>WS-HMI-2 TASK 12 — FILE NÀY GIỜ GHIM HAI LOẠI LITERAL, KHÔNG CHỈ ENUM GÁC.</b> Tên
+/// file vẫn nói "Enum"; nội dung đã rộng hơn, và nói ra ở đây thay vì đổi tên file (một lần đổi tên là một
+/// lần mọi tham chiếu trong báo cáo/review của cả nhánh trỏ vào hư không). Bài mới:
+/// <see cref="The_schemas_two_lowercase_id_patterns_are_the_one_pattern_ContractInvariants_enforces"/>
+/// ghim một PATTERN — không phải một enum — vào HAI đường dẫn của cùng file schema.</para>
+///
+/// <para>📎 🔴 <b>"(2) KHÔNG CÓ STORE NÀO GHI <c>HmiScreenDocument</c>" — RÚT, WS-HMI-2 TASK 12,
+/// giữ nguyên văn ngay dưới.</b> Sai từ <c>30c4fd62</c>: <c>HmiScreenStore.PutAsync</c> gọi
+/// <c>ThrowIfInvalid</c>, và từ <c>be181938</c> một route HTTP thật đi qua nó. <b>(1) thì vẫn ĐÚNG,
+/// kể cả cho <c>widget.kind</c></b> — Task 12 định đóng chỗ ấy, viết xong, đo xong, rồi rút lại vì nó
+/// làm đỏ một bài test đang bị đóng băng; xem đoạn cuối doc-comment của
+/// <c>ContractInvariants.Validate(HmiScreenDocument)</c>'s file header cho phép đo và các phương án.</para>
+///
 /// <para><b>Bộ test này KHÔNG đo cái gì:</b> (1) nó KHÔNG kiểm <i>tư cách thành viên</i> lúc chạy — một tài
 /// liệu mang <c>access: "rww"</c> vẫn đi qua <see cref="ContractInvariants"/> im lặng, vì bộ kiểm ấy hỏi
 /// "có ghi được không", không hỏi "có hợp lệ không"; schema là nơi duy nhất từ chối nó, và
@@ -164,6 +177,46 @@ public class SchemaEnumGuardPinTests
                         "hmi-screen kind if"),
             ContractInvariants.WritableWidgetKinds.ToHashSet(StringComparer.Ordinal),
             Remedy);
+    }
+
+    /// <summary>
+    /// 🔴 <b>WS-HMI-2 TASK 12 — <c>widget.id</c> giờ được kiểm định dạng, và bài này ghim ĐÚNG
+    /// MỘT literal vào HAI đường dẫn của schema.</b>
+    ///
+    /// <para><c>hmi-screen.schema.json</c> khai cùng một pattern ở hai chỗ:
+    /// <c>properties.screenId.pattern</c> (Task 2 đã thi hành) và
+    /// <c>$defs.widget.properties.id.pattern</c> (Task 12 mới thi hành). <c>ContractInvariants</c> giữ
+    /// ĐÚNG MỘT chuỗi cho cả hai (<see cref="ContractInvariants.LowercaseIdPatternSource"/>) — hợp lệ
+    /// CHỈ KHI hai đường dẫn ấy thật sự nói cùng một câu, nên bài này khẳng định điều đó chứ không giả
+    /// định. Ngày ai đó tách chúng, bài này đỏ và người sửa phải QUYẾT ĐỊNH tách C# hay không, thay vì
+    /// để một nửa lặng lẽ thi hành sai luật.</para>
+    ///
+    /// <para><b>So ở DẠNG CỦA SCHEMA, không phải dạng .NET thi hành.</b> .NET và ECMA-262 bất đồng về
+    /// <c>$</c> (xem <c>ContractInvariants.ScreenIdPattern</c>'s doc comment cho phép đo đã buộc phải
+    /// đổi sang <c>\z</c>), nên literal được giữ ở dạng schema và phép đổi neo là một hàm có tên,
+    /// ghim riêng ở <c>ContractInvariantsTests</c>. So chuỗi đã-đổi-neo với schema sẽ đỏ vĩnh viễn và
+    /// dạy người sau rằng phép ghim này vô dụng.</para>
+    /// </summary>
+    [Fact]
+    public void The_schemas_two_lowercase_id_patterns_are_the_one_pattern_ContractInvariants_enforces()
+    {
+        var screen = Schema("hmi-screen.schema.json");
+
+        var screenIdPattern = At(screen, "hmi-screen", "properties", "screenId", "pattern").GetValue<string>();
+        var widgetIdPattern = At(screen, "hmi-screen", "$defs", "widget", "properties", "id", "pattern")
+            .GetValue<string>();
+
+        Assert.True(screenIdPattern == widgetIdPattern,
+            $"schema khai HAI pattern khác nhau — screenId: '{screenIdPattern}', widget.id: " +
+            $"'{widgetIdPattern}'. ContractInvariants giữ đúng MỘT chuỗi cho cả hai, nên khoảnh khắc " +
+            "chúng khác nhau là khoảnh khắc một nửa bị thi hành SAI luật. Tách C# làm hai literal (và " +
+            "tách bài này làm hai khẳng định), đừng nới bài này.");
+
+        Assert.True(screenIdPattern == ContractInvariants.LowercaseIdPatternSource,
+            $"schema khai pattern '{screenIdPattern}', ContractInvariants.LowercaseIdPatternSource giữ " +
+            $"'{ContractInvariants.LowercaseIdPatternSource}'. Sửa literal ở " +
+            "src/St4i.Hmi.Contracts/ContractInvariants.cs cho khớp schema, đừng nới bài này — cửa ghi .NET " +
+            "đang thi hành một luật id khác luật mà lược đồ đóng băng.");
     }
 
     /// <summary>Danh sách MIỄN TRỪ khai tường minh — §2 của skill đòi nó phải là một lời khai, không phải
