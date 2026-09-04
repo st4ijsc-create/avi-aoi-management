@@ -391,6 +391,82 @@ thức) · robot 2/2 hãng đã thử · nhất quán hoá xử lý miền-khôn
 đo, không vá server người dùng đang dùng thật mà không xin phép) — đây có lẽ là đòn bẩy giá trị cao
 nhất tiếp theo nếu mục tiêu là "AI Local sinh code dùng được", cao hơn cả việc thêm tài liệu hãng.
 
+## Việc 6 — vá hồi quy do CHÍNH Việc 2 gây ra: trần token route vscode cho sinh mã
+
+★★★ **ĐÃ LÀM** (2026-09-04, `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-v6-report.md`)
+— đóng đúng CÒN MỞ mà Việc 5 để lại. **B1 (đo TRƯỚC, độc lập với báo cáo Việc 5)**: 3 câu route
+vscode mới (token `[ts=...]` riêng, không trùng cache) qua server 3003 CHƯA vá — `V5-01` 663 ký tự
+cắt giữa từ "cổ[ng]", `V5-02` 691 ký tự cắt giữa `Replace("-", "`, `V5-06` 740 ký tự cắt giữa điều
+kiện `if (buffer[i] == 0x03)` — xác nhận LẶP LẠI phát hiện của Việc 5 trên một mẫu hoàn toàn mới.
+
+**B2 (vá)**: `pickNumPredict()` (`server/services/aiLocalKnowledgeService.ts`) nhận thêm tham số
+`route` (luồn từ `context.route` qua `generateWithOllama`/`generateWithOllamaStream`, thay vì suy
+lại từ `intent` — `intent` đã bị Việc 2 ép cứng "general" nên không còn phân biệt được "câu hỏi
+ngắn" khỏi "câu hỏi vscode xin sinh mã dài"). Route `"vscode"` có ngân sách RIÊNG
+`KB_QA_NUM_PREDICT_VSCODE`, mặc định **900 token** — căn cứ: (a) tái dùng đúng trần
+`KB_QA_NUM_PREDICT_LIST_CAP=900` đã có sẵn trong codebase, không phát minh số mới; (b) đối chiếu
+kích thước THẬT của 5 tệp C# tham khảo hoàn chỉnh trong app demo IoT của Việc 5
+(1.791-3.595 ký tự/33-73 dòng cho một class đọc RS232/TCP/UDP/CRC-16 đơn năng); (c) tỉ lệ ký tự/
+token đo THẬT ở B1 vòng này (220 token ⇒ 663-740 ký tự cắt ⇒ ~2,7-3,0 ký tự/token) ⇒ 900 token ≈
+2.400-2.700 ký tự, đủ một hàm hoàn chỉnh + giải thích ngắn. Đặt env var riêng, KHÔNG sửa `.env`
+(mặc định trong mã, chỉnh được qua biến môi trường mà không cần sửa mã).
+
+**B3 (nhánh kia)**: lưới MỚI `aiLocalKnowledge.numPredictVscode.test.ts` (7 ca) khẳng định (a) route
+vscode ⇒ 900 (hoặc giá trị `KB_QA_NUM_PREDICT_VSCODE` tuỳ chỉnh); (b) route vắng/khác "vscode" ⇒
+Y HỆT hành vi cũ (220 cho general, 300 cho troubleshoot, 340 cho definition — không đổi MỘT BYTE);
+(c) route vscode NHƯNG có tóm tắt tool (hasToolSummary=true, chưa từng xảy ra thật vì tool-loop tắt
+hẳn cho route vscode) vẫn ưu tiên ngân sách TOOL (220) — giữ đúng thứ tự ưu tiên nếu tương lai đổi.
+Ablation: gỡ điều kiện `route === "vscode"` ⇒ đúng 2/7 ca ĐỎ (900→220, 1500→220), 5 ca còn lại (đối
+chứng web + ca hasToolSummary) vẫn XANH — hoàn nguyên ⇒ xanh lại cả 7/7. Đánh đổi nói thẳng: route
+vscode áp trần 900 ĐỒNG LOẠT kể cả câu hỏi ngắn (không còn tín hiệu phân biệt sau khi Việc 2 ép
+intent — num_predict là TRẦN TRÊN, model tự dừng sớm bằng EOS nếu câu trả lời ngắn, nên chi phí
+thực tế chỉ là VRAM/thời gian khi model KHÔNG tự dừng sớm).
+
+**B4 (đo LẠI đúng 10 câu Việc 5, sau khi build lại + khởi động lại 3003 — B6)**:
+
+| | TRƯỚC (Việc 5, cùng build) | SAU (Việc 6) |
+|---|---|---|
+| Độ dài câu trả lời trung bình | 714 ký tự | 1.464 ký tự (+105%) |
+| Dùng ngay | 0/10 (0%) | 2/10 (20%) — V5-01, V5-02 |
+| Sửa nhỏ | 5/10 (50%) | 2/10 (20%) — V5-03, V5-06 |
+| Không dùng được | 5/10 (50%) | 6/10 (60%) |
+| Sai/bịa | 0/10 (0%) | 0/10 (0%) |
+| Thời gian/lượt (10 ca, gồm 1 cold-start 58.665ms) | trung bình 8.136ms | trung bình 12.402ms |
+| Thời gian/lượt (server ẤM, loại cold-start) | ~8.136ms | trung bình 7.261ms (9 ca) |
+
+Ba cặp đo SẠCH (cùng câu hỏi, trước = build cũ B1 vòng này, sau = build mới, server ấm cả hai lượt):
+`V5-01` 4.718ms (663 ký tự, CẮT) → 7.233ms (1.350 ký tự, TRỌN VẸN) · `V5-02` 4.801ms (691, CẮT) →
+10.669ms (2.201, TRỌN VẸN) · `V5-06` 4.232ms (740, CẮT) → 10.482ms (2.977, TRỌN VẸN) — trung bình
++106% thời gian (~2,06×) cho 2-4× nội dung VÀ hết cắt ngang. ★ **Số xấu nói thẳng**: tỉ lệ "không
+dùng được" TĂNG 50%→60%, không giảm — vì `V5-05` (Mitsubishi Modbus TCP) hồi quy từ "sửa nhỏ" (có
+code, đúng thư viện NModbus) xuống "không dùng được" (từ chối hoàn toàn) do RAG lần này trả về tài
+liệu Omron thay vì Mitsubishi (biến thiên truy hồi giữa hai lượt gọi, KHÔNG do bản vá — đối chứng:
+`V5-01/02/06` giữ NGUYÊN citation/hãng giữa B1 và B4, xác nhận bản vá không chạm retrieval). Đây là
+BẰNG CHỨNG gốc rễ còn lại KHÔNG PHẢI trần token: (1) mô hình TỪ CHỐI dù có citation đúng hãng
+(`V5-08` Omron, không đổi giữa trước/sau) hoặc dù không cần tài liệu hãng nào (`V5-07` web module,
+không đổi) — nguyên nhân là ngưỡng "đủ tự tin viết code" của model, num_predict không chạm được;
+(2) nhiễu citation cùng-corpus-khác-hãng (`MIN_PROG_KB_CITATION_SCORE=0.5` không đủ lọc, đã ghi ở
+Việc 1/3/5) — cùng gốc rễ, chưa vá ở vòng này.
+
+**B5 (ablation)**: gỡ điều kiện `route === "vscode"` khỏi `pickNumPredict` (đổi chuỗi so khớp thành
+`"ABLATION-DISABLED"`) ⇒ chạy lại `aiLocalKnowledge.numPredictVscode.test.ts` ⇒ đúng 2/7 ca ĐỎ
+(vscode quay lại 220, output thật dán trong `task-v6-report.md`) ⇒ hoàn nguyên ⇒ 7/7 xanh lại. Lựa
+chọn ablation ở TẦNG MÃ (không phải một vòng build+restart+đo+gỡ+build+restart+đo thứ hai trên
+server 3003 đang phục vụ người dùng thật) — có chủ đích, để giảm số lần restart server thật xuống
+ĐÚNG MỘT LẦN (đã được duyệt sẵn cho B6); cặp B1(trước)/B4(sau) trên CÙNG server thật đã là một phép
+đo nhân quả độc lập bổ sung cho ablation tầng mã.
+
+**B6**: build lại (`npm run build`, 1m31s, `dist/index.js` xác nhận chứa `KB_QA_NUM_PREDICT_VSCODE`)
++ khởi động lại cổng 3003 (dừng PID cũ, `Start-Process node dist/index.js -WorkingDirectory
+"D:\SOURCES\avi-aoi-management"` với `NODE_ENV=production`/`PORT=3003`) — health `200`, B4 ở trên đo
+trên CHÍNH server đã build lại này (không phải suy diễn từ mã nguồn).
+
+**CÒN MỞ** (không phải phạm vi Việc 6 — trần token đã vá, KHÔNG phải nguyên nhân còn lại):
+`V5-05` hồi quy do biến thiên truy hồi (không do Việc 6) chưa điều tra sâu; ngưỡng
+`MIN_PROG_KB_CITATION_SCORE=0.5` vẫn không lọc hết nhiễu cùng-corpus-khác-hãng (Việc 1/3/5 đã ghi);
+ngưỡng "đủ tự tin viết code" của model (từ chối dù có citation đúng, `V5-07`/`V5-08`) — đòn bẩy giá
+trị cao TIẾP THEO nếu muốn tăng tỉ lệ dùng-được, KHÔNG sửa được bằng num_predict.
+
 ---
 
 # 9. Anh cần quyết định

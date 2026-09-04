@@ -632,10 +632,58 @@ const STREAM_GUARD_STEP_CHARS = Number(process.env.KB_QA_STREAM_GUARD_STEP ?? 16
 // often need to enumerate items + code blocks; bump budget ×1.7 to avoid
 // truncating mid-list (observed on SPC rules question — answer cut at NELSON_4).
 const LIST_COUNT_RE = /(bao nhiêu|liệt kê|danh sách|tất cả các|list( all)?|how many|enumerate)/i;
-function pickNumPredict(intent: KbIntent, hasToolSummary: boolean, question?: string): number {
+/**
+ * ★★★ VIỆC 6 (2026-09-04) — hồi quy do CHÍNH Việc 2 gây ra, đo được ở Việc 5
+ * (`task-v5-report.md` B2): Việc 2 ép `intent="general"` cho MỌI câu hỏi route vscode
+ * (`retrieveKnowledge`/`retrieveProgrammingKnowledgeForVscode`, xem `VIỆC 2`/`VIỆC 1` phía trên) —
+ * đúng đắn để tắt 6 regex `*_INTENT` soạn cho câu hỏi VẬN HÀNH, nhưng hệ quả PHỤ chưa từng đo:
+ * `intent="general"` rơi vào nhánh `case "general"` bên dưới ⇒ MỌI câu hỏi route vscode, kể cả
+ * "viết code giúp mình" xin vài trăm dòng, bị khoá vào `KB_QA_NUM_PREDICT_GENERAL` (220 token) —
+ * ngân sách soạn cho câu hỏi ĐỊNH NGHĨA/TRA CỨU ngắn. Việc 5 đo 10/10 câu route vscode bị cắt ở
+ * 599-822 ký tự khớp CHÍNH XÁC 220 token, kể cả câu bắt đầu đúng hướng (0/10 "dùng ngay").
+ *
+ * Vá bằng cách thêm THAM SỐ `route` (KHÔNG suy luận lại từ `intent` — `intent` đã bị Việc 2 xoá
+ * sạch thông tin route bằng cách ép cứng "general", nên nhánh switch bên dưới không còn cách nào
+ * phân biệt "câu hỏi ngắn kiểu tra cứu" khỏi "câu hỏi vscode xin sinh mã dài" — phải lấy `route`
+ * từ NGUỒN GỐC, tức `context.route` luồn qua `generateWithOllama`/`generateWithOllamaStream`).
+ * Đặt NGANG HÀNG với nhánh `hasToolSummary` (trước switch, không phải một case trong đó) để giữ
+ * đúng bất biến hiện tại (intent luôn "general" cho route vscode) NHƯNG không phụ thuộc nó — nếu
+ * sau này route vscode được phép có intent khác "general", bản vá này vẫn đúng.
+ *
+ * ★ CĂN CỨ CHỌN SỐ MẶC ĐỊNH 900 (không phải số bừa — xem `task-v6-report.md` B2 để có số đo thật):
+ * (a) tái dùng đúng trần đã có sẵn và ĐÃ ĐƯỢC CODEBASE NÀY TIN DÙNG cho câu trả lời dài
+ *     (`KB_QA_NUM_PREDICT_LIST_CAP` bên dưới cũng mặc định 900) — không phát minh một hằng số mới;
+ * (b) đối chiếu với kích thước THẬT của 5 tệp C# tham khảo hoàn chỉnh trong app demo IoT của Việc 5
+ *     (`D:\SOURCES\AI Local\demo-iot\csharp-reference\*.cs`, đọc tay, không đoán): một class đọc
+ *     RS232/TCP/UDP đơn năng chạy 1.791-2.012 ký tự (33-43 dòng), một hàm CRC-16/Modbus ĐẦY ĐỦ
+ *     chuẩn chạy 3.318 ký tự (67 dòng), bản đọc Modbus RTU qua servo Delta 3.595 ký tự (73 dòng) —
+ *     900 token đủ cho lớp nhỏ có headroom, gần đủ cho lớp lớn (framing+checksum);
+ * (c) tỉ lệ ký tự/token đo THẬT ở B1 vòng này (220 token ⇒ 663-740 ký tự bị CẮT giữa chừng, tức
+ *     ~2,7-3,0 ký tự/token cho văn bản Việt+code trộn) ⇒ 900 token ≈ 2.400-2.700 ký tự — đủ cho một
+ *     hàm hoàn chỉnh + giải thích ngắn, KHÔNG đủ để chép nguyên một file tham khảo đã người hoàn
+ *     thiện (có chủ đích: model tự sinh thường gọn hơn bản người viết đầy đủ boilerplate/comment);
+ * (d) đánh đổi tốc độ/VRAM: token càng nhiều càng chậm — số đo thời gian trước/sau ở
+ *     `task-v6-report.md` B4 (900 vs 220 token, cùng model, cùng máy).
+ *
+ * ★★★ B3 — NHÁNH KIA (đường WEB): nhánh này CHỈ áp dụng khi `route === "vscode"`; mọi route khác
+ * (kể cả route vắng mặt — trang web/desktop hôm nay không gửi `context.route`) rơi thẳng xuống
+ * `switch (intent)` cũ, KHÔNG đổi một byte hành vi. Lưới `aiLocalKnowledge.numPredictVscode.test.ts`
+ * khẳng định cả hai vế (vscode dùng trần mới, web/route khác giữ trần cũ) + ablation.
+ *
+ * ★ Đánh đổi có CHỦ Ý, nói thẳng: route vscode áp trần 900 ĐỒNG LOẠT cho mọi câu hỏi, kể cả câu
+ * hỏi NGẮN (vd "giá trị thanh ghi X là gì?") — không tách theo độ dài câu hỏi vì `intent` đã bị Việc
+ * 2 ép "general" cho mọi câu (không còn tín hiệu nào phân biệt ngắn/dài mà không viết lại bộ phân
+ * loại — ngoài phạm vi vòng này). Hệ quả: câu hỏi ngắn CÓ THỂ sinh dài hơn cần thiết trước khi model
+ * tự dừng bằng EOS — nhưng đây là num_predict là TRẦN TRÊN (dừng SỚM nếu model tự kết thúc câu trả
+ * lời), không phải độ dài BẮT BUỘC, nên chi phí thực tế chỉ là VRAM/wall-time khi model KHÔNG tự
+ * dừng sớm (đo ở B4).
+ */
+function pickNumPredict(intent: KbIntent, hasToolSummary: boolean, question?: string, route?: string): number {
   let base: number;
   if (hasToolSummary) {
     base = Number(process.env.KB_QA_NUM_PREDICT_TOOL ?? 220);
+  } else if (route === "vscode") {
+    base = Number(process.env.KB_QA_NUM_PREDICT_VSCODE ?? 900);
   } else {
     switch (intent) {
       case "how_to":
@@ -1537,6 +1585,10 @@ async function generateWithOllama(
   userLevel: UserLevel = "technical",
   toolSummary?: string | null,
   userId?: number,
+  // ★★★ VIỆC 6 — xem docblock lớn cạnh `pickNumPredict`. Tham số MỚI, đặt cuối (không phá vỡ lời
+  // gọi cũ nào), luồn `context.route` xuống `pickNumPredict` — thứ duy nhất `retrieve.intent`
+  // không còn mang được nữa sau khi Việc 2 ép nó thành "general" cho route vscode.
+  route?: string,
 ): Promise<string | null> {
   // doc69 G2-3 — AI Gateway: SAME input this function always passed to `route()` below
   // (`{task:"chat", text: question}`), so `plan.decision.modelId` is byte-identical to
@@ -1582,7 +1634,7 @@ async function generateWithOllama(
     .join("\n");
 
   // Default: use bundled GGUF engine (RTX 5090 local). Fallback to Ollama HTTP only if USE_LEGACY_OLLAMA=true.
-  const numPredict = pickNumPredict(retrieve.intent, !!toolSummary, question);
+  const numPredict = pickNumPredict(retrieve.intent, !!toolSummary, question, route);
   if (!USE_LEGACY_OLLAMA) {
     let start = 0;
     try {
@@ -1671,6 +1723,8 @@ export async function* generateWithOllamaStream(
   userLevel: UserLevel = "technical",
   toolSummary?: string | null,
   userId?: number,
+  // ★★★ VIỆC 6 — xem docblock lớn cạnh `pickNumPredict` (cùng lý lẽ với `generateWithOllama` ở trên).
+  route?: string,
 ): AsyncGenerator<string> {
   // doc69 G2-3 — AI Gateway (see the identical comment on generateWithOllama above; same
   // {task:"chat", text: question} input preserves the pinned-model decision byte-for-byte).
@@ -1713,7 +1767,7 @@ export async function* generateWithOllamaStream(
     .join("\n");
 
   // Default: use bundled GGUF engine streaming. Fallback to Ollama HTTP if USE_LEGACY_OLLAMA=true.
-  const numPredict = pickNumPredict(retrieve.intent, !!toolSummary, question);
+  const numPredict = pickNumPredict(retrieve.intent, !!toolSummary, question, route);
 
   /**
    * ★ G5-C — MỘT bộ cắt cho TOÀN BỘ generator, dựng NGOÀI mọi nhánh có chủ ý.
@@ -2745,6 +2799,7 @@ export async function answerQuestion(
           userLevel,
           toolPromptBlock,
           execCtx?.user?.id,
+          kbContext?.route,
         );
         if (llmAnswer) {
           provider = "ollama";
@@ -2764,7 +2819,7 @@ export async function answerQuestion(
     answer = appendHintsFooter(answer, retrieve, true);
   } else if (retrieve.confidence >= 0.30) {
     try {
-      const llmAnswer = await generateWithOllama(question, retrieve, history, userLevel, undefined, execCtx?.user?.id);
+      const llmAnswer = await generateWithOllama(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route);
       if (llmAnswer) {
         provider = "ollama";
         answer = llmAnswer;
@@ -6102,6 +6157,7 @@ export async function* streamAnswer(
         userLevel,
         toolPromptBlock,
         execCtx?.user?.id,
+        kbContext?.route,
       );
       // FE-W0.3 (doc 46 §2.3) — incremental degenerate-loop guard: re-check the
       // accumulated text every STREAM_GUARD_STEP_CHARS once past the min, and BREAK
