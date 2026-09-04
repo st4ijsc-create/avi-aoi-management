@@ -30,7 +30,7 @@ fine-tune.** Docblock của chính hệ thống này đã ghi: *"LoRA = phong c�
 | **DOCX** (Word) | ✅ | bóc chữ |
 | **Markdown / TXT** | ✅ | đọc thẳng |
 | **Trang web (URL)** | ✅ | `kbWebFetcher.ts` tải → `html-to-text` bóc chữ |
-| **Video** | ✅ | `kbVideoTranscriber.ts`: ffmpeg tách audio → **whisper.cpp** chép lời |
+| **Video** | ⚠ **CHƯA nối vào giao diện** | `kbVideoTranscriber.ts` (ffmpeg + whisper.cpp) **có thật và có lưới**, nhưng `kbStudioRouter` **không có `ingestVideoJob`** và không nơi nào trong client gọi nó ⇒ **không nạp được qua Training Studio**. ★ ĐÍNH CHÍNH 2026-09-05: bản trước của tài liệu này ghi nhầm là nạp được. |
 | **Ảnh** (png/jpg/webp) | ✅ | `kbImageDescriber.ts`: model **thị giác** mô tả nội dung |
 | Excel / CSV | ❌ | chưa hỗ trợ — chuyển sang CSV→MD hoặc TXT trước |
 | CHM, ZIP, DLL | ❌ | phải giải nén / chuyển đổi trước |
