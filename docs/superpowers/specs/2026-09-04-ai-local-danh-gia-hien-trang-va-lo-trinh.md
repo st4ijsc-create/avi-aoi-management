@@ -328,3 +328,42 @@ Và chỉ khi đo được rằng phần còn thiếu là phong cách, không ph
   phải kết quả tối ưu hoá.
 - Server đang chạy với `KB_QA_CACHE_TTL_MS` **không mặc định** ở một tiến trình (dùng cho đo) —
   cần trả lại trước khi kết luận về hiệu năng thật.
+
+---
+
+# 11. ★★★ ĐÍNH CHÍNH (2026-09-04, sau khi thực thi Việc 1)
+
+**§2.2 và §7 của tài liệu này SAI ở một điểm chịu lực.** Tôi đo `knowledge/chunks.jsonl` — kho
+**vận hành** — rồi kết luận về **cả hệ thống**. Đo một kho, kết luận về hai.
+
+**Sự thật đo được sau đó:** một hạ tầng **đa-corpus riêng cho tài liệu hãng ĐÃ TỒN TẠI từ trước**
+(`knowledge/programming/*`, `server/services/aiProgrammingKnowledgeService.ts`, doc 34 P1, commit
+`a75bc8f9`), với **91.678 chunk đã nhúng cho cả sáu hãng**, và `PROG_KB_ENABLED=true` bật sẵn
+trong `.env`.
+
+⇒ Lỗ hổng thật **chưa bao giờ** là "chưa có corpus tài liệu hãng". Nó là: **route `vscode` chưa
+được nối vào corpus đó** — đúng món CÒN MỞ #5 mà chính báo cáo Việc 2 đã ghi.
+
+★ Bài học lặp lại lần thứ mười ba trong dự án: **brief của người điều phối phải được kiểm lại bằng
+mã trước khi thực thi.** Agent đã kiểm và bác bỏ tiền đề của tôi — đúng.
+
+## Đã làm được (đo được, đã triển khai lên cổng 3003)
+
+| Việc | Kết quả đo |
+|---|---|
+| Thêm `.cs .py .java .cpp .st .scl` vào bộ trích xuất | +0 chunk **trên repo này** (không có tệp loại đó ở đây) — có tác dụng khi quét dự án của người dùng |
+| 16 PDF hãng thêm sau lần nạp 05/07 chưa từng được nạp | đã nạp: **91.678 → 124.990 chunk (+36%)**, phủ **53/53 PDF**, **0 tệp là ảnh quét** |
+| Nối route `vscode` vào corpus lập trình | `retrieveProgrammingKnowledgeForVscode()` + cổng đầu `retrieveKnowledge` |
+| Ngưỡng trích dẫn | thêm `MIN_PROG_KB_CITATION_SCORE=0.5` (câu hỏi vận hành từng lấy trích dẫn nhiễu điểm thấp) |
+| **Chất lượng miền người dùng** | **6/6** câu hỏi thật dẫn đúng nguồn hãng (điểm 0,716–0,922); **trước đó 0/6 về mặt cấu trúc** |
+| Nghiệm thu LIVE trên 3003 | 3/3 câu (PLC Delta · SDK Universal Robots · RS232) trả **5 trích dẫn PDF** đúng hãng |
+| Đường **web** | **không đổi** (đo bằng spy: 0 lần đọc kho vận hành cho route vscode) |
+| Ablation | gỡ cổng ⇒ 4/5 ca đỏ (có rò kho vận hành thật); gỡ ngưỡng ⇒ 1/7 đỏ |
+
+## CÒN MỞ sau Việc 1
+
+1. ★★ **33.312 chunk mới CHƯA NHÚNG** — cần GPU, mà GPU đang phục vụ model 30B của người dùng.
+   **Cần quyết định của chủ dự án** về thời điểm chạy. Cho tới lúc đó, 16 PDF mới **chưa tìm được**.
+2. `MIN_PROG_KB_CITATION_SCORE=0.5` là **một ngưỡng chọn**, chưa tối ưu hoá bằng đo.
+3. Việc 2 làm câu hỏi **vận hành** gõ trong panel VSCode **không còn được tool trả lời** — đúng chủ
+   ý tách miền, nhưng là đánh đổi người dùng sẽ cảm nhận được.
