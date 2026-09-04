@@ -652,6 +652,7 @@
       "center": "3D Center",
       "map": "Live Map",
       "floor": "Floor Editor",
+      "layout": "Workshop Layout",
       "cell": "Cell Twin",
       "rf": "RF Test Cell"
     },

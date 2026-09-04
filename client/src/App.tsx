@@ -580,7 +580,10 @@ function Router() {
       <Route path="/metric-catalog"><RouteGuard navHref="/metric-catalog"><MetricCatalog /></RouteGuard></Route>
       <Route path="/products"><RouteGuard navHref="/products"><ProductModels /></RouteGuard></Route>
       <Route path="/product-mapping"><RouteGuard navHref="/product-mapping"><ProductMachineMapping /></RouteGuard></Route>
-      <Route path="/layout"><RouteGuard navHref="/layout"><Layout /></RouteGuard></Route>
+      {/* Task 1 Khối D — /layout (không :id) gộp vào TwinHub làm tab "layout" (mode edit).
+          /layout/:id GIỮ RIÊNG: mang route param mà tab không có, và gate
+          requirePermission="settings_factory" khác navHref của route trên. */}
+      <Route path="/layout"><Redirect to="/digital-twin?tab=layout" /></Route>
       <Route path="/layout/:id"><RouteGuard requirePermission="settings_factory"><Layout /></RouteGuard></Route>
       <Route path="/workstation-management"><RouteGuard navHref="/workstation-management"><WorkstationManagement /></RouteGuard></Route>
       <Route path="/process-management"><RouteGuard navHref="/process-management"><ProcessManagement /></RouteGuard></Route>

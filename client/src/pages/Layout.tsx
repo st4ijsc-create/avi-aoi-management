@@ -72,8 +72,14 @@ type MachineWithStats = {
   };
 };
 
-export default function Layout() {
+// Task 1 Khối D — thân trang, KHÔNG bọc DashboardLayout (khuôn FactoryFloorEditorContent).
+// Dùng làm tab "layout" (mode "edit") của TwinHub lẫn nội dung của route /layout độc lập.
+export function LayoutContent() {
   const { t } = useTranslation();
+  // Khi render như tab của TwinHub (route /digital-twin, không có :id), useParams() trả về
+  // context mặc định {} (đo trong wouter esm/index.js: `Params0 = {}`, `useParams = () =>
+  // useContext(ParamsCtx)`) ⇒ params.id === undefined — giống hệt hành vi hiện có khi vào
+  // qua route "/layout" (không :id) hôm nay. KHÔNG phải hành vi mới, không cần nhánh riêng.
   const params = useParams<{ id?: string }>();
   const search = useSearch();
   const searchParams = new URLSearchParams(search);
@@ -417,11 +423,6 @@ export default function Layout() {
   };
 
   return (
-    <DashboardLayout 
-      title="SYNAPSE"
-      navItems={navItems}
-      currentPath="/layout"
-    >
       <PageContainer fluid className="h-full">
         {/* Header — DS PageHeader (shared pattern) */}
         <PageHeader
@@ -1010,6 +1011,16 @@ export default function Layout() {
           </Card>
         )}
       </PageContainer>
+  );
+}
+
+// Vỏ mỏng — giữ NGUYÊN props DashboardLayout cũ (title/navItems/currentPath), khuôn
+// FactoryFloorEditor (Content dòng 60, vỏ mỏng dòng 598) nhưng KHÔNG bọc trần vì
+// DashboardLayout ở đây mang props chứ không phải default rỗng.
+export default function Layout() {
+  return (
+    <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/layout">
+      <LayoutContent />
     </DashboardLayout>
   );
 }

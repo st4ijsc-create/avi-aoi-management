@@ -19,7 +19,7 @@ import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Boxes, Map, LayoutGrid, PlayCircle, Radio, Activity, Clapperboard, PencilRuler } from "lucide-react";
+import { LayoutDashboard, Boxes, Map, LayoutGrid, PlayCircle, Radio, Activity, Clapperboard, PencilRuler, Warehouse } from "lucide-react";
 
 import { DigitalTwinDashboardContent } from "./DigitalTwinDashboard";
 import { DigitalTwinCenterContent } from "./DigitalTwinCenter";
@@ -27,6 +27,7 @@ import { FactoryLiveMap3DContent } from "./FactoryLiveMap3D";
 import { FactoryFloorEditorContent } from "./FactoryFloorEditor";
 import { CellTwinPlayerContent } from "./CellTwinPlayer";
 import { RfTestCellSimContent } from "./RfTestCellSim";
+import { LayoutContent } from "./Layout";
 
 /**
  * Data provenance of a tab:
@@ -36,11 +37,14 @@ import { RfTestCellSimContent } from "./RfTestCellSim";
  */
 type TwinMode = "live" | "sim" | "edit";
 
-const TABS = [
+export const TABS = [
   { value: "overview", labelKey: "twinHub.tabs.overview", fallback: "Tổng quan", icon: <LayoutDashboard className="h-4 w-4" />, mode: "live" as TwinMode, Content: DigitalTwinDashboardContent },
   { value: "center", labelKey: "twinHub.tabs.center", fallback: "Trung tâm 3D", icon: <Boxes className="h-4 w-4" />, mode: "live" as TwinMode, Content: DigitalTwinCenterContent },
   { value: "map", labelKey: "twinHub.tabs.map", fallback: "Bản đồ trực tiếp", icon: <Map className="h-4 w-4" />, mode: "live" as TwinMode, Content: FactoryLiveMap3DContent },
   { value: "floor", labelKey: "twinHub.tabs.floor", fallback: "Sửa mặt bằng", icon: <LayoutGrid className="h-4 w-4" />, mode: "edit" as TwinMode, Content: FactoryFloorEditorContent },
+  // Task 1 Khối D — CRUD bố trí xưởng theo tên (layout.* + WorkshopLayoutEditor), khác "floor"
+  // (kéo-thả vị trí máy trên mặt bằng). Cùng "edit" mode: đều là công cụ soạn, không dữ liệu runtime.
+  { value: "layout", labelKey: "twinHub.tabs.layout", fallback: "Bố trí xưởng", icon: <Warehouse className="h-4 w-4" />, mode: "edit" as TwinMode, Content: LayoutContent },
   { value: "cell", labelKey: "twinHub.tabs.cell", fallback: "Bản sao cell", icon: <PlayCircle className="h-4 w-4" />, mode: "sim" as TwinMode, Content: CellTwinPlayerContent },
   { value: "rf", labelKey: "twinHub.tabs.rf", fallback: "Cell kiểm RF", icon: <Radio className="h-4 w-4" />, mode: "sim" as TwinMode, Content: RfTestCellSimContent },
 ] as const;
