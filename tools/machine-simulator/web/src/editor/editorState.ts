@@ -15,8 +15,8 @@
  * happened; see `CanonicalScreenStore.cs` and `screens.test.mjs`). The promise is about PRESERVING
  * validity, and it is kept by REFUSING an edit whose result would break the contract, not by
  * repairing or clamping it. A refusal leaves `doc`, `past` and `future` exactly as they were — by
- * identity, not merely by value — and puts a human-readable sentence in `lastRefusal`. Never a
- * silent no-op.
+ * identity, not merely by value — and puts a coded, human-readable `EditorRefusal` in `lastRefusal`.
+ * Never a silent no-op.
  *
  * The guards below are a hand-written mirror of `$defs/widget` and `$defs/rect`. This repository's
  * standing objection to a second copy of a rule (see `contracts/README.md`, `validate.mjs`'s header,
@@ -26,15 +26,21 @@
  * asserts the two answers agree member by member — so a guard that drifts loose (accepts what the
  * schema rejects) or tight (rejects what the schema accepts) reddens.
  *
- * Where a vocabulary already exists as a frozen TYPE, it is reached through the type instead of
- * retyped: `Record<WidgetKind, true>` and `Record<keyof ScreenWidget, true>` below are exhaustive in
- * BOTH directions at COMPILE time, exactly as `policyGate`'s `Record<PolicyAction, true>` is, and
- * those unions are themselves pinned against the schema's enums by `scripts/check-contracts.mjs`.
- * Only three things could not be reached that way and are written out as literals: the widget-id
- * `pattern`, the rect `minimum`s, and the set of required widget fields. All three are covered by
- * the differential corpus above.
+ * 🔴 FIX ROUND 1, task-7-review.md §7.1 — THE CORPUS ALONE WAS NOT ENOUGH, AND THE REVIEWER PROVED IT
+ * LIVE. Adding `"minLength": 1` to `$defs/widget.properties.component` — an additive, README-legal
+ * schema change — left `npm run test:runtime` at 269/269 and the contract gate at 52/52, after which
+ * `applyEdit` accepted `component: ""` and returned a document `validate.mjs` REJECTS. The promise
+ * three paragraphs up was false, and nothing was red. A differential corpus can only catch a keyword
+ * whose boundary some corpus member happens to straddle; a NEW keyword at an existing property has
+ * no such member by definition.
  *
- * ── TWO PLACES THIS IS DELIBERATELY STRICTER THAN THE SCHEMA ──────────────────────────────────────
+ * Closed by `SCHEMA_MIRROR.handledKeywords` below plus its test: the test WALKS `$defs/widget` and
+ * `$defs/rect` in the schema file, collects every `(json-pointer, keyword)` pair it finds, and
+ * asserts that set equals the set declared here. A keyword this mirror has no code for reddens
+ * naming the keyword AND the path. Two sides of genuinely different origin — the schema file, walked;
+ * this module, declared — so it is not a constant read from both ends.
+ *
+ * ── THREE PLACES THIS IS DELIBERATELY STRICTER THAN THE SCHEMA ────────────────────────────────────
  *
  * (1) WIDGET IDS MUST BE UNIQUE. The frozen schema does not say so — `widgets` is a plain array and
  *     two widgets may share an `id` and still validate. But four of this module's five edits ADDRESS
@@ -50,6 +56,14 @@
  *     disagree, and an undo stack full of documents that no longer round-trip is worse than a
  *     refused edit.
  *
+ * (3) A `set-prop` PATH WHOSE FIRST SEGMENT NAMES A WIDGET FIELD IS REFUSED — fix round 1,
+ *     task-7-review.md §7.5. `path` is rooted at `props` (see the type below), but the natural
+ *     assumption is that it is rooted at the WIDGET, because four of the five edits address the
+ *     widget. Before this fix, `path: "kind"` was ACCEPTED and quietly wrote `props.kind` — leaving
+ *     `widget.kind` untouched, consuming an undo step, and doing nothing the caller intended. That
+ *     is schema-valid and therefore invisible to every pin in this file. The boundary is now
+ *     enforced, not merely documented, and `editorState.test.mjs` pins it by example.
+ *
  * ── WHAT THIS MODULE DOES NOT DO ──────────────────────────────────────────────────────────────────
  *
  * It does NOT check that a widget's `rect` fits inside `doc.layout`. That is not a schema constraint
@@ -61,8 +75,10 @@
  * viewport.
  *
  * It does not edit `kind`, `bindings`, `component`, `policyAction`, `layout`, `theme`, `title` or
- * `screenId` — this task's `EditorEdit` union has no edit for them, and `set-prop` is rooted at
- * `props` precisely so it cannot reach them (see `set-prop` below).
+ * `screenId` — this task's `EditorEdit` union has no edit for them. Every edit writes only inside
+ * `doc.widgets`, which is why `SCHEMA_MIRROR.handledKeywords` needs to cover only `$defs/widget` and
+ * `$defs/rect`; `editorState.test.mjs` MEASURES that scope (every other top-level field of the
+ * document comes back reference-identical) rather than assuming it.
  */
 import type { HmiScreenDocument, ScreenWidget, WidgetKind, WidgetRect } from "../contracts/hmiScreen.ts"
 import type { PolicyAction } from "../contracts/tagNamespace.ts"
@@ -87,11 +103,87 @@ export type EditorEdit =
    * leaves unconstrained (`{"type": "object"}`), so a write confined to it cannot invalidate the
    * document by construction, and this module needs no second copy of the schema's rules to allow
    * it. Reaching `kind`/`bindings`/`policyAction` needs its own edit kind with its own guards; this
-   * task's brief defines none, so the reach is closed rather than left half-open. */
+   * task's brief defines none, so the reach is closed rather than left half-open — and, since fix
+   * round 1, a path whose first segment names one of those fields is REFUSED (`out-of-scope-path`)
+   * rather than absorbed into `props` under the same name. */
   | { kind: "set-prop"; widgetId: string; path: string; value: unknown }
   | { kind: "add"; widget: ScreenWidget }
   | { kind: "remove"; widgetId: string }
   | { kind: "reorder"; widgetId: string; toIndex: number }
+
+/**
+ * Why a call left the document unchanged, as something a caller can SWITCH ON.
+ *
+ * 🔴 FIX ROUND 1, task-7-review.md §7.2. Before this, `lastRefusal` was a bare sentence and both
+ * refusal kinds returned identical `doc`/`past`/`future` references — so the Task 8 drag layer had
+ * no way to tell a refused no-op (swallow it: the drag ended where it started) from a refused
+ * invalid rect (show it: the operator dragged somewhere impossible) except by string-matching prose.
+ * `policyGate`'s bare `reason` is the tree's precedent, but its consumer only DISPLAYS the reason;
+ * this one must BRANCH on it.
+ */
+export type EditorRefusalCode =
+  /** The edit was well-formed and legal but would not change the document. */
+  | "no-op"
+  /** `edit` was not an object with a `kind` — a caller-side bug, refused rather than thrown. */
+  | "malformed-edit"
+  /** `edit.kind` is not a member of `EditorEdit`. */
+  | "unknown-edit-kind"
+  /** `state.doc` has no `widgets` array — refused rather than thrown. */
+  | "malformed-document"
+  /** No widget on the document carries the `widgetId` the edit named. */
+  | "unknown-widget"
+  /** The `rect` a `move` carries does not satisfy `$defs/rect`. */
+  | "invalid-rect"
+  /** The `widget` an `add` carries does not satisfy `$defs/widget`. */
+  | "invalid-widget"
+  /** `add` named an `id` already on the document — stricter than the schema, on purpose. */
+  | "duplicate-id"
+  /** A `set-prop` `path` that is not a non-empty dotted string. */
+  | "bad-path"
+  /** A `set-prop` `path` whose first segment names a widget field — stricter than the schema. */
+  | "out-of-scope-path"
+  /** A `set-prop` path that would have to descend through an existing non-object, deleting it. */
+  | "path-blocked"
+  /** A `set-prop` `value` that would not survive `JSON.stringify` — stricter than the schema. */
+  | "non-json-value"
+  /** A `reorder` `toIndex` outside `[0, widgets.length - 1]`. */
+  | "index-out-of-range"
+  /** `undo` with an empty undo stack. */
+  | "nothing-to-undo"
+  /** `redo` with an empty redo stack. */
+  | "nothing-to-redo"
+
+export type EditorRefusal = {
+  readonly code: EditorRefusalCode
+  /** Always a non-empty sentence naming the offending value. Never a silently-blocked path with no
+   * reason shown — `policyGate`'s rule, applied to editing. */
+  readonly message: string
+}
+
+/**
+ * Every code the union above declares, as a runtime value. Exhaustive in BOTH directions at compile
+ * time (`Record<EditorRefusalCode, true>`), and `editorState.test.mjs` asserts that every member is
+ * REACHABLE — it produces all of them from real inputs and compares the observed set with this one.
+ * A code declared but unproducible, or produced but undeclared, reddens. Same census idiom as
+ * `widgetRegistry.test.mjs`'s "every registered kind is drawn at least once".
+ */
+export const EDITOR_REFUSAL_CODES: Record<EditorRefusalCode, true> = {
+  "no-op": true,
+  "malformed-edit": true,
+  "unknown-edit-kind": true,
+  "malformed-document": true,
+  "unknown-widget": true,
+  "invalid-rect": true,
+  "invalid-widget": true,
+  "duplicate-id": true,
+  "bad-path": true,
+  "out-of-scope-path": true,
+  "path-blocked": true,
+  "non-json-value": true,
+  "index-out-of-range": true,
+  "nothing-to-undo": true,
+  "nothing-to-redo": true,
+}
 
 export type EditorState = {
   /** The document as it stands. Never the same object the caller passed to `createEditorState`. */
@@ -101,15 +193,11 @@ export type EditorState = {
   /** Redo stack, OLDEST-undone first. Emptied by any accepted `applyEdit`. */
   readonly future: readonly HmiScreenDocument[]
   /**
-   * Why the most recent call left the document unchanged — a refused edit, or an `undo`/`redo` with
-   * nothing left on its stack. `undefined` after any call that DID change the document.
-   *
-   * A refused edit that reported nothing would be indistinguishable, from the caller's side, from an
-   * edit that worked; `policyGate` states the same rule for the same reason (a disabled control that
-   * never says why). Callers that want to know whether undo/redo is available should read
-   * `past.length`/`future.length` — this field is about the call that just happened.
+   * Why the most recent call left the document unchanged. `undefined` after any call that DID change
+   * it. Callers that want to know whether undo/redo is AVAILABLE should read `past.length` /
+   * `future.length` — this field is about the call that just happened.
    */
-  readonly lastRefusal: string | undefined
+  readonly lastRefusal: EditorRefusal | undefined
 }
 
 // ── vocabularies, reached through the frozen types rather than retyped ────────────────────────────
@@ -149,7 +237,8 @@ const POLICY_REQUIRED_KINDS: Record<Extract<WidgetKind, "setpoint-input" | "comm
 }
 
 /** `additionalProperties: false` on `$defs/widget`, reached through `keyof ScreenWidget` so a field
- * added to the frozen type must be acknowledged here before it can be edited. */
+ * added to the frozen type must be acknowledged here before it can be edited. Also the set of
+ * first-path-segment names a `set-prop` REFUSES — see strictness note (3) in the header. */
 const WIDGET_KEYS: Record<keyof ScreenWidget, true> = {
   id: true,
   kind: true,
@@ -163,9 +252,7 @@ const WIDGET_KEYS: Record<keyof ScreenWidget, true> = {
 const WIDGET_REQUIRED_KEYS: readonly (keyof ScreenWidget)[] = ["id", "kind", "rect"]
 
 /** `$defs/rect`'s four `minimum`s, and — via its key set — `additionalProperties: false` over the
- * same four names. These, plus `WIDGET_ID_PATTERN` and `WIDGET_REQUIRED_KEYS`, are the only schema
- * facts here that no frozen type could carry; `editorState.test.mjs`'s differential corpus is what
- * keeps them honest. */
+ * same four names. */
 const RECT_MINIMUM: Record<keyof WidgetRect, number> = { col: 0, row: 0, colSpan: 1, rowSpan: 1 }
 
 /** `$defs/widget.properties.id.pattern`. JavaScript's `$` (no `m` flag) anchors at end of INPUT, so
@@ -173,6 +260,72 @@ const RECT_MINIMUM: Record<keyof WidgetRect, number> = { col: 0, row: 0, colSpan
  * this case. Nothing to work around on this side; noted so the difference is not read as an
  * oversight. */
 const WIDGET_ID_PATTERN = /^[a-z0-9-]+$/
+
+/**
+ * 🔴 FIX ROUND 1, task-7-review.md §7.1 — the parity declaration that closes the mirror's residual
+ * hole, plus the literal values the mirror enforces.
+ *
+ * `handledKeywords` names EVERY `(json-pointer, keyword)` pair inside `$defs/widget` and
+ * `$defs/rect` that the guards below have code for. `editorState.test.mjs` WALKS those two
+ * definitions in `contracts/hmi-screen.schema.json` and asserts the walk's result equals this list —
+ * so a schema keyword this file cannot enforce reddens by NAME and by PATH, and a line here with no
+ * corresponding schema keyword reddens too. Not a count: a count would pass a `minLength` that moved
+ * from `id` to `component`, which is the defect Task 6's floor was just fixed for.
+ *
+ * The other fields let the same test compare the mirror's LITERALS against the schema's, which the
+ * differential corpus already covers but which is nearly free once the walk exists.
+ *
+ * Exported ONLY for that test. Nothing in the product reads it.
+ */
+export const SCHEMA_MIRROR = {
+  widgetProperties: Object.keys(WIDGET_KEYS),
+  widgetRequired: [...WIDGET_REQUIRED_KEYS],
+  widgetIdPattern: WIDGET_ID_PATTERN.source,
+  widgetKinds: Object.keys(WIDGET_KINDS),
+  policyActions: Object.keys(POLICY_ACTIONS),
+  policyRequiredKinds: Object.keys(POLICY_REQUIRED_KINDS),
+  rectProperties: Object.keys(RECT_MINIMUM),
+  rectMinimum: { ...RECT_MINIMUM },
+  handledKeywords: [
+    // $defs/rect — enforced by `rectRefusal`
+    "#/$defs/rect::type", //                            isPlainObject
+    "#/$defs/rect::required", //                        the `!Object.hasOwn(rect, key)` loop
+    "#/$defs/rect::properties", //                      the RECT_MINIMUM key set
+    "#/$defs/rect::additionalProperties", //            the unknown-field loop (false ⇒ reject)
+    "#/$defs/rect/properties/col::type", //             Number.isInteger
+    "#/$defs/rect/properties/col::minimum", //          RECT_MINIMUM.col
+    "#/$defs/rect/properties/row::type",
+    "#/$defs/rect/properties/row::minimum",
+    "#/$defs/rect/properties/colSpan::type",
+    "#/$defs/rect/properties/colSpan::minimum",
+    "#/$defs/rect/properties/rowSpan::type",
+    "#/$defs/rect/properties/rowSpan::minimum",
+    // $defs/widget — enforced by `widgetRefusal`
+    "#/$defs/widget::type", //                          isPlainObject
+    "#/$defs/widget::required", //                      WIDGET_REQUIRED_KEYS
+    "#/$defs/widget::properties", //                    WIDGET_KEYS
+    "#/$defs/widget::additionalProperties", //          the unknown-field loop (false ⇒ reject)
+    "#/$defs/widget::allOf", //                         the POLICY_REQUIRED_KINDS branch
+    "#/$defs/widget/properties/id::type", //            typeof id !== "string"
+    "#/$defs/widget/properties/id::pattern", //         WIDGET_ID_PATTERN
+    "#/$defs/widget/properties/kind::enum", //          WIDGET_KINDS
+    "#/$defs/widget/properties/rect::$ref", //          the call to rectRefusal
+    "#/$defs/widget/properties/component::type", //     typeof component !== "string"
+    "#/$defs/widget/properties/bindings::type", //      isPlainObject
+    "#/$defs/widget/properties/bindings::additionalProperties",
+    "#/$defs/widget/properties/bindings/additionalProperties::type", // every value must be a string
+    "#/$defs/widget/properties/props::type", //         isPlainObject
+    "#/$defs/widget/properties/policyAction::enum", //  POLICY_ACTIONS
+    "#/$defs/widget/allOf/0::if", //                    POLICY_REQUIRED_KINDS is the `if`
+    "#/$defs/widget/allOf/0::then", //                  ... and the refusal below is the `then`
+    "#/$defs/widget/allOf/0/if::properties",
+    "#/$defs/widget/allOf/0/if::required",
+    "#/$defs/widget/allOf/0/if/properties/kind::enum", // POLICY_REQUIRED_KINDS's key set
+    "#/$defs/widget/allOf/0/then::properties",
+    "#/$defs/widget/allOf/0/then::required", //         policyAction must be present
+    "#/$defs/widget/allOf/0/then/properties/policyAction::type",
+  ],
+} as const
 
 // ── small shared predicates ───────────────────────────────────────────────────────────────────────
 
@@ -187,6 +340,36 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * typeof name for those. */
 function describe(value: unknown): string {
   return JSON.stringify(value) ?? typeof value
+}
+
+/**
+ * Deep VALUE equality over two JSON trees — object key ORDER is irrelevant, array order is not.
+ *
+ * 🔴 FIX ROUND 1, task-7-review.md §7.4. `applyEdit`'s no-op check used to be
+ * `JSON.stringify(a) === JSON.stringify(b)`, which is byte-level and therefore key-order sensitive:
+ * a `move` carrying `{rowSpan, colSpan, row, col}` with the SAME VALUES as the stored rect changed
+ * the bytes, passed the check, and spent one step of the bounded 100-step history on an undo that
+ * does nothing when taken — precisely what the no-op rule exists to prevent. Values are what
+ * "changed" means to the operator; the bytes are an implementation detail of how the file is
+ * written. (`move` now also builds the rect in canonical key order, so an ACCEPTED move never churns
+ * the saved document's key order either.)
+ *
+ * Safe without a cycle guard: both sides are JSON trees by construction — the document came through
+ * `structuredClone` of parsed JSON, and every value written into it passed `jsonRefusal`.
+ */
+function sameJsonValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false
+    return a.every((item, i) => sameJsonValue(item, b[i]))
+  }
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const leftKeys = Object.keys(left)
+  if (leftKeys.length !== Object.keys(right).length) return false
+  return leftKeys.every((key) => Object.hasOwn(right, key) && sameJsonValue(left[key], right[key]))
 }
 
 /** Names the first value in `value`'s tree that would not survive `JSON.stringify` — see the header's
@@ -312,17 +495,24 @@ function widgetRefusal(widget: unknown, where: string): string | undefined {
 
 // ── the edits ─────────────────────────────────────────────────────────────────────────────────────
 
-/** Either the document an edit produces, or the sentence explaining why it was refused. Two shapes
+/** Either the document an edit produces, or the coded refusal explaining why it was not. Two shapes
  * rather than a nullable document, so neither a caller nor tsc can read one as the other. */
-type EditResult = { readonly doc: HmiScreenDocument } | { readonly refusal: string }
+type EditResult = { readonly doc: HmiScreenDocument } | { readonly refusal: EditorRefusal }
+
+function refusal(code: EditorRefusalCode, message: string): { readonly refusal: EditorRefusal } {
+  return { refusal: { code, message } }
+}
 
 function indexOfWidget(doc: HmiScreenDocument, widgetId: unknown): number {
   return doc.widgets.findIndex((widget) => widget.id === widgetId)
 }
 
-function unknownWidget(editKind: string, widgetId: unknown): string {
-  return `${editKind}: no widget with id ${describe(widgetId)} on this document — refused rather than ` +
-    `applied to nothing, which would push an undo step that undoes nothing`
+function unknownWidget(editKind: string, widgetId: unknown): { readonly refusal: EditorRefusal } {
+  return refusal(
+    "unknown-widget",
+    `${editKind}: no widget with id ${describe(widgetId)} on this document — refused rather than ` +
+      `applied to nothing, which would push an undo step that undoes nothing`
+  )
 }
 
 /** Rewrites `root` with `segments` set to `value`, copying every object on the path and mutating
@@ -335,16 +525,17 @@ function setDeep(
   segments: readonly string[],
   value: unknown,
   where: string
-): { readonly value: Record<string, unknown> } | { readonly refusal: string } {
+): { readonly value: Record<string, unknown> } | { readonly refusal: EditorRefusal } {
   const [head, ...rest] = segments
   if (rest.length === 0) return { value: { ...root, [head]: value } }
 
   const child = root[head]
   if (child !== undefined && !isPlainObject(child)) {
-    return {
-      refusal: `${where}.${head}: cannot descend — ${describe(child)} is already there and is not an ` +
-        `object; setting through it would delete it`,
-    }
+    return refusal(
+      "path-blocked",
+      `${where}.${head}: cannot descend — ${describe(child)} is already there and is not an object; ` +
+        `setting through it would delete it`
+    )
   }
   const inner = setDeep(isPlainObject(child) ? child : {}, rest, value, `${where}.${head}`)
   if ("refusal" in inner) return inner
@@ -355,35 +546,55 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
   switch (edit.kind) {
     case "move": {
       const index = indexOfWidget(doc, edit.widgetId)
-      if (index < 0) return { refusal: unknownWidget("move", edit.widgetId) }
-      const refusal = rectRefusal(edit.rect, `move ${describe(edit.widgetId)}: rect`)
-      if (refusal !== undefined) return { refusal }
+      if (index < 0) return unknownWidget("move", edit.widgetId)
+      const bad = rectRefusal(edit.rect, `move ${describe(edit.widgetId)}: rect`)
+      if (bad !== undefined) return refusal("invalid-rect", bad)
       const widgets = doc.widgets.slice()
-      widgets[index] = { ...widgets[index], rect: { ...edit.rect } }
+      // Built field by field, in the frozen contract's own declaration order, rather than spread
+      // from the caller's object — fix round 1, task-7-review.md §7.4: an accepted move must not
+      // churn the saved document's key order just because the caller happened to build the rect in a
+      // different order. `rectRefusal` has already proved these four fields are integers in range
+      // and that no fifth field exists.
+      const { col, row, colSpan, rowSpan } = edit.rect
+      widgets[index] = { ...widgets[index], rect: { col, row, colSpan, rowSpan } }
       return { doc: { ...doc, widgets } }
     }
 
     case "set-prop": {
       const index = indexOfWidget(doc, edit.widgetId)
-      if (index < 0) return { refusal: unknownWidget("set-prop", edit.widgetId) }
+      if (index < 0) return unknownWidget("set-prop", edit.widgetId)
       if (typeof edit.path !== "string" || edit.path.length === 0) {
-        return {
-          refusal: `set-prop ${describe(edit.widgetId)}: path must be a non-empty dotted string rooted ` +
-            `at props, got ${describe(edit.path)}`,
-        }
+        return refusal(
+          "bad-path",
+          `set-prop ${describe(edit.widgetId)}: path must be a non-empty dotted string rooted at ` +
+            `props, got ${describe(edit.path)}`
+        )
       }
       const segments = edit.path.split(".")
       if (segments.some((segment) => segment.length === 0)) {
-        return {
-          refusal: `set-prop ${describe(edit.widgetId)}: path ${describe(edit.path)} has an empty ` +
-            `segment — a leading, trailing or doubled "." names a property with no name`,
-        }
+        return refusal(
+          "bad-path",
+          `set-prop ${describe(edit.widgetId)}: path ${describe(edit.path)} has an empty segment — a ` +
+            `leading, trailing or doubled "." names a property with no name`
+        )
+      }
+      // Fix round 1, task-7-review.md §7.5 — header strictness note (3).
+      if (Object.hasOwn(WIDGET_KEYS, segments[0])) {
+        return refusal(
+          "out-of-scope-path",
+          `set-prop ${describe(edit.widgetId)}: path ${describe(edit.path)} starts with ` +
+            `"${segments[0]}", which is a WIDGET field, but set-prop is rooted at the widget's props. ` +
+            `Applying it would have written props.${segments[0]} and left widget.${segments[0]} ` +
+            `untouched — a green edit that does nothing you asked for. Editing ` +
+            `${Object.keys(WIDGET_KEYS).join("/")} needs its own edit kind with its own guards, which ` +
+            `this module does not yet define`
+        )
       }
       const valueRefusal = jsonRefusal(
         edit.value,
         `set-prop ${describe(edit.widgetId)} ${describe(edit.path)}: value`
       )
-      if (valueRefusal !== undefined) return { refusal: valueRefusal }
+      if (valueRefusal !== undefined) return refusal("non-json-value", valueRefusal)
 
       const widget = doc.widgets[index]
       const written = setDeep(
@@ -392,22 +603,23 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
         structuredClone(edit.value),
         `set-prop ${describe(edit.widgetId)}: props`
       )
-      if ("refusal" in written) return { refusal: written.refusal }
+      if ("refusal" in written) return written
       const widgets = doc.widgets.slice()
       widgets[index] = { ...widget, props: written.value }
       return { doc: { ...doc, widgets } }
     }
 
     case "add": {
-      const refusal = widgetRefusal(edit.widget, "add: widget")
-      if (refusal !== undefined) return { refusal }
+      const bad = widgetRefusal(edit.widget, "add: widget")
+      if (bad !== undefined) return refusal("invalid-widget", bad)
       const id = edit.widget.id
       if (indexOfWidget(doc, id) >= 0) {
-        return {
-          refusal: `add: a widget with id ${describe(id)} is already on this document. The frozen ` +
-            `schema permits duplicates; this editor does not, because move/set-prop/remove/reorder all ` +
-            `address a widget BY id and a duplicate makes them ambiguous`,
-        }
+        return refusal(
+          "duplicate-id",
+          `add: a widget with id ${describe(id)} is already on this document. The frozen schema ` +
+            `permits duplicates; this editor does not, because move/set-prop/remove/reorder all ` +
+            `address a widget BY id and a duplicate makes them ambiguous`
+        )
       }
       // Cloned so the caller cannot reach into the document — or into every undo snapshot that will
       // later share this object — by mutating the widget it just handed over.
@@ -416,7 +628,7 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
 
     case "remove": {
       const index = indexOfWidget(doc, edit.widgetId)
-      if (index < 0) return { refusal: unknownWidget("remove", edit.widgetId) }
+      if (index < 0) return unknownWidget("remove", edit.widgetId)
       const widgets = doc.widgets.slice()
       widgets.splice(index, 1)
       return { doc: { ...doc, widgets } }
@@ -424,14 +636,15 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
 
     case "reorder": {
       const from = indexOfWidget(doc, edit.widgetId)
-      if (from < 0) return { refusal: unknownWidget("reorder", edit.widgetId) }
+      if (from < 0) return unknownWidget("reorder", edit.widgetId)
       const to = edit.toIndex
       if (!Number.isInteger(to) || to < 0 || to >= doc.widgets.length) {
-        return {
-          refusal: `reorder ${describe(edit.widgetId)}: toIndex ${describe(to)} is outside ` +
+        return refusal(
+          "index-out-of-range",
+          `reorder ${describe(edit.widgetId)}: toIndex ${describe(to)} is outside ` +
             `[0, ${doc.widgets.length - 1}] — the last position is ${doc.widgets.length - 1}, not ` +
-            `${doc.widgets.length}`,
-        }
+            `${doc.widgets.length}`
+        )
       }
       const widgets = doc.widgets.slice()
       const [moved] = widgets.splice(from, 1)
@@ -440,11 +653,12 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
     }
 
     default:
-      return {
-        refusal: `unrecognised edit kind ${describe((edit as { kind: unknown }).kind)} — refused rather ` +
-          `than ignored, so a sixth member added to EditorEdit without a case here is visible instead ` +
-          `of silently doing nothing`,
-      }
+      return refusal(
+        "unknown-edit-kind",
+        `unrecognised edit kind ${describe((edit as { kind: unknown }).kind)} — refused rather than ` +
+          `ignored, so a sixth member added to EditorEdit without a case here is visible instead of ` +
+          `silently doing nothing`
+      )
   }
 }
 
@@ -464,8 +678,8 @@ export function createEditorState(doc: HmiScreenDocument): EditorState {
 
 /** A NEW state object (so a caller diffing states sees the refusal) carrying the SAME doc/past/future
  * references — nothing about the document changed, by identity and not merely by value. */
-function refuse(state: EditorState, reason: string): EditorState {
-  return { doc: state.doc, past: state.past, future: state.future, lastRefusal: reason }
+function refuse(state: EditorState, code: EditorRefusalCode, message: string): EditorState {
+  return { doc: state.doc, past: state.past, future: state.future, lastRefusal: { code, message } }
 }
 
 /**
@@ -476,19 +690,40 @@ function refuse(state: EditorState, reason: string): EditorState {
  * would exceed `UNDO_DEPTH_LIMIT`) and CLEARS `future` — the standard rule that editing after an undo
  * abandons the redo branch, because the document that branch would redo onto no longer exists.
  *
- * An edit that would change nothing is refused too, not applied. Pushing an undo step for it would
- * give the user an undo that visibly does nothing — a drag that ends where it started, or a property
- * re-set to the value it already had, must not consume a step of a bounded history. The comparison is
- * over the serialised document because that is what "changed" means for a document whose whole point
- * is to be written back as JSON.
+ * An edit that would change nothing is refused too, not applied (`code: "no-op"`). Pushing an undo
+ * step for it would give the user an undo that visibly does nothing — a drag that ends where it
+ * started, or a property re-set to the value it already had, must not consume a step of a bounded
+ * history. Compared by VALUE (`sameJsonValue`), not by serialised bytes — see that function.
+ *
+ * A malformed `edit`, or a `state.doc` with no `widgets` array, is REFUSED rather than thrown
+ * (fix round 1, task-7-review.md §7.6). Both are outside the declared types and tsc stops a
+ * TypeScript caller reaching them, but this module's posture everywhere else is "refuse with a
+ * sentence, never throw", and a UI layer should not need a `try` it did not expect.
  */
 export function applyEdit(state: EditorState, edit: EditorEdit): EditorState {
-  const result = nextDocument(state.doc, edit)
-  if ("refusal" in result) return refuse(state, result.refusal)
-
-  if (JSON.stringify(result.doc) === JSON.stringify(state.doc)) {
+  if (!isPlainObject(edit) || typeof edit.kind !== "string") {
     return refuse(
       state,
+      "malformed-edit",
+      `applyEdit: edit must be an object carrying a string "kind", got ${describe(edit)}`
+    )
+  }
+  if (!isPlainObject(state.doc) || !Array.isArray(state.doc.widgets)) {
+    return refuse(
+      state,
+      "malformed-document",
+      `applyEdit: this state's document has no widgets array (${describe(state.doc?.widgets)}), so ` +
+        `there is nothing an edit could address`
+    )
+  }
+
+  const result = nextDocument(state.doc, edit)
+  if ("refusal" in result) return refuse(state, result.refusal.code, result.refusal.message)
+
+  if (sameJsonValue(result.doc, state.doc)) {
+    return refuse(
+      state,
+      "no-op",
       `${edit.kind}: this edit changes nothing — refused rather than pushed, so undo never offers a ` +
         `step that does nothing when taken`
     )
@@ -507,6 +742,7 @@ export function undo(state: EditorState): EditorState {
   if (state.past.length === 0) {
     return refuse(
       state,
+      "nothing-to-undo",
       `undo: nothing left to undo — the history is empty (it holds at most ${UNDO_DEPTH_LIMIT} steps, ` +
         `and anything older has already been dropped)`
     )
@@ -525,6 +761,7 @@ export function redo(state: EditorState): EditorState {
   if (state.future.length === 0) {
     return refuse(
       state,
+      "nothing-to-redo",
       "redo: nothing to redo — no undo has been taken, or an edit since then discarded the redo branch"
     )
   }

@@ -8,7 +8,7 @@
 // trong file này đọc mã nguồn là bài cuối, và nó chỉ đo TẬP IMPORT (xem lý do tại chỗ).
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// 🔴 HAI KỸ THUẬT ĐƯỢC DÙNG CÓ CHỦ Ý Ở ĐÂY, VÀ VÌ SAO
+// 🔴 BA KỸ THUẬT ĐƯỢC DÙNG CÓ CHỦ Ý Ở ĐÂY, VÀ VÌ SAO
 //
 // (A) CẬN 100 ĐƯỢC VIẾT THẲNG RA, KHÔNG ĐỌC `UNDO_DEPTH_LIMIT`.
 //     Bài "ngăn xếp undo dừng ở ĐÚNG 100 bước" viết 120 / 100 / 20 thành SỐ, và cố ý KHÔNG import
@@ -17,21 +17,31 @@
 //     "ghim một chiều" mà cây mã này đã bị bắt sáu lần trong hai ngày. Sự trùng lặp ở đây là CỐ Ý:
 //     ai nới hay siết cận trong `editorState.ts` phải sửa bài này, và phải nhìn thấy nó đỏ trước.
 //     Bài `UNDO_DEPTH_LIMIT === 100` bên cạnh là dây bẫy rẻ tiền; bài HÀNH VI mới là bằng chứng
-//     rằng hằng số ấy thật sự ĐƯỢC DÙNG.
+//     rằng hằng số ấy thật sự ĐƯỢC DÙNG. (task-7-review.md §2 đã tách rời hai nửa ấy và xác nhận mỗi
+//     nửa bắn ĐỘC LẬP.)
 //
 // (B) "GIỮ HỢP LỆ THEO SCHEMA" ĐƯỢC ĐO BẰNG ĐỐI CHIẾU HAI PHÍA, KHÔNG BẰNG MỘT VÀI EDIT ĐẸP.
 //     `editorState.ts` mang một bản sao viết tay của `$defs/widget`/`$defs/rect` (nó không thể
 //     `import` `validate.mjs` — file đó là hạ tầng test, nằm ngoài `tsconfig.app.json`'s `include`,
-//     và kéo nó vào bundle sản phẩm là sai chỗ). Phản đối thường trực của repo này với "bản sao thứ
-//     hai của một luật" được trả lời đúng cách repo đã trả lời cho `web/src/contracts/*.ts`: bằng
-//     một GHIM HAI CHIỀU CÓ CHẠY. Dưới đây là hai corpus (widget và rect); mỗi thành viên được đưa
-//     qua CẢ `applyEdit` LẪN `validate.mjs` thật của Mốc 0, và bài khẳng định HAI CÂU TRẢ LỜI BẰNG
-//     NHAU. Một guard nới ra (nhận thứ schema từ chối) hay siết vào (từ chối thứ schema nhận) đều đỏ.
+//     và kéo nó vào bundle sản phẩm là sai chỗ). Hai corpus dưới đây đưa từng thành viên qua CẢ
+//     `applyEdit` LẪN `validate.mjs` thật của Mốc 0 và khẳng định HAI CÂU TRẢ LỜI BẰNG NHAU. Một
+//     guard nới ra (nhận thứ schema từ chối) hay siết vào (từ chối thứ schema nhận) đều đỏ.
 //
-//     HAI ngoại lệ đã biết, và cả hai được đo TỪ CẢ HAI PHÍA trong bài riêng của chúng — id TRÙNG và
-//     giá trị KHÔNG-JSON trong `props`: `editorState.ts` nghiêm hơn schema ở đúng hai chỗ đó, mỗi bài
-//     khẳng định schema THẬT SỰ cho phép (đo, không suy) rồi mới khẳng định editor từ chối. Ngày nào
-//     schema siết lại, bài ấy đỏ và ghi chú "nghiêm hơn" phải sửa.
+// (C) 🔴 SỬA VÒNG 1 — CORPUS MỘT MÌNH LÀ CHƯA ĐỦ, VÀ REVIEWER ĐÃ CHỨNG MINH BẰNG PHÉP ĐO.
+//     task-7-review.md §4.2: thêm `"minLength": 1` vào `$defs/widget.properties.component` — một
+//     thay đổi CỘNG THÊM, hợp lệ theo `contracts/README.md` — để lại 269/269 XANH và cổng hợp đồng
+//     52/52 XANH, sau đó `applyEdit` NHẬN `component: ""` và trả về một tài liệu mà chính
+//     `validate.mjs` TỪ CHỐI. Lời hứa trung tâm của module ("applyEdit không bao giờ biến một tài
+//     liệu HỢP LỆ thành không hợp lệ") khi ấy là SAI, và không có gì đỏ. Một corpus đối chiếu chỉ
+//     bắt được một từ khoá mà RANH GIỚI của nó có thành viên corpus đứng hai bên; một từ khoá MỚI ở
+//     một property đã có thì theo định nghĩa không có thành viên như vậy.
+//
+//     Bịt bằng "ghim kiểm kê từ khoá" bên dưới: duyệt `$defs/widget` VÀ `$defs/rect` trong file
+//     schema, thu mọi cặp `(json-pointer, từ-khoá)`, rồi khẳng định tập ấy BẰNG tập
+//     `SCHEMA_MIRROR.handledKeywords` mà module KHAI BÁO. Ghi CẶP, không ghi SỐ ĐẾM — một số đếm sẽ
+//     cho lọt một `minLength` chuyển từ `id` sang `component`, đúng khuyết tật mà sàn của Task 6 vừa
+//     phải sửa. Kèm hai phép tự-kiểm chống-ôi (anchor + probe trên bản sao trong bộ nhớ) để một phép
+//     duyệt hỏng không thể "phủ ít đi" trong im lặng.
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // 🔴 BÀI NÀY KHÔNG ĐO:
@@ -41,13 +51,15 @@
 //     `.tsx` không `import()` được dưới `node --test` (đo nhiều lần trên cây này; xem header của
 //     `widgetRegistry.test.mjs` cho phép đo gốc).
 // (2) Rằng `validate.mjs` THI HÀNH đúng JSON Schema. Nó là bản viết tay MỘT PHẦN và tự nói thế ở
-//     header của chính nó; đọc file đó trước khi tin nó. Mọi khẳng định "hợp lệ" dưới đây chỉ mạnh
-//     bằng bộ ấy — nhưng nó CŨNG là bộ mà `contracts.test.mjs` và `screens.test.mjs` dùng, nên
-//     không có bộ luật thứ hai được dựng riêng cho bài này.
-// (3) Rằng rect nằm trong `layout`. `$defs/rect` không có `maximum` nào; kẹp theo lưới là việc của
-//     `gridLayout.ts`'s `clampRectToLayout` lúc render. Corpus dưới đây có một thành viên ĐO điều đó
-//     (`col: 999` — schema NHẬN, nên editor phải NHẬN), để chỗ-không-phải-việc-của-nó là một phép đo
-//     chứ không phải một khoảng trống.
+//     header của chính nó. Mọi khẳng định "hợp lệ" dưới đây chỉ mạnh bằng bộ ấy — nhưng nó CŨNG là
+//     bộ mà `contracts.test.mjs` và `screens.test.mjs` dùng, nên không có bộ luật thứ hai được dựng
+//     riêng cho bài này.
+// (3) Rằng rect nằm trong `layout`. `$defs/rect` không có `maximum` nào; kẹp lưới là việc của
+//     `gridLayout.ts`'s `clampRectToLayout` lúc render. Corpus dưới đây có thành viên ĐO điều đó
+//     (`col: 999` — schema NHẬN, nên editor phải NHẬN).
+// (4) Rằng một từ khoá schema NGOÀI tập `KNOWN` của `validate.mjs` bị chặn — đó là việc của
+//     `contract-tests/contracts.test.mjs`, và task-7-review.md §4.1 đã đo nó bắn (`maxItems` ⇒ đỏ).
+//     Ghim kiểm kê ở đây giả định lớp ấy còn sống và chỉ lo phần nó không lo.
 
 import { test } from "node:test"
 import assert from "node:assert/strict"
@@ -56,6 +68,8 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import {
+  EDITOR_REFUSAL_CODES,
+  SCHEMA_MIRROR,
   UNDO_DEPTH_LIMIT,
   applyEdit,
   createEditorState,
@@ -86,13 +100,29 @@ const RECT = (col, row, colSpan, rowSpan) => ({ col, row, colSpan, rowSpan })
 const FRESH_RECT = RECT(0, 0, 1, 1)
 
 function assertAccepted(state, what) {
-  assert.equal(state.lastRefusal, undefined, `${what} đáng lẽ được NHẬN nhưng bị từ chối: ${state.lastRefusal}`)
+  assert.equal(
+    state.lastRefusal,
+    undefined,
+    `${what} đáng lẽ được NHẬN nhưng bị từ chối: ${state.lastRefusal?.code} — ${state.lastRefusal?.message}`
+  )
 }
 
-function assertRefusedUnchanged(before, after, what) {
+/**
+ * 🔴 SỬA VÒNG 1, task-7-review.md §7.7 — `expectedCode` là THAM SỐ BẮT BUỘC.
+ *
+ * Bản vòng 0 chỉ kiểm "có MỘT lý do nào đó", nên một trường hợp bị từ chối bởi SAI luật vẫn xanh —
+ * đúng hình dạng mà chú thích M15 (`toIndex: null` bị luật no-op bắt thay vì luật khoảng) đã tự khai
+ * báo. Giờ mọi bài phải nói RÕ guard nào được kỳ vọng bắn.
+ */
+function assertRefusedUnchanged(before, after, what, expectedCode) {
   assert.ok(
-    typeof after.lastRefusal === "string" && after.lastRefusal.length > 0,
+    after.lastRefusal !== undefined && typeof after.lastRefusal.message === "string" && after.lastRefusal.message.length > 0,
     `${what} đáng lẽ bị TỪ CHỐI KÈM LÝ DO, nhưng lastRefusal là ${JSON.stringify(after.lastRefusal)}`
+  )
+  assert.equal(
+    after.lastRefusal.code,
+    expectedCode,
+    `${what} bị từ chối bởi SAI guard: mong "${expectedCode}", nhận "${after.lastRefusal.code}" — ${after.lastRefusal.message}`
   )
   // Tham chiếu, không phải nội dung: một lần từ chối không được dựng lại tài liệu.
   assert.equal(after.doc, before.doc, `${what}: doc đã bị thay dù edit bị từ chối`)
@@ -206,6 +236,23 @@ test("applyEdit(set-prop): prop anh em và widget anh em KHÔNG bị chạm tớ
   }
 })
 
+// 🔴 SỬA VÒNG 1, task-7-review.md §7.5 — mệnh đề "set-prop không với tới được các trường của widget"
+// trước đây ĐÚNG nhưng KHÔNG ĐƯỢC ĐO. Bài gần nhất chỉ kiểm prop anh em và widget anh em, chưa bao
+// giờ kiểm các trường KHÁC của CHÍNH widget bị sửa.
+test("set-prop KHÔNG chạm tới id/kind/rect/component/bindings/policyAction của chính widget bị sửa", () => {
+  const state = freshState()
+  const before = widgetOf(state.doc, "kind-setpoint-input")
+  const next = applyEdit(state, { kind: "set-prop", widgetId: "kind-setpoint-input", path: "label", value: "mới" })
+  assertAccepted(next, "set-prop")
+
+  const after = widgetOf(next.doc, "kind-setpoint-input")
+  assert.equal(after.props.label, "mới")
+  for (const field of SCHEMA_MIRROR.widgetProperties) {
+    if (field === "props") continue
+    assert.deepEqual(after[field], before[field], `set-prop đã thay đổi widget.${field}`)
+  }
+})
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Mệnh đề 2 & 3 — undo · redo · nhánh redo bị xoá
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -270,22 +317,22 @@ test("một applyEdit MỚI sau undo XOÁ nhánh redo — lần thứ ba KHÔNG 
   assert.deepEqual(branched.future, [], "nhánh redo vẫn còn sau một lần sửa mới")
 
   const attempted = redo(branched)
-  assertRefusedUnchanged(branched, attempted, "redo sau khi nhánh đã bị xoá")
+  assertRefusedUnchanged(branched, attempted, "redo sau khi nhánh đã bị xoá", "nothing-to-redo")
   assert.notDeepEqual(attempted.doc, s3.doc, "lần thứ ba đã quay lại được — nhánh redo chưa bị xoá thật")
 })
 
-test("undo ở ĐÁY và redo ở ĐỈNH là no-op CÓ LÝ DO — không ném, không đổi tài liệu", () => {
+test("undo ở ĐÁY và redo ở ĐỈNH là no-op CÓ LÝ DO — không ném, không đổi tài liệu, và hai MÃ khác nhau", () => {
   const state = freshState()
 
   const u = undo(state)
-  assertRefusedUnchanged(state, u, "undo trên state mới tinh")
+  assertRefusedUnchanged(state, u, "undo trên state mới tinh", "nothing-to-undo")
 
   const r = redo(state)
-  assertRefusedUnchanged(state, r, "redo khi chưa undo lần nào")
+  assertRefusedUnchanged(state, r, "redo khi chưa undo lần nào", "nothing-to-redo")
 
-  // Hai lý do phải KHÁC NHAU: "chưa có gì để hoàn tác" và "không có gì để làm lại" là hai tình huống
-  // khác nhau và cần hai câu khác nhau — cùng luật `policyGate` đã đặt cho hai nhánh disabled của nó.
-  assert.notEqual(u.lastRefusal, r.lastRefusal)
+  // Hai tình huống khác nhau cần hai MÃ khác nhau — một giao diện phải tắt được hai nút riêng biệt.
+  assert.notEqual(u.lastRefusal.code, r.lastRefusal.code)
+  assert.notEqual(u.lastRefusal.message, r.lastRefusal.message)
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -327,7 +374,7 @@ test("ngăn xếp undo dừng ở ĐÚNG 100 bước — nới cận HAY siết 
   // thì nó vẫn lùi được một bước nữa, và assert này đỏ.
   const bottom = state
   const oneMore = undo(bottom)
-  assertRefusedUnchanged(bottom, oneMore, "lần undo thứ 101 sau khi ngăn xếp đã cạn")
+  assertRefusedUnchanged(bottom, oneMore, "lần undo thứ 101 sau khi ngăn xếp đã cạn", "nothing-to-undo")
   assert.equal(widgetOf(oneMore.doc, "probe-a").props.seq, 20)
 })
 
@@ -404,6 +451,139 @@ for (const [name, edit] of Object.entries(ACCEPTED_EDITS)) {
   })
 }
 
+test("mọi edit CHỈ ghi vào doc.widgets — mọi trường cấp cao khác trở lại NGUYÊN THAM CHIẾU", () => {
+  // Đây là phép đo BIỆN MINH cho phạm vi của ghim kiểm kê bên dưới (task-7-review.md §4.3 điều kiện
+  // 1: "phép ghim nên NÓI ra, đừng để mặc định"). Nếu một edit nào đó chạm tới `layout`, `theme`,
+  // `screenId`… thì kiểm kê chỉ phủ `$defs/widget`+`$defs/rect` là chưa đủ, và bài này đỏ trước.
+  for (const [name, edit] of Object.entries(ACCEPTED_EDITS)) {
+    const state = freshState()
+    const next = applyEdit(state, edit)
+    assertAccepted(next, `applyEdit(${name})`)
+    for (const key of Object.keys(state.doc)) {
+      if (key === "widgets") continue
+      assert.equal(next.doc[key], state.doc[key], `edit "${name}" đã dựng lại doc.${key} — nó không chỉ ghi vào widgets`)
+    }
+    assert.deepEqual(Object.keys(next.doc), Object.keys(state.doc), `edit "${name}" đã thêm/bớt trường cấp cao`)
+  }
+})
+
+// ── GHIM KIỂM KÊ TỪ KHOÁ — sửa vòng 1, task-7-review.md §4.3 / §7.1 ───────────────────────────────
+
+/**
+ * Duyệt một nút schema và thu MỌI cặp `(json-pointer, từ-khoá)`. Cách đi xuống bám sát cách
+ * `contract-tests/validate.mjs`'s `assertKnownKeywords` phân biệt NÚT SCHEMA với BẢN ĐỒ TÊN→SCHEMA:
+ * khoá của `properties`/`$defs` là TÊN do người dùng đặt, không phải từ khoá.
+ */
+function keywordsUnder(node, pointer, out = []) {
+  if (node === null || typeof node !== "object" || Array.isArray(node)) return out
+  for (const key of Object.keys(node)) out.push(`${pointer}::${key}`)
+  for (const [key, value] of Object.entries(node)) {
+    if (key === "properties" || key === "$defs") {
+      for (const [name, sub] of Object.entries(value)) keywordsUnder(sub, `${pointer}/${key}/${name}`, out)
+    } else if (key === "allOf" || key === "oneOf") {
+      value.forEach((sub, i) => keywordsUnder(sub, `${pointer}/${key}/${i}`, out))
+    } else if (key === "items" || key === "if" || key === "then" || key === "additionalProperties") {
+      keywordsUnder(value, `${pointer}/${key}`, out)
+    }
+  }
+  return out
+}
+
+const inventoryOf = (root) =>
+  [...keywordsUnder(root.$defs.widget, "#/$defs/widget"), ...keywordsUnder(root.$defs.rect, "#/$defs/rect")].sort()
+
+test("ghim kiểm kê: MỌI từ khoá trong $defs/widget và $defs/rect đều có mã trong bản sao viết tay — theo CẶP (đường-dẫn, từ-khoá), không theo số đếm", () => {
+  const found = inventoryOf(schema)
+  const declared = [...SCHEMA_MIRROR.handledKeywords].sort()
+
+  const unhandled = found.filter((pair) => !declared.includes(pair))
+  const stale = declared.filter((pair) => !found.includes(pair))
+
+  assert.deepEqual(
+    unhandled,
+    [],
+    `schema đóng băng có (các) từ khoá mà editorState.ts KHÔNG có mã nào thi hành: ${unhandled.join(", ")}. ` +
+      `applyEdit sẽ NHẬN một edit vi phạm chúng và trả về tài liệu mà validate.mjs TỪ CHỐI — đúng lỗ hổng ` +
+      `task-7-review.md §4.2 đã đo bằng minLength trên component. Thi hành nó trong widgetRefusal/rectRefusal ` +
+      `TRƯỚC, rồi mới thêm cặp vào SCHEMA_MIRROR.handledKeywords.`
+  )
+  assert.deepEqual(
+    stale,
+    [],
+    `SCHEMA_MIRROR.handledKeywords khai (các) cặp KHÔNG còn trong schema: ${stale.join(", ")} — bản khai đã ôi.`
+  )
+  assert.deepEqual(found, declared)
+})
+
+test("ghim kiểm kê CHỐNG-ÔI: năm vị trí neo THẬT SỰ tồn tại trong schema VÀ được phép duyệt tìm thấy", () => {
+  // Nếu phép duyệt hỏng và trả về ít đi, `deepEqual` ở bài trên đã đỏ. Bài này lo tình huống còn lại:
+  // ai đó sửa CẢ phép duyệt LẪN bản khai cho khớp nhau ở một tập nhỏ hơn. Năm neo dưới đây được đọc
+  // TRỰC TIẾP từ schema (không qua phép duyệt) rồi mới đòi phép duyệt phải thấy chúng.
+  assert.equal(typeof schema.$defs.widget.properties.id.pattern, "string")
+  assert.ok(Array.isArray(schema.$defs.widget.properties.kind.enum))
+  assert.ok(Array.isArray(schema.$defs.widget.allOf[0].then.required))
+  assert.equal(typeof schema.$defs.rect.properties.colSpan.minimum, "number")
+  assert.equal(schema.$defs.rect.additionalProperties, false)
+
+  const found = inventoryOf(schema)
+  for (const anchor of [
+    "#/$defs/widget/properties/id::pattern",
+    "#/$defs/widget/properties/kind::enum",
+    "#/$defs/widget/allOf/0/then::required",
+    "#/$defs/rect/properties/colSpan::minimum",
+    "#/$defs/rect::additionalProperties",
+  ]) {
+    assert.ok(found.includes(anchor), `phép duyệt kiểm kê KHÔNG còn thấy ${anchor} — nó đã phủ ÍT ĐI trong im lặng`)
+  }
+})
+
+// Hai probe dưới đây dùng ĐÚNG phép thử của reviewer (task-7-review.md §4.2), trên một BẢN SAO trong
+// bộ nhớ — file schema đóng băng không bị chạm tới. Chúng chứng minh phép duyệt còn SỐNG: nó thấy một
+// từ khoá mới, và ghim ở bài trên sẽ NÊU ĐÍCH DANH từ khoá lẫn đường dẫn.
+for (const [why, mutate, expectedPair] of [
+  [
+    "minLength trên $defs/widget.properties.component (probe của reviewer)",
+    (copy) => { copy.$defs.widget.properties.component.minLength = 1 },
+    "#/$defs/widget/properties/component::minLength",
+  ],
+  [
+    "maximum trên $defs/rect.properties.col (nửa rect của cùng lỗ hổng)",
+    (copy) => { copy.$defs.rect.properties.col.maximum = 100000 },
+    "#/$defs/rect/properties/col::maximum",
+  ],
+]) {
+  test(`ghim kiểm kê CHỐNG-ÔI: phép duyệt thấy ${why}`, () => {
+    const copy = structuredClone(schema)
+    mutate(copy)
+    const found = inventoryOf(copy)
+    const declared = [...SCHEMA_MIRROR.handledKeywords].sort()
+
+    assert.ok(found.includes(expectedPair), "phép duyệt KHÔNG thấy từ khoá mới — nó đã chết")
+    assert.deepEqual(
+      found.filter((pair) => !declared.includes(pair)),
+      [expectedPair],
+      "ghim đáng lẽ nêu ĐÍCH DANH đúng một cặp mới"
+    )
+  })
+}
+
+test("giá trị của bản sao viết tay KHỚP giá trị trong schema đóng băng — pattern, minimum, required, tập property, ba enum", () => {
+  assert.equal(SCHEMA_MIRROR.widgetIdPattern, schema.$defs.widget.properties.id.pattern)
+  assert.deepEqual([...SCHEMA_MIRROR.widgetRequired].sort(), [...schema.$defs.widget.required].sort())
+  assert.deepEqual([...SCHEMA_MIRROR.widgetProperties].sort(), Object.keys(schema.$defs.widget.properties).sort())
+  assert.deepEqual([...SCHEMA_MIRROR.widgetKinds].sort(), [...schema.$defs.widget.properties.kind.enum].sort())
+  assert.deepEqual([...SCHEMA_MIRROR.policyActions].sort(), [...schema.$defs.widget.properties.policyAction.enum].sort())
+  assert.deepEqual(
+    [...SCHEMA_MIRROR.policyRequiredKinds].sort(),
+    [...schema.$defs.widget.allOf[0].if.properties.kind.enum].sort()
+  )
+  assert.deepEqual([...SCHEMA_MIRROR.rectProperties].sort(), Object.keys(schema.$defs.rect.properties).sort())
+  assert.deepEqual([...SCHEMA_MIRROR.rectProperties].sort(), [...schema.$defs.rect.required].sort())
+  for (const [field, minimum] of Object.entries(SCHEMA_MIRROR.rectMinimum)) {
+    assert.equal(minimum, schema.$defs.rect.properties[field].minimum, `rect.${field}: minimum lệch khỏi schema`)
+  }
+})
+
 // ── corpus ĐỐI CHIẾU: `add` phải nhận ĐÚNG những widget schema đóng băng nhận ──────────────────────
 //
 // Mọi id ở đây đều KHÔNG có trên tài liệu demo, nên luật "id phải duy nhất" (nghiêm hơn schema)
@@ -437,6 +617,7 @@ const WIDGET_CORPUS = [
   ],
   ["bindings rỗng", { id: "w-b-empty", kind: "label", rect: FRESH_RECT, bindings: {} }],
   ["props rỗng", { id: "w-p-empty", kind: "label", rect: FRESH_RECT, props: {} }],
+  ["component RỖNG (schema hôm nay không có minLength — xem ghim kiểm kê)", { id: "w-c-empty", kind: "label", rect: FRESH_RECT, component: "" }],
   [
     "rect VƯỢT lưới của tài liệu (schema không có maximum — kẹp lưới là việc của gridLayout.ts)",
     { id: "w-far", kind: "label", rect: RECT(999, 999, 12, 12) },
@@ -481,7 +662,7 @@ for (const [why, widget] of WIDGET_CORPUS) {
       editorAccepts,
       schemaAccepts,
       schemaAccepts
-        ? `schema đóng băng NHẬN widget này, applyEdit TỪ CHỐI: ${next.lastRefusal}`
+        ? `schema đóng băng NHẬN widget này, applyEdit TỪ CHỐI: ${next.lastRefusal?.code} — ${next.lastRefusal?.message}`
         : `schema đóng băng TỪ CHỐI widget này (${errs.join("; ")}), applyEdit lại NHẬN`
     )
 
@@ -490,7 +671,7 @@ for (const [why, widget] of WIDGET_CORPUS) {
       assert.equal(next.doc.widgets.length, state.doc.widgets.length + 1)
       assert.equal(next.doc.widgets[next.doc.widgets.length - 1].id, widget.id, "add không nối vào CUỐI mảng")
     } else {
-      assertRefusedUnchanged(state, next, `add · ${why}`)
+      assertRefusedUnchanged(state, next, `add · ${why}`, "invalid-widget")
     }
   })
 }
@@ -528,7 +709,7 @@ for (const [why, rect] of RECT_CORPUS) {
       editorAccepts,
       schemaAccepts,
       schemaAccepts
-        ? `schema đóng băng NHẬN rect này, applyEdit TỪ CHỐI: ${next.lastRefusal}`
+        ? `schema đóng băng NHẬN rect này, applyEdit TỪ CHỐI: ${next.lastRefusal?.code} — ${next.lastRefusal?.message}`
         : `schema đóng băng TỪ CHỐI rect này (${errs.join("; ")}), applyEdit lại NHẬN`
     )
 
@@ -536,7 +717,7 @@ for (const [why, rect] of RECT_CORPUS) {
       assert.deepEqual(docErrors(next.doc), [])
       assert.deepEqual(widgetOf(next.doc, "probe-a").rect, rect)
     } else {
-      assertRefusedUnchanged(state, next, `move · rect ${why}`)
+      assertRefusedUnchanged(state, next, `move · rect ${why}`, "invalid-rect")
     }
   })
 }
@@ -557,8 +738,8 @@ test("add id TRÙNG bị TỪ CHỐI — nghiêm hơn schema CÓ CHỦ Ý, và s
   )
 
   const next = applyEdit(state, { kind: "add", widget: duplicate })
-  assertRefusedUnchanged(state, next, "add id trùng")
-  assert.ok(next.lastRefusal.includes("probe-a"), `lý do không nêu đích danh id: ${next.lastRefusal}`)
+  assertRefusedUnchanged(state, next, "add id trùng", "duplicate-id")
+  assert.ok(next.lastRefusal.message.includes("probe-a"), `lý do không nêu đích danh id: ${next.lastRefusal.message}`)
 })
 
 const NOT_JSON = [
@@ -576,7 +757,7 @@ for (const [why, value] of NOT_JSON) {
   test(`set-prop giá trị KHÔNG-JSON (${why}) bị TỪ CHỐI — nghiêm hơn schema CÓ CHỦ Ý: nó không hề đi xuống props`, () => {
     const state = freshState()
     const next = applyEdit(state, { kind: "set-prop", widgetId: "probe-a", path: "x", value })
-    assertRefusedUnchanged(state, next, `set-prop ${why}`)
+    assertRefusedUnchanged(state, next, `set-prop ${why}`, "non-json-value")
   })
 }
 
@@ -585,7 +766,7 @@ test("set-prop giá trị vòng lặp bị TỪ CHỐI — JSON.stringify sẽ N
   const cyclic = { name: "vòng" }
   cyclic.self = cyclic
   const next = applyEdit(state, { kind: "set-prop", widgetId: "probe-a", path: "x", value: cyclic })
-  assertRefusedUnchanged(state, next, "set-prop vòng lặp")
+  assertRefusedUnchanged(state, next, "set-prop vòng lặp", "non-json-value")
 })
 
 test("phía schema của luật KHÔNG-JSON: schema đóng băng THẬT SỰ cho props chứa những giá trị ấy đi qua (đo, không suy)", () => {
@@ -601,7 +782,33 @@ test("phía schema của luật KHÔNG-JSON: schema đóng băng THẬT SỰ cho
 
   const state = freshState()
   const next = applyEdit(state, { kind: "add", widget })
-  assertRefusedUnchanged(state, next, "add widget có props không-JSON")
+  assertRefusedUnchanged(state, next, "add widget có props không-JSON", "invalid-widget")
+})
+
+// ── chỗ NGHIÊM HƠN thứ BA: path ngoài phạm vi (sửa vòng 1, task-7-review.md §7.5) ─────────────────
+
+for (const field of ["id", "kind", "rect", "component", "bindings", "props", "policyAction"]) {
+  test(`set-prop với path bắt đầu bằng "${field}" — một TRƯỜNG CỦA WIDGET — bị TỪ CHỐI, không bị hút âm thầm vào props`, () => {
+    const state = freshState()
+    const before = widgetOf(state.doc, "kind-gauge")
+    const next = applyEdit(state, { kind: "set-prop", widgetId: "kind-gauge", path: `${field}.x`, value: "GAUGE" })
+    assertRefusedUnchanged(state, next, `set-prop path "${field}.x"`, "out-of-scope-path")
+    assert.ok(next.lastRefusal.message.includes(field), `lý do không nêu trường gây lỗi: ${next.lastRefusal.message}`)
+
+    // Và phía đo của cùng mệnh đề: trước bản sửa này, edit trên được NHẬN và ghi props[field].
+    const single = applyEdit(state, { kind: "set-prop", widgetId: "kind-gauge", path: field, value: "GAUGE" })
+    assertRefusedUnchanged(state, single, `set-prop path "${field}"`, "out-of-scope-path")
+    assert.equal(before.props?.[field], undefined, "tài liệu nền đã có props ngay tại tên trường này — bài mất ý nghĩa")
+  })
+}
+
+test("phía schema của luật path-ngoài-phạm-vi: một props chứa 'kind' là HỢP LỆ theo schema, nên chỉ editor mới chặn được (đo, không suy)", () => {
+  const widget = { id: "w-scope", kind: "label", rect: FRESH_RECT, props: { kind: "GAUGE", rect: { col: "x" } } }
+  assert.deepEqual(
+    widgetErrors(widget),
+    [],
+    "schema đóng băng GIỜ đi xuống props — luật path-ngoài-phạm-vi không còn là ngoại lệ, hãy sửa doc comment ở đó"
+  )
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -619,10 +826,10 @@ for (const [name, edit] of UNKNOWN_ID_EDITS) {
   test(`${name} nhắm tới widgetId KHÔNG TỒN TẠI bị TỪ CHỐI, và lý do NÊU ĐÍCH DANH id sai`, () => {
     const state = freshState()
     const next = applyEdit(state, edit)
-    assertRefusedUnchanged(state, next, `${name} với id lạ`)
+    assertRefusedUnchanged(state, next, `${name} với id lạ`, "unknown-widget")
     assert.ok(
-      next.lastRefusal.includes("no-such-widget"),
-      `lý do không nêu id sai, người sửa không biết tìm đâu: ${next.lastRefusal}`
+      next.lastRefusal.message.includes("no-such-widget"),
+      `lý do không nêu id sai, người sửa không biết tìm đâu: ${next.lastRefusal.message}`
     )
   })
 }
@@ -633,7 +840,7 @@ for (const path of BAD_PATHS) {
   test(`set-prop với path ${JSON.stringify(path) ?? typeof path} bị TỪ CHỐI — một đoạn không tên không phải một prop`, () => {
     const state = freshState()
     const next = applyEdit(state, { kind: "set-prop", widgetId: "probe-a", path, value: 1 })
-    assertRefusedUnchanged(state, next, `set-prop path ${JSON.stringify(path) ?? typeof path}`)
+    assertRefusedUnchanged(state, next, `set-prop path ${JSON.stringify(path) ?? typeof path}`, "bad-path")
   })
 }
 
@@ -642,8 +849,8 @@ test("set-prop KHÔNG đi xuyên qua một giá trị không phải object — n
   assert.equal(widgetOf(state.doc, "kind-label").props.text, "Nhãn tĩnh")
 
   const next = applyEdit(state, { kind: "set-prop", widgetId: "kind-label", path: "text.deep", value: 1 })
-  assertRefusedUnchanged(state, next, "set-prop xuyên qua một chuỗi")
-  assert.ok(next.lastRefusal.includes("text"), `lý do không nêu đoạn path gây lỗi: ${next.lastRefusal}`)
+  assertRefusedUnchanged(state, next, "set-prop xuyên qua một chuỗi", "path-blocked")
+  assert.ok(next.lastRefusal.message.includes("text"), `lý do không nêu đoạn path gây lỗi: ${next.lastRefusal.message}`)
 })
 
 test("set-prop TẠO object trung gian trên một widget chưa có props nào", () => {
@@ -659,10 +866,12 @@ test("set-prop TẠO object trung gian trên một widget chưa có props nào",
 const BAD_TO_INDEX = [-1, 17, 999, 1.5, "2", null]
 
 for (const toIndex of BAD_TO_INDEX) {
-  test(`reorder với toIndex ${JSON.stringify(toIndex) ?? typeof toIndex} bị TỪ CHỐI — KHÔNG kẹp lại âm thầm về một chỗ nào khác`, () => {
+  test(`reorder với toIndex ${JSON.stringify(toIndex) ?? typeof toIndex} bị TỪ CHỐI bởi ĐÚNG luật khoảng — KHÔNG kẹp lại âm thầm`, () => {
     const state = freshState()
     const next = applyEdit(state, { kind: "reorder", widgetId: "probe-a", toIndex })
-    assertRefusedUnchanged(state, next, `reorder toIndex ${JSON.stringify(toIndex) ?? typeof toIndex}`)
+    // 🔴 SỬA VÒNG 1, task-7-review.md §7.7 — vòng 0 chỉ đòi "một lý do nào đó", nên `null` (vốn bị
+    // luật no-op bắt khi luật khoảng bị xoá) vẫn xanh. Giờ mã được nêu đích danh.
+    assertRefusedUnchanged(state, next, `reorder toIndex ${JSON.stringify(toIndex) ?? typeof toIndex}`, "index-out-of-range")
   })
 }
 
@@ -679,47 +888,213 @@ test("một edit KHÔNG đổi gì bị TỪ CHỐI — ngăn xếp có cận, m
   const state = freshState()
 
   const sameRect = structuredClone(widgetOf(state.doc, "probe-a").rect)
-  assertRefusedUnchanged(state, applyEdit(state, { kind: "move", widgetId: "probe-a", rect: sameRect }), "move về đúng chỗ cũ")
+  assertRefusedUnchanged(state, applyEdit(state, { kind: "move", widgetId: "probe-a", rect: sameRect }), "move về đúng chỗ cũ", "no-op")
 
-  assertRefusedUnchanged(state, applyEdit(state, { kind: "reorder", widgetId: "probe-a", toIndex: 0 }), "reorder về đúng chỗ cũ")
+  assertRefusedUnchanged(state, applyEdit(state, { kind: "reorder", widgetId: "probe-a", toIndex: 0 }), "reorder về đúng chỗ cũ", "no-op")
 
   const sameValue = widgetOf(state.doc, "kind-gauge").props.thresholds.warn
   assertRefusedUnchanged(
     state,
     applyEdit(state, { kind: "set-prop", widgetId: "kind-gauge", path: "thresholds.warn", value: sameValue }),
-    "set-prop về đúng giá trị cũ"
+    "set-prop về đúng giá trị cũ",
+    "no-op"
   )
+})
+
+// 🔴 SỬA VÒNG 1, task-7-review.md §7.4 — luật no-op từng so BYTE (`JSON.stringify`), nên cùng GIÁ TRỊ
+// mà KHÁC THỨ TỰ KHOÁ vẫn được NHẬN và tiêu một bước của ngăn xếp 100 bước.
+test("move với rect ĐÚNG GIÁ TRỊ nhưng KHÁC THỨ TỰ KHOÁ bị TỪ CHỐI là no-op — so GIÁ TRỊ, không so byte", () => {
+  const state = freshState()
+  const stored = widgetOf(state.doc, "probe-a").rect
+  const reordered = { rowSpan: stored.rowSpan, colSpan: stored.colSpan, row: stored.row, col: stored.col }
+
+  // Cùng giá trị, khác byte — nếu hai điều này không đúng thì bài không đo được gì.
+  assert.deepEqual(reordered, stored)
+  assert.notEqual(JSON.stringify(reordered), JSON.stringify(stored))
+
+  const next = applyEdit(state, { kind: "move", widgetId: "probe-a", rect: reordered })
+  assertRefusedUnchanged(state, next, "move với rect cùng giá trị khác thứ tự khoá", "no-op")
+})
+
+// 🔴 CHÚ THÍCH THẲNG THẮN VỀ SỰ CHỒNG LẤN — cùng hình dạng với chú thích M15 (`toIndex: null`) mà
+// vòng 0 đã tự khai. Bài NGAY TRÊN được hai bản sửa cùng bảo vệ: (a) `move` giờ dựng rect theo thứ tự
+// khoá chuẩn, và (b) luật no-op so GIÁ TRỊ. Đo được: hoàn nguyên riêng (b) về `JSON.stringify` KHÔNG
+// làm bài trên đỏ, vì (a) đã chuẩn hoá byte trước khi so. Nên bài trên KHÔNG cô lập được (b).
+//
+// Bài dưới đây cô lập (b): `set-prop` ghi thẳng giá trị người gọi đưa (qua `structuredClone`, vốn GIỮ
+// NGUYÊN thứ tự khoá), nên không có bước chuẩn hoá nào che mất phép so. Hoàn nguyên (b) làm CHÍNH bài
+// này đỏ.
+test("set-prop với object CÙNG GIÁ TRỊ nhưng KHÁC THỨ TỰ KHOÁ bị TỪ CHỐI là no-op — bài CÔ LẬP phép so giá trị", () => {
+  const state = freshState()
+  const stored = widgetOf(state.doc, "kind-gauge").props.thresholds
+  const reordered = { fault: stored.fault, warn: stored.warn }
+
+  assert.deepEqual(Object.keys(stored), ["warn", "fault"], "tài liệu nền đã đổi thứ tự khoá — bài mất ý nghĩa")
+  assert.deepEqual(reordered, stored)
+  assert.notEqual(JSON.stringify(reordered), JSON.stringify(stored))
+
+  const next = applyEdit(state, { kind: "set-prop", widgetId: "kind-gauge", path: "thresholds", value: reordered })
+  assertRefusedUnchanged(state, next, "set-prop với object cùng giá trị khác thứ tự khoá", "no-op")
+})
+
+test("phép so giá trị vẫn phân biệt được thứ tự MẢNG — chỉ thứ tự KHOÁ mới là chi tiết cách ghi file", () => {
+  const state = freshState()
+  const rows = widgetOf(state.doc, "kind-alarm-list").props.rows
+  assert.equal(rows.length, 1, "tài liệu nền chỉ có một hàng — cần hai phần tử để đảo thứ tự")
+
+  const first = applyEdit(state, { kind: "set-prop", widgetId: "probe-a", path: "seq", value: ["a", "b"] })
+  assertAccepted(first, "set-prop mảng [a,b]")
+  const swapped = applyEdit(first, { kind: "set-prop", widgetId: "probe-a", path: "seq", value: ["b", "a"] })
+  assertAccepted(swapped, "set-prop mảng [b,a] — đảo thứ tự MẢNG là một thay đổi THẬT, không phải no-op")
+  assert.deepEqual(widgetOf(swapped.doc, "probe-a").props.seq, ["b", "a"])
+})
+
+test("một move ĐƯỢC NHẬN ghi rect theo THỨ TỰ KHOÁ CHUẨN của hợp đồng, dù người gọi dựng ngược", () => {
+  const state = freshState()
+  const next = applyEdit(state, { kind: "move", widgetId: "probe-a", rect: { rowSpan: 2, colSpan: 3, row: 4, col: 5 } })
+  assertAccepted(next, "move với rect dựng ngược thứ tự")
+
+  assert.deepEqual(Object.keys(widgetOf(next.doc, "probe-a").rect), ["col", "row", "colSpan", "rowSpan"])
+  assert.deepEqual(widgetOf(next.doc, "probe-a").rect, RECT(5, 4, 3, 2))
+  assert.deepEqual(docErrors(next.doc), [])
+})
+
+// 🔴 SỬA VÒNG 1, task-7-review.md §7.6 — hai đầu vào này từng NÉM TypeError thay vì từ chối.
+for (const [why, edit] of [
+  ["null", null],
+  ["undefined", undefined],
+  ["một chuỗi", "move"],
+  ["một số", 42],
+  ["một object không có kind", { widgetId: "probe-a" }],
+  ["kind KHÔNG phải chuỗi", { kind: 7 }],
+]) {
+  test(`applyEdit với edit là ${why} TỪ CHỐI thay vì NÉM — một lớp UI không cần một try nó không ngờ tới`, () => {
+    const state = freshState()
+    const next = applyEdit(state, edit)
+    assertRefusedUnchanged(state, next, `applyEdit(state, ${why})`, "malformed-edit")
+  })
+}
+
+test("applyEdit trên một state có tài liệu KHÔNG CÓ mảng widgets TỪ CHỐI thay vì NÉM", () => {
+  const state = createEditorState({
+    schemaVersion: 1,
+    screenId: "no-widgets",
+    title: "không widget",
+    theme: "blueprint",
+    layout: { cols: 12, rows: 6, breakpoint: "panel" },
+  })
+  const next = applyEdit(state, { kind: "remove", widgetId: "probe-a" })
+  assertRefusedUnchanged(state, next, "applyEdit trên tài liệu không có widgets", "malformed-document")
 })
 
 test("một edit.kind KHÔNG NẰM TRONG EditorEdit bị TỪ CHỐI kèm tên nó — không bị bỏ qua âm thầm", () => {
   const state = freshState()
   const next = applyEdit(state, { kind: "resize", widgetId: "probe-a" })
-  assertRefusedUnchanged(state, next, "edit.kind lạ")
-  assert.ok(next.lastRefusal.includes("resize"), `lý do không nêu kind lạ: ${next.lastRefusal}`)
+  assertRefusedUnchanged(state, next, "edit.kind lạ", "unknown-edit-kind")
+  assert.ok(next.lastRefusal.message.includes("resize"), `lý do không nêu kind lạ: ${next.lastRefusal.message}`)
+})
+
+// ── điều tra dân số MÃ TỪ CHỐI (sửa vòng 1, task-7-review.md §7.2) ────────────────────────────────
+//
+// Mỗi mã trong `EDITOR_REFUSAL_CODES` phải SINH RA ĐƯỢC từ một đầu vào thật. Cùng ý tưởng với
+// "mọi kind trong registry đều được KHAI BÁO ít nhất một lần" của `widgetRegistry.test.mjs`: một mã
+// khai mà không bao giờ bắn là một nhánh chết, và một mã bắn mà không được khai là một mã người
+// tiêu dùng không switch được.
+const NO_WIDGETS_DOC = {
+  schemaVersion: 1,
+  screenId: "no-widgets",
+  title: "không widget",
+  theme: "blueprint",
+  layout: { cols: 12, rows: 6, breakpoint: "panel" },
+}
+
+const REFUSAL_CASES = [
+  ["no-op", () => applyEdit(freshState(), { kind: "reorder", widgetId: "probe-a", toIndex: 0 })],
+  ["malformed-edit", () => applyEdit(freshState(), null)],
+  ["unknown-edit-kind", () => applyEdit(freshState(), { kind: "resize" })],
+  ["malformed-document", () => applyEdit(createEditorState(NO_WIDGETS_DOC), { kind: "remove", widgetId: "x" })],
+  ["unknown-widget", () => applyEdit(freshState(), { kind: "remove", widgetId: "no-such-widget" })],
+  ["invalid-rect", () => applyEdit(freshState(), { kind: "move", widgetId: "probe-a", rect: RECT(-1, 0, 1, 1) })],
+  ["invalid-widget", () => applyEdit(freshState(), { kind: "add", widget: { id: "BAD", kind: "label", rect: FRESH_RECT } })],
+  ["duplicate-id", () => applyEdit(freshState(), { kind: "add", widget: { id: "probe-a", kind: "label", rect: FRESH_RECT } })],
+  ["bad-path", () => applyEdit(freshState(), { kind: "set-prop", widgetId: "probe-a", path: "", value: 1 })],
+  ["out-of-scope-path", () => applyEdit(freshState(), { kind: "set-prop", widgetId: "probe-a", path: "kind", value: 1 })],
+  ["path-blocked", () => applyEdit(freshState(), { kind: "set-prop", widgetId: "kind-label", path: "text.deep", value: 1 })],
+  ["non-json-value", () => applyEdit(freshState(), { kind: "set-prop", widgetId: "probe-a", path: "x", value: undefined })],
+  ["index-out-of-range", () => applyEdit(freshState(), { kind: "reorder", widgetId: "probe-a", toIndex: -1 })],
+  ["nothing-to-undo", () => undo(freshState())],
+  ["nothing-to-redo", () => redo(freshState())],
+]
+
+for (const [code, produce] of REFUSAL_CASES) {
+  test(`mã từ chối "${code}" SINH RA ĐƯỢC từ một đầu vào thật, kèm một câu có nội dung`, () => {
+    const after = produce()
+    assert.equal(after.lastRefusal?.code, code, `nhận mã "${after.lastRefusal?.code}" — ${after.lastRefusal?.message}`)
+    assert.ok(typeof after.lastRefusal.message === "string" && after.lastRefusal.message.length > 0)
+  })
+}
+
+test("điều tra dân số: tập mã SINH RA ĐƯỢC bằng ĐÚNG tập EDITOR_REFUSAL_CODES — không mã chết, không mã lạ", () => {
+  const produced = [...new Set(REFUSAL_CASES.map(([, produce]) => produce().lastRefusal?.code))].sort()
+  const declared = Object.keys(EDITOR_REFUSAL_CODES).sort()
+  assert.ok(declared.length > 0, "EDITOR_REFUSAL_CODES rỗng — phép trích đã hỏng")
+  assert.deepEqual(
+    produced,
+    declared,
+    "một mã được KHAI mà không đầu vào nào sinh ra nó (nhánh chết), hoặc một mã BẮN mà union không khai (người tiêu dùng không switch được)"
+  )
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Điều kiện tiên quyết của cả file: module này KHÔNG kéo theo React/DOM
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-test("editorState.ts import ĐÚNG hai kiểu từ hợp đồng đóng băng và KHÔNG GÌ KHÁC — cả hai đều là `import type`", () => {
+test("editorState.ts import ĐÚNG hai kiểu từ hợp đồng đóng băng và KHÔNG GÌ KHÁC — kể cả import phụ-tác-dụng và nháy đơn", () => {
   // 🔴 CRLF — cùng lý do mọi bài đọc mã nguồn trong cây này nêu: `core.autocrlf=true`, working tree
   // có \r\n, còn mẫu dưới đây viết \n.
-  const src = readFileSync(join(WEB, "src", "editor", "editorState.ts"), "utf8").replace(/\r\n/g, "\n")
+  const raw = readFileSync(join(WEB, "src", "editor", "editorState.ts"), "utf8").replace(/\r\n/g, "\n")
 
-  const imports = [...src.matchAll(/^import\s+(type\s+)?[^"']*from\s+"([^"]+)"/gm)]
+  // Bóc chú thích TRƯỚC — cùng kỹ thuật `scripts/check-test-budgets.mjs` dùng trên
+  // `playwright.config.ts`, và cùng lý do: doc-comment của file này NÓI về `import()` và về React,
+  // nên đọc văn bản thô sẽ bắt nhầm câu giải thích thay vì mã. Giữ số dòng để thông báo lỗi còn ý
+  // nghĩa (thay chú thích bằng chuỗi rỗng, không xoá dòng).
+  const src = raw.replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " ")).replace(/^\s*\/\/.*$/gm, "")
+
+  // 🔴 SỬA VÒNG 1, task-7-review.md §7.3 — mẫu cũ là
+  // `/^import\s+(type\s+)?[^"']*from\s+"([^"]+)"/gm`: nó ĐÒI một mệnh đề `from` và một dấu nháy KÉP,
+  // nên `import "react"` (phụ tác dụng, không có `from`) và `import React from 'react'` (nháy đơn)
+  // đều lọt, cả hai đã được reviewer đo là để lại 105/105 XANH. Giờ bắt MỌI dòng bắt đầu bằng
+  // `import` rồi mới bóc specifier, nên hai hình dạng ấy không còn vô hình.
+  const importLines = src.split("\n").filter((line) => /^\s*import\b/.test(line))
+  assert.ok(importLines.length > 0, "không thấy dòng import nào — phép trích đã hỏng, không phải file đã sạch")
+
+  for (const line of importLines) {
+    assert.match(
+      line,
+      /["'][^"']+["']/,
+      `một câu lệnh import TRẢI NHIỀU DÒNG (${line.trim()}) — phép trích một-dòng này không đọc được nó. ` +
+        `Viết nó trên một dòng, hoặc mở rộng phép trích TRƯỚC khi tin bài này.`
+    )
+    assert.match(
+      line,
+      /^\s*import\s+type\b/,
+      `import KHÔNG phải \`import type\`: ${line.trim()} — module này không được nạp gì lúc chạy`
+    )
+  }
+
+  const specifiers = importLines.map((line) => /["']([^"']+)["']/.exec(line)[1]).sort()
   assert.deepEqual(
-    imports.map((m) => m[2]).sort(),
+    specifiers,
     ["../contracts/hmiScreen.ts", "../contracts/tagNamespace.ts"],
     "editorState.ts import thứ gì đó ngoài hai kiểu hợp đồng đóng băng — React, DOM hay một thư viện đều làm hỏng điều kiện để node --test thực thi file này"
   )
-  assert.ok(
-    imports.every((m) => m[1] !== undefined),
-    "một import KHÔNG phải `import type` — module này không được nạp gì lúc chạy"
-  )
 
-  // Bằng chứng THẬT của cùng mệnh đề không nằm ở đoạn regex trên mà ở việc mọi bài phía trên đã
-  // import và THỰC THI module này dưới `node --test`, nơi không có `document`, `window`, hay React.
+  // Không cửa sau: `require(...)` hay `import(...)` động cũng kéo được runtime vào.
+  assert.doesNotMatch(src, /\brequire\s*\(/, "editorState.ts dùng require() — một phụ thuộc runtime lọt qua phép trích import")
+  assert.doesNotMatch(src, /[^.\w]import\s*\(/, "editorState.ts dùng import() động — cùng lớp cửa sau")
+
+  // Bằng chứng THẬT của cùng mệnh đề không nằm ở các mẫu trên mà ở việc mọi bài phía trên đã import
+  // và THỰC THI module này dưới `node --test`, nơi không có `document`, `window`, hay React.
   assert.equal(typeof globalThis.document, "undefined", "môi trường chạy có DOM — phép đo trên không còn là phép đo")
   assert.equal(typeof applyEdit, "function")
 })
