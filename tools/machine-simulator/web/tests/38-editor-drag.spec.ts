@@ -23,16 +23,41 @@ import { ENGINE_URL } from "./support/engine"
  * cells, 2.4 cells — and each case records, in place, the number a pixel-rounding implementation with
  * no grid would have written instead. Those numbers are MEASURED, not derived: on this suite's
  * 1280×720 viewport (`devices["Desktop Chrome"]` overrides the config's top-level 1440×900) the
- * overlay box is 1230×576 and the pitch is 103.164 × 97.332 px. (🔴 FIX ROUND 1, task-9-review.md F6 —
- * round 0 wrote "≈105 px off a 1256 px overlay", arrived at by arithmetic and presented as a
- * measurement. Nothing in the argument depended on it, which is exactly why it went unchecked.)
+ * overlay box is 898×576 and the pitch is 75.5 × 97.332 px.
  *
- * So "drag `drag-me` right by 3.4 cells" is a ≈351 px displacement, and an implementation that wrote
- * `col: base + Math.round(dx)` would produce `col: 352` — clamped to the far edge at `col: 8`, four
+ * 🔴 WS-HMI-2 TASK 10, FIX ROUND 2 (task-10-review.md F9), COMMENT-ONLY EDIT AUTHORISED BY THE
+ * CONTROLLER — THE TWO WIDTH FIGURES ABOVE WERE STALE AND ARE CORRECTED. They read *"the overlay box
+ * is 1230×576 and the pitch is 103.164 × 97.332 px"*, which was true when Task 9 measured it and
+ * stopped being true when Task 10 put a 320 px property panel beside the canvas. Re-measured, not
+ * recomputed: a throwaway probe read `[data-editor-overlay]`'s own box and derived the pitch the same
+ * way `measurePitch` below does — `(left(ref-b) − left(ref-a)) / 6` off the RENDERER's placed cells —
+ * at this suite's viewport, and printed `{overlayW: 898, overlayH: 576, pitchX: 75.5, pitchY:
+ * 97.33203125, columnGap: "8px", panelW: 320}`. Only the two WIDTH figures moved; the height and the
+ * row pitch are untouched, because the panel is a horizontal sibling and takes nothing off the
+ * canvas's height.
+ *
+ * WHAT THESE NUMBERS DEPEND ON, so the next person who changes the panel does not have to rediscover
+ * it: overlay width = viewport − `EditorRoute`'s `p-3` main padding (2×12) − `PropertyPanel`'s `w-80`
+ * (320) − the frame/panel `gap-3` (12) − the canvas frame's own border (2×1) and `p-3` (2×12); pitch
+ * = (overlay width + 8 px gutter) / 12 columns. **Every number in this paragraph and the one above it
+ * is prose. No assertion in this file reads any of them** — `measurePitch` measures the grid the
+ * browser actually laid out, precisely so a changed canvas width cannot move an expectation, which is
+ * why every test here passed unchanged across Task 10 at both of its viewports. Change the panel width
+ * and this comment goes stale again; nothing else does.
+ *
+ * (🔴 FIX ROUND 1, task-9-review.md F6 — round 0 wrote "≈105 px off a 1256 px overlay", arrived at by
+ * arithmetic and presented as a measurement. Nothing in the argument depended on it, which is exactly
+ * why it went unchecked. The Task 10 correction above is deliberately the same shape: re-measured
+ * rather than re-derived.)
+ *
+ * So "drag `drag-me` right by 3.4 cells" is a 256.7 px displacement, and an implementation that wrote
+ * `col: base + Math.round(dx)` would produce `col: 258` — clamped to the far edge at `col: 8`, four
  * visible cells away from the `col: 4` asserted here. That is not a prediction: with `snapToCells`
  * reduced to `Math.round(px)` the mid-drag ghost reports `grid-column-start: "9"` where `"5"` is
- * expected. The assertion also discriminates a WRONG pitch, not merely a missing one — swapping the
- * pitch for the bare track width (one gutter short per cell) puts the ghost at `"6"`.
+ * expected — and that observation is UNCHANGED by the narrower canvas, because the runaway column is
+ * clamped either way. The assertion also discriminates a WRONG pitch, not merely a missing one —
+ * swapping the pitch for the bare track width (one gutter short per cell, 67.5 px here) still puts the
+ * ghost at `"6"`: 256.7 / 67.5 rounds to 4 cells where 3.4 rounds to 3.
  *
  * ── AND THE PITCH ITSELF IS NOT TAKEN FROM THE IMPLEMENTATION ────────────────────────────────────
  * `gridGeometry.ts` computes the pitch as `(width + gap) / cols`. If this file computed its drag
