@@ -1,10 +1,5 @@
-import { readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
-
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test"
 
-import { validate } from "../contract-tests/validate.mjs"
 import { ENGINE_URL } from "./support/engine"
 
 /**
@@ -16,8 +11,8 @@ import { ENGINE_URL } from "./support/engine"
  * of hostile inputs, and it is the cheaper and wider of the two instruments. It cannot tell a canvas
  * that CALLS that arithmetic from one that computes its own rect and ignores it, because nothing in it
  * dispatches a pointer event or lays out a grid. Everything below happens in a real browser, against
- * the real `ScreenRenderer` output, driven by real mouse input, and every assertion reads either the
- * document the editor is holding or the CSS grid lines the runtime renderer drew from it.
+ * the real `ScreenRenderer` output, driven by real mouse input, and every assertion reads the CSS grid
+ * lines the runtime renderer drew from the document under edit — see `rectOnScreen`.
  *
  * ── THE ONE ASSERTION THIS TASK EXISTS FOR, AND HOW IT IS MADE FALSIFIABLE ───────────────────────
  * "Snapping" is trivially satisfiable by an implementation that never snaps: any drag that happens to
@@ -26,10 +21,18 @@ import { ENGINE_URL } from "./support/engine"
  *
  * So every drag below is by a deliberately NON-INTEGER multiple of the cell pitch — 3.4 cells, 2.6
  * cells, 2.4 cells — and each case records, in place, the number a pixel-rounding implementation with
- * no grid would have written instead. Those numbers are not rhetorical: on this suite's 1280×720
- * viewport the horizontal pitch is ~105 px, so "drag `drag-me` right by 3.4 cells" is a 358 px
- * displacement, and an implementation that wrote `col: base + Math.round(dx)` would produce `col: 359`
- * — clamped to the far edge at `col: 8`, one visible cell away from the `col: 4` asserted here.
+ * no grid would have written instead. Those numbers are MEASURED, not derived: on this suite's
+ * 1280×720 viewport (`devices["Desktop Chrome"]` overrides the config's top-level 1440×900) the
+ * overlay box is 1230×576 and the pitch is 103.164 × 97.332 px. (🔴 FIX ROUND 1, task-9-review.md F6 —
+ * round 0 wrote "≈105 px off a 1256 px overlay", arrived at by arithmetic and presented as a
+ * measurement. Nothing in the argument depended on it, which is exactly why it went unchecked.)
+ *
+ * So "drag `drag-me` right by 3.4 cells" is a ≈351 px displacement, and an implementation that wrote
+ * `col: base + Math.round(dx)` would produce `col: 352` — clamped to the far edge at `col: 8`, four
+ * visible cells away from the `col: 4` asserted here. That is not a prediction: with `snapToCells`
+ * reduced to `Math.round(px)` the mid-drag ghost reports `grid-column-start: "9"` where `"5"` is
+ * expected. The assertion also discriminates a WRONG pitch, not merely a missing one — swapping the
+ * pitch for the bare track width (one gutter short per cell) puts the ghost at `"6"`.
  *
  * ── AND THE PITCH ITSELF IS NOT TAKEN FROM THE IMPLEMENTATION ────────────────────────────────────
  * `gridGeometry.ts` computes the pitch as `(width + gap) / cols`. If this file computed its drag
@@ -128,14 +131,6 @@ const PROBE_DOC: ProbeDocument = {
   ],
 }
 
-/** The frozen schema itself — `web/tests` → `web` → `tools/machine-simulator` → `contracts`. */
-const SCHEMA = JSON.parse(
-  readFileSync(
-    join(dirname(dirname(fileURLToPath(import.meta.url))), "..", "contracts", "hmi-screen.schema.json"),
-    "utf8"
-  )
-) as Record<string, unknown>
-
 /** `PUT /v1/screens/{screenId}` — appends a version and makes it current. Fails LOUDLY with the
  * engine's own body: a refused document must not look like a canvas that drew nothing. */
 async function putScreen(request: APIRequestContext, doc: ProbeDocument): Promise<void> {
@@ -152,41 +147,87 @@ async function openCanvas(page: Page): Promise<void> {
   await expect(page.locator("[data-editor-widget]")).toHaveCount(PROBE_DOC.widgets.length)
 }
 
-/**
- * The document as the editor is holding it RIGHT NOW.
- *
- * Read out of the canvas's own serialisation rather than rebuilt from computed grid lines: a test that
- * reconstructed the rect from the DOM and then validated its own reconstruction would report the
- * schema green whatever the editor put in memory. See `EditorCanvas.tsx` at `data-editor-document`.
- */
-async function editedDocument(page: Page): Promise<ProbeDocument> {
-  const raw = await page.locator("[data-editor-document]").getAttribute("data-editor-document")
-  expect(raw, "the canvas is not publishing the document it holds").toBeTruthy()
-  return JSON.parse(raw as string) as ProbeDocument
+/** A 1-based CSS grid line back to the 0-based `col`/`row` the document carries. Strict on purpose: a
+ * lenient parser turns a computed `"auto"` into `NaN`, and `NaN` compares unequal to everything, so the
+ * test would fail with a number nobody can trace instead of naming what it actually read. */
+function lineToIndex(value: string, widgetId: string, which: string): number {
+  const line = Number.parseInt(value, 10)
+  expect(
+    Number.isInteger(line) && line >= 1,
+    `${which} on "${widgetId}" is not a 1-based grid line: ${JSON.stringify(value)}`
+  ).toBe(true)
+  return line - 1
 }
 
-function rectOf(doc: ProbeDocument, widgetId: string): ProbeRect {
-  const widget = doc.widgets.find((w) => w.id === widgetId)
-  expect(widget, `the document no longer carries a widget "${widgetId}"`).toBeTruthy()
-  return (widget as ProbeWidget).rect
+/** `"span 4"` back to the `colSpan`/`rowSpan` the document carries. Same strictness, same reason. */
+function spanToCount(value: string, widgetId: string, which: string): number {
+  const match = /^span (\d+)$/.exec(value.trim())
+  expect(match, `${which} on "${widgetId}" is not a span: ${JSON.stringify(value)}`).toBeTruthy()
+  return Number.parseInt((match as RegExpExecArray)[1], 10)
 }
 
 /**
- * The frozen schema, run over the document the editor is holding — `contract-tests/validate.mjs`
- * IMPORTED, never copied (`screens.test.mjs` and `editorState.test.mjs` set the rule and state why).
+ * The rect the document holds for `widgetId` — READ OFF THE SCREEN, out of the four grid lines the
+ * runtime renderer computed from it.
  *
- * This is the assertion that makes clamping load-bearing rather than cosmetic. `applyEdit` REFUSES an
- * illegal rect instead of repairing one, so a drag layer that let `col: -1` through would not corrupt
- * anything visible — the widget would simply stop responding at the left edge, with nothing on screen
- * to say why, and every geometry assertion in this file would still pass.
+ * ── WHY THIS AND NOT A SERIALISED DOCUMENT, AND WHY THE SCHEMA IS NOT VALIDATED HERE ─────────────
+ * 🔴 FIX ROUND 1, task-9-review.md F3 + F4, and a controller ruling that overrides the brief's
+ * "run `validate.mjs` after every operation" bullet. Round 0 read the document out of a
+ * `data-editor-document` attribute the canvas published on every render, and ran Milestone 0's real
+ * `validate.mjs` over it. Both are gone, and the reasoning is worth keeping because the round-0
+ * version looked more rigorous than it was:
+ *
+ *   * **The schema call could not fail for anything this layer can produce.** `applyEdit` already
+ *     refuses any edit whose result would break `$defs/rect`, so the document the canvas holds is
+ *     schema-valid whatever the drag layer computes; and `$defs/rect` bounds nothing against `layout`
+ *     (`col`/`row` are just `{"type": "integer", "minimum": 0}`), so the rect a MISSING clamp actually
+ *     produces — `col: 10` on a 12-column grid, or `col: 352` — is schema-*valid* too. Measured, not
+ *     reasoned: with `movedRect`'s column clamp deleted, every one of the seven `expectSchemaValid`
+ *     calls still returned `[]` and the clamp test reddened on its rect equality instead. A call that
+ *     cannot fire is this workstream's signature defect.
+ *   * **The property is real and is still pinned, elsewhere and with teeth.** "No edit turns a valid
+ *     document invalid" is `applyEdit`'s own contract, executed against the real `validate.mjs` by
+ *     `runtime-tests/editorState.test.mjs` over a corpus. Measured: lowering that module's
+ *     `RECT_MINIMUM.col` from 0 to −99 so it accepts a negative column reddens five of its tests,
+ *     named `move · rect col âm: applyEdit và validate.mjs ĐỒNG Ý về $defs/rect` among them. And every
+ *     rect THIS task's geometry can produce is validated against the frozen schema over a 294-case
+ *     corpus by `runtime-tests/editorGeometry.test.mjs`, which reddens when either clamp is removed.
+ *   * **So the production attribute was carrying a near-vacuous assertion.** An always-on output
+ *     serialising the whole authored document into the DOM on every render, for every viewer, with a
+ *     test as its only consumer — the same shape as the `window.__widgetKinds` global this programme
+ *     already refused, at a different address.
+ *
+ * ── WHAT MAKES THE SCREEN AN HONEST STAND-IN FOR THE DOCUMENT ────────────────────────────────────
+ * The renderer CLAMPS at draw time, so in general "what is drawn" is not "what the document says". The
+ * bridge is the assertion below: `clampRectToLayout` sets the cell's `title` exactly when it changed
+ * something (and this probe document has no bindings, so the tooltip's other contributor — an
+ * unresolved `{component}` warning — cannot appear). **No title therefore means the renderer changed
+ * nothing, which means the rect on screen IS the rect in the document.** That check lives here, inside
+ * the read, so every assertion in this file carries it rather than the two that remembered to.
  */
-async function expectSchemaValid(page: Page, why: string): Promise<ProbeDocument> {
-  const doc = await editedDocument(page)
-  const errors: string[] = validate(SCHEMA, SCHEMA, doc)
-  expect(errors, `${why}: the document the editor holds no longer satisfies contracts/hmi-screen.schema.json`).toEqual(
-    []
-  )
-  return doc
+async function rectOnScreen(page: Page, widgetId: string): Promise<ProbeRect> {
+  const cell = renderedCell(page, widgetId)
+  await expect(cell).toBeVisible()
+  await expect(
+    cell,
+    `the renderer had to clamp "${widgetId}" while drawing it — the rect in the document is OUT OF RANGE, ` +
+      `so what is on screen is not what the editor wrote`
+  ).not.toHaveAttribute("title", /.+/)
+  const lines = await cell.evaluate((el) => {
+    const style = getComputedStyle(el)
+    return {
+      colStart: style.gridColumnStart,
+      colEnd: style.gridColumnEnd,
+      rowStart: style.gridRowStart,
+      rowEnd: style.gridRowEnd,
+    }
+  })
+  return {
+    col: lineToIndex(lines.colStart, widgetId, "grid-column-start"),
+    row: lineToIndex(lines.rowStart, widgetId, "grid-row-start"),
+    colSpan: spanToCount(lines.colEnd, widgetId, "grid-column-end"),
+    rowSpan: spanToCount(lines.rowEnd, widgetId, "grid-row-end"),
+  }
 }
 
 type Box = { x: number; y: number; width: number; height: number }
@@ -254,52 +295,85 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
   }) => {
     await openCanvas(page)
 
-    // The two containers. Track COUNTS (not widths) and the absolute gutters, exactly the pair
-    // `37-editor-canvas.spec.ts`'s differential compares between the kiosk and the editor — the same
-    // reasoning, applied to the two grids that must line up inside one page.
-    const grids = await page.evaluate(
-      ([id]) => {
-        const read = (el: Element | null) => {
-          if (!el) return null
-          const s = getComputedStyle(el)
-          return {
-            display: s.display,
-            columnTracks: s.gridTemplateColumns.split(" ").filter(Boolean).length,
-            rowTracks: s.gridTemplateRows.split(" ").filter(Boolean).length,
-            columnGap: s.columnGap,
-            rowGap: s.rowGap,
+    /**
+     * 🔴 FIX ROUND 1, task-9-review.md F7 — the comparison runs at TWO viewports, not one.
+     *
+     * The overlay's grid is a mirror of the renderer's written in a second place, and a mirror can be
+     * right at the size it was authored at and wrong at another: a fixed track, a `min-width` floor, a
+     * gutter that only collapses when the canvas is narrow. Round 0 measured 1280×720 only. The second
+     * size is deliberately narrower and a different aspect ratio, so a horizontal-only or an
+     * aspect-dependent divergence has somewhere to show.
+     *
+     * The limit that REMAINS, stated rather than left unsaid: both passes use the same document, so a
+     * divergence that needs a degenerate `layout` (`cols: 0`, a non-integer `cols`, a string) is not
+     * covered here — the engine's own `PUT /v1/screens/{id}` refuses such a document, so it cannot be
+     * put on screen through this route at all. That arithmetic is covered instead by
+     * `runtime-tests/editorGeometry.test.mjs`'s `trackCount` differential against the runtime's own
+     * `clampRectToLayout`, over exactly those malformed layouts.
+     */
+    for (const viewport of [
+      { width: 1280, height: 720 },
+      { width: 900, height: 620 },
+    ]) {
+      await page.setViewportSize(viewport)
+      const where = `${viewport.width}x${viewport.height}`
+
+      // The two containers. Track COUNTS (not widths) and the absolute gutters, exactly the pair
+      // `37-editor-canvas.spec.ts`'s differential compares between the kiosk and the editor — the same
+      // reasoning, applied to the two grids that must line up inside one page.
+      const grids = await page.evaluate(
+        ([id]) => {
+          const read = (el: Element | null) => {
+            if (!el) return null
+            const s = getComputedStyle(el)
+            return {
+              display: s.display,
+              columnTracks: s.gridTemplateColumns.split(" ").filter(Boolean).length,
+              rowTracks: s.gridTemplateRows.split(" ").filter(Boolean).length,
+              columnGap: s.columnGap,
+              rowGap: s.rowGap,
+            }
           }
-        }
-        return {
-          screen: read(document.querySelector(`[data-hmi-screen="${id}"]`)),
-          overlay: read(document.querySelector(`[data-editor-overlay="${id}"]`)),
-        }
-      },
-      [SCREEN_ID] as const
-    )
+          return {
+            screen: read(document.querySelector(`[data-hmi-screen="${id}"]`)),
+            overlay: read(document.querySelector(`[data-editor-overlay="${id}"]`)),
+          }
+        },
+        [SCREEN_ID] as const
+      )
 
-    // A floor on the comparison: two nulls, or two non-grids, would compare equal and prove nothing.
-    expect(grids.screen?.display, "the renderer's root is not a CSS grid — this comparison read the wrong element").toBe(
-      "grid"
-    )
-    expect(grids.screen?.columnTracks).toBe(COLS)
-    expect(grids.screen?.rowTracks).toBe(ROWS)
-    expect(
-      grids.overlay,
-      "the editor's overlay grid does not match the renderer's. A drag layer on a different grid still " +
-        "produces legal integer rects — it just snaps them to the wrong cells."
-    ).toEqual(grids.screen)
+      // A floor on the comparison: two nulls, or two non-grids, would compare equal and prove nothing.
+      expect(
+        grids.screen?.display,
+        `at ${where}: the renderer's root is not a CSS grid — this comparison read the wrong element`
+      ).toBe("grid")
+      expect(grids.screen?.columnTracks).toBe(COLS)
+      expect(grids.screen?.rowTracks).toBe(ROWS)
+      expect(
+        grids.overlay,
+        `at ${where}: the editor's overlay grid does not match the renderer's. A drag layer on a ` +
+          "different grid still produces legal integer rects — it just snaps them to the wrong cells."
+      ).toEqual(grids.screen)
 
-    // ...and then the thing that actually matters: every hit target sits exactly on top of the cell it
-    // stands for, in device pixels. Track counts and gutters agreeing is necessary and not sufficient
-    // — an overlay inset by the canvas padding would satisfy them and be a full gutter out of step.
-    for (const widget of PROBE_DOC.widgets) {
-      const cell = await boxOf(renderedCell(page, widget.id))
-      const target = await boxOf(hitTarget(page, widget.id))
-      expect(Math.abs(target.x - cell.x), `hit target for "${widget.id}" is off in x`).toBeLessThan(0.5)
-      expect(Math.abs(target.y - cell.y), `hit target for "${widget.id}" is off in y`).toBeLessThan(0.5)
-      expect(Math.abs(target.width - cell.width), `hit target for "${widget.id}" is the wrong width`).toBeLessThan(0.5)
-      expect(Math.abs(target.height - cell.height), `hit target for "${widget.id}" is the wrong height`).toBeLessThan(0.5)
+      // ...and then the thing that actually matters: every hit target sits exactly on top of the cell it
+      // stands for, in device pixels. Track counts and gutters agreeing is necessary and not sufficient
+      // — an overlay inset by the canvas padding would satisfy them and be a full gutter out of step,
+      // and a changed track FUNCTION (`2fr 1fr…` for the same count) is invisible to the first half
+      // entirely. This half is the one with teeth against both.
+      for (const widget of PROBE_DOC.widgets) {
+        const cell = await boxOf(renderedCell(page, widget.id))
+        const target = await boxOf(hitTarget(page, widget.id))
+        expect(Math.abs(target.x - cell.x), `at ${where}: hit target for "${widget.id}" is off in x`).toBeLessThan(0.5)
+        expect(Math.abs(target.y - cell.y), `at ${where}: hit target for "${widget.id}" is off in y`).toBeLessThan(0.5)
+        expect(
+          Math.abs(target.width - cell.width),
+          `at ${where}: hit target for "${widget.id}" is the wrong width`
+        ).toBeLessThan(0.5)
+        expect(
+          Math.abs(target.height - cell.height),
+          `at ${where}: hit target for "${widget.id}" is the wrong height`
+        ).toBeLessThan(0.5)
+      }
     }
   })
 
@@ -343,8 +417,7 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     await expect(page.locator("[data-editor-resize]")).toHaveCount(0)
 
     // Selecting is not editing: nothing above may have touched the document.
-    const doc = await expectSchemaValid(page, "after selecting and deselecting")
-    expect(rectOf(doc, DRAG_ID)).toEqual(DRAG_RECT)
+    expect(await rectOnScreen(page, DRAG_ID)).toEqual(DRAG_RECT)
   })
 
   test("a drop BETWEEN two cells snaps to whole grid coordinates — not to the pixel it was released on", async ({
@@ -356,9 +429,9 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     // ── 3.4 cells to the right. Not 3, not 4: the release point is 40% of a cell past a boundary, so
     // an implementation that snaps at all must choose, and the nearest cell is +3.
     //
-    // What a NON-snapping implementation produces here, spelled out: `dx` is 3.4 x ~105 px = ~358 px,
-    // so `col = 1 + Math.round(dx)` is 359, which the clamp then parks at the far edge (col 8). Both
-    // the document assertion and the grid-line assertion below would name that.
+    // What a NON-snapping implementation produces here, spelled out: `dx` is 3.4 x 103.164 px ≈ 351 px,
+    // so `col = 1 + Math.round(dx)` is 352, which the clamp then parks at the far edge (col 8). Both
+    // the rect assertion and the grid-line assertion below would name that.
     const ghost = page.locator(`[data-editor-ghost="${DRAG_ID}"]`)
     const start = await boxOf(hitTarget(page, DRAG_ID))
     const startX = start.x + start.width / 2
@@ -374,8 +447,7 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     await expect(ghost).toHaveCSS("grid-column-end", "span 4")
     await page.mouse.up()
 
-    let doc = await expectSchemaValid(page, "after a 3.4-cell drag")
-    let rect = rectOf(doc, DRAG_ID)
+    let rect = await rectOnScreen(page, DRAG_ID)
     expect(rect, "a 3.4-cell drag did not land on col 4 with its size intact").toEqual({
       col: 4,
       row: DRAG_RECT.row,
@@ -392,37 +464,22 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     // snapping to the nearest cell gives +3 and col 7. One case cannot distinguish rounding from
     // flooring; these two together can.
     await dragBy(page, hitTarget(page, DRAG_ID), 2.6 * pitch.x, 0)
-    doc = await expectSchemaValid(page, "after a 2.6-cell drag")
-    rect = rectOf(doc, DRAG_ID)
+    rect = await rectOnScreen(page, DRAG_ID)
     expect(rect.col, "2.6 cells was truncated to 2 instead of snapped to the nearest cell").toBe(7)
     expect(rect.row).toBe(DRAG_RECT.row)
 
     // ── and vertically, at a different pitch, so a snap that divided by the wrong axis would show.
     await dragBy(page, hitTarget(page, DRAG_ID), 0, 2.4 * pitch.y)
-    doc = await expectSchemaValid(page, "after a 2.4-row drag")
-    expect(rectOf(doc, DRAG_ID)).toEqual({ col: 7, row: DRAG_RECT.row + 2, colSpan: 4, rowSpan: 2 })
+    expect(await rectOnScreen(page, DRAG_ID)).toEqual({ col: 7, row: DRAG_RECT.row + 2, colSpan: 4, rowSpan: 2 })
 
     // Nothing else moved.
-    expect(rectOf(doc, BYSTANDER_ID)).toEqual(BYSTANDER_RECT)
+    expect(await rectOnScreen(page, BYSTANDER_ID)).toEqual(BYSTANDER_RECT)
   })
 
   test("a drag past the edge is CLAMPED to a legal rect — never a negative col, never past layout.cols", async ({
     page,
   }) => {
     await openCanvas(page)
-
-    // ── THE ANTI-BLINDNESS CHECK FOR `expectSchemaValid` ─────────────────────────────────────────
-    // Every `expectSchemaValid` in this file passes, and one that could never fail would be exactly
-    // the "green while measuring nothing" defect this workstream keeps finding. So: the SAME call,
-    // over the SAME document with one field corrupted the way a missing clamp would corrupt it, must
-    // report an error. If this ever stops failing, every schema assertion in this file is inert.
-    const pristine = await expectSchemaValid(page, "on load")
-    const corrupted = JSON.parse(JSON.stringify(pristine)) as ProbeDocument
-    rectOf(corrupted, DRAG_ID).col = -1
-    expect(
-      validate(SCHEMA, SCHEMA, corrupted).length,
-      "validate.mjs accepted col: -1 — every schema assertion in this file is measuring nothing"
-    ).toBeGreaterThan(0)
 
     const pitch = await measurePitch(page)
     const viewport = page.viewportSize()
@@ -448,8 +505,17 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     await page.mouse.move(vw - 2, vh - 2, { steps: 8 })
     await page.mouse.up()
 
-    let doc = await expectSchemaValid(page, "after dragging off the bottom-right corner")
-    expect(rectOf(doc, DRAG_ID), "a drag past the bottom-right corner did not clamp to the far edge").toEqual({
+    // 🔴 FIX ROUND 1, task-9-review.md F5 — the BYSTANDER is asserted FIRST, and the ordering is the
+    // whole point. Round 0 put it after the `drag-me` assertion, so in the one scenario it was added
+    // for — the press being taken by another widget's hit target — the run still stopped at "the widget
+    // did not move" and this line was never reached. The reviewer had to delete the `drag-me`
+    // assertion before it could fire. Reached first, it names the real failure.
+    expect(
+      await rectOnScreen(page, BYSTANDER_ID),
+      "the BYSTANDER moved — the press was taken by the wrong widget's hit target, so nothing below is " +
+        "measuring the clamp at all"
+    ).toEqual(BYSTANDER_RECT)
+    expect(await rectOnScreen(page, DRAG_ID), "a drag past the bottom-right corner did not clamp to the far edge").toEqual({
       col: maxCol,
       row: maxRow,
       colSpan: DRAG_RECT.colSpan,
@@ -457,14 +523,6 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     })
     await expect(renderedCell(page, DRAG_ID)).toHaveCSS("grid-column-start", `${maxCol + 1}`)
     await expect(renderedCell(page, DRAG_ID)).toHaveCSS("grid-column-end", `span ${DRAG_RECT.colSpan}`)
-    // The bystander is untouched — and this is not decoration: it is what tells "the drag went
-    // nowhere" apart from "the drag moved the wrong widget", which is the exact failure the round-0
-    // bystander position produced. See `BYSTANDER_RECT`.
-    expect(rectOf(doc, BYSTANDER_ID)).toEqual(BYSTANDER_RECT)
-    // The renderer's own clamp had nothing to fix — no overflow warning in the cell's tooltip. A rect
-    // that reached the document out of bounds would still LOOK right on screen (the renderer clamps at
-    // draw time) and would be caught only here and by the schema.
-    await expect(renderedCell(page, DRAG_ID)).not.toHaveAttribute("title", /.+/)
 
     // ── and off the top-left, where the failure would be a NEGATIVE coordinate: schema-invalid, and
     // the one this task's brief names first.
@@ -481,14 +539,17 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     await page.mouse.move(2, 2, { steps: 8 })
     await page.mouse.up()
 
-    doc = await expectSchemaValid(page, "after dragging off the top-left corner")
-    const rect = rectOf(doc, DRAG_ID)
+    // Bystander first here too, for the same reason.
+    expect(
+      await rectOnScreen(page, BYSTANDER_ID),
+      "the BYSTANDER moved — the press was taken by the wrong widget's hit target"
+    ).toEqual(BYSTANDER_RECT)
+    const rect = await rectOnScreen(page, DRAG_ID)
     expect(rect).toEqual({ col: 0, row: 0, colSpan: DRAG_RECT.colSpan, rowSpan: DRAG_RECT.rowSpan })
     expect(rect.col, "col went negative").toBeGreaterThanOrEqual(0)
     expect(rect.row, "row went negative").toBeGreaterThanOrEqual(0)
     expect(rect.col + rect.colSpan, "the widget runs past layout.cols").toBeLessThanOrEqual(COLS)
     expect(rect.row + rect.rowSpan, "the widget runs past layout.rows").toBeLessThanOrEqual(ROWS)
-    expect(rectOf(doc, BYSTANDER_ID)).toEqual(BYSTANDER_RECT)
   })
 
   test("the resize handle changes colSpan/rowSpan, keeps the corner, and never goes below 1", async ({ page }) => {
@@ -501,8 +562,10 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
 
     // ── +2.4 columns and +0.6 rows. Both fractional, for the same reason every other drag here is.
     await dragBy(page, handle, 2.4 * pitch.x, 0.6 * pitch.y)
-    let doc = await expectSchemaValid(page, "after growing the widget")
-    expect(rectOf(doc, DRAG_ID), "a resize moved the widget's corner instead of changing its span").toEqual({
+    expect(
+      await rectOnScreen(page, DRAG_ID),
+      "a resize moved the widget's corner instead of changing its span"
+    ).toEqual({
       col: DRAG_RECT.col,
       row: DRAG_RECT.row,
       colSpan: DRAG_RECT.colSpan + 2,
@@ -515,13 +578,11 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     // `minimum: 1` on both spans; 0 is not a smaller widget, it is an invisible one, and a negative
     // span is a document the schema refuses.
     await dragBy(page, page.locator(`[data-editor-resize="${DRAG_ID}"]`), -1e4, -1e4)
-    doc = await expectSchemaValid(page, "after collapsing the widget")
-    expect(rectOf(doc, DRAG_ID)).toEqual({ col: DRAG_RECT.col, row: DRAG_RECT.row, colSpan: 1, rowSpan: 1 })
+    expect(await rectOnScreen(page, DRAG_ID)).toEqual({ col: DRAG_RECT.col, row: DRAG_RECT.row, colSpan: 1, rowSpan: 1 })
 
     // ── and grown past the far edge, where the ceiling is the grid rather than the pointer.
     await dragBy(page, page.locator(`[data-editor-resize="${DRAG_ID}"]`), 1e4, 1e4)
-    doc = await expectSchemaValid(page, "after growing the widget past the grid")
-    const rect = rectOf(doc, DRAG_ID)
+    const rect = await rectOnScreen(page, DRAG_ID)
     expect(rect).toEqual({
       col: DRAG_RECT.col,
       row: DRAG_RECT.row,
@@ -530,9 +591,8 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     })
     expect(rect.col + rect.colSpan).toBeLessThanOrEqual(COLS)
     expect(rect.row + rect.rowSpan).toBeLessThanOrEqual(ROWS)
-    await expect(renderedCell(page, DRAG_ID)).not.toHaveAttribute("title", /.+/)
 
-    expect(rectOf(doc, BYSTANDER_ID)).toEqual(BYSTANDER_RECT)
+    expect(await rectOnScreen(page, BYSTANDER_ID)).toEqual(BYSTANDER_RECT)
   })
 
   test("Ctrl+Z steps back through the real history — one undo per accepted edit, exact rects restored", async ({
@@ -545,24 +605,24 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     // cannot pass: after one undo the widget must be at the MOVED position with its ORIGINAL span.
     await dragBy(page, hitTarget(page, DRAG_ID), 3.4 * pitch.x, 0)
     const moved = { col: 4, row: DRAG_RECT.row, colSpan: DRAG_RECT.colSpan, rowSpan: DRAG_RECT.rowSpan }
-    expect(rectOf(await editedDocument(page), DRAG_ID)).toEqual(moved)
+    expect(await rectOnScreen(page, DRAG_ID)).toEqual(moved)
 
     await hitTarget(page, DRAG_ID).click()
     await dragBy(page, page.locator(`[data-editor-resize="${DRAG_ID}"]`), 2.4 * pitch.x, 0)
-    expect(rectOf(await editedDocument(page), DRAG_ID)).toEqual({ ...moved, colSpan: moved.colSpan + 2 })
+    expect(await rectOnScreen(page, DRAG_ID)).toEqual({ ...moved, colSpan: moved.colSpan + 2 })
 
     await page.keyboard.press("Control+z")
     expect(
-      rectOf(await expectSchemaValid(page, "after one undo"), DRAG_ID),
+      await rectOnScreen(page, DRAG_ID),
       "one Ctrl+Z did not land on the state between the two edits — either it undid both, or it reset to the load"
     ).toEqual(moved)
     await expect(renderedCell(page, DRAG_ID)).toHaveCSS("grid-column-end", `span ${DRAG_RECT.colSpan}`)
 
     await page.keyboard.press("Control+z")
-    const doc = await expectSchemaValid(page, "after two undos")
-    expect(rectOf(doc, DRAG_ID), "two Ctrl+Z did not restore the EXACT rect the document was authored with").toEqual(
-      DRAG_RECT
-    )
+    expect(
+      await rectOnScreen(page, DRAG_ID),
+      "two Ctrl+Z did not restore the EXACT rect the document was authored with"
+    ).toEqual(DRAG_RECT)
     // All four fields, and the renderer agrees.
     await expect(renderedCell(page, DRAG_ID)).toHaveCSS("grid-column-start", `${DRAG_RECT.col + 1}`)
     await expect(renderedCell(page, DRAG_ID)).toHaveCSS("grid-row-start", `${DRAG_RECT.row + 1}`)
@@ -572,7 +632,7 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     // Past the bottom of the stack: an ordinary boundary, not an error, and not a document that
     // silently keeps changing.
     await page.keyboard.press("Control+z")
-    expect(rectOf(await editedDocument(page), DRAG_ID)).toEqual(DRAG_RECT)
+    expect(await rectOnScreen(page, DRAG_ID)).toEqual(DRAG_RECT)
     await expect(page.locator("[role=alert]")).toHaveCount(0)
   })
 
@@ -585,7 +645,7 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     // One real edit …
     await dragBy(page, hitTarget(page, DRAG_ID), 3.4 * pitch.x, 0)
     const moved = { col: 4, row: DRAG_RECT.row, colSpan: DRAG_RECT.colSpan, rowSpan: DRAG_RECT.rowSpan }
-    expect(rectOf(await editedDocument(page), DRAG_ID)).toEqual(moved)
+    expect(await rectOnScreen(page, DRAG_ID)).toEqual(moved)
 
     // … then two drags that go nowhere: a press-and-release, and a shake that never crosses a cell
     // boundary. `applyEdit` refuses both with `code: "no-op"`, and this layer swallows exactly that
@@ -593,7 +653,7 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     await dragBy(page, hitTarget(page, DRAG_ID), 0, 0)
     await dragBy(page, hitTarget(page, DRAG_ID), 0.3 * pitch.x, -0.4 * pitch.y)
     expect(
-      rectOf(await expectSchemaValid(page, "after two no-op drags"), DRAG_ID),
+      await rectOnScreen(page, DRAG_ID),
       "a sub-cell drag moved the widget"
     ).toEqual(moved)
 
@@ -610,7 +670,7 @@ test.describe("HMI screen editor — selecting, dragging, resizing, and snapping
     // on every pointerup — this would still be sitting at `moved`.
     await page.keyboard.press("Control+z")
     expect(
-      rectOf(await expectSchemaValid(page, "after undoing across two no-ops"), DRAG_ID),
+      await rectOnScreen(page, DRAG_ID),
       "a no-op drag consumed a step of the undo history"
     ).toEqual(DRAG_RECT)
   })

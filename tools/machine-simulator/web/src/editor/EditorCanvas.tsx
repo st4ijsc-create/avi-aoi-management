@@ -436,16 +436,24 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
       className="h-full min-h-0 w-full min-w-0 overflow-hidden border border-border-strong bg-surface-subtle p-3"
     >
       {/*
-        The document as this session actually holds it, so `38-editor-drag.spec.ts` can run Milestone
-        0's real `contract-tests/validate.mjs` against the OBJECT every drag produced rather than
-        against a reconstruction of it assembled from computed grid lines. A test that rebuilt the rect
-        from the DOM and then validated its own rebuild would report the schema green no matter what
-        the editor put in memory — the "passes while measuring nothing" defect this workstream keeps
-        finding. A narrowly-scoped, permanent measurement surface is the precedent this tree already
-        set for exactly that problem (`widgets/label.tsx`'s `__testOnlyThrow`); `hidden` keeps it out of
-        layout and out of the accessibility tree.
+        🔴 FIX ROUND 1, task-9-review.md F3 — a `<div hidden data-editor-document={JSON.stringify(doc)}>`
+        stood here in round 0 so `38-editor-drag.spec.ts` could run `validate.mjs` over the object the
+        canvas holds. It is DELETED, and the reasoning belongs in the file it was cut from: it was an
+        always-on OUTPUT serialising every authored widget into production DOM on every render, for
+        every viewer, with a test as its only consumer — materially the `window.__widgetKinds` global
+        this programme already refused, at a different address. The precedent cited for it,
+        `widgets/label.tsx`'s `__testOnlyThrow`, does not carry it: that is an opt-in INPUT hook, inert
+        unless a document sets it, and it publishes nothing.
+
+        Nothing was lost. `applyEdit` already refuses any edit whose result would break the frozen
+        schema, so the assertion it fed could not fail for anything this layer can produce — measured,
+        with `movedRect`'s clamp deleted every one of those calls still returned `[]`. The property is
+        pinned where it has teeth: `runtime-tests/editorState.test.mjs` runs `applyEdit` and the real
+        `validate.mjs` against each other over a corpus, and `runtime-tests/editorGeometry.test.mjs`
+        validates every rect this task's geometry can produce. The spec now reads rects off the
+        renderer's own grid lines; see `rectOnScreen` there for how the renderer's clamp warning is used
+        to prove that what is drawn IS what the document says.
       */}
-      <div hidden data-editor-document={JSON.stringify(edited)} />
       <div className="relative h-full min-h-0 w-full min-w-0">
         <ScreenRenderer doc={edited} source={DESIGN_TIME_SOURCE} />
         <div

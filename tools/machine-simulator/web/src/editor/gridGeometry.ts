@@ -21,9 +21,10 @@
  *   * `snapToCells` turns a PIXEL delta into a CELL delta. It is the step that makes a drop between
  *     two cells land on an integer coordinate — `Math.round(px / pitch)`, nearest cell, never
  *     truncation. An implementation that skipped it and rounded the PIXEL offset instead would write
- *     `col: 359` for a 358.1 px drag and then be clamped to the far edge, which is why
+ *     `col: 352` for a ≈351 px drag and then be clamped to the far edge, which is why
  *     `tests/38-editor-drag.spec.ts` drags by a deliberately NON-INTEGER multiple of the pitch and
- *     asserts the exact cell, not merely "an integer".
+ *     asserts the exact cell, not merely "an integer". (🔴 FIX ROUND 1, task-9-review.md F6 — the
+ *     figures here said `col: 359` for a 358.1 px drag; the measured pitch is 103.164 px, not ≈105.)
  *   * `movedRect`/`resizedRect` turn a CELL delta into a rect that fits inside `layout`. A move keeps
  *     the widget's SIZE and stops its top-left corner at `cols - colSpan` / `rows - rowSpan`; a resize
  *     keeps the widget's CORNER and stops its span at `cols - col` / `rows - row`, never below 1.
