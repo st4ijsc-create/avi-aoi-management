@@ -83,7 +83,7 @@ vi.mock("./aiGgufEngine", () => ({
   generateTextStream: (...a: unknown[]) => generateTextStream(...a),
 }));
 
-import { streamAnswer, type StreamEvent } from "./aiLocalKnowledgeService";
+import { streamAnswer, tachThanKhoiGiaoCuVscode, type StreamEvent } from "./aiLocalKnowledgeService";
 
 /** Tóm tắt DÀI (≥150 ký tự, xem `KB_TOOL_SHORTCIRCUIT_MIN`) ⇒ đường tắt độ dài trả THẲNG, không
  *  cần model — làm phép đo "tool có chạy hay không" tất định, không phụ thuộc mock LLM. */
@@ -232,19 +232,25 @@ describe("§B — ĐỐI CHỨNG bắt buộc: đường WEB (route khác \"vsco
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════════════════════
- * ★★★ PDCA vòng 8 (`.superpowers/sdd/2026-08-30-vscode-extension-dot-d/pdca8-report.md`) — §A ở
- * trên đo ĐÚNG một câu hỏi KHÔNG mang hình dạng giáo cụ (`"OEE line 2 hôm nay thế nào"` trần trụi)
- * — với câu đó, gate vòng 8 hành xử Y HỆT gate vòng 5 (không bóc được ⇒ chặn, `KHONG_TOOL_VSCODE`).
- * §D dưới đây đo NHÁNH KIA của vòng 8: câu hỏi MANG ĐÚNG hình dạng giáo cụ LOCAL (như extension thật
- * gửi) — gate phải BÓC giáo cụ rồi VẪN gọi `tryExecuteToolLoop`, nhưng CHỈ trên phần câu hỏi thật.
+ * ★★★ VIỆC 2 (tách miền, `docs/superpowers/specs/2026-09-04-ai-local-danh-gia-hien-trang-va-lo-
+ * trinh.md` §5.1/§8) SUPERSEDES PDCA vòng 8 — §D này TỪNG khẳng định (vòng 8) rằng giáo cụ bóc được
+ * ⇒ `tryExecuteToolLoop` VẪN được gọi trên phần câu hỏi thật. Bản vá Việc 2 THÁO điều kiện đó: route
+ * "vscode" nay KHÔNG BAO GIỜ gọi `tryExecuteToolLoop`, KỂ CẢ khi bóc giáo cụ THÀNH CÔNG — vì bốn sự
+ * cố cùng họ (§5.1: intentClassifier hiểu nhầm giáo cụ · "kỹ"/"kỳ" gộp dấu · "Liệt kê một thư mục:"
+ * ép intent · `performance`/`quality`/`yield` trúng trigger OEE) đều chứng minh bộ chọn tool DÙNG
+ * CHUNG cho hai miền là chính nó, không phải một hình dạng giáo cụ cụ thể nào — vá từng trigger (N1)
+ * là chữa triệu chứng, một trigger MỚI ở BẤT KỲ đâu trong 54 tool nhà máy vẫn trúng lại được MIỄN LÀ
+ * tool loop còn chạy trên route vscode. ĐÁNH ĐỔI ĐÃ BIẾT: một câu hỏi vận hành THẬT gõ thẳng vào
+ * panel LOCAL (vd "OEE hôm nay bao nhiêu") không còn được tool trả lời — có chủ đích, xem docblock
+ * lớn cạnh gate trong `aiLocalKnowledgeService.ts`.
  *
  * ⚠ `PREFIX`/`SUFFIX` dưới đây là bản SAO literal của `VSCODE_GIAO_THUC_PREFIX`/`VSCODE_NHAC_LAI_
  * SUFFIX` (`aiLocalKnowledgeService.ts`, chính nó đã là bản sao của `vscode-extension/src/loi/
  * dayGiaoThucDoc.ts`) — bản sao THỨ BA có chủ đích, chỉ để DỰNG đầu vào test giống hệt sản xuất.
- * Nếu văn bản giáo cụ đổi, ca ★★★ đầu tiên dưới đây sẽ ĐỎ (không còn bóc được) — đó là tín hiệu ĐÚNG
- * để đồng bộ lại cả ba bản sao, không phải một lưới hỏng.
+ * Nếu văn bản giáo cụ đổi, ca kiểm `tachThanKhoiGiaoCuVscode` dưới đây sẽ ĐỎ (không còn bóc được) —
+ * đó là tín hiệu ĐÚNG để đồng bộ lại cả ba bản sao, không phải một lưới hỏng.
  */
-describe("§D — PDCA vòng 8: route \"vscode\" MANG giáo cụ LOCAL thật ⇒ bóc rồi VẪN gọi tool trên PHẦN CÂU HỎI THẬT", () => {
+describe("§D — VIỆC 2: route \"vscode\" MANG giáo cụ LOCAL thật, bóc THÀNH CÔNG ⇒ tool VẪN KHÔNG được gọi", () => {
   const PREFIX =
     "QUAN TRỌNG — ĐỌC KỸ TRƯỚC KHI ÁP DỤNG \"NGUYÊN TẮC TRẢ LỜI\" Ở TRÊN: nếu câu hỏi bên dưới cần biết NỘI DUNG một tệp/thư mục cụ thể trong workspace mà bạn KHÔNG thấy trong \"Ngữ cảnh từ knowledge base\", đây KHÔNG PHẢI ca \"ngữ cảnh không liên quan\" — ĐỪNG trả lời câu mẫu \"Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\". Bạn có một cách khác: TỰ ĐỌC tệp/thư mục đó rồi mới trả lời.\n\nMuốn đọc, phát ra ĐÚNG MỘT khối rào sau (không thêm chữ nào khác trong khối); tôi sẽ chạy công cụ đó và gửi lại NGUYÊN VĂN kết quả cho bạn ở lượt kế tiếp — bạn KHÔNG tự bịa nội dung tệp:\n\nĐọc một tệp:\n```avi-tool\n{\"tool\":\"doc_tep\",\"args\":{\"path\":\"<đường dẫn tệp>\"}}\n```\n\nLiệt kê một thư mục:\n```avi-tool\n{\"tool\":\"liet_ke\",\"args\":{\"path\":\"<đường dẫn thư mục>\"}}\n```\n\nTìm một chuỗi/mẫu trong workspace (path có thể bỏ trống để tìm toàn workspace):\n```avi-tool\n{\"tool\":\"grep\",\"args\":{\"mau\":\"<mẫu cần tìm>\",\"path\":\"<thư mục, tuỳ chọn>\"}}\n```\n\nMỗi lượt trả lời CHỈ MỘT khối (một yêu cầu đọc). Nếu bạn ĐÃ có đủ nội dung cần thiết (đọc rồi, hoặc câu hỏi không cần đọc tệp nào), trả lời bình thường — KHÔNG phát khối này.\n\nQUAN TRỌNG THỨ HAI — CA KHÁC, CŨNG GHI ĐÈ \"NGUYÊN TẮC TRẢ LỜI\" Ở TRÊN: nếu câu hỏi bên dưới yêu cầu VIẾT MỘT ĐOẠN MÃ/HÀM HOÀN TOÀN MỚI (chưa tồn tại ở đâu cả — không phải sửa, không phải tìm, không cần đọc một tệp cụ thể nào để trả lời), đây CŨNG KHÔNG PHẢI ca \"ngữ cảnh không liên quan\" — ĐỪNG trả lời câu mẫu \"Tôi không có thông tin chính xác...\", và ĐỪNG phát khối đọc tệp ở trên để đi tìm một tệp không tồn tại. Hãy viết THẲNG đoạn mã được yêu cầu ngay trong câu trả lời này." +
     "\n\n";
@@ -253,22 +259,26 @@ describe("§D — PDCA vòng 8: route \"vscode\" MANG giáo cụ LOCAL thật �
   const THAN_THAT = "Hằng số NGUONG_CANH_BAO_TON_KHO nằm ở tệp nào trong workspace, và giá trị của nó là bao nhiêu?";
   const WRAPPED = `${PREFIX}${THAN_THAT}${SUFFIX}`;
 
-  it("★★★ giáo cụ ĐÚNG hình dạng ⇒ tryExecuteToolLoop ĐƯỢC gọi, với ĐÚNG phần câu hỏi thật (không giáo cụ)", async () => {
-    await chay(WRAPPED, { route: "vscode" });
-    expect(tryExecuteToolLoop, "gốc rễ vòng 8: giáo cụ không còn là lý do chặn toàn bộ vòng tool").toHaveBeenCalledTimes(1);
-    expect(tryExecuteToolLoop.mock.calls[0]![0], "bộ chọn tool phải nhận PHẦN CÂU HỎI THẬT, không phải cả giáo cụ").toBe(THAN_THAT);
+  it("★★★ khẳng định TIỀN ĐỀ bằng hàm THUẦN đã export: giáo cụ ĐÚNG hình dạng THẬT SỰ bóc được (không phải test tự thoả)", () => {
+    expect(tachThanKhoiGiaoCuVscode(WRAPPED)).toBe(THAN_THAT);
   });
 
-  it("★★ giáo cụ ĐÚNG hình dạng, có kết quả tool THẬT ⇒ kết quả đó VẪN đi vào answer (đường vscode không còn mù)", async () => {
+  it("★★★ giáo cụ ĐÚNG hình dạng, bóc THÀNH CÔNG ⇒ tryExecuteToolLoop VẪN KHÔNG được gọi (Việc 2 — khác vòng 8)", async () => {
+    await chay(WRAPPED, { route: "vscode" });
+    expect(tryExecuteToolLoop, "route vscode không còn đường nào chạm bộ chọn tool nhà máy, kể cả khi bóc thành công").not.toHaveBeenCalled();
+  });
+
+  it("★★ giáo cụ ĐÚNG hình dạng, mock tool trả kết quả THẬT (nếu lỡ được gọi) ⇒ KHÔNG đi vào answer — vì nó không được gọi", async () => {
     datToolThat();
     const r = await chay(WRAPPED, { route: "vscode" });
-    expect(r.done && r.done.type === "done" && r.done.answer).toContain(TOM_TAT_TOOL_THAT);
+    expect(r.done && r.done.type === "done" && r.done.answer).not.toContain(TOM_TAT_TOOL_THAT);
   });
 
-  it("★★★ ĐỘT BIẾN — đổi 1 ký tự trong giáo cụ (không còn khớp CHÍNH XÁC) ⇒ RƠI VỀ AN TOÀN, không gọi tool (chưa từng đo, không suy diễn)", async () => {
+  it("★★★ ĐỘT BIẾN — đổi 1 ký tự trong giáo cụ (không còn khớp CHÍNH XÁC, bóc thất bại) ⇒ vẫn KHÔNG gọi tool (cùng kết cục, qua đường an toàn khác)", async () => {
     const gioiHan = WRAPPED.replace("ĐỌC KỸ TRƯỚC KHI", "ĐỌC Kĩ TRƯỚC KHI"); // đổi 1 chữ, không còn khớp startsWith
+    expect(tachThanKhoiGiaoCuVscode(gioiHan), "tiền đề: giờ KHÔNG bóc được").toBeNull();
     const r = await chay(gioiHan, { route: "vscode" });
-    expect(tryExecuteToolLoop, "khớp KHÔNG chính xác ⇒ fallback chặn toàn bộ, giống hệt vòng 5 — AN TOÀN, không phải lỗi").not.toHaveBeenCalled();
+    expect(tryExecuteToolLoop).not.toHaveBeenCalled();
     expect(r.done && r.done.type === "done" && r.done.answer.length).toBeGreaterThan(0);
   });
 
@@ -299,34 +309,45 @@ describe("§D — PDCA vòng 8: route \"vscode\" MANG giáo cụ LOCAL thật �
  * `question` — KHÔNG đổi `question` truyền cho `generateWithOllamaStream` (model vẫn thấy TOÀN BỘ
  * giáo cụ, vẫn ĐƯỢC PHÉP phát khối `avi-tool`; đây là lý do §F dưới cũng phải bỏ ngưỡng độ tin KB
  * cho route này — nếu không, một câu hỏi meta hợp lệ không khớp KB nào sẽ không bao giờ chạm model).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ VIỆC 2 SUPERSEDES ca thứ ba (dòng "KHÔNG bóc được ⇒ vẫn dùng question đầy đủ ⇒ intent VẪN
+ * 'list'") — H6 chỉ vá NHÁNH bóc-thành-công; nhánh bóc-thất-bại vẫn để `classifyIntent` chạy trên
+ * `question` đầy đủ, tức các regex `*_INTENT` VẪN có thể trúng cho route vscode nếu hình dạng giáo
+ * cụ đổi trong tương lai (một lớp rủi ro CÙNG HỌ với sự cố 3, chỉ khác ở chỗ chưa có tái hiện SỐNG).
+ * Việc 2 ép `intent = "general"` cho MỌI câu hỏi route vscode NGAY TẠI ĐIỂM TÍNH (`retrieveKnowledge`,
+ * `context?.route === "vscode"`) — KHÔNG còn phụ thuộc bóc thành công hay không, nên `classifyIntent`
+ * (và toàn bộ sáu regex `*_INTENT` của nó) không còn CHẠY được cho route vscode trong bất kỳ nhánh
+ * nào nữa. Ca thứ ba dưới đây nay khẳng định NGƯỢC LẠI ca cũ.
  */
-describe("§E — TASK H6: retrieveKnowledge dùng câu hỏi THẬT (không noise giáo cụ) cho route vscode", () => {
+describe("§E — VIỆC 2: retrieveKnowledge ép intent:\"general\" cho MỌI câu hỏi route vscode (không phụ thuộc bóc)", () => {
   const CAU_HOI_THAT_M1 = "Từ giờ trở đi, hãy LUÔN dùng tiếng Việt trang trọng khi trả lời tôi.";
   const WRAPPED_M1 = `${PREFIX_H6}${CAU_HOI_THAT_M1}${SUFFIX_H6}`;
 
-  it("★★★ route vscode, giáo cụ bóc được ⇒ meta.intent KHÔNG bị ép \"list\" (gốc rễ đã vá)", async () => {
+  it("★★★ route vscode, giáo cụ bóc được ⇒ meta.intent ép CỨNG \"general\" (không phải chỉ 'khác list')", async () => {
     const r = await chay(WRAPPED_M1, { route: "vscode" });
     const meta = r.events.find((e) => e.type === "meta") as { intent?: string } | undefined;
-    expect(
-      meta?.intent,
-      "câu hỏi thật không hề chứa từ khoá liệt kê/danh sách — intent phải KHÁC \"list\"",
-    ).not.toBe("list");
+    expect(meta?.intent, "Việc 2: intent route vscode LUÔN là general, không qua classifyIntent").toBe("general");
   });
 
-  it("★★ ĐỐI CHỨNG B3 bắt buộc — CÙNG văn bản giáo cụ nhưng route KHÔNG PHẢI vscode ⇒ hành vi CŨ giữ NGUYÊN (intent VẪN \"list\", vì cauHoiTruyVan==question không đổi ở nhánh web)", async () => {
+  it("★★ ĐỐI CHỨNG B3 bắt buộc — CÙNG văn bản giáo cụ nhưng route KHÔNG PHẢI vscode ⇒ hành vi CŨ giữ NGUYÊN (intent VẪN \"list\", classifyIntent(question) chạy y hệt trước)", async () => {
     const r = await chay(WRAPPED_M1, { route: "/factory-command" });
     const meta = r.events.find((e) => e.type === "meta") as { intent?: string } | undefined;
     expect(
       meta?.intent,
-      "đường WEB KHÔNG được đổi hành vi bởi bản vá H6 — vẫn bị noise giáo cụ chi phối y hệt trước",
+      "đường WEB KHÔNG được đổi hành vi bởi Việc 2 — vẫn bị noise giáo cụ chi phối y hệt trước (classifyIntent(question) không đổi cho route khác vscode)",
     ).toBe("list");
   });
 
-  it("★★ route vscode, KHÔNG bóc được (giáo cụ lệch 1 ký tự — hình dạng lạ) ⇒ vẫn dùng `question` đầy đủ (hành vi CŨ, không đổi)", async () => {
+  it("★★★ VIỆC 2: route vscode, KHÔNG bóc được (giáo cụ lệch 1 ký tự — hình dạng lạ) ⇒ intent VẪN \"general\" (KHÔNG còn rơi về \"list\" như trước Việc 2)", async () => {
     const gioiHan = WRAPPED_M1.replace("ĐỌC KỸ TRƯỚC KHI", "ĐỌC Kĩ TRƯỚC KHI");
+    expect(tachThanKhoiGiaoCuVscode(gioiHan), "tiền đề: KHÔNG bóc được").toBeNull();
     const r = await chay(gioiHan, { route: "vscode" });
     const meta = r.events.find((e) => e.type === "meta") as { intent?: string } | undefined;
-    expect(meta?.intent, "bóc thất bại ⇒ fallback AN TOÀN về hành vi cũ, giống vòng 5/8").toBe("list");
+    expect(
+      meta?.intent,
+      "Việc 2 ép general KHÔNG PHỤ THUỘC bóc thành công — kể cả hình dạng giáo cụ lạ cũng không còn trúng regex *_INTENT nào",
+    ).toBe("general");
   });
 });
 
@@ -381,62 +402,107 @@ describe("§F — TASK H6: shouldUseLlm bỏ ngưỡng độ tin KB cho route vs
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════════════════════
- * ★★★ TASK H6 (vòng 2) — LỖ THỨ HAI đo LIVE (`h6-b4-mem-batch.cjs`, xem `task-h6-report.md`): §E ở
- * trên chỉ đo giáo cụ ĐỌC ĐƠN THUẦN (không MCP/bộ nhớ). Khi `dsBoNho`/`dsToolMcp` KHÔNG rỗng,
- * `nhacLaiCuoiCauHoi` (vá H5) chèn THÊM câu cho `coMcp`/`coBoNho` GIỮA `phanDoc` và dấu ")" đóng
- * cuối — bản mirror MỘT-CHUỖI của §E (`SUFFIX_H6`) không còn khớp `endsWith` nữa ⇒
- * `tachThanKhoiGiaoCuVscode` trả `null` HOÀN TOÀN (bóc thất bại), rơi về `KHONG_TOOL_VSCODE` VÀ
- * `cauHoiTruyVan = question` (chưa bóc) — bản vá B2 (§E) không hề chạm tới những lượt CÓ MCP/bộ nhớ,
- * đúng chính xác lớp câu hỏi mà H4/H5 đo `de_xuat_nho` 0/5. §G dưới đây khoá hành vi SAU vòng 2 của
- * bản vá (liệt kê đủ 4 hình dạng hậu tố + bóc thêm hai khối DẠY tuỳ điều kiện ở giữa).
+ * ★★★ TASK H6 (vòng 2) → VIỆC 2 kế thừa — LỖ THỨ HAI từng đo LIVE (`h6-b4-mem-batch.cjs`, xem
+ * `task-h6-report.md`): khi `dsBoNho`/`dsToolMcp` KHÔNG rỗng, `nhacLaiCuoiCauHoi` (vá H5) chèn THÊM
+ * câu GIỮA `phanDoc` và dấu ")" đóng cuối — bốn hình dạng hậu tố khác nhau, `tachThanKhoiGiaoCuVscode`
+ * phải liệt kê ĐỦ cả bốn để bóc đúng (H6 vòng 2 đã vá phần BÓC — vẫn giữ nguyên, không đổi ở đây).
+ *
+ * ★★★ VIỆC 2 đổi phần QUAN SÁT: trước đây §G xác nhận việc bóc đúng BẰNG CÁCH đọc đối số gọi
+ * `tryExecuteToolLoop` (hàm đó nhận ĐÚNG câu hỏi thật). Tool loop nay KHÔNG BAO GIỜ được gọi cho
+ * route vscode nữa (xem §D) — tín hiệu đó không còn tồn tại. §G dưới đây xác nhận việc BÓC vẫn
+ * ĐÚNG bằng hàm thuần đã export (`tachThanKhoiGiaoCuVscode`, tách bạch khỏi tool loop), và xác nhận
+ * riêng rằng tool loop VẪN không được gọi trong mọi tổ hợp MCP/bộ nhớ.
  */
-describe("§G — TASK H6 (vòng 2): bóc ĐÚNG khi CÓ MCP/bộ nhớ (nhacLaiCuoiCauHoi sau vá H5 dài hơn)", () => {
+describe("§G — VIỆC 2 (kế thừa H6 vòng 2): bóc ĐÚNG khi CÓ MCP/bộ nhớ, và tool loop VẪN không được gọi", () => {
   const CAU_HOI_THAT = "Từ giờ trở đi, hãy LUÔN dùng tiếng Việt trang trọng khi trả lời tôi.";
   const KHOI_MCP = khoiDayMcp("everything", "echo", "Trả lại nguyên văn đầu vào");
   const KHOI_BONHO = khoiDayBoNho("Người dùng thích câu trả lời ngắn gọn, súc tích.");
   const WRAPPED_CA_HAI = `${PREFIX_H6}${KHOI_MCP}\n\n${KHOI_BONHO}\n\n${CAU_HOI_THAT}${SUFFIX_H6_CA_HAI}`;
 
-  it("★★★ CÓ CẢ MCP lẫn bộ nhớ ⇒ tryExecuteToolLoop nhận ĐÚNG câu hỏi thật (không còn lẫn khối DẠY)", async () => {
-    await chay(WRAPPED_CA_HAI, { route: "vscode" });
+  it("★★★ CÓ CẢ MCP lẫn bộ nhớ ⇒ bóc ĐÚNG câu hỏi thật (hàm thuần, không cần chạy streamAnswer)", () => {
     expect(
-      tryExecuteToolLoop,
-      "trước vòng 2: bóc thất bại hoàn toàn khi có MCP/bộ nhớ ⇒ hàm này KHÔNG được gọi (KHONG_TOOL_VSCODE)",
-    ).toHaveBeenCalledTimes(1);
-    expect(
-      tryExecuteToolLoop.mock.calls[0][0],
+      tachThanKhoiGiaoCuVscode(WRAPPED_CA_HAI),
       "phần MCP/bộ nhớ phải bị bóc sạch, chỉ còn câu hỏi thật",
     ).toBe(CAU_HOI_THAT);
   });
 
-  it("★★★ CÓ CẢ MCP lẫn bộ nhớ ⇒ meta.intent KHÔNG bị ép \"list\" (trước vòng 2: VẪN \"list\" vì bóc thất bại toàn bộ)", async () => {
-    const r = await chay(WRAPPED_CA_HAI, { route: "vscode" });
-    const meta = r.events.find((e) => e.type === "meta");
-    expect(meta && meta.intent).not.toBe("list");
+  it("★★★ CÓ CẢ MCP lẫn bộ nhớ ⇒ tryExecuteToolLoop KHÔNG được gọi (Việc 2 — không còn phụ thuộc bóc)", async () => {
+    await chay(WRAPPED_CA_HAI, { route: "vscode" });
+    expect(tryExecuteToolLoop).not.toHaveBeenCalled();
   });
 
-  it("★★ CHỈ MCP (không bộ nhớ) ⇒ bóc đúng", async () => {
+  it("★★★ CÓ CẢ MCP lẫn bộ nhớ ⇒ meta.intent ép CỨNG \"general\" (Việc 2 — không còn 'chỉ khác list')", async () => {
+    const r = await chay(WRAPPED_CA_HAI, { route: "vscode" });
+    const meta = r.events.find((e) => e.type === "meta");
+    expect(meta && meta.intent).toBe("general");
+  });
+
+  it("★★ CHỈ MCP (không bộ nhớ) ⇒ bóc đúng VÀ tool loop không được gọi", async () => {
     const nhacMcpDon =
       "\n\n(Nhắc lại: nếu câu hỏi trên cần nội dung một tệp bạn chưa có, hãy phát khối ```avi-tool``` như đã hướng dẫn; nếu câu hỏi là yêu cầu viết mã MỚI (không cần đọc tệp), hãy viết THẲNG mã đó — cả hai ca ĐỪNG trả lời \"không có thông tin\". Nếu câu hỏi trên hỏi về, hoặc yêu cầu dùng, một CÔNG CỤ NGOÀI (MCP) đã kết nối ở trên, đừng trả lời lạc đề — hãy phát khối ```avi-tool``` với \"tool\":\"mcp_goi\" như đã hướng dẫn.)";
     const wrapped = `${PREFIX_H6}${KHOI_MCP}\n\n${CAU_HOI_THAT}${nhacMcpDon}`;
+    expect(tachThanKhoiGiaoCuVscode(wrapped)).toBe(CAU_HOI_THAT);
     await chay(wrapped, { route: "vscode" });
-    expect(tryExecuteToolLoop).toHaveBeenCalledTimes(1);
-    expect(tryExecuteToolLoop.mock.calls[0][0]).toBe(CAU_HOI_THAT);
+    expect(tryExecuteToolLoop).not.toHaveBeenCalled();
   });
 
-  it("★★ CHỈ bộ nhớ (không MCP) ⇒ bóc đúng", async () => {
+  it("★★ CHỈ bộ nhớ (không MCP) ⇒ bóc đúng VÀ tool loop không được gọi", async () => {
     const nhacBoNhoDon =
       "\n\n(Nhắc lại: nếu câu hỏi trên cần nội dung một tệp bạn chưa có, hãy phát khối ```avi-tool``` như đã hướng dẫn; nếu câu hỏi là yêu cầu viết mã MỚI (không cần đọc tệp), hãy viết THẲNG mã đó — cả hai ca ĐỪNG trả lời \"không có thông tin\". Nếu câu hỏi trên là một điều đáng NHỚ LÂU DÀI (chưa có trong BỘ NHỚ DÀI HẠN ở trên) hoặc yêu cầu bạn ghi nhớ nó, đừng bỏ qua — hãy đề xuất bằng khối ```avi-tool``` với \"tool\":\"de_xuat_nho\" như đã hướng dẫn.)";
     const wrapped = `${PREFIX_H6}${KHOI_BONHO}\n\n${CAU_HOI_THAT}${nhacBoNhoDon}`;
+    expect(tachThanKhoiGiaoCuVscode(wrapped)).toBe(CAU_HOI_THAT);
     await chay(wrapped, { route: "vscode" });
-    expect(tryExecuteToolLoop).toHaveBeenCalledTimes(1);
-    expect(tryExecuteToolLoop.mock.calls[0][0]).toBe(CAU_HOI_THAT);
+    expect(tryExecuteToolLoop).not.toHaveBeenCalled();
   });
 
-  it("★ ĐỘT BIẾN — đổi 1 ký tự trong hậu tố nhắc-lại (không còn khớp bất kỳ hình dạng nào trong 4 hình dạng đã biết) ⇒ AN TOÀN, fallback chặn TOÀN BỘ (không cố bóc một phần)", async () => {
+  it("★ ĐỘT BIẾN — đổi 1 ký tự trong hậu tố nhắc-lại (không còn khớp bất kỳ hình dạng nào trong 4 hình dạng đã biết) ⇒ bóc thất bại (null), tool loop VẪN không được gọi (cùng kết cục, khác lý do)", async () => {
     const hauToLoi = SUFFIX_H6_CA_HAI.replace("mcp_goi", "mcp_g0i");
     const wrapped = `${PREFIX_H6}${KHOI_MCP}\n\n${KHOI_BONHO}\n\n${CAU_HOI_THAT}${hauToLoi}`;
+    expect(tachThanKhoiGiaoCuVscode(wrapped), "hậu tố không khớp hình dạng nào đã biết ⇒ bóc thất bại").toBeNull();
     const r = await chay(wrapped, { route: "vscode" });
-    expect(tryExecuteToolLoop, "hậu tố không khớp hình dạng nào đã biết ⇒ fallback AN TOÀN toàn bộ").not.toHaveBeenCalled();
+    expect(tryExecuteToolLoop).not.toHaveBeenCalled();
     expect(r.done && r.done.type === "done" && r.done.answer.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ VIỆC 2 · B4 — LƯỚI CENSUS chống tái diễn (bốn sự cố §5.1 của
+ * `docs/superpowers/specs/2026-09-04-ai-local-danh-gia-hien-trang-va-lo-trinh.md`, đều là MỘT họ:
+ * "một trigger/regex nào đó của miền NHÀ MÁY trúng nhầm câu hỏi/giáo cụ của miền LẬP TRÌNH").
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════
+ * §H khẳng định phát biểu CHUNG (không phải một trigger cụ thể): với BẤT KỲ câu hỏi nào — kể cả một
+ * câu được THIẾT KẾ CỐ Ý để trúng heuristic vận hành (chứa "OEE"/"performance"/"liệt kê"/"kỳ trước"
+ * cùng lúc) — route "vscode" không bao giờ chạm `tryExecuteToolLoop`, và `retrieveKnowledge` không
+ * bao giờ trả về intent nào khác "general". Vì gate là MỘT trường duy nhất (`context.route`) tại
+ * ĐÚNG HAI điểm quyết định (chỗ gọi tool loop trong `streamAnswer`, chỗ tính `intent` trong
+ * `retrieveKnowledge`), một trigger MỚI thêm vào bất kỳ tool nào trong `aiLocalTools/*` — hoặc một
+ * regex `*_INTENT` mới trong `intentClassifier.ts`/`classifyIntent` — KHÔNG CÓ CÁCH NÀO chạm route
+ * vscode, vì bản thân bộ chọn/bộ phân loại đó không còn được GỌI cho route này nữa (không phải "gọi
+ * rồi bị lọc kết quả" — không có đường thoát nào để một tầng lọc bị quên).
+ */
+describe("§H — VIỆC 2 · B4: CENSUS — route vscode không đường nào chạm bộ trigger/regex nhà máy, dù câu hỏi CỐ Ý mang MỌI từ khoá trigger cùng lúc", () => {
+  const CAU_HOI_AC_Y =
+    "Liệt kê một thư mục: OEE performance quality yield availability bottleneck kỳ trước lỗi lời fail troubleshoot architecture kiến trúc api endpoint bao nhiêu danh sách tất cả các list how many enumerate";
+
+  it("★★★ route vscode ⇒ tryExecuteToolLoop KHÔNG được gọi dù câu hỏi mang MỌI từ khoá trigger đã biết cùng lúc", async () => {
+    datToolThat();
+    const r = await chay(CAU_HOI_AC_Y, { route: "vscode" });
+    expect(tryExecuteToolLoop).not.toHaveBeenCalled();
+    expect(r.done && r.done.type === "done" && r.done.answer).not.toContain(TOM_TAT_TOOL_THAT);
+  });
+
+  it("★★★ route vscode ⇒ meta.intent VẪN \"general\" dù câu hỏi mang MỌI từ khoá *_INTENT đã biết cùng lúc", async () => {
+    const r = await chay(CAU_HOI_AC_Y, { route: "vscode" });
+    const meta = r.events.find((e) => e.type === "meta") as { intent?: string } | undefined;
+    expect(meta?.intent).toBe("general");
+  });
+
+  it("★★★ ĐỐI CHỨNG B3 — CÙNG câu hỏi ác ý, route web ⇒ tool VẪN chạy VÀ intent VẪN bị regex chi phối (đường web không đổi hành vi)", async () => {
+    datToolThat();
+    const r = await chay(CAU_HOI_AC_Y, { route: "/factory-command" });
+    expect(tryExecuteToolLoop).toHaveBeenCalledTimes(1);
+    const meta = r.events.find((e) => e.type === "meta") as { intent?: string } | undefined;
+    expect(meta?.intent, "câu hỏi mở đầu bằng \"Liệt kê một thư mục:\" ⇒ LIST_INTENT_RE khớp trên route web y hệt trước Việc 2").toBe("list");
   });
 });

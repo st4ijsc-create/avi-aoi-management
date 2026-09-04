@@ -254,6 +254,22 @@ Với `route:"vscode"`: **không** dùng bộ trigger công cụ nhà máy, **kh
 liên quan dưới ngưỡng. Bốn sự cố ở §5.1 đều là cùng một nguyên nhân: **hai miền dùng chung một bộ
 định tuyến**. Vá từng trigger là **chữa triệu chứng**; tách miền là **chữa gốc**.
 
+★★★ **ĐÃ LÀM** (2026-09-04, `.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-v2-report.md`,
+`aiLocalKnowledgeService.ts`) — hai điểm sửa, cả hai khoá vào `context.route==="vscode"`: (1)
+`streamAnswer` không còn gọi `tryExecuteToolLoop`/bộ chọn tool vận hành cho route vscode NỮA, kể cả
+khi bóc giáo cụ thành công (khác vòng 8 trước đó — vòng 8 vẫn cho tool chạy trên phần câu hỏi thật);
+(2) `retrieveKnowledge` ép `intent="general"` cho route vscode, vô hiệu hoá cả 6 regex `*_INTENT`
+cùng lúc (gốc rễ sự cố 3, và cũng vá luôn "Cmd+K chỉ hiện thẻ duyệt 1/5" — va chạm "lời"/"lỗi" ép
+`troubleshoot`). **Cơ chế chống tái diễn**: một trigger/regex MỚI ở bất kỳ đâu trong 54 tool nhà máy
+không còn CÁCH NÀO chạm route vscode nữa, vì hai hàm đọc chúng (`classifyToolIntent`/`classifyIntent`)
+không còn được GỌI cho route này — không phải bị lọc sau khi chạy. Đo: lưới `aiLocalKnowledge.
+vscodeRouteGate.test.ts` 28/28 xanh (0→9 đỏ khi ablation gỡ 2 điều kiện, dán output thật trong báo
+cáo); phạm vi hồi quy hẹp (aiLocalTools/ + 4 tệp liên quan) 1148→1153/1153 xanh, 0 đỏ; `tsc --noEmit`
+0 lỗi. **CÒN MỞ**: `dist/index.js` cổng 3003 chưa build lại (cần go-ahead vì server đang phục vụ
+người dùng thật) ⇒ chưa đo LIVE qua HTTP; đánh đổi có chủ đích — câu hỏi vận hành gõ thẳng vào panel
+LOCAL không còn được tool trả lời qua route vscode nữa; Việc 1 (KB đúng theo workspace) vẫn CHƯA làm,
+route vscode vẫn quét chung kho KB vận hành.
+
 ## Việc 3 — dựng bộ đánh giá trước khi nghĩ tới huấn luyện
 
 ≥30 tác vụ thật trên dự án thật, chấm theo **kết cục người dùng nhận được**, chạy được lặp lại.

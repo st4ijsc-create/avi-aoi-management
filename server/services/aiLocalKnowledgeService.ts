@@ -2174,7 +2174,21 @@ export async function retrieveKnowledge(
 ): Promise<KbRetrieveResult> {
   const data = ensureDataLoaded();
   const tokens = tokenize(question);
-  const intent = classifyIntent(question);
+  // ★★★ VIỆC 2 (tách miền lập trình/vận hành, xem docblock lớn cạnh `KHONG_TOOL_VSCODE`/
+  // `streamAnswer` — cùng đợt vá) — route "vscode" KHÔNG được chấm bằng các regex `*_INTENT` của
+  // `classifyIntent` (LIST_INTENT_RE/DEFINITION_RE/troubleshoot/architecture/technical — ĐỀU là
+  // heuristic soạn cho câu hỏi VẬN HÀNH). Đây là gốc rễ SỰ CỐ 3 đã đo (§5.1 tài liệu trên): dòng
+  // "Liệt kê một thư mục:" trong giáo cụ khớp `LIST_INTENT_RE` ⇒ ép MỌI câu hỏi VSCODE thành
+  // intent:"list" ⇒ `getSystemPromptForRole` ép khuôn `VI_LIST_FORMAT`. Cùng lớp: "lời"/"lỗi" sau bỏ
+  // dấu ép `intent:"troubleshoot"` (nguyên nhân Cmd+K chỉ hiện thẻ duyệt 1/5, §5.4). Ép cứng
+  // "general" ở ĐÚNG một chỗ — nơi `intent` được TÍNH, không phải một bản vá riêng cho từng regex —
+  // vô hiệu hoá CẢ SÁU regex `*_INTENT` cho route vscode CÙNG LÚC, và bất kỳ regex mới nào thêm vào
+  // `classifyIntent` sau này cũng tự động không chạm được route vscode (không cần nhớ vá lại nơi
+  // này). `intent` chỉ dùng ở CUỐI hàm này (dòng trả về) — không ảnh hưởng chấm điểm/xếp hạng KB phía
+  // trên (đọc mã xác nhận: biến `intent` không xuất hiện lại cho tới `return`) — nên ép ở đây AN
+  // TOÀN, không đổi citations/confidence. Đường WEB (context?.route !== "vscode") giữ NGUYÊN
+  // `classifyIntent(question)` — không đổi một dòng hành vi.
+  const intent: KbIntent = context?.route === "vscode" ? "general" : classifyIntent(question);
   const language = resolveLanguage(question, context);
   const entities = extractEntities(question);
 
@@ -5647,8 +5661,13 @@ function bocKhoiTuyChonDauThan(than: string, dauMoc: string, cuoiMoc: string): s
  * Bóc đúng phần "than" (ngữ cảnh đính kèm + câu hỏi thật) ra khỏi `question` khi nó khớp CHÍNH XÁC
  * hình dạng giáo cụ LOCAL không-Cmd+K đã biết. Trả `null` khi không khớp (Cmd+K, đường web, hoặc
  * giáo cụ đã đổi chữ) — gọi nơi dùng PHẢI coi `null` là "không bóc được, giữ nguyên hành vi chặn".
+ *
+ * ★★★ VIỆC 2 — EXPORT để lưới có thể kiểm trực tiếp việc BÓC (hàm THUẦN, không side-effect), tách
+ * bạch khỏi việc "tool loop có chạy hay không" (nay LUÔN KHÔNG chạy cho route vscode — xem
+ * `KHONG_TOOL_VSCODE`/`streamAnswer`). Trước bản vá này, lưới chỉ quan sát được kết quả bóc GIÁN
+ * TIẾP qua đối số gọi `tryExecuteToolLoop` — tín hiệu đó nay đã mất vì hàm không còn được gọi nữa.
  */
-function tachThanKhoiGiaoCuVscode(question: string): string | null {
+export function tachThanKhoiGiaoCuVscode(question: string): string | null {
   if (!question.startsWith(VSCODE_GIAO_THUC_PREFIX)) return null;
   let than = question.slice(VSCODE_GIAO_THUC_PREFIX.length);
   const khopHauTo = VSCODE_NHAC_LAI_SUFFIXES.find((sfx) => than.endsWith(sfx));
@@ -5761,6 +5780,33 @@ export async function* streamAnswer(
   // NHẤT model thấy được hướng dẫn phát khối `avi-tool` — cắt hẳn `question` ở đó sẽ xoá luôn khả
   // năng tuân thủ giao thức, một lỗi NẶNG HƠN triệu chứng đang vá). Không bóc được (Cmd+K, hình dạng
   // lạ) hoặc route khác "vscode" ⇒ `cauHoiTruyVan = question` (giữ NGUYÊN, byte-đúng hành vi cũ).
+  //
+  // ═══════════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ VIỆC 2 (tách miền lập trình/vận hành, `docs/superpowers/specs/2026-09-04-ai-local-danh-gia-
+  // hien-trang-va-lo-trinh.md` §5.1/§8) — route "vscode" KHÔNG BAO GIỜ gọi
+  // `chayVongLapToolPhatTienDo`/`tryExecuteToolLoop` NỮA, kể cả khi bóc giáo cụ THÀNH CÔNG.
+  // ═══════════════════════════════════════════════════════════════════════════════════════════════
+  // Đây là điểm khác với vòng 8 (`thanThat !== null` từng CHẠY vòng tool THẬT trên phần câu hỏi đã
+  // bóc — xem docblock lớn phía trên cho lý lẽ CŨ). Bốn sự cố cùng họ đã đo được (§5.1: intentClassifier
+  // hiểu nhầm giáo cụ · "kỹ"/"kỳ" gộp dấu trúng `get_ng_compare` · "Liệt kê một thư mục:" ép intent
+  // "list" · `performance`/`quality`/`yield` trúng trigger OEE) đều bắt nguồn từ CÙNG MỘT chỗ: bộ
+  // chọn tool vận hành (`intentClassifier.ts`, `handlers.ts`/`analyticsTools.ts::*.triggers`) là hạ
+  // tầng DÙNG CHUNG cho hai miền hoàn toàn khác nhau, và vá từng trigger (N1, task trước) là chữa
+  // TRIỆU CHỨNG — bất kỳ trigger MỚI nào thêm vào MỘT trong 54 tool nhà máy vẫn có thể trúng lại
+  // đúng lớp lỗi này lần thứ năm. Việc 2 chữa GỐC: route vscode không đi vào bộ chọn NÀY nữa, bất kể
+  // câu hỏi thật (`thanThat`) trông "vận hành" tới đâu — miền lập trình có đường riêng (giáo cụ
+  // `avi-tool` CLIENT-SIDE của extension: `doc_tep`/`liet_ke`/`grep`, không đụng `tryExecuteToolLoop`
+  // của server một chút nào — xem docblock ngay phía trên hàm `streamAnswer`).
+  //
+  // ★ ĐÁNH ĐỔI ĐÃ BIẾT (nói thẳng, không giấu): vòng 8 đo được rằng một câu hỏi vận hành THẬT gõ
+  // thẳng vào panel LOCAL (vd "OEE hôm nay bao nhiêu") từng được tool trả lời ĐÚNG. Bản vá này XOÁ
+  // khả năng đó cho MỌI câu hỏi qua route vscode — đây là hệ quả TRỰC TIẾP, CÓ CHỦ ĐÍCH của chỉ đạo
+  // "tách hẳn hai miền" (§8 Việc 2 của tài liệu trên): panel lập trình không còn là một cửa phụ vào
+  // dữ liệu vận hành nữa. Nếu người dùng thật sự cần hỏi OEE từ VSCode, đường đúng là mở trang web.
+  //
+  // `tachThanKhoiGiaoCuVscode`/`cauHoiTruyVan`/`laVscodeDaBocGiaoThuc` VẪN giữ nguyên — chúng phục vụ
+  // MỤC ĐÍCH KHÁC (H6: cho `retrieveKnowledge`/`shouldUseLlm` thấy câu hỏi thật, không phải giáo cụ),
+  // không phải bộ chọn tool. Đường WEB (route khác "vscode") không đổi MỘT DÒNG nào ở đây.
   let toolExec: TryExecuteToolLoopResult;
   let cauHoiTruyVan = question;
   let laVscodeDaBocGiaoThuc = false;
@@ -5770,7 +5816,7 @@ export async function* streamAnswer(
       cauHoiTruyVan = thanThat;
       laVscodeDaBocGiaoThuc = true;
     }
-    toolExec = thanThat === null ? KHONG_TOOL_VSCODE : yield* chayVongLapToolPhatTienDo(thanThat, context, execCtx);
+    toolExec = KHONG_TOOL_VSCODE;
   } else {
     toolExec = yield* chayVongLapToolPhatTienDo(question, context, execCtx);
   }
