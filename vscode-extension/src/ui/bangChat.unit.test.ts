@@ -105,6 +105,12 @@ const may = vi.hoisted(() => ({
   /** Lời gọi `goiToolMcpNgoai` — dùng để khẳng định ĐÚNG server/tool/dauVao model đã yêu cầu. */
   goiToolMcpDaGoi: [] as Array<{ server: string; tool: string; dauVao: Record<string, unknown> }>,
   ketQuaGoiToolMcpMoPhong: "KẾT QUẢ TỪ MCP SERVER NGOÀI \"demo\" · tool \"ping\" — pong",
+  // ★★★ ĐỢT G / TASK G4 / B3 — cho phép TỪNG CA ép `goiDuyet`/`goiHuy` (`mang/duyetGhi.ts`) ném một
+  // lỗi cụ thể (mô phỏng `fetch` không nối được máy chủ) mà KHÔNG chạm mạng thật. `undefined` ⇒ rơi
+  // về hàm THẬT (qua `importOriginal` ở mock bên dưới) — không ca cũ nào trong tệp này gọi tới
+  // `duyetDeXuat`/`huyDeXuat` (đã xác nhận bằng grep trước khi thêm), nên đây AN TOÀN cho chúng.
+  goiDuyetMoPhong: undefined as undefined | (() => Promise<never>),
+  goiHuyMoPhong: undefined as undefined | (() => Promise<never>),
 }));
 
 /**
@@ -175,6 +181,24 @@ vi.mock("../mang/trpc", () => ({
     return may.trpcAuthMeKetQua;
   },
 }));
+
+/**
+ * ★★★ ĐỢT G / TASK G4 / B3 — CHỈ ghi đè `goiDuyet`/`goiHuy` khi một ca đặt `may.goiDuyetMoPhong`/
+ * `may.goiHuyMoPhong`; mọi export khác (kể cả `goiBatDauApClient`/`goiChotApClient` mà `ui/apBanVa.ts`
+ * — chạy THẬT, không mock — cũng nhập từ đúng module này) đi qua NGUYÊN VẸN bằng `importOriginal`,
+ * để không đẻ ra một bản mô phỏng thứ hai làm trôi hành vi của đường ghi LOCAL đang được lưới khác
+ * trong tệp này đo.
+ */
+vi.mock("../mang/duyetGhi", async (importOriginal) => {
+  const thuc = await importOriginal<typeof import("../mang/duyetGhi")>();
+  return {
+    ...thuc,
+    goiDuyet: async (...args: Parameters<typeof thuc.goiDuyet>) =>
+      may.goiDuyetMoPhong ? may.goiDuyetMoPhong() : thuc.goiDuyet(...args),
+    goiHuy: async (...args: Parameters<typeof thuc.goiHuy>) =>
+      may.goiHuyMoPhong ? may.goiHuyMoPhong() : thuc.goiHuy(...args),
+  };
+});
 
 vi.mock("vscode", () => ({
   ViewColumn: { Beside: 2 },
@@ -367,6 +391,8 @@ beforeEach(() => {
   may.dsToolMcpMoPhong = [];
   may.goiToolMcpDaGoi = [];
   may.ketQuaGoiToolMcpMoPhong = 'KẾT QUẢ TỪ MCP SERVER NGOÀI "demo" · tool "ping" — pong';
+  may.goiDuyetMoPhong = undefined;
+  may.goiHuyMoPhong = undefined;
 });
 
 describe("quenDeXuat — xoá trạng thái VÔ ĐIỀU KIỆN (Minor)", () => {
@@ -475,6 +501,128 @@ describe("hoi — TASK 6/D.1 (LỖI 3): nút Dừng phải khai 'đã dừng', K
     // lạc vào giữa — hai điều đó chỉ có thể tới từ nhánh bị huỷ NGẦM nếu bản vá sai hướng.
     expect(may.daGui.filter((m) => m.loai === "loi")).toEqual([]);
     expect(may.daGui.filter((m) => m.loai === "thong_bao" && String(m.thongDiep).includes("Đã dừng"))).toEqual([]);
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G4 / B3 — LỖI PHẢI CHỈ ĐƯỜNG SỬA cho lỗi KHÔNG-NỐI-ĐƯỢC-MÁY-CHỦ, và NHÁNH KIA
+ * (401/403/500 — máy chủ CÓ trả lời) không được ăn theo gợi ý sai chỗ đó. Vị từ THUẦN chịu trách
+ * nhiệm phân loại (`laLoiKhongNoiDuocMayChu`) đã có lưới riêng ở `loi/loiKetNoiMayChu.unit.test.ts`
+ * — nhóm ca dưới đây đo phần CHỈ `bangChat.ts` mới có: đúng TIN NHẮN nào tới webview và đúng CỜ
+ * `moSettings` nào đi kèm cho từng nhánh.
+ */
+function loiKhongNoiDuocMayChuGia(): Error {
+  const loi = new TypeError("fetch failed");
+  (loi as unknown as { cause: unknown }).cause = Object.assign(new Error("mô phỏng"), { code: "ECONNREFUSED" });
+  return loi;
+}
+
+describe("hoi — ĐỢT G / TASK G4 / B3: lỗi KHÔNG-NỐI-ĐƯỢC-MÁY-CHỦ phải chỉ đường sửa", () => {
+  it("★★★ lỗi mạng (ECONNREFUSED-shaped, chưa hề có đáp ứng HTTP) ⇒ moSettings:true, thongDiep in RÕ địa chỉ", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    may.hangDoiSse = [async () => { throw loiKhongNoiDuocMayChuGia(); }];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "câu hỏi bất kỳ" });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const loi = may.daGui.filter((m) => m.loai === "loi");
+    expect(loi, JSON.stringify(may.daGui)).toHaveLength(1);
+    expect(loi[0].moSettings).toBe(true);
+    // Mock `getConfiguration().get(_k, mm)` luôn trả về giá trị MẶC ĐỊNH (`mm`) — xem đầu tệp — nên
+    // địa chỉ IN RA đúng là mặc định thật của `aviAiLocal.serverUrl` trong `package.json`.
+    expect(String(loi[0].thongDiep)).toContain("http://localhost:3000");
+    expect(String(loi[0].thongDiep)).toContain("KHÔNG cần khởi động lại VSCode");
+  });
+
+  it("★★★ NHÁNH KIA — LoiHttp 500 (máy chủ CÓ trả lời) ⇒ KHÔNG có moSettings, KHÔNG gợi ý đổi địa chỉ", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    may.daGui = [];
+    may.hangDoiSse = [async () => { throw new LoiHttp(500, "Máy chủ trả 500: Mất kết nối cơ sở dữ liệu"); }];
+
+    may.nhanTin?.({ loai: "hoi", cauHoi: "câu hỏi bất kỳ" });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const loi = may.daGui.filter((m) => m.loai === "loi");
+    expect(loi, JSON.stringify(may.daGui)).toHaveLength(1);
+    expect(loi[0].moSettings).not.toBe(true);
+    expect(String(loi[0].thongDiep)).toContain("500");
+    expect(String(loi[0].thongDiep)).not.toContain("Mở Settings");
+  });
+});
+
+describe("ĐỢT G / TASK G4 / B1 — trang_thai_dang_nhap mang theo serverUrl (để tooltip hiển thị)", () => {
+  it("★★★ tin 'san_sang' ⇒ trang_thai_dang_nhap có field serverUrl", async () => {
+    moBang();
+    may.daGui = [];
+    may.nhanTin?.({ loai: "san_sang" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const tt = may.daGui.filter((m) => m.loai === "trang_thai_dang_nhap");
+    expect(tt.length).toBeGreaterThan(0);
+    expect(tt[tt.length - 1].serverUrl).toBe("http://localhost:3000");
+  });
+});
+
+describe("ĐỢT G / TASK G4 / B2/B3 — nút 'Mở Settings' mở ĐÚNG ô aviAiLocal.serverUrl", () => {
+  it("★★★ tin mo_settings_may_chu ⇒ gọi workbench.action.openSettings với đúng đối số", () => {
+    moBang();
+    may.lenhGoi = [];
+    may.nhanTin?.({ loai: "mo_settings_may_chu" });
+    expect(may.lenhGoi).toContain("workbench.action.openSettings");
+  });
+});
+
+describe("ĐỢT G / TASK G4 / B3 — duyệt/huỷ (KHÔNG RÕ KẾT CỤC) cũng chỉ đường sửa khi là lỗi mạng", () => {
+  function deXuatGia() {
+    return {
+      actionId: "act-1", token: "tok-1", tool: "apply_diff" as const,
+      path: "a.ts", original: "x", modified: "y", summary: "1 dòng", hetHan: "",
+    };
+  }
+
+  it("★★★ duyệt gặp lỗi mạng ⇒ thong_bao có moSettings:true + địa chỉ đang thử", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "server:p1", nhan: "SERVER · p1", loai: "server" }];
+    bang.duAnChon = "server:p1";
+    bang.deXuatHienTai = deXuatGia();
+    may.daGui = [];
+    may.goiDuyetMoPhong = async () => { throw loiKhongNoiDuocMayChuGia(); };
+
+    may.nhanTin?.({ loai: "duyet" });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const tb = may.daGui.filter((m) => m.loai === "thong_bao");
+    expect(tb, JSON.stringify(may.daGui)).toHaveLength(1);
+    expect(tb[0].moSettings).toBe(true);
+    expect(String(tb[0].thongDiep)).toContain("KHÔNG RÕ KẾT CỤC");
+    expect(String(tb[0].thongDiep)).toContain("http://localhost:3000");
+  });
+
+  it("★★★ huỷ gặp lỗi mạng ⇒ thong_bao có moSettings:true + địa chỉ đang thử", async () => {
+    const bang = moBang();
+    bang.dsDuAn = [{ id: "server:p1", nhan: "SERVER · p1", loai: "server" }];
+    bang.duAnChon = "server:p1";
+    bang.deXuatHienTai = deXuatGia();
+    may.daGui = [];
+    may.goiHuyMoPhong = async () => { throw loiKhongNoiDuocMayChuGia(); };
+
+    may.nhanTin?.({ loai: "huy" });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const tb = may.daGui.filter((m) => m.loai === "thong_bao");
+    expect(tb, JSON.stringify(may.daGui)).toHaveLength(1);
+    expect(tb[0].moSettings).toBe(true);
+    expect(String(tb[0].thongDiep)).toContain("KHÔNG RÕ KẾT CỤC");
+    expect(String(tb[0].thongDiep)).toContain("http://localhost:3000");
   });
 });
 

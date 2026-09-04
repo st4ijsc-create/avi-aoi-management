@@ -26,6 +26,11 @@ import { KHOA_COOKIE, KHOA_TEN_TAI_KHOAN } from "../loi/dangNhap";
 import { gopDanhSachDuAn, type MucDuAn } from "../loi/duAn";
 import { goiTruyVanTrpc } from "../mang/trpc";
 import { laLoi401 } from "../loi/loiHttp";
+// ★★★ ĐỢT G / TASK G4 / B3 — vị từ THUẦN phân loại "lỗi mạng, KHÔNG NỐI ĐƯỢC MÁY CHỦ" (đọc tín hiệu
+// `.cause.code` của undici, KHÔNG so hình dạng chuỗi `e.message` — xem docblock nguồn cho lý do và
+// phép đo thật). CHỈ khi vị từ này đúng mới được gợi ý đổi `aviAiLocal.serverUrl` — 401/403/500 là
+// đáp ứng THẬT từ máy chủ (NHÁNH KIA của B3) và không được ăn theo gợi ý này.
+import { laLoiKhongNoiDuocMayChu, moTaLoiKhongNoiDuocMayChu } from "../loi/loiKetNoiMayChu";
 import { trangThaiBanDau, apDungSuKienChat, ketLuanLuotChat } from "../loi/suKienChat";
 import { docDeXuatGhi, laTaoTepMoi, type DeXuatGhi } from "../loi/deXuatGhi";
 import { tomTatDiff } from "../loi/tomTatDiff";
@@ -354,6 +359,14 @@ export class BangChat {
       if (m.loai === "dangXuat") { void this.thucHienDangXuat(); return; }
       // ★★★ ĐỢT G / TASK G3 / B4 — người dùng đổi mức quyền ở ô chọn.
       if (m.loai === "dat_muc_quyen") { void this.datMucQuyen(m.mucQuyen); return; }
+      // ★★★ ĐỢT G / TASK G4 / B3 — nút "Mở Settings" trên bong bóng lỗi KHÔNG-NỐI-ĐƯỢC-MÁY-CHỦ
+      // (xem `hoi()`/`duyetDeXuat()`/`huyDeXuat()` bên dưới, và `moTaLoiKhongNoiDuocMayChu`). Webview
+      // chỉ báo Ý ĐỊNH — mở đúng lệnh có sẵn của VSCode, lọc thẳng tới ô `aviAiLocal.serverUrl`,
+      // cùng lệnh mà `aviAiLocal.doiMayChu` (`extension.ts`) dùng, KHÔNG một đường mở-settings riêng.
+      if (m.loai === "mo_settings_may_chu") {
+        void vscode.commands.executeCommand("workbench.action.openSettings", "aviAiLocal.serverUrl");
+        return;
+      }
     });
   }
 
@@ -690,10 +703,23 @@ export class BangChat {
     return { daDangNhap: true, tenTaiKhoan: this.context.globalState.get<string>(KHOA_TEN_TAI_KHOAN, "") };
   }
 
-  /** Đọc trạng thái thật (trên) rồi báo cho webview — dùng chung cho "san_sang" và sau đăng nhập/xuất. */
+  /**
+   * Đọc trạng thái thật (trên) rồi báo cho webview — dùng chung cho "san_sang" và sau đăng nhập/xuất.
+   *
+   * ★★★ ĐỢT G / TASK G4 / B1 — kèm `serverUrl` HIỆN TẠI để webview đặt vào TOOLTIP của icon tài
+   * khoản (xem `htmlBang.ts`, nhánh `trang_thai_dang_nhap`). Đây là lựa chọn ĐÃ CÂN NHẮC thay vì một
+   * dòng riêng ở đầu khung: G1 (2026-09-03) vừa dọn đúng vùng đầu khung này từ BA phần tử xuống MỘT
+   * icon vì người dùng phàn nàn "mất thẩm mỹ" — thêm một dòng cố định là quay lại đúng lỗi vừa sửa.
+   * Tooltip không chiếm chỗ, luôn có mặt (không phải một hành động phải nhớ tìm), và đã đúng chỗ
+   * người dùng nhìn khi họ đang thắc mắc "mình đang nói chuyện với máy nào" (họ hover vào ĐÚNG icon
+   * đang nói về tài khoản của họ trên máy chủ đó). Đọc TƯƠI (`cfg.get`) mỗi lần gọi hàm này — không
+   * cache — nên tooltip luôn khớp giá trị Settings hiện tại, kể cả vừa đổi qua `aviAiLocal.doiMayChu`
+   * mà chưa đóng/mở lại view (B4: đổi Settings không cần Reload Window).
+   */
   private async guiTrangThaiDangNhap(): Promise<void> {
     const tt = await this.trangThaiDangNhap();
-    void this.panel.webview.postMessage({ loai: "trang_thai_dang_nhap", ...tt });
+    const serverUrl = vscode.workspace.getConfiguration("aviAiLocal").get<string>("serverUrl", "http://localhost:3000");
+    void this.panel.webview.postMessage({ loai: "trang_thai_dang_nhap", ...tt, serverUrl });
   }
 
   /**
@@ -1343,6 +1369,25 @@ export class BangChat {
         void this.guiTrangThaiDangNhap();
         return;
       }
+      /**
+       * ★★★ ĐỢT G / TASK G4 / B3 — LỖI PHẢI CHỈ ĐƯỜNG SỬA khi đây THẬT SỰ là "không nối được máy
+       * chủ" (mạng hỏng/sai địa chỉ/timeout — `laLoiKhongNoiDuocMayChu`, THUẦN, có lưới riêng).
+       *
+       * ⚠⚠⚠ NHÁNH KIA — vị từ đã tự loại trừ mọi đáp ứng HTTP THẬT (401 bắt Ở TRÊN bằng `laLoi401`;
+       * 403/500/… rơi qua nhánh chung NGAY DƯỚI ĐÂY, giữ NGUYÊN hành vi cũ — hiện nguyên văn câu của
+       * máy chủ, KHÔNG kèm gợi ý đổi địa chỉ) — gợi ý sai chỗ còn tệ hơn không gợi ý (yêu cầu B3).
+       * `moSettings: true` báo webview vẽ thêm nút "Mở Settings" trên CHÍNH bong bóng lỗi này (xem
+       * `htmlBang.ts#themLuot`) — bấm nút gửi `mo_settings_may_chu` xử lý Ở TRÊN, không một đường
+       * ghi/mở-cấu-hình thứ hai nào khác.
+       */
+      if (laLoiKhongNoiDuocMayChu(e)) {
+        void this.panel.webview.postMessage({
+          loai: "loi",
+          thongDiep: moTaLoiKhongNoiDuocMayChu(cfg.get<string>("serverUrl", "http://localhost:3000")),
+          moSettings: true,
+        });
+        return;
+      }
       // ★ CÙNG LÝ LẼ với nhánh huỷ ở trên: lỗi THẬT cũng không đảm bảo là `Error` (một chuỗi trần
       // ném ra sẽ làm `.message` là `undefined`, tái tạo đúng "bong bóng lỗi RỖNG" cho một lượt
       // KHÔNG PHẢI do huỷ) — dùng `e instanceof Error` để đọc `.message`, ngược lại hiện chính giá
@@ -1717,6 +1762,9 @@ export class BangChat {
     let thongDiep: string;
     /** Giữ đề xuất lại để người dùng thử lại — chỉ bật ở ca KHÔNG BIẾT KẾT CỤC (xem `catch`). */
     let giuDeXuat = false;
+    // ★★★ ĐỢT G / TASK G4 / B3 — chỉ đúng khi `catch` bên dưới xác định lỗi này LÀ không-nối-được-
+    // máy-chủ (xem `laLoiKhongNoiDuocMayChu`); webview vẽ thêm nút "Mở Settings" khi cờ này true.
+    let moSettings = false;
     try {
       // Điểm DUY NHẤT trong extension gọi confirmAction — xem ../mang/duyetGhi.ts.
       const kq = await goiDuyet(serverUrl, cookie, d.actionId, d.token);
@@ -1764,9 +1812,17 @@ export class BangChat {
         `Lượt ghi CÓ THỂ đã xong trên máy chủ, cũng có thể chưa: từ đây không phân biệt được. ` +
         `Bấm "Duyệt & ghi trên SERVER" lần nữa là AN TOÀN — máy chủ xử lý idempotent, nếu lượt trước đã ` +
         `xong nó trả lại kết quả đã lưu chứ KHÔNG ghi lần hai. Thẻ duyệt được giữ nguyên để bạn thử lại.`;
+      // ★★★ B3 — CHỈ khi vị từ THUẦN xác nhận đây là lỗi mạng (chưa hề có đáp ứng HTTP nào) mới nói
+      // thêm địa chỉ đang thử + gợi ý Settings. Một 403/500 giữa chừng KHÔNG ném theo hình dạng này
+      // (đã có đáp ứng — rơi vào nhánh `!kq.ok` phía trên, không vào `catch`), nên nhánh kia của B3
+      // không hề bị chạm ở đây; đây chỉ thêm chi tiết cho ĐÚNG một nguyên nhân đã xác định.
+      if (laLoiKhongNoiDuocMayChu(e)) {
+        moSettings = true;
+        thongDiep += ` Đang thử nối tới "${serverUrl}" — nếu địa chỉ máy chủ vừa đổi, bấm nút bên dưới để mở Settings (không cần khởi động lại VSCode).`;
+      }
     }
     if (!giuDeXuat) this.quenDeXuat();
-    void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
+    void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep, moSettings });
   }
 
   private async huyDeXuat(): Promise<void> {
@@ -1791,6 +1847,8 @@ export class BangChat {
     let thongDiep: string;
     /** Giữ đề xuất lại để người dùng thử lại — chỉ bật ở ca KHÔNG BIẾT KẾT CỤC (xem `catch`). */
     let giuDeXuat = false;
+    // ★★★ ĐỢT G / TASK G4 / B3 — cùng lý do với `duyetDeXuat` ở trên.
+    let moSettings = false;
     try {
       const kq = await goiHuy(serverUrl, cookie, d.actionId);
       // `cancelAction` cũng TỪ CHỐI qua HTTP 200 (đã thực thi trước đó, trạng thái sai...) —
@@ -1810,8 +1868,14 @@ export class BangChat {
         `KHÔNG RÕ KẾT CỤC — không nhận được trả lời của máy chủ (${(e as Error).message}). ` +
         `Lượt huỷ có thể đã tới nơi, cũng có thể chưa; nếu chưa thì đề xuất vẫn còn hiệu lực trên máy chủ ` +
         `cho tới khi hết hạn. Bấm "Huỷ" lần nữa là an toàn. Thẻ duyệt được giữ nguyên để bạn thử lại.`;
+      // ★★★ B3 — cùng lý do với `duyetDeXuat` ở trên: chỉ thêm khi vị từ THUẦN xác nhận đây là lỗi
+      // mạng, không phải mọi lỗi `catch`.
+      if (laLoiKhongNoiDuocMayChu(e)) {
+        moSettings = true;
+        thongDiep += ` Đang thử nối tới "${serverUrl}" — nếu địa chỉ máy chủ vừa đổi, bấm nút bên dưới để mở Settings (không cần khởi động lại VSCode).`;
+      }
     }
     if (!giuDeXuat) this.quenDeXuat();
-    void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
+    void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep, moSettings });
   }
 }

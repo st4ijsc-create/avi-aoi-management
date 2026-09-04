@@ -42,6 +42,15 @@ const may = vi.hoisted(() => ({
   /** Mọi lệnh `window.registerWebviewViewProvider(id, provider)` — dùng để đo B3 (cả hai view id
    *  phải được đăng ký, dùng CHUNG một instance provider). */
   dangKyViewProvider: [] as Array<{ id: string; provider: unknown }>,
+  // ★★★ ĐỢT G / TASK G4 / B3 — mô phỏng `dangNhap()` (`mang/dangNhap.ts`) NÉM một lỗi cụ thể (không
+  // chạm mạng thật). `undefined` ⇒ trả kết quả "ok" mặc định (không ca cũ nào trong tệp này gọi
+  // lệnh `aviAiLocal.dangNhap`, xác nhận bằng grep trước khi thêm mock — an toàn cho chúng).
+  dangNhapNem: undefined as unknown,
+  /** Nút được "bấm" trên hộp thoại lỗi (`showErrorMessage`) — `undefined` mô phỏng đóng hộp thoại
+   *  không chọn gì. */
+  chonNutLoi: undefined as string | undefined,
+  /** Mọi lần `showErrorMessage` được gọi — ghi lại (thông điệp, danh sách nút) để lưới đo cả hai. */
+  loiDuaRa: [] as Array<{ thongDiep: string; nut: string[] }>,
 }));
 
 vi.mock("vscode", () => {
@@ -96,9 +105,13 @@ vi.mock("vscode", () => {
         may.thongBao.push(s);
         return Promise.resolve(undefined);
       },
-      showErrorMessage: (s: string) => {
+      // ★★★ ĐỢT G / TASK G4 / B3 — NHẬN thêm danh sách nút (chữ ký thật của `showErrorMessage` là
+      // `(message, ...items)`), GHI LẠI để lưới đo cả thông điệp lẫn nút được đưa ra, và TRẢ VỀ nút
+      // mà ca lưới đang mô phỏng "đã bấm" (`may.chonNutLoi`, mặc định `undefined` — đóng hộp thoại).
+      showErrorMessage: (s: string, ...nut: string[]) => {
         may.thongBao.push(s);
-        return Promise.resolve(undefined);
+        may.loiDuaRa.push({ thongDiep: s, nut });
+        return Promise.resolve(may.chonNutLoi);
       },
       // ★★★ THANH BÊN — `activate()` nay đăng ký thêm view provider cho khung chat trong thanh
       // hoạt động (xem `extension.ts`). Lưới này đo đường CMD+K, không đo đường thanh bên, nên chỉ
@@ -113,6 +126,18 @@ vi.mock("vscode", () => {
     workspace,
   };
 });
+
+/**
+ * ★★★ ĐỢT G / TASK G4 / B3 — mô phỏng `mang/dangNhap.ts` (I/O đăng nhập THẬT, gọi `fetch`). Không
+ * ca nào trong tệp này trước đây gọi lệnh `aviAiLocal.dangNhap` (grep xác nhận), nên mock TOÀN PHẦN
+ * ở đây an toàn — không có hành vi cũ nào để giữ nguyên.
+ */
+vi.mock("./mang/dangNhap", () => ({
+  dangNhap: async (_serverUrl: string, ten: string) => {
+    if (may.dangNhapNem) throw may.dangNhapNem;
+    return { ket: { loai: "ok", ten }, cookie: "cookie-gia" };
+  },
+}));
 
 // Bảng chat + kho đề xuất bị thay: lưới này đo ĐÚNG một thứ — chuỗi câu hỏi đi ra khỏi Cmd+K.
 vi.mock("./ui/bangChat", () => ({
@@ -159,6 +184,9 @@ beforeEach(() => {
   may.phienBanVscode = "1.135.0";
   may.executeCommandGoi = [];
   may.dangKyViewProvider = [];
+  may.dangNhapNem = undefined;
+  may.chonNutLoi = undefined;
+  may.loiDuaRa = [];
 });
 
 describe("Cmd+K — đường dẫn đưa cho model (F3)", () => {
@@ -382,5 +410,58 @@ describe("ĐỢT F / TASK 4 — activate() đặt context key CẢ HAI view id t
     expect(may.dangKyViewProvider).toHaveLength(2);
     const [a, b] = may.dangKyViewProvider;
     expect(a!.provider).toBe(b!.provider); // NGUYÊN VĂN cùng một object, không chỉ "cùng hình dạng".
+  });
+});
+
+/** ★★★ ĐỢT G / TASK G4 / B2 — lệnh đổi nhanh địa chỉ máy chủ. */
+describe("ĐỢT G / TASK G4 / B2 — lệnh 'aviAiLocal.doiMayChu'", () => {
+  it("★★★ đã đăng ký, và khi chạy thì mở ĐÚNG Settings đã lọc tới aviAiLocal.serverUrl", async () => {
+    activate({ subscriptions: [], secrets: {} } as never);
+
+    expect(may.lenh.has("aviAiLocal.doiMayChu")).toBe(true);
+    await may.lenh.get("aviAiLocal.doiMayChu")!();
+
+    expect(may.executeCommandGoi).toContainEqual(["workbench.action.openSettings", "aviAiLocal.serverUrl"]);
+  });
+});
+
+/**
+ * ★★★ ĐỢT G / TASK G4 / B3 — LỖI PHẢI CHỈ ĐƯỜNG SỬA ở đường ĐĂNG NHẬP: exception từ `dangNhap()`
+ * (`mang/dangNhap.ts`) là đường THỨ HAI có thể gặp "server đổi IP" TRƯỚC KHI có cookie — cùng vị từ
+ * THUẦN `laLoiKhongNoiDuocMayChu` mà `bangChat.ts` dùng cho lỗi giữa lượt hỏi (lưới riêng của vị từ
+ * ở `loi/loiKetNoiMayChu.unit.test.ts`; nhóm ca dưới đây đo phần CHỈ `extension.ts` mới có: đúng
+ * NÚT nào được đưa ra và đúng LỆNH nào chạy khi bấm nút đó).
+ */
+function loiKhongNoiDuocMayChuGia(): Error {
+  const loi = new TypeError("fetch failed");
+  (loi as unknown as { cause: unknown }).cause = Object.assign(new Error("mô phỏng"), { code: "ECONNREFUSED" });
+  return loi;
+}
+
+describe("ĐỢT G / TASK G4 / B3 — đăng nhập gặp lỗi mạng ⇒ chỉ đường sửa", () => {
+  it("★★★ lỗi mạng ⇒ hộp thoại có nút 'Mở Settings'; bấm nút ⇒ mở đúng aviAiLocal.serverUrl", async () => {
+    may.dangNhapNem = loiKhongNoiDuocMayChuGia();
+    may.chonNutLoi = "Mở Settings";
+    activate({ subscriptions: [], secrets: {} } as never);
+
+    await may.lenh.get("aviAiLocal.dangNhap")!();
+
+    const loi = may.loiDuaRa.at(-1);
+    expect(loi, JSON.stringify(may.loiDuaRa)).toBeDefined();
+    expect(loi!.nut).toContain("Mở Settings");
+    expect(loi!.thongDiep).toContain("http://localhost:3000");
+    expect(may.executeCommandGoi).toContainEqual(["workbench.action.openSettings", "aviAiLocal.serverUrl"]);
+  });
+
+  it("★★★ NHÁNH KIA — lỗi KHÔNG PHẢI lỗi mạng ⇒ KHÔNG nút 'Mở Settings', KHÔNG mở Settings", async () => {
+    may.dangNhapNem = new Error("lỗi ngoài dự tính — không phải lỗi mạng");
+    activate({ subscriptions: [], secrets: {} } as never);
+
+    await may.lenh.get("aviAiLocal.dangNhap")!();
+
+    const loi = may.loiDuaRa.at(-1);
+    expect(loi, JSON.stringify(may.loiDuaRa)).toBeDefined();
+    expect(loi!.nut).toEqual([]);
+    expect(may.executeCommandGoi.some((a) => a[0] === "workbench.action.openSettings")).toBe(false);
   });
 });

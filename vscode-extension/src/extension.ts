@@ -10,6 +10,9 @@ import { KhoDeXuat, SCHEME } from "./ui/diffDeXuat";
 import { dungCauHoiSuaChon } from "./loi/cauHoiSuaChon";
 import { duongTuongDoiTrongWorkspace } from "./loi/chanGhi";
 import { duocPhepRoiMay } from "./loi/nguCanh";
+// ★★★ ĐỢT G / TASK G4 / B3 — cùng vị từ THUẦN mà `bangChat.ts` dùng cho lỗi giữa lượt hỏi; đăng
+// nhập là đường THỨ HAI gọi mạng có thể gặp CHÍNH lớp lỗi này (server đổi IP) TRƯỚC KHI có cookie.
+import { laLoiKhongNoiDuocMayChu, moTaLoiKhongNoiDuocMayChu } from "./loi/loiKetNoiMayChu";
 import { hoTroThanhBenPhu, KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU } from "./loi/thanhBenPhu";
 // ★★★ ĐỢT H / TASK H2 / B5 — lệnh quản lý MCP server ngoài (liệt kê/bật-tắt/xem tool). Xem docblock
 // `ui/mcpQuanLy.ts` cho lý do đi đường QuickPick thay vì webview.
@@ -49,7 +52,31 @@ async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
     await context.globalState.update(KHOA_TEN_TAI_KHOAN, ket.ten || ten);
     void vscode.window.showInformationMessage(`AI Local: đã đăng nhập (${ket.ten || ten}).`);
   } catch (e) {
-    void vscode.window.showErrorMessage(`Không nối được máy chủ: ${(e as Error).message}`);
+    /**
+     * ★★★ ĐỢT G / TASK G4 / B3 — LỖI PHẢI CHỈ ĐƯỜNG SỬA. Bản cũ khai NGUYÊN VĂN "Không nối được máy
+     * chủ" cho MỌI lỗi ở đây — vô tình đúng phần lớn thời gian (`dangNhap()`, `mang/dangNhap.ts`,
+     * không kiểm `res.ok` nên KHÔNG BAO GIỜ ném vì sai mật khẩu/tài khoản; mọi exception tới đây vốn
+     * chỉ có thể là `fetch()` thất bại HOẶC một lỗi ngoài dự tính) — nhưng đúng-vì-may-mắn không
+     * phải một hàng rào. Đo bằng vị từ THUẦN (`laLoiKhongNoiDuocMayChu`, `loi/loiKetNoiMayChu.ts`)
+     * để lời khai không còn dựa trên một quan sát ngầm có thể sai lệch nếu `dangNhap()` đổi sau này.
+     *
+     * ★★★ B3 — kèm NÚT hành động thật (`showErrorMessage` của VSCode nhận thêm tham số nút, trả về
+     * nhãn nút được bấm) mở THẲNG `aviAiLocal.serverUrl`, KHÔNG một đường mở-settings thứ hai —
+     * dùng ĐÚNG lệnh `workbench.action.openSettings` mà `aviAiLocal.doiMayChu` (B2) và nút trong
+     * khung chat (B3, `bangChat.ts`) đều gọi.
+     */
+    if (laLoiKhongNoiDuocMayChu(e)) {
+      const chon = await vscode.window.showErrorMessage(moTaLoiKhongNoiDuocMayChu(serverUrl), "Mở Settings");
+      if (chon === "Mở Settings") {
+        void vscode.commands.executeCommand("workbench.action.openSettings", "aviAiLocal.serverUrl");
+      }
+      return;
+    }
+    // NHÁNH KIA — không phải lỗi mạng: KHÔNG gợi ý đổi địa chỉ (gợi ý sai chỗ còn tệ hơn không gợi
+    // ý). Hiện nguyên văn lỗi để còn báo cáo được, không bịa "không nối được máy chủ" khi chưa chắc.
+    void vscode.window.showErrorMessage(
+      `AI Local: lỗi ngoài dự tính khi đăng nhập — ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 }
 
@@ -195,6 +222,25 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("aviAiLocal.nhoDieuNay", () => chayNhoDieuNay(context)),
     // ★★★ ĐỢT H / TASK H3 / B2 — bảng xem/xoá bộ nhớ dài hạn.
     vscode.commands.registerCommand("aviAiLocal.boNho", () => BoNhoQuanLy.moHoacHien(context)),
+    /**
+     * ★★★ ĐỢT G / TASK G4 / B2 — lệnh đổi nhanh địa chỉ máy chủ, mở THẲNG Settings đã LỌC SẴN tới
+     * đúng ô `aviAiLocal.serverUrl` — không cần người dùng tự gõ tìm trong hàng trăm mục cấu hình
+     * của VSCode. `openSettings` là lệnh CÓ SẴN của chính VSCode (không mở một webview/UI thứ hai
+     * để tự vẽ lại ô nhập settings — đúng nguyên tắc "không dựng lại thứ nền tảng đã có").
+     *
+     * ★★★ KHÔNG đưa lên `menus.view/title` (xem `package.json`) — QUYẾT ĐỊNH CÓ CHỦ Ý, không phải bỏ
+     * sót: thanh đó đã có BA nút (chatMoi/lichSu/boNho — G1..G3 lần lượt dựng), và người dùng vừa
+     * phàn nàn khung "mất thẩm mỹ" khiến G1 phải DỌN vùng đầu khung từ ba phần tử xuống một icon.
+     * Thêm nút thứ tư ngay sau đợt dọn đó đi ngược đúng phản hồi vừa nhận. Đường dẫn khác tới lệnh
+     * này: (1) bảng lệnh Ctrl+Shift+P — tên lệnh tiếng Việt rõ ràng, tìm được ngay; (2) ĐÚNG LÚC cần
+     * nhất — bong bóng lỗi "KHÔNG NỐI ĐƯỢC MÁY CHỦ" trong khung chat có nút "Mở Settings" gọi cùng
+     * lệnh `workbench.action.openSettings` này (xem `bangChat.ts`, tin `mo_settings_may_chu`, B3).
+     * Một affordance xuất hiện ĐÚNG lúc người dùng cần (đang gặp lỗi) mạnh hơn một icon tĩnh phải tự
+     * đoán ý nghĩa giữa ba icon khác đang có mặt sẵn.
+     */
+    vscode.commands.registerCommand("aviAiLocal.doiMayChu", () =>
+      vscode.commands.executeCommand("workbench.action.openSettings", "aviAiLocal.serverUrl"),
+    ),
   );
 
   /**

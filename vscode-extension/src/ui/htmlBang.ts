@@ -100,6 +100,10 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   /* Nút ghi đang chờ kết quả: phải THẤY ĐƯỢC là đang khoá, nếu không người dùng bấm tiếp vì nghĩ
      cú bấm đầu rơi mất — đúng cái phản xạ sinh ra hàng kiểm toán thừa. */
   button:disabled { opacity: .5; cursor: default; }
+  /* ĐỢT G / TASK G4 / B3 — nút "Mở Settings" trong bong bóng lỗi KHÔNG-NỐI-ĐƯỢC-MÁY-CHỦ. Chỉ tách
+     bằng khoảng cách với đoạn văn phía trên (\`display:block\`) — không cần màu riêng, đây vẫn là
+     một hành động PHỤ (mở cấu hình), không phải hành động chính của lượt hỏi. */
+  .nut-mo-settings { display: block; margin-top: 6px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -210,7 +214,15 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   // có mang giao thức Cmd+K hay không, vì nội dung cauHoi lúc đó trông giống hệt một câu gõ tay.
   let laCauHoiTuLenh = false;
 
-  function themLuot(nhan, chu) {
+  /**
+   * ★★★ ĐỢT G / TASK G4 / B3 — tham số THỨ BA \`moSettings\` (mặc định falsy, MỌI lời gọi cũ giữ
+   * NGUYÊN hành vi). Khi true, bong bóng này có thêm một nút thật "Mở Settings" — dành riêng cho
+   * lỗi KHÔNG-NỐI-ĐƯỢC-MÁY-CHỦ (xem \`bangChat.ts\`, \`laLoiKhongNoiDuocMayChu\`). Đặt Ở ĐÂY (trong
+   * CHÍNH bong bóng lỗi), KHÔNG PHẢI một phần tử cố định ở đầu khung — lý do CÙNG với quyết định ở
+   * B1 (không phình đầu khung): nút chỉ xuất hiện ĐÚNG lúc cần (đang có lỗi mạng), biến mất theo
+   * đúng vòng đời của bong bóng đó, không chiếm chỗ vĩnh viễn.
+   */
+  function themLuot(nhan, chu, moSettings) {
     const d = document.createElement("div");
     d.className = "luot";
     const t = document.createElement("div");
@@ -219,6 +231,15 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     const c = document.createElement("div");
     c.textContent = chu;
     d.appendChild(t); d.appendChild(c);
+    if (moSettings) {
+      const b = document.createElement("button");
+      b.className = "nut-mo-settings";
+      b.textContent = "Mở Settings — đổi địa chỉ máy chủ";
+      // Webview chỉ báo Ý ĐỊNH — extension mở đúng ô cấu hình qua lệnh có sẵn của VSCode
+      // (\`workbench.action.openSettings\`), đúng nguyên tắc "hiển thị + chuyển tiếp" của cả tệp này.
+      b.addEventListener("click", () => vscode.postMessage({ loai: "mo_settings_may_chu" }));
+      d.appendChild(b);
+    }
     hoiThoai.appendChild(d);
     hoiThoai.scrollTop = hoiThoai.scrollHeight;
     return c;
@@ -485,7 +506,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   window.addEventListener("message", (e) => {
     const m = e.data;
     if (m.loai === "token" && khoiTraLoi) khoiTraLoi.textContent += m.chu;
-    else if (m.loai === "loi") { themLuot("Lỗi", m.thongDiep); nutDung.hidden = true; }
+    else if (m.loai === "loi") { themLuot("Lỗi", m.thongDiep, m.moSettings === true); nutDung.hidden = true; }
     else if (m.loai === "hoan_tat") {
       // vanBanCuoi chỉ có khi server bảo THAY chữ đã stream (degraded) — không phải mọi lượt.
       if (m.vanBanCuoi != null && khoiTraLoi) khoiTraLoi.textContent = m.vanBanCuoi;
@@ -567,7 +588,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // (\`confirmAction\` idempotent — xem \`bangChat.duyetDeXuat\`). Khoá vĩnh viễn ở đó là lấy mất
       // đúng đường thoát mà bản vá kia dựng ra.
       moKhoaNutDuyet();
-      themLuot("Thông báo", m.thongDiep);
+      themLuot("Thông báo", m.thongDiep, m.moSettings === true);
     } else if (m.loai === "dat_cau_hoi_tu_lenh") {
       // ★★★ CMD+K (Task 7) — extension đổ câu hỏi ĐÃ DỰNG SẴN (đường dẫn + dòng + đoạn mã + yêu
       // cầu, xem loi/cauHoiSuaChon.ts) vào Ô NHẬP rồi gọi ĐÚNG hàm gửi mà nút "Gửi" dùng. KHÔNG có
@@ -598,10 +619,16 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // ★★★ ĐỢT G / TASK G1 / B2 — tên tài khoản CHỈ đi vào \`title\`/\`aria-label\` (tooltip qua
       // thuộc tính, không phải \`textContent\` của một phần tử hiện ra) — vẫn tới qua ĐÚNG tin này,
       // không tiêm vào HTML tĩnh (giữ nguyên kỷ luật đã ghi ở docblock đầu tệp).
+      // ★★★ ĐỢT G / TASK G4 / B1 — CÙNG tooltip đó nay MANG THÊM địa chỉ máy chủ hiện tại
+      // (\`m.serverUrl\`, cũng qua thuộc tính \`title\`/\`aria-label\`, KHÔNG \`textContent\`/\`innerHTML\`
+      // — cùng kỷ luật chống tiêm HTML đã ghi ở trên cho tên tài khoản). Lựa chọn "tooltip, không
+      // phải dòng riêng" là CÓ CHỦ Ý: xem lý do đầy đủ ở docblock \`guiTrangThaiDangNhap\`
+      // (\`bangChat.ts\`) — G1 vừa dọn đúng vùng này từ ba phần tử xuống một icon.
       const daDangNhap = m.daDangNhap === true;
       daDangNhapHienTai = daDangNhap;
       nutTaiKhoan.classList.toggle("da-dang-nhap", daDangNhap);
-      const nhanTaiKhoan = daDangNhap ? (m.tenTaiKhoan || "Đã đăng nhập") + " — bấm để đăng xuất" : "Đăng nhập";
+      const dongMayChu = m.serverUrl ? " · Máy chủ: " + m.serverUrl : "";
+      const nhanTaiKhoan = (daDangNhap ? (m.tenTaiKhoan || "Đã đăng nhập") + " — bấm để đăng xuất" : "Đăng nhập") + dongMayChu;
       nutTaiKhoan.title = nhanTaiKhoan;
       nutTaiKhoan.setAttribute("aria-label", nhanTaiKhoan);
     } else if (m.loai === "muc_quyen") {

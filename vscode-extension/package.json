@@ -90,6 +90,10 @@
         "command": "aviAiLocal.boNho",
         "title": "AI Local: Bộ nhớ dài hạn",
         "icon": "$(book)"
+      },
+      {
+        "command": "aviAiLocal.doiMayChu",
+        "title": "AI Local: Đổi địa chỉ máy chủ"
       }
     ],
     "keybindings": [
