@@ -17,6 +17,7 @@ import {
   useMachine,
   useMachineComponents,
   useResetEstop,
+  useScreen,
   useStartFleet,
   useStopFleet,
   type DeviceClass,
@@ -24,6 +25,7 @@ import {
 import { useInspectorStream } from "@/lib/inspector"
 import { DEMO_MACHINE_CODE, resolveDemoScreen } from "@/lib/hmiScreens"
 import { ScreenRenderer } from "@/hmi-runtime/ScreenRenderer"
+import { machineScreenId, renderableScreen } from "@/hmi-runtime/publishedScreen"
 import { createMachineDetailSource } from "@/hmi-runtime/TagValueSource"
 import type { HmiScreenDocument } from "@/contracts/hmiScreen"
 
@@ -49,6 +51,11 @@ import automationOverview from "../../screens/automation-overview.json"
 import aoiOverview from "../../screens/aoi-overview.json"
 import iotOverview from "../../screens/iot-overview.json"
 
+/**
+ * The SHIPPED screen for each device class — and, since WS-HMI-2 Task 13, the FALLBACK rather than
+ * the answer. See `resolveKioskScreen` below for what now comes first and why this table must stay
+ * exactly as it is.
+ */
 const SCREEN_DOCS: Record<DeviceClass, HmiScreenDocument> = {
   Automation: automationOverview as HmiScreenDocument,
   AoiAvi: aoiOverview as HmiScreenDocument,
@@ -101,6 +108,27 @@ export default function Hmi() {
   const code = screenId === undefined ? routeCode : DEMO_MACHINE_CODE
   const demoScreen = resolveDemoScreen(screenId)
   const t = useT()
+
+  /**
+   * ── WS-HMI-2 TASK 13 — THE JOIN: THE KIOSK READS WHAT THE EDITOR PUBLISHED ─────────────────────
+   *
+   * Measured at `20f78b8d`, before this line existed: nothing outside `src/editor/` called
+   * `/v1/screens`, so twelve tasks of screen store, publish/version/rollback door and visual editor
+   * wrote into a store the operator panel never opened. This is the one request that closes it.
+   *
+   * `machineScreenId` (`hmi-runtime/publishedScreen.ts`) derives the id — `machine-` + the lowercased
+   * machine code — and that module's own doc comment carries the reasoning for the reserved prefix
+   * and for `undefined` on a code that cannot make a legal screenId. Nothing here re-states it.
+   *
+   * 🔴 THE DEMO ROUTE IS DELIBERATELY EXCLUDED (`screenId === undefined` is the operator route).
+   * `/hmi/demo/{screenId}` NAMES a document; answering a URL that named one document with a different
+   * one is exactly the defect `35-hmi-indirect-binding.spec.ts`'s third test exists to prevent, and a
+   * published `machine-iot-01` row silently winning over the demo screen would be that defect wearing
+   * a different hat. Excluded at the FETCH, not merely at the render, so the demo route makes no
+   * request it would then ignore.
+   */
+  const kioskScreenId = screenId === undefined ? machineScreenId(code) : undefined
+  const publishedScreen = useScreen(kioskScreenId)
 
   const { data: machine, isPending, isError, error } = useMachine(code)
   // WS-HMI-2 Task 5 — the component tree this machine's screen resolves its `{component}` bindings
@@ -199,6 +227,16 @@ export default function Hmi() {
     return <ErrorKiosk title={t("machineDetail.notFoundState.title")} description={screenId} />
   }
   if (isPending) return <LoadingKiosk />
+  // WS-HMI-2 Task 13 — wait for the STORE's answer before drawing anything, on the operator route.
+  // Not a nicety: without this, a machine that HAS a published screen would render its class's
+  // shipped document for one frame and then swap, i.e. an operator's panel would flash a screen
+  // nobody authored for that machine. The wait costs nothing extra — this query was started at the
+  // top of the component, in parallel with `useMachine`, so both are already in flight — and it
+  // cannot hang: `useScreen` does not retry a confirmed 404 (`lib/api.ts`), which is the answer this
+  // gate gets for every machine that has never been published to. Guarded on the id rather than on
+  // the query, because a DISABLED query stays `isPending` forever (the demo route, and any machine
+  // code that cannot make a legal screenId) and gating on that would be a spinner that never ends.
+  if (kioskScreenId !== undefined && publishedScreen.isPending) return <LoadingKiosk />
   if (isError) {
     const notFound = error instanceof EngineApiError && error.status === 404
     return notFound ? (
@@ -234,6 +272,29 @@ export default function Hmi() {
   // React's own re-render on each poll, same as every other live value on this page). A future widget
   // that DOES need push notifications independent of a re-render would need this reconsidered.
   const source = createMachineDetailSource(machine)
+
+  /**
+   * WS-HMI-2 Task 13 — WHICH DOCUMENT THIS PANEL DRAWS, in priority order, each step with its reason:
+   *
+   *  1. `demoScreen` — the engineering route named a document by URL. Unchanged by this task.
+   *  2. the PUBLISHED screen for this machine, if one exists AND is one the renderer can lay out.
+   *     `renderableScreen` returns `undefined` for the small set of shapes that would throw or
+   *     collapse the grid, so a bad row (a legacy document restored by a rollback, which does not
+   *     re-validate) costs this machine its published screen, never its whole panel — see that
+   *     function's own doc comment, and note that everything a merely ODD document contains
+   *     (an unknown widget kind, an out-of-range rect, an unresolved `{component}`) is still handled
+   *     by `ScreenRenderer` itself, one widget at a time. That net is untouched.
+   *  3. `SCREEN_DOCS[machine.class]` — the shipped screen, exactly as before this task.
+   *
+   * 🔴 STEP 3 IS WHY THE 31 VISUAL BASELINES CANNOT MOVE, and the argument is a grep rather than a
+   * hope: `useScreen` answers 404 for an id nobody ever `PUT`, `renderableScreen(undefined)` is
+   * `undefined`, and NOTHING in this repository writes `machine-scrw-01`, `machine-aoi-01` or
+   * `machine-iot-01` — the ids the three baseline machines derive. So for those three the expression
+   * below evaluates to the SAME object it evaluated to before this task, and `<ScreenRenderer>` is
+   * handed byte-identical input. §5-bis's "an undeclared screen changes nothing" is delivered by the
+   * fallback, not asserted about it.
+   */
+  const kioskDoc = demoScreen ?? renderableScreen(publishedScreen.data) ?? SCREEN_DOCS[machine.class]
 
   return (
     <div className="flex h-svh w-full flex-col overflow-hidden bg-surface-subtle text-text-body">
@@ -307,8 +368,12 @@ export default function Hmi() {
                 — see `35-hmi-indirect-binding.spec.ts` for the observed-in-a-browser version.
                 `?.components` (not a `??  []`) keeps "no declared model" as `undefined` all the way
                 down, which is the exact state §5-bis says must stay valid. */}
+            {/* WS-HMI-2 Task 13 — `kioskDoc` (computed above, with the priority order and the
+                baseline argument written out there) replaced `demoScreen ?? SCREEN_DOCS[machine.class]`
+                here. That expression is the line this whole workstream turned out to be missing: the
+                editor published, and this panel read three documents compiled into the bundle. */}
             <ScreenRenderer
-              doc={demoScreen ?? SCREEN_DOCS[machine.class]}
+              doc={kioskDoc}
               source={source}
               components={componentModel.data?.components}
             />

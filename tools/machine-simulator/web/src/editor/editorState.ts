@@ -217,6 +217,38 @@ export type EditorEdit =
    */
   | { kind: "rename"; widgetId: string; newId: string }
   /**
+   * WS-HMI-2 Task 13 — WHICH COMPONENT INSTANCE a widget is placed against: the field `{component}`
+   * indirect binding resolves through (`hmi-runtime/bindings.ts`'s `componentTagPrefixOf`).
+   *
+   * 🔴 THIS FIELD WAS THE LAST ONE WITH NO EDIT, AND THAT WAS NOT A GAP IN A LIST — IT WAS THE
+   * MISSING HALF OF §3.3. `PropertyPanel`'s header said `component` "is shown because `TagPicker`'s
+   * `{component}/…` section depends on it, so an engineer needs to see what it says", and
+   * `TagPicker`'s component section renders ONLY when the widget already declares one. So the whole
+   * indirect-binding surface was reachable only for a widget whose `component` had been written by
+   * hand into JSON somewhere outside the editor — i.e. the one feature the spec calls "the mechanism
+   * that makes Ignition scale" could not be authored by the editor at all. Task 13's acceptance pass
+   * is an engineer building a two-instance screen WITHOUT WRITING A LINE OF CODE; without this edit
+   * that is impossible, and the gap would have stayed invisible because every OTHER surface was
+   * pinned.
+   *
+   * `componentId` omitted (or `undefined`) REMOVES the field, and so does a blank/whitespace string —
+   * the "(none)" option of a `<select>` has to mean something, and `component: ""` is a value the
+   * frozen schema accepts while `componentTagPrefixOf` treats it as no component at all. Storing a
+   * field that reads as declared and behaves as absent is exactly the kind of half-state this
+   * workstream keeps finding, so the blank case is normalised to REMOVAL here, once, rather than at
+   * each caller. Any other value goes through `widgetRefusal` like every edit since Task 10 — so
+   * `$defs/widget.properties.component`'s `type: "string"` is enforced by the one mirror this file
+   * already carries, and `SCHEMA_MIRROR.handledKeywords` still accounts for that keyword by path.
+   *
+   * There is deliberately NO check that `componentId` names a node that EXISTS in some machine's
+   * component model. It cannot be: a screen document is not bound to a machine (the frozen contract
+   * has no machine field), so "does this id resolve" has no answer at authoring time — it depends on
+   * which machine's panel the document ends up on. The renderer already answers it at draw time, per
+   * widget, with `unresolvedComponentBindingWarning` on the cell. The picker only ever OFFERS ids
+   * from a real model, which is where the help belongs.
+   */
+  | { kind: "set-component"; widgetId: string; componentId?: string }
+  /**
    * WS-HMI-2 Task 12 — the ONLY edit in this vocabulary that writes outside `doc.widgets`.
    *
    * Changing the breakpoint an engineer is designing against is a change to the DOCUMENT
@@ -971,6 +1003,40 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
       return { doc: { ...doc, widgets } }
     }
 
+    // ── WS-HMI-2 Task 13 — which component instance this widget is placed against ────────────────
+    //
+    // Same shape as every edit since Task 10: build the widget this edit WOULD produce and hand it to
+    // `widgetRefusal`, so `$defs/widget.properties.component` is enforced by the one mirror rather
+    // than by a second copy of its rule here.
+    case "set-component": {
+      const index = indexOfWidget(doc, edit.widgetId)
+      if (index < 0) return unknownWidget("set-component", edit.widgetId)
+      const widget = doc.widgets[index]
+      // Blank IS removal — see this edit's own doc comment for why a `component: ""` that reads as
+      // declared and behaves as absent is refused a place in a saved document.
+      const remove =
+        edit.componentId === undefined ||
+        (typeof edit.componentId === "string" && edit.componentId.trim().length === 0)
+      if (remove && !Object.hasOwn(widget, "component")) return { doc }
+      let candidate: Record<string, unknown>
+      if (remove) {
+        candidate = { ...widget }
+        delete candidate.component
+      } else {
+        // Spread, not a rebuild: `component` already sits in the contract's own key order on any
+        // widget that carries one, so re-assigning it leaves a saved document's key order alone —
+        // the property `move`, `rename` and `set-kind` all state about themselves.
+        candidate = { ...widget, component: edit.componentId }
+      }
+      const bad = widgetRefusal(candidate, `set-component ${describe(edit.widgetId)}: widget`)
+      if (bad !== undefined) return refusal("invalid-widget", bad)
+      const widgets = doc.widgets.slice()
+      // The cast is carried by the line above: `widgetRefusal` returning `undefined` IS the proof
+      // that `component` is a string (or absent).
+      widgets[index] = candidate as ScreenWidget
+      return { doc: { ...doc, widgets } }
+    }
+
     // ── WS-HMI-2 Task 11 — the layer tree's rename ──────────────────────────────────────────────
     //
     // Same shape as the three above, and for the same reason: build the widget this edit WOULD
@@ -1074,6 +1140,51 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
 }
 
 // ── the public surface ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * WS-HMI-2 Task 13 — THE FIRST DOCUMENT, for a screenId nobody has ever published.
+ *
+ * ── WHY THIS EXISTS AND WHY IT IS NOT A `/editor/new` ROUTE ─────────────────────────────────────
+ * The plan's acceptance test was written against `/editor/new?machine=NEWM-01`. There is no such
+ * route: `App.tsx` has only `/editor/{screenId}`, and Task 8 turned an undeclared screenId into a
+ * NAMED not-found state (§5-bis: never a blank page, never an error page). That state was a dead end
+ * — it told an engineer that nothing was there and offered no way to start. This function is what the
+ * "start it" button hands to `createEditorState`, and the identity comes from THE URL rather than
+ * from a form: the id an engineer typed is the id the document carries and the id the publish `PUT`s,
+ * so there is no second place for the two to disagree — the exact disagreement `PUT /v1/screens/{id}`
+ * answers with 409 when a body and a route name different identities.
+ *
+ * ── EVERY DEFAULT BELOW IS A CHOICE, SO EACH ONE IS ARGUED ──────────────────────────────────────
+ *   * `title: screenId` — `title` is REQUIRED with `minLength: 1`, and there is no title editor in
+ *     this workstream. A document has to be born with a legal one, and the screenId is the only thing
+ *     known about it at that moment. Naming this a KNOWN GAP rather than inventing a friendlier
+ *     string: a hard-coded "Untitled screen" would be a fourth thing to translate, and a title an
+ *     engineer cannot change is better honest than decorative.
+ *   * `theme: "blueprint"` — every document that ships in this tree declares it
+ *     (`web/screens/*.json`, `web/screens/demo/*.json`), and the editor has no theme control, so a
+ *     new screen must not be born in a palette its author cannot leave. Design doc §6 names `isa101`
+ *     as the intended default for production machines; that is a WS-HMI-4 change to make together
+ *     with the control that can undo it, not a default to smuggle in here.
+ *   * `12 x 8` — the geometry the three shipped operator screens declare, so a screen built for a
+ *     machine's kiosk starts on the same grid the machine's kiosk already uses.
+ *   * `breakpoint: "panel"` — likewise, and the editor's breakpoint chooser can change it
+ *     (`set-breakpoint`), so unlike the two above this one is not a dead end.
+ *   * `widgets: []` — an EMPTY document, which the store would refuse to invent on its own
+ *     (`HmiScreenEndpoints`: "there is no such thing as a valid EMPTY screen" — a 404, never an
+ *     empty 200) but which an engineer may perfectly well AUTHOR, because they are about to add to
+ *     it. Nothing here writes to the store: this document lives in the editing session until the
+ *     engineer publishes, so an abandoned "new screen" leaves the store exactly as it was.
+ */
+export function createBlankScreen(screenId: string): HmiScreenDocument {
+  return {
+    schemaVersion: 1,
+    screenId,
+    title: screenId,
+    theme: "blueprint",
+    layout: { cols: 12, rows: 8, breakpoint: "panel" },
+    widgets: [],
+  }
+}
 
 /**
  * Opens an editing session on `doc`. The document is DEEP-COPIED: `past`/`future` will hold whole

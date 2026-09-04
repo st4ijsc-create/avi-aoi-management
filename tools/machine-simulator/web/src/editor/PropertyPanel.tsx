@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react"
 import type { PolicyAction } from "@/contracts/tagNamespace"
 import type { ScreenWidget, WidgetKind, WidgetRect } from "@/contracts/hmiScreen"
 import { useT } from "@/i18n"
+import { useMachineComponents } from "@/lib/api"
 import {
   POLICY_ACTION_VALUES,
   POLICY_REQUIRED_WIDGET_KINDS,
@@ -78,6 +79,20 @@ import { TagPicker } from "./TagPicker"
  *     rather than presenting a second box for the same field.
  *   * `component` — no edit kind reaches it either. It is shown because `TagPicker`'s `{component}/…`
  *     section depends on it, so an engineer needs to see what it says.
+ *
+ *     🔴 RETRACTED, WS-HMI-2 TASK 13, KEPT VERBATIM ABOVE. There IS an edit kind now
+ *     (`set-component`) and this panel renders its control. The retraction matters more than the
+ *     feature: the sentence above described the state as a considered scope decision, and it was
+ *     actually the hole through which the whole of §3.3 fell out of the product. `TagPicker`'s
+ *     `{component}` section renders only for a widget that already declares a component, and nothing
+ *     in this application could write that field — so indirect binding was authorable only by
+ *     hand-editing JSON somewhere else, while every surface around it was pinned green. Task 13's
+ *     acceptance criterion ("an engineer builds a screen without writing a line of code") is what
+ *     found it, which is the argument for having an end-to-end acceptance pass at all.
+ *
+ *     What did NOT change: no id-resolution claim is made. The chooser lists what one MACHINE
+ *     declares because a screen document names no machine; `set-component` deliberately does not
+ *     check that an id resolves anywhere, and the renderer keeps naming an unresolved one per widget.
  *   * a `props` entry that is nested, an array, a boolean, or whose key shares a widget field's name
  *     (`set-prop` refuses such a path by design — `out-of-scope-path`) or contains a `.` (which
  *     `set-prop` reads as a path separator). Shown read-only; a control that could only ever be
@@ -227,6 +242,11 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
   // NOT reset with the selection: an engineer laying out a screen is working against one machine, and
   // re-choosing it for every widget would make the picker useless.
   const [machineCode, setMachineCode] = useState("")
+  // WS-HMI-2 Task 13 — the component model the `component` chooser lists. Mounted unconditionally
+  // (hooks cannot sit behind the `!widget` return below) and gated on a NON-BLANK code the same way
+  // `TagPicker`'s own call is, so no request is made until a machine is chosen. Same hook, same key,
+  // same cache entry as the picker's — one fetch serves both surfaces.
+  const components = useMachineComponents(machineCode.length > 0 ? machineCode : undefined)
 
   if (forWidgetId !== widget?.id) {
     setForWidgetId(widget?.id)
@@ -256,6 +276,19 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
   const gateMissing = needsAction && !actionRecognised
   const bindings: Record<string, string> = widget.bindings ?? {}
   const props: Record<string, unknown> = widget.props ?? {}
+  /**
+   * WS-HMI-2 Task 13 — the component ids the CHOSEN MACHINE declares, for the chooser below.
+   *
+   * Read through the same `useMachineComponents` hook `TagPicker` already mounts for the same
+   * `machineCode`, so the two share ONE TanStack cache entry and this adds no request. `?? []` rather
+   * than a pending/error branch: "no model declared" and "not read yet" both mean the same thing to a
+   * chooser — there is nothing to offer — and §5-bis says a machine that has declared nothing is a
+   * valid product state, not a failure. The two states are told apart on screen by the note under the
+   * select, not by hiding the control.
+   */
+  const declaredComponentIds: string[] = Array.isArray(components.data?.components)
+    ? components.data.components.map((node) => node.id).filter((id): id is string => typeof id === "string")
+    : []
 
   function chooseKind(next: string) {
     if (!widget) return
@@ -431,11 +464,79 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
         </div>
       </Section>
 
+      {/*
+        WS-HMI-2 Task 13 — `component` STOPPED BEING READ-ONLY, and the sentence that used to sit here
+        (`editor.panel.componentReadOnly`: "the component field has no edit of its own in this task")
+        is deleted rather than softened, because the field now has one.
+
+        🔴 WHY THIS WAS THE LAST GAP AND NOT A MISSING NICETY. `TagPicker`'s `{component}` section
+        renders only for a widget that ALREADY declares a component, and nothing in the editor could
+        write that field — so indirect binding, the mechanism design §3.3 calls the reason Ignition
+        scales, was reachable only by hand-editing JSON outside this application. Task 13's acceptance
+        pass is an engineer building a two-instance screen without writing a line of code; this select
+        is what makes that sentence true rather than aspirational.
+
+        The list is the MACHINE's declared component model — the same `machineCode` the tag picker is
+        pointed at, which is why the chooser only appears once one is chosen. That is not a step
+        ordering imposed for its own sake: a screen document carries no machine (the frozen contract
+        has no such field), so "which components exist" has no answer until somebody names a machine,
+        and offering a free-text box instead would let a typo look exactly like a component that is
+        simply not declared yet.
+      */}
       <Section title={t("editor.panel.componentLabel")}>
         <span data-panel-component className="font-mono text-sm text-text-strong">
           {widget.component ?? t("editor.panel.componentNone")}
         </span>
-        <span className="hmi-micro normal-case text-text-muted">{t("editor.panel.componentReadOnly")}</span>
+        {machineCode.length === 0 ? (
+          <span data-panel-component-no-machine className="hmi-micro normal-case text-text-muted">
+            {t("editor.panel.componentNoMachine")}
+          </span>
+        ) : (
+          <>
+            <select
+              data-panel-component-choose
+              aria-label={t("editor.panel.componentLabel")}
+              className="h-7 w-full border border-border-strong bg-surface-muted px-1.5 text-sm"
+              value={widget.component ?? ""}
+              onChange={(event) =>
+                onEdit({
+                  kind: "set-component",
+                  widgetId: widget.id,
+                  // `""` is the "(none)" option. `set-component` normalises a blank to REMOVAL, so
+                  // this passes it through rather than deciding the same thing a second time here.
+                  componentId: event.target.value === "" ? undefined : event.target.value,
+                })
+              }
+            >
+              <option value="">{t("editor.panel.componentNoneOption")}</option>
+              {/* A component id the DOCUMENT carries that this machine's model does not declare —
+                  a widget authored against a different machine, or a stale reference. Listed so the
+                  select's value is the document's own, marked, and not re-choosable; the same idiom
+                  the kind select above uses for a kind outside the frozen enum. It is NOT an error:
+                  a screen document is not bound to a machine, so "not declared HERE" is an ordinary
+                  state, and the renderer names it per widget at draw time. */}
+              {widget.component !== undefined && !declaredComponentIds.includes(widget.component) ? (
+                <option value={widget.component} disabled data-panel-component-unknown>
+                  {widget.component}
+                </option>
+              ) : null}
+              {declaredComponentIds.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+            {components.data === undefined ? (
+              <span data-panel-component-nomodel className="hmi-micro normal-case text-text-muted">
+                {t("editor.panel.componentNoModel", { machine: machineCode })}
+              </span>
+            ) : (
+              <span className="hmi-micro normal-case text-text-muted">
+                {t("editor.panel.componentHint", { machine: machineCode })}
+              </span>
+            )}
+          </>
+        )}
       </Section>
 
       <Section title={t("editor.panel.bindingsLabel")}>

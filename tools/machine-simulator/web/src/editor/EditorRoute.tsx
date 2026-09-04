@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { useParams } from "wouter"
 
 import { useGloss } from "@/components/hmi/bilingual"
@@ -6,6 +6,7 @@ import type { HmiScreenDocument } from "@/contracts/hmiScreen"
 import { useT } from "@/i18n"
 import { EngineApiError, useScreen, useScreenVersions } from "@/lib/api"
 import { EditorCanvas } from "./EditorCanvas"
+import { createBlankScreen } from "./editorState"
 
 /**
  * WS-HMI-2 Task 8 — `/editor/:screenId`, the screen builder's shell.
@@ -42,6 +43,13 @@ import { EditorCanvas } from "./EditorCanvas"
  * `35-hmi-indirect-binding.spec.ts`'s third test pins the same rule for the kiosk's own
  * `/hmi/demo/<unknown>`; this is that precedent applied to a route whose answer comes over HTTP rather
  * than from a static map.
+ *
+ * 🔴 WS-HMI-2 TASK 13 — "THE THREE STATES" IS NOW FOUR, and the heading above is kept verbatim rather
+ * than renumbered because the fourth one is the point. The 404 branch stayed a NAMED DEAD END for five
+ * tasks: correct under §5-bis, and with no way forward, so the only screens this editor could open
+ * were ones something else had already created. It now offers "start this screen", whose document is
+ * built by `editorState.ts`'s `createBlankScreen` and held in this component until publish — see the
+ * `draft` state below for why the identity comes from the URL and why nothing is written on the way in.
  */
 
 /** The page frame every state below renders inside — so the not-found and the failure states are
@@ -137,12 +145,17 @@ function EditorNotice({
   title,
   description,
   role,
+  action,
 }: {
   title: string
   description: string
   /** `"status"` for a state an engineer can act on at leisure, `"alert"` for a fault that must
    * interrupt. No default — a caller adding a fourth state has to decide which it is. */
   role: "status" | "alert"
+  /** WS-HMI-2 Task 13 — a way OUT of the state, for the one state that has one. Optional and
+   * `undefined` for the rest: a fault an engineer cannot act on must not grow a button that pretends
+   * otherwise, and "this route carries no screen id" has nothing to offer either. */
+  action?: ReactNode
 }) {
   return (
     <div
@@ -152,6 +165,7 @@ function EditorNotice({
     >
       <h2 className="font-heading text-xl font-semibold text-text-strong">{title}</h2>
       <p className="max-w-md text-sm text-text-muted">{description}</p>
+      {action}
     </div>
   )
 }
@@ -161,6 +175,40 @@ export default function EditorRoute() {
   const t = useT()
   const screen = useScreen(screenId)
 
+  /**
+   * ── WS-HMI-2 TASK 13 — STARTING A SCREEN THAT DOES NOT EXIST YET ───────────────────────────────
+   *
+   * The plan's acceptance test was written against a `/editor/new?machine=NEWM-01` route. There is no
+   * such route and there is deliberately no new one: `App.tsx` has `/editor/{screenId}`, and Task 8
+   * already turned an undeclared screenId into a NAMED not-found state. What that state lacked was a
+   * way FORWARD — it told an engineer, correctly, that nothing was there, and stopped. So the
+   * not-found state grows one button, and the document it creates takes its identity FROM THE URL.
+   *
+   * That is the whole reason a `?machine=` form was not added instead: `PUT /v1/screens/{id}` answers
+   * 409 when a body and a route name different identities (WS-HMI-0b HIGH-1's rule), and the surest
+   * way never to hit that is to have only ONE place the identity can come from.
+   *
+   * The draft lives HERE, in the route, and NOT in the store — nothing is written until the engineer
+   * publishes, so an abandoned "new screen" leaves `GET /v1/screens/{id}` answering exactly the 404 it
+   * answered before. It is reset when the URL names a different screen, by React's own documented
+   * "adjust state when a prop changes" pattern (the same one `EditorCanvas` and `PropertyPanel` use):
+   * `wouter` keeps this component mounted across `/editor/a` → `/editor/b`, so without this an
+   * engineer who started a draft for one id and navigated to another would find the first draft
+   * sitting under the second id's name.
+   *
+   * After the first publish this branch stops being reached at all — `usePublishScreen` invalidates
+   * `QUERY_KEYS.screen(screenId)`, the refetch answers 200, and the success branch below renders
+   * `<EditorCanvas>` with the SERVER's document. The editing session survives that swap rather than
+   * restarting, because `EditorCanvas` re-opens a session only when `doc.screenId` CHANGES and this
+   * document was born carrying exactly the id the route asked for.
+   */
+  const [draft, setDraft] = useState<HmiScreenDocument | undefined>(undefined)
+  const [draftFor, setDraftFor] = useState<string | undefined>(screenId)
+  if (draftFor !== screenId) {
+    setDraftFor(screenId)
+    setDraft(undefined)
+  }
+
   // wouter cannot match `/editor/:screenId` with an empty segment, so this is unreachable through the
   // router as wired today. Handled anyway rather than asserted away, because the alternative failure is
   // silent and permanent: `useScreen` is `enabled: false` for an empty id, which leaves `isPending`
@@ -169,6 +217,36 @@ export default function EditorRoute() {
     return (
       <EditorShell screenId="">
         <EditorNotice role="status" title={t("editor.notDeclared.title")} description={t("editor.notDeclared.noId")} />
+      </EditorShell>
+    )
+  }
+
+  /**
+   * 🔴 THE DRAFT BRANCH COMES FIRST, AHEAD OF EVERY QUERY STATE, AND THAT ORDER IS LOAD-BEARING —
+   * MEASURED, not chosen for tidiness.
+   *
+   * The first version of this route put the draft inside the 404 branch, which reads more naturally
+   * ("a draft only makes sense for a screen that does not exist"). It cost the engineer their session
+   * on the very first publish: `usePublishScreen` invalidates `QUERY_KEYS.screen(screenId)`, and
+   * TanStack Query v5 refetching a query that has an ERROR and no DATA clears the error and returns
+   * the status to `pending` for the duration of the fetch — so the route rendered the LOADING notice
+   * for one commit, `<EditorCanvas>` unmounted, and it came back as a brand-new session. Observed in
+   * `tests/43-editor-acceptance.spec.ts`: the publish succeeded (the header's independent version read
+   * showed 1, the dirty flag cleared) while the panel's own "published as version 1" line was gone,
+   * the selection was gone, and the undo history with it.
+   *
+   * With the draft first, no query transition can unmount the canvas: the branch is chosen by a piece
+   * of state only this component writes. The canvas already OWNS the document from mount
+   * (`EditorCanvasProps.doc`), so continuing to hand it the draft object changes nothing about what is
+   * being edited — and `EditorShell` is handed `screen.data ?? draft` so the HEADER still reports what
+   * the engine holds (title, widget count, current version) the moment the publish lands. Two
+   * different questions, answered from two different places, on purpose: what you are editing, and
+   * what the server has.
+   */
+  if (draft) {
+    return (
+      <EditorShell screenId={screenId} doc={screen.data ?? draft}>
+        <EditorCanvas doc={draft} />
       </EditorShell>
     )
   }
@@ -183,6 +261,10 @@ export default function EditorRoute() {
 
   if (screen.isError) {
     const notDeclared = screen.error instanceof EngineApiError && screen.error.status === 404
+    // WS-HMI-2 Task 13 — the button that CREATES a draft is offered only here. An engine that is
+    // unreachable is not a screen that does not exist, and offering "start a new one" there would
+    // invite an engineer to build a document against a store nobody can currently read or write.
+    // (Once a draft exists the branch above answers first, whatever this query then does — see it.)
     return (
       <EditorShell screenId={screenId}>
         {notDeclared ? (
@@ -190,6 +272,16 @@ export default function EditorRoute() {
             role="status"
             title={t("editor.notDeclared.title")}
             description={t("editor.notDeclared.description", { screenId })}
+            action={
+              <button
+                type="button"
+                data-editor-start-new
+                className="border border-border-strong px-3 py-1.5 text-sm text-text-body hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+                onClick={() => setDraft(createBlankScreen(screenId))}
+              >
+                {t("editor.notDeclared.startNew")}
+              </button>
+            }
           />
         ) : (
           // The one `"alert"` on this route. See `EditorNotice`'s own note: an unreachable engine is a

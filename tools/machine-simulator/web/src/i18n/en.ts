@@ -373,7 +373,13 @@ export const en: Dictionary = {
       kindLabel: "Widget kind",
       componentLabel: "Component",
       componentNone: "(not declared)",
-      componentReadOnly: "The component field has no edit of its own at this task.",
+      componentNoneOption: "— no component —",
+      componentNoMachine:
+        "Choose a machine in the tag picker (the … button on a binding row) before this machine's components can be listed. A screen document is not bound to any machine.",
+      componentNoModel: (vars: Vars) =>
+        `${vars.machine}'s component tree has not been read. The list below is empty for that reason, not because the machine declares no components.`,
+      componentHint: (vars: Vars) =>
+        `The list is what ${vars.machine} declares. A binding containing {component} resolves through the chosen component's tagPrefix.`,
       rectLabel: "Grid cell",
       rectCol: "Column",
       rectRow: "Row",
@@ -501,6 +507,8 @@ export const en: Dictionary = {
       componentNoneOnWidget: "This widget declares no component, so there is no {component}/… path to insert.",
       componentNote:
         "A {component}/… path is substituted with the component's tagPrefix by the renderer, but no value source answers a composed path yet, so the cell shows its named placeholder. That is a missing adapter, not a missing wire.",
+      bareNote:
+        "The BARE {component} token is replaced with the component's tagPrefix exactly. Where that tagPrefix is itself a full tag path (telemetry/temperature, say) the cell reads a real value today — unlike the composed {component}/… form below. Choose the component in the property panel.",
     },
     loading: {
       title: "Loading the screen document…",
@@ -511,6 +519,7 @@ export const en: Dictionary = {
       description: (vars: Vars) =>
         `No screen is declared with id ${vars.screenId}. The URL may be mistyped, or this screen has never been saved.`,
       noId: "This URL carries no screen id.",
+      startNew: "Start building this screen",
     },
     loadFailed: {
       description: "The screen document could not be read. This is a connection failure, not an undeclared screen.",

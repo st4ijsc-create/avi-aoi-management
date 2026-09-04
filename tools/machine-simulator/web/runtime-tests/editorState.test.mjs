@@ -165,6 +165,14 @@ const ACCEPTED_EDITS = {
   // `component-demo.json` khai `breakpoint: "panel"`, nên "tablet" là một thay đổi THẬT chứ không
   // phải một no-op đội lốt được nhận.
   "set-breakpoint": { kind: "set-breakpoint", breakpoint: "tablet" },
+  // WS-HMI-2 Task 13 — phép sửa THỨ MƯỜI MỘT, thêm vào ĐÂY vì đúng lý do Task 10/11/12 đã ghi ở trên:
+  // mọi mệnh đề CHUNG (không đột biến, giữ hợp lệ theo schema, chỉ ghi cây con TỰ KHAI, undo trả lại
+  // nguyên trạng) phải đúng cho `set-component` y như cho mười phép kia. Corpus riêng của nó nằm ở
+  // `runtime-tests/screenJoin.test.mjs` cùng với phần còn lại của MỐI NỐI Task 13 dựng.
+  //
+  // `kind-label` trên `component-demo.json` KHÔNG khai `component`, nên đây là một thay đổi THẬT chứ
+  // không phải một no-op đội lốt được nhận.
+  "set-component": { kind: "set-component", widgetId: "kind-label", componentId: "probe-hum" },
 }
 
 /**
@@ -194,6 +202,7 @@ const EDIT_SCOPES = {
   "set-binding": "widgets",
   rename: "widgets",
   "set-breakpoint": "layout",
+  "set-component": "widgets",
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────

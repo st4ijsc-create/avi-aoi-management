@@ -198,6 +198,42 @@ export function TagPicker({ machineCode, onMachineCodeChange, componentId, bindi
 
       {/* ── the {component}/… half — §3.3 with a mouse ────────────────────────────────────────── */}
       <div data-tag-picker-component-section className="mt-3 border-t border-border-strong pt-2">
+        {/*
+          🔴 WS-HMI-2 TASK 13 — THE BARE TOKEN, AND WHY IT IS A SEPARATE CONTROL FROM THE LIST BELOW.
+          The list below composes `{component}/<tag name>`, and this file's own `componentNote` already
+          says what happens to such a path at runtime: `resolveBinding` substitutes correctly and then
+          NO `TagValueSource` in this tree answers the composed result, so the cell draws a named
+          placeholder. That is a missing ADAPTER, not a missing wire, and it stays true.
+
+          The BARE token is the other shape of the same feature and it resolves live TODAY: it
+          substitutes to the instance's `tagPrefix` verbatim, and where a model's `tagPrefix` is itself
+          a full tag path (`telemetry/temperature`, the shape `MachineDetailTagValueSource`'s only
+          multi-member path family actually has — the varying part is the LEAF, so the constant part is
+          the prefix) the widget reads a real number. Task 5 proved it in the product with two
+          instances showing two different readings; Task 13's acceptance pass builds that same screen
+          through this picker instead of shipping it as a JSON file.
+
+          Offered OUTSIDE the `componentId` branch below on purpose: this button writes the BINDING,
+          and which component the binding resolves through is the property panel's `component` chooser
+          — two different fields, and an engineer reaches them in whichever order they like. Gating it
+          on the widget already having a component would recreate, at the binding, the exact ordering
+          trap that kept this whole feature unreachable before Task 13.
+        */}
+        <div className="flex items-center gap-2 border border-border-strong px-1.5 py-1">
+          <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-strong">{COMPONENT_TOKEN}</span>
+          <button
+            type="button"
+            data-tag-component-insert-bare
+            aria-label={t("editor.tagPicker.insert", { path: COMPONENT_TOKEN })}
+            className="shrink-0 border border-border-strong px-1.5 py-0.5 text-xs"
+            onClick={() => onInsert(COMPONENT_TOKEN)}
+          >
+            +
+          </button>
+        </div>
+        <p data-tag-picker-bare-note className="mt-1 mb-2 text-xs text-text-muted">
+          {t("editor.tagPicker.bareNote")}
+        </p>
         {componentId === undefined ? (
           <p data-tag-picker-component-none className="text-xs text-text-muted">
             {t("editor.tagPicker.componentNoneOnWidget")}

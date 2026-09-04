@@ -382,7 +382,19 @@ export const vi = {
       kindLabel: "Loại widget",
       componentLabel: "Thành phần (component)",
       componentNone: "(chưa khai)",
-      componentReadOnly: "Trường component chưa có phép sửa riêng ở tác vụ này.",
+      // WS-HMI-2 Task 13 — `componentReadOnly` ("Trường component chưa có phép sửa riêng ở tác vụ
+      // này.") ĐÃ XOÁ: trường này giờ CÓ phép sửa (`set-component`), nên câu ấy sẽ là một lời nói
+      // sai chứ không phải một giới hạn được nêu thẳng. Xem doc-comment của `PropertyPanel.tsx` cho
+      // phần rút lại đầy đủ — đó mới là chỗ giữ nguyên văn câu cũ.
+      componentNoneOption: "— không gắn component —",
+      // Tài liệu màn hình KHÔNG mang mã máy, nên "máy này khai component nào" chưa có câu trả lời cho
+      // tới khi ai đó chọn một máy. Nói thẳng chỗ chọn, chứ không hiện một ô rỗng không giải thích.
+      componentNoMachine:
+        "Chọn một máy trong bộ chọn tag (nút … ở một dòng binding) thì mới liệt kê được component của máy ấy. Tài liệu màn hình không gắn với máy nào.",
+      componentNoModel: (vars: Vars) =>
+        `Chưa đọc được cây component của ${vars.machine}. Danh sách dưới đây rỗng vì thế, không phải vì máy không có linh kiện.`,
+      componentHint: (vars: Vars) =>
+        `Danh sách là các component ${vars.machine} đang khai. Binding chứa {component} sẽ phân giải qua tagPrefix của component được chọn.`,
       rectLabel: "Ô lưới",
       rectCol: "Cột",
       rectRow: "Hàng",
@@ -543,6 +555,10 @@ export const vi = {
       // trả lời được một đường dẫn tổng hợp lúc chạy, nên binding kiểu này vẽ ra placeholder có tên.
       componentNote:
         "Đường dẫn {component}/… được bộ vẽ thay thế bằng tagPrefix của component lúc render, nhưng chưa nguồn giá trị nào trả lời đường dẫn ghép, nên ô sẽ hiện placeholder có tên. Đó là một bộ chuyển đổi còn thiếu, không phải một dây nối còn thiếu.",
+      // WS-HMI-2 Task 13 — token TRẦN, phân biệt rõ với câu ngay trên: dạng ghép chưa đọc được giá
+      // trị, dạng trần thì ĐỌC ĐƯỢC hôm nay. Nói cả điều kiện, chứ không hứa suông.
+      bareNote:
+        "Token TRẦN {component} được thay bằng đúng tagPrefix của component. Khi tagPrefix tự nó đã là một đường dẫn tag đầy đủ (ví dụ telemetry/temperature) thì ô đọc được số thật ngay hôm nay — khác với dạng ghép {component}/… bên dưới. Chọn component ở panel thuộc tính.",
     },
     loading: {
       title: "Đang tải tài liệu màn hình…",
@@ -553,6 +569,10 @@ export const vi = {
       description: (vars: Vars) =>
         `Chưa có màn hình nào được khai với mã ${vars.screenId}. Có thể đường dẫn gõ sai, hoặc màn hình này chưa từng được lưu.`,
       noId: "Đường dẫn không mang mã màn hình nào.",
+      // WS-HMI-2 Task 13 — lối ĐI TIẾP mà trạng thái này thiếu suốt năm tác vụ. Không có route
+      // `/editor/new`: định danh lấy từ CHÍNH đường dẫn, nên không có chỗ thứ hai để hai định danh
+      // lệch nhau (đúng thứ `PUT /v1/screens/{id}` trả 409 khi thân và đường dẫn gọi hai tên khác nhau).
+      startNew: "Bắt đầu dựng màn hình này",
     },
     loadFailed: {
       description: "Không đọc được tài liệu màn hình. Đây là lỗi kết nối, không phải màn hình chưa khai.",
