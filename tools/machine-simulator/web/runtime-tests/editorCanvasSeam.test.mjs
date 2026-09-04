@@ -59,8 +59,10 @@
 //     and asks the parser for an element access.
 //
 // ── THE THREE SIDES, AT THEIR REAL WIDTH ─────────────────────────────────────────────────────────
-//   SIDE A (client-wide) — exactly one file in `web/src/**` NAMES a renderer DOM hook, and it is
-//   `hmi-runtime/ScreenRenderer.tsx`. This is the only claim here with client-wide reach.
+//   SIDE A — exactly one file in the census NAMES a renderer DOM hook, and it is
+//   `hmi-runtime/ScreenRenderer.tsx`. The census is every `.ts`, `.tsx`, `.js`, `.mjs`, `.cjs` and
+//   `.json` file under `web/src/` (`CODE_EXTENSIONS` + `DATA_EXTENSIONS`); the first five are read
+//   through the parser, `.json` through `JSON.parse`. Limit 5 says what that leaves out.
 //
 //   SIDE B (client-wide) — exactly one file in `web/src/**` DISPATCHES `widgetRegistry` by element
 //   access (aliases resolved), and it is `hmi-runtime/ScreenRenderer.tsx`. Reading the registry's KEYS
@@ -84,7 +86,17 @@
 //      function parameter, or destructured (`const { readout } = widgetRegistry`), is not caught.
 //   4. SIDE C's scope is `src/editor/`. A component elsewhere that takes `doc` and `source` under
 //      different prop names and is mounted from the editor is outside it.
-//   5. None of this reaches a file outside `web/src/**`.
+//   5. 🔴 FIX ROUND 3, task-8-re-review-2.md §7 — this limit read "None of this reaches a file outside
+//      `web/src/**`", which was one notch wider than the code: `listSources()` collected `.ts`/`.tsx`
+//      only, so a `.json` module INSIDE `src/` holding the hook names was not in the corpus at all.
+//      The reviewer measured both placements of the identical constants — `domHooks.ts` reddened
+//      SIDE A, `domHooks.json` left every check green. What the census reads is now the six extensions
+//      named beside SIDE A above. What it does not read: any other extension under `web/src/`
+//      (today that is `index.css`, the only such file — a CSS `[data-hmi-widget]` rule is a selector,
+//      and selectors are legal here for the same reason a `querySelector` is), and any file outside
+//      `web/src/`. `.json` is read by `JSON.parse`, so a hook name reachable only through a comment or
+//      a trailing-comma dialect that `JSON.parse` rejects is reported as an unreadable file rather
+//      than passed over.
 // The differential test is what holds when these run out: it does not care where a renderer lives or
 // how it spells anything, only whether the kiosk and the editor produce the same thing.
 
@@ -128,18 +140,64 @@ function walk(node, visit) {
   ts.forEachChild(node, (child) => walk(child, visit))
 }
 
-/** Every `.ts`/`.tsx` under `dir`, recursively, relative to `SRC` with `/` separators. */
-function listSources(dir) {
+/**
+ * The extensions the census reads, split by how a file of that kind has to be read.
+ *
+ * 🔴 FIX ROUND 3, task-8-re-review-2.md §7 — round 2's census was `.ts`/`.tsx` only, while SIDE A's
+ * assertion said "exactly one file in web/src" and its limits list told the reader the only thing out
+ * of reach was a file OUTSIDE `web/src/**`. The reviewer's impostor D put the hook names in
+ * `src/canvas/domHooks.json` (`resolveJsonModule` is on in `tsconfig.app.json`, so it type-checks and
+ * Vite bundles it) and no `.ts`/`.tsx` in the client spelled a hook anywhere. Measured both ways: the
+ * identical constants in `domHooks.ts` reddened SIDE A; in `domHooks.json` the file was not in the
+ * corpus at all and every check stayed green.
+ */
+const CODE_EXTENSIONS = [".ts", ".tsx", ".js", ".mjs", ".cjs"]
+const DATA_EXTENSIONS = [".json"]
+
+/** Every file under `dir` with one of `extensions`, recursively, relative to `SRC` with `/` separators. */
+function listSources(dir, extensions) {
   const found = []
   for (const entry of readdirSync(dir)) {
     const abs = join(dir, entry)
     if (statSync(abs).isDirectory()) {
-      found.push(...listSources(abs))
+      found.push(...listSources(abs, extensions))
       continue
     }
-    if (entry.endsWith(".ts") || entry.endsWith(".tsx")) found.push(relative(SRC, abs).split(sep).join("/"))
+    if (extensions.some((ext) => entry.endsWith(ext))) found.push(relative(SRC, abs).split(sep).join("/"))
   }
   return found
+}
+
+/**
+ * The renderer DOM hooks a JSON module NAMES — every string it contains, as a value at any depth or as
+ * an object key, compared whole.
+ *
+ * Read by `JSON.parse` rather than through the TypeScript AST: a `.json` file handed to
+ * `createSourceFile` as TSX parses as a block statement with error nodes, and what a broken parse
+ * happens to leave behind is not something a corpus rule should rest on. Whole-value equality, exactly
+ * as the `.ts` rule uses, so a JSON file that happened to contain a value-qualified SELECTOR string
+ * stays legal for the same reason a `.ts` file does.
+ */
+function hooksNamedInJson(value) {
+  const named = new Set()
+  const visit = (node) => {
+    if (typeof node === "string") {
+      if (RENDERER_DOM_HOOKS.includes(node)) named.add(node)
+      return
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item)
+      return
+    }
+    if (node && typeof node === "object") {
+      for (const [key, item] of Object.entries(node)) {
+        if (RENDERER_DOM_HOOKS.includes(key)) named.add(key)
+        visit(item)
+      }
+    }
+  }
+  visit(value)
+  return [...named].sort()
 }
 
 const absOf = (rel) => join(SRC, ...rel.split("/"))
@@ -282,8 +340,26 @@ function whyNotImportingTheRuntimeRenderer(sf) {
 
 // ── the corpus ───────────────────────────────────────────────────────────────────────────────────
 
-const SRC_FILES = listSources(SRC)
-const PARSED = new Map(SRC_FILES.map((rel) => [rel, parse(rel, readSource(absOf(rel)))]))
+const SRC_CODE_FILES = listSources(SRC, CODE_EXTENSIONS)
+const SRC_DATA_FILES = listSources(SRC, DATA_EXTENSIONS)
+const PARSED = new Map(SRC_CODE_FILES.map((rel) => [rel, parse(rel, readSource(absOf(rel)))]))
+
+/**
+ * `rel` → the hooks that JSON module names. A file that will not parse is reported as its own failure
+ * rather than skipped: a census that silently drops what it cannot read is a hole shaped exactly like
+ * the one this round exists to close.
+ */
+const JSON_HOOKS = new Map(
+  SRC_DATA_FILES.map((rel) => {
+    let parsed
+    try {
+      parsed = JSON.parse(readSource(absOf(rel)))
+    } catch (error) {
+      return [rel, { unreadable: String(error && error.message) }]
+    }
+    return [rel, { hooks: hooksNamedInJson(parsed) }]
+  })
+)
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // §0 — THE FLOOR. A collector that quietly finds nothing makes every uniqueness claim below pass
@@ -291,11 +367,17 @@ const PARSED = new Map(SRC_FILES.map((rel) => [rel, parse(rel, readSource(absOf(
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 test("floor: the census reads real sources and names the files this pin is about", () => {
-  assert.ok(SRC_FILES.length > 20, `listSources(src) found ${SRC_FILES.length} files — the census is broken`)
+  assert.ok(SRC_CODE_FILES.length > 20, `listSources(src, CODE_EXTENSIONS) found ${SRC_CODE_FILES.length} files — the census is broken`)
   for (const rel of [RENDERER_REL, CANVAS_REL, ROUTE_REL]) {
-    assert.ok(SRC_FILES.includes(rel), `the census does not contain ${rel} — it moved, or the walk is broken`)
+    assert.ok(SRC_CODE_FILES.includes(rel), `the census does not contain ${rel} — it moved, or the walk is broken`)
   }
-  assert.ok(listSources(EDITOR_DIR).length > 0, "src/editor/ holds no .ts/.tsx files — SIDE C would scan nothing")
+  assert.ok(
+    listSources(EDITOR_DIR, CODE_EXTENSIONS).length > 0,
+    "src/editor/ holds no code files — SIDE C would scan nothing"
+  )
+  // A JSON module that cannot be parsed is named here rather than dropped from SIDE A's corpus.
+  const unreadable = [...JSON_HOOKS].filter(([, entry]) => entry.unreadable).map(([rel, e]) => `${rel}: ${e.unreadable}`)
+  assert.deepEqual(unreadable, [], `JSON modules under web/src that this census could not parse:\n  ${unreadable.join("\n  ")}`)
 })
 
 test("floor: the three collectors find what they exist to find, and do NOT find what must stay legal", () => {
@@ -333,6 +415,24 @@ test("floor: the three collectors find what they exist to find, and do NOT find 
     "hooksNamedBy collected a value-qualified CSS selector — reading a rendered cell must stay legal"
   )
   assert.ok(dispatchesRegistry(probe), "dispatchesRegistry missed a two-hop local alias — SIDE B would be blind")
+  // The JSON half of SIDE A's corpus, exercised on a payload rather than left to be proven by whatever
+  // `.json` files happen to exist — today `web/src/` holds none, so nothing else would run this code.
+  const jsonProbe = {
+    screen: "data-hmi-screen",
+    nested: { list: ["data-hmi-widget"] },
+    "data-hmi-widget-error": true,
+    selector: '[data-hmi-widget="probe-a"]',
+  }
+  assert.deepEqual(
+    hooksNamedInJson(jsonProbe),
+    [...RENDERER_DOM_HOOKS].sort(),
+    "hooksNamedInJson missed a hook as a value, inside an array, or as an object KEY — SIDE A's JSON corpus would be blind"
+  )
+  assert.deepEqual(
+    hooksNamedInJson({ selector: '[data-hmi-widget="probe-a"]', prose: "see data-hmi-widget for the hook" }),
+    [],
+    "hooksNamedInJson collected a value-qualified selector or a mention inside a sentence — whole-value equality is what keeps a drag layer legal, in JSON for the same reason as in .ts"
+  )
   assert.deepEqual(
     screenRendererShapedMounts(probe).sort(),
     ["DesignRenderer", "ScreenRenderer"],
@@ -361,15 +461,19 @@ test("floor: the collectors find the REAL renderer — hooks named, registry dis
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 test("SIDE A: exactly one file in web/src names a renderer DOM hook, and it is ScreenRenderer.tsx", () => {
-  const offenders = SRC_FILES.filter((rel) => hooksNamedBy(PARSED.get(rel)).length > 0).sort()
+  const offenders = [
+    ...SRC_CODE_FILES.filter((rel) => hooksNamedBy(PARSED.get(rel)).length > 0),
+    ...SRC_DATA_FILES.filter((rel) => (JSON_HOOKS.get(rel).hooks ?? []).length > 0),
+  ].sort()
   assert.deepEqual(
     offenders,
     [RENDERER_REL],
     `files naming a renderer DOM hook: ${offenders.join(", ") || "(none)"} — expected only ${RENDERER_REL}. ` +
-      `"Naming" means a JSX attribute name or a whole-value string literal, i.e. the two ways the attribute ` +
-      `can reach the DOM; a value-qualified selector does not count. More than one author means a second ` +
-      `renderer or a fork exists somewhere in the client — that is how the editor and the kiosk start drawing ` +
-      `different screens. Zero means the collector or the renderer changed and this claim now measures nothing.`
+      `"Naming" means, in a code file, a JSX attribute name or a whole-value string literal, and in a .json ` +
+      `module, a whole string value at any depth or an object key — the ways the attribute can reach the DOM. ` +
+      `A value-qualified selector does not count, in either. More than one author means a second renderer or ` +
+      `a fork exists somewhere in the client — that is how the editor and the kiosk start drawing different ` +
+      `screens. Zero means the collector or the renderer changed and this claim now measures nothing.`
   )
 })
 
@@ -378,7 +482,7 @@ test("SIDE A: exactly one file in web/src names a renderer DOM hook, and it is S
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 test("SIDE B: exactly one file in web/src dispatches widgetRegistry, and it is ScreenRenderer.tsx", () => {
-  const offenders = SRC_FILES.filter((rel) => dispatchesRegistry(PARSED.get(rel))).sort()
+  const offenders = SRC_CODE_FILES.filter((rel) => dispatchesRegistry(PARSED.get(rel))).sort()
   assert.deepEqual(
     offenders,
     [RENDERER_REL],
@@ -396,7 +500,7 @@ test("SIDE B: exactly one file in web/src dispatches widgetRegistry, and it is S
 test("SIDE C: every doc+source mount under src/editor is <ScreenRenderer>, and EditorCanvas.tsx has one", () => {
   const wrong = []
   let canvasMounts = 0
-  for (const rel of listSources(EDITOR_DIR)) {
+  for (const rel of listSources(EDITOR_DIR, CODE_EXTENSIONS)) {
     for (const tag of screenRendererShapedMounts(PARSED.get(rel))) {
       if (tag !== "ScreenRenderer") wrong.push(`${rel}: <${tag} doc source/>`)
       else if (rel === CANVAS_REL) canvasMounts += 1
@@ -588,6 +692,28 @@ test("§4: the pin rejects a verbatim fork of ScreenRenderer.tsx, wherever it is
   // ...and the canvas re-pointed at it, with the local name preserved.
   const why = whyNotImportingTheRuntimeRenderer(parse(CANVAS_REL, IMPOSTOR_B_CANVAS))
   assert.match(why ?? "", /ALIAS/, `SIDE C accepted a canvas re-pointed at a local fork under an alias: ${why}`)
+})
+
+/** Impostor D's blinding move: the hook names moved out of TypeScript entirely, into a JSON module
+ * inside `src/` that `resolveJsonModule` lets the client import. Round 2's census read `.ts`/`.tsx`
+ * only, so this file was not in SIDE A's corpus at all and the identical constants that reddened
+ * `domHooks.ts` left every check green. */
+const IMPOSTOR_D_HOOKS_JSON = {
+  screen: "data-hmi-screen",
+  widget: "data-hmi-widget",
+  widgetError: "data-hmi-widget-error",
+}
+
+test("§4: the pin rejects impostor D's hook names in a JSON module", () => {
+  assert.deepEqual(
+    hooksNamedInJson(IMPOSTOR_D_HOOKS_JSON),
+    [...RENDERER_DOM_HOOKS].sort(),
+    "SIDE A's JSON corpus did not see the hook names — this is impostor D's blinding move and it must not come back"
+  )
+  // ...and the corpus really reaches a `.json` file, not merely the collector: a `.json` under `src/`
+  // must be listed for SIDE A to have anything to run the collector on.
+  const wouldBeListed = DATA_EXTENSIONS.some((ext) => "canvas/domHooks.json".endsWith(ext))
+  assert.ok(wouldBeListed, "DATA_EXTENSIONS no longer covers .json — SIDE A would not list impostor D's file at all")
 })
 
 test("§4: the pin ACCEPTS Task 9's drag layer — a value-qualified selector and a ghost overlay", () => {
