@@ -64,7 +64,22 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
              color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border);
              padding: 4px; }
   #hoi-thoai { flex: 1; overflow-y: auto; white-space: pre-wrap; font-size: 13px; }
-  .luot { margin-bottom: 10px; }
+  /* ★★★ PHÂN BIỆT câu hỏi/trả lời/hệ thống — viền trái + nền nhạt, KHÔNG avatar/khung to (B3: panel
+     thanh bên HẸP ~290px, đầu khung đã bị phàn nàn "mất thẩm mỹ" ở Đợt G, không lặp lại). Lớp
+     "luot-*" được SCRIPT nối thẳng từ tham số \`vai\` của \`themLuot\` (xem NHAN_THEO_VAI bên dưới) —
+     không phải một danh sách rời rạc đi kèm nhãn, nên nhãn và màu KHÔNG THỂ trôi khỏi nhau.
+     ★★★ CHỈ dùng biến \`--vscode-*\` có sẵn (kiểm tồn tại trước khi dùng, không bịa tên) — đọc đúng ở
+     CẢ theme sáng lẫn tối, không hardcode mã màu nào trong khối này. */
+  .luot { margin-bottom: 10px; padding: 4px 8px; border-left: 3px solid transparent; }
+  /* Câu hỏi người dùng — nền khối trích dẫn của theme + viền trái màu NHẤN (focusBorder): "đây là
+     tôi vừa nói", giống cách trình soạn thảo VSCode tô một khối được trích dẫn. */
+  .luot-nguoi-dung { background: var(--vscode-textBlockQuote-background);
+                      border-left-color: var(--vscode-focusBorder); }
+  /* Trả lời AI — KHÔNG nền (khác hẳn ô người dùng), chỉ viền trái màu trung tính của theme. */
+  .luot-ai { border-left-color: var(--vscode-textBlockQuote-border); }
+  /* Thông báo hệ thống (lỗi/thông báo/lưu ý) — vai THỨ BA rõ ràng, không ép vào "ai": viền trái lấy
+     màu chữ-mô-tả của theme, khác cả hai màu trên để không bị nhầm là một câu trả lời của AI. */
+  .luot-he-thong { border-left-color: var(--vscode-descriptionForeground); }
   .nhan { opacity: .7; font-size: 11px; text-transform: uppercase; }
   #the-duyet { border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
                background: var(--vscode-editorWidget-background); padding: 8px; margin-top: 8px;
@@ -215,6 +230,15 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   let laCauHoiTuLenh = false;
 
   /**
+   * ★★★ B1 (phân biệt câu hỏi/trả lời) — tham số ĐẦU nay là VAI ("nguoi_dung" | "ai" | "he_thong"),
+   * KHÔNG còn là chữ nhãn tự do. \`NHAN_THEO_VAI\` là nơi DUY NHẤT ánh xạ vai → nhãn hiển thị; lớp
+   * CSS tô màu ("luot-" + vai, xem CSS \`.luot-*\` phía trên) đọc THẲNG từ CÙNG tham số \`vai\` này —
+   * không có hai bản sao (nhãn tự do + lớp tự do) để rồi trôi khỏi nhau, đúng bài học đã trả giá
+   * nhiều lần trong dự án (hai câu gọi khác nhau âm thầm không còn khớp). Vai "nguoi_dung"/"ai" có
+   * nhãn CỐ ĐỊNH — KHÔNG nơi gọi nào được ghi đè. \`nhanTuyChon\` CHỈ dành cho vai "he_thong": lỗi/
+   * thông báo/lưu ý là BA nội dung khác nhau THẬT SỰ (không phải một sự thật bị chép tay hai lần)
+   * nên không có một nhãn mặc định duy nhất — người gọi phải tự nói rõ đang báo cái gì.
+   *
    * ★★★ ĐỢT G / TASK G4 / B3 — tham số THỨ BA \`moSettings\` (mặc định falsy, MỌI lời gọi cũ giữ
    * NGUYÊN hành vi). Khi true, bong bóng này có thêm một nút thật "Mở Settings" — dành riêng cho
    * lỗi KHÔNG-NỐI-ĐƯỢC-MÁY-CHỦ (xem \`bangChat.ts\`, \`laLoiKhongNoiDuocMayChu\`). Đặt Ở ĐÂY (trong
@@ -222,12 +246,15 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
    * B1 (không phình đầu khung): nút chỉ xuất hiện ĐÚNG lúc cần (đang có lỗi mạng), biến mất theo
    * đúng vòng đời của bong bóng đó, không chiếm chỗ vĩnh viễn.
    */
-  function themLuot(nhan, chu, moSettings) {
+  const NHAN_THEO_VAI = { nguoi_dung: "Bạn", ai: "AI Local", he_thong: "Hệ thống" };
+  function themLuot(vai, chu, moSettings, nhanTuyChon) {
     const d = document.createElement("div");
-    d.className = "luot";
+    // "luot-nguoi_dung" → "luot-nguoi-dung": tên lớp CSS kebab-case, tên vai trong script snake_case
+    // — chỉ đổi ký hiệu nối chữ, KHÔNG đổi sự thật (vẫn CÙNG một chuỗi \`vai\` truyền vào).
+    d.className = "luot luot-" + vai.replace(/_/g, "-");
     const t = document.createElement("div");
     t.className = "nhan";
-    t.textContent = nhan;
+    t.textContent = nhanTuyChon || NHAN_THEO_VAI[vai];
     const c = document.createElement("div");
     c.textContent = chu;
     d.appendChild(t); d.appendChild(c);
@@ -409,9 +436,9 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   function gui() {
     const cauHoi = oNhap.value.trim();
     if (!cauHoi) return;
-    themLuot("Bạn", cauHoi);
+    themLuot("nguoi_dung", cauHoi);
     oNhap.value = "";
-    khoiTraLoi = themLuot("AI Local", "");
+    khoiTraLoi = themLuot("ai", "");
     nutDung.hidden = false;
     anMenuMention();
     // ★★★ ĐỢT G / TASK G2 / B1+B2 — HỢP NHẤT hai nguồn tệp: @-mention gõ TRONG câu hỏi này
@@ -506,13 +533,13 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   window.addEventListener("message", (e) => {
     const m = e.data;
     if (m.loai === "token" && khoiTraLoi) khoiTraLoi.textContent += m.chu;
-    else if (m.loai === "loi") { themLuot("Lỗi", m.thongDiep, m.moSettings === true); nutDung.hidden = true; }
+    else if (m.loai === "loi") { themLuot("he_thong", m.thongDiep, m.moSettings === true, "Lỗi"); nutDung.hidden = true; }
     else if (m.loai === "hoan_tat") {
       // vanBanCuoi chỉ có khi server bảo THAY chữ đã stream (degraded) — không phải mọi lượt.
       if (m.vanBanCuoi != null && khoiTraLoi) khoiTraLoi.textContent = m.vanBanCuoi;
       // Cắt ngang hoặc khung hỏng: KHÔNG được im lặng — phải hiện, kể cả khi câu trả lời trông
       // như đã xong.
-      if (m.canhBao) themLuot("Lưu ý", m.canhBao);
+      if (m.canhBao) themLuot("he_thong", m.canhBao, false, "Lưu ý");
       // ★★★ TASK 4 — \`hoan_tat\` là tín hiệu DUY NHẤT "cả lượt hỏi (mọi vòng) đã xong", kể cả khi nó
       // xong VÌ bị dừng (extension vẫn gửi \`hoan_tat\` sau khi báo "đã dừng" — xem \`bangChat.ts\`).
       // Ẩn nút Dừng Ở ĐÂY, không đoán qua bất kỳ tín hiệu nào khác (token/thong_bao vẫn có thể bắn
@@ -566,7 +593,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       moKhoaNutDuyet();
       if (!m.nhanNguon || !m.nhanNut) {
         theDuyet.hidden = true;
-        themLuot("Lỗi", "Thẻ duyệt thiếu nhãn nguồn hoặc chữ trên nút ghi — đã KHÔNG hiện thẻ.");
+        themLuot("he_thong", "Thẻ duyệt thiếu nhãn nguồn hoặc chữ trên nút ghi — đã KHÔNG hiện thẻ.", false, "Lỗi");
       } else {
         document.getElementById("duyet-nguon").textContent = m.nhanNguon;
         document.getElementById("duyet-duong").textContent = m.duong;
@@ -588,7 +615,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // (\`confirmAction\` idempotent — xem \`bangChat.duyetDeXuat\`). Khoá vĩnh viễn ở đó là lấy mất
       // đúng đường thoát mà bản vá kia dựng ra.
       moKhoaNutDuyet();
-      themLuot("Thông báo", m.thongDiep, m.moSettings === true);
+      themLuot("he_thong", m.thongDiep, m.moSettings === true, "Thông báo");
     } else if (m.loai === "dat_cau_hoi_tu_lenh") {
       // ★★★ CMD+K (Task 7) — extension đổ câu hỏi ĐÃ DỰNG SẴN (đường dẫn + dòng + đoạn mã + yêu
       // cầu, xem loi/cauHoiSuaChon.ts) vào Ô NHẬP rồi gọi ĐÚNG hàm gửi mà nút "Gửi" dùng. KHÔNG có
@@ -660,7 +687,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // hội thoại cũ (hay khung vừa khởi động, lúc \`o-nhap\` chắc chắn còn rỗng) — không phải chủ
       // động "rời phiên" như "Chat mới", nên nháp đang gõ (nếu có) phải CÒN NGUYÊN sau khi xem xong.
       xoaKhungChoPhienKhac(false);
-      for (const l of m.luot || []) themLuot(l.vaiTro === "user" ? "Bạn" : "AI Local", l.noiDung);
+      for (const l of m.luot || []) themLuot(l.vaiTro === "user" ? "nguoi_dung" : "ai", l.noiDung);
       // ★★★ ĐỢT G / TASK G2 / B3 — thống kê của ĐÚNG hội thoại vừa vẽ lại (extension gửi kèm
       // \`soLuot\`/\`soKyTu\` của bản ghi vừa khôi phục — xem \`khoiPhucHoiThoaiGanNhat\`/\`moLichSu\`).
       thongKeHoiThoai = { soLuot: m.soLuot ?? 0, soKyTu: m.soKyTu ?? 0 };

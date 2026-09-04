@@ -1139,3 +1139,136 @@ describe("webview — ĐỢT G / TASK G3 / B4: ô chọn mức quyền", () => {
     expect(w.nut("o-muc-quyen").value).toBe("chi_doc");
   });
 });
+
+/**
+ * ★★★ PHÂN BIỆT CÂU HỎI / TRẢ LỜI (B1-B5) — CSS tĩnh: lớp `.luot-*` phải tồn tại, phải khác nhau
+ * theo vai, và chỉ lấy màu từ biến `--vscode-*` (KHÔNG hardcode mã hex) để đọc đúng ở cả hai theme.
+ *
+ * ⚠ Đo trên ĐÚNG đoạn CSS mới thêm (giữa dấu mốc `.luot {` và hết `.luot-he-thong { … }`) — không
+ *   quét toàn bộ `<style>` (phần cũ có `rgba(128,128,128,.2)` làm nền dự phòng, không thuộc phạm vi
+ *   yêu cầu B4 "phần CSS mới").
+ */
+describe("dungHtmlBang — phân biệt câu hỏi/trả lời: CSS lớp .luot-*", () => {
+  const html = dungHtmlBang({ nonce: "N" });
+  const batDau = html.indexOf(".luot { margin-bottom");
+  const ketThuc = html.indexOf(".nhan { opacity");
+  const cssMoi = html.slice(batDau, ketThuc);
+
+  it("★★★ có ĐỦ BA lớp vai, mỗi lớp một `border-left-color` KHÁC NHAU", () => {
+    expect(cssMoi).toContain(".luot-nguoi-dung");
+    expect(cssMoi).toContain(".luot-ai");
+    expect(cssMoi).toContain(".luot-he-thong");
+    // Khớp nguyên khối `.luot-<vai> { … border-left-color: var(--vscode-X); … }` cho từng vai, X
+    // phải khác nhau — nếu hai vai TRÙNG biến, thị giác sẽ trùng nhau y hệt bug đang được vá.
+    const layMauVienTrai = (lop: string): string => {
+      const m = cssMoi.match(new RegExp("\\." + lop + "[^}]*border-left-color:\\s*var\\((--vscode-[a-zA-Z.-]+)"));
+      expect(m, `không tìm thấy border-left-color var(--vscode-...) cho ${lop}`).not.toBeNull();
+      return m![1];
+    };
+    const mauNguoiDung = layMauVienTrai("luot-nguoi-dung");
+    const mauAi = layMauVienTrai("luot-ai");
+    const mauHeThong = layMauVienTrai("luot-he-thong");
+    expect(new Set([mauNguoiDung, mauAi, mauHeThong]).size).toBe(3);
+  });
+
+  it("★★★ KHÔNG hardcode mã màu #rrggbb trong phần CSS mới — chỉ biến `--vscode-*`", () => {
+    expect(cssMoi).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    // Ít nhất bốn tham chiếu `var(--vscode-…)` (2 cho người dùng: nền+viền, 1 cho AI, 1 cho hệ
+    // thống) — một con số THẤP là dấu hiệu ai đó đã âm thầm thay một biến bằng giá trị cứng.
+    const soLanVar = (cssMoi.match(/var\(--vscode-/g) ?? []).length;
+    expect(soLanVar).toBeGreaterThanOrEqual(4);
+  });
+
+  it("★ NHÁNH KIA — tên biến theme dùng phải THẬT SỰ tồn tại trong danh sách gợi ý của kế hoạch", () => {
+    // Không đo được bảng màu thật của VSCode ở lưới đơn vị (không có `vscode` API) — nhưng đo được
+    // rằng ta không bịa một tên KHÔNG nằm trong tập biến kế hoạch đã liệt kê/đã dùng nơi khác trong
+    // CHÍNH tệp này (nơi khác dùng ⇒ chắc chắn đã từng chạy được trong webview thật).
+    for (const bien of ["--vscode-textBlockQuote-background", "--vscode-focusBorder",
+      "--vscode-textBlockQuote-border", "--vscode-descriptionForeground"]) {
+      expect(cssMoi).toContain(bien);
+    }
+  });
+});
+
+/**
+ * ★★★ PHÂN BIỆT CÂU HỎI / TRẢ LỜI (B1+B5) — KẾT CỤC THẬT: chạy script (cùng khuôn `chayWebview` ở
+ * trên), không chỉ soi chữ trong HTML tĩnh. Đo đúng những gì B5 đòi: lịch sử khôi phục, streaming,
+ * bong bóng lỗi/thông báo KHÔNG bị nhầm thành câu trả lời AI.
+ */
+describe("webview — phân biệt câu hỏi/trả lời bằng VAI (class + nhãn cùng một nguồn)", () => {
+  it("★★★ B1 — hỏi rồi nhận bong bóng AI: HAI lớp KHÁC NHAU, nhãn ĐÚNG vai", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "câu hỏi của tôi";
+    w.nut("nut-gui").bam();
+
+    const bongBong = w.nut("hoi-thoai").con;
+    expect(bongBong).toHaveLength(2);
+    expect(bongBong[0]!.className).toBe("luot luot-nguoi-dung");
+    expect(bongBong[1]!.className).toBe("luot luot-ai");
+    expect(bongBong[0]!.className).not.toBe(bongBong[1]!.className);
+    // Nhãn (con đầu của mỗi bong bóng) vẫn đúng chữ cũ — B1 đổi CƠ CHẾ truyền vai, KHÔNG đổi chữ
+    // người dùng thấy.
+    expect(bongBong[0]!.con[0]!.textContent).toBe("Bạn");
+    expect(bongBong[1]!.con[0]!.textContent).toBe("AI Local");
+  });
+
+  it("★★★ B5 (streaming) — token đổ về từng mảnh vẫn nối vào ĐÚNG bong bóng AI, lớp KHÔNG đổi", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "hỏi gì đó";
+    w.nut("nut-gui").bam();
+    const bongBongAi = w.nut("hoi-thoai").con[1]!;
+    expect(bongBongAi.className).toBe("luot luot-ai");
+
+    w.banTin({ loai: "token", chu: "Phần " });
+    w.banTin({ loai: "token", chu: "một." });
+
+    // Vẫn CÙNG một bong bóng (không đẻ thêm bong bóng mới cho mỗi mảnh token).
+    expect(w.nut("hoi-thoai").con).toHaveLength(2);
+    expect(bongBongAi.className).toBe("luot luot-ai");
+    expect(bongBongAi.con[1]!.textContent).toBe("Phần một.");
+  });
+
+  it("★★★ B5 (nhánh kia) — khôi phục LỊCH SỬ: mỗi lượt `user`/`assistant` ra ĐÚNG lớp theo vai", () => {
+    const w = chayWebview();
+    w.banTin({
+      loai: "khoi_phuc_hoi_thoai",
+      luot: [
+        { vaiTro: "user", noiDung: "Câu hỏi cũ" },
+        { vaiTro: "assistant", noiDung: "Trả lời cũ" },
+      ],
+    });
+    const bongBong = w.nut("hoi-thoai").con;
+    expect(bongBong[0]!.className).toBe("luot luot-nguoi-dung");
+    expect(bongBong[1]!.className).toBe("luot luot-ai");
+  });
+
+  it("★★★ B5 (nhánh kia) — bong bóng LỖI mang vai THỨ BA, KHÔNG bị ép vào lớp của AI/người dùng", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "loi", thongDiep: "Không nối được máy chủ" });
+
+    const bongBong = w.nut("hoi-thoai").con;
+    expect(bongBong).toHaveLength(1);
+    expect(bongBong[0]!.className).toBe("luot luot-he-thong");
+    expect(bongBong[0]!.className).not.toBe("luot luot-ai");
+    expect(bongBong[0]!.className).not.toBe("luot luot-nguoi-dung");
+    expect(bongBong[0]!.con[0]!.textContent).toBe("Lỗi");
+  });
+
+  it("★★★ B5 (nhánh kia) — bong bóng THÔNG BÁO cũng mang vai thứ ba (không phải AI)", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "thong_bao", thongDiep: "Đề xuất vẫn còn hiệu lực" });
+
+    const bongBong = w.nut("hoi-thoai").con;
+    expect(bongBong[0]!.className).toBe("luot luot-he-thong");
+    expect(bongBong[0]!.con[0]!.textContent).toBe("Thông báo");
+  });
+
+  it("★★★ B5 (nhánh kia) — LƯU Ý (cảnh báo cắt ngang trong `hoan_tat`) cũng vai thứ ba", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "hoan_tat", canhBao: "Bị dừng giữa chừng" });
+
+    const bongBong = w.nut("hoi-thoai").con;
+    expect(bongBong[0]!.className).toBe("luot luot-he-thong");
+    expect(bongBong[0]!.con[0]!.textContent).toBe("Lưu ý");
+  });
+});
