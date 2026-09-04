@@ -1,11 +1,17 @@
-import type { HmiScreenDocument } from "@/contracts/hmiScreen"
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
+
+import type { HmiScreenDocument, ScreenLayout, ScreenWidget, WidgetRect } from "@/contracts/hmiScreen"
+import { clampRectToLayout } from "@/hmi-runtime/gridLayout"
 import { ScreenRenderer } from "@/hmi-runtime/ScreenRenderer"
 import { createMachineDetailSource } from "@/hmi-runtime/TagValueSource"
 import type { TagValueSource } from "@/hmi-runtime/TagValueSource"
+import { useT } from "@/i18n"
 import type { MachineDetail } from "@/lib/api"
+import { applyEdit, createEditorState, undo, type EditorRefusalCode, type EditorState } from "./editorState"
+import { gridPitch, movedRect, resizedRect, snapToCells, type CellDelta, type GridPitch } from "./gridGeometry"
 
 /**
- * WS-HMI-2 Task 8 — the editor's canvas.
+ * WS-HMI-2 Task 8 — the editor's canvas. WS-HMI-2 Task 9 — the canvas that EDITS.
  *
  * ── THE ONE CLAIM THIS FILE EXISTS TO MAKE ────────────────────────────────────────────────────────
  * The canvas is the RUNTIME renderer. `<ScreenRenderer>` below is the very component `routes/Hmi.tsx`
@@ -13,6 +19,15 @@ import type { MachineDetail } from "@/lib/api"
  * `designMode` prop. The plan calls this Phase 3's most expensive proposition and it is: an editor
  * that draws with its own code drifts from the runtime one widget at a time, and the engineer who
  * designed the screen finds out at the machine.
+ *
+ * 🔴 TASK 9 CHANGED NOTHING ABOUT THAT, AND THE SHAPE IT ADDED WAS PRE-CLEARED. Selection, dragging
+ * and resizing are drawn by an OVERLAY that sits above the renderer's output and draws no widget: it
+ * emits none of the renderer's DOM hooks, dispatches nothing through `widgetRegistry`, and reads no
+ * widget's content. `runtime-tests/editorCanvasSeam.test.mjs`'s §4 asserts — permanently, and as a
+ * PASS rather than a rejection — that exactly this shape (a value-qualified `[data-hmi-widget="…"]`
+ * selector and a `gridColumn`-positioned ghost) satisfies the pin, because Task 8's round-1 rule
+ * forbade both and told the author a fork existed. If any of that ever goes red again, the note there
+ * says it plainly: fix the rule, not the drag layer.
  *
  * That claim is not made by this comment, and — 🔴 FIX ROUND 1, task-8-review.md finding 1 — it is not
  * made by the browser spec either, which is what the round-0 version of this paragraph got wrong. It
@@ -49,7 +64,12 @@ import type { MachineDetail } from "@/lib/api"
  *      through the kiosk route and through this canvas; the container's theme, grid-track counts and
  *      gaps, every cell's id, `title` and four computed grid lines, and the element tree of every
  *      binding-free widget, compared. It does not care where a renderer lives or how it spells
- *      anything — only whether the two paths produce the same thing.
+ *      anything — only whether the two paths produce the same thing. 🔴 Task 9's overlay is a SIBLING
+ *      of the renderer's root and injects nothing into any widget cell, which is why that comparison
+ *      still holds byte for byte with an editing canvas — and `tests/38-editor-drag.spec.ts` pins the
+ *      other half of the same seam: the overlay's own grid geometry is compared, cell by cell, against
+ *      the renderer's, so an overlay that drifts out of alignment with the screen it is editing
+ *      reddens rather than silently snapping drags to the wrong cell.
  *   2. **The same file's five behavioural assertions** — `props.text` on screen (so `widgetRegistry`
  *      dispatch happened), `Readout.tsx`'s own `.hmi-readout-value` row carrying a value that came
  *      through `TagValueSource`, the named placeholder for an unknown `kind`, a per-widget boundary
@@ -131,19 +151,164 @@ const DESIGN_TIME_SNAPSHOT: MachineDetail = {
  * that. Nothing ever calls `.update()` here — the snapshot is frozen — so no subscriber is ever
  * notified, and the listener set only ever holds the widgets currently mounted (each `TrendWidget`
  * returns its own unsubscribe from that effect).
+ *
+ * 🔴 Task 9 makes this matter more than it did: the canvas now re-renders on every snapped cell of
+ * every drag, and a per-render source would re-subscribe every `trend` widget on the screen each time.
  */
 const DESIGN_TIME_SOURCE: TagValueSource = createMachineDetailSource(DESIGN_TIME_SNAPSHOT)
 
+/**
+ * Refusal codes this layer deliberately SWALLOWS, as a set it switches on rather than a sentence it
+ * matches.
+ *
+ * `editorState.ts` added `EditorRefusalCode` for exactly this consumer (its own fix round 1 note:
+ * *"the Task 8 drag layer had no way to tell a refused no-op … from a refused invalid rect except by
+ * string-matching prose"*), and these are the three that mean "you asked for nothing", not "you asked
+ * for something impossible":
+ *
+ *   * `no-op` — the drag ended in the cell it started in, or a resize snapped back to its own span.
+ *     `applyEdit` refuses it so it cannot consume a step of a bounded undo history; surfacing it as an
+ *     error would put a warning on screen for the single most ordinary thing an engineer does with a
+ *     mouse. `tests/38-editor-drag.spec.ts` pins BOTH halves: nothing is announced, and one `Ctrl+Z`
+ *     after a real move followed by a dropped-in-place drag still reaches the ORIGINAL rect — which is
+ *     only true if the no-op pushed no history.
+ *   * `nothing-to-undo` / `nothing-to-redo` — the bottom of the stack. An ordinary boundary, reached
+ *     by holding `Ctrl+Z` one beat too long.
+ *
+ * Everything else means the layer built an edit the document cannot take, which is a defect in THIS
+ * file rather than a user mistake. Clamping (`gridGeometry.ts`) is supposed to make every one of them
+ * unreachable from a pointer, so the effect below reports them to the console instead of to the
+ * engineer — a visible refusal surface belongs to the first task that can actually PRODUCE one from
+ * the UI, and inventing one here would ship a message no test in this tree can make appear.
+ */
+const HARMLESS_REFUSALS: Partial<Record<EditorRefusalCode, true>> = {
+  "no-op": true,
+  "nothing-to-undo": true,
+  "nothing-to-redo": true,
+}
+
+/** What a pointer is doing to one widget between `pointerdown` and `pointerup`. */
+type DragMode = "move" | "resize"
+
+type DragSession = {
+  readonly widgetId: string
+  readonly mode: DragMode
+  /** Only the pointer that opened the session may drive or end it — a second finger on a touch panel
+   * must not steer someone else's drag. */
+  readonly pointerId: number
+  readonly originX: number
+  readonly originY: number
+  /**
+   * Measured ONCE, at `pointerdown`, from the overlay that is on screen. The grid cannot resize
+   * mid-drag (the canvas is a fixed-size frame and no edit this session can make changes `layout`), so
+   * re-measuring on every `pointermove` would buy nothing and would make the snap depend on when the
+   * browser last did layout.
+   */
+  readonly pitch: GridPitch
+  /**
+   * The rect the drag started from — the CLAMPED one, i.e. what the renderer actually drew, not what
+   * the document literally says. A widget whose stored rect hangs off the grid is drawn by
+   * `clampRectToLayout` at its clamped position, and an engineer dragging it is dragging what they can
+   * see. Starting from the raw rect would make the widget jump on the first pixel of movement.
+   */
+  readonly base: WidgetRect
+  /** The live snapped displacement, in whole cells. */
+  readonly delta: CellDelta
+}
+
+type CanvasState = {
+  /** The document this session was opened on. See `EditorCanvas` for why it is compared on every
+   * render. */
+  readonly screenId: string
+  readonly editor: EditorState
+  readonly selectedId?: string
+  readonly drag?: DragSession
+}
+
+function openSession(doc: HmiScreenDocument): CanvasState {
+  return { screenId: doc.screenId, editor: createEditorState(doc) }
+}
+
+/** The rect the runtime renderer will actually place this widget at — the editor's overlay must agree
+ * with it cell for cell, so it asks the renderer's own function rather than re-deriving it. */
+function placedRectOf(widget: ScreenWidget, layout: ScreenLayout): WidgetRect {
+  return clampRectToLayout(widget.rect, layout, widget.id).rect
+}
+
+/** `ScreenRenderer`'s own 1-based translation of a 0-based rect, applied to the overlay so a ghost and
+ * a hit target land on the same lines as the cell they stand for. */
+function gridPlacement(rect: WidgetRect): CSSProperties {
+  return {
+    gridColumn: `${rect.col + 1} / span ${rect.colSpan}`,
+    gridRow: `${rect.row + 1} / span ${rect.rowSpan}`,
+  }
+}
+
+/** Where a drag would land if the pointer were released now. */
+function previewRectOf(drag: DragSession, layout: ScreenLayout): WidgetRect {
+  return drag.mode === "move" ? movedRect(drag.base, drag.delta, layout) : resizedRect(drag.base, drag.delta, layout)
+}
+
+/**
+ * `Ctrl+Z` is the browser's own text-undo inside a field. This layer takes the shortcut only when the
+ * keystroke is not addressed to one — Task 10's tag picker and Task 11's property panel both put real
+ * inputs on this page, and stealing their undo would be a regression introduced by a canvas that was
+ * not even focused.
+ */
+function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  const tag = target.tagName
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
+}
+
+/** The selection outline. Inline rather than a Tailwind class so the exact width/style is a value this
+ * file states and `38-editor-drag.spec.ts` reads back out of `getComputedStyle`, and `var(--focus)` so
+ * it is the same accent every other selection affordance in the app uses (see `index.css`'s token
+ * block — never a hex literal in a component). */
+const SELECTION_OUTLINE: CSSProperties = {
+  outline: "2px solid var(--focus)",
+  outlineOffset: "-2px",
+  backgroundColor: "color-mix(in srgb, var(--focus) 10%, transparent)",
+}
+
 export type EditorCanvasProps = {
-  /** The document to draw. Read-only at this task: the canvas neither owns nor mutates it. WS-HMI-2
-   * Task 9 adds selection/drag and will hand it `editorState.ts`'s `applyEdit` alongside — together
-   * with its consumer, in one commit, the way `WidgetProps.components` was ruled on, rather than a
-   * callback prop parked here now with nothing calling it. */
+  /**
+   * The document to open an editing session ON. Read once, at mount: from then on the canvas owns the
+   * document (`editorState.ts`'s `createEditorState` deep-copies it), because an in-progress edit that
+   * a background refetch could overwrite is worse than a stale one.
+   *
+   * 🔴 A REAL, DOCUMENTED LIMIT of this task: `useScreen` is an ordinary React Query hook, so a
+   * refetch (window focus, a manual invalidation) that brings a NEWER document is silently ignored
+   * while this session is open. Reconciling a concurrent write is a SAVE concern — it needs the
+   * version the session was opened at, which is exactly what `PUT /v1/screens/{id}`'s append-a-version
+   * contract carries — and it belongs to the task that adds the save button, not to the one that adds
+   * dragging. What IS handled here is a different document arriving because the ROUTE changed; see
+   * `EditorCanvas`.
+   */
   doc: HmiScreenDocument
 }
 
 /**
- * Draws `doc` with the runtime renderer, inside a frame the editor owns.
+ * Draws `doc` with the runtime renderer, inside a frame the editor owns, under an overlay that edits.
+ *
+ * ── HOW SELECTION AND DRAGGING WORK WITHOUT TOUCHING THE RENDERER ────────────────────────────────
+ * The overlay is a sibling of `<ScreenRenderer>`'s root, absolutely positioned over it, carrying a CSS
+ * grid with the SAME track counts and the same gutters. It holds one transparent hit target per
+ * widget, placed on the same lines the renderer placed the widget on (`clampRectToLayout`, called
+ * here, is the renderer's own clamp — not a copy of it), plus the selected widget's resize handle and,
+ * mid-drag, a ghost at the rect the drop would produce.
+ *
+ * That the overlay's grid really does line up with the renderer's is not left to this comment: the
+ * spec compares the overlay's computed track counts, gaps and per-cell grid lines against the
+ * renderer's own, cell by cell. A drag layer that snapped to a grid half a gutter out of step from the
+ * screen underneath it would still "work" — every rect it produced would be a legal integer — and
+ * would put widgets one cell away from where the engineer dropped them.
+ *
+ * Every widget cell is covered by a hit target, so a `command-button` widget on a screen under edit
+ * cannot be pressed. That is deliberate: at design time a widget is a thing you MOVE, and a canvas
+ * where dragging a button sometimes fires it instead is the standard defect of editors that hit-test
+ * through to live content.
  *
  * 🔴 `components` is NOT passed to `<ScreenRenderer>`, and its absence is a documented state rather
  * than an omission. `ScreenRendererProps.components` resolves `{component}` bindings through a
@@ -155,12 +320,208 @@ export type EditorCanvasProps = {
  * because that is the task that has a machine to ask about.
  */
 export function EditorCanvas({ doc }: EditorCanvasProps) {
+  const t = useT()
+  const overlayRef = useRef<HTMLDivElement | null>(null)
+  const [canvas, setCanvas] = useState<CanvasState>(() => openSession(doc))
+
+  // React's own documented "adjust state when a prop changes" pattern (no effect, no extra commit):
+  // the route component stays mounted across `/editor/a` → `/editor/b`, so without this the second
+  // screen would be edited through the first screen's session — its widget ids, its undo stack. The
+  // comparison is on `screenId` rather than object identity on purpose: a refetch of the SAME screen
+  // hands us a new object every time and must NOT discard work in progress (see `EditorCanvasProps`).
+  if (canvas.screenId !== doc.screenId) setCanvas(openSession(doc))
+
+  const edited = canvas.editor.doc
+  const layout = edited.layout
+  const refusal = canvas.editor.lastRefusal
+
+  useEffect(() => {
+    if (!refusal || HARMLESS_REFUSALS[refusal.code]) return
+    // Reported, not rendered — see `HARMLESS_REFUSALS`. `code` first so a reader greps for the branch
+    // rather than for the prose.
+    console.error(`[editor] edit refused (${refusal.code}): ${refusal.message}`)
+  }, [refusal])
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return
+      if (event.key.toLowerCase() !== "z") return
+      if (isTextEntry(event.target)) return
+      event.preventDefault()
+      // 🔴 There is exactly ONE history, and it is `editorState.ts`'s. This handler calls `undo` and
+      // stores what it returns; it keeps no stack of its own, pushes nothing on drop, and cannot get
+      // out of step with `applyEdit`'s own `past`/`future` because it does not have anything to get
+      // out of step with. `38-editor-drag.spec.ts` measures the consequence rather than the intent: a
+      // no-op drag between two real edits does not consume a `Ctrl+Z`.
+      setCanvas((prev) => ({ ...prev, editor: undo(prev.editor) }))
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [])
+
+  function beginDrag(event: ReactPointerEvent<HTMLElement>, widget: ScreenWidget, mode: DragMode) {
+    const overlay = overlayRef.current
+    if (!overlay || event.button !== 0) return
+    // Stops the overlay's own background handler from immediately clearing the selection this click
+    // just made, and stops the browser from starting a text/image drag of its own.
+    event.stopPropagation()
+    event.preventDefault()
+    const box = overlay.getBoundingClientRect()
+    const style = window.getComputedStyle(overlay)
+    const pitch = gridPitch({ width: box.width, height: box.height }, layout, {
+      x: Number.parseFloat(style.columnGap),
+      y: Number.parseFloat(style.rowGap),
+    })
+    // Pointer CAPTURE, not window listeners: the element keeps receiving `pointermove`/`pointerup`
+    // even once the pointer has left it (which it does immediately — a drag that never leaves its own
+    // widget is a drag of zero cells), and the browser tears the capture down for us if the pointer is
+    // cancelled or the element unmounts.
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setCanvas((prev) => ({
+      ...prev,
+      selectedId: widget.id,
+      drag: {
+        widgetId: widget.id,
+        mode,
+        pointerId: event.pointerId,
+        originX: event.clientX,
+        originY: event.clientY,
+        pitch,
+        base: placedRectOf(widget, layout),
+        delta: { dCol: 0, dRow: 0 },
+      },
+    }))
+  }
+
+  function trackDrag(event: ReactPointerEvent<HTMLElement>) {
+    setCanvas((prev) => {
+      const drag = prev.drag
+      if (!drag || drag.pointerId !== event.pointerId) return prev
+      const delta = snapToCells({ x: event.clientX - drag.originX, y: event.clientY - drag.originY }, drag.pitch)
+      // Re-rendering on every pixel of a drag that has not yet crossed a cell boundary would redraw
+      // the whole screen — every widget, through the real renderer — dozens of times per cell.
+      if (delta.dCol === drag.delta.dCol && delta.dRow === drag.delta.dRow) return prev
+      return { ...prev, drag: { ...drag, delta } }
+    })
+  }
+
+  function endDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    setCanvas((prev) => {
+      const drag = prev.drag
+      if (!drag || drag.pointerId !== event.pointerId) return prev
+      // CLAMPED HERE, on the way in — `applyEdit` refuses an illegal rect, it never repairs one
+      // (`editorState.ts`'s header). `previewRectOf` is the same call the ghost was drawn from, so the
+      // widget lands exactly where the ghost said it would.
+      const rect = previewRectOf(drag, prev.editor.doc.layout)
+      // A refused edit returns the SAME `doc`/`past`/`future` references, so adopting the result
+      // unconditionally is a pure state swap that keeps the refusal legible to the effect above.
+      return { ...prev, drag: undefined, editor: applyEdit(prev.editor, { kind: "move", widgetId: drag.widgetId, rect }) }
+    })
+  }
+
+  function cancelDrag(event: ReactPointerEvent<HTMLElement>) {
+    setCanvas((prev) => (prev.drag && prev.drag.pointerId === event.pointerId ? { ...prev, drag: undefined } : prev))
+  }
+
+  const dragging = canvas.drag
+  const preview = dragging ? previewRectOf(dragging, layout) : undefined
+  const selectedWidget = edited.widgets.find((widget) => widget.id === canvas.selectedId)
+
   return (
     <div
-      data-editor-canvas={doc.screenId}
+      data-editor-canvas={edited.screenId}
       className="h-full min-h-0 w-full min-w-0 overflow-hidden border border-border-strong bg-surface-subtle p-3"
     >
-      <ScreenRenderer doc={doc} source={DESIGN_TIME_SOURCE} />
+      {/*
+        The document as this session actually holds it, so `38-editor-drag.spec.ts` can run Milestone
+        0's real `contract-tests/validate.mjs` against the OBJECT every drag produced rather than
+        against a reconstruction of it assembled from computed grid lines. A test that rebuilt the rect
+        from the DOM and then validated its own rebuild would report the schema green no matter what
+        the editor put in memory — the "passes while measuring nothing" defect this workstream keeps
+        finding. A narrowly-scoped, permanent measurement surface is the precedent this tree already
+        set for exactly that problem (`widgets/label.tsx`'s `__testOnlyThrow`); `hidden` keeps it out of
+        layout and out of the accessibility tree.
+      */}
+      <div hidden data-editor-document={JSON.stringify(edited)} />
+      <div className="relative h-full min-h-0 w-full min-w-0">
+        <ScreenRenderer doc={edited} source={DESIGN_TIME_SOURCE} />
+        <div
+          ref={overlayRef}
+          data-editor-overlay={edited.screenId}
+          // The renderer's own grid, mirrored — same `Math.max(1, …)` guard, same `gap-2`. Mirrored
+          // rather than measured because an overlay has to be laid out before anything can be measured
+          // off it; that the mirror HOLDS is asserted against the renderer's computed styles in the
+          // spec, which is where a divergence would actually show up.
+          className="absolute inset-0 grid gap-2"
+          style={{
+            gridTemplateColumns: `repeat(${Math.max(1, layout.cols)}, 1fr)`,
+            gridTemplateRows: `repeat(${Math.max(1, layout.rows)}, 1fr)`,
+          }}
+          onPointerDown={(event) => {
+            // Only a press on the overlay's own background clears the selection. A press on a hit
+            // target stops propagating before it reaches here.
+            if (event.target !== event.currentTarget) return
+            setCanvas((prev) => ({ ...prev, selectedId: undefined }))
+          }}
+        >
+          {edited.widgets.map((widget) => {
+            const placed = placedRectOf(widget, layout)
+            const selected = canvas.selectedId === widget.id
+            return (
+              <button
+                key={widget.id}
+                type="button"
+                data-editor-widget={widget.id}
+                data-editor-selected={selected ? "true" : "false"}
+                aria-pressed={selected}
+                aria-label={t("editor.selectWidget", { widgetId: widget.id })}
+                className="cursor-move touch-none appearance-none border-0 bg-transparent p-0"
+                style={{ ...gridPlacement(placed), ...(selected ? SELECTION_OUTLINE : undefined) }}
+                onPointerDown={(event) => beginDrag(event, widget, "move")}
+                onPointerMove={trackDrag}
+                onPointerUp={endDrag}
+                onPointerCancel={cancelDrag}
+              />
+            )
+          })}
+
+          {/*
+            The resize handle is a SIBLING of its widget's hit target, not a child of it: a button
+            inside a button is invalid HTML and gives assistive technology two overlapping controls
+            where there is one affordance. Placed on the same grid lines and pinned to the cell's
+            bottom-right corner by `justify-self`/`align-self`, which is where the industry puts it and
+            which needs no pixel arithmetic to stay attached as the grid reflows.
+          */}
+          {selectedWidget ? (
+            <button
+              type="button"
+              data-editor-resize={selectedWidget.id}
+              aria-label={t("editor.resizeWidget", { widgetId: selectedWidget.id })}
+              className="h-4 w-4 cursor-nwse-resize touch-none appearance-none justify-self-end self-end border border-[var(--focus)] bg-[var(--focus)] p-0"
+              style={gridPlacement(placedRectOf(selectedWidget, layout))}
+              onPointerDown={(event) => beginDrag(event, selectedWidget, "resize")}
+              onPointerMove={trackDrag}
+              onPointerUp={endDrag}
+              onPointerCancel={cancelDrag}
+            />
+          ) : null}
+
+          {/*
+            The ghost — where the drop would land, on the same lines the widget will actually take.
+            `pointer-events-none` so it never becomes the target of the very drag it is describing.
+          */}
+          {dragging && preview ? (
+            <div
+              data-editor-ghost={dragging.widgetId}
+              className="pointer-events-none border-2 border-dashed border-[var(--focus)] bg-[color-mix(in_srgb,var(--focus)_12%,transparent)]"
+              style={gridPlacement(preview)}
+            />
+          ) : null}
+        </div>
+      </div>
     </div>
   )
 }

@@ -6,6 +6,20 @@
     "module": "esnext",
     "types": ["node"],
     "skipLibCheck": true,
+    // WS-HMI-2 Task 9 — `tests/38-editor-drag.spec.ts` validates the document the editor holds in
+    // memory against `contracts/hmi-screen.schema.json` by IMPORTING Milestone 0's real
+    // `contract-tests/validate.mjs`, the same rule `runtime-tests/screens.test.mjs` and
+    // `runtime-tests/editorState.test.mjs` already follow (import it, never copy it — see that file's
+    // own header). Without this, tsc resolves the module but reports TS7016 ("implicitly has an 'any'
+    // type") for a `.mjs` with no declaration file.
+    //
+    // `allowJs` rather than a hand-written `validate.d.mts` ON PURPOSE: a declaration file is a SECOND
+    // statement of that module's signature and the one nobody updates, which is the exact objection
+    // this repository raises against every duplicated rule (`contracts/README.md`, `validate.mjs`'s own
+    // header). Inference from the real source cannot drift from it. `checkJs` stays off, so the `.mjs`
+    // is read for types and not type-CHECKED — this does not turn tsc loose on Milestone 0's
+    // hand-written validator.
+    "allowJs": true,
 
     /* Bundler mode */
     "moduleResolution": "bundler",

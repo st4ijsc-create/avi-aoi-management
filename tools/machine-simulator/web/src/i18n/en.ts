@@ -355,6 +355,11 @@ export const en: Dictionary = {
     designMode:
       "Design mode — this canvas draws with the runtime renderer itself, against fixed sample values, NOT data from a running machine.",
     widgetCount: (vars: Vars) => `${vars.count} widgets`,
+    // WS-HMI-2 Task 9 — the two controls the editing overlay puts over each widget cell. Both are
+    // TRANSPARENT `<button>`s with no text of their own; without these labels a screen reader finds
+    // two unnamed buttons. See `vi.ts` at the same keys.
+    selectWidget: (vars: Vars) => `Select widget ${vars.widgetId}`,
+    resizeWidget: (vars: Vars) => `Resize widget ${vars.widgetId}`,
     loading: {
       title: "Loading the screen document…",
       description: "Reading the document from GET /v1/screens.",

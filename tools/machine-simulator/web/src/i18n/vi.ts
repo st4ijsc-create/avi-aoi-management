@@ -356,6 +356,11 @@ export const vi = {
     designMode:
       "Chế độ thiết kế — canvas dùng đúng bộ vẽ của runtime, với giá trị mẫu cố định, KHÔNG phải dữ liệu của máy đang chạy.",
     widgetCount: (vars: Vars) => `${vars.count} widget`,
+    // WS-HMI-2 Task 9 — nhãn cho hai điều khiển của lớp phủ chỉnh sửa (`EditorCanvas.tsx`). Cả hai
+    // đều là `<button>` TRONG SUỐT nằm đè lên ô widget: không có chữ nào bên trong, nên nếu thiếu
+    // `aria-label` thì với trình đọc màn hình chúng là hai nút không tên.
+    selectWidget: (vars: Vars) => `Chọn widget ${vars.widgetId}`,
+    resizeWidget: (vars: Vars) => `Đổi kích thước widget ${vars.widgetId}`,
     loading: {
       title: "Đang tải tài liệu màn hình…",
       description: "Đang đọc tài liệu từ GET /v1/screens.",
