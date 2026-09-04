@@ -8,9 +8,12 @@ import { asRecord, formatValue, policyGate, readBinding } from "./shared.ts"
  * than a browser-default control.
  *
  * 🔴 SAFETY: identical gate to `command-button.tsx` (`policyGate`, `shared.ts`) — see that file's doc
- * comment for the full rationale. Absent `policyAction` renders the input `disabled` (the native
- * attribute — this is the plain "not applicable right now" case, not a latched control like HALT) AND a
- * visible, `aria-describedby`-linked reason paragraph; never a silently-inert-looking enabled box.
+ * comment for the full rationale. A `policyAction` that is absent, OR present but not one of the two
+ * actions the frozen contract defines (WS-HMI-2 Task 6, controller ruling — it used to be a mere
+ * truthiness check, and an unrecognised action rendered this input ENABLED), makes the input
+ * `disabled` (the native attribute — this is the plain "not applicable right now" case, not a latched
+ * control like HALT) AND shows a visible, `aria-describedby`-linked reason paragraph naming which of
+ * the two cases it is; never a silently-inert-looking enabled box.
  *
  * Does NOT submit anywhere — see `command-button.tsx`'s matching note on why the actual write call is
  * out of this widget's scope.

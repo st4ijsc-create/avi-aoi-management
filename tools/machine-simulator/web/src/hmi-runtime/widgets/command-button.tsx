@@ -15,6 +15,12 @@ const KNOWN_VARIANTS = new Set<ControlButtonVariant>(["start", "pause", "reset",
  * this file's own source text actually calls it, so this component and that test cannot quietly drift
  * apart.
  *
+ * 🔴 WS-HMI-2 Task 6, controller ruling — the schema constrains not only the PRESENCE of that field
+ * but its VALUE (`enum: ["machine.setpoint", "machine.command"]`), and `policyGate` now checks
+ * membership rather than truthiness. Before that fix an unrecognised action rendered this button
+ * ENABLED with no reason shown — the same untrusted-document case this comment already argued about,
+ * answered the opposite way from how `ScreenRenderer` answers it for an unknown `kind`.
+ *
  * Does NOT interpret `bindings.value` — `screen-screwdrive-full.json`'s "reset" widget sets one, but
  * nothing in this widget reads it today; that's free-form schema flexibility with no assigned meaning
  * yet, not a silently-dropped feature.

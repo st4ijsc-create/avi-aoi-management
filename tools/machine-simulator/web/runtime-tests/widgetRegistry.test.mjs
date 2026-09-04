@@ -68,6 +68,18 @@ function readWidgetKindMembers() {
   return members
 }
 
+/** Trích `PolicyAction` từ CHÍNH hợp đồng đóng băng (`contracts/tagNamespace.ts`) — cùng kỹ thuật, cùng
+ * lý do như `readWidgetKindMembers` ngay trên: một danh sách chép tay là bản sao thứ hai để lệch.
+ * `contracts.test.mjs` đã ghim union này hai chiều với CẢ BA schema (`hmi-screen`, `component-model`,
+ * `tag-namespace`), nên đây đúng là từ vựng đóng mà schema định nghĩa, đọc qua kiểu chứ không gõ lại. */
+function readPolicyActionMembers() {
+  const src = readNormalized(join(SRC, "contracts", "tagNamespace.ts"))
+  const m = /export type PolicyAction =([^\n]*)/.exec(src)
+  assert.ok(m, 'không tìm thấy "export type PolicyAction =" trong contracts/tagNamespace.ts')
+  const members = [...m[1].matchAll(/"([^"]*)"/g)].map((x) => x[1])
+  assert.ok(members.length > 0, "trích được 0 thành viên PolicyAction — regex bóc tách đã hỏng, mọi vòng lặp dưới chạy 0 lần và bài sẽ xanh mà không đo gì cả")
+  return members
+}
 /** Trích tập khoá đã đăng ký trong `widgetRegistry.ts` — ĐỌC VĂN BẢN, không `import()` (xem header).
  *
  * 🔴 Regex `/^\s*"([^"]+)":/gm` khớp ĐÚNG một khoá CÓ NGOẶC KÉP — không phải vì mọi kind đều chứa dấu
@@ -176,4 +188,83 @@ test("command-button.tsx và setpoint-input.tsx GỌI policyGate VÀ DÙNG cả 
       `${file} có dùng gate.disabled nhưng không thấy "gate.reason" trong văn bản nguồn — một regression chỉ vô hiệu hoá điều khiển mà KHÔNG hiện lý do (vi phạm đúng bất biến §5: "vô hiệu hoá KÈM lý do nhìn thấy được") sẽ lọt qua nếu thiếu assert này`
     )
   }
+})
+
+// ── 🔴 WS-HMI-2 Task 6, ruling của controller: policyGate là phép kiểm THÀNH VIÊN, không phải phép
+// kiểm TRUTHINESS ─────────────────────────────────────────────────────────────────────────────────
+// Ba bài policyGate ở trên hỏi đúng BA câu — vắng mặt, "machine.setpoint", "machine.command". Chiều
+// "một action LẠ" chưa từng được hỏi, và đó chính là lý do một phép kiểm truthiness sống sót qua mọi
+// vòng review: ĐO ĐƯỢC, không suy diễn, `policyAction: "xyzzy"` render CẢ HAI điều khiển ở trạng thái
+// BẬT, không kèm lý do nào (task-6-report.md §4, có cả quan sát trong trình duyệt thật).
+//
+// Phép kiểm thành viên KHÔNG bịa ra hợp đồng mới: cả ba schema đóng băng đều ràng buộc trường này vào
+// đúng hai giá trị, và `contracts/tagNamespace.ts` phản chiếu chúng thành `PolicyAction`. Nó chỉ thi
+// hành hợp đồng vốn đã có, ở đúng chỗ `ScreenRenderer` đã thi hành luật tương đương cho `kind` lạ.
+
+test("policyGate: từ vựng RUNTIME khớp union PolicyAction của hợp đồng — MỌI thành viên đều BẬT, và tập trích ra không rỗng", () => {
+  const members = readPolicyActionMembers()
+  // Sàn (SKILL.md §2): `readPolicyActionMembers` đã chặn tập RỖNG; con số cụ thể ở đây chặn thêm lỗ
+  // "union bị thu hẹp còn một thành viên mà không ai để ý" — vòng lặp dưới khi ấy vẫn xanh.
+  assert.equal(
+    members.length,
+    2,
+    `PolicyAction có ${members.length} giá trị, kỳ vọng 2 — nếu hợp đồng đổi, cập nhật CẢ POLICY_ACTIONS trong widgets/shared.ts (Record<PolicyAction, true> ở đó sẽ đỏ ngay ở tsc, bài này là lớp thứ hai)`
+  )
+  for (const action of members) {
+    const gate = policyGate({ kind: "command-button", policyAction: action })
+    assert.equal(
+      gate.disabled,
+      false,
+      `"${action}" là thành viên HỢP LỆ của PolicyAction nhưng policyGate vẫn khoá — phép kiểm thành viên đang từ chối chính từ vựng của hợp đồng`
+    )
+    assert.equal(gate.reason, undefined)
+  }
+})
+
+test('policyGate: một action KHÔNG thuộc từ vựng ("xyzzy") ⇒ disabled=true, và lý do NÊU ĐÍCH DANH giá trị sai', () => {
+  const gate = policyGate({ kind: "command-button", policyAction: "xyzzy" })
+  assert.equal(
+    gate.disabled,
+    true,
+    'policyAction "xyzzy" mở khoá điều khiển — đây CHÍNH LÀ hành vi ruling Task 6 sửa; một action PolicyEngine chưa từng nghe tới không bao giờ có thể được cấp'
+  )
+  assert.match(String(gate.reason), /xyzzy/, "lý do phải nêu chính giá trị sai — không nêu thì tác giả không biết mình đã gõ gì")
+  assert.match(String(gate.reason), /machine\.setpoint/, "lý do phải nêu cả từ vựng được chấp nhận")
+  assert.match(String(gate.reason), /machine\.command/)
+})
+
+test('policyGate: action RỖNG ("") và chỉ-khoảng-trắng ("  ", "\\t") ⇒ disabled=true — "có ghi gì đó" không phải là được cấp quyền', () => {
+  for (const raw of ["", "  ", "\t"]) {
+    const gate = policyGate({ kind: "setpoint-input", policyAction: raw })
+    assert.equal(gate.disabled, true, `policyAction ${JSON.stringify(raw)} không được mở khoá điều khiển`)
+    assert.ok(String(gate.reason).length > 0, `policyAction ${JSON.stringify(raw)} bị khoá nhưng KHÔNG kèm lý do nhìn thấy được`)
+  }
+})
+
+test('policyGate: sai HOA/thường ("MACHINE.COMMAND") ⇒ disabled=true — enum của hợp đồng là chữ thường, không có "gần đúng là được"', () => {
+  const gate = policyGate({ kind: "command-button", policyAction: "MACHINE.COMMAND" })
+  assert.equal(gate.disabled, true, 'một phép so KHÔNG phân biệt hoa thường sẽ cho qua giá trị này — schema thì không')
+  assert.match(String(gate.reason), /MACHINE\.COMMAND/)
+})
+
+test("policyGate: một giá trị KHÔNG PHẢI CHUỖI cũng bị khoá — JSON không đảm bảo kiểu của trường này", () => {
+  for (const raw of [1, 0, true, null, {}, []]) {
+    const gate = policyGate({ kind: "command-button", policyAction: raw })
+    assert.equal(gate.disabled, true, `policyAction ${JSON.stringify(raw)} phải bị khoá`)
+    assert.ok(String(gate.reason).length > 0)
+  }
+})
+
+test("policyGate: lý do cho action LẠ KHÁC HẲN lý do cho action VẮNG MẶT — hai lỗi khác nhau cần hai bước sửa khác nhau", () => {
+  const absent = policyGate({ kind: "command-button" })
+  const unknown = policyGate({ kind: "command-button", policyAction: "xyzzy" })
+  assert.equal(absent.disabled, true)
+  assert.equal(unknown.disabled, true)
+  assert.notEqual(
+    absent.reason,
+    unknown.reason,
+    "hai trạng thái hỏng khác nhau đang nói cùng một câu — tác giả viết SAI một action sẽ đi tìm một trường vốn đang nằm ngay đó"
+  )
+  assert.match(String(absent.reason), /has no policyAction/)
+  assert.doesNotMatch(String(unknown.reason), /has no policyAction/)
 })

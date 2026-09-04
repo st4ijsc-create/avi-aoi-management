@@ -10,6 +10,7 @@
  * here, even transitively, would break it.
  */
 import type { ScreenWidget } from "../../contracts/hmiScreen.ts"
+import type { PolicyAction } from "../../contracts/tagNamespace.ts"
 import type { TagValue } from "../TagValueSource.ts"
 import type { WidgetProps } from "../widgetRegistry.ts"
 import { formatMetric } from "../../lib/utils.ts"
@@ -72,13 +73,22 @@ export function readThresholds(props: Record<string, unknown>): Thresholds {
 }
 
 export type PolicyGate = {
-  /** True whenever `widget.policyAction` is absent — the ONLY input this gate looks at. It does NOT
-   * (and at this seam CANNOT) check role, HALT state, or PolicyEngine's own rules — those are
-   * server-side (`.claude/skills/st4i-machine-edition/SKILL.md` §3) and enforced again there
-   * regardless of what this gate decides. This gate exists to satisfy one narrower, purely
-   * client-side obligation: a document that never HAD a `policyAction` must never even offer an
-   * enabled control, so a misconfigured or foreign screen document fails safe in the UI instead of
-   * relying entirely on the server refusing the call after the fact. */
+  /** True whenever `widget.policyAction` is absent OR is not one of the two actions the frozen
+   * contract defines — those are the ONLY inputs this gate looks at. It does NOT (and at this seam
+   * CANNOT) check role, HALT state, or PolicyEngine's own rules — those are server-side
+   * (`.claude/skills/st4i-machine-edition/SKILL.md` §3) and enforced again there regardless of what
+   * this gate decides. This gate exists to satisfy one narrower, purely client-side obligation: a
+   * document that never HAD a usable `policyAction` must never even offer an enabled control, so a
+   * misconfigured or foreign screen document fails safe in the UI instead of relying entirely on the
+   * server refusing the call after the fact.
+   *
+   * 🔴 WS-HMI-2 Task 6, controller ruling — this used to be a TRUTHINESS check on the field, and the
+   * sentence above used to say "absent" was the only input. Measured in that state: `policyAction:
+   * "xyzzy"` rendered BOTH controls ENABLED with no reason shown, and so did `"  "` and
+   * `"MACHINE.COMMAND"`. `ScreenRenderer` already states this project's stance that a document
+   * reaching the renderer is NOT guaranteed schema-valid (validation happens at authoring/publish
+   * time) and acts on it — an unknown `kind` degrades to a named placeholder. The policy gate faced
+   * the same untrusted input and did the opposite: it opened. It is a membership check now. */
   disabled: boolean
   /** A human-visible explanation, always a non-empty string when `disabled` is true — `undefined`
    * otherwise. Never a silently-disabled control with no reason shown. */
@@ -86,14 +96,57 @@ export type PolicyGate = {
 }
 
 /**
+ * The closed vocabulary a `policyAction` may take, keyed BY the frozen contract type rather than
+ * written down beside it. `PolicyAction` (`contracts/tagNamespace.ts`) is itself pinned two-way
+ * against all three `contracts/*.schema.json` enums by `contract-tests/contracts.test.mjs`, so this
+ * is the same closed vocabulary the schemas define, reached through the type instead of retyped.
+ *
+ * A `Record<PolicyAction, true>` is exhaustive in BOTH directions at COMPILE time: widening the
+ * union without adding a member here is a missing-property error, and a member here that the union
+ * does not have is an excess-property error. Two lists that can silently drift apart is the defect
+ * this repository keeps writing comments about; this is deliberately not a third instance of it.
+ */
+const POLICY_ACTIONS: Record<PolicyAction, true> = {
+  "machine.setpoint": true,
+  "machine.command": true,
+}
+
+/** Membership, not truthiness. `value` is `unknown` on purpose: it arrives from a JSON document at
+ * runtime with no guarantee it is even a string, let alone one of the two words the contract
+ * defines — which is the entire case this gate exists for. */
+function isPolicyAction(value: unknown): value is PolicyAction {
+  return typeof value === "string" && Object.hasOwn(POLICY_ACTIONS, value)
+}
+
+/**
  * The ONE gate `setpoint-input.tsx` and `command-button.tsx` both call before deciding whether to
  * render an enabled control — kept here (plain `.ts`, no JSX) so `widgetRegistry.test.mjs` can pin its
  * behaviour by calling the SAME function the real widgets call, not a re-description of it.
+ *
+ * Three outcomes, not two, and the two disabled ones say DIFFERENT things on purpose — an author who
+ * wrote nothing and an author who wrote something unrecognised need different next steps, and a
+ * single shared message would send the second one looking for a missing field that is right there.
+ *
+ * `policyAction` is typed `unknown` here rather than `ScreenWidget["policyAction"]` because that is
+ * the truth about where the value comes from. Narrowing it to the contract type would make the
+ * unrecognised-value branch below look unreachable to `tsc` while remaining perfectly reachable at
+ * runtime — a check the compiler believes cannot fire is exactly how the truthiness version survived.
  */
-export function policyGate(widget: Pick<ScreenWidget, "policyAction" | "kind">): PolicyGate {
-  if (widget.policyAction) return { disabled: false, reason: undefined }
+export function policyGate(widget: Pick<ScreenWidget, "kind"> & { policyAction?: unknown }): PolicyGate {
+  const action = widget.policyAction
+  if (isPolicyAction(action)) return { disabled: false, reason: undefined }
+  if (action === undefined) {
+    return {
+      disabled: true,
+      reason: `disabled — this "${widget.kind}" widget has no policyAction, so it could never reach the PolicyEngine gate`,
+    }
+  }
+  // Names the offending value (JSON-quoted, so a whitespace-only or empty action is VISIBLE rather
+  // than rendering as a blank gap in the sentence) and names what was expected.
   return {
     disabled: true,
-    reason: `disabled — this "${widget.kind}" widget has no policyAction, so it could never reach the PolicyEngine gate`,
+    reason: `disabled — this "${widget.kind}" widget declares policyAction ${JSON.stringify(action)}, which is not one of ${Object.keys(POLICY_ACTIONS)
+      .map((known) => `"${known}"`)
+      .join(" | ")} — an action the PolicyEngine has never heard of could never be granted, so this control fails closed`,
   }
 }
