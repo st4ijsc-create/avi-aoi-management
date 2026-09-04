@@ -86,12 +86,31 @@ const READOUT_LABEL = "ALPHA-PANEL-READOUT"
  * (`machine.setpoint` / `machine.command`) with no translation layer anywhere in this tree — the fact
  * `policyGate`'s doc comment records after it was measured. A panel that showed it as the current,
  * valid selection would be telling an engineer that a real-looking permission is in force. It is
- * stored on the document because the write door accepts it: `ContractInvariants.Validate` checks
- * `policyAction` only for null/whitespace on a writable kind, never against the enum, so
- * `PUT /v1/screens/{id}` takes it. That is a measured property of the write door, not an accident
- * here — the same one `37-editor-canvas.spec.ts` relies on for its `probe-kind` widget.
+ * 🔴 SECURITY REVIEW LOW-1 / S-6 — THIS PARAGRAPH USED TO END, VERBATIM: *"stored on the document
+ * because the write door accepts it: `ContractInvariants.Validate` checks `policyAction` only for
+ * null/whitespace on a writable kind, never against the enum, so `PUT /v1/screens/{id}` takes it. That
+ * is a measured property of the write door, not an accident here — the same one
+ * `37-editor-canvas.spec.ts` relies on for its `probe-kind` widget."* True until the security round.
+ * **False now: that door checks the enum, and refuses this.**
+ *
+ * The two properties were never in conflict — only the fixture technique was, exactly as the
+ * controller ruled for `37-editor-canvas.spec.ts`'s `probe-kind`. The write door must refuse an action
+ * the frozen contract does not name (the review's own S-6 note: storing one "that names nothing" is
+ * the trap a second consumer inherits). The PANEL must fail closed when a document nevertheless
+ * carries one — and it still can, because `RollbackAsync` restores without re-validating, so a row
+ * written before the door was tightened comes back through it unchanged. That rollback path is what
+ * this test is the net for, and it is why the panel's behaviour still matters after the door closed.
+ *
+ * So `panel-gate` is STORED carrying `STORED_ACTION` (a real member of the frozen enum, which the door
+ * accepts) and the response is degraded on the way OUT by `serveWithEngineVocabularyAction` — a real
+ * request through `route.fetch()`, one string rewritten. Every assertion in this file is unchanged.
  */
 const ENGINE_VOCABULARY_ACTION = "machine.command.invoke"
+
+/** What `panel-gate` is STORED as — a real member of the frozen enum, so `PUT` accepts it. See
+ * `ENGINE_VOCABULARY_ACTION` for why the stored value and the served value now differ, and for the
+ * rollback path that makes the served one reachable in production. */
+const STORED_ACTION = "machine.command"
 
 /** `web/tests` → `web` → `tools/machine-simulator` → `contracts/hmi-screen.schema.json`. Read from
  * DISK so the vocabularies the panel renders are compared against the frozen schema itself rather
@@ -171,7 +190,7 @@ const PROBE_DOC: ProbeDocument = {
       id: "panel-gate",
       kind: "command-button",
       rect: { col: 9, row: 0, colSpan: 3, rowSpan: 1 },
-      policyAction: ENGINE_VOCABULARY_ACTION,
+      policyAction: STORED_ACTION,
       props: { label: "GATE-PROBE" },
     },
     // A widget with NO bindings and NO component, for the two "nothing declared yet" states.
@@ -291,6 +310,44 @@ function writeWidgetDoc(screenId: string, kind: string, policyAction?: string): 
   }
 }
 
+/**
+ * 🔴 Makes `GET /v1/screens/{SCREEN_ID}` answer the document the store really holds, with
+ * `panel-gate`'s `policyAction` rewritten to the ENGINE's own action id — the one value in this file
+ * the write door will no longer store, and the reason is a fix rather than a limitation. See
+ * `ENGINE_VOCABULARY_ACTION`.
+ *
+ * `route.fetch()` performs the REAL request: a real round trip to a real engine answering a real 200
+ * with the row it really has on disk. Exactly one string in the body is then rewritten, with two loud
+ * throws so the fixture and the rewrite cannot drift apart into an assertion measuring something
+ * nobody chose. Nothing is synthesised — not the status, not the other widgets.
+ *
+ * Installed in `beforeEach` rather than per-test, deliberately: what the BROWSER sees is then
+ * byte-identical to what it saw before the door was tightened, so every assertion in this file
+ * measures exactly what it measured before, and the change is confined to what the STORE holds.
+ */
+async function serveWithEngineVocabularyAction(page: Page): Promise<void> {
+  await page.route(`**/v1/screens/${SCREEN_ID}`, async (route) => {
+    if (route.request().method() !== "GET") return route.fallback()
+    const response = await route.fetch()
+    const doc = (await response.json()) as ProbeDocument
+    const widget = doc.widgets.find((w) => w.id === "panel-gate")
+    if (!widget) {
+      throw new Error(
+        `serveWithEngineVocabularyAction: the engine's own document carries no "panel-gate" widget, so ` +
+          `the S-6 assertion has no subject. Ids present: ${doc.widgets.map((w) => w.id).join(", ")}`
+      )
+    }
+    if (widget.policyAction !== STORED_ACTION) {
+      throw new Error(
+        `serveWithEngineVocabularyAction: "panel-gate" is stored with policyAction ` +
+          `"${widget.policyAction}", not "${STORED_ACTION}" — the fixture and this rewrite have drifted apart.`
+      )
+    }
+    widget.policyAction = ENGINE_VOCABULARY_ACTION
+    await route.fulfill({ status: response.status(), contentType: "application/json", body: JSON.stringify(doc) })
+  })
+}
+
 async function putScreen(request: APIRequestContext, doc: ProbeDocument): Promise<void> {
   const res = await request.put(`${ENGINE_URL}/v1/screens/${doc.screenId}`, { data: doc })
   if (!res.ok()) throw new Error(`PUT /v1/screens/${doc.screenId} failed: ${res.status()} ${await res.text()}`)
@@ -339,13 +396,16 @@ async function blurFields(page: Page): Promise<void> {
 }
 
 test.describe("HMI screen editor — the property panel and the tag picker", () => {
-  test.beforeEach(async ({ request }) => {
+  test.beforeEach(async ({ page, request }) => {
     // Every test re-establishes all three documents, so none inherits what an earlier one edited and
     // none depends on file ORDER. The canvas holds its edits in memory only (no save exists yet), so
     // a fresh page load is already a fresh document — the PUTs make that true across re-runs too.
     await putScreen(request, PROBE_DOC)
     await putTags(request)
     await putComponents(request)
+    // See `serveWithEngineVocabularyAction`: what the browser receives is byte-identical to what it
+    // received before the write door started checking the policyAction enum.
+    await serveWithEngineVocabularyAction(page)
   })
 
   test("selecting a widget opens its properties, and the kind vocabulary is the frozen schema's own", async ({
