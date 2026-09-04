@@ -45,6 +45,7 @@ import { SCREEN_BREAKPOINT_VALUES, type EditorEdit } from "./editorState"
  */
 export function BreakpointPreview({
   breakpoint,
+  readOnly,
   onEdit,
   children,
 }: {
@@ -52,6 +53,21 @@ export function BreakpointPreview({
    * the chosen breakpoint is a field of the document, and a second copy of it in a `useState` would
    * be a second answer to "which breakpoint is this screen for". */
   breakpoint: ScreenBreakpoint
+  /**
+   * 🔴 FIX ROUND 1, task-12-review.md M1 (found while falsifying it) — TRUE WHILE A PAST VERSION IS
+   * PREVIEWED, and then this chooser must not act.
+   *
+   * The review named four live surfaces; this was a fifth it did not list and the mutation round found:
+   * choosing a breakpoint emits `set-breakpoint`, a real edit on the SESSION's document, and pressing
+   * it while version 3 is on screen would rewrite a document the engineer is not looking at — the same
+   * defect, at a control whose whole subject is what is on screen.
+   *
+   * `disabled` rather than unmounted, unlike the layer tree and the property panel: those two carry
+   * per-widget labels that would be describing widgets that are not on screen, whereas this control's
+   * three labels stay true of the previewed document. A disabled view control that says why is honest;
+   * a hidden one would make the preview look like it had no breakpoint at all.
+   */
+  readOnly: boolean
   onEdit: (edit: EditorEdit) => void
   children: ReactNode
 }) {
@@ -83,6 +99,8 @@ export function BreakpointPreview({
                 aria-checked={active}
                 data-editor-breakpoint-choice={value}
                 data-editor-breakpoint-selected={active ? "true" : "false"}
+                disabled={readOnly}
+                title={readOnly ? t("editor.publish.readOnlyChooser") : undefined}
                 // 🔴 The label names the breakpoint AND its width, because "tablet" alone does not tell
                 // an engineer what they are about to be shown. The width is interpolated from the same
                 // table the frame below uses — never retyped into a dictionary, where it would be a
@@ -93,7 +111,7 @@ export function BreakpointPreview({
                   width: SCREEN_BREAKPOINT_WIDTHS[value],
                 })}
                 className={
-                  "border px-2 py-0.5 text-xs " +
+                  "border px-2 py-0.5 text-xs disabled:opacity-40 " +
                   (active
                     ? "border-[var(--focus)] bg-[color-mix(in_srgb,var(--focus)_18%,transparent)] text-text-strong"
                     : "border-border-strong bg-surface-subtle text-text-muted")

@@ -15,7 +15,15 @@ import type { TagValueSource } from "@/hmi-runtime/TagValueSource"
 import { useT } from "@/i18n"
 import { useScreenAtVersion, type MachineDetail } from "@/lib/api"
 import { BreakpointPreview } from "./BreakpointPreview"
-import { applyEdit, createEditorState, undo, type EditorEdit, type EditorRefusalCode, type EditorState } from "./editorState"
+import {
+  applyEdit,
+  createEditorState,
+  sameJsonValue,
+  undo,
+  type EditorEdit,
+  type EditorRefusalCode,
+  type EditorState,
+} from "./editorState"
 import { gridPitch, movedRect, resizedRect, snapToCells, type CellDelta, type GridPitch } from "./gridGeometry"
 import { LayerTree } from "./LayerTree"
 import { PropertyPanel } from "./PropertyPanel"
@@ -256,16 +264,6 @@ type CanvasState = {
    * exists trains people to click through the warning.
    */
   readonly baselineDoc: HmiScreenDocument
-  /** The version `baselineDoc` came from — `undefined` until this session publishes. `GET /v1/screens/
-   * {id}` answers the document alone (no version number in the body or in a header), so a session that
-   * has not published yet genuinely does not know which version it opened, and this says so rather
-   * than guessing `1`. Used only to notice the server's head has moved past it. */
-  readonly baselineVersion?: number
-  /** Set when a publish landed further than one step past `baselineVersion` — see
-   * `PublishPanel`'s `overtaken` prop for why this is computed HERE (only the canvas holds the
-   * version the session stood on BEFORE the publish moved it) and why it is an after-the-fact
-   * notice rather than a pre-flight check. */
-  readonly overtaken?: { readonly landedAs: number; readonly openedFrom: number }
   /** Which old version is being PREVIEWED, if any. Preview is a read-only overlay on the canvas; it
    * never enters the session and never touches `editor`. */
   readonly previewVersion?: number
@@ -333,13 +331,26 @@ export type EditorCanvasProps = {
    * document (`editorState.ts`'s `createEditorState` deep-copies it), because an in-progress edit that
    * a background refetch could overwrite is worse than a stale one.
    *
-   * 🔴 A REAL, DOCUMENTED LIMIT of this task: `useScreen` is an ordinary React Query hook, so a
-   * refetch (window focus, a manual invalidation) that brings a NEWER document is silently ignored
-   * while this session is open. Reconciling a concurrent write is a SAVE concern — it needs the
-   * version the session was opened at, which is exactly what `PUT /v1/screens/{id}`'s append-a-version
-   * contract carries — and it belongs to the task that adds the save button, not to the one that adds
-   * dragging. What IS handled here is a different document arriving because the ROUTE changed; see
-   * `EditorCanvas`.
+   * 🔴 A REAL, DOCUMENTED LIMIT: `useScreen` is an ordinary React Query hook, so a refetch that brings
+   * a NEWER document is deliberately ignored while this session is open — an in-progress edit that a
+   * background refetch could overwrite is worse than a stale one.
+   *
+   * 🔴 FIX ROUND 1, task-12-review.md LOW-4 — the sentence that used to end this paragraph said
+   * reconciling a concurrent write *"belongs to the task that adds the save button, not to the one that
+   * adds dragging"*. THIS IS THAT TASK, so here is what actually happens instead of a deferral:
+   *
+   *   * **Nothing is overwritten, ever.** `PUT /v1/screens/{id}` APPENDS a version
+   *     (`IHmiScreenStore.PutAsync`'s own contract); it never rewrites the one that was there. A
+   *     concurrent publish and this session's publish both survive, in order.
+   *   * **The session is never silently replaced by the server's newer document.** That is the whole
+   *     point of the paragraph above, and it is unchanged.
+   *   * **What the engineer loses is not their work, it is the OTHER publish's changes** — their
+   *     document simply does not carry them. So the editor's job is to SAY SO, not to merge: on a
+   *     publish that lands further than one step past the version this session was standing on,
+   *     `PublishPanel`'s `overtaken` notice names both numbers and says nothing was overwritten. The
+   *     route header shows the engine's current head throughout, from its own read.
+   *   * **Merging two concurrent screen documents is not attempted and is not planned here.** There is
+   *     no three-way merge for a widget list, and a wrong merge is worse than a named conflict.
    */
   doc: HmiScreenDocument
 }
@@ -394,6 +405,7 @@ export type EditorCanvasProps = {
 export function EditorCanvas({ doc }: EditorCanvasProps) {
   const t = useT()
   const overlayRef = useRef<HTMLDivElement | null>(null)
+  const previewingRef = useRef(false)
   const [canvas, setCanvas] = useState<CanvasState>(() => openSession(doc))
 
   // React's own documented "adjust state when a prop changes" pattern (no effect, no extra commit):
@@ -407,12 +419,15 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
   const layout = edited.layout
   const refusal = canvas.editor.lastRefusal
 
-  // WS-HMI-2 Task 12 — see `CanvasState.baselineDoc`. Compared by VALUE, over the serialised form, for
-  // the same reason `editorState.ts`'s own no-op rule compares by value: an accepted edit rebuilds the
-  // objects on its path, so reference equality would call every session dirty forever. Documents here
-  // are the size of one screen, this runs once per render, and the alternative — a hand-written deep
-  // compare — is a second definition of "the same document" for this file to keep in step.
-  const dirty = JSON.stringify(edited) !== JSON.stringify(canvas.baselineDoc)
+  // WS-HMI-2 Task 12 — see `CanvasState.baselineDoc`. Compared by VALUE through `editorState.ts`'s OWN
+  // `sameJsonValue`, the same predicate its no-op rule uses: an accepted edit rebuilds the objects on
+  // its path, so reference equality would call every session dirty forever.
+  //
+  // 🔴 FIX ROUND 1, task-12-review.md LOW-2 — this was `JSON.stringify(a) !== JSON.stringify(b)`,
+  // justified by citing that no-op rule. The citation was backwards: Task 7 fix round 1 REPLACED a
+  // byte comparison there with deep value equality, precisely because bytes are key-order sensitive.
+  // Importing the one predicate is both the fix and the end of the second definition.
+  const dirty = !sameJsonValue(edited, canvas.baselineDoc)
 
   // WS-HMI-2 Task 12 — the PREVIEW read. Fired only while a version is chosen (`useScreenAtVersion` is
   // `enabled` on that), cached forever (a version row is immutable by the store's append-only
@@ -421,13 +436,42 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
   const previewDoc = canvas.previewVersion !== undefined ? preview.data : undefined
 
   /**
+   * 🔴 FIX ROUND 1, task-12-review.md M1 — WHETHER ANY EDITING SURFACE MAY ACT AT ALL.
+   *
+   * Round 0 removed the canvas OVERLAY during a preview and wrote that preview was therefore
+   * "read-only by not existing". That was true of the overlay and false of everything else: the layer
+   * tree, the property panel, `Ctrl+Z` and Publish all stayed live over a document the engineer could
+   * not see. Delete a layer row while previewing version 3, see nothing change (the canvas is showing
+   * version 3), close the preview, publish — the deletion lands. Same shape as Task 10's box that
+   * silently wrote a zero and Task 11's refused rename that stayed in the field: a control acting on
+   * something other than what the user is looking at, with the extra insult that this file's own
+   * comment claimed it had been prevented.
+   *
+   * Gated on `previewVersion`, NOT on `previewDoc`: the read is in flight for a moment, and an editor
+   * that stayed live during that moment would have exactly the same hole in miniature.
+   */
+  const previewing = canvas.previewVersion !== undefined
+
+  /**
    * 🔴 WS-HMI-2 Task 12 — THE UNSAVED-WORK WARNING, and it is treated as the safety item it is.
    *
-   * `beforeunload` is the ONLY mechanism a browser gives a page to interrupt a reload, a back button,
-   * a closed tab or a typed URL, and it works only if the handler calls `preventDefault()` during the
-   * event. Registered ONLY while the session is dirty and torn down the moment it is not: a page that
-   * always blocks unload trains people to click through the dialog, which is how a real warning gets
-   * ignored later.
+   * `beforeunload` is the mechanism a browser gives a page to interrupt a CROSS-DOCUMENT exit — a
+   * reload, a closed tab, a typed URL, a link to another origin — and it works only if the handler
+   * calls `preventDefault()` during the event. Registered ONLY while the session is dirty and torn
+   * down the moment it is not: a page that always blocks unload trains people to click through the
+   * dialog, which is how a real warning gets ignored later.
+   *
+   * 🔴 FIX ROUND 1, task-12-review.md LOW-7 — THE SENTENCE ABOVE USED TO SAY "the ONLY mechanism …
+   * a reload, a BACK BUTTON, a closed tab or a typed URL", AND THE BACK BUTTON IS WRONG FOR THIS APP.
+   * `/editor/:screenId` is a wouter route in a pushState SPA, so an in-app navigation — including the
+   * back button after one — is a SAME-DOCUMENT history change and `beforeunload` does not fire for it.
+   *
+   * That gap is closed today by a fact about the app rather than by code: `/editor/:screenId` is
+   * mounted outside `<Shell>` (`App.tsx`) and NOTHING in `web/src` links to it or navigates away from
+   * it, so every exit is genuinely cross-document. A fact like that is worth exactly nothing unpinned,
+   * so it is pinned: `tests/42-editor-publish.spec.ts` parses every module under `web/src` and reddens
+   * the day any string literal outside `App.tsx`'s own route table addresses `/editor`. The day that
+   * test goes red, the correct fix is a router-level guard — not deleting the test.
    *
    * `returnValue = ""` alongside `preventDefault()` because the two have swapped roles across browser
    * generations — older Chromium required the assignment and ignored `preventDefault`, the current
@@ -461,6 +505,11 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
       if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return
       if (event.key.toLowerCase() !== "z") return
       if (isTextEntry(event.target)) return
+      // 🔴 FIX ROUND 1 (M1) — an undo while a past version is on screen would rewind a document the
+      // engineer cannot see, and show them nothing for the keystroke. Nothing is swallowed silently:
+      // the two editing rails are replaced by a named read-only notice for the whole preview, so the
+      // reason the keystroke did nothing is on screen before it is pressed.
+      if (previewingRef.current) return
       event.preventDefault()
       // 🔴 There is exactly ONE history, and it is `editorState.ts`'s. This handler calls `undo` and
       // stores what it returns; it keeps no stack of its own, pushes nothing on drop, and cannot get
@@ -602,6 +651,17 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
    * task of its own; it lives HERE because selection is the canvas's state, not the document's.
    */
   function applySessionEdit(edit: EditorEdit) {
+    // 🔴 FIX ROUND 1 (M1) — the funnel every editing surface goes through, closed for the duration of a
+    // preview.
+    //
+    // HONEST REACH, because dressing this up as coverage would be the defect it is guarding against:
+    // NO mutation can make this line matter today. The layer tree and the property panel are unmounted
+    // below, the breakpoint chooser is disabled, Publish is disabled and `Ctrl+Z` returns early — so
+    // deleting this line reddens nothing, and that was measured rather than assumed (falsification
+    // M1-e, task-12-report.md). It stays because it states the rule ONCE, in the one place every edit
+    // passes through, so a surface added later cannot bypass it by forgetting a prop; the four pinned
+    // surfaces are what actually holds today.
+    if (previewing) return
     setCanvas((prev) => {
       const editor = applyEdit(prev.editor, edit)
       const renamed =
@@ -609,6 +669,11 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
       return { ...prev, editor, selectedId: renamed ? edit.newId : prev.selectedId }
     })
   }
+
+  // The `Ctrl+Z` effect is mounted ONCE (empty deps, so the listener is not torn down and re-added on
+  // every render), so it cannot close over `previewing` — it reads this instead. Written during render
+  // rather than in an effect so it is never one render stale at the moment a key arrives.
+  previewingRef.current = previewing
 
   const dragging = canvas.drag
   // Renamed from `preview` in WS-HMI-2 Task 12: `preview` now names the OLD-VERSION read above, and
@@ -657,13 +722,36 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
       EDITED document (not the `doc` prop) so its order is the order `<ScreenRenderer>` is drawing
       below — one list, one truth about draw order.
     */}
-    <LayerTree
-      doc={edited}
-      selectedId={canvas.selectedId}
-      onSelect={(widgetId) => setCanvas((prev) => ({ ...prev, selectedId: widgetId }))}
-      onEdit={applySessionEdit}
-    />
-    <BreakpointPreview breakpoint={layout.breakpoint} onEdit={applySessionEdit}>
+    {previewing ? (
+      /*
+        🔴 FIX ROUND 1 (M1) — the layer tree and the property panel are NOT RENDERED while a past
+        version is on screen, and this notice stands in for both. Unmounted rather than disabled, for
+        the reason this file already gave about the canvas overlay: a tree row addressing a widget BY
+        ID over a different document is a control whose label describes something the engineer cannot
+        see, and a disabled copy of it is still a claim that the thing it names is here. The notice
+        occupies the left rail so the layout does not jump, and says which version and how to get back.
+      */
+      <aside
+        role="status"
+        data-editor-readonly={canvas.previewVersion}
+        className="flex w-64 shrink-0 flex-col gap-2 border border-border-strong bg-surface-subtle p-2"
+      >
+        <h2 className="font-heading text-sm font-semibold text-text-strong">
+          {t("editor.publish.readOnlyTitle")}
+        </h2>
+        <p className="text-xs text-text-body">
+          {t("editor.publish.readOnly", { version: canvas.previewVersion ?? 0 })}
+        </p>
+      </aside>
+    ) : (
+      <LayerTree
+        doc={edited}
+        selectedId={canvas.selectedId}
+        onSelect={(widgetId) => setCanvas((prev) => ({ ...prev, selectedId: widgetId }))}
+        onEdit={applySessionEdit}
+      />
+    )}
+    <BreakpointPreview breakpoint={layout.breakpoint} readOnly={previewing} onEdit={applySessionEdit}>
     <div
       data-editor-canvas={edited.screenId}
       className="h-full min-h-0 min-w-0 overflow-hidden border border-border-strong bg-surface-subtle p-3"
@@ -821,35 +909,28 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
         squeezing them into a sliver.
       */}
       <div className="flex w-80 min-h-0 shrink-0 flex-col gap-2 overflow-y-auto">
-      <PropertyPanel
-        widget={selectedWidget}
-        onEdit={applySessionEdit}
-        // Filtered HERE rather than in the panel, so `HARMLESS_REFUSALS` stays the one place that says
-        // which codes are ordinary — the panel renders whatever it is handed.
-        refusal={refusal && !HARMLESS_REFUSALS[refusal.code] ? refusal : undefined}
-      />
+      {previewing ? null : (
+        <PropertyPanel
+          widget={selectedWidget}
+          onEdit={applySessionEdit}
+          // Filtered HERE rather than in the panel, so `HARMLESS_REFUSALS` stays the one place that says
+          // which codes are ordinary — the panel renders whatever it is handed.
+          refusal={refusal && !HARMLESS_REFUSALS[refusal.code] ? refusal : undefined}
+        />
+      )}
       <PublishPanel
         screenId={canvas.screenId}
         doc={edited}
         dirty={dirty}
-        overtaken={canvas.overtaken}
         previewVersion={canvas.previewVersion}
         onPreviewVersion={(version) => setCanvas((prev) => ({ ...prev, previewVersion: version }))}
-        onPublished={(published, version) =>
-          setCanvas((prev) => ({
-            ...prev,
-            baselineDoc: published,
-            baselineVersion: version,
-            // The append-only store gives every publish the next number, so a session standing on N
-            // that lands on anything above N+1 was overtaken by exactly `version - N - 1` publishes
-            // from elsewhere. Arithmetic on two numbers the engine itself produced — no polling, no
-            // guess. A session that has not published before has no N and therefore no claim to make.
-            overtaken:
-              prev.baselineVersion !== undefined && version > prev.baselineVersion + 1
-                ? { landedAs: version, openedFrom: prev.baselineVersion }
-                : undefined,
-          }))
-        }
+        // 🔴 FIX ROUND 1, task-12-review.md M4 — the canvas no longer tracks WHICH version the session
+        // stands on, and the "overtaken" arithmetic moved to `PublishPanel`. The version this session
+        // opened at is knowable from `GET .../versions`, which that panel already reads; keeping the
+        // number here forced it to be `undefined` until the session's first publish, which made the
+        // commonest overtake of all — open at v3, a colleague publishes v4, you land at v5 — silent.
+        // The canvas keeps only what is genuinely its own: the DOCUMENT that was last accepted.
+        onPublished={(published) => setCanvas((prev) => ({ ...prev, baselineDoc: published }))}
       />
       </div>
     </div>

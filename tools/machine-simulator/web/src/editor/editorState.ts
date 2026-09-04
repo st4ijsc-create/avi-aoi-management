@@ -593,8 +593,16 @@ function describe(value: unknown): string {
  *
  * Safe without a cycle guard: both sides are JSON trees by construction — the document came through
  * `structuredClone` of parsed JSON, and every value written into it passed `jsonRefusal`.
+ *
+ * 🔴 FIX ROUND 1, task-12-review.md LOW-2 — EXPORTED, so `EditorCanvas`'s dirty check uses THIS
+ * function rather than a second definition. Task 12 round 0 compared the session against its publish
+ * baseline with `JSON.stringify(a) !== JSON.stringify(b)` and cited the paragraph above as its
+ * precedent — citing the ruling in support of doing the thing the ruling condemned. Bytes are
+ * key-order sensitive; the only reachable failure was a false-POSITIVE dirty, i.e. warning about work
+ * that no longer exists, which is precisely what the `beforeunload` comment in that file says it is
+ * avoiding. One definition, two callers, no second answer to "is this the same document".
  */
-function sameJsonValue(a: unknown, b: unknown): boolean {
+export function sameJsonValue(a: unknown, b: unknown): boolean {
   if (a === b) return true
   if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false
   if (Array.isArray(a) !== Array.isArray(b)) return false

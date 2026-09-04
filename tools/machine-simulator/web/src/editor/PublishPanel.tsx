@@ -1,3 +1,5 @@
+import { useState } from "react"
+
 import type { HmiScreenDocument } from "@/contracts/hmiScreen"
 import { useT } from "@/i18n"
 import {
@@ -39,9 +41,16 @@ import {
  *   * **401/403** — this session is not an Engineer. `request<T>`'s app-wide 401 handler already
  *     bounces to Login; a 403 stops here and is named.
  *
- * All of them render into the SAME `role="alert"` block, immediately under the button that produced
- * them, carrying the HTTP status as data so a reader (and the spec) can tell which door said no. None
- * of them goes only to the console.
+ * All of them render as the SAME `role="alert"` block, carrying the HTTP status as data so a reader
+ * (and the spec) can tell which door said no. None of them goes only to the console.
+ *
+ * 🔴 FIX ROUND 1, task-12-review.md LOW-1 — "immediately under the button that produced them" was TRUE
+ * for publish and FALSE for rollback, which is the one that has a button PER ROW: the refusal used to
+ * render after the entire version list, so on a long history an engineer could press Restore near the
+ * top and have the answer appear far below, possibly outside the rail's scroll viewport. The rollback
+ * refusal now renders INSIDE the row whose button was pressed — matched on `rollback.variables`, the
+ * `toVersion` the mutation was called with — so the claim is true of both, and true of the row rather
+ * than of the list.
  *
  * ── 🔴 PREVIEWING AN OLD VERSION IS NOT PUBLISHING, AND NOT LOADING ──────────────────────────────
  * Choosing a version fetches `GET /v1/screens/{id}?version=N` and hands it UP to `EditorCanvas`,
@@ -65,7 +74,6 @@ export function PublishPanel({
   screenId,
   doc,
   dirty,
-  overtaken,
   previewVersion,
   onPreviewVersion,
   onPublished,
@@ -76,20 +84,6 @@ export function PublishPanel({
   /** Whether the session differs from what the server last accepted. Computed by `EditorCanvas` (it
    * owns the baseline); shown here because this is where the answer to "so publish it" lives. */
   dirty: boolean
-  /**
-   * Set by `EditorCanvas` when a publish landed FURTHER than one step past the version this session
-   * last stood on — i.e. somebody else published in between. `undefined` otherwise.
-   *
-   * 🔴 IT IS AN AFTER-THE-FACT NOTICE AND SAYS SO, because a before-the-fact one is not available
-   * honestly. `useScreenVersions` does not poll — it reads a DECLARATION a human writes, and a 1 s
-   * poll for it would be ~86 000 requests a day — so between opening the editor and pressing Publish
-   * there is no moment at which this client learns that the head moved. What it CAN do, exactly and
-   * without guessing, is compare the version the engine just returned with the version this session
-   * expected: land at 7 having stood on 3 and versions 4-6 came from somewhere else. Nothing was
-   * overwritten (the store appends), but this document does not carry those changes, and that is the
-   * thing an engineer must be told rather than left to discover.
-   */
-  overtaken: { landedAs: number; openedFrom: number } | undefined
   previewVersion: number | undefined
   onPreviewVersion: (version: number | undefined) => void
   /** Called with the exact document the engine accepted and the version it produced, so the canvas
@@ -105,6 +99,40 @@ export function PublishPanel({
   const rollback = useRollbackScreen(screenId)
 
   const rows: ScreenVersionInfo[] = versions.data ?? []
+  const head = rows.length > 0 ? Math.max(...rows.map((row) => row.version)) : undefined
+
+  /**
+   * 🔴 THE VERSION THIS SESSION IS STANDING ON — FIX ROUND 1, task-12-review.md M4.
+   *
+   * Adopted ONCE from the server's head the first time the history is known, and moved thereafter only
+   * by this session's own publishes. Round 0 tracked it in `EditorCanvas` and set it only in
+   * `onPublished`, so it was `undefined` until the session had already published — which made the
+   * commonest overtake of all silent: open the editor at v3, a colleague publishes v4, you publish and
+   * land at v5, and nothing said so. The justification given was that `GET /v1/screens/{id}` answers
+   * the document without a version number, so the session "genuinely does not know which version it
+   * opened". The narrow claim is true and the inference was not: `useScreenVersions` is read RIGHT
+   * HERE, and `EditorRoute` already renders its head in the page header. The number was on screen.
+   *
+   * Adopt-once matters. Re-adopting the head on every render would make the notice unreachable by
+   * construction: the publish invalidates this query, the head refetches to the number we just landed
+   * on, and `landedAs > stoodOn + 1` could never be true again.
+   */
+  const [stoodOn, setStoodOn] = useState<number | undefined>(undefined)
+  if (stoodOn === undefined && head !== undefined) setStoodOn(head)
+
+  /**
+   * Set when a publish landed FURTHER than one step past `stoodOn` — i.e. somebody else published in
+   * between.
+   *
+   * 🔴 IT IS AN AFTER-THE-FACT NOTICE AND SAYS SO, because a before-the-fact one is not available
+   * honestly. `useScreenVersions` does not poll — it reads a DECLARATION a human writes, and a 1 s
+   * poll for it would be ~86 000 requests a day — so between the last read of the history and pressing
+   * Publish there is no moment at which this client learns the head moved. What it CAN do, exactly and
+   * without guessing, is arithmetic on two numbers the engine itself produced: the append-only store
+   * gives every publish the next number, so landing at 7 while standing on 3 means versions 4-6 came
+   * from somewhere else. Nothing was overwritten, but this document does not carry those changes.
+   */
+  const [overtaken, setOvertaken] = useState<{ landedAs: number; openedFrom: number } | undefined>(undefined)
 
   return (
     // 🔴 `w-full`, and it sits UNDER `PropertyPanel` inside the existing right rail rather than as a
@@ -127,14 +155,32 @@ export function PublishPanel({
       <button
         type="button"
         data-publish-button
-        disabled={publish.isPending}
+        // 🔴 FIX ROUND 1, task-12-review.md M1 — DISABLED WHILE A PAST VERSION IS ON SCREEN. The button
+        // publishes the SESSION's document, but an engineer looking at version 3 and pressing "Publish"
+        // is reasonably reading it as "publish version 3". A control whose effect is not the thing the
+        // user is looking at is the exact defect Task 10 and Task 11 each shipped once. `title` carries
+        // the reason, and the two editing rails are replaced by a named read-only notice for the whole
+        // preview, so the state is announced before the button is reached rather than only on hover.
+        disabled={publish.isPending || previewVersion !== undefined}
+        title={previewVersion !== undefined ? t("editor.publish.readOnly", { version: previewVersion }) : undefined}
         className="border border-border-strong bg-surface-subtle px-2 py-1 text-sm text-text-strong disabled:opacity-50"
         onClick={() => {
           // The document is snapshotted HERE, at click time, and the same snapshot is what
           // `onPublished` reports back — see that prop's own note.
           const sent = doc
+          // `stoodOn` is read from THIS render, i.e. the version the session was standing on when the
+          // button was pressed — not from after the publish moved it.
+          const from = stoodOn
           publish.mutate(sent, {
-            onSuccess: (result: PutScreenResult) => onPublished(sent, result.version),
+            onSuccess: (result: PutScreenResult) => {
+              setOvertaken(
+                from !== undefined && result.version > from + 1
+                  ? { landedAs: result.version, openedFrom: from }
+                  : undefined
+              )
+              setStoodOn(result.version)
+              onPublished(sent, result.version)
+            },
           })
         }}
       >
@@ -171,10 +217,14 @@ export function PublishPanel({
           {t("editor.publish.historyFailed")}
         </p>
       ) : null}
+      {/* 🔴 FIX ROUND 1, task-12-review.md LOW-5 — this branch carried a `data-publish-history-empty`
+          hook that no spec read, and it never could: reaching this component at all requires
+          `GET /v1/screens/{id}` to have answered 200, and a document exists only because a `PUT`
+          created version 1, so an existing screen always has at least one version. The branch stays
+          (an empty list must not render as a blank gap) and the hook is gone, because a test hook
+          nothing can reach is a promise of coverage that does not exist. */}
       {!versions.isPending && !versions.isError && rows.length === 0 ? (
-        <p data-publish-history-empty className="text-xs text-text-muted">
-          {t("editor.publish.historyEmpty")}
-        </p>
+        <p className="text-xs text-text-muted">{t("editor.publish.historyEmpty")}</p>
       ) : null}
 
       <ul data-publish-history className="flex flex-col gap-1">
@@ -206,6 +256,7 @@ export function PublishPanel({
                     ? t("editor.publish.previewClose")
                     : t("editor.publish.preview")}
                 </button>
+                <span className="flex flex-col gap-1">
                 <button
                   type="button"
                   data-publish-rollback={row.version}
@@ -220,6 +271,13 @@ export function PublishPanel({
                 >
                   {t("editor.publish.rollback")}
                 </button>
+                {/* LOW-1: under THIS row's button, not under the whole list. `rollback.variables` is
+                    the `toVersion` the mutation was called with, so a refusal can only ever attach to
+                    the row that asked for it. */}
+                {rollback.isError && rollback.variables === row.version ? (
+                  <Refusal what="rollback" error={rollback.error} />
+                ) : null}
+                </span>
               </span>
             </li>
           ))}
@@ -234,8 +292,6 @@ export function PublishPanel({
           {t("editor.publish.rolledBack", { version: rollback.data.version })}
         </p>
       ) : null}
-
-      <Refusal what="rollback" error={rollback.error} />
     </aside>
   )
 }

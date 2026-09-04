@@ -490,6 +490,14 @@ export const vi = {
         `Đang XEM TRƯỚC phiên bản ${vars.version} — chỉ đọc. Bản đang sửa của bạn không bị đụng tới và quay lại ngay khi đóng xem trước.`,
       previewLoading: (vars: Vars) => `Đang đọc phiên bản ${vars.version}…`,
       previewFailed: (vars: Vars) => `Không đọc được phiên bản ${vars.version}.`,
+      // 🔴 SỬA VÒNG 1 (task-12-review.md M1) — khi đang XEM TRƯỚC một phiên bản cũ, cây lớp và panel
+      // thuộc tính KHÔNG được vẽ, và câu này đứng thay chỗ chúng. Nói rõ vì sao trống, chứ không để
+      // người dùng đoán rằng trình dựng vừa hỏng.
+      readOnlyTitle: "Chỉ đọc",
+      readOnlyChooser:
+        "Đang xem trước một phiên bản cũ. Đổi khổ màn hình là một phép SỬA tài liệu, nên nó tạm khoá — đóng xem trước để đổi.",
+      readOnly: (vars: Vars) =>
+        `Đang xem trước phiên bản ${vars.version}, nên mọi công cụ sửa đều tạm ẩn: một hàng cây lớp hay một ô thuộc tính lúc này sẽ nhắm tới tài liệu bạn KHÔNG nhìn thấy. Đóng xem trước để sửa tiếp — bản đang sửa của bạn vẫn nguyên vẹn.`,
       rollback: "Khôi phục",
       rollbackIsCurrent: "Đây đã là phiên bản hiện hành — khôi phục về nó chỉ tạo ra một bản sao y hệt.",
       // 🔴 "NỐI THÊM", không phải "quay lui": máy chủ đọc tài liệu ở phiên bản cũ rồi ghi nó thành một

@@ -454,6 +454,13 @@ export const en: Dictionary = {
         `PREVIEWING version ${vars.version} — read only. Your working copy is untouched and comes straight back when you close this.`,
       previewLoading: (vars: Vars) => `Reading version ${vars.version}…`,
       previewFailed: (vars: Vars) => `Version ${vars.version} could not be read.`,
+      // See vi.ts at the same keys: the editing rails are unmounted during a preview (M1), and this
+      // stands in for them.
+      readOnlyTitle: "Read only",
+      readOnlyChooser:
+        "A past version is being previewed. Changing the breakpoint EDITS the document, so it is locked — close the preview to change it.",
+      readOnly: (vars: Vars) =>
+        `Previewing version ${vars.version}, so the editing tools are hidden: a layer row or a property field right now would target the document you are NOT looking at. Close the preview to keep editing — your working copy is untouched.`,
       rollback: "Restore",
       rollbackIsCurrent: "This is already the current version — restoring to it would only add an identical copy.",
       rolledBack: (vars: Vars) =>
