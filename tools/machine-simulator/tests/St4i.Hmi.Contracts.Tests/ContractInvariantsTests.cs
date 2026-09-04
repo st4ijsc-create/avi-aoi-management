@@ -728,6 +728,178 @@ public class ContractInvariantsTests
         }
     }
 
+    // ═════════════════════════════════════════════════════════════════════
+    // 🔴 SECURITY REVIEW — HIGH-1 (a size cap), LOW-1 (five schema constraints the door did not
+    // check, every one measured ACCEPTED by the reviewer), LOW-2 (duplicate widget ids).
+    //
+    // Every one is pinned to the schema file itself by SchemaEnumGuardPinTests; these measure that the
+    // checks RUN and refuse, and — for the cap — that the BOUNDARY is where it says it is.
+    // ═════════════════════════════════════════════════════════════════════
+
+    private static ScreenWidget[] Widgets(int count) =>
+        Enumerable.Range(0, count).Select(i => new ScreenWidget($"w{i}", "label", Rect())).ToArray();
+
+    /// <summary>HIGH-1, the accepting half. EXACTLY at the cap is fine — a boundary test that only
+    /// measured the refusal would pass against a cap set anywhere below it, including zero.</summary>
+    [Fact]
+    public void A_screen_with_exactly_the_maximum_widget_count_is_accepted()
+    {
+        Assert.True(ContractInvariants.MaxWidgetsPerScreen > 0);
+        Assert.Empty(ContractInvariants.Validate(Screen(Widgets(ContractInvariants.MaxWidgetsPerScreen))));
+    }
+
+    /// <summary>HIGH-1, the refusing half — ONE past the cap.
+    ///
+    /// <para>The violation list carries EXACTLY ONE entry, and that is part of the fix rather than an
+    /// incidental: continuing through a 200 000-widget document to emit 200 000 violations and then
+    /// joining them into one exception message is the same denial of service, moved to the server. The
+    /// reviewer measured the unbounded document at 15.8 MiB stored in 291 ms with zero violations.</para></summary>
+    [Fact]
+    public void A_screen_one_widget_past_the_maximum_is_refused_with_exactly_one_violation()
+    {
+        var violations = ContractInvariants.Validate(Screen(Widgets(ContractInvariants.MaxWidgetsPerScreen + 1)));
+
+        Assert.Single(violations);
+        Assert.Contains(ContractInvariants.MaxWidgetsPerScreen.ToString(), violations[0], StringComparison.Ordinal);
+        Assert.Contains((ContractInvariants.MaxWidgetsPerScreen + 1).ToString(), violations[0], StringComparison.Ordinal);
+    }
+
+    /// <summary>HIGH-1 — the cap RETURNS rather than continuing, so an oversized document costs one
+    /// violation and not one per widget. Measured on a document that ALSO breaks another rule on every
+    /// widget: if the cap fell through, this would be tens of thousands of lines.</summary>
+    [Fact]
+    public void An_oversized_screen_stops_at_the_cap_instead_of_enumerating_every_widget()
+    {
+        var widgets = Enumerable.Range(0, ContractInvariants.MaxWidgetsPerScreen + 500)
+            .Select(_ => new ScreenWidget("SHOUTING-ID", "no-such-kind", Rect())).ToArray();
+
+        Assert.Single(ContractInvariants.Validate(Screen(widgets)));
+    }
+
+    [Fact]
+    public void A_theme_outside_the_frozen_enum_is_a_violation()
+    {
+        var doc = Screen(new ScreenWidget("w1", "label", Rect())) with { Theme = "console" };
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Single(violations);
+        // Named, because this is the one LOW-1 field with an operator-visible effect: the renderer
+        // stamps it as `data-theme`, and `console` is a real theme block in this app's own stylesheet.
+        Assert.Contains("console", violations[0], StringComparison.Ordinal);
+        Assert.Contains("data-theme", violations[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_breakpoint_outside_the_frozen_enum_is_a_violation()
+    {
+        var doc = Screen(new ScreenWidget("w1", "label", Rect())) with
+        {
+            Layout = new ScreenLayout(12, 8, "watch"),
+        };
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Single(violations);
+        Assert.Contains("watch", violations[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_schemaVersion_other_than_the_frozen_const_is_a_violation()
+    {
+        var doc = Screen(new ScreenWidget("w1", "label", Rect())) with { SchemaVersion = 2 };
+
+        Assert.Single(ContractInvariants.Validate(doc));
+    }
+
+    /// <summary>LOW-1, the rect minimums — the four the reviewer measured accepted. Each one alone, so a
+    /// check that only looked at `col` would leave three rows red.</summary>
+    [Theory]
+    [InlineData(-1, 0, 1, 1, "col")]
+    [InlineData(0, -1, 1, 1, "row")]
+    [InlineData(0, 0, 0, 1, "colSpan")]
+    [InlineData(0, 0, 1, 0, "rowSpan")]
+    public void A_rect_below_the_frozen_minimum_is_a_violation(int col, int row, int colSpan, int rowSpan, string field)
+    {
+        var doc = Screen(new ScreenWidget("w1", "label", new WidgetRect(col, row, colSpan, rowSpan)));
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Single(violations);
+        Assert.Contains($"rect.{field}", violations[0], StringComparison.Ordinal);
+    }
+
+    /// <summary>LOW-1 / S-6 — a `policyAction` that names nothing. Both values the reviewer measured
+    /// accepted: an obvious nonsense one, and the engine's OWN action id, which is the more instructive
+    /// case because it looks right to a reader.</summary>
+    [Theory]
+    [InlineData("xyzzy")]
+    [InlineData("machine.command.invoke")]
+    public void A_policyAction_outside_the_frozen_enum_is_a_violation(string action)
+    {
+        var doc = Screen(new ScreenWidget("b1", "command-button", Rect(), PolicyAction: action));
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Single(violations);
+        Assert.Contains(action, violations[0], StringComparison.Ordinal);
+    }
+
+    /// <summary>LOW-2 — duplicate ids, refused STRICTER than the schema and for a stated reason: the
+    /// renderer keys React children on `widget.id`. The editor has refused them since Task 7 and says so
+    /// in its own message; the HTTP door sided with the schema until now.</summary>
+    [Fact]
+    public void Two_widgets_sharing_an_id_are_a_violation_even_though_the_schema_permits_it()
+    {
+        var doc = Screen(
+            new ScreenWidget("probe-a", "label", Rect()),
+            new ScreenWidget("probe-b", "label", Rect()),
+            new ScreenWidget("probe-a", "readout", Rect()));
+
+        var violations = ContractInvariants.Validate(doc);
+
+        Assert.Single(violations);
+        Assert.Contains("probe-a", violations[0], StringComparison.Ordinal);
+        // The INDEX of the second occurrence, not the first — the first one is legitimate.
+        Assert.Contains("widgets[2]", violations[0], StringComparison.Ordinal);
+    }
+
+    /// <summary>Control for LOW-2: a blank id is already reported by its own rule, and must not ALSO be
+    /// reported as a duplicate of the next blank one. Two widgets, two missing ids, two violations —
+    /// not three.</summary>
+    [Fact]
+    public void Control_Blank_ids_are_not_reported_as_duplicates_of_each_other()
+    {
+        var doc = Screen(
+            new ScreenWidget("", "label", Rect()),
+            new ScreenWidget("", "label", Rect()));
+
+        Assert.Equal(2, ContractInvariants.Validate(doc).Count);
+    }
+
+    /// <summary>Control for every rule above: the largest document this repository actually ships still
+    /// passes. A door tightened past what real screens declare would break authoring, and nothing else
+    /// here would notice.</summary>
+    [Fact]
+    public void Control_Every_shipped_screen_document_still_passes_the_write_door()
+    {
+        var screens = Directory.EnumerateFiles(
+            Path.Combine(Path.GetDirectoryName(ContractFixtures.ContractsDir)!, "web", "screens"),
+            "*.json", SearchOption.AllDirectories).ToList();
+
+        Assert.NotEmpty(screens);
+        foreach (var file in screens)
+        {
+            var doc = System.Text.Json.JsonSerializer.Deserialize<HmiScreenDocument>(
+                File.ReadAllText(file), HmiContractJson.Options);
+            Assert.NotNull(doc);
+            var violations = ContractInvariants.Validate(doc!);
+            Assert.True(violations.Count == 0,
+                $"{Path.GetFileName(file)} — a document this repository SHIPS no longer passes its own " +
+                $"write door: {string.Join(" | ", violations)}");
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Controls — NOT guards. Each of these asserts that a WELL-FORMED document produces ZERO violations.
     // A control cannot fail by construction against any of the checks above (it would only fail if a check

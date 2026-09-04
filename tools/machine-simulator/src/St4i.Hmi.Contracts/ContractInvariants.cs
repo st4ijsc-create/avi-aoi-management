@@ -344,11 +344,90 @@ public static class ContractInvariants
 
     /// <summary>WS-HMI-2 Task 3 fix round 1 — LOẠI LUẬT THỨ TƯ (xem doc-comment đầu file). Ghim với
     /// <c>hmi-screen.schema.json</c> → <c>$defs.layout.properties.cols</c>/<c>rows</c>, khớp nguyên văn
-    /// (<c>minimum: 1, maximum: 48</c>) cho CẢ HAI trường.</summary>
-    private const int LayoutDimensionMin = 1;
+    /// (<c>minimum: 1, maximum: 48</c>) cho CẢ HAI trường.
+    ///
+    /// <para><c>public</c> từ đợt security review: <c>SchemaEnumGuardPinTests</c> đối chiếu hai hằng này
+    /// với chính file schema, và <see cref="MaxWidgetsPerScreen"/> được DẪN RA từ chúng.</para></summary>
+    public const int LayoutDimensionMin = 1;
 
     /// <summary>Xem <see cref="LayoutDimensionMin"/>.</summary>
-    private const int LayoutDimensionMax = 48;
+    public const int LayoutDimensionMax = 48;
+
+    /// <summary>
+    /// 🔴 <b>SECURITY REVIEW HIGH-1 — TRẦN SỐ WIDGET CHO MỘT MÀN HÌNH. Đây là cửa duy nhất chặn nó.</b>
+    ///
+    /// <para><b>Đo được trước khi đóng:</b> một tài liệu 200 000 widget đi qua bộ kiểm này với <b>0 vi
+    /// phạm</b>, serialize thành 15,8 MiB và lưu trong 291 ms; một <c>rollback</c> nối thêm đúng nội dung
+    /// ấy trong 817 ms. Hai hệ quả: React commit danh sách ấy ĐỒNG BỘ trên main thread, nên nút RESET
+    /// HALT của kiosk có mặt trên màn hình mà bấm không được; và phần đĩa nó ăn nằm trên đúng volume giữ
+    /// historian, cơ sở dữ liệu audit và WAL của store-and-forward — nơi mà đĩa đầy nổi lên thành một
+    /// <c>500</c> rỗng, vì <c>SQLITE_FULL</c> là mã 13 còn <c>IsWriteLockBusy</c> chỉ khớp mã 5.</para>
+    ///
+    /// <para><b>VÌ SAO ĐÚNG CON SỐ NÀY, và vì sao nó được DẪN RA chứ không gõ ra.</b> Lưới lớn nhất mà
+    /// lược đồ đóng băng cho phép là <see cref="LayoutDimensionMax"/> × <see cref="LayoutDimensionMax"/> =
+    /// 2304 ô, và mỗi widget chiếm ít nhất một ô (<c>colSpan</c>/<c>rowSpan</c> ≥ 1). Nên trần là "một
+    /// widget cho mỗi ô của lưới lớn nhất hợp đồng cho phép": vượt qua nó, tài liệu không thể đặt hết
+    /// widget của chính nó ở bất kỳ layout hợp lệ nào — nó không còn là một màn hình, nó là một payload.
+    /// Viết thành <c>LayoutDimensionMax * LayoutDimensionMax</c> nên nếu lược đồ nới lưới, trần đi theo,
+    /// và <c>SchemaEnumGuardPinTests</c> giữ <see cref="LayoutDimensionMax"/> khớp với file schema.</para>
+    ///
+    /// <para><b>Chồng lấn là HỢP LỆ, và trần này không cấm nó.</b> Hai widget được phép dùng chung ô (cây
+    /// lớp là nơi thấy cái nào nằm trên), nên một tài liệu VẪN có thể có nhiều widget hơn số ô nó thật sự
+    /// phủ. Trần không phải một luật hình học; nó là một biên trên có nguồn gốc rõ ràng, và nó rộng gấp
+    /// ~150 lần tài liệu lớn nhất kho này ship (<c>screens/demo/component-demo.json</c>: 17 widget).
+    /// Nếu một ngày có màn hình thật cần hơn 2304 widget, đổi con số này là một QUYẾT ĐỊNH có người đọc
+    /// đoạn văn này — đúng điều mà "không có trần" không bao giờ buộc ai làm.</para>
+    ///
+    /// <para><b>Cái trần này KHÔNG làm:</b> nó không giới hạn kích thước byte của request (đó là
+    /// <c>KestrelServerLimits</c>, mặc định 30 MB, không đụng tới ở đợt này), không giới hạn SỐ LẦN ghi
+    /// (không có rate limiter), và không dọn lịch sử (không có DELETE, có chủ ý — xem §3 của
+    /// security-review). Nó đóng đúng một đường: một tài liệu ĐƠN LẺ đủ lớn để làm treo một kiosk.</para>
+    /// </summary>
+    public const int MaxWidgetsPerScreen = LayoutDimensionMax * LayoutDimensionMax;
+
+    /// <summary>SECURITY REVIEW LOW-1 — <c>hmi-screen.schema.json</c> → <c>properties.schemaVersion.const</c>.
+    /// Không trường nào đọc nó hôm nay; đóng vì một tài liệu khai <c>schemaVersion: 2</c> mà kho vẫn nhận
+    /// là một tài liệu nói dối về hợp đồng nó tuân theo, và người đọc tiếp theo tin nó.</summary>
+    public const int SchemaVersionConst = 1;
+
+    /// <summary>SECURITY REVIEW LOW-1 — <c>properties.theme.enum</c>. <b>Trường DUY NHẤT trong năm trường
+    /// LOW-1 có hiệu ứng người vận hành NHÌN THẤY:</b> <c>ScreenRenderer</c> đóng dấu nó thành
+    /// <c>data-theme</c>, và <c>data-theme</c> là bộ chọn theme thật của ứng dụng
+    /// (<c>web/src/index.css</c> khai <c>console</c>/<c>warmth</c>/<c>glass</c>/<c>isa101</c>) — một màn
+    /// hình khai <c>theme: "console"</c> vẽ vùng màn hình trên nền gần đen bên trong một kiosk sáng.
+    /// Ghim hai chiều với file schema.</summary>
+    public static readonly IReadOnlySet<string> KnownThemes =
+        new HashSet<string>(StringComparer.Ordinal) { "isa101", "blueprint" };
+
+    /// <summary>SECURITY REVIEW LOW-1 — <c>$defs.layout.properties.breakpoint.enum</c>. Ghim hai chiều với
+    /// file schema.</summary>
+    public static readonly IReadOnlySet<string> KnownBreakpoints =
+        new HashSet<string>(StringComparer.Ordinal) { "panel", "tablet", "phone" };
+
+    /// <summary>SECURITY REVIEW LOW-1 và S-6 — <c>$defs.widget.properties.policyAction.enum</c>, thi hành ở
+    /// CỬA MÀN HÌNH.
+    ///
+    /// <para><b>Chỉ ở overload màn hình, nói ra để không ai đọc quá.</b>
+    /// <see cref="Validate(TagNamespaceDocument)"/> và <see cref="Validate(ComponentModelDocument)"/> vẫn
+    /// chỉ đòi <c>policyAction</c> KHÁC RỖNG, không đòi tư cách thành viên — đợt này không mở rộng sang
+    /// hai cửa ấy vì chúng có consumer riêng và corpus riêng. Cái đóng được ở đây là cái mà security
+    /// review gọi là "cái bẫy S-6": kho lưu một action không tên gì cả, và consumer THỨ HAI viết ra mà
+    /// không đọc consumer thứ nhất sẽ thừa hưởng nó.</para></summary>
+    public static readonly IReadOnlySet<string> KnownPolicyActions =
+        new HashSet<string>(StringComparer.Ordinal) { "machine.setpoint", "machine.command" };
+
+    /// <summary>SECURITY REVIEW LOW-1 — <c>$defs.rect.properties.&lt;name&gt;.minimum</c>, cả bốn trường,
+    /// theo TÊN. Ghim hai chiều với file schema theo TỪNG ĐƯỜNG DẪN chứ không theo số đếm: một
+    /// <c>minimum</c> chuyển từ <c>colSpan</c> sang <c>col</c> giữ nguyên số đếm và làm sai luật — đúng
+    /// khuyết tật mà sàn của Task 6 phải sửa.</summary>
+    public static readonly IReadOnlyDictionary<string, int> RectMinimums =
+        new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["col"] = 0,
+            ["row"] = 0,
+            ["colSpan"] = 1,
+            ["rowSpan"] = 1,
+        };
 
     /// <summary>Kiểm một <see cref="TagNamespaceDocument"/>: (1) mọi tag <c>access == "rw"</c>
     /// phải có <see cref="TagDescriptor.PolicyAction"/> (luật §5); (2) mọi <see cref="TagDescriptor.Path"/>
@@ -868,6 +947,11 @@ public static class ContractInvariants
     {
         var v = new List<string>();
 
+        // SECURITY REVIEW LOW-1 — see SchemaVersionConst.
+        if (doc.SchemaVersion != SchemaVersionConst)
+            v.Add($"schemaVersion: {doc.SchemaVersion} — contracts/hmi-screen.schema.json đóng băng trường " +
+                  $"này ở const {SchemaVersionConst}; một tài liệu khai số khác đang nói dối về hợp đồng nó tuân theo");
+
         // Fix round 4 — the document's own non-nullable fields, on the criterion this method's doc comment
         // states. Previously all four were silently 0-violation and named nowhere.
         if (string.IsNullOrWhiteSpace(doc.ScreenId))
@@ -880,6 +964,13 @@ public static class ContractInvariants
             v.Add("title: thiếu trường bắt buộc (null/rỗng) — bắt buộc phải có");
         if (string.IsNullOrWhiteSpace(doc.Theme))
             v.Add("theme: thiếu trường bắt buộc (null/rỗng) — bắt buộc phải có");
+        // SECURITY REVIEW LOW-1 — see KnownThemes: this is the one of the five with an operator-visible
+        // effect, because the renderer stamps it as `data-theme`.
+        else if (!KnownThemes.Contains(doc.Theme))
+            v.Add($"theme: '{doc.Theme}' không thuộc enum mà contracts/hmi-screen.schema.json đã đóng băng " +
+                  "cho trường này — bộ vẽ đóng dấu giá trị này thành data-theme, bộ chọn theme thật của ứng " +
+                  "dụng, nên một giá trị lạ đổi nền của cả vùng màn hình trên kiosk. Các giá trị hợp lệ: " +
+                  string.Join(", ", KnownThemes.OrderBy(t => t, StringComparer.Ordinal)));
         if (doc.Layout is null)
         {
             v.Add("layout: thiếu trường bắt buộc (null) — một màn hình không khai lưới đặt widget không phải tài liệu hợp lệ");
@@ -888,6 +979,11 @@ public static class ContractInvariants
         {
             if (string.IsNullOrWhiteSpace(doc.Layout.Breakpoint))
                 v.Add("layout: breakpoint thiếu (null/rỗng) — bắt buộc phải có");
+            // SECURITY REVIEW LOW-1 — see KnownBreakpoints.
+            else if (!KnownBreakpoints.Contains(doc.Layout.Breakpoint))
+                v.Add($"layout: breakpoint '{doc.Layout.Breakpoint}' không thuộc enum mà " +
+                      "contracts/hmi-screen.schema.json đã đóng băng cho trường này. Các giá trị hợp lệ: " +
+                      string.Join(", ", KnownBreakpoints.OrderBy(b => b, StringComparer.Ordinal)));
 
             // WS-HMI-2 Task 3 fix round 1 — LOẠI LUẬT THỨ TƯ (xem doc-comment đầu file). cols/rows ngoài
             // [1..48] là trường hợp DUY NHẤT trong bốn nhóm range-invalid đo được mà runtime KHÔNG có
@@ -906,6 +1002,40 @@ public static class ContractInvariants
         {
             v.Add("widgets: thiếu trường bắt buộc (null) — một tài liệu không khai widgets không phải tài liệu hợp lệ");
             return v;
+        }
+
+        // 🔴 SECURITY REVIEW HIGH-1 — TRẦN SỐ WIDGET, và nó TRẢ VỀ NGAY.
+        //
+        // Trả về ngay, không phải `continue`, và đó là một phần của phép sửa chứ không phải một lối tắt:
+        // đi tiếp trên một tài liệu 200 000 widget để sinh ra 200 000 dòng vi phạm rồi nối chúng bằng
+        // " | " trong thông điệp của ContractViolationException chính là cuộc tấn công, lần này ở phía
+        // máy chủ. Một vi phạm, nêu cả trần lẫn số đếm thật, là tất cả những gì người sửa cần.
+        if (doc.Widgets.Count > MaxWidgetsPerScreen)
+        {
+            v.Add($"widgets: {doc.Widgets.Count} widget vượt trần {MaxWidgetsPerScreen} " +
+                  $"(= {LayoutDimensionMax}×{LayoutDimensionMax}, số ô của lưới lớn nhất mà " +
+                  "contracts/hmi-screen.schema.json cho phép, mỗi widget ít nhất một ô). Một tài liệu lớn " +
+                  "hơn thế không đặt hết được widget của chính nó ở bất kỳ layout hợp lệ nào, và một kiosk " +
+                  "vẽ nó trong MỘT commit đồng bộ — nút RESET HALT có mặt mà bấm không được.");
+            return v;
+        }
+
+        // SECURITY REVIEW LOW-2 — TRÙNG id, chặt hơn lược đồ CÓ CHỦ Ý.
+        //
+        // Lược đồ CHO PHÉP trùng; trình soạn thảo thì không, và nói thẳng lý do ở thông điệp của chính nó.
+        // Cửa này đứng về phía trình soạn thảo, vì `ScreenRenderer` khoá React children theo `widget.id`
+        // (`key={widget.id}`) và React không định nghĩa hành vi cho key trùng khi cập nhật — trên một panel
+        // vẽ lại theo nhịp poll ~1 s, kết cục hợp lý là một widget trạng thái lặng lẽ biến mất. Cùng hình
+        // dạng, và cùng lý do, như luật `path` trùng của Validate(TagNamespaceDocument).
+        var seenIds = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < doc.Widgets.Count; i++)
+        {
+            var id = doc.Widgets[i]?.Id;
+            if (string.IsNullOrWhiteSpace(id)) continue;
+            if (!seenIds.Add(id))
+                v.Add($"widgets[{i}]: id '{id}' đã được một widget trước đó dùng — lược đồ cho phép trùng, " +
+                      "cửa này thì không: bộ vẽ khoá React children theo id, nên hai widget cùng id là hành " +
+                      "vi không xác định lúc cập nhật trên một panel vẽ lại mỗi giây");
         }
 
         for (var i = 0; i < doc.Widgets.Count; i++)
@@ -937,10 +1067,34 @@ public static class ContractInvariants
             // Fix round 4 — checked on the SAME criterion that requires `id` two lines above, which is the
             // whole point: round 3 excluded `rect` for a reason that disqualified `id` as well.
             if (w.Rect is null)
+            {
                 v.Add($"widgets[{i}]: rect thiếu (null) — bắt buộc phải có");
+            }
+            else
+            {
+                // SECURITY REVIEW LOW-1 — see RectMinimums. By NAME, so a minimum that moves between
+                // fields cannot be satisfied by a count.
+                foreach (var (field, value) in new[]
+                         {
+                             ("col", w.Rect.Col), ("row", w.Rect.Row),
+                             ("colSpan", w.Rect.ColSpan), ("rowSpan", w.Rect.RowSpan),
+                         })
+                {
+                    if (value < RectMinimums[field])
+                        v.Add($"widgets[{i}]: rect.{field}={value} nhỏ hơn minimum {RectMinimums[field]} mà " +
+                              "contracts/hmi-screen.schema.json đã đóng băng cho trường này");
+                }
+            }
 
             if (WritableWidgetKinds.Contains(w.Kind) && string.IsNullOrWhiteSpace(w.PolicyAction))
                 v.Add($"widget '{w.Id}': kind='{w.Kind}' nhưng thiếu policyAction — §5 cấm đường ghi không gác");
+            // SECURITY REVIEW LOW-1 / S-6 — see KnownPolicyActions. Only when one is DECLARED: the schema
+            // leaves the field optional, and "absent" is already answered by the §5 rule directly above.
+            else if (!string.IsNullOrWhiteSpace(w.PolicyAction) && !KnownPolicyActions.Contains(w.PolicyAction))
+                v.Add($"widgets[{i}]: policyAction '{w.PolicyAction}' không thuộc enum mà " +
+                      "contracts/hmi-screen.schema.json đã đóng băng cho trường này — lưu một hành động " +
+                      "không tên gì cả là cái bẫy S-6 nói tới. Các giá trị hợp lệ: " +
+                      string.Join(", ", KnownPolicyActions.OrderBy(a => a, StringComparer.Ordinal)));
         }
 
         return v;

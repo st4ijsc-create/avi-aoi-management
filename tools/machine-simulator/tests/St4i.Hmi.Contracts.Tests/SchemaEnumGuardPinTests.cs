@@ -55,12 +55,16 @@ namespace St4i.Hmi.Contracts.Tests;
 /// ghim một PATTERN — không phải một enum — vào hai đường dẫn của cùng file schema.</para>
 ///
 /// <para>📎 🔴 <b>"(1) NÓ KHÔNG KIỂM TƯ CÁCH THÀNH VIÊN LÚC CHẠY" và "(2) KHÔNG CÓ STORE NÀO GHI
-/// <c>HmiScreenDocument</c>" — RÚT MỘT PHẦN, WS-HMI-2 TASK 12, giữ nguyên văn ngay dưới.</b> (1) vẫn đúng
-/// cho <c>access</c>/<c>role</c>/<c>policyAction</c>/<c>theme</c>/<c>breakpoint</c>, và SAI từ đợt này cho
-/// đúng MỘT trường: <c>widget.kind</c> — <c>Validate(HmiScreenDocument)</c> giờ hỏi "có hợp lệ không", vì
-/// cửa ấy là cửa PUBLISH của trình dựng màn hình. (2) sai từ <c>30c4fd62</c>:
-/// <c>HmiScreenStore.PutAsync</c> gọi <c>ThrowIfInvalid</c>, và từ <c>be181938</c> một route HTTP thật đi
-/// qua nó.</para>
+/// <c>HmiScreenDocument</c>" — RÚT MỘT PHẦN, WS-HMI-2 TASK 12, rồi RÚT THÊM ở đợt security review; giữ
+/// nguyên văn ngay dưới.</b> (2) sai từ <c>30c4fd62</c>: <c>HmiScreenStore.PutAsync</c> gọi
+/// <c>ThrowIfInvalid</c>, và từ <c>be181938</c> một route HTTP thật đi qua nó.
+///
+/// (1) giờ chỉ còn đúng cho <c>tag.access</c>, <c>componentTag.role</c> và <c>componentTag.dataType</c> —
+/// tức cho HAI overload KIA. <b>Ở overload MÀN HÌNH nó đã sai hoàn toàn:</b> Task 12 đóng
+/// <c>widget.kind</c>, và đợt security review đóng <c>theme</c>, <c>layout.breakpoint</c> và
+/// <c>widget.policyAction</c> — cộng <c>schemaVersion</c> (một <c>const</c>) và bốn <c>minimum</c> của
+/// <c>$defs/rect</c>. Lý do là một: cửa ấy là cửa PUBLISH của trình dựng màn hình, và cái nó lưu là cái
+/// người vận hành NHÌN THẤY trên máy trước mặt họ.</para>
 ///
 /// <para><b>Bộ test này KHÔNG đo cái gì:</b> (1) nó KHÔNG kiểm <i>tư cách thành viên</i> lúc chạy — một tài
 /// liệu mang <c>access: "rww"</c> vẫn đi qua <see cref="ContractInvariants"/> im lặng, vì bộ kiểm ấy hỏi
@@ -268,6 +272,132 @@ public class SchemaEnumGuardPinTests
             $"'{ContractInvariants.LowercaseIdPatternSource}'. Sửa literal ở " +
             "src/St4i.Hmi.Contracts/ContractInvariants.cs cho khớp schema, đừng nới bài này — cửa ghi .NET " +
             "đang thi hành một luật id khác luật mà lược đồ đóng băng.");
+    }
+
+    /// <summary>
+    /// 🔴 <b>SECURITY REVIEW LOW-1 — BA ENUM NỮA CỦA <c>hmi-screen.schema.json</c> == BA TẬP
+    /// <c>Validate(HmiScreenDocument)</c> NHẬN.</b> Cùng hình dạng, cùng lý do, như bài ghim
+    /// <c>kind</c> ngay trên: mỗi tập là một bản chép trong C#, và bài này là điều kiện để bản chép ấy
+    /// được phép tồn tại.
+    ///
+    /// <para>Cả ba đo được ACCEPTED trước đợt này. <c>theme</c> là cái duy nhất có hiệu ứng người vận
+    /// hành nhìn thấy — bộ vẽ đóng dấu nó thành <c>data-theme</c>, bộ chọn theme thật của ứng dụng.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("theme", new[] { "properties", "theme" })]
+    [InlineData("layout.breakpoint", new[] { "$defs", "layout", "properties", "breakpoint" })]
+    [InlineData("widget.policyAction", new[] { "$defs", "widget", "properties", "policyAction" })]
+    public void The_schemas_screen_enums_name_exactly_the_sets_the_write_door_admits(string label, string[] pointer)
+    {
+        var declared = ConstOrEnum(
+            At(Schema("hmi-screen.schema.json"), "hmi-screen", pointer.Cast<object>().ToArray()),
+            $"hmi-screen {label}");
+
+        var admitted = label switch
+        {
+            "theme" => ContractInvariants.KnownThemes,
+            "layout.breakpoint" => ContractInvariants.KnownBreakpoints,
+            "widget.policyAction" => ContractInvariants.KnownPolicyActions,
+            _ => throw new ArgumentOutOfRangeException(nameof(label), label, "chưa khai tập nhận"),
+        };
+
+        // Sàn: hai tập rỗng cũng "bằng nhau".
+        Assert.NotEmpty(declared);
+        Assert.NotEmpty(admitted);
+
+        AssertSameSet(
+            $"hmi-screen {label} (enum ⟷ cửa ghi)",
+            declared,
+            admitted.ToHashSet(StringComparer.Ordinal),
+            "Sửa CẢ HAI bên trong một lần: enum của schema và tập tương ứng ở đầu " +
+            "src/St4i.Hmi.Contracts/ContractInvariants.cs. Một bên đi trước bên kia nghĩa là cửa PUBLISH " +
+            "hoặc từ chối một tài liệu hợp lệ, hoặc lưu một tài liệu mà chính lược đồ từ chối.");
+    }
+
+    /// <summary>
+    /// 🔴 <b>SECURITY REVIEW LOW-1 — BỐN <c>minimum</c> CỦA <c>$defs/rect</c>, ĐỐI CHIẾU THEO TÊN.</b>
+    ///
+    /// <para>Theo TÊN chứ không theo số đếm, và đó là điểm chính: một <c>minimum</c> chuyển từ
+    /// <c>colSpan</c> sang <c>col</c> giữ nguyên "bốn minimum" và làm sai luật ở cả hai trường. Đây là
+    /// đúng khuyết tật mà sàn của Task 6 phải sửa, ở một chỗ khác.</para>
+    ///
+    /// <para>Hai chiều: một trường <c>rect</c> mà schema đặt <c>minimum</c> còn C# không gác ⇒ đỏ; một
+    /// tên trong <see cref="ContractInvariants.RectMinimums"/> mà schema không đặt <c>minimum</c> ⇒ đỏ.</para>
+    /// </summary>
+    [Fact]
+    public void The_schemas_rect_minimums_are_exactly_the_ones_the_write_door_enforces()
+    {
+        var rect = At(Schema("hmi-screen.schema.json"), "hmi-screen", "$defs", "rect", "properties");
+
+        var inSchema = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var (name, node) in rect.AsObject())
+        {
+            if (node?["minimum"] is { } minimum) inSchema[name] = minimum.GetValue<int>();
+        }
+
+        Assert.NotEmpty(inSchema);
+        Assert.NotEmpty(ContractInvariants.RectMinimums);
+
+        var schemaOnly = inSchema.Keys.Except(ContractInvariants.RectMinimums.Keys, StringComparer.Ordinal)
+            .OrderBy(k => k, StringComparer.Ordinal).ToList();
+        var guardOnly = ContractInvariants.RectMinimums.Keys.Except(inSchema.Keys, StringComparer.Ordinal)
+            .OrderBy(k => k, StringComparer.Ordinal).ToList();
+        Assert.True(schemaOnly.Count == 0 && guardOnly.Count == 0,
+            $"$defs.rect minimums lệch — schema đặt minimum mà cửa ghi không gác: [{string.Join(", ", schemaOnly)}]; " +
+            $"cửa ghi gác mà schema không đặt: [{string.Join(", ", guardOnly)}].");
+
+        foreach (var (name, expected) in inSchema)
+        {
+            Assert.True(ContractInvariants.RectMinimums[name] == expected,
+                $"$defs.rect.{name}.minimum là {expected} ở schema và {ContractInvariants.RectMinimums[name]} ở " +
+                "ContractInvariants — cửa ghi đang thi hành một biên khác biên đã đóng băng.");
+        }
+    }
+
+    /// <summary>
+    /// 🔴 <b>SECURITY REVIEW HIGH-1 và LOW-1 — hai HẰNG SỐ, đối chiếu với chính schema, và cái
+    /// TRẦN được DẪN RA từ một trong chúng.</b>
+    ///
+    /// <para><c>MaxWidgetsPerScreen</c> KHÔNG được so với một con số viết ở đây; nó được so với
+    /// <c>cols.maximum × rows.maximum</c> ĐỌC TỪ FILE SCHEMA. Đó là toàn bộ khác biệt giữa "một trần có
+    /// nguồn gốc" và "một trần ai đó thấy hợp lý": nới lưới trong schema và trần đi theo, hoặc bài này
+    /// đỏ và người sửa phải đọc đoạn văn giải thích nó đến từ đâu.</para>
+    /// </summary>
+    [Fact]
+    public void The_layout_bounds_and_the_widget_ceiling_derived_from_them_match_the_schema()
+    {
+        var layout = At(Schema("hmi-screen.schema.json"), "hmi-screen", "$defs", "layout", "properties");
+
+        foreach (var field in new[] { "cols", "rows" })
+        {
+            var min = At(layout, $"layout.{field}", field, "minimum").GetValue<int>();
+            var max = At(layout, $"layout.{field}", field, "maximum").GetValue<int>();
+            Assert.True(min == ContractInvariants.LayoutDimensionMin,
+                $"$defs.layout.{field}.minimum là {min}, ContractInvariants.LayoutDimensionMin là " +
+                $"{ContractInvariants.LayoutDimensionMin}");
+            Assert.True(max == ContractInvariants.LayoutDimensionMax,
+                $"$defs.layout.{field}.maximum là {max}, ContractInvariants.LayoutDimensionMax là " +
+                $"{ContractInvariants.LayoutDimensionMax}");
+        }
+
+        var colsMax = At(layout, "layout.cols", "cols", "maximum").GetValue<int>();
+        var rowsMax = At(layout, "layout.rows", "rows", "maximum").GetValue<int>();
+        Assert.True(ContractInvariants.MaxWidgetsPerScreen == colsMax * rowsMax,
+            $"trần widget là {ContractInvariants.MaxWidgetsPerScreen} nhưng lưới lớn nhất mà schema cho " +
+            $"phép có {colsMax}×{rowsMax} = {colsMax * rowsMax} ô. Trần phải là 'một widget mỗi ô của lưới " +
+            "lớn nhất' — xem doc comment của MaxWidgetsPerScreen cho vì sao đó là biên có nguồn gốc.");
+    }
+
+    /// <summary>SECURITY REVIEW LOW-1 — <c>properties.schemaVersion.const</c>. Một <c>const</c>, không
+    /// phải một <c>enum</c>, nên nó có bài riêng chứ không đi qua <see cref="ConstOrEnum"/>.</summary>
+    [Fact]
+    public void The_schemas_schemaVersion_const_is_the_one_the_write_door_requires()
+    {
+        var declared = At(Schema("hmi-screen.schema.json"), "hmi-screen", "properties", "schemaVersion", "const")
+            .GetValue<int>();
+        Assert.True(declared == ContractInvariants.SchemaVersionConst,
+            $"schema đóng băng schemaVersion ở const {declared}, cửa ghi đòi " +
+            $"{ContractInvariants.SchemaVersionConst}");
     }
 
     /// <summary>Danh sách MIỄN TRỪ khai tường minh — §2 của skill đòi nó phải là một lời khai, không phải
