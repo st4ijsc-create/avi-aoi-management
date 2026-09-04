@@ -348,8 +348,9 @@ export const en: Dictionary = {
 
   // WS-HMI-2 Task 8 — the HMI screen builder (`/editor/:screenId`, `src/editor/EditorRoute.tsx`).
   editor: {
+    // One title key only — the gloss comes from the INACTIVE dictionary via `useGloss("editor.title")`.
+    // See `vi.ts`'s note at the same key for what fix round 1 replaced and why.
     title: "HMI screen builder",
-    titleGloss: "TRÌNH DỰNG MÀN HÌNH",
     screenIdLabel: "Screen id",
     designMode:
       "Design mode — this canvas draws with the runtime renderer itself, against fixed sample values, NOT data from a running machine.",

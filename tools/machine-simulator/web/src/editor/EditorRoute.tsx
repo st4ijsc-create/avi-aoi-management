@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { useParams } from "wouter"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import type { HmiScreenDocument } from "@/contracts/hmiScreen"
 import { useT } from "@/i18n"
 import { EngineApiError, useScreen } from "@/lib/api"
@@ -13,7 +14,17 @@ import { EditorCanvas } from "./EditorCanvas"
  * the two `/hmi/*` routes already use, and for the same reason: the sidebar/topbar chrome would eat
  * the width a design canvas needs, and nothing about this route belongs to the app's own navigation
  * model yet. Still behind `<AuthGate>` like every other route, because `GET /v1/screens/{screenId}`
- * sits behind the backend's default-deny fallback policy (Operator to read, Engineer to write).
+ * requires an authenticated session.
+ *
+ * 🔴 FIX ROUND 1, task-8-review.md finding 7 — this sentence used to say the endpoint "sits behind the
+ * backend's default-deny fallback policy". It does not, and the correction is not cosmetic: a reader
+ * auditing auth would have followed that to `Program.cs`'s fallback and concluded the protection is
+ * INCIDENTAL — something this route inherits and that a routing change could remove without anyone
+ * noticing. The real mechanism is a DECLARED one, on the endpoint itself:
+ * `HmiScreenEndpoints.cs:135` maps this route with `.RequireAuthorization(Policies.Operator)`, and
+ * `:136`'s `PUT` carries `.RequireAuthorization(Policies.Engineer)` — the read/write split named in
+ * the next clause was always right, only the mechanism behind it was wrong. `RbacPolicyTests.cs:246`
+ * pins both.
  *
  * ── THE THREE STATES, AND WHY 404 IS NOT ONE OF THE ERRORS ────────────────────────────────────────
  * `GET /v1/screens/{screenId}` is the one document endpoint in the HMI family that answers 404 for
@@ -45,12 +56,22 @@ function EditorShell({
   children: ReactNode
 }) {
   const t = useT()
+  // 🔴 FIX ROUND 1, task-8-review.md finding 8 — this used to read `t("editor.titleGloss")`, a key that
+  // carried the OTHER language's text inside each dictionary (`vi` → "HMI SCREEN BUILDER", `en` →
+  // "TRÌNH DỰNG MÀN HÌNH"). It worked, but it was a NEW idiom with no precedent, so nothing told the
+  // next editor whether the cross-language values were deliberate or a swapped paste — and "fixing"
+  // the swap would have silently deleted a bilingual header the design spec requires. This tree
+  // already has the idiom: `useGloss()` (`components/hmi/bilingual.ts`) resolves a key against the
+  // INACTIVE language's dictionary, which is exactly the gloss pairing `Sheet`'s `titleEn` and
+  // `Readout`'s `labelEn` use throughout the HMI (spec §3). One key, one meaning per dictionary,
+  // nothing to mistake for a paste error — and `editor.titleGloss` is deleted from both.
+  const gloss = useGloss()
   return (
     <div className="flex h-svh w-full flex-col overflow-hidden bg-surface-subtle text-text-body">
       <header className="flex shrink-0 flex-col gap-1 border-b border-border-strong px-4 py-3">
         <div className="flex items-baseline gap-3">
           <h1 className="font-heading text-lg font-semibold text-text-strong">{t("editor.title")}</h1>
-          <span className="hmi-micro">{t("editor.titleGloss")}</span>
+          <span className="hmi-micro">{gloss("editor.title")}</span>
         </div>
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="hmi-micro">{t("editor.screenIdLabel")}</span>
@@ -80,11 +101,30 @@ function EditorShell({
 
 /** A named state with a heading and a reason — the shape §5-bis requires of "no screen here" and the
  * shape a real failure gets too. Deliberately NOT two different components: the difference between
- * them is the words, and a second component is a second place to forget the heading. */
-function EditorNotice({ title, description }: { title: string; description: string }) {
+ * them is the words, and a second component is a second place to forget the heading.
+ *
+ * 🔴 FIX ROUND 1, task-8-review.md finding 6 — `role` is a PARAMETER now, and every state below passes
+ * one explicitly. It was hard-coded `"status"` for all three, which meant the engine-unreachable state
+ * announced a FAULT through a polite live region: `role="status"` is `aria-live="polite"`, so a screen
+ * reader waits for a pause and may never interrupt at all. That flattening contradicted this file's
+ * own §5-bis argument two paragraphs up — the whole point of splitting the 404 from the failure is
+ * that they differ in urgency, and rendering both at the same urgency to assistive tech gave that
+ * argument away for the users who most need it. "Loading" and "no such screen yet" stay `"status"`
+ * (ordinary progress and an ordinary product state); only the failure is `"alert"`. */
+function EditorNotice({
+  title,
+  description,
+  role,
+}: {
+  title: string
+  description: string
+  /** `"status"` for a state an engineer can act on at leisure, `"alert"` for a fault that must
+   * interrupt. No default — a caller adding a fourth state has to decide which it is. */
+  role: "status" | "alert"
+}) {
   return (
     <div
-      role="status"
+      role={role}
       data-editor-notice
       className="flex flex-1 flex-col items-center justify-center gap-3 border border-dashed border-border-strong px-6 text-center"
     >
@@ -106,7 +146,7 @@ export default function EditorRoute() {
   if (!screenId) {
     return (
       <EditorShell screenId="">
-        <EditorNotice title={t("editor.notDeclared.title")} description={t("editor.notDeclared.noId")} />
+        <EditorNotice role="status" title={t("editor.notDeclared.title")} description={t("editor.notDeclared.noId")} />
       </EditorShell>
     )
   }
@@ -114,7 +154,7 @@ export default function EditorRoute() {
   if (screen.isPending) {
     return (
       <EditorShell screenId={screenId}>
-        <EditorNotice title={t("editor.loading.title")} description={t("editor.loading.description")} />
+        <EditorNotice role="status" title={t("editor.loading.title")} description={t("editor.loading.description")} />
       </EditorShell>
     )
   }
@@ -125,11 +165,19 @@ export default function EditorRoute() {
       <EditorShell screenId={screenId}>
         {notDeclared ? (
           <EditorNotice
+            role="status"
             title={t("editor.notDeclared.title")}
             description={t("editor.notDeclared.description", { screenId })}
           />
         ) : (
-          <EditorNotice title={t("common.connectivityError")} description={t("editor.loadFailed.description")} />
+          // The one `"alert"` on this route. See `EditorNotice`'s own note: an unreachable engine is a
+          // fault, not a status, and §5-bis's split between the two states has to survive into the
+          // accessibility tree or it only exists for people who can see the words.
+          <EditorNotice
+            role="alert"
+            title={t("common.connectivityError")}
+            description={t("editor.loadFailed.description")}
+          />
         )}
       </EditorShell>
     )

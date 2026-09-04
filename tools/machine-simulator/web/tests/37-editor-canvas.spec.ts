@@ -8,40 +8,69 @@ import { vi as viDict } from "../src/i18n/vi"
  * proposition the plan calls the most expensive of Phase 3 — **the canvas is the runtime
  * `ScreenRenderer`, not a second renderer.**
  *
- * ── WHY THE OBVIOUS TEST WOULD BE WORTHLESS, AND WHAT IS ASSERTED INSTEAD ─────────────────────────
- * The brief's own shape for this pin is right: change a widget in the document, check that what the
- * canvas shows changes. The trap is that a hand-rolled canvas — one that reads `doc.widgets`, places a
- * `<div>` per widget on a CSS grid and writes the widget's id into it — ALSO changes when the document
- * changes, and also renders "the right number of widgets", and would sail through a test that asserted
- * only those two things. So every assertion below was chosen by asking what such a canvas would ALSO
- * pass, and keeping only the ones it would fail:
+ * ── 🔴 WHERE THE IDENTITY CLAIM ACTUALLY LIVES, AND WHY IT IS NOT IN THIS FILE ────────────────────
+ * FIX ROUND 1, task-8-review.md findings 1 and 2. The round-0 header claimed the five assertions below
+ * were chosen so that a reimplementation would fail them, and gave two reasons that are FALSE. Both are
+ * corrected in place rather than deleted, because they are the exact reasoning a later reader would
+ * otherwise repeat:
  *
- *   1. `props.text` reaches the screen (`probe-label`). A canvas drawing boxes labelled by widget id
- *      shows "probe-label" before AND after the edit. Only `widgetRegistry`'s `label` entry —
- *      `widgets/label.tsx`, which is where `props.text` is read at all — produces the authored string.
- *   2. A bound value reaches the screen through the whole runtime pipeline (`probe-readout`). The
- *      assertion is on `.hmi-readout-value`, which is `components/industrial/Readout.tsx`'s OWN class
- *      on its OWN value row, carrying a number that only exists if `bindings.value` → `resolve()` →
- *      `TagValueSource.get()` → `shared.ts`'s `formatValue` → `formatMetric` all ran. A second
- *      renderer would have to re-import the industrial primitive AND re-wire the binding seam to fake
- *      this, at which point it is not a second renderer.
- *   3. A `kind` that names nothing degrades to `ScreenRenderer`'s OWN placeholder (`probe-kind`),
- *      `role="alert"`, worded `unknown widget kind "…"`. That string exists in exactly one place in
- *      the tree.
- *   4. A widget that THROWS is caught by `ScreenRenderer`'s OWN per-widget error boundary
- *      (`probe-crash`) while its siblings keep drawing. A hand-rolled canvas never mounts
- *      `LabelWidget`, so nothing throws and nothing is caught — this assertion cannot be satisfied
- *      accidentally by anything.
- *   5. A moved `rect` produces `ScreenRenderer`'s OWN grid arithmetic — `grid-column: col + 1 / span
- *      colSpan`. The `+ 1` (CSS grid lines are 1-based; the document's `col` is 0-based) is the
- *      renderer's own convention, and a second implementation that placed widgets any other way —
- *      absolute pixels, a 0-based line, flexbox — fails it.
+ *   * "A second renderer would have to re-import the industrial primitive AND re-wire the binding seam
+ *     to fake this, at which point it is not a second renderer" — WRONG. It costs one
+ *     `import { widgetRegistry }` and one `resolveBinding(b, undefined)`. The reviewer wrote it; it is
+ *     unambiguously a second renderer; assertion 2 passed against it.
+ *   * "A hand-rolled canvas never mounts `LabelWidget`, so nothing throws and nothing is caught — this
+ *     assertion cannot be satisfied accidentally by anything" — WRONG. A canvas that dispatches through
+ *     `widgetRegistry` mounts the REAL `LabelWidget`, which really throws, and any boundary of its own
+ *     really catches. The reviewer's impostor emitted `role="alert"` and
+ *     `data-hmi-widget-error="probe-crash"` and differed only in the message TEXT.
  *
- * `EditorCanvas.tsx`'s own header states the same list; this file is where it is measured. The
- * falsification is recorded in `task-8-report.md`: replacing `<ScreenRenderer>` in `EditorCanvas.tsx`
- * with a hand-rolled `doc.widgets.map()` grid of id-labelled boxes turns assertions 1–5 red while the
- * widget COUNT and the `data-hmi-screen` root stay green — i.e. the weak version of this test really
- * would have passed the thing it exists to forbid.
+ * Measured, not argued — three impostors, all recorded in `runtime-tests/editorCanvasSeam.test.mjs`'s
+ * header: a second renderer with its own wording failed ONE assertion, on a string comparison; the same
+ * renderer with the runtime's two degrade sentences copied (two one-line edits) PASSED ALL THREE tests
+ * in this file; and a verbatim FORK of `ScreenRenderer.tsx` under `src/editor/`, with
+ * `clampRectToLayout` deleted and the grid gap changed — a canvas that provably lays screens out
+ * differently from the kiosk — ALSO PASSED ALL THREE.
+ *
+ * So, stated at the width it actually holds: this file pins that the editor's canvas BEHAVES like the
+ * runtime renderer. It does not, and cannot, pin that it IS the runtime renderer. No browser assertion
+ * can: a fork renders identically until it drifts, and the drift is invisible to any test that only
+ * reads the DOM the fork produced. The identity claim lives in
+ * `runtime-tests/editorCanvasSeam.test.mjs`, a two-sided structural pin whose section 4 replays these
+ * same impostors through its own scanners.
+ *
+ * The two files close it TOGETHER, and the composition is a pincer rather than a hopeful sum: every
+ * locator below is built on `data-hmi-screen` / `data-hmi-widget` / `data-hmi-widget-error`, so any
+ * impostor must emit those to be green here — and that pin asserts only `ScreenRenderer.tsx` emits
+ * them anywhere in `web/src/`. Rename the hooks and this file goes red; keep them and that one does.
+ *
+ * ── WHAT THE FIVE ASSERTIONS DO PIN, EACH AT ITS REAL WIDTH ───────────────────────────────────────
+ * They are a BEHAVIOURAL FLOOR — the set of runtime behaviours the canvas must exhibit, each one
+ * genuinely reachable only by running the runtime's own machinery, none of them evidence of WHICH copy
+ * of that machinery ran. Every one is falsified by a real mutation recorded in `task-8-report.md`.
+ *
+ *   1. `props.text` reaches the screen (`probe-label`) — so `widgetRegistry` dispatch into
+ *      `widgets/label.tsx` happened. Discriminates against a canvas that draws its own boxes (F1);
+ *      does NOT discriminate against one that reuses the registry.
+ *   2. A bound value reaches the screen (`probe-readout`), asserted on `.hmi-readout-value` —
+ *      `Readout.tsx`'s own class on its own row — carrying a number that exists only if
+ *      `bindings.value` → `resolve()` → `TagValueSource.get()` → `formatValue` → `formatMetric` all
+ *      ran. Discriminates against a canvas with no binding seam (F1b) and against a source that
+ *      answers nothing (F4); does NOT discriminate against a second renderer that calls
+ *      `resolveBinding` itself.
+ *   3. A `kind` naming nothing degrades to `unknown widget kind "…"`, `role="alert"` (`probe-kind`).
+ *      Discriminates against an editor that filters unknown kinds out before drawing (F5); does NOT
+ *      discriminate against a renderer that copies the sentence — that is precisely what took the
+ *      reviewer's impostor A to A2.
+ *   4. A widget that THROWS is caught per-widget while its siblings keep drawing (`probe-crash`).
+ *      Discriminates against an editor that strips the props that cause it (F7) and against a canvas
+ *      that never mounts the real widget at all; does NOT discriminate against a second renderer with
+ *      its own boundary and the message copied.
+ *   5. A moved `rect` produces `col + 1 / span colSpan` on both axes. Discriminates against a canvas
+ *      that re-lays widgets out itself (F6a); does NOT discriminate against anything that copies eight
+ *      lines of arithmetic — the reviewer's impostor replicated it and every grid assertion passed.
+ *
+ * Assertion 5's admission was the only one round 0 made. Rows 1-4 now say the same thing, because it
+ * was equally true of them.
  *
  * ── THE DOCUMENT COMES OVER HTTP, AND THAT IS ASSERTED, NOT ASSUMED ───────────────────────────────
  * `/hmi/demo/:screenId` (Task 5) resolves its document from a STATIC map bundled into the JS

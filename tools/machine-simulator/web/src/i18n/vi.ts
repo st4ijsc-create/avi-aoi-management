@@ -343,8 +343,12 @@ export const vi = {
   // WS-HMI-2 Task 8 — trình dựng màn hình HMI (`/editor/:screenId`, `src/editor/EditorRoute.tsx`).
   // Render NGOÀI khung Shell, giống `/tokens` và hai route `/hmi/*`.
   editor: {
+    // Chỉ MỘT khoá tiêu đề. Bản gloss (ngôn ngữ còn lại) do `useGloss("editor.title")` lấy từ từ điển
+    // KHÔNG hoạt động — đúng idiom `components/hmi/bilingual.ts` mà `Sheet.titleEn`/`Readout.labelEn`
+    // đã dùng khắp HMI. Sửa vòng 1 (task-8-review.md finding 8): bản trước có `titleGloss` mang sẵn
+    // tiếng Anh ngay trong từ điển tiếng Việt — chạy đúng, nhưng không ai phân biệt được "cố ý song
+    // ngữ" với "dán nhầm chỗ", nên người sau rất dễ "sửa" mất phần gloss.
     title: "Trình dựng màn hình HMI",
-    titleGloss: "HMI SCREEN BUILDER",
     screenIdLabel: "Mã màn hình",
     // Câu trung thực bắt buộc: canvas vẽ bằng ĐÚNG bộ vẽ của runtime, nhưng giá trị là mẫu tĩnh
     // (`EditorCanvas.tsx`'s `DESIGN_TIME_SNAPSHOT`), không phải số đo của máy nào. Xem doc-comment ở

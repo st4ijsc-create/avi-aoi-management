@@ -14,15 +14,39 @@ import type { MachineDetail } from "@/lib/api"
  * that draws with its own code drifts from the runtime one widget at a time, and the engineer who
  * designed the screen finds out at the machine.
  *
- * That claim is not made by this comment. `tests/37-editor-canvas.spec.ts` measures it in a browser,
- * by changing widgets in the DOCUMENT and reading what the canvas draws: a `label`'s `props.text`
- * appears (so `widgetRegistry` dispatch really happened), a `readout` renders `Readout.tsx`'s own
- * `.hmi-readout-value` row carrying a value that came through `TagValueSource` (so the whole
- * binding→source→format pipeline really ran), a widget whose `kind` names nothing degrades to
- * `ScreenRenderer`'s own `unknown widget kind "…"` placeholder, a widget that throws is caught by
- * `ScreenRenderer`'s own per-widget error boundary while its siblings keep drawing, and a moved
- * `rect` produces `ScreenRenderer`'s own `col + 1` grid-line arithmetic. A canvas that drew its own
- * labelled boxes would satisfy none of those, which is exactly the point of choosing them.
+ * That claim is not made by this comment, and — 🔴 FIX ROUND 1, task-8-review.md finding 1 — it is not
+ * made by the browser spec either, which is what the round-0 version of this paragraph got wrong. It
+ * ended "a canvas that drew its own labelled boxes would satisfy none of those, which is exactly the
+ * point of choosing them", and that is true of a canvas drawing labelled BOXES and false of the thing
+ * that actually happens. The reviewer measured it: a second renderer that reuses `widgetRegistry` and
+ * `resolveBinding` — about 110 lines, importing nothing from this file — satisfies every one of those
+ * behaviours, and with the runtime's two degrade sentences copied (two one-line edits) it passes all
+ * three tests in `tests/37-editor-canvas.spec.ts`. So does a verbatim FORK of `ScreenRenderer.tsx`
+ * dropped into this directory with `clampRectToLayout` deleted and the grid gap changed — a canvas
+ * that provably lays screens out differently from the kiosk. No browser assertion can catch a fork: it
+ * renders identically until it drifts, and the drift is invisible to a test that only reads the DOM
+ * the fork produced.
+ *
+ * The claim is therefore split across two files, and neither half is redundant:
+ *
+ *   * `tests/37-editor-canvas.spec.ts` — the BEHAVIOURAL floor, in a real browser: a `label`'s
+ *     `props.text` appears (so `widgetRegistry` dispatch really happened), a `readout` renders
+ *     `Readout.tsx`'s own `.hmi-readout-value` row carrying a value that came through
+ *     `TagValueSource` (so the whole binding→source→format pipeline really ran), an unknown `kind`
+ *     degrades to the named placeholder, a widget that throws is caught per-widget while its siblings
+ *     keep drawing, and a moved `rect` produces `col + 1` grid lines. What that file pins is that the
+ *     canvas BEHAVES like the runtime renderer.
+ *   * `runtime-tests/editorCanvasSeam.test.mjs` — the IDENTITY, structurally and two-sided: this file
+ *     imports `ScreenRenderer` unaliased from `hmi-runtime/ScreenRenderer` and mounts it; nothing
+ *     under `src/editor/` declares a widget-dispatch loop, grid arithmetic or an error boundary of its
+ *     own, nor imports the runtime's parts outside a named allowlist; and the three DOM hooks a screen
+ *     renderer must emit appear in EXACTLY ONE file in `web/src/`. Its own section 4 replays the three
+ *     impostors through its scanners so it cannot go blind.
+ *
+ * Together they are a pincer: every locator in the browser spec is built on `data-hmi-screen` /
+ * `data-hmi-widget` / `data-hmi-widget-error`, so an impostor must emit them to be green there — and
+ * the structural pin says only `ScreenRenderer.tsx` may emit them anywhere. Rename the hooks to slip
+ * the structural pin and the browser spec goes red; keep them and the structural pin does.
  *
  * ── WHY THE DESIGN-TIME SOURCE IS THE RUNTIME ADAPTER, NOT A SECOND ONE ───────────────────────────
  * `ScreenRenderer` needs a `TagValueSource`, and an editor has no machine bound to it. The obvious
