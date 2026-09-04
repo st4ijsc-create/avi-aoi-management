@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { readFileSync, readdirSync } from "node:fs"
+import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
+import ts from "typescript"
 
 import { ENGINE_URL } from "./support/engine"
 import { vi as viDict } from "../src/i18n/vi"
@@ -22,24 +23,37 @@ import { vi as viDict } from "../src/i18n/vi"
  * and about a real browser, and `.tsx` cannot be `import()`ed under `node --test` (measured
  * repeatedly on this tree — see `widgetRegistry.test.mjs`'s header), so they live here.
  *
- * ── 🔴 THE ONE PLACE THIS FILE FAKES ANYTHING, DECLARED UP FRONT ─────────────────────────────────
- * One test — "a refused publish shows EVERY violation" — uses `page.route` to rewrite the **outgoing
- * PUT body**, deleting a `command-button`'s `policyAction` before it leaves the browser. The
- * **response is the engine's own, unmodified**: a real `ContractInvariants` rejection, a real 400, a
- * real `ApiErrorDto.error` carrying every violation joined.
+ * ── 🔴 EVERY INTERCEPTION IN THIS FILE, ENUMERATED FROM THE CODE ──────────────────────────────────
+ * 🔴 FIX ROUND 1, task-12-review.md M3. This block previously said "THE ONE PLACE THIS FILE FAKES
+ * ANYTHING" and was wrong three ways at once — it counted one interception where there were two,
+ * described a mutation the code does not perform ("deleting a `command-button`'s `policyAction`"; the
+ * test replaces `body.widgets` wholesale), and listed the 404 rollback refusal among the things that
+ * are NOT faked while rewriting its body. A declaration of honesty that is itself inaccurate is worse
+ * than no declaration, so this list is now derived by reading the file, and the counts below are
+ * asserted by a test at the bottom of it rather than maintained by hand.
  *
- * Why it has to be done that way, stated rather than glossed: **the editor's own vocabulary cannot
- * build a document this door refuses.** `applyEdit` mirrors `$defs/widget`, gates §5 on both the add
+ * **THREE `page.route` interceptions, in three tests. All three rewrite only what LEAVES the browser;
+ * none fabricates a response.** There is no `route.fulfill` and no `route.abort` anywhere in this file.
+ *
+ *   1. *a REFUSED publish shows EVERY violation* — `route.continue({ postData })` on the PUT, replacing
+ *      `body.widgets` with two synthetic widgets: one whose `id` the frozen pattern refuses (`Bad-Id`)
+ *      and one ungated `command-button` (§5). The 400, and every violation in it, is the engine's.
+ *   2. *a rollback the engine refuses* — `route.continue({ postData })` on the rollback POST, replacing
+ *      `toVersion` with a version that does not exist. The 404 and its sentence are the engine's.
+ *   3. *a version that cannot be read is NAMED* — `route.continue({ url })` on the versioned GET,
+ *      pointing it at a version that does not exist. The 404 is the engine's; only the URL changed.
+ *
+ * Why any of it is needed, stated rather than glossed: **the editor's own vocabulary cannot build a
+ * document the publish door refuses.** `applyEdit` mirrors `$defs/widget`, gates §5 on both the add
  * path and the kind picker, and enforces the frozen id pattern on rename — so there is no sequence of
  * clicks that produces a §5-violating document, and (since Task 12's server-side fix) none that
  * produces a document with an unknown `kind` or a malformed widget id either. That is a good property
- * and `editorState.test.mjs` is where it is measured. It also means the ONLY honest way to see this
- * refusal surface work is to send what a client WITHOUT those guards would send — which is precisely
- * the population the server door exists for. The interception stands in for that client and for
- * nothing else.
+ * and `editorState.test.mjs` is where it is measured. It also means the only honest way to see the
+ * refusal surfaces work is to send what a client WITHOUT those guards would send — which is precisely
+ * the population the server door exists for.
  *
- * Everything else in this file — every publish, every rollback, every version read, the 404 rollback
- * refusal — goes to the real engine with a real body and a real answer.
+ * Everything NOT in the list above — every publish, every rollback, every version read, every document
+ * read — goes to the real engine with a real body and a real answer.
  *
  * ── 🔴 WHY THE HEADER'S VERSION IS ASSERTED AND NOT ONLY THE PANEL'S ─────────────────────────────
  * `PublishPanel` renders the number its own `PUT` returned. A test that read only that would agree
@@ -64,6 +78,60 @@ const SCHEMA = JSON.parse(readNormalized(join(dirname(WEB), "contracts", "hmi-sc
 /** The frozen breakpoint vocabulary, READ rather than retyped — this file never states what the three
  * breakpoints are called, it asks the schema and then checks the chooser agrees. */
 const SCHEMA_BREAKPOINTS = SCHEMA.$defs.layout.properties.breakpoint.enum
+
+/**
+ * `lib/hmiScreens.ts`'s `SCREEN_BREAKPOINT_WIDTHS`, READ FROM SOURCE rather than imported.
+ *
+ * Not a preference: that module `import`s `screens/demo/component-demo.json`, and Playwright's ESM
+ * loader rejects a JSON import without an import attribute — measured, the whole file failed to
+ * collect with *"needs an import attribute of type: json"*. Reading the declaration off disk is also
+ * the idiom `40-editor-layers.spec.ts` already uses for the widget registry, and for the same reason:
+ * the product's own declaration is the thing under test, so it is read, not linked.
+ *
+ * Parsed through TypeScript's own compiler rather than a regex — the numeric literals sit inside an
+ * object literal that a comment block above it also discusses in prose.
+ */
+const BREAKPOINT_WIDTHS: Record<string, number> = (() => {
+  const file = join(WEB, "src", "lib", "hmiScreens.ts")
+  const sf = ts.createSourceFile(file, readNormalized(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const out: Record<string, number> = {}
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === "SCREEN_BREAKPOINT_WIDTHS" &&
+      node.initializer &&
+      ts.isObjectLiteralExpression(node.initializer)
+    ) {
+      for (const prop of node.initializer.properties) {
+        if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && ts.isNumericLiteral(prop.initializer)) {
+          out[prop.name.text] = Number(prop.initializer.text)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  return out
+})()
+
+/**
+ * The design-time width declared for a breakpoint the SCHEMA named.
+ *
+ * The lookup throws rather than returning `undefined`, and that earns its place: it makes "every
+ * breakpoint the frozen contract declares has a preview width" an assertion this file MAKES, which
+ * `Record<ScreenBreakpoint, number>` only proves for code that already knows the three names.
+ */
+function declaredWidth(breakpoint: string): number {
+  const width = BREAKPOINT_WIDTHS[breakpoint]
+  if (width === undefined) {
+    throw new Error(
+      `contracts/hmi-screen.schema.json declares the breakpoint "${breakpoint}" but ` +
+        `SCREEN_BREAKPOINT_WIDTHS has no width for it — the chooser would render a frame of undefined px`
+    )
+  }
+  return width
+}
 
 type ProbeWidget = {
   id: string
@@ -198,10 +266,26 @@ test.describe("HMI screen editor — publish, versions, rollback, breakpoint pre
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-editor-breakpoint-choice") ?? ""))
     expect(offered).toEqual(SCHEMA_BREAKPOINTS)
 
-    // ── half 2: all three are REACHABLE, and each one narrows the canvas the renderer draws in ──
-    // The frame's own width is measured, not the caption: a caption that said "390px" beside a
-    // full-width canvas is exactly the shape of a preview that previews nothing.
+    // ── half 2: all three are REACHABLE, and each one draws at a width that DISTINGUISHES it ────
+    //
+    // 🔴 FIX ROUND 1, task-12-review.md M2 — THE VIEWPORT IS WIDENED FIRST, AND THAT IS THE FIX.
+    // At the project's own 1280x720 the canvas column is ~656 px, so BOTH `panel` (1280) and `tablet`
+    // (1024) exceed it and the `max-width` frame is inert for both: they measured identical, the
+    // assertion was satisfied by equality, and the reviewer proved it measured nothing by setting
+    // `tablet` to 2000 — wider than `panel`, a direct contradiction of the property — with the test
+    // still green. A viewport wide enough for the canvas column to exceed the WIDEST breakpoint is
+    // what makes all three separable at all; below that, no assertion here can tell them apart.
+    //
+    // `LAYOUT_CHROME_PX` is the rail width this route spends before the canvas gets any: 256 (layer
+    // tree) + 320 (right rail) + 24 (two gaps) + 24 (page padding). Derived rather than hard-coded to
+    // a viewport number so that moving a rail moves this too, and the assertion below reddens if the
+    // margin is ever eaten rather than silently going inert again.
+    const LAYOUT_CHROME_PX = 256 + 320 + 24 + 24
+    const widest = Math.max(...SCHEMA_BREAKPOINTS.map(declaredWidth))
+    await page.setViewportSize({ width: widest + LAYOUT_CHROME_PX + 120, height: 900 })
+
     const widths: Record<string, number> = {}
+    let available = 0
     for (const value of SCHEMA_BREAKPOINTS) {
       await page.locator(`[data-editor-breakpoint-choice="${value}"]`).click()
       await expect(page.locator(`[data-editor-breakpoint="${value}"]`)).toBeVisible()
@@ -215,15 +299,45 @@ test.describe("HMI screen editor — publish, versions, rollback, breakpoint pre
       const box = await page.locator(`[data-hmi-screen="${screenId}"]`).boundingBox()
       expect(box, `no rendered screen at breakpoint ${value}`).toBeTruthy()
       widths[value] = Math.round((box as { width: number }).width)
+
+      // The caption is asserted to agree with the table, so `data-editor-preview-width` is a hook a
+      // test actually reads rather than a promise of coverage (task-12-review.md LOW-5).
+      await expect(page.locator("[data-editor-preview-width]")).toHaveAttribute(
+        "data-editor-preview-width",
+        String(declaredWidth(value))
+      )
+
+      // How much room the frame HAD — measured on the frame's PARENT, not on the canvas inside it.
+      // The canvas is already capped by the frame's `max-width`, so measuring it would report the
+      // breakpoint width back and prove nothing; the parent is the column the frame is free to fill.
+      // If the chrome ever grows past the margin above, the assertion below reddens with a sentence
+      // rather than the ordering going quietly vacuous again.
+      const room = await page
+        .locator("[data-editor-breakpoint]")
+        .evaluate((el) => Math.round((el.parentElement as HTMLElement).getBoundingClientRect().width))
+      available = Math.max(available, room)
     }
 
-    // Narrower names really are narrower on screen. Asserted as an ORDER over the three measurements
-    // rather than against the pixel constants, so the table in `lib/hmiScreens.ts` stays free to move
-    // — what must not change is that `phone` is not as wide as `panel`.
-    expect(widths.phone, `phone (${widths.phone}px) is not narrower than tablet (${widths.tablet}px)`).toBeLessThan(
-      widths.tablet
-    )
-    expect(widths.tablet).toBeLessThanOrEqual(widths.panel)
+    expect(
+      available,
+      `the canvas column is ${available}px, not wider than the widest breakpoint (${widest}px) — every ` +
+        `frame is inert at this viewport and the ordering below would be satisfied by three equal ` +
+        `numbers, which is exactly the defect this fix closes`
+    ).toBeGreaterThan(widest)
+
+    // 🔴 STRICTLY increasing, so every one of the three is distinguished from BOTH others. `phone` <
+    // `tablet` < `panel` — no `<=` anywhere, because `<=` is what let two of them be the same number.
+    // Asserted as an ORDER over the measurements rather than against the pixel constants, so the table
+    // in `lib/hmiScreens.ts` stays free to move; what must not change is that a narrower NAME draws
+    // narrower.
+    expect(
+      widths.phone,
+      `phone (${widths.phone}px) is not strictly narrower than tablet (${widths.tablet}px)`
+    ).toBeLessThan(widths.tablet)
+    expect(
+      widths.tablet,
+      `tablet (${widths.tablet}px) is not strictly narrower than panel (${widths.panel}px)`
+    ).toBeLessThan(widths.panel)
 
     // …and the choice survives a publish, which is the whole reason it is a document edit.
     await page.locator(`[data-editor-breakpoint-choice="phone"]`).click()
@@ -311,6 +425,9 @@ test.describe("HMI screen editor — publish, versions, rollback, breakpoint pre
     // Every violation, each on its own line, and the ENGINE's own words — not a sentence this client
     // wrote about them.
     await expect(refusal.locator("li")).toHaveCount(2)
+    // …and the count the panel itself publishes agrees, so `data-publish-violations` is a hook a test
+    // reads rather than a promise of coverage (task-12-review.md LOW-5).
+    await expect(refusal.locator("[data-publish-violations]")).toHaveAttribute("data-publish-violations", "2")
     await expect(refusal).toContainText("Bad-Id")
     await expect(refusal).toContainText("policyAction")
     // …and the named reason for THIS status, so the reader is told what kind of no it is.
@@ -479,6 +596,242 @@ test.describe("HMI screen editor — publish, versions, rollback, breakpoint pre
     // The publish really did carry the edit — otherwise "clean" would be a lie told by the baseline.
     const stored = (await (await request.get(`${ENGINE_URL}/v1/screens/${screenId}`)).json()) as ProbeDocument
     expect(stored.widgets.length).toBe(2)
+  })
+
+  test("🔴 while a past version is previewed, NO editing surface can act on the session", async ({
+    page,
+    request,
+  }) => {
+    // task-12-review.md M1. Round 0 removed the canvas overlay during a preview and called that
+    // "read-only by not existing"; the layer tree, the property panel, `Ctrl+Z` and Publish all stayed
+    // live over a document the engineer could not see. Delete a layer row while previewing version 1,
+    // see nothing change because the canvas is showing version 1, close the preview, publish — the
+    // deletion lands. This test operates all four and asserts the session came back untouched.
+    const screenId = "pub-readonly"
+    const v1 = await putScreen(request, probeDoc(screenId, [ALPHA]))
+    const v2 = await putScreen(request, probeDoc(screenId, [ALPHA, BRAVO]))
+    await openEditor(page, screenId)
+
+    // An UNSAVED edit, and a selection, so both rails have something real to act on.
+    const added = await addLabelWidget(page, screenId)
+    await page.locator(`[data-editor-widget="${added}"]`).click()
+    await expect(page.locator("[data-panel-widget-id]")).toHaveText(added)
+    const before = await canvasIds(page, screenId)
+    expect(before).toEqual([ALPHA.id, BRAVO.id, added])
+
+    await page.locator(`[data-publish-preview="${v1}"]`).click()
+    await expect(page.locator(`[data-editor-preview="${v1}"]`)).toBeVisible()
+
+    // ── (1) and (2): the two editing rails are GONE, replaced by one named read-only notice. Not
+    //     disabled copies of themselves — a tree row addressing a widget by id over a document that is
+    //     not on screen is a label describing something that is not there.
+    await expect(page.locator("[data-layer-tree]")).toHaveCount(0)
+    await expect(page.locator("[data-property-panel]")).toHaveCount(0)
+    await expect(page.locator("[data-editor-readonly]")).toHaveAttribute("data-editor-readonly", String(v1))
+    await expect(page.locator("[data-editor-readonly]")).toContainText(
+      viDict.editor.publish.readOnly({ version: v1 })
+    )
+    // Every control those rails carry is unreachable, by count rather than by disabled-ness.
+    await expect(page.locator("[data-layer-remove]")).toHaveCount(0)
+    await expect(page.locator("[data-layer-add]")).toHaveCount(0)
+    await expect(page.locator("[data-layer-rename]")).toHaveCount(0)
+
+    // ── (3): Publish is disabled, and force-clicking it — which dispatches the click regardless of
+    //     Playwright's actionability checks — still publishes nothing.
+    const publishButton = page.locator("[data-publish-button]")
+    await expect(publishButton).toBeDisabled()
+    await publishButton.click({ force: true })
+    await expect(page.locator("[data-publish-version]")).toHaveCount(0)
+
+    // ── (4): `Ctrl+Z` really is pressed, on a session that HAS an undo step to take.
+    await page.locator("[data-editor-design-mode]").click()
+    await page.keyboard.press("Control+z")
+
+    // ── (5): the BREAKPOINT CHOOSER — a fifth editing surface the review did not list and the
+    //     mutation round found. Choosing a breakpoint emits `set-breakpoint`, a real document edit, so
+    //     it is locked too. Disabled rather than unmounted (its three labels stay true of the previewed
+    //     document), and force-clicked here so the assertion is about what the control DOES, not about
+    //     an attribute.
+    const otherBreakpoint = SCHEMA_BREAKPOINTS.find((b) => b !== "panel") as string
+    await expect(page.locator(`[data-editor-breakpoint-choice="${otherBreakpoint}"]`)).toBeDisabled()
+    await page.locator(`[data-editor-breakpoint-choice="${otherBreakpoint}"]`).click({ force: true })
+    await expect(page.locator("[data-editor-breakpoint]")).toHaveAttribute("data-editor-breakpoint", "panel")
+
+    // Nothing reached the engine, and nothing reached the session.
+    expect(await headVersion(request, screenId)).toBe(v2)
+
+    await page.locator(`[data-publish-preview="${v1}"]`).click()
+    await expect(page.locator(`[data-editor-preview="${v1}"]`)).toHaveCount(0)
+    await expect(page.locator("[data-layer-tree]")).toHaveCount(1)
+    await expect(page.locator("[data-property-panel]")).toHaveCount(1)
+    expect(
+      await canvasIds(page, screenId),
+      "an edit landed on the session while a past version was on screen"
+    ).toEqual(before)
+    await expect(page.locator("[data-editor-dirty]")).toHaveAttribute("data-editor-dirty", "true")
+  })
+
+  test("a version that cannot be read is NAMED on the canvas, not left blank", async ({ page, request }) => {
+    // task-12-review.md LOW-5 — the preview-failure surface was an untested user-visible state.
+    // Reached by rewriting the outgoing GET's URL to a version that does not exist (interception 3 in
+    // this file's header): `route.continue({ url })` changes only where the request points; the 404
+    // and its meaning are the engine's.
+    const screenId = "pub-preview-404"
+    const v1 = await putScreen(request, probeDoc(screenId, [ALPHA]))
+    await putScreen(request, probeDoc(screenId, [ALPHA, BRAVO]))
+    await openEditor(page, screenId)
+
+    await page.route(`**/v1/screens/${screenId}?version=*`, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback()
+      await route.continue({ url: `${ENGINE_URL}/v1/screens/${screenId}?version=9999` })
+    })
+
+    await page.locator(`[data-publish-preview="${v1}"]`).click()
+
+    const failed = page.locator("[data-editor-preview-failed]")
+    await expect(failed).toBeVisible()
+    await expect(failed).toContainText(viDict.editor.publish.previewFailed({ version: v1 }))
+    // A failed preview is still a preview: the session stays out of reach rather than quietly
+    // becoming editable again behind an error message.
+    await expect(page.locator("[data-layer-tree]")).toHaveCount(0)
+    await expect(page.locator("[data-publish-button]")).toBeDisabled()
+  })
+
+  test("🔴 this file's own declaration of what it intercepts is CHECKED, not remembered", async () => {
+    // task-12-review.md M3. The header block previously said "THE ONE PLACE THIS FILE FAKES ANYTHING"
+    // and was wrong three ways: it counted one interception where there were two, described a mutation
+    // the code does not perform, and listed the 404 rollback refusal among the things NOT faked while
+    // rewriting its body. A declaration of honesty that is itself inaccurate is worse than none — so
+    // the numbers in that header are asserted here, from this file's own parsed source, and the day a
+    // fourth interception is added without the header changing, this reddens.
+    const self = readNormalized(fileURLToPath(import.meta.url))
+    const sf = ts.createSourceFile("self", self, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+
+    // Counted through the parser, so the header's own PROSE about `route.fulfill` (it says there is
+    // none) cannot be mistaken for a call to it — the exact confusion a text scan would produce here.
+    const calls: Record<string, number> = {}
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+        const name = node.expression.name.text
+        const target = node.expression.expression.getText(sf)
+        if ((target === "page" && name === "route") || (target === "route" && name !== "request")) {
+          calls[`${target}.${name}`] = (calls[`${target}.${name}`] ?? 0) + 1
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sf)
+
+    expect(
+      calls,
+      "the header enumerates THREE interceptions, all of which rewrite only the outgoing request — " +
+        "if this no longer matches, fix the header first and the count second"
+    ).toEqual({ "page.route": 3, "route.continue": 3, "route.fallback": 3 })
+
+    // Stated separately and absolutely: nothing in this file fabricates a response or drops a request.
+    expect(calls["route.fulfill"] ?? 0, "a response is being synthesised — the header says none is").toBe(0)
+    expect(calls["route.abort"] ?? 0, "a request is being dropped — the header says none is").toBe(0)
+
+    // And each of the three is named in the header, so the list is a list and not a number.
+    for (const phrase of [
+      "route.continue({ postData })` on the PUT",
+      "route.continue({ postData })` on the rollback POST",
+      "route.continue({ url })` on the versioned GET",
+    ]) {
+      expect(self, `the header no longer describes: ${phrase}`).toContain(phrase)
+    }
+  })
+
+  test("🔴 nothing in the app navigates to /editor — the premise the unsaved-work guard rests on", async () => {
+    // task-12-review.md LOW-7, controller ruling. `beforeunload` fires for CROSS-document exits only.
+    // `/editor/:screenId` is a wouter route in a pushState SPA, so an in-app link — and the back button
+    // after following one — is a SAME-document history change that `beforeunload` never sees. Today
+    // that is harmless because nothing links to or from the route, which makes every exit
+    // cross-document. That is a fact about the app, and an unpinned fact is worth nothing: this test is
+    // the pin, and the day it reddens the fix is a router-level guard, not deleting the test.
+    const SRC = join(WEB, "src")
+    const files: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) walk(full)
+        else if (/\.(ts|tsx)$/.test(entry.name)) files.push(full)
+      }
+    }
+    walk(SRC)
+    expect(files.length, "walked src/ and found no modules — the census broke, not the app").toBeGreaterThan(50)
+
+    // String literals only, collected through TypeScript's own parser: a `/editor` written in a comment
+    // (this file's subject is discussed in several) is excluded by the parser rather than by a regex,
+    // the technique `check-comment-only.mjs` records as the only safe one here.
+    const offenders: string[] = []
+    for (const file of files) {
+      const text = readFileSync(file, "utf8").replace(/\r\n/g, "\n")
+      const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+      const visit = (node: ts.Node) => {
+        if (
+          (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+          /^\/editor(\/|$)/.test(node.text)
+        ) {
+          offenders.push(`${relative(WEB, file).replace(/\\/g, "/")}: ${JSON.stringify(node.text)}`)
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(sf)
+    }
+
+    // `App.tsx` is the ONE allowed holder: it declares the route. Declaring a route is not navigating
+    // to it, and removing this exemption would make the pin unsatisfiable rather than strict.
+    const fromElsewhere = offenders.filter((o) => !o.startsWith("src/App.tsx:"))
+    expect(
+      fromElsewhere,
+      "something in web/src now addresses /editor. `beforeunload` does NOT fire for a same-document " +
+        "SPA navigation, so the unsaved-work warning no longer covers every way out of the editor — " +
+        "add a router-level guard (EditorCanvas.tsx's beforeunload effect names this test)"
+    ).toEqual([])
+    // Floor: the exemption must still be live, or this test is comparing two empty lists.
+    expect(offenders.length, "no /editor literal anywhere, not even App.tsx's route — the scan broke").toBeGreaterThan(0)
+  })
+
+  test("🔴 an overtake is named even when this session has NEVER published — the commonest case", async ({
+    page,
+    request,
+  }) => {
+    // task-12-review.md M4. Round 0 tracked the version a session stood on ONLY from its own publishes,
+    // so it was `undefined` until the session had already published once — and the commonest overtake
+    // of all (open at v3, a colleague publishes v4, you publish and land at v5) was silent. The reason
+    // given was that `GET /v1/screens/{id}` answers no version number, which is true of that endpoint
+    // and beside the point: `GET .../versions` is read by this very panel and its head is rendered in
+    // the route header. The panel now adopts that head once, at mount.
+    const screenId = "pub-overtaken-first"
+    const opened = await putScreen(request, probeDoc(screenId, [ALPHA]))
+    await openEditor(page, screenId)
+    // The header proves the number the notice needs was on screen all along.
+    await expect(page.locator("[data-editor-current-version]")).toHaveAttribute(
+      "data-editor-current-version",
+      String(opened)
+    )
+
+    // A colleague publishes while this session sits open, having published nothing itself.
+    const theirs = await putScreen(request, probeDoc(screenId, [BRAVO]))
+    expect(theirs).toBe(opened + 1)
+
+    // This session's FIRST publish. It lands two past the version it opened at.
+    await addLabelWidget(page, screenId)
+    await page.locator("[data-publish-button]").click()
+    const landed = theirs + 1
+    await expect(page.locator("[data-publish-version]")).toHaveAttribute("data-publish-version", String(landed))
+
+    const notice = page.locator("[data-publish-overtaken]")
+    await expect(notice).toBeVisible()
+    await expect(notice).toHaveAttribute("data-publish-overtaken", String(landed))
+    await expect(notice).toContainText(
+      viDict.editor.publish.overtaken({ landedAs: landed, openedFrom: opened })
+    )
+
+    // Nothing was lost — the store appends, and the colleague's version is still on file.
+    const rows = await versionsOf(request, screenId)
+    expect(rows.map((r) => r.version).sort((a, b) => a - b)).toEqual([opened, theirs, landed])
   })
 
   test("a publish OVERTAKEN by someone else's is named — and the negative control says nothing when it was not", async ({

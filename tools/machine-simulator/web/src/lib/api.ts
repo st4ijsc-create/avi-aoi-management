@@ -1113,9 +1113,21 @@ export function useScreen(screenId: string | undefined): UseQueryResult<HmiScree
  *
  * NOT polled, for the reason `useScreen` above is not: it changes when a human publishes or rolls
  * back, and both of those go through THIS client, which invalidates this key on success
- * (`usePublishScreen`/`useRollbackScreen` below). A concurrent publish from another window is not
- * caught by a poll here — it is caught by the stale-head warning the editor renders from this same
- * list on refocus, which is honest about being best-effort rather than pretending to be live.
+ * (`usePublishScreen`/`useRollbackScreen` below).
+ *
+ * 🔴 FIX ROUND 1, task-12-review.md LOW-3 — the sentence that used to end this paragraph claimed a
+ * concurrent publish from another window "is caught by the stale-head warning the editor renders from
+ * this same list on refocus". THERE IS NO REFOCUS WARNING, and `refetchOnWindowFocus` is `false`
+ * app-wide (`App.tsx`). What actually exists, and what this list actually feeds:
+ *
+ *   * `EditorRoute`'s header renders this query's current head, so a refetch — a mount, or the
+ *     invalidation either mutation performs — moves the number on screen;
+ *   * `PublishPanel` adopts that head ONCE as the version its session is standing on, and after a
+ *     publish compares the version the engine returned against it. Landing further than one step past
+ *     it means somebody else published in between, and the panel says so, naming both numbers.
+ *
+ * That is an AFTER-THE-FACT notice and the panel's own doc comment says so. A before-the-fact one is
+ * not available without polling a document that changes when a human saves it.
  *
  * No 404 branch, deliberately: this route answers 200 with `[]` for a screen nobody declared (see
  * `endpoints.screenVersions`), so "no versions" is data, not an error.
