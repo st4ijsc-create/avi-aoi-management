@@ -230,6 +230,37 @@ describe("§D — B5 bắt được: câu hỏi lạc miền vẫn nhận NHIỄ
   });
 });
 
+/**
+ * ★★★ §G — task-v10 (NỢ 1): câu hỏi KHÔNG nêu hãng/dòng sản phẩm nào (`detectProgrammingVendors`
+ * rỗng) không được gắn citation vendor_manual dù điểm hybrid VƯỢT ngưỡng 0,5 — đo THẬT bằng
+ * `eval-vscode-route.mjs` cho thấy ngưỡng tuyệt đối KHÔNG tách được câu ngoài-miền (VSC-09 top1
+ * 0,697 · VSC-10 top1 0,560) khỏi câu đúng-miền (0,649–0,734, CHỒNG LẤN) — xem docblock lớn cạnh
+ * `MIN_PROG_KB_CITATION_SCORE`. Fixture điểm 0,92 dưới đây CỐ Ý cao hơn hẳn cả hai ca đo thật, để
+ * khẳng định: đây không phải "hạ ngưỡng", mà là một GATE khác hẳn — không hãng nào ⇒ luôn rỗng.
+ *
+ * ★ ĐỘT BIẾN PHẢI BẮT ĐƯỢC: gỡ vế `&& detectedVendors.length > 0` khỏi điều kiện `keepIdx` ⇒ ca
+ *   đầu tiên dưới đây phải ĐỎ trở lại (citation lạc miền xuất hiện dù điểm 0,92).
+ */
+describe("§G — task-v10 NỢ 1: KHÔNG hãng nào nêu tên ⇒ RỖNG dù điểm rất cao", () => {
+  it("★★★ câu hỏi C# chung chung (không nêu hãng nào) + citation điểm 0,92 (mock, cao hơn cả đo thật) ⇒ vẫn RỖNG", async () => {
+    searchProgrammingKb.mockResolvedValue(onDomainHit); // citations score 0,921669 — KHÔNG liên quan câu hỏi dưới
+    const r = await retrieveKnowledge(
+      "Trong C#, class System.IO.Ports.SerialPort cấu hình baud rate/parity/stop bits thế nào để giao tiếp Modbus RTU với một thiết bị bất kỳ?",
+      5,
+      { route: "vscode" },
+    );
+    expect(r.citations).toEqual([]);
+    expect(r.contexts).toEqual([]);
+    expect(r.confidence).toBe(0);
+  });
+
+  it("★ ĐỐI CHỨNG cùng khối: CÙNG fixture điểm 0,92, câu hỏi ĐÚNG nêu hãng (Mitsubishi MELSERVO) ⇒ vẫn GIỮ citation (không phá §D ca 1)", async () => {
+    searchProgrammingKb.mockResolvedValue(onDomainHit);
+    const r = await retrieveKnowledge("Mitsubishi MELSERVO J4 mã lỗi tra ở đâu?", 5, { route: "vscode" });
+    expect(r.citations).toHaveLength(2);
+  });
+});
+
 describe("§B — ĐỐI CHỨNG: route KHÁC vscode (web) — hành vi CŨ, không đổi", () => {
   it("★★★ route vắng/web ⇒ dùng kho vận hành (fs được đọc), searchProgrammingKb KHÔNG được gọi", async () => {
     const r = await retrieveKnowledge("OEE hôm nay bao nhiêu", 5, undefined);

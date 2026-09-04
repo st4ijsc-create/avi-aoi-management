@@ -63,6 +63,18 @@ describe("§A — năm hãng hiếm nghĩa: khớp nguyên từ, không cần ng
     expect(detectProgrammingVendors("UR cần xác nhận trước khi ghi đè")).toEqual([]);
   });
 
+  // ★★★ task-v10 (NỢ 1) — đo được VSC-02/VSC-07 (bộ `eval-vscode-route.mjs`) hỏi ĐÚNG dòng sản
+  // phẩm Mitsubishi ("MELSEC", "GX Works3", mã module "QJ71C24") mà KHÔNG gõ chữ "Mitsubishi" —
+  // trước bản vá `detectProgrammingVendors` trả `[]` cho cả hai câu. Alias mới phải bắt được CẢ BA
+  // dạng, không cần chữ "Mitsubishi" đứng cạnh.
+  it.each([
+    ["Đang viết code C# giao tiếp RS-232 với module QJ71C24 để đọc dữ liệu từ PLC MELSEC, cần cấu hình cổng thế nào?", "mitsubishi"],
+    ["Lệnh MOV trong MELSEC GX Works3 dùng để làm gì, cú pháp thế nào?", "mitsubishi"],
+    ["module QJ71E71 cấu hình Ethernet thế nào?", "mitsubishi"],
+  ])("%s ⇒ nhận %s (KHÔNG cần chữ 'Mitsubishi')", (question, expected) => {
+    expect(detectProgrammingVendors(question)).toEqual([expected]);
+  });
+
   it("câu hỏi KHÔNG nêu hãng nào ⇒ mảng rỗng", () => {
     expect(detectProgrammingVendors("làm sao đọc file config JSON trong Node.js?")).toEqual([]);
     expect(detectProgrammingVendors("")).toEqual([]);

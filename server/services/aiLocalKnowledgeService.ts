@@ -2254,10 +2254,29 @@ export function locKhoTheoTienTo<T extends { sourcePath: string }>(
  * "universal-robots" khớp thêm mã model UR3/UR5/UR10/UR16(+"e") và tên riêng phần mềm/SDK của hãng
  * (URScript, PolyScope) — generic fallback chỉ khớp được cụm "universal robots" đầy đủ, không biết
  * các alias này. ⚠ CỐ Ý không khớp "UR" đứng một mình — hai ký tự, quá dễ trùng chữ viết tắt khác.
+ *
+ * ★★★ "mitsubishi" — thêm ở vòng task-v10 (NỢ 1, đo được `VSC-02`/`VSC-07`, hai ca ĐÃ ĐẠT trong bộ
+ * `eval-vscode-route.mjs`): câu hỏi của người dùng thường gọi ĐÚNG TÊN DÒNG SẢN PHẨM ("MELSEC",
+ * "GX Works3", mã module "QJ71C24") mà KHÔNG bao giờ gõ chữ "Mitsubishi" — `genericVendorRegex`
+ * suy từ slug "mitsubishi" không bắt được các tên này, nên trước bản vá `detectProgrammingVendors`
+ * trả `[]` cho CẢ HAI câu hỏi đó dù chấm điểm THẬT vẫn đúng hãng (đo bằng
+ * `node --import tsx` gọi thẳng hàm, xem `task-v10-report.md` N1-B2). Đây là điều kiện BẮT BUỘC
+ * phải vá trước khi dùng tín hiệu này làm CỔNG chặn trích dẫn ngoài-miền bên dưới
+ * (`retrieveProgrammingKnowledgeForVscode`) — nếu không, cổng đó sẽ giết oan chính hai ca này.
+ * "MELSEC"/"QJ71" là mã hãng đặc hiệu (không phải từ tiếng Anh thông dụng) — an toàn theo đúng
+ * tiêu chí đã dùng cho UR/Zmotion. "GX Works" cho phép số phiên bản dính liền ("GX Works3").
+ *
+ * ⚠ Một khoá có mặt ở đây THAY THẾ HOÀN TOÀN `genericVendorRegex(slug)` cho slug đó (xem vòng lặp
+ * `detectProgrammingVendors`: `VENDOR_ALIAS_PATTERNS[slug] ?? genericVendorRegex(slug)` — dấu `??`,
+ * KHÔNG phải hợp hai regex) — nên regex "mitsubishi" ở đây PHẢI tự chứa cả tên hãng gốc
+ * (`\bmitsubishi\b`), không chỉ phần alias mới, nếu không câu hỏi gõ ĐÚNG "Mitsubishi" sẽ ngừng
+ * khớp (tự bắt được lỗi này khi viết bản vá — lưới `aiLocalKnowledge.vendorDetect.test.ts` §D và
+ * `aiLocalKnowledge.vendorFilterWiring.test.ts` §C đỏ ngay ở lượt chạy đầu).
  */
 const VENDOR_ALIAS_PATTERNS: Readonly<Record<string, RegExp>> = {
   "universal-robots": /\buniversal[\s_-]?robots?\b|\bur\d{1,2}e?\b|\burscript\b|\bpolyscope\b/i,
   zmotion: /\bz-?motion\b/i, // cho phép viết rời "Z-Motion"/"ZMotion", generic fallback chỉ khớp liền
+  mitsubishi: /\bmitsubishi\b|\bmelsec\b|\bmelservo\b|\bgx[\s_-]?works?\d*\b|\bqj71[a-z0-9]*\b/i,
 };
 
 /**
@@ -2482,9 +2501,36 @@ async function retrieveProgrammingKnowledgeForVscode(
   // VRAM, xem B5) — CẬN DƯỚI của độ phân tách thật: khi embedding thật tham gia (0,72 trọng số),
   // một câu hỏi lạc đề thường cách xa hơn nữa trong không gian ngữ nghĩa, nên ngưỡng này KHÔNG lỏng
   // hơn thực tế sản xuất.
+  //
+  // ★★★ NỢ 1 (task-v10-report.md N1-B1/B2, `docs/…/2026-09-04-…-lo-trinh.md` §12 CÒN MỞ #1 nửa
+  // "câu ngoài miền vẫn nhận citation") — ngưỡng 0,5 TUYỆT ĐỐI ở trên KHÔNG tổng quát hoá được:
+  // đo THẬT trên bộ 11 ca (`vscode-route-n1-baseline.json`) cho thấy điểm của hai câu NGOÀI MIỀN
+  // (VSC-09 "C# SerialPort/Modbus RTU" top1=0,697 · VSC-10 "Node.js/MQTT/IoT dashboard" top1=0,560)
+  // CHỒNG LẤN thẳng vào dải điểm của 8 câu ĐÚNG MIỀN (0,649–0,734) — VSC-09 còn CAO HƠN top1 của
+  // VSC-08 (0,649). Không có một ngưỡng tuyệt đối/tương đối nào tách sạch hai lớp này bằng ĐIỂM
+  // SỐ đơn thuần mà không giết oan ít nhất một ca ĐANG ĐẠT — lý do: "Modbus RTU, baud rate, parity,
+  // stop bits" (VSC-09) và "module"/CPU (VSC-10, khớp keyword với tiêu đề "…CPU Module…") là từ
+  // vựng THẬT xuất hiện dày trong chương truyền thông nối tiếp của chính các tài liệu PLC — không
+  // phải nhiễu embedding ngẫu nhiên, mà là chồng lấn ngữ nghĩa thật giữa "hỏi VỀ giao thức" và
+  // "hỏi giao thức TỪ GÓC NHÌN một ngôn ngữ lập trình". ⇒ Sửa bằng tín hiệu KHÁC hẳn điểm số: câu
+  // hỏi phải tự nêu được MỘT hãng/dòng sản phẩm cụ thể (`detectProgrammingVendors`, đã có sẵn từ
+  // Việc 7) thì trích dẫn vendor_manual mới được giữ, bất kể điểm — đúng ý chủ dự án đã xác nhận:
+  // "câu hỏi không thuộc miền tài liệu hãng ⇒ không gắn trích dẫn nào". `detectedVendors` đã tính
+  // Ở TRÊN (dùng chung với `vendorFilter`) — không tính lại, không gọi thêm lần hai.
+  //
+  // ★ NHÁNH KIA đã đo: cả 8 ca ĐẠT của bộ 11 ca đều tự nêu tên hãng/dòng sản phẩm trong câu hỏi
+  // (kể cả VSC-02/VSC-07 — chỉ ĐẠT được điều kiện này SAU KHI thêm alias "MELSEC"/"GX Works"/
+  // "QJ71" vào `VENDOR_ALIAS_PATTERNS.mitsubishi` ở trên, xem docblock cạnh đó) — cổng này do đó
+  // KHÔNG hạ 8/8 ca đang ĐẠT (đo lại đủ 11 ca sau bản vá, xem báo cáo). Nhiều-hãng (`detectedVendors.
+  // length > 1`, `vendorFilter` = undefined, tìm khắp) vẫn đi qua cổng này bình thường — chỉ CHẶN
+  // khi KHÔNG hãng nào được nêu (`length === 0`), không đổi hành vi lọc-theo-hãng đã có.
+  //
+  // ★ KHÔNG áp dụng cho nhánh Studio (`MIN_STUDIO_CITATION_SCORE` bên dưới) — corpus Studio là tài
+  // liệu NGƯỜI DÙNG TỰ TẢI LÊN, có thể là bất kỳ chủ đề nào (kể cả C#/web họ tự nạp) — chặn theo
+  // "có hãng hay không" ở đó sẽ SAI mục đích tính năng cá nhân hoá đó.
   const MIN_PROG_KB_CITATION_SCORE = 0.5;
   const keepIdx =
-    vendorResult && vendorResult.enabled
+    vendorResult && vendorResult.enabled && detectedVendors.length > 0
       ? vendorResult.citations
           .map((c, i) => (c.score >= MIN_PROG_KB_CITATION_SCORE ? i : -1))
           .filter((i) => i >= 0)
