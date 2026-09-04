@@ -6898,3 +6898,89 @@ case.** Worth recording together, because the three attacks are the same mistake
    asked src→reflected and never reflected→src. It is bidirectional now: a factory supplying the truth side
    that is declared in no file under `src/` fails, because an assembly no project in this repository owns
    cannot be reviewed and must not decide what the product ships.
+
+---
+
+## 27. WS-HMI-2 — the screen editor, and the join that connects it to the operator panel / Trình dựng màn hình, và mối nối tới màn vận hành
+
+WS-HMI-2 added a **screen store** (`hmi-screens.db`, `ST4I_HMI_SCREENS_DIR` — §15.4's table), **five HTTP
+routes** over it, and a **visual editor** at `/editor/{screenId}` whose canvas is literally the runtime
+renderer. This section is about the LAST of its thirteen tasks, because that is the one that found what
+the other twelve could not.
+
+### 27.1 🔴 The editor wrote into a store the runtime never read
+
+Measured at `20f78b8d`, after twelve tasks:
+
+* `/hmi/{code}` rendered `SCREEN_DOCS[machine.class]` — **three static documents compiled into the JS
+  bundle** (`web/src/routes/Hmi.tsx`, `import`ed from `web/screens/*-overview.json`);
+* **no file outside `web/src/editor/` called `/v1/screens` at all.**
+
+Both halves were pinned thoroughly — an append-only store with versions and rollback, a write door
+enforcing invariant §5, a canvas proven to be the same renderer the kiosk mounts — and **nothing joined
+them**. An engineer could design and publish a screen no operator would ever see. This is the WS-HMI-0c
+lesson at a new address: *“both halves are pinned” is not “the thing works”*, and only an end-to-end
+acceptance pass tells them apart.
+
+### 27.2 The join, and the four rules it is built on
+
+| Question | Answer | Why |
+|---|---|---|
+| Which screen does machine `X`'s kiosk read? | `machine-` + `X` lowercased (`IOT-02` → `machine-iot-02`) | A screen document is **not** bound to a machine — the frozen `HmiScreenDocument` has no machine field and cannot grow one — so the kiosk DERIVES the id. The reserved `machine-` prefix keeps every operator panel out of the flat namespace engineers author free-form ids in, so a screen someone happened to name after a machine code can never take over that machine's panel. Lowercased because `screenId` is constrained to `^[a-z0-9-]+$` while a MACHINE CODE has no case constraint at all and `MachineCodeIdentity` already folds it — the fold happens crossing from the second vocabulary into the first, and a `screenId` is never folded. |
+| Nothing published for that machine? | It renders exactly the document it shipped with | Invariant §5-bis. `GET /v1/screens/{id}` answers **404** for an id nobody declared (deliberate — there is no such thing as a valid EMPTY screen), and that 404 falls straight through to the shipped document. The 31 visual baselines cannot move because nothing in this repository ever writes `machine-scrw-01` / `machine-aoi-01` / `machine-iot-01` — a grep, not a hope. |
+| A bad published document? | The shipped screen renders instead, with a console line naming the defect | `HmiScreenStore.AppendVersionAsync` restores **without re-validating** on the rollback path (deliberate: a restore is not new authorship), so a legacy row written under a laxer contract can be made current again. `renderableScreen` (`web/src/hmi-runtime/publishedScreen.ts`) rejects **only** the shapes that would make the renderer throw or collapse the grid; everything merely odd — an unknown widget kind, an out-of-range rect, an unresolved `{component}` — still takes the renderer's own degrade-in-place path, one widget at a time. |
+| `/hmi/demo/{screenId}`? | Reads no store, and makes no request | That URL NAMES a document. Answering it with a different one is the defect `web/tests/35-hmi-indirect-binding.spec.ts` exists to prevent. |
+
+### 27.3 Indirect binding was built, then unwired, then unauthorable
+
+`{component}` indirect binding — one faceplate serving N component instances — has three separate
+histories worth keeping straight, because each looked complete on its own:
+
+1. **WS-HMI-1 Task 3 BUILT it** (`web/src/hmi-runtime/bindings.ts`) with executed unit tests.
+2. **Nothing used it.** `Hmi.tsx` mounted `<ScreenRenderer>` with no `components` prop, so every
+   `{component}` binding came back with its braces still in it. **One line** stood between a finished
+   feature and the product, for a whole workstream, with both halves green. WS-HMI-2 Task 5 wired it.
+3. **It could not be AUTHORED.** The `component` field had no edit anywhere in the editor, and the tag
+   picker's `{component}` section renders only for a widget that already declares one — so the feature
+   was reachable only by hand-editing JSON outside the application. WS-HMI-2 Task 13 added the
+   `set-component` edit, the property panel's component chooser, and the tag picker's bare-token insert.
+
+The form that reads a live value today is the **bare** `{component}` token: it substitutes to the
+instance's `tagPrefix` verbatim, and where that prefix is itself a full tag path (`telemetry/temperature`)
+the widget reads a real number. The **composed** `{component}/<leaf>` form — the one the design document's
+own example uses — resolves correctly and then reads nothing, because no `TagValueSource` in this tree
+answers a composed path. That is a missing **adapter**, not a missing wire, and both the tag picker and
+`docs/HMI_BUILDER_DESIGN_2026-08-29.md` §3.3 say so on their own surfaces.
+
+### 27.4 What WS-HMI-2 does NOT ship
+
+* **No generator.** Nothing produces a screen from a machine's component tree (WS-HMI-3). §5-bis's **S1**
+  — a customer who never opens the editor still has a working HMI — holds today only because the three
+  static screens are still there; when a generator replaces them, S1 has to be proven again by
+  measurement, not by citing this section.
+* **No ISA-101 linter** (WS-HMI-4). None of the rules in the design document's §6 is enforced, and
+  publishing is blocked by no score.
+* **No screen-pack import/export** (WS-HMI-5), and **no DELETE route** — the store only appends, so a
+  published `screenId` cannot be removed through the API.
+* **No title or theme editor.** A newly started screen takes its `screenId` as its `title` and
+  `blueprint` as its theme, and an engineer cannot change either from the editor.
+* **S-6 remains OPEN**, measured on 2026-09-05 rather than assumed. The editor SELECTS a `policyAction`;
+  nothing RESOLVES whether it is permitted. The engine's gate speaks `machine.setpoint.write` /
+  `machine.command.invoke` (`Policy/MachineWriteGate.cs:38,43`); the screen contract speaks
+  `machine.setpoint` / `machine.command`. The two sets are disjoint and there is no translation layer:
+  grepping the engine's vocabulary across `web/src/` returns five hits, **all of them doc comments, no
+  code**. No widget dispatches a write either. What IS closed is the fail-closed half: `policyGate` tests
+  MEMBERSHIP (not truthiness), an action outside the vocabulary is refused and NAMED at the kiosk and on
+  both authoring surfaces, and the panel says in its own chrome that it is not making a claim about
+  permission. **The first consumer to be built must REFUSE an unrecognised action — never fall through to
+  a default.**
+
+### 27.5 Where the proof lives
+
+| Claim | Instrument |
+|---|---|
+| An engineer builds a screen for a machine that never had one, without writing code, and the machine shows it with live data | `web/tests/43-editor-acceptance.spec.ts` — one pass, editor → publish → kiosk |
+| A machine with no published screen renders exactly its shipped document, and the kiosk provably asked the store | the same file's first test, over all three baseline machines |
+| The join's arithmetic — the derived id, the renderability guard, the first document | `web/runtime-tests/screenJoin.test.mjs` |
+| The editor's canvas IS the runtime renderer | `web/tests/37-editor-canvas.spec.ts`'s differential |
+| Publish appends, rollback appends, a refusal reaches the control the user is looking at | `web/tests/42-editor-publish.spec.ts` |

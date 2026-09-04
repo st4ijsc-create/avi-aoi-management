@@ -248,6 +248,45 @@ Thành phần editor: canvas (kéo/snap/căn/z-order/nhóm), property panel, **t
 
 **Indirect binding** — một faceplate phục vụ N instance. Faceplate `motor` khai tham số `{component}`; binding viết `{component}/speed` chứ không phải `SCRW-01/spindle/speed`. Đây là cơ chế khiến Ignition scale được và là điều kiện cần để "tùy vào linh kiện mà sinh màn hình" không biến thành copy-paste.
 
+> ### 🔴 ĐÍNH CHÍNH TẠI CHỖ — WS-HMI-2 Task 13, 05/09/2026. Đoạn ngay TRÊN giữ NGUYÊN VĂN.
+>
+> **Câu bị bác, trích nguyên văn:** *"**Indirect binding** — một faceplate phục vụ N instance. Faceplate
+> `motor` khai tham số `{component}`; binding viết `{component}/speed` chứ không phải
+> `SCRW-01/spindle/speed`. Đây là cơ chế khiến Ignition scale được và là điều kiện cần để "tùy vào linh
+> kiện mà sinh màn hình" không biến thành copy-paste."*
+>
+> Câu ấy đứng trong danh sách **những thứ WS-HMI-2 phải XÂY**. Đó là chỗ sai, và nó sai theo hai hướng
+> ngược nhau — một phần đã có sớm hơn kế hoạch tưởng, một phần đến nay vẫn CHƯA đọc được giá trị.
+>
+> **PHÉP ĐO 1 — cơ chế đã được xây từ WS-HMI-1, không phải việc của WS-HMI-2.**
+> `web/src/hmi-runtime/bindings.ts` (`resolveBinding` + `componentTagPrefixOf`) hiện thực đầy đủ token
+> `{component}` từ **WS-HMI-1 Task 3**, và `web/runtime-tests/bindings.test.mjs` THỰC THI nó (không phải
+> so chữ) từ cùng lúc ấy. Thứ còn thiếu chưa bao giờ là cơ chế: `routes/Hmi.tsx` mount
+> `<ScreenRenderer>` mà KHÔNG truyền prop `components`, nên `componentTagPrefixOf` luôn được gọi với
+> `undefined`, mọi binding `{component}` trả về nguyên si cả dấu ngoặc, và mọi widget rơi vào cùng một
+> chỗ giữ "không có dữ liệu". Đo tại `71e3af4c`, trước khi có bất kỳ dòng mã nào của Task 5 — xem
+> `task-5-report.md` §1 cho đầu ra nguyên văn. **MỘT DÒNG** đã đứng giữa một tính năng hoàn chỉnh và
+> sản phẩm, suốt một workstream, trong khi cả hai nửa đều xanh.
+>
+> **PHÉP ĐO 2 — `{component}/speed`, đúng dạng ví dụ trong câu trên, KHÔNG phân giải ra một số đọc
+> được.** `hmi-runtime/TagValueSource.ts`'s `readPath` là một `switch` ĐÓNG (`telemetry/*`, `cycles`,
+> `passRate`, `statusText`, `driftState`); không nguồn giá trị nào trong cây này trả lời một đường dẫn
+> GHÉP. `resolveBinding` thay token đúng, rồi widget đọc `undefined` và vẽ chỗ giữ có tên. Dạng **TRẦN**
+> `{component}` thì phân giải sống: nó được thay bằng đúng `tagPrefix` của instance, và khi `tagPrefix`
+> tự nó đã là một đường dẫn tag đầy đủ (`telemetry/temperature`) thì ô đọc được số thật — Task 5 đã
+> chứng minh trong sản phẩm với hai instance cho hai giá trị KHÁC nhau.
+>
+> **CÂU ĐÚNG, thay cho câu trên:** *Indirect binding đã được XÂY ở WS-HMI-1 Task 3 và chỉ thiếu DÂY NỐI;
+> WS-HMI-2 Task 5 nối nó vào `Hmi.tsx`, và WS-HMI-2 Task 13 bổ sung thứ cuối cùng còn thiếu — một CÁCH
+> SOẠN nó bằng chuột (`set-component` + bộ chọn component trong property panel + nút chèn token trần
+> trong tag picker). Trước Task 13 trường `component` KHÔNG có phép sửa nào trong toàn bộ trình soạn
+> thảo, và mục `{component}/…` của tag picker chỉ hiện cho widget ĐÃ khai `component` — nên §3.3 chỉ
+> soạn được bằng cách sửa tay JSON ở ngoài ứng dụng, tức là đúng thứ workstream này tồn tại để xoá bỏ.
+> Dạng dùng được hôm nay là token TRẦN; dạng ghép `{component}/<leaf>` cần một `TagValueSource` adapter
+> chưa ai viết — thiếu ADAPTER, không phải thiếu dây nối.*
+>
+> Bài đo nghiệm thu đi hết một lượt: `web/tests/43-editor-acceptance.spec.ts`.
+
 **Thư viện faceplate** (WS-HMI-3): 20–30 symbol SVG theo `ComponentType`, mỗi cái gồm *symbol* (nhỏ, đặt trên sơ đồ) + *detail popup* (đầy đủ readout/setpoint/alarm/trend của linh kiện đó).
 
 ### 3.4 Tầng ④ — HMI Runtime
@@ -257,6 +296,31 @@ Thành phần editor: canvas (kéo/snap/căn/z-order/nhóm), property panel, **t
 Đích: browser + Tauri kiosk (quyết định #3). Ràng buộc kế thừa từ `HMI_DESIGN_SPEC.md §1`: **offline-only, font bundled, không CDN**. WPF `DesktopShell` giữ nguyên, không đụng trong v1.
 
 **Nghiệm thu quyết định của tầng này:** viết lại **3 màn hard-code hiện tại thành JSON**, xoá bản React, **176 bài Playwright hiện có vẫn xanh** (gồm visual baseline). Nếu runtime không đủ mạnh làm việc này thì nó là đồ chơi, và ta biết điều đó ở tuần thứ 4 chứ không phải tháng thứ 6.
+
+#### 🔴 MỐI NỐI ⑤ ⟷ ③ — thêm mới WS-HMI-2 Task 13, 05/09/2026
+
+Tài liệu này mô tả tầng ③ (Builder) và tầng ④ (Runtime) như hai tầng chồng lên nhau và **không chỗ nào
+nói ai gọi ai**. Kết quả đo được, tại `20f78b8d`, sau MƯỜI HAI tác vụ của WS-HMI-2:
+
+* `/hmi/{code}` vẽ `SCREEN_DOCS[machine.class]` — **ba tài liệu TĨNH biên dịch thẳng vào bundle JS**
+  (`routes/Hmi.tsx`, `import` từ `web/screens/*-overview.json`);
+* ngoài `web/src/editor/` **không tệp nào** gọi `/v1/screens`.
+
+**Tức là trình soạn thảo ghi vào một kho mà màn hình vận hành không bao giờ đọc.** Cả hai nửa đều được
+ghim dày đặc — kho có version + rollback, cửa ghi có §5, canvas CHÍNH LÀ bộ vẽ runtime — và không gì nối
+chúng. Đây đúng bài học WS-HMI-0c: *"cả hai nửa đều đã ghim" không đồng nghĩa với "thứ đó chạy"*.
+
+**Quy tắc mối nối, chốt tại Task 13:**
+
+| Câu hỏi | Trả lời | Vì sao |
+|---|---|---|
+| Kiosk của máy `X` đọc màn hình nào? | `machine-` + `X` viết thường (`IOT-02` → `machine-iot-02`) | Tài liệu màn hình KHÔNG mang mã máy (hợp đồng đóng băng không có trường ấy, `additionalProperties: false`), nên kiosk phải SUY RA. Tiền tố `machine-` đặt riêng một vùng tên: một mã màn hình kỹ sư tự đặt (`component-demo`, `editor-*-probe`…) không bao giờ chiếm được panel của một máy. Viết thường vì `screenId` bị lược đồ ràng `^[a-z0-9-]+$`, còn MÃ MÁY thì không ràng hoa/thường và `MachineCodeIdentity` vốn gộp hoa/thường — nên đây là gộp ĐÚNG chỗ, và không bao giờ gộp một `screenId` |
+| Chưa xuất bản gì thì sao? | Vẫn vẽ đúng tài liệu đang ship của lớp máy ấy | §5-bis. `GET /v1/screens/{id}` trả 404 cho mã chưa ai khai (chủ ý — xem `HmiScreenEndpoints`), và 404 rơi thẳng về nhánh dự phòng. Ba màn baseline không đổi MỘT ĐIỂM ẢNH vì không chỗ nào trong kho này ghi `machine-scrw-01`/`machine-aoi-01`/`machine-iot-01` — đó là một phép `grep`, không phải một hy vọng |
+| Tài liệu xuất bản bị hỏng thì sao? | Kiosk quay về màn đang ship, kèm một dòng console nêu đích danh chỗ hỏng | `RollbackAsync` KHÔNG kiểm lại (chủ ý: "khôi phục không phải là soạn mới"), nên một dòng cũ theo hợp đồng lỏng hơn vẫn có thể được phục vụ. `renderableScreen` chỉ chặn ĐÚNG tập hình dạng làm bộ vẽ NÉM hoặc làm sập lưới; mọi thứ chỉ "lạ" (kind chưa biết, rect tràn, `{component}` không phân giải) vẫn đi đúng đường hạ cấp-tại-chỗ của bộ vẽ, từng widget một |
+| `/hmi/demo/{screenId}` thì sao? | KHÔNG đọc kho, không phát cả request | URL ấy GỌI TÊN một tài liệu; trả lời bằng một tài liệu khác chính là lỗi mà `35-hmi-indirect-binding.spec.ts` tồn tại để chặn |
+
+Bằng chứng: `web/tests/43-editor-acceptance.spec.ts` (một lượt liền: editor → publish → kiosk → dữ liệu
+sống) và `web/runtime-tests/screenJoin.test.mjs` (phần số học của mối nối).
 
 ### 3.5 Tầng ⑤ — Governance & Safety
 
