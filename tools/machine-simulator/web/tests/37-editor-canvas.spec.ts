@@ -102,17 +102,36 @@ import { vi as viDict } from "../src/i18n/vi"
  * asserts a real `200` for `GET /v1/screens/{screenId}`. A canvas fed from a static import would draw
  * the same widgets and fail exactly that assertion.
  *
- * ── ON `probe-kind`, WHICH IS DELIBERATELY SCHEMA-INVALID ─────────────────────────────────────────
- * `DOC_V2`'s `probe-kind` widget declares `kind: "no-such-widget-kind"`, which
- * `contracts/hmi-screen.schema.json` does NOT allow (`kind` is a closed 15-member enum). It is stored
- * anyway, and that is a measured property of the write door rather than an accident here:
- * `ContractInvariants.Validate(HmiScreenDocument)` — the gate `HmiScreenStore.PutAsync` calls first —
- * checks `Kind` only for null/whitespace and for the §5 writable-kind rule, never against the enum, so
- * `PUT /v1/screens/{id}` accepts it. That is precisely the situation `ScreenRenderer.tsx` already says
- * it is built for ("a JSON document is not guaranteed to match the `WidgetKind` TYPE at runtime —
- * schema validation happens at authoring/publish time, not here"), and assertion 3 above is what
- * proves the EDITOR inherits that degrade instead of re-deciding it. Named here so a reader does not
- * mistake a deliberate probe for a document nobody checked.
+ * ── 🔴 ON `probe-kind`: WHY THE UNKNOWN KIND NO LONGER COMES FROM THE STORE ───────────────────────
+ * CONTROLLER RULING, WS-HMI-2 Task 12 fix round 1. This paragraph used to read, verbatim: *"`DOC_V2`'s
+ * `probe-kind` widget declares `kind: "no-such-widget-kind"`, which `contracts/hmi-screen.schema.json`
+ * does NOT allow (`kind` is a closed 15-member enum). It is stored anyway, and that is a measured
+ * property of the write door rather than an accident here: `ContractInvariants.Validate(HmiScreenDocument)`
+ * … checks `Kind` only for null/whitespace and for the §5 writable-kind rule, never against the enum, so
+ * `PUT /v1/screens/{id}` accepts it."* True until `291fbd27`. **False from Task 12: that door now
+ * refuses an unknown `kind`, because it is the screen builder's PUBLISH door and a document the frozen
+ * schema rejects must not reach the store.**
+ *
+ * **The two properties were never in conflict — only the fixture TECHNIQUE was.** The publish door must
+ * refuse what the schema refuses. The renderer must degrade an unknown kind to a named placeholder
+ * rather than crash. Both stay true; what had to change is that the second one stopped using the first
+ * one's DEFECT as its data source. A safety test that depends on a defect stops working the day the
+ * defect is fixed — which is exactly what happened here, and is why this note is written at the spec
+ * rather than left to a diff.
+ *
+ * **The degrade is still load-bearing after the door closed, and the mechanism was verified rather than
+ * assumed.** `IHmiScreenStore.RollbackAsync` does NOT re-validate: it reads the document at the target
+ * version and appends it as a new version, under the deliberate ruling (WS-HMI-2 Task 2 fix round 2,
+ * HIGH-1) that a restore is not new authorship. **So a row written before the fix can still be restored
+ * and served to the renderer** — and that rollback path is precisely what assertion 3's placeholder is
+ * the safety net for. Weakening it because the front door now refuses new ones would be wrong.
+ *
+ * So `probe-kind` is STORED as `STORED_KIND` (schema-valid, `PUT` accepts it) and the response is
+ * degraded on the way out by `serveWithUnknownKind`, which performs the real request and rewrites one
+ * string. Assertion 3 is unchanged, and so is every other assertion in this file. What
+ * `ScreenRenderer.tsx` already says it is built for is unchanged too ("a JSON document is not guaranteed
+ * to match the `WidgetKind` TYPE at runtime — schema validation happens at authoring/publish time, not
+ * here"); the rollback path above is the live example of a document that reaches it that way.
  *
  * ── WHAT THIS FILE DOES NOT MEASURE ───────────────────────────────────────────────────────────────
  * Nothing about pixels: the editor route deliberately has no visual baseline (`00-visual-and-a11y`'s
@@ -141,6 +160,12 @@ const READOUT_LABEL_V1 = "ALPHA-READOUT-BEFORE-EDIT"
 const READOUT_LABEL_V2 = "BRAVO-READOUT-AFTER-EDIT"
 const READOUT_UNIT_V2 = "rpm"
 const UNKNOWN_KIND = "no-such-widget-kind"
+
+/** What `probe-kind` is STORED as. Schema-valid, so `PUT` accepts it — see `serveWithUnknownKind`
+ * below for how the degraded document reaches the renderer without the write door having to be
+ * broken for it. `sheet` because that is what `DOC_V1` already declares for this widget and its
+ * `props.title` is a `sheet` prop, so nothing else about the fixture shifts. */
+const STORED_KIND = "sheet"
 
 /**
  * What `probe-readout` must show, and why it is written out as a LITERAL here rather than imported
@@ -385,9 +410,10 @@ const DOC_V2: ProbeDocument = {
       bindings: { value: "telemetry/temperature" },
       props: { label: "Nhiet do", min: 0, max: 60 },
     },
-    // (4) a kind edit to something the registry does not know — see this file's header on why the
-    //     write door accepts it
-    { id: "probe-kind", kind: UNKNOWN_KIND, rect: { col: 6, row: 1, colSpan: 6, rowSpan: 1 }, props: { title: "Khung se doi kind" } },
+    // (4) the widget that reaches the renderer carrying a kind the registry does not know. STORED as
+    //     `STORED_KIND` and degraded on the way out by `serveWithUnknownKind` — see this file's header
+    //     for the controller ruling behind that, and why the write door is no longer the source.
+    { id: "probe-kind", kind: STORED_KIND, rect: { col: 6, row: 1, colSpan: 6, rowSpan: 1 }, props: { title: "Khung se doi kind" } },
     // (5) a widget added, whose real implementation throws — `widgets/label.tsx`'s permanent,
     //     narrowly-scoped `__testOnlyThrow` hook, the same one `34-hmi-widget-error-boundary.spec.ts`
     //     drives on the kiosk. Only a canvas that actually MOUNTS `LabelWidget` can crash here.
@@ -411,6 +437,43 @@ async function putScreen(request: APIRequestContext, doc: ProbeDocument): Promis
   if (!res.ok()) {
     throw new Error(`PUT /v1/screens/${doc.screenId} failed: ${res.status()} ${await res.text()}`)
   }
+}
+
+/**
+ * 🔴 Makes `GET /v1/screens/{screenId}` answer the document the store really holds, with `probe-kind`'s
+ * `kind` rewritten to one the registry does not know — the ONE fixture in this file the engine will not
+ * store for it, and the reason is a fix rather than a limitation. See this file's header.
+ *
+ * `route.fetch()` performs the REAL request: a real round trip to a real engine answering a real 200
+ * with the row it really has on disk. Exactly one string in the body is then rewritten. Nothing else is
+ * synthesised — not the status, not the other four widgets, not the document that was stored.
+ *
+ * Installed by the caller immediately before the load it applies to, never in a `beforeEach`, so the
+ * FIRST load in the same test (and the "the document comes over HTTP" test, which records real
+ * responses) sees an untouched engine.
+ */
+async function serveWithUnknownKind(page: Page): Promise<void> {
+  await page.route(`**/v1/screens/${SCREEN_ID}`, async (route) => {
+    if (route.request().method() !== "GET") return route.fallback()
+    const response = await route.fetch()
+    const doc = (await response.json()) as ProbeDocument
+    const widget = doc.widgets.find((w) => w.id === "probe-kind")
+    if (!widget) {
+      throw new Error(
+        `serveWithUnknownKind: the engine's own document carries no "probe-kind" widget, so the ` +
+          `degraded-kind assertion has nothing to degrade. Ids present: ${doc.widgets.map((w) => w.id).join(", ")}`
+      )
+    }
+    if (widget.kind !== STORED_KIND) {
+      throw new Error(
+        `serveWithUnknownKind: "probe-kind" is stored as "${widget.kind}", not "${STORED_KIND}" — the ` +
+          `fixture and this rewrite have drifted apart, so the assertion below would measure something ` +
+          `nobody chose.`
+      )
+    }
+    widget.kind = UNKNOWN_KIND
+    await route.fulfill({ status: response.status(), contentType: "application/json", body: JSON.stringify(doc) })
+  })
 }
 
 /** The widget ids the canvas actually placed, in DOM order — `data-hmi-widget` is `ScreenRenderer`'s
@@ -539,6 +602,7 @@ test.describe("HMI screen editor — the canvas is the runtime renderer, and the
 
     // ── THE EDIT ──────────────────────────────────────────────────────────────────────────────────
     await putScreen(request, DOC_V2)
+    await serveWithUnknownKind(page)
     await page.goto(ROUTE)
     await expect(page.locator(`[data-hmi-screen="${SCREEN_ID}"]`)).toBeVisible()
 
