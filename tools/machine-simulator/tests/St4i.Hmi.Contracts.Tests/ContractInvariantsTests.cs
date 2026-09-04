@@ -700,12 +700,27 @@ public class ContractInvariantsTests
 
     /// <summary>Control for the two new rules: EVERY member of the frozen enum, paired with a legal id, is
     /// accepted. A membership check that admitted only some of the fifteen would pass every refusal test
-    /// above and quietly brick thirteen widget kinds; nothing else here would notice.</summary>
+    /// above and quietly brick thirteen widget kinds; nothing else here would notice.
+    ///
+    /// <para>🔴 FIX ROUND 1, task-12-review.md LOW-6 — THE KINDS ARE READ FROM THE SCHEMA FILE, NOT FROM
+    /// <c>ContractInvariants.KnownWidgetKinds</c>. Round 0 iterated the guard's own set, which is
+    /// circular with respect to this test's own name and, worse, with respect to its purpose: the failure
+    /// mode it exists to catch is "the guard admits only SOME of the fifteen", and a loop over the guard's
+    /// set cannot see that by construction. Measured by the reviewer: removing <c>"gauge"</c> from
+    /// <c>KnownWidgetKinds</c> left this test GREEN. It reads
+    /// <c>contracts/hmi-screen.schema.json</c> off disk now — the same file, through the same
+    /// <c>SchemaPin.Load</c>, that <c>SchemaEnumGuardPinTests</c> uses.</para></summary>
     [Fact]
     public void Control_Every_kind_the_schema_declares_is_accepted_with_a_legal_id()
     {
-        Assert.NotEmpty(ContractInvariants.KnownWidgetKinds);
-        foreach (var kind in ContractInvariants.KnownWidgetKinds)
+        var kinds = SchemaPin.Load("hmi-screen.schema.json")["$defs"]!["widget"]!["properties"]!["kind"]!["enum"]!
+            .AsArray().Select(v => v!.GetValue<string>()).ToList();
+
+        // Floor: an empty list makes the loop below vacuous, which is the shape this repository keeps
+        // catching. Fifteen is not asserted — the schema is free to grow; emptiness is not.
+        Assert.NotEmpty(kinds);
+
+        foreach (var kind in kinds)
         {
             var gated = ContractInvariants.WritableWidgetKinds.Contains(kind) ? "machine.command" : null;
             var doc = Screen(new ScreenWidget("probe-a", kind, Rect(), PolicyAction: gated));

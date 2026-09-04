@@ -194,7 +194,10 @@ public sealed class ContractViolationException : Exception
 /// đúng ngày khuyết tật được sửa.
 ///
 /// <b>Và tính chất thứ hai VẪN CHỊU LỰC sau khi cửa đóng — cơ chế, không phải giả định:</b>
-/// <see cref="IHmiScreenStore.RollbackAsync"/> KHÔNG validate lại (một lần khôi phục không phải một
+/// (<c>IHmiScreenStore</c> ở dạng <c>&lt;c&gt;</c> chứ không phải <c>&lt;see cref&gt;</c>, như ba lần
+/// nhắc khác trong file này: nó sống ở <c>St4i.EngineApi</c>, một assembly mà <c>St4i.Hmi.Contracts</c>
+/// KHÔNG tham chiếu và không được phép tham chiếu — một <c>cref</c> ở đây là CS1574, đo được)
+/// <c>IHmiScreenStore.RollbackAsync</c> KHÔNG validate lại (một lần khôi phục không phải một
 /// lần sáng tác mới — WS-HMI-2 Task 2 fix round 2, HIGH-1), nên một hàng ghi TRƯỚC đợt sửa này vẫn
 /// khôi phục được và vẫn được phục vụ cho bộ vẽ. Placeholder hạ cấp là lưới an toàn cho đúng đường đó,
 /// và làm yếu nó đi chỉ vì cửa trước đã khoá là sai.</para>
