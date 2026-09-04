@@ -40,6 +40,15 @@ import componentDemo from "../../screens/demo/component-demo.json"
  * doc comment for why an IoT node and not the `SCRW-01` the brief's example used: `SCRW-01` is an
  * Automation machine and its `MachineDetail.telemetry` is empty, so no two component instances on it
  * can resolve to two distinct real readings today.
+ *
+ * 🔴 CONTROLLER RULING, WS-HMI-2 Task 5 fix round 1 (task-5-review.md LOW-4) — **this stays a
+ * hardcoded fleet code, deliberately unpinned. Do not re-open it.** The obvious "improvement" is a test
+ * asserting this code is present in `fleet.json`; that test would pin a FLEET ROSTER the owner is
+ * entitled to change, turning an ordinary roster edit into a red suite in a file about screens. The
+ * failure mode without it was measured and is loud, not silent: if this machine ever leaves the roster,
+ * `35-hmi-indirect-binding.spec.ts`'s own `expect.poll` on `GET /v1/machines/IOT-01` returns `"not-ok"`
+ * and times out with the message it wrote for itself, and the route renders the not-found kiosk. A loud
+ * failure with a written explanation is the whole benefit a pin would have bought.
  */
 export const DEMO_MACHINE_CODE = "IOT-01"
 

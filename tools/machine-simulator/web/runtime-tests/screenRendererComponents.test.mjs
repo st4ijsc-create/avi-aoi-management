@@ -29,7 +29,7 @@
 
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -40,8 +40,30 @@ import { validate } from "../contract-tests/validate.mjs"
 
 // web/runtime-tests → web
 const WEB = dirname(dirname(fileURLToPath(import.meta.url)))
-const DEMO_SCREEN_PATH = join(WEB, "screens", "demo", "component-demo.json")
+const DEMO_SCREENS_DIR = join(WEB, "screens", "demo")
+const DEMO_SCREEN_PATH = join(DEMO_SCREENS_DIR, "component-demo.json")
 const SCHEMA_PATH = join(WEB, "..", "contracts", "hmi-screen.schema.json")
+
+/**
+ * 🔴 task-5-review.md MEDIUM-2 — the census `screens/demo/` did not have.
+ *
+ * `screens.test.mjs:43`'s census (`readdirSync(SCREENS_DIR).filter(f => f.endsWith(".json"))`) is
+ * NON-RECURSIVE, so it cannot see this subdirectory at all — that is exactly why the demo document
+ * lives here (a top-level demo document would have forced three existing tests to be weakened, which
+ * the standing rule forbids). But the round-1 version of this file then validated the demo population
+ * by ONE HARDCODED FILENAME, which means WS-HMI-2 Task 6's next `screens/demo/*.json` would be
+ * validated by nothing while `npm run test:runtime` still exits 0.
+ *
+ * That is precisely the failure `web/package.json`'s `//test:runtime` and `//test:contracts` comments
+ * exist to block — "a glob matching zero files exits 0 with zero tests" — so this follows their
+ * precedent: enumerate the directory, and assert a FLOOR on what the enumeration found so an empty or
+ * broken enumeration cannot pass silently. Raise `DEMO_SCREENS_FLOOR` when a document is added; never
+ * lower it to make a run go green.
+ */
+const DEMO_SCREENS_FLOOR = 1
+const demoScreenFiles = readdirSync(DEMO_SCREENS_DIR)
+  .filter((f) => f.endsWith(".json"))
+  .sort()
 
 // 🔴 CRLF — same reason every source-text test in this tree states: `core.autocrlf=true`, a fresh
 // checkout has \r\n in the working tree, and the patterns below hard-code \n.
@@ -150,14 +172,28 @@ test("một component id lạ hạ cấp giống hệt components vắng mặt �
 // The demo document itself
 // ─────────────────────────────────────────────────────────────────────────
 
-test("screens/demo/component-demo.json: hợp lệ theo contracts/hmi-screen.schema.json", () => {
-  // `screens.test.mjs`'s census covers the three top-level `*-overview.json` documents and deliberately
-  // does not see this one (it lives in `screens/demo/`, a subdirectory, precisely so that census stays
-  // exactly as sharp as it was). Its schema validation therefore has to happen here instead — a
-  // document nothing validates is a document that can drift out of the contract silently.
+test("MỌI tài liệu trong screens/demo/ hợp lệ theo contracts/hmi-screen.schema.json — đếm theo THƯ MỤC, không theo một tên file", () => {
+  // A document nothing validates is a document that can drift out of the contract silently. See
+  // `DEMO_SCREENS_FLOOR`'s comment above for why this enumerates rather than naming one file, and why
+  // the floor is here at all: an enumeration that finds nothing must be LOUD, not green.
+  assert.ok(
+    demoScreenFiles.length >= DEMO_SCREENS_FLOOR,
+    `screens/demo/ chỉ có ${demoScreenFiles.length} tài liệu .json, kỳ vọng tối thiểu ${DEMO_SCREENS_FLOOR} — ` +
+      `hoặc thư mục đã bị xoá/đổi tên (bài này khi ấy đang đo một tập RỖNG), hoặc một tài liệu đã biến mất`
+  )
+  // Named explicitly as well as counted: the floor alone would still pass if `component-demo.json` were
+  // replaced by an unrelated document, and every other test in this file reads THAT document by name.
+  assert.ok(
+    demoScreenFiles.includes("component-demo.json"),
+    `screens/demo/ không còn component-demo.json — có: ${demoScreenFiles.join(", ") || "(rỗng)"}`
+  )
+
   const schema = JSON.parse(readFileSync(SCHEMA_PATH, "utf8"))
-  const errs = validate(schema, schema, demoScreen)
-  assert.deepEqual(errs, [], `đáng lẽ hợp lệ nhưng validate.mjs báo lỗi:\n${errs.join("\n")}`)
+  for (const file of demoScreenFiles) {
+    const doc = JSON.parse(readFileSync(join(DEMO_SCREENS_DIR, file), "utf8"))
+    const errs = validate(schema, schema, doc)
+    assert.deepEqual(errs, [], `screens/demo/${file} đáng lẽ hợp lệ nhưng validate.mjs báo lỗi:\n${errs.join("\n")}`)
+  }
 })
 
 test("hai widget {component} được soạn MỘT LẦN — chỉ khác id/rect/component, không khác gì nữa", () => {
@@ -204,11 +240,31 @@ test("widget CHỈ nhận resolve — không nhận cả mô hình linh kiện (
     .filter((el) => el.includes("widget={widget}"))
   assert.equal(widgetElements.length, 1, "kỳ vọng đúng MỘT phần tử <Widget widget={widget} …/> trong ScreenRenderer.tsx")
   const widgetElement = widgetElements[0]
-  assert.match(widgetElement, /\bresolve=\{resolve\}/, "widget phải nhận resolve — đó là seam duy nhất")
+
+  // 🔴 task-5-review.md LOW-2 — TIGHTENED from "does not contain `components=`" to an EXACT attribute
+  // set. The name-only form caught re-adding the prop under its own name (measured: it did) but not
+  // the same model handed over under another name, e.g. `model={components}`. `tsc` closes most of
+  // that on its own — `WidgetProps` is a closed object type and JSX excess-property checking rejects
+  // an attribute it does not declare — so the only silent bypass was a RENAME on both sides at once,
+  // which the absence pin below (keyed on the name `components`) would also miss.
+  //
+  // Why this form is not the brittle one it looks like: it compares the set of attribute NAMES, so it
+  // is indifferent to formatting, attribute order, and multi-line JSX (`[^>]` matches newlines). The
+  // one thing that does break it is someone putting a `>` inside an attribute value — and that fails
+  // LOUDLY on the `length === 1` assertion above with a message saying so, never silently green.
+  const attributeNames = [...widgetElement.matchAll(/(\w+)=\{/g)].map((m) => m[1]).sort()
+  assert.deepEqual(
+    attributeNames,
+    ["resolve", "source", "widget"],
+    "tập prop của <Widget …/> đã đổi. `resolve` là seam DUY NHẤT một widget có với mô hình linh kiện — " +
+      "thêm bất kỳ prop nào (dưới BẤT KỲ tên nào, kể cả một tên khác cho cùng mô hình ấy) chỉ hợp lệ khi " +
+      "có widget thực sự ĐỌC nó, và khi ấy bài này phải được sửa cùng commit với người đọc đó. " +
+      "Xem doc-comment của `resolve` trong widgetRegistry.ts"
+  )
   assert.doesNotMatch(
     widgetElement,
-    /\bcomponents=/,
-    "ScreenRenderer đang truyền components xuống widget — xem widgetRegistry.ts's resolve doc comment: nếu có widget thật sự cần, prop phải về CÙNG người đọc nó"
+    /\{\s*\.\.\./,
+    "<Widget …/> đang nhận một spread — tập prop ở trên không còn đọc được từ nguồn, và bài này thôi đo cái nó nói là đang đo"
   )
 })
 
@@ -218,6 +274,17 @@ test("WidgetProps KHÔNG khai components chừng nào chưa widget nào đọc n
   // và một bài gộp chỉ báo được cái hỏng ĐẦU TIÊN. Cả hai đều được kiểm chứng bằng cách phá thật: thêm
   // lại prop làm ĐÚNG bài tương ứng đỏ, không bài nào khác.
   const registry = readSource("src", "hmi-runtime", "widgetRegistry.ts")
+  // 🔴 task-5-review.md LOW-1 — ANCHOR FIRST. Without this line the assertion below is an absence
+  // measured over a file that may no longer contain the thing it names: extract `WidgetProps` to
+  // `widgetProps.ts` and re-export it (`tsc` accepts that), re-add the prop THERE, and a bare
+  // `doesNotMatch` over `widgetRegistry.ts` stays green while measuring nothing at all — a source-text
+  // pin that exits 0 without reading its own subject. The sibling shape pin below already anchors
+  // (`declarations.length >= 1`); this is the same anchor for the absence direction.
+  assert.match(
+    registry,
+    /^export type WidgetProps = \{/m,
+    "WidgetProps không còn được khai trong widgetRegistry.ts — bài dưới sẽ đo một sự VẮNG MẶT trên một file không còn chứa chủ thể của nó; đi theo kiểu ấy tới nơi nó chuyển đến và sửa cả hai bài"
+  )
   assert.doesNotMatch(
     registry,
     /^\s*components\??:/m,

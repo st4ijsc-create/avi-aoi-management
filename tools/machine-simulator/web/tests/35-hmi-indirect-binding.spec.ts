@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 
 import { LIVE_CYCLES_MS } from "./support/deadlines"
 import { ENGINE_URL, setFleetRunning } from "./support/engine"
+import { vi as viDict } from "../src/i18n/vi"
 
 /**
  * WS-HMI-2 Task 5 — `{component}` indirect binding, observed in the PRODUCT.
@@ -35,8 +36,40 @@ import { ENGINE_URL, setFleetRunning } from "./support/engine"
  * -- Why the two widgets differ only in `component` ------------------------------------------------
  * `probe-a` and `probe-b` in that document are byte-identical apart from `id`, `rect` and `component`:
  * no `props`, the same `bindings.value` of `"{component}"`. Every visible difference between the two
- * tiles below therefore comes from the component model alone — that IS "one faceplate authored once,
- * serving N instances", stated as a property of the document rather than as a claim in a comment.
+ * tiles below therefore comes from the component model alone, and nothing else on the document can
+ * account for it. (`readout` widgets, not `faceplate` — `faceplate` is a different, real entry in
+ * `widgetRegistry` with its own semantics, and the brief's prose used the word loosely.)
+ *
+ * -- 🔴 EXACTLY WHAT THIS FILE PINS, AND WHAT IT DOES NOT (task-5-review.md MEDIUM-1) --------------
+ * An earlier version of this header claimed the two tests below are "'one faceplate authored once,
+ * serving N instances', stated as a property of the document rather than as a claim in a comment".
+ * That claimed MORE than the assertions deliver, and overstating a test in its own header is this
+ * project's signature defect — corrected in place rather than deleted.
+ *
+ * PINNED HERE, in a real browser, and genuinely unpinned anywhere before this task:
+ *   1. DELIVERY — the component model actually travels the wire into the resolver.
+ *      `GET /v1/components/{code}` → `Hmi.tsx` → `ScreenRendererProps.components` → the `resolve`
+ *      `RenderedWidget` builds. Break any link and both tiles read `"—"`.
+ *   2. PER-WIDGET SELECTION — `widget.component` picks a DIFFERENT prefix for each widget on one
+ *      screen. This is what `expect(aText).not.toBe(bText)` below is for, and it is load-bearing:
+ *      the review reproduced it by making `ScreenRenderer` resolve every widget through
+ *      `components?.[0]?.id`, which leaves both tiles showing a real (identical) value — so the
+ *      `not.toHaveText("—")` assertions still pass and only the inequality catches it.
+ *
+ * NOT PINNED HERE — token SUBSTITUTION into a composed path. The demo binds the BARE token
+ * `"{component}"`, so the resolved path is byte-identical to the tagPrefix, and a `resolveBinding`
+ * rewritten to `() => tagPrefix` would pass every assertion in this file. Substitution IS executed at
+ * `runtime-tests/bindings.test.mjs:105` — the line inside the test named `resolveBinding:
+ * "{component}/torque" với prefix "SCRW-01/spindle" → "SCRW-01/spindle/torque"` (named as well as
+ * numbered, so the reference survives the line moving), with the full `componentTagPrefixOf` +
+ * `resolveBinding` pipeline over a real `ComponentNode` at `:115`. It stays a unit-level pin for a
+ * reason no test in this file can route around:
+ * `TagValueSource.ts`'s `readPath` is a closed switch whose only multi-member family is
+ * `telemetry/{metric}` — the LEAF varies, the PREFIX is constant, the inverse of indirect binding's
+ * shape. A prefix+leaf demo would resolve correctly and then read `undefined`, so the product cannot
+ * yet DISPLAY a composed path at all. Closing that is a missing `TagValueSource` adapter (WS-HMI-0c's
+ * tag namespace has the data; nothing reads it into this seam yet), not a missing wire — the wiring
+ * this task added is shape-agnostic and needs no second job for the prefix+leaf case.
  */
 
 const DEMO_MACHINE = "IOT-01"
@@ -46,10 +79,19 @@ const DEMO_ROUTE = "/hmi/demo/component-demo"
  * path with a leaf still to come) because `MachineDetailTagValueSource`'s only multi-member path family
  * is `telemetry/{metric}`, where the VARYING part is the leaf and the constant part is the prefix —
  * exactly backwards from the `"{component}/torque"` shape the contract's own worked example uses.
- * `ModelIntegrity.IsPathPrefix` treats an exact match as a valid prefix on purpose ("either an exact
- * match, or `path` continues with a '/'"), so this is a legal component tree, not a workaround. See
- * `task-5-report.md` for the limit of the one live-value adapter that exists today, named rather than
- * papered over. */
+ * 🔴 RETRACTED IN PART, fix round 1 (task-5-review.md LOW-3), kept verbatim above this line: the round-1
+ * text went on to say "`ModelIntegrity.IsPathPrefix` treats an exact match as a valid prefix on purpose
+ * ('either an exact match, or `path` continues with a /'), so this is a legal component tree, not a
+ * workaround." The statement about `IsPathPrefix` is TRUE (`ModelIntegrity.cs:154-159`), but it is NOT
+ * the reason the PUT below succeeds, and citing it as if it were implies a check that never ran. Two
+ * measured facts: that rule is inside `if (ns is not null)` (`ModelIntegrity.cs:134`) and NO tag
+ * namespace is ever declared for this machine by this suite, so it does not execute at all; and even
+ * when it does, `ModelIntegrity.Check`'s output is a WARNING carried in `PutModelResultDto`, never a
+ * rejection (`HmiModelEndpoints.cs:207-216`). The tree IS legal on both counts — it would also pass the
+ * rule against a namespace containing `telemetry/temperature` — but the honest reason the PUT is
+ * accepted is that nothing rejects a tagPrefix here, not that this one satisfies a check. See
+ * `task-5-report.md` §5.6 for the limit of the one live-value adapter that exists today, named rather
+ * than papered over. */
 const TWO_INSTANCE_MODEL = {
   schemaVersion: 1,
   machineCode: DEMO_MACHINE,
@@ -184,5 +226,34 @@ test.describe("HMI indirect binding — one screen authored once, serving two co
     // unresolved-binding tooltip on either cell.
     await expect(cellOf(page, "probe-a")).not.toHaveAttribute("title", /\{component\}/)
     await expect(cellOf(page, "probe-b")).not.toHaveAttribute("title", /\{component\}/)
+  })
+
+  test("/hmi/demo/<unknown> is a named not-found, NOT a silent fall-through to the machine's own class screen", async ({ page }) => {
+    // 🔴 task-5-review.md MEDIUM-3 — this branch (`Hmi.tsx`'s `screenId !== undefined && !demoScreen`
+    // guard) shipped with a comment asserting its behaviour and no test of any kind. The scenario it
+    // exists to prevent is specific and silent: move that guard below `if (!machine) return
+    // <LoadingKiosk/>`, or drop it while refactoring the two-route split, and `/hmi/demo/anything`
+    // renders `SCREEN_DOCS[machine.class]` instead — a URL naming one document answered with a
+    // different one, with every other test in the suite still green.
+    //
+    // It is a Playwright case rather than a `node --test` one because `resolveDemoScreen` cannot be
+    // unit-tested as written — measured by the review: `import("./src/lib/hmiScreens.ts")` under Node
+    // fails with `TypeError: Module ".../component-demo.json" needs an import attribute of
+    // "type: json"`. A browser running the real bundler is the only place this branch is reachable.
+
+    // CONTROL FIRST — the known id really does render. Without this, a demo route broken outright
+    // (every id 404s) would satisfy the not-found half below and the test would prove nothing.
+    await page.goto(DEMO_ROUTE)
+    await expect(page.locator('[data-hmi-screen="component-demo"]')).toBeVisible()
+
+    await page.goto("/hmi/demo/no-such-screen")
+
+    // Named, not blank: the kiosk states what happened and echoes the id that was asked for.
+    await expect(page.getByRole("heading", { name: viDict.machineDetail.notFoundState.title, level: 1 })).toBeVisible()
+    await expect(page.getByText("no-such-screen")).toBeVisible()
+
+    // …and NOTHING was rendered in its place. Not the demo screen, and — the half that actually
+    // catches the regression — not `IOT-01`'s own `DeviceClass` screen either.
+    await expect(page.locator("[data-hmi-screen]")).toHaveCount(0)
   })
 })
