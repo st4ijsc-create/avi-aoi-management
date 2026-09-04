@@ -121,7 +121,11 @@ function RenderedWidget({
   }
   const tagPrefix = componentTagPrefixOf(components, widget.component)
   const resolve = (binding: string) => resolveBinding(binding, tagPrefix)
-  return <Widget widget={widget} source={source} resolve={resolve} />
+  // WS-HMI-2 Task 5 — `components` is forwarded to the widget as well as consumed here. `resolve`
+  // stays the ONE way a widget turns its own bindings into tag paths (nothing under `./widgets/*`
+  // re-derives a prefix from the model itself); this is for the widget that needs the model as DATA,
+  // and it is passed UNCHANGED — same array, same optionality — so there is no second shape of it.
+  return <Widget widget={widget} source={source} resolve={resolve} components={components} />
 }
 
 /**

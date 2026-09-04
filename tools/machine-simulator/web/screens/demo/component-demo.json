@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "screenId": "component-demo",
+  "title": "Demo kỹ thuật — liên kết gián tiếp {component}",
+  "titleEn": "ENGINEERING DEMO — {component} INDIRECT BINDING",
+  "theme": "blueprint",
+  "layout": { "cols": 12, "rows": 4, "breakpoint": "panel" },
+  "widgets": [
+    {
+      "id": "probe-a",
+      "kind": "readout",
+      "component": "probe-temp",
+      "rect": { "col": 0, "row": 0, "colSpan": 4, "rowSpan": 1 },
+      "bindings": { "value": "{component}" }
+    },
+    {
+      "id": "probe-b",
+      "kind": "readout",
+      "component": "probe-hum",
+      "rect": { "col": 4, "row": 0, "colSpan": 4, "rowSpan": 1 },
+      "bindings": { "value": "{component}" }
+    },
+    {
+      "id": "direct-cycles",
+      "kind": "readout",
+      "rect": { "col": 8, "row": 0, "colSpan": 4, "rowSpan": 1 },
+      "bindings": { "value": "cycles" }
+    }
+  ]
+}

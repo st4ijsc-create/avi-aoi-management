@@ -15,12 +15,14 @@ import {
   useFleetEstopEngaged,
   useFleetIsRunning,
   useMachine,
+  useMachineComponents,
   useResetEstop,
   useStartFleet,
   useStopFleet,
   type DeviceClass,
 } from "@/lib/api"
 import { useInspectorStream } from "@/lib/inspector"
+import { DEMO_MACHINE_CODE, resolveDemoScreen } from "@/lib/hmiScreens"
 import { ScreenRenderer } from "@/hmi-runtime/ScreenRenderer"
 import { createMachineDetailSource } from "@/hmi-runtime/TagValueSource"
 import type { HmiScreenDocument } from "@/contracts/hmiScreen"
@@ -90,10 +92,26 @@ function ErrorKiosk({ title, description }: { title: string; description: string
  * overflow-hidden`); the schematic/readout column and the system log each scroll internally.
  */
 export default function Hmi() {
-  const { code } = useParams<{ code: string }>()
+  // WS-HMI-2 Task 5 — this component serves TWO routes (`App.tsx`): the operator panel `/hmi/:code`,
+  // and the engineering demo `/hmi/demo/:screenId`. The demo route carries no `:code` at all, so the
+  // machine whose LIVE DATA its screen renders against is named by `lib/hmiScreens.ts` instead of by
+  // the URL. Everything below this pair of lines is identical on both routes — same kiosk chrome, same
+  // machine poll, same control rail; only WHICH document reaches `<ScreenRenderer>` differs.
+  const { code: routeCode, screenId } = useParams<{ code?: string; screenId?: string }>()
+  const code = screenId === undefined ? routeCode : DEMO_MACHINE_CODE
+  const demoScreen = resolveDemoScreen(screenId)
   const t = useT()
 
   const { data: machine, isPending, isError, error } = useMachine(code)
+  // WS-HMI-2 Task 5 — the component tree this machine's screen resolves its `{component}` bindings
+  // through. DELIBERATELY not destructured into an `isPending`/`isError` pair the way `useMachine` is
+  // above, and deliberately NOT gating anything below: plan §5-bis makes "this machine has declared no
+  // components" a valid product state, and the in-flight first fetch is indistinguishable from it as
+  // far as the renderer is concerned. Both arrive at `<ScreenRenderer>` as `undefined`, which is what
+  // `ScreenRendererProps.components` documents as valid, so the screen renders either way — direct
+  // bindings live, `{component}` bindings showing a named placeholder until (or unless) a model exists.
+  // A spinner or an error kiosk here would turn a valid state into a blocked page.
+  const componentModel = useMachineComponents(code)
   const fleetIsRunning = useFleetIsRunning()
   // C-2: server-owned, shared across every panel/tab — no longer this component instance's own React
   // state, so navigating to another machine's panel (or an F5) can no longer silently drop an active
@@ -174,6 +192,12 @@ export default function Hmi() {
   }
 
   if (!code) return <ErrorKiosk title={t("common.connectivityError")} description="" />
+  // WS-HMI-2 Task 5 — `/hmi/demo/<something nobody authored>`. A mistyped screen id is a not-found
+  // state, not a crash and not a silent fall-through to the machine's own class screen: rendering
+  // `SCREEN_DOCS[machine.class]` here would answer a URL that named one document with a different one.
+  if (screenId !== undefined && !demoScreen) {
+    return <ErrorKiosk title={t("machineDetail.notFoundState.title")} description={screenId} />
+  }
   if (isPending) return <LoadingKiosk />
   if (isError) {
     const notFound = error instanceof EngineApiError && error.status === 404
@@ -274,7 +298,20 @@ export default function Hmi() {
                 this file now only picks WHICH of the three static `HmiScreenDocument`s (`SCREEN_DOCS`)
                 describes `machine.class`'s screen and hands it to the generic renderer. No layout
                 decision keyed on `DeviceClass` is made in THIS file anymore. */}
-            <ScreenRenderer doc={SCREEN_DOCS[machine.class]} source={source} />
+            {/* WS-HMI-2 Task 5 — `components` is the prop that was left empty here from the day
+                `<ScreenRenderer>` grew it. `bindings.ts` (`resolveBinding`/`componentTagPrefixOf`,
+                WS-HMI-1 Task 3) implemented `{component}` in full and was fully unit-tested, and this
+                was the ONE line standing between that and the product: with nothing passed, every
+                `{component}` binding in every document resolved to itself, braces and all, and every
+                widget bound through one showed the same "no data" placeholder. Measured before the fix
+                — see `35-hmi-indirect-binding.spec.ts` for the observed-in-a-browser version.
+                `?.components` (not a `??  []`) keeps "no declared model" as `undefined` all the way
+                down, which is the exact state §5-bis says must stay valid. */}
+            <ScreenRenderer
+              doc={demoScreen ?? SCREEN_DOCS[machine.class]}
+              source={source}
+              components={componentModel.data?.components}
+            />
           </div>
         ) : (
           <SettingsTab

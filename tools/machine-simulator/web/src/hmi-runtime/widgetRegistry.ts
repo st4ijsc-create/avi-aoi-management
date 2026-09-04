@@ -22,6 +22,7 @@
  * FIFTEEN keys quoted, always — not because the strings need it, but because the pin does.
  */
 import type { ReactElement } from "react"
+import type { ComponentNode } from "../contracts/componentModel.ts"
 import type { ScreenWidget, WidgetKind } from "../contracts/hmiScreen.ts"
 import type { TagValueSource } from "./TagValueSource.ts"
 
@@ -48,6 +49,22 @@ export type WidgetProps = {
    * the real implementation; nothing in this file or `./widgets/*` depends on how it works, only on
    * this signature. */
   resolve: (binding: string) => string
+  /**
+   * WS-HMI-2 Task 5 — the component model this screen's widgets bind against, forwarded UNCHANGED from
+   * `ScreenRendererProps.components` (read that field's own doc comment in `ScreenRenderer.tsx`: it is
+   * the authority on the shape, and on why `ComponentNode[]` rather than the full
+   * `ComponentModelDocument` — a second declaration of the same thing under a different type would be a
+   * second source of truth, not a preference).
+   *
+   * `resolve` above already carries everything a widget needs to turn ITS OWN `{component}` bindings
+   * into tag paths, so nothing under `./widgets/*` reads this today, and a widget that only reads
+   * values must keep using `resolve` rather than re-deriving a prefix from here — there would then be
+   * two implementations of one rule. What this exists for is the widget that needs the model as DATA
+   * rather than as a lookup: a `faceplate` drawing a component's own children, a future editor palette
+   * listing what a machine declares. `undefined`/omitted is a valid state at every level of this chain
+   * (plan §5-bis), so a reader must handle it rather than assume a screen always has one.
+   */
+  components?: readonly ComponentNode[]
 }
 
 export type WidgetComponent = (props: WidgetProps) => ReactElement

@@ -79,6 +79,18 @@ function App() {
                   {/* H2 — the HMI operator panel renders as a genuine full-screen kiosk, OUTSIDE
                       <Shell>'s sidebar/topbar chrome (docs/HMI_DESIGN_SPEC.md §8), same reasoning as
                       /tokens above. */}
+                  {/* WS-HMI-2 Task 5 — the ENGINEERING demo route, ahead of `/hmi/:code` because it is
+                      the more specific pattern (three segments, a literal middle one). It renders a
+                      named screen DOCUMENT (`lib/hmiScreens.ts`) instead of the document a machine's
+                      own `DeviceClass` selects, against `DEMO_MACHINE_CODE`'s live data. It is NOT part
+                      of any machine's operator panel and nothing links to it — plan §5-bis: the default
+                      fleet's panels stay exactly as they were. It exists because `{component}` indirect
+                      binding and (WS-HMI-2 Task 6) twelve widget kinds have no shipped screen that uses
+                      them, and adding them to one of the three that ARE shipped would move a pinned
+                      visual baseline. Same `Hmi` component either way — the kiosk chrome, the machine
+                      poll and the control rail are identical; only which document the renderer is
+                      handed differs. */}
+                  <Route path="/hmi/demo/:screenId" component={Hmi} />
                   <Route path="/hmi/:code" component={Hmi} />
                   <Route>
                     <Shell />

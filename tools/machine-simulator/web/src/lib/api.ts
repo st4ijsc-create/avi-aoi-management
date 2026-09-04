@@ -32,6 +32,12 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query"
 
+// WS-HMI-2 Task 5 — the ONE Milestone-0 contract type this client reads off the wire (see
+// `endpoints.componentModel` below). Imported, never re-declared: `contracts/componentModel.ts` is
+// pinned both ways against `contracts/component-model.schema.json`, and a second local copy of the
+// shape here would be a second source of truth that nothing keeps in step.
+import type { ComponentModelDocument } from "../contracts/componentModel.ts"
+
 /**
  * WS-D-D6 — dev no longer hardcodes `http://localhost:5199`: `vite.config.ts`'s own dev-server
  * `server.proxy` now forwards `/v1/*` (and its WS upgrades) to that same fixed port, so a relative
@@ -614,6 +620,18 @@ const endpoints = {
     request<HistorianResultsPageDto>(`/v1/historian/results?${buildHistorianQueryString(filter)}`),
   historianBySerial: (serial: string) =>
     request<HistorianResultDto[]>(`/v1/historian/serial/${encodeURIComponent(serial)}`),
+
+  // WS-HMI-2 Task 5 — the component tree a machine's `{component}` screen bindings resolve through
+  // (`hmi-runtime/bindings.ts`). `ComponentModelDocument` is the FROZEN contract type
+  // (`src/contracts/componentModel.ts`, pinned both ways against `contracts/component-model.schema.json`)
+  // — this is the one place in the web client that reads it off the wire, so no second shape is declared
+  // for it here the way the `Fleet/Dtos.cs` mirrors above have to be.
+  //
+  // 🔴 §5-bis: an undeclared machine answers **200 with an empty document, never 404**
+  // (`HmiModelEndpoints.GetAsync` says so in those words), so this fetcher has no not-found path to
+  // handle and `useMachineComponents` below has no 404 special-case the way `useMachine` does.
+  componentModel: (code: string) =>
+    request<ComponentModelDocument>(`/v1/components/${encodeURIComponent(code)}`),
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -716,6 +734,10 @@ const QUERY_KEYS = {
   machine: (code: string) => ["machine", code] as const,
   settings: ["settings"] as const,
   scenario: ["scenario"] as const,
+  // WS-HMI-2 Task 5 — a machine's declared component tree. Keyed separately from `machine(code)`
+  // because it changes on a human's `PUT /v1/components/{code}`, not on the ~1s live poll: sharing the
+  // machine key would drag a rarely-changing declaration document through a per-second refetch.
+  components: (code: string) => ["hmi-components", code] as const,
 }
 
 /**
@@ -872,6 +894,31 @@ export function useMachine(code: string | undefined): UseQueryResult<MachineDeta
       query.state.error instanceof EngineApiError && query.state.error.status === 404 ? false : 1000,
     retry: (failureCount, error) =>
       error instanceof EngineApiError && error.status === 404 ? false : failureCount < 2,
+  })
+}
+
+/**
+ * WS-HMI-2 Task 5 — `GET /v1/components/{machineCode}`, the component tree an HMI screen's
+ * `{component}` bindings resolve through (`hmi-runtime/bindings.ts`'s `componentTagPrefixOf`).
+ *
+ * NOT polled. Every other live query in this file carries a `refetchInterval` because it reads a
+ * changing MEASUREMENT; this reads a DECLARATION — it changes when an engineer PUTs a new component
+ * tree, which is a human action minutes or months apart, not a machine cycle. TanStack Query's default
+ * refetch-on-mount/on-reconnect behaviour is what picks a new declaration up; a 1s poll here would be
+ * ~86 000 requests a day for a document that changed twice.
+ *
+ * 🔴 §5-bis — a machine that has declared nothing is a VALID product state, so this hook has no error
+ * state to render either: the endpoint answers `200` with an empty document (never `404`), and while
+ * the very first fetch is still in flight `data` is `undefined`. BOTH of those reach `ScreenRenderer`
+ * as "no component model" and are handled identically there and in `bindings.ts` — the screen renders,
+ * direct bindings work, only `{component}` bindings degrade to a named placeholder. Nothing here may
+ * turn either state into a blocking spinner or an error page.
+ */
+export function useMachineComponents(code: string | undefined): UseQueryResult<ComponentModelDocument> {
+  return useQuery({
+    queryKey: QUERY_KEYS.components(code ?? ""),
+    queryFn: () => endpoints.componentModel(code as string),
+    enabled: code !== undefined && code.length > 0,
   })
 }
 
