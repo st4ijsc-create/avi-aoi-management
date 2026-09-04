@@ -356,6 +356,11 @@ export const vi = {
     designMode:
       "Chế độ thiết kế — canvas dùng đúng bộ vẽ của runtime, với giá trị mẫu cố định, KHÔNG phải dữ liệu của máy đang chạy.",
     widgetCount: (vars: Vars) => `${vars.count} widget`,
+    // WS-HMI-2 Task 12 — phiên bản HIỆN HÀNH trên máy chủ, đọc từ `GET .../versions`. Ở header của
+    // route chứ không trong panel xuất bản, vì số phiên bản là một phần ĐỊNH DANH của thứ đang mở, và
+    // vì nó là một nhân chứng THỨ HAI, độc lập với kết quả trả về của chính lượt PUT.
+    currentVersion: (vars: Vars) => `phiên bản hiện hành ${vars.version}`,
+    notPublished: "chưa xuất bản lần nào",
     // WS-HMI-2 Task 9 — nhãn cho hai điều khiển của lớp phủ chỉnh sửa (`EditorCanvas.tsx`). Cả hai
     // đều là `<button>` TRONG SUỐT nằm đè lên ô widget: không có chữ nào bên trong, nên nếu thiếu
     // `aria-label` thì với trình đọc màn hình chúng là hai nút không tên.
@@ -443,6 +448,64 @@ export const vi = {
       // mà thiếu gate, nên nút Thêm bị khoá cho tới khi có hành động.
       addPolicyRequired: (vars: Vars) =>
         `Một "${vars.kind}" là đường GHI, nên lược đồ đóng băng bắt buộc phải có policyAction (bất biến §5: không có đường ghi nào thiếu gate). Chọn một hành động thì mới thêm được.`,
+    },
+    // WS-HMI-2 Task 12 — chọn breakpoint và xuất bản.
+    //
+    // 🔴 KHÔNG khoá nào ở đây viết ra TÊN của ba breakpoint, và không khoá nào viết ra bề rộng bằng
+    // số. Tên đến từ `SCREEN_BREAKPOINT_VALUES` (`editorState.ts`), bề rộng đến từ
+    // `SCREEN_BREAKPOINT_WIDTHS` (`lib/hmiScreens.ts`), cả hai được NỘI SUY vào câu — đúng cách
+    // `layers.renameHint` nội suy mẫu id sau vòng sửa 1 của Task 11 (LOW-4). Một danh sách tên hay
+    // một con số viết tay trong từ điển là hai bản sao (vi + en) mà không phép ghim nào với tới.
+    breakpoint: {
+      label: "Xem theo khổ màn hình",
+      choice: (vars: Vars) => `Xem ở khổ ${vars.breakpoint}, rộng ${vars.width} pixel`,
+      width: (vars: Vars) => `khung xem: ${vars.width}px`,
+    },
+    publish: {
+      title: "Xuất bản",
+      // Hai câu, hai trạng thái — không phải một câu có/không có hậu tố. Người đọc phải thấy trạng
+      // thái AN TOÀN cũng rõ như trạng thái nguy hiểm, nếu không "không thấy cảnh báo" và "chưa kịp
+      // vẽ" trông giống hệt nhau.
+      unsaved: "Có sửa CHƯA xuất bản. Rời trang bây giờ sẽ mất phần chưa xuất bản.",
+      saved: "Không có sửa nào chưa xuất bản.",
+      action: "Xuất bản",
+      pending: "Đang xuất bản…",
+      // Số phiên bản MỚI mà máy chủ vừa trả về — kho NỐI THÊM một phiên bản mỗi lần ghi, không ghi đè,
+      // nên đây luôn là một số chưa từng có.
+      published: (vars: Vars) => `Đã xuất bản thành phiên bản ${vars.version}.`,
+      // 🔴 Câu này nói SAU KHI xuất bản, không phải trước — xem prop `overtaken` của `PublishPanel`
+      // cho lý do một cảnh báo TRƯỚC không thể trung thực nếu không có polling. Nó cũng nói rõ rằng
+      // KHÔNG có gì bị ghi đè, vì kho nối thêm; nói mập mờ ở đây sẽ khiến người đọc tưởng mất dữ liệu.
+      overtaken: (vars: Vars) =>
+        `Bản của bạn được nối thành phiên bản ${vars.landedAs}, nhưng phiên làm việc này đứng trên phiên bản ${vars.openedFrom} — nghĩa là có (những) lượt xuất bản KHÁC xen vào giữa. Không có gì bị ghi đè (kho chỉ nối thêm), nhưng tài liệu vừa xuất bản KHÔNG mang các thay đổi ấy. Xem lại lịch sử bên dưới trước khi đi tiếp.`,
+      historyTitle: "Lịch sử phiên bản",
+      historyLoading: "Đang đọc lịch sử…",
+      historyFailed: "Không đọc được lịch sử phiên bản của màn hình này.",
+      historyEmpty: "Màn hình này chưa từng được xuất bản.",
+      versionRow: (vars: Vars) => `Phiên bản ${vars.version}`,
+      current: "hiện hành",
+      preview: "Xem trước",
+      previewClose: "Đóng xem trước",
+      previewBanner: (vars: Vars) =>
+        `Đang XEM TRƯỚC phiên bản ${vars.version} — chỉ đọc. Bản đang sửa của bạn không bị đụng tới và quay lại ngay khi đóng xem trước.`,
+      previewLoading: (vars: Vars) => `Đang đọc phiên bản ${vars.version}…`,
+      previewFailed: (vars: Vars) => `Không đọc được phiên bản ${vars.version}.`,
+      rollback: "Khôi phục",
+      rollbackIsCurrent: "Đây đã là phiên bản hiện hành — khôi phục về nó chỉ tạo ra một bản sao y hệt.",
+      // 🔴 "NỐI THÊM", không phải "quay lui": máy chủ đọc tài liệu ở phiên bản cũ rồi ghi nó thành một
+      // phiên bản MỚI, nên lịch sử không mất mục nào và con trỏ không bao giờ lùi.
+      rolledBack: (vars: Vars) =>
+        `Đã khôi phục: nội dung cũ được NỐI THÊM thành phiên bản ${vars.version} (lịch sử không mất mục nào). Canvas KHÔNG được nạp lại — các sửa chưa xuất bản của bạn vẫn còn.`,
+      refused: (vars: Vars) => `Máy chủ TỪ CHỐI xuất bản (HTTP ${vars.status})`,
+      rollbackRefused: (vars: Vars) => `Máy chủ TỪ CHỐI khôi phục (HTTP ${vars.status})`,
+      reason400:
+        "Tài liệu vi phạm hợp đồng màn hình. TOÀN BỘ vi phạm được liệt kê bên dưới, không phải cái đầu tiên — sửa hết rồi xuất bản lại.",
+      reason409:
+        "screenId trong tài liệu khác screenId trên đường dẫn. Máy chủ từ chối thay vì tự chọn một trong hai định danh.",
+      reason503:
+        "Kho màn hình đang bận với một lượt ghi khác. Yêu cầu này hợp lệ và nhiều khả năng thành công nếu thử lại sau một chút.",
+      reason404: "Không có phiên bản đó cho màn hình này.",
+      reason403: "Phiên đăng nhập này không có quyền Engineer, nên không ghi được màn hình.",
     },
     tagPicker: {
       title: "Chọn tag",

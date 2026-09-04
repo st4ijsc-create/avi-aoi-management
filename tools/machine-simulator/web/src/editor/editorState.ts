@@ -116,7 +116,7 @@
  * `editorState.test.mjs` MEASURES that scope (every other top-level field of the document comes back
  * reference-identical) rather than assuming it, over the new edits too.
  */
-import type { HmiScreenDocument, ScreenWidget, WidgetKind, WidgetRect } from "../contracts/hmiScreen.ts"
+import type { HmiScreenDocument, ScreenBreakpoint, ScreenWidget, WidgetKind, WidgetRect } from "../contracts/hmiScreen.ts"
 import type { PolicyAction } from "../contracts/tagNamespace.ts"
 
 /**
@@ -216,6 +216,29 @@ export type EditorEdit =
    * and is re-pointed there — a UI concern, deliberately not smuggled into this module's data.
    */
   | { kind: "rename"; widgetId: string; newId: string }
+  /**
+   * WS-HMI-2 Task 12 — the ONLY edit in this vocabulary that writes outside `doc.widgets`.
+   *
+   * Changing the breakpoint an engineer is designing against is a change to the DOCUMENT
+   * (`layout.breakpoint`), not a viewer preference: `contracts/hmi-screen.schema.json` declares it as
+   * a required field of `$defs/layout`, so a screen authored for `phone` and a screen authored for
+   * `panel` are two different documents. An editor that only resized its own preview would let an
+   * engineer lay a screen out at one width and publish it declaring another.
+   *
+   * It touches `layout.breakpoint` and NOTHING else — not `cols`, not `rows`. That is a load-bearing
+   * boundary rather than a convenience: `SCHEMA_MIRROR.handledKeywords`'s inventory pin covers
+   * `$defs/widget` and `$defs/rect` only, and its justification is `editorState.test.mjs`'s
+   * "every edit writes only its own declared sub-tree" test. That test now names this edit's sub-tree
+   * explicitly, and the breakpoint vocabulary gets its OWN two-directional pin against
+   * `$defs/layout.properties.breakpoint.enum` — so widening this edit to reach `cols`/`rows` reddens
+   * the scope test rather than quietly escaping every mirror this file has.
+   *
+   * The value comes from `ScreenBreakpoint`, the frozen three-member type
+   * (`scripts/check-contracts.mjs` already holds that type equal to the schema's enum), and
+   * `applyEdit` refuses anything outside it regardless of what a caller sends — there is no free-text
+   * path to this field.
+   */
+  | { kind: "set-breakpoint"; breakpoint: ScreenBreakpoint }
 
 /**
  * Why a call left the document unchanged, as something a caller can SWITCH ON.
@@ -256,6 +279,10 @@ export type EditorRefusalCode =
   | "non-json-value"
   /** A `reorder` `toIndex` outside `[0, widgets.length - 1]`. */
   | "index-out-of-range"
+  /** A `set-breakpoint` naming a value outside `$defs/layout.properties.breakpoint`'s frozen enum —
+   * WS-HMI-2 Task 12. Its own code rather than a shared one because the UI's answer is a list of the
+   * three legal values, which no other refusal here can supply. */
+  | "unknown-breakpoint"
   /**
    * 🔴 INVARIANT §5, reached from the panel — WS-HMI-2 Task 10. A `set-kind` naming one of the two
    * WRITE kinds while the widget would end up with no `policyAction`.
@@ -303,6 +330,7 @@ export const EDITOR_REFUSAL_CODES: Record<EditorRefusalCode, true> = {
   "path-blocked": true,
   "non-json-value": true,
   "index-out-of-range": true,
+  "unknown-breakpoint": true,
   "policy-action-required": true,
   "bad-binding-name": true,
   "nothing-to-undo": true,
@@ -350,6 +378,17 @@ const WIDGET_KINDS: Record<WidgetKind, true> = {
 const POLICY_ACTIONS: Record<PolicyAction, true> = {
   "machine.setpoint": true,
   "machine.command": true,
+}
+
+/** WS-HMI-2 Task 12 — `$defs/layout.properties.breakpoint`'s frozen enum, reached the same way
+ * `WIDGET_KINDS` reaches the kind enum: `Record<ScreenBreakpoint, true>` is exhaustive in BOTH
+ * directions at compile time, so a fourth breakpoint added to the contract type is a missing-property
+ * error here and a name this union lacks is an excess-property error. In SCHEMA ORDER, which is the
+ * order a picker built from `SCREEN_BREAKPOINT_VALUES` renders. */
+const SCREEN_BREAKPOINTS: Record<ScreenBreakpoint, true> = {
+  panel: true,
+  tablet: true,
+  phone: true,
 }
 
 /** The two kinds `$defs/widget`'s `allOf`/`if`/`then` makes `policyAction` REQUIRED for — invariant
@@ -428,6 +467,15 @@ export const POLICY_ACTION_VALUES: readonly PolicyAction[] = Object.keys(POLICY_
  * reads this to decide when to DEMAND an action before it will commit a kind change; `applyEdit`
  * reads the same record to refuse the commit if the panel ever got it wrong. */
 export const POLICY_REQUIRED_WIDGET_KINDS: readonly WidgetKind[] = Object.keys(POLICY_REQUIRED_KINDS) as WidgetKind[]
+
+/** The three breakpoints, in schema order — what `BreakpointPreview`'s chooser renders, and what
+ * `applyEdit` accepts. One list, so a chooser cannot offer a value the edit would refuse and cannot
+ * fail to offer one it would take. `tests/42-editor-publish.spec.ts` compares what the chooser
+ * RENDERS against the enum read from `contracts/hmi-screen.schema.json` on disk, so neither this
+ * module nor the component is the only witness. */
+export const SCREEN_BREAKPOINT_VALUES: readonly ScreenBreakpoint[] = Object.keys(
+  SCREEN_BREAKPOINTS
+) as ScreenBreakpoint[]
 
 /**
  * The frozen `$defs/widget.properties.id.pattern`, as a string a UI can SHOW.
@@ -976,11 +1024,42 @@ function nextDocument(doc: HmiScreenDocument, edit: EditorEdit): EditResult {
       return { doc: { ...doc, widgets } }
     }
 
+    case "set-breakpoint": {
+      if (typeof edit.breakpoint !== "string" || !Object.hasOwn(SCREEN_BREAKPOINTS, edit.breakpoint)) {
+        return refusal(
+          "unknown-breakpoint",
+          `set-breakpoint: ${describe(edit.breakpoint)} is not one of the breakpoints ` +
+            `contracts/hmi-screen.schema.json froze for layout.breakpoint — the three legal values are ` +
+            `${SCREEN_BREAKPOINT_VALUES.join(", ")}`
+        )
+      }
+      // `layout` is checked here rather than beside `applyEdit`'s `widgets` guard because it is THIS
+      // edit's precondition alone: every other member addresses `doc.widgets`, and refusing all nine of
+      // them on a document with no layout would be a rule none of them needs.
+      if (!isPlainObject(doc.layout)) {
+        return refusal(
+          "malformed-document",
+          `set-breakpoint: this document has no layout object (${describe(doc.layout)}), so there is ` +
+            `no breakpoint to change`
+        )
+      }
+      // Field by field in the frozen contract's declaration order, for the reason `move` states at its
+      // own rect: an accepted edit must not churn the saved document's key order. `cols`/`rows` are
+      // carried across UNREAD and unvalidated — this edit has no opinion about them, and the scope test
+      // in `editorState.test.mjs` measures that they come back by VALUE unchanged.
+      return {
+        doc: {
+          ...doc,
+          layout: { cols: doc.layout.cols, rows: doc.layout.rows, breakpoint: edit.breakpoint },
+        },
+      }
+    }
+
     default:
       return refusal(
         "unknown-edit-kind",
         `unrecognised edit kind ${describe((edit as { kind: unknown }).kind)} — refused rather than ` +
-          `ignored, so a sixth member added to EditorEdit without a case here is visible instead of ` +
+          `ignored, so a member added to EditorEdit without a case here is visible instead of ` +
           `silently doing nothing`
       )
   }

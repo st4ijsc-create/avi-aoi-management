@@ -355,6 +355,9 @@ export const en: Dictionary = {
     designMode:
       "Design mode — this canvas draws with the runtime renderer itself, against fixed sample values, NOT data from a running machine.",
     widgetCount: (vars: Vars) => `${vars.count} widgets`,
+    // WS-HMI-2 Task 12 — see vi.ts at the same keys.
+    currentVersion: (vars: Vars) => `current version ${vars.version}`,
+    notPublished: "never published",
     // WS-HMI-2 Task 9 — the two controls the editing overlay puts over each widget cell. Both are
     // TRANSPARENT `<button>`s with no text of their own; without these labels a screen reader finds
     // two unnamed buttons. See `vi.ts` at the same keys.
@@ -420,6 +423,51 @@ export const en: Dictionary = {
       addButton: "Add",
       addPolicyRequired: (vars: Vars) =>
         `A "${vars.kind}" is a WRITE path, so the frozen schema requires a policyAction on it (invariant §5: no write path without a gate). Nothing is added until an action is chosen.`,
+    },
+    // WS-HMI-2 Task 12 — see vi.ts at the same keys: no breakpoint NAME and no pixel WIDTH is typed
+    // out here; both are interpolated from the single lists the editor actually reads.
+    breakpoint: {
+      label: "Preview at",
+      choice: (vars: Vars) => `Preview at the ${vars.breakpoint} size, ${vars.width} pixels wide`,
+      width: (vars: Vars) => `preview frame: ${vars.width}px`,
+    },
+    publish: {
+      title: "Publish",
+      unsaved: "There are UNPUBLISHED edits. Leaving this page now loses them.",
+      saved: "No unpublished edits.",
+      action: "Publish",
+      pending: "Publishing…",
+      published: (vars: Vars) => `Published as version ${vars.version}.`,
+      // See vi.ts at the same key: this is an AFTER-the-fact notice, and it says plainly that nothing
+      // was overwritten.
+      overtaken: (vars: Vars) =>
+        `Your copy was appended as version ${vars.landedAs}, but this session was standing on version ${vars.openedFrom} — so other publishes landed in between. Nothing was overwritten (the store only appends), but the document you just published does not carry those changes. Check the history below before going on.`,
+      historyTitle: "Version history",
+      historyLoading: "Reading the history…",
+      historyFailed: "This screen's version history could not be read.",
+      historyEmpty: "This screen has never been published.",
+      versionRow: (vars: Vars) => `Version ${vars.version}`,
+      current: "current",
+      preview: "Preview",
+      previewClose: "Close preview",
+      previewBanner: (vars: Vars) =>
+        `PREVIEWING version ${vars.version} — read only. Your working copy is untouched and comes straight back when you close this.`,
+      previewLoading: (vars: Vars) => `Reading version ${vars.version}…`,
+      previewFailed: (vars: Vars) => `Version ${vars.version} could not be read.`,
+      rollback: "Restore",
+      rollbackIsCurrent: "This is already the current version — restoring to it would only add an identical copy.",
+      rolledBack: (vars: Vars) =>
+        `Restored: the old content was APPENDED as version ${vars.version} (no history entry is lost). The canvas was NOT reloaded — your unpublished edits are still here.`,
+      refused: (vars: Vars) => `The engine REFUSED the publish (HTTP ${vars.status})`,
+      rollbackRefused: (vars: Vars) => `The engine REFUSED the restore (HTTP ${vars.status})`,
+      reason400:
+        "The document breaks the screen contract. EVERY violation is listed below, not just the first — fix them all and publish again.",
+      reason409:
+        "The document's screenId names a different screen from the one in the URL. The engine refuses rather than silently choosing one of the two identities.",
+      reason503:
+        "The screen store is busy with another write. This request was well-formed and would likely succeed on retry in a moment.",
+      reason404: "This screen has no such version.",
+      reason403: "This session is not an Engineer, so it cannot write screens.",
     },
     tagPicker: {
       title: "Pick a tag",

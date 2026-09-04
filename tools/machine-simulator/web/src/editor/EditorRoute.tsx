@@ -4,7 +4,7 @@ import { useParams } from "wouter"
 import { useGloss } from "@/components/hmi/bilingual"
 import type { HmiScreenDocument } from "@/contracts/hmiScreen"
 import { useT } from "@/i18n"
-import { EngineApiError, useScreen } from "@/lib/api"
+import { EngineApiError, useScreen, useScreenVersions } from "@/lib/api"
 import { EditorCanvas } from "./EditorCanvas"
 
 /**
@@ -58,6 +58,23 @@ function EditorShell({
   children: ReactNode
 }) {
   const t = useT()
+  /**
+   * WS-HMI-2 Task 12 — WHICH VERSION THE ENGINE IS CURRENTLY SERVING, in the header, in EVERY state.
+   *
+   * Read from `GET /v1/screens/{id}/versions` rather than from any publish result, and that is the
+   * whole reason it lives up here instead of inside `PublishPanel`. The panel already knows what
+   * number its own `PUT` returned; a surface that showed only that would agree with the mutation by
+   * construction and could not tell anyone whether the write actually landed. This header reads the
+   * server back, through a query the publish INVALIDATES, so when it moves it is because the engine
+   * says so — a second, independent witness, which is what `tests/42-editor-publish.spec.ts` asserts
+   * against after a publish and after a rollback.
+   *
+   * Rendered in the not-found and failure states too: "no versions" is the truthful answer for a
+   * screen nobody has declared (that route answers 200 with `[]`, never 404 — see
+   * `endpoints.screenVersions`), and it is exactly the sentence a mistyped URL needs to show back.
+   */
+  const versions = useScreenVersions(screenId)
+  const head = versions.data?.find((row) => row.isCurrent)?.version
   // 🔴 FIX ROUND 1, task-8-review.md finding 8 — this used to read `t("editor.titleGloss")`, a key that
   // carried the OTHER language's text inside each dictionary (`vi` → "HMI SCREEN BUILDER", `en` →
   // "TRÌNH DỰNG MÀN HÌNH"). It worked, but it was a NEW idiom with no precedent, so nothing told the
@@ -84,6 +101,9 @@ function EditorShell({
           {doc ? (
             <span className="hmi-micro normal-case">{t("editor.widgetCount", { count: doc.widgets.length })}</span>
           ) : null}
+          <span data-editor-current-version={head ?? ""} className="hmi-micro normal-case">
+            {head === undefined ? t("editor.notPublished") : t("editor.currentVersion", { version: head })}
+          </span>
         </div>
         {/*
           The honesty line `EditorCanvas`'s own header defers to. The canvas draws through the runtime

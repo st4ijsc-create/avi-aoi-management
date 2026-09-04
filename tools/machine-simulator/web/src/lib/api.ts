@@ -540,13 +540,38 @@ export class EngineApiError extends Error {
   method: string
   path: string
   status: number
+  /**
+   * WS-HMI-2 Task 12 — the server's own `ApiErrorDto.error` text, when it sent one. `undefined` for a
+   * genuinely unparseable body (a proxy's 500 page, a network-layer failure) and for the three
+   * hand-rolled `EngineApiError` construction sites outside this module (`auth.ts`, `configApi.ts`)
+   * that pass only a status.
+   *
+   * 🔴 WHY THIS FIELD RATHER THAN A FOURTH DEDICATED ERROR CLASS. Three already exist in this tree
+   * for exactly this need — `OeeSettingsApiError`, `UsersApiError`, `MachineSettingsApiError` — each
+   * with its own private `fetch` that captures the body, and each documented as chosen "instead of
+   * changing `request<T>`'s contract for every other endpoint in this file". The screen publish door
+   * needs it more sharply than any of them: `PUT /v1/screens/{id}` answers 400 carrying EVERY §5
+   * violation at once (`ContractViolationException` joins them), and the editor's whole refusal
+   * surface is showing an engineer all of them beside the button they pressed. A fourth copy of the
+   * same private-fetch idiom is the shape this branch has spent a week deleting.
+   *
+   * The change is ADDITIVE and the contract those three protected is untouched: `message` still reads
+   * exactly `"${method} ${path} failed: ${status}"`, `status` still means what it meant, and every
+   * existing `error instanceof EngineApiError && error.status === 404` branch is unaffected. The only
+   * new behaviour is that a FAILED response's body is read before the throw — inside a `try`, so a
+   * non-JSON body still produces the same error it always did. The existing three are deliberately
+   * NOT refactored onto this: each has its own callers and its own tests, and rewriting three
+   * unrelated features is not this task's to do.
+   */
+  serverMessage?: string
 
-  constructor(method: string, path: string, status: number) {
+  constructor(method: string, path: string, status: number, serverMessage?: string) {
     super(`${method} ${path} failed: ${status}`)
     this.name = "EngineApiError"
     this.method = method
     this.path = path
     this.status = status
+    this.serverMessage = serverMessage
   }
 }
 
@@ -576,7 +601,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...init?.headers },
   })
   if (res.status === 401) unauthorizedHandler?.()
-  if (!res.ok) throw new EngineApiError(method, path, res.status)
+  if (!res.ok) {
+    // See `EngineApiError.serverMessage`. Total by construction: a body that is absent, empty, not
+    // JSON, or JSON without an `error` string leaves `serverMessage` undefined and the thrown error is
+    // byte-for-byte what it was before this field existed.
+    let serverMessage: string | undefined
+    try {
+      const body = (await res.json()) as { error?: unknown }
+      if (typeof body?.error === "string" && body.error.length > 0) serverMessage = body.error
+    } catch {
+      // Non-JSON body — nothing to carry.
+    }
+    throw new EngineApiError(method, path, res.status, serverMessage)
+  }
   return (await res.json()) as T
 }
 
@@ -653,6 +690,53 @@ const endpoints = {
   // empty". `useScreen` below is where that 404 stops being an error and becomes a named product
   // state; nothing about it is inferred here.
   screen: (screenId: string) => request<HmiScreenDocument>(`/v1/screens/${encodeURIComponent(screenId)}`),
+
+  // ── WS-HMI-2 Task 12 — the PUBLISH door and the version history behind it ──────────────────────
+  //
+  // 🔴 `PUT` ANSWERS A VERSION NUMBER AND THE STORE APPENDS; IT NEVER OVERWRITES.
+  // `IHmiScreenStore.PutAsync`'s own contract: every accepted write adds a row and moves the current
+  // pointer to it, so `version` in the reply is the number that write PRODUCED (1 for a screen's first
+  // publish, climbing after that) and every earlier version is still readable at `?version=N`. Nothing
+  // in this client may present publishing as "saving over" what was there.
+  //
+  // 🔴 EVERY REFUSAL PATH REACHES THE CALLER WITH ITS OWN TEXT, not just a status: `request<T>` now
+  // carries the server's `ApiErrorDto.error` on `EngineApiError.serverMessage` (see that field). The
+  // four this route can answer, all of them things an engineer must see beside the button they
+  // pressed — 400 (§5 and the contract invariants, carrying EVERY violation joined, not the first),
+  // 409 (the body's `screenId` names a different screen from the route — refused, never silently
+  // resolved to one of the two), 503 (another writer holds the store's write lock; well-formed and
+  // retryable), 401/403 (this session is not an Engineer).
+  putScreen: (screenId: string, doc: HmiScreenDocument) =>
+    request<PutScreenResult>(`/v1/screens/${encodeURIComponent(screenId)}`, {
+      method: "PUT",
+      body: JSON.stringify(doc),
+    }),
+
+  // 200 with an EMPTY ARRAY for a screen nobody has declared — NOT 404, and that is the engine's own
+  // decision rather than an inference: `HmiScreenEndpoints.ListVersionsAsync` says so in those words
+  // ("a version HISTORY is inherently a list, and an empty list is a truthful answer"), unlike its
+  // by-id sibling above. So this hook has no not-found branch and must not grow one.
+  screenVersions: (screenId: string) =>
+    request<ScreenVersionInfo[]>(`/v1/screens/${encodeURIComponent(screenId)}/versions`),
+
+  // An OLD version, read whole. 404 when the screen has no such version — which is a real answer to a
+  // real question ("show me version 7") and not the same state as "this screen does not exist".
+  screenAtVersion: (screenId: string, version: number) =>
+    request<HmiScreenDocument>(`/v1/screens/${encodeURIComponent(screenId)}?version=${version}`),
+
+  // 🔴 ROLLBACK APPENDS. `POST .../rollback {toVersion}` reads the document at `toVersion` and adds it
+  // as a NEW, higher version — the history never loses an entry and the pointer never moves backwards
+  // — so the number in the reply is that NEW version, never `toVersion`. A UI that echoed `toVersion`
+  // back would tell the engineer the head is somewhere it is not.
+  //
+  // 404 for "this screen was never declared" AND for "this screen exists but not at that version";
+  // `IHmiScreenStore.RollbackAsync`'s contract deliberately does not distinguish them, and the
+  // message names the versions that do exist.
+  rollbackScreen: (screenId: string, toVersion: number) =>
+    request<PutScreenResult>(`/v1/screens/${encodeURIComponent(screenId)}/rollback`, {
+      method: "POST",
+      body: JSON.stringify({ toVersion }),
+    }),
 
   // WS-HMI-2 Task 10 — `GET /v1/tags?machine={code}`, the tag namespace the editor's tag picker
   // browses. `TagNamespaceDocument` is the FROZEN contract type (`src/contracts/tagNamespace.ts`,
@@ -777,6 +861,12 @@ const QUERY_KEYS = {
   // a screen is not owned by a machine at all (the same document can describe any number of them),
   // so there is no machine code to key it by.
   screen: (screenId: string) => ["hmi-screen", screenId] as const,
+  // WS-HMI-2 Task 12 — a screen's VERSION HISTORY, and one OLD version of it. Separate keys from
+  // `screen(screenId)`, which addresses the CURRENT document: the history changes on every publish and
+  // every rollback, while an old version's content is immutable by the store's own append-only
+  // contract and can be cached forever.
+  screenVersions: (screenId: string) => ["hmi-screen-versions", screenId] as const,
+  screenAtVersion: (screenId: string, version: number) => ["hmi-screen-version", screenId, version] as const,
   // WS-HMI-2 Task 10 — a machine's declared TAG NAMESPACE. Keyed like `components(code)` and for the
   // same reason: it changes on a human's `PUT /v1/tags/{code}`, not on the ~1s live poll.
   tags: (code: string) => ["hmi-tags", code] as const,
@@ -940,6 +1030,31 @@ export function useMachine(code: string | undefined): UseQueryResult<MachineDeta
 }
 
 /**
+ * WS-HMI-2 Task 12 — what `PUT /v1/screens/{id}` and `POST /v1/screens/{id}/rollback` both answer
+ * (`PutScreenResultDto` on the .NET side). A hand-written mirror of a wire shape, like every other
+ * DTO in this file — the FROZEN contract types live in `src/contracts/` and are imported, never
+ * re-declared; this is not one of them, it is the engine's own reply envelope.
+ *
+ * `version` is the version the call PRODUCED. For a rollback that is the NEW, highest version, never
+ * the `toVersion` that was asked for — see `endpoints.rollbackScreen`.
+ */
+export interface PutScreenResult {
+  screenId: string
+  version: number
+  widgetCount: number
+}
+
+/** One row of `GET /v1/screens/{id}/versions` (`ScreenVersionInfo` on the .NET side). `savedAtUtc` is
+ * an ISO-8601 UTC string. `isCurrent` is true for EXACTLY ONE row of a non-empty list, and by the
+ * store's own contract that row is always the one with the highest `version` — a rollback appends
+ * rather than moving the pointer backwards. */
+export interface ScreenVersionInfo {
+  version: number
+  savedAtUtc: string
+  isCurrent: boolean
+}
+
+/**
  * WS-HMI-2 Task 5 — `GET /v1/components/{machineCode}`, the component tree an HMI screen's
  * `{component}` bindings resolve through (`hmi-runtime/bindings.ts`'s `componentTagPrefixOf`).
  *
@@ -990,6 +1105,97 @@ export function useScreen(screenId: string | undefined): UseQueryResult<HmiScree
     enabled: screenId !== undefined && screenId.length > 0,
     retry: (failureCount, error) =>
       error instanceof EngineApiError && error.status === 404 ? false : failureCount < 2,
+  })
+}
+
+/**
+ * WS-HMI-2 Task 12 — `GET /v1/screens/{screenId}/versions`, the publish history the editor lists.
+ *
+ * NOT polled, for the reason `useScreen` above is not: it changes when a human publishes or rolls
+ * back, and both of those go through THIS client, which invalidates this key on success
+ * (`usePublishScreen`/`useRollbackScreen` below). A concurrent publish from another window is not
+ * caught by a poll here — it is caught by the stale-head warning the editor renders from this same
+ * list on refocus, which is honest about being best-effort rather than pretending to be live.
+ *
+ * No 404 branch, deliberately: this route answers 200 with `[]` for a screen nobody declared (see
+ * `endpoints.screenVersions`), so "no versions" is data, not an error.
+ */
+export function useScreenVersions(screenId: string | undefined): UseQueryResult<ScreenVersionInfo[]> {
+  return useQuery({
+    queryKey: QUERY_KEYS.screenVersions(screenId ?? ""),
+    queryFn: () => endpoints.screenVersions(screenId as string),
+    enabled: screenId !== undefined && screenId.length > 0,
+  })
+}
+
+/**
+ * WS-HMI-2 Task 12 — `GET /v1/screens/{screenId}?version=N`, ONE old version, for PREVIEW.
+ *
+ * `staleTime: Infinity` is not a tuning choice, it is the store's contract written down: a version
+ * row is never rewritten (`PutAsync` appends, `RollbackAsync` appends), so the document at version N
+ * is the same document forever. Re-fetching it on focus would be pure cost.
+ *
+ * A confirmed 404 is not retried, same shape and same reason as `useScreen`: "this screen has no
+ * version 7" is a named answer the preview surface renders, not a transient failure to back off from.
+ */
+export function useScreenAtVersion(
+  screenId: string | undefined,
+  version: number | undefined
+): UseQueryResult<HmiScreenDocument> {
+  return useQuery({
+    queryKey: QUERY_KEYS.screenAtVersion(screenId ?? "", version ?? -1),
+    queryFn: () => endpoints.screenAtVersion(screenId as string, version as number),
+    enabled: screenId !== undefined && screenId.length > 0 && version !== undefined,
+    staleTime: Infinity,
+    retry: (failureCount, error) =>
+      error instanceof EngineApiError && error.status === 404 ? false : failureCount < 2,
+  })
+}
+
+/**
+ * WS-HMI-2 Task 12 — `PUT /v1/screens/{screenId}`, the publish itself.
+ *
+ * 🔴 THE ERROR IS DELIBERATELY NOT SWALLOWED OR FLATTENED. TanStack Query hands the caller
+ * `mutation.error`, and the editor's publish surface branches on `EngineApiError.status` and renders
+ * `serverMessage` verbatim. Two tasks on this branch shipped a refused write whose refusal never
+ * reached the control the user was looking at (Task 10's emptied box that wrote a zero, Task 11's
+ * rejected rename that left the rejected name in the field); publish has more refusal paths than
+ * either, so nothing here may turn one into a console line.
+ *
+ * On success BOTH screen keys are invalidated — the document and the history — because a publish
+ * changes what "current" means as well as what versions exist. The canvas does NOT reload from the
+ * refetched document (see `EditorCanvasProps.doc`): the engineer's session is the authority on what
+ * they are editing, and this invalidation is for the surfaces that READ the server's answer.
+ */
+export function usePublishScreen(screenId: string | undefined) {
+  const queryClient = useQueryClient()
+  return useMutation<PutScreenResult, Error, HmiScreenDocument>({
+    mutationFn: (doc: HmiScreenDocument) => endpoints.putScreen(screenId as string, doc),
+    onSuccess: () => {
+      if (!screenId) return
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.screen(screenId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.screenVersions(screenId) })
+    },
+  })
+}
+
+/**
+ * WS-HMI-2 Task 12 — `POST /v1/screens/{screenId}/rollback`.
+ *
+ * Invalidates the same two keys `usePublishScreen` does, for the same reason: a rollback APPENDS a
+ * version, so both the head document and the history changed. It does NOT touch
+ * `QUERY_KEYS.screenAtVersion` — every previously-fetched old version is still exactly what it was;
+ * that is the append-only store's whole point.
+ */
+export function useRollbackScreen(screenId: string | undefined) {
+  const queryClient = useQueryClient()
+  return useMutation<PutScreenResult, Error, number>({
+    mutationFn: (toVersion: number) => endpoints.rollbackScreen(screenId as string, toVersion),
+    onSuccess: () => {
+      if (!screenId) return
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.screen(screenId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.screenVersions(screenId) })
+    },
   })
 }
 

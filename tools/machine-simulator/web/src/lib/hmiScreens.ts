@@ -31,7 +31,7 @@
  * implementation that ignored `widget.component` entirely — and this is the one machine class on which
  * that is achievable without fabricating a reading.
  */
-import type { HmiScreenDocument } from "../contracts/hmiScreen.ts"
+import type { HmiScreenDocument, ScreenBreakpoint } from "../contracts/hmiScreen.ts"
 
 import componentDemo from "../../screens/demo/component-demo.json"
 
@@ -65,4 +65,46 @@ export const DEMO_SCREEN_DOCS: Readonly<Record<string, HmiScreenDocument>> = {
 export function resolveDemoScreen(screenId: string | undefined): HmiScreenDocument | undefined {
   if (!screenId) return undefined
   return Object.hasOwn(DEMO_SCREEN_DOCS, screenId) ? DEMO_SCREEN_DOCS[screenId] : undefined
+}
+
+/**
+ * ── WS-HMI-2 Task 12: WHAT EACH `ScreenBreakpoint` LOOKS LIKE, IN PIXELS, AT DESIGN TIME ─────────
+ *
+ * `contracts/hmi-screen.schema.json` freezes the three NAMES (`$defs/layout.properties.breakpoint`)
+ * and says nothing about what any of them measures — deliberately, because `ScreenRenderer` places
+ * widgets on a FLUID `repeat(cols, minmax(0, 1fr))` grid that fills whatever box it is given. Nothing
+ * at runtime is bound to a number below: a `phone` document rendered on a 4K panel fills the 4K
+ * panel. That is the contract, and this table does not change it.
+ *
+ * What the table IS for: the editor has to answer "does this layout still read at the width this
+ * document says it is for?", and it cannot answer that by asking the browser — the browser is showing
+ * the ENGINEER's window, not the target device's. So the canvas is previewed inside a frame of this
+ * width, and changing the chooser changes both the document's `layout.breakpoint`
+ * (`editorState.ts`'s `set-breakpoint`) and the width it is drawn at. Two things at once, on purpose:
+ * an editor that changed only the preview would let someone lay a screen out at 1 280 px and publish
+ * it declaring `phone`.
+ *
+ * 🔴 THE NUMBERS ARE A DESIGN-TIME CHOICE, NOT A MEASUREMENT, AND ARE DELIBERATELY NOT PINNED TO
+ * ANYTHING. There is nothing in this repository to derive them from — no device roster carries a
+ * screen width, and `fleet.json` describes machines, not the terminals they are watched from. So they
+ * are stated here with their reasoning and are free to change:
+ *
+ *   * `panel` 1280 — the resolution of the 15" industrial panel PCs this product is built for
+ *     (1280×800 is the long-standing default of that class). Also, and not by accident, wider than
+ *     any canvas frame the editor can currently give it inside a 1280 px browser window, so at the
+ *     default breakpoint the preview frame is inert and the canvas keeps every pixel it had before
+ *     this task.
+ *   * `tablet` 1024 — a 10" tablet held landscape, the second surface an operator reaches for.
+ *   * `phone` 390 — a phone held portrait. Deliberately narrow enough that a 12-column layout
+ *     visibly stops working, because a preview that flatters every layout is not a preview.
+ *
+ * `Record<ScreenBreakpoint, number>` is exhaustive in BOTH directions at compile time — a fourth
+ * breakpoint added to the frozen contract is a missing-property error here, and a name the contract
+ * lacks is an excess-property error — so this table cannot silently fall out of step with the enum,
+ * which `scripts/check-contracts.mjs` already holds equal to the schema file itself.
+ */
+export const SCREEN_BREAKPOINT_WIDTHS: Readonly<Record<ScreenBreakpoint, number>> = {
+  panel: 1280,
+  tablet: 1024,
+  phone: 390,
 }

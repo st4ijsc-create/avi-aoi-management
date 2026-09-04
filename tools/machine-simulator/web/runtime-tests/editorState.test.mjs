@@ -70,6 +70,7 @@ import { fileURLToPath } from "node:url"
 import {
   EDITOR_REFUSAL_CODES,
   SCHEMA_MIRROR,
+  SCREEN_BREAKPOINT_VALUES,
   UNDO_DEPTH_LIMIT,
   applyEdit,
   createEditorState,
@@ -155,6 +156,44 @@ const ACCEPTED_EDITS = {
   // lại nguyên trạng) phải đúng cho `rename` y như cho tám phép kia. Một corpus riêng mà không có dòng
   // này sẽ để `rename` nằm ngoài đúng những bài đo phạm vi ấy.
   rename: { kind: "rename", widgetId: "probe-b", newId: "probe-b-doi-ten" },
+  // WS-HMI-2 Task 12 — phép sửa THỨ MƯỜI, và là phép DUY NHẤT ghi ra ngoài `doc.widgets`. Vẫn thêm
+  // vào ĐÂY vì mọi mệnh đề CHUNG phía trên (không đột biến, giữ hợp lệ theo schema, undo trả lại
+  // nguyên trạng) phải đúng cho nó y như cho chín phép kia. Mệnh đề DUY NHẤT nó không thoả là
+  // "chỉ ghi vào doc.widgets" — bài ấy giờ khai PHẠM VI của từng phép sửa thay vì giả định một phạm
+  // vi chung, xem `EDIT_SCOPES` ngay dưới.
+  //
+  // `component-demo.json` khai `breakpoint: "panel"`, nên "tablet" là một thay đổi THẬT chứ không
+  // phải một no-op đội lốt được nhận.
+  "set-breakpoint": { kind: "set-breakpoint", breakpoint: "tablet" },
+}
+
+/**
+ * 🔴 WS-HMI-2 Task 12 — TRƯỜNG CẤP CAO DUY NHẤT mà mỗi phép sửa được phép dựng lại.
+ *
+ * Trước Task 12 mệnh đề là một câu duy nhất cho cả bộ — "mọi edit CHỈ ghi vào doc.widgets" — và nó
+ * đúng vì cả chín phép đều địa chỉ hoá widget. `set-breakpoint` ghi `doc.layout`, nên câu ấy phải
+ * hoặc được NỚI (thành "widgets hoặc layout", mất hết sức nặng cho chín phép kia) hoặc được LÀM
+ * CHÍNH XÁC HƠN. Đây là lựa chọn thứ hai: mỗi phép sửa khai ĐÚNG một trường nó chạm, và bài dưới đây
+ * khẳng định MỌI trường khác quay về NGUYÊN THAM CHIẾU. Nó chặt hơn bản cũ, không lỏng hơn — một
+ * phép `move` bắt đầu đụng `layout` giờ đỏ, điều bản cũ cũng bắt, VÀ một `set-breakpoint` bắt đầu
+ * đụng `widgets` cũng đỏ, điều một câu nới ra sẽ bỏ lọt.
+ *
+ * Đây cũng là phép đo BIỆN MINH cho phạm vi của ghim kiểm kê từ khoá bên dưới (task-7-review.md §4.3
+ * điều kiện 1): kiểm kê phủ `$defs/widget` + `$defs/rect`, và nó đủ CHỈ KHI không phép sửa nào chạm
+ * cây con khác. Cây con khác duy nhất là `layout.breakpoint`, và nó có ghim RIÊNG hai chiều với
+ * `$defs/layout.properties.breakpoint.enum` (xem cuối file).
+ */
+const EDIT_SCOPES = {
+  move: "widgets",
+  "set-prop": "widgets",
+  add: "widgets",
+  remove: "widgets",
+  reorder: "widgets",
+  "set-kind": "widgets",
+  "set-policy-action": "widgets",
+  "set-binding": "widgets",
+  rename: "widgets",
+  "set-breakpoint": "layout",
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -204,7 +243,14 @@ for (const [name, edit] of Object.entries(ACCEPTED_EDITS)) {
     assert.deepEqual(state.future, [])
 
     assert.notEqual(next.doc, state.doc, "applyEdit trả về CHÍNH tài liệu cũ — không có tài liệu mới nào được dựng")
-    assert.notEqual(next.doc.widgets, state.doc.widgets)
+    // 🔴 WS-HMI-2 Task 12 — cây con mà phép sửa TỰ KHAI, chứ không phải `widgets` cứng.
+    //
+    // Dòng này từng viết `next.doc.widgets`, đúng cho chín phép sửa đầu vì cả chín đều địa chỉ hoá
+    // widget. `set-breakpoint` ghi `layout` và PHẢI để `widgets` nguyên tham chiếu (bài phạm vi bên
+    // dưới khẳng định đúng điều đó), nên bản cũ sẽ đỏ vì lý do NGƯỢC với lý do nó tồn tại. Với chín
+    // phép cũ, `EDIT_SCOPES[name]` LÀ "widgets", nên đây không nới lỏng gì — cùng một khẳng định,
+    // viết cho cây con đúng của từng phép.
+    assert.notEqual(next.doc[EDIT_SCOPES[name]], state.doc[EDIT_SCOPES[name]])
     assert.notDeepEqual(next.doc, state.doc, `applyEdit(${name}) không đổi gì cả — bài này khi ấy không đo được tính thuần`)
   })
 }
@@ -463,20 +509,47 @@ for (const [name, edit] of Object.entries(ACCEPTED_EDITS)) {
   })
 }
 
-test("mọi edit CHỈ ghi vào doc.widgets — mọi trường cấp cao khác trở lại NGUYÊN THAM CHIẾU", () => {
-  // Đây là phép đo BIỆN MINH cho phạm vi của ghim kiểm kê bên dưới (task-7-review.md §4.3 điều kiện
-  // 1: "phép ghim nên NÓI ra, đừng để mặc định"). Nếu một edit nào đó chạm tới `layout`, `theme`,
-  // `screenId`… thì kiểm kê chỉ phủ `$defs/widget`+`$defs/rect` là chưa đủ, và bài này đỏ trước.
+test("mọi edit ghi vào ĐÚNG MỘT trường cấp cao nó tự khai — mọi trường khác trở lại NGUYÊN THAM CHIẾU", () => {
+  // Xem `EDIT_SCOPES` cho vì sao mệnh đề này khai phạm vi TỪNG PHÉP thay vì một câu chung, và vì sao
+  // bản này chặt hơn bản trước chứ không lỏng hơn.
+  assert.deepEqual(
+    Object.keys(EDIT_SCOPES).sort(),
+    Object.keys(ACCEPTED_EDITS).sort(),
+    "EDIT_SCOPES và ACCEPTED_EDITS đã lệch nhau — một phép sửa mới không khai phạm vi, hoặc một khai báo đã chết"
+  )
+
   for (const [name, edit] of Object.entries(ACCEPTED_EDITS)) {
     const state = freshState()
     const next = applyEdit(state, edit)
     assertAccepted(next, `applyEdit(${name})`)
+    const scope = EDIT_SCOPES[name]
     for (const key of Object.keys(state.doc)) {
-      if (key === "widgets") continue
-      assert.equal(next.doc[key], state.doc[key], `edit "${name}" đã dựng lại doc.${key} — nó không chỉ ghi vào widgets`)
+      if (key === scope) continue
+      assert.equal(
+        next.doc[key],
+        state.doc[key],
+        `edit "${name}" đã dựng lại doc.${key} — nó khai chỉ ghi vào doc.${scope}`
+      )
     }
+    assert.notEqual(next.doc[scope], state.doc[scope], `edit "${name}" khai ghi doc.${scope} nhưng không đụng tới nó`)
     assert.deepEqual(Object.keys(next.doc), Object.keys(state.doc), `edit "${name}" đã thêm/bớt trường cấp cao`)
   }
+})
+
+test("set-breakpoint đụng ĐÚNG layout.breakpoint — cols/rows quay lại NGUYÊN GIÁ TRỊ", () => {
+  // Ranh giới bên TRONG `layout`, mà bài phạm vi ở trên (so ở cấp cao nhất) không nhìn thấy. Nó là
+  // ranh giới chịu lực: ghim kiểm kê từ khoá KHÔNG phủ `$defs/layout`, nên nếu phép sửa này bắt đầu
+  // ghi `cols`/`rows` thì nó sẽ ghi hai trường có `minimum`/`maximum` mà module này không soi gương.
+  const state = freshState()
+  const next = applyEdit(state, { kind: "set-breakpoint", breakpoint: "phone" })
+  assertAccepted(next, "set-breakpoint phone")
+
+  assert.equal(next.doc.layout.breakpoint, "phone")
+  assert.equal(next.doc.layout.cols, state.doc.layout.cols)
+  assert.equal(next.doc.layout.rows, state.doc.layout.rows)
+  assert.deepEqual(Object.keys(next.doc.layout), Object.keys(state.doc.layout), "set-breakpoint đã thêm/bớt trường của layout")
+  // Và nó KHÔNG chạm widget nào — theo giá trị, không chỉ theo tham chiếu mảng.
+  assert.deepEqual(next.doc.widgets, state.doc.widgets)
 })
 
 // ── GHIM KIỂM KÊ TỪ KHOÁ — sửa vòng 1, task-7-review.md §4.3 / §7.1 ───────────────────────────────
@@ -1595,6 +1668,10 @@ const REFUSAL_CASES = [
     () => applyEdit(freshState(), { kind: "set-kind", widgetId: "kind-label", widgetKind: "command-button" }),
   ],
   ["bad-binding-name", () => applyEdit(freshState(), { kind: "set-binding", widgetId: "kind-label", name: "", path: "cycles" })],
+  [
+    "unknown-breakpoint",
+    () => applyEdit(freshState(), { kind: "set-breakpoint", breakpoint: "watch" }),
+  ],
   ["nothing-to-undo", () => undo(freshState())],
   ["nothing-to-redo", () => redo(freshState())],
 ]
@@ -1616,6 +1693,65 @@ test("điều tra dân số: tập mã SINH RA ĐƯỢC bằng ĐÚNG tập EDIT
     declared,
     "một mã được KHAI mà không đầu vào nào sinh ra nó (nhánh chết), hoặc một mã BẮN mà union không khai (người tiêu dùng không switch được)"
   )
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// 🔴 WS-HMI-2 Task 12 — GHIM RIÊNG CHO `layout.breakpoint`, vì kiểm kê từ khoá KHÔNG phủ `$defs/layout`
+//
+// `set-breakpoint` là phép sửa duy nhất ghi ra ngoài `$defs/widget`, nên nó là phép sửa duy nhất mà
+// hai corpus đối chiếu và ghim kiểm kê ở trên KHÔNG nói gì về từ vựng của nó. Ba khẳng định dưới đây
+// là phần bù, và cả ba đọc file schema THẬT trên đĩa chứ không nhắc lại ba cái tên.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+const SCHEMA_BREAKPOINTS = schema.$defs.layout.properties.breakpoint.enum
+
+test("sàn: schema thật sự khai một enum breakpoint không rỗng — hai tập rỗng cũng 'bằng nhau'", () => {
+  assert.ok(Array.isArray(SCHEMA_BREAKPOINTS) && SCHEMA_BREAKPOINTS.length > 0, "không trích được enum breakpoint")
+  assert.ok(SCREEN_BREAKPOINT_VALUES.length > 0, "SCREEN_BREAKPOINT_VALUES rỗng")
+})
+
+test("SCREEN_BREAKPOINT_VALUES == enum breakpoint của schema, HAI CHIỀU và ĐÚNG THỨ TỰ", () => {
+  // Thứ tự cũng được ghim, không chỉ tập hợp: bộ chọn của `BreakpointPreview` render theo thứ tự này,
+  // và thứ tự của schema (panel → tablet → phone) đi từ rộng tới hẹp, tức thứ tự một người đọc mong đợi.
+  assert.deepEqual([...SCREEN_BREAKPOINT_VALUES], SCHEMA_BREAKPOINTS)
+})
+
+test("applyEdit NHẬN đúng những breakpoint schema khai, và tài liệu sau mỗi lần đổi vẫn HỢP LỆ", () => {
+  for (const breakpoint of SCHEMA_BREAKPOINTS) {
+    const state = freshState()
+    const next = applyEdit(state, { kind: "set-breakpoint", breakpoint })
+    if (state.doc.layout.breakpoint === breakpoint) {
+      // Giá trị nền: đổi sang chính nó là no-op, và no-op bị từ chối có chủ ý. Vẫn phải kiểm tài liệu
+      // hợp lệ, nếu không vòng lặp này im lặng bỏ qua một thành viên enum.
+      assertRefusedUnchanged(state, next, `set-breakpoint ${breakpoint}`, "no-op")
+      assert.deepEqual(docErrors(state.doc), [])
+      continue
+    }
+    assertAccepted(next, `set-breakpoint ${breakpoint}`)
+    assert.equal(next.doc.layout.breakpoint, breakpoint)
+    const errs = docErrors(next.doc)
+    assert.deepEqual(errs, [], `tài liệu sau set-breakpoint ${breakpoint} KHÔNG hợp lệ:\n${errs.join("\n")}`)
+  }
+})
+
+test("applyEdit TỪ CHỐI mọi giá trị breakpoint schema KHÔNG khai — và schema cũng từ chối chúng", () => {
+  // Đối chiếu hai phía, cùng kỹ thuật hai corpus ở trên: mỗi giá trị bị `applyEdit` từ chối cũng phải
+  // bị `validate.mjs` từ chối khi ghi thẳng vào tài liệu. Một guard siết quá tay (từ chối thứ schema
+  // nhận) đỏ ở nửa thứ hai.
+  const OUTSIDE = ["watch", "PANEL", "", "  ", "tablet ", "desktop", 1, null, undefined, {}, ["panel"]]
+  for (const breakpoint of OUTSIDE) {
+    const state = freshState()
+    const next = applyEdit(state, { kind: "set-breakpoint", breakpoint })
+    assertRefusedUnchanged(state, next, `set-breakpoint ${JSON.stringify(breakpoint) ?? String(breakpoint)}`, "unknown-breakpoint")
+
+    const forced = demoDoc()
+    forced.layout.breakpoint = breakpoint
+    assert.notDeepEqual(
+      docErrors(forced),
+      [],
+      `schema NHẬN breakpoint ${JSON.stringify(breakpoint)} mà applyEdit từ chối — guard đã siết quá tay`
+    )
+  }
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
