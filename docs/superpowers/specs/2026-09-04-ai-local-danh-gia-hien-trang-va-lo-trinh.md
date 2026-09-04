@@ -572,11 +572,39 @@ model tự dừng sớm).
 
 1. ★★ **Câu ngoài miền tài liệu hãng vẫn được gắn trích dẫn không chống đỡ câu trả lời**
    (C# tổng quát, web/IoT). Hành vi đúng phải là **không gắn trích dẫn nào** và trả lời bằng kiến
-   thức chung. Đây là 2/2 ca SAI còn lại.
+   thức chung. Đây là 2/2 ca SAI còn lại. ★ Việc 7 (dưới) đã vá NỬA đầu của mục này — câu hỏi nêu
+   ĐÚNG MỘT hãng không còn nhận trích dẫn LẪN hãng khác (đo được: 4/40 → 0/40 citation sai hãng
+   trong 8 ca một-hãng) — nhưng nửa này ("hoàn toàn ngoài miền, không hãng nào") **VẪN CÒN MỞ**,
+   `VSC-09`/`VSC-10` không đổi.
 2. ★★ **Model từ chối trả lời dù đã trích đúng tài liệu** (quan sát ở ca PLC Omron). Chưa truy gốc.
 3. `embed-programming.mjs` báo VRAM sai (xem trên).
 4. Ba server thừa (cổng 3000/3001/3002) đã tắt theo yêu cầu chủ dự án — **MQTT (1883/8883) dừng
    theo** vì cùng tiến trình. Bật lại nếu cần MQTT.
+
+## Việc 7 — lọc theo hãng (vendor) khi truy hồi, thay vì tìm khắp rồi xếp điểm
+
+Đúng CÒN MỞ #1 ở trên, phần **triệu chứng nhầm hãng** (không phải phần "câu ngoài miền vẫn nhận
+citation" — cái đó vẫn CÒN MỞ, xem dưới). `searchProgrammingKb` đã có sẵn tham số `vendor` LỌC THẬT
+(kiểm mã `collectionMatchesVendor`/`chunkMatchesFilters`, lọc TRƯỚC khi chấm điểm) nhưng route
+vscode chưa từng truyền nó. Thêm `detectProgrammingVendors()` (vị từ THUẦN, câu hỏi → 0/1/nhiều slug
+hãng, lưới riêng 26 ca — trọng tâm là ca ÂM TÍNH cho "Delta" vì nó vừa là tên hãng vừa là từ khoá
+JS/TS thông dụng `const delta = t1 - t0`) và nối: đúng-một-hãng ⇒ lọc; không hãng nào ⇒ giữ nguyên
+tìm khắp; nhiều hãng ⇒ CHỌN không lọc (an toàn hơn mở rộng hợp đồng `vendor` sang mảng).
+
+**Đo trước→sau (bộ 11 ca, server 3003 thật, build+restart)**:
+
+| | ĐẠT/SAI/CHẶN-ĐÚNG | Độ SẠCH hãng trong 8 ca một-hãng (40 citation) |
+|---|---|---|
+| Trước | 8/2/1 | **4/40 (10%) SAI hãng** — `VSC-01` 1/5 Mitsubishi lẫn vào câu Delta; `VSC-08` **3/5 Delta** lẫn vào câu URScript (★ đúng kịch bản brief: "hỏi Universal Robots (movel) ⇒ nhận Delta 0,75+") |
+| Sau | 8/2/1 (★ không đổi — cả 8 ca đã ĐẠT từ trước vì bộ chấm chỉ đòi ≥1 citation đúng, bản vá không đổi rổ ĐẠT/SAI) | **0/40 (0%) SAI hãng** |
+
+2 ca SAI còn lại (`VSC-09` C# chung, `VSC-10` web/IoT) **không đổi** — cả hai đều KHÔNG nêu tên
+hãng nào (`vendor: null` trong case JSON) nên không được lọc, đúng như kỳ vọng: đây là CÒN MỞ #1
+phần *"câu ngoài miền vẫn nhận citation"*, một gốc rễ KHÁC, bản vá này không nhắm tới.
+
+ABLATION tầng mã (gỡ điều kiện ngữ cảnh Delta / gỡ nhánh chọn vendor) — output thật dán ở
+`task-v7-report.md`. Chi tiết đầy đủ, kể cả bảng before/after từng ca:
+`.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-v7-report.md`.
 
 ## Demo IoT (Việc 5)
 

@@ -2240,6 +2240,67 @@ export function locKhoTheoTienTo<T extends { sourcePath: string }>(
  * Việc 1, tránh đúng lỗi đã đo: ngữ cảnh SAI MIỀN còn tệ hơn không có ngữ cảnh) là hành vi TỰ NHIÊN
  * của hàm đó, không cần thêm nhánh fallback nào ở đây — `citations`/`contexts` rỗng, `confidence` 0.
  */
+
+/**
+ * ★★★ B2 (đợt "lọc theo hãng đã có sẵn", brief `task-v7`) — bảng so khớp NGUYÊN TỪ cho năm hãng
+ * "hiếm nghĩa" (không phải từ tiếng Anh/toán học thông dụng, brief đã xác nhận: Omron/Fanuc/Zmotion
+ * "an toàn hơn nhiều"; Mitsubishi/Universal Robots cùng tầng — tên riêng đa âm tiết, không trùng từ
+ * vựng lập trình). `\b…\b` = ranh giới từ, không phân biệt hoa/thường.
+ *
+ * "universal-robots" khớp CỤM ĐẦY ĐỦ "universal robots" (khoảng trắng/gạch ngang/gạch dưới), HOẶC
+ * mã model UR3/UR5/UR10/UR16(+"e") — HOẶC tên riêng phần mềm/SDK của hãng (URScript, PolyScope).
+ * ⚠ CỐ Ý không khớp "UR" đứng một mình — hai ký tự, quá dễ trùng với chữ viết tắt khác.
+ */
+const VENDOR_WORD_PATTERNS: ReadonlyArray<{ slug: string; re: RegExp }> = [
+  { slug: "fanuc", re: /\bfanuc\b/i },
+  { slug: "omron", re: /\bomron\b/i },
+  { slug: "zmotion", re: /\bz-?motion\b/i },
+  { slug: "mitsubishi", re: /\bmitsubishi\b/i },
+  { slug: "universal-robots", re: /\buniversal[\s_-]?robots?\b|\bur\d{1,2}e?\b|\burscript\b|\bpolyscope\b/i },
+];
+
+/**
+ * ★★★ "Delta" (hãng thứ sáu) KHÔNG nằm trong bảng trên — nó là TỪ TIẾNG ANH THÔNG DỤNG (delta = độ
+ * chênh) VÀ là định danh JS/TS cực phổ biến (`const delta = t1 - t0`, `deltaTime`, `deltaX`). Dự án
+ * này đã bị cắn BỐN lần vì khớp từ khoá quá lỏng (OEE `performance`/`quality`, `yield` = từ khoá JS,
+ * gộp dấu "kỹ"↔"kỳ", văn bản giáo cụ khớp nhầm intent) — không lặp lại lần thứ năm ở đây.
+ *
+ * Nhận "delta" là hãng khi và CHỈ KHI một trong hai:
+ *   (a) viết hoa ĐÚNG tên riêng — `Delta` (chữ Đ hoa, còn lại thường), so khớp PHÂN BIỆT hoa/thường;
+ *   (b) "delta" (không phân biệt hoa/thường) đi kèm một dấu hiệu thiết bị/hãng trong CÙNG câu hỏi —
+ *       `DELTA_DEVICE_CONTEXT_RE` bên dưới.
+ * Cả hai điều kiện đều dùng `\bdelta\b` — camelCase như `deltaTime`/`deltaX` không có ranh giới từ
+ * trước ký tự theo sau (chữ liền chữ, không phải chữ-số/dấu cách/dấu câu) nên KHÔNG BAO GIỜ khớp,
+ * bất kể điều kiện (a)/(b). "biến tần" (tiếng Việt, không dấu ranh giới ASCII) so khớp bằng chuỗi
+ * con thay vì `\b` vì cụm hai âm tiết đã đủ đặc hiệu.
+ */
+const DELTA_WORD_RE = /\bdelta\b/i;
+const DELTA_PROPER_NOUN_RE = /\bDelta\b/; // PHÂN BIỆT hoa/thường — cố ý
+const DELTA_DEVICE_CONTEXT_RE =
+  /\b(plc|servo|asda|dvp|inverter|vfd|hmi|dop|ecma|drastudio|scada|ladder|encoder|automation)\b|motion controller|biến tần|bien tan/i;
+
+/**
+ * B2 — vị từ nhận diện hãng THUẦN từ câu hỏi. KHÔNG đọc đĩa, KHÔNG gọi GPU/embedding — chỉ so khớp
+ * chuỗi — nên lưới của hàm này (`aiLocalKnowledge.vendorDetect.test.ts`) chạy được mà không cần nạp
+ * corpus 124.990 chunk (cùng lý do `export` như `locKhoTheoTienTo` ở trên).
+ *
+ * Trả về DANH SÁCH slug hãng khớp được (0, 1, hoặc nhiều), đúng TÊN THƯ MỤC dưới
+ * `knowledge/programming/` (`delta`/`fanuc`/`mitsubishi`/`omron`/`universal-robots`/`zmotion`) — vỏ
+ * chữ không quan trọng ở đầu ra vì `collectionMatchesVendor`/`chunkMatchesFilters` phía
+ * `aiProgrammingKnowledgeService` đều `.toLowerCase()` cả hai phía trước khi so khớp.
+ */
+export function detectProgrammingVendors(question: string): string[] {
+  const q = String(question ?? "");
+  const found = new Set<string>();
+  for (const { slug, re } of VENDOR_WORD_PATTERNS) {
+    if (re.test(q)) found.add(slug);
+  }
+  if (DELTA_PROPER_NOUN_RE.test(q) || (DELTA_WORD_RE.test(q) && DELTA_DEVICE_CONTEXT_RE.test(q))) {
+    found.add("delta");
+  }
+  return Array.from(found);
+}
+
 async function retrieveProgrammingKnowledgeForVscode(
   question: string,
   topK: number,
@@ -2256,9 +2317,27 @@ async function retrieveProgrammingKnowledgeForVscode(
     contexts: [],
     rerankMs: null,
   });
+  // ★★★ B3 (đợt "lọc theo hãng đã có sẵn") — `searchProgrammingKb` NHẬN `vendor` để LỌC trước khi
+  // chấm điểm (đo được ở B1: `collectionMatchesVendor`/`chunkMatchesFilters` bỏ qua toàn bộ chunk
+  // không khớp TRƯỚC vòng lặp tính điểm, không phải lọc SAU khi xếp hạng) — nhưng route vscode
+  // trước bản này không truyền tham số đó, nên một câu hỏi Universal Robots có thể nhận trích dẫn
+  // Delta điểm 0,75+ (đo được, xem brief). Ba nhánh, đúng B3:
+  //   · ĐÚNG MỘT hãng nêu tên  ⇒ lọc theo hãng đó (dưới).
+  //   · KHÔNG hãng nào nêu tên ⇒ `vendor` = undefined ⇒ HÀNH VI CŨ (tìm khắp sáu hãng), giữ nguyên
+  //     y hệt trước bản vá — không có nhánh nào âm thầm thu hẹp một câu hỏi chung chung.
+  //   · NHIỀU hãng cùng nêu tên (vd "so sánh Delta và Mitsubishi") ⇒ CHỌN KHÔNG LỌC (giống nhánh
+  //     trên), KHÔNG lọc theo tập. Lý do: `SearchProgrammingKbParams.vendor` chỉ nhận MỘT chuỗi
+  //     (không phải mảng) — mở rộng hợp đồng đó để lọc-theo-tập là một thay đổi lớn hơn phạm vi bản
+  //     vá này ("nhỏ, giá trị cao") và chạm vào một service có lưới riêng đang khoá (11/11 ca xanh,
+  //     `aiProgrammingKnowledgeService.test.ts`). Không lọc còn AN TOÀN HƠN lọc-theo-tập sai: một
+  //     câu so sánh hai hãng cần thấy CẢ HAI, và tìm khắp-rồi-xếp-điểm (hành vi hôm nay) đã làm đúng
+  //     việc đó — nó chỉ sai khi câu hỏi nêu ĐÚNG MỘT hãng mà kết quả lại lẫn hãng khác.
+  const detectedVendors = detectProgrammingVendors(question);
+  const vendorFilter = detectedVendors.length === 1 ? detectedVendors[0] : undefined;
+
   let result: Awaited<ReturnType<typeof searchProgrammingKb>>;
   try {
-    result = await searchProgrammingKb({ query: question, topK });
+    result = await searchProgrammingKb({ query: question, topK, vendor: vendorFilter });
   } catch {
     // fail-safe: một corpus lập trình hỏng không được làm rơi cả lượt hỏi, và KHÔNG được
     // rơi về kho vận hành (đó đúng là lỗi sai-miền Việc 1 phải sửa) — trả kết quả RỖNG.

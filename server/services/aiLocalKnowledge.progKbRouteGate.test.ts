@@ -126,7 +126,11 @@ describe("§A — VIỆC 1: route vscode ⇒ retrieveKnowledge dùng CORPUS LẬ
     const r = await retrieveKnowledge("read modbus register on Delta AS300", 5, { route: "vscode" });
 
     expect(searchProgrammingKb).toHaveBeenCalledTimes(1);
-    expect(searchProgrammingKb).toHaveBeenCalledWith({ query: "read modbus register on Delta AS300", topK: 5 });
+    // ★ B3 (spec "lọc theo hãng") — câu hỏi nêu ĐÚNG MỘT hãng ("Delta", viết hoa tên riêng) ⇒
+    // `vendor: "delta"` giờ được truyền để LỌC trước khi chấm điểm (đo được ở B1). Trước bản vá
+    // này, lời gọi KHÔNG có `vendor` — xem `aiLocalKnowledge.vendorFilterWiring.test.ts` cho lưới
+    // riêng của cả ba nhánh (0/1/nhiều hãng) và `aiLocalKnowledge.vendorDetect.test.ts` cho vị từ.
+    expect(searchProgrammingKb).toHaveBeenCalledWith({ query: "read modbus register on Delta AS300", topK: 5, vendor: "delta" });
     // ★★★ Phép đo cốt lõi: kho vận hành (fs) không bị đọc DÙ MỘT LẦN cho route vscode.
     expect(fsReadFileSync).not.toHaveBeenCalled();
 
