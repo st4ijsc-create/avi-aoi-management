@@ -4,7 +4,7 @@
   "title": "Demo kỹ thuật — liên kết gián tiếp {component}",
   "titleEn": "ENGINEERING DEMO — {component} INDIRECT BINDING",
   "theme": "blueprint",
-  "layout": { "cols": 12, "rows": 4, "breakpoint": "panel" },
+  "layout": { "cols": 12, "rows": 6, "breakpoint": "panel" },
   "widgets": [
     {
       "id": "probe-a",
@@ -25,6 +25,99 @@
       "kind": "readout",
       "rect": { "col": 8, "row": 0, "colSpan": 4, "rowSpan": 1 },
       "bindings": { "value": "cycles" }
+    },
+    {
+      "id": "kind-status-lamp",
+      "kind": "status-lamp",
+      "rect": { "col": 0, "row": 1, "colSpan": 3, "rowSpan": 1 },
+      "props": { "label": "Đèn trạng thái", "sub": "status-lamp" }
+    },
+    {
+      "id": "kind-state-badge",
+      "kind": "state-badge",
+      "rect": { "col": 3, "row": 1, "colSpan": 3, "rowSpan": 1 },
+      "bindings": { "state": "statusText" },
+      "props": { "tones": { "TELEMETRY": "run", "OK": "run", "WARN": "warn", "FAIL": "fault", "Idle": "idle" } }
+    },
+    {
+      "id": "kind-line-state",
+      "kind": "line-state",
+      "rect": { "col": 6, "row": 1, "colSpan": 3, "rowSpan": 1 },
+      "bindings": { "state": "statusText", "sub": "driftState" },
+      "props": { "tones": { "TELEMETRY": "run", "OK": "run", "WARN": "warn", "FAIL": "fault", "Idle": "idle" } }
+    },
+    {
+      "id": "kind-log",
+      "kind": "log",
+      "rect": { "col": 9, "row": 1, "colSpan": 3, "rowSpan": 1 },
+      "bindings": { "message": "keyMetric" }
+    },
+    {
+      "id": "kind-gauge",
+      "kind": "gauge",
+      "rect": { "col": 0, "row": 2, "colSpan": 4, "rowSpan": 1 },
+      "bindings": { "value": "telemetry/temperature" },
+      "props": { "label": "Nhiệt độ", "labelEn": "TEMPERATURE", "unit": "°C", "min": 0, "max": 60, "thresholds": { "warn": 30, "fault": 40 } }
+    },
+    {
+      "id": "kind-kpi-tile",
+      "kind": "kpi-tile",
+      "rect": { "col": 4, "row": 2, "colSpan": 4, "rowSpan": 1 },
+      "bindings": { "value": "cycles", "sub": "statusText" },
+      "props": { "label": "Chu kỳ", "labelEn": "CYCLES" }
+    },
+    {
+      "id": "kind-trend",
+      "kind": "trend",
+      "rect": { "col": 8, "row": 2, "colSpan": 4, "rowSpan": 1 },
+      "bindings": { "series": "telemetry/humidity" },
+      "props": { "label": "Độ ẩm", "unit": "%" }
+    },
+    {
+      "id": "kind-alarm-banner",
+      "kind": "alarm-banner",
+      "rect": { "col": 0, "row": 3, "colSpan": 6, "rowSpan": 1 },
+      "bindings": { "message": "statusText" }
+    },
+    {
+      "id": "kind-alarm-list",
+      "kind": "alarm-list",
+      "rect": { "col": 6, "row": 3, "colSpan": 6, "rowSpan": 1 },
+      "bindings": { "drift": "driftState" },
+      "props": { "rows": [{ "id": "drift", "label": "Lệch cấu hình", "labelEn": "CONFIG DRIFT", "binding": "drift" }] }
+    },
+    {
+      "id": "kind-setpoint-input",
+      "kind": "setpoint-input",
+      "rect": { "col": 0, "row": 4, "colSpan": 3, "rowSpan": 1 },
+      "bindings": { "value": "telemetry/temperature" },
+      "policyAction": "machine.setpoint",
+      "props": { "label": "Điểm đặt (demo)", "labelEn": "SETPOINT — DEMO, NO WRITE", "unit": "°C" }
+    },
+    {
+      "id": "kind-command-button",
+      "kind": "command-button",
+      "rect": { "col": 3, "row": 4, "colSpan": 3, "rowSpan": 1 },
+      "policyAction": "machine.command",
+      "props": { "variant": "start", "label": "Nút lệnh (demo)", "labelEn": "COMMAND — DEMO, NO DISPATCH" }
+    },
+    {
+      "id": "kind-label",
+      "kind": "label",
+      "rect": { "col": 6, "row": 4, "colSpan": 3, "rowSpan": 1 },
+      "props": { "text": "Nhãn tĩnh", "textEn": "STATIC LABEL" }
+    },
+    {
+      "id": "kind-sheet",
+      "kind": "sheet",
+      "rect": { "col": 9, "row": 4, "colSpan": 3, "rowSpan": 1 },
+      "props": { "title": "Khung nhóm", "titleEn": "GROUPING FRAME" }
+    },
+    {
+      "id": "kind-faceplate",
+      "kind": "faceplate",
+      "rect": { "col": 0, "row": 5, "colSpan": 12, "rowSpan": 1 },
+      "props": { "faceplate": "fp.overview.iot", "schematicFlex": 0.85, "readoutFlex": 1.15 }
     }
   ]
 }
