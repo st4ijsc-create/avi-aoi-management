@@ -33,6 +33,25 @@ import type { HmiScreenDocument } from "../contracts/hmiScreen.ts"
 export const SCREEN_ID_PATTERN = /^[a-z0-9-]+$/
 
 /**
+ * 🔴 SECURITY REVIEW MEDIUM-2 — `$defs/layout.properties.cols`/`rows`'s frozen `[1..48]`, mirrored here
+ * for the same reason `SCREEN_ID_PATTERN` above is, and pinned the same way: `screenJoin.test.mjs`
+ * reads both bounds out of the schema FILE ON DISK and compares them against these.
+ *
+ * **Why the guard needed them.** `unrenderableReason` checked `Number.isFinite` on `cols`/`rows` while
+ * the write door checks the RANGE — so `layout.cols = 1e9` was finite, passed this guard, and reached
+ * `repeat(1000000000, minmax(0, 1fr))`. Not reachable today: every row a shipped engine can hold went
+ * through the current door, which caps at 48. It becomes reachable the first time a contract rule is
+ * TIGHTENED, because `RollbackAsync` deliberately does not re-validate — "a restore is not new
+ * authorship", which the review judged correct and which is being kept. That decision is exactly what
+ * makes rollback the one path able to serve content the current door would refuse, and this guard is
+ * the net behind it, so it has to cover the same ground the door does.
+ */
+export const LAYOUT_DIMENSION_MIN = 1
+
+/** See {@link LAYOUT_DIMENSION_MIN}. */
+export const LAYOUT_DIMENSION_MAX = 48
+
+/**
  * The prefix every machine's own operator-panel screen id carries.
  *
  * 🔴 WHY A RESERVED PREFIX AND NOT THE BARE MACHINE CODE — the question this task's brief asks to be
@@ -162,11 +181,31 @@ export function unrenderableReason(doc: unknown): string | undefined {
   if (!isPlainObject(doc)) return `not an object: ${describeValue(doc)}`
   const layout = doc.layout
   if (!isPlainObject(layout)) return `layout is ${describeValue(layout)}`
-  if (!Number.isFinite(layout.cols)) return `layout.cols is ${describeValue(layout.cols)}`
-  if (!Number.isFinite(layout.rows)) return `layout.rows is ${describeValue(layout.rows)}`
+  // 🔴 SECURITY REVIEW MEDIUM-2 — the RANGE the write door enforces, not merely finiteness. See
+  // `LAYOUT_DIMENSION_MIN`. Checked in one place for both axes so the two cannot drift apart, and the
+  // reason names the bound rather than only the value, because the operator-visible symptom of getting
+  // this wrong (a grid with a billion tracks) does not look like a layout problem from the outside.
+  const colsBad = outsideLayoutRange(layout.cols)
+  if (colsBad) return `layout.cols is ${colsBad}`
+  const rowsBad = outsideLayoutRange(layout.rows)
+  if (rowsBad) return `layout.rows is ${rowsBad}`
   if (!Array.isArray(doc.widgets)) return `widgets is ${describeValue(doc.widgets)}`
   const holeAt = doc.widgets.findIndex((widget) => !isPlainObject(widget))
   if (holeAt >= 0) return `widgets[${holeAt}] is ${describeValue(doc.widgets[holeAt])}`
+  return undefined
+}
+
+/** The offending description when `value` is not a whole number inside the frozen `[1..48]`, or
+ * `undefined` when it is. Integer-ness is part of it: `cols: 12.5` is finite and in range and still
+ * produces a fractional CSS track count, which the schema's `"type": "integer"` forbids and this guard
+ * used to accept. */
+function outsideLayoutRange(value: unknown): string | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    return `${describeValue(value)} (not a whole number)`
+  }
+  if (value < LAYOUT_DIMENSION_MIN || value > LAYOUT_DIMENSION_MAX) {
+    return `${value} (outside the frozen range ${LAYOUT_DIMENSION_MIN}..${LAYOUT_DIMENSION_MAX})`
+  }
   return undefined
 }
 

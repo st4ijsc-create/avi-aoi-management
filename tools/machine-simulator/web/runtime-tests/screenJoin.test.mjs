@@ -35,6 +35,8 @@ import { fileURLToPath } from "node:url"
 
 import { validate } from "../contract-tests/validate.mjs"
 import {
+  LAYOUT_DIMENSION_MAX,
+  LAYOUT_DIMENSION_MIN,
   MACHINE_SCREEN_ID_PREFIX,
   SCREEN_ID_PATTERN,
   machineForScreenId,
@@ -74,6 +76,60 @@ test("SCREEN_ID_PATTERN is `properties.screenId.pattern` read off the frozen sch
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // machineScreenId
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// 🔴 SECURITY REVIEW MEDIUM-2 — the layout bounds are a MIRROR too, and held to the same file
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+test("LAYOUT_DIMENSION_MIN/MAX are `$defs.layout.properties.cols|rows`'s frozen minimum/maximum, read off the schema", () => {
+  for (const field of ["cols", "rows"]) {
+    const declared = SCHEMA.$defs?.layout?.properties?.[field]
+    assert.equal(typeof declared?.minimum, "number", `schema no longer declares $defs.layout.${field}.minimum`)
+    assert.equal(typeof declared?.maximum, "number", `schema no longer declares $defs.layout.${field}.maximum`)
+    assert.equal(declared.minimum, LAYOUT_DIMENSION_MIN, `$defs.layout.${field}.minimum has drifted from publishedScreen.ts`)
+    assert.equal(declared.maximum, LAYOUT_DIMENSION_MAX, `$defs.layout.${field}.maximum has drifted from publishedScreen.ts`)
+  }
+})
+
+test("the join's guard refuses the RANGES the write door refuses — not merely non-finite ones", () => {
+  // The reviewer's own example first: `1e9` is finite, so the round-0 guard passed it and the renderer
+  // reached `repeat(1000000000, minmax(0, 1fr))`. Then the rest of the boundary, both axes, both ends,
+  // plus a fractional value the schema's `"type": "integer"` forbids and finiteness accepts.
+  const cases = [
+    ["cols", 1e9],
+    ["cols", 0],
+    ["cols", -1],
+    ["cols", LAYOUT_DIMENSION_MAX + 1],
+    ["cols", 12.5],
+    ["rows", 1e9],
+    ["rows", 0],
+    ["rows", LAYOUT_DIMENSION_MAX + 1],
+    ["rows", 4.5],
+  ]
+  for (const [field, value] of cases) {
+    const doc = structuredClone(GOOD_DOC)
+    doc.layout[field] = value
+    const reason = unrenderableReason(doc)
+    assert.ok(reason, `layout.${field} = ${value} was ACCEPTED by the join's guard`)
+    // `startsWith`, not a regex: the field name is interpolated, and a template literal that has to
+    // escape a dot for a RegExp is one backslash away from matching any character instead of a dot —
+    // which is exactly what the first draft of this line did.
+    assert.ok(
+      reason.startsWith(`layout.${field} is`),
+      `the guard blamed the wrong field for ${field} = ${value}: ${reason}`
+    )
+  }
+})
+
+test("…and ACCEPTS both ends of the frozen range — a guard that refused everything would satisfy the test above", () => {
+  for (const value of [LAYOUT_DIMENSION_MIN, LAYOUT_DIMENSION_MAX]) {
+    for (const field of ["cols", "rows"]) {
+      const doc = structuredClone(GOOD_DOC)
+      doc.layout[field] = value
+      assert.equal(unrenderableReason(doc), undefined, `layout.${field} = ${value} is inside the frozen range but was refused`)
+    }
+  }
+})
 
 test("floor: fleet.json really was read and really has machines — otherwise the roster tests below measure an empty set", () => {
   assert.ok(Array.isArray(FLEET) && FLEET.length > 0, "fleet.json parsed to no roster")
