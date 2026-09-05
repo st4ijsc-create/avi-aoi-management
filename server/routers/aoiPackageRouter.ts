@@ -49,7 +49,11 @@ import { macTenantChoGhi, khoaLuuTruGoi } from "./phamViGhiMay";
 // cổng mọi đường machine khác đang tuân theo. `machineHeaderKey` TÁI DÙNG từ
 // machineApiRouters.ts (export có chủ ý) — không chép lại logic đọc header.
 import { authenticateMachine } from "../services/machineAuthService";
-import { machineHeaderKey } from "./machineApiRouters";
+import {
+  machineHeaderKey,
+  ingestRejectLegacyMachineEnabled,
+  ghiTinHieuHinhDangIngest,
+} from "./machineApiRouters";
 // Pha 1D Task 5 (BG-52 ⛔) — phân loại lỗi VĨNH VIỄN/TẠM THỜI cho chốt chặn retry
 // vô hạn ở cửa ZIP (commit). DÙNG LẠI nguyên hàm đã có ở đường WAL inspection —
 // KHÔNG viết bản thứ hai (đúng chỉ dẫn brief).
@@ -63,7 +67,17 @@ import { isPermanentSubmitError } from "../services/inspection/inspectionStoreFo
 // bản chép tay thứ hai của luật cuộn/nhận-diện-hình-dạng.
 // ════════════════════════════════════════════════════════════════════════════
 import { machineDataContractV2, imageRefSchema, type MachineDataContractV2 } from "../contracts/machineDataContractV2";
-import { laHinhDangCayV2 } from "../contracts/machineDataContract";
+// ★★★ Lô 3 Mục 3 (BG-39 gđ2) — `laHinhDangCayV2` DÙNG CHUNG với `commit` để gác hình dạng phẳng
+// ở `meta.json` TRƯỚC khi parse qua `metaJsonSchema` (schema yêu cầu `surfaces` bắt buộc nên SAU
+// một lượt `.parse()` thành công, vị từ này LUÔN true trên `metaData` — phải hỏi nó trên JSON THÔ,
+// xem điểm gọi trong `commit`). `loiMayChuaNangCap` — CÙNG thông điệp/họ lỗi với đường v1 trực
+// tiếp (mirror, KHÔNG chép chuỗi). Nó trả một `Error` THƯỜNG (không phải TRPCError/appError) — giữ
+// NGUYÊN quyết định đó ở đây: `laLoiVinhVienDemVaoNguongDeadZip` (định nghĩa dưới) coi một
+// `TRPCError(BAD_REQUEST)` là VĨNH VIỄN (đếm vào ngưỡng 'dead'), nhưng một `Error` thường thì
+// không khớp `ZodError`/`TRPCError`/SQLSTATE nào ⇒ rơi vào TẠM THỜI — ĐÚNG hành vi mệnh đề 4 của
+// `aoiPackageBienBg85.test.ts` (hình dạng cũ KHÔNG BAO GIỜ bị khoá 'dead', luôn 'failed', retry
+// được vô hạn). Dùng `appError(...)` ở đây sẽ VÔ TÌNH đổi lớp lỗi này sang VĨNH VIỄN.
+import { laHinhDangCayV2, loiMayChuaNangCap } from "../contracts/machineDataContract";
 import { dichCayKetQua, type CayDaDich, type CaptureDaDich } from "../services/ingestCayKetQua";
 // Khối B Task 4 (BG-92) — cổng spec cho đường CÂY v2, CÙNG hàm mà cửa trực tiếp dùng.
 import { congSpecTuBanDay } from "../services/specGateCayV2";
@@ -1139,7 +1153,52 @@ export const aoiPackageRouter = router({
             );
           }
           const metaContent = await metaFile.async("string");
-          metaData = metaJsonSchema.parse(JSON.parse(metaContent));
+          const metaRaw: unknown = JSON.parse(metaContent);
+
+          // ════════════════════════════════════════════════════════════════
+          // ★★★ Lô 3 Mục 3 (BG-39 gđ2) — GÁC CỬA ZIP bằng ĐÚNG cổng chặn máy cũ mà
+          // đường v1 trực tiếp dùng (`ingestRejectLegacyMachineEnabled` +
+          // `laHinhDangCayV2` + `loiMayChuaNangCap`, cả ba EXPORT từ/định nghĩa ở
+          // `machineDataContract.ts`/`machineApiRouters.ts` — KHÔNG viết bộ nhận
+          // diện/thông điệp thứ hai).
+          //
+          // ⚠⚠⚠ VÌ SAO HỎI TRÊN `metaRaw` (JSON THÔ), KHÔNG PHẢI TRÊN `metaData` (SAU
+          // `.parse()`) — đo được TRƯỚC khi viết dòng này: `metaJsonSchema` (BG-85) YÊU
+          // CẦU `surfaces: z.array(surfaceV2)` — bắt buộc, nhưng KHÔNG `.min(1)` — nên
+          // sau một lượt `metaJsonSchema.parse()` THÀNH CÔNG, `laHinhDangCayV2(metaData)`
+          // LUÔN LÀ `true` (kể cả khi `surfaces` là mảng RỖNG `[]`), và một payload
+          // PHẲNG thật (`measurements[]`, không có `surfaces`) sẽ KHÔNG BAO GIỜ tới được
+          // `metaData` — nó ném `ZodError` NGAY TẠI `.parse()` (thiếu `identity`/
+          // `productId`/`ntf`/`summary.*`/`surfaces` bắt buộc). Hỏi `laHinhDangCayV2` SAU
+          // `.parse()` do đó là mã CHẾT — nhánh phủ định không bao giờ chạm được. Hỏi
+          // TRÊN `metaRaw` (JSON thô, TRƯỚC khi ép qua hợp đồng CÂY) mirror ĐÚNG cách
+          // `quyetDinhPhienBanIngest(raw)` hỏi ở đường v1 trực tiếp — CÙNG một vị từ,
+          // CÙNG một tầng (thô, trước hợp đồng riêng của từng hình dạng).
+          //
+          // Gác Ở ĐÂY (ngay sau khi có `metaRaw`, TRƯỚC `metaJsonSchema.parse()`) để một
+          // payload phẳng khi cờ BẬT nhận ĐÚNG thông điệp `loiMayChuaNangCap` (cùng máy
+          // đọc được với v1) thay vì một `ZodError` chung chung liệt kê 8 trường thiếu —
+          // hai lỗi cùng dẫn tới cùng trạng thái `'failed'` (xem lựa chọn KHÔNG dùng
+          // `appError` ở docblock import phía trên), nhưng thông điệp GÁC nói đúng lý do
+          // nghiệp vụ ("máy chưa nâng cấp") thay vì lý do cú pháp ("thiếu trường X").
+          //
+          // Cờ TẮT (mặc định hôm nay, mệnh đề 2 brief) ⇒ nhánh này không chạy — hành vi
+          // hệt TRƯỚC bản vá, kể cả với payload phẳng: rơi thẳng xuống `metaJsonSchema.
+          // parse()` và ném `ZodError` y hệt mệnh đề 4 của `aoiPackageBienBg85.test.ts`.
+          if (ingestRejectLegacyMachineEnabled() && !laHinhDangCayV2(metaRaw)) {
+            const schemaVersionKhai =
+              metaRaw && typeof metaRaw === "object" && typeof (metaRaw as { schemaVersion?: unknown }).schemaVersion === "string"
+                ? (metaRaw as { schemaVersion: string }).schemaVersion
+                : "(không khai schemaVersion — payload hình dạng phẳng v1.x/`measurements`)";
+            // Tín hiệu đếm (Lô 3 Mục 2, BG-57b) — AN TOÀN ghi ở đây (KHÁC đường v1 trực
+            // tiếp, nơi từ chối xảy ra TRƯỚC `authenticateMachine`): `commit` đã xác thực
+            // `machine` ở ĐẦU mutation (dòng trên), nên `entityName`/`entityId` là máy
+            // THẬT, không phải lời tự khai — không lặp lại lỗ I-4.
+            ghiTinHieuHinhDangIngest("v1-rejected", { id: machine.id, code: machine.code }, schemaVersionKhai);
+            throw loiMayChuaNangCap(schemaVersionKhai);
+          }
+
+          metaData = metaJsonSchema.parse(metaRaw);
 
           // BG-85 — `metaJsonSchema` GIỜ LÀ `machineDataContractV2` + `images[]`
           // (xem docblock tại chỗ khai schema): `surfaces` bắt buộc ⇒ MỌI lượt

@@ -22,9 +22,10 @@
  * ⇒ File này canh MỘT lượng từ trên CẢ HAI router: *"∀ cửa nhận dữ liệu kiểm tra từ máy: nó đi qua
  *   `quyetDinhPhienBanIngest`, HOẶC có tên KÝ trong sổ miễn trừ (hợp của
  *   `MIEN_TRU_QUYET_DINH_PHIEN_BAN` + `MIEN_TRU_CUA_INGEST_ZIP`) kèm lý do đo được."* Miễn trừ là
- *   một lựa chọn HỢP LỆ cho BỐN trong bảy cửa (ba cửa thuộc họ hợp đồng khác hẳn + `presign` không
- *   mang payload đo lường) — nhưng `commit` là LỖ THẬT CHƯA VÁ, ký vào sổ để KHÔNG chặn cổng ra chứ
- *   không phải một tuyên bố "đã ổn"; xem `MIEN_TRU_CUA_INGEST_ZIP.commit` và task-2-report.md.
+ *   một lựa chọn HỢP LỆ cho NĂM trong bảy cửa (ba cửa thuộc họ hợp đồng khác hẳn + `presign` không
+ *   mang payload đo lường + `commit`, tính TỚI Lô 3 Mục 3/BG-39 gđ2, ĐÃ GÁC bằng ba khối dùng
+ *   chung nhưng không gọi TRỰC TIẾP `quyetDinhPhienBanIngest` nên bộ suy AST không thấy được) — xem
+ *   `MIEN_TRU_CUA_INGEST_ZIP.commit` cho bằng chứng và `aoiPackageZipGacMayCu.test.ts` cho hành vi.
  *
  * ⚠⚠ CỔNG XANH KHÔNG CHỨNG MINH "mọi cửa tương lai sẽ tự động được canh". Nó chứng minh BỐN điều:
  *   (1) bộ suy THẬT SỰ tìm thấy ≥7 cửa trên mã hôm nay, TRÊN CẢ HAI router (§1 — cầu chì chống
@@ -222,12 +223,12 @@ describe("§4 — NĂM CA CHUẨN trên mã THẬT", () => {
     expect(MIEN_TRU.presign).toBeDefined();
   });
 
-  it("★★★ commit (CỬA THỨ SÁU, aoiPackageRouter) — CHƯA gác, có miễn trừ đã ký nhưng là LỖ THẬT CHƯA VÁ (không phải 'đã ổn')", () => {
+  it("★★★ commit (CỬA THỨ SÁU, aoiPackageRouter) — KHÔNG gọi quyetDinhPhienBanIngest TRỰC TIẾP (bộ suy AST không thấy), nhưng ĐÃ GÁC bằng ba khối dùng chung (BG-39 gđ2 — xem aoiPackageZipGacMayCu.test.ts cho bằng chứng hành vi)", () => {
     const c = QUET.cua.find((x) => x.ten === "commit");
     expect(c, "không thấy commit — bộ suy mất cửa ZIP này").toBeDefined();
-    expect(c?.quaDiemQuyetDinh, "commit hôm nay KHÔNG gọi quyetDinhPhienBanIngest — nếu true, sổ miễn trừ đã hoá thạch, xoá dòng commit").toBe(false);
+    expect(c?.quaDiemQuyetDinh, "commit KHÔNG gọi quyetDinhPhienBanIngest trực tiếp (hàm đó ở tầng payload submitInspection, không khớp meta.json trong ZIP) — nếu true, sổ miễn trừ đã hoá thạch, xoá dòng commit").toBe(false);
     expect(MIEN_TRU.commit).toBeDefined();
-    expect(MIEN_TRU.commit).toContain("LỖ THẬT");
+    expect(MIEN_TRU.commit).toContain("ĐÃ GÁC");
   });
 
   it("★★★ HỒI QUY: nếu `commit` ĐƯỢC vá để gọi `quyetDinhPhienBanIngest`, bộ suy phải nhận ra NGAY (chứng minh việc gác CÓ được phát hiện qua router/file khác — không chỉ việc KHÔNG gác)", () => {

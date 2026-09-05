@@ -173,10 +173,19 @@ export function laTenCuaIngestZip(ten: string): boolean {
  * sổ (dict này + của `machineApiRouters.ts`) trước khi áp luật §3 — hai sổ không đụng tên (kiểm
  * bằng test) nên hợp bằng spread object là an toàn.
  *
- * ⚠⚠⚠ MỘT trong hai mục dưới đây (`commit`) là LỖ THẬT CHƯA VÁ, không phải một khác biệt kiến
- * trúc hợp lệ — đọc kỹ lý do, và xem mục "mối lo" của `task-2-report.md`
- * (`.superpowers/sdd/2026-08-30-aoi-pha1d-truoc-khoi-b/`) trước khi coi census xanh là "cửa này đã
- * ổn". Ghi vào sổ CHỈ để không chặn cổng ra Task 2, không phải một tuyên bố rằng lỗ đã đóng.
+ * ⚠ CẬP NHẬT (Lô 3 Mục 3, BG-39 gđ2, 2026-09-05) — `commit` KHÔNG còn là "lỗ thật chưa vá": nó
+ * nay tự gác hình dạng phẳng NGAY TRONG THÂN thủ tục (`ingestRejectLegacyMachineEnabled() &&
+ * !laHinhDangCayV2(metaRaw)` trên JSON thô của `meta.json`, TRƯỚC `metaJsonSchema.parse()`) — CÙNG
+ * ba khối dùng chung với đường v1 trực tiếp (`laHinhDangCayV2`, `loiMayChuaNangCap`,
+ * `ingestRejectLegacyMachineEnabled`, cả ba export/định nghĩa ở `machineDataContract.ts`/
+ * `machineApiRouters.ts`). `commit` VẪN nằm trong sổ miễn trừ này (KHÔNG chuyển sang "đã gác" ở
+ * §3/§4 của `cuaIngestCensus.test.ts`) vì lý do KIẾN TRÚC thật, không phải sót: nó không gọi
+ * `quyetDinhPhienBanIngest` (hàm đó nhận `raw: unknown` ở TẦNG payload `submitInspection`, không
+ * khớp tầng `meta.json` bên trong một ZIP — gọi nó ở đây sẽ phải giả lập một request-shape không
+ * tồn tại). Bộ suy AST (`quetCuaIngest`) chỉ biết hỏi "có tới được `quyetDinhPhienBanIngest`
+ * không" — nó KHÔNG thấy được cổng dùng vị từ CHUNG nhưng gọi trực tiếp, nên `commit` tiếp tục
+ * cần một dòng miễn trừ TƯỜNG MINH khẳng định "đã gác, bằng cách khác, có lý do" thay vì để census
+ * đọc nhầm thành "chưa gác".
  */
 export const MIEN_TRU_CUA_INGEST_ZIP: Readonly<Record<string, string>> = {
   presign:
@@ -188,21 +197,21 @@ export const MIEN_TRU_CUA_INGEST_ZIP: Readonly<Record<string, string>> = {
     "hiện ở bước `commit`. Cùng LỚP lý do mà `syncEdgeResults` (machineApiRouters.ts) đã được " +
     "chấp nhận: 'không phải một payload đo lường máy theo hợp đồng v1.x/v2.0 nào'.",
   commit:
-    "★ LỖ THẬT, CHƯA VÁ — không phải miễn trừ kiến trúc: `commit` parse `meta.json` với trường " +
-    "`measurements` (aoiPackageRouter.ts:330-342), và chính chú thích tại chỗ khai trường đó " +
-    "'Đồng bộ với submitInspection measurements' — nghĩa là payload này CÙNG HÌNH DẠNG PHẲNG mà " +
-    "`INGEST_REJECT_LEGACY_MACHINE_ENABLED`/`quyetDinhPhienBanIngest` được dựng ra để từ chối. " +
-    "`meta.json` KHÔNG BAO GIỜ khai `surfaces` (không có nhánh cây v2.0 nào ở ZIP path hôm nay) " +
-    "⇒ `laHinhDangCayV2(metaData)` luôn `false` ⇒ nếu gọi `quyetDinhPhienBanIngest` trên payload " +
-    "này khi cờ BẬT, nó sẽ LUÔN throw `loiMayChuaNangCap` — ĐÚNG là 100% payload ZIP thuộc đúng " +
-    "hình dạng cờ nhắm tới. Ngày cờ `INGEST_REJECT_LEGACY_MACHINE_ENABLED` bật, một máy cũ bị " +
-    "`submitInspection` VÀ `submitInspectionBatch` từ chối vẫn ingest TRỌN VẸN qua đường ZIP — " +
-    "ĐÚNG lớp lỗ mà Task 3 Pha 1C đã đóng ở `submitInspectionBatch` ('cắt mà chừa bốn cửa thì " +
-    "không phải cắt'), tái diễn ở cửa thứ sáu. Miễn trừ ở đây KHÔNG PHẢI lời khẳng định 'cửa này " +
-    "ổn' — nó CHỈ để không chặn cổng ra Task 2 (brief cấm tự sửa `aoiPackageRouter.ts` để gác khi " +
-    "đường đó đang chạy thật). Quyết định GÁC (nối `commit` qua `quyetDinhPhienBanIngest` sau khi " +
-    "parse `meta.json`) hay MIỄN TRỪ VĨNH VIỄN với một lý do kiến trúc thật cần chủ dự án duyệt — " +
-    "xem task-2-report.md.",
+    "★ ĐÃ GÁC (Lô 3 Mục 3, BG-39 gđ2) — không tới được `quyetDinhPhienBanIngest` (hàm đó nhận " +
+    "payload TẦNG `submitInspection`, không khớp `meta.json` TRONG ZIP), nhưng `commit` tự gác " +
+    "BẰNG CHÍNH ba khối dùng chung mà `quyetDinhPhienBanIngest` cũng dùng: đọc `meta.json` thành " +
+    "JSON thô (`metaRaw`) rồi hỏi `ingestRejectLegacyMachineEnabled() && !laHinhDangCayV2(metaRaw)` " +
+    "TRƯỚC khi ép qua `metaJsonSchema.parse()` — khớp `true` ⇒ ném `loiMayChuaNangCap` (CÙNG thông " +
+    "điệp v1) + ghi tín hiệu `ingest_shape_legacy_rejected` (BG-57b), commit dừng ở đó. Đo TRƯỚC " +
+    "khi vá: `metaJsonSchema` (BG-85) yêu cầu `surfaces` BẮT BUỘC nên một payload PHẲNG THẬT không " +
+    "bao giờ tới được `metaData` — nó ném `ZodError` ngay tại `.parse()`; đó là lý do gác PHẢI hỏi " +
+    "trên `metaRaw` (thô), không phải trên `metaData` (sau parse, nơi `laHinhDangCayV2` luôn `true` " +
+    "vì `surfaces` — dù rỗng — đã LÀ một mảng theo hợp đồng). Cờ TẮT (mặc định) ⇒ nhánh gác không " +
+    "chạy, hành vi giữ NGUYÊN mệnh đề 4 của `aoiPackageBienBg85.test.ts` (ZodError, `'failed'`, " +
+    "KHÔNG BAO GIỜ `'dead'`). `commit` VẪN nằm trong sổ miễn trừ (không chuyển 'đã gác' ở §3/§4) vì " +
+    "bộ suy AST chỉ nhận diện lời gọi TRỰC TIẾP `quyetDinhPhienBanIngest(...)` — dòng miễn trừ này " +
+    "là lời khẳng định TƯỜNG MINH rằng cổng đã đóng bằng đường khác, có kiểm chứng bằng test " +
+    "(`aoiPackageZipGacMayCu.test.ts`), không phải một lỗ còn sót.",
 };
 
 /** `router({…})` của một biểu thức lời gọi — bỏ qua, không cần theo `.use()` bọc ngoài (không có ở đây). */
