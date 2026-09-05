@@ -17,5 +17,6 @@ if [ -n "$hp" ]; then
 fi
 cp "$goc/scripts/hooks/pre-commit-chan-commit-tran.sh" "$goc/.git/hooks/pre-commit"
 cp "$goc/scripts/hooks/pre-push-kb-stale.sh" "$goc/.git/hooks/pre-push"
-chmod +x "$goc/.git/hooks/pre-commit" "$goc/.git/hooks/pre-push"
-echo "Đã cài pre-commit (BG-124) + pre-push (kb-stale) vào $goc/.git/hooks/"
+cp "$goc/scripts/hooks/reference-transaction-chan-stash.sh" "$goc/.git/hooks/reference-transaction"
+chmod +x "$goc/.git/hooks/pre-commit" "$goc/.git/hooks/pre-push" "$goc/.git/hooks/reference-transaction"
+echo "Đã cài pre-commit (BG-124) + pre-push (kb-stale) + reference-transaction (chặn stash) vào $goc/.git/hooks/"
