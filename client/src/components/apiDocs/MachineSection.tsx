@@ -216,12 +216,15 @@ POST ${endpointBase}/machineApi.submitMachineTemplate
 Headers: X-API-Key: machine-api-key
 { "productModelCode": "PCBA-REV3", "template": { "surfaces": [...] } }
 
-// 2) Presign — khai captureExtId (+ componentExtId nếu muốn ảnh RIÊNG của linh kiện)
+// 2) Presign — khai captureExtId (+ componentExtId nếu muốn ảnh RIÊNG của linh kiện).
+//    productModelCode NÊN LUÔN gửi: captureExtId là GUID do MÁY cấp, không đảm bảo
+//    duy nhất trên toàn hệ (cây clone cho hai sản phẩm) — thiếu nó mà bị trùng ⇒ 400.
 POST ${endpointBase}/machineApi.presignTemplateImage
 Headers: X-API-Key: machine-api-key
 {
   "captureExtId": "a1b2c3d4-0000-4000-8000-000000001011",
   "componentExtId": "a1b2c3d4-0000-4000-8000-000000010111",
+  "productModelCode": "PCBA-REV3",
   "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "sizeBytes": 245678,
   "ext": "jpg"
@@ -242,6 +245,7 @@ Headers: X-API-Key: machine-api-key
 {
   "captureExtId": "a1b2c3d4-0000-4000-8000-000000001011",
   "componentExtId": "a1b2c3d4-0000-4000-8000-000000010111",
+  "productModelCode": "PCBA-REV3",
   "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "ext": "jpg"
 }
@@ -730,14 +734,15 @@ defer res.Body.Close()`,
                     </p>
                     <ol className="list-decimal space-y-1 pl-5 text-white/80">
                       <li><code className="text-white">submitMachineTemplate</code> — đẩy cây (surface/position/capture/component) như hôm nay, không đổi.</li>
-                      <li><code className="text-white">machineApi.presignTemplateImage</code> — khai <code>captureExtId</code> (ảnh mặt/lượt chụp) hoặc thêm <code>componentExtId</code> (ảnh riêng của linh kiện), <code>contentHash</code> (sha256 hex), <code>sizeBytes</code>, <code>ext</code> (jpg/png). Trả về <code>objectKey</code> + <code>uploadUrl</code>.</li>
+                      <li><code className="text-white">machineApi.presignTemplateImage</code> — khai <code>captureExtId</code> (ảnh mặt/lượt chụp) hoặc thêm <code>componentExtId</code> (ảnh riêng của linh kiện), NÊN LUÔN khai <code>productModelCode</code> (xem cảnh báo dưới), <code>contentHash</code> (sha256 hex), <code>sizeBytes</code>, <code>ext</code> (jpg/png). Trả về <code>objectKey</code> + <code>uploadUrl</code>.</li>
                       <li><code className="text-white">PUT {"{uploadUrl}"}</code> — tải byte ảnh THẬT (body nhị phân, cùng header <code>x-api-key</code>/<code>x-machine-code</code> như upload ZIP).</li>
-                      <li><code className="text-white">machineApi.commitTemplateImage</code> — khai lại đúng <code>captureExtId</code>/<code>componentExtId</code>/<code>contentHash</code>/<code>ext</code>; server đối chiếu sha256 với byte đã nhận rồi ghi URL vào đúng hàng cây.</li>
+                      <li><code className="text-white">machineApi.commitTemplateImage</code> — khai lại đúng <code>captureExtId</code>/<code>componentExtId</code>/<code>productModelCode</code>/<code>contentHash</code>/<code>ext</code>; server đối chiếu sha256 với byte đã nhận rồi ghi URL vào đúng hàng cây.</li>
                     </ol>
                     <p className="mt-2 text-white/80">Ví dụ:</p>
                     <CodeBlock code={templateImageFlowExample} language="typescript" />
                     <ul className="mt-3 list-disc space-y-1 pl-5 text-white/70">
-                      <li><strong>Mã lỗi:</strong> <code className="text-white">NOT_FOUND</code> — <code>captureExtId</code> lạ, hoặc <code>componentExtId</code> không thuộc đúng capture đã khai. <code className="text-white">FORBIDDEN</code> — capture thuộc máy khác. <code className="text-white">BAD_REQUEST</code> — <code>contentHash</code> khai không khớp sha256 thật của byte đã tải lên (PUT lại rồi commit lại).</li>
+                      <li><strong>productModelCode:</strong> tùy chọn nhưng NÊN LUÔN gửi — <code>captureExtId</code> là GUID do máy cấp, không đảm bảo duy nhất trên toàn hệ (một máy dạy cây CLONE cho hai sản phẩm khác nhau có thể mang cùng bộ GUID). Không gửi mà server thấy captureExtId khớp NHIỀU sản phẩm của cùng máy ⇒ 400, không đoán bừa sản phẩm nào.</li>
+                      <li><strong>Mã lỗi:</strong> <code className="text-white">NOT_FOUND</code> — <code>captureExtId</code> lạ, hoặc <code>componentExtId</code> không thuộc đúng capture đã khai. <code className="text-white">FORBIDDEN</code> — capture thuộc máy khác. <code className="text-white">BAD_REQUEST</code> — <code>contentHash</code> khai không khớp sha256 thật của byte đã tải lên (PUT lại rồi commit lại), HOẶC thiếu <code>productModelCode</code> khi captureExtId nhập nhằng nhiều sản phẩm.</li>
                       <li><strong>Idempotent:</strong> commit lặp lại với CÙNG nội dung ảnh (cùng sha256) là AN TOÀN — không tạo hàng mới, không lỗi.</li>
                       <li><strong>Tùy chọn — máy chưa nâng cấp không ảnh hưởng ingest:</strong> đây là BƯỚC RIÊNG, SAU đẩy cây. Máy không gọi hai cửa mới này vẫn <code>submitMachineTemplate</code> bình thường; canvas dạy giới hạn trên hệ chỉ hiện thông điệp "ảnh chưa được tải lên hệ" thay vì lỗi.</li>
                     </ul>

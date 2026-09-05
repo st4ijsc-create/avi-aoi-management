@@ -61,15 +61,21 @@ import { demHinhDangBa } from "../../../scripts/viStringScan.mjs";
  * `pointImage` tab đã có — mô tả tuyến, mã lỗi, idempotency bằng tiếng Việt trần, tên
  * tuyến/trường giữ nguyên tiếng Anh). Cùng NHÓM chủ dự án đã chốt (tài liệu tham chiếu
  * API cho bên tích hợp máy, không phải nhãn giao diện vận hành) — không mở nhóm mới.
+ *
+ * `424 → 425` (2026-09-05, Lô 8 Mục 1 review — sửa lỗ nhập nhằng `captureExtId`) — **+1**
+ * `MachineSection.tsx`: một dòng giải thích `productModelCode` (tùy chọn nhưng NÊN LUÔN
+ * gửi) thêm vào khối tài liệu Lô 8 Mục 3 ở trên, sau khi review đo được `captureExtId`
+ * KHÔNG duy nhất toàn hệ (cây clone) và cửa presign/commit cần trường này để hết nhập
+ * nhằng. CÙNG nhóm/file đã tính ở lần nâng trước.
  */
-const ALLOWED_RAW_VI_STRINGS = 424;
+const ALLOWED_RAW_VI_STRINGS = 425;
 
 /**
  * Trần riêng cho nhóm ApiDocs. Tồn tại để hai con số không thể bù trừ cho nhau:
  * nếu ai đó dịch bớt ApiDocs mà thêm nhãn trần vào màn vận hành, tổng vẫn 410 và
  * cổng trên sẽ xanh — chính là lớp lỗi "ngân sách tự thoả" đã trả giá ở Pha 7.
  */
-const ALLOWED_RAW_VI_APIDOCS = 424; // 415 → 424 (Lô 8 Mục 3, BG-116) — xem chú thích ở trần tổng.
+const ALLOWED_RAW_VI_APIDOCS = 425; // 424 → 425 (Lô 8 Mục 1 review, BG-116) — xem chú thích ở trần tổng.
 
 const CLIENT_SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LOCALES = resolve(CLIENT_SRC, "i18n/locales");

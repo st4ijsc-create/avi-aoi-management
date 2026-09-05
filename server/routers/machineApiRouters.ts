@@ -5805,6 +5805,13 @@ export const machineApiRouter = router({
       machineCode: z.string().optional(),
       captureExtId: z.string().trim().min(1).max(64),
       componentExtId: z.string().trim().min(1).max(64).optional(),
+      // ★ Lô 8 Mục 1 review — TUỲ CHỌN nhưng BẮT BUỘC KHI BIẾT (đúng khuôn
+      // `traPointDefCapComponent.productModelId`): một máy có thể dạy CÙNG
+      // captureExtId cho HAI sản phẩm khác nhau (cây clone) — không khai
+      // productModelCode mà tra ra >1 hàng ⇒ từ chối rõ ràng (`nhapNhang`),
+      // không đoán bừa một trong hai. Đo được THẬT trên chính db test Lô 8
+      // (ba file Khối B khác chạy song song, cùng máy, cùng mẫu máy thật).
+      productModelCode: z.string().trim().min(1).max(100).optional(),
       contentHash: z.string().trim().toLowerCase().regex(/^[0-9a-f]{64}$/, "contentHash phải là sha256 hex 64 ký tự"),
       sizeBytes: z.number().int().positive().max(tranByteAnhTemplate()),
       ext: z.enum(["jpg", "png"]),
@@ -5825,10 +5832,18 @@ export const machineApiRouter = router({
         endpoint: "presignTemplateImage",
       });
 
+      const productModel = input.productModelCode
+        ? await db.getProductModelByCode(input.productModelCode.trim())
+        : null;
+      if (input.productModelCode && !productModel) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model '${input.productModelCode}' not found`);
+      }
+
       const tra = await traHangAnhTemplate({
         machineId: machine.id,
         captureExtId: input.captureExtId,
         componentExtId: input.componentExtId ?? null,
+        productModelId: productModel?.id ?? null,
       });
       if (tra.ket === "khongThayCapture") {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productCapture" }, `captureExtId '${input.captureExtId}' not found`);
@@ -5838,6 +5853,14 @@ export const machineApiRouter = router({
       }
       if (tra.ket === "khongThayComponent") {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `componentExtId '${input.componentExtId}' not found under this capture`);
+      }
+      if (tra.ket === "nhapNhang") {
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "productModelCode" },
+          `captureExtId '${input.captureExtId}' được dạy cho NHIỀU sản phẩm trên máy này — khai kèm productModelCode để chọn đúng sản phẩm.`,
+        );
       }
 
       const objectKey = `product-models/${tra.hang.productModelId}/template-${input.contentHash}.${input.ext}`;
@@ -5857,6 +5880,7 @@ export const machineApiRouter = router({
       machineCode: z.string().optional(),
       captureExtId: z.string().trim().min(1).max(64),
       componentExtId: z.string().trim().min(1).max(64).optional(),
+      productModelCode: z.string().trim().min(1).max(100).optional(),
       contentHash: z.string().trim().toLowerCase().regex(/^[0-9a-f]{64}$/, "contentHash phải là sha256 hex 64 ký tự"),
       ext: z.enum(["jpg", "png"]),
     }).refine((data) => data.apiKey || data.machineCode, {
@@ -5871,10 +5895,18 @@ export const machineApiRouter = router({
         endpoint: "commitTemplateImage",
       });
 
+      const productModel = input.productModelCode
+        ? await db.getProductModelByCode(input.productModelCode.trim())
+        : null;
+      if (input.productModelCode && !productModel) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model '${input.productModelCode}' not found`);
+      }
+
       const tra = await traHangAnhTemplate({
         machineId: machine.id,
         captureExtId: input.captureExtId,
         componentExtId: input.componentExtId ?? null,
+        productModelId: productModel?.id ?? null,
       });
       if (tra.ket === "khongThayCapture") {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productCapture" }, `captureExtId '${input.captureExtId}' not found`);
@@ -5884,6 +5916,14 @@ export const machineApiRouter = router({
       }
       if (tra.ket === "khongThayComponent") {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `componentExtId '${input.componentExtId}' not found under this capture`);
+      }
+      if (tra.ket === "nhapNhang") {
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "productModelCode" },
+          `captureExtId '${input.captureExtId}' được dạy cho NHIỀU sản phẩm trên máy này — khai kèm productModelCode để chọn đúng sản phẩm.`,
+        );
       }
 
       const objectKey = `product-models/${tra.hang.productModelId}/template-${input.contentHash}.${input.ext}`;

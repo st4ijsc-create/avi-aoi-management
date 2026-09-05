@@ -12,7 +12,7 @@
  * Cùng bài học Đ-11 mà `cayDayGhiThat.db.test.ts` đã ghi: gọi thẳng hàm chứng minh HÀM
  * chạy, không chứng minh CỬA xác thực/uỷ quyền có thật.
  *
- * ── NĂM MỆNH ĐỀ (brief mục 1.4) ──────────────────────────────────────────────────
+ * ── NĂM MỆNH ĐỀ CỦA BRIEF (mục 1.4) + BA MỆNH ĐỀ ĐO ĐƯỢC THÊM (review) ────────────
  *  1. presign → ghi file thật vào thư mục uploads TEST (LOCAL_STORAGE_DIR) → commit
  *     ⇒ URL vào ĐÚNG hàng (capture VÀ component).
  *  2. Idempotent theo (hàng, sha256): commit LẶP cùng nội dung ⇒ `daDoi:false`, KHÔNG
@@ -20,6 +20,14 @@
  *  3. Sai máy (capture thuộc máy KHÁC) ⇒ FORBIDDEN, cột không đổi.
  *  4. sha256 khai lệch byte thật ⇒ từ chối, cột không đổi.
  *  5. Chưa xác thực (apiKey sai) ⇒ UNAUTHORIZED, cột không đổi.
+ *  6-7. captureExtId lạ / componentExtId sai capture ⇒ NOT_FOUND.
+ *  8. ★★★ ĐO ĐƯỢC KHI VIẾT LƯỚI NÀY (không phải giả định trước) — `captureExtId` là
+ *     GUID DO MÁY CẤP, KHÔNG duy nhất toàn cục: chạy CÙNG bộ máy có sẵn + CÙNG mẫu
+ *     máy thật với ba file test khác của Khối B (song song) làm CÙNG (machineId,
+ *     captureExtId) tồn tại ở NHIỀU hàng `product_captures` (khác `productModelId`).
+ *     `presignTemplateImage`/`commitTemplateImage` vì vậy nhận thêm `productModelCode`
+ *     TUỲ CHỌN NHƯNG BẮT BUỘC KHI BIẾT (đúng khuôn `traPointDefCapComponent`) — không
+ *     khai mà tra ra >1 hàng ⇒ `BAD_REQUEST` (`nhapNhang`), không đoán bừa.
  *
  * ── DẤU CHÂN ─────────────────────────────────────────────────────────────────────
  * Bốn bảng cây dạy KHÔNG WORM (đã ghi ở `cayDayGhiThat.db.test.ts`) — dọn THẬT bằng
@@ -48,6 +56,19 @@ let apiKeyA = "";
 let apiKeyB = "";
 let captureExtId = "";
 let componentExtId = "";
+/**
+ * ★★★ productModelCode CỦA CHÍNH FILE NÀY — luôn khai kèm ở mọi lượt gọi presign/commit.
+ *
+ * `captureExtId`/`componentExtId` là GUID DO MẪU MÁY THẬT `template-sync-sample.json` sinh
+ * — CỐ ĐỊNH, không phải tự phát theo `RUN`. Ba file test khác của Khối B
+ * (`cayDayGhiThat.db.test.ts`/`cayDayChieuMay.db.test.ts`/`cayDayRouter.db.test.ts`) TÁI DÙNG
+ * ĐÚNG mẫu này + CÙNG máy có sẵn (`ORDER BY id LIMIT 1/2`) cho sản phẩm CỦA RIÊNG chúng khi
+ * chạy song song — nghĩa là CÙNG (machineId, captureExtId) có thể tồn tại ở >1 hàng
+ * `product_captures` cùng lúc trên DB test (đo được thật — xem docblock `traHangAnhTemplate`).
+ * Không khai `productModelCode` sẽ khiến `nhapNhang` nổ ở đúng những lượt chạy trùng, KHÔNG
+ * phải một lỗi của cửa presign/commit.
+ */
+const PMC = () => `L8-${RUN}`;
 
 function ctx(): TrpcContext {
   return {
@@ -130,12 +151,34 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       await fsp.writeFile(filePath, buf);
     }
 
+    /**
+     * ★★★ Tra hàng `product_captures` CỦA CHÍNH FILE NÀY — SCOPE qua CẢ `machineId`
+     * lẫn `productModelId` (`ids.product`), KHÔNG chỉ `captureExtId`/`machineId`.
+     *
+     * Lý do bắt buộc scope CẢ HAI (đo được thật khi viết lưới này — xem docblock đầu
+     * file, mệnh đề 8): `captureExtId` của mẫu máy thật KHÔNG duy nhất theo
+     * `(machineId, captureExtId)` khi CÙNG máy A dạy nhiều sản phẩm CÙNG mẫu (ca
+     * "cây clone", ba file test Khối B khác chạy song song sinh ĐÚNG hiện tượng này
+     * trên máy dùng chung `ORDER BY id LIMIT 1/2`). Không join `product_surfaces` để
+     * lọc `productModelId` thì `count`/`url` đọc được ở đây là TỔNG/MỘT-TRONG-NHIỀU
+     * qua tất cả sản phẩm cùng máy — không phải câu hỏi thật của các mệnh đề dưới.
+     */
+    async function hangCaptureCuaMinh(): Promise<{ n: number; url: string | null; key: string | null }> {
+      const rows = await sql<{ url: string | null; key: string | null }[]>`
+        SELECT pc."templateImageUrl" AS url, pc."templateImageKey" AS key
+        FROM product_captures pc
+        JOIN product_positions pp ON pp.id = pc."positionRowId"
+        JOIN product_surfaces ps ON ps.id = pp."surfaceRowId"
+        WHERE pc."captureExtId" = ${captureExtId} AND pc."machineId" = ${ids.machineA} AND ps."productModelId" = ${ids.product}`;
+      return { n: rows.length, url: rows[0]?.url ?? null, key: rows[0]?.key ?? null };
+    }
+
     it("MỆNH ĐỀ 1a — capture-level: presign → ghi byte thật → commit ⇒ URL vào product_captures.templateImageUrl", async () => {
       const buf = Buffer.from(`L8-CAP-${RUN}-` + "x".repeat(200));
       const sha = createHash("sha256").update(buf).digest("hex");
 
       const pre = await caller().presignTemplateImage({
-        apiKey: apiKeyA, captureExtId, contentHash: sha, sizeBytes: buf.length, ext: "jpg",
+        apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: sha, sizeBytes: buf.length, ext: "jpg",
       });
       expect(pre.success).toBe(true);
       expect(pre.cap, "chỉ captureExtId (không componentExtId) ⇒ đích cấp CAPTURE").toBe("capture");
@@ -143,14 +186,12 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       await ghiByteThat(pre.objectKey, buf);
 
       const commit = await caller().commitTemplateImage({
-        apiKey: apiKeyA, captureExtId, contentHash: sha, ext: "jpg",
+        apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: sha, ext: "jpg",
       });
       expect(commit.success).toBe(true);
       expect(commit.daDoi, "lượt ghi ĐẦU phải thật sự đổi cột").toBe(true);
 
-      const [row] = await sql<{ url: string | null; key: string | null }[]>`
-        SELECT "templateImageUrl" AS url, "templateImageKey" AS key FROM product_captures
-         WHERE "captureExtId" = ${captureExtId}`;
+      const row = await hangCaptureCuaMinh();
       expect(row.url, `[${tenDb}] product_captures.templateImageUrl phải được GHI`).toBe(commit.url);
       expect(row.key).toBe(pre.objectKey);
       expect(row.url, "URL phải trỏ /uploads/... đọc được, KHÔNG phải đường dẫn máy").toMatch(/^\/uploads\//);
@@ -161,19 +202,27 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       const sha = createHash("sha256").update(buf).digest("hex");
 
       const pre = await caller().presignTemplateImage({
-        apiKey: apiKeyA, captureExtId, componentExtId, contentHash: sha, sizeBytes: buf.length, ext: "png",
+        apiKey: apiKeyA, captureExtId, componentExtId, productModelCode: PMC(), contentHash: sha, sizeBytes: buf.length, ext: "png",
       });
       expect(pre.cap, "captureExtId + componentExtId ⇒ đích cấp COMPONENT").toBe("component");
       await ghiByteThat(pre.objectKey, buf);
 
       const commit = await caller().commitTemplateImage({
-        apiKey: apiKeyA, captureExtId, componentExtId, contentHash: sha, ext: "png",
+        apiKey: apiKeyA, captureExtId, componentExtId, productModelCode: PMC(), contentHash: sha, ext: "png",
       });
       expect(commit.success).toBe(true);
 
+      // ⚠ SCOPE qua đúng capture CỦA CHÍNH FILE NÀY (máy A + productModel `ids.product`,
+      // không chỉ componentExtId/machineId) — cùng lý do đo được ở `hangCaptureCuaMinh`:
+      // componentExtId của mẫu máy thật KHÔNG duy nhất toàn cục khi nhiều test cùng đẩy.
       const [row] = await sql<{ url: string | null }[]>`
-        SELECT "referenceImageUrl" AS url FROM measurement_point_defs
-         WHERE "componentExtId" = ${componentExtId}`;
+        SELECT mpd."referenceImageUrl" AS url
+        FROM measurement_point_defs mpd
+        JOIN product_captures pc ON pc.id = mpd."captureRowId"
+        JOIN product_positions pp ON pp.id = pc."positionRowId"
+        JOIN product_surfaces ps ON ps.id = pp."surfaceRowId"
+        WHERE mpd."componentExtId" = ${componentExtId} AND pc."machineId" = ${ids.machineA}
+          AND pc."captureExtId" = ${captureExtId} AND ps."productModelId" = ${ids.product}`;
       expect(row.url, `[${tenDb}] measurement_point_defs.referenceImageUrl phải được GHI`).toBe(commit.url);
     });
 
@@ -181,74 +230,76 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       const buf = Buffer.from(`L8-IDEMP-${RUN}-` + "z".repeat(200));
       const sha = createHash("sha256").update(buf).digest("hex");
 
-      const pre1 = await caller().presignTemplateImage({ apiKey: apiKeyA, captureExtId, contentHash: sha, sizeBytes: buf.length, ext: "jpg" });
+      const pre1 = await caller().presignTemplateImage({ apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: sha, sizeBytes: buf.length, ext: "jpg" });
       await ghiByteThat(pre1.objectKey, buf);
-      const c1 = await caller().commitTemplateImage({ apiKey: apiKeyA, captureExtId, contentHash: sha, ext: "jpg" });
+      const c1 = await caller().commitTemplateImage({ apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: sha, ext: "jpg" });
       expect(c1.daDoi).toBe(true);
 
-      const [truoc] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM product_captures WHERE "captureExtId" = ${captureExtId}`;
-      expect(truoc.n, "trước lượt lặp phải ĐÚNG MỘT hàng capture").toBe(1);
+      // Scope CẢ máy A LẪN sản phẩm của chính file này (`hangCaptureCuaMinh`) — không
+      // chỉ captureExtId: xem docblock hàm đó cho lý do đo được thật.
+      const truoc = await hangCaptureCuaMinh();
+      expect(truoc.n, "trước lượt lặp phải ĐÚNG MỘT hàng capture của máy A/sản phẩm này").toBe(1);
 
       // Lượt LẶP: presign lại (idempotent ở tầng presign) rồi commit lại CÙNG sha.
-      const pre2 = await caller().presignTemplateImage({ apiKey: apiKeyA, captureExtId, contentHash: sha, sizeBytes: buf.length, ext: "jpg" });
+      const pre2 = await caller().presignTemplateImage({ apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: sha, sizeBytes: buf.length, ext: "jpg" });
       expect(pre2.objectKey, "cùng contentHash+ext ⇒ CÙNG objectKey (hàm thuần, không sinh khoá mới)").toBe(pre1.objectKey);
       await ghiByteThat(pre2.objectKey, buf);
-      const c2 = await caller().commitTemplateImage({ apiKey: apiKeyA, captureExtId, contentHash: sha, ext: "jpg" });
+      const c2 = await caller().commitTemplateImage({ apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: sha, ext: "jpg" });
       expect(c2.daDoi, "commit LẶP cùng sha256 ⇒ no-op (key không đổi)").toBe(false);
       expect(c2.url).toBe(c1.url);
 
-      const [sau] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM product_captures WHERE "captureExtId" = ${captureExtId}`;
-      expect(sau.n, "KHÔNG được nhân bản hàng capture").toBe(1);
+      const sau = await hangCaptureCuaMinh();
+      expect(sau.n, "KHÔNG được nhân bản hàng capture của máy A/sản phẩm này").toBe(1);
     });
 
     it("MỆNH ĐỀ 3 — sai máy: capture thuộc máy A, máy B presign/commit ⇒ FORBIDDEN, cột không đổi", async () => {
-      const [truoc] = await sql<{ url: string | null }[]>`SELECT "templateImageUrl" AS url FROM product_captures WHERE "captureExtId" = ${captureExtId}`;
+      const truoc = await hangCaptureCuaMinh();
 
       await expect(
-        caller().presignTemplateImage({ apiKey: apiKeyB, captureExtId, contentHash: "a".repeat(64), sizeBytes: 10, ext: "jpg" }),
+        caller().presignTemplateImage({ apiKey: apiKeyB, captureExtId, productModelCode: PMC(), contentHash: "a".repeat(64), sizeBytes: 10, ext: "jpg" }),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
       const buf = Buffer.from(`L8-XMAY-${RUN}`);
       const sha = createHash("sha256").update(buf).digest("hex");
       await expect(
-        caller().commitTemplateImage({ apiKey: apiKeyB, captureExtId, contentHash: sha, ext: "jpg" }),
+        caller().commitTemplateImage({ apiKey: apiKeyB, captureExtId, productModelCode: PMC(), contentHash: sha, ext: "jpg" }),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
-      const [sau] = await sql<{ url: string | null }[]>`SELECT "templateImageUrl" AS url FROM product_captures WHERE "captureExtId" = ${captureExtId}`;
+      const sau = await hangCaptureCuaMinh();
       expect(sau.url, "cột KHÔNG được đổi bởi một máy không sở hữu capture này").toBe(truoc.url);
     });
 
     it("MỆNH ĐỀ 4 — sha256 khai LỆCH byte thật ⇒ commit từ chối, cột không đổi", async () => {
-      const [truoc] = await sql<{ url: string | null }[]>`SELECT "templateImageUrl" AS url FROM product_captures WHERE "captureExtId" = ${captureExtId}`;
+      const truoc = await hangCaptureCuaMinh();
 
       const buf = Buffer.from(`L8-SHALECH-${RUN}-` + "w".repeat(200));
       const shaThat = createHash("sha256").update(buf).digest("hex");
       const shaSai = "b".repeat(64);
 
-      const pre = await caller().presignTemplateImage({ apiKey: apiKeyA, captureExtId, contentHash: shaSai, sizeBytes: buf.length, ext: "jpg" });
+      const pre = await caller().presignTemplateImage({ apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: shaSai, sizeBytes: buf.length, ext: "jpg" });
       await ghiByteThat(pre.objectKey, buf); // byte thật khớp shaThat, KHÔNG khớp shaSai đã khai
 
       await expect(
-        caller().commitTemplateImage({ apiKey: apiKeyA, captureExtId, contentHash: shaSai, ext: "jpg" }),
+        caller().commitTemplateImage({ apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: shaSai, ext: "jpg" }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
-      const [sau] = await sql<{ url: string | null }[]>`SELECT "templateImageUrl" AS url FROM product_captures WHERE "captureExtId" = ${captureExtId}`;
+      const sau = await hangCaptureCuaMinh();
       expect(sau.url, "sha256 lệch ⇒ KHÔNG được ghi cột").toBe(truoc.url);
       void shaThat; // dùng để tính buf/sha thật — không assert trực tiếp, chỉ đối lập với shaSai
     });
 
     it("MỆNH ĐỀ 5 — chưa xác thực (apiKey sai) ⇒ UNAUTHORIZED, cột không đổi, KHÔNG hàng nào bị chạm", async () => {
-      const [truoc] = await sql<{ url: string | null }[]>`SELECT "templateImageUrl" AS url FROM product_captures WHERE "captureExtId" = ${captureExtId}`;
+      const truoc = await hangCaptureCuaMinh();
 
       await expect(
-        caller().presignTemplateImage({ apiKey: "SAI-" + RUN, captureExtId, contentHash: "c".repeat(64), sizeBytes: 10, ext: "jpg" }),
+        caller().presignTemplateImage({ apiKey: "SAI-" + RUN, captureExtId, productModelCode: PMC(), contentHash: "c".repeat(64), sizeBytes: 10, ext: "jpg" }),
       ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
 
       await expect(
-        caller().commitTemplateImage({ apiKey: "SAI-" + RUN, captureExtId, contentHash: "c".repeat(64), ext: "jpg" }),
+        caller().commitTemplateImage({ apiKey: "SAI-" + RUN, captureExtId, productModelCode: PMC(), contentHash: "c".repeat(64), ext: "jpg" }),
       ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
 
-      const [sau] = await sql<{ url: string | null }[]>`SELECT "templateImageUrl" AS url FROM product_captures WHERE "captureExtId" = ${captureExtId}`;
+      const sau = await hangCaptureCuaMinh();
       expect(sau.url).toBe(truoc.url);
     });
 
@@ -266,9 +317,42 @@ describe.skipIf(!DB_URL || !CO_MAU)(
 
       await expect(
         caller().presignTemplateImage({
-          apiKey: apiKeyA, captureExtId, componentExtId: componentCapture2, contentHash: "e".repeat(64), sizeBytes: 10, ext: "jpg",
+          apiKey: apiKeyA, captureExtId, componentExtId: componentCapture2, productModelCode: PMC(), contentHash: "e".repeat(64), sizeBytes: 10, ext: "jpg",
         }),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("MỆNH ĐỀ 8 — captureExtId trùng ở HAI sản phẩm khác nhau CÙNG máy (cây clone) + KHÔNG khai productModelCode ⇒ BAD_REQUEST (nhapNhang), không đoán bừa", async () => {
+      // Đẩy MỘT sản phẩm THỨ HAI, CÙNG máy A, CÙNG mẫu máy thật (⇒ CÙNG captureExtId) —
+      // mô phỏng đúng ca "cây clone" đã đo được thật khi ba file test Khối B khác chạy song song.
+      // `submitMachineTemplate` đòi productModel ĐÃ TỒN TẠI (không tự tạo) — dựng trước, đúng
+      // khuôn `beforeAll` đã tạo `ids.product`.
+      const mau2 = mauThat();
+      const productModelCode2 = `L8-CLONE-${RUN}`;
+      await sql`INSERT INTO product_models (code, name) VALUES (${productModelCode2}, 'Lo 8 anh template - clone')`;
+      const ket2 = await caller().submitMachineTemplate({ apiKey: apiKeyA, productModelCode: productModelCode2, template: mau2 });
+      expect(ket2.success, "sản phẩm CLONE thứ hai phải đẩy được để dựng ca nhập nhằng").toBe(true);
+
+      try {
+        // KHÔNG khai productModelCode ⇒ captureExtId này giờ khớp CẢ HAI sản phẩm của máy A.
+        await expect(
+          caller().presignTemplateImage({ apiKey: apiKeyA, captureExtId, contentHash: "f".repeat(64), sizeBytes: 10, ext: "jpg" }),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+        // Khai ĐÚNG productModelCode ⇒ hết nhập nhằng, presign đi qua bình thường.
+        const preOk = await caller().presignTemplateImage({
+          apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: "f".repeat(64), sizeBytes: 10, ext: "jpg",
+        });
+        expect(preOk.success, "khai đúng productModelCode phải giải quyết được nhập nhằng").toBe(true);
+      } finally {
+        // Dọn NGAY trong test (không đợi afterAll — sản phẩm này không nằm trong ids.product).
+        const [pm2] = await sql<{ id: number }[]>`SELECT id FROM product_models WHERE code = ${productModelCode2}`;
+        if (pm2) {
+          await sql`DELETE FROM measurement_point_defs WHERE "productModelId" = ${pm2.id}`;
+          await sql`DELETE FROM product_surfaces WHERE "productModelId" = ${pm2.id}`;
+          await sql`DELETE FROM product_models WHERE id = ${pm2.id}`;
+        }
+      }
     });
   },
 );

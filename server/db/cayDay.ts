@@ -990,7 +990,8 @@ export type KetQuaTraAnhTemplate =
   | { readonly ket: "thay"; readonly hang: HangAnhTemplate }
   | { readonly ket: "khongThayCapture" }
   | { readonly ket: "khacMay"; readonly machineIdThat: number }
-  | { readonly ket: "khongThayComponent" };
+  | { readonly ket: "khongThayComponent" }
+  | { readonly ket: "nhapNhang" };
 
 /**
  * ★★★ Lô 8 Mục 1 (BG-116) — tra hàng ĐÍCH cho một lượt `commitTemplateImage`, LỌC
@@ -1006,24 +1007,38 @@ export type KetQuaTraAnhTemplate =
  *   capture đó (không chỉ đúng máy): một componentExtId trùng tình cờ ở capture
  *   KHÁC của CÙNG máy không được coi là khớp.
  *
- * Bốn kết cục PHÂN BIỆT (để router chọn đúng mã lỗi — cùng khuôn
- * `pkg.machineId !== machine.id` của `aoiPackageRouter.commit`):
+ * ⚠⚠ `productModelId` — LỌC THỨ HAI, BẮT BUỘC KHI BIẾT (Y HỆT `traPointDefCapComponent`
+ * ngay trên — ĐO ĐƯỢC ĐÚNG hiện tượng docblock đó cảnh báo: `uq_product_captures_position_extid`
+ * chỉ duy nhất theo `(positionRowId, captureExtId)`, nên MỘT máy dạy HAI sản phẩm (kể
+ * cả cây CLONE, cùng bộ GUID) cho ra HAI hàng `product_captures` CÙNG `machineId` CÙNG
+ * `captureExtId`. Ba db test khác của Khối B (`cayDayGhiThat`/`cayDayChieuMay`/
+ * `cayDayRouter`) và test Lô 8 Mục 1 đều tái dùng CÙNG máy có sẵn (`ORDER BY id LIMIT
+ * 1/2`) + CÙNG mẫu máy thật `template-sync-sample.json` ⇒ chạy song song sinh ĐÚNG ca
+ * này. Không biết `productModelId` mà tra ra >1 hàng ⇒ `nhapNhang` (không đoán bừa một
+ * trong hai — đúng lớp lỗi mà `traPointDefCapComponent.khoaNhapNhang` đã né).
+ *
+ * Năm kết cục PHÂN BIỆT (để router chọn đúng mã lỗi — cùng khuôn `pkg.machineId !==
+ * machine.id` của `aoiPackageRouter.commit`):
  *   `khongThayCapture`  — captureExtId không tồn tại chút nào  ⇒ `NOT_FOUND`.
  *   `khacMay`           — capture tồn tại nhưng thuộc máy KHÁC ⇒ `FORBIDDEN`.
  *   `khongThayComponent`— capture đúng máy, nhưng componentExtId không thuộc
  *                         ĐÚNG capture đó (sai/đã xoá mềm)     ⇒ `NOT_FOUND`.
- *   `thay`              — tra ra đúng hàng, kèm `productModelId` (khoá tiền tố
+ *   `nhapNhang`         — đúng máy nhưng >1 sản phẩm cùng dạy cùng captureExtId,
+ *                         và `productModelCode` không được khai để chọn ⇒ `BAD_REQUEST`
+ *                         (khai rõ, không đoán bừa).
+ *   `thay`              — tra ra đúng MỘT hàng, kèm `productModelId` (khoá tiền tố
  *                         lưu trữ `product-models/<id>/…`, khuôn ĐÃ CÓ).
  */
 export async function traHangAnhTemplate(opts: {
   machineId: number;
   captureExtId: string;
   componentExtId?: string | null;
+  productModelId?: number | null;
 }): Promise<KetQuaTraAnhTemplate> {
   const d = await getDb();
   if (!d) throw new DbUnavailableError();
 
-  const [capture] = await d
+  const capturesCungMay = await d
     .select({
       id: productCaptures.id,
       machineId: productCaptures.machineId,
@@ -1033,11 +1048,39 @@ export async function traHangAnhTemplate(opts: {
     .from(productCaptures)
     .innerJoin(productPositions, eq(productPositions.id, productCaptures.positionRowId))
     .innerJoin(productSurfaces, eq(productSurfaces.id, productPositions.surfaceRowId))
-    .where(eq(productCaptures.captureExtId, opts.captureExtId))
-    .limit(1);
+    .where(and(
+      eq(productCaptures.captureExtId, opts.captureExtId),
+      eq(productCaptures.machineId, opts.machineId),
+      typeof opts.productModelId === "number"
+        ? eq(productSurfaces.productModelId, opts.productModelId)
+        : undefined,
+    ));
 
-  if (!capture) return { ket: "khongThayCapture" };
-  if (capture.machineId !== opts.machineId) return { ket: "khacMay", machineIdThat: capture.machineId };
+  let capture = capturesCungMay[0];
+  if (capturesCungMay.length > 1) {
+    // >1 hàng CÙNG máy, CÙNG captureExtId — chỉ xảy ra khi `productModelId` KHÔNG
+    // được khai để lọc (khai rồi thì WHERE ở trên đã ép về ≤1 hàng). Từ chối rõ
+    // ràng, không lấy đại hàng đầu tiên trả về từ Postgres (thứ tự không cam kết).
+    return { ket: "nhapNhang" };
+  }
+
+  if (!capture) {
+    // Không tra ra hàng CỦA MÁY NÀY (hoặc của đúng productModelId nếu có khai) —
+    // phân biệt "captureExtId không tồn tại chút nào" khỏi "tồn tại nhưng thuộc
+    // máy khác" bằng MỘT lượt tra THÔ hơn (không lọc máy/sản phẩm), CHỈ để chọn
+    // đúng thông điệp lỗi (`NOT_FOUND` vs `FORBIDDEN`) — KHÔNG dùng hàng này để
+    // ghi bất cứ điều gì.
+    const [baTKyMay] = await d
+      .select({ machineId: productCaptures.machineId })
+      .from(productCaptures)
+      .where(eq(productCaptures.captureExtId, opts.captureExtId))
+      .limit(1);
+    if (!baTKyMay) return { ket: "khongThayCapture" };
+    if (baTKyMay.machineId !== opts.machineId) return { ket: "khacMay", machineIdThat: baTKyMay.machineId };
+    // Đúng máy nhưng `productModelId` đã khai không khớp hàng nào ⇒ coi như không
+    // tồn tại (khai sai sản phẩm, không phải khác máy).
+    return { ket: "khongThayCapture" };
+  }
 
   if (!opts.componentExtId) {
     return {

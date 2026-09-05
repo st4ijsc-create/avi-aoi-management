@@ -123,6 +123,7 @@ Content-Type: application/json
   "apiKey": "YOUR_API_KEY",
   "captureExtId": "a1b2c3d4-0000-4000-8000-000000001011",
   "componentExtId": "a1b2c3d4-0000-4000-8000-000000010111",
+  "productModelCode": "PCBA-REV3",
   "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "sizeBytes": 245678,
   "ext": "jpg"
@@ -135,6 +136,12 @@ Content-Type: application/json
 - **`componentExtId` (tùy chọn):** `Component.Id` (GUID) của MỘT linh kiện thuộc
   ĐÚNG capture ở trên. Có mặt ⇒ ảnh là ảnh RIÊNG của linh kiện đó (crop), ghi vào
   `measurement_point_defs.referenceImageUrl` — khác cột với ảnh cấp capture.
+- **`productModelCode` (tùy chọn, NÊN LUÔN GỬI):** mã sản phẩm — cùng giá trị đã
+  gửi ở `submitMachineTemplate`. `captureExtId` là GUID do MÁY cấp, không đảm bảo
+  duy nhất trên toàn hệ (một máy dạy CLONE cây cho hai sản phẩm khác nhau có thể
+  mang cùng bộ GUID). Không gửi mà server tìm thấy captureExtId này ở NHIỀU sản
+  phẩm của cùng máy ⇒ **400 BAD_REQUEST** ("cần khai productModelCode để chọn
+  đúng sản phẩm") thay vì đoán bừa.
 - **`contentHash` (bắt buộc):** SHA-256 hex (64 ký tự, hoa/thường đều được) của
   TOÀN BỘ byte ảnh sắp tải lên. Cùng nội dung ⇒ cùng `contentHash` ⇒ commit lặp là
   AN TOÀN (idempotent) — không tạo hàng mới, không lỗi.
@@ -164,6 +171,9 @@ dùng để tự kiểm chéo với ý định gửi (có/không `componentExtId
   `componentExtId` không thuộc ĐÚNG `captureExtId` đã khai (đúng máy, sai capture).
 - `FORBIDDEN` — `captureExtId` tồn tại nhưng thuộc MÁY KHÁC (đẩy cây bằng API key
   của máy khác, hoặc gõ nhầm GUID của máy khác).
+- `BAD_REQUEST` (field `productModelCode`) — `captureExtId` khớp NHIỀU sản phẩm
+  của cùng máy (cây clone) và `productModelCode` không được khai để chọn đúng
+  sản phẩm — gửi lại kèm `productModelCode`.
 - `UNAUTHORIZED` — `apiKey`/`machineCode` sai hoặc thiếu quyền `ingest:write`
   (CÙNG quyền mà `submitMachineTemplate` đang dùng — không cần cấp quyền mới).
 
@@ -190,12 +200,13 @@ Content-Type: application/json
   "apiKey": "YOUR_API_KEY",
   "captureExtId": "a1b2c3d4-0000-4000-8000-000000001011",
   "componentExtId": "a1b2c3d4-0000-4000-8000-000000010111",
+  "productModelCode": "PCBA-REV3",
   "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "ext": "jpg"
 }
 ```
 
-Khai LẠI đúng `captureExtId`/`componentExtId`/`contentHash`/`ext` như Bước 1 — server
+Khai LẠI đúng `captureExtId`/`componentExtId`/`productModelCode`/`contentHash`/`ext` như Bước 1 — server
 đọc byte đã nhận ở Bước 2, băm lại và đối chiếu với `contentHash`, rồi ghi URL vào
 đúng hàng (`product_captures.templateImageUrl` hoặc
 `measurement_point_defs.referenceImageUrl`, tùy `cap` ở Bước 1).
