@@ -147,6 +147,45 @@ export function laTenCuaIngest(ten: string): boolean {
 }
 
 /**
+ * ★★★ Lô 8 (BG-116) vòng sửa 1, Important 2 (review độc lập) — `machineApi.presignTemplateImage`/
+ * `.commitTemplateImage` (`server/routers/machineApiRouters.ts`) ĐÃ XÉT VÀ CỐ Ý NGOÀI PHẠM VI
+ * lượng từ "∀ cửa ingest…" ở trên, KHÔNG PHẢI một ô mù chưa ai nhìn tới.
+ *
+ * Vì sao KHÔNG thêm vào `MIEN_TRU_QUYET_DINH_PHIEN_BAN`/`MIEN_TRU_CUA_INGEST_ZIP`: hai sổ đó có
+ * hợp đồng HẸP HƠN — "tên NÀY đã được chính `laTenCuaIngest`/`laTenCuaIngestZip` TÌM THẤY (nằm
+ * trong `QUET.cua`), nhưng được miễn khỏi việc gọi `quyetDinhPhienBanIngest`". `cuaIngestCensus.
+ * test.ts` §3 CƯỠNG CHẾ điều đó ("sổ miễn trừ KHÔNG HOÁ THẠCH: mọi tên còn là một cửa CÓ THẬT" —
+ * `tenCua.has(t)`) — thêm một tên mà `laTenCuaIngest` KHÔNG bắt được (đúng ca này:
+ * `presignTemplateImage`/`commitTemplateImage` không khớp `/^submit/i` lẫn `/^sync.*result/i`) sẽ
+ * làm chính lưới ĐỎ, không phải xanh.
+ *
+ * Lý do THẬT hai cửa này ngoài phạm vi (không phải lách quy tắc): chúng KHÔNG mang bất kỳ payload
+ * ĐO LƯỜNG nào (`overallResult`/`measurements`/`components[].result`…) — input CHỈ có
+ * `captureExtId`/`componentExtId`/`productModelCode`/`contentHash`/`sizeBytes`/`ext`, tức toạ độ
+ * + tham chiếu ẢNH CẤU HÌNH của bản dạy, cùng LỚP với `submitMachineTemplate` (đã miễn trừ ở
+ * `MIEN_TRU_QUYET_DINH_PHIEN_BAN.submitMachineTemplate` với đúng lý lẽ: câu hỏi "payload này hình
+ * dạng phẳng v1.x hay cây v2.0?" VÔ NGHĨA với một cửa không mang hình dạng nào trong hai hình đó).
+ * Ép hai cửa này qua `quyetDinhPhienBanIngest` sẽ hỏi một câu không áp dụng được — SAI đúng mục
+ * tiêu của điểm quyết định, không phải một lỗ hổng bị bỏ sót.
+ *
+ * ⚠ Đây là GHI CHÚ CÓ CHỦ Ý, không phải một cơ chế census tự động canh: nếu `laTenCuaIngest` sau
+ * này được nới rộng và VÔ TÌNH bắt được hai tên trên, `cuaIngestCensus.test.ts` §3 sẽ tự ĐỎ đòi một
+ * dòng miễn trừ THẬT trong `MIEN_TRU_QUYET_DINH_PHIEN_BAN` — khối chú thích này không cần cập nhật
+ * lại lúc đó, nó chỉ là bằng chứng "đã xét" cho một reviewer đọc mã hôm nay.
+ */
+export const DA_XET_NGOAI_PHAM_VI_INGEST: Readonly<Record<string, string>> = {
+  presignTemplateImage:
+    "Lô 8 (BG-116) — cửa CONFIG ghi cột template (`product_captures.templateImageUrl`/point-def " +
+    "`referenceImageUrl`), KHÔNG phải dữ liệu ĐO. Input không mang bất kỳ trường KẾT QUẢ nào " +
+    "(overallResult/measurements/components[].result) — chỉ toạ độ tham chiếu ảnh " +
+    "(captureExtId/componentExtId/contentHash/sizeBytes/ext). Đã xét, cố ý ngoài phạm vi census " +
+    "hình-dạng-ingest (cùng lớp `submitMachineTemplate`).",
+  commitTemplateImage:
+    "Cùng lý do với presignTemplateImage — commit chỉ đối chiếu sha256/sizeBytes của ẢNH đã PUT " +
+    "rồi ghi URL vào cây dạy, không parse/ghi một payload đo lường nào.",
+};
+
+/**
  * Vị từ tên của cửa ZIP package (`aoiPackageRouter.ts`) — CỬA THỨ SÁU (BG-39). DANH SÁCH TÊN
  * TƯỜNG MINH, KHÔNG PHẢI REGEX như `laTenCuaIngest`: router này đặt tên theo quy ước KHÁC hẳn
  * (`presign`, `commit` — không mang tiền tố `submit`/`sync…Result`) và có nhiều thủ tục ĐỌC không

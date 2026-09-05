@@ -5882,6 +5882,10 @@ export const machineApiRouter = router({
       componentExtId: z.string().trim().min(1).max(64).optional(),
       productModelCode: z.string().trim().min(1).max(100).optional(),
       contentHash: z.string().trim().toLowerCase().regex(/^[0-9a-f]{64}$/, "contentHash phải là sha256 hex 64 ký tự"),
+      // ★ Vòng sửa 1 (Important 1, review độc lập) — TUỲ CHỌN, ĐỐI CHIẾU THẬT khi có
+      // mặt: so với byte THẬT vừa đọc từ đĩa (cùng khuôn `aoiPackageRouter`
+      // `presignCoreObject.sizeBytes`/`commit.sizeBytes` — xem đối chiếu ngay dưới).
+      sizeBytes: z.number().int().positive().max(tranByteAnhTemplate()).optional(),
       ext: z.enum(["jpg", "png"]),
     }).refine((data) => data.apiKey || data.machineCode, {
       message: "Either apiKey or machineCode must be provided",
@@ -5929,13 +5933,16 @@ export const machineApiRouter = router({
       const objectKey = `product-models/${tra.hang.productModelId}/template-${input.contentHash}.${input.ext}`;
 
       // ── Đọc byte THẬT vừa được PUT vào đúng objectKey, KIỂM sha256 TRƯỚC khi ghi.
+      // ★ Vòng sửa 1 (Minor, review độc lập) — dùng CHUNG `duongDanCucBoAnToan` với
+      // `storagePut`/`storageDelete` (đối xứng ghi-đọc): trước bản vá này đường đọc
+      // này tự dựng `path.join(uploadsRoot, objectKey)` RIÊNG, không qua guard
+      // traversal — vô hại hôm nay vì `objectKey` do CHÍNH SERVER sinh (không phải
+      // input người dùng), nhưng một guard RIÊNG dễ trôi lệch khỏi bản gốc khi
+      // storage.ts đổi quy ước sau này.
       const { promises: fsp } = await import("node:fs");
-      const path = await import("node:path");
       const { createHash } = await import("node:crypto");
-      const uploadsRoot = process.env.LOCAL_STORAGE_DIR
-        ? path.resolve(process.env.LOCAL_STORAGE_DIR)
-        : path.join(process.cwd(), "uploads");
-      const filePath = path.join(uploadsRoot, objectKey);
+      const { duongDanCucBoAnToan } = await import("../storage");
+      const filePath = duongDanCucBoAnToan(objectKey);
 
       let bytes: Buffer;
       try {
@@ -5955,6 +5962,24 @@ export const machineApiRouter = router({
           "INVALID_VALUE",
           { field: "payload" },
           `contentHash khai ("${input.contentHash}") không khớp sha256 THẬT của byte đã tải lên ("${shaThuc}") — tải lại ảnh và commit lại.`,
+        );
+      }
+
+      // ★ Vòng sửa 1 (Important 1) — CÙNG khuôn `aoiPackageRouter`/`_core/index.ts:~4803`
+      // ("sizeBytes ĐỐI CHIẾU byte THẬT"): trước bản vá này, `sizeBytes` chỉ được khai
+      // ở `presignTemplateImage` (đối chiếu trần cứng `tranByteAnhTemplate()`), KHÔNG
+      // BAO GIỜ đối chiếu với byte THẬT đã nằm trên đĩa — một lời khai "trông như bảo
+      // đảm kích thước" mà không kiểm gì (đúng bẫy §6 chuẩn gói ảnh ZIP đã tự gọi tên:
+      // "trường trông như bảo đảm toàn vẹn mà không phải còn nguy hiểm hơn không có
+      // trường"). Tuỳ chọn (không bắt buộc, giữ tương thích lời gọi cũ) — khai thì kiểm
+      // THẬT, không khai thì không có phép kiểm nào cho kích thước ở bước này (đã có
+      // sha256 làm phép kiểm toàn vẹn chính).
+      if (input.sizeBytes != null && input.sizeBytes !== bytes.length) {
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "payload" },
+          `sizeBytes khai ("${input.sizeBytes}" byte) không khớp số byte THẬT đã tải lên ("${bytes.length}" byte) — tải lại ảnh và commit lại.`,
         );
       }
 

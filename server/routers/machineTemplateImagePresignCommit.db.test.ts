@@ -288,6 +288,43 @@ describe.skipIf(!DB_URL || !CO_MAU)(
       void shaThat; // dùng để tính buf/sha thật — không assert trực tiếp, chỉ đối lập với shaSai
     });
 
+    it("★ Vòng sửa 1 (Important 1) — MỆNH ĐỀ 4b: sizeBytes khai LỆCH byte thật ở commit ⇒ BAD_REQUEST, cột không đổi", async () => {
+      const truoc = await hangCaptureCuaMinh();
+
+      const buf = Buffer.from(`L8-SIZELECH-${RUN}-` + "v".repeat(300));
+      const sha = createHash("sha256").update(buf).digest("hex");
+
+      const pre = await caller().presignTemplateImage({
+        apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: sha, sizeBytes: buf.length, ext: "jpg",
+      });
+      await ghiByteThat(pre.objectKey, buf); // byte thật = buf.length, sizeBytes khai ở commit dưới đây SAI
+
+      await expect(
+        caller().commitTemplateImage({
+          apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: sha, ext: "jpg",
+          sizeBytes: buf.length + 1, // ★ khai LỆCH — brief đòi đối chiếu THẬT, không chỉ nhận rồi vứt
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      const sau = await hangCaptureCuaMinh();
+      expect(sau.url, "sizeBytes lệch ⇒ KHÔNG được ghi cột (cùng khuôn sha256 lệch)").toBe(truoc.url);
+    });
+
+    it("sizeBytes khai ĐÚNG byte thật ở commit ⇒ vẫn thành công (đối chứng — không vá quá tay)", async () => {
+      const buf = Buffer.from(`L8-SIZEDUNG-${RUN}-` + "u".repeat(300));
+      const sha = createHash("sha256").update(buf).digest("hex");
+
+      const pre = await caller().presignTemplateImage({
+        apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: sha, sizeBytes: buf.length, ext: "jpg",
+      });
+      await ghiByteThat(pre.objectKey, buf);
+
+      const commit = await caller().commitTemplateImage({
+        apiKey: apiKeyA, captureExtId, productModelCode: PMC(), contentHash: sha, ext: "jpg", sizeBytes: buf.length,
+      });
+      expect(commit.success, "sizeBytes ĐÚNG byte thật phải đi qua bình thường").toBe(true);
+    });
+
     it("MỆNH ĐỀ 5 — chưa xác thực (apiKey sai) ⇒ UNAUTHORIZED, cột không đổi, KHÔNG hàng nào bị chạm", async () => {
       const truoc = await hangCaptureCuaMinh();
 
@@ -353,6 +390,67 @@ describe.skipIf(!DB_URL || !CO_MAU)(
           await sql`DELETE FROM product_models WHERE id = ${pm2.id}`;
         }
       }
+    });
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Vòng sửa 1 — HIGH (security, review độc lập): PUT /api/machine-template-image/
+    // upload KHÔNG buộc objectKey vào MÁY đã xác thực trước bản vá — `authenticateMachine`
+    // + regex FORMAT của khoá là CHƯA ĐỦ (chứng minh "anh là ai" + "khoá trông hợp lệ",
+    // KHÔNG chứng minh "khoá này có thuộc phạm vi máy anh không"). Máy B xác thực THẬT
+    // có thể PUT byte vào tiền tố `product-models/<id-của-máy-A>/…`.
+    //
+    // ⚠ KHÔNG có harness boot-Express-không-listen trong repo (đo được: `server/_core/
+    // index.ts` là MỘT hàm `startServer()` monolithic — xem docblock đầu file
+    // `aoiPackageZipCuaNoiDoi.test.ts` "Vì sao mệnh đề 4 KHÔNG gọi tuyến HTTP PUT thật").
+    // Tiền lệ DUY NHẤT đã có cho lớp lỗi này (`aoiPackageXacThuc.test.ts`) đo bằng HAI
+    // lớp bằng chứng tách rời, và các mệnh đề dưới đây lặp lại ĐÚNG khuôn đó cho route
+    // PUT ảnh template:
+    //   (a) NGUỒN — `machineTemplateImagePutSourceCensus.test.ts` (file riêng): cắt vùng
+    //       thân `app.put("/api/machine-template-image/upload/...")`, xác nhận nó GỌI
+    //       `mayDaDayChoSanPham(` TRƯỚC `storagePut(` (thứ tự đúng — không chỉ "có mặt cả
+    //       hai chữ", một `if(false)` bọc quanh lời gọi vẫn "có mặt chữ" mà không chặn gì).
+    //   (b) HÀNH VI — hai mệnh đề dưới đây, gọi THẲNG `mayDaDayChoSanPham` (hàm THẬT mà
+    //       route phụ thuộc, không phải bản chép) trên dữ liệu cây THẬT đã đẩy ở
+    //       `beforeAll`, chứng minh hàm trả lời ĐÚNG cho cả ca dương và ca âm.
+    it("HIGH — mayDaDayChoSanPham: máy A (chủ thật của ids.product) ⇒ true", async () => {
+      const { mayDaDayChoSanPham } = await import("../db/cayDay");
+      const ketQua = await mayDaDayChoSanPham({ machineId: ids.machineA, productModelId: ids.product });
+      expect(ketQua, "máy A ĐÃ đẩy cây cho ids.product ở beforeAll — phải trả true").toBe(true);
+    });
+
+    it("★★★ HIGH — mayDaDayChoSanPham: máy B ĐÃ dạy sản phẩm KHÁC (không phải ids.product) ⇒ false — ca âm cross-tenant THẬT, không phải 'máy B không có gì'", async () => {
+      // Máy B đẩy cây cho MỘT sản phẩm RIÊNG của nó (khác ids.product) — mô phỏng ĐÚNG
+      // kịch bản tấn công của Important: máy B là một tenant HỢP LỆ, xác thực THẬT, có
+      // cây dạy THẬT của CHÍNH NÓ — chỉ không được đụng vào tiền tố của ids.product.
+      const mauB = mauThat();
+      const productModelCodeB = `L8-MAYB-${RUN}`;
+      await sql`INSERT INTO product_models (code, name) VALUES (${productModelCodeB}, 'Lo 8 may B - san pham rieng')`;
+      const ketB = await caller().submitMachineTemplate({ apiKey: apiKeyB, productModelCode: productModelCodeB, template: mauB });
+      expect(ketB.success, "máy B phải đẩy được cây CHO SẢN PHẨM CỦA CHÍNH NÓ").toBe(true);
+
+      try {
+        const { mayDaDayChoSanPham } = await import("../db/cayDay");
+        const ketQua = await mayDaDayChoSanPham({ machineId: ids.machineB, productModelId: ids.product });
+        expect(ketQua, "máy B có cây dạy THẬT (cho sản phẩm KHÁC) nhưng KHÔNG cho ids.product — phải trả false, KHÔNG cho phép PUT xuyên-tenant").toBe(false);
+
+        // Đối chứng: máy B hỏi về ĐÚNG sản phẩm của NÓ ⇒ true (hàm không fail-closed quá tay).
+        const [pmB] = await sql<{ id: number }[]>`SELECT id FROM product_models WHERE code = ${productModelCodeB}`;
+        const ketQuaDungSanPham = await mayDaDayChoSanPham({ machineId: ids.machineB, productModelId: pmB.id });
+        expect(ketQuaDungSanPham, "đối chứng: máy B hỏi về sản phẩm CỦA CHÍNH NÓ phải trả true").toBe(true);
+      } finally {
+        const [pmB] = await sql<{ id: number }[]>`SELECT id FROM product_models WHERE code = ${productModelCodeB}`;
+        if (pmB) {
+          await sql`DELETE FROM measurement_point_defs WHERE "productModelId" = ${pmB.id}`;
+          await sql`DELETE FROM product_surfaces WHERE "productModelId" = ${pmB.id}`;
+          await sql`DELETE FROM product_models WHERE id = ${pmB.id}`;
+        }
+      }
+    });
+
+    it("mayDaDayChoSanPham: productModelId không tồn tại ⇒ false (fail-closed, không throw)", async () => {
+      const { mayDaDayChoSanPham } = await import("../db/cayDay");
+      const ketQua = await mayDaDayChoSanPham({ machineId: ids.machineA, productModelId: -1 });
+      expect(ketQua).toBe(false);
     });
   },
 );

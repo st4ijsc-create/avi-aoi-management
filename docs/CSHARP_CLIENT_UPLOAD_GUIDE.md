@@ -191,6 +191,12 @@ Cùng quy tắc header với ZIP Package Upload (`x-api-key` HOẶC `x-machine-c
 `Content-Length`, body nhị phân — KHÔNG encode base64). `uploadUrl` đã bao gồm toàn
 bộ đường dẫn — dùng NGUYÊN VĂN giá trị presign trả về, không tự dựng lại.
 
+**Xác thực + kiểm quyền:** server xác thực `apiKey`/`x-machine-code` NHƯ Bước 1, RỒI
+kiểm máy này ĐÃ TỪNG dạy cây cho đúng product model có trong `uploadUrl` — một máy
+xác thực hợp lệ nhưng khai `objectKey` của một sản phẩm không thuộc về nó (vd
+`uploadUrl` bị chỉnh tay, hoặc dùng lại `uploadUrl` cũ sau khi đổi sang sản phẩm
+khác) sẽ nhận **403 FORBIDDEN** và byte KHÔNG được ghi lên đĩa.
+
 ### Bước 3: Commit
 ```http
 POST /api/trpc/machineApi.commitTemplateImage
@@ -202,6 +208,7 @@ Content-Type: application/json
   "componentExtId": "a1b2c3d4-0000-4000-8000-000000010111",
   "productModelCode": "PCBA-REV3",
   "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sizeBytes": 245678,
   "ext": "jpg"
 }
 ```
@@ -210,6 +217,12 @@ Khai LẠI đúng `captureExtId`/`componentExtId`/`productModelCode`/`contentHas
 đọc byte đã nhận ở Bước 2, băm lại và đối chiếu với `contentHash`, rồi ghi URL vào
 đúng hàng (`product_captures.templateImageUrl` hoặc
 `measurement_point_defs.referenceImageUrl`, tùy `cap` ở Bước 1).
+
+**`sizeBytes` (tùy chọn, NÊN LUÔN gửi lại — cùng giá trị đã khai ở Bước 1):** server
+đối chiếu với số byte THẬT vừa đọc từ đĩa (byte đã tải ở Bước 2) — lệch ⇒ **400
+BAD_REQUEST**, cây KHÔNG bị ghi. Đây là phép kiểm TOÀN VẸN THỨ HAI, độc lập với
+`contentHash` — không gửi thì bước này không kiểm kích thước (vẫn còn `contentHash`
+làm phép kiểm chính), gửi sai thì bị từ chối ngay, không phải "nhận rồi vứt".
 
 **Response:**
 ```json
@@ -231,10 +244,15 @@ trước — idempotent, không phải lỗi).
 
 **Lỗi thường gặp (ngoài `NOT_FOUND`/`FORBIDDEN`/`UNAUTHORIZED` như Bước 1):**
 - `BAD_REQUEST` — `contentHash` khai KHÔNG khớp SHA-256 thật của byte đã tải lên ở
-  Bước 2 (dữ liệu hỏng khi truyền, hoặc PUT nhầm ảnh khác). Tải lại đúng ảnh rồi
-  commit lại — hàng cây KHÔNG bị ghi khi lỗi này xảy ra.
+  Bước 2 (dữ liệu hỏng khi truyền, hoặc PUT nhầm ảnh khác), HOẶC `sizeBytes` khai
+  (nếu có gửi) KHÔNG khớp số byte thật đã tải lên. Tải lại đúng ảnh rồi commit lại
+  — hàng cây KHÔNG bị ghi khi lỗi này xảy ra.
 - `UNPROCESSABLE_CONTENT` — commit được gọi TRƯỚC khi Bước 2 hoàn tất (chưa có byte
   nào tại `objectKey`). Gọi PUT trước, đợi phản hồi thành công, rồi mới commit.
+- `FORBIDDEN` (ở Bước 2, PUT) — máy xác thực đúng nhưng CHƯA dạy cây cho product
+  model trong `objectKey` (vd đã đổi model, hoặc gõ nhầm `objectKey` của một máy
+  khác) — server KHÔNG cho PUT byte vào tiền tố của một sản phẩm không thuộc về
+  máy đó, dù `apiKey`/`x-machine-code` hợp lệ.
 
 ## C# Code Example
 

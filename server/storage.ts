@@ -52,6 +52,32 @@ function normalizeKey(relKey: string): string {
   return relKey.replace(/^\/+/, "");
 }
 
+/** Local-mode uploads root — CÙNG một phép tính ở mọi nơi (ghi/xoá/đọc). */
+export function thuMucUploadsCucBo(): string {
+  return process.env.LOCAL_STORAGE_DIR
+    ? path.resolve(process.env.LOCAL_STORAGE_DIR)
+    : path.join(process.cwd(), "uploads");
+}
+
+/**
+ * ★★★ Vòng sửa 1 Lô 8 (Minor, review độc lập) — MỘT nguồn cho phép GHÉP + CHẶN
+ * TRAVERSAL của một storage key ở chế độ `local`, dùng CHUNG cho cả GHI
+ * (`storagePut`), XOÁ (`storageDelete`) VÀ ĐỌC (`commitTemplateImage` kiểm sha256
+ * TRƯỚC khi ghi cột — trước bản vá này đường đọc đó tự dựng `path.join` RIÊNG,
+ * không qua guard, đối xứng ghi-đọc bị vỡ). Ném `Error` khi khoá thoát khỏi gốc
+ * uploads — CÙNG thông điệp `storagePut` đã dùng.
+ */
+export function duongDanCucBoAnToan(relKey: string): string {
+  const uploadsRoot = thuMucUploadsCucBo();
+  const key = normalizeKey(relKey);
+  const filePath = path.join(uploadsRoot, key);
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(path.resolve(uploadsRoot) + path.sep) && resolved !== path.resolve(uploadsRoot)) {
+    throw new Error("Invalid storage key: path traversal detected");
+  }
+  return filePath;
+}
+
 function toFormData(
   data: Buffer | Uint8Array | string,
   contentType: string,
@@ -80,17 +106,7 @@ export async function storagePut(
 
   // Local filesystem mode: save files under LOCAL_STORAGE_DIR (default: ./uploads)
   if (storageMode === "local") {
-    const uploadsRoot = process.env.LOCAL_STORAGE_DIR
-      ? path.resolve(process.env.LOCAL_STORAGE_DIR)
-      : path.join(process.cwd(), "uploads");
-
-    const filePath = path.join(uploadsRoot, key);
-
-    // Prevent path traversal attacks
-    const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(path.resolve(uploadsRoot) + path.sep) && resolved !== path.resolve(uploadsRoot)) {
-      throw new Error("Invalid storage key: path traversal detected");
-    }
+    const filePath = duongDanCucBoAnToan(key);
 
     await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
 
@@ -160,16 +176,14 @@ export async function storageDelete(relKey: string): Promise<{ deleted: boolean;
   const storageMode = process.env.STORAGE_MODE ?? "forge";
 
   if (storageMode === "local") {
-    const uploadsRoot = process.env.LOCAL_STORAGE_DIR
-      ? path.resolve(process.env.LOCAL_STORAGE_DIR)
-      : path.join(process.cwd(), "uploads");
-    const filePath = path.join(uploadsRoot, key);
-    const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(path.resolve(uploadsRoot) + path.sep) && resolved !== path.resolve(uploadsRoot)) {
+    let filePath: string;
+    try {
+      filePath = duongDanCucBoAnToan(key);
+    } catch {
       return { deleted: false, error: "path traversal blocked" };
     }
     try {
-      await fs.promises.unlink(resolved);
+      await fs.promises.unlink(filePath);
       return { deleted: true };
     } catch (err: any) {
       if (err?.code === "ENOENT") return { deleted: false }; // already gone
@@ -220,22 +234,17 @@ export async function resolveImageToDataUrl(url: string | null | undefined): Pro
 
   // Relative /uploads/... path → read file from disk and convert to data URL
   if (url.startsWith('/uploads/')) {
-    const uploadsRoot = process.env.LOCAL_STORAGE_DIR
-      ? path.resolve(process.env.LOCAL_STORAGE_DIR)
-      : path.join(process.cwd(), 'uploads');
-
     const relativePart = url.slice('/uploads/'.length);
-    const filePath = path.join(uploadsRoot, relativePart);
-
-    // Prevent path traversal
-    const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(path.resolve(uploadsRoot) + path.sep) && resolved !== path.resolve(uploadsRoot)) {
+    let filePath: string;
+    try {
+      filePath = duongDanCucBoAnToan(relativePart);
+    } catch {
       return null;
     }
 
     try {
-      const buffer = await fs.promises.readFile(resolved);
-      const ext = path.extname(resolved).toLowerCase();
+      const buffer = await fs.promises.readFile(filePath);
+      const ext = path.extname(filePath).toLowerCase();
       const mime = MIME_MAP[ext] || 'application/octet-stream';
       return `data:${mime};base64,${buffer.toString('base64')}`;
     } catch {

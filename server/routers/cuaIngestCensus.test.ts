@@ -54,7 +54,9 @@ import {
   TEN_HAM_QUYET_DINH,
   TEN_BIEN_ROUTER_ZIP,
   laTenCuaIngestZip,
+  laTenCuaIngest,
   MIEN_TRU_CUA_INGEST_ZIP,
+  DA_XET_NGOAI_PHAM_VI_INGEST,
 } from "./cuaIngestScan";
 import { MIEN_TRU_QUYET_DINH_PHIEN_BAN } from "./machineApiRouters";
 
@@ -316,5 +318,39 @@ describe("§5 — ★★★ ĐỘT BIẾN THẬT: cửa giả KHÔNG gác bị b
     const doc = readFileSync(FILE_THAT, "utf8");
     expect(doc).toBe(MA_THAT);
     expect(doc.includes("submitFakeInspection")).toBe(false);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// §6 — Lô 8 (BG-116) vòng sửa 1, Important 2 — `DA_XET_NGOAI_PHAM_VI_INGEST` PHẢI CÒN ĐÚNG SỰ THẬT
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// `presignTemplateImage`/`commitTemplateImage` KHÔNG vào `MIEN_TRU_QUYET_DINH_PHIEN_BAN`/
+// `MIEN_TRU_CUA_INGEST_ZIP` (xem docblock `DA_XET_NGOAI_PHAM_VI_INGEST` — hai sổ đó đòi tên PHẢI
+// nằm trong `QUET.cua`, tức PHẢI được `laTenCuaIngest` tìm thấy trước; thêm một tên KHÔNG được tìm
+// thấy vào đó sẽ làm §3 "sổ miễn trừ KHÔNG HOÁ THẠCH" ĐỎ). Ghi chú ở `cuaIngestScan.ts` vì vậy là
+// một KHẲNG ĐỊNH TÁCH RIÊNG ("đã xét, cố ý ngoài phạm vi"), không phải một dòng trong sổ miễn trừ
+// được census tự động canh — §6 canh cho khẳng định đó KHÔNG ÂM THẦM SAI theo thời gian.
+describe("§6 — Lô 8 (BG-116) — presignTemplateImage/commitTemplateImage 'đã xét, ngoài phạm vi'", () => {
+  it("cả hai tên THẬT SỰ không khớp laTenCuaIngest hôm nay (tiền đề của ghi chú DA_XET_NGOAI_PHAM_VI_INGEST)", () => {
+    for (const ten of Object.keys(DA_XET_NGOAI_PHAM_VI_INGEST)) {
+      expect(laTenCuaIngest(ten), `'${ten}' NAY khớp laTenCuaIngest — ghi chú đã lỗi thời, phải chuyển thành một dòng THẬT trong MIEN_TRU_QUYET_DINH_PHIEN_BAN kèm lý do`).toBe(false);
+    }
+  });
+
+  it("cả hai tên vẫn là thủ tục THẬT trong machineApiRouter (không phải ghi chú cho một cửa đã đổi tên/xoá)", () => {
+    for (const ten of Object.keys(DA_XET_NGOAI_PHAM_VI_INGEST)) {
+      expect(MA_THAT.includes(`${ten}:`), `'${ten}' không còn xuất hiện trong machineApiRouters.ts — xoá ghi chú lỗi thời`).toBe(true);
+    }
+  });
+
+  it("mọi ghi chú có lý do THẬT (không phải chuỗi rỗng/khẩu vị)", () => {
+    for (const [ten, lyDo] of Object.entries(DA_XET_NGOAI_PHAM_VI_INGEST)) {
+      expect(typeof lyDo, `ghi chú '${ten}' không phải chuỗi`).toBe("string");
+      expect(lyDo.length, `ghi chú '${ten}' thiếu lý do đủ dài để coi là đã xét`).toBeGreaterThan(30);
+    }
+  });
+
+  it("đúng HAI tên đã ghi chú — không thừa không thiếu (đổi tập này là một lời khai, không phải bảo trì im lặng)", () => {
+    expect(Object.keys(DA_XET_NGOAI_PHAM_VI_INGEST).sort()).toEqual(["commitTemplateImage", "presignTemplateImage"]);
   });
 });

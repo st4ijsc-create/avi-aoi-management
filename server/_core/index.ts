@@ -4961,13 +4961,15 @@ async function startServer() {
         }
 
         const { authenticateMachine } = await import("../services/machineAuthService");
+        let machineId: number;
         try {
-          await authenticateMachine({
+          const auth = await authenticateMachine({
             headerKey: apiKey || null,
             machineCode: machineCode || null,
             scope: "ingest:write",
             endpoint: "machineTemplateImage.upload",
           });
+          machineId = auth.machine.id;
         } catch (authErr: any) {
           const code = authErr?.code;
           if (code === "UNAUTHORIZED")
@@ -4983,8 +4985,27 @@ async function startServer() {
         // mà `presignTemplateImage` dựng — chặn TRAVERSAL/khoá lạ ở đây, TRƯỚC khi
         // `storagePut` (bản thân nó cũng chặn `..` — đây là lớp phòng thủ THỨ HAI, đúng
         // khuôn "path traversal" đã ghi trong `server/storage.ts`).
-        if (!/^product-models\/[0-9]+\/template-[0-9a-f]{64}\.(jpg|png)$/.test(objectKeyRaw || "")) {
+        const khopKhoa = /^product-models\/([0-9]+)\/template-[0-9a-f]{64}\.(jpg|png)$/.exec(objectKeyRaw || "");
+        if (!khopKhoa) {
           return res.status(400).json({ success: false, message: "Invalid objectKey — must match presignTemplateImage's layout" });
+        }
+
+        // ★★★ Vòng sửa 1 (HIGH, review độc lập) — ĐÓNG LỖ: FORMAT khớp regex KHÔNG
+        // chứng minh QUYỀN SỞ HỮU `productModelId` trong khoá. Trước bản vá này, một
+        // máy B xác thực THẬT (apiKey hợp lệ, scope đúng) PUT được blob vào tiền tố
+        // `product-models/<id-của-máy-A>/…` — cửa `commitTemplateImage` (tRPC) vẫn
+        // lọc đúng máy nên hàng CÂY không bị ghi sai chủ, nhưng byte đã NẰM TRÊN ĐĨA
+        // dưới tenant khác (ghi xuyên-tenant/spam dung lượng) TRƯỚC KHI commit chạy.
+        // Dùng CHÍNH khuôn `mayCoBanDay`/`traHangAnhTemplate` (Mục 1) — "máy này đã
+        // dạy CÁI ĐANG CHẠY chưa", không phải "máy này từng dạy gì chưa" — KHÔNG
+        // `storagePut` khi chưa qua được cổng này.
+        const productModelId = Number(khopKhoa[1]);
+        const { mayDaDayChoSanPham } = await import("../db/cayDay");
+        if (!(await mayDaDayChoSanPham({ machineId, productModelId }))) {
+          return res.status(403).json({
+            success: false,
+            message: `Máy này chưa dạy cây cho product model ${productModelId} — không được PUT ảnh template vào tiền tố của một sản phẩm không thuộc về nó.`,
+          });
         }
 
         const bytes = req.body as Buffer;

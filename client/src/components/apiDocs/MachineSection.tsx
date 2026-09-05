@@ -233,13 +233,16 @@ Headers: X-API-Key: machine-api-key
 //             "uploadUrl": "/api/machine-template-image/upload/product-models/33/template-e3b0c4...jpg",
 //             "cap": "component" }
 
-// 3) PUT byte ảnh thật lên uploadUrl — body nhị phân, CÙNG header xác thực
+// 3) PUT byte ảnh thật lên uploadUrl — body nhị phân, CÙNG header xác thực.
+//    Server kiểm THÊM: máy này đã dạy cây cho product model trong uploadUrl chưa
+//    (không chỉ "apiKey hợp lệ") — khác sản phẩm/máy ⇒ 403, byte KHÔNG được ghi.
 PUT {uploadUrl}
 Headers: X-API-Key: machine-api-key
 Content-Type: image/jpeg
 [BINARY JPG DATA]
 
-// 4) Commit — khai LẠI đúng khoá + contentHash, server đối chiếu sha256 rồi ghi URL
+// 4) Commit — khai LẠI đúng khoá + contentHash (+ sizeBytes tuỳ chọn, đối chiếu
+//    THẬT với byte đã đọc từ đĩa), server ghi URL vào cây dạy
 POST ${endpointBase}/machineApi.commitTemplateImage
 Headers: X-API-Key: machine-api-key
 {
@@ -247,6 +250,7 @@ Headers: X-API-Key: machine-api-key
   "componentExtId": "a1b2c3d4-0000-4000-8000-000000010111",
   "productModelCode": "PCBA-REV3",
   "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sizeBytes": 245678,
   "ext": "jpg"
 }
 // Response: { "success": true, "cap": "component",
@@ -742,7 +746,7 @@ defer res.Body.Close()`,
                     <CodeBlock code={templateImageFlowExample} language="typescript" />
                     <ul className="mt-3 list-disc space-y-1 pl-5 text-white/70">
                       <li><strong>productModelCode:</strong> tùy chọn nhưng NÊN LUÔN gửi — <code>captureExtId</code> là GUID do máy cấp, không đảm bảo duy nhất trên toàn hệ (một máy dạy cây CLONE cho hai sản phẩm khác nhau có thể mang cùng bộ GUID). Không gửi mà server thấy captureExtId khớp NHIỀU sản phẩm của cùng máy ⇒ 400, không đoán bừa sản phẩm nào.</li>
-                      <li><strong>Mã lỗi:</strong> <code className="text-white">NOT_FOUND</code> — <code>captureExtId</code> lạ, hoặc <code>componentExtId</code> không thuộc đúng capture đã khai. <code className="text-white">FORBIDDEN</code> — capture thuộc máy khác. <code className="text-white">BAD_REQUEST</code> — <code>contentHash</code> khai không khớp sha256 thật của byte đã tải lên (PUT lại rồi commit lại), HOẶC thiếu <code>productModelCode</code> khi captureExtId nhập nhằng nhiều sản phẩm.</li>
+                      <li><strong>Mã lỗi:</strong> <code className="text-white">NOT_FOUND</code> — <code>captureExtId</code> lạ, hoặc <code>componentExtId</code> không thuộc đúng capture đã khai. <code className="text-white">FORBIDDEN</code> — capture thuộc máy khác (ở bước presign/commit), HOẶC ở bước PUT máy chưa dạy cây cho product model trong <code>uploadUrl</code>. <code className="text-white">BAD_REQUEST</code> — <code>contentHash</code>/<code>sizeBytes</code> khai không khớp byte thật đã tải lên (PUT lại rồi commit lại), HOẶC thiếu <code>productModelCode</code> khi captureExtId nhập nhằng nhiều sản phẩm.</li>
                       <li><strong>Idempotent:</strong> commit lặp lại với CÙNG nội dung ảnh (cùng sha256) là AN TOÀN — không tạo hàng mới, không lỗi.</li>
                       <li><strong>Tùy chọn — máy chưa nâng cấp không ảnh hưởng ingest:</strong> đây là BƯỚC RIÊNG, SAU đẩy cây. Máy không gọi hai cửa mới này vẫn <code>submitMachineTemplate</code> bình thường; canvas dạy giới hạn trên hệ chỉ hiện thông điệp "ảnh chưa được tải lên hệ" thay vì lỗi.</li>
                     </ul>

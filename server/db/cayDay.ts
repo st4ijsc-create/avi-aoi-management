@@ -994,6 +994,52 @@ export type KetQuaTraAnhTemplate =
   | { readonly ket: "nhapNhang" };
 
 /**
+ * ★★★ Lô 8 Mục 1 — vòng sửa 1 (HIGH, review độc lập): buộc `PUT
+ * /api/machine-template-image/upload/:objectKey` vào ĐÚNG máy đã xác thực, KHÔNG
+ * chỉ kiểm HÌNH DẠNG khoá (`product-models/<id>/template-<sha>.<ext>` khớp regex
+ * không chứng minh gì về QUYỀN SỞ HỮU `<id>` đó).
+ *
+ * ⚠⚠ LỖ ĐÃ ĐÓNG: TRƯỚC bản vá, route PUT chỉ `authenticateMachine` (xác nhận "anh
+ * là ai") rồi kiểm khoá ĐÚNG HÌNH DẠNG regex (xác nhận "khoá trông hợp lệ") — không
+ * bước nào hỏi "productModelId trong khoá có thuộc về máy này không". Máy B xác
+ * thực THẬT (apiKey hợp lệ, scope `ingest:write` đúng) PUT được blob vào
+ * `product-models/<id-của-máy-A>/template-...` — ghi xuyên-tenant/spam dung lượng,
+ * dù bước `commitTemplateImage` (tRPC) vẫn lọc đúng máy nên hàng CÂY không bị ghi
+ * sai chủ. Route PUT tồn tại RIÊNG (tách khỏi commit để một PUT dở dang không để
+ * lại hàng cây trỏ ảnh chưa toàn vẹn) — đúng vì thế nó cũng cần TỰ kiểm quyền, không
+ * dựa vào "commit sẽ chặn hộ".
+ *
+ * Dùng CHÍNH khuôn `mayCoBanDay` (`traPointDefCapComponent` ngay dưới): câu hỏi
+ * đúng là "máy này đã dạy CÁI ĐANG CHẠY (productModelId) chưa", không phải "máy
+ * này từng dạy gì chưa" — một máy dạy sản phẩm A rồi bị hỏi về sản phẩm B nó
+ * KHÔNG dạy phải bị từ chối, dù cả hai đều "của một máy nào đó có thật".
+ *
+ * `true` = máy có ÍT NHẤT một `product_captures` sống (không xoá mềm ở tầng cha,
+ * tra qua JOIN) thuộc ĐÚNG `productModelId` này — đủ điều kiện PUT ảnh vào tiền tố
+ * `product-models/<productModelId>/…`. `false` ⇒ route PUT từ chối `FORBIDDEN`,
+ * KHÔNG gọi `storagePut`.
+ */
+export async function mayDaDayChoSanPham(opts: {
+  machineId: number;
+  productModelId: number;
+}): Promise<boolean> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const [row] = await d
+    .select({ id: productCaptures.id })
+    .from(productCaptures)
+    .innerJoin(productPositions, eq(productPositions.id, productCaptures.positionRowId))
+    .innerJoin(productSurfaces, eq(productSurfaces.id, productPositions.surfaceRowId))
+    .where(and(
+      eq(productCaptures.machineId, opts.machineId),
+      eq(productSurfaces.productModelId, opts.productModelId),
+    ))
+    .limit(1);
+  return !!row;
+}
+
+/**
  * ★★★ Lô 8 Mục 1 (BG-116) — tra hàng ĐÍCH cho một lượt `commitTemplateImage`, LỌC
  * MÁY qua `product_captures."machineId"` — ĐÚNG cột Khối B Task 2 đã chốt (xem
  * docblock `traPointDefCapComponent` ngay trên: `measurement_point_defs.machineId`
