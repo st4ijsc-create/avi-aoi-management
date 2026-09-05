@@ -19,6 +19,18 @@
  * create_hypertable chỉ chạy khi CHƯA là hypertable; add_retention_policy dùng
  * if_not_exists.
  *
+ * ⚠⚠ HAI BƯỚC KHOÁ RIÊNG (production tính ngân sách cửa sổ bảo trì = CẢ HAI, xem
+ * chi tiết trong `drizzle/0349_audit_logs_hypertable_retention.sql`):
+ *   (1) DROP+ADD PRIMARY KEY (id, "createdAt") — ACCESS EXCLUSIVE trong lúc dựng
+ *       lại B-tree unique ghép trên TOÀN BỘ bảng — có thể NẶNG HƠN (2) trên bảng lớn.
+ *   (2) create_hypertable(migrate_data => true) — ACCESS EXCLUSIVE lần nữa trong
+ *       lúc dời hàng hiện có vào chunk.
+ *
+ * ⚠⚠ CHỐNG NHÂN BẢN HÀNG WORM (review Lô 10 — Important): probe dùng khoá ỔN
+ * ĐỊNH `action='PROBE-0349-STABLE'` (không timestamp/random) + tìm-trước-khi-tạo
+ * — script chạy N lần chỉ để lại TỐI ĐA 1 hàng probe, không phải N hàng (WORM =
+ * hàng probe không bao giờ xoá được, nên phải tái dùng thay vì tạo mới mỗi lần).
+ *
  *   node scripts/apply-migration-0349.mjs            # dev + test
  *   node scripts/apply-migration-0349.mjs --dev-only
  *   node scripts/apply-migration-0349.mjs --test-only
@@ -147,15 +159,31 @@ async function applyTo(rawUrl, label) {
     console.log(`  [0349] ${label} (d) grants avi_app KHONG doi: [${grantsSau}] OK`);
 
     // ── 4) WORM âm tính — vai avi_app: INSERT OK, DELETE 42501 (ca that) ────
-    const [probe] = await appSql`
-      INSERT INTO audit_logs ("action", "status", "details")
-      VALUES ('PROBE-0349', 'success', 'probe Lo 10 Muc 1 - se bi xoa qua DELETE that bai (WORM)')
-      RETURNING id`;
-    if (!probe?.id) throw new Error(`verification failed (${label}): INSERT probe khong tra id`);
+    // ⚠⚠ CHỐNG NHÂN BẢN (review Lô 10 — Important, sửa 2026-09-05): khoá probe ỔN
+    // ĐỊNH (không timestamp/random) + tìm-trước-khi-tạo — WORM nghĩa là hàng probe
+    // KHÔNG BAO GIỜ xoá được, nên script chạy N lần (dev/test lặp lại, CI...) chỉ
+    // được để lại TỐI ĐA 1 hàng, không phải N hàng. Bản trước insert hàng MỚI mỗi
+    // lần chạy — review đo được 7 hàng rác chỉ trong một phiên.
+    const PROBE_ACTION = "PROBE-0349-STABLE";
+    const existingProbe = await appSql`
+      SELECT id FROM audit_logs WHERE action = ${PROBE_ACTION} ORDER BY id LIMIT 1`;
+    let probeId;
+    if (existingProbe[0]) {
+      probeId = existingProbe[0].id;
+      console.log(`  [0349] ${label} (e0) probe da ton tai tu lan chay truoc (id=${probeId}) — tai dung, khong INSERT them`);
+    } else {
+      const [probe] = await appSql`
+        INSERT INTO audit_logs ("action", "status", "details")
+        VALUES (${PROBE_ACTION}, 'success', 'probe Lo 10 Muc 1 - khoa on dinh, tai dung qua cac lan chay - DELETE se that bai (WORM)')
+        RETURNING id`;
+      if (!probe?.id) throw new Error(`verification failed (${label}): INSERT probe khong tra id`);
+      probeId = probe.id;
+    }
+
     let deleteDenied = false;
     let deleteErr = null;
     try {
-      await appSql`DELETE FROM audit_logs WHERE id = ${probe.id}`;
+      await appSql`DELETE FROM audit_logs WHERE id = ${probeId}`;
     } catch (e) {
       deleteDenied = true;
       deleteErr = e;
@@ -166,14 +194,17 @@ async function applyTo(rawUrl, label) {
     if (deleteErr.code !== "42501") {
       throw new Error(`verification failed (${label}): DELETE bi tu choi nhung code="${deleteErr.code}" (phai la 42501 permission denied), message="${deleteErr.message}"`);
     }
-    console.log(`  [0349] ${label} (e) WORM am tinh: avi_app INSERT probe id=${probe.id} OK, DELETE 42501 (${deleteErr.message}) OK — hang probe con lai trong bang (khong xoa duoc bang thiet ke)`);
+    console.log(`  [0349] ${label} (e) WORM am tinh: avi_app probe id=${probeId} (khoa on dinh) OK, DELETE 42501 (${deleteErr.message}) OK — hang probe con lai trong bang (khong xoa duoc bang thiet ke)`);
 
-    // ── 5) KHÔNG mất dữ liệu: tổng hàng SAU = TRƯỚC + 1 (probe INSERT ở bước 4). ─
+    // ── 5) KHÔNG mất dữ liệu gốc: tổng hàng SAU = TRƯỚC + (0 neu probe da co tu
+    //      truoc, hoac 1 neu vua tao moi) — CÔNG THỨC, không phải hằng số +1, vì
+    //      khoá ổn định làm delta = 0 từ lần chạy thứ hai trở đi. ────────────────
     const [soHangSau] = await appSql`SELECT count(*)::int AS n FROM audit_logs`;
-    if (soHangSau.n !== soHangTruoc.n + 1) {
-      throw new Error(`verification failed (${label}): audit_logs ${soHangTruoc.n} -> ${soHangSau.n} (phai la +1 dung 1 hang probe, khong mat/them hang nao khac)`);
+    const deltaKyVong = existingProbe[0] ? 0 : 1;
+    if (soHangSau.n !== soHangTruoc.n + deltaKyVong) {
+      throw new Error(`verification failed (${label}): audit_logs ${soHangTruoc.n} -> ${soHangSau.n} (ky vong +${deltaKyVong}, khong duoc mat/them hang nao khac)`);
     }
-    console.log(`  [0349] ${label} (f) tong hang: ${soHangTruoc.n} -> ${soHangSau.n} (+1 probe, khong mat du lieu goc)`);
+    console.log(`  [0349] ${label} (f) tong hang: ${soHangTruoc.n} -> ${soHangSau.n} (delta=${deltaKyVong} dung cong thuc, khong mat du lieu goc)`);
 
     await sql`
       CREATE TABLE IF NOT EXISTS "__applied_migrations" (

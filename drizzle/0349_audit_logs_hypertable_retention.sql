@@ -42,17 +42,33 @@
 -- + `if_not_exists => TRUE` — tái chạy nhiều lần an toàn, không tạo lại gì đã
 -- có, không rewrite PK lần hai (PK rewrite chỉ chạy trong nhánh chưa-là-hypertable).
 --
--- ⚠ migrate_data => TRUE khóa bảng trong lúc chuyển — với dev/test (nghìn-chục
--- nghìn hàng) là tức thời; môi trường thật PHẢI chạy trong cửa sổ bảo trì
--- (plan §5 điều kiện 1, còn hiệu lực).
+-- ⚠⚠ HAI BƯỚC KHÓA BẢNG RIÊNG BIỆT trên nhánh chưa-là-hypertable (review Lô 10 —
+-- Minor, tách rõ 2026-09-05) — production PHẢI cộng dồn CẢ HAI, không chỉ tính
+-- migrate_data:
+--   (1) `DROP CONSTRAINT ... ADD PRIMARY KEY (id, "createdAt")` — rewrite TOÀN
+--       BỘ bảng dưới khoá `ACCESS EXCLUSIVE` (chặn MỌI đọc/ghi, kể cả SELECT) để
+--       Postgres dựng lại index PK trên hết dữ liệu hiện có. Trên bảng lớn, bước
+--       NÀY có thể NẶNG HƠN chính migrate_data (dựng B-tree unique toàn bảng là
+--       chi phí ALTER TABLE cổ điển, không phải cơ chế đặc thù Timescale).
+--   (2) `create_hypertable(..., migrate_data => TRUE)` — khoá bảng LẦN NỮA (cũng
+--       ACCESS EXCLUSIVE trong lúc dời) để chuyển hàng hiện có vào chunk theo
+--       `createdAt`.
+-- Với dev/test (nghìn-chục nghìn hàng) cả hai bước cộng lại vẫn tức thời; môi
+-- trường thật PHẢI chạy trong cửa sổ bảo trì với ngân sách khoá tính bằng TỔNG
+-- (1)+(2), không chỉ (2) (plan §5 điều kiện 1, còn hiệu lực — cập nhật ngân sách
+-- theo phát hiện PK-rewrite này).
 -- ============================================================================
 
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM timescaledb_information.hypertables
                  WHERE hypertable_name = 'audit_logs') THEN
+    -- BƯỚC KHOÁ (1) — ACCESS EXCLUSIVE trong lúc rewrite PK (dựng B-tree unique
+    -- ghép trên TOÀN BỘ bảng). Chi phí riêng, KHÔNG phải một phần của migrate_data.
     ALTER TABLE audit_logs DROP CONSTRAINT IF EXISTS audit_logs_pkey;
     ALTER TABLE audit_logs ADD PRIMARY KEY (id, "createdAt");
+    -- BƯỚC KHOÁ (2) — ACCESS EXCLUSIVE lần nữa trong lúc migrate_data dời hàng
+    -- hiện có vào chunk. Ngân sách cửa sổ bảo trì production = (1) + (2).
     PERFORM create_hypertable('audit_logs', 'createdAt',
       chunk_time_interval => INTERVAL '7 days', if_not_exists => TRUE, migrate_data => TRUE);
   END IF;

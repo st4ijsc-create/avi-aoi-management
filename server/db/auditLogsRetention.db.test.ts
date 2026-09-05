@@ -7,6 +7,15 @@
  * cầu chì vai-đo-không-superuser TRƯỚC mọi assertion khác (không có cầu chì, mọi
  * ca dưới xanh giả vì `aoi`/superuser bỏ qua mọi kiểm quyền).
  *
+ * ⚠⚠ CHỐNG NHÂN BẢN HÀNG WORM (review Lô 10 — Important, sửa 2026-09-05): `audit_logs`
+ * không role nào xoá được (đúng chủ đích) ⇒ MỌI ca cần ghi phải dùng khoá probe ỔN
+ * ĐỊNH (`action = PROBE_ACTION` dưới đây, KHÔNG timestamp/random trong khoá) + kiểm
+ * TỒN TẠI TRƯỚC KHI INSERT — cả đời lưới (chạy CI trăm lần) chỉ để lại TỐI ĐA 1 hàng.
+ * Bản trước (2026-09-05, trước sửa) insert một hàng MỚI mỗi lần chạy vì không có khoá
+ * ổn định — đo được 7 hàng rác chỉ trong một phiên. Ca duy nhất CẦN ghi là WORM âm
+ * tính (phải có ít nhất 1 hàng để DELETE-thử); các ca khác (hypertable/PK/policy/grants)
+ * CHỈ ĐỌC catalog, không ghi gì.
+ *
  * ── ĐỘT BIẾN mà lưới này bắt được (đã đo tay Lô 10, xem báo cáo) ──────────────
  *   (a) ai đó `remove_retention_policy('audit_logs')`     ⇒ ca "policy 365d" ĐỎ
  *   (b) GRANT DELETE cho avi_app trên audit_logs (mở WORM) ⇒ ca "WORM âm tính" ĐỎ
@@ -14,12 +23,16 @@
  *       thất bại, không phải im lặng bỏ qua)
  *   (c) revert PK về (id) đơn cột (hoàn nguyên 0349)       ⇒ ca "PK ghép" ĐỎ
  *   (d) audit_logs bị hoàn nguyên về bảng thường (drop hypertable) ⇒ ca (a) ĐỎ
+ *   (e) khoá probe không ổn định (vd nhúng Date.now()/random) ⇒ ca "chống nhân bản"
+ *       MỚI dưới đây ĐỎ khi chạy 2 lần liên tiếp (đếm hàng probe phải KHÔNG đổi)
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import postgres from "postgres";
 
 const DB_URL = process.env.DATABASE_URL;
 const RETENTION_DAYS = 365;
+/** Khoá probe ỔN ĐỊNH — KHÔNG chứa timestamp/random. Cả đời lưới chỉ 1 hàng mang giá trị này. */
+const PROBE_ACTION = "DBTEST-0349-PROBE-STABLE";
 
 let sql: ReturnType<typeof postgres>;
 let probeId: number | undefined;
@@ -32,8 +45,8 @@ describe.skipIf(!DB_URL)("BG-93 (0349) — audit_logs hypertable + retention 365
   afterAll(async () => {
     // ⚠ KHÔNG xoá hàng probe: audit_logs là WORM với vai avi_app (đúng chủ đích,
     //   cùng lý do `cheDo2faTheoTrienKhai.test.ts` không dọn hàng nó đẻ ra). Hàng
-    //   probe (action='DBTEST-0349-PROBE') là bằng chứng sống của việc DELETE bị
-    //   chặn — xoá nó đi sẽ cần đúng quyền mà ca kiểm này chứng minh KHÔNG tồn tại.
+    //   probe (action=PROBE_ACTION, khoá ổn định) là bằng chứng sống của việc DELETE
+    //   bị chặn — xoá nó đi sẽ cần đúng quyền mà ca kiểm này chứng minh KHÔNG tồn tại.
     await sql?.end();
   });
 
@@ -68,16 +81,25 @@ describe.skipIf(!DB_URL)("BG-93 (0349) — audit_logs hypertable + retention 365
     expect(jobs[0]?.config?.drop_after).toBe(`${RETENTION_DAYS} days`);
   });
 
-  it("WORM âm tính (ca thật, vai avi_app) — INSERT OK, DELETE 42501", async () => {
-    const [row] = await sql<{ id: number }[]>`
-      INSERT INTO audit_logs ("action", "status", "details")
-      VALUES ('DBTEST-0349-PROBE', 'success', 'auditLogsRetention.db.test.ts — WORM negative gate')
-      RETURNING id`;
-    expect(row?.id, "INSERT vào audit_logs (vai avi_app) phải thành công").toBeGreaterThan(0);
-    probeId = row.id;
+  it("WORM âm tính (ca thật, vai avi_app) — tìm-hoặc-tạo probe ỔN ĐỊNH, DELETE chính nó 42501", async () => {
+    // Tìm-trước-khi-tạo: nếu lượt chạy trước đã để lại hàng mang khoá ổn định này thì
+    // TÁI DÙNG (không INSERT thêm) — cả đời lưới chỉ 1 hàng, chạy CI bao nhiêu lần cũng vậy.
+    const existing = await sql<{ id: number }[]>`
+      SELECT id FROM audit_logs WHERE action = ${PROBE_ACTION} ORDER BY id LIMIT 1`;
+    if (existing[0]) {
+      probeId = existing[0].id;
+    } else {
+      const [row] = await sql<{ id: number }[]>`
+        INSERT INTO audit_logs ("action", "status", "details")
+        VALUES (${PROBE_ACTION}, 'success', 'auditLogsRetention.db.test.ts — WORM negative gate (khoá ổn định, tái dùng qua các lần chạy)')
+        RETURNING id`;
+      expect(row?.id, "INSERT vào audit_logs (vai avi_app) phải thành công").toBeGreaterThan(0);
+      probeId = row.id;
+    }
 
+    // DELETE-âm-tính THỬ CHÍNH hàng vừa tìm/tạo — không cần hàng mới cho bước này.
     await expect(
-      sql`DELETE FROM audit_logs WHERE id = ${row.id}`,
+      sql`DELETE FROM audit_logs WHERE id = ${probeId}`,
     ).rejects.toMatchObject({ code: "42501" });
   });
 
@@ -92,9 +114,19 @@ describe.skipIf(!DB_URL)("BG-93 (0349) — audit_logs hypertable + retention 365
     expect(privs).not.toContain("UPDATE");
   });
 
-  it("hàng probe DBTEST-0349-PROBE vẫn còn (không role nào xoá được nó, kể cả ca kiểm này)", async () => {
-    if (probeId === undefined) return; // ca INSERT ở trên fail thì bỏ qua, không nhân đôi lỗi
+  it(`hàng probe ${PROBE_ACTION} vẫn còn (không role nào xoá được nó, kể cả ca kiểm này)`, async () => {
+    if (probeId === undefined) return; // ca tìm/tạo ở trên fail thì bỏ qua, không nhân đôi lỗi
     const [row] = await sql`SELECT id FROM audit_logs WHERE id = ${probeId}`;
     expect(row?.id, "hàng probe biến mất khỏi audit_logs — WORM đã bị phá").toBe(probeId);
+  });
+
+  it("CHỐNG NHÂN BẢN — đúng 1 hàng mang khoá probe ổn định (chạy lại không được đẻ thêm)", async () => {
+    const rows = await sql<{ id: number }[]>`
+      SELECT id FROM audit_logs WHERE action = ${PROBE_ACTION}`;
+    expect(
+      rows.length,
+      `audit_logs có ${rows.length} hàng action='${PROBE_ACTION}' — phải LUÔN LÀ 1 dù lưới này ` +
+        `chạy bao nhiêu lần (WORM: hàng cũ không xoá được, nên lần sau PHẢI tái dùng thay vì tạo mới).`,
+    ).toBe(1);
   });
 });
