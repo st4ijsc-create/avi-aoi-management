@@ -10,6 +10,7 @@ import {
 import type { HmiScreenDocument, ScreenLayout, ScreenWidget, WidgetRect } from "@/contracts/hmiScreen"
 import { clampRectToLayout } from "@/hmi-runtime/gridLayout"
 import { ScreenRenderer } from "@/hmi-runtime/ScreenRenderer"
+import { DesignTimePermissionProvider } from "@/hmi-runtime/WritePermissionContext"
 import { createMachineDetailSource } from "@/hmi-runtime/TagValueSource"
 import type { TagValueSource } from "@/hmi-runtime/TagValueSource"
 import { useT } from "@/i18n"
@@ -784,7 +785,24 @@ export function EditorCanvas({ doc }: EditorCanvasProps) {
           must be drawn by exactly what version 3 will be drawn by on the panel, or the preview is
           worth nothing.
         */}
-        <ScreenRenderer doc={previewDoc ?? edited} source={DESIGN_TIME_SOURCE} />
+        {/*
+          🔴 SESSION S1 (S-6) — THE TRAP THIS SESSION HAD TO AVOID, and why this wrapper exists.
+
+          S1 makes a write widget render disabled unless the ENGINE has affirmatively said this session
+          may perform its action. But this canvas mounts the very same `ScreenRenderer` the kiosk does
+          (see the note above), so an UNCONDITIONAL runtime gate would disable every `command-button` on
+          the engineer's own canvas — an Engineer is not an Admin. That is a regression in the editor
+          dressed up as a safety win.
+
+          Design time is therefore a DISTINCT ENABLED branch, never the same one as "runtime, permission
+          unresolved". The canvas has NO machine bound to it (`DESIGN_TIME_SOURCE` is synthetic), nothing
+          can dispatch from it, and authoring a control is not operating one. Keeping the two states
+          apart is what stops the fail-closed rule inverting: whichever default served the editor would
+          otherwise serve the kiosk too.
+        */}
+        <DesignTimePermissionProvider>
+          <ScreenRenderer doc={previewDoc ?? edited} source={DESIGN_TIME_SOURCE} />
+        </DesignTimePermissionProvider>
         {/*
           🔴 THE EDITING OVERLAY IS NOT RENDERED WHILE A PAST VERSION IS ON SCREEN. Its hit targets
           address widgets BY ID on `edited`, so leaving it up over a previewed document would put

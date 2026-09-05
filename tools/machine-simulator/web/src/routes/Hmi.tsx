@@ -28,6 +28,7 @@ import { machineScreenId, renderableScreen } from "@/hmi-runtime/publishedScreen
 import { useScreenRepublished } from "@/hmi-runtime/screenChangeStream"
 import { SHIPPED_SCREEN_DOCS } from "@/hmi-runtime/shippedScreens"
 import { createMachineDetailSource } from "@/hmi-runtime/TagValueSource"
+import { WritePermissionProvider } from "@/hmi-runtime/WritePermissionContext"
 
 // WS-HMI-1 Task 5 — the corrigendum at the top of `docs/plans/2026-08-30-hmi-ws1-runtime-blueprint.md`:
 // what deletes is the HAND-WRITTEN layout (the `SCHEMATIC_READOUT_FLEX` proportions table that used to
@@ -476,11 +477,19 @@ export default function Hmi() {
                 <span className="hmi-micro">{t("hmi.screenLoading")}</span>
               </div>
             ) : (
-              <ScreenRenderer
-                doc={kioskDoc}
-                source={source}
-                components={componentModel.data?.components}
-              />
+              // 🔴 Session S1 (S-6) — the KIOSK's write widgets resolve against the real PolicyEngine
+              // for THIS session. Wrapped rather than passed as a prop because `ScreenRenderer.tsx` is
+              // byte-frozen this session; see `WritePermissionContext.tsx` for the full reasoning.
+              // A failed permissions query disables the write widgets with a reason and leaves every
+              // read-only widget on the screen rendering live data — §5-bis, no screen is a valid state
+              // to fail hard on.
+              <WritePermissionProvider machineCode={machine.code}>
+                <ScreenRenderer
+                  doc={kioskDoc}
+                  source={source}
+                  components={componentModel.data?.components}
+                />
+              </WritePermissionProvider>
             )}
           </div>
         ) : (

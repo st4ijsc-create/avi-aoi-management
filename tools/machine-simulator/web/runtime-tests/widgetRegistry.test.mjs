@@ -149,14 +149,24 @@ test("policyGate: policyAction vắng mặt ⇒ disabled=true kèm một lý do 
   assert.ok(gate.reason.length > 0, 'lý do phải là chuỗi CÓ NỘI DUNG — một lý do rỗng ("") không phải "nhìn thấy được"')
 })
 
-test('policyGate: policyAction có mặt ("machine.setpoint") ⇒ disabled=false, không lý do', () => {
-  const gate = policyGate({ kind: "setpoint-input", policyAction: "machine.setpoint" })
+// 🔴 SESSION S1 (S-6) — hai bài dưới ĐÃ ĐỔI, và phải đổi. Trước S1 chúng khẳng định "có mặt trong từ
+// vựng ⇒ BẬT", mà đó CHÍNH LÀ khuyết tật S-6: một Operator mở màn có `command-button` thấy nút BẬT cho
+// một hành động đòi Admin. Tư cách thành viên là ĐIỀU KIỆN CẦN, không đủ; liên từ còn thiếu là "và
+// engine đã khẳng định phiên NÀY được phép". Hai bài vẫn đo đúng cái cũ (từ vựng được nhận), chỉ thêm
+// vế mới: phải có giấy phép TƯỜNG MINH thì mới BẬT.
+const PERMIT_BOTH = {
+  state: "resolved",
+  permitted: { "machine.setpoint": true, "machine.command": true },
+}
+
+test('policyGate: policyAction có mặt ("machine.setpoint") + engine CHO PHÉP ⇒ disabled=false, không lý do', () => {
+  const gate = policyGate({ kind: "setpoint-input", policyAction: "machine.setpoint" }, PERMIT_BOTH)
   assert.equal(gate.disabled, false)
   assert.equal(gate.reason, undefined)
 })
 
-test('policyGate: policyAction có mặt ("machine.command") ⇒ disabled=false, không lý do (đối chứng action còn lại)', () => {
-  const gate = policyGate({ kind: "command-button", policyAction: "machine.command" })
+test('policyGate: policyAction có mặt ("machine.command") + engine CHO PHÉP ⇒ disabled=false, không lý do (đối chứng action còn lại)', () => {
+  const gate = policyGate({ kind: "command-button", policyAction: "machine.command" }, PERMIT_BOTH)
   assert.equal(gate.disabled, false)
   assert.equal(gate.reason, undefined)
 })
@@ -211,11 +221,17 @@ test("policyGate: từ vựng RUNTIME khớp union PolicyAction của hợp đ�
     `PolicyAction có ${members.length} giá trị, kỳ vọng 2 — nếu hợp đồng đổi, cập nhật CẢ POLICY_ACTIONS trong widgets/shared.ts (Record<PolicyAction, true> ở đó sẽ đỏ ngay ở tsc, bài này là lớp thứ hai)`
   )
   for (const action of members) {
-    const gate = policyGate({ kind: "command-button", policyAction: action })
+    // 🔴 S1 — kèm giấy phép TƯỜNG MINH của engine cho ĐÚNG action đang xét. Bài này đo rằng phép kiểm
+    // THÀNH VIÊN không từ chối chính từ vựng hợp đồng; nó không còn (và không được) khẳng định rằng
+    // tư cách thành viên MỘT MÌNH là đủ để BẬT — xem hai bài "engine CHO PHÉP" ở trên.
+    const gate = policyGate(
+      { kind: "command-button", policyAction: action },
+      { state: "resolved", permitted: { [action]: true } }
+    )
     assert.equal(
       gate.disabled,
       false,
-      `"${action}" là thành viên HỢP LỆ của PolicyAction nhưng policyGate vẫn khoá — phép kiểm thành viên đang từ chối chính từ vựng của hợp đồng`
+      `"${action}" là thành viên HỢP LỆ của PolicyAction và engine ĐÃ cho phép, nhưng policyGate vẫn khoá — phép kiểm thành viên đang từ chối chính từ vựng của hợp đồng`
     )
     assert.equal(gate.reason, undefined)
   }
@@ -278,6 +294,136 @@ test("policyGate: lý do cho action LẠ KHÁC HẲN lý do cho action VẮNG M�
   )
   assert.match(String(absent.reason), /has no policyAction/)
   assert.doesNotMatch(String(unknown.reason), /has no policyAction/)
+})
+
+// ── 🔴🔴 SESSION S1 (S-6): KHOÁ AN TOÀN — không có giấy phép của engine thì KHÔNG BẬT ────────────────
+// Khuyết tật S-6, đo được ở b83395cc: `policyGate` chỉ nhìn ĐÚNG MỘT đầu vào — tư cách thành viên của
+// `widget.policyAction` — nên một Operator mở màn có `command-button` (`policyAction:
+// "machine.command"`) thấy một nút BẬT, KHÔNG kèm lý do, cho một hành động đòi vai trò Admin. HMI nói
+// với người vận hành rằng một điều khiển dùng được trong khi nó không.
+//
+// Luật S1, tuyệt đối: `policyGate` trả `disabled: true` TRỪ KHI nó được trao tường minh một giấy phép
+// cho ĐÚNG action ấy. Không có nhánh nào mà THIẾU THÔNG TIN lại cho ra một điều khiển BẬT.
+//
+// Mỗi bài dưới đây đi kèm ĐỐI CHỨNG ÂM ngay tại chỗ: cùng một widget, cùng một action, chỉ khác trạng
+// thái phân giải — để "bài này đỏ khi cần" không bị nhầm với "bài này luôn đỏ".
+
+test("S1 policyGate: ĐANG CHỜ (pending) ⇒ disabled=true kèm lý do — KHÔNG được lạc quan", () => {
+  const gate = policyGate({ kind: "command-button", policyAction: "machine.command" }, { state: "pending" })
+  assert.equal(
+    gate.disabled,
+    true,
+    "đang chờ engine trả lời mà đã BẬT điều khiển — mặc định lạc quan là cách phổ biến nhất khiến một cổng fail-closed hoá fail-open dưới tải"
+  )
+  assert.ok(String(gate.reason).length > 0, "bị khoá thì phải có lý do NHÌN THẤY ĐƯỢC")
+
+  // ĐỐI CHỨNG ÂM: cùng widget, cùng action, đã có giấy phép ⇒ BẬT. Nếu thiếu vế này, một `policyGate`
+  // khoá MỌI THỨ cũng làm bài trên xanh.
+  const permitted = policyGate(
+    { kind: "command-button", policyAction: "machine.command" },
+    { state: "resolved", permitted: { "machine.command": true } }
+  )
+  assert.equal(permitted.disabled, false, "đối chứng âm hỏng: có giấy phép rồi mà vẫn khoá")
+})
+
+test("S1 policyGate: ENGINE KHÔNG VỚI TỚI ĐƯỢC (unavailable) ⇒ disabled=true kèm lý do", () => {
+  const gate = policyGate({ kind: "setpoint-input", policyAction: "machine.setpoint" }, { state: "unavailable" })
+  assert.equal(gate.disabled, true, "engine không trả lời mà vẫn BẬT — vắng thông tin không bao giờ là một sự cho phép")
+  assert.ok(String(gate.reason).length > 0)
+
+  const permitted = policyGate(
+    { kind: "setpoint-input", policyAction: "machine.setpoint" },
+    { state: "resolved", permitted: { "machine.setpoint": true } }
+  )
+  assert.equal(permitted.disabled, false, "đối chứng âm hỏng: có giấy phép rồi mà vẫn khoá")
+})
+
+test("S1 policyGate: TỪ CHỐI TƯỜNG MINH (permitted=false) ⇒ disabled=true, và lý do MANG câu của engine", () => {
+  const engineMessage = "Action 'machine.command.invoke' requires the Admin role (or higher)."
+  const gate = policyGate(
+    { kind: "command-button", policyAction: "machine.command" },
+    {
+      state: "resolved",
+      permitted: { "machine.command": false },
+      reasons: { "machine.command": engineMessage },
+    }
+  )
+  assert.equal(gate.disabled, true)
+  assert.ok(
+    String(gate.reason).includes(engineMessage),
+    "lý do KHÔNG mang câu của engine — người vận hành cần biết AI làm được việc này, và chỉ engine mới nói được vai trò nào"
+  )
+
+  // ĐỐI CHỨNG ÂM: đúng action ấy, đảo mỗi cờ `permitted` ⇒ BẬT.
+  const permitted = policyGate(
+    { kind: "command-button", policyAction: "machine.command" },
+    { state: "resolved", permitted: { "machine.command": true } }
+  )
+  assert.equal(permitted.disabled, false, "đối chứng âm hỏng: cờ permitted không phải là thứ quyết định")
+})
+
+test("S1 policyGate: engine KHÔNG NÓI GÌ về action ấy ⇒ disabled=true — im lặng không phải là cho phép", () => {
+  // Engine trả lời, nhưng bản ghi chỉ nói về setpoint. Một widget command KHÔNG được suy ra điều gì
+  // có lợi cho mình từ sự im lặng ấy.
+  const gate = policyGate(
+    { kind: "command-button", policyAction: "machine.command" },
+    { state: "resolved", permitted: { "machine.setpoint": true } }
+  )
+  assert.equal(gate.disabled, true, "engine im lặng về action này mà widget vẫn tự BẬT")
+  assert.ok(String(gate.reason).length > 0)
+
+  // ĐỐI CHỨNG ÂM: cùng bản phân giải ấy, action KIA (được nói tới, và được cho phép) ⇒ BẬT.
+  const other = policyGate(
+    { kind: "setpoint-input", policyAction: "machine.setpoint" },
+    { state: "resolved", permitted: { "machine.setpoint": true } }
+  )
+  assert.equal(other.disabled, false, "đối chứng âm hỏng: bản phân giải này lẽ ra cho phép setpoint")
+})
+
+test("S1 policyGate: KHÔNG truyền phân giải ⇒ disabled=true — quên truyền phải fail CLOSED", () => {
+  // Đây là hình dạng gọi TRƯỚC S1. Nó vẫn biên dịch được (tham số là tuỳ chọn), nên nó PHẢI khoá:
+  // một chỗ gọi quên truyền quyền phải nhận về một điều khiển an toàn, không phải một điều khiển bật.
+  const gate = policyGate({ kind: "command-button", policyAction: "machine.command" })
+  assert.equal(gate.disabled, true, "hình dạng gọi cũ (không có phân giải) vẫn BẬT — đúng khuyết tật S-6 còn nguyên")
+  assert.ok(String(gate.reason).length > 0)
+})
+
+// ── 🔴🔴 S1 CÁI BẪY: canvas của kỹ sư phải VẪN BẬT lúc thiết kế ────────────────────────────────────
+// `EditorCanvas.tsx:787` vẽ CHÍNH `ScreenRenderer` mà kiosk dùng (một bài AST ghim điều đó). Nên một
+// cổng vai trò VÔ ĐIỀU KIỆN sẽ tắt mọi nút lệnh trên canvas của chính kỹ sư — Engineer không phải
+// Admin. Đó là một regression của trình soạn thảo đội lốt một thắng lợi an toàn.
+//
+// "Lúc thiết kế" là một nhánh BẬT RIÊNG BIỆT, KHÔNG dùng chung nhánh với "lúc chạy, chưa phân giải".
+// Gộp hai cái ấy chính là cách luật fail-closed bị đảo ngược lặng lẽ: mặc định nào phục vụ trình soạn
+// thảo thì cũng phục vụ luôn kiosk.
+
+test("S1 policyGate: LÚC THIẾT KẾ (design-time) ⇒ BẬT — canvas của kỹ sư không bị cổng vai trò tắt", () => {
+  for (const action of ["machine.command", "machine.setpoint"]) {
+    const gate = policyGate({ kind: "command-button", policyAction: action }, { state: "design-time" })
+    assert.equal(
+      gate.disabled,
+      false,
+      `"${action}" bị khoá lúc THIẾT KẾ — mọi nút lệnh trên canvas của chính kỹ sư vừa bị tắt, đúng cái bẫy S1 phải tránh`
+    )
+    assert.equal(gate.reason, undefined, "lúc thiết kế không có gì để giải thích — điều khiển bật bình thường")
+  }
+})
+
+test("S1 policyGate: design-time và pending là HAI NHÁNH KHÁC NHAU — không được gộp", () => {
+  const widget = { kind: "command-button", policyAction: "machine.command" }
+  const designTime = policyGate(widget, { state: "design-time" })
+  const pending = policyGate(widget, { state: "pending" })
+
+  // Đây là bài bắt được "gộp hai trạng thái làm một" theo CẢ HAI chiều hỏng:
+  //   - gộp về BẬT  ⇒ kiosk hở (pending hoá BẬT);
+  //   - gộp về TẮT ⇒ trình soạn thảo hỏng (design-time hoá TẮT).
+  assert.equal(designTime.disabled, false, "design-time phải BẬT — nếu không, canvas của kỹ sư đã hỏng")
+  assert.equal(pending.disabled, true, "pending phải TẮT — nếu không, kiosk đã hở")
+  assert.notEqual(
+    designTime.disabled,
+    pending.disabled,
+    "design-time và pending đang cho CÙNG một kết quả — hai trạng thái đã bị gộp, và bất kể gộp về phía nào thì một trong hai bề mặt đang hỏng"
+  )
 })
 
 // ── 🔴 WS-HMI-2 Task 6 fix round 1 (task-6-review.md LOW-4): NỬA "KHAI BÁO" CỦA PHÉP GHIM PHỦ KIND ─

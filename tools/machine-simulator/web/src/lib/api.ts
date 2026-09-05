@@ -724,6 +724,17 @@ const endpoints = {
   screenAtVersion: (screenId: string, version: number) =>
     request<HmiScreenDocument>(`/v1/screens/${encodeURIComponent(screenId)}?version=${version}`),
 
+  // 🔴 Session S1 (S-6) — GET /v1/machines/{code}/write-permissions. Operator-tier and READ-ONLY: it
+  // asks the real PolicyEngine whether THIS session may perform each screen-contract write action, so a
+  // write widget is never rendered enabled for an action the caller cannot actually perform.
+  //
+  // 🔴 ADVISORY ONLY. This is a UX gate, exactly like `MachineControlPanel`'s own client-side check —
+  // never an authorisation. The enforcement is `POST /v1/machines/{code}/setpoint`/`.../command`, which
+  // re-evaluate the same engine on every write. A permit that goes stale between this read and a write
+  // is refused at the write door, which is the correct place for it.
+  writePermissions: (code: string) =>
+    request<MachineWritePermissions>(`/v1/machines/${encodeURIComponent(code)}/write-permissions`),
+
   // 🔴 ROLLBACK APPENDS. `POST .../rollback {toVersion}` reads the document at `toVersion` and adds it
   // as a NEW, higher version — the history never loses an entry and the pointer never moves backwards
   // — so the number in the reply is that NEW version, never `toVersion`. A UI that echoed `toVersion`
@@ -872,6 +883,12 @@ export const QUERY_KEYS = {
   // contract and can be cached forever.
   screenVersions: (screenId: string) => ["hmi-screen-versions", screenId] as const,
   screenAtVersion: (screenId: string, version: number) => ["hmi-screen-version", screenId, version] as const,
+  // 🔴 Session S1 (S-6) — this SESSION's write verdict for one machine. Keyed by machine code and NOT
+  // folded into `machine(code)`: the answer changes with the HALT latch and the Critical-alarm set, not
+  // with the ~1s live telemetry poll, and it is per-SESSION rather than per-machine — sharing the
+  // machine key would drag a policy answer through a per-second refetch and hand a cached verdict to
+  // whoever logged in next.
+  writePermissions: (code: string) => ["machine-write-permissions", code] as const,
   // WS-HMI-2 Task 10 — a machine's declared TAG NAMESPACE. Keyed like `components(code)` and for the
   // same reason: it changes on a human's `PUT /v1/tags/{code}`, not on the ~1s live poll.
   tags: (code: string) => ["hmi-tags", code] as const,
@@ -1060,6 +1077,34 @@ export interface ScreenVersionInfo {
 }
 
 /**
+ * 🔴 Session S1 (S-6) — one action's verdict from `GET /v1/machines/{code}/write-permissions`
+ * (`MachineWritePermissionDto` on the .NET side).
+ *
+ * `policyAction` is the SCREEN contract's word (`machine.setpoint`/`machine.command`) — the engine's own
+ * action ids (`machine.setpoint.write`/`machine.command.invoke`) deliberately do NOT cross this wire, so
+ * the web tier never gains a copy of a vocabulary it has no business holding. The translation between
+ * the two lives in exactly one place, `MachineWriteGate.ActionForPolicyAction`, on the .NET side, which
+ * is the only tier that holds both.
+ *
+ * `requiredRole` is what lets a denied operator be told WHO can do this rather than merely that they
+ * cannot. `reasonCode` is the engine's own `PolicyReasonCode` on the wire, so a role denial can be told
+ * apart from a HALT block without parsing prose.
+ */
+export interface MachineWritePermission {
+  policyAction: string
+  permitted: boolean
+  reasonCode: string
+  message: string
+  requiredRole: string | null
+}
+
+/** The full per-session answer for one machine. */
+export interface MachineWritePermissions {
+  machineCode: string
+  permissions: MachineWritePermission[]
+}
+
+/**
  * WS-HMI-2 Task 5 — `GET /v1/components/{machineCode}`, the component tree an HMI screen's
  * `{component}` bindings resolve through (`hmi-runtime/bindings.ts`'s `componentTagPrefixOf`).
  *
@@ -1137,6 +1182,35 @@ export function useScreen(screenId: string | undefined): UseQueryResult<HmiScree
  * No 404 branch, deliberately: this route answers 200 with `[]` for a screen nobody declared (see
  * `endpoints.screenVersions`), so "no versions" is data, not an error.
  */
+/**
+ * 🔴 Session S1 (S-6) — `GET /v1/machines/{code}/write-permissions`: may THIS session perform each
+ * screen-contract write action on this machine, right now?
+ *
+ * <b>Polled, unlike the other HMI declaration reads in this file.</b> A component tree or a screen
+ * document changes when a human PUTs one; this answer changes when the HALT latch engages or a Critical
+ * alarm fires — machine events, not human ones. A control that stayed enabled for minutes after a HALT
+ * would be exactly the stale-in-the-permissive-direction failure S1 exists to prevent. 5s rather than
+ * the ~1s telemetry cadence: policy state does not change per cycle, and the write door re-checks
+ * anyway.
+ *
+ * <b>Advisory.</b> Consumers may use this ONLY to decide whether to render a control enabled — never as
+ * authorisation for a write. See `endpoints.writePermissions`' own comment.
+ *
+ * A 404 (unknown machine code) is not retried: it will not start existing a second later, and the
+ * caller's gate fails closed on the resulting error state, which is correct.
+ */
+export function useWritePermissions(code: string | undefined): UseQueryResult<MachineWritePermissions> {
+  return useQuery({
+    queryKey: QUERY_KEYS.writePermissions(code ?? ""),
+    queryFn: () => endpoints.writePermissions(code as string),
+    enabled: code !== undefined && code.length > 0,
+    refetchInterval: (query) =>
+      query.state.error instanceof EngineApiError && query.state.error.status === 404 ? false : 5000,
+    retry: (failureCount, error) =>
+      error instanceof EngineApiError && error.status === 404 ? false : failureCount < 2,
+  })
+}
+
 export function useScreenVersions(screenId: string | undefined): UseQueryResult<ScreenVersionInfo[]> {
   return useQuery({
     queryKey: QUERY_KEYS.screenVersions(screenId ?? ""),

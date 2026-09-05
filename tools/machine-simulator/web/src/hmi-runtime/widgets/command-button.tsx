@@ -1,4 +1,5 @@
 import { ControlButton, type ControlButtonVariant } from "@/components/industrial"
+import { useWritePermissionResolution } from "../writePermissionChannel.ts"
 import type { WidgetProps } from "../widgetRegistry.ts"
 import { asRecord, policyGate } from "./shared.ts"
 
@@ -33,7 +34,10 @@ const KNOWN_VARIANTS = new Set<ControlButtonVariant>(["start", "pause", "reset",
 export function CommandButtonWidget(props: WidgetProps) {
   const { widget } = props
   const p = asRecord(widget.props)
-  const gate = policyGate(widget)
+  // 🔴 Session S1 (S-6) — the engine's per-session verdict, read from context and handed to `policyGate`
+  // as DATA. The gate stays a pure JSX-free function so `widgetRegistry.test.mjs` keeps executing the
+  // real thing directly; the hook lives here, in the `.tsx`, where a hook belongs.
+  const gate = policyGate(widget, useWritePermissionResolution())
   const variant: ControlButtonVariant =
     typeof p.variant === "string" && KNOWN_VARIANTS.has(p.variant as ControlButtonVariant)
       ? (p.variant as ControlButtonVariant)

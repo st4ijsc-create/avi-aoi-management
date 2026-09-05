@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils"
+import { useWritePermissionResolution } from "../writePermissionChannel.ts"
 import type { WidgetProps } from "../widgetRegistry.ts"
 import { asRecord, formatValue, policyGate, readBinding } from "./shared.ts"
 
@@ -21,7 +22,9 @@ import { asRecord, formatValue, policyGate, readBinding } from "./shared.ts"
 export function SetpointInputWidget(props: WidgetProps) {
   const { widget } = props
   const p = asRecord(widget.props)
-  const gate = policyGate(widget)
+  // 🔴 Session S1 (S-6) — identical to `command-button.tsx`: the engine's verdict arrives as context and
+  // is passed to the pure gate as data. See that file's note.
+  const gate = policyGate(widget, useWritePermissionResolution())
   const tv = readBinding(props, "value")
   const label = typeof p.label === "string" ? p.label : widget.id
   const labelEn = typeof p.labelEn === "string" ? p.labelEn : undefined

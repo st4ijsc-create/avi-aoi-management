@@ -74,8 +74,17 @@ export function readThresholds(props: Record<string, unknown>): Thresholds {
 
 export type PolicyGate = {
   /** True whenever `widget.policyAction` is absent OR is not one of the two actions the frozen
-   * contract defines — those are the ONLY inputs this gate looks at. It does NOT (and at this seam
-   * CANNOT) check role, HALT state, or PolicyEngine's own rules — those are server-side
+   * contract defines.
+   *
+   * 🔴 SESSION S1 (S-6) — and ALSO true, now, whenever the engine has not affirmatively said this
+   * session may perform that action: query pending, engine unreachable, or an explicit deny. The
+   * paragraph below described this seam's state BEFORE S1 and is preserved because its reasoning about
+   * server-side enforcement still holds exactly — what changed is that the gate is no longer blind to
+   * role and HALT, it is handed the engine's own verdict as data (`PolicyResolution`). It remains a UX
+   * gate and never an authorisation: `MachineWriteEndpoints` re-evaluates every write regardless.
+   *
+   * It does NOT (and at this seam CANNOT) itself compute role, HALT state, or PolicyEngine's own
+   * rules — those are server-side
    * (`.claude/skills/st4i-machine-edition/SKILL.md` §3) and enforced again there regardless of what
    * this gate decides. This gate exists to satisfy one narrower, purely client-side obligation: a
    * document that never HAD a usable `policyAction` must never even offer an enabled control, so a
@@ -119,6 +128,81 @@ function isPolicyAction(value: unknown): value is PolicyAction {
 }
 
 /**
+ * 🔴 Session S1 (S-6) — what the ENGINE said about this session, handed to `policyGate` as PLAIN DATA.
+ *
+ * <b>A data argument, deliberately not a hook.</b> This module is a plain `.ts` file with no React
+ * import, because `web/runtime-tests/widgetRegistry.test.mjs` imports `policyGate` DIRECTLY under
+ * `node --test` and executes the real function (Node's TS loader strips plain `.ts` types but cannot
+ * parse JSX — see this file's own header). Calling `useWritePermissions()` inside the gate would make
+ * that impossible and would replace an executed behavioural pin with a source-text pattern match. The
+ * hook lives in the WIDGET; the decision lives here, pure and directly callable.
+ *
+ * The four states are deliberately separate rather than one nullable field, because they render
+ * different sentences and — for `design-time` versus `pending` — opposite `disabled` values. Collapsing
+ * them is precisely how a fail-closed gate becomes fail-open.
+ */
+export type PolicyResolution =
+  /** 🔴 DESIGN TIME — the editor's canvas, which has NO machine bound to it. `EditorCanvas.tsx` renders
+   * the very same `ScreenRenderer` the kiosk does (an AST test pins that), so an unconditional runtime
+   * gate would disable every command button on the engineer's own canvas, because an Engineer is not an
+   * Admin. This is a DISTINCT ENABLED branch, never shared with `pending`: nothing can dispatch from a
+   * canvas, there is no machine to dispatch to, and authoring is not operating. */
+  | { state: "design-time" }
+  /** The permissions query has not answered yet. DISABLED — never optimistically enabled. */
+  | { state: "pending" }
+  /** The engine did not answer (network, 5xx, offline). DISABLED — absence of information is never a
+   * grant. */
+  | { state: "unavailable" }
+  /** The engine answered. `permitted` is keyed by the SCREEN action word; a missing key means the engine
+   * said nothing about that action, which is also a denial. */
+  | { state: "resolved"; permitted: Partial<Record<PolicyAction, boolean>>; reasons?: Partial<Record<PolicyAction, string>> }
+
+/**
+ * 🔴 THE FAIL-CLOSED TABLE. Reached only once `action` is already a known member of the screen
+ * vocabulary — membership is necessary and NOT sufficient, and this is the missing conjunct: "and this
+ * session's role satisfies the obligation this action carries".
+ *
+ * `resolution === undefined` is treated as RUNTIME-UNRESOLVED (disabled), not as design time. That
+ * direction matters: a caller that forgets to pass the resolution gets a safely disabled control and a
+ * visible reason, rather than an enabled one. Design time must be requested EXPLICITLY, by a caller that
+ * knows it has no machine — which is exactly what `EditorCanvas`'s renderer does.
+ */
+function resolvedGate(action: PolicyAction, resolution: PolicyResolution | undefined): PolicyGate {
+  // 🔴 The editor's own canvas. The ONLY enabled branch that does not consult the engine, and it is
+  // reachable only when a caller explicitly declares it has no machine context.
+  if (resolution?.state === "design-time") return { disabled: false, reason: undefined }
+
+  if (resolution === undefined || resolution.state === "pending") {
+    return {
+      disabled: true,
+      reason:
+        "đang kiểm tra quyền… / checking permissions… — this control stays disabled until the engine confirms this session may perform it",
+    }
+  }
+
+  if (resolution.state === "unavailable") {
+    return {
+      disabled: true,
+      reason:
+        "không xác nhận được quyền — engine không trả lời / cannot confirm permission — the engine did not answer, so this control fails closed",
+    }
+  }
+
+  if (resolution.permitted[action] === true) return { disabled: false, reason: undefined }
+
+  // Explicit deny, OR the engine said nothing about this action. Both are refusals. The engine's own
+  // sentence is preferred when it sent one — it names the required role, which is the one thing that
+  // tells an operator who CAN do this — with a bilingual fallback when it did not.
+  const engineReason = resolution.reasons?.[action]
+  return {
+    disabled: true,
+    reason: engineReason
+      ? `không đủ quyền / not permitted — ${engineReason}`
+      : `không đủ quyền cho "${action}" / this session is not permitted to perform "${action}" on this machine`,
+  }
+}
+
+/**
  * The ONE gate `setpoint-input.tsx` and `command-button.tsx` both call before deciding whether to
  * render an enabled control — kept here (plain `.ts`, no JSX) so `widgetRegistry.test.mjs` can pin its
  * behaviour by calling the SAME function the real widgets call, not a re-description of it.
@@ -127,14 +211,29 @@ function isPolicyAction(value: unknown): value is PolicyAction {
  * wrote nothing and an author who wrote something unrecognised need different next steps, and a
  * single shared message would send the second one looking for a missing field that is right there.
  *
+ * 🔴 SESSION S1 (S-6) — MEMBERSHIP IS NO LONGER SUFFICIENT. Until S1 this function returned
+ * `{disabled: false}` the moment `policyAction` was a member of the screen vocabulary, looking at no
+ * other input — so an Operator opening a screen carrying a `command-button` saw an ENABLED button for
+ * an action that requires Admin. The HMI told an operator a control was available when it was not.
+ * A recognised action now additionally requires an affirmative permit from the ENGINE for THIS session
+ * (`resolution`, above), and every path that lacks one renders disabled with a visible bilingual
+ * reason. The one exception is `design-time`, which is the editor's canvas and is a distinct branch —
+ * see `PolicyResolution` for why it must never share a branch with `pending`.
+ *
+ * The `resolution` argument is OPTIONAL for source compatibility with the pre-S1 call shape, and
+ * omitting it fails CLOSED (disabled, "checking permissions…"), never open.
+ *
  * `policyAction` is typed `unknown` here rather than `ScreenWidget["policyAction"]` because that is
  * the truth about where the value comes from. Narrowing it to the contract type would make the
  * unrecognised-value branch below look unreachable to `tsc` while remaining perfectly reachable at
  * runtime — a check the compiler believes cannot fire is exactly how the truthiness version survived.
  */
-export function policyGate(widget: Pick<ScreenWidget, "kind"> & { policyAction?: unknown }): PolicyGate {
+export function policyGate(
+  widget: Pick<ScreenWidget, "kind"> & { policyAction?: unknown },
+  resolution?: PolicyResolution
+): PolicyGate {
   const action = widget.policyAction
-  if (isPolicyAction(action)) return { disabled: false, reason: undefined }
+  if (isPolicyAction(action)) return resolvedGate(action, resolution)
   if (action === undefined) {
     return {
       disabled: true,
