@@ -49,11 +49,13 @@ import { macTenantChoGhi, khoaLuuTruGoi } from "./phamViGhiMay";
 // cổng mọi đường machine khác đang tuân theo. `machineHeaderKey` TÁI DÙNG từ
 // machineApiRouters.ts (export có chủ ý) — không chép lại logic đọc header.
 import { authenticateMachine } from "../services/machineAuthService";
-import {
-  machineHeaderKey,
-  ingestRejectLegacyMachineEnabled,
-  ghiTinHieuHinhDangIngest,
-} from "./machineApiRouters";
+import { machineHeaderKey } from "./machineApiRouters";
+// ★★★ Lô 3 Mục 3 (BG-39 gđ2) — hai hàm dùng chung THÊM từ `machineApiRouters.ts` (export có chủ
+// ý, xem Lô 3 Mục 2/BG-57b): cờ cắt máy cũ + hàm ghi tín hiệu đếm. Import TÁCH RIÊNG khỏi
+// `machineHeaderKey` phía trên có chủ đích — `aoiPackageXacThuc.test.ts` §2 khớp regex NGUYÊN VĂN
+// `import { machineHeaderKey } from "./machineApiRouters"` để canh "không chép logic đọc header",
+// gộp chung một import sẽ làm lưới đó đỏ vì lý do KHÔNG liên quan gì tới điều nó canh.
+import { ingestRejectLegacyMachineEnabled, ghiTinHieuHinhDangIngest } from "./machineApiRouters";
 // Pha 1D Task 5 (BG-52 ⛔) — phân loại lỗi VĨNH VIỄN/TẠM THỜI cho chốt chặn retry
 // vô hạn ở cửa ZIP (commit). DÙNG LẠI nguyên hàm đã có ở đường WAL inspection —
 // KHÔNG viết bản thứ hai (đúng chỉ dẫn brief).
