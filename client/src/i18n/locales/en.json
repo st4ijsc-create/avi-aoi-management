@@ -7322,6 +7322,7 @@
     "viewInspection": "View inspection",
     "viewDetail": "View detail",
     "uploadStatsByMachine": "Upload statistics by machine",
+    "uploading": "Uploading",
     "uploadQueueTitle": "Upload queue",
     "uploadQueueTab": "Upload queue",
     "uploadQueueDesc": "Live upload metrics reported by AOI agents",

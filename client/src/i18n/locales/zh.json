@@ -7105,6 +7105,7 @@
     "viewInspection": "查看检查",
     "viewDetail": "查看详情",
     "uploadStatsByMachine": "按机器统计上传",
+    "uploading": "上传中",
     "uploadQueueTitle": "上传队列",
     "uploadQueueTab": "上传队列",
     "uploadQueueDesc": "AOI 代理上报的实时上传指标",
