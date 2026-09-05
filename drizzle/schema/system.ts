@@ -3,6 +3,14 @@ import { pgTable, serial, integer, text, timestamp, varchar, boolean, json, json
 import { statusEnum_2, reportTypeEnum, scheduleEnum, reportFormatEnum, statusEnum_3, dataTypeEnum, typeEnum, priorityEnum, templateTypeEnum_1 } from "./enums";
 import { users } from "./auth";
 
+// 0349 (Lô 10 Mục 1, BG-93) — DB THẬT có PK ghép PRIMARY KEY (id, "createdAt")
+// sau khi trở thành hypertable (create_hypertable đòi cột partition trong PK,
+// xem drizzle/0349_audit_logs_hypertable_retention.sql). `id: serial().primaryKey()`
+// dưới đây CỐ Ý giữ nguyên đơn cột — cùng quy ước 5 hypertable khác của repo này
+// (drizzle/0172_inspection_hypertables.sql rewrite PK ở DB nhưng KHÔNG mirror
+// composite PK vào drizzle/schema/*.ts, xem productInspections/measurementResults
+// ở inspection.ts): schema file này chỉ phục vụ typing + drizzle-kit generate,
+// không phải nguồn sự thật của các hypertable PK — nguồn sự thật là migration SQL.
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
   userId: integer("userId"), // Null for system actions or failed logins
