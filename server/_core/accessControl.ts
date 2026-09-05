@@ -271,6 +271,42 @@ export function requirePermission(moduleName: string, action: 'canView' | 'canCr
 }
 
 /**
+ * Lô 6 (BG-132) — middleware DÙNG CHUNG khi MỘT tài nguyên có NHIỀU vai hợp lệ (OR nhiều cặp
+ * module/action), sinh cho ruling (A) chủ dự án 2026-09-05: đường ghi bố cục xưởng
+ * (`layoutRouters.ts`) mở gate cho `analytics_oee` HOẶC `settings_factory` để KHÔNG làm mất
+ * quyền của người dùng `settings_factory` cũ (chống hồi quy) trong khi đáp ứng ruling (A) ở
+ * đường ghi (trước đó chỉ đường đọc client — RouteGuard `/digital-twin` — theo ruling này).
+ *
+ * Qua nếu BẤT KỲ cặp nào `checkPermission` trả true (short-circuit tuần tự, không đo hết nếu
+ * cặp đầu đã qua). Từ chối thì ném CÙNG hình dạng appError với `requirePermission`
+ * (FORBIDDEN/PERMISSION_DENIED, `{action}`) để không phá `readAppErrorMeta`/từ điển i18n
+ * `errors.action.*` phía client — `action` lấy từ yêu cầu ĐẦU TIÊN trong danh sách (giữ tương
+ * thích chữ ký cũ, không thêm không gian từ điển mới). `fallbackMessage` liệt kê MỌI module chấp
+ * nhận (khác `requirePermission` chỉ nêu một module) để log/API bên thứ ba đọc được đủ ngữ cảnh.
+ */
+export function requireAnyPermission(
+  cacYeuCau: Array<{ module: string; action: 'canView' | 'canCreate' | 'canEdit' | 'canDelete' | 'canExport' }>,
+) {
+  return async ({ ctx, next }: { ctx: TrpcContext & { user: NonNullable<TrpcContext['user']> }; next: Function }) => {
+    for (const yeuCau of cacYeuCau) {
+      const hasAccess = await checkPermission(ctx.user.id, ctx.user.role, yeuCau.module, yeuCau.action);
+      if (hasAccess) {
+        return next({ ctx });
+      }
+    }
+
+    const first = cacYeuCau[0];
+    const danhSachModule = cacYeuCau.map((y) => y.module).join(", ");
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: first.action },
+      `Bạn không có quyền ${first.action.replace('can', '').toLowerCase()} cho module "${danhSachModule}"`,
+    );
+  };
+}
+
+/**
  * Invalidate the assignment cache for a user (call when assignments change).
  */
 export function invalidateAssignmentCache(userId: number) {
