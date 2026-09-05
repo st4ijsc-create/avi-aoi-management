@@ -614,6 +614,21 @@ export const vi = {
         `khôi phục chỉ với tới các phiên bản CỦA CHÍNH mã này, mà màn ship sẵn chưa bao giờ là một phiên bản. ` +
         `Đường về là nút "Khôi phục màn hình ship sẵn" trong bảng Xuất bản.`,
     },
+    // Session 2 (HMI-3) — điểm khởi đầu THỨ HAI, đứng cạnh nút canvas trắng chứ không thay nó: máy
+    // chưa khai linh kiện thì sinh ra cũng chẳng được gì, còn máy đã khai thì không nên phải dựng tay.
+    generate: {
+      machineLabel: "Từ máy",
+      machineChoose: "— chọn một máy —",
+      action: "Sinh từ cây linh kiện của máy",
+      working: "Đang sinh…",
+      // 🔴 Giới hạn ĐÃ ĐO, nói ngay tại chỗ có nút, không để người dùng phát hiện trên kiosk thật.
+      note:
+        "Màn hình sinh ra là một BỐ CỤC khởi đầu, chưa phải màn hình đọc được số: binding của nó gọi tên " +
+        "đường dẫn ghép {tagPrefix}/{tag}, mà chưa nguồn giá trị nào trong bản dựng này trả lời được " +
+        "đường dẫn ghép. Đo trên chính fixture của kho: 6/6 binding sinh ra phân giải ra rỗng, nên các " +
+        "widget sẽ hiện placeholder có tên cho tới khi có bộ chuyển đổi. Đó là một bộ chuyển đổi còn " +
+        "thiếu, không phải một dây nối còn thiếu. Chưa có gì được lưu cho tới khi bạn xuất bản.",
+    },
     loadFailed: {
       description: "Không đọc được tài liệu màn hình. Đây là lỗi kết nối, không phải màn hình chưa khai.",
     },

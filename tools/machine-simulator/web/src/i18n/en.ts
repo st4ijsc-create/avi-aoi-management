@@ -547,6 +547,20 @@ export const en: Dictionary = {
         `delete route, and rollback only reaches versions OF THIS ID, which the shipped screen never was. ` +
         `The way back is "restore the shipped screen" in the Publish panel.`,
     },
+    // Session 2 (HMI-3) — the second starting point, beside the blank canvas.
+    generate: {
+      machineLabel: "From machine",
+      machineChoose: "— choose a machine —",
+      action: "Generate from its component model",
+      working: "Generating…",
+      // 🔴 The limit, MEASURED, stated where the button is rather than discovered on a kiosk.
+      note:
+        "A generated screen is a starting LAYOUT, not yet a screen that reads values: its bindings name " +
+        "composed {tagPrefix}/{tag} paths, and no value source in this build answers a composed path. " +
+        "Measured on this repository's own fixtures: 6 of 6 generated bindings resolve to nothing, so the " +
+        "widgets show their named placeholders until an adapter lands. That is a missing adapter, not a " +
+        "missing wire. Nothing is saved until you publish.",
+    },
     loadFailed: {
       description: "The screen document could not be read. This is a connection failure, not an undeclared screen.",
     },

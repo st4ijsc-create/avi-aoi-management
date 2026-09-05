@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "screenId": "generated-scrw-01",
+  "title": "SCRW-01 \u2014 sinh t\u1EF1 \u0111\u1ED9ng",
+  "titleEn": "SCRW-01 \u2014 generated",
+  "theme": "isa101",
+  "layout": {
+    "cols": 12,
+    "rows": 2,
+    "breakpoint": "panel"
+  },
+  "widgets": [
+    {
+      "id": "ambient-value",
+      "kind": "gauge",
+      "rect": {
+        "col": 0,
+        "row": 0,
+        "colSpan": 3,
+        "rowSpan": 1
+      },
+      "component": "ambient",
+      "bindings": {
+        "value": "{component}/value"
+      },
+      "props": {
+        "label": "Nhi\u1EC7t \u0111\u1ED9 bu\u1ED3ng m\u00E1y \u00B7 value",
+        "unit": "\u00B0C",
+        "min": -10,
+        "max": 80
+      }
+    },
+    {
+      "id": "spindle-running",
+      "kind": "status-lamp",
+      "rect": {
+        "col": 3,
+        "row": 0,
+        "colSpan": 3,
+        "rowSpan": 1
+      },
+      "component": "spindle",
+      "bindings": {
+        "state": "{component}/running"
+      },
+      "props": {
+        "label": "Tr\u1EE5c v\u00EDt ch\u00EDnh \u00B7 running"
+      }
+    },
+    {
+      "id": "spindle-state",
+      "kind": "state-badge",
+      "rect": {
+        "col": 6,
+        "row": 0,
+        "colSpan": 3,
+        "rowSpan": 1
+      },
+      "component": "spindle",
+      "bindings": {
+        "state": "{component}/state"
+      },
+      "props": {
+        "label": "Tr\u1EE5c v\u00EDt ch\u00EDnh \u00B7 state",
+        "tones": {
+          "stopped": "idle",
+          "running": "idle",
+          "faulted": "idle"
+        }
+      }
+    },
+    {
+      "id": "spindle-torque",
+      "kind": "gauge",
+      "rect": {
+        "col": 9,
+        "row": 0,
+        "colSpan": 3,
+        "rowSpan": 1
+      },
+      "component": "spindle",
+      "bindings": {
+        "value": "{component}/torque"
+      },
+      "props": {
+        "label": "Tr\u1EE5c v\u00EDt ch\u00EDnh \u00B7 torque",
+        "unit": "Nm",
+        "min": 0,
+        "max": 20
+      }
+    },
+    {
+      "id": "spindle-torque-target",
+      "kind": "setpoint-input",
+      "rect": {
+        "col": 0,
+        "row": 1,
+        "colSpan": 3,
+        "rowSpan": 1
+      },
+      "component": "spindle",
+      "bindings": {
+        "value": "{component}/torque-target"
+      },
+      "props": {
+        "label": "Tr\u1EE5c v\u00EDt ch\u00EDnh \u00B7 torque-target",
+        "unit": "Nm",
+        "min": 5,
+        "max": 15
+      },
+      "policyAction": "machine.setpoint"
+    },
+    {
+      "id": "spindle-reset",
+      "kind": "command-button",
+      "rect": {
+        "col": 3,
+        "row": 1,
+        "colSpan": 3,
+        "rowSpan": 1
+      },
+      "component": "spindle",
+      "bindings": {
+        "value": "{component}/reset"
+      },
+      "props": {
+        "label": "Tr\u1EE5c v\u00EDt ch\u00EDnh \u00B7 reset"
+      },
+      "policyAction": "machine.command"
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import { useParams } from "wouter"
 import { useGloss } from "@/components/hmi/bilingual"
 import type { HmiScreenDocument } from "@/contracts/hmiScreen"
 import { useT } from "@/i18n"
-import { EngineApiError, useScreen, useScreenVersions } from "@/lib/api"
+import { EngineApiError, generateScreenDocument, useFleetRoster, useScreen, useScreenVersions } from "@/lib/api"
 import { EditorCanvas } from "./EditorCanvas"
 import { createBlankScreen } from "./editorState"
 import { SCREEN_ID_PATTERN } from "@/hmi-runtime/publishedScreen"
@@ -243,9 +243,52 @@ export default function EditorRoute() {
    * actually reads and is illegal under the frozen contract.
    */
   const idIsLegal = screenId !== undefined && SCREEN_ID_PATTERN.test(screenId)
+
+  /**
+   * ── SESSION 2 (HMI-3) — SEEDING THE DRAFT FROM THE GENERATOR ───────────────────────────────────
+   *
+   * The button below stops handing the engineer a blank canvas when the machine already has a
+   * declared component model. `GET /v1/screens/generate?machine={code}` computes the document; the
+   * `screenId` sent with it is THE URL'S OWN SEGMENT, for the reason Task 13 already gave for
+   * `createBlankScreen`: identity comes from exactly one place, so `PUT`'s 409 route-vs-body rule has
+   * no way to fire.
+   *
+   * 🔴 IT FALLS BACK TO `createBlankScreen` ON ANY FAILURE, and that is a product decision rather than
+   * error handling. Every reason generation can fail — the machine declares nothing, the session is
+   * not an Engineer (this route is the one screen READ gated above Operator), the engine is
+   * unreachable — leaves the engineer wanting the same thing: to start building. A blank canvas is a
+   * working starting point; an apology is not. So `generating` never becomes a fault state, and the
+   * button always ends with a document on the canvas.
+   *
+   * `machineForGeneration` is the machine whose component tree is compiled. It defaults to the machine
+   * whose operator panel this screenId IS, when it is one (`shadowed`), because that is the only
+   * machine the URL itself names; otherwise the engineer picks one, because nothing else in this route
+   * knows which machine a screen is about — a screen document is deliberately not bound to a machine
+   * (`editor.tagPicker.noMachine` says so already).
+   */
+  const roster = useFleetRoster()
+  const [machineForGeneration, setMachineForGeneration] = useState("")
+  const [generating, setGenerating] = useState(false)
+  const chosenMachine = machineForGeneration || shadowed?.machineCode || ""
+
   if (draftFor !== screenId) {
     setDraftFor(screenId)
     setDraft(undefined)
+    setMachineForGeneration("")
+  }
+
+  async function startGenerated(id: string, machineCode: string) {
+    setGenerating(true)
+    try {
+      setDraft(await generateScreenDocument(machineCode, id))
+    } catch {
+      // Deliberately swallowed, and deliberately NOT reported as a fault — see the block above. The
+      // engineer gets the blank canvas Task 13 already gave them, which is what they would have got
+      // had this button never existed.
+      setDraft(createBlankScreen(id))
+    } finally {
+      setGenerating(false)
+    }
   }
 
   // wouter cannot match `/editor/:screenId` with an empty segment, so this is unreachable through the
@@ -348,6 +391,54 @@ export default function EditorRoute() {
                 >
                   {t("editor.notDeclared.startNew")}
                 </button>
+                ) : null}
+                {/*
+                  🔴 SESSION 2 (HMI-3) — GENERATE FROM A COMPONENT MODEL, beside the blank-canvas
+                  button rather than replacing it. Both are real starting points and the engineer
+                  chooses: a machine with no component tree gets nothing useful from generation, and a
+                  machine with one should not have to rebuild it by hand.
+                */}
+                {idIsLegal ? (
+                  <div data-editor-generate-section className="flex max-w-md flex-col items-center gap-2">
+                    <label className="flex w-full items-center gap-2">
+                      <span className="hmi-micro shrink-0">{t("editor.generate.machineLabel")}</span>
+                      <select
+                        data-editor-generate-machine
+                        className="h-7 w-full min-w-0 border border-border-strong bg-surface-subtle px-1.5 text-sm"
+                        value={chosenMachine}
+                        onChange={(event) => setMachineForGeneration(event.target.value)}
+                      >
+                        <option value="">{t("editor.generate.machineChoose")}</option>
+                        {(roster.data?.machines ?? []).map((tile) => (
+                          <option key={tile.code} value={tile.code}>
+                            {tile.code}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      data-editor-generate
+                      disabled={chosenMachine === "" || generating}
+                      className="border border-border-strong px-3 py-1.5 text-sm text-text-body hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] disabled:opacity-50"
+                      onClick={() => void startGenerated(screenId, chosenMachine)}
+                    >
+                      {generating ? t("editor.generate.working") : t("editor.generate.action")}
+                    </button>
+                    {/*
+                      🔴 THE LIMIT, AT THE MOMENT OF GENERATION — not a footnote, and rendered whether
+                      or not the button has been pressed, exactly the way `TagPicker`'s
+                      `componentNote` stands beside its own insert button. MEASURED, not estimated:
+                      6 of 6 bindings generated from this repository's own fixture pair resolve to
+                      `undefined` against the only value source that exists
+                      (`runtime-tests/screenGenerator.test.mjs` counts it on every run). An engineer
+                      who publishes a generated screen and sees an empty kiosk must have been told
+                      first, or the whole feature reads as broken rather than as unfinished.
+                    */}
+                    <p data-editor-generate-note className="text-xs text-text-muted">
+                      {t("editor.generate.note")}
+                    </p>
+                  </div>
                 ) : null}
               </>
             }

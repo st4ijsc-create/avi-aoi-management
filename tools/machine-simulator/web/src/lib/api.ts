@@ -691,6 +691,32 @@ const endpoints = {
   // state; nothing about it is inferred here.
   screen: (screenId: string) => request<HmiScreenDocument>(`/v1/screens/${encodeURIComponent(screenId)}`),
 
+  // ── Session 2 (HMI-3) — `GET /v1/screens/generate?machine={code}` ─────────────────────────────
+  //
+  // 🔴 READ-ONLY. It computes a proposed document from the machine's declared component tree and
+  // STORES NOTHING — no screen row, no version, no audit entry — so `GET /v1/screens/{id}` still
+  // answers 404 for the id the returned document names (`HmiScreenEndpointsTests.Generate_stores_
+  // nothing_so_the_id_it_names_still_answers_404` proves that against the real engine). Nothing in this
+  // client may present a generated draft as something the engine holds.
+  //
+  // 🔴 `Policies.Engineer`, unlike every other screen READ in this family, which is Operator. A
+  // proposed document is the start of an authoring session, so it is gated at the tier of the door
+  // that session ends at. A 403 here therefore means "this session cannot author", not "the engine is
+  // broken" — `EditorRoute` falls back to `createBlankScreen` on any failure rather than showing a
+  // fault, because a blank canvas is a working starting point and an apology is not.
+  //
+  // 🔴 THE LIMIT OF WHAT THE RESULT MEANS, stated here as well as at the point of use: the bindings in
+  // this document name composed `{tagPrefix}/{tag}` paths, and NO `TagValueSource` in this tree answers
+  // a composed path (`hmi-runtime/TagValueSource.ts`'s `readPath` answers seven shapes, none of them
+  // composed). Measured on this repository's own fixture pair: 6 of 6 generated bindings resolve to
+  // `undefined` (`runtime-tests/screenGenerator.test.mjs`). The generated screen is a real starting
+  // LAYOUT; it is not yet a screen that reads values.
+  generateScreen: (machineCode: string, screenId?: string) =>
+    request<HmiScreenDocument>(
+      `/v1/screens/generate?machine=${encodeURIComponent(machineCode)}` +
+        (screenId ? `&screenId=${encodeURIComponent(screenId)}` : ""),
+    ),
+
   // ── WS-HMI-2 Task 12 — the PUBLISH door and the version history behind it ──────────────────────
   //
   // 🔴 `PUT` ANSWERS A VERSION NUMBER AND THE STORE APPENDS; IT NEVER OVERWRITES.
@@ -1156,6 +1182,26 @@ export function useScreen(screenId: string | undefined): UseQueryResult<HmiScree
     retry: (failureCount, error) =>
       error instanceof EngineApiError && error.status === 404 ? false : failureCount < 2,
   })
+}
+
+/**
+ * Session 2 (HMI-3) — the imperative half of `endpoints.generateScreen`, exported because the editor
+ * calls it FROM A CLICK, not from a render.
+ *
+ * NOT a `useQuery`: a query would fire on mount for every engineer who merely LOOKS at a not-found
+ * screen, and the answer is a document that is thrown away unless a button is pressed. It is also not
+ * a `useMutation`, because nothing is mutated — the route writes nothing. A plain promise the click
+ * handler awaits is the honest shape, and it keeps `request<T>`'s `credentials: "include"` and the
+ * app-wide 401 reaction, which a hand-rolled `fetch` in a route file would carry neither of.
+ *
+ * See `endpoints.generateScreen` for what the returned document does and does not mean — in
+ * particular, that its bindings do not resolve to readings today.
+ */
+export function generateScreenDocument(
+  machineCode: string,
+  screenId?: string,
+): Promise<HmiScreenDocument> {
+  return endpoints.generateScreen(machineCode, screenId)
 }
 
 /**
