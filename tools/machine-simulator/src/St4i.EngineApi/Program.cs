@@ -489,6 +489,15 @@ builder.Services.AddSingleton<St4i.EngineApi.HmiModel.IHmiScreenStore>(
         new St4i.EngineApi.HmiModel.HmiScreenStore(
             string.IsNullOrWhiteSpace(hmiScreensDir) ? null : hmiScreensDir)));
 
+// 🔴 Session 4 (HMI-5) — the screen-pack export/import service. Registered by TYPE with no factory
+// lambda, deliberately, exactly as the ingestion door below is and for the identical reason: its one
+// constructor takes IHmiScreenStore, so DI hands it the CANONICALIZING decorator registered directly
+// above and there is no expression here that could hand it anything else. A factory lambda would be the
+// place a future edit could quietly substitute the raw, whitespace-sensitive-keyed store — and an import
+// that wrote through a store with different identity rules than every other write door would be exactly
+// the side door this session's brief forbids.
+builder.Services.AddSingleton<St4i.EngineApi.HmiModel.HmiScreenPackService>();
+
 // WS-HMI-0c Task 4, ruling S-3 — the ingestion door. Registered by TYPE with no factory lambda, which is
 // the point: its one constructor takes ITagNamespaceStore, so DI hands it the CANONICALIZING decorator
 // registered three lines above and there is no expression here that could hand it anything else. A factory
@@ -1850,6 +1859,14 @@ app.MapHmiTagEndpoints();
 // Engineer-writes tier as the two surfaces directly above — see HmiScreenEndpoints.cs for why its
 // by-id GET answers "never declared" with 404 where its two siblings above answer empty-200 (§5-bis
 // applies to a machine's declared state, not to a screen document nobody ever authored).
+// 🔴 Session 4 (HMI-5) — GET /v1/screens/export, POST /v1/screens/import. Mapped BEFORE
+// MapHmiScreenEndpoints on purpose, the same visibility choice HmiScreenEndpoints itself makes for
+// /v1/screens/generate against /v1/screens/{screenId}: ASP.NET scores a literal segment above a parameter
+// one regardless of registration order, and mapping these first puts that precedence in the source rather
+// than leaving it to the matcher's table. Operator to export (a batched read of what Operator can already
+// read one screen at a time), Engineer to import (a write, same tier and same argument as
+// PUT /v1/screens/{screenId}) — see HmiScreenPackEndpoints.cs for why import is not Admin.
+app.MapHmiScreenPackEndpoints();
 app.MapHmiScreenEndpoints();
 // WS-HMI-0b Task 3 — WS /v1/hmi/changes. A second WebSocket ROUTE, not a second realtime MECHANISM: same
 // transport and the same client library as /v1/inspector/stream, one more URL, so the web branch still

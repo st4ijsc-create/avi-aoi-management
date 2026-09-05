@@ -253,6 +253,15 @@ public sealed class RbacPolicyTests
         new("/v1/screens", new[] { "GET" }, Policies.Operator),
         new("/v1/screens/{screenId}", new[] { "GET" }, Policies.Operator),
         new("/v1/screens/{screenId}/versions", new[] { "GET" }, Policies.Operator),
+        // 🔴 Session 4 (HMI-5) — GET /v1/screens/export. Operator, and the row sits WITH its Operator-tier
+        // read siblings because that is what it is: it returns exactly what an Operator can already fetch
+        // one screen at a time through the two routes directly above. Gating a batched read above the tier
+        // of the reads it batches would be a difference with no reason behind it — the same argument the
+        // /v1/hmi/changes row below makes ("gating a notification higher than the data it points at").
+        // A literal-segment route, like /v1/screens/generate: mapped before /v1/screens/{screenId} so the
+        // matcher's literal-over-parameter preference is visible in the source. The WRITE half of this
+        // pair, POST /v1/screens/import, is at Engineer among the writes below.
+        new("/v1/screens/export", new[] { "GET" }, Policies.Operator),
         // WS-HMI-0b Task 3 — WS /v1/hmi/changes, the HMI change lane. Methods empty for the same reason
         // /v1/inspector/stream's row is: a WebSocket upgrade is registered with app.Map and carries no HTTP
         // method restriction. Operator, NOT Engineer like the inspector stream: subscribing is a read, and
@@ -294,6 +303,22 @@ public sealed class RbacPolicyTests
         // workstream writes to a device.
         new("/v1/screens/{screenId}", new[] { "PUT" }, Policies.Engineer),
         new("/v1/screens/{screenId}/rollback", new[] { "POST" }, Policies.Engineer),
+        // 🔴 Session 4 (HMI-5) — POST /v1/screens/import, the screen-pack write. Engineer, WEIGHED against
+        // PUT /v1/screens/{screenId} directly above rather than defaulted to it: an import writes screen
+        // documents, which is exactly what that route does, and the tier argument transfers unchanged —
+        // authoring a screen is a CONFIGURATION authority, not a DEVICE authority, and nothing in this
+        // workstream writes to a machine.
+        //
+        // WHY NOT ADMIN, since an import writes MANY screens and can move the current pointer of screens
+        // the importer never authored. That is a difference in SCALE, and scale is not what separates the
+        // tiers in this census: Admin is for routes that reach a machine or change who may reach one
+        // (POST /v1/machines/{code}/command, the user store, identity rotation). An import reaches no
+        // machine, and POST /v1/machines/{code}/config/push already pushes a whole configuration at
+        // Engineer. The blast radius is also smaller than it looks, because the import is APPEND-ONLY: it
+        // destroys nothing, every prior version survives, and every imported screen is one rollback —
+        // already Engineer, already audited — from being undone. An operation fully reversible by an
+        // Engineer-tier route does not need a higher tier than that route to invoke.
+        new("/v1/screens/import", new[] { "POST" }, Policies.Engineer),
         // 🔴 Session 2 (HMI-3) — GET /v1/screens/generate?machine={code}. THE ONE GET IN THIS FILE THAT
         // SITS AT ENGINEER, and the row is here rather than beside its Operator-tier GET siblings above
         // precisely so a reader cannot skim past that. It writes nothing — no screen row, no version, no
