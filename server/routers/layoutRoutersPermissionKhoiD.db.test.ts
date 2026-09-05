@@ -1,29 +1,33 @@
 /**
  * Lô 5 Mục 1 — ĐO cổng `analytics_oee` cho vai KHÔNG-admin (nợ đo Khối D, -46 chưa làm).
+ * Lô 6 Mục 2 (BG-132) — chủ dự án chốt ruling (A) CHO CẢ đường ghi: gate mới =
+ * `analytics_oee` HOẶC `settings_factory` (`requireAnyPermission`, `layoutRouters.ts`). Ca
+ * "user chỉ có `analytics_oee` bị FORBIDDEN ở create" LẬT thành "được phép" (hành vi mới ĐÚNG),
+ * GIỮ ca không-quyền-nào bị chặn, THÊM ca chỉ-`settings_factory` vẫn qua (chống hồi quy — người
+ * dùng cũ không được mất quyền).
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * VÌ SAO PHẢI ĐO BẰNG USER KHÔNG-ADMIN
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * `checkPermission` (server/_core/accessControl.ts:205-207): `if (isAdmin && !scopedAdminEnabled())
- * return true` — admin BYPASS mọi `requirePermission`, không đọc bảng `permissions`. Mọi phép đo
- * quyền chạy bằng `role: "admin"` (như `layoutRoutersAuditKhoiD.db.test.ts` — tự khai ở dòng 48-49
- * của chính nó) chứng minh ĐÚNG 0 VỀ QUYỀN — admin luôn qua bất kể gate là gì. Lưới này dùng
- * `role: "operator"` (không-admin, theo mẫu `aoiPackageDeadCongDanHangNhat.test.ts`/Lô 4 và
- * `aiCodingSessionScope.test.ts` — seed bảng `permissions` thật) làm biến số duy nhất.
+ * return true` — admin BYPASS mọi `requirePermission`/`requireAnyPermission`, không đọc bảng
+ * `permissions`. Mọi phép đo quyền chạy bằng `role: "admin"` (như
+ * `layoutRoutersAuditKhoiD.db.test.ts` — tự khai ở dòng 48-49 của chính nó) chứng minh ĐÚNG 0 VỀ
+ * QUYỀN — admin luôn qua bất kể gate là gì. Lưới này dùng `role: "operator"` (không-admin, theo
+ * mẫu `aoiPackageDeadCongDanHangNhat.test.ts`/Lô 4 và `aiCodingSessionScope.test.ts` — seed bảng
+ * `permissions` thật) làm biến số duy nhất.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ĐO ĐƯỢC GÌ (đọc code TRƯỚC, không suy đoán)
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * · `layoutRouter.listByWorkshop` / `getById` (server/routers/layoutRouters.ts:36-52): CẢ HAI là
- *   `protectedProcedure` TRẦN — KHÔNG `.use(requirePermission(...))` nào. Bất kỳ user đăng nhập
- *   nào (bất kể permission) đều đọc được — đây là hành vi CÓ TỪ TRƯỚC Khối D, không phải hệ quả
- *   ruling (A); ghi lại làm phép đo, KHÔNG "vá" (ngoài phạm vi Mục 1 — brief chỉ xin ĐO).
+ * · `layoutRouter.listByWorkshop` / `getById` (server/routers/layoutRouters.ts): CẢ HAI là
+ *   `protectedProcedure` TRẦN — KHÔNG `.use(...)` nào. Bất kỳ user đăng nhập nào (bất kể
+ *   permission) đều đọc được — đây là hành vi CÓ TỪ TRƯỚC Khối D, KHÔNG đổi ở Lô 6 (brief chỉ
+ *   xin đổi đường GHI).
  * · `layoutRouter.create/update/delete/addMachinePosition/updateMachinePosition/removeMachinePosition`
- *   đều `.use(requirePermission("settings_factory", <action>))` — KHÔNG PHẢI `analytics_oee`.
- *   ⇒ Theo đúng nhánh "DỪNG" của brief: ruling (A) (hub một cổng `analytics_oee`, kể cả cho
- *   đường ghi bố cục) CHƯA được cài ở SERVER cho các mutation. Đây là LỆCH giữa client-route
- *   (hub `/digital-twin` gate `analytics_oee`) và server-gate (mutation vẫn `settings_factory`).
- *   Lưới dưới đây CHỈ ĐO — không đổi gate (đó là quyết định phân quyền, ngoài phạm vi mục này).
+ *   (6 mutation) nay `.use(requireAnyPermission([{analytics_oee,<action>},{settings_factory,<action>}]))`
+ *   — OR hai quyền, dạng "một trong hai đều qua", KHÔNG PHẢI chỉ `settings_factory` như trước
+ *   Lô 6. Đây là bản vá ĐÓNG lệch mà Lô 5 Mục 1 đo được (BG-132).
  *
  * DB THẬT — không mock `../db` hay `accessControl` (giống các lưới permission khác trong repo):
  * `checkPermission` tự query bảng `permissions` qua `getDb()`.
@@ -65,14 +69,17 @@ async function mkUser(tag: string, capAnalyticsOee: boolean): Promise<number> {
     })
     .returning({ id: users.id });
   if (capAnalyticsOee) {
+    // Lô 6 Mục 2 (BG-132) — trước chỉ cần canView (đo đường ĐỌC, không gate). Nay gate GHI mới
+    // (`requireAnyPermission`) hỏi canCreate/canEdit/canDelete của CHÍNH module này ⇒ seed đủ ba
+    // để ca "LẬT" (create) đo đúng nhánh analytics_oee của OR, không lẫn với settings_factory.
     await db!.insert(permissions).values({
       userId: u!.id,
       category: "analytics",
       moduleName: "analytics_oee",
       canView: true,
-      canCreate: false,
-      canEdit: false,
-      canDelete: false,
+      canCreate: true,
+      canEdit: true,
+      canDelete: true,
       canExport: false,
     });
   }
@@ -114,22 +121,27 @@ describe.skipIf(!DB_URL)("Lô 5 Mục 1 — cổng analytics_oee đo bằng user
     });
   });
 
-  describe("Ghi (create) — ĐO GATE THẬT: settings_factory, KHÔNG PHẢI analytics_oee", () => {
-    it("ÂM — user CÓ analytics_oee nhưng KHÔNG có settings_factory BỊ CHẶN ở create (FORBIDDEN)", async () => {
+  describe("Ghi (create) — GATE MỚI (BG-132, Lô 6): analytics_oee HOẶC settings_factory", () => {
+    // LẬT (Lô 6 Mục 2): trước đây user CHỈ có analytics_oee bị FORBIDDEN — nay ruling (A) chốt
+    // OR hai quyền cho đường ghi ⇒ hành vi ĐÚNG là ĐƯỢC PHÉP. RED xác nhận bằng git history:
+    // `git show HEAD~1:server/routers/layoutRoutersPermissionKhoiD.db.test.ts` (trước Lô 6 Mục 2)
+    // mang ca `.rejects.toThrow(...)` cho đúng lời gọi này — ca đó đỏ ngay khi đổi kỳ vọng nếu
+    // chạy trên router CŨ (`requirePermission(MODULE, ...)` chỉ settings_factory).
+    it("★ LẬT — user CÓ analytics_oee (KHÔNG có settings_factory) NAY ĐƯỢC PHÉP tạo layout (ruling A + OR)", async () => {
       if (!coDb) return;
-      await expect(
-        caller(idCoAnalyticsOee).create({ workshopId: 777702, name: `${TAG}-should-fail` }),
-      ).rejects.toThrow(/FORBIDDEN|PERMISSION_DENIED|quyền/i);
+      const res = await caller(idCoAnalyticsOee).create({ workshopId: 777702, name: `${TAG}-oee-ok` });
+      layoutIdsToClean.push(res.id);
+      expect(res.id).toBeGreaterThan(0);
     });
 
-    it("ÂM — user KHÔNG có bất kỳ quyền nào BỊ CHẶN ở create (FORBIDDEN)", async () => {
+    it("GIỮ — user KHÔNG có bất kỳ quyền nào (cả hai phía) BỊ CHẶN ở create (FORBIDDEN)", async () => {
       if (!coDb) return;
       await expect(
         caller(idKhongCoGi).create({ workshopId: 777702, name: `${TAG}-should-fail-2` }),
       ).rejects.toThrow(/FORBIDDEN|PERMISSION_DENIED|quyền/i);
     });
 
-    it("DƯƠNG — user CÓ settings_factory (không cần analytics_oee) TẠO ĐƯỢC layout — xác nhận gate thật vẫn là settings_factory", async () => {
+    it("THÊM — CHỐNG HỒI QUY: user CHỈ có settings_factory (không có analytics_oee) VẪN tạo được layout", async () => {
       if (!coDb) return;
       const db = await getDb();
       const idCoSettingsFactory = await (async () => {
@@ -166,9 +178,9 @@ describe.skipIf(!DB_URL)("Lô 5 Mục 1 — cổng analytics_oee đo bằng user
     });
   });
 
-  // KẾT LUẬN ĐO (ghi vào báo cáo, KHÔNG tự sửa — quyết định phân quyền ngoài phạm vi Mục 1):
-  // Ruling (A) "hub một cổng analytics_oee" áp dụng cho ĐƯỜNG ĐỌC ở client (RouteGuard của
-  // /digital-twin) nhưng KHÔNG áp dụng cho ĐƯỜNG GHI ở server (layoutRouter mutations vẫn
-  // settings_factory, không đổi qua Khối D). Đây là DỮ KIỆN được đo, không phải lỗi cần vá ở
-  // Mục 1 — mục này chỉ ĐO và báo lệch (xem lo-5-report.md).
+  // KẾT LUẬN (Lô 6 Mục 2, BG-132 ĐÓNG): ruling (A) "hub một cổng analytics_oee" nay áp dụng cho
+  // CẢ đường đọc client (RouteGuard /digital-twin, có từ Khối D) LẪN đường ghi server
+  // (layoutRouter 6 mutation, `requireAnyPermission` OR analytics_oee|settings_factory). Rủi ro
+  // đã nhận: người có analytics_oee (không có settings_factory) nay sửa được bố cục xưởng — chủ
+  // dự án chấp nhận rủi ro này khi chốt ruling (A) 2026-09-05 (xem lo-6-report.md).
 });

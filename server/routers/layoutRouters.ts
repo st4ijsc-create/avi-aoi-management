@@ -3,25 +3,44 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import * as db from "../db";
-import { requirePermission } from "../_core/accessControl";
+import { requireAnyPermission } from "../_core/accessControl";
 import { createAuditContext, logCrudOperation } from "../services/auditTrailService";
 
 // doc 42 #18 — RBAC split-brain: bố trí xưởng là master-data của "Quản lý dữ liệu".
 // FE gate module `settings_factory`; BE khớp permission thay vì hardgate role==='admin'.
 const MODULE = "settings_factory";
-const canCreate = protectedProcedure.use(requirePermission(MODULE, "canCreate"));
-const canEdit = protectedProcedure.use(requirePermission(MODULE, "canEdit"));
-const canDelete = protectedProcedure.use(requirePermission(MODULE, "canDelete"));
+
+// BG-132 — ruling (A) chủ dự án 2026-09-05: hạ gate SERVER của đường GHI bố cục theo ruling (A)
+// đã cài ở đường ĐỌC client (RouteGuard `/digital-twin` gate `analytics_oee`, Khối D Task 2).
+// Lô 5 Mục 1 đo được (DB thật, user role:'operator' KHÔNG-admin — admin bypass checkPermission)
+// LỆCH: 6 mutation dưới đây vẫn gate CHỈ `settings_factory`, người có `analytics_oee` (không có
+// `settings_factory`) bị chặn dù ruling (A) đã mở cổng xem cùng tài nguyên qua hub. Quyết định
+// chủ dự án: OR HAI QUYỀN — `analytics_oee` HOẶC `settings_factory` — KHÔNG thay `settings_factory`
+// bằng `analytics_oee` (đó sẽ làm MẤT quyền của người dùng `settings_factory` cũ, chống hồi quy
+// RÀNG BUỘC bởi brief). Rủi ro đã nhận từ ruling (A) gốc: người có `analytics_oee` (vai phân
+// tích/xem OEE) nay SỬA được bố cục xưởng — chủ dự án chấp nhận rủi ro này khi chốt ruling (A).
+// Middleware dùng chung `requireAnyPermission` (sinh cùng đợt, `server/_core/accessControl.ts`).
+const MODULE_OEE = "analytics_oee";
+const canCreate = protectedProcedure.use(requireAnyPermission([
+  { module: MODULE_OEE, action: "canCreate" },
+  { module: MODULE, action: "canCreate" },
+]));
+const canEdit = protectedProcedure.use(requireAnyPermission([
+  { module: MODULE_OEE, action: "canEdit" },
+  { module: MODULE, action: "canEdit" },
+]));
+const canDelete = protectedProcedure.use(requireAnyPermission([
+  { module: MODULE_OEE, action: "canDelete" },
+  { module: MODULE, action: "canDelete" },
+]));
 
 // Khối D Task 2 (RULING R-KD-1) — (A) đổi CỔNG XEM bố cục (settings_factory → analytics_oee
-// qua hub /digital-twin) mà KHÔNG đổi CỔNG GHI (canCreate/canEdit/canDelete ở trên vẫn
-// settings_factory) ⇒ rủi ro chủ dự án nhận ("ai có quyền phân tích mà không có settings_factory
-// sẽ sửa được bố cục xưởng") KHÔNG do 6 mutation dưới đây quyết định — chúng đã đúng gate. Việc
-// thiếu là: trước bản vá, 0 lời gọi audit ⇒ rủi ro đã nhận KHÔNG quan sát được — không biết AI
-// sửa. Khuôn dùng lại NGUYÊN VẸN từ `hierarchyRouters.ts:123` (logCrudOperation +
-// createAuditContext) — KHÔNG phát minh cơ chế mới. `logCrudOperation` tự nuốt lỗi (không ném),
-// nên audit không bao giờ làm hỏng luồng ghi chính. `audit_logs` là WORM với vai `avi_app`
-// (INSERT+SELECT, không DELETE) — mỗi lần gọi để lại một hàng, test không dọn được.
+// qua hub /digital-twin); BG-132 (trên) nay đổi luôn CỔNG GHI (canCreate/canEdit/canDelete) theo
+// CÙNG ruling, dạng OR-hai-quyền chống hồi quy. Khuôn audit dùng lại NGUYÊN VẸN từ
+// `hierarchyRouters.ts:123` (logCrudOperation + createAuditContext) — KHÔNG phát minh cơ chế
+// mới. `logCrudOperation` tự nuốt lỗi (không ném), nên audit không bao giờ làm hỏng luồng ghi
+// chính. `audit_logs` là WORM với vai `avi_app` (INSERT+SELECT, không DELETE) — mỗi lần gọi để
+// lại một hàng, test không dọn được.
 //
 // ⚠ Brief gốc chỉ nêu 4 mutation (create/update/delete/updateMachinePosition). Đo lại đủ file:
 // CÓ 6 mutation ghi bố cục — thiếu `addMachinePosition` và `removeMachinePosition` khỏi danh
@@ -33,6 +52,10 @@ const ENTITY_LAYOUT = "layout";
 const ENTITY_MACHINE_POSITION = "layout_machine_position";
 
 export const layoutRouter = router({
+  // Đo lại trước khi vá (Lô 5 Mục 1, `layoutRoutersPermissionKhoiD.db.test.ts`): CẢ HAI
+  // read-procedure dưới đây là `protectedProcedure` TRẦN — KHÔNG gate quyền nào, có từ TRƯỚC
+  // Khối D (không phải hệ quả ruling A). BG-132 chỉ xin đổi ĐƯỜNG GHI (6 mutation) ⇒ GIỮ
+  // NGUYÊN, không thêm gate ở đây (ngoài phạm vi ràng buộc chống hồi quy của Lô 6).
   listByWorkshop: protectedProcedure
     .input(z.object({ workshopId: z.number() }))
     .query(async ({ input }) => {
