@@ -167,6 +167,15 @@ export const AUDIT_ACTIONS = {
   // trạng thái cờ `INGEST_REJECT_LEGACY_MACHINE_ENABLED`.
   INGEST_SHAPE_LEGACY: "ingest_shape_legacy",
   INGEST_SHAPE_V2: "ingest_shape_v2",
+  // ★★★ Lô 3 Mục 2 (BG-57b) — lượt TỪ CHỐI (cờ BẬT + payload phẳng) phải ĐẾM ĐƯỢC riêng, KHÁC
+  // hẳn `INGEST_SHAPE_LEGACY` ở trên (hàng đó chỉ ghi khi payload phẳng được NHẬN, cờ TẮT). Ghi
+  // qua CÙNG cơ chế `ghiTinHieuHinhDangIngest`/`logCrudOperation` (một điểm ghi, không chép) —
+  // xem `server/routers/machineApiRouters.ts` (định nghĩa) và `server/routers/aoiPackageRouter.ts`
+  // (điểm gọi THẬT — cửa ZIP `commit`, SAU authenticateMachine, xem BG-39 gđ2). ⚠ Đường v1 trực
+  // tiếp (`submitInspection`/`submitInspectionBatch`) từ chối TRƯỚC xác thực (`.input()` transform,
+  // I-4) nên KHÔNG ghi action này — đúng đánh đổi đã khai ở `dangKyTinHieuHinhDangIngestBg89.test.ts`
+  // §C (một hàng WORM cho người gọi CHƯA XÁC THỰC là chính lỗ I-4 đã đóng).
+  INGEST_SHAPE_LEGACY_REJECTED: "ingest_shape_legacy_rejected",
 
   // Reports
   REPORT_GENERATE: "report_generate",

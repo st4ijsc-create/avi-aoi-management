@@ -3405,8 +3405,13 @@ function ensureProcessWalWired(): void {
  * Cờ CẮT máy cũ (BG-1). Mặc định TẮT. CHỈ bật SAU KHI Khối B (đồng bộ teach data)
  * xong và cấp component lưu được — xem §13 Đ-19. Bật sớm hơn mốc đó chặn máy cũ trong
  * khi máy mới còn chưa lưu được chi tiết component ⇒ xấu hơn hôm nay ở CẢ HAI đầu.
+ *
+ * ★★★ Lô 3 Mục 3 (BG-39 gđ2) — EXPORT có chủ ý: cửa ZIP (`aoiPackageRouter.commit`) dùng LẠI
+ * NGUYÊN VĂN hàm này để gác hình dạng phẳng ở `meta.json`, thay vì đọc thẳng
+ * `process.env.INGEST_REJECT_LEGACY_MACHINE_ENABLED` lần thứ hai ở file khác (hai nơi đọc cùng
+ * một biến môi trường qua hai hàm khác nhau là cách một trong hai bị SỬA mà cái kia không hay).
  */
-function ingestRejectLegacyMachineEnabled(): boolean {
+export function ingestRejectLegacyMachineEnabled(): boolean {
   return envTrue(process.env.INGEST_REJECT_LEGACY_MACHINE_ENABLED);
 }
 
@@ -3478,24 +3483,36 @@ const ingestShapeSignalGhiDangBay = new Set<Promise<unknown>>();
  * @param hinhDang HÌNH DẠNG **ĐÃ QUYẾT ĐỊNH** bởi `quyetDinhPhienBanIngest` và mang tới đây
  *   nguyên vẹn (`parsedInput.kind` / `hinhDangIngest`). ⚠ ĐỪNG suy lại bằng `laHinhDangCayV2`
  *   ở đây: một nguồn sự thật thứ hai là cách hai con số bắt đầu lệch nhau mà không ai biết.
+ *   ★★★ Lô 3 Mục 2 (BG-57b) — giá trị THỨ BA `"v1-rejected"` ghi action MỚI
+ *   `INGEST_SHAPE_LEGACY_REJECTED`, dùng cho một lượt TỪ CHỐI (cờ BẬT + payload phẳng) xảy ra
+ *   SAU xác thực — khác hẳn `"v1"`/`"v2"` (payload được NHẬN). Điểm gọi THẬT hôm nay nằm ở
+ *   `aoiPackageRouter.commit` (BG-39 gđ2, cửa ZIP xác thực TRƯỚC KHI parse `meta.json` nên gác ở
+ *   đó là AN TOÀN — khác đường v1 trực tiếp, nơi `loiMayChuaNangCap` ném TRONG `.input()`, TRƯỚC
+ *   xác thực, nên KHÔNG gọi hàm này cho nhánh đó, đúng đánh đổi I-4 đã khai ở trên).
  * @param may Máy **ĐÃ XÁC THỰC** (`auth.machine`) — nguồn DUY NHẤT của `entityName`/`entityId`.
  * @param schemaVersionKhai `schemaVersion` máy khai, lấy từ payload **ĐÃ QUA ZOD** (bị hợp đồng
  *   chặn độ dài), giữ lại vì nó là một phần của thứ đang được đếm.
  */
-function ghiTinHieuHinhDangIngest(
-  hinhDang: "v1" | "v2",
+export function ghiTinHieuHinhDangIngest(
+  hinhDang: "v1" | "v2" | "v1-rejected",
   may: { id: number; code: string },
   schemaVersionKhai: string | null,
 ): void {
+  const action =
+    hinhDang === "v2"
+      ? AUDIT_ACTIONS.INGEST_SHAPE_V2
+      : hinhDang === "v1-rejected"
+        ? AUDIT_ACTIONS.INGEST_SHAPE_LEGACY_REJECTED
+        : AUDIT_ACTIONS.INGEST_SHAPE_LEGACY;
   const luot = logCrudOperation(
     { source: "api" },
     {
-      action: hinhDang === "v2" ? AUDIT_ACTIONS.INGEST_SHAPE_V2 : AUDIT_ACTIONS.INGEST_SHAPE_LEGACY,
+      action,
       entityType: ENTITY_TYPES.MACHINE,
       entityId: may.id,
       entityName: may.code,
       details: {
-        operation: hinhDang === "v2" ? "INGEST_SHAPE_V2" : "INGEST_SHAPE_LEGACY",
+        operation: action.toUpperCase(),
         metadata: {
           hinhDang,
           coCoCheCatMayCuDangBat: ingestRejectLegacyMachineEnabled(),

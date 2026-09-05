@@ -48,7 +48,12 @@ import { eq, and } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import { auditLogs } from "../../drizzle/schema";
-import { machineApiRouter, choTinHieuHinhDangIngestGhiXong } from "./machineApiRouters";
+import {
+  machineApiRouter,
+  choTinHieuHinhDangIngestGhiXong,
+  ghiTinHieuHinhDangIngest,
+  ingestRejectLegacyMachineEnabled,
+} from "./machineApiRouters";
 import { AUDIT_ACTIONS } from "../services/auditTrailService";
 import type { TrpcContext } from "../_core/context";
 
@@ -374,5 +379,59 @@ describe("§D — mệnh đề 3: hình dạng ghi ra là hình dạng ĐÃ QUY�
     // ở nơi ghi: một nguồn sự thật thứ hai là cách hai con số bắt đầu lệch nhau mà không ai biết.
     const than = thanHam("ghiTinHieuHinhDangIngest");
     expect(than.includes("laHinhDangCayV2")).toBe(false);
+  });
+});
+
+/**
+ * ── §E — Lô 3 Mục 2 (BG-57b): tín hiệu MỚI cho lượt TỪ CHỐI ────────────────────────────────
+ *
+ * `ingest_shape_legacy_rejected` KHÁC hẳn `ingest_shape_legacy` (§A mệnh đề 1): hàng đó ghi khi
+ * payload phẳng được **NHẬN** (cờ TẮT); hàng này ghi khi payload phẳng bị **TỪ CHỐI** (cờ BẬT).
+ * Điểm gọi THẬT là `aoiPackageRouter.commit` (BG-39 gđ2, Mục 3 của lô này) — cửa ZIP xác thực
+ * TRƯỚC KHI đọc `meta.json` nên gác + ghi sổ Ở ĐÓ không lặp lại lỗ I-4 (ghi WORM cho người gọi
+ * CHƯA XÁC THỰC). File này chỉ canh phần DÙNG CHUNG (hằng số + hàm ghi) — hành vi ĐẦU CUỐI của
+ * cửa ZIP có lưới riêng (`aoiPackageZipGacMayCu.test.ts`).
+ *
+ * "Đăng ký" ở đây nghĩa là: (1) hằng số tồn tại ĐÚNG chuỗi, (2) `ghiTinHieuHinhDangIngest` NHẬN
+ * giá trị `"v1-rejected"` và ghi ĐÚNG action đó (không lặp lại `INGEST_SHAPE_LEGACY`), (3) hai hàm
+ * dùng chung (`ghiTinHieuHinhDangIngest`/`ingestRejectLegacyMachineEnabled`) THẬT SỰ được export
+ * — xoá `export` ở MỘT trong hai làm import phía trên (dòng 51-56) vỡ biên dịch NGAY, tức census
+ * này đỏ TRƯỚC KHI kịp chạy assertion nào bên dưới.
+ */
+describe("§E — BG-57b: `ingest_shape_legacy_rejected` — hằng số + hàm ghi DÙNG CHUNG đã đăng ký", () => {
+  it("AUDIT_ACTIONS.INGEST_SHAPE_LEGACY_REJECTED tồn tại, ĐÚNG chuỗi, KHÁC hai action anh em", () => {
+    expect(AUDIT_ACTIONS.INGEST_SHAPE_LEGACY_REJECTED).toBe("ingest_shape_legacy_rejected");
+    expect(AUDIT_ACTIONS.INGEST_SHAPE_LEGACY_REJECTED).not.toBe(AUDIT_ACTIONS.INGEST_SHAPE_LEGACY);
+    expect(AUDIT_ACTIONS.INGEST_SHAPE_LEGACY_REJECTED).not.toBe(AUDIT_ACTIONS.INGEST_SHAPE_V2);
+  });
+
+  it("`ingestRejectLegacyMachineEnabled` được export từ machineApiRouters (Mục 3/BG-39 gđ2 cần dùng lại, không đọc process.env lần thứ hai)", () => {
+    expect(typeof ingestRejectLegacyMachineEnabled).toBe("function");
+    delete process.env.INGEST_REJECT_LEGACY_MACHINE_ENABLED;
+    expect(ingestRejectLegacyMachineEnabled()).toBe(false);
+    process.env.INGEST_REJECT_LEGACY_MACHINE_ENABLED = "true";
+    expect(ingestRejectLegacyMachineEnabled()).toBe(true);
+    delete process.env.INGEST_REJECT_LEGACY_MACHINE_ENABLED;
+  });
+
+  it("★★★ `ghiTinHieuHinhDangIngest(\"v1-rejected\", …)` ghi ĐÚNG MỘT hàng `ingest_shape_legacy_rejected` — SELECT thật, không đọc giá trị trả về (hàm trả `void`)", async () => {
+    const may = await taoMay("REJECTED-SIGNAL");
+    ghiTinHieuHinhDangIngest("v1-rejected", { id: may.id, code: may.code }, "1.1");
+    await choTinHieuHinhDangIngestGhiXong();
+
+    expect(await demTinHieu(AUDIT_ACTIONS.INGEST_SHAPE_LEGACY_REJECTED, may.code)).toBe(1);
+    // KHÔNG lặp lại ghi vào hai action anh em — một hàng, một action.
+    expect(await demTinHieu(AUDIT_ACTIONS.INGEST_SHAPE_LEGACY, may.code)).toBe(0);
+    expect(await demTinHieu(AUDIT_ACTIONS.INGEST_SHAPE_V2, may.code)).toBe(0);
+
+    const hang = await docHangDauTien(AUDIT_ACTIONS.INGEST_SHAPE_LEGACY_REJECTED, may.code);
+    expect(hang.entityId, "entityId phải là FK máy ĐÃ XÁC THỰC").toBe(may.id);
+    expect(hang.entityType).toBe("machine");
+    expect(hang.status).toBe("success");
+    const parsed = JSON.parse(hang.details as string) as {
+      metadata?: { hinhDang?: string; schemaVersionKhai?: string | null };
+    };
+    expect(parsed.metadata?.hinhDang).toBe("v1-rejected");
+    expect(parsed.metadata?.schemaVersionKhai).toBe("1.1");
   });
 });
