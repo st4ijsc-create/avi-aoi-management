@@ -20020,6 +20020,11 @@
     "daLuu": "Đã lưu {{soDiem}} điểm",
     "xoaTruong": "Xoá giới hạn {{ten}}",
     "xoaTruongHangLoat": "Xoá trường này trên các điểm đã chọn",
-    "seXoa": "Sẽ bị xoá"
+    "seXoa": "Sẽ bị xoá",
+    "guiYeuCauDuyet": "Gửi yêu cầu duyệt",
+    "dangGuiYeuCauDuyet": "Đang gửi...",
+    "guiYeuCauDuyetRong": "Chưa có trường nào thay đổi để gửi duyệt",
+    "daGuiYeuCauDuyet": "Đã gửi {{soDiem}} yêu cầu duyệt — chờ quản lý chất lượng xem xét",
+    "guiYeuCauDuyetLoiMotPhan": "Gửi được {{thanhCong}}/{{tong}} yêu cầu duyệt — {{soLoi}} yêu cầu lỗi, thử lại sau"
   }
 }

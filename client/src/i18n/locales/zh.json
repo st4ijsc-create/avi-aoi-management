@@ -20048,6 +20048,11 @@
     "daLuu": "已保存 {{soDiem}} 个点",
     "xoaTruong": "清除 {{ten}}",
     "xoaTruongHangLoat": "在已选中的点上清除此字段",
-    "seXoa": "将被清除"
+    "seXoa": "将被清除",
+    "guiYeuCauDuyet": "提交审批申请",
+    "dangGuiYeuCauDuyet": "正在提交...",
+    "guiYeuCauDuyetRong": "尚无字段更改，无法提交审批",
+    "daGuiYeuCauDuyet": "已提交 {{soDiem}} 个审批申请——等待质量审核",
+    "guiYeuCauDuyetLoiMotPhan": "已提交 {{thanhCong}}/{{tong}} 个审批申请——{{soLoi}} 个失败，请稍后重试"
   }
 }

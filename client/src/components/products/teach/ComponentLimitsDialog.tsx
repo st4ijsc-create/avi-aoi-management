@@ -73,6 +73,7 @@ import {
   kiemTraForm,
   soTruongThayDoi,
   xayInputSetLimitsBatch,
+  xayInputYeuCauDuyet,
   ketQuaThanhCong,
   docLoiCanDuyetNguong,
   thongBaoThanhCong,
@@ -244,6 +245,52 @@ export function ComponentLimitsDialog({
     luuMutation.mutate(input);
   };
 
+  // Lô 7 Mục 3 (BG-111) — cầu nối "Gửi yêu cầu duyệt" NGAY chỗ bị chặn. Bị chặn
+  // ⇒ KHÔNG có mutation gộp (`thresholdApproval.request` nhận MỘT pointDefId
+  // mỗi lần) — một lần gọi RIÊNG cho mỗi điểm đã chọn, cùng chia sẻ MỘT bộ
+  // `deXuat`/`comment` (đúng ngữ nghĩa `setLimitsBatch`: "áp cùng thay đổi cho
+  // tất cả điểm đã chọn"). `Promise.allSettled` — một điểm lỗi KHÔNG chặn các
+  // điểm còn lại (mirror `batchApprove` phía server: atomic PER ITEM).
+  const guiYeuCauDuyetMutation = trpc.thresholdApproval.request.useMutation();
+  const [dangGuiDuyet, setDangGuiDuyet] = useState(false);
+  const handleGuiYeuCauDuyet = async () => {
+    const items = xayInputYeuCauDuyet(
+      rows.map((r) => r.id),
+      gia,
+      lyDoDoi,
+      giaGoc,
+      xoaTruong,
+    );
+    if (items.length === 0) {
+      toast.error(t("teachLimits.guiYeuCauDuyetRong", "Chưa có trường nào thay đổi để gửi duyệt"));
+      return;
+    }
+    setDangGuiDuyet(true);
+    try {
+      const ketQua = await Promise.allSettled(
+        items.map((item) => guiYeuCauDuyetMutation.mutateAsync(item)),
+      );
+      const thanhCong = ketQua.filter((k) => k.status === "fulfilled").length;
+      const loi = ketQua.length - thanhCong;
+      if (loi === 0) {
+        toast.success(t("teachLimits.daGuiYeuCauDuyet", "Đã gửi {{soDiem}} yêu cầu duyệt — chờ quản lý chất lượng xem xét", { soDiem: thanhCong }));
+        setCanDuyet(null);
+        onOpenChange(false);
+      } else if (thanhCong > 0) {
+        toast.error(
+          t("teachLimits.guiYeuCauDuyetLoiMotPhan", "Gửi được {{thanhCong}}/{{tong}} yêu cầu duyệt — {{soLoi}} yêu cầu lỗi, thử lại sau", {
+            thanhCong, tong: ketQua.length, soLoi: loi,
+          }),
+        );
+      } else {
+        const dauLoi = ketQua.find((k): k is PromiseRejectedResult => k.status === "rejected");
+        if (dauLoi) toastTrpcError(dauLoi.reason);
+      }
+    } finally {
+      setDangGuiDuyet(false);
+    }
+  };
+
   /** Lô 2 nhóm B — bật/tắt đánh dấu Xoá cho một trường. Bật Xoá thì xoá luôn nội dung đang gõ
    * trong ô đó ở state cục bộ (đồng bộ HÌNH ẢNH ô input với ý định — hàm thuần `layTruongThayDoi`
    * đã tự AN TOÀN dù ô còn chữ, xem test "xoá THẮNG nội dung gõ", nhưng để ô còn hiện số cũ trong
@@ -349,8 +396,23 @@ export function ComponentLimitsDialog({
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>{t("teachLimits.canDuyetTieuDe", "Chưa lưu")}</AlertTitle>
-            <AlertDescription>
-              {t(thongBaoCanDuyet(canDuyet).khoa, thongBaoCanDuyet(canDuyet).macDinh)}
+            <AlertDescription className="space-y-2">
+              <p>{t(thongBaoCanDuyet(canDuyet).khoa, thongBaoCanDuyet(canDuyet).macDinh)}</p>
+              {/* Lô 7 Mục 3 (BG-111) — cầu nối NGAY tại chỗ bị chặn: nút NGƯỜI BẤM
+                  (không auto-ghi ngầm — assertThresholdEditAllowed vẫn chặn y nguyên ở
+                  server, cầu này chỉ đưa ĐÚNG bộ trường đang sửa vào hàng đợi duyệt). */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleGuiYeuCauDuyet}
+                disabled={dangGuiDuyet}
+              >
+                {dangGuiDuyet && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                {dangGuiDuyet
+                  ? t("teachLimits.dangGuiYeuCauDuyet", "Đang gửi...")
+                  : t("teachLimits.guiYeuCauDuyet", "Gửi yêu cầu duyệt")}
+              </Button>
             </AlertDescription>
           </Alert>
         )}

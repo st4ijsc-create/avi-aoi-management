@@ -20040,6 +20040,11 @@
     "daLuu": "Saved {{soDiem}} point(s)",
     "xoaTruong": "Clear {{ten}}",
     "xoaTruongHangLoat": "Clear this field on the selected points",
-    "seXoa": "Will be cleared"
+    "seXoa": "Will be cleared",
+    "guiYeuCauDuyet": "Send for approval",
+    "dangGuiYeuCauDuyet": "Sending...",
+    "guiYeuCauDuyetRong": "No field has changed to send for approval",
+    "daGuiYeuCauDuyet": "Sent {{soDiem}} approval request(s) — awaiting quality review",
+    "guiYeuCauDuyetLoiMotPhan": "Sent {{thanhCong}}/{{tong}} approval requests — {{soLoi}} failed, try again later"
   }
 }

@@ -16,6 +16,7 @@ import {
   layTruongThayDoi,
   soTruongThayDoi,
   xayInputSetLimitsBatch,
+  xayInputYeuCauDuyet,
   ketQuaThanhCong,
   docLoiCanDuyetNguong,
   thongBaoThanhCong,
@@ -562,5 +563,61 @@ describe("docLoiCanDuyetNguong — lỗi CONFLICT (optimistic-lock của measure
       },
     };
     expect(docLoiCanDuyetNguong(err)).toBeNull();
+  });
+});
+
+// ── Lô 7 Mục 3 (BG-111) — cầu nối "Gửi yêu cầu duyệt" ngay chỗ bị chặn ─────────
+describe("xayInputYeuCauDuyet — payload cho thresholdApproval.request, dựng từ TruongThayDoi 3-trạng-thái", () => {
+  it("MỘT id (đơn) + một trường sửa (lowerLimit) ⇒ 1 item, deXuat đúng field, comment đi kèm", () => {
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9" });
+    const g = gia({ lowerLimit: "2", upperLimit: "9" });
+    const items = xayInputYeuCauDuyet([5], g, "ly do doi", daTai);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toEqual({ pointDefId: 5, deXuat: { lowerLimit: "2" }, comment: "ly do doi" });
+  });
+
+  it("trường bị XOÁ (null) ⇒ deXuat mang null tường minh, KHÔNG bị lọc mất (khác 'không đổi')", () => {
+    const daTai = gia({ heightMax: "5" });
+    const items = xayInputYeuCauDuyet([5], daTai, "", daTai, new Set<TenTruongForm>(["heightMax"]));
+    expect(items[0].deXuat).toEqual({ heightMax: null });
+  });
+
+  it("BA trạng thái cùng lúc: một trường ĐẶT giá trị mới, một trường XOÁ, một trường KHÔNG ĐỔI ⇒ deXuat chỉ mang hai trường đầu", () => {
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9", heightMax: "5" });
+    const g = gia({ lowerLimit: "2", upperLimit: "9", heightMax: "" }); // upperLimit không đổi, heightMax bị xoá
+    const items = xayInputYeuCauDuyet([5], g, "", daTai, new Set<TenTruongForm>(["heightMax"]));
+    expect(items[0].deXuat).toEqual({ lowerLimit: "2", heightMax: null });
+  });
+
+  it("changeReason rỗng ⇒ KHÔNG có khoá `comment` trong item (khớp .optional() server, tránh gửi chuỗi rỗng vô nghĩa)", () => {
+    const daTai = gia({ lowerLimit: "1" });
+    const g = gia({ lowerLimit: "2" });
+    const items = xayInputYeuCauDuyet([5], g, "   ", daTai);
+    expect(items[0]).not.toHaveProperty("comment");
+  });
+
+  it("HÀNG LOẠT (N id): MỖI id một item RIÊNG, cùng chia sẻ MỘT bộ deXuat (áp cùng thay đổi cho tất cả)", () => {
+    const g = gia({ heightMax: "9" });
+    const items = xayInputYeuCauDuyet([5, 6, 7], g, "hang loat", null);
+    expect(items).toHaveLength(3);
+    expect(items.map((i) => i.pointDefId)).toEqual([5, 6, 7]);
+    for (const it of items) expect(it.deXuat).toEqual({ heightMax: "9" });
+  });
+
+  it("giaGoc=null (hàng loạt, không có baseline chung) ⇒ rơi về hành vi layTruongThayDoi cũ (mọi trường có nội dung đều vào deXuat)", () => {
+    const g = gia({ lowerLimit: "1", upperLimit: "9" });
+    const items = xayInputYeuCauDuyet([5], g, "", null);
+    expect(items[0].deXuat).toEqual({ lowerLimit: "1", upperLimit: "9" });
+  });
+
+  it("0 trường thay đổi (deXuat rỗng) ⇒ trả mảng RỖNG — không dựng item vô nghĩa cho server từ chối", () => {
+    const daTai = gia({ lowerLimit: "1" });
+    const items = xayInputYeuCauDuyet([5], daTai, "", daTai);
+    expect(items).toEqual([]);
+  });
+
+  it("ids rỗng ⇒ trả mảng rỗng (không lặp, không lỗi)", () => {
+    const g = gia({ lowerLimit: "2" });
+    expect(xayInputYeuCauDuyet([], g, "", null)).toEqual([]);
   });
 });

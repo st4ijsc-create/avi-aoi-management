@@ -40,6 +40,8 @@ import type { AppRouter } from "../../../../../server/routers";
 type RouterInputs = inferRouterInputs<AppRouter>;
 export type SetLimitsBatchInput = RouterInputs["measurementPoint"]["setLimitsBatch"];
 export type SetLimitsBatchItem = SetLimitsBatchInput["items"][number];
+/** Lô 7 Mục 3 (BG-111) — hợp đồng `thresholdApproval.request` MỞ RỘNG (Lô 7 Mục 2, `deXuat`). */
+export type RequestApprovalInput = RouterInputs["thresholdApproval"]["request"];
 
 /** 5 trường DUY NHẤT dialog cho sửa — quyết định #2 chủ dự án (xem `teachTreeLogic.ts`). */
 export const TEN_TRUONG_FORM = ["lowerLimit", "upperLimit", "unit", "heightMin", "heightMax"] as const;
@@ -275,6 +277,51 @@ export function xayInputSetLimitsBatch(
   const items: SetLimitsBatchItem[] = ids.map((id) => ({ id, ...truong }));
   const reason = changeReason.trim();
   return reason ? { items, changeReason: reason } : { items };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★ Lô 7 Mục 3 (BG-111) — cầu nối "Gửi yêu cầu duyệt" NGAY chỗ bị chặn.
+//
+// Khi `setLimitsBatch` bị chặn bởi cửa duyệt ngưỡng (`docLoiCanDuyetNguong`
+// khác `null`), người dùng CHƯA có cách gửi đúng bộ trường đang sửa vào hàng
+// đợi duyệt — `thresholdApproval.request` (Lô 7 Mục 2, mở rộng nhận `deXuat`)
+// là hợp đồng ĐÚNG, nhưng nó nhận MỘT `pointDefId` mỗi lần gọi (khác
+// `setLimitsBatch` gộp N id vào MỘT input) — hàng loạt cần MỘT lần gọi RIÊNG
+// cho mỗi điểm, cùng chia sẻ MỘT bộ `deXuat`/`comment` (đúng ngữ nghĩa
+// `setLimitsBatch`: "áp cùng thay đổi cho tất cả điểm đã chọn").
+//
+// Tái dùng NGUYÊN VĂN `layTruongThayDoi` (không viết lại phép suy 3-trạng-thái
+// lần thứ hai) — `deXuat` của mỗi item CHÍNH LÀ `TruongThayDoi` đã suy, chỉ đổi
+// TÊN KHOÁ bọc ngoài (`{ pointDefId, deXuat, comment }` thay vì
+// `{ id, ...truong }`) để khớp input router `request`.
+// ════════════════════════════════════════════════════════════════════════════
+
+export type RequestApprovalItem = { pointDefId: number } & Pick<RequestApprovalInput, "deXuat" | "comment">;
+
+/**
+ * `ids` (1 phần tử = đơn, N phần tử = hàng loạt) + MỘT bộ giá trị form ĐANG SỬA
+ * (bị chặn bởi cửa duyệt ngưỡng) → MỘT item `thresholdApproval.request` CHO MỖI
+ * id, cùng chia sẻ một `deXuat`. `changeReason` rỗng ⇒ bỏ khoá `comment` khỏi
+ * item (khớp `.optional()` server, cùng quy ước `xayInputSetLimitsBatch`).
+ *
+ * `deXuat` RỖNG (0 trường thay đổi — vd người dùng bấm nút trong lúc form chưa
+ * sửa gì) ⇒ trả MẢNG RỖNG, không dựng item vô nghĩa (server sẽ từ chối
+ * "phải đề xuất ít nhất một field", nhưng chặn Ở ĐÂY tránh N lần gọi thất bại
+ * vô ích cho hàng loạt).
+ */
+export function xayInputYeuCauDuyet(
+  ids: readonly number[],
+  gia: FormGioiHan,
+  changeReason: string,
+  giaGoc: FormGioiHan | null = null,
+  xoaTruong?: ReadonlySet<TenTruongForm>,
+): RequestApprovalItem[] {
+  const deXuat = layTruongThayDoi(gia, giaGoc, xoaTruong);
+  if (Object.keys(deXuat).length === 0) return [];
+  const reason = changeReason.trim();
+  return ids.map((pointDefId) =>
+    reason ? { pointDefId, deXuat, comment: reason } : { pointDefId, deXuat },
+  );
 }
 
 // ── Phân biệt kết quả THẬT: đã lưu vs bị chặn bởi cửa duyệt ngưỡng ─────────────────────────────
