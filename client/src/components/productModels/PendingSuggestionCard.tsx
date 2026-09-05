@@ -86,10 +86,16 @@ export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided, on
       // ghi giới hạn mới (status "applied"); "approved" (chưa apply) không đổi gì
       // ở measurement_point_defs nên KHÔNG được đụng ô nhập.
       if (data?.status === "applied") {
+        // 0348 (Lô 7 Mục 1, BG-111) — proposedLsl/Usl vừa thành NULLABLE (một
+        // yêu cầu duyệt có thể chỉ đề xuất field khác LSL/USL, vd heightMax).
+        // `AppliedThreshold.lsl/usl` (resolveAppliedThreshold.ts) vẫn là
+        // `string` — coi NULL như "không đề xuất field này" ⇒ "" (cùng quy ước
+        // "chuỗi rỗng = không đổi" mà form ngưỡng đã dùng ở nơi khác), KHÔNG
+        // đổi hành vi cho đề xuất LSL/USL bình thường (luôn có giá trị thật).
         onApplied?.({
           pointDefId: data.pointDefId,
-          lsl: data.proposedLsl,
-          usl: data.proposedUsl,
+          lsl: data.proposedLsl ?? "",
+          usl: data.proposedUsl ?? "",
           nominal: data.proposedNominal ?? null,
         });
       }

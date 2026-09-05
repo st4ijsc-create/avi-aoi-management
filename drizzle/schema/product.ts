@@ -1123,8 +1123,11 @@ export const thresholdApprovals = pgTable("threshold_approvals", {
   currentLsl: decimal("currentLsl", { precision: 18, scale: 6 }),
   currentUsl: decimal("currentUsl", { precision: 18, scale: 6 }),
   currentNominal: decimal("currentNominal", { precision: 18, scale: 6 }),
-  proposedLsl: decimal("proposedLsl", { precision: 18, scale: 6 }).notNull(),
-  proposedUsl: decimal("proposedUsl", { precision: 18, scale: 6 }).notNull(),
+  // 0348 (Lô 7 Mục 1, BG-111) — NULLABLE: một yêu cầu duyệt có thể chỉ đề xuất
+  // field khác LSL/USL (vd heightMax) qua suggestion.deXuat. Đường ghi legacy
+  // (client cũ gửi proposedLsl/Usl) vẫn hoạt động y nguyên — cột KHÔNG bị xoá.
+  proposedLsl: decimal("proposedLsl", { precision: 18, scale: 6 }),
+  proposedUsl: decimal("proposedUsl", { precision: 18, scale: 6 }),
   proposedNominal: decimal("proposedNominal", { precision: 18, scale: 6 }),
   // requested | approved | rejected | applied | withdrawn
   status: varchar("status", { length: 20 }).default("requested").notNull(),
