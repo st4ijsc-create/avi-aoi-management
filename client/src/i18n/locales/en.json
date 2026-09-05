@@ -14900,7 +14900,30 @@
       "urlIngesting": "Fetching & ingesting…",
       "urlSuccess": "Ingested \"{{sourceRef}}\" — {{chunksAdded}} chunk(s) added.",
       "urlError": "URL ingest failed.",
-      "webIngestDisabled": "URL ingest is disabled (set WEB_INGEST_ENABLED=true on the server)."
+      "webIngestDisabled": "URL ingest is disabled (set WEB_INGEST_ENABLED=true on the server).",
+      "guidance": {
+        "title": "Guide to ingesting documents yourself",
+        "subtitle": "Four steps to get documents into AI Local yourself — follow the order, the system handles the rest.",
+        "step1Title": "1. Pick the RIGHT domain corpus",
+        "step1Body": "Why domains matter: measured — mixing multiple domains into ONE corpus makes a question about the web pull in PLC documents (5 citations scoring 0.85–0.91 from off-topic material). Noise in a corpus makes answers WORSE, not neutral — the more off-topic documents a corpus holds, the more answers get pulled in the wrong direction.",
+        "fillCorpusAria": "Fill the suggested corpus name \"{{corpus}}\" into the Corpus name field",
+        "step1Note": "Clicking a suggestion only FILLS the \"Corpus name\" field below (it does not create an empty corpus) — a corpus only really exists once its first document has been ingested.",
+        "currentlySelected": "Currently selected:",
+        "step1WebWarning": "Web/app programming domains (C#, React, Node.js, HTML, CSS, JavaScript): the model already knows these languages from training — ingesting documents for this domain does NOT teach it anything new and instead ADDS NOISE to answers (measured: 2/2 remaining wrong cases in the eval set are off-domain questions matched to off-topic vendor-document citations). Don't bother creating a corpus for this domain.",
+        "step2Title": "2. Pick files",
+        "step2Accepts": "Accepts: {{formats}}",
+        "step2AcceptsUrl": ", URL (paste a link in the panel on the right)",
+        "step2ImageHint": "Images are described into text by the vision model before being ingested.",
+        "step2Rejects": "NOT accepted: {{extensions}} — convert to Markdown or TXT before ingesting.",
+        "step2VideoNote": "Video (auto-transcribed via whisper.cpp) exists at the service layer but is not wired into this screen yet — don't try uploading video here, the file will be rejected.",
+        "step3Title": "3. Nothing else to run",
+        "step3Body": "Clicking \"Upload & ingest\" is ALL you need: the system automatically PARSES → CHUNKS → EMBEDS → SAVES in one pass. No script needs to be run manually after uploading — this is the easiest point to misunderstand, since other project docs mention a manual embedding step (a CLI command over a vendor's PDF folder); this Training Studio path does NOT need that step.",
+        "step4Title": "4. Check it actually went in",
+        "step4Body": "Ask the AI Local assistant a question whose answer you ALREADY KNOW, taken straight from the document you just ingested (e.g. a specific register value or error code). A correct answer that cites the right file name means the corpus is alive. A vague answer, or one that never mentions the document, means it did not ingest or was not embedded.",
+        "scanWarningTitle": "Scanned-image PDF warning:",
+        "scanWarningBody": "the system's PDF reader cannot read text embedded in images — it returns EMPTY without an error, meaning a corpus can end up empty without you knowing. After uploading, check the chunk count shown right under the file name — 0 or very low is a sign the document did not actually make it in.",
+        "resultNote": "Result after ingesting: the chunk count appears right under each file below once done. See the full picture (document name, corpus, chunk count, status, error if any) on the \"Jobs\" tab."
+      }
     },
     "jobs": {
       "title": "Ingest jobs",

@@ -542,7 +542,7 @@ export default function AICodingWorkspace() {
    * ★ 2026-09-04 — NỢ ĐÃ TRẢ: khoá `repoWs.search.exclude` nay có đủ ở vi/en/zh (Khối C mở khoá ba
    *   tệp locale). ⚠ Đính chính lời khai cũ của chính khối này: nó ghi "HAI khoá
    *   (`search.exclude`, `search.excludeHint`)" — sai, chỉ có MỘT khoá được dùng; `excludeHint`
-   *   chưa từng tồn tại trong mã. Đếm bằng `grep t("repoWs.search.` thay vì bằng trí nhớ.
+   *   chưa từng tồn tại trong mã. Đếm bằng grep cho tiền tố khoá "repoWs.search" thay vì bằng trí nhớ.
    */
   const [loaiTruTim, setLoaiTruTim] = useState("");
   const [khungToiDa, setKhungToiDa] = useState<"tep" | "xem" | "chat" | null>(null);

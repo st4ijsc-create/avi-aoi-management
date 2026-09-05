@@ -114,27 +114,33 @@ function IngestGuidanceCard({
   allowedTypes: readonly string[];
   webIngestEnabled: boolean;
 }) {
+  const { t } = useTranslation();
   const showsImages = acceptsImageUploads(allowedTypes);
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <Info className="h-4 w-4" />
-          Hướng dẫn tự nạp tài liệu
+          {t("kbStudio.source.guidance.title", "Hướng dẫn tự nạp tài liệu")}
         </CardTitle>
         <CardDescription>
-          Bốn bước để tự đưa tài liệu vào AI Local — làm đúng thứ tự, hệ thống lo phần còn lại.
+          {t(
+            "kbStudio.source.guidance.subtitle",
+            "Bốn bước để tự đưa tài liệu vào AI Local — làm đúng thứ tự, hệ thống lo phần còn lại.",
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         <ol className="space-y-4">
           <li>
-            <p className="font-medium text-foreground">1. Chọn corpus theo ĐÚNG miền</p>
+            <p className="font-medium text-foreground">
+              {t("kbStudio.source.guidance.step1Title", "1. Chọn corpus theo ĐÚNG miền")}
+            </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Vì sao phải tách miền: đã đo được — trộn nhiều miền vào MỘT corpus khiến hỏi về web
-              lại lôi ra tài liệu PLC (5 trích dẫn điểm 0,85–0,91 từ tài liệu lạc đề). Rác trong
-              corpus làm câu trả lời TỆ ĐI, không phải trung tính — corpus càng nhiều tài liệu lạc
-              đề, càng nhiều câu trả lời bị kéo sai hướng.
+              {t(
+                "kbStudio.source.guidance.step1Body",
+                "Vì sao phải tách miền: đã đo được — trộn nhiều miền vào MỘT corpus khiến hỏi về web lại lôi ra tài liệu PLC (5 trích dẫn điểm 0,85–0,91 từ tài liệu lạc đề). Rác trong corpus làm câu trả lời TỆ ĐI, không phải trung tính — corpus càng nhiều tài liệu lạc đề, càng nhiều câu trả lời bị kéo sai hướng.",
+              )}
             </p>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {KB_CORPUS_DOMAIN_SUGGESTIONS.map((s) => (
@@ -145,68 +151,92 @@ function IngestGuidanceCard({
                   size="sm"
                   className="h-7 text-xs"
                   onClick={() => setCorpus(s.corpus)}
-                  aria-label={`Điền tên corpus gợi ý "${s.corpus}" vào ô Tên corpus`}
+                  aria-label={t("kbStudio.source.guidance.fillCorpusAria", {
+                    corpus: s.corpus,
+                    defaultValue: 'Điền tên corpus gợi ý "{{corpus}}" vào ô Tên corpus',
+                  })}
                 >
                   {s.label}
                 </Button>
               ))}
             </div>
             <p className="text-xs text-muted-foreground mt-1.5">
-              Bấm một gợi ý chỉ ĐIỀN tên vào ô "Tên corpus" bên dưới (không tự tạo corpus rỗng) —
-              corpus chỉ thật sự tồn tại sau khi tài liệu đầu tiên được nạp vào nó.
+              {t(
+                "kbStudio.source.guidance.step1Note",
+                'Bấm một gợi ý chỉ ĐIỀN tên vào ô "Tên corpus" bên dưới (không tự tạo corpus rỗng) — corpus chỉ thật sự tồn tại sau khi tài liệu đầu tiên được nạp vào nó.',
+              )}
               {corpus && (
                 <span className="ml-1 text-foreground">
-                  Đang chọn: <span className="font-medium">{corpus}</span>
+                  {t("kbStudio.source.guidance.currentlySelected", "Đang chọn:")}{" "}
+                  <span className="font-medium">{corpus}</span>
                 </span>
               )}
             </p>
             <div className="rounded-lg border-2 border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2 mt-2 flex gap-1.5">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
               <p className="text-xs text-amber-800 dark:text-amber-300">
-                Miền lập trình web/app (C#, React, Node.js, HTML, CSS, JavaScript): model{" "}
-                <span className="font-medium">đã biết sẵn</span> các ngôn ngữ này từ lúc huấn
-                luyện — nạp tài liệu cho miền này KHÔNG dạy thêm gì mà còn làm NHIỄU câu trả lời
-                (đã đo: 2/2 ca sai còn lại trong bộ đánh giá là câu hỏi ngoài miền tài liệu hãng bị
-                gán trích dẫn lạc đề). Đừng mất công tạo corpus cho miền này.
+                {t(
+                  "kbStudio.source.guidance.step1WebWarning",
+                  "Miền lập trình web/app (C#, React, Node.js, HTML, CSS, JavaScript): model đã biết sẵn các ngôn ngữ này từ lúc huấn luyện — nạp tài liệu cho miền này KHÔNG dạy thêm gì mà còn làm NHIỄU câu trả lời (đã đo: 2/2 ca sai còn lại trong bộ đánh giá là câu hỏi ngoài miền tài liệu hãng bị gán trích dẫn lạc đề). Đừng mất công tạo corpus cho miền này.",
+                )}
               </p>
             </div>
           </li>
 
           <li>
-            <p className="font-medium text-foreground">2. Chọn tệp</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Nhận: {formatAllowedTypesLabel(allowedTypes)}
-              {webIngestEnabled ? ", URL (dán link ở khung bên phải)" : ""}.
-              {showsImages && " Ảnh được model thị giác tự mô tả thành văn bản trước khi nạp."}
+            <p className="font-medium text-foreground">
+              {t("kbStudio.source.guidance.step2Title", "2. Chọn tệp")}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              KHÔNG nhận: {KB_STUDIO_REJECTED_EXTENSIONS_FOR_GUIDANCE.join(", ")} — chuyển sang
-              Markdown hoặc TXT trước khi nạp.
+              {t("kbStudio.source.guidance.step2Accepts", {
+                formats: formatAllowedTypesLabel(allowedTypes),
+                defaultValue: "Nhận: {{formats}}",
+              })}
+              {webIngestEnabled
+                ? t("kbStudio.source.guidance.step2AcceptsUrl", ", URL (dán link ở khung bên phải)")
+                : ""}
+              .{" "}
+              {showsImages &&
+                t(
+                  "kbStudio.source.guidance.step2ImageHint",
+                  "Ảnh được model thị giác tự mô tả thành văn bản trước khi nạp.",
+                )}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Video (tự chép lời bằng whisper.cpp) đã có ở tầng dịch vụ nhưng{" "}
-              <span className="font-medium text-foreground">chưa nối vào màn hình này</span> —
-              đừng thử tải video lên đây, tệp sẽ bị từ chối.
+              {t("kbStudio.source.guidance.step2Rejects", {
+                extensions: KB_STUDIO_REJECTED_EXTENSIONS_FOR_GUIDANCE.join(", "),
+                defaultValue: "KHÔNG nhận: {{extensions}} — chuyển sang Markdown hoặc TXT trước khi nạp.",
+              })}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {t(
+                "kbStudio.source.guidance.step2VideoNote",
+                "Video (tự chép lời bằng whisper.cpp) đã có ở tầng dịch vụ nhưng chưa nối vào màn hình này — đừng thử tải video lên đây, tệp sẽ bị từ chối.",
+              )}
             </p>
           </li>
 
           <li>
-            <p className="font-medium text-foreground">3. Không cần chạy thêm gì</p>
+            <p className="font-medium text-foreground">
+              {t("kbStudio.source.guidance.step3Title", "3. Không cần chạy thêm gì")}
+            </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Bấm "Tải lên & nạp" là XONG: hệ thống tự PARSE → CHIA NHỎ (chunk) → NHÚNG (embed) →
-              LƯU trong một lượt. Không có script nào phải tự chạy sau khi tải lên — đây là điểm
-              dễ hiểu lầm nhất vì nhiều tài liệu khác của dự án nói tới bước nhúng thủ công (đường
-              dòng lệnh, cho thư mục PDF theo hãng); đường Training Studio này KHÔNG cần bước đó.
+              {t(
+                "kbStudio.source.guidance.step3Body",
+                'Bấm "Tải lên & nạp" là XONG: hệ thống tự PARSE → CHIA NHỎ (chunk) → NHÚNG (embed) → LƯU trong một lượt. Không có script nào phải tự chạy sau khi tải lên — đây là điểm dễ hiểu lầm nhất vì nhiều tài liệu khác của dự án nói tới bước nhúng thủ công (đường dòng lệnh, cho thư mục PDF theo hãng); đường Training Studio này KHÔNG cần bước đó.',
+              )}
             </p>
           </li>
 
           <li>
-            <p className="font-medium text-foreground">4. Kiểm tra đã vào chưa</p>
+            <p className="font-medium text-foreground">
+              {t("kbStudio.source.guidance.step4Title", "4. Kiểm tra đã vào chưa")}
+            </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Hỏi trợ lý AI Local một câu MÌNH BIẾT TRƯỚC đáp án, lấy thẳng từ tài liệu vừa nạp
-              (vd một giá trị thanh ghi, một mã lỗi cụ thể). Trả lời đúng và dẫn đúng tên tệp vừa
-              nạp = corpus sống. Trả lời chung chung hoặc không nhắc tới tài liệu = chưa vào hoặc
-              chưa nhúng.
+              {t(
+                "kbStudio.source.guidance.step4Body",
+                "Hỏi trợ lý AI Local một câu MÌNH BIẾT TRƯỚC đáp án, lấy thẳng từ tài liệu vừa nạp (vd một giá trị thanh ghi, một mã lỗi cụ thể). Trả lời đúng và dẫn đúng tên tệp vừa nạp = corpus sống. Trả lời chung chung hoặc không nhắc tới tài liệu = chưa vào hoặc chưa nhúng.",
+              )}
             </p>
           </li>
         </ol>
@@ -214,17 +244,22 @@ function IngestGuidanceCard({
         <div className="rounded-lg border-2 border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2.5 flex gap-2">
           <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
           <p className="text-xs text-amber-800 dark:text-amber-300">
-            <span className="font-medium">Cảnh báo PDF quét ảnh (scan):</span> bộ đọc PDF của hệ
-            thống không đọc được chữ trong ảnh — nó trả về RỖNG mà KHÔNG báo lỗi, nghĩa là có thể
-            nạp một corpus rỗng mà không hề biết. Sau khi tải lên, nhìn số đoạn (chunk) hiện ngay
-            bên dưới tên tệp — ra 0 hoặc rất thấp là dấu hiệu tài liệu chưa thật sự vào được.
+            <span className="font-medium">
+              {t("kbStudio.source.guidance.scanWarningTitle", "Cảnh báo PDF quét ảnh (scan):")}
+            </span>{" "}
+            {t(
+              "kbStudio.source.guidance.scanWarningBody",
+              "bộ đọc PDF của hệ thống không đọc được chữ trong ảnh — nó trả về RỖNG mà KHÔNG báo lỗi, nghĩa là có thể nạp một corpus rỗng mà không hề biết. Sau khi tải lên, nhìn số đoạn (chunk) hiện ngay bên dưới tên tệp — ra 0 hoặc rất thấp là dấu hiệu tài liệu chưa thật sự vào được.",
+            )}
           </p>
         </div>
 
         <p className="text-xs text-muted-foreground flex items-center gap-1">
           <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-          Kết quả sau khi nạp: số đoạn (chunk) hiện ngay dưới mỗi tệp bên dưới sau khi xong. Xem
-          lại đầy đủ (tên tài liệu, corpus, số đoạn, trạng thái, lỗi nếu có) ở tab "Tác vụ".
+          {t(
+            "kbStudio.source.guidance.resultNote",
+            'Kết quả sau khi nạp: số đoạn (chunk) hiện ngay dưới mỗi tệp bên dưới sau khi xong. Xem lại đầy đủ (tên tài liệu, corpus, số đoạn, trạng thái, lỗi nếu có) ở tab "Tác vụ".',
+          )}
         </p>
       </CardContent>
     </Card>

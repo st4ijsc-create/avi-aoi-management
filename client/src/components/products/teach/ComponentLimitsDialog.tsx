@@ -225,11 +225,11 @@ export function ComponentLimitsDialog({
       // M-5 (vòng sửa 9) — đơn + đã có baseline (đã tiền điền) ⇒ "0 trường thay đổi" nghĩa là
       // KHÁC với "chưa nhập gì" (form CÓ giá trị, chỉ là giống hệt lúc tải) — nói đúng để người
       // dùng không thắc mắc "tôi nhập rồi mà sao báo chưa nhập".
-      const khoa = donMode && giaGoc !== null ? "teachLimits.errKhongDoiGi" : "teachLimits.errChuaNhapGi";
-      const macDinh = donMode && giaGoc !== null
-        ? "Chưa có trường nào thay đổi so với giá trị đã lưu"
-        : "Chưa nhập trường nào để lưu";
-      toast.error(t(khoa, macDinh));
+      const thongBaoKhongDu =
+        donMode && giaGoc !== null
+          ? t("teachLimits.errKhongDoiGi", "Chưa có trường nào thay đổi so với giá trị đã lưu")
+          : t("teachLimits.errChuaNhapGi", "Chưa nhập trường nào để lưu");
+      toast.error(thongBaoKhongDu);
       return;
     }
     if (!duocLuu) return; // phòng thủ cuối — không nên tới đây nếu ba nhánh trên đã bắt hết

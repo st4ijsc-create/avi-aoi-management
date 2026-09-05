@@ -14880,7 +14880,30 @@
       "urlIngesting": "Đang tải & nạp…",
       "urlSuccess": "Đã nạp \"{{sourceRef}}\" — thêm {{chunksAdded}} đoạn (chunk).",
       "urlError": "Nạp URL thất bại.",
-      "webIngestDisabled": "Nạp URL đang tắt (đặt WEB_INGEST_ENABLED=true trên server)."
+      "webIngestDisabled": "Nạp URL đang tắt (đặt WEB_INGEST_ENABLED=true trên server).",
+      "guidance": {
+        "title": "Hướng dẫn tự nạp tài liệu",
+        "subtitle": "Bốn bước để tự đưa tài liệu vào AI Local — làm đúng thứ tự, hệ thống lo phần còn lại.",
+        "step1Title": "1. Chọn corpus theo ĐÚNG miền",
+        "step1Body": "Vì sao phải tách miền: đã đo được — trộn nhiều miền vào MỘT corpus khiến hỏi về web lại lôi ra tài liệu PLC (5 trích dẫn điểm 0,85–0,91 từ tài liệu lạc đề). Rác trong corpus làm câu trả lời TỆ ĐI, không phải trung tính — corpus càng nhiều tài liệu lạc đề, càng nhiều câu trả lời bị kéo sai hướng.",
+        "fillCorpusAria": "Điền tên corpus gợi ý \"{{corpus}}\" vào ô Tên corpus",
+        "step1Note": "Bấm một gợi ý chỉ ĐIỀN tên vào ô \"Tên corpus\" bên dưới (không tự tạo corpus rỗng) — corpus chỉ thật sự tồn tại sau khi tài liệu đầu tiên được nạp vào nó.",
+        "currentlySelected": "Đang chọn:",
+        "step1WebWarning": "Miền lập trình web/app (C#, React, Node.js, HTML, CSS, JavaScript): model đã biết sẵn các ngôn ngữ này từ lúc huấn luyện — nạp tài liệu cho miền này KHÔNG dạy thêm gì mà còn làm NHIỄU câu trả lời (đã đo: 2/2 ca sai còn lại trong bộ đánh giá là câu hỏi ngoài miền tài liệu hãng bị gán trích dẫn lạc đề). Đừng mất công tạo corpus cho miền này.",
+        "step2Title": "2. Chọn tệp",
+        "step2Accepts": "Nhận: {{formats}}",
+        "step2AcceptsUrl": ", URL (dán link ở khung bên phải)",
+        "step2ImageHint": "Ảnh được model thị giác tự mô tả thành văn bản trước khi nạp.",
+        "step2Rejects": "KHÔNG nhận: {{extensions}} — chuyển sang Markdown hoặc TXT trước khi nạp.",
+        "step2VideoNote": "Video (tự chép lời bằng whisper.cpp) đã có ở tầng dịch vụ nhưng chưa nối vào màn hình này — đừng thử tải video lên đây, tệp sẽ bị từ chối.",
+        "step3Title": "3. Không cần chạy thêm gì",
+        "step3Body": "Bấm \"Tải lên & nạp\" là XONG: hệ thống tự PARSE → CHIA NHỎ (chunk) → NHÚNG (embed) → LƯU trong một lượt. Không có script nào phải tự chạy sau khi tải lên — đây là điểm dễ hiểu lầm nhất vì nhiều tài liệu khác của dự án nói tới bước nhúng thủ công (đường dòng lệnh, cho thư mục PDF theo hãng); đường Training Studio này KHÔNG cần bước đó.",
+        "step4Title": "4. Kiểm tra đã vào chưa",
+        "step4Body": "Hỏi trợ lý AI Local một câu MÌNH BIẾT TRƯỚC đáp án, lấy thẳng từ tài liệu vừa nạp (vd một giá trị thanh ghi, một mã lỗi cụ thể). Trả lời đúng và dẫn đúng tên tệp vừa nạp = corpus sống. Trả lời chung chung hoặc không nhắc tới tài liệu = chưa vào hoặc chưa nhúng.",
+        "scanWarningTitle": "Cảnh báo PDF quét ảnh (scan):",
+        "scanWarningBody": "bộ đọc PDF của hệ thống không đọc được chữ trong ảnh — nó trả về RỖNG mà KHÔNG báo lỗi, nghĩa là có thể nạp một corpus rỗng mà không hề biết. Sau khi tải lên, nhìn số đoạn (chunk) hiện ngay bên dưới tên tệp — ra 0 hoặc rất thấp là dấu hiệu tài liệu chưa thật sự vào được.",
+        "resultNote": "Kết quả sau khi nạp: số đoạn (chunk) hiện ngay dưới mỗi tệp bên dưới sau khi xong. Xem lại đầy đủ (tên tài liệu, corpus, số đoạn, trạng thái, lỗi nếu có) ở tab \"Tác vụ\"."
+      }
     },
     "jobs": {
       "title": "Tác vụ nạp dữ liệu",
