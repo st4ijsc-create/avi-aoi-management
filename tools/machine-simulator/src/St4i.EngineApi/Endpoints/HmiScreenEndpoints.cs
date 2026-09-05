@@ -227,6 +227,36 @@ public static class HmiScreenEndpoints
     // answer to a real question — and `ScreenGenerator` returns a screen carrying ONE label that says the
     // machine declares no components, never a zero-widget document, because a zero-widget screen is
     // indistinguishable from a generator that silently failed.
+    //
+    // 🔴 THE OPTIONAL `?screenId=` PARAMETER, AND THE SILENT REWRITE IT CAN PERFORM — review L-1,
+    // documented here because the surprise belongs to whoever reads this handler, not to whoever finds it
+    // in production.
+    //
+    //   * OMITTED (the ordinary case) — the id is DERIVED: `generated-{machineCode}`, reduced to the
+    //     frozen `^[a-z0-9-]+$` alphabet. Never `machine-{code}`; that namespace is a machine's shipped
+    //     operator panel and the store has no DELETE. See `ScreenGenerator`'s own doc comment.
+    //
+    //   * SUPPLIED — the value is NOT validated and NOT refused. `ScreenGenerator.SanitiseId` REWRITES it
+    //     into the same alphabet: ASCII letters lowercased, digits kept, every other character a hyphen,
+    //     runs of hyphens collapsed, leading/trailing hyphens trimmed. So `?screenId=Bad_Id` answers 200
+    //     with a document whose `screenId` is `bad-id`, and a caller that does not read the response body
+    //     will believe it asked for something it did not get. A value that sanitises to nothing at all
+    //     falls back to the derived id rather than producing an empty, contract-invalid identity.
+    //
+    // WHY REWRITE RATHER THAN REFUSE, since fail-closed is this repository's usual posture. This route
+    // writes nothing, so an unexpected id costs nothing: the document is a PROPOSAL, and the door that
+    // actually matters — `PUT /v1/screens/{screenId}` — validates the id itself and answers 400, plus 409
+    // if the body and the route name different identities. A rewrite here cannot smuggle a bad id past
+    // that. And it cannot mislead the one caller that exists: the editor pre-validates against
+    // `SCREEN_ID_PATTERN` and does not render the generate button at all for an illegal id
+    // (`EditorRoute.tsx`; pinned by `44-editor-generate.spec.ts`'s second test, with the legal-id control
+    // beside it), so every id this parameter actually receives today is already in the alphabet and the
+    // rewrite is the identity function.
+    //
+    // A SECOND caller written without reading this paragraph is exactly who the paragraph is for. If one
+    // ever needs the refusal instead, `ContractInvariants.LowercaseIdPatternSource` is the pattern to
+    // check against, and the change is a 400 here — not a loosening of `SanitiseId`, which the DERIVED
+    // path also depends on.
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> GenerateAsync(
         string? machine, string? screenId, IComponentModelStore components, CancellationToken ct)

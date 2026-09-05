@@ -178,8 +178,16 @@ test("🔴 MEASURED: how many generated bindings resolve to undefined against th
     unresolved.length,
     6,
     "the number of unresolvable generated bindings changed. If it went DOWN, an adapter now answers " +
-      "composed paths — update this number and ScreenGenerator's doc comment together. If it went UP, " +
-      "the generator started emitting bindings that name even less.",
+      "composed paths — which is the good outcome, and FOUR PLACES state this count, so lower them " +
+      "together or the product starts telling engineers a number that is no longer true:\n" +
+      "  1. this assertion;\n" +
+      "  2. ScreenGenerator.cs's doc comment (the 'THE MEASUREMENT THIS TYPE MUST NOT BE READ WITHOUT' block);\n" +
+      "  3. web/src/i18n/en.ts   -> editor.generate.note   ('6 of 6 generated bindings resolve to nothing');\n" +
+      "  4. web/src/i18n/vi.ts   -> editor.generate.note   ('6/6 binding sinh ra phân giải ra rỗng').\n" +
+      "🔴 (3) and (4) are the USER-FACING ones: they are rendered beside the generate button in the " +
+      "editor, so a stale number there is a false statement to an engineer, not merely a stale comment. " +
+      "Nothing but this message ties them to this count. If the number went UP, the generator started " +
+      "emitting bindings that name even less — fix the generator, not this number.",
   )
   assert.equal(resolved.length, 0)
 })

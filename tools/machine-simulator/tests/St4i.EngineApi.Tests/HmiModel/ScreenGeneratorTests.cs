@@ -608,6 +608,36 @@ public sealed class ScreenGeneratorTests
         Assert.Equal("my-screen", ScreenGenerator.Generate(ScrewdriveCell(), "my-screen").ScreenId);
     }
 
+    /// <summary>
+    /// 🔴 REVIEW L-1 — A SUPPLIED ID IS REWRITTEN, NOT REFUSED, and that is now pinned rather than only
+    /// described. <c>GenerateAsync</c>'s doc comment states this behaviour for the next reader; a
+    /// documented claim with no check is the shape this programme keeps paying for, so the claim and its
+    /// measurement land together.
+    ///
+    /// <para>Three arms, each a different consequence of the same rule: an illegal id is silently
+    /// rewritten into the frozen alphabet, an id that sanitises to NOTHING falls back to the derived id
+    /// rather than producing an empty contract-invalid identity, and — the control — a legal id is passed
+    /// through untouched, so the rewrite is the identity function on everything the editor can actually
+    /// send. Every result is asserted VALID, because the point of rewriting instead of refusing is that
+    /// the proposal stays publishable.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("Bad_Id", "bad-id")]              // uppercase and an underscore — both outside the pattern
+    [InlineData("  spaced  out  ", "spaced-out")] // whitespace collapses, edges trimmed
+    [InlineData("--@@--", "generated-scrw-01")]   // sanitises to nothing ⇒ falls back to the DERIVED id
+    [InlineData("already-legal", "already-legal")] // CONTROL: untouched
+    public void A_supplied_screen_id_is_rewritten_into_the_frozen_alphabet_never_refused(
+        string supplied, string expected)
+    {
+        var doc = ScreenGenerator.Generate(ScrewdriveCell(), supplied);
+
+        Assert.Equal(expected, doc.ScreenId);
+        // The reason a rewrite is safe here at all: whatever comes out is something the write door can
+        // still accept. A rewrite that produced an invalid id would be strictly worse than a refusal.
+        Assert.Empty(ContractInvariants.Validate(doc));
+        Assert.Matches(ContractInvariants.LowercaseIdPatternSource, doc.ScreenId);
+    }
+
     // ═════════════════════════════════════════════════════════════════════════════════════════════
     // 11. THE MEASUREMENT ITSELF, ON THIS SIDE — how many bindings name a path the namespace declares.
     // ═════════════════════════════════════════════════════════════════════════════════════════════
@@ -671,6 +701,23 @@ public sealed class ScreenGeneratorTests
     /// reader while the wire is not, so a byte comparison would measure formatting rather than content.
     /// The determinism of the CONTENT is pinned separately, on bytes, by
     /// <see cref="Two_generations_from_the_same_document_are_byte_identical"/>.</para>
+    ///
+    /// <para>🔴 <b>EXACTLY WHAT IS COMPARED, stated so no sentence about this test is wider than the test
+    /// — review M-1's second half.</b> Document level: <see cref="HmiScreenDocument.ScreenId"/>,
+    /// <see cref="HmiScreenDocument.Theme"/>, <see cref="HmiScreenDocument.Layout"/> and the widget COUNT.
+    /// Per widget, in order: <see cref="ScreenWidget.Id"/>, <see cref="ScreenWidget.Kind"/>,
+    /// <see cref="ScreenWidget.Rect"/>, <see cref="ScreenWidget.Component"/>,
+    /// <see cref="ScreenWidget.PolicyAction"/>, <see cref="ScreenWidget.Bindings"/> and — since review
+    /// M-1 — <see cref="ScreenWidget.Props"/>, canonicalised. That is every field
+    /// <see cref="ScreenWidget"/> declares.</para>
+    ///
+    /// <para><b>NOT compared, and named rather than left to be found:</b>
+    /// <see cref="HmiScreenDocument.Title"/>, <see cref="HmiScreenDocument.TitleEn"/> and
+    /// <see cref="HmiScreenDocument.SchemaVersion"/>. Nothing in
+    /// <c>screenGenerator.test.mjs</c> reads them, so a drift there cannot make the web-side measurement
+    /// report a stale number — which is the specific failure this test exists to prevent, not "the
+    /// fixture is identical in every respect". A future web assertion on the title would have to add
+    /// them here, and this paragraph is where that reader is told so.</para>
     /// </summary>
     [Fact]
     public void The_committed_web_fixture_is_still_exactly_what_this_generator_produces()
@@ -710,6 +757,35 @@ public sealed class ScreenGeneratorTests
             Assert.Equal(
                 e.Bindings?.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList(),
                 c.Bindings?.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList());
+
+            // 🔴 REVIEW M-1 — `Props` IS COMPARED, AND ITS ABSENCE WAS THE DEFECT.
+            //
+            // The six fields above were the whole comparison until this round, while
+            // `screenGenerator.test.mjs` asserts on `props.tones` — so a generator that dropped a `unit`,
+            // moved a `min`/`max`, or stopped emitting an all-`idle` tone map would leave THIS test green
+            // while the web test went on reporting from a stale committed artefact. That is precisely the
+            // "a committed artefact of a generator becomes a lie the moment the generator moves" failure
+            // this test's own doc comment claims to prevent, which made the doc comment the defect rather
+            // than the omission.
+            //
+            // Compared as CANONICAL JSON — keys ordinal-sorted before serialising — for two reasons.
+            // `JsonElement` has no value equality (two elements holding the same number are not `Equal`),
+            // and `IReadOnlyDictionary` iteration order is not part of the value being asserted, so a
+            // naive comparison would be either always-true or flaky depending on which mistake was made.
+            // Sorting first means the only thing that can move this assertion is the CONTENT.
+            Assert.Equal(CanonicalProps(e.Props), CanonicalProps(c.Props));
         }
     }
+
+    /// <summary>Review M-1's helper — a stable string for a widget's <c>props</c>: keys ordinal-sorted,
+    /// then serialised. <see langword="null"/> and an EMPTY map are deliberately kept distinct (<c>null</c>
+    /// vs <c>{}</c>), because the contract's rule is that absence IS null and an explicitly-written empty
+    /// object is a different document.</summary>
+    private static string CanonicalProps(IReadOnlyDictionary<string, JsonElement>? props) =>
+        props is null
+            ? "(null)"
+            : JsonSerializer.Serialize(
+                props.OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                     .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal),
+                HmiContractJson.Options);
 }

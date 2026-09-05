@@ -182,9 +182,23 @@ public static class ScreenGenerator
         ArgumentNullException.ThrowIfNull(model);
 
         var machineCode = model.MachineCode ?? string.Empty;
-        var id = string.IsNullOrWhiteSpace(screenId)
-            ? DefaultScreenId(machineCode)
-            : SanitiseId(screenId);
+        // 🔴 REVIEW L-1 FOUND A REAL DEFECT HERE, and it is recorded rather than quietly patched.
+        //
+        // This read `IsNullOrWhiteSpace(screenId) ? DefaultScreenId(...) : SanitiseId(screenId)`, which is
+        // wrong for a supplied id that sanitises to NOTHING (`"--@@--"`, `"###"`): `SanitiseId` returns
+        // `""`, and this method then produced a document with `screenId: ""` — which
+        // `ContractInvariants.Validate` REFUSES ("screenId: thiếu trường bắt buộc"). So the read-only
+        // generate route would have answered 200 with a document its own product's write door rejects,
+        // and the caller would learn only at publish. The three-line doc-comment version of this rule was
+        // written before the check that would have caught it; writing the check is what found it.
+        //
+        // A blank or absent id derives; a supplied id that survives sanitisation is honoured; a supplied
+        // id that sanitises away falls back to the derived id, because an EMPTY identity is strictly worse
+        // than an unexpected one — the unexpected one is still publishable, and the route writes nothing
+        // either way. Pinned, with the legal-id control beside it, by
+        // `ScreenGeneratorTests.A_supplied_screen_id_is_rewritten_into_the_frozen_alphabet_never_refused`.
+        var supplied = string.IsNullOrWhiteSpace(screenId) ? string.Empty : SanitiseId(screenId);
+        var id = supplied.Length > 0 ? supplied : DefaultScreenId(machineCode);
 
         var widgets = new List<ScreenWidget>();
         var usedIds = new HashSet<string>(StringComparer.Ordinal);
