@@ -35,6 +35,10 @@ const id = {
   // upperLimit/heightMin/heightMax hợp lệ ([1;10]/[1;10]) để đo mệnh đề "merge
   // với hiện có" — KHÔNG dùng chung devA/B/C (đã có state cụ thể từ §1/§2).
   devD: 0, devE: 0,
+  // BG-123 (Khối C, "nợ còn mở", 2026-09-05) — điểm RIÊNG cho §5 (xoá giới hạn
+  // về NULL qua measurementPoint.update/setLimitsBatch, đi qua tRPC caller
+  // THẬT — khác `server/db/xoaGioiHanVeNull.db.test.ts` đo thẳng hàm DB).
+  devF: 0, devG: 0, devH: 0,
 };
 
 // ctx admin — bỏ qua checkPermission (role==='admin' short-circuit, xem
@@ -103,6 +107,24 @@ describe.skipIf(!DB_URL)("Task 8 Khối C — touchesLimits suy từ spec + setL
       VALUES (${id.devProduct}, ${"PT-DE-" + RUN}, 'Dev E', 'DIMENSION', 50, 50, '1.000000', '10.000000') RETURNING id`;
     id.devE = de.id;
 
+    // BG-123 §5 — điểm RIÊNG với lowerLimit/upperLimit/heightMin/heightMax
+    // HỢP LỆ sẵn, dùng để đo xoá-về-NULL qua `measurementPoint.update` (khác
+    // devD/E — không muốn state của §4 lẫn với §5).
+    const [df] = await sql`
+      INSERT INTO measurement_point_defs
+        ("productModelId", code, name, "measurementType", "positionX", "positionY", "lowerLimit", "upperLimit", "heightMin", "heightMax")
+      VALUES (${id.devProduct}, ${"PT-DF-" + RUN}, 'Dev F', 'DIMENSION', 60, 60, '1.000000', '10.000000', '2.000000', '20.000000') RETURNING id`;
+    id.devF = df.id;
+    // Hai điểm RIÊNG cho setLimitsBatch xoá hàng loạt.
+    const [dg] = await sql`
+      INSERT INTO measurement_point_defs ("productModelId", code, name, "measurementType", "positionX", "positionY", "heightMax")
+      VALUES (${id.devProduct}, ${"PT-DG-" + RUN}, 'Dev G', 'DIMENSION', 70, 70, '5.000000') RETURNING id`;
+    id.devG = dg.id;
+    const [dh] = await sql`
+      INSERT INTO measurement_point_defs ("productModelId", code, name, "measurementType", "positionX", "positionY", "heightMax")
+      VALUES (${id.devProduct}, ${"PT-DH-" + RUN}, 'Dev H', 'DIMENSION', 80, 80, '7.000000') RETURNING id`;
+    id.devH = dh.id;
+
     // Sản phẩm KHÁC (development, để không lẫn gate) — dùng để đo BAD_REQUEST
     // khi một batch trộn hai productModelId.
     const [op] = await sql`
@@ -118,7 +140,8 @@ describe.skipIf(!DB_URL)("Task 8 Khối C — touchesLimits suy từ spec + setL
   afterAll(async () => {
     await safe(async () => {
       await sql`DELETE FROM measurement_point_versions WHERE "pointDefId" IN (
-        ${id.liveA}, ${id.liveB}, ${id.devA}, ${id.devB}, ${id.devC}, ${id.otherA}, ${id.devD}, ${id.devE}
+        ${id.liveA}, ${id.liveB}, ${id.devA}, ${id.devB}, ${id.devC}, ${id.otherA}, ${id.devD}, ${id.devE},
+        ${id.devF}, ${id.devG}, ${id.devH}
       )`;
     });
     await safe(async () => { await sql`DELETE FROM measurement_point_defs WHERE "productModelId" IN (${id.liveProduct}, ${id.devProduct}, ${id.otherProduct})`; });
@@ -287,6 +310,81 @@ describe.skipIf(!DB_URL)("Task 8 Khối C — touchesLimits suy từ spec + setL
       const [afterC] = await sql`SELECT "heightMax" FROM measurement_point_defs WHERE id = ${id.devC}`;
       expect(afterE.upperLimit).toBe(beforeE.upperLimit);
       expect(afterC.heightMax, "item KHÁC trong CÙNG batch (hợp lệ riêng nó) cũng không được ghi — batch là MỘT transaction").toBe(beforeC.heightMax);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★★★ BG-123 (Khối C, "nợ còn mở", 2026-09-05) — xoá giới hạn về NULL qua CỬA
+  // THẬT (tRPC caller + DB thật, khác `server/db/xoaGioiHanVeNull.db.test.ts`
+  // đo thẳng hàm DB). §5.2 là lưới HỒI QUY cho một lỗi phát hiện khi cài bản vá
+  // này: `measurementPoint.update` merge "input + hàng hiện có" bằng `??` ở
+  // HAI chỗ (derive tolerance-mode, và khoảng đã merge cho gate lower≤upper) —
+  // `??` coi `null` (xoá) là "vắng mặt" và ÂM THẦM phục hồi giá trị CŨ, nên một
+  // lượt xoá heightMax hợp lệ (kèm nâng heightMin) từng bị chặn OAN bằng giá
+  // trị heightMax CŨ (đã sửa bằng `gopGiuNguyenNull`, `measurementPointLimitGate.ts`).
+  // ══════════════════════════════════════════════════════════════════════════
+  describe("§5 — BG-123: xoá giới hạn về NULL (measurementPoint.update / setLimitsBatch)", () => {
+    it("★★★ measurementPoint.update — xoá upperLimit về NULL: cột NULL, snapshot giá trị CŨ, version +1, KHÔNG đụng lowerLimit", async () => {
+      const [{ c: mpvBefore }] = await sql`SELECT count(*)::int AS c FROM measurement_point_versions WHERE "pointDefId" = ${id.devF}`;
+
+      const res = await caller.update({ id: id.devF, upperLimit: null });
+      expect(res).toEqual({ success: true });
+
+      const [after] = await sql`SELECT "lowerLimit", "upperLimit" FROM measurement_point_defs WHERE id = ${id.devF}`;
+      expect(after.upperLimit, "cột PHẢI thành NULL").toBeNull();
+      expect(Number(after.lowerLimit), "lowerLimit KHÔNG bị đụng — vẫn 1").toBe(1);
+
+      const [{ c: mpvAfter }] = await sql`SELECT count(*)::int AS c FROM measurement_point_versions WHERE "pointDefId" = ${id.devF}`;
+      expect(mpvAfter - mpvBefore, "version PHẢI bump ĐÚNG 1").toBe(1);
+
+      const [snap] = await sql`
+        SELECT "snapshotJson" FROM measurement_point_versions
+        WHERE "pointDefId" = ${id.devF} ORDER BY version DESC LIMIT 1`;
+      expect(Number(snap.snapshotJson.upperLimit), "snapshot mang giá trị TRƯỚC khi xoá (10)").toBe(10);
+    });
+
+    it("★★★ HỒI QUY — nâng heightMin (25) ĐỒNG THỜI xoá heightMax về NULL ⇒ PHẢI qua (không còn cận trên để mâu thuẫn), KHÔNG bị chặn OAN bằng heightMax CŨ (20)", async () => {
+      // Nền (từ beforeAll, chưa bị ca trên đụng): heightMin=2, heightMax=20.
+      // Trước bản vá: merge `??` giữ heightMax=20 (stale) khi thấy `null` ⇒
+      // 25 > 20 ⇒ BAD_REQUEST OAN. Sau bản vá: heightMax merge ra `null` (đúng
+      // ý xoá) ⇒ không có cận trên để so ⇒ heightMin=25 một mình hợp lệ.
+      // ĐÃ CHẠY TAY: đổi tạm dòng `heightMax: gopGiuNguyenNull(...)` thành
+      // `rest.heightMax ?? existingPoint.heightMax ?? undefined` → ca này ĐỎ
+      // đúng dự đoán (`appCode: 'INVALID_VALUE', appParams: { field: '…heightMin/heightMax…' }`)
+      // → hoàn tác nguyên văn → XANH lại. Xem report BG-123.
+      const res = await caller.update({ id: id.devF, heightMin: "25", heightMax: null });
+      expect(res).toEqual({ success: true });
+
+      const [after] = await sql`SELECT "heightMin", "heightMax" FROM measurement_point_defs WHERE id = ${id.devF}`;
+      expect(Number(after.heightMin)).toBe(25);
+      expect(after.heightMax, "heightMax PHẢI thành NULL").toBeNull();
+    });
+
+    it("setLimitsBatch — xoá heightMax về NULL cho 2 điểm cùng lúc: cả hai NULL, 2 hàng lịch sử, MỘT lần bump", async () => {
+      const [pmBefore] = await sql`SELECT "pointsConfigVersion" FROM product_models WHERE id = ${id.devProduct}`;
+      const [{ c: mpvGBefore }] = await sql`SELECT count(*)::int AS c FROM measurement_point_versions WHERE "pointDefId" = ${id.devG}`;
+      const [{ c: mpvHBefore }] = await sql`SELECT count(*)::int AS c FROM measurement_point_versions WHERE "pointDefId" = ${id.devH}`;
+
+      const res = await caller.setLimitsBatch({
+        items: [
+          { id: id.devG, heightMax: null },
+          { id: id.devH, heightMax: null },
+        ],
+      });
+      expect(res.updated).toBe(2);
+
+      const rows = await sql`SELECT id, "heightMax" FROM measurement_point_defs WHERE id IN (${id.devG}, ${id.devH})`;
+      for (const r of rows) {
+        expect(r.heightMax, `điểm ${r.id} PHẢI thành NULL`).toBeNull();
+      }
+
+      const [{ c: mpvGAfter }] = await sql`SELECT count(*)::int AS c FROM measurement_point_versions WHERE "pointDefId" = ${id.devG}`;
+      const [{ c: mpvHAfter }] = await sql`SELECT count(*)::int AS c FROM measurement_point_versions WHERE "pointDefId" = ${id.devH}`;
+      expect(mpvGAfter - mpvGBefore).toBe(1);
+      expect(mpvHAfter - mpvHBefore).toBe(1);
+
+      const [pmAfter] = await sql`SELECT "pointsConfigVersion" FROM product_models WHERE id = ${id.devProduct}`;
+      expect(pmAfter.pointsConfigVersion, "MỘT lần bump, không phải 2").toBe(pmBefore.pointsConfigVersion + 1);
     });
   });
 });

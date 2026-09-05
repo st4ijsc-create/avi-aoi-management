@@ -38,7 +38,12 @@ import {
 } from "../services/thresholdGovernanceService";
 // Task 8 Khối C (QĐ-5) — `touchesLimits` SUY từ POINT_LIMIT_SPEC, MỘT hàm dùng
 // chung với `measurementPointImport.ts` (xem docblock trong file đó).
-import { touchesApprovalLimitFields, assertCapGioiHanHopLe, gopCapGioiHanDonGian } from "../utils/measurementPointLimitGate";
+import {
+  touchesApprovalLimitFields, assertCapGioiHanHopLe, gopCapGioiHanDonGian,
+  // BG-123 (Khối C, "nợ còn mở") — xoá giới hạn về NULL: shape zod nullable
+  // SUY từ spec (không chép tay) + merge giữ nguyên null tường minh.
+  xayZodShapeGioiHanNullable, gopGiuNguyenNull,
+} from "../utils/measurementPointLimitGate";
 // BG-126 (Khối C, "nợ còn mở") — chặn changeReason/reason NGƯỜI DÙNG giả tiền
 // tố cấu trúc [VARIANT:n]. Import trực tiếp (không barrel `../db`) — xem docblock
 // `server/utils/changeReasonGuard.ts`.
@@ -293,11 +298,14 @@ function toNumberOrNull(value?: string | number | null): number | null {
 
 function deriveLegacyLimitsFromTolerance(input: {
   toleranceMode?: z.infer<typeof toleranceModeSchema>;
-  nominalValue?: string;
-  tolPlus?: string;
-  tolMinus?: string;
-  lowerLimit?: string;
-  upperLimit?: string;
+  // BG-123 — `null` tường minh = "xoá" (client gửi qua `gopGiuNguyenNull`),
+  // KHÁC `undefined` = "không đổi". `toNumberOrNull` bên dưới đã coi cả hai
+  // là "không có số" từ trước — không cần đổi phần thân hàm.
+  nominalValue?: string | null;
+  tolPlus?: string | null;
+  tolMinus?: string | null;
+  lowerLimit?: string | null;
+  upperLimit?: string | null;
 }) {
   if (input.toleranceMode !== "bilateral") {
     return {
@@ -1247,38 +1255,26 @@ export const measurementPointRouter = router({
       description: z.string().optional(),
       measurementType: legacyMeasurementTypeSchema.optional(),
       measurementTypeCode: z.string().min(3).max(100).optional(),
-      unit: z.string().optional(),
-      lowerLimit: z.string().optional(),
-      upperLimit: z.string().optional(),
-      nominalValue: z.string().optional(),
+      // BG-123 — 20 field giới hạn KIỂU CHUỖI (unit/lowerLimit/upperLimit/
+      // nominalValue/tolPlus/tolMinus/height*/area*/volume*/coplanarityMax/
+      // warpageMax/voidPctMax/offsetXMax/offsetYMax/tiltMax/thicknessMin/
+      // thicknessMax) SUY từ `APPROVAL_LIMIT_FIELDS` (không chép tay) —
+      // `z.string().nullable().optional()`: undefined = không đổi, null = XOÁ
+      // giới hạn đó (SET cột NULL, có snapshot + bump version — xem `update`
+      // bên dưới, cùng cửa duyệt ngưỡng như mọi lần sửa limit khác).
+      ...xayZodShapeGioiHanNullable(),
       toleranceMode: toleranceModeSchema.optional(),
-      tolPlus: z.string().optional(),
-      tolMinus: z.string().optional(),
       criteria: z.array(criteriaItemSchema).optional(),
       datumRefs: z.array(z.string().trim().min(1).max(20)).max(10).optional(),
       materialCondition: materialConditionSchema.optional(),
       fitClass: z.string().max(20).optional(),
       positionZ: z.string().optional(),
-      heightMin: z.string().optional(),
-      heightMax: z.string().optional(),
       heightNominal: z.string().optional(),
       heightUnit: z.string().max(20).optional(),
-      areaMin: z.string().optional(),
-      areaMax: z.string().optional(),
       areaNominal: z.string().optional(),
       areaUnit: z.string().max(20).optional(),
-      volumeMin: z.string().optional(),
-      volumeMax: z.string().optional(),
       volumeNominal: z.string().optional(),
       volumeUnit: z.string().max(20).optional(),
-      coplanarityMax: z.string().optional(),
-      warpageMax: z.string().optional(),
-      voidPctMax: z.string().optional(),
-      offsetXMax: z.string().optional(),
-      offsetYMax: z.string().optional(),
-      tiltMax: z.string().optional(),
-      thicknessMin: z.string().optional(),
-      thicknessMax: z.string().optional(),
       depthMapUrl: z.string().url().optional(),
       pointCloudUrl: z.string().url().optional(),
       positionX: z.number().int().nonnegative().max(100000).optional(),
@@ -1378,13 +1374,19 @@ export const measurementPointRouter = router({
       );
       data.measurementType = nextLegacyType;
 
+      // ★★★ BG-123 — merge GIỮ NGUYÊN `null` tường minh (`gopGiuNguyenNull`,
+      // KHÔNG `??`): `??` coi `null` (xoá) là "vắng mặt" và âm thầm phục hồi
+      // giá trị CŨ — client gửi `nominalValue: null` để xoá sẽ bị đảo ngược
+      // ngay tại chỗ merge này, TRƯỚC khi kịp chảy xuống DB. `toleranceMode`
+      // không nằm trong tập nullable-để-xoá (enum, xem `measurementPointLimitGate.ts`)
+      // nên giữ nguyên `??`.
       const legacyLimits = deriveLegacyLimitsFromTolerance({
         toleranceMode: (rest.toleranceMode ?? existingPoint.toleranceMode ?? undefined) as z.infer<typeof toleranceModeSchema> | undefined,
-        nominalValue: (rest.nominalValue ?? existingPoint.nominalValue ?? undefined) as string | undefined,
-        tolPlus: (rest.tolPlus ?? existingPoint.tolPlus ?? undefined) as string | undefined,
-        tolMinus: (rest.tolMinus ?? existingPoint.tolMinus ?? undefined) as string | undefined,
-        lowerLimit: (rest.lowerLimit ?? existingPoint.lowerLimit ?? undefined) as string | undefined,
-        upperLimit: (rest.upperLimit ?? existingPoint.upperLimit ?? undefined) as string | undefined,
+        nominalValue: gopGiuNguyenNull(rest.nominalValue, existingPoint.nominalValue),
+        tolPlus: gopGiuNguyenNull(rest.tolPlus, existingPoint.tolPlus),
+        tolMinus: gopGiuNguyenNull(rest.tolMinus, existingPoint.tolMinus),
+        lowerLimit: gopGiuNguyenNull(rest.lowerLimit, existingPoint.lowerLimit),
+        upperLimit: gopGiuNguyenNull(rest.upperLimit, existingPoint.upperLimit),
       });
       data.lowerLimit = legacyLimits.lowerLimit;
       data.upperLimit = legacyLimits.upperLimit;
@@ -1400,17 +1402,22 @@ export const measurementPointRouter = router({
       // (`pointResultEvaluator.ts`) chấm CẢ NĂM cặp — area/volume/thickness đi
       // qua trắng, cùng lỗ RỖNG-KHOẢNG mà I-2 đã vá cho hai cặp kia. Nay merge +
       // kiểm CẢ NĂM cặp trong `MIN_MAX_PAIRS` (`shared/pointLimitSpec.ts`).
+      // ★★★ BG-123 — cùng lý do ở trên: `gopGiuNguyenNull` giữ nguyên `null`
+      // tường minh (xoá heightMax nhưng KHÔNG đổi heightMin phải kiểm đúng
+      // "heightMin hiện có ≤ NULL" = luôn hợp lệ, không phải "heightMin hiện
+      // có ≤ heightMax CŨ" — `??` sẽ âm thầm dùng giá trị CŨ và có thể chặn
+      // OAN một lượt xoá hợp lệ, hoặc bỏ lọt một khoảng đáng lẽ phải chặn).
       assertCapGioiHanHopLe({
         lowerLimit: legacyLimits.lowerLimit,
         upperLimit: legacyLimits.upperLimit,
-        heightMin: rest.heightMin ?? existingPoint.heightMin ?? undefined,
-        heightMax: rest.heightMax ?? existingPoint.heightMax ?? undefined,
-        areaMin: rest.areaMin ?? existingPoint.areaMin ?? undefined,
-        areaMax: rest.areaMax ?? existingPoint.areaMax ?? undefined,
-        volumeMin: rest.volumeMin ?? existingPoint.volumeMin ?? undefined,
-        volumeMax: rest.volumeMax ?? existingPoint.volumeMax ?? undefined,
-        thicknessMin: rest.thicknessMin ?? existingPoint.thicknessMin ?? undefined,
-        thicknessMax: rest.thicknessMax ?? existingPoint.thicknessMax ?? undefined,
+        heightMin: gopGiuNguyenNull(rest.heightMin, existingPoint.heightMin),
+        heightMax: gopGiuNguyenNull(rest.heightMax, existingPoint.heightMax),
+        areaMin: gopGiuNguyenNull(rest.areaMin, existingPoint.areaMin),
+        areaMax: gopGiuNguyenNull(rest.areaMax, existingPoint.areaMax),
+        volumeMin: gopGiuNguyenNull(rest.volumeMin, existingPoint.volumeMin),
+        volumeMax: gopGiuNguyenNull(rest.volumeMax, existingPoint.volumeMax),
+        thicknessMin: gopGiuNguyenNull(rest.thicknessMin, existingPoint.thicknessMin),
+        thicknessMax: gopGiuNguyenNull(rest.thicknessMax, existingPoint.thicknessMax),
       });
 
       // P1: derive legacy x/y/r from supplied geometry (for any shape).
@@ -1580,27 +1587,11 @@ export const measurementPointRouter = router({
         id: z.number().int().positive(),
         // ⚠ Cùng KIỂU với `update` ở trên — cột numeric ở DB đi qua dưới dạng
         // chuỗi (tránh Postgres làm tròn/ép kiểu im lặng khi client gửi number).
-        unit: z.string().optional(),
-        lowerLimit: z.string().optional(),
-        upperLimit: z.string().optional(),
-        nominalValue: z.string().optional(),
+        // BG-123 — `z.string().nullable().optional()` SUY từ `APPROVAL_LIMIT_FIELDS`
+        // (trừ `criteria`/`toleranceMode`, không chép tay): undefined = không
+        // đổi, null = XOÁ giới hạn đó cho điểm này.
+        ...xayZodShapeGioiHanNullable(),
         toleranceMode: toleranceModeSchema.optional(),
-        tolPlus: z.string().optional(),
-        tolMinus: z.string().optional(),
-        heightMin: z.string().optional(),
-        heightMax: z.string().optional(),
-        areaMin: z.string().optional(),
-        areaMax: z.string().optional(),
-        volumeMin: z.string().optional(),
-        volumeMax: z.string().optional(),
-        coplanarityMax: z.string().optional(),
-        warpageMax: z.string().optional(),
-        voidPctMax: z.string().optional(),
-        offsetXMax: z.string().optional(),
-        offsetYMax: z.string().optional(),
-        tiltMax: z.string().optional(),
-        thicknessMin: z.string().optional(),
-        thicknessMax: z.string().optional(),
       })).min(1).max(200),
       changeReason: z.string().max(500).optional(),
     }))

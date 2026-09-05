@@ -152,3 +152,67 @@ export function assertCapGioiHanHopLe(gopSau: CapGioiHan): void {
     );
   }
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★ BG-123 (Khối C, "nợ còn mở", 2026-09-05) — XOÁ giới hạn về NULL.
+//
+// `measurementPoint.update`/`setLimitsBatch` khai mọi cột giới hạn
+// `z.string().optional()` ⇒ client KHÔNG có cách gửi "xoá" (chỉ có "để nguyên"
+// [omit/undefined] hoặc "đặt giá trị mới" [string]). Đổi sang
+// `z.string().nullable().optional()`: `undefined` = không đổi, `null` = XOÁ
+// giới hạn đó (SET cột NULL). Đường ghi (`updateMeasurementPointDef`/
+// `updateMeasurementPointLimitsBatch`, `server/db/product.ts`) ĐÃ đúng ngữ
+// nghĩa "chỉ đưa vào SET khi `!== undefined`" từ trước (BG-108/Task 8 Khối C)
+// — `null` không phải `undefined` nên đã chảy xuống SET NULL sẵn, KHÔNG cần
+// sửa hàm DB. `touchesApprovalLimitFields` (`fields[f] !== undefined`) cũng
+// đã coi null là "có chạm" ⇒ xoá limit vẫn qua cửa duyệt ngưỡng như sửa limit.
+//
+// SUY danh sách field KIỂU CHUỖI từ `APPROVAL_LIMIT_FIELDS` (không chép tay):
+// loại `criteria` (mảng jsonb — "xoá" một mảng không cùng nghĩa "đặt NULL một
+// số", ngoài phạm vi bản vá string-limit này) và `toleranceMode` (enum, không
+// phải "giới hạn" theo nghĩa numeric/text — đặt null không có ý nghĩa nghiệp
+// vụ rõ ràng ở đây).
+// ════════════════════════════════════════════════════════════════════════════
+
+const KHONG_PHAI_CHUOI_XOA_DUOC = new Set<(typeof APPROVAL_LIMIT_FIELDS)[number]>(["criteria", "toleranceMode"]);
+
+/** 20 field giới hạn KIỂU CHUỖI (APPROVAL_LIMIT_FIELDS trừ `criteria`/`toleranceMode`)
+ * — nhận `z.string().nullable().optional()` ở input router: `undefined` =
+ * không đổi, `null` = XOÁ giới hạn đó. */
+export const NULLABLE_LIMIT_STRING_FIELDS: readonly Exclude<
+  (typeof APPROVAL_LIMIT_FIELDS)[number],
+  "criteria" | "toleranceMode"
+>[] = APPROVAL_LIMIT_FIELDS.filter(
+  (f): f is Exclude<(typeof APPROVAL_LIMIT_FIELDS)[number], "criteria" | "toleranceMode"> =>
+    !KHONG_PHAI_CHUOI_XOA_DUOC.has(f),
+);
+
+/**
+ * Zod shape `{ field: z.string().nullable().optional() }` cho 20 field trên —
+ * spread vào input schema của `measurementPoint.update`/`setLimitsBatch`
+ * (KHÔNG chép tay 20 dòng `field: z.string().optional()` — BG-123, cùng
+ * nguyên tắc "một nguồn sự thật" mà `capGioiHanSchema` ở trên đã theo).
+ */
+export function xayZodShapeGioiHanNullable(): Record<
+  (typeof NULLABLE_LIMIT_STRING_FIELDS)[number],
+  z.ZodOptional<z.ZodNullable<z.ZodString>>
+> {
+  return Object.fromEntries(
+    NULLABLE_LIMIT_STRING_FIELDS.map((f) => [f, z.string().nullable().optional()]),
+  ) as Record<(typeof NULLABLE_LIMIT_STRING_FIELDS)[number], z.ZodOptional<z.ZodNullable<z.ZodString>>>;
+}
+
+/**
+ * ★★★ BG-123 — merge "input người dùng" + "hàng hiện có" GIỮ NGUYÊN `null`
+ * tường minh. KHÔNG dùng `??` (coi `null` là "vắng mặt" ⇒ âm thầm phục hồi
+ * giá trị CŨ, đánh bại chính ý nghĩa "null = xoá" mà bản vá này thêm vào zod
+ * input — đo được ở `measurementPoint.update`: hai chỗ merge cho
+ * `deriveLegacyLimitsFromTolerance` và cho `assertCapGioiHanHopLe` đều dùng
+ * `rest.x ?? existingPoint.x ?? undefined` trước bản vá này).
+ */
+export function gopGiuNguyenNull<T>(
+  input: T | null | undefined,
+  existing: T | null | undefined,
+): T | null | undefined {
+  return input !== undefined ? input : (existing ?? undefined);
+}
