@@ -4057,6 +4057,16 @@ export async function recordVariantOverrideVersion(
   // KHÔNG có ý nghĩa rõ ràng ở đây (override thuộc VARIANT, không phải bump toàn
   // sản phẩm) ⇒ để null có chủ ý: reconstruction rơi về nhánh INSTANT (P1), an
   // toàn, KHÔNG khoá nhầm VERSION-EXACT (0282) vào một con số không đúng nghĩa.
+  //
+  // ★★★ BG-128 (Khối C, "nợ còn mở", 2026-09-05) — BẤT BIẾN, KHÔNG PHẢI TÁC
+  // DỤNG PHỤ: cái NULL này là lý do DUY NHẤT `revertPointsConfigToVersion`
+  // (VERSION-EXACT revert, phía dưới trong file này — `stamped = versions.filter
+  // (v.productPointsConfigVersion != null)`) KHÔNG BAO GIỜ coi một hàng biến thể
+  // là một mốc snapshot BASE hợp lệ. Ai "cải tiến" bằng cách đóng dấu version
+  // THẬT cho hàng này (nghĩ "ghi cho đủ") sẽ MỞ LẠI đúng lỗ đó — revert có thể
+  // phục hồi điểm base bằng giá trị CHỈ từng tồn tại trên một biến thể. Lưới
+  // `server/db/lienKetBoTrongBienThe.db.test.ts` đo cả cột NULL lẫn hành vi
+  // revert thật (đột biến ở cuối file đó chứng minh lưới ĐỎ khi bất biến bị phá).
   if (stampConfigVersion) versionRow.productPointsConfigVersion = null;
   await db.insert(measurementPointVersions).values(versionRow as typeof measurementPointVersions.$inferInsert);
 }
