@@ -6276,7 +6276,7 @@ holds COM3 — and on a **gateway** there is no such protection to reason about 
   `hmi-screens`) **machine-wide**
   directories under `%ProgramData%` is
   relocatable by a derivable `ST4I_*_DIR`
-  variable, and a test derives both sets from `src/` so a **nineteenth** machine-wide store cannot arrive
+  variable, and a test derives both sets from `src/` so a **twenty-first** machine-wide store cannot arrive
   without one. 📎 **The clause that used to follow — *"a beside-the-binary store can, and does; that is what
   the second population below is"* — is RETRACTED 2026-08-23 (BF-1) and kept verbatim:** the owner moved all
   three of those stores under `%ProgramData%`, so the second population is EMPTY and a store arriving beside
@@ -6534,7 +6534,7 @@ host là **tình cờ** — đọc mục quần thể thứ hai của §15.9 tr�
 hữu chuyển cả ba store ấy xuống `%ProgramData%` ngày 2026-08-23, nên **mười ba thành mười sáu** và quần thể
 cạnh-binary **RỖNG**; hai host trên một máy nay dùng chung ba file ấy **theo mặc định** giống hệt mười ba cái
 kia, và cách tách vẫn là cho mỗi host một gốc riêng), và
-một test suy ra cả hai tập từ `src/` nên store **toàn máy** thứ **mười chín** không thể ra đời mà thiếu biến
+một test suy ra cả hai tập từ `src/` nên store **toàn máy** thứ **hai mươi mốt** không thể ra đời mà thiếu biến
 (🔴 **MƯỜI BẢY → MƯỜI CHÍN, 2026-08-30**, cùng finding: mệnh đề này đọc *"store **toàn máy** thứ mười bảy"*,
 là số thứ tự đi kèm con số mười sáu ở đầu câu; nửa tiếng Anh đã nói **nineteenth** từ Task 5) — còn
 một store cạnh-binary thì **không còn cái nào**, và phép ghim của quần thể ấy nay ghim đúng số không. Cái F-1 **không**
@@ -6927,7 +6927,7 @@ acceptance pass tells them apart.
 | Question | Answer | Why |
 |---|---|---|
 | Which screen does machine `X`'s kiosk read? | `machine-` + `X` lowercased (`IOT-02` → `machine-iot-02`) | A screen document is **not** bound to a machine — the frozen `HmiScreenDocument` has no machine field and cannot grow one — so the kiosk DERIVES the id. The reserved `machine-` prefix keeps every operator panel out of the flat namespace engineers author free-form ids in, so a screen someone happened to name after a machine code can never take over that machine's panel. Lowercased because `screenId` is constrained to `^[a-z0-9-]+$` while a MACHINE CODE has no case constraint at all and `MachineCodeIdentity` already folds it — the fold happens crossing from the second vocabulary into the first, and a `screenId` is never folded. |
-| Nothing published for that machine? | It renders exactly the document it shipped with | Invariant §5-bis. `GET /v1/screens/{id}` answers **404** for an id nobody declared (deliberate — there is no such thing as a valid EMPTY screen), and that 404 falls straight through to the shipped document. The 31 visual baselines cannot move because nothing in this repository ever writes `machine-scrw-01` / `machine-aoi-01` / `machine-iot-01` — a grep, not a hope. 🔴 **Both halves of that, since only one of them is a guarantee:** they *could not* move, and the reason is a property of this repository's corpus that **nothing enforces** — the reserved prefix is a browser-side convention the write door knows nothing about. The day something does publish there, that machine's panel changes; see §27.5 for what that costs and how to get back, and note that the acceptance suite asserts the 404 precondition by machine name so the change is announced rather than discovered in a screenshot diff. |
+| Nothing published for that machine? | It renders exactly the document it shipped with | Invariant §5-bis. `GET /v1/screens/{id}` answers **404** for an id nobody declared (deliberate — there is no such thing as a valid EMPTY screen), and that 404 falls straight through to the shipped document. The 31 visual baselines cannot move because nothing in this repository ever writes `machine-scrw-01` / `machine-aoi-01` / `machine-iot-01` — a grep, not a hope. 🔴 **The evidence has moved, and the conclusion has not — whole-branch review M-2.** "Nothing ever writes those ids" stopped being true INSIDE this branch: the security round's audit fix (`6dad4d2c`) added `HmiScreenEndpointsTests.cs:579`, which PUTs `machine-aoi-01` deliberately, as the right fixture for a machine-panel id. It writes into a `WebApplicationFactory` temp store, so no baseline is at risk — but a grep is no longer the evidence, and a sentence standing where a check should be is what this branch calls a defect. **The standing guard is the live one:** `43-editor-acceptance.spec.ts` asserts the 404 precondition for all three baseline machines against the REAL store, naming the machine and its shipped screen when it fails. 🔴 **And both halves, since only one is a guarantee:** the baselines could not move, and the reason is a property of a corpus that **nothing enforces** — the reserved prefix is a browser-side convention the write door knows nothing about. See §27.6. |
 | A bad published document? | The shipped screen renders instead, with a console line naming the defect | `HmiScreenStore.AppendVersionAsync` restores **without re-validating** on the rollback path (deliberate: a restore is not new authorship), so a legacy row written under a laxer contract can be made current again. `renderableScreen` (`web/src/hmi-runtime/publishedScreen.ts`) rejects **only** the shapes that would make the renderer throw or collapse the grid; everything merely odd — an unknown widget kind, an out-of-range rect, an unresolved `{component}` — still takes the renderer's own degrade-in-place path, one widget at a time. |
 | `/hmi/demo/{screenId}`? | Reads no store, and makes no request | That URL NAMES a document. Answering it with a different one is the defect `web/tests/35-hmi-indirect-binding.spec.ts` exists to prevent. |
 
@@ -6952,7 +6952,34 @@ own example uses — resolves correctly and then reads nothing, because no `TagV
 answers a composed path. That is a missing **adapter**, not a missing wire, and both the tag picker and
 `docs/HMI_BUILDER_DESIGN_2026-08-29.md` §3.3 say so on their own surfaces.
 
-### 27.4 What WS-HMI-2 does NOT ship
+### 27.4 🔴 The third gap: a widget built in the editor could not be given a caption
+
+Whole-branch review H-1, and it is the same shape as the other two at a third address: **the
+mechanism was built and the way to author it was not.** Every visible attribute of every widget in
+this runtime lives in `props` — `label`, `labelEn`, `unit`, `min`, `max`, `thresholds`, `text`,
+`rows`, `faceplate` — and three tasks met here, each correct on its own reading:
+
+* **Task 7** built `set-prop` able to CREATE a path that does not exist, and pinned it.
+* **Task 10** wired the panel to `Object.entries(props)` — one control per prop that already exists.
+  It gave `bindings` a create control in the same fix round; `props` did not get one.
+* **Task 11** made `add` emit `{id, kind, rect}` and nothing else.
+
+Jointly: every widget an engineer built rendered under its own generated id, because
+`readout.tsx`, `gauge.tsx`, `kpi-tile.tsx` and `label.tsx` all fall back to `widget.id` — so the
+acceptance journey published an operator panel captioned **"w-1"** and **"w-2"**, and asserted
+nothing about what it said. Renaming could not fix it: widget ids are `^[a-z0-9-]+$`, so a caption
+with a space or a capital — let alone a Vietnamese one — is impossible by construction. 16 of the 20
+widgets this repository ships carry props, and the three shipped operator panels are a single
+`faceplate` widget whose *entire* content is props.
+
+The panel now has the same three controls for props that it has for bindings — a name box, a
+**type** chooser and an Add button. The type chooser is not decoration: `commitProp` keeps a prop's
+type, and every numeric prop in this runtime is read with `typeof p.max === "number"`, so a `max`
+created as a string would be a prop the widget silently ignores. The acceptance journey now gives
+both its widgets a caption carrying a space and capitals, and asserts that caption on the kiosk —
+so a caption that stopped reaching the operator reddens by name.
+
+### 27.5 What WS-HMI-2 does NOT ship
 
 * **No generator.** Nothing produces a screen from a machine's component tree (WS-HMI-3). §5-bis's **S1**
   — a customer who never opens the editor still has a working HMI — holds today only because the three
@@ -6963,7 +6990,16 @@ answers a composed path. That is a missing **adapter**, not a missing wire, and 
 * **No screen-pack import/export** (WS-HMI-5), and **no DELETE route** — the store only appends, so a
   published `screenId` cannot be removed through the API. 🔴 That is not only a WS-HMI-5 gap: since
   Task 13 built the join, it is also what makes a publish to a machine's panel id irreversible. See
-  §27.5, which is where the consequence and the way back are written down.
+  §27.6, which is where the consequence and the way back are written down.
+* **No way to reach or discover the editor from inside the application** (whole-branch review L-3).
+  Nothing in `web/src` links to `/editor` except the route table — and `42-editor-publish.spec.ts`
+  deliberately REDDENS if anything does, because the unsaved-work `beforeunload` guard only covers
+  cross-document exits and that pin is what keeps every exit cross-document. At the same time
+  `GET /v1/screens`, the list route built in Task 3 and pinned in `HmiScreenEndpointsTests`, has **no
+  consumer anywhere in `web/src`**. So an engineer must know a screen id and type a URL, and
+  recovering a published screen whose id they have forgotten needs `curl`. Recorded as a roadmap item
+  rather than closed here: navigation for this route is a design decision (it interacts with that
+  `beforeunload` pin), not a gap to patch under a review round.
 * **No title or theme editor.** A newly started screen takes its `screenId` as its `title` and
   `blueprint` as its theme, and an engineer cannot change either from the editor.
 * **S-6 remains OPEN**, measured on 2026-09-05 rather than assumed. The editor SELECTS a `policyAction`;
@@ -6977,7 +7013,16 @@ answers a composed path. That is a missing **adapter**, not a missing wire, and 
   permission. **The first consumer to be built must REFUSE an unrecognised action — never fall through to
   a default.**
 
-### 27.5 🔴 Publishing to a machine's panel id is permanent — the cost, and the way back
+> 🔴 **A STANDING RULE THIS SECTION PAID FOR — whole-branch review B-1.** `web/src/` is an INPUT to a
+> .NET suite. `St4i.Connector.Abstractions.Tests` holds `EnumSpellingContractTests`, which registers
+> TypeScript tables by path and anchor name and sweeps every file under `web/src/`, so **any change
+> under `web/src/` requires re-running that suite** — even when the diff names nothing under `src/`,
+> `tests/` or `contracts/`. That rule is sound for EdgeCore, Conformance and EdgeService and false
+> for Abstractions; applying it uniformly left this branch red for five days, on the very table
+> §27.1's join moved. It is stated in `EnumSpellingContractTests`'s own header, at the registry entry,
+> in `scripts/verify-suites.sh`, and beside the moved table in `routes/Hmi.tsx`.
+
+### 27.6 🔴 Publishing to a machine's panel id is permanent — the cost, and the way back
 
 `/editor/machine-aoi-01` is a legal URL, and §27.1's join is exactly what turned it from a named
 dead end into a working "start building this screen" flow. An engineer who opens it, adds one widget
@@ -7019,7 +7064,7 @@ all three baseline machines with a message that names the machine and its shippe
 somebody does publish there the suite says so by name instead of by a screenshot diff three specs
 later.
 
-### 27.6 The screen store can delay one region, and only one
+### 27.7 The screen store can delay one region, and only one
 
 The kiosk waits for `GET /v1/screens/{id}` before drawing a screen document, because a machine that
 HAS a published screen would otherwise show its **class** document for a frame and then swap — a
@@ -7036,7 +7081,45 @@ screen store blanked an operator panel — safety controls and all — for about
 about a screen document may ever be able to hide a HALT reset. A store failure costs this machine its
 published screen and falls back to the shipped one; it never costs the panel.
 
-### 27.7 Where the proof lives
+> 🔴 **§24.6's ordinal, corrected — whole-branch review L-2.** That sentence read *"every one of the
+> **twenty** … machine-wide directories"* and, in the same clause, *"so a **nineteenth** machine-wide
+> store cannot arrive without one"* — in both languages. With twenty directories a nineteenth cannot
+> arrive at all; §26.6 names `hmi-tagmaps` as the nineteenth and this branch's own §15.4 row names
+> `hmi-screens` as the twentieth, so the next one is the **twenty-first**. Pre-existing by one
+> (WS-HMI-1 moved the count and left the ordinal) and worsened to two here, in a clause this branch
+> edited. `PerHostDataRootsTests` pins the COUNT in seven sentences and does not read the ordinal,
+> which is how the two halves drifted while the suite stayed green.
+
+### 27.8 🔴 A republish reaching a kiosk that is already open — announced, never swapped
+
+Whole-branch review H-2. `useScreen` sets no `staleTime` and no poll, `refetchOnWindowFocus` is off
+app-wide, and `Hmi.tsx` mounts the query once for the life of the page — so the kiosk read its
+published document **exactly once, at mount**. Measured: publish v1, open the panel, publish v2,
+wait eight seconds; the operator's panel keeps rendering v1, and only a reload moves it. An engineer
+who corrected a mislabelled control and published had changed nothing for anyone on shift.
+
+The same shape again — `WS /v1/hmi/changes` was built in WS-HMI-0b Task 3 and grew
+`ScreenChanged` in WS-HMI-2 Task 4 *for exactly this*, and had no consumer anywhere under `web/`.
+Before §27.1's join it did not matter, because nothing rendered a published screen.
+
+🔴 **The ruling, and it is the same one this branch applies everywhere else: announce, do not swap.**
+`hmi-runtime/screenChangeStream.ts` consumes the lane and never refetches on its own. A republish
+raises a quiet `role="status"` notice naming the new version, positioned as an OVERLAY so the screen
+an operator is reading does not move, and a person watching that machine decides when to take it. A
+panel that rearranges itself while somebody is working the equipment is precisely the surprise the
+editor's own "a background refetch must not overwrite your session" rule exists to prevent, at the
+other end of the same pipe.
+
+Both halves are pinned separately, because they fail independently: cut the consumer and the notice
+never appears; auto-accept and the old widget is gone before anybody clicked. Nothing here
+reinstates a poll — `useScreen`'s argument against ~86 000 requests a day stands; what it left out
+was that the alternative to polling is not "never".
+
+**Still true:** the lane has no replay by design, so a republish that happened while the socket was
+down is missed, and a reconnect does NOT re-read — because re-reading on reconnect is the swap the
+ruling forbids. The panel keeps showing what it has, which is the state every kiosk was already in.
+
+### 27.9 Where the proof lives
 
 | Claim | Instrument |
 |---|---|
@@ -7045,5 +7128,8 @@ published screen and falls back to the shipped one; it never costs the panel.
 | The join's arithmetic — the derived id, the renderability guard, the first document | `web/runtime-tests/screenJoin.test.mjs` |
 | The editor's canvas IS the runtime renderer | `web/tests/37-editor-canvas.spec.ts`'s differential |
 | Publish appends, rollback appends, a refusal reaches the control the user is looking at | `web/tests/42-editor-publish.spec.ts` |
+| A widget built in the editor can be given a caption, and that caption reaches the operator | `web/tests/43-editor-acceptance.spec.ts`'s journey |
+| A republish is announced on an open kiosk, and the screen does not change until it is taken | the same file, both halves separately |
+| The editor refuses an id the write door would reject, at entry rather than at publish | the same file, with a legal-id control |
 | A publish that shadows a machine's shipped panel warns first (with a negative control) and has a way back that appends | `web/tests/43-editor-acceptance.spec.ts` |
 | A slow or failing screen store delays one region only, and no frame shows a screen nobody authored for that machine | the same file, sampling `data-hmi-screen` during the transition |
