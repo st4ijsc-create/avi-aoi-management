@@ -3657,6 +3657,7 @@
     "MUST_CHANGE_PASSWORD": "You must change your password before you can continue using the system.",
     "FEATURE_NOT_CONFIGURED": "The {{feature}} feature is not configured on this system.",
     "ENTITY_EXPIRED": "The {{entity}} has expired.",
+    "CHANGE_REASON_RESERVED_PREFIX": "{{field}} must not start with the reserved system prefix (the \"[VARIANT:<number>]\" pattern). Please change the text.",
     "MACHINE_CREDENTIAL_INVALID": "Machine credentials are invalid.",
     "MACHINE_CREDENTIAL_INVALID_WITH_REASON": "Machine credentials are invalid. {{reason}}",
     "KB_FILE_TOO_LARGE": "File exceeds the {{limitMb}} MB limit.",
@@ -4014,6 +4015,9 @@
       "kbHealthCheck": "check knowledge-base health"
     },
     "field": {
+      "changeReason": "change reason",
+      "reason": "reason",
+      "comment": "comment",
       "code": "code",
       "datasetId": "dataset ID",
       "modelCardGovernanceFields": "model card governance fields",

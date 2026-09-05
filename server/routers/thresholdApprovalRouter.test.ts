@@ -6,6 +6,7 @@
  * + mocked db-layer helpers, mirroring machineRecipeRouter.test.ts.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readAppErrorMeta } from "../_core/appError";
 import { FakeDb, makeEq, makeAnd, makeDesc, resetSeq } from "./__otFakeDb";
 import {
   thresholdApprovals,
@@ -32,6 +33,13 @@ vi.mock("../db", () => ({
   getDb: vi.fn(async () => fake),
   updateMeasurementPointDef: (...a: any[]) => updateSpy(...a),
   createAuditLog: (...a: any[]) => auditSpy(...a),
+  // ★ Bản vá không-liên-quan-BG-126, phát hiện khi thêm ca này — cổng
+  // `chanKhiPhaiDoiMatKhau` (server/_core/trpc.ts) đứng ở GỐC mọi thủ tục và đọc
+  // `phaiDoiMatKhau` từ `../db`; mock ở đây chưa từng liệt kê export này (trôi
+  // theo thời gian, không phải do BG-126) nên MỌI ca trong file này đã đỏ trước
+  // khi có bản vá này (đo được: stash bản gốc → 9/9 ca đỏ CÙNG lỗi). `false` =
+  // không ai bị buộc đổi mật khẩu, giữ hành vi các ca hiện có nguyên vẹn.
+  phaiDoiMatKhau: vi.fn(async () => false),
 }));
 
 import { thresholdApprovalRouter } from "./thresholdApprovalRouter";
@@ -187,5 +195,46 @@ describe("revert — OP8 restore prior limits + audit", () => {
   it("throws NOT_FOUND when there is no prior version to revert to", async () => {
     fake.seed(measurementPointDefs, [{ id: 5, code: "MP-5" }]);
     await expect(caller(10).revert({ pointDefId: 5 })).rejects.toThrow(/No prior version/i);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★★★ BG-126 (Khối C, "nợ còn mở", 2026-09-05) — `comment` ở đây chảy THẲNG
+  // vào `changeReason` của `updateMeasurementPointDef` (xem
+  // `server/routers/thresholdApprovalRouter.ts:448`: `changeReason: input.comment
+  // ?? "threshold.revert (doc31 OP8)"`) — người dùng gõ đúng tiền tố cấu trúc
+  // `[VARIANT:<id>]` (`RE_TIEN_TO_VERSION_BIEN_THE`, `server/db/product.ts`) sẽ
+  // làm snapshot BASE đó vô hình với `napLichSuGioiHanTheoDiem`/
+  // `loadPointLimitSnapshots` khi cờ `SPEC_GATE_SNAPSHOT_ENABLED` BẬT.
+  // ══════════════════════════════════════════════════════════════════════════
+  it("★★★ BG-126 — comment='[VARIANT:12] abc' ⇒ BAD_REQUEST/CHANGE_REASON_RESERVED_PREFIX, KHÔNG ghi gì", async () => {
+    fake.seed(measurementPointVersions, [
+      { id: 1, pointDefId: 5, version: 1, snapshotJson: { lowerLimit: "2", upperLimit: "8" } },
+    ]);
+    fake.seed(measurementPointDefs, [{ id: 5, code: "MP-5", lowerLimit: "0", upperLimit: "1" }]);
+
+    let err: unknown;
+    try {
+      await caller(10).revert({ pointDefId: 5, comment: "[VARIANT:12] abc" });
+    } catch (e) {
+      err = e;
+    }
+    expect(err, "phải bị từ chối").toBeDefined();
+    expect(readAppErrorMeta(err)).toMatchObject({
+      appCode: "CHANGE_REASON_RESERVED_PREFIX",
+      appParams: { field: "comment" },
+    });
+    expect(updateSpy, "gate phải chặn TRƯỚC khi updateMeasurementPointDef chạy").not.toHaveBeenCalled();
+    expect(auditSpy).not.toHaveBeenCalled();
+  });
+
+  it("BG-126 — comment='đổi giới hạn theo đo đạc' ⇒ qua bình thường", async () => {
+    fake.seed(measurementPointVersions, [
+      { id: 1, pointDefId: 5, version: 1, snapshotJson: { lowerLimit: "2", upperLimit: "8" } },
+    ]);
+    fake.seed(measurementPointDefs, [{ id: 5, code: "MP-5", lowerLimit: "0", upperLimit: "1" }]);
+
+    const out = await caller(10).revert({ pointDefId: 5, comment: "đổi giới hạn theo đo đạc" });
+    expect(out.ok).toBe(true);
+    expect(updateSpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -3649,6 +3649,7 @@
     "MUST_CHANGE_PASSWORD": "您必须先修改密码，然后才能继续使用系统。",
     "FEATURE_NOT_CONFIGURED": "此系统尚未配置{{feature}}功能。",
     "ENTITY_EXPIRED": "{{entity}}已过期。",
+    "CHANGE_REASON_RESERVED_PREFIX": "{{field}}不能以系统保留前缀（形如 \"[VARIANT:<数字>]\"）开头,请修改内容。",
     "MACHINE_CREDENTIAL_INVALID": "设备认证信息无效。",
     "MACHINE_CREDENTIAL_INVALID_WITH_REASON": "设备认证信息无效。{{reason}}",
     "KB_FILE_TOO_LARGE": "文件超过 {{limitMb}} MB 限制。",
@@ -4006,6 +4007,9 @@
       "kbHealthCheck": "检查知识库状态"
     },
     "field": {
+      "changeReason": "变更原因",
+      "reason": "原因",
+      "comment": "备注",
       "code": "编码",
       "datasetId": "数据集ID",
       "modelCardGovernanceFields": "模型卡治理字段",

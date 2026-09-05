@@ -39,6 +39,10 @@ import {
 // Task 8 Khối C (QĐ-5) — `touchesLimits` SUY từ POINT_LIMIT_SPEC, MỘT hàm dùng
 // chung với `measurementPointImport.ts` (xem docblock trong file đó).
 import { touchesApprovalLimitFields, assertCapGioiHanHopLe, gopCapGioiHanDonGian } from "../utils/measurementPointLimitGate";
+// BG-126 (Khối C, "nợ còn mở") — chặn changeReason/reason NGƯỜI DÙNG giả tiền
+// tố cấu trúc [VARIANT:n]. Import trực tiếp (không barrel `../db`) — xem docblock
+// `server/utils/changeReasonGuard.ts`.
+import { assertChangeReasonKhongGiaTienToBienThe } from "../utils/changeReasonGuard";
 // Doc 31 MP1/PM6 — BOM-driven componentCode backfill (lights up Pareto-by-package).
 import { backfillComponentCodesFromBom } from "../services/componentLinkBackfill";
 // Doc 31 MP3 (WB-2) — __UNMAPPED__ unmatched-rate metric + remap helpers.
@@ -1305,6 +1309,8 @@ export const measurementPointRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, changeReason, expectedUpdatedAt, ...rest } = input;
+      // BG-126 — chặn Ở INPUT, TRƯỚC bất kỳ đọc/ghi DB nào.
+      assertChangeReasonKhongGiaTienToBienThe(changeReason, "changeReason");
       const data: Record<string, unknown> = { ...rest };
       const existingPoint = await db.getMeasurementPointDefById(id);
       if (!existingPoint) {
@@ -1600,6 +1606,8 @@ export const measurementPointRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { items, changeReason } = input;
+      // BG-126 — chặn Ở INPUT, TRƯỚC bất kỳ đọc/ghi DB nào.
+      assertChangeReasonKhongGiaTienToBienThe(changeReason, "changeReason");
       const ids = items.map((it) => it.id);
 
       // Lọc tenant theo PHIÊN (phamViCua(ctx)), KHÔNG theo input — điểm ngoài
@@ -1942,6 +1950,8 @@ export const measurementPointRouter = router({
       reason: z.string().max(500).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // BG-126 — chặn Ở INPUT, TRƯỚC bất kỳ đọc/ghi DB nào.
+      assertChangeReasonKhongGiaTienToBienThe(input.reason, "reason");
       const result = await withDbErrors(() =>
         db.revertPointsConfigToVersion(input.productModelId, input.targetVersion, {
           changedBy: ctx.user.id,

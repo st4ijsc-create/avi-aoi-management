@@ -79,6 +79,20 @@ export const APP_ERROR_CODES = [
                           // lực, KHÁC ENTITY_NOT_FOUND (chưa từng có/đã bị xoá). Review cuối, ca
                           // I-A #9: reportArtifactRouter.ts gộp nhánh 'expired' vào ENTITY_NOT_FOUND.
 
+  // ── BG-126 (Khối C, "nợ còn mở", 2026-09-05) ─────────────────────────────
+  "CHANGE_REASON_RESERVED_PREFIX", // params: { field } — chuỗi lý do NGƯỜI DÙNG
+                          // gõ (changeReason/reason/comment) khớp CHÍNH tiền tố
+                          // CẤU TRÚC `[VARIANT:<id>]` (RE_TIEN_TO_VERSION_BIEN_THE,
+                          // server/db/product.ts) mà `recordVariantOverrideVersion`
+                          // dùng để đánh dấu hàng version của MỘT BIẾN THỂ, không
+                          // phải của điểm BASE — snapshot-gate (napLichSuGioiHanTheoDiem/
+                          // loadPointLimitSnapshots) LỌC BỎ hàng mang tiền tố này
+                          // khi tái dựng cho một điểm BASE. Người dùng gõ đúng
+                          // chuỗi đó (vô tình hay cố ý) làm snapshot BASE của họ
+                          // VÔ HÌNH với cổng đó. KHÁC INVALID_VALUE (không phải
+                          // sai KIỂU/miền giá trị — chuỗi vẫn hợp lệ về mặt zod,
+                          // vấn đề là nó GIẢ một tín hiệu nội bộ).
+
   // ── Nạp tri thức (KB) — Task 3 ────────────────────────────────────────────
   "KB_FILE_TOO_LARGE",        // params: { limitMb }
   "KB_UNSUPPORTED_TYPE",      // params: { ext, supported }

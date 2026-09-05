@@ -3657,6 +3657,7 @@
     "MUST_CHANGE_PASSWORD": "Bạn phải đổi mật khẩu trước khi tiếp tục sử dụng hệ thống.",
     "FEATURE_NOT_CONFIGURED": "Tính năng {{feature}} chưa được cấu hình trên hệ thống này.",
     "ENTITY_EXPIRED": "Đã hết hạn lưu trữ: {{entity}}.",
+    "CHANGE_REASON_RESERVED_PREFIX": "{{field}} không được bắt đầu bằng tiền tố hệ thống dành riêng (dạng \"[VARIANT:<số>]\"). Vui lòng đổi lại nội dung.",
     "MACHINE_CREDENTIAL_INVALID": "Thông tin xác thực máy không hợp lệ.",
     "MACHINE_CREDENTIAL_INVALID_WITH_REASON": "Thông tin xác thực máy không hợp lệ. {{reason}}",
     "KB_FILE_TOO_LARGE": "Tệp vượt quá giới hạn {{limitMb}} MB.",
@@ -4014,6 +4015,9 @@
       "kbHealthCheck": "kiểm tra tình trạng kho tri thức"
     },
     "field": {
+      "changeReason": "lý do thay đổi",
+      "reason": "lý do",
+      "comment": "bình luận",
       "code": "mã",
       "datasetId": "mã tập dữ liệu",
       "modelCardGovernanceFields": "trường quản trị của model card",

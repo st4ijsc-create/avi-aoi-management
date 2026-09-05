@@ -44,6 +44,10 @@ import {
   productModels,
 } from "../../drizzle/schema/product";
 import { assertApprovalSoD } from "../services/thresholdGovernanceService";
+// BG-126 (Khối C, "nợ còn mở") — chặn `comment` NGƯỜI DÙNG giả tiền tố cấu
+// trúc [VARIANT:n] trước khi nó chảy vào changeReason của updateMeasurementPointDef
+// (đường `revert` dưới đây). Xem docblock `server/utils/changeReasonGuard.ts`.
+import { assertChangeReasonKhongGiaTienToBienThe } from "../utils/changeReasonGuard";
 
 const STATUS_PENDING = "requested";
 const STATUS_APPROVED = "approved";
@@ -399,6 +403,8 @@ export const thresholdApprovalRouter = router({
       message: "approvalId or pointDefId is required",
     }))
     .mutation(async ({ ctx, input }) => {
+      // BG-126 — chặn Ở INPUT, TRƯỚC bất kỳ đọc/ghi DB nào.
+      assertChangeReasonKhongGiaTienToBienThe(input.comment, "comment");
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
 
