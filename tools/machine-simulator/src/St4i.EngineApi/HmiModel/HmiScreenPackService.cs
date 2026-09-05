@@ -245,11 +245,17 @@ public sealed class HmiScreenPackService
         // undone, so "refuse after 300 of 20,000 landed" would be the worst possible answer. The message
         // names the LIMIT and the ACTUAL size, because "too large" that does not say by how much is a
         // refusal the caller cannot act on.
-        if (pack.Screens.Count > ScreenPackDocument.MaxScreensPerPack)
+        // Same run-time-vs-compile-time gap as the null-document check inside the loop below, one level up:
+        // `Screens` is non-nullable but a body that simply OMITS the field deserializes it to null, and
+        // every line under this one enumerates it. An empty pack is a legitimate no-op; a missing list is a
+        // malformed body, and both are answered without a NullReferenceException.
+        var screens = pack.Screens ?? Array.Empty<ScreenPackEntry>();
+
+        if (screens.Count > ScreenPackDocument.MaxScreensPerPack)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(pack), pack.Screens.Count,
-                $"pack carries {pack.Screens.Count} screens, above the limit of " +
+                nameof(pack), screens.Count,
+                $"pack carries {screens.Count} screens, above the limit of " +
                 $"{ScreenPackDocument.MaxScreensPerPack} — refused whole, so no entry is imported.");
         }
 
@@ -257,7 +263,7 @@ public sealed class HmiScreenPackService
         // here (the reviewer's measured pack summed to 1,000,000), and an overflow would wrap to a small
         // number and PASS this very check.
         long totalWidgets = 0;
-        foreach (var entry in pack.Screens) totalWidgets += entry.Document?.Widgets?.Count ?? 0;
+        foreach (var entry in screens) totalWidgets += entry?.Document?.Widgets?.Count ?? 0;
         if (totalWidgets > ScreenPackDocument.MaxWidgetsPerPack)
         {
             throw new ArgumentOutOfRangeException(
@@ -272,9 +278,30 @@ public sealed class HmiScreenPackService
         // so it compares the same spelling the store would key on.
         var seenInThisPack = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var entry in pack.Screens)
+        foreach (var entry in screens)
         {
+            // A null ENTRY — `"screens":[null]` — has no id to report against, so it is the one shape this
+            // loop cannot name. Skipped rather than crashed; the caller sees a report shorter than the pack
+            // they sent, which is the same signal a skipped export entry gives. FIRST in the loop, before
+            // the dereference on the next line.
+            if (entry is null) continue;
+
             var envelopeId = ScreenIdentity.Canonicalize(entry.ScreenId);
+
+            // 🔴 A NULL DOCUMENT IS A NAMED REFUSAL, NOT A NullReferenceException. `Document` is declared
+            // non-nullable and this project has <Nullable>enable</Nullable>, but that is a COMPILE-time
+            // promise System.Text.Json does not keep at RUN time: `"document": null` on the wire
+            // deserializes to a null, and every line below this one dereferences it. Checked here, before
+            // the identity check, so a malformed body is a 400-shaped per-entry refusal like every other
+            // bad entry rather than an unexplained 500.
+            if (entry.Document is null)
+            {
+                results.Add(new ScreenImportResult(
+                    envelopeId, ScreenImportOutcome.RejectedInvalid, null,
+                    new[] { $"entry '{envelopeId}' carries no document — a pack entry without a document " +
+                            "names a screen it does not contain." }));
+                continue;
+            }
 
             // 🔴 Envelope-vs-document identity, refused rather than resolved — the same ruling
             // `PUT /v1/screens/{screenId}` made for its route-vs-body conflict, for the same reason:

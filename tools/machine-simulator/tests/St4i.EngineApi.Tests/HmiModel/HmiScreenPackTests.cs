@@ -657,6 +657,69 @@ public class HmiScreenPackTests : IDisposable
         Assert.Equal(3, (await store.ListScreenIdsAsync()).Count);
     }
 
+    /// <summary>🔴 A pack entry carrying a NULL document is a named refusal, not a 500.
+    ///
+    /// <para><c>ScreenPackEntry.Document</c> is declared non-nullable in a <c>&lt;Nullable&gt;enable&lt;/Nullable&gt;</c>
+    /// project, and that is a COMPILE-time promise <c>System.Text.Json</c> does not keep at RUN time: a body
+    /// with <c>"document": null</c> deserializes to a null and the reference is real. Found while
+    /// re-reading the H-1 fix — the new aggregate-widget loop was written null-safe
+    /// (<c>entry.Document?.Widgets?.Count ?? 0</c>) while the identity check below it dereferenced
+    /// <c>entry.Document.ScreenId</c> directly, so the two disagreed about whether a null was possible. It
+    /// is reachable by any Engineer over the wire, and an unexplained 500 for a malformed body is exactly
+    /// the shape this file's siblings refuse.</para></summary>
+    [Fact]
+    public async Task An_entry_with_a_null_document_is_refused_by_name_rather_than_throwing()
+    {
+        var raw = NewRawStore();
+        var store = new CanonicalizingHmiScreenStore(raw);
+
+        // The shape System.Text.Json really can produce, reached the way the wire reaches it rather than by
+        // a cast: deserialize a body whose `document` is literally null.
+        var pack = JsonSerializer.Deserialize<ScreenPackDocument>(
+            """
+            {"packVersion":1,"exportedFrom":"elsewhere","exportedAtUtc":"2026-01-01T00:00:00.0000000+00:00",
+             "screens":[{"screenId":"ghost","version":1,"savedAtUtc":"2026-01-01T00:00:00.0000000+00:00",
+                         "exportValid":true,"exportViolations":[],"document":null}]}
+            """, HmiContractJson.Options)!;
+
+        var result = Assert.Single(await ServiceOver(raw).ImportAsync(pack));
+
+        Assert.Equal(ScreenImportOutcome.RejectedInvalid, result.Outcome);
+        Assert.Null(result.Version);
+        Assert.NotEmpty(result.Violations);
+        Assert.Empty(await store.ListScreenIdsAsync());
+    }
+
+    /// <summary>The same run-time-vs-compile-time gap one level up: a body that OMITS <c>screens</c>
+    /// entirely deserializes the list to null, and every line of the import enumerates it. A missing list
+    /// is a malformed body, not a crash; an empty pack is a legitimate no-op; a <c>[null]</c> element has
+    /// no id to report against and is skipped. None throws.
+    ///
+    /// <para>🔴 <b>HOW THIS TEST REACHES THE HOLE, stated because it is what makes the guard trustworthy.</b>
+    /// All three cases are reached by <see cref="JsonSerializer.Deserialize{T}(string, JsonSerializerOptions)"/>
+    /// of a RAW JSON STRING — the shape a caller can actually put on the wire — never by constructing a
+    /// <see cref="ScreenPackDocument"/> with a null passed in code. That distinction is the whole point
+    /// here: C# will not LET you write <c>new ScreenPackDocument(..., null)</c> without a warning under
+    /// <c>&lt;Nullable&gt;enable&lt;/Nullable&gt;</c>, so a hand-built object would be proving the guard
+    /// against a shape the compiler already prevents, while leaving the one the compiler cannot see —
+    /// JSON — untested. <c>System.Text.Json</c> does not enforce the nullable annotation, which is exactly
+    /// why the hole exists.</para></summary>
+    [Theory]
+    [InlineData("""{"packVersion":1,"exportedFrom":"x","exportedAtUtc":"2026-01-01T00:00:00.0000000+00:00"}""")]
+    [InlineData("""{"packVersion":1,"exportedFrom":"x","exportedAtUtc":"2026-01-01T00:00:00.0000000+00:00","screens":[]}""")]
+    [InlineData("""{"packVersion":1,"exportedFrom":"x","exportedAtUtc":"2026-01-01T00:00:00.0000000+00:00","screens":[null]}""")]
+    public async Task A_pack_with_a_missing_empty_or_null_entry_list_imports_nothing_without_throwing(string body)
+    {
+        var raw = NewRawStore();
+        var store = new CanonicalizingHmiScreenStore(raw);
+        var pack = JsonSerializer.Deserialize<ScreenPackDocument>(body, HmiContractJson.Options)!;
+
+        var results = await ServiceOver(raw).ImportAsync(pack);
+
+        Assert.Empty(results);
+        Assert.Empty(await store.ListScreenIdsAsync());
+    }
+
     /// <summary>The two ends agree: export cannot PRODUCE a pack import would refuse for duplication. This
     /// is the property L-1 is really about — a format that means different things at each end.</summary>
     [Fact]
