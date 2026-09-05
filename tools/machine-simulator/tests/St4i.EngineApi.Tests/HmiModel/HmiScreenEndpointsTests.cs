@@ -270,7 +270,7 @@ public sealed class HmiScreenEndpointsTests
         using var versions = await op.GetAsync("/v1/screens/rb-line/versions");
         var list = await versions.Content.ReadFromJsonAsync<List<ScreenVersionInfo>>(HmiContractJson.Options);
         Assert.Equal(new[] { 1, 2, 3 }, list!.Select(v => v.Version).ToArray());
-        var current = Assert.Single(list, v => v.IsCurrent);
+        var current = Assert.Single(list!, v => v.IsCurrent);
         Assert.Equal(3, current.Version);
     }
 

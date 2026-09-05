@@ -115,7 +115,7 @@ public sealed class HmiModelWiringTests
     [Fact]
     public async Task Capabilities_declares_the_HmiModelEnabled_flag_true()
     {
-        await using var factory = await CreateFactoryAsync().ConfigureAwait(false);
+        await using var factory = await CreateFactoryAsync();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/v1/capabilities");

@@ -83,7 +83,7 @@ public sealed class TagIngestionWiringTests
     [Fact]
     public async Task The_ingestion_service_resolves_around_the_canonicalizing_store_never_the_raw_one()
     {
-        await using var factory = await CreateFactoryAsync().ConfigureAwait(false);
+        await using var factory = await CreateFactoryAsync();
 
         var resolved = factory.Services.GetRequiredService<ITagNamespaceStore>();
         Assert.IsType<CanonicalizingTagNamespaceStore>(resolved);
@@ -141,7 +141,7 @@ public sealed class TagIngestionWiringTests
         Assert.Equal("hmi-tagmaps", leaf);
 
         // The README §15.9 rule, applied rather than restated.
-        Assert.Equal("ST4I_" + leaf.ToUpperInvariant().Replace('-', '_') + "_DIR", TagIngestionService.EnvVarDir);
+        Assert.Equal(TagIngestionService.EnvVarDir, "ST4I_" + leaf.ToUpperInvariant().Replace('-', '_') + "_DIR");
 
         // Derivable from the machine-wide root, which is what makes the variable legal under BF-1.
         Assert.Equal(
@@ -179,7 +179,7 @@ public sealed class TagIngestionWiringTests
     [Fact]
     public async Task A_host_with_no_tag_map_directory_starts_and_serves_normally()
     {
-        await using var factory = await CreateFactoryAsync().ConfigureAwait(false);
+        await using var factory = await CreateFactoryAsync();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/v1/capabilities");
@@ -236,7 +236,7 @@ public sealed class TagIngestionWiringTests
             ["ST4I_MODBUS_MAP"] = mapPath,
             [TagIngestionService.EnvVarDir] = tagMapDir,
             [TagNamespaceStore.EnvVarDir] = tagsDir,
-        }).ConfigureAwait(false);
+        });
 
         // The connector really did bind to that machine — without this the assertion below could pass for
         // a host that ingested nothing and a store that was never asked.
@@ -281,7 +281,7 @@ public sealed class TagIngestionWiringTests
     [Fact]
     public async Task Startup_actually_calls_the_tag_map_ingestion_loop()
     {
-        await using var factory = await CreateFactoryAsync().ConfigureAwait(false);
+        await using var factory = await CreateFactoryAsync();
         _ = factory.Server;
 
         Assert.True(TagMapStartupIngestion.HasRunAgainstTheProductionDirectory,

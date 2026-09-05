@@ -858,7 +858,7 @@ public sealed class HmiModelEventsTests
         using var get = await engineerC.GetAsync("/v1/screens/pad-01");
         Assert.Equal(HttpStatusCode.OK, get.StatusCode);
         var listed = await (await engineerC.GetAsync("/v1/screens")).Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
-        Assert.Contains("pad-01", listed);
+        Assert.Contains("pad-01", listed!);
     }
 
     /// <summary>🔴 The property the brief names by name: a rollback's event carries the NEW version
