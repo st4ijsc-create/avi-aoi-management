@@ -19,6 +19,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { format } from "date-fns";
+import { PACKAGE_STATUS_BADGE_VARIANTS, PACKAGE_STATUS_FILTER_OPTIONS } from "./aoiPackagesStatusPresentation";
 import {
   Package,
   Search,
@@ -54,14 +55,10 @@ import {
 // ============================================================
 function StatusBadge({ status }: { status: string }) {
   const { t } = useTranslation();
-  const variants: Record<string, { labelKey: string; className: string }> = {
-    pending: { labelKey: "packages.pending", className: "bg-warning/15 text-warning border-warning/30" },
-    uploading: { labelKey: "packages.uploading", className: "bg-info/15 text-info border-info/30" },
-    uploaded: { labelKey: "packages.uploaded", className: "bg-info/15 text-info border-info/30" },
-    committed: { labelKey: "packages.committed", className: "bg-success/15 text-success border-success/30" },
-    failed: { labelKey: "common.error", className: "bg-destructive/15 text-destructive border-destructive/30" },
-  };
-  const v = variants[status] || { labelKey: "", className: "bg-muted text-muted-foreground" };
+  // Lô 4 Mục 2 (BG-74) — bảng biến thể RÚT RA `aoiPackagesStatusPresentation.ts`
+  // (logic thuần, test được không cần hạ tầng render-test) — bao gồm 'dead',
+  // trước bản vá rơi vào fallback xám nhạt bên dưới, thấp hơn cả `failed`.
+  const v = PACKAGE_STATUS_BADGE_VARIANTS[status] || { labelKey: "", className: "bg-muted text-muted-foreground" };
   return <Badge className={v.className}>{v.labelKey ? t(v.labelKey) : status}</Badge>;
 }
 
@@ -262,10 +259,11 @@ export default function AOIPackages() {
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">{t('common.all')}</SelectItem>
-                        <SelectItem value="committed">{t('packages.committed')}</SelectItem>
-                        <SelectItem value="uploaded">{t('packages.uploaded')}</SelectItem>
-                        <SelectItem value="pending">{t('packages.pending')}</SelectItem>
-                        <SelectItem value="failed">{t('common.error')}</SelectItem>
+                        {/* Lô 4 Mục 2 (BG-74) — danh sách RÚT RA `aoiPackagesStatusPresentation.ts`,
+                            nối `listPackages` (Mục 1, enum input đã mở rộng đủ 6 giá trị kể cả 'dead'). */}
+                        {PACKAGE_STATUS_FILTER_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{t(opt.labelKey)}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

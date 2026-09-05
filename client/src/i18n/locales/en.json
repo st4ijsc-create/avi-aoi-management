@@ -7380,6 +7380,7 @@
     "description": "Description",
     "committedCount": "Committed count",
     "committed": "Committed",
+    "dead": "Dead (permanent failure)",
     "agentMetricsHint": "Agent metrics hint"
   },
   "permissions": {
