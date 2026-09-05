@@ -1144,8 +1144,43 @@ test("🔴 FLOOR: the rule-id list here matches the union the module actually em
   // Independently authored sets: the literal at the top of this file, versus the ids observed coming
   // out of `lintScreen` across every fixture above plus the module's own type. A ninth rule added
   // without a pin lands here.
+  //
+  // 🔴 THIS EXTRACTION IS LINE-ENDING AGNOSTIC, AND IT DID NOT USED TO BE. READ THIS BEFORE WRITING
+  // ANOTHER SOURCE-TEXT MATCHER ANYWHERE IN THIS TREE.
+  //
+  // Round 1 terminated the match at a BLANK LINE: `/...([\s\S]*?)\n\nexport type Isa101Finding/`.
+  // That passed here and went RED the moment the branch was merged, on a tree at the SAME COMMIT.
+  // Measured on the two worktrees:
+  //
+  //     this branch's checkout : CRLF=0    LF-only=921   contains "\n\n"
+  //     main's checkout        : CRLF=921  LF-only=0     contains "\r\n\r\n", never "\n\n"
+  //
+  // This repository has `core.autocrlf=true` and NO `.gitattributes`, so the object store holds LF
+  // and a checkout materialises CRLF -- while a worktree written by some other path can hold LF. A
+  // blank line is therefore `\n\n` in one checkout and `\r\n\r\n` in another, `match` returns null,
+  // and `assert.ok(union, ...)` fires. A floor test that reports its own CHECKOUT rather than the
+  // source it claims to measure is worse than a missing test: green where it is written, red where
+  // it is merged, and neither result is about the code.
+  //
+  // Two fixes were available and the weaker one was REJECTED. Normalising the text
+  // (`.replace(/\r\n/g, "\n")` -- which `bindings.test.mjs`, `chartTokens.test.mjs`,
+  // `editorCanvasSeam.test.mjs`, `hmiWiring.test.mjs` and `editorState.test.mjs` all already do; this
+  // tree had learned the lesson and this file had not) would have fixed THIS regex while leaving the
+  // pattern's real weakness in place: it was anchored both to a blank line AND to `Isa101Finding`
+  // being the very next declaration, so inserting anything between the two -- a helper, a comment, a
+  // second blank line -- breaks it for reasons that have nothing to do with the union it measures.
+  //
+  // So the union is located by ITS OWN SYNTAX and terminated at its own last member: a run of
+  // `| "literal"` alternatives. `\s*` spans any line ending by construction, there is no delimiter to
+  // depend on, and nothing after the union can extend the match (verified by inspecting the text
+  // immediately following the capture). Falsified three ways when written: a ninth member yields 9
+  // ids, a removed member yields 7, and renaming the union yields null so `assert.ok` still fires.
+  //
+  // Related trap, different mechanism, same root cause: `web/scripts/check-comment-only.mjs` records
+  // why a raw token scan is unsafe on this tree's spec files. Both are text matchers that are correct
+  // on their author's bytes and wrong on somebody else's.
   const src = readFileSync(join(WEB, "src", "editor", "isa101Linter.ts"), "utf8")
-  const union = src.match(/export type Isa101RuleId =([\s\S]*?)\n\nexport type Isa101Finding/)
+  const union = src.match(/export type Isa101RuleId\s*=\s*((?:\s*\|\s*"[a-z0-9-]+")+)/)
   assert.ok(union, "could not find the Isa101RuleId union")
   const declared = [...union[1].matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1])
   assert.deepEqual(declared.sort(), [...ALL_RULE_IDS].sort())
