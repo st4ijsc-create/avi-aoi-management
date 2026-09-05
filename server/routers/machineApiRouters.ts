@@ -30,7 +30,7 @@ import { requirePermission } from "../_core/accessControl";
 // commit `7088b433`), phép kiểm THUẦN ở cửa, và đường ghi bốn bảng.
 import { machineTemplateContract } from "../contracts/machineTemplateContract";
 import { kiemTraCayDay } from "../services/kiemTraCayDay";
-import { ghiCayDay, demDiemDoTheoNeo } from "../db/cayDay";
+import { ghiCayDay, demDiemDoTheoNeo, traHangAnhTemplate, ghiUrlAnhTemplate } from "../db/cayDay";
 // Khối B Task 3 — hàm THUẦN (không chạm DB) tách trị đo về hai cột. Nhập TRỰC TIẾP
 // từ module, KHÔNG qua barrel `../db`: ~9 lưới `vi.mock("../db")` liệt kê export
 // tường minh, và một hàm thuần đi qua barrel sẽ bắt tất cả chúng phải khai thêm một
@@ -213,6 +213,21 @@ function maxImageBase64Chars(): number {
 }
 const MAX_IMAGE_B64 = maxImageBase64Chars();
 const IMAGE_B64_TOO_LARGE = `image exceeds MACHINE_INGEST_MAX_IMAGE_B64 (${MAX_IMAGE_B64} base64 chars)`;
+
+// ════════════════════════════════════════════════════════════════════════════
+// Lô 8 Mục 1 (BG-116) — trần `sizeBytes` cho `presignTemplateImage`. Đo TRẦN GÓI
+// HIỆN DÙNG (brief đòi "đo trần gói hiện dùng"): `MAX_IMAGE_B64` ở trên ≈ 15MB
+// GIẢI MÃ (20.000.000 ký tự base64 ⇒ *0.75) cho ẢNH ĐO LƯỜNG trên đường ingest
+// nóng — một ảnh TEMPLATE (dạy MỘT LẦN, không phải mỗi bo) có thể lớn hơn một
+// chút nhưng cùng LỚP kích thước (ảnh chụp linh kiện/mặt sản phẩm, không phải
+// ZIP hàng trăm MB) nên dùng CÙNG con số mặc định, cấu hình RIÊNG qua ENV để
+// không trôi lệch cùng `MACHINE_INGEST_MAX_IMAGE_B64` khi một bên đổi.
+// ════════════════════════════════════════════════════════════════════════════
+export function tranByteAnhTemplate(): number {
+  const raw = process.env.MACHINE_TEMPLATE_IMAGE_MAX_BYTES;
+  const n = raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 15 * 1024 * 1024;
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Doc 51 P3 batch-1 (§5.4 / CASE #2 / CASE #9) — BATCH INGEST cap.
@@ -5755,6 +5770,164 @@ export const machineApiRouter = router({
         productModelId: productModel.id,
         productModelCode: productModel.code,
         ...ketQua,
+      };
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ★★★ Lô 8 Mục 1 (BG-116) — ẢNH TEMPLATE do MÁY tải lên, SAU khi cây đã dạy.
+  // ══════════════════════════════════════════════════════════════════════════════
+  //
+  // Gốc: cây dạy Khối B ghi `referenceImageUrl`/`templateImageUrl` = ĐƯỜNG DẪN HỆ
+  // TỆP MÁY AOI (`templateImagePath` trong `machineTemplateContract`, vd
+  // `D:/InspectProAOI/...jpg`) — trình duyệt không fetch được, canvas dạy giới hạn
+  // (`ComponentLimitsDialog`/`MeasurementPointCanvas`) vẽ ROI trên nền câm (R-KC-1).
+  // Đây là CỬA RIÊNG cho ảnh — KHÔNG trộn vào `submitMachineTemplate` (hợp đồng đẩy
+  // cây GIỮ NGUYÊN, máy cũ không upload ảnh vẫn hoạt động y hệt hôm nay) và KHÔNG
+  // trộn vào luồng gói kết quả (`aoiPackageRouter.presign`/`.commit`) — đó là ẢNH
+  // NG/gói ZIP, đây là ẢNH CẤU HÌNH của bản dạy.
+  //
+  // Hai bước, CÙNG hình dạng `presign`/`commit` của `aoiPackageRouter` (đo TRƯỚC —
+  // xem docblock ở đó): `presignTemplateImage` chỉ XÁC NHẬN quyền + tra hàng đích
+  // (không ghi byte nào); `commitTemplateImage` đọc byte THẬT từ đúng `objectKey`
+  // mà `presign` đã tính, đối chiếu sha256, rồi GHI url+key vào ĐÚNG hàng.
+  //
+  // ⚠ KHÁC ZIP Ở MỘT ĐIỂM CÓ CHỦ Ý: `objectKey` ở đây là HÀM THUẦN của
+  // `(productModelId, contentHash, ext)` — `product-models/<id>/template-<sha256>.<ext>`
+  // (khuôn Storage ĐÃ CÓ, xem `server/routers/_shared.ts` dòng dựng `fileKey` cho
+  // `ref-*.png`) — KHÔNG cần một bảng "package" trung gian để nhớ khoá giữa hai
+  // bước như ZIP (gói ZIP không tự mang khoá hội tụ, ảnh template thì có: cùng nội
+  // dung ⇒ cùng sha256 ⇒ cùng khoá). Đây CŨNG LÀ cơ chế idempotent theo (hàng,
+  // sha256): commit lặp cùng nội dung ghi ĐÈ đúng cùng key (`ghiUrlAnhTemplate` so
+  // key cũ/mới, no-op nếu trùng) — không có "gói" nào để nhân bản.
+  presignTemplateImage: publicProcedure
+    .input(z.object({
+      apiKey: z.string().optional(),
+      machineCode: z.string().optional(),
+      captureExtId: z.string().trim().min(1).max(64),
+      componentExtId: z.string().trim().min(1).max(64).optional(),
+      contentHash: z.string().trim().toLowerCase().regex(/^[0-9a-f]{64}$/, "contentHash phải là sha256 hex 64 ký tự"),
+      sizeBytes: z.number().int().positive().max(tranByteAnhTemplate()),
+      ext: z.enum(["jpg", "png"]),
+    }).refine((data) => data.apiKey || data.machineCode, {
+      message: "Either apiKey or machineCode must be provided",
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // ── (0) XÁC THỰC — CÙNG scope `submitMachineTemplate` đang dùng. Đo TRƯỚC:
+      // vocabulary scope (`server/api/v1/scopes.ts`) KHÔNG có `config:write` — cửa
+      // đẩy cây dạy (cấu hình máy→hệ, cùng lớp với ảnh template) dùng `ingest:write`,
+      // nên cửa ảnh này dùng ĐÚNG scope đó, không bịa một scope mới không có trong
+      // vocabulary.
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "ingest:write",
+        endpoint: "presignTemplateImage",
+      });
+
+      const tra = await traHangAnhTemplate({
+        machineId: machine.id,
+        captureExtId: input.captureExtId,
+        componentExtId: input.componentExtId ?? null,
+      });
+      if (tra.ket === "khongThayCapture") {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productCapture" }, `captureExtId '${input.captureExtId}' not found`);
+      }
+      if (tra.ket === "khacMay") {
+        throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "productCapture", parent: "machine" }, "Capture belongs to another machine");
+      }
+      if (tra.ket === "khongThayComponent") {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `componentExtId '${input.componentExtId}' not found under this capture`);
+      }
+
+      const objectKey = `product-models/${tra.hang.productModelId}/template-${input.contentHash}.${input.ext}`;
+      await db.updateMachineHeartbeat(machine.id);
+
+      return {
+        success: true,
+        objectKey,
+        uploadUrl: `/api/machine-template-image/upload/${objectKey}`,
+        cap: tra.hang.cap,
+      };
+    }),
+
+  commitTemplateImage: publicProcedure
+    .input(z.object({
+      apiKey: z.string().optional(),
+      machineCode: z.string().optional(),
+      captureExtId: z.string().trim().min(1).max(64),
+      componentExtId: z.string().trim().min(1).max(64).optional(),
+      contentHash: z.string().trim().toLowerCase().regex(/^[0-9a-f]{64}$/, "contentHash phải là sha256 hex 64 ký tự"),
+      ext: z.enum(["jpg", "png"]),
+    }).refine((data) => data.apiKey || data.machineCode, {
+      message: "Either apiKey or machineCode must be provided",
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "ingest:write",
+        endpoint: "commitTemplateImage",
+      });
+
+      const tra = await traHangAnhTemplate({
+        machineId: machine.id,
+        captureExtId: input.captureExtId,
+        componentExtId: input.componentExtId ?? null,
+      });
+      if (tra.ket === "khongThayCapture") {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productCapture" }, `captureExtId '${input.captureExtId}' not found`);
+      }
+      if (tra.ket === "khacMay") {
+        throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "productCapture", parent: "machine" }, "Capture belongs to another machine");
+      }
+      if (tra.ket === "khongThayComponent") {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `componentExtId '${input.componentExtId}' not found under this capture`);
+      }
+
+      const objectKey = `product-models/${tra.hang.productModelId}/template-${input.contentHash}.${input.ext}`;
+
+      // ── Đọc byte THẬT vừa được PUT vào đúng objectKey, KIỂM sha256 TRƯỚC khi ghi.
+      const { promises: fsp } = await import("node:fs");
+      const path = await import("node:path");
+      const { createHash } = await import("node:crypto");
+      const uploadsRoot = process.env.LOCAL_STORAGE_DIR
+        ? path.resolve(process.env.LOCAL_STORAGE_DIR)
+        : path.join(process.cwd(), "uploads");
+      const filePath = path.join(uploadsRoot, objectKey);
+
+      let bytes: Buffer;
+      try {
+        bytes = await fsp.readFile(filePath);
+      } catch {
+        throw appError(
+          "UNPROCESSABLE_CONTENT",
+          "OPERATION_FAILED",
+          { operation: "commitTemplateImage" },
+          `Chưa thấy byte ảnh tại '${objectKey}' — gọi PUT lên uploadUrl của presign TRƯỚC khi commit.`,
+        );
+      }
+      const shaThuc = createHash("sha256").update(bytes).digest("hex");
+      if (shaThuc !== input.contentHash) {
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "payload" },
+          `contentHash khai ("${input.contentHash}") không khớp sha256 THẬT của byte đã tải lên ("${shaThuc}") — tải lại ảnh và commit lại.`,
+        );
+      }
+
+      const { url } = await storagePut(objectKey, bytes, input.ext === "png" ? "image/png" : "image/jpeg");
+      const ketQuaGhi = await ghiUrlAnhTemplate(tra.hang, { url, key: objectKey });
+      await db.updateMachineHeartbeat(machine.id);
+
+      return {
+        success: true,
+        cap: tra.hang.cap,
+        url,
+        objectKey,
+        daDoi: ketQuaGhi.daDoi,
       };
     }),
 

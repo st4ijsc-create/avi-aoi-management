@@ -4929,6 +4929,81 @@ async function startServer() {
     }
   });
 
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ★★★ Lô 8 Mục 1 (BG-116) — PUT byte ẢNH TEMPLATE, cùng khuôn `PUT /api/aoi/upload/:packageId`
+  // ở trên (raw body, xác thực máy, ghi bằng `storagePut`) nhưng KHÔNG đụng
+  // `inspection_packages`/vòng đời gói ZIP — đây là byte của MỘT ẢNH CẤU HÌNH, không
+  // phải một gói kết quả. `:objectKey(*)` bắt TOÀN BỘ phần đuôi (khoá mang `/`, khuôn
+  // `product-models/<id>/template-<sha256>.<ext>` mà `presignTemplateImage` đã dựng).
+  //
+  // ⚠ Route này CHỈ nhận byte xuống ĐÚNG khoá đã tính trước (không tạo hàng DB nào,
+  // không đổi `product_captures`/`measurement_point_defs`) — `machineApi.commitTemplateImage`
+  // (tRPC) mới là nơi đọc lại byte này, kiểm sha256, và GHI url vào cây dạy. Tách hai
+  // bước để một PUT dở dang (mất mạng giữa chừng) không để lại một hàng cây trỏ vào
+  // ảnh chưa toàn vẹn.
+  //
+  // CÙNG khuôn `aoiPackageRouterModuleAtBoot` ở trên — import ĐỘNG MỘT LẦN lúc đăng
+  // ký route (không phải mỗi request) để `express.raw({ limit })` dùng ĐÚNG
+  // `tranByteAnhTemplate()` mà `presignTemplateImage` đối chiếu `sizeBytes`, không
+  // một con số hardcode RIÊNG có thể trôi lệch.
+  const machineApiRoutersModuleAtBoot = await import("../routers/machineApiRouters");
+  app.put(
+    "/api/machine-template-image/upload/:objectKey(*)",
+    express.raw({ type: "*/*", limit: machineApiRoutersModuleAtBoot.tranByteAnhTemplate() }),
+    uploadGuard("image"),
+    async (req, res) => {
+      try {
+        const objectKeyRaw = req.params.objectKey;
+        const apiKey = req.header("x-api-key") || req.header("X-API-Key") || "";
+        const machineCode = req.header("x-machine-code") || req.header("X-Machine-Code") || "";
+        if (!apiKey && !machineCode) {
+          return res.status(401).json({ success: false, message: "x-api-key or x-machine-code header required" });
+        }
+
+        const { authenticateMachine } = await import("../services/machineAuthService");
+        try {
+          await authenticateMachine({
+            headerKey: apiKey || null,
+            machineCode: machineCode || null,
+            scope: "ingest:write",
+            endpoint: "machineTemplateImage.upload",
+          });
+        } catch (authErr: any) {
+          const code = authErr?.code;
+          if (code === "UNAUTHORIZED")
+            return res.status(401).json({ success: false, message: authErr?.message || "Invalid machine credentials" });
+          if (code === "FORBIDDEN")
+            return res.status(403).json({ success: false, message: authErr?.message || "Forbidden" });
+          if (authErr?.name === "DbUnavailableError")
+            return res.status(503).json({ success: false, message: "Database unavailable — retry" });
+          throw authErr;
+        }
+
+        // ⚠ Khoá PHẢI khớp NGUYÊN VĂN khuôn `product-models/<id>/template-<sha256 hex 64>.<jpg|png>`
+        // mà `presignTemplateImage` dựng — chặn TRAVERSAL/khoá lạ ở đây, TRƯỚC khi
+        // `storagePut` (bản thân nó cũng chặn `..` — đây là lớp phòng thủ THỨ HAI, đúng
+        // khuôn "path traversal" đã ghi trong `server/storage.ts`).
+        if (!/^product-models\/[0-9]+\/template-[0-9a-f]{64}\.(jpg|png)$/.test(objectKeyRaw || "")) {
+          return res.status(400).json({ success: false, message: "Invalid objectKey — must match presignTemplateImage's layout" });
+        }
+
+        const bytes = req.body as Buffer;
+        if (!bytes || bytes.length === 0) {
+          return res.status(400).json({ success: false, message: "Empty request body" });
+        }
+
+        const { storagePut } = await import("../storage");
+        const contentType = objectKeyRaw.endsWith(".png") ? "image/png" : "image/jpeg";
+        await storagePut(objectKeyRaw, bytes, contentType);
+
+        res.json({ success: true, objectKey: objectKeyRaw, sizeBytes: bytes.length });
+      } catch (error: any) {
+        console.error("[MachineTemplateImage] upload error:", error);
+        res.status(500).json({ success: false, message: error?.message || "Upload failed" });
+      }
+    },
+  );
+
   // AOI Package - Serve image directly (non-tRPC endpoint for <img> tags)
   app.get("/api/aoi/image/:packageId/:fileName", async (req, res) => {
     try {

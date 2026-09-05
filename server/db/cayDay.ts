@@ -977,6 +977,140 @@ export async function traPointDefCapComponent(opts: {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// Lô 8 (BG-116) — ẢNH TEMPLATE do MÁY tải lên SAU khi cây đã dạy
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Hàng đích của một lượt commit ảnh template — CHÍNH XÁC MỘT trong hai cấp. */
+export type HangAnhTemplate =
+  | { readonly cap: "capture"; readonly rowId: number; readonly productModelId: number; readonly urlHienTai: string | null }
+  | { readonly cap: "component"; readonly rowId: number; readonly productModelId: number; readonly urlHienTai: string | null };
+
+/** Kết quả tra hàng ảnh template — phân biệt "không tồn tại" khỏi "khác máy" cho router chọn mã lỗi. */
+export type KetQuaTraAnhTemplate =
+  | { readonly ket: "thay"; readonly hang: HangAnhTemplate }
+  | { readonly ket: "khongThayCapture" }
+  | { readonly ket: "khacMay"; readonly machineIdThat: number }
+  | { readonly ket: "khongThayComponent" };
+
+/**
+ * ★★★ Lô 8 Mục 1 (BG-116) — tra hàng ĐÍCH cho một lượt `commitTemplateImage`, LỌC
+ * MÁY qua `product_captures."machineId"` — ĐÚNG cột Khối B Task 2 đã chốt (xem
+ * docblock `traPointDefCapComponent` ngay trên: `measurement_point_defs.machineId`
+ * mang hai nghĩa không cổng nào canh, `product_captures.machineId` chỉ có MỘT
+ * nghĩa NOT NULL và bị khoá ngoại GHÉP buộc đúng máy của surface gốc).
+ *
+ * - Chỉ `captureExtId` (không `componentExtId`) ⇒ đích là **CẤP CAPTURE**
+ *   (`product_captures.templateImageUrl`, ảnh nền của cả lượt chụp).
+ * - Cả hai ⇒ đích là **CẤP COMPONENT** (`measurement_point_defs.referenceImageUrl`,
+ *   ảnh crop riêng của linh kiện) — PHẢI xác nhận `componentExtId` thuộc ĐÚNG
+ *   capture đó (không chỉ đúng máy): một componentExtId trùng tình cờ ở capture
+ *   KHÁC của CÙNG máy không được coi là khớp.
+ *
+ * Bốn kết cục PHÂN BIỆT (để router chọn đúng mã lỗi — cùng khuôn
+ * `pkg.machineId !== machine.id` của `aoiPackageRouter.commit`):
+ *   `khongThayCapture`  — captureExtId không tồn tại chút nào  ⇒ `NOT_FOUND`.
+ *   `khacMay`           — capture tồn tại nhưng thuộc máy KHÁC ⇒ `FORBIDDEN`.
+ *   `khongThayComponent`— capture đúng máy, nhưng componentExtId không thuộc
+ *                         ĐÚNG capture đó (sai/đã xoá mềm)     ⇒ `NOT_FOUND`.
+ *   `thay`              — tra ra đúng hàng, kèm `productModelId` (khoá tiền tố
+ *                         lưu trữ `product-models/<id>/…`, khuôn ĐÃ CÓ).
+ */
+export async function traHangAnhTemplate(opts: {
+  machineId: number;
+  captureExtId: string;
+  componentExtId?: string | null;
+}): Promise<KetQuaTraAnhTemplate> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const [capture] = await d
+    .select({
+      id: productCaptures.id,
+      machineId: productCaptures.machineId,
+      templateImageUrl: productCaptures.templateImageUrl,
+      productModelId: productSurfaces.productModelId,
+    })
+    .from(productCaptures)
+    .innerJoin(productPositions, eq(productPositions.id, productCaptures.positionRowId))
+    .innerJoin(productSurfaces, eq(productSurfaces.id, productPositions.surfaceRowId))
+    .where(eq(productCaptures.captureExtId, opts.captureExtId))
+    .limit(1);
+
+  if (!capture) return { ket: "khongThayCapture" };
+  if (capture.machineId !== opts.machineId) return { ket: "khacMay", machineIdThat: capture.machineId };
+
+  if (!opts.componentExtId) {
+    return {
+      ket: "thay",
+      hang: { cap: "capture", rowId: capture.id, productModelId: capture.productModelId, urlHienTai: capture.templateImageUrl },
+    };
+  }
+
+  const [point] = await d
+    .select({
+      id: measurementPointDefs.id,
+      referenceImageUrl: measurementPointDefs.referenceImageUrl,
+    })
+    .from(measurementPointDefs)
+    .where(and(
+      eq(measurementPointDefs.captureRowId, capture.id),
+      eq(measurementPointDefs.componentExtId, opts.componentExtId),
+      isNull(measurementPointDefs.deletedAt),
+    ))
+    .limit(1);
+
+  if (!point) return { ket: "khongThayComponent" };
+  return {
+    ket: "thay",
+    hang: { cap: "component", rowId: point.id, productModelId: capture.productModelId, urlHienTai: point.referenceImageUrl },
+  };
+}
+
+/**
+ * ★★★ Lô 8 Mục 1 — GHI url+key ảnh template vào ĐÚNG hàng đã tra bằng
+ * `traHangAnhTemplate`. `key` LUÔN mang `contentHash` (sha256) NGUYÊN VĂN trong
+ * tên tệp (`commitTemplateImage` dựng key theo khuôn
+ * `product-models/<id>/template-<sha256>.<ext>`) — đây LÀ cơ chế idempotent
+ * theo (hàng, sha256) mà brief đòi: commit LẶP cùng sha256 tính ra CÙNG `key`,
+ * hàm này chỉ UPDATE (không INSERT) nên không có hàng thứ hai nào để nhân bản,
+ * và so `key` cũ/mới CHO PHÉP người gọi biết lượt ghi có thật sự đổi gì không
+ * (`daDoi`) mà không cần một cột sha256 riêng (KHÔNG migration, đúng ràng buộc).
+ */
+export async function ghiUrlAnhTemplate(
+  hang: HangAnhTemplate,
+  anh: { url: string; key: string },
+): Promise<{ daDoi: boolean }> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  if (hang.cap === "capture") {
+    const [truoc] = await d
+      .select({ key: productCaptures.templateImageKey })
+      .from(productCaptures)
+      .where(eq(productCaptures.id, hang.rowId))
+      .limit(1);
+    if (truoc?.key === anh.key) return { daDoi: false };
+    await d
+      .update(productCaptures)
+      .set({ templateImageUrl: anh.url, templateImageKey: anh.key, updatedAt: new Date() })
+      .where(eq(productCaptures.id, hang.rowId));
+    return { daDoi: true };
+  }
+
+  const [truoc] = await d
+    .select({ key: measurementPointDefs.referenceImageKey })
+    .from(measurementPointDefs)
+    .where(eq(measurementPointDefs.id, hang.rowId))
+    .limit(1);
+  if (truoc?.key === anh.key) return { daDoi: false };
+  await d
+    .update(measurementPointDefs)
+    .set({ referenceImageUrl: anh.url, referenceImageKey: anh.key, updatedAt: new Date() })
+    .where(eq(measurementPointDefs.id, hang.rowId));
+  return { daDoi: true };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // BG-97 — LỊCH SỬ SỬA GIỚI HẠN, NẠP MỘT LƯỢT CHO CẢ BO
 // ════════════════════════════════════════════════════════════════════════════
 
