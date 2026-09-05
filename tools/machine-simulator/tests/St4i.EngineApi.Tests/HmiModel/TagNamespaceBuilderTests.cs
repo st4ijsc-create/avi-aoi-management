@@ -515,6 +515,32 @@ public sealed class TagNamespaceBuilderTests
         {
             "St4i.EngineApi/HmiModel/TagMapDeclaration.cs",    // declares the field on TagMapEntry
             "St4i.EngineApi/HmiModel/TagNamespaceBuilder.cs",  // copies it, entry -> descriptor
+
+            // 🔴🔴 SESSION S1 (S-6) — THIS TRIPWIRE FIRED, AS DESIGNED, AND THE ANSWER IS RECORDED HERE
+            // RATHER THAN THE LIST QUIETLY WIDENED.
+            //
+            // These two are the FIRST real consumers of policyAction in this assembly — the census above
+            // was written for exactly this moment ("the day a fifth file appears... whoever added it has
+            // to decide the fail-closed question S-6 reserves, at the moment the decision is being made").
+            // The decision, made deliberately and pinned by its own tests:
+            //
+            //   * MachineWriteGate.ActionForPolicyAction is a TOTAL, INJECTIVE, ORDINAL map from the two
+            //     frozen SCREEN words to the two engine action ids, and returns null — never a default,
+            //     never a throw — for anything else. There is no arm that turns an unrecognised value
+            //     into an action, which is the precise shape of the fail-OPEN consumer this census was
+            //     written to catch. MachineWriteGateActionMappingTests pins totality, injectivity-onto,
+            //     and null for case/whitespace/the engine's own words/an unknown word, each falsified.
+            //
+            //   * MachineWritePermissionEndpoints READS the map to answer "may this session do this?" and
+            //     treats null as NOT PERMITTED. It is a mutation-free READ that grants nothing: the
+            //     enforcement is still MachineWriteEndpoints' own RequireAuthorization + PolicyEngine
+            //     evaluation, which re-decides every actual write.
+            //
+            // So both DECIDE rather than merely carry, and both decide CLOSED. The census's own stated
+            // limit still applies and is not narrowed here: it cannot tell whether a file already on this
+            // list has since changed how it decides.
+            "St4i.EngineApi/Endpoints/MachineWritePermissionEndpoints.cs",
+            "St4i.EngineApi/Policy/MachineWriteGate.cs",
         };
 
         var mentions = Directory

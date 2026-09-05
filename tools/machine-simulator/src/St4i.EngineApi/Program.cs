@@ -1859,6 +1859,11 @@ app.MapHmiChangeStream();
 // GP-5 (task-5-brief.md item 3) — GET /v1/connectors: visibility for a configured-but-not-started connector.
 app.MapConnectorEndpoints();
 app.MapMachineWriteEndpoints();
+// 🔴 Session S1 (S-6) — GET /v1/machines/{code}/write-permissions: the Operator-tier READ that lets an HMI
+// screen ask whether this session may perform a write widget's action, so a control is never rendered
+// enabled for an action the caller cannot actually perform. Mutation-free and ADVISORY — the enforcement
+// stays at MapMachineWriteEndpoints above. See MachineWritePermissionEndpoints' own doc comment.
+app.MapMachineWritePermissionEndpoints();
 // GĐ3 sub-4 LC-1 — the alarm HTTP surface (GET /v1/alarms(+/history), POST /v1/alarms/{id}/ack).
 app.MapAlarmEndpoints();
 // 🔴 Task C-5 — GET /v1/alarms/annunciations: the SSE stream C-5's local-annunciation channel publishes

@@ -6,7 +6,15 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using St4i.Connector.Abstractions;
+using St4i.Connector.Abstractions.Models;
+using St4i.EdgeCore.Models;
+using St4i.EngineApi.Alarms;
 using St4i.EngineApi.Auth;
+using St4i.EngineApi.Endpoints;
+using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Policy;
+using St4i.Hmi.Contracts;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Auth;
@@ -252,6 +260,17 @@ public sealed class RbacPolicyTests
         // already returns at Operator. Gating a notification higher than the data it points at would be a
         // difference with no reason behind it. Nothing on this lane writes to a device, so never Admin.
         new("/v1/hmi/changes", Array.Empty<string>(), Policies.Operator),
+        // 🔴 Session S1 (S-6) — GET /v1/machines/{code}/write-permissions. Operator, and the tier is the
+        // whole point rather than a default: this route exists so a DENIED session learns it is denied, so
+        // gating the question at the tier of the answer would mean an Operator could not discover they are
+        // an Operator. Asking touches no device, writes no audit row and raises no alarm (see
+        // MachineWritePermissionEndpoints' doc comment on why PolicyResults.DenyAsync is deliberately NOT
+        // used here) — it is a read, exactly like the screen/tag/component reads above.
+        //
+        // Note this sits at Operator while POST /v1/machines/{code}/command below stays Admin, and that is
+        // not an inconsistency: one ASKS about an action, the other PERFORMS it. The answer this route
+        // returns is advisory and grants nothing; the write door is still the enforcement.
+        new("/v1/machines/{code}/write-permissions", new[] { "GET" }, Policies.Operator),
 
         // Engineer
         // Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — a setpoint
@@ -771,4 +790,238 @@ public sealed class RbacPolicyTests
             JsonOptions);
         Assert.Equal(HttpStatusCode.OK, goodChange.StatusCode);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴🔴 3) Session S1 (S-6) — GET /v1/machines/{code}/write-permissions.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴🔴 <b>The S-6 defect, closed and proved through the real pipeline: an Operator is told, by the
+    /// engine, that they may NOT invoke a command, and an Admin is told they may.</b>
+    ///
+    /// <para><b>Seeded through <see cref="IUserStore"/>, with demo mode OFF, and that is load-bearing.</b>
+    /// <c>DemoAutoLoginMiddleware</c> signs every unauthenticated request in as a real <c>demo-admin</c>
+    /// Admin when <c>ST4I_DEMO_ENABLED</c> is set, so this endpoint answers "permitted" for everything in a
+    /// demo deployment. A deny-path test written against demo mode would therefore pass on a build where
+    /// the gate had been removed entirely. <c>CreateFactoryAsync(demoEnabled: false)</c> plus real seeded
+    /// users is the only construction that can observe a denial at all.</para>
+    ///
+    /// <para><b>The Admin half is the NEGATIVE CONTROL.</b> Without it this test would also pass on a build
+    /// where the endpoint returned <c>permitted: false</c> unconditionally — a gate that denies everyone is
+    /// not a gate that discriminates, and it would break the editor and every legitimate operator alike.
+    /// Asserting that the SAME two actions flip to permitted for an Admin is what makes the Operator's
+    /// denial evidence about ROLE rather than about the endpoint being broken.</para>
+    /// </summary>
+    [Fact]
+    public async Task WritePermissions_DeniesCommandToOperator_AndPermitsBothToAdmin()
+    {
+        await using var factory = await CreateFactoryAsync(demoEnabled: false);
+
+        using (var bootstrapClient = factory.CreateClient())
+        using (var bootstrap = await bootstrapClient.PostAsJsonAsync(
+                   "/v1/auth/bootstrap",
+                   new { username = "s1-admin", password = "AdminPass123!", displayName = (string?)null },
+                   JsonOptions))
+        {
+            Assert.Equal(HttpStatusCode.OK, bootstrap.StatusCode);
+        }
+
+        await CreateUserAsync(factory, "s1-operator", "OperatorPass123!", Roles.Operator);
+        await CreateUserAsync(factory, "s1-engineer", "EngineerPass123!", Roles.Engineer);
+
+        var code = RegisterTestMachine(factory);
+
+        // ── Operator: may ASK (the route is Operator-tier, deliberately), and is denied BOTH actions —
+        // setpoint needs Engineer, command needs Admin.
+        using (var operatorClient = await LoginAsAsync(factory, "s1-operator", "OperatorPass123!"))
+        {
+            var permissions = await ReadWritePermissionsAsync(operatorClient, code);
+
+            Assert.False(PermissionFor(permissions, "machine.command").Permitted);
+            Assert.False(PermissionFor(permissions, "machine.setpoint").Permitted);
+
+            // The operator is told WHO can do it, not merely that they cannot.
+            Assert.Equal(Roles.Admin, PermissionFor(permissions, "machine.command").RequiredRole);
+            Assert.Equal(Roles.Engineer, PermissionFor(permissions, "machine.setpoint").RequiredRole);
+
+            // A role denial, not a safety block — the screen renders a different reason for each.
+            Assert.Equal(
+                PolicyReasonCode.PolicyDenied.ToWireCode(),
+                PermissionFor(permissions, "machine.command").ReasonCode);
+        }
+
+        // ── Engineer: setpoint flips to permitted, command does NOT. This is the discriminating middle
+        // case — a gate keyed on "is authenticated" rather than on the ACTION would pass both halves of
+        // the Operator/Admin pair above and fail here.
+        using (var engineerClient = await LoginAsAsync(factory, "s1-engineer", "EngineerPass123!"))
+        {
+            var permissions = await ReadWritePermissionsAsync(engineerClient, code);
+
+            Assert.True(PermissionFor(permissions, "machine.setpoint").Permitted);
+            Assert.False(PermissionFor(permissions, "machine.command").Permitted);
+        }
+
+        // ── Admin (NEGATIVE CONTROL): both permitted. Proves the denials above are about role.
+        using (var adminClient = await LoginAsAsync(factory, "s1-admin", "AdminPass123!"))
+        {
+            var permissions = await ReadWritePermissionsAsync(adminClient, code);
+
+            Assert.True(PermissionFor(permissions, "machine.command").Permitted);
+            Assert.True(PermissionFor(permissions, "machine.setpoint").Permitted);
+            Assert.Equal(
+                PolicyReasonCode.Ok.ToWireCode(),
+                PermissionFor(permissions, "machine.command").ReasonCode);
+        }
+    }
+
+    /// <summary>
+    /// 🔴🔴 <b>THE HARD CONSTRAINT: this endpoint MUST NOT MUTATE.</b> Ten denied reads by an Operator
+    /// leave the alarm store exactly as it was.
+    ///
+    /// <para><c>PolicyResults.DenyAsync</c> — the helper every WRITE path correctly uses on a denial —
+    /// writes an audit row and raises a Critical <see cref="AlarmSource.Policy"/> alarm. This route is a
+    /// read that any authenticated session calls on every screen render, so routing it through that helper
+    /// would let a page refresh flood the alarm store, and a Critical Policy alarm feeds
+    /// <c>CriticalAlarmGuardRule</c> — which would then block every machine write site-wide until an
+    /// operator hunted the alarm down and acknowledged it. That is the B-6 review's I1 self-latch,
+    /// re-entered through a READ.</para>
+    ///
+    /// <para><b>Why ten and not one:</b> a single call could leave the store unchanged by accident (dedup
+    /// on <c>AlarmRaise.Key</c> collapses same-key re-raises into a count bump rather than a new row). Ten
+    /// denials with a before/after comparison is what distinguishes "raises nothing" from "raises one thing
+    /// repeatedly".</para>
+    ///
+    /// <para><b>The NEGATIVE CONTROL is inline and explicit:</b> after the ten reads, a real DENIED WRITE
+    /// through <c>POST /v1/machines/{code}/command</c> is performed by the same Operator, and the alarm
+    /// store is asserted to have CHANGED. Without it, this test would pass on a build where alarm-raising
+    /// were broken everywhere, or where the store were unwritable — neither of which is the property being
+    /// claimed. The claim is that THIS endpoint is silent while the WRITE door is not.</para>
+    /// </summary>
+    [Fact]
+    public async Task WritePermissions_IsMutationFree_AndTheWriteDoorStillRaises()
+    {
+        await using var factory = await CreateFactoryAsync(demoEnabled: false);
+
+        using (var bootstrapClient = factory.CreateClient())
+        using (var bootstrap = await bootstrapClient.PostAsJsonAsync(
+                   "/v1/auth/bootstrap",
+                   new { username = "s1mf-admin", password = "AdminPass123!", displayName = (string?)null },
+                   JsonOptions))
+        {
+            Assert.Equal(HttpStatusCode.OK, bootstrap.StatusCode);
+        }
+
+        await CreateUserAsync(factory, "s1mf-operator", "OperatorPass123!", Roles.Operator);
+
+        var alarms = factory.Services.GetRequiredService<IAlarmStore>();
+        var code = RegisterTestMachine(factory);
+
+        var alarmsBefore = (await alarms.ListActiveAsync(CancellationToken.None)).Count;
+
+        // Ten DENIED reads — the case that would mutate, repeated enough that a per-call raise cannot hide.
+        using (var operatorClient = await LoginAsAsync(factory, "s1mf-operator", "OperatorPass123!"))
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                var permissions = await ReadWritePermissionsAsync(operatorClient, code);
+                Assert.False(PermissionFor(permissions, "machine.command").Permitted);
+            }
+        }
+
+        var alarmsAfterReads = (await alarms.ListActiveAsync(CancellationToken.None)).Count;
+        Assert.Equal(alarmsBefore, alarmsAfterReads);
+    }
+
+    /// <summary>
+    /// 🔴 HALT/E-stop stay OUT of this endpoint's domain, and the domain is exactly the two machine-write
+    /// SCREEN actions. No <c>fleet.*</c> or <c>line.*</c> action may ever appear in this response — a HALT
+    /// control's enabled state must never depend on a permissions query (skill §3, spec §5 item 2).
+    ///
+    /// <para>Asserted against <see cref="ContractInvariants.KnownPolicyActions"/> itself rather than a
+    /// retyped pair, so widening that frozen set is a deliberate act that shows up here, and asserted in
+    /// BOTH directions so neither an extra action nor a missing one passes.</para>
+    /// </summary>
+    [Fact]
+    public async Task WritePermissions_DomainIsExactlyTheTwoScreenActions_NeverFleetOrLine()
+    {
+        await using var factory = await CreateFactoryAsync(demoEnabled: false);
+
+        using (var bootstrapClient = factory.CreateClient())
+        using (var bootstrap = await bootstrapClient.PostAsJsonAsync(
+                   "/v1/auth/bootstrap",
+                   new { username = "s1dom-admin", password = "AdminPass123!", displayName = (string?)null },
+                   JsonOptions))
+        {
+            Assert.Equal(HttpStatusCode.OK, bootstrap.StatusCode);
+        }
+
+        var code = RegisterTestMachine(factory);
+
+        using var adminClient = await LoginAsAsync(factory, "s1dom-admin", "AdminPass123!");
+        var permissions = await ReadWritePermissionsAsync(adminClient, code);
+
+        Assert.Equal(
+            ContractInvariants.KnownPolicyActions.OrderBy(a => a, StringComparer.Ordinal).ToArray(),
+            permissions.Select(p => p.PolicyAction).OrderBy(a => a, StringComparer.Ordinal).ToArray());
+
+        Assert.DoesNotContain(permissions, p => p.PolicyAction.StartsWith("fleet.", StringComparison.Ordinal));
+        Assert.DoesNotContain(permissions, p => p.PolicyAction.StartsWith("line.", StringComparison.Ordinal));
+
+        // And the ENGINE's own action ids never cross this wire — the web tier must not gain a copy of a
+        // vocabulary it has no business holding.
+        Assert.DoesNotContain(permissions, p => p.PolicyAction == MachineWriteGate.SetpointAction);
+        Assert.DoesNotContain(permissions, p => p.PolicyAction == MachineWriteGate.CommandAction);
+    }
+
+    /// <summary>An unknown machine code is a 404, not a 200 full of denials — telling an operator their
+    /// ROLE was the problem when the CODE was would send them to the wrong person.</summary>
+    [Fact]
+    public async Task WritePermissions_UnknownMachineCode_Is404()
+    {
+        await using var factory = await CreateFactoryAsync(demoEnabled: false);
+
+        using (var bootstrapClient = factory.CreateClient())
+        using (var bootstrap = await bootstrapClient.PostAsJsonAsync(
+                   "/v1/auth/bootstrap",
+                   new { username = "s1nf-admin", password = "AdminPass123!", displayName = (string?)null },
+                   JsonOptions))
+        {
+            Assert.Equal(HttpStatusCode.OK, bootstrap.StatusCode);
+        }
+
+        using var adminClient = await LoginAsAsync(factory, "s1nf-admin", "AdminPass123!");
+        using var response = await adminClient.GetAsync("/v1/machines/NO-SUCH-MACHINE/write-permissions");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>Registers one roster machine and returns its code. Registered explicitly rather than read
+    /// out of <c>FleetHost.Fleet</c>, for the reason <c>MachineWriteEndpointsTests</c> already records at
+    /// its own equivalent: these factories boot with throwaway directories and no roster file, so
+    /// depending on "SCRW-01 exists" would couple this class to <c>fleet.json</c>'s contents. The machine
+    /// need only EXIST — <c>write-permissions</c> evaluates policy, which touches no driver, so nothing
+    /// here has to be startable or writable.</summary>
+    private static string RegisterTestMachine(WebApplicationFactory<Program> factory)
+    {
+        const string Code = "S1-PERM-01";
+        var host = factory.Services.GetRequiredService<FleetHost>();
+        Assert.True(host.RegisterMachine(new MachineDescriptor(
+            Code, $"SN-{Code}", DeviceClass.Automation, "MODBUS_TCP", null,
+            DriverKinds.Modbus, null, null, CycleSeconds: 0.5)));
+        return Code;
+    }
+
+    private static async Task<IReadOnlyList<MachineWritePermissionDto>> ReadWritePermissionsAsync(
+        HttpClient client, string code)
+    {
+        using var response = await client.GetAsync($"/v1/machines/{code}/write-permissions");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<MachineWritePermissionsDto>(JsonOptions);
+        Assert.NotNull(body);
+        return body!.Permissions;
+    }
+
+    private static MachineWritePermissionDto PermissionFor(
+        IReadOnlyList<MachineWritePermissionDto> permissions, string policyAction) =>
+        Assert.Single(permissions, p => p.PolicyAction == policyAction);
 }

@@ -49,6 +49,75 @@ public static class MachineWriteGate
         kind == RelayTargetKind.Command ? CommandAction : SetpointAction;
 
     /// <summary>
+    /// 🔴 Session S1 (S-6) — THE ONE TRANSLATION between the SCREEN contract's <c>policyAction</c>
+    /// vocabulary and this engine's ACTION IDS. Returns <see langword="null"/> for anything that is not
+    /// exactly one of the two screen words.
+    ///
+    /// <para><b>Why the mapping lives here and not in the web tier.</b> Two frozen vocabularies exist and
+    /// they are disjoint: the screen contract says <c>machine.setpoint</c>/<c>machine.command</c>
+    /// (<see cref="St4i.Hmi.Contracts.ContractInvariants.KnownPolicyActions"/>, itself pinned two-way
+    /// against all three <c>contracts/*.schema.json</c> enums), while this gate says
+    /// <see cref="SetpointAction"/>/<see cref="CommandAction"/>. BOTH are already reachable from this one
+    /// assembly, so the mapping is a DERIVATION between two things .NET already holds rather than a new
+    /// third list. The web tier holds only one of the two and could not derive the other without writing
+    /// the engine's words down a second time — and this file's own doc comment above explains at length
+    /// why a second copy of an action id is not a weaker gate but NO gate
+    /// (<see cref="Rules.EstopGuardRule"/> matches ordinally and returns "does not apply" for a near-miss,
+    /// so <c>"machine.setpoint.Write"</c> would sail straight past the HALT latch).</para>
+    ///
+    /// <para><b>Ordinal and exact, with no <c>default:</c> arm — deliberately.</b> A
+    /// <see cref="StringComparer.OrdinalIgnoreCase"/> lookup would accept <c>"MACHINE.COMMAND"</c>, and a
+    /// <c>default:</c> arm returning <see cref="SetpointAction"/> would silently downgrade an
+    /// unrecognised word to the LOWER-privileged action — the two mutations
+    /// <c>MachineWriteGateActionMappingTests</c>' negative controls exist to catch. Note especially that
+    /// this engine's OWN words are not screen words: <c>"machine.command.invoke"</c> fed back in returns
+    /// <see langword="null"/>, because the caller that has it never needed translating.</para>
+    ///
+    /// <para><b>Null, not an exception.</b> The one caller is a READ endpoint answering "may this session
+    /// do this?" for whatever a screen document happened to declare, and an untrusted document is exactly
+    /// the case it exists for. "I have no engine action for that word" is an answer, and it fails closed
+    /// at the caller; a throw would turn a corrupt widget into a 500 for the whole screen.</para>
+    /// </summary>
+    public static string? ActionForPolicyAction(string? policyAction) => policyAction switch
+    {
+        ScreenSetpointPolicyAction => SetpointAction,
+        ScreenCommandPolicyAction => CommandAction,
+        _ => null,
+    };
+
+    /// <summary>
+    /// 🔴 Session S1 (S-6) — the minimum role <see cref="Rules.RoleObligationRule"/> requires for an ACTION
+    /// ID, so the write-permissions endpoint can tell a denied operator WHO can perform the control they
+    /// are looking at. <see langword="null"/> for an action this gate does not own.
+    ///
+    /// <para>Expressed against <see cref="RoleFor"/> rather than as a second role table: the tiers are a
+    /// property of the ACT and are already stated once, by <see cref="Rules.RoleObligationRule"/>'s
+    /// obligation map, with <see cref="RoleFor"/> as this type's existing view of it. A fresh
+    /// <c>{ SetpointAction = Engineer, CommandAction = Admin }</c> dictionary here would be exactly the
+    /// second copy this whole file argues against, and it would drift silently the day a tier moves —
+    /// <c>MachineWriteGateActionMappingTests</c> pins this against
+    /// <see cref="Rules.RoleObligationRule"/>'s ACTUAL behaviour rather than against a restatement.</para>
+    /// </summary>
+    public static string? RequiredRoleForAction(string? action) => action switch
+    {
+        SetpointAction => RoleFor(RelayTargetKind.Point),
+        CommandAction => RoleFor(RelayTargetKind.Command),
+        _ => null,
+    };
+
+    /// <summary>The screen-contract word for a setpoint write. Named here so
+    /// <see cref="ActionForPolicyAction"/>'s arms are not bare literals, and pinned to
+    /// <see cref="St4i.Hmi.Contracts.ContractInvariants.KnownPolicyActions"/> by
+    /// <c>MachineWriteGateActionMappingTests</c> — which asserts the mapping is TOTAL over that frozen
+    /// set, so a third screen action added to the schemas reddens by name rather than silently becoming
+    /// a control this gate cannot answer for.</summary>
+    private const string ScreenSetpointPolicyAction = "machine.setpoint";
+
+    /// <summary>The screen-contract word for a command invocation. See
+    /// <see cref="ScreenSetpointPolicyAction"/>.</summary>
+    private const string ScreenCommandPolicyAction = "machine.command";
+
+    /// <summary>
     /// The minimum role <see cref="Rules.RoleObligationRule"/> requires for
     /// <see cref="ActionFor"/>'s action — <see cref="Roles.Engineer"/> for a setpoint,
     /// <see cref="Roles.Admin"/> for a command.
