@@ -45,3 +45,30 @@ const INGEST_KEY_SET = new Set(INGEST_INTEGRITY_KEYS);
 export function locIngestLienQuan<T extends IntegrityRelationshipLike>(relationships: readonly T[]): T[] {
   return relationships.filter((r) => INGEST_KEY_SET.has(r.key));
 }
+
+// ── Fix review Lô 4 (Important) — phân biệt lỗi QUYỀN với empty-state THẬT ──────
+
+/**
+ * `integrity.summary`/`runNow`/`history` (`server/routers/integrityRouter.ts`) là
+ * `adminProcedure` — đòi `ctx.user.role === 'admin'` ĐÚNG CHỮ (`server/_core/trpc.ts:357`),
+ * KHÔNG dùng `requirePermission()`. `aoiPackage.listDeadLetters`/`getDeadLetterDetail`
+ * (Lô 4 Mục 3) dùng `requirePermission("admin_system","canView")` — nhóm quyền CÓ THỂ
+ * cấp cho một vai KHÔNG PHẢI admin (scoped-admin, xem `checkPermission` — một hàng
+ * `permissions` với `canView=true` đủ để qua, không cần `role==='admin'`). Hai cổng
+ * KHÔNG cùng lớp: một scoped-admin xem được tab dead-letter (đúng quyền của họ) nhưng
+ * bị `integrity.summary` từ chối `FORBIDDEN` — nếu UI không phân biệt, empty-state
+ * "0 relationship" và "bị từ chối quyền" trông GIỐNG HỆT NHAU, đúng lớp lỗi "một lối
+ * vào rồi từ chối" (memory dự án đã ghi ở Khối D). KHÔNG đổi quyền của `integrityRouter`
+ * ở đây — đó là quyết định ngoài phạm vi bản vá này (đổi ai được xem toàn bộ master-data
+ * integrity là quyết định sản phẩm, không phải một fix UI).
+ *
+ * Hàm THUẦN — nhận hình dạng lỗi tRPC bất kỳ (không import `TRPCClientError` để giữ
+ * module này không phụ thuộc `@trpc/client`, test được với object trần), cùng quy ước
+ * đọc `error.data.code` mà `getErrorCode` (nội bộ, không export) của
+ * `client/src/lib/trpcErrors.ts` đã dùng.
+ */
+export function laLoiTuChoiQuyen(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const data = (error as { data?: { code?: unknown } }).data;
+  return !!data && typeof data === "object" && data.code === "FORBIDDEN";
+}

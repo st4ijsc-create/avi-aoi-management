@@ -7181,6 +7181,7 @@
     "integrityScanRunSuccess": "完整性扫描已完成",
     "integrityScanRunError": "完整性扫描失败",
     "integrityScanEmpty": "未找到与接入相关的关系",
+    "integrityScanForbidden": "您没有权限查看完整性扫描结果",
     "integrityScanRelationship": "关系",
     "integrityScanViolations": "违规数",
     "integrityScanLastRun": "最近扫描时间",

@@ -7398,6 +7398,7 @@
     "integrityScanRunSuccess": "Integrity scan completed",
     "integrityScanRunError": "Integrity scan failed",
     "integrityScanEmpty": "No ingest-related relationships found",
+    "integrityScanForbidden": "You do not have permission to view integrity scan results",
     "integrityScanRelationship": "Relationship",
     "integrityScanViolations": "Violations",
     "integrityScanLastRun": "Last scan",

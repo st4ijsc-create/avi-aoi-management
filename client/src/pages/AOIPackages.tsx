@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { PACKAGE_STATUS_BADGE_VARIANTS, PACKAGE_STATUS_FILTER_OPTIONS } from "./aoiPackagesStatusPresentation";
-import { locIngestLienQuan } from "./ingestIntegrityScanPresentation";
+import { locIngestLienQuan, laLoiTuChoiQuyen } from "./ingestIntegrityScanPresentation";
 import {
   Package,
   Search,
@@ -133,6 +133,13 @@ export default function AOIPackages() {
     () => locIngestLienQuan(integrityScanQuery.data?.relationships ?? []),
     [integrityScanQuery.data],
   );
+  // Fix review Lô 4 (Important) — `integrity.summary` là adminProcedure (đòi role==='admin'
+  // ĐÚNG CHỮ) trong khi listDeadLetters/getDeadLetterDetail (tab này) dùng
+  // requirePermission("admin_system","canView") — cấp được cho vai KHÔNG PHẢI admin. Một
+  // scoped-admin xem được bảng dead-letter nhưng bị integrity.summary từ chối FORBIDDEN —
+  // PHẢI phân biệt với "đã quét, 0 relationship liên quan ingest" (empty-state THẬT), nếu
+  // không hai trạng thái trông giống hệt nhau (lớp lỗi "một lối vào rồi từ chối").
+  const integrityScanForbidden = laLoiTuChoiQuyen(integrityScanQuery.error);
   const runIntegrityScanMutation = trpc.integrity.runNow.useMutation({
     onSuccess: () => {
       toast.success(t('packages.integrityScanRunSuccess'));
@@ -708,19 +715,35 @@ export default function AOIPackages() {
                 <CardDescription>{t('packages.integrityScanDesc')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="flex justify-end">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={runIntegrityScanMutation.isPending}
-                    onClick={() => runIntegrityScanMutation.mutate()}
-                  >
-                    <RefreshCcw className={`h-4 w-4 mr-2 ${runIntegrityScanMutation.isPending ? "animate-spin" : ""}`} />
-                    {t('packages.integrityScanRunNow')}
-                  </Button>
-                </div>
+                {/* Fix review Lô 4 (Important) — nút "Quét ngay" ẩn khi thiếu quyền, cùng
+                    điều kiện với nhánh nội dung bên dưới. Không để bấm rồi toast lỗi (đúng
+                    lớp "một lối vào rồi từ chối"): người không đủ quyền XEM kết quả quét
+                    thì cũng không thấy nút KÍCH HOẠT quét. */}
+                {!integrityScanForbidden && (
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={runIntegrityScanMutation.isPending}
+                      onClick={() => runIntegrityScanMutation.mutate()}
+                    >
+                      <RefreshCcw className={`h-4 w-4 mr-2 ${runIntegrityScanMutation.isPending ? "animate-spin" : ""}`} />
+                      {t('packages.integrityScanRunNow')}
+                    </Button>
+                  </div>
+                )}
                 {integrityScanQuery.isLoading ? (
                   <p className="text-center text-muted-foreground py-8">{t('common.loading')}</p>
+                ) : integrityScanForbidden ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <ShieldAlert className="h-10 w-10 mx-auto mb-2 opacity-30 text-warning" />
+                    <p>{t('packages.integrityScanForbidden')}</p>
+                  </div>
+                ) : integrityScanQuery.isError ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <AlertCircle className="h-10 w-10 mx-auto mb-2 opacity-30 text-destructive" />
+                    <p>{t('packages.integrityScanRunError')}</p>
+                  </div>
                 ) : ingestIntegrityRelationships.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <Info className="h-10 w-10 mx-auto mb-2 opacity-30" />

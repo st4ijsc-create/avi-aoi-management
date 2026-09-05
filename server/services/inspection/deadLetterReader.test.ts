@@ -173,4 +173,56 @@ describe("getDeadLetterDetail — payload CẮT GỌN AN TOÀN, trần kích th�
     expect(detail!.machineCode).toBe("M-SMALL");
     expect(detail!.serialNumber).toBe("SN-SMALL");
   });
+
+  /**
+   * Fix review Lô 4 (Minor) — nhánh PHÒNG-THỦ-KÉP (`MAX_DETAIL_JSON_BYTES=60_000`,
+   * `deadLetterReader.ts` quanh dòng 190) TRƯỚC bản vá fix chưa từng được test CHẠY QUA:
+   * mọi ca cũ chỉ đo trường-đơn-lẻ-quá-dài (>2000 ký tự, bị cắt Ở TỪNG TRƯỜNG, không bao
+   * giờ chạm nhánh tổng). Ca này dựng payload NHIỀU trường VỪA (mỗi trường 1800 ký tự —
+   * DƯỚI ngưỡng cắt-từng-trường 2000, nên `catGonGiaTri` không đụng tới TỪNG trường) —
+   * nhưng CỘNG DỒN 40 trường như vậy vượt xa 60.000 byte, buộc nhánh tổng phải chạy.
+   * Viết assertion kích thước TRƯỚC KHI biết chắc nhánh có bug hay không (không nâng trần
+   * tạm để giả RED) — nếu nhánh phòng-thủ-kép có lỗi (vd điều kiện sai, không cắt), test
+   * này bắt được ngay vì assertion đòi kích thước NHỎ + có mặt cờ `_daCatGonToanBo`.
+   */
+  it("★★★ PHÒNG-THỦ-KÉP — nhiều trường VỪA (mỗi trường <2000 ký tự, không bị cắt-từng-trường) nhưng TỔNG vượt 60KB ⇒ nhánh trần-tổng cắt xuống chỉ còn metadata", async () => {
+    const nhieuTruongVua: Record<string, string> = {};
+    for (let i = 0; i < 40; i++) {
+      // 1800 ký tự/trường — DƯỚI MAX_FIELD_STRING_LENGTH (2000) nên không bị cắt riêng lẻ.
+      // 40 trường × ~1810 byte (kể cả tên khoá JSON) ≈ 72.400 byte, vượt trần 60.000.
+      nhieuTruongVua[`fieldVua${i}`] = "M".repeat(1800);
+    }
+    const line = JSON.stringify({
+      key: "phong-thu-kep",
+      deadAt: new Date().toISOString(),
+      attempts: 2,
+      error: "UNAUTHORIZED: Invalid API key",
+      payload: {
+        machineCode: "M-DOUBLE-DEFENSE",
+        apiKey: "mk_should_not_leak_double_defense",
+        serialNumber: "SN-DOUBLE-DEFENSE",
+        ...nhieuTruongVua,
+      },
+    });
+    await fsp.writeFile(deadLetterFilePath(), line + "\n", "utf8");
+
+    const { getDeadLetterDetail } = await import("./deadLetterReader");
+    const detail = await getDeadLetterDetail("phong-thu-kep");
+    expect(detail).not.toBeNull();
+
+    const asString = JSON.stringify(detail);
+    // Chép nguyên văn độ dài đo được vào report (yêu cầu review) — assertion cứng dưới đây
+    // TỰ BẮT lỗi nếu nhánh trần-tổng không chạy (bytes sẽ ở mức ~72KB thay vì vài trăm byte).
+    expect(asString.length, "sau nhánh trần-tổng, chi tiết trả về phải RẤT NHỎ (chỉ còn metadata) — không phải ~72KB payload gốc").toBeLessThan(1000);
+    expect(detail!.payload).toHaveProperty("_daCatGonToanBo");
+    expect((detail!.payload as any)._daCatGonToanBo).toContain("60000");
+    // Metadata cấp cao vẫn còn — nhánh trần-tổng không được xoá sạch mọi manh mối chẩn đoán.
+    expect((detail!.payload as any).machineCode).toBe("M-DOUBLE-DEFENSE");
+    expect((detail!.payload as any).serialNumber).toBe("SN-DOUBLE-DEFENSE");
+    // apiKey vẫn không rò dù đi qua nhánh nào.
+    expect(asString).not.toContain("mk_should_not_leak_double_defense");
+    // Không trường VỪA nào (fieldVua*) còn sót lại trong bản đã cắt-tổng.
+    expect(asString).not.toContain("fieldVua0");
+    expect(asString).not.toContain("M".repeat(1800));
+  });
 });

@@ -7362,6 +7362,7 @@
     "integrityScanRunSuccess": "Quét toàn vẹn hoàn tất",
     "integrityScanRunError": "Quét toàn vẹn thất bại",
     "integrityScanEmpty": "Không tìm thấy quan hệ liên quan ingest",
+    "integrityScanForbidden": "Bạn không có quyền xem kết quả quét toàn vẹn",
     "integrityScanRelationship": "Quan hệ",
     "integrityScanViolations": "Số vi phạm",
     "integrityScanLastRun": "Lần quét gần nhất",

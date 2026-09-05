@@ -18,7 +18,7 @@
  * gọi mạng, test được không cần DB/render (BG-129).
  */
 import { describe, it, expect } from "vitest";
-import { locIngestLienQuan, INGEST_INTEGRITY_KEYS } from "./ingestIntegrityScanPresentation";
+import { locIngestLienQuan, INGEST_INTEGRITY_KEYS, laLoiTuChoiQuyen } from "./ingestIntegrityScanPresentation";
 
 function relGia(key: string, violationCount: number | null) {
   return {
@@ -66,5 +66,35 @@ describe("locIngestLienQuan — lọc summary.relationships xuống đúng khoá
     const filtered = locIngestLienQuan([relGia("fk:product_inspections.machineId->machines.id", null)]);
     expect(filtered).toHaveLength(1);
     expect(filtered[0].lastScan).toBeNull();
+  });
+});
+
+/**
+ * Fix review Lô 4 (Important) — `integrity.summary`/`runNow`/`history` là `adminProcedure`
+ * (đòi `ctx.user.role === 'admin'` ĐÚNG CHỮ, `server/_core/trpc.ts:357`) trong khi
+ * `listDeadLetters`/`getDeadLetterDetail` (bản vá này thêm) dùng
+ * `requirePermission("admin_system","canView")` — nhóm quyền CÓ THỂ cấp cho một vai
+ * KHÔNG PHẢI admin (scoped-admin). Một scoped-admin xem được tab dead-letter (đúng quyền)
+ * nhưng bị `integrity.summary` từ chối `FORBIDDEN` — TRƯỚC bản vá fix, UI không phân biệt
+ * lỗi này với "đã quét, 0 relationship liên quan ingest" ⇒ empty-state SAI Ý NGHĨA (giống
+ * lớp lỗi "một lối vào rồi từ chối" đã ghi trong memory dự án). `laLoiTuChoiQuyen` là hàm
+ * THUẦN nhận diện lỗi FORBIDDEN từ hình dạng lỗi tRPC (`error.data.code`), CÙNG quy ước
+ * `getErrorCode` nội bộ của `client/src/lib/trpcErrors.ts` (không export, nên viết một bản
+ * hẹp — chỉ cần phân biệt FORBIDDEN, không cần toàn bộ bộ dịch lỗi).
+ */
+describe("laLoiTuChoiQuyen — nhận diện lỗi FORBIDDEN (403) để phân biệt với empty-state THẬT", () => {
+  it("★★★ TRUNG TÂM — lỗi tRPC code FORBIDDEN (hình dạng TRPCClientError.data) ⇒ true", () => {
+    expect(laLoiTuChoiQuyen({ data: { code: "FORBIDDEN" } })).toBe(true);
+  });
+
+  it("lỗi khác (vd INTERNAL_SERVER_ERROR) ⇒ false — không được gộp chung mọi lỗi thành 'thiếu quyền'", () => {
+    expect(laLoiTuChoiQuyen({ data: { code: "INTERNAL_SERVER_ERROR" } })).toBe(false);
+  });
+
+  it("null/undefined/không có data ⇒ false (không ném ngoại lệ khi tra hình dạng lỗi lạ)", () => {
+    expect(laLoiTuChoiQuyen(null)).toBe(false);
+    expect(laLoiTuChoiQuyen(undefined)).toBe(false);
+    expect(laLoiTuChoiQuyen({})).toBe(false);
+    expect(laLoiTuChoiQuyen("chuỗi lỗi trần")).toBe(false);
   });
 });
