@@ -55,15 +55,21 @@ import { demHinhDangBa } from "../../../scripts/viStringScan.mjs";
  * ST4I Process Feed v1, commit `a69ed50e`) · **+1** đợt mở rộng `AoiPackageSection.tsx`
  * (+141 dòng, sau `79d9ff45`). Đo lại đủ 8 file: 415/415 nằm TRỌN trong nhóm ApiDocs,
  * nhãn vận hành vẫn 0 — trần dưới đây nâng CÙNG số nên hai cổng vẫn không bù trừ được.
+ *
+ * `415 → 424` (2026-09-05, Lô 8 Mục 3, BG-116) — **+9** `MachineSection.tsx`: khối tài
+ * liệu tích hợp MỚI cho luồng `presignTemplateImage`/`commitTemplateImage` (đúng khuôn
+ * `pointImage` tab đã có — mô tả tuyến, mã lỗi, idempotency bằng tiếng Việt trần, tên
+ * tuyến/trường giữ nguyên tiếng Anh). Cùng NHÓM chủ dự án đã chốt (tài liệu tham chiếu
+ * API cho bên tích hợp máy, không phải nhãn giao diện vận hành) — không mở nhóm mới.
  */
-const ALLOWED_RAW_VI_STRINGS = 415;
+const ALLOWED_RAW_VI_STRINGS = 424;
 
 /**
  * Trần riêng cho nhóm ApiDocs. Tồn tại để hai con số không thể bù trừ cho nhau:
  * nếu ai đó dịch bớt ApiDocs mà thêm nhãn trần vào màn vận hành, tổng vẫn 410 và
  * cổng trên sẽ xanh — chính là lớp lỗi "ngân sách tự thoả" đã trả giá ở Pha 7.
  */
-const ALLOWED_RAW_VI_APIDOCS = 415; // 410 → 415 cùng đợt 2026-09-03 — xem chú thích ở trần tổng.
+const ALLOWED_RAW_VI_APIDOCS = 424; // 415 → 424 (Lô 8 Mục 3, BG-116) — xem chú thích ở trần tổng.
 
 const CLIENT_SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LOCALES = resolve(CLIENT_SRC, "i18n/locales");

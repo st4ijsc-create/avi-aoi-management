@@ -99,6 +99,132 @@ x-api-key: YOUR_API_KEY
 }
 ```
 
+## Phương thức 3: Template Image Upload (ảnh của cây dạy — TÙY CHỌN, BG-116)
+
+**Bối cảnh:** khi máy đẩy cây dạy qua `submitMachineTemplate` (`surfaces[].positions[].
+captures[].components[]`), trường `templateImagePath` trong payload chỉ mang **đường
+dẫn hệ tệp của chính máy** (vd `D:/InspectProAOI/Solutions/MODEL-X/template.jpg`) —
+server **không fetch được** đường dẫn đó, nên canvas dạy giới hạn trên hệ không hiện
+được ảnh nền cho các điểm dạy từ cây. Phương thức này mở đường để máy (tùy chọn) tải
+**chính byte ảnh** lên server, theo đúng khuôn presign→PUT→commit của ZIP Package Upload.
+
+**⚠ TÙY CHỌN — máy chưa nâng cấp không bị ảnh hưởng.** Đây là bước RIÊNG, chạy SAU
+khi cây đã đẩy xong; hợp đồng `submitMachineTemplate`/cấu trúc cây **không đổi**. Máy
+không gọi ba bước dưới đây vẫn đẩy cây và ingest kết quả bình thường như hôm nay —
+canvas trên hệ chỉ hiện thông điệp "Ảnh template chưa được máy tải lên hệ" thay vì vẽ
+ảnh nền, không phải một lỗi.
+
+### Bước 1: Gọi Presign Endpoint
+```http
+POST /api/trpc/machineApi.presignTemplateImage
+Content-Type: application/json
+
+{
+  "apiKey": "YOUR_API_KEY",
+  "captureExtId": "a1b2c3d4-0000-4000-8000-000000001011",
+  "componentExtId": "a1b2c3d4-0000-4000-8000-000000010111",
+  "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sizeBytes": 245678,
+  "ext": "jpg"
+}
+```
+
+- **`captureExtId` (bắt buộc):** `Capture.Id` (GUID) — cùng giá trị đã gửi trong cây
+  dạy ở `submitMachineTemplate`. KHÔNG có `componentExtId` ⇒ ảnh áp cho CẢ CAPTURE
+  (ảnh nền của cả lượt chụp, ghi vào `product_captures.templateImageUrl`).
+- **`componentExtId` (tùy chọn):** `Component.Id` (GUID) của MỘT linh kiện thuộc
+  ĐÚNG capture ở trên. Có mặt ⇒ ảnh là ảnh RIÊNG của linh kiện đó (crop), ghi vào
+  `measurement_point_defs.referenceImageUrl` — khác cột với ảnh cấp capture.
+- **`contentHash` (bắt buộc):** SHA-256 hex (64 ký tự, hoa/thường đều được) của
+  TOÀN BỘ byte ảnh sắp tải lên. Cùng nội dung ⇒ cùng `contentHash` ⇒ commit lặp là
+  AN TOÀN (idempotent) — không tạo hàng mới, không lỗi.
+- **`sizeBytes` (bắt buộc):** số byte chính xác của ảnh. Trần mặc định 15 MB (cấu
+  hình bằng `MACHINE_TEMPLATE_IMAGE_MAX_BYTES`).
+- **`ext` (bắt buộc):** `"jpg"` hoặc `"png"`.
+
+**Response:**
+```json
+{
+  "result": {
+    "data": {
+      "success": true,
+      "objectKey": "product-models/33/template-e3b0c4...jpg",
+      "uploadUrl": "/api/machine-template-image/upload/product-models/33/template-e3b0c4...jpg",
+      "cap": "component"
+    }
+  }
+}
+```
+
+`cap` cho biết đích thật của lượt commit sắp tới: `"capture"` hay `"component"` —
+dùng để tự kiểm chéo với ý định gửi (có/không `componentExtId`).
+
+**Lỗi thường gặp:**
+- `NOT_FOUND` — `captureExtId` không tồn tại (chưa đẩy cây, hoặc gõ sai GUID), HOẶC
+  `componentExtId` không thuộc ĐÚNG `captureExtId` đã khai (đúng máy, sai capture).
+- `FORBIDDEN` — `captureExtId` tồn tại nhưng thuộc MÁY KHÁC (đẩy cây bằng API key
+  của máy khác, hoặc gõ nhầm GUID của máy khác).
+- `UNAUTHORIZED` — `apiKey`/`machineCode` sai hoặc thiếu quyền `ingest:write`
+  (CÙNG quyền mà `submitMachineTemplate` đang dùng — không cần cấp quyền mới).
+
+### Bước 2: Upload ảnh
+```http
+PUT {uploadUrl}
+Content-Type: image/jpeg
+Content-Length: 245678
+x-api-key: YOUR_API_KEY
+
+[BINARY JPG/PNG DATA]
+```
+
+Cùng quy tắc header với ZIP Package Upload (`x-api-key` HOẶC `x-machine-code`,
+`Content-Length`, body nhị phân — KHÔNG encode base64). `uploadUrl` đã bao gồm toàn
+bộ đường dẫn — dùng NGUYÊN VĂN giá trị presign trả về, không tự dựng lại.
+
+### Bước 3: Commit
+```http
+POST /api/trpc/machineApi.commitTemplateImage
+Content-Type: application/json
+
+{
+  "apiKey": "YOUR_API_KEY",
+  "captureExtId": "a1b2c3d4-0000-4000-8000-000000001011",
+  "componentExtId": "a1b2c3d4-0000-4000-8000-000000010111",
+  "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "ext": "jpg"
+}
+```
+
+Khai LẠI đúng `captureExtId`/`componentExtId`/`contentHash`/`ext` như Bước 1 — server
+đọc byte đã nhận ở Bước 2, băm lại và đối chiếu với `contentHash`, rồi ghi URL vào
+đúng hàng (`product_captures.templateImageUrl` hoặc
+`measurement_point_defs.referenceImageUrl`, tùy `cap` ở Bước 1).
+
+**Response:**
+```json
+{
+  "result": {
+    "data": {
+      "success": true,
+      "cap": "component",
+      "url": "/uploads/product-models/33/template-e3b0c4...jpg",
+      "objectKey": "product-models/33/template-e3b0c4...jpg",
+      "daDoi": true
+    }
+  }
+}
+```
+
+`daDoi: false` nghĩa là lượt commit này KHÔNG đổi gì (cùng nội dung đã được ghi từ
+trước — idempotent, không phải lỗi).
+
+**Lỗi thường gặp (ngoài `NOT_FOUND`/`FORBIDDEN`/`UNAUTHORIZED` như Bước 1):**
+- `BAD_REQUEST` — `contentHash` khai KHÔNG khớp SHA-256 thật của byte đã tải lên ở
+  Bước 2 (dữ liệu hỏng khi truyền, hoặc PUT nhầm ảnh khác). Tải lại đúng ảnh rồi
+  commit lại — hàng cây KHÔNG bị ghi khi lỗi này xảy ra.
+- `UNPROCESSABLE_CONTENT` — commit được gọi TRƯỚC khi Bước 2 hoàn tất (chưa có byte
+  nào tại `objectKey`). Gọi PUT trước, đợi phản hồi thành công, rồi mới commit.
+
 ## C# Code Example
 
 ### Quan trọng về CORS và Headers

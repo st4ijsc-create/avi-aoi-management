@@ -210,6 +210,44 @@ Headers: X-API-Key: machine-api-key
   "productReferenceImageUrl": "/uploads/product-models/33/ref-1710576000.png"
 }`;
 
+  // ── BG-116 Lô 8 Mục 3 — ảnh TEMPLATE của cây dạy: presign → PUT → commit (tùy chọn) ──
+  const templateImageFlowExample = `// 1) Đẩy cây dạy — KHÔNG đổi, làm như hôm nay
+POST ${endpointBase}/machineApi.submitMachineTemplate
+Headers: X-API-Key: machine-api-key
+{ "productModelCode": "PCBA-REV3", "template": { "surfaces": [...] } }
+
+// 2) Presign — khai captureExtId (+ componentExtId nếu muốn ảnh RIÊNG của linh kiện)
+POST ${endpointBase}/machineApi.presignTemplateImage
+Headers: X-API-Key: machine-api-key
+{
+  "captureExtId": "a1b2c3d4-0000-4000-8000-000000001011",
+  "componentExtId": "a1b2c3d4-0000-4000-8000-000000010111",
+  "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sizeBytes": 245678,
+  "ext": "jpg"
+}
+// Response: { "success": true, "objectKey": "product-models/33/template-e3b0c4...jpg",
+//             "uploadUrl": "/api/machine-template-image/upload/product-models/33/template-e3b0c4...jpg",
+//             "cap": "component" }
+
+// 3) PUT byte ảnh thật lên uploadUrl — body nhị phân, CÙNG header xác thực
+PUT {uploadUrl}
+Headers: X-API-Key: machine-api-key
+Content-Type: image/jpeg
+[BINARY JPG DATA]
+
+// 4) Commit — khai LẠI đúng khoá + contentHash, server đối chiếu sha256 rồi ghi URL
+POST ${endpointBase}/machineApi.commitTemplateImage
+Headers: X-API-Key: machine-api-key
+{
+  "captureExtId": "a1b2c3d4-0000-4000-8000-000000001011",
+  "componentExtId": "a1b2c3d4-0000-4000-8000-000000010111",
+  "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "ext": "jpg"
+}
+// Response: { "success": true, "cap": "component",
+//             "url": "/uploads/product-models/33/template-e3b0c4...jpg", "daDoi": true }`;
+
   // ── Direction 2: Server → Client (getPoints) ──
   const getPointsExample = `GET ${endpointBase}/machineApi.getPoints?input={"machineCode":"AOI-01","productModelCode":"PCBA-REV3"}
 Headers: X-API-Key: machine-api-key`;
@@ -676,6 +714,32 @@ defer res.Body.Close()`,
                       <li><strong>getPointImage:</strong> Khi App cần tải ảnh mẫu điểm đo theo <code>pointCode</code> + <code>productModelCode</code> (không cần numeric ID).</li>
                       <li><strong>Lưu ý:</strong> <code>syncMeasurementPoints</code> vẫn hỗ trợ <code>imageBase64</code> cho mỗi điểm — dùng khi sync batch nhiều điểm cùng lúc.</li>
                       <li><strong>getPoints:</strong> Response đã bao gồm <code>referenceImageUrl</code> cho mỗi point — dùng khi cần tải tất cả.</li>
+                    </ul>
+                  </div>
+
+                  {/* BG-116 Lô 8 Mục 3 — ảnh TEMPLATE của cây dạy (khác "Point Image" ở trên:
+                      đây là ảnh capture/component của CÂY DẠY submitMachineTemplate, không phải
+                      điểm đo phẳng v1.x). Tuỳ chọn — máy chưa nâng cấp không bị ảnh hưởng. */}
+                  <div className="mt-4 rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-4">
+                    <h4 className="mb-2 font-semibold text-cyan-300">🖼️ Ảnh template của cây dạy (BG-116, tùy chọn)</h4>
+                    <p className="mb-2 text-white/80">
+                      Sau khi đẩy cây dạy qua <code className="text-white">submitMachineTemplate</code>, cột
+                      {" "}<code className="text-white">templateImagePath</code> trong payload chỉ mang đường dẫn HỆ TỆP
+                      của máy (vd <code className="text-white">D:/InspectProAOI/...jpg</code>) — server KHÔNG fetch được
+                      đường dẫn đó. Máy có thể (tùy chọn) tải chính byte ảnh lên server bằng ba bước:
+                    </p>
+                    <ol className="list-decimal space-y-1 pl-5 text-white/80">
+                      <li><code className="text-white">submitMachineTemplate</code> — đẩy cây (surface/position/capture/component) như hôm nay, không đổi.</li>
+                      <li><code className="text-white">machineApi.presignTemplateImage</code> — khai <code>captureExtId</code> (ảnh mặt/lượt chụp) hoặc thêm <code>componentExtId</code> (ảnh riêng của linh kiện), <code>contentHash</code> (sha256 hex), <code>sizeBytes</code>, <code>ext</code> (jpg/png). Trả về <code>objectKey</code> + <code>uploadUrl</code>.</li>
+                      <li><code className="text-white">PUT {"{uploadUrl}"}</code> — tải byte ảnh THẬT (body nhị phân, cùng header <code>x-api-key</code>/<code>x-machine-code</code> như upload ZIP).</li>
+                      <li><code className="text-white">machineApi.commitTemplateImage</code> — khai lại đúng <code>captureExtId</code>/<code>componentExtId</code>/<code>contentHash</code>/<code>ext</code>; server đối chiếu sha256 với byte đã nhận rồi ghi URL vào đúng hàng cây.</li>
+                    </ol>
+                    <p className="mt-2 text-white/80">Ví dụ:</p>
+                    <CodeBlock code={templateImageFlowExample} language="typescript" />
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-white/70">
+                      <li><strong>Mã lỗi:</strong> <code className="text-white">NOT_FOUND</code> — <code>captureExtId</code> lạ, hoặc <code>componentExtId</code> không thuộc đúng capture đã khai. <code className="text-white">FORBIDDEN</code> — capture thuộc máy khác. <code className="text-white">BAD_REQUEST</code> — <code>contentHash</code> khai không khớp sha256 thật của byte đã tải lên (PUT lại rồi commit lại).</li>
+                      <li><strong>Idempotent:</strong> commit lặp lại với CÙNG nội dung ảnh (cùng sha256) là AN TOÀN — không tạo hàng mới, không lỗi.</li>
+                      <li><strong>Tùy chọn — máy chưa nâng cấp không ảnh hưởng ingest:</strong> đây là BƯỚC RIÊNG, SAU đẩy cây. Máy không gọi hai cửa mới này vẫn <code>submitMachineTemplate</code> bình thường; canvas dạy giới hạn trên hệ chỉ hiện thông điệp "ảnh chưa được tải lên hệ" thay vì lỗi.</li>
                     </ul>
                   </div>
                 </TabsContent>
