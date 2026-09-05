@@ -362,6 +362,23 @@ sudo ufw allow 1883/tcp  # MQTT (internal only)
 sudo ufw enable
 ```
 
+### 8.4 Chính Sách 2FA Bắt Buộc (`AUTH_2FA_BAT_BUOC`)
+
+> Chính sách chủ dự án chốt 2026-09-05 (Lô 10 Mục 2). Xem chi tiết đầy đủ ở khối chú thích
+> `AUTH_2FA_BAT_BUOC` trong `.env.example` và docblock `batBuoc2FA()` ở `server/_core/trpc.ts`.
+
+Biến môi trường `AUTH_2FA_BAT_BUOC` (mặc định = ép buộc khi không đặt) quyết định server có đòi
+admin/vai đặc quyền (supervisor, quality_inspector, engineer) phải bật 2FA trước khi gọi các thủ
+tục đặc quyền hay không:
+
+| Kiểu triển khai | Giá trị bắt buộc | Vì sao |
+|---|---|---|
+| **Internet-facing** (cổng đăng nhập lộ ra ngoài LAN nhà máy, kể cả qua VPN/reverse-proxy công khai) | `AUTH_2FA_BAT_BUOC=1` **hoặc để trống/không đặt** (mặc định trong mã đã là ép) | Đặt `=0` tắt đòi-BẬT-2FA cho **mọi** `adminProcedure`/`require2FA` cùng lúc, gồm cả các thủ tục quản trị đã hợp nhất RBAC với dead-letter WAL (`integrityRouter`, BG-131 Lô 9 Mục 3) — các thủ tục đó chạy được mà không cần OTP khi cờ này tắt. |
+| **Mạng LOCAL** (nội bộ nhà máy, không có lối vào Internet) | `AUTH_2FA_BAT_BUOC=0` được phép | Đánh đổi đã chấp nhận: chi phí bắt ~100 kỹ sư quẹt OTP mỗi lần đăng nhập/đăng xuất nhiều lần trong ca không tương xứng với rủi ro khi không có tầng truy cập Internet nào phải chắn. RBAC/kiểm vai vẫn giữ nguyên; step-up OTP cho lệnh chạm máy/deploy (`ACTUATION_STEPUP_2FA`) không đổi. |
+
+**Không đổi hành vi mặc định trong mã** — đây thuần là chính sách cấu hình `.env` theo môi trường
+triển khai, không phải một thay đổi runtime mới.
+
 ---
 
 ## 9. Monitoring và Logging
