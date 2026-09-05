@@ -41,7 +41,7 @@ import {
   ShieldCheck,
   Ticket
 } from "lucide-react";
-import { navItems } from "@/lib/navigation";
+import { navItems, getRequiredPermissionForHref } from "@/lib/navigation";
 // doc 47 IA Đợt 2 — "Tổng quan": cây mô hình nhà máy + bảng kiểm tra cấu hình.
 import { FactoryTree } from "@/components/factoryConfig/FactoryTree";
 import { ConfigHealthPanel } from "@/components/factoryConfig/ConfigHealthPanel";
@@ -785,8 +785,20 @@ export default function DataSettings() {
 
   // doc 47 IA Đợt 1 — the hub LINKS OUT to config pages that have their own single home
   // (instead of re-embedding their managers, which caused menu/route duplication).
+  //
+  // Lô 5 Mục 2 (lớp lỗi "một lối vào rồi TỪ CHỐI", -46) — "layout" trỏ tới "/layout", từ
+  // Khối D Task 1 route đó chỉ còn <Redirect> vào "/digital-twin?tab=layout" (gate
+  // analytics_oee, xem navigation.tsx). Trang DataSettings này tự nó đã gate
+  // settings_factory (canViewFactoryConfig ở trên) — một người có settings_factory mà
+  // KHÔNG có analytics_oee vẫn vào được trang, thấy link, bấm thì bị RouteGuard của hub
+  // từ chối. Điều kiện hiển thị RIÊNG link này phải = quyền của ĐÍCH, lấy từ navGroups
+  // (một nguồn — getRequiredPermissionForHref), không hand-copy chuỗi quyền tay.
+  const layoutLinkPermission = getRequiredPermissionForHref("/digital-twin") ?? "analytics_oee";
+  const canOpenLayoutQuickLink = isAdmin || hasPermission(layoutLinkPermission, "canView");
   const quickLinks = [
-    { href: "/layout", title: t("dataSettings.quickLinks.layout"), description: t("dataSettings.quickLinks.layoutDesc"), icon: <Factory className="h-5 w-5" /> },
+    ...(canOpenLayoutQuickLink
+      ? [{ href: "/layout", title: t("dataSettings.quickLinks.layout"), description: t("dataSettings.quickLinks.layoutDesc"), icon: <Factory className="h-5 w-5" /> }]
+      : []),
     { href: "/workstation-management", title: t("dataSettings.quickLinks.workstation"), description: t("dataSettings.quickLinks.workstationDesc"), icon: <Warehouse className="h-5 w-5" /> },
     { href: "/process-management", title: t("dataSettings.quickLinks.process"), description: t("dataSettings.quickLinks.processDesc"), icon: <Workflow className="h-5 w-5" /> },
     { href: "/products", title: t("dataSettings.quickLinks.products"), description: t("dataSettings.quickLinks.productsDesc"), icon: <Package className="h-5 w-5" /> },

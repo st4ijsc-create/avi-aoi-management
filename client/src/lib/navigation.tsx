@@ -2442,6 +2442,23 @@ export function hasAccessToItem(
 }
 
 /**
+ * Lô 5 Mục 2 — MỘT NGUỒN cho "quyền của route đích", để nơi hiển thị một lối vào KHÔNG
+ * hand-copy chuỗi quyền của route đó (lớp lỗi "một lối vào rồi TỪ CHỐI": mục điều hướng
+ * khai quyền X trong khi route đích thật đòi quyền Y — vd `/layout` từng khai
+ * `settings_factory` trong khi từ Khối D Task 1 nó chỉ còn là <Redirect> vào
+ * `/digital-twin?tab=layout`, route thật đòi `analytics_oee`). Truyền THẲNG href của route
+ * ĐÍCH (sau redirect) — không truyền href của mục điều hướng cũ nếu mục đó đã bị xoá khỏi
+ * `navGroups` (trả `undefined`, không suy ra quyền sai).
+ */
+export function getRequiredPermissionForHref(href: string): string | undefined {
+  for (const group of navGroups) {
+    const item = group.items.find(i => i.href === href);
+    if (item) return item.requiredPermission;
+  }
+  return undefined;
+}
+
+/**
  * Get filtered navigation groups based on user role AND granular permissions.
  */
 /**

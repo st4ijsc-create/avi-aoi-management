@@ -22,6 +22,7 @@ import {
   getFilteredNavGroups,
   filterNavGroupsByMode,
   defaultNavModeForRole,
+  getRequiredPermissionForHref,
   type NavGroup,
 } from "./navigation";
 
@@ -66,6 +67,32 @@ describe("navigation.tsx — engineer AI nav widening (doc69 Wave 0-C)", () => {
   it("a role outside the widened set (e.g. operator) is still rejected by the widened items", () => {
     expect(hasAccessToItem("/ai-brain", "operator", allowAllPerms)).toBe(false);
     expect(hasAccessToItem("/ai-datasets", "operator", allowAllPerms)).toBe(false);
+  });
+});
+
+/**
+ * Lô 5 Mục 2 — `getRequiredPermissionForHref`: MỘT NGUỒN cho "quyền của route đích",
+ * dùng để sửa lớp lỗi "một lối vào rồi TỪ CHỐI" (mục điều hướng/tile/quicklink khai quyền
+ * X trong khi đích thật đòi quyền Y). Ghim hai điều:
+ *  1. `/digital-twin` (đích thật của `/layout` sau khi <Redirect> — Khối D Task 1) trả
+ *     đúng "analytics_oee" — đây là quyền mà `DataManagementHub.tsx`/`DataSettings.tsx`
+ *     phải dùng cho tile/quicklink "layout", KHÔNG PHẢI "settings_factory" đã khai trước
+ *     Lô 5 (BG mới, xem lo-5-report.md).
+ *  2. `/layout` (mục điều hướng cũ) trả `undefined` — mục này đã bị XOÁ khỏi `navGroups`
+ *     ở Khối D Task 2 (04265a03). Không được suy luận nhầm quyền từ một href không còn
+ *     mục nav — `undefined` là câu trả lời ĐÚNG, nơi gọi phải tự có fallback rõ ràng.
+ */
+describe("navigation.tsx — getRequiredPermissionForHref (Lô 5 Mục 2, một nguồn quyền-theo-route)", () => {
+  it("/digital-twin (đích thật sau redirect của /layout) trả 'analytics_oee'", () => {
+    expect(getRequiredPermissionForHref("/digital-twin")).toBe("analytics_oee");
+  });
+
+  it("/layout (mục nav ĐÃ XOÁ ở Khối D Task 2) trả undefined — không suy ra quyền sai", () => {
+    expect(getRequiredPermissionForHref("/layout")).toBeUndefined();
+  });
+
+  it("một href không tồn tại trong navGroups cũng trả undefined", () => {
+    expect(getRequiredPermissionForHref("/khong-ton-tai-lo5")).toBeUndefined();
   });
 });
 

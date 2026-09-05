@@ -8,10 +8,20 @@
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HubLauncher, type HubCategory } from "@/components/workspace";
+import { getRequiredPermissionForHref } from "@/lib/navigation";
 import {
   Package, Sparkles, Link as LinkIcon, Cpu, Tags, Users, History, ShieldCheck, BookOpen,
   Database, LayoutTemplate, Building2, Workflow,
 } from "lucide-react";
+
+// Lô 5 Mục 2 (lớp lỗi "một lối vào rồi TỪ CHỐI", -46) — tile "/layout" từng khai
+// requiredPermission: "settings_factory" trong khi đích thật (sau Khối D Task 1) là
+// <Redirect> vào "/digital-twin?tab=layout", route đòi "analytics_oee" (navigation.tsx).
+// Người có settings_factory mà không có analytics_oee vẫn THẤY tile, bấm vào bị RouteGuard
+// của hub từ chối. Điều kiện hiển thị PHẢI = quyền của ĐÍCH — lấy từ navGroups (một nguồn),
+// không hand-copy chuỗi quyền tay lần hai.
+const LAYOUT_TILE_HREF = "/layout";
+const LAYOUT_TILE_PERMISSION = getRequiredPermissionForHref("/digital-twin") ?? "analytics_oee";
 
 const CATEGORIES: readonly HubCategory[] = [
   {
@@ -45,7 +55,7 @@ const CATEGORIES: readonly HubCategory[] = [
       { icon: Database, label: "dataHub.datasettings", blurb: "dataHub.datasettingsBlurb", href: "/datasettings", requiredPermission: "settings_factory" },
       { icon: LayoutTemplate, label: "dataHub.workstationManagement", blurb: "dataHub.workstationManagementBlurb", href: "/workstation-management", requiredPermission: "settings_factory" },
       { icon: Workflow, label: "dataHub.processManagement", blurb: "dataHub.processManagementBlurb", href: "/process-management", requiredPermission: "settings_factory" },
-      { icon: LayoutTemplate, label: "dataHub.layout", blurb: "dataHub.layoutBlurb", href: "/layout", requiredPermission: "settings_factory" },
+      { icon: LayoutTemplate, label: "dataHub.layout", blurb: "dataHub.layoutBlurb", href: LAYOUT_TILE_HREF, requiredPermission: LAYOUT_TILE_PERMISSION },
     ],
   },
 ];
