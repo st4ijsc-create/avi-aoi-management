@@ -13951,6 +13951,8 @@
     "current": "Current",
     "proposed": "Proposed",
     "nominal": "Nominal",
+    "deXuatDayDu": "Full proposal",
+    "deXuatXoa": "cleared",
     "aiBasis": "AI basis",
     "requesterComment": "Requester comment",
     "decisionComment": "Decision comment",

@@ -13734,6 +13734,8 @@
     "current": "当前",
     "proposed": "建议",
     "nominal": "标称值",
+    "deXuatDayDu": "完整提议",
+    "deXuatXoa": "清除",
     "aiBasis": "AI 依据",
     "requesterComment": "申请人备注",
     "decisionComment": "决定备注",

@@ -54,6 +54,11 @@ import { SlidersHorizontal, AlertTriangle, CheckCircle2, XCircle, Undo2 } from "
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { normalizeBatchResponse, type BatchSummary } from "./thresholdApprovalsBatch";
+// Lô 7 Mục 4 (BG-111) — hiển thị ĐỦ BỘ `suggestion.deXuat` (Lô 7 Mục 2). Hàm
+// THUẦN trả `[]` cho hàng CŨ (không có `deXuat`) — khối "current vs proposed"
+// bên dưới (LSL/USL/nominal) ĐỌC TRỰC TIẾP các cột legacy, KHÔNG đổi, KHÔNG
+// phụ thuộc file này — tương thích lùi giữ NGUYÊN VĂN.
+import { xayDeXuatHienThi, coDeXuatDayDu } from "./thresholdApprovalsDeXuatDisplay";
 
 type Approval = {
   id: number;
@@ -437,7 +442,8 @@ function ReviewDialog({
             )}
           </div>
 
-          {/* current vs proposed */}
+          {/* current vs proposed — NGUYÊN VĂN từ trước Lô 7 (LSL/USL/nominal, đọc cột legacy
+              trực tiếp), không đổi — tương thích lùi cho MỌI hàng (cũ lẫn mới). */}
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-md border p-3">
               <div className="text-xs font-medium text-muted-foreground mb-1">{t("thresholdApprovals.current")}</div>
@@ -452,6 +458,28 @@ function ReviewDialog({
               <div>{t("thresholdApprovals.nominal")}: <b>{num(item.proposedNominal)}</b></div>
             </div>
           </div>
+
+          {/* Lô 7 Mục 4 (BG-111) — ĐỦ BỘ suggestion.deXuat (Lô 7 Mục 2, hợp đồng
+              request mở rộng). Chỉ render khi hàng THẬT SỰ mang deXuat (hàng CŨ
+              trước Lô 7 ⇒ coDeXuatDayDu=false, khối này ẩn hẳn — khối current/
+              proposed ở trên đã đủ cho chúng, đúng "hàng cũ vẫn render như trước"). */}
+          {coDeXuatDayDu(item.suggestion) && (
+            <div className="rounded-md border p-3">
+              <div className="text-xs font-medium text-muted-foreground mb-1">
+                {t("thresholdApprovals.deXuatDayDu", "Đề xuất đủ bộ")}
+              </div>
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs sm:grid-cols-3">
+                {xayDeXuatHienThi(item.suggestion).map((d) => (
+                  <div key={d.field} className="flex items-baseline justify-between gap-2 rounded border px-2 py-1">
+                    <dt className="text-muted-foreground">{t(d.i18nKey)}</dt>
+                    <dd className={d.laXoa ? "font-medium text-destructive" : "font-medium"}>
+                      {d.laXoa ? t("thresholdApprovals.deXuatXoa", "xóa") : d.giaTri}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
 
           {/* AI basis */}
           {(cpk != null || basis != null) && (
