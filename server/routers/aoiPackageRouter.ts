@@ -11,6 +11,8 @@
  * - downloadZip: Tải ZIP gốc cho audit
  * - queueMetrics: Agent gửi metrics hàng đợi upload
  * - getQueueStatus: Xem trạng thái hàng đợi upload theo máy
+ * - listDeadLetters/getDeadLetterDetail: Lô 4 Mục 3 (BG-36) — đọc dead-letter WAL
+ *   (inspectionStoreForward.ts), phạm vi ĐỌC-only, payload cắt gọn an toàn.
  */
 
 import { z, ZodError } from "zod";
@@ -93,6 +95,12 @@ import { taoDemMayTuMauThuan } from "../services/mayTuMauThuan";
 // sản xuất sau khi Task 5 đổi neo spec-gate của cửa ZIP sang `inspection_packages.createdAt`.
 import { docGioMay } from "../utils/factoryTime";
 import type { ResultVerdict } from "@shared/rollupVerdict";
+// Lô 4 Mục 3 (BG-36) — đường ĐỌC dead-letter WAL (phạm vi ĐỌC-only, xem docblock
+// đầu `deadLetterReader.ts`). `requirePermission` CÙNG cổng `admin_system`/`canView`
+// mà `systemHealthRouter.dbIngestHealth` và các endpoint quản trị ingest khác
+// (`machineApiRouters.ts`) đã dùng — không phát minh nhóm quyền mới cho việc này.
+import { requirePermission } from "../_core/accessControl";
+import { listDeadLetterEntries, getDeadLetterDetail } from "../services/inspection/deadLetterReader";
 
 // ============================================================
 // Image Cache Configuration
@@ -2424,4 +2432,33 @@ export const aoiPackageRouter = router({
         perMachine,
       };
     }),
+
+  /**
+   * 11. Lô 4 Mục 3 (BG-36) — danh sách dead-letter (phân trang) + tổng số + tổng
+   * byte. ĐỌC-ONLY: không resubmit/replay (đó là việc SAU, ngoài phạm vi). Không
+   * bao giờ trả `payload` đầy đủ (ảnh base64 + apiKey) — chỉ metadata rút gọn, xem
+   * `deadLetterReader.listDeadLetterEntries`. `admin_system`/`canView` — CÙNG
+   * nhóm quyền `systemHealthRouter.dbIngestHealth` đã dùng cho các chỉ số ingest
+   * nội bộ khác (query shapes/WAL depth) — dead-letter còn nhạy hơn (mang dữ liệu
+   * bo THẬT), nên dùng nhóm quyền CHẶT nhất đang có cho ingest, không nới lỏng
+   * hơn cổng đã có.
+   */
+  listDeadLetters: protectedProcedure
+    .use(requirePermission("admin_system", "canView"))
+    .input(z.object({
+      offset: z.number().int().min(0).default(0),
+      limit: z.number().int().min(1).max(200).default(20),
+    }))
+    .query(async ({ input }) => listDeadLetterEntries(input)),
+
+  /**
+   * 12. Lô 4 Mục 3 (BG-36) — chi tiết MỘT mục dead-letter theo `key`. Payload đã
+   * CẮT GỌN AN TOÀN (chuỗi dài + `apiKey` — xem `deadLetterReader.getDeadLetterDetail`).
+   * Trả `null` khi không tìm thấy (tra cứu sai khoá — không phải lỗi hệ thống, để
+   * UI tự vẽ "không tìm thấy" thay vì bắt lỗi TRPCError).
+   */
+  getDeadLetterDetail: protectedProcedure
+    .use(requirePermission("admin_system", "canView"))
+    .input(z.object({ key: z.string().min(1) }))
+    .query(async ({ input }) => getDeadLetterDetail(input.key)),
 });
