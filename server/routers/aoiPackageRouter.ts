@@ -1923,7 +1923,11 @@ export const aoiPackageRouter = router({
       machineCode: z.string().optional(),
       serialNumber: z.string().optional(),
       productModel: z.string().optional(),
-      status: z.enum(["pending", "uploading", "uploaded", "committed", "failed"]).optional(),
+      // ★★★ Lô 4 Mục 1 (BG-74) — 'dead' (migration 0344, trạng thái CUỐI — xem
+      // `laGoiDaChet`) THÊM vào enum lọc. TRƯỚC bản vá, enum này chỉ 5 giá trị —
+      // một gói `'dead'` (cột DB `packagestatusenum` đã có đủ 6 giá trị từ lâu)
+      // KHÔNG BAO GIỜ lọc được qua UI/API, dù nó tồn tại thật trong bảng.
+      status: z.enum(["pending", "uploading", "uploaded", "committed", "failed", "dead"]).optional(),
       overallResult: z.enum(["OK", "NG", "NTF"]).optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
@@ -2380,12 +2384,21 @@ export const aoiPackageRouter = router({
 
       const where = conditions.length > 0 ? and(...conditions) : undefined;
 
+      // ★★★ Lô 4 Mục 1 (BG-74) — 'dead' (migration 0344, trạng thái CUỐI) THÊM thành
+      // một nhóm RIÊNG. TRƯỚC bản vá, bốn nhóm `committed/failed/pending` (không có
+      // `dead`) KHÔNG cộng khớp `total` (= count(*), MỌI status) mỗi khi tồn tại ít
+      // nhất một gói `'dead'` thật — "cộng không khớp" mà BG-74 khai. Bất biến sau
+      // bản vá: `committed + failed + pending + dead === total` LUÔN ĐÚNG (6 giá trị
+      // enum `packagestatusenum` được phủ đủ bởi bốn nhóm: pending/uploading/uploaded
+      // gộp vào `pending`, committed/failed/dead mỗi cái một nhóm riêng — không còn
+      // giá trị status nào rơi ra ngoài cả bốn nhóm).
       const stats = await database
         .select({
           total: count(),
           committed: sql<number>`SUM(CASE WHEN status = 'committed' THEN 1 ELSE 0 END)::int`,
           failed: sql<number>`SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)::int`,
           pending: sql<number>`SUM(CASE WHEN status IN ('pending', 'uploading', 'uploaded') THEN 1 ELSE 0 END)::int`,
+          dead: sql<number>`SUM(CASE WHEN status = 'dead' THEN 1 ELSE 0 END)::int`,
           totalImages: sql<number>`SUM(COALESCE("imageCount", 0))::int`,
           totalSize: sql<number>`SUM(COALESCE("fileSizeBytes", 0))::bigint`,
           ngPackages: sql<number>`SUM(CASE WHEN "overallResult" = 'NG' THEN 1 ELSE 0 END)::int`,
@@ -2407,7 +2420,7 @@ export const aoiPackageRouter = router({
         .groupBy(inspectionPackages.machineCode, inspectionPackages.machineId);
 
       return {
-        summary: stats[0] || { total: 0, committed: 0, failed: 0, pending: 0, totalImages: 0, totalSize: 0, ngPackages: 0 },
+        summary: stats[0] || { total: 0, committed: 0, failed: 0, pending: 0, dead: 0, totalImages: 0, totalSize: 0, ngPackages: 0 },
         perMachine,
       };
     }),

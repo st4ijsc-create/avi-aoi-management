@@ -896,7 +896,7 @@ record PendingUpload
   pageSize: 20,
   serialNumber: "SN-2026",     // optional filter
   machineCode: "AOI-01",       // optional filter
-  status: "committed",          // "pending" | "uploading" | "uploaded" | "committed" | "failed"
+  status: "committed",          // "pending" | "uploading" | "uploaded" | "committed" | "failed" | "dead"
   overallResult: "NG",         // "OK" | "NG" | "NTF"
   dateFrom: "2026-02-01",
   dateTo: "2026-02-07",
