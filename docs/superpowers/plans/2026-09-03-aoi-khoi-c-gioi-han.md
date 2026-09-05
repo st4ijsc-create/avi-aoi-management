@@ -1,6 +1,6 @@
 # Khối C — nguồn sự thật của giới hạn: kế hoạch thực thi
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Đóng BG-96 (fake-UTC) và BG-97 (v2 chấm theo limit sống) rồi dựng đường DẠY GIỚI HẠN (spec dùng chung + router đọc cây + tab UI) để spec-gate BG-92 lần đầu chấm trên dữ liệu thật; chốt bằng BG-98 (cổng máy-tự-mâu-thuẫn).
 
@@ -9,6 +9,17 @@
 **Tech Stack:** TypeScript · drizzle + postgres-js · tRPC v11 · vitest (`*.db.test.ts` cần Postgres test, client `*.unit.test.ts`) · React 19 + shadcn/ui + i18next.
 
 **Spec:** `docs/superpowers/specs/2026-09-03-aoi-khoi-c-nguon-su-that-gioi-han-design.md`
+
+## ⓘ NGHIỆM THU 2026-09-05 — cách các ô dưới đây được tick
+
+Kế hoạch được thực thi bởi HAI phiên (Task 1-5 phiên -91/-fe; Task 6-14 phiên -46 tiếp quản theo
+spec tiếp-quản 57c8686d) với review từng task + review toàn nhánh lượt 9 (1C·5I) + vòng sửa 9 hai
+vòng (12 commit) + re-review cuối 0C·0I·3M. Ô tick theo TRẠNG THÁI CUỐI ghi ở ledger
+`.superpowers/sdd/2026-09-03-aoi-khoi-c-gioi-han/progress.md` và mục Cổng ra (7/7, tick kèm commit
+`db44d88e`, mục 3 gỡ "có điều kiện" ở `c3789c34`) — không dựng lại từng bước lịch sử. Sai khác so
+với kế hoạch gốc đều có ruling trong ledger (neo server-thay-máy dff2e531 · Task 4 bỏ vì c98781db
+làm sẵn · BG-99 gộp vào Task 5 · R-KC-1 canvas). Nợ bền kế hoạch để lại: BG-100…128 trong backlog
+toàn cảnh (BG-113/119/121/122/124/125 đã đóng 2026-09-04/05, retag kèm SHA).
 
 ## Global Constraints
 
@@ -35,7 +46,7 @@
 
 **Interfaces:** Produces: bất biến "mọi cột thời gian họ inspection là UTC thật" — Task 5 (neo instant) và Task 3 (census) dựa vào.
 
-- [ ] **Bước 1: Viết lưới bất biến (ĐỎ trên mã hiện tại).** Trong `thoiGianMotHeQuyChieu.db.test.ts`: gọi `submitInspectionTreeV2` (qua `machineApiRouter.createCaller` như `walCayV2PhatLai.db.test.ts` đang làm) với payload v2 có `completedAt: "2026-09-03T02:00:00.000Z"` và capture mang `startedAt: "2026-09-03T01:59:00.000Z"`; đọc lại hàng `product_inspections` + `inspection_captures` cùng bo:
+- [x] **Bước 1: Viết lưới bất biến (ĐỎ trên mã hiện tại).** Trong `thoiGianMotHeQuyChieu.db.test.ts`: gọi `submitInspectionTreeV2` (qua `machineApiRouter.createCaller` như `walCayV2PhatLai.db.test.ts` đang làm) với payload v2 có `completedAt: "2026-09-03T02:00:00.000Z"` và capture mang `startedAt: "2026-09-03T01:59:00.000Z"`; đọc lại hàng `product_inspections` + `inspection_captures` cùng bo:
 
 ```ts
 // Bất biến BG-96: header và cây CÙNG hệ quy chiếu — lệch đúng 60s như máy khai,
@@ -47,9 +58,9 @@ expect(header[0].inspectionTime.getTime() - cap[0].startedAt!.getTime()).toBe(60
 expect(header[0].inspectionTime.toISOString()).toBe("2026-09-03T02:00:00.000Z");
 ```
 
-- [ ] **Bước 2: Chạy để xác nhận ĐỎ.** `npx vitest run server/routers/thoiGianMotHeQuyChieu.db.test.ts` — kỳ vọng lệch `25_260_000` (60s + 7h) trên máy UTC+7. Chép nguyên văn dòng đỏ.
+- [x] **Bước 2: Chạy để xác nhận ĐỎ.** `npx vitest run server/routers/thoiGianMotHeQuyChieu.db.test.ts` — kỳ vọng lệch `25_260_000` (60s + 7h) trên máy UTC+7. Chép nguyên văn dòng đỏ.
 
-- [ ] **Bước 3: Bỏ dịch ở 4 điểm ghi + 1 dedup.** Mẫu (áp cả 5 chỗ):
+- [x] **Bước 3: Bỏ dịch ở 4 điểm ghi + 1 dedup.** Mẫu (áp cả 5 chỗ):
 
 ```ts
 // TRƯỚC (machineApiRouters.ts:1557-1558):
@@ -63,11 +74,11 @@ const localInspTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOf
   Dedup `:1119-1121`: `const local = ...` → dùng thẳng `new Date(input.inspectionTime)`. `serverReceivedAt` `:1588-1590`: bỏ `localServerReceivedAt`, ghi `serverReceivedAt` thô.
   **Thay khối chú thích doc 51 P1 CASE #3** (`:1543-1556` và bản sao ở `:3720-3721`, `aoiPackageRouter.ts` quanh `:1334`) bằng chú thích mới: cutover 2026-09-03 theo spec Khối C QĐ-1 — dữ liệu test đã được chủ dự án cho phép làm lại, `FACTORY_DB_STORAGE_TZ` giữ mặc định UTC.
 
-- [ ] **Bước 4: Sửa lưới đang ghim fake-UTC.** `machineApiProvenance.test.ts:281-284`: `expectedLocalRecv` → `serverNow` thô (`expect((row.serverReceivedAt as Date).toISOString()).toBe(serverNow.toISOString())`). Soát cả file test này tìm phép dịch tương tự (grep `getTimezoneOffset` trong file).
+- [x] **Bước 4: Sửa lưới đang ghim fake-UTC.** `machineApiProvenance.test.ts:281-284`: `expectedLocalRecv` → `serverNow` thô (`expect((row.serverReceivedAt as Date).toISOString()).toBe(serverNow.toISOString())`). Soát cả file test này tìm phép dịch tương tự (grep `getTimezoneOffset` trong file).
 
-- [ ] **Bước 5: Chạy lưới liên quan.** `npx vitest run server/routers/thoiGianMotHeQuyChieu.db.test.ts server/routers/machineApiProvenance.test.ts server/db/walCayV2PhatLai.db.test.ts server/routers/aoiPackageIngestHopNhat.test.ts` — tất cả XANH. Nếu lưới khác đỏ vì từng ghim fake-UTC: sửa lưới (hành vi mới là đúng theo spec), ghi vào báo cáo từng file đã sửa.
+- [x] **Bước 5: Chạy lưới liên quan.** `npx vitest run server/routers/thoiGianMotHeQuyChieu.db.test.ts server/routers/machineApiProvenance.test.ts server/db/walCayV2PhatLai.db.test.ts server/routers/aoiPackageIngestHopNhat.test.ts` — tất cả XANH. Nếu lưới khác đỏ vì từng ghim fake-UTC: sửa lưới (hành vi mới là đúng theo spec), ghi vào báo cáo từng file đã sửa.
 
-- [ ] **Bước 6: Commit** (`git add` đúng các file trên).
+- [x] **Bước 6: Commit** (`git add` đúng các file trên).
 
 **Ba mệnh đề:** header = đúng instant máy khai (ISO khớp từng ký tự) · header↔cây lệch đúng 60s · dedup v1 vẫn bắt trùng (lưới `walCayV2PhatLai`/dedup hiện có xanh).
 
@@ -79,7 +90,7 @@ const localInspTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOf
 
 **Interfaces:** Consumes: `wallClockToUtc(input, tz)` — `server/utils/factoryTime.ts:138` (nhận `{year,month,day,hour?,minute?,second?}`); `getFactoryTimezone()`.
 
-- [ ] **Bước 1: Viết helper dùng chung + lưới (ĐỎ vì chưa có).** Tạo hàm trong `server/utils/factoryTime.ts`:
+- [x] **Bước 1: Viết helper dùng chung + lưới (ĐỎ vì chưa có).** Tạo hàm trong `server/utils/factoryTime.ts`:
 
 ```ts
 /**
@@ -109,12 +120,12 @@ export function docGioTuongNhaMay(dateStr: string, endOfDay = false): Date | und
 
   Lưới (`docGioTuongNhaMay.test.ts`, ghim `FACTORY_TIMEZONE=Asia/Ho_Chi_Minh` qua `vi.stubEnv`): `"2026-09-03"` → `2026-09-02T17:00:00.000Z` · `"2026-09-03"` endOfDay → `2026-09-03T16:59:59.999Z` · `"2026-09-03T08:30:00"` → `2026-09-03T01:30:00.000Z` · `"2026-09-03T08:30:00Z"` → giữ nguyên · `""`/`"rác"` → `undefined` · **đối chứng**: cùng ngày, kết quả === `resolveFactoryDateWindow("2026-09-03","2026-09-03").start` (`server/utils/kpi.ts:112`).
 
-- [ ] **Bước 2: Chạy ĐỎ rồi cài, chạy XANH.**
+- [x] **Bước 2: Chạy ĐỎ rồi cài, chạy XANH.**
 
-- [ ] **Bước 3: Thay ruột 3 helper cũ.** `parseLocalDate(s, endOfDay)` → `return docGioTuongNhaMay(s, endOfDay) ?? new Date(NaN);` (call site `_core/index.ts` kiểm `isNaN` sẵn — soát 7 điểm gọi liệt kê ở báo cáo khảo sát: `:2271, 2382, 2733, 3617, 3763, 3990, 4184`). `parseDateParam` → giữ chữ ký, ruột gọi `docGioTuongNhaMay`, trả `undefined` như cũ. `toFakeUtc(d: Date)` nhận `Date` (đã parse từ input client): thay bằng nhận input GỐC — đo call site: nếu tất cả dạng `toFakeUtc(new Date(input.startDate))` thì đổi thành `docGioTuongNhaMay(input.startDate)`; nếu có chỗ truyền Date tính toán, giữ hàm nhận Date và đổi ruột thành `wallClockToUtc(wallClockInZone-của-process...)` — **đo trước khi sửa, ghi vào báo cáo**.
+- [x] **Bước 3: Thay ruột 3 helper cũ.** `parseLocalDate(s, endOfDay)` → `return docGioTuongNhaMay(s, endOfDay) ?? new Date(NaN);` (call site `_core/index.ts` kiểm `isNaN` sẵn — soát 7 điểm gọi liệt kê ở báo cáo khảo sát: `:2271, 2382, 2733, 3617, 3763, 3990, 4184`). `parseDateParam` → giữ chữ ký, ruột gọi `docGioTuongNhaMay`, trả `undefined` như cũ. `toFakeUtc(d: Date)` nhận `Date` (đã parse từ input client): thay bằng nhận input GỐC — đo call site: nếu tất cả dạng `toFakeUtc(new Date(input.startDate))` thì đổi thành `docGioTuongNhaMay(input.startDate)`; nếu có chỗ truyền Date tính toán, giữ hàm nhận Date và đổi ruột thành `wallClockToUtc(wallClockInZone-của-process...)` — **đo trước khi sửa, ghi vào báo cáo**.
 
-- [ ] **Bước 4:** `npx vitest run server/routers/stationAnalysisRouter` (+ mọi test của 3 module — glob theo tên file) + `npm run check`. XANH.
-- [ ] **Bước 5: Commit.**
+- [x] **Bước 4:** `npx vitest run server/routers/stationAnalysisRouter` (+ mọi test của 3 module — glob theo tên file) + `npm run check`. XANH.
+- [x] **Bước 5: Commit.**
 
 **Hai mệnh đề:** cùng một ngày người dùng chọn, 3 module trả cùng cửa sổ với `resolveFactoryDateWindow` · không call site nào còn gọi thẳng công thức `getTimezoneOffset`.
 
@@ -125,9 +136,9 @@ export function docGioTuongNhaMay(dateStr: string, endOfDay = false): Date | und
 - Create: `scripts/don-du-lieu-lech-tz.mjs`
 - Modify: `docs/superpowers/plans/2026-09-03-aoi-khoi-b-cay-day.md:340` (gỡ ràng buộc "không so thời gian header↔cây")
 
-- [ ] **Bước 1: Census.** Quét `server/**/*.ts` (trừ `*.test.ts`) tìm mẫu `getTimezoneOffset\(\)\s*\*\s*60000` — kỳ vọng **0** (sau Task 1+2). Fuse chống-vacuity: tự quét một chuỗi mồi chứa mẫu ⇒ phải bắt được. Chạy ĐỎ trên cây chưa vá không cần (Task 1+2 đã vá) — thay bằng **đột biến**: thêm tạm 1 dòng chứa mẫu vào một file server ⇒ census ĐỎ ⇒ hoàn tác, chép nguyên văn.
-- [ ] **Bước 2: Script dọn.** `don-du-lieu-lech-tz.mjs` (chạy tay, KHÔNG tự động): in `current_database()` + đếm `product_inspections`, rồi (cờ `--xoa` mới thật sự chạy) `DELETE` họ kết quả: `measurement_results` → `inspection_captures` → `inspection_positions` → `inspection_surfaces` → `inspection_idempotency_keys` → `product_inspections` (đúng thứ tự FK; **KHÔNG** đụng `product_surfaces/positions/captures`, `measurement_point_defs`, `machine_template_versions`, `inspection_packages`). Chạy trên dev DB, dán số trước/sau vào báo cáo. (Được phép: chủ dự án xác nhận dữ liệu test 2026-08.)
-- [ ] **Bước 3:** Gỡ dòng ràng buộc BG-96 trong plan Khối B (thay bằng "ĐÃ ĐÓNG 2026-09-03, xem plan Khối C Task 1-3"). Commit.
+- [x] **Bước 1: Census.** Quét `server/**/*.ts` (trừ `*.test.ts`) tìm mẫu `getTimezoneOffset\(\)\s*\*\s*60000` — kỳ vọng **0** (sau Task 1+2). Fuse chống-vacuity: tự quét một chuỗi mồi chứa mẫu ⇒ phải bắt được. Chạy ĐỎ trên cây chưa vá không cần (Task 1+2 đã vá) — thay bằng **đột biến**: thêm tạm 1 dòng chứa mẫu vào một file server ⇒ census ĐỎ ⇒ hoàn tác, chép nguyên văn.
+- [x] **Bước 2: Script dọn.** `don-du-lieu-lech-tz.mjs` (chạy tay, KHÔNG tự động): in `current_database()` + đếm `product_inspections`, rồi (cờ `--xoa` mới thật sự chạy) `DELETE` họ kết quả: `measurement_results` → `inspection_captures` → `inspection_positions` → `inspection_surfaces` → `inspection_idempotency_keys` → `product_inspections` (đúng thứ tự FK; **KHÔNG** đụng `product_surfaces/positions/captures`, `measurement_point_defs`, `machine_template_versions`, `inspection_packages`). Chạy trên dev DB, dán số trước/sau vào báo cáo. (Được phép: chủ dự án xác nhận dữ liệu test 2026-08.)
+- [x] **Bước 3:** Gỡ dòng ràng buộc BG-96 trong plan Khối B (thay bằng "ĐÃ ĐÓNG 2026-09-03, xem plan Khối C Task 1-3"). Commit.
 
 **Mệnh đề:** census xanh + đột biến đỏ · dev DB 0 hàng lệch · `npm run check` sạch.
 
@@ -143,10 +154,10 @@ export function docGioTuongNhaMay(dateStr: string, endOfDay = false): Date | und
 
 **Interfaces:** Produces: `traLichSuGioiHanBatch(pointDefIds: readonly number[]): Promise<Map<number, PointLimitSnapshot[]>>` — Task 5 dùng. Consumes: `PointLimitSnapshot` từ `server/services/pointResultEvaluator.ts:468`.
 
-- [ ] **Bước 1: Lưới ĐỎ.** Trong `pointLimitSnapshots.db.test.ts`: seed 1 point-def, sửa nó 2 lần qua `db.updateMeasurementPointDef` (tự ghi `measurement_point_versions`), gọi `traLichSuGioiHanBatch([id, 999999])` ⇒ map có `id → 2 snapshot` (tăng dần `changedAt`, có `productPointsConfigVersion` khi cột 0282 tồn tại) và `999999 → []`.
-- [ ] **Bước 2: Cài.** Chuyển nguyên logic `:1190-1234` sang hàm mới, đổi `WHERE pointDefId = $1` → `inArray(measurementPointVersions.pointDefId, ids)`, group theo `pointDefId`; giữ nguyên probe cột 0282 + fail-soft `[]` cho id lỗi (bản đồ thiếu khoá = `[]`). `loadPointLimitSnapshots(id, cache)` cũ thành wrapper gọi batch 1 phần tử (v1 không đổi hành vi — cache giữ nguyên).
-- [ ] **Bước 3:** Chạy XANH + `npx vitest run server/routers/machineApiProvenance.test.ts` (v1 không hồi quy). **Đột biến:** trong batch bỏ `orderBy changedAt` ⇒ lưới thứ tự ĐỎ. Hoàn tác, chép nguyên văn.
-- [ ] **Bước 4: Commit.**
+- [x] **Bước 1: Lưới ĐỎ.** Trong `pointLimitSnapshots.db.test.ts`: seed 1 point-def, sửa nó 2 lần qua `db.updateMeasurementPointDef` (tự ghi `measurement_point_versions`), gọi `traLichSuGioiHanBatch([id, 999999])` ⇒ map có `id → 2 snapshot` (tăng dần `changedAt`, có `productPointsConfigVersion` khi cột 0282 tồn tại) và `999999 → []`.
+- [x] **Bước 2: Cài.** Chuyển nguyên logic `:1190-1234` sang hàm mới, đổi `WHERE pointDefId = $1` → `inArray(measurementPointVersions.pointDefId, ids)`, group theo `pointDefId`; giữ nguyên probe cột 0282 + fail-soft `[]` cho id lỗi (bản đồ thiếu khoá = `[]`). `loadPointLimitSnapshots(id, cache)` cũ thành wrapper gọi batch 1 phần tử (v1 không đổi hành vi — cache giữ nguyên).
+- [x] **Bước 3:** Chạy XANH + `npx vitest run server/routers/machineApiProvenance.test.ts` (v1 không hồi quy). **Đột biến:** trong batch bỏ `orderBy changedAt` ⇒ lưới thứ tự ĐỎ. Hoàn tác, chép nguyên văn.
+- [x] **Bước 4: Commit.**
 
 ### Task 5: Giải giới-hạn-tại-neo cho v2 + nối 3 đường + bộ đếm basis
 
@@ -177,9 +188,9 @@ export function giaiGioiHanTaiNeo(
 - `submitInspectionTreeV2` opts (machineApiRouters.ts:3665) thêm `serverReceivedAt?: Date`.
 - `ProcessFn` (inspectionStoreForward.ts:395) → `(payload: BufferedSubmission, meta?: { enqueuedAt?: Date }) => Promise<{ inspectionId: number }>`; call site `:966` → `processFn(entry.payload, { enqueuedAt: new Date(entry.enqueuedAt) })`.
 
-- [ ] **Bước 1: Lưới thuần ĐỎ** (`giaiGioiHanTaiNeo.test.ts`): điểm có snapshot `changedAt > neo` mang limit cũ ⇒ map trả limit CŨ, `theoInstant=1` · điểm không sửa sau neo ⇒ limit live, `theoLive=1` · khoá không có trong `banDo` không xuất hiện.
-- [ ] **Bước 2: Cài** bằng `resolveLimitsAtInstant` (pointResultEvaluator.ts:509): basis `snapshot` ⇒ dùng `limits` đó; `missing` ⇒ dùng `tra.gioiHan.get(khoa)` (live). XANH.
-- [ ] **Bước 3: Nối 3 đường.** Trong `submitInspectionTreeV2` sau `:3710`:
+- [x] **Bước 1: Lưới thuần ĐỎ** (`giaiGioiHanTaiNeo.test.ts`): điểm có snapshot `changedAt > neo` mang limit cũ ⇒ map trả limit CŨ, `theoInstant=1` · điểm không sửa sau neo ⇒ limit live, `theoLive=1` · khoá không có trong `banDo` không xuất hiện.
+- [x] **Bước 2: Cài** bằng `resolveLimitsAtInstant` (pointResultEvaluator.ts:509): basis `snapshot` ⇒ dùng `limits` đó; `missing` ⇒ dùng `tra.gioiHan.get(khoa)` (live). XANH.
+- [x] **Bước 3: Nối 3 đường.** Trong `submitInspectionTreeV2` sau `:3710`:
 
 ```ts
 const neo = opts.serverReceivedAt ?? new Date();
@@ -195,8 +206,8 @@ const congSpec = congSpecTuBanDay(traChoConga);
 ```
 
   WAL wiring `:1075` → `submitInspectionTreeV2(payload…, { serverReceivedAt: meta?.enqueuedAt })`. Cửa ZIP (`aoiPackageRouter.ts:1273`): cùng khối, `neo = pkg.createdAt` (cột `inspection_packages.createdAt`, defaultNow lúc gói được tạo — đo lại tên biến `pkg` tại chỗ). Trả `theoInstant/theoLive` trong object `specGate` của response (`:3677-3680`) và bản tương ứng phía ZIP (`:1689`).
-- [ ] **Bước 4: Lưới tích hợp ĐỎ→XANH** (thêm vào `walCayV2PhatLai.db.test.ts`): (a) bật `SPEC_GATE_SNAPSHOT_ENABLED` qua `vi.stubEnv`; (b) dạy limit `upperLimit=10` cho 1 component; (c) đưa payload v2 (value=12, máy khai OK) vào WAL; (d) **siết** limit thành 5 qua `db.updateMeasurementPointDef`; (e) phát lại ⇒ component bị chấm theo limit **lúc enqueue** (=10): vi phạm `12>10` chứ KHÔNG phải `12>5` — assert chuỗi remark chứa `> max 10`; `theoInstant ≥ 1`. **Đối chứng chống hồi quy:** cờ TẮT ⇒ hành vi hôm nay (chấm theo 5).
-- [ ] **Bước 5: Commit.**
+- [x] **Bước 4: Lưới tích hợp ĐỎ→XANH** (thêm vào `walCayV2PhatLai.db.test.ts`): (a) bật `SPEC_GATE_SNAPSHOT_ENABLED` qua `vi.stubEnv`; (b) dạy limit `upperLimit=10` cho 1 component; (c) đưa payload v2 (value=12, máy khai OK) vào WAL; (d) **siết** limit thành 5 qua `db.updateMeasurementPointDef`; (e) phát lại ⇒ component bị chấm theo limit **lúc enqueue** (=10): vi phạm `12>10` chứ KHÔNG phải `12>5` — assert chuỗi remark chứa `> max 10`; `theoInstant ≥ 1`. **Đối chứng chống hồi quy:** cờ TẮT ⇒ hành vi hôm nay (chấm theo 5).
+- [x] **Bước 5: Commit.**
 
 **Ba mệnh đề:** bo WAL chấm theo limit thời-điểm-đến, đo bằng remark · cờ tắt ⇒ không đổi hành vi · v1 không đổi (provenance test xanh).
 
@@ -206,8 +217,8 @@ const congSpec = congSpecTuBanDay(traChoConga);
 - Modify: `server/db/product.ts` (xuất helper) · `server/routers/machineApiRouters.ts:2046-2057` · `server/services/specGateCayV2.ts` (chú thích đầu file)
 - Test: `server/db/apDungVariantPatch.test.ts`
 
-- [ ] **Bước 1: Lưới ĐỎ:** patch chứa `{upperLimit:"9", id:999, deletedAt:"x"}` áp lên base ⇒ chỉ `upperLimit` ăn, `id`/`deletedAt` giữ nguyên base.
-- [ ] **Bước 2:** Xuất từ `product.ts` (cạnh `VARIANT_PATCH_PROTECTED_KEYS:3761`):
+- [x] **Bước 1: Lưới ĐỎ:** patch chứa `{upperLimit:"9", id:999, deletedAt:"x"}` áp lên base ⇒ chỉ `upperLimit` ăn, `id`/`deletedAt` giữ nguyên base.
+- [x] **Bước 2:** Xuất từ `product.ts` (cạnh `VARIANT_PATCH_PROTECTED_KEYS:3761`):
 
 ```ts
 /** Doc 55 Item 3 — MỘT bản merge patch variant (lọc khoá bảo vệ). Trước 2026-09-03
@@ -225,8 +236,8 @@ export function apDungVariantPatch<T extends object>(base: T, patchJson: unknown
 ```
 
   Dùng trong `mergeEffectivePoints:3785-3793` và thay khối inline `machineApiRouters.ts:2050-2056`.
-- [ ] **Bước 3:** Chú thích đầu `specGateCayV2.ts` thêm đoạn: *"v2 chấm theo BASE variant — hợp đồng v2 không mang `variantCode` nên không phân giải được variant; KHÔNG đếm per-bo được (không biết bo thuộc variant nào mà không thêm truy vấn) — lệch spec QĐ-2.6 phần 'đếm', khai tại đây và trong báo cáo."*
-- [ ] **Bước 4:** XANH + v1 gate tests + commit.
+- [x] **Bước 3:** Chú thích đầu `specGateCayV2.ts` thêm đoạn: *"v2 chấm theo BASE variant — hợp đồng v2 không mang `variantCode` nên không phân giải được variant; KHÔNG đếm per-bo được (không biết bo thuộc variant nào mà không thêm truy vấn) — lệch spec QĐ-2.6 phần 'đếm', khai tại đây và trong báo cáo."*
+- [x] **Bước 4:** XANH + v1 gate tests + commit.
 
 ---
 
@@ -250,9 +261,9 @@ export const LIMIT_FIELDS: readonly string[]; // = POINT_LIMIT_SPEC.map(m => m.f
 export const APPROVAL_LIMIT_FIELDS: readonly string[]; // LIMIT_FIELDS + nominalValue, toleranceMode, tolPlus, tolMinus
 ```
 
-- [ ] **Bước 1: Lưới ĐỎ:** (a) so `LIMIT_FIELDS` với danh sách khoá của một `PointLimitSource` mẫu đầy đủ (compile-time: `satisfies Record<(typeof LIMIT_FIELDS)[number], unknown>` trên object mẫu; runtime: 18 phần tử, không trùng); (b) census: mọi `field` phải là cột thật của `measurementPointDefs` (import từ `drizzle/schema/product`, kiểm `field in measurementPointDefs`).
-- [ ] **Bước 2: Cài spec.** i18nKey dạng `pointLimits.<field>`.
-- [ ] **Bước 3: Refactor SELECT `cayDay.ts:842-859`** thành build-từ-spec:
+- [x] **Bước 1: Lưới ĐỎ:** (a) so `LIMIT_FIELDS` với danh sách khoá của một `PointLimitSource` mẫu đầy đủ (compile-time: `satisfies Record<(typeof LIMIT_FIELDS)[number], unknown>` trên object mẫu; runtime: 18 phần tử, không trùng); (b) census: mọi `field` phải là cột thật của `measurementPointDefs` (import từ `drizzle/schema/product`, kiểm `field in measurementPointDefs`).
+- [x] **Bước 2: Cài spec.** i18nKey dạng `pointLimits.<field>`.
+- [x] **Bước 3: Refactor SELECT `cayDay.ts:842-859`** thành build-từ-spec:
 
 ```ts
 const gioiHanProjection = Object.fromEntries(
@@ -261,7 +272,7 @@ const gioiHanProjection = Object.fromEntries(
 ```
 
   (giữ 3 cột khoá `pointDefId/captureExtId/componentExtId` khai tay). Chạy `npx vitest run server/db/cayDay*` + `server/services/specGateCayV2*` — XANH, hành vi không đổi.
-- [ ] **Bước 4: Đột biến:** bỏ `thicknessMax` khỏi spec ⇒ lưới (a) ĐỎ kiểu compile hoặc runtime. Hoàn tác, chép nguyên văn. Commit.
+- [x] **Bước 4: Đột biến:** bỏ `thicknessMax` khỏi spec ⇒ lưới (a) ĐỎ kiểu compile hoặc runtime. Hoàn tác, chép nguyên văn. Commit.
 
 ### Task 8: `touchesLimits` suy từ spec + `setLimitsBatch`
 
@@ -271,11 +282,11 @@ const gioiHanProjection = Object.fromEntries(
 
 **Interfaces:** Produces: `measurementPoint.setLimitsBatch({ items: [{id, ...limits}], changeReason? })` → `{ updated: number; pointsConfigVersion: number }` — Task 11 (UI batch) gọi.
 
-- [ ] **Bước 1: Lưới ĐỎ 1 (lỗ 3D):** sản phẩm live + enforced, `update` chỉ đổi `heightMax` ⇒ hiện ĐI THẲNG (bug). Lưới kỳ vọng `FORBIDDEN`/hàng đợi duyệt ⇒ ĐỎ trên mã hiện tại. Chép nguyên văn.
-- [ ] **Bước 2:** `touchesLimits = APPROVAL_LIMIT_FIELDS.some((f) => (rest as Record<string, unknown>)[f] !== undefined);` (import từ `shared/pointLimitSpec`). Lưới 1 XANH; lưới đối chứng: đổi `name` không qua cửa duyệt.
-- [ ] **Bước 3: Lưới ĐỎ 2 (batch):** `setLimitsBatch` 3 điểm cùng sản phẩm ⇒ cả 3 có limit mới, `pointsConfigVersion` tăng ĐÚNG 1, `measurement_point_versions` +3 hàng.
-- [ ] **Bước 4: Cài.** DB (`product.ts`): `updateMeasurementPointLimitsBatch(items, changedBy)` — MỘT transaction: từng hàng `SELECT ... FOR UPDATE` + INSERT `measurement_point_versions` (mirror `updateMeasurementPointDef:1906-1988`, cùng cột) + UPDATE chỉ các field thuộc `APPROVAL_LIMIT_FIELDS`; cuối cùng bump `pointsConfigVersion` MỘT lần. Router: `requirePermission("settings_measurement_points","canEdit")`, mọi `id` phải cùng `productModelId` (khác ⇒ `BAD_REQUEST`), gọi `assertThresholdEditAllowed(items[0].id)` MỘT lần cho sản phẩm; input zod: `items` 1..200 phần tử, mỗi phần tử `{id: z.number().int().positive()}` + các field limit `z.string().optional()` (chuỗi — numeric drizzle, cùng kiểu `update`).
-- [ ] **Bước 5:** XANH + đột biến: bỏ bump version ⇒ lưới ĐỎ. Commit.
+- [x] **Bước 1: Lưới ĐỎ 1 (lỗ 3D):** sản phẩm live + enforced, `update` chỉ đổi `heightMax` ⇒ hiện ĐI THẲNG (bug). Lưới kỳ vọng `FORBIDDEN`/hàng đợi duyệt ⇒ ĐỎ trên mã hiện tại. Chép nguyên văn.
+- [x] **Bước 2:** `touchesLimits = APPROVAL_LIMIT_FIELDS.some((f) => (rest as Record<string, unknown>)[f] !== undefined);` (import từ `shared/pointLimitSpec`). Lưới 1 XANH; lưới đối chứng: đổi `name` không qua cửa duyệt.
+- [x] **Bước 3: Lưới ĐỎ 2 (batch):** `setLimitsBatch` 3 điểm cùng sản phẩm ⇒ cả 3 có limit mới, `pointsConfigVersion` tăng ĐÚNG 1, `measurement_point_versions` +3 hàng.
+- [x] **Bước 4: Cài.** DB (`product.ts`): `updateMeasurementPointLimitsBatch(items, changedBy)` — MỘT transaction: từng hàng `SELECT ... FOR UPDATE` + INSERT `measurement_point_versions` (mirror `updateMeasurementPointDef:1906-1988`, cùng cột) + UPDATE chỉ các field thuộc `APPROVAL_LIMIT_FIELDS`; cuối cùng bump `pointsConfigVersion` MỘT lần. Router: `requirePermission("settings_measurement_points","canEdit")`, mọi `id` phải cùng `productModelId` (khác ⇒ `BAD_REQUEST`), gọi `assertThresholdEditAllowed(items[0].id)` MỘT lần cho sản phẩm; input zod: `items` 1..200 phần tử, mỗi phần tử `{id: z.number().int().positive()}` + các field limit `z.string().optional()` (chuỗi — numeric drizzle, cùng kiểu `update`).
+- [x] **Bước 5:** XANH + đột biến: bỏ bump version ⇒ lưới ĐỎ. Commit.
 
 ### Task 9: `cayDayRouter` — 4 procedure đọc
 
@@ -289,9 +300,9 @@ const gioiHanProjection = Object.fromEntries(
 - `cayDay.listComponents({captureRowId}) → { id, componentExtId, name, roiX, roiY, roiWidth, roiHeight, updatedAt, coGioiHan: boolean, gioiHan: Record<string, string|null> }[]` (`gioiHan` chỉ các field trong `POINT_LIMIT_SPEC`; `coGioiHan` = ít nhất một field khác NULL — trừ `unit`, cùng ngữ nghĩa `evaluatePointResult` "có gì để chấm")
 - `cayDay.thongKeGioiHan({productModelId, machineId}) → { tongComponent, daDay, chuaCoGioiHan }`
 
-- [ ] **Bước 1: Lưới ĐỎ.** Seed bằng chính đường thật: gọi `machineApi.submitMachineTemplate` (`machineApiRouters.ts:5533`) với mẫu 2/4/8/16 (tái dùng fixture của `cayDayChieuMay.db.test.ts`); rồi: `listMachinesForProduct` trả 1 máy + version hiện hành · `getTree` trả 2/4/8, mỗi capture `soComponent=2` · `listComponents` 2 hàng `coGioiHan:false` · `thongKeGioiHan` = `{16, 0, 16}` · sau khi dạy limit 1 điểm (qua `measurementPoint.update`) ⇒ `{16, 1, 15}`. **Phạm vi tenant:** caller thuộc tenant khác ⇒ `FORBIDDEN`/rỗng theo mẫu `productRouters.ts:402` (`db.sanPhamTrongPhamVi` — đo tên thật trước khi viết).
-- [ ] **Bước 2: Cài.** DB đọc trong `cayDay.ts` (join như `traPointDefCapComponent:812-876`, lọc máy qua `productCaptures.machineId`, `deletedAt IS NULL`); version hiện hành từ `machine_template_versions` theo `uq_mtv_hien_hanh` (`supersededAt IS NULL`). Router `protectedProcedure`. `coGioiHan` tính từ `POINT_LIMIT_SPEC` (không chép tay danh sách).
-- [ ] **Bước 3:** XANH + `npm run check` + commit.
+- [x] **Bước 1: Lưới ĐỎ.** Seed bằng chính đường thật: gọi `machineApi.submitMachineTemplate` (`machineApiRouters.ts:5533`) với mẫu 2/4/8/16 (tái dùng fixture của `cayDayChieuMay.db.test.ts`); rồi: `listMachinesForProduct` trả 1 máy + version hiện hành · `getTree` trả 2/4/8, mỗi capture `soComponent=2` · `listComponents` 2 hàng `coGioiHan:false` · `thongKeGioiHan` = `{16, 0, 16}` · sau khi dạy limit 1 điểm (qua `measurementPoint.update`) ⇒ `{16, 1, 15}`. **Phạm vi tenant:** caller thuộc tenant khác ⇒ `FORBIDDEN`/rỗng theo mẫu `productRouters.ts:402` (`db.sanPhamTrongPhamVi` — đo tên thật trước khi viết).
+- [x] **Bước 2: Cài.** DB đọc trong `cayDay.ts` (join như `traPointDefCapComponent:812-876`, lọc máy qua `productCaptures.machineId`, `deletedAt IS NULL`); version hiện hành từ `machine_template_versions` theo `uq_mtv_hien_hanh` (`supersededAt IS NULL`). Router `protectedProcedure`. `coGioiHan` tính từ `POINT_LIMIT_SPEC` (không chép tay danh sách).
+- [x] **Bước 3:** XANH + `npm run check` + commit.
 
 ### Task 10: Tab "Cây dạy" — đọc (tree + bảng component + badge version)
 
@@ -302,10 +313,10 @@ const gioiHanProjection = Object.fromEntries(
 
 **Interfaces:** Consumes: 4 procedure Task 9 qua `trpc.cayDay.*.useQuery`. Produces: `ComponentLimitsTable` nhận prop `onEdit(row)` / `onBatchEdit(rows)` — Task 11 nối dialog.
 
-- [ ] **Bước 1:** `TeachTreeTab({ productModelId })`: Select máy (từ `listMachinesForProduct`; rỗng ⇒ empty-state trung thực `t("teachTree.chuaCoMay", "Chưa máy nào dạy sản phẩm này")` — KHÔNG bịa dữ liệu); badge `t("teachTree.banDay", "Bản dạy v{{version}}")` + `pushedAt` định dạng `date-fns`; breadcrumb surface→position→capture (danh sách lồng, mẫu Accordion/DataTable như `ComponentLibrary.tsx`); chọn capture ⇒ render `ComponentLimitsTable`.
-- [ ] **Bước 2:** `ComponentLimitsTable({ captureRowId, onEdit, onBatchEdit })`: `DataTable` cột componentExtId/name/ROI/badge trạng thái — `coGioiHan ? t("teachTree.daDay","Đã dạy") : t("teachTree.chuaCoGioiHan","Chưa có giới hạn")` (variant destructive cho chưa) + checkbox chọn nhiều; thanh đầu bảng hiện `thongKeGioiHan` (`daDay`/`tongComponent`).
-- [ ] **Bước 3:** Khoá i18n đủ 3 locale (thêm CÙNG commit — `npm run i18n:check` xanh); `viStringCoverage.unit.test.ts` + `npm run check` xanh.
-- [ ] **Bước 4:** Lưới unit: `client/src/components/products/teach/teachTreeTab.unit.test.ts` — render với mock trpc (mẫu mock của test unit client hiện có): máy rỗng ⇒ empty-state; có cây ⇒ đếm đúng số hàng component. Commit.
+- [x] **Bước 1:** `TeachTreeTab({ productModelId })`: Select máy (từ `listMachinesForProduct`; rỗng ⇒ empty-state trung thực `t("teachTree.chuaCoMay", "Chưa máy nào dạy sản phẩm này")` — KHÔNG bịa dữ liệu); badge `t("teachTree.banDay", "Bản dạy v{{version}}")` + `pushedAt` định dạng `date-fns`; breadcrumb surface→position→capture (danh sách lồng, mẫu Accordion/DataTable như `ComponentLibrary.tsx`); chọn capture ⇒ render `ComponentLimitsTable`.
+- [x] **Bước 2:** `ComponentLimitsTable({ captureRowId, onEdit, onBatchEdit })`: `DataTable` cột componentExtId/name/ROI/badge trạng thái — `coGioiHan ? t("teachTree.daDay","Đã dạy") : t("teachTree.chuaCoGioiHan","Chưa có giới hạn")` (variant destructive cho chưa) + checkbox chọn nhiều; thanh đầu bảng hiện `thongKeGioiHan` (`daDay`/`tongComponent`).
+- [x] **Bước 3:** Khoá i18n đủ 3 locale (thêm CÙNG commit — `npm run i18n:check` xanh); `viStringCoverage.unit.test.ts` + `npm run check` xanh.
+- [x] **Bước 4:** Lưới unit: `client/src/components/products/teach/teachTreeTab.unit.test.ts` — render với mock trpc (mẫu mock của test unit client hiện có): máy rỗng ⇒ empty-state; có cây ⇒ đếm đúng số hàng component. Commit.
 
 ### Task 11: Dialog dạy giới hạn (đơn + hàng loạt)
 
@@ -313,18 +324,18 @@ const gioiHanProjection = Object.fromEntries(
 - Create: `client/src/components/products/teach/ComponentLimitsDialog.tsx`, `BatchTeachLimitsDialog.tsx` · Test: `client/src/components/products/teach/componentLimitsDialog.unit.test.ts`
 - Modify: `TeachTreeTab.tsx` (nối onEdit/onBatchEdit), locales ×3
 
-- [ ] **Bước 1:** `ComponentLimitsDialog`: form các field từ `POINT_LIMIT_SPEC` **nhóm theo `nhom`** (1d luôn mở; 3d/gdt collapse — đa số máy AOI chỉ dùng 1d), nhãn `t(muc.i18nKey)`; mẫu form + mutation: `ProductVariantsTab.tsx:223-263`; lưu qua `trpc.measurementPoint.update` với `expectedUpdatedAt` (optimistic lock — mẫu xử lý CONFLICT `ProductModels.tsx:2155-2177`); lỗi qua `toastTrpcError`.
-- [ ] **Bước 2:** `BatchTeachLimitsDialog`: nhận `rows`, form MỘT bộ giá trị áp cho tất cả (chỉ field người dùng nhập mới gửi), gọi `trpc.measurementPoint.setLimitsBatch`; hiện cảnh báo số điểm sẽ đổi + `changeReason` bắt buộc ≥ 5 ký tự.
-- [ ] **Bước 3:** Unit test: submit gửi ĐÚNG field đã nhập (không gửi field rỗng — gửi `undefined` chứ không `""`); CONFLICT hiện thoại xung đột. i18n đủ 3 locale. Commit.
+- [x] **Bước 1:** `ComponentLimitsDialog`: form các field từ `POINT_LIMIT_SPEC` **nhóm theo `nhom`** (1d luôn mở; 3d/gdt collapse — đa số máy AOI chỉ dùng 1d), nhãn `t(muc.i18nKey)`; mẫu form + mutation: `ProductVariantsTab.tsx:223-263`; lưu qua `trpc.measurementPoint.update` với `expectedUpdatedAt` (optimistic lock — mẫu xử lý CONFLICT `ProductModels.tsx:2155-2177`); lỗi qua `toastTrpcError`.
+- [x] **Bước 2:** `BatchTeachLimitsDialog`: nhận `rows`, form MỘT bộ giá trị áp cho tất cả (chỉ field người dùng nhập mới gửi), gọi `trpc.measurementPoint.setLimitsBatch`; hiện cảnh báo số điểm sẽ đổi + `changeReason` bắt buộc ≥ 5 ký tự.
+- [x] **Bước 3:** Unit test: submit gửi ĐÚNG field đã nhập (không gửi field rỗng — gửi `undefined` chứ không `""`); CONFLICT hiện thoại xung đột. i18n đủ 3 locale. Commit.
 
 ### Task 12: Readiness đếm hàng cây + nghiệm thu ảnh
 
 **Files:**
 - Modify: `server/services/productReadinessService.ts` (nguồn `agg` — đo nơi dựng `numericPoints`/`numericWithLimits`, mở rộng đếm hàng `captureRowId IS NOT NULL` với "có limit" theo `POINT_LIMIT_SPEC`) · Test: readiness test hiện có (đo tên file bằng glob `productReadiness*`).
 
-- [ ] **Bước 1: Lưới ĐỎ:** sản phẩm chỉ có cây dạy 16 component 0 limit ⇒ hạng mục `limits` phải **missing/0%**, KHÔNG phải `na`/100%. Trên mã hiện tại (chỉ đếm điểm phẳng DIMENSION) ⇒ ĐỎ. Chép nguyên văn.
-- [ ] **Bước 2: Cài + XANH.** Dạy 8/16 ⇒ fraction 0.5.
-- [ ] **Bước 3: Ảnh tự xem.** Build + chạy port 3000, đúc vé (`sdk.createSessionToken` + `ghiSoPhien`, cookie `app_session_id`, script ở GỐC repo, `process.exit(0)`), Playwright chụp `/products` tab Cây dạy (có máy + bảng component + badge); **tự mở ảnh xem bằng Read**, mô tả thấy gì vào báo cáo. Commit.
+- [x] **Bước 1: Lưới ĐỎ:** sản phẩm chỉ có cây dạy 16 component 0 limit ⇒ hạng mục `limits` phải **missing/0%**, KHÔNG phải `na`/100%. Trên mã hiện tại (chỉ đếm điểm phẳng DIMENSION) ⇒ ĐỎ. Chép nguyên văn.
+- [x] **Bước 2: Cài + XANH.** Dạy 8/16 ⇒ fraction 0.5.
+- [x] **Bước 3: Ảnh tự xem.** Build + chạy port 3000, đúc vé (`sdk.createSessionToken` + `ghiSoPhien`, cookie `app_session_id`, script ở GỐC repo, `process.exit(0)`), Playwright chụp `/products` tab Cây dạy (có máy + bảng component + badge); **tự mở ảnh xem bằng Read**, mô tả thấy gì vào báo cáo. Commit.
 
 ### Task 14: Tách shell — `ProductListPanel` + `ProductDialogsHost` (cơ học, không đổi hành vi)
 
@@ -332,11 +343,11 @@ const gioiHanProjection = Object.fromEntries(
 - Create: `client/src/components/products/ProductListPanel.tsx` (từ `ProductModels.tsx:2426-2677` — Card cột trái: search/Select lifecycle/Select sort/chip filter/`ImportExportBar`/`DataTable<ProductModel>`) · `client/src/components/products/ProductDialogsHost.tsx` (từ `:3312-3546` — 14 dialog)
 - Modify: `client/src/pages/ProductModels.tsx` (thay hai vùng bằng hai component, truyền props state/handler hiện có)
 
-- [ ] **Bước 1: Đo TRƯỚC.** `(Get-Content client/src/pages/ProductModels.tsx | Measure-Object -Line).Lines` — ghi số. Chụp ảnh `/products` làm baseline (cùng cách Task 12).
-- [ ] **Bước 2: Rút `ProductListPanel`.** CHỈ di chuyển JSX + nhận props (typed interface liệt kê đúng state/handler nó dùng — đọc từ vùng dòng, không thêm logic mới). KHÔNG đổi khoá i18n, KHÔNG đổi hành vi.
-- [ ] **Bước 3: Rút `ProductDialogsHost`.** Cùng nguyên tắc: props là các cặp `open/onOpenChange` + handler hiện có.
-- [ ] **Bước 4: Đo SAU.** `ProductModels.tsx` giảm ≥ 500 dòng; `npm run check` sạch; `viStringCoverage` + `i18n:check` xanh (di chuyển không tạo chuỗi mới); chụp lại ảnh `/products` — so bằng mắt với baseline, mô tả khác biệt (kỳ vọng: không).
-- [ ] **Bước 5: Commit.**
+- [x] **Bước 1: Đo TRƯỚC.** `(Get-Content client/src/pages/ProductModels.tsx | Measure-Object -Line).Lines` — ghi số. Chụp ảnh `/products` làm baseline (cùng cách Task 12).
+- [x] **Bước 2: Rút `ProductListPanel`.** CHỈ di chuyển JSX + nhận props (typed interface liệt kê đúng state/handler nó dùng — đọc từ vùng dòng, không thêm logic mới). KHÔNG đổi khoá i18n, KHÔNG đổi hành vi.
+- [x] **Bước 3: Rút `ProductDialogsHost`.** Cùng nguyên tắc: props là các cặp `open/onOpenChange` + handler hiện có.
+- [x] **Bước 4: Đo SAU.** `ProductModels.tsx` giảm ≥ 500 dòng; `npm run check` sạch; `viStringCoverage` + `i18n:check` xanh (di chuyển không tạo chuỗi mới); chụp lại ảnh `/products` — so bằng mắt với baseline, mô tả khác biệt (kỳ vọng: không).
+- [x] **Bước 5: Commit.**
 
 ---
 
@@ -348,9 +359,9 @@ const gioiHanProjection = Object.fromEntries(
 - Create: `server/services/mayTuMauThuan.ts` · Test: `server/services/mayTuMauThuan.test.ts`
 - Modify: `server/services/ingestCayKetQua.ts` (gọi tại `dichComponent:189-214`, TÁCH KHỎI `cong.cham`) · `submitInspectionTreeV2` response (thêm `mayTuMauThuan` cạnh `specGate:3677`)
 
-- [ ] **Bước 1: Lưới ĐỎ (thuần):** `demTuMauThuan(component)` — component thô mang `lowerLimit:"1"`, `upperLimit:"10"`, `value:12`, `result:"OK"` ⇒ mâu thuẫn; `value:12,result:"NG"` ⇒ không; thiếu limit máy khai ⇒ không; value không parse được ⇒ không. Dùng `tachTriDo` cho value (một bản tách, như cổng).
-- [ ] **Bước 2: Cài.** Bộ đếm `{tong, mauThuan, mau: string[]}` (trần 20 mẫu như `SO_MAU_TRUOT`). **KHÔNG đổi verdict, KHÔNG ghi remark** — tín hiệu chất-lượng-pipeline-máy, trả trong response + log warn khi `mauThuan > 0`. Chú thích đầu file: *"HAI cổng, HAI nguồn: cổng bản-dạy chấm bằng giới hạn KỸ SƯ; cổng này chỉ so máy với CHÍNH máy — cấm gộp (spec QĐ-8)."*
-- [ ] **Bước 3:** XANH + commit.
+- [x] **Bước 1: Lưới ĐỎ (thuần):** `demTuMauThuan(component)` — component thô mang `lowerLimit:"1"`, `upperLimit:"10"`, `value:12`, `result:"OK"` ⇒ mâu thuẫn; `value:12,result:"NG"` ⇒ không; thiếu limit máy khai ⇒ không; value không parse được ⇒ không. Dùng `tachTriDo` cho value (một bản tách, như cổng).
+- [x] **Bước 2: Cài.** Bộ đếm `{tong, mauThuan, mau: string[]}` (trần 20 mẫu như `SO_MAU_TRUOT`). **KHÔNG đổi verdict, KHÔNG ghi remark** — tín hiệu chất-lượng-pipeline-máy, trả trong response + log warn khi `mauThuan > 0`. Chú thích đầu file: *"HAI cổng, HAI nguồn: cổng bản-dạy chấm bằng giới hạn KỸ SƯ; cổng này chỉ so máy với CHÍNH máy — cấm gộp (spec QĐ-8)."*
+- [x] **Bước 3:** XANH + commit.
 
 ---
 
