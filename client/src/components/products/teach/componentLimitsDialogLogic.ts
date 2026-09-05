@@ -461,3 +461,43 @@ export function diemCayDayChoCanvas(p: {
     geometry: { shape: "rect", x: p.roiX, y: p.roiY, width: p.roiWidth, height: p.roiHeight },
   };
 }
+
+/**
+ * ★★★ Lô 8 Mục 2 (BG-116, R-KC-1) — phân loại NGUỒN của `referenceImageUrl` TRƯỚC khi
+ * đưa vào `MeasurementPointCanvas` (`<image href={imageUrl}>`, SVG — trình duyệt tự fetch
+ * bằng chính request đó, KHÔNG có cách nào bắt lỗi 404/scheme-lạ TỪ BÊN NGOÀI thẻ `<image>`
+ * một cách đáng tin — canvas hiện nay im lặng không vẽ gì, để lại nền `bg-muted/30` câm mà
+ * ROI vẫn vẽ đè lên, trông như "máy gửi ROI sai toạ độ" trong khi THẬT RA ảnh chưa từng tải
+ * được. Gốc (Lô 8 brief): cây dạy Khối B ghi NGUYÊN VĂN `templateImagePath` máy khai —
+ * đường dẫn HỆ TỆP MÁY (`D:/InspectProAOI/...jpg`, `\\SERVER\share\...`) — không phải một
+ * URL server này phục vụ được.
+ *
+ * Hàm THUẦN, không I/O — không thử fetch, không đoán "ảnh có tồn tại trên đĩa server
+ * không" (đó là việc của `resolveImageToDataUrl`/route ảnh, ở server). Nó chỉ phân loại
+ * HÌNH DẠNG chuỗi:
+ *   - `"he"`        — hệ ĐÃ NHẬN ảnh này (Lô 8 Mục 1 `commitTemplateImage` ghi
+ *                     `/uploads/product-models/...`), hoặc một URL tuyệt đối `http(s)://`/
+ *                     `data:` mà trình duyệt fetch trực tiếp được — canvas load NHƯ THƯỜNG.
+ *   - `"duongDanMay"` — đường dẫn HỆ TỆP MÁY còn nguyên trong cột (ổ đĩa Windows `X:/…`/`X:\…`,
+ *                     UNC `\\server\share\…`, hoặc một đường TƯƠNG ĐỐI không mang scheme nào
+ *                     mà trình duyệt sẽ hiểu lầm thành đường tương đối của chính trang web —
+ *                     cả hai đều KHÔNG BAO GIỜ tải được) — canvas hiện thông điệp trung thực,
+ *                     KHÔNG tự vẽ placeholder giả ảnh.
+ *   - `"rong"`      — `null`/`undefined`/chuỗi rỗng sau `trim()` — máy CHƯA gửi gì (khác hẳn
+ *                     "máy gửi một đường dẫn máy" — hai thông điệp phải khác nhau để kỹ sư
+ *                     biết cần làm gì tiếp: "đợi máy dạy" so với "đợi máy nâng cấp lên Lô 8").
+ *
+ * ⚠ `/uploads/` PHẢI là tiền tố (không chỉ CHỨA chuỗi đó ở đâu đó) — một đường dẫn máy tình
+ * cờ có `/uploads/` ở giữa (vd một máy đặt tên thư mục cục bộ trùng) không được coi là hệ đã
+ * nhận, đúng khuôn "fail-closed" mà `hinhDangCuaDuongDan` (server) đã dùng cho uỷ quyền ảnh.
+ */
+export type NguonAnhTemplate = "he" | "duongDanMay" | "rong";
+
+export function phanLoaiNguonAnhTemplate(url: string | null | undefined): NguonAnhTemplate {
+  const s = url?.trim();
+  if (!s) return "rong";
+  if (s.startsWith("/uploads/")) return "he";
+  if (/^https?:\/\//i.test(s)) return "he";
+  if (s.startsWith("data:")) return "he";
+  return "duongDanMay";
+}

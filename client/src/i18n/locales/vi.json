@@ -20005,6 +20005,7 @@
     "moTaDon": "Nhập giới hạn cho linh kiện này. Hình học (vị trí/ROI) do máy dạy — không sửa ở đây.",
     "moTaHangLoat": "Giá trị bạn nhập sẽ áp dụng cho TẤT CẢ {{n}} linh kiện đã chọn — bỏ trống trường nào thì trường đó GIỮ NGUYÊN theo từng linh kiện.",
     "khongCoAnh": "Máy chưa gửi ảnh/toạ độ ROI tham chiếu cho linh kiện này.",
+    "anhChuaTaiLenHe": "Ảnh template chưa được máy tải lên hệ.",
     "canDuyetTieuDe": "Chưa lưu",
     "canDuyetLifecycle": "Chưa lưu — sản phẩm đang hoạt động, thay đổi giới hạn phải qua hàng đợi duyệt ngưỡng",
     "canDuyetChuongTrinh": "Chưa lưu — sản phẩm đã có chương trình kiểm phát hành, thay đổi giới hạn phải qua hàng đợi duyệt ngưỡng",

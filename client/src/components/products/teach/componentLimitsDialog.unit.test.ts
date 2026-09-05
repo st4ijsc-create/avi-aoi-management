@@ -24,6 +24,7 @@ import {
   keHoachLamMoiSauLuu,
   diemCayDayChoCanvas,
   coTheLuu,
+  phanLoaiNguonAnhTemplate,
   type FormGioiHan,
   type TenTruongForm,
 } from "./componentLimitsDialogLogic";
@@ -619,5 +620,46 @@ describe("xayInputYeuCauDuyet — payload cho thresholdApproval.request, dựng 
   it("ids rỗng ⇒ trả mảng rỗng (không lặp, không lỗi)", () => {
     const g = gia({ lowerLimit: "2" });
     expect(xayInputYeuCauDuyet([], g, "", null)).toEqual([]);
+  });
+});
+
+// ── Lô 8 Mục 2 (BG-116, R-KC-1) — phân loại nguồn ảnh template TRƯỚC khi vào canvas ──
+describe("phanLoaiNguonAnhTemplate — 'he' (tải được) vs 'duongDanMay' (câm) vs 'rong' (chưa có)", () => {
+  it("null/undefined/chuỗi rỗng/chỉ khoảng trắng ⇒ 'rong'", () => {
+    expect(phanLoaiNguonAnhTemplate(null)).toBe("rong");
+    expect(phanLoaiNguonAnhTemplate(undefined)).toBe("rong");
+    expect(phanLoaiNguonAnhTemplate("")).toBe("rong");
+    expect(phanLoaiNguonAnhTemplate("   ")).toBe("rong");
+  });
+
+  it("`/uploads/...` (Lô 8 Mục 1 commitTemplateImage ghi) ⇒ 'he'", () => {
+    expect(phanLoaiNguonAnhTemplate("/uploads/product-models/12/template-abc.jpg")).toBe("he");
+  });
+
+  it("URL tuyệt đối http(s):// ⇒ 'he'", () => {
+    expect(phanLoaiNguonAnhTemplate("https://cdn.example.com/x.png")).toBe("he");
+    expect(phanLoaiNguonAnhTemplate("http://server.local/img.jpg")).toBe("he");
+  });
+
+  it("data: URL ⇒ 'he'", () => {
+    expect(phanLoaiNguonAnhTemplate("data:image/png;base64,AAAA")).toBe("he");
+  });
+
+  it("đường dẫn ổ đĩa Windows (`X:/...`, `X:\\...`) ⇒ 'duongDanMay' — ĐÚNG lỗ R-KC-1 gốc", () => {
+    expect(phanLoaiNguonAnhTemplate("D:/InspectProAOI/Solutions/MODEL-X/template.jpg")).toBe("duongDanMay");
+    expect(phanLoaiNguonAnhTemplate("D:\\InspectProAOI\\Solutions\\MODEL-X\\template.jpg")).toBe("duongDanMay");
+  });
+
+  it("đường dẫn UNC (`\\\\server\\share\\...`) ⇒ 'duongDanMay'", () => {
+    expect(phanLoaiNguonAnhTemplate("\\\\AOI-SERVER\\share\\template.jpg")).toBe("duongDanMay");
+  });
+
+  it("đường dẫn tương đối không mang scheme nào (không phải /uploads/) ⇒ 'duongDanMay' — trình duyệt sẽ hiểu lầm thành đường của CHÍNH trang web", () => {
+    expect(phanLoaiNguonAnhTemplate("templates/model-x/template.jpg")).toBe("duongDanMay");
+    expect(phanLoaiNguonAnhTemplate("uploads/product-models/12/x.jpg")).toBe("duongDanMay"); // thiếu dấu `/` đầu — KHÔNG phải tiền tố /uploads/
+  });
+
+  it("chuỗi chỉ CHỨA '/uploads/' ở giữa (không phải TIỀN TỐ) ⇒ vẫn 'duongDanMay' — fail-closed, không suy đoán theo vị trí con", () => {
+    expect(phanLoaiNguonAnhTemplate("D:/local-cache/uploads/template.jpg")).toBe("duongDanMay");
   });
 });

@@ -20025,6 +20025,7 @@
     "moTaDon": "Enter limits for this component. Geometry (position/ROI) is taught by the machine — it cannot be edited here.",
     "moTaHangLoat": "The values you enter will apply to ALL {{n}} selected components — leaving a field blank keeps that field UNCHANGED per component.",
     "khongCoAnh": "The machine has not sent a reference image/ROI coordinates for this component.",
+    "anhChuaTaiLenHe": "The template image has not been uploaded to the server by the machine yet.",
     "canDuyetTieuDe": "Not saved",
     "canDuyetLifecycle": "Not saved — the product is live; limit changes must go through the threshold approval queue",
     "canDuyetChuongTrinh": "Not saved — the product already has a released inspection program; limit changes must go through the threshold approval queue",

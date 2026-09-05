@@ -81,6 +81,7 @@ import {
   keHoachLamMoiSauLuu,
   diemCayDayChoCanvas,
   coTheLuu,
+  phanLoaiNguonAnhTemplate,
   type KetQuaCanDuyet,
 } from "./componentLimitsDialogLogic";
 
@@ -312,6 +313,10 @@ export function ComponentLimitsDialog({
   const anhThamChieu = donMode
     ? ((chiTietQuery.data as { referenceImageUrl?: string | null } | undefined)?.referenceImageUrl ?? null)
     : null;
+  // Lô 8 Mục 2 (BG-116, R-KC-1) — phân loại NGUỒN của anhThamChieu TRƯỚC khi đưa vào canvas.
+  // Chỉ URL hệ ĐÃ NHẬN (`/uploads/...`) hoặc URL tuyệt đối mới load canvas — đường dẫn máy còn
+  // nguyên (`X:/...`, `\\server\...`) hiện thông điệp TRUNG THỰC thay vì nền câm mà ROI vẽ đè lên.
+  const nguonAnh = phanLoaiNguonAnhTemplate(anhThamChieu);
 
   const dangLuu = luuMutation.isPending;
 
@@ -370,9 +375,9 @@ export function ComponentLimitsDialog({
           <div className="overflow-hidden rounded-lg border bg-muted/20">
             {chiTietQuery.isLoading ? (
               <Skeleton className="h-48 w-full" />
-            ) : anhThamChieu && diemCanvas ? (
+            ) : nguonAnh === "he" && diemCanvas ? (
               <MeasurementPointCanvas
-                imageUrl={anhThamChieu}
+                imageUrl={anhThamChieu as string}
                 points={[diemCanvas]}
                 selectedIndex={0}
                 onSelectIndex={() => {}}
@@ -384,6 +389,12 @@ export function ComponentLimitsDialog({
                 zoomLevel={100}
                 className="max-h-80"
               />
+            ) : nguonAnh === "duongDanMay" ? (
+              // Lô 8 Mục 2 (BG-116, R-KC-1) — KHÔNG tự vẽ placeholder giả ảnh: thông điệp
+              // trung thực thay cho nền câm mà ROI từng vẽ đè lên (trông như toạ độ sai).
+              <p className="p-6 text-center text-sm text-muted-foreground">
+                {t("teachLimits.anhChuaTaiLenHe", "Ảnh template chưa được máy tải lên hệ.")}
+              </p>
             ) : (
               <p className="p-6 text-center text-sm text-muted-foreground">
                 {t("teachLimits.khongCoAnh", "Máy chưa gửi ảnh/toạ độ ROI tham chiếu cho linh kiện này.")}
