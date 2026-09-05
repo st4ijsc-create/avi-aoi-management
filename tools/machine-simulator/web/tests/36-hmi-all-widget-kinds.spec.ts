@@ -227,4 +227,67 @@ test.describe("every registered widget kind is drawn in the product, pinned agai
     // widgets the loop above happens not to sample (the loop only visits the FIRST widget of each kind).
     await expect(page.locator("[data-hmi-widget]")).toHaveCount(DEMO_DOCUMENT.widgets.length)
   })
+
+  test("🔴 the DEMO route makes NO published-screen request — a URL that NAMES a document is not answered with a different one", async ({
+    page,
+  }) => {
+    /**
+     * PERIMETER SWEEP ROW W22, closed. `scripts/delete-and-redden-web.sh`'s W22 deletes the demo
+     * route's exclusion from the machine-panel lookup in `routes/Hmi.tsx`:
+     *
+     *     const kioskScreenId = screenId === undefined ? machineScreenId(code) : undefined
+     *                        → const kioskScreenId = machineScreenId(code)
+     *
+     * That line's own comment calls the exclusion deliberate and says why: `/hmi/demo/{screenId}`
+     * NAMES a document, and answering a URL that named one document with a different one is the exact
+     * defect `35-hmi-indirect-binding.spec.ts`'s third test exists to prevent. It is excluded AT THE
+     * FETCH, not merely at the render, so the demo route makes no request it would then ignore.
+     *
+     * 🔴 THE POSITIVE HALF OF THAT CLAIM IS PINNED IN THREE PLACES AND THE NEGATIVE HALF WAS PINNED IN
+     * NONE — which is why the mutation was green. Of the four specs that visit `/hmi/demo/` (35, 36,
+     * 37, 41), not one asserted that the route issues no `/v1/screens/` request; and
+     * `43-editor-acceptance.spec.ts`, the spec that owns the "the kiosk really did ask the store"
+     * assertion, never visits the demo route at all. Asserting that a document RENDERS cannot see this:
+     * `demoScreen` is still FIRST in `kioskDoc`'s `??` chain, so under the mutation the right document
+     * is still drawn. What changes is invisible to every existing assertion — the route fires a doomed
+     * `GET /v1/screens/machine-iot-01` and gates its first paint on `publishedScreen.isPending`.
+     *
+     * So this test asserts the ABSENCE, which is the half nobody held. The id is not derived here at
+     * all — the assertion is that NO `/v1/screens/` path is requested, which is stronger than naming
+     * one and cannot be satisfied by a build that merely spells the doomed id differently.
+     * `DEMO_MACHINE_CODE` is `IOT-01` (`src/lib/hmiScreens.ts`), so the request the exclusion prevents
+     * is the one for `machine-iot-01`.
+     */
+    const asked: string[] = []
+    page.on("request", (req) => {
+      const path = new URL(req.url()).pathname
+      if (path.startsWith("/v1/screens/")) asked.push(path)
+    })
+
+    await page.goto(DEMO_ROUTE)
+
+    // The demo document is on screen — so the route really did run, and an empty `asked` below means
+    // "asked nothing", not "rendered nothing".
+    await expect(page.locator('[data-hmi-screen="component-demo"]')).toBeVisible()
+    await expect(page.locator("[data-hmi-widget]")).toHaveCount(DEMO_DOCUMENT.widgets.length)
+
+    /**
+     * 🔴 READ AFTER A SETTLE, NOT AT FIRST PAINT. There is no positive signal for "a request was never
+     * made", so this is a real sleep — the same idiom as `43-editor-acceptance.spec.ts`'s
+     * `SCREEN_HOLD_MS` and `deadlines.ts`'s `TONE_SETTLE_MS`. Without it a build that DOES fire the
+     * doomed GET could be counted before the request left, which is a false green. It cannot produce a
+     * false red: a route that issues no request issues none however long anybody waits.
+     */
+    await page.waitForTimeout(1000)
+
+    expect(
+      asked,
+      `${DEMO_ROUTE} requested ${JSON.stringify(asked)} from the published-screen store. The demo route ` +
+        `NAMES the document it wants; a machine-panel lookup here can answer that URL with a different ` +
+        `document, and it gates the demo screen's first paint on a request it never asked for. See ` +
+        `kioskScreenId in src/routes/Hmi.tsx.`
+    ).toEqual([])
+
+    page.removeAllListeners("request")
+  })
 })

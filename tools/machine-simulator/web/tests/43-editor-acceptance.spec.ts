@@ -378,6 +378,90 @@ test.describe("WS-HMI-2 acceptance — an engineer builds a machine's screen, an
     }
   })
 
+  test("🔴 a confirmed 404 is asked ONCE and never retried — §5-bis's named not-found state is PROMPT, not merely eventual", async ({
+    page,
+  }) => {
+    /**
+     * PERIMETER SWEEP ROW W23, closed — and this is the row where the property and the pin that
+     * existed for it were not the same claim.
+     *
+     * `useScreen`'s `retry` branch (`lib/api.ts`) says a confirmed 404 is not retried, and its doc
+     * comment says why it is load-bearing rather than a network nicety: plan §5-bis requires an
+     * undeclared screen to reach a NAMED not-found state, and the app-wide `retry: 2` (`App.tsx`)
+     * would otherwise leave the route in `isPending` through two backoff waits first — a spinner where
+     * a named answer belongs.
+     *
+     * 🔴 WHAT WAS ALREADY PINNED, AND WHY IT COULD NOT SEE THIS. The §5-bis test directly above
+     * asserts the OUTCOME: the fallback appears, and the kiosk provably asked. Deleting the retry
+     * branch passes it — measured, as sweep row W23 — because the outcome still arrives, just ~3 s
+     * later, and `toBeVisible()` waits it out. This branch has written that lesson down once already
+     * about a different line, in this same file's MEDIUM-1 comment: *"the reviewer's cut of it came
+     * back GREEN, because every assertion that could have seen it auto-retries past the transient."*
+     * An outcome assertion cannot measure promptness. That is not a weakness in those tests; it is
+     * what they are for.
+     *
+     * 🔴 WHAT THIS TEST MEASURES, SAID PLAINLY, BECAUSE "PROMPTNESS" IS THE EASY THING TO FAKE HERE.
+     * It does NOT measure elapsed time, and deliberately so: a wall-clock assertion ("the fallback
+     * arrived within N ms") on a kiosk that also boots an engine, a fleet poll and a component fetch
+     * is a flake generator, and one tuned loose enough not to flake would no longer be able to see a
+     * 1 s first backoff at all. What it measures instead is the REQUEST COUNT, which is what "not
+     * retried" means mechanically and is a discrete, settled quantity rather than a timing:
+     *
+     *   * with the branch:   exactly ONE `GET /v1/screens/machine-scrw-01`, ever;
+     *   * without it:        THREE — the app-wide `retry: 2` takes over, at 1 s and 2 s.
+     *
+     * One versus three is not a threshold anybody has to tune, and the count is read only AFTER the
+     * whole retry window has been given room to happen (see `RETRY_WINDOW_MS`), so a green here means
+     * the retries did not occur rather than that the test looked too early.
+     *
+     * 🔴 AND THE COUNT IS READ AGAINST A REAL 404 FROM THE ENGINE, not a fulfilled one. `SCRW-01` is a
+     * baseline machine whose derived id nothing in this repository ever publishes — the §5-bis test
+     * above asserts exactly that precondition, by name, for all three. So this is the store's own
+     * answer on the product's own path.
+     */
+    const machine = BASELINE_MACHINES[0]
+
+    /**
+     * Long enough to contain BOTH backoff waits the app-wide `retry: 2` would spend (1 s, then 2 s)
+     * plus room for the third request to be issued. There is no positive signal for "a retry did not
+     * happen", so this is a real sleep, the same idiom and the same reasoning as `SCREEN_HOLD_MS`
+     * above and `deadlines.ts`'s `TONE_SETTLE_MS`.
+     *
+     * 🔴 THIS IS THE ONE NUMBER IN THIS TEST THAT COULD MAKE IT LIE, AND IT LIES ONLY TOWARDS GREEN —
+     * so it is sized well past the window rather than near it. Too SHORT and a build that does retry
+     * is counted before its retries land, which is a false green; there is no value that produces a
+     * false RED, because a build that does not retry cannot issue a second request no matter how long
+     * anybody waits. 4 s against a 3 s window is the margin, and it is spent once, in one test.
+     */
+    const RETRY_WINDOW_MS = 4000
+
+    const asked: string[] = []
+    page.on("request", (req) => {
+      const path = new URL(req.url()).pathname
+      if (path === `/v1/screens/${machine.derivedId}`) asked.push(path)
+    })
+
+    await page.goto(`/hmi/${machine.code}`)
+
+    // The not-found state has been REACHED — the panel is showing this machine's shipped document.
+    // Asserted first so that a build which never asked at all fails on the §5-bis test's terms rather
+    // than passing this one with a count of zero.
+    await expect(page.locator(`[data-hmi-screen="${machine.shippedScreen}"]`)).toBeVisible()
+
+    // Now give both backoff waits every chance to fire before the count is read.
+    await page.waitForTimeout(RETRY_WINDOW_MS)
+
+    expect(
+      asked.length,
+      `GET /v1/screens/${machine.derivedId} was issued ${asked.length} times for a confirmed 404. A 404 ` +
+        `is settled in one round trip and must not be retried: the app-wide retry: 2 (App.tsx) turns an ` +
+        `undeclared screen into ~3 s of isPending — a spinner on an operator's panel where §5-bis ` +
+        `requires a named answer. See useScreen's retry branch in lib/api.ts.`
+    ).toBe(1)
+
+    page.removeAllListeners("request")
+  })
+
   test("an engineer builds a screen for a machine that has never had one, without writing a line of code, and the machine shows it with live data", async ({
     page,
     request,
@@ -704,6 +788,80 @@ test.describe("WS-HMI-2 acceptance — an engineer builds a machine's screen, an
     await expect(page.locator('[data-hmi-screen="iot-overview"]')).toBeVisible()
     await expect(page.getByRole("button", { name: viDict.hmi.controls.estop })).toBeVisible()
     await page.unroute(`**/v1/screens/${SCREEN_ID}`)
+  })
+
+  test("🔴 an UNRENDERABLE published document degrades to the shipped screen — the safety net is applied AT THE CALL SITE, not merely exported", async ({
+    page,
+    request,
+  }) => {
+    /**
+     * PERIMETER SWEEP ROW W20, closed. `scripts/delete-and-redden-web.sh`'s W20 cuts
+     * `renderableScreen(…)` out of `Hmi.tsx`'s `kioskDoc` — the kiosk then renders whatever the store
+     * returned — and before this test that mutation reddened NOTHING. The function itself is pinned as
+     * hard as anything on this branch (`runtime-tests/screenJoin.test.mjs`; sweep row W10 reddens
+     * thirteen of its tests). What had no test was the CALL.
+     *
+     * 🔴 WHY NOTHING PINNED IT, AND WHY THIS TEST IS SHAPED THE WAY IT IS. The perimeter report
+     * (§5.3) names the reason and it is structural rather than an oversight: **no browser test can
+     * create an unrenderable published document through the product's own doors.** The write door
+     * validates, so one cannot be `PUT`; the only path that can serve one is a rollback restoring a
+     * row written under a laxer contract — `HmiScreenStore.AppendVersionAsync`'s deliberate "a restore
+     * is not new authorship" — and no fixture in this tree can construct that state. So the call site
+     * was only ever exercised with documents that need no net.
+     *
+     * This test puts the document on the WIRE instead, with `page.route`, which is the one place a
+     * legacy row is reproducible without a test-only hole in the store's contract. It asserts nothing
+     * about how such a row comes to exist — that is the engine's own pinned behaviour — only that when
+     * one arrives, the kiosk survives it.
+     *
+     * 🔴 THE DOCUMENT IS THE `cols: 1e9` SHAPE ON PURPOSE, AND THE CHOICE IS THE TEST. Security review
+     * MEDIUM-2. A `layout: null` document would ALSO be caught by the net, but it THROWS inside
+     * `ScreenRenderer` (`const { layout, widgets } = doc` then `Math.max(1, layout.cols)`, above the
+     * per-widget boundaries), so with the net cut the page dies and this test would go red on a blank
+     * page — which is red for the right reason but reads as a crash rather than as a measurement.
+     * `cols: 1e9` is finite and does NOT throw: it reaches `repeat(1000000000, minmax(0, 1fr))`, the
+     * declaration is dropped, and every widget stacks. So with the net cut the page RENDERS, carrying
+     * `data-hmi-screen="machine-iot-02"` — the sentinel document, laid out as a heap — and with the net
+     * it renders `iot-overview`. Two live builds that differ by which document is on screen, rather
+     * than by whether anything is.
+     */
+    const legacyRow = {
+      ...shadowingDoc(SCREEN_ID),
+      // Finite, in a document that is otherwise perfectly well-formed, and a billion tracks. This is
+      // exactly the row the write door refuses today and a rollback can still make current.
+      layout: { cols: 1e9, rows: 8, breakpoint: "panel" },
+    }
+
+    await page.route(`**/v1/screens/${SCREEN_ID}`, (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(legacyRow) })
+    )
+
+    await page.goto(`/hmi/${MACHINE}`)
+
+    // The panel is this machine's SHIPPED screen…
+    await expect(page.locator('[data-hmi-screen="iot-overview"]')).toBeVisible()
+    // …and the unrenderable document is nowhere on it. This is the half that reddens under W20: with
+    // the net cut, `data-hmi-screen` is the sentinel id and the shadow label is on screen.
+    await expect(page.locator(`[data-hmi-screen="${SCREEN_ID}"]`)).toHaveCount(0)
+    await expect(page.getByText(SHADOW_SENTINEL)).toHaveCount(0)
+    // Exactly one screen rendered — a fallback that drew BESIDE the bad document would fail here.
+    await expect(page.locator("[data-hmi-screen]")).toHaveCount(1)
+
+    // And the degradation is silent on screen but never silent about the panel itself: the safety
+    // controls an operator reaches for are up, on a panel whose published screen could not be laid out.
+    await expect(page.getByRole("button", { name: viDict.hmi.controls.estop })).toBeVisible()
+
+    await page.unroute(`**/v1/screens/${SCREEN_ID}`)
+
+    // 🔴 THE NEGATIVE CONTROL, and without it this test would pass on a build that ALWAYS ignores the
+    // published document — which is a different defect with the same symptom, and the one a fallback
+    // test is most likely to mask. Same machine, same route, a document that IS renderable: it must
+    // now be the thing on screen. So the two assertions above measure "the net fired", not "the kiosk
+    // never reads the store".
+    await putScreen(request, shadowingDoc(SCREEN_ID))
+    await page.goto(`/hmi/${MACHINE}`)
+    await expect(page.locator(`[data-hmi-screen="${SCREEN_ID}"]`)).toBeVisible()
+    await expect(page.getByText(SHADOW_SENTINEL)).toBeVisible()
   })
 
   test("🔴 the editor refuses to start a screen at an id the write door will always reject, at the point of entry", async ({

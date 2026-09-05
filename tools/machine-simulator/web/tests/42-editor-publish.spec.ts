@@ -529,6 +529,96 @@ test.describe("HMI screen editor — publish, versions, rollback, breakpoint pre
     }
   })
 
+  test("🔴 a rollback INVALIDATES the head document — what GET .../{id} now serves has changed, and every surface reading it re-reads", async ({
+    page,
+    request,
+  }) => {
+    /**
+     * PERIMETER SWEEP ROW W25, closed. `scripts/delete-and-redden-web.sh`'s W25 drops
+     * `QUERY_KEYS.screen(screenId)` from `useRollbackScreen.onSuccess` while KEEPING the history key,
+     * and before this test that mutation reddened nothing in this file's thirteen tests.
+     *
+     * The property is `useRollbackScreen`'s own doc comment in `lib/api.ts`: a rollback APPENDS a
+     * version, so BOTH the head document and the history changed. Its complement is already pinned —
+     * sweep row W24 drops the HISTORY key from `usePublishScreen` and reddens `42:352`. So the pair
+     * was half-held, and this is the other half.
+     *
+     * 🔴 WHY NO EXISTING TEST COULD SEE IT, WHICH IS ALSO WHY THIS ONE IS SHAPED AS A NETWORK
+     * ASSERTION RATHER THAN A UI ONE. The perimeter report (§5.7) traced it: after a rollback the
+     * editor reads the VERSION LIST (`data-publish-version-row`, `data-editor-current-version`), and
+     * both of those are fed by `useScreenVersions` — the key W25 leaves alone. The canvas deliberately
+     * does NOT reload from the refetched document: `EditorCanvasProps.doc`'s own rule that "the
+     * engineer's session is the authority on what they are editing". So there is no pixel anywhere in
+     * this product that moves when the head-document invalidation is deleted, and a test written
+     * against a rendered surface would either measure nothing or would have to assert a behaviour the
+     * branch has deliberately refused.
+     *
+     * What DOES change is observable and is exactly the claim: the query is invalidated, so the
+     * `useScreen(screenId)` that `EditorRoute` mounts (`src/editor/EditorRoute.tsx`) re-reads the head
+     * document. One `GET /v1/screens/{id}` after the rollback, or none. That is the mechanism the doc
+     * comment describes, measured where it happens rather than three surfaces downstream.
+     *
+     * 🔴 THE HEAD DOCUMENT ONLY — `?version=` REQUESTS ARE NOT COUNTED. `PublishPanel`'s version
+     * preview fetches `GET /v1/screens/{id}?version=N` through `useScreenAtVersion`, a DIFFERENT key
+     * (`QUERY_KEYS.screenAtVersion`) that a rollback deliberately does not touch, because every
+     * previously-fetched old version is still exactly what it was. Counting those would make this test
+     * pass on a build with no head invalidation at all, purely because the panel happened to preview
+     * something — the precise shape of a green that measures the wrong request.
+     */
+    const screenId = "pub-rollback-invalidates-head"
+    const v1 = await putScreen(request, probeDoc(screenId, [ALPHA]))
+    const v2 = await putScreen(request, probeDoc(screenId, [ALPHA, BRAVO]))
+    expect(v2).toBe(v1 + 1)
+
+    await openEditor(page, screenId)
+
+    // Counted from AFTER the editor has settled, so the mount's own read of the head document is not
+    // mistaken for the invalidation's refetch. Everything below is caused by the rollback or by nothing.
+    const headReads: string[] = []
+    page.on("request", (req) => {
+      const url = new URL(req.url())
+      if (req.method() !== "GET") return
+      // The HEAD document: the bare document path, no `?version=`. See the note above on why the
+      // version-preview requests are excluded rather than merely unmentioned.
+      if (url.pathname === `/v1/screens/${screenId}` && !url.searchParams.has("version")) {
+        headReads.push(url.pathname + url.search)
+      }
+    })
+
+    await page.locator(`[data-publish-rollback="${v1}"]`).click()
+
+    // The rollback landed — asserted through the surface that DOES move, so a failure to roll back at
+    // all is reported as itself rather than as a missing refetch.
+    await expect(page.locator("[data-rollback-version]")).toHaveAttribute(
+      "data-rollback-version",
+      String(v2 + 1)
+    )
+
+    /**
+     * 🔴 A POLL-FREE WAIT, AND THAT IS WHAT MAKES THE COUNT MEAN SOMETHING. `useScreen` sets no
+     * `staleTime` and no `refetchInterval`, and `refetchOnWindowFocus` is `false` app-wide
+     * (`App.tsx`), so this hook NEVER refetches on its own. A `GET` of the head document arriving in
+     * this window therefore has exactly one possible cause: something invalidated its key. Sized the
+     * same way, and for the same reason, as this suite's other "nothing happened" waits.
+     */
+    await expect
+      .poll(() => headReads.length, {
+        message:
+          `the rollback did not re-read GET /v1/screens/${screenId}. A rollback APPENDS a version, so ` +
+          `what that endpoint now serves has CHANGED — every surface reading the current document is ` +
+          `holding a stale one until something else happens to invalidate it. useScreen never refetches ` +
+          `on its own (no staleTime, no poll, refetchOnWindowFocus false), so nothing else will. See ` +
+          `useRollbackScreen.onSuccess in src/lib/api.ts.`,
+        timeout: 5000,
+      })
+      .toBeGreaterThanOrEqual(1)
+
+    // …and it really is the head that was re-read, carrying no version selector.
+    expect(headReads.every((u) => !u.includes("version="))).toBe(true)
+
+    page.removeAllListeners("request")
+  })
+
   test("a rollback the engine refuses is named at the control, with its status", async ({ page, request }) => {
     const screenId = "pub-rollback-404"
     // TWO versions, because the Restore button on the CURRENT row is deliberately disabled (restoring
