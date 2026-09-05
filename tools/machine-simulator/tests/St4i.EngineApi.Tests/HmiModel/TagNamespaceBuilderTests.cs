@@ -541,6 +541,37 @@ public sealed class TagNamespaceBuilderTests
             // list has since changed how it decides.
             "St4i.EngineApi/Endpoints/MachineWritePermissionEndpoints.cs",
             "St4i.EngineApi/Policy/MachineWriteGate.cs",
+
+            // 🔴🔴 SESSION 2 (HMI-3) — THIS TRIPWIRE FIRED A SECOND TIME, AS DESIGNED, AND THE ANSWER IS
+            // RECORDED HERE RATHER THAN THE LIST QUIETLY WIDENED.
+            //
+            // `ScreenGenerator` DECIDES on policyAction; it does not merely carry it. The decision it
+            // makes, and why it is the fail-CLOSED direction:
+            //
+            //   * It tests MEMBERSHIP in ContractInvariants.KnownPolicyActions before emitting a write
+            //     widget. A member is copied VERBATIM into the widget and no authorisation claim is made
+            //     about it — Session 1's `policyGate` (web) re-decides that per session against the
+            //     engine's own verdict, and PUT /v1/screens/{id} re-validates the document.
+            //   * A NON-member — or an absent action on a write role — emits a `label` NAMING the
+            //     unrecognised action INSTEAD of a write widget. There is no arm that turns an
+            //     unrecognised value into a widget carrying it, which is the precise shape of the
+            //     fail-OPEN consumer this census exists to catch.
+            //
+            // WHY THE DECISION HAD TO BE MADE AT ALL, rather than copying verbatim like the builder
+            // above: the two write doors disagree. Validate(ComponentModelDocument) requires only that a
+            // setpoint/command tag's policyAction be NON-EMPTY, while Validate(HmiScreenDocument) — and
+            // the frozen schema's $defs.widget.properties.policyAction.enum — require MEMBERSHIP. So a
+            // LEGAL component model can declare `plant.override`, and a generator copying it verbatim
+            // would build a screen document its own product's write door answers 400 for. Pinned, with a
+            // negative control, by ScreenGeneratorTests'
+            // A_setpoint_whose_policyAction_is_outside_the_screen_contracts_vocabulary_becomes_a_naming_label
+            // and Every_member_of_the_frozen_policy_vocabulary_still_produces_a_write_widget_carrying_it_verbatim
+            // — the second exists because a generator that refused EVERY action would satisfy the first
+            // perfectly while emitting no write widget at all.
+            //
+            // The census's own stated limit is not narrowed by this entry either: it still cannot tell
+            // whether a file already on this list has since changed how it decides.
+            "St4i.EngineApi/HmiModel/ScreenGenerator.cs",
         };
 
         var mentions = Directory

@@ -163,6 +163,13 @@ public static class HmiScreenEndpoints
     public static void MapHmiScreenEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/v1/screens", ListAsync).RequireAuthorization(Policies.Operator);
+        // Session 2 (HMI-3) — READ-ONLY, and mapped BEFORE the by-id route on purpose. ASP.NET routing
+        // scores a literal segment above a parameter one, so `/v1/screens/generate` reaches this handler
+        // and never `GetAsync` with `screenId == "generate"`; the map order merely makes that visible to a
+        // reader instead of leaving it to the matcher's precedence table. The cost is that `generate` is
+        // no longer reachable as a screen ID over GET — measured, nothing in this repository declares,
+        // ships or tests a screen by that name.
+        app.MapGet("/v1/screens/generate", GenerateAsync).RequireAuthorization(Policies.Engineer);
         app.MapGet("/v1/screens/{screenId}", GetAsync).RequireAuthorization(Policies.Operator);
         app.MapPut("/v1/screens/{screenId}", PutAsync).RequireAuthorization(Policies.Engineer);
         app.MapGet("/v1/screens/{screenId}/versions", ListVersionsAsync).RequireAuthorization(Policies.Operator);
@@ -194,6 +201,58 @@ public static class HmiScreenEndpoints
             version is null
                 ? $"no screen is declared with id '{screenId}'."
                 : $"screen '{screenId}' has no version {version.Value}."));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GET /v1/screens/generate?machine={code}
+    //
+    // 🔴 READ-ONLY, AND IT STORES NOTHING. The document is computed by `ScreenGenerator` (pure, static —
+    // `TagNamespaceBuilder` is the precedent) from the machine's DECLARED component tree and handed back
+    // over the wire. Nothing is written: no screen row, no version, no audit entry. So
+    // `GET /v1/screens/{id}` still answers 404 for the id this document names, which is this class's own
+    // ruling ("there is no such thing as a valid EMPTY screen") left exactly as it was —
+    // `HmiScreenEndpointsTests.Generate_stores_nothing_so_the_id_it_names_still_answers_404` proves that
+    // against the real pipeline rather than restating it here.
+    //
+    // 🔴 `Policies.Engineer`, NOT the Operator tier its GET siblings carry, and the difference is the
+    // point rather than an oversight. Every other read on this family answers a document somebody
+    // AUTHORED; this one answers a PROPOSED document — the starting point of an authoring session, which
+    // is an Engineer's act. It matches the tier of the door the result is destined for
+    // (`PUT /v1/screens/{screenId}`), so the route cannot hand an Operator a draft they could never
+    // publish. It still writes nothing, so this is the read tier of a write workflow, not a write.
+    //
+    // 🔴 WHY 200 WITH A ONE-LABEL SCREEN FOR AN UNDECLARED MACHINE, rather than 404. This route asks the
+    // same question `GET /v1/components/{code}` asks, and that route answers §5-bis's empty-200 because "a
+    // machine that has declared nothing" is a real product state. Generation over an empty model is a real
+    // answer to a real question — and `ScreenGenerator` returns a screen carrying ONE label that says the
+    // machine declares no components, never a zero-widget document, because a zero-widget screen is
+    // indistinguishable from a generator that silently failed.
+    // ─────────────────────────────────────────────────────────────────────
+    internal static async Task<IResult> GenerateAsync(
+        string? machine, string? screenId, IComponentModelStore components, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(machine))
+        {
+            return Results.BadRequest(new ApiErrorDto(
+                "query parameter 'machine' is required — GET /v1/screens/generate?machine={code}."));
+        }
+
+        // Raw to the store, exactly as `HmiModelEndpoints.GetAsync` does it: `components` is the
+        // canonicalizing decorator, and THAT is what makes the lookup case-insensitive — not a
+        // normalisation line here.
+        var model = await components.GetAsync(machine, ct).ConfigureAwait(false);
+        var canonical = MachineCodeIdentity.Canonicalize(machine);
+        model ??= new ComponentModelDocument(
+            ContractInvariants.SchemaVersionConst, canonical,
+            Array.Empty<ComponentNode>(), Array.Empty<ComponentTypeDef>());
+
+        var generated = ScreenGenerator.Generate(model, screenId);
+
+        // HmiContractJson.Options, never Results.Ok: an HmiScreenDocument carries optional fields
+        // (`titleEn`, `component`, `bindings`, `props`, `policyAction`) and only these options honour this
+        // contract family's "absence IS null, never written explicitly" rule. The same reason every other
+        // producer in this directory uses it.
+        return Results.Json(generated, HmiContractJson.Options);
     }
 
     // ─────────────────────────────────────────────────────────────────────

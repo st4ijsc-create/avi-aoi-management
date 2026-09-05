@@ -294,6 +294,17 @@ public sealed class RbacPolicyTests
         // workstream writes to a device.
         new("/v1/screens/{screenId}", new[] { "PUT" }, Policies.Engineer),
         new("/v1/screens/{screenId}/rollback", new[] { "POST" }, Policies.Engineer),
+        // 🔴 Session 2 (HMI-3) — GET /v1/screens/generate?machine={code}. THE ONE GET IN THIS FILE THAT
+        // SITS AT ENGINEER, and the row is here rather than beside its Operator-tier GET siblings above
+        // precisely so a reader cannot skim past that. It writes nothing — no screen row, no version, no
+        // audit entry — so the tier is not about a mutation. It is about what the answer IS: every other
+        // screen read returns a document somebody AUTHORED, while this one returns a PROPOSED document,
+        // the starting point of an authoring session. Gating it at the tier of the door that session ends
+        // at (PUT /v1/screens/{screenId}, directly above) means the route cannot hand an Operator a draft
+        // they could never publish. A literal-segment route, not a parameter one — it is mapped BEFORE
+        // /v1/screens/{screenId} so the matcher's literal-over-parameter preference is visible in the
+        // source rather than only in its precedence table.
+        new("/v1/screens/generate", new[] { "GET" }, Policies.Engineer),
         new("/v1/machines/{code}/setpoint", new[] { "POST" }, Policies.Engineer),
         new("/v1/machines/{code}/sync-config", new[] { "POST" }, Policies.Engineer),
         new("/v1/mode", new[] { "PUT" }, Policies.Engineer),

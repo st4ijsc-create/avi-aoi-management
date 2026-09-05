@@ -1168,6 +1168,189 @@ public sealed class HmiScreenEndpointsTests
                 new DefaultHttpContext(), DiscardingRecorder(), CancellationToken.None));
     }
 
+    // ═════════════════════════════════════════════════════════════════════
+    // 🔴 Session 2 (HMI-3) — GET /v1/screens/generate?machine={code}
+    //
+    // The route is READ-ONLY and stores nothing. That is the property the whole design rests on, and it
+    // is measured against the real pipeline here rather than asserted in the generator's doc comment.
+    // ═════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 🔴 THE PROPERTY THE EXISTING RULING DEPENDS ON. <c>GET /v1/screens/{id}</c> answers 404 for a
+    /// screen nobody authored — this class's own doc comment argues it at length — and generation must not
+    /// quietly soften it by leaving a row behind. So: generate, then ask for the id the generated document
+    /// names, and get a 404. Asked over the REAL pipeline, and the 200 is asserted first so a route that
+    /// simply failed could not pass the 404 half by accident.
+    /// </summary>
+    [Fact]
+    public async Task Generate_stores_nothing_so_the_id_it_names_still_answers_404()
+    {
+        var (factory, _, engineerC, operatorC) = await NewFactoryWithUsersAsync("gen-404");
+        await using var _f = factory;
+        using var eng = engineerC;
+        using var op = operatorC;
+
+        string generatedId;
+        using (var gen = await eng.GetAsync("/v1/screens/generate?machine=GEN-01"))
+        {
+            Assert.Equal(HttpStatusCode.OK, gen.StatusCode);
+            var doc = await gen.Content.ReadFromJsonAsync<HmiScreenDocument>(HmiContractJson.Options);
+            Assert.NotNull(doc);
+            generatedId = doc!.ScreenId;
+            Assert.False(string.IsNullOrWhiteSpace(generatedId));
+        }
+
+        using (var get = await op.GetAsync($"/v1/screens/{generatedId}"))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+        }
+
+        // And it is absent from the LIST too — a row that existed but was somehow unreadable by id would
+        // pass the check above while still being a write this route promised not to make.
+        using (var list = await op.GetAsync("/v1/screens"))
+        {
+            Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+            var ids = await list.Content.ReadFromJsonAsync<List<string>>(HmiContractJson.Options);
+            Assert.NotNull(ids);
+            Assert.DoesNotContain(generatedId, ids!);
+        }
+    }
+
+    /// <summary>
+    /// The generated document survives the REAL write door end to end: an Engineer PUTs exactly what the
+    /// generate route returned and gets a version back. This is the property "editable and publishable
+    /// through everything WS-HMI-2 already built" reduces to, and it cannot be established by
+    /// <c>ContractInvariants.Validate</c> alone — the model binder, the route-vs-body 409 rule and the
+    /// store all sit between.
+    /// </summary>
+    [Fact]
+    public async Task A_generated_document_is_accepted_verbatim_by_the_real_publish_door()
+    {
+        var (factory, _, engineerC, _) = await NewFactoryWithUsersAsync("gen-publish");
+        await using var _f = factory;
+        using var eng = engineerC;
+
+        // Seed a real component model first, so the generated document carries actual widgets rather than
+        // only the empty-model label — publishing an empty screen would not exercise the write door's §5
+        // and widget rules at all.
+        var model = new ComponentModelDocument(
+            1, "GENPUB-01",
+            new[] { new ComponentNode("spindle", "st4i.motor.spindle", "Trục vít", null, "GENPUB-01/spindle") },
+            new[]
+            {
+                new ComponentTypeDef("st4i.motor.spindle", "Spindle",
+                    new[]
+                    {
+                        new ComponentTagDef("running", "in", "bool", null, null, null, null, null),
+                        new ComponentTagDef("torque", "in", "float", null, "Nm", 0, 20, null),
+                        new ComponentTagDef("torque-target", "setpoint", "float", null, "Nm", 5, 15, "machine.setpoint"),
+                        new ComponentTagDef("reset", "command", "bool", null, null, null, null, "machine.command"),
+                    },
+                    Array.Empty<ComponentStateDef>(), "fp.motor.spindle"),
+            });
+        using (var seed = await eng.PutAsJsonAsync("/v1/components/GENPUB-01", model, HmiContractJson.Options))
+        {
+            Assert.Equal(HttpStatusCode.OK, seed.StatusCode);
+        }
+
+        HmiScreenDocument generated;
+        using (var gen = await eng.GetAsync("/v1/screens/generate?machine=GENPUB-01"))
+        {
+            Assert.Equal(HttpStatusCode.OK, gen.StatusCode);
+            generated = (await gen.Content.ReadFromJsonAsync<HmiScreenDocument>(HmiContractJson.Options))!;
+        }
+
+        // The premise, guarded: a generated screen with no write widget would not measure what this test
+        // claims to measure.
+        Assert.Contains(generated.Widgets, w => ContractInvariants.WritableWidgetKinds.Contains(w.Kind));
+
+        using var put = await eng.PutAsJsonAsync(
+            $"/v1/screens/{generated.ScreenId}", generated, HmiContractJson.Options);
+        Assert.True(put.StatusCode == HttpStatusCode.OK,
+            $"publishing a generated document answered {(int)put.StatusCode}: {await put.Content.ReadAsStringAsync()}");
+    }
+
+    /// <summary>An undeclared machine is a real product state, not an error — the same §5-bis reading
+    /// <c>GET /v1/components/{code}</c> already takes. 200, with a screen that SAYS the machine declares
+    /// nothing.</summary>
+    [Fact]
+    public async Task Generate_for_an_undeclared_machine_answers_200_with_a_screen_that_says_so()
+    {
+        var (factory, _, engineerC, _) = await NewFactoryWithUsersAsync("gen-empty");
+        await using var _f = factory;
+        using var eng = engineerC;
+
+        using var gen = await eng.GetAsync("/v1/screens/generate?machine=NOSUCH-01");
+        Assert.Equal(HttpStatusCode.OK, gen.StatusCode);
+        var doc = (await gen.Content.ReadFromJsonAsync<HmiScreenDocument>(HmiContractJson.Options))!;
+
+        Assert.Empty(ContractInvariants.Validate(doc));
+        var w = Assert.Single(doc.Widgets);
+        Assert.Equal("label", w.Kind);
+    }
+
+    /// <summary>A missing <c>?machine=</c> is a 400, not a 500 and not a screen for a machine named "".
+    /// The same posture <c>GET /v1/tags?machine=</c> already takes for a blank code.</summary>
+    [Fact]
+    public async Task Generate_without_a_machine_parameter_answers_400()
+    {
+        var (factory, _, engineerC, _) = await NewFactoryWithUsersAsync("gen-nomachine");
+        await using var _f = factory;
+        using var eng = engineerC;
+
+        using var gen = await eng.GetAsync("/v1/screens/generate");
+        Assert.Equal(HttpStatusCode.BadRequest, gen.StatusCode);
+    }
+
+    /// <summary>
+    /// 🔴 NEGATIVE CONTROL on the route's tier, and it is safety-shaped: the route sits at
+    /// <c>Policies.Engineer</c> while every other GET in this family sits at Operator, so a wiring mistake
+    /// that dropped the requirement would be invisible to every other test here. An Operator session must
+    /// be refused. (<c>RbacPolicyTests</c> holds the metadata row; this checks the enforcement.)
+    /// </summary>
+    [Fact]
+    public async Task Generate_refuses_an_operator_session_even_though_every_other_screen_read_admits_one()
+    {
+        var (factory, _, engineerC, operatorC) = await NewFactoryWithUsersAsync("gen-rbac");
+        await using var _f = factory;
+        using var eng = engineerC;
+        using var op = operatorC;
+
+        using (var denied = await op.GetAsync("/v1/screens/generate?machine=GEN-01"))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        }
+
+        // The control: the SAME operator client reads the sibling list route, so the refusal above is
+        // about this route's tier and not about a broken session.
+        using (var allowed = await op.GetAsync("/v1/screens"))
+        {
+            Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
+        }
+
+        // And an Engineer is admitted, so the route is not simply refusing everyone.
+        using (var ok = await eng.GetAsync("/v1/screens/generate?machine=GEN-01"))
+        {
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        }
+    }
+
+    /// <summary>The literal segment wins over the parameter one, which is what makes the route reachable
+    /// at all. Asserted by OUTCOME — a generate response is a screen document with a generated id, not a
+    /// 404 for a screen called "generate" — rather than by reading the matcher's precedence table.</summary>
+    [Fact]
+    public async Task The_literal_generate_segment_wins_over_the_by_id_route()
+    {
+        var (factory, _, engineerC, _) = await NewFactoryWithUsersAsync("gen-route");
+        await using var _f = factory;
+        using var eng = engineerC;
+
+        using var gen = await eng.GetAsync("/v1/screens/generate?machine=ROUTE-01");
+        Assert.Equal(HttpStatusCode.OK, gen.StatusCode);
+        var doc = (await gen.Content.ReadFromJsonAsync<HmiScreenDocument>(HmiContractJson.Options))!;
+        Assert.Equal("generated-route-01", doc.ScreenId);
+    }
+
     private sealed class ThrowsOperationCanceledOnGetStore : IHmiScreenStore
     {
         public Task<HmiScreenDocument?> GetAsync(string screenId, int? version = null, CancellationToken ct = default) =>
