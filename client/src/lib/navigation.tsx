@@ -2045,15 +2045,13 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "settings",
         section: "factoryConfig",
       },
-      {
-        href: "/layout",
-        label: "nav.factoryLayout",
-        icon: <LayoutGrid className="h-4 w-4" />,
-        description: "nav.factoryLayoutDesc",
-        requiredPermission: "settings_factory",
-        permissionCategory: "settings",
-        section: "factoryConfig",
-      },
+      // Khối D Task 2 — mục "/layout" ĐÃ BỎ: từ Task 1 (a86e7017), route "/layout" chỉ
+      // còn là <Redirect> vào hub /digital-twin?tab=layout (gate analytics_oee), trong khi
+      // mục nav này còn khai settings_factory — một lối vào hiện ra rồi RouteGuard của hub
+      // từ chối (khác quyền với quyền nó thật sự dẫn tới). "/layout/:id" KHÔNG bị ảnh hưởng:
+      // đó là route riêng, mang route param, giữ nguyên gate settings_factory (xem App.tsx).
+      // Khoá `nav.factoryLayout`/`nav.factoryLayoutDesc` CỐ Ý giữ trong 3 locale (mồ côi vô
+      // hại — /layout/:id có thể cần lại khi có breadcrumb/tiêu đề).
       {
         href: "/workstation-management",
         label: "nav.workstationManagement",
