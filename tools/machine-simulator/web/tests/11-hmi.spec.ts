@@ -138,12 +138,62 @@ test.describe("HMI operator panel", () => {
       // `transform` attribute recomputed every `requestAnimationFrame` from the real cycle clock
       // (`cycleTwin.ts`) — not a CSS animation — so a real regression that froze the twin (e.g. a
       // stale `plan` never re-fetched, or `useCycleTwin` wired to the wrong `animate` gate) would leave
-      // this attribute constant forever. Sampling it once, then polling for ANY change, is a direct,
-      // non-pixel proof the head is actually moving.
+      // this attribute constant forever.
+      //
+      // 🔴 THIS WAS THE SUITE'S ONE STANDING FLAKE (six reds across WS-HMI-2, every one of them here,
+      // every one of them reading `translate(104, 0)`), and the shape of the old assertion was the
+      // whole cause. It sampled the attribute ONCE and then `expect.poll`ed for ANY change:
+      //
+      //     const initialTransform = await head.getAttribute("transform")
+      //     await expect.poll(() => head.getAttribute("transform")).not.toBe(initialTransform)
+      //
+      // That is an ALIASING bug, not a slow-engine bug, and both periods that alias are real and
+      // measured. (1) SCRW-01's cycle is 0.85 s — `ScrewdriveSim.CycleSecondsOverride`, i.e.
+      // `HandlingOverheadSeconds(0.2) + 3 rev / 450 rpm (0.4) + clampTimeMs(0.25)` — while the plan
+      // that drives the twin only reaches the page on `useMachine`'s 1 s poll (`api.ts`'s
+      // `refetchInterval: 1000`). `computeCyclePlanClock` CLAMPS `elapsedSec` to `durationSeconds`, so
+      // for the ~0.15 s of every poll window in which the held plan is already spent, the head parks
+      // dead still at its LAST step — `nx = 0.2 + 3*(0.6/3) = 0.8`, and `0.8 * RAIL_SWEEP_PX(130)` is
+      // exactly the `translate(104, 0)` every recorded red reported. (2) `expect.poll`'s own default
+      // cadence backs off to a FIXED 1000 ms — the same period as the plan poll. When its samples
+      // phase-lock into that parked window, every one of the ~13 samples inside the 10 s bound reads
+      // the identical parked value and the test times out while the machine is cycling perfectly.
+      //
+      // Measured directly (probe replaying `expect.poll`'s exact sample instants against a healthy
+      // running fleet): a tight loop never stalls at all (40/40 changes, max 1 009 ms — one poll
+      // interval), but sampling at 100/250/500/1000/1000… reproduces the stall, and reproduces it with
+      // all thirteen samples equal to `translate(104, 0)`. The flake was never about the engine being
+      // slow; it was about WHEN this test looked.
+      //
+      // The fix is to stop sampling on a cadence that can alias, and to wait for the condition the
+      // claim actually rests on. Sampling runs INSIDE the page on `requestAnimationFrame` — the very
+      // clock the twin is redrawn by, so it cannot miss motion that happens between two external
+      // polls — and the assertion is now the stronger one the test name always claimed: the head is
+      // seen at MULTIPLE DISTINCT positions, i.e. it genuinely travels, rather than merely differing
+      // from one arbitrary first reading. A frozen twin still fails, and now fails for the right
+      // reason: it reports how many distinct positions it saw (1, the frozen one).
       await gotoHmi(page, "SCRW-01")
       const head = page.locator(".hmi-gantry-head")
-      const initialTransform = await head.getAttribute("transform")
-      await expect.poll(() => head.getAttribute("transform")).not.toBe(initialTransform)
+      const distinctHeadPositions = await head.evaluate(
+        (node, budgetMs) =>
+          new Promise<string[]>((resolve) => {
+            const seen = new Set<string>()
+            const deadline = performance.now() + budgetMs
+            const sample = () => {
+              seen.add(node.getAttribute("transform") ?? "")
+              // Two distinct positions already prove travel — stop as soon as that is established so a
+              // healthy run costs a frame or two, not the whole budget.
+              if (seen.size >= 2 || performance.now() >= deadline) resolve([...seen])
+              else requestAnimationFrame(sample)
+            }
+            requestAnimationFrame(sample)
+          }),
+        LIVE_CYCLES_MS
+      )
+      expect(
+        distinctHeadPositions.length,
+        `the gantry head should visit multiple positions across a cycle; saw ${JSON.stringify(distinctHeadPositions)}`
+      ).toBeGreaterThan(1)
 
       // Per-point NG lighting: `AoiSchematic.tsx` gives each live step's dot an accessible `<title>`
       // of `"{code} — {ĐẠT|LỖI}"` once that step's real result is revealed — a real regression that
