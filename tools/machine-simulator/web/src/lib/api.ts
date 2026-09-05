@@ -1198,6 +1198,29 @@ export function useScreen(screenId: string | undefined): UseQueryResult<HmiScree
  *
  * A 404 (unknown machine code) is not retried: it will not start existing a second later, and the
  * caller's gate fails closed on the resulting error state, which is correct.
+ *
+ * 🔴 SECURITY REVIEW L-1 — BOUNDED PERMISSIVE STALENESS, accepted rather than fixed. Between the HALT
+ * latch engaging and the next poll, a write widget renders enabled for up to 5s (and `App.tsx` sets
+ * `refetchOnWindowFocus: false`). This is inherent to an ADVISORY read: any cadence leaves a window.
+ * It is bounded by the write door, which re-evaluates `PolicyEngine` on every actual write and refuses
+ * a stale permit — measured by the review, which confirmed the endpoint reports `SAFETY_BLOCKED`
+ * correctly once asked and that the door refuses throughout. Recorded here so it is not rediscovered
+ * as a finding; shortening the interval would trade real request volume for a smaller window on a
+ * control that grants nothing.
+ *
+ * 🔴 SECURITY REVIEW M-1 — CROSS-IDENTITY CACHE WINDOW, carried to S5, deliberately NOT fixed here.
+ * `lib/auth.ts`'s `logout` never calls `queryClient.clear()`, and nothing in this app does — so this
+ * entry survives a logout for the default 5-minute `gcTime`. If an Admin uses a machine's HMI and an
+ * Operator logs in afterwards and opens the same machine, React Query can serve the ADMIN's cached
+ * verdict synchronously, and the Operator sees an enabled control until the refetch lands (one
+ * round-trip, since `staleTime` is 0). The write door still refuses, and no write widget can dispatch
+ * anything today — so the harm is the S-6 defect itself reappearing through a different door, briefly.
+ *
+ * It is NOT fixed in S1 because the cause is a pre-existing app-wide pattern (every `QUERY_KEYS` entry
+ * has always survived logout); S1 is merely the first place a cached value is a VERDICT rather than
+ * telemetry. The fix — `queryClient.clear()` on logout, or folding the session identity into this key —
+ * changes global cache behaviour, which is a wider blast radius than a security session's review
+ * covered. Carried to S5 alongside the eight duplicate `ROLE_RANK` tables.
  */
 export function useWritePermissions(code: string | undefined): UseQueryResult<MachineWritePermissions> {
   return useQuery({

@@ -2,7 +2,7 @@ import * as React from "react"
 
 import { useWritePermissions } from "@/lib/api"
 import type { PolicyResolution } from "./widgets/shared.ts"
-import { DESIGN_TIME_RESOLUTION, WritePermissionContext } from "./writePermissionChannel.ts"
+import { DESIGN_TIME_RESOLUTION, resolutionFromBody, WritePermissionContext } from "./writePermissionChannel.ts"
 
 /**
  * 🔴 Session S1 (S-6) — the two PROVIDERS that decide which world a `ScreenRenderer` is drawing in.
@@ -29,9 +29,15 @@ import { DESIGN_TIME_RESOLUTION, WritePermissionContext } from "./writePermissio
  * that has somehow lost its machine code is unresolved, which must fail closed. The editor declares
  * design time explicitly through {@link DesignTimePermissionProvider} instead.
  *
- * 🔴 §5-bis — a failed permissions query disables the write widgets WITH A REASON and does nothing else:
- * no error page, no empty grid, no spinner over the screen. Every read-only widget keeps rendering live
- * data, and the per-widget `WidgetErrorBoundary` is untouched.
+ * 🔴 §5-bis — a permissions query that fails, OR that succeeds with a body this provider cannot read,
+ * disables the write widgets WITH A REASON and does nothing else: no error page, no empty grid, no
+ * spinner over the screen. Every read-only widget keeps rendering live data, and the per-widget
+ * `WidgetErrorBoundary` is untouched.
+ *
+ * The second half of that sentence is new in fix round 1. It previously said only "a failed query",
+ * which was true for a REJECTED query and false for a fulfilled-but-malformed one — that case threw
+ * during render, above the only boundary in the tree, and unmounted the whole kiosk. See the M-2 note
+ * inside the `useMemo` below for the measurement.
  */
 export function WritePermissionProvider({
   machineCode,
@@ -52,17 +58,11 @@ export function WritePermissionProvider({
     if (isError) return { state: "unavailable" }
     if (isPending || data === undefined) return { state: "pending" }
 
-    const permitted: Partial<Record<"machine.setpoint" | "machine.command", boolean>> = {}
-    const reasons: Partial<Record<"machine.setpoint" | "machine.command", string>> = {}
-    for (const entry of data.permissions) {
-      if (entry.policyAction === "machine.setpoint" || entry.policyAction === "machine.command") {
-        permitted[entry.policyAction] = entry.permitted
-        // The engine's own sentence names the required role, which is the one thing that tells a denied
-        // operator who CAN do this. Carried only for denials — a permit needs no explanation.
-        if (!entry.permitted) reasons[entry.policyAction] = entry.message
-      }
-    }
-    return { state: "resolved", permitted, reasons }
+    // 🔴 SECURITY REVIEW M-2, fix round 1 — the body is UNTRUSTED and is narrowed by a pure function
+    // in the JSX-free module next door, so `node --test` can execute the malformed cases directly.
+    // Before this fix the loop lived here and a fulfilled-but-malformed 200 threw during render, above
+    // the only error boundary in the tree, unmounting the whole kiosk. See `resolutionFromBody`.
+    return resolutionFromBody(data)
   }, [machineCode, isError, isPending, data])
 
   return <WritePermissionContext.Provider value={resolution}>{children}</WritePermissionContext.Provider>

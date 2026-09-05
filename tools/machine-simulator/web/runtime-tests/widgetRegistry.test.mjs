@@ -48,6 +48,7 @@ import { readFileSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { policyGate } from "../src/hmi-runtime/widgets/shared.ts"
+import { resolutionFromBody } from "../src/hmi-runtime/writePermissionChannel.ts"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, "..", "src")
@@ -424,6 +425,101 @@ test("S1 policyGate: design-time và pending là HAI NHÁNH KHÁC NHAU — khôn
     pending.disabled,
     "design-time và pending đang cho CÙNG một kết quả — hai trạng thái đã bị gộp, và bất kể gộp về phía nào thì một trong hai bề mặt đang hỏng"
   )
+})
+
+// ── 🔴🔴 RÀ SOÁT BẢO MẬT M-2 (vòng sửa 1): THÂN PHẢN HỒI 200 LÀ DỮ LIỆU KHÔNG ĐÁNG TIN ──────────────
+// `lib/api.ts`'s `request` kết thúc bằng `return (await res.json()) as T` — một ép kiểu KHÔNG kiểm tra,
+// không có xác thực lúc chạy ở bất cứ đâu trên đường này. Một 200 mà thân thiếu `permissions` (proxy
+// viết lại thân, engine triển khai dở dang, phản hồi bị cắt) TRƯỚC bản sửa này ném TypeError ngay
+// TRONG lúc vẽ của provider — mà ranh giới lỗi DUY NHẤT trong cả cây web (`WidgetErrorBoundary`) nằm
+// BÊN TRONG `ScreenRenderer`, tức là BÊN DƯỚI provider, nên không ai bắt được và TOÀN BỘ màn kiosk bị
+// gỡ. Khoá an toàn (không điều khiển nào hiện) nhưng HỞ về tính sẵn sàng — và trên một HMI máy, một
+// màn hình trắng tự nó là một hiểm hoạ: người vận hành mất mọi widget chỉ-đọc và toàn bộ dữ liệu sống.
+//
+// `resolutionFromBody` là hàm THUẦN làm việc thu hẹp ấy, đặt trong module KHÔNG-JSX đúng để bài này
+// thực thi nó THẬT, chứ không so khớp văn bản nguồn.
+
+test("M-2: thân 200 THIẾU `permissions` ⇒ unavailable, KHÔNG ném", () => {
+  for (const body of [{}, { machineCode: "SCRW-01" }, { permissions: null }, { permissions: "nope" }, { permissions: 7 }]) {
+    let resolution
+    assert.doesNotThrow(() => {
+      resolution = resolutionFromBody(body)
+    }, `thân ${JSON.stringify(body)} làm resolutionFromBody NÉM — trong provider điều này gỡ toàn bộ màn kiosk`)
+    assert.equal(
+      resolution.state,
+      "unavailable",
+      `thân ${JSON.stringify(body)} phải suy ra "unavailable" — engine đã không đưa ra câu trả lời dùng được`
+    )
+  }
+})
+
+test("M-2: thân null/không-phải-đối-tượng ⇒ unavailable, KHÔNG ném", () => {
+  for (const body of [null, undefined, "", "a string", 42, true]) {
+    let resolution
+    assert.doesNotThrow(() => {
+      resolution = resolutionFromBody(body)
+    }, `thân ${JSON.stringify(body)} làm resolutionFromBody NÉM`)
+    assert.equal(resolution.state, "unavailable")
+  }
+})
+
+test("M-2: một DÒNG hỏng bị bỏ qua, và bỏ qua nghĩa là TỪ CHỐI — không ném, không cấp quyền", () => {
+  const resolution = resolutionFromBody({
+    permissions: [null, "nonsense", 12, { policyAction: "machine.command", permitted: true }],
+  })
+  assert.equal(resolution.state, "resolved")
+  // Dòng hợp lệ vẫn được đọc...
+  assert.equal(resolution.permitted["machine.command"], true)
+  // ...còn action KHÔNG được nhắc tới thì vắng mặt, và `policyGate` đòi `=== true`, nên nó bị khoá.
+  assert.equal(resolution.permitted["machine.setpoint"], undefined)
+  const gate = policyGate({ kind: "setpoint-input", policyAction: "machine.setpoint" }, resolution)
+  assert.equal(gate.disabled, true, "một action bị bỏ qua vì dòng hỏng lại mở khoá điều khiển — bỏ qua phải fail CLOSED")
+})
+
+test("M-2: `permitted` KHÔNG PHẢI boolean không phải là giấy phép — so sánh nghiêm ngặt, không truthiness", () => {
+  for (const raw of ["yes", 1, "true", {}, [], "TRUE"]) {
+    const resolution = resolutionFromBody({
+      permissions: [{ policyAction: "machine.command", permitted: raw }],
+    })
+    assert.equal(
+      resolution.permitted["machine.command"],
+      false,
+      `permitted=${JSON.stringify(raw)} được coi là giấy phép — thân phản hồi không đáng tin, phải so sánh === true`
+    )
+    const gate = policyGate({ kind: "command-button", policyAction: "machine.command" }, resolution)
+    assert.equal(gate.disabled, true, `permitted=${JSON.stringify(raw)} mở khoá điều khiển`)
+  }
+})
+
+// 🔴 ĐỐI CHỨNG ÂM cho toàn bộ chốt M-2 ở trên. Không có vế này, một `resolutionFromBody` trả
+// "unavailable" cho MỌI THỨ — hoặc một hàm khoá sạch mọi đường — cũng làm cả bốn bài trên xanh, và
+// chốt sẽ không phân biệt được gì cả.
+test("M-2 ĐỐI CHỨNG ÂM: một thân HỢP LỆ vẫn phân giải và vẫn CHO PHÉP", () => {
+  const resolution = resolutionFromBody({
+    machineCode: "SCRW-01",
+    permissions: [
+      { policyAction: "machine.command", permitted: true, reasonCode: "OK", message: "OK", requiredRole: "Admin" },
+      {
+        policyAction: "machine.setpoint",
+        permitted: false,
+        reasonCode: "POLICY_DENIED",
+        message: "Action 'machine.setpoint.write' requires the Engineer role (or higher).",
+        requiredRole: "Engineer",
+      },
+    ],
+  })
+
+  assert.equal(resolution.state, "resolved", "một thân hợp lệ bị coi là hỏng — chốt M-2 đang khoá sạch mọi đường")
+  assert.equal(resolution.permitted["machine.command"], true)
+  assert.equal(resolution.permitted["machine.setpoint"], false)
+
+  // Câu của engine được mang theo cho vế TỪ CHỐI (nó nêu vai trò cần thiết), và không mang cho vế cho phép.
+  assert.match(String(resolution.reasons["machine.setpoint"]), /Engineer/)
+  assert.equal(resolution.reasons["machine.command"], undefined)
+
+  // Và đi hết đường tới cổng thật: cho phép ⇒ BẬT, từ chối ⇒ TẮT.
+  assert.equal(policyGate({ kind: "command-button", policyAction: "machine.command" }, resolution).disabled, false)
+  assert.equal(policyGate({ kind: "setpoint-input", policyAction: "machine.setpoint" }, resolution).disabled, true)
 })
 
 // ── 🔴 WS-HMI-2 Task 6 fix round 1 (task-6-review.md LOW-4): NỬA "KHAI BÁO" CỦA PHÉP GHIM PHỦ KIND ─
