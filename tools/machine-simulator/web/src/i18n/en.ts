@@ -450,6 +450,11 @@ export const en: Dictionary = {
       unsaved: "There are UNPUBLISHED edits. Leaving this page now loses them.",
       saved: "No unpublished edits.",
       action: "Publish",
+      // See vi.ts at the same key. Spec §6's two severities: `error` blocks publish, `warn` does not.
+      isa101Blocked: (vars: Vars) =>
+        `Cannot publish: ${vars.count} BLOCKING ISA-101 violation(s). Fixing them re-enables the button.`,
+      isa101Warned: (vars: Vars) =>
+        `${vars.count} ISA-101 note(s). These do NOT block publishing — they are for consideration, not compliance.`,
       pending: "Publishing…",
       published: (vars: Vars) => `Published as version ${vars.version}.`,
       // See vi.ts at the same key: this is an AFTER-the-fact notice, and it says plainly that nothing

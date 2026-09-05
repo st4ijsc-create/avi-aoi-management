@@ -11,6 +11,7 @@ import {
   type ScreenVersionInfo,
 } from "@/lib/api"
 import { useShadowedPanel } from "./shadowedPanel"
+import { lintScreen, type Isa101Finding } from "./isa101Linter"
 
 /**
  * WS-HMI-2 Task 12 — PUBLISH, VERSION HISTORY, PREVIEW AN OLD VERSION, ROLLBACK.
@@ -155,6 +156,28 @@ export function PublishPanel({
    */
   const shadowed = useShadowedPanel(screenId)
 
+  /**
+   * 🔴 SESSION 3 (WS-HMI-4) — THE ISA-101 GATE.
+   *
+   * Scored on the SESSION's document, at render, on every keystroke — `lintScreen` is a pure function
+   * over the document with no I/O, so there is nothing to debounce and nothing to invalidate. It is
+   * read from the same `doc` the button sends, so the verdict on screen can never be about a different
+   * document from the one that would be published.
+   *
+   * Spec §6 assigns two severities and only one of them blocks: `error` blocks publish, `warn` is
+   * shown and does not. `blocksPublish` is computed inside the linter rather than here, so "what
+   * blocks publish" has exactly one definition in this tree.
+   *
+   * 🔴 THE WRITE DOOR IS UNCHANGED, AND THAT ASYMMETRY IS DELIBERATE. This disables a BUTTON. `PUT
+   * /v1/screens/{id}` keeps precisely the rules it had, and a document that fails a rule here is
+   * still one the engine would accept. The linter encodes a DOCTRINE; the write door encodes a
+   * CONTRACT (the frozen schema plus §5's safety invariants). A doctrine enforced at the endpoint
+   * would be un-opt-out-able for every future non-editor writer, the generator included.
+   */
+  const lint = lintScreen(doc)
+  const lintErrors = lint.findings.filter((f) => f.severity === "error")
+  const lintWarnings = lint.findings.filter((f) => f.severity === "warn")
+
   return (
     // 🔴 `w-full`, and it sits UNDER `PropertyPanel` inside the existing right rail rather than as a
     // fourth column. Measured reasoning, not taste: `38-editor-drag.spec.ts` runs a deliberately narrow
@@ -195,8 +218,17 @@ export function PublishPanel({
         // user is looking at is the exact defect Task 10 and Task 11 each shipped once. `title` carries
         // the reason, and the two editing rails are replaced by a named read-only notice for the whole
         // preview, so the state is announced before the button is reached rather than only on hover.
-        disabled={publish.isPending || previewVersion !== undefined}
-        title={previewVersion !== undefined ? t("editor.publish.readOnly", { version: previewVersion }) : undefined}
+        // 🔴 Session 3 — an ISA-101 `error` is the third reason this button refuses, and it is
+        // announced the same way the other two are: as `disabled` PLUS a named reason, never as a
+        // button that looks pressable and does nothing.
+        disabled={publish.isPending || previewVersion !== undefined || lint.blocksPublish}
+        title={
+          previewVersion !== undefined
+            ? t("editor.publish.readOnly", { version: previewVersion })
+            : lint.blocksPublish
+              ? t("editor.publish.isa101Blocked", { count: lintErrors.length })
+              : undefined
+        }
         className="border border-border-strong bg-surface-subtle px-2 py-1 text-sm text-text-strong disabled:opacity-50"
         onClick={() => {
           // The document is snapshotted HERE, at click time, and the same snapshot is what
@@ -220,6 +252,46 @@ export function PublishPanel({
       >
         {publish.isPending ? t("editor.publish.pending") : t("editor.publish.action")}
       </button>
+
+      {/* 🔴 SESSION 3 — THE ISA-101 VERDICT, IMMEDIATELY UNDER THE BUTTON IT GOVERNS.
+
+          Placed here for this panel's own standing rule (see the header): every refusal lands on the
+          control that caused it. A blocked publish whose reason rendered below the version history
+          would repeat exactly the defect fix round 1 removed from the rollback rows.
+
+          `role="alert"` for the errors, because they changed what the button does; `role="status"`
+          for the warnings, because they did not. Both carry their rule id as a `data-` attribute, so
+          a test names the RULE rather than matching prose that translation may legitimately reword. */}
+      {lintErrors.length > 0 ? (
+        <div
+          role="alert"
+          data-isa101-blocked={lintErrors.length}
+          className="flex flex-col gap-1 border border-status-fault bg-status-fault/10 px-1.5 py-1 text-xs text-danger-text"
+        >
+          <p className="font-semibold">{t("editor.publish.isa101Blocked", { count: lintErrors.length })}</p>
+          {lintErrors.map((finding: Isa101Finding, i: number) => (
+            <p key={`${finding.rule}-${finding.widgetId ?? "screen"}-${i}`} data-isa101-error={finding.rule}>
+              {finding.widgetId ? `${finding.widgetId}: ` : ""}
+              {finding.detail}
+            </p>
+          ))}
+        </div>
+      ) : null}
+      {lintWarnings.length > 0 ? (
+        <div
+          role="status"
+          data-isa101-warnings={lintWarnings.length}
+          className="flex flex-col gap-1 border border-status-warn bg-status-warn/10 px-1.5 py-1 text-xs text-warn-text"
+        >
+          <p className="font-semibold">{t("editor.publish.isa101Warned", { count: lintWarnings.length })}</p>
+          {lintWarnings.map((finding: Isa101Finding, i: number) => (
+            <p key={`${finding.rule}-${finding.widgetId ?? "screen"}-${i}`} data-isa101-warn={finding.rule}>
+              {finding.widgetId ? `${finding.widgetId}: ` : ""}
+              {finding.detail}
+            </p>
+          ))}
+        </div>
+      ) : null}
 
       {publish.isSuccess && !publish.isPending ? (
         <p

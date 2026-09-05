@@ -497,6 +497,14 @@ export const vi = {
       unsaved: "Có sửa CHƯA xuất bản. Rời trang bây giờ sẽ mất phần chưa xuất bản.",
       saved: "Không có sửa nào chưa xuất bản.",
       action: "Xuất bản",
+      // 🔴 Session 3 (WS-HMI-4) — phán quyết của bộ kiểm ISA-101, spec §6. HAI mức, và chỉ MỘT mức
+      // chặn: `error` chặn xuất bản, `warn` chỉ nói. Hai câu riêng biệt chứ không phải một câu có hậu
+      // tố — cùng lý do đã ghi ở `unsaved`/`saved` ngay trên: người đọc phải phân biệt được "bị chặn"
+      // với "có ghi chú" ngay từ hình dạng câu, không phải bằng cách đọc kỹ.
+      isa101Blocked: (vars: Vars) =>
+        `Không xuất bản được: ${vars.count} vi phạm ISA-101 ở mức CHẶN. Sửa xong thì nút mở lại.`,
+      isa101Warned: (vars: Vars) =>
+        `${vars.count} ghi chú ISA-101. KHÔNG chặn xuất bản — nói để cân nhắc, không phải để sửa cho hết.`,
       pending: "Đang xuất bản…",
       // Số phiên bản MỚI mà máy chủ vừa trả về — kho NỐI THÊM một phiên bản mỗi lần ghi, không ghi đè,
       // nên đây luôn là một số chưa từng có.
