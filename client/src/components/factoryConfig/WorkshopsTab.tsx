@@ -17,7 +17,7 @@ import { DataTable } from "@/components/DataTable";
 import { EmptyState } from "@/components/patterns";
 import { Badge } from "@/components/ui/badge";
 import { ExcelImportExport } from "@/components/ExcelImportExport";
-import { PermissionGate } from "@/components/PermissionGate";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import { Warehouse, Plus, Loader2, Pencil, Trash2, RotateCcw, LayoutGrid } from "lucide-react";
 import type { Factory, Workshop } from "./entityTypes";
@@ -38,6 +38,23 @@ export function pickExistingLayoutId(layouts: readonly { id: number }[] | undefi
 /** Lô 5 Mục 3 — URL đích, MỘT chỗ dựng chuỗi (tránh viết tay `/layout/${x}?workshopId=${y}` rải rác). */
 export function buildWorkshopLayoutUrl(layoutId: number, workshopId: number): string {
   return `/layout/${layoutId}?workshopId=${workshopId}`;
+}
+
+/**
+ * Vòng sửa review Lô 5 (Important) — logic THUẦN cho điều kiện hiển thị nút, tách ra để ghim
+ * ĐÚNG action bằng test (chống trôi ngược về `canEdit`). PHẢI khớp NGUYÊN VĂN vị từ `RouteGuard`
+ * dùng cho `/layout/:id` (`App.tsx:587` → `RouteGuard requirePermission="settings_factory"`, xét
+ * `canView` — RouteGuard.tsx dòng ~156-169: `isAdmin || role==='admin'`, rồi nhánh
+ * `requirePermission` mà KHÔNG `navHref` dùng `hasPermission(requirePermission, "canView")`).
+ * `canView`/`canEdit` là hai cột ĐỘC LẬP của bảng `permissions` — dùng `canEdit` ở đây từng tạo
+ * lại đúng lớp "một lối vào rồi TỪ CHỐI" mà Mục 2 vừa dẹp (canEdit=true/canView=false: thấy nút,
+ * bị RouteGuard chặn).
+ */
+export function canOpenWorkshopLayoutButton(
+  isAdmin: boolean,
+  hasPermission: (module: string, action: "canView") => boolean,
+): boolean {
+  return isAdmin || hasPermission("settings_factory", "canView");
 }
 
 interface WorkshopsTabProps {
@@ -88,8 +105,12 @@ export function WorkshopsTab({
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
+  const { hasPermission } = usePermissions();
   const [openingLayoutForWorkshopId, setOpeningLayoutForWorkshopId] = useState<number | null>(null);
   const createLayoutForWorkshopMutation = trpc.layout.create.useMutation();
+  // Vòng sửa review Lô 5 (Important) — nút mở "/layout/:id" phải khớp CỔNG VÀO của route đó,
+  // KHÔNG phải canEdit (xem docblock `canOpenWorkshopLayoutButton` phía trên cho lý do đầy đủ).
+  const canOpenLayoutButton = canOpenWorkshopLayoutButton(isAdmin, hasPermission);
 
   // Lô 5 Mục 3 — "/layout/:id" (server + client GIỮ RIÊNG gate settings_factory, xem
   // App.tsx) sống mà trước Lô 5 KHÔNG có lối vào nào trong UI (đo: grep "/layout/" toàn
@@ -229,10 +250,14 @@ export function WorkshopsTab({
                     { id: "actions", header: "", align: "right", width: "128px", cell: (w) => (
                       <div className="flex items-center justify-end gap-1">
                         {/* Lô 5 Mục 3 — lối vào /layout/:id (i18n mồ côi nav.factoryLayout* tái
-                            dùng, KHÔNG tạo khoá mới). Điều kiện hiển thị = quyền của ĐÍCH
-                            (settings_factory canEdit — cùng lớp Mục 2, đúng gate server thật
-                            của layoutRouter mutations, xem layoutRouters.ts). */}
-                        <PermissionGate module="settings_factory" action="canEdit">
+                            dùng, KHÔNG tạo khoá mới). Điều kiện hiển thị = quyền của ĐÍCH: khớp
+                            ĐÚNG cổng vào route (RouteGuard requirePermission="settings_factory"
+                            kiểm canView — RouteGuard.tsx:38/168), KHÔNG dùng canEdit (review Lô 5
+                            Important — canView/canEdit độc lập, canEdit lẻ loi tạo lại đúng lớp
+                            "một lối vào rồi TỪ CHỐI" Mục 2 vừa dẹp). Mutations bên trong trang đã
+                            tự gate settings_factory riêng (layoutRouters.ts) — không cần canEdit
+                            ở lối vào. */}
+                        {canOpenLayoutButton && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -243,7 +268,7 @@ export function WorkshopsTab({
                           >
                             {openingLayoutForWorkshopId === w.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <LayoutGrid className="h-4 w-4" />}
                           </Button>
-                        </PermissionGate>
+                        )}
                         <Button variant="ghost" size="icon" onClick={() => handleEditWorkshop(w)}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setWorkshopToDelete(w)}><Trash2 className="h-4 w-4" /></Button>
                       </div>
