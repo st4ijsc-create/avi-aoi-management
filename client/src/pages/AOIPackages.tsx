@@ -19,6 +19,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { format } from "date-fns";
+import { useCanWrite } from "@/components/PermissionGate";
 import { PACKAGE_STATUS_BADGE_VARIANTS, PACKAGE_STATUS_FILTER_OPTIONS } from "./aoiPackagesStatusPresentation";
 import { locIngestLienQuan, laLoiTuChoiQuyen } from "./ingestIntegrityScanPresentation";
 import {
@@ -133,13 +134,24 @@ export default function AOIPackages() {
     () => locIngestLienQuan(integrityScanQuery.data?.relationships ?? []),
     [integrityScanQuery.data],
   );
-  // Fix review Lô 4 (Important) — `integrity.summary` là adminProcedure (đòi role==='admin'
-  // ĐÚNG CHỮ) trong khi listDeadLetters/getDeadLetterDetail (tab này) dùng
-  // requirePermission("admin_system","canView") — cấp được cho vai KHÔNG PHẢI admin. Một
-  // scoped-admin xem được bảng dead-letter nhưng bị integrity.summary từ chối FORBIDDEN —
-  // PHẢI phân biệt với "đã quét, 0 relationship liên quan ingest" (empty-state THẬT), nếu
-  // không hai trạng thái trông giống hệt nhau (lớp lỗi "một lối vào rồi từ chối").
+  // BG-131 (Lô 9 Mục 3, 2026-09-05) — integrityRouter NAY dùng CÙNG mô hình quyền
+  // (protectedProcedure + requirePermission("admin_system", canView/canEdit)) với
+  // listDeadLetters/getDeadLetterDetail — hợp nhất hai nửa tab về MỘT nhóm quyền,
+  // đóng lệch mà review Lô 4 phát hiện (khi đó integrity.summary còn là adminProcedure,
+  // đòi role==='admin' ĐÚNG CHỮ, tách biệt khỏi requirePermission("admin_system","canView")
+  // của dead-letter). Nhánh forbidden dưới đây VẪN GIỮ (đúng brief: "giữ nhánh forbidden cho
+  // user KHÔNG có admin_system — vẫn cần trung thực") — chỉ khác NGƯỜI bị chặn: trước đây MỌI
+  // non-admin bị forbidden; nay CHỈ user thiếu `admin_system.canView` mới bị forbidden (một
+  // scoped-admin có canView nay xem được, đúng ý "hợp nhất" — không còn "một lối vào rồi từ
+  // chối" giữa hai panel cùng tab).
   const integrityScanForbidden = laLoiTuChoiQuyen(integrityScanQuery.error);
+  // summary/đọc = canView, NHƯNG runNow/ghi = canEdit (MỘT BẬC CHẶT HƠN, xem docblock
+  // `integrityRouter.ts`) — một user chỉ có canView (không canEdit) sẽ KHÔNG forbidden ở
+  // summary (panel hiện được) nhưng SẼ forbidden nếu bấm "Quét ngay". Không gate nút đó riêng
+  // theo canEdit sẽ tái tạo ĐÚNG lớp lỗi "một lối vào rồi từ chối" (nay ở TRONG một panel thay
+  // vì giữa hai panel) — ẩn nút khi thiếu canEdit, giống hệt cách Lô 4 đã ẩn nút theo
+  // integrityScanForbidden trước đây.
+  const canRunIntegrityScan = useCanWrite("admin_system").canEdit;
   const runIntegrityScanMutation = trpc.integrity.runNow.useMutation({
     onSuccess: () => {
       toast.success(t('packages.integrityScanRunSuccess'));
@@ -715,11 +727,15 @@ export default function AOIPackages() {
                 <CardDescription>{t('packages.integrityScanDesc')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {/* Fix review Lô 4 (Important) — nút "Quét ngay" ẩn khi thiếu quyền, cùng
-                    điều kiện với nhánh nội dung bên dưới. Không để bấm rồi toast lỗi (đúng
-                    lớp "một lối vào rồi từ chối"): người không đủ quyền XEM kết quả quét
-                    thì cũng không thấy nút KÍCH HOẠT quét. */}
-                {!integrityScanForbidden && (
+                {/* Fix review Lô 4 (Important), điều chỉnh BG-131 Lô 9 Mục 3 — nút "Quét ngay"
+                    ẩn khi thiếu QUYỀN GHI (`canRunIntegrityScan`, admin_system.canEdit), KHÔNG
+                    còn dùng chung điều kiện với panel đọc (`integrityScanForbidden`, canView).
+                    Từ khi integrityRouter tách canView (đọc)/canEdit (ghi) — Lô 9 Mục 3 — một
+                    user chỉ có canView xem được panel (không forbidden) nhưng KHÔNG có canEdit;
+                    nếu vẫn gate nút theo `!integrityScanForbidden` như cũ, nút sẽ HIỆN cho họ
+                    rồi bấm ra FORBIDDEN — đúng lớp lỗi "một lối vào rồi từ chối" (Lô 4 đã tránh
+                    được nó GIỮA hai panel, đừng để nó tái diễn TRONG một panel). */}
+                {!integrityScanForbidden && canRunIntegrityScan && (
                   <div className="flex justify-end">
                     <Button
                       variant="outline"

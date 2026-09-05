@@ -70,17 +70,21 @@ describe("locIngestLienQuan — lọc summary.relationships xuống đúng khoá
 });
 
 /**
- * Fix review Lô 4 (Important) — `integrity.summary`/`runNow`/`history` là `adminProcedure`
- * (đòi `ctx.user.role === 'admin'` ĐÚNG CHỮ, `server/_core/trpc.ts:357`) trong khi
- * `listDeadLetters`/`getDeadLetterDetail` (bản vá này thêm) dùng
- * `requirePermission("admin_system","canView")` — nhóm quyền CÓ THỂ cấp cho một vai
- * KHÔNG PHẢI admin (scoped-admin). Một scoped-admin xem được tab dead-letter (đúng quyền)
- * nhưng bị `integrity.summary` từ chối `FORBIDDEN` — TRƯỚC bản vá fix, UI không phân biệt
- * lỗi này với "đã quét, 0 relationship liên quan ingest" ⇒ empty-state SAI Ý NGHĨA (giống
- * lớp lỗi "một lối vào rồi từ chối" đã ghi trong memory dự án). `laLoiTuChoiQuyen` là hàm
- * THUẦN nhận diện lỗi FORBIDDEN từ hình dạng lỗi tRPC (`error.data.code`), CÙNG quy ước
- * `getErrorCode` nội bộ của `client/src/lib/trpcErrors.ts` (không export, nên viết một bản
- * hẹp — chỉ cần phân biệt FORBIDDEN, không cần toàn bộ bộ dịch lỗi).
+ * Fix review Lô 4 (Important) — bối cảnh gốc khi hàm này được viết: `integrity.summary`/
+ * `runNow`/`history` là `adminProcedure` (đòi `ctx.user.role === 'admin'` ĐÚNG CHỮ) trong khi
+ * `listDeadLetters`/`getDeadLetterDetail` dùng `requirePermission("admin_system","canView")` —
+ * nhóm quyền CÓ THỂ cấp cho một vai KHÔNG PHẢI admin (scoped-admin). Một scoped-admin xem được
+ * tab dead-letter (đúng quyền) nhưng bị `integrity.summary` từ chối `FORBIDDEN` — TRƯỚC bản vá
+ * fix, UI không phân biệt lỗi này với "đã quét, 0 relationship liên quan ingest" ⇒ empty-state
+ * SAI Ý NGHĨA (giống lớp lỗi "một lối vào rồi từ chối" đã ghi trong memory dự án).
+ *
+ * BG-131 (Lô 9 Mục 3) ĐÃ hợp nhất `integrityRouter` về CÙNG mô hình `admin_system` — hàm
+ * `laLoiTuChoiQuyen` vẫn CẦN THIẾT (một user thiếu `admin_system.canView` vẫn FORBIDDEN thật ở
+ * `summary`, chỉ hẹp lại còn đúng nhóm đó thay vì mọi non-admin) nên các ca dưới đây KHÔNG đổi.
+ * `laLoiTuChoiQuyen` là hàm THUẦN nhận diện lỗi FORBIDDEN từ hình dạng lỗi tRPC
+ * (`error.data.code`), CÙNG quy ước `getErrorCode` nội bộ của `client/src/lib/trpcErrors.ts`
+ * (không export, nên viết một bản hẹp — chỉ cần phân biệt FORBIDDEN, không cần toàn bộ bộ dịch
+ * lỗi).
  */
 describe("laLoiTuChoiQuyen — nhận diện lỗi FORBIDDEN (403) để phân biệt với empty-state THẬT", () => {
   it("★★★ TRUNG TÂM — lỗi tRPC code FORBIDDEN (hình dạng TRPCClientError.data) ⇒ true", () => {

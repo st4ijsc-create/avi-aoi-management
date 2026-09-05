@@ -49,6 +49,19 @@ export function locIngestLienQuan<T extends IntegrityRelationshipLike>(relations
 // ── Fix review Lô 4 (Important) — phân biệt lỗi QUYỀN với empty-state THẬT ──────
 
 /**
+ * ⚠ CẬP NHẬT BG-131 (Lô 9 Mục 3, 2026-09-05) — đoạn dưới đây mô tả tình trạng TRƯỚC bản vá,
+ * giữ nguyên văn để hiểu VÌ SAO hàm này tồn tại; tình trạng THẬT SAU vá: `integrity.summary`/
+ * `runNow`/`history` (`server/routers/integrityRouter.ts`) đã đổi từ `adminProcedure` sang
+ * `protectedProcedure + requirePermission("admin_system", canView|canEdit)` — CÙNG mô hình
+ * với `aoiPackage.listDeadLetters`/`getDeadLetterDetail` mô tả bên dưới. Hàm `laLoiTuChoiQuyen`
+ * này VẪN CẦN THIẾT (không xoá được) — một user THIẾU `admin_system.canView` vẫn nhận
+ * FORBIDDEN thật ở `summary` (không có gate nào cấp quyền vô điều kiện), UI vẫn phải phân biệt
+ * "0 relationship" thật với "bị từ chối quyền" — chỉ khác là NGƯỜI bị chặn hẹp lại (trước: mọi
+ * non-admin; nay: chỉ non-`admin_system.canView`). `AOIPackages.tsx` còn thêm
+ * `canRunIntegrityScan` (canEdit) RIÊNG cho nút "Quét ngay" — canView không tự cho canEdit, xem
+ * comment tại chỗ dùng.
+ *
+ * ── Nguyên văn TRƯỚC bản vá (giữ để đối chiếu lịch sử) ──────────────────────────────────────
  * `integrity.summary`/`runNow`/`history` (`server/routers/integrityRouter.ts`) là
  * `adminProcedure` — đòi `ctx.user.role === 'admin'` ĐÚNG CHỮ (`server/_core/trpc.ts:357`),
  * KHÔNG dùng `requirePermission()`. `aoiPackage.listDeadLetters`/`getDeadLetterDetail`
@@ -60,7 +73,7 @@ export function locIngestLienQuan<T extends IntegrityRelationshipLike>(relations
  * "0 relationship" và "bị từ chối quyền" trông GIỐNG HỆT NHAU, đúng lớp lỗi "một lối
  * vào rồi từ chối" (memory dự án đã ghi ở Khối D). KHÔNG đổi quyền của `integrityRouter`
  * ở đây — đó là quyết định ngoài phạm vi bản vá này (đổi ai được xem toàn bộ master-data
- * integrity là quyết định sản phẩm, không phải một fix UI).
+ * integrity là quyết định sản phẩm, không phải một fix UI) — ĐÃ LÀM Ở BG-131 (Lô 9 Mục 3).
  *
  * Hàm THUẦN — nhận hình dạng lỗi tRPC bất kỳ (không import `TRPCClientError` để giữ
  * module này không phụ thuộc `@trpc/client`, test được với object trần), cùng quy ước
