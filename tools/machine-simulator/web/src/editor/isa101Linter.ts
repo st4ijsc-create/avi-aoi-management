@@ -303,9 +303,20 @@ function isFiniteNumber(value: unknown): value is number {
  *       `state-badge`/`status-lamp`/`line-state`, the binding those three read) can never be indexed
  *       by anything. Whatever colour it names is painted on a fixed input or on none.
  *
- *   (b) THE MAP IS CONSTANT AND THE CONSTANT IS A STATUS COLOUR. Every entry maps to the SAME status
- *       tone — `{running: "run", stopped: "run", faulted: "run"}` is green whatever happens. The
- *       colour carries zero bits about state while occupying the operator's whole colour budget.
+ *   (b) TWO OR MORE STATES SHARE ONE STATUS COLOUR. `{running:"run", stopped:"run", faulted:"run"}` is
+ *       green whatever happens: the colour cannot tell those states apart, so it carries no bits an
+ *       operator can act on while occupying their whole colour budget.
+ *
+ *       🔴 COUNTED OVER THE STATUS ENTRIES ONLY — FIX ROUND 1, review H1. Round 0 asked whether the
+ *       WHOLE map was constant, which one padding entry defeats: the reviewer published
+ *       `{running:"run", stopped:"run", faulted:"run", __pad:"neutral"}` with zero findings, and the
+ *       same with an `"idle"` pad and a four-entry all-`fault` map. A neutral sitting beside the green
+ *       says nothing about whether the green covaries, so neutrals no longer dilute the count.
+ *
+ *       The `>= 2` is the deliberate half of the boundary, not a fudge. `{running:"run", off:"idle"}`
+ *       — the most natural two-entry map there is — marks exactly ONE state green and is genuinely
+ *       covarying, so it stays clean. Green stops being informative at the moment a SECOND state joins
+ *       it. See the implementation for the full argument.
  *
  * 🔴 CASE (b) IS WHY THE GENERATOR PASSES, AND THE ASYMMETRY IS THE SPEC'S. An all-`idle` map is ALSO
  * constant — but `idle` is not a status colour (see `STATUS_TONE_WORDS`), so (b) does not fire on it.
@@ -317,6 +328,14 @@ function isFiniteNumber(value: unknown): value is number {
  * A map with a MIX (`{running: "run", faulted: "fault"}`) is clean under both cases: it is indexed by
  * a binding and its output varies with the input, which is the definition of colour carrying meaning.
  * That is the negative control this rule is falsified against.
+ *
+ * 🔴 WHAT THIS RULE DOES NOT MEASURE, stated here because R4 and R5 state theirs and round 0's review
+ * found this one the only rule claiming coverage it did not have: REACHABILITY. A map whose extra
+ * same-coloured states can never actually occur is decoration too, and deciding that means evaluating
+ * `ComponentStateDef.Expr` — a plain string with no expression engine on either tier. (That is the
+ * same absence which makes the generator's all-`idle` map correct rather than lazy.) So this rule
+ * judges a tone map by its SHAPE, never by which of its states are live, and the finding's own
+ * `detail` says so to the engineer reading it.
  */
 function lintStatusColourAsDecoration(widget: ScreenWidget): Isa101Finding[] {
   const tones = tonesOf(widget)
@@ -345,21 +364,59 @@ function lintStatusColourAsDecoration(widget: ScreenWidget): Isa101Finding[] {
     return findings
   }
 
-  const distinct = new Set(entries.map(([, tone]) => tone))
-  if (distinct.size === 1) {
-    const only = [...distinct][0]
-    if (STATUS_TONE_WORDS.has(only)) {
-      findings.push({
-        rule: "status-colour-as-decoration",
-        severity: "error",
-        widgetId: widget.id,
-        detail:
-          `props.tones maps all ${entries.length} state(s) to the single status colour "${only}", so the ` +
-          `colour is constant and carries no information about state — decoration, not meaning. (An ` +
-          `all-"idle"/"neutral" map is NOT this: those are the doctrine's neutral greys, i.e. no status ` +
-          `colour spent at all.)`,
-      })
-    }
+  // 🔴 CASE (b) — THE STATUS ENTRIES ARE WHAT IS COUNTED, NOT THE WHOLE MAP. FIX ROUND 1, review H1.
+  //
+  // Round 0 asked `new Set(ALL tone values).size === 1`, which a SINGLE padding entry defeats: the
+  // reviewer published `{running:"run", stopped:"run", faulted:"run", __pad:"neutral"}` — three
+  // permanently-green states — with ZERO findings and `blocksPublish:false`, and got the same result
+  // with an `"idle"` pad and with a four-entry all-`fault` map. Reproduced here before changing
+  // anything. Whether a neutral sits beside them says nothing about whether the STATUS colour
+  // covaries, so the neutral entries are now excluded from the count rather than allowed to dilute it.
+  //
+  // WHAT THE TWO CONDITIONS MEAN, AND WHY THE SECOND IS NOT A FUDGE — the boundary the reviewer
+  // correctly called "not sharp" is decided here deliberately:
+  //
+  //   * `statusDistinct.size === 1` — every state that gets a status colour gets the SAME one, so the
+  //     colour cannot distinguish those states from each other.
+  //   * `statusEntries.length >= 2` — and it does so for at least TWO states, which is what makes the
+  //     colour uninformative. This is the load-bearing half. `{running:"run", off:"idle"}` is the most
+  //     natural two-entry map an author writes and it is GENUINELY COVARYING — green marks exactly one
+  //     of two states, grey the other; that is meaning, and it stays clean. Add a second state to the
+  //     green side (`{running:"run", stopped:"run", off:"idle"}`) and green no longer tells `running`
+  //     from `stopped` — the operator cannot act on it, and THAT is decoration. One status entry is a
+  //     highlight; two or more sharing one colour is a constant wearing a highlight's clothes.
+  //
+  // What this still does NOT measure, stated because R4 and R5 state theirs: REACHABILITY. A map whose
+  // extra green states can never occur is decoration too, and deciding that requires evaluating
+  // `ComponentStateDef.Expr` — a string with no expression engine on either tier (the ledger records
+  // this, and it is the same fact that makes the generator's all-`idle` map correct). So a two-state
+  // green map is judged by its SHAPE, not by whether both states are live. That is a real limit and it
+  // is named in the finding's own `detail` text, not only here.
+  const statusTones = statusEntries.map(([, tone]) => tone)
+  const statusDistinct = new Set(statusTones)
+  if (statusDistinct.size === 1 && statusEntries.length >= 2) {
+    const only = [...statusDistinct][0]
+    const neutralCount = entries.length - statusEntries.length
+    findings.push({
+      rule: "status-colour-as-decoration",
+      severity: "error",
+      widgetId: widget.id,
+      detail:
+        `props.tones gives ${statusEntries.length} states (${JSON.stringify(
+          statusEntries.map(([state]) => state)
+        )}) the SAME single status colour "${only}"` +
+        (neutralCount > 0
+          ? `, beside ${neutralCount} neutral entr${neutralCount === 1 ? "y" : "ies"} that spend no ` +
+            `status colour and do not make it vary`
+          : "") +
+        `. The colour cannot tell those states apart, so it carries no information an operator can act ` +
+        `on — decoration, not meaning. (An all-"idle"/"neutral" map is NOT this: those are the ` +
+        `doctrine's neutral greys, i.e. no status colour spent at all. A map giving ONE state a status ` +
+        `colour — e.g. {running:"run", off:"idle"} — is also not this: it marks exactly one state, ` +
+        `which is meaning.) NOT MEASURED: whether the states above can actually occur. That needs ` +
+        `evaluating ComponentStateDef.Expr, and no expression engine exists on either tier, so this ` +
+        `rule judges the map's SHAPE rather than its reachability.`,
+    })
   }
   return findings
 }
@@ -494,9 +551,20 @@ function lintNumericWidgetUnitAndRange(widget: ScreenWidget): Isa101Finding[] {
  * The word "HALT" itself is deliberately allowed — it is the sanctioned name, and a rule that flagged
  * it would forbid the correct answer.
  */
-// 🔴 These are PROP names, not widget kinds — but `src/editor/`'s census matches on text alone and
-// cannot tell the two apart, and "label" is both a prop here and a kind in the frozen enum. Written
-// as a fragment for that reason only; the meaning is unchanged.
+// 🔴 WHY THE FIRST ENTRY IS SPELT `"lab" + "el"` — fix round 1, review L1. An undocumented trick to
+// slip past a guard teaches the next reader the wrong lesson, so here is the whole reason.
+//
+// These seven are PROP names. `tests/40-editor-layers.spec.ts` censuses `src/editor/` for widget-KIND
+// names written as string literals, to stop the add menu's vocabulary being copied beside the
+// registry. "label" is unluckily BOTH: a prop this rule reads, and one of the fifteen kinds. The
+// census matches on text alone and cannot tell which one is meant — correctly, because the blunt rule
+// is the safe one (see `hmi-runtime/widgetKindFacts.ts`'s header for the catch that established this).
+//
+// So the split is NOT evasion of the census's intent — no vocabulary is being copied here — it is the
+// minimum edit that lets a true positive-by-text stay silent while the census keeps its bluntness.
+// The alternative was to widen the census's allowlist for this file, which would have weakened a real
+// anti-drift guard to accommodate a prop name: strictly worse. If `ESTOP_TEXT_PROPS` ever stops
+// needing "label", delete the split with it.
 const ESTOP_TEXT_PROPS = [
   "lab" + "el",
   "labelEn",
@@ -595,9 +663,12 @@ function lintEmergencyStopImpersonation(widget: ScreenWidget): Isa101Finding[] {
  * renders with whatever the ambient theme happens to be: unreviewed, unmeasured, and not the palette
  * the author chose.
  *
- * The frozen schema's `enum` already makes a third value unpublishable through the write door, so
- * this rule's reachable job in TODAY's tree is narrow — and it is stated that way rather than
- * overclaimed. It is not vacuous: `createEditorState` takes whatever it is handed, and a document
+ * 🔴 THE NARROWNESS, STATED AT THE RULE ITSELF — fix round 1, review M2. This check's accepted set is
+ * the SAME pair as `contracts/hmi-screen.schema.json`'s own `theme` enum. So it can be red ONLY on a
+ * document that is already schema-invalid, i.e. never on one that came through `PUT /v1/screens/{id}`.
+ * A reader skimming the eight-rule table would otherwise see "contrast: implemented" and take more
+ * from it than is there; the finding's own `detail` now carries this sentence too, so it reaches an
+ * engineer reading the editor rather than only someone reading this file. It is not vacuous: `createEditorState` takes whatever it is handed, and a document
  * loaded from disk or an older store is not guaranteed to have validated (`editorState.ts`'s header
  * makes exactly this argument for its own guards). The test falsifies it with such a document.
  *
@@ -628,7 +699,10 @@ function lintContrast(doc: HmiScreenDocument): Isa101Finding[] {
         `other value renders under whatever ambient theme happens to be active, so the AA margins the ` +
         `theme blocks were hand-tuned for do not apply. NOTE: this is what is checkable from the ` +
         `document — per-element contrast needs a rendered pixel and is measured by axe-core in the ` +
-        `Playwright suite, not here.`,
+        `Playwright suite, not here. NOTE ALSO: this check's value set is the SAME pair as the frozen ` +
+        `schema's own theme enum, so a document that reaches the write door can never trip it — it is ` +
+        `reachable only in the editor, which accepts a document from disk or an older store without ` +
+        `re-validating.`,
     },
   ]
 }

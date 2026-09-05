@@ -210,7 +210,135 @@ test("R1 falsification (b): a CONSTANT status-colour map — every state the sam
   })
   assertSchemaValid(doc, "r1-constant")
   const [hit] = expectViolates(doc, "status-colour-as-decoration", "error")
-  assert.match(hit.detail, /constant/)
+  // Fix round 1: the message now names HOW MANY states share the colour and WHICH they are, because
+  // that is the measured quantity — "constant" was a verdict, this is the evidence for it.
+  assert.match(hit.detail, /3 states/)
+  assert.match(hit.detail, /SAME single status colour "run"/)
+  // The reachability limit must reach the engineer, not just this file's doc comment (review H1).
+  assert.match(hit.detail, /NOT MEASURED: whether the states above can actually occur/)
+})
+
+/** Builds a one-`state-badge` screen with the given tone map and a real `state` binding — the shape
+ * every H1 case below shares, so each case differs from its neighbours by the tone map ALONE. */
+function badgeDoc(screenId, tones) {
+  return baseDoc({
+    screenId,
+    widgets: [
+      {
+        id: "badge",
+        kind: "state-badge",
+        rect: { col: 0, row: 0, colSpan: 3, rowSpan: 1 },
+        bindings: { state: "SCRW-01/spindle/state" },
+        props: { tones },
+      },
+    ],
+  })
+}
+
+test("🔴 R1 falsification (b1): a NEUTRAL padding entry does not buy a pass — fix round 1, review H1", () => {
+  // Round 0 asked whether the WHOLE map was constant, so one `neutral` entry made `distinct.size` 2
+  // and the rule went silent on three permanently-green states. The reviewer published exactly this
+  // and got `blocksPublish: false`.
+  const doc = badgeDoc("r1-pad-neutral", {
+    running: "run",
+    stopped: "run",
+    faulted: "run",
+    __pad: "neutral",
+  })
+  assertSchemaValid(doc, "r1-pad-neutral")
+  const [hit] = expectViolates(doc, "status-colour-as-decoration", "error")
+  assert.match(hit.detail, /3 states/)
+  assert.match(hit.detail, /1 neutral entry/, "the finding must account for the padding it ignored")
+  assert.equal(lintScreen(doc).blocksPublish, true)
+})
+
+test("🔴 R1 falsification (b2): an `idle` padding entry does not buy a pass either", () => {
+  const doc = badgeDoc("r1-pad-idle", {
+    running: "run",
+    stopped: "run",
+    faulted: "run",
+    off: "idle",
+  })
+  assertSchemaValid(doc, "r1-pad-idle")
+  expectViolates(doc, "status-colour-as-decoration", "error")
+})
+
+test("🔴 R1 falsification (b3): four states all `fault` beside one `idle` — the third H1 shape", () => {
+  const doc = badgeDoc("r1-all-fault", { a: "fault", b: "fault", c: "fault", d: "idle" })
+  assertSchemaValid(doc, "r1-all-fault")
+  const [hit] = expectViolates(doc, "status-colour-as-decoration", "error")
+  assert.match(hit.detail, /"fault"/, "the finding must name the colour that is constant")
+})
+
+test("🔴 R1 NEGATIVE CONTROL for the H1 fix: ONE state coloured beside a neutral is MEANING, not decoration", () => {
+  // 🔴 THE BOUNDARY CASE, and the reason the rule counts `>= 2` rather than `>= 1`. The reviewer
+  // named this exact map as the most natural two-entry map an author writes, and it is genuinely
+  // covarying: green marks exactly one of two states and grey the other. A fix that reddened this
+  // would have "closed" H1 by failing everything, which is the failure this suite's negative controls
+  // exist to catch.
+  const doc = badgeDoc("r1-one-state", { running: "run", off: "idle" })
+  assertSchemaValid(doc, "r1-one-state")
+  expectClean(doc, "status-colour-as-decoration")
+
+  // ...and adding a SECOND state to the green side flips it, so the boundary is measured from both
+  // sides rather than asserted from one.
+  const twoGreen = badgeDoc("r1-two-state", { running: "run", stopped: "run", off: "idle" })
+  assert.ok(
+    findingsFor(twoGreen, "status-colour-as-decoration").length > 0,
+    "green stops being informative the moment a second state shares it — that transition is the rule"
+  )
+})
+
+test("🔴 R1 NEGATIVE CONTROL: two DIFFERENT status colours stay clean however few the entries", () => {
+  const doc = badgeDoc("r1-two-hues", { running: "run", hot: "warn" })
+  assertSchemaValid(doc, "r1-two-hues")
+  expectClean(doc, "status-colour-as-decoration")
+})
+
+test("🔴 R1: the reviewer's own attack document, verbatim, is now BLOCKED", () => {
+  // Copied from s3-review.md §H1 rather than reconstructed, so this pins the exact artefact that was
+  // demonstrated passing. Both badges are permanently coloured; both must be named.
+  const attack = {
+    schemaVersion: 1,
+    screenId: "decor-demo",
+    title: "Decorative colour demo",
+    theme: "isa101",
+    layout: { breakpoint: "panel", cols: 12, rows: 8 },
+    widgets: [
+      {
+        id: "alarms",
+        kind: "alarm-banner",
+        rect: { col: 0, row: 0, colSpan: 12, rowSpan: 1 },
+        bindings: { value: "sim.alarm" },
+        props: {},
+      },
+      {
+        id: "deco",
+        kind: "state-badge",
+        rect: { col: 0, row: 1, colSpan: 6, rowSpan: 2 },
+        bindings: { state: "sim.state" },
+        props: { tones: { running: "run", stopped: "run", faulted: "run", __pad: "neutral" } },
+      },
+      {
+        id: "deco2",
+        kind: "line-state",
+        rect: { col: 6, row: 1, colSpan: 6, rowSpan: 2 },
+        bindings: { state: "sim.line" },
+        props: { tones: { EXECUTE: "run", HOLDING: "run", ABORTED: "run", __pad: "idle" } },
+      },
+    ],
+  }
+  assertSchemaValid(attack, "reviewer H1 attack document")
+  const report = lintScreen(attack)
+  assert.equal(report.blocksPublish, true, "the H1 bypass is back")
+  assert.deepEqual(
+    report.findings
+      .filter((f) => f.rule === "status-colour-as-decoration")
+      .map((f) => f.widgetId)
+      .sort(),
+    ["deco", "deco2"],
+    "both decorative widgets must be named, not just the first"
+  )
 })
 
 test("R1 NEGATIVE CONTROL: a bound map whose colour VARIES with state is clean", () => {
@@ -302,6 +430,74 @@ test("R2 falsification (range): an inverted band (max <= min) is not a range eit
   })
   assertSchemaValid(doc, "r2-inverted")
   expectViolates(doc, "numeric-widget-without-unit-or-range", "error")
+})
+
+test("🔴 R2 falsification (range, setpoint-input): the OTHER range branch and its own message — fix round 1, review M1", () => {
+  // 🔴 Round 0's only `setpoint-input` declared min AND max, so this branch never ran: disabling the
+  // whole range check reddened only the two GAUGE tests. The branch was live (it fires on both frozen
+  // fixtures) but its MESSAGE was pinned by nothing — and that message is the one this session
+  // rewrote after measuring that `setpoint-input.tsx` reads neither prop. A regression reverting it to
+  // gauge's "invented 0..100" wording — the exact defect that was caught mid-flight — would have
+  // passed. It no longer can.
+  const doc = baseDoc({
+    screenId: "r2-sp-norange",
+    widgets: [
+      {
+        id: "sp",
+        kind: "setpoint-input",
+        rect: { col: 0, row: 0, colSpan: 3, rowSpan: 1 },
+        policyAction: "machine.setpoint",
+        bindings: { value: "SCRW-01/spindle/torque-target" },
+        props: { label: "Đích", unit: "Nm" },
+      },
+    ],
+  })
+  assertSchemaValid(doc, "r2-sp-norange")
+  const [hit] = expectViolates(doc, "numeric-widget-without-unit-or-range", "error")
+  // The two range branches must not share a message: gauge's reason is FALSE of this widget.
+  assert.match(hit.detail, /setpoint-input has no engineering range/)
+  assert.match(hit.detail, /reads neither prop/, "the measured fact must be in the message")
+  assert.match(hit.detail, /WRITE path/)
+  assert.doesNotMatch(
+    hit.detail,
+    /invented 0\.\.100/,
+    "this is gauge's reasoning and it is untrue of setpoint-input — the correction must not regress"
+  )
+})
+
+test("🔴 R2: the two range branches carry DIFFERENT messages, compared side by side", () => {
+  // The distinction is the whole point of M1's fix, so it is asserted directly rather than inferred
+  // from two separate tests passing.
+  const gauge = baseDoc({
+    screenId: "r2-cmp-g",
+    widgets: [
+      {
+        id: "g",
+        kind: "gauge",
+        rect: { col: 0, row: 0, colSpan: 3, rowSpan: 1 },
+        bindings: { value: "SCRW-01/spindle/torque" },
+        props: { label: "G", unit: "Nm" },
+      },
+    ],
+  })
+  const setpoint = baseDoc({
+    screenId: "r2-cmp-s",
+    widgets: [
+      {
+        id: "s",
+        kind: "setpoint-input",
+        rect: { col: 0, row: 0, colSpan: 3, rowSpan: 1 },
+        policyAction: "machine.setpoint",
+        bindings: { value: "SCRW-01/spindle/torque-target" },
+        props: { label: "S", unit: "Nm" },
+      },
+    ],
+  })
+  const gDetail = findingsFor(gauge, "numeric-widget-without-unit-or-range")[0].detail
+  const sDetail = findingsFor(setpoint, "numeric-widget-without-unit-or-range")[0].detail
+  assert.notEqual(gDetail, sDetail, "the two range branches must not report the same reason")
+  assert.match(gDetail, /invented 0\.\.100/)
+  assert.match(sDetail, /reads neither prop/)
 })
 
 test("R2 NEGATIVE CONTROL: a fully declared gauge is clean", () => {
@@ -505,6 +701,15 @@ test("R4 falsification: a theme naming no palette this build can resolve", () =>
   )
   const [hit] = expectViolates(doc, "contrast-below-aa", "error")
   assert.match(hit.detail, /axe-core/, "the finding must disclose where real contrast IS measured")
+  // 🔴 Fix round 1, review M2 — the NARROWNESS must reach the engineer too, not live only in the doc
+  // comment: this check's value set is the schema enum's own pair, so it cannot fire on anything the
+  // write door would accept. A reader who sees "contrast: implemented" must be able to learn that
+  // from the product, not from a markdown report they will never open.
+  assert.match(
+    hit.detail,
+    /SAME pair as the frozen schema's own theme enum/,
+    "R4's finding must disclose that it cannot fire on a document the write door accepts"
+  )
 })
 
 test("R4 NEGATIVE CONTROL: both frozen theme values are clean — including `blueprint`, the inherit case", () => {
