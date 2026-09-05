@@ -473,6 +473,208 @@ public class HmiScreenPackTests : IDisposable
     }
 
     // ═════════════════════════════════════════════════════════════════════
+    // SECURITY REVIEW H-1 — THE WHOLE-PACK CEILINGS, FALSIFIED AT THE BOUNDARY IN BOTH DIRECTIONS
+    //
+    // Each ceiling gets a pack EXACTLY AT the cap (must be accepted) and a pack ONE ENTRY OVER (must be
+    // refused). At-the-cap is the negative control that matters most here: a service that refused every
+    // large pack — or that got the comparison off by one and refused at the cap — would pass every
+    // "too big is refused" test while breaking the largest legal import.
+    // ═════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task A_pack_with_exactly_the_maximum_screen_count_is_accepted()
+    {
+        var raw = NewRawStore();
+        var store = new CanonicalizingHmiScreenStore(raw);
+        var entries = Enumerable.Range(0, ScreenPackDocument.MaxScreensPerPack)
+            .Select(i => Entry($"screen-{i}", Screen($"screen-{i}", $"s{i}")))
+            .ToArray();
+
+        var results = await ServiceOver(raw).ImportAsync(Pack(entries));
+
+        Assert.Equal(ScreenPackDocument.MaxScreensPerPack, results.Count);
+        Assert.All(results, r => Assert.Equal(ScreenImportOutcome.Created, r.Outcome));
+        Assert.Equal(ScreenPackDocument.MaxScreensPerPack, (await store.ListScreenIdsAsync()).Count);
+    }
+
+    [Fact]
+    public async Task A_pack_one_screen_over_the_maximum_is_refused_whole_and_imports_nothing()
+    {
+        var raw = NewRawStore();
+        var store = new CanonicalizingHmiScreenStore(raw);
+        var entries = Enumerable.Range(0, ScreenPackDocument.MaxScreensPerPack + 1)
+            .Select(i => Entry($"screen-{i}", Screen($"screen-{i}", $"s{i}")))
+            .ToArray();
+
+        var ex = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => ServiceOver(raw).ImportAsync(Pack(entries)));
+
+        // The refusal NAMES the limit and the actual size — "too large" without either is unactionable.
+        Assert.Contains(ScreenPackDocument.MaxScreensPerPack.ToString(), ex.Message, StringComparison.Ordinal);
+        Assert.Contains((ScreenPackDocument.MaxScreensPerPack + 1).ToString(), ex.Message, StringComparison.Ordinal);
+        // 🔴 REFUSED WHOLE — not one screen landed. This is the property that matters in a store with no
+        // DELETE: a partial import could not be undone.
+        Assert.Empty(await store.ListScreenIdsAsync());
+    }
+
+    [Fact]
+    public async Task A_pack_over_the_aggregate_widget_ceiling_is_refused_even_though_every_entry_is_legal()
+    {
+        // The reviewer's measured shape, scaled down: many screens, each individually FAR under
+        // ContractInvariants.MaxWidgetsPerScreen, whose SUM crosses the pack ceiling. This is the exact
+        // hole H-1 named — the per-document cap binds each entry and nothing bound their sum.
+        var raw = NewRawStore();
+        var store = new CanonicalizingHmiScreenStore(raw);
+
+        const int widgetsEach = ContractInvariants.MaxWidgetsPerScreen; // legal for a single document
+        var screensNeeded = (ScreenPackDocument.MaxWidgetsPerPack / widgetsEach) + 1;
+        Assert.True(
+            screensNeeded <= ScreenPackDocument.MaxScreensPerPack,
+            "this fixture must cross the WIDGET ceiling while staying under the SCREEN ceiling, so the " +
+            "refusal it measures is unambiguously the aggregate-widget one");
+
+        var entries = Enumerable.Range(0, screensNeeded)
+            .Select(i => Entry($"screen-{i}", Fat($"screen-{i}", widgetsEach)))
+            .ToArray();
+        // Every entry is individually legal — otherwise this measures the per-document cap, not the new one.
+        Assert.All(entries, e => Assert.Empty(ContractInvariants.Validate(e.Document)));
+
+        var ex = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => ServiceOver(raw).ImportAsync(Pack(entries)));
+
+        Assert.Contains(ScreenPackDocument.MaxWidgetsPerPack.ToString(), ex.Message, StringComparison.Ordinal);
+        Assert.Empty(await store.ListScreenIdsAsync());
+    }
+
+    [Fact]
+    public async Task A_pack_at_exactly_the_aggregate_widget_ceiling_is_accepted()
+    {
+        // NEGATIVE CONTROL for the ceiling above, and the one an off-by-one would fail: the largest legal
+        // aggregate must still import.
+        var raw = NewRawStore();
+        var store = new CanonicalizingHmiScreenStore(raw);
+
+        const int widgetsEach = ContractInvariants.MaxWidgetsPerScreen;
+        var screensNeeded = ScreenPackDocument.MaxWidgetsPerPack / widgetsEach;
+        var entries = Enumerable.Range(0, screensNeeded)
+            .Select(i => Entry($"screen-{i}", Fat($"screen-{i}", widgetsEach)))
+            .ToArray();
+        Assert.Equal(ScreenPackDocument.MaxWidgetsPerPack, entries.Sum(e => (long)e.Document.Widgets.Count));
+
+        var results = await ServiceOver(raw).ImportAsync(Pack(entries));
+
+        Assert.All(results, r => Assert.Equal(ScreenImportOutcome.Created, r.Outcome));
+        Assert.Equal(screensNeeded, (await store.ListScreenIdsAsync()).Count);
+    }
+
+    /// <summary>The aggregate ceiling is DERIVED from the frozen contract, not typed. If someone retypes
+    /// either constant as a literal, this reddens — the same discipline
+    /// <c>ContractInvariants.MaxWidgetsPerScreen</c> is held to by <c>SchemaEnumGuardPinTests</c>.</summary>
+    [Fact]
+    public void The_pack_ceilings_are_derived_from_the_frozen_per_document_cap()
+    {
+        Assert.Equal(
+            ContractInvariants.LayoutDimensionMax * ContractInvariants.MaxWidgetsPerScreen,
+            ScreenPackDocument.MaxWidgetsPerPack);
+        // And the per-document cap is itself still the grid-derived number, so the chain back to the
+        // frozen schema is unbroken rather than merely asserted one link up.
+        Assert.Equal(
+            ContractInvariants.LayoutDimensionMax * ContractInvariants.LayoutDimensionMax,
+            ContractInvariants.MaxWidgetsPerScreen);
+    }
+
+    /// <summary>🔴 THE TWO CEILINGS MUST BE INDEPENDENT, OR ONE OF THEM IS DEAD CODE.
+    ///
+    /// <para>The first derivation of <see cref="ScreenPackDocument.MaxWidgetsPerPack"/> was
+    /// <c>MaxScreensPerPack * MaxWidgetsPerScreen</c>, which made the widget ceiling UNREACHABLE — crossing
+    /// it needed more screens than the screen ceiling allows, and the screen ceiling is checked first. A
+    /// bound that can never fire reports safety nobody measured. This asserts the property that was
+    /// violated, so the same mistake cannot return under a different arithmetic: it must be possible to
+    /// cross the widget ceiling while staying within the screen ceiling.</para></summary>
+    [Fact]
+    public void Each_pack_ceiling_is_reachable_without_first_crossing_the_other()
+    {
+        // A pack of MaxScreensPerPack full-grid screens must be OVER the widget ceiling — i.e. the widget
+        // ceiling bites strictly before the screen ceiling for heavy screens.
+        var widgetsIfScreenCeilingFull =
+            (long)ScreenPackDocument.MaxScreensPerPack * ContractInvariants.MaxWidgetsPerScreen;
+        Assert.True(
+            widgetsIfScreenCeilingFull > ScreenPackDocument.MaxWidgetsPerPack,
+            "the widget ceiling must be crossable within the screen ceiling, else it is dead code");
+
+        // And the converse: the screen ceiling must be crossable while staying under the widget ceiling,
+        // i.e. by many LIGHT screens — the reviewer's 20,000 × 1 shape.
+        Assert.True(
+            ScreenPackDocument.MaxScreensPerPack < ScreenPackDocument.MaxWidgetsPerPack,
+            "a pack of one-widget screens must hit the screen ceiling before the widget ceiling");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // SECURITY REVIEW L-1 — A DUPLICATE ID INSIDE ONE PACK
+    // ═════════════════════════════════════════════════════════════════════
+
+    /// <summary>🔴 The reviewer measured 1,000 entries of one id landing as 1,000 permanent versions in a
+    /// store with no DELETE. The first entry imports; every later entry with that id is refused.</summary>
+    [Fact]
+    public async Task A_screen_id_repeated_inside_one_pack_lands_once_and_the_rest_are_refused()
+    {
+        var raw = NewRawStore();
+        var store = new CanonicalizingHmiScreenStore(raw);
+
+        var results = await ServiceOver(raw).ImportAsync(Pack(
+            Entry("line-overview", Screen("line-overview", "first")),
+            Entry("line-overview", Screen("line-overview", "second")),
+            Entry("line-overview", Screen("line-overview", "third"))));
+
+        Assert.Equal(ScreenImportOutcome.Created, results[0].Outcome);
+        Assert.Equal(ScreenImportOutcome.RejectedDuplicateInPack, results[1].Outcome);
+        Assert.Equal(ScreenImportOutcome.RejectedDuplicateInPack, results[2].Outcome);
+        Assert.Null(results[1].Version);
+        Assert.NotEmpty(results[1].Violations);
+
+        // 🔴 ONE version, not three. This is the measurement, not the outcome labels.
+        var versions = await store.ListVersionsAsync("line-overview");
+        Assert.Single(versions);
+        // And it is the FIRST entry that survived — the decision is "first wins", stated and pinned, not
+        // array order picking a silent winner.
+        Assert.Equal("first", (await store.GetAsync("line-overview"))!.Title);
+    }
+
+    /// <summary>NEGATIVE CONTROL for the de-duplication: a service that refused every entry after the first,
+    /// regardless of id, would pass the test above. Three DISTINCT ids in one pack must all land.</summary>
+    [Fact]
+    public async Task Three_distinct_ids_in_one_pack_all_land()
+    {
+        var raw = NewRawStore();
+        var store = new CanonicalizingHmiScreenStore(raw);
+
+        var results = await ServiceOver(raw).ImportAsync(Pack(
+            Entry("one", Screen("one", "a")),
+            Entry("two", Screen("two", "b")),
+            Entry("three", Screen("three", "c"))));
+
+        Assert.All(results, r => Assert.Equal(ScreenImportOutcome.Created, r.Outcome));
+        Assert.Equal(3, (await store.ListScreenIdsAsync()).Count);
+    }
+
+    /// <summary>The two ends agree: export cannot PRODUCE a pack import would refuse for duplication. This
+    /// is the property L-1 is really about — a format that means different things at each end.</summary>
+    [Fact]
+    public async Task Export_never_produces_a_pack_that_import_would_refuse_as_duplicated()
+    {
+        var raw = NewRawStore();
+        await new CanonicalizingHmiScreenStore(raw).PutAsync(Screen("line-overview", "x"));
+
+        // Ask for the same screen three times, and in two spellings that canonicalise to one identity.
+        var pack = await ServiceOver(raw).ExportAsync(
+            "dev", new[] { "line-overview", "line-overview", "  line-overview  " });
+
+        Assert.Single(pack.Screens);
+        var results = await ServiceOver(new HmiScreenStore(Path.Combine(_dir, "target"))).ImportAsync(pack);
+        Assert.Equal(ScreenImportOutcome.Created, Assert.Single(results).Outcome);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
     // THE ROUND TRIP THE FEATURE EXISTS FOR
     // ═════════════════════════════════════════════════════════════════════
 
@@ -522,6 +724,17 @@ public class HmiScreenPackTests : IDisposable
         1, id, title, null, "isa101",
         new ScreenLayout(12, 8, "panel"),
         new[] { new ScreenWidget("w1", "label", new WidgetRect(0, 0, 2, 1)) });
+
+    /// <summary>A document with <paramref name="widgetCount"/> widgets, on the largest grid the frozen
+    /// schema allows so the document stays VALID at the per-document cap. Used by the aggregate-ceiling
+    /// tests, which need entries that are individually legal and collectively over the pack ceiling — the
+    /// exact shape security review H-1 measured.</summary>
+    static HmiScreenDocument Fat(string id, int widgetCount) => new(
+        1, id, id, null, "isa101",
+        new ScreenLayout(ContractInvariants.LayoutDimensionMax, ContractInvariants.LayoutDimensionMax, "panel"),
+        Enumerable.Range(0, widgetCount)
+            .Select(i => new ScreenWidget($"w{i}", "label", new WidgetRect(0, 0, 1, 1)))
+            .ToArray());
 
     /// <summary>Writes a version row and moves the pointer by RAW SQLite INSERT, bypassing
     /// <see cref="HmiScreenStore.PutAsync"/> — and therefore <see cref="ContractInvariants"/> — entirely.

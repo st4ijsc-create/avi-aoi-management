@@ -8,6 +8,30 @@ namespace St4i.EngineApi.HmiModel;
 /// else.
 ///
 /// ══════════════════════════════════════════════════════════════════════════════════════════════════
+/// ⚠ <b>LINE ENDINGS: THIS FILE IS LF; <c>HmiScreenStore.cs</c> NEXT DOOR IS CRLF. MEASURED, NOT GUESSED.</b>
+/// ══════════════════════════════════════════════════════════════════════════════════════════════════
+/// Counted at the byte level: <c>HmiScreenStore.cs</c> = 415 CRLF / 0 bare LF; this file, <c>ScreenPack.cs</c>
+/// and <c>HmiScreenPackEndpoints.cs</c> = 0 CRLF / all bare LF. The repository has
+/// <c>core.autocrlf=true</c> and no <c>.gitattributes</c>, so files enter the worktree in whichever shape
+/// their author's tooling produced and nothing normalises them afterwards.
+///
+/// <para><b>Why this is written here rather than left to be discovered.</b> It is the THIRD line-ending
+/// trap this programme has hit — one session ago a source-text matcher requiring <c>\n\n</c> passed on one
+/// worktree and failed on another at the SAME commit. The failure mode is silent in both directions: a
+/// <c>sed</c>/patch/regex written against one of these two files can no-op against the other while
+/// reporting success, and a matcher that anchors on a literal newline shape will pass here and fail next
+/// door. It is also easy to mis-measure — a shell layer that normalises on read (Git Bash's <c>grep</c>
+/// among them) will report BOTH files as LF, which is how this stayed invisible until it was counted in
+/// bytes rather than looked at.</para>
+///
+/// <para><b>What to do:</b> read normalised (<c>.Replace("\r\n", "\n")</c> — the idiom
+/// <c>HmiModelWiringTests</c>/<c>SchemaEnumGuardPinTests</c> already use, and <c>readSource</c> on the web
+/// side) before matching source text from either file, and never assume an edit tool that worked on one
+/// will work on the other. Do NOT "fix" this by rewriting either file's endings wholesale: that is a
+/// diff touching every line of a frozen-adjacent file, which buys nothing and hides the next real
+/// change.</para>
+///
+/// ══════════════════════════════════════════════════════════════════════════════════════════════════
 /// 🔴 THE APPEND-ONLY BOUNDARY, AND WHY THIS CLASS CANNOT BREACH IT EVEN BY MISTAKE
 /// ══════════════════════════════════════════════════════════════════════════════════════════════════
 /// The session boundary is absolute: <b>import may only append. It may never overwrite, delete, or edit an
@@ -183,8 +207,27 @@ public sealed class HmiScreenPackService
     /// comment for why that is what makes the append-only boundary structural rather than a check.</para>
     ///
     /// <para>Throws <see cref="ArgumentOutOfRangeException"/> for a pack declaring a
-    /// <see cref="ScreenPackDocument.PackVersion"/> this engine does not know — refused whole, before any
-    /// entry is examined, so an unknown wrapper can never half-import.</para>
+    /// <see cref="ScreenPackDocument.PackVersion"/> this engine does not know, or one exceeding
+    /// <see cref="ScreenPackDocument.MaxScreensPerPack"/> / <see cref="ScreenPackDocument.MaxWidgetsPerPack"/>
+    /// — all three refused WHOLE, before any entry is examined, so an over-cap or unreadable pack can never
+    /// half-import into a store with no DELETE to undo it.</para>
+    ///
+    /// <para>🔴 <b>SECURITY REVIEW L-1 — A screenId APPEARING TWICE IN ONE PACK IS AN ERROR, NOT
+    /// LAST-ONE-WINS.</b> The reviewer measured 1,000 entries of one id landing as 1,000 permanent versions
+    /// in a store with no DELETE. The first entry with a given id imports normally; every later entry with
+    /// that same id is refused as <see cref="ScreenImportOutcome.RejectedDuplicateInPack"/>.
+    ///
+    /// <para><b>Why an error rather than last-one-wins</b>, which was the other honest candidate. A pack is
+    /// ONE AUTHORED ARTEFACT describing a set of screens, and a set does not contain the same member twice —
+    /// <see cref="ExportAsync"/> already de-duplicates its id list, so no pack this engine PRODUCES can
+    /// contain a duplicate, and the two ends must agree or the format means different things at each. Given
+    /// that, a duplicate can only come from hand-editing or from concatenating two packs, and in BOTH cases
+    /// the engineer has two documents and no stated intent about which should win. Last-one-wins would pick
+    /// one silently — and pick it by array ORDER, which is not something a JSON author reliably controls or
+    /// even sees. Refusing names the mistake at the moment it can still be fixed. It is also the strictly
+    /// safer half of the choice under this store's own constraints: a refusal writes nothing and is
+    /// undoable by editing the pack, whereas the wrong silent winner is a permanent version in a store with
+    /// no DELETE.</para></para>
     /// </summary>
     public async Task<IReadOnlyList<ScreenImportResult>> ImportAsync(
         ScreenPackDocument pack, CancellationToken ct = default)
@@ -197,7 +240,37 @@ public sealed class HmiScreenPackService
                 $"{ScreenPackDocument.CurrentPackVersion} only.");
         }
 
+        // 🔴 SECURITY REVIEW H-1 — BOTH ceilings checked HERE, before the loop below writes anything. An
+        // over-cap pack must be refused WHOLE: a partial import into a store with no DELETE cannot be
+        // undone, so "refuse after 300 of 20,000 landed" would be the worst possible answer. The message
+        // names the LIMIT and the ACTUAL size, because "too large" that does not say by how much is a
+        // refusal the caller cannot act on.
+        if (pack.Screens.Count > ScreenPackDocument.MaxScreensPerPack)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(pack), pack.Screens.Count,
+                $"pack carries {pack.Screens.Count} screens, above the limit of " +
+                $"{ScreenPackDocument.MaxScreensPerPack} — refused whole, so no entry is imported.");
+        }
+
+        // `long`, not `int`: the sum of individually-legal entries is exactly the quantity that overflows
+        // here (the reviewer's measured pack summed to 1,000,000), and an overflow would wrap to a small
+        // number and PASS this very check.
+        long totalWidgets = 0;
+        foreach (var entry in pack.Screens) totalWidgets += entry.Document?.Widgets?.Count ?? 0;
+        if (totalWidgets > ScreenPackDocument.MaxWidgetsPerPack)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(pack), totalWidgets,
+                $"pack carries {totalWidgets} widgets in total, above the limit of " +
+                $"{ScreenPackDocument.MaxWidgetsPerPack} — refused whole, so no entry is imported. " +
+                "Every entry may be individually legal; this is the ceiling on their sum.");
+        }
+
         var results = new List<ScreenImportResult>();
+        // L-1 — ids already claimed by an EARLIER entry of THIS pack. Ordinal, over the canonicalised id,
+        // so it compares the same spelling the store would key on.
+        var seenInThisPack = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var entry in pack.Screens)
         {
@@ -215,6 +288,24 @@ public sealed class HmiScreenPackService
                     {
                         $"entry screenId '{entry.ScreenId}' does not match its document's screenId " +
                         $"'{entry.Document.ScreenId}' — refused rather than silently choosing one of the two.",
+                    }));
+                continue;
+            }
+
+            // 🔴 L-1 — a second entry naming an id an EARLIER entry of this same pack already claimed.
+            // Checked AFTER the identity check above deliberately: an entry that is BOTH self-inconsistent
+            // and a duplicate is reported for the identity conflict, the fault that makes it unusable
+            // regardless of what else is in the pack.
+            if (!seenInThisPack.Add(envelopeId))
+            {
+                results.Add(new ScreenImportResult(
+                    envelopeId, ScreenImportOutcome.RejectedDuplicateInPack, null,
+                    new[]
+                    {
+                        $"screenId '{envelopeId}' appears more than once in this pack — a pack is one " +
+                        "authored artefact and describes each screen once. The FIRST entry with this id " +
+                        "was imported; this one is refused rather than silently overwriting it or " +
+                        "appending a second version chosen by array order.",
                     }));
                 continue;
             }

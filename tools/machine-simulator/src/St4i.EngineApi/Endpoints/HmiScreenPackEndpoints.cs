@@ -138,8 +138,11 @@ public static class HmiScreenPackEndpoints
         }
         catch (ArgumentOutOfRangeException ex)
         {
-            // An unreadable WRAPPER — refused whole, nothing examined, nothing written. See this class's
-            // doc comment for why this is the one whole-request 400.
+            // An unreadable WRAPPER, or one over a whole-pack ceiling — refused whole, nothing examined,
+            // nothing written. See this class's doc comment for why these are the whole-request 400s, and
+            // ScreenPackDocument.MaxWidgetsPerPack for why the ceilings exist and where they come from.
+            // The message carries the limit AND the actual size; StripParameterFraming removes only
+            // ArgumentOutOfRangeException's own " (Parameter 'pack')" tail, never the numbers.
             return Results.BadRequest(new ApiErrorDto(StripParameterFraming(ex.Message)));
         }
         catch (SqliteException ex) when (HmiScreenEndpoints.IsWriteLockBusy(ex))
@@ -195,9 +198,11 @@ public static class HmiScreenPackEndpoints
 
 /// <summary>One row of an import report. <paramref name="Outcome"/> is the
 /// <see cref="ScreenImportOutcome"/> name — <c>Created</c>, <c>AppendedAsNewVersion</c>,
-/// <c>RejectedInvalid</c> or <c>RejectedIdentityConflict</c>. <paramref name="Version"/> is where the
-/// document landed IN THIS STORE (never the pack's provenance version) and is <see langword="null"/> for a
-/// refusal.</summary>
+/// <c>RejectedInvalid</c>, <c>RejectedIdentityConflict</c> or <c>RejectedDuplicateInPack</c>.
+/// <paramref name="Version"/> is where the document landed IN THIS STORE (never the pack's provenance
+/// version) and is <see langword="null"/> for a refusal — which is why the report's <c>Rejected</c> count
+/// is computed from a null version rather than from a list of refusal names, so a future outcome added to
+/// the enum is counted as a refusal automatically rather than silently falling out of the total.</summary>
 public sealed record ScreenImportResultDto(
     string ScreenId, string Outcome, int? Version, IReadOnlyList<string> Violations);
 

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Endpoints;
+using St4i.EngineApi.Tests.Auth;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.HmiModel;
 using St4i.Hmi.Contracts;
@@ -26,7 +27,25 @@ namespace St4i.EngineApi.Tests.HmiModel;
 /// <para>Harness duplicated from <see cref="HmiScreenEndpointsTests"/> deliberately, the same way that
 /// class duplicates its own from <c>HmiModelWiringTests</c>/<c>RbacPolicyTests</c>: each is private to its
 /// own class, and sharing one would couple two suites' env-var lifetimes.</para>
+///
+/// <para>🔴 <b><c>[Collection]</c> IS LOAD-BEARING, AND OMITTING IT WAS A MEASURED FLAKE, NOT A STYLE
+/// MISS.</b> This class's own <c>EnvLock</c> serializes its OWN tests, and that is NOT enough: xUnit runs
+/// different test CLASSES in parallel, and the env vars this harness sets
+/// (<c>ST4I_HMI_SCREENS_DIR</c>, <c>ST4I_SECURITY_DIR</c>, <c>ASPNETCORE_ENVIRONMENT</c>) are
+/// PROCESS-WIDE — so a private semaphore locks out nobody but itself. Measured without this attribute, on
+/// two consecutive full-suite runs: one run failed
+/// <c>An_unknown_pack_version_is_a_400_and_imports_nothing</c> with
+/// <c>UnauthorizedAccessException</c> from <c>SimulatedEcosystem.WriteAllTextAtomic</c> (two hosts building
+/// against one config directory, racing on a file move), the other failed
+/// <c>The_export_route_wins_over_the_by_id_route_in_the_live_matcher</c> with <b>409 Conflict</b> from
+/// <c>/v1/auth/bootstrap</c> (a sibling class's admin already bootstrapped into the security directory this
+/// one believed was its own). DIFFERENT tests each run — the signature of a race, not of a product defect.
+/// Joining <see cref="SecurityEnvVarTests.CollectionName"/> puts this class in the one xUnit collection
+/// that is never run concurrently with its members, which is what every other
+/// <c>WebApplicationFactory</c>-based class in this tree already does — <see cref="HmiScreenEndpointsTests"/>
+/// among them.</para>
 /// </summary>
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class HmiScreenPackEndpointsTests
 {
     private static readonly SemaphoreSlim EnvLock = new(1, 1);
@@ -290,6 +309,82 @@ public sealed class HmiScreenPackEndpointsTests
 
         using var get = await op.GetAsync("/v1/screens/would-have-worked");
         Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+    }
+
+    /// <summary>🔴 SECURITY REVIEW H-1 over HTTP — an over-cap pack is a 400 that names the limit and the
+    /// actual size, and nothing lands. The message content is asserted because a refusal that does not say
+    /// how far over it is leaves the caller unable to act on it.</summary>
+    [Fact]
+    public async Task A_pack_over_the_screen_ceiling_is_a_400_that_names_the_limit_and_imports_nothing()
+    {
+        var (factory, engineer, op) = await NewFactoryWithUsersAsync("ceiling");
+        await using var _f = factory;
+        using var _e = engineer;
+        using var _o = op;
+
+        var entries = Enumerable.Range(0, ScreenPackDocument.MaxScreensPerPack + 1)
+            .Select(i => Entry($"screen-{i}", Screen($"screen-{i}", $"s{i}")))
+            .ToArray();
+
+        using var import = await engineer.PostAsJsonAsync("/v1/screens/import", Pack(entries), HmiContractJson.Options);
+
+        Assert.Equal(HttpStatusCode.BadRequest, import.StatusCode);
+        var error = await import.Content.ReadFromJsonAsync<ApiErrorDto>(HmiContractJson.Options);
+        Assert.NotNull(error);
+        Assert.Contains(ScreenPackDocument.MaxScreensPerPack.ToString(), error!.Error, StringComparison.Ordinal);
+        Assert.Contains((ScreenPackDocument.MaxScreensPerPack + 1).ToString(), error.Error, StringComparison.Ordinal);
+
+        // Nothing landed — the store is still empty of every id the pack named.
+        using var list = await op.GetAsync("/v1/screens");
+        var ids = await list.Content.ReadFromJsonAsync<string[]>(HmiContractJson.Options);
+        Assert.Empty(ids!);
+    }
+
+    /// <summary>NEGATIVE CONTROL for the HTTP ceiling: an import route that 400'd every multi-screen pack
+    /// would pass the test above. A pack just UNDER the ceiling must still import over the same route.</summary>
+    [Fact]
+    public async Task A_pack_just_under_the_screen_ceiling_still_imports_over_http()
+    {
+        var (factory, engineer, op) = await NewFactoryWithUsersAsync("under-ceiling");
+        await using var _f = factory;
+        using var _e = engineer;
+        using var _o = op;
+
+        var entries = Enumerable.Range(0, ScreenPackDocument.MaxScreensPerPack)
+            .Select(i => Entry($"screen-{i}", Screen($"screen-{i}", $"s{i}")))
+            .ToArray();
+
+        using var import = await engineer.PostAsJsonAsync("/v1/screens/import", Pack(entries), HmiContractJson.Options);
+
+        Assert.Equal(HttpStatusCode.OK, import.StatusCode);
+        var report = await import.Content.ReadFromJsonAsync<ScreenImportReportDto>(HmiContractJson.Options);
+        Assert.Equal(ScreenPackDocument.MaxScreensPerPack, report!.Created);
+        Assert.Equal(0, report.Rejected);
+    }
+
+    /// <summary>🔴 SECURITY REVIEW L-1 over HTTP — a duplicated id inside one pack lands once, and the
+    /// report counts the refusals rather than hiding them in a total.</summary>
+    [Fact]
+    public async Task A_duplicated_id_in_one_pack_lands_once_over_http()
+    {
+        var (factory, engineer, op) = await NewFactoryWithUsersAsync("dup");
+        await using var _f = factory;
+        using var _e = engineer;
+        using var _o = op;
+
+        using var import = await engineer.PostAsJsonAsync("/v1/screens/import", Pack(
+            Entry("line-overview", Screen("line-overview", "first")),
+            Entry("line-overview", Screen("line-overview", "second"))), HmiContractJson.Options);
+
+        Assert.Equal(HttpStatusCode.OK, import.StatusCode);
+        var report = await import.Content.ReadFromJsonAsync<ScreenImportReportDto>(HmiContractJson.Options);
+        Assert.Equal(1, report!.Created);
+        Assert.Equal(1, report.Rejected);
+        Assert.Equal(nameof(ScreenImportOutcome.RejectedDuplicateInPack), report.Results[1].Outcome);
+
+        using var versions = await op.GetAsync("/v1/screens/line-overview/versions");
+        var rows = await versions.Content.ReadFromJsonAsync<ScreenVersionInfo[]>(HmiContractJson.Options);
+        Assert.Single(rows!);
     }
 
     /// <summary>Export → import round trip over HTTP, end to end: what an Operator exports is what an
