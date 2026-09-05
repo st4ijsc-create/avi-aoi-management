@@ -130,7 +130,18 @@ HSS=src/St4i.EngineApi/HmiModel/HmiScreenStore.cs
 CSS=src/St4i.EngineApi/HmiModel/CanonicalScreenStore.cs
 HSE=src/St4i.EngineApi/Endpoints/HmiScreenEndpoints.cs
 
-SOURCES="$HTE $HME $TIQ $EV $CMC $HCS $PROG $TMD $DTS $TNB $TIS $CI $IHS $HSS $CSS $HSE"
+# 🔴 WS-HMI-2 PERIMETER PASS (2026-09-05) — THE SAME HOLE A FOURTH TIME, AND THIS TIME IT WAS FOUND BY
+# COUNTING THE BRANCH'S FILES AGAINST SOURCES RATHER THAN BY A SUITE GOING RED.
+# The whole-branch review (M-3) states it exactly: "SOURCES is .NET-only" reads as "the .NET half is
+# covered", and the .NET half is FOURTEEN OF SIXTEEN FILES. The two missing ones are below. Neither is
+# large and neither is clever, which is the whole reason they were skipped — and a positional record is
+# precisely where a silent defect hides, because REORDERING TWO PARAMETERS OF THE SAME TYPE COMPILES
+# EVERYWHERE AND CHANGES EVERY CALL SITE'S MEANING. There is no red squiggle for `WidgetRect(col, row,
+# rowSpan, colSpan)`; there is only a screen that lays out wrong.
+HMD=src/St4i.EngineApi/Endpoints/HmiModelDtos.cs
+HSD=src/St4i.Hmi.Contracts/HmiScreenDocument.cs
+
+SOURCES="$HTE $HME $TIQ $EV $CMC $HCS $PROG $TMD $DTS $TNB $TIS $CI $IHS $HSS $CSS $HSE $HMD $HSD"
 
 # 🔴 LINE ENDINGS ARE MIXED IN THIS SET, MEASURED NOT ASSUMED — Gate 1. HmiScreenStore.cs and
 # HmiScreenEndpointsTests' subject HmiScreenEndpoints.cs are CRLF; CanonicalScreenStore.cs and
@@ -196,8 +207,24 @@ trap 'restore; rm -rf "$BK"' EXIT
 # The sentinel is the whole point: it is grep'd across the sources AFTER the mutation and
 # BEFORE the test run. If it is absent the mutation did not land, and the row is reported as
 # a non-measurement instead of as a green.
+# 🔴 `ONLY` — RUN A SUBSET, ADDED BY THE WS-HMI-2 PERIMETER PASS, AND WHY IT IS SAFE.
+# This file's own header measures a full run at 4-5 HOURS. That number is why the sweep was not re-run
+# after Gate 1, and an instrument nobody can afford to run is on its way to being an instrument nobody
+# runs. `ONLY=<extended-regex>` restricts which rows are MEASURED; every other row's mutation is still
+# applied and then immediately restored, so the tree ends in the same state either way.
+#
+# 🔴 IT IS A CONVENIENCE, NOT A VERDICT, AND THE DISTINCTION IS ENFORCED: a subset run prints a banner
+# saying so, because "the sweep passed" said of a filtered run is exactly the class of overclaim this
+# harness exists to stop — a conclusion wider than the instrument. Merge decisions take the FULL run.
+#   ONLY='^G5' bash scripts/delete-and-redden.sh     # just the post-Gate-1 rows
+ONLY="${ONLY:-}"
+
 measure() {
   local label="$1" sentinel="$2" out summary mutated before after
+  if [ -n "$ONLY" ] && ! echo "$label" | grep -Eq -- "$ONLY"; then
+    restore
+    return
+  fi
   if ! grep -qF -- "$sentinel" $SOURCES; then
     echo "### $label => MUTATION DID NOT LAND (sentinel '$sentinel' absent) — NOT A MEASUREMENT"
     restore
@@ -287,6 +314,11 @@ $(dotnet test "$CTESTS" --filter "$CFILTER" --no-build 2>&1)" ;;
 # sentinel to confirm, and asking for one printed a spurious "MUTATION DID NOT LAND" beside a
 # perfectly good green. A harness whose own output has to be explained is a harness that will be
 # misread — which is the failure it exists to prevent, one level up.
+if [ -n "$ONLY" ]; then
+  echo "🔴 SUBSET RUN — ONLY='$ONLY'. The rows this filter excludes were NOT MEASURED on this run."
+  echo "🔴 This output is not 'the sweep'. A merge decision takes the unfiltered run. See ONLY's comment."
+fi
+
 echo "=== BASELINE (no mutation) ==="
 echo "### baseline (EngineApi) => $(dotnet test "$TESTS" --filter "$FILTER" 2>&1 \
   | grep -oE 'Failed:[[:space:]]+[0-9]+, Passed:[[:space:]]+[0-9]+' | tail -1)"
@@ -584,5 +616,108 @@ measure "G4-5 ScreenChanged trims directly, so a null screenId throws | guards: 
 
 perl -0777 -pi -e 's/    public const string ScreenChangeKind = "screen";/    public const string ScreenChangeKind = "screens"; \/\/ MUTANT-G4-KIND/' $EV
 measure "G4-6 the screen change kind renamed | guards: the wire's third change discriminator, which the web branch builds against" "// MUTANT-G4-KIND"
+
+
+# ═════════════════════════════════════════════════════════════════════════════════════════
+# WS-HMI-2 TASK 12 AND THE SECURITY ROUND — GATE 2 (the "perimeter pass", 2026-09-05).
+#
+# 🔴 WHY THESE ROWS DID NOT EXIST, STATED PLAINLY, BECAUSE IT IS A NEW SHAPE OF THE OLD DEFECT.
+# The 0b / 0c / Gate-1 blocks above all record the SAME failure: a file this workstream added was not in
+# SOURCES, so the harness could not mutate it at all. That failure is loud once you look — the file list
+# is short and you can read it. THIS one is quiet. Every line below lives in a file that HAS been in
+# SOURCES for a workstream or more (`ContractInvariants.cs` since 0c, `HmiScreenEndpoints.cs` since
+# Gate 1), so nothing about the FILE list was wrong. What was wrong is that the ROW list stopped at the
+# lines that existed when Gate 1 was written, and Task 12 plus the security round then added ELEVEN
+# guards and TWO audit records inside those already-covered files.
+#
+# The whole-branch review (M-3) named the consequence exactly: those guards' nineteen falsifications are
+# real, are recorded in the ledger, and "exist in no file anybody can re-run" — which is the defect this
+# script's own header records having paid for twice ("a table nobody can reproduce is not evidence at
+# all"). A file being in SOURCES is NOT the same as its lines being measured, and "the sweep covers
+# ContractInvariants.cs" is the sentence that hid the difference.
+#
+# The header's ruling stands and is what makes this ordinary rather than a repair: EXTENDING THE ROW
+# LIST IS ORDINARY MAINTENANCE, and belongs to whoever next touches those files. This is that, done.
+#
+# Every mutation below is a PLAUSIBLE REFACTOR — a guard relaxed, an enum check dropped, a `return`
+# softened to fall-through, two same-typed record parameters transposed — never a compile-breaker.
+# ═════════════════════════════════════════════════════════════════════════════════════════
+
+# ── Task 12 — the widget-level door: id, kind, and the two rules the schema itself does not have ──
+
+perl -0777 -pi -e 's/            else if \(!WidgetIdPattern\.IsMatch\(w\.Id\)\)/            else if (false) \/* MUTANT-G5-WIDGETID *\//' $CI
+measure "G5-1 the widget-id pattern check deleted | guards: \$defs/widget.properties.id's frozen ^[a-z0-9-]+\$ at the WRITE DOOR — the editor mirrors it, this is the side that refuses" "MUTANT-G5-WIDGETID"
+
+perl -0777 -pi -e 's/            else if \(!KnownWidgetKinds\.Contains\(w\.Kind\)\)/            else if (false) \/* MUTANT-G5-WIDGETKIND *\//' $CI
+measure "G5-2 the widget-KIND enum check deleted | guards: the fifteen-member kind enum — a widget the renderer has no module for is refused at the door, not drawn as a placeholder forever" "MUTANT-G5-WIDGETKIND"
+
+# The widget cap, in TWO rows, because it makes TWO claims and one row would conflate them.
+perl -0777 -pi -e 's/        if \(doc\.Widgets\.Count > MaxWidgetsPerScreen\)/        if (false) \/* MUTANT-G5-NOCAP *\//' $CI
+measure "G5-3 the widget-count ceiling deleted outright | guards: SECURITY REVIEW HIGH-1 — a document with more widgets than the largest legal grid has cells cannot place its own widgets, and a kiosk draws it in ONE synchronous commit" "MUTANT-G5-NOCAP"
+
+# 🔴 THE SECOND CLAIM, AND IT IS THE ONE A REVIEWER WOULD MISS. The cap's fix is not only THAT it
+# refuses — it is that it refuses AND RETURNS. Falling through on a 200 000-widget document builds
+# 200 000 violation strings and joins them with " | " into one exception message, which IS the attack,
+# server-side. So `return v` is deleted while the check itself is left standing: the document is still
+# refused, the status code does not move, and the only thing that changes is how much work the refusal
+# costs. A row that deleted the whole block could never tell those two apart.
+perl -0777 -pi -e 's/(RESET HALT có mặt mà bấm không được\."\);\r?\n)            return v;/$1            \/* MUTANT-G5-CAP-NORETURN *\//s' $CI
+measure "G5-4 the cap reports the violation but FALLS THROUGH instead of returning | guards: the return-rather-than-continue half of HIGH-1 — one violation naming the ceiling, not 200 000 joined into the message" "MUTANT-G5-CAP-NORETURN"
+
+perl -0777 -pi -e 's/            if \(!seenIds\.Add\(id\)\)/            if (false) \/* MUTANT-G5-DUPID *\//' $CI
+measure "G5-5 the duplicate-widget-id refusal deleted | guards: SECURITY REVIEW LOW-2 — the schema PERMITS duplicates and this door does not, because ScreenRenderer keys React children by widget.id and a duplicate key is undefined behaviour on a panel that redraws every second" "MUTANT-G5-DUPID"
+
+# ── The security round's FIVE LOW-1 schema constraints, one row each ──────────────────────────────
+# They are five separate rules over five separate schema keywords and they fail five different ways, so
+# they get five rows rather than one representative. A representative row proves the file still has SOME
+# enum check; it does not prove that THIS one is wired.
+
+perl -0777 -pi -e 's/        if \(doc\.SchemaVersion != SchemaVersionConst\)/        if (false) \/* MUTANT-G5-SCHEMAVER *\//' $CI
+measure "G5-6 (1/5) the schemaVersion const check deleted | guards: properties.schemaVersion.const — a document declaring another number is lying about which contract it obeys" "MUTANT-G5-SCHEMAVER"
+
+perl -0777 -pi -e 's/        else if \(!KnownThemes\.Contains\(doc\.Theme\)\)/        else if (false) \/* MUTANT-G5-THEME *\//' $CI
+measure "G5-7 (2/5) the theme enum check deleted | guards: properties.theme.enum — the ONE of the five with an operator-visible effect, since ScreenRenderer stamps it onto the rendered tree" "MUTANT-G5-THEME"
+
+perl -0777 -pi -e 's/            else if \(!KnownBreakpoints\.Contains\(doc\.Layout\.Breakpoint\)\)/            else if (false) \/* MUTANT-G5-BREAKPOINT *\//' $CI
+measure "G5-8 (3/5) the layout breakpoint enum check deleted | guards: \$defs.layout.properties.breakpoint.enum, pinned two-way against the schema file" "MUTANT-G5-BREAKPOINT"
+
+perl -0777 -pi -e 's/            else if \(!string\.IsNullOrWhiteSpace\(w\.PolicyAction\) && !KnownPolicyActions\.Contains\(w\.PolicyAction\)\)/            else if (false) \/* MUTANT-G5-POLICYENUM *\//' $CI
+measure "G5-9 (4/5) the policyAction enum check deleted | guards: S-6 — storing an action that names nothing at all is the trap; §5's 'a write kind must DECLARE one' is a different rule and is NOT what this row measures" "MUTANT-G5-POLICYENUM"
+
+perl -0777 -pi -e 's/                    if \(value < RectMinimums\[field\]\)/                    if (false) \/* MUTANT-G5-RECTMIN *\//' $CI
+measure "G5-10 (5/5) the rect minimums check deleted, all four fields | guards: \$defs.rect.properties.<name>.minimum, compared BY NAME so a minimum that moves between fields cannot be satisfied by a count" "MUTANT-G5-RECTMIN"
+
+# ── The security round's TWO AUDIT RECORDS (MEDIUM-1) ─────────────────────────────────────────────
+# 🔴 Neither screen write produced an audit record before that round, while fifteen other write routes
+# did. The rows are deletions rather than tampering, and the deletion is `if (false)` rather than a cut,
+# so `recorder` stays used and the row measures a MISSING AUDIT rather than an unused-parameter error.
+
+perl -0777 -pi -e 's/        await recorder\.RecordAsync\(\r?\n            context, PublishAction,/        if (false) await recorder.RecordAsync( \/* MUTANT-G5-NOAUDIT-PUB *\/\n            context, PublishAction,/s' $HSE
+measure "G5-11 PUT /v1/screens/{id} records no audit row | guards: MEDIUM-1 — the version history says WHAT changed and only the audit log says WHO did it" "MUTANT-G5-NOAUDIT-PUB"
+
+perl -0777 -pi -e 's/        await recorder\.RecordAsync\(\r?\n            context, RollbackAction,/        if (false) await recorder.RecordAsync( \/* MUTANT-G5-NOAUDIT-RB *\/\n            context, RollbackAction,/s' $HSE
+measure "G5-12 POST /v1/screens/{id}/rollback records no audit row | guards: MEDIUM-1 on the second write door — a rollback is a write and the review found it unrecorded too" "MUTANT-G5-NOAUDIT-RB"
+
+# 🔴 A DISCRIMINATING CONTROL, NOT A THIRD DELETION. G5-11/12 ask "is a row written at all". This asks
+# whether anyone checks WHAT is in it: `toVersion` is dropped while the row itself still lands. If this
+# comes back GREEN then the two rows above are only pinning the CALL, and an investigator's "what did
+# they ask for" is defended by nothing.
+perl -0777 -pi -e 's/            new \{ version, toVersion = body\.ToVersion \},/            new \{ version \}, \/* MUTANT-G5-AUDIT-NOTOVERSION *\//' $HSE
+measure "G5-13 the rollback audit row stops carrying toVersion | guards: 'restored version 2' and 'which produced version 9' are two different facts and an investigator needs both" "MUTANT-G5-AUDIT-NOTOVERSION"
+
+# ── The two files that were never in SOURCES ──────────────────────────────────────────────────────
+# 🔴 EVERY ROW HERE TRANSPOSES TWO PARAMETERS OF THE SAME TYPE IN A POSITIONAL RECORD. That is the
+# mutation these files can actually suffer: it compiles everywhere, no caller changes, no analyser
+# fires, and every positional construction in the tree silently swaps two meanings. It is also exactly
+# what a tidy-up refactor does when it "puts the fields in a nicer order".
+
+perl -0777 -pi -e 's/public sealed record ScreenLayout\(int Cols, int Rows, string Breakpoint\);/public sealed record ScreenLayout(int Rows, int Cols, string Breakpoint); \/\/ MUTANT-G5-LAYOUT-TRANSPOSE/' $HSD
+measure "G5-14 ScreenLayout's Cols and Rows transposed | guards: the C# mirror of \$defs/layout is held to the schema BY NAME — a 12x8 grid silently becoming 8x12 is the whole failure" "// MUTANT-G5-LAYOUT-TRANSPOSE"
+
+perl -0777 -pi -e 's/public sealed record WidgetRect\(int Col, int Row, int ColSpan, int RowSpan\);/public sealed record WidgetRect(int Col, int Row, int RowSpan, int ColSpan); \/\/ MUTANT-G5-RECT-TRANSPOSE/' $HSD
+measure "G5-15 WidgetRect's ColSpan and RowSpan transposed | guards: the C# mirror of \$defs/rect — every widget on every screen changes shape and nothing fails to compile" "// MUTANT-G5-RECT-TRANSPOSE"
+
+perl -0777 -pi -e 's/public sealed record PutScreenResultDto\(string ScreenId, int Version, int WidgetCount\);/public sealed record PutScreenResultDto(string ScreenId, int WidgetCount, int Version); \/\/ MUTANT-G5-DTO-TRANSPOSE/' $HMD
+measure "G5-16 PutScreenResultDto's Version and WidgetCount transposed | guards: what BOTH write doors answer — the editor reads 'published as version N' straight out of this record" "// MUTANT-G5-DTO-TRANSPOSE"
 
 echo "=== sources restored ==="

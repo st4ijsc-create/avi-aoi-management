@@ -15,13 +15,93 @@
 # `main`'s `5d4c5ae0`, and WS-HMI-2's `c9e860d2`, which stayed red five days through a security
 # review and up to a merge gate (whole-branch review B-1).
 #
-# 🔴 AND A WARNING ABOUT THIS SCRIPT ITSELF: the EXPECT_* constants below are STALE by several
-# workstreams (measured 2026-09-05 on `feat/hmi-ws2-editor`: EngineApi 1844 vs EXPECT 1479,
-# Hmi.Contracts 170 vs 46, web e2e 288 vs 220). Only EXPECT_ABSTRACTIONS=161 and
-# EXPECT_EDGECORE are current. Running this today reports failures that are not failures, which
-# is why nobody ran it and why nothing above the per-task discipline caught B-1. Refreshing them
-# is recorded as a separate item for the owner (whole-branch review I-1); it is NOT done here,
-# because a number this file asserts must be one the person changing it has just measured.
+# 🔴 THIS SCRIPT IS THE STANDING ANSWER TO THAT FAILURE, AND IT IS WORTH SAYING WHY IN ONE LINE.
+# B-1 was not caught by the per-task discipline because the per-task discipline is per task: each
+# round asked "does this round's diff touch a .NET file", answered no, and was RIGHT about three
+# suites and WRONG about the fourth. Nothing above it ever asked "are all six suites at their
+# expected totals TODAY". That question is this file, it is one command, and it would have gone red
+# on `c9e860d2` the day the mirror moved instead of five days later at a merge gate. The per-task
+# rule is not being replaced — it is being given something above it that does not depend on anyone
+# correctly predicting which suites a diff can reach.
+#
+# 📎 🔴 "IT IS NOT DONE HERE" — RETRACTED, 2026-09-05, WS-HMI-2 perimeter pass. The paragraph that
+# stood here read, VERBATIM:
+#
+#     "🔴 AND A WARNING ABOUT THIS SCRIPT ITSELF: the EXPECT_* constants below are STALE by several
+#      workstreams (measured 2026-09-05 on `feat/hmi-ws2-editor`: EngineApi 1844 vs EXPECT 1479,
+#      Hmi.Contracts 170 vs 46, web e2e 288 vs 220). Only EXPECT_ABSTRACTIONS=161 and
+#      EXPECT_EDGECORE are current. Running this today reports failures that are not failures, which
+#      is why nobody ran it and why nothing above the per-task discipline caught B-1. Refreshing them
+#      is recorded as a separate item for the owner (whole-branch review I-1); it is NOT done here,
+#      because a number this file asserts must be one the person changing it has just measured."
+#
+# It was correct in every part except its arithmetic, and the arithmetic is now superseded rather
+# than merely corrected. THE CONSTANTS HAVE BEEN REFRESHED — see the block immediately below for
+# what was measured, when, and against which commit. The sentence's own condition is what made the
+# refresh legitimate: every number now in this file was measured by the person who changed it, in
+# the run recorded below, one suite at a time, absolute paths, .NET never overlapping Playwright.
+#
+# 🔴 WHAT THE RETRACTED PARAGRAPH GOT WRONG, AND IT MATTERS BECAUSE IT IS THIS FILE'S OWN SUBJECT:
+# it said the constants were stale "by several workstreams" and implied breadth. MEASURED, the drift
+# is NARROWER AND SHARPER than that — FOUR numbers moved, and only TWO of them are .NET suite totals:
+#
+#     EXPECT_ENGINEAPI          1479 -> 1844   (.NET suite)
+#     EXPECT_HMI_CONTRACTS        46 -> 170    (.NET suite)
+#     EXPECT_WEB_CONTRACT_TESTS   48 ->  52    (web, `npm run test:contracts`)
+#     EXPECT_WEB_E2E_TESTS       220 -> 290    (web, `npx playwright test`)
+#
+# The other FOUR .NET suite constants — ABSTRACTIONS 161, CONFORMANCE 24, EDGECORE 1310,
+# EDGESERVICE 52 — were already exactly right, re-measured here rather than assumed from the
+# retracted sentence's own list, which named only two of the four as current. A gate that is wrong
+# in two places reads as "stale everywhere" and gets abandoned wholesale; that is precisely how this
+# one came to be unrunnable, so the correction is stated as a count and not as an impression.
+#
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 WHEN THESE NUMBERS WERE MEASURED, AND AGAINST WHAT — so the next person knows what they are
+# trusting rather than inheriting a constant with no provenance.
+#
+#   WHEN:      2026-09-05
+#   BRANCH:    feat/hmi-ws2-editor
+#   COMMIT:    3387d52ff7fd693e353ec30db60c2e46ec2231e5
+#              "docs(hmi): the third gap and the second read are disclosed, and the grep this
+#               branch argued from was falsified inside it"
+#   TREE:      clean but for the pre-existing untracked tools/machine-simulator/aoi-after.png
+#   HOW:       one suite at a time, foreground, ABSOLUTE csproj paths, .NET never overlapping the
+#              browser suite. NOT read off a ledger, NOT summed from per-task deltas, NOT taken from
+#              the whole-branch review's table — every line below is a `Passed:` from a run made for
+#              this purpose. (The review's own table is where `web e2e 288` came from; it is 290 on
+#              this commit, because the two commits AFTER that review added two tests. Copying its
+#              number instead of running the suite would have re-introduced the exact defect this
+#              block exists to close, one workstream later, which is how it happened the last time.)
+#
+#     dotnet test .../tests/St4i.Hmi.Contracts.Tests/St4i.Hmi.Contracts.Tests.csproj
+#         -> Failed: 0, Passed:  170     (EXPECT_HMI_CONTRACTS)
+#     dotnet test .../tests/St4i.Connector.Abstractions.Tests/...csproj
+#         -> Failed: 0, Passed:  161     (EXPECT_ABSTRACTIONS — B-1 is FIXED on this commit)
+#     dotnet test .../tests/St4i.Connector.Conformance.Tests/...csproj
+#         -> Failed: 0, Passed:   24     (EXPECT_CONFORMANCE)
+#     dotnet test .../tests/St4i.EdgeService.Tests/...csproj
+#         -> Failed: 0, Passed:   52     (EXPECT_EDGESERVICE)
+#     dotnet test .../tests/St4i.EdgeCore.Tests/...csproj
+#         -> Failed: 0, Passed: 1310     (EXPECT_EDGECORE, 3 m 58 s)
+#     dotnet test .../tests/St4i.EngineApi.Tests/...csproj
+#         -> Failed: 0, Passed: 1844     (EXPECT_ENGINEAPI, 11 m 21 s)
+#     cd web && npm run test:contracts   -> pass 52   (EXPECT_WEB_CONTRACT_TESTS)
+#     cd web && npx playwright test      -> see EXPECT_WEB_E2E_TESTS's own block for the count and
+#                                           why it is measured by RUNNING and never by --list
+#
+#   .NET GRAND TOTAL ON THIS COMMIT: 170 + 161 + 24 + 52 + 1310 + 1844 = 3561. It is asserted
+#   separately below and is NEVER added to the browser suite's count — two runners with two
+#   definitions of "a test" summed into one scalar is a scalar over a union.
+#
+# 🔴 AND THE FALSIFICATION, BECAUSE A GATE NOBODY HAS SEEN FAIL IS A CLAIM AND NOT AN INSTRUMENT.
+# ______________________________________________________________________________________________
+# PLACEHOLDER — NOT YET RUN. This paragraph is deliberately empty of a result. It will record the
+# gate being told the smallest lie it can be told (one suite's expectation moved by ONE) and the
+# exact line it printed in reply, TRANSCRIBED FROM THE RUN. Writing the expected sentence here
+# before the run and then "confirming" it is the one thing this whole file exists to make
+# impossible, so it is not written until it has been read.
+# ______________________________________________________________________________________________
 # ══════════════════════════════════════════════════════════════════════════════════════════
 #
 # WHY THIS EXISTS
@@ -428,7 +508,14 @@ export MSBUILDDISABLENODEREUSE=1
 # new `///` blocks are not compiled either way — tag balance on every block was checked directly rather
 # than inferred from that, because an unbalanced block HIDES the diagnostics inside it.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 WS-HMI-2 PERIMETER PASS, 2026-09-05, commit 3387d52f — RE-MEASURED AND UNCHANGED at 161, and
+# that is the point rather than a formality: this is the suite whole-branch-review B-1 left red for five
+# days (157 passed / 4 FAILED = 161 discovered). The TOTAL never moved — only the pass/fail split did —
+# so a gate asserting only the total would have been green through the whole incident. It is the
+# separate `${failed} failed` arm at the bottom of this file, not this constant, that catches B-1.
+#     dotnet test .../tests/St4i.Connector.Abstractions.Tests/... -> Failed: 0, Passed: 161
 EXPECT_ABSTRACTIONS=161
+# 🔴 2026-09-05, commit 3387d52f — RE-MEASURED AND UNCHANGED at 24. Failed: 0, Passed: 24.
 EXPECT_CONFORMANCE=24
 # chore/test-hygiene raised this 735 -> 741 (+6): guards proving the test-isolation seam added to
 # CredentialStore, which was the only one of THIRTEEN stores without one — which is exactly why
@@ -2810,6 +2897,7 @@ EXPECT_CONFORMANCE=24
 #                       mean "the seam works" instead of "something changed": a seam that reads the
 #                       variable while quietly relocating live OEE data would pass C and fail D.
 #   Scope of all four: class-filtered, NOT the full suite. Stated rather than implied. BASE -> 0 red.
+# 🔴 2026-09-05, commit 3387d52f — RE-MEASURED AND UNCHANGED at 1310. Failed: 0, Passed: 1310, 3 m 58 s.
 EXPECT_EDGECORE=1310
 # 🔴 Task E-4 (docs/plans/2026-08-04-dotE-fleet-core-extraction-blueprint.md §12) raises EXPECT_EDGESERVICE
 # 45 -> 46 (+1) and EXPECT_ENGINEAPI 1283 -> 1289 (+6). Grand total 2581 -> 2588. Per file, and nothing is
@@ -2876,6 +2964,7 @@ EXPECT_EDGECORE=1310
 # Full justification beside EXPECT_ABSTRACTIONS at the top of this file. This suite writes nothing beside
 # its binary today, and the guard is here anyway for the reason K-1's is — a guard installed only where a
 # leak has already been paid for is a guard that arrives one incident late.
+# 🔴 2026-09-05, commit 3387d52f — RE-MEASURED AND UNCHANGED at 52. Failed: 0, Passed: 52.
 EXPECT_EDGESERVICE=52
 # Task C-7 raised this from 1087 to 1122 across two rounds.
 #   +29 in the implementation round:
@@ -4541,7 +4630,19 @@ EXPECT_EDGESERVICE=52
 # a method RENAME (review Minor 2 -- the count came out of the name) and an attribute written in its short
 # form (Minor 9). A rename moves no number, and that is why +4 is the whole delta rather than +4 plus a
 # remainder nobody could account for.
-EXPECT_ENGINEAPI=1479
+# 🔴 WS-HMI-2 PERIMETER PASS, 2026-09-05, commit 3387d52f — 1479 -> 1844 (+365). NOT a delta anyone
+# reconstructed: the +365 spans every WS-HMI-0b, 0c, 1 and 2 task that added a [Fact] to this suite
+# since the constant was last touched, and no attempt is made here to itemise them, because an
+# itemisation nobody can check is worth less than the one thing that IS checkable — the number was
+# MEASURED, on this commit, by the person changing this line:
+#     dotnet test /d/SOURCES/avi-aoi-sim/tools/machine-simulator/tests/St4i.EngineApi.Tests/St4i.EngineApi.Tests.csproj
+#     -> Failed: 0, Passed: 1844, Skipped: 0, Total: 1844, Duration: 11 m 21 s
+# 🔴 THE HONEST CEILING ON THAT: a refreshed constant re-baselines whatever the tree contains today,
+# including a test that should not exist. This line now says "1844 is what this suite ran on 3387d52f",
+# NOT "1844 is the right number of tests". The per-task justifications above are what carried the
+# second claim, and this refresh does not renew them; the next person adding a test here should write
+# the +N justification, not extend this paragraph.
+EXPECT_ENGINEAPI=1844
 
 # 🔴 WS-HMI-0a Task 5 FIX ROUND 1 (2026-08-30) — St4i.Hmi.Contracts.Tests gets its FIRST pin here. It has
 # existed since WS-HMI Mốc 0 (Task 1, 2026-08-29) with zero mechanical coverage in this file: no EXPECT_*
@@ -4581,7 +4682,14 @@ EXPECT_ENGINEAPI=1479
 # MEASURED this wave:
 #   dotnet test /d/SOURCES/avi-aoi-sim/tools/machine-simulator/tests/St4i.Hmi.Contracts.Tests
 #   -> Passed: 46, Failed: 0, Total: 46
-EXPECT_HMI_CONTRACTS=46
+# 🔴 WS-HMI-2 PERIMETER PASS, 2026-09-05, commit 3387d52f — 46 -> 170 (+124). The whole of WS-HMI-2's
+# contract work lands in this suite: Task 1/2's screen store and identity pins, Task 12's five LOW-1
+# schema constraints, the widget cap's derived ceiling, the duplicate-id rule, and the schema-enum
+# guards. MEASURED, not summed:
+#     dotnet test /d/SOURCES/avi-aoi-sim/tools/machine-simulator/tests/St4i.Hmi.Contracts.Tests/St4i.Hmi.Contracts.Tests.csproj
+#     -> Failed: 0, Passed: 170, Skipped: 0, Total: 170, Duration: 59 ms
+# Same ceiling as EXPECT_ENGINEAPI's: this re-baselines, it does not re-justify.
+EXPECT_HMI_CONTRACTS=170
 
 SUITES=(
   # St4i.Hmi.Contracts first — zero-dependency contract assembly, same population as Abstractions/
@@ -4616,7 +4724,19 @@ SUITES=(
 # suites (161/24/1289/52/1451), it is summed and asserted separately below, and the two are NEVER
 # added together. A single number over two runners with two definitions of "a test" would be a
 # scalar over a union, which is the exact defect EXPECT_WARNING_LEDGER exists downstream to catch.
-EXPECT_WEB_E2E_TESTS=220
+# 🔴 WS-HMI-2 PERIMETER PASS, 2026-09-05, commit 3387d52f — 220 -> 290 (+70). MEASURED BY RUNNING, which
+# is this constant's own standing rule and not a formality here: the whole-branch review of 2026-09-05
+# reported 288 on `28e1bce0`, and TWO COMMITS LATER it is 290. Copying 288 out of that review — a
+# document three days old written by someone careful, on this same branch — would have pinned a number
+# that was already wrong, and the gate would have gone red on its next run for a reason having nothing
+# to do with the code. That is the entire argument for measuring rather than citing, demonstrated on the
+# smallest possible drift.
+#     cd web && npx playwright test
+#     -> "Running 290 tests using 1 worker" ... "290 passed (10.2m)"
+#        0 failed, 0 flaky. `11-hmi.spec.ts:106`'s known-flaky living twin did NOT fire on this run.
+# EXPECT_WEB_E2E_PINNED_FAILURES stays EMPTY, and with an empty pin a non-zero runner exit is RED — see
+# its own block below. A green 290/290 is what makes that pin's emptiness true rather than merely stated.
+EXPECT_WEB_E2E_TESTS=290
 WEB_SUITES=(
   "web:$EXPECT_WEB_E2E_TESTS"
 )
@@ -6360,6 +6480,14 @@ DOC_ABSOLUTES_BASELINE="cfcfae42"
 # repaired.
 # The baseline cfcfae42 is STILL not moved. The corpus grew by ONE file — HistorianRootSeamTests.cs, the only
 # *.cs this task added: 563 -> 564.
+# 🔴 WS-HMI-2 PERIMETER PASS, 2026-09-05, commit 3387d52f — MEASURED 1200 AGAINST THIS PIN'S 703, AND
+# LEFT UNMOVED. `bash scripts/scan-doc-negations.sh --since cfcfae42 --expect 703` reports
+# "FAIL: expected exactly 703 new absolute doc claim(s) since cfcfae42, measured 1200." Unlike the two
+# warning pins, this one is folded into FAILURES rather than exiting, so it does NOT stop the suites —
+# it just guarantees a FAIL verdict on every run until it is cleared.
+# Clearing it means READING 497 new absolute doc claims and showing each true. The tool says so itself:
+# "Do not raise the number to make this green." It is recorded here as outstanding work with a measured
+# size, which is the most this pass can honestly do for it.
 EXPECT_NEW_DOC_ABSOLUTES=703
 
 # `$0`'s directory is passed to bash as an argument rather than spliced into a delimited string: on
@@ -8589,6 +8717,23 @@ note "build: 0 errors, ${WARNINGS} warnings (only comparable from -t:Rebuild on 
 # comparison against the base shows exactly FOUR non-blank base lines absent from the new file -- the two
 # verdict-table rows, the Part I enumeration sentence, and the `gate:phần-i` machine field.
 #
+# 🔴 WS-HMI-2 PERIMETER PASS, 2026-09-05, commit 3387d52f — MEASURED 227, AND DELIBERATELY LEFT AT 219.
+# This is NOT an oversight and it is not laziness; it is this pin's own rule being obeyed. A full
+# `-t:Rebuild` on this commit reports `0 errors, 227 warnings`, so this gate DIES HERE, in [1/3], before
+# a single suite runs — which means refreshing the six suite totals above was necessary and NOT
+# sufficient to make this file runnable on this branch.
+#
+# It was not moved because moving it is an act of accounting, not an edit: +8 has to be attributed
+# before it is recorded, and the ledger below shows the attribution is not a single population —
+# `OURS CS8604` moved 14 -> 16 and TWO NEW xUnit analyser rows appeared (`xUnit1030` 5, `xUnit2000` 1),
+# which is plausibly real test-hygiene debt this branch introduced rather than noise. Raising this
+# number without naming those is exactly how a debt stops being named.
+#
+# 🔴 IT WAS SET TO 227 TEMPORARILY, ONCE, AND PUT BACK. The perimeter pass had to reach [2/3] to falsify
+# the suite check (see the falsification block beside EXPECT_ABSTRACTIONS at the top of this file); it
+# set this to the measured 227 and the ledger to its measured rows FOR THAT RUN ONLY, and reverted both.
+# The value below is the original. Recorded so that "it was briefly 227" is a fact in this file rather
+# than something a reader has to reconstruct from a report.
 EXPECT_WARNINGS=219
 if [[ "${WARNINGS:-}" != "$EXPECT_WARNINGS" ]]; then
   echo "FAIL: build warnings are ${WARNINGS:-unknown}, expected ${EXPECT_WARNINGS}."
@@ -9214,6 +9359,15 @@ warning_ledger() {
 # it actually counted, so a documentation warning reappearing anywhere in our source adds a row this
 # comparison does not expect and the gate goes red on it -- the absence below is a stronger assertion than
 # the `0` a literal row would have been. Fourteen rows, 185 vendored + 34 ours = 219.
+# 🔴 WS-HMI-2 PERIMETER PASS, 2026-09-05, commit 3387d52f — MEASURED AND LEFT UNMOVED, same reasoning as
+# EXPECT_WARNINGS above. On this commit the observed ledger differs from the rows below in three places:
+#     OURS CS8604   14 -> 16
+#     OURS xUnit1030      5   (NEW ROW)
+#     OURS xUnit2000      1   (NEW ROW)
+# The two new rows are why this assertion exists at all — its own message says it best: "227 is a scalar
+# over a union and a scalar over a union cannot see one population fall while another rises." A total-only
+# pin would have blurred two new xUnit analyser populations into an unremarkable +8. They are named here,
+# not absorbed. Set to the measured rows for ONE falsification run and reverted; see EXPECT_WARNINGS.
 EXPECT_WARNING_LEDGER="OURS CS8601 7
 OURS CS8604 14
 OURS CS8767 2
@@ -9499,7 +9653,13 @@ fi
 # +1 for the `access` writable-set pin, the web mirror of the C# one (Critical 2); +1 for the
 # assertion that every `invalid/` fixture declares which rule must have blocked it (Important 4).
 # 29 + 5 + 12 + 1 + 1 = 48 is arithmetic that AGREES with the measured `ℹ tests 48`.
-EXPECT_WEB_CONTRACT_TESTS=48
+# 🔴 WS-HMI-2 PERIMETER PASS, 2026-09-05, commit 3387d52f — 48 -> 52 (+4). MEASURED:
+#     cd web && npm run test:contracts   -> tests 52, pass 52, fail 0
+# This is the FOURTH of the four numbers that had drifted, and it is the one the whole-branch review's
+# I-1 did not name — it listed EngineApi, Hmi.Contracts and web e2e. Found by re-measuring every
+# constant rather than by re-reading the review's list, which is the only way a list's omissions are
+# ever found.
+EXPECT_WEB_CONTRACT_TESTS=52
 WEB_CONTRACT_TESTS=$(grep -oE 'ℹ tests [0-9]+' "$_web_contract_log" 2>/dev/null | grep -oE '[0-9]+' || true)
 WEB_CONTRACT_PASS=$(grep -oE 'ℹ pass [0-9]+' "$_web_contract_log" 2>/dev/null | grep -oE '[0-9]+' || true)
 WEB_CONTRACT_FAIL=$(grep -oE 'ℹ fail [0-9]+' "$_web_contract_log" 2>/dev/null | grep -oE '[0-9]+' || true)
