@@ -30,12 +30,38 @@ namespace St4i.EngineApi.Endpoints;
 /// <see cref="PolicyResults.DenyAsync"/>.</b> That helper writes an audit row and, for a
 /// <see cref="PolicyReasonCode.SafetyBlocked"/> denial, raises a Critical <see cref="AlarmSource.Policy"/>
 /// alarm — both correct for an ATTEMPTED WRITE, both catastrophic here. This route is a read that any
-/// authenticated session may call on every screen render; routing it through <c>DenyAsync</c> would let a
-/// page refresh flood the alarm store, and (via <see cref="MachineWriteGate.AnyCriticalAlarmActiveAsync"/>'s
-/// deliberate <see cref="AlarmSource.Policy"/> exclusion NOT applying to
-/// <see cref="Policy.Rules.CriticalAlarmGuardRule"/>) could self-latch machine writes for the whole site.
+/// authenticated session may call on every screen render, so routing it through <c>DenyAsync</c> would let
+/// a page refresh flood the alarm store with a Critical alarm per denied render.
 /// The raw <see cref="PolicyEngine.Evaluate"/> verdict is returned instead. No audit row, no alarm, no
 /// device I/O, no store write of any kind.</para>
+///
+/// <para><b>🔴 WHICH surface that alarm flood would latch — corrected in fix round 1 after the security
+/// review measured this sentence FALSE in the permissive direction.</b> It previously claimed the
+/// <see cref="AlarmSource.Policy"/> exclusion does NOT apply to
+/// <see cref="Policy.Rules.CriticalAlarmGuardRule"/> and that the flood would self-latch MACHINE WRITES.
+/// Both halves are wrong, and re-measured here rather than restated:
+/// <list type="bullet">
+/// <item><description><b>Machine writes are protected.</b>
+/// <see cref="MachineWriteGate.AnyCriticalAlarmActiveAsync"/> filters
+/// <c>a.Source != AlarmSource.Policy</c>, and it is the resolution EVERY caller that evaluates a machine
+/// action uses — <see cref="MachineWriteEndpoints"/>' two write handlers (through the forwarder at that
+/// class's own <c>AnyCriticalAlarmActiveAsync</c>) and this endpoint. <c>CriticalAlarmGuardRule</c> reads
+/// only the already-resolved <see cref="PolicyRequest.CriticalAlarmActive"/> boolean, so the exclusion
+/// applies to it IN FULL. The self-latch that sentence described is the PRE-FIX state: it was real, it
+/// was B-6 review finding I1, and the exclusion is the fix for it. Describing a fixed defect as current
+/// is how a false premise gets propagated by the next reader.</description></item>
+/// <item><description><b>The line commands are NOT protected, and that is the real consequence.</b>
+/// <c>LineEndpoints.AnyCriticalAlarmActiveAsync</c> keeps its own copy of this helper with NO source
+/// filter — <c>active.Any(a =&gt; a.Priority == AlarmPriority.Critical)</c> — deliberately, because
+/// <c>line.start</c> is not the request path that wrote those alarms (B-6 recorded the difference
+/// explicitly, and <see cref="MachineWriteGate"/>'s own class comment names it as what must NOT be folded
+/// together). So a Critical Policy alarm DOES latch <c>line.start</c>/<c>line.unhold</c> until somebody
+/// acknowledges it, surviving a HALT reset. A page refresh flooding Policy alarms would therefore
+/// self-latch the production LINE.</description></item>
+/// </list>
+/// That is a different surface from the one first written down, and it is still a sufficient argument for
+/// the hard constraint above — which is why the constraint is unchanged and only its justification moved.
+/// The claim is deliberately not widened beyond the two helpers actually read.</para>
 ///
 /// <para><b>🔴 ADVISORY ONLY — this is not an authorisation.</b> The real enforcement stays exactly where
 /// it was, at <see cref="MachineWriteEndpoints"/>' own <c>RequireAuthorization</c> plus its own

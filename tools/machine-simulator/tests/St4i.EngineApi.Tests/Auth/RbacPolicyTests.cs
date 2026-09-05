@@ -881,21 +881,40 @@ public sealed class RbacPolicyTests
     /// <para><c>PolicyResults.DenyAsync</c> — the helper every WRITE path correctly uses on a denial —
     /// writes an audit row and raises a Critical <see cref="AlarmSource.Policy"/> alarm. This route is a
     /// read that any authenticated session calls on every screen render, so routing it through that helper
-    /// would let a page refresh flood the alarm store, and a Critical Policy alarm feeds
-    /// <c>CriticalAlarmGuardRule</c> — which would then block every machine write site-wide until an
-    /// operator hunted the alarm down and acknowledged it. That is the B-6 review's I1 self-latch,
-    /// re-entered through a READ.</para>
+    /// would let a page refresh flood the alarm store with a Critical alarm per denied render. (Which
+    /// SURFACE that flood would then latch is stated, corrected and measured at
+    /// <c>MachineWritePermissionEndpoints</c>' own doc comment: machine writes are protected by
+    /// <c>MachineWriteGate.AnyCriticalAlarmActiveAsync</c>'s Policy exclusion, and it is
+    /// <c>line.start</c>/<c>line.unhold</c> that would latch, through <c>LineEndpoints</c>' deliberately
+    /// unfiltered copy. This test does not re-assert that; it asserts only that nothing is raised at all.)</para>
     ///
     /// <para><b>Why ten and not one:</b> a single call could leave the store unchanged by accident (dedup
     /// on <c>AlarmRaise.Key</c> collapses same-key re-raises into a count bump rather than a new row). Ten
     /// denials with a before/after comparison is what distinguishes "raises nothing" from "raises one thing
     /// repeatedly".</para>
     ///
-    /// <para><b>The NEGATIVE CONTROL is inline and explicit:</b> after the ten reads, a real DENIED WRITE
-    /// through <c>POST /v1/machines/{code}/command</c> is performed by the same Operator, and the alarm
-    /// store is asserted to have CHANGED. Without it, this test would pass on a build where alarm-raising
-    /// were broken everywhere, or where the store were unwritable — neither of which is the property being
-    /// claimed. The claim is that THIS endpoint is silent while the WRITE door is not.</para>
+    /// <para>🔴 <b>Fix round 1 — THE NEGATIVE CONTROL IS NOW ACTUALLY IN THE BODY, and its construction had
+    /// to change to one that works.</b> The docstring previously described a control this method did not
+    /// contain: "a real DENIED WRITE by the same Operator, and the alarm store asserted to have CHANGED".
+    /// The security review found the paragraph describing absent code AND, worse, describing code that
+    /// could not have passed — an <b>Operator</b> hitting <c>POST /v1/machines/{code}/command</c> is
+    /// refused by ASP.NET's <c>RequireAuthorization(Policies.Admin)</c> <b>before the handler runs</b>, so
+    /// <c>PolicyResults.DenyAsync</c> is never reached and NOTHING is raised. Re-measured here: that
+    /// sequence really does leave the alarm store at zero.</para>
+    ///
+    /// <para>The control that DOES work, and is what runs below: an <b>Admin</b> writing while the
+    /// <b>HALT latch is engaged</b>. That request passes the ASP.NET tier (the caller genuinely is an
+    /// Admin), reaches <see cref="St4i.EngineApi.Policy.PolicyEngine"/>, is refused by
+    /// <c>EstopGuardRule</c> with <c>SAFETY_BLOCKED</c>, and <c>DenyAsync</c> then raises the Critical
+    /// Policy alarm. So the control exercises the same helper this endpoint is forbidden to call, through
+    /// the door that is supposed to call it. Without it, this test would pass on a build where
+    /// alarm-raising were broken everywhere or the store unwritable — neither being the property claimed.
+    /// The claim is that THIS endpoint is silent while the WRITE door is not.</para>
+    ///
+    /// <para>🔴 <b>L-2, also fix round 1:</b> the AUDIT dimension is now asserted beside the alarm one.
+    /// <c>DenyAsync</c>'s FIRST act is <c>recorder.RecordAsync</c>, so an alarm-only assertion would miss a
+    /// mutation that wrote an audit row and no alarm. Counted through the store rather than the HTTP audit
+    /// surface, so the assertion does not depend on that endpoint's response shape.</para>
     /// </summary>
     [Fact]
     public async Task WritePermissions_IsMutationFree_AndTheWriteDoorStillRaises()
@@ -914,9 +933,11 @@ public sealed class RbacPolicyTests
         await CreateUserAsync(factory, "s1mf-operator", "OperatorPass123!", Roles.Operator);
 
         var alarms = factory.Services.GetRequiredService<IAlarmStore>();
+        var audit = factory.Services.GetRequiredService<IAuditStore>();
         var code = RegisterTestMachine(factory);
 
         var alarmsBefore = (await alarms.ListActiveAsync(CancellationToken.None)).Count;
+        var auditBefore = await CountAuditRowsAsync(audit);
 
         // Ten DENIED reads — the case that would mutate, repeated enough that a per-call raise cannot hide.
         using (var operatorClient = await LoginAsAsync(factory, "s1mf-operator", "OperatorPass123!"))
@@ -930,6 +951,54 @@ public sealed class RbacPolicyTests
 
         var alarmsAfterReads = (await alarms.ListActiveAsync(CancellationToken.None)).Count;
         Assert.Equal(alarmsBefore, alarmsAfterReads);
+
+        // 🔴 L-2 — the AUDIT dimension, beside the alarm one. DenyAsync's FIRST act is recorder.RecordAsync,
+        // so an alarm-only assertion would miss a mutation that wrote a row and raised nothing. The ten
+        // reads ran inside one login, so exactly one auth.login_success row is expected and nothing else.
+        var auditAfterReads = await CountAuditRowsAsync(audit);
+        Assert.Equal(auditBefore + AuditRowsPerLogin, auditAfterReads);
+
+        // ── 🔴 THE NEGATIVE CONTROL: the WRITE door, through the one construction that actually raises.
+        //
+        // An Admin, with HALT engaged. This passes ASP.NET's RequireAuthorization(Policies.Admin) — the
+        // caller really is an Admin — reaches PolicyEngine, is refused by EstopGuardRule with
+        // SAFETY_BLOCKED, and DenyAsync then raises the Critical Policy alarm. An OPERATOR write would
+        // NOT work here and that is the measured reason this control has the shape it does: ASP.NET
+        // refuses it before the handler runs, so DenyAsync is never reached and nothing is raised.
+        using (var adminClient = await LoginAsAsync(factory, "s1mf-admin", "AdminPass123!"))
+        {
+            using (var estop = await adminClient.PostAsync("/v1/fleet/estop", null))
+            {
+                Assert.Equal(HttpStatusCode.OK, estop.StatusCode);
+            }
+
+            using var deniedWrite = await adminClient.PostAsJsonAsync(
+                $"/v1/machines/{code}/command", new { command = "start" }, JsonOptions);
+
+            // Refused by the POLICY layer (409), not by the auth tier (403) — if this ever becomes a 403
+            // the control has stopped exercising DenyAsync and the assertion below would be meaningless.
+            Assert.Equal(HttpStatusCode.Conflict, deniedWrite.StatusCode);
+        }
+
+        var alarmsAfterDeniedWrite = (await alarms.ListActiveAsync(CancellationToken.None)).Count;
+        Assert.True(
+            alarmsAfterDeniedWrite > alarmsAfterReads,
+            $"the WRITE door raised no alarm ({alarmsAfterReads} -> {alarmsAfterDeniedWrite}) — the control " +
+            "measures nothing, so 'this endpoint is silent' is not evidence about THIS endpoint");
+    }
+
+    /// <summary>One login writes exactly one <c>auth.login_success</c> row; named so the assertion above
+    /// reads as the claim it makes rather than as an unexplained arithmetic offset.</summary>
+    private const int AuditRowsPerLogin = 1;
+
+    /// <summary>Counts audit rows through the STORE rather than <c>GET /v1/audit</c>, so the assertion does
+    /// not depend on that endpoint's response shape or on the caller holding the Admin tier it needs.</summary>
+    private static async Task<int> CountAuditRowsAsync(IAuditStore audit)
+    {
+        // Total, not Items.Count — the unpaged row count, so a store that grew past the page size cannot
+        // silently make this assertion stop moving.
+        var page = await audit.QueryAsync(null, null, null, null, null, 1, 0, CancellationToken.None);
+        return page.Total;
     }
 
     /// <summary>
