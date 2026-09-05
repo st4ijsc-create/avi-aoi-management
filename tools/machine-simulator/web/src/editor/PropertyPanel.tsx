@@ -237,6 +237,33 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
   const [pendingKind, setPendingKind] = useState<WidgetKind | undefined>(undefined)
   const [pickerFor, setPickerFor] = useState<string | undefined>(undefined)
   const [newBindingName, setNewBindingName] = useState("")
+  /**
+   * 🔴 WHOLE-BRANCH REVIEW H-1 — THE PROP CREATE CONTROL, AND WHY IT IS THE SAME SHAPE AS THE
+   * BINDING ONE. `props` is where EVERY visible attribute of every widget lives: `label`, `labelEn`,
+   * `unit`, `min`, `max`, `thresholds`, `text`, `title`, `rows`, `faceplate`. Three tasks met here
+   * and each was right on its own — Task 7 built `set-prop` able to CREATE a path that does not
+   * exist and pinned it; Task 10 wired the panel only to `Object.entries(props)`, i.e. one control
+   * per prop that already exists, and gave `bindings` a create control in the same fix round; Task
+   * 11 made `add` emit `{id, kind, rect}` and nothing else. Jointly: a widget built in this editor
+   * could never be given a single display property, so every editor-built widget rendered under its
+   * own generated id (`readout.tsx`, `gauge.tsx`, `kpi-tile.tsx`, `label.tsx` all fall back to
+   * `widget.id`), and the acceptance journey published an operator panel captioned "w-1" and "w-2".
+   * Widget ids are `^[a-z0-9-]+$`, so renaming cannot supply a caption either — a Vietnamese one is
+   * impossible by construction.
+   */
+  const [newPropName, setNewPropName] = useState("")
+  /**
+   * Whether the created prop starts as a string or a number, and it is NOT decoration.
+   * `commitProp` keeps a prop's type: a field created as `""` edits as a string forever, and every
+   * numeric prop in this runtime is read with `typeof p.max === "number"` — so a `max` created as a
+   * string is a prop the widget silently ignores. One `<select>` with two options is the whole cost
+   * of not shipping that trap. It is a native select over a two-member vocabulary for the same
+   * reason the policy-action control is: the property being claimed is what the control CANNOT do.
+   */
+  const [newPropType, setNewPropType] = useState<"text" | "number">("text")
+  /** The name "Add property" was pressed with that already exists — same rule the binding one uses:
+   * a button labelled ADD must not overwrite. */
+  const [duplicateProp, setDuplicateProp] = useState<string | undefined>(undefined)
   /** The name "Add binding" was pressed with that already exists — see the F3 note at the button. */
   const [duplicateName, setDuplicateName] = useState<string | undefined>(undefined)
   // NOT reset with the selection: an engineer laying out a screen is working against one machine, and
@@ -257,6 +284,9 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
     setPickerFor(undefined)
     setNewBindingName("")
     setDuplicateName(undefined)
+    setNewPropName("")
+    setNewPropType("text")
+    setDuplicateProp(undefined)
   }
 
   if (!widget) {
@@ -714,6 +744,71 @@ export function PropertyPanel({ widget, onEdit, refusal }: PropertyPanelProps) {
             </label>
           )
         })}
+
+        {/*
+          🔴 WHOLE-BRANCH REVIEW H-1 — ADD A PROPERTY. Deliberately the same three controls the
+          binding row above uses (a name box, a chooser, an Add button), because it is the same job
+          and a second idiom for it would be a second set of rules to learn.
+
+          The NAME is passed to `applyEdit` exactly as typed. `set-prop` already owns every rule
+          about what a legal path is — blank is `bad-path`, a first segment naming a widget field is
+          `out-of-scope-path`, a dotted path that would have to descend through a non-object is
+          `path-blocked` — and each refusal lands in the panel's own `data-panel-refusal` line
+          naming the code. Re-checking any of that here would be a second copy of a rule this file
+          spent three fix rounds removing copies of.
+        */}
+        <div className="flex items-center gap-1">
+          <input
+            data-panel-prop-new-name
+            aria-label={t("editor.panel.propNewNameLabel")}
+            className="h-7 w-full min-w-0 border border-border-strong bg-surface-muted px-1.5 text-sm"
+            value={newPropName}
+            onChange={(event) => setNewPropName(event.target.value)}
+          />
+          <select
+            data-panel-prop-new-type
+            aria-label={t("editor.panel.propNewTypeLabel")}
+            className="h-7 shrink-0 border border-border-strong bg-surface-muted px-1 text-sm"
+            value={newPropType}
+            onChange={(event) => setNewPropType(event.target.value === "number" ? "number" : "text")}
+          >
+            <option value="text">{t("editor.panel.propTypeText")}</option>
+            <option value="number">{t("editor.panel.propTypeNumber")}</option>
+          </select>
+          <button
+            type="button"
+            data-panel-prop-add
+            className="shrink-0 border border-border-strong px-1.5 py-0.5 text-xs"
+            onClick={() => {
+              const name = newPropName
+              // `trim()`, matching `set-prop`'s own `bad-path` rule — a button that can only ever
+              // build a refused edit is a control that can only ever fail.
+              if (name.trim().length === 0) return
+              // A BUTTON LABELLED "ADD" MUST NOT OVERWRITE — task-10-review.md F3, applied here
+              // rather than re-learned. Pressing Add on a name that already exists opens nothing and
+              // destroys nothing; it says which of the two things happened and leaves the authored
+              // value exactly as it was.
+              if (Object.hasOwn(props, name)) {
+                setDuplicateProp(name)
+                setNewPropName("")
+                return
+              }
+              setDuplicateProp(undefined)
+              setNewPropName("")
+              // Created with a real value of the chosen TYPE, not with `undefined`: `set-prop`
+              // refuses a value that would not survive `JSON.stringify` (`non-json-value`), and a
+              // prop whose type is decided later is a prop the widget reads with the wrong `typeof`.
+              onEdit({ kind: "set-prop", widgetId: widget.id, path: name, value: newPropType === "number" ? 0 : "" })
+            }}
+          >
+            {t("editor.panel.propAdd")}
+          </button>
+        </div>
+        {duplicateProp === undefined ? null : (
+          <p data-panel-prop-duplicate role="status" className="text-xs text-text-body">
+            {t("editor.panel.propDuplicate", { name: duplicateProp })}
+          </p>
+        )}
         <span className="hmi-micro normal-case text-text-muted">{t("editor.panel.propReadOnly")}</span>
       </Section>
     </aside>

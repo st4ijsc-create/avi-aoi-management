@@ -128,6 +128,27 @@ const BASELINE_MACHINES = [
  * would pass every assertion about the warning appearing. */
 const NOT_A_PANEL_ID = "not-a-machine-panel"
 
+/** A screen id the FROZEN CONTRACT refuses — uppercase and an underscore, both outside
+ * `^[a-z0-9-]+$`. `GET /v1/screens/{id}` does not validate an id (it looks one up and answers 404),
+ * so this reaches the editor's §5-bis not-found state exactly like a legal-but-undeclared id does. */
+const ILLEGAL_SCREEN_ID = "Bad_Id"
+
+/** The caption an engineer gives a widget through the editor, and it is chosen to be IMPOSSIBLE as a
+ * widget id: a space and capital letters, neither legal under `^[a-z0-9-]+$`. So a test that finds it
+ * on the kiosk has found a PROP that reached the operator, and not a renamed widget — which matters,
+ * because renaming was the only thing an engineer could do before this round and it cannot produce a
+ * caption at all. */
+const W1_CAPTION = "Nhiet do buong A"
+const W2_CAPTION = "Do am buong B"
+
+/** How long to let a screen that must NOT change fail to change. There is no positive signal for
+ * "nothing happened", so this is a real sleep — the same idiom and the same reasoning as
+ * `deadlines.ts`'s `TONE_SETTLE_MS`. Sized far above a local refetch (single-digit milliseconds
+ * against the in-process engine, measured throughout this suite) so that a build which DID swap on
+ * the event has finished swapping before the assertion runs — otherwise the assertion would pass by
+ * racing rather than by the screen holding still. */
+const SCREEN_HOLD_MS = 1000
+
 /** The one widget `web/screens/iot-overview.json` declares, and the accessible name its schematic
  * renders under. Read as CONTENT rather than by `screenId`, because the restored document carries
  * the PANEL's id (the write door refuses a body naming a different identity from the route) — so
@@ -274,6 +295,34 @@ async function bindThroughPicker(page: Page, widgetId: string, componentId: stri
   ).toBe(componentId)
 }
 
+/**
+ * 🔴 WHOLE-BRANCH REVIEW H-1 — GIVES A WIDGET A CAPTION, through the property panel, with a mouse.
+ *
+ * Every visible attribute of every widget in this runtime lives in `props`, and until this round the
+ * panel had a control per prop that ALREADY EXISTED and no way to create one — while `add` emitted
+ * `{id, kind, rect}` and nothing else. So every editor-built widget rendered under its own generated
+ * id, and this suite's own acceptance journey published an operator panel captioned "w-1" and "w-2"
+ * while asserting nothing about what either said. Renaming cannot fix it: widget ids are
+ * `^[a-z0-9-]+$`, so a caption with a space or a capital is impossible by construction — which is why
+ * the captions here have both.
+ */
+async function nameWidget(page: Page, widgetId: string, caption: string): Promise<void> {
+  // The props section starts EMPTY for a widget the editor just created — that is the state the
+  // review measured, asserted here so this helper cannot silently start editing a prop that was
+  // already there and prove nothing.
+  await expect(page.locator("[data-panel-props-empty]")).toBeVisible()
+  await page.locator("[data-panel-prop-new-name]").fill("label")
+  await page.locator("[data-panel-prop-new-type]").selectOption("text")
+  await page.locator("[data-panel-prop-add]").click()
+  // Created, and created EMPTY — the row exists and holds nothing until the engineer types.
+  await expect(page.locator('[data-panel-prop="label"]')).toHaveValue("")
+  await page.locator('[data-panel-prop="label"]').fill(caption)
+  await page.locator('[data-panel-prop="label"]').press("Enter")
+  await expect(page.locator('[data-panel-prop="label"]')).toHaveValue(caption)
+  // …and it is on the CANVAS immediately, because the canvas is the runtime renderer.
+  await expect(page.locator(`[data-hmi-widget="${widgetId}"]`)).toContainText(caption)
+}
+
 test.describe("WS-HMI-2 acceptance — an engineer builds a machine's screen, and the machine shows it", () => {
   test("§5-bis: a machine with no PUBLISHED screen renders exactly its shipped document — and the kiosk really did ask the store", async ({
     page,
@@ -413,9 +462,11 @@ test.describe("WS-HMI-2 acceptance — an engineer builds a machine's screen, an
     // ── 2. Add a widget from the registry menu, bind it with the tag picker ──────────────────────
     await addWidget(page, "readout", "w-1")
     await bindThroughPicker(page, "w-1", INSTANCES[0].id)
+    await nameWidget(page, "w-1", W1_CAPTION)
 
     await addWidget(page, "readout", "w-2")
     await bindThroughPicker(page, "w-2", INSTANCES[1].id)
+    await nameWidget(page, "w-2", W2_CAPTION)
 
     // ── 3. Place them ───────────────────────────────────────────────────────────────────────────
     // Both widgets were born at the same cell (the layer tree's `freshRect` is deterministic, not
@@ -496,6 +547,16 @@ test.describe("WS-HMI-2 acceptance — an engineer builds a machine's screen, an
     await expect(renderedCell(page, "w-2")).not.toHaveAttribute("title", /.+/)
     expect(await rowOnScreen(page, "w-1")).toBe(1)
     expect(await rowOnScreen(page, "w-2")).toBe(3)
+
+    // 🔴 WHOLE-BRANCH REVIEW H-1 — WHAT THE OPERATOR'S PANEL SAYS. Before this round every widget an
+    // engineer built rendered under its generated id, and this journey published a panel captioned
+    // "w-1" / "w-2" while asserting nothing about it. The captions carry a space and capitals, so
+    // they cannot have come from a widget id under any renaming: they are props, authored with a
+    // mouse, that reached the kiosk.
+    await expect(renderedCell(page, "w-1")).toContainText(W1_CAPTION)
+    await expect(renderedCell(page, "w-2")).toContainText(W2_CAPTION)
+    await expect(renderedCell(page, "w-1")).not.toContainText("w-1")
+    await expect(renderedCell(page, "w-2")).not.toContainText("w-2")
   })
 
   test("🔴 a publish that shadows a machine's shipped panel has a way back, and it appends rather than deletes", async ({
@@ -643,5 +704,92 @@ test.describe("WS-HMI-2 acceptance — an engineer builds a machine's screen, an
     await expect(page.locator('[data-hmi-screen="iot-overview"]')).toBeVisible()
     await expect(page.getByRole("button", { name: viDict.hmi.controls.estop })).toBeVisible()
     await page.unroute(`**/v1/screens/${SCREEN_ID}`)
+  })
+
+  test("🔴 the editor refuses to start a screen at an id the write door will always reject, at the point of entry", async ({
+    page,
+    request,
+  }) => {
+    /**
+     * Whole-branch review M-1. `GET /v1/screens/{id}` does not validate an id — it looks it up and
+     * answers 404 — so an illegal id reached the §5-bis not-found state, which since Task 13 carries a
+     * "start building" button, and the document was born with the URL segment copied in verbatim. The
+     * engineer then built a whole screen and learned at PUBLISH, from a 400, with no rename surface
+     * (the identity comes from the URL by design) and no way to keep the draft (`draftFor !== screenId`
+     * discards it the moment the URL changes).
+     */
+    const probe = await request.get(`${ENGINE_URL}/v1/screens/${ILLEGAL_SCREEN_ID}`)
+    expect(
+      probe.status(),
+      `GET /v1/screens/${ILLEGAL_SCREEN_ID} must be 404 for this test to be about the EDITOR rather than the store`
+    ).toBe(404)
+
+    await page.goto(`/editor/${ILLEGAL_SCREEN_ID}`)
+    // Still the named §5-bis state — this must not become a blank page or an error page.
+    await expect(page.getByRole("heading", { name: viDict.editor.notDeclared.title, level: 2 })).toBeVisible()
+    // …and it names the rule rather than the outcome, quoting the frozen pattern.
+    await expect(page.locator(`[data-editor-illegal-id="${ILLEGAL_SCREEN_ID}"]`)).toBeVisible()
+    await expect(page.locator("[data-editor-illegal-id]")).toContainText("^[a-z0-9-]+$")
+    // The button is GONE, not merely disabled: a session started here can only ever end in a 400.
+    await expect(page.locator("[data-editor-start-new]")).toHaveCount(0)
+
+    // CONTROL — a LEGAL id that is equally undeclared still offers the button and says nothing about
+    // legality. Without this, refusing every id would satisfy the assertions above.
+    await page.goto(`/editor/${NOT_A_PANEL_ID}`)
+    await expect(page.locator("[data-editor-start-new]")).toBeVisible()
+    await expect(page.locator("[data-editor-illegal-id]")).toHaveCount(0)
+  })
+
+  test("🔴 a republish reaches a kiosk that is already open — it is ANNOUNCED, and the screen does not change until it is taken", async ({
+    page,
+    request,
+  }) => {
+    /**
+     * Whole-branch review H-2, both halves, because they fail independently.
+     *
+     * Before this round `useScreen` read the published document once at mount and never again, so an
+     * engineer who corrected a mislabelled control and published changed nothing for anyone on shift
+     * until somebody reloaded. `WS /v1/hmi/changes` and `HmiModelEvents.ScreenChanged` were built for
+     * exactly this in WS-HMI-0b Task 3 and WS-HMI-2 Task 4, and had no consumer anywhere under `web/`.
+     *
+     * The ruling: announce, do not swap. An operator panel that rearranges itself while someone is
+     * working the equipment is the surprise this branch has avoided everywhere else.
+     */
+    const beforeDoc = shadowingDoc(SCREEN_ID)
+    beforeDoc.widgets[0].id = "before-republish"
+    await putScreen(request, beforeDoc)
+
+    await page.goto(`/hmi/${MACHINE}`)
+    await expect(page.getByRole("heading", { name: MACHINE, level: 1 })).toBeVisible()
+    await expect(page.locator('[data-hmi-widget="before-republish"]')).toBeVisible()
+    // Nothing is announced while nothing has been published.
+    await expect(page.locator("[data-kiosk-screen-update]")).toHaveCount(0)
+
+    // Somebody else publishes, from somewhere else — an API write, exactly as another engineer's
+    // editor session would look to this page.
+    const afterDoc = shadowingDoc(SCREEN_ID)
+    afterDoc.widgets[0].id = "after-republish"
+    await putScreen(request, afterDoc)
+    const version = Math.max(...(await versionsOf(request, SCREEN_ID)).map((row) => row.version))
+
+    // HALF ONE — it is ANNOUNCED, on a page nobody reloaded, naming the version the engine produced.
+    await expect(page.locator(`[data-kiosk-screen-update="${version}"]`)).toBeVisible()
+
+    // HALF TWO — and the screen has NOT changed. A real sleep, because there is no positive signal
+    // for "nothing happened" and a build that swapped on the event would have finished swapping well
+    // inside this window against an in-process engine.
+    await page.waitForTimeout(SCREEN_HOLD_MS)
+    await expect(
+      page.locator('[data-hmi-widget="before-republish"]'),
+      "the kiosk swapped the screen under the operator instead of announcing it"
+    ).toBeVisible()
+    await expect(page.locator('[data-hmi-widget="after-republish"]')).toHaveCount(0)
+
+    // …and taking it is one click, by the person watching the machine.
+    await page.locator("[data-kiosk-screen-update-accept]").click()
+    await expect(page.locator('[data-hmi-widget="after-republish"]')).toBeVisible()
+    await expect(page.locator('[data-hmi-widget="before-republish"]')).toHaveCount(0)
+    // The notice is gone once the document it announced is on screen — it cannot linger and be taken twice.
+    await expect(page.locator("[data-kiosk-screen-update]")).toHaveCount(0)
   })
 })

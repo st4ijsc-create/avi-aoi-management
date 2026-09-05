@@ -72,7 +72,18 @@ export const LAYOUT_DIMENSION_MAX = 48
  * It also keeps the rule cheap to check by eye, which matters for the §5-bis property this whole join
  * rests on: the three shipped operator screens keep rendering exactly what they render today PRECISELY
  * BECAUSE `machine-scrw-01` / `machine-aoi-01` / `machine-iot-01` are ids nothing in this repository
- * ever writes. That is a grep, not an argument.
+ * ever writes.
+ *
+ * 🔴 WHOLE-BRANCH REVIEW M-2 — THAT SENTENCE SAID "That is a grep, not an argument", AND THE GREP
+ * STOPPED BEING EMPTY INSIDE THIS BRANCH. The security round's audit fix (`6dad4d2c`) added
+ * `HmiScreenEndpointsTests.cs:579`, which `PUT`s `machine-aoi-01` on purpose — the right fixture for a
+ * machine-panel id, into a `WebApplicationFactory` temp store, so no baseline is at risk and the
+ * CONCLUSION is unchanged. What changed is the evidence, and this repository's whole discipline is that
+ * a sentence standing where a check should be is a defect. The standing guard is the live one:
+ * `tests/43-editor-acceptance.spec.ts` asserts the 404 precondition for all three baseline machines
+ * against the REAL store and names the machine when it fails. Nothing enforces this namespace — see the
+ * "way back" the editor now offers (`editor/shadowedPanel.ts`) for what happens when someone publishes
+ * here anyway.
  */
 export const MACHINE_SCREEN_ID_PREFIX = "machine-"
 

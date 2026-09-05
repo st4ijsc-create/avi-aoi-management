@@ -8,6 +8,27 @@ using Xunit;
 namespace St4i.Connector.Abstractions.Tests;
 
 /// <summary>
+/// 🔴 <b>READ THIS BEFORE DECIDING WHICH .NET SUITES A CHANGE NEEDS: THIS SUITE'S INPUTS ARE WEB FILES.</b>
+/// <b>ANY change under <c>web/src/</c> requires re-running <c>St4i.Connector.Abstractions.Tests</c></b>,
+/// even when the diff names nothing under <c>src/</c>, <c>tests/</c> or <c>contracts/</c>. The registry
+/// below points at TypeScript files by PATH and by ANCHOR NAME, and the sweeps below read every file under
+/// <c>web/src/</c>, so a web-only commit can make this suite red without touching one line of C#.
+///
+/// <para>This is not a caution, it is a post-mortem. The shipped-screen mirror has now rotted TWICE for
+/// exactly this reason, in successive workstreams: <c>main</c>'s <c>5d4c5ae0</c>
+/// (<i>"the mirror moved to SCREEN_DOCS and the registry was still pointing at the constant WS-HMI-1
+/// correctly deleted"</i>), and WS-HMI-2's <c>c9e860d2</c>, which moved it again to
+/// <c>web/src/hmi-runtime/shippedScreens.ts</c> and left this registry pointing at an anchor with no
+/// object literal behind it. The second time it stayed red for five days — through a security review and
+/// up to a merge gate — because the branch applied a re-run rule that is SOUND for
+/// <c>St4i.EdgeCore.Tests</c>, <c>St4i.Connector.Conformance.Tests</c> and <c>St4i.EdgeService.Tests</c>
+/// and is FALSE for this one. Whole-branch review B-1.</para>
+///
+/// <para>The rule is stated again at the retargeted registry entry itself, and in
+/// <c>scripts/verify-suites.sh</c>, because a rule that lives only in a header is a rule the next person
+/// reads after they have already decided.</para>
+/// </summary>
+/// <summary>
 /// Task P-2 (.superpowers/sdd/enum-spelling-witnessed/task-1-brief.md) — <b>the spelling of an enum member
 /// on this assembly is a published string, and until this file existed nothing here read it as one ACROSS
 /// THE BOUNDARY IT CROSSES.</b>
@@ -317,10 +338,36 @@ public class EnumSpellingContractTests
         //     `request<MachineDetail>` cast (api.ts:585) with no runtime narrowing, so a class the server
         //     really emits and the union does not name arrives at this lookup as an ordinary string with
         //     every compiler on both sides green.
-        new("web/src/routes/Hmi.tsx", SiteShape.TsRecordConst, "SCREEN_DOCS", ["DeviceClass"],
+        // 🔴 WS-HMI-2 WHOLE-BRANCH REVIEW, B-1 — THE SAME MIRROR MOVED AGAIN, ONE WORKSTREAM AFTER
+        // `main`'s `5d4c5ae0` MOVED IT LAST. Kept as a record rather than silently retargeted, because
+        // twice is a pattern and the pattern is the point. The entry that stood here was:
+        //
+        //     new("web/src/routes/Hmi.tsx", SiteShape.TsRecordConst, "SCREEN_DOCS", ["DeviceClass"], …)
+        //
+        // WS-HMI-2 Task 13 fix round 1 (`c9e860d2`) moved the three-document table out of
+        // `routes/Hmi.tsx` into `web/src/hmi-runtime/shippedScreens.ts` as `SHIPPED_SCREEN_DOCS`,
+        // because the editor's "restore the shipped screen" button needs the same bytes and a second
+        // table built from the same three files would be a copy to keep in step. That move was right.
+        // What it left behind was `const SCREEN_DOCS: Record<DeviceClass, HmiScreenDocument> =
+        // SHIPPED_SCREEN_DOCS` — the NAME surviving without the object literal — so this registry
+        // pointed at a site that extracted ZERO keys, which Fact 2 refuses to report as a pass, while
+        // the real table went unregistered and Facts 5 and 5b both named it. Four tests red for five
+        // days, through a security review and up to a merge gate. The alias is now DELETED (nothing
+        // aliases this table; `Hmi.tsx` reads `SHIPPED_SCREEN_DOCS` directly), so there is exactly one
+        // `Record<DeviceClass, HmiScreenDocument>` in `web/src` and this entry names it.
+        //
+        // 🔴 THE RULE THAT WOULD HAVE CAUGHT IT BOTH TIMES, AND IT BELONGS AT THE TOP OF THIS FILE AS
+        // WELL AS HERE: **THIS SUITE'S INPUTS ARE WEB FILES.** A change under `web/src/` requires
+        // re-running `St4i.Connector.Abstractions.Tests`, even when the diff names nothing under
+        // `src/`, `tests/` or `contracts/`. That last rule is sound for `EdgeCore`, `Conformance` and
+        // `EdgeService`, and it is FALSE for this one. Both times this mirror rotted, it rotted because
+        // its INPUT changed while its own code did not, on a branch that "touched no .NET".
+        new("web/src/hmi-runtime/shippedScreens.ts", SiteShape.TsRecordConst, "SHIPPED_SCREEN_DOCS", ["DeviceClass"],
             "which JSON screen document describes this machine's operator panel — and this is the site in "
-            + "the registry that fails WORST rather than degrading. `SCREEN_DOCS[machine.class]` is handed "
-            + "straight to `<ScreenRenderer doc={…}>` (Hmi.tsx:277) and ScreenRenderer's first statement "
+            + "the registry that fails WORST rather than degrading. `SHIPPED_SCREEN_DOCS[machine.class]` is "
+            + "handed straight to `<ScreenRenderer doc={…}>` (through `Hmi.tsx`'s `kioskDoc`, as the "
+            + "FALLBACK when this machine has no published screen — WS-HMI-2 Task 13's join) and "
+            + "ScreenRenderer's first statement "
             + "is `const { layout, widgets } = doc`, so a missing member yields undefined and that "
             + "destructure throws. The only error boundary anywhere in web/src is ScreenRenderer's own "
             + "WidgetErrorBoundary, which wraps each WIDGET from inside the component that just threw and "

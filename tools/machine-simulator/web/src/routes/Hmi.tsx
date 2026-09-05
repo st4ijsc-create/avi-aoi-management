@@ -20,15 +20,14 @@ import {
   useScreen,
   useStartFleet,
   useStopFleet,
-  type DeviceClass,
 } from "@/lib/api"
 import { useInspectorStream } from "@/lib/inspector"
 import { DEMO_MACHINE_CODE, resolveDemoScreen } from "@/lib/hmiScreens"
 import { ScreenRenderer } from "@/hmi-runtime/ScreenRenderer"
 import { machineScreenId, renderableScreen } from "@/hmi-runtime/publishedScreen"
+import { useScreenRepublished } from "@/hmi-runtime/screenChangeStream"
 import { SHIPPED_SCREEN_DOCS } from "@/hmi-runtime/shippedScreens"
 import { createMachineDetailSource } from "@/hmi-runtime/TagValueSource"
-import type { HmiScreenDocument } from "@/contracts/hmiScreen"
 
 // WS-HMI-1 Task 5 — the corrigendum at the top of `docs/plans/2026-08-30-hmi-ws1-runtime-blueprint.md`:
 // what deletes is the HAND-WRITTEN layout (the `SCHEMATIC_READOUT_FLEX` proportions table that used to
@@ -57,9 +56,23 @@ import type { HmiScreenDocument } from "@/contracts/hmiScreen"
 // the three imports at their new address AND asserts this file still imports that module, so the
 // chain a revert of WS-HMI-1 Task 5 would break is still checked end to end.
 //
-// The SHIPPED screen for each device class is, since Task 13, the FALLBACK rather than the answer —
-// see `kioskDoc` below for what comes first and why this table must keep answering unchanged.
-const SCREEN_DOCS: Record<DeviceClass, HmiScreenDocument> = SHIPPED_SCREEN_DOCS
+// 🔴 WHOLE-BRANCH REVIEW B-1, AND THE REASON THERE IS NO LOCAL ALIAS HERE ANY MORE. The move above
+// left `const SCREEN_DOCS: Record<DeviceClass, HmiScreenDocument> = SHIPPED_SCREEN_DOCS` standing —
+// the NAME survived and the object literal did not — and that broke a guard in another tier:
+// `EnumSpellingContractTests` (St4i.Connector.Abstractions.Tests) registers TypeScript tables keyed
+// on this repository's C# enum spellings, held that registry pointing at `Hmi.tsx::SCREEN_DOCS`, and
+// found a registered site with ZERO keys — which it correctly refuses to report as a pass ("an empty
+// extraction compares the member set against nothing and passes; that is not a measurement"). Four
+// tests red for five days. An alias with an annotation and no literal is a decoy for any instrument
+// that reads either one, so the alias is deleted and `SHIPPED_SCREEN_DOCS` is used directly at the
+// one site that reads it. There is now exactly one `Record<DeviceClass, HmiScreenDocument>` in
+// `web/src`, it holds the literal, and it is the address the registry names.
+//
+// 🔴 THE RULE THAT WOULD HAVE CAUGHT IT, STATED WHERE IT WAS NEEDED: **a change under `web/src/`
+// requires re-running `St4i.Connector.Abstractions.Tests`.** That suite's INPUTS ARE WEB FILES. The
+// re-run rule this branch used — "the diff names no file under `src/`, `tests/` or `contracts/`" — is
+// sound for the other three .NET suites and false for that one. Same rule, same registry, one
+// workstream earlier: `main`'s `5d4c5ae0`.
 
 let localEventSeq = 0
 function nextLocalId(): string {
@@ -128,6 +141,20 @@ export default function Hmi() {
    */
   const kioskScreenId = screenId === undefined ? machineScreenId(code) : undefined
   const publishedScreen = useScreen(kioskScreenId)
+  /**
+   * 🔴 WHOLE-BRANCH REVIEW H-2 — A REPUBLISH REACHING A PANEL THAT IS ALREADY OPEN.
+   *
+   * `useScreen` reads once at mount and never again (no `staleTime`, no poll, and
+   * `refetchOnWindowFocus` is off app-wide), so before this line an engineer who corrected a
+   * mislabelled control and published changed nothing for anyone on shift until somebody reloaded.
+   * Measured by the reviewer: publish v2, wait eight seconds, the panel still draws v1.
+   *
+   * This ANNOUNCES and does not swap — the ruling, and the same principle that stops a background
+   * refetch overwriting an editing session, applied at the operator end of the same pipe. A screen
+   * that rearranges itself while someone is working the equipment is the surprise this branch has
+   * avoided everywhere else. Nothing here refetches; `accept()` does, and only a person calls it.
+   */
+  const republished = useScreenRepublished(kioskScreenId)
 
   const { data: machine, isPending, isError, error } = useMachine(code)
   // WS-HMI-2 Task 5 — the component tree this machine's screen resolves its `{component}` bindings
@@ -176,7 +203,7 @@ export default function Hmi() {
   // schematic/readout pair (config-drift worst-wins across products, the AOI product's real
   // measurement-point positions, the per-cycle NG aggregate, the parsed IoT key metric) moved to
   // `src/hmi-runtime/widgets/faceplate.tsx`'s `OperationOverviewFaceplate` — the ONE widget each of
-  // `SCREEN_DOCS` below now names. It re-derives all of it itself off the SAME `useMachine(code)` (and
+  // `SHIPPED_SCREEN_DOCS` below now names. It re-derives all of it itself off the SAME `useMachine(code)` (and
   // sibling) TanStack Query hooks, sharing this component's own cache entries rather than duplicating
   // a fetch. See that file's own header comment for why this moved as a single unit instead of being
   // decomposed into the 15 generic widget kinds.
@@ -221,7 +248,7 @@ export default function Hmi() {
   if (!code) return <ErrorKiosk title={t("common.connectivityError")} description="" />
   // WS-HMI-2 Task 5 — `/hmi/demo/<something nobody authored>`. A mistyped screen id is a not-found
   // state, not a crash and not a silent fall-through to the machine's own class screen: rendering
-  // `SCREEN_DOCS[machine.class]` here would answer a URL that named one document with a different one.
+  // `SHIPPED_SCREEN_DOCS[machine.class]` here would answer a URL that named one document with a different one.
   if (screenId !== undefined && !demoScreen) {
     return <ErrorKiosk title={t("machineDetail.notFoundState.title")} description={screenId} />
   }
@@ -273,7 +300,7 @@ export default function Hmi() {
    *     function's own doc comment, and note that everything a merely ODD document contains
    *     (an unknown widget kind, an out-of-range rect, an unresolved `{component}`) is still handled
    *     by `ScreenRenderer` itself, one widget at a time. That net is untouched.
-   *  3. `SCREEN_DOCS[machine.class]` — the shipped screen, exactly as before this task.
+   *  3. `SHIPPED_SCREEN_DOCS[machine.class]` — the shipped screen, exactly as before this task.
    *
    * 🔴 STEP 3 IS WHY THE 31 VISUAL BASELINES CANNOT MOVE, and the argument is a grep rather than a
    * hope: `useScreen` answers 404 for an id nobody ever `PUT`, `renderableScreen(undefined)` is
@@ -283,7 +310,7 @@ export default function Hmi() {
    * handed byte-identical input. §5-bis's "an undeclared screen changes nothing" is delivered by the
    * fallback, not asserted about it.
    */
-  const kioskDoc = demoScreen ?? renderableScreen(publishedScreen.data) ?? SCREEN_DOCS[machine.class]
+  const kioskDoc = demoScreen ?? renderableScreen(publishedScreen.data) ?? SHIPPED_SCREEN_DOCS[machine.class]
 
   /**
    * 🔴 WS-HMI-2 TASK 13 FIX ROUND 1 (task-13-review.md MEDIUM-2) — WHETHER THE SCREEN AREA MAY DRAW
@@ -375,13 +402,49 @@ export default function Hmi() {
             role="tabpanel"
             aria-labelledby="hmi-tab-operation"
             tabIndex={0}
-            className="flex min-h-0 min-w-0 flex-1 gap-3 outline-none"
+            // `relative` is the anchor for the republish notice below and NOTHING else: a
+            // `position: relative` element with no offsets lays out exactly where it did, so this
+            // adds no pixel to any of the three panels that carry visual baselines.
+            className="relative flex min-h-0 min-w-0 flex-1 gap-3 outline-none"
           >
+            {/*
+              🔴 WHOLE-BRANCH REVIEW H-2 — THE ANNOUNCEMENT, AND WHY IT IS AN OVERLAY.
+
+              Absolutely positioned rather than a band in the flow, so the screen an operator is
+              reading does not MOVE when a new version is announced. The whole point of the ruling is
+              that nothing rearranges under someone working the equipment; a notice that pushed the
+              grid down by its own height would be a smaller version of the thing being prevented.
+
+              `role="status"` (polite), never `alert`: a newer screen being available is not a fault
+              and must not interrupt. It is dismissed by taking it — there is deliberately no
+              "ignore", because the state it reports does not go away by being hidden.
+            */}
+            {republished.pendingVersion === undefined ? null : (
+              <div
+                data-kiosk-screen-update={republished.pendingVersion}
+                role="status"
+                className="absolute right-1 top-1 z-10 flex items-center gap-2 border border-border-strong bg-surface-muted px-2 py-1"
+              >
+                <span className="hmi-micro normal-case text-text-body">
+                  {republished.pendingVersion >= 0
+                    ? t("hmi.screenUpdated", { version: republished.pendingVersion })
+                    : t("hmi.screenUpdatedUnknownVersion")}
+                </span>
+                <button
+                  type="button"
+                  data-kiosk-screen-update-accept
+                  className="border border-border-strong px-2 py-0.5 text-xs text-text-strong hover:border-navy-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+                  onClick={republished.accept}
+                >
+                  {t("hmi.screenUpdateAccept")}
+                </button>
+              </div>
+            )}
             {/* WS-HMI-1 Task 5 — this used to be `<SchematicPanel>` + `<Sheet><ReadoutGrid/></Sheet>`
                 hand-placed side by side with a `DeviceClass`-keyed flex-grow ratio computed right here
                 in this file (`SCHEMATIC_READOUT_FLEX`). Both the ratio and the schematic-selection
                 branch moved to `src/hmi-runtime/widgets/faceplate.tsx`'s `OperationOverviewFaceplate` —
-                this file now only picks WHICH of the three static `HmiScreenDocument`s (`SCREEN_DOCS`)
+                this file now only picks WHICH of the three static `HmiScreenDocument`s (`SHIPPED_SCREEN_DOCS`)
                 describes `machine.class`'s screen and hands it to the generic renderer. No layout
                 decision keyed on `DeviceClass` is made in THIS file anymore. */}
             {/* WS-HMI-2 Task 5 — `components` is the prop that was left empty here from the day
@@ -394,7 +457,7 @@ export default function Hmi() {
                 `?.components` (not a `??  []`) keeps "no declared model" as `undefined` all the way
                 down, which is the exact state §5-bis says must stay valid. */}
             {/* WS-HMI-2 Task 13 — `kioskDoc` (computed above, with the priority order and the
-                baseline argument written out there) replaced `demoScreen ?? SCREEN_DOCS[machine.class]`
+                baseline argument written out there) replaced `demoScreen ?? SHIPPED_SCREEN_DOCS[machine.class]`
                 here. That expression is the line this whole workstream turned out to be missing: the
                 editor published, and this panel read three documents compiled into the bundle.
 

@@ -397,6 +397,13 @@ export const en: Dictionary = {
       bindingAdd: "Add binding",
       propsLabel: "Display properties",
       propsEmpty: "This widget declares no props yet.",
+      propNewNameLabel: "New prop name",
+      propNewTypeLabel: "New prop type",
+      propTypeText: "text",
+      propTypeNumber: "number",
+      propAdd: "Add prop",
+      propDuplicate: (vars: Vars) =>
+        `Prop "${vars.name}" already exists on this widget — the Add button does NOT overwrite. Edit it on the row above.`,
       propReadOnly:
         "The panel edits top-level string and number props only. Nested props, arrays, booleans and props that share a widget field's name are shown read-only.",
       policyLabel: "Policy action",
@@ -529,6 +536,11 @@ export const en: Dictionary = {
         `No screen is declared with id ${vars.screenId}. The URL may be mistyped, or this screen has never been saved.`,
       noId: "This URL carries no screen id.",
       startNew: "Start building this screen",
+      illegalId: (vars: Vars) =>
+        `⚠ "${vars.screenId}" is not a legal screen id under the frozen contract: it must match ${vars.pattern} ` +
+        `(lowercase letters, digits and hyphens only). The write door would refuse it at publish, so the editor ` +
+        `does not open a session here — the identity comes from the URL and there is no rename afterwards. ` +
+        `Fix the URL and try again. The likeliest slip: a machine panel is machine-aoi-01, not machine-AOI-01.`,
       shadowsPanel: (vars: Vars) =>
         `⚠ This screen id IS ${vars.machine}'s operator panel. That machine currently shows its shipped ` +
         `screen; publishing here REPLACES it for the operator, and the store only appends — there is no ` +
@@ -1654,6 +1666,9 @@ export const en: Dictionary = {
   },
 
   hmi: {
+    screenUpdated: (vars: Vars) => `A newer version of this screen was published (version ${vars.version}).`,
+    screenUpdatedUnknownVersion: "This screen was just republished.",
+    screenUpdateAccept: "Load it",
     screenLoading: "Reading this machine's screen document… the controls on the right still work.",
     entryButton: "Machine HMI",
     entryButtonAria: (vars: Vars) => `Open machine HMI for ${vars.code}`,

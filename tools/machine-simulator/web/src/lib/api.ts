@@ -845,7 +845,12 @@ export function useFleetEstopEngaged(): boolean {
 // Query hooks
 // ─────────────────────────────────────────────────────────────────────────
 
-const QUERY_KEYS = {
+// 🔴 EXPORTED for WS-HMI-2 whole-branch review H-2 (`hmi-runtime/screenChangeStream.ts`). The change
+// lane's consumer has to invalidate EXACTLY the key `useScreen` reads, and a second spelling of that
+// key would invalidate nothing while looking like it did — the failure mode this whole object exists
+// to prevent. Exported rather than given a wrapper hook, because a wrapper would be a second place to
+// keep in step with the same key.
+export const QUERY_KEYS = {
   fleet: ["fleet"] as const,
   mode: ["mode"] as const,
   capabilities: ["capabilities"] as const,

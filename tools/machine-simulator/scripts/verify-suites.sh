@@ -1,6 +1,29 @@
 #!/usr/bin/env bash
 # verify-suites.sh — assert a POSITIVE expected quantity, never the absence of failure.
 #
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 BEFORE YOU SKIP A SUITE: ONE OF THESE SIX READS `web/src/`.
+#
+# `St4i.Connector.Abstractions.Tests` holds `EnumSpellingContractTests`, whose INPUTS ARE WEB
+# FILES: it registers TypeScript tables by path and by anchor name, and sweeps every file under
+# `web/src/`. **Any change under `web/src/` requires re-running that suite**, even when the diff
+# names nothing under `src/`, `tests/` or `contracts/`.
+#
+# The rule "the diff names no .NET file, so the .NET suites need no re-run" is SOUND for
+# EdgeCore, Conformance and EdgeService, and FALSE for Abstractions. That exact rule has now
+# left this repository red twice, on successive workstreams, both times on the same mirror:
+# `main`'s `5d4c5ae0`, and WS-HMI-2's `c9e860d2`, which stayed red five days through a security
+# review and up to a merge gate (whole-branch review B-1).
+#
+# 🔴 AND A WARNING ABOUT THIS SCRIPT ITSELF: the EXPECT_* constants below are STALE by several
+# workstreams (measured 2026-09-05 on `feat/hmi-ws2-editor`: EngineApi 1844 vs EXPECT 1479,
+# Hmi.Contracts 170 vs 46, web e2e 288 vs 220). Only EXPECT_ABSTRACTIONS=161 and
+# EXPECT_EDGECORE are current. Running this today reports failures that are not failures, which
+# is why nobody ran it and why nothing above the per-task discipline caught B-1. Refreshing them
+# is recorded as a separate item for the owner (whole-branch review I-1); it is NOT done here,
+# because a number this file asserts must be one the person changing it has just measured.
+# ══════════════════════════════════════════════════════════════════════════════════════════
+#
 # WHY THIS EXISTS
 # ---------------
 # Đợt C hit seven distinct verification traps. Five produced a GREEN-LOOKING NUMBER,

@@ -416,6 +416,18 @@ export const vi = {
       bindingAdd: "Thêm binding",
       propsLabel: "Thuộc tính hiển thị (props)",
       propsEmpty: "Widget này chưa khai props nào.",
+      // 🔴 SỬA SAU REVIEW TOÀN NHÁNH (H-1) — THÊM một prop, không chỉ sửa prop đã có. `props` là nơi
+      // MỌI thuộc tính nhìn thấy được của mọi widget sống: `label`, `unit`, `min`, `max`, `text`,
+      // `faceplate`… Trước bản sửa này, widget nào dựng trong trình soạn thảo cũng hiện dưới đúng mã
+      // tự sinh của nó (`w-1`, `w-2`), và mã widget bị ràng `^[a-z0-9-]+$` nên đổi tên cũng không đặt
+      // được một cái nhãn tiếng Việt.
+      propNewNameLabel: "Tên prop mới",
+      propNewTypeLabel: "Kiểu của prop mới",
+      propTypeText: "chuỗi",
+      propTypeNumber: "số",
+      propAdd: "Thêm prop",
+      propDuplicate: (vars: Vars) =>
+        `Prop "${vars.name}" đã có sẵn trên widget này — nút Thêm KHÔNG ghi đè. Sửa nó ở dòng phía trên.`,
       // Giới hạn THẬT của tác vụ này, nói thẳng thay vì để người dùng đoán vì sao một ô không sửa được.
       propReadOnly:
         "Panel chỉ sửa được prop kiểu chuỗi và số ở cấp một. Prop lồng nhau, mảng, boolean và prop trùng tên một trường của widget hiển thị ở dạng chỉ đọc.",
@@ -588,6 +600,11 @@ export const vi = {
       // `/editor/new`: định danh lấy từ CHÍNH đường dẫn, nên không có chỗ thứ hai để hai định danh
       // lệch nhau (đúng thứ `PUT /v1/screens/{id}` trả 409 khi thân và đường dẫn gọi hai tên khác nhau).
       startNew: "Bắt đầu dựng màn hình này",
+      illegalId: (vars: Vars) =>
+        `⚠ Mã "${vars.screenId}" KHÔNG hợp lệ theo hợp đồng đóng băng: mã màn hình phải khớp ${vars.pattern} ` +
+        `(chỉ chữ THƯỜNG, chữ số và gạch nối). Cửa ghi sẽ từ chối nó ở lượt xuất bản, nên trình soạn thảo ` +
+        `KHÔNG mở phiên làm việc ở đây — định danh lấy từ chính đường dẫn, nên không có chỗ nào đổi tên sau. ` +
+        `Sửa đường dẫn rồi mở lại. Ví dụ dễ nhầm nhất: panel của một máy là machine-aoi-01, không phải machine-AOI-01.`,
       // 🔴 SỬA VÒNG 1 (task-13-review.md HIGH-1) — CÁI GIÁ của nút trên, nói TRƯỚC khi bấm và KỂ
       // TÊN máy. Mã màn hình này là panel vận hành của một máy đang chạy: xuất bản ở đây không tạo
       // ra một màn hình mới, nó THAY THẾ màn hình đang ship của máy ấy, và kho không có đường xoá.
@@ -1722,6 +1739,12 @@ export const vi = {
     // lời, không phải cả kiosk. Nameplate, nhật ký, và toàn bộ cột điều khiển (HALT + RESET) vẫn ở
     // trên màn từ khung hình đầu tiên, dù kho có bận hay hỏng. Câu này nói rõ đang chờ THỨ GÌ, để
     // một ô trống không bị đọc thành "máy mất kết nối".
+    // 🔴 REVIEW TOÀN NHÁNH H-2 — thông báo có bản mới, KHÔNG tự đổi màn. Xem doc-comment của
+    // `hmi-runtime/screenChangeStream.ts`: một màn hình tự sắp xếp lại khi có người đang thao tác máy
+    // đúng là điều cả nhánh này tránh ở mọi chỗ khác.
+    screenUpdated: (vars: Vars) => `Có phiên bản màn hình mới (bản ${vars.version}).`,
+    screenUpdatedUnknownVersion: "Màn hình này vừa được xuất bản lại.",
+    screenUpdateAccept: "Nạp bản mới",
     screenLoading: "Đang đọc tài liệu màn hình của máy này… Các nút điều khiển bên phải vẫn dùng được.",
     entryButton: "Bảng điều khiển máy",
     entryButtonAria: (vars: Vars) => `Mở bảng điều khiển máy ${vars.code}`,

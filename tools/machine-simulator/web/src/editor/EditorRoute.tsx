@@ -7,6 +7,7 @@ import { useT } from "@/i18n"
 import { EngineApiError, useScreen, useScreenVersions } from "@/lib/api"
 import { EditorCanvas } from "./EditorCanvas"
 import { createBlankScreen } from "./editorState"
+import { SCREEN_ID_PATTERN } from "@/hmi-runtime/publishedScreen"
 import { useShadowedPanel } from "./shadowedPanel"
 
 /**
@@ -23,8 +24,13 @@ import { useShadowedPanel } from "./shadowedPanel"
  * auditing auth would have followed that to `Program.cs`'s fallback and concluded the protection is
  * INCIDENTAL — something this route inherits and that a routing change could remove without anyone
  * noticing. The real mechanism is a DECLARED one, on the endpoint itself:
- * `HmiScreenEndpoints.cs:135` maps this route with `.RequireAuthorization(Policies.Operator)`, and
- * `:136`'s `PUT` carries `.RequireAuthorization(Policies.Engineer)` — the read/write split named in
+ * `HmiScreenEndpoints.cs:166` maps this route with `.RequireAuthorization(Policies.Operator)`, and
+ * `:167`'s `PUT` carries `.RequireAuthorization(Policies.Engineer)`
+ * (🔴 whole-branch review L-1 — these read `:135`/`:136` until now, which the security round's ~31-line
+ * insertion above `MapHmiScreenEndpoints` moved; `:135` had become a line of a doc comment. The
+ * BY-NAME half was still right, which is exactly why a line number that has drifted is worse than no
+ * line number: it reads as precision. The reviewer resolved all twenty `file:NNN` citations this
+ * branch touches and this was the only one that landed elsewhere.) — the read/write split named in
  * the next clause was always right, only the mechanism behind it was wrong. Both rows are pinned by
  * `RbacPolicyTests.cs`, at TWO line numbers: `:246` is the GET/Operator row and `:276` is the
  * PUT/Engineer row. (Fix round 2, task-8-re-review.md finding 6 — round 1 cited `:246` alone and said
@@ -215,6 +221,28 @@ export default function EditorRoute() {
    * this round; now the state that offers the button also states the cost, and names the machine.
    */
   const shadowed = useShadowedPanel(screenId)
+  /**
+   * 🔴 WHOLE-BRANCH REVIEW M-1 — IS THIS ID ONE THE WRITE DOOR COULD EVER ACCEPT?
+   *
+   * `GET /v1/screens/{id}` does not validate an id, it looks one up and answers 404 — so
+   * `/editor/Bad_Id` reached the §5-bis not-found state, which since Task 13 carries a "start
+   * building this screen" button, and `createBlankScreen` copied the URL segment in verbatim. The
+   * engineer then built a whole document and learned at PUBLISH, from a 400. The refusal itself is
+   * good — it names the pattern and the offending value — but the identity comes from the URL BY
+   * DESIGN ("the surest way never to hit the 409 is to have only ONE place the identity can come
+   * from"), so there is no rename surface, no export, and this component's own `draftFor !== screenId`
+   * reset discards the draft the moment the URL changes. A session's work, lost to a naming rule
+   * nothing surfaced until the end.
+   *
+   * Refused at the point of ENTRY, where the cost is still zero. `SCREEN_ID_PATTERN` is the mirror
+   * `publishedScreen.ts` already holds and `runtime-tests/screenJoin.test.mjs` already checks against
+   * the schema file on disk — not a fourth copy of the rule.
+   *
+   * 🔴 The likeliest typo in the whole feature is exactly this shape: machine codes in this fleet are
+   * uppercase with a hyphen, so `/editor/machine-AOI-01` is one keystroke from the id the kiosk
+   * actually reads and is illegal under the frozen contract.
+   */
+  const idIsLegal = screenId !== undefined && SCREEN_ID_PATTERN.test(screenId)
   if (draftFor !== screenId) {
     setDraftFor(screenId)
     setDraft(undefined)
@@ -285,6 +313,18 @@ export default function EditorRoute() {
             description={t("editor.notDeclared.description", { screenId })}
             action={
               <>
+                {/* 🔴 M-1 — no button at all for an id the write door will always refuse, and the
+                    reason names the pattern rather than the outcome. `role="alert"`, because an
+                    engineer who reads this and starts anyway loses the session. */}
+                {idIsLegal ? null : (
+                  <p
+                    role="alert"
+                    data-editor-illegal-id={screenId}
+                    className="max-w-md border border-status-fault bg-status-fault/10 px-3 py-2 text-sm text-danger-text"
+                  >
+                    {t("editor.notDeclared.illegalId", { screenId, pattern: SCREEN_ID_PATTERN.source })}
+                  </p>
+                )}
                 {/* 🔴 FIX ROUND 1 (HIGH-1) — the cost of the button, stated BEFORE it is pressed and
                     naming the machine. `role="alert"` rather than `status`: an engineer about to
                     replace a running machine's operator panel, irreversibly, must be interrupted —
@@ -299,6 +339,7 @@ export default function EditorRoute() {
                     {t("editor.notDeclared.shadowsPanel", { machine: shadowed.machineCode })}
                   </p>
                 ) : null}
+                {idIsLegal ? (
                 <button
                   type="button"
                   data-editor-start-new
@@ -307,6 +348,7 @@ export default function EditorRoute() {
                 >
                   {t("editor.notDeclared.startNew")}
                 </button>
+                ) : null}
               </>
             }
           />
