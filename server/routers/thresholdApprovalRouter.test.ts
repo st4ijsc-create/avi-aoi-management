@@ -27,7 +27,18 @@ vi.mock("drizzle-orm", async (orig) => {
 });
 vi.mock("../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 
-const updateSpy = vi.fn(async () => {});
+// ★★★ Lô 2 nhóm A ca 3 — bản mock trước đây là no-op HOÀN TOÀN (`async () => {}`):
+// không hề chạm `fake.store`, nên assertion đọc lại `measurementPointDefs` sau
+// `approve({ apply: true })` KHÔNG BAO GIỜ có thể thấy giá trị mới, bất kể ai duyệt
+// — bài kiểm không đo được gì (âm tính giả cấu trúc). Sửa: mock nay THẬT SỰ ghi
+// lowerLimit/upperLimit/nominalValue vào đúng hàng trong fake.store, khớp đúng 3
+// trường mà `decideApproval` (thresholdApprovalRouter.ts) truyền cho hàm thật —
+// để assertion ở dòng ~93-95 đo đúng "hàng đã đổi", không phải "mock có được gọi".
+const updateSpy = vi.fn(async (pointDefId: number, patch: Record<string, any>) => {
+  const key = (measurementPointDefs as any)[Symbol.for("drizzle:Name")];
+  const row = fake.store.get(key)?.find((r: any) => r.id === pointDefId);
+  if (row) Object.assign(row, patch);
+});
 const auditSpy = vi.fn(async () => ({ id: 1 }));
 vi.mock("../db", () => ({
   getDb: vi.fn(async () => fake),

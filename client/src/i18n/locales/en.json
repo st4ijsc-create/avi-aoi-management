@@ -4094,7 +4094,13 @@
       "notificationContent": "notification content",
       "apiKeyOrMachineCode": "API key or machine code",
       "factoryCode": "factory code",
-      "machineId": "machine ID"
+      "machineId": "machine ID",
+      "sizeBytes": "size in bytes",
+      "sha256": "SHA-256 hash",
+      "meta.json": "meta.json file",
+      "images[].captureId": "image capture ID",
+      "images[].fileName": "image file name",
+      "images[].sha256": "image SHA-256 hash"
     },
     "feature": {
       "webIngest": "web content ingestion",

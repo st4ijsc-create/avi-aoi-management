@@ -4086,7 +4086,13 @@
       "notificationContent": "通知内容",
       "apiKeyOrMachineCode": "API密钥或设备码",
       "factoryCode": "工厂代码",
-      "machineId": "设备ID"
+      "machineId": "设备ID",
+      "sizeBytes": "字节大小",
+      "sha256": "SHA256哈希值",
+      "meta.json": "meta.json 文件",
+      "images[].captureId": "图像采集ID",
+      "images[].fileName": "图像文件名",
+      "images[].sha256": "图像SHA256哈希值"
     },
     "feature": {
       "webIngest": "网页内容导入",

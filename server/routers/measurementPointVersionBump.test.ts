@@ -101,8 +101,10 @@ describe("doc 51 R4 — measurementPoint.create", () => {
 
     // A new point the fleet never re-fetches is a point that is never inspected.
     expect(bumpSpy).toHaveBeenCalledWith(7);
-    // publishPointsConfigChanged broadcasts BY CODE + the NEW version.
-    expect(publishSpy).toHaveBeenCalledWith("PM-7", 8);
+    // publishPointsConfigChanged broadcasts BY CODE + the NEW version. QĐ#14 added
+    // optional machineCode/variantCode params (both undefined here — this point has
+    // no variant) — arity 4, byte-identical legacy behaviour on the wire.
+    expect(publishSpy).toHaveBeenCalledWith("PM-7", 8, undefined, undefined);
   });
 
   it("does NOT bump when the code already existed (nothing was written)", async () => {
@@ -137,7 +139,9 @@ describe("doc 51 R4 — measurementPoint.update", () => {
     expect(updateSpy).toHaveBeenCalled();
     // Uses the point's OWN productModelId — not anything client-supplied.
     expect(bumpSpy).toHaveBeenCalledWith(7);
-    expect(publishSpy).toHaveBeenCalledWith("PM-7", 8);
+    // QĐ#14 arity 4 (machineCode/variantCode) — see create test above for why both
+    // are undefined for a non-variant point.
+    expect(publishSpy).toHaveBeenCalledWith("PM-7", 8, undefined, undefined);
   });
 
   it("does NOT bump when the write was rejected by the optimistic lock", async () => {
@@ -164,7 +168,9 @@ describe("doc 51 R4/CASE #4 — measurementPoint.delete", () => {
     // atomic with the deletedAtVersion stamp), so the router must NOT bump again —
     // a second bump would strand machines one version behind the tombstone.
     expect(bumpSpy).not.toHaveBeenCalled();
-    expect(publishSpy).toHaveBeenCalledWith("PM-1", 9);
+    // QĐ#14 arity 4 — deletion path resolves variantCode via variantCodeForPointNotify,
+    // which returns undefined here (existingPoint has no variantId).
+    expect(publishSpy).toHaveBeenCalledWith("PM-1", 9, undefined, undefined);
     expect(res).toMatchObject({ success: true, pointsConfigVersion: 9 });
   });
 

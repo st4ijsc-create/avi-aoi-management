@@ -4094,7 +4094,13 @@
       "notificationContent": "nội dung thông báo",
       "apiKeyOrMachineCode": "khoá API hoặc mã máy",
       "factoryCode": "mã nhà máy",
-      "machineId": "mã máy"
+      "machineId": "mã máy",
+      "sizeBytes": "dung lượng byte",
+      "sha256": "mã băm sha256",
+      "meta.json": "tệp meta.json",
+      "images[].captureId": "mã capture của ảnh",
+      "images[].fileName": "tên tệp ảnh",
+      "images[].sha256": "mã băm sha256 của ảnh"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",

@@ -27,6 +27,12 @@ vi.mock("../db", () => ({
   getDb: vi.fn(async () => fake),
   updateMeasurementPointDef: vi.fn(async () => {}),
   createAuditLog: vi.fn(async () => ({ id: 1 })),
+  // ★ Cùng lỗ đã vá ở thresholdApprovalRouter.test.ts (commit 99034e1f) — cổng
+  // `chanKhiPhaiDoiMatKhau` (server/_core/trpc.ts) đứng ở GỐC mọi thủ tục và đọc
+  // `phaiDoiMatKhau` từ `../db`; mock ở đây chưa từng liệt kê export này (trôi theo
+  // thời gian, không liên quan BG-126) nên MỌI ca trong file này đỏ CÙNG lỗi. `false`
+  // = không ai bị buộc đổi mật khẩu, giữ hành vi các ca hiện có nguyên vẹn.
+  phaiDoiMatKhau: vi.fn(async () => false),
 }));
 
 import { thresholdApprovalRouter } from "./thresholdApprovalRouter";
