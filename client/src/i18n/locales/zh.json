@@ -19999,6 +19999,9 @@
     "hangLoatAnCanvas": "已选择多个点——每个点都有各自的参考图像，画布仅在单点编辑模式下显示。",
     "lyDoDoi": "更改原因（可选）",
     "luuHangLoat": "保存至 {{n}} 个元件",
-    "daLuu": "已保存 {{soDiem}} 个点"
+    "daLuu": "已保存 {{soDiem}} 个点",
+    "xoaTruong": "清除 {{ten}}",
+    "xoaTruongHangLoat": "在已选中的点上清除此字段",
+    "seXoa": "将被清除"
   }
 }

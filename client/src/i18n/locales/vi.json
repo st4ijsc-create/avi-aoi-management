@@ -19971,6 +19971,9 @@
     "hangLoatAnCanvas": "Chọn nhiều điểm — mỗi điểm có ảnh tham chiếu riêng, canvas chỉ hiện khi sửa đơn.",
     "lyDoDoi": "Lý do đổi (không bắt buộc)",
     "luuHangLoat": "Lưu cho {{n}} linh kiện",
-    "daLuu": "Đã lưu {{soDiem}} điểm"
+    "daLuu": "Đã lưu {{soDiem}} điểm",
+    "xoaTruong": "Xoá giới hạn {{ten}}",
+    "xoaTruongHangLoat": "Xoá trường này trên các điểm đã chọn",
+    "seXoa": "Sẽ bị xoá"
   }
 }

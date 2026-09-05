@@ -159,23 +159,53 @@ export function soTruongDaNhap(gia: FormGioiHan): number {
  * KHÁC NHAU, không có "giá trị đã tải" chung nào để so, xem docblock `ComponentLimitsDialog.tsx`)
  * ⇒ giữ NGUYÊN hành vi cũ của `layTruongDaNhap` (mọi trường có nội dung đều gửi).
  */
+/**
+ * Lô 2 nhóm B (BG-123 phần UI) — kiểu trả về MỞ RỘNG từ `Partial<Record<TenTruongForm, string>>`
+ * sang cho phép `null` (XOÁ giới hạn — khớp `NULLABLE_LIMIT_STRING_FIELDS`/`setLimitsBatch` server,
+ * commit 82ced43b). Ba trạng thái CÙNG một object kết quả:
+ *   • khoá VẮNG MẶT  → undefined khi đọc — "không đổi", KHÔNG gửi lên server.
+ *   • khoá = string  → "đặt giá trị mới".
+ *   • khoá = null    → "xoá giới hạn này" (người dùng bấm nút Xoá).
+ */
+export type TruongThayDoi = Partial<Record<TenTruongForm, string | null>>;
+
+/**
+ * `xoaTruong` (mặc định RỖNG — tương thích ngược tuyệt đối với mọi lời gọi trước Lô 2): tập trường
+ * người dùng bấm nút "Xoá" cho trường đó. XOÁ THẮNG mọi nội dung đang gõ trong ô — kể cả khi ô đó
+ * còn chữ (UI nên tự xoá/khoá ô khi đánh dấu, nhưng hàm THUẦN này không tin UI, xem test "xoá THẮNG
+ * nội dung gõ" — một trường vừa bị xoá không thể đồng thời "đặt giá trị mới", đó là hai ý định loại
+ * trừ nhau, và ý xoá luôn được tôn trọng vì nó là hành động RÕ RÀNG HƠN — bấm nút, không phải gõ
+ * nhầm).
+ */
 export function layTruongThayDoi(
   gia: FormGioiHan,
   giaGoc: FormGioiHan | null,
-): Partial<Record<TenTruongForm, string>> {
+  xoaTruong: ReadonlySet<TenTruongForm> = new Set(),
+): TruongThayDoi {
   const nhap = layTruongDaNhap(gia);
-  if (giaGoc === null) return nhap;
-  const ra: Partial<Record<TenTruongForm, string>> = {};
-  for (const truong of TEN_TRUONG_FORM) {
-    const v = nhap[truong];
-    if (v === undefined) continue; // trống — không đổi, đã lọc ở layTruongDaNhap
-    if (v !== giaGoc[truong].trim()) ra[truong] = v;
+  const ra: TruongThayDoi = giaGoc === null
+    ? { ...nhap }
+    : (() => {
+        const ket: TruongThayDoi = {};
+        for (const truong of TEN_TRUONG_FORM) {
+          const v = nhap[truong];
+          if (v === undefined) continue; // trống — không đổi, đã lọc ở layTruongDaNhap
+          if (v !== giaGoc[truong].trim()) ket[truong] = v;
+        }
+        return ket;
+      })();
+  for (const truong of xoaTruong) {
+    ra[truong] = null; // XOÁ ghi đè bất kỳ giá trị nào vừa tính ở trên cho đúng trường này.
   }
   return ra;
 }
 
-export function soTruongThayDoi(gia: FormGioiHan, giaGoc: FormGioiHan | null): number {
-  return Object.keys(layTruongThayDoi(gia, giaGoc)).length;
+export function soTruongThayDoi(
+  gia: FormGioiHan,
+  giaGoc: FormGioiHan | null,
+  xoaTruong?: ReadonlySet<TenTruongForm>,
+): number {
+  return Object.keys(layTruongThayDoi(gia, giaGoc, xoaTruong)).length;
 }
 
 /**
@@ -208,11 +238,15 @@ export function coTheLuu(opts: {
   readonly loiForm: readonly LoiTruongForm[];
   readonly soTruongDaNhap: number;
   readonly dangTaiChiTietDon: boolean;
+  // Lô 2 nhóm B — số trường bị đánh dấu Xoá (mặc định 0, TƯƠNG THÍCH NGƯỢC). Một lượt Lưu chỉ
+  // đánh dấu Xoá (không gõ trường nào khác) là một thay đổi HỢP LỆ, nên "0 trường NHẬP" không còn
+  // đủ để chặn — phải cùng "0 trường XOÁ" mới thật sự là "chưa làm gì".
+  readonly soTruongXoa?: number;
 }): boolean {
   if (opts.soHang === 0) return false;
   if (opts.dangTaiChiTietDon) return false;
   if (opts.loiForm.length > 0) return false;
-  if (opts.soTruongDaNhap === 0) return false;
+  if (opts.soTruongDaNhap === 0 && (opts.soTruongXoa ?? 0) === 0) return false;
   return true;
 }
 
@@ -224,14 +258,20 @@ export function coTheLuu(opts: {
  * M-5 (vòng sửa 9) — `giaGoc` (mặc định `null`, TƯƠNG THÍCH NGƯỢC với lời gọi cũ) là bộ giá trị
  * lúc vừa tải cho chế độ đơn — có `giaGoc` ⇒ CHỈ trường thật sự đổi mới vào `items` (xem
  * `layTruongThayDoi`), tránh sinh version + bump vô ích khi người dùng Lưu mà không sửa gì.
+ *
+ * Lô 2 nhóm B — `xoaTruong` (mặc định RỖNG, TƯƠNG THÍCH NGƯỢC) là tập trường bị đánh dấu Xoá; mỗi
+ * trường trong tập đó vào `items` dưới dạng `null` cho MỌI id (kể cả hàng loạt — "xoá cho tất cả
+ * các điểm đã chọn", đúng brief BG-123 mục 2), khớp kiểu `SetLimitsBatchItem` server đã mở
+ * `.nullable()` cho đúng 20 trường `NULLABLE_LIMIT_STRING_FIELDS` (commit 82ced43b).
  */
 export function xayInputSetLimitsBatch(
   ids: readonly number[],
   gia: FormGioiHan,
   changeReason: string,
   giaGoc: FormGioiHan | null = null,
+  xoaTruong?: ReadonlySet<TenTruongForm>,
 ): SetLimitsBatchInput {
-  const truong = layTruongThayDoi(gia, giaGoc);
+  const truong = layTruongThayDoi(gia, giaGoc, xoaTruong);
   const items: SetLimitsBatchItem[] = ids.map((id) => ({ id, ...truong }));
   const reason = changeReason.trim();
   return reason ? { items, changeReason: reason } : { items };

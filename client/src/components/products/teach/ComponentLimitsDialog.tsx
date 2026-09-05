@@ -43,7 +43,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { Loader2, AlertTriangle, X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import {
@@ -59,6 +59,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MeasurementPointCanvas } from "@/components/measurement-point-canvas/MeasurementPointCanvas";
@@ -117,6 +118,11 @@ export function ComponentLimitsDialog({
   const [giaGoc, setGiaGoc] = useState<FormGioiHan | null>(null);
   const [lyDoDoi, setLyDoDoi] = useState("");
   const [canDuyet, setCanDuyet] = useState<KetQuaCanDuyet | null>(null);
+  // Lô 2 nhóm B (BG-123 phần UI) — tập trường bị đánh dấu "Xoá giới hạn" (gửi `null`, khác với ô
+  // trống = "không đổi"/undefined). Đơn: nút X nhỏ cạnh MỖI ô ĐANG CÓ giá trị đã tải (giaGoc).
+  // Hàng loạt: checkbox "Xoá trường này trên các điểm đã chọn" — không có "giá trị đã tải chung"
+  // để so, nên hiện cho CẢ 5 trường luôn (đúng docChuoi/FORM_RONG hàng loạt vốn đã không tiền điền).
+  const [xoaTruong, setXoaTruong] = useState<Set<TenTruongForm>>(new Set());
 
   const donMode = rows.length === 1;
   const diemDau = rows[0];
@@ -141,6 +147,7 @@ export function ComponentLimitsDialog({
     setLyDoDoi("");
     setGia(FORM_RONG);
     setGiaGoc(null); // M-5 — không baseline nào tin được cho tới khi chiTietQuery.data mới về.
+    setXoaTruong(new Set()); // Lô 2 nhóm B — đổi mục tiêu (đơn A→B, hoặc đổi tập chọn) reset luôn ý định Xoá cũ.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, donMode, rows.map((r) => r.id).join(",")]);
 
@@ -163,12 +170,16 @@ export function ComponentLimitsDialog({
   // M-5 (vòng sửa 9) — đơn: chỉ đếm trường THẬT SỰ đổi so với `giaGoc` (đếm cả 5 trường tiền điền
   // dù không sửa gì sẽ cho phép Lưu vô ích — sinh version + bump `pointsConfigVersion`, xem
   // `layTruongThayDoi`). Hàng loạt: `giaGoc` luôn `null` ⇒ hàm rơi về hành vi CŨ (đếm mọi trường
-  // có nội dung), không đổi.
-  const soTruong = soTruongThayDoi(gia, giaGoc);
+  // có nội dung), không đổi. Lô 2 nhóm B — con số này ĐÃ gồm cả trường bị đánh dấu Xoá
+  // (`layTruongThayDoi` cộng chúng vào cùng object kết quả dưới dạng `null`).
+  const soTruong = soTruongThayDoi(gia, giaGoc, xoaTruong);
   // Vòng sửa 1 (b) — đơn mode: khoá Lưu trong SUỐT lúc `getById` đang tải/tải lại (không riêng
   // lần đầu) — `isFetching` là tập CHA của `isLoading`, bắt cả trường hợp revisit-cache-nhưng-
   // đang-refetch-nền. Hàng loạt không phụ thuộc `getById` ⇒ luôn `false`.
   const dangTaiChiTietDon = donMode && chiTietQuery.isFetching;
+  // `soTruong` (trên) đã CỘNG gộp cả phần Xoá qua `soTruongThayDoi(gia, giaGoc, xoaTruong)`, nên
+  // `soTruongDaNhap` ở đây đã đủ để coTheLuu biết "có ít nhất một thay đổi" — không cần truyền lại
+  // `soTruongXoa` riêng (tham số đó tồn tại cho lời gọi CŨ không đi qua `soTruongThayDoi`).
   const duocLuu = coTheLuu({ soHang: rows.length, loiForm, soTruongDaNhap: soTruong, dangTaiChiTietDon });
 
   const luuMutation = trpc.measurementPoint.setLimitsBatch.useMutation({
@@ -228,8 +239,23 @@ export function ComponentLimitsDialog({
       gia,
       lyDoDoi,
       giaGoc,
+      xoaTruong,
     );
     luuMutation.mutate(input);
+  };
+
+  /** Lô 2 nhóm B — bật/tắt đánh dấu Xoá cho một trường. Bật Xoá thì xoá luôn nội dung đang gõ
+   * trong ô đó ở state cục bộ (đồng bộ HÌNH ẢNH ô input với ý định — hàm thuần `layTruongThayDoi`
+   * đã tự AN TOÀN dù ô còn chữ, xem test "xoá THẮNG nội dung gõ", nhưng để ô còn hiện số cũ trong
+   * lúc đã bấm Xoá là gây hiểu lầm cho người dùng). */
+  const toggleXoaTruong = (truong: TenTruongForm) => {
+    setXoaTruong((prev) => {
+      const next = new Set(prev);
+      if (next.has(truong)) next.delete(truong);
+      else next.add(truong);
+      return next;
+    });
+    setGia((prev) => ({ ...prev, [truong]: "" }));
   };
 
   const diemCanvas =
@@ -333,9 +359,32 @@ export function ComponentLimitsDialog({
           {TEN_TRUONG_FORM.map((truong: TenTruongForm) => {
             const loi = loiForm.find((l) => l.truong === truong);
             const khoaNhan = NHAN_TRUONG.get(truong) ?? truong;
+            const daXoa = xoaTruong.has(truong);
+            // Đơn: nút X chỉ hiện khi trường ĐANG CÓ giá trị đã tải (giaGoc) — xoá một trường vốn
+            // đã trống không có ý nghĩa gì (không có gì để xoá). Hàng loạt: giaGoc luôn null (N
+            // component có thể khác nhau, xem docblock effect ở trên) — hiện checkbox "Xoá trên
+            // các điểm đã chọn" cho CẢ 5 trường luôn, vì không có "giá trị hiện tại chung" để so.
+            const coTheXoaDon = donMode && giaGoc !== null && giaGoc[truong].trim() !== "";
             return (
               <div key={truong} className="space-y-1.5">
-                <Label htmlFor={`cld-${truong}`}>{t(khoaNhan)}</Label>
+                <div className="flex items-center justify-between gap-1">
+                  <Label htmlFor={`cld-${truong}`}>{t(khoaNhan)}</Label>
+                  {donMode && coTheXoaDon && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 text-muted-foreground hover:text-destructive"
+                      aria-label={t("teachLimits.xoaTruong", "Xoá giới hạn {{ten}}", { ten: t(khoaNhan) })}
+                      title={t("teachLimits.xoaTruong", "Xoá giới hạn {{ten}}", { ten: t(khoaNhan) })}
+                      aria-pressed={daXoa}
+                      onClick={() => toggleXoaTruong(truong)}
+                      disabled={dangLuu}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
                 <Input
                   id={`cld-${truong}`}
                   value={gia[truong]}
@@ -343,9 +392,24 @@ export function ComponentLimitsDialog({
                   inputMode={truong === "unit" ? "text" : "decimal"}
                   aria-invalid={loi ? true : undefined}
                   className={loi ? "border-destructive" : undefined}
-                  disabled={dangLuu}
+                  disabled={dangLuu || daXoa}
+                  placeholder={daXoa ? t("teachLimits.seXoa", "Sẽ bị xoá") : undefined}
                 />
                 {loi && <p className="text-xs text-destructive">{t(loi.khoa, loi.macDinh)}</p>}
+                {!donMode && (
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Checkbox
+                      checked={daXoa}
+                      onCheckedChange={() => toggleXoaTruong(truong)}
+                      disabled={dangLuu}
+                      aria-label={t(
+                        "teachLimits.xoaTruongHangLoat",
+                        "Xoá trường này trên các điểm đã chọn",
+                      )}
+                    />
+                    {t("teachLimits.xoaTruongHangLoat", "Xoá trường này trên các điểm đã chọn")}
+                  </label>
+                )}
               </div>
             );
           })}

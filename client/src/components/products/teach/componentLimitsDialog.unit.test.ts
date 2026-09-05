@@ -24,6 +24,7 @@ import {
   diemCayDayChoCanvas,
   coTheLuu,
   type FormGioiHan,
+  type TenTruongForm,
 } from "./componentLimitsDialogLogic";
 
 function gia(overrides: Partial<FormGioiHan>): FormGioiHan {
@@ -426,5 +427,140 @@ describe("coTheLuu — Vòng sửa 1 (Important): chặn race đổi điểm A�
     expect(
       coTheLuu({ soHang: 1, loiForm: kiemTraForm(FORM_RONG), soTruongDaNhap: soTruongDaNhap(FORM_RONG), dangTaiChiTietDon: false }),
     ).toBe(false);
+  });
+
+  // Lô 2 nhóm B — nút Xoá không đổi điều kiện coTheLuu cũ khi KHÔNG có gì bị đánh dấu xoá
+  // (xoaTruong rỗng ⇒ tương thích ngược tuyệt đối với mọi ca ở trên).
+  it("xoaTruong rỗng (mặc định) ⇒ hành vi y hệt trước khi có nút Xoá", () => {
+    expect(
+      coTheLuu({ soHang: 1, loiForm: kiemTraForm(FORM_RONG), soTruongDaNhap: 0, dangTaiChiTietDon: false, soTruongXoa: 0 }),
+    ).toBe(false);
+  });
+
+  it("0 trường nhập nhưng CÓ trường bị đánh dấu xoá ⇒ vẫn cho Lưu (xoá LÀ một thay đổi)", () => {
+    expect(
+      coTheLuu({ soHang: 1, loiForm: [], soTruongDaNhap: 0, dangTaiChiTietDon: false, soTruongXoa: 1 }),
+    ).toBe(true);
+  });
+
+  it("đang tải chi tiết đơn ⇒ vẫn chặn dù có trường đánh dấu xoá (race A→B)", () => {
+    expect(
+      coTheLuu({ soHang: 1, loiForm: [], soTruongDaNhap: 0, dangTaiChiTietDon: true, soTruongXoa: 1 }),
+    ).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Lô 2 nhóm B (BG-123 phần UI) — nút "Xoá giới hạn" gửi NULL, khác "để trống" (undefined/không đổi)
+// và khác "nhập giá trị" (string). Server (82ced43b) đã nhận `z.string().nullable().optional()`
+// cho đúng NULLABLE_LIMIT_STRING_FIELDS (APPROVAL_LIMIT_FIELDS trừ criteria/toleranceMode — bao
+// gồm cả 5 trường form ở đây: lowerLimit/upperLimit/unit/heightMin/heightMax).
+//
+// Ba trạng thái PHẢI phân biệt RÕ ở input gửi lên setLimitsBatch:
+//   • undefined — trường không đụng tới (không có trong object item)
+//   • string    — đặt giá trị mới (người dùng gõ, hoặc tiền điền không đổi ở batch cũ)
+//   • null      — người dùng bấm nút Xoá cho trường đó (ghi đè MỌI nội dung gõ trong ô, xem test
+//                 "xoá THẮNG nội dung gõ" dưới đây — tránh trạng thái mơ hồ "vừa gõ vừa xoá")
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("layTruongThayDoi/xayInputSetLimitsBatch với xoaTruong — 3 trạng thái undefined/string/null", () => {
+  function xoa(...truong: TenTruongForm[]): ReadonlySet<TenTruongForm> {
+    return new Set(truong);
+  }
+
+  it("không đánh dấu xoá gì (mặc định) ⇒ y hệt hành vi cũ (không tham số thứ 3)", () => {
+    const g = gia({ lowerLimit: "1", upperLimit: "9" });
+    expect(layTruongThayDoi(g, null)).toEqual(layTruongThayDoi(g, null, xoa()));
+  });
+
+  it("đơn: trường ĐANG CÓ giá trị (giaGoc có), bấm Xoá ⇒ null, KHÔNG phải undefined hay chuỗi cũ", () => {
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9", unit: "mm", heightMin: "0", heightMax: "5" });
+    // Người dùng không gõ gì thêm — chỉ bấm nút Xoá cho upperLimit.
+    const truong = layTruongThayDoi(daTai, daTai, xoa("upperLimit"));
+    expect(truong).toEqual({ upperLimit: null });
+    expect(truong.upperLimit).not.toBe(undefined);
+  });
+
+  it("trường KHÔNG đụng tới (không gõ, không bấm Xoá) ⇒ undefined — không có mặt trong kết quả", () => {
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9" });
+    const truong = layTruongThayDoi(daTai, daTai, xoa("upperLimit"));
+    expect(Object.prototype.hasOwnProperty.call(truong, "lowerLimit")).toBe(false);
+    expect(truong.lowerLimit).toBeUndefined();
+  });
+
+  it("trường được GÕ giá trị mới (không bấm Xoá) ⇒ chuỗi thật, không phải null", () => {
+    const daTai = gia({ lowerLimit: "1" });
+    const hienTai = { ...daTai, heightMin: "2" };
+    const truong = layTruongThayDoi(hienTai, daTai, xoa());
+    expect(truong).toEqual({ heightMin: "2" });
+  });
+
+  it("xoá THẮNG nội dung gõ — bấm Xoá một trường ĐỒNG THỜI ô đó vẫn còn chữ cũ ⇒ vẫn null", () => {
+    // Race hiếm: UI nên tự xoá/khoá ô khi đánh dấu Xoá, nhưng logic thuần phải AN TOÀN dù ô còn
+    // giá trị — ý định "xoá" của người dùng không được bị nội dung ô nuốt mất.
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9" });
+    const hienTaiVanConChu = { ...daTai, upperLimit: "999" };
+    const truong = layTruongThayDoi(hienTaiVanConChu, daTai, xoa("upperLimit"));
+    expect(truong.upperLimit).toBeNull();
+  });
+
+  it("hàng loạt (giaGoc null) + đánh dấu xoá 2 trường ⇒ cả hai null, trường khác theo layTruongDaNhap cũ", () => {
+    const g = gia({ unit: "mm" }); // unit được gõ, lowerLimit/heightMax bị đánh dấu xoá
+    const truong = layTruongThayDoi(g, null, xoa("lowerLimit", "heightMax"));
+    expect(truong).toEqual({ unit: "mm", lowerLimit: null, heightMax: null });
+  });
+
+  it("nhiều trường: 1 giữ nguyên (undefined) + 1 đặt mới (string) + 1 xoá (null) cùng lúc", () => {
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9", unit: "mm", heightMin: "0", heightMax: "5" });
+    const hienTai = { ...daTai, heightMin: "3" }; // đặt mới heightMin, không đụng lowerLimit/unit/upperLimit
+    const truong = layTruongThayDoi(hienTai, daTai, xoa("upperLimit"));
+    expect(truong).toEqual({ heightMin: "3", upperLimit: null });
+    expect(Object.prototype.hasOwnProperty.call(truong, "lowerLimit")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(truong, "unit")).toBe(false);
+  });
+
+  it("xayInputSetLimitsBatch: item mang null ĐÚNG cho trường bị xoá, giữ id nguyên vẹn", () => {
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9" });
+    const input = xayInputSetLimitsBatch([42], daTai, "", daTai, xoa("lowerLimit"));
+    expect(input.items).toHaveLength(1);
+    expect(input.items[0]).toEqual({ id: 42, lowerLimit: null });
+  });
+
+  it("xayInputSetLimitsBatch hàng loạt: null áp cho TẤT CẢ id đã chọn", () => {
+    const ids = [1, 2, 3];
+    const input = xayInputSetLimitsBatch(ids, FORM_RONG, "", null, xoa("unit"));
+    expect(input.items).toHaveLength(3);
+    for (let i = 0; i < ids.length; i++) {
+      expect(input.items[i]).toEqual({ id: ids[i], unit: null });
+    }
+  });
+
+  it("xayInputSetLimitsBatch: không truyền xoaTruong (tương thích ngược) ⇒ y hệt trước Lô 2", () => {
+    const g = gia({ lowerLimit: "1", upperLimit: "9" });
+    const cu = xayInputSetLimitsBatch([1], g, "");
+    const moi = xayInputSetLimitsBatch([1], g, "", null, xoa());
+    expect(cu).toEqual(moi);
+  });
+
+  it("soTruongThayDoi đếm CẢ trường bị xoá (null) — không chỉ trường có chuỗi", () => {
+    const daTai = gia({ lowerLimit: "1", upperLimit: "9" });
+    expect(soTruongThayDoi(daTai, daTai, xoa("upperLimit"))).toBe(1);
+  });
+});
+
+describe("docLoiCanDuyetNguong — lỗi CONFLICT (optimistic-lock của measurementPoint.update) KHÔNG bị nhận nhầm thành 'cần duyệt'", () => {
+  // BG-123 UI dùng setLimitsBatch (không có expectedUpdatedAt/CONFLICT — đó là cơ chế RIÊNG của
+  // measurementPoint.update, xem productRouters.ts:1451-1480). Test này khẳng định NẾU một lỗi
+  // CONFLICT tới tay dialog (vd một mutation khác dùng chung hàm này trong tương lai), nó KHÔNG bị
+  // nuốt nhầm thành "cần duyệt" — rơi đúng nhánh toastTrpcError(err) chung, dialog vẫn mở (xem
+  // onError trong ComponentLimitsDialog.tsx: chỉ đóng dialog ở onSuccess, không ở nhánh lỗi nào).
+  it("lỗi CONFLICT (MP_STALE_WRITE) ⇒ docLoiCanDuyetNguong trả null, KHÔNG bị coi là 'cần duyệt'", () => {
+    const err = {
+      data: {
+        code: "CONFLICT",
+        appCode: "ENTITY_DUPLICATE",
+        appParams: { entity: "measurementPoint", expectedUpdatedAt: "2020-01-01T00:00:00.000Z" },
+      },
+    };
+    expect(docLoiCanDuyetNguong(err)).toBeNull();
   });
 });
