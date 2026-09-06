@@ -34,6 +34,9 @@ Xây một Digital Twin 3D làm **trung tâm điều hướng và xử lý** cho
 | QĐ-9 | Thứ tự theo **giá trị**: Thiết kế 3D → Vận hành → Cockpit → Mô phỏng |
 | QĐ-10 | Màn Thiết kế v1 **đủ thay cả hai editor cũ**: máy + vùng polygon + ảnh nền + tỉ lệ mét + thêm/xoá máy |
 | QĐ-11 | Spec markdown + mockup HTML tương tác để duyệt |
+| QĐ-12 | Dựng nhà xưởng **hai con đường**: nhập bản vẽ CAD/STEP/GLB (sửa được sau khi nhập) **hoặc** điền dài×rộng×cao từng mặt sàn (§10A) |
+| QĐ-13 | Hình học thiết bị: **7 khối mặc định** phủ 25+ loại máy, thay được bằng file 3D ở 3 cấp — máy / chủng loại / mặc định (§10B) |
+| QĐ-14 | **Line là phạm vi, không phải vật thể** — hình học suy ra từ trạm/máy; có chế độ xem 3D riêng cho từng Line và cho toàn tập đoàn (§10C) |
 
 ---
 
@@ -1105,6 +1108,295 @@ Quy ước alarm: **Đỏ = critical · Vàng = warning · Xanh dương = inform
 
 ---
 
+
+---
+
+## 10A. Dựng nhà xưởng — hai con đường
+
+Yêu cầu chủ sở hữu (2026-09-06): cho phép **dựng nhà xưởng từ bản vẽ kỹ thuật** (nhập CAD/STEP/GLB, chỉnh sửa được sau khi nhập) **hoặc** **điền kích thước dài × rộng × cao từng mặt sàn** rồi dựng các tầng.
+
+Hai con đường **không loại trừ nhau** — chúng ghi vào cùng `twin_toa_nha` / `twin_tang` / `twin_vat_the`, nên nhập CAD xong vẫn sửa tay được, và ngược lại.
+
+### 10A.0 Vì sao cần cả hai — bằng chứng đo được
+
+`factories.floorWidthM = 1500` và `floorDepthM = 1200` trên `SIM-FAC`. Đọc đúng đơn vị thì đó là **1,5 km × 1,2 km** — vô lý cho một xưởng lắp ráp. Gần như chắc chắn ai đó nhập số pixel vào ô mét. Ba nhà máy còn lại để `NULL`.
+
+Nghĩa là: **kích thước sàn hiện tại không dùng được**, và đây chính là lỗ hổng mà con đường B lấp. Con đường A (nhập bản vẽ) lấp nó bằng cách khác — lấy hình học thật từ file CAD.
+
+> **Luật bắt buộc:** giá trị `floorWidthM/floorDepthM` cũ **không được di trú thẳng** vào `twin_tang`. Script di trú phải bỏ qua chúng và để `twin_tang` dùng mặc định, kèm badge "chưa đo" — vì di trú số rác sẽ tạo ra một mặt sàn 1,5 km mà không ai hiểu tại sao.
+
+### 10A.1 Con đường A — nhập từ bản vẽ kỹ thuật
+
+**Định dạng nhận:** `.glb` / `.gltf` (mesh sẵn), `.step` / `.stp` / `.iges` / `.igs` (CAD đặc), `.dxf` / `.dwg` **không nhận ở v1** (cần thư viện riêng, xem §16).
+
+**Công cụ:** `occt-import-js@0.0.23` — đã có sẵn trong repo, kèm `occt-import-js-worker.js` và `occt-import-js.wasm`, nên **chuyển đổi chạy trên trình duyệt trong worker**, không cần dịch vụ máy chủ.
+
+```
+Chọn file bản vẽ (≤ 60 MB)
+  → Worker occt-import-js chuyển STEP/IGES → mesh (không chặn giao diện)
+     hoặc GLTFLoader nạp thẳng .glb/.gltf
+  → Đo: số tam giác, số node, bbox tổng
+  → HỘP THOẠI HIỆU CHỈNH (bắt buộc, không bỏ qua được):
+       • Đơn vị nguồn:  [mm ▾] m · cm · inch
+       • Trục lên:      [Z ▾] Y            ← CAD thường Z-up, glTF Y-up
+       • Xoay quanh trục lên: [0°]
+       • Điểm gốc:      [góc bbox ▾] tâm bbox · gốc file
+       • Xem trước kèm THƯỚC TỈ LỆ và một hình người cao 1,7 m để đối chiếu
+  → Người dùng xác nhận kích thước đọc được:
+       "Bao ngoài: 84,2 m × 51,6 m × 9,4 m — đúng không?"
+  → Chọn cách dùng:
+       (a) Làm VỎ NHÀ (một `twin_vat_the` loai='nhom', giữ nguyên hình)
+       (b) TÁCH THÀNH TẦNG — xem 10A.3
+  → Ghi `equipment_3d_models` (sourceFormat='step'|'gltf') + `twin_vat_the`
+```
+
+**Vì sao hộp thoại hiệu chỉnh là bắt buộc:** file CAD **không tự khai đơn vị một cách đáng tin**. Nhập sai đơn vị cho ra nhà xưởng lớn gấp 1.000 lần hoặc nhỏ bằng hạt gạo, và người dùng sẽ không hiểu vì sao. Thước tỉ lệ + hình người 1,7 m làm sai lệch đơn vị **lộ ra ngay bằng mắt** — rẻ hơn mọi cách kiểm tự động.
+
+**Chỉnh sửa sau khi nhập** (yêu cầu rõ của chủ sở hữu):
+- Vỏ nhà nhập vào là một `twin_vat_the` bình thường → **gizmo di chuyển/xoay/co giãn áp dụng được ngay**, cùng bộ 12 công cụ căn chỉnh ở §7.2.
+- Cây phân cấp hiện **cây node của file gốc** (giữ được nhờ `--no-join --no-flatten`, §7.4) → ẩn/hiện/xoá từng bộ phận (mái, tường, cột) độc lập.
+- Nút **"Đặt lại tỉ lệ"** mở lại hộp thoại hiệu chỉnh nếu phát hiện đơn vị sai sau khi đã nhập.
+- Nút **"Thay bản vẽ"** giữ nguyên mọi máy đã đặt, chỉ thay vỏ.
+
+**Ngưỡng chặn:** > 2.000.000 tam giác hoặc > 60 MB → chặn, hướng dẫn giảm lưới. Vỏ nhà là hình học **tĩnh**, sẽ được merge thành 1 mesh + baked vertex color (§4), nên số tam giác cao ít hại hơn máy móc — nhưng vẫn phải có trần.
+
+### 10A.2 Con đường B — điền kích thước từng mặt sàn
+
+Đây là con đường **mặc định** khi không có bản vẽ, và là con đường nhanh nhất để có mặt bằng dùng được.
+
+**Trình tự ba bước trong màn Thiết kế:**
+
+```
+Bước 1 — Toà nhà
+  Mã       [TN-A          ]
+  Tên      [Toà A         ]
+  Kích thước bao ngoài (m)   Dài [84.0]  Rộng [52.0]  Cao [12.0]
+  Vị trí trong khuôn viên (m) X [0]  Y [0]
+
+Bước 2 — Các tầng    [+ Thêm tầng]
+  ┌────┬──────────────┬─────────┬────────┬──────────┬───────────┐
+  │ Số │ Tên          │ Dài (m) │ Rộng   │ Cao thông│ Cao độ    │
+  ├────┼──────────────┼─────────┼────────┼──────────┼───────────┤
+  │ 1  │ Tầng trệt    │  84.0   │  52.0  │   6.0    │    0.0    │
+  │ 2  │ Tầng 2       │  84.0   │  52.0  │   4.5    │    6.3    │
+  └────┴──────────────┴─────────┴────────┴──────────┴───────────┘
+  ☑ Các tầng cùng kích thước với toà nhà
+  ☐ Tự tính cao độ tầng trên = cao độ + cao thông thuỷ + 0,3 m sàn
+
+Bước 3 — Xem trước 3D + [Tạo]
+```
+
+**Quy tắc thiết kế:**
+- **Nhập bằng MÉT, lưu bằng MILIMÉT.** Người dùng nghĩ bằng mét ("xưởng dài 84 mét"); DB lưu mm để không mất độ chính xác khi đặt máy. Quy đổi trong `heToaDo.ts`, một chỗ duy nhất.
+- **Cao độ tầng trên tự tính** nhưng **sửa đè được** — mặc định `caoDo(n+1) = caoDo(n) + caoThongThuy(n) + 300mm`.
+- Tầng có thể **nhỏ hơn** toà nhà (tầng lửng, tầng kỹ thuật) — bỏ tích "cùng kích thước".
+- Mỗi tầng có **ảnh nền mặt bằng riêng** + công cụ **Đặt tỉ lệ** (§7.3) — hai điểm click + khoảng cách thật.
+- Mọi giá trị nhập tay đặt `nguon = 'tay'` ⇒ **sinh tự động không đè**.
+
+**Sinh tường bao tự động:** tạo tầng xong, sinh 4 `twin_vat_the` loai=`tuong` theo chu vi, dày 200 mm, `nguon='sinh'` — để tầng không phải một mặt phẳng trơ. Xoá được, sửa được.
+
+### 10A.3 Tách bản vẽ thành tầng (cầu nối A → B)
+
+Khi nhập bản vẽ nhiều tầng, hộp thoại đề nghị tách theo cao độ:
+
+```
+Phát hiện 3 cụm hình học theo trục cao:
+  [☑]  0,0 – 6,2 m    → Tầng 1    (12.408 tam giác)
+  [☑]  6,3 – 10,8 m   → Tầng 2    ( 9.117 tam giác)
+  [☐] 10,9 – 12,4 m   → Mái       ( 2.043 tam giác)   ← bỏ tích = gộp vào tầng dưới
+                                             [Tách thành tầng]
+```
+
+Thuật toán: chiếu bbox mọi node lên trục cao, tìm khoảng trống > 0,5 m làm ranh giới. Đây là **gợi ý**, người dùng sửa được ranh giới trước khi áp dụng. Module thuần `tachTangTuHinhHoc.ts`, có test.
+
+### 10A.4 Bảng dữ liệu bổ sung
+
+`twin_tang` thêm ba cột (gộp vào migration `0350`):
+
+| Cột | Kiểu | Ý nghĩa |
+|---|---|---|
+| `daiMm` | `numeric(14,3)` | Dài mặt sàn (trục X) |
+| `rongMm` | `numeric(14,3)` | Rộng mặt sàn (trục Y) |
+| `nguonHinhHoc` | `varchar(16)` | `'nhap_tay'` \| `'ban_ve'` \| `'sinh'` — biết mặt sàn từ đâu ra |
+
+`twin_toa_nha` thêm:
+
+| Cột | Kiểu | Ý nghĩa |
+|---|---|---|
+| `modelVoId` | `integer REFERENCES equipment_3d_models(id)` | Vỏ nhà nhập từ bản vẽ, NULL = dựng bằng khối |
+| `donViNguon` | `varchar(8)` | Đơn vị của file gốc, để hiệu chỉnh lại |
+
+---
+
+## 10B. Hình học thiết bị — mặc định theo chủng loại, thay được bằng file
+
+Yêu cầu chủ sở hữu: **hiển thị mặc định theo vài chủng loại máy thông thường**, và **cho phép nhập file 3D nhẹ để thay thế mặc định**.
+
+### 10B.1 Bảy hình khối mặc định phủ 25+ loại máy
+
+`machineTypeEnum` có **25+ giá trị**, nhưng không cần 25 hình khối. Vẽ 7 hình đủ để phân biệt bằng mắt ở khoảng cách vận hành, và mỗi hình ≈ 40–60 tam giác.
+
+| Hình khối | Loại máy dùng nó | Đặc điểm nhận dạng |
+|---|---|---|
+| **Buồng kiểm quang** | `AOI`, `AVI`, `SPI`, `AXI` | Hộp + nắp buồng camera nhô lên + cửa băng tải hai đầu |
+| **Bàn test** | `ICT`, `FCT`, `ICT_FUNC`, `CMM`, `ROBOT_TEST` | Hộp thấp + mặt bàn + trụ đồ gá |
+| **Máy gắp đặt** | `MOUNTER`, `FEEDER` | Hộp dài + dàn feeder răng lược một bên |
+| **Lò / buồng nhiệt** | `REFLOW`, `WAVE_SOLDER` | Hộp rất dài + ống khói + băng tải xuyên tâm |
+| **Máy in / phun** | `STENCIL_PRINTER`, `DISPENSING`, `SCREWDRIVE` | Hộp + khung in phía trên + ray ngang |
+| **Cánh tay robot** | `ROBOT`, `PALLETIZER`, `WELDER` | Đế trụ + 3 khúc khớp (dùng lại `ArticulatedRobot` khi có dữ liệu khớp) |
+| **Trạm chung** | `ASSEMBLY`, `PACKAGING`, `AUTOMATION`, còn lại | Hộp bo góc + bảng điều khiển nghiêng |
+
+Ánh xạ trong module thuần `hinhKhoiMay.ts`:
+```ts
+export function hinhKhoiCho(loaiMay: string): KhoiKey   // 25+ loại → 7 khối
+```
+Test `hinhKhoiMay.test.ts`: **mọi giá trị của `machineTypeEnum` phải ánh xạ được**, không giá trị nào rơi vào `undefined` — đây là bánh cóc chống việc thêm loại máy mới mà quên cập nhật.
+
+**Mỗi khối tôn trọng kích thước thật** từ `twin_dat_cho.rongMm/caoMm/sauMm` (§5.3) — hình dạng cố định, tỉ lệ co giãn theo số đo. Máy AOI 1400 mm và máy AOI 2200 mm nhìn khác nhau ngay.
+
+**Chỉ báo hướng:** mỗi khối có **một vạch màu ở mặt trước** (mặt vào phôi). Không có nó thì máy xoay 180° trông y hệt, và người dùng không phát hiện hướng sai.
+
+### 10B.2 Thay mặc định bằng file 3D
+
+Ba cấp gán, độ ưu tiên từ hẹp đến rộng — tận dụng đúng cấu trúc `equipment_3d_models` đã có:
+
+```
+1. machineId       → model riêng cho ĐÚNG máy này
+2. equipmentClass  → model cho cả CHỦNG LOẠI (mọi máy AOI dùng chung)
+3. (không có)      → khối thủ tục theo 10B.1
+```
+
+Cấp 2 là cấp **đáng dùng nhất**: nhập một file cho `AOI` là 14 máy AOI đổi hình cùng lúc. UI thư viện asset phải làm rõ điều này bằng nút riêng:
+
+```
+┌──────────────────────────────────────────────┐
+│  aoi-machine.glb    12.400 tam giác  1,8 MB  │
+│  [Gán cho máy này]  [Gán cho MỌI máy AOI ▾]  │
+└──────────────────────────────────────────────┘
+```
+
+**Định dạng nhận:** `.glb`, `.gltf` (nhẹ, khuyến nghị) · `.step`, `.stp`, `.iges`, `.igs` (qua `occt-import-js`) · **`.svg` KHÔNG nhận** — SVG là ảnh 2D, không có chiều sâu; nếu cần biểu tượng phẳng thì đó là việc của bản 2D, không phải mô hình 3D. *(Chủ sở hữu có nhắc `.svg`; tôi ghi rõ lý do từ chối ở đây thay vì im lặng bỏ qua.)*
+
+**Ngưỡng cho model máy** (chặt hơn vỏ nhà, vì máy nhân lên 43 lần và nằm gần camera):
+
+| Số tam giác | Xử lý |
+|---|---|
+| ≤ 50.000 | Nhận, không cảnh báo |
+| 50.001 – 150.000 | Nhận, cảnh báo, gợi ý nén |
+| > 150.000 hoặc > 15 MB | **Chặn** |
+
+**Hiệu chỉnh khi nhập** — cùng hộp thoại của 10A.1 (đơn vị, trục lên, xoay, gốc), cộng thêm:
+- **So sánh với kích thước khai báo**: nếu bbox file lệch > 30 % so với `twin_dat_cho`, hiện cảnh báo *"Model cao 2,4 m nhưng máy khai 1,9 m — dùng kích thước nào?"* với hai nút `[Theo model]` `[Giữ khai báo, co model]`.
+- **Ghi `bounds`** vào `equipment_3d_models` (hiện **NULL ở 5/5 hàng**) — lấp đúng lỗ hổng ở §1.3.
+
+### 10B.3 LOD — bốn bậc
+
+43 máy là ít, nhưng model nhập có thể nặng. Bậc chi tiết trong `mucChiTiet.ts`:
+
+| Bậc | Điều kiện | Vẽ gì |
+|---|---|---|
+| L0 | ≤ 8 máy gần camera nhất **và** khoảng cách < 25 m | GLB thật, đầy đủ |
+| L1 | < 60 m | Khối thủ tục 7 hình (§10B.1) |
+| L2 | < 150 m | Hộp đơn (12 tam giác) |
+| L3 | ≥ 150 m hoặc ngoài khung nhìn | Không vẽ |
+
+Ngân sách cứng: **tối đa 8 GLB nạp đồng thời**. Vượt thì thay thế theo LRU. Điều này giữ ngân sách §4 kể cả khi người dùng nhập 43 model nặng.
+
+---
+
+## 10C. Bố cục và xem theo Line sản xuất
+
+Yêu cầu chủ sở hữu: **layout theo Line, và view 3D riêng cho từng Line** thay vì luôn xem cả tầng.
+
+### 10C.0 Dữ liệu Line đo được
+
+| Line | Mã | Xưởng | Trạm | Máy |
+|---|---|---|---|---|
+| 1 | `SIM-L1` | Xưởng lắp ráp ảo | 12 | 18 |
+| 2 | `SIM-L2` | Xưởng lắp ráp ảo | 12 | 12 |
+| 3 | `SIM-L3` | Xưởng lắp ráp ảo | 12 | 12 |
+| 11 | `T12-SHOT-LA-…` | Task 12 anh chup | 1 | 1 |
+
+Hai dữ kiện quyết định thiết kế:
+- **`orderIndex` đầy đủ 37/37 trạm** → thứ tự dòng chảy dọc Line **suy ra được chính xác**, không cần ai nhập tay.
+- **`production_lines` không có cột hình học nào** → Line **không tự có vị trí**; hình học của nó là **bao lồi các trạm thuộc nó**. Đây là quyết định kiến trúc, không phải thiếu sót.
+
+### 10C.1 Line là phạm vi, không phải vật thể
+
+**QĐ-12:** Line **không** có hàng riêng trong `twin_dat_cho` cho hình học. Nó là **bộ lọc phạm vi** — hình học suy ra từ trạm/máy thuộc nó:
+
+```ts
+// module thuần phamViLine.ts
+export function hinhHocLine(tram: ViTri[], may: ViTri[]): {
+  bbox: BBox;              // bao lồi mọi trạm+máy của line
+  truc: 'X' | 'Y';         // trục chính, từ phương sai lớn hơn
+  huong: 1 | -1;           // chiều dòng chảy, từ orderIndex
+  diemDuongTam: Vec3[];    // đường tâm, nối tâm các trạm theo orderIndex
+}
+```
+
+**Vì sao không cho Line vị trí riêng:** nếu Line có toạ độ riêng, nó sẽ **lệch** khỏi các trạm khi ai đó kéo trạm đi — sinh ra nguồn sự thật thứ hai cho cùng một thứ. Suy ra thì không bao giờ lệch.
+
+Ngoại lệ có chủ ý: `twin_dat_cho` **vẫn nhận** `loaiThucThe='line'` để lưu **nhãn và màu dải Line** (`mau`, `hienThi`, `daKhoa`) — nhưng các cột vị trí bị bỏ qua khi đọc. Ghi rõ trong docblock để không ai "sửa" thành dùng vị trí.
+
+### 10C.2 Chế độ xem theo Line
+
+Bộ chọn phạm vi có **bốn cấp**, chọn cấp nào thì camera và bộ lọc đổi theo:
+
+| Phạm vi | Camera | Hiện | Làm mờ / ẩn |
+|---|---|---|---|
+| **Tập đoàn** | Ortho nghiêng, cao ~400 m | Khối các nhà máy + tên + đèn cảnh báo tổng | Mọi thứ bên trong |
+| **Nhà máy** | Orbit quanh khuôn viên | Các toà nhà, cắt mái | Chi tiết máy |
+| **Tầng** | Top-down ortho nghiêng nhẹ | Xưởng, chuyền, trạm, máy dạng khối | Nhãn máy (trừ máy lỗi) |
+| **Line** ★ | **Orbit dọc trục chính của Line** | Trạm + máy **có nhãn đầy đủ** + mũi tên dòng chảy + WIP từng trạm | Line khác **mờ 12 %**, tường/cột mờ 40 % |
+| **Máy** | Orbit gần, ≤ 8 m | GLB chi tiết + nhãn đầy đủ + ngăn xử lý | — |
+
+Chuyển cấp bằng tween 500 ms. Breadcrumb (§9.1) là đường đi lên; click node trong cây là đường đi xuống.
+
+### 10C.3 Chế độ xem Line có gì riêng
+
+Ba thứ chỉ xuất hiện ở phạm vi Line, vì chúng vô nghĩa ở cấp cao hơn:
+
+**1. Đường dòng chảy có hướng.** Nối tâm các trạm theo `orderIndex`, vẽ mũi tên chạy. Đây là thứ duy nhất trên toàn Twin được phép **animation lúc bình thường** — vì hướng dòng chảy là thông tin, không phải trang trí. Tốc độ mũi tên **tỉ lệ với nhịp thật** (`commandLog.avgDurations`), không phải hằng số; đứng yên khi Line dừng.
+
+**2. Ống WIP theo trạm.** Mỗi trạm có một cột đứng cạnh, cao theo số WIP đang chờ. Trạm nghẽn → cột cao + màu cảnh báo. Đây là cách đọc nút thắt bằng mắt trong 2 giây.
+
+**3. Dải Line theo băng ngang.** Dưới canvas, một dải 2D thu nhỏ toàn Line: 12 ô trạm nối nhau, mỗi ô có màu trạng thái + số WIP + nhịp. **Đồng bộ hai chiều với 3D** — click ô là camera bay tới trạm.
+
+> Dải 2D này thực thi luật §11.5: *mọi lớp phủ màu trên 3D phải có bản 2D song song*. Màu không cho phép so sánh chính xác "trạm 5 tải hơn trạm 4 bao nhiêu".
+
+### 10C.4 Bố cục theo Line trong màn Thiết kế
+
+Ở màn Thiết kế, chọn phạm vi Line mở thêm ba công cụ chuyên dụng — chúng chính là **array + align (§7.2) đặt vào ngữ cảnh Line**, không phải cơ chế mới:
+
+| Công cụ | Việc |
+|---|---|
+| **Rải trạm dọc Line** | Nhập bước (mặc định 2.500 mm) → xếp lại toàn bộ trạm theo `orderIndex` trên một đường thẳng. Máy trong trạm đi theo |
+| **Nắn thẳng Line** | Fit đường thẳng bình phương tối thiểu qua các trạm, chiếu mọi trạm lên đó. Sửa Line bị lệch sau nhiều lần kéo tay |
+| **Đổi hướng Line** | Xoay cả Line 90°/180° quanh tâm, giữ nguyên thứ tự trạm và hướng máy tương đối |
+
+Cả ba là **một lệnh undo được**, không phải chuỗi thao tác — dùng lại `lichSuThaoTac.ts` với `{op:'raiTram', targets:[...], truoc, sau}`.
+
+### 10C.5 Deep-link và điều hướng
+
+Phạm vi Line vào deep-link như mọi phạm vi khác:
+```
+/twin?pv=line:1&chon=station:5&lop=wip,dongChay
+```
+
+Nút điều hướng ở `NganXuLy` khi chọn Line (đã có trong §9.3): `/wip-dashboard?lineId=` · `/production-dashboard?lineId=` · `/oee-dashboard?lineId=`.
+
+### 10C.6 Xem toàn tập đoàn
+
+Phạm vi cao nhất, đáp ứng yêu cầu "xem toàn bộ nhà máy trong tập đoàn":
+
+- Nối qua `factories.corporateCode` → `corporates.code` (**varchar, không phải id** — đo được ở `hierarchy.ts:78`).
+- Mỗi nhà máy là **một khối** đặt theo `twin_toa_nha` của nó; nhà máy chưa có toà nhà → khối giữ chỗ mờ + nhãn "chưa dựng".
+- Bố trí giữa các nhà máy: **lưới vuông tất định** `ceil(sqrt(n))` cột, bước 400 m, thứ tự theo `factories.code`. Chỉnh tay được, `nguon='tay'` thì không đè.
+- Hiện: tên, số máy, số cảnh báo đang mở, đèn trạng thái tổng.
+- Click nhà máy → tụt xuống phạm vi Nhà máy.
+
+**Hiện trạng cần nói thẳng:** DB có **1 tập đoàn, 1 nhà máy có dữ liệu**. View tập đoàn đúng về cấu trúc nhưng hiện chỉ hiển thị một khối. Nó **không phải tính năng chết** — nó là chỗ chứa sẵn cho nhà máy thứ hai. Nhưng đừng nghiệm thu nó bằng ảnh chụp trông "hoành tráng"; nghiệm thu bằng: tạo nhà máy thứ hai trong DB test → phải hiện đủ hai khối.
 ## 11. Sổ kiểm 62 tính năng — cổng ra cho việc xoá màn cũ
 
 QĐ-1 là phương án **khối lượng lớn nhất**: 62 tính năng đang chạy phải được viết lại trước khi xoá màn cũ. Rủi ro lớn nhất không phải kỹ thuật mà là **quên mất một tính năng ai đó đang dùng hằng ngày**.
@@ -1239,26 +1531,70 @@ QĐ-1 là phương án **khối lượng lớn nhất**: 62 tính năng đang ch
 
 ---
 
-## 12. Kế hoạch triển khai — 5 đợt theo giá trị (QĐ-9)
+## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
 
+### 12.1 Bảng đợt
+
 | Đợt | Nội dung | Đầu ra nghiệm thu | Phụ thuộc |
 |---|---|---|---|
-| **Đ0** | **Nền móng & lưới an toàn.** 4 migration; seed `twin_kich_thuoc_loai`; script di trú §5.6 + báo cáo đối soát; `resolve.dedupe` + `manualChunks vendor-three`; **vá rò rỉ GPU `Factory3DScene.tsx:219-226`**; `mauTrangThai.ts` hợp nhất 3 hệ màu; tạo sẵn route stub `/twin` + `/twin-studio` + mục `navigation.tsx` + **toàn bộ khoá i18n `twin3d.*` cho cả vi/en/zh** | `npm run db:push && db:verify` sạch · `npm test` xanh (kể cả `duongVaoMenu.test.ts`) · chunk `vendor-three` xuất hiện trong `dist` · script di trú in đối soát khớp | — |
-| **Đ1** | **Lõi engine `twin3d/loi/`** + module thuần. Mở rộng `factory-scene` thành kit: `KhungCanh`, `dieuKhienQuay` (+`invalidate`), `LoBatchMay` (BatchedMesh), `LopNhan`+`locNhan`, `chonVatThe`, `vienNoiBat`, `matDoKhungHinh`, `giaiPhong`, `webglcontextlost`, `heToaDo.ts` | `/factory-command` (đang dùng `FactoryScene3D`) viết lại trên kit mà **hoạt động y hệt** · đo được ≤ 150 draw calls · test `heToaDo.test.ts` xanh | Đ0 |
-| **Đ2** | **Thuật toán sinh + màn Thiết kế** `/twin-studio`. `sinhBoCuc.ts` + `hinhHocCanChinh.ts` + `snapVatVaoVat.ts` + `boCucService.ts` + tRPC `xemTruocSinh`/`sinhTuDong`/`luuHangLoat`; 3 vùng, gizmo, bộ 9+3 công cụ, cây, inspector, undo/redo, thư viện asset, vùng polygon, ảnh nền + tỉ lệ, khu chờ xếp chỗ | 9 test T1–T9 xanh · kéo máy → Lưu → reload giữ nguyên · sinh lại **không đè** máy đã chỉnh tay · vẽ được vùng · tải được ảnh nền + đặt tỉ lệ · **đủ điều kiện tắt 2 editor cũ** (sổ kiểm #41–#49 ✅) | Đ1 |
-| **Đ3** | **Màn Vận hành** `/twin`. Bố cục toàn khung, `NganXuLy` (ack alarm + tạo phiếu + gán KTV), bảng điều hướng §9.3, deep-link, breadcrumb, 3 trạng thái tươi, đối soát, danh sách 2D đồng bộ, toggle 2D + fallback WebGL, a11y bàn phím, chế độ trình bày | Click máy → ack được alarm thật, tạo được phiếu thật · deep-link khôi phục đúng cảnh · tắt WebGL → rơi 2D không màn đen · **chỉ dùng bàn phím vẫn ack được alarm** · sổ kiểm #8–#17, #30–#34, #50–#54 ✅ | Đ1, Đ2 |
-| **Đ4** | **Hấp thụ cockpit & realtime.** `twin:trangThai` 10s; `trangThaiHangLoat` (bỏ N+1); UNS stream; di trú cây ISA-95 + dải cảnh báo; nút mở cockpit máy/robot; E-STOP nổi lên Twin; timeline tua | Không còn query N+1 trong vòng render · sổ kiểm #18–#29, #55–#62 ✅ · **xoá được `CommandCenter`, `FactoryLiveMap3D`, `DigitalTwinCenter`** sau khi mọi dòng của chúng ✅ | Đ3 |
-| **Đ5** | **Mô phỏng & dọn dẹp.** Ngăn "Mô phỏng" (what-if + workflow replay), export USD, xoá màn cũ đã ✅ toàn bộ, gỡ 2 editor cũ, gỡ `Factory3DScene`/`FactoryFloor3D`, quyết định `/layout/:id` | Sổ kiểm **62/62 ✅** · grep 3 engine cũ = 0 kết quả · mọi route cũ redirect đúng | Đ4 |
+| **Đ0** | **Nền móng & lưới an toàn.** 5 migration (thêm cột 10A.4); seed `twin_kich_thuoc_loai` 25+ loại; script di trú §5.6 + đối soát; `resolve.dedupe` + `manualChunks vendor-three`; **vá rò rỉ GPU `Factory3DScene.tsx:219-226`**; `mauTrangThai.ts` hợp nhất 3 hệ màu; route stub `/twin` + `/twin-studio` + `navigation.tsx` + **toàn bộ khoá i18n `twin3d.*` cho vi/en/zh** | `db:push && db:verify` sạch · `npm test` xanh (kể cả `duongVaoMenu.test.ts`) · chunk `vendor-three` trong `dist` · script di trú in đối soát khớp · **`floorWidthM=1500` KHÔNG được di trú** (§10A.0) | — |
+| **Đ1** | **Lõi engine `twin3d/loi/`** + module thuần. Mở rộng `factory-scene` thành kit: `KhungCanh`, `dieuKhienQuay` (+`invalidate`), `LoBatchMay` (BatchedMesh), `LopNhan`+`locNhan`, `chonVatThe`, `vienNoiBat`, `matDoKhungHinh`, `giaiPhong`, `webglcontextlost`, `heToaDo.ts` | `/factory-command` viết lại trên kit mà **hoạt động y hệt** · ≤ 150 draw calls đo được · `heToaDo.test.ts` xanh | Đ0 |
+| **Đ2** | **Hình học thiết bị (§10B).** 7 khối mặc định `hinhKhoiMay.ts` + ánh xạ 25+ loại; `mucChiTiet.ts` 4 bậc LOD; vạch chỉ hướng mặt trước; gán model 3 cấp (máy / chủng loại / mặc định) | `hinhKhoiMay.test.ts`: **mọi giá trị `machineTypeEnum` ánh xạ được**, 0 giá trị `undefined` · 7 khối phân biệt được bằng mắt ở ảnh chụp · LOD hạ bậc đúng ngưỡng | Đ1 |
+| **Đ3** | **Dựng nhà xưởng (§10A).** Con đường B (điền kích thước 3 bước) + con đường A (nhập CAD/GLB qua `occt-import-js` worker) + hộp thoại hiệu chỉnh đơn vị/trục + `tachTangTuHinhHoc.ts` + sinh tường bao | Điền 84×52×6 m → tạo được toà + tầng, xem trước đúng tỉ lệ · nhập STEP → hộp thoại hiệu chỉnh hiện thước + hình người 1,7 m · **nhập sai đơn vị bị bắt bằng mắt** · tách tầng theo cao độ chạy đúng | Đ1 |
+| **Đ4** | **Màn Thiết kế (§7) + thuật toán sinh (§8).** `sinhBoCuc.ts` + `hinhHocCanChinh.ts` + `snapVatVaoVat.ts` + `boCucService.ts` + tRPC ghi cảnh; 3 vùng, gizmo, bộ 12 công cụ, cây, inspector, undo/redo, thư viện asset, vùng polygon, ảnh nền + tỉ lệ, khu chờ xếp chỗ; **3 công cụ Line (§10C.4)** | 9 test T1–T9 xanh · kéo máy → Lưu → reload giữ nguyên · sinh lại **không đè** máy đã chỉnh tay · **xoay snap ra đúng 15.000 không phải 23.000** (RB-2) · **đủ điều kiện tắt 2 editor cũ** (sổ kiểm #41–#49 ✅) | Đ2, Đ3 |
+| **Đ5** | **Màn Vận hành (§9) + phạm vi Line/Tập đoàn (§10C).** Bố cục toàn khung, `NganXuLy` (ack alarm + tạo phiếu + gán KTV), 5 cấp phạm vi, `phamViLine.ts`, đường dòng chảy có hướng, ống WIP, dải Line 2D, deep-link, 3 trạng thái tươi, đối soát, toggle 2D + fallback, a11y bàn phím | Click máy → ack alarm **thật trong DB**, tạo phiếu **thật** · chọn phạm vi Line → chỉ Line đó rõ, Line khác mờ 12 % · deep-link `?pv=line:1` khôi phục đúng · tắt WebGL → rơi 2D · **chỉ bàn phím vẫn ack được** · sổ kiểm #8–#17, #30–#34, #50–#54 ✅ | Đ1, Đ4 |
+| **Đ6** | **Hấp thụ cockpit & realtime.** `twin:trangThai` 10s; `trangThaiHangLoat` (bỏ N+1); UNS stream; di trú cây ISA-95 + dải cảnh báo; nút mở cockpit; E-STOP nổi lên Twin; timeline tua | Không còn N+1 trong vòng render · sổ kiểm #18–#29, #55–#62 ✅ · **xoá được `CommandCenter`, `FactoryLiveMap3D`, `DigitalTwinCenter`** sau khi mọi dòng ✅ | Đ5 |
+| **Đ7** | **Mô phỏng & dọn dẹp.** Ngăn "Mô phỏng" (what-if + workflow replay), export USD, xoá màn cũ đã ✅ toàn bộ, gỡ 2 editor cũ, gỡ `Factory3DScene`/`FactoryFloor3D`, quyết định `/layout/:id` | Sổ kiểm **62/62 ✅** · grep 3 engine cũ = 0 kết quả · mọi route cũ redirect đúng | Đ6 |
 
-**Chạy song song được:** Đ0 và phần module thuần của Đ2 (`sinhBoCuc.ts`, `hinhHocCanChinh.ts`) — khác tệp hoàn toàn. Đ1 phải xong trước Đ2 và Đ3.
+### 12.2 Phân công session và agent
+
+Chủ dự án (phiên điều phối) tạo **một session riêng cho mỗi đợt**, giao brief gồm: §2 (ràng buộc cứng) + §3 (nguyên tắc) + §4 (ngân sách) + mục đợt của mình + danh sách test phải xanh.
+
+| Đợt | Loại session | Agent chuyên môn | Vì sao |
+|---|---|---|---|
+| Đ0 | Backend/DB | `general-purpose` | Migration + script di trú + cấu hình build; ít suy luận kiến trúc, nhiều thao tác chính xác |
+| Đ1 | Frontend 3D | `feature-dev:code-architect` → rồi `general-purpose` | Kit engine là quyết định kiến trúc ảnh hưởng mọi đợt sau; cần thiết kế trước khi viết |
+| Đ2 | Frontend 3D | `general-purpose` | 7 khối + LOD là công việc hình học rõ ràng, có test làm cổng |
+| Đ3 | Full-stack | `general-purpose` | Nhập CAD chạy trong worker trình duyệt; cần cả UI lẫn xử lý tệp |
+| Đ4 | Frontend 3D | `feature-dev:code-architect` → `general-purpose` | Màn nặng nhất: gizmo + 12 công cụ + undo/redo; kiến trúc lệnh phải đúng từ đầu |
+| Đ5 | Frontend | `feature-dev:code-architect` → `general-purpose` | Màn trung tâm nghiệp vụ; ack alarm/tạo phiếu chạm nhiều module |
+| Đ6 | Full-stack | `general-purpose` | Realtime + di trú tính năng; nhiều việc cơ học |
+| Đ7 | Full-stack | `code-simplifier` + `general-purpose` | Dọn dẹp và xoá; cần con mắt gộp trùng lặp |
+
+**Chạy song song được:**
+- Đ0 ∥ phần module thuần của Đ2/Đ4 (`hinhKhoiMay.ts`, `sinhBoCuc.ts`, `hinhHocCanChinh.ts`) — khác tệp hoàn toàn.
+- Đ2 ∥ Đ3 sau khi Đ1 xong — hình học thiết bị và dựng nhà xưởng không chạm nhau.
+- **Đ4 và Đ5 KHÔNG song song** — cả hai đọc cùng kit và cùng mô hình dữ liệu; chạy song song sẽ xung đột liên tục.
 
 **Gộp 5 tệp dùng chung vào Đ0** (`App.tsx`, `navigation.tsx`, 3 tệp locale) để các đợt sau không xung đột merge.
 
-Sau mỗi đợt: `npm run check && npm test && npm run test:e2e` trước khi mở đợt kế tiếp.
+### 12.3 Cổng chất lượng sau mỗi đợt — bắt buộc
 
----
+Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, theo thứ tự:
+
+```
+1. CỔNG MÁY    npm run check && npm test && npm run test:e2e
+                 ↓ (xanh)
+2. CỔNG QA     Agent QA độc lập (KHÔNG phải agent đã viết mã)
+                 · đọc brief đợt + đọc diff
+                 · tìm lỗi, tìm chỗ khai mà không đo
+                 · chạy lại phép đo bằng mô hình RỜI với mô hình của người viết
+                 · báo cáo: lỗi CHẶN / lỗi THƯỜNG / quan sát
+                 ↓ (0 lỗi chặn)
+3. CỔNG PDCA   Skill `pdca` cho mọi lỗi QA tìm được
+                 · validate thiết bị đo TRƯỚC
+                 · đo OUTCOME người dùng thấy, không đo cơ chế
+                 · chứng minh nhân quả bằng ablation
+                 · Pareto gốc rễ rồi mới sửa
+                 ↓
+   → mở đợt kế tiếp
+```
+
+**Luật cứng cho cổng QA:** agent QA **không được là agent đã viết mã đợt đó**. Bài học `BG-127` của repo: *độc lập phải ở mô hình, không ở người đo* — hai phiên cùng sai một kiểu vẫn cho cùng kết quả sai. Nên QA phải đo bằng **mô hình khác**: nếu người viết đếm bằng `WHERE`, QA phải liệt kê toàn phân bố và đối chiếu tổng.
+
+**Luật bàn giao số:** báo cáo của mỗi đợt phải đọc **thiết bị đo**, không đọc kết quả. "Test xanh" là lời khai; "`npm test` in `142 passed`, dán nguyên văn" là số đo.
 
 ## 13. Kiểm thử
 
@@ -1277,6 +1613,11 @@ Hiện trạng: **0 test cho mọi component 3D, 0 e2e liên quan twin.** Đây 
 | `lichSuThaoTac.test.ts` | undo/redo, giới hạn 50, gộp thao tác kéo liên tiếp |
 | `kiemTraAsset.test.ts` | ngưỡng 50k/150k tam giác, 15 MB, bbox suy biến |
 | `duongDanTwin.test.ts` | mã hoá↔giải mã round-trip, tham số rác không làm vỡ |
+| `hinhKhoiMay.test.ts` | ★ **mọi giá trị `machineTypeEnum` (25+) ánh xạ được**, 0 giá trị `undefined`; khối co giãn đúng theo kích thước |
+| `hieuChinhNhapModel.test.ts` | quy đổi đơn vị mm/cm/m/inch, đổi trục Z-up↔Y-up, xoay, đặt gốc; bbox sau hiệu chỉnh đúng |
+| `tachTangTuHinhHoc.test.ts` | tách cụm theo cao độ, khoảng trống > 0,5 m làm ranh giới, sửa ranh giới thủ công |
+| `phamViLine.test.ts` | bao lồi Line, trục chính từ phương sai, hướng dòng chảy từ `orderIndex`, đường tâm qua tâm trạm |
+| `boCucTang.test.ts` | dài×rộng×cao → bbox tầng; cao độ tầng trên tự tính; tầng nhỏ hơn toà nhà |
 
 ### 13.2 Playwright e2e
 
@@ -1296,6 +1637,11 @@ Hiện trạng: **0 test cho mọi component 3D, 0 e2e liên quan twin.** Đây 
 | `e2e/twin-ngan-sach-hieu-nang.spec.ts` | `window.__thongKeVe` → ≤ 150 draw calls, ≤ 500k tam giác |
 | `e2e/twin-du-lieu-khong-ro.spec.ts` | ★ Máy không có dữ liệu → **không** màu xanh; có badge "Không rõ" |
 | `e2e/twin-mot-canvas.spec.ts` | ★ RB-4: đếm số `<canvas>` WebGL sống = 1 tại mọi thời điểm |
+| `e2e/twin-dung-tang-nhap-tay.spec.ts` | Điền 84×52×6 m → toà + tầng xuất hiện, tường bao sinh tự động |
+| `e2e/twin-nhap-ban-ve.spec.ts` | Nhập GLB → hộp thoại hiệu chỉnh; đổi đơn vị → bbox đổi 1.000×; sửa được sau khi nhập |
+| `e2e/twin-gan-model-chung-loai.spec.ts` | ★ Gán model cho `AOI` → **mọi máy AOI** đổi hình, không chỉ máy đang chọn |
+| `e2e/twin-pham-vi-line.spec.ts` | ★ Chọn Line 1 → Line 2,3 mờ; dải Line 2D click được; deep-link `?pv=line:1` khôi phục |
+| `e2e/twin-pham-vi-tap-doan.spec.ts` | Seed nhà máy thứ hai → view Tập đoàn hiện **2 khối** |
 
 Cửa sổ đo cho e2e: `window.__thongKeVe`, `window.__demNhan`, `window.__phamViTwin`, `window.__soCanvas`.
 
@@ -1351,7 +1697,14 @@ Twin được coi là **hoàn thành** khi và chỉ khi tất cả đúng:
 17. Đổi theme sáng ↔ tối → cảnh 3D đúng ở cả hai.
 18. Đổi ngôn ngữ vi/en/zh → không còn chuỗi cứng nào trong Twin.
 19. **Đo quyền bằng tài khoản KHÔNG phải admin**: vai không có quyền → chế độ chỉ đọc, gizmo và nút Lưu **biến mất** (không phải disable).
-20. **Sổ kiểm §11 đạt 62/62 ✅ đã đo** trước khi xoá màn cũ cuối cùng.
+20. Điền `84 × 52 × 6` m → tạo được toà nhà + tầng, xem trước 3D đúng tỉ lệ; tường bao sinh tự động.
+21. Nhập một file STEP → hộp thoại hiệu chỉnh hiện **thước tỉ lệ + hình người 1,7 m**; đổi đơn vị mm→m làm mô hình đổi kích thước 1.000 lần **thấy được bằng mắt**.
+22. Nhập bản vẽ nhiều tầng → tách được theo cao độ; sửa ranh giới trước khi áp dụng.
+23. Mọi giá trị của `machineTypeEnum` (25+) ánh xạ được sang 1 trong 7 khối — **0 giá trị rơi vào `undefined`**.
+24. Gán một model cho chủng loại `AOI` → **mọi máy AOI đổi hình cùng lúc**, không phải gán từng máy.
+25. Chọn phạm vi **Line** → chỉ Line đó rõ, Line khác mờ 12 %; mũi tên dòng chảy chạy theo `orderIndex`; dải Line 2D đồng bộ hai chiều với 3D.
+26. Tạo nhà máy thứ hai trong DB test → view **Tập đoàn hiện đủ hai khối** (không nghiệm thu bằng ảnh chụp một khối).
+27. **Sổ kiểm §11 đạt 62/62 ✅ đã đo** trước khi xoá màn cũ cuối cùng.
 
 ---
 
@@ -1366,6 +1719,8 @@ Twin được coi là **hoàn thành** khi và chỉ khi tất cả đúng:
 - ❌ Điều khiển máy trực tiếp từ 3D. Hệ hiện là **ALERT-ONLY**; các nút "Propose" điều hướng sang `/control-plane` và `/command-console` chứ không ghi lệnh xuống máy. Giữ nguyên nguyên tắc đó.
 - ❌ Thực thể camera CCTV — DB chưa có bảng camera.
 - ❌ Import BIM/IFC (chỉ GLB/GLTF + STEP/IGES ở v1).
+- ❌ **Import `.dxf` / `.dwg`** — cần thư viện riêng (`dxf-parser` hoặc RealDWG); bản vẽ 2D dùng làm **ảnh nền tầng** (§7.3) là đủ cho v1.
+- ❌ **Import `.svg` làm mô hình máy** — SVG là ảnh 2D không có chiều sâu. Chủ sở hữu có nhắc định dạng này; lý do từ chối ghi ở §10B.2. Nếu cần biểu tượng phẳng thì đó là việc của bản 2D.
 
 ---
 
