@@ -99,6 +99,7 @@ import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/ngan
 // ── Đợt 6 (§9.8/§10.2) — kho trạng thái DÙNG CHUNG cho trực tiếp và tua lại ──
 import { dongHoHienThi, hopNhat } from "@/components/twin3d/van-hanh/khoTrangThai";
 import { useKhoTrangThai } from "@/components/twin3d/van-hanh/useKhoTrangThai";
+import { DongThoiGian, type TocDo } from "@/components/twin3d/van-hanh/DongThoiGian";
 
 /** Phạm vi mặc định khi URL không nói gì. */
 const PHAM_VI_MAC_DINH: PhamVi = { cap: "tang", id: null };
@@ -280,7 +281,34 @@ export default function TwinVanHanh() {
    *   thay thế nó: lúc chưa có gói realtime nào, cảnh vẫn phải vẽ đúng dữ liệu
    *   nền — một cảnh trống ở giây đầu chính là "0 giả" mà NT-3 cấm.
    */
-  const { kho, ketNoi, datMocXemLai } = useKhoTrangThai(factoryId, bayGioThat);
+  const { kho, ketNoi, datAnhLichSu } = useKhoTrangThai(factoryId, bayGioThat);
+
+  /* ── Tua lại (§9.8) ─────────────────────────────────────────────────── */
+  const [mocTua, setMocTua] = useState<number | null>(null);
+  const [dangPhat, setDangPhat] = useState(false);
+  const [tocDo, setTocDo] = useState<TocDo>(1);
+
+  /**
+   * ★★★ ẢNH LỊCH SỬ ĐỔ VÀO **CÙNG** KHO — đây là chỗ §9.8 được thực thi.
+   *
+   * Không có `khoReplay` riêng. Gói lịch sử đi qua đúng `apDung()` mà gói socket
+   * đi qua, chỉ khác `nguon` và có `mocXemLai`. Nhờ vậy mọi luật phía sau (tuổi
+   * → `khong_ro`, đếm rỗng ≠ đếm 0) áp y hệt nhau cho hai chế độ.
+   */
+  const lichSuQ = trpc.twinCanh.anhLichSu.useQuery(
+    { factoryId: factoryId ?? 0, moc: mocTua ?? 0 },
+    { enabled: factoryId !== null && mocTua !== null, retry: false },
+  );
+
+  useEffect(() => {
+    if (mocTua === null) {
+      datAnhLichSu(null, null);
+      return;
+    }
+    // Chưa có dữ liệu ⇒ chỉ đánh dấu đang tua (UI hiện "Xem lại"), CHƯA thay
+    // cảnh. Thay cảnh bằng dữ liệu trực tiếp mà gắn nhãn lịch sử là nói dối.
+    datAnhLichSu(mocTua, lichSuQ.data?.may ?? null);
+  }, [mocTua, lichSuQ.data, datAnhLichSu]);
 
   /**
    * ★★★ MỘT đồng hồ cho MỌI phép xét tuổi. Khi đang tua, đây là MỐC ĐANG XEM
@@ -999,6 +1027,17 @@ export default function TwinVanHanh() {
           />
         </div>
       </div>
+
+      {/* ── Dải tua lại 24 h (§9.8) — CÙNG kho với trực tiếp ───────────── */}
+      <DongThoiGian
+        moc={mocTua}
+        bayGio={bayGioThat}
+        dangPhat={dangPhat}
+        tocDo={tocDo}
+        onDoiMoc={setMocTua}
+        onDoiPhat={setDangPhat}
+        onDoiTocDo={setTocDo}
+      />
 
       {/* ── Dải dưới: dải Line 2D đồng bộ hai chiều (§10C.3 mục 3) ─────── */}
       {phamVi.cap === "line" && hinhLine ? (

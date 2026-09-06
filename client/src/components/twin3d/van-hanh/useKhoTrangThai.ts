@@ -38,8 +38,11 @@ export interface KetQuaKhoTrangThai {
   kho: KhoTrangThai;
   /** Một trong NĂM trạng thái G15 — KHÔNG phải một boolean. */
   ketNoi: TrangThaiKetNoi;
-  /** Đặt mốc tua lại (hoặc `null` để về trực tiếp). */
-  datMocXemLai: (moc: number | null) => void;
+  /**
+   * Đặt ảnh lịch sử đang xem. `moc = null` ⇒ về trực tiếp.
+   * ★ Nhận CẢ dữ liệu chứ không chỉ mốc — xem docblock trong thân hàm.
+   */
+  datAnhLichSu: (moc: number | null, may: readonly MocTrangThai[] | null) => void;
 }
 
 /**
@@ -95,12 +98,27 @@ export function useKhoTrangThai(
     };
   }, [factoryId]);
 
-  const datMocXemLai = useMemo(
-    () => (moc: number | null) =>
-      setKho((cu) => ({ ...cu, mocXemLai: moc, nguon: moc == null ? cu.nguon : "lich_su" })),
+  /**
+   * ★★★ ĐỔ ẢNH LỊCH SỬ VÀO **CÙNG MỘT** `apDung()` mà socket dùng (§9.8).
+   *
+   * ⚠ Bản viết đầu chỉ đặt `mocXemLai` mà KHÔNG thay dữ liệu — hậu quả là nhãn
+   * nói "Xem lại 14:32" trong khi cảnh vẫn vẽ số liệu TRỰC TIẾP. Đó đúng là
+   * "live và replay lệch nhau" mà §9.8 sinh ra để chặn, chỉ khác là lệch 100%.
+   * Nên hàm này nhận CẢ dữ liệu, không chỉ cái mốc.
+   *
+   * `null` ⇒ về trực tiếp: xoá `mocXemLai` và để gói socket kế tiếp ghi đè.
+   */
+  const datAnhLichSu = useMemo(
+    () => (moc: number | null, may: readonly MocTrangThai[] | null) => {
+      setKho((cu) => {
+        if (moc == null) return { ...cu, mocXemLai: null };
+        if (!may) return { ...cu, mocXemLai: moc, nguon: "lich_su" as const };
+        return apDung(cu, { may, bayGio: moc, nguon: "lich_su", mocXemLai: moc });
+      });
+    },
     [],
   );
 
   const ketNoi = ketNoiTheoMoc(kho, daKetNoi, bayGio);
-  return { kho, ketNoi, datMocXemLai };
+  return { kho, ketNoi, datAnhLichSu };
 }
