@@ -1740,6 +1740,24 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > ⇒ **Luật:** trước khi tin một phép đo "không có gì xấu xảy ra", hỏi *"nếu luật này KHÔNG tồn tại
 > thì phép đo có khác đi không?"* Nếu không khác, phép đo đang chứng minh số 0 — phải dựng ca dương.
 
+> ### ★★★ G9 — ĐƠN VỊ CỦA CON SỐ (2026-09-06, dọn cổng i18n)
+>
+> Chủ dự án giao brief nói *"dọn **33 mục** i18n thiếu"*. Agent đo lại và sửa: **33 là số DÒNG BÁO
+> LỖI, không phải số KHOÁ** — chúng gộp lại còn **7 khoá riêng biệt** (mỗi khoá báo một lần cho mỗi
+> locale, và vài điểm gọi lặp lại). Ai lập kế hoạch theo "33 bản dịch" là làm việc trên con số phóng
+> đại gần 5 lần.
+>
+> Cùng lớp với "25+ loại máy" (số thật 24) ở G3, nhưng nguy hiểm hơn: ở đây **con số đúng** —
+> chỉ **đơn vị sai**. Không phép kiểm tra "số này có khớp DB không" nào bắt được.
+>
+> ⇒ **Luật:** mọi con số trong brief phải kèm **đơn vị và câu lệnh sinh ra nó**. *"33 dòng từ
+> `vitest run <tệp>`"* khác hẳn *"33 khoá cần dịch"*. Và agent nhận brief **được phép và nên** đo lại
+> con số đó trước khi lập kế hoạch — đây là lần thứ hai một agent sửa số của chủ dự án và đúng.
+>
+> **Chi tiết đo đáng nhớ:** khi thiếu khoá, suite **dừng sớm** — 7 test thu thập tụt còn 3, trong đó
+> `1 passed`. Ai chỉ nhìn "số xanh" mà không nhìn **số thu thập** sẽ thấy "1 passed" và tưởng gần ổn.
+> Đây chính là G3 áp cho ca lỗi-chặn-thu-thập.
+
 > ### ★★★ G8 — CHỈ BÁO LUÔN-ĐÚNG là chỉ báo KHÔNG BAO GIỜ NÓI KHÔNG (2026-09-06, vá Đợt 3)
 >
 > `donViDeNghiChacChan` cũ nghĩa là *"đơn vị đã chọn có hợp lý không"* — **đúng theo cấu trúc**, vì
@@ -1924,6 +1942,26 @@ Twin được coi là **hoàn thành** khi và chỉ khi tất cả đúng:
 27. **Sổ kiểm §11 đạt 62/62 ✅ đã đo** trước khi xoá màn cũ cuối cùng.
 
 ---
+
+## 15b. Nợ i18n còn lại — đã đo, cố ý KHÔNG mở rộng phạm vi
+
+Session dọn cổng i18n (`a9049f26`) làm xanh **2 cổng** `entityDictionaryCoverage` +
+`appErrorParamsCoverage` (7/7), thêm đúng **7 khoá** vào cả 3 locale, `errors.*` cân bằng
+**646/646/646**. Sàng mật độ chứng minh cổng biết kêu (xoá 1 khoá → 2 đỏ; hoàn nguyên → 7 xanh).
+
+**Nợ CÒN LẠI, nằm ngoài `errors.*` nên hai cổng trên không quản:**
+
+| Hạng mục | Số đo |
+|---|---|
+| Tổng khoá mỗi locale | vi **17.958** · en **17.978** · zh **17.986** — lệch |
+| Nợ chính thức đóng băng | **339 thiếu-ở-tất-cả + 20 thiếu-ở-một-vài** (`npm run i18n:check`) |
+| Nợ này có phải do Twin sinh ra? | **KHÔNG** — tại HEAD trước khi vá đã là 17.951/17.971/17.979; mỗi tệp chỉ tăng đúng +7 |
+
+**Hai điều người tiếp quản phải biết:**
+1. **`i18n:check` sẽ XANH suốt** trong khi nợ này tồn tại, vì nó đã được đóng băng làm đường cơ sở.
+   Nghĩa là **không có cổng nào nhắc ai sửa** — nợ này chỉ được xử khi có người chủ động tìm đến.
+2. **3 tệp locale là tệp dùng chung.** Dọn ~359 khoá cần một session **không có phiên nào ghi song
+   song** — xem luật G2.
 
 ## 16. Ngoài phạm vi (YAGNI)
 
