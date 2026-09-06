@@ -27,6 +27,20 @@ export default defineConfig({
   envDir: path.resolve(import.meta.dirname),
   root: path.resolve(import.meta.dirname, "client"),
   publicDir: path.resolve(import.meta.dirname, "client", "public"),
+  // ★★★ Twin 3D — worker PHẢI là "es", không được để mặc định "iife".
+  //
+  // Vite mặc định `worker.format = "iife"`. Riêng nó thì chạy; riêng `manualChunks` ở dưới
+  // thì cũng chạy. GHÉP LẠI thì vỡ:
+  //   [vite:worker-import-meta-url] Invalid value "iife" for option "worker.format"
+  //   — UMD and IIFE output formats are not supported for code-splitting builds.
+  //
+  // Đợt 0 thêm `manualChunks` (bật code-splitting) và Đợt 3 thêm worker `occtWorker.ts`
+  // (đọc STEP/IGES bằng occt-import-js). Không đợt nào sai riêng — chỉ tổ hợp mới hỏng,
+  // và `npm run check` vẫn XANH vì đây là lỗi thời-điểm-BUNDLE, không phải lỗi kiểu.
+  // ⇒ Bài học: `check` xanh KHÔNG thay được `build`; cổng ra của mọi đợt phải chạy cả hai.
+  worker: {
+    format: "es",
+  },
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
