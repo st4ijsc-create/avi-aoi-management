@@ -1,0 +1,1405 @@
+# Thiết kế: Nhà máy 3D Digital Twin — trung tâm hệ sinh thái AVI/AOI
+
+- **Ngày:** 2026-09-06
+- **Trạng thái:** CHỜ DUYỆT — chưa được phép viết mã
+- **Nhánh hiện tại:** `feat/hmi-dep`
+- **Nhánh đề xuất thực thi:** `feat/twin-3d-trung-tam`
+- **Người duyệt:** chủ sở hữu hệ thống
+
+---
+
+## 0. Tóm tắt điều hành
+
+Xây một Digital Twin 3D làm **trung tâm điều hướng và xử lý** cho hệ AVI/AOI, gồm hai màn bổ trợ:
+
+| Màn | Route | Vai trò | Ai dùng |
+|---|---|---|---|
+| **Xưởng dựng Twin** | `/twin-studio` (mới) | Thiết kế & bố trí mặt bằng 3D: kéo thả, căn chỉnh, vùng an toàn, ảnh nền, thư viện model | Kỹ sư layout, admin |
+| **Twin vận hành** | `/twin` (mới) | Xem & xử lý: 3D toàn khung, trạng thái realtime, click máy → ack alarm / tạo phiếu / mở chức năng | Quản lý, kỹ thuật, vận hành |
+
+Đây **không phải dự án từ số 0**, cũng **không phải nâng cấp tại chỗ**. Repo đã có 11 màn liên quan 3D/layout với **62 tính năng độc nhất đang chạy**, 5.269 dòng service twin ở backend, và một package cảnh 3D (`factory-scene`, 1.393 dòng) đã đạt chuẩn kỹ thuật tốt. Chiến lược: **xây Twin mới đầy đủ, di trú dần 62 tính năng, xoá màn cũ sau khi từng dòng sổ kiểm được đánh dấu *đã di trú và đã đo*.**
+
+### Quyết định nền đã chốt với chủ sở hữu
+
+| # | Quyết định |
+|---|---|
+| QĐ-1 | Xây Twin mới đầy đủ, di trú dần 62 tính năng, cuối cùng xoá màn cũ |
+| QĐ-2 | 3D điều hướng + panel 2D xử lý (ack alarm, tạo phiếu ở bề mặt 2D tuân ISA-101) |
+| QĐ-3 | Bộ 9 công cụ căn chỉnh + snap vật-vào-vật + array (mức Visual Components) |
+| QĐ-4 | Hệ toạ độ **mm tuyệt đối** mới, di trú 2 hệ cũ vào, giữ cột cũ để màn cũ không gãy |
+| QĐ-5 | Dựng đủ cấu trúc campus (Site→Toà→Tầng→Xưởng→Chuyền→Trạm→Máy), nhưng **chờ người nhập** toà nhà/tầng thật; sinh tự động chỉ tạo 1 toà 1 tầng mặc định |
+| QĐ-6 | Hình học: sinh thủ tục từ DB + GLB cho máy gần camera + **import CAD/STEP** qua `occt-import-js` |
+| QĐ-7 | Kích thước máy: mặc định theo **loại máy** + badge "chưa đo" + sửa được trong Inspector |
+| QĐ-8 | Hai editor cũ chạy **song song** trong giai đoạn di trú, tắt sau khi màn Thiết kế đủ tính năng |
+| QĐ-9 | Thứ tự theo **giá trị**: Thiết kế 3D → Vận hành → Cockpit → Mô phỏng |
+| QĐ-10 | Màn Thiết kế v1 **đủ thay cả hai editor cũ**: máy + vùng polygon + ảnh nền + tỉ lệ mét + thêm/xoá máy |
+| QĐ-11 | Spec markdown + mockup HTML tương tác để duyệt |
+
+---
+
+## 1. Hiện trạng đo được (2026-09-06)
+
+Mọi số dưới đây **đo trực tiếp** trên repo và DB `aoi_management@127.0.0.1:5434`, không lấy từ tài liệu.
+
+### 1.1 ⚠️ Bản thiết kế đính kèm là của HỆ KHÁC
+
+Tài liệu `2026-09-04-nha-may-3d-twin-design.md` mà chủ sở hữu cung cấp **chưa từng tồn tại trong repo này** — kiểm trên 123 nhánh, toàn bộ lịch sử git (`git log --all --diff-filter=A`). Các tệp nó đặt tên (`TwinBuilder.tsx`, `sinhBoCuc.ts`, `twinSceneRouter.ts`) cũng chưa từng có commit nào. **0/7 pha của nó đã thực thi**, vì nó thuộc một hệ thống khác.
+
+Ba giả định nền của nó **sai với repo ta** — chép theo sẽ hỏng ngay pha 0:
+
+| Giả định của tài liệu đính kèm | Đo được ở repo ta | Hệ quả nếu chép |
+|---|---|---|
+| Cấm `@react-three/drei` (lỗi Vite) | drei `^10.7.7` **đang dùng ở 7 tệp**, chạy tốt | Tự trói tay, viết lại vô ích |
+| Migration kế tiếp là `0043` | Cao nhất **`0349`** (348 tệp `.sql`) | Trùng số, migration không chạy |
+| `machine_positions` có mm + quaternion | **int pixel**; `positionZ`=0 và `rotation`=0 ở **36/36 hàng** | Đọc ra toàn số 0, cảnh 3D dẹt |
+| 74 máy / 35 xưởng / 201 trạm | **43 máy / 1 xưởng thật / 37 trạm** | Ngân sách hiệu năng sai 5× |
+
+**Giữ lại từ nó:** cấu trúc chương mục, ý tưởng tách Builder/Viewer, cờ `nguồn = sinh|tay`, kỷ luật "không vẽ máy mất tín hiệu bằng màu xanh". Đó là những phần đúng bất kể hệ nào.
+
+### 1.2 Quy mô thật (đo trên DB dev)
+
+```
+corporates 1 · factories 4 (2 isActive) · workshops 2 · production_lines 4
+stations 37 · machines 43 (42 isActive)
+factory_layouts 3 · machine_positions 36 · workshop_positions 0 · factory_positions 0
+factory_zones 0 · equipment_3d_models 5
+```
+
+Phân bố máy theo nhà máy:
+
+| Nhà máy | isActive | Xưởng | Số máy |
+|---|---|---|---|
+| `SIM-FAC` | ✅ | Xưởng lắp ráp ảo (SIM) | **42** |
+| `T12-SHOT-FA-…` | ✅ | Task 12 anh chup - ws | 1 |
+| `AUDIT_FAC_01` | ❌ | — | 0 |
+| `AUDIT2_65562` | ❌ | — | 0 |
+
+**Kết luận:** chỉ có **một xưởng thật** với dữ liệu. Hai nhà máy còn lại là rác kiểm thử. Quy mô 43 máy là **rất nhỏ** với WebGL — hiệu năng không phải rào cản; **chất lượng dữ liệu bố cục mới là rào cản**.
+
+### 1.3 Chất lượng dữ liệu bố cục — lỗ hổng thật
+
+| Vấn đề | Số đo | Hệ quả |
+|---|---|---|
+| **Không có bảng `buildings`/`floors`** | 0 bảng | Campus nhiều toà nhà không dựng được — chặn cứng |
+| **Không máy nào có độ cao** | `positionZ = 0` ở **36/36** hàng | Cảnh 3D dẹt hoàn toàn |
+| **Không máy nào có hướng xoay** | `rotation = 0` ở **36/36** hàng | Mọi máy cùng một hướng |
+| **Không model nào có kích thước** | `bounds IS NULL` ở **5/5** `equipment_3d_models` | Không biết vẽ máy to bao nhiêu |
+| **HAI hệ toạ độ song song** | 36 hàng `machine_positions` (int pixel 60..1255) **và** 38 máy có `layoutPositionX/Y` (0–1) + `layout` jsonb | Hai nguồn sự thật không đồng bộ |
+| **Không có vùng nào** | `factory_zones` = 0 dòng | Chưa ai vẽ vùng an toàn |
+| **`three` chưa tách chunk** | `vite.config.ts` không có `manualChunks` lẫn `resolve.dedupe` | Nguy cơ 2 bản three cùng tồn tại (lỗi câm phổ biến nhất của R3F) |
+| **`three-mesh-bvh` chưa cài** | 0 kết quả toàn cây | Snap vật-vào-vật cần thêm gói này |
+
+### 1.4 Nền móng đã có — dùng lại được ngay
+
+**Frontend — package `factory-scene` (1.393 dòng) là nền kit tốt nhất:**
+
+| Tệp | Dòng | Vai trò |
+|---|---|---|
+| `client/src/components/factory-scene/FactoryScene3D.tsx` | 516 | Cảnh 3D: `frameloop="demand"`, InstancedMesh 1 draw-call/nhóm, LOD nhãn cap 60, `AdaptiveDpr`, `ContactShadows frames={1}` |
+| `client/src/components/factory-scene/FactoryScene2D.tsx` | 361 | **Bản 2D cùng chữ ký props** — fallback WebGL có sẵn |
+| `client/src/components/factory-scene/sceneTypes.ts` | 295 | `MachineNode`, `FactorySceneProps`, `OverlayMode`, `resolveLayout`, `shapeKeyFor`, `scenePalette`, `overlayColorHex` — **module thuần, test được** |
+| `client/src/components/factory-scene/machineMesh.tsx` | 159 | Geometry cache theo shape |
+| `client/src/components/factory-scene/useOptionalTheme.ts` | 41 | Theme-aware |
+
+**Backend twin (5.269 dòng service) — rất dày, nhưng chỉ đọc:**
+
+| Tệp | Vai trò |
+|---|---|
+| `server/services/twin/sceneGraph.ts` | Scene graph phân cấp factory→zone/line→station→device, resolve `modelUri` |
+| `server/services/twin/twinSchema.ts` | Mô hình DTDL v3 |
+| `server/services/twin/usdExport.ts` | Xuất USDA cho Omniverse (643 dòng) |
+| `server/services/twin/occupancyGrid.ts` + `dstarLite.ts` | Lưới chiếm dụng + A* + D* Lite |
+| `server/services/twin/twinReplay.ts` | Replay time-series TimescaleDB |
+| `server/services/twin/twinStream.ts` | WS gateway đẩy delta thiết bị |
+| `server/services/twin/modelRegistry.ts` | register/list/resolve model glTF/URDF |
+
+Router: `twinRouter` (15 thủ tục), `digitalTwinRouter` (6), `twinGovRouter` (4), `layoutRouters` (8), `assetCockpitRouter` (3).
+
+**Điểm mấu chốt: không có API ghi cảnh 3D.** Toàn bộ là read-only. Đây là phần backend phải xây mới.
+
+**Gói đã có sẵn, chưa dùng cho layout:** `occt-import-js@0.0.23` (đọc STEP/IGES), `@dimforge/rapier3d-compat`, `@dnd-kit/*`, `react-resizable-panels@3.0.6`.
+
+### 1.5 Realtime — cờ ĐANG BẬT trong môi trường thật
+
+| Hạng mục | Trạng thái đo được |
+|---|---|
+| `TWIN_STREAM_ENABLED` | **`=true`** tại `.env:756` (chú thích "A2 doc37"); `.env.example:1668` = `false` |
+| Từ khi nào | 7 bản `.env.bak-*` từ **2026-08-16** đều có `=true` |
+| `startTwinBroadcaster` | `server/_core/socket.ts:1412`, interval **2000 ms**, sàn `Math.max(500, …)` |
+| Sự kiện | `twin:update` → room `global` + `line:{lineId}` |
+| `twin:status` | **KHÔNG TỒN TẠI** — 0 kết quả grep |
+| `TWIN_LIVE_ENABLED` | Cờ thứ hai, gate tầng service |
+
+**Nghĩa là:** broadcaster WIP 2 giây **đang chạy thật**. Thiết kế realtime nối vào cái đang chạy, không phải bật từ đầu.
+
+### 1.6 Kiểm thử — lỗ hổng lớn nhất
+
+- **0 test** cho mọi component 3D (`client/src/components/twin/` có 1 tệp, 0 test).
+- **0 e2e** liên quan twin/3D/layout (thư mục `e2e/` có 5 tệp, không tệp nào chạm 3D).
+- 2 unit test duy nhất (`twinHubTabBoTriXuong.unit.test.ts`) chỉ kiểm tab layout không crash.
+- Backend twin **có test dày** (`twin.t1.test.ts`, `twinSchema.t3.test.ts`, `usdExport.t3b.test.ts`, `dstarLite.test.ts`…).
+
+### 1.7 Bản đồ 11 màn hiện có
+
+`TwinHub` (`/digital-twin`) **đã gộp sẵn 7 tab** và có redirect từ 6 route cũ. Ngoài hub còn: `/command-center`, `/machine/:id`, `/robot/:id`, `/factory-command`, `/corporate-layout`, `/layout/:id`.
+
+| # | Màn | Dòng | 3D? | Vai trò |
+|---|---|---|---|---|
+| 1 | `TwinHub.tsx` | 140 | — | Vỏ 7 tab + badge LIVE/SIM/SƠ ĐỒ |
+| 2 | `DigitalTwinCenter.tsx` | 936 | ✅ | Scene-graph 3D + replay + export USD + robot FK |
+| 3 | `CommandCenter.tsx` | 1596 | ✅ | 3 pane: cây ISA-95 + twin + dải cảnh báo |
+| 4 | `MachineCockpit.tsx` | 1223 | ✅ | 12 tab chuyên sâu một máy |
+| 5 | `RobotCockpit.tsx` | 889 | ✅ | 11 tab chuyên sâu một robot |
+| 6 | `DigitalTwinDashboard.tsx` | 606 | ❌ | 6 tab bảng/heatmap/what-if |
+| 7 | `CellTwinPlayer.tsx` | 770 | ❌ (SVG) | Phát lại workflow mô phỏng |
+| 8 | `FactoryFloorEditor.tsx` | 604 | ❌ (SVG) | **Editor hệ 0–1 + CRUD vùng + ảnh nền** |
+| 9 | `WorkshopLayoutEditor.tsx` | 716 | ❌ (DOM) | **Editor hệ pixel + thêm/xoá máy** |
+| 10 | `FactoryLiveMap3D.tsx` | 240 | ✅ | Bản đồ 3D + UNS stream |
+| 11 | `Layout.tsx` | 1026 | ❌ | CRUD layout theo tên + minimap + export PNG |
+| — | `RfTestCellSim.tsx` | 792 | ❌ | **0 lệnh tRPC** — giáo cụ trình diễn tĩnh |
+
+**Ba engine cảnh 3D trùng lặp:**
+
+| Engine | Dòng | demand | Instancing | LOD | HDR CDN | Dùng ở |
+|---|---|---|---|---|---|---|
+| `factory-scene/FactoryScene3D` | 516 | ✅ | ✅ | ✅ | ❌ (an toàn) | `/factory-command` |
+| `FactoryFloor3D` | 209 | ❌ | ❌ | ❌ | ⚠️ `preset="night"` | `/digital-twin?tab=map` |
+| `Factory3DScene` | 255 | ❌ | ❌ | ❌ | ⚠️ `preset="night"` | `/corporate-layout` |
+
+⚠️ **`Factory3DScene.tsx:219-226` rò rỉ GPU**: cấp phát `new THREE.Line(new BufferGeometry(), new LineBasicMaterial())` **mỗi lần render**, không `dispose()`. Bug thật, đáng vá bất kể thiết kế này có được duyệt hay không.
+
+⚠️ **`/layout/:id` là route mồ côi** — còn sống (`App.tsx:587`), có guard `settings_factory`, nhưng **không màn nào navigate tới**. Đúng lớp lỗi "một lối vào rồi từ chối" đã gặp ở Khối D.
+
+---
+
+## 2. Ràng buộc cứng — vi phạm là vỡ màn
+
+Mọi agent thực thi phải đọc mục này trước khi viết dòng đầu tiên. Ba mục đầu đã **kiểm chứng trực tiếp trên `node_modules` của repo này**, không phải trích tài liệu.
+
+### RB-1 ★★★ `TransformControls` KHÔNG còn là `Object3D`
+
+Kiểm chứng: `node_modules/three/examples/jsm/controls/TransformControls.js:77` → `class TransformControls extends Controls`, và `getHelper()` tại dòng 397.
+
+```js
+scene.add(transformControls);              // ❌ THROW: "object not an instance of THREE.Object3D"
+scene.add(transformControls.getHelper());  // ✅ ĐÚNG
+```
+
+Đây là breaking change từ three r169; repo ở r182 nên **đang dính**. Viết sai thì gizmo không hiện và không có lỗi rõ ràng.
+
+### RB-2 ★★★ Snap xoay của three là TƯƠNG ĐỐI, phải vá thành tuyệt đối
+
+`setTranslationSnap()` snap theo lưới thế giới (tuyệt đối), nhưng `setRotationSnap()` snap **tương đối với góc hiện tại**. Máy đang ở 8° với snap 15° sẽ đi 8°→23°→38°, **không bao giờ chạm 15°**. Nghĩa là "xoay máy này về đúng hướng chuyền" là bất khả thi nếu không vá.
+
+Cách vá (~10 dòng, trong `hinhHocCanChinh.ts`): bắt sự kiện `objectChange`, làm tròn tuyệt đối `Math.round(góc / bước) * bước`.
+
+### RB-3 `frameloop="demand"` phải nối tay `invalidate`
+
+Controls của drei tự gọi `invalidate()`; controls thuần **không**. Thiếu dòng này thì **màn hình đứng hình khi xoay camera**:
+
+```js
+controls.addEventListener('change', invalidate);
+useFrame(() => animationDangChay && invalidate());
+```
+
+### RB-4 Chỉ MỘT `<Canvas>` sống tại một thời điểm
+
+`TwinHub.tsx:8-9` ghi rõ nó cố ý dựa vào Radix Tabs unmount để giữ 1 WebGL context. Twin mới dùng panel/drawer thay tab, nên **phải tự đảm bảo bất biến này**. Nhiều canvas cùng lúc = cạn WebGL context, canvas đen.
+
+### RB-5 Không tải HDR/asset từ CDN
+
+`CommandCenter.tsx:605-607` đã phải **tự tay gỡ `<Environment preset="night">`** vì mạng nhà máy air-gap chặn CDN → khung đen. Đây là lỗi đã xảy ra thật. Dùng `HemisphereLight` + `DirectionalLight` tự cân như `FactoryScene3D` đang làm.
+
+### RB-6 KHÔNG dùng WebGPU
+
+`three@0.182` đã có entry `./webgpu`, nhưng [three.js#30560](https://github.com/mrdoob/three.js/issues/30560) còn mở: WebGPU **chậm hơn WebGL ~4×** với nhiều mesh không-instanced, và đo trên Intel Iris Xe cho kết quả tương tự. Đó **chính xác** là hồ sơ tải của ta (43 máy khác hình dạng + iGPU văn phòng). Ở lại `WebGLRenderer`; đặt lịch đo lại khi #30560 đóng.
+
+### RB-7 `dispose()` triệt để
+
+three.js **không** tự thu hồi bộ nhớ GPU. Mọi geometry/material/texture/render target phải `dispose()` trong cleanup. Cả 3 engine hiện tại đều thiếu — kit mới phải có, vì hub mount/unmount tab liên tục.
+
+### RB-8 Quy ước sẵn có của repo phải giữ
+
+1. **Module tính toán tách ra `.ts` thuần** (tên tiếng Việt không dấu, camelCase). Vitest chạy `environment: "node"`, chỉ include `client/src/**/*.test.ts` → **`.tsx` không test được**.
+2. **Route mới phải `React.lazy` trong `App.tsx` VÀ có mục trong `navigation.tsx`** — bánh cóc `client/src/lib/duongVaoMenu.test.ts` sẽ đỏ nếu thiếu.
+3. **Mọi chuỗi qua `t()`**, thêm khoá vào cả 3 tệp `vi.json` / `en.json` / `zh.json`.
+4. `data-testid` tiếng Việt không dấu, kebab-case (`khoi-canh-3d`, `cay-phan-cap-twin`).
+5. Migration áp bằng `npm run db:push` (`scripts/migrate-standalone.mjs`), **không** `drizzle-kit push`.
+6. Cột thời gian dùng `timestamptz` + `DEFAULT now()` (quy ước migration `0038`).
+
+---
+
+## 3. Bốn nguyên tắc bất biến
+
+Mọi quyết định thiết kế đều dẫn xuất từ đây.
+
+### NT-1 — Twin là *mục lục không gian*, không phải mô phỏng
+
+Việc của 3D là trả lời "*cái nào* trong 43 máy giống hệt nhau" và "*nó ở đâu*", rồi **bàn giao ngay** cho bề mặt 2D. Mọi tính năng 3D không trả lời được một câu hỏi vận hành cụ thể thì **cắt**.
+
+Đây là thuốc chống cạm bẫy số 1 của ngành. Phân loại Kritzinger (2018, IFAC 51(11):1016–1022, ~2.337 trích dẫn) chia theo **mức tích hợp dữ liệu, không theo độ đẹp đồ hoạ**: *Digital Model* (thủ công hai chiều) → *Digital Shadow* (tự động một chiều) → *Digital Twin* (tự động hai chiều, đối tượng số là thực thể điều khiển). "Đồ trang trí đắt tiền" chính là: xây một Digital Model, render ở chất lượng Twin, bán giá Twin.
+
+### NT-2 — 3D định vị, 2D quyết định
+
+ASM Consortium liệt kê *"No 3D graphical objects"* như một quy tắc thiết kế HMI. Ta không bỏ 3D — ta đặt đúng chỗ:
+
+- **3D**: ngữ cảnh không gian, định vị, phân biệt, điều hướng.
+- **2D tuân ISA-101**: báo động, xác nhận, tạo phiếu, điều khiển.
+
+Kèm ba luật cứng:
+1. **Góc camera không bao giờ được che một alarm đang hoạt động.** Badge alarm vẽ ở **không gian màn hình**, không ở không gian thế giới.
+2. **Alarm badge = hình dạng + màu + chữ** (mã hoá dư thừa), không bao giờ chỉ màu.
+3. Bảng màu **≤ 7 mã** (giới hạn trí nhớ ngắn hạn, ASM Guideline 6.1).
+
+### NT-3 — Không có dữ liệu ≠ bình thường
+
+Cạm bẫy chết người nhất: tag vẫn `Quality=Good` trong khi timestamp ngừng tiến; HMI vẫn vẽ số cuối, badge vẫn xanh, không alarm nào nổ.
+
+Bắt buộc:
+1. **Mọi giá trị đi thành bộ ba `(giá trị, chất lượng, thời điểm)`.** Không bao giờ vẽ số mà thiếu xuất xứ.
+2. **Trạng thái `KHÔNG RÕ` là hạng nhất** — xám gạch chéo, không bao giờ suy biến về "khoẻ" hay "lỗi".
+3. **Ba mức tươi**: `< 60s` tươi (màu bình thường) · `60s–5 phút` cũ (nhạt 40% + badge đồng hồ) · `> 5 phút` không rõ (xám gạch chéo).
+4. **"Cập nhật lần cuối" phải là `max(timestamp)` của dữ liệu nền**, KHÔNG phải thời điểm render trang. Riêng phân biệt này diệt cả một lớp bug giả-tươi.
+5. **Đếm rỗng khác đếm bằng 0** — chưa đo hiện `—`, không hiện `0` (tái dùng quy ước `WipLineBalance.tsx:110-127`).
+6. Giữ nguyên `isScopeEmpty` của `CommandCenter.tsx:1468` — phân biệt "0 cảnh báo vì yên ổn" với "0 vì tài khoản không được gán nhà máy".
+
+### NT-4 — Số giả định phải tự khai là giả định
+
+Kích thước máy, toà nhà, tầng đều **chưa có dữ liệu thật**. Nên:
+- Mọi giá trị sinh ra mang cờ `nguon = 'sinh'` và hiện **badge vàng "chưa đo"** trên UI.
+- Người nhập tay → `nguon = 'tay'` → lần sinh sau **không đè** (trừ khi tích ô "ghi đè cả phần đã chỉnh tay", có dialog đếm rõ bao nhiêu bản ghi sẽ mất).
+- **Nhãn đời model** hiện song song với dấu thời gian dữ liệu: *"bố cục cập nhật 2026-09-06"*. Model cũ được đối xử hiển thị y như dữ liệu cũ — đây là thuốc chống *model drift*.
+
+Đây chính là bài học `BG-127` của repo: *độc lập phải ở mô hình, không ở người đo*.
+
+---
+
+## 4. Ngân sách hiệu năng
+
+Quy mô 43 máy là rất nhỏ với WebGL (đối chiếu: có hệ chạy 30.000 pallet @ 90fps trên three.js thuần, ~670 draw calls). Ngân sách đặt rộng rãi, và **đo bằng e2e tự động, không bằng cảm nhận**.
+
+| Chỉ số | Ngưỡng | Đo bằng |
+|---|---|---|
+| Draw calls | **≤ 150** | `renderer.info.render.calls` |
+| Tam giác | **≤ 500.000** | `renderer.info.render.triangles` |
+| Đèn | **≤ 3**, không point-light shadow | Đọc scene graph |
+| Nhãn DOM đồng thời | **≤ 30** (cap cứng) | `locNhan.ts` |
+| DPR | clamp **≤ 1,5** | `<Canvas dpr={[1, 1.5]}>` |
+| FPS khi xoay | **≥ 30** | e2e qua `requestAnimationFrame` |
+| GPU khi đứng yên | **≈ 0%** | `frameloop="demand"` |
+| Chunk `three` | tách riêng `vendor-three` | `dist/public/assets` |
+
+**Vì sao cap nhãn ở 30:** đo được rằng **300 nhãn CSS2D đã "laggy"**, và `troika-three-text` tốn **1 draw call mỗi nhãn**. Không công nghệ nào cứu được — phải **cull**, và cull mới là cách sửa, không phải chọn thư viện.
+
+**Kỹ thuật bắt buộc:**
+
+1. **`frameloop="demand"` + `invalidate()`** — đòn bẩy lớn nhất cho iGPU. Dashboard mở suốt ca 8 tiếng phải đưa GPU về 0 khi không ai chạm.
+2. **`BatchedMesh` cho thân máy** — đã kiểm chứng `node_modules/three/src/objects/BatchedMesh.js` **có sẵn** trong r182. Nó render nhiều object **cùng material nhưng khác hình học** trong 1 draw call, `perObjectFrustumCulled` mặc định `true`, và **giữ ID từng object** nên click vào máy vẫn hoạt động. Đây là điểm khác then chốt so với `InstancedMesh` (chỉ một geometry duy nhất).
+3. **`InstancedMesh` cho vật thể lặp** (kệ, pallet, cột).
+4. **Hạ tầng tĩnh merge thành 1 mesh** với baked vertex color; đường viền gộp thành 1 `LineSegments`.
+5. **Outline bằng `EdgesGeometry`, KHÔNG post-processing.** Trên iGPU, `EffectComposer` mất MSAA rẻ và thêm một full-screen pass.
+6. **Baked lighting**: 1 `HemisphereLight` + 1 `DirectionalLight` shadow map 1024, `shadow.autoUpdate = false` (chỉ update khi layout đổi).
+7. **`vite.config.ts`**: thêm `resolve.dedupe: ['three']` (chống 2 bản three — lỗi câm phổ biến nhất) và `manualChunks` gom `three` + `@react-three/*` vào `vendor-three`.
+
+**KHÔNG dùng `@three.ez/instanced-mesh`**: phiên bản `0.3.x` (API chưa ổn định), README không có benchmark, và có phản chứng đo được — [issue #101](https://github.com/agargaro/instanced-mesh/issues/101): 500.000 ngọn cỏ chạy `InstancedMesh` thường **60 FPS** vs `InstancedMesh2` **15 FPS**. Lợi ích của nó chỉ hoàn vốn ở 10⁵–10⁶ instance; ta ở 10¹–10².
+
+### Chống vỡ
+
+- **Bắt `webglcontextlost`**: `event.preventDefault()` + chờ `webglcontextrestored` → khởi tạo lại. Không làm thì canvas đen vĩnh viễn. Đây là chuyện *sẽ* xảy ra (hết VRAM, driver crash, tab ẩn lâu).
+- **Không có WebGL** → rơi thẳng vào `FactoryScene2D` (đã có sẵn, cùng chữ ký props), **không** hiện "trình duyệt không hỗ trợ".
+- **`MatDoKhungHinh.ts`**: fps trung bình < 25 trong 3 giây → tự hạ: tắt shadow → DPR = 1 → tắt nhãn → chỉ box. Hiện chip "Chế độ hiệu năng thấp", cho phép ép bật/tắt, nhớ trong `localStorage`.
+- **`ErrorBoundary` riêng bọc `<Canvas>`** với fallback là view 2D — tái dùng khuôn `CommandCenter.tsx:839-849`.
+
+---
+
+## 5. Mô hình dữ liệu
+
+### 5.1 Nguyên tắc: một nguồn sự thật mm, hai hệ cũ được nuôi
+
+Hiện có **hai hệ toạ độ song song, không đồng bộ**:
+
+| Hệ | Bảng/cột | Đơn vị | Ai ghi | Ai đọc |
+|---|---|---|---|---|
+| A | `machines.layoutPositionX/Y` + `machines.layout` jsonb | chuẩn hoá **0–1** | `FactoryFloorEditor` (`machine.updateLayout`) | `FactoryFloor3D`, `DigitalTwinCenter`, `CellTwinPlayer` |
+| B | `machine_positions.positionX/Y/Z` + `rotation` | **int pixel** | `WorkshopLayoutEditor` (`layout.updateMachinePosition`) | `Layout.tsx` |
+
+Cả hai đều **không biểu diễn được** thứ Twin 3D cần: độ cao thật, hướng xoay 3 trục, kích thước máy. Đo được: `positionZ = 0` và `rotation = 0` ở **36/36** hàng.
+
+**Quyết định (QĐ-4):** tạo hệ thứ ba là **nguồn sự thật duy nhất cho Twin** — mm tuyệt đối, quaternion, kích thước. Di trú dữ liệu từ A và B vào. **Giữ nguyên cột A và B** để 2 editor cũ chạy song song (QĐ-8) — không đổi ý nghĩa cột đang có dữ liệu, vì đó là thay đổi câm.
+
+### 5.2 Quy ước toạ độ
+
+```
+DB lưu milimét (numeric 14,3) · Scene dùng mét (float)
+
+scene.x =  viTriXMm / 1000        // Đông  →
+scene.y =  viTriZMm / 1000        // Z trong DB là ĐỘ CAO
+scene.z =  viTriYMm / 1000        // Y mặt bằng hướng xuống → Z scene
+```
+
+Y của mặt bằng hướng **xuống** (quy ước ảnh/CAD), Y của scene hướng **lên**. Toàn bộ quy đổi nằm trong **một** module thuần `heToaDo.ts`, có test. Mọi thực thể mới (toà nhà, tầng, vật thể cảnh) dùng chung quy ước này.
+
+### 5.3 Bảng mới
+
+#### `twin_toa_nha` — toà nhà
+
+```sql
+CREATE TABLE twin_toa_nha (
+  id              serial PRIMARY KEY,
+  "factoryId"     integer NOT NULL REFERENCES factories(id) ON DELETE CASCADE,
+  ma              varchar(64)  NOT NULL,
+  ten             varchar(255) NOT NULL,
+  "viTriXMm"      numeric(14,3) NOT NULL DEFAULT 0,
+  "viTriYMm"      numeric(14,3) NOT NULL DEFAULT 0,
+  "viTriZMm"      numeric(14,3) NOT NULL DEFAULT 0,
+  "rongMm"        numeric(14,3) NOT NULL DEFAULT 60000,
+  "sauMm"         numeric(14,3) NOT NULL DEFAULT 40000,
+  "caoMm"         numeric(14,3) NOT NULL DEFAULT 12000,
+  "quatX" numeric(12,9) DEFAULT 0, "quatY" numeric(12,9) DEFAULT 0,
+  "quatZ" numeric(12,9) DEFAULT 0, "quatW" numeric(12,9) DEFAULT 1,
+  nguon           twinnguonenum NOT NULL DEFAULT 'sinh',
+  "isActive"      boolean NOT NULL DEFAULT true,
+  "createdAt"     timestamptz NOT NULL DEFAULT now(),
+  "updatedAt"     timestamptz NOT NULL DEFAULT now(),
+  UNIQUE ("factoryId", ma),
+  CONSTRAINT ck_toa_nha_quat CHECK (
+    abs("quatX"*"quatX" + "quatY"*"quatY" + "quatZ"*"quatZ" + "quatW"*"quatW" - 1) < 0.000001)
+);
+```
+
+#### `twin_tang` — tầng
+
+```sql
+CREATE TABLE twin_tang (
+  id              serial PRIMARY KEY,
+  "toaNhaId"      integer NOT NULL REFERENCES twin_toa_nha(id) ON DELETE CASCADE,
+  "capSo"         integer NOT NULL,                    -- 1,2,3... (am = ham)
+  ten             varchar(255) NOT NULL,
+  "caoDoMm"       numeric(14,3) NOT NULL DEFAULT 0,
+  "caoThongThuyMm" numeric(14,3) NOT NULL DEFAULT 6000,
+  "anhNenUrl"     text,
+  "anhNenKey"     text,
+  "tiLeMmMoiPx"   numeric(12,6),
+  "daHieuChuan"   boolean NOT NULL DEFAULT false,
+  nguon           twinnguonenum NOT NULL DEFAULT 'sinh',
+  "isActive"      boolean NOT NULL DEFAULT true,
+  "createdAt"     timestamptz NOT NULL DEFAULT now(),
+  "updatedAt"     timestamptz NOT NULL DEFAULT now(),
+  UNIQUE ("toaNhaId", "capSo")
+);
+```
+
+#### `twin_dat_cho` — vị trí 3D của MỌI thực thể phân cấp
+
+Một bảng thay vì bốn (`machine_positions` + `workshop_positions` + `factory_positions` + …). Lý do: thuật toán sinh, gizmo, undo/redo, và API lưu batch đều thao tác đồng nhất trên "một vật thể có vị trí"; tách bảng theo cấp buộc mọi thứ nhân bốn.
+
+```sql
+CREATE TYPE twinnguonenum   AS ENUM ('sinh','tay');
+CREATE TYPE twinthucTheenum AS ENUM ('workshop','line','station','machine','workstation');
+
+CREATE TABLE twin_dat_cho (
+  id              serial PRIMARY KEY,
+  "tangId"        integer NOT NULL REFERENCES twin_tang(id) ON DELETE CASCADE,
+  "loaiThucThe"   twinthucTheenum NOT NULL,
+  "thucTheId"     integer NOT NULL,
+  "viTriXMm"      numeric(14,3) NOT NULL DEFAULT 0,
+  "viTriYMm"      numeric(14,3) NOT NULL DEFAULT 0,
+  "viTriZMm"      numeric(14,3) NOT NULL DEFAULT 0,
+  "rongMm"        numeric(14,3), "caoMm" numeric(14,3), "sauMm" numeric(14,3),
+  "kichThuocDaDo" boolean NOT NULL DEFAULT false,
+  "quatX" numeric(12,9) DEFAULT 0, "quatY" numeric(12,9) DEFAULT 0,
+  "quatZ" numeric(12,9) DEFAULT 0, "quatW" numeric(12,9) DEFAULT 1,
+  "tiLeX" numeric(10,6) NOT NULL DEFAULT 1,
+  "tiLeY" numeric(10,6) NOT NULL DEFAULT 1,
+  "tiLeZ" numeric(10,6) NOT NULL DEFAULT 1,
+  "modelId"       integer REFERENCES equipment_3d_models(id) ON DELETE SET NULL,
+  "daKhoa"        boolean NOT NULL DEFAULT false,
+  "hienThi"       boolean NOT NULL DEFAULT true,
+  nguon           twinnguonenum NOT NULL DEFAULT 'sinh',
+  "createdAt"     timestamptz NOT NULL DEFAULT now(),
+  "updatedAt"     timestamptz NOT NULL DEFAULT now(),
+  UNIQUE ("loaiThucThe", "thucTheId"),
+  CONSTRAINT ck_dat_cho_quat CHECK (
+    abs("quatX"*"quatX" + "quatY"*"quatY" + "quatZ"*"quatZ" + "quatW"*"quatW" - 1) < 0.000001)
+);
+CREATE INDEX idx_twin_dat_cho_tang ON twin_dat_cho("tangId");
+CREATE INDEX idx_twin_dat_cho_thuc_the ON twin_dat_cho("loaiThucThe","thucTheId");
+```
+
+> **`UNIQUE (loaiThucThe, thucTheId)`** là ràng buộc quan trọng nhất bảng này: một máy chỉ có **một** vị trí trong toàn hệ. Đây là thứ ngăn hệ toạ độ thứ tư ra đời.
+
+#### `twin_vat_the` — vật thể cảnh không thuộc cây phân cấp
+
+Tường, cột, cửa, vạch kẻ sàn, **vùng an toàn (polygon)**, kệ, pallet, biển báo, và mọi GLB người dùng nhập.
+
+```sql
+CREATE TYPE twinvatTheenum AS ENUM (
+  'tuong','cot','cua','vach_ke','vung','ke','pallet',
+  'bang_tai','rao_an_toan','bien_bao','nhom','khac'
+);
+
+CREATE TABLE twin_vat_the (
+  id              serial PRIMARY KEY,
+  "tangId"        integer NOT NULL REFERENCES twin_tang(id) ON DELETE CASCADE,
+  "chaId"         integer REFERENCES twin_vat_the(id) ON DELETE CASCADE,
+  loai            twinvatTheenum NOT NULL,
+  ten             varchar(255) NOT NULL,
+  "modelId"       integer REFERENCES equipment_3d_models(id) ON DELETE SET NULL,
+  "viTriXMm"      numeric(14,3) NOT NULL DEFAULT 0,
+  "viTriYMm"      numeric(14,3) NOT NULL DEFAULT 0,
+  "viTriZMm"      numeric(14,3) NOT NULL DEFAULT 0,
+  "rongMm"        numeric(14,3), "caoMm" numeric(14,3), "sauMm" numeric(14,3),
+  "quatX" numeric(12,9) DEFAULT 0, "quatY" numeric(12,9) DEFAULT 0,
+  "quatZ" numeric(12,9) DEFAULT 0, "quatW" numeric(12,9) DEFAULT 1,
+  "tiLeX" numeric(10,6) NOT NULL DEFAULT 1,
+  "tiLeY" numeric(10,6) NOT NULL DEFAULT 1,
+  "tiLeZ" numeric(10,6) NOT NULL DEFAULT 1,
+  mau             varchar(9),
+  "diemDa"        jsonb,
+  "thuocTinh"     jsonb NOT NULL DEFAULT '{}',
+  "thuTu"         integer NOT NULL DEFAULT 0,
+  "daKhoa"        boolean NOT NULL DEFAULT false,
+  "hienThi"       boolean NOT NULL DEFAULT true,
+  nguon           twinnguonenum NOT NULL DEFAULT 'tay',
+  "createdAt"     timestamptz NOT NULL DEFAULT now(),
+  "updatedAt"     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_twin_vat_the_tang ON twin_vat_the("tangId");
+```
+
+> `loai = 'vung'` với `diemDa` thay thế `factory_zones` (hiện **0 dòng**, nên không có dữ liệu để mất). Cột `points` của `factory_zones` là toạ độ 0–1; ở đây là mm — nhất quán với phần còn lại.
+
+#### `twin_kich_thuoc_loai` — kích thước mặc định theo loại máy (QĐ-7)
+
+```sql
+CREATE TABLE twin_kich_thuoc_loai (
+  "loaiMay"       machinetypeenum PRIMARY KEY,
+  "rongMm"        numeric(14,3) NOT NULL,
+  "caoMm"         numeric(14,3) NOT NULL,
+  "sauMm"         numeric(14,3) NOT NULL,
+  "laGiaDinh"     boolean NOT NULL DEFAULT true,
+  "ghiChu"        text,
+  "updatedAt"     timestamptz NOT NULL DEFAULT now()
+);
+```
+
+Seed cho **25+ giá trị** của `machineTypeEnum` (AVI, AOI, SPI, AXI, ICT, FCT, CMM, MOUNTER, REFLOW, STENCIL_PRINTER, WAVE_SOLDER, ROBOT, PALLETIZER, WELDER…). **Mọi hàng seed đặt `laGiaDinh = true`** — không hàng nào được giả vờ là số đo. Kỹ thuật đo thật rồi sửa trong Inspector → `laGiaDinh = false` → badge tự tắt.
+
+Thứ tự ưu tiên lấy kích thước khi vẽ máy:
+
+```
+twin_dat_cho.rongMm/caoMm/sauMm      (đã nhập tay, kichThuocDaDo = true)
+  ↓ nếu NULL
+equipment_3d_models.bounds           (bbox đo từ file GLB khi nạp)
+  ↓ nếu NULL
+twin_kich_thuoc_loai[machineType]    (mặc định theo loại — badge "chưa đo")
+  ↓ nếu không có
+1200 × 1800 × 800 mm                 (mặc định cuối — badge "chưa đo")
+```
+
+#### `twin_ban_ghi` — phiên bản bố cục
+
+```sql
+CREATE TABLE twin_ban_ghi (
+  id              serial PRIMARY KEY,
+  "tangId"        integer NOT NULL REFERENCES twin_tang(id) ON DELETE CASCADE,
+  nhan            varchar(255) NOT NULL,
+  "anhChup"       jsonb NOT NULL,
+  "daXuatBan"     boolean NOT NULL DEFAULT false,
+  "nguoiTao"      integer REFERENCES users(id),
+  "createdAt"     timestamptz NOT NULL DEFAULT now()
+);
+```
+
+**Màn Vận hành chỉ đọc bản đã xuất bản.** Người đang dựng không làm rối màn hình vận hành đang chạy.
+
+### 5.4 Sửa bảng có sẵn
+
+| Bảng | Thay đổi | Vì sao |
+|---|---|---|
+| `layoutLevelEnum` | thêm `SITE`, `BUILDING`, `FLOOR` | Layout neo được vào cấp campus |
+| `equipment_3d_models` | thêm `soTamGiac integer`, `kichThuocByte bigint`, `anhXemTruocUrl text`, `phanLoai varchar(64)`, `nguonGoc varchar(16) DEFAULT 'builtin'` | Thư viện asset có phân loại, ảnh xem trước, biết nặng bao nhiêu. `bounds` **đã có sẵn**, chỉ chưa điền |
+| `workshops` | thêm `tangId integer REFERENCES twin_tang(id) ON DELETE SET NULL` | Xưởng nằm ở tầng nào |
+| `machine_positions`, `machines.layoutPositionX/Y` | **KHÔNG ĐỔI** | QĐ-8: hai editor cũ chạy song song |
+
+### 5.5 Migration
+
+| Tệp | Nội dung |
+|---|---|
+| `drizzle/0350_twin_toa_nha_va_tang.sql` | `twin_toa_nha`, `twin_tang`, `workshops.tangId`, mở rộng `layoutLevelEnum` |
+| `drizzle/0351_twin_dat_cho_va_vat_the.sql` | 3 enum mới, `twin_dat_cho`, `twin_vat_the`, `twin_ban_ghi` |
+| `drizzle/0352_twin_kich_thuoc_loai.sql` | `twin_kich_thuoc_loai` + seed 25+ loại (`laGiaDinh = true`) |
+| `drizzle/0353_twin_mo_rong_asset.sql` | Cột mới cho `equipment_3d_models` |
+
+Áp bằng `npm run db:push`, sau đó `npm run db:verify`.
+
+### 5.6 Di trú dữ liệu — script một chiều, đo được
+
+Script `scripts/di-tru-bo-cuc-twin.ts`, chạy tay, **idempotent**, in báo cáo đối soát.
+
+**Bước 1 — sinh khung tối thiểu.** Với mỗi `factory` có ít nhất 1 máy (đo được: **2 nhà máy**), tạo 1 `twin_toa_nha` + 1 `twin_tang`, `nguon = 'sinh'`. **Không sinh nhiều toà/tầng** (QĐ-5) — chờ người nhập thật.
+
+**Bước 2 — di trú vị trí.** Với mỗi máy, ưu tiên:
+
+```
+1. machine_positions (hệ B, int pixel)    → 36 máy
+     xMm = positionX × TI_LE_PX_MM
+2. machines.layoutPositionX/Y (hệ A, 0–1) → 38 máy, dùng khi hệ B không có
+     xMm = layoutPositionX × factories.floorWidthM × 1000
+3. Không có cả hai                        → không tạo hàng;
+                                            máy hiện ở "khu chờ xếp chỗ"
+```
+
+> ⚠️ **`TI_LE_PX_MM` là GIẢ ĐỊNH, không phải số đo.** `factory_layouts` không có trường tỉ lệ và không có cờ hiệu chuẩn. Nên **mọi hàng di trú đặt `nguon = 'sinh'` và `kichThuocDaDo = false`**, hiện badge "chưa đo". Người dùng hiệu chuẩn lại bằng công cụ **Đặt tỉ lệ** ở màn Thiết kế (§7.4). Không được trình bày kết quả di trú như toạ độ thật.
+
+**Bước 3 — đối soát bắt buộc.** Script in và **dừng nếu lệch**:
+
+```
+Máy trong DB:              43
+Máy isActive:              42
+Đã có vị trí (hệ B):       36
+Đã có vị trí (hệ A):       38
+Hợp nhất được:             N
+Không có vị trí nào:       43 − N   ← phải khớp số máy hiện ở
+                                      "khu chờ xếp chỗ" trên UI
+```
+
+Đây là phép đo **hai mô hình rời nhau** (đếm từ DB **và** đếm từ UI), theo bài học `BG-127`: hai phép đo cùng kiểu có thể cùng sai.
+
+---
+
+## 6. Kiến trúc phần mềm
+
+### 6.1 Bản đồ module
+
+```
+client/src/components/twin3d/
+├── loi/                          ★ LÕI ENGINE — dùng chung Thiết kế + Vận hành
+│   ├── KhungCanh.tsx             <Canvas> + camera + đèn + demand + webglcontextlost
+│   ├── dieuKhienQuay.ts          OrbitControls + nối invalidate (RB-3)
+│   ├── boNhoModel.ts             GLTFLoader + DRACOLoader singleton có cache
+│   ├── LoBatchMay.tsx            BatchedMesh — 1 draw call, giữ ID máy để click
+│   ├── LoInstanceVatThe.tsx      InstancedMesh cho kệ/pallet/cột
+│   ├── LopNhan.tsx               nhãn HTML chiếu + declutter cap 30
+│   ├── chonVatThe.ts             picking + đồng bộ 2 chiều với DOM
+│   ├── vienNoiBat.ts             outline EdgesGeometry (KHÔNG post-processing)
+│   ├── matDoKhungHinh.ts         theo dõi fps, tự hạ chất lượng
+│   └── giaiPhong.ts              dispose() geometry/material/texture (RB-7)
+│
+├── (module thuần .ts — CÓ TEST vitest)
+│   ├── heToaDo.ts                mm ↔ mét, quaternion, bbox
+│   ├── hinhHocCanChinh.ts        snap lưới, VÁ snap xoay tuyệt đối (RB-2),
+│   │                             align, distribute, array
+│   ├── snapVatVaoVat.ts          spatial index + dung sai theo PIXEL màn hình
+│   ├── sinhBoCuc.ts              thuật toán sinh bố cục (§8)
+│   ├── hinhKhoiMay.ts            sinh khối máy theo loại
+│   ├── hinhKhoiHaTang.ts         sinh tường/cột/sàn/vạch kẻ
+│   ├── mucChiTiet.ts             LOD 4 bậc
+│   ├── mauTrangThai.ts           MỘT nguồn sự thật màu trạng thái (§10)
+│   ├── locNhan.ts                declutter screen-space
+│   ├── lichSuThaoTac.ts          undo/redo command-pattern
+│   ├── kiemTraAsset.ts           validate GLB/STEP upload
+│   └── duongDanTwin.ts           mã hoá/giải mã deep-link URL ↔ trạng thái
+│
+├── thiet-ke/                     ★ chỉ màn Thiết kế
+│   ├── GizmoBienDoi.tsx          TransformControls + getHelper() (RB-1)
+│   ├── CayPhanCap.tsx            cây trái, kéo-thả đổi cha
+│   ├── BangThuocTinh.tsx         inspector phải, nhập số chính xác
+│   ├── ThuVienAsset.tsx          palette asset + upload GLB/STEP
+│   ├── ThanhCanChinh.tsx         align 6 hướng, distribute, array, đo
+│   ├── VeVungPolygon.tsx         vẽ/sửa vùng an toàn
+│   └── HopThoaiSinh.tsx          dialog sinh tự động + xem trước dạng ma
+│
+└── van-hanh/                     ★ chỉ màn Vận hành
+    ├── ThanhDuongDan.tsx         breadcrumb Site→Toà→Tầng→Xưởng→Chuyền
+    ├── NganXuLy.tsx              ★ drawer 2D: ack alarm, tạo phiếu, gán KTV (NT-2)
+    ├── BangKpiNoi.tsx            KPI overlay
+    ├── DaiCanhBao.tsx            dải cảnh báo (di trú từ CommandCenter)
+    └── DongThoiGian.tsx          timeline tua
+
+client/src/pages/
+├── TwinStudio.tsx                ★ MỚI → /twin-studio
+└── TwinVanHanh.tsx               ★ MỚI → /twin
+
+server/routers/
+└── twinCanhRouter.ts             ★ MỚI — CRUD cảnh, sinh tự động, upload asset
+
+server/services/twin/
+├── boCucService.ts               ★ MỚI — chạy thuật toán sinh, ghi DB trong transaction
+└── canhService.ts                ★ MỚI — đọc/ghi cảnh theo phạm vi
+```
+
+**Vì sao thư mục mới `twin3d/` chứ không dùng `twin/`:** `client/src/components/twin/` hiện chứa `ArticulatedRobot.tsx` thuộc kiến trúc cũ. Tên mới tránh nhầm lẫn trong giai đoạn hai hệ sống chung; khi di trú xong thì đổi tên là việc cơ học.
+
+**Quan hệ với `factory-scene`:** package `factory-scene` (1.393 dòng) là **nền của `loi/`**, không viết lại. Cụ thể: `sceneTypes.ts` (`MachineNode`, `OverlayMode`, `scenePalette`, `overlayColorHex`, `shapeKeyFor`) được **mở rộng tại chỗ**; `FactoryScene2D.tsx` trở thành fallback 2D chính thức; `machineMesh.tsx` là nền cho `hinhKhoiMay.ts`.
+
+### 6.2 Luồng dữ liệu
+
+```
+                  ┌──────────────────────────────────────┐
+   DB (mm)  ─────►│  twinCanh.docCanh({phamVi, id})      │
+                  │  trả 1 lần: TOÀN BỘ hình học tĩnh    │
+                  └──────────────┬───────────────────────┘
+                                 │  staleTime 5 phút
+                                 ▼
+                      heToaDo.ts (mm → mét)
+                                 │
+                                 ▼
+                  ┌──────────────────────────────────────┐
+                  │  Scene graph bất biến (useMemo)      │
+                  │  BatchedMesh cho máy · Instanced cho │
+                  │  vật thể lặp · merge cho hạ tầng     │
+                  └──────────────┬───────────────────────┘
+                                 │
+   twin:update (2s, ĐANG BẬT) ──►│  CHỈ cập nhật:
+   twin:trangThai (10s, MỚI) ───►│   • màu instance
+   fallback poll 5s ────────────►│   • nội dung nhãn
+                                 │   • badge alarm
+                                 ▼   KHÔNG dựng lại geometry
+                          invalidate() → 1 frame
+```
+
+**Nguyên tắc bất biến:** hình học tĩnh tách hẳn khỏi trạng thái động. Dữ liệu realtime **chỉ** được chạm `instanceColor`, `visible`, nội dung nhãn. Không bao giờ dựng lại scene graph vì một cập nhật trạng thái.
+
+### 6.3 API mới
+
+`server/routers/twinCanhRouter.ts`, đăng ký namespace `twinCanh`.
+
+| Thủ tục | Loại | Input | Output |
+|---|---|---|---|
+| `docCanh` | query | `{phamVi, phamViId, banGhiId?}` | Toàn bộ hình học tĩnh: toà nhà, tầng, đặt chỗ, vật thể, asset |
+| `trangThaiHangLoat` | query | `{phamVi, phamViId}` | `[{machineId, trangThai, diemSucKhoe, capNhatLuc, doTuoiGiay}]` — **3 query cố định, KHÔNG N+1** |
+| `xemTruocSinh` | query | `{factoryIds[], cauHinh}` | `KetQuaSinh` — **không ghi DB**, để vẽ ghost |
+| `sinhTuDong` | mutation (admin) | `{factoryIds[], cauHinh, ghiDeThuCong}` | `{daTao, daGiuNguyen, canhBao[]}` — 1 transaction |
+| `luuToaNha` / `xoaToaNha` | mutation | CRUD `twin_toa_nha` | |
+| `luuTang` / `xoaTang` | mutation | CRUD `twin_tang` | |
+| `luuDatCho` | mutation | CRUD `twin_dat_cho` | |
+| `luuVatThe` / `xoaVatThe` | mutation | CRUD `twin_vat_the` | |
+| `luuHangLoat` | mutation | `{thayDoi[]}` (≤ 500) | Ghi batch 1 transaction — nút Lưu của Thiết kế |
+| `taiAnhNen` | mutation | `{tangId, tenFile, duLieu}` | URL ảnh nền tầng |
+| `luuBanGhi` / `xuatBanBanGhi` / `khoiPhucBanGhi` | mutation | Phiên bản bố cục | |
+
+**Sửa lỗi hiệu năng đã phát hiện:** `machineStatus.listWithStatus` chạy **3 query con mỗi máy** (N+1). **Không dùng cho vòng render.** `trangThaiHangLoat` thay bằng 3 query cố định dùng `DISTINCT ON`/window function.
+
+Toàn bộ là `protectedProcedure`; `sinhTuDong`, `xoaAsset`, `xuatBanBanGhi` là `adminRoleProcedure`.
+
+### 6.4 Phân quyền
+
+| Hành động | Quyền |
+|---|---|
+| Mở `/twin` (vận hành) | `analytics_oee` **hoặc** `machine_status` — canView |
+| Mở `/twin-studio` (thiết kế) | `settings_factory` **hoặc** `machine_control` — canView |
+| Sửa/xoá bố cục | canEdit |
+| Nhập asset | canCreate |
+| Sinh tự động, xuất bản phiên bản | `adminRoleProcedure` |
+| Ack alarm | canEdit trên module alarm |
+| Tạo phiếu công việc | canCreate trên module maintenance |
+
+**Không có quyền → vào thẳng chế độ chỉ đọc, ẩn toàn bộ gizmo và nút Lưu** (không chỉ disable).
+
+> ⚠️ **Bài học Khối D bắt buộc áp dụng.** Mục nav và route guard phải khai **cùng một quyền** — lỗi "một lối vào rồi từ chối" xảy ra khi nav khai `settings_factory` nhưng route gate `analytics_oee`. Và: **admin bypass `requirePermission`**, nên phép đo quyền **phải thực hiện bằng tài khoản KHÔNG phải admin**; đo bằng admin chứng minh số 0.
+
+---
+
+## 7. Màn Thiết kế — `/twin-studio`
+
+### 7.1 Bố cục ba vùng
+
+Đây là bố cục chung của AWS TwinMaker Scene Composer, Azure 3D Scenes Studio, và Visual Components. Nó tồn tại vì hai lối tìm kiếm khác nhau: **cây tìm theo tên** (khi không biết vật ở đâu), **canvas tìm theo vị trí** (khi không biết tên).
+
+```
+┌────────────────────────────────────────────────────────────────────────────────┐
+│ Xưởng dựng Twin      [Tầng ▾][☑Nhãn][☐Ngừng KT]  [⊹Kéo][↻Xoay][⤢Co]  ↶ ↷      │
+│                                              [✨Sinh tự động][💾Lưu][↺Vẽ lại]   │
+├────────────────────────────────────────────────────────────────────────────────┤
+│ Sức khoẻ dữ liệu: 36/43 máy đã xếp chỗ · 7 chờ xếp · 43 kích thước "chưa đo"   │
+├──────────────────┬──────────────────────────────────────┬──────────────────────┤
+│ CÂY PHÂN CẤP     │                                      │ THUỘC TÍNH           │
+│ [🔍 lọc...]      │            CANVAS 3D                 │                      │
+│                  │                                      │ Tên   [__________]   │
+│ ▾ SIM-FAC        │      (gizmo di chuyển/xoay/co)       │ Loại  [AOI      ▾]   │
+│   ▾ Toà A        │                                      │ Model [mặc định ▾][⤒]│
+│     ▾ Tầng 1     │                                      │                      │
+│       ▾ Xưởng SIM│                                      │ Vị trí (mm)          │
+│         ▾ Chuyền1│                                      │  X [____] Y [____]   │
+│           ▸ Tr.1 │                                      │  Z [____]            │
+│             ■ M1 │                                      │ Xoay (°)  [_____]    │
+│                  │                                      │ Kích thước (mm)      │
+│ ── KHU CHỜ ──    │                                      │  R[__] C[__] S[__]   │
+│  ▫ M40 (chưa đặt)│                                      │  ⚠ chưa đo  [Đã đo]  │
+│  ▫ M41           │  [⊞Lưới][📐Đo][🎨Vùng][🖼Ảnh nền]     │ ☐ Khoá   ☑ Hiện      │
+│  ▫ M42           │  Vẽ 17 · 1.418 tri · 58 fps          │ [Gỡ khỏi mặt bằng]   │
+├──────────────────┴──────────────────────────────────────┴──────────────────────┤
+│ THƯ VIỆN ASSET   [Máy][Hạ tầng][Kho]   [🔍 lọc]        [⤒ Tải mô hình lên]     │
+│  ▢ AOI mặc định  ▢ AVI mặc định  ▢ Tường  ▢ Cột  ▢ Kệ  ▢ Pallet               │
+│  Kéo thẻ vào cảnh để đặt mô hình lên mặt bằng.                                 │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Dùng `PageShell maxWidth="full"` + `react-resizable-panels@3.0.6` (đã có trong deps) cho 3 cột kéo giãn được.
+
+**Hai chi tiết bố cục có lý do đo được:**
+
+1. **Dải "Sức khoẻ dữ liệu" trên cùng** — hiện *đã xếp chỗ / chờ xếp / chưa đo kích thước*. Đây là hiện thực hoá NT-3 và NT-4 ngay ở chỗ dễ thấy nhất, thay vì giấu trong tooltip.
+2. **"Khu chờ xếp chỗ" trong cây** — 7 máy chưa có vị trí (43 − 36) hiện ở nhánh riêng, mờ + viền nét đứt. Tái dùng khuôn đã có ở `FactoryFloor3D.tsx:154-159`. Nếu ẩn chúng đi, người dùng không bao giờ biết mình thiếu 7 máy.
+
+### 7.2 Bộ 9 công cụ căn chỉnh (QĐ-3)
+
+Không thư viện nào cho sẵn align/distribute — three.js `TransformControls`, drei `PivotControls`, Babylon `GizmoManager` đều chỉ có gizmo + snap lưới. Nhưng phần thiếu **chỉ là số học bounding-box**, không cần spatial index hay constraint solver. Đó là ranh giới tự nhiên của v1.
+
+| # | Công cụ | Phím | Ghi chú thực thi |
+|---|---|---|---|
+| 1 | Gizmo di chuyển / xoay / co giãn | `W` / `E` / `R` | `TransformControls` + **`getHelper()`** (RB-1). Quy ước phím theo Unity — người dùng 3D đã có sẵn trong ngón tay |
+| 2 | Snap lưới bước chỉnh được (mặc định 100 mm) | giữ `Ctrl` để **đảo** | Ngữ nghĩa *đảo* của Blender: một phím phục vụ cả "snap ngay" lẫn "thoát snap". **Snap không có đường thoát còn tệ hơn không snap** |
+| 3 | **Vá snap xoay thành tuyệt đối** | — | RB-2. 0/15/30/45/90°. ~10 dòng trong `hinhHocCanChinh.ts` |
+| 4 | Nudge phím mũi tên | `←↑→↓` 10 mm · `Shift` 100 mm | Độ chính xác không phụ thuộc con chuột |
+| 5 | Khoá trục khi kéo | `X` / `Y` / `Z` | |
+| 6 | **Align 6 hướng + Distribute** | `Alt`+chữ | Trái/giữa/phải + trên/giữa/dưới; distribute ngang/dọc. Thuần bbox. Dùng `Alt` (Figma) thay `Ctrl+Shift+Mũi tên` để tránh đụng phím trình duyệt |
+| 7 | Nhập số chính xác trong Inspector | — | **Ô nhập là nguồn sự thật, gizmo chỉ là lối tắt** |
+| 8 | Khoá / ghim vật thể | `Ctrl+L` | Cột `daKhoa`. Chặn lỗi phổ biến nhất: kéo nhầm thứ đã đặt đúng |
+| 9 | **Undo/Redo command-pattern** | `Ctrl+Z` / `Ctrl+Shift+Z` | Không phải tính năng mà là **quyết định kiến trúc** — nhét sau rất đắt. Lưu *lệnh* `{op, targets, truoc, sau}`, không snapshot cả scene. Stack 50 bước, gộp thao tác kéo liên tiếp |
+
+**Cộng thêm (QĐ-3, mức Visual Components):**
+
+| # | Công cụ | Ghi chú |
+|---|---|---|
+| 10 | **Snap vật-vào-vật** | Bắt cạnh / mặt / tâm / góc bbox của máy khác. ⚠️ **Dung sai tính theo PIXEL màn hình, không theo đơn vị thế giới** — nếu không, snap vỡ ở mọi mức zoom. Cần `three-mesh-bvh` (chưa cài) hoặc lưới không gian tự viết |
+| 11 | **Array / nhân bản theo mẫu** | Tuyến tính (theo trục, bước, số lượng) và toả tròn (quanh trục, góc, số lượng). Xem trước bằng bounding box trước khi Áp dụng — khuôn của Visual Components `Pattern` |
+| 12 | **Đo khoảng cách** | Click 2 điểm → hiện khoảng cách mm. Bố trí mặt bằng luôn cần "cái này cách cái kia bao xa" |
+
+> **Cạm bẫy đã biết — snap source ≠ snap target.** Người dùng tưởng **góc** vật đang kéo sẽ snap, nhưng code lại snap **gốc toạ độ**. Blender giải bằng tuỳ chọn "Snap With: Closest/Center/Median/Active"; không thư viện web nào có. v1 **hardcode "điểm gần nhất của bounding box"** và ghi rõ trong tooltip.
+
+### 7.3 Chức năng chính
+
+| Nhóm | Chi tiết |
+|---|---|
+| **Chọn phạm vi** | Dropdown Tầng. Đổi tầng = đổi cảnh, camera bay tới, cây tự mở đúng nhánh |
+| **Sinh tự động** | Mở `HopThoaiSinh`: chỉnh tham số → **xem trước dạng ma (ghost) trong 3D** → bảng tổng kết "sẽ tạo N vật thể, **giữ nguyên M vật thể đã chỉnh tay**" → Áp dụng |
+| **Chọn** | Click trong 3D **hoặc** trong cây — **đồng bộ hai chiều bắt buộc**. `Shift`-click chọn nhiều. Chọn xong: outline + inspector đổi |
+| **Kéo–thả** | Gizmo 3 chế độ. Kéo giới hạn trong mặt sàn của tầng đang chọn (không cho máy bay lơ lửng, trừ khi bỏ khoá trục Y) |
+| **Gỡ khỏi mặt bằng** | Phím `Delete`. Xoá hàng `twin_dat_cho` = gỡ máy khỏi mặt bằng, **KHÔNG** xoá bản ghi `machines`. Dialog xác nhận nói rõ điều đó, và máy chuyển về "Khu chờ xếp chỗ" |
+| **Thêm máy vào mặt bằng** | Kéo từ "Khu chờ xếp chỗ" vào cảnh — **thay thế chức năng độc nhất của `WorkshopLayoutEditor`** (QĐ-10) |
+| **Vẽ vùng an toàn** | Công cụ polygon: click thêm điểm, kéo đỉnh, đổi màu, đặt tên, xoá. Ghi `twin_vat_the` với `loai='vung'` — **thay chức năng độc nhất của `FactoryFloorEditor`** (QĐ-10) |
+| **Ảnh nền + tỉ lệ** | Tải ảnh mặt bằng CAD (≤ 8 MB) làm nền tầng; công cụ **Đặt tỉ lệ**: click 2 điểm trên ảnh + nhập khoảng cách thật (mm) → tính `tiLeMmMoiPx`, đặt `daHieuChuan = true`. **Đây là cách sửa giả định `TI_LE_PX_MM` ở §5.6** |
+| **Lưu** | Ghi *batch* trong **một transaction**. Chỉ báo "N thay đổi chưa lưu" + chặn rời trang (`beforeunload`) |
+| **Phiên bản** | `luuBanGhi` / `xuatBanBanGhi` / `khoiPhucBanGhi`. **Vận hành chỉ đọc bản đã xuất bản** |
+
+### 7.4 Thư viện asset và nhập mô hình (QĐ-6)
+
+**Nhóm sẵn có (builtin)** — sinh khi migrate, không cần vẽ:
+- *Máy*: khối thủ tục theo `machineTypeEnum` (AOI, AVI, SPI, MOUNTER, REFLOW, ROBOT…) + **5 model đã có** trong `equipment_3d_models`.
+- *Hạ tầng*: tường, cột, cửa, lan can an toàn, vạch kẻ sàn, biển tên vùng.
+- *Kho*: kệ, pallet, thùng, băng tải, xe đẩy.
+
+**Luồng nhập GLB/GLTF:**
+
+```
+Chọn file (.glb/.gltf, ≤ 15 MB)
+  → GLTFLoader nạp NGAY TRÊN TRÌNH DUYỆT (chưa upload)
+  → kiemTraAsset.ts đo: số tam giác, số material, bbox, có texture rời không
+  → Hiện xem trước + số liệu
+       ≤ 50.000 tam giác        → OK
+       50.001 – 150.000         → cảnh báo, vẫn cho dùng, gợi ý nén
+       > 150.000 hoặc > 15 MB   → CHẶN, hướng dẫn nén
+  → Upload → uploads/twin-assets/<uuid>.glb
+  → Ghi equipment_3d_models: bounds + soTamGiac + nguonGoc='uploaded'
+  → Sinh ảnh xem trước: chụp canvas offscreen 256×256 → PNG
+```
+
+**Luồng nhập CAD/STEP (QĐ-6)** — dùng `occt-import-js@0.0.23` đã có sẵn:
+
+```
+Chọn file (.step/.stp/.iges/.igs, ≤ 30 MB)
+  → occt-import-js chuyển sang mesh TRÊN TRÌNH DUYỆT (worker)
+  → Cảnh báo nếu > 150.000 tam giác sau chuyển đổi, đề nghị giảm lưới
+  → Người dùng xác nhận → xuất GLB → theo luồng GLB ở trên
+  → equipment_3d_models.sourceFormat = 'step', conversionStatus = 'ready'
+```
+
+> **Nén phía máy chủ — cảnh báo bắt buộc.** Nếu chạy `gltf-transform optimize`, **phải dùng `--no-join --no-flatten`**. Mặc định của nó là `--join true --flatten true`, sẽ **gộp mesh và làm sập cây scene** ⇒ mất danh tính từng node máy ⇒ click-vào-máy chết. Và cần biết: **Draco/Meshopt chỉ giảm băng thông tải, KHÔNG tăng FPS và KHÔNG giảm VRAM** (giải nén xảy ra trước khi lên GPU). Thứ *thật sự* giảm VRAM là **KTX2** — texture nén nằm nén luôn trên GPU.
+
+**Bảo mật — bắt buộc:** allowlist đường dẫn model chỉ mở thêm đúng tiền tố `/uploads/twin-assets/`, không mở gì khác. Server kiểm MIME + magic bytes glTF (`glTF` = `0x46546C67`), giới hạn dung lượng, chỉ cho vai trò có `canCreate`.
+
+---
+
+## 8. Thuật toán sinh bố cục
+
+Module thuần `client/src/components/twin3d/sinhBoCuc.ts` — **thuần tuý, tất định, có test**. Server gọi lại chính module này qua `boCucService.ts` để không có hai bản cài đặt lệch nhau.
+
+### 8.1 Chữ ký
+
+```ts
+export interface CauHinhSinh {
+  buocChuyenMm: number;         // 6_000  — khoảng cách giữa 2 chuyền
+  buocTramMm: number;           // 2_500  — bước dọc chuyền
+  buocMayTrongTramMm: number;   // 1_400  — nhiều máy cùng trạm
+  loiDiMm: number;              // 4_000  — lối đi giữa các hàng xưởng
+  rongSanToiDaMm: number;       // 100_000 — nới ra nếu có xưởng rộng hơn
+  kichThuocMacDinh: { rongMm: number; caoMm: number; sauMm: number };
+}
+
+export interface CayPhanCapDauVao {
+  nhaMay: { id: number; ma: string; isActive: boolean }[];
+  toaNha: { id: number; factoryId: number; ma: string }[];   // ★ xem GC-1
+  tang:   { id: number; toaNhaId: number; capSo: number }[]; // ★ xem GC-1
+  xuong:  { id: number; factoryId: number; ma: string; tangId: number | null }[];
+  chuyen: { id: number; workshopId: number; ma: string }[];
+  tram:   { id: number; lineId: number; ma: string; thuTu: number | null }[];
+  may:    { id: number; stationId: number | null; ma: string;
+            loaiMay: string; isActive: boolean }[];
+}
+
+export interface KetQuaSinh {
+  datCho:  ViTriDatCho[];
+  vatThe:  ViTriVatThe[];
+  boQua:   { loai: string; id: number; lyDo: string }[];   // đã 'tay' → giữ nguyên
+  canhBao: string[];                                        // "3 xưởng không có chuyền nào"
+}
+
+export function sinhBoCuc(
+  cay: CayPhanCapDauVao,
+  kichThuocTheoLoai: Map<string, KichThuoc>,
+  daCoThuCong: Set<string>,      // khoá dạng "machine:42"
+  cauHinh: CauHinhSinh
+): KetQuaSinh;
+```
+
+> **GC-1 — `CayPhanCapDauVao` PHẢI mang mảng `toaNha` và `tang`.**
+> Nếu không, `xuong.tangId` không có gì để ánh xạ, và mọi xưởng đã được người dùng gán tầng sẽ rơi vào nhánh dự phòng — tức là **lựa chọn tầng của người dùng bị xoá mỗi lần bấm "Sinh tự động"**, đúng kiểu tự huỷ mà cờ `nguon` sinh ra để ngăn. Đây là lỗi *cấu trúc chữ ký*, không phải thiếu dữ liệu, nên phải đúng ngay từ bản đầu.
+
+### 8.2 Các bước
+
+1. **Toà nhà & tầng**: mỗi nhà máy có máy → **1 toà, 1 tầng** (QĐ-5). Không sinh nhiều tầng. Toà/tầng đã tồn tại → **giữ nguyên**, chỉ sinh phần thiếu.
+2. **Xưởng vào tầng**: xưởng đã có `tangId` → giữ nguyên tầng đó (đọc qua mảng `tang`, xem GC-1). Chưa có → gán tầng 1 của toà thuộc nhà máy đó.
+3. **Xưởng trên mặt sàn — xếp kệ (shelf packing)**:
+   - bề **rộng** ô xưởng (trục X) = `sốTrạmNhiềuNhấtTrongMộtChuyền × buocTramMm`
+   - bề **sâu** ô xưởng (trục Y) = `sốChuyền × buocChuyenMm`
+   - Sắp giảm dần theo bề rộng, xếp thành hàng, xuống hàng khi vượt `rongSanToiDaMm`, chừa `loiDiMm` giữa các hàng và giữa các xưởng cùng hàng.
+
+   > **Trục phải khớp bước 4 và 5.** Bước 4 xếp chuyền cách nhau theo **trục Y**, bước 5 xếp trạm dọc **trục X** ⇒ bề rộng do *số trạm* quyết định, không phải số chuyền. Viết ngược thì ô đóng gói xoay 90° so với nội dung bên trong và tính chất T4 ("không chồng lấn") đổ ngay ở quy mô nhỏ nhất.
+
+4. **Chuyền trong xưởng**: dải song song dọc trục X, cách nhau `buocChuyenMm`, thứ tự theo `production_lines.code` (tất định).
+5. **Trạm trên chuyền**: dọc trục X theo `stations.orderIndex` (fallback `code`), bước `buocTramMm`.
+6. **Máy trong trạm**: máy đầu ở tâm trạm; máy thứ 2, 3… lệch ±`buocMayTrongTramMm` theo trục Z. Kích thước lấy theo thứ tự ưu tiên ở §5.3.
+7. **Hướng máy**: quay quanh trục Y sao cho mặt trước hướng ra lối đi của chuyền (0° hoặc 180° tuỳ dải chẵn/lẻ) → quaternion chuẩn hoá.
+8. **Hạ tầng sinh kèm**: tường bao mỗi tầng, sàn, cột lưới 12 m, vạch kẻ lối đi giữa các hàng xưởng, biển tên xưởng. Ghi `twin_vat_the` với `nguon = 'sinh'`.
+9. **Bỏ qua & báo cáo**: mọi bản ghi `nguon = 'tay'` đưa vào `boQua`. Trả `canhBao` cho bất thường (xưởng rỗng, chuyền không trạm, máy không thuộc trạm nào).
+
+### 8.3 Tính tất định (bắt buộc)
+
+Không `Math.random()`, không `Date.now()`, không phụ thuộc thứ tự trả về của DB. Cùng đầu vào → cùng đầu ra, **byte-for-byte**. Đây là điều kiện để viết được test T1–T2, và là điều kiện để "Sinh tự động" an toàn khi bấm lần thứ hai.
+
+### 8.4 Chín tính chất phải test (`sinhBoCuc.test.ts`)
+
+| # | Tính chất |
+|---|---|
+| T1 | **Tất định**: gọi 2 lần cùng đầu vào → kết quả *deep-equal* |
+| T2 | **Idempotent**: đưa kết quả lần 1 vào làm `daCoThuCong` rỗng → lần 2 y hệt |
+| T3 | **Tôn trọng thủ công**: đánh dấu 5 máy là `tay` → 5 máy đó nằm trong `boQua`, không có trong `datCho` |
+| T4 | **Không chồng lấn**: bounding box 2D của 2 máy bất kỳ trong cùng tầng không giao nhau (phép so **chặt**) |
+| T5 | **Trong biên**: mọi máy nằm trong bbox của tầng chứa nó |
+| T6 | **Quaternion chuẩn hoá**: `x²+y²+z²+w² ≈ 1` (sai số 1e-6) → khớp CHECK constraint của DB |
+| T7 | **Đầu vào rỗng** → kết quả rỗng, không ném lỗi |
+| T8 | **Dữ liệu khuyết**: xưởng không chuyền, chuyền không trạm, máy không trạm → vào `canhBao`, không làm hỏng phần còn lại |
+| T9 | **Quy mô thật**: 2 nhà máy / 2 xưởng / 4 chuyền / 37 trạm / 43 máy chạy < 100 ms |
+
+> T9 dùng **số thật đo được của repo này** (§1.2), không phải số của hệ khác.
+
+---
+
+## 9. Màn Vận hành — `/twin`
+
+Đây là **trung tâm** mà chủ sở hữu yêu cầu: mọi hoạt động quản lý và theo dõi đều xử lý được ở đây.
+
+### 9.1 Bố cục toàn khung
+
+```
+┌────────────────────────────────────────────────────────────────────────────────┐
+│ SIM-FAC › Toà A › Tầng 1 › Xưởng SIM › Chuyền 1 › AOI-03    ⏱ 12s  [Ops|Trình bày]│
+├───────────────┬──────────────────────────────────────────┬─────────────────────┤
+│ TỔNG QUAN     │                                          │ NGĂN XỬ LÝ          │
+│ Máy       43  │                                          │                     │
+│ Chạy      38  │            C A N V A S   3 D             │ AOI-03              │
+│ Dừng       2  │            (toàn khung, nền)             │ ● Đang chạy         │
+│ Lỗi        1  │                                          │ Health 92 · FPY 98% │
+│ Không rõ   2  │                                          │ Cập nhật 12s trước  │
+│ ───────────   │                                          │ ─────────────────── │
+│ TƯƠI DỮ LIỆU  │                                          │ ⚠ CẢNH BÁO (2)      │
+│ ● 38 tươi     │                                          │  [Xác nhận][Ẩn tạm] │
+│ ● 3 cũ        │                                          │ ─────────────────── │
+│ ▨ 2 không rõ  │                                          │ [+ Tạo phiếu]       │
+│ ───────────   │                                          │ [+ Gán kỹ thuật]    │
+│ CẢNH BÁO      │                                          │ ─────────────────── │
+│ ⚠ AOI-03 P1   │  [Tầng▾][Lớp▾][2D/3D][⤢Fit][⌂]           │ MỞ CHỨC NĂNG        │
+│ ⚠ SPI-01 P2   │  Vẽ 41 · 12.880 tri · 60 fps             │ [Sức khoẻ máy →]    │
+│               │                                          │ [Phân tích trạm →]  │
+│ ── DANH SÁCH ─│                                          │ [Lịch sử kiểm →]    │
+│ (bảng máy, tab│                                          │ [Ảnh lỗi AOI →]     │
+│  được, đồng bộ│                                          │ [Cockpit đầy đủ →]  │
+│  2 chiều 3D)  │                                          │                     │
+├───────────────┴──────────────────────────────────────────┴─────────────────────┤
+│ WIP theo trạm  ▁▂▃▅▂  │  Nhật ký sự kiện (live)  │  Tải trạm / nghẽn          │
+│ ◁ ◀ ⏸ ▶ ▷   ×1 ×5 ×20   ├────────────────────────── 24h ──────────────────┤  │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 9.2 Twin là nơi XỬ LÝ, không chỉ để xem (QĐ-2)
+
+Khảo sát cho thấy **không hệ lớn nào** (AWS TwinMaker, Azure ADT, ThingsBoard) cho phép ack alarm, tạo phiếu công việc, hay gán kỹ thuật viên ngay trên 3D. Nghĩa là **không có tiền lệ để sao chép** — phần này ta tự thiết kế, và phải thiết kế cẩn thận.
+
+Cách giải quyết mâu thuẫn giữa "mọi việc xử lý trên twin" (yêu cầu) và "3D không nên là mặt xử lý alarm" (ASM/ISA-101): **hành động ở ngăn 2D bên phải, ngữ cảnh ở 3D bên trái**. Người dùng click máy trên 3D → ngăn xử lý mở ra ngay cạnh, và mọi thao tác diễn ra trên bề mặt 2D tuân chuẩn.
+
+**Ba nhóm hành động trong `NganXuLy`:**
+
+| Nhóm | Hành động | Điều kiện |
+|---|---|---|
+| **Xử lý cảnh báo** | Xác nhận (ack) · Ẩn tạm (shelve, có hạn) · Ghi chú | `canEdit` module alarm. Ack/shelve ghi vết kiểm toán |
+| **Tạo việc** | Tạo phiếu công việc từ máy này · Gán kỹ thuật viên · Đặt mức ưu tiên | `canCreate` module maintenance. Phiếu tự điền machineId, trạng thái, alarm liên quan |
+| **Mở chức năng** | Điều hướng sang màn chuyên sâu, mang theo đúng id | canView của module đích |
+
+**Ẩn tạm (shelve) là trạng thái hạng nhất**, không phải "xoá khỏi danh sách": theo ISA-18.2, alarm bị shelve phải **hiện rõ cho người vận hành + có vết kiểm toán + có hạn tự bung**. Hợp với hạ tầng WORM/audit đã có của repo.
+
+### 9.3 Bảng điều hướng (đo được từ 11 màn hiện có)
+
+Click vật thể → `NganXuLy` hiện đúng nhóm nút theo loại:
+
+| Chọn | Nút điều hướng |
+|---|---|
+| **Máy** | `/machine/:id` (cockpit 12 tab) · `/machine-health` · `/history?machineId=` · `/traceability?machineId=` · `/control-plane?machineId=&command=` · `/device-monitor` |
+| **Robot** | `/robot/:id` (cockpit 11 tab) · `/robot-control` · `/command-console?robotId=&command=` · `/ir-editor?projectId=` |
+| **Trạm** | `/station-analysis/:id` · `/station-escape?stationId=` |
+| **Chuyền** | `/wip-dashboard?lineId=` · `/production-dashboard?lineId=` · `/oee-dashboard?lineId=` |
+| **Xưởng** | `/production-dashboard?workshopId=` · `/andon?workshopId=` |
+| **Nhà máy** | `/corporate-dashboard?factoryId=` · `/reports?factoryId=` |
+| **Bất kỳ, có alarm** | `/andon` cuộn tới sự kiện · `/ops-console` · `/safety-workforce` |
+| **Bố cục** | `/twin-studio` (sửa mặt bằng) · `/layout/:id` ★ |
+
+> ★ **`/layout/:id` hiện là route mồ côi** — còn sống, có guard, nhưng **không màn nào link tới**. Đưa vào bảng này là cách sửa rẻ nhất; nếu quyết định bỏ thì phải gỡ cả route lẫn guard, không để nửa vời.
+
+### 9.4 Deep-link hai chiều
+
+`duongDanTwin.ts` mã hoá trạng thái vào query string:
+
+```
+/twin?pv=tang:1&chon=machine:42&cam=45.2,18.0,-30.5,0.8,120&lop=nhiet,wip&tg=2026-09-06T14:30
+      pv  = phạm vi      chon = vật thể chọn      cam = vị trí+hướng camera
+      lop = lớp bật      tg   = mốc thời gian (chế độ tua)
+```
+
+Mở URL → khôi phục đúng cảnh. Đổi cảnh → `replaceState` (không đẩy history mỗi lần xoay chuột); chỉ `pushState` khi đổi phạm vi hoặc đổi vật thể chọn.
+
+Điều này biến câu "anh xem chỗ này giúp em" thành một đường link — mẫu **saved viewpoint** mà mọi hệ chuyên nghiệp đều có.
+
+### 9.5 Trung thực dữ liệu (NT-3) — điều kiện sống còn
+
+1. **Ba trạng thái tươi**, hiện ở panel trái *và* trên chính vật thể:
+
+| Tuổi dữ liệu | Hiển thị |
+|---|---|
+| < 60 giây | Màu trạng thái bình thường |
+| 60 giây – 5 phút | Nhạt 40% + badge đồng hồ |
+| > 5 phút, hoặc chưa từng có | **Xám gạch chéo, nhãn "Không rõ"** |
+
+2. **Chỉ báo độ tươi luôn hiện**: "Cập nhật 12 giây trước", đổi sang đỏ khi > 60 giây. Giá trị này là **`max(timestamp)` của dữ liệu nền**, KHÔNG phải thời điểm render trang.
+
+3. **Đối soát mỗi lần nạp cảnh**: so số máy `isActive` trong DB với số node trong scene. Lệch → banner vàng *"7 máy chưa được đặt vào mặt bằng — [Mở Xưởng dựng]"*. Đây là thuốc chống *model drift*: layout thật đổi mà twin không đổi thì banner sẽ kêu.
+
+4. **Nhãn đời bố cục**: *"Bố cục cập nhật 2026-09-06 · 43 kích thước chưa đo"* — model cũ được đối xử hiển thị y như dữ liệu cũ.
+
+5. **Đếm rỗng khác đếm bằng 0**: chưa đo hiện `—`, không hiện `0`.
+
+6. **Giữ `isScopeEmpty`** (`CommandCenter.tsx:1468`): phân biệt "0 cảnh báo vì yên ổn" với "0 vì tài khoản không được gán nhà máy".
+
+7. **Nhà máy/xưởng/máy `isActive = false`**: vẽ **mờ 35% + không màu trạng thái**, kèm nhãn "Ngừng khai thác". Tầng hình học **không lọc** `isActive` (lọc thì mặt bằng thiếu mà không nói vì sao); bộ chọn phạm vi mặc định chỉ hiện phần đang khai thác, có ô "☐ Hiện cả phần ngừng khai thác".
+
+### 9.6 Nhãn — declutter
+
+Đo được: **300 nhãn CSS2D đã lag**; `troika-three-text` tốn **1 draw call mỗi nhãn**. Không công nghệ nào cứu — phải **cull**.
+
+Chiến lược trong `locNhan.ts`:
+1. **Mặc định KHÔNG hiện nhãn.** Chỉ hiện cho: đang hover, đang chọn, **đang bất thường**, và top-N gần camera.
+2. LOD nhãn: xa → chấm màu (instanced sprite); trung → icon; gần → chữ.
+3. Declutter screen-space: `Vector3.project()` các ứng viên → sort theo khoảng cách → greedy loại nhãn có bbox giao nhau → **cap cứng 30 nhãn DOM**.
+4. Occlusion: chỉ raycast cho ứng viên đã lọc, không toàn scene.
+5. Nhãn là DOM thật → Playwright và trình đọc màn hình đọc được.
+
+### 9.7 Chế độ trình bày
+
+Toggle `Ops | Trình bày`: ẩn toàn bộ panel, camera bay chậm theo tuyến định sẵn, chỉ giữ KPI lớn và cảnh báo. Không phải sản phẩm thứ hai — chỉ là một cờ `cheDo` trong cùng component. Tự thoát khi có tương tác chuột.
+
+### 9.8 Tua lại thời gian
+
+Dải dưới có scrubber `◁ ◀ ⏸ ▶ ▷` + tốc độ ×1/×5/×20 + thanh kéo 24 h qua.
+
+**Nguyên tắc bắt buộc: CÙNG MỘT state store cho live và replay**, chỉ đổi nguồn (socket `twin:update` → API lịch sử). Tách hai code path thì replay sẽ luôn lệch.
+
+Nguồn lịch sử: `machine_status_logs`, `station_dwell_time`, `wip_tracking`, `andon_events`. Các bảng **0 dòng** (`oee_metrics`, `machine_heartbeats`, `ot_telemetry`) → lớp phủ dựa vào chúng hiện *"chưa có dữ liệu"*, **không** hiện 0.
+
+### 9.9 Khả năng truy cập và chế độ 2D
+
+**Bắt buộc, không phải tuỳ chọn.** Canvas 3D vô hình với trình đọc màn hình.
+
+- **Danh sách máy bên trái là DOM thật**, tab-navigable, có focus ring rõ, và **mọi hành động làm được từ đó** — chọn máy, xem KPI, ack alarm, mở chi tiết. Selection 3D ↔ focus DOM đồng bộ hai chiều. Điều này giải quyết cả a11y lẫn mẫu "list và 3D là hai mặt của một selection".
+- **Toggle `2D | 3D`** ở thanh dưới. Bản 2D render từ **chính dữ liệu đó** — `FactoryScene2D.tsx` (361 dòng) đã có sẵn cùng chữ ký props.
+- **2D cũng là fallback tự động** khi WebGL không khả dụng hoặc context bị mất. Không hiện "trình duyệt không hỗ trợ".
+- `sr-only` tóm tắt trạng thái + `role="img"` aria-label cho canvas — tái dùng khuôn `CommandCenter.tsx:769-779`.
+
+---
+
+## 10. Ngôn ngữ thị giác
+
+### 10.1 ISA-101: xám là mặc định, màu chỉ dành cho bất thường
+
+Đây là điểm đa số twin 3D làm sai. Nguyên tắc: **màu sáng dùng để thu hút chú ý vào tình huống bất thường, không phải để thể hiện tình trạng bình thường.**
+
+Cụ thể:
+- Sàn, tường, cột, băng tải, kệ: **xám trung tính**, phân biệt nhau bằng **độ sáng và độ dày nét**, không bằng sắc.
+- Máy **đang chạy bình thường**: xám nhạt hơi ngả xanh — *không* xanh lá rực.
+- Chỉ máy **bất thường** mới có màu bão hoà.
+- Độ bão hoà = mức nghiêm trọng: cảnh báo sớm dùng màu nhạt, chỉ mức cao mới full saturation.
+- **Không animation lúc bình thường.** Animation chỉ để làm nổi bật tình huống bất thường.
+- **Không đổ bóng/bevel/specular** trên hình học máy.
+
+> Hollifield phản biện lập luận "nhưng nó không giống nhà máy!" bằng một câu đáng nhớ: *"Bảng đồng hồ ô tô của bạn có nên trông giống động cơ không?"*
+
+### 10.2 Một nguồn sự thật cho màu trạng thái
+
+Hiện có **ba** hệ lệch nhau:
+- Server hex: `server/services/digitalTwinService.ts:6` (`TWIN_STATUS_COLORS`)
+- Token oklch: `client/src/index.css`
+- Ánh xạ client: `client/src/lib/trangThai.tsx`
+
+**Quyết định:** `client/src/components/twin3d/mauTrangThai.ts` là nguồn duy nhất cho cảnh 3D, phân giải từ token oklch để **tự đổi theo theme sáng/tối**. Server ngừng quyết định màu; `digitalTwinService.colorForStatus` giữ lại cho tương thích ngược nhưng Twin không đọc nữa.
+
+| Trạng thái | Vai trò 3D | Token |
+|---|---|---|
+| `running` | xám nhạt ngả xanh, **không nổi bật** | `--neutral-strong` pha `--primary` 15% |
+| `warming_up`, `changeover` | xanh dương nhạt | `--info-subtle` |
+| `starved`, `blocked` | vàng/cam theo mức | `--marginal` → `--warning` |
+| `stopped` | xám đậm | `--neutral-subtle` |
+| `maintenance` | xanh dương + sọc chéo | `--info` + hoạ tiết |
+| `error` | **đỏ bão hoà** (duy nhất) | `--destructive` |
+| **`khong_ro`** (mới) | **xám gạch chéo** | `--muted` + hoạ tiết |
+| **`ngung_khai_thac`** (mới) | mờ 35%, không màu trạng thái | `--muted` opacity 0.35 |
+
+Quy ước alarm: **Đỏ = critical · Vàng = warning · Xanh dương = information.** Bảng màu **≤ 7 mã** (ASM Guideline 6.1 — giới hạn trí nhớ ngắn hạn).
+
+**Cấm hardcode hex trong component 3D.** Test `mauTrangThai.test.ts` kiểm: mọi giá trị của `operationStatusEnum` đều có ánh xạ; `khong_ro` khác mọi màu "khoẻ"; tương phản đủ trên nền cả hai theme.
+
+### 10.3 Badge alarm — ba luật cứng
+
+1. **Vẽ ở không gian màn hình**, không ở không gian thế giới ⇒ phối cảnh không thể thu nhỏ badge P1 thành không đọc nổi.
+2. **Mã hoá dư thừa: hình dạng + màu + chữ.** Màu đơn thuần không bao giờ là dấu hiệu duy nhất.
+3. **Góc camera không bao giờ được che một alarm đang hoạt động.** Alarm bị khuất sau hình học phải nổi lên rìa màn hình kèm mũi tên chỉ hướng.
+
+Đây chính là chế độ hỏng mà quy tắc "No 3D" của ASM sinh ra để phòng. Ta giữ 3D nhưng phải trả đúng cái giá này.
+
+### 10.4 Hoà nhập design system
+
+- Bọc bằng `PageShell maxWidth="full"` + `PageHeader` + `PageSection`.
+- KPI dùng `ds/StatTile` (có sẵn `isError`, `emptyHint`) — **không** chép tay `<Card>`.
+- Bảng dùng `ds/DataTable` (bắt buộc `isLoading`/`isError`, có phân trang).
+- Bộ lọc dùng `ds/FilterBar` + `useFilterBar()` (tự đồng bộ query string — hợp với deep-link).
+- Token vai trò trong `index.css`: `text-metric`, `--space-gutter`, `--radius-lg`, `--shadow-panel`.
+- Dark-first. 3D phải đúng ở **cả hai** theme — nền cảnh lấy từ `--background`, không hardcode.
+
+---
+
+## 11. Sổ kiểm 62 tính năng — cổng ra cho việc xoá màn cũ
+
+QĐ-1 là phương án **khối lượng lớn nhất**: 62 tính năng đang chạy phải được viết lại trước khi xoá màn cũ. Rủi ro lớn nhất không phải kỹ thuật mà là **quên mất một tính năng ai đó đang dùng hằng ngày**.
+
+**Luật cổng ra:** không màn cũ nào bị xoá cho tới khi **mọi dòng của nó** trong bảng dưới được đánh dấu `✅ đã di trú và ĐÃ ĐO` — đo bằng e2e hoặc bằng người thao tác thật, không phải bằng lời khai "đã làm xong".
+
+### 11.1 `DigitalTwinCenter.tsx` (7)
+
+| # | Tính năng | Đích di trú |
+|---|---|---|
+| 1 | Export USD/USDA (`twin.usdExport`) | Nút trong `NganXuLy` cấp nhà máy |
+| 2 | Replay lịch sử TimescaleDB + scrubber + tốc độ | `DongThoiGian.tsx` (§9.8) |
+| 3 | Robot khớp nối FK (`ArticulatedRobot` + `getKinematicModel`) | `loi/` — đường thoát "thiết bị có model động" |
+| 4 | glTF per-device + `ModelErrorBoundary` | `boNhoModel.ts` + fallback khối |
+| 5 | Vùng 3D translucent + nhãn | `twin_vat_the` loai=`vung` |
+| 6 | Socket `twin:{factoryId}` / `twin:device` delta lerp | Giữ nguyên, nối vào `loi/` |
+| 7 | Banner 3 trạng thái cờ/stream/poll | Panel trái, mục "Tươi dữ liệu" |
+
+### 11.2 `CommandCenter.tsx` (10)
+
+| # | Tính năng | Đích di trú |
+|---|---|---|
+| 8 | Cây ISA-95 5 tầng + roll-up đếm | `CayPhanCap.tsx` |
+| 9 | Tìm kiếm cây debounce 200ms + highlight `<mark>` | `CayPhanCap.tsx` |
+| 10 | Lọc "chỉ node có cảnh báo" + auto-expand | `CayPhanCap.tsx` |
+| 11 | **Bàn phím WAI-ARIA tree** (Enter/Space/←/→, roving tabindex) | `CayPhanCap.tsx` — ★ phần khó nhất, đừng viết lại từ đầu |
+| 12 | Dải cảnh báo hợp nhất (seed + socket, dedupe, cap 100) | `DaiCanhBao.tsx` |
+| 13 | Nhóm "Tồn đọng > 24h" | `DaiCanhBao.tsx` |
+| 14 | Chip lọc mức độ | `DaiCanhBao.tsx` |
+| 15 | Scope filter theo subtree | `CayPhanCap.tsx` ↔ `DaiCanhBao.tsx` |
+| 16 | KPI toàn hệ sinh thái | `BangKpiNoi.tsx` |
+| 17 | **`isScopeEmpty`** chống nói dối "yên ổn" khi 0-gán | ★ NT-3, bắt buộc giữ |
+
+### 11.3 `MachineCockpit.tsx` (6)
+
+| # | Tính năng | Đích di trú |
+|---|---|---|
+| 18 | **Upload & đăng ký glTF cho máy** (`twin.models.uploadAndRegister`) | `ThuVienAsset.tsx` (§7.4) |
+| 19 | Sensor trend + band ±2σ | Giữ ở cockpit, mở từ `NganXuLy` |
+| 20 | Maintenance: WO + lazy parts + downtime timeline | Giữ ở cockpit; **nút "Tạo phiếu" của Twin ghi vào đây** |
+| 21 | gatedActions → `/control-plane` | `NganXuLy` nhóm "Mở chức năng" |
+| 22 | CapabilitiesValidationBadge | Giữ ở cockpit |
+| 23 | Tab `process` (ProcessAnalyticsPanel) | Giữ ở cockpit |
+
+### 11.4 `RobotCockpit.tsx` (6)
+
+| # | Tính năng | Đích |
+|---|---|---|
+| 24 | TeachJogPanel + persist + lưu thành artifact | Giữ ở cockpit (2 mutation) |
+| 25 | Joints bar + limit band | Giữ ở cockpit |
+| 26 | E-STOP badge | **Nổi lên Twin** — an toàn phải thấy từ tổng quan |
+| 27 | Sparkline speed/battery | Giữ ở cockpit |
+| 28 | Tab safety / anomalies / jobs / tasks | Giữ ở cockpit |
+| 29 | gatedActions → `/command-console` | `NganXuLy` |
+
+### 11.5 `DigitalTwinDashboard.tsx` (5)
+
+| # | Tính năng | Đích |
+|---|---|---|
+| 30 | What-if throughput (`digitalTwin.whatIf`) | Ngăn kéo "Mô phỏng" (đợt 5) |
+| 31 | Defect heatmap | Lớp phủ 3D + bảng xếp hạng 2D dải dưới |
+| 32 | Station load + bottleneck | Lớp phủ + bảng xếp hạng |
+| 33 | Prediction tắc nghẽn | Badge nổi + panel cảnh báo |
+| 34 | Bảng health/risk (`digitalTwin.twinState`) | Danh sách trái (đồng bộ 2 chiều) |
+
+> **Luật kèm theo:** mọi lớp phủ màu trên 3D **phải có bảng xếp hạng 2D song song** ở dải dưới. Màu không cho phép so sánh chính xác — đây là mẫu của Siemens Plant Simulation Bottleneck Analyzer.
+
+### 11.6 `CellTwinPlayer.tsx` (6)
+
+| # | Tính năng | Đích |
+|---|---|---|
+| 35 | Phát lại `orchestration.simulate` workflow bất kỳ | Ngăn "Mô phỏng" (đợt 5) |
+| 36 | `commandLog.avgDurations` → cycle time thật | Ngăn "Mô phỏng" |
+| 37 | Scrub Gantt + phím ←/→ theo biên step | `DongThoiGian.tsx` |
+| 38 | Toggle Dự đoán/Trực tiếp | `DongThoiGian.tsx` |
+| 39 | Dùng lại layout vẽ polyline dòng chảy | Lớp phủ WIP |
+| 40 | Deep-link `?ref=` + EngineeringContext | `duongDanTwin.ts` |
+
+### 11.7 `FactoryFloorEditor.tsx` (5) — ★ RỦI RO CAO NHẤT
+
+| # | Tính năng | Đích |
+|---|---|---|
+| 41 | **Nơi DUY NHẤT ghi toạ độ 0–1** mà 3 màn khác đọc | `twin_dat_cho` + script di trú §5.6 |
+| 42 | **Nơi DUY NHẤT CRUD vùng an toàn** | `VeVungPolygon.tsx` (§7.3) |
+| 43 | Ảnh nền CAD + tỉ lệ mét | `twin_tang.anhNenUrl` + công cụ Đặt tỉ lệ |
+| 44 | Undo/Redo | `lichSuThaoTac.ts` |
+| 45 | Xoay + footprint W/D per-machine | Gizmo + Inspector |
+
+> Xoá màn này trước khi 41–43 xong = **3D map thành vô dụng**. Đây là lý do QĐ-8 (chạy song song) không phải là sự thận trọng thừa.
+
+### 11.8 `WorkshopLayoutEditor.tsx` (4)
+
+| # | Tính năng | Đích |
+|---|---|---|
+| 46 | Hệ toạ độ pixel riêng | `twin_dat_cho` + di trú |
+| 47 | **Thêm/xoá máy khỏi layout** | "Khu chờ xếp chỗ" (§7.1, §7.3) |
+| 48 | Chip lineStage theo station | Inspector |
+| 49 | Sửa toạ độ bằng số | Inspector (đã có, món #7) |
+
+### 11.9 `FactoryLiveMap3D.tsx` (5)
+
+| # | Tính năng | Đích |
+|---|---|---|
+| 50 | **UNS stream ISA-95** (`useUnsStream`) — duy nhất | `loi/` nguồn realtime thứ hai |
+| 51 | Adaptive poll 5s ↔ 30s theo trạng thái WS | `loi/` |
+| 52 | Badge phân biệt SHADOW vs TWIN | Panel "Tươi dữ liệu" |
+| 53 | Máy chưa đặt = bán trong suốt (staged) | "Khu chờ xếp chỗ" |
+| 54 | Nhãn tên chuyền tại centroid | `LopNhan.tsx` |
+
+### 11.10 `Layout.tsx` (7)
+
+| # | Tính năng | Đích |
+|---|---|---|
+| 55 | **CRUD layout theo tên** | `twin_ban_ghi` (phiên bản bố cục) |
+| 56 | Mini-map click-to-navigate | Góc dưới phải canvas |
+| 57 | Export PNG | Nút trong Thiết kế |
+| 58 | Fit-all-in-view + Fullscreen | Thanh công cụ canvas |
+| 59 | Highlight theo lineStage | Chọn máy → sáng cả stage |
+| 60 | Stats AOI OK/NG/NTF/Yield | `NganXuLy` |
+| 61 | WIP overlay theo `layoutId` | Lớp phủ WIP |
+
+### 11.11 `TwinHub.tsx` (2)
+
+| # | Tính năng | Đích |
+|---|---|---|
+| 62 | **Badge xuất xứ LIVE / SIM / SƠ ĐỒ + legend** | ★ NT-3 — giữ nguyên tinh thần, hiện ở panel "Tươi dữ liệu" |
+| — | Unmount tab → 1 WebGL context | ★ RB-4 — Twin mới phải tự đảm bảo |
+
+### 11.12 `RfTestCellSim.tsx` — ưu tiên thấp nhất
+
+Đo được: **792 dòng, 0 lệnh tRPC**. Hoàn toàn dữ liệu tĩnh — là **giáo cụ trình diễn**, không nối hệ thật. Di trú sau cùng, hoặc giữ nguyên như một trang độc lập.
+
+---
+
+## 12. Kế hoạch triển khai — 5 đợt theo giá trị (QĐ-9)
+
+Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
+
+| Đợt | Nội dung | Đầu ra nghiệm thu | Phụ thuộc |
+|---|---|---|---|
+| **Đ0** | **Nền móng & lưới an toàn.** 4 migration; seed `twin_kich_thuoc_loai`; script di trú §5.6 + báo cáo đối soát; `resolve.dedupe` + `manualChunks vendor-three`; **vá rò rỉ GPU `Factory3DScene.tsx:219-226`**; `mauTrangThai.ts` hợp nhất 3 hệ màu; tạo sẵn route stub `/twin` + `/twin-studio` + mục `navigation.tsx` + **toàn bộ khoá i18n `twin3d.*` cho cả vi/en/zh** | `npm run db:push && db:verify` sạch · `npm test` xanh (kể cả `duongVaoMenu.test.ts`) · chunk `vendor-three` xuất hiện trong `dist` · script di trú in đối soát khớp | — |
+| **Đ1** | **Lõi engine `twin3d/loi/`** + module thuần. Mở rộng `factory-scene` thành kit: `KhungCanh`, `dieuKhienQuay` (+`invalidate`), `LoBatchMay` (BatchedMesh), `LopNhan`+`locNhan`, `chonVatThe`, `vienNoiBat`, `matDoKhungHinh`, `giaiPhong`, `webglcontextlost`, `heToaDo.ts` | `/factory-command` (đang dùng `FactoryScene3D`) viết lại trên kit mà **hoạt động y hệt** · đo được ≤ 150 draw calls · test `heToaDo.test.ts` xanh | Đ0 |
+| **Đ2** | **Thuật toán sinh + màn Thiết kế** `/twin-studio`. `sinhBoCuc.ts` + `hinhHocCanChinh.ts` + `snapVatVaoVat.ts` + `boCucService.ts` + tRPC `xemTruocSinh`/`sinhTuDong`/`luuHangLoat`; 3 vùng, gizmo, bộ 9+3 công cụ, cây, inspector, undo/redo, thư viện asset, vùng polygon, ảnh nền + tỉ lệ, khu chờ xếp chỗ | 9 test T1–T9 xanh · kéo máy → Lưu → reload giữ nguyên · sinh lại **không đè** máy đã chỉnh tay · vẽ được vùng · tải được ảnh nền + đặt tỉ lệ · **đủ điều kiện tắt 2 editor cũ** (sổ kiểm #41–#49 ✅) | Đ1 |
+| **Đ3** | **Màn Vận hành** `/twin`. Bố cục toàn khung, `NganXuLy` (ack alarm + tạo phiếu + gán KTV), bảng điều hướng §9.3, deep-link, breadcrumb, 3 trạng thái tươi, đối soát, danh sách 2D đồng bộ, toggle 2D + fallback WebGL, a11y bàn phím, chế độ trình bày | Click máy → ack được alarm thật, tạo được phiếu thật · deep-link khôi phục đúng cảnh · tắt WebGL → rơi 2D không màn đen · **chỉ dùng bàn phím vẫn ack được alarm** · sổ kiểm #8–#17, #30–#34, #50–#54 ✅ | Đ1, Đ2 |
+| **Đ4** | **Hấp thụ cockpit & realtime.** `twin:trangThai` 10s; `trangThaiHangLoat` (bỏ N+1); UNS stream; di trú cây ISA-95 + dải cảnh báo; nút mở cockpit máy/robot; E-STOP nổi lên Twin; timeline tua | Không còn query N+1 trong vòng render · sổ kiểm #18–#29, #55–#62 ✅ · **xoá được `CommandCenter`, `FactoryLiveMap3D`, `DigitalTwinCenter`** sau khi mọi dòng của chúng ✅ | Đ3 |
+| **Đ5** | **Mô phỏng & dọn dẹp.** Ngăn "Mô phỏng" (what-if + workflow replay), export USD, xoá màn cũ đã ✅ toàn bộ, gỡ 2 editor cũ, gỡ `Factory3DScene`/`FactoryFloor3D`, quyết định `/layout/:id` | Sổ kiểm **62/62 ✅** · grep 3 engine cũ = 0 kết quả · mọi route cũ redirect đúng | Đ4 |
+
+**Chạy song song được:** Đ0 và phần module thuần của Đ2 (`sinhBoCuc.ts`, `hinhHocCanChinh.ts`) — khác tệp hoàn toàn. Đ1 phải xong trước Đ2 và Đ3.
+
+**Gộp 5 tệp dùng chung vào Đ0** (`App.tsx`, `navigation.tsx`, 3 tệp locale) để các đợt sau không xung đột merge.
+
+Sau mỗi đợt: `npm run check && npm test && npm run test:e2e` trước khi mở đợt kế tiếp.
+
+---
+
+## 13. Kiểm thử
+
+Hiện trạng: **0 test cho mọi component 3D, 0 e2e liên quan twin.** Đây là lỗ hổng lớn nhất và phải lấp cùng lúc với việc xây.
+
+### 13.1 Vitest — module thuần (`environment: "node"`, chỉ `.ts`)
+
+| Tệp test | Phủ |
+|---|---|
+| `sinhBoCuc.test.ts` | 9 tính chất T1–T9 (§8.4) |
+| `heToaDo.test.ts` | mm↔m, Y↔Z, quaternion chuẩn hoá, bbox, làm tròn |
+| `hinhHocCanChinh.test.ts` | ★ **snap xoay TUYỆT ĐỐI** (8° + snap 15° → 15°, không phải 23°), snap lưới, align 6 hướng, distribute, array tuyến tính/toả tròn |
+| `snapVatVaoVat.test.ts` | dung sai theo pixel giữ nguyên ở mọi mức zoom |
+| `mauTrangThai.test.ts` | đủ enum, `khong_ro` khác mọi màu "khoẻ", tương phản 2 theme |
+| `locNhan.test.ts` | cap 30, không chồng bbox, ưu tiên bất thường > gần camera |
+| `lichSuThaoTac.test.ts` | undo/redo, giới hạn 50, gộp thao tác kéo liên tiếp |
+| `kiemTraAsset.test.ts` | ngưỡng 50k/150k tam giác, 15 MB, bbox suy biến |
+| `duongDanTwin.test.ts` | mã hoá↔giải mã round-trip, tham số rác không làm vỡ |
+
+### 13.2 Playwright e2e
+
+| Tệp | Kiểm |
+|---|---|
+| `e2e/twin-thiet-ke-sinh-tu-dong.spec.ts` | Sinh tự động → thấy ≥ 43 node máy trong cây |
+| `e2e/twin-thiet-ke-keo-tha.spec.ts` | Chọn máy → di chuyển → Lưu → reload → vị trí giữ nguyên |
+| `e2e/twin-thiet-ke-khong-de.spec.ts` | ★ Chỉnh tay 1 máy → Sinh tự động lại → máy đó **không bị đè** |
+| `e2e/twin-thiet-ke-can-chinh.spec.ts` | Chọn 3 máy → Align trái → 3 máy cùng X; Distribute → khoảng cách đều |
+| `e2e/twin-thiet-ke-vung-anh-nen.spec.ts` | Vẽ vùng polygon → lưu → reload; tải ảnh nền → đặt tỉ lệ |
+| `e2e/twin-van-hanh-dieu-huong.spec.ts` | Click máy → ngăn xử lý → nút "Sức khoẻ máy" → đúng route + id |
+| `e2e/twin-van-hanh-ack-alarm.spec.ts` | ★ Click máy có alarm → Xác nhận → alarm đổi trạng thái **thật trong DB** |
+| `e2e/twin-van-hanh-tao-phieu.spec.ts` | ★ Click máy → Tạo phiếu → phiếu xuất hiện trong `maintenance.listWorkOrders` |
+| `e2e/twin-deep-link.spec.ts` | Mở URL có `?pv=&chon=&cam=` → cảnh khôi phục đúng |
+| `e2e/twin-khong-webgl.spec.ts` | Chặn WebGL → tự rơi về 2D, không màn hình đen |
+| `e2e/twin-ban-phim.spec.ts` | ★ Chỉ bàn phím: Tab tới danh sách → Enter → ack được alarm |
+| `e2e/twin-ngan-sach-hieu-nang.spec.ts` | `window.__thongKeVe` → ≤ 150 draw calls, ≤ 500k tam giác |
+| `e2e/twin-du-lieu-khong-ro.spec.ts` | ★ Máy không có dữ liệu → **không** màu xanh; có badge "Không rõ" |
+| `e2e/twin-mot-canvas.spec.ts` | ★ RB-4: đếm số `<canvas>` WebGL sống = 1 tại mọi thời điểm |
+
+Cửa sổ đo cho e2e: `window.__thongKeVe`, `window.__demNhan`, `window.__phamViTwin`, `window.__soCanvas`.
+
+### 13.3 Bánh cóc sẵn có phải giữ xanh
+
+- `client/src/lib/duongVaoMenu.test.ts` — thêm `/twin` + `/twin-studio` vào **cả** `App.tsx` và `navigation.tsx`
+- `client/src/i18n/khoaDungTrongMa.test.ts`, `placeholderRatchet.test.ts` — khoá mới đủ `vi`/`en`/`zh`
+- `client/src/lib/designTokens.test.ts` — không phá ngưỡng tương phản
+- `server/routers/layoutRoutersPermissionKhoiD.db.test.ts` — quyền layout không đổi
+- `npm run check` (`tsc --noEmit`) sạch
+
+---
+
+## 14. Rủi ro
+
+| # | Rủi ro | Xác suất | Ảnh hưởng | Giảm thiểu |
+|---|---|---|---|---|
+| R1 | **Twin thành "đồ trang trí"** — nguyên nhân thất bại số 1 của ngành | Cao | Nghiêm trọng | NT-1 + NT-2 là **tiêu chí nghiệm thu bắt buộc**, không phải "nice to have". Mọi tính năng 3D không trả lời được một câu hỏi vận hành cụ thể thì **cắt** |
+| R2 | **Quên một trong 62 tính năng** khi xoá màn cũ | **Cao** | Nghiêm trọng | Sổ kiểm §11 là **cổng ra**. Không xoá màn nào cho tới khi mọi dòng của nó ✅ **đã đo**, không phải "đã khai" |
+| R3 | **Di trú toạ độ sai vì `TI_LE_PX_MM` là giả định** | **Chắc chắn** | Cao | Mọi hàng di trú `nguon='sinh'` + badge "chưa đo"; công cụ **Đặt tỉ lệ** để sửa; đối soát 2 mô hình rời nhau (§5.6 bước 3) |
+| R4 | **Model drift** — layout thật đổi, twin không đổi | Cao | Nghiêm trọng | QĐ-6: sinh geometry **từ chính DB**, không có bước "nhờ ai đó update file 3D". Banner đối soát §9.5(3). Nhãn đời bố cục §9.5(4) |
+| R5 | **Nhập liệu layout không ai làm** — Thiết kế xong nhưng không ai ngồi kéo 43 máy | Trung bình | Cao | Sinh tự động phải cho ra cảnh **dùng được ngay** (Đ2 có cả sinh lẫn kéo). Thiết kế chỉ để tinh chỉnh dần |
+| R6 | **Hai editor sống chung gây lệch dữ liệu** | Trung bình | Cao | Editor cũ ghi hệ cũ, Twin ghi hệ mới; **không đồng bộ ngược**. Banner ở editor cũ: "màn này sẽ được thay". Tắt ngay khi sổ kiểm #41–#49 ✅ |
+| R7 | **Bảng dữ liệu rỗng** — `oee_metrics`, `machine_heartbeats`, `ot_telemetry`, `factory_zones` đều 0 dòng | **Chắc chắn** | Trung bình | Mọi lớp phủ dựa vào chúng hiện *"chưa có dữ liệu"* rõ ràng. **Không** hiện 0 hay xanh. Kiểm bằng e2e |
+| R8 | **Hiệu năng trên máy xưởng** kém hơn máy dev | Trung bình | Trung bình | Ngân sách §4 kiểm bằng **e2e tự động**. `matDoKhungHinh` tự hạ chất lượng. Fallback 2D |
+| R9 | **Lỗi drei tái phát** dưới dạng khác | Thấp | Cao | Không tìm thấy issue drei/Vite đang mở nào khớp; drei 10.7.8 tương thích three 0.182 + R3F 9.5. Nhưng thêm test kiểm bundle không phình |
+| R10 | **Xung đột merge** ở `App.tsx`, `navigation.tsx`, 3 tệp i18n | Cao | Thấp | Gộp mọi sửa đổi 5 tệp dùng chung vào Đ0, một lần |
+| R11 | **Máy vận hành không có WebGL** hoặc driver cũ | Thấp | Cao | Fallback 2D bắt buộc + e2e `twin-khong-webgl.spec.ts` |
+| R12 | **Nhánh dài** `feat/hmi-dep` đã có nhiều thay đổi | Trung bình | Trung bình | Làm trên nhánh riêng `feat/twin-3d-trung-tam` cắt từ nhánh hiện tại; rebase sau mỗi đợt |
+
+---
+
+## 15. Tiêu chí nghiệm thu tổng thể
+
+Twin được coi là **hoàn thành** khi và chỉ khi tất cả đúng:
+
+1. `npm run check` sạch · `npm test` xanh · `npm run test:e2e` xanh (gồm 14 e2e mới).
+2. Mở `/twin-studio` → Sinh tự động → hiện đủ **43 máy / 37 trạm / 4 chuyền / 2 xưởng**, số khớp DB.
+3. Kéo một máy, Lưu, reload → vị trí giữ nguyên. Chạy lại Sinh tự động → máy đó **không** bị đè.
+4. Chọn 3 máy → Align trái → cùng toạ độ X (đo bằng e2e, không bằng mắt).
+5. **Xoay máy về đúng 15°** bằng snap → giá trị đọc ra là `15.000`, không phải `23.000` (RB-2).
+6. Vẽ được vùng an toàn, tải được ảnh nền, đặt được tỉ lệ mét → `daHieuChuan = true`.
+7. Kéo máy từ "Khu chờ xếp chỗ" vào mặt bằng → số máy chờ giảm đúng 1.
+8. Mở `/twin` → 3D toàn khung → click máy → **ack được alarm thật** (đổi trạng thái trong DB) và **tạo được phiếu thật**.
+9. Click máy → nút mở đúng `/machine/:id` và `/station-analysis/:id` với đúng id.
+10. Copy URL đang xem, mở tab mới → cảnh khôi phục y hệt (phạm vi, vật thể chọn, camera, lớp bật).
+11. Máy không có dữ liệu > 5 phút → **xám gạch chéo "Không rõ"**, không xanh.
+12. `renderer.info` báo **≤ 150 draw calls** và **≤ 500.000 tam giác** ở cảnh đầy đủ nhất.
+13. Không chạm chuột 10 giây → `frameloop` dừng, GPU về ~0%.
+14. Tắt WebGL → tự rơi về 2D, không màn hình đen, vẫn chọn được máy.
+15. **Chỉ dùng bàn phím**: Tab tới danh sách máy → Enter → ack được alarm.
+16. Đếm `<canvas>` WebGL sống = **1** tại mọi thời điểm (RB-4).
+17. Đổi theme sáng ↔ tối → cảnh 3D đúng ở cả hai.
+18. Đổi ngôn ngữ vi/en/zh → không còn chuỗi cứng nào trong Twin.
+19. **Đo quyền bằng tài khoản KHÔNG phải admin**: vai không có quyền → chế độ chỉ đọc, gizmo và nút Lưu **biến mất** (không phải disable).
+20. **Sổ kiểm §11 đạt 62/62 ✅ đã đo** trước khi xoá màn cũ cuối cùng.
+
+---
+
+## 16. Ngoài phạm vi (YAGNI)
+
+- ❌ Photoreal / PBR / HDRI / raytracing — con đường nhanh nhất biến twin thành đồ trang trí.
+- ❌ Mô phỏng vật lý, va chạm, robot kinematics đầy đủ (giữ `ArticulatedRobot` hiện có, không mở rộng).
+- ❌ VR/AR/WebXR.
+- ❌ WebGPU — RB-6, đo lại khi three.js#30560 đóng.
+- ❌ Ràng buộc align vĩnh viễn kiểu Revit (cần constraint solver + đồ thị phụ thuộc + phát hiện chu trình; mặt bằng nhà máy không có phụ thuộc hình học như toà nhà).
+- ❌ Rule engine cấu hình được kiểu TwinMaker (biểu thức JEXL → màu). v1 dùng ánh xạ trạng thái cố định.
+- ❌ Điều khiển máy trực tiếp từ 3D. Hệ hiện là **ALERT-ONLY**; các nút "Propose" điều hướng sang `/control-plane` và `/command-console` chứ không ghi lệnh xuống máy. Giữ nguyên nguyên tắc đó.
+- ❌ Thực thể camera CCTV — DB chưa có bảng camera.
+- ❌ Import BIM/IFC (chỉ GLB/GLTF + STEP/IGES ở v1).
+
+---
+
+## 17. Phụ lục: nguồn tham khảo
+
+**Sản phẩm chuẩn ngành**
+- AWS IoT TwinMaker Scene Composer — https://docs.aws.amazon.com/iot-twinmaker/latest/guide/scenes-creation.html
+- Azure Digital Twins 3D Scenes Studio — https://learn.microsoft.com/en-us/azure/digital-twins/how-to-use-3d-scenes-studio
+- `microsoft/iot-cardboard-js` (MIT) — schema `3DScenesConfiguration` đáng học: Scene → Element → Behavior → Layer
+- Visual Components (Snap Type 7 chế độ, Align hai điểm, Pattern array) — https://help.visualcomponents.com/4.10/Premium/en/English/3D%20Operations/Snapping_components.htm
+- Emulate3D (Rockwell) — Snap Mode 8 chế độ, Align/Distribute/Grid Snap
+- Siemens Plant Simulation Bottleneck Analyzer — màu trên vật thể **+** bảng xếp hạng song song
+
+**Kỹ thuật three.js**
+- three.js editor (MIT) — khuôn multi-select group-proxy + delta matrix tại `editor/js/Selector.js`; snap tại `Viewport.js:318`
+- three.js#29546 — TransformControls không còn là Object3D (RB-1)
+- TransformControls snap xoay tương đối — https://discourse.threejs.org/t/transformcontrols-snapping-is-absolute-for-translation-but-relative-for-rotation/47420 (RB-2)
+- three.js#30560 — WebGPURenderer chậm với nhiều render item (RB-6)
+- R3F Scaling performance — https://r3f.docs.pmnd.rs/advanced/scaling-performance
+- BatchedMesh — https://threejs.org/docs/pages/BatchedMesh.html
+- `webglcontextlost` phải `preventDefault()` — https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/webglcontextlost_event
+- glTF-Transform: `--no-join --no-flatten` giữ danh tính node — https://gltf-transform.dev/
+
+**Chuẩn và cạm bẫy**
+- Kritzinger et al. 2018, *IFAC-PapersOnLine* 51(11):1016–1022 — phân loại Model/Shadow/Twin theo mức tích hợp dữ liệu
+- ISA-101 HMI — Hollifield, *The High Performance HMI*
+- ASM Consortium Guideline 6.1 — ≤7 mã màu; "No 3D graphical objects"
+- ISA-18.2 — vòng đời alarm 10 giai đoạn; shelved/suppressed là trạng thái hạng nhất
+- ISA-95 / IEC 62264 — `ISA95EquipmentElementLevelEnum`, discrete manufacturing: Enterprise→Site→Area→Production Line→Work Cell
+- WEF Global Lighthouse Network — 70% nhà sản xuất kẹt "pilot purgatory"
+- ⚠️ Con số *"80% dự án digital twin thất bại"* lan truyền rộng nhưng **không quy được nguồn** — không dùng làm bằng chứng
+
+**Trong repo**
+- `client/src/components/factory-scene/` — nền kit 3D (1.393 dòng)
+- `server/services/twin/` — 5.269 dòng service đã có
+- `CommandCenter.tsx:605-607` — bằng chứng HDR từ CDN làm treo màn hình (RB-5)
+- `Factory3DScene.tsx:219-226` — rò rỉ GPU cần vá
