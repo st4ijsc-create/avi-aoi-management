@@ -1252,6 +1252,12 @@ export function hinhKhoiCho(loaiMay: string): KhoiKey   // 25+ loại → 7 kh�
 ```
 Test `hinhKhoiMay.unit.test.ts`: **mọi giá trị của `machineTypeEnum` phải ánh xạ được**, không giá trị nào rơi vào `undefined` — đây là bánh cóc chống việc thêm loại máy mới mà quên cập nhật.
 
+> **ĐO ĐƯỢC 2026-09-06 (cổng QA Đợt 2, đo bằng cách CHẠY `hinhHocKhoi` chứ không đọc mã):**
+> cả **7/7 khối đều đúng 60 tam giác** (5 hộp × 12), tức **chạm sát trần trên của khoảng
+> 40–60, dư địa bằng 0**. Thêm dù chỉ **một** hộp con vào bất kỳ khối nào sẽ vượt 60 và test
+> đỏ ngay. Đây là hành vi đúng của lưới, nhưng đợt sau phải biết trước: muốn thêm chi tiết
+> hình học thì phải **bớt chỗ khác**, hoặc nâng trần có chủ đích kèm lý do.
+
 **Mỗi khối tôn trọng kích thước thật** từ `twin_dat_cho.rongMm/caoMm/sauMm` (§5.3) — hình dạng cố định, tỉ lệ co giãn theo số đo. Máy AOI 1400 mm và máy AOI 2200 mm nhìn khác nhau ngay.
 
 **Chỉ báo hướng:** mỗi khối có **một vạch màu ở mặt trước** (mặt vào phôi). Không có nó thì máy xoay 180° trông y hệt, và người dùng không phát hiện hướng sai.
