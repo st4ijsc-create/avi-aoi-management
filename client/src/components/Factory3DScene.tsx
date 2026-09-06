@@ -1,6 +1,6 @@
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Text, Box, Cylinder, PerspectiveCamera, Environment, Grid } from "@react-three/drei";
-import { useRef, useState, Suspense } from "react";
+import { useRef, useState, useMemo, useEffect, Suspense } from "react";
 import * as THREE from "three";
 import type { FactoryData } from "@/types/factory";
 
@@ -147,11 +147,65 @@ function Ground() {
 
 function Scene({ factories, selectedFactory, onSelectFactory }: Factory3DSceneProps) {
   // Position factories in a circle
-  const positions: [number, number, number][] = factories.map((_, index) => {
-    const angle = (index / factories.length) * Math.PI * 2;
-    const radius = 5;
-    return [Math.cos(angle) * radius, 0.6, Math.sin(angle) * radius];
-  });
+  const positions: [number, number, number][] = useMemo(
+    () =>
+      factories.map((_, index) => {
+        const angle = (index / factories.length) * Math.PI * 2;
+        const radius = 5;
+        return [Math.cos(angle) * radius, 0.6, Math.sin(angle) * radius] as [number, number, number];
+      }),
+    [factories],
+  );
+
+  /**
+   * ★★★ VÁ RÒ RỈ GPU (Twin 3D Đợt 0; spec §1.7 + RB-7).
+   *
+   * TRƯỚC: JSX gọi thẳng `new THREE.Line(new THREE.BufferGeometry(), new
+   * THREE.LineBasicMaterial())` bên trong `factories.map(...)` của thân render.
+   * React chạy lại thân render mỗi lần state/prop đổi — và cảnh này có `useFrame`
+   * cùng `hovered`/`isSelected` đổi liên tục — nên MỖI LẦN render sinh ra N cặp
+   * geometry+material MỚI trên GPU, còn cặp cũ bị bỏ rơi.
+   *
+   * ⚠ three.js KHÔNG có garbage collector cho bộ nhớ GPU. `delete`/GC của JS thu hồi
+   * được đối tượng JS nhưng KHÔNG thu hồi VBO/shader program đã cấp phát trong ngữ
+   * cảnh WebGL — chỉ `dispose()` làm được. Nên rò rỉ này tăng đơn điệu cho tới khi
+   * mất ngữ cảnh WebGL (canvas ĐEN), và nó im lặng suốt: không exception, không
+   * cảnh báo, chỉ là màn hình từ từ chậm rồi đen.
+   *
+   * SAU: `useMemo` cấp phát ĐÚNG MỘT LẦN cho mỗi bộ (factories, positions), và
+   * `useEffect` cleanup `dispose()` cả geometry lẫn material khi bộ đó bị thay hoặc
+   * component unmount. Hai hook PHẢI cùng phụ thuộc `duongNoi` — nếu cleanup bám
+   * phụ thuộc khác thì nó sẽ giải phóng nhầm mảng đang dùng (rò rỉ đổi thành crash).
+   */
+  const duongNoi = useMemo(
+    () =>
+      positions.map((pos) => {
+        const hinhHoc = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0.1, 0),
+          new THREE.Vector3(pos[0] * 0.7, 0.1, pos[2] * 0.7),
+        ]);
+        const vatLieu = new THREE.LineBasicMaterial({
+          color: "#06b6d4",
+          opacity: 0.3,
+          transparent: true,
+        });
+        return new THREE.Line(hinhHoc, vatLieu);
+      }),
+    [positions],
+  );
+
+  useEffect(() => {
+    return () => {
+      for (const line of duongNoi) {
+        line.geometry.dispose();
+        // `material` của Line có thể là mảng (multi-material) theo kiểu của three;
+        // ở đây luôn là một, nhưng xử lý cả hai nhánh để không rò khi ai đó sửa sau.
+        const vl = line.material;
+        if (Array.isArray(vl)) vl.forEach((m) => m.dispose());
+        else vl.dispose();
+      }
+    };
+  }, [duongNoi]);
 
   return (
     <>
@@ -208,23 +262,10 @@ function Scene({ factories, selectedFactory, onSelectFactory }: Factory3DScenePr
         Tập đoàn
       </Text>
 
-      {/* Connection lines - using Line component from drei */}
-      {factories.map((_, index) => {
-        const pos = positions[index];
-        const points = [
-          new THREE.Vector3(0, 0.1, 0),
-          new THREE.Vector3(pos[0] * 0.7, 0.1, pos[2] * 0.7)
-        ];
-        return (
-          <primitive
-            key={`line-${index}`}
-            object={new THREE.Line(
-              new THREE.BufferGeometry().setFromPoints(points),
-              new THREE.LineBasicMaterial({ color: "#06b6d4", opacity: 0.3, transparent: true })
-            )}
-          />
-        );
-      })}
+      {/* Đường nối tâm → nhà máy. Xem docblock `duongNoi` về rò rỉ GPU đã vá. */}
+      {duongNoi.map((line, index) => (
+        <primitive key={`line-${index}`} object={line} />
+      ))}
     </>
   );
 }

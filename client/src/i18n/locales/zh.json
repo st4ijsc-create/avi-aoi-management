@@ -6882,7 +6882,11 @@
     "productWorkspaceDesc": "产品定义 · 变体 · 金样 · 质量 — 统一入口",
     "metricCatalog": "指标目录",
     "metricCatalogDesc": "语义层：带版本的 KPI 定义（OEE@v1）· 公式 · 数据来源（血缘）",
-    "factoryCommand": "工厂指挥"
+    "factoryCommand": "工厂指挥",
+    "twin3d": "3D 工厂",
+    "twin3dDesc": "空间索引：在车间中定位设备并查看实时状态",
+    "twinStudio": "3D 工厂设计",
+    "twinStudioDesc": "创建建筑、楼层与设备布局；导入图纸；发布版本"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",
@@ -20057,5 +20061,109 @@
     "guiYeuCauDuyetRong": "尚无字段更改，无法提交审批",
     "daGuiYeuCauDuyet": "已提交 {{soDiem}} 个审批申请——等待质量审核",
     "guiYeuCauDuyetLoiMotPhan": "已提交 {{thanhCong}}/{{tong}} 个审批申请——{{soLoi}} 个失败，请稍后重试"
+  },
+  "twin3d": {
+    "chuaDung": "此页面尚未构建。内容将在 3D 数字孪生项目的后续阶段中添加。",
+    "chuaDo": "未实测",
+    "chuaDoGiaiThich": "该数值由系统生成，尚未有人在现场实测。",
+    "khuChoXepCho": "待布置设备",
+    "khuChoXepChoMoTa": "在 3D 布局中尚无位置的设备。拖到楼面上即可布置。",
+    "vanHanh": {
+      "tieuDe": "3D 工厂 — 运行",
+      "moTa": "工厂的空间索引：定位设备、查看实时状态，并切换到 2D 界面进行处理。"
+    },
+    "studio": {
+      "tieuDe": "3D 工厂 — 设计",
+      "moTa": "创建建筑与楼层、导入工程图纸、布置设备，并为运行界面发布版本。"
+    },
+    "trangThai": {
+      "running": "运行中",
+      "stopped": "停机",
+      "error": "故障",
+      "maintenance": "维护",
+      "warmingUp": "预热中",
+      "changeover": "换型中",
+      "starved": "缺料等待",
+      "blocked": "下游阻塞",
+      "khongRo": "未知",
+      "ngungKhaiThac": "已停用"
+    },
+    "tuoi": {
+      "tuoi": "数据实时",
+      "cu": "数据陈旧",
+      "khongRo": "信号中断",
+      "capNhatLanCuoi": "最后更新"
+    },
+    "toaNha": {
+      "tieuDe": "建筑",
+      "ma": "编码",
+      "ten": "名称",
+      "dai": "长 (m)",
+      "rong": "宽 (m)",
+      "cao": "高 (m)",
+      "themMoi": "添加建筑"
+    },
+    "tang": {
+      "tieuDe": "楼层",
+      "capSo": "楼层号",
+      "ten": "楼层名称",
+      "caoDo": "标高 (m)",
+      "caoThongThuy": "净高 (m)",
+      "themMoi": "添加楼层",
+      "cungKichThuoc": "各楼层与建筑尺寸相同",
+      "tuTinhCaoDo": "自动计算上层标高",
+      "anhNen": "平面底图",
+      "datTiLe": "设置比例",
+      "daHieuChuan": "已校准",
+      "chuaHieuChuan": "未校准"
+    },
+    "vatThe": {
+      "tuong": "墙",
+      "cot": "柱",
+      "cua": "门",
+      "vachKe": "地面标线",
+      "vung": "区域",
+      "ke": "货架",
+      "pallet": "托盘",
+      "bangTai": "输送带",
+      "raoAnToan": "安全围栏",
+      "bienBao": "标识牌",
+      "nhom": "组",
+      "khac": "其他"
+    },
+    "nguon": {
+      "sinh": "系统生成",
+      "tay": "人工录入"
+    },
+    "banVe": {
+      "chonTep": "选择图纸文件",
+      "donViNguon": "源单位",
+      "trucLen": "向上轴",
+      "diemGoc": "原点",
+      "xacNhanKichThuoc": "确认识别到的尺寸",
+      "baoNgoai": "外包围盒",
+      "quaLon": "文件超出允许上限。请先减面后再导入。",
+      "soTamGiac": "三角面数",
+      "tachThanhTang": "拆分为楼层"
+    },
+    "banGhi": {
+      "tieuDe": "布局版本",
+      "xuatBan": "发布",
+      "daXuatBan": "已发布",
+      "nhan": "版本标签"
+    },
+    "congCu": {
+      "chon": "选择",
+      "diChuyen": "移动",
+      "xoay": "旋转",
+      "coGian": "缩放",
+      "canTrai": "左对齐",
+      "canPhai": "右对齐",
+      "canGiua": "居中对齐",
+      "raiDeu": "均匀分布",
+      "batDinh": "吸附网格",
+      "khoa": "锁定",
+      "hienThi": "显示/隐藏"
+    }
   }
 }

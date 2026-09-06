@@ -167,6 +167,10 @@ const RequestRole = React.lazy(() => import("./pages/RequestRole")); // Doc 10 U
 // doc 39 Wave 4 — the 6 twin/3D surfaces are consolidated into one lazy Digital Twin
 // hub (their bodies are imported as *Content there). Legacy routes redirect in.
 const TwinHub = React.lazy(() => import("./pages/TwinHub"));
+// Twin 3D Đợt 0 (spec 2026-09-06) — hai màn mới của Nhà máy 3D. STUB ở đợt này; chiếm
+// chỗ định tuyến sớm để Đ1–Đ6 không cùng sửa App.tsx/navigation.tsx/3 locale (rủi ro R10).
+const TwinVanHanh = React.lazy(() => import("./pages/TwinVanHanh"));
+const TwinStudio = React.lazy(() => import("./pages/TwinStudio"));
 const CommandCenter = React.lazy(() => import("./pages/CommandCenter")); // U2 (doc 21 §6 G-3): Ecosystem Command Center — single pane (hierarchy tree + factory twin + KPI strip + unified live alarm rail)
 const ControlTower = React.lazy(() => import("./pages/ControlTower")); // doc 46 FE-W3.1 (D4): persona-configurable Executive Control Tower — consolidates 6 command screens (compose + cross-link)
 const ComparisonStudio = React.lazy(() => import("./pages/ComparisonStudio")); // doc 46 FE-W3.3: unified multi-dim comparison (line/shift/product/period + benchmark)
@@ -315,6 +319,11 @@ function Router() {
       {/* doc 39 Wave 4 — Digital Twin hub consolidates the 6 twin/3D surfaces into one
           tabbed page; the legacy routes deep-link into their tab. */}
       <Route path="/digital-twin"><RouteGuard navHref="/digital-twin"><AIPageWrapper><TwinHub /></AIPageWrapper></RouteGuard></Route>
+      {/* Twin 3D Đợt 0 (spec 2026-09-06 §6.4) — `navHref` chứ KHÔNG `requirePermission`:
+          guard TRA quyền từ chính navGroups, nên mục nav và cổng route KHÔNG THỂ lệch
+          nhau. Đó là cách repo chặn lớp lỗi "một lối vào rồi TỪ CHỐI" của Khối D. */}
+      <Route path="/twin"><RouteGuard navHref="/twin"><TwinVanHanh /></RouteGuard></Route>
+      <Route path="/twin-studio"><RouteGuard navHref="/twin-studio"><TwinStudio /></RouteGuard></Route>
       <Route path="/history"><RouteGuard navHref="/history"><History /></RouteGuard></Route>
       <Route path="/inspection/:id"><RouteGuard requirePermission="history_view"><InspectionDetail /></RouteGuard></Route>
       <Route path="/aoi-packages"><RouteGuard navHref="/aoi-packages"><AOIPackages /></RouteGuard></Route>

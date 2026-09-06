@@ -392,6 +392,37 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "analytics",
         section: "mes",
       },
+      // ── Twin 3D Đợt 0 (spec 2026-09-06 §6.4) ────────────────────────────────
+      // ★ Quyền ở ĐÂY là NGUỒN DUY NHẤT: `App.tsx` gate hai route này bằng
+      // `RouteGuard navHref=…`, tức là guard TRA lại chính hai dòng dưới. Không có
+      // chuỗi quyền nào bị chép tay sang bên kia ⇒ không thể tái diễn lớp lỗi "một
+      // lối vào rồi TỪ CHỐI" (nav khai `settings_factory`, route gate `analytics_oee`)
+      // đã gặp ở Khối D. Đổi quyền ở đây là đổi cho cả hai bên.
+      //
+      // ⚠ Nghiệm thu quyền PHẢI dùng tài khoản KHÔNG phải admin — admin bypass
+      // `requirePermission`, nên đo bằng admin chứng minh số 0.
+      {
+        // Vận hành: xem cảnh, điều hướng, xử lý cảnh báo → cùng gate với các màn
+        // giám sát khác trong group (`analytics_oee`).
+        href: "/twin",
+        label: "nav.twin3d",
+        icon: <Boxes className="h-4 w-4" />,
+        description: "nav.twin3dDesc",
+        requiredPermission: "analytics_oee",
+        permissionCategory: "analytics",
+        section: "mes",
+      },
+      {
+        // Thiết kế: sửa bố cục nhà xưởng = sửa cấu hình nhà máy → `settings_factory`,
+        // KHÁC (chặt hơn) màn vận hành. Hai màn hai quyền là chủ ý, không phải sơ suất.
+        href: "/twin-studio",
+        label: "nav.twinStudio",
+        icon: <Building2 className="h-4 w-4" />,
+        description: "nav.twinStudioDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+        section: "mes",
+      },
       {
         href: "/history",
         label: "nav.historyPage",

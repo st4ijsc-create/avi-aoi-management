@@ -7079,7 +7079,11 @@
     "productWorkspace": "Xưởng sản phẩm",
     "productWorkspaceDesc": "Định nghĩa sản phẩm · biến thể · chuẩn vàng · chất lượng — một nơi",
     "metricCatalog": "Danh mục chỉ số (Metric Catalog)",
-    "metricCatalogDesc": "Semantic layer: định nghĩa KPI có phiên bản (OEE@v1) · công thức · nguồn dữ liệu (lineage)"
+    "metricCatalogDesc": "Semantic layer: định nghĩa KPI có phiên bản (OEE@v1) · công thức · nguồn dữ liệu (lineage)",
+    "twin3d": "Nhà máy 3D",
+    "twin3dDesc": "Mục lục không gian: định vị máy trong nhà xưởng, xem trạng thái theo thời gian thực",
+    "twinStudio": "Thiết kế nhà máy 3D",
+    "twinStudioDesc": "Dựng toà nhà, mặt sàn và bố cục máy; nhập bản vẽ kỹ thuật; xuất bản phiên bản"
   },
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",
@@ -20029,5 +20033,109 @@
     "guiYeuCauDuyetRong": "Chưa có trường nào thay đổi để gửi duyệt",
     "daGuiYeuCauDuyet": "Đã gửi {{soDiem}} yêu cầu duyệt — chờ quản lý chất lượng xem xét",
     "guiYeuCauDuyetLoiMotPhan": "Gửi được {{thanhCong}}/{{tong}} yêu cầu duyệt — {{soLoi}} yêu cầu lỗi, thử lại sau"
+  },
+  "twin3d": {
+    "chuaDung": "Màn này chưa dựng. Nội dung sẽ được lắp ở các đợt sau của dự án Twin 3D.",
+    "chuaDo": "chưa đo",
+    "chuaDoGiaiThich": "Giá trị do hệ sinh ra, chưa có ai đo lại trên thực địa.",
+    "khuChoXepCho": "Khu chờ xếp chỗ",
+    "khuChoXepChoMoTa": "Máy chưa có vị trí trong bố cục 3D. Kéo vào mặt sàn để xếp chỗ.",
+    "vanHanh": {
+      "tieuDe": "Nhà máy 3D — Vận hành",
+      "moTa": "Mục lục không gian của nhà máy: định vị máy, xem trạng thái theo thời gian thực, và chuyển sang màn 2D để xử lý."
+    },
+    "studio": {
+      "tieuDe": "Nhà máy 3D — Thiết kế",
+      "moTa": "Dựng toà nhà và mặt sàn, nhập bản vẽ kỹ thuật, đặt máy vào bố cục, và xuất bản phiên bản cho màn vận hành."
+    },
+    "trangThai": {
+      "running": "Đang chạy",
+      "stopped": "Dừng",
+      "error": "Lỗi",
+      "maintenance": "Bảo trì",
+      "warmingUp": "Đang khởi động",
+      "changeover": "Đổi sản phẩm",
+      "starved": "Chờ vật tư",
+      "blocked": "Nghẽn hạ nguồn",
+      "khongRo": "Không rõ",
+      "ngungKhaiThac": "Ngừng khai thác"
+    },
+    "tuoi": {
+      "tuoi": "Dữ liệu tươi",
+      "cu": "Dữ liệu cũ",
+      "khongRo": "Mất tín hiệu",
+      "capNhatLanCuoi": "Cập nhật lần cuối"
+    },
+    "toaNha": {
+      "tieuDe": "Toà nhà",
+      "ma": "Mã",
+      "ten": "Tên",
+      "dai": "Dài (m)",
+      "rong": "Rộng (m)",
+      "cao": "Cao (m)",
+      "themMoi": "Thêm toà nhà"
+    },
+    "tang": {
+      "tieuDe": "Tầng",
+      "capSo": "Số tầng",
+      "ten": "Tên tầng",
+      "caoDo": "Cao độ (m)",
+      "caoThongThuy": "Cao thông thuỷ (m)",
+      "themMoi": "Thêm tầng",
+      "cungKichThuoc": "Các tầng cùng kích thước với toà nhà",
+      "tuTinhCaoDo": "Tự tính cao độ tầng trên",
+      "anhNen": "Ảnh nền mặt bằng",
+      "datTiLe": "Đặt tỉ lệ",
+      "daHieuChuan": "Đã hiệu chuẩn",
+      "chuaHieuChuan": "Chưa hiệu chuẩn"
+    },
+    "vatThe": {
+      "tuong": "Tường",
+      "cot": "Cột",
+      "cua": "Cửa",
+      "vachKe": "Vạch kẻ sàn",
+      "vung": "Vùng",
+      "ke": "Kệ",
+      "pallet": "Pallet",
+      "bangTai": "Băng tải",
+      "raoAnToan": "Rào an toàn",
+      "bienBao": "Biển báo",
+      "nhom": "Nhóm",
+      "khac": "Khác"
+    },
+    "nguon": {
+      "sinh": "Hệ sinh",
+      "tay": "Người nhập"
+    },
+    "banVe": {
+      "chonTep": "Chọn tệp bản vẽ",
+      "donViNguon": "Đơn vị nguồn",
+      "trucLen": "Trục lên",
+      "diemGoc": "Điểm gốc",
+      "xacNhanKichThuoc": "Xác nhận kích thước đọc được",
+      "baoNgoai": "Bao ngoài",
+      "quaLon": "Tệp vượt ngưỡng cho phép. Vui lòng giảm lưới trước khi nhập.",
+      "soTamGiac": "Số tam giác",
+      "tachThanhTang": "Tách thành tầng"
+    },
+    "banGhi": {
+      "tieuDe": "Phiên bản bố cục",
+      "xuatBan": "Xuất bản",
+      "daXuatBan": "Đã xuất bản",
+      "nhan": "Nhãn phiên bản"
+    },
+    "congCu": {
+      "chon": "Chọn",
+      "diChuyen": "Di chuyển",
+      "xoay": "Xoay",
+      "coGian": "Co giãn",
+      "canTrai": "Căn trái",
+      "canPhai": "Căn phải",
+      "canGiua": "Căn giữa",
+      "raiDeu": "Rải đều",
+      "batDinh": "Bắt dính lưới",
+      "khoa": "Khoá",
+      "hienThi": "Hiện/ẩn"
+    }
   }
 }
