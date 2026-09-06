@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useAuth } from "@/lib/auth"
+import { meetsMinRole } from "@/lib/roleRank"
 import {
   EngineApiError,
   useRotateIdentity,
@@ -46,16 +47,6 @@ import { Switch } from "@/components/ui/switch"
 
 type TFunc = ReturnType<typeof useT>
 type BadgeStatus = NonNullable<VariantProps<typeof statusBadgeVariants>["status"]>
-
-/** Rank order for the Engineer+ gate below — same hierarchy `AssetRegistry.tsx`'s own local
- * `ROLE_RANK`/`meetsMinRole` already encode (duplicated per-file in this codebase rather than shared,
- * same as `Sidebar.tsx`'s own copy). */
-const ROLE_RANK: Record<string, number> = { Operator: 0, Engineer: 1, Admin: 2 }
-
-function meetsMinRole(minRole: string, userRole: string | undefined): boolean {
-  if (!userRole) return false
-  return (ROLE_RANK[userRole] ?? -1) >= (ROLE_RANK[minRole] ?? Number.POSITIVE_INFINITY)
-}
 
 /** Client-side Engineer+ gate for the Site-link SAVE control only — the server's own `Policies.Engineer`
  * on `PUT /v1/site` is the real enforcement (`SiteEndpoints.cs`). A non-Engineer sees a read-only

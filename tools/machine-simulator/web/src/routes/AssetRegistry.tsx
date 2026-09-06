@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useAuth } from "@/lib/auth"
+import { meetsMinRole } from "@/lib/roleRank"
 import {
   useAsset,
   useAssets,
@@ -96,19 +97,12 @@ function formatAssetTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? "—" : assetDateTimeFormatter.format(d)
 }
 
-/** Rank order for the Engineer+ gate below — same hierarchy `Sidebar.tsx`'s `ROLE_RANK`/`meetsMinRole`
- * already encode server-side (`Policies.Engineer` = Engineer OR Admin). This is the first Engineer+
+/** The Engineer+ gate below compares through `lib/roleRank.ts`'s shared ladder, which mirrors what
+ * the server already encodes (`Policies.Engineer` = Engineer OR Admin). This is the first Engineer+
  * (not Admin-only) client gate in the app: `Audit.tsx`/`Users.tsx`'s own local `RequireRole` checks
  * exact string equality, which happens to be correct for THEM only because Admin has nothing above it
  * to differ from — reused verbatim here it would wrongly block an Admin from a control the SERVER
  * lets Admin use just as freely as Engineer. */
-const ROLE_RANK: Record<string, number> = { Operator: 0, Engineer: 1, Admin: 2 }
-
-function meetsMinRole(minRole: string, userRole: string | undefined): boolean {
-  if (!userRole) return false
-  return (ROLE_RANK[userRole] ?? -1) >= (ROLE_RANK[minRole] ?? Number.POSITIVE_INFINITY)
-}
-
 /** Client-side Engineer+ gate for the lifecycle transition control ONLY — never the whole page (reads
  * are Operator, `AssetEndpoints.MapAssetEndpoints`). Renders a small inline note instead of the
  * control for anyone below `role`; the server's own `Policies.Engineer` is the real enforcement. */

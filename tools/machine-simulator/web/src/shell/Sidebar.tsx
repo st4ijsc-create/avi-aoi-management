@@ -24,6 +24,7 @@ import { useLanguage, useT } from "@/i18n"
 import { en } from "@/i18n/en"
 import { vi, type Dictionary } from "@/i18n/vi"
 import { useAuth } from "@/lib/auth"
+import { navMeetsMinRole } from "@/lib/roleRank"
 import { cn } from "@/lib/utils"
 
 export interface NavItem {
@@ -33,9 +34,9 @@ export interface NavItem {
   path: string
   icon: React.ComponentType<{ className?: string }>
   /** WS-D-D7 (blueprint §6) — the minimum role allowed to SEE this nav entry at all (undefined means
-   * every authenticated role). Checked via {@link ROLE_RANK}, not string equality, so a future
-   * `minRole:"Engineer"` entry would also show for Admin — Admin is always a superset of every lower
-   * role's own nav surface. The server's own per-route policy (`Policies.Admin`/etc.) is the REAL
+   * every authenticated role). Checked via `lib/roleRank.ts`'s shared `ROLE_RANK` ladder, not string
+   * equality, so a future `minRole:"Engineer"` entry would also show for Admin — Admin is always a
+   * superset of every lower role's own nav surface. The server's own per-route policy (`Policies.Admin`/etc.) is the REAL
    * gate regardless; this only keeps the sidebar/command-palette from listing a route whose every
    * underlying request would just 403 for the current user. */
   minRole?: string
@@ -117,22 +118,11 @@ export const NAV_ITEMS: NavItem[] = [
   { labelKey: "shell.nav.audit", path: "/audit", icon: ScrollText, minRole: "Admin" },
 ]
 
-/** Rank order for {@link NavItem.minRole} comparisons — Operator < Engineer < Admin, same hierarchy
- * `Policies.cs`'s server-side `RequireRole` OR-chains already encode (`Policies.Admin` = Admin alone,
- * `Policies.Engineer` = Engineer or Admin, `Policies.Operator` = any of the three). */
-const ROLE_RANK: Record<string, number> = { Operator: 0, Engineer: 1, Admin: 2 }
-
-function meetsMinRole(minRole: string | undefined, userRole: string | undefined): boolean {
-  if (!minRole) return true
-  if (!userRole) return false
-  return (ROLE_RANK[userRole] ?? -1) >= (ROLE_RANK[minRole] ?? Number.POSITIVE_INFINITY)
-}
-
 /** `NAV_ITEMS` filtered down to what `userRole` is allowed to even see — shared by `Sidebar` and
  * `CommandPalette` so the two surfaces never disagree about which nav entries exist for the signed-in
  * user. */
 export function visibleNavItems(userRole: string | undefined): NavItem[] {
-  return NAV_ITEMS.filter((item) => meetsMinRole(item.minRole, userRole))
+  return NAV_ITEMS.filter((item) => navMeetsMinRole(item.minRole, userRole))
 }
 
 function isNavItemActive(location: string, path: string): boolean {

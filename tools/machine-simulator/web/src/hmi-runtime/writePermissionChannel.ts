@@ -17,9 +17,11 @@ import type { PolicyResolution } from "./widgets/shared.ts"
  * design time. The safe default must be the one that CLOSES; design time is opt-in, declared by a mount
  * that knows it has no machine (`DesignTimePermissionProvider`).
  *
- * <b>No role comparison lives here, or anywhere on this path.</b> `web/src/` already holds eight
- * identical copies of the `ROLE_RANK`/`meetsMinRole` hierarchy; the entire point of resolving in the
- * engine is that this tier consumes a boolean somebody else computed. There is no ninth copy.
+ * <b>No role comparison lives here, or anywhere on this path.</b> The `ROLE_RANK`/`meetsMinRole`
+ * hierarchy now has exactly ONE home, `lib/roleRank.ts` (Session 5 hoisted the eight identical copies
+ * that used to be scattered across routes and the shell; `runtime-tests/roleRank.test.mjs` pins that a
+ * ninth cannot appear). This file does not import it and must not: the entire point of resolving in
+ * the engine is that this tier consumes a boolean somebody else computed.
  */
 export const WritePermissionContext = React.createContext<PolicyResolution>({ state: "pending" })
 

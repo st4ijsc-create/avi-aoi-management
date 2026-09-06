@@ -4,6 +4,7 @@ import { AlertTriangle, Loader2, Radio, Send, Zap } from "lucide-react"
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useAuth } from "@/lib/auth"
+import { meetsMinRole } from "@/lib/roleRank"
 import {
   MachineWriteApiError,
   useConfiguredConnectors,
@@ -44,13 +45,6 @@ import { Switch } from "@/components/ui/switch"
  *   exactly that collapse happened one layer down (inside a driver); this UI does not repeat it one layer
  *   up.
  */
-
-const ROLE_RANK: Record<string, number> = { Operator: 0, Engineer: 1, Admin: 2 }
-
-function meetsMinRole(minRole: string, userRole: string | undefined): boolean {
-  if (!userRole) return false
-  return (ROLE_RANK[userRole] ?? -1) >= (ROLE_RANK[minRole] ?? Number.POSITIVE_INFINITY)
-}
 
 type TFunc = ReturnType<typeof useT>
 type GlossFunc = ReturnType<typeof useGloss>

@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useAuth } from "@/lib/auth"
+import { meetsMinRole } from "@/lib/roleRank"
 import {
   ConnectorConfigApiError,
   effectiveInstanceId,
@@ -53,15 +54,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
  */
 
 type TFunc = ReturnType<typeof useT>
-
-/** Rank order for the Engineer+ gates below — same hierarchy `Site.tsx`/`AssetRegistry.tsx`'s own local
- * `ROLE_RANK`/`meetsMinRole` already encode (duplicated per-file in this codebase rather than shared). */
-const ROLE_RANK: Record<string, number> = { Operator: 0, Engineer: 1, Admin: 2 }
-
-function meetsMinRole(minRole: string, userRole: string | undefined): boolean {
-  if (!userRole) return false
-  return (ROLE_RANK[userRole] ?? -1) >= (ROLE_RANK[minRole] ?? Number.POSITIVE_INFINITY)
-}
 
 function RequireRole({ role, children }: { role: string; children: React.ReactNode }) {
   const { user } = useAuth()

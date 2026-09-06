@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useAuth } from "@/lib/auth"
+import { meetsMinRole } from "@/lib/roleRank"
 import {
   NotificationApiError,
   useDeleteNotificationChannel,
@@ -83,15 +84,6 @@ import { Switch } from "@/components/ui/switch"
  */
 
 type TFunc = ReturnType<typeof useT>
-
-/** Rank order for the gates below — the same hierarchy `Connectors.tsx`/`Site.tsx`/`AlarmCenter.tsx` each
- * declare locally (duplicated per-file in this codebase rather than shared). */
-const ROLE_RANK: Record<string, number> = { Operator: 0, Engineer: 1, Admin: 2 }
-
-function meetsMinRole(minRole: string, userRole: string | undefined): boolean {
-  if (!userRole) return false
-  return (ROLE_RANK[userRole] ?? -1) >= (ROLE_RANK[minRole] ?? Number.POSITIVE_INFINITY)
-}
 
 /** 🔴 Only `Critical` and `High` actually occur in this build, and the threshold field says so rather than
  * offering four options that look equally reachable. The other two are accepted by the API and are listed
