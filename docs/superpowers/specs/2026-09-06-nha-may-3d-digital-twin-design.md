@@ -1899,6 +1899,40 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > không tái sinh nó. Cần một đường xoá — ngoài phạm vi. Đây chính là hàng mà ô `datChoMoCoi` đang
 > đếm, nên **hệ đang tự khai đúng**.
 
+> ### ★★★ G15 — "0 kèm HTTP 200" CÂM HƠN 403 (2026-09-06, áp lại vá Đợt 5)
+>
+> CHẶN-2 vá xong đường 403: query bị từ chối giờ hiện `—` + banner. Nhưng session áp lại tìm ra
+> **một đường câm hơn**:
+>
+> `factory.list` trả **`[]` kèm HTTP 200** (không phải 403) ⇒ `factoryId` = null ⇒ `canhQ`/`overviewQ`
+> bị `enabled: false` ⇒ **`isLoading = false` VÀ `isError = false`** ⇒ 5 ô đếm vẫn in **`0`**.
+>
+> Bản vá CHẶN-2 chỉ bắt `isError`. Query **chưa từng chạy** không phải lỗi, cũng không phải đang tải —
+> nó là **trạng thái thứ ba** mà cả hai cờ đều không mô tả. Đã thêm cờ `chuaChay`.
+>
+> ⇒ **Luật:** một chỉ số có **ba** trạng thái chứ không phải hai: *đã đo* · *đang đo* · **chưa từng đo**.
+> Vá một đường trả `0` không đủ; phải liệt kê **mọi đường** dẫn tới `0` và hỏi từng đường:
+> *"số 0 này đến từ phép đo, hay từ việc không có phép đo nào?"*
+> Đây là G7 (đếm đầu vào ≠ đầu ra) áp cho *trạng thái query*, và là ca thứ tư của họ
+> "cổng xanh mà không đo gì".
+
+> ### ★★★ G16 — TEST XANH + COMMIT SẠCH KHÔNG CHỨNG MINH TÍNH NĂNG ĐƯỢC NỐI (2026-09-07)
+>
+> `locBadge.ts` viết xong, **18 test xanh**, commit sạch, cổng máy đủ. Nhưng
+> `LopCanhBao.tsx` **không hề gọi nó** — grep ra **0 kết quả**. Lỗi T-1 (11 cặp badge alarm chồng
+> nhau, che mất alarm đang hoạt động) **vẫn sống nguyên trên `/twin`**.
+>
+> Module mới **luôn xanh** khi chưa ai dùng: test của nó gọi thẳng hàm, nên nó đo *hàm đúng không*,
+> không đo *hàm có được gọi không*. Cổng máy cũng hài lòng vì không gì hỏng.
+>
+> Session viết mã **tự khai** điều này trong commit message (`CHUA NOI VAO UI`) — trung thực, và là
+> lý do nó được phát hiện ngay. Nhưng nếu chỉ đọc số test thì không ai thấy.
+>
+> ⇒ **Luật:** với mọi module mới, hỏi **"ai gọi nó?"** trước khi tính là xong — `grep -rn "<tênHàm>"`
+> ngoài chính tệp và tệp test của nó. Và nghiệm thu phải đo **ở lớp người dùng chạm vào**
+> (bbox DOM thật trên `/twin`), không phải ở lớp hàm. Đây là G11 (*hiện ra* ≠ *hoạt động*) đẩy lên
+> một bậc: ở đây thậm chí **chưa hiện ra**, mà mọi cổng vẫn xanh.
+
 > ### ★★★ G13 — THIẾT BỊ ĐO HỎNG TRONG KHI THỨ ĐƯỢC ĐO VẪN TỐT (QA Đợt 5)
 >
 > QA Đợt 5 gặp **ba lần thiết bị đo của chính nó hỏng** trong một lượt audit, và tự rút ra dấu hiệu chung:
