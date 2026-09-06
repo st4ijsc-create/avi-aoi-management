@@ -1038,6 +1038,21 @@ Chiến lược trong `locNhan.ts`:
 4. Occlusion: chỉ raycast cho ứng viên đã lọc, không toàn scene.
 5. Nhãn là DOM thật → Playwright và trình đọc màn hình đọc được.
 
+> ### QUYẾT ĐỊNH 2026-09-06, sau Đợt 1 — nhãn CỠ CỐ ĐỊNH, không co theo khoảng cách
+>
+> `FactoryScene3D.tsx:265` cũ dùng `<Html distanceFactor={14}>`: chữ **co nhỏ dần khi camera lùi
+> ra**, tới mức **vô hình khi zoom xa**. Kit Đợt 1 vẽ cỡ cố định trên màn hình (`LopNhan.tsx:174`,
+> `fontSize: 12`). Đây là **thay đổi hành vi nhìn thấy được**, và Đợt 1 báo lại thay vì tự nhận là
+> cải tiến — đúng cách.
+>
+> **Quyết định: giữ cỡ cố định.** Nhãn co theo khoảng cách mâu thuẫn với §10.3 luật 1 — *badge alarm
+> vẽ ở **không gian màn hình**, không ở không gian thế giới, để phối cảnh không thu nhỏ badge P1
+> thành không đọc nổi*. Nhãn máy chịu cùng ràng buộc: một máy đang lỗi ở xa mà nhãn nhỏ tới mức vô
+> hình **chính là** chế độ hỏng mà luật đó sinh ra để phòng.
+>
+> Cỡ cố định cộng cap 30 nhãn (§4) là cặp đúng: **chọn ÍT nhãn để hiện, nhưng nhãn nào hiện thì đọc
+> được**. Cặp sai là ngược lại — hiện nhiều nhãn nhưng nhãn nào cũng không đọc nổi.
+
 ### 9.7 Chế độ trình bày
 
 Toggle `Ops | Trình bày`: ẩn toàn bộ panel, camera bay chậm theo tuyến định sẵn, chỉ giữ KPI lớn và cảnh báo. Không phải sản phẩm thứ hai — chỉ là một cờ `cheDo` trong cùng component. Tự thoát khi có tương tác chuột.
