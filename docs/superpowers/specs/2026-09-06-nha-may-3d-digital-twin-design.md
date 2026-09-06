@@ -1798,6 +1798,25 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > ⇒ **Luật:** trước khi tin một phép đo "không có gì xấu xảy ra", hỏi *"nếu luật này KHÔNG tồn tại
 > thì phép đo có khác đi không?"* Nếu không khác, phép đo đang chứng minh số 0 — phải dựng ca dương.
 
+> ### ★★★ G10b — CHỈ BÁO ĐO *BUNDLER* THAY VÌ ĐO HÀNH VI (2026-09-06, Đợt 4b)
+>
+> G10 ứng nghiệm ngay trên chỉ báo của chính agent viết mã. Nó dựng chỉ báo RB-1 là
+> `helper.constructor.name === "TransformControlsRoot"` — chạy `dev` thì **xanh**, chạy trên bản
+> `npm run build` thì **ĐỎ**, vì minifier đổi tên lớp thành `"Fj"`.
+>
+> Chỉ báo đó **không đo RB-1**; nó đo **minifier**. Nếu chỉ chạy ở `dev` thì nó xanh vĩnh viễn và
+> chẳng canh gì; nếu chạy ở `build` thì nó đỏ vĩnh viễn dù mã hoàn toàn đúng. **Cả hai chiều đều vô dụng.**
+>
+> Thay bằng ba chỉ báo bất biến với minify (`GizmoBienDoi.tsx:191-195`):
+> `controlsLaObject3D` (phải **false** — đó chính là nội dung RB-1) · `helperLaObject3D` (true) ·
+> `helperTrongScene` (`helper.parent === scene`). Đo được: `soConHelper: 2`, draw call **2 → 16** khi
+> gắn gizmo — bằng chứng gizmo thật sự vào scene, không phải mesh tự vẽ.
+>
+> ⇒ **Luật:** chỉ báo dựa trên **tên** (tên lớp, tên hàm, chuỗi trong mã) là chỉ báo về **công cụ
+> dựng**, không phải về hành vi. Đo bằng **quan hệ cấu trúc** (`instanceof`, `parent`, số con) hoặc
+> **hệ quả quan sát được** (draw call tăng). Và mọi chỉ báo phải chạy **cả `dev` lẫn `build`** — đây
+> là G4 áp cho chính thiết bị đo.
+
 > ### ★★★ G10 — SPEC DỰ ĐOÁN SAI *CHỈ BÁO NÀO SẼ ĐỔ* (2026-09-06, Đợt 4a)
 >
 > §8.2 bước 3 khẳng định: đảo trục sẽ làm **T4 ("không chồng lấn") đổ ngay ở quy mô nhỏ nhất**.
