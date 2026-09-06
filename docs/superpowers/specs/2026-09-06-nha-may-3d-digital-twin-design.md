@@ -1968,6 +1968,59 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > (bbox DOM thật trên `/twin`), không phải ở lớp hàm. Đây là G11 (*hiện ra* ≠ *hoạt động*) đẩy lên
 > một bậc: ở đây thậm chí **chưa hiện ra**, mà mọi cổng vẫn xanh.
 
+> ### ★★★ G17 — BẢN VÁ CÓ THỂ MỞ LỖ MÀ LỖI GỐC KHÔNG CÓ (2026-09-07, Đợt 6)
+>
+> Đợt 6 thêm broadcaster `twin:trangThai` 10 giây. Trong lúc viết, agent **tự phát hiện bản vá của
+> chính mình mở một lỗ rò xuyên tenant**:
+>
+> `subscribe` (`socket.ts:166`) cho socket `join("twin:{twinFactoryId}")` **không kiểm quyền gì cả** —
+> id nhà máy là **lời tự khai của client**. Với `twin:device` điều đó còn chịu được (gateway đã lọc
+> *trước* khi phát). Nhưng broadcaster mới **tự đọc DB theo id lấy từ tên phòng** ⇒ một tài khoản
+> **không được gán nhà máy nào** (đo được: `operator1`) chỉ cần gửi `{twinFactoryId: 1}` là nhận
+> **trạng thái toàn SIM-FAC mỗi 10 giây**.
+>
+> **Lỗi gốc (`subscribe` không kiểm quyền) đã tồn tại từ trước và vô hại; bản vá biến nó thành lỗ rò.**
+>
+> Cách bịt: phát **từng socket**, mỗi socket lọc theo phạm vi của chính người cầm nó, dùng
+> `resolveTenantFactoryScope` — **đúng bộ phân giải mà tầng dữ liệu đi qua**, không tự suy lại (G12).
+> Đo bằng 4 tài khoản non-admin: `engineer1`→factory 1 **NHẬN**; `operator1`/`supervisor1`/`maint1`
+> **BỊ CHẶN**; `engineer1`→factory 18 **BỊ CHẶN**.
+>
+> ⇒ **Luật:** sau khi vá, hỏi *"bản vá này còn chạm đường nào nữa?"* — đặc biệt khi nó **đọc dữ liệu
+> theo một tham số do client cấp**. Một cơ chế vô hại trở nên nguy hiểm khi có consumer mới tin nó.
+>
+> **★ G16 bắt được orphan của chính agent:** `emitTwinTrangThai` (phát cho cả phòng) có **0 nơi gọi**
+> và là **đường vòng qua chính bộ lọc trên**. Đã gỡ. Nếu để lại, người sau sẽ dùng nó và mở lại lỗ.
+
+> ### ★★★ G18 — CHỈ TRÌNH DUYỆT MỚI THẤY (2026-09-07, Đợt 6)
+>
+> Thanh tua thời gian render **đúng mọi testid**, `check` 0, `build` 0, **971 test xanh** — nhưng nó
+> nằm ở `top: 1265` trong khung nhìn cao **1249px**: **vô hình**. Không cổng nào thấy được.
+>
+> Cùng họ với G11 (*ảnh chụp chứng minh hiện ra, không chứng minh hoạt động*), nhưng ngược chiều:
+> ở đây **mã chạy đúng, DOM đúng, test đúng** — chỉ **vị trí trên màn** sai. Không có lớp nào giữa
+> "DOM tồn tại" và "người dùng nhìn thấy" ngoài trình duyệt thật.
+>
+> ⇒ **Luật:** tính năng có bề mặt thị giác phải nghiệm thu **trên trình duyệt thật ở kích thước thật**,
+> và phép đo là **`getBoundingClientRect()` so với `innerHeight`/`innerWidth`**, không phải sự tồn tại
+> của testid. "Có trong DOM" và "ở trong khung nhìn" là **hai đại lượng khác nhau** (G7).
+
+> ### ★★★ G19 — DỮ LIỆU THẬT CÓ THỂ HẸP HƠN ENUM (2026-09-07, Đợt 6)
+>
+> Hai lỗi agent **tự gây ra rồi tự bắt bằng phép đo, không phải bằng test**:
+>
+> 1. **Độ tươi lấy `max(status_log, heartbeat)`** ⇒ 3 băng tải **im lặng 51,7 ngày** báo thành
+>    **0,4 ngày**. Sửa thành **chỉ heartbeat**. Đây là **cùng lớp lỗi** mà `trungThucDuLieu.ts` đã
+>    từng bị vá một lần — lớp lỗi tái phát ở chỗ khác.
+> 2. **`machine_status_logs.status` chỉ có `online`/`offline`** (4.171/3.490 hàng) so với
+>    `operationStatusEnum` **8 giá trị**. Trả thẳng ⇒ `mauChoTrangThai` rơi hết về `khong_ro` ⇒
+>    **replay sơn xám TOÀN nhà máy, im lặng**. Đã ánh xạ tường minh, và khai `online→running` là
+>    **xấp xỉ** (NT-4: số giả định phải tự khai).
+>
+> ⇒ **Luật:** trước khi tin một cột enum, **đếm phân bố giá trị THẬT** của nó. Enum khai 8 giá trị
+> không có nghĩa dữ liệu có 8. Cột hẹp hơn enum là **lỗi câm** — không gì nổ, chỉ là mọi thứ rơi về
+> nhánh mặc định.
+
 > ### ★★★ G13b — LUẬT CÔNG CỤ: `sed` SỬA ĐƯỢC, `sed` ĐO KHÔNG ĐƯỢC (2026-09-07, Đợt 6)
 >
 > Agent Đợt 6 nêu một xung đột thật: hướng dẫn môi trường bảo dùng `sed`/heredoc thay cho Edit/Write,
