@@ -1,0 +1,288 @@
+/**
+ * trungThucDuLieu.ts — §9.5 / NT-3: **KHÔNG CÓ DỮ LIỆU ≠ BÌNH THƯỜNG**.
+ *
+ * Đây là điều kiện SỐNG CÒN của màn Vận hành, không phải một tính năng phụ. Cạm
+ * bẫy chết người nhất của mọi HMI: tag vẫn `Quality=Good` trong khi timestamp
+ * ngừng tiến; màn hình vẫn vẽ số cuối cùng, badge vẫn xanh, không alarm nào nổ,
+ * và người vận hành tin rằng nhà máy đang chạy.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO MODULE NÀY KHÔNG PHẢI LÝ THUYẾT — SỐ ĐO CỦA CHÍNH DB NÀY
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đo 2026-09-06 trên `aoi_management` (SQL thô, đường độc lập với tRPC):
+ *
+ *   42 máy `isActive`:  0 tươi · 0 cũ · **40 quá 5 phút** · 2 CHƯA TỪNG báo cáo
+ *   `operationStatus`:  39 `stopped` · **3 `running`**
+ *   `max(lastHeartbeat)` của nhóm `running` = **2026-07-17** (gần hai tháng trước)
+ *
+ * Nghĩa là: một bản cài đặt ngây thơ đọc `operationStatus` rồi tô màu sẽ vẽ **3
+ * máy XANH ĐANG CHẠY** trên một nhà máy mà **không máy nào còn gửi tín hiệu**.
+ * Ba ô xanh đó là toàn bộ lớp lỗi mà NT-3 sinh ra để chặn, và ở DB này nó KHÔNG
+ * phải rủi ro lý thuyết — nó là trạng thái mặc định.
+ *
+ * ⇒ `trangThaiHienThi()` cho `khong_ro` THẮNG mọi trạng thái được báo cáo. Việc
+ *   đó đã được `mauTrangThai.mauTheoTuoi` cưỡng chế ở tầng màu; module này cưỡng
+ *   chế cùng luật ở tầng DỮ LIỆU, để cả bảng DOM, dải cảnh báo và ô đếm cũng
+ *   không thể nói khác cảnh 3D.
+ *
+ * ★ Module THUẦN (RB-8.1): không three, không react, không `Date.now()` ẩn —
+ *   `bayGio` luôn là THAM SỐ, nên test tất định và không phụ thuộc đồng hồ máy.
+ */
+
+import { mucTuoi, type MucTuoi } from "../mauTrangThai";
+
+/** Ngưỡng ba mức tươi (NT-3.3), ms. Khai lại ở đây để test đối chiếu được. */
+export const NGUONG_TUOI_MS = 60_000;
+export const NGUONG_CU_MS = 300_000;
+
+/**
+ * Một máy như màn Vận hành cần biết. Cố ý KHÔNG dùng `MachineNode` của
+ * `factory-scene` — bộ đó mang tập trạng thái khác (`running|idle|down|offline|
+ * maintenance`) và KHÔNG mang dấu thời gian dữ liệu, tức là thiếu đúng thứ NT-3
+ * cần. Xem docblock `CanhNhaMay.tsx` về việc vì sao hai hệ trạng thái không
+ * được nối thẳng vào nhau.
+ */
+export interface MayVanHanh {
+  id: number;
+  ma: string;
+  ten: string;
+  loaiMay: string;
+  /** `machines.operationStatus` — giá trị ĐƯỢC BÁO CÁO, chưa xét tuổi. */
+  trangThaiBaoCao: string | null;
+  /**
+   * `machines.lastHeartbeat` (ms epoch) — thời điểm DỮ LIỆU, không phải thời
+   * điểm render. `null` = CHƯA TỪNG báo cáo (2/42 máy của DB này).
+   */
+  thoiDiemDuLieu: number | null;
+  isActive: boolean;
+  stationId: number | null;
+  lineId: number | null;
+}
+
+/** Trạng thái SAU khi đã xét tuổi dữ liệu và cờ khai thác. */
+export interface TrangThaiHienThi {
+  /** Khoá cho `mauTrangThai.mauChoTrangThai` — đã gồm `khong_ro`/`ngung_khai_thac`. */
+  trangThai: string;
+  tuoi: MucTuoi;
+  /** true khi giá trị hiển thị KHÁC giá trị máy tự khai (để UI giải thích được). */
+  daGhiDe: boolean;
+}
+
+/**
+ * ★★★ HÀM TRUNG TÂM CỦA NT-3.
+ *
+ * Thứ tự ưu tiên KHÔNG được đổi:
+ *   1. `isActive = false` → `ngung_khai_thac` (mờ 35%, KHÔNG màu trạng thái).
+ *      Máy đã ngừng khai thác không "mất tín hiệu" — nó không còn phải gửi tín
+ *      hiệu nào. Xếp nó vào `khong_ro` sẽ đẻ ra một cảnh báo giả mỗi ngày.
+ *   2. tuổi > 5 phút (hoặc chưa từng có) → `khong_ro`, xám gạch chéo.
+ *   3. còn lại → chính giá trị máy khai.
+ *
+ * `daGhiDe` cho UI nói được câu *"máy khai `running`, nhưng dữ liệu 2 tháng
+ * tuổi"* thay vì lặng lẽ đổi màu — người vận hành phải thấy được sự bất đồng,
+ * vì chính sự bất đồng đó mới là thông tin.
+ */
+export function trangThaiHienThi(may: MayVanHanh, bayGio: number): TrangThaiHienThi {
+  if (!may.isActive) {
+    return { trangThai: "ngung_khai_thac", tuoi: "khong_ro", daGhiDe: true };
+  }
+  const tuoi = mucTuoi(may.thoiDiemDuLieu, bayGio);
+  if (tuoi === "khong_ro") {
+    return {
+      trangThai: "khong_ro",
+      tuoi,
+      // Ghi đè THẬT chỉ khi máy có khai một trạng thái — máy chưa từng báo cáo
+      // gì thì `khong_ro` không ghi đè lên cái gì cả.
+      daGhiDe: may.trangThaiBaoCao != null,
+    };
+  }
+  return { trangThai: may.trangThaiBaoCao ?? "khong_ro", tuoi, daGhiDe: false };
+}
+
+/**
+ * ★★★ LỌC NGUỒN DẤU THỜI GIAN — bản vá một lỗi NT-3 ĐO ĐƯỢC trên trình duyệt.
+ *
+ * `factoryCommand.overview` trả `issues[]` với ô `ageMinutes`, và cám dỗ là lấy
+ * bất kỳ ô nào làm "tuổi dữ liệu". Nghiệm thu thật 2026-09-06 cho thấy hậu quả:
+ * RAISE một andon lên máy 2 làm ô "tươi" nhảy 0 → 1 và máy đó hiện `16s`, trong
+ * khi SQL thô nói nó im lặng từ 2026-09-03. **Một cảnh báo mới làm máy trông như
+ * vừa gửi tín hiệu.**
+ *
+ * Đọc tại nguồn (`server/services/factoryCommandService.ts`), chỉ MỘT loại mang
+ * thời điểm ĐO TRẠNG THÁI:
+ *   `andon`     :342 → tuổi của `andon_events.raisedAt`      ✗
+ *   `alarm`     :355 → tuổi của `createdAt`                  ✗
+ *   `pdm`       :373 → tuổi bản ghi health                   ✗
+ *   `workorder` :390 → tuổi của `scheduledFor`               ✗
+ *   `offline`   :404 → `machine_status_logs."timestamp"`     ✓
+ *
+ * Hàm này là chỗ DUY NHẤT biết luật đó, để không nơi nào chép lại sai.
+ */
+export const LOAI_ISSUE_MANG_TS_TRANG_THAI = "offline";
+
+export function tsTrangThaiTuIssues(
+  issues: readonly { kind?: string; machineId?: number | null; ageMinutes?: number }[],
+  bayGio: number,
+): Map<number, number> {
+  const m = new Map<number, number>();
+  for (const iss of issues) {
+    if (iss.kind !== LOAI_ISSUE_MANG_TS_TRANG_THAI) continue;
+    if (iss.machineId == null || typeof iss.ageMinutes !== "number") continue;
+    if (!Number.isFinite(iss.ageMinutes)) continue;
+    const ts = bayGio - iss.ageMinutes * 60_000;
+    const cu = m.get(iss.machineId);
+    if (cu === undefined || ts > cu) m.set(iss.machineId, ts);
+  }
+  return m;
+}
+
+/** Đếm theo mức tươi — nguồn cho khối "TƯƠI DỮ LIỆU" ở panel trái (§9.1). */
+export interface DemTuoi {
+  tuoi: number;
+  cu: number;
+  khongRo: number;
+  ngungKhaiThac: number;
+  tong: number;
+}
+
+export function demTheoTuoi(ds: readonly MayVanHanh[], bayGio: number): DemTuoi {
+  const d: DemTuoi = { tuoi: 0, cu: 0, khongRo: 0, ngungKhaiThac: 0, tong: ds.length };
+  for (const m of ds) {
+    const tt = trangThaiHienThi(m, bayGio);
+    if (tt.trangThai === "ngung_khai_thac") d.ngungKhaiThac += 1;
+    else if (tt.tuoi === "tuoi") d.tuoi += 1;
+    else if (tt.tuoi === "cu") d.cu += 1;
+    else d.khongRo += 1;
+  }
+  return d;
+}
+
+/** Đếm theo trạng thái hiển thị (ĐÃ xét tuổi) — khối "TỔNG QUAN" ở panel trái. */
+export function demTheoTrangThai(
+  ds: readonly MayVanHanh[],
+  bayGio: number,
+): Record<string, number> {
+  const ra: Record<string, number> = {};
+  for (const m of ds) {
+    const { trangThai } = trangThaiHienThi(m, bayGio);
+    ra[trangThai] = (ra[trangThai] ?? 0) + 1;
+  }
+  return ra;
+}
+
+/**
+ * ★★★ NT-3.2 — "Cập nhật lần cuối" là `max(timestamp)` của DỮ LIỆU NỀN,
+ * **KHÔNG** phải thời điểm render trang.
+ *
+ * Riêng phân biệt này diệt cả một lớp bug "giả tươi": trang vừa render xong thì
+ * mọi thứ trông mới, kể cả dữ liệu từ hôm qua. Hàm nhận thẳng danh sách máy nên
+ * KHÔNG có đường nào để một `Date.now()` lọt vào chỗ này.
+ *
+ * Trả `null` khi KHÔNG máy nào từng báo cáo — và `null` phải hiện là `—`, không
+ * phải "vừa xong" (NT-3.5).
+ */
+export function thoiDiemDuLieuMoiNhat(ds: readonly MayVanHanh[]): number | null {
+  let max: number | null = null;
+  for (const m of ds) {
+    if (m.thoiDiemDuLieu == null) continue;
+    if (max === null || m.thoiDiemDuLieu > max) max = m.thoiDiemDuLieu;
+  }
+  return max;
+}
+
+/**
+ * Kết quả ĐỐI SOÁT giữa DB và cảnh 3D (NT-3.3) — thuốc chống *model drift*.
+ * Bố cục thật đổi mà twin không đổi thì banner phải KÊU.
+ */
+export interface KetQuaDoiSoat {
+  /** Số máy `isActive` trong DB. */
+  soMayDb: number;
+  /** Số máy thật sự có node trong cảnh (có đặt chỗ, đang hiện). */
+  soNodeCanh: number;
+  /** Máy có trong DB mà KHÔNG có chỗ trên mặt bằng. */
+  thieuTrenMatBang: number[];
+  /** Đặt chỗ trỏ vào máy không còn `isActive` — ô `datChoMoCoi` của Đợt 4. */
+  datChoMoCoi: number[];
+  /** true ⇒ hiện banner vàng. */
+  lech: boolean;
+}
+
+/**
+ * Đối soát mỗi lần nạp cảnh (NT-3.3).
+ *
+ * ⚠ HAI CHIỀU, không phải một:
+ *   • máy có trong DB mà thiếu chỗ  → mặt bằng THIẾU (banner "N máy chưa xếp chỗ")
+ *   • chỗ trỏ vào máy đã ngừng      → mặt bằng THỪA  (ô `datChoMoCoi`)
+ * Chỉ đo một chiều thì một mặt bằng vừa thiếu vừa thừa vẫn có thể cho ra "khớp"
+ * vì hai sai số triệt tiêu nhau trong phép so TỔNG. Nên ở đây so theo TẬP HỢP
+ * id, không so theo con số đếm — đúng bài học BG-127 (liệt kê phân bố, đừng chỉ
+ * đếm tổng).
+ */
+export function doiSoatCanh(
+  may: readonly MayVanHanh[],
+  idCoDatCho: readonly number[],
+): KetQuaDoiSoat {
+  const tapDatCho = new Set(idCoDatCho);
+  const thieuTrenMatBang: number[] = [];
+  const datChoMoCoi: number[] = [];
+  const idSong = new Set<number>();
+
+  for (const m of may) {
+    if (m.isActive) {
+      idSong.add(m.id);
+      if (!tapDatCho.has(m.id)) thieuTrenMatBang.push(m.id);
+    }
+  }
+  for (const id of tapDatCho) {
+    if (!idSong.has(id)) datChoMoCoi.push(id);
+  }
+
+  thieuTrenMatBang.sort((a, b) => a - b);
+  datChoMoCoi.sort((a, b) => a - b);
+
+  return {
+    soMayDb: idSong.size,
+    soNodeCanh: [...tapDatCho].filter((id) => idSong.has(id)).length,
+    thieuTrenMatBang,
+    datChoMoCoi,
+    lech: thieuTrenMatBang.length > 0 || datChoMoCoi.length > 0,
+  };
+}
+
+/**
+ * ★ NT-3.5 — ĐẾM RỖNG KHÁC ĐẾM BẰNG 0.
+ *
+ * `dangTai` hoặc `chuaDo` ⇒ `"—"`. Một ô hiện `0` nói *"đã đo, và kết quả là
+ * không có cái nào"*; hiện `—` nói *"chưa đo được"*. Hai câu đó dẫn tới hai hành
+ * động khác nhau của người vận hành, nên không được trộn.
+ *
+ * Tái dùng quy ước `WipLineBalance.tsx:110-127`.
+ */
+export function hienSo(giaTri: number | null | undefined, dangTai = false): string {
+  if (dangTai || giaTri == null || !Number.isFinite(giaTri)) return "—";
+  return String(giaTri);
+}
+
+/**
+ * Nhãn "cập nhật N trước" + cờ có nên tô đỏ không (NT-3.2: đỏ khi > 60 giây).
+ *
+ * Trả về các mảnh SỐ, không trả chuỗi đã dịch: `t()` thuộc về tầng component
+ * (RB-8.3), và một module thuần gọi `useTranslation` là không test được ở
+ * `environment: "node"`.
+ */
+export interface NhanDoTuoi {
+  /** `null` khi chưa từng có dữ liệu ⇒ UI hiện `—`. */
+  giay: number | null;
+  do: boolean;
+}
+
+export function nhanDoTuoi(
+  thoiDiemDuLieu: number | null,
+  bayGio: number,
+): NhanDoTuoi {
+  if (thoiDiemDuLieu == null) return { giay: null, do: true };
+  // `Math.max(0, …)` vì đồng hồ client có thể chạy TRƯỚC đồng hồ server vài
+  // giây; một nhãn "cập nhật -3 giây trước" làm người đọc nghi ngờ cả màn hình.
+  const giay = Math.max(0, Math.round((bayGio - thoiDiemDuLieu) / 1000));
+  return { giay, do: bayGio - thoiDiemDuLieu > NGUONG_TUOI_MS };
+}
