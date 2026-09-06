@@ -1598,7 +1598,35 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
    → mở đợt kế tiếp
 ```
 
-**Luật cứng cho cổng QA:** agent QA **không được là agent đã viết mã đợt đó**. Bài học `BG-127` của repo: *độc lập phải ở mô hình, không ở người đo* — hai phiên cùng sai một kiểu vẫn cho cùng kết quả sai. Nên QA phải đo bằng **mô hình khác**: nếu người viết đếm bằng `WHERE`, QA phải liệt kê toàn phân bố và đối chiếu tổng.
+> ### ★★★ ĐÍNH CHÍNH sau PDCA vòng 1 (2026-09-06) — ba lỗ hổng ĐO ĐƯỢC của quy trình
+>
+> Đo trên 10 sự kiện thật của Đợt 0+2: **7 ĐẠT / 3 HỎNG**. Ba ca hỏng có ba gốc rễ khác nhau,
+> và **không ca nào bị cổng nào bắt** — chúng lọt tới tận chủ dự án.
+>
+> **G1 — Cổng QA phải có NĂNG LỰC ĐO, không chỉ có brief đúng.**
+> Vòng 1 giao QA cho một agent chỉ có Read/Grep, trong khi brief yêu cầu chạy `vitest` và `git`.
+> Kết quả: hai mục cốt lõi nhất (bánh cóc có biết kêu không) **không đo được**, agent phải tự báo
+> "KHÔNG ĐẠT vì thiếu công cụ". Cổng thiết kế đúng nhưng **không thực thi được**.
+> ⇒ **Luật:** agent QA phải là loại **có Bash**. Trước khi giao, đối chiếu brief với công cụ của
+> agent: mỗi động từ trong brief (*chạy*, *tiêm*, *hoàn nguyên*, *đo*) phải có công cụ tương ứng.
+>
+> **G2 — Không tiêm/sửa tệp DÙNG CHUNG khi có phiên khác chạy cùng nhánh.**
+> Vòng 1: chủ dự án tiêm giá trị giả vào `enums.ts` để đo bánh cóc; session Đợt 0 chạy song song
+> commit đúng lúc đó và **cuốn dòng giả vào lịch sử** (`7ee92263`), phải vá bằng `634deee9`.
+> ⇒ **Luật:** trước khi tiêm, chạy `git status --short` và **`ListAgents`**. Có phiên khác đang
+> chạy ⇒ hoặc đo trên **worktree riêng**, hoặc **chờ phiên kia commit xong**. Repo này có hook
+> `BG-124` chặn commit trần — nó cứu được commit của mình, **không** cứu được commit của phiên khác.
+>
+> **G3 — Mọi CON SỐ trong spec phải đối soát với nguồn thật trước khi giao việc.**
+> Vòng 1: spec ghi "25+ loại máy" (ước lượng đọc lướt); số thật là **24**, đo bằng
+> `unnest(enum_range(NULL::machinetypeenum))`. Cũng vậy: spec ghi tên test `.test.ts` trong khi
+> `vitest.config.ts` chỉ include `.unit.test.ts` — nếu agent làm theo spec thì **176 test không
+> được thu thập mà cổng vẫn báo xanh**.
+> ⇒ **Luật:** con số nào trong spec chưa kèm câu lệnh đo được thì phải đánh dấu **"ước lượng"**,
+> và cổng ra của đợt phải **đối soát bằng hai mô hình rời nhau** (liệt kê toàn phân bố ↔ đếm tổng),
+> không phải hai lần cùng một phép đếm.
+
+**Luật cứng cho cổng QA:** agent QA **không được là agent đã viết mã đợt đó**, và **phải có Bash** (G1). Bài học `BG-127` của repo: *độc lập phải ở mô hình, không ở người đo* — hai phiên cùng sai một kiểu vẫn cho cùng kết quả sai. Nên QA phải đo bằng **mô hình khác**: nếu người viết đếm bằng `WHERE`, QA phải liệt kê toàn phân bố và đối chiếu tổng.
 
 **Luật bàn giao số:** báo cáo của mỗi đợt phải đọc **thiết bị đo**, không đọc kết quả. "Test xanh" là lời khai; "`npm test` in `142 passed`, dán nguyên văn" là số đo.
 
