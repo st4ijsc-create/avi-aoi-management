@@ -1854,6 +1854,42 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > ⇒ **Luật:** trước khi tin một phép đo "không có gì xấu xảy ra", hỏi *"nếu luật này KHÔNG tồn tại
 > thì phép đo có khác đi không?"* Nếu không khác, phép đo đang chứng minh số 0 — phải dựng ca dương.
 
+> ### ★★★ G12 — "HAI BẢN CÀI ĐẶT" HIẾM KHI CHỈ LỆCH MỘT CHỖ (2026-09-06, hợp nhất THƯỜNG-4)
+>
+> QA báo triệu chứng: `sum(viTriXMm)` lệch 6283. Session vá tìm ra **gốc rễ là công thức lệch máy**.
+> Hợp nhất công thức xong — **vẫn lệch 6 hàng**.
+>
+> Đo **từng hàng** (không đếm `count(*)`, vốn sẽ trông ổn) lộ ra **hai lệch nữa cùng lớp**, cả hai
+> nằm trong **câu truy vấn** chứ không phải trong công thức:
+> - **Thứ tự máy**: seed sort theo `id`; `sinhBoCuc` sort theo `code` rồi `id` (`sapTheoMa`).
+>   Trạm `SIM-L1-SPI-ST` cho `1,243,244,245,246,247` so với `244,245,243,1,247,246` — **cùng công
+>   thức, khác vị trí**.
+> - **`isActive`**: `sinhBoCuc` lọc máy đã ngừng, seed không ⇒ 82 hàng so với 81.
+>
+> Sau khi vá cả ba: **78/78 hàng khớp** dưới **một** phép tịnh tiến cứng duy nhất (`dX=2950, dY=2800`
+> — một giá trị cho mọi hàng), 0 lệch tương đối. Trước đó phần dư là **bội của 1400** — dấu vết của
+> công thức, không phải của phép neo.
+>
+> ⇒ **Luật:** khi hợp nhất hai bản cài đặt, **đừng dừng ở chỗ lệch đầu tiên tìm được**. Đo lại
+> **từng phần tử** sau mỗi lần vá; `count(*)` và tổng `sum()` che được lệch hoán vị. Và nhớ:
+> hai bản cùng gọi một hàm vẫn lệch nếu **đầu vào của chúng khác nhau** (thứ tự, bộ lọc, phạm vi).
+>
+> **★ Phần dư còn lại KHÔNG phải trôi dạt — và agent dừng đúng chỗ.** `dX=2950` đến từ:
+> seed neo ở `tường + lối đi` (200+4000+1250 = 5450), `sinhBoCuc` xếp kệ từ gốc 0 (2500). Và
+> `gocXMm === 0` **được khẳng định tường minh** tại `sinhBoCuc.unit.test.ts:745` ⇒ **có chủ đích**.
+> Re-neo seed sẽ viết lại toàn bộ vỏ nhà (kích thước sàn, 4 tường, bbox xưởng) mà `sinhBoCuc`
+> **không mô hình hoá**, và đẩy trạm vào trong đường tường. Đây là **quyết định thiết kế của chủ sở
+> hữu**, không phải việc của một phiên vá lỗi.
+>
+> **★ Test khẳng định trên MÃ NGUỒN, không trên GIÁ TRỊ TRẢ VỀ:** một bản chép-dán tái tạo đúng công
+> thức sẽ làm **mọi test dựa trên giá trị xanh** trong khi tái tạo y nguyên con bug. Test mới kiểm
+> tệp seed **thật sự import** `lechTrongTram`. Ablation trên mã trước-vá: **6/9 đỏ**.
+>
+> **Nợ còn lại (đã đo):** hàng `twin_dat_cho` id 776 → máy `SN-ST4I-TRIAL-WELD-20260818`
+> (`isActive=false`) sót từ trước khi thêm bộ lọc. **Seed cập nhật nhưng không xoá**, `sinhTuDong`
+> không tái sinh nó. Cần một đường xoá — ngoài phạm vi. Đây chính là hàng mà ô `datChoMoCoi` đang
+> đếm, nên **hệ đang tự khai đúng**.
+
 > ### ★★★ G11 — ẢNH CHỤP CHỨNG MINH THỨ *HIỆN RA*, KHÔNG CHỨNG MINH THỨ *HOẠT ĐỘNG* (QA Đợt 4)
 >
 > Đợt 4b nghiệm thu RB-1 bằng **ảnh chụp gizmo 3 trục** — và ảnh đó **đúng**. Nhưng QA Đợt 4 đo tiếp
