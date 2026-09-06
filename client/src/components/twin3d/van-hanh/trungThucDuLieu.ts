@@ -29,11 +29,18 @@
  *   `bayGio` luôn là THAM SỐ, nên test tất định và không phụ thuộc đồng hồ máy.
  */
 
-import { mucTuoi, type MucTuoi } from "../mauTrangThai";
+import { mucTuoi, NGUONG_CU_MS, NGUONG_TUOI_MS, type MucTuoi } from "../mauTrangThai";
 
-/** Ngưỡng ba mức tươi (NT-3.3), ms. Khai lại ở đây để test đối chiếu được. */
-export const NGUONG_TUOI_MS = 60_000;
-export const NGUONG_CU_MS = 300_000;
+/**
+ * ★ T-3 — ngưỡng ba mức tươi (NT-3.3), ms. **RE-EXPORT**, không khai lại.
+ *
+ * Trước đây hai con số này được viết lần thứ hai ở đây, song song với số ma
+ * thuật trong `mauTrangThai.mucTuoi()`. Hai bản sao chỉ đồng ý tới lần sửa đầu
+ * tiên, và khi lệch thì KHÔNG nổ — chỉ âm thầm cho cảnh 3D và ô đếm nói khác
+ * nhau về cùng một máy. Giờ chỉ còn MỘT nơi khai (`../mauTrangThai`), tệp này
+ * chuyền tiếp để các call site cũ không phải đổi đường import.
+ */
+export { NGUONG_CU_MS, NGUONG_TUOI_MS };
 
 /**
  * Một máy như màn Vận hành cần biết. Cố ý KHÔNG dùng `MachineNode` của

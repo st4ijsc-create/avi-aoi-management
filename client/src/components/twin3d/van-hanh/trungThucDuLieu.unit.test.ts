@@ -27,6 +27,12 @@ import {
   trangThaiHienThi,
   type MayVanHanh,
 } from "./trungThucDuLieu";
+// ★ T-3 — nhập THẲNG từ module KHAI để đối chiếu hai đường. Nếu ai đó khai lại
+// một bản sao ở `trungThucDuLieu`, hai vế sẽ tách nhau và test dưới đỏ.
+import {
+  NGUONG_CU_MS as NGUONG_CU_MS_GOC,
+  NGUONG_TUOI_MS as NGUONG_TUOI_MS_GOC,
+} from "../mauTrangThai";
 
 const BAY_GIO = Date.parse("2026-09-06T12:00:00.000Z");
 
@@ -375,5 +381,57 @@ describe("gopTinhTrang — 403 phải ra `—` + banner, KHÔNG ra `0`", () => {
 
   it("danh sách rỗng ⇒ không chuaDo (không tự bịa lỗi khi chưa hỏi gì)", () => {
     expect(gopTinhTrang([])).toEqual({ chuaDo: false, biTuChoi: [], loiKhac: [] });
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ T-3 — MỘT NGƯỠNG, KHÔNG HAI BẢN SAO                                    */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("T-3 — ngưỡng tươi dùng chung với `mauTrangThai`", () => {
+  const T0 = 1_700_000_000_000;
+
+  it("hai hằng re-export mang đúng giá trị spec NT-3", () => {
+    // SỐ VIẾT TAY — không suy lại từ chính hằng đang đo.
+    expect(NGUONG_TUOI_MS).toBe(60_000);
+    expect(NGUONG_CU_MS).toBe(300_000);
+  });
+
+  it("★ hằng ở đây LÀ CHÍNH hằng của `mauTrangThai`, không phải bản sao", () => {
+    // Đây là phép đo cốt lõi của T-3: hai module phải trỏ vào MỘT ô nhớ. Nếu ai
+    // khai lại số ở một bên, ô này đỏ dù cả hai bên vẫn "tự nhất quán".
+    expect(NGUONG_TUOI_MS).toBe(NGUONG_TUOI_MS_GOC);
+    expect(NGUONG_CU_MS).toBe(NGUONG_CU_MS_GOC);
+  });
+
+  it("★ biên HÀNH VI ở đúng 5 PHÚT — số viết tay, bắt cả ca đổi hằng", () => {
+    // Ba test kia đều dùng hằng ở CẢ HAI vế nên chúng trôi theo mọi đột biến của
+    // hằng. Ô này ghim spec NT-3 bằng SỐ THẬT: "quá 5 phút là không rõ". Đổi
+    // ngưỡng mà không đổi spec thì phải đỏ ở đây.
+    const mk = (tuoiMs: number) =>
+      trangThaiHienThi(
+        { id: 1, ma: "M1", ten: "M1", loaiMay: "AOI", trangThaiBaoCao: "running",
+          thoiDiemDuLieu: T0 - tuoiMs, isActive: true, stationId: null, lineId: null },
+        T0,
+      ).tuoi;
+    expect(mk(300_000)).toBe("cu");
+    expect(mk(300_001)).toBe("khong_ro");
+  });
+
+  it("★ biên của `trangThaiHienThi` DI CHUYỂN theo hằng — nối thật, không trùng hợp", () => {
+    // Hằng đúng mà hàm vẫn đọc số cứng thì hai ô trên vẫn xanh. Ô này bắt ca đó:
+    // nó hỏi HÀNH VI ở đúng hai bên biên do hằng quy định.
+    const tren = trangThaiHienThi(
+      { id: 1, ma: "M1", ten: "M1", loaiMay: "AOI", trangThaiBaoCao: "running",
+        thoiDiemDuLieu: T0 - NGUONG_CU_MS, isActive: true, stationId: null, lineId: null },
+      T0,
+    );
+    const duoi = trangThaiHienThi(
+      { id: 1, ma: "M1", ten: "M1", loaiMay: "AOI", trangThaiBaoCao: "running",
+        thoiDiemDuLieu: T0 - NGUONG_CU_MS - 1, isActive: true, stationId: null, lineId: null },
+      T0,
+    );
+    expect(tren.tuoi).toBe("cu");
+    expect(duoi.tuoi).toBe("khong_ro");
   });
 });

@@ -205,11 +205,33 @@ export function mauChoTrangThai(trangThai: unknown): MauTrangThai {
  */
 export type MucTuoi = "tuoi" | "cu" | "khong_ro";
 
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ T-3 (Đợt 5) — NGƯỠNG TƯƠI KHAI ĐÚNG MỘT LẦN                            */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*
+ * Hai ngưỡng này TỪNG tồn tại thành HAI BẢN SAO: số ma thuật `60_000`/`300_000`
+ * viết thẳng trong `mucTuoi()` dưới đây, và hằng `NGUONG_TUOI_MS`/`NGUONG_CU_MS`
+ * khai lại ở `van-hanh/trungThucDuLieu.ts`. Hai bản sao của một ngưỡng chỉ đồng ý
+ * với nhau cho tới lần sửa đầu tiên — và khi lệch, chúng KHÔNG nổ: màu 3D dùng
+ * bản này, ô đếm dùng bản kia, nên cùng một máy được tô "cũ" ở cảnh và đếm vào
+ * "không rõ" ở panel. Đúng bài học G12: "hai bản cài đặt" hiếm khi chỉ lệch MỘT chỗ.
+ *
+ * ⚠ HƯỚNG IMPORT — cố ý NGƯỢC với đề xuất ban đầu (cho `mauTrangThai` import từ
+ *   `trungThucDuLieu`). `trungThucDuLieu` ĐÃ import `mucTuoi` từ tệp này (:32),
+ *   nên nhập ngược lại tạo VÒNG TRÒN import. Tệp này là LÁ (0 import), nên nó
+ *   phải là nơi KHAI; `trungThucDuLieu` re-export để mọi call site cũ giữ nguyên.
+ */
+
+/** Dưới ngưỡng này là dữ liệu "tươi" (ms). */
+export const NGUONG_TUOI_MS = 60_000;
+/** Tới ngưỡng này còn là "cũ"; QUÁ nó là `khong_ro` (ms). NT-3 "quá 5 phút". */
+export const NGUONG_CU_MS = 300_000;
+
 export function mucTuoi(thoiDiemDuLieu: number | null | undefined, bayGio: number): MucTuoi {
   if (thoiDiemDuLieu === null || thoiDiemDuLieu === undefined) return "khong_ro";
   const tuoiMs = bayGio - thoiDiemDuLieu;
-  if (tuoiMs < 60_000) return "tuoi";
-  if (tuoiMs <= 300_000) return "cu";
+  if (tuoiMs < NGUONG_TUOI_MS) return "tuoi";
+  if (tuoiMs <= NGUONG_CU_MS) return "cu";
   return "khong_ro";
 }
 

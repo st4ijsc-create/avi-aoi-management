@@ -17,6 +17,8 @@ import { describe, it, expect } from "vitest";
 import {
   mauChoTrangThai,
   mauTheoTuoi,
+  NGUONG_CU_MS,
+  NGUONG_TUOI_MS,
   mucTuoi,
   giaiMauCanh,
   MOI_TRANG_THAI_CANH,
@@ -175,5 +177,42 @@ describe("giaiMauCanh — phân giải token, không hardcode hex", () => {
     for (const t of TOKEN_DA_DUNG) {
       expect(t).toMatch(/^--[a-z][a-z0-9-]*$/);
     }
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ T-3 — NGƯỠNG TƯƠI CHỈ ĐƯỢC KHAI MỘT LẦN                                */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("T-3 — hằng ngưỡng là NGUỒN KHAI của `mucTuoi`", () => {
+  const T0 = 1_700_000_000_000;
+  it("hai hằng mang đúng giá trị spec NT-3 (60 giây / 5 phút)", () => {
+    // SỐ VIẾT TAY, cố ý không suy lại từ hằng: so hằng với chính nó thì hai vế
+    // cùng trôi và phép đo không bao giờ đỏ.
+    expect(NGUONG_TUOI_MS).toBe(60_000);
+    expect(NGUONG_CU_MS).toBe(300_000);
+  });
+
+  it("★ `mucTuoi` ĐỌC hằng — không còn số ma thuật thứ hai trong thân hàm", () => {
+    // Nếu thân hàm còn giữ bản sao `60_000`/`300_000` viết tay, đổi hằng sẽ
+    // KHÔNG làm biên đổi theo và ba ô dưới đây đỏ. Đó chính là cái T-3 muốn ghim.
+    expect(mucTuoi(T0 - (NGUONG_TUOI_MS - 1), T0)).toBe("tuoi");
+    expect(mucTuoi(T0 - NGUONG_TUOI_MS, T0)).toBe("cu");
+    expect(mucTuoi(T0 - NGUONG_CU_MS, T0)).toBe("cu");
+    expect(mucTuoi(T0 - (NGUONG_CU_MS + 1), T0)).toBe("khong_ro");
+  });
+
+  it("★ biên HÀNH VI ở đúng 5 PHÚT — số viết tay, độc lập với hằng", () => {
+    // Hai ô kia dùng hằng ở cả hai vế nên trôi theo đột biến của hằng. Ô này
+    // ghim spec NT-3 bằng số thật để một lần đổi ngưỡng không lọt im lặng.
+    expect(mucTuoi(T0 - 300_000, T0)).toBe("cu");
+    expect(mucTuoi(T0 - 300_001, T0)).toBe("khong_ro");
+    expect(mucTuoi(T0 - 59_999, T0)).toBe("tuoi");
+    expect(mucTuoi(T0 - 60_000, T0)).toBe("cu");
+  });
+
+  it("★ biên `cu`→`khong_ro` bám theo hằng, không bám số cứng", () => {
+    expect(mucTuoi(T0 - NGUONG_CU_MS, T0)).not.toBe("khong_ro");
+    expect(mucTuoi(T0 - NGUONG_CU_MS - 1, T0)).toBe("khong_ro");
   });
 });
