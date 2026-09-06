@@ -806,6 +806,9 @@ export function initializeSocket(server: HttpServer): Server {
   // G2.7 — start the WIP twin broadcaster (no-op unless TWIN_STREAM_ENABLED=true).
   startTwinBroadcaster();
 
+  // Đợt 6 (§10.2) — nhịp 10s trạng thái máy cho `/twin` (cùng cờ, no-op khi tắt).
+  startTwinTrangThaiBroadcaster();
+
   // P2 follow-up — start the realtime OEE broadcaster (single oeeService source).
   startOeeBroadcaster();
 
@@ -1417,7 +1420,18 @@ export function startTwinBroadcaster(intervalMs = 2000): void {
     import("../db/twin")
       .then(({ getWipByStation }) => getWipByStation())
       .then((rows) => {
-        if (!rows.length) return;
+        /*
+         * ★★★ G15 — PHÁT CẢ KHI RỖNG. Trước bản vá ở đây có `if (!rows.length)
+         * return;`, và nó làm client KHÔNG PHÂN BIỆT ĐƯỢC hai thế giới:
+         *   • "đã đo, và không có WIP nào"  → phải hiện 0
+         *   • "stream chết / server im"     → phải hiện "chưa rõ"
+         * Cả hai đều biểu hiện thành *không có sự kiện nào tới*, nên màn hình
+         * đứng im ở giá trị cuối cùng và không ai biết nó đã cũ. Một nhà máy
+         * vừa dọn sạch WIP trông y hệt một broadcaster đã chết.
+         *
+         * Mảng rỗng là một PHÉP ĐO có giá trị: nó nói "tôi vừa đọc DB xong, và
+         * kết quả là không có gì". Im lặng thì không nói gì cả.
+         */
         emitTwinUpdate({
           stations: rows.map((r) => ({ stationId: r.currentStationId, wipCount: r.count })),
           ts: Date.now(),
@@ -1434,6 +1448,159 @@ export function stopTwinBroadcaster(): void {
     clearInterval(twinBroadcaster);
     twinBroadcaster = null;
     console.log("[Twin] WIP broadcaster stopped");
+  }
+}
+
+// ============ ĐỢT 6 (§10.2) — TWIN STATUS BROADCAST `twin:trangThai`, 10s ======
+
+/**
+ * Trạng thái một máy như `/twin` cần để tô lại `instanceColor` — KHÔNG kèm hình học.
+ *
+ * ★★★ `doTuoiGiay: number | null` — `null` là ca THẬT, không phải chỗ lười.
+ * `null` ⇔ máy CHƯA TỪNG báo cáo (đo được: 3/42 máy của DB này). Nếu quy về `0`
+ * thì client đọc "vừa cập nhật 0 giây trước" về một cái máy im lặng vĩnh viễn —
+ * đúng lời nói dối mà NT-3 sinh ra để chặn.
+ */
+export interface TwinTrangThaiMay {
+  machineId: number;
+  trangThai: string | null;
+  capNhatLuc: number | null;
+  doTuoiGiay: number | null;
+  isActive: boolean;
+}
+
+export interface TwinTrangThaiEvent {
+  factoryId: number;
+  may: TwinTrangThaiMay[];
+  /** Đồng hồ SERVER lúc phát — client quy chiếu tuổi về đây, không về đồng hồ nó. */
+  bayGio: number;
+  /** `max(capNhatLuc)`; `null` khi KHÔNG máy nào từng báo cáo (NT-3.5 ⇒ `—`). */
+  capNhatMoiNhat: number | null;
+  /** Số máy đã đo. Luôn là số THẬT — mảng rỗng vẫn phát (xem docblock dưới). */
+  tong: number;
+}
+
+/*
+ * ⚠ CỐ Ý KHÔNG CÓ `emitTwinTrangThai(event)` phát cho CẢ PHÒNG.
+ *
+ * Bản đầu của Đợt 6 có hàm đó, và G16 ("ai gọi nó?") cho thấy **0 nơi gọi** —
+ * cùng khuôn `locBadge.ts` (18 test xanh mà không ai dùng). Nhưng ở đây nó tệ
+ * hơn một hàm mồ côi: `io.to("twin:"+id).emit(...)` phát cho MỌI socket trong
+ * phòng, mà phòng đó ai cũng join được (handler `subscribe` không kiểm quyền).
+ * Tức là để nó nằm đó là để sẵn một đường vòng qua chính bộ lọc phạm vi bên
+ * dưới — và đường vòng đó trông vô hại ở chỗ gọi.
+ *
+ * ⇒ Chỉ còn MỘT lối phát trạng thái: vòng lặp per-socket trong
+ *   `startTwinTrangThaiBroadcaster`, nơi mỗi người xem được lọc theo phạm vi
+ *   của chính họ.
+ */
+
+let twinTrangThaiBroadcaster: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * ★★★ §10.2 — nhịp 10 GIÂY cho trạng thái máy (khác nhịp 2 giây của WIP).
+ *
+ * Vì sao 10s chứ không 2s: trạng thái máy đổi theo phút, còn WIP đổi theo giây.
+ * Bơm trạng thái ở 2s là 5 lần công DB cho cùng một thông tin — và chính vòng
+ * này là chỗ N+1 sẽ giết máy chủ nếu nó quay lại, nên nó đọc qua
+ * `traTrangThaiHangLoat` (số query CỐ ĐỊNH, đo được).
+ *
+ * ⚠ CHỈ ĐỌC, không ghi gì — cùng luật với `startTwinBroadcaster`.
+ *
+ * ★ Phát cho MỌI nhà máy đang có người xem (phòng `twin:{id}` không rỗng), chứ
+ *   không phát mù toàn hệ: không ai xem thì không tốn truy vấn nào.
+ */
+export function startTwinTrangThaiBroadcaster(intervalMs = 10000): void {
+  if (twinTrangThaiBroadcaster || !io || !twinStreamEnabled()) return;
+  twinTrangThaiBroadcaster = setInterval(() => {
+    if (!io || !twinStreamEnabled()) return;
+
+    /*
+     * Chỉ đọc DB cho nhà máy CÓ NGƯỜI XEM. `io.sockets.adapter.rooms` mang mọi
+     * phòng đang sống; phòng `twin:<id>` chỉ tồn tại khi có socket đã join.
+     */
+    const factoryIds: number[] = [];
+    for (const ten of io.sockets.adapter.rooms.keys()) {
+      if (!ten.startsWith("twin:")) continue;
+      const id = Number(ten.slice(5));
+      if (Number.isInteger(id) && id > 0) factoryIds.push(id);
+    }
+    if (factoryIds.length === 0) return; // không ai xem → không tốn query
+
+    import("../db/twinCanh")
+      .then(async ({ traTrangThaiHangLoat }) => {
+        for (const factoryId of factoryIds) {
+          const bayGio = Date.now();
+          /*
+           * ★★★ PHẠM VI ĐO TỪNG NGƯỜI XEM — KHÔNG phát mù cho cả phòng.
+           *
+           * ⚠ ĐO ĐƯỢC (2026-09-07): handler `subscribe` (dòng ~166) cho socket
+           * join `twin:{twinFactoryId}` **KHÔNG kiểm quyền gì cả** — id nhà máy
+           * là lời TỰ KHAI của client, đúng khuôn `{ userId: input.userId }` mà
+           * `_phamViNguoiXem.ts` cảnh báo. Với `twin:device` điều đó còn chịu
+           * được (gateway đã lọc trước khi phát), nhưng broadcaster NÀY tự đọc
+           * DB theo id lấy từ tên phòng — nên nếu phát thẳng cho cả phòng thì
+           * một tài khoản KHÔNG được gán nhà máy nào (đo được: `operator1`) chỉ
+           * cần gửi `{twinFactoryId: 1}` là nhận trạng thái toàn SIM-FAC mỗi 10
+           * giây. Đó là rò rỉ xuyên tenant do CHÍNH bản vá này mở ra.
+           *
+           * ⇒ Phát TỪNG SOCKET, mỗi socket lọc theo phạm vi của chính người
+           *   đang cầm nó. Dùng `resolveTenantFactoryScope` — ĐÚNG bộ phân giải
+           *   mà tầng dữ liệu đi qua, không tự suy lại (G12).
+           */
+          const phong = io?.sockets.adapter.rooms.get(`twin:${factoryId}`);
+          if (!phong || phong.size === 0) continue;
+
+          const may = await traTrangThaiHangLoat(factoryId, bayGio, undefined);
+          const capNhatMoiNhat = may.reduce<number | null>(
+            (max, m) => (m.capNhatLuc == null ? max : max == null || m.capNhatLuc > max ? m.capNhatLuc : max),
+            null,
+          );
+          const goi: TwinTrangThaiEvent = {
+            factoryId,
+            may: may.map((m) => ({
+              machineId: m.machineId,
+              trangThai: m.trangThai,
+              capNhatLuc: m.capNhatLuc,
+              doTuoiGiay: m.doTuoiGiay,
+              isActive: m.isActive,
+            })),
+            bayGio,
+            capNhatMoiNhat,
+            tong: may.length,
+          };
+
+          const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+          for (const sid of phong) {
+            const sk = io?.sockets.sockets.get(sid);
+            if (!sk) continue;
+            const nguoi = (sk.data as any)?.user;
+            // Không danh tính (client `machine`) ⇒ KHÔNG nhận trạng thái nhà máy.
+            if (!nguoi?.id) continue;
+            const pv = await resolveTenantFactoryScope({ userId: nguoi.id, userRole: nguoi.role });
+            // `factoryIds === null` = vai toàn quyền (admin) ⇒ không lọc.
+            const duocXem = pv.factoryIds === null || pv.factoryIds.includes(factoryId);
+            if (!duocXem) continue;
+            /*
+             * ★★★ G15 — PHÁT CẢ KHI `may` RỖNG, cùng lý do đã ghi ở broadcaster
+             * WIP: im lặng không phân biệt được "đo xong, không có máy nào" với
+             * "broadcaster đã chết". Một sự kiện mang `tong: 0` nói câu thứ nhất.
+             */
+            if (twinStreamEnabled()) sk.emit("twin:trangThai", goi);
+          }
+        }
+      })
+      .catch((err) => console.error("[Twin] trangThai broadcaster read failed:", err));
+  }, Math.max(1000, intervalMs));
+  if (typeof (twinTrangThaiBroadcaster as any)?.unref === "function") (twinTrangThaiBroadcaster as any).unref();
+  console.log("[Twin] trangThai broadcaster started (read-only, gated, 10s)");
+}
+
+export function stopTwinTrangThaiBroadcaster(): void {
+  if (twinTrangThaiBroadcaster) {
+    clearInterval(twinTrangThaiBroadcaster);
+    twinTrangThaiBroadcaster = null;
+    console.log("[Twin] trangThai broadcaster stopped");
   }
 }
 
