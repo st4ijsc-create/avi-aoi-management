@@ -61,6 +61,7 @@ import {
   traKichThuocTheoLoai,
   // ── Đợt 6 (§6.3) — trạng thái hàng loạt cho vòng render `/twin` ──
   traTrangThaiHangLoat,
+  traAnhLichSu,
 } from "../db/twinCanh";
 
 /**
@@ -742,6 +743,44 @@ export const twinCanhRouter = router({
         // Đếm rỗng khác đếm bằng 0: `tong` luôn là số ĐÃ đo (độ dài mảng).
         tong: may.length,
       };
+    }),
+
+  /**
+   * ★★★ §9.8 — ẢNH LỊCH SỬ TẠI MỘT MỐC, nguồn của scrubber tua lại.
+   *
+   * ★ CÙNG hình dạng trả về với `trangThaiHangLoat`, và đó là điều kiện để
+   *   §9.8 ("CÙNG MỘT state store cho live và replay") thực hiện được: client
+   *   đổ cả hai vào đúng một `apDung()` mà không cần nhánh riêng.
+   *
+   * ⚠ `moc` là ms epoch. Trần 24h quá khứ theo §9.8 ("thanh kéo 24 h qua"); mốc
+   *   ở TƯƠNG LAI bị từ chối — nhìn trộm tương lai không phải tua lại.
+   */
+  anhLichSu: protectedProcedure
+    .use(quyenVanHanh("canView"))
+    .input(
+      z.object({
+        factoryId: z.number().int().positive(),
+        moc: z.number().int().positive(),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
+      /*
+       * ★ KẸP mốc thay vì ném lỗi: scrubber gửi mốc liên tục khi người dùng kéo,
+       *   và một `throw` giữa chừng làm cảnh nhấp nháy lỗi trong lúc kéo. Kẹp về
+       *   biên là hành vi đúng của một thanh trượt — và biên vẫn được cưỡng chế,
+       *   nên không có đường nhìn trộm tương lai hay đọc quá 24 h.
+       */
+      const bayGio = Date.now();
+      const TRAN_24H = 24 * 60 * 60 * 1000;
+      const moc = Math.min(Math.max(input.moc, bayGio - TRAN_24H), bayGio);
+      const may = await traAnhLichSu(input.factoryId, moc, phamViCua(ctx));
+      const capNhatMoiNhat = may.reduce<number | null>(
+        (max, m) => (m.capNhatLuc == null ? max : max == null || m.capNhatLuc > max ? m.capNhatLuc : max),
+        null,
+      );
+      // `bayGio` trả về là MỐC ĐÃ KẸP — client phải xét tuổi theo mốc thật sự
+      // được đọc, không theo mốc nó đã xin.
+      return { may, bayGio: moc, capNhatMoiNhat, tong: may.length };
     }),
 
   luuHangLoat: protectedProcedure

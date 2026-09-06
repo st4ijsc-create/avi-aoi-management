@@ -99,3 +99,48 @@ describe("quyUptime — cửa sổ rỗng là `null`, không phải 0%", () => {
     expect(quyUptime({ online: 2, offline: 1 })).toBe(66.7);
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ §9.8 — HAI TỪ VỰNG TRẠNG THÁI, VÀ VÌ SAO TRỘN CHÚNG LÀ LỖI CÂM         */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+import { nhatKyRaTrangThaiCanh } from "./twinCanh";
+
+describe("nhatKyRaTrangThaiCanh — nhật ký KẾT NỐI ≠ lịch sử VẬN HÀNH", () => {
+  /*
+   * ĐO ĐƯỢC 2026-09-07:
+   *   machine_status_logs.status  → CHỈ 2 giá trị: online (4.171) · offline (3.490)
+   *   machines.operationStatus    → 8 giá trị của operationStatusEnum
+   *
+   * Bản viết đầu trả thẳng `status` thô ra client. Hậu quả CÂM: `mauChoTrangThai`
+   * rơi về `khong_ro` cho mọi giá trị lạ ⇒ tua lại vẽ TOÀN BỘ nhà máy thành xám
+   * gạch chéo, không lỗi, không cảnh báo. Tua lại nói dối về quá khứ.
+   */
+  it("★★★ `offline` → `stopped` (mất kết nối: chắc chắn không chạy)", () => {
+    expect(nhatKyRaTrangThaiCanh("offline")).toBe("stopped");
+  });
+
+  it("★★★ `online` → `running` — XẤP XỈ CÓ KHAI, không phải sự thật", () => {
+    // Máy có kết nối vẫn có thể đang maintenance/starved/error. Nhật ký KHÔNG
+    // mang thông tin đó; ta khai xấp xỉ thay vì bịa chi tiết (NT-4).
+    expect(nhatKyRaTrangThaiCanh("online")).toBe("running");
+  });
+
+  it("★★★ giá trị LẠ → `null` (⇒ `khong_ro`), KHÔNG bị nuốt vào `running`", () => {
+    // Nếu một ngày nhật ký thêm giá trị thứ ba, nó phải hiện "không rõ" chứ
+    // không âm thầm được xếp vào một trạng thái nào đó.
+    expect(nhatKyRaTrangThaiCanh("degraded")).toBeNull();
+    expect(nhatKyRaTrangThaiCanh("")).toBeNull();
+    expect(nhatKyRaTrangThaiCanh(null)).toBeNull();
+  });
+
+  it("★ ĐỐI CHỨNG — giá trị thô KHÔNG phải giá trị cảnh", () => {
+    // Ô này ghim đúng cái bẫy: `online`/`offline` không nằm trong từ vựng cảnh.
+    // Nếu ai đó bỏ ánh xạ và trả thô, hai dòng dưới đỏ.
+    const TU_VUNG_CANH = ["running", "stopped", "error", "maintenance", "warming_up", "changeover", "starved", "blocked"];
+    expect(TU_VUNG_CANH).not.toContain("online");
+    expect(TU_VUNG_CANH).not.toContain("offline");
+    expect(TU_VUNG_CANH).toContain(nhatKyRaTrangThaiCanh("online"));
+    expect(TU_VUNG_CANH).toContain(nhatKyRaTrangThaiCanh("offline"));
+  });
+});

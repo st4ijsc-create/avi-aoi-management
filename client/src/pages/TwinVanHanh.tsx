@@ -96,6 +96,9 @@ import {
   type MayVanHanh,
 } from "@/components/twin3d/van-hanh/trungThucDuLieu";
 import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
+// ── Đợt 6 (§9.8/§10.2) — kho trạng thái DÙNG CHUNG cho trực tiếp và tua lại ──
+import { dongHoHienThi, hopNhat } from "@/components/twin3d/van-hanh/khoTrangThai";
+import { useKhoTrangThai } from "@/components/twin3d/van-hanh/useKhoTrangThai";
 
 /** Phạm vi mặc định khi URL không nói gì. */
 const PHAM_VI_MAC_DINH: PhamVi = { cap: "tang", id: null };
@@ -250,7 +253,7 @@ export default function TwinVanHanh() {
   }, [tram]);
 
   /** Danh sách máy đã hợp nhất trạng thái + tuổi dữ liệu (NT-3). */
-  const mayVanHanh = useMemo<MayVanHanh[]>(() => {
+  const mayNen = useMemo<MayVanHanh[]>(() => {
     const tt = new Map<number, string>();
     for (const n of overviewQ.data?.machines ?? []) tt.set(n.id, n.status);
     return may.map((m) => ({
@@ -266,7 +269,38 @@ export default function TwinVanHanh() {
     }));
   }, [may, overviewQ.data, tsTheoMay, lineCuaTram]);
 
-  const bayGio = Date.now();
+  const bayGioThat = Date.now();
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ ĐỢT 6 — REALTIME `twin:trangThai` + TUA LẠI, CÙNG MỘT KHO (§9.8)     */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * ★ Kho là lớp PHỦ lên `mayNen` (nền từ `factoryCommand.overview`), không
+   *   thay thế nó: lúc chưa có gói realtime nào, cảnh vẫn phải vẽ đúng dữ liệu
+   *   nền — một cảnh trống ở giây đầu chính là "0 giả" mà NT-3 cấm.
+   */
+  const { kho, ketNoi, datMocXemLai } = useKhoTrangThai(factoryId, bayGioThat);
+
+  /**
+   * ★★★ MỘT đồng hồ cho MỌI phép xét tuổi. Khi đang tua, đây là MỐC ĐANG XEM
+   *   chứ không phải giờ hiện tại — nếu không, mọi máy trong ảnh lịch sử đều
+   *   thành `khong_ro` vì "cũ 3 tiếng", và tua lại trở nên vô dụng.
+   */
+  const bayGio = dongHoHienThi(kho, bayGioThat);
+
+  /**
+   * Máy SAU khi phủ realtime/lịch sử — nguồn duy nhất cho 3D, 2D, bảng, ô đếm.
+   *
+   * ★★★ TÊN `mayVanHanh` CỐ Ý TRỎ VÀO BẢN **ĐÃ HỢP NHẤT**.
+   *
+   * Bản nền giờ tên `mayNen` và KHÔNG có call site nào ngoài dòng này. Làm vậy
+   * để không thể "quên" một chỗ tiêu thụ: nếu ai đó thêm một bề mặt mới và đọc
+   * `mayVanHanh`, họ tự động lấy bản có realtime/tua lại. Cách ngược lại (đặt
+   * tên mới cho bản hợp nhất rồi đi sửa 15 chỗ) là cách chắc chắn bỏ sót một
+   * chỗ, và chỗ bỏ sót đó sẽ hiện dữ liệu cũ mà KHÔNG kêu.
+   */
+  const mayVanHanh = useMemo(() => hopNhat(mayNen, kho), [mayNen, kho]);
 
   /** Trạng thái HIỂN THỊ (đã xét tuổi) — nguồn duy nhất cho mọi bề mặt. */
   const trangThaiTheoMay = useMemo(() => {
@@ -715,6 +749,47 @@ export default function TwinVanHanh() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {/*
+            ★★★ G15 — TRẠNG THÁI ĐƯỜNG SỐ LIỆU, NĂM ô chứ không phải một boolean.
+
+            `chua_ket_noi` (chưa từng nhận gì) PHẢI phân biệt được với "đã kết nối
+            và giá trị bằng 0". Bản cũ (`useTwinStream.isStreaming`) không diễn đạt
+            nổi điều đó: cờ một chiều false→true, nên "chưa kết nối", "đã nối chưa
+            có gói" và "stream vừa chết" đều cho cùng một `false`.
+          */}
+          <span
+            className={
+              "rounded px-1.5 py-0.5 text-[10px] font-medium " +
+              (ketNoi === "truc_tiep"
+                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                : ketNoi === "xem_lai"
+                  ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
+                  : ketNoi === "im_lang"
+                    ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"
+                    : "bg-muted text-muted-foreground")
+            }
+            data-testid="trang-thai-ket-noi"
+            data-ket-noi={ketNoi}
+            title={t(`twin3d.ketNoi.${ketNoi}.moTa`, {
+              defaultValue: {
+                chua_ket_noi: "Chưa kết nối luồng trực tiếp — các số dưới đây là ảnh chụp lúc tải trang.",
+                dang_cho: "Đã kết nối, đang chờ gói dữ liệu đầu tiên.",
+                truc_tiep: "Đang nhận dữ liệu trực tiếp.",
+                im_lang: "Đã kết nối nhưng không nhận được gói nào gần đây — dữ liệu đang cũ dần.",
+                xem_lai: "Đang xem lại lịch sử, không phải dữ liệu trực tiếp.",
+              }[ketNoi],
+            })}
+          >
+            {t(`twin3d.ketNoi.${ketNoi}.nhan`, {
+              defaultValue: {
+                chua_ket_noi: "Chưa kết nối",
+                dang_cho: "Đang chờ…",
+                truc_tiep: "Trực tiếp",
+                im_lang: "Im lặng",
+                xem_lai: "Xem lại",
+              }[ketNoi],
+            })}
+          </span>
           {/*
             ★★★ NT-3.2 — "cập nhật lần cuối" là max(timestamp) của DỮ LIỆU NỀN.
             Đỏ khi > 60 giây. `—` khi chưa từng có dữ liệu (KHÔNG hiện "vừa xong").

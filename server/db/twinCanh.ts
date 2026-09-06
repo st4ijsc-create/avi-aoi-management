@@ -28,7 +28,7 @@
  * tồn tại" với "có thật nhưng của tenant khác" — một câu riêng cho ca sau là một
  * oracle rò rỉ tồn-tại.
  */
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { appError } from "../_core/appError";
@@ -45,6 +45,8 @@ import {
   workstations,
 } from "../../drizzle/schema";
 import { trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
+// Đợt 6 — cùng bộ bóc hàng thô mà `db/machine.ts` dùng (một quy ước, không hai).
+import { executeRows } from "../utils/kpi";
 
 /** Nguồn của một giá trị — khớp `twinnguonenum`. */
 export type NguonGiaTri = "sinh" | "tay";
@@ -1148,6 +1150,135 @@ export async function traTrangThaiHangLoat(
       capNhatLuc,
       doTuoiGiay,
       uptimePhanTram: quyUptime(up),
+    };
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 6 (§9.8) — ẢNH LỊCH SỬ CHO TUA LẠI                                 */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Ảnh trạng thái toàn nhà máy TẠI một mốc thời gian — nguồn của scrubber (§9.8).
+ *
+ * ★★★ NGUỒN: `machine_status_logs` (đo được 7.661 dòng, mới nhất 2026-09-06).
+ *   KHÔNG dùng `oee_metrics`/`machine_heartbeats` cho lớp phủ này: đo 2026-09-07
+ *   thấy hai bảng đó dừng ở **2026-07-17** (~52 ngày trước). Chúng KHÔNG rỗng
+ *   như spec cũ ghi — chúng CŨ, và đó là lý do khác nhau dẫn tới cùng một kết
+ *   luận hiển thị: mọi máy rơi vào `khong_ro` qua THANG TUỔI, chứ không qua một
+ *   danh sách bảng-rỗng viết cứng (danh sách viết cứng sẽ mục đúng như spec cũ
+ *   đã mục — hôm nay `ot_telemetry` có 24,4 triệu dòng và vẫn tươi).
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ HAI TỪ VỰNG TRẠNG THÁI — ĐO ĐƯỢC, VÀ KHÔNG ĐƯỢC TRỘN
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đo 2026-09-07, `SELECT status, count(*) FROM machine_status_logs GROUP BY 1`:
+ *
+ *     online   4.171
+ *     offline  3.490
+ *
+ * ĐÚNG HAI giá trị. Trong khi `machines.operationStatus` là `operationStatusEnum`
+ * với TÁM giá trị (`running`/`stopped`/`error`/`maintenance`/`warming_up`/
+ * `changeover`/`starved`/`blocked`).
+ *
+ * ⇒ `machine_status_logs` là **NHẬT KÝ KẾT NỐI**, KHÔNG phải lịch sử trạng thái
+ *   vận hành. Nó KHÔNG tái dựng được `running` hay `error`.
+ *
+ * ⚠ Bản viết đầu của Đợt 6 trả thẳng `status` thô ra client. Hậu quả CÂM đo được:
+ *   `mauChoTrangThai` (mauTrangThai.ts:192) rơi về `BANG_MAU.khong_ro` cho mọi
+ *   giá trị lạ — nên tua lại vẽ TOÀN BỘ nhà máy thành xám gạch chéo "Không rõ",
+ *   không lỗi, không cảnh báo. Một cái máy ĐANG CHẠY lúc 14:32 hiện ra là "không
+ *   rõ" — tức là tua lại nói dối về quá khứ, đúng lớp lỗi §9.8 cảnh báo khi hai
+ *   đường lệch nhau.
+ *
+ * ⇒ Ánh xạ TƯỜNG MINH sang từ vựng cảnh, và chỉ nói ĐÚNG cái đo được:
+ *     `offline` → `stopped`   (máy mất kết nối: chắc chắn không chạy)
+ *     `online`  → `running`   ★ XẤP XỈ CÓ KHAI, xem cảnh báo dưới
+ *
+ * ⚠⚠ `online → running` là một XẤP XỈ, không phải sự thật: một máy có kết nối
+ *   vẫn có thể đang `maintenance`/`starved`/`error`. Nhật ký này KHÔNG mang
+ *   thông tin đó và không nguồn nào khác trong DB mang nó theo thời gian. Ta
+ *   KHAI xấp xỉ ấy ở đây và ở `nguonXapXi` của giá trị trả về, để UI nói được
+ *   *"tua lại chỉ dựng được KẾT NỐI, không dựng được chế độ vận hành"* thay vì
+ *   trình bày một quá khứ chi tiết hơn dữ liệu thật (NT-4: số giả định phải tự
+ *   khai là giả định).
+ *
+ * ★ `DISTINCT ON` lấy hàng MỚI NHẤT **không muộn hơn** `mocMs` cho mỗi máy —
+ *   đúng nghĩa "trạng thái tại thời điểm T", không phải "hàng gần T nhất" (hàng
+ *   gần nhất có thể nằm ở TƯƠNG LAI so với T, và lấy nó là nhìn trộm tương lai).
+ *
+ * ⚠ SỐ QUERY CỐ ĐỊNH = 4 cây phân cấp + 1 ảnh. Không N+1.
+ */
+/**
+ * Ánh xạ từ vựng NHẬT KÝ KẾT NỐI (`online`/`offline`) sang từ vựng cảnh
+ * (`operationStatusEnum`). Xem docblock `traAnhLichSu` cho phép đo và cảnh báo.
+ *
+ * ★ Giá trị LẠ trả `null` (⇒ `khong_ro`) chứ không đoán: nếu một ngày nhật ký
+ *   thêm giá trị thứ ba, ta muốn nó hiện "không rõ" chứ không bị nuốt vào
+ *   `running` một cách im lặng.
+ */
+export function nhatKyRaTrangThaiCanh(status: string | null): string | null {
+  if (status === "offline") return "stopped";
+  if (status === "online") return "running"; // ★ XẤP XỈ — xem `laXapXi` dưới
+  return null;
+}
+
+/**
+ * Tua lại dựng được KẾT NỐI, KHÔNG dựng được chế độ vận hành. Cờ này đi kèm mọi
+ * ảnh lịch sử để UI khai đúng giới hạn đó (NT-4) thay vì trình bày một quá khứ
+ * chi tiết hơn dữ liệu thật.
+ */
+export const LICH_SU_LA_XAP_XI = true;
+
+export async function traAnhLichSu(
+  factoryId: number,
+  mocMs: number,
+  scope?: PhamViNguoiXem,
+): Promise<TrangThaiMayHangLoat[]> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const cay = await traCayPhanCapNhaMay(factoryId, scope);
+  if (cay.may.length === 0) return [];
+
+  const ids = cay.may.map((m) => m.id);
+  const moc = new Date(mocMs);
+
+  const hang = executeRows(
+    await d.execute(sql`
+      SELECT DISTINCT ON ("machineId")
+             "machineId" AS machine_id, status, "timestamp" AS ts
+      FROM machine_status_logs
+      WHERE "machineId" IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
+        AND "timestamp" <= ${moc.toISOString()}
+      ORDER BY "machineId", "timestamp" DESC
+    `),
+  ) as Array<{ machine_id: number; status: string | null; ts: Date | null }>;
+
+  const theoId = new Map<number, { status: string | null; ts: Date | null }>();
+  for (const r of hang) theoId.set(Number(r.machine_id), { status: r.status, ts: r.ts });
+
+  return cay.may.map((m) => {
+    const h = theoId.get(m.id);
+    const capNhatLuc = h?.ts ? new Date(h.ts).getTime() : null;
+    return {
+      machineId: m.id,
+      ma: m.ma,
+      ten: m.ten,
+      loaiMay: m.loaiMay ?? null,
+      isActive: m.isActive ?? false,
+      stationId: m.stationId ?? null,
+      /*
+       * ★ `null` khi TẠI MỐC ĐÓ máy chưa từng có bản ghi nào — và đó là câu
+       *   đúng: ta không biết nó ở trạng thái gì lúc 08:00 nếu bản ghi đầu tiên
+       *   của nó là 09:00. Điền `stopped` vào đây sẽ là bịa ra một quá khứ.
+       */
+      trangThai: nhatKyRaTrangThaiCanh(h?.status ?? null),
+      diemSucKhoe: null,
+      capNhatLuc,
+      // Tuổi tính TỪ MỐC ĐANG XEM, không từ bây giờ (§9.8).
+      doTuoiGiay: capNhatLuc == null ? null : Math.max(0, Math.round((mocMs - capNhatLuc) / 1000)),
+      uptimePhanTram: null,
     };
   });
 }
