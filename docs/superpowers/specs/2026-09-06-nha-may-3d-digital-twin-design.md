@@ -35,7 +35,7 @@ Xây một Digital Twin 3D làm **trung tâm điều hướng và xử lý** cho
 | QĐ-10 | Màn Thiết kế v1 **đủ thay cả hai editor cũ**: máy + vùng polygon + ảnh nền + tỉ lệ mét + thêm/xoá máy |
 | QĐ-11 | Spec markdown + mockup HTML tương tác để duyệt |
 | QĐ-12 | Dựng nhà xưởng **hai con đường**: nhập bản vẽ CAD/STEP/GLB (sửa được sau khi nhập) **hoặc** điền dài×rộng×cao từng mặt sàn (§10A) |
-| QĐ-13 | Hình học thiết bị: **7 khối mặc định** phủ 25+ loại máy, thay được bằng file 3D ở 3 cấp — máy / chủng loại / mặc định (§10B) |
+| QĐ-13 | Hình học thiết bị: **7 khối mặc định** phủ 24 loại máy, thay được bằng file 3D ở 3 cấp — máy / chủng loại / mặc định (§10B) |
 | QĐ-14 | **Line là phạm vi, không phải vật thể** — hình học suy ra từ trạm/máy; có chế độ xem 3D riêng cho từng Line và cho toàn tập đoàn (§10C) |
 
 ---
@@ -486,7 +486,7 @@ CREATE TABLE twin_kich_thuoc_loai (
 );
 ```
 
-Seed cho **25+ giá trị** của `machineTypeEnum` (AVI, AOI, SPI, AXI, ICT, FCT, CMM, MOUNTER, REFLOW, STENCIL_PRINTER, WAVE_SOLDER, ROBOT, PALLETIZER, WELDER…). **Mọi hàng seed đặt `laGiaDinh = true`** — không hàng nào được giả vờ là số đo. Kỹ thuật đo thật rồi sửa trong Inspector → `laGiaDinh = false` → badge tự tắt.
+Seed cho **24 giá trị** của `machineTypeEnum` (AVI, AOI, SPI, AXI, ICT, FCT, CMM, MOUNTER, REFLOW, STENCIL_PRINTER, WAVE_SOLDER, ROBOT, PALLETIZER, WELDER…). **Mọi hàng seed đặt `laGiaDinh = true`** — không hàng nào được giả vờ là số đo. Kỹ thuật đo thật rồi sửa trong Inspector → `laGiaDinh = false` → badge tự tắt.
 
 Thứ tự ưu tiên lấy kích thước khi vẽ máy:
 
@@ -531,7 +531,7 @@ CREATE TABLE twin_ban_ghi (
 |---|---|
 | `drizzle/0350_twin_toa_nha_va_tang.sql` | `twin_toa_nha`, `twin_tang`, `workshops.tangId`, mở rộng `layoutLevelEnum` |
 | `drizzle/0351_twin_dat_cho_va_vat_the.sql` | 3 enum mới, `twin_dat_cho`, `twin_vat_the`, `twin_ban_ghi` |
-| `drizzle/0352_twin_kich_thuoc_loai.sql` | `twin_kich_thuoc_loai` + seed 25+ loại (`laGiaDinh = true`) |
+| `drizzle/0352_twin_kich_thuoc_loai.sql` | `twin_kich_thuoc_loai` + seed 24 loại (`laGiaDinh = true`) |
 | `drizzle/0353_twin_mo_rong_asset.sql` | Cột mới cho `equipment_3d_models` |
 
 Áp bằng `npm run db:push`, sau đó `npm run db:verify`.
@@ -1232,9 +1232,9 @@ Thuật toán: chiếu bbox mọi node lên trục cao, tìm khoảng trống > 
 
 Yêu cầu chủ sở hữu: **hiển thị mặc định theo vài chủng loại máy thông thường**, và **cho phép nhập file 3D nhẹ để thay thế mặc định**.
 
-### 10B.1 Bảy hình khối mặc định phủ 25+ loại máy
+### 10B.1 Bảy hình khối mặc định phủ 24 loại máy
 
-`machineTypeEnum` có **25+ giá trị**, nhưng không cần 25 hình khối. Vẽ 7 hình đủ để phân biệt bằng mắt ở khoảng cách vận hành, và mỗi hình ≈ 40–60 tam giác.
+`machineTypeEnum` có **24 giá trị**, nhưng không cần 25 hình khối. Vẽ 7 hình đủ để phân biệt bằng mắt ở khoảng cách vận hành, và mỗi hình ≈ 40–60 tam giác.
 
 | Hình khối | Loại máy dùng nó | Đặc điểm nhận dạng |
 |---|---|---|
@@ -1248,7 +1248,7 @@ Yêu cầu chủ sở hữu: **hiển thị mặc định theo vài chủng lo�
 
 Ánh xạ trong module thuần `hinhKhoiMay.ts`:
 ```ts
-export function hinhKhoiCho(loaiMay: string): KhoiKey   // 25+ loại → 7 khối
+export function hinhKhoiCho(loaiMay: string): KhoiKey   // 24 loại → 7 khối
 ```
 Test `hinhKhoiMay.unit.test.ts`: **mọi giá trị của `machineTypeEnum` phải ánh xạ được**, không giá trị nào rơi vào `undefined` — đây là bánh cóc chống việc thêm loại máy mới mà quên cập nhật.
 
@@ -1545,9 +1545,9 @@ Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt h�
 
 | Đợt | Nội dung | Đầu ra nghiệm thu | Phụ thuộc |
 |---|---|---|---|
-| **Đ0** | **Nền móng & lưới an toàn.** 5 migration (thêm cột 10A.4); seed `twin_kich_thuoc_loai` 25+ loại; script di trú §5.6 + đối soát; `resolve.dedupe` + `manualChunks vendor-three`; **vá rò rỉ GPU `Factory3DScene.tsx:219-226`**; `mauTrangThai.ts` hợp nhất 3 hệ màu; route stub `/twin` + `/twin-studio` + `navigation.tsx` + **toàn bộ khoá i18n `twin3d.*` cho vi/en/zh** | `db:push && db:verify` sạch · `npm test` xanh (kể cả `duongVaoMenu.unit.test.ts`) · chunk `vendor-three` trong `dist` · script di trú in đối soát khớp · **`floorWidthM=1500` KHÔNG được di trú** (§10A.0) | — |
+| **Đ0** | **Nền móng & lưới an toàn.** 5 migration (thêm cột 10A.4); seed `twin_kich_thuoc_loai` 24 loại; script di trú §5.6 + đối soát; `resolve.dedupe` + `manualChunks vendor-three`; **vá rò rỉ GPU `Factory3DScene.tsx:219-226`**; `mauTrangThai.ts` hợp nhất 3 hệ màu; route stub `/twin` + `/twin-studio` + `navigation.tsx` + **toàn bộ khoá i18n `twin3d.*` cho vi/en/zh** | `db:push && db:verify` sạch · `npm test` xanh (kể cả `duongVaoMenu.unit.test.ts`) · chunk `vendor-three` trong `dist` · script di trú in đối soát khớp · **`floorWidthM=1500` KHÔNG được di trú** (§10A.0) | — |
 | **Đ1** | **Lõi engine `twin3d/loi/`** + module thuần. Mở rộng `factory-scene` thành kit: `KhungCanh`, `dieuKhienQuay` (+`invalidate`), `LoBatchMay` (BatchedMesh), `LopNhan`+`locNhan`, `chonVatThe`, `vienNoiBat`, `matDoKhungHinh`, `giaiPhong`, `webglcontextlost`, `heToaDo.ts` | `/factory-command` viết lại trên kit mà **hoạt động y hệt** · ≤ 150 draw calls đo được · `heToaDo.unit.test.ts` xanh | Đ0 |
-| **Đ2** | **Hình học thiết bị (§10B).** 7 khối mặc định `hinhKhoiMay.ts` + ánh xạ 25+ loại; `mucChiTiet.ts` 4 bậc LOD; vạch chỉ hướng mặt trước; gán model 3 cấp (máy / chủng loại / mặc định) | `hinhKhoiMay.unit.test.ts`: **mọi giá trị `machineTypeEnum` ánh xạ được**, 0 giá trị `undefined` · 7 khối phân biệt được bằng mắt ở ảnh chụp · LOD hạ bậc đúng ngưỡng | Đ1 |
+| **Đ2** | **Hình học thiết bị (§10B).** 7 khối mặc định `hinhKhoiMay.ts` + ánh xạ 24 loại; `mucChiTiet.ts` 4 bậc LOD; vạch chỉ hướng mặt trước; gán model 3 cấp (máy / chủng loại / mặc định) | `hinhKhoiMay.unit.test.ts`: **mọi giá trị `machineTypeEnum` ánh xạ được**, 0 giá trị `undefined` · 7 khối phân biệt được bằng mắt ở ảnh chụp · LOD hạ bậc đúng ngưỡng | Đ1 |
 | **Đ3** | **Dựng nhà xưởng (§10A).** Con đường B (điền kích thước 3 bước) + con đường A (nhập CAD/GLB qua `occt-import-js` worker) + hộp thoại hiệu chỉnh đơn vị/trục + `tachTangTuHinhHoc.ts` + sinh tường bao | Điền 84×52×6 m → tạo được toà + tầng, xem trước đúng tỉ lệ · nhập STEP → hộp thoại hiệu chỉnh hiện thước + hình người 1,7 m · **nhập sai đơn vị bị bắt bằng mắt** · tách tầng theo cao độ chạy đúng | Đ1 |
 | **Đ4** | **Màn Thiết kế (§7) + thuật toán sinh (§8).** `sinhBoCuc.ts` + `hinhHocCanChinh.ts` + `snapVatVaoVat.ts` + `boCucService.ts` + tRPC ghi cảnh; 3 vùng, gizmo, bộ 12 công cụ, cây, inspector, undo/redo, thư viện asset, vùng polygon, ảnh nền + tỉ lệ, khu chờ xếp chỗ; **3 công cụ Line (§10C.4)** | 9 test T1–T9 xanh · kéo máy → Lưu → reload giữ nguyên · sinh lại **không đè** máy đã chỉnh tay · **xoay snap ra đúng 15.000 không phải 23.000** (RB-2) · **đủ điều kiện tắt 2 editor cũ** (sổ kiểm #41–#49 ✅) | Đ2, Đ3 |
 | **Đ5** | **Màn Vận hành (§9) + phạm vi Line/Tập đoàn (§10C).** Bố cục toàn khung, `NganXuLy` (ack alarm + tạo phiếu + gán KTV), 5 cấp phạm vi, `phamViLine.ts`, đường dòng chảy có hướng, ống WIP, dải Line 2D, deep-link, 3 trạng thái tươi, đối soát, toggle 2D + fallback, a11y bàn phím | Click máy → ack alarm **thật trong DB**, tạo phiếu **thật** · chọn phạm vi Line → chỉ Line đó rõ, Line khác mờ 12 % · deep-link `?pv=line:1` khôi phục đúng · tắt WebGL → rơi 2D · **chỉ bàn phím vẫn ack được** · sổ kiểm #8–#17, #30–#34, #50–#54 ✅ | Đ1, Đ4 |
@@ -1629,7 +1629,7 @@ Hiện trạng: **0 test cho mọi component 3D, 0 e2e liên quan twin.** Đây 
 | `lichSuThaoTac.unit.test.ts` | undo/redo, giới hạn 50, gộp thao tác kéo liên tiếp |
 | `kiemTraAsset.unit.test.ts` | ngưỡng 50k/150k tam giác, 15 MB, bbox suy biến |
 | `duongDanTwin.unit.test.ts` | mã hoá↔giải mã round-trip, tham số rác không làm vỡ |
-| `hinhKhoiMay.unit.test.ts` | ★ **mọi giá trị `machineTypeEnum` (25+) ánh xạ được**, 0 giá trị `undefined`; khối co giãn đúng theo kích thước |
+| `hinhKhoiMay.unit.test.ts` | ★ **mọi giá trị `machineTypeEnum` (24) ánh xạ được**, 0 giá trị `undefined`; khối co giãn đúng theo kích thước |
 | `hieuChinhNhapModel.unit.test.ts` | quy đổi đơn vị mm/cm/m/inch, đổi trục Z-up↔Y-up, xoay, đặt gốc; bbox sau hiệu chỉnh đúng |
 | `tachTangTuHinhHoc.unit.test.ts` | tách cụm theo cao độ, khoảng trống > 0,5 m làm ranh giới, sửa ranh giới thủ công |
 | `phamViLine.unit.test.ts` | bao lồi Line, trục chính từ phương sai, hướng dòng chảy từ `orderIndex`, đường tâm qua tâm trạm |
@@ -1716,7 +1716,7 @@ Twin được coi là **hoàn thành** khi và chỉ khi tất cả đúng:
 20. Điền `84 × 52 × 6` m → tạo được toà nhà + tầng, xem trước 3D đúng tỉ lệ; tường bao sinh tự động.
 21. Nhập một file STEP → hộp thoại hiệu chỉnh hiện **thước tỉ lệ + hình người 1,7 m**; đổi đơn vị mm→m làm mô hình đổi kích thước 1.000 lần **thấy được bằng mắt**.
 22. Nhập bản vẽ nhiều tầng → tách được theo cao độ; sửa ranh giới trước khi áp dụng.
-23. Mọi giá trị của `machineTypeEnum` (25+) ánh xạ được sang 1 trong 7 khối — **0 giá trị rơi vào `undefined`**.
+23. Mọi giá trị của `machineTypeEnum` (24) ánh xạ được sang 1 trong 7 khối — **0 giá trị rơi vào `undefined`**.
 24. Gán một model cho chủng loại `AOI` → **mọi máy AOI đổi hình cùng lúc**, không phải gán từng máy.
 25. Chọn phạm vi **Line** → chỉ Line đó rõ, Line khác mờ 12 %; mũi tên dòng chảy chạy theo `orderIndex`; dải Line 2D đồng bộ hai chiều với 3D.
 26. Tạo nhà máy thứ hai trong DB test → view **Tập đoàn hiện đủ hai khối** (không nghiệm thu bằng ảnh chụp một khối).
