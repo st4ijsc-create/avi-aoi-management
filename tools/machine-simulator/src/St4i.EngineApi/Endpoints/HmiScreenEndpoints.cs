@@ -3,6 +3,8 @@ using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.HmiModel;
 using St4i.Hmi.Contracts;
+using St4i.EdgeCore.Licensing;
+using St4i.EngineApi.Licensing;
 
 namespace St4i.EngineApi.Endpoints;
 
@@ -169,11 +171,23 @@ public static class HmiScreenEndpoints
         // reader instead of leaving it to the matcher's precedence table. The cost is that `generate` is
         // no longer reachable as a screen ID over GET — measured, nothing in this repository declares,
         // ships or tests a screen by that name.
-        app.MapGet("/v1/screens/generate", GenerateAsync).RequireAuthorization(Policies.Engineer);
+        app.MapGet("/v1/screens/generate", GenerateAsync).RequireAuthorization(Policies.Engineer)
+            // 🔴 WS-E — a GET that AUTHORS. It computes a proposed screen document from the machine's
+            // declared component tree, which is the editor's "start from the model" action; it is gated
+            // with the writes, not with the reads, because what it produces is authoring output. Its
+            // HTTP verb is the one thing about it that is not a clue.
+            .RequireLicense(LicenseFeatures.HmiAuthoring);
         app.MapGet("/v1/screens/{screenId}", GetAsync).RequireAuthorization(Policies.Operator);
-        app.MapPut("/v1/screens/{screenId}", PutAsync).RequireAuthorization(Policies.Engineer);
+        // 🔴 WS-E — THE PAID AUTHORING RIGHT, and the line the whole edition split rests on. The GET
+        // one line up is CORE and permanently free: it is what the operator kiosk renders from, and an
+        // expired licence that blanked it would be a licence problem stopping a machine. What is sold
+        // is the right to CHANGE a screen, never the right to DISPLAY one.
+        app.MapPut("/v1/screens/{screenId}", PutAsync).RequireAuthorization(Policies.Engineer)
+            .RequireLicense(LicenseFeatures.HmiAuthoring);
         app.MapGet("/v1/screens/{screenId}/versions", ListVersionsAsync).RequireAuthorization(Policies.Operator);
-        app.MapPost("/v1/screens/{screenId}/rollback", RollbackAsync).RequireAuthorization(Policies.Engineer);
+        app.MapPost("/v1/screens/{screenId}/rollback", RollbackAsync).RequireAuthorization(Policies.Engineer)
+            // 🔴 WS-E — rollback WRITES a new version (it does not rewind history), so it is authoring.
+            .RequireLicense(LicenseFeatures.HmiAuthoring);
     }
 
     // ─────────────────────────────────────────────────────────────────────

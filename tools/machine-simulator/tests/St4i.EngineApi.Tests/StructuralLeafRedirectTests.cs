@@ -55,6 +55,7 @@ public class StructuralLeafRedirectTests
         "security" => SecurityDb.DefaultRoot(),
         "alarms" => AlarmStore.DefaultRoot(),
         "connector-config" => ConnectorConfigStore.DefaultRoot(),
+        "license" => St4i.EdgeCore.Licensing.LicenseStore.DefaultRoot(),
         _ => throw new ArgumentOutOfRangeException(nameof(leaf), leaf, "Unknown leaf."),
     };
 
@@ -73,6 +74,13 @@ public class StructuralLeafRedirectTests
     [InlineData("ST4I_SECURITY_DIR", "security")]
     [InlineData("ST4I_ALARMS_DIR", "alarms")]
     [InlineData("ST4I_CONNECTOR_CONFIG_DIR", "connector-config")]
+    // 🔴 WS-E (License/Edition) — the licence leaf belongs in THIS file rather than the sibling, and
+    // urgently: Program.cs constructs a LicenseStore unconditionally at startup, and that ctor CREATES
+    // the directory and applies SecurityDirAcl to it. Without the structural redirect, every
+    // WebApplicationFactory<Program> boot in this assembly would create and ACL-lock the REAL
+    // %ProgramData%\ST4I\sim\license on whatever machine runs the suite — CredentialStore's own recorded
+    // defect (~3,000 DPAPI blobs written into this machine's real credential directory) reproduced exactly.
+    [InlineData("ST4I_LICENSE_DIR", "license")]
     public void EveryConventionOnlyLeafInThisAssembly_IsStructurallyRedirectedAwayFromItsRealDirectory(
         string variable, string leaf)
     {

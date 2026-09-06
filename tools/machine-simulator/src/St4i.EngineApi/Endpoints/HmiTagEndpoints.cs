@@ -3,6 +3,8 @@ using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.HmiModel;
 using St4i.Hmi.Contracts;
+using St4i.EdgeCore.Licensing;
+using St4i.EngineApi.Licensing;
 
 namespace St4i.EngineApi.Endpoints;
 
@@ -47,7 +49,10 @@ public static class HmiTagEndpoints
     {
         app.MapGet("/v1/tags", GetByMachineAsync).RequireAuthorization(Policies.Operator);
         app.MapGet("/v1/tags/by-path/{**path}", GetByPathAsync).RequireAuthorization(Policies.Operator);
-        app.MapPut("/v1/tags/{machineCode}", PutAsync).RequireAuthorization(Policies.Engineer);
+        // 🔴 WS-E — authoring. The two tag GETs above stay CORE and ungated for the same measured reason
+        // the component-model GETs do: they are on the kiosk's render path.
+        app.MapPut("/v1/tags/{machineCode}", PutAsync).RequireAuthorization(Policies.Engineer)
+            .RequireLicense(LicenseFeatures.HmiAuthoring);
     }
 
     // ─────────────────────────────────────────────────────────────────────

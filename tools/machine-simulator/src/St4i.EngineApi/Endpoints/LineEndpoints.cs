@@ -3,6 +3,8 @@ using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.Line;
 using St4i.EngineApi.Policy;
+using St4i.EdgeCore.Licensing;
+using St4i.EngineApi.Licensing;
 
 namespace St4i.EngineApi.Endpoints;
 
@@ -21,7 +23,11 @@ public static class LineEndpoints
     public static void MapLineEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/v1/line", GetLineAsync).RequireAuthorization(Policies.Operator);
-        app.MapPost("/v1/line/{command}", ExecuteAsync).RequireAuthorization(Policies.Operator);
+        // 🔴 WS-E — THE ROADMAP'S OWN ACCEPTANCE CRITERION (roadmap:377, "mở khoá Line bằng license mới").
+        // GET /v1/line one line up is NOT gated: reading line state is operator visibility, and a licence
+        // must not blank an operator's view of the line any more than it may blank their screen.
+        app.MapPost("/v1/line/{command}", ExecuteAsync).RequireAuthorization(Policies.Operator)
+            .RequireLicense(LicenseFeatures.LineControl);
     }
 
     // ─────────────────────────────────────────────────────────────────────

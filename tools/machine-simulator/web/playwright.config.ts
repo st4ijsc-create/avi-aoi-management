@@ -336,6 +336,16 @@ export default defineConfig({
         // `new HmiScreenStore()` (no DI required) would otherwise write into a real install's data the
         // moment this harness or a developer's own `npm run dev` happened to construct one.
         ST4I_HMI_SCREENS_DIR: join(e2eDataDir, "hmi-screens"),
+        // 🔴 WS-E (License/Edition) — and this one is NOT the "declared in src/, not yet created" case the
+        // block above describes. `Program.cs` constructs a `LicenseStore` UNCONDITIONALLY at startup, and
+        // that constructor creates the directory and applies `SecurityDirAcl` to it. Without this line,
+        // every `npm run test:e2e` and every `npm run dev` would create and ACL-lock the REAL
+        // `%ProgramData%\ST4I\sim\license` on the developer's own machine — the same class of leak that
+        // put login-capable accounts in a production security.db (SM-6) and 613 DPAPI-sealed credentials in
+        // the real creds directory. It would also mean a developer who had installed a real licence could
+        // have the e2e suite reading it, so a test run's licence state would depend on whose machine it ran
+        // on. `EveryStoreTheEngineCreates_IsIsolatedByThePlaywrightHarness` requires this entry.
+        ST4I_LICENSE_DIR: join(e2eDataDir, "license"),
       },
     },
   ],

@@ -60,6 +60,24 @@
          output regardless of whether that consumer's own code uses it). See
          St4i.EdgeCore.Tests.MakaretuNotShippedTests for the proof those two outputs are now clean, and the
          task-1-report.md for the full rationale. -->
+    <!-- 🔴 WS-E (License/Edition) — the ONE new NuGet this workstream adds, and it enters the TRUST ROOT
+         of the revenue mechanism, so the reason is recorded here rather than inferred from the using.
+
+         WHY A PACKAGE AT ALL, MEASURED not assumed: .NET 10's System.Security.Cryptography (10.0.0.0)
+         exports MLDsa/SlhDsa/CompositeMLDsa/ECDsa and their Cng/OpenSsl variants and has NO Ed25519 and
+         NO EdDsa type — the post-quantum suite shipped and EdDSA was skipped. The roadmap names Ed25519
+         (roadmap:136, :305, :342) and the owner ruled on 2026-09-06 to keep the spec's letter rather than
+         substitute ECDSA P-256, which the platform does have. Verified before this reference was added:
+         BouncyCastle 2.7.0 signs, verifies, produces a 32-byte public key and a 64-byte signature, and
+         REJECTS a tampered payload — the last of which is the property that matters and the one a
+         verifier that accepts everything would also pass a happy-path test for.
+
+         🔴 NO PRIVATE KEY EVER ENTERS THIS REPOSITORY. Only the 32-byte public key is embedded
+         (LicenseVerifier.EmbeddedPublicKey). Test licences are signed by a key pair generated IN MEMORY
+         inside the test fixture and verified through LicenseVerifier's SPKI-injection seam; nothing
+         writes a private key to the tree, and LicensePrivateKeyAbsenceTests parses the source to prove
+         no key-generation call site exists in src/. -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
     <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
     <PackageReference Include="MQTTnet.Server" Version="5.2.0.1603" />
     <!-- G2-2 (UNS spine) — the ONE new NuGet this task adds: runtime-only, used by

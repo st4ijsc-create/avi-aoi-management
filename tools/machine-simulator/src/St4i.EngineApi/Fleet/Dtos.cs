@@ -63,8 +63,31 @@ public sealed record ModeDto(TransportMode Mode);
 // one flag plus the sentence in docs/HMI_API_CONTRACT.md, and the moment 0c or WS-E can separate them is
 // the moment to add the second. Both remain unconditionally `true` today for the reason the paragraph
 // above gives.
+// 🔴 WS-E (License/Edition) — THE GATE PREDICTED ABOVE ARRIVED, AND THE FIVE EXISTING MEMBERS DID NOT
+// MOVE. `Fleet/Dtos.cs`'s own comment set the condition — "WS-E License/Edition is the workstream that
+// gives this a real gate ... WITHOUT MOVING WHERE THE FLAG IS REPORTED" — so the first five members keep
+// their exact names, types and ORDER, and the three below are strictly additive.
+//
+// Additive is measured to be free rather than assumed: no .NET test enumerates this endpoint's property
+// set (AuthPipelineTests reads one named property; RbacPolicyTests reads route metadata only;
+// TagIngestionWiringTests calls EnsureSuccessStatusCode(); HmiModelWiringTests reads two named
+// properties), and the web client parses with `as T` (`web/src/lib/api.ts`), which ignores unknown
+// members at runtime and does not reject extra ones at compile time.
+//
+// 🔴 WHY HmiModelEnabled AND HmiApiEnabled STILL REPORT `true` ON AN UNLICENSED MACHINE, and why that is
+// the gate WORKING rather than the gate doing nothing. Both flags now READ the licence
+// (`license.Has(...)`) instead of being literals — but the features they name, `hmi.model` and
+// `hmi.api`, are CORE: permanently free in every edition, licence or none. That was measured, not
+// chosen for convenience. `web/src/routes/Hmi.tsx` — the operator kiosk — renders from
+// `GET /v1/screens/{id}` (line 144), `GET /v1/components/{code}` (line 169, feeding ScreenRenderer's
+// `components` prop at line 490) and `WS /v1/hmi/changes` (line 158). Gating any of those on entitlement
+// means an EXPIRED LICENCE BLANKS AN OPERATOR'S SCREEN ON A RUNNING MACHINE, which is the boundary this
+// product may not cross. So the READ is free forever and the AUTHORING right (`hmi.authoring`) is what
+// Machine edition sells, enforced at the PUT/rollback/generate/import routes by endpoint filter.
+// `LicenseEnabled` below is the flag a client branches on to know whether authoring is available.
 public sealed record CapabilitiesDto(
-    bool DemoEnabled, TransportMode Mode, string Version, bool HmiModelEnabled, bool HmiApiEnabled);
+    bool DemoEnabled, TransportMode Mode, string Version, bool HmiModelEnabled, bool HmiApiEnabled,
+    string LicenseEdition, string LicenseState, string? LicenseExpiresAtUtc, bool HmiAuthoringEnabled);
 
 // ─────────────────────────────────────────────────────────────────────────
 // POST /v1/scenario, /v1/scenario/preset, /v1/scenario/burst

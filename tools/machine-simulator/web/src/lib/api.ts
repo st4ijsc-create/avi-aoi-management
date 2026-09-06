@@ -174,6 +174,43 @@ export interface Capabilities {
    */
   hmiModelEnabled: boolean
   hmiApiEnabled: boolean
+
+  /**
+   * 🔴 WS-E (License/Edition) — THE GATE THE COMMENT ABOVE PREDICTED, AND IT DID NOT LAND WHERE THAT
+   * COMMENT EXPECTED.
+   *
+   * `hmiModelEnabled` / `hmiApiEnabled` above are now READ FROM THE LICENCE rather than hardcoded — but
+   * they still report `true` on an unlicensed machine, and that is the gate working rather than the gate
+   * doing nothing. Both name CORE features: measured on this very client, `routes/Hmi.tsx` renders the
+   * operator kiosk from `GET /v1/screens/{id}` and `GET /v1/components/{code}`, so gating either would
+   * mean an expired licence BLANKS AN OPERATOR'S SCREEN ON A RUNNING MACHINE. Reads are free forever; the
+   * AUTHORING right is what is sold.
+   *
+   * 🔴 So `hmiAuthoringEnabled` is the flag a client should branch on to decide whether to offer the
+   * editor. It is the one that can be `false`.
+   *
+   * All four are OPTIONAL because `request<T>` ends `return (await res.json()) as T` — an unchecked cast,
+   * so an older engine that does not send them yields `undefined` at runtime while the type says
+   * otherwise. Marking them optional makes that runtime possibility visible to the compiler instead of
+   * hiding it behind a cast, and every read site below must therefore handle absence.
+   */
+  hmiAuthoringEnabled?: boolean
+
+  /** The edition label on the invoice — `"Core"` when unlicensed. Display only; never branch on it (the
+   * feature flags are the truth, editions are a label over them). */
+  licenseEdition?: string
+
+  /** The `LicenseState` name: `Valid`, `Grace`, `Expired`, `Missing`, `Corrupt`, `Invalid`,
+   * `WrongMachine`, `Unsupported` or `ClockUnusable`.
+   *
+   * 🔴 `Grace` and `ClockUnusable` keep paid features ON — a client must not infer "degraded" from a
+   * non-`Valid` state, and must NEVER present any of these states as a machine fault. The machine is
+   * running. An operator banner for these is AMBER, never red: red is this product's colour for "the
+   * machine has a problem", and the machine does not have one. */
+  licenseState?: string
+
+  /** ISO-8601 expiry, or absent for a perpetual licence or no licence at all. */
+  licenseExpiresAtUtc?: string | null
 }
 
 // ─────────────────────────────────────────────────────────────────────────

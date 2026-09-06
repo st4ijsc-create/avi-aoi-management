@@ -118,7 +118,15 @@ public sealed class RbacPolicyTests
             Environment.SetEnvironmentVariable("ST4I_NOTIFICATIONS_DIR", notificationsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
-            var factory = new WebApplicationFactory<Program>();
+            // 🔴 WS-E (License/Edition) — an ENTITLED host. This suite exercises
+            // every /v1 route including the licence-gated writes, asserting ROLE outcomes, and WS-E put a licence filter on the
+            // paid ones. On a bare (unlicensed) host those answer 403 LICENSE_REQUIRED, which
+            // would make this suite's ROLE assertions unreadable: a 403 would no longer tell an
+            // RBAC refusal apart from a licence refusal, and the suite would go green for the
+            // wrong reason on the very routes it exists to police. Entitling the host keeps 403
+            // meaning exactly one thing here. See LicensedTestHost for what was rejected, and
+            // LicenseReadPathTests for where the licence 403 itself is asserted.
+            var factory = St4i.EngineApi.Tests.Licensing.LicensedTestHost.Create();
             _ = factory.Server; // force the host to build NOW, while the env vars above are still set.
             return factory;
         }
@@ -414,6 +422,23 @@ public sealed class RbacPolicyTests
 
         // Admin — GĐ3 closeout WI-4 (device-identity rotation — see SiteEndpoints.RotateIdentityAsync)
         new("/v1/site/identity/rotate", new[] { "POST" }, Policies.Admin),
+
+        // 🔴 WS-E (License/Edition) — the three licence routes, joining this census in the SAME COMMIT
+        // that adds them, per this branch's standing rule.
+        //
+        // Engineer for both reads: GET /v1/license carries a customer name and the machine's own
+        // fingerprint — the same tier of material as GET /v1/settings, which is Engineer for the same
+        // reason. 🔴 NEITHER read is licence-gated, and GET /v1/license/fingerprint especially must not
+        // be: it is what an UNLICENSED machine calls to get itself licensed, so gating it on a licence
+        // would make offline activation impossible. GET /v1/license must answer precisely when the
+        // licence is broken, which is when a support engineer needs it.
+        //
+        // Admin for the write: installing an entitlement is an ownership act, not a configuration one —
+        // same tier as /v1/site/identity/rotate directly above, which is the other route that changes
+        // what this machine IS rather than what it is doing.
+        new("/v1/license", new[] { "GET" }, Policies.Engineer),
+        new("/v1/license/fingerprint", new[] { "GET" }, Policies.Engineer),
+        new("/v1/license/activate", new[] { "POST" }, Policies.Admin),
 
         // Admin — Task B-6: a command can fire real, ungoverned motion (a coil pulse, an OPC-UA CallAsync) —
         // this batch's own highest-risk actuation surface (B-5's report: "the highest-risk surface this

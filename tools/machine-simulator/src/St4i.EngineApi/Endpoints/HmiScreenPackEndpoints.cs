@@ -4,6 +4,8 @@ using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.HmiModel;
 using St4i.Hmi.Contracts;
+using St4i.EdgeCore.Licensing;
+using St4i.EngineApi.Licensing;
 
 namespace St4i.EngineApi.Endpoints;
 
@@ -87,7 +89,12 @@ public static class HmiScreenPackEndpoints
     public static void MapHmiScreenPackEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/v1/screens/export", ExportAsync).RequireAuthorization(Policies.Operator);
-        app.MapPost("/v1/screens/import", ImportAsync).RequireAuthorization(Policies.Engineer);
+        // 🔴 WS-E — import WRITES screens, so it is the authoring right. EXPORT one line up is NOT gated:
+        // a customer whose licence lapsed must still be able to get their own authored screens OUT.
+        // Holding a customer's own work hostage to a billing state is not a feature gate, and a support
+        // engineer needs export to diagnose a machine whatever its licence says.
+        app.MapPost("/v1/screens/import", ImportAsync).RequireAuthorization(Policies.Engineer)
+            .RequireLicense(LicenseFeatures.ScreensImport);
     }
 
     // ─────────────────────────────────────────────────────────────────────

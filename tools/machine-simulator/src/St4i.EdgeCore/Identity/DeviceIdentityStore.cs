@@ -87,6 +87,37 @@ public sealed class DeviceIdentityStore
     /// <summary>The resolved identity directory (after explicit/env/default resolution).</summary>
     public string RootDirectory => _dir;
 
+    /// <summary>
+    /// 🔴 WS-E — <see langword="true"/> once this store instance has MINTED an identity rather than loaded
+    /// one, i.e. <see cref="LoadOrCreate"/> found nothing usable on disk and generated a brand-new one.
+    /// The only production change WS-E asks for outside licence code, and it exists because the licence
+    /// fingerprint takes the identity thumbprint as one of its four components.
+    ///
+    /// <para><b>The failure chain it makes visible.</b> <see cref="TryLoad"/> treats ANY read failure as
+    /// "no stored identity" — a partially-written file after a power cut on a factory floor, a DPAPI scope
+    /// change, a blob copied from another machine — and <see cref="LoadOrCreate"/> then regenerates, by
+    /// design, because a device must always have a usable identity. Correct for THIS store's purpose; but
+    /// it means the fingerprint's first component can change <b>with no hardware change at all</b>. The
+    /// machine silently drops from 4-of-4 to 3-of-4, and the tolerance that exists so a NIC swap does not
+    /// cost a customer their paid features has been spent by an unrelated subsystem's recovery path.
+    /// Nobody finds out until one more ordinary event takes it to 2-of-4 and the features switch off.</para>
+    ///
+    /// <para><b>What this flag does and does not do.</b> It does not prevent the regeneration — preventing
+    /// it would break the "a device always has an identity" contract this store is built on. It makes the
+    /// event <i>reportable</i>: <see cref="St4i.EdgeCore.Licensing.MachineFingerprint"/> carries it into
+    /// <see cref="St4i.EdgeCore.Licensing.LicenseEvaluation.IdentityWasRegenerated"/>, and
+    /// <c>GET /v1/license/fingerprint</c> shows it, so a machine one event away from refusing is visible
+    /// BEFORE it refuses rather than after. It is per-INSTANCE and per-process: it answers "did this
+    /// store object mint the identity it is handing you", not "has this machine ever re-keyed", which
+    /// would need durable state this store deliberately does not keep.</para>
+    ///
+    /// <para>🔴 <see cref="Rotate"/> does NOT set it. A rotation is a deliberate operator action through
+    /// <c>POST /v1/site/identity/rotate</c>, already audited on that path; conflating it with a SILENT
+    /// regeneration would make the one signal that means "something went wrong unnoticed" fire routinely
+    /// on an action somebody chose, which is how a signal stops being read.</para>
+    /// </summary>
+    public bool WasRegenerated { get; private set; }
+
     /// <param name="directory">Explicit directory override (tests), or <see langword="null"/> to resolve
     /// via <see cref="ResolveRoot"/>.</param>
     /// <param name="logError">Called (never throws past this class) whenever a stored identity can't be
@@ -204,6 +235,13 @@ public sealed class DeviceIdentityStore
 
     private DeviceIdentity Create(string nodeId)
     {
+        // 🔴 WS-E — set BEFORE any of the persistence attempts below, and on every exit path from here,
+        // because every one of them returns a NEWLY MINTED identity. Setting it after a successful
+        // Persist/TryLoad would leave the in-memory-only fallback path (persistence failed) reporting a
+        // regeneration as though it were a normal load, which is the case where the signal matters MOST:
+        // an identity that could not be written is one that will be regenerated again on the next boot.
+        WasRegenerated = true;
+
         var pfxBytes = MintPfxBytes(nodeId);
 
         try

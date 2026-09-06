@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using St4i.EngineApi.Alarms;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
+using St4i.EdgeCore.Licensing;
+using St4i.EngineApi.Licensing;
 
 namespace St4i.EngineApi.Endpoints;
 
@@ -129,22 +131,43 @@ public static class NotificationEndpoints
         // ── Writes. One route per channel rather than one parameterised route, so each carries its own
         // policy in its own endpoint metadata. See the class doc comment: this is what makes the relay's
         // Admin gate a routing fact the RBAC sweep can assert, rather than an `if` inside a handler.
+        // 🔴 WS-E (License/Edition) — `alarms.notify` GATES THE TWO REMOTE-DISPATCH CHANNELS AND NOTHING
+        // ELSE, and the split inside this block is a safety decision rather than a packaging one.
+        //
+        // What is SOLD is the machine telling SOMEBODY ELSE — a webhook receiver, an SMTP recipient —
+        // that an alarm fired. What is CORE and must never be gated is the machine telling the person
+        // STANDING IN FRONT OF IT: alarm annunciation, the local beacon and the physical relay are how an
+        // operator learns the equipment needs attention, and an entitlement state must never be able to
+        // silence them. `local-annunciation` and `relay` are therefore deliberately UNGATED below despite
+        // living in the same endpoint family and carrying the same "notification" word in their paths.
+        // Their names are the only thing that groups them with the two above; what they DO is on the
+        // opposite side of this workstream's boundary.
+        //
+        // The DELETEs are gated with their PUTs: an unlicensed machine may not reconfigure remote
+        // dispatch in either direction, and a delete is a configuration change like any other.
         app.MapPut("/v1/notifications/webhook", SaveWebhookAsync)
-            .RequireAuthorization(Policies.Engineer);
+            .RequireAuthorization(Policies.Engineer)
+            .RequireLicense(LicenseFeatures.AlarmsNotify);
         app.MapDelete("/v1/notifications/webhook", DeleteWebhookAsync)
-            .RequireAuthorization(Policies.Engineer);
+            .RequireAuthorization(Policies.Engineer)
+            .RequireLicense(LicenseFeatures.AlarmsNotify);
 
         app.MapPut("/v1/notifications/smtp", SaveSmtpAsync)
-            .RequireAuthorization(Policies.Engineer);
+            .RequireAuthorization(Policies.Engineer)
+            .RequireLicense(LicenseFeatures.AlarmsNotify);
         app.MapDelete("/v1/notifications/smtp", DeleteSmtpAsync)
-            .RequireAuthorization(Policies.Engineer);
+            .RequireAuthorization(Policies.Engineer)
+            .RequireLicense(LicenseFeatures.AlarmsNotify);
 
+        // 🔴 UNGATED BY LICENCE, on purpose — see the block comment above. This is the LOCAL beacon: how
+        // an operator standing at the machine learns an alarm fired. No entitlement state may silence it.
         app.MapPut("/v1/notifications/local-annunciation", SaveLocalAnnunciationAsync)
             .RequireAuthorization(Policies.Engineer);
         app.MapDelete("/v1/notifications/local-annunciation", DeleteLocalAnnunciationAsync)
             .RequireAuthorization(Policies.Engineer);
 
         // 🔴🔴 ADMIN. See the class doc comment — this is the privilege-escalation close.
+        // 🔴 ALSO UNGATED BY LICENCE: a physical relay is annunciation hardware on the machine itself.
         app.MapPut("/v1/notifications/relay", SaveRelayAsync)
             .RequireAuthorization(Policies.Admin);
         app.MapDelete("/v1/notifications/relay", DeleteRelayAsync)

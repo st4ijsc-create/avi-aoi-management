@@ -68,7 +68,15 @@ public sealed class HmiScreenPackEndpointsTests
             // Assets manifest failure a bare Development host hits before a single request runs.
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
-            var factory = new WebApplicationFactory<Program>();
+            // 🔴 WS-E (License/Edition) — an ENTITLED host. This suite exercises
+            // POST /v1/screens/import, and WS-E put a licence filter on the
+            // paid ones. On a bare (unlicensed) host those answer 403 LICENSE_REQUIRED, which
+            // would make this suite's ROLE assertions unreadable: a 403 would no longer tell an
+            // RBAC refusal apart from a licence refusal, and the suite would go green for the
+            // wrong reason on the very routes it exists to police. Entitling the host keeps 403
+            // meaning exactly one thing here. See LicensedTestHost for what was rejected, and
+            // LicenseReadPathTests for where the licence 403 itself is asserted.
+            var factory = St4i.EngineApi.Tests.Licensing.LicensedTestHost.Create();
             _ = factory.Server;
             return (factory, hmiScreensDir);
         }

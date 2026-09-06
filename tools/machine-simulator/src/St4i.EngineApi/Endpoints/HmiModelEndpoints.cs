@@ -2,6 +2,8 @@ using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.HmiModel;
 using St4i.Hmi.Contracts;
+using St4i.EdgeCore.Licensing;
+using St4i.EngineApi.Licensing;
 
 namespace St4i.EngineApi.Endpoints;
 
@@ -27,7 +29,12 @@ public static class HmiModelEndpoints
     {
         app.MapGet("/v1/components", ListMachineCodesAsync).RequireAuthorization(Policies.Operator);
         app.MapGet("/v1/components/{machineCode}", GetAsync).RequireAuthorization(Policies.Operator);
-        app.MapPut("/v1/components/{machineCode}", PutAsync).RequireAuthorization(Policies.Engineer);
+        // 🔴 WS-E — authoring. The two GETs above stay CORE and ungated: the kiosk reads
+        // GET /v1/components/{code} to resolve every {component} binding on a rendered screen
+        // (web/src/routes/Hmi.tsx:169 → ScreenRenderer's `components` prop at :490), so gating the read
+        // would blank an operator's screen on a running machine.
+        app.MapPut("/v1/components/{machineCode}", PutAsync).RequireAuthorization(Policies.Engineer)
+            .RequireLicense(LicenseFeatures.HmiAuthoring);
         app.MapGet("/v1/components/{machineCode}/integrity", GetIntegrityAsync).RequireAuthorization(Policies.Operator);
         app.MapGet("/v1/component-types", ListComponentTypesAsync).RequireAuthorization(Policies.Operator);
     }

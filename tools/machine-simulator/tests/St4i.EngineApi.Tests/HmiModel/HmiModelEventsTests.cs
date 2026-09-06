@@ -90,7 +90,14 @@ public sealed class HmiModelEventsTests
             Environment.SetEnvironmentVariable("ST4I_SECURITY_DIR", securityDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
-            var factory = new WebApplicationFactory<Program>();
+            // 🔴 WS-E (License/Edition) — an ENTITLED host, because this suite exercises
+            // the HMI screen/tag PUT and rollback routes, which WS-E made a PAID feature. A bare host has no
+            // licence, so every write here would answer 403 LICENSE_REQUIRED — the gate working,
+            // not a defect, and not something to fix by weakening the gate. See LicensedTestHost
+            // for what was rejected (an ST4I_LICENSE_DISABLED escape hatch would be a documented
+            // bypass shipped inside the revenue mechanism) and for where the UNLICENSED behaviour
+            // of these same routes is asserted instead (LicenseReadPathTests).
+            var factory = St4i.EngineApi.Tests.Licensing.LicensedTestHost.Create();
             _ = factory.Server;
             return (factory, screensDir);
         }

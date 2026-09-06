@@ -959,6 +959,39 @@ var deviceIdentity = deviceIdentityStore.LoadOrCreate(unsOptions.Cell);
 var deviceIdentityProvider = new St4i.EdgeCore.Identity.DeviceIdentityProvider(deviceIdentityStore, deviceIdentity);
 builder.Services.AddSingleton(deviceIdentityProvider);
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+// 🔴 WS-E (License/Edition) — THE LICENCE GATE. Evaluated ONCE, here, for the process lifetime.
+//
+// Placed immediately after the device identity because it READS it: the identity certificate thumbprint
+// is one of the four fingerprint components, and `deviceIdentityStore.WasRegenerated` — the only
+// production change WS-E made outside licence code — tells the evaluation whether that component may
+// have moved with no hardware change at all (a power cut mid-write corrupts device-identity.bin,
+// TryLoad silently treats that as "no identity", LoadOrCreate mints a new one, and the machine drops
+// from 4-of-4 to 3-of-4 with nobody informed). The store instance is REUSED rather than reconstructed
+// so that flag is the one this process actually set.
+//
+// 🔴 EVALUATED ONCE, ON PURPOSE — the same discipline DemoModeGate states for itself. A licence whose
+// state can flip mid-process gives an operator a running machine whose feature set changes under their
+// hands. A licence that expires at 14:00 on a machine that started at 06:00 changes nothing at 14:00.
+//
+// 🔴 AND IT IS NOT A POLICY RULE. It is deliberately NOT registered into the IPolicyRule[] a few hundred
+// lines above: PolicyEngine is default-deny and FleetEndpoints evaluates it for fleet.estop and
+// fleet.estop_reset, so a licence rule there could make HALT unreachable. Licence gating is an endpoint
+// filter (`.RequireLicense(...)`) attached route by route. PolicyRuleArrayPinTests pins that array to
+// exactly its three current types so this cannot be undone by accident.
+//
+// A licence problem never stops a machine: every failure path inside Create resolves to a state, and the
+// unentitled state is Core — a working machine that cannot AUTHOR, not a machine that cannot RUN.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+var licenseStore = new St4i.EdgeCore.Licensing.LicenseStore();
+builder.Services.AddSingleton(licenseStore);
+builder.Services.AddSingleton(new St4i.EdgeCore.Licensing.LicenseVerifier());
+builder.Services.AddSingleton(St4i.EngineApi.Licensing.LicenseGate.Create(
+    licenseStore,
+    new St4i.EdgeCore.Licensing.LicenseVerifier(),
+    deviceIdentityStore,
+    Path.Combine(securityDir, "security.db")));
+
 // GĐ3 sub-2 SD-1 (.superpowers/sdd/2026-07-27-giaidoan3-mdns-join-wizard-blueprint/task-1-brief.md) — the
 // mDNS Site-discovery singleton backing GET /v1/site/discover. Registered UNCONDITIONALLY (unlike the
 // UNS-gated SiteBridgeManager below) — browsing the LAN for a Site to join has nothing to do with whether
@@ -1835,6 +1868,13 @@ app.MapFleetEndpoints();
 app.MapSafetyEndpoints();
 app.MapModeEndpoints();
 app.MapCapabilitiesEndpoints();
+
+// 🔴 WS-E (License/Edition) — GET /v1/license (Engineer, the incident-call diagnostic),
+// GET /v1/license/fingerprint (Engineer, and it MUST work on an unlicensed machine — it is what a
+// customer sends ST4I to have a licence issued) and POST /v1/license/activate (Admin, verify-then-write
+// so a bad paste cannot displace a working licence). None of the three carries a licence filter, by
+// design: a machine must be able to diagnose and fix its own unlicensed state.
+app.MapLicenseEndpoints();
 app.MapScenarioEndpoints();
 app.MapSettingsEndpoints();
 app.MapOnboardingEndpoints();

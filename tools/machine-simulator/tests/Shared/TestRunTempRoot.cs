@@ -413,6 +413,17 @@ internal static class TestRunTempRoot
                          // Task 2/3 registers the seam, every boot in every suite starts resolving it
                          // against the REAL %ProgramData%\ST4I\sim\hmi-screens.
                          ("ST4I_HMI_SCREENS_DIR", "hmi-screens"),
+                         // 🔴 WS-E (License/Edition) — the licence leaf, added in the SAME COMMIT as
+                         // LicenseStore's EnvVarDir/DefaultRoot/ResolveRoot triple, following the precedent
+                         // every entry above it records. It is NOT harmless-today the way ST4I_HMI_SCREENS_DIR
+                         // was when it was added: Program.cs constructs a LicenseStore unconditionally at
+                         // startup and its ctor CREATES the directory and applies SecurityDirAcl to it, so
+                         // without this line every WebApplicationFactory<Program> boot in every suite would
+                         // create and ACL-lock %ProgramData%\ST4I\sim\license on the machine running the
+                         // tests. That is CredentialStore's own recorded defect — the one store that lacked a
+                         // redirect seam, which is how ~3,000 DPAPI blobs ended up in this machine's real
+                         // credential directory — reproduced exactly, and this line is what prevents it.
+                         ("ST4I_LICENSE_DIR", "license"),
                      })
             {
                 if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variable)))

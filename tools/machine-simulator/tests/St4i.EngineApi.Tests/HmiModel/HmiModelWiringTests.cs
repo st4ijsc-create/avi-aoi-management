@@ -134,6 +134,36 @@ public sealed class HmiModelWiringTests
         // are REPORTED, which is what a client branches on, not that the gate works.
         Assert.True(doc.RootElement.GetProperty("hmiApiEnabled").GetBoolean());
 
+        // 🔴 WS-E (License/Edition) — THE PARAGRAPH DIRECTLY ABOVE IS ANSWERED, AND THE ANSWER IS NOT THE
+        // ONE IT EXPECTED. It predicted WS-E would make one of these two flags able to go FALSE. WS-E
+        // measured the kiosk instead, and found that both features they name are on the operator RENDER
+        // path: web/src/routes/Hmi.tsx reads GET /v1/screens/{id} (line 144) and GET /v1/components/{code}
+        // (line 169, feeding ScreenRenderer's `components` prop at line 490) to paint an operator panel.
+        // Gating either would mean an expired licence BLANKS AN OPERATOR'S SCREEN ON A RUNNING MACHINE, so
+        // `hmi.api` and `hmi.model` are CORE — free in every edition, licence or none — and these two
+        // assertions above are therefore CORRECT AS WRITTEN and stay exactly as they were.
+        //
+        // 🔴 BUT THEY ARE NO LONGER LITERALS, and that distinction is the whole of what WS-E changed here.
+        // CapabilitiesEndpoints now reads `license.Has("hmi.model")` / `license.Has("hmi.api")`. The
+        // assertions look identical and measure something different: that the GATE grants a Core feature,
+        // not that a `true` was typed into a constructor call.
+        //
+        // The flag that CAN be false is the new one, and the red half of the pair this comment's own
+        // prediction asked for lives in LicenseReadPathTests
+        // (Capabilities_answers_200_when_expired_and_reports_authoring_off_but_reads_on plus its entitled
+        // negative control), which boots the engine with an EXPIRED LicenseGate and asserts
+        // hmiAuthoringEnabled is false while these two stay true. It is there rather than here because it
+        // needs to replace the LicenseGate singleton in the test host, which this suite's factory helper
+        // deliberately does not do.
+        //
+        // This fixture has no licence file — TestRunTempRoot redirects ST4I_LICENSE_DIR to an empty
+        // throwaway leaf — so the state below is Missing, i.e. the honest unlicensed install. A machine in
+        // that state still reports both Core flags true and still answers 200, which is what makes an
+        // unlicensed appliance a WORKING machine rather than a brick.
+        Assert.False(doc.RootElement.GetProperty("hmiAuthoringEnabled").GetBoolean());
+        Assert.Equal("Missing", doc.RootElement.GetProperty("licenseState").GetString());
+        Assert.Equal("Core", doc.RootElement.GetProperty("licenseEdition").GetString());
+
         // 🔴 Step 1's own correctness, which nothing else in this suite would catch: at the time this test
         // was written, no endpoint read IComponentModelStore/ITagNamespaceStore yet (WS-HMI-0a Task 5's own
         // brief was explicit that adding one was WS-HMI-0b's job), so a broken/typo'd DI registration would

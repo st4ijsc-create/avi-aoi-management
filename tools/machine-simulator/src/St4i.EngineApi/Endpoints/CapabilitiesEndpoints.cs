@@ -1,6 +1,8 @@
 using System.Reflection;
 using St4i.EdgeCore.Config;
+using St4i.EdgeCore.Licensing;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Licensing;
 
 namespace St4i.EngineApi.Endpoints;
 
@@ -36,9 +38,41 @@ public static class CapabilitiesEndpoints
         // route could reach them, which is precisely the state the two flags exist to let a client tell
         // apart. The change lane (WS /v1/hmi/changes) gets NO third flag — see CapabilitiesDto's own doc
         // comment for why a flag that can never disagree with another is worse than no flag.
-        app.MapGet("/v1/capabilities", (FleetHost host, DemoModeGate demoGate) =>
+        //
+        // 🔴 WS-E (License/Edition) — THE GATE ARRIVED, AND THE TWO LITERAL `true`s ABOVE ARE NOW READS.
+        // `Fleet/Dtos.cs`'s comment named this workstream by name and set its condition: give the flags a
+        // real gate "without moving where the flag is reported". The five original members keep their
+        // exact names, types and order; three new members are additive (measured free — see CapabilitiesDto).
+        //
+        // 🔴 THIS ENDPOINT MUST BE TOTAL. It answers 200 in EVERY licence state, including Missing,
+        // Corrupt and Invalid, and it stays AllowAnonymous. Three suites call it on a fixture with no
+        // licence file at all (AuthPipelineTests, TagIngestionWiringTests, HmiModelWiringTests), the web
+        // shell cannot boot without it, and an unlicensed appliance is a WORKING machine whose shell must
+        // still render. A licence state is reported here, never enforced here — enforcement is the
+        // per-route endpoint filter, and this is Layer A (advisory) of the two-layer split: a client that
+        // ignores this response is still refused at the route.
+        //
+        // 🔴 LicenseGate IS RESOLVED OPTIONALLY (`LicenseGate?`), and that is not defensive noise. A
+        // host that composes this endpoint without registering the gate must still answer 200 with the
+        // honest unlicensed answer rather than throwing on a route the shell needs to boot — the same
+        // reasoning SiteDiscovery's own registration comment gives for why a nullable inferred parameter
+        // on a minimal-API route is a real hazard here.
+        app.MapGet("/v1/capabilities", (FleetHost host, DemoModeGate demoGate, LicenseGate? license) =>
             Results.Ok(new CapabilitiesDto(
-                demoGate.Enabled, host.Mode, ProductVersion, HmiModelEnabled: true, HmiApiEnabled: true)))
+                demoGate.Enabled,
+                host.Mode,
+                ProductVersion,
+                // Core features: free in every edition, licence or none — see CapabilitiesDto's comment
+                // for the measurement (the kiosk renders through both of these) that put them there.
+                HmiModelEnabled: license?.Has(LicenseFeatures.HmiModel) ?? true,
+                HmiApiEnabled: license?.Has(LicenseFeatures.HmiApi) ?? true,
+                LicenseEdition: license?.Edition ?? "Core",
+                LicenseState: (license?.State ?? St4i.EdgeCore.Licensing.LicenseState.Missing).ToString(),
+                LicenseExpiresAtUtc: license?.ExpiresAtUtc?.ToUniversalTime().ToString("O"),
+                // 🔴 The flag that actually GATES, and the one a client should branch on to decide whether
+                // to offer the editor. The two above are Core and therefore always true; this one is false
+                // on an unlicensed, expired or wrong-machine appliance.
+                HmiAuthoringEnabled: license?.Has(LicenseFeatures.HmiAuthoring) ?? false)))
             .AllowAnonymous();
     }
 }
