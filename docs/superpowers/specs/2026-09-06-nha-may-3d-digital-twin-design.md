@@ -140,7 +140,7 @@ Router: `twinRouter` (15 thủ tục), `digitalTwinRouter` (6), `twinGovRouter` 
 - **0 test** cho mọi component 3D (`client/src/components/twin/` có 1 tệp, 0 test).
 - **0 e2e** liên quan twin/3D/layout (thư mục `e2e/` có 5 tệp, không tệp nào chạm 3D).
 - 2 unit test duy nhất (`twinHubTabBoTriXuong.unit.test.ts`) chỉ kiểm tab layout không crash.
-- Backend twin **có test dày** (`twin.t1.test.ts`, `twinSchema.t3.test.ts`, `usdExport.t3b.test.ts`, `dstarLite.test.ts`…).
+- Backend twin **có test dày** (`twin.t1.test.ts`, `twinSchema.t3.test.ts`, `usdExport.t3b.test.ts`, `dstarLite.unit.test.ts`…).
 
 ### 1.7 Bản đồ 11 màn hiện có
 
@@ -892,7 +892,7 @@ export function sinhBoCuc(
 
 Không `Math.random()`, không `Date.now()`, không phụ thuộc thứ tự trả về của DB. Cùng đầu vào → cùng đầu ra, **byte-for-byte**. Đây là điều kiện để viết được test T1–T2, và là điều kiện để "Sinh tự động" an toàn khi bấm lần thứ hai.
 
-### 8.4 Chín tính chất phải test (`sinhBoCuc.test.ts`)
+### 8.4 Chín tính chất phải test (`sinhBoCuc.unit.test.ts`)
 
 | # | Tính chất |
 |---|---|
@@ -1087,7 +1087,7 @@ Hiện có **ba** hệ lệch nhau:
 
 Quy ước alarm: **Đỏ = critical · Vàng = warning · Xanh dương = information.** Bảng màu **≤ 7 mã** (ASM Guideline 6.1 — giới hạn trí nhớ ngắn hạn).
 
-**Cấm hardcode hex trong component 3D.** Test `mauTrangThai.test.ts` kiểm: mọi giá trị của `operationStatusEnum` đều có ánh xạ; `khong_ro` khác mọi màu "khoẻ"; tương phản đủ trên nền cả hai theme.
+**Cấm hardcode hex trong component 3D.** Test `mauTrangThai.unit.test.ts` kiểm: mọi giá trị của `operationStatusEnum` đều có ánh xạ; `khong_ro` khác mọi màu "khoẻ"; tương phản đủ trên nền cả hai theme.
 
 ### 10.3 Badge alarm — ba luật cứng
 
@@ -1250,7 +1250,7 @@ Yêu cầu chủ sở hữu: **hiển thị mặc định theo vài chủng lo�
 ```ts
 export function hinhKhoiCho(loaiMay: string): KhoiKey   // 25+ loại → 7 khối
 ```
-Test `hinhKhoiMay.test.ts`: **mọi giá trị của `machineTypeEnum` phải ánh xạ được**, không giá trị nào rơi vào `undefined` — đây là bánh cóc chống việc thêm loại máy mới mà quên cập nhật.
+Test `hinhKhoiMay.unit.test.ts`: **mọi giá trị của `machineTypeEnum` phải ánh xạ được**, không giá trị nào rơi vào `undefined` — đây là bánh cóc chống việc thêm loại máy mới mà quên cập nhật.
 
 **Mỗi khối tôn trọng kích thước thật** từ `twin_dat_cho.rongMm/caoMm/sauMm` (§5.3) — hình dạng cố định, tỉ lệ co giãn theo số đo. Máy AOI 1400 mm và máy AOI 2200 mm nhìn khác nhau ngay.
 
@@ -1286,7 +1286,7 @@ Cấp 2 là cấp **đáng dùng nhất**: nhập một file cho `AOI` là 14 m�
 | > 150.000 hoặc > 15 MB | **Chặn** |
 
 **Hiệu chỉnh khi nhập** — cùng hộp thoại của 10A.1 (đơn vị, trục lên, xoay, gốc), cộng thêm:
-- **So sánh với kích thước khai báo**: nếu bbox file lệch > 30 % so với `twin_dat_cho`, hiện cảnh báo *"Model cao 2,4 m nhưng máy khai 1,9 m — dùng kích thước nào?"* với hai nút `[Theo model]` `[Giữ khai báo, co model]`.
+- **So sánh với kích thước khai báo**: nếu bbox file lệch > 30 % so với `twin_dat_cho`, hiện cảnh báo *"Model cao 2,9 m nhưng máy khai 1,9 m — dùng kích thước nào?"* (lệch 52,6 %; ví dụ cũ 2,4 m chỉ lệch 26,3 % nên **không** vượt ngưỡng 30 % — đã sửa sau khi Đợt 2 khoá con số bằng test) với hai nút `[Theo model]` `[Giữ khai báo, co model]`.
 - **Ghi `bounds`** vào `equipment_3d_models` (hiện **NULL ở 5/5 hàng**) — lấp đúng lỗ hổng ở §1.3.
 
 ### 10B.3 LOD — bốn bậc
@@ -1539,9 +1539,9 @@ Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt h�
 
 | Đợt | Nội dung | Đầu ra nghiệm thu | Phụ thuộc |
 |---|---|---|---|
-| **Đ0** | **Nền móng & lưới an toàn.** 5 migration (thêm cột 10A.4); seed `twin_kich_thuoc_loai` 25+ loại; script di trú §5.6 + đối soát; `resolve.dedupe` + `manualChunks vendor-three`; **vá rò rỉ GPU `Factory3DScene.tsx:219-226`**; `mauTrangThai.ts` hợp nhất 3 hệ màu; route stub `/twin` + `/twin-studio` + `navigation.tsx` + **toàn bộ khoá i18n `twin3d.*` cho vi/en/zh** | `db:push && db:verify` sạch · `npm test` xanh (kể cả `duongVaoMenu.test.ts`) · chunk `vendor-three` trong `dist` · script di trú in đối soát khớp · **`floorWidthM=1500` KHÔNG được di trú** (§10A.0) | — |
-| **Đ1** | **Lõi engine `twin3d/loi/`** + module thuần. Mở rộng `factory-scene` thành kit: `KhungCanh`, `dieuKhienQuay` (+`invalidate`), `LoBatchMay` (BatchedMesh), `LopNhan`+`locNhan`, `chonVatThe`, `vienNoiBat`, `matDoKhungHinh`, `giaiPhong`, `webglcontextlost`, `heToaDo.ts` | `/factory-command` viết lại trên kit mà **hoạt động y hệt** · ≤ 150 draw calls đo được · `heToaDo.test.ts` xanh | Đ0 |
-| **Đ2** | **Hình học thiết bị (§10B).** 7 khối mặc định `hinhKhoiMay.ts` + ánh xạ 25+ loại; `mucChiTiet.ts` 4 bậc LOD; vạch chỉ hướng mặt trước; gán model 3 cấp (máy / chủng loại / mặc định) | `hinhKhoiMay.test.ts`: **mọi giá trị `machineTypeEnum` ánh xạ được**, 0 giá trị `undefined` · 7 khối phân biệt được bằng mắt ở ảnh chụp · LOD hạ bậc đúng ngưỡng | Đ1 |
+| **Đ0** | **Nền móng & lưới an toàn.** 5 migration (thêm cột 10A.4); seed `twin_kich_thuoc_loai` 25+ loại; script di trú §5.6 + đối soát; `resolve.dedupe` + `manualChunks vendor-three`; **vá rò rỉ GPU `Factory3DScene.tsx:219-226`**; `mauTrangThai.ts` hợp nhất 3 hệ màu; route stub `/twin` + `/twin-studio` + `navigation.tsx` + **toàn bộ khoá i18n `twin3d.*` cho vi/en/zh** | `db:push && db:verify` sạch · `npm test` xanh (kể cả `duongVaoMenu.unit.test.ts`) · chunk `vendor-three` trong `dist` · script di trú in đối soát khớp · **`floorWidthM=1500` KHÔNG được di trú** (§10A.0) | — |
+| **Đ1** | **Lõi engine `twin3d/loi/`** + module thuần. Mở rộng `factory-scene` thành kit: `KhungCanh`, `dieuKhienQuay` (+`invalidate`), `LoBatchMay` (BatchedMesh), `LopNhan`+`locNhan`, `chonVatThe`, `vienNoiBat`, `matDoKhungHinh`, `giaiPhong`, `webglcontextlost`, `heToaDo.ts` | `/factory-command` viết lại trên kit mà **hoạt động y hệt** · ≤ 150 draw calls đo được · `heToaDo.unit.test.ts` xanh | Đ0 |
+| **Đ2** | **Hình học thiết bị (§10B).** 7 khối mặc định `hinhKhoiMay.ts` + ánh xạ 25+ loại; `mucChiTiet.ts` 4 bậc LOD; vạch chỉ hướng mặt trước; gán model 3 cấp (máy / chủng loại / mặc định) | `hinhKhoiMay.unit.test.ts`: **mọi giá trị `machineTypeEnum` ánh xạ được**, 0 giá trị `undefined` · 7 khối phân biệt được bằng mắt ở ảnh chụp · LOD hạ bậc đúng ngưỡng | Đ1 |
 | **Đ3** | **Dựng nhà xưởng (§10A).** Con đường B (điền kích thước 3 bước) + con đường A (nhập CAD/GLB qua `occt-import-js` worker) + hộp thoại hiệu chỉnh đơn vị/trục + `tachTangTuHinhHoc.ts` + sinh tường bao | Điền 84×52×6 m → tạo được toà + tầng, xem trước đúng tỉ lệ · nhập STEP → hộp thoại hiệu chỉnh hiện thước + hình người 1,7 m · **nhập sai đơn vị bị bắt bằng mắt** · tách tầng theo cao độ chạy đúng | Đ1 |
 | **Đ4** | **Màn Thiết kế (§7) + thuật toán sinh (§8).** `sinhBoCuc.ts` + `hinhHocCanChinh.ts` + `snapVatVaoVat.ts` + `boCucService.ts` + tRPC ghi cảnh; 3 vùng, gizmo, bộ 12 công cụ, cây, inspector, undo/redo, thư viện asset, vùng polygon, ảnh nền + tỉ lệ, khu chờ xếp chỗ; **3 công cụ Line (§10C.4)** | 9 test T1–T9 xanh · kéo máy → Lưu → reload giữ nguyên · sinh lại **không đè** máy đã chỉnh tay · **xoay snap ra đúng 15.000 không phải 23.000** (RB-2) · **đủ điều kiện tắt 2 editor cũ** (sổ kiểm #41–#49 ✅) | Đ2, Đ3 |
 | **Đ5** | **Màn Vận hành (§9) + phạm vi Line/Tập đoàn (§10C).** Bố cục toàn khung, `NganXuLy` (ack alarm + tạo phiếu + gán KTV), 5 cấp phạm vi, `phamViLine.ts`, đường dòng chảy có hướng, ống WIP, dải Line 2D, deep-link, 3 trạng thái tươi, đối soát, toggle 2D + fallback, a11y bàn phím | Click máy → ack alarm **thật trong DB**, tạo phiếu **thật** · chọn phạm vi Line → chỉ Line đó rõ, Line khác mờ 12 % · deep-link `?pv=line:1` khôi phục đúng · tắt WebGL → rơi 2D · **chỉ bàn phím vẫn ack được** · sổ kiểm #8–#17, #30–#34, #50–#54 ✅ | Đ1, Đ4 |
@@ -1602,22 +1602,32 @@ Hiện trạng: **0 test cho mọi component 3D, 0 e2e liên quan twin.** Đây 
 
 ### 13.1 Vitest — module thuần (`environment: "node"`, chỉ `.ts`)
 
+> ### ★★★ ĐÍNH CHÍNH 2026-09-06, sau khi thực thi module thuần Đợt 2
+> Bảng này ban đầu ghi tên tệp là `*.test.ts`. **SAI.** `vitest.config.ts:50` chỉ include
+> `client/src/**/*.unit.test.ts` — đo được: **105 tệp `.unit.test.ts` so với 3 tệp `.test.ts`**
+> trong `client/src`. Đặt tên theo bản cũ thì tệp test **không bao giờ được thu thập, mà cổng
+> vẫn báo xanh** — âm tính giả ở chính thiết bị đo. Chính `vitest.config.ts:41` đã ghi lại một
+> lần mắc lỗi này trước đây: *"KHÔNG NẰM trong `include` cũ nên chưa từng được vitest thu thập"*.
+>
+> **Mọi tệp test module thuần đặt tên `<tên>.unit.test.ts`.** Cổng ra của mỗi đợt phải dán
+> **số test được thu thập**, không chỉ dán chữ "xanh" — một suite 0 test cũng xanh.
+
 | Tệp test | Phủ |
 |---|---|
-| `sinhBoCuc.test.ts` | 9 tính chất T1–T9 (§8.4) |
-| `heToaDo.test.ts` | mm↔m, Y↔Z, quaternion chuẩn hoá, bbox, làm tròn |
-| `hinhHocCanChinh.test.ts` | ★ **snap xoay TUYỆT ĐỐI** (8° + snap 15° → 15°, không phải 23°), snap lưới, align 6 hướng, distribute, array tuyến tính/toả tròn |
-| `snapVatVaoVat.test.ts` | dung sai theo pixel giữ nguyên ở mọi mức zoom |
-| `mauTrangThai.test.ts` | đủ enum, `khong_ro` khác mọi màu "khoẻ", tương phản 2 theme |
-| `locNhan.test.ts` | cap 30, không chồng bbox, ưu tiên bất thường > gần camera |
-| `lichSuThaoTac.test.ts` | undo/redo, giới hạn 50, gộp thao tác kéo liên tiếp |
-| `kiemTraAsset.test.ts` | ngưỡng 50k/150k tam giác, 15 MB, bbox suy biến |
-| `duongDanTwin.test.ts` | mã hoá↔giải mã round-trip, tham số rác không làm vỡ |
-| `hinhKhoiMay.test.ts` | ★ **mọi giá trị `machineTypeEnum` (25+) ánh xạ được**, 0 giá trị `undefined`; khối co giãn đúng theo kích thước |
-| `hieuChinhNhapModel.test.ts` | quy đổi đơn vị mm/cm/m/inch, đổi trục Z-up↔Y-up, xoay, đặt gốc; bbox sau hiệu chỉnh đúng |
-| `tachTangTuHinhHoc.test.ts` | tách cụm theo cao độ, khoảng trống > 0,5 m làm ranh giới, sửa ranh giới thủ công |
-| `phamViLine.test.ts` | bao lồi Line, trục chính từ phương sai, hướng dòng chảy từ `orderIndex`, đường tâm qua tâm trạm |
-| `boCucTang.test.ts` | dài×rộng×cao → bbox tầng; cao độ tầng trên tự tính; tầng nhỏ hơn toà nhà |
+| `sinhBoCuc.unit.test.ts` | 9 tính chất T1–T9 (§8.4) |
+| `heToaDo.unit.test.ts` | mm↔m, Y↔Z, quaternion chuẩn hoá, bbox, làm tròn |
+| `hinhHocCanChinh.unit.test.ts` | ★ **snap xoay TUYỆT ĐỐI** (8° + snap 15° → 15°, không phải 23°), snap lưới, align 6 hướng, distribute, array tuyến tính/toả tròn |
+| `snapVatVaoVat.unit.test.ts` | dung sai theo pixel giữ nguyên ở mọi mức zoom |
+| `mauTrangThai.unit.test.ts` | đủ enum, `khong_ro` khác mọi màu "khoẻ", tương phản 2 theme |
+| `locNhan.unit.test.ts` | cap 30, không chồng bbox, ưu tiên bất thường > gần camera |
+| `lichSuThaoTac.unit.test.ts` | undo/redo, giới hạn 50, gộp thao tác kéo liên tiếp |
+| `kiemTraAsset.unit.test.ts` | ngưỡng 50k/150k tam giác, 15 MB, bbox suy biến |
+| `duongDanTwin.unit.test.ts` | mã hoá↔giải mã round-trip, tham số rác không làm vỡ |
+| `hinhKhoiMay.unit.test.ts` | ★ **mọi giá trị `machineTypeEnum` (25+) ánh xạ được**, 0 giá trị `undefined`; khối co giãn đúng theo kích thước |
+| `hieuChinhNhapModel.unit.test.ts` | quy đổi đơn vị mm/cm/m/inch, đổi trục Z-up↔Y-up, xoay, đặt gốc; bbox sau hiệu chỉnh đúng |
+| `tachTangTuHinhHoc.unit.test.ts` | tách cụm theo cao độ, khoảng trống > 0,5 m làm ranh giới, sửa ranh giới thủ công |
+| `phamViLine.unit.test.ts` | bao lồi Line, trục chính từ phương sai, hướng dòng chảy từ `orderIndex`, đường tâm qua tâm trạm |
+| `boCucTang.unit.test.ts` | dài×rộng×cao → bbox tầng; cao độ tầng trên tự tính; tầng nhỏ hơn toà nhà |
 
 ### 13.2 Playwright e2e
 
@@ -1648,7 +1658,7 @@ Cửa sổ đo cho e2e: `window.__thongKeVe`, `window.__demNhan`, `window.__pham
 ### 13.3 Bánh cóc sẵn có phải giữ xanh
 
 - `client/src/lib/duongVaoMenu.test.ts` — thêm `/twin` + `/twin-studio` vào **cả** `App.tsx` và `navigation.tsx`
-- `client/src/i18n/khoaDungTrongMa.test.ts`, `placeholderRatchet.test.ts` — khoá mới đủ `vi`/`en`/`zh`
+- `client/src/i18n/khoaDungTrongMa.test.ts`, `placeholderRatchet.unit.test.ts` — khoá mới đủ `vi`/`en`/`zh`
 - `client/src/lib/designTokens.test.ts` — không phá ngưỡng tương phản
 - `server/routers/layoutRoutersPermissionKhoiD.db.test.ts` — quyền layout không đổi
 - `npm run check` (`tsc --noEmit`) sạch
