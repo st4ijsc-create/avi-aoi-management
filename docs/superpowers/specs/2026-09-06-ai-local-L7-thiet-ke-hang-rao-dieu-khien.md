@@ -742,3 +742,46 @@ một thước đo mức độ khó:
 - CSDL `aoi_management` — truy vấn **chỉ đọc**: `device_adapters`, `device_tags`,
   `commissioning_records`, `robot_commissioning_records`, `command_log`, `robot_jobs`,
   `interlock_rules`, `safety_plc_configs`, `parameter_guardrails`
+
+---
+
+## Phu luc A — Quyet dinh cau hinh 2026-09-06 (chu du an duyet)
+
+### A.1 `PARAM_GUARDRAIL_STRICT=true` — DA BAT tren `.env` dang chay
+
+Moi lo neu o bao cao truoc ("bat co nay doi hanh vi cho ca nguoi van hanh")
+la **SAI**. Toi neu no dua tren `.env.example`, chua truy het nguoi goi. Do lai:
+
+| Diem goi | Duong | Truyen `opts.strict`? | Anh huong khi bat |
+|---|---|---|---|
+| `machineControl.ts:305` | AI — dung cau hoi | CO | Canh bao truoc |
+| `machineControl.ts:352` | AI — **thuc thi** | CO | **CHAN** (return truoc `runDispatch`) |
+| `machineRecipeRouter.ts:227` | **NGUOI** | **KHONG** (goi 2 doi so) | **KHONG doi** |
+| `parameterGuardrailService.ts:242` (`checkValue`) | — | CO | 0 nguoi goi |
+
+Nghiem bang 3 ca do duoc, khong bang lap luan: duong nguoi (goi 2 doi so) VAN
+QUA khi strict bat · duong AI (`strict:true`) bi chan voi ma `NO_GUARDRAIL` ·
+tham so CO dai va TRONG dai van qua o ca hai duong.
+
+Hoi quy sau khi bat: **92/92 tep · 1430/1430 test xanh**. Hieu luc tren tien
+trinh that: `PARAM_GUARDRAIL_STRICT === "true"` => `true`.
+
+Ket qua: AI **khong con ghi duoc tham so chua co dai an toan**. Vi bang
+`parameter_guardrails` hien **0 dong**, thuc te nay = AI bi chan MOI ghi tham
+so so hoc, cho toi khi ky su dien dai. Day la trang thai DUNG: mo tung tham so
+mot cach co chu dich, thay vi mo san tat ca.
+
+### A.2 `AI_OT_CONTROL_ENABLED` — GIU TAT
+
+Hang rao da dung nhung duong AI xuong thiet bi van DONG. Do duoc: bien vang
+mat trong `.env` => `=== "true"` la `false`. Bat khi nao la quyet dinh cua chu
+du an, va nen bat tren mot may thu truoc.
+
+### A.3 Con mo (khong dong duoc o dot nay)
+
+1. ★★★ Danh sach TRANG tag trong CSDL — hien la danh sach DEN bang regex, se
+   mu voi tag kieu `SPD_LIM_2`. Can migration + ky su dien.
+2. ★★ Tran tan suat song trong MOT tien trinh — N ban sao => tran that N×5.
+3. ★★ `dispatch()` con 4 nguoi goi khac khong qua cong (gom DCMD tu MQTT).
+4. ★ Chua ai do tren he chay that. Khi do: **dung do bang admin** — admin
+   bypass `requirePermission`, se chung minh so 0.
