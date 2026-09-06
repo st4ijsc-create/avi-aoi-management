@@ -3706,6 +3706,8 @@
       "machine": "机台",
       "line": "产线",
       "user": "用户",
+      "twinToaNha": "建筑",
+      "twinTang": "楼层",
       "workOrder": "工单",
       "alert": "警报",
       "recipe": "配方",
@@ -20218,6 +20220,8 @@
         "capSoTrung": "楼层号 {{capSo}} 重复。",
         "thieuTenTang": "楼层 {{capSo}} 尚未命名。",
         "caoThongThuyKhongHopLe": "楼层 {{capSo}} 的净高必须大于 0。",
+        "tangVuotChieuCaoToaNha": "各楼层总高度超过建筑高度。请增加建筑高度或降低楼层净高。",
+        "sanQuaHepChoTuongBao": "{{capSo}} 层楼面过窄，无法生成围墙（每边需大于 400 毫米）。",
         "tangTranKhoiToaNha": "楼层 {{capSo}} 的楼面大于建筑外轮廓。"
       }
     }

@@ -30,6 +30,8 @@ import {
   toaNhaMetSangMm,
   type TangNhapMet,
   type ToaNhaNhapMet,
+  tangVuotChieuCaoToaNha,
+  sanQuaHepChoTuongBao,
 } from "./boCucTang";
 import { kichThuocBBox } from "./heToaDo";
 
@@ -375,5 +377,119 @@ describe("kiemTraNhapLieu — chặn ở bước 3", () => {
   it("★ kích thước toà nhà sai KHÔNG đẻ ra lỗi tràn phái sinh che mất lỗi gốc", () => {
     const loi = kiemTraNhapLieu({ ...TOA_NHA_84, daiM: 0, rongM: 0 }, [TANG_TRET]);
     expect(loi.map((l) => l.khoa)).not.toContain("tangTranKhoiToaNha");
+  });
+});
+
+/**
+ * ═════════════════════════════════════════════════════════════════════════════
+ * ★★★ Đợt 3 THƯỜNG-4 — KHÔNG AI KIỂM TRỤC CAO
+ * ═════════════════════════════════════════════════════════════════════════════
+ *
+ * `tangTranKhoiToaNha` chỉ so hai trục MẶT BẰNG (dài × rộng) và bỏ trục cao hoàn
+ * toàn. QA đo được: toà cao 12 000 mm với 3 tầng × 6 m cho đỉnh tầng 3 ở
+ * 18 600 mm — vượt 6,6 m ra ngoài mái — và `kiemTraNhapLieu` trả mảng **RỖNG**.
+ * Không lỗi, không cảnh báo; người dùng bấm [Tạo] và DB ghi một toà nhà có ba
+ * tầng chọc thủng nóc.
+ *
+ * ★ ABLATION: bỏ `if (tangVuotChieuCaoToaNha(...))` khỏi `kiemTraNhapLieu` ⇒ ca
+ *   "3 tầng × 6 m trong toà 12 m" ĐỎ (đã chạy, xem báo cáo).
+ */
+describe("★★★ Đợt 3 THƯỜNG-4 — tầng vượt CHIỀU CAO toà nhà (trục bị bỏ quên)", () => {
+  const TOA = { ma: "TN-A", ten: "Xưởng A", daiM: 84, rongM: 30, caoM: 12 };
+
+  it("★★★ ca QA đo được: toà cao 12 m + 3 tầng × 6 m ⇒ PHẢI có lỗi (trước đây RỖNG)", () => {
+    const tangs = [1, 2, 3].map((c) => ({ capSo: c, ten: `Tầng ${c}`, caoThongThuyM: 6 }));
+    const loi = kiemTraNhapLieu(TOA, tangs);
+    expect(loi.map((l) => l.khoa)).toContain("tangVuotChieuCaoToaNha");
+  });
+
+  it("★ toà nhà VỪA KHÍT không bị báo lỗi giả — chỉ báo phải biết nói CÓ lẫn KHÔNG", () => {
+    // T1: 0 → 6 000. T2: 6 000+300(sàn) = 6 300 → 12 000. Đỉnh = 12 000 = caoMm.
+    const loi = kiemTraNhapLieu(TOA, [
+      { capSo: 1, ten: "T1", caoThongThuyM: 6 },
+      { capSo: 2, ten: "T2", caoThongThuyM: 5.7 },
+    ]);
+    expect(loi.map((l) => l.khoa)).not.toContain("tangVuotChieuCaoToaNha");
+  });
+
+  it("★★ tầng HẦM (cao độ ÂM) KHÔNG được tính là vượt mái", () => {
+    // Nếu luật cộng dồn thay vì lấy max của đỉnh, tầng hầm sẽ đẩy tổng lên và
+    // báo lỗi giả cho một công trình hoàn toàn hợp lệ.
+    const loi = kiemTraNhapLieu(TOA, [
+      { capSo: -1, ten: "Hầm", caoThongThuyM: 3, caoDoM: -3 },
+      { capSo: 1, ten: "T1", caoThongThuyM: 6 },
+    ]);
+    expect(loi.map((l) => l.khoa)).not.toContain("tangVuotChieuCaoToaNha");
+  });
+
+  it("★ hàm thuần: so ĐỈNH CAO NHẤT với caoMm, không cộng dồn", () => {
+    const toaNha = toaNhaMetSangMm(TOA);
+    const vuot = tangMetSangMm([{ capSo: 1, ten: "T", caoThongThuyM: 20 }], toaNha);
+    expect(tangVuotChieuCaoToaNha(vuot, toaNha)).toBe(true);
+
+    const vua = tangMetSangMm([{ capSo: 1, ten: "T", caoThongThuyM: 12 }], toaNha);
+    expect(tangVuotChieuCaoToaNha(vua, toaNha), "đúng bằng caoMm KHÔNG phải vượt").toBe(false);
+
+    expect(tangVuotChieuCaoToaNha([], toaNha), "không tầng nào thì không vượt").toBe(false);
+  });
+});
+
+/**
+ * ═════════════════════════════════════════════════════════════════════════════
+ * ★★★ Đợt 3 THƯỜNG-5 — SÀN HẸP cho tường suy biến
+ * ═════════════════════════════════════════════════════════════════════════════
+ *
+ * `sinhTuongBao` với `rong = 300 mm` (DAY_TUONG_MM = 200) cho tường Tây/Đông
+ * `sauMm = max(300 − 400, 0) = 0` (khối SUY BIẾN), và hai tường Bắc/Nam chồng
+ * nhau (y = 100 và y = 200, mỗi bức dày 200). Router `twinCanhRouter` có
+ * `.positive()` nên nó TỪ CHỐI `sauMm = 0` — người dùng nhận một lỗi validate về
+ * một con số họ chưa từng gõ, và không có đường nào từ câu đó về ô "Rộng".
+ *
+ * ★ ABLATION: bỏ `if (sanQuaHepChoTuongBao(t))` ⇒ ca "rộng 300 mm" ĐỎ.
+ */
+describe("★★★ Đợt 3 THƯỜNG-5 — sàn quá hẹp để dựng tường bao", () => {
+  const TOA_HEP = { ma: "TN-H", ten: "Xưởng hẹp", daiM: 84, rongM: 0.3, caoM: 12 };
+
+  it("★★★ ca QA đo được: rộng 300 mm ⇒ PHẢI bị chặn ở bước 3, không để vỡ ở API", () => {
+    const loi = kiemTraNhapLieu(TOA_HEP, [{ capSo: 1, ten: "T1", caoThongThuyM: 6 }]);
+    expect(loi.map((l) => l.khoa)).toContain("sanQuaHepChoTuongBao");
+  });
+
+  it("★★ ca BIÊN — cạnh ĐÚNG BẰNG 2 × DAY_TUONG_MM vẫn phải bị chặn (lỗi một-đơn-vị)", () => {
+    // 400 mm ⇒ sauMm = max(400−400, 0) = 0, router `.positive()` vẫn từ chối.
+    // Dùng `<` thay vì `<=` sẽ để lọt đúng giá trị tròn số này.
+    const bien = { ...TOA_HEP, rongM: (2 * DAY_TUONG_MM) / 1000 };
+    const loi = kiemTraNhapLieu(bien, [{ capSo: 1, ten: "T1", caoThongThuyM: 6 }]);
+    expect(loi.map((l) => l.khoa)).toContain("sanQuaHepChoTuongBao");
+  });
+
+  it("★ sàn ĐỦ RỘNG không bị báo — và tường sinh ra có bề dày DƯƠNG thật", () => {
+    const ok = { ...TOA_HEP, rongM: 0.5 };
+    expect(kiemTraNhapLieu(ok, [{ capSo: 1, ten: "T1", caoThongThuyM: 6 }]).map((l) => l.khoa))
+      .not.toContain("sanQuaHepChoTuongBao");
+
+    // Kiểm tận gốc: mọi tường đều có ba cạnh DƯƠNG (không suy biến).
+    const toaNha = toaNhaMetSangMm(ok);
+    const [tang] = tangMetSangMm([{ capSo: 1, ten: "T1", caoThongThuyM: 6 }], toaNha);
+    for (const tuong of sinhTuongBao(tang)) {
+      expect(tuong.rongMm, tuong.ten).toBeGreaterThan(0);
+      expect(tuong.caoMm, tuong.ten).toBeGreaterThan(0);
+      expect(tuong.sauMm, tuong.ten).toBeGreaterThan(0);
+    }
+  });
+
+  it("★★ CHỨNG MINH hình suy biến có thật ở dưới ngưỡng — luật không phải nỗi lo tưởng tượng", () => {
+    const toaNha = toaNhaMetSangMm(TOA_HEP);
+    const [tang] = tangMetSangMm([{ capSo: 1, ten: "T1", caoThongThuyM: 6 }], toaNha);
+    expect(sanQuaHepChoTuongBao(tang)).toBe(true);
+
+    const tuongs = sinhTuongBao(tang);
+    const tay = tuongs.find((w) => w.ten === "Tường Tây")!;
+    expect(tay.sauMm, "tường Tây suy biến — đây là lý do luật tồn tại").toBe(0);
+
+    // …và hai tường Bắc/Nam chồng nhau: khoảng cách tâm < bề dày.
+    const bac = tuongs.find((w) => w.ten === "Tường Bắc")!;
+    const nam = tuongs.find((w) => w.ten === "Tường Nam")!;
+    expect(Math.abs(nam.viTriYMm - bac.viTriYMm)).toBeLessThan(DAY_TUONG_MM);
   });
 });

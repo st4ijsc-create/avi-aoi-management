@@ -322,6 +322,38 @@ export function tangTranKhoiToaNha(tang: TangMm, toaNha: ToaNhaMm): boolean {
   return tang.daiMm > toaNha.rongMm || tang.rongMm > toaNha.sauMm;
 }
 
+/**
+ * ★★★ Đợt 3 THƯỜNG-4 — tầng có ĐỘI QUA MÁI toà nhà không?
+ *
+ * `tangTranKhoiToaNha` ở trên chỉ so HAI trục MẶT BẰNG (dài × rộng) và bỏ trục
+ * CAO hoàn toàn. Hệ quả đo được:
+ *
+ *   toà cao 12 000 mm, 3 tầng × 6 m
+ *     → đỉnh tầng 3 ở 18 600 mm — vượt 6,6 m RA NGOÀI MÁI
+ *     → `kiemTraNhapLieu` trả về mảng **RỖNG** (không lỗi, không cảnh báo)
+ *
+ * Người dùng bấm [Tạo], API nhận, DB ghi, và cảnh 3D dựng ra ba tầng chọc thủng
+ * nóc một toà nhà 12 m. Không gì trong đường đi nói cho họ biết — đúng lớp lỗi
+ * câm mà NT-3 chống: một phỏng đoán sai được ghi xuống như một sự thật.
+ *
+ * ⚠ So ĐỈNH CAO NHẤT trong toàn bộ tầng, không so từng tầng riêng lẻ: cao độ
+ *   `caoDoMm` có thể ÂM (tầng hầm) và tầng hầm KHÔNG được tính là "vượt mái".
+ *   Điều phải hỏi là "chỗ cao nhất của công trình có quá mái không", tức
+ *   `max(caoDoMm + caoThongThuyMm)` — một phép max trên toàn danh sách.
+ *
+ * ⚠ KHÔNG cộng `DAY_SAN_MM` vào đỉnh: `caoDoMm` là cốt MẶT TRÊN của sàn (xem
+ *   `bboxTangScene`), nên `caoDo + caoThongThuy` đã đúng là mặt dưới của sàn kế
+ *   trên. Cộng thêm bề dày sàn là đếm đúp và sẽ báo lỗi giả cho một toà nhà vừa khít.
+ */
+export function tangVuotChieuCaoToaNha(
+  tangs: readonly TangMm[],
+  toaNha: ToaNhaMm,
+): boolean {
+  if (tangs.length === 0) return false;
+  const dinhCaoNhat = Math.max(...tangs.map((t) => t.caoDoMm + t.caoThongThuyMm));
+  return dinhCaoNhat > toaNha.caoMm;
+}
+
 // ---------------------------------------------------------------------------
 // Sinh tường bao (§10A.2)
 // ---------------------------------------------------------------------------
@@ -341,6 +373,34 @@ export function tangTranKhoiToaNha(tang: TangMm, toaNha: ToaNhaMm): boolean {
  * Toạ độ trả về là TÂM khối, hệ DB (mm), Z = ĐỘ CAO (§5.2). Tường cao đúng
  * `caoThongThuyMm` của tầng, đáy tại `caoDoMm`.
  */
+/**
+ * ★★★ Đợt 3 THƯỜNG-5 — mặt sàn có QUÁ HẸP để sinh nổi 4 tường bao không?
+ *
+ * `sinhTuongBao` đặt tường BÊN TRONG chu vi, dày `DAY_TUONG_MM` mỗi bên. Một
+ * cạnh nhỏ hơn `2 × DAY_TUONG_MM` thì hai bức tường đối diện ĂN HẾT cạnh đó và
+ * còn chồng lên nhau. Đo được với `rong = 300 mm` (DAY_TUONG_MM = 200):
+ *
+ *   · tường Tây/Đông:  `sauMm = max(300 − 400, 0) = 0`  ⇒ khối SUY BIẾN
+ *   · tường Bắc ở y=100, tường Nam ở y=200, mỗi bức dày 200 ⇒ CHỒNG NHAU
+ *
+ * Rồi router `twinCanhRouter` có `.positive()` trên mọi cạnh nên nó TỪ CHỐI
+ * `sauMm = 0` — người dùng nhận một lỗi validate về một con số họ chưa từng gõ
+ * (0 là do phép trừ ở đây sinh ra, không phải do họ nhập). Không đường nào từ
+ * thông báo đó về lại ô "Rộng" mà họ cần sửa.
+ *
+ * ⇒ Chặn ở bước 3 với một câu nói ĐÚNG chỗ sai, thay vì để nó vỡ ở tầng API.
+ *
+ * ⚠ Dùng `<=` chứ KHÔNG `<`, và đây là chỗ dễ sai một-đơn-vị: cạnh ĐÚNG BẰNG
+ *   `2 × DAY_TUONG_MM` (400 mm) vẫn hỏng — `max(400 − 400, 0) = 0`, tức tường
+ *   Tây/Đông vẫn suy biến thành `sauMm = 0` và router `.positive()` vẫn từ chối.
+ *   Ca biên ấy PHẢI nằm trong vùng bị chặn, nên phép so là `<=`. Dùng `<` sẽ để
+ *   lọt đúng một giá trị — và đúng cái giá trị mà người dùng hay gõ tròn số.
+ */
+export function sanQuaHepChoTuongBao(tang: TangMm): boolean {
+  const toiThieu = 2 * DAY_TUONG_MM;
+  return tang.daiMm <= toiThieu || tang.rongMm <= toiThieu;
+}
+
 export function sinhTuongBao(tang: TangMm): TuongBaoMm[] {
   const dai = tang.daiMm;
   const rong = tang.rongMm;
@@ -459,10 +519,24 @@ export function kiemTraNhapLieu(
   // một lỗi gốc sẽ đẻ ra N lỗi phái sinh và che mất chính nó.
   if (!loi.some((l) => l.khoa.startsWith("kichThuocKhongHopLe"))) {
     const tn = toaNhaMetSangMm(toaNha);
-    for (const t of tangMetSangMm(tangs, tn)) {
+    const tangsMm = tangMetSangMm(tangs, tn);
+    for (const t of tangsMm) {
       if (tangTranKhoiToaNha(t, tn)) {
         loi.push({ khoa: "tangTranKhoiToaNha", capSo: t.capSo });
       }
+      // ★ Đợt 3 THƯỜNG-5 — sàn hẹp hơn hai lần bề dày tường ⇒ tường suy biến +
+      //   chồng nhau, và router `.positive()` sẽ từ chối `sauMm = 0` bằng một
+      //   câu người dùng không nối được về ô nào. Nói ở đây, đúng chỗ họ gõ.
+      if (sanQuaHepChoTuongBao(t)) {
+        loi.push({ khoa: "sanQuaHepChoTuongBao", capSo: t.capSo });
+      }
+    }
+
+    // ★★★ Đợt 3 THƯỜNG-4 — trục CAO, thứ mà `tangTranKhoiToaNha` bỏ hoàn toàn.
+    //   Kiểm MỘT LẦN trên cả bộ (không phải mỗi tầng): câu hỏi là "công trình có
+    //   đội mái không", và một lỗi cho cả bộ đọc dễ hơn N lỗi giống nhau.
+    if (tangVuotChieuCaoToaNha(tangsMm, tn)) {
+      loi.push({ khoa: "tangVuotChieuCaoToaNha" });
     }
   }
 

@@ -3714,6 +3714,8 @@
       "machine": "máy",
       "line": "chuyền",
       "user": "người dùng",
+      "twinToaNha": "toà nhà",
+      "twinTang": "tầng",
       "workOrder": "lệnh bảo trì",
       "alert": "cảnh báo",
       "recipe": "công thức",
@@ -20190,6 +20192,8 @@
         "capSoTrung": "Số tầng {{capSo}} bị trùng.",
         "thieuTenTang": "Tầng {{capSo}} chưa có tên.",
         "caoThongThuyKhongHopLe": "Cao thông thuỷ của tầng {{capSo}} phải lớn hơn 0.",
+        "tangVuotChieuCaoToaNha": "Tổng chiều cao các tầng vượt quá chiều cao toà nhà. Tăng chiều cao toà nhà hoặc giảm chiều cao thông thuỷ của tầng.",
+        "sanQuaHepChoTuongBao": "Mặt sàn tầng {{capSo}} quá hẹp để dựng tường bao (cần lớn hơn 400 mm mỗi cạnh).",
         "tangTranKhoiToaNha": "Mặt sàn tầng {{capSo}} lớn hơn bao ngoài toà nhà."
       }
     }

@@ -3714,6 +3714,8 @@
       "machine": "machine",
       "line": "line",
       "user": "user",
+      "twinToaNha": "building",
+      "twinTang": "floor",
       "workOrder": "work order",
       "alert": "alert",
       "recipe": "recipe",
@@ -20210,6 +20212,8 @@
         "capSoTrung": "Floor number {{capSo}} is duplicated.",
         "thieuTenTang": "Floor {{capSo}} has no name.",
         "caoThongThuyKhongHopLe": "Clear height of floor {{capSo}} must be greater than 0.",
+        "tangVuotChieuCaoToaNha": "The floors stack higher than the building. Increase the building height or reduce a floor clear height.",
+        "sanQuaHepChoTuongBao": "Floor {{capSo}} is too narrow for perimeter walls (each side must exceed 400 mm).",
         "tangTranKhoiToaNha": "Floor {{capSo}} is larger than the building envelope."
       }
     }
