@@ -15,6 +15,8 @@ import {
   dinhDangTuTenTep,
   donViDeNghi,
   donViDeNghiChacChan,
+  suyDoanDonVi,
+  DAI_HOP_LY_MET,
   phanQuyetChan,
   soTamGiacCuaMesh,
   tomTatKetQuaOcct,
@@ -291,5 +293,146 @@ describe("★★★ HỘP THOẠI HIỆU CHỈNH CÓ TÁC DỤNG THẬT (§10A.1
     // 52.000 mới là độ cao — một toà nhà cao 52 m mà chỉ sâu 6 m, sai rõ ràng.
     expect(zUp.kichThuocMm.caoMm).toBe(6000);
     expect(yUp.kichThuocMm.caoMm).toBe(52_000);
+  });
+});
+
+/**
+ * ═════════════════════════════════════════════════════════════════════════════
+ * ★★★ Đợt 3 CHẶN-3 — `donViDeNghi` SAI-MÀ-TỰ-TIN trên trọn dải máy công nghiệp
+ * ═════════════════════════════════════════════════════════════════════════════
+ *
+ * QA đo toàn dải và bắt được ba lỗ mà 378 lưới cũ đều mù:
+ *
+ *   (1) cạnh thô     10 -> 'm'  chacChan=TRUE  (khối 10 mm hoá 10 m — sai 1000×)
+ *   (2) cạnh thô  2 000 -> 'cm' chacChan=TRUE  (máy 2 m hoá 20 m)
+ *       …dải sai 10 → 10 425, TRỌN dải kích thước máy công nghiệp (0,3–5 m).
+ *   (3) G6 — `docBanVe` giữ BẢN SAO THỨ HAI của bảng hệ số đơn vị. QA tiêm sai
+ *       hệ số inch 10× vào cả hai bản ⇒ **378/378 vẫn XANH**, vì KHÔNG assertion
+ *       nào từng đi qua nhánh 'inch'.
+ *
+ * ─── Vì sao 5 ca `donViDeNghi` CŨ (ở describe trên) không bắt được gì ────────
+ * Cả 5 ca chỉ hỏi những cạnh có ĐÚNG MỘT cách đọc hợp lý (84 000 / 84 / 8 400 /
+ * 1e9 / 0). Chúng không bao giờ chạm vùng NHẬP NHẰNG — nơi hai, ba đơn vị cùng
+ * hợp lý và bản cũ bốc cái đầu tiên rồi ký tên. Một bộ ca chỉ hỏi câu dễ là một
+ * thiết bị đo không biết kêu.
+ *
+ * ★ ABLATION đã chạy (dán trong báo cáo):
+ *     · tiêm `inch: 254` (sai 10×) vào `HE_SO_SANG_MM` ⇒ ca "cạnh thô 600 ⇒
+ *       inch" và ca "hệ số inch đúng 25,4" ĐỎ. Trước bản vá: 378/378 XANH.
+ *     · trả `donViDeNghiChacChan` về nghĩa cũ ("cái đã chọn có hợp lý không")
+ *       ⇒ mọi ca "nhập nhằng ⇒ KHÔNG chắc chắn" ĐỎ.
+ */
+describe("★★★ Đợt 3 CHẶN-3 — nhánh inch (G6: bản sao hệ số + vùng mù không ai đi)", () => {
+  function bboxCanh(canh: number) {
+    return { minX: 0, maxX: canh, minY: 0, maxY: canh / 2, minZ: 0, maxZ: canh / 10 };
+  }
+
+  it("★★★ cạnh thô 600 ⇒ 'inch' — CA DUY NHẤT đi qua nhánh inch (tiêm sai hệ số 10× ⇒ ĐỎ)", () => {
+    // 600 inch = 15,24 m ⇒ hợp lý và DUY NHẤT (600 mm = 0,6 m; 600 cm = 6 m;
+    // 600 m = 600 m — cả ba đều ngoài dải 10–500 m).
+    // Nếu hệ số inch bị tiêm thành 254 (sai 10×): 600 × 0,254 = 152,4 m — vẫn
+    // trong dải, NHƯNG 600 cm = 6 m vẫn ngoài… nên ca này một mình chưa đủ; ca
+    // "hệ số inch đúng 25,4" ngay dưới ghim thẳng con số.
+    expect(donViDeNghi(bboxCanh(600))).toBe("inch");
+    expect(donViDeNghiChacChan(bboxCanh(600))).toBe(true);
+  });
+
+  it("★★★ hệ số inch phải ĐÚNG 25,4 mm — ghim thẳng con số, một bảng duy nhất", () => {
+    // Phép đo ĐỘC LẬP với ca trên (mô hình khác: đo BIÊN của dải thay vì đọc
+    // nhãn). 400 inch = 10,16 m (vừa qua biên dưới 10 m) còn 393 inch = 9,98 m
+    // (vừa dưới biên). Chỉ đúng khi hệ số là 25,4; hệ số 254 đẩy cả hai lên
+    // 101,6 m / 99,8 m và ca này ĐỎ.
+    expect(suyDoanDonVi(bboxCanh(400)).ungVien).toContain("inch");
+    expect(suyDoanDonVi(bboxCanh(393)).ungVien).not.toContain("inch");
+  });
+
+  it("★ hệ số inch dùng chung với hieuChinhNhapModel — KHÔNG còn bản sao thứ hai", async () => {
+    // Nếu ai đó chép lại bảng hệ số vào docBanVe, ca này vẫn xanh — nhưng hai ca
+    // trên sẽ ĐỎ ngay khi hai bản lệch nhau, và đó mới là thứ đáng canh.
+    const { HE_SO_SANG_MM } = await import("./hieuChinhNhapModel");
+    expect(HE_SO_SANG_MM.inch).toBe(25.4);
+    expect(HE_SO_SANG_MM.mm).toBe(1);
+    expect(HE_SO_SANG_MM.cm).toBe(10);
+    expect(HE_SO_SANG_MM.m).toBe(1000);
+  });
+});
+
+describe("★★★ Đợt 3 CHẶN-3 — NHIỀU đơn vị hợp lý ⇒ KHÔNG được khai chắc chắn (NT-4)", () => {
+  function bboxCanh(canh: number) {
+    return { minX: 0, maxX: canh, minY: 0, maxY: canh / 2, minZ: 0, maxZ: canh / 10 };
+  }
+
+  it("★★★ cạnh thô 2 000 — 'cm'(20 m) và 'inch'(50,8 m) CÙNG hợp lý ⇒ chacChan=FALSE", () => {
+    // Đây là ca QA đo được: bản cũ trả 'cm' + chacChan=TRUE, giấu mất 'inch'.
+    const r = suyDoanDonVi(bboxCanh(2000));
+    expect(r.chacChan).toBe(false);
+    expect(r.lyDo).toBe("nhapNhang");
+    expect(r.ungVien.sort()).toEqual(["cm", "inch"]);
+    // Lối tắt cũ phải nhất quán với hàm chính (một nguồn).
+    expect(donViDeNghiChacChan(bboxCanh(2000))).toBe(false);
+  });
+
+  it("★★★ cạnh thô 10 000 — BA đơn vị cùng hợp lý ⇒ liệt kê đủ ba, không giấu hai", () => {
+    const r = suyDoanDonVi(bboxCanh(10_000));
+    expect(r.chacChan).toBe(false);
+    expect(r.ungVien.sort()).toEqual(["cm", "inch", "mm"]);
+  });
+
+  it("★ ĐÚNG MỘT đơn vị hợp lý thì VẪN chắc chắn — bản vá không làm mọi thứ 'không chắc'", () => {
+    // Chỉ báo phải biết nói CÓ, không chỉ biết nói KHÔNG; nếu không nó vô dụng.
+    const r = suyDoanDonVi(bboxCanh(84_000));
+    expect(r.chacChan).toBe(true);
+    expect(r.lyDo).toBe("duyNhat");
+    expect(r.ungVien).toEqual(["mm"]);
+  });
+
+  it("★ không đơn vị nào hợp lý ⇒ mm trung tính + KHÔNG chắc chắn + lý do rõ", () => {
+    const r = suyDoanDonVi(bboxCanh(1e9));
+    expect(r.donVi).toBe("mm");
+    expect(r.chacChan).toBe(false);
+    expect(r.lyDo).toBe("khongCoUngVien");
+    expect(r.ungVien).toEqual([]);
+  });
+
+  it("★ bbox suy biến có lý do RIÊNG, không lẫn với 'không ứng viên'", () => {
+    const r = suyDoanDonVi({ minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 });
+    expect(r.lyDo).toBe("bboxSuyBien");
+    expect(r.chacChan).toBe(false);
+  });
+});
+
+describe("★★★ Đợt 3 CHẶN-3 — NGỮ CẢNH loại vật thể (máy 0,3–5 m vs nhà xưởng 10–500 m)", () => {
+  function bboxCanh(canh: number) {
+    return { minX: 0, maxX: canh, minY: 0, maxY: canh / 2, minZ: 0, maxZ: canh / 10 };
+  }
+
+  it("★★★ máy thật 2 000 mm (2 m) — ngữ cảnh 'may' ra 'mm' chắc chắn, KHÔNG phải 'cm'", () => {
+    // Bản cũ (không có ngữ cảnh) trả 'cm' ⇒ máy 2 m dựng thành 20 m.
+    const r = suyDoanDonVi(bboxCanh(2000), "may");
+    expect(r.donVi).toBe("mm");
+    expect(r.chacChan).toBe(true);
+  });
+
+  it("★★★ khối 10 mm — ngữ cảnh 'may' KHÔNG có cách đọc nào hợp lý ⇒ không khai bừa", () => {
+    // Bản cũ trả 'm' + chacChan=TRUE ⇒ khối 10 mm thành 10 m (sai 1000 lần).
+    const r = suyDoanDonVi(bboxCanh(10), "may");
+    expect(r.chacChan).toBe(false);
+    expect(r.ungVien).toEqual([]);
+  });
+
+  it("★ CÙNG bbox, ngữ cảnh khác ⇒ câu trả lời khác — ngữ cảnh có tác dụng THẬT", () => {
+    // Phép đo chứng minh tham số ngữ cảnh không phải trang trí (cùng khuôn với
+    // ca "hộp thoại hiệu chỉnh có tác dụng thật" ở trên).
+    const nhaXuong = suyDoanDonVi(bboxCanh(2000), "nhaXuong");
+    const may = suyDoanDonVi(bboxCanh(2000), "may");
+    expect(nhaXuong.donVi).not.toBe(may.donVi);
+    expect(may.chacChan).toBe(true);
+    expect(nhaXuong.chacChan).toBe(false);
+  });
+
+  it("★ mặc định vẫn là 'nhaXuong' — call site cũ không đổi hành vi ngoài phần đã vá", () => {
+    expect(suyDoanDonVi(bboxCanh(84_000)).donVi).toBe(donViDeNghi(bboxCanh(84_000)));
+    expect(DAI_HOP_LY_MET.nhaXuong).toEqual({ min: 10, max: 500 });
+    expect(DAI_HOP_LY_MET.may).toEqual({ min: 0.3, max: 5 });
   });
 });

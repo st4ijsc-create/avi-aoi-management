@@ -12,7 +12,7 @@
 
 import { bboxRong, bboxTuDiem, gopBBox, type BBox } from "./heToaDo";
 import type { NodeHinhHoc } from "./tachTangTuHinhHoc";
-import type { DonViNguon } from "./hieuChinhNhapModel";
+import { HE_SO_SANG_MM, DANH_SACH_DON_VI, type DonViNguon } from "./hieuChinhNhapModel";
 
 // ---------------------------------------------------------------------------
 // Ngưỡng CHẶN (§10A.1) — vỏ nhà là hình học TĨNH nên chịu được nhiều tam giác
@@ -234,52 +234,157 @@ export function phanQuyetChan(
 // ---------------------------------------------------------------------------
 
 /**
- * Đơn vị ĐỀ NGHỊ cho hộp thoại, suy từ độ lớn bbox thô.
+ * ═════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐƠN VỊ ĐỀ NGHỊ — và vì sao bản Đợt 3 SAI TRÊN CẢ DẢI MÁY CÔNG NGHIỆP
+ * ═════════════════════════════════════════════════════════════════════════════
  *
- * ★★★ ĐÂY LÀ MỘT PHỎNG ĐOÁN, VÀ NÓ PHẢI TỰ KHAI LÀ PHỎNG ĐOÁN (NT-4). Hàm này
- *   KHÔNG được dùng để tự động áp đơn vị — nó chỉ đặt giá trị KHỞI ĐẦU của
- *   dropdown, và hộp thoại vẫn BẮT BUỘC người dùng xác nhận bằng mắt qua thước
- *   tỉ lệ + hình người 1,7 m. Bỏ bước xác nhận đó để "tiện hơn" là bỏ đúng thứ
- *   §10A.1 dựng cả một hộp thoại để có.
+ * Bản trước quét mm→cm→m→inch và trả về CÁI ĐẦU TIÊN đưa cạnh dài nhất vào dải
+ * 10–500 m, rồi khai `chacChan = true` cho mọi kết quả tìm được. QA đo toàn dải
+ * và bắt được hai lớp sai KHÁC NHAU cùng nằm dưới một lời khai "chắc chắn":
  *
- * Suy luận: một nhà xưởng có cạnh dài nhất trong khoảng 10–500 m. Chiếu ngược
- * lại, số thô trong file phải rơi vào dải nào để ra khoảng đó.
+ *   cạnh thô     10 -> 'm'  chacChan=TRUE   (khối 10 mm hoá 10 m — sai 1000 lần)
+ *   cạnh thô  2 000 -> 'cm' chacChan=TRUE   (máy 2 m hoá 20 m)
+ *   dải sai:  10 → 10 425 — tức TRỌN dải kích thước máy công nghiệp (0,3–5 m).
+ *
+ * ─── Sai lầm 1: NHIỀU đơn vị cùng hợp lý, nhưng chỉ cái đầu được nói ra ──────
+ * Với cạnh thô 2 000 thì CẢ 'cm' (20 m) LẪN 'inch' (50,8 m) đều rơi vào dải nhà
+ * xưởng. Với 10 000 thì có tới BA ('mm' 10 m, 'cm' 100 m, 'inch' 254 m). Bản cũ
+ * lấy cái đầu theo thứ tự liệt kê — một thứ tự TUỲ TIỆN, không mang thông tin —
+ * rồi khai chắc chắn. Đó không phải phỏng đoán tốt nhất, đó là **bốc thăm rồi
+ * ký tên**. Đúng NT-4: một phỏng đoán phải TỰ KHAI là phỏng đoán, và "có hai câu
+ * trả lời hợp lý" là thông tin PHẢI nói ra chứ không phải thứ để giấu đi.
+ *
+ * ─── Sai lầm 2: dải 10–500 m là dải NHÀ XƯỞNG, nhưng hộp thoại còn nhập MÁY ──
+ * §10A.1 dùng chung hộp thoại hiệu chỉnh cho cả vỏ nhà xưởng lẫn model máy. Một
+ * cái máy 0,3–5 m KHÔNG có cách đọc nào cho ra 10–500 m, nên mọi đề nghị cho nó
+ * đều là ép một câu trả lời sai vào một câu hỏi sai. Vì thế `donViDeNghi` nay
+ * nhận NGỮ CẢNH loại vật thể, và dải hợp lý đi theo ngữ cảnh đó.
+ *
+ * ⚠⚠ Và đây là lý do hình người 1,7 m ở §10A.1 KHÔNG cứu được ca này: thước đo
+ *    thị giác ấy chỉ hữu ích khi vật thể LỚN HƠN người. Với một cái máy 0,3 m
+ *    hay một khối 10 mm, hình người biến thành một vệt và người dùng không đọc
+ *    được gì từ nó. Cảnh báo `chacChan = false` là lớp bảo vệ DUY NHẤT còn lại.
+ *
+ * ⚠⚠ HỆ SỐ QUY ĐỔI NAY IMPORT TỪ `hieuChinhNhapModel.HE_SO_SANG_MM` (G6). Trước
+ *    đó file này giữ BẢN SAO THỨ HAI của bảng hệ số (`{mm:.001, cm:.01, m:1,
+ *    inch:.0254}`) viết trong CHÍNH hai hàm dưới. QA tiêm sai hệ số inch 10× vào
+ *    cả hai bản và **378/378 lưới vẫn XANH** — vì không assertion nào từng đi
+ *    qua nhánh 'inch'. Hai bản sao + không lưới nào canh = một hằng số vật lý
+ *    trôi tự do. Nay: MỘT bảng, và có lưới đi qua nhánh inch (xem
+ *    `docBanVe.unit.test.ts`, ca "cạnh thô 600 ⇒ inch").
  */
-export function donViDeNghi(bbox: BBox, canhNhaXuongMin = 10, canhNhaXuongMax = 500): DonViNguon {
-  const canh = Math.max(
-    bbox.maxX - bbox.minX,
-    bbox.maxY - bbox.minY,
-    bbox.maxZ - bbox.minZ,
-  );
-  if (!Number.isFinite(canh) || canh <= 0) return "mm";
 
-  // Thử từng đơn vị, chọn cái đưa cạnh dài nhất vào dải nhà xưởng hợp lý.
-  const ungVien: { donVi: DonViNguon; heSoSangMet: number }[] = [
-    { donVi: "mm", heSoSangMet: 0.001 },
-    { donVi: "cm", heSoSangMet: 0.01 },
-    { donVi: "m", heSoSangMet: 1 },
-    { donVi: "inch", heSoSangMet: 0.0254 },
-  ];
-  for (const uv of ungVien) {
-    const met = canh * uv.heSoSangMet;
-    if (met >= canhNhaXuongMin && met <= canhNhaXuongMax) return uv.donVi;
-  }
-  // Không đơn vị nào cho ra một nhà xưởng hợp lý ⇒ giữ 'mm' (mặc định CAD của
-  // `CAU_HINH_MAC_DINH`) và để người dùng quyết. KHÔNG đoán bừa một cái khác:
-  // một phỏng đoán sai mà trông tự tin còn tệ hơn mặc định trung tính.
-  return "mm";
+/** Loại vật thể đang nhập — quyết định dải kích thước nào là "hợp lý". */
+export type LoaiVatTheNhap = "nhaXuong" | "may";
+
+/**
+ * Dải kích thước hợp lý (MÉT) theo loại vật thể.
+ *
+ * `nhaXuong` 10–500 m giữ nguyên §10A.1. `may` 0,3–5 m là dải máy AOI/AVI công
+ * nghiệp — chính dải mà bản cũ trả lời sai-mà-tự-tin trên toàn bộ.
+ */
+export const DAI_HOP_LY_MET: Readonly<Record<LoaiVatTheNhap, { min: number; max: number }>> =
+  Object.freeze({
+    nhaXuong: { min: 10, max: 500 },
+    may: { min: 0.3, max: 5 },
+  });
+
+/** Cạnh DÀI NHẤT của một bbox. `null` khi bbox suy biến/không hữu hạn. */
+function canhDaiNhat(bbox: BBox): number | null {
+  const canh = Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY, bbox.maxZ - bbox.minZ);
+  return Number.isFinite(canh) && canh > 0 ? canh : null;
 }
 
-/** Đơn vị đề nghị có phải là ĐOÁN CHẮC không (có rơi vào dải hợp lý)? */
-export function donViDeNghiChacChan(bbox: BBox, canhMin = 10, canhMax = 500): boolean {
-  const dn = donViDeNghi(bbox, canhMin, canhMax);
-  const heSo: Record<DonViNguon, number> = { mm: 0.001, cm: 0.01, m: 1, inch: 0.0254 };
-  const canh = Math.max(
-    bbox.maxX - bbox.minX,
-    bbox.maxY - bbox.minY,
-    bbox.maxZ - bbox.minZ,
-  );
-  if (!Number.isFinite(canh) || canh <= 0) return false;
-  const met = canh * heSo[dn];
-  return met >= canhMin && met <= canhMax;
+/** Kết quả suy đoán đơn vị — mang theo CẢ sự nhập nhằng, không giấu đi. */
+export interface SuyDoanDonVi {
+  /** Đơn vị đặt vào dropdown. Luôn có giá trị (mặc định 'mm' khi không suy được). */
+  donVi: DonViNguon;
+  /**
+   * Chỉ `true` khi có ĐÚNG MỘT đơn vị cho ra kích thước hợp lý. Hai ứng viên trở
+   * lên ⇒ `false` + `ungVien` liệt kê ra, để UI nói "có thể là cm hoặc inch"
+   * thay vì im lặng chọn một cái.
+   */
+  chacChan: boolean;
+  /** MỌI đơn vị cho ra kích thước hợp lý. Rỗng = không cái nào hợp lý. */
+  ungVien: DonViNguon[];
+  /** Vì sao không chắc — để UI hiện đúng câu, không phải để người dùng đoán. */
+  lyDo: "duyNhat" | "nhapNhang" | "khongCoUngVien" | "bboxSuyBien";
+}
+
+/**
+ * Suy đoán đơn vị ĐẦY ĐỦ, kèm nhập nhằng. Đây là hàm CHÍNH; `donViDeNghi` và
+ * `donViDeNghiChacChan` là hai lối tắt đọc lại kết quả của nó (một nguồn).
+ *
+ * ★★★ VẪN CHỈ LÀ ĐỀ NGHỊ (NT-4). Hàm này KHÔNG được dùng để tự động áp đơn vị —
+ *   nó chỉ đặt giá trị KHỞI ĐẦU của dropdown; hộp thoại vẫn BẮT BUỘC người dùng
+ *   xác nhận bằng mắt. Bỏ bước xác nhận đó để "tiện hơn" là bỏ đúng thứ §10A.1
+ *   dựng cả một hộp thoại để có.
+ */
+export function suyDoanDonVi(
+  bbox: BBox,
+  loai: LoaiVatTheNhap = "nhaXuong",
+  daiTuyChon?: { min: number; max: number },
+): SuyDoanDonVi {
+  const canh = canhDaiNhat(bbox);
+  if (canh === null) {
+    return { donVi: "mm", chacChan: false, ungVien: [], lyDo: "bboxSuyBien" };
+  }
+
+  const dai = daiTuyChon ?? DAI_HOP_LY_MET[loai];
+  // ★ MỘT bảng hệ số (HE_SO_SANG_MM), không bản sao. /1000 vì bảng đó ra MILIMÉT.
+  const ungVien = DANH_SACH_DON_VI.filter((dv) => {
+    const met = (canh * HE_SO_SANG_MM[dv]) / 1000;
+    return met >= dai.min && met <= dai.max;
+  });
+
+  if (ungVien.length === 1) {
+    return { donVi: ungVien[0], chacChan: true, ungVien: [...ungVien], lyDo: "duyNhat" };
+  }
+  if (ungVien.length === 0) {
+    // Không đơn vị nào hợp lý ⇒ giữ 'mm' (mặc định CAD của `CAU_HINH_MAC_DINH`) và
+    // để người dùng quyết. KHÔNG đoán bừa: một phỏng đoán sai mà trông tự tin còn
+    // tệ hơn một mặc định trung tính.
+    return { donVi: "mm", chacChan: false, ungVien: [], lyDo: "khongCoUngVien" };
+  }
+  // ★ NHIỀU ứng viên: vẫn đặt một giá trị vào dropdown (UI cần một giá trị khởi
+  //   đầu), nhưng chacChan=FALSE và liệt kê hết để UI khai nhập nhằng ra.
+  return { donVi: ungVien[0], chacChan: false, ungVien: [...ungVien], lyDo: "nhapNhang" };
+}
+
+/**
+ * Đơn vị ĐỀ NGHỊ cho dropdown. Lối tắt của `suyDoanDonVi`.
+ *
+ * ⚠ Chữ ký giữ hai tham số dải để không phá call site cũ, nhưng nay chúng là
+ *   `daiTuyChon` TƯỜNG MINH — truyền vào là ghi đè dải của `loai`.
+ */
+export function donViDeNghi(
+  bbox: BBox,
+  canhNhaXuongMin?: number,
+  canhNhaXuongMax?: number,
+  loai: LoaiVatTheNhap = "nhaXuong",
+): DonViNguon {
+  const dai =
+    canhNhaXuongMin !== undefined && canhNhaXuongMax !== undefined
+      ? { min: canhNhaXuongMin, max: canhNhaXuongMax }
+      : undefined;
+  return suyDoanDonVi(bbox, loai, dai).donVi;
+}
+
+/**
+ * Đơn vị đề nghị có phải ĐOÁN CHẮC không?
+ *
+ * ★★★ ĐỔI NGHĨA so với Đợt 3: "chắc chắn" nay nghĩa **CHỈ MỘT** đơn vị cho ra
+ *   kích thước hợp lý. Trước đây nó chỉ hỏi "cái đã chọn có hợp lý không" — câu
+ *   đó luôn đúng theo dựng, nên nó là một phép kiểm KHÔNG BAO GIỜ nói không với
+ *   ca nhập nhằng, tức một chỉ báo không biết kêu.
+ */
+export function donViDeNghiChacChan(
+  bbox: BBox,
+  canhMin?: number,
+  canhMax?: number,
+  loai: LoaiVatTheNhap = "nhaXuong",
+): boolean {
+  const dai =
+    canhMin !== undefined && canhMax !== undefined ? { min: canhMin, max: canhMax } : undefined;
+  return suyDoanDonVi(bbox, loai, dai).chacChan;
 }
