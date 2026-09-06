@@ -38,6 +38,11 @@ import { Html } from "@react-three/drei";
 import * as THREE from "three";
 
 import { giaiMauCanh } from "../mauTrangThai";
+import {
+  demCapChongLapBadge,
+  locBadge,
+  type BadgeUngVien,
+} from "./locBadge";
 
 /** Mức độ cảnh báo — khớp `andon_events.state`. */
 export type MucCanhBao = "call" | "yellow" | "red";
@@ -104,6 +109,14 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
   const [soAn, setSoAn] = useState(0);
   const tamRef = useRef(new THREE.Vector3());
   const chuKyRef = useRef("");
+  /**
+   * Kích thước THẬT của từng badge (đo bằng `getBoundingClientRect` sau khi div
+   * đã render), nhớ theo `id`. Cùng lý do như `coNhanRef` của `LopNhan`: bề rộng
+   * badge phụ thuộc nhãn đã qua `t()` và font đang tải, nên ƯỚC LƯỢNG theo ký tự
+   * là cách sinh con số CÓ VẺ đúng mà không ai đo. Khung đầu của một badge mới
+   * dùng trị suy đoán của `locBadge`; từ khung sau đã có số đo thật.
+   */
+  const coBadgeRef = useRef(new Map<number, { rongPx: number; caoPx: number }>());
 
   const tinhLai = useCallback(() => {
     if (canhBao.length === 0) {
@@ -167,20 +180,71 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
     }
 
     /**
-     * Sắp theo ĐỘ NGHIÊM TRỌNG trước, rồi mới tới thứ tự id — KHÔNG theo khoảng
-     * cách camera. Nếu cắt theo khoảng cách, một alarm P1 ở cuối xưởng sẽ bị 12
-     * alarm P3 ở gần đẩy ra khỏi trần. Alarm chưa ack xếp trước alarm đã ack.
+     * ★★★ T-1 — KHỬ CHỒNG LẤN, KHÔNG CHỈ SẮP + CẮT.
+     *
+     * Trước bản vá đây là `ra.sort(...).slice(0, tran)` trần: một phép chọn theo
+     * ƯU TIÊN, KHÔNG phải phép khử chồng lấn theo KHÔNG GIAN. Hậu quả đo được:
+     * 52 cặp badge chồng nhau trên 12 badge (4 alarm cùng máy `SIM-L1-AOI` đè
+     * hoàn toàn lên nhau, không đọc nổi) trong khi `data-so-an` khai `0`.
+     *
+     * `locBadge` (thuần, có test) làm cả ba việc theo đúng thứ tự: sắp ưu tiên →
+     * khử chồng lấn bbox (chỉ badge TRONG khung; badge ngoài khung được MIỄN vì
+     * §10.3 luật 3 cấm để một alarm biến mất) → cắt trần. Thứ tự ưu tiên (mức độ,
+     * rồi chưa-ack trước) là CHÍNH SÁCH của lớp này, nên ta tính `diemUuTien` ở
+     * đây rồi truyền vào — `locBadge` không cần biết về `MucCanhBao`.
      */
-    ra.sort((a, b) => {
-      if (a.daAck !== b.daAck) return a.daAck ? 1 : -1;
-      const ua = KIEU_MUC[a.muc].uuTien;
-      const ub = KIEU_MUC[b.muc].uuTien;
-      if (ua !== ub) return ub - ua;
-      return a.id - b.id;
+    const ungVien: BadgeUngVien[] = ra.map((b) => {
+      const co = coBadgeRef.current.get(b.id);
+      // Chưa-ack (daAck=false) phải xếp TRƯỚC đã-ack ⇒ +1000 khi chưa ack, để nó
+      // trội hơn mọi chênh lệch mức độ (uuTien ∈ {1,2,3}). Giống nhánh `daAck`
+      // trong sort cũ (đã-ack đẩy xuống cuối).
+      const diemUuTien = KIEU_MUC[b.muc].uuTien + (b.daAck ? 0 : 1000);
+      return {
+        id: b.id,
+        x: b.x,
+        y: b.y,
+        diemUuTien,
+        ngoaiKhung: b.ngoaiKhung,
+        // Số đo THẬT khi đã có; thiếu thì `locBadge` dùng trị suy đoán của nó.
+        rongPx: co?.rongPx,
+        caoPx: co?.caoPx,
+      };
     });
 
-    const ve = ra.slice(0, tran);
-    const an = ra.length - ve.length;
+    const kq = locBadge(ungVien, { tran });
+
+    // Dựng lại danh sách BadgeDaChieu theo thứ tự `locBadge` đã chọn.
+    const theoId = new Map(ra.map((b) => [b.id, b]));
+    const ve = kq.ve.map((u) => theoId.get(u.id)!);
+    // ★★★ G7 — `data-so-an` phải là con số người đọc TƯỞNG nó là: số alarm đang
+    //   bị GIẤU khỏi màn (vì chồng lấn HOẶC vì chạm trần). Đó là `kq.soAn`, đại
+    //   lượng ĐẦU VÀO-bị-loại. NHƯNG chỉ số này KHÔNG đủ để nghiệm thu (nó do
+    //   chính thuật toán tính ra); phép nghiệm thu dùng `capConChong` bên dưới —
+    //   số cặp CÒN chồng ở ĐẦU RA, đo bằng hàm độc lập `demCapChongLapBadge`.
+    const an = kq.soAn;
+
+    // Cửa sổ đo cho e2e (luật G11). Ghi CẢ khi 0 badge — "không đo được" phải
+    // khác "đo được 0". `capConChong` là đại lượng ĐỘC LẬP với `locBadge`: nó
+    // quét mọi cặp trong tập ĐƯỢC VẼ bằng bbox (dùng số đo thật khi có), nên nó
+    // có thể BÁC BỎ `locBadge`. Phải luôn = 0; e2e đối chiếu với getBoundingClientRect.
+    if (typeof window !== "undefined") {
+      (window as WindowCoDoBadge).__demBadge = {
+        ve: ve.length,
+        tong: ra.length,
+        soAn: an,
+        soBiChongLap: kq.soBiChongLap,
+        soVuotTran: kq.soVuotTran,
+        tran,
+        capConChong: demCapChongLapBadge(
+          ve.map((b) => ({
+            x: b.x,
+            y: b.y,
+            ngoaiKhung: b.ngoaiKhung,
+            ...(coBadgeRef.current.get(b.id) ?? {}),
+          })),
+        ),
+      };
+    }
 
     const chuKy = `${an}|${ve.map((v) => `${v.id}:${Math.round(v.x)}:${Math.round(v.y)}:${v.ngoaiKhung ? 1 : 0}`).join("|")}`;
     if (chuKy === chuKyRef.current) return;
@@ -206,6 +270,16 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
               data-testid={`badge-canh-bao-${b.id}`}
               data-ngoai-khung={b.ngoaiKhung ? "1" : "0"}
               data-muc={b.muc}
+              /* ★ Đo kích thước THẬT ngay khi div gắn vào DOM và nhớ theo `id`.
+                 Khung sau, `locBadge` khử chồng lấn bằng bbox thật thay vì trị
+                 suy đoán. Ghi vào ref (không setState) nên KHÔNG gây re-render. */
+              ref={(el) => {
+                if (!el) return;
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) {
+                  coBadgeRef.current.set(b.id, { rongPx: r.width, caoPx: r.height });
+                }
+              }}
               style={{
                 position: "absolute",
                 left: b.x,
@@ -247,6 +321,27 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
       </div>
     </Html>
   );
+}
+
+/**
+ * Hình dạng cửa sổ đo `window.__demBadge` — e2e đọc đúng các khoá này.
+ *
+ * ⚠ `soAn`/`soBiChongLap`/`soVuotTran` là ĐẦU VÀO bị loại (do `locBadge` tính).
+ *   `capConChong` là ĐẦU RA còn chồng (do `demCapChongLapBadge` đo độc lập) —
+ *   phải luôn 0. Chính chỗ lẫn hai đại lượng này là gốc của `chongLap = 0` sai.
+ */
+export interface WindowCoDoBadge extends Window {
+  __demBadge?: {
+    ve: number;
+    tong: number;
+    /** Số badge BỊ GIẤU (chồng lấn HOẶC chạm trần) — đại lượng của `data-so-an`. */
+    soAn: number;
+    soBiChongLap: number;
+    soVuotTran: number;
+    tran: number;
+    /** Số CẶP badge CÒN chồng nhau trong tập ĐƯỢC VẼ — phải luôn 0. */
+    capConChong: number;
+  };
 }
 
 export default LopCanhBao;
