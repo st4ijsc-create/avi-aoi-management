@@ -792,7 +792,7 @@ export default function TwinVanHanh() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] flex-col" data-testid="man-twin-van-hanh">
+    <div className="flex h-[calc(100vh-5rem)] min-h-0 flex-col overflow-hidden" data-testid="man-twin-van-hanh">
       {/* ── Breadcrumb + độ tươi + chế độ ──────────────────────────────── */}
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-1.5">
         <nav className="flex items-center gap-1 text-xs" aria-label="breadcrumb" data-testid="breadcrumb-twin">
@@ -1075,7 +1075,7 @@ export default function TwinVanHanh() {
         </div>
 
         {/* CANVAS GIỮA — ★ RB-4: 2D THAY THẾ 3D, không bao giờ cả hai */}
-        <div className="relative min-w-0 flex-1">
+        <div className="relative min-h-0 min-w-0 flex-1">
           {che2D ? (
             <CanhVanHanh2D
               may={mayVe}
@@ -1117,7 +1117,7 @@ export default function TwinVanHanh() {
         </div>
 
         {/* NGĂN XỬ LÝ PHẢI — ★★★ nơi mọi việc được XỬ LÝ (§9.2) */}
-        <div className="w-80 shrink-0">
+        <div className="flex w-80 min-h-0 shrink-0 flex-col overflow-hidden">
           <NganXuLy
             machineId={machineIdChon}
             ma={mayDangChon?.ma ?? ""}
@@ -1138,7 +1138,22 @@ export default function TwinVanHanh() {
         </div>
       </div>
 
-      {/* ── Dải dưới: dải Line 2D đồng bộ hai chiều (§10C.3 mục 3) ─────── */}
+      {/*
+        ── Dải dưới: dải Line 2D đồng bộ hai chiều (§10C.3 mục 3) ───────
+
+        ★★★ ĐỢT 6 VÁ THƯỜNG-3 — `shrink-0` VÀ KHUNG NGOÀI `overflow-hidden`.
+        Đo được trên trình duyệt thật ở 1366×768: trang tràn **77 px** mà
+        KHÔNG có cuộn nội bộ — `khoi-canh-3d` và `ngan-xu-ly` bottom=821 trong
+        khi việwport chỉ cao 768, panes `overflow-y:visible`, `canScroll:false`.
+        Người dùng phải cuộn CẢ TRANG, đẩy header và thanh tua lên khỏi tầm
+        nhìn — đúng lớp lỗi mà chú thích của `DongThoiGian` ở trên đã tả, nhưng
+        mới chỉ vá được MỘT NỬA (dải tua), còn dải Line này vẫn nằm sau thân.
+
+        ★ Ba ô `min-h-0` (khung ngoài, cột canvas, cột phải) là bắt buộc: một
+          flex item MẶC ĐẮNH có `min-height:auto`, nghĩa là nó TỪ CHỐI co nhỏ
+          hơn nội dung. Thiếu chúng thì `overflow-y-auto` của `ngan-xu-ly` không
+          bao giờ kích hoạt — nó phình ra thay vì cuộn.
+      */}
       {phamVi.cap === "line" && hinhLine ? (
         <DaiLine
           tram={tram
