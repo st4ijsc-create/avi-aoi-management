@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Historian;
 using St4i.EdgeCore.Identity;
+using St4i.EdgeCore.Licensing;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Site;
 using St4i.EdgeCore.Uns;
@@ -878,6 +879,20 @@ public sealed class OperatorDataRemovalCensusTests
         ["src/St4i.EdgeCore/Config/ProductConfigStore.cs"] = "File.Move(overwrite:true), File.WriteAllText",
         ["src/St4i.EdgeCore/Historian/OeeSettingsStore.cs"] = "File.Move(overwrite:true), File.WriteAllText",
         ["src/St4i.EdgeCore/Site/SiteLinkStore.cs"] = "File.Move(overwrite:true), File.WriteAllText",
+        // 🔴 WS-E (License/Edition) — a NEW removal site, and the enumeration's own failure text asks which
+        // artifact it targets and whose bytes those are. It targets `license.json`, and the bytes are an
+        // Ed25519-signed entitlement ISSUED BY ST4I and INSTALLED BY AN ADMIN through
+        // POST /v1/license/activate. Classified OperatorAuthored below rather than ProductGenerated on the
+        // same reasoning SiteLinkStore carries: this machine did not MINT these bytes, but a human
+        // deliberately chose to put them here, and the removal question this census exists to answer —
+        // "would a wipe destroy something a person put there on purpose?" — turns on the choosing, not the
+        // minting. It is the only row in this table whose bytes are PURCHASED PROPERTY rather than data
+        // this deployment produced; packaging/remove-data.ps1's entry says so where an operator reads.
+        //
+        // `File.Move(overwrite:true)` is the atomic temp-then-rename LicenseStore.Save uses, so a crash
+        // mid-write leaves the PREVIOUS licence intact rather than a truncated file. There is deliberately
+        // no File.Delete: nothing in src/ deletes a licence.
+        ["src/St4i.EdgeCore/Licensing/LicenseStore.cs"] = "File.Move(overwrite:true), File.WriteAllText",
 
         // ── product-generated artifacts ───────────────────────────────────────────────────────────────
         ["src/St4i.EdgeCore/Identity/DeviceIdentityStore.cs"] = "File.Move(overwrite:true), File.WriteAllBytes, File.WriteAllText",
@@ -1004,7 +1019,12 @@ public sealed class OperatorDataRemovalCensusTests
         Assert.Equal(10, files.Count);
         Assert.Equal(9, routeRegistrations);
         Assert.Equal(4, prose);
-        Assert.Equal(11, invisibleToTheVocabulary.Count);
+        // 🔴 WS-E — 11 → 12. `LicenseStore.cs` joined ExpectedRemovalSites (it writes `license.json` via
+        // temp-then-rename) and never spells `Delete(` anywhere, so it lands in the UNDER-INCLUSIVE half:
+        // one more file that makes bytes unretrievable and is invisible to the briefed vocabulary. That is
+        // this assertion's whole point — the number moving in this direction CONFIRMS the finding rather
+        // than contradicting it. Nothing in src/ deletes a licence, deliberately.
+        Assert.Equal(12, invisibleToTheVocabulary.Count);
 
         // The remainder — the hits that really are removals or a removal's declaration — is written as the
         // SUBTRACTION rather than as a fourth independent literal, so it cannot drift away from the three
@@ -1196,6 +1216,10 @@ public sealed class OperatorDataRemovalCensusTests
         ["src/St4i.EdgeCore/Config/ProductConfigStore.cs"] = Provenance.OperatorAuthored,
         ["src/St4i.EdgeCore/Historian/OeeSettingsStore.cs"] = Provenance.OperatorAuthored,
         ["src/St4i.EdgeCore/Site/SiteLinkStore.cs"] = Provenance.OperatorAuthored,
+        // WS-E — an admin's deliberate installation of a purchased entitlement (POST /v1/license/activate,
+        // verify-then-write). See the ExpectedRemovalSites entry above for why the CHOOSING rather than the
+        // minting decides this classification.
+        ["src/St4i.EdgeCore/Licensing/LicenseStore.cs"] = Provenance.OperatorAuthored,
         ["src/St4i.EngineApi/Alarms/NotificationConfigStore.cs"] = Provenance.OperatorAuthored,
         ["src/St4i.EngineApi/Auth/SqliteUserStore.cs"] = Provenance.OperatorAuthored,
         ["src/St4i.EngineApi/Fleet/ConnectorConfigStore.cs"] = Provenance.OperatorAuthored,
@@ -1243,6 +1267,9 @@ public sealed class OperatorDataRemovalCensusTests
         ["MachineConfigStore"] = "src/St4i.EdgeCore/Config/MachineConfigStore.cs",
         ["ProductConfigStore"] = "src/St4i.EdgeCore/Config/ProductConfigStore.cs",
         ["OeeSettingsStore"] = "src/St4i.EdgeCore/Historian/OeeSettingsStore.cs",
+        // 🔴 WS-E — owns `license.json`, written by `Save` via temp-then-rename on
+        // POST /v1/license/activate and re-read once at every startup.
+        ["LicenseStore"] = "src/St4i.EdgeCore/Licensing/LicenseStore.cs",
         ["SimulatedEcosystem"] = "src/St4i.EngineApi/Config/SimulatedEcosystem.cs",
         ["ConnectorConfigStore"] = "src/St4i.EngineApi/Fleet/ConnectorConfigStore.cs",
         ["NotificationConfigStore"] = "src/St4i.EngineApi/Alarms/NotificationConfigStore.cs",
@@ -1442,6 +1469,46 @@ public sealed class OperatorDataRemovalCensusTests
             return Posture.UnreadableIsAbsent;
         }), dir => _ = new SecurityDb(dir)),
 
+        // 🔴 WS-E (License/Edition) — `license.json`. OPERATOR-AUTHORED in this table's sense: an admin
+        // deliberately installs it through POST /v1/license/activate (the same "a human chose to put these
+        // bytes here" reasoning SiteLinkStore's row carries), even though ST4I issued the bytes.
+        //
+        // 🔴 IT OBEYS THE LAW RATHER THAN TAKING AN EXCEPTION TO IT. The first draft of this row reported
+        // `UnreadableIsAbsent` and would have needed a third entry in DecidedExceptionsToTheLaw plus an
+        // owner decision. That was the wrong instinct: this test named the better fix in its own message
+        // ("give the read a third outcome"), and the distinction is worth having on its own merits — an
+        // engineer told "no licence installed" installs one, while an engineer told "the licence file is
+        // there and unreadable" looks at the disk, and collapsing the two sends half of them wrong.
+        // `LicenseStore.Read(out …)` therefore returns Absent / Present / Unreadable, and `LicenseGate`
+        // carries Unreadable through to `LicenseState.Corrupt` rather than `Missing`.
+        //
+        // Neither outcome throws and neither stops the machine: both leave the appliance on Core features,
+        // which is what keeps the boundary intact while the report stays honest.
+        // 🔴 WHAT IS MEASURED HERE, precisely, because the rig writes corrupt JSON that is perfectly
+        // readable AS BYTES. `Read(out …)` correctly answers `Present` for that — the file IS there and
+        // its bytes DID read — so the third state cannot come from the store's I/O layer alone. It comes
+        // from where it should: `LicenseVerifier` refuses the content as `Corrupt`, which is distinct from
+        // the `Missing` an ABSENT file produces. The pair below is what the law actually asks for — the
+        // caller can branch — and it is asserted over BOTH inputs so that a store answering the same thing
+        // for both would redden.
+        new("LicenseStore", "license.json", true, dir => Observe(() =>
+        {
+            var store = new LicenseStore(dir);
+            var corruptOutcome = store.Read(out var corruptBytes);
+            var verifier = new LicenseVerifier();
+
+            // Present-but-corrupt → Corrupt. Absent → Missing. Two distinct answers.
+            var corruptState = corruptOutcome == LicenseFileRead.Present
+                ? verifier.Verify(corruptBytes, out _, out _)
+                : LicenseState.Missing;
+
+            var absentState = new LicenseStore(EmptyDir()).Read(out _) == LicenseFileRead.Absent
+                ? LicenseState.Missing
+                : LicenseState.Corrupt;
+
+            return corruptState != absentState ? Posture.ThirdState : Posture.UnreadableIsAbsent;
+        }), dir => _ = new LicenseStore(dir).Read(out _)),
+
         // ── 🔴 TASK V-1 — the five S-1 enumerated and did not measure ────────────────────────────────
         new("AlarmStore", "alarms.db", false, dir => Observe(() =>
         {
@@ -1511,6 +1578,11 @@ public sealed class OperatorDataRemovalCensusTests
         ["FleetSettingsStore"] = Posture.ThirdState,
         ["SiteLinkStore"] = Posture.ThirdState,
         ["OeeSettingsStore"] = Posture.ThirdState,
+        // 🔴 WS-E — the licence store answers a DISTINCT outcome for "no licence" (Missing) and "a licence
+        // is here and this machine cannot use it" (Corrupt / Unreadable), so its caller can branch and a
+        // support engineer is sent to the right place. See the row in OperatorArtifacts for exactly what
+        // that measurement composes, and why it had to compose the verifier rather than the I/O layer alone.
+        ["LicenseStore"] = Posture.ThirdState,
 
         // The read ends the operation instead. Nothing is destroyed here (measured — see
         // TheThrowingStores_…) and nothing continues either; the caller learns by catching.

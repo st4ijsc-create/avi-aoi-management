@@ -540,8 +540,22 @@ public sealed class NotificationDocumentationTests
         // operator-authored configuration files and nothing else. A third member is a NEW decision about
         // what survives a clean-slate wipe, and it belongs to the owner, not to whoever is making a red go
         // away. Derived from src/ on the left so the pin cannot outlive the leaves it names.
+        //
+        // 🔴 WS-E, 2026-09-06 — THE THIRD MEMBER ARRIVED, AND IT ARRIVED THE WAY THE PARAGRAPH ABOVE
+        // DEMANDED. `license` was NOT added by whoever was making a red go away. WS-E's implementer hit
+        // this pin, put the licence on the PURGE list (the status that needs no ruling), wrote the
+        // argument for keeping it beside both the purge entry and `.PARAMETER LicenseDir`, and escalated.
+        // The owner then ruled it KEPT. So the sentence above is not retracted — it is the procedure that
+        // was followed, and this line is what its successful outcome looks like.
+        //
+        // Why the ruling went this way: a licence is property the customer BOUGHT, one step along from
+        // configuration an operator AUTHORED. Purging it would make a routine reinstall force offline
+        // reactivation — read a fingerprint off the appliance, e-mail ST4I, wait, paste — which on the
+        // offline machines this product is built for is a trip to the factory.
+        //
+        // A FOURTH member is a new decision again, and this pin still says so.
         Assert.Equal(
-            new[] { "ecosystem", "products" },
+            new[] { "ecosystem", "license", "products" },
             declared.Where(Keeps).OrderBy(n => n, StringComparer.Ordinal).ToArray());
 
         // And the reason must actually be stated ON THE SAME LINE as the entry, because "kept" without a
@@ -549,7 +563,7 @@ public sealed class NotificationDocumentationTests
         // flattened text has no line breaks, so a same-entry check over it would silently accept a Reason
         // belonging to the next entry.
         var rawScript = ReadRepoFile("packaging", "remove-data.ps1");
-        foreach (var kept in new[] { "ecosystem", "products" })
+        foreach (var kept in new[] { "ecosystem", "license", "products" })
         {
             Assert.Matches(
                 new Regex($@"^[^\n]*Keep\s*=\s*'{kept}'[^\n]*Reason\s*=\s*'[^'\n]{{20,}}'",

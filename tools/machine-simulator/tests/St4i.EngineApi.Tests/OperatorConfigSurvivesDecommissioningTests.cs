@@ -38,9 +38,19 @@ namespace St4i.EngineApi.Tests;
 /// </summary>
 public sealed class OperatorConfigSurvivesDecommissioningTests
 {
-    /// <summary>The two leaves the owner's 2026-08-23(b) ruling keeps, holding the four operator-authored
-    /// configuration files between them.</summary>
-    private static readonly string[] KeptLeaves = ["ecosystem", "products"];
+    /// <summary>
+    /// The leaves a decommissioning wipe KEEPS: two by the owner's 2026-08-23(b) ruling (holding the four
+    /// operator-authored configuration files between them), and 🔴 <c>license</c> by the ruling of
+    /// 2026-09-06.
+    ///
+    /// <para><b>Why the licence joined them.</b> The first two hold configuration an operator AUTHORED;
+    /// the licence holds property the customer BOUGHT, which is the same argument one step on. Purging it
+    /// would make a routine reinstall force offline reactivation — a fingerprint read off the appliance,
+    /// an e-mail to ST4I, a wait, a paste — which on the offline machines this product targets is a trip
+    /// to the factory. WS-E's implementer hit the pin that forbade a third member, purged the licence
+    /// instead, wrote the argument beside it and escalated; the owner then ruled.</para>
+    /// </summary>
+    private static readonly string[] KeptLeaves = ["ecosystem", "license", "products"];
 
     private static string MachineSimulatorRoot()
     {
@@ -127,6 +137,11 @@ public sealed class OperatorConfigSurvivesDecommissioningTests
             File.WriteAllText(
                 Path.Combine(sandbox, "ecosystem", "ecosystem-recipes.json"), "[{\"code\":\"ECO-R\"}]");
 
+            // 🔴 WS-E — the licence, written where LicenseStore would write it, so its survival is
+            // measured on BYTES rather than on a directory entry an empty re-creation would satisfy.
+            File.WriteAllText(
+                Path.Combine(sandbox, "license", "license.json"), "{\"payload\":\"OPERATOR-LICENCE\"}");
+
             var script = Path.Combine(MachineSimulatorRoot(), "packaging", "remove-data.ps1");
             Assert.True(File.Exists(script), $"packaging/remove-data.ps1 not found at \"{script}\".");
 
@@ -196,6 +211,9 @@ public sealed class OperatorConfigSurvivesDecommissioningTests
                 ("products", "recipes.json", "[{\"code\":\"OPERATOR-R\"}]"),
                 ("ecosystem", "ecosystem-products.json", "[{\"code\":\"ECO\"}]"),
                 ("ecosystem", "ecosystem-recipes.json", "[{\"code\":\"ECO-R\"}]"),
+                // 🔴 WS-E, owner ruling 2026-09-06 — the licence survives, byte for byte. A wipe that
+                // deleted this would force offline reactivation after a routine reinstall.
+                ("license", "license.json", "{\"payload\":\"OPERATOR-LICENCE\"}"),
             };
 
             foreach (var (leaf, name, bytes) in kept)

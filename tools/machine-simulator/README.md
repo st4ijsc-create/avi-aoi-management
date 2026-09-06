@@ -1284,7 +1284,7 @@ pass) removes only what the MSI itself installed — everything under `%ProgramF
 Simulator\`, the Start Menu/Startup shortcuts, and — if `ServiceFeature` was enabled — stops and
 deletes the `St4iEngineApi` service.
 
-**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine declares **twenty**
+**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine declares **twenty-one**
 directories there (`historian`, `wal`, `security`, `creds`, `notifications`, `identity`,
 `connector-config`, `opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`,
 `machine-config`, `products`, `ecosystem` — 🔴 the last three arrived on **2026-08-23**, when the owner
@@ -1500,7 +1500,18 @@ chúng chứa mọi định nghĩa sản phẩm/công thức mà vận hành vi�
 bằng tay; **cố ý KHÔNG có cờ nào** làm việc đó. `machine-config` là thư mục mới thứ ba và nó **CÓ** bị xoá:
 nó giữ tham số vận hành của máy và danh sách `History` chỉ-thêm của mọi lần điều chỉnh — một bản ghi về
 việc máy ĐÃ LÀM GÌ, không phải thứ vận hành viên dựng lên.
-🔴 **CẬP NHẬT WS-HMI-2 Task 1 — engine KHAI HAI MƯƠI thư mục, script xoá MƯỜI TÁM.** `hmi-screens` (tài
+🔴 **CẬP NHẬT WS-E (License/Edition) — engine KHAI HAI MƯƠI MỐT thư mục, script vẫn xoá MƯỜI TÁM.**
+`license` (`LicenseStore`, `ST4I_LICENSE_DIR` — giấy phép máy đã ký Ed25519) gia nhập quần thể KHAI nhưng
+vào danh sách **GIỮ**, không phải danh sách XOÁ — nên lần này số KHAI tăng còn số XOÁ đứng yên, và tập GIỮ
+đi từ HAI lên BA. 🔴 **Phán quyết của chủ sở hữu 2026-09-06:** giấy phép là **tài sản khách hàng đã mua**,
+một bước tiếp theo của "cấu hình do vận hành viên soạn" mà hai mục GIỮ kia đang giữ. Xoá nó biến một lần
+cài lại thường lệ thành **kích hoạt lại offline** — đọc vân tay trên máy, gửi e-mail cho ST4I, chờ, dán
+giấy phép mới — tức là một chuyến về nhà máy trên đúng loại máy offline mà sản phẩm này nhắm tới.
+📎 Bản nháp trước của đoạn này ghi `license` vào danh sách XOÁ, vì tập GIỮ khi ấy được ghim cứng ở
+`{ecosystem, products}` và thành viên thứ ba là quyết định của chủ sở hữu chứ không phải của người thực
+thi. Lập luận ấy đúng và đã được thi hành: câu hỏi được đưa lên, chủ sở hữu đã phán quyết. Đây là kết quả.
+📎 🔴 **RÚT WS-E, giữ nguyên văn:** câu ngay trên trước đây đọc CẬP NHẬT WS-HMI-2 Task 1 —
+*"engine KHAI HAI MƯƠI thư mục, script xoá MƯỜI TÁM."* `hmi-screens` (tài
 liệu màn hình HMI đã lưu, mỗi lần ghi một phiên bản) gia nhập danh sách XOÁ cùng lý do với `hmi-model`/
 `hmi-tags` ở dưới — chưa store .NET nào phân giải nó qua DI hôm nay, nhưng đã KHAI trong `src/`.
 📎 🔴 **"CHƯA STORE .NET NÀO PHÂN GIẢI NÓ QUA DI" — RÚT, WS-HMI-2 Task 2, 2026-09-01, giữ nguyên văn câu
@@ -1725,10 +1736,20 @@ Windows machine** (§24). They share no roster, no claim registry and no channel
 **The rule, and it is the whole mechanism — and it is scoped to the MACHINE-WIDE population:** every
 directory this product creates under
 `%ProgramData%\ST4I\sim\<name>` is relocatable by an environment variable whose name is derived from the
-directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **20** of them
+directory name — **`ST4I_` + `<NAME>` (uppercased, `-` → `_`) + `_DIR`**. There are **21** of them
 today, and there is no exception **within that population**. 🔴 **It is not the whole of what this product
 writes**: three more stores live BESIDE THE ENGINE BINARY and are isolated only by accident — see "The
 SECOND store population" below, and read it before concluding two hosts are separated.
+
+🔴 **WS-E (License/Edition) — TWENTY → TWENTY-ONE, kept verbatim below rather than edited.** The count
+above read *"There are **20** of them today"* until this workstream added `license` (`LicenseStore`,
+`ST4I_LICENSE_DIR`) to the population. Unlike `hmi-screens` below it is NOT "declared, not created":
+`Program.cs` constructs a `LicenseStore` unconditionally at startup and that constructor creates the
+directory and ACL-locks it, so the leaf exists on every install from the moment this lands. 🔴 It is also
+the first member of this population whose contents are **property the customer bought** rather than data
+this deployment produced, so by the owner's ruling of 2026-09-06 it is **KEPT** by
+`packaging/remove-data.ps1` rather than purged — the third member of that kept set, alongside `products`
+and `ecosystem`.
 
 🔴 **WS-HMI-2 Task 1 — NINETEEN → TWENTY, kept verbatim below rather than edited.** The count above read
 *"There are **19** of them today"* until this task added `hmi-screens` (`HmiScreenStore`,
@@ -1798,6 +1819,7 @@ effect.
 | `hmi-model` | `ST4I_HMI_MODEL_DIR` | EngineApi (`ComponentModelStore`, on an engineer's `PutAsync`) | EngineApi | `hmi-model.db` — the declared component tree (types, `tagPrefix` bindings) a HMI screen resolves against. 🔴 **joined on 2026-08-30** (WS-HMI-0a Task 5); no endpoint reads it yet (WS-HMI-0b). 🔴 **Declared and registered; CREATED on first resolution, which no endpoint performs until WS-HMI-0b** — the DI registration is a factory singleton, so this directory does not exist on a live machine today |
 | `hmi-tags` | `ST4I_HMI_TAGS_DIR` | EngineApi (`TagNamespaceStore`, on an engineer/connector's `PutAsync`) | EngineApi | `tag-namespaces.db` — the declared tag namespace + its flat path index. 🔴 **joined on 2026-08-30** (WS-HMI-0a Task 5); no driver loads a real tag into it yet (WS-HMI-0c). 🔴 **Declared and registered; CREATED on first resolution, which no endpoint performs until WS-HMI-0b** — same factory-singleton reason as the row above |
 | `hmi-screens` | `ST4I_HMI_SCREENS_DIR` | EngineApi (`HmiScreenStore`, on an engineer's `PutAsync`) | EngineApi | `hmi-screens.db` — every saved VERSION of every HMI screen document, appended per write, plus the current-version pointer `rollback` (spec §7) moves. 🔴 **joined on 2026-08-31** (WS-HMI-2 Task 1); no DI registration and no route exist yet (Tasks 2/3). 🔴 **"no DI registration" — RETRACTED, WS-HMI-2 Task 2, 2026-09-01, kept verbatim just above.** `Program.cs` now registers `IHmiScreenStore` as `CanonicalizingHmiScreenStore`. Still no route/endpoint resolves it (WS-HMI-2 Task 3) — same declared-and-registered-but-not-yet-resolved state the two rows above show. 🔴 **Declared; CREATED on first DI RESOLUTION of the seam, not on the first write and not at startup** — the same factory-singleton timing as the two rows above, not a new one |
+| `license` | `ST4I_LICENSE_DIR` | EngineApi (`LicenseStore`, on `POST /v1/license/activate`) | EngineApi (once, at startup) | `license.json` — the Ed25519-signed machine licence: customer, edition, feature strings, the four fingerprint components it is bound to, and the validity window. 🔴 **joined with WS-E (License/Edition)**. **CREATED AT STARTUP, unconditionally** — `Program.cs` constructs a `LicenseStore` whose constructor creates the directory and applies `SecurityDirAcl`; this is NOT the declared-but-not-created timing the three HMI rows above show. 🔴 **The only row in this table whose contents are PROPERTY THE CUSTOMER BOUGHT** rather than data this deployment produced, and therefore the THIRD member of `remove-data.ps1`'s KEPT set (owner ruling 2026-09-06) — a decommissioning wipe reports it and does not delete it, because purging it would force offline reactivation after a routine reinstall. See `.PARAMETER LicenseDir`. 🔴 **NOT secret and deliberately not DPAPI-sealed**: it is signed, and a support engineer must be able to read it over the phone. A licence that cannot be read is `Missing`, which is a WORKING machine on Core features, never a startup failure |
 
 *(The WRITES/READS columns are an enumeration of CALL SITES in `src/`, not an inference from which assembly
 references which type: `CredentialStore.Save` appears in `St4i.EngineApi/Fleet/OnboardingService.cs` and in the
@@ -2119,7 +2141,11 @@ triển khai bình thường (§24). Hai host không chia sẻ roster, không ch
 nào — nhưng mặc định chúng **dùng chung một bộ file**. Mục này nói cách cho mỗi host một bộ riêng, và cái giá
 phải trả. **Quy tắc:** mọi thư mục sản phẩm tạo dưới `%ProgramData%\ST4I\sim\<tên>` đều dời chỗ được bằng một
 biến môi trường suy ra được từ tên thư mục — **`ST4I_` + `<TÊN>` (viết hoa, `-` → `_`) + `_DIR`**. Hôm nay có
-**hai mươi** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên).
+**hai mươi mốt** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên).
+📎 🔴 **RÚT WS-E (License/Edition), giữ nguyên văn:** câu ngay trên đọc
+*"Hôm nay có **hai mươi** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên)."* `license`
+(`LicenseStore`, `ST4I_LICENSE_DIR`) gia nhập quần thể — và khác `hmi-screens`, nó được TẠO ngay: `Program.cs`
+dựng `LicenseStore` vô điều kiện lúc khởi động, hàm dựng tạo thư mục và khoá ACL. Xem đoạn tiếng Anh ngay trên.
 📎 🔴 **RÚT WS-HMI-2 Task 1, giữ nguyên văn:** câu ngay trên đọc
 *"Hôm nay có **mười chín** thư mục, **không có ngoại lệ TRONG QUẦN THỂ ẤY** (bảng bên trên)."* `hmi-screens`
 gia nhập quần thể cùng lý do với `hmi-model`/`hmi-tags`/`hmi-tagmaps` — xem đoạn tiếng Anh ngay trên.
@@ -6271,7 +6297,7 @@ holds COM3 — and on a **gateway** there is no such protection to reason about 
   is the WAL queue), so nothing regressed — **and E-5 did not change that either: an RS-485 bus opens a COM
   port and a gateway bus opens a socket; neither is a store, and the shared-open bookkeeping is an in-process
   dictionary the host owns.** 🔴 **F-1 changed the "by default": per-host data roots are now a SUPPORTED
-  deployment (§15.9)** — every one of the **twenty** (🔴 thirteen until 2026-08-23, sixteen until
+  deployment (§15.9)** — every one of the **twenty-one** (🔴 thirteen until 2026-08-23, sixteen until
   2026-08-30 — WS-HMI-0a Task 5 added `hmi-model`/`hmi-tags`; nineteen until WS-HMI-2 Task 1, which added
   `hmi-screens`) **machine-wide**
   directories under `%ProgramData%` is
@@ -6518,7 +6544,7 @@ của nó là hàng đợi WAL), nên không có gì thụt lùi — **và E-5 c
 cổng COM còn một tuyến gateway mở một socket; không cái nào là store, và sổ sách chia sẻ lần mở là một
 dictionary trong tiến trình do host sở hữu.** **Máy của một connector đã xoá vẫn nằm trong roster tới khi khởi
 động lại** (§23.5), không đổi. 🔴 **F-1 đổi phần "mặc định" ấy: gốc dữ liệu theo host giờ là hình dạng triển
-khai ĐƯỢC HỖ TRỢ (§15.9)** — cả **hai mươi** thư mục **toàn máy** dưới `%ProgramData%` đều dời chỗ được bằng
+khai ĐƯỢC HỖ TRỢ (§15.9)** — cả **hai mươi mốt** thư mục **toàn máy** dưới `%ProgramData%` đều dời chỗ được bằng
 một biến `ST4I_*_DIR` suy ra được (📎 🔴 **RÚT WS-HMI-2 Task 1, giữ nguyên văn:** chỗ này đọc
 *"cả **mười chín** thư mục **toàn máy**"*, trong khi nửa TIẾNG ANH của đúng câu này đã được sửa thành
 **twenty** cùng với `hmi-screens` — xem đoạn tiếng Anh ngay trên. 📎 🔴 **RÚT 2026-08-30 (review toàn nhánh

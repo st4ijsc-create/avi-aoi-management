@@ -6,7 +6,7 @@
 
 .DESCRIPTION
   The MSI installer (packaging/installer/) only ever removes what IT installed, under Program Files -
-  it has no idea this exe/service declares 20 directories under
+  it has no idea this exe/service declares 21 directories under
   %ProgramData%\ST4I\sim\ - the historian database, the store-and-forward WAL buffer, the local
   user/session/audit-log database, the DPAPI-protected machine credential, the alarm-notification
   channel configuration and its credentials, the DEVICE IDENTITY PRIVATE KEY, saved device connections
@@ -18,6 +18,19 @@
   customer's production history, audit trail, or credentials. This script is the separate, explicit,
   opt-in tool for an operator who genuinely wants a clean-slate wipe (e.g. decommissioning a machine,
   resetting a demo box back to a fresh-install state).
+
+  WS-E, 2026-09-06 - DECLARED TWENTY -> TWENTY-ONE, PURGED STAYS EIGHTEEN, KEPT TWO -> THREE. `license`
+  (LicenseStore) joined the population: it declares the same EnvVarDir/DefaultRoot/ResolveRoot triple as
+  its twenty siblings and Program.cs constructs one unconditionally at startup, so the directory exists on
+  every install, licensed or not.
+  🔴 It is the THIRD member of the KEPT list, by owner ruling of 2026-09-06, and the first kept entry that
+  holds property the customer BOUGHT rather than configuration an operator AUTHORED. Purging it would make
+  a routine reinstall force offline reactivation - a fingerprint read off the appliance, an e-mail to ST4I,
+  a wait, a paste - which on the offline machines this product is built for is a trip to the factory.
+  📎 An earlier draft of this file PURGED it and said so here, on the procedural ground that the kept set
+  was pinned to exactly {ecosystem, products} and that a third member was the owner's decision rather than
+  the implementer's. That reasoning was right and it was carried out: the question was escalated and the
+  owner ruled. This is the outcome, not a reversal of the procedure.
 
   WS-HMI-2 TASK 1, 2026-08-31 - NINETEEN -> TWENTY. `hmi-screens` (HmiScreenStore) joined the
   population the day the type was added under St4i.EngineApi/HmiModel - DECLARED, not yet CREATED, in
@@ -61,7 +74,7 @@
   WS-HMI-0b TASK 4, 2026-08-31 - THAT RESOLUTION NOW HAPPENS, and the paragraph above is kept verbatim
   because its MECHANISM is still exactly right; only its "no endpoint exists" precondition expired.
   WS-HMI-0b's HmiModelEndpoints/HmiTagEndpoints take IComponentModelStore/ITagNamespaceStore as handler
-  parameters, so ASP.NET resolves both seams and both stores get constructed. EIGHTEEN of the TWENTY are
+  parameters, so ASP.NET resolves both seams and both stores get constructed. TWENTY of the TWENTY-ONE are
   created by a running engine now (WS-HMI-2 Task 1 moved the denominator nineteen -> twenty without
   moving the numerator: `hmi-screens` has no DI registration yet, so it is not among the eighteen) -
   but EACH on the FIRST REQUEST TO A ROUTE THAT RESOLVES THAT STORE,
@@ -209,7 +222,7 @@
   St4i.EngineApi ingests at startup to build each machine's tag namespace.
 
   PURGED, not kept - and that is an OWNER RULING, not an oversight. It is the one leaf on this list the
-  engine only ever READS; the other NINETEEN are WRITE stores by design (README §15.9's WRITES/READS
+  engine only ever READS; the other TWENTY are WRITE stores by design (README §15.9's WRITES/READS
   table). WS-HMI-2 Task 1 moved this count eighteen -> nineteen without moving the partition it draws:
   `hmi-screens` is one of the nineteen by DESIGN (its `PutAsync` is the only thing that ever touches
   `hmi-screens.db`), but like `hmi-model`/`hmi-tags` before WS-HMI-0b it is not ACTUALLY written by a
@@ -240,6 +253,26 @@
   it records what the machine's HMI currently shows, not a recipe/product definition an operator
   authored outside the product.
 
+.PARAMETER LicenseDir
+  WS-E (License/Edition) - the machine licence directory (ST4I_LICENSE_DIR), holding `license.json`: an
+  Ed25519-signed entitlement naming the customer, the edition and the four machine-identity components the
+  licence is bound to. Created unconditionally at engine startup (LicenseStore's ctor creates the directory
+  and ACL-locks it), so the directory exists on every install, licensed or not.
+
+  🔴 KEPT, NOT PURGED - owner ruling 2026-09-06, and it is the THIRD member of the kept set. A licence is
+  property the customer BOUGHT, one step along from the configuration an operator AUTHORED that the other
+  two kept entries hold. Purging it would make a routine reinstall force offline reactivation: read a
+  fingerprint off the appliance, e-mail ST4I, wait, paste a new licence back. On the offline machines this
+  product is built for, that is a trip to the factory over a reinstall.
+
+  This parameter therefore RESOLVES the directory (so a relocated install's licence is found and reported
+  in the inventory) without deleting it - the same status -ProductsDir and -EcosystemDir have.
+
+  🔴 IF YOU GENUINELY WANT THE LICENCE GONE - decommissioning a machine for good, or returning it - delete
+  the directory this script REPORTS by hand. There is deliberately no flag: a switch that destroys
+  purchased entitlement is one keystroke from a support call, and the owner's ruling was that the safe
+  default is to keep it.
+
 .EXAMPLE
   .\packaging\remove-data.ps1 -WhatIf
   Preview exactly what would be stopped/deleted, without touching anything.
@@ -261,11 +294,11 @@
   .\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -WalDir D:\St4iData\wal -SecurityDir D:\St4iData\security -IdentityDir D:\St4iData\identity
   Purges relocated data directories explicitly - needed whenever the service was configured (via its
   registry Environment value, README section 15.2) with a directory that is NOT the default
-  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory - TWENTY of
+  %ProgramData%\ST4I\sim\<name>. There is one -XxxDir parameter per relocatable directory - TWENTY-ONE of
   them, all twenty documented under .PARAMETER above (-CredsDir's block was missing until the Dot F
   branch review, F-9; -MachineConfigDir, -ProductsDir and -EcosystemDir arrived with task BF-1;
   -HmiModelDir and -HmiTagsDir arrived with task 5, WS-HMI-0a; -HmiTagMapsDir arrived with WS-HMI-0c;
-  -HmiScreensDir arrived with WS-HMI-2 Task 1). EIGHTEEN
+  -HmiScreensDir arrived with WS-HMI-2 Task 1; -LicenseDir arrived with WS-E). EIGHTEEN
   of those twenty name a directory this script PURGES; -ProductsDir and -EcosystemDir resolve the two the
   owner's 2026-08-23(b) ruling KEEPS, so passing them changes what is PRINTED and never what is deleted.
 
@@ -461,7 +494,11 @@ param(
     [string]$HmiTagMapsDir,
     # WS-HMI-2 Task 1 - a purge parameter like the three above it; same reasoning as -HmiModelDir/
     # -HmiTagsDir (see .PARAMETER), not a fourth member of the products/ecosystem keep exemption.
-    [string]$HmiScreensDir
+    [string]$HmiScreensDir,
+    # WS-E - a purge parameter, and the only one whose directory holds PURCHASED ENTITLEMENT rather than
+    # data this deployment produced. See .PARAMETER LicenseDir for why it is purged rather than kept, and
+    # what the owner would have to rule to change that.
+    [string]$LicenseDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -548,6 +585,7 @@ $subdirs = @(
     # hmi-screens joined this list the day HmiScreenStore was added under St4i.EngineApi/HmiModel. PURGED,
     # not kept - same reasoning as hmi-model/hmi-tags above (see .PARAMETER HmiScreensDir).
     @{ Name = 'hmi-screens';      Path = (Resolve-DataDir $HmiScreensDir      'ST4I_HMI_SCREENS_DIR'      (Join-Path $root 'hmi-screens'));      Warning = 'every saved version of every HMI screen document, and the current-version pointer per screen (hmi-screens.db)' }
+
 )
 
 # ---- Task BF-1, owner ruling 2026-08-23(b): THE KEPT LIST -----------------------------------------
@@ -563,6 +601,22 @@ $subdirs = @(
 $keptByDesign = @(
     @{ Keep = 'products';  Path = (Resolve-DataDir $ProductsDir  'ST4I_PRODUCTS_DIR'  (Join-Path $root 'products'));  Reason = 'products.json + recipes.json - product and recipe definitions an operator authored' }
     @{ Keep = 'ecosystem'; Path = (Resolve-DataDir $EcosystemDir 'ST4I_ECOSYSTEM_DIR' (Join-Path $root 'ecosystem')); Reason = 'ecosystem-products.json + ecosystem-recipes.json - the simulated ecosystem an operator authored' }
+
+    # 🔴 WS-E (License/Edition) - THE THIRD KEPT MEMBER, and the owner's ruling of 2026-09-06 that put it
+    # here. The two above hold configuration an operator AUTHORED; this one holds property the customer
+    # BOUGHT, which is the same argument one step further along: a clean-slate wipe exists to remove what
+    # this deployment PRODUCED, and an entitlement is not that.
+    #
+    # What purging it would cost, which is why the ruling went this way: reinstalling would force
+    # reactivation, and on an offline machine - which is the deployment this product is built for -
+    # reactivation means reading a fingerprint off the appliance, e-mailing ST4I, waiting, and pasting a
+    # new licence back. A routine reinstall would become a trip to the factory.
+    #
+    # 🔴 An earlier draft of this file PURGED it, on the procedural ground that the kept set was pinned to
+    # exactly {ecosystem, products} by owner ruling 2026-08-23(b) and that a third member was a decision
+    # belonging to the owner rather than to whoever was making a red go away. That reasoning was correct
+    # and it has now been carried out: the decision was escalated and the owner took it.
+    @{ Keep = 'license';   Path = (Resolve-DataDir $LicenseDir   'ST4I_LICENSE_DIR'   (Join-Path $root 'license'));   Reason = 'license.json - the signed machine licence, property the customer bought; purging it would force offline reactivation after a routine reinstall' }
 )
 
 Write-Host ""
