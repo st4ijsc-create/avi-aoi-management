@@ -50,7 +50,7 @@
 //      is stated so nobody reads them as a safety net they are not:
 //      `EveryStoreTheEngineCreates_IsIsolatedByThePlaywrightHarness` is what catches that, and it is a
 //      test rather than a cleanup.
-import { existsSync, readdirSync, rmSync, statSync } from "node:fs"
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -106,3 +106,50 @@ if (existsSync(e2eDataDir)) {
   rmSync(e2eDataDir, { recursive: true, force: true })
   console.log(`[reset-engine-state] wiped isolated E2E ProgramData stand-in: ${e2eDataDir}`)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+// 🔴 WS-E (License/Edition) — SEED THE SIGNED E2E LICENCE, immediately after the wipe above.
+//
+// WHY THIS EXISTS. WS-E made HMI authoring, line commands and notification dispatch paid features. The
+// e2e webServer boots the real engine, so with no licence file every `PUT /v1/screens/{id}` answers
+// 403 LICENSE_REQUIRED and 56 editor tests die — the gate working exactly as designed, on a host that
+// has no business being unlicensed.
+//
+// 🔴 WHAT WAS REJECTED, so nobody re-proposes it. Unlocking on `ST4I_DEMO_ENABLED` (which this
+// webServer already sets) would have been one line — and `ST4I_DEMO_ENABLED` is an INSTALLABLE MSI
+// FEATURE shipped to customers ("Exhibition launcher", packaging/installer/…/decompiled2.wxs:312), so
+// any customer could unlock the entire paid product by installing it. That is a licence bypass inside
+// the revenue mechanism. The owner ruled against it on 2026-09-06 and for this: a genuinely signed
+// licence, seeded into the already-isolated directory.
+//
+// 🔴 WHAT THIS LICENCE IS. `fixtures/e2e-license.json` is a real Ed25519-signed licence — the SAME
+// verification path a customer licence takes, no test seam, no bypass. Its payload names
+// `"mode": "unbound-test-only"` INSIDE the signature, which is the only way the fingerprint check is
+// skipped (LicenseBindingMode). It has to be unbound because the e2e machine is whatever CI or a
+// developer laptop happens to be, so no fingerprint could be issued against it in advance.
+//
+// 🔴 NO PRIVATE KEY IS IN THIS REPOSITORY. The key pair was minted out of band, used once to sign this
+// file, and discarded with the process that made it — no copy of the private half exists anywhere. So
+// this key can verify the committed licence and can never sign another one.
+//
+// 🔴 Seeded AFTER the wipe, not before: the wipe is recursive and would delete it.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+const licenseDir = join(e2eDataDir, "license")
+const licenseFixture = join(here, "..", "fixtures", "e2e-license.json")
+
+if (!existsSync(licenseFixture)) {
+  // Loud, not silent. A missing fixture means every editor test fails with a 403 that looks like a
+  // product defect, and the person reading that failure needs to be sent here rather than into the gate.
+  console.error(
+    `[reset-engine-state] FATAL: the e2e licence fixture is missing at ${licenseFixture}. Without it the ` +
+      `engine boots UNLICENSED and every authoring test fails with 403 LICENSE_REQUIRED — which is the ` +
+      `licence gate working, not a bug in the editor.`
+  )
+  process.exit(1)
+}
+
+mkdirSync(licenseDir, { recursive: true })
+copyFileSync(licenseFixture, join(licenseDir, "license.json"))
+console.log(
+  `[reset-engine-state] seeded the signed E2E licence into ${licenseDir} (unbound-test-only; not valid on any customer machine)`
+)
