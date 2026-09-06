@@ -920,7 +920,25 @@ export function sinhBoCuc(
    - bề **sâu** ô xưởng (trục Y) = `sốChuyền × buocChuyenMm`
    - Sắp giảm dần theo bề rộng, xếp thành hàng, xuống hàng khi vượt `rongSanToiDaMm`, chừa `loiDiMm` giữa các hàng và giữa các xưởng cùng hàng.
 
-   > **Trục phải khớp bước 4 và 5.** Bước 4 xếp chuyền cách nhau theo **trục Y**, bước 5 xếp trạm dọc **trục X** ⇒ bề rộng do *số trạm* quyết định, không phải số chuyền. Viết ngược thì ô đóng gói xoay 90° so với nội dung bên trong và tính chất T4 ("không chồng lấn") đổ ngay ở quy mô nhỏ nhất.
+   > **Trục phải khớp bước 4 và 5.** Bước 4 xếp chuyền cách nhau theo **trục Y**, bước 5 xếp trạm dọc **trục X** ⇒ bề rộng do *số trạm* quyết định, không phải số chuyền. Viết ngược thì ô đóng gói xoay 90° so với nội dung bên trong.
+   >
+   > **★★★ ĐÍNH CHÍNH 2026-09-06 (Đợt 4a) — bản đầu ghi "T4 đổ ngay ở quy mô nhỏ nhất". SAI.**
+   > Đo được khi tiêm đúng phép đảo trục đó: **T5 đổ** (`machine:10 ra ngoài sàn tầng 201`), còn
+   > **T4 vẫn XANH** trên mọi ca một-xưởng, kể cả quy mô thật 43 máy.
+   >
+   > Lý do: đảo trục làm ô **đóng gói** xoay 90°, nhưng nội dung bên trong vẫn xếp đúng ⇒ máy
+   > **tràn ra ngoài ô**, không va vào nhau. Số đo (2 chuyền × 10 trạm): ô đúng 27.500×18.000, ô sai
+   > 14.500×31.000, nội dung cần tới x = 25.000. T4 chỉ bắt được khi có **xưởng thứ hai kề bên** để
+   > phần tràn đâm vào — với ô sai, xưởng 2 bắt đầu ở x = 18.500 < 25.000 ⇒ chồng lấn.
+   >
+   > ⇒ **Đợt 4a đã thêm ca `★ HAI XƯỞNG KỀ NHAU trên một tầng` vào T4** và kiểm chứng nó biết kêu.
+   > Xác minh độc lập của chủ dự án (tiêm lại phép đảo trục): **T4 đỏ ở đúng ca đó**
+   > (`tầng 201: machine:8 × machine:21`) **và T5 đỏ**; hoàn nguyên → 623 xanh.
+   >
+   > **Bài học lớn hơn cả lỗi:** nếu agent làm **đúng chữ của spec** — viết T4 theo mô tả một-xưởng —
+   > thì **T4 sẽ mù đúng cái lỗi mà spec giao nó canh, và cổng vẫn báo xanh**. Spec **dự đoán sai chỉ
+   > báo nào sẽ đổ** là một lớp lỗi riêng: nó không sai về hành vi mã, nó sai về **thiết bị đo**.
+   > ⇒ Xem G10.
 
 4. **Chuyền trong xưởng**: dải song song dọc trục X, cách nhau `buocChuyenMm`, thứ tự theo `production_lines.code` (tất định).
 5. **Trạm trên chuyền**: dọc trục X theo `stations.orderIndex` (fallback `code`), bước `buocTramMm`.
@@ -1779,6 +1797,25 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 >
 > ⇒ **Luật:** trước khi tin một phép đo "không có gì xấu xảy ra", hỏi *"nếu luật này KHÔNG tồn tại
 > thì phép đo có khác đi không?"* Nếu không khác, phép đo đang chứng minh số 0 — phải dựng ca dương.
+
+> ### ★★★ G10 — SPEC DỰ ĐOÁN SAI *CHỈ BÁO NÀO SẼ ĐỔ* (2026-09-06, Đợt 4a)
+>
+> §8.2 bước 3 khẳng định: đảo trục sẽ làm **T4 ("không chồng lấn") đổ ngay ở quy mô nhỏ nhất**.
+> Đo được: **T4 vẫn XANH** trên mọi ca một-xưởng kể cả 43 máy thật; thứ đổ là **T5 ("trong biên")**.
+>
+> Spec **không sai về hành vi mã** — đảo trục đúng là lỗi. Nó sai về **thiết bị đo**: chỉ định nhầm
+> chỉ báo sẽ bắt được lỗi. Hậu quả nguy hiểm hơn một lỗi thường:
+>
+> **Nếu agent làm ĐÚNG CHỮ của spec, nó viết T4 theo mô tả một-xưởng ⇒ T4 mù đúng cái lỗi spec giao
+> nó canh ⇒ cổng vẫn báo xanh.** Spec tự tay tạo ra vùng mù, và không phép kiểm nào bắt được vì mọi
+> test đều xanh và mọi chữ trong spec đều được thực hiện.
+>
+> ⇒ **Luật:** khi spec nói *"vi phạm X sẽ làm test Y đỏ"*, đó là **một lời khai cần đo**, không phải
+> sự thật. Agent thực thi phải **tiêm X và xem test nào thật sự đỏ** — nếu không phải Y, thì **thêm
+> ca cho Y** (như Đợt 4a đã làm: `★ HAI XƯỞNG KỀ NHAU`) và **báo lại**, chứ không im lặng dựa vào Y-thay-thế.
+>
+> Đây là ca thứ tư trong dự án của cùng một họ: G5 (đo trên tập rỗng), G6 (nhánh không ai đi),
+> G7 (đo nhầm đại lượng), G10 (chỉ định nhầm chỉ báo). Cả bốn đều cho **cổng xanh mà không đo gì**.
 
 > ### ★★★ G9 — ĐƠN VỊ CỦA CON SỐ (2026-09-06, dọn cổng i18n)
 >
