@@ -62,9 +62,15 @@ Ba giả định nền của nó **sai với repo ta** — chép theo sẽ hỏn
 
 ### 1.2 Quy mô thật (đo trên DB dev)
 
+> **★ ĐÍNH CHÍNH 2026-09-06 (session seed) — con số dưới đây là TOÀN HỆ, không phải SIM-FAC.**
+> Đo lại theo nhà máy: **SIM-FAC có 36 trạm / 42 máy** (3 Line × 12 trạm = 36, khớp đúng);
+> `T12-SHOT-FA` có 1 trạm / 1 máy. Cộng lại mới ra 37/43. Brief giao Đợt 4 dùng "37 trạm, 43 máy
+> cho SIM-FAC" là **lẫn phạm vi** — agent seed phát hiện khi thực thi.
+> ⇒ Mọi con số phải kèm **phạm vi** cùng với đơn vị (G9).
+
 ```
 corporates 1 · factories 4 (2 isActive) · workshops 2 · production_lines 4
-stations 37 · machines 43 (42 isActive)
+stations 37 · machines 43 (42 isActive)      ← TOÀN HỆ; SIM-FAC riêng = 36 trạm / 42 máy
 factory_layouts 3 · machine_positions 36 · workshop_positions 0 · factory_positions 0
 factory_zones 0 · equipment_3d_models 5
 ```
@@ -918,7 +924,20 @@ export function sinhBoCuc(
 
 4. **Chuyền trong xưởng**: dải song song dọc trục X, cách nhau `buocChuyenMm`, thứ tự theo `production_lines.code` (tất định).
 5. **Trạm trên chuyền**: dọc trục X theo `stations.orderIndex` (fallback `code`), bước `buocTramMm`.
-6. **Máy trong trạm**: máy đầu ở tâm trạm; máy thứ 2, 3… lệch ±`buocMayTrongTramMm` theo trục Z. Kích thước lấy theo thứ tự ưu tiên ở §5.3.
+6. **Máy trong trạm**: máy đầu ở tâm trạm; máy thứ 2, 3… lệch ±`buocMayTrongTramMm` **theo trục Y mặt bằng**. Kích thước lấy theo thứ tự ưu tiên ở §5.3.
+
+   > **★★★ ĐÍNH CHÍNH 2026-09-06 (session seed) — L-1: bản đầu ghi "theo trục Z" là MÂU THUẪN NỘI TẠI.**
+   > §5.2 định nghĩa **Z của DB là ĐỘ CAO**. Trạm `SIM-L1-SPI-ST` có **7 máy** ⇒ làm đúng chữ của
+   > bước này sẽ **treo 6 máy lơ lửng tới 4,2 m trên không**. Agent seed phát hiện khi thực thi, đi
+   > theo trục Y và **báo lại thay vì tự sửa spec** — xử lý đúng.
+   > Đã đo sau seed: `viTriZMm ≠ 0` là **0/42 máy**. Không máy nào bay.
+   >
+   > **Hai lỗi nhỏ cùng đợt, cũng do thực thi phát hiện:**
+   > - **`buocMayTrongTramMm = 1400` an toàn NHỜ DỮ LIỆU, không nhờ tham số.** Cặp kề tệ nhất hiện
+   >   cần 1.300 mm (AOI sâu 1100 ↔ WELDER sâu 1500) — vừa lọt. Hai máy sâu 1500 kề nhau sẽ **chồng**.
+   >   Cầu chì T4 quét hậu điều kiện trong script sẽ bắt khi dữ liệu đổi; đừng tin con số 1400.
+   > - **`stations.orderIndex` là 0-based (0..11)**, không phải 1,2,3… như bước 5 ngầm giả định. Hàm
+   >   tính vị trí phải trừ `thuTuNhoNhat` để đúng cho cả hai quy ước.
 7. **Hướng máy**: quay quanh trục Y sao cho mặt trước hướng ra lối đi của chuyền (0° hoặc 180° tuỳ dải chẵn/lẻ) → quaternion chuẩn hoá.
 8. **Hạ tầng sinh kèm**: tường bao mỗi tầng, sàn, cột lưới 12 m, vạch kẻ lối đi giữa các hàng xưởng, biển tên xưởng. Ghi `twin_vat_the` với `nguon = 'sinh'`.
 9. **Bỏ qua & báo cáo**: mọi bản ghi `nguon = 'tay'` đưa vào `boQua`. Trả `canhBao` cho bất thường (xưởng rỗng, chuyền không trạm, máy không thuộc trạm nào).
