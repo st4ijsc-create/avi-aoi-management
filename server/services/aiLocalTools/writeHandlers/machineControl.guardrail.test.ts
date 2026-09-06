@@ -10,7 +10,8 @@
  * The guardrail SERVICE is mocked (its pure decision is unit-tested separately);
  * here we verify the WIRING in machineControl.execute.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { boDemChungChoTest } from "../../ot/aiControlGate";
 
 type Row = Record<string, any>;
 
@@ -45,6 +46,12 @@ vi.mock("../../ot/commandDispatcher", () => ({
   isOtControlEnabled: () => false,
 }));
 
+// L-7 — cầu nối safety của cổng AI (cổng chính chạy THẬT, không mock).
+const safetyChoAi = vi.fn(async () => "OK" as const);
+vi.mock("../../ot/aiControlGate.safety", () => ({
+  preflightSafetyChoAi: (...a: unknown[]) => safetyChoAi(...a),
+}));
+
 // The guardrail service — fully controllable.
 const paramGuardrailEnabled = vi.fn(() => false);
 const paramGuardrailStrict = vi.fn(() => false);
@@ -72,10 +79,22 @@ function execTool(params: Record<string, unknown>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // ── L-7 (2026-09-06) — `set_machine_param` nay đi qua cổng AI trước dispatcher.
+  //   `speed` là tag KHÔNG-an-toàn ⇒ Mức 3 ⇒ được phép, NHƯNG chỉ khi cờ riêng
+  //   bật + safety-PLC = "OK". Suite này đo GUARDRAIL, không đo cổng L-7, nên nó
+  //   đặt cả hai để cô lập đúng thứ nó muốn đo. (Cổng L-7 có suite riêng:
+  //   server/services/ot/aiControlGate.test.ts)
+  process.env.AI_OT_CONTROL_ENABLED = "true";
+  safetyChoAi.mockResolvedValue("OK");
+  boDemChungChoTest().xoaHet(); // trần tần suất dùng chung — dọn giữa các ca
   paramGuardrailEnabled.mockReturnValue(false);
   paramGuardrailStrict.mockReturnValue(false);
   checkAgainstGuardrail.mockReturnValue({ ok: true });
   lastKnownValue.mockResolvedValue(null);
+});
+
+afterEach(() => {
+  delete process.env.AI_OT_CONTROL_ENABLED;
 });
 
 describe("set_machine_param — guardrail enforcement (G4.18)", () => {

@@ -8,8 +8,21 @@
  *   - execute args come from the DB row (not the client)
  *   - RBAC #2 loss at confirm → denied, dispatch NOT called
  *   - execute passes the confirmed actionId to the dispatcher (defense-in-depth)
+ *
+ * ★★★ 2026-09-06 — L-7 ĐỔI HỢP ĐỒNG (aiControlGate.ts). Các ca dưới đây đã được
+ *   cập nhật, KHÔNG phải để "cho test xanh lại", mà vì hành vi đúng đã đổi thật:
+ *
+ *   · `machine_start` / `machine_reset` (Mức 4 — TĂNG năng lượng) và
+ *     `select_recipe` / `download_job` / `acknowledge_machine_alarm` (Mức 5)
+ *     nay bị cổng AI CHẶN CỨNG ⇒ `dispatch` KHÔNG BAO GIỜ được gọi cho chúng.
+ *     Ca "happy path → dispatch" cũ của `machine_start` giờ tự mâu thuẫn với
+ *     hàng rào; nó được đổi thành ca ÂM TÍNH khẳng định đúng điều đó, và ca
+ *     dương tính chuyển sang `machine_stop` (Mức 1 — GIẢM năng lượng).
+ *   · Đường Mức 1/3 đòi cờ `AI_OT_CONTROL_ENABLED=true` + safety-PLC = "OK".
+ *     `beforeEach` đặt cả hai; test nào muốn đo trạng thái khác thì tự ghi đè.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { boDemChungChoTest } from "../ot/aiControlGate";
 
 type Row = Record<string, any>;
 const store = new Map<string, Row>(); // ai_pending_actions
@@ -94,6 +107,13 @@ vi.mock("../ot/commandDispatcher", () => ({
   isOtControlEnabled: () => false,
 }));
 
+// L-7 — cầu nối đọc safety-PLC của cổng AI. KHÔNG mock `aiControlGate` chính:
+// cổng phải chạy THẬT ở đây, nếu không test này không đo hàng rào nào cả.
+const safetyChoAi = vi.fn(async () => "OK" as const);
+vi.mock("../ot/aiControlGate.safety", () => ({
+  preflightSafetyChoAi: (...a: unknown[]) => safetyChoAi(...a),
+}));
+
 // audit — silence.
 const logCrudOperation = vi.fn(async () => ({ id: 1 }));
 const logUpdate = vi.fn(async () => {});
@@ -124,6 +144,18 @@ beforeEach(() => {
   vi.clearAllMocks();
   checkPermission.mockResolvedValue(true);
   getActiveRecipe.mockResolvedValue({ id: 1, code: "R1", version: 2 });
+  // L-7: cổng AI mặc định TẮT. Bật cho các ca đo đường Mức 1/3 đi tới dispatcher.
+  process.env.AI_OT_CONTROL_ENABLED = "true";
+  // L-7: cổng AI fail-closed trên safety UNKNOWN. Adapter giả không có safety-PLC
+  // ⇒ mặc định UNKNOWN ⇒ mọi lệnh bị chặn. Giả lập "OK" để đo ĐÚNG thứ ca này đo.
+  safetyChoAi.mockResolvedValue("OK");
+  // Trần tần suất là bộ đếm dùng-chung của tiến trình — dọn giữa các ca, nếu
+  // không ca thứ 6 trở đi sẽ đỏ vì hết quota chứ không vì lỗi thật.
+  boDemChungChoTest().xoaHet();
+});
+
+afterEach(() => {
+  delete process.env.AI_OT_CONTROL_ENABLED;
 });
 
 describe("machine control — registration + permissions", () => {
@@ -159,21 +191,59 @@ describe("machine_start — HITL flow", () => {
     expect(logCrudOperation).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "ai_action_denied" }));
   });
 
-  it("happy path: propose → confirm → execute → dispatch(simulated), actionId threaded", async () => {
+  it("★★★ L-7 ÂM TÍNH: machine_start ĐÃ CONFIRM vẫn KHÔNG tới dispatcher (Mức 4)", async () => {
+    // Ca này TRƯỚC L-7 khẳng định điều NGƯỢC LẠI (dispatch được gọi 1 lần). Hàng
+    // rào L-7 đổi hợp đồng: người xác nhận đúng quy trình vẫn không đủ để một
+    // TÁC NHÂN AI khởi động máy — HITL chứng minh "có người bấm", không chứng
+    // minh "không có tay người trong máy".
     const p = await proposeAction(tool("machine_start"), { machineId: 5 }, ctx(ADMIN));
+    expect(dispatchSpy).not.toHaveBeenCalled();
+    const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
+    // ★ Vòng đời HITL chạy hết và kết thúc ở `bi_tu_choi_ghi` — một giá trị enum
+    //   ĐÃ CÓ SẴN (drizzle/0341) nghĩa là "lượt ghi bị TỪ CHỐI". Cổng L-7 rơi
+    //   đúng vào ô đó mà không cần enum mới, và `/api/v1/advice?status=` lọc
+    //   được ngay. KHÔNG phải "executed": lệnh này không hề được thực thi.
+    expect(c.status).toBe("bi_tu_choi_ghi");
+    expect(dispatchSpy).not.toHaveBeenCalled(); // ★ KHÔNG một byte nào tới thiết bị
+  });
+
+  it("★ L-7 ÂM TÍNH: machine_reset cũng bị chặn (Mức 4)", async () => {
+    const p = await proposeAction(tool("machine_reset"), { machineId: 5 }, ctx(ADMIN));
+    await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
+    expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("happy path (Mức 1): machine_stop → confirm → execute → dispatch, actionId threaded", async () => {
+    // Ca DƯƠNG TÍNH canh: nếu ca này đỏ thì các ca âm tính ở trên vô nghĩa (một
+    // cổng chặn-tất cũng làm chúng xanh).
+    const p = await proposeAction(tool("machine_stop"), { machineId: 5 }, ctx(ADMIN));
     expect(dispatchSpy).not.toHaveBeenCalled();
     const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
     expect(c.status).toBe("executed");
     expect(dispatchSpy).toHaveBeenCalledTimes(1);
     const arg = dispatchSpy.mock.calls[0][0] as any;
-    expect(arg.commandType).toBe("start");
+    expect(arg.commandType).toBe("stop");
     // F5b: AI write-tools ALWAYS dispatch via the human-confirmed HITL path; they
     // NEVER produce triggeredBy.kind='interlock'.
     expect(arg.triggeredBy.kind).toBe("hitl");
     expect(arg.triggeredBy.confirmedBy).toBe(1);
     expect(arg.triggeredBy.requestedBy).toBe(1);
     expect(arg.triggeredBy.actionId).toBe(p.pendingAction!.actionId); // defense-in-depth id passed through
-    expect(arg.writes).toEqual([{ tagKey: "cmd_start", value: true }]);
+    expect(arg.writes).toEqual([{ tagKey: "cmd_stop", value: true }]);
+  });
+
+  it("★ L-7 ÂM TÍNH: cờ AI_OT_CONTROL_ENABLED vắng ⇒ cả Mức 1 cũng không tới dispatcher", async () => {
+    delete process.env.AI_OT_CONTROL_ENABLED;
+    const p = await proposeAction(tool("machine_stop"), { machineId: 5 }, ctx(ADMIN));
+    await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
+    expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("★ L-7 ÂM TÍNH: safety-PLC UNKNOWN ⇒ Mức 1 bị chặn (fail-closed cho AI)", async () => {
+    safetyChoAi.mockResolvedValue("UNKNOWN" as never);
+    const p = await proposeAction(tool("machine_stop"), { machineId: 5 }, ctx(ADMIN));
+    await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
+    expect(dispatchSpy).not.toHaveBeenCalled();
   });
 
   it("AI SAFETY: an AI write-tool dispatch is NEVER triggeredBy.kind='interlock'", async () => {
@@ -207,13 +277,23 @@ describe("execute uses DB-row args (not client)", () => {
 });
 
 describe("select_recipe", () => {
-  it("execute resolves active recipe and dispatches its version", async () => {
+  it("★ L-7 ÂM TÍNH: select_recipe là Mức 5 ⇒ KHÔNG tới dispatcher", async () => {
+    // Nạp recipe = thay TOÀN BỘ tập tham số máy trong một lệnh, gồm cả tham số
+    // an toàn nằm trong recipe. Không kiểm điểm được từng giá trị ⇒ Mức 5.
     const p = await proposeAction(tool("select_recipe"), { machineId: 5, recipeCode: "R1" }, ctx(ADMIN));
     expect(dispatchSpy).not.toHaveBeenCalled();
-    const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
-    expect(c.status).toBe("executed");
-    const arg = dispatchSpy.mock.calls[0][0] as any;
-    expect(arg.commandType).toBe("select_recipe");
-    expect(arg.writes[0].value).toBe(2); // active recipe version
+    await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
+    expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("★ L-7 ÂM TÍNH: download_job + acknowledge_machine_alarm cũng Mức 5", async () => {
+    for (const [name, args] of [
+      ["download_job", { machineId: 5, jobId: "J1" }],
+      ["acknowledge_machine_alarm", { machineId: 5 }],
+    ] as const) {
+      const p = await proposeAction(tool(name), args as never, ctx(ADMIN));
+      await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
+    }
+    expect(dispatchSpy).not.toHaveBeenCalled();
   });
 });

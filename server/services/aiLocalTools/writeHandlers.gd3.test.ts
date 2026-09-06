@@ -11,7 +11,7 @@
  *   - navigate route whitelist (unknown route refused, no directive)
  *   - LLM routing picks the right WRITE tool (generateJSON mocked)
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Fake ai_pending_actions store + drizzle-like builder (mirrors GĐ2 test) ──
 type Row = Record<string, any>;
@@ -147,6 +147,7 @@ vi.mock("../../db/system", () => ({ createAuditLog: (...a: unknown[]) => systemC
 import { getTool } from "./toolRegistry";
 import "./writeHandlers"; // registers all GĐ2 + GĐ3a tools
 import { proposeAction, confirmAction } from "../aiCopilotActions";
+import { boDemChungChoTest } from "../ot/aiControlGate";
 
 const ADMIN = { id: 1, role: "admin", name: "Admin" } as const;
 const OPERATOR = { id: 2, role: "operator", name: "Op" } as const;
@@ -161,12 +162,20 @@ function tool(name: string) {
 beforeEach(() => {
   store.clear();
   vi.clearAllMocks();
+  // L-7 — `set_yield_threshold` là Mức 3: qua cổng AI, cần cờ riêng bật.
+  // (Không cần safety-PLC: tool này ghi bảng ngưỡng trong CSDL, không chạm PLC.)
+  process.env.AI_OT_CONTROL_ENABLED = "true";
+  boDemChungChoTest().xoaHet(); // trần tần suất dùng chung — dọn giữa các ca
   checkPermission.mockResolvedValue(true);
   getAlertHistoryById.mockResolvedValue({ id: 5, message: "NG cao", acknowledgedAt: null, acknowledgedBy: null });
   getPredictiveAlertById.mockResolvedValue({ id: 7, title: "Yield drop", status: "ACTIVE", acknowledgedBy: null, resolvedBy: null, resolutionNotes: null });
   getMeasurementPointDefById.mockResolvedValue({ id: 12, code: "MP12", name: "Điểm đo 12", upperLimit: "9.0", lowerLimit: "8.0", nominalValue: "8.5", unit: "mm" });
   getMeasurementPointDefByCode.mockResolvedValue(undefined);
   getYieldAlertThresholdByType.mockResolvedValue({ id: 3, metricType: "FPY", warningThreshold: "95", criticalThreshold: "90", targetValue: "98", comparisonOperator: "gte" });
+});
+
+afterEach(() => {
+  delete process.env.AI_OT_CONTROL_ENABLED;
 });
 
 describe("acknowledge_alert", () => {
