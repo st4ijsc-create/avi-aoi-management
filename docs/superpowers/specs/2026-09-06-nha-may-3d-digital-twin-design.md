@@ -1968,6 +1968,48 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > (bbox DOM thật trên `/twin`), không phải ở lớp hàm. Đây là G11 (*hiện ra* ≠ *hoạt động*) đẩy lên
 > một bậc: ở đây thậm chí **chưa hiện ra**, mà mọi cổng vẫn xanh.
 
+> ### ★★★ G20 — TEST ĐO BẢN SAO CHÉP TAY, KHÔNG ĐO MÃ GIAO HÀNG (QA Đợt 6)
+>
+> `server/_core/twinTrangThaiPhamVi.unit.test.ts` có **5 test xanh** canh bộ lọc tenant — thứ vừa
+> được thêm để bịt một lỗ rò bảo mật. Nhưng tệp đó **chỉ `import { describe, it, expect }` từ
+> `vitest`** — **không import gì từ `socket.ts`**, và tự khai lại hàm quyết định `duocNhan` ở dòng 31.
+>
+> QA tiêm: **xoá sạch `resolveTenantFactoryScope` khỏi broadcaster thật, phát cho cả phòng** ⇒
+> **5/5 test VẪN XANH**.
+>
+> Test đo **một bản tái-cài-đặt của logic**, không đo **mã sẽ chạy trên production**. Cả hai bản có
+> thể trôi khỏi nhau vô hạn mà cổng không bao giờ đỏ — và ở đây bản trôi là **bộ lọc bảo mật**.
+>
+> ⇒ **Luật:** test phải **import chính module giao hàng**. Nếu logic bị chôn trong một hàm không
+> export được (đóng trong `startXBroadcaster`), thì **tách nó ra thành hàm thuần có export** rồi
+> test hàm đó — đừng chép nó sang tệp test. Câu hỏi kiểm nhanh: *"nếu tôi xoá sạch mã sản phẩm,
+> test này có đỏ không?"* Không đỏ ⇒ nó đang đo tệp test của chính nó.
+>
+> Đây là **G6 (nhánh không ai đi) + G10 (chỉ định nhầm chỉ báo)** hợp lại, và là ca thứ **năm** của
+> họ *"cổng xanh mà không đo gì"*.
+
+> ### ★★★ G21 — "ĐỊNH TUYẾN" KHÔNG PHẢI "PHÂN QUYỀN" (QA Đợt 6)
+>
+> Agent Đợt 6 khai `twin:device` an toàn vì *"gateway đã lọc trước khi phát"*. QA **đo lại và bác bỏ**:
+> `twinStream.flush()` nhóm delta **theo nhà máy CỦA MÁY** rồi `io.to("twin:{factoryId}").emit(...)`.
+> Đó là **định tuyến gói tới đúng phòng** — nó quyết định *gói đi đâu*, không quyết định *ai được vào
+> phòng*. Và handler `subscribe` (`socket.ts:166`) cho **bất kỳ ai** join `twin:{id}` họ tự khai.
+>
+> **Bằng chứng đo được, và nó là cái bẫy đẹp nhất của cả đợt:** `operator1` (không được gán nhà máy
+> nào) nhận **0 gói `twin:device`** — trông y như bị chặn. Nhưng lý do thật là **sim không phát metric
+> nào trong cửa sổ đo**, không phải vì có bộ lọc. Nếu producer phát, mọi socket trong phòng đều nhận.
+>
+> Đây là **G5 ở dạng tinh vi nhất**: phép đo cho kết quả "an toàn" trên một **tập rỗng**, và kết quả
+> đó **trùng khít** với kết quả của hệ thực sự an toàn.
+>
+> Đo được ở kênh còn lại: `emitTwinUpdate` (`socket.ts:1407`) phát `io.to("global")` ⇒ `operator1`
+> nhận **11 gói WIP** của SIM-FAC (36 trạm, `stationId:29 wipCount:86`) trong 2 chu kỳ.
+>
+> ⇒ **Luật:** khi khai một kênh là "đã lọc", chỉ ra **dòng mã kiểm quyền của người nhận**. Nhóm theo
+> thuộc tính của *dữ liệu* (nhà máy của máy) là định tuyến. Phân quyền phải hỏi *người đang cầm socket
+> là ai và họ được xem gì* — như `twin:trangThai` làm ở `socket.ts:1580`.
+> Và: **"không nhận được gói nào" chỉ là bằng chứng khi có ai đó đang phát.**
+
 > ### ★★★ G17 — BẢN VÁ CÓ THỂ MỞ LỖ MÀ LỖI GỐC KHÔNG CÓ (2026-09-07, Đợt 6)
 >
 > Đợt 6 thêm broadcaster `twin:trangThai` 10 giây. Trong lúc viết, agent **tự phát hiện bản vá của
