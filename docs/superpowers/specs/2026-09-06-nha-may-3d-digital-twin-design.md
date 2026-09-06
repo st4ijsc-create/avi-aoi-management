@@ -1845,6 +1845,34 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > ⇒ **Luật:** trước khi tin một phép đo "không có gì xấu xảy ra", hỏi *"nếu luật này KHÔNG tồn tại
 > thì phép đo có khác đi không?"* Nếu không khác, phép đo đang chứng minh số 0 — phải dựng ca dương.
 
+> ### ★★★ G11 — ẢNH CHỤP CHỨNG MINH THỨ *HIỆN RA*, KHÔNG CHỨNG MINH THỨ *HOẠT ĐỘNG* (QA Đợt 4)
+>
+> Đợt 4b nghiệm thu RB-1 bằng **ảnh chụp gizmo 3 trục** — và ảnh đó **đúng**. Nhưng QA Đợt 4 đo tiếp
+> và tìm ra: **gizmo hiện đẹp mà kéo không lưu được**.
+>
+> Gốc rễ (`CanhThietKe.tsx:218-223`): proxy `new THREE.Object3D()` được `attach()` nhưng **chưa bao
+> giờ vào scene graph** — không `scene.add`, không `<primitive>`. Chuỗi nhân quả kiểm chứng tại
+> nguồn `node_modules/three/examples/jsm/controls/TransformControls.js`:
+> 1. dòng 1066: `parent === null` → vào nhánh `console.error`, **`_parentScale` không được gán**
+> 2. dòng 344: `_parentScale = new Vector3()` = **(0,0,0)**
+> 3. dòng 501/505: `.divide(this._parentScale)` → **chia cho 0** ⇒ NaN
+>
+> Triệu chứng: kéo gizmo **lúc được lúc không**; cùng một cặp toạ độ cho kết quả khác nhau giữa hai
+> lượt. Console nổ **90+ lần** mỗi phiên. Nút **Lưu vẫn disabled** sau nhiều lượt kéo, SQL thô xác
+> nhận DB **không đổi một byte**.
+>
+> **Đối chứng phân lập của QA là phần đắt nhất:** gõ số vào ô Inspector → `luuDisabled: false` ngay.
+> Cùng một kết cục mong đợi, **hai đường vào: đường Inspector sống, đường gizmo chết**. Không có
+> đối chứng này thì rất dễ kết luận nhầm là "lỗi ở đường lưu".
+>
+> **Bốn thiết bị đo đều nói ĐẠT mà tính năng trung tâm vẫn hỏng:** 747 test xanh (không test nào
+> chạm đường gizmo thật) · `check` 0 · `build` 0 · **ảnh chụp thấy gizmo**.
+>
+> ⇒ **Luật:** ảnh chụp nghiệm thu **thứ hiện ra**. Muốn nghiệm thu **thứ hoạt động**, phải đo
+> **kết cục bền vững**: thao tác → đọc lại từ **DB bằng đường độc lập** → giá trị đổi thật.
+> Và với mọi tính năng có **hai đường vào** cùng kết cục, phải đo **cả hai** — một đường sống có thể
+> che một đường chết.
+
 > ### ★★★ G10b — CHỈ BÁO ĐO *BUNDLER* THAY VÌ ĐO HÀNH VI (2026-09-06, Đợt 4b)
 >
 > G10 ứng nghiệm ngay trên chỉ báo của chính agent viết mã. Nó dựng chỉ báo RB-1 là
