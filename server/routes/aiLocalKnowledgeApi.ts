@@ -57,10 +57,53 @@ function parseUserRole(raw: unknown): UserRole {
 
 const VALID_UI_LANGUAGES: ReadonlySet<KbLanguage> = new Set(["vi", "en", "zh"]);
 
+/**
+ * ★★★ Đợt I / I-2 (`docs/superpowers/specs/2026-09-06-ai-local-thiet-ke-lai-toan-dien.md` §4.1,
+ * audit N1 `.superpowers/sdd/2026-09-06-audit-ai-local/audit-2-backend.md`) — `context.route`
+ * trước bản vá này chỉ được lọc theo HÌNH DẠNG (chuỗi ≤200 ký tự, `str()` dưới), không theo GIÁ TRỊ
+ * — khác `uiLanguage`/`codingMode`/`projectId` ngay cạnh, đều có whitelist giá trị.
+ *
+ * ★ KHÔNG PHẢI enum đóng như `VALID_UI_LANGUAGES` — đã ĐO (grep toàn `server/`+`client/`+
+ *   `vscode-extension/`) hai lớp giá trị THẬT hoàn toàn khác nhau cùng đi qua một trường:
+ *   (1) đúng MỘT literal đặc biệt `"vscode"` (`vscode-extension/src/loi/yeuCau.ts:87`) — literal
+ *       DUY NHẤT làm đổi hành vi định tuyến (5 điểm rẽ nhánh trong `aiLocalKnowledgeService.ts`:
+ *       `pickNumPredict:685`, `retrieveKnowledge:2689,2708`, `answerQuestion:3181`,
+ *       `streamAnswer:6343,6536` — TẤT CẢ đều so sánh chính xác `=== "vscode"`, không so bất kỳ
+ *       giá trị cụ thể nào khác).
+ *   (2) đường dẫn trang WEB HIỆN TẠI (`useLocation()` của wouter) — TỰ DO theo thiết kế: gửi từ
+ *       `AILocalChatBubble.tsx:544` (`route: location`, mount MỘT LẦN ở gốc `App.tsx`, tức đi kèm
+ *       ~221 route ứng dụng đếm được trong `client/src/App.tsx`, cả route tĩnh lẫn tham số động
+ *       như `/machines/:id`) và các literal cố định (`AIChatPage.tsx:324` → `/ai-chat`,
+ *       `AICodingWorkspace.tsx:1377` → `/ai-coding-workspace`). Dùng CHỈ để gợi ý nhẹ
+ *       (`routeToFeatureHints`, ~dòng 2209 — tra `ROUTE_FEATURE_HINTS`, KHÔNG khớp ⇒ `[]`, không
+ *       phải lỗi) và để tính `resolveCitationRoute`. Khoá value này thành một enum nhỏ (chỉ liệt
+ *       kê 8 path có trong `ROUTE_FEATURE_HINTS` hôm nay, hoặc chỉ 2-3 literal đã biết) sẽ ÂM THẦM
+ *       hỏng gợi ý cho ~213 route CÒN LẠI — đúng điều brief B1 cảnh báo ("bỏ sót route hợp lệ = làm
+ *       hỏng một đường đang chạy"). ⇒ Không đưa danh sách 221 route vào đây; giữ nguyên khả năng
+ *       nhận BẤT KỲ chuỗi hình-dạng-đường-dẫn nào cho vế web (`ROUTE_FEATURE_HINTS`/
+ *       `resolveCitationRoute` phía service đã tự an toàn với giá trị không khớp).
+ *
+ * Vá: whitelist GIÁ TRỊ cho đúng NGHĨA đang cần bảo vệ — literal `"vscode"` (kích hoạt nhánh đặc
+ * biệt) — VÀ giữ nguyên hình dạng "đường dẫn web" (bắt đầu bằng `/`, đúng những gì mọi client web
+ * thật đã luôn gửi — `useLocation()` không bao giờ trả chuỗi không bắt đầu bằng `/`). Bất kỳ chuỗi
+ * KHÔNG khớp CẢ HAI dạng này (rác kiểu `"admin"`, `"' OR 1=1"`, chuỗi 200 ký tự ngẫu nhiên — không
+ * phải literal đặc biệt, cũng không phải đường dẫn) ⇒ `undefined`, KHÔNG ném lỗi. Lý do không ném
+ * lỗi: `route` là trường TUỲ CHỌN (đường WEB không gửi route từ trước tới nay vẫn hợp lệ — xem lưới
+ * `aiLocalKnowledge.numPredictVscode.test.ts` §B "route VẮNG ⇒ … y hệt trước bản vá") — biến nó
+ * thành cửa chặn cứng (ném lỗi) sẽ phạt nhầm một trường vốn được thiết kế để vắng mặt an toàn; rơi
+ * về `undefined` tái dùng ĐÚNG con đường "route vắng" đã có, đã có lưới, đã có nghĩa well-defined
+ * ("hành vi mặc định/web") — không phải một trạng thái mới.
+ */
+export function isValidRoute(v: string): boolean {
+  return v === "vscode" || v.startsWith("/");
+}
+
 // C3a — parse the optional page context from the request body. Whitelists known
 // fields, coerces types, drops unknown keys. Returns undefined when absent or
 // empty so the service falls back to legacy behavior (backward-compatible).
-function parseContext(raw: unknown): KbQueryContext | undefined {
+// ★ I-2 — exported (chỉ thêm `export`, KHÔNG đổi thân hàm) để lưới
+// `aiLocalKnowledgeApi.parseContextRoute.test.ts` gọi trực tiếp, không phải dựng toàn bộ Express app.
+export function parseContext(raw: unknown): KbQueryContext | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const r = raw as Record<string, unknown>;
   const ctx: KbQueryContext = {};
@@ -69,7 +112,10 @@ function parseContext(raw: unknown): KbQueryContext | undefined {
   const num = (v: unknown): number | undefined =>
     typeof v === "number" && Number.isFinite(v) ? v : undefined;
 
-  if (str(r.route)) ctx.route = str(r.route);
+  // I-2 — GIÁ TRỊ, không chỉ hình dạng: rác (không phải "vscode", không phải đường dẫn "/…") rơi
+  // về undefined (vắng route ⇒ hành vi web mặc định), không ném lỗi. Xem docblock `isValidRoute`.
+  const routeStr = str(r.route);
+  if (routeStr && isValidRoute(routeStr)) ctx.route = routeStr;
   if (typeof r.uiLanguage === "string" && VALID_UI_LANGUAGES.has(r.uiLanguage as KbLanguage)) {
     ctx.uiLanguage = r.uiLanguage as KbLanguage;
   }
