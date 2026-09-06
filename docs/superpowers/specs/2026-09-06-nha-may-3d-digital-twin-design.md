@@ -1899,6 +1899,50 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > không tái sinh nó. Cần một đường xoá — ngoài phạm vi. Đây chính là hàng mà ô `datChoMoCoi` đang
 > đếm, nên **hệ đang tự khai đúng**.
 
+> ### ★★★ G13 — THIẾT BỊ ĐO HỎNG TRONG KHI THỨ ĐƯỢC ĐO VẪN TỐT (QA Đợt 5)
+>
+> QA Đợt 5 gặp **ba lần thiết bị đo của chính nó hỏng** trong một lượt audit, và tự rút ra dấu hiệu chung:
+> - `perl -0pi` **im lặng không áp** bản tiêm ⇒ báo "854/854 xanh" — một đột biến *chưa từng tồn tại*
+> - hook WebGL trả `0/0`
+> - wrapper `Bash` exit 127 trong khi tiến trình con vẫn chạy và phục vụ HTTP 200
+>
+> **Cả ba: thiết bị hỏng, thứ được đo vẫn tốt.** Và cả ba có cùng một dấu hiệu:
+> ***một kết quả không tốn gì để tạo ra.*** Suite xanh mà không chạy gì cũng xanh. Bộ đếm trả 0 vì
+> không đo được cũng trả 0. Exit code của vỏ bọc không nói gì về tiến trình bên trong.
+>
+> Lần thứ tư suýt lọt: lượt re-test T-3 **im lặng không áp**, báo 895 xanh. QA chỉ bắt được vì
+> Python `assert` bắn. Nguyên văn: *"Nếu dùng `sed`, tôi đã báo một đột biến sống sót mà chưa từng tồn tại."*
+>
+> ⇒ **Luật:** khi tiêm đột biến, công cụ tiêm phải **tự khẳng định đã áp** (`assert old in s` rồi mới ghi).
+> `sed`/`perl -i` thất bại **im lặng**; Python với `assert` thì không. Và mọi kết quả **xanh hoặc bằng 0**
+> phải có **mô hình thứ hai không liên quan** xác nhận trước khi tin — đây là G5/G7/G10 áp cho chính dụng cụ.
+>
+> ### ★★★ G14 — `reset --hard` TRÊN WORKTREE DÙNG CHUNG XOÁ VIỆC CHƯA COMMIT CỦA PHIÊN KHÁC
+>
+> **Tai nạn thật, lỗi của chủ dự án (2026-09-06).** Chuỗi sự kiện:
+> 1. Một phiên khác **đổi nhánh của worktree chính** từ `feat/twin-3d-trung-tam` sang `feat/ai-local-L7-hang-rao`
+> 2. Chủ dự án thấy 4 commit twin3d "biến mất khỏi `HEAD`" ⇒ tưởng bị rebase mất ⇒ cherry-pick chúng vào — **nhầm nhánh**
+> 3. Gỡ bằng `git reset --hard 1b327541` ⇒ **xoá mọi thay đổi chưa commit trên tệp đã tracked**
+>
+> **Thiệt hại đo được:** bản vá T-3 của session vá (`NGUONG_CU_MS` trong `mauTrangThai.ts`) biến mất,
+> cùng sửa chưa commit trên 5 tệp khác. Test **895 → 872** (mất ~23). Tệp **untracked**
+> (`locBadge.ts` + test) **còn nguyên** — `reset --hard` không chạm untracked.
+>
+> **Không mất commit nào:** nhánh `feat/twin-3d-trung-tam` vẫn ở `926a9d98` nguyên vẹn. Bốn commit
+> "biến mất" chỉ là **worktree đang đứng ở nhánh khác** — chúng chưa bao giờ rời nhánh của mình.
+>
+> ⇒ **Ba luật:**
+> 1. **Trước khi kết luận "commit bị mất", chạy `git branch --show-current` và `git log --oneline -1 <nhánh-của-mình>`.**
+>    Commit "biến mất khỏi HEAD" thường chỉ là HEAD đang ở chỗ khác.
+> 2. **KHÔNG BAO GIỜ `reset --hard` trên worktree có việc chưa commit của phiên khác.** Kiểm
+>    `git status --short` trước. Cách gỡ cherry-pick nhầm là `git cherry-pick --abort` (khi đang dở)
+>    hoặc `git reset --soft` (giữ nguyên cây làm việc).
+> 3. **Commit sớm theo từng hạng mục.** Việc nằm chưa commit là việc có thể mất. Session vá bị mất
+>    ~23 test vì gom nhiều hạng mục vào một lần commit chưa xảy ra.
+>
+> Hook `BG-124` chặn commit trần và hook reference-transaction chặn `stash` — cả hai **cứu commit
+> của mình**, nhưng **không cứu cây làm việc của phiên khác** khỏi `reset --hard`.
+
 > ### ★★★ G11 — ẢNH CHỤP CHỨNG MINH THỨ *HIỆN RA*, KHÔNG CHỨNG MINH THỨ *HOẠT ĐỘNG* (QA Đợt 4)
 >
 > Đợt 4b nghiệm thu RB-1 bằng **ảnh chụp gizmo 3 trục** — và ảnh đó **đúng**. Nhưng QA Đợt 4 đo tiếp
