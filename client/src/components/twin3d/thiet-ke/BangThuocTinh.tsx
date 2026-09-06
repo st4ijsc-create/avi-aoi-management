@@ -45,6 +45,15 @@ export interface BangThuocTinhProps {
   buocGocDo: number;
   onSua: (khoa: KhoaNode, sua: Partial<DatChoDauVao>) => void;
   onGoKhoiMatBang: (khoa: KhoaNode) => void;
+  /**
+   * ★★★ CHẶN-2 — chế độ chỉ đọc: ẨN mọi ô nhập/công tắc/nút ghi, KHÔNG disable.
+   *
+   * ⚠ Inspector là đường vào THỨ HAI của màn Thiết kế (gizmo là đường thứ nhất).
+   *   Ẩn gizmo mà để ô nhập sống thì chế độ chỉ-đọc chỉ đóng một nửa cửa — và
+   *   nửa còn lại chính là đường mà QA đã đo được là SỐNG. Mặc định `false` để
+   *   không đổi hành vi của chỗ gọi nào chưa truyền.
+   */
+  chiDoc?: boolean;
 }
 
 /** mm → mét để HIỆN. Làm tròn 3 chữ số: `numeric(14,3)` không giữ hơn thế. */
@@ -113,6 +122,7 @@ export function BangThuocTinh({
   buocGocDo,
   onSua,
   onGoKhoiMatBang,
+  chiDoc = false,
 }: BangThuocTinhProps) {
   const { t } = useTranslation();
 
@@ -155,6 +165,37 @@ export function BangThuocTinh({
         <p className="rounded border border-dashed p-2 text-[11px] text-muted-foreground">
           {t("twin3d.khuChoXepChoMoTa")}
         </p>
+      ) : chiDoc ? (
+        /*
+         * ★★★ CHẶN-2 — nhánh CHỈ ĐỌC. Vẫn HIỆN SỐ (người chỉ-xem có quyền xem
+         * bố cục), nhưng không có một ô nhập, công tắc hay nút ghi nào trong
+         * DOM. Phép đo nghiệm thu là `queryByTestId("o-vi-tri-x") === null`, và
+         * một ô `disabled` sẽ làm phép đo đó ĐỎ — đúng như phải thế.
+         */
+        <div className="grid gap-1.5 text-[11px]" data-testid="thuoc-tinh-chi-doc">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("twin3d.thuocTinh.viTri")}</span>
+            <span className="tabular-nums">
+              {hienMet(datCho.viTriXMm)} · {hienMet(datCho.viTriYMm)} ·{" "}
+              {hienMet(datCho.viTriZMm)}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("twin3d.thuocTinh.xoayDo")}</span>
+            <span className="tabular-nums">{Math.round(gocDo * 1000) / 1000}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("twin3d.thuocTinh.kichThuoc")}</span>
+            <span className="tabular-nums">
+              {datCho.rongMm === null ? "—" : hienMet(datCho.rongMm)} ·{" "}
+              {datCho.caoMm === null ? "—" : hienMet(datCho.caoMm)} ·{" "}
+              {datCho.sauMm === null ? "—" : hienMet(datCho.sauMm)}
+            </span>
+          </div>
+          <div className="text-muted-foreground">
+            {t("twin3d.nguon." + (datCho.nguon === "tay" ? "tay" : "sinh"))}
+          </div>
+        </div>
       ) : (
         <>
           {/* ★ NT-4 — badge vàng "chưa đo". */}

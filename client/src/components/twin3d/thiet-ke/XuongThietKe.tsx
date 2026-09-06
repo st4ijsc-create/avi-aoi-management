@@ -21,12 +21,44 @@
  * không phải "số lần người dùng chạm vào cái gì đó".
  *
  * ★ Undo/redo dùng `lichSuThaoTac.ts` (30 test) — command pattern, không snapshot.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ CHẶN-2 — CHẾ ĐỘ CHỈ ĐỌC PHẢI **ẨN**, KHÔNG PHẢI **DISABLE**
+ * ════════════════════════════════════════════════════════════════════════════
+ * §6.4: "Không có quyền → vào thẳng chế độ chỉ đọc, **ẩn** toàn bộ gizmo và nút
+ * Lưu (**không chỉ disable**)". Bản trước không có khái niệm chỉ-đọc nào: grep
+ * `chiDoc|readOnly|canEdit|coQuyenSua` trên cả thư mục `thiet-ke/` + `TwinStudio`
+ * cho 0 kết quả, và ảnh chụp bằng `engineer1` cho thấy gizmo, thanh 9 công cụ,
+ * nút Lưu, Sinh tự động, Gỡ khỏi mặt bằng hiện đầy đủ.
+ *
+ * ★ VÌ SAO ẨN CHỨ KHÔNG DISABLE — không phải chuyện thẩm mỹ. Một nút xám vẫn nói
+ *   "chức năng này thuộc về bạn, chỉ đang không dùng được lúc này", nên người
+ *   dùng đi tìm cách bật nó. Với người KHÔNG BAO GIỜ có quyền, câu đó là sai.
+ *   Và gizmo thì không có trạng thái "xám": nó vẫn bắt chuột, vẫn dời máy trên
+ *   màn hình, chỉ có lượt lưu là bị server từ chối — tức người dùng mất công kéo
+ *   cả bố cục rồi mới biết. `mayDangChon={null}` gỡ hẳn gizmo khỏi cảnh.
+ *
+ * ★ QUYỀN đọc ở đây khớp ĐÚNG cổng của router (`quyenThietKe`): `settings_factory`
+ *   **HOẶC** `machine_control`, canEdit. Hai bên lệch nhau là lớp lỗi Khối D
+ *   ("một lối vào rồi TỪ CHỐI") — chỉ đổi chỗ xảy ra từ giữa hai màn sang giữa
+ *   UI và API.
+ *
+ * ⚠ Đây là cưỡng chế TRÌNH BÀY, KHÔNG thay thế cổng server (phòng thủ nhiều
+ *   lớp). Router vẫn kiểm từng mutation; phần này chỉ để người không có quyền
+ *   không nhìn thấy thứ họ không dùng được.
+ *
+ * ⚠ `useCanWrite` cho admin TẤT CẢ true (`usePermissions` bypass). Nên phép đo
+ *   nghiệm thu PHẢI chạy bằng tài khoản KHÔNG phải admin — đo bằng admin chứng
+ *   minh số 0 về cổng quyền (§6.4).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Redo2, Save, Sparkles, Undo2 } from "lucide-react";
+import { Eye, Redo2, Save, Sparkles, Undo2 } from "lucide-react";
 
+import { useCanWrite } from "@/components/PermissionGate";
+import { EmptyState } from "@/components/EmptyState";
+import { isScopeEmpty } from "@/lib/scopeEmpty";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -103,6 +135,18 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
   const { t } = useTranslation();
   const tienIch = trpc.useUtils();
 
+  /**
+   * ★★★ CHẶN-2 — quyền SỬA bố cục. Xem docblock đầu tệp.
+   *
+   * `canEdit` trên `settings_factory` HOẶC `machine_control` — phép HOẶC là cố
+   * ý và khớp `quyenThietKe()` của `twinCanhRouter`. Viết thành AND sẽ chặn đúng
+   * những người mà §6.4 muốn cho vào.
+   */
+  const quyenSettings = useCanWrite("settings_factory");
+  const quyenMayMoc = useCanWrite("machine_control");
+  const coQuyenSua = quyenSettings.canEdit || quyenMayMoc.canEdit;
+  const chiDoc = !coQuyenSua;
+
   // ── Dữ liệu ──────────────────────────────────────────────────────────────
   const canhQ = trpc.twinCanh.canhThietKe.useQuery(
     { factoryId, tangIds: tangId === null ? [] : [tangId] },
@@ -145,6 +189,23 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
   }, [canhQ.data]);
 
   const may = canhQ.data?.may ?? [];
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ THƯỜNG-2(b) — PHÂN BIỆT "RỖNG VÌ YÊN ỔN" VỚI "RỖNG VÌ CHƯA ĐƯỢC GÁN"
+   * ════════════════════════════════════════════════════════════════════════
+   * Tái dùng ĐÚNG khuôn `isScopeEmpty` của `CommandCenter.tsx:1468`, không dựng
+   * khuôn thứ hai. Server nay trả `scopeEmptyReason` ở `canhThietKe` (xem
+   * docblock của thủ tục đó).
+   *
+   * ⚠ HAI CHIỀU, không phải một. Một nhà máy THẬT SỰ chưa xếp máy nào VẪN phải
+   *   thấy câu "chưa có máy" bình thường — `isScopeEmpty` chỉ trả `true` khi
+   *   server khai ĐÚNG mã `no_factory_assignment`. Vá quá tay (hiện câu
+   *   phạm-vi-rỗng cho người CÓ gán) là nói dối theo chiều ngược lại.
+   */
+  const phamViRong = isScopeEmpty(
+    (canhQ.data as { scopeEmptyReason?: string | null } | undefined)?.scopeEmptyReason,
+  );
 
   // ── Cây + sức khoẻ ───────────────────────────────────────────────────────
   const datChoMang = useMemo(() => [...datChoSua.values()], [datChoSua]);
@@ -336,7 +397,12 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
   }, [thayDoi.length]);
 
   // ── Phím tắt (§7.2) ──────────────────────────────────────────────────────
+  //
+  // ★★★ CHẶN-2 — phím tắt là ĐƯỜNG VÀO THỨ BA. Ẩn nút Lưu mà để Ctrl+S sống thì
+  //   người chỉ-xem vẫn gọi được mutation; §6.4 đòi bỏ đường GHI, không đòi bỏ
+  //   cái NÚT. Thoát sớm khi chỉ-đọc là cách gỡ CẢ Ctrl+S, Ctrl+Z lẫn W/E/R.
   useEffect(() => {
+    if (chiDoc) return;
     const h = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       // Không nuốt phím khi con trỏ đang trong ô nhập — nếu không thì gõ "we"
@@ -366,7 +432,7 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [chayHoanTac, chayLamLai, luu, trucKhoa]);
+  }, [chayHoanTac, chayLamLai, luu, trucKhoa, chiDoc]);
 
   // ── Align / distribute / array — qua `hinhHocCanChinh` (hoán vị trục ở
   //    `bboxCuaDatCho`/`apDichVaoDatCho`, xem docblock của chúng) ────────────
@@ -481,7 +547,24 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="xuong-thiet-ke">
       {/* ── Thanh công cụ trên cùng ─────────────────────────────────────── */}
+      {/*
+        ★★★ CHẶN-2 — mọi công cụ GHI dưới đây nằm sau `coQuyenSua`, và cách gỡ là
+        KHÔNG RENDER (`&&` / `? :`), không phải `disabled`. Kiểm nghiệm thu là
+        `expect(queryByTestId(...)).toBeNull()` — một nút `disabled` vẫn ở trong
+        DOM nên phép đo đó phân biệt được hai cách làm.
+
+        Công tắc LƯỚI và nút ĐO khoảng cách CỐ Ý ở lại: chúng không ghi gì, chỉ
+        đổi cách nhìn. Ẩn chúng sẽ biến "chỉ đọc" thành "xem được ít hơn", trong
+        khi §6.4 chỉ đòi bỏ đường GHI.
+      */}
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-1.5">
+        {chiDoc ? (
+          <Badge variant="outline" className="gap-1 text-[11px]" data-testid="huy-hieu-chi-xem">
+            <Eye className="h-3 w-3" />
+            {t("common.viewOnly", "Chỉ xem")}
+          </Badge>
+        ) : null}
+        {coQuyenSua ? (
         <div className="flex items-center gap-1">
           {(["translate", "rotate", "scale"] as CheDoGizmo[]).map((cd, i) => (
             <Button
@@ -496,7 +579,9 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
             </Button>
           ))}
         </div>
+        ) : null}
 
+        {coQuyenSua ? (
         <div className="flex items-center gap-1.5">
           <Switch
             checked={snapBat}
@@ -505,33 +590,38 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
           />
           <Label className="text-[11px]">{t("twin3d.studioUi.batDinh")}</Label>
         </div>
+        ) : null}
         <div className="flex items-center gap-1.5">
           <Switch checked={hienLuoi} onCheckedChange={setHienLuoi} data-testid="cong-tac-luoi" />
           <Label className="text-[11px]">{t("twin3d.studioUi.luoi")}</Label>
         </div>
 
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7"
-          disabled={!coTheHoanTac(lichSu)}
-          data-testid="nut-hoan-tac"
-          onClick={chayHoanTac}
-          aria-label={t("twin3d.studioUi.hoanTac")}
-        >
-          <Undo2 className="h-4 w-4" />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7"
-          disabled={!coTheLamLai(lichSu)}
-          data-testid="nut-lam-lai"
-          onClick={chayLamLai}
-          aria-label={t("twin3d.studioUi.lamLai")}
-        >
-          <Redo2 className="h-4 w-4" />
-        </Button>
+        {coQuyenSua ? (
+          <>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              disabled={!coTheHoanTac(lichSu)}
+              data-testid="nut-hoan-tac"
+              onClick={chayHoanTac}
+              aria-label={t("twin3d.studioUi.hoanTac")}
+            >
+              <Undo2 className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              disabled={!coTheLamLai(lichSu)}
+              data-testid="nut-lam-lai"
+              onClick={chayLamLai}
+              aria-label={t("twin3d.studioUi.lamLai")}
+            >
+              <Redo2 className="h-4 w-4" />
+            </Button>
+          </>
+        ) : null}
 
         <div className="ml-auto flex items-center gap-2">
           {thayDoi.length > 0 ? (
@@ -539,32 +629,38 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
               {t("twin3d.studioUi.chuaLuu", { n: thayDoi.length })}
             </Badge>
           ) : null}
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5 text-[11px]"
-            data-testid="nut-mo-sinh"
-            onClick={() => setMoSinh(true)}
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            {t("twin3d.studioUi.sinhTuDong")}
-          </Button>
-          <Button
-            size="sm"
-            className="h-7 gap-1.5 text-[11px]"
-            disabled={thayDoi.length === 0 || luuM.isPending}
-            data-testid="nut-luu"
-            onClick={() => void luu()}
-          >
-            <Save className="h-3.5 w-3.5" />
-            {luuM.isPending ? t("twin3d.studioUi.dangLuu") : t("twin3d.studioUi.luu")}
-          </Button>
+          {coQuyenSua ? (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5 text-[11px]"
+                data-testid="nut-mo-sinh"
+                onClick={() => setMoSinh(true)}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                {t("twin3d.studioUi.sinhTuDong")}
+              </Button>
+              <Button
+                size="sm"
+                className="h-7 gap-1.5 text-[11px]"
+                disabled={thayDoi.length === 0 || luuM.isPending}
+                data-testid="nut-luu"
+                onClick={() => void luu()}
+              >
+                <Save className="h-3.5 w-3.5" />
+                {luuM.isPending ? t("twin3d.studioUi.dangLuu") : t("twin3d.studioUi.luu")}
+              </Button>
+            </>
+          ) : null}
         </div>
       </div>
 
       {/* ── ★ Dải "Sức khoẻ dữ liệu" (§7.1) ─────────────────────────────── */}
       <DaiSucKhoe sucKhoe={sucKhoe} />
 
+      {/* ★ CHẶN-2 — thanh căn chỉnh là 9 công cụ GHI (căn/dàn/nhân bản). Ẩn hẳn. */}
+      {coQuyenSua ? (
       <ThanhCanChinh
         soDangChon={chon.length}
         onCanh={(huong: HuongCanh) => apKetQuaDich(canhTheoBien(dsBboxDangChon, huong), "canh")}
@@ -612,6 +708,16 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
         onBatDo={setDangDo}
         ketQuaDoMm={ketQuaDoMm}
       />
+      ) : null}
+
+      {/* ★★★ THƯỜNG-2(b) — dải phạm-vi-rỗng. Đứng NGAY TRÊN ba vùng, không nhét
+          xuống chân trang: mắt người đọc khối gần nhất chỗ đang nhìn, và cái
+          người dùng đang nhìn là mặt sàn trống. */}
+      {phamViRong ? (
+        <div className="border-b px-3 py-2" data-testid="dai-pham-vi-rong">
+          <EmptyState compact scopeEmptyReason="no_factory_assignment" />
+        </div>
+      ) : null}
 
       {/* ── Ba vùng ─────────────────────────────────────────────────────── */}
       <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
@@ -628,9 +734,13 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
         <ResizablePanel defaultSize={58} minSize={30} className="min-w-0">
           <div className="h-full min-h-0" data-testid="vung-canvas">
             {/* ★★★ RB-4 — ĐÚNG MỘT chỗ dựng canvas trong toàn màn. */}
+            {/* ★★★ CHẶN-2 — `mayDangChon={null}` gỡ HẲN gizmo khỏi cảnh 3D.
+                Gizmo không có trạng thái "xám": để nguyên thì nó vẫn bắt chuột và
+                vẫn dời máy trên màn hình, chỉ lượt lưu mới bị server chặn — tức
+                người dùng kéo xong cả bố cục rồi mới biết mình không có quyền. */}
             <CanhThietKe
               may={mayVe}
-              mayDangChon={machineIdChon}
+              mayDangChon={coQuyenSua ? machineIdChon : null}
               mayDaKhoa={datChoDangChon?.daKhoa ?? false}
               cheDo={cheDo}
               snapBat={snapBat}
@@ -670,11 +780,15 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
         <ResizableHandle withHandle />
 
         <ResizablePanel defaultSize={22} minSize={14} className="min-w-0">
+          {/* ★★★ CHẶN-2 — Inspector là ĐƯỜNG VÀO THỨ HAI. Đường gizmo đã bị gỡ
+              ở trên; nếu để ô nhập ở đây sống thì chế độ chỉ-đọc mới đóng được
+              một nửa cửa, và nửa còn lại chính là đường QA đo được là SỐNG. */}
           <BangThuocTinh
             node={nodeDangChon}
             datCho={datChoDangChon}
             soDangChon={chon.length}
             buocGocDo={BUOC_GOC_MAC_DINH_DO}
+            chiDoc={chiDoc}
             onSua={(khoa, sua) => apSua(khoa, sua, "keo")}
             onGoKhoiMatBang={(khoa) => void goKhoi(khoa)}
           />
@@ -684,6 +798,9 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
       {/* ── Thư viện asset — dải dưới ───────────────────────────────────── */}
       <ThuVienAsset />
 
+      {/* ★ CHẶN-2 — hộp thoại Sinh tự động: nút mở đã ẩn, nhưng không dựng luôn
+          hộp thoại thì `moSinh` không thể bị bật bằng đường nào khác. */}
+      {coQuyenSua ? (
       <HopThoaiSinh
         mo={moSinh}
         onDoiMo={(v) => {
@@ -699,6 +816,7 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
         onXemTruoc={() => void xemTruoc()}
         onApDung={() => void apDungSinh()}
       />
+      ) : null}
     </div>
   );
 }

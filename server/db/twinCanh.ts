@@ -42,6 +42,7 @@ import {
   productionLines,
   stations,
   machines,
+  workstations,
 } from "../../drizzle/schema";
 import { trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 
@@ -625,6 +626,57 @@ async function nhaMayCuaTang(
   return nhaMayCuaToaNha(d, t.toaNhaId);
 }
 
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ THƯỜNG-1 — THỰC THỂ ĐÍCH PHẢI TỒN TẠI TRƯỚC KHI ĐẶT CHỖ
+ * ════════════════════════════════════════════════════════════════════════════
+ * Ca dương đo được trước bản vá: gửi `thucTheId: 999999` (không có hàng nào
+ * trong `machines`) → HTTP 200 `{"daGhi":1,"daTao":1}`. Hàng đặt chỗ trỏ tới
+ * một cái máy không tồn tại được ghi thành công và im lặng.
+ *
+ * ★ Vì sao đây là lỗi THẬT chứ không phải chuyện sạch sẽ: dải "Sức khoẻ dữ liệu"
+ *   của §7.1 đếm `datChoMoCoi` — đặt chỗ không khớp thực thể nào. Đường ghi này
+ *   CHÍNH LÀ nguồn sinh ra thứ mà phép đo kia phải đi dọn. Một hệ vừa sinh rác
+ *   vừa đếm rác của chính mình thì con số đếm được không nói lên điều gì về thế
+ *   giới.
+ *
+ * ⚠ VÌ SAO KIỂM Ở ĐÂY CHỨ KHÔNG PHẢI THÊM FOREIGN KEY:
+ *   `twin_dat_cho` có MỘT cặp cột `(loaiThucThe, thucTheId)` trỏ tới NĂM bảng
+ *   khác nhau (khoá đa hình). Postgres KHÔNG có FK đa hình — muốn dùng FK phải
+ *   tách thành năm cột nullable + năm ràng buộc, tức đổi schema và di trú toàn
+ *   bộ dữ liệu đang có. Kiểm ở tầng ghi bắt đúng lớp lỗi đó với chi phí một
+ *   query trên mỗi LOẠI (không phải mỗi hàng).
+ *
+ * ⚠ KHÔNG chống được đua: một máy bị xoá giữa lúc kiểm và lúc ghi vẫn lọt. Cửa
+ *   sổ đó hẹp và hậu quả là một hàng mồ côi — đúng thứ dải Sức khoẻ đã đếm
+ *   được. Khai rõ giới hạn thay vì để người sau tưởng đây là bảo đảm tuyệt đối.
+ *
+ * @returns danh sách khoá `loai:id` KHÔNG tồn tại (rỗng = mọi thực thể có thật).
+ */
+async function thucTheKhongTonTai(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  hangs: readonly { loaiThucThe: DatChoGhi["loaiThucThe"]; thucTheId: number }[],
+): Promise<string[]> {
+  const bang = {
+    workshop: workshops,
+    line: productionLines,
+    station: stations,
+    machine: machines,
+    workstation: workstations,
+  } as const;
+
+  const thieu: string[] = [];
+  for (const loai of new Set(hangs.map((h) => h.loaiThucThe))) {
+    const ids = [...new Set(hangs.filter((h) => h.loaiThucThe === loai).map((h) => h.thucTheId))];
+    if (ids.length === 0) continue;
+    const t = bang[loai];
+    const co = await d.select({ id: t.id }).from(t).where(inArray(t.id, ids));
+    const coSet = new Set(co.map((r) => r.id));
+    for (const id of ids) if (!coSet.has(id)) thieu.push(`${loai}:${id}`);
+  }
+  return thieu;
+}
+
 /** Kết quả một lượt ghi hàng loạt. */
 export interface KetQuaGhiHangLoat {
   daGhi: number;
@@ -675,6 +727,26 @@ export async function ghiDatChoHangLoat(
     const factoryId = await nhaMayCuaTang(d, tangId);
     if (factoryId === null) return null;
     if (!(await trongPhamVi("factory", factoryId, scope))) return null;
+  }
+
+  // ── ★★★ THƯỜNG-1 — cổng TỒN TẠI, xem `thucTheKhongTonTai` ─────────────────
+  //
+  // ⚠ Ném BAD_REQUEST chứ KHÔNG trả `null`: `null` ở hàm này đã mang nghĩa
+  //   "ngoài phạm vi / tầng không tồn tại" và người gọi dịch nó thành NOT_FOUND
+  //   `twinTang`. Gộp hai ca vào một mã trả về sẽ báo cho người dùng rằng TẦNG
+  //   sai trong khi thứ sai là MÁY — chẩn đoán dẫn nhầm hướng.
+  //
+  // ⚠ Thông báo có liệt kê khoá thiếu. Đây KHÔNG phải rò rỉ oracle tồn-tại như
+  //   cổng phạm vi ở trên: tới được đây nghĩa là người gọi ĐÃ qua cổng phạm vi
+  //   của tầng đích, và các khoá này do CHÍNH họ vừa gửi lên.
+  const thieu = await thucTheKhongTonTai(d, hangs);
+  if (thieu.length > 0) {
+    throw appError(
+      "BAD_REQUEST",
+      "ENTITY_NOT_FOUND",
+      { entity: "twinDatCho", thucThe: thieu.slice(0, 20).join(", ") },
+      `Thực thể không tồn tại: ${thieu.slice(0, 20).join(", ")}${thieu.length > 20 ? ` (+${thieu.length - 20})` : ""}`,
+    );
   }
 
   // Đếm hàng ĐÃ CÓ trước khi ghi, để phân biệt tạo mới với cập nhật. Đây là con

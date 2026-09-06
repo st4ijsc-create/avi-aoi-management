@@ -36,6 +36,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { EmptyState } from "@/components/EmptyState";
+import { isScopeEmpty } from "@/lib/scopeEmpty";
 import DungNhaXuong from "@/components/twin3d/thiet-ke/DungNhaXuong";
 import NhapBanVe from "@/components/twin3d/thiet-ke/NhapBanVe";
 import XuongThietKe from "@/components/twin3d/thiet-ke/XuongThietKe";
@@ -56,6 +58,33 @@ export default function TwinStudio() {
   const toaNhaQ = trpc.twinCanh.danhSachToaNha.useQuery(
     { factoryId: factoryId ?? 0 },
     { enabled: factoryId !== null },
+  );
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ THƯỜNG-2(b) — "CHƯA CÓ NHÀ MÁY" ≠ "CHƯA ĐƯỢC GÁN NHÀ MÁY"
+   * ════════════════════════════════════════════════════════════════════════
+   * Đo được 2026-09-06: tài khoản không-admin KHÔNG có hàng trong
+   * `user_factory_assignments` mở màn này thì `factory.list` trả `[]` ⇒
+   * `factoryId` ở nguyên `null` ⇒ nhánh `factoryId === null` render **`null`**,
+   * tức MÀN HÌNH TRẮNG không một chữ giải thích. Người dùng không phân biệt được
+   * "hệ thống chưa có nhà máy nào" với "tôi chưa được gán".
+   *
+   * ★ `canhThietKe` là truy vấn CÙNG MÀN có mang nhãn phạm vi (server đã đính ba
+   *   ô qua `resolveTenantFactoryScope`). Đây đúng là khuôn mà `withScopeLabels`
+   *   dặn: thủ tục trả mảng không mang được nhãn qua tRPC, nên giao diện lấy lý
+   *   do từ truy vấn có nhãn cùng màn.
+   *
+   * ⚠ `enabled` khi CHƯA có nhà máy — đó chính là ca cần hỏi. Truyền `factoryId:
+   *   0` là hợp lệ với `positive()`? KHÔNG. Nên chỉ chạy khi thật sự rỗng và
+   *   dùng `factoryId` giả 1 chỉ để LẤY NHÃN, không dùng dữ liệu trả về.
+   */
+  const nhanPhamViQ = trpc.twinCanh.canhThietKe.useQuery(
+    { factoryId: 1, tangIds: [] },
+    { enabled: factoryId === null && !factoriesQ.isLoading, retry: false },
+  );
+  const phamViRong = isScopeEmpty(
+    (nhanPhamViQ.data as { scopeEmptyReason?: string | null } | undefined)?.scopeEmptyReason,
   );
 
   /**
@@ -152,7 +181,18 @@ export default function TwinStudio() {
           value="thiet-ke"
           className="mt-2 min-h-0 flex-1 overflow-hidden rounded-md border data-[state=inactive]:hidden"
         >
-          {factoryId === null ? null : tangDau === null ? (
+          {factoryId === null ? (
+            /* ★★★ THƯỜNG-2(b) — nói RÕ vì sao trống, thay cho `null` câm. */
+            factoriesQ.isLoading || nhanPhamViQ.isLoading ? null : phamViRong ? (
+              <div className="p-4" data-testid="dai-pham-vi-rong">
+                <EmptyState scopeEmptyReason="no_factory_assignment" />
+              </div>
+            ) : (
+              <p className="p-4 text-sm text-muted-foreground" data-testid="chua-co-nha-may">
+                {t("twin3d.studioUi.chuaCoNhaMay", "Chưa có nhà máy nào để thiết kế.")}
+              </p>
+            )
+          ) : tangDau === null ? (
             <p className="p-4 text-sm text-muted-foreground" data-testid="chua-co-tang">
               {t("twin3d.studioUi.chuaCoTang")}
             </p>

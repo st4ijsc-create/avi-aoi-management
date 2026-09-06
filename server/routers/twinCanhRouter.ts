@@ -36,7 +36,7 @@
  * xưởng nhỏ đi 1000 lần, đúng lớp lỗi §10A.1.
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { requireAnyPermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
 import { storagePut } from "../storage";
@@ -630,7 +630,33 @@ export const twinCanhRouter = router({
         input.tangIds && input.tangIds.length > 0
           ? await traDatChoTheoTang(input.tangIds, scope)
           : [];
-      return { ...cay, datCho, kichThuoc };
+
+      /*
+       * ════════════════════════════════════════════════════════════════════
+       * ★★★ THƯỜNG-2(b) — "RỖNG VÌ YÊN ỔN" ≠ "RỖNG VÌ CHƯA ĐƯỢC GÁN"
+       * ════════════════════════════════════════════════════════════════════
+       * Đo được: `user_factory_assignments` chỉ có 2 hàng, CẢ HAI của userId 51.
+       * `supervisor1`/`maint1` qua được cổng quyền rồi thấy màn RỖNG — và màn
+       * này nói "0 máy" y hệt như khi nhà máy thật sự chưa xếp máy nào. Đó đúng
+       * là thứ NT-3 cấm: hai thế giới khác hẳn nhau mà giao diện phát biểu giống
+       * nhau, nên người dùng đi tìm lỗi ở chỗ không có lỗi.
+       *
+       * ★ Dùng ĐÚNG `resolveTenantFactoryScope` — bộ phân giải mà chính đường dữ
+       *   liệu đi qua — chứ KHÔNG tự tính lại. Hai bộ suy độc lập canh hai nửa
+       *   một câu là lớp lỗi đã cắn dự án này (xem `mqttOeeRouters.getScopeLabels`).
+       *
+       * ⚠ Trả ĐÚNG BA Ô CHỮ của `scope.labels`. `filter` của drizzle mang tham
+       *   chiếu vòng và từng làm `dashboard.getStats` trả 500 cho MỌI người dùng
+       *   (2026-08-17); `resolveTenantFactoryScope` đã lọc qua `scopeLabelsOf`
+       *   nên nó không có đường ra tới đây.
+       */
+      const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+      const nhan = await resolveTenantFactoryScope({
+        userId: ctx.user?.id,
+        userRole: ctx.user?.role,
+      });
+
+      return { ...cay, datCho, kichThuoc, ...nhan.labels };
     }),
 
   /**
@@ -755,9 +781,36 @@ export const twinCanhRouter = router({
    *   thì mất bảo vệ, còn "không có hàng để ghi" thì không sửa nhầm được.
    *
    * ★ Mọi hàng ghi ra mang `nguon='sinh'` ⇒ badge vàng "chưa đo" hiện đúng.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ QUYỀN — `adminProcedure`, KHÔNG phải `quyenThietKe("canCreate")`
+   * ════════════════════════════════════════════════════════════════════════
+   * §6.4 dòng 755 xếp "Sinh tự động, xuất bản phiên bản" vào cột `adminRoleProcedure`,
+   * TÁCH khỏi ba dòng canView/canEdit/canCreate ở trên. Bản đầu dùng
+   * `quyenThietKe("canCreate")` và hậu quả được dựng thành CA DƯƠNG, không phải
+   * suy đoán: cấp `user_factory_assignments` cho `supervisor1` (vai supervisor,
+   * KHÔNG admin, KHÔNG có `settings_factory`) rồi gọi procedure này → HTTP 200
+   * `{"daGhi":81}`. Một tài khoản không-admin ĐÃ ghi đè 81 hàng bố cục.
+   *
+   * Vì sao mức quyền ở đây phải CHẶT HƠN các mutation khác của chính router này:
+   * kéo-thả một máy sửa MỘT hàng và người làm nhìn thấy ngay kết quả, nên
+   * `canEdit` là đủ. `sinhTuDong` ghi đè TOÀN BỘ bố cục trong một lượt (đo được:
+   * 81 hàng) — đây là thao tác phá huỷ nhất của màn Thiết kế, và thứ duy nhất
+   * cứu dữ liệu chỉnh tay là luật NT-4 `nguon='tay'` ở `sinhBoCuc`.
+   *
+   * ⚠ TÊN TRONG SPEC KHÔNG TỒN TẠI TRONG MÃ. Spec viết `adminRoleProcedure`;
+   *   `server/_core/trpc.ts` KHÔNG export định danh nào tên đó (có
+   *   `adminProcedure` và factory `roleProcedure(...)`). Chọn `adminProcedure` vì
+   *   nó đúng NGHĨA spec mô tả (vai admin) và là khuôn mà ~20 router khác trong
+   *   repo đã dùng. Chênh lệch TÊN này đã báo lại ở cổng ra, không tự sửa spec.
+   *
+   * ⚠ `adminProcedure` KÈM cổng 2FA (`batBuoc2FA()` — `trpc.ts:373`): ở triển
+   *   khai internet-facing (`AUTH_2FA_BAT_BUOC` ≠ "0") admin CHƯA bật 2FA sẽ
+   *   nhận `TWO_FACTOR_NOT_SET_UP` chứ không phải chạy được. Đó là hành vi ĐÚNG
+   *   theo §8.4, nhưng nó là thay đổi hành vi thật nên ghi ra đây thay vì để ai
+   *   đó phát hiện lúc nửa đêm.
    */
-  sinhTuDong: protectedProcedure
-    .use(quyenThietKe("canCreate"))
+  sinhTuDong: adminProcedure
     .input(
       z.object({
         factoryId: z.number().int().positive(),
