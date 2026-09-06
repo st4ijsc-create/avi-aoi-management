@@ -990,6 +990,25 @@ export default function TwinVanHanh() {
         </div>
       ) : null}
 
+      {/*
+        ── Dải tua lại 24 h (§9.8) — CÙNG kho với trực tiếp ─────────────
+        ⚠ ĐẶT TRƯỚC thân trang, KHÔNG phải sau. Đo được trên trình duyệt thật:
+        khung ngoài là `h-[calc(100vh-5rem)] flex-col`, thân giữa `flex-1` chiếm
+        1054 px và KHÔNG co lại, nên một dải 37 px đặt sau thân bị đẩy xuống
+        `top: 1265` trong khi viewport chỉ cao 1249 — thanh tua **render nhưng
+        nằm ngoài màn hình**. Một bộ điều khiển người dùng không nhìn thấy là
+        một bộ điều khiển không tồn tại, và không có lỗi nào nổ để báo điều đó.
+      */}
+      <DongThoiGian
+        moc={mocTua}
+        bayGio={bayGioThat}
+        dangPhat={dangPhat}
+        tocDo={tocDo}
+        onDoiMoc={setMocTua}
+        onDoiPhat={setDangPhat}
+        onDoiTocDo={setTocDo}
+      />
+
       {/* ── Thân: trái | canvas | phải ─────────────────────────────────── */}
       <div className="flex min-h-0 flex-1">
         {/* PANEL TRÁI — DOM thật, tab được, MỌI hành động làm được từ đây (§9.9) */}
@@ -1118,17 +1137,6 @@ export default function TwinVanHanh() {
           />
         </div>
       </div>
-
-      {/* ── Dải tua lại 24 h (§9.8) — CÙNG kho với trực tiếp ───────────── */}
-      <DongThoiGian
-        moc={mocTua}
-        bayGio={bayGioThat}
-        dangPhat={dangPhat}
-        tocDo={tocDo}
-        onDoiMoc={setMocTua}
-        onDoiPhat={setDangPhat}
-        onDoiTocDo={setTocDo}
-      />
 
       {/* ── Dải dưới: dải Line 2D đồng bộ hai chiều (§10C.3 mục 3) ─────── */}
       {phamVi.cap === "line" && hinhLine ? (
