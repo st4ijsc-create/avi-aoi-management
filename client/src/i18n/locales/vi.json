@@ -20107,7 +20107,10 @@
         "sanXuat": "Sản xuất",
         "andon": "Andon",
         "tapDoan": "Tổng quan tập đoàn",
-        "xuongDung": "Sửa mặt bằng"
+        "xuongDung": "Sửa mặt bằng",
+        "dieuKhien": "Mặt phẳng điều khiển",
+        "robotCockpit": "Buồng lái robot",
+        "banDieuKhien": "Bàn điều khiển lệnh"
       },
       "canhAria2D": "Sơ đồ 2D nhà máy: {{may}} máy, {{canhBao}} cảnh báo đang mở, {{khongRo}} máy mất tín hiệu"
     },
@@ -20369,6 +20372,58 @@
       "roiTrang": "Còn thay đổi chưa lưu. Rời trang sẽ mất.",
       "loiLuu": "Không lưu được: {{loi}}",
       "phimTat": "Phím tắt: W di chuyển · E xoay · R co giãn · Ctrl đảo bắt dính · Ctrl+Z hoàn tác"
+    },
+    "ketNoi": {
+      "chua_ket_noi": {
+        "nhan": "Chưa kết nối",
+        "moTa": "Chưa kết nối luồng trực tiếp — các số dưới đây là ảnh chụp lúc tải trang."
+      },
+      "dang_cho": {
+        "nhan": "Đang chờ…",
+        "moTa": "Đã kết nối, đang chờ gói dữ liệu đầu tiên."
+      },
+      "truc_tiep": {
+        "nhan": "Trực tiếp",
+        "moTa": "Đang nhận dữ liệu trực tiếp."
+      },
+      "im_lang": {
+        "nhan": "Im lặng",
+        "moTa": "Đã kết nối nhưng không nhận được gói nào gần đây — dữ liệu đang cũ dần."
+      },
+      "xem_lai": {
+        "nhan": "Xem lại",
+        "moTa": "Đang xem lại lịch sử, không phải dữ liệu trực tiếp."
+      }
+    },
+    "tua": {
+      "trucTiep": "Trực tiếp",
+      "xemLai": "Xem lại {{gio}}",
+      "lui": "Lùi 5 phút",
+      "tien": "Tiến 5 phút",
+      "phat": "Phát",
+      "dung": "Tạm dừng",
+      "thanhKeo": "Tua lại 24 giờ qua"
+    },
+    "xuatXu": {
+      "bong": {
+        "nhan": "SHADOW",
+        "moTa": "SHADOW — màu phản ánh telemetry/heartbeat THỰC của thiết bị."
+      },
+      "mo_phong": {
+        "nhan": "MÔ PHỎNG",
+        "moTa": "MÔ PHỎNG — các số này là giả định what-if, KHÔNG phải số đo."
+      },
+      "so_do": {
+        "nhan": "SƠ ĐỒ",
+        "moTa": "SƠ ĐỒ — chỉ có bố cục, chưa có số liệu vận hành nào."
+      },
+      "khong_ro": {
+        "nhan": "—",
+        "moTa": "Chưa xác định được xuất xứ của dữ liệu đang hiện."
+      }
+    },
+    "anToan": {
+      "estopDangNhan": "E-STOP đang được nhấn: {{ds}}"
     }
   }
 }

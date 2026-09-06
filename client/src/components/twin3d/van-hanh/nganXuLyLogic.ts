@@ -190,7 +190,7 @@ export function dangAnTam(shelvedUntil: number | null | undefined, bayGio: numbe
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 /** Loại vật thể mà bảng §9.3 phân biệt. */
-export type LoaiDich = "machine" | "station" | "line" | "workshop" | "factory";
+export type LoaiDich = "machine" | "station" | "line" | "workshop" | "factory" | "robot";
 
 export interface NutDieuHuong {
   /** Khoá i18n cho nhãn nút. */
@@ -227,6 +227,9 @@ export interface NutDieuHuong {
  *     /production-dashboard   → dashboard_view      (navigation.tsx:335)
  *     /andon                  → dashboard_view      (navigation.tsx:294)
  *     /corporate-dashboard    → dashboard_corporate (navigation.tsx:261)
+ *     /control-plane          → machine_control     (App.tsx:424)   ← Đợt 6 #21
+ *     /command-console        → machine_control     (App.tsx:422)   ← Đợt 6 #29
+ *     /robot/:id              → machine_status      (App.tsx:454)   ← Đợt 6 #24-29
  *
  * ⚠ `/machine-health` là REDIRECT sang `/device-monitor?tab=health`
  *   (`App.tsx:381`), nên nút trỏ thẳng tới đích để không phải nhảy hai lần.
@@ -239,6 +242,32 @@ export function nutDieuHuongCho(loai: LoaiDich, id: number): NutDieuHuong[] {
         { khoaNhan: "twin3d.vanHanh.dieuHuong.sucKhoeMay", href: "/device-monitor?tab=health", quyen: "machine_status" },
         { khoaNhan: "twin3d.vanHanh.dieuHuong.lichSu", href: `/history?machineId=${id}`, quyen: "history_view" },
         { khoaNhan: "twin3d.vanHanh.dieuHuong.truyXuat", href: `/traceability?machineId=${id}`, quyen: "analytics_oee" },
+        /*
+         * ★ Sổ kiểm §11 #21 — `gatedActions → /control-plane`.
+         *
+         * §11 xếp mục này vào "`NganXuLy` nhóm Mở chức năng", tức là CHỈ NỐI
+         * NÚT: bảng `gatedActions` vẫn sống ở `MachineCockpit` (#21 không nói
+         * "viết lại"), Twin chỉ cần mở được đường tới nơi thao tác.
+         *
+         * ⚠ `machine_control` lấy từ CHÍNH nơi cưỡng chế (`App.tsx:424`), không
+         *   đoán: khai rộng hơn ⇒ nút hiện rồi bị chặn (lỗi Khối D); khai hẹp
+         *   hơn ⇒ nút biến mất với đúng người cần nó, và không lỗi nào nổ.
+         */
+        { khoaNhan: "twin3d.vanHanh.dieuHuong.dieuKhien", href: `/control-plane?machineId=${id}`, quyen: "machine_control" },
+      ];
+    /*
+     * ★ Sổ kiểm §11 #24-#29 — RobotCockpit.
+     *
+     * Năm trong sáu mục (#24 teach/jog · #25 joints · #27 sparkline · #28 tab
+     * safety/anomalies · #29 gatedActions) có cột "Đích di trú" là **GIỮ Ở
+     * COCKPIT**. Nên phần Twin phải làm là MỘT ĐƯỜNG MỞ tới cockpit đó — không
+     * phải dựng lại sáu tính năng ở Twin. #26 (E-STOP) là ngoại lệ duy nhất:
+     * spec ghi "Nổi lên Twin", và nó được xử lý ở tầng badge, không ở đây.
+     */
+    case "robot":
+      return [
+        { khoaNhan: "twin3d.vanHanh.dieuHuong.robotCockpit", href: `/robot/${id}`, quyen: "machine_status" },
+        { khoaNhan: "twin3d.vanHanh.dieuHuong.banDieuKhien", href: `/command-console?robotId=${id}`, quyen: "machine_control" },
       ];
     case "station":
       return [

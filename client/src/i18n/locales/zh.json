@@ -20135,7 +20135,10 @@
         "sanXuat": "生产",
         "andon": "安灯",
         "tapDoan": "集团总览",
-        "xuongDung": "编辑布局"
+        "xuongDung": "编辑布局",
+        "dieuKhien": "控制平面",
+        "robotCockpit": "机器人驾驶舱",
+        "banDieuKhien": "指令控制台"
       },
       "canhAria2D": "2D 工厂平面图：{{may}} 台设备，{{canhBao}} 条未处理报警，{{khongRo}} 台设备失去信号"
     },
@@ -20397,6 +20400,58 @@
       "roiTrang": "仍有未保存的更改，离开将会丢失。",
       "loiLuu": "保存失败：{{loi}}",
       "phimTat": "快捷键：W 移动 · E 旋转 · R 缩放 · Ctrl 反转吸附 · Ctrl+Z 撤销"
+    },
+    "ketNoi": {
+      "chua_ket_noi": {
+        "nhan": "未连接",
+        "moTa": "实时流未连接 — 以下数字为页面加载时的快照。"
+      },
+      "dang_cho": {
+        "nhan": "等待中…",
+        "moTa": "已连接，正在等待第一个数据包。"
+      },
+      "truc_tiep": {
+        "nhan": "实时",
+        "moTa": "正在接收实时数据。"
+      },
+      "im_lang": {
+        "nhan": "静默",
+        "moTa": "已连接但近期无数据包 — 数据正在变旧。"
+      },
+      "xem_lai": {
+        "nhan": "回放",
+        "moTa": "正在查看历史数据，非实时数据。"
+      }
+    },
+    "tua": {
+      "trucTiep": "实时",
+      "xemLai": "回放 {{gio}}",
+      "lui": "后退5分钟",
+      "tien": "前进5分钟",
+      "phat": "播放",
+      "dung": "暂停",
+      "thanhKeo": "回放过去24小时"
+    },
+    "xuatXu": {
+      "bong": {
+        "nhan": "SHADOW",
+        "moTa": "SHADOW — 颜色反映设备的真实遥测/心跳数据。"
+      },
+      "mo_phong": {
+        "nhan": "模拟",
+        "moTa": "模拟 — 这些是假设推演值，并非实测数据。"
+      },
+      "so_do": {
+        "nhan": "示意图",
+        "moTa": "示意图 — 仅有布局，尚无运行数据。"
+      },
+      "khong_ro": {
+        "nhan": "—",
+        "moTa": "无法确定当前数据的来源。"
+      }
+    },
+    "anToan": {
+      "estopDangNhan": "E-STOP 已触发：{{ds}}"
     }
   }
 }

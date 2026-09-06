@@ -20127,7 +20127,10 @@
         "sanXuat": "Production",
         "andon": "Andon",
         "tapDoan": "Corporate overview",
-        "xuongDung": "Edit layout"
+        "xuongDung": "Edit layout",
+        "dieuKhien": "Control plane",
+        "robotCockpit": "Robot cockpit",
+        "banDieuKhien": "Command console"
       },
       "canhAria2D": "2D factory map: {{may}} machines, {{canhBao}} open alarms, {{khongRo}} machines with no signal"
     },
@@ -20389,6 +20392,58 @@
       "roiTrang": "There are unsaved changes. Leaving will lose them.",
       "loiLuu": "Save failed: {{loi}}",
       "phimTat": "Shortcuts: W move · E rotate · R scale · Ctrl inverts snap · Ctrl+Z undo"
+    },
+    "ketNoi": {
+      "chua_ket_noi": {
+        "nhan": "Not connected",
+        "moTa": "Live stream not connected — the numbers below are a snapshot from page load."
+      },
+      "dang_cho": {
+        "nhan": "Waiting…",
+        "moTa": "Connected, waiting for the first data packet."
+      },
+      "truc_tiep": {
+        "nhan": "Live",
+        "moTa": "Receiving live data."
+      },
+      "im_lang": {
+        "nhan": "Silent",
+        "moTa": "Connected but no recent packets — data is going stale."
+      },
+      "xem_lai": {
+        "nhan": "Replay",
+        "moTa": "Viewing history, not live data."
+      }
+    },
+    "tua": {
+      "trucTiep": "Live",
+      "xemLai": "Replay {{gio}}",
+      "lui": "Back 5 minutes",
+      "tien": "Forward 5 minutes",
+      "phat": "Play",
+      "dung": "Pause",
+      "thanhKeo": "Replay the last 24 hours"
+    },
+    "xuatXu": {
+      "bong": {
+        "nhan": "SHADOW",
+        "moTa": "SHADOW — colors reflect the device's REAL telemetry/heartbeat."
+      },
+      "mo_phong": {
+        "nhan": "SIMULATED",
+        "moTa": "SIMULATED — these are what-if assumptions, NOT measurements."
+      },
+      "so_do": {
+        "nhan": "DIAGRAM",
+        "moTa": "DIAGRAM — layout only, no operational data yet."
+      },
+      "khong_ro": {
+        "nhan": "—",
+        "moTa": "Cannot determine the provenance of the data shown."
+      }
+    },
+    "anToan": {
+      "estopDangNhan": "E-STOP engaged: {{ds}}"
     }
   }
 }

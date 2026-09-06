@@ -46,7 +46,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useSearch } from "wouter";
-import { AlertTriangle, Boxes, LayoutGrid, RefreshCw } from "lucide-react";
+import { AlertTriangle, Boxes, LayoutGrid, OctagonAlert, RefreshCw } from "lucide-react";
 import type * as THREE from "three";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -100,6 +100,9 @@ import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/ngan
 import { dongHoHienThi, hopNhat } from "@/components/twin3d/van-hanh/khoTrangThai";
 import { useKhoTrangThai } from "@/components/twin3d/van-hanh/useKhoTrangThai";
 import { DongThoiGian, type TocDo } from "@/components/twin3d/van-hanh/DongThoiGian";
+// ── Đợt 6 (§11 #26/#51/#52) — an toàn nổi lên Twin + xuất xứ dữ liệu ──
+import { tomTatAnToan } from "@/components/twin3d/van-hanh/canhBaoAnToan";
+import { laGiaDinh, xuatXuHienTai } from "@/components/twin3d/van-hanh/nguonDuLieu";
 
 /** Phạm vi mặc định khi URL không nói gì. */
 const PHAM_VI_MAC_DINH: PhamVi = { cap: "tang", id: null };
@@ -329,6 +332,38 @@ export default function TwinVanHanh() {
    * chỗ, và chỗ bỏ sót đó sẽ hiện dữ liệu cũ mà KHÔNG kêu.
    */
   const mayVanHanh = useMemo(() => hopNhat(mayNen, kho), [mayNen, kho]);
+
+  /* ── §11 #52 — XUẤT XỨ: SHADOW / mô phỏng / chỉ sơ đồ ──────────────── */
+
+  /**
+   * ★ "Có số liệu thật" = có ÍT NHẤT một máy mang dấu thời gian dữ liệu. Đo bằng
+   *   `thoiDiemDuLieu != null` chứ KHÔNG bằng "có máy nào không": một cảnh 42
+   *   máy mà không máy nào từng báo cáo là SƠ ĐỒ, không phải SHADOW.
+   */
+  const xuatXu = useMemo(
+    () =>
+      xuatXuHienTai(
+        {
+          coSoLieuThat: mayVanHanh.some((m) => m.thoiDiemDuLieu != null),
+          // Twin hiện chưa có chế độ what-if trên màn Vận hành (ngăn "Mô phỏng"
+          // là việc của Đợt 5/7) ⇒ luôn `false` ở đây. KHÔNG hardcode `bong`:
+          // khi ngăn đó nối vào, chỉ cần đổi đúng ô này.
+          dangMoPhong: false,
+        },
+        (canhQ.data?.datCho?.length ?? 0) > 0,
+      ),
+    [mayVanHanh, canhQ.data],
+  );
+
+  /* ── §11 #26 — E-STOP nổi lên tổng quan ───────────────────────────────── */
+
+  /**
+   * ⚠ NỢ CÓ KHAI: Twin chưa đặt được robot vào cảnh (`twin_dat_cho.loaiThucThe`
+   * không có `robot` — `drizzle/schema/twin3d.ts:149`), nên tóm tắt này hiện
+   * chạy trên TẬP RỖNG và chỉ chứng minh "không nổ". Xem docblock
+   * `canhBaoAnToan.ts` cho ba điều kiện còn thiếu để đóng #26.
+   */
+  const anToan = useMemo(() => tomTatAnToan([]), []);
 
   /** Trạng thái HIỂN THỊ (đã xét tuổi) — nguồn duy nhất cho mọi bề mặt. */
   const trangThaiTheoMay = useMemo(() => {
@@ -822,6 +857,38 @@ export default function TwinVanHanh() {
             ★★★ NT-3.2 — "cập nhật lần cuối" là max(timestamp) của DỮ LIỆU NỀN.
             Đỏ khi > 60 giây. `—` khi chưa từng có dữ liệu (KHÔNG hiện "vừa xong").
           */}
+          {/*
+            ★★★ §11 #52/#62 — BADGE XUẤT XỨ. SHADOW và TWIN trông giống hệt nhau
+            trên màn hình nhưng trả lời hai câu khác hẳn ("đang thế nào" vs "sẽ
+            thế nào nếu"). Không khai xuất xứ = để người vận hành đọc một con số
+            mô phỏng như số đo thật (NT-4).
+          */}
+          <span
+            className={
+              "rounded px-1.5 py-0.5 text-[10px] font-medium " +
+              (laGiaDinh(xuatXu)
+                ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-300"
+                : xuatXu === "bong"
+                  ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  : "bg-muted text-muted-foreground")
+            }
+            data-testid="badge-xuat-xu"
+            data-xuat-xu={xuatXu}
+            title={t(`twin3d.xuatXu.${xuatXu}.moTa`, {
+              defaultValue: {
+                bong: "SHADOW — màu phản ánh telemetry/heartbeat THỰC của thiết bị.",
+                mo_phong: "MÔ PHỎNG — các số này là giả định what-if, KHÔNG phải số đo.",
+                so_do: "SƠ ĐỒ — chỉ có bố cục, chưa có số liệu vận hành nào.",
+                khong_ro: "Chưa xác định được xuất xứ của dữ liệu đang hiện.",
+              }[xuatXu],
+            })}
+          >
+            {t(`twin3d.xuatXu.${xuatXu}.nhan`, {
+              defaultValue: {
+                bong: "SHADOW", mo_phong: "MÔ PHỎNG", so_do: "SƠ ĐỒ", khong_ro: "—",
+              }[xuatXu],
+            })}
+          </span>
           <span
             className={`text-[11px] ${doTuoiNen.do ? "text-destructive" : "text-muted-foreground"}`}
             data-testid="do-tuoi-nen"
@@ -896,6 +963,30 @@ export default function TwinVanHanh() {
           >
             {t("twin3d.vanHanh.moXuongDung", "Mở Xưởng dựng")}
           </button>
+        </div>
+      ) : null}
+
+      {/*
+        ★★★ §11 #26 — E-STOP NỔI LÊN TWIN. An toàn phải thấy được từ tổng quan,
+        không phải mở từng buồng lái mới biết. Đặt TRÊN mọi banner khác: đây là
+        thông tin an toàn, nó không xếp hàng sau cảnh báo bố cục.
+
+        ⚠ Hiện chạy trên tập RỖNG (Twin chưa đặt được robot vào cảnh) — xem
+        docblock `canhBaoAnToan.ts`. Khối này vì thế CHƯA từng hiện trên dữ liệu
+        thật, và #26 chưa được đánh dấu "đã di trú VÀ ĐÃ ĐO".
+      */}
+      {anToan.coCanhBao ? (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b border-destructive bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive"
+          role="alert"
+          data-testid="canh-bao-estop"
+        >
+          <OctagonAlert className="h-4 w-4 shrink-0" />
+          <span>
+            {t("twin3d.anToan.estopDangNhan", "E-STOP đang được nhấn: {{ds}}", {
+              ds: anToan.dangNhan.map((r) => r.ma).join(", "),
+            })}
+          </span>
         </div>
       ) : null}
 
