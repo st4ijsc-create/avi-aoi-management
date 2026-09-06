@@ -958,3 +958,196 @@ export async function traKichThuocTheoLoai() {
     laGiaDinh: h.laGiaDinh,
   }));
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 6 (§6.3) — TRẠNG THÁI HÀNG LOẠT CHO VÒNG RENDER CỦA `/twin`        */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Một máy kèm trạng thái đã xét tuổi — hình dạng §6.3 của `trangThaiHangLoat`.
+ *
+ * ★★★ `doTuoiGiay` là ô QUAN TRỌNG NHẤT, và nó có `null` THẬT.
+ *
+ * §6.3 ghi cột `doTuoiGiay`, nhưng một `number` đơn thuần KHÔNG diễn đạt nổi ba
+ * trạng thái mà G15/NT-3 đòi: *đã đo · đang đo · **chưa từng đo***. Nếu máy chưa
+ * bao giờ báo cáo mà ta trả `0`, client đọc được "vừa cập nhật xong 0 giây
+ * trước" — tức là câu NÓI DỐI mạnh nhất có thể về một máy đã im lặng vĩnh viễn.
+ *
+ * ⇒ `capNhatLuc = null` **và** `doTuoiGiay = null` ⇔ CHƯA TỪNG có dữ liệu.
+ *   Đo được trên DB này: 2/42 máy rơi vào ca đó (xem docblock
+ *   `trungThucDuLieu.ts`). Không phải ca lý thuyết.
+ */
+export interface TrangThaiMayHangLoat {
+  machineId: number;
+  ma: string;
+  ten: string;
+  loaiMay: string | null;
+  isActive: boolean;
+  stationId: number | null;
+  /** Giá trị máy TỰ KHAI (`machines.operationStatus`) — CHƯA xét tuổi. */
+  trangThai: string | null;
+  /** Điểm sức khoẻ 0-100 nếu có; `null` = chưa đo (NT-3.5: `—`, không phải `0`). */
+  diemSucKhoe: number | null;
+  /** ms epoch của DỮ LIỆU (không phải thời điểm render). `null` = chưa từng có. */
+  capNhatLuc: number | null;
+  /** Tuổi dữ liệu (giây). `null` = CHƯA TỪNG báo cáo — KHÔNG được quy về 0. */
+  doTuoiGiay: number | null;
+  /** Uptime 24h (%) — `null` khi cửa sổ 24h không có bản ghi nào để tính. */
+  uptimePhanTram: number | null;
+}
+
+/**
+ * Trạng thái toàn bộ máy của một nhà máy — **SỐ QUERY CỐ ĐỊNH, KHÔNG N+1** (§6.3).
+ *
+ * Tổng: 4 truy vấn cây phân cấp (`traCayPhanCapNhaMay`) + 1 đọc `machines` +
+ * 3 của `trangThaiTapMay` — **không phụ thuộc số máy**. Đo được: N = 1…42 đều
+ * cho `trangThaiTapMay` = 3 query (xem thông điệp commit `trangThaiTapMay`).
+ *
+ * ★ DÙNG LẠI `trangThaiTapMay` của `db/machine.ts`, KHÔNG chép ba truy vấn sang
+ *   đây. Luật G12 — xem docblock của hàm đó.
+ *
+ * ⚠ `bayGio` là THAM SỐ, không phải `Date.now()` ẩn: `doTuoiGiay` phải tất định
+ *   trong test, và một `Date.now()` nằm sâu trong tầng db là thứ test không với
+ *   tới được.
+ */
+/**
+ * ★★★ PHÉP QUY TUỔI — hàm THUẦN, tách khỏi I/O để TEST ĐƯỢC.
+ *
+ * Tách ra vì hai quyết định dưới đây đều do PHÉP ĐO ép ra chứ không hiển nhiên,
+ * nên chúng phải có test ghim; mà một hàm chạm DB thì test phải dựng DB, và
+ * test cần DB là test hay bị tắt. Xem `traTrangThaiHangLoat` cho phần I/O.
+ *
+ * Hai luật hàm này cưỡng chế:
+ *  1. Mốc tươi = **NHỊP TIM**, không trộn `machine_status_logs` (xem docblock
+ *     trong `traTrangThaiHangLoat` — đo được 3 conveyor tự khai 0,4 ngày trong
+ *     khi im lặng 51,7 ngày).
+ *  2. Chưa từng có dữ liệu ⇒ `capNhatLuc`/`doTuoiGiay` = **`null`**, KHÔNG phải
+ *     `0`. `0` nghĩa là "vừa cập nhật xong", tức câu nói dối mạnh nhất có thể
+ *     về một máy im lặng vĩnh viễn (NT-3.5).
+ */
+export function quyTuoiMay(
+  nguon: {
+    hbBang: Date | string | null | undefined;
+    hbMay: Date | string | null | undefined;
+  },
+  bayGio: number,
+): { capNhatLuc: number | null; doTuoiGiay: number | null } {
+  const moc: number[] = [];
+  for (const v of [nguon.hbBang, nguon.hbMay]) {
+    if (v == null) continue;
+    const t = new Date(v).getTime();
+    if (Number.isFinite(t)) moc.push(t);
+  }
+  if (moc.length === 0) return { capNhatLuc: null, doTuoiGiay: null };
+  const capNhatLuc = Math.max(...moc);
+  // `Math.max(0, …)`: đồng hồ lệch vài giây không được thành tuổi ÂM — một nhãn
+  // "cập nhật -3 giây trước" làm người đọc nghi ngờ cả màn hình.
+  return { capNhatLuc, doTuoiGiay: Math.max(0, Math.round((bayGio - capNhatLuc) / 1000)) };
+}
+
+/**
+ * Uptime % từ hai khoảng giây. `null` khi cửa sổ 24h KHÔNG có bản ghi nào —
+ * "chưa đo" chứ không phải "0% = chết hẳn" (NT-3.5).
+ */
+export function quyUptime(up: { online: number; offline: number } | undefined): number | null {
+  if (!up) return null;
+  const tong = up.online + up.offline;
+  if (tong <= 0) return null;
+  return Math.round((up.online / tong) * 1000) / 10;
+}
+
+export async function traTrangThaiHangLoat(
+  factoryId: number,
+  bayGio: number,
+  scope?: PhamViNguoiXem,
+): Promise<TrangThaiMayHangLoat[]> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  // Cổng phạm vi nằm TRONG `traCayPhanCapNhaMay` — nhà máy ngoài phạm vi trả cây
+  // rỗng, nên danh sách máy cũng rỗng. Không đặt cổng thứ hai ở đây: hai cổng nối
+  // tiếp che mất chỗ cổng thật sự được áp (cùng lý lẽ ở `trangThaiTapMay`).
+  const cay = await traCayPhanCapNhaMay(factoryId, scope);
+  if (cay.may.length === 0) return [];
+
+  const ids = cay.may.map((m) => m.id);
+  const { trangThaiTapMay } = await import("./machine");
+  const tap = await trangThaiTapMay(ids);
+
+  // `operationStatus` + `lastHeartbeat` + `healthScore` sống ở chính bảng `machines`.
+  const hangMay = await d
+    .select({
+      id: machines.id,
+      operationStatus: machines.operationStatus,
+      lastHeartbeat: machines.lastHeartbeat,
+    })
+    .from(machines)
+    .where(inArray(machines.id, ids));
+  const theoId = new Map(hangMay.map((m) => [m.id, m]));
+
+  return cay.may.map((m) => {
+    const bosung = theoId.get(m.id);
+    const tt = tap.latestStatusByMachine.get(m.id);
+    const hb = tap.latestHeartbeatByMachine.get(m.id);
+
+    /*
+     * ★★★ THỜI ĐIỂM DỮ LIỆU = **NHỊP TIM**, KHÔNG phải `max` của mọi nguồn.
+     *
+     * ⚠ Bản viết đầu của Đợt 6 lấy `max(status_log, heartbeat, lastHeartbeat)`
+     * với lý lẽ "máy sống mà trạng thái lâu không đổi thì đừng báo động giả".
+     * PHÉP ĐO BÁC BỎ lý lẽ đó:
+     *
+     *   SIM-L1/L2/L3-CONVEYOR — `operationStatus='running'`
+     *     machines.lastHeartbeat  = 2026-07-17  (im lặng 52 ngày)
+     *     machine_heartbeats max  = 2026-07-17  (im lặng 52 ngày)
+     *     machine_status_logs max = 2026-09-06  (0,4 ngày)  ← `max` chọn ô này
+     *
+     * Tức là `max` làm ba cái máy đã ngừng gửi nhịp tim 52 ngày **tự khai là mới
+     * 0,4 ngày**, chỉ vì có một hàng log trạng thái được ghi gần đây. Đó ĐÚNG là
+     * lớp lỗi mà `trungThucDuLieu.tsTrangThaiTuIssues` đã phải vá một lần rồi:
+     * *"RAISE một andon lên máy 2 làm ô tươi nhảy 0 → 1"* — một sự kiện KHÔNG
+     * PHẢI phép đo trạng thái làm máy im lặng trông như vừa gửi tín hiệu.
+     *
+     * ⇒ Chỉ nhịp tim mới trả lời được câu "máy này CÒN NÓI CHUYỆN với ta không".
+     *   Lấy `max` của hai nguồn nhịp tim (`machines.lastHeartbeat` và bảng
+     *   `machine_heartbeats`) — cùng đại lượng, chỉ khác chỗ lưu — và KHÔNG trộn
+     *   `machine_status_logs` vào. Kết quả khớp `trungThucDuLieu.ts`: 2/42 máy
+     *   CHƯA TỪNG báo cáo (`lastHeartbeat IS NULL`, đo được), 3 máy `running`
+     *   rơi vào `khong_ro` vì im lặng 52 ngày.
+     */
+    void tt; // trạng thái mới nhất giữ cho `trangThai`; KHÔNG dùng làm mốc tươi
+    const { capNhatLuc, doTuoiGiay } = quyTuoiMay(
+      { hbBang: hb?.ts, hbMay: bosung?.lastHeartbeat },
+      bayGio,
+    );
+
+    const up = tap.uptimeByMachine.get(m.id);
+
+    return {
+      machineId: m.id,
+      ma: m.ma,
+      ten: m.ten,
+      loaiMay: m.loaiMay ?? null,
+      isActive: m.isActive ?? false,
+      stationId: m.stationId ?? null,
+      trangThai: bosung?.operationStatus ?? null,
+      /*
+       * ★ `diemSucKhoe` = `null` — "CHƯA ĐO", và đó là câu ĐÚNG, không phải chỗ chưa làm.
+       *
+       * Đo được: `machines` KHÔNG có cột `healthScore` (đã thử và `tsc` bác bỏ);
+       * điểm sức khoẻ sống ở `machine_health_history` (`schema/machine.ts:85`),
+       * tức là một bảng lịch sử cần thêm MỘT truy vấn nữa. Thêm truy vấn thứ tư
+       * ở đây sẽ làm yếu chính thứ procedure này tồn tại để bảo đảm (số query cố
+       * định cho vòng render), nên món đó để nguyên là NỢ CÓ KHAI.
+       *
+       * ⇒ Trả `null` (⇒ UI hiện `—`) chứ TUYỆT ĐỐI không trả `0` hay `100`: một
+       *   `0` ở ô sức khoẻ nói "máy này hỏng nặng", một `100` nói "máy hoàn hảo",
+       *   và cả hai đều là lời khai bịa về một đại lượng chưa hề đọc (NT-3.5).
+       */
+      diemSucKhoe: null,
+      capNhatLuc,
+      doTuoiGiay,
+      uptimePhanTram: quyUptime(up),
+    };
+  });
+}

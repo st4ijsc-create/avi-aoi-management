@@ -59,6 +59,8 @@ import {
   traCayPhanCapNhaMay,
   traDatChoTheoTang,
   traKichThuocTheoLoai,
+  // ── Đợt 6 (§6.3) — trạng thái hàng loạt cho vòng render `/twin` ──
+  traTrangThaiHangLoat,
 } from "../db/twinCanh";
 
 /**
@@ -88,6 +90,29 @@ function quyenThietKe(hanhDong: "canView" | "canCreate" | "canEdit" | "canDelete
   return requireAnyPermission([
     { module: "settings_factory", action: hanhDong },
     { module: "machine_control", action: hanhDong },
+  ]);
+}
+
+/**
+ * §6.4 — cổng quyền màn **VẬN HÀNH** (`/twin`): `analytics_oee` **HOẶC**
+ * `machine_status`.
+ *
+ * ⚠⚠ KHÁC `quyenThietKe` và sự khác đó là CỐ Ý. `/twin` (xem) và `/twin-studio`
+ * (sửa bố cục) là hai màn khác nhau với hai tập người dùng khác nhau; dùng chung
+ * một cổng sẽ hoặc chặn người trực ca khỏi màn xem, hoặc mở đường sửa bố cục cho
+ * người chỉ được xem. Đo trên seed thật (`congQuyenTwin.unit.test.ts`): trong 4
+ * vai non-admin chỉ `supervisor1` có `analytics_oee`, ba vai kia có
+ * `machine_status` ⇒ nếu cổng này chỉ khai `analytics_oee` thì 3/4 người trực ca
+ * mất màn Vận hành.
+ *
+ * ★ Khớp ĐÚNG tập mà ô nav `/twin` khai (`requiredPermissionAny:
+ *   ["analytics_oee", "machine_status"]`) — luật Khối D "một lối vào rồi TỪ
+ *   CHỐI": nav và router phải nói cùng một câu.
+ */
+function quyenVanHanh(hanhDong: "canView" | "canEdit") {
+  return requireAnyPermission([
+    { module: "analytics_oee", action: hanhDong },
+    { module: "machine_status", action: hanhDong },
   ]);
 }
 
@@ -668,6 +693,57 @@ export const twinCanhRouter = router({
    *   mọi công chỉnh tay biến mất ở lần bấm "Sinh tự động" kế tiếp — không lỗi,
    *   không cảnh báo, chỉ là máy về chỗ cũ.
    */
+  /**
+   * ★★★ §6.3 — TRẠNG THÁI HÀNG LOẠT cho vòng render của `/twin`. KHÔNG N+1.
+   *
+   * Thay cho `machineStatus.listWithStatus` ở vòng render. Số truy vấn CỐ ĐỊNH,
+   * không phụ thuộc số máy — đo được N = 1…42 đều cho `trangThaiTapMay` = 3
+   * query (N+1 thật sẽ cho 3/6/…/126).
+   *
+   * ⚠ **ĐÍNH CHÍNH SPEC (§6.3) — tiền đề "N+1" đã KHÔNG còn đúng khi Đợt 6 đo.**
+   * §6.3 viết `listWithStatus` "chạy 3 query con mỗi máy". Đo lại 2026-09-07:
+   * `db/machine.ts` đã được doc 54 Wave C (`d467c6b5`) viết lại thành tập-hợp
+   * (`DISTINCT ON` + `LEAD`) từ trước — đúng kỹ thuật mà §6.3 kê đơn. Việc của
+   * Đợt 6 vì thế KHÔNG phải "vá N+1" mà là dựng procedure hình dạng §6.3 **dùng
+   * lại** đường tập-hợp đó (`trangThaiTapMay`), thay vì chép nó sang bản thứ hai.
+   * Báo lại thay vì tự sửa spec.
+   *
+   * ★ `bayGio` do SERVER đặt, không nhận từ client: `doTuoiGiay` là số dùng để
+   *   quyết định máy có bị xếp `khong_ro` hay không, nên để client tự khai đồng
+   *   hồ là mở đường cho một trình duyệt lệch giờ tự tuyên bố dữ liệu của mình
+   *   còn tươi.
+   */
+  trangThaiHangLoat: protectedProcedure
+    .use(quyenVanHanh("canView"))
+    .input(z.object({ factoryId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const bayGio = Date.now();
+      const may = await traTrangThaiHangLoat(input.factoryId, bayGio, phamViCua(ctx));
+
+      /*
+       * ★★★ G15 — TRẢ CẢ `bayGio` CỦA SERVER, và đây không phải ô thừa.
+       *
+       * Client tính "cập nhật N giây trước" bằng đồng hồ CỦA NÓ sẽ sai đúng bằng
+       * độ lệch giữa hai đồng hồ. Trên một màn mà >5 phút nghĩa là "Không rõ",
+       * một trình duyệt lệch 6 phút sẽ tô xám gạch chéo TOÀN BỘ nhà máy đang
+       * chạy tốt — hoặc tệ hơn theo chiều ngược lại. Trả mốc của server cho phép
+       * client quy chiếu về cùng một đồng hồ.
+       */
+      const capNhatMoiNhat = may.reduce<number | null>(
+        (max, m) => (m.capNhatLuc == null ? max : max == null || m.capNhatLuc > max ? m.capNhatLuc : max),
+        null,
+      );
+
+      return {
+        may,
+        bayGio,
+        // `null` (KHÔNG phải 0) khi KHÔNG máy nào từng báo cáo — NT-3.5.
+        capNhatMoiNhat,
+        // Đếm rỗng khác đếm bằng 0: `tong` luôn là số ĐÃ đo (độ dài mảng).
+        tong: may.length,
+      };
+    }),
+
   luuHangLoat: protectedProcedure
     .use(quyenThietKe("canEdit"))
     .input(
