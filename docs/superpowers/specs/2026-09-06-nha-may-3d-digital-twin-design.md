@@ -534,7 +534,13 @@ CREATE TABLE twin_ban_ghi (
 | `drizzle/0352_twin_kich_thuoc_loai.sql` | `twin_kich_thuoc_loai` + seed 24 loại (`laGiaDinh = true`) |
 | `drizzle/0353_twin_mo_rong_asset.sql` | Cột mới cho `equipment_3d_models` |
 
-Áp bằng `npm run db:push`, sau đó `npm run db:verify`.
+Áp bằng `npm run db:push`.
+
+> **ĐÍNH CHÍNH (Đợt 0):** spec ban đầu ghi *"sau đó `npm run db:verify`"* — **script đó không tồn tại**
+> trong `package.json` (chỉ có `db:push` và `db:generate`). Thay bằng **migration `0354`** đóng vai
+> cầu chì: tự đọc lại `pg_catalog` và **ném lỗi nếu bảng/cột/enum thiếu**. Lý do: các migration dùng
+> `IF NOT EXISTS` dày đặc có thể "chạy sạch" mà **không tạo gì cả** — chạy sạch không phải bằng chứng
+> đã tạo.
 
 ### 5.6 Di trú dữ liệu — script một chiều, đo được
 
@@ -542,13 +548,19 @@ Script `scripts/di-tru-bo-cuc-twin.ts`, chạy tay, **idempotent**, in báo cáo
 
 **Bước 1 — sinh khung tối thiểu.** Với mỗi `factory` có ít nhất 1 máy (đo được: **2 nhà máy**), tạo 1 `twin_toa_nha` + 1 `twin_tang`, `nguon = 'sinh'`. **Không sinh nhiều toà/tầng** (QĐ-5) — chờ người nhập thật.
 
+> **ĐÍNH CHÍNH (Đợt 0):** không có cột `machines.factoryId`. Phải đi **4 chặng**:
+> `machines.stationId → stations.lineId → production_lines.workshopId → workshops.factoryId`.
+
 **Bước 2 — di trú vị trí.** Với mỗi máy, ưu tiên:
 
 ```
 1. machine_positions (hệ B, int pixel)    → 36 máy
      xMm = positionX × TI_LE_PX_MM
 2. machines.layoutPositionX/Y (hệ A, 0–1) → 38 máy, dùng khi hệ B không có
-     xMm = layoutPositionX × factories.floorWidthM × 1000
+     xMm = layoutPositionX × KÍCH_THƯỚC_MẶC_ĐỊNH_TẦNG
+     ★ ĐÍNH CHÍNH (Đợt 0): bản đầu ghi "× factories.floorWidthM × 1000" — SAI, và
+       TỰ MÂU THUẪN với §10A.0 vốn cấm dùng floorWidthM (SIM-FAC = 1500 ⇒ 1,5 km, số rác).
+       Đợt 0 từ chối làm theo và báo lại. Dùng kích thước mặc định của tầng.
 3. Không có cả hai                        → không tạo hàng;
                                             máy hiện ở "khu chờ xếp chỗ"
 ```
