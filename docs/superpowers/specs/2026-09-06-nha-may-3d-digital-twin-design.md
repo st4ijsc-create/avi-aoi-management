@@ -1318,6 +1318,20 @@ Cấp 2 là cấp **đáng dùng nhất**: nhập một file cho `AOI` là 14 m�
 | 50.001 – 150.000 | Nhận, cảnh báo, gợi ý nén |
 | > 150.000 hoặc > 15 MB | **Chặn** |
 
+> ### ⚠️ CẢNH BÁO 2026-09-06, do Đợt 3 tự khai — `donViDeNghi` sai với vật thể NHỎ
+>
+> Hàm gợi ý đơn vị (`docBanVe.ts`) **giả định vật thể cỡ nhà xưởng**. Đo được trên một khối lập
+> phương thật 10 mm (`Cube 10x10.stp`): nó gợi ý đơn vị **`m`** và **tự khai là "chắc chắn"**, nên
+> cảnh báo *"không suy được đơn vị"* **sẽ không hiện**.
+>
+> Vô hại ở §10A vì hộp thoại vẫn **bắt buộc xác nhận bằng mắt** (thước tỉ lệ + hình người 1,7 m) —
+> đó chính là lý do hộp thoại đó tồn tại. **Nhưng nguy hiểm nếu tái dùng module này cho model MÁY**
+> (§10B.2), vì máy nhỏ hơn nhà xưởng vài bậc độ lớn. Trước khi Đợt sau dùng lại: hoặc siết ngưỡng
+> tự tin theo cỡ vật thể, hoặc **bỏ hẳn cờ "chắc chắn"** và luôn buộc người dùng xác nhận.
+>
+> Đây là **lời tự khai của agent viết mã, không ai hỏi** — loại phát hiện đắt nhất, vì nó nằm ở
+> chỗ không phép đo nào đang chĩa vào.
+
 **Hiệu chỉnh khi nhập** — cùng hộp thoại của 10A.1 (đơn vị, trục lên, xoay, gốc), cộng thêm:
 - **So sánh với kích thước khai báo**: nếu bbox file lệch > 30 % so với `twin_dat_cho`, hiện cảnh báo *"Model cao 2,9 m nhưng máy khai 1,9 m — dùng kích thước nào?"* (lệch 52,6 %; ví dụ cũ 2,4 m chỉ lệch 26,3 % nên **không** vượt ngưỡng 30 % — đã sửa sau khi Đợt 2 khoá con số bằng test) với hai nút `[Theo model]` `[Giữ khai báo, co model]`.
 - **Ghi `bounds`** vào `equipment_3d_models` (hiện **NULL ở 5/5 hàng**) — lấp đúng lỗ hổng ở §1.3.
@@ -1595,6 +1609,16 @@ Chủ dự án (phiên điều phối) tạo **một session riêng cho mỗi đ
 | Đ5 | Frontend | `feature-dev:code-architect` → `general-purpose` | Màn trung tâm nghiệp vụ; ack alarm/tạo phiếu chạm nhiều module |
 | Đ6 | Full-stack | `general-purpose` | Realtime + di trú tính năng; nhiều việc cơ học |
 | Đ7 | Full-stack | `code-simplifier` + `general-purpose` | Dọn dẹp và xoá; cần con mắt gộp trùng lặp |
+
+### 12.1b Nợ kỹ thuật bàn giao cho Đ4 — do Đợt 3 tự khai
+
+Ba món, không món nào là lỗi, nhưng Đ4 phải biết trước:
+
+| # | Nợ | Vì sao để lại | Việc của Đ4 |
+|---|---|---|---|
+| N-1 | **`dungNhaXuong` KHÔNG chạy trong một transaction** | Bọc transaction đòi cài lại `trongPhamVi` bên trong `tx` — tức **hệ phân quyền thứ hai**, thứ `hierarchy.ts` cấm | Nếu lỗi giữa chừng, hàng để lại **vẫn hợp lệ và sửa được** (không phải rác). Đ4 quyết: chấp nhận, hay tách một lớp transaction không cần quyền |
+| N-2 | **Nạp `.glb`/`.gltf` cho bản vẽ đang là stub** (`napGltfChoBanVe` ném lỗi, UI nói "đợt sau") | `GLTFLoader` kéo theo `three`; Đ1 sở hữu lớp bọc three trong `twin3d/loi/`. Hai bản `three` cùng tồn tại **chính là lỗi câm** mà `resolve.dedupe:['three']` sinh ra để chặn | Nối `napGltfChoBanVe` vào `boNhoModel.ts` của Đ1 |
+| N-3 | **`KhungXemTruoc3D` trả `null`** — interface khai, thân rỗng | Xem trước hiện dùng SVG để giữ **RB-4: một WebGL context** | Điền thân bằng kit `twin3d/loi/`, và bảo đảm không mở canvas thứ hai |
 
 **Chạy song song được:**
 - Đ0 ∥ phần module thuần của Đ2/Đ4 (`hinhKhoiMay.ts`, `sinhBoCuc.ts`, `hinhHocCanChinh.ts`) — khác tệp hoàn toàn.
