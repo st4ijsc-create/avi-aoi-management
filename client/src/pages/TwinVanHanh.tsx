@@ -113,6 +113,52 @@ export default function TwinVanHanh() {
   const search = useSearch();
   const { hasPermission } = usePermissions();
 
+  /*
+   * ★★★ THƯỜNG-3 — ĐO chiều cao chrome thay vì ĐOÁN nó.
+   *
+   * Đặt `--twin-top` = khoảng cách từ đỉnh viewport tới đỉnh khung này, để
+   * `height: calc(100vh - var(--twin-top))` luôn vừa khít DÙ chrome cao bao
+   * nhiêu. Đo lại khi cửa sổ đổi kích thước (chrome có thể xuống dòng).
+   *
+   * ⚠ Vì sao không dùng một hằng số khác: đo được `top=133px` trong khi CSS trừ
+   * `5rem`=80px ⇒ tràn đúng 77px ở CẢ 1366×768 lẫn 1280×1249. Một hằng số mới
+   * cũng chỉ đúng tới lần đổi chrome kế tiếp, và sai thì KHÔNG có lỗi nào nổ.
+   */
+  const khungRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = khungRef.current;
+    if (!el) return;
+    const doLai = () => {
+      const node = khungRef.current;
+      if (!node) return;
+      const top = node.getBoundingClientRect().top + window.scrollY;
+      /*
+       * ★★★ CỘNG CẢ ĐỆM DƯỚI CỦA VỎ ỨNG DỤNG.
+       *
+       * Đo được (Playwright 2026-09-07): sau khi trừ đúng `top=133`, vẫn còn tràn
+       * ĐÚNG 24px. Truy ra: `<main>` của vỏ ứng dụng mang `p-6` ⇒ `paddingBottom
+       * = 24px`. Khung này cao vừa khít tới đáy viewport, rồi 24px đệm của CHA
+       * đẩy tài liệu dài thêm 24px.
+       *
+       * ⚠ KHÔNG sửa `p-6` của vỏ: nó là đệm dùng chung của MỌI trang, đổi nó là
+       * đổi bố cục toàn hệ để chữa một màn. Thay vào đó trang này tự trừ phần
+       * đệm CỦA CHA — đọc từ `getComputedStyle`, không phải hằng số đoán.
+       */
+      const cha = node.parentElement;
+      const demDuoi = cha ? parseFloat(getComputedStyle(cha).paddingBottom) || 0 : 0;
+      node.style.setProperty("--twin-top", `${Math.max(0, Math.round(top + demDuoi))}px`);
+    };
+    doLai();
+    window.addEventListener("resize", doLai);
+    // Chrome có thể đổi chiều cao mà không có `resize` (băng cảnh báo hiện ra).
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(doLai) : null;
+    if (ro && el.parentElement) ro.observe(el.parentElement);
+    return () => {
+      window.removeEventListener("resize", doLai);
+      ro?.disconnect();
+    };
+  }, []);
+
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* Trạng thái từ URL (§9.4)                                                */
   /* ═══════════════════════════════════════════════════════════════════════ */
@@ -792,7 +838,32 @@ export default function TwinVanHanh() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] min-h-0 flex-col overflow-hidden" data-testid="man-twin-van-hanh">
+    <div
+      /*
+       * ★★★ ĐỢT 6 VÁ THƯỜNG-3 — CHIỀU CAO ĐO TỪ VỊ TRÍ THẬT, KHÔNG TRỪ HẰNG SỐ ĐOÁN.
+       *
+       * ⚠ ĐO ĐƯỢC trên trình duyệt thật (Playwright, 2026-09-07), CẢ HAI kích thước:
+       *     1366×768  → innerHeight=768  scrollHeight=845  TRÀN 77px
+       *     1280×1249 → innerHeight=1249 scrollHeight=1326 TRÀN 77px
+       *   `man-twin-van-hanh` bắt đầu ở **top=133**, nhưng CSS chỉ trừ `5rem` = **80px**.
+       *   77 = 133 − 80 + 24 (đệm dưới). Tức đây KHÔNG phải lỗi flex/cuộn — nó là một
+       *   PHÉP TRỪ SAI: hằng số `5rem` là lời ĐOÁN về chiều cao chrome, và chrome thật
+       *   cao 133px. Cùng một con số tràn 77px ở HAI viewport rất khác nhau chính là
+       *   dấu hiệu: sai lệch KHÔNG phụ thuộc chiều cao màn hình ⇒ nó là hằng số, không
+       *   phải hiệu ứng cuộn.
+       *
+       * ⇒ Đừng thay 5rem bằng một hằng số đoán khác (8.5rem…): lần sau chrome đổi là
+       *   sai lại, và không có lỗi nào nổ. Lấy ĐÚNG vị trí thật của chính khung này
+       *   (`getBoundingClientRect().top`) rồi trừ khỏi `100vh` — tự đúng với mọi chrome.
+       *
+       * ★ `--twin-top` do `useEffect` bên dưới đặt; giá trị đầu `5rem` chỉ là mồi cho
+       *   lượt render đầu tiên (trước khi đo được), và nó KHÔNG bao giờ là số cuối.
+       */
+      ref={khungRef}
+      className="flex min-h-0 flex-col overflow-hidden"
+      style={{ height: "calc(100vh - var(--twin-top, 5rem))" }}
+      data-testid="man-twin-van-hanh"
+    >
       {/* ── Breadcrumb + độ tươi + chế độ ──────────────────────────────── */}
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-1.5">
         <nav className="flex items-center gap-1 text-xs" aria-label="breadcrumb" data-testid="breadcrumb-twin">
