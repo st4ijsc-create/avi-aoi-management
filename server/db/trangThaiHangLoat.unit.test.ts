@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { quyTuoiMay, quyUptime } from "./twinCanh";
+import { quyTuoiMay, quyUptime, chonNguonMocTuoi } from "./twinCanh";
 
 /**
  * ★★★ ĐỢT 6 (§6.3 + NT-3/G15) — GHIM HAI QUYẾT ĐỊNH DO PHÉP ĐO ÉP RA.
@@ -79,6 +79,89 @@ describe("quyTuoiMay — mốc tươi là NHỊP TIM, không phải log trạng 
   it("đồng hồ lệch (dữ liệu ở TƯƠNG LAI) ⇒ tuổi 0, không âm", () => {
     const tuongLai = DO_THAT.bayGio + 5000;
     expect(quyTuoiMay({ hbBang: new Date(tuongLai), hbMay: null }, DO_THAT.bayGio).doTuoiGiay).toBe(0);
+  });
+});
+
+/**
+ * ★★★ ĐỢT 6 VÁ THƯỜNG-4 — GHIM "MỐC TƯƠI CHỈ DÙNG NHỊP TIM".
+ *
+ * ⚠ VÙNG MÙ QA ĐO ĐƯỢC 2026-09-07: 14 test trên đây đều xanh, nhưng chúng chỉ
+ * gọi `quyTuoiMay` — hàm KHÔNG BAO GIỜ THẤY `machine_status_logs`. Việc CHỌN
+ * nguồn nằm ở chỗ gọi trong `traTrangThaiHangLoat`, và không test nào với tới.
+ * QA tiêm đúng vào đó (`max(status_log, heartbeat)`) ⇒ **14/14 VẪN XANH**.
+ *
+ * ⇒ Phép chọn nguồn nay là `chonNguonMocTuoi` (hàm thuần, export), chỗ gọi đi
+ *   qua nó, và các ô dưới đây import ĐÚNG nó. Tiêm "trộn status_log" vào hàm
+ *   đó ⇒ các ô này ĐỎ.
+ */
+describe("chonNguonMocTuoi — mốc tươi CHỈ nhịp tim, KHÔNG trộn status_log", () => {
+  it("★★★ `statusLogTs` MỚI HƠN vẫn bị VỨT ĐI — đây là ô QA tiêm mà 14/14 mù", () => {
+    // Đúng số thật của 3 conveyor: nhịp tim chết 2026-07-17, log trạng thái
+    // 2026-09-06. Nếu ai trộn status_log vào, ô này ĐỎ ngay.
+    const chon = chonNguonMocTuoi({
+      hbBang: DO_THAT.conveyorHbBang,
+      hbMay: DO_THAT.conveyorHbMay,
+      statusLogTs: DO_THAT.conveyorStatusLog,
+    });
+    expect(chon.hbBang).toBe(DO_THAT.conveyorHbBang);
+    expect(chon.hbMay).toBe(DO_THAT.conveyorHbMay);
+    // Và KHÔNG ô nào của kết quả mang mốc log trạng thái.
+    expect(Object.values(chon)).not.toContain(DO_THAT.conveyorStatusLog);
+  });
+
+  it("★★★ NỐI ĐẦU-CUỐI — chọn nguồn rồi quy tuổi PHẢI ra ~52 ngày, KHÔNG ra 0,4", () => {
+    // Đây là câu trả lời cho đúng lỗi G19: 3 băng tải im lặng 51,7 ngày bị báo
+    // thành 0,4 ngày. Ô này đi HẾT đường mà mã sản phẩm đi.
+    const { doTuoiGiay } = quyTuoiMay(
+      chonNguonMocTuoi({
+        hbBang: DO_THAT.conveyorHbBang,
+        hbMay: DO_THAT.conveyorHbMay,
+        statusLogTs: DO_THAT.conveyorStatusLog,
+      }),
+      DO_THAT.bayGio,
+    );
+    const ngay = doTuoiGiay! / 86400;
+    expect(ngay).toBeGreaterThan(45);   // sự thật: im lặng ~52 ngày
+    expect(ngay).toBeLessThan(60);
+  });
+
+  it("★★★ ĐỐI CHỨNG — nếu trộn status_log thì tuổi tụt xuống <1 ngày (bản SAI)", () => {
+    // Ghim KHOẢNG CÁCH giữa bản đúng và bản sai. Nếu hai bên bằng nhau thì hai
+    // ô trên không chứng minh gì — chúng sẽ xanh với cả hai cài đặt.
+    const saiMoc = Math.max(
+      new Date(DO_THAT.conveyorHbBang).getTime(),
+      new Date(DO_THAT.conveyorHbMay).getTime(),
+      new Date(DO_THAT.conveyorStatusLog).getTime(),
+    );
+    const ngaySai = (DO_THAT.bayGio - saiMoc) / 86400000;
+    expect(ngaySai).toBeLessThan(1);
+
+    const dung = quyTuoiMay(
+      chonNguonMocTuoi({
+        hbBang: DO_THAT.conveyorHbBang,
+        hbMay: DO_THAT.conveyorHbMay,
+        statusLogTs: DO_THAT.conveyorStatusLog,
+      }),
+      DO_THAT.bayGio,
+    );
+    expect(dung.doTuoiGiay! / 86400).toBeGreaterThan(ngaySai + 40);
+  });
+
+  it("★★★ CHỈ CÓ status_log, KHÔNG nhịp tim ⇒ `null` (CHƯA TỪNG báo cáo)", () => {
+    // Ca nguy hiểm nhất: một máy chỉ có log trạng thái. Trộn status_log vào sẽ
+    // biến nó thành "vừa cập nhật"; luật đúng nói "chưa từng gửi nhịp tim".
+    const kq = quyTuoiMay(
+      chonNguonMocTuoi({ hbBang: null, hbMay: null, statusLogTs: DO_THAT.conveyorStatusLog }),
+      DO_THAT.bayGio,
+    );
+    expect(kq.capNhatLuc).toBeNull();
+    expect(kq.doTuoiGiay).toBeNull();
+  });
+
+  it("`statusLogTs` VẮNG MẶT không đổi gì — hai nguồn nhịp tim giữ nguyên", () => {
+    const co = chonNguonMocTuoi({ hbBang: "2026-09-01", hbMay: "2026-09-02", statusLogTs: "2026-09-06" });
+    const khong = chonNguonMocTuoi({ hbBang: "2026-09-01", hbMay: "2026-09-02" });
+    expect(co).toEqual(khong);
   });
 });
 

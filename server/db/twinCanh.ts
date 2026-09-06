@@ -1027,6 +1027,40 @@ export interface TrangThaiMayHangLoat {
  *     `0`. `0` nghĩa là "vừa cập nhật xong", tức câu nói dối mạnh nhất có thể
  *     về một máy im lặng vĩnh viễn (NT-3.5).
  */
+/**
+ * ★★★ ĐỢT 6 VÁ THƯỜNG-4 — CHỌN NGUỒN MỐC TƯƠI, TÁCH RA ĐỂ TEST ĐƯỢC.
+ *
+ * ⚠ VÙNG MÙ ĐÃ CÓ (QA đo 2026-09-07): `quyTuoiMay` là hàm thuần và có 14 test
+ * xanh, NHƯNG nó chỉ nhận `{hbBang, hbMay}` — nó KHÔNG BAO GIỜ THẤY
+ * `machine_status_logs`. Việc chọn "lấy nguồn nào làm mốc" nằm ở CHỖ GỌI, và
+ * chỗ gọi thì KHÔNG test nào với tới. QA tiêm đúng vào đó — đổi thành
+ * `max(status_log, heartbeat)` — và **14/14 test VẪN XANH**.
+ *
+ * Đây ĐÚNG là lỗi mà Đợt 6 tự gây rồi tự sửa (G19): 3 băng tải im lặng 51,7
+ * ngày tự khai thành 0,4 ngày. Tự sửa mà KHÔNG ghim thì lần sau lại trôi về.
+ *
+ * ⇒ Phép chọn nguồn nay là HÀM THUẦN CÓ EXPORT, và test import ĐÚNG nó.
+ *
+ * ★★★ LUẬT NÓ CƯỠNG CHẾ: mốc tươi CHỈ lấy từ NHỊP TIM — `machines.lastHeartbeat`
+ * và bảng `machine_heartbeats`, cùng một đại lượng chỉ khác chỗ lưu. TUYỆT ĐỐI
+ * KHÔNG trộn `machine_status_logs`: một hàng log trạng thái là SỰ KIỆN, không
+ * phải phép đo "máy này còn nói chuyện với ta không". Trộn vào là làm máy đã
+ * ngừng gửi nhịp tim 52 ngày tự khai là mới 0,4 ngày.
+ *
+ * ★ Chữ ký CỐ Ý nhận cả `statusLogTs` dù KHÔNG dùng: để một đột biến "trộn
+ *   status_log vào" phải sửa ĐÚNG hàm này (nơi có test soi), thay vì lặng lẽ
+ *   thêm một nguồn ở chỗ gọi mà không test nào thấy.
+ */
+export function chonNguonMocTuoi(nguon: {
+  hbBang: Date | string | null | undefined;
+  hbMay: Date | string | null | undefined;
+  statusLogTs?: Date | string | null | undefined;
+}): { hbBang: Date | string | null | undefined; hbMay: Date | string | null | undefined } {
+  // `statusLogTs` được nhận rồi VỨT ĐI — có chủ đích, xem docblock.
+  void nguon.statusLogTs;
+  return { hbBang: nguon.hbBang, hbMay: nguon.hbMay };
+}
+
 export function quyTuoiMay(
   nguon: {
     hbBang: Date | string | null | undefined;
@@ -1117,11 +1151,19 @@ export async function traTrangThaiHangLoat(
      *   CHƯA TỪNG báo cáo (`lastHeartbeat IS NULL`, đo được), 3 máy `running`
      *   rơi vào `khong_ro` vì im lặng 52 ngày.
      */
-    void tt; // trạng thái mới nhất giữ cho `trangThai`; KHÔNG dùng làm mốc tươi
-    const { capNhatLuc, doTuoiGiay } = quyTuoiMay(
-      { hbBang: hb?.ts, hbMay: bosung?.lastHeartbeat },
-      bayGio,
-    );
+    /*
+     * ★★★ THƯỜNG-4 — việc chọn nguồn đi qua `chonNguonMocTuoi`, là hàm THUẦN
+     * CÓ TEST GHIM. Trước đây phép chọn nằm THẲNG ở đây và không test nào với
+     * tới, nên QA đổi nó thành `max(status_log, heartbeat)` mà 14/14 vẫn xanh.
+     * `tt` (log trạng thái) được TRUYỀN VÀO rồi bị hàm đó VỨT ĐI — có chủ đích:
+     * để muốn trộn nó vào thì phải sửa ĐÚNG hàm đang có test soi.
+     */
+    const nguonMoc = chonNguonMocTuoi({
+      hbBang: hb?.ts,
+      hbMay: bosung?.lastHeartbeat,
+      statusLogTs: tt?.ts,
+    });
+    const { capNhatLuc, doTuoiGiay } = quyTuoiMay(nguonMoc, bayGio);
 
     const up = tap.uptimeByMachine.get(m.id);
 
