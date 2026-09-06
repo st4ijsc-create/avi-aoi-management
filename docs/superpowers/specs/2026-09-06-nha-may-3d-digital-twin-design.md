@@ -1968,6 +1968,27 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > (bbox DOM thật trên `/twin`), không phải ở lớp hàm. Đây là G11 (*hiện ra* ≠ *hoạt động*) đẩy lên
 > một bậc: ở đây thậm chí **chưa hiện ra**, mà mọi cổng vẫn xanh.
 
+> ### ★★★ G13b — LUẬT CÔNG CỤ: `sed` SỬA ĐƯỢC, `sed` ĐO KHÔNG ĐƯỢC (2026-09-07, Đợt 6)
+>
+> Agent Đợt 6 nêu một xung đột thật: hướng dẫn môi trường bảo dùng `sed`/heredoc thay cho Edit/Write,
+> nhưng G13 cấm đúng thứ đó. Nó **dừng lại hỏi thay vì im lặng chọn một bên** — đúng cách.
+>
+> **Phân xử:**
+>
+> | Việc | Công cụ | Vì sao |
+> |---|---|---|
+> | Sửa **mã sản phẩm** | `sed`/heredoc được | Kết quả đi qua `check`/`build`/`test` — sai thì lộ |
+> | **Tiêm đột biến để ĐO** | **BẮT BUỘC** Python + `assert old in s` | Tiêm hụt ⇒ kết quả "xanh" — mà "xanh" **chính là thứ đang muốn chứng minh** ⇒ không gì phát hiện |
+>
+> ⇒ **Nguyên tắc chung, rộng hơn `sed`:**
+> **Công cụ nào mà THẤT BẠI của nó TRÔNG GIỐNG THÀNH CÔNG thì không được dùng để đo.**
+>
+> `sed` hụt khớp → thoát 0, không đổi gì. `perl -0pi` hụt khớp → im lặng. Cả hai biến **phép đo**
+> thành **lời khai**. Python `assert` thì nổ.
+>
+> **Luật này tự chứng minh ngay khi được viết:** script sửa spec của chủ dự án `assert` **bắn** vì
+> đoán sai câu gốc. Dùng `sed` thì đã commit một bản "sửa" **không sửa gì** — và không ai biết.
+
 > ### ★★★ G13 — THIẾT BỊ ĐO HỎNG TRONG KHI THỨ ĐƯỢC ĐO VẪN TỐT (QA Đợt 5)
 >
 > QA Đợt 5 gặp **ba lần thiết bị đo của chính nó hỏng** trong một lượt audit, và tự rút ra dấu hiệu chung:
