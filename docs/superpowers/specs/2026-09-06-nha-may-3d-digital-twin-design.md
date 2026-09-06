@@ -759,6 +759,24 @@ Toàn bộ là `protectedProcedure`; `sinhTuDong`, `xoaAsset`, `xuatBanBanGhi` l
 **Không có quyền → vào thẳng chế độ chỉ đọc, ẩn toàn bộ gizmo và nút Lưu** (không chỉ disable).
 
 > ⚠️ **Bài học Khối D bắt buộc áp dụng.** Mục nav và route guard phải khai **cùng một quyền** — lỗi "một lối vào rồi từ chối" xảy ra khi nav khai `settings_factory` nhưng route gate `analytics_oee`. Và: **admin bypass `requirePermission`**, nên phép đo quyền **phải thực hiện bằng tài khoản KHÔNG phải admin**; đo bằng admin chứng minh số 0.
+>
+> ### ★★★ NỢ ĐANG MỞ (2026-09-06, Đợt 4b tự khai) — e2e XANH nhưng CHỨNG MINH SỐ 0 về quyền
+>
+> `e2e/twin-studio-thiet-ke.spec.ts` chạy **5/5 xanh**, nhưng bằng tài khoản `e2e_twin_dot4`
+> (id 20191) **vai `admin`**. Admin bypass `requirePermission` ⇒ **suite đó không đo gì về phân
+> quyền**. Agent viết mã **tự khai điều này** thay vì để nó trôi — nhưng nợ vẫn là nợ.
+>
+> **Đây là một biến thể của G5 (đo trên tập rỗng):** phép đo chạy, kết quả xanh, và cổng nào cũng
+> hài lòng — trong khi luật cần kiểm **chưa bao giờ được thực thi một lần nào**. Ai đọc "e2e 5/5
+> xanh" mà kết luận "quyền đã đo" là mắc đúng bẫy này.
+>
+> **Tài khoản non-admin có sẵn trong DB dev để đo cho đúng:**
+> `operator1` (48, không quyền) · `supervisor1` (49, chỉ `machine_control`) ·
+> `maint1` (50, `machine_control`) · `engineer1` (51, cả hai).
+> Kỳ vọng theo §6.4: supervisor1/maint1 **PHẢI vào được** `/twin-studio` (nhánh OR), operator1 **bị chặn**.
+>
+> Và một mục §6.4 **giờ mới đo được** vì đã có gizmo: *"Không có quyền → vào thẳng chế độ chỉ đọc,
+> **ẩn** toàn bộ gizmo và nút Lưu (không chỉ disable)"*.
 
 ---
 
