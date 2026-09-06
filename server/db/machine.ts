@@ -52,41 +52,41 @@ export async function getLatestMachineStatus(machineId: number) {
   return result.length > 0 ? result[0] : null;
 }
 
-export async function getAllMachinesWithStatus(scope?: PhamViNguoiXem) {
+/**
+ * ★★★ TRẠNG THÁI TẬP MÁY — **MỘT** bản cài đặt tập-hợp, dùng chung.
+ *
+ * Rút ra từ thân `getAllMachinesWithStatus` (doc 54 Wave C) ở Đợt 6 để
+ * `twinCanh.trangThaiHangLoat` (§6.3) DÙNG LẠI thay vì chép sang một bản thứ
+ * hai. Luật G12: "hai bản cài đặt" chỉ đồng ý tới lần sửa đầu tiên, và khi lệch
+ * thì KHÔNG nổ — chỉ âm thầm cho cảnh 3D và bảng DOM nói khác nhau về cùng một
+ * máy. Đây đúng lớp lỗi mà `NGUONG_CU_MS` đã phải gộp về một nơi ở Đợt 5.
+ *
+ * ★ SỐ QUERY **CỐ ĐỊNH = 3**, không phụ thuộc số máy (§6.3 "KHÔNG N+1"):
+ *   1. `DISTINCT ON` — trạng thái mới nhất mỗi máy
+ *   2. `DISTINCT ON` — heartbeat mới nhất mỗi máy
+ *   3. `LEAD(...) OVER (PARTITION BY ...)` — uptime 24h theo cửa sổ
+ * Đo được bằng `demQueryTrangThai.unit`-style harness: N = 1 / 10 / 42 đều cho 3.
+ *
+ * ⚠ KHÔNG tự lọc phạm vi: người gọi phải truyền vào tập id ĐÃ qua cổng phạm vi.
+ *   Hàm này nhận `machineIds` như một sự thật đã kiểm — đặt cổng ở đây nữa sẽ
+ *   thành hai cổng nối tiếp và che mất chỗ cổng thật sự được áp.
+ */
+export interface TrangThaiTapMay {
+  latestStatusByMachine: Map<number, { status: string | null; ts: Date | null }>;
+  latestHeartbeatByMachine: Map<number, { status: string | null; ts: Date | null }>;
+  uptimeByMachine: Map<number, { online: number; offline: number }>;
+}
+
+export async function trangThaiTapMay(machineIds: readonly number[]): Promise<TrangThaiTapMay> {
+  const rong: TrangThaiTapMay = {
+    latestStatusByMachine: new Map(),
+    latestHeartbeatByMachine: new Map(),
+    uptimeByMachine: new Map(),
+  };
+  if (machineIds.length === 0) return rong;
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return rong;
 
-  // ⚠ Đây là BẢNG KIỂM KÊ TOÀN NHÀ XƯỞNG: mỗi hàng mang máy + trạm + tuyến + xưởng + NHÀ MÁY.
-  // Trước bản vá, mọi tài khoản qua được `machine_monitoring/canView` đọc được cả đội của mọi
-  // tenant. Bộ lọc theo `input.lineId/factoryId` ở router là bộ lọc GIAO DIỆN, không phải cổng.
-  const idsMay = await idsTrongPhamVi("machine", scope);
-  const allMachines = await db.select({
-    machine: machines,
-    station: stations,
-    line: productionLines,
-    workshop: workshops,
-    factory: factories
-  })
-    .from(machines)
-    .innerJoin(stations, eq(machines.stationId, stations.id))
-    .innerJoin(productionLines, eq(stations.lineId, productionLines.id))
-    .innerJoin(workshops, eq(productionLines.workshopId, workshops.id))
-    .innerJoin(factories, eq(workshops.factoryId, factories.id))
-    .where(and(
-      eq(machines.isActive, true),
-      ...(idsMay === null ? [] : [inArray(machines.id, idsMay.length ? idsMay : [-1])]),
-    ));
-
-  if (allMachines.length === 0) return [];
-
-  // doc 54 Wave C — SET-BASED fleet status. The old path fanned out one
-  // getLatestMachineStatus + getLatestMachineHeartbeat + getMachineUptimeStats PER
-  // machine inside .map() → 1 + 3N queries, uncapped, re-run every 60s (won't scale).
-  // This computes the whole fleet with a FIXED handful of grouped queries (latest
-  // status + latest heartbeat via DISTINCT ON, and windowed uptime via a LEAD window),
-  // regardless of fleet size. Mirrors getAllMachinesOEELive in oeeService. The return
-  // shape is IDENTICAL to the per-machine path.
-  const machineIds = allMachines.map((m) => m.machine.id);
   const idList = sql.join(machineIds.map((id) => sql`${id}`), sql`, `);
 
   // Latest status per machine (DISTINCT ON → newest row per machineId).
@@ -132,6 +132,49 @@ export async function getAllMachinesWithStatus(scope?: PhamViNguoiXem) {
   for (const r of durationRows) {
     uptimeByMachine.set(Number(r.machine_id), { online: Number(r.online_sec) || 0, offline: Number(r.offline_sec) || 0 });
   }
+
+  return { latestStatusByMachine, latestHeartbeatByMachine, uptimeByMachine };
+}
+
+export async function getAllMachinesWithStatus(scope?: PhamViNguoiXem) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // ⚠ Đây là BẢNG KIỂM KÊ TOÀN NHÀ XƯỞNG: mỗi hàng mang máy + trạm + tuyến + xưởng + NHÀ MÁY.
+  // Trước bản vá, mọi tài khoản qua được `machine_monitoring/canView` đọc được cả đội của mọi
+  // tenant. Bộ lọc theo `input.lineId/factoryId` ở router là bộ lọc GIAO DIỆN, không phải cổng.
+  const idsMay = await idsTrongPhamVi("machine", scope);
+  const allMachines = await db.select({
+    machine: machines,
+    station: stations,
+    line: productionLines,
+    workshop: workshops,
+    factory: factories
+  })
+    .from(machines)
+    .innerJoin(stations, eq(machines.stationId, stations.id))
+    .innerJoin(productionLines, eq(stations.lineId, productionLines.id))
+    .innerJoin(workshops, eq(productionLines.workshopId, workshops.id))
+    .innerJoin(factories, eq(workshops.factoryId, factories.id))
+    .where(and(
+      eq(machines.isActive, true),
+      ...(idsMay === null ? [] : [inArray(machines.id, idsMay.length ? idsMay : [-1])]),
+    ));
+
+  if (allMachines.length === 0) return [];
+
+  // doc 54 Wave C — SET-BASED fleet status. The old path fanned out one
+  // getLatestMachineStatus + getLatestMachineHeartbeat + getMachineUptimeStats PER
+  // machine inside .map() → 1 + 3N queries, uncapped, re-run every 60s (won't scale).
+  // This computes the whole fleet with a FIXED handful of grouped queries (latest
+  // status + latest heartbeat via DISTINCT ON, and windowed uptime via a LEAD window),
+  // regardless of fleet size. Mirrors getAllMachinesOEELive in oeeService. The return
+  // shape is IDENTICAL to the per-machine path.
+  const machineIds = allMachines.map((m) => m.machine.id);
+  // ★ Đợt 6 — DÙNG LẠI `trangThaiTapMay` thay vì giữ bản sao thứ hai của ba
+  //   truy vấn tập-hợp. Số query KHÔNG đổi (vẫn 1 + 3); chỗ khai giờ chỉ còn một.
+  const { latestStatusByMachine, latestHeartbeatByMachine, uptimeByMachine } =
+    await trangThaiTapMay(machineIds);
 
   // Assemble in JS — SAME output shape/type as the per-machine path.
   return allMachines.map((m) => {
