@@ -20,6 +20,17 @@ namespace St4i.EngineApi.Tests.Licensing;
 /// literals first. Both matter here: the production files this workstream added DISCUSS key generation at
 /// length in their comments (explaining why they do not do it), and a naive substring scan would flag
 /// every one of them, which would make the test useless and get it deleted.</para>
+///
+/// <para>🔴🔴 <b>WS-F4 Task 2 — THIS COVERS BOTH KEYS.</b> The owner ruled on 2026-09-06 that the update
+/// path gets its OWN Ed25519 key, separate from the licence key, because a leaked licence key costs
+/// revenue while a leaked update key costs remote code execution on every machine in every factory. This
+/// test needed no change to cover it — it asserts over <c>src/</c> as a whole rather than over the
+/// licensing namespace — but it gained a named non-vacuity check for
+/// <c>Updates/UpdateManifestVerifier.cs</c>, so "the second key is covered" is measured rather than
+/// inferred from the enumeration's shape. <b>Note this is the ABSENCE property, which is shared. The
+/// RELEASE guards are deliberately NOT shared</b>: <c>EmbeddedKeyIsTheTestKeyTests</c> and
+/// <c>EmbeddedUpdateKeyIsTheTestKeyTests</c> are separate files, because one test covering both keys
+/// would be satisfied by rotating either and would then stop blocking the other.</para>
 /// </summary>
 public sealed class LicensePrivateKeyAbsenceTests
 {
@@ -44,6 +55,7 @@ public sealed class LicensePrivateKeyAbsenceTests
         var offenders = new List<string>();
         var scanned = 0;
         var sawTheVerifier = false;
+        var sawTheUpdateVerifier = false;
 
         foreach (var file in PolicyRuleArrayPinTests.ProductSources(srcRoot))
         {
@@ -51,6 +63,7 @@ public sealed class LicensePrivateKeyAbsenceTests
             var text = File.ReadAllText(file);
 
             if (file.EndsWith("LicenseVerifier.cs", StringComparison.Ordinal)) sawTheVerifier = true;
+            if (file.EndsWith("UpdateManifestVerifier.cs", StringComparison.Ordinal)) sawTheUpdateVerifier = true;
 
             foreach (var identifier in ForbiddenInProductionCode)
             {
@@ -84,6 +97,20 @@ public sealed class LicensePrivateKeyAbsenceTests
         Assert.True(sawTheVerifier,
             "The scan never reached src/St4i.EdgeCore/Licensing/LicenseVerifier.cs, so it cannot have been " +
             "looking where a private key would appear.");
+
+        // 🔴🔴 WS-F4 Task 2 — THE SECOND KEY IS COVERED, AND THAT IS ASSERTED RATHER THAN INFERRED.
+        // This scan always walked the whole of src/, so it covered the update verifier the moment that
+        // file existed. But "the scan happens to reach it" and "the scan is KNOWN to reach it" are
+        // different guarantees: a future refactor that moved Updates/ outside this enumeration — a new
+        // project, a different source root — would silently stop covering the key that gates CODE
+        // EXECUTION while every assertion here still passed. The owner's ruling gave the update path its
+        // own key precisely because its blast radius is larger than the licence key's, so it gets its own
+        // named non-vacuity check rather than riding on the licensing one's.
+        Assert.True(sawTheUpdateVerifier,
+            "The scan never reached src/St4i.EdgeCore/Updates/UpdateManifestVerifier.cs, so it is not " +
+            "covering the UPDATE-signing key at all. That key gates code execution on every machine in " +
+            "every factory — a leaked licence key costs revenue, a leaked update key costs remote code " +
+            "execution — so its absence from this scan is a bigger hole than the licence key's would be.");
 
         Assert.True(offenders.Count == 0,
             "Production code must never generate or hold a licence-signing private key — the appliance only " +

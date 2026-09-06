@@ -380,6 +380,17 @@ public sealed class OperatorDataRemovalCensusTests
         ["System.IO.FileStream..ctor/3"] = Effect.Mode,
         ["System.IO.FileStream..ctor/4"] = Effect.Mode,
         ["System.IO.FileStream..ctor/5"] = Effect.Mode,
+        // 🔴 WS-F4 Task 2 — the 6-argument overload (path, mode, access, share, bufferSize, useAsync),
+        // reached by UpdateBundle.ComputeSha256's streaming hash of an update payload. Classified
+        // `Effect.Mode` for the SAME reason as its 3-, 4- and 5-argument siblings and not for a weaker
+        // one: the question this census asks is about the OVERLOAD, whose removal capability is decided
+        // by a `FileMode` argument the IL reach cannot read. That the one call site in the product today
+        // passes `FileMode.Open` with `FileAccess.Read` — a read-only hash that writes nothing — is a
+        // property of the CALL, not of the member, and classifying the member `None` on the strength of
+        // its current caller would blind this census to the next caller that passes `FileMode.Create`.
+        // The source-text reach is what discriminates the two, and it correctly does not flag
+        // UpdateBundle.cs, whose text contains no `FileMode.Create` or `FileMode.Truncate`.
+        ["System.IO.FileStream..ctor/6"] = Effect.Mode,
         ["System.IO.StreamWriter..ctor/1"] = Effect.Replace,  // (string path) truncates
         ["System.IO.StreamWriter..ctor/2"] = Effect.Mode,     // (string, bool append) — or (Stream, Encoding)
         ["System.IO.StreamWriter..ctor/3"] = Effect.Mode,
@@ -793,7 +804,14 @@ public sealed class OperatorDataRemovalCensusTests
         var unreachableByText = removalCapable.Where(api => ShapesFor(api).Length == 0)
             .OrderBy(a => a, StringComparer.Ordinal).ToList();
 
-        Assert.Equal(37, removalCapable.Count);
+        // 🔴 WS-F4 Task 2 — 37 → 38. The new member is `System.IO.FileStream..ctor/6`, classified
+        // `Effect.Mode` above and reached by `UpdateBundle.ComputeSha256`'s streaming hash of an update
+        // payload. `unreachableByText` is deliberately UNCHANGED at 21: `ShapesFor` already maps every
+        // `System.IO.FileStream..ctor` arity to the same three text shapes, so the new member arrives with
+        // a Reach B pattern already attached and widens the classified population without widening the
+        // hole. A change that moved BOTH numbers would mean a genuinely new blind spot and should be read
+        // as one.
+        Assert.Equal(38, removalCapable.Count);
         Assert.Equal(9, SourcePatterns.Length);
         Assert.Equal(21, unreachableByText.Count);
     }
