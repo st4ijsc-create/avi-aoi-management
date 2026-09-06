@@ -32,7 +32,17 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { appError } from "../_core/appError";
-import { twinToaNha, twinTang, twinVatThe } from "../../drizzle/schema";
+import {
+  twinToaNha,
+  twinTang,
+  twinVatThe,
+  twinDatCho,
+  twinKichThuocLoai,
+  workshops,
+  productionLines,
+  stations,
+  machines,
+} from "../../drizzle/schema";
 import { trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 
 /** Nguồn của một giá trị — khớp `twinnguonenum`. */
@@ -536,4 +546,343 @@ export async function demVatTheTheoTang(tangIds: readonly number[]) {
     .select({ id: twinVatThe.id, tangId: twinVatThe.tangId, loai: twinVatThe.loai, nguon: twinVatThe.nguon })
     .from(twinVatThe)
     .where(inArray(twinVatThe.tangId, [...tangIds]));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ĐỢT 4 (§7) — ĐƯỜNG GHI CỦA MÀN THIẾT KẾ: đặt chỗ hàng loạt + sinh tự động
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ★★★ NỢ N-1 CỦA ĐỢT 3 — QUYẾT ĐỊNH CỦA ĐỢT 4, ghi ở đây vì đây là chỗ nó được
+//     giải. Spec §12.1b để lại câu hỏi: "chấp nhận `dungNhaXuong` không chạy
+//     trong một transaction, hay tách một lớp transaction không cần quyền?"
+//
+//     Đợt 4 chọn phương án THỨ HAI, và nó rẻ hơn nhiều so với mô tả trong nợ:
+//     `trongPhamVi` KHÔNG cần nằm trong `tx`. Phạm vi là câu hỏi về NGƯỜI GỌI
+//     (họ được thấy nhà máy nào), không phải về các hàng sắp ghi; nó không đọc
+//     bảng nào mà transaction này ghi. Nên khuôn đúng là:
+//
+//         kiểm quyền + phạm vi  ─── NGOÀI transaction (một lần, ở trên)
+//         ghi mọi hàng          ─── TRONG transaction (nguyên tử)
+//
+//     Đây đúng là khuôn `ghiDeTuongBaoSinh` đã dùng từ Đợt 3 — tức là repo đã
+//     có sẵn câu trả lời, chỉ chưa ai nối nó với nợ N-1. Không cần "hệ phân
+//     quyền thứ hai" nào cả.
+//
+//     ⚠ Đánh đổi phải nói thẳng: giữa lúc kiểm phạm vi và lúc commit có một cửa
+//     sổ mà quyền của người dùng có thể bị thu hồi. Cửa sổ đó tính bằng mili
+//     giây và tồn tại y hệt ở MỌI procedure của repo (kiểm ở middleware, ghi ở
+//     handler) — nó không phải thứ Đợt 4 mới tạo ra, và đóng nó đòi khoá hàng
+//     phân quyền trong cùng tx, tức chính "hệ thứ hai" mà `hierarchy.ts` cấm.
+
+/** Một hàng `twin_dat_cho` đi vào đường ghi hàng loạt (§7.3 "Lưu"). */
+export interface DatChoGhi {
+  loaiThucThe: "workshop" | "line" | "station" | "machine" | "workstation";
+  thucTheId: number;
+  tangId: number;
+  viTriXMm: number;
+  viTriYMm: number;
+  viTriZMm: number;
+  rongMm?: number | null;
+  caoMm?: number | null;
+  sauMm?: number | null;
+  kichThuocDaDo?: boolean;
+  quatX?: number;
+  quatY?: number;
+  quatZ?: number;
+  quatW?: number;
+  daKhoa?: boolean;
+  hienThi?: boolean;
+  /** Ai ghi hàng này. Người kéo tay ⇒ 'tay' (NT-4: lần sinh sau KHÔNG đè). */
+  nguon?: NguonGiaTri;
+}
+
+/**
+ * Trần một lô ghi. Khớp `TRAN_LO_GHI` của `trangThaiThietKe.ts` — hai hằng ở hai
+ * phía đường dây phải bằng nhau, nếu không client chia lô 500 mà server từ chối
+ * ở 200, và lần Lưu đầu tiên vượt 200 sẽ hỏng.
+ */
+export const TRAN_LO_DAT_CHO = 500;
+
+/** Số → chuỗi numeric, giữ NULL là NULL ("chưa biết" khác 0 — xem schema §5.3). */
+function soRaChuoiCoNull(gt: number | null | undefined): string | null {
+  return gt === null || gt === undefined ? null : soRaChuoi(gt);
+}
+
+/**
+ * Tra `factoryId` của tầng — cổng phạm vi cho mọi thao tác đặt chỗ.
+ * `null` = tầng không tồn tại (hoặc toà nhà của nó không tồn tại).
+ */
+async function nhaMayCuaTang(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  tangId: number,
+): Promise<number | null> {
+  const [t] = await d
+    .select({ toaNhaId: twinTang.toaNhaId })
+    .from(twinTang)
+    .where(eq(twinTang.id, tangId))
+    .limit(1);
+  if (!t) return null;
+  return nhaMayCuaToaNha(d, t.toaNhaId);
+}
+
+/** Kết quả một lượt ghi hàng loạt. */
+export interface KetQuaGhiHangLoat {
+  daGhi: number;
+  daTao: number;
+  daCapNhat: number;
+}
+
+/**
+ * Ghi hàng loạt `twin_dat_cho` trong MỘT transaction (§7.3 "Lưu").
+ *
+ * ★★★ UPSERT theo `uq_twin_dat_cho_thuc_the` (loaiThucThe, thucTheId) — bất biến
+ *   quan trọng nhất của mô hình (§5.3: "một máy có ĐÚNG MỘT vị trí"). Dùng
+ *   `onConflictDoUpdate` chứ KHÔNG phải "đọc rồi quyết định insert/update":
+ *   khuôn đọc-rồi-ghi có cửa sổ đua, và dưới cửa sổ đó hai phiên cùng lưu sẽ
+ *   ném 23505 lên mặt người dùng thay vì hoà nhau một cách yên lành.
+ *
+ * ★ MỌI tầng đích phải nằm trong phạm vi người gọi. Kiểm TRƯỚC transaction, và
+ *   kiểm cho TẬP tangId DUY NHẤT (không phải cho từng hàng) — 500 hàng cùng một
+ *   tầng chỉ tốn một lượt kiểm.
+ *
+ * ★★★ `updatedAt` ghi TƯỜNG MINH `new Date()`: cột có `defaultNow()` nhưng
+ *   default chỉ áp lúc INSERT. Nhánh UPDATE của upsert giữ `updatedAt` CŨ nếu
+ *   không gán, và khi đó phép đo G5b ("updatedAt đã tiến" chứng minh đường ghi
+ *   có chạy) sẽ báo ÂM TÍNH GIẢ trên một lượt ghi ĐÃ THÀNH CÔNG.
+ *
+ * @returns `null` khi có tầng ngoài phạm vi / không tồn tại — KHÔNG phân biệt
+ *          hai ca (oracle rò rỉ tồn-tại, xem docblock đầu file).
+ */
+export async function ghiDatChoHangLoat(
+  hangs: readonly DatChoGhi[],
+  scope?: PhamViNguoiXem,
+): Promise<KetQuaGhiHangLoat | null> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+  if (hangs.length === 0) return { daGhi: 0, daTao: 0, daCapNhat: 0 };
+  if (hangs.length > TRAN_LO_DAT_CHO) {
+    throw appError(
+      "BAD_REQUEST",
+      "INVALID_VALUE",
+      { field: "hangs", reason: `toi da ${TRAN_LO_DAT_CHO} hang moi lo` },
+      `Mot lo toi da ${TRAN_LO_DAT_CHO} hang; nhan ${hangs.length}`,
+    );
+  }
+
+  // ── Cổng phạm vi: NGOÀI transaction (nợ N-1, xem docblock khối) ────────────
+  const tangIds = [...new Set(hangs.map((h) => h.tangId))];
+  for (const tangId of tangIds) {
+    const factoryId = await nhaMayCuaTang(d, tangId);
+    if (factoryId === null) return null;
+    if (!(await trongPhamVi("factory", factoryId, scope))) return null;
+  }
+
+  // Đếm hàng ĐÃ CÓ trước khi ghi, để phân biệt tạo mới với cập nhật. Đây là con
+  // số BÁO CÁO (hiện trên toast), không điều khiển hành vi ghi nào.
+  const khoaCu = new Set<string>();
+  for (const loai of new Set(hangs.map((h) => h.loaiThucThe))) {
+    const ids = hangs.filter((h) => h.loaiThucThe === loai).map((h) => h.thucTheId);
+    if (ids.length === 0) continue;
+    const cu = await d
+      .select({ thucTheId: twinDatCho.thucTheId })
+      .from(twinDatCho)
+      .where(and(eq(twinDatCho.loaiThucThe, loai), inArray(twinDatCho.thucTheId, ids)));
+    for (const r of cu) khoaCu.add(`${loai}:${r.thucTheId}`);
+  }
+
+  const bayGio = new Date();
+  await d.transaction(async (tx) => {
+    for (const h of hangs) {
+      const giaTri = {
+        tangId: h.tangId,
+        loaiThucThe: h.loaiThucThe,
+        thucTheId: h.thucTheId,
+        viTriXMm: soRaChuoi(h.viTriXMm),
+        viTriYMm: soRaChuoi(h.viTriYMm),
+        viTriZMm: soRaChuoi(h.viTriZMm),
+        rongMm: soRaChuoiCoNull(h.rongMm),
+        caoMm: soRaChuoiCoNull(h.caoMm),
+        sauMm: soRaChuoiCoNull(h.sauMm),
+        kichThuocDaDo: h.kichThuocDaDo ?? false,
+        quatX: soRaChuoi(h.quatX ?? 0),
+        quatY: soRaChuoi(h.quatY ?? 0),
+        quatZ: soRaChuoi(h.quatZ ?? 0),
+        quatW: soRaChuoi(h.quatW ?? 1),
+        daKhoa: h.daKhoa ?? false,
+        hienThi: h.hienThi ?? true,
+        nguon: h.nguon ?? "tay",
+        updatedAt: bayGio,
+      };
+      await tx
+        .insert(twinDatCho)
+        .values(giaTri)
+        .onConflictDoUpdate({
+          target: [twinDatCho.loaiThucThe, twinDatCho.thucTheId],
+          set: {
+            tangId: giaTri.tangId,
+            viTriXMm: giaTri.viTriXMm,
+            viTriYMm: giaTri.viTriYMm,
+            viTriZMm: giaTri.viTriZMm,
+            rongMm: giaTri.rongMm,
+            caoMm: giaTri.caoMm,
+            sauMm: giaTri.sauMm,
+            kichThuocDaDo: giaTri.kichThuocDaDo,
+            quatX: giaTri.quatX,
+            quatY: giaTri.quatY,
+            quatZ: giaTri.quatZ,
+            quatW: giaTri.quatW,
+            daKhoa: giaTri.daKhoa,
+            hienThi: giaTri.hienThi,
+            nguon: giaTri.nguon,
+            updatedAt: bayGio,
+          },
+        });
+    }
+  });
+
+  const daCapNhat = hangs.filter((h) => khoaCu.has(`${h.loaiThucThe}:${h.thucTheId}`)).length;
+  return { daGhi: hangs.length, daTao: hangs.length - daCapNhat, daCapNhat };
+}
+
+/**
+ * Gỡ một thực thể khỏi mặt bằng (§7.3 "Gỡ khỏi mặt bằng", phím Delete).
+ *
+ * ★★★ XOÁ HÀNG `twin_dat_cho`, TUYỆT ĐỐI KHÔNG chạm `machines`. Máy quay về
+ *   "Khu chờ xếp chỗ" và mọi dữ liệu vận hành của nó nguyên vẹn. Hộp thoại xác
+ *   nhận ở client nói đúng điều đó — mã ở đây phải khớp với lời hộp thoại, nếu
+ *   không thì lời hứa trên UI là lời khai không ai kiểm.
+ */
+export async function goKhoiMatBang(
+  loaiThucThe: DatChoGhi["loaiThucThe"],
+  thucTheId: number,
+  scope?: PhamViNguoiXem,
+): Promise<boolean> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const [cu] = await d
+    .select({ tangId: twinDatCho.tangId })
+    .from(twinDatCho)
+    .where(and(eq(twinDatCho.loaiThucThe, loaiThucThe), eq(twinDatCho.thucTheId, thucTheId)))
+    .limit(1);
+  if (!cu) return false;
+
+  const factoryId = await nhaMayCuaTang(d, cu.tangId);
+  if (factoryId === null || !(await trongPhamVi("factory", factoryId, scope))) return false;
+
+  const xoa = await d
+    .delete(twinDatCho)
+    .where(and(eq(twinDatCho.loaiThucThe, loaiThucThe), eq(twinDatCho.thucTheId, thucTheId)))
+    .returning({ id: twinDatCho.id });
+  return xoa.length > 0;
+}
+
+/**
+ * Đọc mọi đặt chỗ của một tập tầng, numeric đã quy về number.
+ *
+ * ★ Quy đổi Ở ĐÂY, không ở client: đây là ranh giới duy nhất mà "numeric ra
+ *   string" được phép tồn tại. Để string lọt lên client thì mọi phép cộng toạ độ
+ *   trên UI thành nối chuỗi (xem cảnh báo đầu file), và biểu hiện là máy nhảy ra
+ *   ngoài vũ trụ chứ không phải một lỗi đọc được.
+ */
+export async function traDatChoTheoTang(tangIds: readonly number[], scope?: PhamViNguoiXem) {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+  if (tangIds.length === 0) return [];
+
+  const hopLe: number[] = [];
+  for (const tangId of new Set(tangIds)) {
+    const factoryId = await nhaMayCuaTang(d, tangId);
+    if (factoryId === null) continue;
+    if (await trongPhamVi("factory", factoryId, scope)) hopLe.push(tangId);
+  }
+  if (hopLe.length === 0) return [];
+
+  const hang = await d.select().from(twinDatCho).where(inArray(twinDatCho.tangId, hopLe));
+  return hang.map((h) => ({
+    id: h.id,
+    tangId: h.tangId,
+    loaiThucThe: h.loaiThucThe,
+    thucTheId: h.thucTheId,
+    viTriXMm: chuoiRaSo(h.viTriXMm) ?? 0,
+    viTriYMm: chuoiRaSo(h.viTriYMm) ?? 0,
+    viTriZMm: chuoiRaSo(h.viTriZMm) ?? 0,
+    rongMm: chuoiRaSo(h.rongMm),
+    caoMm: chuoiRaSo(h.caoMm),
+    sauMm: chuoiRaSo(h.sauMm),
+    kichThuocDaDo: h.kichThuocDaDo,
+    quatX: chuoiRaSo(h.quatX) ?? 0,
+    quatY: chuoiRaSo(h.quatY) ?? 0,
+    quatZ: chuoiRaSo(h.quatZ) ?? 0,
+    quatW: chuoiRaSo(h.quatW) ?? 1,
+    daKhoa: h.daKhoa,
+    hienThi: h.hienThi,
+    nguon: h.nguon,
+    updatedAt: h.updatedAt,
+  }));
+}
+
+/**
+ * Cây phân cấp phẳng của một nhà máy — đầu vào cho `sinhBoCuc` và cho cây trái.
+ *
+ * ★ `machines` KHÔNG có cột `factoryId` (đo được 2026-09-06: nhà máy suy qua
+ *   `stations → production_lines → workshops.factoryId`). Viết `machines.factoryId`
+ *   là lỗi biên dịch, nhưng suy nhầm đường JOIN thì KHÔNG — nó chỉ trả về ít máy
+ *   hơn thực tế, và cây trái thiếu máy mà không ai biết.
+ */
+export async function traCayPhanCapNhaMay(factoryId: number, scope?: PhamViNguoiXem) {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+  if (!(await trongPhamVi("factory", factoryId, scope))) {
+    return { xuong: [], chuyen: [], tram: [], may: [] };
+  }
+
+  const xuong = await d
+    .select({ id: workshops.id, ma: workshops.code, ten: workshops.name, factoryId: workshops.factoryId })
+    .from(workshops)
+    .where(eq(workshops.factoryId, factoryId));
+  const xuongIds = xuong.map((x) => x.id);
+  if (xuongIds.length === 0) return { xuong: [], chuyen: [], tram: [], may: [] };
+
+  const chuyen = await d
+    .select({ id: productionLines.id, ma: productionLines.code, ten: productionLines.name, workshopId: productionLines.workshopId })
+    .from(productionLines)
+    .where(inArray(productionLines.workshopId, xuongIds));
+  const chuyenIds = chuyen.map((c) => c.id);
+  if (chuyenIds.length === 0) return { xuong, chuyen, tram: [], may: [] };
+
+  const tram = await d
+    .select({ id: stations.id, ma: stations.code, ten: stations.name, lineId: stations.lineId, thuTu: stations.orderIndex })
+    .from(stations)
+    .where(inArray(stations.lineId, chuyenIds));
+  const tramIds = tram.map((t) => t.id);
+  if (tramIds.length === 0) return { xuong, chuyen, tram, may: [] };
+
+  const may = await d
+    .select({
+      id: machines.id,
+      ma: machines.code,
+      ten: machines.name,
+      loaiMay: machines.machineType,
+      isActive: machines.isActive,
+      stationId: machines.stationId,
+    })
+    .from(machines)
+    .where(inArray(machines.stationId, tramIds));
+
+  return { xuong, chuyen, tram, may };
+}
+
+/** Bảng kích thước mặc định theo loại máy (§5.3 bậc 2 của chuỗi dự phòng). */
+export async function traKichThuocTheoLoai() {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+  const hang = await d.select().from(twinKichThuocLoai);
+  return hang.map((h) => ({
+    loaiMay: h.loaiMay,
+    rongMm: chuoiRaSo(h.rongMm) ?? 0,
+    caoMm: chuoiRaSo(h.caoMm) ?? 0,
+    sauMm: chuoiRaSo(h.sauMm) ?? 0,
+    laGiaDinh: h.laGiaDinh,
+  }));
 }

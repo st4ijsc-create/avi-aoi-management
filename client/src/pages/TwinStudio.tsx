@@ -25,7 +25,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Building2, FileUp } from "lucide-react";
+import { Building2, FileUp, LayoutGrid } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -38,6 +38,7 @@ import {
 import { Label } from "@/components/ui/label";
 import DungNhaXuong from "@/components/twin3d/thiet-ke/DungNhaXuong";
 import NhapBanVe from "@/components/twin3d/thiet-ke/NhapBanVe";
+import XuongThietKe from "@/components/twin3d/thiet-ke/XuongThietKe";
 
 export default function TwinStudio() {
   const { t } = useTranslation();
@@ -57,11 +58,35 @@ export default function TwinStudio() {
     { enabled: factoryId !== null },
   );
 
+  /**
+   * ĐỢT 4 — toà nhà đầu tiên của nhà máy, để lấy TẦNG và KÍCH THƯỚC SÀN.
+   *
+   * ★ `numeric(14,3)` về từ drizzle là **string**; `Number(...)` tường minh ở
+   *   đây là bắt buộc. Cộng thẳng hai giá trị string sẽ NỐI CHUỖI
+   *   ("38400"+"0" = "384000") — không throw, và nhà xưởng to gấp 10 lần.
+   */
+  const toaNhaDau = (toaNhaQ.data ?? [])[0] as
+    | { id: number; rongMm: string | number; sauMm: string | number }
+    | undefined;
+  const chiTietQ = trpc.twinCanh.chiTietToaNha.useQuery(
+    { id: toaNhaDau?.id ?? 0 },
+    { enabled: toaNhaDau !== undefined },
+  );
+  const tangDau = useMemo(() => {
+    const tang = (chiTietQ.data?.tangs ?? [])[0] as { id: number } | undefined;
+    if (!toaNhaDau || !tang) return null;
+    return {
+      tangId: tang.id,
+      rongMm: Number(toaNhaDau.rongMm),
+      sauMm: Number(toaNhaDau.sauMm),
+    };
+  }, [toaNhaDau, chiTietQ.data]);
+
   return (
-    <div className="flex flex-col gap-4 p-6" data-testid="man-twin-studio">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+    <div className="flex h-[calc(100vh-5rem)] flex-col gap-3 p-4" data-testid="man-twin-studio">
+      <header className="flex shrink-0 flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">{t("twin3d.studio.tieuDe")}</h1>
+          <h1 className="text-xl font-semibold text-foreground">{t("twin3d.studio.tieuDe")}</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{t("twin3d.studio.moTa")}</p>
         </div>
         <div className="grid min-w-52 gap-1.5">
@@ -90,7 +115,7 @@ export default function TwinStudio() {
         {toaNhaQ.isLoading || factoryId === null ? "—" : (toaNhaQ.data?.length ?? 0)}
       </p>
 
-      <Tabs defaultValue="dien-kich-thuoc">
+      <Tabs defaultValue="thiet-ke" className="flex min-h-0 flex-1 flex-col">
         <TabsList>
           <TabsTrigger value="dien-kich-thuoc" data-testid="tab-con-duong-b">
             <Building2 className="mr-1.5 h-4 w-4" />
@@ -99,6 +124,15 @@ export default function TwinStudio() {
           <TabsTrigger value="nhap-ban-ve" data-testid="tab-con-duong-a">
             <FileUp className="mr-1.5 h-4 w-4" />
             {t("twin3d.banVe.chonTep")}
+          </TabsTrigger>
+          {/* ★★★ ĐỢT 4 (§7) — xưởng dựng bố cục. ĐÂY là tab mang `<Canvas>`.
+              RB-4: Radix Tabs UNMOUNT nội dung tab không hoạt động, nên chỉ một
+              WebGL context sống tại một thời điểm — cùng cơ chế mà
+              `TwinHub.tsx:8-9` cố ý dựa vào. `window.__soCanvas` đo được điều
+              đó, và `KhungCanh` tự console.error nếu > 1. */}
+          <TabsTrigger value="thiet-ke" data-testid="tab-thiet-ke">
+            <LayoutGrid className="mr-1.5 h-4 w-4" />
+            {t("twin3d.studioUi.thietKe")}
           </TabsTrigger>
         </TabsList>
 
@@ -112,6 +146,24 @@ export default function TwinStudio() {
           {/* Đợt 4 nối kết quả hiệu chỉnh vào `twin_vat_the` (vỏ nhà) hoặc vào
               chính form con đường B (tách tầng — §10A.3 `cumTangSangDongNhap`). */}
           <NhapBanVe />
+        </TabsContent>
+
+        <TabsContent
+          value="thiet-ke"
+          className="mt-2 min-h-0 flex-1 overflow-hidden rounded-md border data-[state=inactive]:hidden"
+        >
+          {factoryId === null ? null : tangDau === null ? (
+            <p className="p-4 text-sm text-muted-foreground" data-testid="chua-co-tang">
+              {t("twin3d.studioUi.chuaCoTang")}
+            </p>
+          ) : (
+            <XuongThietKe
+              factoryId={factoryId}
+              tangId={tangDau.tangId}
+              sanRongMm={tangDau.rongMm}
+              sanSauMm={tangDau.sauMm}
+            />
+          )}
         </TabsContent>
       </Tabs>
     </div>
