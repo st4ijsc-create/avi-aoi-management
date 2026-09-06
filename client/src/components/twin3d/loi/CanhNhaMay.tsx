@@ -24,7 +24,7 @@
  * đúng enum của DB. Ghi lại ở đây để đợt sau không tưởng là bỏ sót.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { Grid } from "@react-three/drei";
@@ -276,8 +276,22 @@ function NoiDungCanh({
 
   /**
    * Tập nhãn: giữ NGUYÊN luật của màn cũ (chọn ∪ hover ∪ andon ∪ pdm, hoặc TẤT CẢ
-   * khi zoom gần) rồi để `locNhan.ts` cắt xuống 30. Màn cũ cắt cứng ở 60 và không
-   * khử chồng lấp — đây là điểm kit mới TỐT HƠN, không phải khác đi.
+   * khi zoom gần) rồi để `locNhan.ts` cắt xuống 30.
+   *
+   * ★ ĐỐI CHỨNG với màn cũ, khai theo cái ĐO ĐƯỢC chứ không theo ý định:
+   * `client/src/components/factory-scene/FactoryScene3D.tsx:257` (engine cũ) chỉ
+   * `.slice(0, 60)` — KHÔNG khử chồng
+   * lấp gì cả. Kit này khử chồng lấp bằng bbox thật (`locNhan.ts`), nên nhãn
+   * không đè lên nhau nữa: đó là điểm HƠN, đo được bằng `__demNhan.capConChong`.
+   * Đổi lại kit này chỉ vẽ tối đa 30 nhãn thay vì 60 — với người dùng cần đọc
+   * nhiều mã máy cùng lúc thì đó là điểm KÉM hơn. Hai chiều, không phải "tốt hơn"
+   * một chiều.
+   *
+   * ⚠ Bản khai TRƯỚC ở đây viết "đây là điểm kit mới TỐT HƠN, không phải khác đi"
+   * trong khi khử chồng lấp lúc đó dùng mô hình ĐƯỜNG TRÒN bán kính 42px và QA đo
+   * được 5 cặp nhãn vẫn chồng nhau thật (chồng ngang tới 66px). Lời khai đó sai
+   * tại thời điểm viết; nay mô hình đã sửa thành bbox nên nó ĐÚNG với phần khử
+   * chồng lấp — nhưng vẫn phải nói kèm cái đánh đổi 60→30.
    */
   const nhan = useMemo<NhanTheGioi[]>(() => {
     const canHien = (p: PlacedMachine) =>
@@ -304,6 +318,44 @@ function NoiDungCanh({
   }, [chon.dangHover, gl]);
 
   const banKinh = layout.radius;
+
+  /**
+   * ★★★ `useCallback` BẮT BUỘC, không phải làm đẹp.
+   *
+   * `DieuKhien` liệt kê `onDoiKhoangCach` trong deps của `useEffect` dựng
+   * `OrbitControls`. Truyền arrow function inline thì MỌI re-render của
+   * `NoiDungCanh` (đổi lớp phủ, hover một máy, dữ liệu trạng thái về) sinh một
+   * hàm mới ⇒ deps đổi ⇒ effect chạy lại ⇒ `controls.dispose()` rồi `new
+   * OrbitControls(...)`.
+   *
+   * Đo được ở lần đổi lớp phủ: listener `pointerdown`/`wheel`/`contextmenu` mỗi
+   * loại +1 gắn, +2 gỡ. Số GỠ ≥ số GẮN nên KHÔNG rò listener, và vị trí camera
+   * giữ nguyên — nên đây không phải lỗi chặn. Hậu quả thật là **mất quán tính
+   * damping đang trôi** (camera đang trượt mượt thì khựng lại giữa chừng khi
+   * người dùng bấm nút lớp phủ) cộng cấp phát thừa mỗi lần.
+   *
+   * `banKinh` KHÔNG nằm trong deps của callback này dù thân hàm dùng nó: nó là
+   * `layout.radius`, đổi khi bố cục đổi — và khi bố cục đổi thì dựng lại controls
+   * là ĐÚNG (`maxDistance` phụ thuộc `banKinh`). `DieuKhien` đã có `banKinh`
+   * trong deps riêng nên hành vi đó được giữ; thêm vào đây chỉ nhân đôi lý do.
+   */
+  const doiKhoangCach = useCallback(
+    (d: number) => {
+      const gan = d < Math.max(10, banKinh * 0.8);
+      setZoomGan((truoc) => (truoc === gan ? truoc : gan));
+    },
+    [banKinh],
+  );
+
+  /**
+   * Cùng lý do: `TheoDoiFps` cũng nhận hàm này qua deps của effect. Hai `set*`
+   * đều là setter của `useState` — React đảm bảo chúng ỔN ĐỊNH giữa các render,
+   * nên deps rỗng là đúng chứ không phải bỏ sót.
+   */
+  const doiBac = useCallback((hop: boolean, nhanBat: boolean) => {
+    setChiHopBao(hop);
+    setCoNhan(nhanBat);
+  }, []);
 
   return (
     <>
@@ -343,21 +395,9 @@ function NoiDungCanh({
       <VienChon may={mayDangChon} />
       <LopNhan nhan={nhan} dangChon={selectedId} dangHover={chon.dangHover} tat={!coNhan} />
 
-      <DieuKhien
-        banKinh={banKinh}
-        controlsRef={controlsRef}
-        onDoiKhoangCach={(d) => {
-          const gan = d < Math.max(10, banKinh * 0.8);
-          setZoomGan((truoc) => (truoc === gan ? truoc : gan));
-        }}
-      />
+      <DieuKhien banKinh={banKinh} controlsRef={controlsRef} onDoiKhoangCach={doiKhoangCach} />
       <BayToi byId={byId} focusId={focusId} controlsRef={controlsRef} />
-      <TheoDoiFps
-        onDoiBac={(hop, nhanBat) => {
-          setChiHopBao(hop);
-          setCoNhan(nhanBat);
-        }}
-      />
+      <TheoDoiFps onDoiBac={doiBac} />
     </>
   );
 }

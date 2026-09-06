@@ -12,15 +12,29 @@
 import { describe, it, expect } from "vitest";
 import {
   locNhan,
+  demCapChongLap,
   diemUuTienNhan,
+  haiHopChongNhau,
+  hopNhan,
   TRAN_NHAN_DOM,
   BAN_KINH_VA_CHAM_PX,
+  CAO_SUY_DOAN_PX,
+  RONG_SUY_DOAN_PX,
   type NhanUngVien,
 } from "./locNhan";
 
-/** Sinh N nhãn RỜI NHAU (cách xa hơn bán kính va chạm) để cô lập luật trần. */
+/**
+ * Sinh N nhãn RỜI NHAU (bbox không chạm nhau) để cô lập luật trần.
+ *
+ * ⚠ BƯỚC phải lớn hơn BỀ RỘNG nhãn, không phải lớn hơn bán kính. Bản đầu của
+ * fixture này lấy `BAN_KINH_VA_CHAM_PX * 3 = 126px` — nhỏ hơn bề rộng suy đoán
+ * 150px của nhãn thật, nên sau khi đổi sang mô hình bbox, 6 test "rời nhau" ĐỎ
+ * hàng loạt. Đó là fixture sai chứ không phải hành vi sai: 126px thật sự KHÔNG
+ * đủ để hai nhãn 150px không đè lên nhau, và chính đó là lỗi mà mô hình đường
+ * tròn cũ giấu đi. Giữ ghi chú này để lần sau không ai "sửa" ngược lại.
+ */
 function nhanRoiNhau(n: number, tuy: Partial<NhanUngVien> = {}): NhanUngVien[] {
-  const buoc = BAN_KINH_VA_CHAM_PX * 3;
+  const buoc = RONG_SUY_DOAN_PX * 2;
   return Array.from({ length: n }, (_, i) => ({
     khoa: `may:${String(i).padStart(3, "0")}`,
     x: (i % 20) * buoc,
@@ -157,21 +171,36 @@ describe("locNhan — khử chồng lấp CHẠY TRƯỚC cắt trần", () => {
     expect(kq.ve.map((v) => v.khoa)).not.toContain("z-du");
   });
 
-  it("nhãn cách nhau vừa đúng bán kính KHÔNG bị coi là chồng", () => {
+  it("nhãn KỀ SÁT MÉP nhau (chạm nhưng không đè) KHÔNG bị coi là chồng", () => {
+    // Cách nhau đúng một bề rộng ⇒ mép phải của a trùng mép trái của b. Đọc được
+    // bình thường, giết một cái đi là mất thông tin không đổi lại được gì.
     const kq = locNhan([
-      { khoa: "a", x: 0, y: 0, khoangCachMet: 1 },
-      { khoa: "b", x: BAN_KINH_VA_CHAM_PX, y: 0, khoangCachMet: 2 },
+      { khoa: "a", x: 0, y: 0, khoangCachMet: 1, rongPx: 100, caoPx: 20 },
+      { khoa: "b", x: 100, y: 0, khoangCachMet: 2, rongPx: 100, caoPx: 20 },
     ]);
     expect(kq.ve.length).toBe(2);
   });
 
-  it("bán kính va chạm tuỳ chỉnh được", () => {
+  it("kích thước suy đoán tuỳ chỉnh được", () => {
     const ds: NhanUngVien[] = [
       { khoa: "a", x: 0, y: 0, khoangCachMet: 1 },
       { khoa: "b", x: 100, y: 0, khoangCachMet: 2 },
     ];
+    expect(locNhan(ds, { rongSuyDoanPx: 20, caoSuyDoanPx: 20 }).ve.length).toBe(2);
+    expect(locNhan(ds, { rongSuyDoanPx: 400, caoSuyDoanPx: 20 }).ve.length).toBe(1);
+  });
+
+  it("★ TƯƠNG THÍCH NGƯỢC: `banKinhVaChamPx` cũ ⇒ hộp vuông cạnh 2× bán kính", () => {
+    // Người gọi cũ truyền bán kính; hành vi phải suy biến êm chứ không đổi đột ngột.
+    const ds: NhanUngVien[] = [
+      { khoa: "a", x: 0, y: 0, khoangCachMet: 1 },
+      { khoa: "b", x: 100, y: 0, khoangCachMet: 2 },
+    ];
+    // Bán kính 10 ⇒ hộp 20×20, cách 100px ⇒ rời nhau.
     expect(locNhan(ds, { banKinhVaChamPx: 10 }).ve.length).toBe(2);
+    // Bán kính 200 ⇒ hộp 400×400, cách 100px ⇒ chồng.
     expect(locNhan(ds, { banKinhVaChamPx: 200 }).ve.length).toBe(1);
+    expect(BAN_KINH_VA_CHAM_PX).toBe(42); // hằng số cũ vẫn xuất khẩu, không phá import
   });
 
   it("khi chồng nhau, cái ƯU TIÊN CAO HƠN sống sót — không phải cái đến trước", () => {
@@ -233,5 +262,135 @@ describe("locNhan — NT-2 luật 1: alarm không bao giờ bị góc camera che
     expect(kq.ve.length).toBe(30);
     expect(kq.ve.map((v) => v.khoa)).toContain("may:LOI");
     expect(kq.ve[0].khoa).toBe("may:LOI"); // và nó đứng ĐẦU
+  });
+});
+
+/* ═════════════════════════════════════════════════════════════════════════ */
+/* ★★★ KHỬ CHỒNG LẤP THEO BBOX — bản vá cho một LỜI KHAI SAI                */
+/*                                                                           */
+/* QA đo bằng `getBoundingClientRect` trên màn thật: 5 CẶP nhãn chồng nhau,   */
+/* chồng ngang tới 66px, chữ che nhau không đọc được — TRONG KHI bộ đếm       */
+/* `__demNhan.chongLap` báo 0. Bộ đếm không sai số học; MÔ HÌNH của nó sai    */
+/* hình: nó coi nhãn là đường tròn bán kính 42px, nhãn thật là hình chữ nhật  */
+/* rộng 112–198px. Khối test dưới đây ghim mô hình mới bằng cách đo ĐẦU RA    */
+/* (quét toàn bộ cặp), không bằng cách đọc lại bộ đếm.                        */
+/* ═════════════════════════════════════════════════════════════════════════ */
+
+describe("★ khử chồng lấp theo BBOX, không theo đường tròn", () => {
+  it("★ CA HỒI QUY QA: hai nhãn rộng 180px cách tâm 100px CHỒNG 80px — mô hình cũ bảo KHÔNG", () => {
+    // Đây đúng là ca mà bán kính 42 bỏ lọt: khoảng cách tâm 100 > 42, "không
+    // chồng" theo đường tròn; nhưng 180px rộng thì hai hộp đè nhau 80px thật.
+    const ds: NhanUngVien[] = [
+      { khoa: "a", x: 0, y: 0, khoangCachMet: 1, rongPx: 180, caoPx: 22 },
+      { khoa: "b", x: 100, y: 0, khoangCachMet: 2, rongPx: 180, caoPx: 22 },
+    ];
+    const kq = locNhan(ds);
+    expect(kq.ve.length).toBe(1);
+    expect(kq.soBiChongLap).toBe(1);
+    expect(kq.ve[0].khoa).toBe("a"); // gần camera hơn thì sống
+  });
+
+  it("★ KHÔNG có bán kính nào cứu được: nhãn 9:1 chồng NGANG mà rời DỌC", () => {
+    // Vì sao phải đổi HÌNH chứ không nới SỐ. Cùng bề rộng 180, cùng cách 100px:
+    //  - lệch NGANG  ⇒ chồng thật     ⇒ phải loại
+    //  - lệch DỌC    ⇒ đọc được cả hai ⇒ phải giữ
+    // Mọi bán kính đường tròn xử hai ca này GIỐNG NHAU, nên luôn sai một trong hai.
+    const ngang: NhanUngVien[] = [
+      { khoa: "a", x: 0, y: 0, khoangCachMet: 1, rongPx: 180, caoPx: 22 },
+      { khoa: "b", x: 100, y: 0, khoangCachMet: 2, rongPx: 180, caoPx: 22 },
+    ];
+    const doc: NhanUngVien[] = [
+      { khoa: "a", x: 0, y: 0, khoangCachMet: 1, rongPx: 180, caoPx: 22 },
+      { khoa: "b", x: 0, y: 100, khoangCachMet: 2, rongPx: 180, caoPx: 22 },
+    ];
+    expect(locNhan(ngang).ve.length).toBe(1);
+    expect(locNhan(doc).ve.length).toBe(2);
+  });
+
+  it("★ HẬU ĐIỀU KIỆN: 0 cặp CÒN chồng trong kết quả, với kích thước nhãn HỖN TẠP", () => {
+    // Phép đo ĐỘC LẬP với thuật toán: quét mọi cặp trong `ve` bằng
+    // `demCapChongLap`. Đây chính là điều `__demNhan.chongLap = 0` ngầm khai mà
+    // bản đường tròn KHÔNG giữ được. Bề rộng trải 112–198px đúng dải QA đo được.
+    const rong = [112, 128, 145, 160, 175, 198];
+    const ds: NhanUngVien[] = Array.from({ length: 120 }, (_, i) => ({
+      khoa: `may:${String(i).padStart(3, "0")}`,
+      // Lưới CỐ Ý dày (60px) để có rất nhiều cặp chồng thật ở đầu vào.
+      x: (i % 12) * 60,
+      y: Math.floor(i / 12) * 18,
+      khoangCachMet: 5 + i * 0.1,
+      rongPx: rong[i % rong.length],
+      caoPx: 22,
+    }));
+
+    // Đầu vào PHẢI có chồng lấp thật, nếu không phép đo dưới thành vô can giả.
+    expect(demCapChongLap(ds)).toBeGreaterThan(5);
+
+    const kq = locNhan(ds);
+    const daVe = kq.ve.map((v) => {
+      const goc = ds.find((n) => n.khoa === v.khoa)!;
+      return { x: v.x, y: v.y, rongPx: goc.rongPx, caoPx: goc.caoPx };
+    });
+    expect(demCapChongLap(daVe)).toBe(0);
+  });
+
+  it("★ `hop` trả về KHỚP với `getBoundingClientRect` của CSS thật", () => {
+    // CSS của LopNhan.tsx: `left: x; top: y; transform: translate(-50%, -100%)`.
+    // Nghĩa là (x, y) là GIỮA CẠNH DƯỚI, không phải tâm. Nhầm chỗ này thì lệch
+    // nửa chiều cao — và lệch đúng theo hướng báo THIẾU chồng lấp.
+    const h = hopNhan({ x: 500, y: 300, rongPx: 180, caoPx: 22 });
+    expect(h.trai).toBe(410); // 500 - 180/2
+    expect(h.phai).toBe(590); // 500 + 180/2
+    expect(h.duoi).toBe(300); // neo nằm ở CẠNH DƯỚI
+    expect(h.tren).toBe(278); // 300 - 22, hộp nằm HOÀN TOÀN phía trên neo
+  });
+
+  it("★ nhãn NGAY TRÊN nhau (cùng x, cách dọc 21px < cao 22px) bị bắt là chồng", () => {
+    // Ca mà mô hình cũ CÓ bắt được (21 < 42) nhưng lý do đúng phải là bbox.
+    const gan = locNhan([
+      { khoa: "a", x: 0, y: 0, khoangCachMet: 1, rongPx: 100, caoPx: 22 },
+      { khoa: "b", x: 0, y: 21, khoangCachMet: 2, rongPx: 100, caoPx: 22 },
+    ]);
+    expect(gan.ve.length).toBe(1);
+    // Cách dọc 22px = đúng bằng chiều cao ⇒ chạm mép, KHÔNG chồng.
+    const vua = locNhan([
+      { khoa: "a", x: 0, y: 0, khoangCachMet: 1, rongPx: 100, caoPx: 22 },
+      { khoa: "b", x: 0, y: 22, khoangCachMet: 2, rongPx: 100, caoPx: 22 },
+    ]);
+    expect(vua.ve.length).toBe(2);
+  });
+
+  it("thiếu rongPx/caoPx ⇒ dùng suy đoán, không NaN và không bỏ qua khử chồng", () => {
+    const h = hopNhan({ x: 0, y: 0 });
+    expect(h.phai - h.trai).toBe(RONG_SUY_DOAN_PX);
+    expect(h.duoi - h.tren).toBe(CAO_SUY_DOAN_PX);
+    // rongPx = 0 / âm / NaN đều rơi về suy đoán chứ không thành hộp rỗng (hộp
+    // rỗng thì không bao giờ chồng ⇒ khử chồng lấp tắt câm lặng).
+    for (const xau of [0, -5, NaN, Infinity]) {
+      const hx = hopNhan({ x: 0, y: 0, rongPx: xau, caoPx: xau });
+      expect(hx.phai - hx.trai).toBe(RONG_SUY_DOAN_PX);
+      expect(hx.duoi - hx.tren).toBe(CAO_SUY_DOAN_PX);
+    }
+  });
+
+  it("haiHopChongNhau tất định và đối xứng", () => {
+    const a = { trai: 0, phai: 100, tren: 0, duoi: 20 };
+    const b = { trai: 50, phai: 150, tren: 10, duoi: 30 };
+    const c = { trai: 200, phai: 300, tren: 0, duoi: 20 };
+    expect(haiHopChongNhau(a, b)).toBe(true);
+    expect(haiHopChongNhau(b, a)).toBe(true);
+    expect(haiHopChongNhau(a, c)).toBe(false);
+    expect(haiHopChongNhau(c, a)).toBe(false);
+  });
+
+  it("demCapChongLap đếm ĐÚNG số cặp, không phải số nhãn", () => {
+    // Ba nhãn chồng nhau đôi một = 3 CẶP (không phải 3 nhãn, không phải 2).
+    const ba = [
+      { x: 0, y: 0, rongPx: 100, caoPx: 22 },
+      { x: 10, y: 0, rongPx: 100, caoPx: 22 },
+      { x: 20, y: 0, rongPx: 100, caoPx: 22 },
+    ];
+    expect(demCapChongLap(ba)).toBe(3);
+    expect(demCapChongLap([])).toBe(0);
+    expect(demCapChongLap([ba[0]])).toBe(0);
   });
 });

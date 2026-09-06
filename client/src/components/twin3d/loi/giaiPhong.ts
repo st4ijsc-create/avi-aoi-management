@@ -6,8 +6,38 @@
  * Cả 3 engine hiện tại của repo đều thiếu bước này — và hub mount/unmount tab liên
  * tục, nên rò rỉ tích luỹ theo giờ làm việc chứ không theo lần tải trang.
  *
- * Module này import `three` (kiểu) nên KHÔNG có test node đi kèm; nó cố ý mỏng và
- * không chứa nhánh logic nào đáng test — phần đáng test đã ở `locNhan`/`matDoKhungHinh`.
+ * ★★★ TÌNH TRẠNG THẬT (đo 2026-09-06, grep toàn repo): **MODULE NÀY CHƯA ĐƯỢC
+ * DÙNG Ở ĐÂU.** 0 nơi gọi; nó chỉ được `index.ts` re-export. RB-7 hiện ĐẠT nhờ
+ * bốn chỗ dispose VIẾT TAY, không nhờ module này:
+ *   - `LoBatchMay.tsx:175-179`      (BatchedMesh + geometry + material)
+ *   - `CanhNhaMay.tsx:184`          (viền chọn, gọi `giaiPhongVien`)
+ *   - `vienNoiBat.ts:87-94`         (EdgesGeometry + LineBasicMaterial)
+ *   - `hinhHocTuMoTa.ts:76`         (các mảnh BoxGeometry sau `mergeGeometries`)
+ *
+ * ★ QUYẾT ĐỊNH của phiên vá (2026-09-06): **GIỮ NGUYÊN, chưa nối vào bốn chỗ trên.**
+ * Đã cân nhắc phương án thay bốn chỗ viết tay bằng module này (gọn hơn, một nguồn
+ * sự thật) và BỎ, vì:
+ *   1. Bốn chỗ đó mỗi chỗ giải phóng 1-2 vật thể ĐÃ BIẾT TÊN; `giaiPhongCay` duyệt
+ *      cây scene TỔNG QUÁT. Đổi sang nó là đổi từ "giải phóng đúng 2 thứ này" sang
+ *      "giải phóng mọi thứ tìm thấy dưới gốc này" — phạm vi rộng hơn hẳn, và
+ *      BatchedMesh chia sẻ geometry giữa các instance nên "duyệt cây rồi dispose
+ *      tất" là đúng loại thao tác có thể dispose nhầm cái còn dùng.
+ *   2. Bằng chứng RB-7 hiện tại đo trên bốn chỗ viết tay đó. Thay chúng ⇒ bằng
+ *      chứng cũ hết hiệu lực, phải đo lại rò rỉ GPU trên màn thật — việc của một
+ *      đợt có ngân sách đo, không phải của một phiên vá 3 việc.
+ *   3. Module này CHƯA CÓ TEST NÀO. Nối mã chưa đo vào bốn điểm đang chạy đúng là
+ *      đổi rủi ro lấy vẻ gọn gàng.
+ *
+ * ⇒ ĐỂ ĐỢT SAU: hoặc (a) viết test cho module rồi mới nối và đo lại RB-7, hoặc
+ * (b) dùng nó cho các engine CŨ (`factory-scene/`) vốn đang thiếu dispose hoàn
+ * toàn — đó mới là chỗ nó có giá trị ròng, vì ở đó nó thay thế SỐ KHÔNG chứ không
+ * thay thế mã đang chạy đúng.
+ *
+ * ⚠ KHÔNG XOÁ: module đã viết xong, có ích cho (b), và xoá tài nguyên dự án phải
+ * hỏi chủ dự án.
+ *
+ * Module này import `three` (kiểu) nên chưa có test node đi kèm; nếu đợt sau nối
+ * nó vào thật thì test là điều kiện tiên quyết (xem điểm 3 ở trên).
  */
 
 import * as THREE from "three";

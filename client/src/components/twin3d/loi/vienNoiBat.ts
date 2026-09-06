@@ -15,7 +15,17 @@
 
 import * as THREE from "three";
 
-/** Ngưỡng góc (độ) để một cạnh được coi là "cạnh nét". 1° = giữ gần như mọi cạnh. */
+/**
+ * Ngưỡng góc (độ) để một cạnh được coi là "cạnh nét" — `EdgesGeometry` chỉ giữ
+ * cạnh mà hai mặt kề lệch nhau HƠN ngưỡng này.
+ *
+ * ⚠ Comment cũ ở đây viết "1° = giữ gần như mọi cạnh" trong khi hằng số là 25 —
+ * comment mô tả một trị KHÁC hẳn trị đang chạy, nên đọc comment mà suy ra hành vi
+ * là suy sai. Trị THẬT là **25°**, và nó có lý do: khối máy dựng bằng hộp nên
+ * cạnh thật đều ~90°, còn 25° đủ cao để bỏ các cạnh do `mergeGeometries` sinh ra
+ * giữa hai hộp con áp sát nhau (gần đồng phẳng, lệch vài độ). Hạ về 1° thì viền
+ * nổi bật rối vì đầy cạnh nội bộ; nâng quá 90° thì mất sạch viền.
+ */
 export const NGUONG_GOC_CANH = 25;
 
 export interface CauHinhVien {

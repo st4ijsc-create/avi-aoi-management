@@ -17,7 +17,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useRef, useState } from "react";
 import * as THREE from "three";
 
-import { locNhan, TRAN_NHAN_DOM, type NhanUngVien } from "./locNhan";
+import { demCapChongLap, locNhan, TRAN_NHAN_DOM, type NhanUngVien } from "./locNhan";
 
 /** Một nhãn trước khi chiếu — vị trí ở KHÔNG GIAN THẾ GIỚI (mét). */
 export interface NhanTheGioi {
@@ -70,6 +70,20 @@ export function LopNhan({ nhan, dangChon, dangHover, tat = false, tranNhan = TRA
   const [hienThi, setHienThi] = useState<NhanDaChieu[]>([]);
   const tamRef = useRef(new THREE.Vector3());
   const chuKyRef = useRef("");
+  /**
+   * Kích thước THẬT của từng nhãn, đo bằng `getBoundingClientRect` sau khi div
+   * đã render, nhớ theo `khoa`.
+   *
+   * ★ Vì sao ĐO chứ không ƯỚC LƯỢNG từ độ dài chuỗi: bề rộng phụ thuộc font đang
+   * tải, `zoom` trình duyệt, và chuỗi `phu` đã qua `t()` (tiếng Việt có dấu rộng
+   * hơn tiếng Anh cùng số ký tự). Ước lượng theo ký tự chính là cách sinh ra một
+   * con số CÓ VẺ đúng mà không ai đo — đúng lớp lỗi mà bản vá này đang sửa.
+   *
+   * ★ Vì sao nhớ được qua các khung: mã máy của một `khoa` không đổi, nên bề rộng
+   * cũng không đổi. Khung đầu tiên của một nhãn mới dùng trị suy đoán của
+   * `locNhan`; từ khung sau đã có số đo thật.
+   */
+  const coNhanRef = useRef(new Map<string, { rongPx: number; caoPx: number }>());
 
   const tinhLai = useCallback(() => {
     if (tat || nhan.length === 0) {
@@ -85,11 +99,15 @@ export function LopNhan({ nhan, dangChon, dangHover, tat = false, tranNhan = TRA
       const kc = camera.position.distanceTo(p);
       const mh = chieu(p, camera, size.width, size.height);
       theoKhoa.set(n.khoa, n);
+      const co = coNhanRef.current.get(n.khoa);
       ungVien.push({
         khoa: n.khoa,
         x: mh?.x ?? 0,
         y: mh?.y ?? 0,
         khoangCachMet: kc,
+        // Số đo THẬT khi đã có; thiếu thì `locNhan` dùng trị suy đoán của nó.
+        rongPx: co?.rongPx,
+        caoPx: co?.caoPx,
         dangChon: n.machineId === dangChon,
         batThuong: n.batThuong === true,
         hover: n.machineId === dangHover,
@@ -115,6 +133,17 @@ export function LopNhan({ nhan, dangChon, dangHover, tat = false, tranNhan = TRA
         chongLap: kq.soBiChongLap,
         vuotTran: kq.soVuotTran,
         tran: tranNhan,
+        // ★ Số CẶP nhãn CÒN chồng nhau trong tập được vẽ — đại lượng KHÁC với
+        // `chongLap` (số nhãn BỊ LOẠI). Chính chỗ lẫn hai đại lượng này làm bộ
+        // đếm cũ khai 0 trong khi màn thật có 5 cặp chồng. Đại lượng này phải
+        // luôn = 0; e2e đối chiếu nó với `getBoundingClientRect`.
+        capConChong: demCapChongLap(
+          kq.ve.map((v) => ({
+            x: v.x,
+            y: v.y,
+            ...(coNhanRef.current.get(v.khoa) ?? {}),
+          })),
+        ),
       };
     }
 
@@ -164,6 +193,16 @@ export function LopNhan({ nhan, dangChon, dangHover, tat = false, tranNhan = TRA
           <div
             key={n.khoa}
             data-testid="nhan-may-twin3d"
+            /* ★ Đo kích thước THẬT ngay khi div gắn vào DOM và nhớ theo `khoa`.
+               Khung sau, `locNhan` khử chồng lấp bằng bbox thật thay vì trị suy
+               đoán. Ghi vào ref (không setState) nên KHÔNG gây re-render vòng. */
+            ref={(el) => {
+              if (!el) return;
+              const r = el.getBoundingClientRect();
+              if (r.width > 0 && r.height > 0) {
+                coNhanRef.current.set(n.khoa, { rongPx: r.width, caoPx: r.height });
+              }
+            }}
             style={{
               position: "absolute",
               left: n.x,
@@ -203,9 +242,15 @@ export interface WindowCoDo extends Window {
     ve: number;
     tong: number;
     ngoaiKhung: number;
+    /** Số nhãn BỊ LOẠI vì chồng bbox lên một nhãn ưu tiên cao hơn. */
     chongLap: number;
     vuotTran: number;
     tran: number;
+    /**
+     * Số CẶP nhãn CÒN chồng nhau trong tập ĐƯỢC VẼ — phải luôn 0.
+     * ⚠ KHÁC `chongLap`: đây là đầu ra (còn chồng), kia là đầu vào (bị loại).
+     */
+    capConChong: number;
   };
 }
 

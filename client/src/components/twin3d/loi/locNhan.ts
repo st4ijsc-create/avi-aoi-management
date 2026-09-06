@@ -12,18 +12,52 @@
  * Bốn luật, theo thứ tự:
  *   1. Nhãn ngoài khung / sau lưng camera bị loại NGAY (không tốn suất).
  *   2. Ưu tiên: đang chọn > đang bất thường > hover > gần camera.
- *   3. Nhãn chồng nhau trong bán kính `banKinhVaChamPx` → giữ cái ưu tiên cao hơn.
+ *   3. Nhãn chồng HÌNH CHỮ NHẬT với một nhãn đã giữ → bỏ cái ưu tiên thấp hơn.
  *   4. Sau cùng cắt về `TRAN_NHAN_DOM` (30).
  *
  * ⚠ Luật 3 chạy TRƯỚC luật 4 có chủ đích: nếu cắt 30 trước rồi mới khử chồng,
  * ta có thể còn 8 nhãn hiển thị trong khi 22 suất bị các nhãn chồng nhau ăn mất.
+ *
+ * ★★★ LUẬT 3 DÙNG BBOX, KHÔNG DÙNG ĐƯỜNG TRÒN — và đây là bản VÁ một lời khai sai.
+ * Bản đầu so khoảng cách TÂM với bán kính cố định 42px, tức mô hình nhãn là ĐƯỜNG
+ * TRÒN đường kính 84px. Nhãn thật là HÌNH CHỮ NHẬT rộng 112–198px (đo bằng
+ * `getBoundingClientRect` trên màn thật), nên hai nhãn cách tâm 100px — ngoài
+ * bán kính, "không chồng" theo mô hình cũ — vẫn chồng ngang tới 66px và chữ che
+ * nhau không đọc được. QA đo được **5 cặp chồng thật trong khi `__demNhan.chongLap`
+ * báo 0**: bộ đếm không sai về số học, mô hình của nó sai về hình.
+ *
+ * Vì sao đường tròn KHÔNG cứu được bằng cách nới bán kính: nhãn rộng ~180px và
+ * cao ~20px, tỉ lệ gần 9:1. Một đường tròn phủ hết bề rộng thì cũng phủ 180px
+ * theo CHIỀU DỌC — giết oan các nhãn xếp chồng dọc vốn đọc được hoàn toàn. Không
+ * có bán kính nào đúng cho cả hai chiều; phải đổi HÌNH, không phải đổi SỐ.
+ *
+ * `banKinhVaChamPx` GIỮ LẠI làm bề rộng/cao SUY ĐOÁN khi người gọi chưa đo được
+ * kích thước thật (khung đầu tiên, trước khi DOM tồn tại) — xem {@link hopNhan}.
  */
 
 /** Trần cứng số nhãn DOM đồng thời (§4 — bảng ngân sách hiệu năng). */
 export const TRAN_NHAN_DOM = 30;
 
-/** Bán kính va chạm mặc định, PIXEL màn hình. */
+/**
+ * Bán kính va chạm mặc định, PIXEL màn hình.
+ *
+ * ⚠ CÒN LẠI vì tương thích: từ bản vá bbox, trị này chỉ dùng để SUY ĐOÁN kích
+ * thước một nhãn chưa đo được (bề rộng `2 × 42 = 84`, bề cao `RONG_MAC_DINH...`
+ * — xem {@link hopNhan}), chứ không còn là bán kính đường tròn nữa.
+ */
 export const BAN_KINH_VA_CHAM_PX = 42;
+
+/**
+ * Kích thước SUY ĐOÁN của một nhãn chưa đo được, pixel.
+ *
+ * Đo trên màn thật (`getBoundingClientRect`, 2026-09-06): nhãn thật rộng 112–198px
+ * và cao ~22px. `RONG_SUY_DOAN_PX` lấy 150 — giữa dải đo được, KHÔNG lấy 198 (cận
+ * trên) vì suy đoán quá rộng sẽ giết oan nhãn ở khung đầu tiên rồi nhãn đó không
+ * bao giờ được render để đo thật, tự khoá mình. Ở khung thứ hai người gọi đã có
+ * số đo THẬT và trị suy đoán này hết vai trò.
+ */
+export const RONG_SUY_DOAN_PX = 150;
+export const CAO_SUY_DOAN_PX = 22;
 
 /**
  * Một nhãn ứng viên, đã được người gọi chiếu sang toạ độ MÀN HÌNH (pixel).
@@ -48,6 +82,55 @@ export interface NhanUngVien {
    * (`ndc.z > 1` hoặc |ndc.x|>1). Bị loại ngay, không tốn suất.
    */
   ngoaiKhung?: boolean;
+  /**
+   * Bề RỘNG thật của nhãn, pixel — người gọi đo bằng `getBoundingClientRect` của
+   * div nhãn đã render. Thiếu ⇒ dùng {@link RONG_SUY_DOAN_PX}.
+   */
+  rongPx?: number;
+  /** Bề CAO thật của nhãn, pixel. Thiếu ⇒ dùng {@link CAO_SUY_DOAN_PX}. */
+  caoPx?: number;
+}
+
+/** Hình chữ nhật màn hình, đơn vị pixel, gốc góc trên-trái canvas. */
+export interface HinhChuNhat {
+  trai: number;
+  phai: number;
+  tren: number;
+  duoi: number;
+}
+
+/**
+ * Hộp bao MÀN HÌNH của một nhãn — phải khớp CSS thật của `LopNhan.tsx`.
+ *
+ * ★ Neo nhãn KHÔNG phải tâm hộp: div nhãn có `left: x; top: y` cộng
+ * `transform: translate(-50%, -100%)`, nghĩa là (x, y) là điểm giữa CẠNH DƯỚI.
+ * Vì thế hộp trải ngang ±rộng/2 quanh x, nhưng trải dọc từ `y - cao` tới `y` —
+ * hoàn toàn ở PHÍA TRÊN điểm neo. Dùng nhầm y làm tâm dọc thì mọi phép so lệch
+ * nửa chiều cao, và lệch đúng theo hướng làm bộ đếm báo THIẾU chồng lấp.
+ */
+export function hopNhan(
+  n: Pick<NhanUngVien, "x" | "y" | "rongPx" | "caoPx">,
+  rongMacDinh = RONG_SUY_DOAN_PX,
+  caoMacDinh = CAO_SUY_DOAN_PX,
+): HinhChuNhat {
+  const rong = Number.isFinite(n.rongPx) && (n.rongPx as number) > 0 ? (n.rongPx as number) : rongMacDinh;
+  const cao = Number.isFinite(n.caoPx) && (n.caoPx as number) > 0 ? (n.caoPx as number) : caoMacDinh;
+  return {
+    trai: n.x - rong / 2,
+    phai: n.x + rong / 2,
+    tren: n.y - cao,
+    duoi: n.y,
+  };
+}
+
+/**
+ * Hai hình chữ nhật có chồng nhau không (chạm mép KHÔNG tính là chồng).
+ *
+ * Dùng `<` chứ không `<=`: hai nhãn kề sát mép nhau đọc được bình thường, giết
+ * một cái đi là mất thông tin không đổi lại được gì.
+ */
+export function haiHopChongNhau(a: HinhChuNhat, b: HinhChuNhat): boolean {
+  return a.trai < b.phai && b.trai < a.phai && a.tren < b.duoi && b.tren < a.duoi;
 }
 
 /** Nhãn đã được chọn để vẽ. */
@@ -57,6 +140,11 @@ export interface NhanDuocVe {
   y: number;
   /** Điểm ưu tiên đã tính — hiện ra để gỡ lỗi và để test khẳng định thứ tự. */
   diemUuTien: number;
+  /**
+   * Hộp bao màn hình ĐÃ DÙNG để khử chồng lấp. Hiện ra để test/e2e đối chiếu
+   * được với `getBoundingClientRect` thật, thay vì phải suy lại từ x/y.
+   */
+  hop: HinhChuNhat;
 }
 
 export interface KetQuaLocNhan {
@@ -66,7 +154,12 @@ export interface KetQuaLocNhan {
   tongUngVien: number;
   /** Số bị loại vì ngoài khung nhìn. */
   soNgoaiKhung: number;
-  /** Số bị loại vì chồng lên một nhãn ưu tiên cao hơn. */
+  /**
+   * Số bị loại vì bbox chồng lên một nhãn ưu tiên cao hơn.
+   *
+   * ⚠ Đây là số nhãn BỊ LOẠI, KHÔNG phải số cặp còn chồng nhau trên màn (số đó
+   * luôn = 0 theo hậu điều kiện của `locNhan`, đo bằng {@link demCapChongLap}).
+   */
   soBiChongLap: number;
   /** Số bị loại vì đã chạm trần `tranNhan`. */
   soVuotTran: number;
@@ -75,8 +168,17 @@ export interface KetQuaLocNhan {
 export interface CauHinhLocNhan {
   /** Trần nhãn DOM. Mặc định {@link TRAN_NHAN_DOM}. */
   tranNhan?: number;
-  /** Bán kính va chạm pixel. Mặc định {@link BAN_KINH_VA_CHAM_PX}. */
+  /**
+   * Bán kính va chạm pixel — TƯƠNG THÍCH NGƯỢC. Khi truyền, nó đặt bề rộng/cao
+   * SUY ĐOÁN thành `2 × banKinhVaChamPx` cho nhãn chưa đo được (hộp vuông cạnh
+   * bằng đường kính cũ), nên hành vi của người gọi cũ không đổi đột ngột.
+   * Ưu tiên dùng `rongSuyDoanPx`/`caoSuyDoanPx` cho rõ nghĩa.
+   */
   banKinhVaChamPx?: number;
+  /** Bề rộng suy đoán cho nhãn thiếu `rongPx`. Mặc định {@link RONG_SUY_DOAN_PX}. */
+  rongSuyDoanPx?: number;
+  /** Bề cao suy đoán cho nhãn thiếu `caoPx`. Mặc định {@link CAO_SUY_DOAN_PX}. */
+  caoSuyDoanPx?: number;
 }
 
 /**
@@ -117,17 +219,26 @@ function soSanh(a: NhanUngVien, b: NhanUngVien): number {
 }
 
 /**
- * Lọc nhãn: cull ngoài khung → sắp ưu tiên → khử chồng lấp → cắt trần 30.
+ * Lọc nhãn: cull ngoài khung → sắp ưu tiên → khử chồng lấp BBOX → cắt trần 30.
  *
  * Hàm THUẦN và TẤT ĐỊNH: cùng đầu vào (ở bất kỳ thứ tự nào) cho cùng đầu ra.
+ *
+ * ★ HẬU ĐIỀU KIỆN mà bản đường-tròn cũ KHÔNG có: mọi cặp trong `ve` KHÔNG chồng
+ * bbox. Đây chính là điều `__demNhan.chongLap = 0` ngầm khai mà không giữ được —
+ * nay giữ được, và `locNhan.unit.test.ts` ghim nó bằng phép quét toàn bộ cặp.
  */
 export function locNhan(
   ungVien: NhanUngVien[],
   cauHinh: CauHinhLocNhan = {},
 ): KetQuaLocNhan {
   const tranNhan = cauHinh.tranNhan ?? TRAN_NHAN_DOM;
-  const banKinh = cauHinh.banKinhVaChamPx ?? BAN_KINH_VA_CHAM_PX;
-  const banKinhBinhPhuong = banKinh * banKinh;
+  // `banKinhVaChamPx` cũ → hộp vuông cạnh bằng ĐƯỜNG KÍNH (tương thích ngược).
+  const rongMacDinh =
+    cauHinh.rongSuyDoanPx ??
+    (cauHinh.banKinhVaChamPx != null ? cauHinh.banKinhVaChamPx * 2 : RONG_SUY_DOAN_PX);
+  const caoMacDinh =
+    cauHinh.caoSuyDoanPx ??
+    (cauHinh.banKinhVaChamPx != null ? cauHinh.banKinhVaChamPx * 2 : CAO_SUY_DOAN_PX);
 
   const trongKhung = ungVien.filter((n) => !n.ngoaiKhung);
   const soNgoaiKhung = ungVien.length - trongKhung.length;
@@ -136,16 +247,19 @@ export function locNhan(
   const daSap = [...trongKhung].sort(soSanh);
 
   const ve: NhanDuocVe[] = [];
+  // Hộp của những nhãn ĐÃ giữ — song song với `ve`, giữ để không phải dựng lại
+  // hộp ở mỗi lần so (vòng lặp này là O(n × 30) chạy mỗi khung được vẽ).
+  const hopDaGiu: HinhChuNhat[] = [];
   let soBiChongLap = 0;
   let soVuotTran = 0;
 
   for (const n of daSap) {
-    // Khử chồng lấp: nếu đè lên một nhãn ĐÃ được giữ (ưu tiên cao hơn) thì bỏ.
+    const hop = hopNhan(n, rongMacDinh, caoMacDinh);
+
+    // Khử chồng lấp: nếu bbox đè lên một nhãn ĐÃ giữ (ưu tiên cao hơn) thì bỏ.
     let chongLap = false;
-    for (const g of ve) {
-      const dx = g.x - n.x;
-      const dy = g.y - n.y;
-      if (dx * dx + dy * dy < banKinhBinhPhuong) {
+    for (const g of hopDaGiu) {
+      if (haiHopChongNhau(g, hop)) {
         chongLap = true;
         break;
       }
@@ -158,7 +272,8 @@ export function locNhan(
       soVuotTran += 1;
       continue;
     }
-    ve.push({ khoa: n.khoa, x: n.x, y: n.y, diemUuTien: diemUuTienNhan(n) });
+    ve.push({ khoa: n.khoa, x: n.x, y: n.y, diemUuTien: diemUuTienNhan(n), hop });
+    hopDaGiu.push(hop);
   }
 
   return {
@@ -168,4 +283,28 @@ export function locNhan(
     soBiChongLap,
     soVuotTran,
   };
+}
+
+/**
+ * Đếm số CẶP nhãn chồng bbox trong một danh sách đã vẽ — dụng cụ ĐO độc lập.
+ *
+ * Vì sao tách ra khỏi `locNhan` thay vì tin vào `soBiChongLap`: `soBiChongLap`
+ * đếm số nhãn BỊ LOẠI (đầu vào của thuật toán), còn hàm này đếm số cặp CÒN chồng
+ * (đầu ra thật). Đây là hai đại lượng khác nhau, và chính chỗ lẫn hai đại lượng
+ * này là gốc của lời khai sai cũ. E2E gọi hàm này với `rongPx`/`caoPx` lấy từ
+ * `getBoundingClientRect` để đối chiếu với `__demNhan`.
+ */
+export function demCapChongLap(
+  nhan: readonly Pick<NhanUngVien, "x" | "y" | "rongPx" | "caoPx">[],
+  rongMacDinh = RONG_SUY_DOAN_PX,
+  caoMacDinh = CAO_SUY_DOAN_PX,
+): number {
+  const hop = nhan.map((n) => hopNhan(n, rongMacDinh, caoMacDinh));
+  let so = 0;
+  for (let i = 0; i < hop.length; i++) {
+    for (let j = i + 1; j < hop.length; j++) {
+      if (haiHopChongNhau(hop[i], hop[j])) so += 1;
+    }
+  }
+  return so;
 }
