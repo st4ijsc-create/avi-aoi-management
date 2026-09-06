@@ -26,6 +26,9 @@ import {
   verifyMachineSocketAuth,
   recordSocketMachineAuthMismatch,
 } from "./socketMachineAuth";
+// ── ĐỢT 6 VÁ CHẶN-1 — phép quyết định phân quyền twin, MỘT nơi duy nhất.
+// Test import ĐÚNG các hàm này (không chép lại biểu thức sang tệp test — G20).
+import { coDanhTinhNguoiDung, nguoiXemDuocNhan } from "./twinPhamViQuyen";
 
 let io: Server | null = null;
 
@@ -161,11 +164,58 @@ export function initializeSocket(server: HttpServer): Server {
         socket.join(`line:${data.lineId}`);
         console.log(`[Socket.io] ${socket.id} joined line:${data.lineId}`);
       }
-      // T1-c — Digital Twin live stream room (per factory). A 3D twin viewer joins
-      // `twin:{factoryId}` to receive throttled device state/position deltas.
+      /*
+       * T1-c — Digital Twin live stream room (per factory). A 3D twin viewer joins
+       * `twin:{factoryId}` to receive throttled device state/position deltas.
+       *
+       * ★★★ ĐỢT 6 VÁ CHẶN-1 (a) — KIỂM QUYỀN TRƯỚC KHI CHO JOIN.
+       *
+       * ⚠ ĐO ĐƯỢC 2026-09-07 (socket.io-client thật, tài khoản thật): trước bản
+       * vá này handler cho **BẤT KỲ AI** join `twin:{id}` với id là lời TỰ KHAI
+       * của client. `operator1` — tài khoản KHÔNG được gán nhà máy nào — chỉ cần
+       * gửi `{twinFactoryId: 1}` là nhận 11 gói `twin:update` mang nguyên văn
+       * `stationId:29 wipCount:86` cùng 35 trạm khác của SIM-FAC.
+       *
+       * ★★★ VÀ ĐÂY LÀ LỜI KHAI SAI ĐÃ BỊ ĐO BÁC BỎ: bản trước ghi rằng với
+       * `twin:device` "gateway đã lọc trước khi phát". KHÔNG. `twinStream.flush()`
+       * nhóm delta theo nhà máy CỦA MÁY — đó là ĐỊNH TUYẾN gói tới đúng phòng,
+       * KHÔNG phải kiểm quyền NGƯỜI NHẬN. Ai đã ở trong phòng thì nhận tất.
+       *
+       * ⇒ Phòng `twin:{id}` từ đây là phòng CÓ KIỂM SOÁT: chỉ người có nhà máy
+       *   đó trong phạm vi mới vào được. Mọi kênh dùng phòng này hưởng lợi.
+       *
+       * ★ Join là bất đồng bộ (phải hỏi DB) — không chặn các nhánh join khác.
+       * ★ G12 — dùng ĐÚNG `resolveTenantFactoryScope`, không tự suy lại.
+       */
       if ((data as any).twinFactoryId) {
-        socket.join(`twin:${(data as any).twinFactoryId}`);
-        console.log(`[Socket.io] ${socket.id} joined twin:${(data as any).twinFactoryId}`);
+        const twinFactoryId = Number((data as any).twinFactoryId);
+        if (Number.isInteger(twinFactoryId) && twinFactoryId > 0) {
+          void (async () => {
+            try {
+              const nguoiJoin = (socket.data as any)?.user;
+              if (!coDanhTinhNguoiDung(nguoiJoin)) {
+                console.warn(
+                  `[Socket.io] ${socket.id} TU CHOI join twin:${twinFactoryId} - khong co danh tinh nguoi dung`,
+                );
+                return;
+              }
+              const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+              const pv = await resolveTenantFactoryScope({ userId: nguoiJoin.id, userRole: nguoiJoin.role });
+              if (!nguoiXemDuocNhan(nguoiJoin, pv.factoryIds, twinFactoryId)) {
+                console.warn(
+                  `[Socket.io] ${socket.id} TU CHOI join twin:${twinFactoryId} - user=${nguoiJoin.id} ngoai pham vi`,
+                );
+                return;
+              }
+              socket.join(`twin:${twinFactoryId}`);
+              console.log(`[Socket.io] ${socket.id} joined twin:${twinFactoryId}`);
+            } catch (err) {
+              // ⚠ Lỗi phân giải phạm vi ⇒ KHÔNG join. "Không biết" phải rơi về
+              // phía CHẶN; một catch cho qua là cửa hậu mở bằng cách làm DB lỗi.
+              console.error(`[Socket.io] loi kiem quyen twin:${twinFactoryId}:`, (err as Error)?.message ?? err);
+            }
+          })();
+        }
       }
       // X1-c (doc 16 §5) — Device live stream room (per device). A device-monitor
       // viewer joins `device:{deviceId}` to receive TIERED-sampled UDM state/position
@@ -1404,8 +1454,80 @@ function twinStreamEnabled(): boolean {
  */
 export function emitTwinUpdate(event: TwinUpdateEvent): void {
   if (!io || !twinStreamEnabled()) return;   // gate: off → no emit, FE polls
-  io.to("global").emit("twin:update", event);
-  if (event.lineId) io.to(`line:${event.lineId}`).emit("twin:update", event);
+  void phatTwinUpdateTheoPhamVi(event);
+}
+
+/**
+ * ★★★ ĐỢT 6 VÁ CHẮN-1 (b) — `twin:update` PHÁT THEO PHẠM VI TỪNG NGƯỜI XEM.
+ *
+ * ⚠ LỖ RÒ ĐO ĐƯỢC 2026-09-07: bản trước là `io.to("global").emit(...)`, mà
+ * **MỌI client trình duyệt** đều join `global`. `operator1` (KHÔNG được gán nhà
+ * máy nào) nhận 11 gói mang nguyên văn `stationId:29 wipCount:86` và 35 trạm
+ * khác của SIM-FAC.
+ *
+ * ★★★ VÌ SAO VÁ (a) — KIỂM QUYỀN Ở `subscribe` — MỘT MÌNH KHÔNG ĐỦ CHO KÊNH NÀY:
+ * kênh này KHÔNG dùng phòng `twin:{id}`. Nó phát vào `global`, một phòng ai
+ * cũng ở trong đó từ lúc kết nối — không có điểm "join" nào để chặn. Và client
+ * thật (`useTwinStream.ts`) KHÔNG hề gửi `twinFactoryId`, nên dẫn nó sang phòng
+ * có kiểm soát sẽ làm chết tính năng. ⇒ phải lọc Ở CHỖ PHÁT, từng socket.
+ *
+ * ★★★ VÀ GÓI TIN KHÔNG MANG `factoryId`: nó chỉ có `stationId`. Nên bộ lọc
+ * KHÔNG CÓ GÌ ĐỂ SO nếu không quy được trạm về nhà máy trước — đó là việc của
+ * `traBanDoTramNhaMay` (db/twin.ts). Mỗi người xem nhận ĐÚNG tập trạm thuộc
+ * phạm vi của mình; phạm vi rỗng ⇒ KHÔNG PHÁT GÌ CẢ (không phải "phát gói rỗng"
+ * — một người không được gán nhà máy nào không có quyền biết hệ đang chạy).
+ *
+ * ★ Trạm KHÔNG quy được về nhà máy (line/workshop mồ côi) ⇒ chỉ vai TOÀN
+ *   QUYỀN (`factoryIds === null`) thấy. "Không biết nó của ai" phải rơi về phía
+ *   CHẮN, không phải phía cho qua.
+ *
+ * ★ G12 — dùng ĐÚNG `resolveTenantFactoryScope` + `nguoiXemDuocNhan`.
+ */
+async function phatTwinUpdateTheoPhamVi(event: TwinUpdateEvent): Promise<void> {
+  if (!io || !twinStreamEnabled()) return;
+  try {
+    const sockets = await io.in("global").fetchSockets();
+    if (sockets.length === 0) return;
+
+    const { traBanDoTramNhaMay } = await import("../db/twin");
+    const banDo = await traBanDoTramNhaMay();
+    const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+
+    // Cache theo userId trong MỘT lần phát: 2 tab của cùng một người không
+    // được thành 2 lần hỏi DB — vòng này chạy mỗi 2 giây.
+    const cachePhamVi = new Map<number, number[] | null>();
+
+    for (const sk of sockets) {
+      const nguoi = (sk.data as any)?.user;
+      if (!coDanhTinhNguoiDung(nguoi)) continue; // client `machine`/vô danh ⇒ không nhận
+      let factoryIds = cachePhamVi.get(nguoi.id);
+      if (factoryIds === undefined) {
+        const pv = await resolveTenantFactoryScope({ userId: nguoi.id, userRole: nguoi.role });
+        factoryIds = pv.factoryIds;
+        cachePhamVi.set(nguoi.id, factoryIds);
+      }
+
+      const tramCuaHo = factoryIds === null
+        ? event.stations
+        : event.stations.filter((st) => {
+            const fid = banDo.get(st.stationId);
+            return fid !== undefined && nguoiXemDuocNhan(nguoi, factoryIds as number[], fid);
+          });
+
+      /*
+       * ★★★ PHẠM VI RỖNG ⇒ IM LẮNG HOÀN TOÀN.
+       * Đây là chỗ KHÁC với luật G15 ("phát cả khi rỗng"): G15 nói về việc
+       * phân biệt "đo xong, không có WIP" với "stream chết" — cho NGƯỜI ĐƯỢC
+       * XEM. Người KHÔNG được xem nhà máy nào thì ngay cả "hệ đang sống" cũng
+       * là thông tin không thuộc về họ.
+       */
+      if (factoryIds !== null && factoryIds.length === 0) continue;
+
+      sk.emit("twin:update", { ...event, stations: tramCuaHo });
+    }
+  } catch (err) {
+    console.error("[Twin] emitTwinUpdate scope filter failed:", (err as Error)?.message ?? err);
+  }
 }
 
 // Read-only broadcaster: periodically reads WIP-by-station (SELECT only) and
@@ -1537,8 +1659,13 @@ export function startTwinTrangThaiBroadcaster(intervalMs = 10000): void {
            * ⚠ ĐO ĐƯỢC (2026-09-07): handler `subscribe` (dòng ~166) cho socket
            * join `twin:{twinFactoryId}` **KHÔNG kiểm quyền gì cả** — id nhà máy
            * là lời TỰ KHAI của client, đúng khuôn `{ userId: input.userId }` mà
-           * `_phamViNguoiXem.ts` cảnh báo. Với `twin:device` điều đó còn chịu
-           * được (gateway đã lọc trước khi phát), nhưng broadcaster NÀY tự đọc
+           * `_phamViNguoiXem.ts` cảnh báo.
+           *
+           * ★★★ SỬA LỜI KHAI SAI CỦA CHÍNH DOCBLOCK NÀY (QA đo lại 2026-09-07):
+           * bản trước viết "với `twin:device` điều đó còn chịu được (gateway đã
+           * lọc trước khi phát)". SAI. `twinStream.flush()` nhóm delta theo nhà
+           * máy CỦA MÁY — ĐỊNH TUYẾN, không phải PHÂN QUYềN. Cả ba kênh đều rò,
+           * và cả ba nay đều qua `nguoiXemDuocNhan`. Broadcaster NÀY tự đọc
            * DB theo id lấy từ tên phòng — nên nếu phát thẳng cho cả phòng thì
            * một tài khoản KHÔNG được gán nhà máy nào (đo được: `operator1`) chỉ
            * cần gửi `{twinFactoryId: 1}` là nhận trạng thái toàn SIM-FAC mỗi 10
@@ -1576,11 +1703,17 @@ export function startTwinTrangThaiBroadcaster(intervalMs = 10000): void {
             if (!sk) continue;
             const nguoi = (sk.data as any)?.user;
             // Không danh tính (client `machine`) ⇒ KHÔNG nhận trạng thái nhà máy.
-            if (!nguoi?.id) continue;
+            if (!coDanhTinhNguoiDung(nguoi)) continue;
             const pv = await resolveTenantFactoryScope({ userId: nguoi.id, userRole: nguoi.role });
-            // `factoryIds === null` = vai toàn quyền (admin) ⇒ không lọc.
-            const duocXem = pv.factoryIds === null || pv.factoryIds.includes(factoryId);
-            if (!duocXem) continue;
+            /*
+             * ★★★ G20 — PHÉP QUYẾT ĐỊNH GỌI TỪ `twinPhamViQuyen.ts`, KHÔNG viết
+             * tại chỗ. Bản trước viết thẳng biểu thức
+             * `pv.factoryIds === null || pv.factoryIds.includes(factoryId)` ở đây,
+             * và tệp test lại CHÉP TAY đúng biểu thức ấy sang tests. Kết quả: QA xoá
+             * sạch bộ lọc khỏi broadcaster thật mà 5/5 test VẪN XANH. Một điểm gọi
+             * chung là điều kiện để test có quyền nói nó ghim cái gì.
+             */
+            if (!nguoiXemDuocNhan(nguoi, pv.factoryIds, factoryId)) continue;
             /*
              * ★★★ G15 — PHÁT CẢ KHI `may` RỖNG, cùng lý do đã ghi ở broadcaster
              * WIP: im lặng không phân biệt được "đo xong, không có máy nào" với
@@ -1639,7 +1772,51 @@ export interface TwinDeviceDelta {
  */
 export function emitTwinDeviceDeltas(factoryId: number, deltas: TwinDeviceDelta[]): void {
   if (!io || deltas.length === 0) return;
-  io.to(`twin:${factoryId}`).emit("twin:device", { factoryId, deltas, ts: Date.now() });
+  void phatTwinDeviceTheoPhamVi(factoryId, deltas);
+}
+
+/**
+ * ★★★ ĐỢT 6 VÁ CHẮN-1 (b) — `twin:device` KIỂM QUYỀN TẮNG NGƯỜI NHẬN.
+ *
+ * ★★★ LỜI KHAI SAI CỦA ĐỢT 6, ĐÃ BỊ ĐO BÁC BỎI: bản trước khai rằng kênh này
+ * "gateway đã lọc trước khi phát" nên không cần cổng. Đo lại:
+ * `twinStream.flush()` nhóm delta theo nhà máy CỦA MÁY rồi gửi tới phòng tương
+ * ứng — đó là ĐỊNH TUYẾN (gói đi đúng phòng), KHÔNG phải PHÂN QUYỀN (ai
+ * được ở trong phòng đó). Hai câu khác hẳn nhau, và chỉ câu thứ hai là bảo mật.
+ *
+ * ★★★ VÀ ĐÂY LÀ CÁI BẪY G5 ĐÃ SUÍT LÀM PHÉP ĐO NHIỆM: khi QA đo,
+ * `operator1` nhận **0 gói `twin:device`** — trông y hệt như đã bị chặn. Lý do
+ * thật là sim KHÔNG PHÁT metric nào trong cửa sổ đo. Kết quả "an toàn" trên
+ * TẬP RỖNG trùng khít với kết quả của một hệ thực sự an toàn ⇒ số 0 ấy không
+ * chứng minh gì. Nghệm thu bản vá này BẮT BUỘC dựng CA DƯƠNG (G21).
+ *
+ * ★ Vá (a) ở `subscribe` đã bịt gốc cho kênh này; cổng ở đây là LỚP THỨ HAI:
+ *   `emitTwinDeviceDeltas` là hàm EXPORT, bất kỳ producer nào cũng gọi được, và
+ *   phòng có thể còn socket đã join từ TRƯỚC khi phạm vi người đó bị thu hẹp.
+ */
+async function phatTwinDeviceTheoPhamVi(factoryId: number, deltas: TwinDeviceDelta[]): Promise<void> {
+  if (!io) return;
+  try {
+    const sockets = await io.in(`twin:${factoryId}`).fetchSockets();
+    if (sockets.length === 0) return;
+    const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+    const goi = { factoryId, deltas, ts: Date.now() };
+    const cachePhamVi = new Map<number, number[] | null>();
+    for (const sk of sockets) {
+      const nguoi = (sk.data as any)?.user;
+      if (!coDanhTinhNguoiDung(nguoi)) continue;
+      let factoryIds = cachePhamVi.get(nguoi.id);
+      if (factoryIds === undefined) {
+        const pv = await resolveTenantFactoryScope({ userId: nguoi.id, userRole: nguoi.role });
+        factoryIds = pv.factoryIds;
+        cachePhamVi.set(nguoi.id, factoryIds);
+      }
+      if (!nguoiXemDuocNhan(nguoi, factoryIds, factoryId)) continue;
+      sk.emit("twin:device", goi);
+    }
+  } catch (err) {
+    console.error("[Twin] emitTwinDeviceDeltas scope filter failed:", (err as Error)?.message ?? err);
+  }
 }
 
 // ============ X1-c — DEVICE LIVE STREAM (UDM, tiered sampling, gated) ==========

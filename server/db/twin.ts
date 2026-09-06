@@ -6,7 +6,7 @@
 // getLatestLineBalance from ./lineBalance for the heatmap path.
 import { getDb } from "./connection";
 import { and, asc, eq, gte, isNull, sql } from "drizzle-orm";
-import { wipTracking } from "../../drizzle/schema";
+import { wipTracking, stations, productionLines, workshops } from "../../drizzle/schema";
 
 export interface WipByStationRow {
   currentStationId: number;
@@ -41,6 +41,38 @@ export async function getWipByStation(opts?: { lineId?: number }): Promise<WipBy
       count: Number(r.count ?? 0),
       serials: Array.isArray(r.serials) ? r.serials.filter((s): s is string => !!s) : [],
     }));
+}
+
+/**
+ * ★★★ ĐỢT 6 VÁ CHẶN-1 — BẢN ĐỒ TRẠM → NHÀ MÁY, để `twin:update` lọc được tenant.
+ *
+ * ⚠ VÌ SAO CẦN: `twin:update` phát `io.to("global")` và gói tin của nó KHÔNG
+ * MANG `factoryId` nào — nó chỉ có `stationId`. Nên một bộ lọc per-socket
+ * KHÔNG CÓ GÌ ĐỂ SO: không biết trạm 29 thuộc nhà máy nào thì không thể trả
+ * lời "người này có được xem trạm 29 không".
+ *
+ * ⇒ Phải quy được trạm về nhà máy TRƯỚC. Đường phân cấp có thật trong lược đồ:
+ *   `stations.lineId` → `production_lines.workshopId` → `workshops.factoryId`.
+ *
+ * CHỈ ĐỌC. Trả `Map<stationId, factoryId>`; trạm không quy được (line/workshop
+ * mồ côi) KHÔNG có mặt trong map — và người gọi phải coi "vắng mặt" là KHÔNG
+ * AI ĐƯỢC XEM, chứ không phải "ai cũng xem được".
+ */
+export async function traBanDoTramNhaMay(): Promise<Map<number, number>> {
+  const db = await getDb();
+  const map = new Map<number, number>();
+  if (!db) return map;
+  const rows = await db
+    .select({ stationId: stations.id, factoryId: workshops.factoryId })
+    .from(stations)
+    .innerJoin(productionLines, eq(stations.lineId, productionLines.id))
+    .innerJoin(workshops, eq(productionLines.workshopId, workshops.id));
+  for (const r of rows) {
+    const sid = Number(r.stationId);
+    const fid = Number(r.factoryId);
+    if (Number.isInteger(sid) && Number.isInteger(fid)) map.set(sid, fid);
+  }
+  return map;
 }
 
 export interface WipCountBucket {
