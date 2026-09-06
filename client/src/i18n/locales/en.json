@@ -20136,7 +20136,31 @@
       "baoNgoai": "Bounding box",
       "quaLon": "File exceeds the allowed limit. Please decimate the mesh before importing.",
       "soTamGiac": "Triangle count",
-      "tachThanhTang": "Split into floors"
+      "tachThanhTang": "Split into floors",
+      "dangDoc": "Reading drawing…",
+      "dinhDangNhan": "Accepts .step/.stp, .iges/.igs, .brep, .glb/.gltf. Max {{tranMb}} MB and {{tranTamGiac}} triangles. (.dxf/.dwg not accepted in this version.)",
+      "hieuChinhTieuDe": "Calibrate the imported drawing",
+      "hieuChinhMoTa": "CAD files do not reliably declare their unit. Compare the building against the 1.7 m human figure and the scale bar below — a wrong unit produces a factory 1,000 times too large or too small.",
+      "xoayQuanhTrucLen": "Rotation about up axis (degrees)",
+      "gocBbox": "Bounding-box corner",
+      "tamBbox": "Bounding-box centre",
+      "gocFile": "File origin",
+      "donViKhongDoanDuoc": "Could not infer the unit from the file dimensions — please choose one and check it visually.",
+      "soNode": "Parts",
+      "cachDung": "How to use this drawing",
+      "lamVoNha": "Use as building shell",
+      "phatHienCum": "Detected {{so}} clusters by elevation",
+      "khongTachDuoc": "No floor boundary found — use it as a shell and split it manually later.",
+      "xemTruocDoiChieu": "Scale reference preview",
+      "xacNhan": "Confirm",
+      "chan": {
+        "dinhDangKhongNhan": "This format is not accepted in the current version.",
+        "fileQuaLon": "The {{mb}} MB file exceeds the {{tranMb}} MB limit. Please decimate and re-export.",
+        "quaNhieuTamGiac": "The drawing has {{soTamGiac}} triangles, above the {{tranTamGiac}} limit. Please decimate and re-export.",
+        "docThatBai": "Could not read the drawing. The file may be corrupt or use an unsupported schema.",
+        "khongCoHinhHoc": "The file was read but contains no geometry.",
+        "gltfChuaLap": "Loading .glb/.gltf arrives in a later wave. For now use .step/.stp/.iges/.igs/.brep."
+      }
     },
     "banGhi": {
       "tieuDe": "Layout version",
@@ -20156,6 +20180,38 @@
       "batDinh": "Snap to grid",
       "khoa": "Lock",
       "hienThi": "Show/hide"
+    },
+    "loi": {
+      "matContext": "Graphics context lost. Restoring…",
+      "matContextMoTa": "The browser released the WebGL context (usually out of graphics memory). The scene will rebuild automatically.",
+      "hieuNangThap": "Low performance mode",
+      "hieuNangThapMoTa": "Frame rate dropped below 25 fps, so display quality was reduced automatically. Click to override.",
+      "khongHoTroWebgl": "This browser cannot render 3D — showing the 2D map instead.",
+      "nhanBiAn": "{{so}} labels hidden — not enough room"
+    },
+    "dungXuong": {
+      "viTriX": "Site position X (m)",
+      "viTriY": "Site position Y (m)",
+      "ghiChuDonVi": "Enter metres. The system stores millimetres so machines can be placed to the mm.",
+      "sinhTuongBao": "Generate perimeter walls (200 mm thick)",
+      "xemTruoc": "Preview",
+      "buocTruoc": "Back",
+      "buocSau": "Next",
+      "tao": "Create building",
+      "daTao": "Created {{soTang}} floors and {{soTuong}} perimeter walls.",
+      "loi": {
+        "thieuMa": "Building code is missing.",
+        "thieuTen": "Building name is missing.",
+        "kichThuocKhongHopLe.daiM": "Building length must be greater than 0.",
+        "kichThuocKhongHopLe.rongM": "Building width must be greater than 0.",
+        "kichThuocKhongHopLe.caoM": "Building height must be greater than 0.",
+        "khongCoTang": "At least one floor is required.",
+        "capSoKhongHopLe": "Floor number must be a non-zero integer (negative means basement).",
+        "capSoTrung": "Floor number {{capSo}} is duplicated.",
+        "thieuTenTang": "Floor {{capSo}} has no name.",
+        "caoThongThuyKhongHopLe": "Clear height of floor {{capSo}} must be greater than 0.",
+        "tangTranKhoiToaNha": "Floor {{capSo}} is larger than the building envelope."
+      }
     }
   }
 }

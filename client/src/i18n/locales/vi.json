@@ -20116,7 +20116,31 @@
       "baoNgoai": "Bao ngoài",
       "quaLon": "Tệp vượt ngưỡng cho phép. Vui lòng giảm lưới trước khi nhập.",
       "soTamGiac": "Số tam giác",
-      "tachThanhTang": "Tách thành tầng"
+      "tachThanhTang": "Tách thành tầng",
+      "dangDoc": "Đang đọc bản vẽ…",
+      "dinhDangNhan": "Nhận .step/.stp, .iges/.igs, .brep, .glb/.gltf. Tối đa {{tranMb}} MB và {{tranTamGiac}} tam giác. (.dxf/.dwg chưa nhận ở phiên bản này.)",
+      "hieuChinhTieuDe": "Hiệu chỉnh bản vẽ vừa nhập",
+      "hieuChinhMoTa": "File CAD không tự khai đơn vị một cách đáng tin. Hãy đối chiếu khối nhà với hình người cao 1,7 m và thước tỉ lệ bên dưới — nhập sai đơn vị cho ra nhà xưởng lớn hoặc nhỏ gấp 1.000 lần.",
+      "xoayQuanhTrucLen": "Xoay quanh trục lên (độ)",
+      "gocBbox": "Góc bao ngoài",
+      "tamBbox": "Tâm bao ngoài",
+      "gocFile": "Gốc của file",
+      "donViKhongDoanDuoc": "Chưa đoán được đơn vị từ kích thước file — hãy tự chọn và đối chiếu bằng mắt.",
+      "soNode": "Số bộ phận",
+      "cachDung": "Dùng bản vẽ này làm gì",
+      "lamVoNha": "Làm vỏ nhà",
+      "phatHienCum": "Phát hiện {{so}} cụm theo cao độ",
+      "khongTachDuoc": "Không tìm được ranh giới tầng nào — hãy dùng làm vỏ nhà rồi chia tay sau.",
+      "xemTruocDoiChieu": "Xem trước đối chiếu tỉ lệ",
+      "xacNhan": "Xác nhận",
+      "chan": {
+        "dinhDangKhongNhan": "Định dạng này chưa nhận ở phiên bản hiện tại.",
+        "fileQuaLon": "File {{mb}} MB vượt trần {{tranMb}} MB. Hãy giảm lưới rồi xuất lại.",
+        "quaNhieuTamGiac": "Bản vẽ có {{soTamGiac}} tam giác, vượt trần {{tranTamGiac}}. Hãy giảm lưới rồi xuất lại.",
+        "docThatBai": "Không đọc được bản vẽ. File có thể hỏng hoặc dùng phiên bản chuẩn chưa hỗ trợ.",
+        "khongCoHinhHoc": "Đọc được file nhưng không có hình học nào bên trong.",
+        "gltfChuaLap": "Nạp .glb/.gltf sẽ có ở đợt sau. Hiện dùng .step/.stp/.iges/.igs/.brep."
+      }
     },
     "banGhi": {
       "tieuDe": "Phiên bản bố cục",
@@ -20136,6 +20160,38 @@
       "batDinh": "Bắt dính lưới",
       "khoa": "Khoá",
       "hienThi": "Hiện/ẩn"
+    },
+    "loi": {
+      "matContext": "Mất kết nối đồ hoạ. Đang khôi phục…",
+      "matContextMoTa": "Trình duyệt đã thu hồi ngữ cảnh WebGL (thường do hết bộ nhớ đồ hoạ). Cảnh sẽ tự dựng lại.",
+      "hieuNangThap": "Chế độ hiệu năng thấp",
+      "hieuNangThapMoTa": "Tốc độ khung hình xuống dưới 25/giây nên chất lượng hiển thị đã tự hạ. Bấm để chọn lại.",
+      "khongHoTroWebgl": "Trình duyệt không dựng được 3D — đang hiển thị bản đồ 2D.",
+      "nhanBiAn": "{{so}} nhãn bị ẩn do chật chỗ"
+    },
+    "dungXuong": {
+      "viTriX": "Vị trí X trong khuôn viên (m)",
+      "viTriY": "Vị trí Y trong khuôn viên (m)",
+      "ghiChuDonVi": "Nhập bằng mét. Hệ lưu bằng milimét để đặt máy chính xác tới từng mm.",
+      "sinhTuongBao": "Sinh tường bao (dày 200 mm)",
+      "xemTruoc": "Xem trước",
+      "buocTruoc": "Quay lại",
+      "buocSau": "Tiếp",
+      "tao": "Tạo nhà xưởng",
+      "daTao": "Đã tạo {{soTang}} tầng và {{soTuong}} tường bao.",
+      "loi": {
+        "thieuMa": "Thiếu mã toà nhà.",
+        "thieuTen": "Thiếu tên toà nhà.",
+        "kichThuocKhongHopLe.daiM": "Chiều dài toà nhà phải lớn hơn 0.",
+        "kichThuocKhongHopLe.rongM": "Chiều rộng toà nhà phải lớn hơn 0.",
+        "kichThuocKhongHopLe.caoM": "Chiều cao toà nhà phải lớn hơn 0.",
+        "khongCoTang": "Phải có ít nhất một tầng.",
+        "capSoKhongHopLe": "Số tầng phải là số nguyên khác 0 (số âm là tầng hầm).",
+        "capSoTrung": "Số tầng {{capSo}} bị trùng.",
+        "thieuTenTang": "Tầng {{capSo}} chưa có tên.",
+        "caoThongThuyKhongHopLe": "Cao thông thuỷ của tầng {{capSo}} phải lớn hơn 0.",
+        "tangTranKhoiToaNha": "Mặt sàn tầng {{capSo}} lớn hơn bao ngoài toà nhà."
+      }
     }
   }
 }

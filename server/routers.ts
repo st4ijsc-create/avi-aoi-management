@@ -170,6 +170,7 @@ import { vda5050Router } from "./routers/vda5050Router"; // P3b: VDA 5050 AGV/AM
 import { simTargetsRouter } from "./routers/simTargetsRouter"; // I3a (doc 20 §3/§5): URSim + ROS2 validation harness (URSIM_ENABLED / ROS2_BRIDGE_ENABLED)
 import { fleetRouter } from "./routers/fleetRouter"; // G1 (doc 16 Khối 2): Fleet & Task Orchestration (FLEET_ORCH_ENABLED)
 import { twinRouter } from "./routers/twinRouter"; // T1 (doc 16 Khối 7): Digital Twin — models/sceneGraph/replay/occupancyGrid (TWIN_LIVE_ENABLED)
+import { twinCanhRouter } from "./routers/twinCanhRouter"; // Twin 3D Đợt 3 (§10A): dựng nhà xưởng — toà nhà/tầng/ảnh nền/tường bao. Quyền §6.4: settings_factory HOẶC machine_control
 import { safetyRouter } from "./routers/safetyRouter"; // S1 (doc 16 Khối 3): Safety audit + mixed workforce + near-miss advisory (ADVISORY; SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)
 import { oversightRouter } from "./routers/oversightRouter"; // U5 (doc 26 §2.3): "Hộp phê duyệt" gộp — đếm việc chờ duyệt/xử lý toàn tầng Kỹ thuật & Điều khiển (READ-ONLY, fail-safe)
 import { equipmentStandardsRouter } from "./routers/equipmentStandardsRouter"; // E1 (doc 16 Khối 5): Equipment standardization governance — device type registry/alarm taxonomy/CR workflow/conformance/compliance (EQ_GOVERN_ENABLED)
@@ -569,6 +570,8 @@ export const appRouter = router({
   simTargets: simTargetsRouter, // I3a (doc 20 §3/§5): URSim + ROS2 validation harness (URSIM_ENABLED / ROS2_BRIDGE_ENABLED)
   fleet: fleetRouter, // G1 (doc 16 Khối 2): Fleet & Task Orchestration (FLEET_ORCH_ENABLED)
   twin: twinRouter, // T1 (doc 16 Khối 7): Digital Twin — models/sceneGraph/replay/occupancyGrid (TWIN_LIVE_ENABLED)
+  twinCanh: twinCanhRouter, // Twin 3D Đợt 3 (§10A): dựng nhà xưởng (twin_toa_nha/twin_tang/twin_vat_the). KHÁC `twin` ở trên — đó là twin realtime cũ (doc 16), đây là cảnh 3D mới của spec 2026-09-06
+
   simulation: simulationRouter, // T5 (doc 24 Wave-4): discrete-event throughput/bottleneck what-if + scheduling advisory (read-only, pure)
   safety: safetyRouter, // S1 (doc 16 Khối 3): Safety audit + mixed workforce + near-miss advisory (ADVISORY ONLY; SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)
   oversight: oversightRouter, // U5 (doc 26 §2.3): "Hộp phê duyệt" gộp — đếm việc chờ duyệt/xử lý toàn tầng Kỹ thuật & Điều khiển (READ-ONLY, fail-safe)

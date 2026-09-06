@@ -20144,7 +20144,31 @@
       "baoNgoai": "外包围盒",
       "quaLon": "文件超出允许上限。请先减面后再导入。",
       "soTamGiac": "三角面数",
-      "tachThanhTang": "拆分为楼层"
+      "tachThanhTang": "拆分为楼层",
+      "dangDoc": "正在读取图纸…",
+      "dinhDangNhan": "支持 .step/.stp、.iges/.igs、.brep、.glb/.gltf。最大 {{tranMb}} MB 与 {{tranTamGiac}} 个三角面。（本版本暂不支持 .dxf/.dwg。）",
+      "hieuChinhTieuDe": "校准已导入的图纸",
+      "hieuChinhMoTa": "CAD 文件不会可靠地声明单位。请将建筑与下方 1.7 米人形和比例尺对照——单位选错会得到大或小 1000 倍的厂房。",
+      "xoayQuanhTrucLen": "绕竖轴旋转（度）",
+      "gocBbox": "包围盒角点",
+      "tamBbox": "包围盒中心",
+      "gocFile": "文件原点",
+      "donViKhongDoanDuoc": "无法从文件尺寸推断单位——请自行选择并用肉眼核对。",
+      "soNode": "部件数",
+      "cachDung": "如何使用这张图纸",
+      "lamVoNha": "作为建筑外壳",
+      "phatHienCum": "按标高检测到 {{so}} 个分组",
+      "khongTachDuoc": "未找到楼层分界——请先作为外壳使用，稍后手动划分。",
+      "xemTruocDoiChieu": "比例参照预览",
+      "xacNhan": "确认",
+      "chan": {
+        "dinhDangKhongNhan": "当前版本暂不支持该格式。",
+        "fileQuaLon": "文件 {{mb}} MB 超过 {{tranMb}} MB 上限。请减面后重新导出。",
+        "quaNhieuTamGiac": "图纸有 {{soTamGiac}} 个三角面，超过 {{tranTamGiac}} 上限。请减面后重新导出。",
+        "docThatBai": "无法读取图纸。文件可能已损坏或使用了尚未支持的标准版本。",
+        "khongCoHinhHoc": "文件已读取，但其中没有任何几何体。",
+        "gltfChuaLap": "加载 .glb/.gltf 将在后续批次提供。目前请使用 .step/.stp/.iges/.igs/.brep。"
+      }
     },
     "banGhi": {
       "tieuDe": "布局版本",
@@ -20164,6 +20188,38 @@
       "batDinh": "吸附网格",
       "khoa": "锁定",
       "hienThi": "显示/隐藏"
+    },
+    "loi": {
+      "matContext": "图形上下文丢失，正在恢复…",
+      "matContextMoTa": "浏览器已释放 WebGL 上下文（通常是显存不足）。场景将自动重建。",
+      "hieuNangThap": "低性能模式",
+      "hieuNangThapMoTa": "帧率低于 25 fps，已自动降低显示质量。点击可手动指定。",
+      "khongHoTroWebgl": "此浏览器无法渲染 3D，正在显示 2D 地图。",
+      "nhanBiAn": "{{so}} 个标签因空间不足被隐藏"
+    },
+    "dungXuong": {
+      "viTriX": "厂区位置 X（米）",
+      "viTriY": "厂区位置 Y（米）",
+      "ghiChuDonVi": "请以米输入。系统以毫米存储，以便按毫米精度摆放设备。",
+      "sinhTuongBao": "生成外围墙（厚 200 毫米）",
+      "xemTruoc": "预览",
+      "buocTruoc": "上一步",
+      "buocSau": "下一步",
+      "tao": "创建厂房",
+      "daTao": "已创建 {{soTang}} 个楼层和 {{soTuong}} 面外围墙。",
+      "loi": {
+        "thieuMa": "缺少建筑编码。",
+        "thieuTen": "缺少建筑名称。",
+        "kichThuocKhongHopLe.daiM": "建筑长度必须大于 0。",
+        "kichThuocKhongHopLe.rongM": "建筑宽度必须大于 0。",
+        "kichThuocKhongHopLe.caoM": "建筑高度必须大于 0。",
+        "khongCoTang": "至少需要一个楼层。",
+        "capSoKhongHopLe": "楼层号必须是非零整数（负数表示地下层）。",
+        "capSoTrung": "楼层号 {{capSo}} 重复。",
+        "thieuTenTang": "楼层 {{capSo}} 尚未命名。",
+        "caoThongThuyKhongHopLe": "楼层 {{capSo}} 的净高必须大于 0。",
+        "tangTranKhoiToaNha": "楼层 {{capSo}} 的楼面大于建筑外轮廓。"
+      }
     }
   }
 }
