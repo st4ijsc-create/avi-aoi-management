@@ -1699,6 +1699,38 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 
 **Luật cứng cho cổng QA:** agent QA **không được là agent đã viết mã đợt đó**, và **phải có Bash** (G1). Bài học `BG-127` của repo: *độc lập phải ở mô hình, không ở người đo* — hai phiên cùng sai một kiểu vẫn cho cùng kết quả sai. Nên QA phải đo bằng **mô hình khác**: nếu người viết đếm bằng `WHERE`, QA phải liệt kê toàn phân bố và đối chiếu tổng.
 
+> ### ★★★ G5 — PHẢI DỰNG CA DƯƠNG, không được đo trên tập rỗng (2026-09-06, QA Đợt 3)
+>
+> Lời hứa trung tâm của NT-4 là *"chạy lại sinh tự động **không đè** hàng `nguon='tay'`"*. Mọi lượt
+> chạy script di trú trước đó đều in "đối soát ĐẠT" — nhưng QA Đợt 3 đo được: khi đó
+> `twin_dat_cho` có **0 hàng `nguon='tay'`**. Mệnh đề `WHERE nguon='sinh'` **chưa bao giờ được thực
+> thi trên một hàng nào**. Mọi lượt chạy trước **chứng minh số 0**, đúng lớp lỗi `C-1: đo với cờ tắt`.
+>
+> QA phải **tự dựng ca dương** rồi mới đo: đánh dấu một hàng thành `nguon='tay'` với vị trí đặc
+> trưng (77777/88888), chạy script, đọc lại bằng SQL thô. Kết quả: `updatedAt` **không đổi một
+> microgiây**, vị trí nguyên vẹn ⇒ NT-4 ĐẠT — lần đầu có bằng chứng thật.
+>
+> **Và một cái bẫy đi kèm:** toà `D3-CONGRA` "sống sót" qua script **không phải** vì NT-4 bảo vệ nó,
+> mà vì script chỉ chạm mã `TN-DITRU-{factoryId}` — `D3-CONGRA` **không nằm trên đường đi**. Ai lấy
+> nó làm bằng chứng NT-4 là đang đo nhầm thứ.
+>
+> ⇒ **Luật:** trước khi tin một phép đo "không có gì xấu xảy ra", hỏi *"nếu luật này KHÔNG tồn tại
+> thì phép đo có khác đi không?"* Nếu không khác, phép đo đang chứng minh số 0 — phải dựng ca dương.
+
+> ### ★★★ G6 — VÙNG MÙ Ở NHÁNH KHÔNG AI ĐI, và BẢN SAO THỨ HAI của một bảng dữ liệu
+>
+> QA Đợt 3 tiêm sai hệ số inch **10 lần** (0,0254 → 0,254) vào `docBanVe.ts` ở **cả hai** hàm —
+> **378/378 test vẫn XANH**. Nguyên nhân: 8 assertion của `donViDeNghi` chỉ chạm mm/cm/m; **nhánh
+> `inch` chưa từng có một assertion nào**.
+>
+> Nặng hơn: `docBanVe.ts` giữ **bản sao thứ hai** của bảng hệ số đơn vị (bản gốc ở
+> `hieuChinhNhapModel.ts:42`, có test). Hai bản sao có thể lệch nhau mà **không gì báo** — đúng thứ
+> docblock của `boCucTang.ts` đã cảnh báo: *"hai chỗ chia 1000 là hai chỗ có thể lệch nhau"*.
+>
+> ⇒ **Luật:** (a) mỗi bảng hằng số dữ liệu chỉ được có **một** bản; nơi khác **import**, không khai
+> lại. (b) Sàng mật độ phải tiêm vào **từng nhánh** của một `switch`/bảng tra, không chỉ nhánh phổ
+> biến — nhánh không ai đi là nhánh không ai đo.
+
 **Luật bàn giao số:** báo cáo của mỗi đợt phải đọc **thiết bị đo**, không đọc kết quả. "Test xanh" là lời khai; "`npm test` in `142 passed`, dán nguyên văn" là số đo.
 
 ## 13. Kiểm thử
