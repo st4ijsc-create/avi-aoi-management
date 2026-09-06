@@ -13,6 +13,7 @@ export const roleEnum = pgEnum("roleenum", [
   "user"             // Basic user access (default)
 ]);
 export const machineTypeEnum = pgEnum("machinetypeenum", [
+  "QA_LOAI_GIA_TIEM_TAM",
   "AVI",        // Automated Visual Inspection
   "AOI",        // Automated Optical Inspection
   "SPI",        // Solder Paste Inspection
@@ -446,4 +447,33 @@ export const programDeployStatusEnum = pgEnum("programdeploystatusenum", [
   "failed",
   "rolled_back",
   "rejected",
+]);
+
+// ════════════════════════════════════════════════════════════════════════════
+// Twin 3D — Đợt 0 (spec 2026-09-06-nha-may-3d-digital-twin-design §5.3), mig 0350/0351
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * NT-4 ở tầng DB: "số giả định phải TỰ KHAI là giả định".
+ *   'sinh' — hệ sinh ra (di trú, thuật toán bố cục, mặc định theo loại) ⇒ UI hiện
+ *            badge vàng "chưa đo", và một lần sinh sau ĐƯỢC PHÉP đè.
+ *   'tay'  — người nhập/kéo thả ⇒ sinh tự động KHÔNG BAO GIỜ đè (trừ khi người
+ *            dùng tích ô ghi-đè, có dialog đếm rõ bao nhiêu bản ghi sẽ mất).
+ * Là enum chứ không boolean/quy ước tầng ứng dụng: quy ước thì quên được.
+ */
+export const twinNguonEnum = pgEnum("twinnguonenum", ["sinh", "tay"]);
+
+/**
+ * Cấp thực thể ISA-95 có thể đặt chỗ trong cảnh 3D.
+ * 'workstation' TÁCH khỏi 'station' vì là hai bảng khác nhau trong repo
+ * (stations / workstations) — gộp lại thì `thucTheId` nhập nhằng giữa hai id.
+ */
+export const twinThucTheEnum = pgEnum("twinthuctheenum", [
+  "workshop", "line", "station", "machine", "workstation",
+]);
+
+/** Vật thể cảnh KHÔNG thuộc cây phân cấp (tường/cột/vùng an toàn/kệ/GLB nhập…). */
+export const twinVatTheEnum = pgEnum("twinvattheenum", [
+  "tuong", "cot", "cua", "vach_ke", "vung", "ke", "pallet",
+  "bang_tai", "rao_an_toan", "bien_bao", "nhom", "khac",
 ]);

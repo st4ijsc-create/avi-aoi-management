@@ -84,3 +84,4 @@ export * from "./aiCodingLesson"; // doc 82 BỘ NHỚ XUYÊN PHIÊN — bài h�
 export * from "./aiRepoDuAn"; // QUẢN LÝ DỰ ÁN 2026-08-23 — dự án hộp cát đăng ký qua UI (nguồn DB, env thắng khi trùng id), migration 0337
 export * from "./productConfigTree"; // Pha 1A 2026-08-25 — cây CẤU HÌNH 4 cấp surface→position→capture→component, migration 0338
 export * from "./inspectionTree"; // Pha 1A 2026-08-25 — cây KẾT QUẢ 3 cấp surface→position→capture, migration 0339
+export * from "./twin3d"; // Twin 3D Đợt 0 2026-09-06 — toà nhà/tầng/đặt-chỗ/vật-thể/bản-ghi + kích thước mặc định theo loại máy, migration 0350-0354
