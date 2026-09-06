@@ -112,6 +112,15 @@ import {
 import { docDanhSachBoNho, themMucBoNho } from "../loi/khoBoNho";
 import { docDeXuatNho } from "../loi/deXuatNho";
 import { dungKhoWorkspaceState } from "./khoWorkspaceState";
+// ★★★ ĐỢT M — chạy lệnh trên máy lập trình viên. `docYeuCauLenh` CHỈ quét `traLoiCuoi` (văn bản
+// model TỰ SINH — cùng ranh giới `docYeuCauDoc`/`docYeuCauMcpNgoai`); `xetDuyetLenh` (THUẦN, M1) là
+// CỬA DUY NHẤT quyết định một chuỗi lệnh có khớp allowlist không; `chayLenhCucBo` (M2) là LỚP I/O
+// spawn thật, tái dùng khuôn `mang/mcpClient.ts`; `dinhDangKetQuaLenh` (M3) che bí mật + vô hiệu hoá
+// khối avi-tool giả trong output TRƯỚC khi nối vào ngữ cảnh.
+import { docYeuCauLenh } from "../loi/docYeuCauLenh";
+import { xetDuyetLenh, TRAN_MS_THEO_LENH, type LenhDaDuyet } from "../loi/lenhChoPhep";
+import { chayLenhCucBo } from "../mang/chayLenhCucBo";
+import { dinhDangKetQuaLenh } from "../loi/dinhDangKetQuaLenh";
 
 /** Đề xuất ghi CỤC BỘ đang chờ duyệt + mọi thứ đã ĐO tại thời điểm dựng thẻ (không đo lại lúc bấm,
  *  trừ băm đĩa — băm PHẢI đo lại trong `apBanVa` vì đó chính là phép chống xung đột). */
@@ -127,6 +136,17 @@ interface DeXuatCucBoDangCho {
   thuMucWorkspace: string;
   them: number;
   bot: number;
+}
+
+/** ★★★ ĐỢT M — yêu cầu chạy lệnh đang chờ duyệt. CÙNG VAI TRÒ `DeXuatCucBoDangCho` (thẻ duyệt riêng,
+ *  không dùng chung state với đề xuất GHI TỆP — hai thứ độc lập, `quenLenhCucBo` chỉ xoá trường này). */
+interface LenhCucBoDangCho {
+  actionId: string;
+  lenh: LenhDaDuyet;
+  /** Thư mục workspace SẼ LÀ `cwd` của tiến trình con — chốt lúc dựng thẻ, dùng lại nguyên vẹn lúc
+   *  chạy thật (không đọc lại `workspaceFolders` lúc bấm — nếu workspace đổi giữa chừng, tốt hơn là
+   *  chạy đúng cái đã hiện trên thẻ hơn là một thư mục người dùng chưa từng thấy tên). */
+  cwd: string;
 }
 
 /**
@@ -148,6 +168,7 @@ function nhanYeuCauDoc(y: YeuCauDoc): string {
 function nhanYeuCauMcpNgoai(y: YeuCauMcp): string {
   return `gọi tool "${y.tool}" trên MCP server "${y.server}"`;
 }
+
 
 /**
  * Câu báo khi vòng lặp tác nhân DỪNG vì một lý do KHÔNG PHẢI "xong việc bình thường". `khong_con_tool`
@@ -238,6 +259,11 @@ export class BangChat {
   private deXuatHienTai: DeXuatGhi | undefined;
   private deXuatCucBoHienTai: DeXuatCucBoDangCho | undefined;
   private nhanNguonHienTai: string | undefined;
+  // ★★★ ĐỢT M — yêu cầu CHẠY LỆNH đang chờ duyệt. Thẻ RIÊNG (webview `loai:"the_duyet_lenh"`),
+  // KHÔNG dùng chung `the_duyet`/`deXuatCucBoHienTai`: chạy lệnh và ghi tệp là hai loại hành động
+  // khác hẳn nhau (một cái đọc/kiểm tra, một cái đổi byte trên đĩa) và người dùng cần phân biệt
+  // NGAY trên mặt chữ đang nhìn — trộn chung một thẻ dễ khiến người bấm tưởng nhầm loại hành động.
+  private lenhCucBoHienTai: LenhCucBoDangCho | undefined;
   // ★★★ CMD+K (Task 7) — cờ + hàng đợi cho `guiCauHoiTuLenh`. `daSanSang` bật NGAY khi webview báo
   // "san_sang" (tức đã đăng ký `addEventListener("message", …)" — xem cảnh báo đua ở constructor
   // dưới đây), KHÔNG đợi `napDuAn()` xong: đó là hai việc khác nhau (webview nhận được postMessage
@@ -328,6 +354,7 @@ export class BangChat {
       if (m.duAnId && m.duAnId !== this.duAnChon) {
         this.duAnChon = m.duAnId;
         this.quenDeXuat("Đã đổi dự án — đề xuất ghi đang chờ đã được bỏ. Hãy hỏi lại nếu vẫn cần.");
+        this.quenLenhCucBo("Đã đổi dự án — yêu cầu chạy lệnh đang chờ đã được bỏ. Hãy hỏi lại nếu vẫn cần.");
         // ★★★ TASK 5 — danh sách gợi ý @-mention thuộc về DỰ ÁN CŨ; đổi dự án mà giữ nguyên bộ nhớ
         // đệm sẽ gợi ý tệp của workspace KHÁC. Nạp lại LƯỜI ở lượt gõ "@" kế tiếp (`guiGoiYMention`).
         this.dsTepMention = undefined;
@@ -349,6 +376,9 @@ export class BangChat {
       if (m.loai === "xem_diff") { void this.xemDiff(); return; }
       if (m.loai === "duyet") { void this.duyetDeXuat(); return; }
       if (m.loai === "huy") { void this.huyDeXuat(); return; }
+      // ★★★ ĐỢT M — thẻ duyệt CHẠY LỆNH riêng, không dùng chung "duyet"/"huy" của đề xuất GHI TỆP.
+      if (m.loai === "duyet_lenh") { void this.duyetLenhCucBo(); return; }
+      if (m.loai === "huy_lenh") { this.quenLenhCucBo("Đã huỷ — không có lệnh nào được chạy."); return; }
       // ★★★ TASK 4 — nút Dừng. Tên loại tin CỐ Ý khác "huy" (huỷ ĐỀ XUẤT GHI, một khái niệm hoàn
       // toàn khác) — hai nút không được lẫn vào nhau.
       if (m.loai === "dung_hoi") { this.dungVongHienTai(); return; }
@@ -389,6 +419,16 @@ export class BangChat {
     if (!actionId) return;
     this.khoDeXuat.quen(actionId);
     void this.panel.webview.postMessage({ loai: "an_the_duyet" });
+    if (thongBao) void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: thongBao });
+  }
+
+  /** ★★★ ĐỢT M — cùng vai trò `quenDeXuat`, cho thẻ duyệt CHẠY LỆNH riêng. Không đụng
+   *  `deXuatCucBoHienTai`/`nhanNguonHienTai` — hai loại thẻ độc lập, xem docblock `lenhCucBoHienTai`. */
+  private quenLenhCucBo(thongBao?: string): void {
+    const coThe = this.lenhCucBoHienTai !== undefined;
+    this.lenhCucBoHienTai = undefined;
+    if (!coThe) return;
+    void this.panel.webview.postMessage({ loai: "an_the_duyet_lenh" });
     if (thongBao) void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: thongBao });
   }
 
@@ -907,6 +947,7 @@ export class BangChat {
     this.lichSu = [];
     this.maHoiThoaiHienTai = undefined;
     this.quenDeXuat();
+    this.quenLenhCucBo();
     // ★★★ ĐỢT G / TASK G2 / B3 — khung TRẮNG THẬT ⇒ thống kê cũng phải về ĐÚNG 0/0, không phải giữ
     // số của phiên vừa rời (`thongKeHoiThoaiHienTai()` đọc `this.lichSu`, VỪA được xoá ở trên).
     void this.panel.webview.postMessage({ loai: "chat_moi", ...this.thongKeHoiThoaiHienTai() });
@@ -954,6 +995,7 @@ export class BangChat {
     this.lichSu = [...muc.hoiThoai.luot];
     this.maHoiThoaiHienTai = muc.hoiThoai.ma;
     this.quenDeXuat();
+    this.quenLenhCucBo();
     void this.panel.webview.postMessage({
       loai: "khoi_phuc_hoi_thoai",
       luot: muc.hoiThoai.luot.map((l) => ({ vaiTro: l.role, noiDung: l.content })),
@@ -1001,6 +1043,7 @@ export class BangChat {
     // rồi bấm cái nút của câu CŨ. `xuLyDeXuat` có quên đề xuất cũ, nhưng chỉ khi một đề xuất MỚI
     // tới; lượt hỏi không đẻ đề xuất nào thì thẻ cũ sống mãi.
     this.quenDeXuat();
+    this.quenLenhCucBo();
     const cookie = await this.context.secrets.get(KHOA_COOKIE);
     if (!cookie) {
       void this.panel.webview.postMessage({
@@ -1145,6 +1188,10 @@ export class BangChat {
           // `traLoiCuoi` bên dưới, không quét biến này) — đúng nguyên tắc chống tiêm lệnh mà H2 đã
           // dựng cho kết quả tool, dùng LẠI nguyên vẹn ở đây (B4).
           dsBoNho: docDanhSachBoNho(this.khoHoiThoaiTho()),
+          // ★★★ ĐỢT M — dạy `chay_lenh` CHỈ khi mức quyền hiện tại KHÔNG PHẢI "chỉ đọc". `chi_doc`
+          // vẫn là hàng rào THẬT ở nơi THỰC THI (`chayYeuCauLenh` bên dưới) — cờ này CHỈ tránh mời
+          // model xin một khả năng chắc chắn bị chặn (xem docblock `dayLenhDoc.ts`).
+          choPhepChayLenh: duocPhepGhiTheoMucQuyen(this.mucQuyenHienTai).ok,
         });
         let tt = trangThaiBanDau();
         const { hong } = await moDongSse({
@@ -1359,6 +1406,11 @@ export class BangChat {
       // `docYeuCauDoc` ở trên), CÙNG điều kiện LOCAL với đường ghi tệp — bộ nhớ là một tính năng phía
       // client (workspaceState), không có ý nghĩa gì cho chế độ SERVER.
       if (cheDo.loai === "local") void this.xuLyDeXuatNho(traLoiCuoi);
+      // ★★★ ĐỢT M — cùng nguồn `traLoiCuoi`, cùng điều kiện LOCAL (chạy lệnh trên máy NGƯỜI DÙNG,
+      // không có ý nghĩa gì cho chế độ SERVER — nơi model đã có `run_command` RIÊNG trên hộp cát
+      // của chính máy chủ, xem `task-I3-I4-report.md`). Đồng bộ (không `void`) vì hàm THUẦN đồng bộ,
+      // không có await nào bên trong (chỉ `postMessage`, vốn đã tự "void" ở bên trong hàm đó).
+      if (cheDo.loai === "local") this.xuLyYeuCauLenh(traLoiCuoi);
     } catch (e) {
       // Huỷ lượt cũ là hành vi BÌNH THƯỜNG (người dùng hỏi câu mới) — không phải lỗi, không được
       // khai thành lỗi. Chỉ lỗi THẬT mới hiện lên.
@@ -1675,6 +1727,84 @@ export class BangChat {
   }
 
   /**
+   * ★★★ ĐỢT M — YÊU CẦU CHẠY LỆNH do model phát ra. `vanBan` PHẢI là `traLoiCuoi` (văn bản model
+   * TỰ SINH ở lượt SSE này) — KHÔNG BAO GIỜ kết quả tool/ngữ cảnh/mục nhớ, cùng ranh giới
+   * `docYeuCauDoc`/`docYeuCauMcpNgoai` đã dựng ở vòng lặp Task 3 (chống tiêm lệnh KIẾN TRÚC, xem
+   * docblock `loi/docYeuCauLenh.ts`).
+   *
+   * ★★★ M3 HÀNG RÀO 1 (cửa duyệt) + HÀNG RÀO 2 (chi_doc chặn) + HÀNG RÀO 3 (chỉ lệnh allowlist) —
+   * CẢ BA được xét Ở ĐÂY, TRƯỚC KHI dựng thẻ, và **XÉT LẠI LẦN NỮA** ở `duyetLenhCucBo` lúc bấm
+   * (cùng khuôn `xuLyDeXuatCucBo`/`apBanVa`: hàng rào thật nằm ở ĐIỂM THỰC THI, không phải điểm vẽ
+   * thẻ — một webview vẽ sai hoặc một lời gọi tới từ đường khác sau này đều phải bị chặn LẠI ở đó).
+   *
+   * ⚠ Chỉ xử lý yêu cầu ĐẦU TIÊN nếu model phát nhiều khối `chay_lenh` trong cùng lượt — cùng khuôn
+   *   `xuLyDeXuatCucBo` (một lượt chỉ duyệt được MỘT thứ).
+   */
+  private xuLyYeuCauLenh(vanBan: string): void {
+    const ds = docYeuCauLenh(vanBan);
+    if (ds.length === 0) return;
+    this.quenLenhCucBo();
+    if (ds.length > 1) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Model đề xuất ${ds.length} lệnh nhưng bảng này chỉ duyệt MỘT lần một lệnh — chỉ hiện lệnh đầu tiên, hãy hỏi lại cho các lệnh còn lại.`,
+      });
+    }
+    const d = ds[0]!;
+
+    // ★★★ HÀNG RÀO 2 — `chi_doc` CHẶN Ở ĐÂY (báo sớm, cùng lý lẽ `xuLyDeXuatCucBo`: tránh dựng thẻ
+    // cho một lượt CHẮC CHẮN bị `duyetLenhCucBo` từ chối). Dùng LẠI ĐÚNG `duocPhepGhiTheoMucQuyen` —
+    // `chay_lenh` được coi là hành động "write-shape" (đổi trạng thái máy người dùng, dù phần lớn
+    // sáu lệnh chỉ đọc/kiểm tra) theo đúng phân loại `run_command` ở thiết kế gốc (`kind:"write"`,
+    // xem `task-I3-I4-report.md` §B1.3) — không phải một mức quyền THỨ TƯ.
+    const quyenChay = duocPhepGhiTheoMucQuyen(this.mucQuyenHienTai);
+    if (!quyenChay.ok) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Model đề xuất chạy lệnh "${d.command}" nhưng bị chặn: ${quyenChay.lyDo}`,
+      });
+      return;
+    }
+
+    // ★★★ HÀNG RÀO 3 — CHỈ LỆNH TRONG ALLOWLIST (M1, THUẦN). Từ chối ⇒ báo lý do, KHÔNG dựng thẻ.
+    const xet = xetDuyetLenh(d.command);
+    if (!xet.ok) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Model đề xuất chạy lệnh nhưng bị TỪ CHỐI: ${xet.lyDo}`,
+      });
+      return;
+    }
+
+    const cwd = this.thuMucHoiHienTai ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!cwd) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Model đề xuất chạy lệnh "${xet.lenh.hienThi}" nhưng KHÔNG có thư mục workspace nào đang mở — đã bỏ qua.`,
+      });
+      return;
+    }
+
+    // ★★★ HÀNG RÀO 1 — CỬA DUYỆT: mặc định HỎI TRƯỚC KHI CHẠY, hiện NGUYÊN VĂN lệnh sắp chạy
+    // (`xet.lenh.hienThi`, không phải `d.command` thô — hai chuỗi PHẢI khớp cho SÁU lệnh hợp lệ,
+    // nhưng hiện đúng cái SẼ THỰC SỰ chạy là kỷ luật đúng, không suy diễn từ đầu vào chưa xét duyệt).
+    // ★ KHÔNG có nhánh "tự động chạy" nào ở đây dù mức quyền là "tu_ghi" — xem docblock module: sáu
+    // hàng rào KHÔNG THƯƠNG LƯỢNG, và "hỏi trước khi chạy" là hàng rào ĐẦU TIÊN, không bị
+    // `boQuaBuocHoi` (mức "Tự ghi") bỏ qua như đường ghi tệp. Lý do khác GHI TỆP: `apBanVa` còn năm
+    // hàng rào KHÁC đứng sau bước hỏi (băm/EOL/kiểm toán…) nên bỏ bước hỏi ở đó vẫn còn nhiều lớp
+    // chặn lại; `chay_lenh` chỉ còn ĐÚNG MỘT hàng rào (allowlist) đứng sau bước hỏi — bỏ luôn bước
+    // hỏi ở đây là để lại một lượt lệnh CHẠY THẲNG ra máy người dùng chỉ dựa trên một allowlist tĩnh,
+    // rủi ro cao hơn hẳn so với ghi một tệp (có thể Ctrl+Z). "Tự trị" cho `chay_lenh` KHÔNG được đặt
+    // ở đợt này — cần một quyết định riêng của chủ dự án nếu muốn, không suy luận ngầm từ `tu_ghi`.
+    this.lenhCucBoHienTai = { actionId: randomUUID(), lenh: xet.lenh, cwd };
+    void this.panel.webview.postMessage({
+      loai: "the_duyet_lenh",
+      lenh: xet.lenh.hienThi,
+      thuMuc: cwd,
+    });
+  }
+
+  /**
    * ★★★ ĐỢT H / TASK H3 / B5 — ĐỀ XUẤT NHỚ do AI phát ra: hỏi RÀNH MẠCH, chỉ ghi khi người dùng
    * bấm DUYỆT. `vanBan` PHẢI là `traLoiCuoi` (văn bản model TỰ SINH ở lượt SSE này) — KHÔNG BAO GIỜ
    * ngữ cảnh/mục nhớ/kết quả tool, cùng ranh giới `docYeuCauDoc` đã dựng ở vòng lặp Task 3.
@@ -1781,6 +1911,70 @@ export class BangChat {
       thongDiep = `Lỗi ngoài dự tính khi ghi "${cb.duongTuongDoi}": ${(e as Error).message}. Hãy KIỂM TRA LẠI tệp trước khi hỏi tiếp.`;
     }
     this.quenDeXuat();
+    void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
+  }
+
+  /**
+   * ★★★ ĐỢT M — BẤM "Chạy lệnh" trên thẻ duyệt CHẠY LỆNH. Đây là lối đi DUY NHẤT tới
+   * `mang/chayLenhCucBo.ts` (LỚP I/O spawn thật) — cùng kỷ luật `apDungCucBo`: HÀNG RÀO THẬT nằm ở
+   * ĐIỂM BẤM, được xét LẠI TỪ ĐẦU, không tin bất kỳ điều gì đã xét lúc dựng thẻ (mức quyền có thể đã
+   * đổi giữa lúc hiện thẻ và lúc bấm — cùng lý lẽ `duyetDeXuat`/`apDungCucBo` áp cho chế độ dự án).
+   *
+   * ★★★ SÁU HÀNG RÀO — BA CÁI ĐÃ XÉT Ở `xuLyYeuCauLenh` ĐƯỢC XÉT LẠI, BA CÁI CÒN LẠI Ở ĐÂY:
+   *   1. Cửa duyệt        — CHÍNH sự tồn tại của bước này.
+   *   2. `chi_doc` chặn   — xét LẠI (`duocPhepGhiTheoMucQuyen`), không tin cờ lúc dựng thẻ.
+   *   3. Allowlist        — xét LẠI (`xetDuyetLenh` trên CHÍNH `hienThi` đã lưu, không phải một
+   *      chuỗi mới) — phòng thủ chiều sâu, dù về lý thuyết `lenh` đã là `LenhDaDuyet` (argv cố định).
+   *   4. `cheBiMat`       — áp trong `dinhDangKetQuaLenh`, TRƯỚC khi đưa kết quả vào lịch sử/hiển thị.
+   *   5. Kết quả là DỮ LIỆU — `dinhDangKetQuaLenh` vô hiệu hoá khối avi-tool giả; HÀNG RÀO KIẾN TRÚC
+   *      thật (kết quả không bao giờ đi qua `docYeuCauLenh` lần nữa) nằm ở việc hàm này KHÔNG gọi
+   *      lại `xuLyYeuCauLenh`/`docYeuCauLenh` trên `thongDiep` vừa dựng — nó chỉ `postMessage`.
+   *   6. Hai trần         — thời gian (`TRAN_MS_THEO_LENH`, truyền vào `chayLenhCucBo`) + kích thước
+   *      (`TRAN_BYTE_CHAY_LENH`, sống trong `chayLenhCucBo`, kiểm streaming).
+   */
+  private async duyetLenhCucBo(): Promise<void> {
+    const lc = this.lenhCucBoHienTai;
+    if (!lc) return;
+
+    // ★★★ HÀNG RÀO 2, XÉT LẠI — `chi_doc` phải chặn Ở ĐIỂM THỰC THI, không chỉ ở điểm vẽ thẻ.
+    const quyenChay = duocPhepGhiTheoMucQuyen(this.mucQuyenHienTai);
+    if (!quyenChay.ok) {
+      this.quenLenhCucBo(`KHÔNG CHẠY — ${quyenChay.lyDo}`);
+      return;
+    }
+
+    // ★★★ HÀNG RÀO 3, XÉT LẠI — allowlist trên CHÍNH nhãn hiển thị đã lưu, không tin `lc.lenh.argv`
+    // đã đúng mãi mãi (phòng thủ chiều sâu nếu một đường code sau này gán `lenhCucBoHienTai` mà
+    // không đi qua `xuLyYeuCauLenh`).
+    const xetLai = xetDuyetLenh(lc.lenh.hienThi);
+    if (!xetLai.ok) {
+      this.quenLenhCucBo(`KHÔNG CHẠY — lệnh không còn khớp allowlist lúc duyệt: ${xetLai.lyDo}`);
+      return;
+    }
+
+    void this.panel.webview.postMessage({
+      loai: "thong_bao",
+      thongDiep: `Đang chạy "${xetLai.lenh.hienThi}"…`,
+    });
+
+    const kq = await chayLenhCucBo({
+      lenh: xetLai.lenh,
+      cwd: lc.cwd,
+      tranMs: TRAN_MS_THEO_LENH[xetLai.lenh.ten],
+    });
+
+    // ★★★ HÀNG RÀO 4+5 — che bí mật + vô hiệu hoá khối avi-tool giả TRƯỚC khi hiển thị. Đây là
+    // dữ liệu đi vào bong bóng chat (hiển thị cho người dùng) — cùng mức cẩn trọng với dữ liệu đi
+    // vào ngữ cảnh model, vì người dùng cũng là một "người đọc" mà bí mật không cần rời máy tới.
+    const thongDiep = dinhDangKetQuaLenh({
+      lenhHienThi: xetLai.lenh.hienThi,
+      output: kq.output,
+      exitCode: kq.exitCode,
+      timedOut: kq.timedOut,
+      daCatSomODongChay: kq.daCatSom,
+    });
+
+    this.quenLenhCucBo();
     void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
   }
 

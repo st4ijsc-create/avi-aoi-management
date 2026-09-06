@@ -28,6 +28,10 @@ import { dungVanBanDayMcpNgoai, type MoTaToolMcp } from "./dayMcpDoc";
 // từng dùng lệnh "AI Local: Nhớ điều này" thấy `question` không đổi một ký tự nào so với trước H3.
 import { dungVanBanDayBoNho } from "./dayBoNhoDoc";
 import type { MucBoNho } from "./khoBoNho";
+// ★★★ ĐỢT M — dạy giao thức `chay_lenh`, CÙNG điều kiện chèn (LOCAL, không Cmd+K) với MCP/bộ nhớ ở
+// trên, CỘNG điều kiện RIÊNG: `choPhepChay` (mức quyền hiện tại KHÔNG PHẢI "chỉ đọc", xem docblock
+// `dayLenhDoc.ts`). `dungVanBanDayLenhDoc(false)` trả CHUỖI RỖNG.
+import { dungVanBanDayLenhDoc } from "./dayLenhDoc";
 
 export type CheDoDuAn =
   | { loai: "local"; nhan: string }
@@ -82,6 +86,12 @@ export function dungYeuCauStream(dv: {
    * Local: Nhớ điều này" thấy `question` giống hệt trước khi H3 tồn tại.
    */
   dsBoNho?: readonly MucBoNho[];
+  /**
+   * ★★★ ĐỢT M — `true` khi mức quyền hiện tại CHO PHÉP chạy lệnh (khác "chỉ đọc"). Mặc định
+   * `false` (an toàn hơn: không dạy) — nơi gọi (`ui/bangChat.ts`) PHẢI truyền tường minh giá trị
+   * suy từ `mucQuyen.ts`, không được để tham số tuỳ chọn này âm thầm mở khả năng dạy.
+   */
+  choPhepChayLenh?: boolean;
 }): Record<string, unknown> {
   const context: Record<string, unknown> = {
     route: "vscode",
@@ -111,6 +121,12 @@ export function dungYeuCauStream(dv: {
   const vanBanDayBoNho = dungVanBanDayBoNho(dsBoNho);
   const phanDayBoNho = vanBanDayBoNho.length > 0 ? `${vanBanDayBoNho}\n\n` : "";
 
+  // ★★★ ĐỢT M — dạy `chay_lenh` NGAY SAU bộ nhớ, CÙNG điều kiện chèn (LOCAL, không Cmd+K) VÀ điều
+  // kiện riêng `choPhepChayLenh`. RỖNG khi SERVER/Cmd+K/mức "chỉ đọc" ⇒ dòng dưới không thêm ký tự.
+  const choPhepChayLenh = dayGiaoThucDoc && dv.choPhepChayLenh === true;
+  const vanBanDayLenh = dungVanBanDayLenhDoc(choPhepChayLenh);
+  const phanDayLenh = vanBanDayLenh.length > 0 ? `${vanBanDayLenh}\n\n` : "";
+
   // ★★★ LỖI 1, vòng đo lại thứ nhất — nhắc lại NGẮN ở CUỐI `question` (gần điểm sinh chữ nhất).
   // Đo LIVE: dạy MỘT LẦN ở đầu prompt thua luật "NGUYÊN TẮC TRẢ LỜI" máy chủ tự chèn ở 10/11 lượt
   // — xem docblock `dayGiaoThucDoc.ts`. KHÔNG áp cho SERVER (cùng lý do không dạy giao thức ở đó),
@@ -131,7 +147,7 @@ export function dungYeuCauStream(dv: {
   const nguCanhCoNhan =
     dv.nguCanh.trim().length > 0 ? `${nhanNguonNguCanh(dv.cheDo)}\n${dv.nguCanh}` : dv.nguCanh;
   const than = nguCanhCoNhan.trim().length > 0 ? `${nguCanhCoNhan}\n${dv.cauHoi}` : dv.cauHoi;
-  const question = `${phanDayGiaoThuc}${phanDayMcp}${phanDayBoNho}${than}${phanNhacLaiCuoi}`;
+  const question = `${phanDayGiaoThuc}${phanDayMcp}${phanDayBoNho}${phanDayLenh}${than}${phanNhacLaiCuoi}`;
 
   return { question, history: dv.lichSu, userRole: dv.vaiTro, context };
 }

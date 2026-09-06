@@ -517,6 +517,87 @@ describe("webview — nút GHI không được gửi hai lượt cho một quy�
 });
 
 /**
+ * ★★★ ĐỢT M — THẺ DUYỆT CHẠY LỆNH, RIÊNG khỏi thẻ ghi tệp — cùng khuôn "chống bấm hai lần" ở trên,
+ * vì bấm "Chạy lệnh" hai lần liên tiếp sẽ spawn HAI tiến trình con thay vì một.
+ */
+describe("webview — thẻ duyệt CHẠY LỆNH (Đợt M)", () => {
+  it("★★★ hiện NGUYÊN VĂN lệnh + thư mục khi nhận `the_duyet_lenh`", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "the_duyet_lenh", lenh: "git status", thuMuc: "C:\\ws" });
+    expect(w.nut("the-duyet-lenh").hidden).toBe(false);
+    expect(w.nut("duyet-lenh-cau-lenh").textContent).toBe("git status");
+  });
+
+  it("★★★ THIẾU `lenh` ⇒ FAIL-CLOSED, KHÔNG hiện thẻ", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "the_duyet_lenh", lenh: "", thuMuc: "C:\\ws" });
+    expect(w.nut("the-duyet-lenh").hidden).toBe(true);
+  });
+
+  it("★★★ BẤM HAI LẦN liên tiếp ⇒ extension chỉ nhận ĐÚNG MỘT tin `duyet_lenh`", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "the_duyet_lenh", lenh: "git status", thuMuc: "C:\\ws" });
+
+    w.nut("nut-duyet-lenh").bam();
+    w.nut("nut-duyet-lenh").bam();
+    w.nut("nut-duyet-lenh").bam();
+
+    expect(w.daGui.filter((m) => m.loai === "duyet_lenh")).toHaveLength(1);
+    expect(w.nut("nut-duyet-lenh").disabled).toBe(true);
+  });
+
+  it("★★★ `an_the_duyet_lenh` ⇒ MỞ KHOÁ + ẨN thẻ", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "the_duyet_lenh", lenh: "git diff", thuMuc: "C:\\ws" });
+    w.nut("nut-duyet-lenh").bam();
+    expect(w.nut("nut-duyet-lenh").disabled).toBe(true);
+
+    w.banTin({ loai: "an_the_duyet_lenh" });
+    expect(w.nut("nut-duyet-lenh").disabled).toBe(false);
+    expect(w.nut("the-duyet-lenh").hidden).toBe(true);
+  });
+
+  it("★★★ `thong_bao` GIỮA LÚC LỆNH ĐANG CHẠY KHÔNG được mở khoá — chặn spawn tiến trình thứ hai", () => {
+    // ★★★ Khác hẳn nút GHI TỆP (nơi `thong_bao` PHẢI mở khoá cho ca "KHÔNG RÕ KẾT CỤC" thử lại):
+    // `duyetLenhCucBo` gửi một `thong_bao` TIẾN ĐỘ ("Đang chạy…") TRƯỚC KHI tiến trình con kết thúc.
+    // Mở khoá ở đó cho phép bấm lại NGAY khi tiến trình đầu còn sống — spawn tiến trình con THỨ HAI
+    // ngoài ý muốn. Nút chỉ được mở khoá khi thẻ ẩn hẳn (`an_the_duyet_lenh`, kèm kết quả CUỐI).
+    const w = chayWebview();
+    w.banTin({ loai: "the_duyet_lenh", lenh: "npm run check", thuMuc: "C:\\ws" });
+    w.nut("nut-duyet-lenh").bam();
+    expect(w.nut("nut-duyet-lenh").disabled).toBe(true);
+
+    w.banTin({ loai: "thong_bao", thongDiep: 'Đang chạy "npm run check"…' });
+    expect(w.nut("nut-duyet-lenh").disabled).toBe(true);
+
+    w.banTin({ loai: "an_the_duyet_lenh" });
+    w.banTin({ loai: "thong_bao", thongDiep: "KẾT QUẢ LỆNH..." });
+    expect(w.nut("nut-duyet-lenh").disabled).toBe(false);
+  });
+
+  it("★★ hàng rào CHỈ áp cho nút 'Chạy lệnh' — 'Huỷ' vẫn bấm được bao nhiêu lần cũng được", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "the_duyet_lenh", lenh: "git status", thuMuc: "C:\\ws" });
+    w.nut("nut-huy-lenh").bam();
+    w.nut("nut-huy-lenh").bam();
+    expect(w.daGui.filter((m) => m.loai === "huy_lenh")).toHaveLength(2);
+  });
+
+  it("★★★ ĐỘC LẬP khỏi thẻ ghi tệp — bấm nút GHI không khoá/mở nút CHẠY LỆNH và ngược lại", () => {
+    const w = chayWebview();
+    w.banTin({ loai: "the_duyet", nhanNguon: "LOCAL · C:\\ws", nhanNut: "Ghi vào workspace", duong: "a.ts", tomTat: "+1 / −0", han: "" });
+    w.banTin({ loai: "the_duyet_lenh", lenh: "git status", thuMuc: "C:\\ws" });
+
+    w.nut("nut-duyet").bam();
+    expect(w.nut("nut-duyet-lenh").disabled).toBe(false);
+
+    w.nut("nut-duyet-lenh").bam();
+    expect(w.daGui.filter((m) => m.loai === "duyet")).toHaveLength(1);
+    expect(w.daGui.filter((m) => m.loai === "duyet_lenh")).toHaveLength(1);
+  });
+});
+
+/**
  * ★★★ TASK 4 — NÚT DỪNG: KẾT CỤC, không chỉ CHỮ TRONG HTML. Cùng khuôn với nhóm "CHỐNG BẤM HAI
  * LẦN" ở trên — chạy THẬT script của webview, quan sát `hidden` đổi và tin nhắn thật được gửi.
  */

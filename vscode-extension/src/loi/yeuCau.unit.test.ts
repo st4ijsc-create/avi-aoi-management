@@ -259,3 +259,39 @@ describe("dungYeuCauStream — Đợt H / Task H3 (dsBoNho)", () => {
     expect(String(t.question)).toContain("KHÔNG PHẢI CHỈ DẪN THỰC THI");
   });
 });
+
+// ★★★ ĐỢT M — choPhepChayLenh: PHẢI giữ nguyên hành vi cũ khi VẮNG MẶT (kiểm NHÁNH KIA), cùng khuôn
+// nhóm ca dsToolMcp (H2) / dsBoNho (H3) ở trên.
+describe("dungYeuCauStream — Đợt M (choPhepChayLenh)", () => {
+  it("★★★ choPhepChayLenh VẮNG MẶT ⇒ question giống hệt byte-đúng so với trước Đợt M (đối chứng chính)", () => {
+    const truoc = dungYeuCauStream({ ...CHUNG, cheDo: { loai: "local", nhan: "x" } });
+    const coMNhungTat = dungYeuCauStream({ ...CHUNG, cheDo: { loai: "local", nhan: "x" }, choPhepChayLenh: false });
+    expect(coMNhungTat.question).toBe(truoc.question);
+  });
+
+  it("LOCAL + choPhepChayLenh:true ⇒ dạy chay_lenh, liệt kê git status/diff/npm run check/vitest/dotnet", () => {
+    const t = dungYeuCauStream({ ...CHUNG, cheDo: { loai: "local", nhan: "x" }, choPhepChayLenh: true });
+    expect(String(t.question)).toContain("chay_lenh");
+    expect(String(t.question)).toContain("git status");
+    expect(String(t.question)).toContain("dotnet test");
+  });
+
+  it("★★ SERVER ⇒ KHÔNG dạy chay_lenh dù choPhepChayLenh:true (cùng lý do không dạy giao thức đọc ở SERVER)", () => {
+    const t = dungYeuCauStream({
+      ...CHUNG,
+      cheDo: { loai: "server", projectId: "csharp", nhan: "Demo" },
+      choPhepChayLenh: true,
+    });
+    expect(String(t.question)).not.toContain("chay_lenh");
+  });
+
+  it("★★ Cmd+K ⇒ KHÔNG dạy chay_lenh (cùng lý do không dạy giao thức đọc ở Cmd+K)", () => {
+    const t = dungYeuCauStream({ ...CHUNG, cheDo: { loai: "local", nhan: "x" }, laCmdK: true, choPhepChayLenh: true });
+    expect(String(t.question)).not.toContain("chay_lenh");
+  });
+
+  it("★★★ mức CHỈ ĐỌC (choPhepChayLenh:false) ở LOCAL ⇒ KHÔNG dạy chay_lenh — không mời một khả năng chắc chắn bị chặn", () => {
+    const t = dungYeuCauStream({ ...CHUNG, cheDo: { loai: "local", nhan: "x" }, choPhepChayLenh: false });
+    expect(String(t.question)).not.toContain("chay_lenh");
+  });
+});

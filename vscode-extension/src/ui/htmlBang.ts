@@ -208,6 +208,20 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     <button id="nut-huy">Huỷ</button>
   </div>
 </div>
+<!-- ★★★ ĐỢT M — THẺ DUYỆT CHẠY LỆNH, RIÊNG khỏi #the-duyet (đề xuất GHI TỆP). Hai loại hành động
+     khác hẳn nhau (chạy tiến trình trên máy vs. đổi byte một tệp) — trộn chung một thẻ dễ khiến
+     người bấm tưởng nhầm loại hành động đang duyệt. ⚠ #duyet-lenh-cau-lenh hiện NGUYÊN VĂN lệnh SẼ
+     CHẠY (nhãn từ M1, không phải chuỗi model gõ thô) — đây là hàng rào ĐẦU TIÊN của M3 ("hiện nguyên
+     văn lệnh sắp chạy"), không phải trang trí. -->
+<div id="the-duyet-lenh" hidden>
+  <div class="nhan">AI muốn CHẠY LỆNH trên máy này</div>
+  <div id="duyet-lenh-cau-lenh"></div>
+  <div id="duyet-lenh-thu-muc"></div>
+  <div class="the-duyet-nut">
+    <button id="nut-duyet-lenh">Chạy lệnh</button>
+    <button id="nut-huy-lenh">Huỷ</button>
+  </div>
+</div>
 <div id="hang-nhap">
   <!-- TASK 5 — dropdown gợi ý @-mention. MẶC ĐỊNH ẨN: chỉ hiện khi đang gõ "@..." VÀ extension đã
        trả về ít nhất một gợi ý. Nội dung (danh sách tệp) do EXTENSION dựng — webview chỉ hiển thị
@@ -596,6 +610,22 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
 
   document.getElementById("nut-huy").addEventListener("click", () => vscode.postMessage({ loai: "huy" }));
 
+  // ★★★ ĐỢT M — thẻ duyệt CHẠY LỆNH, RIÊNG khỏi thẻ ghi tệp ở trên. Webview chỉ hiển thị NGUYÊN VĂN
+  // lệnh + thư mục do extension đã dựng sẵn và chuyển tiếp cú bấm — không tự quyết chạy hay không.
+  // CÙNG khuôn chống-bấm-hai-lần (nut-duyet ở trên): một cú bấm thứ hai trong lúc lệnh đang chạy sẽ
+  // spawn tiến trình THỨ HAI, không phải "gửi lại" — khoá nút ngay khi bấm.
+  const theDuyetLenh = document.getElementById("the-duyet-lenh");
+  const nutDuyetLenh = document.getElementById("nut-duyet-lenh");
+  let dangGuiDuyetLenh = false;
+  function moKhoaNutDuyetLenh() { dangGuiDuyetLenh = false; nutDuyetLenh.disabled = false; }
+  nutDuyetLenh.addEventListener("click", () => {
+    if (dangGuiDuyetLenh) return;
+    dangGuiDuyetLenh = true;
+    nutDuyetLenh.disabled = true;
+    vscode.postMessage({ loai: "duyet_lenh" });
+  });
+  document.getElementById("nut-huy-lenh").addEventListener("click", () => vscode.postMessage({ loai: "huy_lenh" }));
+
   /**
    * ★★★ ĐỢT F / TASK 3 — dọn khung cho MỘT PHIÊN KHÁC: dùng CHUNG cho "Chat mới" (B3 — khung THỰC
    * SỰ trắng) VÀ "Lịch sử" (B4 — khung sắp vẽ lại nội dung của MỘT HỘI THOẠI KHÁC). Xoá bong bóng
@@ -632,6 +662,10 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     khoiTraLoi = null;
     theDuyet.hidden = true;
     moKhoaNutDuyet();
+    // ★★★ ĐỢT M — cùng lý lẽ với thẻ ghi tệp ở trên: một yêu cầu chạy lệnh của phiên VỪA RỜI không
+    // được sống sót sang phiên MỚI/phiên vừa chọn.
+    theDuyetLenh.hidden = true;
+    moKhoaNutDuyetLenh();
     nutDung.hidden = true;
     anMenuMention();
     if (xoaCauDangGo) oNhap.value = "";
@@ -736,6 +770,22 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     } else if (m.loai === "an_the_duyet") {
       theDuyet.hidden = true;
       moKhoaNutDuyet();
+    } else if (m.loai === "the_duyet_lenh") {
+      // ★★★ ĐỢT M — CÙNG KỶ LUẬT FAIL-CLOSED với "the_duyet": thiếu \`lenh\` (nguyên văn lệnh sắp
+      // chạy) ⇒ KHÔNG hiện thẻ. Đây là hàng rào ĐẦU TIÊN của M3 ("hỏi trước khi chạy, hiện nguyên
+      // văn lệnh") — một thẻ hiện ra mà không nói RÕ lệnh gì là đúng loại "tai nạn không cứu được".
+      moKhoaNutDuyetLenh();
+      if (!m.lenh) {
+        theDuyetLenh.hidden = true;
+        themLuot("he_thong", "Thẻ duyệt chạy lệnh thiếu nội dung lệnh — đã KHÔNG hiện thẻ.", false, "Lỗi");
+      } else {
+        document.getElementById("duyet-lenh-cau-lenh").textContent = m.lenh;
+        document.getElementById("duyet-lenh-thu-muc").textContent = m.thuMuc ? "Thư mục: " + m.thuMuc : "";
+        theDuyetLenh.hidden = false;
+      }
+    } else if (m.loai === "an_the_duyet_lenh") {
+      theDuyetLenh.hidden = true;
+      moKhoaNutDuyetLenh();
     } else if (m.loai === "thong_bao") {
       // ⚠⚠ MỞ KHOÁ Ở ĐÂY LÀ BẮT BUỘC, không phải cho gọn. Đường SERVER có một ca CỐ Ý **giữ thẻ
       // lại**: "KHÔNG RÕ KẾT CỤC" (mất mạng giữa chừng) chỉ gửi \`thong_bao\` và KHÔNG gửi
@@ -743,6 +793,12 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // (\`confirmAction\` idempotent — xem \`bangChat.duyetDeXuat\`). Khoá vĩnh viễn ở đó là lấy mất
       // đúng đường thoát mà bản vá kia dựng ra.
       moKhoaNutDuyet();
+      // ★★★ ĐỢT M — CỐ Ý KHÔNG \`moKhoaNutDuyetLenh()\` ở đây (khác nút ghi tệp ở trên): giữa lúc
+      // lệnh đang chạy, \`bangChat.ts#duyetLenhCucBo\` gửi MỘT \`thong_bao\` tiến độ ("Đang chạy…")
+      // TRƯỚC khi tiến trình kết thúc — mở khoá ngay lúc đó cho phép bấm "Chạy lệnh" LẦN HAI trong
+      // khi lệnh thứ nhất còn sống, spawn tiến trình THỨ HAI ngoài ý muốn. Nút chỉ mở khoá lại khi
+      // thẻ ẩn hẳn (\`an_the_duyet_lenh\`, gửi kèm kết quả cuối) hoặc khi một thẻ MỚI hiện ra
+      // (\`the_duyet_lenh\`, gọi \`moKhoaNutDuyetLenh()\` riêng — xem nhánh đó ở trên).
       // ★★★ ĐỢT I / TASK I-1a — TIN CÓ NGHĨA: khi lượt còn đang chờ (chỉ báo ba-chấm vẫn còn, tức
       // CHƯA có token thật nào tới), đổi chỉ báo sang ĐÚNG chữ tiến độ này ("vòng N/3 — đang đọc…")
       // thay vì ba chấm chung chung — KHÔNG THAY THẾ bong bóng hệ thống bên dưới (giữ NGUYÊN, đây là
