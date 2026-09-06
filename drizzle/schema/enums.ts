@@ -13,7 +13,6 @@ export const roleEnum = pgEnum("roleenum", [
   "user"             // Basic user access (default)
 ]);
 export const machineTypeEnum = pgEnum("machinetypeenum", [
-  "QA_LOAI_GIA_TIEM_TAM",
   "AVI",        // Automated Visual Inspection
   "AOI",        // Automated Optical Inspection
   "SPI",        // Solder Paste Inspection
