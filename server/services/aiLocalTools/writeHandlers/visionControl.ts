@@ -32,6 +32,13 @@ import { getDb } from "../../../db/connection";
 import { deviceAdapters, deviceTags } from "../../../../drizzle/schema";
 import { dispatch, type DispatchInput } from "../../ot/commandDispatcher";
 import {
+  kiemCongAi,
+  siriengChoAi,
+  ketQuaTuChoiChoTool,
+  type KetQuaDispatchToiThieu,
+} from "../../ot/aiControlGate";
+import { preflightSafetyChoAi } from "../../ot/aiControlGate.safety";
+import {
   registerTool,
   type ActionPreview,
   type ToolExecContext,
@@ -125,8 +132,32 @@ async function adapterIdForMachine(machineId: number): Promise<number> {
  */
 async function runDispatch(
   ctx: ToolExecContext,
-  args: { machineId: number; adapterId: number; commandType: string; writes: Array<{ tagKey: string; value: unknown }> },
+  args: {
+    machineId: number;
+    adapterId: number;
+    commandType: string;
+    writes: Array<{ tagKey: string; value: unknown }>;
+    /** L-7 T2 — tên tool AI, BẮT BUỘC. Xem ghi chú ở machineControl.runDispatch. */
+    toolName: string;
+  },
 ): Promise<ToolExecuteResult> {
+  // ── L-7 CỔNG AI ─────────────────────────────────────────────────────────────
+  // ★ CẢ HAI tool trong tệp này (`reject_divert`, `spi_printer_offset`) là Mức 5:
+  //   chúng gây CHUYỂN ĐỘNG VẬT LÝ (cần gạt phôi / đầu in kem hàn). Cổng sẽ từ
+  //   chối chúng vô điều kiện. Tệp này không nằm trong danh sách 6 tool của
+  //   brief, nhưng nó CÓ tới `dispatch()` — bỏ qua nó là để hở đúng thứ mục 5.1
+  //   bản thiết kế L-7 cấm tuyệt đối.
+  const safety = await preflightSafetyChoAi(args.adapterId, args.machineId);
+  const cong = kiemCongAi({
+    toolName: args.toolName,
+    userId: ctx.user.id,
+    adapterId: args.adapterId,
+    safety,
+  });
+  if (!cong.choPhep) {
+    return ketQuaTuChoiChoTool(cong, args.toolName) as ToolExecuteResult;
+  }
+
   const idempotencyKey = ctx.actionId ?? `vc-${args.machineId}-${args.commandType}-${Date.now()}`;
   const input: DispatchInput = {
     adapterId: args.adapterId,
@@ -142,7 +173,10 @@ async function runDispatch(
     lang: ctx.lang,
     idempotencyKey,
   };
-  const result = await dispatch(input);
+  // ── L-7 T3 — acked_unverified ⇒ ok=false cho AI (đường người không đổi) ────
+  const result = siriengChoAi(
+    (await dispatch(input)) as unknown as KetQuaDispatchToiThieu,
+  ) as unknown as Awaited<ReturnType<typeof dispatch>>;
   const title = result.simulated
     ? w(ctx.lang, `[MÔ PHỎNG] ${args.commandType} cho máy #${args.machineId}`, `[SIMULATED] ${args.commandType} for machine #${args.machineId}`, `[模拟] 机器 #${args.machineId} 的 ${args.commandType}`)
     : w(ctx.lang, `${args.commandType} cho máy #${args.machineId}: ${result.status}`, `${args.commandType} for machine #${args.machineId}: ${result.status}`, `机器 #${args.machineId} 的 ${args.commandType}：${result.status}`);
@@ -216,6 +250,7 @@ registerTool<RejectDivertParams, unknown>({
       adapterId,
       commandType: "reject_divert",
       writes: [{ tagKey, value: p.lane ?? true }],
+      toolName: "reject_divert",
     });
   },
 });
@@ -287,6 +322,7 @@ registerTool<SpiPrinterOffsetParams, unknown>({
         { tagKey: tagKeyX, value: p.offsetXUm },
         { tagKey: tagKeyY, value: p.offsetYUm },
       ],
+      toolName: "spi_printer_offset",
     });
   },
 });

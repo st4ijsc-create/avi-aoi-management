@@ -29,6 +29,7 @@ import {
   type ToolLang,
 } from "../toolRegistry";
 import type { AuditChangeField } from "../../auditTrailService";
+import { kiemCongAi, ketQuaTuChoiChoTool } from "../../ot/aiControlGate";
 
 const metricTypeSchema = z.enum(["FPY", "FY", "NTF", "UPH"]);
 const fieldSchema = z.enum(["warning", "critical", "target"]).default("warning");
@@ -120,6 +121,31 @@ export const setYieldThresholdTool: Tool<SetYieldParams, { ok: boolean }> = {
   summarize: summarizeSetYield,
   preview: previewSetYield,
   execute: async (p, ctx) => {
+    // ── L-7 T2 — CỔNG AI (Mức 3) ────────────────────────────────────────────
+    // Tool này KHÔNG chạm PLC — nó ghi bảng ngưỡng cảnh báo trong CSDL. Nhưng nó
+    // đổi đúng cái ngưỡng mà con người dựa vào để BIẾT máy có vấn đề: một model
+    // "tối ưu" ngưỡng cảnh báo lên đủ cao sẽ làm dây chuyền trông sạch sẽ trong
+    // khi hàng lỗi vẫn chạy. Nên nó vẫn phải qua cổng + trần tần suất.
+    //
+    // Không có adapter OT ⇒ dùng khoá adapter SENTINEL 0 cho trần tần suất. Nghĩa
+    // là mọi lệnh yield của cùng một người dùng chia CHUNG một quota — đúng ý đồ
+    // (chặn vòng lặp), và không bao giờ đụng quota của một adapter thật (adapterId
+    // thật luôn là số nguyên dương — khoá 0 không thể trùng).
+    //
+    // safety='OK' là TRUNG THỰC ở đây, không phải cửa hậu: không có safety-PLC nào
+    // liên quan tới một hàng ngưỡng trong CSDL. Nếu tool này có ngày chạm thiết bị
+    // thì dòng này PHẢI đổi thành đọc safety thật.
+    const ADAPTER_SENTINEL_YIELD = 0;
+    const cong = kiemCongAi({
+      toolName: "set_yield_threshold",
+      userId: ctx.user.id,
+      adapterId: ADAPTER_SENTINEL_YIELD,
+      safety: "OK",
+    });
+    if (!cong.choPhep) {
+      return ketQuaTuChoiChoTool(cong, "set_yield_threshold") as any;
+    }
+
     const current = await resolveThreshold(p);
     if (!current) {
       return {
