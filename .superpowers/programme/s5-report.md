@@ -36,6 +36,18 @@ flip from DENY (`ROLE_RANK[""] ?? +Infinity` — nothing outranks it) to ALLOW. 
 opening silently. So the *ladder* is shared and the two comparison shapes stay two functions:
 `meetsMinRole` (strict) and `navMeetsMinRole` (nav entries).
 
+> 🔴 **The review found I understated this, and it was right.** I described one direction of the
+> hazard. Measured on `NAV_ITEMS` via the AST: **17 nav items, only 3 carry a `minRole`, so 14 take
+> the falsy branch.** The absent-`minRole` case is therefore the *common* nav path, not an edge —
+> which means a merge in the **other** direction (adopting the strict body for the nav caller) would
+> have emptied most of the sidebar. **Both directions were live hazards**, and keeping two functions
+> was load-bearing in both.
+>
+> Worth recording: my first attempt at this count used `grep -c "minRole:"` and returned 4, because
+> one match sat in a comment. That is the prose-counted-as-code error for the **third** time in this
+> session — the ledger's eight-vs-ten warning, my hoist-proof tool, and the census bypass being the
+> others. The AST count above is the one to trust, and the pattern is the session's real lesson.
+
 ### How behaviour-preservation was PROVEN, not asserted
 
 Two independent mechanical checks, both run against the base commit's own text:
@@ -80,7 +92,7 @@ because the failure was instructive, not incidental.
 
 ### The pin against a ninth copy
 
-`web/runtime-tests/roleRank.test.mjs` (24 tests), following the census precedent in
+`web/runtime-tests/roleRank.test.mjs` (28 tests), following the census precedent in
 `editorCanvasSeam.test.mjs` rather than inventing a mechanism:
 
 - **SIDE A — behaviour, executed.** The full 3×3 matrix written out as the *answer* (not recomputed
@@ -88,10 +100,46 @@ because the failure was instructive, not incidental.
   `minRole` — all of which must fail closed. The two functions are asserted to agree everywhere
   except on an absent `minRole`, which is pinned as the deliberate divergence so a later
   "simplification" that merges them reddens instead of widening seven gates.
-- **SIDE B — census.** Walks `web/src/**` over `.ts/.tsx/.js/.mjs/.cjs`, **strips comments**, and
-  matches a *binding* (`const|let|var ROLE_RANK`), never the bare identifier. Asserts exactly one
-  declaring file. Also asserts all eight former declarers now import, and that the prose-only
-  mention is still prose.
+- **SIDE B — census.** Walks `web/src/**` over `.ts/.tsx/.js/.mjs/.cjs` and finds ladders through
+  **TypeScript's own parse**, by *shape*: an object literal whose keys are exactly the three roles.
+
+### 🔴 Fix round 1 — the census was defeated, twice, and both were fair
+
+**M-1 — a `//` inside a string literal.** Round 1's census stripped comments with two regexes. The
+reviewer appended one line to `Site.tsx`:
+
+```ts
+const __probeUrl = "https://example.com//docs"; const ROLE_RANK: Record<string, number> = { … }
+```
+
+The `//` in the URL was read as a line comment, so the rest of the line — including the ninth ladder
+— was deleted before matching. **The census exited 0 with two ladders in the tree.** I reproduced
+this before fixing it.
+
+This is the same defect class I recorded learning from *in this very session*: my hoist-proof tool
+matched a declaration quoted inside a doc comment, I wrote down that comment detection without a
+parser is not comment detection — and then did not apply that lesson to the instrument next to it.
+`scripts/check-comment-only.mjs`'s header already states the general form of this trap and its
+remedy; the census now follows it. A parser needs no comment-stripping at all, because comments are
+never in the AST to begin with. My round-1 control was a near miss: it tested `"https://x/y"`
+(one slash), which survives — `//docs` is what breaks it.
+
+**M-2 — the pin forbade a name, not a ladder.** A rename, an inline literal, quoted keys or a
+reordering all walked past a regex keyed on the identifier `ROLE_RANK`. The rule is now the shape.
+
+**What the widened census catches** (each asserted, not claimed): the shipped form; the M-1
+string-literal probe; a **renamed** table; an **inline** literal never bound to a name; quoted keys;
+keys in any order — while ignoring comments, imports, uses, unrelated objects, and partial keys.
+
+**What it still does not catch, stated rather than papered over:** `new Map([["Operator",0],…])`; an
+`["Operator","Engineer","Admin"]` array with `indexOf`; a table built at runtime (`reduce`) or read
+from JSON; two roles compared on some other encoding entirely. There is no finite syntactic rule
+that catches every re-encoding of an ordered role list, and this one does not pretend to. What it
+does is make the *cheap* path — copy the object literal back into a route file, under any name —
+impossible to take silently; everything in the residue list is a deliberate re-implementation a
+reviewer reading a diff will see, and SIDE A holds if someone writes one. **The residue is itself
+asserted** (`STATED RESIDUE`), so if a later change makes any of it detectable the test reddens and
+the header must be corrected — the limit is measured, not merely described.
 
 ---
 
@@ -204,11 +252,18 @@ and `GET /v1/screens` (`HmiScreenEndpoints.cs:165`, `RequireAuthorization(Polici
 The reason for deferring is measured, not aesthetic. A screens index needs a nav entry to be
 reachable, and `tests/00-visual-and-a11y.spec.ts` holds **22 full-page pixel baselines** — dashboard,
 machines, machine-detail, product-config, scenario, inspector, onboarding and more, across three
-themes — every one of which contains the sidebar. Adding one nav row changes all 22.
+themes. **21 of those 22 contain the sidebar**; the exception is `tokens-glass`, because `/tokens`
+is routed outside `<Shell>` (`App.tsx:79`) and renders standalone. Adding one nav row changes all 21.
+
+> 🔴 CORRECTED in fix round 1 (review L-1). This paragraph originally said "every one of which
+> contains the sidebar… changes all 22". That was wrong by one, and wrong in the direction that
+> flatters the argument. The conclusion is unaffected — 21 moved baselines is just as much a finding
+> as 22 — but a number stated for effect is exactly what this programme does not accept, so the
+> sentence is corrected rather than the conclusion defended.
 
 The constraint for this session is explicit: *no baseline may move; a moved baseline is a finding
 you report, never a file you update.* The minimal-looking option is therefore not minimal — it is a
-22-baseline change plus a new route, a new client hook, i18n keys in two languages, and role gating,
+21-baseline change plus a new route, a new client hook, i18n keys in two languages, and role gating,
 inside a session whose boundary says "no new features".
 
 This is an acceptable answer under the brief, and it is the honest one: the item is small in UI and
@@ -225,11 +280,14 @@ refusing or clearing everything.
 
 | # | Property | Mutation applied | Result |
 |---|---|---|---|
-| 1 | Only one file declares the ladder | added a ninth `const ROLE_RANK` to `Site.tsx` | ✅ `EXACTLY ONE file…` + `all eight former declarers…` red (22/24) |
-| 2 | The census counts declarations, not mentions | *(control)* comment / import / use fed to the matcher | ✅ none counted; a bare, an exported and a `let` copy all counted |
-| 3 | `stripComments` does not over-strip | *(control)* real code + a `https://` URL | ✅ code and URL path survive |
+| 1 | Only one file declares the ladder | added a plain ninth `const ROLE_RANK` to `Site.tsx` | ✅ `EXACTLY ONE file…` + `all eight former declarers…` red (26/28) |
+| 1a | **Round 1's bypass is closed** (review M-1) | the reviewer's exact line — `const __probeUrl = "https://example.com//docs"; const ROLE_RANK = {…}` — appended to `Site.tsx` | ✅ red (26/28). Under round 1 this exited **0 with two ladders in the tree** |
+| 1b | A **renamed** table is caught (review M-2) | `const RANKS = { Operator: 0, … }` appended to `Site.tsx` | ✅ red (26/28); round 1 missed it entirely |
+| 2 | The census counts declarations, not mentions | *(control)* comment / import / use / unrelated object / partial keys | ✅ none counted |
+| 3 | The census's **stated residue** is real | *(control)* `Map`, `indexOf` array, and `reduce`-built table asserted **undetected** | ✅ the documented blind spots are pinned as blind spots, so the header cannot drift from the code |
 | 4 | The gate is not "deny everything" | *(control)* 6 permit rows vs 3 deny rows asserted | ✅ both classes non-empty |
-| 5 | Logout really clears | reverted `logout` to its pre-S5 body | ✅ `DIRECTION 1` ×2 + the no-op control red (8/11) |
+| 5 | Logout really clears | neutered `isAuthGateQueryKey` in the **predicate module** to always exempt | ✅ 5 red (6/11): both `DIRECTION 1` rows, the no-op control, the namespace row, and the predicate control |
+| 5a | *(correction, review L-2)* | reverting `auth.ts`'s `logout` body | ⚠️ reddens **1**, not 3 — only the source-text seam check. The direction-1 tests execute the test file's own local `runLogoutCacheSequence`, so `auth.ts` is not in their path; the seam check is precisely what covers that gap. Row 5 above is the mutation that actually exercises the property |
 | 6 | Logout does not break the gate | swapped in naive `queryClient.clear()` | ✅ `DIRECTION 2: AuthGate can still render <Login/>` red (8/11) |
 | 7 | **Negative control** for #5/#6 | `clear()` asserted to *drop* bootstrap-status | ✅ the hazard is demonstrated, so "gate still works" is not vacuous |
 | 8 | The predicate is not a constant | *(control)* true-side and false-side keys | ✅ both reachable |
@@ -260,7 +318,7 @@ the test was corrected to the new reality, not weakened.
 | `node scripts/check-contracts.mjs` | pass | **pass (52)** ✅ |
 | `npx tsc -b --force` | clean | **clean** ✅ |
 | `npx oxlint` | 15 warnings, 0 errors | **15 warnings, 0 errors** ✅ |
-| `npm run test:runtime` | 556 | **602** (+46) ✅ |
+| `npm run test:runtime` | 556 | **606** (+50) ✅ |
 | `npm run check:test-budgets` | pass | **pass, 0 over budget** ✅ |
 | `npx playwright test` | 299 | *(see below)* |
 
@@ -283,6 +341,14 @@ verified **pre-existing** by linting the base versions of the changed files in i
 - `web/tests/38-editor-drag.spec.ts` — 0
 
 No snapshot file appears in `git status`. **No baseline moved.**
+
+### One diff entry that is not a source change
+
+`web/package.json` appears in the diff. It is the registration of the three new runtime-test files in
+the `test:runtime` command — explicit filenames, never a glob, because that script's own `//` note
+records that *a glob matching zero files exits 0 with zero tests*, and `testRuntimeScript.test.mjs`
+reddens if a `runtime-tests/*.test.mjs` is added without being listed. Registering them is what that
+file demands; the printed count was re-verified to have grown (556 → 606), not merely to still exit 0.
 
 Net production change: **−16 lines** across 12 files, despite substantially more documentation —
 the duplication removed exceeds the shared module added.

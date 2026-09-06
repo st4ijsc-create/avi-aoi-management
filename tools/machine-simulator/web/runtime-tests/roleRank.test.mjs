@@ -41,6 +41,7 @@ import assert from "node:assert/strict"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { dirname, join, relative, sep } from "node:path"
 import { fileURLToPath } from "node:url"
+import { createRequire } from "node:module"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const WEB = join(HERE, "..")
@@ -197,25 +198,95 @@ const SRC_FILES = listSources(SRC, CODE_EXTENSIONS)
 const OWNER = "lib/roleRank.ts"
 
 /**
- * Does this source DECLARE the ladder — as opposed to merely mentioning it?
+ * ── HOW A DECLARATION IS RECOGNISED, AND WHY IT IS A PARSE AND NOT A REGEX ───────────────────────
  *
- * 🔴 THE DISTINCTION IS THE WHOLE POINT. Two files in this tree (`hmi-runtime/writePermissionChannel.ts`
- * and `lib/api.ts`) name `ROLE_RANK` in prose, and the owning module quotes its own former shape in a
- * doc comment. A matcher that counted those would report ten declarations where there are one, and
- * would send the next reader to edit two files that compare no roles at all.
+ * 🔴 FIX ROUND 1, review M-1. The first version of this census stripped comments with two regexes and
+ * then matched `const|let|var ROLE_RANK`. The reviewer defeated it in one line, appended to `Site.tsx`:
  *
- * So comments are STRIPPED before matching, and what is matched is a binding — `const ROLE_RANK` /
- * `let ROLE_RANK` / `var ROLE_RANK`, optionally exported — not the identifier. An IMPORT of the name
- * is not a declaration of the table and stays legal everywhere.
+ *     const __probeUrl = "https://example.com//docs"; const ROLE_RANK: Record<string, number> = { … }
+ *
+ * The `//` inside the STRING LITERAL was read as the start of a line comment, so everything after it —
+ * including the ninth ladder — was deleted before matching. The census exited 0 with two ladders in
+ * the tree. Reproduced before fixing, and re-run as a control below.
+ *
+ * That is the same defect class this session's own report recorded learning from: the hoist-proof tool
+ * matched a declaration quoted inside a doc comment, and the lesson was written down — comment
+ * detection without a parser is not comment detection — and then not applied to the neighbouring
+ * instrument. `scripts/check-comment-only.mjs`'s header already states the general form of the trap
+ * ("a raw `ts.createScanner` is not safe… a parser knows what a backtick means") and this file now
+ * follows its remedy: TypeScript's own parse, resolved the way `editorCanvasSeam.test.mjs` resolves
+ * it. A parser knows a `//` inside a string is not a comment, and it needs no comment-stripping at
+ * all, because comments are never part of the AST in the first place.
+ *
+ * ── WHAT IS RECOGNISED: A SHAPE, NOT A NAME ──────────────────────────────────────────────────────
+ *
+ * 🔴 FIX ROUND 1, review M-2. The regex forbade one IDENTIFIER, so a renamed table or an inline
+ * literal walked straight past it. The rule is now the ladder's SHAPE: an object literal whose
+ * property names are exactly the three roles. That is what makes a second ladder a second ladder —
+ * the name it is bound to is incidental, and so is whether it is bound at all.
+ *
+ * WHAT THIS CATCHES (each asserted below, not merely claimed here):
+ *   * the shipped form, and the string-literal probe that defeated round 1;
+ *   * a RENAMED table (`const RANKS = { Operator: 0, … }`);
+ *   * an INLINE literal never bound to a name (`({ Operator: 0, … })[role]`);
+ *   * quoted keys, and keys in any order;
+ *   * while ignoring comments, imports, uses, and unrelated objects.
+ *
+ * 🔴 WHAT IT STILL DOES NOT CATCH — stated because a census claiming total reach is worse than one
+ * that names its limits, and this branch states its other limits the same way:
+ *   * `new Map([["Operator", 0], …])` — an ordered role list re-encoded as a Map;
+ *   * `["Operator","Engineer","Admin"]` with `indexOf` — the same ladder as an array;
+ *   * a table built at runtime (`ROLES.reduce(…)`), or read from JSON;
+ *   * two roles compared by `<`/`>` on some other encoding entirely.
+ * There is no finite syntactic rule that catches every re-encoding of an ordered role list, and this
+ * one does not pretend to. What it does is make the CHEAP path — copy the object literal back into a
+ * route file, under any name — impossible to take silently. Anything in the list above is a
+ * deliberate re-implementation, a different act from a copy-paste and one a reviewer reading a diff
+ * will see. SIDE A's behavioural tests are what hold if someone writes one anyway.
  */
-function stripComments(text) {
-  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+const ts = createRequire(join(WEB, "package.json"))("typescript")
+
+/**
+ * The property names of `node` if it is an object literal whose every property is a plain
+ * `name: value` assignment, else `null`. A spread or a computed key returns `null` — such a literal is
+ * not a legible table, and guessing at one would be a census reporting what it cannot see.
+ */
+function objectLiteralKeys(node) {
+  if (!ts.isObjectLiteralExpression(node)) return null
+  const keys = []
+  for (const prop of node.properties) {
+    if (!ts.isPropertyAssignment(prop)) return null
+    const name = prop.name
+    if (ts.isIdentifier(name) || ts.isStringLiteral(name)) keys.push(name.text)
+    else return null
+  }
+  return keys
 }
 
-const DECLARES = /(?:^|\n)\s*(?:export\s+)?(?:const|let|var)\s+ROLE_RANK\b/
+/** Is this node an object literal keyed by exactly the three roles — under any name, or none? */
+function isLadderLiteral(node) {
+  const keys = objectLiteralKeys(node)
+  return keys !== null && keys.length === ROLES.length && ROLES.every((role) => keys.includes(role))
+}
+
+/** Every ladder-shaped object literal in `text`, as `{ line }` records. */
+function laddersIn(text, fileName = "probe.tsx") {
+  const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const hits = []
+  const walk = (node) => {
+    if (isLadderLiteral(node)) {
+      hits.push({ line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1 })
+    }
+    ts.forEachChild(node, walk)
+  }
+  walk(sourceFile)
+  return hits
+}
+
+const declaresLadder = (text) => laddersIn(text).length > 0
 
 function declaringFiles() {
-  return SRC_FILES.filter((rel) => DECLARES.test(stripComments(readSource(join(SRC, rel)))))
+  return SRC_FILES.filter((rel) => declaresLadder(readSource(join(SRC, rel))))
 }
 
 test("floor: the census reads a real source tree and can see the owning module", () => {
@@ -227,13 +298,28 @@ test("floor: the census reads a real source tree and can see the owning module",
   }
 })
 
+test("floor: the parser really parses — a syntactically real file yields real declarations", () => {
+  // If `createSourceFile` were handed something it could not parse it would return an AST full of
+  // error nodes and this census would quietly find nothing anywhere. One positive probe pins it works.
+  const hits = laddersIn("const A = { Operator: 0, Engineer: 1, Admin: 2 }\nconst B = { x: 1 }\n")
+  assert.equal(hits.length, 1)
+  assert.equal(hits[0].line, 1)
+})
+
 test("EXACTLY ONE file under web/src declares the role ladder, and it is lib/roleRank.ts", () => {
   assert.deepEqual(
     declaringFiles(),
     [OWNER],
-    "a ninth ROLE_RANK declaration has appeared (or the one true one moved) — import it from " +
-      "`@/lib/roleRank` instead of re-declaring the table"
+    "a second role ladder has appeared (or the one true one moved) — import `meetsMinRole`/" +
+      "`navMeetsMinRole` from `@/lib/roleRank` instead of re-declaring the table"
   )
+})
+
+test("the owning module declares the ladder exactly ONCE — its doc comment does not count", () => {
+  // `lib/roleRank.ts` quotes the old declaration in its own header. A parser never sees it, which is
+  // the property that makes this whole census trustworthy; asserted rather than assumed.
+  const hits = laddersIn(readSource(join(SRC, OWNER)), OWNER)
+  assert.equal(hits.length, 1, `expected one ladder in ${OWNER}, found ${hits.length}`)
 })
 
 test("all eight former declarers now IMPORT the ladder instead of declaring it", () => {
@@ -251,13 +337,13 @@ test("all eight former declarers now IMPORT the ladder instead of declaring it",
     ["shell/Sidebar.tsx", "navMeetsMinRole"],
   ]
   for (const [rel, fn] of FORMER) {
-    const text = stripComments(readSource(join(SRC, rel)))
+    const text = readSource(join(SRC, rel))
     assert.match(
       text,
       new RegExp(`import\\s*\\{[^}]*\\b${fn}\\b[^}]*\\}\\s*from\\s*["']@/lib/roleRank["']`),
       `${rel} does not import ${fn} from @/lib/roleRank`
     )
-    assert.ok(!DECLARES.test(text), `${rel} declares ROLE_RANK again`)
+    assert.ok(!declaresLadder(text), `${rel} declares a role ladder again`)
   }
 })
 
@@ -267,42 +353,84 @@ test("the PROSE-ONLY mention is still prose, and was not mistaken for a declarat
   // mentions would have "consolidated" both, neither of which compares a role at all.
   //
   // `lib/api.ts`'s mention was retired in this same session: its text was the M-1 note saying the
-  // cache defect was "carried to S5 alongside the eight duplicate ROLE_RANK tables", and once M-1 was
-  // actually fixed that sentence was rewritten to describe the fix. So one prose mention remains, and
+  // cache defect was "carried to S5 alongside the eight duplicate ROLE_RANK tables", and once that was
+  // actually fixed the sentence was rewritten to describe the fix. So one prose mention remains, and
   // it is the one whose whole point is to say NO role comparison belongs on that path. An earlier
-  // version of this test asserted both, and reddened when `api.ts` was edited — which is the control
-  // working: it refuses to keep claiming something that stopped being true.
+  // version of this test asserted both, and reddened when `api.ts` was edited — the control refusing
+  // to keep claiming something that had stopped being true.
   const rel = "hmi-runtime/writePermissionChannel.ts"
   const raw = readSource(join(SRC, rel))
   assert.ok(raw.includes("ROLE_RANK"), `${rel} no longer mentions ROLE_RANK — this control is stale`)
-  assert.ok(!DECLARES.test(stripComments(raw)), `${rel} now DECLARES the ladder`)
+  assert.ok(!declaresLadder(raw), `${rel} now DECLARES a ladder`)
   assert.ok(!declaringFiles().includes(rel), `${rel} was counted as a declarer`)
 
-  // `lib/api.ts` must still not declare it, mention or no mention — that half of the guard stands.
+  // `lib/api.ts` must still not declare one, mention or no mention — that half of the guard stands.
   assert.ok(!declaringFiles().includes("lib/api.ts"), "lib/api.ts was counted as a declarer")
 })
 
-test("FALSIFICATION CONTROL: the matcher really fires on a ninth copy, and really ignores a mention", () => {
-  // Without this pair, `EXACTLY ONE` above would pass just as happily against a regex that matches
-  // nothing at all — the exact way a census can measure zero and look green.
-  const NINTH = `const ROLE_RANK: Record<string, number> = { Operator: 0, Engineer: 1, Admin: 2 }\n`
-  assert.ok(DECLARES.test(stripComments(`import x from "y"\n${NINTH}`)), "the matcher missed a bare ninth copy")
-  assert.ok(DECLARES.test(stripComments(`export ${NINTH}`)), "the matcher missed an EXPORTED ninth copy")
-  assert.ok(DECLARES.test(stripComments(`let ROLE_RANK = {}\n`)), "the matcher missed a `let` declaration")
+// ── the census's own falsification: what it catches, and what it admits it does not ───────────────
 
-  // …and the other direction: the shapes that must NOT count.
-  assert.ok(!DECLARES.test(stripComments(`/** eight copies of ROLE_RANK once lived here */\n`)), "a block comment counted")
-  assert.ok(!DECLARES.test(stripComments(`// const ROLE_RANK: Record<string, number> = {}\n`)), "a line comment counted")
-  assert.ok(
-    !DECLARES.test(stripComments(`import { ROLE_RANK } from "@/lib/roleRank"\n`)),
-    "an import counted as a declaration"
-  )
-  assert.ok(!DECLARES.test(stripComments(`const x = ROLE_RANK["Admin"]\n`)), "a USE counted as a declaration")
+test("FALSIFICATION CONTROL: the M-1 string-literal probe is CAUGHT — round 1's bypass is closed", () => {
+  // 🔴 THE REVIEWER'S EXACT PROBE. Under round 1's regex the `//` in the URL swallowed the rest of the
+  // line and the census exited 0 with two ladders in the tree.
+  const PROBE =
+    'const __probeUrl = "https://example.com//docs"; const ROLE_RANK: Record<string, number> = ' +
+    "{ Operator: 0, Engineer: 1, Admin: 2 }\n"
+  assert.equal(laddersIn(PROBE).length, 1, "the string-literal probe still hides a ladder")
+
+  // …and the PLAIN form must keep reddening too — closing the probe must not have cost the base case.
+  const PLAIN = "const ROLE_RANK: Record<string, number> = { Operator: 0, Engineer: 1, Admin: 2 }\n"
+  assert.equal(laddersIn(PLAIN).length, 1, "the plain ninth copy is no longer caught")
+
+  // Both in one file are two ladders, not one.
+  assert.equal(laddersIn(PROBE + PLAIN).length, 2)
 })
 
-test("FALSIFICATION CONTROL: stripComments does not eat code, and does not spare a URL's slashes", () => {
-  // If `stripComments` over-stripped, the census would report zero declarers and stay green forever.
-  assert.ok(stripComments(`const a = 1 // note\nconst ROLE_RANK = {}\n`).includes("const ROLE_RANK"))
-  assert.ok(stripComments(`const u = "https://x/y"\nconst ROLE_RANK = {}\n`).includes("const ROLE_RANK"))
-  assert.ok(stripComments(`const u = "https://x/y"`).includes("https://x/y"), "a URL lost its path")
+test("FALSIFICATION CONTROL: a RENAMED table and an INLINE literal are caught (review M-2)", () => {
+  // The round-1 regex forbade an identifier, so both of these walked past it.
+  assert.equal(laddersIn("const RANKS = { Operator: 0, Engineer: 1, Admin: 2 }\n").length, 1, "a rename escaped")
+  assert.equal(
+    laddersIn("const ok = ({ Operator: 0, Engineer: 1, Admin: 2 })[role] >= 1\n").length,
+    1,
+    "an inline literal escaped"
+  )
+  assert.equal(laddersIn('const R = { "Operator": 0, "Engineer": 1, "Admin": 2 }\n').length, 1, "quoted keys escaped")
+  assert.equal(laddersIn("const R = { Admin: 2, Operator: 0, Engineer: 1 }\n").length, 1, "reordered keys escaped")
+})
+
+test("FALSIFICATION CONTROL: comments, imports and uses are NOT declarations", () => {
+  // The other direction. Without these the census could be satisfied by a rule that fires on anything
+  // containing the three words — which would report the owning module's own header as a violation.
+  for (const notADeclaration of [
+    "/** const ROLE_RANK = { Operator: 0, Engineer: 1, Admin: 2 } */\n",
+    "// const ROLE_RANK = { Operator: 0, Engineer: 1, Admin: 2 }\n",
+    'import { ROLE_RANK } from "@/lib/roleRank"\n',
+    'const x = ROLE_RANK["Admin"]\n',
+    'const s = "Operator Engineer Admin"\n',
+    "const colours = { red: 0, green: 1, blue: 2 }\n",
+    "const partial = { Operator: 0, Engineer: 1 }\n",
+  ]) {
+    assert.equal(laddersIn(notADeclaration).length, 0, `counted as a declaration: ${notADeclaration.trim()}`)
+  }
+})
+
+test("STATED RESIDUE: re-encodings this census does NOT catch, asserted so the limit is honest", () => {
+  // 🔴 These are the census's known blind spots, pinned AS blind spots. If a later change makes any of
+  // them detectable, this test reddens and the header's "what it does not catch" list must be
+  // corrected — which is the point: the limit is measured, not merely described.
+  //
+  // Each is a deliberate re-implementation rather than a copy of the literal, and SIDE A's behavioural
+  // tests are what hold if someone writes one.
+  const RESIDUE = [
+    'const m = new Map([["Operator", 0], ["Engineer", 1], ["Admin", 2]])\n',
+    'const order = ["Operator", "Engineer", "Admin"]\nconst ok = order.indexOf(a) >= order.indexOf(b)\n',
+    'const built = ["Operator", "Engineer", "Admin"].reduce((acc, r, i) => ({ ...acc, [r]: i }), {})\n',
+  ]
+  for (const reEncoding of RESIDUE) {
+    assert.equal(
+      laddersIn(reEncoding).length,
+      0,
+      `this census now DETECTS a re-encoding it documents as out of reach — update the header:\n${reEncoding}`
+    )
+  }
 })
