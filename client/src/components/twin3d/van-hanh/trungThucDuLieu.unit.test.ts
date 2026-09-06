@@ -19,6 +19,7 @@ import {
   demTheoTrangThai,
   demTheoTuoi,
   doiSoatCanh,
+  gopTinhTrang,
   hienSo,
   nhanDoTuoi,
   thoiDiemDuLieuMoiNhat,
@@ -277,5 +278,102 @@ describe("nhanDoTuoi", () => {
 
   it("★ đồng hồ client chạy TRƯỚC server ⇒ kẹp về 0, không hiện 'cập nhật -3 giây trước'", () => {
     expect(nhanDoTuoi(BAY_GIO + 3_000, BAY_GIO).giay).toBe(0);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ CHẶN-2 — TRUY VẤN BỊ TỪ CHỐI KHÔNG ĐƯỢC HIỆN THÀNH `0`                 */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("gopTinhTrang — 403 phải ra `—` + banner, KHÔNG ra `0`", () => {
+  const ok = (ten: string) => ({ ten, dangTai: false, loi: false, ma: null });
+  const tuChoi = (ten: string) => ({ ten, dangTai: false, loi: true, ma: "FORBIDDEN" });
+  const loiMang = (ten: string) => ({ ten, dangTai: false, loi: true, ma: "INTERNAL_SERVER_ERROR" });
+  const dangTai = (ten: string) => ({ ten, dangTai: true, loi: false, ma: null });
+
+  it("mọi truy vấn OK ⇒ chuaDo false, không tên nào bị nêu", () => {
+    const r = gopTinhTrang([ok("twinCanh.canhThietKe"), ok("andon.active")]);
+    expect(r).toEqual({ chuaDo: false, biTuChoi: [], loiKhac: [] });
+  });
+
+  it("★ CA DƯƠNG THẬT — maint1 bị 403 ở `andon.active`", () => {
+    // Đây là ca ĐO ĐƯỢC trên trình duyệt, không phải ca dựng: `maint1` không có
+    // quyền đọc andon, truy vấn trả FORBIDDEN, mảng rơi về [] và `isLoading` đã
+    // false ⇒ bản cũ in "Cảnh báo (0)".
+    const r = gopTinhTrang([
+      ok("twinCanh.canhThietKe"),
+      ok("factoryCommand.overview"),
+      tuChoi("andon.active"),
+    ]);
+    expect(r.chuaDo).toBe(true);
+    expect(r.biTuChoi).toEqual(["andon.active"]);
+    expect(r.loiKhac).toEqual([]);
+  });
+
+  it("★ hienSo NHẬN cờ đó ⇒ '—', trong khi số 0 THẬT vẫn ra '0'", () => {
+    // Ghim đúng chỗ nối bị thiếu: mảng rỗng vì 403 và mảng rỗng vì thật sự
+    // không có cảnh báo nào là HAI câu khác nhau, và chỉ cờ này tách được.
+    const r = gopTinhTrang([tuChoi("andon.active")]);
+    expect(hienSo(0, r.chuaDo)).toBe("—");
+    const sach = gopTinhTrang([ok("andon.active")]);
+    expect(hienSo(0, sach.chuaDo)).toBe("0");
+  });
+
+  it("★ 403 TÁCH khỏi lỗi mạng — hai cái dẫn tới hai hành động khác nhau", () => {
+    // Gộp chung thì banner sẽ bảo người mất mạng đi xin quyền, và bảo người
+    // thiếu quyền đi thử lại. Cả hai lời khuyên đều sai.
+    const r = gopTinhTrang([tuChoi("andon.active"), loiMang("factoryCommand.overview")]);
+    expect(r.biTuChoi).toEqual(["andon.active"]);
+    expect(r.loiKhac).toEqual(["factoryCommand.overview"]);
+    expect(r.chuaDo).toBe(true);
+  });
+
+  it("lỗi KHÔNG phải 403 vẫn bật chuaDo — số vẫn chưa có nghĩa", () => {
+    const r = gopTinhTrang([loiMang("andon.active")]);
+    expect(r.chuaDo).toBe(true);
+    expect(r.biTuChoi).toEqual([]);
+  });
+
+  it("đang tải bật chuaDo nhưng KHÔNG nêu tên — chưa có gì để trách", () => {
+    const r = gopTinhTrang([dangTai("andon.active")]);
+    expect(r).toEqual({ chuaDo: true, biTuChoi: [], loiKhac: [] });
+  });
+
+  it("nêu ĐÍCH DANH nhiều truy vấn bị từ chối, giữ nguyên thứ tự khai", () => {
+    const r = gopTinhTrang([tuChoi("twinCanh.canhThietKe"), ok("x"), tuChoi("andon.active")]);
+    expect(r.biTuChoi).toEqual(["twinCanh.canhThietKe", "andon.active"]);
+  });
+
+  it("★ CA CÂM HƠN 403 — truy vấn `enabled:false` chưa từng chạy", () => {
+    // Đo thật với `maint1`: `factory.list` trả `[]` kèm HTTP **200** (KHÔNG 403),
+    // nên `factoryId` ở lại null và canhQ/overviewQ bị enabled:false. react-query
+    // để isLoading=false + isError=false ⇒ ô đếm in `0` trông y như một nhà máy
+    // đã đo xong và rỗng thật. Không lỗi nào nổ.
+    const r = gopTinhTrang([
+      ok("factory.list"),
+      { ten: "twinCanh.canhThietKe", dangTai: false, loi: false, ma: null, chuaChay: true },
+      { ten: "factoryCommand.overview", dangTai: false, loi: false, ma: null, chuaChay: true },
+    ]);
+    expect(r.chuaDo).toBe(true);
+    expect(hienSo(0, r.chuaDo)).toBe("—");
+  });
+
+  it("★ chưa-chạy KHÔNG bị nêu tên trong banner — không ai từ chối họ cả", () => {
+    // Nêu tên sẽ gửi người dùng đi xin một quyền mà họ không hề thiếu.
+    const r = gopTinhTrang([
+      { ten: "twinCanh.canhThietKe", dangTai: false, loi: false, ma: null, chuaChay: true },
+    ]);
+    expect(r.biTuChoi).toEqual([]);
+    expect(r.loiKhac).toEqual([]);
+    expect(r.chuaDo).toBe(true);
+  });
+
+  it("chuaChay=false không bật gì — cờ vắng mặt phải trung tính", () => {
+    const r = gopTinhTrang([{ ten: "x", dangTai: false, loi: false, ma: null, chuaChay: false }]);
+    expect(r.chuaDo).toBe(false);
+  });
+
+  it("danh sách rỗng ⇒ không chuaDo (không tự bịa lỗi khi chưa hỏi gì)", () => {
+    expect(gopTinhTrang([])).toEqual({ chuaDo: false, biTuChoi: [], loiKhac: [] });
   });
 });

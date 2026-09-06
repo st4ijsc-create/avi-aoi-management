@@ -88,6 +88,7 @@ import {
 import {
   demTheoTuoi,
   doiSoatCanh,
+  gopTinhTrang,
   hienSo,
   nhanDoTuoi,
   thoiDiemDuLieuMoiNhat,
@@ -509,7 +510,74 @@ export default function TwinVanHanh() {
   /* NT-3 — đếm, đối soát, độ tươi                                            */
   /* ═══════════════════════════════════════════════════════════════════════ */
 
-  const dangTai = canhQ.isLoading || overviewQ.isLoading;
+  /**
+   * ★★★ CHẶN-2 (Đợt 5) — TRUY VẤN BỊ TỪ CHỐI KHÔNG ĐƯỢC HIỆN THÀNH `0`.
+   *
+   * Bản trước chỉ truyền `isLoading` vào `hienSo(...)`. Với `maint1` (không có
+   * quyền `andon.active`), truy vấn trả 403, mảng rơi về `[]`, `isLoading` đã
+   * `false` ⇒ màn in **"Cảnh báo (0)"** — lời khai *"đã kiểm tra, không có cảnh
+   * báo nào"* nói với một người không được phép thấy cảnh báo nào cả.
+   *
+   * `hienSo` VỐN ĐÃ đúng (trả `—` khi cờ bật); khuyết tật nằm ở đúng một chỗ:
+   * tầng trang không nối `isError` vào. Nên bản vá là NỐI ĐỦ, không phải viết
+   * lại hàm — và gộp một lần ở đây để không call site nào quên.
+   */
+  const tinhTrang = useMemo(
+    () =>
+      gopTinhTrang([
+        {
+          ten: "factory.list",
+          dangTai: factoriesQ.isLoading,
+          loi: factoriesQ.isError,
+          ma: (factoriesQ.error?.data as { code?: string } | undefined)?.code,
+        },
+        {
+          ten: "twinCanh.canhThietKe",
+          dangTai: canhQ.isLoading,
+          loi: canhQ.isError,
+          ma: (canhQ.error?.data as { code?: string } | undefined)?.code,
+          // `enabled: factoryId !== null` ⇒ chưa có nhà máy thì truy vấn này
+          // KHÔNG chạy, và react-query báo isLoading=false/isError=false.
+          chuaChay: factoryId === null,
+        },
+        {
+          ten: "factoryCommand.overview",
+          dangTai: overviewQ.isLoading,
+          loi: overviewQ.isError,
+          ma: (overviewQ.error?.data as { code?: string } | undefined)?.code,
+          chuaChay: factoryId === null,
+        },
+        {
+          ten: "andon.active",
+          dangTai: andonQ.isLoading,
+          loi: andonQ.isError,
+          ma: (andonQ.error?.data as { code?: string } | undefined)?.code,
+        },
+      ]),
+    [
+      factoriesQ.isLoading, factoriesQ.isError, factoriesQ.error,
+      canhQ.isLoading, canhQ.isError, canhQ.error,
+      overviewQ.isLoading, overviewQ.isError, overviewQ.error,
+      andonQ.isLoading, andonQ.isError, andonQ.error,
+      factoryId,
+    ],
+  );
+
+  /**
+   * Cờ cho các ô đếm dựng từ `canhQ` + `overviewQ`. `isError` gộp vào cùng
+   * `isLoading`: với ô hiển thị, "đang tải" và "hỏi bị từ chối" nói CÙNG một
+   * câu — *con số này chưa có nghĩa* — nên cả hai phải ra `—`.
+   */
+  const dangTai =
+    canhQ.isLoading ||
+    overviewQ.isLoading ||
+    canhQ.isError ||
+    overviewQ.isError ||
+    factoriesQ.isLoading ||
+    factoriesQ.isError ||
+    // ★ Chưa có nhà máy nào ⇒ hai truy vấn nền chưa từng chạy. Ô đếm phải là
+    //   `—`, không phải `0`: chưa hỏi thì chưa có câu trả lời nào để in.
+    factoryId === null;
   const demTuoi = useMemo(() => demTheoTuoi(mayVanHanh, bayGio), [mayVanHanh, bayGio]);
   const tsNen = useMemo(() => thoiDiemDuLieuMoiNhat(mayVanHanh), [mayVanHanh]);
   const doTuoiNen = nhanDoTuoi(tsNen, bayGio);
@@ -679,6 +747,31 @@ export default function TwinVanHanh() {
         </div>
       </header>
 
+      {/*
+        ── ★★★ CHẶN-2 — BANNER TRUY VẤN BỊ TỪ CHỐI ──────────────────────
+        Nêu ĐÍCH DANH truy vấn nào bị chặn. Một banner chung chung ("thiếu
+        quyền") để người dùng và người trực tổng đài đoán mò xem thiếu cái gì;
+        tên tRPC nguyên văn cho họ đúng chuỗi để đọc cho quản trị viên.
+        Đặt TRƯỚC banner đối soát: đối soát tính trên dữ liệu, mà dữ liệu đang
+        thiếu ⇒ câu nói về quyền phải tới trước.
+      */}
+      {tinhTrang.biTuChoi.length > 0 ? (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b border-destructive/40 bg-destructive/10 px-3 py-1 text-[11px] text-destructive"
+          data-testid="banner-thieu-quyen-truy-van"
+          data-truy-van={tinhTrang.biTuChoi.join(",")}
+        >
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            {t(
+              "twin3d.vanHanh.thieuQuyenTruyVan",
+              "Không đủ quyền xem dữ liệu — liên hệ quản trị viên. Truy vấn bị từ chối: {{ds}}",
+              { ds: tinhTrang.biTuChoi.join(", ") },
+            )}
+          </span>
+        </div>
+      ) : null}
+
       {/* ── Banner đối soát (NT-3.3) — thuốc chống model drift ─────────── */}
       {!dangTai && doiSoat.lech ? (
         <div
@@ -736,7 +829,7 @@ export default function TwinVanHanh() {
           {/* Cảnh báo */}
           <div className="shrink-0 border-b p-2" data-testid="khoi-canh-bao">
             <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("twin3d.vanHanh.canhBao", "Cảnh báo")} ({hienSo(andonRows.length, andonQ.isLoading)})
+              {t("twin3d.vanHanh.canhBao", "Cảnh báo")} ({hienSo(andonRows.length, andonQ.isLoading || andonQ.isError)})
             </h2>
             <ul className="max-h-24 space-y-0.5 overflow-y-auto">
               {andonRows.slice(0, 12).map((a) => (

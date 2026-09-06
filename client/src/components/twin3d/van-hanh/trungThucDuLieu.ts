@@ -263,6 +263,89 @@ export function hienSo(giaTri: number | null | undefined, dangTai = false): stri
   return String(giaTri);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ CHẶN-2 (Đợt 5) — TRUY VẤN BỊ TỪ CHỐI KHÔNG ĐƯỢC HIỆN THÀNH `0`         */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Một truy vấn của màn Vận hành, rút về ĐÚNG hai bit mà tầng trình bày cần.
+ *
+ * ⚠ Cố ý KHÔNG nhận cả object query của react-query: module này thuần (RB-8.1)
+ * và phải test được ở `environment: "node"`. Tầng trang bóc `isLoading`/`isError`
+ * ra rồi truyền vào — đó cũng là chỗ ĐÃ thiếu và sinh ra chính lỗi này.
+ */
+export interface TinhTrangTruyVan {
+  /** Tên đường dẫn tRPC, ví dụ `"andon.active"`. Hiện NGUYÊN VĂN trong banner. */
+  ten: string;
+  dangTai: boolean;
+  loi: boolean;
+  /** Mã lỗi tRPC (`error.data.code`), dùng để tách 403 khỏi lỗi mạng. */
+  ma?: string | null;
+  /**
+   * ★★★ `enabled: false` — truy vấn CHƯA TỪNG CHẠY.
+   *
+   * Ca này ĐO ĐƯỢC và câm hơn cả 403: với `maint1`, `factory.list` trả `[]` kèm
+   * **HTTP 200** (không phải 403), nên `factoryId` ở lại `null` và `canhQ`/
+   * `overviewQ` bị `enabled: false` — không bao giờ chạy. react-query để
+   * `isLoading=false`, `isError=false`, dữ liệu `undefined` ⇒ mọi ô đếm rơi về
+   * `0` và trông y hệt một nhà máy đã đo xong và rỗng thật.
+   *
+   * "Chưa hỏi" KHÔNG phải "đã hỏi và được trả lời 0". Cờ này giữ hai câu đó tách
+   * nhau, y như `chuaDo` giữ 403 tách khỏi 0.
+   */
+  chuaChay?: boolean;
+}
+
+/** Mã tRPC nghĩa là "đã tới server, server TỪ CHỐI vì quyền". */
+export const MA_TU_CHOI = "FORBIDDEN";
+
+export interface KetQuaChuaDo {
+  /** `true` khi có BẤT KỲ truy vấn nào chưa cho ra số dùng được. */
+  chuaDo: boolean;
+  /** Tên các truy vấn bị server TỪ CHỐI (403). Rỗng khi không có. */
+  biTuChoi: string[];
+  /** Tên các truy vấn lỗi vì lý do KHÁC 403 (mạng, 500…). */
+  loiKhac: string[];
+}
+
+/**
+ * ★★★ VÌ SAO HÀM NÀY TỒN TẠI — lỗi ĐO ĐƯỢC, không phải phòng xa.
+ *
+ * `hienSo(giaTri, dangTai)` ĐÃ đúng từ đầu: nó trả `—` khi `dangTai`. Nhưng tầng
+ * trang chỉ truyền `isLoading` vào, KHÔNG truyền `isError`. Hậu quả đo được bằng
+ * tài khoản `maint1` (không có quyền `andon.active`): truy vấn trả 403,
+ * `andonRows` rơi về `[]`, `andonRows.length` là `0`, `isLoading` đã `false`
+ * ⇒ màn hình in **"Cảnh báo (0)"**.
+ *
+ * `0` ở đó là một LỜI KHAI SAI VỀ THẾ GIỚI, không phải một ô trống: nó nói
+ * *"đã kiểm tra, nhà máy KHÔNG có cảnh báo nào"* với một người thực ra **không
+ * được phép nhìn thấy cảnh báo nào cả**. Người trực ca đọc `0` rồi đi về. Đây
+ * đúng lớp lỗi mà cả module NT-3 này sinh ra để chặn — chỉ khác là lần này
+ * nguồn im lặng không phải cái máy, mà là CỔNG QUYỀN.
+ *
+ * ⇒ Lỗi và đang-tải PHẢI gộp chung về một bit `chuaDo`, vì với tầng hiển thị
+ *   chúng nói CÙNG một câu: "con số này chưa có nghĩa". Nhưng banner thì phải
+ *   tách 403 khỏi lỗi mạng, vì hai cái dẫn tới hai hành động khác nhau của
+ *   người dùng (xin quyền vs. thử lại).
+ */
+export function gopTinhTrang(ds: readonly TinhTrangTruyVan[]): KetQuaChuaDo {
+  const biTuChoi: string[] = [];
+  const loiKhac: string[] = [];
+  let chuaDo = false;
+  for (const q of ds) {
+    if (q.dangTai) chuaDo = true;
+    // Chưa chạy ⇒ chưa đo. Không nêu tên: không ai bị TỪ CHỐI, nên đổ lỗi cho
+    // truy vấn này sẽ gửi người dùng đi xin một quyền mà họ không thiếu.
+    if (q.chuaChay) chuaDo = true;
+    if (q.loi) {
+      chuaDo = true;
+      if (q.ma === MA_TU_CHOI) biTuChoi.push(q.ten);
+      else loiKhac.push(q.ten);
+    }
+  }
+  return { chuaDo, biTuChoi, loiKhac };
+}
+
 /**
  * Nhãn "cập nhật N trước" + cờ có nên tô đỏ không (NT-3.2: đỏ khi > 60 giây).
  *

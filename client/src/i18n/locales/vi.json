@@ -20081,6 +20081,7 @@
       "chuaTungBaoCao": "Chưa từng nhận dữ liệu",
       "duLieuQuaCu": "Dữ liệu quá cũ — trạng thái không đáng tin",
       "doiSoatLech": "{{thieu}} máy chưa xếp chỗ · {{moCoi}} đặt chỗ trỏ vào máy đã ngừng",
+      "thieuQuyenTruyVan": "Không đủ quyền xem dữ liệu — liên hệ quản trị viên. Truy vấn bị từ chối: {{ds}}",
       "moXuongDung": "Mở Xưởng dựng",
       "thieuQuyenBoCuc": "Chưa có quyền đọc bố cục nhà xưởng",
       "thieuQuyenBoCucMoTa": "Bạn xem được màn Vận hành, nhưng dữ liệu mặt bằng 3D cần quyền cấu hình nhà máy hoặc điều khiển thiết bị. Liên hệ quản trị để được cấp.",

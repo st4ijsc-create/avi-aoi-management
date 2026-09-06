@@ -20101,6 +20101,7 @@
       "chuaTungBaoCao": "Never reported",
       "duLieuQuaCu": "Data too old — status not trustworthy",
       "doiSoatLech": "{{thieu}} machines not placed · {{moCoi}} placements point at retired machines",
+      "thieuQuyenTruyVan": "Insufficient permission to view data - contact an administrator. Denied queries: {{ds}}",
       "moXuongDung": "Open Studio",
       "thieuQuyenBoCuc": "No permission to read the factory layout",
       "thieuQuyenBoCucMoTa": "You can view the Operations screen, but the 3D layout data requires factory-settings or machine-control permission. Contact an administrator.",

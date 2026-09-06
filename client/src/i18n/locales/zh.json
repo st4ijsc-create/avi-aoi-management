@@ -20109,6 +20109,7 @@
       "chuaTungBaoCao": "从未上报数据",
       "duLieuQuaCu": "数据过旧——状态不可信",
       "doiSoatLech": "{{thieu}} 台设备未布置 · {{moCoi}} 条布置指向已停用设备",
+      "thieuQuyenTruyVan": "权限不足，无法查看数据 — 请联系管理员。被拒绝的查询：{{ds}}",
       "moXuongDung": "打开设计工作室",
       "thieuQuyenBoCuc": "无权读取厂房布局",
       "thieuQuyenBoCucMoTa": "您可以查看运行画面，但 3D 布局数据需要工厂配置或设备控制权限。请联系管理员。",
