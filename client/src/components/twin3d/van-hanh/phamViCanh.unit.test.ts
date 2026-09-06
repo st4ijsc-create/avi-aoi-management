@@ -10,6 +10,8 @@ import { describe, it, expect } from "vitest";
 import { bboxRong, bboxTuDiem } from "../heToaDo";
 import {
   DO_MO_NGOAI_PHAM_VI,
+  HE_SO_CAO,
+  HE_SO_LUI,
   KHOANG_CACH_TOI_DA_CAP_MAY,
   TI_LE_PHA_NGOAI_PHAM_VI,
   TWEEN_DOI_CAP_MS,
@@ -109,6 +111,97 @@ describe("khungNhinCho — ★★★ G8: bbox rỗng KHÔNG sinh khung nhìn", (
     for (let i = 1; i < luiDan.length; i += 1) {
       expect(luiDan[i]).toBeGreaterThan(luiDan[i - 1]);
     }
+  });
+
+  /* ═════════════════════════════════════════════════════════════════════ */
+  /* ★★★ T-2 (Đợt 5) — VÙNG MÙ `HE_SO_LUI` / `HE_SO_CAO`                    */
+  /* ═════════════════════════════════════════════════════════════════════ */
+  /*
+   * Test "đơn điệu" ngay TRÊN đo `Math.hypot(lui, cao, lui)` — MỘT CON SỐ GỘP.
+   * Một con số gộp không thể thấy hai thành phần ĐỔI CHỖ cho nhau, cũng không
+   * thấy một cấp bị chép đè giá trị của cấp khác: chỉ cần tổng bình phương giữ
+   * thứ tự thì nó vẫn xanh. Đây đúng bài học G7 — ĐO NHẦM ĐẠI LƯỢNG.
+   *
+   * Bốn test dưới đo `lui` và `cao` RỜI NHAU, trên từng cấp, nên đột biến vào
+   * một ô bất kỳ của một trong hai bảng đều có chỗ để kêu.
+   */
+
+  /** Bbox nhỏ để cấp `may` KHÔNG chạm trần 8 m — chạm trần thì `lui` bị kẹp và
+   *  phép đo mất đúng cái nó định đo (một dạng G7 khác). */
+  const BBOX_NHO = bboxTuDiem([
+    { x: 0, y: 0, z: 0 },
+    { x: 2, y: 1, z: 2 },
+  ]);
+  const CAPS: CapPhamVi[] = ["tapDoan", "nhaMay", "tang", "line", "may"];
+  /** Hệ số lùi ĐO ĐƯỢC từ hình học, tách riêng khỏi trục cao. */
+  const luiDo = () =>
+    CAPS.map((c) => {
+      const kn = khungNhinCho(BBOX_NHO, c)!;
+      return (kn.viTri[0] - kn.muc[0]) / kn.banKinh;
+    });
+  /** Hệ số cao ĐO ĐƯỢC từ hình học, tách riêng khỏi trục lùi. */
+  const caoDo = () =>
+    CAPS.map((c) => {
+      const kn = khungNhinCho(BBOX_NHO, c)!;
+      return (kn.viTri[1] - kn.muc[1]) / kn.banKinh;
+    });
+
+  /*
+   * ⚠ MỖI ràng buộc một `it()` RIÊNG — cố ý. Gộp bốn `expect` vào một `it()`
+   * thì vitest dừng ở `expect` đầu tiên hỏng, nên một đột biến chỉ làm ĐỎ được
+   * ĐÚNG MỘT test dù nó phá vỡ cả bốn ràng buộc. Số test đỏ khi đó đo "có bao
+   * nhiêu it()", KHÔNG đo "đột biến phá bao nhiêu tính chất" — lại là G7.
+   */
+
+  it("★ T-2 `HE_SO_LUI` khớp bảng SỐ VIẾT TAY (không đọc lại chính hằng)", () => {
+    // So kết quả với chính hằng đang đo thì hai vế cùng trôi theo nhau và phép
+    // đo KHÔNG BAO GIỜ đỏ — bẫy "hai phép đo của TÔI tự thoả".
+    expect(luiDo()).toEqual([2.4, 1.9, 1.6, 1.35, 1.1].map((v) => expect.closeTo(v, 6)));
+  });
+
+  it("★ T-2 năm hệ số lùi ĐÔI MỘT KHÁC NHAU", () => {
+    // Bắt ca chép đè: một cấp mang giá trị của cấp khác.
+    expect(new Set(luiDo().map((v) => v.toFixed(6))).size).toBe(5);
+  });
+
+  it("★ T-2 hệ số lùi GIẢM DẦN CHẶT theo cấp", () => {
+    const lui = luiDo();
+    for (let i = 1; i < lui.length; i += 1) expect(lui[i]).toBeLessThan(lui[i - 1]);
+  });
+
+  it("★ T-2 bảng `HE_SO_LUI` công bố ra ngoài khớp số đo từ hình học", () => {
+    const lui = luiDo();
+    CAPS.forEach((c, i) => expect(HE_SO_LUI[c]).toBeCloseTo(lui[i], 6));
+  });
+
+  it("★ T-2 `HE_SO_CAO` khớp bảng SỐ VIẾT TAY", () => {
+    expect(caoDo()).toEqual([1.8, 1.1, 0.9, 0.55, 0.7].map((v) => expect.closeTo(v, 6)));
+  });
+
+  it("★ T-2 năm hệ số cao ĐÔI MỘT KHÁC NHAU", () => {
+    expect(new Set(caoDo().map((v) => v.toFixed(6))).size).toBe(5);
+  });
+
+  it("★ T-2 bảng `HE_SO_CAO` công bố ra ngoài khớp số đo từ hình học", () => {
+    const cao = caoDo();
+    CAPS.forEach((c, i) => expect(HE_SO_CAO[c]).toBeCloseTo(cao[i], 6));
+  });
+
+  it("★ T-2 `cao` KHÔNG đơn điệu — `may` cao hơn `line` (line nhìn THẤP dọc trục)", () => {
+    // Ghim đúng chỗ gãy của bảng: một test "đơn điệu" áp cho `cao` sẽ ép sai spec.
+    expect(HE_SO_CAO.may).toBeGreaterThan(HE_SO_CAO.line);
+  });
+
+  it("★ T-2 hai bảng KHÔNG bằng nhau ở bất kỳ cấp nào", () => {
+    // Trỏ cả hai về một bảng thì mọi test dùng `hypot` vẫn xanh.
+    for (const c of CAPS) expect(HE_SO_LUI[c]).not.toBeCloseTo(HE_SO_CAO[c], 6);
+  });
+
+  it("★ T-2 `lui` và `cao` KHÔNG ĐỔI CHỖ — mọi cấp lùi xa hơn là cao", () => {
+    // Ràng buộc HÌNH HỌC của §10C.2: orbit chéo ⇒ khoảng lùi ngang > độ cao.
+    const lui = luiDo();
+    const cao = caoDo();
+    CAPS.forEach((_, i) => expect(lui[i]).toBeGreaterThan(cao[i]));
   });
 
   it("★ cấp `may` bị ÉP ≤ 8 m (§10C.2 'Orbit gần')", () => {
