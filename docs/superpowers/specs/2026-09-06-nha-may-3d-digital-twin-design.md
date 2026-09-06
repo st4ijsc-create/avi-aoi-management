@@ -1741,6 +1741,27 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 
 **Luật cứng cho cổng QA:** agent QA **không được là agent đã viết mã đợt đó**, và **phải có Bash** (G1). Bài học `BG-127` của repo: *độc lập phải ở mô hình, không ở người đo* — hai phiên cùng sai một kiểu vẫn cho cùng kết quả sai. Nên QA phải đo bằng **mô hình khác**: nếu người viết đếm bằng `WHERE`, QA phải liệt kê toàn phân bố và đối chiếu tổng.
 
+> ### ★★★ G5b — CA DƯƠNG BẮT ĐƯỢC LỖI THẬT, và cần DÒNG ĐỐI CHỨNG (2026-09-06, session seed)
+>
+> G5 nói *phải* dựng ca dương. Session seed làm, và nó **bắt được một lỗi câm có thật** — chứng minh
+> ca dương không phải nghi thức:
+>
+> Lượt G5 đầu, cầu chì NT-4 báo **đỏ**: `kichThuocDaDo` thiếu trong mệnh đề `DO UPDATE` của `upsert`.
+> Hậu quả: một hàng từng là `nguon='tay'` (nên `kichThuocDaDo=true`) khi được ghi lại thành `'sinh'`
+> **vẫn giữ cờ "đã đo"** ⇒ **một hàng SINH tự nhận là ĐO**. Đúng thứ NT-4 sinh ra để chặn, và nó lọt
+> qua mọi phép kiểm khác. Vá tại `scripts/seed-twin-mau.ts:717-742`.
+>
+> Điều này cũng chứng minh **cầu chì NT-4 không phải chỉ báo luôn-đúng (G8)**: nó đã nói `false` một
+> lần, trên một ca dương có thật.
+>
+> **★ Và một bổ sung quan trọng cho khuôn đo — DÒNG ĐỐI CHỨNG:**
+> Ca dương chỉ chứng minh "hàng `tay` không đổi". Nhưng *không đổi* có hai nguyên nhân: (a) luật
+> `WHERE nguon='sinh'` chặn đúng, hoặc (b) **script không hề chạy qua đường ghi đó**. Hai nguyên nhân
+> cho **cùng một quan sát**.
+> ⇒ Phải kèm **một dòng đối chứng `nguon='sinh'`** và chứng minh `updatedAt` của nó **ĐÃ TIẾN**.
+> Đo được: hàng `tay` giữ `06:57:53.697`; hàng đối chứng `sinh` tiến lên `06:57:59.394`.
+> Không có dòng đối chứng thì ca dương vẫn có thể là một phép đo trên đường chết.
+
 > ### ★★★ G5 — PHẢI DỰNG CA DƯƠNG, không được đo trên tập rỗng (2026-09-06, QA Đợt 3)
 >
 > Lời hứa trung tâm của NT-4 là *"chạy lại sinh tự động **không đè** hàng `nguon='tay'`"*. Mọi lượt
