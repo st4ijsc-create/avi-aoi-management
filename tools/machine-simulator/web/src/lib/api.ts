@@ -1254,19 +1254,25 @@ export function generateScreenDocument(
  * as a finding; shortening the interval would trade real request volume for a smaller window on a
  * control that grants nothing.
  *
- * 🔴 SECURITY REVIEW M-1 — CROSS-IDENTITY CACHE WINDOW, carried to S5, deliberately NOT fixed here.
- * `lib/auth.ts`'s `logout` never calls `queryClient.clear()`, and nothing in this app does — so this
- * entry survives a logout for the default 5-minute `gcTime`. If an Admin uses a machine's HMI and an
- * Operator logs in afterwards and opens the same machine, React Query can serve the ADMIN's cached
- * verdict synchronously, and the Operator sees an enabled control until the refetch lands (one
- * round-trip, since `staleTime` is 0). The write door still refuses, and no write widget can dispatch
- * anything today — so the harm is the S-6 defect itself reappearing through a different door, briefly.
+ * 🔴 SECURITY REVIEW M-1 — CROSS-IDENTITY CACHE WINDOW. FIXED IN SESSION 5; the history is kept
+ * because the shape of the defect explains what the fix has to keep being true.
  *
- * It is NOT fixed in S1 because the cause is a pre-existing app-wide pattern (every `QUERY_KEYS` entry
- * has always survived logout); S1 is merely the first place a cached value is a VERDICT rather than
- * telemetry. The fix — `queryClient.clear()` on logout, or folding the session identity into this key —
- * changes global cache behaviour, which is a wider blast radius than a security session's review
- * covered. Carried to S5 alongside the eight duplicate `ROLE_RANK` tables.
+ * WHAT IT WAS: `lib/auth.ts`'s `logout` never removed anything, so this entry survived a logout for
+ * the default 5-minute `gcTime`. If an Admin used a machine's HMI and an Operator logged in
+ * afterwards and opened the same machine, React Query served the ADMIN's cached verdict
+ * synchronously, and the Operator saw an enabled control until the refetch landed (one round-trip,
+ * since `staleTime` is 0). The write door refused throughout, so the harm was a lie on screen rather
+ * than an unauthorised write — but a VERDICT must not outlive the identity it was computed for.
+ *
+ * WHY IT WAITED: the cause was an app-wide pattern (every `QUERY_KEYS` entry had always survived
+ * logout); S1 was merely the first place a cached value was a verdict rather than telemetry, and
+ * changing global cache behaviour is a wider blast radius than a security session's review covered.
+ *
+ * WHAT NOW HAPPENS: `logout` removes every query EXCEPT the two `["auth", …]` entries `App.tsx`'s
+ * `AuthGate` renders from — see `lib/authCacheScope.ts` for the predicate and `lib/auth.ts`'s
+ * `logout` for why a blanket `queryClient.clear()` would strand a signing-out user on the splash.
+ * Both directions are measured in `runtime-tests/authLogoutCache.test.mjs`, including a negative
+ * control that fails against the naive clear.
  */
 export function useWritePermissions(code: string | undefined): UseQueryResult<MachineWritePermissions> {
   return useQuery({

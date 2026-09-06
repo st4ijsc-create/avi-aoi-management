@@ -22,6 +22,7 @@ import * as React from "react"
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query"
 
 import { BASE_URL, EngineApiError, onUnauthorized } from "@/lib/api"
+import { AUTH_ME_QUERY_KEY, BOOTSTRAP_STATUS_QUERY_KEY, isAuthGateQueryKey } from "@/lib/authCacheScope"
 
 export interface AuthUser {
   username: string
@@ -97,8 +98,6 @@ async function postBootstrap(input: BootstrapInput): Promise<AuthUser> {
   return toAuthUser((await res.json()) as RawAuthUserDto)
 }
 
-const AUTH_ME_QUERY_KEY = ["auth", "me"] as const
-const BOOTSTRAP_STATUS_QUERY_KEY = ["auth", "bootstrap-status"] as const
 
 export interface AuthContextValue {
   user: AuthUser | null
@@ -151,8 +150,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [queryClient]
   )
 
+  /**
+   * SESSION 5 (residuals) — M-1, THE CROSS-IDENTITY CACHE WINDOW, CLOSED.
+   *
+   * ── THE DEFECT ─────────────────────────────────────────────────────────────────────────────────
+   * Before this, `logout` called the API and wrote `null` into `["auth","me"]`, and stopped. Every
+   * OTHER cache entry survived — for the default 5-minute `gcTime` — so an Admin's cached
+   * write-permission verdict (`lib/api.ts`'s `useWritePermissions`, whose own doc comment carried
+   * this defect forward to this session) could be served SYNCHRONOUSLY to the next person to sign in
+   * on the same browser, showing an Operator an enabled control until the refetch landed one
+   * round-trip later. The write door refuses regardless, so the harm was a lie on screen rather than
+   * an unauthorised write — but a verdict is exactly the kind of value that must not outlive the
+   * identity it was computed for.
+   *
+   * ── WHY NOT `queryClient.clear()` ──────────────────────────────────────────────────────────────
+   * 🔴 THIS IS THE HALF THAT BREAKS THINGS IF IT IS GOT WRONG, so the reasoning is written down.
+   * `clear()` empties the whole query cache AND the mutation cache, including the two `["auth", …]`
+   * entries this provider is built on. `App.tsx`'s `AuthGate` renders in this order:
+   *
+   *     if (auth.isLoading || bootstrapStatus.isLoading) return <AuthSplash />
+   *     if (bootstrapStatus.data?.needsBootstrap)        return <Bootstrap />
+   *     if (auth.user == null)                           return <Login />
+   *
+   * Removing `["auth","bootstrap-status"]` puts that query back to `isLoading`, so a logout would
+   * land the user on the SPLASH — and then, once bootstrap-status answered again, briefly on whatever
+   * its refetch said — instead of going straight to `<Login/>`. Removing `["auth","me"]` does the
+   * same to `auth.isLoading`. So the cache is emptied of everything EXCEPT this file's own two auth
+   * keys, and `["auth","me"]` is then written to `null` exactly as before.
+   *
+   * The predicate is spelled as "not one of MY two keys" rather than "not anything starting with
+   * `auth`" so that a future unrelated key that happens to begin with `"auth"` is still cleared: the
+   * exemption is for the two entries the gate reads, not for a namespace.
+   *
+   * ── WHAT IS DELIBERATELY *NOT* DONE ────────────────────────────────────────────────────────────
+   * Nothing here touches a LIVE session. `logout` runs only after `POST /v1/auth/logout` has
+   * succeeded — the session is already gone server-side by the time anything is removed — and no
+   * other code path in this app removes queries. A signed-in user's caches are untouched by this
+   * change, which is the second direction `runtime-tests/authLogoutCache.test.mjs` pins.
+   */
   const logout = React.useCallback(async () => {
     await postLogout()
+    queryClient.removeQueries({ predicate: (query) => !isAuthGateQueryKey(query.queryKey) })
     queryClient.setQueryData(AUTH_ME_QUERY_KEY, null)
   }, [queryClient])
 
