@@ -1717,6 +1717,28 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > ⇒ **Luật:** trước khi tin một phép đo "không có gì xấu xảy ra", hỏi *"nếu luật này KHÔNG tồn tại
 > thì phép đo có khác đi không?"* Nếu không khác, phép đo đang chứng minh số 0 — phải dựng ca dương.
 
+> ### ★★★ G8 — CHỈ BÁO LUÔN-ĐÚNG là chỉ báo KHÔNG BAO GIỜ NÓI KHÔNG (2026-09-06, vá Đợt 3)
+>
+> `donViDeNghiChacChan` cũ nghĩa là *"đơn vị đã chọn có hợp lý không"* — **đúng theo cấu trúc**, vì
+> hàm chỉ chọn đơn vị nào hợp lý. Một chỉ báo không bao giờ trả `false` thì không phải chỉ báo.
+> Bản vá đổi nghĩa thành *"có **đúng một** đơn vị hợp lý"* — giờ nó nói `false` được khi nhập nhằng.
+>
+> Đây là **cùng lớp** với bánh cóc `0 undefined` ở Đợt 2 (hàm toàn phần nên mệnh đề luôn đúng) và
+> với `chongLap = 0` ở G7. Ba ca, ba nơi, cùng một hình dạng: **một phép đo tự thoả mãn**.
+>
+> ⇒ **Luật:** với mọi cờ boolean/chỉ báo, hỏi *"đầu vào nào làm nó trả `false`?"* Không trả lời được
+> bằng một ví dụ cụ thể ⇒ nó vô dụng. Và UI đã sẵn sàng cho `false` **không chứng minh** `false` từng
+> xảy ra: `NhapBanVe.tsx:304` có cảnh báo nhập nhằng từ đầu — nó **chưa bao giờ nhận được `false`**.
+>
+> **Hai quyết định kỹ thuật kèm theo, đáng giữ làm khuôn:**
+> 1. **Bất biến về DỮ LIỆU thì đặt ở DB, không ở mã.** Chọn *partial unique* `WHERE "isActive"` thay
+>    vì find-before-create: khuôn sau có khe TOCTOU (vẫn phải bắt `23505`, tức nửa việc mà gấp đôi
+>    chi phí) và **âm thầm hồi sinh** tầng/ảnh/vị-trí-máy của lần dựng trước dưới một mã gõ lại.
+>    Khuôn BG-93 hợp với bảng WORM nơi **không thể xoá** — không phải ca này.
+> 2. **Chọn `<=` chứ không `<`** ở `sanQuaHepChoTuongBao`: cạnh đúng bằng `2 × DAY_TUONG_MM` vẫn cho
+>    `sauMm = 0`, thứ router `.positive()` từ chối. Dùng `<` sẽ để lọt **đúng con số tròn mà người
+>    dùng hay gõ**.
+
 > ### ★★★ G7 — ĐẾM ĐẦU VÀO ≠ ĐẾM ĐẦU RA (2026-09-06, vá Đợt 1)
 >
 > Gốc thật của lời khai sai *"khử chồng lấp nhãn hoạt động"* **không phải** ở thuật toán, mà ở chỗ
