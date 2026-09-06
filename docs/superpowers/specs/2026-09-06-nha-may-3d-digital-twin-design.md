@@ -740,7 +740,19 @@ server/services/twin/
 | `taiAnhNen` | mutation | `{tangId, tenFile, duLieu}` | URL ảnh nền tầng |
 | `luuBanGhi` / `xuatBanBanGhi` / `khoiPhucBanGhi` | mutation | Phiên bản bố cục | |
 
-**Sửa lỗi hiệu năng đã phát hiện:** `machineStatus.listWithStatus` chạy **3 query con mỗi máy** (N+1). **Không dùng cho vòng render.** `trangThaiHangLoat` thay bằng 3 query cố định dùng `DISTINCT ON`/window function.
+**Sửa lỗi hiệu năng đã phát hiện:** `machineStatus.listWithStatus` **từng** chạy 3 query con mỗi máy (N+1).
+
+> **★ ĐÍNH CHÍNH 2026-09-07 (Đợt 6) — N+1 ĐÃ ĐƯỢC VÁ TỪ TRƯỚC.** Đo bằng cách vá hook `debug` của
+> `postgres-js` (điểm **mọi** câu lệnh đi qua) rồi gọi hàm thật: **N=42 ⇒ 4 query**, ổn định qua 3
+> lượt — không phải `1 + 3×42 = 127`. `server/db/machine.ts:55` đã viết lại ở commit `d467c6b5`
+> (doc 54 Wave C), **đang dùng đúng khuôn `DISTINCT ON` + `LEAD`** mà §6.3 kê; comment
+> `machine.ts:80-87` ghi lại việc gỡ fan-out cũ.
+>
+> ⇒ Việc còn lại **không phải "vá N+1"** mà là **dựng endpoint hình dạng §6.3 trong
+> `twinCanhRouter.ts`, dùng lại truy vấn tập hợp đã có**.
+>
+> ★ Agent tự nêu giới hạn phép đo của chính nó: *"4 query ở N cố định 42 chưa tự nó chứng minh không
+> có N+1 — cần cho N biến thiên."* Đúng. Đó là phép đo phải làm để đóng mục này.
 
 Toàn bộ là `protectedProcedure`; `sinhTuDong`, `xoaAsset`, `xuatBanBanGhi` là `adminRoleProcedure`.
 
@@ -1179,7 +1191,30 @@ Dải dưới có scrubber `◁ ◀ ⏸ ▶ ▷` + tốc độ ×1/×5/×20 + th
 
 **Nguyên tắc bắt buộc: CÙNG MỘT state store cho live và replay**, chỉ đổi nguồn (socket `twin:update` → API lịch sử). Tách hai code path thì replay sẽ luôn lệch.
 
-Nguồn lịch sử: `machine_status_logs`, `station_dwell_time`, `wip_tracking`, `andon_events`. Các bảng **0 dòng** (`oee_metrics`, `machine_heartbeats`, `ot_telemetry`) → lớp phủ dựa vào chúng hiện *"chưa có dữ liệu"*, **không** hiện 0.
+Nguồn lịch sử: `machine_status_logs`, `station_dwell_time`, `wip_tracking`, `andon_events`.
+
+> ### ★★★ ĐÍNH CHÍNH 2026-09-07 (Đợt 6) — "3 bảng 0 dòng" là SAI, xây theo nó sẽ LỘN NGƯỢC NT-3
+>
+> Bản đầu ghi `oee_metrics`, `machine_heartbeats`, `ot_telemetry` **0 dòng**. Đo lại trên DB thật:
+>
+> | Bảng | Spec ghi | ĐO ĐƯỢC | Hàng mới nhất |
+> |---|---|---|---|
+> | `oee_metrics` | 0 | **897** | 2026-07-17 (~52 ngày cũ) |
+> | `machine_heartbeats` | 0 | **108** | 2026-07-17 (~52 ngày cũ) |
+> | `ot_telemetry` | 0 | **24.458.273** | **2026-09-06 — TƯƠI** |
+>
+> Làm theo bản cũ sẽ dán *"chưa có dữ liệu"* lên **24,4 triệu hàng tươi** — NT-3 bị **lộn ngược**.
+>
+> ⇒ **Phân biệt thật là CŨ, không phải RỖNG.** `trungThucDuLieu.ts` đã cài đúng thang ba mức tuổi của
+> §9.5; bảng cũ **tự rơi** vào `khong_ro` vì lý do đo được, không vì một danh sách hardcode sẽ mục.
+>
+> **★ Ca NT-3 đang SỐNG trong dữ liệu thật — không cần dựng:**
+> ```
+> 3 máy 'running'  → heartbeat mới nhất 2026-07-17   (im lặng 52 NGÀY)
+> 40 máy 'stopped' → heartbeat 2026-09-03
+> ```
+> Renderer ngây thơ vẽ **3 máy XANH trên một nhà máy đã chết**. Đây là **ca dương có sẵn** để nghiệm
+> thu NT-3 — dùng nó, đừng dựng ca giả.
 
 ### 9.9 Khả năng truy cập và chế độ 2D
 
@@ -1708,7 +1743,7 @@ Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt h�
 | **Đ3** | **Dựng nhà xưởng (§10A).** Con đường B (điền kích thước 3 bước) + con đường A (nhập CAD/GLB qua `occt-import-js` worker) + hộp thoại hiệu chỉnh đơn vị/trục + `tachTangTuHinhHoc.ts` + sinh tường bao | Điền 84×52×6 m → tạo được toà + tầng, xem trước đúng tỉ lệ · nhập STEP → hộp thoại hiệu chỉnh hiện thước + hình người 1,7 m · **nhập sai đơn vị bị bắt bằng mắt** · tách tầng theo cao độ chạy đúng | Đ1 |
 | **Đ4** | **Màn Thiết kế (§7) + thuật toán sinh (§8).** `sinhBoCuc.ts` + `hinhHocCanChinh.ts` + `snapVatVaoVat.ts` + `boCucService.ts` + tRPC ghi cảnh; 3 vùng, gizmo, bộ 12 công cụ, cây, inspector, undo/redo, thư viện asset, vùng polygon, ảnh nền + tỉ lệ, khu chờ xếp chỗ; **3 công cụ Line (§10C.4)** | 9 test T1–T9 xanh · kéo máy → Lưu → reload giữ nguyên · sinh lại **không đè** máy đã chỉnh tay · **xoay snap ra đúng 15.000 không phải 23.000** (RB-2) · **đủ điều kiện tắt 2 editor cũ** (sổ kiểm #41–#49 ✅) | Đ2, Đ3 |
 | **Đ5** | **Màn Vận hành (§9) + phạm vi Line/Tập đoàn (§10C).** Bố cục toàn khung, `NganXuLy` (ack alarm + tạo phiếu + gán KTV), 5 cấp phạm vi, `phamViLine.ts`, đường dòng chảy có hướng, ống WIP, dải Line 2D, deep-link, 3 trạng thái tươi, đối soát, toggle 2D + fallback, a11y bàn phím | Click máy → ack alarm **thật trong DB**, tạo phiếu **thật** · chọn phạm vi Line → chỉ Line đó rõ, Line khác mờ 12 % · deep-link `?pv=line:1` khôi phục đúng · tắt WebGL → rơi 2D · **chỉ bàn phím vẫn ack được** · sổ kiểm #8–#17, #30–#34, #50–#54 ✅ | Đ1, Đ4 |
-| **Đ6** | **Hấp thụ cockpit & realtime.** `twin:trangThai` 10s; `trangThaiHangLoat` (bỏ N+1); UNS stream; di trú cây ISA-95 + dải cảnh báo; nút mở cockpit; E-STOP nổi lên Twin; timeline tua | Không còn N+1 trong vòng render · sổ kiểm #18–#29, #55–#62 ✅ · **xoá được `CommandCenter`, `FactoryLiveMap3D`, `DigitalTwinCenter`** sau khi mọi dòng ✅ | Đ5 |
+| **Đ6** | **Hấp thụ cockpit & realtime.** `twin:trangThai` 10s; `trangThaiHangLoat` (bỏ N+1); UNS stream; di trú cây ISA-95 + dải cảnh báo; nút mở cockpit; E-STOP nổi lên Twin; timeline tua | Không còn N+1 trong vòng render · sổ kiểm **#18–#29 + #50–#54** ✅ (★ đính chính Đợt 6: bản đầu ghi #55–#62 — SAI, đó là `Layout.tsx`+`TwinHub`; "UNS stream" mà chính dòng này nêu là mục **#50** thuộc khối `FactoryLiveMap3D`. 12+5 = 17 mục, khớp bảng §11) · **xoá được `CommandCenter`, `FactoryLiveMap3D`, `DigitalTwinCenter`** sau khi mọi dòng ✅ | Đ5 |
 | **Đ7** | **Mô phỏng & dọn dẹp.** Ngăn "Mô phỏng" (what-if + workflow replay), export USD, xoá màn cũ đã ✅ toàn bộ, gỡ 2 editor cũ, gỡ `Factory3DScene`/`FactoryFloor3D`, quyết định `/layout/:id` | Sổ kiểm **62/62 ✅** · grep 3 engine cũ = 0 kết quả · mọi route cũ redirect đúng | Đ6 |
 
 ### 12.2 Phân công session và agent
@@ -2203,7 +2238,7 @@ Cửa sổ đo cho e2e: `window.__thongKeVe`, `window.__demNhan`, `window.__pham
 | R4 | **Model drift** — layout thật đổi, twin không đổi | Cao | Nghiêm trọng | QĐ-6: sinh geometry **từ chính DB**, không có bước "nhờ ai đó update file 3D". Banner đối soát §9.5(3). Nhãn đời bố cục §9.5(4) |
 | R5 | **Nhập liệu layout không ai làm** — Thiết kế xong nhưng không ai ngồi kéo 43 máy | Trung bình | Cao | Sinh tự động phải cho ra cảnh **dùng được ngay** (Đ2 có cả sinh lẫn kéo). Thiết kế chỉ để tinh chỉnh dần |
 | R6 | **Hai editor sống chung gây lệch dữ liệu** | Trung bình | Cao | Editor cũ ghi hệ cũ, Twin ghi hệ mới; **không đồng bộ ngược**. Banner ở editor cũ: "màn này sẽ được thay". Tắt ngay khi sổ kiểm #41–#49 ✅ |
-| R7 | **Bảng dữ liệu rỗng** — `oee_metrics`, `machine_heartbeats`, `ot_telemetry`, `factory_zones` đều 0 dòng | **Chắc chắn** | Trung bình | Mọi lớp phủ dựa vào chúng hiện *"chưa có dữ liệu"* rõ ràng. **Không** hiện 0 hay xanh. Kiểm bằng e2e |
+| R7 | ~~Bảng dữ liệu rỗng~~ → **Bảng dữ liệu CŨ** (đính chính Đợt 6): `oee_metrics` 897 hàng · `machine_heartbeats` 108 · `ot_telemetry` **24,4 triệu, tươi** · `factory_zones` 0 | **Chắc chắn** | Trung bình | Phân biệt theo **TUỔI**, không theo rỗng. Thang 3 mức của §9.5 xử đúng mà không cần danh sách hardcode. ★ Ca dương có sẵn: 3 máy `running` im lặng 52 ngày |
 | R8 | **Hiệu năng trên máy xưởng** kém hơn máy dev | Trung bình | Trung bình | Ngân sách §4 kiểm bằng **e2e tự động**. `matDoKhungHinh` tự hạ chất lượng. Fallback 2D |
 | R9 | **Lỗi drei tái phát** dưới dạng khác | Thấp | Cao | Không tìm thấy issue drei/Vite đang mở nào khớp; drei 10.7.8 tương thích three 0.182 + R3F 9.5. Nhưng thêm test kiểm bundle không phình |
 | R10 | **Xung đột merge** ở `App.tsx`, `navigation.tsx`, 3 tệp i18n | Cao | Thấp | Gộp mọi sửa đổi 5 tệp dùng chung vào Đ0, một lần |
