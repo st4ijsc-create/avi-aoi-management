@@ -30,7 +30,8 @@ Xây một Digital Twin 3D làm **trung tâm điều hướng và xử lý** cho
 | QĐ-5 | Dựng đủ cấu trúc campus (Site→Toà→Tầng→Xưởng→Chuyền→Trạm→Máy), nhưng **chờ người nhập** toà nhà/tầng thật; sinh tự động chỉ tạo 1 toà 1 tầng mặc định |
 | QĐ-6 | Hình học: sinh thủ tục từ DB + GLB cho máy gần camera + **import CAD/STEP** qua `occt-import-js` |
 | QĐ-7 | Kích thước máy: mặc định theo **loại máy** + badge "chưa đo" + sửa được trong Inspector |
-| QĐ-8 | Hai editor cũ chạy **song song** trong giai đoạn di trú, tắt sau khi màn Thiết kế đủ tính năng |
+| QĐ-8 | ~~Hai editor cũ chạy **song song** trong giai đoạn di trú~~ → **THAY BỞI QĐ-15** |
+| **QĐ-15** | **(2026-09-06, chủ sở hữu quyết)** Xoá **toàn bộ** dữ liệu twin **và cả hai hệ toạ độ cũ**, seed lại bằng script thiết kế đúng. Dứt điểm hai nguồn sự thật song song ngay, không chờ Đợt 4 |
 | QĐ-9 | Thứ tự theo **giá trị**: Thiết kế 3D → Vận hành → Cockpit → Mô phỏng |
 | QĐ-10 | Màn Thiết kế v1 **đủ thay cả hai editor cũ**: máy + vùng polygon + ảnh nền + tỉ lệ mét + thêm/xoá máy |
 | QĐ-11 | Spec markdown + mockup HTML tương tác để duyệt |
@@ -543,6 +544,28 @@ CREATE TABLE twin_ban_ghi (
 > đã tạo.
 
 ### 5.6 Di trú dữ liệu — script một chiều, đo được
+
+> ### ★★★ QĐ-15 (2026-09-06) — MỤC NÀY ĐÃ HẾT HIỆU LỰC VỚI DỮ LIỆU DEV
+>
+> Chủ sở hữu quyết **xoá toàn bộ và thiết kế lại**, thay vì di trú. Cụ thể đã xoá:
+> `twin_toa_nha` (3) · `twin_tang` (5) · `twin_dat_cho` (38) · `twin_vat_the` (12) ·
+> `machine_positions` (36) · `factory_layouts` (3) · `machines.layoutPositionX/Y` + `machines.layout`
+> (38 máy → NULL) · 2–3 nhà máy rác audit. **Giữ** `twin_kich_thuoc_loai` (24 hàng, bảng tham chiếu)
+> và toàn bộ cây phân cấp SIM-FAC (43 máy / 37 trạm / 3 Line).
+> Sao lưu: `scratchpad/backup/twin-truoc-xoa.json` (135 hàng, 8 bảng).
+>
+> **Thay bằng** `scripts/seed-twin-mau.ts` — tất định, idempotent, mọi hàng `nguon='sinh'` +
+> `kichThuocDaDo=false`. Kích thước toà nhà **suy từ nội dung phải chứa** (3 Line × 12 trạm ×
+> bước trạm), không lấy số tròn tuỳ tiện và tuyệt đối không đọc `factories.floorWidthM` (§10A.0).
+>
+> **Hệ quả phải biết:** hai editor cũ (`FactoryFloorEditor` hệ 0–1, `WorkshopLayoutEditor` hệ pixel)
+> giờ **không còn dữ liệu** — chúng sẽ hiện mặt bằng trống. Đây là hệ quả **có chủ ý** của QĐ-15:
+> dứt điểm hai nguồn sự thật song song ngay, thay vì nuôi chúng tới Đợt 4. Sổ kiểm §11 mục
+> #41–#49 (tính năng độc nhất của 2 editor đó) **vẫn phải di trú sang màn Thiết kế** — mất dữ liệu
+> không có nghĩa mất yêu cầu chức năng.
+>
+> Mục §5.6 dưới đây **giữ lại làm hồ sơ**: nó ghi 3 lỗi spec mà Đợt 0 phát hiện khi thực thi, và
+> khuôn đối soát hai mô hình rời vẫn áp dụng cho script seed mới.
 
 Script `scripts/di-tru-bo-cuc-twin.ts`, chạy tay, **idempotent**, in báo cáo đối soát.
 
