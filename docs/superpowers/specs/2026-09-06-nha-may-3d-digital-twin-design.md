@@ -1717,6 +1717,31 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > ⇒ **Luật:** trước khi tin một phép đo "không có gì xấu xảy ra", hỏi *"nếu luật này KHÔNG tồn tại
 > thì phép đo có khác đi không?"* Nếu không khác, phép đo đang chứng minh số 0 — phải dựng ca dương.
 
+> ### ★★★ G7 — ĐẾM ĐẦU VÀO ≠ ĐẾM ĐẦU RA (2026-09-06, vá Đợt 1)
+>
+> Gốc thật của lời khai sai *"khử chồng lấp nhãn hoạt động"* **không phải** ở thuật toán, mà ở chỗ
+> **lẫn hai đại lượng khác nhau**:
+> - `chongLap` đếm **nhãn bị loại** — đại lượng ĐẦU VÀO của thuật toán
+> - "số cặp còn chồng trên màn" là đại lượng ĐẦU RA — thứ người dùng thật sự nhìn thấy
+>
+> Bộ đếm báo `chongLap = 0` **hoàn toàn đúng với định nghĩa của nó**, trong khi màn hình có 5 cặp
+> nhãn che nhau. Không ai nói dối; phép đo đo nhầm đại lượng.
+>
+> ⇒ **Luật:** dụng cụ đo phải **độc lập với thuật toán nó đo**. Bản vá thêm `demCapChongLap()` — quét
+> hậu điều kiện trên kết quả, không đọc biến đếm nội bộ — và `__demNhan.capConChong` để e2e đối chiếu
+> với `getBoundingClientRect`. Khi kiểm một chỉ số, luôn hỏi: *nó đếm thứ tôi làm, hay thứ người dùng nhận?*
+>
+> **Ba quyết định kèm theo, đáng giữ làm khuôn:**
+> 1. **Đổi HÌNH, không đổi SỐ.** Nhãn tỉ lệ ~9:1; nới bán kính đường tròn cho phủ hết bề rộng 180px
+>    thì cũng phủ 180px chiều dọc ⇒ giết oan nhãn xếp chồng dọc vốn đọc được. Mô hình sai thì tinh
+>    chỉnh tham số không cứu được.
+> 2. **Fixture sai thì sửa FIXTURE, không sửa KHẲNG ĐỊNH.** 6 test cũ đỏ sau khi đổi mô hình vì
+>    fixture đặt bước 126px < bề rộng nhãn 150px — 126px thật sự không đủ để hai nhãn không đè nhau.
+>    Chính lỗi đó bị mô hình cũ che đi.
+> 3. **Không nối mã CHƯA ĐO vào điểm ĐANG CHẠY ĐÚNG.** `giaiPhong.ts` (0 test) không được thay 4 chỗ
+>    `dispose()` viết tay đang là bằng chứng RB-7 — thay chúng là bằng chứng hết hiệu lực và phải đo
+>    lại rò rỉ GPU trên màn thật. Gọn gàng không đáng đổi lấy rủi ro chưa đo.
+
 > ### ★★★ G6 — VÙNG MÙ Ở NHÁNH KHÔNG AI ĐI, và BẢN SAO THỨ HAI của một bảng dữ liệu
 >
 > QA Đợt 3 tiêm sai hệ số inch **10 lần** (0,0254 → 0,254) vào `docBanVe.ts` ở **cả hai** hàm —
