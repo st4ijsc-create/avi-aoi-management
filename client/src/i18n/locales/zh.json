@@ -3868,7 +3868,8 @@
       "ursimRobot": "UR 机器人（URSim）",
       "rosbridge": "ROS bridge",
       "hsms": "HSMS（SECS/GEM）",
-      "vda5050Robot": "VDA5050 AGV"
+      "vda5050Robot": "VDA5050 AGV",
+      "productCapture": "产品拍摄图像"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",
@@ -4006,7 +4007,10 @@
       "issueServiceIdentity": "签发服务身份",
       "useInstrument": "使用测量仪器",
       "editThresholdDirectly": "直接修改阈值",
-      "kbHealthCheck": "检查知识库状态"
+      "kbHealthCheck": "检查知识库状态",
+      "commitTemplateImage": "提交模板图像",
+      "taiAnhNenTang": "上传楼层背景图",
+      "dungNhaXuong": "搭建厂房布局"
     },
     "field": {
       "changeReason": "变更原因",
@@ -4094,7 +4098,10 @@
       "meta.json": "meta.json 文件",
       "images[].captureId": "图像采集ID",
       "images[].fileName": "图像文件名",
-      "images[].sha256": "图像SHA256哈希值"
+      "images[].sha256": "图像SHA256哈希值",
+      "productModelCode": "产品型号编码",
+      "deXuat": "提案内容",
+      "mimeType": "图像格式"
     },
     "feature": {
       "webIngest": "网页内容导入",

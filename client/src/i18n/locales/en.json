@@ -3876,7 +3876,8 @@
       "ursimRobot": "UR robot (URSim)",
       "rosbridge": "ROS bridge",
       "hsms": "HSMS (SECS/GEM)",
-      "vda5050Robot": "VDA5050 AGV"
+      "vda5050Robot": "VDA5050 AGV",
+      "productCapture": "product capture"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
@@ -4014,7 +4015,10 @@
       "issueServiceIdentity": "issue service identity",
       "useInstrument": "use the measurement instrument",
       "editThresholdDirectly": "edit threshold directly",
-      "kbHealthCheck": "check knowledge-base health"
+      "kbHealthCheck": "check knowledge-base health",
+      "commitTemplateImage": "commit template image",
+      "taiAnhNenTang": "upload floor background image",
+      "dungNhaXuong": "build factory layout"
     },
     "field": {
       "changeReason": "change reason",
@@ -4102,7 +4106,10 @@
       "meta.json": "meta.json file",
       "images[].captureId": "image capture ID",
       "images[].fileName": "image file name",
-      "images[].sha256": "image SHA-256 hash"
+      "images[].sha256": "image SHA-256 hash",
+      "productModelCode": "product model code",
+      "deXuat": "proposal",
+      "mimeType": "image format"
     },
     "feature": {
       "webIngest": "web content ingestion",

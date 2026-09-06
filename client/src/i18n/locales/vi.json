@@ -3876,7 +3876,8 @@
       "ursimRobot": "robot UR (URSim)",
       "rosbridge": "ROS bridge",
       "hsms": "HSMS (SECS/GEM)",
-      "vda5050Robot": "AGV theo chuẩn VDA5050"
+      "vda5050Robot": "AGV theo chuẩn VDA5050",
+      "productCapture": "ảnh chụp sản phẩm"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
@@ -4014,7 +4015,10 @@
       "issueServiceIdentity": "cấp định danh dịch vụ",
       "useInstrument": "sử dụng thiết bị đo",
       "editThresholdDirectly": "sửa ngưỡng trực tiếp",
-      "kbHealthCheck": "kiểm tra tình trạng kho tri thức"
+      "kbHealthCheck": "kiểm tra tình trạng kho tri thức",
+      "commitTemplateImage": "chốt ảnh mẫu",
+      "taiAnhNenTang": "tải ảnh nền của tầng lên",
+      "dungNhaXuong": "dựng nhà xưởng"
     },
     "field": {
       "changeReason": "lý do thay đổi",
@@ -4102,7 +4106,10 @@
       "meta.json": "tệp meta.json",
       "images[].captureId": "mã capture của ảnh",
       "images[].fileName": "tên tệp ảnh",
-      "images[].sha256": "mã băm sha256 của ảnh"
+      "images[].sha256": "mã băm sha256 của ảnh",
+      "productModelCode": "mã sản phẩm",
+      "deXuat": "nội dung đề xuất",
+      "mimeType": "định dạng ảnh"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",
