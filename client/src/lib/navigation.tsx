@@ -425,13 +425,25 @@ export const navGroups: NavGroup[] = [
       // ⚠ Nghiệm thu quyền PHẢI dùng tài khoản KHÔNG phải admin — admin bypass
       // `requirePermission`, nên đo bằng admin chứng minh số 0.
       {
-        // Vận hành: xem cảnh, điều hướng, xử lý cảnh báo → cùng gate với các màn
-        // giám sát khác trong group (`analytics_oee`).
+        // Vận hành: xem cảnh, điều hướng, xử lý cảnh báo.
+        //
+        // ★★★ Đợt 5 CHẶN-1 — ô này TỪNG khai MỘT quyền `analytics_oee`. Hậu quả
+        // ĐO ĐƯỢC: trong 4 vai non-admin của seed, CHỈ `supervisor1` có
+        // `analytics_oee`; `engineer1`/`maint1`/`operator1` đều có
+        // `machine_status` nhưng KHÔNG có `analytics_oee` ⇒ 3/4 vai vận hành
+        // bị chặn khỏi chính màn Vận hành. 1/4 vào được, không lỗi nào nổ.
+        //
+        // Đây lại là lớp lỗi "một lối vào rồi TỪ CHỐI" chạy chiều NGƯỢC (nav
+        // hẹp hơn nhu cầu vai), cùng họ với CHẶN-1 của Đợt 3 ở `/twin-studio`
+        // ngay dưới — khuôn sửa cũng y hệt: mở bằng `requiredPermissionAny`.
+        //
+        // `RouteGuard navHref="/twin"` (App.tsx:325) TRA lại chính ô này qua
+        // `hasAccessToItem`, nên nav và guard không thể lệch.
         href: "/twin",
         label: "nav.twin3d",
         icon: <Boxes className="h-4 w-4" />,
         description: "nav.twin3dDesc",
-        requiredPermission: "analytics_oee",
+        requiredPermissionAny: ["analytics_oee", "machine_status"],
         permissionCategory: "analytics",
         section: "mes",
       },
