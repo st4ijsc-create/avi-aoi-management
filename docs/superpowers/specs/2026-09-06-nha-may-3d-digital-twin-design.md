@@ -349,6 +349,23 @@ scene.z =  viTriYMm / 1000        // Y mặt bằng hướng xuống → Z scene
 
 Y của mặt bằng hướng **xuống** (quy ước ảnh/CAD), Y của scene hướng **lên**. Toàn bộ quy đổi nằm trong **một** module thuần `heToaDo.ts`, có test. Mọi thực thể mới (toà nhà, tầng, vật thể cảnh) dùng chung quy ước này.
 
+> ### ★★★ BẪY HOÁN VỊ TRỤC — lỗi câm, không gì nổ (2026-09-06, Đợt 4b)
+>
+> `hinhHocCanChinh.ts` làm việc trên **hệ scene**; DB dùng **hệ mặt bằng** (y = mặt bằng, z = độ cao).
+> Truyền thẳng toạ độ DB vào các hàm căn chỉnh thì:
+> - align *"canh lên trên"* **không làm gì cả**
+> - `danDeu` **làm máy bay lên trời**
+>
+> Và **không lỗi nào nổ** — không exception, không cảnh báo, `npm run check` xanh. Người dùng chỉ
+> thấy nút bấm không có tác dụng, hoặc máy biến mất khỏi tầm nhìn.
+>
+> ⇒ Hoán vị đặt ở **một chỗ duy nhất**, có test vòng tròn (đi rồi về phải bằng chính nó).
+> Đo được khi tiêm lỗi: **bỏ hoán vị → 5 test đỏ**; **snap tương đối → 7 test đỏ**.
+>
+> Đây là họ hàng của L-1 (§8 bước 6 ghi "trục Z" khiến máy treo lơ lửng): **mọi chỗ hai hệ toạ độ
+> gặp nhau đều là chỗ có thể sai câm.** Danh sách các điểm giao hiện tại: `heToaDo.ts` (mm↔mét),
+> `hinhHocTuMoTa.tsx` (mô tả→three), và lớp gọi `hinhHocCanChinh` từ UI.
+
 ### 5.3 Bảng mới
 
 #### `twin_toa_nha` — toà nhà
@@ -756,7 +773,7 @@ Toàn bộ là `protectedProcedure`; `sinhTuDong`, `xoaAsset`, `xuatBanBanGhi` l
 │ Xưởng dựng Twin      [Tầng ▾][☑Nhãn][☐Ngừng KT]  [⊹Kéo][↻Xoay][⤢Co]  ↶ ↷      │
 │                                              [✨Sinh tự động][💾Lưu][↺Vẽ lại]   │
 ├────────────────────────────────────────────────────────────────────────────────┤
-│ Sức khoẻ dữ liệu: 36/43 máy đã xếp chỗ · 7 chờ xếp · 43 kích thước "chưa đo"   │
+│ Sức khoẻ: 41/41 đã xếp · 0 chờ · 42 chưa đo · ⚠ 1 đặt chỗ MỒ CÔI              │
 ├──────────────────┬──────────────────────────────────────┬──────────────────────┤
 │ CÂY PHÂN CẤP     │                                      │ THUỘC TÍNH           │
 │ [🔍 lọc...]      │            CANVAS 3D                 │                      │
@@ -779,6 +796,18 @@ Toàn bộ là `protectedProcedure`; `sinhTuDong`, `xoaAsset`, `xuatBanBanGhi` l
 │  Kéo thẻ vào cảnh để đặt mô hình lên mặt bằng.                                 │
 └────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+> **★ ĐÍNH CHÍNH 2026-09-06 (Đợt 4b) — số trong khung trên đã sửa.** Bản đầu ghi "36/43 đã xếp ·
+> 7 chờ xếp" là **số cũ trước khi seed lại** (QĐ-15). Đo lại bằng hai mô hình rời:
+> SIM-FAC có **42 máy tổng, 41 sống**; `twin_dat_cho` có **42 hàng máy**, trong đó **1 hàng trỏ vào
+> máy `isActive=false`** — bảng đặt chỗ giữ vị trí cho một máy đã ngừng.
+>
+> Agent **không sửa spec** mà thêm ô đếm **`datChoMoCoi`** để chỗ lệch **tự kêu trên UI** (NT-3),
+> thay vì im lặng cho hai con số khớp nhau. Đây là xử lý đúng: chênh lệch không biến mất, nó được
+> **hiển thị**.
+>
+> Máy chờ xếp chỗ duy nhất toàn hệ là id 257 (factory 18, chưa có toà nhà).
+
 
 Dùng `PageShell maxWidth="full"` + `react-resizable-panels@3.0.6` (đã có trong deps) cho 3 cột kéo giãn được.
 
