@@ -1968,6 +1968,46 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > (bbox DOM thật trên `/twin`), không phải ở lớp hàm. Đây là G11 (*hiện ra* ≠ *hoạt động*) đẩy lên
 > một bậc: ở đây thậm chí **chưa hiện ra**, mà mọi cổng vẫn xanh.
 
+> ### ★★★ G22 — CA DƯƠNG DỰNG XONG MỚI BIẾT LỖ CÓ THẬT (vá Đợt 6)
+>
+> QA đo `twin:device` bằng cách nghe 2 chu kỳ: `operator1` nhận **0 gói** — trông như bị chặn. QA
+> **nói thẳng là không kết luận được**, vì sim không phát metric nào trong cửa sổ đo (G21).
+>
+> Session vá **tự dựng producer thật** (`ingestTelemetry` → tap → `flush` → `emitTwinDeviceDeltas`,
+> 30 sample), rồi đo **ablation hai chiều**:
+>
+> | | operator1 | supervisor1 | engineer1 |
+> |---|---|---|---|
+> | **TRƯỚC vá** | **10** ❌ | **10** ❌ | 10 |
+> | **SAU vá** | **0** ✅ | **0** ✅ | 10 ✅ |
+>
+> ⇒ **`twin:device` rò THẬT.** Không có ca dương thì lỗ này đã được ghi là "không đo được" và
+> **sống sót**. Phép đo im lặng và hệ an toàn cho **cùng một quan sát**; chỉ ca dương tách được chúng.
+>
+> **★ Và một đọc-nhầm mà ca dương cũng gỡ:** `engineer1@18` nhận 13 gói `twin:update` — trông như rò.
+> Đo tại nguồn: 36 trạm đó **đều thuộc factory 1** (đúng phạm vi engineer1); factory 18 chỉ có 1 trạm
+> và **0 WIP**. `twin:update` là feed **theo NGƯỜI**, không theo phòng. **Có gói ≠ có rò** — phải hỏi
+> *gói đó chứa dữ liệu của ai*.
+>
+> ⇒ **Luật:** với mọi khẳng định bảo mật dạng "không nhận được gì", **dựng producer rồi đo lại**.
+> Và khi thấy "nhận được gói", kiểm **nội dung** trước khi gọi là rò.
+
+> ### ★★★ G23 — CÙNG MỘT CON SỐ SAI Ở HAI MÔI TRƯỜNG ⇒ HẰNG SỐ SAI, KHÔNG PHẢI HIỆU ỨNG (vá Đợt 6)
+>
+> Lỗi tràn viewport: bản vá **đầu tiên** đoán là lỗi flex/cuộn, thêm `min-h-0`. Đo lại: **vẫn tràn
+> đúng 77px**.
+>
+> **Cùng một con số ở hai kích thước màn rất khác nhau (1366×768 và 1280×1249) là chữ ký của một
+> HẰNG SỐ SAI, không phải của một hiệu ứng layout** — hiệu ứng sẽ đổi theo kích thước.
+>
+> Gốc rễ: khung ở `top = 133` nhưng CSS trừ `5rem` = 80px, cộng `p-6` = 24px của `<main>` ⇒ **lệch
+> đúng 77px**. Vá bằng cách **đo** `getBoundingClientRect().top` + `paddingBottom` của cha lúc chạy,
+> **không đoán một hằng số mới**.
+>
+> ⇒ **Luật:** trước khi vá một sai lệch số, đo nó ở **≥2 điều kiện khác nhau**. Số **đổi** ⇒ hiệu ứng,
+> tìm cơ chế. Số **đứng yên** ⇒ hằng số sai, tìm phép cộng/trừ. Và thay hằng số bằng **phép đo lúc
+> chạy**, đừng thay bằng hằng số khác — hằng số mới sẽ sai lại khi bố cục đổi.
+
 > ### ★★★ G20 — TEST ĐO BẢN SAO CHÉP TAY, KHÔNG ĐO MÃ GIAO HÀNG (QA Đợt 6)
 >
 > `server/_core/twinTrangThaiPhamVi.unit.test.ts` có **5 test xanh** canh bộ lọc tenant — thứ vừa
