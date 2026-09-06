@@ -1632,7 +1632,8 @@ Ba món, không món nào là lỗi, nhưng Đ4 phải biết trước:
 Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, theo thứ tự:
 
 ```
-1. CỔNG MÁY    npm run check && npm test && npm run test:e2e
+1. CỔNG MÁY    npm run check && npm run build && npm test && npm run test:e2e
+                 ↑ ★ `build` là BẮT BUỘC, không được coi `check` là đủ
                  ↓ (xanh)
 2. CỔNG QA     Agent QA độc lập (KHÔNG phải agent đã viết mã)
                  · đọc brief đợt + đọc diff
@@ -1676,6 +1677,25 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > ⇒ **Luật:** con số nào trong spec chưa kèm câu lệnh đo được thì phải đánh dấu **"ước lượng"**,
 > và cổng ra của đợt phải **đối soát bằng hai mô hình rời nhau** (liệt kê toàn phân bố ↔ đếm tổng),
 > không phải hai lần cùng một phép đếm.
+
+> ### ★★★ G4 — `npm run check` XANH KHÔNG THAY ĐƯỢC `npm run build` (2026-09-06, sau QA Đợt 1)
+>
+> Đo được: sau khi Đợt 0 và Đợt 3 cùng vào nhánh, `npm run check` **exit 0** trong khi
+> `npm run build` **VỠ**:
+> ```
+> [vite:worker-import-meta-url] Invalid value "iife" for option "worker.format"
+> — UMD and IIFE output formats are not supported for code-splitting builds.
+> ```
+> **Không đợt nào sai riêng.** Đợt 0 thêm `manualChunks` (bật code-splitting); Đợt 3 thêm worker
+> `occtWorker.ts`; Vite mặc định `worker.format="iife"`. Riêng từng cái đều chạy — **chỉ tổ hợp
+> mới hỏng**. Và `check` không thể thấy, vì đây là lỗi **thời-điểm-bundle**, không phải lỗi kiểu.
+>
+> Cả Đợt 0, Đợt 1 và Đợt 3 đều khai "build exit 0" — **đúng tại thời điểm commit của từng đợt**,
+> sai sau khi hợp nhất. Chỉ QA Đợt 1 bắt được, vì nó **chạy build thật** thay vì tin lời khai.
+>
+> ⇒ **Luật:** cổng máy của mọi đợt phải chạy **`npm run check` VÀ `npm run build`**. Và với dự án
+> nhiều đợt song song: **chạy lại build sau MỖI lần hợp nhất**, không chỉ trong đợt của mình.
+> Vá tại `vite.config.ts` (`worker.format: "es"`), commit `0b3cae57`.
 
 **Luật cứng cho cổng QA:** agent QA **không được là agent đã viết mã đợt đó**, và **phải có Bash** (G1). Bài học `BG-127` của repo: *độc lập phải ở mô hình, không ở người đo* — hai phiên cùng sai một kiểu vẫn cho cùng kết quả sai. Nên QA phải đo bằng **mô hình khác**: nếu người viết đếm bằng `WHERE`, QA phải liệt kê toàn phân bố và đối chiếu tổng.
 
