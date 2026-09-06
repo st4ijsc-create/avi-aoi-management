@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using St4i.Hmi.Contracts;
+using St4i.EdgeCore.Infrastructure;
 
 namespace St4i.EngineApi.HmiModel;
 
@@ -107,9 +108,24 @@ public sealed class TagNamespaceStore : ITagNamespaceStore
     // Schema
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>🔴 WS-F4 Task 1 — the highest migration rung this build understands, DERIVED from
+    /// <see cref="Migrations"/> rather than restated, so a new rung cannot leave the ceiling behind.
+    /// A database above this was written by a newer build; see
+    /// <see cref="SchemaFromTheFutureException"/> for why that must be a refusal and not a skip.</summary>
+    private static long HighestKnownSchemaVersion => Migrations[^1].Version;
+
     private void EnsureSchema()
     {
         using var connection = OpenConnection();
+
+        // 🔴 WS-F4 Task 1 — THE SCHEMA CEILING. Refuse a database written by a NEWER build before the
+        // ladder below is allowed to skip it silently. This call must stay ABOVE the loop: the loop's own
+        // `continue` skips every rung when the file is ahead, so a guard placed inside it could never fire
+        // on the one input that matters. HighestKnownSchemaVersion is derived from Migrations, so adding a
+        // rung raises the ceiling automatically and the two can never drift apart.
+        SchemaFromTheFutureException.ThrowIfDatabaseIsNewerThanThisBuild(
+            connection, DbPath, HighestKnownSchemaVersion);
+
         var currentVersion = GetUserVersion(connection);
 
         foreach (var (version, statements) in Migrations)
