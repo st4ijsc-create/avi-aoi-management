@@ -1347,7 +1347,29 @@ describe("webview — ĐỢT I / TASK I-1: chỉ báo ĐANG CHẠY trong bong b�
     expect(bongBongHeThong[0]!.con[1]!.textContent).toBe('vòng 2/3 — đang đọc tệp "a.ts"');
   });
 
-  it("★★★ I-1b (kết cục 1/4 — XONG) — token đầu tiên XOÁ chỉ báo, chữ thật ghi vào ĐÚNG chỗ", () => {
+  /**
+   * ★★★ QA "kết cục thứ NĂM" (2026-09-06, `qa-toan-module.md` §1) — BẤT BIẾN thật của I-1b KHÔNG
+   * PHẢI "bốn loại tin nhắn cụ thể xoá chỉ báo" (một danh sách ĐÓNG — đúng cách audit gốc đặt tên
+   * các ca dưới đây, `N/4`), mà là:
+   *
+   *   ★ CHỈ BÁO CHỜ-AI PHẢI BIẾN MẤT Ở MỌI ĐƯỜNG KẾT THÚC PHIÊN ĐANG HIỂN THỊ NÓ — bất kể đường đó
+   *     là tin từ SERVER (token/hoan_tat/loi) hay một HÀNH ĐỘNG CỦA NGƯỜI DÙNG khiến webview rời
+   *     khỏi phiên đó (Chat mới/Lịch sử) — KHÔNG một chỉ báo mồ côi nào được phép sống sót để bị
+   *     tin nhắn TỚI MUỘN của phiên cũ ghi đè lên phiên MỚI.
+   *
+   * Danh sách MỌI đường kết thúc đã biết tính tới nay (đặt tên theo đường, không theo số thứ tự —
+   * một danh sách có thể mọc thêm phần tử thứ N+1 mà không ai đổi TÊN lưới, đúng bài học Khối D):
+   *   1. XONG — token đầu tiên tới.
+   *   2. XONG, KHÔNG STREAM — `hoan_tat` mang thẳng `vanBanCuoi` (degraded), không token nào trước đó.
+   *   3. DỪNG — người dùng bấm nút Dừng, rồi `hoan_tat` xác nhận.
+   *   4. LỖI / MẤT KẾT NỐI — `loi` (kèm hoặc không `moSettings`).
+   *   5. ĐỔI PHIÊN GIỮA LÚC ĐANG CHẠY — "Chat mới" hoặc "Lịch sử" trong khi lượt cũ chưa có kết cục
+   *      nào ở trên (đây LÀ lỗi QA vừa bắt: `xoaKhungChoPhienKhac` không hề dọn `choAiHienTai`).
+   *
+   * Đây KHÔNG phải trần cuối cùng — bất kỳ đường thoát MỚI nào (ví dụ một loại tin nhắn tương lai)
+   * đều phải cộng thêm một ca ở ĐÚNG hình dạng này, đặt tên theo TÊN đường, không theo số thứ tự.
+   */
+  it("★★★ ĐƯỜNG KẾT THÚC 'XONG' — token đầu tiên XOÁ chỉ báo, chữ thật ghi vào ĐÚNG chỗ", () => {
     const w = chayWebview();
     w.nut("o-nhap").value = "câu hỏi";
     w.nut("nut-gui").bam();
@@ -1360,7 +1382,7 @@ describe("webview — ĐỢT I / TASK I-1: chỉ báo ĐANG CHẠY trong bong b�
     expect(bongBongAi.con[1]!.textContent).toBe("Đây là ");
   });
 
-  it("★★★ I-1b (kết cục 1/4 — XONG, KHÔNG token nào) — `hoan_tat` cũng XOÁ chỉ báo", () => {
+  it("★★★ ĐƯỜNG KẾT THÚC 'XONG, KHÔNG STREAM' — `hoan_tat` không kèm token nào cũng XOÁ chỉ báo", () => {
     // Ca CÓ THẬT: câu trả lời degraded thay hẳn bằng `vanBanCuoi` mà KHÔNG một token nào từng đổ về
     // trước đó (xem `bangChat.ts`, nhánh degraded gửi thẳng `hoan_tat` mà không stream token).
     const w = chayWebview();
@@ -1376,7 +1398,7 @@ describe("webview — ĐỢT I / TASK I-1: chỉ báo ĐANG CHẠY trong bong b�
     expect(w.nut("nut-dung").hidden).toBe(true);
   });
 
-  it("★★★ I-1b (kết cục 2/4 — DỪNG) — nút Dừng bấm ⇒ `hoan_tat` sau đó vẫn XOÁ chỉ báo, không quay mãi", () => {
+  it("★★★ ĐƯỜNG KẾT THÚC 'DỪNG' — nút Dừng bấm ⇒ `hoan_tat` sau đó vẫn XOÁ chỉ báo, không quay mãi", () => {
     // Đường SERVER/LOCAL đều gửi `hoan_tat` sau khi báo 'đã dừng' — xem docblock `bangChat.ts`. Chỉ
     // báo phải biến mất Ở ĐÂY hệt như đường "xong bình thường" — đây CHÍNH LÀ nhánh brief cảnh báo
     // "một spinner không bao giờ tắt còn tệ hơn không có spinner".
@@ -1396,7 +1418,7 @@ describe("webview — ĐỢT I / TASK I-1: chỉ báo ĐANG CHẠY trong bong b�
     expect(w.nut("nut-dung").hidden).toBe(true);
   });
 
-  it("★★★ I-1b (kết cục 3/4 — LỖI) — `loi` (lỗi máy chủ thường) XOÁ chỉ báo", () => {
+  it("★★★ ĐƯỜNG KẾT THÚC 'LỖI' — `loi` (lỗi máy chủ thường) XOÁ chỉ báo", () => {
     const w = chayWebview();
     w.nut("o-nhap").value = "câu hỏi";
     w.nut("nut-gui").bam();
@@ -1408,7 +1430,7 @@ describe("webview — ĐỢT I / TASK I-1: chỉ báo ĐANG CHẠY trong bong b�
     expect(w.nut("nut-dung").hidden).toBe(true);
   });
 
-  it("★★★ I-1b (kết cục 4/4 — MẤT KẾT NỐI) — `loi` kèm `moSettings:true` cũng XOÁ chỉ báo", () => {
+  it("★★★ ĐƯỜNG KẾT THÚC 'MẤT KẾT NỐI' — `loi` kèm `moSettings:true` cũng XOÁ chỉ báo", () => {
     // Mất-kết-nối-máy-chủ đi qua ĐÚNG cùng loại tin `loi` với `moSettings:true` (không có một loại
     // tin riêng cho "mất kết nối" — xem `bangChat.ts#laLoiKhongNoiDuocMayChu`), nên đây là ca RIÊNG
     // BIỆT với "LỖI" ở trên theo brief (bốn kết cục: xong/dừng/lỗi/mất kết nối), dù cùng nhánh mã.
@@ -1421,6 +1443,118 @@ describe("webview — ĐỢT I / TASK I-1: chỉ báo ĐANG CHẠY trong bong b�
 
     expect(choAiCuaBongBongAi(w)).toBeUndefined();
     expect(w.nut("nut-dung").hidden).toBe(true);
+  });
+
+  it("★★★ ĐƯỜNG KẾT THÚC 'ĐỔI PHIÊN GIỮA LÚC ĐANG CHẠY' (kết cục thứ NĂM, QA 2026-09-06) — 'Chat mới' XOÁ chỉ báo mồ côi, tin `thong_bao` TỚI MUỘN của phiên cũ KHÔNG được ghi vào node mồ côi đó", () => {
+    // Kịch bản QA đo được NGUYÊN VĂN (đúng thứ tự): hỏi câu A (vòng ≥2, chỉ báo còn "ba chấm" — CHƯA
+    // có token nào tới) → bấm "Chat mới" GIỮA LÚC đang chờ → luồng SSE cũ của A "bay muộn" và bắn một
+    // `thong_bao` tiến độ TRƯỚC KHI người dùng kịp gõ câu B. Trước bản vá, `xoaKhungChoPhienKhac`
+    // không gọi `xoaChiBaoChoAi()` nên `choAiHienTai` (biến closure, KHÔNG phải con mà `innerHTML=""`
+    // biết dọn) vẫn trỏ vào chỉ báo mồ côi của phiên A — `thong_bao` muộn ghi ĐÈ đúng vào node đó.
+    //
+    // ★ CHÚ Ý THỨ TỰ: bài lưới TRƯỚC (rút gọn) gửi tin muộn SAU KHI đã gõ câu B — nhưng `gui()` (xử
+    // lý nút Gửi) tự gọi `xoaChiBaoChoAi()` Ở ĐẦU (dọn "chỉ báo lượt TRƯỚC nếu còn sót vì lý do bất
+    // thường" — xem docblock tại đó) TRƯỚC KHI tạo chỉ báo của B, nên nó VÔ TÌNH dọn luôn node mồ côi
+    // và CHE MẤT lỗ hổng thật của `xoaKhungChoPhienKhac` (xác nhận bằng đột biến: gỡ dòng
+    // `xoaChiBaoChoAi()` khỏi `xoaKhungChoPhienKhac` KHÔNG làm ca cũ đỏ). Ca ĐÚNG phải đo NGAY SAU
+    // 'chat_moi', TRƯỚC khi có bất kỳ `gui()` nào khác chạy — đúng thời điểm QA mô tả.
+    const w = chayWebview();
+    w.nut("o-nhap").value = "câu hỏi A — vòng đang chạy";
+    w.nut("nut-gui").bam();
+    const choAiPhienA = choAiCuaBongBongAi(w);
+    expect(choAiPhienA, "phiên A phải có chỉ báo trước khi bị đổi phiên").toBeDefined();
+    // Phiên A CHƯA có kết cục nào (không token, không hoan_tat, không loi) — đúng khe hở QA mô tả.
+
+    w.banTin({ loai: "chat_moi", soLuot: 0, soKyTu: 0 }); // "Chat mới" — dựng lại DOM cho khung TRẮNG
+
+    // Bong bóng AI của phiên A đã bị `innerHTML=""` xoá khỏi DOM — khung giờ TRẮNG (chỉ còn hướng
+    // dẫn rỗng lần đầu, không còn bong bóng "luot-ai" nào).
+    expect(w.nut("hoi-thoai").con.some((x) => x.className === "luot luot-ai")).toBe(false);
+
+    // ★★★ TIN `thong_bao` MUỘN của luồng SSE cũ (phiên A) "bay" tới NGAY SAU 'chat_moi' — TRƯỚC khi
+    // người dùng kịp gõ/gửi câu B (đúng thứ tự QA đo được thật). Nếu `xoaKhungChoPhienKhac` không tự
+    // dọn `choAiHienTai`, tin này ghi THẲNG vào node mồ côi của phiên A — TRỤC ĐO của ca này là node
+    // đó phải BẤT ĐỘNG trước tin muộn (dù ở lớp extension đã có hàng rào `aborted` chặn từ NGUỒN, ca
+    // này đo LỚP PHÒNG THỦ THỨ HAI ở webview một cách ĐỘC LẬP — hai lớp phải cùng đứng vững).
+    w.banTin({ loai: "thong_bao", thongDiep: "vòng 2/3 — đang đọc tệp a.ts" });
+
+    expect(
+      choAiPhienA!.className,
+      "node mồ côi của phiên A KHÔNG được đổi className bởi tin thong_bao muộn",
+    ).toBe("cho-ai");
+    expect(choAiPhienA!.textContent, "node mồ côi của phiên A KHÔNG được đổi textContent").toBe("");
+
+    // NHÁNH KIA — người dùng sau đó gõ câu B: phiên B phải có chỉ báo CỦA RIÊNG nó, không tái dùng
+    // node mồ côi, và tin thong_bao TIẾP THEO phải cập nhật ĐÚNG chỉ báo của B.
+    w.nut("o-nhap").value = "câu hỏi B — phiên mới";
+    w.nut("nut-gui").bam();
+    const choAiPhienB = choAiCuaBongBongAi(w);
+    expect(choAiPhienB, "phiên B phải có chỉ báo CỦA RIÊNG nó").toBeDefined();
+    expect(choAiPhienB).not.toBe(choAiPhienA); // hai node KHÁC NHAU — không tái dùng node mồ côi
+
+    w.banTin({ loai: "thong_bao", thongDiep: "vòng 2/3 — đang đọc tệp b.ts" });
+    // ĐÚNG NHƯ THIẾT KẾ CÓ SẴN (I-1a): tin `thong_bao` cập nhật chỉ báo CỦA PHIÊN ĐANG HIỆN (B).
+    expect(choAiPhienB!.className).toBe("cho-ai-chu");
+    expect(choAiPhienB!.textContent).toBe("vòng 2/3 — đang đọc tệp b.ts");
+  });
+
+  it("★★ NHÁNH KIA của kết cục thứ NĂM — 'Lịch sử' (khôi phục hội thoại khác) cũng XOÁ chỉ báo mồ côi y hệt 'Chat mới'", () => {
+    // `xoaKhungChoPhienKhac` là hàm DÙNG CHUNG cho cả `chat_moi` lẫn `khoi_phuc_hoi_thoai` — bản vá
+    // phải đóng CẢ HAI đường gọi nó, không chỉ đường "Chat mới" đã đo ở ca trên.
+    const w = chayWebview();
+    w.nut("o-nhap").value = "câu hỏi A — vòng đang chạy";
+    w.nut("nut-gui").bam();
+    const choAiPhienA = choAiCuaBongBongAi(w);
+    expect(choAiPhienA).toBeDefined();
+
+    w.banTin({ loai: "khoi_phuc_hoi_thoai", luot: [{ vaiTro: "user", noiDung: "câu cũ" }], soLuot: 1, soKyTu: 6 });
+
+    w.banTin({ loai: "thong_bao", thongDiep: "vòng 2/3 — đang đọc tệp a.ts" });
+
+    // Không bong bóng "luot-ai" nào của hội thoại vừa khôi phục (chỉ có "user") mang chỉ báo bị ghi
+    // đè — nếu `xoaChiBaoChoAi()` bị bỏ sót, chỉ báo mồ côi vẫn "sống" nhưng không có bong bóng AI
+    // nào để hiện trong khung mới nên phép đo trực tiếp nhất là: node cũ KHÔNG bị đổi bởi tin muộn.
+    expect(choAiPhienA!.className).toBe("cho-ai");
+    expect(choAiPhienA!.textContent).toBe("");
+  });
+
+  it("★ NHÁNH KIA của kết cục thứ NĂM — hai lượt hỏi CHỒNG NHAU (gửi câu B khi câu A đang chạy, KHÔNG qua Chat mới/Lịch sử) — chỉ báo KHÔNG kẹt", () => {
+    // ★★★ B3 của brief — đo thêm một đường ĐỔI PHIÊN nữa: gõ thẳng câu hỏi thứ hai trong khi câu hỏi
+    // thứ nhất vẫn đang hiện chỉ báo (không đi qua "Chat mới"/"Lịch sử"). `gui()` tạo bong bóng AI
+    // MỚI cho MỖI lượt hỏi (không tái dùng bong bóng cũ) — đây là đường "kết cục thứ SÁU" phải kiểm.
+    const w = chayWebview();
+    // ★ `choAiCuaBongBongAi` chọn bong bóng AI ĐẦU TIÊN (đủ cho mọi ca khác — chỉ có MỘT bong bóng
+    // AI tại một thời điểm ở đó); ca này CỐ Ý có HAI bong bóng AI cùng lúc nên tự truy theo CHỈ SỐ.
+    const choAiThuN = (n: number) => {
+      const bongBong = w.nut("hoi-thoai").con.filter((x) => x.className === "luot luot-ai")[n]!;
+      return bongBong.con[1]!.con[0];
+    };
+    w.nut("o-nhap").value = "câu hỏi A";
+    w.nut("nut-gui").bam();
+    const choAiPhienA = choAiThuN(0);
+    expect(choAiPhienA).toBeDefined();
+
+    // Người dùng KHÔNG đợi kết cục của A — gõ câu B và bấm Gửi ngay (webview không cấm việc này;
+    // hàng rào "một lượt tại một thời điểm" nằm ở PHÍA EXTENSION — `hoi()` tự abort `this.huy` cũ).
+    w.nut("o-nhap").value = "câu hỏi B";
+    w.nut("nut-gui").bam();
+    const choAiPhienB = choAiThuN(1);
+    expect(choAiPhienB).toBeDefined();
+    expect(choAiPhienB).not.toBe(choAiPhienA);
+
+    // Chỉ báo của A vẫn còn TRONG DOM (bong bóng "Bạn: câu hỏi A" + bong bóng AI của nó chưa bị xoá
+    // — webview không dọn lượt CŨ khi một câu hỏi MỚI chỉ đơn giản được GÕ THÊM, khác hẳn "Chat mới"
+    // chủ động dọn khung). Đây KHÔNG phải một chỉ báo "kẹt" theo nghĩa QA lo ngại: nó vẫn là sổ tiến
+    // trình THẬT của lượt A (chưa có kết cục), không bị lượt B ghi đè — mỗi bong bóng AI giữ chỉ báo
+    // CỦA RIÊNG NÓ (biến `choAiHienTai` chỉ theo dõi bong bóng MỚI NHẤT, nhưng node CŨ không bị mất
+    // nội dung — nó chỉ không còn được `capNhatChiBaoChoAi`/`xoaChiBaoChoAi` cập nhật nữa).
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: "Trả lời B", soLuot: 1, soKyTu: 5 });
+
+    // Kết cục của B xoá ĐÚNG chỉ báo của B — không kẹt.
+    expect(choAiPhienB!.className).toBe("cho-ai");
+    expect(choAiPhienB!.textContent).toBe("");
+    const bongBongAiB = w.nut("hoi-thoai").con.filter((x) => x.className === "luot luot-ai")[1]!;
+    expect(bongBongAiB.con[1]!.textContent).toBe("Trả lời B");
   });
 
   it("★ chỉ báo mang MÀU của theme qua biến --vscode-*, không hardcode màu", () => {

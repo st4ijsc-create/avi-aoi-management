@@ -619,6 +619,16 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     // trống — "Chat mới", hoặc khôi phục một hội thoại 0 lượt), nó ĐỨNG YÊN hiện ra — đúng NHÁNH KIA
     // yêu cầu: có lượt rồi thì không hiện, chưa có lượt nào thì phải hiện.
     hienLaiRongLanDau();
+    // ★★★ QA "kết cục thứ NĂM" (2026-09-06) — \`innerHTML = ""\` Ở TRÊN vừa xoá bong bóng AI cũ khỏi
+    // DOM THẬT, nhưng biến \`choAiHienTai\` (đóng gói riêng trong closure, KHÔNG phải một node con mà
+    // \`innerHTML\` biết dọn) vẫn còn trỏ vào phần tử chỉ báo mồ côi đó nếu phiên cũ bị đổi GIỮA LÚC
+    // đang chạy (chưa có token nào tới để tự xoá nó qua nhánh "token" bên dưới). Không gọi
+    // \`xoaChiBaoChoAi()\` ở đây thì một tin \`thong_bao\` TỚI MUỘN của luồng SSE cũ (dù đã được chặn ở
+    // nguồn — xem hàng rào \`aborted\` mới thêm ở \`bangChat.ts\`) vẫn có một biến sống sẵn sàng nhận
+    // \`capNhatChiBaoChoAi()\` mà không ai kiểm tra "chỉ báo này có còn thuộc phiên đang hiện không".
+    // Gọi ở đây đóng cả hai lớp bằng CẤU TRÚC: dọn tham chiếu NGAY KHI phiên đổi, không dựa vào việc
+    // luồng cũ có kịp tới hay không.
+    xoaChiBaoChoAi();
     khoiTraLoi = null;
     theDuyet.hidden = true;
     moKhoaNutDuyet();

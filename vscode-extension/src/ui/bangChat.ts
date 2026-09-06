@@ -1081,13 +1081,47 @@ export class BangChat {
     // giữ NGUYÊN. `null` nghĩa là "không thay gì" — fallback cũ (`degradedCuoi ? traLoiCuoi : null`)
     // ở dưới vẫn áp dụng, kể cả cho ca het_tran KHÔNG có khối dở dang.
     let vanBanCuoiThayThe: string | null = null;
+    /**
+     * ★★★ QA "kết cục thứ NĂM" (2026-09-06) — LỚP THỨ BA của cùng lỗ hổng, còn NẶNG HƠN hai lớp
+     * `thong_bao` đã vá ở trên: đây là RÒ RỈ DỮ LIỆU, không chỉ rò rỉ HIỂN THỊ.
+     *
+     * `break` ở nhánh `buoc.loai === "dung"` thoát khỏi `for(;;)` bằng đường BÌNH THƯỜNG (không
+     * `throw`), nên toàn bộ ĐOẠN SAU vòng lặp (đẩy `this.lichSu.push(...)`, gửi `hoan_tat`, gọi
+     * `luuHoiThoaiHienTai()`, `xuLyDeXuatCucBo`/`xuLyDeXuatNho`) LUÔN chạy, KỂ CẢ khi lượt này vừa bị
+     * huỷ NGẦM vì người dùng đã rời sang một phiên KHÁC (`chatMoi()`/`moLichSu()`). Đo được: `chatMoi()`
+     * đã reset `this.lichSu = []` cho phiên MỚI TRẮNG, nhưng đoạn epilogue của lượt CŨ vẫn `push()`
+     * câu hỏi/trả lời của phiên A vào ĐÚNG mảng `this.lichSu` đó (đọc lại `this`, không phải một bản
+     * chụp riêng) — phiên B "trắng" tự nhiên có 1 lượt "ma" ngay khi vừa mở, rồi bị LƯU BỀN vào
+     * `workspaceState` như một hội thoại MỚI mang nội dung của A. Nặng hơn nữa: nếu đây là đường
+     * `moLichSu()` (không phải `chatMoi()`), `this.maHoiThoaiHienTai` lúc epilogue chạy đã trỏ sang
+     * BẢN GHI người dùng vừa MỞ LẠI — `luuHoiThoaiHienTai()` UPSERT sẽ GHI ĐÈ đúng hội thoại đó bằng
+     * nội dung của một câu hỏi hoàn toàn không liên quan (đúng nguy cơ mà docblock `moLichSu()` đã tự
+     * cảnh báo, nhưng cảnh báo đó chỉ tính đường huỷ TRƯỚC khi `moDongSse` được gọi, không tính khe
+     * hở NÀY — giữa hai vòng của MỘT lượt `hoi()` đã đang chạy).
+     *
+     * Vá bằng CỜ đặt tại nơi phát hiện huỷ ngầm (nhánh `buoc.loai === "dung"`), đọc lại NGAY SAU khi
+     * thoát vòng lặp — RETURN SỚM trước MỌI hiệu ứng phụ của epilogue, tái dùng đúng "nhánh SILENT"
+     * mà `catch` bên dưới đã có cho ca huỷ-giữa-lúc-đọc-SSE, áp dụng cho ca huỷ-giữa-hai-vòng này.
+     */
+    let boQuaEpilogueViHuyNgam = false;
 
     try {
       for (;;) {
         vong++;
         // Tiến độ cho NGƯỜI DÙNG: chỉ vòng ≥ 2 mới báo — vòng 1 là câu hỏi bình thường, token đã tự
         // stream ra rồi, báo thêm ở đó là làm ồn cho đường hạnh phúc phổ biến nhất (không cần đọc gì).
-        if (cheDo.loai === "local" && vong > 1) {
+        //
+        // ★★★ QA "kết cục thứ NĂM" (2026-09-06) — HÀNG RÀO `aborted` BẮT BUỘC ở đây. `chatMoi()`/
+        // `moLichSu()` huỷ NGẦM (`this.huy?.abort()` không kèm lý do) rồi `return` NGAY — nhưng
+        // vòng lặp SSE của `hoi()` CŨ (closure `dieuKhien` này) không hề biết điều đó, nó vẫn đang
+        // "bay" và có thể tới ĐÚNG lúc này giữa hai vòng đọc tool. Không có hàng rào, `postMessage`
+        // dưới đây phóng thẳng vào webview ĐÃ chuyển sang phiên MỚI (webview không phân biệt được
+        // tin đến từ luồng nào — nó chỉ có MỘT `choAiHienTai` cho phiên đang hiện) ⇒ chỉ báo của
+        // phiên MỚI bị ghi đè bằng tiến độ của một câu hỏi đã bị người dùng bỏ. Đọc TÍN HIỆU
+        // (`dieuKhien.signal.aborted`), không đọc "đang ở nhánh try hay catch" — cùng nguyên tắc
+        // TASK 6/D.1 đã dùng cho nhánh lỗi bên dưới: nguồn sự thật là AbortSignal, không phải hình
+        // dạng luồng thực thi.
+        if (cheDo.loai === "local" && vong > 1 && !dieuKhien.signal.aborted) {
           void this.panel.webview.postMessage({
             loai: "thong_bao",
             thongDiep: `— vòng ${vong}/${TRAN_VONG_MAC_DINH}: đang hỏi lại model với kết quả tool —`,
@@ -1185,12 +1219,33 @@ export class BangChat {
           coLoi: tt.daBaoLoi,
         });
         if (buoc.loai === "dung") {
-          if (buoc.lyDo !== "khong_con_tool") {
+          /**
+           * ★★★ QA "kết cục thứ NĂM" (2026-09-06) — LỚP THỨ HAI của cùng lỗ hổng, Ở ĐIỂM KHÁC với
+           * `bangChat.ts:1090`. `buocKeTiep` (THUẦN, `vongTacNhan.ts`) đọc `biHuy` từ CHÍNH
+           * `dieuKhien.signal.aborted` và gộp CẢ HAI nguồn huỷ (nút Dừng THẬT lẫn huỷ NGẦM vì đổi
+           * phiên) vào chung một nhãn hiển thị `"nguoi_dung_dung"` — đúng như docblock
+           * `LY_DO_NGUOI_DUNG_DUNG` ở trên đã cảnh báo (từ vựng TRÙNG CHỮ có chủ đích), nhưng chỗ
+           * NÀY lại dùng nó để GỬI THẲNG một `thong_bao` "Đã dừng theo yêu cầu" mà KHÔNG kiểm lại
+           * `dieuKhien.signal.reason` như nhánh `catch` bên dưới đã làm — nếu `chatMoi()`/`moLichSu()`
+           * huỷ NGẦM đúng lúc vòng lặp vừa kết thúc MỘT VÒNG (giữa hai lần `await moDongSse`, không
+           * phải giữa lúc ĐANG đọc thân SSE — khe hở KHÁC với khe hở đã vá ở dòng ~1090), tin này vẫn
+           * bay ra và có thể ghi đè khung PHIÊN MỚI bằng một câu "đã dừng" của phiên đã bị bỏ, dù
+           * người dùng chưa từng bấm nút Dừng. Hàng rào ĐÚNG: chỉ báo "đã dừng" khi ĐÂY THẬT SỰ là
+           * `dungVongHienTai()` của lượt này (`reason === LY_DO_NGUOI_DUNG_DUNG`) — huỷ ngầm thì im
+           * lặng, cùng nguyên tắc `catch` đã áp dụng, không phải một hàng rào MỚI phát minh riêng.
+           */
+          const laHuyNgamViDoiPhien =
+            buoc.lyDo === "nguoi_dung_dung" && dieuKhien.signal.reason !== LY_DO_NGUOI_DUNG_DUNG;
+          if (buoc.lyDo !== "khong_con_tool" && !laHuyNgamViDoiPhien) {
             void this.panel.webview.postMessage({
               loai: "thong_bao",
               thongDiep: nhanLyDoDungVong(buoc.lyDo, vong),
             });
           }
+          // ★★★ QA "kết cục thứ NĂM" — CỜ EPILOGUE (xem docblock khai báo `boQuaEpilogueViHuyNgam`
+          // ở đầu `hoi()`): huỷ ngầm vì đổi phiên thì epilogue (lưu lịch sử/gửi hoan_tat) phải bị
+          // BỎ QUA HOÀN TOÀN, không chỉ bỏ tin `thong_bao` hiển thị.
+          boQuaEpilogueViHuyNgam = laHuyNgamViDoiPhien;
           // ★★★ CHỈ nhánh het_tran — nguoi_dung_dung/loi/khong_con_tool KHÔNG được đổi hành vi
           // (xem docblock biến `vanBanCuoiThayThe` ở trên). Trả `null` khi không có khối dở dang.
           if (buoc.lyDo === "het_tran") {
@@ -1243,6 +1298,13 @@ export class BangChat {
         // mỗi vòng vừa tốn ngân sách ngữ cảnh vừa không mang tin gì mới cho những lượt sau.
         nguCanhVong = undefined;
       }
+
+      // ★★★ QA "kết cục thứ NĂM" — RETURN SỚM, TRƯỚC MỌI hiệu ứng phụ bên dưới (xem docblock khai
+      // báo `boQuaEpilogueViHuyNgam` ở đầu hàm). Không gửi `hoan_tat`, không đụng `this.lichSu`,
+      // không gọi `luuHoiThoaiHienTai()`/`xuLyDeXuatCucBo`/`xuLyDeXuatNho` — im lặng HOÀN TOÀN, cùng
+      // hành vi với nhánh SILENT của `catch` bên dưới (huỷ ngầm ở lượt hỏi MỚI đè lên lượt cũ), chỉ
+      // khác ĐIỂM huỷ rơi vào (giữa hai vòng của vòng lặp tác nhân, không phải giữa lúc đọc SSE).
+      if (boQuaEpilogueViHuyNgam) return;
 
       // `degraded` ⇒ webview đang hiện chữ ĐÃ STREAM mà server vừa bảo là rác (vòng công cụ suy
       // biến) — phải THAY bằng `answer` thật, không chỉ lặng lẽ lưu đúng mà hiện sai. Một lượt DUY

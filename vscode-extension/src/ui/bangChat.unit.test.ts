@@ -1491,6 +1491,115 @@ describe("ĐỢT F / TASK 3 / B3 — 'Chat mới'", () => {
     expect(may.daGui.filter((m) => m.loai === "chat_moi")).toHaveLength(1);
     expect(bang.lichSu).toEqual([]);
   });
+
+  it("★★★ QA 'kết cục thứ NĂM' (2026-09-06) — huỷ GIỮA HAI VÒNG của vòng lặp tác nhân ⇒ `thong_bao` tiến độ của VÒNG KẾ TIẾP KHÔNG ĐƯỢC gửi (hàng rào `aborted` tại nguồn)", async () => {
+    /**
+     * ★★★ Ca "câu hỏi ĐANG CHẠY DỞ" ở trên hủy trong lúc `moDongSse` TREO ở vòng 1 — không bao giờ
+     * chạm được nhánh `thong_bao` (chỉ bắn từ vòng ≥ 2, NGAY ĐẦU vòng lặp, TRƯỚC lời gọi
+     * `moDongSse` — xem `bangChat.ts:1090`). Đây LÀ đúng khe hở QA đo được: vòng 1 XIN đọc tool
+     * (buộc có vòng 2) → `chatMoi()` huỷ NGẦM (không lý do) NGAY SAU khi vòng 1 trả lời xong nhưng
+     * TRƯỚC KHI vòng lặp `for(;;)` chạy tới đầu vòng 2 — mô phỏng ĐÚNG khoảng hở đua (race window)
+     * thật: luồng SSE cũ "vẫn bay" và có thể tới ĐÚNG lúc `chatMoi()` vừa return.
+     *
+     * Kỹ thuật: gọi `chatMoi()` NGAY TRONG mock của vòng 1 (trước khi mock đó return) — JS đơn luồng
+     * nên `for(;;)` chỉ có thể chạy tiếp SAU khi promise của vòng 1 resolve, tức SAU khi `chatMoi()`
+     * (và `abort()` bên trong nó) đã chạy xong hoàn toàn. Đây là cách MÔ PHỎNG CHẶT THỜI ĐIỂM nhất
+     * có thể trong lưới thuần, không cần giả lập lịch tick bất định.
+     */
+    const bang = moBangThanhBen();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    const chatMoiRef = bang as unknown as { chatMoi: () => Promise<void> };
+    may.hangDoiSse = [
+      // Vòng 1 — model XIN đọc tool (buộc có vòng 2 kế tiếp).
+      async (dv) => {
+        dv.nhan({
+          type: "token",
+          token: '```avi-tool\n{"tool":"doc_tep","args":{"path":"a.ts"}}\n```',
+        });
+        dv.nhan({ type: "done" });
+        // ★★★ ĐIỂM ĐUA: đúng lúc vòng 1 "vừa xong, chưa kịp báo tiến độ vòng 2" — người dùng bấm
+        // "Chat mới". `this.huy` (đang là `dieuKhien` của lượt NÀY) bị `abort()` NGAY tại đây.
+        await chatMoiRef.chatMoi();
+        return { hong: [] };
+      },
+      // Vòng 2 — KHÔNG được phép chạy tới bước gọi SSE nếu hàng rào đứng vững; nếu lưới ĐỎ vì
+      // mock này bị gọi, đó là dấu hiệu vòng lặp KHÔNG dừng dù `dieuKhien.signal.aborted === true`
+      // — một hình dạng lỗi KHÁC (nghiêm trọng hơn), không phải trục đo của ca này.
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Không nên tới đây." });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "câu hỏi cần đọc tệp, vòng ≥2" });
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+
+    // (a) TRỤC ĐO CHÍNH — không một tin `thong_bao` NÀO mang tiến độ "vòng .../..:" của luồng cũ
+    // lọt ra SAU khi 'chat_moi' đã gửi (mốc chia hai phiên trong `daGui`, cùng thứ tự thật).
+    const chiSoChatMoi = may.daGui.findIndex((m) => m.loai === "chat_moi");
+    expect(chiSoChatMoi, "phải thấy đúng một tin 'chat_moi'").toBeGreaterThanOrEqual(0);
+    const sauChatMoi = may.daGui.slice(chiSoChatMoi + 1);
+    const thongBaoTienDoMuon = sauChatMoi.filter(
+      (m) => m.loai === "thong_bao" && typeof m.thongDiep === "string" && m.thongDiep.includes("vòng"),
+    );
+    expect(
+      thongBaoTienDoMuon,
+      `KHÔNG được có thong_bao tiến độ của luồng CŨ sau 'chat_moi'; thực tế: ${JSON.stringify(sauChatMoi)}`,
+    ).toEqual([]);
+
+    // (b) ★★★ RÒ RỈ DỮ LIỆU (lớp NẶNG HƠN đã phát hiện thêm khi viết ca này) — luồng CŨ tuyệt đối
+    // KHÔNG được gửi `hoan_tat` (sẽ ghi/che nội dung của khung phiên B), KHÔNG được `push` vào
+    // `this.lichSu` (đã bị `chatMoi()` reset về rỗng cho phiên B TRẮNG), và KHÔNG được lưu một hội
+    // thoại "ma" nào vào kho bền — xem docblock `boQuaEpilogueViHuyNgam` ở `bangChat.ts`.
+    expect(sauChatMoi.filter((m) => m.loai === "hoan_tat"), `daGui SAU chat_moi: ${JSON.stringify(sauChatMoi)}`).toEqual([]);
+    expect(bang.lichSu, "this.lichSu của phiên B phải vẫn RỖNG — không dính lượt ma của phiên A").toEqual([]);
+    expect(may.workspaceState[KHOA_HOI_THOAI], "KHÔNG hội thoại nào được lưu từ luồng mồ côi").toBeUndefined();
+  });
+
+  it("★★ NHÁNH KIA của kết cục thứ NĂM (RÒ RỈ DỮ LIỆU) — huỷ giữa hai vòng qua 'Lịch sử' KHÔNG được UPSERT đè bản ghi vừa mở lại", async () => {
+    // ★★★ Đây CHÍNH LÀ nguy cơ mà docblock `moLichSu()` tự cảnh báo (`bangChat.ts:932-937`) nhưng
+    // hàng rào "huỷ TRƯỚC khi gán lại `maHoiThoaiHienTai`" ở đó chỉ chặn đường huỷ-giữa-lúc-đọc-SSE
+    // (qua `catch`/`throw`); nó KHÔNG chặn khe hở NÀY (`break` bình thường giữa hai vòng của MỘT
+    // lượt `hoi()` CŨ đã đang chạy) — epilogue của lượt CŨ vẫn có thể chạy SAU khi `moLichSu()` đã
+    // gán `this.maHoiThoaiHienTai` sang bản ghi VỪA MỞ LẠI, khiến `luuHoiThoaiHienTai()` UPSERT ghi
+    // đè đúng bản ghi đó bằng nội dung không liên quan.
+    const bang = moBangThanhBen();
+    bang.dsDuAn = [{ id: "local:C:\\ws", nhan: "LOCAL · C:\\ws", loai: "local" }];
+    bang.duAnChon = "local:C:\\ws";
+    const hoiThoaiCu: HoiThoai = {
+      ma: "hoi-thoai-can-bao-ve",
+      tieuDe: "Hội thoại QUAN TRỌNG đã lưu từ trước",
+      thoiDiem: 100,
+      luot: [{ role: "user", content: "câu hỏi cũ" }, { role: "assistant", content: "trả lời cũ" }],
+    };
+    may.workspaceState[KHOA_HOI_THOAI] = [hoiThoaiCu];
+    may.quickPickChonChiSo = 0;
+    const moLichSuRef = bang as unknown as { moLichSu: () => Promise<void> };
+    may.hangDoiSse = [
+      async (dv) => {
+        dv.nhan({ type: "token", token: '```avi-tool\n{"tool":"doc_tep","args":{"path":"a.ts"}}\n```' });
+        dv.nhan({ type: "done" });
+        await moLichSuRef.moLichSu(); // ĐIỂM ĐUA — mở "Lịch sử", chọn ĐÚNG bản ghi quan trọng ở trên.
+        return { hong: [] };
+      },
+      async (dv) => {
+        dv.nhan({ type: "token", token: "Không nên tới đây." });
+        dv.nhan({ type: "done" });
+        return { hong: [] };
+      },
+    ];
+    may.nhanTin?.({ loai: "hoi", cauHoi: "câu hỏi phiên đang chạy, cần đọc tệp" });
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+
+    // Bản ghi quan trọng phải CÒN NGUYÊN — không bị epilogue của luồng mồ côi ghi đè.
+    const luuCuoi = may.workspaceState[KHOA_HOI_THOAI] as HoiThoai[];
+    expect(luuCuoi, `thực tế: ${JSON.stringify(luuCuoi)}`).toHaveLength(1);
+    expect(luuCuoi[0]).toEqual(hoiThoaiCu);
+    // Trạng thái nội bộ đã chuyển đúng sang bản ghi vừa mở lại — không lẫn nội dung của lượt bị huỷ.
+    expect(bang.maHoiThoaiHienTai).toBe("hoi-thoai-can-bao-ve");
+    expect(bang.lichSu).toEqual(hoiThoaiCu.luot);
+  });
 });
 
 /**
@@ -1934,3 +2043,4 @@ describe("ĐỢT G / TASK G3 / B4 — người dùng đổi mức quyền ('dat_
     expect(may.daGui.filter((m) => m.loai === "muc_quyen")).toEqual([]);
   });
 });
+
