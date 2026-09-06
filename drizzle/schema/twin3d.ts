@@ -25,6 +25,7 @@
 //   Đây là hành vi cố ý của driver (numeric có thể vượt Number.MAX_SAFE_INTEGER).
 //   Mọi phép tính PHẢI Number(...) tường minh; cộng thẳng hai giá trị sẽ NỐI CHUỖI
 //   ("1000" + "500" = "1000500") — lỗi câm, không throw. Xem `heToaDo.ts`.
+import { sql } from "drizzle-orm";
 import {
   pgTable, serial, integer, varchar, text, jsonb, boolean, numeric,
   timestamp, index, uniqueIndex,
@@ -67,7 +68,14 @@ export const twinToaNha = pgTable("twin_toa_nha", {
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_twin_toa_nha_factory").on(table.factoryId),
-  uniqueIndex("uq_twin_toa_nha_factory_ma").on(table.factoryId, table.ma),
+  // ★★★ Đợt 3 CHẶN-2 (mig 0355) — PARTIAL unique: chỉ ràng buộc hàng ĐANG SỐNG.
+  // Bản cũ không có `.where(...)`, nên một toà nhà đã XOÁ MỀM vẫn giữ chỗ của mã
+  // và không đường nào trong UI lấy lại được ⇒ mã mất vĩnh viễn. Xem docblock của
+  // `drizzle/0355_twin_unique_chi_tren_hang_song.sql` để biết vì sao chọn partial
+  // unique thay vì find-before-create.
+  uniqueIndex("uq_twin_toa_nha_factory_ma_song")
+    .on(table.factoryId, table.ma)
+    .where(sql`"isActive"`),
 ]);
 
 export type TwinToaNha = typeof twinToaNha.$inferSelect;
@@ -108,7 +116,11 @@ export const twinTang = pgTable("twin_tang", {
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_twin_tang_toa_nha").on(table.toaNhaId),
-  uniqueIndex("uq_twin_tang_toa_nha_cap").on(table.toaNhaId, table.capSo),
+  // ★★★ Đợt 3 CHẶN-2 (mig 0355) — cùng lý do như `twin_toa_nha` ở trên: xoá mềm
+  // tầng 2 rồi tạo lại tầng 2 là ngõ cụt nếu ràng buộc không mang vị từ isActive.
+  uniqueIndex("uq_twin_tang_toa_nha_cap_song")
+    .on(table.toaNhaId, table.capSo)
+    .where(sql`"isActive"`),
 ]);
 
 export type TwinTang = typeof twinTang.$inferSelect;

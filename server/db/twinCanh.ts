@@ -31,6 +31,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
+import { appError } from "../_core/appError";
 import { twinToaNha, twinTang, twinVatThe } from "../../drizzle/schema";
 import { trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 
@@ -50,6 +51,66 @@ function chuoiRaSo(gt: string | null | undefined): number | null {
   if (gt === null || gt === undefined) return null;
   const n = Number(gt);
   return Number.isFinite(n) ? n : null;
+}
+
+// ---------------------------------------------------------------------------
+// Trùng khoá (23505) — dịch sang câu người đọc hiểu, KHÔNG rò SQL
+// ---------------------------------------------------------------------------
+
+/**
+ * ★★★ Đợt 3 CHẶN-2 (b) — vì sao phải dịch 23505 ở ĐÂY.
+ *
+ * Driver `postgres` ném lỗi mang **NGUYÊN VĂN câu INSERT kèm tên MỌI cột** trong
+ * `err.query`, và tRPC serialize lỗi chưa-được-dịch xuống client thành
+ * `INTERNAL_SERVER_ERROR`. Đo được trước bản vá: client nhận đủ
+ *   `INSERT INTO twin_toa_nha ("factoryId", ma, ten, "rongMm", "sauMm", …)`
+ * Hai cái sai cùng lúc:
+ *   1. RÒ LƯỢC ĐỒ. Tên bảng + tên từng cột là thứ người dùng không cần và kẻ tấn
+ *      công thì cần. `INTERNAL_SERVER_ERROR` lẽ ra phải là bức tường, không phải
+ *      cửa sổ.
+ *   2. NGÕ CỤT CÂM. "INTERNAL_SERVER_ERROR" không nói cho người dùng biết họ vừa
+ *      trùng MÃ, cũng không nói phải làm gì. Họ chỉ thấy màn đỏ và không có
+ *      đường ra — đúng thứ mà `ENTITY_DUPLICATE` (đã có i18n vi/en/zh) nói được.
+ *
+ * ⚠ ĐI THEO `err.cause`, không chỉ đọc tầng ngoài: drizzle bọc lỗi driver, nên
+ *   `e.code` ở tầng ngoài cùng thường `undefined`. Đây đúng bài học `isMissingTable`
+ *   (doc 69) — một phép kiểm chỉ nhìn tầng ngoài là một phép kiểm luôn trả false.
+ *
+ * ⚠ CHỈ nuốt 23505. Mọi mã lỗi khác PHẢI ném nguyên — dịch bừa một lỗi chưa hiểu
+ *   thành "trùng mã" là biến một sự cố thành một lời khai sai.
+ */
+function laTrungKhoa(err: unknown): boolean {
+  let e: unknown = err;
+  for (let sau = 0; e != null && sau < 5; sau++) {
+    const anyE = e as { code?: string; message?: string; cause?: unknown };
+    if (anyE.code === "23505") return true;
+    if (String(anyE.message ?? "").includes("duplicate key value violates unique constraint")) {
+      return true;
+    }
+    e = anyE.cause;
+  }
+  return false;
+}
+
+/**
+ * Chạy một lượt ghi, dịch 23505 thành `CONFLICT` + `ENTITY_DUPLICATE`.
+ *
+ * `thucThe` là khoá i18n `errors.entity.*` (không phải câu tiếng Việt viết tay),
+ * và `fallbackMessage` nói RÕ đường ra cho log/API `/v1`/client chưa có i18n.
+ */
+async function ghiBatTrungKhoa<T>(
+  thucThe: string,
+  fallbackMessage: string,
+  chay: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await chay();
+  } catch (e) {
+    if (laTrungKhoa(e)) {
+      throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: thucThe }, fallbackMessage);
+    }
+    throw e;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -112,15 +173,28 @@ export async function luuToaNha(input: LuuToaNhaInput, scope?: PhamViNguoiXem) {
     if (!cu) return null;
     if (!(await trongPhamVi("factory", cu.factoryId, scope))) return null;
 
-    const [ket] = await d
-      .update(twinToaNha)
-      .set({ ...giaTri, updatedAt: new Date() })
-      .where(eq(twinToaNha.id, input.id))
-      .returning();
+    // ★ Đợt 3 CHẶN-2 — SỬA cũng đụng ràng buộc: đổi `ma` sang mã của một toà nhà
+    //   khác ĐANG SỐNG là 23505 y hệt lúc TẠO. Bọc cả hai nhánh, không chỉ nhánh
+    //   insert (vá một nhánh rồi quên nhánh kia đúng là lớp lỗi "vá xong không
+    //   kiểm NHÁNH KIA" của Đợt C).
+    const [ket] = await ghiBatTrungKhoa(
+      "twinToaNha",
+      `Mã toà nhà "${giaTri.ma}" đã có trong nhà máy này. Chọn mã khác hoặc sửa toà nhà đang mang mã đó.`,
+      () =>
+        d
+          .update(twinToaNha)
+          .set({ ...giaTri, updatedAt: new Date() })
+          .where(eq(twinToaNha.id, input.id as number))
+          .returning(),
+    );
     return ket ?? null;
   }
 
-  const [ket] = await d.insert(twinToaNha).values(giaTri).returning();
+  const [ket] = await ghiBatTrungKhoa(
+    "twinToaNha",
+    `Mã toà nhà "${giaTri.ma}" đã có trong nhà máy này. Chọn mã khác hoặc sửa toà nhà đang mang mã đó.`,
+    () => d.insert(twinToaNha).values(giaTri).returning(),
+  );
   return ket ?? null;
 }
 
@@ -281,15 +355,26 @@ export async function luuTang(input: LuuTangInput, scope?: PhamViNguoiXem) {
     const factoryCu = await nhaMayCuaToaNha(d, cu.toaNhaId);
     if (factoryCu === null || !(await trongPhamVi("factory", factoryCu, scope))) return null;
 
-    const [ket] = await d
-      .update(twinTang)
-      .set({ ...giaTri, updatedAt: new Date() })
-      .where(eq(twinTang.id, input.id))
-      .returning();
+    // ★ Đợt 3 CHẶN-2 — cùng lý do như `luuToaNha`: đổi `capSo` sang cấp số của
+    //   một tầng khác ĐANG SỐNG trong cùng toà nhà cũng là 23505.
+    const [ket] = await ghiBatTrungKhoa(
+      "twinTang",
+      `Toà nhà này đã có tầng cấp số ${giaTri.capSo}. Chọn cấp số khác hoặc sửa tầng đang mang cấp số đó.`,
+      () =>
+        d
+          .update(twinTang)
+          .set({ ...giaTri, updatedAt: new Date() })
+          .where(eq(twinTang.id, input.id as number))
+          .returning(),
+    );
     return ket ?? null;
   }
 
-  const [ket] = await d.insert(twinTang).values(giaTri).returning();
+  const [ket] = await ghiBatTrungKhoa(
+    "twinTang",
+    `Toà nhà này đã có tầng cấp số ${giaTri.capSo}. Chọn cấp số khác hoặc sửa tầng đang mang cấp số đó.`,
+    () => d.insert(twinTang).values(giaTri).returning(),
+  );
   return ket ?? null;
 }
 
