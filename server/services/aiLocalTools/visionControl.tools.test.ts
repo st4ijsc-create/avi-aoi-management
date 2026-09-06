@@ -222,51 +222,46 @@ describe("registration + RBAC surface", () => {
 });
 
 describe("(c) confirmed proposal routes through dispatch — SIMULATED on uncommissioned adapter (composes with C2)", () => {
-  it("reject_divert: control ON + NOT commissioned ⇒ simulated, writeTags 0×", async () => {
-    // no commissioning record seeded
+  it("★★★ L-7 ÂM TÍNH: reject_divert (Mức 5) KHÔNG tới dispatcher, KHÔNG có dòng command_log", async () => {
+    // TRƯỚC L-7 ca này khẳng định lệnh ĐI TỚI dispatcher và ghi một dòng
+    // command_log 'simulated'. L-7 chặn SỚM HƠN THẾ: `reject_divert` gạt một
+    // cần gạt vật lý ⇒ Mức 5 ⇒ tác nhân AI không bao giờ được gọi. Không tới
+    // dispatcher nghĩa là cũng KHÔNG có dòng sổ nào — chặn ở cổng, không phải
+    // chặn ở đáy.
     const p = await proposeAction(tool("reject_divert"), { machineId: 5, unitRef: "55" }, ctx());
-    expect(p.ok).toBe(true);
-    // GATE-INTACT: preview did NOT dispatch / write / log anything.
+    expect(p.ok).toBe(true); // vẫn ĐỀ XUẤT được (để người còn đọc và tự bấm)
     expect(writeTagsSpy).not.toHaveBeenCalled();
     expect(cmdLog).toHaveLength(0);
 
     const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, USER, "vi");
-    expect(c.status).toBe("executed");
-
-    const result = (c.result as any).data; // DispatchResult
-    expect(result.simulated).toBe(true);
-    expect(result.status).toBe("simulated");
-    expect(result.reason).toBe("not_commissioned");
-    // The driver was NEVER touched — C2 forced the simulated path despite control ON.
+    expect(c.status).toBe("bi_tu_choi_ghi"); // lượt ghi bị TỪ CHỐI
     expect(writeTagsSpy).not.toHaveBeenCalled();
-    expect(cmdLog).toHaveLength(1);
-    expect(cmdLog[0].status).toBe("simulated");
-    expect(cmdLog[0].triggerKind).toBe("hitl");
-    expect(cmdLog[0].errorText).toMatch(/^not_commissioned:/);
-  });
+    expect(cmdLog).toHaveLength(0); // ★ KHÔNG tới dispatcher ⇒ không có dòng sổ
+    // 20s: ca đầu tiên của tệp phải nạp cả cây module (Redis fallback + dispatcher
+    // thật). Đứng một mình hết ~4,5s; chạy song song với 90 tệp khác thì vượt
+    // 5s mặc định — timeout do TẢI MÁY, không phải do logic.
+  }, 20_000);
 
-  it("spi_printer_offset: two writes, both simulated on uncommissioned adapter, writeTags 0×", async () => {
+  it("★ L-7 ÂM TÍNH: spi_printer_offset (Mức 5) cũng bị chặn", async () => {
     const p = await proposeAction(tool("spi_printer_offset"), { machineId: 5, offsetXUm: -6, offsetYUm: 2.5 }, ctx());
     const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, USER, "vi");
-    expect(c.status).toBe("executed");
-    const result = (c.result as any).data;
-    expect(result.simulated).toBe(true);
-    expect(result.results).toHaveLength(2); // offset_x + offset_y
+    expect(c.status).toBe("bi_tu_choi_ghi");
     expect(writeTagsSpy).not.toHaveBeenCalled();
-    expect(cmdLog.every((r) => r.status === "simulated")).toBe(true);
-    expect(cmdLog).toHaveLength(2);
+    expect(cmdLog).toHaveLength(0);
   });
 
-  it("once COMMISSIONED (+control ON) the SAME confirmed proposal actuates for real (writeTags 1×, acked)", async () => {
+  it("★★★ L-7 ÂM TÍNH: COMMISSIONED + control ON + cờ AI BẬT vẫn KHÔNG chạm driver", async () => {
+    // Ca quan trọng nhất của tệp này. Trước L-7 nó chứng minh điều NGƯỢC LẠI
+    // (writeTags 1x, acked). Giờ nó chứng minh Mức 5 là CHẶN CỨNG: mọi cổng
+    // khác đã mở hết — nghiệm thu xong, cờ thiết bị bật, cờ AI bật, tag ghi
+    // được, người đã xác nhận — mà byte vẫn KHÔNG rời máy chủ.
     commissionAdapter10();
+    process.env.AI_OT_CONTROL_ENABLED = "true";
     const p = await proposeAction(tool("reject_divert"), { machineId: 5, unitRef: "55" }, ctx());
     const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, USER, "vi");
-    expect(c.status).toBe("executed");
-    const result = (c.result as any).data;
-    expect(result.simulated).toBe(false);
-    expect(result.status).toBe("acked");
-    expect(writeTagsSpy).toHaveBeenCalledTimes(1);
-    expect(cmdLog[0].status).toBe("acked");
+    expect(c.status).toBe("bi_tu_choi_ghi");
+    expect(writeTagsSpy).not.toHaveBeenCalled(); // ★ KHÔNG một byte nào rời đi
+    expect(cmdLog).toHaveLength(0);
   });
 });
 
@@ -280,22 +275,28 @@ describe("GATE-INTACT: HITL + allowlist are never bypassed", () => {
     expect(cmdLog).toHaveLength(0);
   });
 
-  it("a non-writable tag is rejected by the dispatcher allowlist even when commissioned", async () => {
+  it("★ L-7: cổng AI chặn TRƯỚC cả allowlist tag.writable (chặn sớm hơn, không muộn hơn)", async () => {
+    // Trước L-7, thứ cứu ta ở đây là `tag.writable=false` — một cột dữ liệu.
+    // Bản thiết kế L-7 mục 0.3 đã nói thẳng: đó là "dữ liệu chưa ai điền", không
+    // phải hàng rào có chủ đích, và MỘT câu UPDATE là đủ để mở toang. Ca này đo
+    // rằng ta không còn phụ thuộc vào nó: kể cả khi tag GHI ĐƯỢC, cổng vẫn chặn.
     commissionAdapter10();
-    tags[0].writable = false; // cmd_reject_divert no longer in the write allowlist
+    tags[0].writable = true; // ★ tag GHI ĐƯỢC — hàng rào cũ đã mở
     const p = await proposeAction(tool("reject_divert"), { machineId: 5 }, ctx());
     const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, USER, "vi");
-    const result = (c.result as any).data;
-    expect(result.status).toBe("rejected");
-    expect(result.reason).toBe("TAG_NOT_WRITABLE");
+    expect(c.status).toBe("bi_tu_choi_ghi");
     expect(writeTagsSpy).not.toHaveBeenCalled();
+    expect(cmdLog).toHaveLength(0); // chặn ở CỔNG ⇒ dispatcher chưa từng chạy
   });
 
-  it("the AI/quality-loop dispatch is ALWAYS triggeredBy.kind='hitl' (never interlock)", async () => {
+  it("★ L-7: KHÔNG có dispatch nào cho tool Mức 5 ⇒ không có dòng sổ mang triggerKind", async () => {
+    // Bất biến cũ ("luôn là hitl, không bao giờ interlock") nay đúng một cách
+    // MẠNH HƠN và rỗng: đường AI không sinh ra dòng command_log nào cho Mức 5.
+    // Ghi lại nguyên văn để lượt sau không tưởng bất biến cũ đã mất.
     commissionAdapter10();
     const p = await proposeAction(tool("reject_divert"), { machineId: 5 }, ctx());
     await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, USER, "vi");
-    expect(cmdLog[0].triggerKind).toBe("hitl");
-    expect(cmdLog[0].interlockRuleId ?? null).toBeNull();
+    expect(cmdLog).toHaveLength(0);
+    expect(cmdLog.some((r) => r.triggerKind === "interlock")).toBe(false);
   });
 });
