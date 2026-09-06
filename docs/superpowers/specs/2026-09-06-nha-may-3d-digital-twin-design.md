@@ -752,7 +752,16 @@ Toàn bộ là `protectedProcedure`; `sinhTuDong`, `xoaAsset`, `xuatBanBanGhi` l
 | Mở `/twin-studio` (thiết kế) | `settings_factory` **hoặc** `machine_control` — canView |
 | Sửa/xoá bố cục | canEdit |
 | Nhập asset | canCreate |
-| Sinh tự động, xuất bản phiên bản | `adminRoleProcedure` |
+| Sinh tự động, xuất bản phiên bản | **`adminProcedure`** |
+
+> **★ ĐÍNH CHÍNH 2026-09-06 (vá Đợt 4) — spec sai TÊN so với mã.** Bản đầu ghi `adminRoleProcedure`;
+> tên đó **không tồn tại**. `server/_core/trpc.ts` có `adminProcedure` (dòng 353) và factory
+> `roleProcedure(...)`. Agent chọn `adminProcedure` — đúng nghĩa spec, khớp khuôn ~20 router khác —
+> và **báo lại thay vì tự sửa spec**.
+>
+> **Hệ quả phải biết:** `adminProcedure` **kèm cổng 2FA** (`require2FA`). Admin chưa bật 2FA gọi
+> `sinhTuDong` sẽ nhận `TWO_FACTOR_NOT_SET_UP`. Đúng §8.4 (2FA bắt buộc cho internet-facing), nhưng
+> đây là **đổi hành vi thật** — không phải đổi tên suông.
 | Ack alarm | canEdit trên module alarm |
 | Tạo phiếu công việc | canCreate trên module maintenance |
 
