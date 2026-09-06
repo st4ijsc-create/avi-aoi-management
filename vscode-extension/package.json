@@ -134,6 +134,56 @@
           "command": "aviAiLocal.boNho",
           "when": "view == aviAiLocal.bangChatPhu",
           "group": "navigation"
+        },
+        {
+          "command": "aviAiLocal.dangNhap",
+          "when": "view == aviAiLocal.bangChat",
+          "group": "1_taiKhoan@1"
+        },
+        {
+          "command": "aviAiLocal.dangXuat",
+          "when": "view == aviAiLocal.bangChat",
+          "group": "1_taiKhoan@2"
+        },
+        {
+          "command": "aviAiLocal.doiMayChu",
+          "when": "view == aviAiLocal.bangChat",
+          "group": "2_cauHinh@1"
+        },
+        {
+          "command": "aviAiLocal.mcpServers",
+          "when": "view == aviAiLocal.bangChat",
+          "group": "2_cauHinh@2"
+        },
+        {
+          "command": "aviAiLocal.nhoDieuNay",
+          "when": "view == aviAiLocal.bangChat",
+          "group": "3_boNho@1"
+        },
+        {
+          "command": "aviAiLocal.dangNhap",
+          "when": "view == aviAiLocal.bangChatPhu",
+          "group": "1_taiKhoan@1"
+        },
+        {
+          "command": "aviAiLocal.dangXuat",
+          "when": "view == aviAiLocal.bangChatPhu",
+          "group": "1_taiKhoan@2"
+        },
+        {
+          "command": "aviAiLocal.doiMayChu",
+          "when": "view == aviAiLocal.bangChatPhu",
+          "group": "2_cauHinh@1"
+        },
+        {
+          "command": "aviAiLocal.mcpServers",
+          "when": "view == aviAiLocal.bangChatPhu",
+          "group": "2_cauHinh@2"
+        },
+        {
+          "command": "aviAiLocal.nhoDieuNay",
+          "when": "view == aviAiLocal.bangChatPhu",
+          "group": "3_boNho@1"
         }
       ]
     },

@@ -106,10 +106,34 @@ describe("thanh bên — ĐỢT F / TASK 3: view/title (Chat mới + Lịch sử
    */
   const BA_LENH_VIEW_TITLE = ["aviAiLocal.chatMoi", "aviAiLocal.lichSu", "aviAiLocal.boNho"];
 
+  /**
+   * ★★★ ĐỢT I / TASK I-5b (2026-09-06) — MỞ RỘNG lần hai, cùng lý lẽ với docblock H3 ở trên: audit
+   * đo được 5/10 lệnh (đăng nhập/đăng xuất/MCP servers/nhớ điều này/đổi máy chủ) không nằm trong bất
+   * kỳ `menus` nào — CHỈ gõ đúng tên trong Command Palette mới ra, đúng lớp lỗi "đã cài ≠ nhìn thấy
+   * được" đã cắn dự án hai lần trước H3. Năm lệnh này vào MENU PHỤ (group KHÔNG PHẢI "navigation" —
+   * xem `LENH_MENU_PHU` và ca "group navigation" bên dưới) thay vì nhồi thêm nút vào thanh công cụ
+   * đã có 3 nút trên panel hẹp ~290px. MỞ RỘNG đúng lưới BA-MỐI-NỐI này (không tách describe riêng)
+   * để một lệnh bị BỎ SÓT khỏi MỘT trong hai view id vẫn làm phép đếm/tích Đề-các lệch NGAY, đúng
+   * nguyên tắc H3 đã đặt.
+   */
+  const LENH_MENU_PHU = [
+    "aviAiLocal.dangNhap",
+    "aviAiLocal.dangXuat",
+    "aviAiLocal.doiMayChu",
+    "aviAiLocal.mcpServers",
+    "aviAiLocal.nhoDieuNay",
+  ];
+  const TAM_LENH_VIEW_TITLE = [...BA_LENH_VIEW_TITLE, ...LENH_MENU_PHU];
+
   it("★★★ có ÍT NHẤT ba mục trong view/title (Chat mới + Lịch sử + Bộ nhớ)", () => {
     expect(dsMenu().length).toBeGreaterThanOrEqual(3);
     const lenh = dsMenu().map((m) => m.command);
     for (const l of BA_LENH_VIEW_TITLE) expect(lenh).toContain(l);
+  });
+
+  it("★★★ I-5b — năm lệnh CÒN THIẾU (audit 2026-09-06) nay CÓ mặt trong view/title", () => {
+    const lenh = dsMenu().map((m) => m.command);
+    for (const l of LENH_MENU_PHU) expect(lenh).toContain(l);
   });
 
   it("★★★ MỐI NỐI 4 — mọi `when` trong view/title khớp NGUYÊN VĂN `view == <một trong hai MA_VIEW_...>`", async () => {
@@ -124,20 +148,20 @@ describe("thanh bên — ĐỢT F / TASK 3: view/title (Chat mới + Lịch sử
     }
   });
 
-  it("★★★ ĐỢT F / TASK 4 / B4 — mọi menu (Chat mới + Lịch sử + Bộ nhớ) áp cho CẢ HAI view id, không riêng một bên", async () => {
-    // Lệch ⇒ thanh công cụ (nút Chat mới/Lịch sử/Bộ nhớ) BIẾN MẤT ở vùng chứa còn lại — đúng cảnh
-    // báo trong kế hoạch Đợt F / Task 4 / B4, và đúng bài học người dùng đã trả giá (H3, xem docblock
-    // `BA_LENH_VIEW_TITLE` ở trên): thiếu MỘT view id là nút biến mất Ở MỘT TRONG HAI vị trí, người
-    // dùng mở đúng vị trí thiếu thì coi như tính năng không tồn tại. Đo bằng tích Đề-các:
-    // 3 lệnh × 2 view id = 6 mục.
+  it("★★★ ĐỢT F / TASK 4 / B4 (mở rộng I-5b) — mọi menu áp cho CẢ HAI view id, không riêng một bên", async () => {
+    // Lệch ⇒ mục menu BIẾN MẤT ở vùng chứa còn lại — đúng cảnh báo trong kế hoạch Đợt F / Task 4 /
+    // B4, và đúng bài học người dùng đã trả giá (H3, xem docblock `BA_LENH_VIEW_TITLE` ở trên): thiếu
+    // MỘT view id là mục biến mất Ở MỘT TRONG HAI vị trí, người dùng mở đúng vị trí thiếu thì coi
+    // như tính năng không tồn tại. Đo bằng tích Đề-các: 8 lệnh × 2 view id = 16 mục (I-5b thêm 5
+    // lệnh × 2 view id = 10, cộng 6 mục cũ của H3).
     const { MA_VIEW_THANH_BEN, MA_VIEW_THANH_BEN_PHU } = await import("./bangChatView");
-    for (const lenh of BA_LENH_VIEW_TITLE) {
+    for (const lenh of TAM_LENH_VIEW_TITLE) {
       for (const view of [MA_VIEW_THANH_BEN, MA_VIEW_THANH_BEN_PHU]) {
         const co = dsMenu().some((m) => m.command === lenh && m.when === `view == ${view}`);
         expect(co, `thiếu mục view/title cho lệnh "${lenh}" ở view "${view}"`).toBe(true);
       }
     }
-    expect(dsMenu()).toHaveLength(6);
+    expect(dsMenu()).toHaveLength(16);
   });
 
   it("★★★ MỐI NỐI 5 — mọi `command` trong view/title THẬT SỰ được `registerCommand(...)` trong extension.ts", () => {
@@ -158,6 +182,14 @@ describe("thanh bên — ĐỢT F / TASK 3: view/title (Chat mới + Lịch sử
       const m = dsMenu().find((x) => x.command === id);
       expect(m, `thiếu mục view/title cho "${id}"`).toBeDefined();
       expect(m!.group).toBe("navigation");
+    }
+  });
+
+  it("★★★ I-5b — năm lệnh MENU PHỤ KHÔNG đứng trong group \"navigation\" (không nhồi thêm nút vào thanh công cụ ba-nút-sẵn-có, panel hẹp ~290px)", () => {
+    for (const id of LENH_MENU_PHU) {
+      const ds = dsMenu().filter((x) => x.command === id);
+      expect(ds.length, `thiếu mục view/title cho "${id}"`).toBeGreaterThan(0);
+      for (const m of ds) expect(m.group, `mục "${id}" không nên ở group "navigation"`).not.toBe("navigation");
     }
   });
 

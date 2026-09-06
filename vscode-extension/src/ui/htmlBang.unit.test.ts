@@ -357,6 +357,10 @@ class PhanTuGia {
   className = "";
   scrollTop = 0;
   scrollHeight = 0;
+  // ★★★ ĐỢT I / TASK I-5a — script thật gán `d.id = "rong-lan-dau"` khi dựng lại hướng dẫn lần-đầu
+  // (`hienLaiRongLanDau`, htmlBang.ts) để lưới phân biệt được nó với bong bóng hội thoại thật trong
+  // `#hoi-thoai.con` bằng CÙNG thuộc tính DOM chuẩn (`Element.id`) mà script thật đọc/ghi.
+  id = "";
   // ★★★ ĐỢT G / TASK G1 / B2 — script thật đọc `dataset.daDangNhap` (từ `data-da-dang-nhap` của
   // markup TĨNH) và ghi `title`/`aria-label`/lớp `da-dang-nhap` thay vì `hidden`/`textContent` của
   // BA phần tử riêng như bản Đợt F cũ. Đối tượng RỖNG mặc định (không phải `undefined`) — script
@@ -722,20 +726,31 @@ describe("webview — 'khoi_phuc_hoi_thoai' vẽ lại ĐÚNG bong bóng đã c�
       ],
     });
 
-    const bongBong = w.nut("hoi-thoai").con;
-    expect(bongBong).toHaveLength(3);
+    // ★★★ ĐỢT I / TASK I-5a — `xoaKhungChoPhienKhac` (chạy TRƯỚC khi vẽ lại) dựng lại `#rong-lan-dau`
+    // rồi mỗi lượt `themLuot` sau đó tự ẨN nó (không xoá khỏi DOM) — nên nó vẫn là CON ĐẦU TIÊN của
+    // `#hoi-thoai`, chỉ với `hidden === true`. Lọc nó ra trước khi so bong bóng thật, đúng những gì
+    // người dùng THẤY (một phần tử `hidden` không hiển thị, dù vẫn còn trong DOM).
+    const bongBongThat = w.nut("hoi-thoai").con.filter((x) => x.id !== "rong-lan-dau");
+    expect(bongBongThat).toHaveLength(3);
+    expect(w.nut("hoi-thoai").con.find((x) => x.id === "rong-lan-dau")?.hidden).toBe(true);
     // Mỗi bong bóng (`d` trong `themLuot`) có ĐÚNG hai con: nhãn (`t`) rồi tới nội dung (`c`).
-    expect(bongBong[0]!.con.map((x) => x.textContent)).toEqual(["Bạn", "Câu hỏi từ phiên trước"]);
-    expect(bongBong[1]!.con.map((x) => x.textContent)).toEqual(["AI Local", "Trả lời từ phiên trước"]);
-    expect(bongBong[2]!.con.map((x) => x.textContent)).toEqual(["Bạn", "Câu hỏi thứ hai"]);
+    expect(bongBongThat[0]!.con.map((x) => x.textContent)).toEqual(["Bạn", "Câu hỏi từ phiên trước"]);
+    expect(bongBongThat[1]!.con.map((x) => x.textContent)).toEqual(["AI Local", "Trả lời từ phiên trước"]);
+    expect(bongBongThat[2]!.con.map((x) => x.textContent)).toEqual(["Bạn", "Câu hỏi thứ hai"]);
   });
 
   it("★ NHÁNH KIA — mảng `luot` RỖNG (hoặc thiếu hẳn) ⇒ KHÔNG vẽ bong bóng nào, KHÔNG ném lỗi", () => {
+    // ★★★ ĐỢT I / TASK I-5a — khôi phục một hội thoại 0 lượt (hoặc mảng vắng mặt) nghĩa là khung
+    // THẬT SỰ trống ⇒ hướng dẫn lần-đầu phải HIỆN LẠI (NHÁNH KIA thứ hai của I-5a, cạnh "có lượt thì
+    // ẩn") — không phải một khoảng trắng vô nghĩa khi #hoi-thoai không còn gì để vẽ.
     const w = chayWebview();
     expect(() => w.banTin({ loai: "khoi_phuc_hoi_thoai", luot: [] })).not.toThrow();
-    expect(w.nut("hoi-thoai").con).toHaveLength(0);
+    expect(w.nut("hoi-thoai").con).toHaveLength(1);
+    expect(w.nut("hoi-thoai").con[0]!.id).toBe("rong-lan-dau");
+    expect(w.nut("hoi-thoai").con[0]!.hidden).toBe(false);
     expect(() => w.banTin({ loai: "khoi_phuc_hoi_thoai" })).not.toThrow();
-    expect(w.nut("hoi-thoai").con).toHaveLength(0);
+    expect(w.nut("hoi-thoai").con).toHaveLength(1);
+    expect(w.nut("hoi-thoai").con[0]!.hidden).toBe(false);
   });
 });
 
@@ -767,7 +782,13 @@ describe("webview — ĐỢT F / TASK 3 / B3: tin 'chat_moi' xoá SẠCH khung",
 
     w.banTin({ loai: "chat_moi" });
 
-    expect(w.nut("hoi-thoai").con).toHaveLength(0);
+    // ★★★ ĐỢT I / TASK I-5a — "Chat mới" là khung THẬT SỰ trống (không lượt nào sắp được vẽ lại,
+    // khác `khoi_phuc_hoi_thoai`) ⇒ hướng dẫn lần-đầu phải HIỆN LẠI, đúng NHÁNH KIA của I-5a. Đây
+    // là phần tử DUY NHẤT còn lại trong `#hoi-thoai` sau khi "xoá HẾT" — không phải một khung rỗng
+    // vô nghĩa mà một hướng dẫn có chủ đích.
+    expect(w.nut("hoi-thoai").con).toHaveLength(1);
+    expect(w.nut("hoi-thoai").con[0]!.id).toBe("rong-lan-dau");
+    expect(w.nut("hoi-thoai").con[0]!.hidden).toBe(false);
     expect(w.nut("the-duyet").hidden).toBe(true);
     expect(w.nut("nut-dung").hidden).toBe(true);
     expect(w.nut("o-nhap").value).toBe("");
@@ -776,7 +797,9 @@ describe("webview — ĐỢT F / TASK 3 / B3: tin 'chat_moi' xoá SẠCH khung",
   it("★ 'chat_moi' không ném lỗi khi khung ĐÃ trắng sẵn (rảnh, chưa hỏi gì)", () => {
     const w = chayWebview();
     expect(() => w.banTin({ loai: "chat_moi" })).not.toThrow();
-    expect(w.nut("hoi-thoai").con).toHaveLength(0);
+    // ★★★ ĐỢT I / TASK I-5a — vẫn ĐÚNG MỘT phần tử: hướng dẫn lần-đầu (dựng lại, hiện).
+    expect(w.nut("hoi-thoai").con).toHaveLength(1);
+    expect(w.nut("hoi-thoai").con[0]!.id).toBe("rong-lan-dau");
   });
 
   it("★★ nút duyệt đang KHOÁ (chống bấm hai lần) từ phiên cũ ⇒ 'chat_moi' cũng MỞ KHOÁ lại", () => {
@@ -802,7 +825,10 @@ describe("webview — ĐỢT F / TASK 3 / B4: 'khoi_phuc_hoi_thoai' THAY THẾ n
   it("★★★ đang hiện hội thoại A ⇒ chọn hội thoại B ⇒ khung chỉ còn ĐÚNG nội dung của B, không lẫn A", () => {
     const w = chayWebview();
     w.banTin({ loai: "khoi_phuc_hoi_thoai", luot: [{ vaiTro: "user", noiDung: "Câu hỏi của phiên A" }] });
-    expect(w.nut("hoi-thoai").con).toHaveLength(1);
+    // ★★★ ĐỢT I / TASK I-5a — lọc bỏ `#rong-lan-dau` (dựng lại rồi tự ẨN NGAY bởi `themLuot` của
+    // lượt vừa vẽ — xem docblock nhóm ca "NHIỀU lượt" ở trên) khỏi phép đếm bong bóng THẬT.
+    const bongBongThat = () => w.nut("hoi-thoai").con.filter((x) => x.id !== "rong-lan-dau");
+    expect(bongBongThat()).toHaveLength(1);
 
     w.banTin({
       loai: "khoi_phuc_hoi_thoai",
@@ -812,7 +838,7 @@ describe("webview — ĐỢT F / TASK 3 / B4: 'khoi_phuc_hoi_thoai' THAY THẾ n
       ],
     });
 
-    const bongBong = w.nut("hoi-thoai").con;
+    const bongBong = bongBongThat();
     expect(bongBong).toHaveLength(2);
     expect(bongBong.map((b) => b.con.map((x) => x.textContent))).toEqual([
       ["Bạn", "Câu hỏi của phiên B"],
@@ -1237,7 +1263,8 @@ describe("webview — phân biệt câu hỏi/trả lời bằng VAI (class + nh
         { vaiTro: "assistant", noiDung: "Trả lời cũ" },
       ],
     });
-    const bongBong = w.nut("hoi-thoai").con;
+    // ★★★ ĐỢT I / TASK I-5a — lọc `#rong-lan-dau` (dựng lại rồi tự ẩn ngay khi lượt đầu được vẽ).
+    const bongBong = w.nut("hoi-thoai").con.filter((x) => x.id !== "rong-lan-dau");
     expect(bongBong[0]!.className).toBe("luot luot-nguoi-dung");
     expect(bongBong[1]!.className).toBe("luot luot-ai");
   });
@@ -1270,5 +1297,144 @@ describe("webview — phân biệt câu hỏi/trả lời bằng VAI (class + nh
     const bongBong = w.nut("hoi-thoai").con;
     expect(bongBong[0]!.className).toBe("luot luot-he-thong");
     expect(bongBong[0]!.con[0]!.textContent).toBe("Lưu ý");
+  });
+});
+
+/**
+ * ★★★ ĐỢT I / TASK I-1a+I-1b — CHỈ BÁO ĐANG CHẠY: kết cục, không chỉ cơ chế. Bong bóng AI vừa tạo
+ * (chưa có token nào) phải mang một PHẦN TỬ chỉ báo (`cho-ai`, ba chấm nhấp nháy CSS) làm CON của
+ * `khoiTraLoi` (chính `c` trong `themLuot`, chỗ `bongBong[1].con[1]` giữ). I-1b là NHÁNH KIA và là
+ * chỗ dễ sai nhất theo brief: lưới BỐN kết cục riêng biệt (xong · dừng · lỗi · mất kết nối) phải
+ * đều xoá chỉ báo — một spinner không tắt còn tệ hơn không có spinner.
+ */
+describe("webview — ĐỢT I / TASK I-1: chỉ báo ĐANG CHẠY trong bong bóng AI", () => {
+  /** Bong bóng AI của lượt vừa gửi — `con[1]` là `c` (nội dung), `con[1].con[1]` là chỉ báo (sau
+   *  nhãn "AI Local" ở `con[0]`, chỉ báo là con THỨ HAI của `c`, đứng sau `t`... — thực ra chỉ báo
+   *  là con của `c` chứ không phải của `d`; xem `khoiTraLoi.appendChild(choAiHienTai)` trong
+   *  htmlBang.ts). `c` chính là `bongBongAi.con[1]` (d.appendChild(t) rồi d.appendChild(c)). */
+  function choAiCuaBongBongAi(w: ReturnType<typeof chayWebview>) {
+    const bongBongAi = w.nut("hoi-thoai").con.find((x) => x.id !== "rong-lan-dau" && x.className === "luot luot-ai")!;
+    const noiDungAi = bongBongAi.con[1]!; // c — xem themLuot: d.appendChild(t); d.appendChild(c)
+    return noiDungAi.con[0]; // choAiHienTai — phần tử DUY NHẤT được appendChild vào c lúc tạo
+  }
+
+  it("★★★ I-1a — gửi câu hỏi ⇒ bong bóng AI có NGAY chỉ báo ba-chấm (KHÔNG rỗng-im-lìm)", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "câu hỏi";
+    w.nut("nut-gui").bam();
+
+    const choAi = choAiCuaBongBongAi(w);
+    expect(choAi).toBeDefined();
+    expect(choAi!.className).toBe("cho-ai");
+    // Ba chấm — CSS `@keyframes` tự chạy trên MỖI span con, không phải một JS timer nào ở đây.
+    expect(choAi!.con).toHaveLength(3);
+  });
+
+  it("★★★ I-1a — `thong_bao` (tiến độ CÓ NGHĨA) ĐỔI chữ chỉ báo, KHÔNG xoá nó khỏi bong bóng hệ thống", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "câu hỏi cần đọc tệp";
+    w.nut("nut-gui").bam();
+
+    w.banTin({ loai: "thong_bao", thongDiep: "vòng 2/3 — đang đọc tệp \"a.ts\"" });
+
+    const choAi = choAiCuaBongBongAi(w);
+    expect(choAi!.className).toBe("cho-ai-chu");
+    expect(choAi!.textContent).toBe('vòng 2/3 — đang đọc tệp "a.ts"');
+    // NHÁNH KIA — sổ tiến trình đầy đủ (bong bóng hệ thống) vẫn giữ NGUYÊN, không bị thay bằng
+    // chỉ báo trong bong bóng AI: đây là một BẢN TÓM TẮT thêm, không phải một đường thay thế.
+    const bongBongHeThong = w.nut("hoi-thoai").con.filter((x) => x.className === "luot luot-he-thong");
+    expect(bongBongHeThong).toHaveLength(1);
+    expect(bongBongHeThong[0]!.con[1]!.textContent).toBe('vòng 2/3 — đang đọc tệp "a.ts"');
+  });
+
+  it("★★★ I-1b (kết cục 1/4 — XONG) — token đầu tiên XOÁ chỉ báo, chữ thật ghi vào ĐÚNG chỗ", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "câu hỏi";
+    w.nut("nut-gui").bam();
+    expect(choAiCuaBongBongAi(w)).toBeDefined();
+
+    w.banTin({ loai: "token", chu: "Đây là " });
+
+    expect(choAiCuaBongBongAi(w)).toBeUndefined();
+    const bongBongAi = w.nut("hoi-thoai").con.find((x) => x.className === "luot luot-ai")!;
+    expect(bongBongAi.con[1]!.textContent).toBe("Đây là ");
+  });
+
+  it("★★★ I-1b (kết cục 1/4 — XONG, KHÔNG token nào) — `hoan_tat` cũng XOÁ chỉ báo", () => {
+    // Ca CÓ THẬT: câu trả lời degraded thay hẳn bằng `vanBanCuoi` mà KHÔNG một token nào từng đổ về
+    // trước đó (xem `bangChat.ts`, nhánh degraded gửi thẳng `hoan_tat` mà không stream token).
+    const w = chayWebview();
+    w.nut("o-nhap").value = "câu hỏi";
+    w.nut("nut-gui").bam();
+    expect(choAiCuaBongBongAi(w)).toBeDefined();
+
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: "Câu trả lời thay thế" });
+
+    expect(choAiCuaBongBongAi(w)).toBeUndefined();
+    const bongBongAi = w.nut("hoi-thoai").con.find((x) => x.className === "luot luot-ai")!;
+    expect(bongBongAi.con[1]!.textContent).toBe("Câu trả lời thay thế");
+    expect(w.nut("nut-dung").hidden).toBe(true);
+  });
+
+  it("★★★ I-1b (kết cục 2/4 — DỪNG) — nút Dừng bấm ⇒ `hoan_tat` sau đó vẫn XOÁ chỉ báo, không quay mãi", () => {
+    // Đường SERVER/LOCAL đều gửi `hoan_tat` sau khi báo 'đã dừng' — xem docblock `bangChat.ts`. Chỉ
+    // báo phải biến mất Ở ĐÂY hệt như đường "xong bình thường" — đây CHÍNH LÀ nhánh brief cảnh báo
+    // "một spinner không bao giờ tắt còn tệ hơn không có spinner".
+    const w = chayWebview();
+    w.nut("o-nhap").value = "câu hỏi dài";
+    w.nut("nut-gui").bam();
+    expect(choAiCuaBongBongAi(w)).toBeDefined();
+
+    w.nut("nut-dung").bam(); // báo Ý ĐỊNH dừng — extension xử lý huỷ SSE thật, webview chỉ chờ tin về
+    expect(w.daGui.filter((m) => m.loai === "dung_hoi")).toHaveLength(1);
+    // Chỉ báo vẫn còn TRONG LÚC chờ extension xác nhận đã dừng xong (webview không tự đoán).
+    expect(choAiCuaBongBongAi(w)).toBeDefined();
+
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: null });
+
+    expect(choAiCuaBongBongAi(w)).toBeUndefined();
+    expect(w.nut("nut-dung").hidden).toBe(true);
+  });
+
+  it("★★★ I-1b (kết cục 3/4 — LỖI) — `loi` (lỗi máy chủ thường) XOÁ chỉ báo", () => {
+    const w = chayWebview();
+    w.nut("o-nhap").value = "câu hỏi";
+    w.nut("nut-gui").bam();
+    expect(choAiCuaBongBongAi(w)).toBeDefined();
+
+    w.banTin({ loai: "loi", thongDiep: "Máy chủ báo lỗi 500." });
+
+    expect(choAiCuaBongBongAi(w)).toBeUndefined();
+    expect(w.nut("nut-dung").hidden).toBe(true);
+  });
+
+  it("★★★ I-1b (kết cục 4/4 — MẤT KẾT NỐI) — `loi` kèm `moSettings:true` cũng XOÁ chỉ báo", () => {
+    // Mất-kết-nối-máy-chủ đi qua ĐÚNG cùng loại tin `loi` với `moSettings:true` (không có một loại
+    // tin riêng cho "mất kết nối" — xem `bangChat.ts#laLoiKhongNoiDuocMayChu`), nên đây là ca RIÊNG
+    // BIỆT với "LỖI" ở trên theo brief (bốn kết cục: xong/dừng/lỗi/mất kết nối), dù cùng nhánh mã.
+    const w = chayWebview();
+    w.nut("o-nhap").value = "câu hỏi";
+    w.nut("nut-gui").bam();
+    expect(choAiCuaBongBongAi(w)).toBeDefined();
+
+    w.banTin({ loai: "loi", thongDiep: "Không nối được máy chủ.", moSettings: true });
+
+    expect(choAiCuaBongBongAi(w)).toBeUndefined();
+    expect(w.nut("nut-dung").hidden).toBe(true);
+  });
+
+  it("★ chỉ báo mang MÀU của theme qua biến --vscode-*, không hardcode màu", () => {
+    const html = dungHtmlBang({ nonce: "N" });
+    const khoiCss = html.slice(html.indexOf(".cho-ai "), html.indexOf(".cho-ai-chu"));
+    expect(khoiCss).toContain("var(--vscode-");
+    expect(khoiCss).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+  });
+
+  it("★ hoạt ảnh chỉ báo là CSS @keyframes thuần — không setInterval/setTimeout nào trong toàn script", () => {
+    const html = dungHtmlBang({ nonce: "N" });
+    expect(html).toContain("@keyframes");
+    const ma = html.match(/<script nonce="N">([\s\S]*?)<\/script>/)![1];
+    expect(ma).not.toContain("setInterval");
+    expect(ma).not.toContain("setTimeout");
   });
 });

@@ -81,6 +81,28 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
      màu chữ-mô-tả của theme, khác cả hai màu trên để không bị nhầm là một câu trả lời của AI. */
   .luot-he-thong { border-left-color: var(--vscode-descriptionForeground); }
   .nhan { opacity: .7; font-size: 11px; text-transform: uppercase; }
+  /* ★★★ ĐỢT I / TASK I-1a — CHỈ BÁO ĐANG CHẠY. Bong bóng AI KHÔNG được rỗng-im-lìm trong lúc model
+     nghĩ (3-58s đo được) — người dùng phải THẤY nó còn sống. Thuần CSS @keyframes (không JS
+     timer): trình duyệt tự chạy animation, không tốn một setInterval nào để dọn khi lượt kết
+     thúc. Ba chấm nhấp nháy LỆCH PHA nhau (delay khác nhau) — đúng hình ảnh "đang gõ" quen thuộc,
+     không phải một khối chớp tắt đồng loạt trông giống lỗi hiển thị hơn là đang hoạt động. */
+  @keyframes cho-ai-nhap-nhay { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
+  .cho-ai { display: inline-flex; gap: 3px; vertical-align: middle; }
+  .cho-ai span { width: 5px; height: 5px; border-radius: 50%;
+                 background: var(--vscode-descriptionForeground, currentColor);
+                 animation: cho-ai-nhap-nhay 1.2s infinite ease-in-out both; }
+  .cho-ai span:nth-child(2) { animation-delay: .2s; }
+  .cho-ai span:nth-child(3) { animation-delay: .4s; }
+  /* Trạng thái CÓ NGHĨA (đến từ tin "thong_bao" khi model đang đọc tool/gọi vòng tiếp — xem xử lý
+     tin bên dưới): chữ mờ, không giật — thay THẾ ba chấm chung chung khi có tin thật để báo, không
+     hiện CẢ HAI cùng lúc (rối mắt, và cũng không đúng — ba chấm nghĩa là "chưa biết đang làm gì"). */
+  .cho-ai-chu { font-style: italic; opacity: .75; }
+  /* ★★★ ĐỢT I / TASK I-5a — KHUNG RỖNG CÓ HƯỚNG DẪN. GỌN theo yêu cầu (panel hẹp ~290px, đầu khung
+     đã bị phàn nàn "mất thẩm mỹ" ở Đợt G) — ba dòng ngắn, chữ mờ như một placeholder, KHÔNG khung
+     viền/nền riêng (không thêm một khối thị giác mới cạnh tranh với hội thoại thật). Ẩn hẳn (không
+     chỉ mờ) ngay khi bong bóng ĐẦU TIÊN xuất hiện — script gỡ nó, xem hàm themLuot/anRongLanDau. */
+  #rong-lan-dau { opacity: .7; font-size: 12px; line-height: 1.6; }
+  #rong-lan-dau p { margin: 4px 0; }
   #the-duyet { border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
                background: var(--vscode-editorWidget-background); padding: 8px; margin-top: 8px;
                font-size: 12px; }
@@ -158,7 +180,17 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
   </button>
 </div>
 <select id="o-du-an" title="Chọn dự án" hidden></select>
-<div id="hoi-thoai"></div>
+<!-- ★★★ ĐỢT I / TASK I-5a — HƯỚNG DẪN lần đầu mở, CHƯA từng có lượt nào (markup TĨNH, giống khuôn
+     #rong của htmlBoNho.ts). NHÁNH KIA: có lượt rồi ⇒ script ẩn nó NGAY khi bong bóng đầu tiên
+     được thêm (xem themLuot); khôi phục lịch sử cũng ẩn nó TRƯỚC khi vẽ (xem xoaKhungChoPhienKhac
+     gọi anRongLanDau()) — không hiện lại giữa các lượt của một hội thoại đã có nội dung. -->
+<div id="hoi-thoai">
+  <div id="rong-lan-dau">
+    <p>Hỏi AI Local về mã trong workspace này — ví dụ: "hàm này làm gì", "sửa lỗi ở dòng X".</p>
+    <p>Gõ <code>@</code> để chèn tệp vào câu hỏi.</p>
+    <p><code>Ctrl+Enter</code> để gửi.</p>
+  </div>
+</div>
 <div id="the-duyet" hidden>
   <div class="nhan">Đề xuất ghi tệp</div>
   <div id="duyet-nguon"></div>
@@ -247,7 +279,34 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
    * đúng vòng đời của bong bóng đó, không chiếm chỗ vĩnh viễn.
    */
   const NHAN_THEO_VAI = { nguoi_dung: "Bạn", ai: "AI Local", he_thong: "Hệ thống" };
+  // ★★★ ĐỢT I / TASK I-5a — hướng dẫn lần đầu mở chỉ có Ý NGHĨA khi khung THẬT SỰ chưa có lượt nào.
+  // Ẩn Ở ĐÂY (điểm DUY NHẤT mọi bong bóng thật đi qua — kể cả lượt đầu do người dùng gõ VÀ lượt đầu
+  // của một hội thoại vừa khôi phục) thay vì rải rác nhiều nơi tự đoán "đây có phải lần đầu không".
+  // ⚠ \`xoaKhungChoPhienKhac\` (Chat mới/Lịch sử) xoá SẠCH \`#hoi-thoai\` bằng \`innerHTML = ""\` — phần
+  // tử \`#rong-lan-dau\` TĨNH ban đầu bị phá huỷ CÙNG LÚC, nên biến này chỉ còn dùng được cho LẦN ĐẦU
+  // (trước khi \`xoaKhungChoPhienKhac\` từng chạy); \`xoaKhungChoPhienKhac\` tự dựng lại một bản MỚI khi
+  // cần hiện lại (xem hàm đó bên dưới) thay vì trông cậy vào biến này đã bị "mồ côi" khỏi DOM.
+  let rongLanDau = document.getElementById("rong-lan-dau");
+  function anRongLanDau() {
+    if (rongLanDau) rongLanDau.hidden = true;
+  }
+  /** Dựng lại hướng dẫn lần-đầu bằng ĐÚNG nội dung tĩnh ban đầu — dùng khi \`#hoi-thoai\` vừa bị dọn
+   *  sạch (\`innerHTML = ""\`) và cần hiện lại vì khung THẬT SỰ trống (không có lượt nào để vẽ). */
+  function hienLaiRongLanDau() {
+    const d = document.createElement("div");
+    d.id = "rong-lan-dau";
+    const dong1 = document.createElement("p");
+    dong1.textContent = "Hỏi AI Local về mã trong workspace này — ví dụ: \\"hàm này làm gì\\", \\"sửa lỗi ở dòng X\\".";
+    const dong2 = document.createElement("p");
+    dong2.textContent = "Gõ @ để chèn tệp vào câu hỏi.";
+    const dong3 = document.createElement("p");
+    dong3.textContent = "Ctrl+Enter để gửi.";
+    d.appendChild(dong1); d.appendChild(dong2); d.appendChild(dong3);
+    hoiThoai.appendChild(d);
+    rongLanDau = d;
+  }
   function themLuot(vai, chu, moSettings, nhanTuyChon) {
+    anRongLanDau();
     const d = document.createElement("div");
     // "luot-nguoi_dung" → "luot-nguoi-dung": tên lớp CSS kebab-case, tên vai trong script snake_case
     // — chỉ đổi ký hiệu nối chữ, KHÔNG đổi sự thật (vẫn CÙNG một chuỗi \`vai\` truyền vào).
@@ -433,12 +492,50 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     tkDinhKem.textContent = "Tệp đính kèm: " + tepDinhKemHienTai.length;
   }
 
+  /**
+   * ★★★ ĐỢT I / TASK I-1a — CHỈ BÁO ĐANG CHẠY. Bong bóng AI vừa tạo (chưa có token nào tới) nay
+   * mang một PHẦN TỬ RIÊNG \`choAiHienTai\`, con của CHÍNH \`khoiTraLoi\` (ba chấm CSS \`@keyframes\`,
+   * không JS timer). \`khoiTraLoi.textContent += m.chu\` (token đầu tiên) tự XOÁ nó khỏi DOM THẬT
+   * (gán \`textContent\` xoá MỌI con cũ) — nhưng DOM giả của lưới không mô phỏng hiệu ứng đó (xem
+   * \`PhanTuGia\`, \`textContent\` chỉ là một thuộc tính chuỗi rời khỏi \`.con\`), nên KHÔNG được trông
+   * cậy vào hiệu ứng ngầm ấy để lưới đo đúng: mọi nơi set \`khoiTraLoi.textContent\` PHẢI tự gọi
+   * \`xoaChiBaoChoAi()\` NGAY TRƯỚC — đúng thứ tự đó mới đúng ở CẢ browser thật lẫn DOM giả.
+   * Xoá bằng CÁCH LỌC \`.con\` của \`khoiTraLoi\` (không cần \`parentNode\`, phần tử này CHỈ BAO GIỜ có
+   * đúng một cha — \`khoiTraLoi\` — nên không cần một API DOM tổng quát hơn mức lưới mô phỏng được).
+   */
+  let choAiHienTai = null;
+  function xoaChiBaoChoAi() {
+    if (choAiHienTai && khoiTraLoi && khoiTraLoi.con) {
+      const i = khoiTraLoi.con.indexOf(choAiHienTai);
+      if (i >= 0) khoiTraLoi.con.splice(i, 1);
+    }
+    choAiHienTai = null;
+  }
+  /** Đổi NỘI DUNG chỉ báo sang một dòng CÓ NGHĨA (từ \`thong_bao\` — "vòng N/3: đang đọc…") thay vì ba
+   *  chấm chung chung — CHỈ áp dụng khi CHƯA có token nào tới (còn \`choAiHienTai\`); token đầu tiên
+   *  tự xoá chỉ báo này (xem xử lý tin "token" bên dưới), nên không có chuyện chữ tiến độ cũ đứng lỳ
+   *  cạnh câu trả lời đã bắt đầu stream. */
+  function capNhatChiBaoChoAi(chu) {
+    if (!choAiHienTai) return;
+    choAiHienTai.className = "cho-ai-chu";
+    choAiHienTai.textContent = chu;
+  }
+
   function gui() {
     const cauHoi = oNhap.value.trim();
     if (!cauHoi) return;
     themLuot("nguoi_dung", cauHoi);
     oNhap.value = "";
+    xoaChiBaoChoAi(); // lượt TRƯỚC (nếu còn sót chỉ báo vì lý do bất thường) không được dính sang lượt này.
     khoiTraLoi = themLuot("ai", "");
+    // Ba chấm nhấp nháy CHUNG CHUNG mặc định — thay bằng dòng CÓ NGHĨA ngay khi \`thong_bao\` đầu tiên
+    // của lượt này tới (xem xử lý tin "thong_bao" bên dưới).
+    choAiHienTai = document.createElement("span");
+    choAiHienTai.className = "cho-ai";
+    choAiHienTai.appendChild(document.createElement("span"));
+    choAiHienTai.appendChild(document.createElement("span"));
+    choAiHienTai.appendChild(document.createElement("span"));
+    khoiTraLoi.appendChild(choAiHienTai);
     nutDung.hidden = false;
     anMenuMention();
     // ★★★ ĐỢT G / TASK G2 / B1+B2 — HỢP NHẤT hai nguồn tệp: @-mention gõ TRONG câu hỏi này
@@ -516,6 +613,12 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
    */
   function xoaKhungChoPhienKhac(xoaCauDangGo) {
     hoiThoai.innerHTML = "";
+    // ★★★ ĐỢT I / TASK I-5a — \`innerHTML = ""\` vừa phá huỷ \`#rong-lan-dau\` TĨNH cùng lúc với bong
+    // bóng cũ. Dựng lại NGAY (hiện sẵn) — nếu ngay sau đây có lượt được vẽ lại (\`khoi_phuc_hoi_thoai\`
+    // có nội dung), \`themLuot\` bên dưới tự ẩn nó qua \`anRongLanDau()\`; nếu KHÔNG (khung THẬT SỰ
+    // trống — "Chat mới", hoặc khôi phục một hội thoại 0 lượt), nó ĐỨNG YÊN hiện ra — đúng NHÁNH KIA
+    // yêu cầu: có lượt rồi thì không hiện, chưa có lượt nào thì phải hiện.
+    hienLaiRongLanDau();
     khoiTraLoi = null;
     theDuyet.hidden = true;
     moKhoaNutDuyet();
@@ -532,9 +635,24 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
 
   window.addEventListener("message", (e) => {
     const m = e.data;
-    if (m.loai === "token" && khoiTraLoi) khoiTraLoi.textContent += m.chu;
-    else if (m.loai === "loi") { themLuot("he_thong", m.thongDiep, m.moSettings === true, "Lỗi"); nutDung.hidden = true; }
+    // ★★★ ĐỢT I / TASK I-1a — token ĐẦU TIÊN của lượt là tín hiệu "model đã bắt đầu trả lời thật":
+    // xoá chỉ báo đang-chờ NGAY TRƯỚC khi ghi chữ, không sau — DOM giả của lưới không tự dọn hộ
+    // (xem docblock \`xoaChiBaoChoAi\`), và kể cả trên browser thật thì cũng phải TỰ xoá thay vì trông
+    // cậy \`textContent +=\` (đây là PHÉP CỘNG chuỗi, không phải phép GÁN — nó không xoá con cũ, một
+    // \`<span>\` ba-chấm vẫn nằm nguyên trong DOM cạnh chữ vừa ghi nếu không dọn tay).
+    if (m.loai === "token" && khoiTraLoi) {
+      xoaChiBaoChoAi();
+      khoiTraLoi.textContent += m.chu;
+    }
+    // ★★★ ĐỢT I / TASK I-1b — NHÁNH KIA của I-1a: LỖI (bao gồm mất-kết-nối, cùng gói tin \`loi\` với
+    // \`moSettings:true\` — xem \`bangChat.ts#laLoiKhongNoiDuocMayChu\`) phải XOÁ chỉ báo, không được
+    // để nó quay mãi trong một bong bóng AI rỗng đứng lại vĩnh viễn cạnh bong bóng lỗi mới.
+    else if (m.loai === "loi") { xoaChiBaoChoAi(); themLuot("he_thong", m.thongDiep, m.moSettings === true, "Lỗi"); nutDung.hidden = true; }
     else if (m.loai === "hoan_tat") {
+      // ★★★ ĐỢT I / TASK I-1b — NHÁNH KIA: XONG lẫn DỪNG đều đi qua \`hoan_tat\` (xem docblock
+      // \`bangChat.ts\`) — chỉ báo phải biến mất ở CẢ HAI, không chỉ đường "xong bình thường". Xoá
+      // TRƯỚC khi (có thể) ghi \`vanBanCuoi\` — cùng lý do với nhánh "token" ở trên.
+      xoaChiBaoChoAi();
       // vanBanCuoi chỉ có khi server bảo THAY chữ đã stream (degraded) — không phải mọi lượt.
       if (m.vanBanCuoi != null && khoiTraLoi) khoiTraLoi.textContent = m.vanBanCuoi;
       // Cắt ngang hoặc khung hỏng: KHÔNG được im lặng — phải hiện, kể cả khi câu trả lời trông
@@ -615,6 +733,12 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       // (\`confirmAction\` idempotent — xem \`bangChat.duyetDeXuat\`). Khoá vĩnh viễn ở đó là lấy mất
       // đúng đường thoát mà bản vá kia dựng ra.
       moKhoaNutDuyet();
+      // ★★★ ĐỢT I / TASK I-1a — TIN CÓ NGHĨA: khi lượt còn đang chờ (chỉ báo ba-chấm vẫn còn, tức
+      // CHƯA có token thật nào tới), đổi chỉ báo sang ĐÚNG chữ tiến độ này ("vòng N/3 — đang đọc…")
+      // thay vì ba chấm chung chung — KHÔNG THAY THẾ bong bóng hệ thống bên dưới (giữ NGUYÊN, đây là
+      // sổ tiến trình đầy đủ đã có từ trước); chỉ báo trong bong bóng AI là một bản tóm tắt SỐNG
+      // ngay chỗ mắt người dùng đang nhìn (cạnh nút Dừng), không buộc phải cuộn lên đọc sổ.
+      capNhatChiBaoChoAi(m.thongDiep);
       themLuot("he_thong", m.thongDiep, m.moSettings === true, "Thông báo");
     } else if (m.loai === "dat_cau_hoi_tu_lenh") {
       // ★★★ CMD+K (Task 7) — extension đổ câu hỏi ĐÃ DỰNG SẴN (đường dẫn + dòng + đoạn mã + yêu
