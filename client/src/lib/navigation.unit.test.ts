@@ -23,6 +23,7 @@ import {
   filterNavGroupsByMode,
   defaultNavModeForRole,
   getRequiredPermissionForHref,
+  getAcceptedPermissionsForHref,
   type NavGroup,
 } from "./navigation";
 
@@ -172,5 +173,72 @@ describe("Pha 5 N9 — nav `/ai-brain` mở cho supervisor (lớp 1 của năm l
     }
     // Không vai nào ⇒ không vào.
     expect(hasAccessToItem("/ai-brain", undefined, allowAllPerms)).toBe(false);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ★★★ Twin 3D Đợt 3 — CHẶN-1: quyền HOẶC ở tầng nav/guard (`/twin-studio`)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `server/routers/twinCanhRouter.ts:63` khai `requireAnyPermission([settings_factory,
+ * machine_control])` theo §6.4. Mục nav `/twin-studio` TRƯỚC bản vá này khai MỘT
+ * quyền `settings_factory`, và `App.tsx:326` dựng `RouteGuard navHref="/twin-studio"`
+ * — guard tra CHÍNH mục nav đó. Hậu quả đo được: `supervisor1`/`maint1` (có
+ * `machine_control`, KHÔNG có `settings_factory`) bị UI chặn khỏi đúng màn mà API
+ * cho phép họ ghi.
+ *
+ * ★ Bộ test này đo bằng permission-checker HẸP (chỉ cấp đúng một quyền), KHÔNG
+ *   phải `allowAllPerms`: `allowAllPerms` cho true với mọi chuỗi nên nó KHÔNG
+ *   BAO GIỜ phân biệt được HOẶC với VÀ — nó sẽ xanh cả trước lẫn sau bản vá.
+ *   Đây chính là lý do 5 test cũ ở đầu file mù với lớp lỗi này.
+ *
+ * ★ Vai dùng để đo KHÔNG được là "admin": `isItemAccessible` bypass admin ở dòng
+ *   đầu, nên một phép đo bằng admin chứng minh SỐ 0 (bài học Khối D).
+ *
+ * ★ ABLATION — hoàn `requiredPermissionAny` về `requiredPermission:
+ *   "settings_factory"` thì hai case `machine_control` dưới đây phải ĐỎ. Nếu
+ *   chúng vẫn xanh thì thiết bị đo hỏng, không phải bản vá đúng.
+ */
+describe("★★★ Đợt 3 CHẶN-1 — /twin-studio nhận quyền HOẶC (§6.4), khớp requireAnyPermission của router", () => {
+  /** Checker cấp ĐÚNG một quyền — phân biệt được HOẶC với VÀ. */
+  function chiCo(...quyen: string[]) {
+    return (module: string, _action?: string) => quyen.includes(module);
+  }
+
+  it("★ vai có machine_control (supervisor1/maint1) VÀO ĐƯỢC /twin-studio — ca hỏng đã đo", () => {
+    expect(hasAccessToItem("/twin-studio", "supervisor", chiCo("machine_control"))).toBe(true);
+    expect(hasAccessToItem("/twin-studio", "maintenance", chiCo("machine_control"))).toBe(true);
+  });
+
+  it("vai có settings_factory vẫn vào được — bản vá KHÔNG lấy mất nhánh cũ", () => {
+    expect(hasAccessToItem("/twin-studio", "engineer", chiCo("settings_factory"))).toBe(true);
+  });
+
+  it("★ CHIỀU NGƯỢC — vai KHÔNG có quyền nào trong tập vẫn BỊ CHẶN (không nới bừa)", () => {
+    expect(hasAccessToItem("/twin-studio", "operator", chiCo("history_view"))).toBe(false);
+    expect(hasAccessToItem("/twin-studio", "viewer", chiCo())).toBe(false);
+  });
+
+  it("★ /twin (màn VẬN HÀNH) KHÔNG bị nới theo — vẫn chỉ analytics_oee", () => {
+    // Hai màn hai quyền là chủ ý (§6.4). machine_control KHÔNG mở được màn vận hành.
+    expect(hasAccessToItem("/twin", "supervisor", chiCo("machine_control"))).toBe(false);
+    expect(hasAccessToItem("/twin", "supervisor", chiCo("analytics_oee"))).toBe(true);
+  });
+
+  it("★ tập quyền của nav KHỚP TỪNG PHẦN TỬ với quyenThietKe() của twinCanhRouter", () => {
+    // Ghim hợp đồng hai bên. Router: requireAnyPermission([settings_factory, machine_control]).
+    expect([...getAcceptedPermissionsForHref("/twin-studio")].sort()).toEqual(
+      ["machine_control", "settings_factory"],
+    );
+  });
+
+  it("getAcceptedPermissionsForHref vẫn đúng cho route MỘT quyền và route không tồn tại", () => {
+    expect(getAcceptedPermissionsForHref("/twin")).toEqual(["analytics_oee"]);
+    expect(getAcceptedPermissionsForHref("/khong-ton-tai-dot3")).toEqual([]);
+  });
+
+  it("★ admin bypass — vào được, nhưng phép đo này chứng minh SỐ 0 về cổng quyền", () => {
+    expect(hasAccessToItem("/twin-studio", "admin", chiCo())).toBe(true);
   });
 });

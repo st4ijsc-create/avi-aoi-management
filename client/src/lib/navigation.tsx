@@ -115,6 +115,29 @@ export interface NavItem {
   requiredRole?: string | string[];
   /** Module permission name required to view this item (checked via canView) */
   requiredPermission?: string;
+  /**
+   * ★★★ Đợt 3 CHẶN-1 — tập quyền chấp nhận theo phép **HOẶC**: có BẤT KỲ quyền nào
+   * trong danh sách là vào được. Dùng cho những route mà router phía server khai
+   * `requireAnyPermission([...])` — vd `/twin-studio` (§6.4: `settings_factory`
+   * HOẶC `machine_control`).
+   *
+   * ⚠⚠ Vì sao cần một trường RIÊNG thay vì nhồi thêm chuỗi vào `requiredPermission`:
+   * `requiredPermission` là ô ĐƠN, và mọi consumer (nav filter, RouteGuard qua
+   * `hasAccessToItem`, `getRequiredPermissionForHref`) đều đọc nó như MỘT tên
+   * module. Biến nó thành mảng sẽ phải sửa mọi consumer cùng lúc; thêm ô mới thì
+   * ô cũ giữ nguyên ngữ nghĩa và chỉ `isItemAccessible` phải hiểu thêm một nhánh.
+   *
+   * ⚠⚠ **LỚP LỖI "MỘT LỐI VÀO RỒI TỪ CHỐI" (Khối D) chạy CẢ HAI CHIỀU.** Chiều đã
+   * biết: nav rộng hơn router ⇒ thấy menu rồi bị API chặn. Chiều NGƯỢC LẠI cũng
+   * là lỗi: nav HẸP hơn router ⇒ người có quyền hợp lệ theo spec KHÔNG BAO GIỜ
+   * thấy lối vào, và không có lỗi nào nổ để ai truy ra. Đợt 3 dính đúng chiều
+   * này: router mở cho `machine_control` còn nav chỉ khai `settings_factory`, nên
+   * `supervisor1`/`maint1` bị UI chặn khỏi màn mà API cho phép.
+   *
+   * Quan hệ với `requiredPermission`: nếu khai CẢ HAI thì phép là HOẶC trên hợp
+   * của hai (ô đơn được coi như một phần tử nữa của tập). Thường chỉ khai một.
+   */
+  requiredPermissionAny?: string[];
   /** Permission category this item belongs to */
   permissionCategory?: string;
   /** Cấp-2 section key; items sharing a key are grouped under one sub-header (i18n nav.section.<key>) */
@@ -413,13 +436,27 @@ export const navGroups: NavGroup[] = [
         section: "mes",
       },
       {
-        // Thiết kế: sửa bố cục nhà xưởng = sửa cấu hình nhà máy → `settings_factory`,
-        // KHÁC (chặt hơn) màn vận hành. Hai màn hai quyền là chủ ý, không phải sơ suất.
+        // Thiết kế: sửa bố cục nhà xưởng. §6.4 cho vào bằng `settings_factory`
+        // **HOẶC** `machine_control` — khớp CHÍNH XÁC `quyenThietKe()` của
+        // `server/routers/twinCanhRouter.ts:63` (`requireAnyPermission`).
+        //
+        // ★★★ Đợt 3 CHẶN-1 — trước đây ô này khai MỘT quyền `settings_factory`
+        // trong khi router mở HAI. Hậu quả ĐO ĐƯỢC: `supervisor1` và `maint1`
+        // (có `machine_control`, KHÔNG có `settings_factory`) bị UI chặn khỏi
+        // đúng màn mà API cho phép họ ghi — 2/4 vai non-admin mất lối vào mà
+        // không lỗi nào nổ. Đó là lớp lỗi "một lối vào rồi TỪ CHỐI" của Khối D
+        // chạy theo CHIỀU NGƯỢC (nav hẹp hơn router), và nó câm hơn chiều xuôi.
+        //
+        // ⚠ Sửa ĐÚNG là mở nav ra bằng router, KHÔNG phải thu router về một
+        //   quyền: thu router lại là đi ngược §6.4 và cắt quyền của vai vận hành.
+        // ⚠ Đổi ô này thì phải đổi `quyenThietKe()` cùng lượt — hai bên là một
+        //   hợp đồng, và chỉ có nghiệm thu bằng tài khoản KHÔNG-admin mới thấy
+        //   được lệch (admin bypass `requirePermission` ⇒ đo bằng admin ra số 0).
         href: "/twin-studio",
         label: "nav.twinStudio",
         icon: <Building2 className="h-4 w-4" />,
         description: "nav.twinStudioDesc",
-        requiredPermission: "settings_factory",
+        requiredPermissionAny: ["settings_factory", "machine_control"],
         permissionCategory: "settings",
         section: "mes",
       },
@@ -2414,6 +2451,17 @@ function isItemAccessible(
     if (!userRole || !allowedRoles.includes(userRole)) return false;
   }
 
+  // ★★★ Đợt 3 CHẶN-1 — cổng quyền HOẶC. Đặt TRƯỚC cổng ô-đơn: khi một item khai
+  // `requiredPermissionAny`, tập đó (hợp với ô đơn nếu có) là câu trả lời đầy đủ,
+  // và chạy tiếp xuống cổng ô-đơn sẽ biến HOẶC thành VÀ — tức đúng cái lỗi mà
+  // docblock của `twinCanhRouter` cảnh báo khi nối hai `requirePermission`.
+  if (hasPermission && item.requiredPermissionAny && item.requiredPermissionAny.length > 0) {
+    const tap = item.requiredPermission
+      ? [...item.requiredPermissionAny, item.requiredPermission]
+      : item.requiredPermissionAny;
+    return tap.some(quyen => hasPermission(quyen, 'canView'));
+  }
+
   // Permission-based gate (if permission checker is provided and item has a mapping)
   if (hasPermission && item.requiredPermission) {
     return hasPermission(item.requiredPermission, 'canView');
@@ -2487,6 +2535,30 @@ export function getRequiredPermissionForHref(href: string): string | undefined {
     if (item) return item.requiredPermission;
   }
   return undefined;
+}
+
+/**
+ * ★★★ Đợt 3 CHẶN-1 — TẬP quyền chấp nhận (phép HOẶC) của một route, gộp cả ô đơn
+ * `requiredPermission` lẫn ô tập `requiredPermissionAny`. Trả mảng RỖNG khi route
+ * không có trong `navGroups` hoặc không gán quyền nào.
+ *
+ * ⚠ Vì sao thêm hàm này thay vì để mọi nơi gọi `getRequiredPermissionForHref`:
+ * hàm kia chỉ đọc ô ĐƠN, nên với một route khai quyền-HOẶC (như `/twin-studio`)
+ * nó trả `undefined` — tức "route này không gán quyền", SAI hoàn toàn và sai một
+ * cách CÂM. Nơi nào cần hỏi "route này đòi quyền gì" phải hỏi hàm này; hàm kia
+ * chỉ còn đúng cho route một-quyền và được giữ vì các consumer hiện có
+ * (`DataManagementHub`, `DataSettings`) chỉ tra `/digital-twin` — một-quyền.
+ */
+export function getAcceptedPermissionsForHref(href: string): string[] {
+  for (const group of navGroups) {
+    const item = group.items.find(i => i.href === href);
+    if (!item) continue;
+    const tap: string[] = [];
+    if (item.requiredPermissionAny) tap.push(...item.requiredPermissionAny);
+    if (item.requiredPermission) tap.push(item.requiredPermission);
+    return tap;
+  }
+  return [];
 }
 
 /**
