@@ -43,7 +43,17 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import { AsyncBoundary } from "@/components/AsyncBoundary";
-import { FactoryScene2D, FactoryScene3D } from "@/components/factory-scene";
+import { FactoryScene2D } from "@/components/factory-scene";
+// Twin 3D Đợt 1 — cảnh 3D chạy trên KIT `twin3d/loi/` (BatchedMesh 1 draw call,
+// frameloop demand + invalidate nối tay, cap 30 nhãn, dispose triệt để, bắt
+// webglcontextlost). Cùng chữ ký `FactorySceneProps` với `FactoryScene2D` nên chỗ
+// hoán đổi 2D/3D bên dưới không đổi.
+//
+// `factory-scene/FactoryScene3D.tsx` GIỮ NGUYÊN trên đĩa (spec §6.1: factory-scene
+// là NỀN của loi/, không viết lại). Đo được: sau thay đổi này KHÔNG còn màn nào
+// import nó — nó là đối chứng để so sánh hành vi, và `FactoryScene2D` vẫn là
+// fallback 2D chính thức, vẫn được màn này dùng qua nút toggle.
+import { CanhNhaMay } from "@/components/twin3d/loi";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -358,7 +368,12 @@ export default function FactoryCommandView() {
 
   const activeFactoryValue = factoryId != null ? String(factoryId) : "all";
 
-  const SceneComponent = is3D ? FactoryScene3D : FactoryScene2D;
+  // Nhãn trạng thái cho nhãn nổi trong cảnh 3D — đi qua `t()` ở ĐÂY, không cứng
+  // trong kit. Kit `twin3d/loi/` không biết gì về `MachineStatus` của màn này.
+  const nhanTrangThai = (status: string) => {
+    const meta = STATUS_META[status as MachineStatus];
+    return meta ? t(meta.labelKey, meta.labelVi) : status;
+  };
 
   return (
     <DashboardLayout
@@ -496,13 +511,31 @@ export default function FactoryCommandView() {
                 </div>
               }
             >
-              <SceneComponent
-                machines={sceneMachines}
-                selectedId={selectedId}
-                onSelect={selectMachine}
-                overlay={overlay}
-                focusId={focusId}
-              />
+              {/* 2D và 3D CÙNG props `FactorySceneProps`; 3D nhận thêm bộ dịch
+                  nhãn trạng thái, nên rẽ nhánh ở đây thay vì dùng một biến
+                  component chung (union props sẽ nuốt mất `nhanTrangThai`). */}
+              {is3D ? (
+                <CanhNhaMay
+                  machines={sceneMachines}
+                  selectedId={selectedId}
+                  onSelect={selectMachine}
+                  overlay={overlay}
+                  focusId={focusId}
+                  nhanTrangThai={nhanTrangThai}
+                  chuMatContext={t(
+                    "twin3d.loi.matContext",
+                    "Mất kết nối đồ hoạ. Đang khôi phục…",
+                  )}
+                />
+              ) : (
+                <FactoryScene2D
+                  machines={sceneMachines}
+                  selectedId={selectedId}
+                  onSelect={selectMachine}
+                  overlay={overlay}
+                  focusId={focusId}
+                />
+              )}
             </AsyncBoundary>
           </div>
 
