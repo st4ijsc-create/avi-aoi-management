@@ -1,34 +1,859 @@
 /**
- * `/twin` — Màn VẬN HÀNH của Nhà máy 3D Digital Twin.
+ * `/twin` — MÀN VẬN HÀNH của Nhà máy 3D Digital Twin (§9).
  *
- * ⚠ ĐÂY LÀ STUB CỦA ĐỢT 0. Nó tồn tại để CHIẾM CHỖ định tuyến + điều hướng + i18n,
- * để các đợt sau (Đ1–Đ6) không phải cùng sửa `App.tsx` / `navigation.tsx` / ba tệp
- * locale và đâm nhau khi merge (§12.2: "gộp 5 tệp dùng chung vào Đ0", rủi ro R10).
+ * Đây là **trung tâm** mà chủ sở hữu yêu cầu: *"mọi hoạt động quản lý cũng như
+ * theo dõi sau này đều có thể xử lý trên 3D Digital Twin này"*.
  *
- * ★ Nó KHÔNG dựng `<Canvas>` nào. Đó là chủ ý, không phải việc chưa làm xong:
- *   • RB-4 — chỉ MỘT `<Canvas>` được sống tại một thời điểm; thêm một canvas ở đây
- *     lúc chưa có bộ điều phối canvas (Đ1) là cách nhanh nhất để cạn WebGL context
- *     và làm ĐEN canvas của `/digital-twin` đang chạy.
- *   • NT-3 — màn này chưa có nguồn dữ liệu; vẽ một cảnh trống trông "bình thường" là
- *     đúng cái cạm bẫy "không có dữ liệu ≠ bình thường". Nói thẳng "chưa dựng" trung
- *     thực hơn một cảnh 3D rỗng nhìn như nhà máy đang yên ổn.
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ RB-4 — MỘT `<Canvas>` DUY NHẤT
+ * ════════════════════════════════════════════════════════════════════════════
+ * `CanhVanHanh` (chứa `KhungCanh`) được dựng ĐÚNG MỘT LẦN, và bản 2D **THAY
+ * THẾ** nó chứ không đứng cạnh nó — `che2D ? <2D/> : <3D/>`, không bao giờ cả
+ * hai. `window.__soCanvas` phải luôn ≤ 1 và `KhungCanh` tự `console.error` nếu
+ * vượt.
  *
- * Nội dung thật lắp ở Đợt 5 (§9). Đợt 1 thay phần thân bằng kit `twin3d/loi/`.
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ NT-3 — TRUNG THỰC DỮ LIỆU LÀ ĐIỀU KIỆN SỐNG CÒN
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đo trên DB dev 2026-09-06 (SQL thô): **42/42 máy `isActive` có dữ liệu quá 5
+ * phút**, trong đó 3 máy khai `operationStatus='running'` với tim đập từ
+ * 2026-07-17. Một bản cài đặt ngây thơ sẽ vẽ 3 ô XANH trên một nhà máy đã im
+ * lặng gần hai tháng.
+ *
+ * ⇒ Mọi trạng thái đi qua `trangThaiHienThi()` TRƯỚC khi tới màu, tới bảng, tới
+ *   ô đếm. Không có đường nào để một giá trị thô lọt thẳng ra giao diện.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ QUYỀN — MỘT LỐI VÀO RỒI TỪ CHỐI (bài học Khối D)
+ * ════════════════════════════════════════════════════════════════════════════
+ * `/twin` gate `analytics_oee` (nav + RouteGuard, ghim bởi `navigation.unit.test.ts`).
+ * Nhưng dữ liệu HÌNH HỌC đến từ `twinCanh.canhThietKe`, gate
+ * `settings_factory` **HOẶC** `machine_control`. Hai tập quyền KHÁC NHAU ⇒ một
+ * người qua được cổng route vẫn có thể bị thủ tục từ chối.
+ *
+ * Đo được trên 4 tài khoản không-admin: chỉ `supervisor1` có `analytics_oee`,
+ * và may mắn cũng có `machine_control`. Nghĩa là ca "vào được màn, bị từ chối dữ
+ * liệu" CHƯA xảy ra với dữ liệu hiện tại — nhưng nó là một tai nạn đang chờ, vì
+ * hai cổng không có gì ràng chúng với nhau.
+ *
+ * ⇒ Màn này BẮT lỗi FORBIDDEN của truy vấn hình học và nói RÕ *"bạn xem được màn
+ *   này nhưng chưa có quyền đọc bố cục"*, thay vì hiện một cảnh trống trông như
+ *   nhà máy chưa xây. Xem `thieuQuyenBoCuc` bên dưới.
+ *
+ * ⚠ Phép đo quyền PHẢI bằng tài khoản KHÔNG-admin — admin bypass.
  */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, useSearch } from "wouter";
+import { AlertTriangle, Boxes, LayoutGrid, RefreshCw } from "lucide-react";
+import type * as THREE from "three";
+
+import { EmptyState } from "@/components/EmptyState";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { usePermissions } from "@/_core/hooks/usePermissions";
+import { isScopeEmpty } from "@/lib/scopeEmpty";
+import { trpc } from "@/lib/trpc";
+
+import { gocTuQuatTrucDung, mmSangMet } from "@/components/twin3d/heToaDo";
+import { hinhKhoiCho } from "@/components/twin3d/hinhKhoiMay";
+import { giaiMauCanh, mauChoTrangThai } from "@/components/twin3d/mauTrangThai";
+import { hinhHocLine, type ViTriDaDat } from "@/components/twin3d/phamViLine";
+import type { MayTrongLo, NhanTheGioi } from "@/components/twin3d/loi";
+
+import { CanhVanHanh } from "@/components/twin3d/van-hanh/CanhVanHanh";
+import { CanhVanHanh2D } from "@/components/twin3d/van-hanh/CanhVanHanh2D";
+import { DanhSachMay } from "@/components/twin3d/van-hanh/DanhSachMay";
+import { NganXuLy } from "@/components/twin3d/van-hanh/NganXuLy";
+import { DaiLine } from "@/components/twin3d/van-hanh/DaiLine";
+import type { CanhBaoTheGioi, MucCanhBao } from "@/components/twin3d/van-hanh/LopCanhBao";
+import {
+  docTrangThaiUrl,
+  ghiCamera,
+  kieuGhiLichSu,
+  tronTrangThaiUrl,
+  type PhamVi,
+} from "@/components/twin3d/van-hanh/duongDanTwin";
+import {
+  bboxCuaTap,
+  dungBreadcrumb,
+  khungNhinCho,
+  khungNhinLine,
+  phaVeNen,
+  trongPhamVi,
+  TI_LE_PHA_NGOAI_PHAM_VI,
+  type KhungNhin,
+} from "@/components/twin3d/van-hanh/phamViCanh";
+import {
+  demTheoTuoi,
+  doiSoatCanh,
+  hienSo,
+  nhanDoTuoi,
+  thoiDiemDuLieuMoiNhat,
+  trangThaiHienThi,
+  type MayVanHanh,
+} from "@/components/twin3d/van-hanh/trungThucDuLieu";
+import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
+
+/** Phạm vi mặc định khi URL không nói gì. */
+const PHAM_VI_MAC_DINH: PhamVi = { cap: "tang", id: null };
 
 export default function TwinVanHanh() {
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
+  const search = useSearch();
+  const { hasPermission } = usePermissions();
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* Trạng thái từ URL (§9.4)                                                */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  const urlState = useMemo(() => docTrangThaiUrl(search), [search]);
+  const phamVi = urlState.phamVi ?? PHAM_VI_MAC_DINH;
+  const machineIdChon = urlState.chon?.loai === "machine" ? urlState.chon.id : null;
+
+  /**
+   * Ghi trạng thái vào URL. `push` khi đổi phạm vi/chọn (nút Back quay lại cấp
+   * trước), `replace` khi chỉ xoay camera — xoay sinh hàng trăm sự kiện mỗi
+   * giây và đẩy hết vào history làm nút Back vô dụng (§9.4).
+   */
+  const ghiUrl = useCallback(
+    (thayDoi: Parameters<typeof tronTrangThaiUrl>[1]) => {
+      const qs = tronTrangThaiUrl(window.location.search, thayDoi);
+      const url = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
+      if (kieuGhiLichSu(thayDoi) === "push") setLocation(url);
+      else window.history.replaceState(null, "", url);
+    },
+    [setLocation],
+  );
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* Dữ liệu                                                                  */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  const factoriesQ = trpc.factory.list.useQuery();
+  const factories = useMemo(
+    () => (factoriesQ.data ?? []) as Array<{ id: number; name?: string; code?: string }>,
+    [factoriesQ.data],
+  );
+  const [factoryId, setFactoryId] = useState<number | null>(null);
+  useEffect(() => {
+    if (factoryId === null && factories.length > 0) setFactoryId(factories[0].id);
+  }, [factories, factoryId]);
+
+  // Toà nhà → tầng (hình học sàn). `canhThietKe` KHÔNG trả toà nhà/tầng.
+  const toaNhaQ = trpc.twinCanh.danhSachToaNha.useQuery(
+    { factoryId: factoryId ?? 0 },
+    { enabled: factoryId !== null, retry: false },
+  );
+  const toaNhaDau = (toaNhaQ.data ?? [])[0] as
+    | { id: number; rongMm: string | number; sauMm: string | number }
+    | undefined;
+  const chiTietQ = trpc.twinCanh.chiTietToaNha.useQuery(
+    { id: toaNhaDau?.id ?? 0 },
+    { enabled: toaNhaDau !== undefined, retry: false },
+  );
+  const tangDau = useMemo(() => {
+    const tang = (chiTietQ.data?.tangs ?? [])[0] as { id: number } | undefined;
+    if (!toaNhaDau || !tang) return null;
+    // ★ `numeric(14,3)` về từ drizzle là STRING. `Number(...)` tường minh là bắt
+    //   buộc: cộng hai string sẽ NỐI CHUỖI ("38400"+"0"="384000") — không throw,
+    //   và nhà xưởng to gấp 10 lần.
+    return { tangId: tang.id, rongMm: Number(toaNhaDau.rongMm), sauMm: Number(toaNhaDau.sauMm) };
+  }, [toaNhaDau, chiTietQ.data]);
+
+  // Hình học + cây phân cấp.
+  const canhQ = trpc.twinCanh.canhThietKe.useQuery(
+    { factoryId: factoryId ?? 0, tangIds: tangDau ? [tangDau.tangId] : [] },
+    { enabled: factoryId !== null, retry: false },
+  );
+
+  // Trạng thái sống + OEE + andon (hợp đồng `factoryCommand.overview`).
+  const overviewQ = trpc.factoryCommand.overview.useQuery(
+    { factoryId: factoryId ?? undefined },
+    { enabled: factoryId !== null, retry: false, refetchInterval: 30_000 },
+  );
+
+  // Cảnh báo đang mở — nguồn cho badge 3D và cho `NganXuLy`.
+  const andonQ = trpc.andon.active.useQuery(undefined, {
+    retry: false,
+    refetchInterval: 20_000,
+  });
+
+  /**
+   * ★★★ "MỘT LỐI VÀO RỒI TỪ CHỐI" — bắt FORBIDDEN của truy vấn hình học.
+   * Người dùng qua cổng `analytics_oee` nhưng `canhThietKe` đòi
+   * `settings_factory`/`machine_control`. Không bắt thì họ thấy một cảnh TRỐNG
+   * trông y như nhà máy chưa dựng — lời khai sai về thế giới.
+   */
+  const thieuQuyenBoCuc =
+    (canhQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
+    (toaNhaQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN";
+
+  const phamViRong = isScopeEmpty(
+    (canhQ.data as { scopeEmptyReason?: string | null } | undefined)?.scopeEmptyReason,
+  );
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* Hợp nhất dữ liệu — MỘT nguồn cho cả 3D, 2D, bảng và ô đếm                */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * `machineId` → dấu thời gian DỮ LIỆU TRẠNG THÁI mới nhất (ms), hoặc `null`.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ CHỈ NHẬN `kind === "offline"` — MỘT LỖI NT-3 ĐO ĐƯỢC, ĐÃ VÁ
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản đầu nhận MỌI `issues[].ageMinutes` làm "tuổi dữ liệu". Nghiệm thu trên
+   * trình duyệt thật bắt được hậu quả ngay: sau khi RAISE một andon lên máy 2,
+   * ô "tươi" nhảy từ 0 lên 1 và máy 2 hiện `16s` — **một cảnh báo mới làm máy
+   * trông như vừa gửi tín hiệu**, trong khi SQL thô nói nó im lặng từ 2026-09-03.
+   *
+   * Gốc rễ đọc tại nguồn (`server/services/factoryCommandService.ts`):
+   *   :342 `kind:"andon"`    → `ageMinutes` = tuổi của `andon_events.raisedAt`
+   *   :385 `kind:"workorder"`→ tuổi của `scheduledFor`
+   *   :373 `kind:"pdm"`      → tuổi của bản ghi health
+   *   :404 `kind:"offline"`  → `st.ts` = `machine_status_logs."timestamp"` ★
+   * Chỉ dòng cuối là THỜI ĐIỂM ĐO TRẠNG THÁI. Bốn dòng kia là tuổi của những
+   * SỰ KIỆN KHÁC, và trộn chúng vào đây biến "máy vừa được báo lỗi" thành "máy
+   * vừa gửi tín hiệu" — đúng lớp lỗi giả-tươi mà NT-3.2 sinh ra để chặn.
+   *
+   * ⚠ Hệ quả trung thực: máy KHÔNG offline thì hợp đồng fleet hiện tại **không
+   *   mang** dấu thời gian nào, nên ta để `null` ⇒ `khong_ro` (xám gạch chéo).
+   *   Đó là câu trả lời ĐÚNG: ta thật sự không biết dữ liệu của nó cũ bao nhiêu.
+   *   Đoán một con số ở đây là bịa. Nợ đã ghi: thêm `statusTs` vào
+   *   `CommandMachineNode` (giá trị đã có sẵn tại `factoryCommandService.ts:211`).
+   */
+  const tsTheoMay = useMemo(() => {
+    const m = new Map<number, number | null>();
+    for (const iss of overviewQ.data?.issues ?? []) {
+      if (iss.kind !== "offline") continue;
+      if (iss.machineId == null || typeof iss.ageMinutes !== "number") continue;
+      const ts = Date.now() - iss.ageMinutes * 60_000;
+      const cu = m.get(iss.machineId);
+      if (cu == null || ts > cu) m.set(iss.machineId, ts);
+    }
+    return m;
+  }, [overviewQ.data]);
+
+  const may = canhQ.data?.may ?? [];
+  const tram = canhQ.data?.tram ?? [];
+  const chuyen = canhQ.data?.chuyen ?? [];
+
+  /** Trạm → line, để suy `lineId` của máy (máy chỉ mang `stationId`). */
+  const lineCuaTram = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const s of tram) m.set(s.id, s.lineId);
+    return m;
+  }, [tram]);
+
+  /** Danh sách máy đã hợp nhất trạng thái + tuổi dữ liệu (NT-3). */
+  const mayVanHanh = useMemo<MayVanHanh[]>(() => {
+    const tt = new Map<number, string>();
+    for (const n of overviewQ.data?.machines ?? []) tt.set(n.id, n.status);
+    return may.map((m) => ({
+      id: m.id,
+      ma: m.ma,
+      ten: m.ten,
+      loaiMay: String(m.loaiMay),
+      trangThaiBaoCao: tt.get(m.id) ?? null,
+      thoiDiemDuLieu: tsTheoMay.get(m.id) ?? null,
+      isActive: m.isActive,
+      stationId: m.stationId,
+      lineId: m.stationId != null ? (lineCuaTram.get(m.stationId) ?? null) : null,
+    }));
+  }, [may, overviewQ.data, tsTheoMay, lineCuaTram]);
+
+  const bayGio = Date.now();
+
+  /** Trạng thái HIỂN THỊ (đã xét tuổi) — nguồn duy nhất cho mọi bề mặt. */
+  const trangThaiTheoMay = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const mv of mayVanHanh) m.set(mv.id, trangThaiHienThi(mv, bayGio).trangThai);
+    return m;
+  }, [mayVanHanh, bayGio]);
+
+  const maTheoMay = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const mv of mayVanHanh) m.set(mv.id, mv.ma);
+    return m;
+  }, [mayVanHanh]);
+
+  /** Đặt chỗ theo máy — nguồn vị trí 3D. */
+  const datChoTheoMay = useMemo(() => {
+    // `NonNullable` vì `canhQ.data` là `… | undefined` lúc chưa tải xong; ta chỉ
+    // cần KIỂU của phần tử, không cần giá trị.
+    type HangDatCho = NonNullable<typeof canhQ.data>["datCho"][number];
+    const m = new Map<number, HangDatCho>();
+    for (const d of canhQ.data?.datCho ?? []) {
+      if (d.loaiThucThe === "machine") m.set(d.thucTheId, d);
+    }
+    return m;
+  }, [canhQ.data]);
+
+  const kichThuocTheoLoai = useMemo(() => {
+    const m = new Map<string, { rongMm: number; caoMm: number; sauMm: number }>();
+    for (const k of canhQ.data?.kichThuoc ?? []) {
+      m.set(k.loaiMay, { rongMm: k.rongMm, caoMm: k.caoMm, sauMm: k.sauMm });
+    }
+    return m;
+  }, [canhQ.data]);
+
+  /* ── Máy để VẼ (3D và 2D dùng CHUNG mảng này) ───────────────────────── */
+  /**
+   * Màu nền cảnh, phân giải từ token `--background` (§10.4: 3D phải đúng ở CẢ
+   * hai theme). Dùng làm ĐÍCH PHA cho vật thể ngoài phạm vi — pha về nền cho ra
+   * "nhạt đi" đúng nghĩa, khác hẳn làm tối (xem `phaVeNen`).
+   */
+  const mauNenCanh = giaiMauCanh("--background") ?? "#f8fafc";
+
+  const mayVe = useMemo<MayTrongLo[]>(() => {
+    const ra: MayTrongLo[] = [];
+    for (const mv of mayVanHanh) {
+      const d = datChoTheoMay.get(mv.id);
+      if (!d || !d.hienThi) continue;
+      const co = kichThuocTheoLoai.get(mv.loaiMay) ?? { rongMm: 1000, caoMm: 1800, sauMm: 1000 };
+      const kieu = mauChoTrangThai(trangThaiTheoMay.get(mv.id));
+      const trong = trongPhamVi(
+        {
+          machineId: mv.id,
+          stationId: mv.stationId,
+          lineId: mv.lineId,
+          workshopId: null,
+          factoryId,
+          tangId: d.tangId,
+        },
+        phamVi,
+      );
+      ra.push({
+        machineId: mv.id,
+        khoi: hinhKhoiCho(mv.loaiMay),
+        kichThuocMm: {
+          rongMm: d.rongMm ?? co.rongMm,
+          caoMm: d.caoMm ?? co.caoMm,
+          sauMm: d.sauMm ?? co.sauMm,
+        },
+        // DB: X = Đông, Y = mặt bằng, Z = độ cao → scene: x, y = độ cao, z = mặt bằng.
+        viTri: { x: mmSangMet(d.viTriXMm), y: mmSangMet(d.viTriZMm), z: mmSangMet(d.viTriYMm) },
+        gocXoayRad: gocTuQuatTrucDung({ x: d.quatX, y: d.quatY, z: d.quatZ, w: d.quatW }),
+        /**
+         * ★★★ "MỜ ĐI" PHẢI LÀ PHA VỀ NỀN, KHÔNG PHẢI LÀM TỐI (lỗi thị giác đo được)
+         *
+         * `doMo` của `LoBatchMay` (Đợt 1, không được sửa) là kênh LÀM TỐI:
+         * `LoBatchMay.tsx:196` nhân màu với `0.35 + 0.65*doMo`, vì vật liệu của
+         * `BatchedMesh` là ĐỤC (bật `transparent` cho cả lô sẽ phá thứ tự vẽ).
+         *
+         * ⚠ Nghiệm thu bằng ẢNH bắt được: trên theme SÁNG, làm tối một màu vốn
+         *   nhạt (`--muted` = oklch 0.94) cho ra khối gần như ĐEN trên nền sàn
+         *   sáng — đọc như MÁY HỎNG, không như "lùi khỏi tiền cảnh". Đó là lời
+         *   khai sai theo đúng kiểu §10.1 cấm: độ tương phản CAO dành cho bất
+         *   thường, mà ở đây nó lại rơi vào những máy bình thường ngoài phạm vi.
+         *
+         * ⇒ Ta pha màu về phía NỀN ngay ở tầng này (`pha()` bên dưới) rồi truyền
+         *   `doMo: 1`, tức là dùng đúng kênh mà kit cho phép mà không phải sửa
+         *   kit. Kết quả: máy ngoài phạm vi nhạt đi đúng nghĩa, ở CẢ hai theme.
+         */
+        mau: trong
+          ? (giaiMauCanh(kieu.token) ?? "#94a3b8")
+          : phaVeNen(giaiMauCanh(kieu.token) ?? "#94a3b8", mauNenCanh, TI_LE_PHA_NGOAI_PHAM_VI),
+        doMo: trong ? kieu.doMo : 1,
+      });
+    }
+    return ra;
+  }, [mayVanHanh, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, phamVi, factoryId, mauNenCanh]);
+
+  /* ── Nhãn thế giới ──────────────────────────────────────────────────── */
+  const nhan = useMemo<NhanTheGioi[]>(
+    () =>
+      mayVe.map((m) => {
+        const tt = trangThaiTheoMay.get(m.machineId) ?? "khong_ro";
+        return {
+          khoa: `may-${m.machineId}`,
+          machineId: m.machineId,
+          viTri: { x: m.viTri.x, y: m.viTri.y + mmSangMet(m.kichThuocMm.caoMm) + 0.4, z: m.viTri.z },
+          ma: maTheoMay.get(m.machineId) ?? `#${m.machineId}`,
+          phu: t(mauChoTrangThai(tt).khoaNhan),
+          batThuong: mauChoTrangThai(tt).laBatThuong,
+        };
+      }),
+    [mayVe, trangThaiTheoMay, maTheoMay, t],
+  );
+
+  /* ── Cảnh báo ───────────────────────────────────────────────────────── */
+  const andonRows = useMemo(
+    () =>
+      ((andonQ.data ?? []) as Array<{
+        id: number;
+        machineId: number | null;
+        state: string;
+        status: string;
+        title: string;
+        raisedAt: string | Date;
+      }>).filter((a) => a.status !== "resolved"),
+    [andonQ.data],
+  );
+
+  const canhBao3D = useMemo<CanhBaoTheGioi[]>(() => {
+    const viTriMay = new Map(mayVe.map((m) => [m.machineId, m]));
+    const ra: CanhBaoTheGioi[] = [];
+    for (const a of andonRows) {
+      if (a.machineId == null) continue;
+      const m = viTriMay.get(a.machineId);
+      if (!m) continue;
+      ra.push({
+        id: a.id,
+        machineId: a.machineId,
+        viTri: { x: m.viTri.x, y: m.viTri.y + mmSangMet(m.kichThuocMm.caoMm) + 0.9, z: m.viTri.z },
+        muc: (["red", "yellow", "call"].includes(a.state) ? a.state : "call") as MucCanhBao,
+        nhan: maTheoMay.get(a.machineId) ?? `#${a.machineId}`,
+        daAck: a.status === "acknowledged",
+      });
+    }
+    return ra;
+  }, [andonRows, mayVe, maTheoMay]);
+
+  const canhBaoCuaMay = useMemo<CanhBaoDangMo[]>(
+    () =>
+      andonRows
+        .filter((a) => a.machineId === machineIdChon)
+        .map((a) => ({
+          id: a.id,
+          mucDo: a.state,
+          trangThai: a.status,
+          tieuDe: a.title,
+          raisedAt: new Date(a.raisedAt).getTime(),
+          machineId: a.machineId,
+        })),
+    [andonRows, machineIdChon],
+  );
+
+  /* ── Phạm vi Line (§10C.3) ──────────────────────────────────────────── */
+  const hinhLine = useMemo(() => {
+    if (phamVi.cap !== "line" || phamVi.id === null) return null;
+    const datChoTram = new Map<number, { x: number; y: number; z: number }>();
+    for (const d of canhQ.data?.datCho ?? []) {
+      if (d.loaiThucThe === "station") {
+        datChoTram.set(d.thucTheId, {
+          x: mmSangMet(d.viTriXMm),
+          y: mmSangMet(d.viTriZMm),
+          z: mmSangMet(d.viTriYMm),
+        });
+      }
+    }
+    const tramCuaLine: ViTriDaDat[] = tram
+      .filter((s) => s.lineId === phamVi.id)
+      .map((s) => {
+        const v = datChoTram.get(s.id);
+        // ★ Trạm chưa có đặt chỗ ⇒ suy tâm từ MÁY của nó, thay vì bỏ trạm khỏi
+        //   Line (bỏ đi làm đường tâm đứt quãng mà không nói vì sao).
+        const mayCuaTram = mayVe.filter(
+          (m) => mayVanHanh.find((x) => x.id === m.machineId)?.stationId === s.id,
+        );
+        const tamMay =
+          mayCuaTram.length > 0
+            ? {
+                x: mayCuaTram.reduce((a, m) => a + m.viTri.x, 0) / mayCuaTram.length,
+                y: 0,
+                z: mayCuaTram.reduce((a, m) => a + m.viTri.z, 0) / mayCuaTram.length,
+              }
+            : null;
+        return { khoa: `station:${s.id}`, tam: v ?? tamMay ?? { x: 0, y: 0, z: 0 }, thuTu: s.thuTu };
+      });
+    const mayCuaLine: ViTriDaDat[] = mayVe
+      .filter((m) => mayVanHanh.find((x) => x.id === m.machineId)?.lineId === phamVi.id)
+      .map((m) => ({ khoa: `machine:${m.machineId}`, tam: m.viTri }));
+    if (tramCuaLine.length === 0 && mayCuaLine.length === 0) return null;
+    return { hh: hinhHocLine(tramCuaLine, mayCuaLine), tram: tramCuaLine };
+  }, [phamVi, tram, mayVe, mayVanHanh, canhQ.data]);
+
+  /* ── Khung nhìn theo phạm vi ────────────────────────────────────────── */
+  const khungNhin = useMemo<KhungNhin | null>(() => {
+    if (phamVi.cap === "line" && hinhLine) {
+      return khungNhinLine(hinhLine.hh.bbox, hinhLine.hh.truc, hinhLine.hh.trucDangTin);
+    }
+    if (phamVi.cap === "may" && phamVi.id !== null) {
+      const m = mayVe.find((x) => x.machineId === phamVi.id);
+      if (m) {
+        return khungNhinCho(
+          bboxCuaTap([
+            {
+              tam: m.viTri,
+              co: {
+                rong: mmSangMet(m.kichThuocMm.rongMm),
+                cao: mmSangMet(m.kichThuocMm.caoMm),
+                sau: mmSangMet(m.kichThuocMm.sauMm),
+              },
+            },
+          ]),
+          "may",
+        );
+      }
+    }
+    return khungNhinCho(
+      bboxCuaTap(
+        mayVe.map((m) => ({
+          tam: m.viTri,
+          co: {
+            rong: mmSangMet(m.kichThuocMm.rongMm),
+            cao: mmSangMet(m.kichThuocMm.caoMm),
+            sau: mmSangMet(m.kichThuocMm.sauMm),
+          },
+        })),
+      ),
+      phamVi.cap,
+    );
+  }, [phamVi, hinhLine, mayVe]);
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* NT-3 — đếm, đối soát, độ tươi                                            */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  const dangTai = canhQ.isLoading || overviewQ.isLoading;
+  const demTuoi = useMemo(() => demTheoTuoi(mayVanHanh, bayGio), [mayVanHanh, bayGio]);
+  const tsNen = useMemo(() => thoiDiemDuLieuMoiNhat(mayVanHanh), [mayVanHanh]);
+  const doTuoiNen = nhanDoTuoi(tsNen, bayGio);
+  const doiSoat = useMemo(
+    () => doiSoatCanh(mayVanHanh, [...datChoTheoMay.keys()]),
+    [mayVanHanh, datChoTheoMay],
+  );
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* Quyền xử lý (§9.2)                                                       */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  const quyen: QuyenXuLy = {
+    ackAlarm: hasPermission("andon", "canEdit"),
+    anTamAlarm: hasPermission("machine_control", "canCreate"),
+    // `machine_monitoring` resolve về `machine_status` ở CẢ hai phía — khai đúng
+    // tên router dùng để hai bên không thể lệch.
+    taoPhieu: hasPermission("machine_monitoring", "canCreate"),
+    suaPhieu: hasPermission("machine_monitoring", "canEdit"),
+  };
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* 2D / 3D — toggle VÀ fallback tự động khi WebGL hỏng (§9.9)               */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  const [epChe2D, setEpChe2D] = useState(false);
+  const [webglHong, setWebglHong] = useState(false);
+  useEffect(() => {
+    try {
+      const c = document.createElement("canvas");
+      const gl = c.getContext("webgl") || c.getContext("experimental-webgl");
+      setWebglHong(!gl);
+    } catch {
+      setWebglHong(true);
+    }
+  }, []);
+  // ★ RB-4: `che2D` quyết định THAY THẾ, không bao giờ dựng cả hai.
+  const che2D = epChe2D || webglHong;
+
+  const chonMay = useCallback(
+    (id: number | null) => {
+      ghiUrl({ chon: id === null ? null : { loai: "machine", id } });
+    },
+    [ghiUrl],
+  );
+
+  const doiPhamVi = useCallback((pv: PhamVi) => ghiUrl({ phamVi: pv }), [ghiUrl]);
+
+  /** Ghi camera vào URL — `replaceState`, và chỉ khi chuỗi THẬT SỰ đổi. */
+  const camCuoi = useRef("");
+  const khiCameraDoi = useCallback(
+    (viTri: THREE.Vector3, muc: THREE.Vector3) => {
+      const s = ghiCamera({ x: viTri.x, y: viTri.y, z: viTri.z, mucX: muc.x, mucZ: muc.z });
+      if (s === camCuoi.current) return;
+      camCuoi.current = s;
+      ghiUrl({ cam: { x: viTri.x, y: viTri.y, z: viTri.z, mucX: muc.x, mucZ: muc.z } });
+    },
+    [ghiUrl],
+  );
+
+  const napLai = useCallback(() => {
+    void andonQ.refetch();
+    void overviewQ.refetch();
+  }, [andonQ, overviewQ]);
+
+  const mayDangChon = mayVanHanh.find((m) => m.id === machineIdChon) ?? null;
+  const sanRongM = tangDau ? mmSangMet(tangDau.rongMm) : 40;
+  const sanSauM = tangDau ? mmSangMet(tangDau.sauMm) : 30;
+
+  const breadcrumb = dungBreadcrumb(phamVi, (cap, id) => {
+    if (cap === "line" && id !== null) {
+      return chuyen.find((c) => c.id === id)?.ten ?? `Line ${id}`;
+    }
+    if (cap === "may" && id !== null) return maTheoMay.get(id) ?? `#${id}`;
+    if (cap === "nhaMay") return factories.find((f) => f.id === factoryId)?.name ?? t("common.factory");
+    return t(`twin3d.vanHanh.cap.${cap}`, cap);
+  });
+
+  /**
+   * ⚠ Nhãn phải nói ĐÚNG chế độ đang hiện. Bản đầu cứng chuỗi "Cảnh 3D" và
+   *   nghiệm thu bắt được nó vẫn đọc "Cảnh 3D" khi đang ở chế độ 2D — với người
+   *   dùng trình đọc màn hình, đó là bề mặt DUY NHẤT mô tả cảnh, nên nói sai
+   *   chế độ là nói sai toàn bộ thứ họ đang xem.
+   */
+  const ariaLabel = t(
+    che2D ? "twin3d.vanHanh.canhAria2D" : "twin3d.vanHanh.canhAria",
+    { may: mayVe.length, canhBao: andonRows.length, khongRo: demTuoi.khongRo },
+  );
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* Render                                                                   */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  // ★ Không có quyền đọc bố cục — nói THẲNG, không hiện cảnh trống.
+  if (thieuQuyenBoCuc) {
+    return (
+      <div className="p-6" data-testid="man-twin-van-hanh">
+        <EmptyState
+          title={t("twin3d.vanHanh.thieuQuyenBoCuc", "Chưa có quyền đọc bố cục nhà xưởng")}
+          description={t(
+            "twin3d.vanHanh.thieuQuyenBoCucMoTa",
+            "Bạn xem được màn Vận hành, nhưng dữ liệu mặt bằng 3D cần quyền cấu hình nhà máy hoặc điều khiển thiết bị. Liên hệ quản trị để được cấp.",
+          )}
+        />
+      </div>
+    );
+  }
+
+  if (phamViRong) {
+    return (
+      <div className="p-6" data-testid="man-twin-van-hanh">
+        <EmptyState scopeEmptyReason="no_factory_assignment" />
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6" data-testid="man-twin-van-hanh">
-      <h1 className="text-2xl font-semibold text-foreground">{t("twin3d.vanHanh.tieuDe")}</h1>
-      <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-        {t("twin3d.vanHanh.moTa")}
-      </p>
-      <p className="mt-6 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-        {t("twin3d.chuaDung")}
-      </p>
+    <div className="flex h-[calc(100vh-5rem)] flex-col" data-testid="man-twin-van-hanh">
+      {/* ── Breadcrumb + độ tươi + chế độ ──────────────────────────────── */}
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-1.5">
+        <nav className="flex items-center gap-1 text-xs" aria-label="breadcrumb" data-testid="breadcrumb-twin">
+          {breadcrumb.map((m, i) => (
+            <span key={`${m.cap}-${i}`} className="flex items-center gap-1">
+              {i > 0 ? <span className="text-muted-foreground">›</span> : null}
+              <button
+                type="button"
+                className="rounded px-1 hover:bg-accent focus-visible:outline focus-visible:outline-2"
+                data-testid={`breadcrumb-${m.cap}`}
+                onClick={() => doiPhamVi({ cap: m.cap, id: m.id })}
+              >
+                {m.nhan}
+              </button>
+            </span>
+          ))}
+        </nav>
+
+        <div className="flex items-center gap-2">
+          {/*
+            ★★★ NT-3.2 — "cập nhật lần cuối" là max(timestamp) của DỮ LIỆU NỀN.
+            Đỏ khi > 60 giây. `—` khi chưa từng có dữ liệu (KHÔNG hiện "vừa xong").
+          */}
+          <span
+            className={`text-[11px] ${doTuoiNen.do ? "text-destructive" : "text-muted-foreground"}`}
+            data-testid="do-tuoi-nen"
+            data-giay={doTuoiNen.giay ?? ""}
+          >
+            {doTuoiNen.giay === null
+              ? `${t("twin3d.tuoi.capNhatLanCuoi")}: —`
+              : t("twin3d.vanHanh.capNhatTruoc", "Cập nhật {{giay}} giây trước", {
+                  giay: hienSo(doTuoiNen.giay),
+                })}
+          </span>
+          <Button size="sm" variant="ghost" onClick={napLai} data-testid="nut-nap-lai">
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="nut-che-2d"
+            aria-pressed={che2D}
+            disabled={webglHong}
+            onClick={() => setEpChe2D((v) => !v)}
+          >
+            {che2D ? <LayoutGrid className="mr-1 h-3.5 w-3.5" /> : <Boxes className="mr-1 h-3.5 w-3.5" />}
+            {che2D ? "2D" : "3D"}
+          </Button>
+        </div>
+      </header>
+
+      {/* ── Banner đối soát (NT-3.3) — thuốc chống model drift ─────────── */}
+      {!dangTai && doiSoat.lech ? (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[11px] text-amber-700 dark:text-amber-400"
+          data-testid="banner-doi-soat"
+        >
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            {t("twin3d.vanHanh.doiSoatLech", "{{thieu}} máy chưa xếp chỗ · {{moCoi}} đặt chỗ trỏ vào máy đã ngừng", {
+              thieu: doiSoat.thieuTrenMatBang.length,
+              moCoi: doiSoat.datChoMoCoi.length,
+            })}
+          </span>
+          <button
+            type="button"
+            className="underline"
+            onClick={() => setLocation("/twin-studio")}
+            data-testid="nut-mo-xuong-dung"
+          >
+            {t("twin3d.vanHanh.moXuongDung", "Mở Xưởng dựng")}
+          </button>
+        </div>
+      ) : null}
+
+      {/* ── Thân: trái | canvas | phải ─────────────────────────────────── */}
+      <div className="flex min-h-0 flex-1">
+        {/* PANEL TRÁI — DOM thật, tab được, MỌI hành động làm được từ đây (§9.9) */}
+        <div className="flex w-72 shrink-0 flex-col overflow-hidden border-r">
+          {/* Tổng quan + tươi dữ liệu */}
+          <div className="shrink-0 border-b p-2 text-xs" data-testid="khoi-tong-quan">
+            <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+              <span className="text-muted-foreground">{t("twin3d.vanHanh.soMay", "Máy")}</span>
+              <span className="text-right font-medium" data-testid="dem-may">
+                {hienSo(mayVanHanh.length, dangTai)}
+              </span>
+              <span className="text-muted-foreground">{t("twin3d.tuoi.tuoi")}</span>
+              <span className="text-right font-medium" data-testid="dem-tuoi">
+                {hienSo(demTuoi.tuoi, dangTai)}
+              </span>
+              <span className="text-muted-foreground">{t("twin3d.tuoi.cu")}</span>
+              <span className="text-right font-medium" data-testid="dem-cu">
+                {hienSo(demTuoi.cu, dangTai)}
+              </span>
+              <span className="text-muted-foreground">{t("twin3d.trangThai.khongRo")}</span>
+              <span className="text-right font-medium text-amber-700 dark:text-amber-400" data-testid="dem-khong-ro">
+                {hienSo(demTuoi.khongRo, dangTai)}
+              </span>
+              <span className="text-muted-foreground">{t("twin3d.trangThai.ngungKhaiThac")}</span>
+              <span className="text-right font-medium" data-testid="dem-ngung">
+                {hienSo(demTuoi.ngungKhaiThac, dangTai)}
+              </span>
+            </div>
+          </div>
+
+          {/* Cảnh báo */}
+          <div className="shrink-0 border-b p-2" data-testid="khoi-canh-bao">
+            <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("twin3d.vanHanh.canhBao", "Cảnh báo")} ({hienSo(andonRows.length, andonQ.isLoading)})
+            </h2>
+            <ul className="max-h-24 space-y-0.5 overflow-y-auto">
+              {andonRows.slice(0, 12).map((a) => (
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    className="w-full truncate rounded px-1 py-0.5 text-left text-[11px] hover:bg-accent focus-visible:outline focus-visible:outline-2"
+                    data-testid={`canh-bao-trai-${a.id}`}
+                    onClick={() => a.machineId != null && chonMay(a.machineId)}
+                  >
+                    <Badge variant={a.state === "red" ? "destructive" : "outline"} className="mr-1 px-1 py-0">
+                      {a.state}
+                    </Badge>
+                    {a.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* ★ DANH SÁCH MÁY — DOM thật, mọi hành động làm được từ đây (§9.9) */}
+          <DanhSachMay
+            may={mayVanHanh}
+            trangThaiTheoMay={trangThaiTheoMay}
+            machineIdChon={machineIdChon}
+            onChonMay={chonMay}
+            bayGio={bayGio}
+            dangTai={dangTai}
+          />
+        </div>
+
+        {/* CANVAS GIỮA — ★ RB-4: 2D THAY THẾ 3D, không bao giờ cả hai */}
+        <div className="relative min-w-0 flex-1">
+          {che2D ? (
+            <CanhVanHanh2D
+              may={mayVe}
+              trangThaiTheoMay={trangThaiTheoMay}
+              maTheoMay={maTheoMay}
+              machineIdChon={machineIdChon}
+              onChonMay={chonMay}
+              sanRongM={sanRongM}
+              sanSauM={sanSauM}
+              nhanTrangThai={(tt) => t(mauChoTrangThai(tt).khoaNhan)}
+              ariaLabel={ariaLabel}
+            />
+          ) : (
+            <CanhVanHanh
+              may={mayVe}
+              nhan={nhan}
+              canhBao={canhBao3D}
+              dongChay={
+                hinhLine && hinhLine.hh.coHinhHoc
+                  ? { diem: hinhLine.hh.diemDuongTam, nhipMs: null }
+                  : null
+              }
+              wip={[]}
+              machineIdChon={machineIdChon}
+              onChonMay={chonMay}
+              khungNhin={khungNhin}
+              sanRongM={sanRongM}
+              sanSauM={sanSauM}
+              tatNhan={false}
+              chuMatContext={t("twin3d.loi.matContext")}
+              ariaLabel={ariaLabel}
+              onCameraDoi={khiCameraDoi}
+            />
+          )}
+          {/* Trình đọc màn hình: canvas WebGL vô hình với nó (§9.9). */}
+          <p className="sr-only" data-testid="tom-tat-canh">
+            {ariaLabel}
+          </p>
+        </div>
+
+        {/* NGĂN XỬ LÝ PHẢI — ★★★ nơi mọi việc được XỬ LÝ (§9.2) */}
+        <div className="w-80 shrink-0">
+          <NganXuLy
+            machineId={machineIdChon}
+            ma={mayDangChon?.ma ?? ""}
+            ten={mayDangChon?.ten ?? ""}
+            trangThai={
+              mayDangChon
+                ? trangThaiHienThi(mayDangChon, bayGio)
+                : { trangThai: "khong_ro", tuoi: "khong_ro", daGhiDe: false }
+            }
+            thoiDiemDuLieu={mayDangChon?.thoiDiemDuLieu ?? null}
+            bayGio={bayGio}
+            canhBao={canhBaoCuaMay}
+            quyen={quyen}
+            coQuyenXem={(m) => hasPermission(m, "canView")}
+            onDaXuLy={napLai}
+            onDieuHuong={setLocation}
+          />
+        </div>
+      </div>
+
+      {/* ── Dải dưới: dải Line 2D đồng bộ hai chiều (§10C.3 mục 3) ─────── */}
+      {phamVi.cap === "line" && hinhLine ? (
+        <DaiLine
+          tram={tram
+            .filter((s) => s.lineId === phamVi.id)
+            .map((s) => ({
+              id: s.id,
+              ma: s.ma,
+              ten: s.ten,
+              thuTu: s.thuTu,
+              soMay: mayVanHanh.filter((m) => m.stationId === s.id).length,
+              trangThai:
+                mayVanHanh
+                  .filter((m) => m.stationId === s.id)
+                  .map((m) => trangThaiTheoMay.get(m.id) ?? "khong_ro")[0] ?? "khong_ro",
+            }))}
+          onChonTram={(stationId) => {
+            const mayDau = mayVanHanh.find((m) => m.stationId === stationId);
+            if (mayDau) chonMay(mayDau.id);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
