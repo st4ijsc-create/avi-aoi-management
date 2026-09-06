@@ -1885,6 +1885,15 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 > thức sẽ làm **mọi test dựa trên giá trị xanh** trong khi tái tạo y nguyên con bug. Test mới kiểm
 > tệp seed **thật sự import** `lechTrongTram`. Ablation trên mã trước-vá: **6/9 đỏ**.
 >
+> **★ QUYẾT ĐỊNH CHỦ SỞ HỮU về phép neo (2026-09-06): GIỮ NGUYÊN, không hợp nhất.**
+> Đo hệ quả thật trước khi quyết: tầng `38.400 × 29.600 mm`, máy sau seed ở `X 5.450..32.950`,
+> `Y 4.950..20.800`. Nếu `sinhTuDong` chạy (neo gốc 0) thì `minX = 2.500`, `minY = 2.150` —
+> **vẫn trong tường** (tường dày 200 mm), **không lọt ra ngoài**. Hậu quả thật: máy sát tường hơn,
+> mất lối đi 4 m — khó chịu, không sai.
+> ⇒ Không đáng đổi vỏ nhà lúc này. Ghi lại để Đợt sau biết: **hai bản khác NHAU ở phép NEO, giống
+> nhau ở BỐ CỤC TƯƠNG ĐỐI** (78/78 hàng khớp dưới một tịnh tiến cứng). Muốn hợp nhất hoàn toàn thì
+> phải cho `sinhBoCuc` biết về tường và lối đi — tức mở rộng mô hình, không phải sửa hằng số.
+
 > **Nợ còn lại (đã đo):** hàng `twin_dat_cho` id 776 → máy `SN-ST4I-TRIAL-WELD-20260818`
 > (`isActive=false`) sót từ trước khi thêm bộ lọc. **Seed cập nhật nhưng không xoá**, `sinhTuDong`
 > không tái sinh nó. Cần một đường xoá — ngoài phạm vi. Đây chính là hàng mà ô `datChoMoCoi` đang
