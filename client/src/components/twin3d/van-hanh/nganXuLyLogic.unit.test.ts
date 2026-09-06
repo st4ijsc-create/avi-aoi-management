@@ -23,6 +23,7 @@ import {
   type CanhBaoDangMo,
   type LoaiDich,
   type QuyenXuLy,
+  nguoiGanDuoc,
 } from "./nganXuLyLogic";
 
 const BAY_GIO = Date.parse("2026-09-06T12:00:00.000Z");
@@ -201,5 +202,53 @@ describe("nutDieuHuongCho — §9.3", () => {
         expect(nut.href.startsWith("/")).toBe(true);
       }
     }
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ T-4 — DANH SÁCH GÁN KHÔNG ĐƯỢC CHỨA TÀI KHOẢN ĐÃ VÔ HIỆU HOÁ           */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("nguoiGanDuoc — §9.2 lọc tài khoản đã vô hiệu hoá", () => {
+  it("★ loại tài khoản `isActive: false` — phiếu gán cho người đã nghỉ là phiếu KHÔNG AI NHẬN", () => {
+    const ra = nguoiGanDuoc([
+      { id: 1, name: "Còn làm", isActive: true },
+      { id: 2, name: "Đã nghỉ", isActive: false },
+      { id: 3, name: "Còn làm 2", isActive: true },
+    ]);
+    expect(ra.map((u) => u.id)).toEqual([1, 3]);
+  });
+
+  it("★ `isActive` VẮNG MẶT ⇒ GIỮ — undefined là 'không trả về', không phải 'đã tắt'", () => {
+    // Suy ngược lại sẽ làm dropdown rỗng sạch khi hợp đồng server đổi hình, và
+    // rỗng-vì-đọc-nhầm trông y hệt rỗng-vì-không-có-ai.
+    expect(nguoiGanDuoc([{ id: 1, name: "A" }]).map((u) => u.id)).toEqual([1]);
+    expect(nguoiGanDuoc([{ id: 1, name: "A", isActive: null }]).map((u) => u.id)).toEqual([1]);
+  });
+
+  it("null / undefined / rỗng ⇒ mảng rỗng, không ném", () => {
+    expect(nguoiGanDuoc(null)).toEqual([]);
+    expect(nguoiGanDuoc(undefined)).toEqual([]);
+    expect(nguoiGanDuoc([])).toEqual([]);
+  });
+
+  it("★ MỌI người đều bị vô hiệu hoá ⇒ rỗng, KHÔNG rơi về 'hiện hết'", () => {
+    // Ca đối chứng: một bản vá cẩu thả kiểu "lọc, nhưng nếu rỗng thì trả nguyên
+    // danh sách" sẽ xanh ở test đầu mà vẫn hiện người đã nghỉ đúng lúc quan trọng.
+    expect(nguoiGanDuoc([
+      { id: 1, name: "Nghỉ 1", isActive: false },
+      { id: 2, name: "Nghỉ 2", isActive: false },
+    ])).toEqual([]);
+  });
+
+  it("giữ nguyên thứ tự và giữ nguyên các ô khác của bản ghi", () => {
+    const ra = nguoiGanDuoc([
+      { id: 9, name: "Chín", username: "u9", isActive: true },
+      { id: 2, name: "Hai", username: "u2", isActive: true },
+    ]);
+    expect(ra).toEqual([
+      { id: 9, name: "Chín", username: "u9", isActive: true },
+      { id: 2, name: "Hai", username: "u2", isActive: true },
+    ]);
   });
 });

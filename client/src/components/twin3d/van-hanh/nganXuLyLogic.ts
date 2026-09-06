@@ -271,3 +271,33 @@ export function nutSuaBoTri(): NutDieuHuong {
     quyen: "machine_control",
   };
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ T-4 (Đợt 5) — DANH SÁCH GÁN KỸ THUẬT VIÊN                              */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Ô tối thiểu mà dropdown "Gán kỹ thuật viên" cần từ `user.list`. */
+export interface NguoiCoTheGan {
+  id: number;
+  name?: string | null;
+  username?: string | null;
+  isActive?: boolean | null;
+}
+
+/**
+ * Lọc danh sách người có thể GÁN việc.
+ *
+ * ★ §9.2 — tài khoản đã VÔ HIỆU HOÁ không được nằm trong danh sách gán. Gán một
+ *   phiếu bảo trì cho người đã nghỉ việc là một phiếu KHÔNG AI NHẬN, và nó im
+ *   lặng: phiếu vẫn "đã gán", vẫn có tên người, vẫn trôi qua mọi báo cáo — chỉ
+ *   không có ai đang thực sự chờ nó. Đây cùng họ với lớp lỗi NT-3: một ô dữ liệu
+ *   trông đầy đủ trong khi thế giới thật đằng sau nó đã rỗng.
+ *
+ * ⚠ `isActive` VẮNG MẶT (`undefined`) được coi là CÒN hoạt động — `undefined`
+ *   nghĩa là "trường không được trả về", không phải "đã vô hiệu hoá". Chỉ
+ *   `false` mới loại. Suy ngược lại sẽ làm dropdown rỗng sạch khi hợp đồng
+ *   server đổi hình, và rỗng-vì-đọc-nhầm trông y hệt rỗng-vì-không-có-ai.
+ */
+export function nguoiGanDuoc(ds: readonly NguoiCoTheGan[] | null | undefined): NguoiCoTheGan[] {
+  return (ds ?? []).filter((u) => u.isActive !== false);
+}

@@ -54,7 +54,7 @@
  * nào. Đó là điều kiện để người dùng bàn phím/trình đọc màn hình xử lý được việc.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Check, ClipboardPlus, Clock, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
@@ -78,6 +78,7 @@ import {
   MOC_AN_TAM_GIO,
   hanAnTam,
   hanhDongChoVatThe,
+  nguoiGanDuoc,
   nutDieuHuongCho,
   type CanhBaoDangMo,
   type LoaiDich,
@@ -156,14 +157,32 @@ export function NganXuLy(props: NganXuLyProps) {
   const [ganCho, setGanCho] = useState<string>("");
 
   /**
-   * Danh sách người để gán. `users.list` là thủ tục đọc đã có; nếu tài khoản
+   * Danh sách người để gán. `user.list` là thủ tục đọc đã có; nếu tài khoản
    * không có quyền xem người dùng thì nó lỗi và ta ĐỂ Ô TRỐNG thay vì chặn cả
    * form — gán KTV là tuỳ chọn, không phải điều kiện để tạo phiếu.
+   *
+   * ⚠⚠ NỢ ĐÃ BIẾT, CHƯA VÁ Ở ĐÂY — `user.list` là **ADMIN-ONLY**
+   * (`server/routers/userRouters.ts:23-26` ném FORBIDDEN khi
+   * `ctx.user.role !== 'admin'`). Nghĩa là dropdown này **RỖNG với MỌI tài khoản
+   * không phải admin** — tức với đúng những vai (bảo trì, kỹ thuật, giám sát)
+   * mà tính năng gán KTV sinh ra để phục vụ. QA trước tái hiện bằng admin nên
+   * không nhìn thấy: admin bypass, và ô rỗng trông y hệt "chưa có ai để gán".
+   *
+   * KHÔNG sửa ở đây vì `user.list` là hợp đồng DÙNG CHUNG, nhiều màn khác gọi;
+   * nới nó là quyết định về lộ danh sách nhân sự cho vai thấp hơn, phải do chủ
+   * dự án chọn. Hướng đã đề xuất: một thủ tục HẸP `user.assignableTechnicians`
+   * chỉ trả `{id, name}` của người CÒN hoạt động, gate bằng `maintenance_*`.
    */
   const nguoiQ = trpc.user.list.useQuery(undefined, {
     enabled: moTaoPhieu && quyen.suaPhieu,
     retry: false,
   });
+
+  /**
+   * ★ T-4 — LỌC tài khoản đã vô hiệu hoá khỏi danh sách gán (§9.2).
+   * Gán phiếu cho người đã nghỉ việc là phiếu KHÔNG AI NHẬN, và nó im lặng.
+   */
+  const nguoiGan = useMemo(() => nguoiGanDuoc(nguoiQ.data), [nguoiQ.data]);
 
   const canhBaoChuaAck = canhBao.filter((c) => c.trangThai === "raised");
   const tuoi = nhanDoTuoi(thoiDiemDuLieu, bayGio);
@@ -336,7 +355,7 @@ export function NganXuLy(props: NganXuLyProps) {
                       <SelectValue placeholder={t("twin3d.vanHanh.chuaGan", "Chưa gán")} />
                     </SelectTrigger>
                     <SelectContent>
-                      {(nguoiQ.data ?? []).map((u) => (
+                      {nguoiGan.map((u) => (
                         <SelectItem key={u.id} value={String(u.id)}>
                           {u.name ?? u.username ?? `#${u.id}`}
                         </SelectItem>
