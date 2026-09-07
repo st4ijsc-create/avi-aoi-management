@@ -1985,6 +1985,37 @@ Agent **không tự nhận là xong** — đúng, vì hàm không ai gọi thì 
 `CommandCenter.tsx:330-343` chỉ có Enter/Space/←/→, **không có ↑/↓/Home/End** ⇒ trên bàn phím
 **không đi lại được giữa các node**. Chép sang là chép một cây chỉ mở/đóng được.
 
+### 11d.5 LÔ C ĐÃ VỀ — 5/5 mục có chỗ gọi thật (2026-09-07)
+
+Cổng: **45 tệp / 1391 test** · `check` 0 · `build` 0. Commit `e44c90be`.
+#58 `khungNhin.ts` · #57 `xuatAnh.ts` · #56 `banDoNho.ts` → `XuongThietKe.tsx:880` ·
+#5 `vungAnToan.ts` → `CanhThietKe.tsx:405` · #42 `VeVung.tsx` → `XuongThietKe.tsx:922`.
+
+> #### ★★★ G27 — TỰ BẮT LỜI KHAI QUÁ CỦA CHÍNH MÌNH, RỒI SỬA CHO LỜI KHAI THÀNH ĐÚNG
+> Docblock đầu tiên của lô C hứa nhãn vùng đặt tại **trọng tâm diện tích**. Tự đo lại trên hình
+> chữ L `(0,0)-(12,0)-(12,4)-(3,4)-(3,12)-(0,12)` m ⇒ trọng tâm **(4,5 · 4,0) NẰM NGOÀI đa giác**
+> ⇒ nhãn nổi giữa lối đi.
+> Nó **không sửa câu chữ cho khớp mã** — nó viết `diemDatNhan()` (quét ngang, lấy nhịp trong dài
+> nhất) để **lời hứa thành đúng**, và gọi nó ở `vungAnToan.ts:344`.
+> ⇒ Khi phát hiện tài liệu nói quá mã: **hỏi lời hứa hay mã mới là thứ sai**. Hạ lời hứa xuống cho
+> khớp mã là cách dễ nhất để giữ một khuyết tật vĩnh viễn.
+
+> #### ★ G28 — `preserveDrawingBuffer=false`: ẢNH XUẤT RA **TRẮNG MÀ KHÔNG LỖI**
+> `toDataURL` ngây thơ trên build thật cho chuỗi **11.126 ký tự** (ảnh trắng); đường render-rồi-chụp
+> cho **120.458** (10,8×). Không exception, không cảnh báo — chỉ một tệp PNG rỗng. Đo bằng **độ dài
+> chuỗi**, đừng đo bằng "có tải về được không".
+
+**Vượt phạm vi — chấp nhận:** lô C thêm đường ghi server (`twinCanh.ts`, `twinCanhRouter.ts`) vì
+#42 là **CRUD**, không có đường ghi thì không làm được. Đo lại: **chỉ `e44c90be` chạm hai tệp đó**,
+không xung đột. Nó **khai thẳng thay vì im**. ⇒ Phạm vi tệp là hàng rào **chống đụng tay**, không
+phải rào chặn kỹ thuật; vượt rào + khai báo + đo không xung đột = chấp nhận được.
+
+**Khôi phục DB đo độc lập:** `twin_vat_the` = `[{"loai":"tuong","n":4}]`, tổng 4 = cộng phân bố 4,
+**0 hàng `vung`** — sạch đúng trạng thái trước thử nghiệm.
+
+**G2 (nhiều lô một nhánh):** khoá i18n của lô C bị cuốn vào commit `0162fafc` của lô B. Đo lại:
+`canvasUi` + `vung` **có đủ ở cả vi/en/zh** ⇒ phiền sổ sách, không mất mát.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
