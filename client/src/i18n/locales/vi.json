@@ -20122,7 +20122,15 @@
       "aoiNg": "NG",
       "aoiNtf": "NTF",
       "aoiYield": "Yield",
-      "aoiTong": "Tổng kiểm"
+      "aoiTong": "Tổng kiểm",
+      "nhung": {
+        "tieuDeMay": "Chi tiết máy",
+        "tieuDeRobot": "Buồng lái robot",
+        "tieuDeTram": "Phân tích trạm",
+        "quayLai": "Quay lại 3D",
+        "moDayDu": "Mở màn đầy đủ",
+        "dangNap": "Đang tải nội dung…"
+      }
     },
     "studio": {
       "tieuDe": "Nhà máy 3D — Thiết kế",

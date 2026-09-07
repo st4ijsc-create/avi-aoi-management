@@ -20150,7 +20150,15 @@
       "aoiNg": "NG",
       "aoiNtf": "NTF",
       "aoiYield": "良率",
-      "aoiTong": "检测总数"
+      "aoiTong": "检测总数",
+      "nhung": {
+        "tieuDeMay": "设备详情",
+        "tieuDeRobot": "机器人驾驶舱",
+        "tieuDeTram": "工位分析",
+        "quayLai": "返回 3D",
+        "moDayDu": "打开完整页面",
+        "dangNap": "正在加载内容…"
+      }
     },
     "studio": {
       "tieuDe": "3D 工厂 — 设计",

@@ -48,7 +48,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSharedSocket } from "@/lib/socketManager";
 import { useTranslation } from "react-i18next";
 import { useLocation, useSearch } from "wouter";
-import { AlertTriangle, Boxes, LayoutGrid, OctagonAlert, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  Boxes,
+  ChevronLeft,
+  ChevronRight,
+  LayoutGrid,
+  OctagonAlert,
+  RefreshCw,
+} from "lucide-react";
 import type * as THREE from "three";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -83,7 +91,17 @@ import {
   kieuGhiLichSu,
   tronTrangThaiUrl,
   type PhamVi,
+  type ThayDoiTwinUrl,
 } from "@/components/twin3d/van-hanh/duongDanTwin";
+// ── Đợt 10 lô F (§11e.6 F1/F2/F3) — bộ chọn Nhà máy/Toà/Tầng ──────────────
+import {
+  phamViThuc,
+  phanGiaiNap,
+  tapDoiSoatTheoNap,
+  yeuCauBiBoQua,
+  type MucChon,
+} from "@/components/twin3d/van-hanh/boChonNap";
+import { BoChonNapUI } from "@/components/twin3d/van-hanh/BoChonNapUI";
 import {
   bboxCuaTap,
   dungBreadcrumb,
@@ -105,6 +123,12 @@ import {
   type MayVanHanh,
 } from "@/components/twin3d/van-hanh/trungThucDuLieu";
 import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
+// ── Đợt 10 mục 5 (lô G) — xem chi tiết TẠI CHỖ, trạng thái ngăn ở khoá `?xem=` ──
+import {
+  docXemTuQuery,
+  tronXemVaoQuery,
+  type NganNhungMo,
+} from "@/components/twin3d/van-hanh/nhungTaiCho";
 // ── Đợt 6 (§9.8/§10.2) — kho trạng thái DÙNG CHUNG cho trực tiếp và tua lại ──
 import { dongHoHienThi, hopNhat } from "@/components/twin3d/van-hanh/khoTrangThai";
 // ── Đóng nợ trước Đợt 7 — §11 #50 (UNS), #53 (khu chờ), #54 (nhãn Line) ──
@@ -195,7 +219,7 @@ export default function TwinVanHanh() {
   /* ═══════════════════════════════════════════════════════════════════════ */
 
   const urlState = useMemo(() => docTrangThaiUrl(search), [search]);
-  const phamVi = urlState.phamVi ?? PHAM_VI_MAC_DINH;
+  const phamViYeuCau = urlState.phamVi ?? PHAM_VI_MAC_DINH;
   const machineIdChon = urlState.chon?.loai === "machine" ? urlState.chon.id : null;
 
   /**
@@ -204,7 +228,7 @@ export default function TwinVanHanh() {
    * giây và đẩy hết vào history làm nút Back vô dụng (§9.4).
    */
   const ghiUrl = useCallback(
-    (thayDoi: Parameters<typeof tronTrangThaiUrl>[1]) => {
+    (thayDoi: ThayDoiTwinUrl) => {
       const qs = tronTrangThaiUrl(window.location.search, thayDoi);
       const url = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
       if (kieuGhiLichSu(thayDoi) === "push") setLocation(url);
@@ -212,6 +236,41 @@ export default function TwinVanHanh() {
     },
     [setLocation],
   );
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ ĐỢT 10 MỤC 5 (lô G) — XEM CHI TIẾT **TẠI CHỖ**, KHÔNG REDIRECT      */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /*
+   * Yêu cầu chủ sở hữu: *"xem chi tiết của máy/Line không sử dụng redirect
+   * chuyển trang để xem rất bất tiện … cần dialog hoặc modal … và có phím back
+   * … để ng dùng không cần rời màn hình 3D digital Twin"*.
+   *
+   * Trước đợt này `onDieuHuong={setLocation}` (dưới) làm mọi nút "Mở chức năng"
+   * **rời hẳn `/twin`**. Ba móc dưới đây là toàn bộ chỗ nối.
+   *
+   * ★ Ngăn mở sống trong URL (`?xem=machine:42`) chứ không trong `useState`:
+   *   F5 giữa lúc đang xem chi tiết mà mất ngăn là đúng nỗi bất tiện chủ sở hữu
+   *   than phiền, chỉ đổi nguyên nhân. `docXemTuQuery`/`tronXemVaoQuery`
+   *   (`nhungTaiCho.ts`) dùng khoá RIÊNG `xem=` và giữ nguyên mọi tham số khác,
+   *   nên chúng KHÔNG đụng `pv/chon/cam/lop/tg` của `tronTrangThaiUrl` — mở ngăn
+   *   không làm mất phạm vi hay góc camera.
+   *
+   * ★ `push`, không `replace`: mở ngăn chi tiết LÀ "đi tới một chỗ khác", nên
+   *   **nút Back của trình duyệt đóng ngăn** — đúng "có phím back cũng được"
+   *   của yêu cầu, và nó có sẵn miễn phí nhờ đặt trạng thái vào URL.
+   */
+  const nganNhung = useMemo(() => docXemTuQuery(search), [search]);
+
+  const ghiXem = useCallback(
+    (ngan: NganNhungMo | null) => {
+      const qs = tronXemVaoQuery(window.location.search, ngan);
+      setLocation(`${window.location.pathname}${qs ? `?${qs}` : ""}`);
+    },
+    [setLocation],
+  );
+
+  const moTaiCho = useCallback((ngan: NganNhungMo) => ghiXem(ngan), [ghiXem]);
+  const dongNhung = useCallback(() => ghiXem(null), [ghiXem]);
 
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* Dữ liệu                                                                  */
@@ -222,10 +281,61 @@ export default function TwinVanHanh() {
     () => (factoriesQ.data ?? []) as Array<{ id: number; name?: string; code?: string }>,
     [factoriesQ.data],
   );
-  const [factoryId, setFactoryId] = useState<number | null>(null);
-  useEffect(() => {
-    if (factoryId === null && factories.length > 0) setFactoryId(factories[0].id);
-  }, [factories, factoryId]);
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 10 LÔ F — BA CHỈ SỐ `[0]` VIẾT CỨNG ĐÃ BỊ GỠ (§11e.6 F1)
+   * ════════════════════════════════════════════════════════════════════════
+   * Trước bản này: `factories[0]` (:227) → `toaNha[0]` (:270) → `tangs[0]`
+   * (:278). Lô E đo được hậu quả — **không đường nào trong UI hiện hơn một
+   * tầng, của một toà, của một nhà máy**, và banner khai sai 373 máy "chưa xếp
+   * chỗ" (chúng chỉ ở tầng không được hỏi).
+   *
+   * ★ Nguồn sự thật của lựa chọn là **URL**, không phải `useState`. Bản cũ giữ
+   *   `factoryId` trong state ⇒ không chia sẻ được, không tải lại được, và nút
+   *   Back không quay về tầng vừa xem. `phanGiaiNap` chỉ phân giải; nó KHÔNG
+   *   ghi — mọi lượt ghi đi qua `ghiUrl` để có đúng một đường vào lịch sử.
+   *
+   * ⚠ KHÔNG có ngưỡng chặn theo số máy ở đây. Lô E đo 549 máy/tầng: 3 draw
+   *   call, 57–59 FPS — §4 đạt rộng rãi. Thêm giới hạn là bịa ràng buộc.
+   */
+  const mucNhaMay = useMemo<MucChon[]>(
+    () => factories.map((f) => ({ id: f.id, nhan: f.name ?? f.code ?? `#${f.id}` })),
+    [factories],
+  );
+  const factoryId = useMemo(
+    () =>
+      phanGiaiNap(
+        { nhaMayId: urlState.nap.nm, toaNhaId: null, tangId: null },
+        { nhaMay: mucNhaMay, toaNha: [], tang: [] },
+      ).nhaMayId,
+    [urlState.nap.nm, mucNhaMay],
+  );
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ F3 — `?pv=tapdoan` ĐANG NÓI DỐI, VÀ ĐÂY LÀ CHỖ NÓ THÔI NÓI DỐI
+   * ════════════════════════════════════════════════════════════════════════
+   * Lô E đo: breadcrumb ghi "Tập đoàn" trong khi `dem-may=549` — **1.592 máy
+   * của 3 nhà máy khác vắng mặt**. Hai lối thoát, và lô F chọn có căn cứ:
+   *
+   *   (a) hiện đủ 4 nhà máy — `canhThietKe` nhận ĐÚNG MỘT `factoryId`
+   *       (`twinCanhRouter.ts:646-651`); làm (a) là đổi hợp đồng server, ngoài
+   *       phạm vi lô F. Và §11e.6 đã ghi §10C.6 còn lỗi hình học riêng (bước
+   *       lưới 400 m làm 4 khối 3 km lồng vào nhau) chưa ai sửa.
+   *   (b) nói ĐÚNG phạm vi đang hiện — chọn (b).
+   *
+   * ★ Hạ cấp mà IM LẶNG cũng là nói dối, chỉ theo chiều ngược. Nên `daHaCap`
+   *   bật một dòng giải thích trên màn (xem `banner-ha-cap` phía render).
+   * ★ Khi tập đoàn chỉ có MỘT nhà máy, "Tập đoàn" là câu ĐÚNG và không bị hạ —
+   *   đó cũng chính là mục nghiệm thu §10C.6 mà lô E đo được là đang hỏng:
+   *   tạo nhà máy thứ hai PHẢI làm hành vi này đổi.
+   */
+  const phamViKq = useMemo(
+    () => phamViThuc(phamViYeuCau, factories.length, factoryId === null ? 0 : 1),
+    [phamViYeuCau, factories.length, factoryId],
+  );
+  const phamVi = phamViKq.pv;
 
   const bayGioThat = Date.now();
 
@@ -267,25 +377,128 @@ export default function TwinVanHanh() {
     { factoryId: factoryId ?? 0 },
     { enabled: factoryId !== null, retry: false },
   );
-  const toaNhaDau = (toaNhaQ.data ?? [])[0] as
-    | { id: number; rongMm: string | number; sauMm: string | number }
-    | undefined;
-  const chiTietQ = trpc.twinCanh.chiTietToaNha.useQuery(
-    { id: toaNhaDau?.id ?? 0 },
-    { enabled: toaNhaDau !== undefined, retry: false },
+  const dsToaNha = useMemo(
+    () =>
+      (toaNhaQ.data ?? []) as Array<{
+        id: number;
+        ma?: string;
+        ten?: string;
+        rongMm: string | number;
+        sauMm: string | number;
+      }>,
+    [toaNhaQ.data],
   );
+  const mucToaNha = useMemo<MucChon[]>(
+    () => dsToaNha.map((b) => ({ id: b.id, nhan: b.ten || b.ma || `#${b.id}` })),
+    [dsToaNha],
+  );
+
+  /** Toà ĐANG CHỌN — từ URL, rơi về phần tử đầu khi id không tồn tại. */
+  const toaNhaId = useMemo(
+    () =>
+      phanGiaiNap(
+        { nhaMayId: null, toaNhaId: urlState.nap.toa, tangId: null },
+        { nhaMay: [], toaNha: mucToaNha, tang: [] },
+      ).toaNhaId,
+    [urlState.nap.toa, mucToaNha],
+  );
+  const toaNhaDangChon = useMemo(
+    () => dsToaNha.find((b) => b.id === toaNhaId) ?? null,
+    [dsToaNha, toaNhaId],
+  );
+
+  const chiTietQ = trpc.twinCanh.chiTietToaNha.useQuery(
+    { id: toaNhaId ?? 0 },
+    { enabled: toaNhaId !== null, retry: false },
+  );
+  const dsTang = useMemo(
+    () => (chiTietQ.data?.tangs ?? []) as Array<{ id: number; capSo?: number; ten?: string }>,
+    [chiTietQ.data],
+  );
+  const mucTang = useMemo<MucChon[]>(
+    () =>
+      dsTang.map((s) => ({
+        id: s.id,
+        nhan: s.ten || (s.capSo != null ? `Tầng ${s.capSo}` : `#${s.id}`),
+      })),
+    [dsTang],
+  );
+
+  /** Tầng ĐANG HIỆN — từ URL, rơi về tầng đầu của toà đang chọn. */
+  const tangId = useMemo(
+    () =>
+      phanGiaiNap(
+        { nhaMayId: null, toaNhaId: null, tangId: urlState.nap.tang },
+        { nhaMay: [], toaNha: [], tang: mucTang },
+      ).tangId,
+    [urlState.nap.tang, mucTang],
+  );
+
+  /**
+   * Link người dùng mở có trỏ vào thứ không còn tồn tại không?
+   *
+   * ⚠ Chỉ tính khi danh sách ĐÃ có ít nhất một mục: lúc truy vấn chưa xong thì
+   *   mọi danh sách đều rỗng và `phanGiaiNap` trả `null` — kết luận "link hỏng"
+   *   ở khoảnh khắc đó là đọc một phép đo CHƯA CHẠY (đúng lớp lỗi NT-3.5:
+   *   "đếm rỗng khác đếm bằng 0").
+   */
+  const linkBiBoQua =
+    (mucNhaMay.length > 0 &&
+      yeuCauBiBoQua(
+        { nhaMayId: urlState.nap.nm, toaNhaId: null, tangId: null },
+        { nhaMayId: factoryId, toaNhaId: null, tangId: null },
+      )) ||
+    (mucToaNha.length > 0 &&
+      yeuCauBiBoQua(
+        { nhaMayId: null, toaNhaId: urlState.nap.toa, tangId: null },
+        { nhaMayId: null, toaNhaId, tangId: null },
+      )) ||
+    (mucTang.length > 0 &&
+      yeuCauBiBoQua(
+        { nhaMayId: null, toaNhaId: null, tangId: urlState.nap.tang },
+        { nhaMayId: null, toaNhaId: null, tangId },
+      ));
+
   const tangDau = useMemo(() => {
-    const tang = (chiTietQ.data?.tangs ?? [])[0] as { id: number } | undefined;
-    if (!toaNhaDau || !tang) return null;
+    if (!toaNhaDangChon || tangId === null) return null;
     // ★ `numeric(14,3)` về từ drizzle là STRING. `Number(...)` tường minh là bắt
     //   buộc: cộng hai string sẽ NỐI CHUỖI ("38400"+"0"="384000") — không throw,
     //   và nhà xưởng to gấp 10 lần.
-    return { tangId: tang.id, rongMm: Number(toaNhaDau.rongMm), sauMm: Number(toaNhaDau.sauMm) };
-  }, [toaNhaDau, chiTietQ.data]);
+    return {
+      tangId,
+      rongMm: Number(toaNhaDangChon.rongMm),
+      sauMm: Number(toaNhaDangChon.sauMm),
+    };
+  }, [toaNhaDangChon, tangId]);
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ F2 — HỎI **MỌI TẦNG CỦA TOÀ ĐANG CHỌN**, KHÔNG CHỈ TẦNG ĐANG HIỆN
+   * ════════════════════════════════════════════════════════════════════════
+   * Đây là nửa thứ hai của bản vá "373 máy chưa xếp chỗ", và nó KHÔNG phải là
+   * "nạp nhiều hơn cho chắc". Lý do cơ học:
+   *
+   *   `canhThietKe` trả `may` của **cả nhà máy** nhưng `datCho` chỉ của
+   *   `tangIds` được hỏi. Đem hai tập LỆCH PHẠM VI đó so với nhau
+   *   (`doiSoatCanh`) là đếm ĐẦU VÀO ≠ ĐẦU RA — họ G7. Máy tầng 2/3 có hàng
+   *   `twin_dat_cho` thật, nhưng client không thấy nên khai chúng "chưa xếp
+   *   chỗ".
+   *
+   * ⇒ Hỏi đủ tầng của toà thì client BIẾT máy nào đã có chỗ ở tầng khác, và
+   *   `tapDoiSoatTheoNap` loại chúng khỏi banner (xếp vào một con số có nhãn
+   *   riêng "ở tầng khác"), thay vì khai sai.
+   *
+   * ★ Chi phí: `traDatChoTheoTang` chạy một `nhaMayCuaTang` mỗi tầng (bounded
+   *   ≤50 theo Zod). Đo được ở lô E: hiệu năng VẼ không phải nút thắt (3 draw
+   *   call ở 549 máy), nên đổi thêm vài truy vấn lấy một câu khai ĐÚNG là đánh
+   *   đổi rõ ràng có lợi. Máy ngoài tầng đang hiện KHÔNG được vẽ — bộ lọc vẽ là
+   *   `d.tangId === tangId`, xem `mayVe` bên dưới.
+   */
+  const tangIdsHoi = useMemo(() => dsTang.map((s) => s.id).slice(0, 50), [dsTang]);
 
   // Hình học + cây phân cấp.
   const canhQ = trpc.twinCanh.canhThietKe.useQuery(
-    { factoryId: factoryId ?? 0, tangIds: tangDau ? [tangDau.tangId] : [] },
+    { factoryId: factoryId ?? 0, tangIds: tangIdsHoi },
     { enabled: factoryId !== null, retry: false },
   );
 
@@ -619,17 +832,69 @@ export default function TwinVanHanh() {
     return m;
   }, [mayVanHanh]);
 
-  /** Đặt chỗ theo máy — nguồn vị trí 3D. */
+  /**
+   * Đặt chỗ theo máy **CỦA TẦNG ĐANG HIỆN** — nguồn vị trí 3D.
+   *
+   * ★★★ F2 — `canhQ` nay hỏi MỌI tầng của toà (để đối soát nói đúng), nên bản
+   *   đồ này PHẢI lọc lại theo `tangId`. Không lọc thì máy ba tầng chồng lên
+   *   nhau trên cùng mặt sàn — và không có lỗi nào nổ, chỉ là một nhà xưởng
+   *   trông đông gấp ba (đúng lớp "sai mà không kêu" của §5.2).
+   */
   const datChoTheoMay = useMemo(() => {
     // `NonNullable` vì `canhQ.data` là `… | undefined` lúc chưa tải xong; ta chỉ
     // cần KIỂU của phần tử, không cần giá trị.
     type HangDatCho = NonNullable<typeof canhQ.data>["datCho"][number];
     const m = new Map<number, HangDatCho>();
     for (const d of canhQ.data?.datCho ?? []) {
-      if (d.loaiThucThe === "machine") m.set(d.thucTheId, d);
+      if (d.loaiThucThe !== "machine") continue;
+      if (tangId !== null && d.tangId !== tangId) continue;
+      m.set(d.thucTheId, d);
     }
     return m;
+  }, [canhQ.data, tangId]);
+
+  /**
+   * Máy có chỗ ở **BẤT KỲ tầng nào của toà đang chọn** — vế thứ hai của F2.
+   * Đây là tập cho phép phân biệt "chưa xếp chỗ" với "ở tầng khác".
+   */
+  const idCoDatChoDaHoi = useMemo(() => {
+    const s = new Set<number>();
+    for (const d of canhQ.data?.datCho ?? []) {
+      if (d.loaiThucThe === "machine") s.add(d.thucTheId);
+    }
+    return [...s];
   }, [canhQ.data]);
+
+  /**
+   * Nhà máy chỉ có MỘT toà ⇒ lượt hỏi đã phủ mọi tầng của nhà máy, nên câu
+   * "chưa xếp chỗ" suy được. Nhiều toà ⇒ KHÔNG suy được, và ta khai "chưa đo"
+   * thay vì khai sai (G9: một phép đếm chỉ đúng trong phạm vi mẫu của nó).
+   */
+  const moiToaDaHoi = dsToaNha.length <= 1;
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ F2 — ĐỐI SOÁT CHỈ TRÊN TẬP MÀ LƯỢT NẠP NÀY PHÁT BIỂU ĐƯỢC
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản cũ đưa CẢ `mayVanHanh` (máy của cả nhà máy) so với `datChoTheoMay` (chỉ
+   * tầng[0]) — hai tập lệch phạm vi, và chênh lệch đó bị in ra như "N máy chưa
+   * xếp chỗ". Ở FUYU-F 549 máy trải 176/187/186, con số đó là **373**, và cả
+   * 373 máy ấy ĐỀU đã có hàng `twin_dat_cho` thật.
+   *
+   * `tapDoiSoatTheoNap` cắt tập máy xuống đúng phần lượt nạp này có thẩm quyền
+   * nói về, và trả `soNgoaiLuotNap` để phần bị cắt vẫn được KHAI — nhưng khai
+   * đúng câu ("ở tầng/toà khác"), không phải câu sai ("chưa xếp chỗ").
+   */
+  const tapDs = useMemo(
+    () =>
+      tapDoiSoatTheoNap(
+        mayVanHanh.filter((m) => m.isActive).map((m) => m.id),
+        [...datChoTheoMay.keys()],
+        idCoDatChoDaHoi,
+        moiToaDaHoi,
+      ),
+    [mayVanHanh, datChoTheoMay, idCoDatChoDaHoi, moiToaDaHoi],
+  );
 
   const kichThuocTheoLoai = useMemo(() => {
     const m = new Map<string, { rongMm: number; caoMm: number; sauMm: number }>();
@@ -748,9 +1013,19 @@ export default function TwinVanHanh() {
      *
      * ⇒ Hai điều kiện phải là phủ định của nhau, viết bằng CÙNG một biểu thức.
      */
+    /*
+     * ★★★ F2 — KHU CHỜ CŨNG PHẢI THEO ĐÚNG TẬP CỦA LƯỢT NẠP.
+     *
+     * Không có `duoc.has(mv.id)` thì 373 máy của tầng 2/3 (đã có chỗ THẬT ở tầng
+     * khác) sẽ bị dựng thành 373 khối trong khu chờ ngoài rìa tầng đang xem —
+     * cùng một lời nói dối như banner, chỉ đổi từ chữ sang hình khối, và lần này
+     * người dùng THẤY chúng nên còn tin hơn.
+     */
+    const duoc = new Set(tapDs.idMay);
     const chuaDat = mayVanHanh
       .filter((mv) => {
         if (!mv.isActive) return false;
+        if (!duoc.has(mv.id)) return false;
         const d = datChoTheoMay.get(mv.id);
         return !d || !d.hienThi;
       })
@@ -783,7 +1058,7 @@ export default function TwinVanHanh() {
         hien: true,
       };
     });
-  }, [mayVanHanh, datChoTheoMay, mayVe, kichThuocTheoLoai, mauNenCanh]);
+  }, [mayVanHanh, datChoTheoMay, mayVe, kichThuocTheoLoai, mauNenCanh, tapDs]);
 
   /** Máy đã đặt + máy khu chờ — CÙNG một lô vẽ (RB-4: một `BatchedMesh`). */
   const mayVeTatCa = useMemo<MayTrongLo[]>(() => [...mayVe, ...mayKhuCho], [mayVe, mayKhuCho]);
@@ -1244,10 +1519,32 @@ export default function TwinVanHanh() {
   const demTuoi = useMemo(() => demTheoTuoi(mayVanHanh, bayGio), [mayVanHanh, bayGio]);
   const tsNen = useMemo(() => thoiDiemDuLieuMoiNhat(mayVanHanh), [mayVanHanh]);
   const doTuoiNen = nhanDoTuoi(tsNen, bayGio);
-  const doiSoat = useMemo(
-    () => doiSoatCanh(mayVanHanh, [...datChoTheoMay.keys()]),
-    [mayVanHanh, datChoTheoMay],
-  );
+  /**
+   * ★★★ CHỈ CẮT VẾ "THIẾU", KHÔNG CẮT VẾ "THỪA".
+   *
+   * `doiSoatCanh` đo HAI CHIỀU (xem docblock của nó): máy thiếu chỗ, và chỗ trỏ
+   * vào máy đã ngừng (`datChoMoCoi`). F2 chỉ nói về chiều THỨ NHẤT.
+   *
+   * ⚠ Bản vá đầu của lô F lọc CẢ HAI vế theo `tapDs.idMay` — và đo được ngay
+   *   trên trình duyệt thật: banner mất luôn dòng "1 đặt chỗ trỏ vào máy đã
+   *   ngừng" của SIM-FAC. `tapDs.idMay` chỉ chứa máy `isActive`, nên mọi hàng
+   *   mồ côi (theo định nghĩa trỏ vào máy KHÔNG `isActive`) bị lọc sạch. Vá một
+   *   lời khai sai bằng cách làm câm một lời khai ĐÚNG là đổi lỗi lấy lỗi.
+   *
+   * ⇒ Vế "thừa" nhận NGUYÊN tập máy + NGUYÊN tập đặt chỗ của tầng đang hiện.
+   *   Vế "thiếu" nhận tập đã cắt. Hai vế hai phạm vi là CÓ CHỦ Ý, vì chúng trả
+   *   lời hai câu hỏi khác nhau.
+   */
+  const doiSoat = useMemo(() => {
+    const duoc = new Set(tapDs.idMay);
+    const idTangNay = [...datChoTheoMay.keys()];
+    const thieu = doiSoatCanh(
+      mayVanHanh.filter((m) => duoc.has(m.id)),
+      idTangNay.filter((id) => duoc.has(id)),
+    );
+    const thua = doiSoatCanh(mayVanHanh, idTangNay);
+    return { ...thieu, datChoMoCoi: thua.datChoMoCoi, lech: thieu.lech || thua.datChoMoCoi.length > 0 };
+  }, [mayVanHanh, datChoTheoMay, tapDs]);
 
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* Quyền xử lý (§9.2)                                                       */
@@ -1288,6 +1585,18 @@ export default function TwinVanHanh() {
   );
 
   const doiPhamVi = useCallback((pv: PhamVi) => ghiUrl({ phamVi: pv }), [ghiUrl]);
+
+  /* ── ★★★ F4 — THU/MỞ PANEL BÊN, trạng thái ở URL ─────────────────────── */
+  const thuTrai = urlState.thu.includes("trai");
+  const thuPhai = urlState.thu.includes("phai");
+  const doiThu = useCallback(
+    (ten: string) => {
+      const hienTai = docTrangThaiUrl(window.location.search).thu;
+      const moi = hienTai.includes(ten) ? hienTai.filter((x) => x !== ten) : [...hienTai, ten];
+      ghiUrl({ thu: moi });
+    },
+    [ghiUrl],
+  );
 
   /** Ghi camera vào URL — `replaceState`, và chỉ khi chuỗi THẬT SỰ đổi. */
   const camCuoi = useRef("");
@@ -1385,14 +1694,26 @@ export default function TwinVanHanh() {
       data-testid="man-twin-van-hanh"
     >
       {/* ── Breadcrumb + độ tươi + chế độ ──────────────────────────────── */}
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-1.5">
-        <nav className="flex items-center gap-1 text-xs" aria-label="breadcrumb" data-testid="breadcrumb-twin">
+      {/*
+        ★★★ F4 — HEADER MỘT DÒNG. `flex-wrap` bị bỏ CÓ CHỦ Ý.
+        Đo được: với `flex-wrap`, ba ô chọn mới của F1 đẩy header từ 48 lên
+        85 px ở 1280×720, và 37 px ấy trừ thẳng vào canvas. Thay vì cho nó xuống
+        dòng, cho breadcrumb TRUNG BỚT (`min-w-0 truncate`) — breadcrumb là thứ
+        duy nhất ở đây có độ dài không đoán trước được (tên nhà máy do người
+        dùng đặt), nên nó phải là thứ nhường chỗ.
+      */}
+      <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-3">
+        <nav
+          className="flex min-w-0 items-center gap-1 overflow-hidden text-xs"
+          aria-label="breadcrumb"
+          data-testid="breadcrumb-twin"
+        >
           {breadcrumb.map((m, i) => (
             <span key={`${m.cap}-${i}`} className="flex items-center gap-1">
               {i > 0 ? <span className="text-muted-foreground">›</span> : null}
               <button
                 type="button"
-                className="rounded px-1 hover:bg-accent focus-visible:outline focus-visible:outline-2"
+                className="max-w-[9rem] truncate rounded px-1 hover:bg-accent focus-visible:outline focus-visible:outline-2"
                 data-testid={`breadcrumb-${m.cap}`}
                 onClick={() => doiPhamVi({ cap: m.cap, id: m.id })}
               >
@@ -1402,7 +1723,27 @@ export default function TwinVanHanh() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        {/*
+          ── ★★★ F1 — BA Ô CHỌN Nhà máy / Toà / Tầng ───────────────────────
+          Chỗ gọi duy nhất của `BoChonNapUI`. Trước bản này màn `/twin` có
+          **0 `<select>`** — màn duy nhất trong hệ thiếu picker (đối chứng
+          `FactoryFloorEditor.tsx`: 9). Mọi lượt đổi đi qua `ghiUrl` ⇒ vào URL,
+          chia sẻ và tải lại được, và nút Back quay về tầng vừa xem.
+        */}
+        <BoChonNapUI
+          nhaMay={mucNhaMay}
+          toaNha={mucToaNha}
+          tang={mucTang}
+          nhaMayId={factoryId}
+          toaNhaId={toaNhaId}
+          tangId={tangId}
+          dangTai={factoriesQ.isLoading || toaNhaQ.isLoading || chiTietQ.isLoading}
+          onDoiNhaMay={(id) => ghiUrl({ nap: { nm: id } })}
+          onDoiToaNha={(id) => ghiUrl({ nap: { toa: id } })}
+          onDoiTang={(id) => ghiUrl({ nap: { tang: id } })}
+        />
+
+        <div className="flex shrink-0 items-center gap-2">
           {/*
             ★★★ G15 — TRẠNG THÁI ĐƯỜNG SỐ LIỆU, NĂM ô chứ không phải một boolean.
 
@@ -1540,7 +1881,7 @@ export default function TwinVanHanh() {
           data-testid="banner-doi-soat"
         >
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span>
+          <span data-ngoai-luot-nap={tapDs.soNgoaiLuotNap}>
             {t("twin3d.vanHanh.doiSoatLech", "{{thieu}} máy chưa xếp chỗ · {{moCoi}} đặt chỗ trỏ vào máy đã ngừng", {
               thieu: doiSoat.thieuTrenMatBang.length,
               moCoi: doiSoat.datChoMoCoi.length,
@@ -1554,6 +1895,82 @@ export default function TwinVanHanh() {
           >
             {t("twin3d.vanHanh.moXuongDung", "Mở Xưởng dựng")}
           </button>
+        </div>
+      ) : null}
+
+      {/*
+        ── ★★★ F2 — MÁY Ở TẦNG/TOÀ KHÁC: KHAI ĐÚNG CÂU ─────────────────────
+        Đây là 373 máy mà bản cũ khai là "chưa xếp chỗ". Chúng KHÔNG biến mất
+        khỏi giao diện — làm thế là đổi một lời khai sai lấy một chỗ im lặng.
+        Chúng được khai đúng: *có chỗ, nhưng không ở tầng bạn đang xem*, và ô
+        chọn Tầng ngay trên đầu là lối đi tới chúng.
+      */}
+      {!dangTai && tapDs.soNgoaiLuotNap > 0 ? (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b border-sky-500/40 bg-sky-500/10 px-3 py-1 text-[11px] text-sky-700 dark:text-sky-300"
+          data-testid="banner-ngoai-luot-nap"
+          data-so={tapDs.soNgoaiLuotNap}
+          data-moi-toa-da-hoi={moiToaDaHoi ? "1" : "0"}
+        >
+          <Boxes className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            {moiToaDaHoi
+              ? t(
+                  "twin3d.vanHanh.mayTangKhac",
+                  "{{so}} máy nữa đã có chỗ ở tầng khác của toà này — đổi ô Tầng để xem",
+                  { so: tapDs.soNgoaiLuotNap },
+                )
+              : t(
+                  "twin3d.vanHanh.mayToaKhac",
+                  "{{so}} máy không nằm trong lượt nạp này (toà khác chưa được hỏi) — chưa kết luận được chúng đã xếp chỗ hay chưa",
+                  { so: tapDs.soNgoaiLuotNap },
+                )}
+          </span>
+        </div>
+      ) : null}
+
+      {/*
+        ── ★★★ F3 — PHẠM VI BỊ HẠ CẤP, NÓI THẲNG VÌ SAO ────────────────────
+        `?pv=tapdoan` trên một hệ nhiều nhà máy: đường dữ liệu chỉ với tới MỘT
+        nhà máy (`canhThietKe` nhận đúng một `factoryId`). Breadcrumb nay ghi
+        "Nhà máy" chứ không ghi "Tập đoàn" — và dòng này nói vì sao, để việc hạ
+        cấp không trở thành một lời nói dối thứ hai theo chiều ngược lại.
+      */}
+      {phamViKq.daHaCap ? (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[11px] text-amber-700 dark:text-amber-400"
+          data-testid="banner-ha-cap"
+          data-cap-yeu-cau={phamViKq.capYeuCau}
+          data-cap-thuc={phamVi.cap}
+        >
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            {t(
+              "twin3d.vanHanh.haCapPhamVi",
+              "Đang hiện dữ liệu của MỘT nhà máy ({{soNhaMay}} nhà máy trong hệ). Phạm vi Tập đoàn chưa nạp được nhiều nhà máy cùng lúc — dùng ô Nhà máy để chuyển.",
+              { soNhaMay: factories.length },
+            )}
+          </span>
+        </div>
+      ) : null}
+
+      {/*
+        ── ★ LINK CŨ TRỎ VÀO THỨ KHÔNG CÒN ─────────────────────────────────
+        Im lặng hiện một tầng khác là để người dùng tin họ đang xem đúng thứ họ
+        được gửi. Một dòng ngắn là đủ, và nó chỉ hiện khi thật sự có chuyện.
+      */}
+      {!dangTai && linkBiBoQua ? (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[11px] text-amber-700 dark:text-amber-400"
+          data-testid="banner-link-bi-bo-qua"
+        >
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            {t(
+              "twin3d.vanHanh.linkBiBoQua",
+              "Đường link mở màn này trỏ tới nhà máy/toà/tầng không còn tồn tại — đang hiện lựa chọn gần nhất.",
+            )}
+          </span>
         </div>
       ) : null}
 
@@ -1604,7 +2021,36 @@ export default function TwinVanHanh() {
       {/* ── Thân: trái | canvas | phải ─────────────────────────────────── */}
       <div className="flex min-h-0 flex-1">
         {/* PANEL TRÁI — DOM thật, tab được, MỌI hành động làm được từ đây (§9.9) */}
-        <div className="flex w-72 shrink-0 flex-col overflow-hidden border-r">
+        <div
+          /*
+           * ════════════════════════════════════════════════════════════════
+           * ★★★ F4 — PANEL THU ĐƯỢC, VÀ BỀ NGANG THEO VIEWPORT
+           * ════════════════════════════════════════════════════════════════
+           * Đo được (Playwright 1280×720, 2026-09-07): khung twin rộng 968 px;
+           * `w-72`(288) + `w-80`(320) = **608 px = 63 %** ⇒ canvas 360 px, tức
+           * 3D chiếm 360×416/1280×720 = **16,9 %** viewport.
+           *
+           * Hai phép sửa, cả hai đều đo được, không phép nào là "làm cho đẹp":
+           *   1. `w-56 2xl:w-72` — dưới 1536 px panel trái co về 224 px. Nội
+           *      dung của nó (ô đếm 2 cột, dải cảnh báo, danh sách máy) vốn đã
+           *      cuộn dọc; 64 px kia không mua thêm dòng nào mà lấy đi 64 px
+           *      của thứ duy nhất KHÔNG cuộn được là cảnh 3D.
+           *   2. `?thu=trai` — thu hẳn về 0. Đây là đường tới "3D toàn màn".
+           *
+           * ⚠ KHÔNG unmount panel khi thu: §9.9 đòi mọi hành động làm được từ
+           *   DOM thật, và `DanhSachMay`/`DaiCanhBao` giữ trạng thái lọc/chọn.
+           *   Ẩn bằng `hidden` + `w-0` giữ cây React nguyên vẹn, mở lại tức thì
+           *   và không mất một cú gõ nào của người dùng.
+           */
+          className={
+            "flex min-h-0 shrink-0 flex-col overflow-hidden border-r transition-[width] duration-200 " +
+            (thuTrai ? "w-0 border-r-0" : "w-56 2xl:w-72")
+          }
+          data-testid="panel-trai"
+          data-thu={thuTrai ? "1" : "0"}
+          aria-hidden={thuTrai}
+          hidden={thuTrai}
+        >
           {/* Tổng quan + tươi dữ liệu */}
           <div className="shrink-0 border-b p-2 text-xs" data-testid="khoi-tong-quan">
             <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
@@ -1695,6 +2141,54 @@ export default function TwinVanHanh() {
               onCameraDoi={khiCameraDoi}
             />
           )}
+          {/*
+            ── ★★★ F4 — HAI TAY NẮM THU/MỞ, NỔI TRÊN MÉP CANVAS ──────────────
+            Đặt Ở ĐÂY chứ không trong panel, và lý do là cơ học: một nút nằm
+            TRONG panel sẽ biến mất cùng panel khi thu (`hidden`), và người dùng
+            mất luôn đường mở lại — một trạng thái không thoát ra được.
+
+            ★ `aria-expanded` + nhãn nói rõ panel nào: với trình đọc màn hình,
+              hai nút chỉ khác nhau ở một mũi tên là hai nút không phân biệt
+              được. §9.9 đòi mọi hành động làm được bằng bàn phím.
+          */}
+          <button
+            type="button"
+            className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-r border border-l-0 bg-background/90 px-0.5 py-3 text-muted-foreground shadow-sm hover:bg-accent focus-visible:outline focus-visible:outline-2"
+            data-testid="nut-thu-trai"
+            aria-expanded={!thuTrai}
+            aria-label={
+              thuTrai
+                ? t("twin3d.vanHanh.moPanelTrai", "Mở bảng bên trái")
+                : t("twin3d.vanHanh.thuPanelTrai", "Thu bảng bên trái")
+            }
+            title={
+              thuTrai
+                ? t("twin3d.vanHanh.moPanelTrai", "Mở bảng bên trái")
+                : t("twin3d.vanHanh.thuPanelTrai", "Thu bảng bên trái")
+            }
+            onClick={() => doiThu("trai")}
+          >
+            {thuTrai ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-l border border-r-0 bg-background/90 px-0.5 py-3 text-muted-foreground shadow-sm hover:bg-accent focus-visible:outline focus-visible:outline-2"
+            data-testid="nut-thu-phai"
+            aria-expanded={!thuPhai}
+            aria-label={
+              thuPhai
+                ? t("twin3d.vanHanh.moPanelPhai", "Mở ngăn xử lý bên phải")
+                : t("twin3d.vanHanh.thuPanelPhai", "Thu ngăn xử lý bên phải")
+            }
+            title={
+              thuPhai
+                ? t("twin3d.vanHanh.moPanelPhai", "Mở ngăn xử lý bên phải")
+                : t("twin3d.vanHanh.thuPanelPhai", "Thu ngăn xử lý bên phải")
+            }
+            onClick={() => doiThu("phai")}
+          >
+            {thuPhai ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
           {/* Trình đọc màn hình: canvas WebGL vô hình với nó (§9.9). */}
           <p className="sr-only" data-testid="tom-tat-canh">
             {ariaLabel}
@@ -1702,7 +2196,18 @@ export default function TwinVanHanh() {
         </div>
 
         {/* NGĂN XỬ LÝ PHẢI — ★★★ nơi mọi việc được XỬ LÝ (§9.2) */}
-        <div className="flex w-80 min-h-0 shrink-0 flex-col overflow-hidden">
+        <div
+          /* ★ F4 — xem chú thích panel trái. `w-64 2xl:w-80`: 256 px vẫn đủ cho
+             mọi nút của `NganXuLy` (đo bằng ảnh, không phải đoán). */
+          className={
+            "flex min-h-0 shrink-0 flex-col overflow-hidden transition-[width] duration-200 " +
+            (thuPhai ? "w-0" : "w-64 2xl:w-80")
+          }
+          data-testid="panel-phai"
+          data-thu={thuPhai ? "1" : "0"}
+          aria-hidden={thuPhai}
+          hidden={thuPhai}
+        >
           <NganXuLy
             machineId={machineIdChon}
             ma={mayDangChon?.ma ?? ""}
@@ -1719,6 +2224,9 @@ export default function TwinVanHanh() {
             coQuyenXem={(m) => hasPermission(m, "canView")}
             onDaXuLy={napLai}
             onDieuHuong={setLocation}
+            onMoTaiCho={moTaiCho}
+            nganNhung={nganNhung}
+            onDongNhung={dongNhung}
           />
         </div>
       </div>

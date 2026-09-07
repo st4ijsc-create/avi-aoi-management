@@ -56,7 +56,7 @@
 
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Check, ClipboardPlus, Clock, ExternalLink } from "lucide-react";
+import { AlertTriangle, Check, ClipboardPlus, Clock, ExternalLink, Maximize2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +74,7 @@ import { trpc } from "@/lib/trpc";
 import { toastTrpcError } from "@/lib/trpcErrors";
 
 import { mauChoTrangThai } from "../mauTrangThai";
+import { NganNhung } from "./NganNhung";
 import {
   MOC_AN_TAM_GIO,
   hanAnTam,
@@ -85,6 +86,7 @@ import {
   type QuyenXuLy,
   docStatsAoi,
 } from "./nganXuLyLogic";
+import { nhungChoHref, type NganNhungMo } from "./nhungTaiCho";
 import { hienSo, nhanDoTuoi, type TrangThaiHienThi } from "./trungThucDuLieu";
 
 export interface NganXuLyProps {
@@ -103,8 +105,28 @@ export interface NganXuLyProps {
   coQuyenXem: (module: string) => boolean;
   /** Gọi sau khi ack/tạo phiếu thành công để tầng trên nạp lại dữ liệu. */
   onDaXuLy: () => void;
-  /** Điều hướng nội bộ (wouter `setLocation`). */
+  /**
+   * Điều hướng nội bộ (wouter `setLocation`) — **CHỈ CÒN cho đích chưa nhúng
+   * được**. Xem `onMoTaiCho` và docblock "XEM CHI TIẾT TẠI CHỖ" bên dưới.
+   */
   onDieuHuong: (href: string) => void;
+  /**
+   * ★★★ Đợt 10 mục 5 — MỞ CHI TIẾT **TẠI CHỖ**, không rời `/twin`.
+   *
+   * Ngăn mở là trạng thái của TẦNG TRÊN (nó ghi vào URL `?xem=` để F5 không mất
+   * ngữ cảnh), nên `NganXuLy` chỉ *yêu cầu* mở, không tự giữ state. `undefined`
+   * ⇒ tầng trên chưa nối, và mọi nút rơi về `onDieuHuong` như trước — không có
+   * nút nào chết, chỉ mất tính năng mới.
+   */
+  onMoTaiCho?: (ngan: NganNhungMo) => void;
+  /**
+   * Ngăn nhúng đang mở (đọc từ URL ở tầng trên). `undefined`/`null` ⇒ đóng.
+   * `NganXuLy` render ngăn vì đây là nơi các nút mở nó sống — người dùng bấm ở
+   * đâu thì nội dung mở ra ngay từ đó.
+   */
+  nganNhung?: NganNhungMo | null;
+  /** Đóng ngăn nhúng — tầng trên xoá `?xem=`. */
+  onDongNhung?: () => void;
   /** Loại vật thể đang chọn — quyết định bộ nút §9.3. */
   loaiDich?: LoaiDich;
 }
@@ -123,6 +145,9 @@ export function NganXuLy(props: NganXuLyProps) {
     coQuyenXem,
     onDaXuLy,
     onDieuHuong,
+    onMoTaiCho,
+    nganNhung = null,
+    onDongNhung,
     loaiDich = "machine",
   } = props;
 
@@ -513,26 +538,84 @@ export function NganXuLy(props: NganXuLyProps) {
         <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t("twin3d.vanHanh.moChucNang", "Mở chức năng")}
         </h3>
+        {/*
+          ════════════════════════════════════════════════════════════════════
+          ★★★ ĐỢT 10 MỤC 5 — XEM CHI TIẾT **TẠI CHỖ**, KHÔNG REDIRECT
+          ════════════════════════════════════════════════════════════════════
+          Yêu cầu chủ sở hữu: *"xem chi tiết của máy/Line không sử dụng redirect
+          chuyển trang để xem rất bất tiện … cần dialog hoặc modal … và có phím
+          back … để ng dùng không cần rời màn hình 3D digital Twin"*.
+
+          Trước đợt này MỌI nút dưới đây gọi `onDieuHuong(n.href)` = `setLocation`
+          (`TwinVanHanh.tsx:1721`) ⇒ **rời hẳn `/twin`**: cảnh 3D bị huỷ, camera
+          và phạm vi mất, đường về duy nhất là nút Back của trình duyệt.
+
+          Bây giờ mỗi nút chia **hai đường, quyết định bởi CHÍNH `href`** (không
+          có cờ thứ hai để lệch — G12):
+
+            nhúng được  → `onMoTaiCho` mở ngăn ngay trên `/twin`, icon `Maximize2`
+                          ("phóng to tại chỗ"). Đây là **MẶC ĐỊNH**.
+            chưa nhúng  → `onDieuHuong` như cũ, giữ icon `ExternalLink`.
+
+          ★★★ VÌ SAO ICON PHẢI KHÁC NHAU. `ExternalLink` là lời hứa "bấm cái này
+            là rời trang". Để nguyên nó trên một nút mở tại chỗ là nói dối người
+            dùng theo chiều ngược lại — họ do dự bấm vì sợ mất cảnh, đúng nỗi bất
+            tiện mà mục này sinh ra để bỏ. Hai hành vi khác nhau PHẢI nhìn ra
+            được, nếu không thì tính năng có mà không ai dám dùng.
+
+          ★ Lối thoát phụ ("mở màn đầy đủ" ở tab mới) KHÔNG mất — nó nằm trong
+            chính ngăn nhúng (`NganNhung.tsx`), nơi người dùng đã thấy nội dung
+            và mới biết mình có muốn cả trang hay không.
+
+          ⚠ `onMoTaiCho` `undefined` (tầng trên chưa nối) ⇒ **rơi về `onDieuHuong`**,
+            không phải nút chết. Một nút không làm gì là chế độ hỏng câm.
+        */}
         <div className="space-y-1">
           {nutDieuHuongCho(loaiDich, machineId)
             // ★ Ẩn nút dẫn tới màn người dùng không vào được — nếu không thì họ
             //   bấm rồi bị RouteGuard chặn: đúng lớp lỗi "một lối vào rồi TỪ CHỐI".
             .filter((n) => coQuyenXem(n.quyen))
-            .map((n) => (
-              <Button
-                key={n.href}
-                size="sm"
-                variant="ghost"
-                className="w-full justify-start"
-                data-testid={`nut-dieu-huong-${n.khoaNhan.split(".").pop()}`}
-                onClick={() => onDieuHuong(n.href)}
-              >
-                <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                {t(n.khoaNhan)}
-              </Button>
-            ))}
+            .map((n) => {
+              const ngan = nhungChoHref(n.href);
+              const taiCho = ngan !== null && onMoTaiCho !== undefined;
+              return (
+                <Button
+                  key={n.href}
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-start"
+                  data-testid={`nut-dieu-huong-${n.khoaNhan.split(".").pop()}`}
+                  data-tai-cho={taiCho ? "1" : "0"}
+                  onClick={() => (taiCho ? onMoTaiCho(ngan) : onDieuHuong(n.href))}
+                >
+                  {taiCho ? (
+                    <Maximize2 className="mr-1.5 h-3.5 w-3.5" />
+                  ) : (
+                    <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  {t(n.khoaNhan)}
+                </Button>
+              );
+            })}
         </div>
       </section>
+
+      {/*
+        ── NGĂN CHI TIẾT TẠI CHỖ ─────────────────────────────────────────
+
+        Đặt ở ĐÂY, trong chính `NganXuLy`, vì đây là nơi các nút mở nó sống —
+        người dùng bấm ở đâu thì nội dung mở ra ngay từ đó. `NganNhung` tự
+        portal ra `document.body` (Radix `Sheet`) nên nó KHÔNG bị kẹt trong cột
+        `w-80` này; vị trí trong cây JSX chỉ quyết định quyền sở hữu logic, không
+        quyết định chỗ vẽ.
+
+        `nganNhung === null` ⇒ `NganNhung` trả `null`, 0 nút DOM.
+      */}
+      <NganNhung
+        ngan={nganNhung}
+        nhanPhu={ma ? `${ma}${ten ? ` · ${ten}` : ""}` : undefined}
+        onDong={() => onDongNhung?.()}
+      />
     </aside>
   );
 }

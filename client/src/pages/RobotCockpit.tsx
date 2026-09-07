@@ -298,11 +298,42 @@ function Model3DPane({ model3d, t }: { model3d: RobotDetail["model3d"]; t: (k: s
 // PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
-export default function RobotCockpit() {
+/**
+ * Robot cockpit BODY — no `DashboardLayout`, `robotId` is a PARAMETER.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ WHY THIS SPLIT EXISTS (Đợt 10 lô G, 2026-09-07)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Owner requirement: *"xem chi tiết của máy/Line không sử dụng redirect chuyển
+ * trang … cần dialog hoặc modal … để ng dùng không cần rời màn hình 3D digital
+ * Twin"*. The Twin operations screen (`/twin`) must show this cockpit IN PLACE.
+ *
+ * Before this split the page read its own route (`useRoute("/robot/:id")`), so
+ * mounting it anywhere else yielded `robotId = NaN` → "Invalid robot id". That
+ * is a SILENT failure: no error, just the wrong content.
+ *
+ * The split follows the precedent already proven in this repo —
+ * `MachineCockpit.tsx:720` `MachineCockpitBody({machineId, embedded})`, embedded
+ * by `MachineWorkspace.tsx:78`.
+ *
+ * ⚠ BEHAVIOUR OF `/robot/:id` IS UNCHANGED. The route (`App.tsx:454`) points at
+ *   the `default` export below, which passes the same id read the same way and
+ *   wraps the same `DashboardLayout`. Nothing was added, removed, or reordered
+ *   inside the body — only the two `<DashboardLayout>` frames moved out.
+ *
+ * @param embedded reserved for density tweaks; kept for signature parity with
+ *   `MachineCockpitBody` so both embed sites read the same.
+ */
+export function RobotCockpitBody({
+  robotId,
+  embedded = false,
+}: {
+  robotId: number;
+  embedded?: boolean;
+}) {
+  void embedded;
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const [, params] = useRoute("/robot/:id");
-  const robotId = Number(params?.id);
   const validId = Number.isFinite(robotId) && robotId > 0;
 
   const [now, setNow] = useState(() => Date.now());
@@ -440,16 +471,13 @@ export default function RobotCockpit() {
 
   if (!validId) {
     return (
-      <DashboardLayout>
-        <div className="p-4">
-          <EmptyState title={t("cockpit.badRobotId", "Invalid robot id")} description={t("cockpit.badRobotIdHint", "This URL does not reference a robot.")} />
-        </div>
-      </DashboardLayout>
+      <div className="p-4">
+        <EmptyState title={t("cockpit.badRobotId", "Invalid robot id")} description={t("cockpit.badRobotIdHint", "This URL does not reference a robot.")} />
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
       <div className="space-y-4 p-1">
         <PageHeader
           icon={<Bot className="h-6 w-6" />}
@@ -845,6 +873,20 @@ export default function RobotCockpit() {
           </Tabs>
         )}
       </div>
+  );
+}
+
+/**
+ * Standalone route wrapper — reads `/robot/:id` and frames the body in the app
+ * shell. This is what `App.tsx:454` mounts, so `/robot/:id` behaves exactly as
+ * it did before the body was split out.
+ */
+export default function RobotCockpit() {
+  const [, params] = useRoute("/robot/:id");
+  const robotId = Number(params?.id);
+  return (
+    <DashboardLayout>
+      <RobotCockpitBody robotId={robotId} />
     </DashboardLayout>
   );
 }

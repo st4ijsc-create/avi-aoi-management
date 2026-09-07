@@ -20142,7 +20142,15 @@
       "aoiNg": "NG",
       "aoiNtf": "NTF",
       "aoiYield": "Yield",
-      "aoiTong": "Total inspected"
+      "aoiTong": "Total inspected",
+      "nhung": {
+        "tieuDeMay": "Machine details",
+        "tieuDeRobot": "Robot cockpit",
+        "tieuDeTram": "Station analysis",
+        "quayLai": "Back to 3D",
+        "moDayDu": "Open full screen",
+        "dangNap": "Loading content…"
+      }
     },
     "studio": {
       "tieuDe": "3D Factory — Design",
