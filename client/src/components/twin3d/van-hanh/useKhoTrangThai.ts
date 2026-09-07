@@ -43,6 +43,14 @@ export interface KetQuaKhoTrangThai {
    * ★ Nhận CẢ dữ liệu chứ không chỉ mốc — xem docblock trong thân hàm.
    */
   datAnhLichSu: (moc: number | null, may: readonly MocTrangThai[] | null) => void;
+  /**
+   * ★★★ §11 #50 — CỬA VÀO CỦA NGUỒN REALTIME **THỨ HAI** (UNS stream ISA-95).
+   *
+   * Nhận mốc đã quy sẵn (xem `phuUns.mocTuAnhChupUns`) và đổ vào ĐÚNG `apDung()`
+   * mà socket `twin:trangThai` và ảnh lịch sử dùng. Không có kho thứ hai, không
+   * có đường phủ riêng — xem docblock `phuUns.ts` về vì sao.
+   */
+  datMocUns: (may: readonly MocTrangThai[], bayGio: number) => void;
 }
 
 /**
@@ -119,6 +127,22 @@ export function useKhoTrangThai(
     [],
   );
 
+  /**
+   * ★★★ §11 #50 — UNS đi vào CÙNG cửa với socket.
+   *
+   * ⚠ `mocXemLai: null` giống nhánh socket, và vì cùng một lý do: một gói realtime
+   *   tới trong lúc người dùng đang tua lại KHÔNG được lặng lẽ kéo cảnh về hiện
+   *   tại mang nhãn quá khứ. Người gọi chịu trách nhiệm KHÔNG bơm UNS khi đang
+   *   tua (xem chỗ gọi ở `TwinVanHanh.tsx`).
+   */
+  const datMocUns = useMemo(
+    () => (may: readonly MocTrangThai[], mocNhan: number) => {
+      if (may.length === 0) return;
+      setKho((cu) => apDung(cu, { may, bayGio: mocNhan, nguon: "socket", mocXemLai: null }));
+    },
+    [],
+  );
+
   const ketNoi = ketNoiTheoMoc(kho, daKetNoi, bayGio);
-  return { kho, ketNoi, datAnhLichSu };
+  return { kho, ketNoi, datAnhLichSu, datMocUns };
 }

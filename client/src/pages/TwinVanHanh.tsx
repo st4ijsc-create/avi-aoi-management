@@ -98,6 +98,14 @@ import {
 import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
 // ── Đợt 6 (§9.8/§10.2) — kho trạng thái DÙNG CHUNG cho trực tiếp và tua lại ──
 import { dongHoHienThi, hopNhat } from "@/components/twin3d/van-hanh/khoTrangThai";
+// ── Đóng nợ trước Đợt 7 — §11 #50 (UNS), #53 (khu chờ), #54 (nhãn Line) ──
+import { useUnsStream, isa95Slug } from "@/lib/unsStreamClient";
+import { mocTuAnhChupUns } from "@/components/twin3d/van-hanh/phuUns";
+import {
+  xepKhuCho,
+  nhanLineTaiCentroid,
+  PHA_KHU_CHO,
+} from "@/components/twin3d/van-hanh/khuChoVaNhanLine";
 import { useKhoTrangThai } from "@/components/twin3d/van-hanh/useKhoTrangThai";
 import { DongThoiGian, type TocDo } from "@/components/twin3d/van-hanh/DongThoiGian";
 // ── Đợt 6 (§11 #26/#51/#52) — an toàn nổi lên Twin + xuất xứ dữ liệu ──
@@ -341,7 +349,7 @@ export default function TwinVanHanh() {
    *   thay thế nó: lúc chưa có gói realtime nào, cảnh vẫn phải vẽ đúng dữ liệu
    *   nền — một cảnh trống ở giây đầu chính là "0 giả" mà NT-3 cấm.
    */
-  const { kho, ketNoi, datAnhLichSu } = useKhoTrangThai(factoryId, bayGioThat);
+  const { kho, ketNoi, datAnhLichSu, datMocUns } = useKhoTrangThai(factoryId, bayGioThat);
 
   /* ── Tua lại (§9.8) ─────────────────────────────────────────────────── */
   const [mocTua, setMocTua] = useState<number | null>(null);
@@ -389,6 +397,53 @@ export default function TwinVanHanh() {
    * chỗ, và chỗ bỏ sót đó sẽ hiện dữ liệu cũ mà KHÔNG kêu.
    */
   const mayVanHanh = useMemo(() => hopNhat(mayNen, kho), [mayNen, kho]);
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ §11 #50 — UNS STREAM ISA-95, NGUỒN REALTIME THỨ HAI                  */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Di trú từ `FactoryLiveMap3D.tsx:87` — màn DUY NHẤT trong repo dùng
+   * `useUnsStream`, và Đợt 7 sẽ xoá nó. Không di trú = mất một đường dữ liệu thật.
+   *
+   * ★ Tiền tố là slug ISA-95 của MÃ nhà máy (`isa95Slug(factory.code)`), y hệt
+   *   bản gốc. Nhà máy chưa chọn ⇒ `null` ⇒ hook tự trơ, không mở socket.
+   */
+  const nhaMayHienTai = useMemo(
+    () => factories.find((f) => f.id === factoryId) ?? null,
+    [factories, factoryId],
+  );
+  const tienToUns = nhaMayHienTai?.code ? isa95Slug(nhaMayHienTai.code) : null;
+  const uns = useUnsStream({ pathPrefix: tienToUns, aspects: ["state"], enabled: true });
+
+  /**
+   * ★★★ Đổ ảnh chụp UNS vào KHO DÙNG CHUNG, không vẽ thẳng.
+   *
+   * ⚠⚠ HAI CỔNG, và cả hai đều cần thiết:
+   *   1. `uns.live` — hook tự khai khi CHƯA có snapshot/mất kết nối. Phủ khi
+   *      chưa live là bịa dữ liệu; `useUnsStream` nói rõ *"this hook never
+   *      fabricates data"* và người gọi phải giữ nguồn cũ.
+   *   2. `mocTua === null` — đang TUA LẠI thì một gói realtime tới KHÔNG được
+   *      kéo cảnh về hiện tại trong khi nhãn vẫn nói "Xem lại 14:32". Đúng lớp
+   *      lỗi mà §9.8 và docblock `datAnhLichSu` đã ghi.
+   */
+  useEffect(() => {
+    if (!uns.live || mocTua !== null) return;
+    const isActiveTheoMay = new Map(mayNen.map((m) => [m.id, m.isActive]));
+    /*
+     * ⚠⚠ `byMachineId` là **`Map`**, KHÔNG phải object (`unsStreamClient.ts:93`).
+     * Bản viết đầu dùng `Object.values(...)` — `tsc` XANH, và nó trả **mảng
+     * RỖNG** trong im lặng: UNS sẽ không bao giờ phủ được gì, và màn hình trông
+     * y hệt lúc stream chưa bật. Đúng lớp lỗi G5 "đo trên tập rỗng", chỉ khác
+     * là tập bị làm cho rỗng bởi chính bản vá.
+     */
+    const anhChup = [...uns.byMachineId.values()];
+    const moc = mocTuAnhChupUns(anhChup, isActiveTheoMay);
+    if (moc.length > 0) datMocUns(moc, bayGioThat);
+    // `bayGioThat` đổi mỗi render nên KHÔNG đưa vào deps — nó chỉ là nhãn "nhận
+    // lúc", không phải thứ quyết định có bơm hay không (thứ ấy là `byMachineId`).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uns.live, uns.byMachineId, mocTua, mayNen, datMocUns]);
 
   /* ── §11 #52 — XUẤT XỨ: SHADOW / mô phỏng / chỉ sơ đồ ──────────────── */
 
@@ -527,6 +582,98 @@ export default function TwinVanHanh() {
     return ra;
   }, [mayVanHanh, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, phamVi, factoryId, mauNenCanh]);
 
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ §11 #53 — KHU CHỜ XẾP CHỖ: máy chưa đặt = BÁN TRONG SUỐT             */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * ⚠⚠ Trước bản này máy chưa có `twin_dat_cho` **không được vẽ chút nào** —
+   * vòng `mayVe` ở trên có `if (!d || !d.hienThi) continue`. Banner đối soát ĐẾM
+   * chúng ("N máy chưa xếp chỗ") nhưng cảnh thì im lặng bỏ qua, nên người dùng
+   * đọc được một con số mà không bao giờ thấy được nó trỏ vào cái gì.
+   *
+   * ⇒ #53 không phải "đổi độ mờ của thứ đang vẽ" mà là CHO NÓ MỘT CHỖ ĐỨNG
+   *   trước đã: một khu chờ ngoài rìa mặt bằng, pha về nền `PHA_KHU_CHO` (xem
+   *   `khuChoVaNhanLine.ts` về vì sao pha-về-nền chứ không phải alpha, và vì
+   *   sao KHÔNG dùng kênh `doMo` — nó LÀM TỐI, và tối = "đang lỗi" theo ISA-101).
+   *
+   * ★ Neo khu chờ vào bbox của phần ĐÃ đặt, không vào một hằng số toạ độ: mặt
+   *   bằng mỗi nhà máy một kích thước, và một hằng số sẽ hoặc chồng lên nhà
+   *   xưởng, hoặc trôi ra xa tới mức không ai cuộn tới.
+   */
+  const mayKhuCho = useMemo<MayTrongLo[]>(() => {
+    const chuaDat = mayVanHanh
+      .filter((mv) => mv.isActive && !datChoTheoMay.has(mv.id))
+      .map((mv) => mv.id);
+    if (chuaDat.length === 0) return [];
+
+    let minX = Number.POSITIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    for (const m of mayVe) {
+      if (m.viTri.x < minX) minX = m.viTri.x;
+      if (m.viTri.z < minZ) minZ = m.viTri.z;
+    }
+    // Chưa có máy nào trên mặt bằng ⇒ neo về gốc, khu chờ vẫn hiện được.
+    if (!Number.isFinite(minX)) minX = 0;
+    if (!Number.isFinite(minZ)) minZ = 0;
+
+    const loaiTheoMay = new Map(mayVanHanh.map((mv) => [mv.id, mv.loaiMay]));
+    return xepKhuCho(chuaDat, { mepX: minX, mepZ: minZ }).map((k) => {
+      const loai = loaiTheoMay.get(k.machineId) ?? "";
+      const co = kichThuocTheoLoai.get(loai) ?? { rongMm: 1000, caoMm: 1800, sauMm: 1000 };
+      return {
+        machineId: k.machineId,
+        khoi: hinhKhoiCho(loai),
+        kichThuocMm: co,
+        viTri: k.viTri,
+        gocXoayRad: 0,
+        // BÁN TRONG SUỐT = pha về nền. `doMo: 1` để KHÔNG bị làm tối thêm.
+        mau: phaVeNen(giaiMauCanh("--muted-foreground") ?? "#94a3b8", mauNenCanh, PHA_KHU_CHO),
+        doMo: 1,
+        hien: true,
+      };
+    });
+  }, [mayVanHanh, datChoTheoMay, mayVe, kichThuocTheoLoai, mauNenCanh]);
+
+  /** Máy đã đặt + máy khu chờ — CÙNG một lô vẽ (RB-4: một `BatchedMesh`). */
+  const mayVeTatCa = useMemo<MayTrongLo[]>(() => [...mayVe, ...mayKhuCho], [mayVe, mayKhuCho]);
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ §11 #54 — NHÃN TÊN CHUYỀN TẠI CENTROID                              */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * ★ Centroid tính từ TÂM MÁY thuộc line (không phải tâm bbox) — xem
+   *   `nhanLineTaiCentroid` về vì sao hai thứ đó khác nhau và vì sao chọn cái này.
+   *
+   * ⚠ Chỉ dựng nhãn cho line CÓ máy đã đặt trên mặt bằng: một nhãn "Chuyền 3"
+   *   trôi giữa khoảng trống nói rằng có một chuyền ở đó, và đó là lời khai sai
+   *   (NT-3). `nhanLineTaiCentroid` tự bỏ qua line rỗng.
+   */
+  const nhanLine = useMemo(() => {
+    const tamTheoLine = new Map<number, { x: number; y: number; z: number }[]>();
+    const viTriMay = new Map(mayVe.map((m) => [m.machineId, m]));
+    for (const mv of mayVanHanh) {
+      if (mv.lineId == null) continue;
+      const m = viTriMay.get(mv.id);
+      if (!m) continue;
+      const ds = tamTheoLine.get(mv.lineId) ?? [];
+      ds.push({ x: m.viTri.x, y: m.viTri.y + mmSangMet(m.kichThuocMm.caoMm), z: m.viTri.z });
+      tamTheoLine.set(mv.lineId, ds);
+    }
+    const tenTheoLine = new Map<number, { ma: string; ten: string }>();
+    for (const c of canhQ.data?.chuyen ?? []) tenTheoLine.set(c.id, { ma: c.ma, ten: c.ten });
+
+    return nhanLineTaiCentroid(
+      [...tamTheoLine.entries()].map(([lineId, tamVatThe]) => ({
+        lineId,
+        ma: tenTheoLine.get(lineId)?.ma ?? `L${lineId}`,
+        ten: tenTheoLine.get(lineId)?.ten ?? `Line ${lineId}`,
+        tamVatThe,
+      })),
+    );
+  }, [mayVanHanh, mayVe, canhQ.data]);
+
   /* ── Nhãn thế giới ──────────────────────────────────────────────────── */
   const nhan = useMemo<NhanTheGioi[]>(
     () =>
@@ -542,6 +689,33 @@ export default function TwinVanHanh() {
         };
       }),
     [mayVe, trangThaiTheoMay, maTheoMay, t],
+  );
+
+  /**
+   * ★★★ #54 — nhãn Line đi CHUNG lớp nhãn với nhãn máy.
+   *
+   * ⚠ Dùng chung `LopNhan` chứ KHÔNG dựng lớp thứ hai, vì `LopNhan` là nơi luật
+   *   declutter (§9.6) sống: 300 nhãn CSS2D đã lag, nên nhãn phải đi qua bộ cull
+   *   và trần `TRAN_NHAN_DOM`. Một lớp nhãn riêng cho Line sẽ nằm NGOÀI trần ấy
+   *   và phá đúng ngân sách mà §9.6 dựng ra.
+   *
+   * ★ `machineId` âm (`-lineId`) — khoá không gian máy và không gian line phải
+   *   KHÔNG va nhau: `LopNhan` dùng `machineId` để so với `dangChon`/`dangHover`,
+   *   và một nhãn Line mang id trùng một máy sẽ sáng lên khi máy đó được chọn.
+   */
+  const nhanTatCa = useMemo<NhanTheGioi[]>(
+    () => [
+      ...nhan,
+      ...nhanLine.map((l) => ({
+        khoa: `line-${l.lineId}`,
+        machineId: -l.lineId,
+        viTri: l.viTri,
+        ma: l.ma,
+        phu: l.ten,
+        batThuong: false,
+      })),
+    ],
+    [nhan, nhanLine],
   );
 
   /* ── Cảnh báo ───────────────────────────────────────────────────────── */
@@ -1170,7 +1344,7 @@ export default function TwinVanHanh() {
         <div className="relative min-h-0 min-w-0 flex-1">
           {che2D ? (
             <CanhVanHanh2D
-              may={mayVe}
+              may={mayVeTatCa}
               trangThaiTheoMay={trangThaiTheoMay}
               maTheoMay={maTheoMay}
               machineIdChon={machineIdChon}
@@ -1182,8 +1356,8 @@ export default function TwinVanHanh() {
             />
           ) : (
             <CanhVanHanh
-              may={mayVe}
-              nhan={nhan}
+              may={mayVeTatCa}
+              nhan={nhanTatCa}
               canhBao={canhBao3D}
               dongChay={
                 hinhLine && hinhLine.hh.coHinhHoc
