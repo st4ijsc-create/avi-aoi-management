@@ -2294,6 +2294,48 @@ Không xoá màn/dữ liệu, không đổi lược đồ, DB gốc về **`fact
 `twin_dat_cho` 82** (nghiệm thu bằng **MD5 từng hàng**), đo bằng vai **không-admin**
 (admin **bypass** `requirePermission` ⇒ đo bằng admin chứng minh **0**).
 
+### 11e.8 LÔ H ĐÃ VỀ — ảo hoá + cổng quyền, và **hai lỗ mới đo được** (2026-09-07)
+
+Commit `67822401`. Cổng: **51 tệp / 1539 test** (nền 47/1433) · server twin **20/211** · `check` 0 · `build` 0.
+
+**H1 — ảo hoá:** `<li>` **549 → 29**, gõ lọc **80,7 → 27,7 ms**. Ablation N=0/43/150/549 chứng minh
+thiết bị đo không mù. **Không thêm thư viện** — tái dùng `computeVirtualWindow`
+(`DataTable.tsx:289`, đã có 9 test canh) thay vì viết bản thứ hai (họ **G12**).
+
+> #### ★★★ G36 — TỐI ƯU HIỆU NĂNG CÓ THỂ **PHÁ A11Y MÀ KHÔNG LỖI NÀO NỔ**
+> Ảo hoá kiểu "cắt mảng, mỗi ô một `tabIndex`": máy thứ 400 **không có trong DOM** ⇒ Tab không bao
+> giờ tới, **449/549 máy rơi khỏi tầm bàn phím**, không gì báo lỗi.
+> **Đột biến số 2 là bằng chứng đắt nhất cả đợt**: cài bản ảo hoá **ngây thơ** ⇒ **2/11 đỏ — đúng
+> hai ca a11y, mọi ca hiệu năng VẪN XANH**. Nếu chỉ đo hiệu năng thì bản vá nguy hiểm **đã đi qua cổng
+> xanh**. Khuôn đúng: `role=listbox` + **một** điểm dừng Tab + `aria-activedescendant` + `aria-setsize`
+> theo **mảng đã lọc**, con trỏ chạy trên dữ liệu chứ không trên DOM.
+
+**H2 — chọn phương án (b) nới cổng đọc.** Ca dương **có sẵn trong seed**: `operator1` có đúng một
+quyền `machine_status` ⇒ vào được nav, `trangThaiHangLoat` 200, nhưng `danhSachToaNha` và
+`canhThietKe` **403**. Không chọn (a) vì siết nav = **xoá `/twin` khỏi `operator1`/`maint1`** — chính
+các vai màn Vận hành sinh ra để phục vụ — và đảo ngược bản vá Đợt 5. **Sửa "vào rồi bị chặn" bằng
+"không cho vào nữa" là đóng cửa thay vì mở đường.**
+
+**Chứng minh không nới âm thầm — ba điều đo được:** chỉ **3 thủ tục đọc** được mở, mọi đường **ghi**
+giữ `quyenThietKe` (`luuToaNha` vẫn **403**) · **phạm vi tenant không đi qua cổng quyền** mà qua
+`trongPhamVi(..., phamViCua(ctx))` — **trục rời hẳn** · `/twin-studio` **không bị mở**. Test ghim cả cận
+dưới lẫn **cận trên**.
+
+> #### ★★★ LỖ QUYỀN THỨ HAI — `andon.active`, CHƯA VÁ (ngoài phạm vi lô H)
+> `andonRouter.ts:165-166` đòi quyền **`andon`**, nhưng nav `/twin` chỉ đòi
+> `analytics_oee`/`machine_status`. Chủ dự án đo độc lập trên 4 vai seed:
+> `maint1` → **chỉ `machine_status`** · `operator1`/`supervisor1`/`engineer1` → **có `andon`**.
+> ⇒ **`maint1` là vai DUY NHẤT mất dải cảnh báo** — và đó chính là **vai bảo trì**, người cần thấy
+> cảnh báo nhất. Lô H bắt được **chỉ vì tự Read ảnh chụp**; phép đo API của nó **mù hoàn toàn**.
+
+> #### ★★ LỌC TENANT VẮNG MẶT — `demVatThe` (có sẵn từ trước, chưa vá)
+> `twinCanhRouter.ts:681` dùng `async ({ input })` — **không nhận `ctx`** — trong khi bốn thủ tục
+> xung quanh (`:311,319,355,377`) đều truyền `phamViCua(ctx)`. `tangIds` **do client tự khai**.
+> Cùng họ với bài học cũ *"hàng rào tenant lọc theo cột CLIENT TỰ KHAI"*.
+
+**Đính chính số nền:** §11e.6 ghi cổng server twin là "17 tệp / 184 test"; đo lại **19 / 201**
+trước khi chạm vào gì. **H3 (`?pv=tapdoan` phía server) CHƯA LÀM** — lô H khai thẳng, không giả vờ đã đo.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
