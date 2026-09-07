@@ -2630,6 +2630,50 @@ Chu du an do doc lap ca ba:
 **He qua tich cuc:** #43 va #42 la **hai chan tro that** cua viec go `FactoryFloorEditor` (§11c.4).
 Ca hai nay da xong => **rang buoc do duoc go**. Lo M **khong xoa gi** vi cong §11 con xa moi mo - dung.
 
+### 11g.7 LO N - #1 nut xuat USD XONG - #3 robot khop noi KHONG LAM DUOC (2026-09-07)
+
+Commit `88095499`. Cong: **57 tep / 1667 test** (nen 56/1650) - `check` 0 - `build` 0 - DB nguyen ven.
+Cho goi: `TwinVanHanh.tsx:1998` (nut), `:2090` (bang ket qua), module thuan `xuatUsd.ts` (+17 test).
+
+> #### G47 - "DEGRADE-SAFE" LA CAI BAY: 200 + noi dung HOP LE + RONG NGHIA
+> `buildFactoryUsda` voi nha may rong tra stage USDA **hop le ma 0 prim**, **HTTP 200**, khong nem loi.
+> Do qua HTTP bang `operator1` (non-admin):
+> - factory 1 -> **40.024 byte / 142 prim** (canh that)
+> - factory 2 -> **115 byte / 0 prim** - `"empty stage (no factory)"`
+>
+> Hai ket qua di qua **dung mot duong ma**. `byteLength` **KHONG phan biet duoc** (115 van qua moi
+> `length > 0`). => Cong ra phai dem **don vi NGHIA** (prim), khong dem byte. Day la G28 o dang manh
+> hon: khong chi "anh trang khong loi" ma "**tep hop le ma rong nghia**".
+
+**Ba cho brief/spec SAI (lo N do, chu du an kiem lai ca ba):**
+1. **Dich §11 #1 sai** - `NganXuLyProps` pham vi **MOT MAY**, `usdExport` nhan `{factoryId}`. Dat o do
+   thi nut **bien mat dung luc can nhat** (chua chon may) va **noi doi ve pham vi** khi da chon.
+   Lo N dat o **thanh cong cu man Van hanh**, cung pham vi toan man.
+2. **Brief noi "cho goi Twin duy nhat la `DigitalTwinCenter.tsx:606`"** - dung theo nghia Twin, nhung
+   thuc te co **hai** cho goi `usdExport`; cho kia la `SystemHealth.tsx:592`. Khong dung ca hai.
+3. **Brief noi "cung cong nav => khong de them loi-vao-roi-tu-choi"** - **chi dung mot nua**. Nav `/twin`
+   la `analytics_oee` **HOAC** `machine_status`; `usdExport` chi nhan `machine_status`. Chu du an do
+   tren `permissions` that: **0 tai khoan** roi vao khe (moi hang `analytics_oee` deu kem
+   `machine_status`) => **rui ro tiem tang, khong phai loi dang xay ra**. Nut **an** thay vi hien-roi-chan.
+
+> #### G48 - CHON NHAM COT CHO CUNG MOT KET LUAN VI LY DO SAI HAN
+> #3 khong lam duoc. Lo N do bang **hai mo hinh roi**: 0 khoa ngoai lien quan `robots` trong toan luoc
+> do; `machines JOIN robots ON code` = 0. Va enum `twinthuctheenum` =
+> `workshop|line|station|machine|workstation` - **khong co `robot`** (chu du an kiem tan noi).
+> => Noi Twin<->joints doi **gia tri enum moi = migration**, ma lo nay bi **cam** doi luoc do.
+>
+> **Bay cot, do duoc:** `robot_telemetry.joint_states` = **0 hang khac NULL**, nhung
+> `robot_telemetry."poseJson"` = **1.097.349 hang**. Chon nham cot thi ket luan *"khong co du lieu khop"*
+> se **SAI hoan toan** - ma van ra **cung mot cau** "chua lam duoc", vi ly do khac han.
+> => Khi ket luan "nguon rong", phai noi **rong o cot nao** va da thu **cot thay the** nao.
+
+**Lo N khong dung du lieu tam** - dung: cai thieu khong phai *du lieu* ma la *duong dia chi hoa*;
+dung tam cung khong lam hien duoc gi. §11 #25 (joints) da xep dich = **GIU O RobotCockpit**
+(`nganXuLyLogic.ts:261`), khong phai Twin.
+
+**Con mo:** khe quyen `analytics_oee`-ma-khong-`machine_status` (hom nay **0 tai khoan**) - chua ai quyet
+co nen noi `usdExport` thanh `requireAnyPermission` nhu `quyenVanHanh` khong.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
