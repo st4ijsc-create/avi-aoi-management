@@ -602,8 +602,25 @@ export default function TwinVanHanh() {
    *   xưởng, hoặc trôi ra xa tới mức không ai cuộn tới.
    */
   const mayKhuCho = useMemo<MayTrongLo[]>(() => {
+    /*
+     * ★★★ ĐIỀU KIỆN PHẢI LÀ **PHỦ ĐỊNH CHÍNH XÁC** CỦA ĐIỀU KIỆN VẼ.
+     *
+     * ⚠⚠ Bản viết đầu lọc `!datChoTheoMay.has(mv.id)` — chỉ bắt máy KHÔNG CÓ
+     * hàng đặt chỗ. Nhưng vòng `mayVe` bỏ qua theo `if (!d || !d.hienThi)`, tức
+     * máy CÓ hàng nhưng `hienThi = false` **rơi vào khe giữa hai điều kiện**: nó
+     * không được vẽ trên mặt bằng (mayVe bỏ) và cũng không vào khu chờ (vì
+     * `has()` trả true) ⇒ **biến mất khỏi cảnh hoàn toàn**, đúng cái mà #53 sinh
+     * ra để chấm dứt. Và `hienThi = false` nghĩa CHÍNH LÀ "hiện chưa xếp lên mặt
+     * bằng", tức đúng tập mà khu chờ phục vụ.
+     *
+     * ⇒ Hai điều kiện phải là phủ định của nhau, viết bằng CÙNG một biểu thức.
+     */
     const chuaDat = mayVanHanh
-      .filter((mv) => mv.isActive && !datChoTheoMay.has(mv.id))
+      .filter((mv) => {
+        if (!mv.isActive) return false;
+        const d = datChoTheoMay.get(mv.id);
+        return !d || !d.hienThi;
+      })
       .map((mv) => mv.id);
     if (chuaDat.length === 0) return [];
 
