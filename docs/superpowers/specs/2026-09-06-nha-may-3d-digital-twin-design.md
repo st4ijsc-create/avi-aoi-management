@@ -1959,6 +1959,32 @@ muốn nối vào nó, nên nó được giao **độc quyền cho A**; B và C 
 4. **G9 cho `grep`**: `nhipHoiMs` cho thấy *tệp* được import vẫn khiến grep-theo-tên-tệp báo "đã nối".
    Grep **tên hàm**.
 
+### 11d.4 LÔ B ĐÃ VỀ — và ba thứ đo được nằm ngoài phạm vi vá (2026-09-07)
+
+Cổng: **45 tệp / 1387 test** (nền 32/994) · `check` 0 lỗi · `build` 0. Commit `0162fafc`.
+
+**NỢ KHAI THỪlNG (đúng luật G16):** `DaiCanhBao.tsx` có **0 chỗ gọi** — điểm nối là
+`TwinVanHanh.tsx`, tệp **lô A giữ độc quyền**. #12/#13/#14 = *logic xong + đo được, CHƯA nối UI*.
+Agent **không tự nhận là xong** — đúng, vì hàm không ai gọi thì chưa giao được gì.
+
+> #### ★★★ G25 — MỘT SỰ KIỆN PHÁT VÀO BA PHÒNG: "TRÙNG" KHÔNG PHẢI LỖI CLIENT
+> `socket.ts:1392-1394` phát **cùng một** `andon:event` vào `global` + `line:{id}` + `machine:{id}`.
+> Client nghe nhiều phòng nhận **2–3 bản**. Thêm nữa, id seed nhúng `seq` đơn điệu ⇒ **cùng một
+> hàng andon ra id khác nhau mỗi lần refetch**, nên dedupe theo id **khử được 0**. Phải khoá theo
+> `{nguon}:{idNguon}`. ⇒ Trước khi dedupe, hỏi **khoá có ỔN ĐỊNH qua hai lần đọc không**.
+
+> #### ★★★ G26 — NHÁNH KHÔNG AI ĐI ĐƯỢC, TRÔNG NHƯ THIẾT KẾ ĐÚNG (họ G5)
+> `nganXuLyLogic.ts:120` lọc `trangThai === "raised"` để hiện nút *Xác nhận*. Đo độc lập bằng
+> **hai mô hình rời** (BG-127) — liệt kê toàn phân bố rồi đối chiếu tổng:
+> `[{"status":"acknowledged","n":7}]`, tổng 7 = cộng phân bố 7 ⇒ **0 hàng `raised` trên TOÀN BẢNG**.
+> Nhánh đó **chưa ai từng đi qua** trên DB dev. Người nghiệm thu live sẽ thấy "không có nút"
+> và tưởng **đúng thiết kế**. ⇒ Mọi nghiệm thu ack **phải tự dựng hàng `raised`** (ca dương, G22).
+> `stationId` NULL 7/7 — một tập rỗng thứ hai nằm sẵn đó.
+
+**#11 — "đừng viết lại từ đầu" là lời khuyên SAI của tôi:** bản gốc
+`CommandCenter.tsx:330-343` chỉ có Enter/Space/←/→, **không có ↑/↓/Home/End** ⇒ trên bàn phím
+**không đi lại được giữa các node**. Chép sang là chép một cây chỉ mở/đóng được.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
