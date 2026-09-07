@@ -775,7 +775,7 @@ Toàn bộ là `protectedProcedure`; `sinhTuDong`, `xoaAsset`, `xuatBanBanGhi` l
 > `sinhTuDong` sẽ nhận `TWO_FACTOR_NOT_SET_UP`. Đúng §8.4 (2FA bắt buộc cho internet-facing), nhưng
 > đây là **đổi hành vi thật** — không phải đổi tên suông.
 | Ack alarm | canEdit trên module alarm |
-| Tạo phiếu công việc | canCreate trên module maintenance |
+| Tạo phiếu công việc | `canCreate` trên module **`machine_monitoring`** (alias `machine_status`) |
 
 **Không có quyền → vào thẳng chế độ chỉ đọc, ẩn toàn bộ gizmo và nút Lưu** (không chỉ disable).
 
@@ -1097,7 +1097,7 @@ Cách giải quyết mâu thuẫn giữa "mọi việc xử lý trên twin" (yê
 | Nhóm | Hành động | Điều kiện |
 |---|---|---|
 | **Xử lý cảnh báo** | Xác nhận (ack) · Ẩn tạm (shelve, có hạn) · Ghi chú | `canEdit` module alarm. Ack/shelve ghi vết kiểm toán |
-| **Tạo việc** | Tạo phiếu công việc từ máy này · Gán kỹ thuật viên · Đặt mức ưu tiên | `canCreate` module maintenance. Phiếu tự điền machineId, trạng thái, alarm liên quan |
+| **Tạo việc** | Tạo phiếu công việc từ máy này · Gán kỹ thuật viên · Đặt mức ưu tiên | `canCreate` module **`machine_monitoring`**. Phiếu tự điền machineId, trạng thái, alarm liên quan |
 | **Mở chức năng** | Điều hướng sang màn chuyên sâu, mang theo đúng id | canView của module đích |
 
 **Ẩn tạm (shelve) là trạng thái hạng nhất**, không phải "xoá khỏi danh sách": theo ISA-18.2, alarm bị shelve phải **hiện rõ cho người vận hành + có vết kiểm toán + có hạn tự bung**. Hợp với hạ tầng WORM/audit đã có của repo.
@@ -1755,6 +1755,20 @@ QĐ-1 là phương án **khối lượng lớn nhất**: 62 tính năng đang ch
 > ⇒ Đây là **G9 (đơn vị/phạm vi của con số)** áp cho `grep`: một phép đếm chỉ đúng trong phạm vi mẫu
 > của nó. Trước khi tin "0 kết quả", **thử mẫu thứ hai rời hẳn** — ở đây là đếm cả `./<Tên>`,
 > `@/pages/<Tên>`, và `pages/<Tên>`.
+
+> ### ★★★ G24 — SPEC LẤY TÊN TỪ FIXTURE TEST, KHÔNG TỪ HỆ THẬT (đóng nợ Đợt 6)
+>
+> §6.4 và brief của tôi ghi cổng quyền là `maintenance_*`. Agent đo lại: **tên đó không tồn tại**
+> trong mã sản phẩm. Chuỗi `"maintenance"` chỉ xuất hiện **ở đúng một fixture test**
+> (`twinTrangThaiPhamVi.unit.test.ts:49`). Module thật là **`machine_monitoring`** (alias `machine_status`).
+>
+> Tác hại nếu tin spec: người **lấy được danh sách KTV** sẽ khác người **tạo được phiếu** —
+> dropdown đầy tên nhưng bấm Lưu thì 403. Một lớp lỗi **không test đơn nào bắt được**, vì mỗi
+> đầu đều đúng với cổng của chính nó.
+>
+> ⇒ **Luật:** tên định danh trong spec (module quyền, enum, cờ, trường DB) phải **grep ra được
+> trong mã sản phẩm** trước khi viết. Trúng trong tests/fixtures **không tính** — test có thể tự
+> dựng thế giới của nó. Và hai điểm chặn của cùng một luồng phải dùng **cùng một hằng có tên**.
 
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
