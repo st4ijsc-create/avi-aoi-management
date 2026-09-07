@@ -71,6 +71,33 @@ export interface TuTheCamera {
   mucZ: number;
 }
 
+/**
+ * LỰA CHỌN NẠP — nhà máy / toà / tầng đang được HỎI DỮ LIỆU (Đợt 10 lô F).
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO KHÔNG DÙNG `pv` CHO VIỆC NÀY
+ * ════════════════════════════════════════════════════════════════════════════
+ * `pv` (§10C.2) là "đang NHÌN cấp nào" — nó điều khiển camera và độ mờ. Ba ô ở
+ * đây là "đang HỎI dữ liệu của cái nào" — chúng điều khiển `tangIds` gửi lên
+ * `twinCanh.canhThietKe`. Hai trục ĐỘC LẬP: `pv=line:1` vẫn phải nạp cả tầng
+ * chứa line đó (người vận hành cần thấy hàng xóm để định vị), và `pv=machine:42`
+ * không được làm mất phần còn lại của tầng.
+ *
+ * Nhét cả hai vào `pv` thì mỗi lần người dùng bấm một máy là đổi luôn tập dữ
+ * liệu được nạp — một truy vấn mạng cho mỗi cú click, và cảnh chớp về rỗng.
+ *
+ * ★ Không có ô nào cho `line`: line KHÔNG phải một đơn vị nạp. Nó là bộ lọc
+ *   phạm vi (QĐ-12 §10C.1) và dữ liệu của nó đã nằm trong tầng chứa nó.
+ */
+export interface LuaChonNapUrl {
+  /** `factories.id`. `null` = tham số vắng/hỏng ⇒ tầng gọi tự chọn. */
+  nm: number | null;
+  /** `twin_toa_nha.id`. */
+  toa: number | null;
+  /** `twin_tang.id`. */
+  tang: number | null;
+}
+
 /** Toàn bộ trạng thái mã hoá được vào URL. */
 export interface TrangThaiTwinUrl {
   /** `null` = tham số vắng hoặc hỏng; tầng gọi dùng mặc định của nó. */
@@ -81,7 +108,40 @@ export interface TrangThaiTwinUrl {
   lop: string[] | null;
   /** Mốc thời gian chế độ tua, ms epoch. `null` = chế độ live. */
   tg: number | null;
+  /** Ba ô "nạp cái gì" (§11e.6 F1) — xem {@link LuaChonNapUrl}. */
+  nap: LuaChonNapUrl;
+  /**
+   * ★★★ F4 — HAI PANEL BÊN ĐANG THU (`?thu=trai,phai`).
+   *
+   * Đo được trên trình duyệt thật (Playwright, 1280×720, 2026-09-07): khung
+   * `man-twin-van-hanh` rộng **968 px** (viewport 1280 − sidebar vỏ 264 − đệm
+   * `p-6` 2×24). Panel trái `w-72` = 288 và panel phải `w-80` = 320 ⇒ **608 px,
+   * tức 63 %** bề ngang, để canvas đúng **360 px**. Trên toàn viewport, 3D
+   * chiếm 360×416 / 1280×720 = **16,9 %**.
+   *
+   * ⇒ Thu panel là cách DUY NHẤT trả lại phần lớn diện tích cho 3D mà KHÔNG
+   *   phá §9.9 (mọi hành động phải làm được từ DOM thật): panel không bị XOÁ,
+   *   nó thu lại và mở ra được bằng một nút có `aria-expanded`.
+   * ★ Vào URL vì đây là một lựa chọn xem, cùng hạng với camera — nhưng ghi
+   *   `replace` chứ không `push`: thu/mở một panel không phải "đi tới chỗ khác".
+   */
+  thu: string[];
 }
+
+/** Tên panel thu được. Danh sách ĐÓNG — cùng lý do với `LOP_HOP_LE`. */
+export const PANEL_THU_DUOC: readonly string[] = ["trai", "phai"];
+
+/**
+ * Một THAY ĐỔI trạng thái URL — khác `Partial<TrangThaiTwinUrl>` ở ô `nap`.
+ *
+ * ★ `nap` ở đây là **Partial**, vì "đổi nhà máy" là một thao tác hợp lệ mà
+ *   không nói gì về toà/tầng (và chính sự VẮNG MẶT của hai khoá kia là tín hiệu
+ *   để `tronTrangThaiUrl` xoá chúng — xem chú thích trong hàm đó). Ở
+ *   `TrangThaiTwinUrl` thì ba ô luôn có mặt, vì đó là trạng thái ĐÃ ĐỌC.
+ */
+export type ThayDoiTwinUrl = Omit<Partial<TrangThaiTwinUrl>, "nap"> & {
+  nap?: Partial<LuaChonNapUrl>;
+};
 
 /** Ánh xạ cấp phạm vi → tiền tố dùng trong URL. Một chỗ, không chép tay. */
 const TIEN_TO_CAP: Readonly<Record<CapPhamVi, string>> = {
@@ -276,7 +336,46 @@ export function docTrangThaiUrl(queryString: string): TrangThaiTwinUrl {
     cam: docCamera(sp.get("cam")),
     lop: docLop(sp.get("lop")),
     tg: docThoiGian(sp.get("tg")),
+    nap: docLuaChonNap(sp),
+    thu: docThu(sp.get("thu")),
   };
+}
+
+/**
+ * Đọc `thu=` → danh sách panel đang thu. Tên lạ bị BỎ, không làm hỏng cả ô —
+ * cùng luật với `docLop`. Vắng ⇒ `[]` (mở cả hai), KHÔNG phải `null`: ở đây
+ * không có "bộ mặc định" nào khác ngoài "mở cả hai", nên hai ca trùng nhau và
+ * tách chúng ra chỉ thêm một trạng thái không ai dùng.
+ */
+export function docThu(raw: string | null | undefined): string[] {
+  if (raw == null || raw.trim() === "") return [];
+  const ra: string[] = [];
+  for (const phan of raw.split(",")) {
+    const t = phan.trim();
+    if (PANEL_THU_DUOC.includes(t) && !ra.includes(t)) ra.push(t);
+  }
+  return ra;
+}
+
+/** Ghi danh sách panel thu → chuỗi, thứ tự theo `PANEL_THU_DUOC` (TẤT ĐỊNH). */
+export function ghiThu(thu: readonly string[]): string {
+  return PANEL_THU_DUOC.filter((p) => thu.includes(p)).join(",");
+}
+
+/**
+ * Đọc ba ô nạp. Mỗi ô ĐỘC LẬP: một `?toa=abc` hỏng không được làm mất `?nm=3`
+ * hợp lệ đi cùng — người mở link vẫn tới đúng nhà máy, chỉ mất lựa chọn toà.
+ *
+ * ⚠ KHÔNG có ca "id âm rơi về 1": `soNguyenDuong` trả `null` và tầng gọi rơi về
+ *   phần tử đầu của danh sách THẬT. Sửa `-1` thành `1` là bịa ra một id có thể
+ *   tồn tại và trỏ vào một nhà máy khác hẳn.
+ */
+export function docLuaChonNap(sp: URLSearchParams): LuaChonNapUrl {
+  const oSo = (k: string): number | null => {
+    const v = sp.get(k);
+    return v === null ? null : soNguyenDuong(v.trim());
+  };
+  return { nm: oSo("nm"), toa: oSo("toa"), tang: oSo("tang") };
 }
 
 /**
@@ -298,6 +397,14 @@ export function ghiTrangThaiUrl(tt: Partial<TrangThaiTwinUrl>): string {
   if (tt.cam) sp.set("cam", ghiCamera(tt.cam));
   if (tt.lop != null) sp.set("lop", ghiLop(tt.lop));
   if (tt.tg != null) sp.set("tg", ghiThoiGian(tt.tg));
+  if (tt.nap) {
+    if (tt.nap.nm != null) sp.set("nm", String(tt.nap.nm));
+    if (tt.nap.toa != null) sp.set("toa", String(tt.nap.toa));
+    if (tt.nap.tang != null) sp.set("tang", String(tt.nap.tang));
+  }
+  // `thu: []` KHÔNG ghi ra: "mở cả hai" là mặc định, và một `?thu=` rỗng trong
+  // mọi URL chia sẻ chỉ làm nhiễu mà không mang thông tin nào.
+  if (tt.thu != null && tt.thu.length > 0) sp.set("thu", ghiThu(tt.thu));
   return sp.toString();
 }
 
@@ -312,7 +419,7 @@ export function ghiTrangThaiUrl(tt: Partial<TrangThaiTwinUrl>): string {
  */
 export function tronTrangThaiUrl(
   queryStringHienTai: string,
-  thayDoi: Partial<TrangThaiTwinUrl>,
+  thayDoi: ThayDoiTwinUrl,
 ): string {
   const sp = new URLSearchParams(
     queryStringHienTai.startsWith("?") ? queryStringHienTai.slice(1) : queryStringHienTai,
@@ -326,6 +433,30 @@ export function tronTrangThaiUrl(
   if ("cam" in thayDoi) dat("cam", thayDoi.cam ? ghiCamera(thayDoi.cam) : null);
   if ("lop" in thayDoi) dat("lop", thayDoi.lop != null ? ghiLop(thayDoi.lop) : null);
   if ("tg" in thayDoi) dat("tg", thayDoi.tg != null ? ghiThoiGian(thayDoi.tg) : null);
+  /*
+   * ★★★ ĐỔI MỘT CẤP NẠP PHẢI XOÁ CÁC CẤP DƯỚI — nếu không, URL tự mâu thuẫn.
+   *
+   * Chọn nhà máy khác mà giữ nguyên `?toa=7&tang=9` thì hai id đó trỏ vào toà/
+   * tầng của nhà máy CŨ. `phanGiaiNap` sẽ không tìm thấy chúng và rơi về phần
+   * tử đầu — tức hành vi vẫn đúng, NHƯNG URL trên thanh địa chỉ khai một thứ
+   * mà màn hình hiện một thứ khác, và người dùng copy đúng cái URL sai đó đi
+   * gửi. Nên xoá tại nguồn thay vì trông cậy vào phép rơi-về ở tầng dưới.
+   *
+   * ⚠ Chỉ xoá khi khoá CẤP TRÊN có mặt trong `thayDoi` mà cấp dưới KHÔNG có:
+   *   một lượt đặt cả ba ô cùng lúc (khôi phục từ link) phải giữ nguyên cả ba.
+   */
+  if (thayDoi.nap) {
+    const n = thayDoi.nap;
+    if ("nm" in n) dat("nm", n.nm != null ? String(n.nm) : null);
+    if ("toa" in n) dat("toa", n.toa != null ? String(n.toa) : null);
+    if ("tang" in n) dat("tang", n.tang != null ? String(n.tang) : null);
+    if ("nm" in n && !("toa" in n)) sp.delete("toa");
+    if (("nm" in n || "toa" in n) && !("tang" in n)) sp.delete("tang");
+  }
+  if ("thu" in thayDoi) {
+    const t = thayDoi.thu;
+    dat("thu", t != null && t.length > 0 ? ghiThu(t) : null);
+  }
   return sp.toString();
 }
 
@@ -343,8 +474,11 @@ export type KieuGhiLichSu = "push" | "replace";
  * ⇒ `replace`. Camera một mình sinh hàng trăm sự kiện mỗi giây; đẩy vào history
  * làm nút Back mất tác dụng hoàn toàn.
  */
-export function kieuGhiLichSu(thayDoi: Partial<TrangThaiTwinUrl>): KieuGhiLichSu {
-  return "phamVi" in thayDoi || "chon" in thayDoi ? "push" : "replace";
+export function kieuGhiLichSu(thayDoi: ThayDoiTwinUrl): KieuGhiLichSu {
+  // ★ `nap` cũng là "đi tới chỗ khác": đổi tầng/toà/nhà máy thay TOÀN BỘ dữ
+  //   liệu trên màn. Nút Back phải quay lại được tầng vừa xem — và khác camera
+  //   ở chỗ nó sinh MỘT sự kiện mỗi lần bấm, không phải hàng trăm mỗi giây.
+  return "phamVi" in thayDoi || "chon" in thayDoi || "nap" in thayDoi ? "push" : "replace";
 }
 
 /**

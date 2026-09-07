@@ -10,15 +10,18 @@
 import { describe, it, expect } from "vitest";
 import {
   LOP_HOP_LE,
+  PANEL_THU_DUOC,
   docCamera,
   docLop,
   docPhamVi,
   docThoiGian,
+  docThu,
   docTrangThaiUrl,
   docVatTheChon,
   ghiCamera,
   ghiLop,
   ghiPhamVi,
+  ghiThu,
   ghiTrangThaiUrl,
   ghiVatTheChon,
   kieuGhiLichSu,
@@ -207,6 +210,11 @@ describe("docTrangThaiUrl / ghiTrangThaiUrl", () => {
       cam: null,
       lop: null,
       tg: null,
+      // ★ `nap` là một OBJECT ba ô null, không phải `null` — ba ô này luôn có
+      //   mặt trong hình dạng trả về để tầng gọi không phải kiểm `?.` ở ba chỗ.
+      nap: { nm: null, toa: null, tang: null },
+      // ★ `thu: []` = mở cả hai panel. Không có ca `null` riêng — xem `docThu`.
+      thu: [],
     });
   });
 
@@ -225,8 +233,76 @@ describe("docTrangThaiUrl / ghiTrangThaiUrl", () => {
       cam: { x: 45.2, y: 18, z: -30.5, mucX: 0.8, mucZ: 120 },
       lop: ["nhan", "wip"],
       tg: Date.parse("2026-09-06T14:30:00.000Z"),
+      nap: { nm: 18, toa: 4, tang: 9 },
+      thu: ["trai"],
     };
     expect(docTrangThaiUrl(ghiTrangThaiUrl(goc))).toEqual(goc);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 10 LÔ F — BA Ô NẠP (`nm` / `toa` / `tang`), mục F1                  */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("★★★ lựa chọn NẠP vào URL — F1: 'chia sẻ / tải lại được'", () => {
+  it("đọc đủ ba ô", () => {
+    const tt = docTrangThaiUrl("?nm=18&toa=4&tang=9");
+    expect(tt.nap).toEqual({ nm: 18, toa: 4, tang: 9 });
+  });
+
+  it("★ ba ô ĐỘC LẬP — `toa` rác KHÔNG làm mất `nm` hợp lệ đi cùng", () => {
+    const tt = docTrangThaiUrl("?nm=18&toa=abc&tang=9");
+    expect(tt.nap).toEqual({ nm: 18, toa: null, tang: 9 });
+  });
+
+  it("★ id âm / 0 / thập phân ⇒ null, KHÔNG sửa thành một id có thể tồn tại", () => {
+    // Sửa `-1` thành `1` sẽ lặng lẽ trỏ vào một NHÀ MÁY KHÁC HẲN.
+    expect(docTrangThaiUrl("?nm=-1&toa=0&tang=1.5").nap).toEqual({
+      nm: null,
+      toa: null,
+      tang: null,
+    });
+  });
+
+  it("★ `nap` KHÔNG đụng tới `pv` — hai trục độc lập", () => {
+    const tt = docTrangThaiUrl("?pv=line:1&nm=18&tang=9");
+    expect(tt.phamVi).toEqual({ cap: "line", id: 1 });
+    expect(tt.nap.tang).toBe(9);
+  });
+
+  it("★★★ ĐỔI NHÀ MÁY XOÁ `toa`+`tang` CỦA NHÀ MÁY CŨ — URL không được tự mâu thuẫn", () => {
+    const ra = tronTrangThaiUrl("nm=1&toa=3&tang=7", { nap: { nm: 18 } });
+    const sp = new URLSearchParams(ra);
+    expect(sp.get("nm")).toBe("18");
+    expect(sp.get("toa")).toBeNull();
+    expect(sp.get("tang")).toBeNull();
+  });
+
+  it("★ đổi TOÀ xoá `tang` nhưng GIỮ `nm`", () => {
+    const sp = new URLSearchParams(
+      tronTrangThaiUrl("nm=1&toa=3&tang=7", { nap: { toa: 4 } }),
+    );
+    expect(sp.get("nm")).toBe("1");
+    expect(sp.get("toa")).toBe("4");
+    expect(sp.get("tang")).toBeNull();
+  });
+
+  it("★ đặt CẢ BA cùng lúc (khôi phục từ link) giữ nguyên cả ba", () => {
+    const sp = new URLSearchParams(
+      tronTrangThaiUrl("", { nap: { nm: 18, toa: 4, tang: 9 } }),
+    );
+    expect([sp.get("nm"), sp.get("toa"), sp.get("tang")]).toEqual(["18", "4", "9"]);
+  });
+
+  it("★ đổi `tang` một mình KHÔNG đụng `nm`/`toa`", () => {
+    const sp = new URLSearchParams(
+      tronTrangThaiUrl("nm=1&toa=3&tang=7", { nap: { tang: 8 } }),
+    );
+    expect([sp.get("nm"), sp.get("toa"), sp.get("tang")]).toEqual(["1", "3", "8"]);
+  });
+
+  it("★ đổi lượt NẠP ⇒ push (nút Back quay lại tầng vừa xem)", () => {
+    expect(kieuGhiLichSu({ nap: { nm: 18, toa: null, tang: null } })).toBe("push");
   });
 });
 
@@ -278,5 +354,130 @@ describe("phamViChoVatThe", () => {
   it("trạm/xưởng KHÔNG có cấp riêng (§10C.2 chỉ có 5 cấp) ⇒ về cấp tầng", () => {
     expect(phamViChoVatThe({ loai: "station", id: 5 })).toEqual({ cap: "tang", id: null });
     expect(phamViChoVatThe({ loai: "workshop", id: 2 })).toEqual({ cap: "tang", id: null });
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 10 LÔ F — `?thu=` THU PANEL BÊN, mục F4                            */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("★★★ docThu / ghiThu — F4: trả diện tích cho 3D", () => {
+  it("vắng hoặc rỗng ⇒ [] (mở cả hai panel)", () => {
+    expect(docThu(null)).toEqual([]);
+    expect(docThu("")).toEqual([]);
+    expect(docThu("   ")).toEqual([]);
+  });
+
+  it("đọc đúng cả hai tên", () => {
+    expect(docThu("trai,phai")).toEqual(["trai", "phai"]);
+    expect(docThu("phai")).toEqual(["phai"]);
+  });
+
+  it("★ tên lạ bị BỎ nhưng KHÔNG làm hỏng cả ô (cùng luật docLop)", () => {
+    expect(docThu("trai,giua,<script>")).toEqual(["trai"]);
+  });
+
+  it("khử trùng lặp", () => {
+    expect(docThu("trai,trai,trai")).toEqual(["trai"]);
+  });
+
+  it("★ ghi TẤT ĐỊNH theo PANEL_THU_DUOC, không theo thứ tự người gọi truyền", () => {
+    expect(ghiThu(["phai", "trai"])).toBe("trai,phai");
+    expect(ghiThu(["trai", "phai"])).toBe("trai,phai");
+  });
+
+  it("mọi tên trong PANEL_THU_DUOC đều khứ hồi được", () => {
+    expect(docThu(ghiThu(PANEL_THU_DUOC))).toEqual([...PANEL_THU_DUOC]);
+  });
+
+  it("★ `thu: []` KHÔNG ghi ra URL — 'mở cả hai' là mặc định, ghi ra chỉ làm nhiễu", () => {
+    expect(ghiTrangThaiUrl({ thu: [] })).toBe("");
+    expect(ghiTrangThaiUrl({ thu: ["phai"] })).toBe("thu=phai");
+  });
+
+  it("★ trộn: truyền [] để XOÁ khoá, giữ nguyên mọi khoá khác", () => {
+    const sp = new URLSearchParams(tronTrangThaiUrl("pv=line:1&thu=trai", { thu: [] }));
+    expect(sp.get("thu")).toBeNull();
+    expect(sp.get("pv")).toBe("line:1");
+  });
+
+  it("★ thu/mở panel ⇒ REPLACE, không push (không phải 'đi tới chỗ khác')", () => {
+    expect(kieuGhiLichSu({ thu: ["trai"] })).toBe("replace");
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ LÔ F × LÔ G — HAI CHỦ SỞ HỮU CỦA CÙNG MỘT QUERY STRING                  */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*
+ * Lô F ghi `nm/toa/tang/thu` qua `tronTrangThaiUrl`; lô G ghi `xem` qua
+ * `tronXemVaoQuery` (`nhungTaiCho.ts`). Hai hàm ĐỘC LẬP, cùng ghi lên một chuỗi.
+ *
+ * ★★★ VÌ SAO TEST NÀY KHÔNG THỪA DÙ ĐÃ CÓ "GIỮ THAM SỐ LẠ" (`utm_source`).
+ * `utm_source` là tham số **không ai trong màn này ghi**. `xem=` thì khác hẳn:
+ * nó có một hàm ghi RIÊNG, chạy trên cùng màn, cùng lượt tương tác. Test tham số
+ * lạ chứng minh "không xoá thứ không ai đụng" — nó KHÔNG chứng minh "hai người
+ * cùng viết không giẫm lên nhau". Đó là hai mệnh đề khác nhau, và chỉ mệnh đề
+ * thứ hai mới là thứ hỏng khi ai đó đổi `tronTrangThaiUrl` sang `ghiTrangThaiUrl`
+ * (dựng lại từ đầu) — một lượt sửa "cho gọn" hoàn toàn có thật.
+ *
+ * ⚠ Đo được lúc viết: lô G nằm ở commit `a3eb2919`, lô F nằm CÙNG commit đó —
+ *   nên không lần chạy CI nào từng thấy hai lô ở trạng thái rời nhau. Cổng xanh
+ *   suốt mà chưa bao giờ đo đúng chỗ giao (họ G5).
+ */
+describe("★★★ lô F (nap/thu) × lô G (xem) — cùng tồn tại trên MỘT url", () => {
+  it("★★★ mở panel `?xem=` KHÔNG xoá lựa chọn nạp — chiều lô G ghi", async () => {
+    const { tronXemVaoQuery } = await import("./nhungTaiCho");
+    const sau = tronXemVaoQuery("nm=18&toa=4&tang=9&thu=trai", { loai: "machine", id: 42 });
+    const sp = new URLSearchParams(sau);
+    expect(sp.get("xem")).toBe("machine:42");
+    // Đây là mệnh đề chính: ba ô nạp SỐNG SÓT qua lượt ghi của lô G.
+    expect([sp.get("nm"), sp.get("toa"), sp.get("tang")]).toEqual(["18", "4", "9"]);
+    expect(sp.get("thu")).toBe("trai");
+  });
+
+  it("★★★ ĐỔI TẦNG không xoá panel `?xem=` — chiều lô F ghi", () => {
+    const sp = new URLSearchParams(
+      tronTrangThaiUrl("nm=18&toa=4&tang=9&xem=machine:42", { nap: { tang: 10 } }),
+    );
+    expect(sp.get("tang")).toBe("10");
+    // G32 — đầu ra KHÁC đầu vào ở đúng ô ta đổi…
+    expect(sp.get("xem")).toBe("machine:42"); // …và KHÔNG đổi ở ô ta không đụng.
+  });
+
+  it("★★★ ĐỔI NHÀ MÁY xoá `toa`+`tang` (đúng luật F) nhưng GIỮ `xem`", () => {
+    // Ca dễ hỏng nhất: đây là nhánh DUY NHẤT trong `tronTrangThaiUrl` gọi
+    // `sp.delete()` một cách chủ động. Một `sp.delete("xem")` thêm vào đây sẽ
+    // không làm đỏ bất kỳ test nào khác.
+    const sp = new URLSearchParams(
+      tronTrangThaiUrl("nm=1&toa=3&tang=7&xem=station:5", { nap: { nm: 18 } }),
+    );
+    expect([sp.get("nm"), sp.get("toa"), sp.get("tang")]).toEqual(["18", null, null]);
+    expect(sp.get("xem")).toBe("station:5");
+  });
+
+  it("★ thu/mở panel bên không đụng `xem`", () => {
+    const sp = new URLSearchParams(
+      tronTrangThaiUrl("xem=robot:9&thu=trai", { thu: ["trai", "phai"] }),
+    );
+    expect(sp.get("thu")).toBe("trai,phai");
+    expect(sp.get("xem")).toBe("robot:9");
+  });
+
+  it("★ ĐÓNG ngăn (`xem=null`) không đụng ba ô nạp", async () => {
+    const { tronXemVaoQuery } = await import("./nhungTaiCho");
+    const sp = new URLSearchParams(tronXemVaoQuery("nm=18&tang=9&xem=machine:42", null));
+    expect(sp.get("xem")).toBeNull();
+    expect([sp.get("nm"), sp.get("tang")]).toEqual(["18", "9"]);
+  });
+
+  it("★★★ ĐỌC: một URL mang CẢ hai lô đọc ra đủ cả hai, không vế nào nuốt vế nào", async () => {
+    const { docXemTuQuery } = await import("./nhungTaiCho");
+    const q = "?pv=line:1&nm=18&toa=4&tang=9&thu=phai&xem=machine:42&cam=1,2,3,4,5";
+    const tt = docTrangThaiUrl(q);
+    expect(tt.nap).toEqual({ nm: 18, toa: 4, tang: 9 });
+    expect(tt.thu).toEqual(["phai"]);
+    expect(tt.phamVi).toEqual({ cap: "line", id: 1 });
+    expect(docXemTuQuery(q)).toEqual({ loai: "machine", id: 42 });
   });
 });
