@@ -24,6 +24,7 @@ import {
   type DiemScene,
 } from "../heToaDo";
 import type { CapPhamVi, PhamVi } from "./duongDanTwin";
+import { byteMau } from "./byteMau";
 
 /** Thời lượng tween khi chuyển cấp (§10C.2). */
 export const TWEEN_DOI_CAP_MS = 500;
@@ -88,7 +89,23 @@ export function doMoTheoPhamVi(v: VatTheCoPhamVi, pv: PhamVi): number {
  */
 export const TI_LE_PHA_NGOAI_PHAM_VI = 0.72;
 
-/** Tách một chuỗi màu CSS `rgb(r, g, b)` / `#rrggbb` thành ba kênh 0–255. */
+/**
+ * Tách một chuỗi màu CSS thành ba kênh 0–255.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ G29 — TRƯỚC BẢN VÁ NÀY, HÀM CHỈ ĐỌC `rgb()`/`#hex`, VÀ `--muted` LÀ
+ *     `oklch(...)` ⇒ `phaVeNen()` TRẢ NGUYÊN MÀU GỐC ⇒ "MỜ 12 % CHO LINE
+ *     NGOÀI PHẠM VI" (§10C) **CHƯA TỪNG CÓ HIỆU LỰC**.
+ * ════════════════════════════════════════════════════════════════════════════
+ * Mã chạy, không lỗi, không cảnh báo, **không làm gì**. Đây là G5 ở dạng độc
+ * nhất: không phải "tập rỗng" mà là "phép biến đổi đồng nhất" — hàm được gọi
+ * với dữ liệu KHÁC RỖNG và trả về đúng đầu vào của nó.
+ *
+ * Nhánh thứ ba (`byteMau`) quy MỌI cú pháp màu CSS qua canvas 2D. Nó trả `null`
+ * trong `environment: "node"` (không DOM), nên module này VẪN THUẦN về phía
+ * test — hai nhánh regex đầu đủ cho mọi test node, và ca oklch được đo ở
+ * `phaVeNen.dom.test.tsx` (jsdom + canvas tiêm).
+ */
 function tachRgb(mau: string): [number, number, number] | null {
   const s = mau.trim();
   const m = s.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
@@ -103,7 +120,8 @@ function tachRgb(mau: string): [number, number, number] | null {
     const [r, g, b] = h3[1].split("");
     return [parseInt(r + r, 16), parseInt(g + g, 16), parseInt(b + b, 16)];
   }
-  return null;
+  // ★ oklch/oklab/lab/lch/color()/hwb — quy qua canvas 2D. `null` khi không DOM.
+  return byteMau(s);
 }
 
 /**

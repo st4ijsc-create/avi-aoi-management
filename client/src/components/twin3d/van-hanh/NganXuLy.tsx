@@ -83,6 +83,7 @@ import {
   type CanhBaoDangMo,
   type LoaiDich,
   type QuyenXuLy,
+  docStatsAoi,
 } from "./nganXuLyLogic";
 import { hienSo, nhanDoTuoi, type TrangThaiHienThi } from "./trungThucDuLieu";
 
@@ -188,6 +189,40 @@ export function NganXuLy(props: NganXuLyProps) {
    */
   const nguoiGan = useMemo(() => nguoiGanDuoc(nguoiQ.data), [nguoiQ.data]);
 
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ §11 #60 — STATS AOI OK/NG/NTF/YIELD (Đợt 8 lô D)                     */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * ★★★ SPEC/BRIEF SAI — nguồn ĐÚNG là `getMachineStats`, KHÔNG `getAllMachinesStats`.
+   *
+   * Brief lô D chỉ `dashboard.getAllMachinesStats`. Đo hợp đồng
+   * (`dashboardStatsRouters.ts:95-153`): thủ tục đó gọi `getMachinesWithHierarchy()`
+   * rồi `Promise.all` **một `getMachineStats` cho MỖI máy** — 42 máy trên SIM-FAC —
+   * để ngăn này dùng đúng **một** hàng. Đó là 42 lần truy vấn để hiển thị 1/42
+   * kết quả, đúng lớp lỗi N+1 mà Đ6 sinh ra để diệt ("Không còn N+1 trong vòng
+   * render").
+   *
+   * `dashboard.getMachineStats` (`:75-93`) là **cùng một** `protectedProcedure`,
+   * **cùng một** `db.getMachineStats` với cùng `StatsScopeArgs`, và **cùng một**
+   * khoá cache (`scopedStatsCacheKey(CACHE_KEYS.MACHINE_STATS, …)`) — nên số ra
+   * bằng nhau từng chữ số, chỉ khác là không kéo theo 41 máy không ai xem.
+   * ⇒ Dùng thủ tục hẹp. Đã báo cáo là bác brief, không im lặng đổi.
+   *
+   * ★ G15 — BA trạng thái: `dangTai` · `isError` · có dữ liệu. Truy vấn 403
+   *   (thiếu quyền đọc thống kê) trả rỗng, và một ngăn in "Yield 0 %" cho người
+   *   không được phép thấy số là lời nói dối tệ nhất của một màn giám sát.
+   */
+  const statsQ = trpc.dashboard.getMachineStats.useQuery(
+    { machineId: machineId ?? 0 },
+    { enabled: machineId !== null, retry: false, staleTime: 30_000 },
+  );
+
+  const statsAoi = useMemo(
+    () => docStatsAoi(statsQ.data, statsQ.isSuccess),
+    [statsQ.data, statsQ.isSuccess],
+  );
+
   const canhBaoChuaAck = canhBao.filter((c) => c.trangThai === "raised");
   const tuoi = nhanDoTuoi(thoiDiemDuLieu, bayGio);
   const kieuMau = mauChoTrangThai(trangThai.trangThai);
@@ -255,6 +290,61 @@ export function NganXuLy(props: NganXuLyProps) {
             : t("twin3d.vanHanh.capNhatTruoc", "Cập nhật {{giay}} giây trước", { giay: hienSo(tuoi.giay) })}
         </p>
       </header>
+
+      {/* ── §11 #60 — STATS AOI OK/NG/NTF/YIELD ────────────────────────── */}
+      {/*
+        ★★★ `—` CHỨ KHÔNG `0` khi chưa đo được (NT-3 / G15). Ba ca:
+          · chưa đo được (đang tải / 403 / lỗi)  ⇒ mọi ô `—`
+          · đo được, mẫu rỗng (0 chiếc)          ⇒ đếm `0`, tỉ lệ `—`
+          · đo được, có mẫu                      ⇒ số thật
+        `data-*` mang giá trị THÔ để nghiệm thu đọc được số, không phải đọc chữ.
+      */}
+      <section className="border-t pt-2" data-testid="nhom-stats-aoi">
+        <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {t("twin3d.vanHanh.statsAoi", "Kết quả AOI")}
+          {statsAoi.mauRong ? (
+            <span className="font-normal normal-case" data-testid="stats-mau-rong">
+              {t("twin3d.vanHanh.chuaKiemChiecNao", "chưa kiểm chiếc nào")}
+            </span>
+          ) : null}
+        </h3>
+        <dl className="grid grid-cols-4 gap-1 text-center" data-testid="stats-aoi">
+          {(
+            [
+              ["ok", "twin3d.vanHanh.aoiOk", "OK", statsAoi.ok, "text-success"],
+              ["ng", "twin3d.vanHanh.aoiNg", "NG", statsAoi.ng, "text-destructive"],
+              ["ntf", "twin3d.vanHanh.aoiNtf", "NTF", statsAoi.ntf, "text-muted-foreground"],
+            ] as const
+          ).map(([ma_, khoa, macDinh, gt, lop]) => (
+            <div key={ma_} className="rounded border px-1 py-1">
+              <dt className="text-[10px] uppercase text-muted-foreground">{t(khoa, macDinh)}</dt>
+              <dd
+                className={`text-sm font-semibold tabular-nums ${lop}`}
+                data-testid={`stats-${ma_}`}
+                data-gia-tri={gt ?? ""}
+              >
+                {hienSo(gt)}
+              </dd>
+            </div>
+          ))}
+          <div className="rounded border px-1 py-1">
+            <dt className="text-[10px] uppercase text-muted-foreground">
+              {t("twin3d.vanHanh.aoiYield", "Yield")}
+            </dt>
+            <dd
+              className="text-sm font-semibold tabular-nums"
+              data-testid="stats-yield"
+              data-gia-tri={statsAoi.yieldRate ?? ""}
+            >
+              {statsAoi.yieldRate === null ? hienSo(null) : `${statsAoi.yieldRate}%`}
+            </dd>
+          </div>
+        </dl>
+        <p className="mt-1 text-[10px] text-muted-foreground" data-testid="stats-tong">
+          {t("twin3d.vanHanh.aoiTong", "Tổng kiểm")}: {hienSo(statsAoi.total)}
+          {statsAoi.fpy === null ? "" : ` · FPY ${statsAoi.fpy}%`}
+        </p>
+      </section>
 
       {/* ── NHÓM 1: XỬ LÝ CẢNH BÁO ─────────────────────────────────────── */}
       <section className="border-t pt-2" data-testid="nhom-canh-bao">

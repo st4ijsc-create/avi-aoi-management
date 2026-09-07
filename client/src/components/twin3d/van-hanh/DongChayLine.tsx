@@ -26,7 +26,15 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
-import { giaiMauCanh } from "../mauTrangThai";
+/**
+ * ★★★ G29 — `mauThree()` CHỨ KHÔNG `new THREE.Color(giaiMauCanh(...))`.
+ *
+ * `giaiMauCanh("--info")` trả `"oklch(70% .13 250)"`; `THREE.Color` gặp chuỗi
+ * đó thì **warn rồi trả TRẮNG**, không throw. Đường kẻ tuyến và 8 mũi tên vẫn
+ * vẽ đủ hình, đúng vị trí — chỉ là **trắng**, chở 0 bit. `mauThree` quy qua
+ * canvas 2D ra RGB thật (xem `mauThree.ts`).
+ */
+import { mauThree } from "./mauThree";
 
 export interface DiemDongChay {
   /** Đường tâm Line — nối tâm các trạm theo `orderIndex` (từ `hinhHocLine`). */
@@ -81,7 +89,7 @@ export function DongChayLine({ dongChay, soMuiTen = SO_MUI_TEN_MAC_DINH }: DongC
     if (!duong) return { hinhDuong: null, chatLieuDuong: null, duongVe: null };
     const g = new THREE.BufferGeometry().setFromPoints(duong.getPoints(Math.max(16, diem.length * 8)));
     const m = new THREE.LineBasicMaterial({
-      color: new THREE.Color(giaiMauCanh("--info") ?? "#3b82f6"),
+      color: mauThree("--info", "#3b82f6"),
       transparent: true,
       opacity: 0.45,
     });
@@ -94,7 +102,7 @@ export function DongChayLine({ dongChay, soMuiTen = SO_MUI_TEN_MAC_DINH }: DongC
     // Nón mặc định chĩa +Y; xoay để chĩa +Z rồi mới hướng theo tiếp tuyến.
     g.rotateX(Math.PI / 2);
     const m = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(giaiMauCanh("--info") ?? "#3b82f6"),
+      color: mauThree("--info", "#3b82f6"),
     });
     return { hinhNon: g, chatLieuNon: m };
   }, []);

@@ -20135,7 +20135,14 @@
         "robotCockpit": "Robot cockpit",
         "banDieuKhien": "Command console"
       },
-      "canhAria2D": "2D factory map: {{may}} machines, {{canhBao}} open alarms, {{khongRo}} machines with no signal"
+      "canhAria2D": "2D factory map: {{may}} machines, {{canhBao}} open alarms, {{khongRo}} machines with no signal",
+      "statsAoi": "AOI results",
+      "chuaKiemChiecNao": "no units inspected",
+      "aoiOk": "OK",
+      "aoiNg": "NG",
+      "aoiNtf": "NTF",
+      "aoiYield": "Yield",
+      "aoiTong": "Total inspected"
     },
     "studio": {
       "tieuDe": "3D Factory — Design",

@@ -20143,7 +20143,14 @@
         "robotCockpit": "机器人驾驶舱",
         "banDieuKhien": "指令控制台"
       },
-      "canhAria2D": "2D 工厂平面图：{{may}} 台设备，{{canhBao}} 条未处理报警，{{khongRo}} 台设备失去信号"
+      "canhAria2D": "2D 工厂平面图：{{may}} 台设备，{{canhBao}} 条未处理报警，{{khongRo}} 台设备失去信号",
+      "statsAoi": "AOI 结果",
+      "chuaKiemChiecNao": "尚未检测任何产品",
+      "aoiOk": "OK",
+      "aoiNg": "NG",
+      "aoiNtf": "NTF",
+      "aoiYield": "良率",
+      "aoiTong": "检测总数"
     },
     "studio": {
       "tieuDe": "3D 工厂 — 设计",

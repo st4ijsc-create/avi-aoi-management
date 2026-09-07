@@ -20115,7 +20115,14 @@
         "robotCockpit": "Buồng lái robot",
         "banDieuKhien": "Bàn điều khiển lệnh"
       },
-      "canhAria2D": "Sơ đồ 2D nhà máy: {{may}} máy, {{canhBao}} cảnh báo đang mở, {{khongRo}} máy mất tín hiệu"
+      "canhAria2D": "Sơ đồ 2D nhà máy: {{may}} máy, {{canhBao}} cảnh báo đang mở, {{khongRo}} máy mất tín hiệu",
+      "statsAoi": "Kết quả AOI",
+      "chuaKiemChiecNao": "chưa kiểm chiếc nào",
+      "aoiOk": "OK",
+      "aoiNg": "NG",
+      "aoiNtf": "NTF",
+      "aoiYield": "Yield",
+      "aoiTong": "Tổng kiểm"
     },
     "studio": {
       "tieuDe": "Nhà máy 3D — Thiết kế",

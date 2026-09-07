@@ -330,3 +330,88 @@ export interface NguoiCoTheGan {
 export function nguoiGanDuoc(ds: readonly NguoiCoTheGan[] | null | undefined): NguoiCoTheGan[] {
   return (ds ?? []).filter((u) => u.isActive !== false);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ §11 #60 (Đợt 8 lô D) — STATS AOI OK/NG/NTF/YIELD                       */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Hàng thô từ `dashboard.getMachineStats`.
+ *
+ * ⚠ Mọi trường `optional`: hợp đồng server trả thêm ba ô nhãn phạm vi và có thể
+ *   đổi hình, và một `undefined` lọt qua `Number()` thành `NaN` — thứ hiển thị
+ *   ra màn hình như một con số thật. Chuẩn hoá ở một chỗ, không ở JSX.
+ */
+export interface HangStatsAoi {
+  total?: number | null;
+  ok?: number | null;
+  ng?: number | null;
+  ntf?: number | null;
+  yieldRate?: number | null;
+  fpy?: number | null;
+}
+
+/**
+ * Bốn ô của #60 sau khi chuẩn hoá. `null` = **CHƯA ĐO ĐƯỢC**, KHÔNG phải 0.
+ */
+export interface StatsAoi {
+  total: number | null;
+  ok: number | null;
+  ng: number | null;
+  ntf: number | null;
+  /** % — `null` khi mẫu rỗng (chia cho 0), không phải 0 %. */
+  yieldRate: number | null;
+  fpy: number | null;
+  /** true khi mẫu thật sự rỗng: máy CÓ được đo, chỉ là 0 chiếc trong cửa sổ. */
+  mauRong: boolean;
+}
+
+/**
+ * ★★★ NT-3 TẠI Ô SỐ: "CHƯA ĐO ĐƯỢC" ≠ "ĐO ĐƯỢC 0" ≠ "0 %".
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đây là chỗ lớp lỗi CHẶN-2 quay lại dưới dạng khác. `getMachineStats` trả
+ * `{total:0, ok:0, ng:0, ntf:0, yieldRate:0}` khi **không có DB** — cùng hình
+ * dạng y hệt một máy chạy thật mà chưa kiểm chiếc nào trong cửa sổ. Nếu ta vẽ
+ * thẳng hàng đó ra, người vận hành đọc "Yield 0 %" và tưởng máy đang hỏng nặng.
+ *
+ * Ba trạng thái phải phân biệt được, và chúng có ba biểu hiện khác nhau:
+ *   1. **chưa đo được** (`dangTai`/`loi`/`hang == null`) ⇒ mọi ô `null` ⇒ UI vẽ `—`
+ *   2. **đo được, mẫu rỗng** (`total === 0`) ⇒ `mauRong=true`, tỉ lệ `null` ⇒ `—`
+ *      (đếm vẫn là 0 THẬT: "0 chiếc" là một sự thật, "0 %" thì không)
+ *   3. **đo được, có mẫu** ⇒ số thật
+ *
+ * ⚠ `yieldRate` KHÔNG được tính lại ở client. Server dùng `finalYield({ok, ntf,
+ *   total})` — NTF tính là PASS (quyết định #4 của repo). Tự tính `ok/total` ở
+ *   đây tạo **nguồn sự thật thứ hai** cho cùng một chỉ số, và hai bản sẽ lệch
+ *   ngay lần đầu ai đó đổi cách xử NTF (G12). Ta chỉ CHUẨN HOÁ, không TÍNH.
+ */
+export function docStatsAoi(
+  hang: HangStatsAoi | null | undefined,
+  daDo: boolean,
+): StatsAoi {
+  const RONG: StatsAoi = {
+    total: null, ok: null, ng: null, ntf: null,
+    yieldRate: null, fpy: null, mauRong: false,
+  };
+  if (!daDo || hang === null || hang === undefined) return RONG;
+
+  const so = (v: number | null | undefined): number | null =>
+    typeof v === "number" && Number.isFinite(v) ? v : null;
+
+  const total = so(hang.total);
+  // Hợp đồng hỏng hình (thiếu `total`) ⇒ coi như CHƯA ĐO, không coi như 0.
+  if (total === null) return RONG;
+
+  const mauRong = total === 0;
+  return {
+    total,
+    ok: so(hang.ok) ?? 0,
+    ng: so(hang.ng) ?? 0,
+    ntf: so(hang.ntf) ?? 0,
+    // ★ Mẫu rỗng ⇒ tỉ lệ `null`. `0/0` không phải 0 %.
+    yieldRate: mauRong ? null : so(hang.yieldRate),
+    fpy: mauRong ? null : so(hang.fpy),
+    mauRong,
+  };
+}

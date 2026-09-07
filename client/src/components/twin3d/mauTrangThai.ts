@@ -40,11 +40,29 @@
  * WebGL/three.js không parse được `oklch()`. Cám dỗ là hardcode hex ở đây — nhưng
  * hex cứng KHÔNG đổi theo theme sáng/tối, và §10.4 bắt 3D phải đúng ở CẢ HAI theme.
  *
- * Nên tệp này trả về **tên token** (`--destructive`), và `giaiMauCanh()` phân giải
- * token → rgb lúc chạy bằng `getComputedStyle` (chính trình duyệt tính oklch → rgb,
- * không cần thư viện màu). Đổi theme ⇒ gọi lại ⇒ cảnh đổi màu. Tách đôi như vậy còn
- * làm phần ÁNH XẠ (bảng dưới) test được trong môi trường **node** không DOM — vitest
- * của repo chạy `environment: "node"` (RB-8).
+ * Nên tệp này trả về **tên token** (`--destructive`), và `giaiMauCanh()` đọc giá trị
+ * token lúc chạy bằng `getComputedStyle`. Đổi theme ⇒ gọi lại ⇒ cảnh đổi màu. Tách
+ * đôi như vậy còn làm phần ÁNH XẠ (bảng dưới) test được trong môi trường **node**
+ * không DOM — vitest của repo chạy `environment: "node"` (RB-8).
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐÍNH CHÍNH (Đợt 8 lô D, G29) — CÂU "TRÌNH DUYỆT TỰ TÍNH oklch → rgb" LÀ **SAI**
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản trước của đoạn này viết: *"chính trình duyệt tính oklch → rgb, không cần thư
+ * viện màu"*. Đo lại trên trang thật: `getPropertyValue("--warning")` trả nguyên văn
+ * `"oklch(78% .15 75)"`. **Custom property KHÔNG được CSS phân giải** — nó thay thế
+ * nguyên văn, và `getComputedStyle` trả lại đúng chuỗi tác giả đã viết. (Cả cách gán
+ * vào `color` của một phần tử dò cũng không cứu: Chrome nay giữ `oklch()` ở computed
+ * value.) Câu sai đó khiến hai lớp lỗi tồn tại hàng đợt mà không cổng nào bắt:
+ *   1. `THREE.Color("oklch(...)")` → **warn rồi trả TRẮNG**, không throw (G29);
+ *   2. `phaVeNen()` (`van-hanh/phamViCanh.ts`) trả **nguyên màu gốc** ⇒ "mờ 12 % cho
+ *      Line ngoài phạm vi" (§10C) **chưa từng có hiệu lực**.
+ *
+ * ⇒ `giaiMauCanh()` là **giá trị token thô** (có thể là `oklch()`). Ai đưa màu vào
+ *   three, hoặc vào một phép trộn số, PHẢI đi qua `van-hanh/mauThree.ts`
+ *   (`mauThree` / `mauHex` / `mauCss`) — nơi quy qua canvas 2D ra RGB thật.
+ *   Người tiêu thụ **DOM** (`background`, SVG `fill`) thì dùng thẳng được: ở đó
+ *   trình duyệt CÓ rasterise, nên `oklch()` hiển thị đúng.
  *
  * ⚠ Bảng màu ≤ 7 mã (ASM Guideline 6.1 — giới hạn trí nhớ ngắn hạn). Đếm token khác
  * nhau dùng dưới đây: packml-run, info, warning, alarm-medium, muted-foreground,
@@ -264,8 +282,12 @@ export const TOKEN_DA_DUNG: readonly string[] = [
  * Phân giải tên token → chuỗi màu WebGL dùng được (`rgb(r, g, b)`).
  *
  * PHỤ THUỘC DOM — cố ý tách khỏi phần ánh xạ thuần ở trên để bảng màu test được
- * trong `environment: "node"`. Trình duyệt tự tính `oklch()` → `rgb()`, nên không
- * cần thư viện chuyển đổi màu nào.
+ * trong `environment: "node"`.
+ *
+ * ⚠ Trả về **GIÁ TRỊ THÔ của token**, KHÔNG phải rgb. `index.css` khai token bằng
+ *   `oklch()`, và custom property không được phân giải ⇒ hàm này trả chuỗi
+ *   `"oklch(...)"`. Dùng thẳng cho CSS/SVG thì đúng; đưa vào `THREE.Color` thì
+ *   **trắng câm** (G29). Đường vào three: `van-hanh/mauThree.ts`.
  *
  * `docGiaTri` được TIÊM VÀO (mặc định `getComputedStyle`) để test bơm giá trị giả
  * mà không cần jsdom.

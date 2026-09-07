@@ -44,13 +44,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { getSharedSocket } from "@/lib/socketManager";
 import { useTranslation } from "react-i18next";
 import { useLocation, useSearch } from "wouter";
 import { AlertTriangle, Boxes, LayoutGrid, OctagonAlert, RefreshCw } from "lucide-react";
 import type * as THREE from "three";
 
 import { EmptyState } from "@/components/EmptyState";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { isScopeEmpty } from "@/lib/scopeEmpty";
@@ -58,7 +59,8 @@ import { trpc } from "@/lib/trpc";
 
 import { gocTuQuatTrucDung, mmSangMet } from "@/components/twin3d/heToaDo";
 import { hinhKhoiCho } from "@/components/twin3d/hinhKhoiMay";
-import { giaiMauCanh, mauChoTrangThai } from "@/components/twin3d/mauTrangThai";
+import { mauChoTrangThai } from "@/components/twin3d/mauTrangThai";
+import { mauCss } from "@/components/twin3d/van-hanh/mauThree";
 import { hinhHocLine, type ViTriDaDat } from "@/components/twin3d/phamViLine";
 import type { MayTrongLo, NhanTheGioi } from "@/components/twin3d/loi";
 
@@ -66,6 +68,13 @@ import { CanhVanHanh } from "@/components/twin3d/van-hanh/CanhVanHanh";
 import { CanhVanHanh2D } from "@/components/twin3d/van-hanh/CanhVanHanh2D";
 import { DanhSachMay } from "@/components/twin3d/van-hanh/DanhSachMay";
 import { NganXuLy } from "@/components/twin3d/van-hanh/NganXuLy";
+import { DaiCanhBao } from "@/components/twin3d/van-hanh/DaiCanhBao";
+import {
+  chuanHoaHang,
+  type CanhBaoDai,
+  type ChonMuc,
+  type TapPhamVi,
+} from "@/components/twin3d/van-hanh/daiCanhBaoLogic";
 import { DaiLine } from "@/components/twin3d/van-hanh/DaiLine";
 import type { CanhBaoTheGioi, MucCanhBao } from "@/components/twin3d/van-hanh/LopCanhBao";
 import {
@@ -636,7 +645,20 @@ export default function TwinVanHanh() {
    * hai theme). Dùng làm ĐÍCH PHA cho vật thể ngoài phạm vi — pha về nền cho ra
    * "nhạt đi" đúng nghĩa, khác hẳn làm tối (xem `phaVeNen`).
    */
-  const mauNenCanh = giaiMauCanh("--background") ?? "#f8fafc";
+  /*
+   * ★★★ `mauCss` CHỨ KHÔNG `giaiMauCanh` TRẦN — G29, ĐO ĐƯỢC 84 WARNING.
+   *
+   * `giaiMauCanh("--background")` trả nguyên chuỗi `oklch(14.5% .015 260)`.
+   * Chuỗi đó chảy vào `phaVeNen()` (nơi `tachRgb` cũ trả `null` ⇒ **không pha
+   * gì**) rồi vào `LoBatchMay.tsx:189` `c.set(m.mau)` — three **warn rồi trả
+   * TRẮNG** cho từng máy, từng lần cập nhật. 42 máy ⇒ hàng chục warning và
+   * **mọi máy trắng như nhau**: cảnh 3D chở 0 bit về trạng thái.
+   *
+   * `mauCss` quy qua canvas 2D ra `rgb(r, g, b)` thật — three đọc được, và
+   * `tachRgb` của `phaVeNen` cũng đọc được, nên "mờ 12 % cho Line ngoài phạm
+   * vi" (§10C) bắt đầu **có hiệu lực lần đầu**.
+   */
+  const mauNenCanh = mauCss("--background", "#f8fafc");
 
   const mayVe = useMemo<MayTrongLo[]>(() => {
     const ra: MayTrongLo[] = [];
@@ -685,8 +707,8 @@ export default function TwinVanHanh() {
          *   kit. Kết quả: máy ngoài phạm vi nhạt đi đúng nghĩa, ở CẢ hai theme.
          */
         mau: trong
-          ? (giaiMauCanh(kieu.token) ?? "#94a3b8")
-          : phaVeNen(giaiMauCanh(kieu.token) ?? "#94a3b8", mauNenCanh, TI_LE_PHA_NGOAI_PHAM_VI),
+          ? mauCss(kieu.token, "#94a3b8")
+          : phaVeNen(mauCss(kieu.token, "#94a3b8"), mauNenCanh, TI_LE_PHA_NGOAI_PHAM_VI),
         doMo: trong ? kieu.doMo : 1,
       });
     }
@@ -756,7 +778,7 @@ export default function TwinVanHanh() {
         viTri: k.viTri,
         gocXoayRad: 0,
         // BÁN TRONG SUỐT = pha về nền. `doMo: 1` để KHÔNG bị làm tối thêm.
-        mau: phaVeNen(giaiMauCanh("--muted-foreground") ?? "#94a3b8", mauNenCanh, PHA_KHU_CHO),
+        mau: phaVeNen(mauCss("--muted-foreground", "#94a3b8"), mauNenCanh, PHA_KHU_CHO),
         doMo: 1,
         hien: true,
       };
@@ -893,6 +915,92 @@ export default function TwinVanHanh() {
         })),
     [andonRows, machineIdChon],
   );
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ §11 #12/#13/#14/#15 — DẢI CẢNH BÁO HỢP NHẤT (lô B dựng, lô D NỐI)   */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * ★★★ G16 — LÔ B GIAO `DaiCanhBao.tsx` + 35 TEST LOGIC VỚI **0 CHỖ GỌI**.
+   *
+   * Điểm nối duy nhất là tệp này, và lô B không được sửa nó (hàng rào chống đụng
+   * tay giữa ba lô song song). Nó **tự khai đúng** thay vì nhận là xong: hàm
+   * không ai gọi thì chưa giao được gì. Đây là chỗ gọi.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ G25 — MỘT SỰ KIỆN PHÁT VÀO BA PHÒNG: "TRÙNG" KHÔNG PHẢI LỖI CLIENT
+   * ════════════════════════════════════════════════════════════════════════
+   * `server/_core/socket.ts:1392-1394` phát CÙNG MỘT `andon:event` vào `global`
+   * + `line:{id}` + `machine:{id}`. Một client nghe nhiều phòng nhận **2–3 bản**
+   * của cùng một raise. Cộng thêm: id seed nhúng `seq` đơn điệu ⇒ **cùng một
+   * hàng andon ra id khác nhau mỗi lần refetch**, nên dedupe theo `id` khử được
+   * **0**. `gopCanhBao` khoá theo `{nguon}:{idNguon}` — ổn định qua hai lần đọc.
+   */
+
+  /** Cảnh báo đến qua socket, giữ trong state để `gopCanhBao` trộn với seed. */
+  const [canhBaoSong, setCanhBaoSong] = useState<readonly CanhBaoDai[]>([]);
+
+  useEffect(() => {
+    const socket = getSharedSocket();
+    const nhan = (goi: unknown) => {
+      const tho = goi as Parameters<typeof chuanHoaHang>[0] | null;
+      if (!tho || typeof tho.id !== "number") return;
+      // ★ `mocDuPhong` = thời điểm NHẬN GÓI, không `Date.now()` bên trong
+      //   `chuanHoaHang` (RB-8.1: hàm thuần không tự đọc đồng hồ).
+      const c = chuanHoaHang(tho, Date.now());
+      // Giữ mảng có trần: `gopCanhBao` cũng cap 100, nhưng cắt ở đây để state
+      // không phình vô hạn giữa hai lần render.
+      setCanhBaoSong((truoc) => [c, ...truoc].slice(0, 200));
+    };
+    socket.on("andon:event", nhan);
+    return () => {
+      socket.off("andon:event", nhan);
+    };
+  }, []);
+
+  /** Seed từ `andon.active`, chuẩn hoá bằng CÙNG hàm với đường socket. */
+  const canhBaoSeed = useMemo<readonly CanhBaoDai[]>(
+    () => andonRows.map((a) => chuanHoaHang(a, bayGio)),
+    [andonRows, bayGio],
+  );
+
+  /** Chip mức đang chọn (#14). */
+  const [chonMucCanhBao, setChonMucCanhBao] = useState<ChonMuc>("tat_ca");
+
+  /**
+   * #15 — phạm vi đang chọn dưới dạng bốn tập id.
+   *
+   * ★ `null` khi cấp `tapDoan`/`nhaMay` hoặc `id` chưa phân giải: đó là "chưa
+   *   thu hẹp", KHÁC hẳn "nhánh này rỗng" (xem docblock `locTheoPhamVi`).
+   *   Gộp hai ca làm một sẽ giấu sạch cảnh báo mỗi khi chưa chọn nhánh.
+   */
+  const phamViCanhBao = useMemo<TapPhamVi | null>(() => {
+    if (phamVi.id === null || phamVi.cap === "tapDoan" || phamVi.cap === "nhaMay") return null;
+    const machineIds = new Set<number>();
+    const lineIds = new Set<number>();
+    const stationIds = new Set<number>();
+    if (phamVi.cap === "may") {
+      machineIds.add(phamVi.id);
+    } else if (phamVi.cap === "line") {
+      lineIds.add(phamVi.id);
+      for (const mv of mayVanHanh) {
+        if (mv.lineId === phamVi.id) {
+          machineIds.add(mv.id);
+          if (mv.stationId !== null) stationIds.add(mv.stationId);
+        }
+      }
+    } else {
+      // Cấp `tang` — máy thuộc tầng suy từ chỗ đặt, không từ cột nào của máy.
+      for (const mv of mayVanHanh) {
+        if (datChoTheoMay.get(mv.id)?.tangId === phamVi.id) {
+          machineIds.add(mv.id);
+          if (mv.lineId !== null) lineIds.add(mv.lineId);
+          if (mv.stationId !== null) stationIds.add(mv.stationId);
+        }
+      }
+    }
+    return { workshopIds: new Set<number>(), lineIds, stationIds, machineIds };
+  }, [phamVi, mayVanHanh, datChoTheoMay]);
 
   /* ── Phạm vi Line (§10C.3) ──────────────────────────────────────────── */
   const hinhLine = useMemo(() => {
@@ -1523,29 +1631,22 @@ export default function TwinVanHanh() {
             </div>
           </div>
 
-          {/* Cảnh báo */}
-          <div className="shrink-0 border-b p-2" data-testid="khoi-canh-bao">
-            <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("twin3d.vanHanh.canhBao", "Cảnh báo")} ({hienSo(andonRows.length, andonQ.isLoading || andonQ.isError)})
-            </h2>
-            <ul className="max-h-24 space-y-0.5 overflow-y-auto">
-              {andonRows.slice(0, 12).map((a) => (
-                <li key={a.id}>
-                  <button
-                    type="button"
-                    className="w-full truncate rounded px-1 py-0.5 text-left text-[11px] hover:bg-accent focus-visible:outline focus-visible:outline-2"
-                    data-testid={`canh-bao-trai-${a.id}`}
-                    onClick={() => a.machineId != null && chonMay(a.machineId)}
-                  >
-                    <Badge variant={a.state === "red" ? "destructive" : "outline"} className="mr-1 px-1 py-0">
-                      {a.state}
-                    </Badge>
-                    {a.title}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {/* ★★★ §11 #12/#13/#14/#15 — DẢI CẢNH BÁO (lô B dựng, nối ở đây)
+              Thay khối `<ul>` phẳng trước đó: khối cũ KHÔNG dedupe (G25: một
+              `andon:event` phát vào 3 phòng ⇒ 2-3 dòng cho một sự cố), KHÔNG
+              tách nhóm >24h (#13), KHÔNG có chip lọc mức (#14), và hiện "0
+              cảnh báo" khi truy vấn 403 thay vì `—` (G15). */}
+          <DaiCanhBao
+            seed={canhBaoSeed}
+            song={canhBaoSong}
+            phamVi={phamViCanhBao}
+            chonMuc={chonMucCanhBao}
+            onChonMuc={setChonMucCanhBao}
+            bayGio={bayGio}
+            dangTai={andonQ.isLoading}
+            khongDoDuoc={andonQ.isError}
+            onChonCanhBao={(c) => c.machineId != null && chonMay(c.machineId)}
+          />
 
           {/* ★ DANH SÁCH MÁY — DOM thật, mọi hành động làm được từ đây (§9.9) */}
           <DanhSachMay

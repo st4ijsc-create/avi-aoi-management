@@ -11,6 +11,7 @@
 import { describe, it, expect } from "vitest";
 import { isValidPermissionModule } from "@shared/permissions";
 import {
+  docStatsAoi,
   MOC_AN_TAM_GIO,
   QUYEN_RONG,
   TRAN_AN_TAM_GIO,
@@ -250,5 +251,90 @@ describe("nguoiGanDuoc — §9.2 lọc tài khoản đã vô hiệu hoá", () =>
       { id: 9, name: "Chín", username: "u9", isActive: true },
       { id: 2, name: "Hai", username: "u2", isActive: true },
     ]);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ §11 #60 (Đợt 8 lô D) — `docStatsAoi`: BA TRẠNG THÁI, KHÔNG PHẢI HAI     */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("★★★ #60 `docStatsAoi` — 'chưa đo được' ≠ 'đo được 0' ≠ '0 %'", () => {
+  /** Hàng như `dashboard.getMachineStats` thật trả về. */
+  const HANG_THAT = {
+    total: 1200, ok: 1150, ng: 40, ntf: 10,
+    yieldRate: 96.67, fpy: 94.5, firstPass: 1134, firstTotal: 1200,
+  };
+
+  it("★★★ CA DƯƠNG — hàng THẬT khác rỗng ⇒ số đi qua nguyên vẹn (G5)", () => {
+    // ★ G5: một ca chỉ đo tập rỗng sẽ xanh y hệt khi hàm bị moi ruột.
+    const s = docStatsAoi(HANG_THAT, true);
+    expect(s.total).toBe(1200);
+    expect(s.ok).toBe(1150);
+    expect(s.ng).toBe(40);
+    expect(s.ntf).toBe(10);
+    expect(s.yieldRate).toBe(96.67);
+    expect(s.fpy).toBe(94.5);
+    expect(s.mauRong).toBe(false);
+  });
+
+  it("★★★ CHƯA ĐO ĐƯỢC (đang tải / 403) ⇒ MỌI ô `null`, KHÔNG một ô nào là 0", () => {
+    for (const [ten, hang, daDo] of [
+      ["đang tải", undefined, false],
+      ["lỗi/403", undefined, true],
+      ["null", null, true],
+      ["có dữ liệu nhưng chưa success", HANG_THAT, false],
+    ] as const) {
+      const s = docStatsAoi(hang, daDo);
+      expect(s, `${ten}: total`).toHaveProperty("total", null);
+      expect(s.ok, `${ten}: ok`).toBeNull();
+      expect(s.ng, `${ten}: ng`).toBeNull();
+      expect(s.ntf, `${ten}: ntf`).toBeNull();
+      expect(s.yieldRate, `${ten}: yield`).toBeNull();
+      expect(s.mauRong, `${ten}: mauRong`).toBe(false);
+    }
+  });
+
+  it("★★★ ĐO ĐƯỢC MẪU RỖNG ⇒ đếm là 0 THẬT, nhưng tỉ lệ là `null` (0/0 ≠ 0 %)", () => {
+    // Đây là ca mà một bản cài đặt ngây thơ sẽ in "Yield 0 %" — người vận hành
+    // đọc thành "máy đang hỏng nặng" trong khi sự thật là "chưa kiểm chiếc nào".
+    const s = docStatsAoi({ total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0, fpy: 0 }, true);
+    expect(s.total).toBe(0);
+    expect(s.ok).toBe(0);
+    expect(s.ng).toBe(0);
+    expect(s.mauRong).toBe(true);
+    expect(s.yieldRate).toBeNull();
+    expect(s.fpy).toBeNull();
+  });
+
+  it("★★★ HAI CA NÀY PHẢI PHÂN BIỆT ĐƯỢC — nếu bằng nhau thì #60 chở 0 bit", () => {
+    const chuaDo = docStatsAoi(undefined, false);
+    const mauRong = docStatsAoi({ total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0 }, true);
+    expect(chuaDo.total).not.toBe(mauRong.total); // null vs 0
+    expect(chuaDo.mauRong).not.toBe(mauRong.mauRong);
+  });
+
+  it("★★★ HỢP ĐỒNG HỎNG HÌNH (thiếu `total`) ⇒ coi là CHƯA ĐO, không coi là 0", () => {
+    // `undefined` qua `Number()` ra `NaN`, và `NaN` hiển thị ra màn hình như một
+    // con số thật. Ca này chặn đúng đường đó.
+    const s = docStatsAoi({ ok: 5, ng: 1 } as never, true);
+    expect(s.total).toBeNull();
+    expect(s.ok).toBeNull();
+    expect(Number.isNaN(s.total as unknown as number)).toBe(false);
+  });
+
+  it("★★★ KHÔNG TỰ TÍNH LẠI `yieldRate` — server là nguồn sự thật DUY NHẤT (G12)", () => {
+    // Server dùng `finalYield({ok, ntf, total})` với NTF tính là PASS (quyết
+    // định #4). Nếu client tự tính `ok/total` thì hàng này ra 50, không phải 75.
+    const s = docStatsAoi({ total: 100, ok: 50, ng: 25, ntf: 25, yieldRate: 75 }, true);
+    expect(s.yieldRate).toBe(75);
+    expect(s.yieldRate).not.toBe(50);
+  });
+
+  it("★ giá trị KHÔNG HỮU HẠN (NaN/Infinity) rơi về `null`, không lọt ra UI", () => {
+    const s = docStatsAoi({ total: 10, ok: NaN, ng: Infinity, ntf: 3, yieldRate: NaN }, true);
+    expect(s.ok).toBe(0); // `null ?? 0` — đếm hỏng về 0, hợp lý cho một BỘ ĐẾM
+    expect(s.ng).toBe(0);
+    expect(s.ntf).toBe(3);
+    expect(s.yieldRate).toBeNull(); // nhưng TỈ LỆ hỏng thì `null`, không 0 %
   });
 });
