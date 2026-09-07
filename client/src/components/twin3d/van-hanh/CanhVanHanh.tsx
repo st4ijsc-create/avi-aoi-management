@@ -186,6 +186,131 @@ function San({ rongM, sauM, toi }: { rongM: number; sauM: number; toi: boolean }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
+/* Màu token → THREE.Color                                                      */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ★★★ `giaiMauCanh()` TRẢ `oklch(...)`, VÀ `THREE.Color` KHÔNG ĐỌC ĐƯỢC OKLCH.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ MỘT LỚP PHỦ VẼ ĐỦ HÌNH MÀ CHỞ **0 BIT** THÔNG TIN — ĐO ĐƯỢC ĐỢT 8
+ * ════════════════════════════════════════════════════════════════════════════
+ * Nghiệm thu thị giác Đợt 8 (`/twin?pv=line:1`, dữ liệu SIM-FAC thật): mọi cột
+ * WIP hiện ra **trắng như nhau** — cột nghẽn và cột thường không phân biệt nổi.
+ * Hình học đúng, chiều cao đúng, và kênh MÀU chở đúng 0 bit. Đây là G5 mặc áo
+ * mới: dữ liệu KHÁC RỖNG, cổng vẫn xanh, mà thông tin giao được vẫn bằng không.
+ *
+ * Đo ba bước, mỗi bước một mẫu RỜI (G9):
+ *   1. trên trang thật: `getComputedStyle(root).getPropertyValue("--warning")`
+ *      = `"oklch(78% .15 75)"` — **chuỗi oklch**, KHÔNG phải `rgb()`;
+ *   2. trong node + three r182: `new THREE.Color("oklch(0.78 0.15 75)")` in
+ *      `THREE.Color: Unknown color model` (một **warning**, không phải lỗi) rồi
+ *      trả về **`#ffffff`** — im lặng, không throw, không ai biết;
+ *   3. đối chứng: `new THREE.Color("#f59e0b")` ra đúng `f59e0b`.
+ *
+ * ⚠ Docblock của `mauTrangThai.ts:44` khẳng định *"trình duyệt tính oklch → rgb
+ *   nên không cần thư viện màu"*. Khẳng định đó SAI với biến CSS: **custom
+ *   property không được CSS phân giải** — nó thay thế nguyên văn, và
+ *   `getPropertyValue` trả lại đúng chuỗi tác giả đã viết. (Đã thử cả cách gán
+ *   vào `color` của một phần tử dò: Chrome nay giữ nguyên `oklch()` ở computed
+ *   value luôn, nên đường đó cũng không cứu được.)
+ *
+ * Cách quy ĐÚNG là canvas 2D: `ctx.fillStyle = <bất kỳ cú pháp màu CSS nào>`
+ * rồi ĐỌC LẠI PIXEL. Trình duyệt buộc phải rasterise, nên nó trả về RGB thật.
+ * Đo trên trang: `--warning` → `rgb(239,168,49)`, `--info` → `rgb(90,163,236)`.
+ *
+ * ★ Vì sao có canh gác `#010203` thay vì chỉ đọc pixel: một chuỗi RÁC cũng cho
+ *   pixel `(0,0,0)`, không phân biệt được với "màu đen hợp lệ". Nhưng canvas 2D
+ *   BỎ QUA giá trị không hợp lệ và GIỮ NGUYÊN `fillStyle` cũ — nên đặt một giá
+ *   trị canh gác rồi kiểm xem nó có đổi không là phép thử đáng tin, còn đọc
+ *   pixel thì không.
+ *
+ * ⚠ PHẠM VI TỰ KHAI: bản vá này chỉ chữa HAI chỗ `new THREE.Color(...)` trong
+ *   tệp này. Cùng lỗi còn ở `DongChayLine.tsx:84/97`, và `phaVeNen()`
+ *   (`phamViCanh.ts:124`) thì im lặng KHÔNG LÀM GÌ với oklch (`tachRgb` trả
+ *   `null` ⇒ `return mau`), nghĩa là "mờ 12% cho Line ngoài phạm vi" của §10C
+ *   cũng chưa từng có hiệu lực. Hai món đó nằm NGOÀI phạm vi tệp của lô này —
+ *   đã báo cáo, chưa sửa.
+ */
+export function mauThree(token: string, duPhong: string): THREE.Color {
+  const gt = giaiMauCanh(token);
+  if (!gt) return new THREE.Color(duPhong);
+  // Hex/rgb/hsl/tên: three đọc thẳng được, không cần vòng qua canvas.
+  if (!/^\s*(oklch|oklab|lch|lab|color)\s*\(/i.test(gt)) {
+    return new THREE.Color(gt);
+  }
+  const b = byteMau(gt);
+  if (!b) return new THREE.Color(duPhong);
+  /*
+   * ★★★ `setRGB(..., SRGBColorSpace)` CHỨ KHÔNG `new THREE.Color(r/255, …)`.
+   *
+   * Bộ dựng ba-số coi đầu vào là **ĐÃ TUYẾN TÍNH** và không quy đổi gì. Nạp
+   * thẳng byte sRGB vào đó cho ra một màu SAI SẮC — và sai theo hướng SÁNG LÊN,
+   * tức là đúng hướng che mất khuyết tật. Đo được: nền `rgb(7,10,16)` đi vòng
+   * qua `getHexString()` ra `#2e3847`, sáng gấp mấy lần.
+   *
+   * ★ Chính test của tệp này bắt được, ở lượt chạy ĐẦU TIÊN của `mauHex` — một
+   *   ví dụ sống cho việc test phải so ở ĐÚNG đơn vị (ở đây: đúng không gian
+   *   màu), nếu không nó xanh trên một con số không có nghĩa.
+   */
+  return new THREE.Color().setRGB(b[0] / 255, b[1] / 255, b[2] / 255, THREE.SRGBColorSpace);
+}
+
+/**
+ * Đọc MỘT chuỗi màu CSS bất kỳ ra ba byte **sRGB**, bằng canvas 2D.
+ *
+ * `null` khi không quy được (chuỗi rác, canvas bị chặn, không có DOM) — người
+ * gọi tự chọn màu dự phòng; module này KHÔNG bịa một màu câm.
+ */
+function byteMau(gt: string): [number, number, number] | null {
+  if (typeof document === "undefined") return null;
+  try {
+    const cv = document.createElement("canvas");
+    cv.width = 1;
+    cv.height = 1;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return null;
+    const CANH_GAC = "#010203";
+    ctx.fillStyle = CANH_GAC;
+    ctx.fillStyle = gt;
+    if (ctx.fillStyle === CANH_GAC) return null;
+    ctx.fillRect(0, 0, 1, 1);
+    const d = ctx.getImageData(0, 0, 1, 1).data;
+    return [d[0], d[1], d[2]];
+  } catch {
+    // Canvas bị chặn (fingerprinting guard) — người gọi dùng màu dự phòng ĐÚNG
+    // SẮC, còn hơn để `THREE.Color` âm thầm trả về trắng.
+    return null;
+  }
+}
+
+/**
+ * ★★★ Cùng phép quy, nhưng trả **chuỗi hex** cho những chỗ nhận `string`.
+ *
+ * `KhungCanh` nhận `mauNen` là `string` rồi mới dựng `<color args={[mauNen]}/>`
+ * bên trong (`KhungCanh.tsx:262`) — tức là `new THREE.Color(...)` xảy ra ở BÊN
+ * KIA hàng rào tệp. Truyền một chuỗi `oklch()` qua đó thì nền cảnh 3D thành
+ * **TRẮNG** ở theme tối: đo được ở nghiệm thu Đợt 8 (canvas trắng toát trên nền
+ * ứng dụng tối) và console in `Unknown color model oklch(14.5% .015 260)`.
+ *
+ * Quy ở ĐÂY, tại nguồn, thay vì sửa `KhungCanh` — tệp đó ngoài phạm vi lô này,
+ * và hex thì MỌI người tiêu thụ đều đọc được, nên đây cũng là chỗ đúng về thiết
+ * kế chứ không chỉ là chỗ tiện.
+ */
+export function mauHex(token: string, duPhong: string): string {
+  const gt = giaiMauCanh(token);
+  if (!gt) return duPhong;
+  if (!/^\s*(oklch|oklab|lch|lab|color)\s*\(/i.test(gt)) return gt;
+  // ★ Đi THẲNG từ byte sRGB ra hex. KHÔNG vòng qua `mauThree().getHexString()`:
+  //   đường đó nạp byte vào không gian tuyến tính rồi quy ngược ra sRGB, làm màu
+  //   sáng vọt lên (`rgb(7,10,16)` → `#2e3847`). Xem chú thích ở `mauThree`.
+  const b = byteMau(gt);
+  if (!b) return duPhong;
+  return `#${b.map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
 /* Ống WIP theo trạm — §10C.3 mục 2                                            */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -217,8 +342,8 @@ function OngWip({ wip }: { wip: CanhVanHanhProps["wip"] }) {
     const inst = ref.current;
     if (!inst) return;
     const mt = new THREE.Matrix4();
-    const mauNghen = new THREE.Color(giaiMauCanh("--warning") ?? "#f59e0b");
-    const mauThuong = new THREE.Color(giaiMauCanh("--info") ?? "#3b82f6");
+    const mauNghen = mauThree("--warning", "#f59e0b");
+    const mauThuong = mauThree("--info", "#3b82f6");
     wip.forEach((w, i) => {
       const cao = Math.max(0.05, w.cao);
       mt.compose(
@@ -315,7 +440,11 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
    * ★ §10.4 — nền cảnh lấy từ token `--background`, KHÔNG hardcode. 3D phải đúng
    *   ở CẢ HAI theme; một nền cứng sẽ đúng ở một theme và sai ở theme kia.
    */
-  const mauNen = giaiMauCanh("--background") ?? (toi ? "#0f172a" : "#f8fafc");
+  //
+  // ★★★ Qua `mauHex` chứ KHÔNG `giaiMauCanh` trần: token này là `oklch()`, và
+  //   `KhungCanh` đưa thẳng chuỗi vào `<color/>`. Trước bản vá, nền cảnh ra
+  //   **TRẮNG** ở theme tối — thấy được bằng mắt ở nghiệm thu Đợt 8.
+  const mauNen = mauHex("--background", toi ? "#0f172a" : "#f8fafc");
 
   return (
     <KhungCanh

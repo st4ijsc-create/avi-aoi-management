@@ -99,3 +99,48 @@ export function xuatXuHienTai(n: NguonHienTai, coBoCuc: boolean): XuatXu {
 export function laGiaDinh(xx: XuatXu): boolean {
   return xx === "mo_phong";
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* #51 (nối chỗ gọi) — TỪ TRẠNG THÁI KẾT NỐI RA NHỊP HỎI                        */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ★★★ NĂM trạng thái G15 → MỘT boolean "có luồng đẩy đang sống".
+ *
+ * Tách ra đây vì phép quy này là nơi lỗi hay nằm nhất, và nó KHÔNG hiển nhiên:
+ *
+ *   `truc_tiep`    → **có** luồng. Đây là ô duy nhất trả `true`.
+ *   `im_lang`      → **không**. Socket vẫn `connected` nhưng đã quá
+ *                    `NGUONG_SONG_MS` không phát gì — đúng lúc ta CẦN poll
+ *                    nhanh nhất. Quy `im_lang` về `true` (vì "đã kết nối")
+ *                    là biến một luồng chết âm thầm thành màn hình đóng băng
+ *                    30 giây một nhịp, tức là bỏ đúng lưới an toàn mà #51 sinh
+ *                    ra để giăng.
+ *   `dang_cho`     → **không**. Chưa có gói đầu tiên ⇒ chưa có bằng chứng nào
+ *                    rằng đường đẩy thật sự chảy.
+ *   `chua_ket_noi` → **không**. Hiển nhiên.
+ *   `xem_lai`      → **không**. Đang tua lịch sử; poll nền vẫn phải giữ nhịp
+ *                    nhanh để lúc người dùng bấm "về trực tiếp" dữ liệu đã sẵn.
+ *
+ * ⚠ Đây KHÔNG phải `ketNoi !== "chua_ket_noi"`. Bốn trên năm ô trả `false`.
+ */
+export function coLuongTheoKetNoi(ketNoi: string): boolean {
+  return ketNoi === "truc_tiep";
+}
+
+/**
+ * ★★★ Nhịp hỏi có TRẦN — dùng cho những truy vấn vốn đã nhanh hơn 30 s.
+ *
+ * `nhipHoiMs` trả 30 s khi có luồng. Với `andon.active` và `twinCanh.anToanRobot`
+ * (đang là 20 s viết cứng) thì áp thẳng `nhipHoiMs` sẽ **làm CHẬM ĐI** hai truy
+ * vấn hạng an toàn — E-STOP và cảnh báo đang mở — mỗi khi socket khoẻ. Đó là một
+ * hồi quy đội lốt "nối tính năng".
+ *
+ * Nên luật đúng là: nhịp thích nghi chỉ được **rút ngắn**, không được kéo dài.
+ * Trần đi vào đây tường minh thay vì nằm rải rác ở chỗ gọi.
+ *
+ * @param tranMs nhịp hiện có của truy vấn đó (ms) — kết quả không bao giờ lớn hơn.
+ */
+export function nhipHoiToiDa(coLuong: boolean, tranMs: number): number {
+  return Math.min(nhipHoiMs(coLuong), tranMs);
+}

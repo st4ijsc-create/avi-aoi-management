@@ -110,7 +110,21 @@ import { useKhoTrangThai } from "@/components/twin3d/van-hanh/useKhoTrangThai";
 import { DongThoiGian, type TocDo } from "@/components/twin3d/van-hanh/DongThoiGian";
 // ── Đợt 6 (§11 #26/#51/#52) — an toàn nổi lên Twin + xuất xứ dữ liệu ──
 import { tomTatAnToan } from "@/components/twin3d/van-hanh/canhBaoAnToan";
-import { laGiaDinh, xuatXuHienTai } from "@/components/twin3d/van-hanh/nguonDuLieu";
+import {
+  NHIP_CO_LUONG_MS,
+  coLuongTheoKetNoi,
+  laGiaDinh,
+  nhipHoiMs,
+  nhipHoiToiDa,
+  xuatXuHienTai,
+} from "@/components/twin3d/van-hanh/nguonDuLieu";
+// ── Đợt 8 (§11 #61/#32/#36) — WIP theo trạm, nút thắt, nhịp chuyền thật ──
+import {
+  cotWip,
+  nhipTuCanBang,
+  xepHangWip,
+  type TinhWip,
+} from "@/components/twin3d/van-hanh/wipTram";
 
 /** Phạm vi mặc định khi URL không nói gì. */
 const PHAM_VI_MAC_DINH: PhamVi = { cap: "tang", id: null };
@@ -204,6 +218,41 @@ export default function TwinVanHanh() {
     if (factoryId === null && factories.length > 0) setFactoryId(factories[0].id);
   }, [factories, factoryId]);
 
+  const bayGioThat = Date.now();
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ ĐỢT 6 — REALTIME `twin:trangThai` + TUA LẠI, CÙNG MỘT KHO (§9.8)     */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * ★ Kho là lớp PHỦ lên `mayNen` (nền từ `factoryCommand.overview`), không
+   *   thay thế nó: lúc chưa có gói realtime nào, cảnh vẫn phải vẽ đúng dữ liệu
+   *   nền — một cảnh trống ở giây đầu chính là "0 giả" mà NT-3 cấm.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 8 — HOOK NÀY ĐỨNG **TRƯỚC** MỌI `useQuery` LÀ CÓ CHỦ Ý
+   * ════════════════════════════════════════════════════════════════════════
+   * `ketNoi` là đầu vào của `nhipHoiMs` (#51), và `refetchInterval` phải biết
+   * nhịp NGAY TẠI chỗ khai truy vấn. Đặt hook ở dưới (như bản Đợt 6) thì nhịp
+   * thích nghi không thể tới được các truy vấn — đó chính là lý do cơ học khiến
+   * ba `refetchInterval` nằm nguyên dạng hằng số cứng suốt hai đợt.
+   */
+  const { kho, ketNoi, datAnhLichSu, datMocUns } = useKhoTrangThai(factoryId, bayGioThat);
+
+  /**
+   * ★★★ §11 #51 — NHỊP HỎI THÍCH NGHI, CHỖ GỌI THẬT.
+   *
+   * Đợt 7 đo được (L-1): `nhipHoiMs` viết đúng, có test, **0 chỗ gọi sản phẩm**.
+   * Bẫy là *tệp* `nguonDuLieu.ts` ĐÃ được import (cho `xuatXuHienTai`), nên grep
+   * theo TÊN TỆP báo "đã nối" trong khi grep theo TÊN HÀM ra 0. Đây là chỗ gọi.
+   *
+   * ⚠ `coLuongTheoKetNoi` KHÔNG phải `ketNoi !== "chua_ket_noi"`: `im_lang`
+   *   (socket còn nối nhưng 25 s không phát gì) phải kéo nhịp XUỐNG 5 s, vì đó
+   *   đúng là lúc poll là đường dữ liệu duy nhất còn lại.
+   */
+  const coLuongDay = coLuongTheoKetNoi(ketNoi);
+  const nhipTongQuanMs = nhipHoiMs(coLuongDay);
+
   // Toà nhà → tầng (hình học sàn). `canhThietKe` KHÔNG trả toà nhà/tầng.
   const toaNhaQ = trpc.twinCanh.danhSachToaNha.useQuery(
     { factoryId: factoryId ?? 0 },
@@ -231,16 +280,28 @@ export default function TwinVanHanh() {
     { enabled: factoryId !== null, retry: false },
   );
 
-  // Trạng thái sống + OEE + andon (hợp đồng `factoryCommand.overview`).
+  /**
+   * Trạng thái sống + OEE + andon (hợp đồng `factoryCommand.overview`).
+   *
+   * ★★★ #51 — nhịp ĐẦY ĐỦ 5 s ↔ 30 s. Đây là truy vấn tổng quan, cùng hạng với
+   *   `machineStatus.listWithStatus` mà `FactoryLiveMap3D.tsx:68` áp luật này.
+   */
   const overviewQ = trpc.factoryCommand.overview.useQuery(
     { factoryId: factoryId ?? undefined },
-    { enabled: factoryId !== null, retry: false, refetchInterval: 30_000 },
+    { enabled: factoryId !== null, retry: false, refetchInterval: nhipTongQuanMs },
   );
 
-  // Cảnh báo đang mở — nguồn cho badge 3D và cho `NganXuLy`.
+  /**
+   * Cảnh báo đang mở — nguồn cho badge 3D và cho `NganXuLy`.
+   *
+   * ★★★ #51 CÓ TRẦN 20 s — và trần này KHÔNG phải sự thận trọng thừa.
+   *   `nhipHoiMs(true)` = 30 s. Áp thẳng nó vào đây sẽ làm truy vấn cảnh báo
+   *   **CHẬM ĐI** (20 → 30 s) mỗi khi socket khoẻ — một hồi quy an toàn đội lốt
+   *   "nối tính năng #51". Luật đúng: nhịp thích nghi chỉ được rút NGẮN.
+   */
   const andonQ = trpc.andon.active.useQuery(undefined, {
     retry: false,
-    refetchInterval: 20_000,
+    refetchInterval: nhipHoiToiDa(coLuongDay, 20_000),
   });
 
   /**
@@ -248,10 +309,70 @@ export default function TwinVanHanh() {
    *
    * ★ Nhịp làm mới 20 s, BẰNG `andonQ` chứ không bằng `overviewQ` (30 s): E-STOP
    *   cùng hạng với cảnh báo đang mở, không cùng hạng với số liệu tổng quan.
+   *   ★★★ #51 giữ nguyên bất biến đó qua `nhipHoiToiDa(_, 20_000)`: socket chết
+   *   thì rút về 5 s, socket khoẻ thì ở lại 20 s — KHÔNG bao giờ trôi lên 30 s.
    */
   const anToanQ = trpc.twinCanh.anToanRobot.useQuery(
     { factoryId: factoryId ?? 0 },
-    { enabled: factoryId !== null, retry: false, refetchInterval: 20_000 },
+    { enabled: factoryId !== null, retry: false, refetchInterval: nhipHoiToiDa(coLuongDay, 20_000) },
+  );
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ ĐỢT 8 — §11 #61 + #32 + #36: WIP, NÚT THẮT, NHỊP CHUYỀN             */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * ★★★ BA truy vấn này CHỈ BẬT Ở PHẠM VI LINE, và đó không phải tối ưu.
+   *
+   * WIP là đại lượng CỦA MỘT CHUYỀN. Cả ba thủ tục đều nhận `lineId` bắt buộc
+   * (hoặc chỉ có nghĩa với nó). Gọi chúng ở cấp Tầng/Xưởng thì hoặc phải bịa một
+   * `lineId`, hoặc phải gộp WIP của nhiều chuyền vào một cột — và một cột "tổng
+   * WIP toàn xưởng" đứng tại tâm một trạm là câu trả lời cho câu hỏi mà không ai
+   * hỏi. §10C.3 vốn đã xếp ống WIP và đường dòng chảy vào riêng phạm vi Line.
+   */
+  const lineDangXem = phamVi.cap === "line" ? phamVi.id : null;
+
+  /**
+   * #61 — số WIP theo trạm. Nhịp thích nghi (#51) áp luôn ở đây: WIP đổi theo
+   * từng chiếc rời trạm, nên nó cùng hạng "số liệu vận hành" với `overviewQ`.
+   */
+  const wipQ = trpc.digitalTwin.wipFlowState.useQuery(
+    { lineId: lineDangXem ?? 0 },
+    { enabled: lineDangXem !== null, retry: false, refetchInterval: nhipTongQuanMs },
+  );
+
+  /**
+   * ★★★ #32 + #36 — MỘT truy vấn cho CẢ nút thắt LẪN nhịp chuyền.
+   *
+   * ⚠ Bản đầu gọi THÊM `digitalTwin.stationLoadHeatmap` chỉ để lấy
+   *   `bottleneckStationId`. Đã BỎ, và lý do là một luật chứ không phải tiết
+   *   kiệm: thủ tục đó KHÔNG trả `periodStart`, nên lời khai của nó không tự
+   *   chứng minh được mình còn hạn — mà nghiệm thu Đợt 8 đo được rằng một lời
+   *   khai 16 ngày tuổi tô đỏ sai trạm. Ghép `bottleneckStationId` của truy vấn
+   *   này với `periodStart` của truy vấn kia là mời G12 vào cửa: hai con số từ
+   *   hai bản ghi khác nhau, trình bày như thể thuộc về một.
+   *   `wip.lineBalance` trả NGUYÊN HÀNG — `periodStart`, `avgCycleTimeMs`,
+   *   `bottleneckStationId` chắc chắn cùng một bản ghi.
+   *
+   * #36 — NHỊP CHUYỀN THẬT cho mũi tên dòng chảy.
+   *
+   * ★★★ SPEC §11 #36 GHI SAI NGUỒN. Nó chỉ `commandLog.avgDurations`, nhưng thủ
+   *   tục đó tính `avg(ackedAt − sentAt) GROUP BY commandType` — **độ trễ ACK
+   *   của lệnh điều khiển**, gộp theo LOẠI LỆNH, không theo chuyền. Một chuyền
+   *   12 s/chiếc mà lệnh `START` ack trong 80 ms sẽ cho mũi tên chạy nhanh gấp
+   *   150 lần sự thật (họ G7 — đo nhầm đại lượng).
+   *   Nguồn ĐÚNG dùng ở đây: `line_balance_metrics.avgCycleTimeMs` qua
+   *   `wip.lineBalance` — ms/chiếc, theo TỪNG LINE.
+   *
+   * ★ `limit: 1` — chỉ cần bản ghi gần nhất; thủ tục đã `orderBy periodStart desc`.
+   * ★ Nhịp CỐ ĐỊNH ở `NHIP_CO_LUONG_MS` (30 s) và KHÔNG thích nghi: cân bằng
+   *   chuyền là số liệu tổng hợp theo KỲ, không phải trạng thái tức thời. Hỏi
+   *   nó 5 giây một lần khi socket chết chỉ đọc lại đúng một hàng — nhịp thích
+   *   nghi ở đây sẽ tốn băng thông mà không đổi được một chữ số nào.
+   */
+  const canBangQ = trpc.wip.lineBalance.useQuery(
+    { lineId: lineDangXem ?? 0, limit: 1 },
+    { enabled: lineDangXem !== null, retry: false, refetchInterval: NHIP_CO_LUONG_MS },
   );
 
   /**
@@ -338,18 +459,8 @@ export default function TwinVanHanh() {
     }));
   }, [may, overviewQ.data, tsTheoMay, lineCuaTram]);
 
-  const bayGioThat = Date.now();
-
-  /* ═══════════════════════════════════════════════════════════════════════ */
-  /* ★★★ ĐỢT 6 — REALTIME `twin:trangThai` + TUA LẠI, CÙNG MỘT KHO (§9.8)     */
-  /* ═══════════════════════════════════════════════════════════════════════ */
-
-  /**
-   * ★ Kho là lớp PHỦ lên `mayNen` (nền từ `factoryCommand.overview`), không
-   *   thay thế nó: lúc chưa có gói realtime nào, cảnh vẫn phải vẽ đúng dữ liệu
-   *   nền — một cảnh trống ở giây đầu chính là "0 giả" mà NT-3 cấm.
-   */
-  const { kho, ketNoi, datAnhLichSu, datMocUns } = useKhoTrangThai(factoryId, bayGioThat);
+  // ★ `bayGioThat` + `useKhoTrangThai` đã khai ở TRÊN mọi `useQuery` (§11 #51) —
+  //   `ketNoi` phải có mặt trước khi các truy vấn khai `refetchInterval`.
 
   /* ── Tua lại (§9.8) ─────────────────────────────────────────────────── */
   const [mocTua, setMocTua] = useState<number | null>(null);
@@ -821,6 +932,96 @@ export default function TwinVanHanh() {
     if (tramCuaLine.length === 0 && mayCuaLine.length === 0) return null;
     return { hh: hinhHocLine(tramCuaLine, mayCuaLine), tram: tramCuaLine };
   }, [phamVi, tram, mayVe, mayVanHanh, canhQ.data]);
+
+  /* ══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ §11 #61 + #32 — GHÉP SỐ WIP VỚI VỊ TRÍ TRẠM                        */
+  /* ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Đầu vào DUY NHẤT cho cả hai bề mặt: cột 3D (`cotWip`) và bảng 2D
+   * (`xepHangWip`). Một phép ghép, hai người đọc — §11.5 đòi hai bề mặt và G12
+   * cấm hai bản cài đặt.
+   *
+   * ★★★ `soWip = null` KHÔNG PHẢI `0`, VÀ SỰ KHÁC BIỆT LÀ TOÀN BỘ VẤN ĐỀ.
+   *   `wipFlowState` chỉ trả những trạm CÓ serial đang chờ (SQL đã `GROUP BY` +
+   *   loại `exitedAt`). Một trạm vắng mặt trong kết quả có hai nghĩa hoàn toàn
+   *   khác nhau:
+   *     • truy vấn ĐÃ trả lời (`isSuccess`) ⇒ trạm thật sự trống ⇒ **0 thật**;
+   *     • truy vấn chưa xong / 403 / lỗi   ⇒ ta KHÔNG BIẾT ⇒ **`null`**.
+   *   Gộp hai ca này thành `0` là đúng lớp lỗi CHẶN-2 mà `tinhTrang` ở dưới đã
+   *   phải vá một lần cho ô đếm cảnh báo: in "0 WIP" cho một người không có
+   *   quyền `machine_control` là lời khai *"đã kiểm tra, chuyền trống"*.
+   */
+  const tinhWip = useMemo<TinhWip[]>(() => {
+    if (lineDangXem === null || !hinhLine) return [];
+    // `khoa` của `hinhLine.tram` là `station:<id>` — nguồn toạ độ ĐÃ quy về mét.
+    const tamTram = new Map<number, { x: number; z: number }>();
+    for (const t of hinhLine.tram) {
+      const id = Number(t.khoa.slice("station:".length));
+      if (Number.isFinite(id)) tamTram.set(id, { x: t.tam.x, z: t.tam.z });
+    }
+    const daDo = wipQ.isSuccess;
+    const soTheoTram = new Map<number, number>();
+    for (const s of wipQ.data?.stations ?? []) soTheoTram.set(s.stationId, s.wipCount);
+    return tram
+      .filter((s) => s.lineId === lineDangXem)
+      .map((s) => {
+        const v = tamTram.get(s.id);
+        return {
+          stationId: s.id,
+          ma: s.ma,
+          ten: s.ten,
+          thuTu: s.thuTu,
+          // trạm vắng mặt trong kết quả THÀNH CÔNG ⇒ 0 thật; chưa/không trả lời ⇒ null
+          soWip: daDo ? (soTheoTram.get(s.id) ?? 0) : null,
+          x: v?.x ?? 0,
+          z: v?.z ?? 0,
+        };
+      })
+      .sort((a, b) => a.thuTu - b.thuTu || a.ma.localeCompare(b.ma));
+  }, [lineDangXem, hinhLine, tram, wipQ.isSuccess, wipQ.data]);
+
+  /**
+   * ★★★ #32 — LỜI KHAI NÚT THẮT CỦA SERVER, **KÈM TUỔI CỦA NÓ**.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ `mocKhai` KHÔNG PHẢI TRANG TRÍ — NGHIỆM THU ĐỢT 8 ĐO ĐƯỢC HẬU QUẢ
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản đầu chỉ lấy `bottleneckStationId` và cho nó thắng vô điều kiện. Mở
+   * `/twin?pv=line:1` trên dữ liệu SIM-FAC thật thì màn hình tô đỏ trạm **10
+   * (124 WIP)** trong khi trạm **1 đang giữ 3.152 chiếc** — vì bản ghi
+   * `line_balance` mới nhất của Line 1 đã **16 ngày 18 giờ tuổi**.
+   * Một lời khai hết hạn vẫn là một lời khai; nó không được phép bác một phép
+   * đo SỐNG. `conHieuLuc` (8 giờ = một ca) là cửa kiểm đó.
+   *
+   * ★ Tuổi VÀ giá trị lấy từ CÙNG một hàng `wip.lineBalance` — xem chú thích ở
+   *   chỗ khai `canBangQ` về vì sao `stationLoadHeatmap` không dùng được cho
+   *   việc này (nó không trả `periodStart`, nên không tự kiểm hạn được).
+   */
+  const khaiNghen = useMemo(() => {
+    const hang = canBangQ.data?.[0];
+    const moc = hang?.periodStart ? new Date(hang.periodStart).getTime() : null;
+    return {
+      nghenTheoServer: hang?.bottleneckStationId ?? null,
+      mocKhai: Number.isFinite(moc) ? moc : null,
+      bayGio: bayGioThat,
+    };
+  }, [canBangQ.data, bayGioThat]);
+
+  /** #61 — cột 3D. Đây là thứ thay hằng rỗng viết cứng ở chỗ gọi `CanhVanHanh`. */
+  const cotWipCanh = useMemo(() => cotWip(tinhWip, khaiNghen), [tinhWip, khaiNghen]);
+
+  /** §11.5 — bảng 2D SONG SONG, cùng đầu vào, cùng `laNghen`. */
+  const bangWip = useMemo(() => xepHangWip(tinhWip, khaiNghen), [tinhWip, khaiNghen]);
+
+  /**
+   * #36 — nhịp chuyền THẬT (ms/chiếc) cho mũi tên dòng chảy.
+   * `null` ⇒ mũi tên đứng yên, đúng cam kết của `DongChayLine`.
+   */
+  const nhipChuyenMs = useMemo(
+    () => nhipTuCanBang(canBangQ.data?.[0]?.avgCycleTimeMs),
+    [canBangQ.data],
+  );
 
   /* ── Khung nhìn theo phạm vi ────────────────────────────────────────── */
   const khungNhin = useMemo<KhungNhin | null>(() => {
@@ -1378,10 +1579,10 @@ export default function TwinVanHanh() {
               canhBao={canhBao3D}
               dongChay={
                 hinhLine && hinhLine.hh.coHinhHoc
-                  ? { diem: hinhLine.hh.diemDuongTam, nhipMs: null }
+                  ? { diem: hinhLine.hh.diemDuongTam, nhipMs: nhipChuyenMs }
                   : null
               }
-              wip={[]}
+              wip={cotWipCanh}
               machineIdChon={machineIdChon}
               onChonMay={chonMay}
               khungNhin={khungNhin}
@@ -1439,19 +1640,37 @@ export default function TwinVanHanh() {
       */}
       {phamVi.cap === "line" && hinhLine ? (
         <DaiLine
+          /*
+            ★★★ §11.5 — BẢNG 2D SONG SONG VỚI LỚP PHỦ WIP 3D.
+
+            `bangWip` và `cotWipCanh` (truyền vào `CanhVanHanh` ở trên) ra từ
+            CÙNG `tinhWip` và CÙNG `laNghen()`. Nếu 3D tô đỏ trạm 7 thì dòng
+            trạm 7 ở đây bắt buộc mang `nghen: true` — không có đường nào để hai
+            bề mặt lệch nhau, vì không có phép tính thứ hai (G12).
+          */
           tram={tram
             .filter((s) => s.lineId === phamVi.id)
-            .map((s) => ({
-              id: s.id,
-              ma: s.ma,
-              ten: s.ten,
-              thuTu: s.thuTu,
-              soMay: mayVanHanh.filter((m) => m.stationId === s.id).length,
-              trangThai:
-                mayVanHanh
-                  .filter((m) => m.stationId === s.id)
-                  .map((m) => trangThaiTheoMay.get(m.id) ?? "khong_ro")[0] ?? "khong_ro",
-            }))}
+            .map((s) => {
+              const w = bangWip.find((d) => d.stationId === s.id);
+              return {
+                id: s.id,
+                ma: s.ma,
+                ten: s.ten,
+                thuTu: s.thuTu,
+                soMay: mayVanHanh.filter((m) => m.stationId === s.id).length,
+                trangThai:
+                  mayVanHanh
+                    .filter((m) => m.stationId === s.id)
+                    .map((m) => trangThaiTheoMay.get(m.id) ?? "khong_ro")[0] ?? "khong_ro",
+                // ★ `?? null` chứ không `?? 0`: trạm không có dòng trong `bangWip`
+                //   là "chưa đo được", và `hienSo` sẽ in `—`.
+                soWip: w?.soWip ?? null,
+                nghen: w?.nghen ?? false,
+                hang: w?.hang ?? null,
+              };
+            })}
+          nhipChuyenMs={nhipChuyenMs}
+          stationIdChon={mayDangChon?.stationId ?? null}
           onChonTram={(stationId) => {
             const mayDau = mayVanHanh.find((m) => m.stationId === stationId);
             if (mayDau) chonMay(mayDau.id);

@@ -32,19 +32,61 @@ export interface TramTrenDai {
   soMay: number;
   /** Trạng thái ĐÃ xét tuổi (NT-3), lấy từ máy đại diện của trạm. */
   trangThai: string;
+  /**
+   * ★★★ §11.5 (Đợt 8) — SỐ WIP đang chờ. `null` = **CHƯA ĐO ĐƯỢC**, không phải 0.
+   *
+   * Đây là nửa 2D của lớp phủ WIP 3D. Thiếu cột này thì `OngWip` tô một cột đỏ
+   * cao ngất mà người đọc chỉ biết "trạm này nóng", không biết "nóng bao nhiêu"
+   * — đúng giới hạn thị giác mà §11.5 sinh ra để bù. `undefined` ⇒ không có
+   * dữ liệu WIP nào cả (phạm vi không phải Line) ⇒ cột WIP KHÔNG hiện.
+   */
+  soWip?: number | null;
+  /** Trạm này là nút thắt? Phải khớp TUYỆT ĐỐI với cờ `nghen` của cột 3D (G12). */
+  nghen?: boolean;
+  /** Hạng theo WIP, 1 = nhiều nhất. `null` = chưa đo được. */
+  hang?: number | null;
 }
 
 export interface DaiLineProps {
   tram: readonly TramTrenDai[];
   onChonTram: (stationId: number) => void;
   stationIdChon?: number | null;
+  /**
+   * ★★★ §11 #36 — nhịp chuyền THẬT (ms/chiếc). `null` = chưa đo được ⇒ hiện `—`.
+   *
+   * Cùng con số điều khiển tốc độ mũi tên 3D. In nó ra ĐÂY là điều kiện §11.5
+   * áp cho lớp phủ chuyển-động: một mũi tên chạy nhanh hơn nói được "chuyền
+   * nhanh hơn", không nói được "12,4 giây một chiếc".
+   */
+  nhipChuyenMs?: number | null;
 }
 
-export function DaiLine({ tram, onChonTram, stationIdChon = null }: DaiLineProps) {
+/** Nhịp ms → chuỗi giây một chữ số thập phân. `null` ⇒ `—` (NT-3: không bịa số). */
+export function nhanNhip(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms) || ms <= 0) return "—";
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+export function DaiLine({
+  tram,
+  onChonTram,
+  stationIdChon = null,
+  nhipChuyenMs = null,
+}: DaiLineProps) {
   const { t } = useTranslation();
 
   // Sắp theo `orderIndex` — đây là chiều DÒNG CHẢY, không phải thứ tự DB trả về.
   const daSap = [...tram].sort((a, b) => a.thuTu - b.thuTu || a.ma.localeCompare(b.ma));
+
+  /**
+   * ★ Có lớp WIP hay không quyết định bằng "có khoá `soWip` không", KHÔNG bằng
+   *   "có giá trị khác null không". Một chuyền mà MỌI trạm đều `null` (truy vấn
+   *   403) vẫn phải hiện cột WIP với `—` — ẩn cột đi là khai rằng WIP không phải
+   *   thứ màn này theo dõi, trong khi sự thật là ta không được phép thấy nó.
+   */
+  const coWip = daSap.some((s) => s.soWip !== undefined);
+  const daDoWip = daSap.map((s) => s.soWip).filter((n): n is number => n != null);
+  const tongWip = daDoWip.length === 0 ? null : daDoWip.reduce((a, b) => a + b, 0);
 
   if (daSap.length === 0) return null;
 
@@ -57,6 +99,19 @@ export function DaiLine({ tram, onChonTram, stationIdChon = null }: DaiLineProps
         <span className="text-[10px] text-muted-foreground">
           {t("twin3d.vanHanh.soTram", "{{n}} trạm", { n: hienSo(daSap.length) })}
         </span>
+        {/*
+          ★★★ §11 #36 — NHỊP CHUYỀN BẰNG SỐ, cạnh mũi tên động của 3D.
+          Mũi tên nói "nhanh hơn"; con số này nói "nhanh hơn bao nhiêu".
+        */}
+        <span className="text-[10px] text-muted-foreground" data-testid="dai-line-nhip">
+          {t("twin3d.vanHanh.nhipChuyen", "Nhịp")}: <b>{nhanNhip(nhipChuyenMs)}</b>
+        </span>
+        {/* Tổng WIP — chỉ hiện khi CÓ phép đo; `—` khi chưa đo được (NT-3). */}
+        {coWip ? (
+          <span className="text-[10px] text-muted-foreground" data-testid="dai-line-tong-wip">
+            {t("twin3d.vanHanh.tongWip", "WIP")}: <b>{tongWip == null ? "—" : hienSo(tongWip)}</b>
+          </span>
+        ) : null}
       </div>
 
       <ol className="flex items-stretch gap-1 overflow-x-auto pb-1" aria-label={t("twin3d.vanHanh.daiLine", "Dải chuyền")}>
@@ -76,7 +131,9 @@ export function DaiLine({ tram, onChonTram, stationIdChon = null }: DaiLineProps
                 type="button"
                 data-testid={`o-tram-${s.id}`}
                 data-trang-thai={s.trangThai}
-                title={`${s.ma} — ${s.ten} — ${t(kieu.khoaNhan)}`}
+                title={`${s.ma} — ${s.ten} — ${t(kieu.khoaNhan)}${
+                  coWip ? ` — WIP ${s.soWip == null ? "—" : s.soWip}${s.nghen ? " ★" : ""}` : ""
+                }`}
                 className={`min-w-16 rounded border px-1.5 py-1 text-left focus-visible:outline focus-visible:outline-2 ${
                   daChon ? "ring-2 ring-primary" : "hover:bg-accent/60"
                 }`}
@@ -98,6 +155,39 @@ export function DaiLine({ tram, onChonTram, stationIdChon = null }: DaiLineProps
                     {t("twin3d.vanHanh.soMayNgan", "{{n}} máy", { n: hienSo(s.soMay) })}
                   </span>
                 </span>
+                {/*
+                  ★★★ §11.5 — CỘT WIP: nửa 2D của `OngWip`.
+
+                  `data-nghen` phải khớp TUYỆT ĐỐI với cờ `nghen` của cột 3D —
+                  cả hai đến từ cùng `laNghen()` trong `wipTram.ts`, và test
+                  §11.5 ghim sự khớp đó. Hai bản cài đặt rời sẽ lệch (G12).
+                */}
+                {coWip ? (
+                  <span
+                    className="flex items-center gap-1"
+                    data-testid={`o-tram-wip-${s.id}`}
+                    data-nghen={s.nghen ? "1" : "0"}
+                  >
+                    <span
+                      className={`text-[10px] font-semibold tabular-nums ${
+                        s.nghen ? "text-[color:var(--warning,#f59e0b)]" : "text-foreground"
+                      }`}
+                    >
+                      {s.soWip == null ? "—" : hienSo(s.soWip)}
+                    </span>
+                    <span className="text-[9px] uppercase text-muted-foreground">
+                      {t("twin3d.vanHanh.wipNgan", "WIP")}
+                    </span>
+                    {/*
+                      Hạng — trả lời "hơn bao nhiêu" bằng THỨ TỰ khi con số tuyệt
+                      đối chưa đủ ngữ cảnh. Ẩn khi chưa đo được (xếp hạng một
+                      trạm mình không biết gì là bịa).
+                    */}
+                    {s.hang != null ? (
+                      <span className="text-[9px] text-muted-foreground">#{hienSo(s.hang)}</span>
+                    ) : null}
+                  </span>
+                ) : null}
               </button>
             </li>
           );
