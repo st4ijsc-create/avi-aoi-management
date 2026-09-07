@@ -184,12 +184,11 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/deviceAdapterRouter.ts (2) ──────────────────────────────────────────────
   "server/routers/deviceAdapterRouter.ts#deviceAdapterRouter.get",
   "server/routers/deviceAdapterRouter.ts#deviceAdapterRouter.list",
-  // ── server/routers/digitalTwinRouter.ts (5) ────────────────────────────────────────────────
-  "server/routers/digitalTwinRouter.ts#digitalTwinRouter.defectHeatmap",
-  "server/routers/digitalTwinRouter.ts#digitalTwinRouter.predictionOverlay",
-  "server/routers/digitalTwinRouter.ts#digitalTwinRouter.stationLoadHeatmap",
-  "server/routers/digitalTwinRouter.ts#digitalTwinRouter.twinState",
-  "server/routers/digitalTwinRouter.ts#digitalTwinRouter.wipFlowState",
+  // ── server/routers/digitalTwinRouter.ts — ★ ĐỢT 14 LÔ Q1: 5 mục ĐÃ TRẢ, xoá khỏi sổ ────────
+  //    twinState · defectHeatmap · wipFlowState · stationLoadHeatmap · predictionOverlay đều đã
+  //    mang `phamViCua(ctx)` xuống tầng dữ liệu. Nghiệm thu hai chiều trên CSDL thật ở
+  //    `digitalTwinPhamVi.db.test.ts`; phân đôi toàn tập ở `phamViTwinCanh.unit.test.ts`.
+  //    (`whatIf` chưa từng có tên ở đây — nó là hàm thuần, không chạm CSDL.)
   // ── server/routers/ecnRouter.ts (2) ────────────────────────────────────────────────────────
   "server/routers/ecnRouter.ts#ecnRouter.getById",
   "server/routers/ecnRouter.ts#ecnRouter.list",

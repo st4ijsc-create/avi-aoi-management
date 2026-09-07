@@ -7,11 +7,53 @@
  *
  * Read-only / protected. Auto-degrade về mảng rỗng khi DB chưa sẵn sàng.
  * Không phụ thuộc hạ tầng mới.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 14 LÔ Q1 — **HÀNG RÀO TENANT**. Trước bản vá này router KHÔNG lọc gì.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Đo trên `aoi_management` 2026-09-07, tài khoản `maint1` (id 50, **0 nhà máy
+ * được gán**) đọc được trọn dữ liệu của SIM-FAC:
+ *
+ *     twinState        → **43/43** máy (cả 42 máy SIM-FAC + 1 máy nhà máy 18)
+ *     wipFlowState     → **4.707** WIP / 12 trạm của chuyền 1 (thuộc SIM-FAC)
+ *     stationLoadHeatmap → cells của chuyền 1
+ *     predictionOverlay  → chuỗi WIP của chuyền 1
+ *
+ * Đây ĐÚNG lớp lỗi lô K vừa vá ở `demVatThe`, và nó tái diễn vì cùng một nguyên
+ * nhân: thủ tục khai `async ({ input })` — **không bóc `ctx`** — nên danh tính
+ * không bao giờ rời tay handler. `twinState`/`stationLoadHeatmap`/
+ * `predictionOverlay`/`wipFlowState` còn nhận `stationId`/`lineId`/`layoutId`
+ * do **client TỰ KHAI**, tức một id đoán được là một cánh cửa sang tenant khác.
+ *
+ * **Vá ở tầng ROUTER, không ở tầng db.** Các hàm `getWipByStation` /
+ * `getStationDwellAgg` / `getLatestLineBalance` / `getWipCountSeries` còn có
+ * người gọi khác (socket, script seed); đổi chữ ký của chúng là đổi hợp đồng
+ * của những nơi ấy. Router là chỗ danh tính CÓ MẶT, nên cổng đặt ở đây.
+ *
+ * **Hai trục, vì lược đồ có hai hình dạng** (luật đã ghi ở `db/hierarchy.ts`):
+ *   - `machines` treo vào chuỗi phân cấp `station → line → workshop → factory`
+ *     ⇒ dùng `idsTrongPhamVi("machine"|"line"|"station", …)`.
+ *   - `product_inspections` mang **MÃ** tenant thẳng trên hàng (`factoryCode`)
+ *     ⇒ dùng `congMaTenant`. Chiếu bảng này qua chuỗi phân cấp là dựng một quan
+ *     hệ không tồn tại.
+ *
+ * ⚠ `null` từ `idsTrongPhamVi` = vai toàn quyền / lối không mang danh tính ⇒
+ *   **KHÔNG thêm mệnh đề nào** (chiều DƯƠNG chống "vá quá tay thành chặn tất
+ *   cả"). Tập RỖNG ⇒ trả 0 hàng, KHÔNG phải "không lọc".
+ *
+ * ⚠ Id ngoài phạm vi được xử như **KHÔNG TỒN TẠI** (hình dạng rỗng hợp lệ), chứ
+ *   không ném lỗi riêng: một thông báo "bạn không được xem chuyền 42" vẫn xác
+ *   nhận rằng chuyền 42 có thật.
+ *
+ * Nghiệm thu: `digitalTwinPhamVi.db.test.ts` (hai chiều, DB thật) +
+ * `phamViTwinCanh.unit.test.ts` (phân đôi toàn tập, tầng router).
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { idsTrongPhamVi, trongPhamVi, congMaTenant } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
 import { machines } from "../../drizzle/schema";
 import { machineHealthHistory } from "../../drizzle/schema";
 import { productInspections } from "../../drizzle/schema";
@@ -35,14 +77,27 @@ export const digitalTwinRouter = router({
       stationId: z.number().int().positive().optional(),
       limit: z.number().int().min(1).max(1000).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [] as any[];
+
+      // ★ Q1 — cổng tenant. `null` = toàn quyền ⇒ không thêm mệnh đề nào.
+      const idsMay = await idsTrongPhamVi("machine", phamViCua(ctx));
+      if (idsMay !== null && idsMay.length === 0) return [];
+
+      // ⚠ `stationId` là lời TỰ KHAI của client. Một trạm ngoài phạm vi phải cho
+      //   kết quả RỖNG như thể nó không tồn tại — cổng `idsMay` bên dưới đã làm
+      //   việc ấy (máy của trạm lạ không nằm trong tập id), nên không cần, và
+      //   KHÔNG được, ném lỗi riêng.
+      const dieuKien = [
+        input?.stationId ? eq(machines.stationId, input.stationId) : undefined,
+        idsMay !== null ? inArray(machines.id, idsMay) : undefined,
+      ].filter((x): x is NonNullable<typeof x> => x !== undefined);
 
       const rows = await database
         .select()
         .from(machines)
-        .where(input?.stationId ? eq(machines.stationId, input.stationId) : undefined)
+        .where(dieuKien.length > 0 ? and(...dieuKien) : undefined)
         .limit(input?.limit ?? 500);
 
       if (rows.length === 0) return [];
@@ -98,11 +153,19 @@ export const digitalTwinRouter = router({
       hours: z.number().int().min(1).max(720).optional(),
       stationId: z.number().int().positive().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [] as { machineId: number; ngCount: number; totalCount: number; ngRate: number }[];
 
       const since = new Date(Date.now() - (input?.hours ?? 24) * 60 * 60 * 1000);
+
+      // ★ Q1 — TRỤC MÃ, không phải trục id: `product_inspections` mang `factoryCode`
+      //   thẳng trên hàng và KHÔNG treo vào chuỗi phân cấp. `undefined` = không lọc
+      //   (toàn quyền); 0 gán ⇒ `congMaTenant` cho `1 = 0` TƯỜNG MINH.
+      const congMa = await congMaTenant(
+        { factoryCode: productInspections.factoryCode, corporateCode: productInspections.corporateCode },
+        phamViCua(ctx),
+      );
 
       const rows = await database
         .select({
@@ -111,7 +174,7 @@ export const digitalTwinRouter = router({
           totalCount: sql<number>`count(*)::int`,
         })
         .from(productInspections)
-        .where(gte(productInspections.inspectionTime, since))
+        .where(and(gte(productInspections.inspectionTime, since), congMa))
         .groupBy(productInspections.machineId);
 
       return rows.map((r) => ({
@@ -123,6 +186,16 @@ export const digitalTwinRouter = router({
     }),
 
   // --- G10: mô phỏng what-if năng suất chuyền (pure compute) ---
+  //
+  // ★ Q1 — **MIỄN TRỪ CÓ LÝ DO ĐO ĐƯỢC**, ghi ở `MIEN_TRU` của
+  //   `phamViTwinCanh.unit.test.ts`. Thủ tục này KHÔNG chạm CSDL: mọi con số nó
+  //   trả về đều suy từ chính `input` của người gọi (`simulateWhatIf` là hàm
+  //   thuần, đo được: `services/digitalTwinService.ts`). Không có hàng nào của
+  //   tenant nào để rò. `stationId` trong input chỉ là NHÃN đi kèm kết quả — nó
+  //   không tra cứu gì, nên một id đoán được cũng không mở được cửa nào.
+  //
+  // ⚠ Cố tình KHÔNG thêm cổng phạm vi giả ở đây: một cổng không đo gì làm cả hai
+  //   ô của lưới phân đôi xanh mà không có phép đo nào đứng sau (họ G5/G6).
   whatIf: protectedProcedure
     .input(z.object({
       stations: z.array(z.object({
@@ -146,11 +219,35 @@ export const digitalTwinRouter = router({
       lineId: z.number().int().positive().optional(),
       layoutId: z.number().int().positive().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // ★ Q1 — `lineId` và `layoutId` đều do client TỰ KHAI. Hai cổng rời nhau:
+      //   (a) chuyền được hỏi phải nằm trong phạm vi; (b) trạm trả về phải nằm
+      //   trong phạm vi — cần cả hai vì `getWipByStation()` KHÔNG truyền `lineId`
+      //   sẽ quét MỌI chuyền.
+      const pv = phamViCua(ctx);
+      const [idsChuyen, idsTram] = await Promise.all([
+        idsTrongPhamVi("line", pv),
+        idsTrongPhamVi("station", pv),
+      ]);
+      const rong = { stations: [], totalWip: 0, stationCount: 0, ts: Date.now() };
+      if (idsChuyen !== null && input?.lineId != null && !idsChuyen.includes(input.lineId)) {
+        // Chuyền ngoài phạm vi ⇒ NHƯ KHÔNG TỒN TẠI, không phải một lỗi riêng.
+        return rong;
+      }
+      if ((idsChuyen !== null && idsChuyen.length === 0) || (idsTram !== null && idsTram.length === 0)) {
+        return rong;
+      }
+
       const rows = await getWipByStation({ lineId: input?.lineId });
       // DB đã GROUP BY + loại exited (exitedAt IS NULL) ở SQL → count/serials thực.
+      // ★ Q1 — lọc TRẠM: `getWipByStation` không biết phạm vi, nên khi gọi không
+      //   kèm `lineId` nó trả trạm của MỌI chuyền. Lọc ở đây, KHÔNG "tất cả hoặc
+      //   không gì" — trạm trong phạm vi vẫn phải sống sót.
       const byStation = new Map<number, { count: number; serials: string[] }>();
-      for (const r of rows) byStation.set(r.currentStationId, { count: r.count, serials: r.serials });
+      for (const r of rows) {
+        if (idsTram !== null && !idsTram.includes(r.currentStationId)) continue;
+        byStation.set(r.currentStationId, { count: r.count, serials: r.serials });
+      }
 
       // Vị trí station (best-effort) từ layout — read-only, optional.
       const posByStation = new Map<number, { x: number; y: number }>();
@@ -158,6 +255,10 @@ export const digitalTwinRouter = router({
         const positions = await getMachinePositionsByLayout(input.layoutId);
         for (const p of positions as any[]) {
           const sid = (p.station?.id ?? p.stationId) as number | undefined;
+          // ★ Q1 — `layoutId` cũng do client TỰ KHAI. Không chặn cả lời gọi (một
+          //   layout có thể trộn trạm nhiều nhà máy); lọc TỪNG trạm, cùng luật
+          //   với vòng lặp WIP bên trên. Toạ độ của trạm ngoài phạm vi bị bỏ.
+          if (sid != null && idsTram !== null && !idsTram.includes(sid)) continue;
           if (sid != null && !posByStation.has(sid) && p.positionX != null && p.positionY != null) {
             posByStation.set(sid, { x: Number(p.positionX), y: Number(p.positionY) });
           }
@@ -185,7 +286,11 @@ export const digitalTwinRouter = router({
       lineId: z.number().int().positive(),
       hours: z.number().int().min(1).max(720).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // ★ Q1 — `lineId` bắt buộc và do client TỰ KHAI ⇒ phải kiểm trước khi đọc.
+      if (!(await trongPhamVi("line", input.lineId, phamViCua(ctx)))) {
+        return { cells: [], bottleneckStationId: null, ts: Date.now() };
+      }
       const since = new Date(Date.now() - (input.hours ?? 24) * 60 * 60 * 1000);
       const [dwellAgg, latest] = await Promise.all([
         getStationDwellAgg(input.lineId, since),
@@ -217,7 +322,14 @@ export const digitalTwinRouter = router({
       bucketMin: z.number().int().min(1).max(240).optional(),
       threshold: z.number().positive().max(100000).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // ★ Q1 — cùng luật với `stationLoadHeatmap`. Hình dạng trả về dùng lại
+      //   nhánh `available:false` đã có sẵn, nhưng với `reason` RIÊNG: "ngoài
+      //   phạm vi" và "không đủ dữ liệu" là hai câu khác nhau, gộp chúng lại là
+      //   nói dối một trong hai (G47 — đếm đơn vị NGHĨA).
+      if (!(await trongPhamVi("line", input.lineId, phamViCua(ctx)))) {
+        return { available: false as const, reason: "out_of_scope", cells: [], ts: Date.now() };
+      }
       const bucketMin = input.bucketMin ?? 30;
       const lookbackHours = 24;
       const since = new Date(Date.now() - lookbackHours * 60 * 60 * 1000);

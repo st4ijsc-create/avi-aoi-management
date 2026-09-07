@@ -40,14 +40,34 @@ vi.mock("../db/layout", () => ({
   getMachinePositionsByLayout: vi.fn(async () => []),
 }));
 
-// getDb used only by the legacy twinState/defectHeatmap endpoints.
+// getDb: null ⇒ twinState/defectHeatmap degrade to []. The G2.7 endpoints below
+// read through the mocked db helpers above, so they do not need a connection.
 vi.mock("../db/connection", () => ({
   getDb: vi.fn(async () => null),
 }));
 
 import { digitalTwinRouter } from "./digitalTwinRouter";
 
-const ctx = { user: { id: 1, role: "supervisor", name: "Sup" } } as any;
+/**
+ * ★ ĐỢT 14 LÔ Q1 — vai **admin**, và đó là một lựa chọn có lý do, không phải một
+ * bước dọn cho test xanh.
+ *
+ * Tệp này đo **HÌNH DẠNG ĐÁP ỨNG** của ba thủ tục G2.7 (wipFlowState /
+ * stationLoadHeatmap / predictionOverlay) — nó không đo tenancy. Sau lô Q1 mọi
+ * thủ tục đều hỏi `idsTrongPhamVi`, mà hàm ấy cần một kết nối DB thật; với
+ * `getDb → null` một vai bị-thu-hẹp cho phạm vi RỖNG và mọi đáp ứng thành rỗng
+ * hợp lệ — tức tệp này sẽ đo "cổng phạm vi chặn đúng" thay vì đo hình dạng, và
+ * ba ô của nó sẽ xanh-vì-lý-do-sai nếu ai đó lỡ nới chúng thành `toEqual([])`.
+ *
+ * `admin` ⇒ `phamViCua` cho phạm vi `null` ⇒ KHÔNG thêm mệnh đề nào ⇒ hình dạng
+ * đáp ứng lộ ra nguyên vẹn, đúng thứ tệp này sinh ra để canh.
+ *
+ * ⚠ Điều này KHÔNG chứng minh gì về quyền (admin BYPASS mọi cổng — đo bằng admin
+ *   chứng minh SỐ 0). Hàng rào tenant được nghiệm thu ở chỗ khác, bằng vai
+ *   KHÔNG-admin trên DB thật: `digitalTwinPhamVi.db.test.ts` (hai chiều) và
+ *   `phamViTwinCanh.unit.test.ts` (phân đôi toàn tập).
+ */
+const ctx = { user: { id: 1, role: "admin", name: "Adm" } } as any;
 const caller = digitalTwinRouter.createCaller(ctx);
 
 beforeEach(() => {

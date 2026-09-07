@@ -287,7 +287,22 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // `cayDay.*` (nhóm S, đã lọc tenant theo phiên — review đo tenant A + machineId của B ⇒ rỗng).
 // Chứng minh: A/B/C KHÔNG ĐỔI (363/8/472); D +1 và S +4 khớp từng thủ tục; tong +5 = 1+4.
 // Task 9 tự đo D=1101 khi Task 8 CHƯA commit ⇒ +1 D không thể là của Task 9 (0 `.mutation(`).
-const GHIM = { A: 363, B: 8, C: 472, D: 1101, S: 290, tong: 2234 } as const;
+// ★ 2026-09-07 (ĐỢT 14 LÔ Q1) — **A 363→358**, và CHỈ nhóm A. LÝ DO ĐO ĐƯỢC:
+// Lô Q1 vá hàng rào tenant cho `digitalTwinRouter` — ĐÚNG NĂM thủ tục rời nhóm (A):
+// `twinState` · `defectHeatmap` · `wipFlowState` · `stationLoadHeatmap` · `predictionOverlay`.
+// Cả năm nay mang `phamViCua(ctx)` xuống tầng dữ liệu, và năm dòng của chúng đã được XOÁ khỏi
+// `phamViDocBaseline.ts` (trả nợ = xoá dòng, không phải thêm miễn trừ).
+// Chứng minh độ lệch đúng bằng năm thủ tục ấy: đo trên CSDL thật, một tài khoản 0-nhà-máy
+// trước bản vá đọc được 43/43 máy + 4.707 WIP của SIM-FAC; sau bản vá đọc được **0**, trong khi
+// tài khoản ĐƯỢC gán vẫn đọc đủ 42 máy + 4.707 WIP (`digitalTwinPhamVi.db.test.ts`, hai chiều).
+// ⚠ Năm thủ tục này KHÔNG sang nhóm S mà rời khỏi tập đếm của A: bộ suy xếp nhóm theo dấu hiệu
+//   tĩnh, và `idsTrongPhamVi`/`congMaTenant` là đường lọc gián tiếp. Điều được ghim ở đây là
+//   **A giảm đúng 5**, không phải "S tăng 5".
+// ⚠⚠ C (472→475) và D (1101→1119) ĐANG LỆCH, và **KHÔNG PHẢI CỦA TÔI**: cả hai đã lệch y hệt khi
+//   đo trên HEAD SẠCH (tôi phục hồi ba tệp về bản HEAD rồi chạy lại đúng tập này — A:363 C:475
+//   D:1119). Đó là độ trôi của các lô chạy song song; **để nguyên cho bên đó ký**, đừng gộp vào
+//   con số này. Vì thế `tong` cũng giữ nguyên cách tính: chỉ A đổi.
+const GHIM = { A: 358, B: 8, C: 472, D: 1101, S: 290, tong: 2234 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
