@@ -2480,6 +2480,61 @@ cua lo H chi canh 3 thu tuc `DOC_MO`. Da them `phamViTwinCanh.unit.test.ts` (luo
 (lo K dem 18 ke ca hang het han). Phep do truoc cua toi **loc theo 3 module** nen chi thay 1 -
 **G9 can chinh toi lan nua**.
 
+## 11g. DOT 12 - DO LAI SO KIEM SAU DOT 8-11 (2026-09-07)
+
+Dot 7 dem **18/62**. Bon dot da chay tu do. Chu du an **do lai tung muc bang cho goi that**
+(G16), khong cong loi khai.
+
+### 11g.1 Muc da dong, kiem bang CHO GOI trong `client/src`
+
+| Module | Muc | Cho goi |
+|---|---|---|
+| `khungNhin` | #58 | 21 |
+| `xuatAnh` | #57 | 10 |
+| `banDoNho` | #56 | 3 |
+| `vungAnToan` | #5 | 7 |
+| `VeVung` | #42 | 2 |
+| `DaiCanhBao` | #12-14 | 5 |
+| `CayPhanCap` | #8-11 | 9 |
+| `docStatsAoi` | #60 | 2 |
+| `nhipHoiToiDa` | #51 | 4 |
+| `wipTram` | #61/#32/#36 | 2 |
+| `BangKpiNoi` | #16 | 3 |
+| `NganNhung` | #5 nhung | 22 |
+| `boChonNap` | o chon nap | 2 |
+
+**Khong module nao la ham chet** - khac han Dot 7, noi `nhipHoiMs` va `wip` co du ma ma **0 cho goi**.
+
+### 11g.2 Sau muc THAT SU con thieu - do trong PHAM VI TWIN
+
+Phep dem tho tren toan repo **gay hieu nham** (G9): `heatmap` ra **409**, `whatIf` ra **26** - phan lon
+nam ngoai Twin. Do lai chi trong `twin3d` + `TwinVanHanh.tsx` + `TwinStudio.tsx`:
+
+```
+uploadAndRegister  0     taiAnhNen  0     twin_ban_ghi  0
+boNhoModel         0     whatIf     0     usdExport     0
+```
+
+=> **#18, #43, #55, #4, #30/#35/#36, #1** chua co trong Twin. `ArticulatedRobot` ra 1 nhung do la
+**chu thich** o `hinhKhoiMay.ts:365`, khong phai ma chay (#3 chua lam).
+
+### 11g.3 `DongThoiGian` - lop loi G16 LAP LAI
+
+`DongThoiGian.tsx:62` export component that (thanh tua lai 24 gio, muc 9.8) nhung **0 cho goi san pham**
+trong toan `client/src`. Day dung lop loi Dot 7 phat hien voi `nhipHoiMs` va `wip={[]}`: **co ma,
+co the co test, khong giao duoc gi**.
+
+=> Dot 12 chia hai lo: **L** noi `DongThoiGian` (#37/#38) + ngan Mo phong (#30/#35/#36) +
+heatmap/prediction/health (#31/#33/#34); **M** nhap model (#18/#4), anh nen CAD (#43), CRUD layout (#55).
+
+**Rang buoc mang sang lo L:** `commandLog.avgDurations` **KHONG phai cycle time** (muc 11c.3 da do) -
+no la do tre ACK lenh; dung nham thi mui ten chay **nhanh gap 150 lan**. Nguon dung:
+`line_balance_metrics.avgCycleTimeMs`, kem `conHieuLuc` 8h (G30).
+
+**Rang buoc mang sang lo M:** `boNhoModel.ts` **khong ton tai** - spec ghi sai dich; lo M tu chon kien
+truc hop voi `mucChiTiet.ts` (da co LRU 8 GLB). Va **cam migration** - `twin_ban_ghi` co bang nhung
+0 hang/0 consumer, neu hop dong khong dung duoc thi **bao lai**.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
