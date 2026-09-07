@@ -2950,6 +2950,79 @@ khop tuyet doi. **Admin chi dung lam doi chung** - no qua bat ke, chung minh **s
 dua tren **fixture 96 hang** no tu dung roi go, **khong** tren tap 2.880 hang ma brief mo ta. Cong cu san
 sang nhung **chua chay tren tap do**.
 
+### 11i.6 LO R DA VE - L-1 rong hon **5,5 lan** brief, va mot canh bao 2 TRIEU HANG (2026-09-08)
+
+Commit `3bb3b151`. Cong: **57 tep / 1667 test** = nen - tap twin **20 tep / 223 test, 0 do** -
+`check` 0 - `build` 0 - DB `factories 2, machines 43, twin_dat_cho 82`.
+
+> #### ★★★ G58 - **VA MOI `create` LA DE NGUYEN CUA CHO `delete`**
+> Brief cua chu du an neu **2** thu tuc. Lo R do lai: **11**.
+> `maintenanceRouter` co **ca 9** thu tuc khong boc `ctx` - khong chi `create` ma ca
+> `update`/`close`/**`delete`**/`list`/`get`/`summary`/`recordPartsUsed`/`listPartsForWorkOrder`.
+> `andonRouter` co `acknowledge` **va** `resolve` (brief chi neu `acknowledge`).
+> => Va mot `create` ma bo `delete` la **de nguyen cua**: mot `id` doan duoc van **xoa** duoc phieu cua
+> tenant khac. **Khi tim lo tenant, quet CA ROUTER, dung quet thu tuc brief chi ten.**
+>
+> Chu du an kiem lai: con **dung 1** thu tuc khong boc `ctx` - `partsBelowReorder` (`:449`), doc
+> `sparePartsInventory` (**kho vat tu, khong co truc tenant theo may**) => bo qua **hop ly**.
+
+**Chung minh hai chieu** (`maintenanceAndonPhamVi.db.test.ts`, 19/19, CSDL that, vai `engineer`) - moi
+chieu (−) xac nhan bang **SQL tho** rang **0 byte doi**: `create` chan cho may B (0 hang ghi) -
+`update/close/delete` chan phieu B (title/status/so hang khong doi) - `acknowledge`/`resolve` chan
+andon B (van `raised`, `acknowledgedAt` NULL). Ngoai pham vi tra **`NOT_FOUND`**, khong `FORBIDDEN`.
+
+> #### ★★★ G43 BAT DUOC THAT - lan chay dau **4 o do voi `appCode: PERMISSION_DENIED`**
+> RBAC chan **truoc** cong pham vi ⇒ moi o (−) khi ay xanh vi **LY DO SAI**, va **van xanh neu go sach
+> ban va**. Chi sau khi cap quyen RBAC that roi **kiem `appCode == ENTITY_NOT_FOUND`** moi do dung thu.
+> Bay kem: `machine_monitoring` bi **alias** sang `machine_status` (goi `resolvePermissionModule`, dung
+> chep tay); `permissions.category` la **enum** - `'system'` nem `22P02`.
+
+**Quyet dinh NULL ca ba truc** (`andon_events`, G54): **fail-CLOSED** cho nguoi bi thu hep, vai toan
+quyen van cham duoc (khong thanh rac vinh vien). **G48**: 9 hang - `machineId` 9/9, `lineId` 9/9,
+`stationId` 2/9, **NULL-ca-ba 0/9** ⇒ luat khong lam mat hang that nao.
+
+### 11i.7 Don rac - va **GOC RE sau hon brief tuong**
+
+BG-127 hai mo hinh roi, **doi chieu tong khop tuyet doi**: truoc **185.805** = 177.608 song + **8.197**
+mo coi → `DELETE 8197` (vi tu **quan he**, khong theo tien to ma) → sau **177.608 + 0**.
+Chu du an kiem doc lap: `machine_health_history` mo coi **= 0**.
+
+**Ba phat hien khi va script go:**
+1. `machine_health_history` **da co san** trong script (lo P them) - **brief cua chu du an sai cho nay**.
+   8.197 la rac cua cac luot go **truoc** ban va do.
+2. `station_dwell_time`: khoa dung la **`machineId`**, **KHONG** phai `stationId` nhu chu du an de xuat.
+   Do duoc: mo coi theo `machineId` **3.247**, theo `stationId` **0** ⇒ duong go theo `stationId` **se de
+   lai dung 3.247 hang ay**.
+3. **★ Goc re:** do thi **FK vao `machines` RONG (0 hang)** ⇒ quet theo FK cho **am-tinh-gia hoan hao**;
+   quet theo **ten cot** la mo hinh **duy nhat con hieu luc**. Da them cau chi **tu suy** quet theo ten
+   cot - chi **DO va BAO**, khong xoa.
+
+> #### G59 - **TEN COT KHONG THONG NHAT GIUA CAC BANG**
+> Chu du an quet kiem chung thi `ot_telemetry` dung **`machine_id`** (snake_case) trong khi
+> `machine_health_history`/`station_dwell_time` dung **`machineId`** (camelCase) - Postgres nem `42703`.
+> => Cau chi quet theo ten cot phai thu **ca hai quy uoc**, khong thi no se **bao 0 mo coi mot cach
+> am tham** o dung nhung bang lon nhat.
+
+### 11i.8 ⚠ CAN CHU SO HUU QUYET - **~2 TRIEU hang mo coi o 6 bang khac**
+
+Lo R **bao lai, khong tu xoa** (dung). Chu du an do lai doc lap va **so con cao hon** vi du lieu van chay:
+
+| Bang | Lo R do | Chu du an do lai |
+|---|---|---|
+| `ot_telemetry` | 1.954.052 | **2.024.741** |
+| `rul_estimates` | 8.197 | — |
+| `machine_status_logs` | 4.022 | — |
+| `station_dwell_time` | 3.247 | **3.247** ✓ |
+| `predictive_alerts` | 10 | — |
+| `measurement_point_defs` | 12 | — |
+
+⚠ `ot_telemetry` la **hypertable nen** - lo P do duoc: `DELETE` tren 28,3M hang chay **10 phut roi do
+`53400`**. Xoa 2 trieu hang o day **khong phai mot lenh DELETE**.
+
+**Chinh chinh nen cong 2 cua chu du an:** brief ghi *"20 tep / 226 test, 3 DA DO"*. Lo R do nen that
+**19 tep / 204 test, 0 do**; khong tai hien duoc 3 do nao - mot lan thay do la **timeout 5s flaky**.
+Va **be mat L-1**: brief ghi 283 may / 3 nha may (**do luc FUYU-G con song**); DB nay **43 may / 2 nha may**.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
