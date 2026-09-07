@@ -688,7 +688,42 @@ export default function TwinVanHanh() {
   //   `ketNoi` phải có mặt trước khi các truy vấn khai `refetchInterval`.
 
   /* ── Tua lại (§9.8) ─────────────────────────────────────────────────── */
-  const [mocTua, setMocTua] = useState<number | null>(null);
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 12 LÔ L — MỐC TUA SỐNG TRONG **URL** (`?tg=`), KHÔNG TRONG STATE
+   * ════════════════════════════════════════════════════════════════════════
+   * `duongDanTwin.ts` đã có `docThoiGian`/`ghiThoiGian`, khoá `tg=` đã nằm
+   * trong `TrangThaiTwinUrl`, `docTrangThaiUrl` đã phân tích nó, và
+   * `tronTrangThaiUrl`/`kieuGhiLichSu` đã xử lý nó — **có test, có mã, và
+   * KHÔNG MỘT CHỖ GỌI SẢN PHẨM NÀO** (đo 2026-09-07: `grep -rn "\.tg\b|
+   * docThoiGian|ghiThoiGian" client/src` ngoài chính `duongDanTwin*` ⇒ rỗng).
+   * Đây đúng lớp lỗi G16 mà Đợt 7 phát hiện với `nhipHoiMs` và lớp phủ WIP: hạ
+   * tầng dựng xong, cổng xanh, và người dùng không nhận được gì.
+   *
+   * Hậu quả CỤ THỂ của bản `useState` cũ, cả ba đều là thứ người dùng gặp:
+   *   • F5 giữa lúc đang xem lại 08:30 ⇒ văng về trực tiếp, mất chỗ đang xem;
+   *   • không gửi được "anh xem giúp em lúc 08:30" thành một đường link —
+   *     đúng công dụng mà `?pv=`/`?chon=`/`?cam=` sinh ra để phục vụ;
+   *   • nút Back không quay lại mốc vừa xem.
+   *
+   * ★ `replace` chứ không `push` (`kieuGhiLichSu` đã quyết định vậy cho `tg`):
+   *   vòng phát lại ×20 ghi MỘT mốc mỗi giây, và đẩy từng cái vào history sẽ
+   *   biến nút Back thành vô dụng — đúng lý do camera cũng dùng `replace`.
+   */
+  const mocTua = urlState.tg;
+  const setMocTua = useCallback(
+    (moc: number | null) => ghiUrl({ tg: moc }),
+    [ghiUrl],
+  );
+
+  /*
+   * ★ `dangPhat`/`tocDo` Ở LẠI `useState`, CÓ CHỦ Ý — không phải bỏ sót.
+   *   Chúng là cách ĐANG ĐI TỚI một mốc, không phải CHỖ đang đứng. Người nhận
+   *   link phải thấy đúng khung hình 08:30, chứ không phải một cảnh đang tự
+   *   chạy ×20 mà họ không bấm; và ghi `dangPhat` vào URL còn thêm một lượt
+   *   ghi history mỗi lần vòng phát tự dừng ở hiện tại.
+   */
   const [dangPhat, setDangPhat] = useState(false);
   const [tocDo, setTocDo] = useState<TocDo>(1);
 

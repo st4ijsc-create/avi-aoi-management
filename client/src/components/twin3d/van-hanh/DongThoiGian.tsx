@@ -59,6 +59,104 @@ export function nhanMoc(moc: number | null): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* #37 — SCRUB THEO **BIÊN STEP**, VÀ PHÍM ←/→                                 */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ★★★ Mốc kế tiếp khi bấm ◁/▷ hoặc phím ←/→ — **CĂN VỀ BIÊN**, không cộng thô.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO KHÔNG PHẢI `moc + delta` (đó chính là `nhay()` cũ)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Spec §11 #37 đòi *"scrub … **theo biên step**"*, và cộng thô KHÔNG cho ra
+ * biên. Mốc khởi điểm gần như luôn lệch biên, vì hai đường vào đều sinh số lẻ:
+ *   • thả thanh trượt → `step={60_000}` của `<input>` căn theo `min`, mà `min`
+ *     = `bayGio − 24h` là một mili-giây bất kỳ (`Date.now()`);
+ *   • vòng phát lại → `m + tocDo*1000`, tức bội số của 1 s, không của 5 phút.
+ * Nên từ 09:03:47 mà cộng thô 5 phút được 09:08:47, rồi 09:13:47 — người dùng
+ * bấm ◁ ba lần vẫn không bao giờ đứng trên một mốc tròn, và hai người tua tới
+ * "cùng một chỗ" nhận hai mốc khác nhau. Đó cũng là thứ phá tính khứ hồi của
+ * `?tg=`: mốc chia sẻ mang một offset ngẫu nhiên vô nghĩa.
+ *
+ * Căn biên khiến lưới mốc chỉ phụ thuộc `BUOC_MS`, KHÔNG phụ thuộc điểm khởi
+ * hành — hai người bấm ←/→ từ hai chỗ khác nhau hội tụ về cùng một tập mốc.
+ *
+ * ★ HAI luật con, cả hai đều cần thiết:
+ *   1. **Đang lệch biên thì bước ĐẦU TIÊN chỉ căn về biên**, không nhảy trọn ô.
+ *      Từ 09:03:47 bấm ◁ ra 09:00:00 (lùi 3'47"), bấm tiếp ra 08:55:00. Nếu bỏ
+ *      luật này mà luôn nhảy trọn ô thì ◁ từ 09:03:47 ra 08:55:00 — **vượt qua**
+ *      09:00:00 mà không dừng lại, tức có những biên người dùng KHÔNG BAO GIỜ
+ *      tới được bằng phím, kể cả bấm bao nhiêu lần.
+ *   2. **Đã đúng biên thì đi trọn một ô** — nếu không, bấm ◁ trên một mốc tròn
+ *      sẽ căn về chính nó và phím trở nên chết cứng (`f(x)=x`, G5/G32: đầu ra
+ *      phải KHÁC đầu vào).
+ *
+ * ★ `goc == null` (đang trực tiếp): điểm khởi hành là `bayGio`. Bấm ◁ từ chế độ
+ *   trực tiếp là cách vào chế độ tua, nên nó PHẢI trả một mốc, không trả `null`.
+ *
+ * ⚠ Kết quả luôn qua `kepMoc`: căn biên có thể ném ra ngoài cửa sổ 24 h (căn lên
+ *   từ một mốc sát `bayGio` cho ra một biên ở TƯƠNG LAI), và biên vẫn phải được
+ *   cưỡng chế — không có đường nhìn trộm tương lai.
+ */
+export function mocTheoBuoc(
+  goc: number | null,
+  huong: -1 | 1,
+  bayGio: number,
+  buocMs: number = BUOC_MS,
+): number {
+  const tu = goc ?? bayGio;
+  // Lưới neo vào epoch (0), không vào `bayGio`: neo vào `bayGio` làm lưới trôi
+  // mỗi render vì `Date.now()` đổi, và cùng một `?tg=` mở hai lúc ra hai biên.
+  const duoi = Math.floor(tu / buocMs) * buocMs;
+  const ke =
+    huong < 0
+      ? // lệch biên ⇒ về biên dưới; đúng biên ⇒ lùi trọn một ô
+        (duoi < tu ? duoi : tu - buocMs)
+      : // lên: biên trên của ô hiện tại; đúng biên ⇒ tiến trọn một ô
+        duoi + buocMs;
+  return kepMoc(ke, bayGio);
+}
+
+/**
+ * Phím ←/→ có phải thao tác tua không, và theo hướng nào.
+ *
+ * ★ `null` cho MỌI thứ khác — kể cả ←/→ đi kèm phím bổ trợ. `Alt+←` là **Back
+ *   của trình duyệt** và `Cmd+←` là về đầu dòng; nuốt chúng để tua 5 phút là
+ *   cướp một phím hệ thống mà người dùng không hề yêu cầu.
+ */
+export function huongTuPhim(e: {
+  key: string;
+  altKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  shiftKey?: boolean;
+}): -1 | 1 | null {
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return null;
+  if (e.key === "ArrowLeft") return -1;
+  if (e.key === "ArrowRight") return 1;
+  return null;
+}
+
+/**
+ * Ô đang gõ có được quyền GIỮ phím ←/→ không.
+ *
+ * ★★★ Đây không phải phòng thủ thừa. `/twin` có ô lọc máy, ô tìm kiếm và chính
+ *   `<input type="range">` của thanh này. Bắt ←/→ ở cấp `window` mà không hỏi
+ *   tiêu điểm thì người dùng đang sửa một chữ trong ô lọc bấm ← để lùi con trỏ
+ *   sẽ **tua cả nhà máy về 5 phút trước** — và không có lỗi nào nổ để báo.
+ *
+ * ⚠ `<input type="range">` cũng nằm trong danh sách này: trình duyệt đã cho ←/→
+ *   nghĩa "giảm/tăng một `step`" khi nó có tiêu điểm. Cướp phím ở đó tạo HAI bộ
+ *   xử lý cho một phím (G12), và mốc sẽ nhảy hai lần một lần bấm.
+ */
+export function oDangGo(el: Element | null | undefined): boolean {
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return (el as HTMLElement).isContentEditable === true;
+}
+
 export function DongThoiGian({
   moc,
   bayGio,
@@ -100,10 +198,40 @@ export function DongThoiGian({
     // liên tục. Giá trị mới nhất đọc qua `refPhat`.
   }, [dangPhat, moc == null, onDoiMoc, onDoiPhat]);
 
-  const nhay = (delta: number) => {
-    const goc = moc ?? bayGio;
-    onDoiMoc(kepMoc(goc + delta, bayGio));
+  /**
+   * #37 — một BƯỚC tua. Dùng chung cho nút ◁/▷ và phím ←/→, nên hai đường vào
+   * không thể lệch nhau (G12: hai bản cài đặt của cùng một luật sớm muộn cũng
+   * cho hai kết quả, và ở đây "bấm nút" với "bấm phím" phải là MỘT thao tác).
+   */
+  const buoc = (huong: -1 | 1) => {
+    onDoiMoc(mocTheoBuoc(moc, huong, bayGio));
   };
+
+  /*
+   * #37 — PHÍM ←/→ ở cấp `window`.
+   *
+   * ★ Bắt ở `window` chứ không trên thanh này: người vận hành đang nhìn cảnh 3D
+   *   không có tiêu điểm trên thanh tua, và bắt họ Tab tới nó trước mới tua được
+   *   thì phím tắt không mua thêm gì so với cái nút đã có.
+   *
+   * ⚠ HAI cửa kiểm trước khi nuốt phím, và bỏ cửa nào cũng hỏng:
+   *   • `huongTuPhim` → `null` khi có phím bổ trợ ⇒ `Alt+←` vẫn là Back.
+   *   • `oDangGo` ⇒ ←/→ trong ô lọc/ô tìm/thanh trượt vẫn là di chuyển con trỏ.
+   * `preventDefault` CHỈ chạy sau khi cả hai cửa đã cho qua — gọi nó sớm hơn là
+   * cướp phím của người khác rồi mới hỏi có nên cướp không.
+   */
+  useEffect(() => {
+    const xuLy = (e: KeyboardEvent) => {
+      const huong = huongTuPhim(e);
+      if (huong === null) return;
+      if (oDangGo(document.activeElement)) return;
+      e.preventDefault();
+      buoc(huong);
+    };
+    window.addEventListener("keydown", xuLy);
+    return () => window.removeEventListener("keydown", xuLy);
+    // `buoc` đọc `moc`/`bayGio` mới nhất qua closure ⇒ phải gắn lại khi chúng đổi.
+  });
 
   return (
     <div
@@ -133,7 +261,7 @@ export function DongThoiGian({
         className="h-7 w-7 p-0"
         data-testid="nut-lui"
         aria-label={t("twin3d.tua.lui", "Lùi 5 phút")}
-        onClick={() => nhay(-BUOC_MS)}
+        onClick={() => buoc(-1)}
       >
         <SkipBack className="h-3.5 w-3.5" />
       </Button>
@@ -156,7 +284,7 @@ export function DongThoiGian({
         className="h-7 w-7 p-0"
         data-testid="nut-tien"
         aria-label={t("twin3d.tua.tien", "Tiến 5 phút")}
-        onClick={() => nhay(BUOC_MS)}
+        onClick={() => buoc(1)}
       >
         <SkipForward className="h-3.5 w-3.5" />
       </Button>
