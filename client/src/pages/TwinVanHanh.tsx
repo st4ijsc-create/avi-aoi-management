@@ -123,6 +123,9 @@ import {
   type MayVanHanh,
 } from "@/components/twin3d/van-hanh/trungThucDuLieu";
 import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
+// ── Đợt 11 lô J — §11 #16: KPI ĐỌC ĐƯỢC TRÊN CẢNH 3D (yêu cầu #6) ──────────
+import { tinhKpiNoi, type MayTongQuanKpi } from "@/components/twin3d/van-hanh/kpiNoiLogic";
+import { BangKpiNoi } from "@/components/twin3d/van-hanh/BangKpiNoi";
 // ── Đợt 10 mục 5 (lô G) — xem chi tiết TẠI CHỖ, trạng thái ngăn ở khoá `?xem=` ──
 import {
   docXemTuQuery,
@@ -1547,6 +1550,64 @@ export default function TwinVanHanh() {
   }, [mayVanHanh, datChoTheoMay, tapDs]);
 
   /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ ĐỢT 11 LÔ J — §11 #16: KPI TRÊN CẢNH 3D (yêu cầu #6 chủ sở hữu)     */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * ★★★ NGUỒN LÀ `factoryCommand.overview`, VÀ ĐÓ LÀ MỘT LỰA CHỌN CÓ CĂN CỨ.
+   *
+   * `overview` gate bằng **`machine_status`** (`factoryCommandRouter.ts:32-33`)
+   * — CÙNG cổng nav mà `/twin` đã đi qua. Truy vấn HÌNH HỌC (`canhThietKe`) thì
+   * đòi `settings_factory`/`machine_control`, và §11e.6 đo được hậu quả: người
+   * qua cổng nav rồi bị từ chối ở tầng dữ liệu ⇒ màn trắng. Dựng KPI trên
+   * `overview` vì vậy KHÔNG đẻ thêm một "lối vào rồi từ chối" nào.
+   *
+   * ★ KHÔNG gọi thêm truy vấn nào. `overviewQ` đã có mặt ở `:511` cho badge
+   *   trạng thái; gọi lần hai chỉ để lấy KPI là tạo NGUỒN SỰ THẬT THỨ HAI, và
+   *   hai lần fetch cách nhau vài giây sẽ cho cảnh 3D và bảng KPI khai khác
+   *   nhau về cùng một máy (G12).
+   */
+  const mayKpi = useMemo<MayTongQuanKpi[]>(() => {
+    const tatCa = overviewQ.data?.machines ?? [];
+    /*
+     * ★★★ KPI PHẢI ĐO ĐÚNG THỨ ĐANG HIỆN TRÊN CẢNH.
+     *
+     * `phamViCanhBao` là tập id ĐÃ được tính cho dải cảnh báo — dùng lại nó thay
+     * vì lọc lần hai ở đây. Hai phép lọc song song là đúng chỗ G12 hay chui vào:
+     * chúng chỉ đồng ý tới lần sửa đầu tiên, rồi âm thầm cho bảng KPI và dải
+     * cảnh báo nói về hai tập máy khác nhau mà không gì nổ.
+     *
+     * `null` = cấp `tapDoan`/`nhaMay` ⇒ KHÔNG lọc: ở hai cấp đó cảnh hiện toàn
+     * bộ máy `overview` trả về, nên mẫu số của KPI cũng phải là toàn bộ.
+     */
+    const loc = phamViCanhBao?.machineIds ?? null;
+    const ds = loc === null ? tatCa : tatCa.filter((m) => loc.has(m.id));
+    return ds.map((m) => ({
+      id: m.id,
+      status: String(m.status),
+      // ★ `?? null` chứ KHÔNG `?? 0` — honest-null đi suốt từ server tới ô hiển
+      //   thị. Đo được trên DB này: `oeePercent` null cho MỌI máy.
+      oeePercent: typeof m.oeePercent === "number" ? m.oeePercent : null,
+      andonActive: Boolean(m.andonActive),
+      pdmRiskHigh: Boolean(m.pdmRiskHigh),
+    }));
+  }, [overviewQ.data, phamViCanhBao]);
+
+  /**
+   * ★ Cờ `chuaDo` nhận RIÊNG tình trạng của `overviewQ`, KHÔNG dùng `dangTai`
+   *   chung. `dangTai` gộp cả `canhQ` (hình học) — mà một `canhQ` 403 KHÔNG làm
+   *   các con số trạng thái của `overview` sai đi. Gộp vào sẽ làm bảng KPI câm
+   *   ở đúng ca nó hữu ích nhất: người không có quyền xem bố cục vẫn được phép
+   *   biết bao nhiêu máy đang chạy.
+   */
+  const kpiChuaDo =
+    overviewQ.isLoading || overviewQ.isError || factoryId === null;
+  const kpiNoi = useMemo(() => tinhKpiNoi(mayKpi, kpiChuaDo), [mayKpi, kpiChuaDo]);
+
+  /** Bảng KPI mở/thu — dùng CHUNG khoá `?thu=` với hai panel bên (G40). */
+  const thuKpi = urlState.thu.includes("kpi");
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
   /* Quyền xử lý (§9.2)                                                       */
   /* ═══════════════════════════════════════════════════════════════════════ */
 
@@ -2141,6 +2202,32 @@ export default function TwinVanHanh() {
               onCameraDoi={khiCameraDoi}
             />
           )}
+          {/*
+            ── ★★★ ĐỢT 11 LÔ J — §11 #16: BẢNG KPI NỔI TRÊN CẢNH (yêu cầu #6) ──
+
+            ĐẶT Ở ĐÂY, TRONG khung canvas, chứ không trong panel trái — và đó là
+            toàn bộ điểm của yêu cầu #6. Mọi con số của màn này trước bản J sống
+            trong `khoi-tong-quan` của panel trái; `?thu=trai,phai` (đường tới
+            "3D toàn màn", đo được: canvas 488→968 px) làm mất sạch chúng. Một
+            màn hình treo tường chạy đúng chế độ đó sẽ hiện một nhà máy 3D đẹp
+            mà KHÔNG một con số nào.
+
+            ★ Lớp phủ DOM, KHÔNG phải chữ trong cảnh: đo 2026-09-07 cảnh này là
+              **3 draw calls**; 8 nhãn troika sẽ thành 11 (§4 trần 150 — còn
+              rộng, nhưng chữ trong cảnh xoay/bị che/nhỏ dần theo camera, tức là
+              không đọc được đúng lúc cần đọc). Xem docblock `kpiNoiLogic.ts`.
+          */}
+          <BangKpiNoi
+            kpi={kpiNoi}
+            dangTai={kpiChuaDo}
+            mo={!thuKpi}
+            onDoiMo={() => doiThu("kpi")}
+            /* ★ Nói RÕ đang đo phạm vi nào — một bảng KPI không khai phạm vi thì
+               người xem mặc định hiểu là toàn nhà máy, trong khi cảnh chỉ nạp
+               một tầng (đúng lớp lỗi `?pv=tapdoan` của §11e.6 F3). */
+            nhanPhamVi={breadcrumb.map((m) => m.nhan).join(" · ")}
+          />
+
           {/*
             ── ★★★ F4 — HAI TAY NẮM THU/MỞ, NỔI TRÊN MÉP CANVAS ──────────────
             Đặt Ở ĐÂY chứ không trong panel, và lý do là cơ học: một nút nằm

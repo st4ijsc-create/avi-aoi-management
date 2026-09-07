@@ -20523,6 +20523,23 @@
       "polygonKhongHopLe": "至少需要 {{n}} 个不共线的顶点",
       "quaNhieuDinh": "最多 {{n}} 个顶点",
       "tieuDe": "安全区"
+    },
+    "kpiNoi": {
+      "tieuDe": "指标",
+      "mauSo": "{{n}} 台设备",
+      "thu": "收起指标面板",
+      "mo": "展开指标面板",
+      "mauSoOee": "已测量 OEE 的设备 {{co}}/{{tong}} 台",
+      "o": {
+        "dangChay": "运行中",
+        "dungLoi": "故障停机",
+        "baoTri": "维护中",
+        "matKetNoi": "失去连接",
+        "tyLeChay": "运行率",
+        "oeeTrungBinh": "平均 OEE",
+        "andonMo": "未处理安灯",
+        "ruiRoPdm": "预测性维护风险"
+      }
     }
   }
 }

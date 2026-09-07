@@ -390,6 +390,46 @@ describe("★★★ docThu / ghiThu — F4: trả diện tích cho 3D", () => {
     expect(docThu(ghiThu(PANEL_THU_DUOC))).toEqual([...PANEL_THU_DUOC]);
   });
 
+  /* ═════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 11 LÔ J (§11 #16) — BẢNG KPI DÙNG CHUNG KHOÁ `thu=`, G40
+   * ═════════════════════════════════════════════════════════════════════════ */
+
+  it("★ `kpi` là panel thu được, và MẶC ĐỊNH LÀ MỞ (vắng mặt ⇒ không nằm trong `thu`)", () => {
+    // Yêu cầu #6 đòi số liệu ĐỌC ĐƯỢC trên cảnh 3D ⇒ mặc định phải HIỆN.
+    // Nếu ai đó lật ngữ nghĩa thành "có mặt = mở", test này đỏ.
+    expect(docThu("")).not.toContain("kpi");
+    expect(docThu(null)).not.toContain("kpi");
+    expect(docThu("kpi")).toEqual(["kpi"]);
+  });
+
+  it("★ G40 — thu `kpi` KHÔNG đè `pv`/`chon`/`cam`/`nm` của người ghi khác", () => {
+    // Bốn khoá kia có bộ ghi riêng. Một lượt ghi `thu` phải đi qua
+    // `tronTrangThaiUrl` và giữ NGUYÊN VĂN mọi khoá nó không sở hữu.
+    const goc = "pv=line:1&chon=machine:42&cam=1,2,3,4,5&nm=7&toa=24&tang=28&xem=canhbao";
+    const sp = new URLSearchParams(tronTrangThaiUrl(goc, { thu: ["kpi"] }));
+    expect(sp.get("thu")).toBe("kpi");
+    expect(sp.get("pv")).toBe("line:1");
+    expect(sp.get("chon")).toBe("machine:42");
+    expect(sp.get("cam")).toBe("1,2,3,4,5");
+    expect(sp.get("nm")).toBe("7");
+    expect(sp.get("toa")).toBe("24");
+    expect(sp.get("tang")).toBe("28");
+    // `?xem=` là khoá của lô G (`nhungTaiCho`) — người ghi KHÁC, phải sống sót.
+    expect(sp.get("xem")).toBe("canhbao");
+  });
+
+  it("★ `kpi` sống chung với `trai`/`phai` trong CÙNG một khoá, thứ tự tất định", () => {
+    expect(ghiThu(["kpi", "phai", "trai"])).toBe("trai,phai,kpi");
+    // ★ `docThu` giữ THỨ TỰ ĐẦU VÀO (nó duyệt và nối), còn `ghiThu` CHUẨN HOÁ
+    //   về thứ tự `PANEL_THU_DUOC`. Hai hàm cố ý bất đối xứng: đọc phải khoan
+    //   dung với mọi URL người dùng dán vào, ghi phải tất định để so chuỗi rẻ.
+    expect(docThu("kpi,trai")).toEqual(["kpi", "trai"]);
+    expect(ghiThu(docThu("kpi,trai"))).toBe("trai,kpi");
+    // ...và ba panel độc lập: thu KPI không thu panel bên nào.
+    const sp = new URLSearchParams(tronTrangThaiUrl("thu=trai", { thu: ["trai", "kpi"] }));
+    expect(docThu(sp.get("thu"))).toEqual(["trai", "kpi"]);
+  });
+
   it("★ `thu: []` KHÔNG ghi ra URL — 'mở cả hai' là mặc định, ghi ra chỉ làm nhiễu", () => {
     expect(ghiTrangThaiUrl({ thu: [] })).toBe("");
     expect(ghiTrangThaiUrl({ thu: ["phai"] })).toBe("thu=phai");

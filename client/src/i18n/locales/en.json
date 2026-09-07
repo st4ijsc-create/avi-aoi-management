@@ -20515,6 +20515,23 @@
       "polygonKhongHopLe": "Needs at least {{n}} non-collinear vertices",
       "quaNhieuDinh": "At most {{n}} vertices",
       "tieuDe": "Safety zones"
+    },
+    "kpiNoi": {
+      "tieuDe": "Metrics",
+      "mauSo": "{{n}} machines",
+      "thu": "Collapse metrics panel",
+      "mo": "Expand metrics panel",
+      "mauSoOee": "OEE measured on {{co}}/{{tong}} machines",
+      "o": {
+        "dangChay": "Running",
+        "dungLoi": "Down",
+        "baoTri": "Maintenance",
+        "matKetNoi": "Offline",
+        "tyLeChay": "Running rate",
+        "oeeTrungBinh": "Average OEE",
+        "andonMo": "Open andon",
+        "ruiRoPdm": "PdM risk"
+      }
     }
   }
 }

@@ -20495,6 +20495,23 @@
       "polygonKhongHopLe": "Cần ít nhất {{n}} đỉnh không thẳng hàng",
       "quaNhieuDinh": "Tối đa {{n}} đỉnh",
       "tieuDe": "Vùng an toàn"
+    },
+    "kpiNoi": {
+      "tieuDe": "Chỉ số",
+      "mauSo": "{{n}} máy",
+      "thu": "Thu bảng chỉ số",
+      "mo": "Mở bảng chỉ số",
+      "mauSoOee": "OEE đo được trên {{co}}/{{tong}} máy",
+      "o": {
+        "dangChay": "Đang chạy",
+        "dungLoi": "Dừng lỗi",
+        "baoTri": "Bảo trì",
+        "matKetNoi": "Mất kết nối",
+        "tyLeChay": "Tỉ lệ chạy",
+        "oeeTrungBinh": "OEE trung bình",
+        "andonMo": "Andon đang mở",
+        "ruiRoPdm": "Rủi ro PdM"
+      }
     }
   }
 }

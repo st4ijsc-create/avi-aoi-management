@@ -128,8 +128,21 @@ export interface TrangThaiTwinUrl {
   thu: string[];
 }
 
-/** Tên panel thu được. Danh sách ĐÓNG — cùng lý do với `LOP_HOP_LE`. */
-export const PANEL_THU_DUOC: readonly string[] = ["trai", "phai"];
+/**
+ * Tên panel thu được. Danh sách ĐÓNG — cùng lý do với `LOP_HOP_LE`.
+ *
+ * ★★★ `"kpi"` (Đợt 11 lô J, §11 #16) DÙNG LẠI ĐÚNG KHOÁ `thu=` NÀY, KHÔNG THÊM
+ *   KHOÁ QUERY MỚI — và đó là một luật (G40), không phải tiết kiệm ký tự. Màn
+ *   `/twin` đã có bốn người ghi vào query string (`pv`, `chon`/`xem`, `cam`,
+ *   `nm/toa/tang`). Một khoá thứ năm kiểu `?kpi=0` sẽ có bộ đọc riêng, bộ ghi
+ *   riêng, và luật hợp nhất riêng — tức là chỗ thứ năm để hai lượt ghi đè nhau.
+ *   Ở đây `docThu`/`ghiThu` đã là MỘT bộ đọc-ghi tất định cho cả danh sách.
+ *
+ * ★ Hệ quả ngữ nghĩa CÓ CHỦ Ý: vắng mặt = **đang mở**. Bảng KPI vì vậy mặc định
+ *   HIỆN (yêu cầu #6: số liệu phải đọc được trên cảnh 3D), và `?thu=kpi` là
+ *   đường tắt cho "cảnh 3D sạch không chữ".
+ */
+export const PANEL_THU_DUOC: readonly string[] = ["trai", "phai", "kpi"];
 
 /**
  * Một THAY ĐỔI trạng thái URL — khác `Partial<TrangThaiTwinUrl>` ở ô `nap`.
