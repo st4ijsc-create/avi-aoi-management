@@ -62,6 +62,8 @@ import {
   // ── Đợt 6 (§6.3) — trạng thái hàng loạt cho vòng render `/twin` ──
   traTrangThaiHangLoat,
   traAnhLichSu,
+  // ── Đóng nợ #26 (§11) — E-STOP nổi lên Twin ──
+  traAnToanRobot,
 } from "../db/twinCanh";
 
 /**
@@ -743,6 +745,38 @@ export const twinCanhRouter = router({
         // Đếm rỗng khác đếm bằng 0: `tong` luôn là số ĐÃ đo (độ dài mảng).
         tong: may.length,
       };
+    }),
+
+  /**
+   * ★★★ §11 #26 — AN TOÀN (E-STOP) CỦA ROBOT, NỔI LÊN TỔNG QUAN.
+   *
+   * ⚠ Thủ tục RIÊNG, không nhét vào `trangThaiHangLoat`: hai câu hỏi khác nhau
+   *   trên hai bảng khác nhau, và gộp lại sẽ làm một lỗi đọc telemetry robot
+   *   đánh sập cả vòng render trạng thái máy. Tách ra thì mất tín hiệu an toàn
+   *   là mất ĐÚNG dải an toàn, và nó nói ra điều đó.
+   *
+   * ★★★ G21 — QUYỀN CỦA NGƯỜI NHẬN, không phải phép nhóm theo dữ liệu. Cổng là
+   *   `quyenVanHanh("canView")` = `analytics_oee` **HOẶC** `machine_status`,
+   *   CÙNG cổng mà `/twin` và `trangThaiHangLoat` dùng. Lý do dùng lại thay vì
+   *   khai một cổng thứ ba: ai đã được xem màn Vận hành thì phải thấy được tín
+   *   hiệu an toàn của chính màn ấy — một dải E-STOP mà người trực ca không có
+   *   quyền đọc là dải E-STOP không tồn tại. Ngược lại, ai KHÔNG qua nổi cổng
+   *   `/twin` thì cũng không gọi được thủ tục này.
+   *
+   * ★ Phạm vi nhà máy: `phamViCua(ctx)` → `traCayPhanCapNhaMay` (xem
+   *   `traAnToanRobot`). Không có đường vòng nào lấy robot ngoài phạm vi.
+   */
+  anToanRobot: protectedProcedure
+    .use(quyenVanHanh("canView"))
+    .input(z.object({ factoryId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const robot = await traAnToanRobot(input.factoryId, phamViCua(ctx));
+      /*
+       * ★ Trả `bayGio` của SERVER cùng lý lẽ G15 đã ghi ở `trangThaiHangLoat`:
+       *   client không được tự khai đồng hồ khi quyết định dữ liệu còn tươi hay
+       *   không.
+       */
+      return { robot, bayGio: Date.now(), tong: robot.length };
     }),
 
   /**

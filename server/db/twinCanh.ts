@@ -43,6 +43,10 @@ import {
   stations,
   machines,
   workstations,
+  // Đợt 7 nợ #26 — E-STOP nổi lên Twin. Robot KHÔNG vào được `twin_dat_cho`
+  // (enum `loaiThucThe` không có `robot`), nên an toàn đi đường RIÊNG.
+  robots,
+  robotTelemetry,
 } from "../../drizzle/schema";
 import { trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 // Đợt 6 — cùng bộ bóc hàng thô mà `db/machine.ts` dùng (một quy ước, không hai).
@@ -1321,6 +1325,129 @@ export async function traAnhLichSu(
       // Tuổi tính TỪ MỐC ĐANG XEM, không từ bây giờ (§9.8).
       doTuoiGiay: capNhatLuc == null ? null : Math.max(0, Math.round((mocMs - capNhatLuc) / 1000)),
       uptimePhanTram: null,
+    };
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ★★★ §11 #26 — TRẠNG THÁI AN TOÀN (E-STOP) CỦA ROBOT TRONG MỘT NHÀ MÁY
+// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * Trả robot của một nhà máy kèm HAI nguồn tín hiệu E-STOP, để
+ * `tomTatAnToan()` ở client quy về ba trạng thái `nhan|nha|khong_ro`.
+ *
+ * ════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO ĐƯỜNG RIÊNG, KHÔNG MỞ RỘNG `canhThietKe`/`twin_dat_cho`
+ * ════════════════════════════════════════════════════════════════════════
+ * Đo được 2026-09-07:
+ *   • `twin_dat_cho.loaiThucThe` là enum `workshop|line|station|machine|
+ *     workstation` (`drizzle/schema/twin3d.ts`) — **KHÔNG có `robot`**. Thêm
+ *     giá trị enum là một migration + đổi hợp đồng của 5 procedure ghi; đó là
+ *     việc của Đợt 7, không phải điều kiện để an toàn hiện lên màn hình.
+ *   • `duongDanTwin.unit.test.ts:57` ghim `docPhamVi("robot:1") === null` —
+ *     robot KHÔNG địa chỉ hoá được trong cảnh.
+ *
+ * ⇒ Và nó KHÔNG CẦN phải địa chỉ hoá được. §3 NT-2 luật 1 nói rõ: *"Badge alarm
+ *   vẽ ở KHÔNG GIAN MÀN HÌNH, không ở không gian thế giới"* — chính là để một
+ *   góc camera không bao giờ che được một tín hiệu an toàn. Dải E-STOP của
+ *   `/twin` là một banner 2D ở đỉnh trang, nên nó cần biết *robot NÀO đang
+ *   nhấn*, KHÔNG cần biết robot ấy đứng ở toạ độ mm nào. Chờ enum mới để hiện
+ *   được một banner là buộc an toàn xếp hàng sau hình học.
+ *
+ * ★ Phạm vi nhà máy đi qua ĐÚNG `traCayPhanCapNhaMay` — cùng bộ phân giải mà mọi
+ *   đường dữ liệu khác của Twin dùng (BG-127: độc lập phải ở mô hình, không ở
+ *   người đo). Robot neo vào nhà máy qua `lineId`/`stationId`; ta nhận CẢ HAI
+ *   đường vì `robots.lineId` và `robots.stationId` đều nullable và dữ liệu thật
+ *   dùng `lineId` (3/3 robot dev có `lineId=1`, `stationId=NULL`).
+ *
+ * ★★★ `isEnabled = false` bị LOẠI, và đó là quyết định có lý do: một robot đã
+ *   vô hiệu hoá không có người vận hành nào đang đứng cạnh, nên mạch an toàn của
+ *   nó không phải là câu hỏi của ca trực. Ngược lại `status`/`estop` KHÔNG được
+ *   lọc — lọc theo trạng thái chính là bỏ mất tập ta đi tìm.
+ *
+ * ★ `estop` lấy từ hàng telemetry MỚI NHẤT mỗi robot (`DISTINCT ON`). Robot
+ *   chưa từng có telemetry ⇒ `estop = null` ⇒ `khong_ro`, KHÔNG phải `nha`
+ *   (NT-3: không có dữ liệu ≠ bình thường).
+ */
+export interface AnToanRobot {
+  id: number;
+  ma: string;
+  ten: string;
+  /** `robots.status` — `"estop"` là một GIÁ TRỊ của cột này (fleetRouter.ts:325). */
+  status: string | null;
+  /** Cờ E-STOP từ telemetry mới nhất. `null` = CHƯA ĐỌC ĐƯỢC. */
+  estop: boolean | null;
+  /**
+   * Mốc telemetry mới nhất — `null` khi robot chưa từng báo cáo.
+   *
+   * ★ Lấy từ cột `timestamp` (MỐC ĐO của thiết bị), KHÔNG phải `createdAt`
+   *   (mốc GHI HÀNG). Hai cột cùng tồn tại trên `robot_telemetry`, và chọn
+   *   nhầm cột ghi làm một lô backfill cũ tự khai là vừa đo xong — đúng lớp
+   *   lỗi "giả tươi" mà NT-3.4 cấm. `timestamp` cũng là cột ĐƯỢC ĐÁNH CHỈ MỤC
+   *   (`idx_robot_telemetry_robot_time`), nên đây còn là lựa chọn đúng về đọc.
+   */
+  capNhatLuc: number | null;
+}
+
+export async function traAnToanRobot(
+  factoryId: number,
+  scope?: PhamViNguoiXem,
+): Promise<AnToanRobot[]> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  // Cổng phạm vi nằm TRONG `traCayPhanCapNhaMay` (nhà máy ngoài phạm vi ⇒ cây
+  // rỗng ⇒ không robot nào). Không đặt cổng thứ hai: hai cổng nối tiếp che mất
+  // chỗ cổng thật sự được áp — cùng lý lẽ đã ghi ở `traTrangThaiHangLoat`.
+  const cay = await traCayPhanCapNhaMay(factoryId, scope);
+  const chuyenIds = cay.chuyen.map((c) => c.id);
+  const tramIds = cay.tram.map((t) => t.id);
+  if (chuyenIds.length === 0 && tramIds.length === 0) return [];
+
+  const dieuKien = [];
+  if (chuyenIds.length > 0) dieuKien.push(inArray(robots.lineId, chuyenIds));
+  if (tramIds.length > 0) dieuKien.push(inArray(robots.stationId, tramIds));
+
+  const hangRobot = await d
+    .select({
+      id: robots.id,
+      ma: robots.code,
+      ten: robots.name,
+      status: robots.status,
+    })
+    .from(robots)
+    .where(
+      and(
+        eq(robots.isEnabled, true),
+        dieuKien.length === 1 ? dieuKien[0] : sql`(${dieuKien[0]} OR ${dieuKien[1]})`,
+      ),
+    );
+  if (hangRobot.length === 0) return [];
+
+  const ids = hangRobot.map((r) => r.id);
+  const hangTele = executeRows(
+    await d.execute(sql`
+      SELECT DISTINCT ON ("robotId")
+             "robotId" AS robot_id, estop, "timestamp" AS ts
+      FROM robot_telemetry
+      WHERE "robotId" IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
+      ORDER BY "robotId", "timestamp" DESC
+    `),
+  ) as Array<{ robot_id: number; estop: boolean | null; ts: Date | null }>;
+
+  const teleTheoId = new Map<number, { estop: boolean | null; ts: Date | null }>();
+  for (const r of hangTele) teleTheoId.set(Number(r.robot_id), { estop: r.estop, ts: r.ts });
+
+  return hangRobot.map((r) => {
+    const t = teleTheoId.get(r.id);
+    return {
+      id: r.id,
+      ma: r.ma,
+      ten: r.ten,
+      status: r.status ?? null,
+      // `?? null` chứ KHÔNG `?? false`: chưa có telemetry ⇒ CHƯA ĐỌC ĐƯỢC.
+      estop: t?.estop ?? null,
+      capNhatLuc: t?.ts ? new Date(t.ts).getTime() : null,
     };
   });
 }

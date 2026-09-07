@@ -236,6 +236,17 @@ export default function TwinVanHanh() {
   });
 
   /**
+   * ★★★ §11 #26 — NGUỒN DỮ LIỆU AN TOÀN (E-STOP). Đây là ô đã đóng nợ Đợt 6.
+   *
+   * ★ Nhịp làm mới 20 s, BẰNG `andonQ` chứ không bằng `overviewQ` (30 s): E-STOP
+   *   cùng hạng với cảnh báo đang mở, không cùng hạng với số liệu tổng quan.
+   */
+  const anToanQ = trpc.twinCanh.anToanRobot.useQuery(
+    { factoryId: factoryId ?? 0 },
+    { enabled: factoryId !== null, retry: false, refetchInterval: 20_000 },
+  );
+
+  /**
    * ★★★ "MỘT LỐI VÀO RỒI TỪ CHỐI" — bắt FORBIDDEN của truy vấn hình học.
    * Người dùng qua cổng `analytics_oee` nhưng `canhThietKe` đòi
    * `settings_factory`/`machine_control`. Không bắt thì họ thấy một cảnh TRỐNG
@@ -404,12 +415,21 @@ export default function TwinVanHanh() {
   /* ── §11 #26 — E-STOP nổi lên tổng quan ───────────────────────────────── */
 
   /**
-   * ⚠ NỢ CÓ KHAI: Twin chưa đặt được robot vào cảnh (`twin_dat_cho.loaiThucThe`
-   * không có `robot` — `drizzle/schema/twin3d.ts:149`), nên tóm tắt này hiện
-   * chạy trên TẬP RỖNG và chỉ chứng minh "không nổ". Xem docblock
-   * `canhBaoAnToan.ts` cho ba điều kiện còn thiếu để đóng #26.
+   * ★★★ NỢ ĐỢT 6 ĐÃ ĐÓNG — trước đây ô này là `tomTatAnToan([])`, một MẢNG RỖNG
+   * HARDCODE, nên badge E-STOP không thể nổi lên dù có robot đang nhấn thật.
+   *
+   * Nguồn nay là `twinCanh.anToanRobot` — thủ tục riêng, cùng cổng quyền với
+   * `/twin`, phạm vi nhà máy đi qua `traCayPhanCapNhaMay`. Robot KHÔNG cần vào
+   * được `twin_dat_cho`: §3 NT-2 luật 1 đòi badge an toàn vẽ ở KHÔNG GIAN MÀN
+   * HÌNH, nên dải này chỉ cần biết robot NÀO, không cần toạ độ của nó.
+   *
+   * ⚠ `anToanQ.data?.robot ?? []` — khi truy vấn CHƯA XONG hoặc BỊ TỪ CHỐI thì
+   *   ta không có dữ liệu an toàn nào, và mảng rỗng ở đây nói đúng câu ấy: dải
+   *   không hiện. Điều KHÔNG được làm là để trạng thái lỗi tự suy thành "mọi
+   *   robot đã nhả E-STOP" — và `tomTatAnToan` không có đường nào ra kết luận
+   *   đó từ một mảng rỗng (`coCanhBao` chỉ bật khi có phần tử `nhan`).
    */
-  const anToan = useMemo(() => tomTatAnToan([]), []);
+  const anToan = useMemo(() => tomTatAnToan(anToanQ.data?.robot ?? []), [anToanQ.data]);
 
   /** Trạng thái HIỂN THỊ (đã xét tuổi) — nguồn duy nhất cho mọi bề mặt. */
   const trangThaiTheoMay = useMemo(() => {
@@ -1042,9 +1062,10 @@ export default function TwinVanHanh() {
         không phải mở từng buồng lái mới biết. Đặt TRÊN mọi banner khác: đây là
         thông tin an toàn, nó không xếp hàng sau cảnh báo bố cục.
 
-        ⚠ Hiện chạy trên tập RỖNG (Twin chưa đặt được robot vào cảnh) — xem
-        docblock `canhBaoAnToan.ts`. Khối này vì thế CHƯA từng hiện trên dữ liệu
-        thật, và #26 chưa được đánh dấu "đã di trú VÀ ĐÃ ĐO".
+        ★ Nguồn: `twinCanh.anToanRobot` (đã nối 2026-09-07 — đóng nợ Đợt 6).
+        Nghiệm thu bằng CA DƯƠNG dựng tay: đặt một robot sang `status='estop'`,
+        mở `/twin`, dải này NỔI LÊN; khôi phục xong nó tắt. Không dựng ca dương
+        thì "không dải nào hiện" trông y hệt nhau dù mã đúng hay hỏng (G5/G22).
       */}
       {anToan.coCanhBao ? (
         <div
