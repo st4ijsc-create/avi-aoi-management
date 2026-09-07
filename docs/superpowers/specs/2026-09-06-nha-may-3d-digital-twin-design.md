@@ -1729,6 +1729,33 @@ QĐ-1 là phương án **khối lượng lớn nhất**: 62 tính năng đang ch
 
 ---
 
+## 11b. Bản đồ phụ thuộc 5 màn cũ — ĐO TRƯỚC KHI XOÁ (2026-09-07)
+
+Đợt 7 xoá màn cũ. Trước đó phải biết **ai đang phụ thuộc chúng** — đo được, không đoán:
+
+| Màn cũ | Ai import | Xoá cần làm gì trước |
+|---|---|---|
+| `DigitalTwinCenter` | **`TwinHub.tsx`** — `DigitalTwinCenterContent` (tab `center`) | Gỡ tab khỏi TwinHub |
+| `FactoryLiveMap3D` | **`TwinHub.tsx`** — `FactoryLiveMap3DContent` (tab `map`) | Gỡ tab khỏi TwinHub |
+| `CommandCenter` | `App.tsx:174` lazy + `:652` preload map, route `/command-center` | Gỡ route + preload + redirect |
+| `MachineCockpit` | `App.tsx:178` **VÀ `MachineWorkspace.tsx`** | ★ **CÓ CONSUMER NGOÀI ROUTE** |
+| `RobotCockpit` | `App.tsx:179`, route `/robot/:id` | Gỡ route + redirect |
+
+> ### ★★★ CẢNH BÁO — `MachineCockpit` có consumer thứ hai
+> `client/src/pages/MachineWorkspace.tsx` import `MachineCockpit` trực tiếp (nó export
+> `MachineCockpitBody({machineId, embedded})` để nhúng). **`MachineWorkspace` KHÔNG nằm trong phạm vi
+> Twin** — xoá `MachineCockpit` sẽ làm gãy một màn ngoài dự án.
+> ⇒ Đợt 7 **không được xoá `MachineCockpit`** cho tới khi `MachineWorkspace` có đường khác, và đó là
+> quyết định của chủ sở hữu, không phải của đợt dọn dẹp.
+
+> ### ★★★ BẪY ĐO — grep sai mẫu cho ra "0 nơi import"
+> Lần đo đầu của chủ dự án dùng mẫu `pages/<Tên>` và cho kết quả `DigitalTwinCenter: 0 nơi import` —
+> **sai**. TwinHub import chúng bằng đường dẫn tương đối `"./DigitalTwinCenter"`, không khớp mẫu đó.
+> Nếu tin con số ấy, Đợt 7 đã xoá hai màn **đang được TwinHub dùng**.
+> ⇒ Đây là **G9 (đơn vị/phạm vi của con số)** áp cho `grep`: một phép đếm chỉ đúng trong phạm vi mẫu
+> của nó. Trước khi tin "0 kết quả", **thử mẫu thứ hai rời hẳn** — ở đây là đếm cả `./<Tên>`,
+> `@/pages/<Tên>`, và `pages/<Tên>`.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
