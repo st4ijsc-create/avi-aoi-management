@@ -2113,6 +2113,52 @@ màn Vận hành) — thiếu nó thì không nghiệm thu thị giác được 
 WIP chọn **trạm 1 (3.152)** thay vì trạm 10 (124) mà bản ghi cũ khai. Đo trên DOM trang thật.
 
 
+### 11d.8 TỔNG KẾT ĐỢT 8 — 4 lô, chủ dự án đo độc lập (2026-09-07)
+
+**Cổng cuối: 47 tệp / 1433 test** (nền Đợt 7: 32/994) · `check` 0 · `build` 0 · cây nguồn sạch ·
+**cảnh báo `oklch` 84 → 0**. Commit: A `ba47a695` · B `0162fafc` · C `e44c90be` · D `5588bf0a`.
+
+**Kiểm G16 độc lập — MỌI mục có chỗ gọi thật** (khác hẳn Đợt 7, nơi `nhipHoiMs`/`wip` có đủ mã mà **0** chỗ gọi):
+`nhipHoiToiDa` 4 · `wipTram` 2 · `khungNhin` 21 · `xuatAnh` 10 · `banDoNho` 3 · `vungAnToan` 7 ·
+`VeVung` 2 · `DaiCanhBao` 3 · `docStatsAoi` 2 · `byteMau` 9.
+
+**Nợ lô B đã đóng:** `DaiCanhBao` từ 0 chỗ gọi → `TwinVanHanh.tsx:1639`. Khối `<ul>` phẳng cũ bị bỏ —
+để lại là **hai dải cùng nói về một sự cố với hai con số**.
+
+**#60 — bác brief đúng, đo được:** brief chỉ `getAllMachinesStats`; thủ tục đó
+(`dashboardStatsRouters.ts:95-153`) `Promise.all` **một `getMachineStats` cho MỖI máy** (42 trên SIM-FAC)
+để ngăn này dùng đúng **một** hàng — chính là N+1 mà Đợt 6 sinh ra để diệt. Nguồn đúng
+`dashboard.getMachineStats` (`:75-93`); **cả hai `protectedProcedure`** ⇒ đổi nguồn **không nới quyền**.
+
+> #### ★★★ G32 — PHÉP BIẾN ĐỔI ĐỒNG NHẤT: G5 **KHÔNG CẦN TẬP RỖNG**
+> `phaVeNen()` nhận `oklch`, không phân giải được, **trả nguyên màu gốc**. Đầu vào **khác rỗng**, mã
+> **chạy đủ**, không lỗi, mọi cổng xanh — và hiệu ứng là **`f(x) = x`**. Đo song song hai nhánh
+> trên trang thật: chênh lệch **0 → 376** (running), **0 → 329** (error), **0 → 306** (blocked).
+> ⇒ Chống G5 không chỉ là "cho dữ liệu khác rỗng"; phải hỏi **đầu ra có KHÁC đầu vào không**.
+
+> #### ★ G31 — VÁ ĐÚNG MỘT TỆP VẪN CHƯA TỚI ĐÍCH
+> Lô A vá `oklch` ở `CanhVanHanh.tsx` và **tự khai còn 2 chỗ + 84 warning**. Chính lời tự khai đó là
+> toàn bộ giá trị còn lại — không có nó thì lô D không biết đi đâu.
+
+> #### ★ G33/G34 — ĐO NHẦM TẦNG, VÀ `tong=0` GIỐNG HỆT CANVAS TRỐNG
+> G33: `toContain("stats-ok")` đỏ vì ba ô sinh trong `.map()`; **hạ xuống `"stats-"` sẽ XANH mà đo đúng
+> số 0** — neo vào mảng sinh ra bốn ô thay vì nới chỉ báo. G34: `preserveDrawingBuffer=false` lần 2 —
+> phải có **cửa kiểm frame khác rỗng** trước khi phân loại màu.
+
+**D5 — KHÔNG CHỨNG MINH ĐƯỢC, khai thẳng:** 715.000 pixel × 4 tư thế camera ⇒ **0 pixel hổ phách**.
+Nguyên nhân **đo được**: trạm nghẽn là **trạm #1** ở đầu chuyền, nhãn 3D chiếu ra **x âm**
+(`SIM-L1-AOI` x=−14) ⇒ ngoài khung trái; mọi cách dời camera bị `ghiCamera` ghi `?cam=` đè sau ~1 s.
+Đo được tầng ngay dưới: `setColorAt` nghẽn `rgb(239,168,49)` vs thường `rgb(90,163,236)`, **chênh 341**
+(trước vá cả hai `#ffffff`, chênh **0**).
+**MÓN CÒN MỞ:** màn Vận hành **thiếu đường đặt camera không bị URL ghi đè** ⇒ không nghiệm thu thị
+giác được bất cứ gì ngoài khung mặc định. Đây là **hạn chế của THIẾT BỊ ĐO**, không phải của tính năng.
+
+**G30 đã có hiệu lực trên trang thật:** `conHieuLuc` bác đúng bản khai `line_balance` **16 ngày tuổi**;
+đường suy từ WIP chọn **trạm 1 (3.152)** thay vì trạm 10 (124).
+
+**Nghiệm thu chạy bằng `e2e_twin_dot4@local.test` — KHÔNG phải admin** ⇒ số về quyền là số thật
+(admin **bypass** `requirePermission`, đo bằng admin chứng minh **0** — bài học Khối D).
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
