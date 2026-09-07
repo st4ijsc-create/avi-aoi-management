@@ -2054,6 +2054,65 @@ Cổng: **45 tệp / 1391 test** (riêng `van-hanh` **18 tệp / 387**) · `chec
 trái khung hình). Cột xanh đã đo được bằng pixel. **A3 (#60) CHƯA LÀM** — đích `NganXuLy.tsx` ngoài
 danh sách tệp lô A.
 
+### 11d.7 LÔ D ĐÃ VỀ — nợ đã ĐO ĐƯỢC đã dọn, và một mục KHÔNG chứng minh được (2026-09-07)
+
+Cổng: **47 tệp / 1433 test** (nền 45/1391) · `check` 0 · `build` 0 · **cảnh báo `oklch` 84 → 0**.
+Commit `5588bf0a`.
+
+**D1 → `mauThree.ts` + `byteMau.ts`** (mới) · `DongChayLine.tsx:92,105` · `TwinVanHanh.tsx:653,702,703,773`
+**D2 → `phamViCanh.ts` `tachRgb`** · **D3 (#60) → `NganXuLy.tsx` `nhom-stats-aoi`** ·
+**D4 → `TwinVanHanh.tsx:1554`** (`<DaiCanhBao>`) **+ `andon:event`**
+
+> #### ★★★ G31 — MỘT BẢN VÁ ĐÚNG Ở MỘT TỆP VẪN LÀ MỘT BẢN VÁ **CHƯA TỚI ĐÍCH**
+> Lô A vá `THREE.Color(oklch)` **đúng**, có test, và **tự khai** ba chỗ còn lại ngoài phạm vi tệp
+> của nó. Ba chỗ đó là toàn bộ giá trị còn lại: 84 warning và `phaVeNen()` chết câm. ⇒ Khi một
+> bản vá tự khai "còn N chỗ nữa", **N chỗ đó là món nợ có kỳ hạn**, không phải chú thích. Cách
+> dọn đúng là **rút bản vá ra một module** rồi mọi người tiêu thụ import (G12), KHÔNG chép sang
+> N chỗ. Lô D tách `byteMau.ts` (không three) khỏi `mauThree.ts` (có three) để `phamViCanh.ts`
+> giữ được lời khai "module THUẦN" của chính nó — hạ lời khai xuống cho khớp mã là cách dễ nhất
+> giữ một khuyết tật vĩnh viễn (G27).
+
+> #### ★★★ G32 — "PHÉP BIẾN ĐỔI ĐỒNG NHẤT": G5 KHÔNG CẦN TẬP RỖNG
+> `phaVeNen()` nhận dữ liệu **KHÁC RỖNG**, chạy hết thân, không lỗi, không cảnh báo, và trả về
+> **đúng đầu vào của nó**. Mọi cổng xanh; "mờ 12 % cho Line ngoài phạm vi" (§10C) **chưa từng có
+> hiệu lực** qua nhiều đợt. Đo song song hai nhánh trên trang thật: chênh **TRƯỚC vá = 0** cho
+> cả 4 trạng thái · **SAU vá = 376 / 329 / 306 / 28** (running / error / blocked / khong_ro).
+> ⇒ Với mọi hàm BIẾN ĐỔI, ca nghiệm thu phải là **so đầu vào với đầu ra và đòi chúng KHÁC nhau**.
+> "Chạy không lỗi" không phân biệt được `f(x)=y` với `f(x)=x`.
+
+> #### ★★★ G33 — TỰ BẮT MÌNH ĐO NHẦM TẦNG, VÀ **KHÔNG** HẠ KỲ VỌNG CHO XANH
+> Ca "#60 vẽ đủ bốn ô" viết `expect(NGAN).toContain("stats-ok")` và **ĐỎ** — không phải vì thiếu
+> tính năng, mà vì ba ô sinh trong `.map()` với ``data-testid={`stats-${ma_}`}``: chuỗi đó chỉ tồn
+> tại **lúc chạy**. Cám dỗ là hạ xuống `toContain("stats-")` — nhưng một tiền tố cũng thoả, tức đo
+> đúng **số 0**. ⇒ Neo vào **MẢNG SINH RA** bốn ô (ba mã trong mảng + ô thứ tư viết tay), không
+> vào chuỗi phẳng. Cùng họ G9: một phép đếm chỉ đúng trong phạm vi mẫu của nó.
+
+> #### ★★ G34 — `preserveDrawingBuffer=false` LẦN THỨ HAI: `tong = 0` **TRÔNG NHƯ** "CANVAS TRỐNG"
+> Đọc pixel canvas WebGL cho `tong: 0` ở lần chụp đầu — mọi pixel `alpha < 10`, vì buffer đã bị
+> XOÁ sau khi present. Con số đó **không phân biệt được** với "cảnh không vẽ gì". Chỉ khi ép một
+> frame (`pointermove` + **hai** `requestAnimationFrame`) mới đọc được 397.800 px. ⇒ Mọi phép đo
+> pixel phải có **cửa kiểm frame khác rỗng** trước khi phân loại màu; nếu không, một lỗi đo được
+> báo cáo thành một kết luận về sản phẩm (G28 mặc áo mới).
+
+**Spec/brief SAI — #60 nguồn dữ liệu:** brief chỉ `dashboard.getAllMachinesStats`. Đo hợp đồng
+(`dashboardStatsRouters.ts:95-153`): thủ tục đó `Promise.all` **một `getMachineStats` cho MỖI máy**
+(42 trên SIM-FAC) để ngăn dùng đúng **một** hàng — N+1 mà Đ6 sinh ra để diệt. Dùng
+`dashboard.getMachineStats` (`:75-93`): **cùng** procedure, **cùng** `StatsScopeArgs`, **cùng** khoá
+cache ⇒ số bằng nhau từng chữ số.
+
+**CHƯA CHỨNG MINH ĐƯỢC (khai thẳng) — cột hổ phách của D5:** đo 715.000 px × 4 tư thế camera trên
+build thật ⇒ **0 pixel hổ phách**. Nguyên nhân đo được: trạm nghẽn là **trạm #1** (3.152 WIP,
+`data-nghen="1"` trên `o-tram-wip-1`) ở **ĐẦU** chuyền, và nhãn 3D của nhóm máy đó chiếu ra **x âm**
+(`SIM-L1-AOI` x=−14, `SN-SIM-0001` x=−61) ⇒ ngoài khung về phía trái; mọi cách dời camera bị
+`ghiCamera` ghi `?cam=` đè lại sau ~1 s. Đo được **tầng ngay dưới**: màu nạp vào `setColorAt` —
+nghẽn `rgb(239,168,49)` vs thường `rgb(90,163,236)`, **chênh 341**; trước vá cả hai `#ffffff`, chênh
+**0**. ⇒ Món còn mở cho đợt sau: **một đường đặt camera KHÔNG bị URL ghi đè** (hoặc nút fit-all ở
+màn Vận hành) — thiếu nó thì không nghiệm thu thị giác được bất cứ gì nằm ngoài khung mặc định.
+
+**G30 đã có hiệu lực:** `conHieuLuc` bác đúng bản khai `line_balance` 16 ngày tuổi, và đường suy từ
+WIP chọn **trạm 1 (3.152)** thay vì trạm 10 (124) mà bản ghi cũ khai. Đo trên DOM trang thật.
+
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
