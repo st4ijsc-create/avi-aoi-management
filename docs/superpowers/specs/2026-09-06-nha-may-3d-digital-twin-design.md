@@ -1770,6 +1770,156 @@ QĐ-1 là phương án **khối lượng lớn nhất**: 62 tính năng đang ch
 > trong mã sản phẩm** trước khi viết. Trúng trong tests/fixtures **không tính** — test có thể tự
 > dựng thế giới của nó. Và hai điểm chặn của cùng một luồng phải dùng **cùng một hằng có tên**.
 
+
+---
+
+## 11c. ĐỢT 7 — ĐO LẠI SỔ KIỂM 62 MỤC (2026-09-07)
+
+> Đo lại **từ đầu**, không đọc lời khai đợt trước. Ba agent đo ba khối rời nhau; mọi mục
+> đánh XONG đều phải chỉ ra **chỗ gọi** (G16). Kết quả bác bỏ nhiều giả định của chính spec này.
+
+### 11c.1 Kết quả tổng
+
+| Trạng thái | Số mục | Danh sách |
+|---|---|---|
+| **XONG — ĐO ĐƯỢC** | **18** | 2, 7, 17, 20, 21, 26, 29, 41, 44, 45, 46, 47, 49, 50, 52, 53, 54, 62 (+62b) |
+| **XONG — CHƯA ĐO** | **8** | 19, 22, 23, 24, 25, 27, 28, 39 |
+| **CHƯA LÀM** | **36** | 1, 3, 4, 5, 6*, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 30, 31, 32, 33, 34, 35, 36, 37, 38, 40, 42, 43, 48, 51, 55, 56, 57, 58, 59, 60, 61 |
+
+`*` #6 đã di trú socket nhưng **hợp đồng đổi**: kênh là `twin:trangThai` (ảnh chụp cả nhà máy),
+không phải `twin:{factoryId}`/`twin:device` delta ⇒ **delta lerp không còn đối tượng để nội suy**.
+
+> ### ★★★ CỔNG RA §11 CHƯA MỞ — 18/62 đo được, KHÔNG PHẢI ≥58/62
+> Luật §11 nói: *không màn cũ nào bị xoá cho tới khi **mọi dòng** ✅ đã đo*. Với 36 mục CHƯA LÀM,
+> **xoá bất kỳ màn nào trong 4 màn cũ hôm nay là mất tính năng thật đang chạy**, không phải dọn dẹp.
+
+### 11c.2 ★★★ BỐN LỚP LỖI ĐO ĐƯỢC — "có mã, có test, nhưng không giao được gì"
+
+Đây là phần đáng giá nhất của đợt đo. Cả bốn đều **qua `check`, qua `build`, qua 994 test**.
+
+**L-1 — `nhipHoiMs` (#51): hàm được viết ĐÚNG cho mục đó, có test, và KHÔNG AI GỌI.**
+`van-hanh/nguonDuLieu.ts:52` khai `nhipHoiMs(coLuong)` (5 s ↔ 30 s), docblock trích thẳng "#51".
+`nguonDuLieu.unit.test.ts:15-27` kiểm nó xanh. Nhưng `TwinVanHanh.tsx:113` chỉ import
+`laGiaDinh, xuatXuHienTai` — **`nhipHoiMs` có 0 chỗ gọi trong mã sản phẩm**, trong khi ba nhịp
+poll ở `TwinVanHanh.tsx:237/243/254` là **hằng viết cứng** 30 s/20 s/20 s.
+⇒ Bẫy: *tệp* được import nên grep theo TÊN TỆP báo "đã nối". Phải grep theo **TÊN HÀM**.
+
+**L-2 — `wip={[]}` (#61, #32, #36): lớp phủ dựng xong, gọi thật, và vĩnh viễn vô hình.**
+`CanhVanHanh.tsx:199-239` có đủ `OngWip` (InstancedMesh 1 draw call, màu nghẽn, RB-7 dispose) và
+được render ở `:302`. Nhưng chỗ gọi duy nhất truyền **mảng rỗng viết cứng**:
+`TwinVanHanh.tsx:1384 wip={[]}`, và `CanhVanHanh.tsx:238 if (wip.length === 0) return null`.
+Cùng hình dạng: `TwinVanHanh.tsx:1381 nhipMs: null` ⇒ mũi tên dòng chảy chạy tốc độ hằng.
+⇒ Đây là **G5 nguyên bản**: cổng xanh trên tập rỗng trùng khít cổng xanh của hệ đúng. Không test
+nào trong 994 test truyền một `wip` KHÁC RỖNG.
+
+**L-3 — `twin_ban_ghi` (#55): bảng có, migration có, 0 dòng và 0 mã đọc/ghi.**
+`drizzle/0351_twin_dat_cho_va_vat_the.sql:158` tạo bảng, `drizzle/schema/twin3d.ts:261` khai kiểu.
+Đo trên DB dev: **0 dòng**. `grep twinBanGhi server/ client/` (trừ schema) ⇒ **0 kết quả**.
+Bảng tồn tại không phải là tính năng tồn tại.
+
+**L-4 — `taiAnhNen` (#43): backend xong, i18n ba thứ tiếng xong, client 0 chỗ gọi.**
+`twinCanhRouter.ts:398` có thủ tục, `twinCanh.ts:428/450` có cột `anhNenUrl`, khoá i18n đã viết ở
+`en/vi/zh.json:4020`. `grep taiAnhNen client/src` ⇒ chỉ trúng chính các khoá i18n đó.
+⇒ Dấu hiệu làm từ trên xuống rồi **dừng ngay trước component**. Khoá i18n tồn tại cho một tính
+năng không có UI là chỉ báo sớm rất tốt — nên đưa vào cổng QA.
+
+### 11c.3 ★★★ SPEC SAI — SÁU CHỖ ĐO ĐƯỢC (họ G24, nối tiếp nợ Đợt 6)
+
+| Spec ghi | Sự thật đo được | Hệ quả nếu tin spec |
+|---|---|---|
+| `DaiCanhBao.tsx`, `BangKpiNoi.tsx` (#12-16) | **KHÔNG TỒN TẠI** dưới bất kỳ tên nào (đo 3 mẫu: trần, `./X`, `@/…/X`) | Đánh dấu xong nhầm cho `LopCanhBao.tsx` — đó là **badge 3D screen-space §10.3**, tính năng KHÁC |
+| `VeVungPolygon.tsx` (#42) | **KHÔNG TỒN TẠI**; CRUD vùng an toàn vẫn chỉ ở `FactoryFloorEditor.tsx:444` | Xoá `FactoryFloorEditor` = mất **nơi duy nhất** CRUD vùng an toàn |
+| `boNhoModel.ts` (#4) | **KHÔNG TỒN TẠI** ở cả client lẫn server | — |
+| `lineStage` (#48, #59) | **Định danh ma**: 0 hit trong mã sản phẩm Twin; `trpc.lineStage.*` duy nhất ở `factoryConfig/StagesTab.tsx` (màn cài đặt, không liên quan) | Hai mục **không di trú được như đã viết** |
+| `CayPhanCap.tsx` là đích của #8-11, #15 (màn **Vận hành**) | Tệp có thật nhưng ở `thiet-ke/`, **chỗ gọi duy nhất `XuongThietKe.tsx:725`** (màn **Thiết kế**). `/twin` KHÔNG có cây phân cấp | Đánh dấu xong nhầm cho một component dựng cho mục đích khác |
+| #1 "nút trong `NganXuLy` **cấp nhà máy**" | `NganXuLy` là **cấp MÁY** (`NganXuLyProps.machineId`, `NganXuLy.tsx:89-91`). Không có vùng cấp nhà máy | Đích di trú của #1 **sai kiến trúc**, phải chọn lại chỗ đặt |
+
+> **★★★ `CayPhanCap` có ARIA nhưng KHÔNG có bàn phím — tệ hơn là không có gì.**
+> `CayPhanCap.tsx:70 role="treeitem"`, `:180 role="tree"`, có `aria-selected`/`aria-expanded`.
+> Nhưng **0 `onKeyDown`, 0 `tabIndex`** trong toàn `twin3d/**` (chỗ duy nhất là
+> `BangThuocTinh.tsx:108`, không liên quan). Hàng là `<div onClick>`.
+> ⇒ Nó **tự khai với trình đọc màn hình rằng nó là một cây điều khiển được**, rồi không thao tác
+> được bằng bàn phím. #11 (mục spec đánh dấu ★ "phần khó nhất") chưa làm, và phần ARIA đã có làm
+> cho lỗi **khó phát hiện hơn** chứ không nhẹ đi.
+
+### 11c.4 Đo trên DB dev (2026-09-07) — đổi kết luận cho #41/#46
+
+Đo bằng **hai mô hình rời** (đếm trực tiếp; và `query_to_xml` liệt kê toàn phân bố) — BG-127:
+
+```
+twin_dat_cho          82     (nguon: 'sinh' 82 / 'tay' 0)
+twin_tang              1     twin_toa_nha           1
+twin_vat_the           4     (loai: 'tuong' 4 / 'vung' 0)   ⇒ #5 CHƯA LÀM ở cả tầng dữ liệu
+twin_ban_ghi           0     twin_kich_thuoc_loai  24
+machine_positions      0  ★  factory_layouts        0  ★
+machines              43     dat_cho: machine 42 / station 36 / line 3 / workshop 1
+```
+
+> ### ★★★ HAI BẢNG NGUỒN CỦA #41/#46 ĐỀU **RỖNG**
+> §11.7 gọi #41 là *"nơi DUY NHẤT ghi toạ độ 0–1 mà 3 màn khác đọc"* và xếp §11.7 là **rủi ro cao
+> nhất**. Đo được: `machine_positions` = **0 dòng**, `factory_layouts` = **0 dòng**.
+> ⇒ Trên DB dev **không còn dữ liệu bố cục cũ để mất**. Rủi ro thật của việc xoá
+> `FactoryFloorEditor` KHÔNG phải mất toạ độ (#41/#46 đã có đường mới, và nguồn cũ rỗng) mà là
+> **mất #42 (CRUD vùng an toàn) và #43 (ảnh nền CAD + tỉ lệ)** — hai mục chưa có đường thay thế.
+> ⚠ Con số này là của **DB dev**. Trước khi xoá thật phải đo lại trên production — một bảng rỗng
+> ở dev không chứng minh gì về production (G9: phạm vi của phép đếm).
+
+### 11c.5 Hai thủ tục server SỐNG mà KHÔNG AI GỌI từ Twin mới
+
+`twin.usdExport` (`twinRouter.ts:316`, có `usdExport.t3b.test.ts`) và `twin.replay`
+(`twinRouter.ts:346`) đã cài đặt đầy đủ. Chỗ gọi client **chỉ có ở màn sắp xoá**:
+`DigitalTwinCenter.tsx:606` và `SystemHealth.tsx:592`.
+⇒ **Xoá `DigitalTwinCenter` hôm nay = âm thầm mất xuất USD trong ngữ cảnh Twin.**
+
+### 11c.6 Quyết định Đợt 7 về "Ngăn mô phỏng + xuất USD" — **HOÃN**
+
+Brief cho phép tự quyết: chỉ làm nếu ≥58/62 mục XONG-ĐO ĐƯỢC. Đo được **18/62**.
+Theo **§16 YAGNI** (*tính năng mới xếp sau tính năng đã hứa*) ⇒ **KHÔNG làm ngăn mô phỏng, KHÔNG
+làm xuất USD trong đợt này**. Thêm bề mặt mới trong khi 36 mục đã hứa còn nợ là cách chắc chắn
+làm cổng ra §11 không bao giờ đóng được.
+
+### 11c.7 Kế hoạch GỠ 4 màn — ĐO XONG, **CHƯA THỰC THI** (chờ chủ sở hữu)
+
+> ⛔ Đợt 7 **không xoá gì**. Dưới đây là chỗ phải sửa, đo được, để lần xoá thật không phải dò lại.
+> Điều kiện tiên quyết cho MỌI dòng: các mục §11 tương ứng phải XONG-ĐO ĐƯỢC trước.
+
+| Màn | Chỗ phải sửa (file:line) | Redirect cần thêm | Chặn hiện tại |
+|---|---|---|---|
+| `DigitalTwinCenter` | `TwinHub.tsx:25` (import), `:42` (tab `center`) | `/digital-twin-center` đã redirect (`App.tsx:440`) — giữ | **#1 USD** (`DigitalTwinCenter.tsx:606` là chỗ gọi duy nhất trong ngữ cảnh Twin); #3, #4, #5 |
+| `FactoryLiveMap3D` | `TwinHub.tsx:26` (import), `:43` (tab `map`) | `/factory-live-map` đã redirect (`App.tsx:383`) — giữ | #51 (nhịp thích ứng) chưa nối; #50/#52/#53/#54 **đã xong** |
+| `CommandCenter` | `App.tsx:174` (lazy), `:441` (route `/command-center`), `:652` (preload map), `navigation.tsx:301` (mục nav) | `/command-center` → `/twin` | **#8-#16 chưa làm (9 mục)**; #17 đã xong |
+| `RobotCockpit` | `App.tsx:179` (lazy), `:454` (route `/robot/:id`) | `/robot/:id` → `/twin?chon=…` **chỉ khi** #24/#25/#27/#28 có đường mới | #24, #25, #27, #28 mới XONG-CHƯA ĐO và **spec nói GIỮ ở cockpit** ⇒ xoá là **trái spec** |
+| `MachineCockpit` | ⛔ **KHÔNG XOÁ** | — | `MachineWorkspace.tsx:17` import `MachineCockpitBody`, dùng ở `:78`. **Ngoài phạm vi Twin.** Quyết định của chủ sở hữu |
+
+> ### ★★★ HAI MÀN TRONG DANH SÁCH "XOÁ" ĐƯỢC SPEC YÊU CẦU **GIỮ**
+> §11.4 ghi rõ #24/#25/#27/#28 là *"Giữ ở cockpit"* — tức `RobotCockpit` **không phải màn để xoá**,
+> nó là **đích đến** của 4 mục. Tương tự §11.3 với `MachineCockpit` (#19/#22/#23).
+> ⇒ Brief Đợt 7 xếp `RobotCockpit` vào "4 màn còn lại" là **mâu thuẫn với §11.4 của chính spec**.
+> Chỉ có `NganXuLy` **trỏ tới** chúng (`nganXuLyLogic.ts:241` `/machine/:id`, `:269` `/robot/:id`)
+> — xoá đích thì hai nút điều hướng vừa xây xong ở Đợt 6 sẽ trỏ vào 404.
+
+> ### ★★★ `TwinHub` VẪN CHẠY TOÀN BỘ NGĂN XẾP CŨ
+> `TwinHub.tsx:24-30` import **7 màn cũ** và có **0 tham chiếu** tới `twin3d/**`, `TwinVanHanh`,
+> `TwinStudio`. Ngăn xếp mới sống ở route riêng (`App.tsx:325-326`). Đúng QĐ-8 (chạy song song),
+> nhưng nghĩa là #55/#56/#57/#59/#60/#61 **vẫn còn bản cũ đang phục vụ người dùng** sau các tab
+> `layout`/`floor`/`map` — và xoá chúng là mất tính năng, không phải dọn dẹp.
+
+### 11c.8 Đề xuất cho chủ sở hữu (KHÔNG tự thực thi — cần hỏi người dùng)
+
+Không mục nào dưới đây được thực hiện trong Đợt 7. Kèm bằng chứng đo được để chủ sở hữu quyết định:
+
+1. **Nối `nhipHoiMs` vào ba `refetchInterval`** (`TwinVanHanh.tsx:237/243/254`) — mã và test đã có
+   sẵn, chỉ thiếu chỗ gọi. Chi phí thấp nhất trong toàn bộ danh sách nợ.
+2. **Cấp dữ liệu cho `wip`** (`TwinVanHanh.tsx:1384`) và `nhipMs` (`:1381`) — mở khoá #61, #32, #36
+   cùng lúc; lớp phủ 3D đã dựng xong. Kèm điều kiện §11.5: phải có **bảng xếp hạng 2D song song**
+   (hiện `DaiLine.tsx` thiếu cột WIP và nhịp).
+3. **Sửa spec §11** cho 6 chỗ sai ở §11c.3 — đặc biệt đổi đích của #1 (NganXuLy là cấp máy) và
+   viết lại #48/#59 (`lineStage` không tồn tại).
+4. **Bổ sung bàn phím cho `CayPhanCap`** hoặc **gỡ `role="tree"`** — hiện trạng (ARIA có, bàn phím
+   không) là lời khai sai với trình đọc màn hình.
+5. **Xoá 2 thủ tục chết hoặc nối chúng**: `twin.usdExport`, `twin.replay`. ⚠ Chỉ sau khi quyết
+   định số phận `DigitalTwinCenter` — hiện chúng vẫn có người dùng thật qua màn cũ.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
