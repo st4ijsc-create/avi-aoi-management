@@ -2370,6 +2370,44 @@ Chúng giữ `ExternalLink`, không mất chức năng. **G3 (cấp `line`) chư
 **Lỗi nhỏ tự khai, chưa vá:** nhãn phụ của ngăn lấy từ **máy đang chọn** ⇒ mở ngăn robot/trạm vẫn
 hiện mã máy. Thẩm mỹ, không sai chức năng — **khai thay vì vá lén**.
 
+### 11e.10 LÔ F2 — **TIỀN ĐỀ BRIEF CỦA TÔI SAI: KHÔNG CÓ GÌ BỊ MẤT** (2026-09-07)
+
+Commit `88e51e1e` (worktree riêng `D:/SOURCES/_twin_wt`). Cổng: **51 tệp / 1547 test** (nền 51/1539) ·
+`check` 0 · `build` 0 · DB `factories 2 · machines 43 · twin_dat_cho 82`, 0 hàng rác.
+
+> #### ★★★ G39 — "MẤT VIỆC" CẦN ĐO BẰNG GIT, KHÔNG SUY TỪ TRIỆU CHỨNG
+> Tôi chẩn đoán lô F mất `TwinVanHanh.tsx` và giao lô F2 **dựng lại**. Lô F2 đo bằng git và **bác bỏ**:
+> `ababe4c9:TwinVanHanh.tsx` còn `factories[0]` (**1** kết quả); `a3eb2919:TwinVanHanh.tsx` có
+> **4** tham chiếu `boChonNap`/`BoChonNapUI`. ⇒ **Việc của lô F đã bị CUỐN vào commit mang nhãn lô G.**
+> Nó không mất — chỉ **bị gán sai tên**, và thông điệp commit `a3eb2919` **không hề nhắc lô F**.
+> Điều này cũng giải thích **G38**: 570 dòng ấy là **lô F + lô G cộng lại**, không phải lô G ước lượng sai.
+> ⇒ Trước khi ra lệnh "dựng lại", **`git show <commit>:<tệp> | grep`** cả hai phiên bản. Dựng lại thứ
+> đã có là cách tạo ra **hai bản cài đặt** của cùng một việc (họ **G12**).
+
+> #### ★★★ G40 — HAI LÔ SHIP CHUNG MỘT COMMIT ⇒ **ĐƯỜNG NỐI GIỮA CHÚNG CHƯA TỪNG ĐƯỢC ĐO**
+> `nap/thu` ghi URL qua `tronTrangThaiUrl`; `xem` ghi qua `tronXemVaoQuery`. **Hai hàm độc lập, một
+> query string.** Vì cả hai lô vào **cùng một commit**, chưa lần chạy CI nào thấy chúng **tách nhau**.
+> Phủ sóng cũ chỉ có "giữ tham số lạ" (`utm_source`) — chứng minh *"không xoá thứ không ai ghi"*,
+> **không** chứng minh *"hai người ghi không đè nhau"*.
+> **Ablation đắt nhất:** giữ đột biến số 2 còn sống, gỡ 6 test mới ⇒ **50/50 test cũ XANH**.
+> Bộ test cũ **mù hoàn toàn** với lớp lỗi này.
+
+**F3 — Lời khai của lô E SAI, và e2e đòi HÀNH VI SAI.** Chủ dự án đo độc lập:
+`user_factory_assignments` nối bằng **`factoryCode`** (không có cột `factoryId`); `e2e_tai_loE`
+(id 21075, `supervisor`) được gán **đúng 1**: `["SIM-FAC"]`. ⇒ `factory.list` trả 1 ⇒
+**"Tập đoàn = 1 nhà máy" là câu ĐÚNG** — **hàng rào tenant chạy đúng**, không phải lỗi.
+§11e.6 mục 4 (*"1.592 máy vắng mặt"*) **bị bác bỏ**. `e2e/twin-lo-f.spec.ts` từng assert
+`expect(b.haCap).not.toBeNull()` — **đòi một lần hạ cấp KHÔNG ĐƯỢC PHÉP xảy ra** ⇒ test đó sẽ đỏ
+trên một hệ **chạy đúng**. Đã viết lại, không đổi mã sản phẩm.
+
+**Suýt thành BG-127 lần hai:** phép đếm đầu của lô F2 dùng `a."factoryId"` — cột **không tồn tại** ⇒
+Postgres ném `42703`, **hỏng ồn ào**. Nếu lược đồ tình cờ có một cột `factoryId` vô nghĩa, phép đo đã
+**âm thầm trả "0 nhà máy được gán"** và "xác nhận" câu chuyện sai của lô E.
+
+**MÓN CÒN MỞ (lô F2 khai thẳng):** `e2e/twin-lo-f.spec.ts` **chưa từng chạy** — Playwright cần server
+sống, worktree mới **không có `.env`** (chỉ có `.env.testbak`). ⇒ Số canvas F4 (**488×416**, thu cả hai
+⇒ **968**) và `header.height` về **48** vẫn là **lời khai của lô F, chưa ai nghiệm thu độc lập**.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
