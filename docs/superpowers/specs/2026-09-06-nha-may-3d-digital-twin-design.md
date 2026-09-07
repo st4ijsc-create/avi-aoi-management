@@ -2886,6 +2886,70 @@ mot nguon nua.
 ⇒ Khi mot tinh nang "van khong chay du da co du lieu", **liet ke MOI bang no doc**, dung dung lai o
 bang dau tien.
 
+### 11i.5 LO S DA VE - **BAC CA HAI TIEN DE CUA CHU DU AN** (2026-09-08)
+
+Commit `6ee7150a`. Cong: **57 tep / 1667 test** = nen - `check` 0 - `build` 0 - DB
+`factories 2, machines 43, twin_dat_cho 82`, `station_dwell_time` ve **8.652**.
+
+> #### ★★★ G55 - **SO DO CO HAN SU DUNG: mot phep do dung LUC AY co the SAI LUC GIAO VIEC**
+> Brief cua chu du an ghi *"`product_inspections` 2.880 hang, ca 2.880 `factoryCode` NULL"* - **do that,
+> luc do**. Lo S do lai bang **hai mo hinh roi**: `count(*)` = **0** va `n_live_tup` = **0**.
+> Chu du an kiem lai: **dung 0**.
+> Ly do: 2.880 hang ay la cua **lo P**, va `go-tai-twin.ts` **da don chung** khi thao FUYU-G - dung nhu
+> thiet ke. Giua luc do va luc giao viec, **the gioi da doi**.
+> => **Do lai ngay truoc khi lam**, dung tin so trong brief - ke ca brief cua chinh minh viet 1 gio truoc.
+> Cung ho voi G30 (*"loi khai trong DB khong co han dung"*), nhung o **tang dieu phoi**: **con so trong
+> mot ban giao viec cung co han su dung**.
+
+> #### ★★★ G56 - **"NGUON THU HAI" GAN NHAM THU TUC** (loi suy luan cua chu du an)
+> Chu du an ket luan: *"`predictionOverlay` van chan vi `station_dwell_time` moi nhat 17 ngay"*.
+> **SAI.** Lo S do tai nguon, chu du an xac minh tan noi:
+>
+> | Thu tuc | Ham | Bang |
+> |---|---|---|
+> | `predictionOverlay` | `getWipCountSeries` (`db/twin.ts:88`) | **`wip_tracking`** |
+> | `stationLoadHeatmap` | `getStationDwellAgg` | **`station_dwell_time`** |
+>
+> **Hai thu tuc, hai bang, KHONG giao nhau.** Chan that su la `wip_tracking` cu. Docblock cua lo P
+> (`taiVanHanhTwin.ts:20-24`) **da ghi dung** dieu nay tu truoc - chu du an **khong doc**.
+> => Khi noi "X chan Y", phai **chi ra dong ma noi Y doc X**. Suy tu ten bang nghe hop ly la **doan**.
+
+**S1(a) DA XONG TU TRUOC:** ca **bon** duong ghi san xuat deu dien `factoryCode` tu
+`macTenantChoGhi(machine)` - suy tu **may da xac thuc**, khong bao gio tu input client
+(`machineApiRouters.ts:1760,2281,3868`, `aoiPackageRouter.ts:1461`).
+★ **Census G44 cho thay grep BAT DONG:** 3 cho theo grep chu, **11 cho that** - hai bo ghi hang loat cua
+sim dung **ten bang dong**, khong co chuoi `INSERT INTO product_inspections` nao.
+
+**Da xay:** `sinhDwellChoLine` + duong ghi `station_dwell_time` (nut that dwell **co y trung** nut that
+WIP - lech nhau chinh la bug Dot 8) - `--va-ma-kiem-tra` (backfill mot giao dich, in phan bo truoc/sau +
+doi chieu tong, **idempotent**) - `--chi-nhip` nay lam tuoi **ca ba dong ho** (nhip 5', wip 24h, dwell 24h),
+**truot ca chuoi** thay vi don ve `now()` (don ve se chi con 1 bucket va overlay **van tat**).
+
+**Chung minh qua API that, vai supervisor KHONG-admin:**
+
+| | truoc | sau |
+|---|---|---|
+| `predictionOverlay.available` | `false` | **`true`** |
+| `stationLoadHeatmap.cells` | 0 | **4** |
+
+Ablation day du: 8 cells → **0** (tiem NULL `factoryCode`) → **8** (backfill). 96 hang, tong doi chieu
+khop tuyet doi. **Admin chi dung lam doi chung** - no qua bat ke, chung minh **so 0**.
+
+> #### G57 - **NHANH "KHONG SUY DUOC" CO THE RONG THEO LUOC DO**
+> Lo S thu **ba cach** dung mot hang khong suy duoc `factoryCode`; luoc do **tu choi ca ba**
+> (`23502`/`23503`): moi mat xich `machineId → stationId → lineId → workshopId → factoryId → code` deu
+> **NOT NULL**, va `machineId` co **FK** toi `machines`.
+> => Nhanh "de nguyen vi khong suy duoc" **khong bao gio chay**. Giu lai vi vo hai, nhung **bao dam manh
+> hon** brief gia dinh. Doi lap voi G26 (nhanh khong ai di **vi thieu du lieu**): day la nhanh khong ai
+> di **vi luoc do cam**.
+
+**★ Mon cho lo R:** `station_dwell_time` **khong co trong `go-tai-twin.ts`** - thao nha may thu de lai
+**48 hang mo coi** (lo S da don tay). Duong go cung hinh dang: `WHERE "stationId" = ANY(<tram cua nha may>)`.
+
+**Loi khai lo S tu gioi han:** vi `product_inspections` **rong tren DB nay**, tinh dung dan cua backfill
+dua tren **fixture 96 hang** no tu dung roi go, **khong** tren tap 2.880 hang ma brief mo ta. Cong cu san
+sang nhung **chua chay tren tap do**.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
