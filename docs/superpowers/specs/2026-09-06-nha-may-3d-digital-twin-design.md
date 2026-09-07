@@ -2262,6 +2262,38 @@ Thang 50/150/300/549 máy cho FPS **không đơn điệu** (39/38/23/**57**). L�
 luận thay vì dùng nó để vẽ đường cong đẹp — **đúng**: một dãy không đơn điệu là dấu hiệu thiết bị đo
 nhiễu, không phải dữ liệu.
 
+### 11e.7 ĐỢT 10 — chia 3 lô theo tệp độc quyền (2026-09-07, chủ sở hữu duyệt)
+
+| Lô | Việc | Tệp độc quyền |
+|---|---|---|
+| **F** | Gỡ 3 chỉ số `[0]` + ô chọn NM/toà/tầng · sửa banner "373 chưa xếp chỗ" · `?pv=tapdoan` · canvas | `TwinVanHanh.tsx` |
+| **G** | Panel/modal tại chỗ thay redirect · cấp `may` (Cell twin) | `NganXuLy.tsx`, `nganXuLyLogic.ts` |
+| **H** | Ảo hoá 549 `<li>` · **"một lối vào rồi TỪ CHỐI"** | `DanhSachMay.tsx`, `navigation.tsx` |
+
+#### Đo được trước khi giao — ba manh mối tiết kiệm cả đợt
+
+**1. Đường redirect của mục #5 nằm ở đâu** (tìm được sau khi đổi mẫu grep — **G9 cắn chính chủ dự án**:
+mẫu `navigate\(|setLocation\(` cho **0 kết quả** trong `van-hanh/`):
+`NganXuLy.tsx:107` nhận `onDieuHuong(href)` → `:528` `onClick` → icon **`ExternalLink`** `:530`;
+`TwinVanHanh.tsx:1721` truyền **`onDieuHuong={setLocation}`** ⇒ **rời hẳn màn 3D**.
+Đích: `nganXuLyLogic.ts:267-275` → `/robot/:id`, `/command-console?robotId=`, `/station-analysis/:id`.
+
+**2. Các đích đó là MÀN KHÔNG ĐƯỢC XOÁ** (§11b/§11c.7) ⇒ mục #5 là **NHÚNG nội dung tại chỗ**,
+**không phải dựng lại sáu tính năng ở Twin**. `MachineCockpit` đã export
+**`MachineCockpitBody({machineId, embedded})`** — hình dạng để nhúng **có sẵn**.
+
+**3. Mục #6 có nguồn **KHÔNG** gây lỗi cổng quyền**: `factoryCommand.overview`
+(`factoryCommandRouter.ts:32-33`) trả *vị trí + trạng thái live + OEE + andon + PdM*, gate bằng
+**`machine_status`** — **cùng cổng nav của `/twin`**. Khác hẳn truy vấn **hình học** (đòi
+`settings_factory`/`machine_control`) vốn là thứ gây màn trắng ở §11e.6 mục 5.
+⇒ Thống kê trên màn 3D dùng `overview` thì **không đẻ thêm một "lối vào rồi từ chối"** nữa.
+`BangKpiNoi` (§11 #16) **chưa tồn tại** — sẽ tạo mới.
+
+#### Ràng buộc chung ba lô
+Không xoá màn/dữ liệu, không đổi lược đồ, DB gốc về **`factories` 2 · `machines` 43 ·
+`twin_dat_cho` 82** (nghiệm thu bằng **MD5 từng hàng**), đo bằng vai **không-admin**
+(admin **bypass** `requirePermission` ⇒ đo bằng admin chứng minh **0**).
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
