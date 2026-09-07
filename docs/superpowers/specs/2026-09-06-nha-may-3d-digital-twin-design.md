@@ -2579,6 +2579,57 @@ van `` `wip={[]}` `` lam luoi do; no **khong phan biet duoc ma voi van xuoi**.
 **Cong 3000 la server cua PHIEN KHAC** (PID 28480). Nghiem thu dau cua lo L tren 3000 cho ket qua SAI
 vi no phuc vu **bundle cu**. Chuyen sang 3123, khong dung PID kia.
 
+### 11g.5 LO M DA VE - 4/4 muc, va hai loi CHI ca duong bat duoc (2026-09-07)
+
+Commit `66fd7dc9`. Cong: **56 tep / 1650 test** (nen 52/1566) - `check` 0 - `build` 0 -
+DB `factories 2, machines 43, twin_dat_cho 82` nguyen ven.
+
+| Muc | Cho goi (chu du an kiem doc lap) |
+|---|---|
+| #18 nhap glTF | `XuongThietKe.tsx:993` `<ThuVienAsset>` |
+| #4 LOD + ModelErrorBoundary | `CanhThietKe.tsx` `<LopModelMay>`; `napModel.ts:45` dung `mucChiTiet.ts` |
+| #43 anh nen CAD | `XuongThietKe.tsx:1009` `<AnhNenTang>` |
+| #55 CRUD ban ghi | `XuongThietKe.tsx:1020` `<BanGhiBoCuc>` |
+
+`mucChiTiet.ts` truoc day **0 cho goi** - nay duoc dung that. Lo M **khong dung `boNhoModel.ts`**
+(spec ghi sai dich) ma **tai dung LRU 8 GLB da co** (G12).
+
+> #### G46 - HAI LOI MA CHI CA DUONG TREN NEN THAT BAT DUOC
+> 1. **`twin-assets/` KHONG DOC DUOC.** `_uyQuyenAnh.ts:209` la allowlist **dong**, tra 403
+>    `image_path_shape_unknown`. Duong **ghi** tra 200, hang dang ky **dung**, `bounds` **da day** -
+>    chi khi doc lai trong trinh duyet that moi lo. Trieu chung se la mot may **am tham roi ve khoi
+>    mac dinh**, khong phan biet duoc voi model hong that.
+> 2. **LOD KHONG BAO GIO CHAY.** `camera` la tham chieu **on dinh** (three doi `position` **tai cho**),
+>    nen `useMemo` khong bao gio chay lai => **0 request `.glb` ke ca sau khi zoom**. Day dung lop loi
+>    L-1 ma lo M duoc giao di dong, **tai xuat hien o cho tinh vi hon**. Va bang `useTheoDoiCamera`
+>    (250 ms + nguong 2 m): sau va **4 request, 3 dap ung HTTP 200**.
+> => Mot gia tri **doi tai cho** khong kich hoat `useMemo`/`useEffect`. Nghiem thu bang **so request
+>    that**, khong bang "ham co duoc goi khong".
+
+**Brief cua chu du an KHONG DAY DU o M1:** toi ghi `uploadAndRegister` = 0 trong Twin. Dung - nhung
+thu tuc **co ton tai** (`twinRouter.ts:129`) voi nguoi goi song o `MachineCockpit.tsx:740`. No chi
+buoc **cap MAY** (`machineId` bat buoc, `modelKey` cung), nen **cap CHUNG LOAI** - tang gia tri nhat
+theo §10B.2 - khong co duong. Lo M **them `phamVi` thay vi noi long thu tuc dang chay** (dung).
+
+**Spec so dong cu:** `taiAnhNen` o `twinCanhRouter.ts:457`, khong phai `:398`.
+
+### 11g.6 BA MON CAN CHU SO HUU QUYET - lo M BAO, KHONG TU SUA (cam migration)
+
+Chu du an do doc lap ca ba:
+
+1. **`twin_ban_ghi` thieu `UNIQUE ("tangId", nhan)`** - do bang `pg_constraint`: chi co
+   `twin_ban_ghi_pkey` + 2 khoa ngoai, **khong co UNIQUE nao**. Lo M cuong che o tang ghi
+   (find-before-create; ha co trong **mot** giao dich) nhung do la **hang rao MEM** - hai lan ghi
+   dong thoi van lot.
+2. **`taiAnhNen` bat buoc `anhBase64`** (`twinCanhRouter.ts:483`) => buoc "Dat ti le" phai **gui lai
+   ca anh** => moi lan hieu chuan de ra **mot tep mo coi**. Can thu tuc `datTiLeTang` chi nhan
+   `{tangId, tiLeMmMoiPx}`.
+3. **Hang model cap chung loai la TOAN CUC** - so dang ky khong co cot pham vi cho hang cap lop.
+   Hang rao cua lo M chan **ai duoc ghi**, khong chan **ai bi anh huong**.
+
+**He qua tich cuc:** #43 va #42 la **hai chan tro that** cua viec go `FactoryFloorEditor` (§11c.4).
+Ca hai nay da xong => **rang buoc do duoc go**. Lo M **khong xoa gi** vi cong §11 con xa moi mo - dung.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
