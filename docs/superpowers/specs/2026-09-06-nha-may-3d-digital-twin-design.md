@@ -2209,6 +2209,59 @@ có xử lý thật**, không phải khai báo suông: `phamViCanh.ts:67` (`may`
 - Lý do tách: kết quả đo ở Đợt 9 có thể **đổi cách thiết kế panel** (ngân sách nhãn §4 cap ở **30**;
   300 nhãn CSS2D đã laggy) ⇒ thiết kế UX trước khi biết ngưỡng là thiết kế trên giả định.
 
+### 11e.6 LÔ E ĐÃ ĐO — **NÚT THẮT KHÔNG PHẢI GPU, LÀ KIẾN TRÚC NẠP** (2026-09-07)
+
+Commit `b21a05e3`. Cổng: **47 tệp / 1433 test** đúng nền · `check` 0 · `build` 0 · cây sạch ·
+DB cuối **`factories` 2 · `machines` 43 · `twin_dat_cho` 82 · 0 hàng rác** (chủ dự án đo lại độc lập).
+
+**Script gỡ viết TRƯỚC script sinh**, và nghiệm thu **mạnh hơn brief đòi**: không chỉ đếm mà
+**MD5 từng hàng của 9 bảng** — trùng khớp baseline sau khi gỡ **2.141 máy / 4.366 hàng `twin_dat_cho`**.
+Nhận dạng bằng **mã** (`FUYU-F%`/`TAI-%`), không bằng `nguon='sinh'` — dùng enum sẽ **xoá nhầm 82 hàng
+thật của SIM-FAC**.
+
+#### Hiệu năng: ĐẠT RỘNG RÃI, không phải nút thắt
+
+| Cảnh | Tải (ms) | draw calls | tam giác | FPS xoay | nhãn |
+|---|---|---|---|---|---|
+| 1 nhà máy, **549 máy** | 2.572–7.815 | **3** | 27.842 | **57–59** | 6–12 |
+| `?pv=tapdoan` (4 NM) | 6.650 | **3** | 32.942 | 54,1 | 7 |
+
+Ngân sách §4 (≤150 calls, ≥30 FPS, ≤30 nhãn): đạt rộng rãi. **`BatchedMesh` hoạt động thật —
+549 máy trong 3 draw calls.** Ablation chứng minh thiết bị đo không mù: 549 máy → 32.942 tam giác;
+0 máy → 21.602.
+
+> #### ★★★ G35 — KHÔNG ĐO ĐƯỢC ĐƯỜNG CONG LÀ **PHÁT HIỆN**, KHÔNG PHẢI THẤT BẠI
+> Brief đòi đường cong **1→2→4→7 toà**. Đo không được — và **lý do chính là câu trả lời**:
+> `TwinVanHanh.tsx` nạp `factories[0]` (`:227`) → `toaNha[0]` (`:270`) → `tangs[0]` (`:278`) —
+> **ba chỉ số `[0]` viết cứng**. **Không đường nào trong UI hiện hơn một tầng, của một toà, của một
+> nhà máy.**
+> ⇒ Ô chọn toà mà chủ sở hữu yêu cầu **không cần ngưỡng chặn vì hiệu năng** — GPU còn rất rộng ở
+> 549 máy/tầng. Nó cần tồn tại vì **hiện không có lối vào**.
+> ⇒ Khi một phép đo bất khả thi, **hỏi vì sao** trước khi coi là thiếu sót; lý do thường là kết luận.
+
+#### Sáu phần frontend **chưa dùng được** ở quy mô này (đo, không sửa)
+
+| # | Chỗ | Đo được |
+|---|---|---|
+| 1 | `DanhSachMay.tsx:109` | `.map()` toàn mảng ⇒ **549 `<li>` thật trong DOM**; gõ bộ lọc **263 ms/lần** |
+| 2 | `TwinVanHanh.tsx:225-228` | **0 `<select>`, 0 `[role=combobox]`** — màn *duy nhất* thiếu picker (đối chứng `FactoryFloorEditor.tsx` có **9**) |
+| 3 | `TwinVanHanh.tsx:270,278` | Banner **"373 machines not placed"** — ablation: dồn 1 tầng ⇒ banner biến mất; trải 176/187/186 ⇒ trở lại đúng **187+186=373**. **Máy tầng 2/3 bị khai sai** |
+| 4 | `?pv=tapdoan` | breadcrumb "Corporate" nhưng `dem-may=549`, **1.592 máy của 3 NM `TAI-*` vắng mặt** |
+| 5 | `navigation.tsx:446` vs `TwinVanHanh.tsx:388-395` | **"MỘT LỐI VÀO RỒI TỪ CHỐI"** (Khối D): nav cho vào bằng `analytics_oee`/`machine_status`, dữ liệu đòi `settings_factory`/`machine_control` ⇒ **màn trắng**. Mã **đã tự khai** lỗi này mà **chưa ai đo bằng tài khoản thật** |
+| 6 | canvas | chỉ **360×473 px** ở viewport 1280×720 ⇒ 3D chiếm **~13%** màn hình laptop |
+
+#### Spec SAI — §10C.6
+
+**Bước lưới 400 m giữa các nhà máy**: ở quy mô **3 km/nhà máy**, 400 m làm 4 khối **lồng vào nhau**.
+Và mục nghiệm thu *"tạo nhà máy thứ hai → phải hiện đủ hai khối"* — lô E tạo **bốn**, vẫn chỉ hiện
+**một**. **Mục nghiệm thu này đang HỎNG và chưa ai chạy nó.**
+
+#### Không chứng minh được — khai thẳng
+
+Thang 50/150/300/549 máy cho FPS **không đơn điệu** (39/38/23/**57**). Lô E **tự loại dãy đó** khỏi kết
+luận thay vì dùng nó để vẽ đường cong đẹp — **đúng**: một dãy không đơn điệu là dấu hiệu thiết bị đo
+nhiễu, không phải dữ liệu.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
