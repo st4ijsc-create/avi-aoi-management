@@ -44,6 +44,9 @@ import { nanoid } from "nanoid";
 import { phamViCua } from "./_phamViNguoiXem";
 import {
   demVatTheTheoTang,
+  traVungAnToan,
+  luuVungAnToan,
+  xoaVungAnToan,
   ganAnhNenTang,
   ghiDeTuongBaoSinh,
   luuTang,
@@ -658,6 +661,18 @@ export const twinCanhRouter = router({
         input.tangIds && input.tangIds.length > 0
           ? await traDatChoTheoTang(input.tangIds, scope)
           : [];
+      /*
+       * ★★★ ĐỢT 8 LÔ C — VÙNG AN TOÀN (§11.1 #5).
+       *   Đo được trước đợt này: `twin_vat_the` 4 hàng, TOÀN `loai='tuong'`,
+       *   **0 hàng `'vung'`**. Trước dòng này, màn Thiết kế KHÔNG có đường nào
+       *   để biết một vùng an toàn tồn tại — nên #5 chưa làm ở cả tầng dữ liệu
+       *   LẪN tầng vận chuyển. Đây là nửa "đọc"; nửa "ghi" là ba thủ tục
+       *   `vungAnToan*` ở dưới (#42).
+       */
+      const vung =
+        input.tangIds && input.tangIds.length > 0
+          ? await traVungAnToan(input.tangIds, scope)
+          : [];
 
       /*
        * ════════════════════════════════════════════════════════════════════
@@ -684,7 +699,7 @@ export const twinCanhRouter = router({
         userRole: ctx.user?.role,
       });
 
-      return { ...cay, datCho, kichThuoc, ...nhan.labels };
+      return { ...cay, datCho, kichThuoc, vung, ...nhan.labels };
     }),
 
   /**
@@ -889,6 +904,86 @@ export const twinCanhRouter = router({
         );
       }
       return { daGo: true };
+    }),
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     ĐỢT 8 LÔ C — CRUD VÙNG AN TOÀN (§11.7 #42)
+     ═══════════════════════════════════════════════════════════════════════
+
+     ★★★ §11c.3 ghi đích của #42 là `VeVungPolygon.tsx` — tệp đó **KHÔNG TỒN
+         TẠI**, và `FactoryFloorEditor.tsx:444` vẫn là **nơi DUY NHẤT** CRUD vùng
+         an toàn trong hệ. Đây là đường THAY THẾ đầu tiên. `FactoryFloorEditor`
+         KHÔNG bị đụng tới: cổng ra §11 chưa mở (18/62), và xoá nó hôm nay là
+         mất tính năng thật (§11c.7).
+
+     ★ Cổng quyền: `canEdit` cho ghi, `canDelete` cho xoá — KHÔNG dùng chung một
+       mức. Vẽ lại một vùng và xoá hẳn nó là hai hậu quả khác nhau.
+  */
+
+  /**
+   * Tạo hoặc sửa MỘT vùng an toàn (polygon mm).
+   *
+   * ★ Trần 200 đỉnh khớp `SO_DINH_TOI_DA` của `vungAnToan.ts` — hai cổng, cùng
+   *   một con số. Lệch nhau thì client cho vẽ cái server từ chối, và người dùng
+   *   mất công vẽ rồi nhận lỗi ở bước Lưu.
+   *
+   * ⚠ `z.tuple` cho từng đỉnh (KHÔNG `z.array(z.number())`): một mảng 3 phần tử
+   *   lọt qua `array` và ghi vào jsonb, rồi mọi nơi đọc phải tự đoán phần tử thứ
+   *   ba là gì. Hình dạng phải bị cưỡng chế ở cổng vào.
+   */
+  luuVungAnToan: protectedProcedure
+    .use(quyenThietKe("canEdit"))
+    .input(
+      z.object({
+        id: z.number().int().positive().optional(),
+        tangId: z.number().int().positive(),
+        ten: z.string().trim().min(1).max(255),
+        diemDa: z.array(z.tuple([z.number().finite(), z.number().finite()])).min(3).max(200),
+        viTriXMm: z.number().finite(),
+        viTriYMm: z.number().finite(),
+        viTriZMm: z.number().finite(),
+        caoMm: z.number().finite().positive().max(10_000_000),
+        mau: z.string().regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const kq = await luuVungAnToan(
+        { ...input, diemDa: input.diemDa.map(([x, y]) => [x, y] as [number, number]) },
+        phamViCua(ctx),
+      );
+      if (!kq) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "twinVatThe" },
+          "Tầng hoặc vùng không tồn tại, hoặc ngoài phạm vi",
+        );
+      }
+      return kq;
+    }),
+
+  /**
+   * Xoá MỘT vùng an toàn.
+   *
+   * ★★★ Tầng DB ràng `loai='vung'` vào cả `SELECT` lẫn `DELETE`. Không có ràng
+   *   buộc đó thì thủ tục này xoá được **bất kỳ** hàng `twin_vat_the` nào theo
+   *   id — kể cả bốn bức tường bao mà `sinhTuongBao` dựng — và người dùng chỉ
+   *   phát hiện khi vỏ nhà biến mất khỏi cảnh.
+   */
+  xoaVungAnToan: protectedProcedure
+    .use(quyenThietKe("canDelete"))
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const xong = await xoaVungAnToan(input.id, phamViCua(ctx));
+      if (!xong) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "twinVatThe" },
+          "Vùng không tồn tại hoặc ngoài phạm vi",
+        );
+      }
+      return { daXoa: true };
     }),
 
   /**

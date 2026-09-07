@@ -104,6 +104,10 @@ import { HopThoaiSinh } from "./HopThoaiSinh";
 import { ThanhCanChinh } from "./ThanhCanChinh";
 import { ThuVienAsset } from "./ThuVienAsset";
 import { DaiSucKhoe } from "./DaiSucKhoe";
+import { ThanhCongCuCanh, type MayTrenCanh } from "./ThanhCongCuCanh";
+import type { CanhDaNoi } from "./CauNoiCanh";
+import { vungTuDanhSach, type HangVung } from "./vungAnToan";
+import { VeVung } from "./VeVung";
 import { cheDoTuPhim, type CheDoGizmo, type TrucKhoa, trucSauPhim } from "./gizmoNoiLogic";
 import {
   apChon,
@@ -164,6 +168,16 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
   const [cauHinhSinh, setCauHinhSinh] = useState<CauHinhSinh>({ ...CAU_HINH_SINH_MAC_DINH });
   const [ma, setMa] = useState<readonly HopMa[]>([]);
   const [dangDo, setDangDo] = useState(false);
+  /**
+   * ★ Ref cầu nối ra cảnh 3D (§11.9 #56/#57/#58) — xem `CauNoiCanh.tsx`.
+   *   Ref chứ không state: camera đổi mỗi khung người dùng xoay chuột, và ghi
+   *   nó vào state là render lại 42 máy mỗi khung đó.
+   */
+  const refCanh = useRef<CanhDaNoi | null>(null);
+  /** Phần tử được đưa vào TOÀN MÀN HÌNH (#58) — bọc canvas + lớp phủ. */
+  const refBocCanvas = useRef<HTMLDivElement | null>(null);
+  /** Vùng an toàn đang chọn (#5/#42). */
+  const [vungChon, setVungChon] = useState<string | null>(null);
 
   /** Ảnh chụp lúc tải — mẫu so để biết cái gì THẬT SỰ đổi (§7.3). */
   const datChoGoc = useMemo(() => {
@@ -273,6 +287,73 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
     }
     return ra;
   }, [may, datChoSua, kichThuocTheoLoai]);
+
+  /**
+   * ★★★ #58 FIT-ALL + #56 MINI-MAP ĐỌC **CÙNG** `mayVe` MÀ CẢNH 3D ĐANG VẼ.
+   *
+   *   Đây là dòng làm cho G5 không lách được: bbox fit và các chấm mini-map suy
+   *   ra từ ĐÚNG mảng mà `LoBatchMay` render. Dời một máy ⇒ cả ba đổi cùng lúc.
+   *   Nếu chúng đọc một nguồn thứ hai (ví dụ `canhQ.data.datCho` thô), thì "Fit"
+   *   sẽ fit bố cục ĐÃ LƯU trong khi màn hình đang hiện bố cục ĐANG SỬA — và
+   *   không có gì nổ.
+   */
+  const mayTrenCanh = useMemo<MayTrenCanh[]>(
+    () =>
+      mayVe.map((m) => ({
+        khoa: khoaNode("machine", m.machineId),
+        viTri: m.viTri,
+        kichThuocMm: m.kichThuocMm,
+        mau: m.mau,
+        // Dùng `chon` (tập khoá) trực tiếp — `machineIdChon` được tính ở dưới và
+        // chỉ giữ node CHỦ ĐẠO, nên chọn nhiều máy sẽ chỉ tô một chấm.
+        chon: chon.includes(khoaNode("machine", m.machineId)),
+      })),
+    [mayVe, chon],
+  );
+
+  /**
+   * ★★★ #5 — VÙNG AN TOÀN. Đo được trước Đợt 8: `twin_vat_the` 4 hàng, TOÀN
+   *   `'tuong'`, **0 hàng `'vung'`** ⇒ mảng này RỖNG cho tới khi có người vẽ
+   *   vùng đầu tiên. Đó là trạng thái ĐÚNG, không phải lỗi — nhưng nó cũng có
+   *   nghĩa mọi nghiệm thu thị giác của #5 phải tự dựng ca dương trước.
+   */
+  const vungVe = useMemo(
+    () => vungTuDanhSach((canhQ.data?.vung ?? []) as HangVung[], vungChon),
+    [canhQ.data, vungChon],
+  );
+
+  /**
+   * Máy làm NỀN cho bản vẽ mặt bằng của công cụ vẽ vùng (#42), đơn vị **mm**
+   * của hệ DB (X đông, Y mặt bằng) — KHÔNG phải hệ scene.
+   *
+   * ★ Bản vẽ vùng là hình chiếu MẶT BẰNG nên nó sống trong hệ DB, ở đó `viTriYMm`
+   *   đã là trục mặt bằng và không cần hoán vị gì. Quy sang scene rồi quy ngược
+   *   lại chỉ thêm một chỗ để nhầm trục.
+   */
+  const mayNenVung = useMemo(
+    () =>
+      mayVe.map((m) => ({
+        khoa: khoaNode("machine", m.machineId),
+        xMm: metSangMm(m.viTri.x),
+        yMm: metSangMm(m.viTri.z),
+        rongMm: m.kichThuocMm.rongMm,
+        sauMm: m.kichThuocMm.sauMm,
+      })),
+    [mayVe],
+  );
+
+  /**
+   * Nhãn đưa vào TÊN TỆP PNG (#57).
+   *
+   * ★ Suy từ dữ liệu ĐÃ CÓ, không thêm prop: `XuongThietKe` được gọi từ
+   *   `pages/TwinStudio.tsx` — tệp NGOÀI phạm vi lô này, và đổi chữ ký của nó
+   *   sẽ buộc một lô khác phải sửa theo. Tên xưởng đầu tiên là mô tả đủ tốt cho
+   *   một tên tệp; không có xưởng nào thì `tenTepAnh` tự lùi về dạng chỉ-ngày.
+   */
+  const tenTangHienTai = useMemo(() => {
+    const xuong = canhQ.data?.xuong ?? [];
+    return xuong.length > 0 ? String(xuong[0].ten ?? xuong[0].ma ?? "") : "";
+  }, [canhQ.data]);
 
   const khoaChuDao = nodeChuDao(chon);
   const nodeDangChon = khoaChuDao ? (cay.theoKhoa.get(khoaChuDao) ?? null) : null;
@@ -732,7 +813,18 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
         <ResizableHandle withHandle />
 
         <ResizablePanel defaultSize={58} minSize={30} className="min-w-0">
-          <div className="h-full min-h-0" data-testid="vung-canvas">
+          {/*
+            ★ `relative` + ref: lớp phủ (thanh công cụ #58/#57, mini-map #56)
+              định vị tuyệt đối TRONG khung này, và chính khung này là thứ được
+              đưa vào toàn màn hình — nếu đưa mỗi `<canvas>` vào fullscreen thì
+              thanh công cụ và mini-map biến mất đúng lúc người dùng cần chúng
+              nhất.
+          */}
+          <div
+            ref={refBocCanvas}
+            className="relative h-full min-h-0 bg-background"
+            data-testid="vung-canvas"
+          >
             {/* ★★★ RB-4 — ĐÚNG MỘT chỗ dựng canvas trong toàn màn. */}
             {/* ★★★ CHẶN-2 — `mayDangChon={null}` gỡ HẲN gizmo khỏi cảnh 3D.
                 Gizmo không có trạng thái "xám": để nguyên thì nó vẫn bắt chuột và
@@ -751,6 +843,9 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
               sanRongM={mmSangMet(sanRongMm)}
               sanSauM={mmSangMet(sanSauMm)}
               hienLuoi={hienLuoi}
+              vung={vungVe}
+              onChonVung={setVungChon}
+              refCanh={refCanh}
               chuMatContext={t("twin3d.loi.matContext")}
               onChonMay={(machineId) =>
                 setChon(machineId === null ? [] : [khoaNode("machine", machineId)])
@@ -775,6 +870,22 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
                 );
               }}
             />
+
+            {/* ★★★ §11.9 #58 Fit + Fullscreen · #57 Export PNG · #56 Mini-map.
+                Lớp phủ DOM THẬT (không `<Html>` trong Canvas): nút bấm phải nhận
+                được tiêu điểm bàn phím và mini-map phải là SVG chọn được.
+                CỐ Ý hiện cả ở chế độ chỉ đọc — ba công cụ này KHÔNG ghi gì, chỉ
+                đổi cách nhìn; ẩn chúng biến "chỉ đọc" thành "xem được ít hơn"
+                (cùng lý do công tắc Lưới và nút Đo ở lại). */}
+            <ThanhCongCuCanh
+              refCanh={refCanh}
+              refBoc={refBocCanvas}
+              may={mayTrenCanh}
+              sanRongM={mmSangMet(sanRongMm)}
+              sanSauM={mmSangMet(sanSauMm)}
+              nhanAnh={tenTangHienTai}
+              onChonMay={(khoa) => setChon([khoa as KhoaNode])}
+            />
           </div>
         </ResizablePanel>
         <ResizableHandle withHandle />
@@ -783,15 +894,44 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
           {/* ★★★ CHẶN-2 — Inspector là ĐƯỜNG VÀO THỨ HAI. Đường gizmo đã bị gỡ
               ở trên; nếu để ô nhập ở đây sống thì chế độ chỉ-đọc mới đóng được
               một nửa cửa, và nửa còn lại chính là đường QA đo được là SỐNG. */}
-          <BangThuocTinh
-            node={nodeDangChon}
-            datCho={datChoDangChon}
-            soDangChon={chon.length}
-            buocGocDo={BUOC_GOC_MAC_DINH_DO}
-            chiDoc={chiDoc}
-            onSua={(khoa, sua) => apSua(khoa, sua, "keo")}
-            onGoKhoiMatBang={(khoa) => void goKhoi(khoa)}
-          />
+          <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+            <BangThuocTinh
+              node={nodeDangChon}
+              datCho={datChoDangChon}
+              soDangChon={chon.length}
+              buocGocDo={BUOC_GOC_MAC_DINH_DO}
+              chiDoc={chiDoc}
+              onSua={(khoa, sua) => apSua(khoa, sua, "keo")}
+              onGoKhoiMatBang={(khoa) => void goKhoi(khoa)}
+            />
+
+            {/* ★★★ §11.7 #42 — CRUD VÙNG AN TOÀN.
+                Trước dòng này, `FactoryFloorEditor.tsx:444` là **nơi DUY NHẤT**
+                trong hệ làm được việc này (§11c.3, đo lại 2026-09-07). Đây là
+                đường THAY THẾ; màn cũ KHÔNG bị đụng tới — cổng ra §11 mới mở
+                18/62 và xoá nó hôm nay là mất tính năng thật (§11c.7).
+
+                ★ CHẶN-2 — đây là đường GHI ⇒ chỉ dựng khi `coQuyenSua`. Không
+                  `disabled`: một công cụ vẽ bị xám vẫn nói "chức năng này thuộc
+                  về bạn". */}
+            {coQuyenSua && tangId !== null ? (
+              <div className="border-t p-2" data-testid="khoi-vung-an-toan">
+                <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+                  {t("twin3d.vung.tieuDe")}
+                </p>
+                <VeVung
+                  tangId={tangId}
+                  sanRongMm={sanRongMm}
+                  sanSauMm={sanSauMm}
+                  vung={(canhQ.data?.vung ?? []) as HangVung[]}
+                  mayNen={mayNenVung}
+                  vungChon={vungChon}
+                  onChonVung={setVungChon}
+                  onDaGhi={() => tienIch.twinCanh.canhThietKe.invalidate()}
+                />
+              </div>
+            ) : null}
+          </div>
         </ResizablePanel>
       </ResizablePanelGroup>
 

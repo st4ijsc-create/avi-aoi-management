@@ -1451,3 +1451,212 @@ export async function traAnToanRobot(
     };
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ĐỢT 8 LÔ C — VÙNG AN TOÀN (§11.1 #5 hiển thị, §11.7 #42 CRUD)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ★★★ ĐO ĐƯỢC TRƯỚC KHI VIẾT (Đợt 7 §11c.4, đo lại 2026-09-07 bằng phiên này):
+//     `twin_vat_the` = 4 hàng, TOÀN `loai='tuong'`, **0 hàng `'vung'`**.
+//     ⇒ #5 và #42 chưa làm ở CẢ TẦNG DỮ LIỆU. Mọi phép đo trên dữ liệu có sẵn
+//     trước đợt này là phép đo trên TẬP RỖNG (G5).
+//
+// ★★★ §11c.3 ghi `VeVungPolygon.tsx` là đích của #42 — tệp đó KHÔNG TỒN TẠI, và
+//     `FactoryFloorEditor.tsx:444` vẫn là nơi DUY NHẤT CRUD vùng an toàn trong
+//     hệ. Đường mới này là đường THAY THẾ; `FactoryFloorEditor` KHÔNG bị đụng
+//     tới cho tới khi cổng ra §11 mở.
+//
+// ⚠ `factory_zones` (bảng cũ) dùng toạ độ 0–1; ở đây là **mm**, nhất quán với
+//   phần còn lại của Twin. KHÔNG di trú dữ liệu — bảng cũ đo được 0 dòng.
+
+/** Một hàng vùng an toàn trả về cho client. `diemDa` đã chuẩn hoá thành cặp số. */
+export interface VungAnToanRa {
+  id: number;
+  tangId: number;
+  ten: string;
+  diemDa: [number, number][] | null;
+  viTriXMm: number;
+  viTriYMm: number;
+  viTriZMm: number;
+  caoMm: number | null;
+  mau: string | null;
+  daKhoa: boolean;
+  hienThi: boolean;
+  nguon: "tay" | "sinh";
+}
+
+/**
+ * `diemDa` (jsonb) → cặp số đã kiểm.
+ *
+ * ★ jsonb KHÔNG có lược đồ. Một hàng ghi bằng tay hoặc bởi một bản cũ có thể
+ *   chứa bất cứ gì; trả thẳng nó ra client là để client tự nổ. Lọc ở ĐÂY, một
+ *   lần, thay vì mỗi nơi đọc tự phòng thân.
+ */
+function docDiemDaJsonb(gt: unknown): [number, number][] | null {
+  if (!Array.isArray(gt)) return null;
+  const ra: [number, number][] = [];
+  for (const c of gt) {
+    if (!Array.isArray(c) || c.length < 2) continue;
+    const x = Number(c[0]);
+    const y = Number(c[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    ra.push([x, y]);
+  }
+  return ra.length > 0 ? ra : null;
+}
+
+/** Đọc mọi vùng an toàn của các tầng đã cho, đã lọc phạm vi tenant. */
+export async function traVungAnToan(
+  tangIds: readonly number[],
+  scope: PhamViNguoiXem,
+): Promise<VungAnToanRa[]> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+  if (tangIds.length === 0) return [];
+
+  const hopLe = await locTangTrongPhamVi(d, tangIds, scope);
+  if (hopLe.length === 0) return [];
+
+  const hang = await d
+    .select()
+    .from(twinVatThe)
+    .where(and(inArray(twinVatThe.tangId, hopLe), eq(twinVatThe.loai, "vung")))
+    .orderBy(asc(twinVatThe.thuTu), asc(twinVatThe.id));
+
+  return hang.map((h) => ({
+    id: h.id,
+    tangId: h.tangId,
+    ten: h.ten,
+    diemDa: docDiemDaJsonb(h.diemDa),
+    // ★ numeric → string qua driver. `Number(...)` TƯỜNG MINH, xem docblock đầu tệp.
+    viTriXMm: Number(h.viTriXMm),
+    viTriYMm: Number(h.viTriYMm),
+    viTriZMm: Number(h.viTriZMm),
+    caoMm: h.caoMm == null ? null : Number(h.caoMm),
+    mau: h.mau,
+    daKhoa: h.daKhoa,
+    hienThi: h.hienThi,
+    nguon: h.nguon,
+  }));
+}
+
+/**
+ * Lọc danh sách tầng xuống những tầng NGƯỜI GỌI được thấy.
+ *
+ * ★ Tra ngược `twin_tang → twin_toa_nha → factoryId` rồi mới kiểm phạm vi —
+ *   KHÔNG tin `tangId` trong input. Đây là cùng khuôn mà `ghiDeTuongBaoSinh`
+ *   dùng; bài học `pham-vi-tenant-dot-lon`: lọc theo cột client tự khai là
+ *   không có hàng rào.
+ */
+async function locTangTrongPhamVi(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  tangIds: readonly number[],
+  scope: PhamViNguoiXem,
+): Promise<number[]> {
+  const tang = await d
+    .select({ id: twinTang.id, toaNhaId: twinTang.toaNhaId })
+    .from(twinTang)
+    .where(inArray(twinTang.id, [...tangIds]));
+  const ra: number[] = [];
+  for (const t of tang) {
+    const factoryId = await nhaMayCuaToaNha(d, t.toaNhaId);
+    if (factoryId !== null && (await trongPhamVi("factory", factoryId, scope))) ra.push(t.id);
+  }
+  return ra;
+}
+
+/** Payload ghi một vùng an toàn. */
+export interface VungAnToanGhi {
+  id?: number;
+  tangId: number;
+  ten: string;
+  diemDa: [number, number][];
+  viTriXMm: number;
+  viTriYMm: number;
+  viTriZMm: number;
+  caoMm: number;
+  mau: string;
+}
+
+/**
+ * Tạo hoặc sửa MỘT vùng an toàn. Trả `null` khi ngoài phạm vi (không phân biệt
+ * "không tồn tại" với "của tenant khác" — oracle rò rỉ tồn-tại).
+ *
+ * ★★★ NT-4 — ghi `nguon: 'tay'`. Vùng an toàn LUÔN do người vẽ; không có đường
+ *   sinh tự động nào tạo ra chúng. Ghi `'sinh'` ở đây sẽ khiến `ghiDeTuongBaoSinh`
+ *   và mọi đường "xoá rồi sinh lại" tương lai **cuốn mất công vẽ tay** — đúng
+ *   lớp lỗi G5b đã bắt được ở `seed-twin-mau.ts`.
+ */
+export async function luuVungAnToan(
+  input: VungAnToanGhi,
+  scope: PhamViNguoiXem,
+): Promise<{ id: number } | null> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const hopLe = await locTangTrongPhamVi(d, [input.tangId], scope);
+  if (hopLe.length === 0) return null;
+
+  const gt = {
+    tangId: input.tangId,
+    loai: "vung" as const,
+    ten: input.ten,
+    diemDa: input.diemDa,
+    viTriXMm: soRaChuoi(input.viTriXMm),
+    viTriYMm: soRaChuoi(input.viTriYMm),
+    viTriZMm: soRaChuoi(input.viTriZMm),
+    caoMm: soRaChuoi(input.caoMm),
+    mau: input.mau,
+    nguon: "tay" as const,
+    updatedAt: new Date(),
+  };
+
+  if (input.id != null) {
+    // ★ Ràng `loai='vung'` vào mệnh đề WHERE: không có nó thì một `id` trỏ vào
+    //   hàng TƯỜNG sẽ bị ghi đè thành vùng, và bốn bức tường bao của tầng biến
+    //   mất mà không có lỗi nào. `id` đến từ client nên phải coi là tự khai.
+    const cu = await d
+      .select({ id: twinVatThe.id, tangId: twinVatThe.tangId })
+      .from(twinVatThe)
+      .where(and(eq(twinVatThe.id, input.id), eq(twinVatThe.loai, "vung")))
+      .limit(1);
+    if (cu.length === 0) return null;
+    // Hàng có thật, nhưng có thể thuộc TẦNG KHÁC ngoài phạm vi.
+    const okCu = await locTangTrongPhamVi(d, [cu[0].tangId], scope);
+    if (okCu.length === 0) return null;
+
+    await d.update(twinVatThe).set(gt).where(eq(twinVatThe.id, input.id));
+    return { id: input.id };
+  }
+
+  const [moi] = await d.insert(twinVatThe).values(gt).returning({ id: twinVatThe.id });
+  return { id: moi.id };
+}
+
+/**
+ * Xoá MỘT vùng an toàn.
+ *
+ * ★★★ Ràng `loai='vung'` — đây là hàng rào chống xoá nhầm TƯỜNG. Một `DELETE`
+ *   chỉ theo `id` sẽ xoá được bất kỳ vật thể cảnh nào, kể cả bốn bức tường bao
+ *   mà `sinhTuongBao` dựng, và người dùng chỉ phát hiện khi vỏ nhà biến mất.
+ *
+ * Trả `false` khi không xoá được (không tồn tại, sai loại, hoặc ngoài phạm vi)
+ * — một câu trả lời, không phải một ngoại lệ.
+ */
+export async function xoaVungAnToan(id: number, scope: PhamViNguoiXem): Promise<boolean> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const cu = await d
+    .select({ id: twinVatThe.id, tangId: twinVatThe.tangId })
+    .from(twinVatThe)
+    .where(and(eq(twinVatThe.id, id), eq(twinVatThe.loai, "vung")))
+    .limit(1);
+  if (cu.length === 0) return false;
+
+  const ok = await locTangTrongPhamVi(d, [cu[0].tangId], scope);
+  if (ok.length === 0) return false;
+
+  await d.delete(twinVatThe).where(and(eq(twinVatThe.id, id), eq(twinVatThe.loai, "vung")));
+  return true;
+}

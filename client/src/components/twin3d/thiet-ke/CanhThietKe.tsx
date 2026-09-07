@@ -63,6 +63,9 @@ import { TRANG_THAI_CHON_RONG, type TrangThaiChon } from "../loi/chonVatThe";
 import { GizmoBienDoi } from "./GizmoBienDoi";
 import type { CheDoGizmo, TrucKhoa } from "./gizmoNoiLogic";
 import type { HopMa } from "./xemTruocSinh";
+import { CauNoiCanh, type RefCanh } from "./CauNoiCanh";
+import { LopVung } from "./LopVung";
+import type { VungVe } from "./vungAnToan";
 
 export interface CanhThietKeProps {
   may: MayTrongLo[];
@@ -80,6 +83,16 @@ export interface CanhThietKeProps {
   sanRongM: number;
   sanSauM: number;
   hienLuoi: boolean;
+  /** Vùng an toàn đã dựng sẵn (§11.1 #5). Rỗng = không có vùng nào. */
+  vung?: readonly VungVe[];
+  /** Ẩn nhãn vùng. */
+  tatNhanVung?: boolean;
+  onChonVung?: (khoa: string | null) => void;
+  /**
+   * ★ CẦU NỐI ra lớp phủ DOM (thanh công cụ #58/#57, mini-map #56).
+   *   Xem `CauNoiCanh.tsx`: dùng ref thay context để KHÔNG phải sửa `loi/KhungCanh`.
+   */
+  refCanh?: RefCanh;
   onChonMay: (machineId: number | null) => void;
   /** Kéo gizmo xong: vị trí SCENE (mét) + góc ĐỘ. Người gọi quy sang mm. */
   onBienDoiXong: (kq: {
@@ -250,6 +263,10 @@ function NoiDung(props: CanhThietKeProps & { toi: boolean }) {
     sanRongM,
     sanSauM,
     hienLuoi,
+    vung,
+    tatNhanVung,
+    onChonVung,
+    refCanh,
     onChonMay,
     onBienDoiXong,
   } = props;
@@ -379,7 +396,13 @@ function NoiDung(props: CanhThietKeProps & { toi: boolean }) {
   return (
     <>
       <DieuKhien banKinh={banKinh} controlsRef={orbitRef} />
+      {/* ★ Cầu nối ra lớp phủ DOM — 0 draw call, xem `CauNoiCanh.tsx`. Đặt SAU
+          `DieuKhien` để `orbitRef` đã được gán trước khi ai đó đọc. */}
+      {refCanh ? <CauNoiCanh refCanh={refCanh} controls={orbitRef} /> : null}
       <San rongM={sanRongM} sauM={sanSauM} hienLuoi={hienLuoi} toi={toi} />
+      {/* ★ #5 — vùng an toàn translucent + nhãn. Vẽ SAU sàn, TRƯỚC máy: vùng
+          nằm trên sàn và máy đứng trong vùng. */}
+      <LopVung vung={vung ?? []} tatNhan={tatNhanVung} onChon={onChonVung} />
       <LoBatchMay
         may={may}
         chon={chon}
