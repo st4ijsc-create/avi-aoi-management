@@ -20109,6 +20109,9 @@
       "daiLine": "Line strip",
       "soTram": "{{n}} stations",
       "soMayNgan": "{{n}} machines",
+      "nhipChuyen": "Takt",
+      "tongWip": "WIP",
+      "wipNgan": "WIP",
       "cap": {
         "tapDoan": "Corporate",
         "nhaMay": "Factory",
@@ -20299,7 +20302,10 @@
       "loc": "Filter by name or code…",
       "khongKhop": "No matching items",
       "moTatCa": "Expand all",
-      "dongTatCa": "Collapse all"
+      "dongTatCa": "Collapse all",
+      "chiCanhBao": "Only nodes with alarms",
+      "soCanhBao": "{{n}} alarms",
+      "ariaCay": "Factory hierarchy"
     },
     "thuocTinh": {
       "tieuDe": "Properties",
@@ -20444,6 +20450,56 @@
     },
     "anToan": {
       "estopDangNhan": "E-STOP engaged: {{ds}}"
+    },
+    "daiCanhBao": {
+      "tieuDe": "Alarms",
+      "homNay": "Today",
+      "tonDong": "Backlog >24h",
+      "tonDongNgay": "backlog {{n}}d",
+      "trong": "No alarms",
+      "trongMuc": "No alarms at the selected level",
+      "tatCa": "All",
+      "red": "Stop",
+      "call": "Call",
+      "yellow": "Warning",
+      "green": "Normal",
+      "theoNhanh": "Scoped to selection",
+      "daAck": "Ack"
+    },
+    "canvasUi": {
+      "fitTatCa": "Fit all in view",
+      "fitKhongSan": "3D scene is not ready",
+      "toanManHinh": "Fullscreen",
+      "toanManHinhKhongHoTro": "Browser does not support fullscreen",
+      "xuatAnh": "Export PNG",
+      "xuatAnhXong": "Saved {{ten}}",
+      "xuatAnhLoi": "Could not export image",
+      "miniMap": "Mini-map — click to navigate",
+      "miniMapRong": "No machines yet"
+    },
+    "vung": {
+      "veMoi": "Draw safety zone",
+      "banVe": "Floor plan — click to add a vertex",
+      "demDinh": "{{n}} vertices",
+      "boDinhCuoi": "Remove last vertex",
+      "xong": "Done",
+      "huy": "Cancel",
+      "luu": "Save",
+      "dangLuu": "Saving…",
+      "sua": "Edit",
+      "xoa": "Delete",
+      "vungMoi": "New safety zone",
+      "suaVung": "Edit safety zone",
+      "ten": "Zone name",
+      "tenGoiY": "e.g. Welding robot safety zone",
+      "mau": "Colour",
+      "tomTat": "{{n}} vertices · {{dt}} m²",
+      "chuaCoVung": "No safety zones on this floor yet.",
+      "daLuu": "Safety zone saved",
+      "daXoa": "Safety zone deleted",
+      "polygonKhongHopLe": "Needs at least {{n}} non-collinear vertices",
+      "quaNhieuDinh": "At most {{n}} vertices",
+      "tieuDe": "Safety zones"
     }
   }
 }

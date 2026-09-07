@@ -20117,6 +20117,9 @@
       "daiLine": "产线条",
       "soTram": "{{n}} 个工位",
       "soMayNgan": "{{n}} 台设备",
+      "nhipChuyen": "节拍",
+      "tongWip": "在制品",
+      "wipNgan": "在制",
       "cap": {
         "tapDoan": "集团",
         "nhaMay": "工厂",
@@ -20307,7 +20310,10 @@
       "loc": "按名称或编码筛选…",
       "khongKhop": "没有匹配项",
       "moTatCa": "全部展开",
-      "dongTatCa": "全部折叠"
+      "dongTatCa": "全部折叠",
+      "chiCanhBao": "仅显示有告警的节点",
+      "soCanhBao": "{{n}} 条告警",
+      "ariaCay": "工厂层级树"
     },
     "thuocTinh": {
       "tieuDe": "属性",
@@ -20452,6 +20458,56 @@
     },
     "anToan": {
       "estopDangNhan": "E-STOP 已触发：{{ds}}"
+    },
+    "daiCanhBao": {
+      "tieuDe": "告警",
+      "homNay": "今天",
+      "tonDong": "积压 >24小时",
+      "tonDongNgay": "积压 {{n}} 天",
+      "trong": "无告警",
+      "trongMuc": "所选级别无告警",
+      "tatCa": "全部",
+      "red": "停机",
+      "call": "呼叫支援",
+      "yellow": "警告",
+      "green": "正常",
+      "theoNhanh": "按所选分支",
+      "daAck": "已确认"
+    },
+    "canvasUi": {
+      "fitTatCa": "适应视图",
+      "fitKhongSan": "3D 场景尚未就绪",
+      "toanManHinh": "全屏",
+      "toanManHinhKhongHoTro": "浏览器不支持全屏",
+      "xuatAnh": "导出 PNG",
+      "xuatAnhXong": "已保存 {{ten}}",
+      "xuatAnhLoi": "无法导出图片",
+      "miniMap": "小地图 — 点击导航",
+      "miniMapRong": "尚无设备"
+    },
+    "vung": {
+      "veMoi": "绘制安全区",
+      "banVe": "平面图 — 点击添加顶点",
+      "demDinh": "{{n}} 个顶点",
+      "boDinhCuoi": "删除最后一个顶点",
+      "xong": "完成",
+      "huy": "取消",
+      "luu": "保存",
+      "dangLuu": "保存中…",
+      "sua": "编辑",
+      "xoa": "删除",
+      "vungMoi": "新建安全区",
+      "suaVung": "编辑安全区",
+      "ten": "区域名称",
+      "tenGoiY": "例如：焊接机器人安全区",
+      "mau": "颜色",
+      "tomTat": "{{n}} 个顶点 · {{dt}} m²",
+      "chuaCoVung": "此楼层尚无安全区。",
+      "daLuu": "已保存安全区",
+      "daXoa": "已删除安全区",
+      "polygonKhongHopLe": "至少需要 {{n}} 个不共线的顶点",
+      "quaNhieuDinh": "最多 {{n}} 个顶点",
+      "tieuDe": "安全区"
     }
   }
 }

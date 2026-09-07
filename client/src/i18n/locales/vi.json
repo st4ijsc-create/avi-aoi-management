@@ -20089,6 +20089,9 @@
       "daiLine": "Dải chuyền",
       "soTram": "{{n}} trạm",
       "soMayNgan": "{{n}} máy",
+      "nhipChuyen": "Nhịp",
+      "tongWip": "WIP",
+      "wipNgan": "WIP",
       "cap": {
         "tapDoan": "Tập đoàn",
         "nhaMay": "Nhà máy",
@@ -20279,7 +20282,10 @@
       "loc": "Lọc theo tên hoặc mã…",
       "khongKhop": "Không có mục nào khớp",
       "moTatCa": "Mở tất cả",
-      "dongTatCa": "Đóng tất cả"
+      "dongTatCa": "Đóng tất cả",
+      "chiCanhBao": "Chỉ node có cảnh báo",
+      "soCanhBao": "{{n}} cảnh báo",
+      "ariaCay": "Cây phân cấp nhà máy"
     },
     "thuocTinh": {
       "tieuDe": "Thuộc tính",
@@ -20424,6 +20430,56 @@
     },
     "anToan": {
       "estopDangNhan": "E-STOP đang được nhấn: {{ds}}"
+    },
+    "daiCanhBao": {
+      "tieuDe": "Cảnh báo",
+      "homNay": "Hôm nay",
+      "tonDong": "Tồn đọng >24h",
+      "tonDongNgay": "tồn đọng {{n}}d",
+      "trong": "Không có cảnh báo",
+      "trongMuc": "Không có cảnh báo ở mức đã lọc",
+      "tatCa": "Tất cả",
+      "red": "Dừng",
+      "call": "Gọi hỗ trợ",
+      "yellow": "Cảnh báo",
+      "green": "Bình thường",
+      "theoNhanh": "Theo nhánh đang chọn",
+      "daAck": "Đã xác nhận"
+    },
+    "canvasUi": {
+      "fitTatCa": "Vừa khung nhìn",
+      "fitKhongSan": "Cảnh 3D chưa sẵn sàng",
+      "toanManHinh": "Toàn màn hình",
+      "toanManHinhKhongHoTro": "Trình duyệt không hỗ trợ toàn màn hình",
+      "xuatAnh": "Xuất ảnh PNG",
+      "xuatAnhXong": "Đã lưu {{ten}}",
+      "xuatAnhLoi": "Không xuất được ảnh",
+      "miniMap": "Bản đồ thu nhỏ — bấm để đi tới",
+      "miniMapRong": "Chưa có máy nào"
+    },
+    "vung": {
+      "veMoi": "Vẽ vùng an toàn",
+      "banVe": "Bản vẽ mặt bằng — bấm để thêm đỉnh",
+      "demDinh": "{{n}} đỉnh",
+      "boDinhCuoi": "Bỏ đỉnh cuối",
+      "xong": "Xong",
+      "huy": "Huỷ",
+      "luu": "Lưu",
+      "dangLuu": "Đang lưu…",
+      "sua": "Sửa",
+      "xoa": "Xoá",
+      "vungMoi": "Vùng an toàn mới",
+      "suaVung": "Sửa vùng an toàn",
+      "ten": "Tên vùng",
+      "tenGoiY": "VD: Vùng an toàn robot hàn",
+      "mau": "Màu",
+      "tomTat": "{{n}} đỉnh · {{dt}} m²",
+      "chuaCoVung": "Chưa có vùng an toàn nào trên tầng này.",
+      "daLuu": "Đã lưu vùng an toàn",
+      "daXoa": "Đã xoá vùng an toàn",
+      "polygonKhongHopLe": "Cần ít nhất {{n}} đỉnh không thẳng hàng",
+      "quaNhieuDinh": "Tối đa {{n}} đỉnh",
+      "tieuDe": "Vùng an toàn"
     }
   }
 }
