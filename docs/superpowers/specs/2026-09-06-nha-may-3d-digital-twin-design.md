@@ -2408,6 +2408,78 @@ Postgres ném `42703`, **hỏng ồn ào**. Nếu lược đồ tình cờ có m
 sống, worktree mới **không có `.env`** (chỉ có `.env.testbak`). ⇒ Số canvas F4 (**488×416**, thu cả hai
 ⇒ **968**) và `header.height` về **48** vẫn là **lời khai của lô F, chưa ai nghiệm thu độc lập**.
 
+## 11f. DOT 11 - THONG KE TREN MAN 3D + HAI LO QUYEN/TENANT (2026-09-07)
+
+Cong: **52 tep / 1566 test** (nen 51/1547) - `check` 0 - `build` 0 - DB `factories 2, machines 43,
+twin_dat_cho 82`. Lo J `fe2c8c07`, lo K `47a5e602`. **Yeu cau #6 cua chu so huu: XONG.**
+
+### 11f.1 Lo J - bang KPI noi tren canh 3D
+
+Cho goi: `TwinVanHanh.tsx:2220` (render), `:1605` (`tinhKpiNoi`), `duongDanTwin.ts:145`.
+Dung `overviewQ` **da co** o `:514` - khong goi them truy van nao. Do tren trinh duyet that:
+**`drawCalls = 3` truoc va sau** => lop phu DOM ton **0 draw call** (muc 4 tran 150). `?thu=trai,phai`
+(canvas 968) bang **van con**. Dung chung khoa `thu=`, **khong de khoa query thu nam** (G40).
+`oeeTrungBinh = "-"` kem *"OEE measured on 0/41 machines"* - **honest-null** dung tren DB that
+(ban `?? 0` se in *"OEE 0 %"*, mot loi khai sai).
+
+> #### G41 - TINH NANG **HIEN RA DU MA DOC KHONG DUOC**: hai khuyet tat chi ANH bat duoc
+> Ca hai cong deu **xanh** khi chung ton tai:
+> 1. **Nhan 3D de len so** - `LopNhan.tsx:180` dung drei `<Html zIndexRange={[20,0]}>` => nhan o
+>    z-index **20**; bang dat `z-10` bi *"SIM-L2-ICT - Unknown"* phu kin. Bang **hien ra nhung doc
+>    khong duoc** - hong dung thu yeu cau #6 doi. Va `z-30`.
+> 2. **Dong cuoi bi cat** - `max-w-[min(20rem,60%)]` o canvas 488 chi cho 196 px.
+> => Mot lop phu thong tin phai nghiem thu bang **mat tren nen that**, khong bang "co render khong".
+
+> #### G42 - `elementFromPoint` **BO QUA `pointer-events:none`**
+> Phep do che-khuat dau tien cua lo J la **am-tinh-gia**: bao "ca 8 o bi che" boi phan tu **rong chu**,
+> vi bang KPI **bat buoc** co `pointer-events:none` (de canvas nhan drag xoay). Do lai bang
+> **thu tu ve** + ca duong da biet (17 nhan co chu) => 0 nhan chong lan o z >= 30.
+
+**e2e lo F chay lan dau -> DO, va SPEC sai chu khong phai ma:** `twin-lo-f.spec.ts:74` doi
+`soTang >= 3`, nhan **1**. Chu du an do doc lap: DB co **1 toa `TN-SEED-1` / 1 tang "Tang tret"**.
+The gioi 3 tang/549 may **chi ton tai sau `sinh-tai-twin.ts`**. Lo J **khong noi assertion cho xanh** -
+dung. **Loi khai canvas cua lo F sai 2/4:** canvas **488x453** (khai 416), `header.height` **56** (khai 48).
+
+**J2 - brief cua toi SAI:** toi ghi "lo G chua lam cap `line`". Do lai: `phamViCanh.ts:65,235,298,320,323`
+xu ly `line` that, `DaiLine` render o `TwinVanHanh.tsx:2338`, `?pv=line:1` cho breadcrumb + LINE STRIP
+12 tram + cot WIP 3D. **Cap `line` da chay day du tu truoc.**
+
+### 11f.2 Lo K - K1 **TU CHOI VA**, va do la ket luan cua phep do
+
+Tien de brief cua toi (*"`maint1` mat dai canh bao IM LANG"*) **khong song sot phep do**. Ba dieu
+chu du an kiem doc lap:
+1. **Suy bien tu te DA CO** - `TwinVanHanh.tsx:1924` banner in **nguyen van duong tRPC bi tu choi**;
+   `:2154` truyen `khongDoDuoc` => `DaiCanhBao` render `-`, **khong phai `0`**. `maint1` mat dai **ON AO**.
+2. **Tien le lo H KHONG tai hien duoc** - lo H duoc noi cong doc vi chung minh **truc tenant di duong
+   khac**. `andonRouter` **0 tham chieu** `phamViCua`/`trongPhamVi`, va `andon_events` **khong co cot
+   tenant** => noi `andon` o day la **noi THAT**. No **tu choi noi thieu chuan chung minh cua lo H**.
+3. **La quyet dinh san pham da viet ra** - `navigation.tsx:362`: *"maintenance thieu andon/canView se
+   thay trang thai rong trung thuc"*.
+
+> #### G43 - MOT MA 403 KHONG NOI NO DEN TU CONG NAO
+> Do qua HTTP that, `maint1` tra **403 tren ca ba thu tuc** - nhung `appCode` la
+> **`MUST_CHANGE_PASSWORD`**, khong phai `PERMISSION_DENIED`. Cong do chay **truoc** RBAC
+> (`trpc.ts:163`; `maint1.passwordChangedAt = NULL`). Doc "403" roi ket luan "lo quyen" la **do nham
+> han mot thu khac**. Chi sau khi tam go cong do moi thay `PERMISSION_DENIED` that tren module `andon`.
+
+**K2 - RO RI TENANT THAT, da va va chung minh hai chieu.** `demVatThe` nay
+`async ({ input, ctx })` -> `demVatTheTheoTang(input.tangIds, phamViCua(ctx))` (chu du an kiem tan noi).
+Do tren **server song, build cu**: `maint1` - **0 nha may duoc gan** - van dem duoc **4 vat the** cua
+tang SIM-FAC.
+
+| tai khoan | duoc gan | truoc | sau |
+|---|---|---|---|
+| `maint1` | **khong co** | **4** | **0** |
+| `e2e_tai_loE` | SIM-FAC | 4 | **4** |
+
+**Dot bien (b) lo vung mu:** router quen `phamViCua(ctx)` => **khong test nao trong repo do**. Test cu
+cua lo H chi canh 3 thu tuc `DOC_MO`. Da them `phamViTwinCanh.unit.test.ts` (luong phan toan tap).
+**K3:** ca **20** thu tuc `twinCanhRouter` nay deu truyen `phamViCua(ctx)`.
+
+**Brief cua toi sai so quyen** - toi ghi *"`maint1` => machine_status"* (1 module). Do lai: **17 module**
+(lo K dem 18 ke ca hang het han). Phep do truoc cua toi **loc theo 3 module** nen chi thay 1 -
+**G9 can chinh toi lan nua**.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
