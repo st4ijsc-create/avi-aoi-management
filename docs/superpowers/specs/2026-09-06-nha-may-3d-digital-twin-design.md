@@ -1920,6 +1920,45 @@ Không mục nào dưới đây được thực hiện trong Đợt 7. Kèm bằ
 5. **Xoá 2 thủ tục chết hoặc nối chúng**: `twin.usdExport`, `twin.replay`. ⚠ Chỉ sau khi quyết
    định số phận `DigitalTwinCenter` — hiện chúng vẫn có người dùng thật qua màn cũ.
 
+## 11d. ĐỢT 8 — ĐÓNG 36 MỤC CÒN LẠI (2026-09-07, chủ dự án duyệt)
+
+Đợt 7 đo ra **18/62**. Người dùng duyệt đề xuất **Đợt 8 = đóng 36 mục**, không phải xóa màn cũ.
+
+### 11d.1 Chia lô theo **tệp đích**, không theo số mục
+
+36 mục **không đồng chất**: có mục chỉ thiếu một sợi dây, có mục là cả màn hình. Chia theo tệp đích
+để ba lô chạy **song song trên cùng nhánh mà không đụng tay nhau**:
+
+| Lô | Mục | Tệp độc quyền |
+|---|---|---|
+| **A — nối dây chết** | #51, #61, #32, #36, #60 | `TwinVanHanh.tsx` (**duy nhất A được sửa**), `nguonDuLieu.ts`, `CanhVanHanh.tsx`, `DaiLine.tsx` |
+| **B — cây + cảnh báo** | #8–#15 | `CayPhanCap.tsx`, `DaiCanhBao.tsx` (tạo mới) |
+| **C — công cụ canvas** | #56, #57, #58, #5, #42 | `thiet-ke/**` (trừ `CayPhanCap`), `loi/**` |
+
+**Luật phân lô:** mỗi tệp thuộc **đúng một lô**. `TwinVanHanh.tsx` là điểm nóng nhất — cả ba lô đều
+muốn nối vào nó, nên nó được giao **độc quyền cho A**; B và C phải **báo lại** thay vì tự sửa.
+
+### 11d.2 Hoãn có lý do — không giao ở Đợt 8
+
+- **#30/#35/#36 (ngăn Mô phỏng), #37/#38 (`DongThoiGian`)** — §16 YAGNI: tính năng mới xếp sau
+  tính năng đã hứa. `TwinVanHanh.tsx:460` đang hardcode `dangMoPhong: false`.
+- **#1 (nút USD)** — **đích sai kiến trúc**: `NganXuLy` phạm vi **MÁY** (`NganXuLyProps.machineId`),
+  nút cấp nhà máy không có chỗ đặt. Phải viết lại mục trước khi giao.
+- **#48/#59 (`lineStage`)** — định danh **ma**: `trpc.lineStage.*` duy nhất thuộc màn settings khác.
+  Viết lại mục trước, đừng đoán (**G24**).
+- **#55 (`twin_ban_ghi`)** — bảng có, **0 hàng, 0 consumer**; cần quyết định hợp đồng phiên bản trước.
+
+### 11d.3 Ràng buộc cứng cho cả ba lô
+
+1. **Không xóa gì** — không `git rm`/`rm`/`DROP`/`DELETE FROM`, không màn nào. Dữ liệu thử phải
+   khôi phục **byte-exact**. (Ba màn `MachineCockpit`/`RobotCockpit`/`DigitalTwinCenter` đều đang
+   phục vụ thật — §11b, §11c.7.)
+2. **G5 là luật trung tâm của đợt này**: `wip={[]}` cho thấy một tính năng có thể có đủ mã, đủ test,
+   qua cả 994 test mà **chưa bao giờ vẽ gì**. Mọi mục nối xong phải có test với dữ liệu **KHÁC RỖNG**.
+3. **G16**: khai xong phải kèm **chỗ gọi `file:line`**. Hàm không ai gọi = chưa xong.
+4. **G9 cho `grep`**: `nhipHoiMs` cho thấy *tệp* được import vẫn khiến grep-theo-tên-tệp báo "đã nối".
+   Grep **tên hàm**.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
