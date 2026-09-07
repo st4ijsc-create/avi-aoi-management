@@ -2336,6 +2336,40 @@ dưới lẫn **cận trên**.
 **Đính chính số nền:** §11e.6 ghi cổng server twin là "17 tệp / 184 test"; đo lại **19 / 201**
 trước khi chạm vào gì. **H3 (`?pv=tapdoan` phía server) CHƯA LÀM** — lô H khai thẳng, không giả vờ đã đo.
 
+### 11e.9 LÔ G ĐÃ VỀ — xem chi tiết **không rời màn 3D** (2026-09-07)
+
+Commit `a3eb2919`. Cổng: **51 tệp / 1539 test** · `check` 0 · `build` 0.
+Chỗ gọi: `NganXuLy.tsx:582,590,611` · `TwinVanHanh.tsx:257,261,1949-1951`.
+Mặc định = **tại chỗ** (icon `Maximize2`); `ExternalLink` giữ làm **lối thoát phụ**.
+
+Nghiệm thu mắt (vai **không-admin**, trên `dist`): bấm "Cockpit đầy đủ" ⇒ URL
+`/twin?pv=machine:2405&chon=machine:2405&cam=11.27,…&xem=machine:2405` — **vẫn ở `/twin`**, `pv`+`cam`
+nguyên vẹn, cảnh 3D còn sống bên trái. Esc đóng · Back mở lại · F5 giữ ngăn · **0 lỗi console**.
+
+> #### ★★★ G37 — MÀN TỰ ĐỌC ROUTE HỎNG **CÂM** KHI ĐẶT NGOÀI ROUTE CỦA NÓ
+> `MachineCockpitBody` đã có sẵn nên dễ tưởng hai màn kia cũng nhúng được. Đo lại:
+> **`RobotCockpit.tsx:885` dùng `useRoute("/robot/:id")`** và **`StationAnalysis.tsx:3` dùng `useParams()`**
+> ⇒ đặt ngoài route của chính nó thì `id = NaN` → *"Invalid robot id"*. **Không exception, không
+> cảnh báo** — chỉ một ngăn báo lỗi trông như dữ liệu xấu.
+> ⇒ Trước khi nhúng một màn, **grep `useRoute`/`useParams`/`useSearch` trong chính nó**. Một màn
+> đọc ngữ cảnh route là một màn **không nhúng được** cho tới khi tách thân — và tách thân phải
+> **không đổi hành vi màn cũ** (đo lại `/robot/3`, `/station-analysis/2192`, và cả nhánh id-sai `/robot/abc`).
+
+> #### ★★ G38 — TỰ KHAI PHẠM VI PHẢI ĐO, KHÔNG ƯỚC LƯỢNG
+> Lô G được giao *"chỉ sửa đúng một dòng `:1721`"*, tự khai đã sửa **"~15 dòng"**. `git show --stat`:
+> **570 dòng** trong `TwinVanHanh.tsx`. Việc vượt phạm vi là **đúng** (trạng thái ngăn phải đọc/ghi URL,
+> một dòng không đủ) và nó **có khai báo** — nhưng **con số thì sai 38×**.
+> ⇒ Khi một lô báo "tôi sửa khoảng N dòng", **chạy `git show --stat`** trước khi dựa vào N để đánh
+> giá rủi ro xung đột. Đo được lúc ấy: lô F **chưa chạm** `TwinVanHanh.tsx` (tệp sạch) ⇒ không xung
+> đột thật, nhưng đã cảnh báo lô F phải **đọc lại tệp từ đĩa** trước khi sửa.
+
+**Ba đích CỐ Ý không nhúng** (khai rõ, không phải thiếu sót): `/control-plane`, `/command-console`
+(**màn ra lệnh OT** — nhúng cạnh 3D là mời bấm nhầm), `/history`, `/traceability`, `/device-monitor`.
+Chúng giữ `ExternalLink`, không mất chức năng. **G3 (cấp `line`) chưa làm** — khai thẳng.
+
+**Lỗi nhỏ tự khai, chưa vá:** nhãn phụ của ngăn lấy từ **máy đang chọn** ⇒ mở ngăn robot/trạm vẫn
+hiện mã máy. Thẩm mỹ, không sai chức năng — **khai thay vì vá lén**.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
