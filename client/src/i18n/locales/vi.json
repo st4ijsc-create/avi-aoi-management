@@ -20130,7 +20130,14 @@
         "quayLai": "Quay lại 3D",
         "moDayDu": "Mở màn đầy đủ",
         "dangNap": "Đang tải nội dung…"
-      }
+      },
+      "xuatUsd": "Xuất USD",
+      "xuatUsdDang": "Đang xuất…",
+      "xuatUsdMoTa": "Xuất toàn bộ cảnh nhà máy ra tệp USD (.usda) để mở trong Omniverse / Isaac Sim",
+      "xuatUsdXong": "Đã xuất {{ten}} — {{prim}} vật thể, {{byte}} byte",
+      "xuatUsdCanhTrong": "Chưa xuất: nhà máy này chưa có vật thể nào trên mặt bằng (tệp sẽ rỗng).",
+      "xuatUsdChuaChonNhaMay": "Chưa chọn nhà máy để xuất.",
+      "xuatUsdHong": "Xuất USD thất bại ({{lyDo}})."
     },
     "studio": {
       "tieuDe": "Nhà máy 3D — Thiết kế",

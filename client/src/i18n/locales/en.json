@@ -20150,7 +20150,14 @@
         "quayLai": "Back to 3D",
         "moDayDu": "Open full screen",
         "dangNap": "Loading content…"
-      }
+      },
+      "xuatUsd": "Export USD",
+      "xuatUsdDang": "Exporting…",
+      "xuatUsdMoTa": "Export the whole factory scene as a USD (.usda) file for Omniverse / Isaac Sim",
+      "xuatUsdXong": "Exported {{ten}} — {{prim}} prims, {{byte}} bytes",
+      "xuatUsdCanhTrong": "Not exported: this factory has no objects placed on the floor plan (the file would be empty).",
+      "xuatUsdChuaChonNhaMay": "No factory selected to export.",
+      "xuatUsdHong": "USD export failed ({{lyDo}})."
     },
     "studio": {
       "tieuDe": "3D Factory — Design",

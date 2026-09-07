@@ -20158,7 +20158,14 @@
         "quayLai": "返回 3D",
         "moDayDu": "打开完整页面",
         "dangNap": "正在加载内容…"
-      }
+      },
+      "xuatUsd": "导出 USD",
+      "xuatUsdDang": "正在导出…",
+      "xuatUsdMoTa": "将整个工厂场景导出为 USD (.usda) 文件，可在 Omniverse / Isaac Sim 中打开",
+      "xuatUsdXong": "已导出 {{ten}} — {{prim}} 个图元，{{byte}} 字节",
+      "xuatUsdCanhTrong": "未导出：该工厂的平面图上尚无任何对象（文件将为空）。",
+      "xuatUsdChuaChonNhaMay": "尚未选择要导出的工厂。",
+      "xuatUsdHong": "USD 导出失败（{{lyDo}}）。"
     },
     "studio": {
       "tieuDe": "3D 工厂 — 设计",

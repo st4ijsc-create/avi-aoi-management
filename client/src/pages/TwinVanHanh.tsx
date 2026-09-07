@@ -53,6 +53,7 @@ import {
   Boxes,
   ChevronLeft,
   ChevronRight,
+  Download,
   LayoutGrid,
   OctagonAlert,
   RefreshCw,
@@ -84,6 +85,7 @@ import {
   type TapPhamVi,
 } from "@/components/twin3d/van-hanh/daiCanhBaoLogic";
 import { DaiLine } from "@/components/twin3d/van-hanh/DaiLine";
+import { xuatUsd, type KetQuaXuatUsd } from "@/components/twin3d/van-hanh/xuatUsd";
 import type { CanhBaoTheGioi, MucCanhBao } from "@/components/twin3d/van-hanh/LopCanhBao";
 import {
   docTrangThaiUrl,
@@ -1711,6 +1713,68 @@ export default function TwinVanHanh() {
     void overviewQ.refetch();
   }, [andonQ, overviewQ]);
 
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ §11 #1 — XUẤT USD/USDA. VÌ SAO NÚT NẰM Ở ĐÂY, KHÔNG Ở `NganXuLy`
+   * ════════════════════════════════════════════════════════════════════════
+   * Sổ kiểm §11 ghi đích là `NganXuLy`. **Đích đó SAI, và đo được là sai:**
+   * `NganXuLyProps` có phạm vi MỘT MÁY (`machineId: number | null`), trong khi
+   * `twin.usdExport` nhận `{ factoryId }` và xuất TOÀN nhà máy. Đặt một nút cấp
+   * nhà máy vào ngăn chi tiết của một máy nghĩa là: nút biến mất khi chưa chọn
+   * máy nào (lúc người ta muốn xuất cả cảnh nhất), và khi đã chọn thì nó nói dối
+   * về phạm vi — người dùng tưởng đang xuất cái máy đang xem.
+   *
+   * ⇒ Nút thuộc THANH CÔNG CỤ của màn, cạnh `napLai`/`che2D` — những nút khác
+   *   cũng có phạm vi TOÀN MÀN. Báo lại thay vì tự sửa spec.
+   *
+   * ★ QUYỀN — vì sao chỗ này KHÔNG đẻ thêm "một lối vào rồi từ chối":
+   *   `twin.usdExport` gate `machine_monitoring`, mà `_core/accessControl.ts:213`
+   *   phân giải alias `machine_monitoring → machine_status`. Nút chỉ hiện khi
+   *   `hasPermission("machine_status","canView")` — ĐÚNG quyền mà thủ tục cưỡng
+   *   chế, lấy từ chính nơi cưỡng chế chứ không đoán.
+   *
+   *   ⚠ CÒN MỘT KHE HỞ, ghi lại để đợt sau không tưởng là đã kín: cổng vào
+   *   `/twin` là `analytics_oee` **HOẶC** `machine_status` (`quyenVanHanh`),
+   *   còn `usdExport` chỉ nhận `machine_status`. Một người chỉ có `analytics_oee`
+   *   sẽ vào được màn mà không có nút. Đo trên `permissions` thật ngày
+   *   2026-09-07: **0 tài khoản** rơi vào khe đó (mọi hàng `analytics_oee` đều
+   *   kèm `machine_status`) — nên hôm nay nó là rủi ro tiềm tàng, không phải lỗi
+   *   đang xảy ra. Nút ẨN (không hiện-rồi-chặn) là ứng xử đúng cho khe này.
+   *
+   * ★ G28 — `buildFactoryUsda` DEGRADE-SAFE: nhà máy rỗng trả một stage USDA
+   *   **hợp lệ mà 0 prim** (đo được: factory 2 → 115 byte, 0 prim) chứ không ném
+   *   lỗi. Nên `xuatUsd` THẨM ĐỊNH nội dung (đếm prim) trước khi cho tải, và
+   *   trạng thái dưới đây giữ lại `soPrim`/`soByte` để thanh công cụ nói ra CON
+   *   SỐ thay vì một chữ "Xong" không đo gì.
+   */
+  const [dangXuatUsd, setDangXuatUsd] = useState(false);
+  const [ketQuaXuatUsd, setKetQuaXuatUsd] = useState<KetQuaXuatUsd | null>(null);
+  const utils = trpc.useUtils();
+
+  const xuatUsdNhaMay = useCallback(async () => {
+    if (factoryId === null) {
+      setKetQuaXuatUsd({ xong: false, lyDo: "khong-nha-may", ten: "", soPrim: 0, soByte: 0 });
+      return;
+    }
+    setDangXuatUsd(true);
+    setKetQuaXuatUsd(null);
+    try {
+      const res = await utils.twin.usdExport.fetch({
+        factoryId,
+        includeMaterials: true,
+        includePhysics: false,
+      });
+      const ten = factories.find((f) => f.id === factoryId)?.name ?? `factory-${factoryId}`;
+      setKetQuaXuatUsd(xuatUsd(res, document, ten, new Date()));
+    } catch {
+      // Truy vấn hỏng (mạng / FORBIDDEN) — KHÔNG im lặng. `rong` là lý do đúng:
+      // không có chuỗi USDA nào để thẩm định.
+      setKetQuaXuatUsd({ xong: false, lyDo: "rong", ten: "", soPrim: 0, soByte: 0 });
+    } finally {
+      setDangXuatUsd(false);
+    }
+  }, [factoryId, factories, utils]);
+
   const mayDangChon = mayVanHanh.find((m) => m.id === machineIdChon) ?? null;
   const sanRongM = tangDau ? mmSangMet(tangDau.rongMm) : 40;
   const sanSauM = tangDau ? mmSangMet(tangDau.sauMm) : 30;
@@ -1931,6 +1995,34 @@ export default function TwinVanHanh() {
           <Button size="sm" variant="ghost" onClick={napLai} data-testid="nut-nap-lai">
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
+          {/*
+            ── §11 #1 — XUẤT USD/USDA ────────────────────────────────────────
+            Nút ẨN khi thiếu `machine_status` (quyền mà `twin.usdExport` thật sự
+            cưỡng chế qua alias `machine_monitoring`) — ẩn chứ không hiện-rồi-chặn.
+            `data-so-prim` là thứ e2e/nghiệm thu đọc: nó là SỐ ĐO nội dung, khác
+            hẳn một cờ "đã bấm được nút".
+          */}
+          {hasPermission("machine_status", "canView") ? (
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="nut-xuat-usd"
+              data-so-prim={ketQuaXuatUsd?.soPrim ?? ""}
+              data-so-byte={ketQuaXuatUsd?.soByte ?? ""}
+              data-ly-do={ketQuaXuatUsd?.lyDo ?? ""}
+              disabled={dangXuatUsd || factoryId === null}
+              onClick={() => void xuatUsdNhaMay()}
+              title={t(
+                "twin3d.vanHanh.xuatUsdMoTa",
+                "Xuất toàn bộ cảnh nhà máy ra tệp USD (.usda) để mở trong Omniverse / Isaac Sim",
+              )}
+            >
+              <Download className="mr-1 h-3.5 w-3.5" />
+              {dangXuatUsd
+                ? t("twin3d.vanHanh.xuatUsdDang", "Đang xuất…")
+                : t("twin3d.vanHanh.xuatUsd", "Xuất USD")}
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="outline"
@@ -1944,6 +2036,69 @@ export default function TwinVanHanh() {
           </Button>
         </div>
       </header>
+
+      {/*
+        ── §11 #1 — KẾT QUẢ XUẤT USD, NÓI BẰNG CON SỐ ────────────────────
+        ★ G28: một cú xuất "thành công" phải khoe SỐ PRIM, vì đó là thứ phân
+          biệt tệp 40 KB có 142 prim với tệp 115 byte có 0 prim. Và ca
+          `canh-trong` phải nói RÕ "nhà máy chưa có gì trên mặt bằng" thay vì
+          đưa người dùng một tệp rỗng kèm chữ "Xong".
+      */}
+      {ketQuaXuatUsd !== null ? (
+        <div
+          className={
+            "flex shrink-0 items-center gap-2 border-b px-3 py-1 text-[11px] " +
+            (ketQuaXuatUsd.xong
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400")
+          }
+          data-testid="bang-ket-qua-xuat-usd"
+          data-xong={ketQuaXuatUsd.xong ? "1" : "0"}
+          data-so-prim={ketQuaXuatUsd.soPrim}
+          data-so-byte={ketQuaXuatUsd.soByte}
+          data-ly-do={ketQuaXuatUsd.lyDo ?? ""}
+        >
+          {ketQuaXuatUsd.xong ? (
+            <span>
+              {t(
+                "twin3d.vanHanh.xuatUsdXong",
+                "Đã xuất {{ten}} — {{prim}} vật thể, {{byte}} byte",
+                {
+                  ten: ketQuaXuatUsd.ten,
+                  prim: ketQuaXuatUsd.soPrim,
+                  byte: ketQuaXuatUsd.soByte,
+                },
+              )}
+            </span>
+          ) : (
+            <>
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span>
+                {ketQuaXuatUsd.lyDo === "canh-trong"
+                  ? t(
+                      "twin3d.vanHanh.xuatUsdCanhTrong",
+                      "Chưa xuất: nhà máy này chưa có vật thể nào trên mặt bằng (tệp sẽ rỗng).",
+                    )
+                  : ketQuaXuatUsd.lyDo === "khong-nha-may"
+                    ? t("twin3d.vanHanh.xuatUsdChuaChonNhaMay", "Chưa chọn nhà máy để xuất.")
+                    : t(
+                        "twin3d.vanHanh.xuatUsdHong",
+                        "Xuất USD thất bại ({{lyDo}}).",
+                        { lyDo: ketQuaXuatUsd.lyDo ?? "?" },
+                      )}
+              </span>
+            </>
+          )}
+          <button
+            type="button"
+            className="ml-auto underline"
+            onClick={() => setKetQuaXuatUsd(null)}
+            data-testid="nut-dong-ket-qua-xuat-usd"
+          >
+            {t("common.close", "Đóng")}
+          </button>
+        </div>
+      ) : null}
 
       {/*
         ── ★★★ CHẶN-2 — BANNER TRUY VẤN BỊ TỪ CHỐI ──────────────────────
