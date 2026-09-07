@@ -2674,6 +2674,60 @@ dung tam cung khong lam hien duoc gi. §11 #25 (joints) da xep dich = **GIU O Ro
 **Con mo:** khe quyen `analytics_oee`-ma-khong-`machine_status` (hom nay **0 tai khoan**) - chua ai quyet
 co nen noi `usdExport` thanh `requireAnyPermission` nhu `quyenVanHanh` khong.
 
+## 11h. DOT 14 - NHA MAY 4 TANG + GOP DIGITAL TWIN VAO 3D FACTORY (2026-09-07)
+
+Chu so huu giao hai viec, va **giua chung doi huong viec 2**:
+> *"Voi muc 2 can lam mot ban thiet ke chi tiet tung man hinh, tung nghiep vu tung hanh dong tren
+> 3D Factory va xay dung 3D Factory sau do chung ta se ban them truoc khi di den mot ke hoach
+> nang cap cu the"*
+
+=> **Viec 2 chuyen thanh: VA LO BAO MAT + VIET THIET KE**, khong xay them tinh nang moi.
+Ban thiet ke se duoc **dem ra ban** truoc khi co ke hoach nang cap.
+
+### 11h.1 Viec 1 (lo P) - nha may moi 4 tang x 5 line x 12 may = **240 may**
+
+Rang buoc mang sang: `machines.stationId` **bat buoc** - may khong treo thang vao line;
+`twinnguonenum` chi co `sinh|tay` => co dat theo **MA**, **cam them gia tri enum**; bang `twin_*` dung
+**mm** (§10A.0 cam `floorWidthM`); **Z la chieu cao**; §10C.6 buoc luoi 400 m **sai** o quy mo km.
+Script `sinh-tai-twin.ts`/`go-tai-twin.ts` **da co** (`b21a05e3`) - mo rong, **dung viet ban thu hai** (G12).
+
+**Diem then chot cua viec "mo phong":** hai nguon mo phong dang **RONG** (§11g.4 do duoc):
+`wip_tracking` **0 hang trong 24h** (moi nhat **17 ngay**) va `product_inspections` **0 hang**.
+=> Nha may moi **phai sinh kem du lieu van hanh** (WIP, telemetry, andon) voi **moc thoi gian gan hien
+tai** (G30: `conHieuLuc` 8h se loai du lieu cu). Khong thi se giao mot canh 3D dep ma **moi lop phu
+deu trong** - dung cai bay G5.
+
+### 11h.2 Viec 2 (lo Q) - **DO TRUOC KHI GIAO**: bon trang cu, 3.378 dong, 12 thu tuc
+
+| Trang | Dong | Thu tuc tRPC |
+|---|---|---|
+| `DigitalTwinDashboard` | 606 | `digitalTwin.twinState` `defectHeatmap` `stationLoadHeatmap` `predictionOverlay` `whatIf` |
+| `CommandCenter` | 1596 | `commandCenter.hierarchy` `kpiSummary` `recentAlerts` `status` + `twin.sceneGraph` |
+| `DigitalTwinCenter` | 936 | `twin.sceneGraph` `twin.status` `machineStatus.listWithStatus` |
+| `FactoryLiveMap3D` | 240 | `machineStatus.listWithStatus` |
+
+`DigitalTwinDashboard` giu **dung 5 muc Twin con thieu**: #30 `whatIf` - #31 `defectHeatmap` -
+#32 `stationLoadHeatmap` - #33 `predictionOverlay` - #34 `twinState`.
+
+> #### G49 - **GOP MOT ROUTER CHUA LOC TENANT LA MANG RO RI VAO TRUNG TAM**
+> `digitalTwinRouter` co **0 tham chieu** `phamViCua`/`resolveTenantFactoryScope`/`trongPhamVi`
+> (chu du an do), va `twinState:33-40` nhan `stationId` **do client tu khai**. Moi thu tuc chi
+> `protectedProcedure` - **khong cong module nao**.
+> Day **dung lop loi lo K vua va** o `demVatThe`: `maint1` - 0 nha may duoc gan - van dem duoc vat the
+> cua SIM-FAC.
+> => **Va truoc khi gop.** Gop mot nguon chua loc vao man trung tam la nhan rong pham vi ro ri, khong
+> phai them tinh nang. Co san `phamViCua(ctx)` + `trongPhamVi(...)` + test luong-phan
+> `phamViTwinCanh.unit.test.ts` - **dung lai** (G12).
+>
+> **He qua phu dang chu y:** vi router nay **khong co cong module**, gop no vao `/twin` **khong** de
+> them "mot loi vao roi tu choi" - nhung cai gia la no cung **chua tung chan ai**.
+
+### 11h.3 Yeu cau **honest-null** cho hai muc nguon rong
+
+`predictionOverlay` luon `available:false` va `defectHeatmap` vinh vien trong (do o §11g.4).
+=> Hai muc do phai hien **`-` kem ly do** (*"do tren 0/N"*), **KHONG** hien `0`. Ban `?? 0` la
+**loi khai sai**. `BangKpiNoi` da lam dung khuon nay (§11f.1).
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
