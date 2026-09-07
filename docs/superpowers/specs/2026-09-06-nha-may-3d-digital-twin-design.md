@@ -2535,6 +2535,50 @@ no la do tre ACK lenh; dung nham thi mui ten chay **nhanh gap 150 lan**. Nguon d
 truc hop voi `mucChiTiet.ts` (da co LRU 8 GLB). Va **cam migration** - `twin_ban_ghi` co bang nhung
 0 hang/0 consumer, neu hop dong khong dung duoc thi **bao lai**.
 
+### 11g.4 LO L DA VE - VA BAC BRIEF CUA CHU DU AN O HAI CHO (2026-09-07)
+
+Commit `30165f93`. Cong: **55 tep / 1632 test** (nen 52/1566) - `check` 0 - `build` 0 - DB nguyen ven.
+
+> #### G44 - GREP LOC BO `import` CO THE LOC BO CA CHO GOI JSX
+> Toi khai *"`DongThoiGian` co ma, 0 cho goi san pham"*. **SAI.** Chu du an do lai:
+> `TwinVanHanh.tsx:2107` da render `<DongThoiGian>` tu commit `444151f3` (Dot 6), va no **noi day
+> that**: `mocTua` dieu khien `twinCanh.anhLichSu` va **chan** goi realtime khi dang tua.
+> Loi cua toi: grep ten roi loc bo dong `import` - **loc luon ca dong render JSX** vi ca hai deu
+> chua ten do. Day la **G9 lan thu ba** trong cung mot du an.
+> => Khi grep de tim cho goi, dem **rieng** cac dang: `import`, `<Ten`, `Ten(`, `= Ten`.
+
+**Bac thu hai - #36 DA VA TU TRUOC:** brief toi canh bao `commandLog.avgDurations` dung nham.
+Do lai: `TwinVanHanh.tsx:579-590` docblock ghi ro **nguon DUNG la `line_balance_metrics.avgCycleTimeMs`
+qua `wip.lineBalance`**, tieu thu that o `:2190`/`:2368`. Khong con gi de sua.
+
+**Mon THAT SU chua ai goi (dung lop loi G16, khac symbol):** `docThoiGian`/`ghiThoiGian` + khoa `tg=`
+da du trong `duongDanTwin.ts`, co test - va **0 cho goi**; `mocTua` nam trong `useState`. He qua: F5
+mat cho dang xem, khong gui duoc link *"xem giup luc 08:30"*, Back khong quay lai moc.
+**Da noi:** `TwinVanHanh.tsx:714` (`mocTua = urlState.tg`), `:716` (`ghiUrl({tg})`) - chu du an kiem tan noi.
+
+`mocTheoBuoc()` **can ve bien** thay vi `moc + delta`: cong tho khong bao gio dat chan len moc tron
+(slider `step=60_000` neo theo `min`=`Date.now()`). Hai luat con: lech bien thi buoc dau **chi can ve
+bien** (neu khong, 09:00 la moc **khong bao gio** toi duoc bang phim); dung bien thi **di tron o**
+(neu khong => `f(x)=x`, G32).
+
+> #### G45 - "KHONG LAM" CO THE LA KET LUAN DO DUOC, KHONG PHAI BO SOT
+> **#38 (toggle Du doan) KHONG LAM** - va do la ket luan dung. `digitalTwin.predictionOverlay` doc
+> `wip_tracking` voi lookback **24h cung** va can >=3 diem. Chu du an do doc lap:
+> `wip_tracking` co **7.048 hang** nhung **0 hang trong 24h**, ban ghi moi nhat **17 ngay tuoi**
+> => moi line ra `series.length=0` => `available:false`.
+> **#31 (heatmap):** `product_inspections` = **0 hang** => heatmap vinh vien trong.
+> => Lam toggle/heatmap tren nguon do la **cong xanh tren tap RONG** (G5). Can seed truoc.
+> Lo L **khong lam do** va **noi thang** - dung hon la giao mot tinh nang khong bao gio hien gi.
+
+**Anh dau tien cua lo L chi co spinner** - no **tu doc va tu loai**, chup lai moi thay dai tua that.
+Neu khong tu nhin, mot anh vo gia tri da thanh bang chung.
+
+**Bay con lai cho nguoi sau:** `noiChoGoi.unit.test.ts` **grep VAN BAN THO** - docblock trich nguyen
+van `` `wip={[]}` `` lam luoi do; no **khong phan biet duoc ma voi van xuoi**.
+
+**Cong 3000 la server cua PHIEN KHAC** (PID 28480). Nghiem thu dau cua lo L tren 3000 cho ket qua SAI
+vi no phuc vu **bundle cu**. Chuyen sang 3123, khong dung PID kia.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
