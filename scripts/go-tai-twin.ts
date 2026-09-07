@@ -58,7 +58,7 @@ const argTienTo = args.find((a) => a.startsWith("--tien-to="));
  * Tiền tố mã nhà máy được phép gỡ. MẶC ĐỊNH chỉ hai họ do lô E sinh ra.
  * `SIM-FAC` và `T12-SHOT-FA-…` KHÔNG khớp bất kỳ tiền tố nào ⇒ bất khả xâm phạm.
  */
-export const TIEN_TO_MAC_DINH: readonly string[] = Object.freeze(["FUYU-F", "TAI-"]);
+export const TIEN_TO_MAC_DINH: readonly string[] = Object.freeze(["FUYU-F", "FUYU-G", "TAI-"]);
 
 /**
  * Mã nhà máy CẤM chạm, kể cả khi ai đó truyền `--tien-to` rộng.
@@ -232,6 +232,29 @@ async function main(): Promise<void> {
 
   console.log(`  twin_vat_the=${vtCount}  twin_ban_ghi=${bgCount}  twin_dat_cho=${dcIds.length}`);
 
+  // Đếm dữ liệu VẬN HÀNH sẽ xoá — in ra kể cả ở `--kho`, để chạy khô nói được
+  // đầy đủ hậu quả chứ không chỉ phần hình học.
+  async function dem(bang: string, cot: string, ids: number[]): Promise<number> {
+    if (!ids.length) return 0;
+    const [r] = await sql.unsafe<{ n: string }[]>(
+      `SELECT count(*)::text n FROM ${bang} WHERE "${cot}" = ANY($1)`,
+      [ids as never],
+    );
+    return Number(r.n);
+  }
+  const vanHanh = {
+    wip_tracking: await dem("wip_tracking", "currentStationId", stIds),
+    product_inspections: await dem("product_inspections", "machineId", mIds),
+    machine_health_history: await dem("machine_health_history", "machineId", mIds),
+    machine_heartbeats: await dem("machine_heartbeats", "machineId", mIds),
+    andon_events: await dem("andon_events", "lineId", plIds),
+    line_balance_metrics: await dem("line_balance_metrics", "lineId", plIds),
+  };
+  console.log(
+    "  Van hanh: " +
+      Object.entries(vanHanh).map(([k, v]) => `${k}=${v}`).join("  "),
+  );
+
   if (CHI_DO) {
     console.log("\n  [--kho] KHONG xoa gi. Dung.");
     await sql.end();
@@ -241,6 +264,102 @@ async function main(): Promise<void> {
   // ── B4. Xoá trong MỘT giao dịch, ngược thứ tự tạo ────────────────────────
   const xoa: Record<string, number> = {};
   await sql.begin(async (tx) => {
+    // ══════════════════════════════════════════════════════════════════════
+    // ★★★ TRẦN GIẢI NÉN CỦA TIMESCALE — vì sao lượt gỡ đầu tiên CHẾT
+    // ══════════════════════════════════════════════════════════════════════
+    // Đo được khi gỡ FUYU-G (240 máy): `DELETE FROM ot_telemetry` chạy **10
+    // phút** rồi đổ
+    //
+    //   SQLSTATE 53400 "tuple decompression limit exceeded by operation"
+    //   detail: current limit: 100000, tuples decompressed: 17190221
+    //
+    // `ot_telemetry` là **hypertable ĐANG NÉN** với **28.281.581 hàng**
+    // (`compression_enabled = true`, đo bằng `timescaledb_information
+    // .hypertables`). Một `DELETE ... WHERE "machineId" = ANY(...)` không có
+    // vế thời gian buộc Timescale GIẢI NÉN mọi chunk để tìm hàng khớp — 17,19
+    // triệu bản ghi cho 128k hàng cần xoá.
+    //
+    // ★ Điều ĐÚNG đã xảy ra: cả giao dịch QUAY LUI, nên FUYU-G còn nguyên 240
+    //   máy chứ không nằm lại ở trạng thái xoá dở. Đó chính là lý do mọi phép
+    //   xoá ở đây nằm trong MỘT `begin`.
+    //
+    // ⚠ Đặt bằng `SET LOCAL` — chỉ trong giao dịch này, tự hết hiệu lực khi
+    //   commit/rollback. KHÔNG `ALTER DATABASE`/`ALTER SYSTEM`: đó là đổi cấu
+    //   hình máy chủ dùng chung cho một việc dùng một lần, và nó sẽ sống lâu
+    //   hơn cái lý do sinh ra nó.
+    // ⚠ `0` = không giới hạn. An toàn ở đây vì phạm vi đã bị chặn bằng `mIds`
+    //   (danh sách id CỤ THỂ của nhà máy tải), không phải một vị từ mở.
+    await tx`SET LOCAL timescaledb.max_tuples_decompressed_per_dml_transaction = 0`;
+    // ══════════════════════════════════════════════════════════════════════
+    // ★★★ DỮ LIỆU VẬN HÀNH XOÁ TRƯỚC — nó trỏ vào machines/stations/lines
+    // ══════════════════════════════════════════════════════════════════════
+    // Năm bảng này do lô P thêm vào bộ sinh. Chúng trỏ NGƯỢC lên máy/trạm/line
+    // của nhà máy tải, nên phải đi TRƯỚC — xoá máy trước thì hoặc FK chặn, hoặc
+    // (tệ hơn, ở bảng không FK) chúng thành MỒ CÔI CÂM và không còn đường nào
+    // truy ra là của ai nữa. Đây đúng lớp tai nạn mà `twin_dat_cho` đã dạy.
+    //
+    // ⚠ KHOÁ NHẬN DẠNG LÀ QUAN HỆ, KHÔNG PHẢI TIỀN TỐ SERIAL. `serialNumber`
+    //   mang tiền tố mã nhà máy, nhưng lọc theo tên là lọc theo một quy ước;
+    //   lọc theo `currentStationId ∈ trạm của nhà máy này` là lọc theo một
+    //   đường truy vết CÓ THẬT. Nếu ai đó sinh WIP bằng tay trên trạm này, nó
+    //   cũng bị gỡ — và đó là hành vi ĐÚNG: trạm sắp biến mất.
+    if (stIds.length) {
+      xoa.wip_tracking = (await tx`DELETE FROM wip_tracking WHERE "currentStationId" = ANY(${stIds})`).count;
+    }
+    if (mIds.length) {
+      xoa.product_inspections = (await tx`DELETE FROM product_inspections WHERE "machineId" = ANY(${mIds})`).count;
+      xoa.machine_health_history = (await tx`DELETE FROM machine_health_history WHERE "machineId" = ANY(${mIds})`).count;
+      xoa.machine_heartbeats = (await tx`DELETE FROM machine_heartbeats WHERE "machineId" = ANY(${mIds})`).count;
+      // ══════════════════════════════════════════════════════════════════════
+      // ★★★ BỐN BẢNG DO **SERVER ĐANG CHẠY** SINH RA, KHÔNG PHẢI BỘ SINH
+      // ══════════════════════════════════════════════════════════════════════
+      // Phát hiện khi nghiệm thu 240 máy: bật server lên rồi đo lại, thấy máy
+      // của nhà máy tải đã có **100.800 hàng `ot_telemetry`**, 911 hàng
+      // `machine_health_history` (bộ sinh chỉ ghi 240) và 668 `rul_estimates`.
+      // Nhật ký server nói thẳng: `[simOtTelemetry] emitted 1128 sample(s) for
+      // 282 machine(s)` — 282 = 43 máy thật + 240 máy tải (+1). Nghĩa là:
+      //
+      //   ⇒ Hễ server còn chạy, nó TỰ ĐỘNG bơm dữ liệu vào máy tải của ta, và
+      //     một script gỡ chỉ biết những bảng NÓ GHI sẽ để lại hàng chục vạn
+      //     hàng mồ côi — không phải vì nó sai, mà vì phạm vi của nó được suy
+      //     từ "tôi đã ghi gì", chứ không từ "cái gì trỏ vào máy của tôi".
+      //
+      // ★ Bài học tổng quát: phạm vi phép gỡ phải suy từ **ĐỒ THỊ THAM CHIẾU**,
+      //   không từ danh sách INSERT của bộ sinh. Danh sách INSERT là lời khai
+      //   của tác giả; đồ thị tham chiếu là sự thật của lược đồ.
+      //
+      // ⚠ Vẫn nên DỪNG server trước khi gỡ: nó có thể ghi thêm giữa lúc ta đọc
+      //   id và lúc ta xoá. Cầu chì mồ côi "lượt này" ở cuối sẽ bắt được nếu có.
+      // ★ VẾ THỜI GIAN `ts >= now() - 30 days` KHÔNG phải để lọc — `machineId`
+      //   đã đủ. Nó để **CẮT CHUNK**: cột phân mảnh của hypertable là `ts`, nên
+      //   không có vế này Timescale phải mở MỌI chunk (28,3 triệu hàng, 10 phút
+      //   và 17,19 triệu tuple giải nén). Với vế này nó chỉ chạm các chunk gần
+      //   đây — nơi 100% hàng của nhà máy tải nằm, vì nhà máy tải vừa được sinh
+      //   ra và `simOtTelemetry` chỉ ghi dữ liệu SỐNG.
+      //
+      // ⚠ Nếu ai đó giữ nhà máy tải quá 30 ngày, con số này phải nới ra —
+      //   nên cầu chì mồ côi "lượt này" ở cuối đếm KHÔNG kèm vế thời gian và
+      //   sẽ kêu nếu còn sót. Cắt nhanh mà vẫn có người kiểm.
+      xoa.ot_telemetry = (
+        await tx`DELETE FROM ot_telemetry
+                  WHERE "machineId" = ANY(${mIds}) AND ts >= now() - interval '30 days'`
+      ).count;
+      xoa.rul_estimates = (await tx`DELETE FROM rul_estimates WHERE machine_id = ANY(${mIds})`).count;
+      xoa.machine_status_logs = (await tx`DELETE FROM machine_status_logs WHERE "machineId" = ANY(${mIds})`).count;
+      // ★ `predictive_alerts` tìm ra bằng MÔ HÌNH THỨ HAI, không bằng đồ thị FK:
+      //   nó KHÔNG có khoá ngoại vào `machines` (như `ot_telemetry`,
+      //   `rul_estimates`, `machine_health_history`), nên phép quét theo FK bỏ
+      //   sót nó hoàn toàn. Chỉ phép quét theo TÊN CỘT trên `information_schema`
+      //   mới thấy — đúng bài BG-127: hai mô hình rời nhau, và cái thứ hai bắt
+      //   được thứ cái thứ nhất mù. Danh sách này KHÔNG được sửa bằng cách đoán;
+      //   chạy lại phép quét theo tên cột sau mỗi lần lược đồ đổi.
+      xoa.predictive_alerts = (await tx`DELETE FROM predictive_alerts WHERE "machineId" = ANY(${mIds})`).count;
+    }
+    if (plIds.length) {
+      xoa.andon_events = (await tx`DELETE FROM andon_events WHERE "lineId" = ANY(${plIds})`).count;
+      xoa.line_balance_metrics = (await tx`DELETE FROM line_balance_metrics WHERE "lineId" = ANY(${plIds})`).count;
+    }
+
     if (dcIds.length) xoa.twin_dat_cho = (await tx`DELETE FROM twin_dat_cho WHERE id = ANY(${dcIds})`).count;
     if (tgIds.length) {
       xoa.twin_vat_the = (await tx`DELETE FROM twin_vat_the WHERE "tangId" = ANY(${tgIds})`).count;
@@ -252,6 +371,12 @@ async function main(): Promise<void> {
     if (stIds.length) xoa.stations = (await tx`DELETE FROM stations WHERE id = ANY(${stIds})`).count;
     if (plIds.length) xoa.production_lines = (await tx`DELETE FROM production_lines WHERE id = ANY(${plIds})`).count;
     if (wsIds.length) xoa.workshops = (await tx`DELETE FROM workshops WHERE id = ANY(${wsIds})`).count;
+    // ★ Hàng gán phạm vi tenant do bộ sinh tạo — khoá là `factoryCode`, tức là
+    //   ĐÚNG mã nhà máy đang gỡ. Không có FK nên DB không tự dọn; bỏ sót thì
+    //   người dùng đo giữ quyền xem một nhà máy KHÔNG CÒN TỒN TẠI.
+    xoa.user_factory_assignments = (
+      await tx`DELETE FROM user_factory_assignments WHERE "factoryCode" = ANY(${nhaMays.map((f) => f.code)})`
+    ).count;
     xoa.factories = (await tx`DELETE FROM factories WHERE id = ANY(${fIds})`).count;
   });
 
@@ -261,6 +386,143 @@ async function main(): Promise<void> {
   // ── B5. Cầu chì mồ côi: hàng đặt-chỗ trỏ vào máy/trạm KHÔNG còn tồn tại ──
   // `thucTheId` đa hình, không FK ⇒ DB không tự bắt. Nếu số này > 0 sau khi gỡ,
   // phép gỡ KHÔNG sạch và phải nói thẳng.
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★★★ CẦU CHÌ MỒ CÔI VẬN HÀNH — VÀ VÌ SAO NÓ ĐO THEO **ID VỪA XOÁ**
+  // ══════════════════════════════════════════════════════════════════════════
+  // Bản đầu của cầu chì này đếm mồ côi TOÀN CSDL, và nó lập tức bắt được 8.197
+  // hàng `machine_health_history` mồ côi. Điều tra (BG-127, hai mô hình rời:
+  // LIỆT KÊ toàn phân bố theo tiền tố `machineCode`, rồi đối chiếu TỔNG
+  // 182.403 = 174.206 sống + 8.197 mồ côi) cho ra:
+  //
+  //   FUYU-*  6.588 hàng / 1.098 máy   ghi 2026-09-07 05:12 → 07:05
+  //   TAI-*   1.592 hàng / 1.592 máy   ghi 2026-09-07 05:13 → 05:14
+  //   khác       17 hàng               2026-08-18 và 2026-09-03
+  //
+  // ⇒ Đó là RÁC CÓ SẴN của những lượt sinh TRƯỚC bản vá này: `go-tai-twin.ts`
+  //   nguyên bản KHÔNG xoá `machine_health_history` (bảng đó chỉ vào phạm vi
+  //   khi lô P thêm nó vào bộ sinh), nên mỗi lượt gỡ trước đây để lại toàn bộ
+  //   phần sức khoẻ. Hàng của lượt gỡ ĐANG chạy = **0** (đo riêng).
+  //
+  // ⚠ Nên phép đo đúng là "lượt gỡ NÀY có để lại mồ côi không", tức là đếm trên
+  //   ĐÚNG tập id vừa xoá — không phải đếm rác của người khác rồi báo mình hỏng.
+  //   Một cầu chì kêu vì lỗi của lượt trước sẽ bị người đọc học cách phớt lờ, và
+  //   khi nó kêu THẬT thì không ai nghe nữa.
+  //
+  // ★ Rác có sẵn vẫn được BÁO (mục "rac co san" bên dưới) — chỉ không tính vào
+  //   kết luận sạch/bẩn của lượt này. Dọn nó là quyết định của chủ sở hữu, không
+  //   phải việc script này tự ý làm: nó nằm NGOÀI phạm vi "hàng do tôi sinh".
+  const mA = mIds.length ? mIds : [0];
+  const sA = stIds.length ? stIds : [0];
+  const pA = plIds.length ? plIds : [0];
+  const [{ n: moCoiCuaToi }] = await sql<{ n: string }[]>`
+    SELECT (
+      (SELECT count(*) FROM machine_health_history WHERE "machineId" = ANY(${mA}))
+    + (SELECT count(*) FROM product_inspections    WHERE "machineId" = ANY(${mA}))
+    + (SELECT count(*) FROM machine_heartbeats     WHERE "machineId" = ANY(${mA}))
+    + (SELECT count(*) FROM ot_telemetry           WHERE "machineId" = ANY(${mA}))
+    + (SELECT count(*) FROM rul_estimates          WHERE machine_id   = ANY(${mA}))
+    + (SELECT count(*) FROM machine_status_logs    WHERE "machineId" = ANY(${mA}))
+    + (SELECT count(*) FROM predictive_alerts      WHERE "machineId" = ANY(${mA}))
+    + (SELECT count(*) FROM wip_tracking WHERE "currentStationId" = ANY(${sA}))
+    + (SELECT count(*) FROM andon_events           WHERE "lineId"  = ANY(${pA}))
+    + (SELECT count(*) FROM line_balance_metrics    WHERE "lineId" = ANY(${pA}))
+    )::text n
+  `;
+  console.log(`\n  Cau chi mo coi LUOT NAY (hang con sot tren id vua xoa): ${moCoiCuaToi}`);
+  if (Number(moCoiCuaToi) > 0) {
+    // ══════════════════════════════════════════════════════════════════════
+    // ★★★ HÀNG SÓT VÌ **ĐUA VỚI SERVER**, KHÔNG PHẢI VÌ VỊ TỪ XOÁ SAI
+    // ══════════════════════════════════════════════════════════════════════
+    // Đo được ở lượt gỡ FUYU-G: sót đúng **1.920 hàng `ot_telemetry`**, mốc
+    // `ts` = 17:10:30.717 → 17:10:31.016 — tức là được ghi TRONG LÚC giao dịch
+    // xoá đang chạy. `simOtTelemetry` của server bơm ~1.128 mẫu mỗi nhịp cho
+    // mọi máy đang `isActive`, và giao dịch của ta chụp ảnh (snapshot) tại lúc
+    // BẮT ĐẦU nên không nhìn thấy hàng sinh sau đó.
+    //
+    // ⇒ Đây KHÔNG sửa được bằng một vị từ khéo hơn. Chừng nào còn một tiến
+    //   trình khác ghi vào cùng những máy này, sẽ luôn có khe hở giữa "đọc id"
+    //   và "commit". Cách đúng là **DỪNG SERVER trước khi gỡ**; cách vá là
+    //   quét lại một lượt sau khi máy đã biến mất — lúc này an toàn tuyệt đối
+    //   vì máy KHÔNG CÒN, nên không ai ghi thêm cho nó được nữa.
+    //
+    // ★ Quét lại đánh vào ĐÚNG tập id đã xoá, không phải "mọi hàng mồ côi":
+    //   rác của lượt khác không phải việc của lượt này (xem docblock trên).
+    console.log("  → Doi thu 2 (hang do SERVER ghi xen giua giao dich). Quet lai...");
+    const xoaThem: Record<string, number> = {};
+    await sql.begin(async (tx) => {
+      await tx`SET LOCAL timescaledb.max_tuples_decompressed_per_dml_transaction = 0`;
+      xoaThem.ot_telemetry = (
+        await tx`DELETE FROM ot_telemetry WHERE "machineId" = ANY(${mA}) AND ts >= now() - interval '30 days'`
+      ).count;
+      xoaThem.machine_health_history = (await tx`DELETE FROM machine_health_history WHERE "machineId" = ANY(${mA})`).count;
+      xoaThem.rul_estimates = (await tx`DELETE FROM rul_estimates WHERE machine_id = ANY(${mA})`).count;
+      xoaThem.predictive_alerts = (await tx`DELETE FROM predictive_alerts WHERE "machineId" = ANY(${mA})`).count;
+      xoaThem.machine_status_logs = (await tx`DELETE FROM machine_status_logs WHERE "machineId" = ANY(${mA})`).count;
+      xoaThem.machine_heartbeats = (await tx`DELETE FROM machine_heartbeats WHERE "machineId" = ANY(${mA})`).count;
+      xoaThem.product_inspections = (await tx`DELETE FROM product_inspections WHERE "machineId" = ANY(${mA})`).count;
+      xoaThem.wip_tracking = (await tx`DELETE FROM wip_tracking WHERE "currentStationId" = ANY(${sA})`).count;
+    });
+    console.log(
+      "  Doi thu 2 da xoa: " +
+        Object.entries(xoaThem).filter(([, v]) => v > 0).map(([k, v]) => `${k}=${v}`).join("  "),
+    );
+
+    const [{ n: conSot }] = await sql<{ n: string }[]>`
+      SELECT (
+        (SELECT count(*) FROM ot_telemetry           WHERE "machineId" = ANY(${mA}))
+      + (SELECT count(*) FROM machine_health_history WHERE "machineId" = ANY(${mA}))
+      + (SELECT count(*) FROM rul_estimates          WHERE machine_id   = ANY(${mA}))
+      + (SELECT count(*) FROM predictive_alerts      WHERE "machineId" = ANY(${mA}))
+      + (SELECT count(*) FROM machine_status_logs    WHERE "machineId" = ANY(${mA}))
+      + (SELECT count(*) FROM machine_heartbeats     WHERE "machineId" = ANY(${mA}))
+      + (SELECT count(*) FROM product_inspections    WHERE "machineId" = ANY(${mA}))
+      + (SELECT count(*) FROM wip_tracking WHERE "currentStationId" = ANY(${sA}))
+      )::text n
+    `;
+    console.log(`  Sau doi thu 2, con sot: ${conSot}`);
+    if (Number(conSot) > 0) {
+      console.error(
+        "LOI: van con sot sau doi thu 2 — nhieu kha nang SERVER VAN DANG CHAY." +
+          " Dung server roi chay lai script nay.",
+      );
+      process.exitCode = 1;
+    }
+  }
+
+  const [{ n: moCoiWip }] = await sql<{ n: string }[]>`
+    SELECT count(*)::text n FROM wip_tracking w
+     WHERE w."currentStationId" IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM stations s WHERE s.id = w."currentStationId")
+  `;
+  const [{ n: moCoiIns }] = await sql<{ n: string }[]>`
+    SELECT count(*)::text n FROM product_inspections p
+     WHERE NOT EXISTS (SELECT 1 FROM machines m WHERE m.id = p."machineId")
+  `;
+  const [{ n: moCoiAndon }] = await sql<{ n: string }[]>`
+    SELECT count(*)::text n FROM andon_events a
+     WHERE a."machineId" IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM machines m WHERE m.id = a."machineId")
+  `;
+  const [{ n: moCoiHealth }] = await sql<{ n: string }[]>`
+    SELECT count(*)::text n FROM machine_health_history h
+     WHERE NOT EXISTS (SELECT 1 FROM machines m WHERE m.id = h."machineId")
+  `;
+  const [{ n: moCoiCb }] = await sql<{ n: string }[]>`
+    SELECT count(*)::text n FROM line_balance_metrics b
+     WHERE NOT EXISTS (SELECT 1 FROM production_lines p WHERE p.id = b."lineId")
+  `;
+  // Rác mồ côi TOÀN CSDL — BÁO CÁO, không phải cổng. Xem docblock ở trên: phần
+  // lớn là di sản của những lượt gỡ TRƯỚC bản vá này, và quy nó vào lượt hiện
+  // tại là đổ lỗi sai chỗ. Ghi ra để chủ sở hữu quyết định có dọn hay không.
+  const tongMoCoi =
+    Number(moCoiWip) + Number(moCoiIns) + Number(moCoiAndon) +
+    Number(moCoiHealth) + Number(moCoiCb);
+  console.log(
+    `  Rac mo coi CO SAN toan CSDL (KHONG phai cua luot nay): wip=${moCoiWip}` +
+      ` inspections=${moCoiIns} andon=${moCoiAndon} health=${moCoiHealth}` +
+      ` line_balance=${moCoiCb}  tong=${tongMoCoi}`,
+  );
+
   const [{ n: moCoiMay }] = await sql<{ n: string }[]>`
     SELECT count(*)::text n FROM twin_dat_cho d
      WHERE d."loaiThucThe" = 'machine'
