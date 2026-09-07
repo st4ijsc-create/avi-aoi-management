@@ -76,6 +76,29 @@ export const CUA_SO_WIP_MS = 22 * 60 * 60 * 1000;
 export const SO_MOC_WIP = 24;
 
 /**
+ * ★★★ Cửa sổ `station_dwell_time`, ms — **22 giờ**, CÙNG bề rộng với WIP.
+ *
+ * `wipRouter.dwellByStation` / `db/lineBalance.getStationDwellAgg` lọc
+ * `enteredAt >= since` với `since` do người gọi truyền; `stationLoadHeatmap`
+ * truyền `now - 24h`. Dùng lại đúng 22 giờ của `CUA_SO_WIP_MS` cho hai lý do:
+ *
+ *   1. Cùng lề 2 giờ, cùng lý do (mép cửa sổ 24h — xem `CUA_SO_WIP_MS`).
+ *   2. Hai lớp phủ đọc HAI BẢNG khác nhau cho CÙNG một chuyền. Rải chúng trên
+ *      hai bề rộng khác nhau thì khi một lớp trống mà lớp kia đầy, không ai
+ *      phân biệt được "bảng này thiếu dữ liệu" với "hai cửa sổ lệch nhau".
+ */
+export const CUA_SO_DWELL_MS = CUA_SO_WIP_MS;
+
+/**
+ * Số bản ghi dwell mỗi trạm.
+ *
+ * `getStationDwellAgg` gom `avg()` theo `stationId` — một mẫu cho ra một trung
+ * bình bằng chính nó, tức là một con số KHÔNG đo được độ tản. 6 mẫu/trạm đủ để
+ * trung bình có nghĩa và vẫn rẻ: 240 máy × 6 = 1.440 hàng.
+ */
+export const DWELL_MOI_TRAM = 6;
+
+/**
  * Hạn để lời khai nút thắt còn hiệu lực, ms — PHẢI khớp `HAN_KHAI_NGHEN_MS`
  * của `client/src/components/twin3d/van-hanh/wipTram.ts` (8 giờ = một ca).
  *
@@ -191,6 +214,27 @@ export interface HangKiemTra {
   inspectionTimeMs: number;
 }
 
+/**
+ * Một hàng `station_dwell_time` sẽ ghi.
+ *
+ * ⚠ `stationId`, `dwellMs`, `processingMs`, `starvedMs`, `blockedMs`,
+ *   `enteredAt` đều **NOT NULL** trong lược đồ (đo bằng
+ *   `information_schema.columns`) — bỏ sót một cột là `23502`, không phải một
+ *   hàng thiếu dữ liệu im lặng.
+ */
+export interface HangDwell {
+  lineId: number;
+  stationId: number;
+  machineId: number;
+  serialNumber: string;
+  dwellMs: number;
+  processingMs: number;
+  starvedMs: number;
+  blockedMs: number;
+  enteredAtMs: number;
+  exitedAtMs: number;
+}
+
 /** Một hàng `machine_health_history` sẽ ghi. */
 export interface HangSucKhoe {
   machineId: number;
@@ -300,6 +344,81 @@ export function sinhWipChoLine(
       });
     }
     stt += soWip;
+  }
+  return ra;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* SINH DWELL TRẠM (cho `stationLoadHeatmap` / `wipRouter.dwellByStation`)      */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ `station_dwell_time` LÀ NGUỒN THỨ HAI, VÀ NÓ KHÔNG PHẢI NGUỒN CỦA
+ *     `predictionOverlay` — BRIEF LÔ S NÓI SAI CHỖ NÀY
+ * ════════════════════════════════════════════════════════════════════════════
+ * Brief đợt 15 lô S khai: *"`predictionOverlay` vẫn chặn ... vì
+ * `station_dwell_time` mới nhất 17 ngày"*. Đo lại tại nguồn thì KHÔNG PHẢI:
+ *
+ *   `digitalTwinRouter.predictionOverlay`  → CHỈ `getWipCountSeries(...)`
+ *                                            → đọc **`wip_tracking`**
+ *   `digitalTwinRouter.stationLoadHeatmap` → `getStationDwellAgg(...)`
+ *                                            → đọc **`station_dwell_time`**
+ *
+ * Hai thủ tục, hai bảng. `station_dwell_time` có cũ 17 ngày hay mới 1 phút thì
+ * `predictionOverlay` cũng KHÔNG đổi một bit — nó chặn vì `wip_tracking` không
+ * có ≥3 bucket trong 24 giờ.
+ *
+ * ⇒ Vì sao vẫn sinh bảng này: G50. `stationLoadHeatmap` là một lớp phủ THẬT
+ *   đang trống vì đúng lý do brief mô tả, chỉ gán nhầm tên thủ tục. Sửa nguồn
+ *   đúng thì cả hai lớp phủ cùng sống; sửa theo brief thì lớp phủ dự báo vẫn
+ *   trống và không ai biết vì sao.
+ *
+ * ★★★ NÚT THẮT PHẢI TRÙNG NÚT THẮT WIP
+ * `stationLoadHeatmap` tô theo `avgDwellMs`, còn cột WIP tô theo `soWipCuaTram`.
+ * Hai lớp phủ vẽ trên CÙNG một cảnh, cho CÙNG một chuyền. Nếu trạm dwell cao
+ * nhất khác trạm WIP cao nhất, màn hình tự mâu thuẫn — đúng lỗi Đợt 8 đo được
+ * trên dữ liệu thật, và không phép đo tự động nào phân biệt được nó với một lỗi
+ * ghép nối. Nên dwell dùng CHÍNH `tramNghenCuaLine` mà WIP dùng.
+ */
+export function sinhDwellChoLine(
+  maNhaMay: string,
+  lineId: number,
+  tramCuaLine: readonly TramTai[],
+  bayGio: number,
+): HangDwell[] {
+  const ra: HangDwell[] = [];
+  if (tramCuaLine.length === 0) return ra;
+  const nghen = tramNghenCuaLine(lineId, tramCuaLine.length);
+  for (const t of tramCuaLine) {
+    const rnd = taoNgauNhien(bamChuoi(`dwell:${maNhaMay}:${lineId}:${t.thuTu}`));
+    for (let i = 0; i < DWELL_MOI_TRAM; i++) {
+      // Rải mốc đều trong cửa sổ, khe 0 = xa nhất. Cùng cách rải như WIP.
+      const enteredAtMs =
+        bayGio - CUA_SO_DWELL_MS + Math.round((i * CUA_SO_DWELL_MS) / DWELL_MOI_TRAM);
+      // Trạm nghẽn: dwell gấp bội và phần lớn thời gian là BLOCKED (hàng phía
+      // sau không nhận được) — đó là hình dạng vật lý của một nút thắt thật.
+      // Trạm thường: dwell thấp, phần chờ chủ yếu là STARVED (đói hàng).
+      const laNghen = t.thuTu === nghen;
+      const processingMs = 8_000 + Math.floor(rnd() * 4_000); // 8–12s, mọi trạm
+      const blockedMs = laNghen ? 45_000 + Math.floor(rnd() * 20_000) : Math.floor(rnd() * 2_000);
+      const starvedMs = laNghen ? Math.floor(rnd() * 2_000) : 3_000 + Math.floor(rnd() * 5_000);
+      // dwell = tổng thời gian nằm ở trạm. Phải ≥ ba thành phần cộng lại, nếu
+      // không thì hàng tự mâu thuẫn (một trạm "chờ" lâu hơn cả lúc nó ở đó).
+      const dwellMs = processingMs + blockedMs + starvedMs;
+      ra.push({
+        lineId,
+        stationId: t.stationId,
+        machineId: t.machineId,
+        serialNumber: `${maNhaMay}-DWL-${lineId}-${t.stationId}-${i}`,
+        dwellMs,
+        processingMs,
+        starvedMs,
+        blockedMs,
+        enteredAtMs,
+        exitedAtMs: enteredAtMs + dwellMs,
+      });
+    }
   }
   return ra;
 }

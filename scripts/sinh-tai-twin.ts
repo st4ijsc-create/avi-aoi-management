@@ -8,6 +8,9 @@
  *   npx tsx scripts/sinh-tai-twin.ts                      # sinh FUYU-F đầy đủ
  *   npx tsx scripts/sinh-tai-twin.ts --ma=TAI-A --tang=1 --line=1 --may=2
  *   npx tsx scripts/sinh-tai-twin.ts --bo-tai             # sinh 3 nhà máy TAI-*
+ *   npx tsx scripts/sinh-tai-twin.ts --chi-nhip           # làm tươi nhịp tim + WIP + dwell
+ *   npx tsx scripts/sinh-tai-twin.ts --va-ma-kiem-tra --kho   # ĐO số hàng thiếu factoryCode
+ *   npx tsx scripts/sinh-tai-twin.ts --va-ma-kiem-tra         # ĐIỀN factoryCode (một giao dịch)
  *
  * ════════════════════════════════════════════════════════════════════════════
  * ★★★ ĐỌC `scripts/go-tai-twin.ts` TRƯỚC. Nó được viết TRƯỚC script này.
@@ -58,6 +61,7 @@ import {
   TUOI_HEARTBEAT_MS,
   sinhAndonChoLine,
   sinhCanBangLine,
+  sinhDwellChoLine,
   sinhKiemTraChoMay,
   sinhSucKhoeChoMay,
   sinhWipChoLine,
@@ -310,7 +314,8 @@ async function sinhMotNhaMay(
   const dem: Record<string, number> = {
     factories: 0, workshops: 0, production_lines: 0, stations: 0,
     machines: 0, twin_toa_nha: 0, twin_tang: 0, twin_dat_cho: 0,
-    wip_tracking: 0, product_inspections: 0, machine_health_history: 0,
+    wip_tracking: 0, station_dwell_time: 0, product_inspections: 0,
+    machine_health_history: 0,
     andon_events: 0, line_balance_metrics: 0, user_factory_assignments: 0,
   };
 
@@ -515,6 +520,34 @@ async function sinhMotNhaMay(
           )
         `;
         dem.wip_tracking++;
+      }
+
+      // ══════════════════════════════════════════════════════════════════════
+      // ★★★ `station_dwell_time` — NGUỒN THỨ HAI, BẢNG KHÁC, LỚP PHỦ KHÁC
+      // ══════════════════════════════════════════════════════════════════════
+      // `wip_tracking` nuôi `predictionOverlay`; bảng này nuôi
+      // `stationLoadHeatmap` (qua `db/lineBalance.getStationDwellAgg`). Sinh
+      // một cái mà bỏ cái kia thì một lớp phủ sống, một lớp phủ trống — và vì
+      // cả hai vẽ trên CÙNG một cảnh, người nghiệm thu rất dễ thấy lớp sống rồi
+      // kết luận "màn Vận hành có dữ liệu" (G50).
+      //
+      // ⚠ Bảng này KHÔNG được `go-tai-twin.ts` dọn tính đến `5bb9167c` — nó gỡ
+      //   `wip_tracking` theo `currentStationId` nhưng không có câu nào cho
+      //   `station_dwell_time`. Đã báo lô R để thêm; đường gỡ có sẵn và giống
+      //   hệt: `WHERE "stationId" = ANY(<trạm của nhà máy tải>)`.
+      for (const d of sinhDwellChoLine(q.ma, lineId, tram, BAY_GIO)) {
+        await tx`
+          INSERT INTO station_dwell_time (
+            "lineId", "stationId", "machineId", "serialNumber",
+            "dwellMs", "processingMs", "starvedMs", "blockedMs",
+            "enteredAt", "exitedAt"
+          ) VALUES (
+            ${d.lineId}, ${d.stationId}, ${d.machineId}, ${d.serialNumber},
+            ${d.dwellMs}, ${d.processingMs}, ${d.starvedMs}, ${d.blockedMs},
+            ${new Date(d.enteredAtMs)}, ${new Date(d.exitedAtMs)}
+          )
+        `;
+        dem.station_dwell_time++;
       }
 
       for (const a of sinhAndonChoLine(lineId, tram, BAY_GIO)) {
@@ -731,7 +764,10 @@ async function main(): Promise<void> {
   if (!KHONG_VAN_HANH) {
     const mas = quyMos.map((q) => q.ma);
     const [vh] = await sql<
-      { wip24h: string; buckets: string; ins24h: string; andonMo: string; cbMoi: string; mayTuoi: string }[]
+      {
+        wip24h: string; buckets: string; ins24h: string; insNull: string;
+        dwell24h: string; dwellTram: string; andonMo: string; cbMoi: string; mayTuoi: string;
+      }[]
     >`
       WITH tram AS (
         SELECT s.id
@@ -766,6 +802,22 @@ async function main(): Promise<void> {
           WHERE "machineId" IN (SELECT id FROM may)
             AND "inspectionTime" > now() - interval '24 hours'
             AND "factoryCode" IS NOT NULL)                            AS "ins24h",
+        -- Doi chieu HAI MO HINH (BG-127): dem hang THIEU ma, tren cung tap.
+        -- 'ins24h' + 'insNull' phai bang tong hang 24h; mot minh 'ins24h' > 0
+        -- KHONG loai tru duoc kha nang mot phan hang van NULL.
+        (SELECT count(*)::text FROM product_inspections
+          WHERE "machineId" IN (SELECT id FROM may)
+            AND "inspectionTime" > now() - interval '24 hours'
+            AND "factoryCode" IS NULL)                                AS "insNull",
+        -- station_dwell_time: nguon cua stationLoadHeatmap (BANG KHAC voi
+        -- wip_tracking cua predictionOverlay). Dem ca so TRAM co dwell: mot
+        -- tram duy nhat co 1.440 hang van cho mot heatmap MOT O.
+        (SELECT count(*)::text FROM station_dwell_time
+          WHERE "stationId" IN (SELECT id FROM tram)
+            AND "enteredAt" > now() - interval '24 hours')            AS "dwell24h",
+        (SELECT count(DISTINCT "stationId")::text FROM station_dwell_time
+          WHERE "stationId" IN (SELECT id FROM tram)
+            AND "enteredAt" > now() - interval '24 hours')            AS "dwellTram",
         (SELECT count(*)::text FROM andon_events
           WHERE "lineId" IN (SELECT id FROM lin) AND status <> 'resolved') AS "andonMo",
         (SELECT count(*)::text FROM line_balance_metrics
@@ -779,13 +831,21 @@ async function main(): Promise<void> {
     console.log(`    wip_tracking trong 24h, chua ra          ${vh.wip24h}`);
     console.log(`    so BUCKET 30' co WIP (router can >= 3)   ${vh.buckets}`);
     console.log(`    product_inspections trong 24h            ${vh.ins24h}`);
+    console.log(`      trong do THIEU factoryCode (phai = 0)  ${vh.insNull}`);
+    console.log(`    station_dwell_time trong 24h             ${vh.dwell24h}  (${vh.dwellTram} tram)`);
     console.log(`    andon dang mo                            ${vh.andonMo}`);
     console.log(`    line_balance con han 8h                  ${vh.cbMoi}`);
     console.log(`    may co heartbeat < 5 phut                ${vh.mayTuoi}`);
     // Mỗi số 0 ở đây là một lớp phủ TRỐNG trên màn hình — nói thẳng, đừng để
     // người nghiệm thu tự phát hiện bằng mắt.
-    const trong = Object.entries(vh).filter(([, v]) => Number(v) === 0).map(([k]) => k);
+    // ⚠ `insNull` ĐẢO CHIỀU: mọi số khác phải > 0, số này phải = 0. Gộp nó vào
+    //   bộ lọc "=== 0" ở dưới sẽ báo LỖI đúng lúc nó ĐẠT — một cầu chì kêu
+    //   ngược. Nên tách ra trước khi lọc.
+    const trong = Object.entries(vh)
+      .filter(([k, v]) => k !== "insNull" && Number(v) === 0)
+      .map(([k]) => k);
     if (Number(vh.buckets) < 3) trong.push("buckets<3");
+    if (Number(vh.insNull) > 0) trong.push(`insNull=${vh.insNull} (hang THIEU factoryCode)`);
     if (trong.length) {
       console.error(`LOI: lop phu se TRONG vi: ${trong.join(", ")}`);
       process.exitCode = 1;
@@ -811,14 +871,43 @@ async function main(): Promise<void> {
  * là lãng phí và — quan trọng hơn — nó đổi toàn bộ id, nên phép đo trước và sau
  * không so được với nhau nữa.
  *
- * CHỈ đụng `machines.lastHeartbeat` của máy thuộc nhà máy tải. Không tạo, không
- * xoá hàng nào; `go-tai-twin.ts` không cần biết gì về nó.
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ LÔ S — BA ĐỒNG HỒ, KHÔNG PHẢI MỘT (G51 + G50)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản lô P chỉ làm tươi `machines.lastHeartbeat`. Đủ cho MÀU máy, nhưng màn
+ * Vận hành có BA đồng hồ chạy song song, ba ngưỡng khác nhau, ba BẢNG khác nhau:
+ *
+ *   `machines.lastHeartbeat`     5 PHÚT  → màu máy (`mucTuoi` → `khong_ro`)
+ *   `wip_tracking.enteredAt`     24 GIỜ  → `predictionOverlay` (cần ≥3 bucket)
+ *   `station_dwell_time.enteredAt` 24 GIỜ → `stationLoadHeatmap`
+ *
+ * ⇒ Làm tươi MỘT đồng hồ rồi tuyên bố "dữ liệu đã tươi" là đúng bẫy G50: máy
+ *   có màu trở lại — thứ đập vào mắt trước nhất — trong khi hai lớp phủ kia
+ *   lặng lẽ hết hạn sau 24 giờ. Người nghiệm thu thấy cảnh có màu và kết luận
+ *   màn hình sống.
+ *
+ * ⚠ Vì sao DỜI mốc thay vì đặt tất cả về `now()`: dồn mọi hàng vào MỘT mốc thì
+ *   `getWipCountSeries` gom được đúng **1 bucket** và `predictionOverlay` trả
+ *   `insufficient_data` — số hàng không đổi, lớp phủ vẫn tắt. Nên phép dời giữ
+ *   nguyên KHOẢNG CÁCH giữa các mốc (cộng một hằng cho mọi hàng), tức là giữ
+ *   nguyên hình dạng chuỗi thời gian; chỉ trượt cả chuỗi tới sát hiện tại.
+ *
+ * CHỈ đụng cột mốc thời gian của hàng thuộc nhà máy tải. Không tạo, không xoá
+ * hàng nào; `go-tai-twin.ts` không cần biết gì về nó.
  */
 async function chiNhip(): Promise<void> {
   tieuDe("LAM TUOI NHIP TIM (--chi-nhip)");
-  const tienTos = ["FUYU-F%", "FUYU-G%", "TAI-%"];
+  // ⚠ Mặc định là BA TIỀN TỐ của các preset; `--ma=X` nhắm đúng một nhà máy.
+  //   Không có nó thì một nhà máy sinh bằng `--ma=` (đường mà `main()` cho
+  //   phép) sẽ KHÔNG BAO GIỜ được làm tươi, và `--chi-nhip` báo "0 máy" —
+  //   một con số đúng cho một câu hỏi sai. Đo được: `--ma=LOS-T1` trả 0/0/0.
+  const maRieng = args.find((x) => x.startsWith("--ma="));
+  const tienTos = maRieng ? [maRieng.slice(5)] : ["FUYU-F%", "FUYU-G%", "TAI-%"];
+  const moc = new Date(BAY_GIO - TUOI_HEARTBEAT_MS);
+
+  // ── 1. Nhịp tim máy — đồng hồ 5 PHÚT ────────────────────────────────────
   const r = await sql`
-    UPDATE machines SET "lastHeartbeat" = ${new Date(BAY_GIO - TUOI_HEARTBEAT_MS)}
+    UPDATE machines SET "lastHeartbeat" = ${moc}
      WHERE "stationId" IN (
        SELECT s.id FROM stations s
          JOIN production_lines p ON p.id = s."lineId"
@@ -828,10 +917,272 @@ async function chiNhip(): Promise<void> {
      )
   `;
   console.log(`  Da lam tuoi ${r.count} may. Han dung ${HAN_MAU_MAY_MS / 1000}s.`);
+
+  // ── 2+3. WIP và dwell — đồng hồ 24 GIỜ, TRƯỢT cả chuỗi ──────────────────
+  // Mốc mới nhất của tập được kéo về `bayGio - TUOI_HEARTBEAT_MS`; mọi hàng
+  // khác dời CÙNG một khoảng ⇒ khoảng cách giữa các mốc GIỮ NGUYÊN, nên số
+  // bucket mà router gom được cũng giữ nguyên.
+  const truotBang = async (bang: "wip_tracking" | "station_dwell_time", cot: string): Promise<void> => {
+    const [d] = await sql<{ n: string; mx: string | null }[]>`
+      SELECT count(*)::text n, max(${sql(cot)})::text mx
+        FROM ${sql(bang)}
+       WHERE "stationId" IN (
+         SELECT s.id FROM stations s
+           JOIN production_lines p ON p.id = s."lineId"
+           JOIN workshops w ON w.id = p."workshopId"
+           JOIN factories f ON f.id = w."factoryId"
+          WHERE f.code LIKE ANY(${tienTos}) AND f.code <> 'SIM-FAC'
+       )
+    `;
+    if (Number(d.n) === 0 || !d.mx) {
+      console.log(`  ${bang.padEnd(20)} 0 hang cua nha may tai — KHONG doi gi.`);
+      return;
+    }
+    const u = await sql`
+      UPDATE ${sql(bang)}
+         SET ${sql(cot)} = ${sql(cot)} + (${moc}::timestamp - ${d.mx}::timestamp)
+       WHERE "stationId" IN (
+         SELECT s.id FROM stations s
+           JOIN production_lines p ON p.id = s."lineId"
+           JOIN workshops w ON w.id = p."workshopId"
+           JOIN factories f ON f.id = w."factoryId"
+          WHERE f.code LIKE ANY(${tienTos}) AND f.code <> 'SIM-FAC'
+       )
+    `;
+    console.log(`  ${bang.padEnd(20)} da truot ${u.count} hang (moc cu nhat -> ${d.mx}).`);
+  };
+  // ⚠ `wip_tracking` dùng `currentStationId`, `station_dwell_time` dùng
+  //   `stationId` — HAI TÊN CỘT KHÁC NHAU cho cùng một ý nghĩa. Dùng nhầm là
+  //   `42703`, không phải một bản cập nhật rỗng im lặng.
+  await truotWip(tienTos, moc);
+  await truotBang("station_dwell_time", "enteredAt");
+
+  // ── Đo LẠI TỪ DB đúng câu mà router hỏi ────────────────────────────────
+  const [ktr] = await sql<{ buckets: string; dwell24h: string; mayTuoi: string }[]>`
+    WITH tram AS (
+      SELECT s.id FROM stations s
+        JOIN production_lines p ON p.id = s."lineId"
+        JOIN workshops w ON w.id = p."workshopId"
+        JOIN factories f ON f.id = w."factoryId"
+       WHERE f.code LIKE ANY(${tienTos}) AND f.code <> 'SIM-FAC'
+    )
+    SELECT
+      (SELECT count(DISTINCT date_bin('30 minutes', "enteredAt", timestamp '1970-01-01'))::text
+         FROM wip_tracking
+        WHERE "currentStationId" IN (SELECT id FROM tram)
+          AND "enteredAt" > now() - interval '24 hours')            AS "buckets",
+      (SELECT count(*)::text FROM station_dwell_time
+        WHERE "stationId" IN (SELECT id FROM tram)
+          AND "enteredAt" > now() - interval '24 hours')            AS "dwell24h",
+      (SELECT count(*)::text FROM machines
+        WHERE "stationId" IN (SELECT id FROM tram)
+          AND "lastHeartbeat" > now() - interval '5 minutes')       AS "mayTuoi"
+  `;
+  console.log("\n  Do lai tu DB (cua so ma router hoi):");
+  console.log(`    bucket 30' co WIP trong 24h (can >= 3)   ${ktr.buckets}`);
+  console.log(`    station_dwell_time trong 24h             ${ktr.dwell24h}`);
+  console.log(`    may co heartbeat < 5 phut                ${ktr.mayTuoi}`);
   await sql.end();
 }
 
-(args.includes("--chi-nhip") ? chiNhip() : main()).catch(async (e) => {
+/** `wip_tracking` — tách riêng vì cột trạm tên `currentStationId`, không phải `stationId`. */
+async function truotWip(tienTos: string[], moc: Date): Promise<void> {
+  const [d] = await sql<{ n: string; mx: string | null }[]>`
+    SELECT count(*)::text n, max("enteredAt")::text mx
+      FROM wip_tracking
+     WHERE "currentStationId" IN (
+       SELECT s.id FROM stations s
+         JOIN production_lines p ON p.id = s."lineId"
+         JOIN workshops w ON w.id = p."workshopId"
+         JOIN factories f ON f.id = w."factoryId"
+        WHERE f.code LIKE ANY(${tienTos}) AND f.code <> 'SIM-FAC'
+     )
+  `;
+  if (Number(d.n) === 0 || !d.mx) {
+    console.log(`  ${"wip_tracking".padEnd(20)} 0 hang cua nha may tai — KHONG doi gi.`);
+    return;
+  }
+  const u = await sql`
+    UPDATE wip_tracking
+       SET "enteredAt" = "enteredAt" + (${moc}::timestamp - ${d.mx}::timestamp)
+     WHERE "currentStationId" IN (
+       SELECT s.id FROM stations s
+         JOIN production_lines p ON p.id = s."lineId"
+         JOIN workshops w ON w.id = p."workshopId"
+         JOIN factories f ON f.id = w."factoryId"
+        WHERE f.code LIKE ANY(${tienTos}) AND f.code <> 'SIM-FAC'
+     )
+  `;
+  console.log(`  ${"wip_tracking".padEnd(20)} da truot ${u.count} hang (moc moi nhat -> ${d.mx}).`);
+}
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ `--va-ma-kiem-tra` — ĐIỀN `product_inspections.factoryCode` CHO HÀNG CŨ
+ * ════════════════════════════════════════════════════════════════════════════
+ * Lô S đợt 15, P-1(b). Đây là **UPDATE trên dữ liệu THẬT**, nên mọi lựa chọn
+ * dưới đây nghiêng về phía KHÔNG ĐỘNG VÀO khi không chắc.
+ *
+ * ── VÌ SAO KHÔNG NỚI CỔNG THÀNH "NULL THÌ CHO QUA" ────────────────────────
+ * Cám dỗ hiển nhiên: `defectHeatmap` lọc theo trục mã, hàng NULL bị rớt, nên
+ * thêm `OR "factoryCode" IS NULL` là xong. Đó là MỞ LẠI ĐÚNG LỖ lô Q1 vừa vá:
+ * một hàng chưa khai mã sẽ hiện ra cho **mọi** tenant, không riêng tenant của
+ * nó. Sửa một lớp phủ trống bằng cách phá hàng rào phạm vi là đổi một lỗi nhìn
+ * thấy được lấy một lỗi KHÔNG nhìn thấy được.
+ *
+ * ── SUY TỪ ĐÂU ────────────────────────────────────────────────────────────
+ * Đúng chuỗi mà đường ghi dùng (`phamViGhiMay.maTenantCuaMay`, gọi từ
+ * `machineApiRouters.submitInspection` :1760 / :3868 và
+ * `aoiPackageRouter` :1461 — cả BA đều đã điền `factoryCode` từ MÁY ĐÃ XÁC
+ * THỰC, không từ lời khai của client):
+ *
+ *   `product_inspections.machineId` → `machines.stationId` → `stations.lineId`
+ *     → `production_lines.workshopId` → `workshops.factoryId` → `factories.code`
+ *
+ * ⇒ Hàng cũ được điền ĐÚNG giá trị mà cùng một hàng ghi HÔM NAY sẽ nhận. Không
+ *   đoán theo tên, không lấy "nhà máy duy nhất trong DB" làm mặc định — nếu
+ *   chuỗi đứt ở bất kỳ mắt nào (máy mồ côi, trạm không line, line không xưởng),
+ *   hàng ấy KHÔNG suy được và **để nguyên NULL**. Một hàng NULL là một lớp phủ
+ *   thiếu một điểm; một hàng gán bừa là dữ liệu của tenant này chảy sang tenant
+ *   khác — hai sai lầm KHÔNG cùng hạng.
+ *
+ * ── ĐO NHƯ THẾ NÀO (BG-127: hai mô hình RỜI) ──────────────────────────────
+ * KHÔNG dùng `count(*) WHERE factoryCode IS NULL` một mình rồi so trước/sau —
+ * đó là LỌC-RỒI-ĐẾM, và nó mù đúng cái nó cần thấy (một hàng đổi từ mã A sang
+ * mã B không làm số ấy nhúc nhích). Thay vào đó:
+ *
+ *   mô hình 1  LIỆT KÊ toàn phân bố `factoryCode → count` (kể cả NULL), trước
+ *              và sau, rồi so từng khoá.
+ *   mô hình 2  `count(*)` TỔNG bảng, trước và sau — phải BẰNG NHAU tuyệt đối
+ *              (UPDATE không được tạo/mất hàng nào).
+ *
+ * Hai mô hình phải khớp: tổng của phân bố = tổng bảng, ở CẢ HAI lượt đo.
+ *
+ * ── AN TOÀN ───────────────────────────────────────────────────────────────
+ * • MỘT giao dịch. `--kho` chỉ đo, không ghi (và vẫn in đủ hai mô hình).
+ * • `WHERE "factoryCode" IS NULL` ⇒ KHÔNG bao giờ ghi đè một mã đã có. Chạy lại
+ *   lần hai không đổi gì (idempotent) — kiểm bằng chính phân bố sau.
+ * • KHÔNG đụng `corporateCode`/`workshopCode`/`lineCode`: ngoài phạm vi giao,
+ *   và mỗi cột thêm vào là một cột nữa phải chứng minh.
+ */
+async function vaMaKiemTra(): Promise<void> {
+  tieuDe("VA MA `product_inspections.factoryCode`" + (CHI_DO ? "   [--kho: CHI DO]" : ""));
+  const [{ nguoiDung, csdl }] = await sql<{ nguoiDung: string; csdl: string }[]>`
+    SELECT current_user AS "nguoiDung", current_database() AS "csdl"
+  `;
+  console.log(`  Vai: ${nguoiDung}   CSDL: ${csdl}`);
+
+  /** Mô hình 1: LIỆT KÊ toàn phân bố, KHÔNG lọc. NULL in ra là `(NULL)`. */
+  const phanBo = async (): Promise<Array<{ ma: string; n: number }>> => {
+    const r = await sql<{ ma: string | null; n: string }[]>`
+      SELECT "factoryCode" AS ma, count(*)::text AS n
+        FROM product_inspections GROUP BY 1 ORDER BY 2 DESC, 1 NULLS FIRST
+    `;
+    return r.map((x) => ({ ma: x.ma ?? "(NULL)", n: Number(x.n) }));
+  };
+  /** Mô hình 2: TỔNG bảng, đo RỜI khỏi phân bố. */
+  const tongBang = async (): Promise<number> => {
+    const [{ n }] = await sql<{ n: string }[]>`SELECT count(*)::text n FROM product_inspections`;
+    return Number(n);
+  };
+
+  const inDo = (nhan: string, pb: Array<{ ma: string; n: number }>, tong: number): void => {
+    const congPb = pb.reduce((a, x) => a + x.n, 0);
+    console.log(`\n  -- ${nhan} --`);
+    for (const x of pb) console.log(`    ${x.ma.padEnd(24)} ${x.n}`);
+    console.log(`    ${"tong phan bo".padEnd(24)} ${congPb}`);
+    console.log(
+      `    ${"count(*) bang".padEnd(24)} ${tong}   ${congPb === tong ? "KHOP" : "LECH ***"}`,
+    );
+    if (congPb !== tong) process.exitCode = 1;
+  };
+
+  const pbTruoc = await phanBo();
+  const tongTruoc = await tongBang();
+  inDo("TRUOC", pbTruoc, tongTruoc);
+
+  // Phân loại hàng NULL: suy được hay không — ĐO TRƯỚC KHI GHI, để biết con số
+  // "để nguyên" là bao nhiêu và vì sao, thay vì phát hiện nó SAU khi đã UPDATE.
+  const [phan] = await sql<{ nullTong: string; suyDuoc: string; khongSuy: string }[]>`
+    SELECT
+      count(*)::text AS "nullTong",
+      count(f.code)::text AS "suyDuoc",
+      (count(*) - count(f.code))::text AS "khongSuy"
+      FROM product_inspections pi
+      LEFT JOIN machines m         ON m.id = pi."machineId"
+      LEFT JOIN stations s         ON s.id = m."stationId"
+      LEFT JOIN production_lines p ON p.id = s."lineId"
+      LEFT JOIN workshops w        ON w.id = p."workshopId"
+      LEFT JOIN factories f        ON f.id = w."factoryId"
+     WHERE pi."factoryCode" IS NULL
+  `;
+  console.log(
+    `\n  Hang NULL: ${phan.nullTong}  |  suy duoc: ${phan.suyDuoc}` +
+      `  |  KHONG suy duoc (de nguyen): ${phan.khongSuy}`,
+  );
+
+  if (CHI_DO) {
+    console.log("\n  [--kho] KHONG ghi gi. Dung.");
+    await sql.end();
+    return;
+  }
+  if (Number(phan.suyDuoc) === 0) {
+    console.log("\n  Khong co hang nao suy duoc => KHONG chay UPDATE nao. Dung.");
+    await sql.end();
+    return;
+  }
+
+  let daVa = 0;
+  await sql.begin(async (tx) => {
+    // ⚠ `WHERE "factoryCode" IS NULL` nằm TRONG câu, không chỉ ở phép đo: nếu
+    //   chỉ lọc lúc đo rồi UPDATE rộng, một hàng đã có mã đúng sẽ bị ghi đè
+    //   bằng mã suy — và hai giá trị ấy CÓ THỂ KHÁC nhau (máy được chuyển nhà
+    //   máy sau khi hàng được ghi). Lịch sử phải giữ nguyên mã lúc đo.
+    const r = await tx`
+      UPDATE product_inspections pi
+         SET "factoryCode" = f.code
+        FROM machines m
+        JOIN stations s         ON s.id = m."stationId"
+        JOIN production_lines p ON p.id = s."lineId"
+        JOIN workshops w        ON w.id = p."workshopId"
+        JOIN factories f        ON f.id = w."factoryId"
+       WHERE pi."machineId" = m.id
+         AND pi."factoryCode" IS NULL
+    `;
+    daVa = r.count;
+  });
+  console.log(`\n  DA VA ${daVa} hang.`);
+
+  const pbSau = await phanBo();
+  const tongSau = await tongBang();
+  inDo("SAU", pbSau, tongSau);
+
+  // ── ĐỐI CHIẾU: tổng bảng KHÔNG được đổi; NULL phải giảm ĐÚNG bằng số đã vá ──
+  const nullCua = (pb: Array<{ ma: string; n: number }>): number =>
+    pb.find((x) => x.ma === "(NULL)")?.n ?? 0;
+  const nullTruoc = nullCua(pbTruoc);
+  const nullSau = nullCua(pbSau);
+  console.log("\n  -- DOI CHIEU --");
+  console.log(
+    `    tong bang truoc/sau      ${tongTruoc} / ${tongSau}   ` +
+      `${tongTruoc === tongSau ? "KHOP (UPDATE khong tao/mat hang)" : "LECH ***"}`,
+  );
+  console.log(`    NULL truoc - da va       ${nullTruoc} - ${daVa} = ${nullTruoc - daVa}`);
+  console.log(
+    `    NULL sau (do lai tu DB)  ${nullSau}   ${nullTruoc - daVa === nullSau ? "KHOP" : "LECH ***"}`,
+  );
+  console.log(`    con lai NULL (khong suy duoc): ${nullSau}`);
+  if (tongTruoc !== tongSau || nullTruoc - daVa !== nullSau) process.exitCode = 1;
+
+  await sql.end();
+}
+
+const lenh = args.includes("--va-ma-kiem-tra")
+  ? vaMaKiemTra()
+  : args.includes("--chi-nhip")
+  ? chiNhip()
+  : main();
+lenh.catch(async (e) => {
   console.error(e);
   try {
     await sql.end();

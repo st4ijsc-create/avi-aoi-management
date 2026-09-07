@@ -27,7 +27,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CUA_SO_WIP_MS,
+  CUA_SO_DWELL_MS,
   CUA_SO_KIEM_TRA_MS,
+  DWELL_MOI_TRAM,
   HAN_KHAI_NGHEN_MS,
   HAN_MAU_MAY_MS,
   KIEM_TRA_MOI_MAY,
@@ -38,6 +40,7 @@ import {
   mocConHieuLuc,
   sinhAndonChoLine,
   sinhCanBangLine,
+  sinhDwellChoLine,
   sinhKiemTraChoMay,
   sinhSucKhoeChoMay,
   sinhWipChoLine,
@@ -376,5 +379,155 @@ describe("HÌNH DẠNG — 12 máy/line theo brief", () => {
     expect(CUA_SO_WIP_MS).toBeLessThan(24 * 60 * 60 * 1000);
     expect(SO_MOC_WIP).toBeGreaterThanOrEqual(3);
     expect(CUA_SO_KIEM_TRA_MS).toBeLessThan(24 * 60 * 60 * 1000);
+  });
+});
+
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* LÔ S ĐỢT 15 — `station_dwell_time`                                          */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("★★★ LÔ S — `sinhDwellChoLine` nuôi `stationLoadHeatmap` (BẢNG KHÁC `predictionOverlay`)", () => {
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ BRIEF LÔ S GÁN NHẦM NGUỒN — GHI LẠI Ở ĐÂY ĐỂ KHÔNG AI "SỬA" NGƯỢC
+   * ════════════════════════════════════════════════════════════════════════
+   * Brief khai `predictionOverlay` chặn vì `station_dwell_time` cũ 17 ngày.
+   * Đo tại nguồn (`digitalTwinRouter.ts`):
+   *
+   *   `predictionOverlay`  :336 → `getWipCountSeries`  → **`wip_tracking`**
+   *   `stationLoadHeatmap` :314 → `getStationDwellAgg` → **`station_dwell_time`**
+   *
+   * Hai thủ tục, hai bảng, KHÔNG giao nhau. Nghiệm thu live xác nhận: khi ta
+   * đặt `factoryCode` về NULL, `defectHeatmap` tụt 8 → 0 ô còn
+   * `predictionOverlay` vẫn `available:true` — ba đường độc lập thật.
+   *
+   * ⇒ Bộ sinh này tồn tại vì `stationLoadHeatmap` LÀ một lớp phủ trống thật
+   *   (G50), không phải vì nó chặn `predictionOverlay`.
+   */
+  const tramCua = (lineId: number, n: number): TramTai[] =>
+    Array.from({ length: n }, (_, i) => ({
+      stationId: 5000 + lineId * 100 + i,
+      machineId: 9000 + lineId * 100 + i,
+      lineId,
+      thuTu: i,
+      soTramCuaLine: n,
+    }));
+
+  it("mọi mốc lọt qua cửa 24h mà `stationLoadHeatmap` hỏi — đo bằng ngưỡng của HỆ", () => {
+    // ⚠ Cửa của router là 24h VIẾT CỨNG; bộ sinh dùng 22h để chừa lề. Ca này
+    //   đo mốc SINH RA so với cửa CỦA HỆ, không so với hằng của bộ sinh.
+    const CUA_ROUTER_MS = 24 * 60 * 60 * 1000;
+    const hang = sinhDwellChoLine("TAI-T", 7, tramCua(7, 12), BAY_GIO);
+    expect(hang.length).toBeGreaterThan(0);
+    for (const h of hang) {
+      expect(mocConHieuLuc(h.enteredAtMs, BAY_GIO, CUA_ROUTER_MS)).toBe(true);
+    }
+  });
+
+  it("★★★ nút thắt dwell TRÙNG nút thắt WIP — hai lớp phủ vẽ trên CÙNG một cảnh", () => {
+    // Nếu trạm dwell cao nhất khác trạm WIP cao nhất thì màn hình tự mâu thuẫn,
+    // và không phép đo tự động nào phân biệt được nó với một lỗi ghép nối.
+    const n = 12;
+    const tram = tramCua(7, n);
+    const dwell = sinhDwellChoLine("TAI-T", 7, tram, BAY_GIO);
+    const nghenWip = tramNghenCuaLine(7, n);
+
+    const trungBinh = new Map<number, number>();
+    for (const t of tram) {
+      const cua = dwell.filter((d) => d.stationId === t.stationId);
+      trungBinh.set(t.thuTu, cua.reduce((a, d) => a + d.dwellMs, 0) / cua.length);
+    }
+    const caoNhat = [...trungBinh.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    expect(caoNhat).toBe(nghenWip);
+  });
+
+  it("★★★ G5/G32 — dwell phải KHÁC NHAU giữa các trạm (heatmap MỘT MÀU là lớp phủ vô nghĩa)", () => {
+    const tram = tramCua(7, 12);
+    const dwell = sinhDwellChoLine("TAI-T", 7, tram, BAY_GIO);
+    const tb = tram.map((t) => {
+      const cua = dwell.filter((d) => d.stationId === t.stationId);
+      return cua.reduce((a, d) => a + d.dwellMs, 0) / cua.length;
+    });
+    // "Có dữ liệu" mà mọi ô bằng nhau ⇒ heatmap một màu: đúng bẫy G5.
+    expect(new Set(tb).size).toBeGreaterThan(1);
+    // Và nút thắt phải TRỘI HẲN, không chỉ hơn một chút — nếu không thì lớp
+    // phủ có vẽ nhưng người xem không đọc ra được nút thắt ở đâu.
+    expect(Math.max(...tb)).toBeGreaterThan(Math.min(...tb) * 2);
+  });
+
+  it("hàng tự nhất quán: dwell = processing + starved + blocked, và exited > entered", () => {
+    // Một trạm "chờ" lâu hơn cả lúc nó ở đó là hàng tự mâu thuẫn — `avg()` vẫn
+    // ra một con số, nên KHÔNG cổng nào khác bắt được.
+    for (const d of sinhDwellChoLine("TAI-T", 7, tramCua(7, 6), BAY_GIO)) {
+      expect(d.dwellMs).toBe(d.processingMs + d.starvedMs + d.blockedMs);
+      expect(d.exitedAtMs).toBeGreaterThan(d.enteredAtMs);
+      // Lược đồ: bốn cột này NOT NULL và là `integer` — số âm lọt INSERT
+      // nhưng làm `avg()` vô nghĩa.
+      expect(d.dwellMs).toBeGreaterThan(0);
+      expect(d.processingMs).toBeGreaterThan(0);
+      expect(d.starvedMs).toBeGreaterThanOrEqual(0);
+      expect(d.blockedMs).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("nút thắt BLOCKED trội, trạm thường STARVED trội — hình dạng vật lý của nghẽn", () => {
+    const n = 12;
+    const tram = tramCua(7, n);
+    const nghen = tramNghenCuaLine(7, n);
+    const dwell = sinhDwellChoLine("TAI-T", 7, tram, BAY_GIO);
+    const oNghen = dwell.filter((d) => d.stationId === tram[nghen].stationId);
+    const oThuong = dwell.filter((d) => d.stationId !== tram[nghen].stationId);
+    // Trạm nghẽn: hàng phía sau không nhận được ⇒ BLOCKED.
+    for (const d of oNghen) expect(d.blockedMs).toBeGreaterThan(d.starvedMs);
+    // Trạm thường: đói hàng vì nghẽn ở trên ⇒ STARVED.
+    for (const d of oThuong) expect(d.starvedMs).toBeGreaterThan(d.blockedMs);
+  });
+
+  it("số hàng = số trạm × DWELL_MOI_TRAM, và line rỗng KHÔNG nổ", () => {
+    expect(sinhDwellChoLine("TAI-T", 7, tramCua(7, 12), BAY_GIO)).toHaveLength(12 * DWELL_MOI_TRAM);
+    expect(sinhDwellChoLine("TAI-T", 7, [], BAY_GIO)).toEqual([]);
+  });
+
+  it("TẤT ĐỊNH — hai lần gọi ra hàng giống hệt nhau", () => {
+    const a = sinhDwellChoLine("TAI-T", 7, tramCua(7, 6), BAY_GIO);
+    const b = sinhDwellChoLine("TAI-T", 7, tramCua(7, 6), BAY_GIO);
+    expect(a).toEqual(b);
+  });
+
+  it("★ ĐỐI CHỨNG (f(x)=x): bản PHẲNG phải làm ĐỎ đúng hai cổng trên", () => {
+    // ⚠ Không có ca này thì không ai biết mấy cổng trên CÓ BIẾT KÊU hay không.
+    const tram = tramCua(7, 12);
+    const phang = tram.flatMap((t) =>
+      Array.from({ length: DWELL_MOI_TRAM }, (_, i) => ({
+        lineId: 7,
+        stationId: t.stationId,
+        machineId: t.machineId,
+        serialNumber: `P-${i}`,
+        dwellMs: 10_000,
+        processingMs: 10_000,
+        starvedMs: 0,
+        blockedMs: 0,
+        enteredAtMs: BAY_GIO - 1000,
+        exitedAtMs: BAY_GIO,
+      })),
+    );
+    const tb = tram.map((t) => {
+      const cua = phang.filter((d) => d.stationId === t.stationId);
+      return cua.reduce((a, d) => a + d.dwellMs, 0) / cua.length;
+    });
+    // Cổng "≥2 giá trị" PHẢI đỏ trên bản phẳng.
+    expect(new Set(tb).size).toBe(1);
+    // Cổng "nút thắt trội gấp đôi" PHẢI đỏ trên bản phẳng.
+    expect(Math.max(...tb)).not.toBeGreaterThan(Math.min(...tb) * 2);
+  });
+
+  it("★ G12 — cửa sổ dwell DÙNG LẠI cửa sổ WIP, không phải một hằng thứ hai", () => {
+    // Hai bề rộng khác nhau cho hai lớp phủ trên cùng một chuyền là chỗ để
+    // "bảng thiếu dữ liệu" và "hai cửa sổ lệch nhau" trông giống hệt nhau.
+    expect(CUA_SO_DWELL_MS).toBe(CUA_SO_WIP_MS);
+    expect(CUA_SO_DWELL_MS).toBeLessThan(24 * 60 * 60 * 1000);
+    // `getStationDwellAgg` gom `avg()`: một mẫu cho trung bình bằng chính nó.
+    expect(DWELL_MOI_TRAM).toBeGreaterThan(1);
   });
 });
