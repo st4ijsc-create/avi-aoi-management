@@ -49,3 +49,39 @@ tran lam noi long hop dong doc — phai co so lieu truoc khi doi.
 ## Con mo
 - Chi 5 cau, mot nhiet do (0.3), mot lan chay. Chua do phuong sai.
 - Chua do `mcp_goi` (cung duoc va o H5, cung tung 0/5) — can may chu MCP that.
+
+---
+
+## Phu luc — DEM TAN SUAT lo "JSON tran khong rao" (2026-09-07)
+
+O bao cao tren toi de xuat **dem tan suat that truoc khi noi long hop dong doc**.
+Da dem. 10 cau moi, nhiet do **0.7** (cao hon lan do goc 0.3 => nhieu bien thien
+hon, kho hon cho model):
+
+| Ket cuc | So lan |
+|---|---|
+| Phat khoi **CO hang rao** (parser bat duoc) | **10/10** |
+| **JSON tran** khong rao (parser bo qua) | **0/10** |
+| Khong goi tool | 0/10 |
+
+Do bang **dung regex cua parser that** (`khoiAviTool.ts:37`), khong bang mot
+khuon tu che.
+
+### QUYET DINH: **KHONG VA**
+
+Ca JSON-tran quan sat duoc truoc do xay ra o dieu kien **DA GO ban va H5**. Tuc
+no la trieu chung cua viec **thao hang rao**, khong phai mot lo doc lap cua
+parser. Khi ban va co mat — tuc trang thai that dang chay — tan suat do duoc la
+**0**.
+
+Noi long hop dong doc (chap nhan JSON tran) se:
+- lam yeu giao thuc cho mot van de co tan suat do duoc = 0;
+- mo cua cho van ban tinh co chua `{"tool": ...}` bi hieu nham la mot lenh goi
+  tool — **doi mot lo khong xay ra lay mot lop tan cong moi**.
+
+Ghi lai de nguoi sau khong phai do lai. Neu ai do go/sua `nhacLaiCuoiCauHoi`,
+**phai do lai muc nay** — lo se quay ve.
+
+## Con mo (cap nhat)
+- `mcp_goi` — cung lop, cung tung 0/5, chua do vi can may chu MCP that.
+- Chua do phuong sai nhieu lan chay.
