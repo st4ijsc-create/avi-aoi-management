@@ -2016,6 +2016,44 @@ phải rào chặn kỹ thuật; vượt rào + khai báo + đo không xung đ�
 **G2 (nhiều lô một nhánh):** khoá i18n của lô C bị cuốn vào commit `0162fafc` của lô B. Đo lại:
 `canvasUi` + `vung` **có đủ ở cả vi/en/zh** ⇒ phiền sổ sách, không mất mát.
 
+### 11d.6 LÔ A ĐÃ VỀ — và một lớp lỗi màu lan ra ngoài đợt (2026-09-07)
+
+Cổng: **45 tệp / 1391 test** (riêng `van-hanh` **18 tệp / 387**) · `check` 0 · `build` 0. Commit `ba47a695`.
+#51 → `TwinVanHanh.tsx:291,305,318` · #61/#32/#36 → `:1444,1447` + `DaiLine` `:1692-1714`.
+
+> #### ★★★ G29 — `THREE.Color` KHÔNG ĐỌC `oklch()`: VẼ ĐỦ HÌNH, CHỞR **0 BIT**
+> three r182 gặp `new THREE.Color("oklch(...)")` thì **WARN rồi trả TRẮNG** — không ném lỗi.
+> 12 cột WIP vẽ đúng vị trí, đúng chiều cao, **trắng như nhau** ⇒ lớp phủ chở **0 bit thông tin**.
+> Đo pixel trước/sau: trắng **33.901 → 62**, xanh **1.117 → 4.861**.
+>
+> **Lan xa hơn đợt này** (đo độc lập): `mauTrangThai.ts` có **2 `oklch(`, 0 hex**, trong khi
+> `tachRgb` (`phamViCanh.ts`) chỉ đọc `rgb()`/`#hex` ⇒ `phaVeNen()` **trả nguyên màu gốc**
+> ⇒ **"mờ 12% cho Line ngoài phạm vi" (§10C) CHƯA TỪNG CÓ HIỆU LỰC**. Mã chạy, không lỗi,
+> không làm gì — **G5 ở dạng độc nhất**. Còn 84 warning `oklch` từ `LoBatchMay`/kit.
+>
+> Docblock `mauTrangThai.ts:44` ("trình duyệt tính oklch→rgb nên không cần thư viện màu") **sai**:
+> custom property **không được CSS phân giải** trước khi tới three.
+
+> #### ★★★ G30 — LỜI KHAI TRONG DB KHÔNG CÓ HẠN DÙNG (họ "lý do hoãn hết hạn", Khối D)
+> Bản ghi `line_balance` của Line 1 **16 ngày 18 giờ tuổi** khai trạm 10 là nút thắt (124 WIP),
+> trong khi trạm 1 đang giữ **3.152** (22× trung vị). Màn tô đỏ **đúng trạm không hỏng**.
+> ⇒ Mọi giá trị đọc từ bảng phân tích phải kèm **hạn hiệu lực** (ở đây `conHieuLuc` 8 h);
+> không có hạn thì một kết luận đúng của **hai tuần trước** vẫn được vẽ như sự thật hôm nay.
+
+**Spec SAI — #36:** §11 chỉ `commandLog.avgDurations` là "cycle time thật". Thủ tục đó là
+`avg(ackedAt − sentAt) GROUP BY commandType` = **độ trễ ACK lệnh**, không theo chuyền. Chuyền 12 s/chiếc
++ ack 80 ms ⇒ mũi tên chạy **nhanh gấp 150 lần** (G7). Nguồn đúng: `line_balance_metrics.avgCycleTimeMs`.
+
+**Bác brief đúng:** áp thẳng `nhipHoiMs` sẽ làm andon/E-STOP **chậm đi** 20→30 s khi socket khoẻ
+⇒ thêm `nhipHoiToiDa` (chỉ rút ngắn, không kéo dài). **An toàn không được chậm đi vì một tối ưu.**
+
+**ĐB-9 sống sót lần đầu** (13 tiêm/13 bắt sau khi vá): gỡ trần 20 s khỏi **một** trong hai truy vấn,
+`toContain` vẫn xanh nhờ chuỗi còn sót ở call site kia — **G9**. Đổi sang đếm + neo đích danh.
+
+**Chưa chứng minh (tự khai):** cột 3D **màu hổ phách** của trạm nghẽn chưa nhìn tận mắt (nằm sát mép
+trái khung hình). Cột xanh đã đo được bằng pixel. **A3 (#60) CHƯA LÀM** — đích `NganXuLy.tsx` ngoài
+danh sách tệp lô A.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
