@@ -2779,6 +2779,64 @@ quyet dinh cua lo G truoc do.
 HEAD sach la **20 tep / 226 test, trong do 3 DA DO** (census pin lech do lo khac). Lo Q dong them 1,
 **khong them do nao**.
 
+### 11h.5 LO P DA VE - nha may 240 may + mo phong SONG (2026-09-08)
+
+Commit `8fa28e17`. Cong: **57 tep / 1667 test** = nen - `check` 0 - `build` 0 -
+DB sau khi go **`factories 2, machines 43, twin_dat_cho 82`, 0 hang rac** (chu du an kiem doc lap).
+
+**Hieu nang o 240 may** (yeu cau chu so huu: 4 tang x 5 line x 12 may):
+**3 draw calls** (tran 150) - **60,3 FPS** (san 30) - tai **1,18 s** - 3.422 tam giac.
+Nghiem thu **go truoc khi sinh khoi lon**: **16/16 bang khop tuyet doi** (dem + MD5 tung hang).
+
+**Mo phong da SONG** (do qua API that, vai supervisor khong-admin):
+`predictionOverlay` **`available: true`** (truoc lo nay **vinh vien false**) - `defectHeatmap` **240 may**,
+346 NG/2.880 - `wipFlowState` 139 WIP/12 tram, nut that WIP **trung** `bottleneckStationId` server khai.
+
+> #### G51 - **NGUONG TUOI NGHIEM NGAT NHAT KHONG PHAI CAI BRIEF NHAC**
+> Brief cua chu du an dan "moc gan hien tai, `conHieuLuc` 8h". Rang buoc **nang nhat thuc ra la 5 PHUT**:
+> `NGUONG_CU_MS = 300s` (`mauTrangThai.ts`) - qua do **240 may hoa xam** du moi bang day du lieu.
+> => Khi giao "sinh du lieu tuoi", phai **liet ke MOI nguong tuoi tren duong hien thi**, khong chi cai
+> minh nho. Lo P them `--chi-nhip` de lam tuoi mau ma khong sinh lai.
+
+> #### G52 - **`npm run check` KHONG BAO VE `scripts/`**
+> Mot backtick lac trong chu thich SQL lam script **khong chay noi**, ma cong 2 (`check`) **van exit 0**.
+> => Cong go/sinh du lieu phai co **test parse rieng**; `tsc --noEmit` khong phu thu muc nay.
+
+> #### G53 - **PHAM VI PHEP GO PHAI SUY TU DO THI THAM CHIEU, KHONG TU DANH SACH INSERT**
+> Server **tu bom 100.800 hang `ot_telemetry`** vao may cua lo P - khong nam trong danh sach INSERT nao
+> cua script. Quet theo **khoa ngoai** **bo sot** `predictive_alerts`; chi quet theo **ten cot** moi thay
+> (BG-127: hai mo hinh roi). Va **Timescale**: DELETE tren hypertable nen (28,3M hang) chay 10 phut roi
+> do `53400` - giao dich **quay lui sach**, dung ly do moi phep xoa nam trong mot `begin`.
+
+**★ Anh dau tien cua lo P la ANH TRANG HOAN TOAN** (bay `preserveDrawingBuffer=false`, G28). No **tu doc,
+tu loai, chup lai** bang viewport. Day la lan thu ba trong du an mot lo tu bat anh vo gia tri cua chinh no.
+
+### 11h.6 MON CAN CHU SO HUU QUYET - **8.197 hang mo coi la RAC CUA DOT 9**
+
+Lo P bao "co san tu truoc, khong phai cua toi" - **dung**. Chu du an truy nguon goc bang hai mo hinh:
+
+| Ngay tao | So hang |
+|---|---|
+| **07/09** | **8.180** |
+| 03/09 | 3 |
+| 18/08 | 14 |
+
+Tien to ma: **`FUYU-F` 6.588** - `TAI-C`/`TAI-D` ~740 - deu la **du lieu thu cua LO E (Dot 9)**.
+=> Khong phai rac ngoai du an: **script go cua lo E BO SOT bang `machine_health_history`**, dung lop loi
+ma G53 mo ta (pham vi go suy tu danh sach INSERT thay vi do thi tham chieu).
+⇒ **Xoa chung la XOA DU LIEU** - can chu so huu quyet, khong tu lam.
+
+**Hai mon con mo khac (lo P khai thang, khong xu):** `oee_metrics` **897 hang, 0 trong 24h**, chi 36 may
+SIM-FAC ⇒ man hien **"OEE measured on 0/240"** - **nguon rong thu ba**. Va nhan tung may van hien
+"Unknown" du o dem da 240 tuoi.
+
+**Giu lai de xem** (hien **da go** de chung minh cong 5):
+```
+npx tsx scripts/sinh-tai-twin.ts --240        # dung lai 240 may
+npx tsx scripts/sinh-tai-twin.ts --chi-nhip   # lam tuoi mau (moi <5 phut)
+npx tsx scripts/go-tai-twin.ts                # go - DUNG SERVER TRUOC
+```
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
