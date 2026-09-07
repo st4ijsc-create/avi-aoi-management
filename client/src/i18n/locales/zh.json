@@ -20262,7 +20262,18 @@
       "tieuDe": "布局版本",
       "xuatBan": "发布",
       "daXuatBan": "已发布",
-      "nhan": "版本标签"
+      "nhan": "版本标签",
+      "luu": "保存版本",
+      "khoiPhuc": "恢复",
+      "xoa": "删除",
+      "chuaCo": "尚无已保存的布局版本。",
+      "thucThe": "个实体",
+      "rongKhongLuu": "当前布局为空——没有可保存的内容。",
+      "daLuu": "布局版本已保存（{{n}} 个实体）。该版本尚未发布。",
+      "daXuatBanXong": "已发布。运行画面现已显示该布局。",
+      "daKhoiPhuc": "已将 {{n}} 个实体恢复到正在编辑的布局。请点击保存写入数据库。",
+      "daXoa": "布局版本已删除。",
+      "xoaBanDangXuatBan": "已删除——该版本正是发布到运行画面的那一个。"
     },
     "congCu": {
       "chon": "选择",
@@ -20539,6 +20550,43 @@
         "oeeTrungBinh": "平均 OEE",
         "andonMo": "未处理安灯",
         "ruiRoPdm": "预测性维护风险"
+      }
+    },
+    "model": {
+      "tamGiac": "三角面",
+      "material": "材质",
+      "duoiKhongNhan": "仅接受 .glb / .gltf 文件。SVG 是二维图像，没有深度；STEP/IGES 需先转换。",
+      "napHong": "无法读取该 3D 文件。文件可能已损坏或不是 glTF 2.0。",
+      "goiYNen": "建议：用 gltf-transform 压缩（保留 --no-join --no-flatten，以免节点树被压平）。",
+      "daGan": "3D 模型已上传并分配。",
+      "chuaChonMay": "请先选择一台设备",
+      "ganMayNay": "分配给 {{ma}}",
+      "chonChungLoai": "设备类型…",
+      "ganMoiMay": "分配给全部 {{n}} 台同类型设备",
+      "lechKichThuoc": "模型与申报尺寸相差 {{phanTram}}%——分配前请核对单位。",
+      "lyDo": {
+        "tam_giac_cao": "超过 50,000 三角面——仍可使用，但会占用帧预算。",
+        "tam_giac_vuot_tran": "超过 150,000 三角面——已阻止。",
+        "dung_luong_vuot_tran": "大于 15 MB——已阻止。",
+        "tep_rong": "文件为空。",
+        "duoi_tep_khong_nhan": "不接受该文件扩展名。"
+      }
+    },
+    "anhNen": {
+      "duoiKhongNhan": "仅接受 PNG、JPG 或 WebP 图像。DWG/PDF 需先导出为图像。",
+      "docHong": "无法读取该图像。",
+      "taiLen": "上传平面图",
+      "daTai": "平面图已上传。尚未校准——请在摆放设备前先设置比例。",
+      "huongDan": "点击两个已知真实距离的点，然后输入该距离。",
+      "khoangCachThat": "真实距离（毫米）",
+      "xoaDiem": "清除标点",
+      "daHieuChuanXong": "比例已保存，平面图已完成校准。",
+      "lechSan": "图像宽 {{anh}} 米，而申报的地面为 {{san}} 米——摆放设备前请核对比例。",
+      "loi": {
+        "thieu_diem": "请在图像上点击两个点。",
+        "hai_diem_qua_gan": "两点距离过近——点击误差一个像素就会使整体比例失真。请选择相距更远的两点。",
+        "khoang_cach_that_khong_hop_le": "请输入以毫米为单位的真实距离。",
+        "ti_le_vo_ly": "该比例不合理——请核对所输入距离的单位。"
       }
     }
   }

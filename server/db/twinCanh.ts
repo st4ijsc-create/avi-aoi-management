@@ -28,7 +28,7 @@
  * tồn tại" với "có thật nhưng của tenant khác" — một câu riêng cho ca sau là một
  * oracle rò rỉ tồn-tại.
  */
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { appError } from "../_core/appError";
@@ -38,6 +38,7 @@ import {
   twinVatThe,
   twinDatCho,
   twinKichThuocLoai,
+  twinBanGhi,
   workshops,
   productionLines,
   stations,
@@ -1695,4 +1696,346 @@ export async function xoaVungAnToan(id: number, scope: PhamViNguoiXem): Promise<
 
   await d.delete(twinVatThe).where(and(eq(twinVatThe.id, id), eq(twinVatThe.loai, "vung")));
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Gán model 3D — hàng rào tenant (§7.4, §10B.2) — #18
+// ---------------------------------------------------------------------------
+
+/** Phạm vi gán của một model: đúng một máy, hay cả một chủng loại. */
+export type PhamViGanModel =
+  | { phamVi: "may"; machineId: number }
+  | { phamVi: "chung_loai"; loaiMay: string };
+
+/**
+ * Người gọi có được phép gán model ở phạm vi này không.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO MỘT ĐĂNG BẠ KHÔNG-TENANT VẪN CẦN HÀNG RÀO TENANT
+ * ════════════════════════════════════════════════════════════════════════════
+ * `equipment_3d_models` không treo vào chuỗi phân cấp, nên thoạt nhìn nó giống
+ * `twin_kich_thuoc_loai` — một bảng tra chung, miễn hàng rào. Nhưng thứ được
+ * ghi vào đó là **một liên kết tới `machines.id`**, và hệ quả của liên kết đó
+ * hiện ra trong cảnh 3D của tenant sở hữu máy ấy.
+ *
+ * ⇒ Không kiểm thì bất kỳ ai qua được cổng `settings_factory`/`machine_control`
+ *   của **nhà máy mình** cũng đổi được hình khối một máy của **nhà máy khác**.
+ *   Không rò dữ liệu (không đọc gì của họ), nhưng ghi được vào cảnh của họ —
+ *   và một thay đổi thị giác câm là thứ khó truy nhất.
+ *
+ * ★ Dùng ĐÚNG `trongPhamVi("machine", …)` — bộ phân giải mà mọi đường khác đi
+ *   qua. Tự lọc theo `machines.factoryId` ở đây là dựng bộ luật phân quyền thứ
+ *   hai, thứ `hierarchy.ts` cấm (và là gốc của lớp lỗi BG-127).
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ CẤP CHỦNG LOẠI — ĐÒI SỞ HỮU ÍT NHẤT MỘT MÁY CỦA LOẠI ĐÓ
+ * ════════════════════════════════════════════════════════════════════════════
+ * Một hàng cấp chủng loại KHÔNG trỏ tới máy nào, nên không có id để kiểm. Câu
+ * hỏi đúng là "người này có máy loại đó không": có thì việc gán ảnh hưởng máy
+ * của chính họ (và của người khác cùng loại — xem cảnh báo dưới); không có thì
+ * họ đang đổi hình cho một chủng loại mà họ không vận hành máy nào.
+ *
+ * ⚠ NÓI THẲNG GIỚI HẠN: đăng bạ **không có cột phạm vi cho hàng cấp loại**, nên
+ *   một hàng `AOI` là TOÀN CỤC — nó đổi hình máy AOI của MỌI tenant. Hàng rào
+ *   này thu hẹp *ai được ghi*, KHÔNG thu hẹp *ai bị ảnh hưởng*. Sửa triệt để
+ *   cần thêm cột phạm vi vào `equipment_3d_models`, tức MIGRATION — ngoài phạm
+ *   vi lô này (brief cấm). Ghi lại ở đây thay vì để lời khai "đã có hàng rào"
+ *   che mất chuyện nửa còn lại chưa được rào.
+ */
+export async function duocGanModel(
+  pv: PhamViGanModel,
+  scope: PhamViNguoiXem,
+): Promise<boolean> {
+  if (pv.phamVi === "may") {
+    return trongPhamVi("machine", pv.machineId, scope);
+  }
+
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  // Mọi máy thuộc chủng loại này (không lọc phạm vi ở SQL — để `trongPhamVi`
+  // quyết, một bộ luật duy nhất).
+  const cungLoai = await d
+    .select({ id: machines.id })
+    .from(machines)
+    .where(eq(machines.machineType, pv.loaiMay as typeof machines.machineType.enumValues[number]));
+  if (cungLoai.length === 0) return false;
+
+  for (const m of cungLoai) {
+    if (await trongPhamVi("machine", m.id, scope)) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Bản ghi bố cục — `twin_ban_ghi` (§5.3, §11 #55)
+// ---------------------------------------------------------------------------
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ HỢP ĐỒNG PHIÊN BẢN — ĐỌC LƯỢC ĐỒ THẬT RỒI MỚI VIẾT
+ * ════════════════════════════════════════════════════════════════════════════
+ * §11c.2 xếp #55 vào lớp lỗi **L-3**: bảng có, migration có (`drizzle/0351…:158`),
+ * **0 dòng và 0 mã đọc/ghi**. *"Bảng tồn tại không phải là tính năng tồn tại."*
+ *
+ * Lược đồ đo lại trên DB dev 2026-09-07 (`\d twin_ban_ghi`), KHÔNG đọc từ spec:
+ *
+ *   id serial PK · "tangId" int NOT NULL → twin_tang ON DELETE CASCADE
+ *   nhan varchar(255) NOT NULL · "anhChup" jsonb NOT NULL
+ *   "daXuatBan" bool NOT NULL DEFAULT false · "nguoiTao" int → users(id)
+ *   "createdAt" timestamptz NOT NULL DEFAULT now()
+ *   idx: ("tangId") · ("tangId","daXuatBan")
+ *
+ * ⇒ **HỢP ĐỒNG NÀY DÙNG ĐƯỢC, KHÔNG CẦN MIGRATION.** `anhChup` là jsonb tự
+ *   chứa, đúng thứ §5.3 đòi: một bản đã xuất bản không đổi hình khi ai đó sửa
+ *   bảng sống. Lô này vì thế KHÔNG đổi lược đồ (brief cấm, và cũng không cần).
+ *
+ * ★★★ HAI THIẾU SÓT CỦA LƯỢC ĐỒ — BÁO LẠI, KHÔNG TỰ VÁ BẰNG MIGRATION:
+ *
+ *   (a) KHÔNG có `UNIQUE ("tangId", nhan)`. Hai bản ghi trùng tên trên cùng một
+ *       tầng là hợp lệ với DB, và người dùng không phân biệt được chúng trong
+ *       danh sách. Ta cưỡng chế ở tầng ghi (`luuBanGhi` tìm-trước-khi-tạo), và
+ *       nói thẳng rằng đó là hàng rào MỀM: hai lượt ghi đồng thời vẫn lọt được.
+ *       Vá cứng cần một unique index ⇒ migration ⇒ đợt sau.
+ *
+ *   (b) KHÔNG có ràng buộc "mỗi tầng nhiều nhất MỘT bản đã xuất bản". §5.3 nói
+ *       *"Màn Vận hành chỉ đọc bản đã xuất bản"* — số ít. Với DB hiện tại, N bản
+ *       cùng `daXuatBan = true` là hợp lệ, và màn Vận hành sẽ phải chọn bừa một
+ *       cái. `xuatBanBanGhi` vì thế HẠ CỜ mọi bản khác trong CÙNG MỘT lượt ghi;
+ *       nhưng một partial unique index mới là thứ làm điều đó không lách được.
+ */
+
+/** Một bản ghi bố cục, đã lọc phạm vi. `anhChup` KHÔNG trả trong danh sách. */
+export interface BanGhiTomTat {
+  id: number;
+  tangId: number;
+  nhan: string;
+  daXuatBan: boolean;
+  nguoiTao: number | null;
+  createdAt: Date;
+  /** Số thực thể trong ảnh chụp — để danh sách nói được "bản này có gì". */
+  soDatCho: number;
+}
+
+/**
+ * Hình dạng của `anhChup`.
+ *
+ * ★★★ ẢNH CHỤP PHẢI TỰ CHỨA — KHÔNG JOIN LẠI BẢNG SỐNG.
+ *   Đây là toàn bộ lý do bảng này tồn tại (§5.3). Một "ảnh chụp" chỉ lưu danh
+ *   sách id rồi đọc lại `twin_dat_cho` lúc khôi phục KHÔNG phải ảnh chụp: nó
+ *   đổi hình mỗi khi ai đó kéo một máy, và "khôi phục bản v3" sẽ cho ra bố cục
+ *   hôm nay chứ không phải bố cục hôm ghi v3.
+ */
+export interface AnhChupBoCuc {
+  /** Phiên bản HÌNH DẠNG của chính ảnh chụp — không phải phiên bản bố cục. */
+  phienBan: 1;
+  ghiLuc: string;
+  datCho: Array<{
+    loaiThucThe: string;
+    thucTheId: number;
+    viTriXMm: number;
+    viTriYMm: number;
+    viTriZMm: number;
+    quatX: number;
+    quatY: number;
+    quatZ: number;
+    quatW: number;
+    rongMm?: number | null;
+    caoMm?: number | null;
+    sauMm?: number | null;
+    daKhoa?: boolean;
+    hienThi?: boolean;
+  }>;
+}
+
+/**
+ * ★ Vì sao có `phienBan` trong chính jsonb dù cột đã tên là "bản ghi":
+ *   `daXuatBan`/`nhan` là phiên bản của BỐ CỤC (thứ người dùng đặt tên).
+ *   `phienBan` là phiên bản của LƯỢC ĐỒ JSON — thứ mã đọc phải biết để không
+ *   đọc nhầm một ảnh chụp cũ bằng luật mới. Trộn hai khái niệm đó vào một số là
+ *   cách chắc chắn để một ngày nào đó "v3" nghĩa là hai thứ khác nhau.
+ */
+export function laAnhChupHopLe(gt: unknown): gt is AnhChupBoCuc {
+  if (typeof gt !== "object" || gt === null) return false;
+  const o = gt as Record<string, unknown>;
+  if (o.phienBan !== 1) return false;
+  return Array.isArray(o.datCho);
+}
+
+/** Danh sách bản ghi của các tầng đã cho — KHÔNG kèm `anhChup` (có thể rất to). */
+export async function traBanGhi(
+  tangIds: readonly number[],
+  scope: PhamViNguoiXem,
+): Promise<BanGhiTomTat[]> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+  if (tangIds.length === 0) return [];
+
+  const hopLe = await locTangTrongPhamVi(d, tangIds, scope);
+  if (hopLe.length === 0) return [];
+
+  const hang = await d
+    .select()
+    .from(twinBanGhi)
+    .where(inArray(twinBanGhi.tangId, hopLe))
+    .orderBy(desc(twinBanGhi.createdAt), desc(twinBanGhi.id));
+
+  return hang.map((h) => ({
+    id: h.id,
+    tangId: h.tangId,
+    nhan: h.nhan,
+    daXuatBan: h.daXuatBan,
+    nguoiTao: h.nguoiTao,
+    createdAt: h.createdAt,
+    // ★ Đếm ở đây, KHÔNG gửi cả `anhChup` xuống rồi để client đếm: một bản ghi
+    //   42 máy là ~15 KB, và danh sách 20 bản là 300 KB cho một con số.
+    soDatCho: laAnhChupHopLe(h.anhChup) ? h.anhChup.datCho.length : 0,
+  }));
+}
+
+/** Một bản ghi ĐẦY ĐỦ (kèm `anhChup`) — chỉ đọc khi thật sự khôi phục. */
+export async function traMotBanGhi(
+  id: number,
+  scope: PhamViNguoiXem,
+): Promise<{ id: number; tangId: number; nhan: string; daXuatBan: boolean; anhChup: AnhChupBoCuc } | null> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const [h] = await d.select().from(twinBanGhi).where(eq(twinBanGhi.id, id)).limit(1);
+  if (!h) return null;
+  const hopLe = await locTangTrongPhamVi(d, [h.tangId], scope);
+  if (hopLe.length === 0) return null;
+  // jsonb KHÔNG có lược đồ — lọc ở ĐÂY, một lần (cùng lý lẽ `docDiemDaJsonb`).
+  if (!laAnhChupHopLe(h.anhChup)) return null;
+
+  return {
+    id: h.id,
+    tangId: h.tangId,
+    nhan: h.nhan,
+    daXuatBan: h.daXuatBan,
+    anhChup: h.anhChup,
+  };
+}
+
+export interface LuuBanGhiInput {
+  tangId: number;
+  nhan: string;
+  anhChup: AnhChupBoCuc;
+  nguoiTao?: number | null;
+}
+
+/**
+ * Tạo một bản ghi mới, hoặc GHI ĐÈ bản cùng tên trên cùng tầng.
+ *
+ * ★★★ TÌM-TRƯỚC-KHI-TẠO, vì lược đồ KHÔNG có `UNIQUE ("tangId", nhan)`.
+ *   Không có bước này thì bấm "Lưu bản ghi" hai lần với cùng cái tên tạo ra hai
+ *   hàng trùng tên, và danh sách hiện hai dòng y hệt nhau — người dùng không có
+ *   cách nào biết cái nào là cái họ vừa lưu.
+ *
+ * ⚠ HÀNG RÀO MỀM: hai lượt ghi ĐỒNG THỜI vẫn lọt được cả hai (không có unique
+ *   index để DB từ chối). Đây là giới hạn của lược đồ hiện tại, được báo lại
+ *   thay vì tự thêm migration (brief cấm). Xác suất thấp — một người dùng, một
+ *   nút — nhưng nó có thật và không nên nằm im.
+ */
+export async function luuBanGhi(input: LuuBanGhiInput, scope: PhamViNguoiXem) {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const hopLe = await locTangTrongPhamVi(d, [input.tangId], scope);
+  if (hopLe.length === 0) return null;
+
+  const [cu] = await d
+    .select({ id: twinBanGhi.id })
+    .from(twinBanGhi)
+    .where(and(eq(twinBanGhi.tangId, input.tangId), eq(twinBanGhi.nhan, input.nhan)))
+    .limit(1);
+
+  if (cu) {
+    const [ket] = await d
+      .update(twinBanGhi)
+      .set({ anhChup: input.anhChup as unknown as Record<string, unknown> })
+      .where(eq(twinBanGhi.id, cu.id))
+      .returning();
+    return ket ?? null;
+  }
+
+  const [ket] = await d
+    .insert(twinBanGhi)
+    .values({
+      tangId: input.tangId,
+      nhan: input.nhan,
+      anhChup: input.anhChup as unknown as Record<string, unknown>,
+      nguoiTao: input.nguoiTao ?? null,
+      // ★ `daXuatBan` CỐ Ý để mặc định false. Lưu một bản nháp không được đẩy
+      //   nó ra màn Vận hành đang chạy — đó là cả lý do cột này tồn tại.
+    })
+    .returning();
+  return ket ?? null;
+}
+
+/**
+ * Xuất bản MỘT bản ghi, và HẠ CỜ mọi bản khác của cùng tầng.
+ *
+ * ★★★ HAI LƯỢT GHI, MỘT TRANSACTION. Hạ cờ trước rồi nâng cờ sau mà không bọc
+ *   transaction để lại một cửa sổ trong đó tầng KHÔNG có bản nào xuất bản —
+ *   và màn Vận hành đọc đúng lúc đó sẽ thấy nhà máy rỗng. Cửa sổ ấy dài vài
+ *   mili giây, tức nó sẽ xảy ra, và nó sẽ không tái lập được khi đi tìm.
+ *
+ * ⚠ Vì sao ở ĐÂY bọc transaction được trong khi `dungNhaXuong` (N-1) thì không:
+ *   phép kiểm phạm vi đã chạy XONG trước khi mở transaction, và trong transaction
+ *   chỉ còn hai câu UPDATE trên MỘT bảng. Không có `trongPhamVi` nào phải chạy
+ *   bên trong `tx`, nên không có bộ luật phân quyền thứ hai nào bị sinh ra.
+ */
+export async function xuatBanBanGhi(id: number, scope: PhamViNguoiXem) {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const [h] = await d
+    .select({ id: twinBanGhi.id, tangId: twinBanGhi.tangId })
+    .from(twinBanGhi)
+    .where(eq(twinBanGhi.id, id))
+    .limit(1);
+  if (!h) return null;
+  const hopLe = await locTangTrongPhamVi(d, [h.tangId], scope);
+  if (hopLe.length === 0) return null;
+
+  return d.transaction(async (tx) => {
+    await tx
+      .update(twinBanGhi)
+      .set({ daXuatBan: false })
+      .where(and(eq(twinBanGhi.tangId, h.tangId), eq(twinBanGhi.daXuatBan, true)));
+    const [ket] = await tx
+      .update(twinBanGhi)
+      .set({ daXuatBan: true })
+      .where(eq(twinBanGhi.id, id))
+      .returning();
+    return ket ?? null;
+  });
+}
+
+/**
+ * Xoá một bản ghi.
+ *
+ * ★ KHÔNG chặn xoá bản đang xuất bản, nhưng NÓI RA qua giá trị trả về: người
+ *   gọi biết mình vừa gỡ thứ màn Vận hành đang đọc và cảnh báo được. Chặn hẳn
+ *   sẽ khoá người dùng lại với một bản họ muốn bỏ, và họ không có đường ra.
+ */
+export async function xoaBanGhi(
+  id: number,
+  scope: PhamViNguoiXem,
+): Promise<{ daXoa: boolean; daTungXuatBan: boolean } | null> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const [h] = await d
+    .select({ id: twinBanGhi.id, tangId: twinBanGhi.tangId, daXuatBan: twinBanGhi.daXuatBan })
+    .from(twinBanGhi)
+    .where(eq(twinBanGhi.id, id))
+    .limit(1);
+  if (!h) return null;
+  const hopLe = await locTangTrongPhamVi(d, [h.tangId], scope);
+  if (hopLe.length === 0) return null;
+
+  await d.delete(twinBanGhi).where(eq(twinBanGhi.id, id));
+  return { daXoa: true, daTungXuatBan: h.daXuatBan };
 }

@@ -94,7 +94,7 @@ import {
   xoaLichSu,
   type LichSu,
 } from "../lichSuThaoTac";
-import { CAU_HINH_SINH_MAC_DINH, type CauHinhSinh } from "../sinhBoCuc";
+import { CAU_HINH_SINH_MAC_DINH, type CauHinhSinh, type LoaiThucThe } from "../sinhBoCuc";
 import type { MayTrongLo } from "../loi";
 
 import { BangThuocTinh } from "./BangThuocTinh";
@@ -108,6 +108,8 @@ import { ThanhCongCuCanh, type MayTrenCanh } from "./ThanhCongCuCanh";
 import type { CanhDaNoi } from "./CauNoiCanh";
 import { vungTuDanhSach, type HangVung } from "./vungAnToan";
 import { VeVung } from "./VeVung";
+import { AnhNenTang } from "./AnhNenTang";
+import { BanGhiBoCuc, type DatChoAnhChup } from "./BanGhiBoCuc";
 import { cheDoTuPhim, type CheDoGizmo, type TrucKhoa, trucSauPhim } from "./gizmoNoiLogic";
 import {
   apChon,
@@ -133,9 +135,29 @@ export interface XuongThietKeProps {
   tangId: number | null;
   sanRongMm: number;
   sanSauMm: number;
+  /**
+   * ── #43 — trạng thái ảnh nền của tầng đang mở, từ `chiTietToaNha`.
+   *   Truyền XUỐNG thay vì gọi lại truy vấn ở đây: `TwinStudio` đã tải
+   *   `chiTietToaNha` để lấy `tangId`, và gọi lần thứ hai cho cùng dữ liệu là
+   *   mở đường cho hai bên hiện hai trạng thái hiệu chuẩn khác nhau.
+   */
+  anhNenUrl?: string | null;
+  tiLeMmMoiPx?: number | null;
+  daHieuChuan?: boolean;
+  /** Gọi sau khi ghi ảnh nền/tỉ lệ, để `TwinStudio` tải lại `chiTietToaNha`. */
+  onDaGhiTang?: () => void;
 }
 
-export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongThietKeProps) {
+export function XuongThietKe({
+  factoryId,
+  tangId,
+  sanRongMm,
+  sanSauMm,
+  anhNenUrl,
+  tiLeMmMoiPx,
+  daHieuChuan,
+  onDaGhiTang,
+}: XuongThietKeProps) {
   const { t } = useTranslation();
   const tienIch = trpc.useUtils();
 
@@ -287,6 +309,49 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
     }
     return ra;
   }, [may, datChoSua, kichThuocTheoLoai]);
+
+  /**
+   * ── #18 — máy cho dải thư viện asset, KÈM kích thước đã phân giải ────────
+   *
+   * ★ `kichThuocDeVe(d, mặc-định-theo-loại)` là CÙNG hàm mà `mayVe` ở trên dùng.
+   *   Dải asset vì thế so bbox của file với ĐÚNG con số đang được vẽ, không phải
+   *   với `twin_kich_thuoc_loai` thô — hai thứ khác nhau khi máy đã được đo tay.
+   */
+  const mayChoThuVien = useMemo(
+    () =>
+      may.map((m) => {
+        const d = datChoSua.get(khoaNode("machine", m.id));
+        const kt = d
+          ? kichThuocDeVe(d, kichThuocTheoLoai.get(String(m.loaiMay)) ?? null).kichThuoc
+          : null;
+        return {
+          id: m.id,
+          ma: String(m.ma ?? m.id),
+          ten: m.ten ?? null,
+          loaiMay: String(m.loaiMay ?? ""),
+          rongMm: kt?.rongMm ?? null,
+          caoMm: kt?.caoMm ?? null,
+          sauMm: kt?.sauMm ?? null,
+        };
+      }),
+    [may, datChoSua, kichThuocTheoLoai],
+  );
+
+  /**
+   * ── #4 — BẢNG MODEL ĐÃ ĐĂNG KÝ, cho cảnh 3D giải phân giải 3 cấp ────────
+   *
+   * Một lượt gọi cho cả cảnh; `napModel.chonModelChoMay` áp thứ tự ưu tiên
+   * §10B.2 trên mảng này. Xem docblock của `twinCanh.danhSachModel` để biết vì
+   * sao KHÔNG gọi `resolve` 42 lần.
+   */
+  const modelQ = trpc.twinCanh.danhSachModel.useQuery(undefined, { retry: false });
+
+  /** machineId → chủng loại, cho cấp 2 của §10B.2. Một bảng, dựng một lần. */
+  const loaiMayTheoId = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const x of may) m.set(x.id, String(x.loaiMay ?? ""));
+    return m;
+  }, [may]);
 
   /**
    * ★★★ #58 FIT-ALL + #56 MINI-MAP ĐỌC **CÙNG** `mayVe` MÀ CẢNH 3D ĐANG VẼ.
@@ -597,6 +662,78 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
     }
   }, [sinhM, factoryId, tangId, cauHinhSinh, tienIch, toast, t]);
 
+  // ── #55 — ảnh chụp / khôi phục bố cục ────────────────────────────────────
+
+  /**
+   * Ảnh chụp bố cục ĐANG SỬA.
+   *
+   * ★★★ ĐỌC `datChoSua`, KHÔNG ĐỌC `canhQ.data.datCho`.
+   *   `datChoSua` là bố cục người dùng ĐANG NHÌN (đã gồm mọi thay đổi chưa
+   *   lưu); `canhQ.data.datCho` là bố cục ĐÃ LƯU. Chụp nhầm nguồn cho ra một
+   *   bản ghi KHÔNG PHẢI thứ họ vừa thấy khi bấm nút — và hai bố cục khác nhau
+   *   mang cùng một cái tên là đúng thứ tính năng này sinh ra để tránh.
+   */
+  const layAnhChup = useCallback(
+    (): DatChoAnhChup[] =>
+      [...datChoSua.values()].map((d) => ({
+        loaiThucThe: d.loaiThucThe,
+        thucTheId: d.thucTheId,
+        viTriXMm: d.viTriXMm,
+        viTriYMm: d.viTriYMm,
+        viTriZMm: d.viTriZMm,
+        quatX: d.quatX,
+        quatY: d.quatY,
+        quatZ: d.quatZ,
+        quatW: d.quatW,
+        rongMm: d.rongMm,
+        caoMm: d.caoMm,
+        sauMm: d.sauMm,
+        daKhoa: d.daKhoa,
+        hienThi: d.hienThi,
+      })),
+    [datChoSua],
+  );
+
+  /**
+   * Khôi phục một ảnh chụp vào trạng thái đang sửa.
+   *
+   * ★★★ QUA `apLo` �⇒ MỘT LỆNH UNDO DUY NHẤT. Đây là thao tác nguy hiểm nhất
+   *   của màn (nó đè lên mọi thứ đang làm dở), nên nó phải là thao tác DỄ LÙI
+   *   nhất. Ghi thẳng vào `setDatChoSua` sẽ bỏ qua `lichSuThaoTac.ts` và người
+   *   dùng mất đường lùi đúng ở chỗ họ cần nó nhất.
+   *
+   * ★ Chỉ áp cho thực thể CÒN TỒN TẠI trên tầng (`apLo` tự bỏ khoá không có
+   *   trong `datChoSua`). Một máy đã bị gỡ khỏi mặt bằng sau khi bản ghi được
+   *   tạo KHÔNG được hồi sinh bằng đường này: `twin_dat_cho` có
+   *   `uniqueIndex(loaiThucThe, thucTheId)` và hồi sinh bừa tạo ra đúng thứ mà
+   *   dải Sức khoẻ đang đếm là "đặt chỗ mồ côi".
+   */
+  const khoiPhucAnhChup = useCallback(
+    (datCho: DatChoAnhChup[]) => {
+      apLo(
+        datCho.map((d) => ({
+          khoa: khoaNode(d.loaiThucThe as LoaiThucThe, d.thucTheId),
+          sua: {
+            viTriXMm: d.viTriXMm,
+            viTriYMm: d.viTriYMm,
+            viTriZMm: d.viTriZMm,
+            quatX: d.quatX,
+            quatY: d.quatY,
+            quatZ: d.quatZ,
+            quatW: d.quatW,
+            ...(d.rongMm != null ? { rongMm: d.rongMm } : {}),
+            ...(d.caoMm != null ? { caoMm: d.caoMm } : {}),
+            ...(d.sauMm != null ? { sauMm: d.sauMm } : {}),
+            ...(d.daKhoa !== undefined ? { daKhoa: d.daKhoa } : {}),
+            ...(d.hienThi !== undefined ? { hienThi: d.hienThi } : {}),
+          } as Partial<DatChoDauVao>,
+        })),
+        "canh",
+      );
+    },
+    [apLo],
+  );
+
   // ── Gỡ khỏi mặt bằng ─────────────────────────────────────────────────────
   const goM = trpc.twinCanh.goKhoiMatBang.useMutation();
   const goKhoi = useCallback(
@@ -844,6 +981,8 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
               sanSauM={mmSangMet(sanSauMm)}
               hienLuoi={hienLuoi}
               vung={vungVe}
+              bangModel={modelQ.data ?? []}
+              loaiMayTheoId={loaiMayTheoId}
               onChonVung={setVungChon}
               refCanh={refCanh}
               chuMatContext={t("twin3d.loi.matContext")}
@@ -931,12 +1070,67 @@ export function XuongThietKe({ factoryId, tangId, sanRongMm, sanSauMm }: XuongTh
                 />
               </div>
             ) : null}
+
+            {/* ★★★ §11.7 #43 — ẢNH NỀN CAD + ĐẶT TỈ LỆ. ĐÂY LÀ CHỖ GỌI (G16).
+                §11c.2 xếp #43 vào lớp lỗi L-4: server + i18n ba thứ tiếng xong
+                từ Đợt 3, client 0 chỗ gọi. Cùng với #42 ở trên, đây là mục thứ
+                hai trong hai lý do thật khiến `FactoryFloorEditor` chưa xoá
+                được (§11c.4) — màn cũ vẫn KHÔNG bị đụng tới.
+
+                ★ CHẶN-2 — đường GHI ⇒ chỉ dựng khi `coQuyenSua`. */}
+            {coQuyenSua && tangId !== null ? (
+              <AnhNenTang
+                tangId={tangId}
+                sanRongMm={sanRongMm}
+                anhNenUrl={anhNenUrl}
+                tiLeMmMoiPx={tiLeMmMoiPx}
+                daHieuChuan={daHieuChuan}
+                onDaGhi={() => onDaGhiTang?.()}
+              />
+            ) : null}
+
+            {/* ★★★ §11 #55 — BẢN GHI BỐ CỤC THEO TÊN. ĐÂY LÀ CHỖ GỌI (G16).
+                §11c.2 xếp #55 vào lớp lỗi L-3: bảng có từ migration 0351, DB
+                dev 0 dòng, `grep twinBanGhi` ngoài schema cho 0 kết quả. Ba
+                tầng (db · router · UI) đóng cùng một lượt — thiếu tầng nào thì
+                hai tầng kia lại thành một lớp L-3 mới ở chỗ khác.
+
+                ★ CHẶN-2 — đường GHI ⇒ chỉ dựng khi `coQuyenSua`. */}
+            {coQuyenSua && tangId !== null ? (
+              <BanGhiBoCuc
+                tangId={tangId}
+                layAnhChup={layAnhChup}
+                onKhoiPhuc={khoiPhucAnhChup}
+              />
+            ) : null}
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
 
       {/* ── Thư viện asset — dải dưới ───────────────────────────────────── */}
-      <ThuVienAsset />
+      {/*
+        ★★★ ĐỢT 12 LÔ M — #18 NHẬP MODEL glTF. ĐÂY LÀ CHỖ GỌI (G16).
+          Trước dòng này `ThuVienAsset` nhận 0 prop và nút "Tải mô hình lên" chỉ
+          hiện toast "sẽ có ở đợt sau". Bốn prop dưới đây là toàn bộ thứ nó cần
+          để làm thật, và cả bốn đều lấy từ dữ liệu MÀN NÀY ĐANG VẼ:
+
+          • `may`          — cùng mảng `canhQ.data.may` mà cây và cảnh 3D dùng,
+                             kèm kích thước KHAI BÁO để so với bbox của file
+                             (§10B.2 ngưỡng lệch 30 %). Đọc một nguồn thứ hai ở
+                             đây là mở đường cho hai bên nói hai con số khác nhau.
+          • `mayDangChon`  — đích của nút "Gán cho máy này". Dùng `machineIdChon`,
+                             CÙNG biến mà gizmo và Inspector đọc, nên "máy này"
+                             luôn là máy người dùng đang nhìn.
+          • `coQuyenSua`   — CHẶN-2: tải lên là đường GHI.
+          • `onDaGanModel` — nạp lại bảng model để cảnh đổi hình ngay, không
+                             phải reload trang.
+      */}
+      <ThuVienAsset
+        may={mayChoThuVien}
+        mayDangChon={machineIdChon}
+        coQuyenSua={coQuyenSua}
+        onDaGanModel={() => void modelQ.refetch()}
+      />
 
       {/* ★ CHẶN-2 — hộp thoại Sinh tự động: nút mở đã ẩn, nhưng không dựng luôn
           hộp thoại thì `moSinh` không thể bị bật bằng đường nào khác. */}

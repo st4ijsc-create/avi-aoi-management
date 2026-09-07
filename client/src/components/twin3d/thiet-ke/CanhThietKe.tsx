@@ -51,13 +51,26 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import { useOptionalTheme } from "@/components/factory-scene/useOptionalTheme";
 
-import { KhungCanh, LoBatchMay, taoDieuKhienQuay, type MayTrongLo } from "../loi";
+import {
+  KhungCanh,
+  LoBatchMay,
+  LopModelMay,
+  taoDieuKhienQuay,
+  type MayCoModel,
+  type MayTrongLo,
+} from "../loi";
+import {
+  banDoModel,
+  lapKeHoachNap,
+  taoBoDemModel,
+  type HangModel,
+} from "../napModel";
 import { mmSangMet } from "../heToaDo";
 import { TRANG_THAI_CHON_RONG, type TrangThaiChon } from "../loi/chonVatThe";
 import { GizmoBienDoi } from "./GizmoBienDoi";
@@ -85,6 +98,14 @@ export interface CanhThietKeProps {
   hienLuoi: boolean;
   /** Vùng an toàn đã dựng sẵn (§11.1 #5). Rỗng = không có vùng nào. */
   vung?: readonly VungVe[];
+  /**
+   * ★ #4 — bảng `equipment_3d_models` đã tải. Rỗng = mọi máy vẽ bằng khối thủ
+   *   tục, tức HÀNH VI CŨ Y NGUYÊN. Đây là điều kiện để lớp model là một phần
+   *   THÊM VÀO chứ không phải một thay đổi có thể làm hỏng cảnh đang chạy.
+   */
+  bangModel?: readonly HangModel[];
+  /** Chủng loại từng máy (`machines.machineType`) — cấp 2 của §10B.2. */
+  loaiMayTheoId?: ReadonlyMap<number, string>;
   /** Ẩn nhãn vùng. */
   tatNhanVung?: boolean;
   onChonVung?: (khoa: string | null) => void;
@@ -248,6 +269,43 @@ function LopMa({ ma }: { ma: readonly HopMa[] }) {
 /* Proxy mang gizmo                                                            */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* Theo dõi camera có tiết lưu — cho LOD (§10B.3)                              */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Nhịp đo tối đa. 250 ms là dưới ngưỡng người nhận ra độ trễ, trên ngưỡng phí. */
+const NHIP_DO_MS = 250;
+/**
+ * Camera phải dời quá ngần này (mét) mới tính lại LOD.
+ *
+ * ★ Không có ngưỡng này thì mỗi rung chuột đổi `viTriCam` ⇒ `useMemo` chạy lại
+ *   ⇒ có thể đổi tập L0 ⇒ một lượt nạp/thả GLB. 2 m nhỏ so với ngưỡng L0 (25 m)
+ *   nên nó không làm trễ việc lên bậc, mà cắt hết phần nhiễu.
+ */
+const NGUONG_DOI_M = 2;
+
+function useTheoDoiCamera(dat: (v: { x: number; y: number; z: number }) => void) {
+  const camera = useThree((s) => s.camera);
+  const lanCuoi = useRef(0);
+  const daBao = useRef({ x: NaN, y: NaN, z: NaN });
+
+  useFrame(() => {
+    const bayGio = performance.now();
+    if (bayGio - lanCuoi.current < NHIP_DO_MS) return;
+    lanCuoi.current = bayGio;
+
+    const p = camera.position;
+    const cu = daBao.current;
+    const doi =
+      !Number.isFinite(cu.x) ||
+      Math.hypot(p.x - cu.x, p.y - cu.y, p.z - cu.z) > NGUONG_DOI_M;
+    if (!doi) return;
+
+    daBao.current = { x: p.x, y: p.y, z: p.z };
+    dat({ x: p.x, y: p.y, z: p.z });
+  });
+}
+
 function NoiDung(props: CanhThietKeProps & { toi: boolean }) {
   const {
     toi,
@@ -266,6 +324,8 @@ function NoiDung(props: CanhThietKeProps & { toi: boolean }) {
     vung,
     tatNhanVung,
     onChonVung,
+    bangModel,
+    loaiMayTheoId,
     refCanh,
     onChonMay,
     onBienDoiXong,
@@ -393,6 +453,104 @@ function NoiDung(props: CanhThietKeProps & { toi: boolean }) {
 
   const banKinh = Math.max(sanRongM, sanSauM) / 2;
 
+  /*
+   * ═════════════════════════════════════════════════════════════════════════
+   * ★★★ #4 — LỚP MODEL glTF THEO TỪNG MÁY. ĐÂY LÀ CHỖ GỌI `napModel.ts` (G16).
+   * ═════════════════════════════════════════════════════════════════════════
+   * Trước dòng này `chonMucChiTiet` và `BoDemGlbLru` (`mucChiTiet.ts`, 4 bậc LOD
+   * + trần 8 GLB, có test đầy đủ) có **0 chỗ gọi trong mã sản phẩm** — đúng lớp
+   * lỗi L-1 mà §11c.2 gọi tên: "hàm được viết đúng cho mục đó, có test, và
+   * KHÔNG AI GỌI".
+   *
+   * ★★★ BỘ ĐỆM PHẢI SỐNG QUA CÁC LƯỢT RENDER ⇒ `useRef`, KHÔNG `useMemo`.
+   *   `useMemo` được phép vứt kết quả bất cứ lúc nào (React nói rõ điều đó);
+   *   một bộ đệm LRU bị dựng lại giữa chừng quên sạch "gần đây dùng gì" và trần
+   *   8 mất hiệu lực từng đợt — rò VRAM theo cách không tái lập được.
+   */
+  const boDemRef = useRef(taoBoDemModel());
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ VỊ TRÍ CAMERA PHẢI ĐƯỢC THEO DÕI — BÀI HỌC ĐO ĐƯỢC, KHÔNG PHẢI LÝ THUYẾT
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản đầu đọc `camera.position` MỘT LẦN trong `useMemo` với `camera` ở mảng
+   * phụ thuộc, kèm một đoạn chú thích tự tin giải thích rằng "dùng vị trí lúc
+   * mount là đánh đổi đúng cho màn Thiết kế".
+   *
+   * Nghiệm thu ca dương trên trình duyệt thật (2026-09-07) BÁC BỎ điều đó:
+   *
+   *   camera lúc mở màn = (40,3 · 23,8 · 47,4)
+   *   máy nằm quanh      = (19 · 0 · 19)          ⇒ khoảng cách ≈ 40 m
+   *   ngưỡng L0          = 25 m                   ⇒ **0 máy đạt L0**
+   *   số request .glb    = **0**, kể cả sau 25 nấc cuộn zoom vào
+   *
+   * `camera` là MỘT THAM CHIẾU ỔN ĐỊNH — three sửa `position` TẠI CHỖ, nên
+   * `useMemo` không bao giờ chạy lại dù người dùng zoom sát vào máy. Kết quả:
+   * lớp model được nối đủ ba tầng mà **không bao giờ nạp một tệp nào** — tức
+   * đúng lớp lỗi L-1 mà lô này được giao để đóng, chỉ ở một chỗ tinh vi hơn.
+   *
+   * ⇒ Theo dõi camera bằng `useFrame` CÓ TIẾT LƯU. Ba mức chống lãng phí:
+   *   1. Chỉ đo mỗi `NHIP_DO_MS`, không mỗi khung.
+   *   2. Chỉ cập nhật state khi camera đã dời quá `NGUONG_DOI_M` — zoom một
+   *      chút không kích hoạt một lượt nạp/thả GLB.
+   *   3. `frameloop="demand"` vẫn được tôn trọng: `useFrame` chỉ chạy trong các
+   *      khung mà cảnh đã thức, nên đứng yên vẫn 0% GPU.
+   */
+  const [viTriCam, setViTriCam] = useState(() => ({
+    x: camera.position.x,
+    y: camera.position.y,
+    z: camera.position.z,
+  }));
+  useTheoDoiCamera(setViTriCam);
+
+  const keHoach = useMemo(() => {
+    if (!bangModel || bangModel.length === 0) return null;
+    const dsMay = may.map((m) => ({
+      machineId: m.machineId,
+      loaiMay: loaiMayTheoId?.get(m.machineId) ?? null,
+      viTri: m.viTri,
+    }));
+    const banDo = banDoModel(dsMay, bangModel);
+    return lapKeHoachNap(dsMay, banDo, viTriCam, boDemRef.current);
+  }, [may, bangModel, loaiMayTheoId, viTriCam]);
+
+  /** Máy được vẽ bằng GLB lượt này — phần còn lại vẫn do `LoBatchMay` lo. */
+  const mayCoModel = useMemo<MayCoModel[]>(() => {
+    if (!keHoach) return [];
+    const ra: MayCoModel[] = [];
+    for (const [machineId, modelUri] of keHoach.canNap) {
+      const m = may.find((x) => x.machineId === machineId);
+      if (!m) continue;
+      ra.push({
+        machineId,
+        modelUri,
+        viTri: m.viTri,
+        gocXoayRad: m.gocXoayRad,
+        caoM: mmSangMet(m.kichThuocMm.caoMm),
+      });
+    }
+    return ra;
+  }, [keHoach, may]);
+
+  /**
+   * ★★★ MÁY ĐANG VẼ GLB PHẢI ĐƯỢC **ẨN** KHỎI LÔ BATCH.
+   *   Không ẩn thì khối thủ tục và model chồng lên nhau — z-fighting, và người
+   *   dùng thấy một máy "nhoè" mà không có lỗi nào. Đây là chỗ duy nhất hai lớp
+   *   gặp nhau, nên bất biến nằm ngay đây.
+   *
+   * ⚠ Máy có model HỎNG phải quay lại lô batch. `moHongRef` ghi lại máy nào đã
+   *   ném; `ModelErrorBoundary` báo qua `onModelLoi`.
+   */
+  const [mayHong, setMayHong] = useState<ReadonlySet<number>>(() => new Set());
+  const mayVeCuoi = useMemo<MayTrongLo[]>(() => {
+    if (mayCoModel.length === 0) return may;
+    const dungGlb = new Set(
+      mayCoModel.map((m) => m.machineId).filter((id) => !mayHong.has(id)),
+    );
+    if (dungGlb.size === 0) return may;
+    return may.map((m) => (dungGlb.has(m.machineId) ? { ...m, hien: false } : m));
+  }, [may, mayCoModel, mayHong]);
+
   return (
     <>
       <DieuKhien banKinh={banKinh} controlsRef={orbitRef} />
@@ -404,7 +562,7 @@ function NoiDung(props: CanhThietKeProps & { toi: boolean }) {
           nằm trên sàn và máy đứng trong vùng. */}
       <LopVung vung={vung ?? []} tatNhan={tatNhanVung} onChon={onChonVung} />
       <LoBatchMay
-        may={may}
+        may={mayVeCuoi}
         chon={chon}
         onChon={onChonMay}
         onHover={() => {
@@ -412,6 +570,23 @@ function NoiDung(props: CanhThietKeProps & { toi: boolean }) {
         }}
       />
       <LopMa ma={ma} />
+      {/* ★★★ #4 — lớp model glTF. Mỗi máy một `ModelErrorBoundary` riêng: một
+          tệp hỏng làm ĐÚNG MỘT máy rơi về khối, cảnh vẫn sống. `khoiThayThe`
+          trả `null` vì khối của máy đó đã có sẵn trong `LoBatchMay` — ta chỉ
+          cần BẬT nó lại, và `onModelLoi` làm đúng việc đó. */}
+      {mayCoModel.length > 0 ? (
+        <LopModelMay
+          may={mayCoModel.filter((m) => !mayHong.has(m.machineId))}
+          onModelLoi={(machineId) =>
+            setMayHong((cu) => {
+              if (cu.has(machineId)) return cu;
+              const moi = new Set(cu);
+              moi.add(machineId);
+              return moi;
+            })
+          }
+        />
+      ) : null}
       {/*
         ★★★ CHẶN-3 — PROXY VÀO SCENE GRAPH.
 

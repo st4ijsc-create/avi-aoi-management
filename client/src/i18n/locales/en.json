@@ -20254,7 +20254,18 @@
       "tieuDe": "Layout version",
       "xuatBan": "Publish",
       "daXuatBan": "Published",
-      "nhan": "Version label"
+      "nhan": "Version label",
+      "luu": "Save version",
+      "khoiPhuc": "Restore",
+      "xoa": "Delete",
+      "chuaCo": "No saved layout version yet.",
+      "thucThe": "items",
+      "rongKhongLuu": "The layout is empty — there is nothing to save.",
+      "daLuu": "Layout version saved ({{n}} items). It is NOT published yet.",
+      "daXuatBanXong": "Published. The Operations screen now shows this layout.",
+      "daKhoiPhuc": "Restored {{n}} items into the working layout. Press Save to write them to the database.",
+      "daXoa": "Layout version deleted.",
+      "xoaBanDangXuatBan": "Deleted — that version was the one published to Operations."
     },
     "congCu": {
       "chon": "Select",
@@ -20531,6 +20542,43 @@
         "oeeTrungBinh": "Average OEE",
         "andonMo": "Open andon",
         "ruiRoPdm": "PdM risk"
+      }
+    },
+    "model": {
+      "tamGiac": "triangles",
+      "material": "materials",
+      "duoiKhongNhan": "Only .glb / .gltf files are accepted. SVG is a 2D image and carries no depth; STEP/IGES must be converted first.",
+      "napHong": "Could not read this 3D file. It may be corrupt or not glTF 2.0.",
+      "goiYNen": "Suggestion: compress with gltf-transform (keep --no-join --no-flatten so the node tree survives).",
+      "daGan": "3D model uploaded and assigned.",
+      "chuaChonMay": "Select a machine first",
+      "ganMayNay": "Assign to {{ma}}",
+      "chonChungLoai": "Machine type…",
+      "ganMoiMay": "Assign to all {{n}} machines of this type",
+      "lechKichThuoc": "Model differs {{phanTram}}% from the declared size — check the unit before assigning.",
+      "lyDo": {
+        "tam_giac_cao": "Above 50,000 triangles — accepted, but it will cost frame budget.",
+        "tam_giac_vuot_tran": "Above 150,000 triangles — blocked.",
+        "dung_luong_vuot_tran": "Larger than 15 MB — blocked.",
+        "tep_rong": "The file is empty.",
+        "duoi_tep_khong_nhan": "File extension not accepted."
+      }
+    },
+    "anhNen": {
+      "duoiKhongNhan": "Only PNG, JPG or WebP images are accepted. DWG/PDF must be exported to an image first.",
+      "docHong": "Could not read this image.",
+      "taiLen": "Upload floor plan",
+      "daTai": "Floor plan uploaded. It is NOT calibrated yet — set the scale before placing machines.",
+      "huongDan": "Click two points whose real distance you know, then type that distance.",
+      "khoangCachThat": "Real distance (mm)",
+      "xoaDiem": "Clear points",
+      "daHieuChuanXong": "Scale saved. The floor plan is now calibrated.",
+      "lechSan": "The image measures {{anh}} m wide but the floor is declared {{san}} m — check the scale before placing machines.",
+      "loi": {
+        "thieu_diem": "Click two points on the image.",
+        "hai_diem_qua_gan": "The two points are too close — a one-pixel click error would skew the whole scale. Pick two points further apart.",
+        "khoang_cach_that_khong_hop_le": "Enter the real distance in millimetres.",
+        "ti_le_vo_ly": "That scale is implausible — check the unit of the distance you entered."
       }
     }
   }

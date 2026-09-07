@@ -102,12 +102,36 @@ export default function TwinStudio() {
     { enabled: toaNhaDau !== undefined },
   );
   const tangDau = useMemo(() => {
-    const tang = (chiTietQ.data?.tangs ?? [])[0] as { id: number } | undefined;
+    /*
+     * ★ #43 — TẦNG MANG THEO CẢ TRẠNG THÁI ẢNH NỀN.
+     *   `traToaNhaKemTang` đã trả `anhNenUrl`/`tiLeMmMoiPx`/`daHieuChuan` (nó
+     *   spread nguyên hàng `twin_tang`), nên không cần truy vấn thứ hai. Gọi
+     *   thêm một truy vấn cho cùng dữ liệu là mở đường cho hai chỗ hiện hai
+     *   trạng thái hiệu chuẩn khác nhau — và người dùng không biết tin cái nào.
+     *
+     * ⚠ `tiLeMmMoiPx` là `numeric` ⇒ về từ drizzle là STRING (hoặc null sau khi
+     *   `chuoiRaSo` quy đổi ở tầng db). `Number(...)` tường minh, xem cảnh báo
+     *   nối-chuỗi ở docblock `toaNhaDau` phía trên.
+     */
+    const tang = (chiTietQ.data?.tangs ?? [])[0] as
+      | {
+          id: number;
+          anhNenUrl?: string | null;
+          tiLeMmMoiPx?: number | string | null;
+          daHieuChuan?: boolean | null;
+        }
+      | undefined;
     if (!toaNhaDau || !tang) return null;
     return {
       tangId: tang.id,
       rongMm: Number(toaNhaDau.rongMm),
       sauMm: Number(toaNhaDau.sauMm),
+      anhNenUrl: tang.anhNenUrl ?? null,
+      tiLeMmMoiPx:
+        tang.tiLeMmMoiPx === null || tang.tiLeMmMoiPx === undefined
+          ? null
+          : Number(tang.tiLeMmMoiPx),
+      daHieuChuan: tang.daHieuChuan === true,
     };
   }, [toaNhaDau, chiTietQ.data]);
 
@@ -202,6 +226,10 @@ export default function TwinStudio() {
               tangId={tangDau.tangId}
               sanRongMm={tangDau.rongMm}
               sanSauMm={tangDau.sauMm}
+              anhNenUrl={tangDau.anhNenUrl}
+              tiLeMmMoiPx={tangDau.tiLeMmMoiPx}
+              daHieuChuan={tangDau.daHieuChuan}
+              onDaGhiTang={() => void chiTietQ.refetch()}
             />
           )}
         </TabsContent>

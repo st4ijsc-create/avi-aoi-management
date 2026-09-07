@@ -20234,7 +20234,18 @@
       "tieuDe": "Phiên bản bố cục",
       "xuatBan": "Xuất bản",
       "daXuatBan": "Đã xuất bản",
-      "nhan": "Nhãn phiên bản"
+      "nhan": "Nhãn phiên bản",
+      "luu": "Lưu bản",
+      "khoiPhuc": "Khôi phục",
+      "xoa": "Xoá",
+      "chuaCo": "Chưa có bản ghi bố cục nào.",
+      "thucThe": "thực thể",
+      "rongKhongLuu": "Bố cục đang rỗng — không có gì để lưu.",
+      "daLuu": "Đã lưu bản bố cục ({{n}} thực thể). Bản này CHƯA được xuất bản.",
+      "daXuatBanXong": "Đã xuất bản. Màn Vận hành hiện đang hiển thị bố cục này.",
+      "daKhoiPhuc": "Đã khôi phục {{n}} thực thể vào bố cục đang sửa. Bấm Lưu để ghi xuống cơ sở dữ liệu.",
+      "daXoa": "Đã xoá bản ghi bố cục.",
+      "xoaBanDangXuatBan": "Đã xoá — đó chính là bản đang được xuất bản ra màn Vận hành."
     },
     "congCu": {
       "chon": "Chọn",
@@ -20511,6 +20522,43 @@
         "oeeTrungBinh": "OEE trung bình",
         "andonMo": "Andon đang mở",
         "ruiRoPdm": "Rủi ro PdM"
+      }
+    },
+    "model": {
+      "tamGiac": "tam giác",
+      "material": "vật liệu",
+      "duoiKhongNhan": "Chỉ nhận tệp .glb / .gltf. SVG là ảnh 2D, không có chiều sâu; STEP/IGES phải chuyển đổi trước.",
+      "napHong": "Không đọc được tệp 3D này. Tệp có thể hỏng hoặc không phải glTF 2.0.",
+      "goiYNen": "Gợi ý: nén bằng gltf-transform (giữ --no-join --no-flatten để không sập cây node).",
+      "daGan": "Đã tải lên và gán model 3D.",
+      "chuaChonMay": "Hãy chọn một máy trước",
+      "ganMayNay": "Gán cho {{ma}}",
+      "chonChungLoai": "Chủng loại máy…",
+      "ganMoiMay": "Gán cho cả {{n}} máy cùng loại",
+      "lechKichThuoc": "Model lệch {{phanTram}}% so với kích thước khai báo — kiểm tra đơn vị trước khi gán.",
+      "lyDo": {
+        "tam_giac_cao": "Trên 50.000 tam giác — vẫn nhận, nhưng sẽ tốn ngân sách khung hình.",
+        "tam_giac_vuot_tran": "Trên 150.000 tam giác — bị chặn.",
+        "dung_luong_vuot_tran": "Lớn hơn 15 MB — bị chặn.",
+        "tep_rong": "Tệp rỗng.",
+        "duoi_tep_khong_nhan": "Đuôi tệp không được nhận."
+      }
+    },
+    "anhNen": {
+      "duoiKhongNhan": "Chỉ nhận ảnh PNG, JPG hoặc WebP. DWG/PDF phải xuất ra ảnh trước.",
+      "docHong": "Không đọc được ảnh này.",
+      "taiLen": "Tải ảnh mặt bằng",
+      "daTai": "Đã tải ảnh mặt bằng. Ảnh CHƯA hiệu chuẩn — hãy đặt tỉ lệ trước khi xếp máy.",
+      "huongDan": "Click hai điểm mà bạn biết khoảng cách thật, rồi gõ khoảng cách đó.",
+      "khoangCachThat": "Khoảng cách thật (mm)",
+      "xoaDiem": "Xoá điểm",
+      "daHieuChuanXong": "Đã lưu tỉ lệ. Ảnh mặt bằng đã được hiệu chuẩn.",
+      "lechSan": "Ảnh rộng {{anh}} m trong khi sàn khai {{san}} m — kiểm tra lại tỉ lệ trước khi xếp máy.",
+      "loi": {
+        "thieu_diem": "Hãy click hai điểm trên ảnh.",
+        "hai_diem_qua_gan": "Hai điểm quá gần nhau — sai một pixel khi click sẽ làm lệch cả tỉ lệ. Hãy chọn hai điểm xa nhau hơn.",
+        "khoang_cach_that_khong_hop_le": "Hãy nhập khoảng cách thật, đơn vị milimét.",
+        "ti_le_vo_ly": "Tỉ lệ này vô lý — kiểm tra lại đơn vị của khoảng cách vừa nhập."
       }
     }
   }

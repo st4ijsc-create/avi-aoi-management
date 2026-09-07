@@ -71,3 +71,15 @@ export {
   maTranDatMay,
   demDinhVaChiSo,
 } from "./hinhHocTuMoTa";
+
+export {
+  ModelErrorBoundary,
+  type ModelErrorBoundaryProps,
+} from "./ModelErrorBoundary";
+
+export {
+  LopModelMay,
+  duongDanCungGoc,
+  type MayCoModel,
+  type LopModelMayProps,
+} from "./ModelMay";
