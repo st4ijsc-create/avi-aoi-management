@@ -162,6 +162,25 @@ export const digitalTwinRouter = router({
       // ★ Q1 — TRỤC MÃ, không phải trục id: `product_inspections` mang `factoryCode`
       //   thẳng trên hàng và KHÔNG treo vào chuỗi phân cấp. `undefined` = không lọc
       //   (toàn quyền); 0 gán ⇒ `congMaTenant` cho `1 = 0` TƯỜNG MINH.
+      //
+      // ⚠⚠ **HỆ QUẢ ĐO ĐƯỢC 2026-09-07, PHẢI ĐỌC TRƯỚC KHI "SỬA" THỦ TỤC NÀY.**
+      //   `product_inspections` có **2.880 hàng** (lô P vừa sinh) nhưng **CẢ 2.880
+      //   hàng đều `factoryCode IS NULL`** — không hàng nào khai nhà máy. Vì
+      //   `NULL IN (…)` không bao giờ đúng, cổng này cho:
+      //
+      //       admin (không lọc)          → 240 hàng / 341 NG
+      //       vai được gán SIM-FAC       → **0 hàng**
+      //
+      //   Đây là fail-CLOSED **đúng hướng** và là luật đã ghi ở `congMaTenant`
+      //   ("hàng có cả hai mã NULL bị LOẠI cho người bị thu hẹp"). Nhưng nó có
+      //   nghĩa: heatmap lỗi hiện **rỗng với mọi vai không-admin**, và cái rỗng ấy
+      //   nói *"dữ liệu chưa khai nhà máy"*, KHÔNG phải *"không có lỗi nào"*.
+      //
+      //   ⇒ Cách chữa ĐÚNG là **điền `factoryCode` cho nguồn ghi** (đường ingest),
+      //     KHÔNG phải nới cổng này thành "NULL thì cho qua" — nới như thế là mở
+      //     lại đúng lỗ vừa vá, cho MỌI tenant đọc MỌI hàng chưa khai.
+      //   ⇒ Và phía UI phải phân biệt "0 vì chưa khai nhà máy" với "0 vì không có
+      //     lỗi": hiện `—` kèm lý do, không hiện `0` (honest-null).
       const congMa = await congMaTenant(
         { factoryCode: productInspections.factoryCode, corporateCode: productInspections.corporateCode },
         phamViCua(ctx),

@@ -3314,6 +3314,288 @@ Không đợt nào được coi là xong cho tới khi qua đủ **ba cổng**, 
 
 **Luật bàn giao số:** báo cáo của mỗi đợt phải đọc **thiết bị đo**, không đọc kết quả. "Test xanh" là lời khai; "`npm test` in `142 passed`, dán nguyên văn" là số đo.
 
+## 12b. §13 — THIẾT KẾ 3D FACTORY LÀM TRUNG TÂM (ĐỢT 14 LÔ Q, 2026-09-07)
+
+> **Vì sao mục này mang số 12b chứ không phải 13.** Điều phối giao *"mục mới §13"*, nhưng tài liệu
+> này **đã có `## 13. Kiểm thử`** từ trước. Chiếm lại số 13 sẽ tạo hai mục cùng tên trong một tệp
+> sắp được đem ra bàn — đúng kiểu nhầm lẫn mà một bản thiết kế không được phép gây ra. Nên nội dung
+> được yêu cầu nằm nguyên vẹn ở đây, đặt ngay trước §13 cũ.
+
+**Trạng thái:** Q1 (vá lỗ tenant) **ĐÃ LÀM VÀ ĐÃ NGHIỆM THU** — commit `cd56d186`. Phần còn lại của
+mục này là **THIẾT KẾ, CHƯA XÂY**. Mọi mục chưa có đều được đánh dấu rõ.
+
+---
+
+### 12b.0 ★★★ NĂM ĐIỀU BRIEF NÓI SAI — ĐO LẠI 2026-09-07
+
+Bản brief giao lô Q chứa những khẳng định **không còn đúng**. Ghi ra đây vì một bản thiết kế dựng
+trên số sai sẽ dẫn tới một quyết định sai.
+
+| # | Brief nói | ĐO ĐƯỢC 2026-09-07 | Hệ quả |
+|---|---|---|---|
+| S-1 | `product_inspections` **0 hàng** ⇒ `defectHeatmap` vĩnh viễn trống | **2.880 hàng** (341 NG / 2.539 OK), mới nhất trong 24h | Lô P đã sinh dữ liệu. Nhưng xem S-2 — kết luận "trống" vẫn đúng, **vì một lý do KHÁC HẲN** |
+| S-2 | — (brief không biết) | **CẢ 2.880 hàng đều `factoryCode IS NULL`** | Sau Q1, `defectHeatmap` cho admin **240 hàng / 341 NG**, cho vai được gán SIM-FAC **0 hàng**. Fail-CLOSED đúng hướng, nhưng heatmap **rỗng với mọi vai không-admin** |
+| S-3 | `wip_tracking` 0 hàng/24h, mới nhất **17 ngày** ⇒ `predictionOverlay` luôn `available:false` | **2.704 hàng trong 24h**, mới nhất **0 ngày** | Nguồn WIP **đã sống**. Nhưng `predictionOverlay` **vẫn** `insufficient_data` — xem S-4 |
+| S-4 | — (brief không biết) | `station_dwell_time` mới nhất **2026-08-21 (17 ngày)**; chuỗi WIP 24h của chuyền 1 gom được **0 bucket** | Lô P sinh WIP với mốc mới nhưng **chưa sinh kèm `station_dwell_time`**. Nên `stationLoadHeatmap` đo trên dữ liệu 17 ngày tuổi, và `predictionOverlay` vẫn không đủ 3 điểm |
+| S-5 | 4 trang cũ là 4 màn rời, "3.378 dòng" | **3 trong 4 ĐÃ bị gộp sẵn** thành tab của `TwinHub` (`client/src/pages/TwinHub.tsx:41-43`); hai tuyến cũ đã là **redirect** (`App.tsx:383`, `App.tsx:440`) | Chỉ `CommandCenter` còn tuyến riêng (`App.tsx:441`) + còn trên thanh điều hướng (`navigation.tsx:301`). Phạm vi "gộp 4 màn" nhỏ hơn brief tưởng |
+
+> #### G50 — **"NGUỒN ĐÃ CÓ DỮ LIỆU" KHÔNG BẰNG "LỚP PHỦ ĐÃ ĐỌC ĐƯỢC"**
+> Ba lớp phủ cùng mang tiếng "nguồn rỗng", nhưng sau khi lô P đổ dữ liệu, chúng **rỗng vì ba lý do
+> khác nhau**: `defectHeatmap` rỗng vì **thiếu cột tenant**; `predictionOverlay` rỗng vì **thiếu
+> bảng thứ hai** (`station_dwell_time`); `stationLoadHeatmap` **có số nhưng số đã 17 ngày**.
+> Một câu "nguồn đã có dữ liệu rồi, bật lớp phủ lên" sẽ cho ba kết quả sai theo ba kiểu.
+> ⇒ **Điều kiện nghiệm thu phải viết theo LỚP PHỦ, không theo BẢNG.**
+
+★ S-5 đúng lớp lỗi đã ghi ở sổ Khối D: *"phạm vi 10 màn co còn 1 vì tôi ĐẾM tên tệp thay vì ĐỌC"*.
+
+---
+
+### 12b.1 HIỆN TRẠNG `/twin` — ĐO ĐƯỢC, KHÔNG SUY
+
+`/twin` = `client/src/pages/TwinVanHanh.tsx` (**2.568 dòng**), tuyến `App.tsx:325`.
+
+#### 12b.1.1 Các vùng màn hình
+
+| Vùng | `file:line` | Hiện gì |
+|---|---|---|
+| Thanh đầu (48px) | `TwinVanHanh.tsx:1865` | Dải công cụ trên cùng |
+| ↳ Breadcrumb | `:1869` | Nhà máy → toà → tầng → line → máy, bấm được |
+| ↳ Trạng thái kết nối | `:1926` | Chỉ báo socket realtime |
+| ↳ Badge xuất xứ | `:1967` | SHADOW / mô phỏng / chỉ-sơ-đồ (logic `:821`) |
+| ↳ Độ tuổi dữ liệu | `:1986` | "cập nhật N giây trước" |
+| ↳ Nút nạp lại | `:1995` | Refetch mọi truy vấn |
+| ↳ Nút xuất USD | `:2009` | Xuất `.usda`; **ẩn** nếu thiếu `machine_status/canView` (`:2005`) |
+| ↳ Toggle 2D/3D | `:2029` | Đổi `CanhVanHanh` ↔ `CanhVanHanh2D`; **disable** khi WebGL hỏng (năng lực, không phải quyền) |
+| Dải kết quả xuất USD | `:2055` | Số prim / số byte / lý do thất bại |
+| Banner: truy vấn bị từ chối | `:2114` | **Nêu đích danh** thủ tục tRPC nào trả FORBIDDEN |
+| Banner: đối soát lệch | `:2132` | N máy chưa đặt / N chỗ đặt mồ côi + link `/twin-studio` |
+| Banner: máy ngoài lượt nạp | `:2162` | Máy đặt ở tầng/toà khác |
+| Banner: hạ cấp phạm vi | `:2193` | `?pv=tapdoan` bị hạ về một nhà máy |
+| Banner: link cũ bị bỏ qua | `:2216` | URL trỏ tới nhà máy/toà/tầng đã xoá |
+| Dải cảnh báo E-STOP | `:2242` | Robot đang E-STOP (`role="alert"`) |
+| Dòng thời gian | `:2262-2270` | Tua lại 24h: mốc, play/pause, tốc độ |
+| **Panel trái** | `:2300` | Thu được bằng `?thu=trai` |
+| ↳ Khối tổng quan | `:2306` | `dem-may` `:2309` · `dem-tuoi` `:2313` · `dem-cu` `:2317` · `dem-khong-ro` `:2321` · `dem-ngung` `:2325` |
+| ↳ Đài cảnh báo | `:2335-2350` | Cảnh báo khử trùng lặp, chip mức, gom >24h |
+| ↳ Danh sách máy | `:2352-2360` | DOM thật, đi được bằng bàn phím |
+| **Canvas giữa** | `:2361` | `CanhVanHanh` (3D) **hoặc** `CanhVanHanh2D` — loại trừ nhau |
+| ↳ Bảng KPI nổi | `:2410-2420` | Lớp phủ DOM (**0 draw call**), sống qua `?thu=` |
+| ↳ Tay thu trái / phải | `:2434` / `:2453` | Chevron nổi |
+| ↳ Tóm tắt cho trình đọc màn hình | `:2470` | `sr-only` |
+| **Panel phải** | `:2483`, `NganXuLy` `:2489-2518` | **Mặt ghi duy nhất** |
+| ↳ Ngăn nhúng tại chỗ | `NganXuLy.tsx:614` → `NganNhung.tsx` | Radix Sheet nạp thân cockpit máy/robot/trạm **tại chỗ** |
+| Dải line dưới | `:2527` | Dải trạm 2D khi `phamVi.cap === "line"` |
+
+#### 12b.1.2 `/twin` hiện cho SỬA những gì — đường ghi đã nối
+
+★ Đây là câu chủ sở hữu hỏi thẳng ("điều chỉnh và sửa đổi được"). Đo được:
+**`TwinVanHanh.tsx` có ĐÚNG 0 mutation.** Toàn bộ khả năng ghi nằm ở `NganXuLy.tsx` và ở các thân
+cockpit nạp qua ngăn nhúng.
+
+| # | Thủ tục | Chỗ gọi `file:line` | Ghi gì | Cổng quyền (server) |
+|---|---|---|---|---|
+| W1 | `andon.acknowledge` | hook `NganXuLy.tsx:158`, gọi `:416` | Đánh dấu 1 hàng `andon_events` đã tiếp nhận | `andonRouter.ts:125` + `requirePermission("andon","canEdit")` `:126` |
+| W2 | `maintenance.createWorkOrder` | hook `NganXuLy.tsx:167`, gọi `:496` | INSERT `maintenance_work_orders` | `maintenanceRouter.ts:89` + `requirePermission(MODULE,"canCreate")` `:90` |
+| W3 | `twin.models.uploadAndRegister` | `MachineCockpit.tsx:740` / `:753` (qua ngăn nhúng) | Nạp + đăng ký mô hình 3D cho máy | `twinRouter.ts:129` + `machine_control/canCreate` `:130` |
+| W4 | `programming.createArtifact` | `RobotCockpit.tsx:393` / `:402`,`:413` | Tạo phiên bản chương trình `tmscript` | `programmingRouter.ts:317` + `machine_control/canCreate` `:318` |
+| W5 | `programming.createProject` | `RobotCockpit.tsx:400` / `:416` | Tạo dự án lập trình robot | `programmingRouter.ts:216` + `machine_control/canCreate` `:217` |
+
+**Không có đường ghi nào ra lệnh OT** (start/stop/reset/đổi chế độ) trên `/twin`. Có chủ ý — xem 12b.4.
+
+#### 12b.1.3 ẨN hay HIỆN-RỒI-CHẶN — đo từng phần tử
+
+Luật của dự án ghi ở `nganXuLyLogic.ts:102-111`: **thiếu quyền ⇒ ẨN; bị chặn tạm thời ⇒ disable +
+giải thích.** `duocPhep` (quyền) tách hẳn `lyDoChan` (trạng thái) — `nganXuLyLogic.ts:93-99`.
+
+| Phần tử | `file:line` | Kết luận |
+|---|---|---|
+| Nút Ack | `NganXuLy.tsx:408-423` | **ẨN** (ternary trả `null` `:423`); `disabled` `:413` chỉ cho `lyDoChan`/pending |
+| Nút Ẩn tạm | `:425`, `:652-659` | **ẨN** `:425` |
+| Nút + form tạo phiếu | `:434-533` | **ẨN** `:533` |
+| Select gán kỹ thuật viên | `:469-485` | **ẨN** `:485` |
+| Nút lưu phiếu | `:488-507` | **DISABLE** `:494` khi `title.length < 3` — khớp zod `min(3)` (`maintenanceRouter.ts:93`). Đúng luật: trạng thái, không phải quyền |
+| Truy vấn kỹ thuật viên | `:206-209` | **KHÔNG BẮN** khi thiếu quyền (`enabled` `:207`) |
+| Nút điều hướng | `:574-599` | **ẨN** (lọc khỏi mảng `:577`) |
+| Nút xuất USD | `TwinVanHanh.tsx:2005-2024` | **ẨN** `:2024` |
+| **Lưu teach buffer (robot)** | `RobotCockpit.tsx:916-918` | ⚠ **HIỆN-RỒI-CHẶN** — nút vẫn render, chỉ `disabled` + `title` giải thích. **Vi phạm duy nhất** của luật, và **với tới được từ `/twin`** qua ngăn nhúng |
+
+⇒ **Kết luận Q3:** phần `/twin` do các lô này viết **đã theo đúng luật ẩn-không-disable**. Còn **một**
+chỗ lệch, thừa kế từ `RobotCockpit` — xem P-3.
+
+#### 12b.1.4 Trục URL đang dùng (G40)
+
+Khoá đã có: `pv=` (phạm vi) · `chon=` (vật thể) · `cam=` (camera) · `lop=` (lớp phủ) · `tg=` (thời
+gian) · `thu=` (panel đang thu) — `duongDanTwin.ts:7`. `lop=` là **danh sách ĐÓNG 6 tên**
+(`duongDanTwin.ts:186-193`): `nhan` `canhBao` `wip` `dongChay` `tuoi` `ngungKhaiThac`.
+
+⇒ **Mọi lớp phủ mới phải THÊM TÊN vào `LOP_HOP_LE`, không đẻ khoá URL thứ bảy.** `thu=` đã được lô J
+dùng lại cho bảng KPI (`duongDanTwin.ts:134-142`) — đúng khuôn, cứ thế mà theo.
+
+---
+
+### 12b.2 CÁI GỘP VÀ CÁI BỎ — kèm lý do từng cái
+
+Ba tiêu chí: **(1)** trả lời *"nhà máy đang thế nào"* ⇒ thuộc về Twin · **(2)** chỉ là **cách trình
+bày khác** của dữ liệu Twin đã có ⇒ bỏ · **(3)** **ra lệnh OT** ⇒ cân nhắc kỹ.
+
+#### GỘP — 7 mục
+
+| # | Mục | Nguồn `file:line` | Vì sao GỘP |
+|---|---|---|---|
+| G-1 | **Health score + nguy cơ hỏng theo máy** | `DigitalTwinDashboard.tsx:245-250`, thủ tục `digitalTwin.twinState` | Trả lời thẳng *"máy nào sắp hỏng"*. `/twin` hiện tô màu theo **trạng thái vận hành**, không theo **sức khoẻ** ⇒ thông tin MỚI, không phải trình bày lại. Nguồn `machine_health_history` **185.180 hàng, mới nhất hôm nay** |
+| G-2 | **Mô phỏng what-if năng suất** | `DigitalTwinDashboard.tsx:319-377, 556-606` | Mặt **mô phỏng** duy nhất trong cả 4 trang — đúng nghĩa "digital TWIN" chứ không phải digital shadow. Hàm thuần, **không chạm CSDL** ⇒ không mang theo rủi ro tenant |
+| G-3 | **Tua lại lịch sử (replay/scrub)** | `DigitalTwinCenter.tsx:504-592, 750-800` | *"Nhà máy đã thế nào lúc 3 giờ sáng"* là câu hỏi vận hành chính đáng. `/twin` **đã có** `DongThoiGian` (`:2262-2270`) và khoá `tg=` ⇒ **nối nguồn vào khung đã dựng**, không dựng khung mới |
+| G-4 | **Vùng (zones) + glTF + robot khớp động** | `DigitalTwinCenter.tsx:282-308, 171-184, 240-243` | Vùng an toàn / chia-sẻ-với-người là **thông tin an toàn**, không phải trang trí. `/twin` có dải E-STOP (`:2242`) nhưng **chưa vẽ được vùng** |
+| G-5 | **Đài cảnh báo hợp nhất + tồn đọng >24h + "phạm vi rỗng ≠ không có cảnh báo"** | `CommandCenter.tsx:1415-1505`, đặc biệt `:1458-1481` | `/twin` **đã có** `DaiCanhBao`; cái đáng gộp là **ô phân biệt "rỗng vì RBAC" với "rỗng vì bình yên"** (`:1468-1473`) — đúng khuôn honest-null, và là **tính đúng đắn an toàn** |
+| G-6 | **Lớp phủ UNS realtime + badge live/poll trung thực** | `FactoryLiveMap3D.tsx:39-48, 87, 122-132` | Nói thẳng *"số này đến từ WS hay từ poll 5s"*. `/twin` đã có `trang-thai-ket-noi` (`:1926`) + badge xuất xứ (`:1967`) ⇒ **nối thêm nguồn vào chỉ báo đã có** |
+| G-7 | **Cây phân cấp site→máy có roll-up** | `CommandCenter.tsx:1330-1405` | Mặt điều hướng **đa site** duy nhất. `/twin` chỉ có breadcrumb một nhánh (`:1869`) ⇒ ở quy mô tập đoàn (§11e) đây là khoảng trống thật |
+
+#### BỎ — 6 mục
+
+| # | Mục | Nguồn `file:line` | Vì sao BỎ |
+|---|---|---|---|
+| B-1 | **Bốn dải KPI "đang chạy / dừng / offline"** | `FactoryLiveMap3D.tsx:157-163` · `DigitalTwinCenter.tsx:726-734` · `DigitalTwinDashboard.tsx:139-176` | Tiêu chí (2). `/twin` **đã có** `khoi-tong-quan` (`:2306-2325`) + `BangKpiNoi`. Gộp = **năm** bản đếm cùng một thứ, và **bốn cơ hội để chúng lệch nhau** |
+| B-2 | **Bảng trạng thái máy dạng bảng** | `DigitalTwinDashboard.tsx:225-254` | Tiêu chí (2). `/twin` đã có `DanhSachMay` (`:2352-2360`) — DOM thật, đi được bằng bàn phím. Bảng thứ hai không thêm sự thật nào |
+| B-3 | **Ba bộ dựng sàn 3D rời** | `FactoryLiveMap3D.tsx:177` · `DigitalTwinCenter.tsx:819-832` · `CommandCenter.tsx:863-867` | Tiêu chí (2), và tệ hơn: chúng đọc **hai nguồn khác nhau** (`machineStatus` vs `twin.sceneGraph`) trên **hai hệ toạ độ khác nhau** (`CommandCenter` dùng lưới tổng hợp `:466-491`, không phải vị trí thật). Giữ cả ba là mời hai cảnh 3D nói hai câu khác nhau về cùng một nhà máy |
+| B-4 | **Ba bộ chọn nhà máy** | `FactoryLiveMap3D.tsx:135-140` · `DigitalTwinCenter.tsx:658-663` | Tiêu chí (2). `/twin` đã có `pv=` + breadcrumb — **một trục phạm vi duy nhất, ghi được vào URL** |
+| B-5 | **`stationLoadHeatmap` làm nguồn nút thắt** | `DigitalTwinDashboard.tsx:437-480` | ⚠ **KHÔNG phải vì trùng lặp — vì nó KHÔNG TỰ CHỨNG MINH ĐƯỢC MÌNH CÒN HẠN.** Lô trước đã **cố ý gỡ** lời gọi này khỏi `/twin`; lý do ghi nguyên văn ở `TwinVanHanh.tsx:574-582`: thủ tục **không trả `periodStart`**, và nghiệm thu Đợt 8 đo được **một lời khai 16 ngày tuổi tô đỏ sai trạm**. Nguồn ĐÚNG đang dùng: `wip.lineBalance` — trả NGUYÊN HÀNG nên `bottleneckStationId` và `periodStart` **chắc chắn cùng một bản ghi**. Gộp lại = tái lập đúng lỗi đã vá (G12) |
+| B-6 | **Nhúng `/command-console` (ra lệnh OT) cạnh 3D** | — | Tiêu chí (3). Lô G đã **cố ý không nhúng**; xem 12b.4 |
+
+---
+
+### 12b.3 TỪNG NGHIỆP VỤ — đã có hay chưa
+
+| Nghiệp vụ | Trạng thái | Chỗ gọi / thiếu gì |
+|---|---|---|
+| **THEO DÕI** trạng thái máy realtime | CÓ | `TwinVanHanh.tsx:516` (`factoryCommand.overview`), `:1926` chỉ báo socket |
+| Theo dõi cảnh báo andon | CÓ | `:529` (`andon.active`), đài `:2335-2350` |
+| Theo dõi an toàn robot / E-STOP | CÓ | `:542` (`twinCanh.anToanRobot`), dải `:2242` |
+| Theo dõi WIP theo trạm | CÓ | `:566` (`digitalTwin.wipFlowState`) — **đã lọc tenant sau Q1** |
+| Theo dõi nhịp chuyền / nút thắt | CÓ | `:600` (`wip.lineBalance`) — nguồn tự chứng minh được hạn |
+| Theo dõi **sức khoẻ máy / nguy cơ hỏng** | **CHƯA** | Cần G-1. Nguồn `machine_health_history` **có thật** (185.180 hàng, mới nhất hôm nay) nhưng `/twin` **chưa gọi** `digitalTwin.twinState` |
+| Theo dõi **chất lượng / tỷ lệ NG** | **BỊ CHẶN** | `product_inspections.factoryCode` NULL **2.880/2.880** ⇒ mọi vai không-admin thấy rỗng. **Phải sửa nguồn ghi trước** — P-1 |
+| Theo dõi **dự báo tắc nghẽn** | **BỊ CHẶN** | `station_dwell_time` mới nhất **17 ngày**; chuỗi WIP 24h chuyền 1 = **0 bucket** ⇒ `insufficient_data`. Cần lô P sinh `station_dwell_time` mốc mới — P-2 |
+| Theo dõi **đa site / tập đoàn** | **CHƯA** | Cần G-7 |
+| **ĐIỀU CHỈNH** — tiếp nhận cảnh báo | CÓ | W1 `NganXuLy.tsx:416` |
+| **ĐIỀU CHỈNH** — ẩn tạm cảnh báo (shelve) | **NỬA VỜI** | Nút **có** (`NganXuLy.tsx:652-659`), quyền có (`anTamAlarm`), **nhưng KHÔNG bắn mutation nào** — chỉ mở hộp giải thích (docblock `:623-644`). Một hành động **khai mà chưa nối đường ghi** |
+| **SỬA ĐỔI** — tạo phiếu bảo trì | CÓ | W2 `NganXuLy.tsx:496` |
+| **SỬA ĐỔI** — gán kỹ thuật viên | CÓ | `NganXuLy.tsx:469-485` (cần `suaPhieu`) |
+| **SỬA ĐỔI** — đăng ký mô hình 3D cho máy | CÓ (qua ngăn nhúng) | W3 `MachineCockpit.tsx:753` |
+| **SỬA ĐỔI** — chương trình robot | CÓ (qua ngăn nhúng) | W4/W5 `RobotCockpit.tsx:402`,`:416` |
+| **SỬA ĐỔI** — vị trí / hình học máy trong cảnh | CÓ, **ở màn khác** | `/twin-studio` (`App.tsx:326`). `/twin` **cố ý chỉ đọc** hình học; banner đối soát `:2132` **link sang** studio |
+| **RA LỆNH OT** (start/stop/reset) | **KHÔNG CÓ, VÀ ĐỀ NGHỊ GIỮ NGUYÊN** | Xem 12b.4 |
+
+#### Từng hành động trên cảnh 3D — quyền, đường ghi, hoàn tác
+
+| Hành động | Điều kiện quyền | Đường ghi | Hoàn tác được? |
+|---|---|---|---|
+| Chọn vật thể (máy/robot/trạm) | Không | Không ghi — chỉ `chon=` trên URL | Có (bấm chỗ khác) |
+| Xoay / kéo / zoom camera | Không | Không ghi — `cam=` trên URL | Có |
+| Bật/tắt lớp phủ | Không | Không ghi — `lop=` trên URL | Có |
+| Thu/mở panel | Không | Không ghi — `thu=` trên URL | Có |
+| Tua thời gian | Không | Không ghi — `tg=` trên URL | Có |
+| Xuất USD | `machine_status/canView` | Không ghi server; tải tệp về máy | Không cần |
+| **Ack cảnh báo** | `andon/canEdit` | W1 → `andon_events` | **KHÔNG** — có `resolve` riêng (`andonRouter.ts:134`) nhưng không có "bỏ ack" |
+| **Tạo phiếu bảo trì** | `machine_monitoring/canCreate` | W2 → `maintenance_work_orders` | **KHÔNG** trên `/twin` — phải sang màn bảo trì |
+| **Gán kỹ thuật viên** | `machine_monitoring/canEdit` | W2 (trường `assignedTo`) | Như trên |
+| Kéo-thả vị trí máy | — | **Không có trên `/twin`** (chỉ `/twin-studio`) | — |
+
+---
+
+### 12b.4 ★ ĐIỀU TÔI KHÔNG KHUYÊN LÀM — và vì sao nói thẳng
+
+Chủ sở hữu viết *"mọi hoạt động của nhà máy đều có thể quản lý, theo dõi, **điều chỉnh và sửa đổi**
+được"*. Đọc tối đa nghĩa câu ấy sẽ dẫn tới **nhúng bảng ra lệnh OT cạnh cảnh 3D**.
+**Đề nghị KHÔNG làm**, ba lý do đo được:
+
+1. **Lô G đã cố ý không nhúng `/command-console`**, lý do ghi lại: *"nhúng cạnh 3D là mời bấm nhầm"*.
+   Cảnh 3D là mặt **khám phá** — người dùng xoay, kéo, bấm thử. Một nút `STOP` sống trong mặt khám
+   phá là một nút **sẽ** bị bấm thử.
+2. **Hai mutation ghi hiện có của `/twin` CHƯA LỌC TENANT** (12b.6, L-1). Thêm đường ghi mạnh hơn
+   (lệnh OT) lên một mặt mà đường ghi yếu hơn còn chưa an toàn là **cộng dồn rủi ro**, không phải
+   thêm tính năng.
+3. Cảnh 3D **không tự chứng minh được mình còn hạn ở mức đủ cho lệnh OT**. `/twin` có badge độ tuổi
+   (`:1986`) — nhưng "đủ tươi để NHÌN" khác "đủ tươi để RA LỆNH". Bấm `STOP` lên một máy khi cảnh
+   đang trễ 5 giây là **dừng nhầm máy**.
+
+**Đề xuất thay thế:** giữ **chọn-rồi-nhảy** — `/twin` chọn máy, nút "Mở chức năng"
+(`NganXuLy.tsx:574-599`, đã lọc theo quyền `:577`) đưa sang cockpit/console thật. Người dùng **rời
+mặt khám phá một cách có ý thức** trước khi chạm đường ghi OT. Đây là hành vi **đang có**, chỉ cần giữ.
+
+---
+
+### 12b.5 KHOẢNG TRỐNG ĐO ĐƯỢC + THỨ TỰ ƯU TIÊN (cái nào CHẶN cái nào)
+
+```
+P-1 ──chặn──> nghiệp vụ chất lượng / NG trên /twin
+P-2 ──chặn──> dự báo tắc nghẽn + stationLoad
+L-1 ──chặn──> mọi đường ghi MỚI trên /twin
+```
+
+| # | Việc | Vì sao ở bậc này | Chặn cái gì |
+|---|---|---|---|
+| **P-1** | **Điền `factoryCode` cho đường ghi `product_inspections`** | 2.880/2.880 hàng NULL ⇒ vai không-admin thấy **0**. ⚠ **Cách chữa SAI là nới cổng thành "NULL thì cho qua"** — đó là mở lại đúng lỗ Q1 vừa vá, cho mọi tenant đọc mọi hàng chưa khai | Toàn bộ nghiệp vụ chất lượng |
+| **P-2** | **Lô P sinh `station_dwell_time` với mốc gần hiện tại** | Mới nhất 17 ngày; WIP 24h chuyền 1 = 0 bucket | `predictionOverlay`, `stationLoadHeatmap` |
+| **L-1** | **Vá tenant cho W1/W2** (12b.6) | Lỗ **GHI**, cùng lớp với lỗ ĐỌC mà Q1 vừa vá | Mọi đường ghi mới |
+| **P-3** | Vá "hiện-rồi-chặn" ở `RobotCockpit.tsx:916-918` | Vi phạm duy nhất của luật ẩn-không-disable, với tới được từ `/twin` | — |
+| **P-4** | Nối đường ghi cho nút **Ẩn tạm**, hoặc bỏ nút | Hành động khai mà không ghi gì | — |
+| **P-5** | G-1 sức khoẻ máy | Nguồn đã sống, chỉ thiếu lời gọi | — |
+| **P-6** | G-5 phân biệt "phạm vi rỗng" / "bình yên" | Tính đúng đắn an toàn | — |
+| **P-7** | G-2 what-if · G-3 replay · G-4 zones · G-6 UNS · G-7 cây đa site | Tính năng, làm sau khi nền đã sạch | — |
+
+**Ngân sách phải giữ khi làm G-1…G-7** (§4): nhãn cap **30** · draw call **≤150** · FPS **≥30** ·
+lớp phủ bảng theo khuôn `BangKpiNoi` (**0 draw call**, DOM) · bảng phải `z-30` vì nhãn drei ở
+**z-index 20** (G41) · nghiệm thu **bằng mắt trên nền thật**.
+
+---
+
+### 12b.6 ★★★ L-1 — LỖ GHI CÙNG LỚP VỚI LỖ ĐỌC VỪA VÁ (phát hiện khi làm Q1)
+
+Q1 vá **đường ĐỌC**. Đo tiếp **đường GHI** của chính `/twin`, thấy cùng hình dạng ấy còn nguyên:
+
+| Thủ tục | `file:line` | Hình dạng |
+|---|---|---|
+| `maintenance.createWorkOrder` | `maintenanceRouter.ts:89-104` | Khai **`async ({ input })`** — **không bóc `ctx`**. `input.machineId` do client TỰ KHAI, chỉ dùng để tra `machines.code` (`:104`). **Không `phamViCua`, không `trongPhamVi`** |
+| `andon.acknowledge` | `andonRouter.ts:125-131` | Có `ctx` (để đóng dấu người tiếp nhận) nhưng **không kiểm `input.id` có thuộc phạm vi người gọi không** |
+
+⇒ Một tài khoản có `machine_monitoring/canCreate` ở nhà máy A **tạo được phiếu bảo trì cho máy của
+nhà máy B**, chỉ cần đoán `machineId`. Cổng `requirePermission` **không** đo tenant — hai trục khác
+nhau, và chỉ một trục có người canh (đúng câu đã ghi ở `twinDemVatThePhamVi.db.test.ts:14-16`).
+
+**Chưa vá trong lô này** vì `maintenanceRouter`/`andonRouter` **ngoài phạm vi tệp được giao**. Ghi ra
+đây để có người ký. Khuôn vá đã có sẵn: `trongPhamVi("machine", input.machineId, phamViCua(ctx))`.
+
+---
+
+### 12b.7 `/twin-studio` — vùng, và ranh giới với `/twin`
+
+`/twin-studio` = `client/src/pages/TwinStudio.tsx`, tuyến `App.tsx:326`. Ranh giới **đang đúng và nên giữ**:
+
+| | `/twin` (Vận hành) | `/twin-studio` (Thiết kế) |
+|---|---|---|
+| Hình học nhà xưởng | **CHỈ ĐỌC** (`canhThietKe` `TwinVanHanh.tsx:505`) | **SỬA** |
+| Cổng quyền | `quyenDocHinhHoc` (`twinCanhRouter.ts:196`) | `quyenThietKe` = `settings_factory` ∨ `machine_control` (`twinCanhRouter.ts:115`) |
+| Dữ liệu runtime | Có (WIP, andon, an toàn) | Không |
+
+★ Hai cổng khác nhau **là nguyên nhân** của banner `thieuQuyenBoCuc` (`TwinVanHanh.tsx:611`, `:1807`):
+người qua cổng `analytics_oee` vào được `/twin` nhưng `canhThietKe` đòi cổng kia ⇒ **nếu không bắt
+FORBIDDEN thì họ thấy một cảnh TRỐNG trông y như nhà máy chưa dựng — một lời khai sai về thế giới**
+(nguyên văn `:1802-1806`). Đây là bản vá **đã có** cho lớp lỗi "một lối vào rồi TỪ CHỐI" của Khối D.
+
+---
+
+### 12b.8 Điều kiện nghiệm thu cho phần XÂY (sau khi bàn xong)
+
+1. Mỗi mục G-x phải có **chỗ gọi `file:line`** — hàm không ai gọi = chưa xong (G16).
+2. Lớp phủ mới ⇒ thêm tên vào `LOP_HOP_LE` (`duongDanTwin.ts:186`), **không** đẻ khoá URL thứ bảy (G40).
+3. Mỗi lớp phủ phải **tự khai được nguồn và độ tuổi**; nguồn không trả mốc thời gian ⇒ **không dùng
+   làm chỉ báo** (bài học B-5).
+4. Nguồn rỗng ⇒ **`—` kèm lý do**, không `0` (`?? 0` là lời khai sai). Khuôn: `BangKpiNoi`.
+5. Đo bằng vai **KHÔNG-admin** (admin bypass `requirePermission` ⇒ đo bằng admin chứng minh **0**).
+6. Ngân sách §4 đo lại sau khi thêm: draw call ≤150, FPS ≥30, nhãn ≤30.
+7. Mỗi lớp phủ mới đọc dữ liệu tenant phải có **ô hai chiều** như `digitalTwinPhamVi.db.test.ts`.
+
+
 ## 13. Kiểm thử
 
 Hiện trạng: **0 test cho mọi component 3D, 0 e2e liên quan twin.** Đây là lỗ hổng lớn nhất và phải lấp cùng lúc với việc xây.
