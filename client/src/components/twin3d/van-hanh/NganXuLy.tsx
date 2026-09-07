@@ -157,24 +157,28 @@ export function NganXuLy(props: NganXuLyProps) {
   const [ganCho, setGanCho] = useState<string>("");
 
   /**
-   * Danh sách người để gán. `user.list` là thủ tục đọc đã có; nếu tài khoản
-   * không có quyền xem người dùng thì nó lỗi và ta ĐỂ Ô TRỐNG thay vì chặn cả
-   * form — gán KTV là tuỳ chọn, không phải điều kiện để tạo phiếu.
+   * Danh sách người để gán. Nếu tài khoản không có quyền thì truy vấn lỗi và ta
+   * ĐỂ Ô TRỐNG thay vì chặn cả form — gán KTV là tuỳ chọn, không phải điều kiện
+   * để tạo phiếu.
    *
-   * ⚠⚠ NỢ ĐÃ BIẾT, CHƯA VÁ Ở ĐÂY — `user.list` là **ADMIN-ONLY**
-   * (`server/routers/userRouters.ts:23-26` ném FORBIDDEN khi
-   * `ctx.user.role !== 'admin'`). Nghĩa là dropdown này **RỖNG với MỌI tài khoản
-   * không phải admin** — tức với đúng những vai (bảo trì, kỹ thuật, giám sát)
-   * mà tính năng gán KTV sinh ra để phục vụ. QA trước tái hiện bằng admin nên
-   * không nhìn thấy: admin bypass, và ô rỗng trông y hệt "chưa có ai để gán".
+   * ★★★ NỢ ĐÃ ĐÓNG (2026-09-07). Trước đây ô này gọi `user.list`, là thủ tục
+   * **ADMIN-ONLY** (`userRouters.ts` ném FORBIDDEN khi `ctx.user.role !==
+   * 'admin'`), nên dropdown **RỖNG với MỌI tài khoản không phải admin** — tức
+   * với đúng những vai (bảo trì, kỹ thuật, giám sát) mà tính năng này sinh ra
+   * để phục vụ. QA trước tái hiện bằng admin nên không thấy: admin bypass, và ô
+   * rỗng trông y hệt "chưa có ai để gán".
    *
-   * KHÔNG sửa ở đây vì `user.list` là hợp đồng DÙNG CHUNG, nhiều màn khác gọi;
-   * nới nó là quyết định về lộ danh sách nhân sự cho vai thấp hơn, phải do chủ
-   * dự án chọn. Hướng đã đề xuất: một thủ tục HẸP `user.assignableTechnicians`
-   * chỉ trả `{id, name}` của người CÒN hoạt động, gate bằng `maintenance_*`.
+   * Nay dùng `user.assignableTechnicians` — thủ tục HẸP, gate bằng ĐÚNG quyền
+   * mà `maintenance.createWorkOrder` đòi (`machine_monitoring/canCreate`), chỉ
+   * trả `{id, name}` của người `isActive = true`. `user.list` KHÔNG bị đổi: nó
+   * là hợp đồng dùng chung, nhiều màn khác gọi.
+   *
+   * ★ Cổng `quyen.taoPhieu` (không phải `suaPhieu`): danh sách này phục vụ việc
+   *   TẠO phiếu, và nó cùng một quyền với thủ tục server — hai bên khai cùng một
+   *   câu thì không thể lệch (luật Khối D "một lối vào rồi TỪ CHỐI").
    */
-  const nguoiQ = trpc.user.list.useQuery(undefined, {
-    enabled: moTaoPhieu && quyen.suaPhieu,
+  const nguoiQ = trpc.user.assignableTechnicians.useQuery(undefined, {
+    enabled: moTaoPhieu && quyen.taoPhieu,
     retry: false,
   });
 

@@ -1,5 +1,15 @@
 import { protectedProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
+import { requirePermission } from "../_core/accessControl";
+
+/**
+ * Module quyền của PHIẾU CÔNG VIỆC — chép ĐÚNG chuỗi mà `maintenanceRouter.ts`
+ * dùng (`const MODULE = "machine_monitoring"`, resolve về `machine_status`).
+ * Một hằng có tên để `assignableTechnicians` và `createWorkOrder` không lệch
+ * nhau trong im lặng. Xem docblock của `assignableTechnicians` về việc §6.4 ghi
+ * `maintenance` — một module KHÔNG TỒN TẠI trong `PERMISSION_MODULES`.
+ */
+const MODULE_PHIEU = "machine_monitoring";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -26,6 +36,59 @@ export const userRouter = router({
     }
     return toPublicUsers(await db.getAllUsers());
   }),
+
+  /**
+   * ★★★ §9.2 — DANH SÁCH GÁN KỸ THUẬT VIÊN cho `NganXuLy` của `/twin`.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * VÌ SAO THỦ TỤC MỚI, KHÔNG NỚI `user.list`
+   * ══════════════════════════════════════════════════════════════════════════
+   * Nợ đo được: `user.list` ở ngay trên **gate `admin`**, nên dropdown "Gán kỹ
+   * thuật viên" **RỖNG với MỌI tài khoản không phải admin** — tức với đúng
+   * những vai (bảo trì, kỹ thuật, giám sát) mà tính năng ấy sinh ra để phục vụ.
+   * QA trước tái hiện bằng admin nên không thấy: **admin bypass
+   * `requirePermission`** (`accessControl.ts:207`), và một ô rỗng trông y hệt
+   * "chưa có ai để gán".
+   *
+   * **Chủ dự án chốt: KHÔNG đổi `user.list`** — nó là hợp đồng DÙNG CHUNG,
+   * nhiều màn khác gọi, và nới nó sẽ mở danh sách nhân sự đầy đủ cho vai thấp
+   * hơn ở MỌI màn cùng lúc. Một thủ tục HẸP thì phạm vi nới đúng bằng nhu cầu.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * ★★★ G21 — DÒNG MÃ KIỂM QUYỀN CỦA **NGƯỜI NHẬN**
+   * ══════════════════════════════════════════════════════════════════════════
+   * `requirePermission(MODULE_PHIEU, "canCreate")` ngay dưới đây. Đây là phép
+   * kiểm trên **người gọi**, không phải phép nhóm theo thuộc tính dữ liệu.
+   *
+   * ⚠⚠ **ĐÍNH CHÍNH SPEC — §6.4 ghi *"canCreate trên module maintenance"*, và
+   * cái tên đó KHÔNG TỒN TẠI.** Đo được 2026-09-07:
+   *   • `shared/permissions.ts` — `PERMISSION_MODULES` **không có** mục nào
+   *     khớp `maintenance*` (grep ra 0 kết quả).
+   *   • Module THẬT mà `maintenanceRouter.ts:35` dùng là
+   *     `const MODULE = "machine_monitoring"`, và `PERMISSION_MODULE_ALIASES`
+   *     resolve nó về **`machine_status`**.
+   * ⇒ Dùng ĐÚNG chuỗi mà `maintenance.createWorkOrder` dùng. Đây là điều kiện
+   *   để hai bên không thể lệch: người lấy được danh sách gán **chính xác** là
+   *   người tạo được phiếu để gán. Khai một module khác (kể cả một module có
+   *   thật) sẽ dựng lại lớp lỗi Khối D "một lối vào rồi TỪ CHỐI" theo chiều
+   *   ngược — thấy danh sách rồi không tạo nổi phiếu, hoặc ngược lại.
+   *   **Báo lại thay vì tự sửa spec.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * HAI QUYẾT ĐỊNH VỀ DỮ LIỆU RA
+   * ══════════════════════════════════════════════════════════════════════════
+   * • **CHỈ `{id, name}`** — không email, không vai, không phòng ban, không gì
+   *   khác. Không phải lọc sau khi đọc mà là `select` đúng hai cột ở
+   *   `traKyThuatVienGanDuoc` (mặc định ĐÓNG, cùng khuôn `publicUser`).
+   * • **Chỉ `isActive = true`**, lọc TỪ SQL. Client đã có `nguoiGanDuoc()` làm
+   *   điều tương tự, nhưng lưới ở client là lưới thứ hai — hàng vô hiệu hoá
+   *   không được rời khỏi máy chủ ngay từ đầu.
+   */
+  assignableTechnicians: protectedProcedure
+    .use(requirePermission(MODULE_PHIEU, "canCreate"))
+    .query(async () => {
+      return db.traKyThuatVienGanDuoc();
+    }),
 
   getById: adminProcedure
     .input(z.object({ id: z.number() }))
