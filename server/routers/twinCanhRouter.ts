@@ -123,6 +123,62 @@ function quyenVanHanh(hanhDong: "canView" | "canEdit") {
 }
 
 /**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 10 LÔ H2 — CỔNG **ĐỌC HÌNH HỌC**, chỗ lớp lỗi Khối D thật sự nằm
+ * ════════════════════════════════════════════════════════════════════════════
+ * Ba thủ tục ĐỌC (`danhSachToaNha`, `chiTietToaNha`, `canhThietKe`) phục vụ
+ * **HAI** màn: `/twin-studio` (sửa bố cục) và `/twin` (chỉ xem). Trước lô H
+ * chúng đứng trên `quyenThietKe` — cổng của màn SỬA. Hậu quả **đo được trên
+ * tài khoản thật**, không phải suy luận:
+ *
+ *   `operator1` (userId 48, seed) có **ĐÚNG MỘT** quyền: `machine_status`.
+ *   · `navigation.tsx:446` cho vào `/twin` bằng `analytics_oee` HOẶC
+ *     `machine_status` ⇒ mục menu HIỆN, `RouteGuard` CHO QUA.
+ *   · rồi `canhThietKe` đòi `settings_factory`/`machine_control` ⇒ **FORBIDDEN**.
+ *   ⇒ Thấy menu, bấm vào, và màn nói "không có quyền đọc bố cục nhà máy".
+ *   Đây ĐÚNG là "một lối vào rồi TỪ CHỐI" của Khối D, chiều XUÔI.
+ *
+ * ⚠ Vì sao KHÔNG siết cổng nav lại cho khớp (phương án (a)): làm thế là **xoá
+ *   `/twin` khỏi `operator1`/`maint1`** — chính những vai mà màn Vận hành sinh
+ *   ra để phục vụ, và là đảo ngược bản vá Đợt 5 CHẶN-1 vốn đã đo được (1/4 vai
+ *   → 4/4). Sửa một lỗi "vào rồi bị chặn" bằng cách "không cho vào nữa" là
+ *   đóng cửa thay vì mở đường.
+ *
+ * ⚠⚠ **KHÔNG PHẢI NỚI QUYỀN ÂM THẦM.** Ba điều được ĐO, không được khai:
+ *   1. Chỉ ĐỌC hình học được mở. MỌI đường GHI (`luuToaNha`, `luuTang`,
+ *      `xoaToaNha`, `luuHangLoat`, `dungNhaXuong`, `sinhTuongBao`,
+ *      `vungAnToan*`, `goKhoiMatBang`) **giữ nguyên `quyenThietKe`**.
+ *      `congDocHinhHoc.unit.test.ts` liệt kê TOÀN BỘ thủ tục của router và ghim
+ *      danh sách ĐỌC-mở là đúng ba tên — thêm tên thứ tư vào đây thì test đỏ.
+ *   2. **Phạm vi tenant KHÔNG đi qua cổng quyền.** Nó đi qua
+ *      `trongPhamVi("factory", factoryId, phamViCua(ctx))`
+ *      (`server/db/twinCanh.ts:250,270`) — một trục HOÀN TOÀN RỜI với module
+ *      quyền. Mở `analytics_oee`/`machine_status` không cho ai thấy thêm một
+ *      nhà máy nào; nó chỉ đổi *quyền nào* mở được hình học của nhà máy mà
+ *      người đó **vốn đã ở trong phạm vi**.
+ *   3. `/twin-studio` KHÔNG bị mở ra: lối vào của nó là ô nav riêng
+ *      (`settings_factory`/`machine_control`) mà `RouteGuard navHref` tra lại.
+ *
+ * ★ Cổng này là HỢP của hai cổng, không phải cổng thứ ba: ai vào được màn Thiết
+ *   kế vẫn đọc được y như trước (không ai mất gì), ai vào được màn Vận hành nay
+ *   đọc được thứ màn đó cần. Viết bằng `quyenThietKe`+`quyenVanHanh` gộp lại
+ *   thay vì gõ lại bốn tên module: gõ tay lần thứ ba là chỗ hai bản cài đặt bắt
+ *   đầu lệch nhau (G12).
+ */
+export const MODULE_DOC_HINH_HOC = [
+  "settings_factory",
+  "machine_control",
+  "analytics_oee",
+  "machine_status",
+] as const;
+
+function quyenDocHinhHoc() {
+  return requireAnyPermission(
+    MODULE_DOC_HINH_HOC.map((module) => ({ module, action: "canView" as const })),
+  );
+}
+
+/**
  * Giới hạn mm cho một cạnh: 1 mm tới 10 km.
  *
  * ⚠ Trần 10 km KHÔNG phải số tuỳ tiện — `numeric(14,3)` biểu diễn tới 10^11 mm,
@@ -249,7 +305,7 @@ export const twinCanhRouter = router({
 
   /** Danh sách toà nhà của một nhà máy. Ngoài phạm vi ⇒ mảng RỖNG. */
   danhSachToaNha: protectedProcedure
-    .use(quyenThietKe("canView"))
+    .use(quyenDocHinhHoc())
     .input(z.object({ factoryId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       return traToaNhaTheoNhaMay(input.factoryId, phamViCua(ctx));
@@ -257,7 +313,7 @@ export const twinCanhRouter = router({
 
   /** Một toà nhà kèm các tầng, numeric đã quy về number. */
   chiTietToaNha: protectedProcedure
-    .use(quyenThietKe("canView"))
+    .use(quyenDocHinhHoc())
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       return traToaNhaKemTang(input.id, phamViCua(ctx));
@@ -644,7 +700,7 @@ export const twinCanhRouter = router({
    *   một lớp lỗi có thật của giao diện nhiều-nguồn, và nó không kêu.
    */
   canhThietKe: protectedProcedure
-    .use(quyenThietKe("canView"))
+    .use(quyenDocHinhHoc())
     .input(
       z.object({
         factoryId: z.number().int().positive(),
