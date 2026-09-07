@@ -2159,6 +2159,56 @@ giác được bất cứ gì ngoài khung mặc định. Đây là **hạn ch�
 **Nghiệm thu chạy bằng `e2e_twin_dot4@local.test` — KHÔNG phải admin** ⇒ số về quyền là số thật
 (admin **bypass** `requirePermission`, đo bằng admin chứng minh **0** — bài học Khối D).
 
+## 11e. ĐỢT 9 + 10 — QUY MÔ TẬP ĐOÀN VÀ UX TẠI CHỖ (2026-09-07, chủ sở hữu giao)
+
+Sáu yêu cầu mới. Chủ sở hữu chốt: dữ liệu sinh **trên DB dev, có cờ nguồn + script gỡ**; UX **tách Đợt 10**.
+
+### 11e.1 Quy mô yêu cầu vs thực tế đang đo được
+
+| | Hiện có | Yêu cầu mới |
+|---|---|---|
+| Nhà máy | **2** (`SIM-FAC` id 1, id 18) | **4** (mục 3), hướng tới **6–7** (mục 4) |
+| Máy toàn hệ | **43** | FUYU-F **360–720**; 6–7 tòa × **100 máy/tòa** |
+| `twin_dat_cho` | **82** | — |
+
+⇒ Gấp **17–50×** mọi phép đo hiệu năng từ trước đến nay. **`FUYU-F` chưa tồn tại.**
+
+### 11e.2 ★ CHỦ SỞ HỮU CHỐT LỐI THOÁT TRƯỚC KHI ĐO
+
+> *"nếu xem cùng lúc 7 tòa bị vượt quá, thì chỉ cho phép load từng tòa 1, cho thêm ô chọn tòa"*
+
+Điều này **đổi tiêu chí "gãy"**: xem 7 tòa cùng lúc **không còn là ràng buộc phải đạt**. Phải đo **hai
+số riêng**: (a) **một tòa** — số này phải đạt §4; (b) **nhiều tòa** — đo để tìm **ngưỡng gãy chính xác**,
+vì chính con số đó quyết định **ô chọn tòa chặn ở đâu**. Đo tăng dần **1 → 2 → 4 → 7** để thấy đường
+cong, không chỉ một điểm.
+
+### 11e.3 Đo được: nền cho mục #2 (Line/Cell twin) ĐÃ CÓ, không phải xây từ đầu
+
+`duongDanTwin.ts:38` khai `CapPhamVi = "tapDoan" | "nhaMay" | "tang" | "line" | "may"` — và **cả 5 cấp đều
+có xử lý thật**, không phải khai báo suông: `phamViCanh.ts:67` (`may`), `:59,82,298` (`tapDoan`),
+`duongDanTwin.ts:158,170,360`. Cấp `tapDoan` chính là nền cho câu hỏi **#3 (nhiều nhà máy)**.
+⇒ Việc còn lại là **cảnh 3D + panel cho cấp `may`**, không phải dựng hệ định tuyến mới.
+
+### 11e.4 Ràng buộc dữ liệu đo được trước khi sinh
+
+- Chuỗi phân cấp: `factories → workshops.factoryId → production_lines.workshopId → stations.lineId
+  → machines.stationId`. **`machines.stationId` BẮT BUỘC** — máy không treo thẳng vào line.
+- **`twinnguonenum` chỉ có `sinh` và `tay`** ⇒ **không có chỗ cho cờ nguồn thứ ba**. Thêm giá trị enum là
+  đổi lược đồ ⇒ **cấm**. Cờ phải đặt theo **MÃ** (tiền tố `FUYU-F-*`, `TAI-*`), và script gỡ dựa vào đó.
+- Đơn vị bảng `twin_*` là **mm**: 3000 m = **3.000.000 mm**. §10A.0 đã cấm `floorWidthM`
+  (SIM-FAC = 1500 ⇒ 1,5 km, số rác) — **đừng lặp lại lỗi đơn vị đó**.
+- **Script GỠ phải viết và nghiệm thu TRƯỚC khi sinh khối lớn**: đếm → sinh nhỏ → gỡ → đếm lại →
+  **mọi số về đúng ban đầu**. Gỡ không sạch thì **dừng**, đừng sinh tiếp.
+
+### 11e.5 Đợt 10 — UX tại chỗ (tách riêng theo quyết định chủ sở hữu)
+
+- **Mục 5**: bỏ redirect khi xem chi tiết máy/Line → **modal/panel tại chỗ + nút quay lại**, người dùng
+  **không rời màn 3D**. (Liên quan §11c.7: `nganXuLyLogic.ts:267` hiện **trỏ ra `/robot/:id`** — đúng
+  loại điều hướng mà mục 5 muốn bỏ.)
+- **Mục 6**: thống kê và chỉ số hiển thị **trên màn 3D**.
+- Lý do tách: kết quả đo ở Đợt 9 có thể **đổi cách thiết kế panel** (ngân sách nhãn §4 cap ở **30**;
+  300 nhãn CSS2D đã laggy) ⇒ thiết kế UX trước khi biết ngưỡng là thiết kế trên giả định.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
