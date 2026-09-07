@@ -2728,6 +2728,57 @@ deu trong** - dung cai bay G5.
 => Hai muc do phai hien **`-` kem ly do** (*"do tren 0/N"*), **KHONG** hien `0`. Ban `?? 0` la
 **loi khai sai**. `BangKpiNoi` da lam dung khuon nay (§11f.1).
 
+### 11h.4 LO Q DA VE - Q1 va lo tenant, §12b thiet ke 282 dong (2026-09-08)
+
+Commit `cd56d186` (ma) + `d5d60634` (thiet ke). Cong: **57 tep / 1667 test** = nen - `check` 0 - `build` 0.
+
+**Q1 - lo do duoc TRUOC khi va:** tai khoan **0 nha may duoc gan** doc duoc **43/43 may** va
+**4.707 WIP** cua SIM-FAC. Chu du an kiem lai: `digitalTwinRouter` truoc do **0 tham chieu** loc tenant,
+**nay 15**. Chung minh hai chieu tren CSDL that (vai `engineer` khong-admin):
+
+| | 0 nha may | duoc gan SIM-FAC |
+|---|---|---|
+| `twinState` | **0** | **42** |
+| `wipFlowState` line 1 | **0** | **4.707** |
+| `stationLoadHeatmap` | **0 cells** | 1 cell |
+
+Va o **tang router** (db functions con caller khac), **hai truc**: `idsTrongPhamVi` cho `machines`,
+`congMaTenant` cho `product_inspections`. **7 dot bien, giet ca 7.** Dang chu y: dot bien (f)/(g) **chi**
+bi bat boi o dich danh - hai o phan doi tong quat **de lot**.
+
+> #### G50 - **DU LIEU CO MA VAN VO DUNG: cot pham vi de TRONG**
+> Brief cua chu du an ghi `product_inspections` = 0 hang (do o §11g.4). **Da doi**: nay co **2.880 hang**.
+> Nhung chu du an do lai: **ca 2.880 deu `factoryCode IS NULL`** => sau Q1, vai duoc gan nha may thay
+> **0 hang**; chi admin (bypass) thay.
+> => **Fail-closed dung huong** - nhung "co du lieu" **khong** dong nghia "dung duoc". Cach chua **SAI**
+> la noi cong quyen cho du lieu hien ra; cach dung la **dien `factoryCode`**.
+> Cung the voi `wip_tracking`: nay co 2.704 hang/24h, nhung `predictionOverlay` **van chan** vi
+> `station_dwell_time` moi nhat **17 ngay** - **mot nguon thu hai** ma khong ai nhin toi.
+
+> #### ★★★ L-1 (LO Q PHAT HIEN, CHUA VA) - `createWorkOrder` KHONG BOC `ctx`
+> `maintenanceRouter.ts:89` `createWorkOrder` khai `.mutation(async ({ input }) => ...)` - **khong nhan
+> `ctx`** - roi tra `machines` bang `input.machineId` **do client tu khai**, khong kiem pham vi.
+> Doi chung trong **cung tep**: thu tuc o `:256` **co** dung `async ({ input, ctx })`.
+> **Be mat do duoc:** 283 may tren 3 nha may (`FUYU-G` 240, `SIM-FAC` 42, id-18 1) => mot tai khoan o
+> nha may A **tao duoc phieu cong viec cho bat ky may nao** cua nha may B.
+> => Cung lop loi voi `demVatThe` (lo K) va `digitalTwinRouter` (lo Q), nhung o **DUONG GHI** - nang hon
+> duong doc. **Chua va vi ngoai pham vi tep duoc giao** - can chu so huu ky.
+
+**Ba trong bon trang cu DA bi gop san** thanh tab `TwinHub` (`TwinHub.tsx:41-43`) => pham vi viec 2 **nho
+hon** brief tuong. §12b chot **GOP 7 / BO 6**, moi cai kem ly do.
+Dang chu y **B-5**: bo `stationLoadHeatmap` **khong** vi trung lap ma vi **no khong tu chung minh duoc
+minh con han** (G30) - lo truoc da co y go, ly do o `TwinVanHanh.tsx:574-582`.
+
+**Q3 do duoc:** `TwinVanHanh.tsx` co **dung 0 mutation**; 5 duong ghi W1-W5 deu `requirePermission`.
+Luat **an-khong-disable** da theo dung, con **mot** cho lech: `RobotCockpit.tsx:916-918`.
+
+**Lo Q noi thang dieu khong nen lam:** khong nhung bang lenh OT canh 3D, ba ly do do duoc - khop voi
+quyet dinh cua lo G truoc do.
+
+**Dinh chinh so nen cua chu du an:** cong 2 (tap twin) **khong phai "20 tep/211 test xanh"** - nen tren
+HEAD sach la **20 tep / 226 test, trong do 3 DA DO** (census pin lech do lo khac). Lo Q dong them 1,
+**khong them do nao**.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
