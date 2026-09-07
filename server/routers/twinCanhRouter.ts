@@ -678,12 +678,21 @@ export const twinCanhRouter = router({
       return { soTuong: soGhi };
     }),
 
-  /** Đếm vật thể theo tầng — cho UI và cho phép đối soát hai mô hình rời. */
+  /**
+   * Đếm vật thể theo tầng — cho UI và cho phép đối soát hai mô hình rời.
+   *
+   * ★★★ LÔ K/K2 — thủ tục này TỪNG khai `async ({ input })`, tức là **không bóc
+   *   `ctx` một lần nào**, trong khi bốn thủ tục đọc quanh nó (`:311`, `:319`,
+   *   `:355`, `:377`) đều truyền `phamViCua(ctx)`. Vì `tangIds` do CLIENT TỰ
+   *   KHAI, thiếu sót ấy biến cổng quyền `quyenThietKe` thành hàng rào duy
+   *   nhất — mà nó chỉ trả lời "vai này xem được thiết kế không", KHÔNG trả lời
+   *   "nhà máy này có phải của người ấy không". Xem `db/twinCanh.demVatTheTheoTang`.
+   */
   demVatThe: protectedProcedure
     .use(quyenThietKe("canView"))
     .input(z.object({ tangIds: z.array(z.number().int().positive()).max(200) }))
-    .query(async ({ input }) => {
-      const hang = await demVatTheTheoTang(input.tangIds);
+    .query(async ({ input, ctx }) => {
+      const hang = await demVatTheTheoTang(input.tangIds, phamViCua(ctx));
       return { tong: hang.length, hang };
     }),
 

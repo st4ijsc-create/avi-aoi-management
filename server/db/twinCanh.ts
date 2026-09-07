@@ -544,15 +544,51 @@ export async function ghiDeTuongBaoSinh(
   });
 }
 
-/** Đếm vật thể theo loại của một tầng — dùng cho đối soát và cho UI. */
-export async function demVatTheTheoTang(tangIds: readonly number[]) {
+/**
+ * Đếm vật thể theo loại của một tầng — dùng cho đối soát và cho UI.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ LÔ K/K2 — `scope` KHÔNG PHẢI THAM SỐ TUỲ CHỌN CHO VUI
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản trước hàm này KHÔNG nhận `scope`, và `twinCanhRouter.demVatThe` gọi nó
+ * bằng `async ({ input })` — **không bóc `ctx` ra một lần nào**. Hậu quả ĐO
+ * ĐƯỢC: `tangIds` là lời **TỰ KHAI của client**, nên bất kỳ ai qua được cổng
+ * `quyenThietKe("canView")` đều đếm được vật thể của MỌI tầng thuộc MỌI nhà
+ * máy — chỉ cần đoán một số nguyên. Đây đúng lớp lỗi đã có tên trong sổ dự án:
+ * *"hàng rào tenant lọc theo cột CLIENT TỰ KHAI"*.
+ *
+ * ⚠ Cổng quyền và hàng rào tenant là HAI trục khác nhau, và trục thứ hai vắng
+ *   mặt ở đây. `quyenThietKe` trả lời "vai này được xem thiết kế không"; nó
+ *   KHÔNG trả lời "nhà máy này có phải của người ấy không". Một cổng quyền xanh
+ *   che mất việc hàng rào tenant chưa từng được dựng.
+ *
+ * ⇒ Lọc theo ĐÚNG khuôn của `traDatChoTheoTang` (`:866`) — bản sao nguyên văn,
+ *   không dựng luật phạm vi thứ hai: suy nhà máy của từng tầng rồi hỏi
+ *   `trongPhamVi`. Tầng ngoài phạm vi bị LOẠI KHỎI DANH SÁCH, không ném lỗi:
+ *   một câu lỗi riêng cho ca "có thật nhưng của tenant khác" là một oracle rò
+ *   rỉ tồn-tại, đúng lý lẽ đã ghi ở `luuToaNha`.
+ *
+ * ⚠ `scope` **tuỳ chọn** giữ nguyên chiều DƯƠNG của `PhamViNguoiXem`: vắng danh
+ *   tính ⇒ `idsTrongPhamVi` trả `null` ⇒ KHÔNG lọc. Đó là hình dạng có thật của
+ *   lối gọi nội bộ (seed, script), và là thứ chặn "vá quá tay thành chặn tất cả".
+ */
+export async function demVatTheTheoTang(tangIds: readonly number[], scope?: PhamViNguoiXem) {
   const d = await getDb();
   if (!d) throw new DbUnavailableError();
   if (tangIds.length === 0) return [];
+
+  // ★ G12 — TÁI DÙNG `locTangTrongPhamVi` (`:1587`), KHÔNG viết bản thứ ba của
+  //   cùng một luật. Repo đã có HAI nơi hỏi "tầng nào người này được thấy"
+  //   (`traVungAnToan`, `luuVungAnToan`); một bản chép thứ ba là chỗ hai bản cài
+  //   đặt bắt đầu lệch nhau. Nó cũng rẻ hơn: MỘT truy vấn cho cả danh sách tầng
+  //   thay vì một truy vấn mỗi tầng.
+  const hopLe = await locTangTrongPhamVi(d, tangIds, scope ?? {});
+  if (hopLe.length === 0) return [];
+
   return d
     .select({ id: twinVatThe.id, tangId: twinVatThe.tangId, loai: twinVatThe.loai, nguon: twinVatThe.nguon })
     .from(twinVatThe)
-    .where(inArray(twinVatThe.tangId, [...tangIds]));
+    .where(inArray(twinVatThe.tangId, hopLe));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
