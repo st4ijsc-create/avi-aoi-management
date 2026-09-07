@@ -896,7 +896,7 @@ export default function RobotCockpit() {
  * nên KHÔNG mất khi đổi tab; cha cũng đồng bộ localStorage. "Lưu vào project robot-tm"
  * gọi programming.createArtifact (qua cha) để đưa buffer vào pipeline build/deploy có gate.
  */
-function TeachJogBuffer({
+export function TeachJogBuffer({
   value, onChange, onSave, canSave, saving,
 }: {
   value: string;
@@ -912,14 +912,36 @@ function TeachJogBuffer({
       <div>
         <div className="mb-1 flex items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">{t("cockpit.tmscript", "tmscript buffer (preview)")}</span>
-          <span
-            title={!canSave ? t("cockpit.teachSavePerm", "Cần quyền tạo chương trình (machine_control/canCreate)") : undefined}
-          >
-            <Button size="sm" variant="outline" className="h-7" disabled={!canSave || saving} onClick={onSave}>
+          {/*
+            ★★★ ĐỢT 15 LÔ R (P-3) — **HIỆN-RỒI-CHẶN ⇒ ẨN.**
+
+            Luật của dự án (`nganXuLyLogic.ts:102-111`): **thiếu QUYỀN ⇒ ẨN; bị
+            chặn TẠM THỜI ⇒ disable + giải thích.** Hai trục tách hẳn nhau
+            (`duocPhep` ≠ `lyDoChan`, `nganXuLyLogic.ts:93-99`).
+
+            Bản trước render nút rồi `disabled={!canSave || saving}` kèm `title`
+            "Cần quyền tạo chương trình" — tức **gộp hai trục vào một biểu thức**
+            và xử trục QUYỀN bằng cách của trục TRẠNG THÁI. Đây là **vi phạm duy
+            nhất** của luật còn lại, và nó **với tới được từ `/twin`** qua ngăn
+            nhúng (§12b.1.3). Một nút hiện ra rồi từ chối vừa mời người dùng bấm
+            vào chỗ không đi được, vừa xác nhận cho người không có quyền rằng
+            chức năng ấy có thật.
+
+            ⇒ `canSave` (QUYỀN `machine_control/canCreate`) quyết định **CÓ
+              RENDER HAY KHÔNG**; `saving` (TRẠNG THÁI tạm thời) vẫn `disabled` +
+              spinner — đúng vế thứ hai của luật, và KHÔNG đổi hành vi cho người
+              đã có quyền.
+
+            ⚠ Chỉ đổi đúng chỗ này. `RobotCockpit` là màn KHÔNG ĐƯỢC XOÁ và có
+              người dùng ngoài Twin; phần xem/preview buffer bên dưới giữ nguyên
+              cho mọi vai.
+          */}
+          {canSave && (
+            <Button size="sm" variant="outline" className="h-7" disabled={saving} onClick={onSave}>
               {saving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 h-3.5 w-3.5" />}
               {t("cockpit.teachSave", "Lưu vào project robot-tm")}
             </Button>
-          </span>
+          )}
         </div>
         <pre className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 text-xs font-mono">{value}</pre>
         <p className="mt-1 text-[11px] text-muted-foreground">

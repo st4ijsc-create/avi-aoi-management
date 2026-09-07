@@ -7,6 +7,64 @@
  *   acknowledge  → andon/canEdit
  *   resolve      → andon/canEdit
  *   list/active/get/metrics → andon/canView
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 15 LÔ R (L-1) — **HÀNG RÀO TENANT CHO `acknowledge` / `resolve`.**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * `acknowledge` **CÓ** `ctx` — nhưng chỉ để ĐÓNG DẤU người tiếp nhận
+ * (`acknowledgedBy = ctx.user.id`). Nó **KHÔNG kiểm `input.id` có thuộc phạm vi
+ * người gọi hay không**. Đó là một phân biệt quan trọng và dễ nhìn nhầm:
+ *
+ *     có `ctx`  ≠  có kiểm phạm vi.
+ *
+ * Danh tính được DÙNG để ghi, không được dùng để CHẶN. Một tài khoản có
+ * `andon/canEdit` ở nhà máy A tiếp nhận (và giải quyết) được cảnh báo Andon của
+ * nhà máy B — chỉ cần đoán `id`; và vì `acknowledge` dập MTTA, nó còn làm hỏng
+ * số đo của tenant kia.
+ *
+ * ★★★ **`requirePermission` KHÔNG đo tenant.** Hai trục khác nhau; chỉ một trục
+ *   có người canh.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ★★★ `andon_events` KHÔNG CÓ CỘT TENANT — PHẠM VI PHẢI **SUY QUA PHÂN CẤP**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Đo lược đồ 2026-09-08: cột của bảng là `id, state, reason, status, lineId,
+ * stationId, machineId, title, message, raisedBy, …` — KHÔNG có `factoryCode`
+ * hay `corporateCode`. Nên `congMaTenant` (trục MÃ) **không dùng được ở đây**;
+ * phải chiếu qua chuỗi `machines → stations → production_lines → workshops →
+ * factories` bằng `idsTrongPhamVi`, tức trục ID.
+ *
+ * ⚠⚠ **CẢ BA cột `machineId`/`stationId`/`lineId` đều NULLABLE** (đo bằng
+ *   `information_schema.columns`: cả ba `is_nullable = YES`). Nên câu hỏi thật
+ *   là: *một hàng NULL cả ba thuộc phạm vi ai?*
+ *
+ *   **QUYẾT ĐỊNH: fail-CLOSED.** Một hàng không khai máy, trạm lẫn chuyền
+ *   **không có đường nào truy ra nhà máy** — nói nó "thuộc mọi người" là mở đúng
+ *   cái lỗ vừa vá (mọi tenant tiếp nhận được mọi cảnh báo vô chủ). Người bị thu
+ *   hẹp KHÔNG chạm được nó; **vai toàn quyền vẫn chạm được**, nên hàng ấy không
+ *   trở thành rác không ai dọn nổi.
+ *
+ *   Đây là cùng luật đã ghi ở hai chỗ khác trong repo, không phải luật thứ ba:
+ *   `congMaTenant` ("hàng có CẢ HAI mã NULL bị LOẠI cho người bị thu hẹp") và
+ *   nhánh `workstation` của `idsTrongPhamVi` ("công trạm mồ côi cả ba khoá
+ *   KHÔNG có đường nào ra nhà máy ⇒ bị loại").
+ *
+ * ★ G48 — **cái rỗng này rỗng ở cột nào**: đo trên `aoi_management` 2026-09-08,
+ *   `andon_events` có **9 hàng**, trong đó `machineId` khai đủ **9/9**,
+ *   `lineId` **9/9**, `stationId` **2/9**, và **0 hàng** NULL cả ba. Nghĩa là
+ *   luật fail-closed ở trên **không làm mất hàng nào đang có thật**; nó chỉ định
+ *   nghĩa trước một hình dạng chưa xuất hiện.
+ *
+ * ⚠ **HOẶC, không phải VÀ**: một hàng khai `machineId` của A và `lineId` của A
+ *   phải qua; nhưng nếu chỉ một trong ba cột được khai thì chính cột ấy quyết
+ *   định. Dùng VÀ sẽ loại mọi hàng có cột NULL — "vá quá tay thành chặn tất cả".
+ *
+ * ⚠ Ngoài phạm vi ⇒ **`NOT_FOUND`**, cùng mã với "không tồn tại": một mã riêng
+ *   vẫn xác nhận cảnh báo ấy có thật. Cùng luật lô Q1.
+ *
+ * Nghiệm thu: `maintenanceAndonPhamVi.db.test.ts` (hai chiều, CSDL thật, vai
+ * KHÔNG-admin). ★ G26 — CSDL có **0 hàng `raised`**, nên lưới **tự dựng** hàng
+ * `raised` rồi xoá lại; đo trên tập rỗng là đo trên hư không.
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -18,7 +76,8 @@ import { getDb as getDbRaw } from "../db";
 import { andonEvents } from "../../drizzle/schema";
 import { raiseAndon, acknowledgeAndon, resolveAndon } from "../services/andon/andonService";
 import { classifyIssue } from "../services/aiIssueClassifier";
-import { getMachineByCode } from "../db/hierarchy";
+import { getMachineByCode, idsTrongPhamVi } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
 
 async function getDb() {
   const db = await getDbRaw();
@@ -28,6 +87,44 @@ async function getDb() {
 
 const stateEnum = z.enum(["green", "yellow", "red", "call"]);
 const reasonEnum = z.enum(["quality", "material", "maintenance", "safety", "setup", "other"]);
+
+/**
+ * ★★★ L-1 — cổng phạm vi cho MỘT hàng `andon_events` lấy theo `id` TỰ KHAI.
+ *
+ * Ném `NOT_FOUND` khi hàng không tồn tại HOẶC nằm ngoài phạm vi người gọi — hai
+ * ca cho CÙNG một mã, cố ý (xem docblock đầu tệp).
+ *
+ * ⚠ Trả về hàng đã đọc để nơi gọi không phải đọc lần thứ hai (và không có khe hở
+ *   giữa hai lần đọc).
+ *
+ * ⚠ Ba trục HOẶC nhau, và mỗi trục chỉ tính khi cột ấy KHÔNG NULL. Cả ba NULL ⇒
+ *   fail-CLOSED cho người bị thu hẹp.
+ */
+async function congPhamViAndon(id: number, ctx: unknown) {
+  const db = await getDb();
+  const [row] = await db.select().from(andonEvents).where(eq(andonEvents.id, id)).limit(1);
+  if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "andonEvent" }, "Andon không tồn tại.");
+
+  const pv = phamViCua(ctx as Parameters<typeof phamViCua>[0]);
+  const [idsMay, idsTram, idsChuyen] = await Promise.all([
+    idsTrongPhamVi("machine", pv),
+    idsTrongPhamVi("station", pv),
+    idsTrongPhamVi("line", pv),
+  ]);
+  // `null` ở tầng máy = vai toàn quyền / lối không mang danh tính ⇒ KHÔNG cổng
+  // nào. Ba lời gọi cùng nguồn phạm vi nên chúng `null` cùng lúc; kiểm một là đủ,
+  // nhưng kiểm cả ba cho hình dạng tự nói.
+  if (idsMay === null && idsTram === null && idsChuyen === null) return row;
+
+  const hop =
+    (row.machineId != null && (idsMay ?? []).includes(row.machineId)) ||
+    (row.stationId != null && (idsTram ?? []).includes(row.stationId)) ||
+    (row.lineId != null && (idsChuyen ?? []).includes(row.lineId));
+  if (!hop) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "andonEvent" }, "Andon không tồn tại.");
+  }
+  return row;
+}
 
 export const andonRouter = router({
   raise: protectedProcedure
@@ -126,6 +223,9 @@ export const andonRouter = router({
     .use(requirePermission("andon", "canEdit"))
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
+      // ★★★ L-1 — cổng phạm vi TRƯỚC khi ghi. Bản gốc có `ctx` nhưng chỉ dùng nó
+      //   để đóng dấu người tiếp nhận, không để chặn.
+      await congPhamViAndon(input.id, ctx);
       const row = await acknowledgeAndon(input.id, ctx.user.id, { id: ctx.user.id, name: ctx.user.name ?? null });
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "andonEvent" }, "Andon không tồn tại.");
       return row;
@@ -135,6 +235,9 @@ export const andonRouter = router({
     .use(requirePermission("andon", "canEdit"))
     .input(z.object({ id: z.number().int().positive(), notes: z.string().max(2000).optional() }))
     .mutation(async ({ input, ctx }) => {
+      // ★ L-1 — `resolve` có ĐÚNG hình dạng của `acknowledge`; vá một mà bỏ cái
+      //   kia là để nguyên cánh cửa (bài học "vá xong kiểm NHÁNH KIA").
+      await congPhamViAndon(input.id, ctx);
       const row = await resolveAndon(input.id, ctx.user.id, input.notes, { id: ctx.user.id, name: ctx.user.name ?? null });
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "andonEvent" }, "Andon không tồn tại.");
       return row;

@@ -249,6 +249,10 @@ async function main(): Promise<void> {
     machine_heartbeats: await dem("machine_heartbeats", "machineId", mIds),
     andon_events: await dem("andon_events", "lineId", plIds),
     line_balance_metrics: await dem("line_balance_metrics", "lineId", plIds),
+    // ★ ĐỢT 15 LÔ R — `station_dwell_time` (lô S đo được 48 hàng mồ côi sau một
+    //   lượt gỡ). Đếm theo `machineId`, KHÔNG theo `stationId`: xem docblock ở
+    //   phép xoá bên dưới.
+    station_dwell_time: await dem("station_dwell_time", "machineId", mIds),
   };
   console.log(
     "  Van hanh: " +
@@ -354,6 +358,29 @@ async function main(): Promise<void> {
       //   được thứ cái thứ nhất mù. Danh sách này KHÔNG được sửa bằng cách đoán;
       //   chạy lại phép quét theo tên cột sau mỗi lần lược đồ đổi.
       xoa.predictive_alerts = (await tx`DELETE FROM predictive_alerts WHERE "machineId" = ANY(${mIds})`).count;
+      // ══════════════════════════════════════════════════════════════════════
+      // ★★★ ĐỢT 15 LÔ R — `station_dwell_time`, VÀ VÌ SAO KHOÁ LÀ `machineId`
+      // ══════════════════════════════════════════════════════════════════════
+      // Lô S dựng một nhà máy thử rồi tháo, để lại **48 hàng mồ côi** ở bảng
+      // này; nó dọn tay, nhưng gốc rễ nằm ở đây. Bảng mang CẢ BA khoá
+      // `lineId`/`stationId`/`machineId`, nên có ba đường gỡ nghĩ được — và
+      // chúng KHÔNG tương đương:
+      //
+      //   Đo trên `aoi_management` 2026-09-08 (8.652 hàng):
+      //     mồ côi theo `machineId`  → **3.247**
+      //     mồ côi theo `stationId`  → **0**
+      //
+      // ⇒ Gỡ theo `stationId` (đường mà đề xuất ban đầu nêu) sẽ để lại đúng
+      //   3.247 hàng ấy: chúng khai một `stationId` CÒN SỐNG nhưng một
+      //   `machineId` ĐÃ CHẾT. Khoá đúng là `machineId`, cùng trục với
+      //   `machine_health_history` / `ot_telemetry` / `rul_estimates`.
+      //
+      // ⚠ Đây KHÔNG phải "chọn cột an toàn hơn" — nó là hệ quả của việc bảng
+      //   mang nhiều khoá độc lập, và phép đo trên cả hai cột là cách duy nhất
+      //   biết được cái nào bắt hết. Đừng đổi cột mà không đo lại cả hai.
+      xoa.station_dwell_time = (
+        await tx`DELETE FROM station_dwell_time WHERE "machineId" = ANY(${mIds})`
+      ).count;
     }
     if (plIds.length) {
       xoa.andon_events = (await tx`DELETE FROM andon_events WHERE "lineId" = ANY(${plIds})`).count;
@@ -423,6 +450,7 @@ async function main(): Promise<void> {
     + (SELECT count(*) FROM rul_estimates          WHERE machine_id   = ANY(${mA}))
     + (SELECT count(*) FROM machine_status_logs    WHERE "machineId" = ANY(${mA}))
     + (SELECT count(*) FROM predictive_alerts      WHERE "machineId" = ANY(${mA}))
+    + (SELECT count(*) FROM station_dwell_time      WHERE "machineId" = ANY(${mA}))
     + (SELECT count(*) FROM wip_tracking WHERE "currentStationId" = ANY(${sA}))
     + (SELECT count(*) FROM andon_events           WHERE "lineId"  = ANY(${pA}))
     + (SELECT count(*) FROM line_balance_metrics    WHERE "lineId" = ANY(${pA}))
@@ -461,6 +489,7 @@ async function main(): Promise<void> {
       xoaThem.machine_heartbeats = (await tx`DELETE FROM machine_heartbeats WHERE "machineId" = ANY(${mA})`).count;
       xoaThem.product_inspections = (await tx`DELETE FROM product_inspections WHERE "machineId" = ANY(${mA})`).count;
       xoaThem.wip_tracking = (await tx`DELETE FROM wip_tracking WHERE "currentStationId" = ANY(${sA})`).count;
+      xoaThem.station_dwell_time = (await tx`DELETE FROM station_dwell_time WHERE "machineId" = ANY(${mA})`).count;
     });
     console.log(
       "  Doi thu 2 da xoa: " +
@@ -476,6 +505,7 @@ async function main(): Promise<void> {
       + (SELECT count(*) FROM machine_status_logs    WHERE "machineId" = ANY(${mA}))
       + (SELECT count(*) FROM machine_heartbeats     WHERE "machineId" = ANY(${mA}))
       + (SELECT count(*) FROM product_inspections    WHERE "machineId" = ANY(${mA}))
+      + (SELECT count(*) FROM station_dwell_time     WHERE "machineId" = ANY(${mA}))
       + (SELECT count(*) FROM wip_tracking WHERE "currentStationId" = ANY(${sA}))
       )::text n
     `;
@@ -522,6 +552,76 @@ async function main(): Promise<void> {
       ` inspections=${moCoiIns} andon=${moCoiAndon} health=${moCoiHealth}` +
       ` line_balance=${moCoiCb}  tong=${tongMoCoi}`,
   );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★★★ ĐỢT 15 LÔ R — **CẦU CHÌ TỰ SUY: QUÉT THEO TÊN CỘT, KHÔNG THEO DANH SÁCH**
+  // ══════════════════════════════════════════════════════════════════════════
+  // G53 nói phạm vi phép gỡ phải suy từ **đồ thị tham chiếu**, không từ danh
+  // sách INSERT. Nhưng ở CSDL này đồ thị FK **RỖNG**: đo 2026-09-08,
+  //
+  //   SELECT … FROM information_schema.table_constraints
+  //    WHERE constraint_type='FOREIGN KEY'
+  //      AND ccu.table_name IN ('machines','stations','production_lines', …)
+  //   → **0 hàng**
+  //
+  // Không một bảng nào khai khoá ngoại vào `machines`. Nên một phép quét theo FK
+  // trả về 0 và trông như "không còn gì để gỡ" — **âm tính giả hoàn hảo**. Mô
+  // hình DUY NHẤT còn hiệu lực là quét theo **TÊN CỘT**.
+  //
+  // ⇒ Và đó chính là lý do danh sách xoá ở trên cứ thiếu thêm một bảng sau mỗi
+  //   lô: lô P thêm `machine_health_history`, lô R thêm `station_dwell_time`…
+  //   Chừng nào danh sách còn được BẢO TRÌ BẰNG TAY, nó sẽ còn lệch. Khối dưới
+  //   đây không sửa danh sách — nó làm cho việc lệch **TỰ BÁO**.
+  //
+  // ⚠ Nó chỉ **ĐO và BÁO**, KHÔNG xoá: mở rộng phạm vi xoá theo một phép quét
+  //   tự động là đúng cách để một hôm nào đó xoá nhầm bảng của người khác. Hàng
+  //   nào nó tìm thấy là việc của người đọc quyết định.
+  const bangCoKhoaMay = await sql<{ tbl: string; col: string }[]>`
+    SELECT c.table_name AS tbl, c.column_name AS col
+      FROM information_schema.columns c
+      JOIN information_schema.tables t
+        ON t.table_name = c.table_name AND t.table_schema = c.table_schema
+     WHERE c.table_schema = 'public'
+       AND t.table_type = 'BASE TABLE'
+       AND c.column_name IN ('machineId', 'machine_id')
+       AND c.data_type IN ('integer', 'bigint', 'smallint')
+     ORDER BY c.table_name
+  `;
+  const soTMoCoi: Array<{ tbl: string; n: number }> = [];
+  for (const { tbl, col } of bangCoKhoaMay) {
+    try {
+      const [r] = await sql.unsafe<{ n: string }[]>(
+        `SELECT count(*)::text n FROM public."${tbl}" x
+          WHERE x."${col}" IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM machines m WHERE m.id = x."${col}")`,
+      );
+      if (Number(r.n) > 0) soTMoCoi.push({ tbl, n: Number(r.n) });
+    } catch {
+      // Bảng phân mảnh/khung nhìn đặc biệt — bỏ qua, không để một bảng lạ giết
+      // cả phép đo.
+    }
+  }
+  if (soTMoCoi.length > 0) {
+    const tong = soTMoCoi.reduce((a, b) => a + b.n, 0);
+    console.log(
+      `
+  [QUET TEN COT] Mo coi theo machineId toan CSDL: tong=${tong}  ` +
+        soTMoCoi.map((r) => `${r.tbl}=${r.n}`).join("  "),
+    );
+    const laVet = new Set([
+      // Những bảng phép gỡ này CÓ xử lý — mồ côi ở đây là rác của lượt TRƯỚC.
+      "machine_health_history", "ot_telemetry", "rul_estimates",
+      "machine_status_logs", "predictive_alerts", "machine_heartbeats",
+      "product_inspections", "station_dwell_time",
+    ]);
+    const laLa = soTMoCoi.filter((r) => !laVet.has(r.tbl));
+    if (laLa.length > 0) {
+      console.error(
+        "  ⚠ BANG NGOAI DANH SACH GO: " + laLa.map((r) => `${r.tbl}=${r.n}`).join("  ") +
+          "  → phep go dang THIEU bang nay. Bao lai truoc khi mo rong pham vi xoa.",
+      );
+    }
+  }
 
   const [{ n: moCoiMay }] = await sql<{ n: string }[]>`
     SELECT count(*)::text n FROM twin_dat_cho d
