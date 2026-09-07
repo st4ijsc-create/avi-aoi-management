@@ -2837,6 +2837,55 @@ npx tsx scripts/sinh-tai-twin.ts --chi-nhip   # lam tuoi mau (moi <5 phut)
 npx tsx scripts/go-tai-twin.ts                # go - DUNG SERVER TRUOC
 ```
 
+## 11i. DOT 15 - CHU SO HUU DUYET §12b, MO DOT XAY (2026-09-08)
+
+Chu so huu **duyet ca ba**: va L-1, don 8.197 hang mo coi, va danh sach **GOP 7 / BO 6** cua §12b.
+Thu tu lam theo **§12b.5** - ba thu **CHAN** phan con lai di truoc.
+
+### 11i.1 Chia lo
+
+| Lo | Viec | Tep doc quyen |
+|---|---|---|
+| **R** | **L-1** va lo ghi xuyen tenant (2 thu tuc) - don 8.197 hang mo coi - **P-3** an-khong-disable | `maintenanceRouter.ts`, `andonRouter.ts`, `RobotCockpit.tsx`, `scripts/go-tai-twin.ts` |
+| **S** | **P-1** dien `factoryCode` - **P-2** sinh `station_dwell_time` | `scripts/sinh-tai-twin.ts`, `scripts/_lib/**`, duong ghi `product_inspections` |
+
+### 11i.2 L-1 co **HAI** thu tuc, khong phai mot
+
+Ban thiet ke §12b.6 tim ra thu hai; chu du an kiem lai ca hai:
+
+| Thu tuc | `file:line` | Hinh dang |
+|---|---|---|
+| `maintenance.createWorkOrder` | `maintenanceRouter.ts:89` | `.mutation(async ({ input }) => ...)` - **khong boc `ctx`**; tra `machines` bang `input.machineId` client tu khai |
+| `andon.acknowledge` | `andonRouter.ts:125-131` | **Co** `ctx` (dong dau nguoi tiep nhan) nhung **khong kiem `input.id` thuoc pham vi nguoi goi** |
+
+**Doi chung trong cung tep:** `maintenanceRouter.ts:256` **co** dung `async ({ input, ctx })`.
+**Be mat do duoc:** 283 may / 3 nha may => mot tai khoan o nha may A **tao duoc phieu cho bat ky may
+nao** cua nha may B, chi can doan `machineId`.
+
+> #### G54 - `andon_events` **KHONG CO COT TENANT** => pham vi phai SUY QUA PHAN CAP
+> Chu du an do: cot bang la `id, state, reason, status, lineId, stationId, machineId, ...` - **khong co
+> `factoryId`/`factoryCode`**. Pham vi phai suy qua `machines -> stations -> production_lines ->
+> workshops -> factories`.
+> **Va ca ba cot `lineId`/`stationId`/`machineId` deu CO THE NULL** - hang NULL ca ba thuoc pham vi ai?
+> Day la mot **quyet dinh**, khong phai chi tiet ky thuat; **fail-closed la mac dinh an toan**.
+
+### 11i.3 P-1 - cai bay da duoc canh bao TRUOC
+
+`product_inspections` 2.880 hang, **ca 2.880 `factoryCode IS NULL`**. Sau khi lo Q va loc tenant, vai
+khong-admin thay **0 hang**.
+
+> **Cach chua SAI: noi cong thanh "NULL thi cho qua".** Do la **mo lai dung lo ma lo Q vua va**, cho moi
+> tenant doc moi hang chua khai. Cach **DUNG**: **dien `factoryCode`** - ca o **duong ghi** (de khong de
+> them hang NULL) lan **du lieu san co** (suy tu chuoi phan cap, chi dien hang **suy duoc chac chan**).
+
+### 11i.4 P-2 - nguon thu hai ma khong ai nhin toi
+
+`predictionOverlay` **van chan** du `wip_tracking` nay co 2.704 hang/24h - vi **`station_dwell_time` moi
+nhat 17 ngay**. Day la **G50 o dang thu hai**: sua mot nguon xong van khong mo duoc tinh nang, vi con
+mot nguon nua.
+⇒ Khi mot tinh nang "van khong chay du da co du lieu", **liet ke MOI bang no doc**, dung dung lai o
+bang dau tien.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
