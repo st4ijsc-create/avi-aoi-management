@@ -20567,6 +20567,49 @@
         "khoang_cach_that_khong_hop_le": "Hãy nhập khoảng cách thật, đơn vị milimét.",
         "ti_le_vo_ly": "Tỉ lệ này vô lý — kiểm tra lại đơn vị của khoảng cách vừa nhập."
       }
+    },
+    "moPhong": {
+      "tieuDe": "Mô phỏng",
+      "thu": "Thu ngăn mô phỏng",
+      "mo": "Mở ngăn mô phỏng",
+      "whatIf": "Năng suất what-if",
+      "horizon": "Khoảng (giờ)",
+      "heSo": "Hệ số cycle",
+      "chay": "Chạy",
+      "dangChay": "Đang mô phỏng…",
+      "bamChay": "Bấm Chạy để ước lượng năng suất.",
+      "tuoi": "{{tuoi}} trước",
+      "nguon": "Nhịp {{nhip}} s/chiếc của CẢ CHUYỀN (wip.lineBalance), áp chung cho {{n}} trạm{{tuoi}}",
+      "sanLuong": "Sản lượng",
+      "lyThuyet": "Lý thuyết",
+      "canBang": "Cân bằng",
+      "nutThat": "Nút thắt",
+      "tram": "Trạm",
+      "cycle": "Cycle (s)",
+      "hieuSuat": "Hiệu suất",
+      "phatLai": "Phát lại quy trình",
+      "chonWorkflow": "Chọn quy trình để phát lại",
+      "khongCoWorkflow": "Chưa có quy trình nào được triển khai.",
+      "simKhongDat": "Mô phỏng không đạt.",
+      "phat": "Phát",
+      "tam": "Tạm dừng",
+      "luiBuoc": "Lùi một bước",
+      "toiBuoc": "Tới một bước",
+      "lyDo": {
+        "chuaChonLine": "Chọn một chuyền để mô phỏng năng suất.",
+        "khongCoTram": "Chuyền này chưa có trạm nào.",
+        "chuaDo": "Đang đọc nhịp chuyền…",
+        "khongCoBanGhi": "Chưa có bản ghi cân bằng chuyền nào cho chuyền này.",
+        "banGhiKhongCoNhip": "Bản ghi cân bằng chuyền gần nhất không có nhịp (avgCycleTimeMs rỗng).",
+        "nhipHetHan": "Nhịp chuyền gần nhất đã quá hạn 8 giờ — không dùng để mô phỏng."
+      },
+      "buocTren": "bước {{i}}/{{n}}",
+      "khongThoiLuong": "Quy trình này chỉ gồm cổng chờ người — mô phỏng không đoán thời lượng, nên xem theo BƯỚC.",
+      "donVi": {
+        "phut": "{{n}} phút",
+        "gio": "{{n}} giờ",
+        "ngay": "{{n}} ngày"
+      }
     }
   }
 }

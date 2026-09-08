@@ -1654,7 +1654,7 @@ QĐ-1 là phương án **khối lượng lớn nhất**: 62 tính năng đang ch
 
 | # | Tính năng | Đích |
 |---|---|---|
-| 30 | What-if throughput (`digitalTwin.whatIf`) | Ngăn kéo "Mô phỏng" (đợt 5) |
+| 30 | What-if throughput (`digitalTwin.whatIf`) | ✅ Đợt 19 lô X — `NganMoPhong.tsx`, chỗ gọi `TwinVanHanh.tsx:2577` |
 | 31 | Defect heatmap | Lớp phủ 3D + bảng xếp hạng 2D dải dưới |
 | 32 | Station load + bottleneck | Lớp phủ + bảng xếp hạng |
 | 33 | Prediction tắc nghẽn | Badge nổi + panel cảnh báo |
@@ -1666,7 +1666,7 @@ QĐ-1 là phương án **khối lượng lớn nhất**: 62 tính năng đang ch
 
 | # | Tính năng | Đích |
 |---|---|---|
-| 35 | Phát lại `orchestration.simulate` workflow bất kỳ | Ngăn "Mô phỏng" (đợt 5) |
+| 35 | Phát lại `orchestration.simulate` workflow bất kỳ | ✅ Đợt 19 lô X — `NganMoPhong.tsx`, chỗ gọi `TwinVanHanh.tsx:2577`. ⚠ 4/5 workflow thật `totalDurationMs=0` ⇒ chế độ **theo BƯỚC** (G71) |
 | 36 | `commandLog.avgDurations` → cycle time thật | Ngăn "Mô phỏng" |
 | 37 | Scrub Gantt + phím ←/→ theo biên step | `DongThoiGian.tsx` |
 | 38 | Toggle Dự đoán/Trực tiếp | `DongThoiGian.tsx` |
@@ -3325,6 +3325,74 @@ Con lai: **`whatIf` 0** (#30/#35) va `ArticulatedRobot` 1 (**chu thich**, khong 
 `orchestration.simulate` (`orchestrationRouter.ts:243`).
 §12b.2 xep **G-2 what-if** la *"mat mo phong duy nhat trong ca 4 trang - dung nghia digital TWIN chu
 khong phai digital shadow"*.
+
+### 11n.3 LO X DA VE - MUC CUOI DONG, va HAI loi chi TRINH DUYET/ANH bat duoc (2026-09-08)
+
+Cong: **58 tep / 1706 test** (nen 57/1668) - `check` 0 - `build` 0 - DB `factories 2 · machines 43 ·
+twin_dat_cho 82` nguyen ven - 5 anh lo C **con nguyen** (`git diff -- test-results/` rong).
+
+| Muc | Cho goi `file:line` |
+|---|---|
+| #30 what-if | `TwinVanHanh.tsx:2577` `<NganMoPhong>`; truy van `:1502` `digitalTwin.whatIf` |
+| #35 phat lai | cung `<NganMoPhong>`; truy van `:1536` `orchestration.simulate`, `:1532` `listWorkflows` |
+| **`dangMoPhong` HET hardcode** | **`TwinVanHanh.tsx:1577`** - `daBamChay && dungWhatIf.chay && whatIfQ.data != null` |
+
+Nghiem thu THI GIAC (`.qa-loX/`, cong 3130 rieng, **khong dung 3000 cua phien khac**): badge xuat xu
+lat **`bong` → `mo_phong`** khi chay what-if that (san luong **3000**, nut that **#1**) - tu chup, tu doc.
+
+> #### ★★★ G71 - **`gateMs = 0` LA CHU Y DUNG, NHUNG NO LAM CHET NUT BAM TREN 4/5 DU LIEU THAT**
+> Do `orchestration.simulate` tren **ca 5** hang `orchestration_workflows`:
+> `Line-a-startup` total **34.000** (command/wait) - **4 hang con lai total 0**, vi chung gom **TOAN
+> `hitl_gate`** va simulate de `gateMs` mac dinh **0** (`foeSimulator.ts:680`; docblock `:127` ghi
+> *"the human pause is 0 in sim by default"* - **dung**, mot cong cho NGUOI khong co thoi luong doan duoc).
+>
+> Hai he qua, **ca hai deu 1.694 luoi don vi mu**:
+> 1. **Nut ►/◄ CHET.** Tap bien `[0, ...startMs, tongMs]` gop ve dung `[0]` ⇒ `f(x) = x`, **G32**.
+> 2. **`0.0s / 0.0s` la LOI KHAI SAI** - mot workflow **5 buoc co that** doc y het *"workflow rong"*.
+>
+> Ban va: `coThoiLuong()` tach **HAI che do** (theo THOI GIAN / theo BUOC), va **ca hai** ham
+> `datBuocPhatLai` + `mocBuocKeTiep` phai hoi **cung mot cua** (G12) - lech nhau thi bam nut thay so
+> doi ma **khong thanh nao sang**. Che do buoc in "buoc 2/5" + mot cau noi **vi sao** khong co giay.
+>
+> ⇒ **Luat:** mot mac dinh **dung ve ngu nghia** o tang duoi (`gateMs=0`) van co the la **du lieu thoai
+> hoa** o tang tren. Tang tren phai **phat hien va doi che do**, khong duoc trinh bay thoai hoa nhu do dac.
+
+> #### ★★★ G72 - **MODULE THUAN KHONG DUOC SINH CHU CHO NGUOI DOC** (anh tu chup bat)
+> `nhanTuoi()` ban dau tra thang `"17 ngày"`, roi tang ve ghep vao khuon EN `"{{tuoi}} ago"` ⇒ man
+> hinh in **"(17 ngày ago)"**. `tsc` **0**, **36** luoi don vi **xanh**, **3** ca Playwright **xanh** -
+> vi **khong o nao hoi "chuoi nay thuoc ngon ngu nao"**. Chi **TU DOC ANH** moi lo.
+> Ban va: `nhanTuoi` tra **`{so, donVi}`** (du lieu), `t()` dich **DON VI** o tang ve.
+> ⇒ Cung ho voi G10b: **mot lop loi ma moi cong tu dong deu mu**, chi con mat nguoi (hoac mot o luoi
+> hoi dung cau hoi do - da them ca hai: `.unit.test.ts` + assertion e2e `not.toMatch(/ngày|giờ|phút/)`).
+
+> #### ★ G73 - DOT BIEN SONG SOT VI **BO DU LIEU DO TRUNG KET QUA HAI LUAT**
+> Thay `coThoiLuong(buoc, tongMs)` bang `tongMs > 0` trong `datBuocPhatLai`: **35/35 luoi van xanh**.
+> Ly do: bo `BUOC_TOAN_CONG` di kem `tongMs = 0`, noi **hai luat trung ket qua**. Cho chung khac nhau
+> DUY NHAT la `tongMs > 0` **va** moi buoc dai 0 - chua o nao hoi. Them ca do ⇒ dot bien chet.
+> ⇒ **Luat:** dot bien song sot **khong** co nghia ban va thua; truoc het hay hoi *"bo du lieu cua toi
+> co di qua cho hai ban cai dat KHAC NHAU khong?"* **9/9** dot bien bi giet sau khi bo sung.
+
+**Honest-null tren CSDL nay (G45 - "khong lam" cung la ket luan do duoc):** `line_balance_metrics`
+chuyen 1 co **6 hang**, hang moi nhat **2026-08-21 (17-18 ngay)** va **chinh hang ay `avgCycleTimeMs`
+NULL**; `station_dwell_time` chuyen 1 moc moi nhat **2026-07-19/08-21**. ⇒ what-if tren du lieu that
+ra **`ban_ghi_khong_co_nhip`**: hien `—` **kem CAU giai thich + tuoi**, khong hien `0`.
+`dungDauVaoWhatIf` tach **SAU** ly do roi nhau (`chua_chon_line` · `khong_co_tram` · `chua_do` ·
+`khong_co_ban_ghi` · `ban_ghi_khong_co_nhip` · `nhip_het_han`) - gop chung lam mot la vut di dung
+phan giup nguoi van hanh biet phai lam gi (G50).
+
+★ **Cua kiem han dat o CLIENT, va do la bat buoc:** `whatIf` la ham **thuan** ⇒ no **tin tuyet doi**
+`cycleTimeSec` ta gui len, khong co cach nao biet con so ay 18 ngay tuoi. Dung lai `conHieuLuc` +
+`HAN_KHAI_NGHEN_MS` (8h) cua `wipTram.ts` - **khong viet ban thu hai** (G12).
+
+★ **G40 lan hai:** `"moPhong"` them vao `PANEL_THU_DUOC` (`duongDanTwin.ts:152`), **khong de khoa URL
+thu bay**. Danh sach DONG o ca hai chieu ⇒ quen them ten thi `?thu=moPhong` bi **nuot cam** (ghi ra
+dung, doc lai rong, ngan tu mo lai sau F5, **khong loi nao no**) - dung lop **G67 "tang dau tien la KIEU"**.
+
+★ **Brief cua chu du an dung o moi diem kiem duoc** (`TwinVanHanh.tsx:836` hardcode · `whatIf` thuan
+khong rui ro tenant · `simulate` ton tai · §12b.2 xep G-2 vao nhom GOP). **Mot cho chua day du:**
+brief noi *"neu mot phan mo phong khong co du lieu de chay"* - thuc te **ca hai phan deu co du lieu**,
+nhung **theo hai kieu khac nhau**: #35 co **5 workflow that** (chay duoc ngay), #30 co nguon nhung
+**het han/NULL** ⇒ honest-null. Khong phan nao la "ngan trong".
 
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 

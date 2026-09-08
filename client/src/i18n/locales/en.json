@@ -20587,6 +20587,49 @@
         "khoang_cach_that_khong_hop_le": "Enter the real distance in millimetres.",
         "ti_le_vo_ly": "That scale is implausible — check the unit of the distance you entered."
       }
+    },
+    "moPhong": {
+      "tieuDe": "Simulation",
+      "thu": "Collapse simulation panel",
+      "mo": "Expand simulation panel",
+      "whatIf": "What-if throughput",
+      "horizon": "Horizon (h)",
+      "heSo": "Cycle factor",
+      "chay": "Run",
+      "dangChay": "Simulating…",
+      "bamChay": "Press Run to estimate throughput.",
+      "tuoi": "{{tuoi}} ago",
+      "nguon": "Cycle {{nhip}} s/unit for the WHOLE LINE (wip.lineBalance), applied to all {{n}} stations{{tuoi}}",
+      "sanLuong": "Output",
+      "lyThuyet": "Theoretical",
+      "canBang": "Balance",
+      "nutThat": "Bottleneck",
+      "tram": "Station",
+      "cycle": "Cycle (s)",
+      "hieuSuat": "Utilization",
+      "phatLai": "Replay workflow",
+      "chonWorkflow": "Choose a workflow to replay",
+      "khongCoWorkflow": "No workflow has been deployed yet.",
+      "simKhongDat": "Simulation did not pass.",
+      "phat": "Play",
+      "tam": "Pause",
+      "luiBuoc": "Step back",
+      "toiBuoc": "Step forward",
+      "lyDo": {
+        "chuaChonLine": "Select a line to simulate throughput.",
+        "khongCoTram": "This line has no stations.",
+        "chuaDo": "Reading line cycle time…",
+        "khongCoBanGhi": "No line-balance record exists for this line.",
+        "banGhiKhongCoNhip": "The latest line-balance record carries no cycle time (avgCycleTimeMs is empty).",
+        "nhipHetHan": "The latest line cycle time is older than 8 hours — not used for simulation."
+      },
+      "buocTren": "step {{i}}/{{n}}",
+      "khongThoiLuong": "This workflow is human-approval gates only — the simulation does not predict their duration, so it is shown STEP by step.",
+      "donVi": {
+        "phut": "{{n}} min",
+        "gio": "{{n}} h",
+        "ngay": "{{n}} days"
+      }
     }
   }
 }

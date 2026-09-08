@@ -20595,6 +20595,49 @@
         "khoang_cach_that_khong_hop_le": "请输入以毫米为单位的真实距离。",
         "ti_le_vo_ly": "该比例不合理——请核对所输入距离的单位。"
       }
+    },
+    "moPhong": {
+      "tieuDe": "仿真",
+      "thu": "收起仿真面板",
+      "mo": "展开仿真面板",
+      "whatIf": "What-if 产能",
+      "horizon": "时长（小时）",
+      "heSo": "节拍系数",
+      "chay": "运行",
+      "dangChay": "仿真中…",
+      "bamChay": "点击“运行”以估算产能。",
+      "tuoi": "{{tuoi}}前",
+      "nguon": "整条产线节拍 {{nhip}} 秒/件（wip.lineBalance），统一应用于 {{n}} 个工位{{tuoi}}",
+      "sanLuong": "产量",
+      "lyThuyet": "理论产量",
+      "canBang": "平衡率",
+      "nutThat": "瓶颈",
+      "tram": "工位",
+      "cycle": "节拍（秒）",
+      "hieuSuat": "利用率",
+      "phatLai": "回放流程",
+      "chonWorkflow": "选择要回放的流程",
+      "khongCoWorkflow": "尚未部署任何流程。",
+      "simKhongDat": "仿真未通过。",
+      "phat": "播放",
+      "tam": "暂停",
+      "luiBuoc": "上一步",
+      "toiBuoc": "下一步",
+      "lyDo": {
+        "chuaChonLine": "请选择一条产线以进行产能仿真。",
+        "khongCoTram": "该产线尚无工位。",
+        "chuaDo": "正在读取产线节拍…",
+        "khongCoBanGhi": "该产线尚无产线平衡记录。",
+        "banGhiKhongCoNhip": "最新的产线平衡记录不含节拍（avgCycleTimeMs 为空）。",
+        "nhipHetHan": "最新产线节拍已超过 8 小时有效期 — 不用于仿真。"
+      },
+      "buocTren": "第 {{i}}/{{n}} 步",
+      "khongThoiLuong": "该流程仅包含人工审批门 — 仿真不预测其时长，因此按步骤展示。",
+      "donVi": {
+        "phut": "{{n}} 分钟",
+        "gio": "{{n}} 小时",
+        "ngay": "{{n}} 天"
+      }
     }
   }
 }

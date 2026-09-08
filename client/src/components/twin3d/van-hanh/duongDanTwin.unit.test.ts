@@ -402,6 +402,22 @@ describe("★★★ docThu / ghiThu — F4: trả diện tích cho 3D", () => {
     expect(docThu("kpi")).toEqual(["kpi"]);
   });
 
+  /* ═════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 19 LÔ X (§11 #30/#35) — NGĂN MÔ PHỎNG CŨNG DÙNG CHUNG `thu=`
+   * ═════════════════════════════════════════════════════════════════════════ */
+
+  it("★★★ G40/G67 — `moPhong` PHẢI nằm trong danh sách đóng, nếu không URL bị NUỐT CÂM", () => {
+    // Danh sách ĐÓNG ở cả hai chiều: quên thêm tên thì `?thu=moPhong` ghi ra
+    // đúng nhưng đọc lại ra RỖNG — ngăn tự mở lại sau F5, không lỗi nào nổ.
+    // Đây là tầng ĐẦU TIÊN một tính năng có thể chết ở (G67), nên nó có ô riêng.
+    expect(PANEL_THU_DUOC).toContain("moPhong");
+    expect(docThu("moPhong")).toEqual(["moPhong"]);
+    expect(docThu(ghiThu(["moPhong"]))).toEqual(["moPhong"]);
+    // Và nó KHÔNG đá nhau với `kpi` — hai panel nổi cùng sống trên một khoá.
+    expect(docThu("kpi,moPhong")).toEqual(["kpi", "moPhong"]);
+    expect(ghiThu(["moPhong", "kpi"])).toBe("kpi,moPhong");
+  });
+
   it("★ G40 — thu `kpi` KHÔNG đè `pv`/`chon`/`cam`/`nm` của người ghi khác", () => {
     // Bốn khoá kia có bộ ghi riêng. Một lượt ghi `thu` phải đi qua
     // `tronTrangThaiUrl` và giữ NGUYÊN VĂN mọi khoá nó không sở hữu.

@@ -141,8 +141,15 @@ export interface TrangThaiTwinUrl {
  * ★ Hệ quả ngữ nghĩa CÓ CHỦ Ý: vắng mặt = **đang mở**. Bảng KPI vì vậy mặc định
  *   HIỆN (yêu cầu #6: số liệu phải đọc được trên cảnh 3D), và `?thu=kpi` là
  *   đường tắt cho "cảnh 3D sạch không chữ".
+ *
+ * ★★★ `"moPhong"` (Đợt 19 lô X, §11 #30/#35) DÙNG LẠI ĐÚNG KHOÁ NÀY — G40 lần
+ *   thứ hai, cùng lý do đã ghi ở trên cho `"kpi"`. Danh sách là ĐÓNG ở CẢ hai
+ *   chiều (`docThu` lọc theo nó, `ghiThu` sắp thứ tự theo nó), nên **quên thêm
+ *   tên vào đây thì `?thu=moPhong` bị NUỐT trong im lặng**: URL ghi ra đúng, đọc
+ *   lại ra rỗng, ngăn tự mở lại sau F5 và không lỗi nào nổ. Đúng lớp G67 "tính
+ *   năng chết ở tầng ĐẦU TIÊN là KIỂU/DANH SÁCH", nên tên phải vào đây TRƯỚC.
  */
-export const PANEL_THU_DUOC: readonly string[] = ["trai", "phai", "kpi"];
+export const PANEL_THU_DUOC: readonly string[] = ["trai", "phai", "kpi", "moPhong"];
 
 /**
  * Một THAY ĐỔI trạng thái URL — khác `Partial<TrangThaiTwinUrl>` ở ô `nap`.
