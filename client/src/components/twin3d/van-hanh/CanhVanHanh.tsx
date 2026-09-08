@@ -143,7 +143,23 @@ function DieuKhien({
   useFrame(() => {
     const tw = tween.current;
     const controls = controlsRef.current;
-    if (!tw || !controls) return;
+    // ★★★ RB-3b (Lô U, Đợt 16) — QUÁN TÍNH ĐÒI `update()` MỖI KHUNG, KỂ CẢ KHI
+    // KHÔNG TWEEN. Trước bản vá này thân hàm `return` ngay khi `tween` rỗng —
+    // tức `controls.update()` CHỈ chạy trong lúc đổi phạm vi. Mà `enableDamping`
+    // thì luôn bật: mỗi `update()` chỉ áp 8% cú chuột, phần dư 92% chờ lần sau
+    // (three r182, OrbitControls.js:617-618, 701-704). Không tween ⇒ không ai
+    // gọi ⇒ phần dư bị vứt ⇒ camera khựng lại khi nhả chuột.
+    //
+    // Đây đúng là điều kiện kích hoạt của chữ *"thi thoảng"*: quán tính chỉ
+    // chạy trơn trong lúc còn tween đổi phạm vi, mọi lúc khác thì cụt.
+    if (!controls) return;
+    if (!tw) {
+      // `update()` tự phát `change` (⇒ `invalidate`) chỉ khi camera còn dịch
+      // quá `_EPS` (OrbitControls.js:812-815), nên vòng này TỰ TẮT khi camera
+      // đứng yên — `frameloop="demand"` vẫn được tôn trọng.
+      controls.update();
+      return;
+    }
     const t = Math.min(1, (performance.now() - tw.batDau) / TWEEN_DOI_CAP_MS);
     // ease-out cubic — dừng êm, không phanh gấp ở cuối.
     const e = 1 - (1 - t) ** 3;

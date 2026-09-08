@@ -151,6 +151,31 @@ function DieuKhien({
     };
   }, [camera, gl, invalidate, banKinh, controlsRef]);
 
+  // ★★★ RB-3b (Lô U, Đợt 16) — QUÁN TÍNH ĐÒI `update()` MỖI KHUNG.
+  //
+  // `taoDieuKhienQuay` bật `enableDamping` (mặc định `quanTinh ?? true`). Với
+  // damping, OrbitControls KHÔNG áp trọn cú chuột ngay: mỗi `update()` chỉ áp
+  // `dampingFactor` (0,08 = 8%) rồi nhân phần dư với `(1 - 0,08)` và CHỜ lần
+  // `update()` sau (three r182, OrbitControls.js:617-618, 701-704). Phần dư 92%
+  // cần ~40 lần `update()` nữa mới trôi hết.
+  //
+  // Dưới `frameloop="demand"` KHÔNG có vòng lặp nào tự chạy: thứ duy nhất lập
+  // lịch những lần `update()` đó là một `useFrame`. Thiếu nó, phần dư bị VỨT —
+  // camera dừng khựng ngay khi người dùng nhả chuột.
+  //
+  // ★ ĐÃ ĐO (build thật, vai `e2e_tai_loE`, 240 máy): độ đổi ảnh canvas từ lúc
+  //   nhả chuột tới +1,2s — `/twin-studio` = **0,000 %** (đứng chết) trong khi
+  //   `/twin` = 41,006 %. Đối chứng không chạm chuột = 0,000 % ở CẢ HAI màn, nên
+  //   0,000 % kia là quán tính chết thật, không phải nhiễu đo.
+  //
+  // ★ Vòng này TỰ TẮT, không phá `demand`: `update()` chỉ phát `change` (⇒
+  //   `invalidate`) khi camera còn dịch quá `_EPS` (OrbitControls.js:812-815).
+  //   Camera đứng yên ⇒ không `change` ⇒ không `invalidate` ⇒ không khung kế.
+  //   Xem `CanhNhaMay.tsx:102` — cảnh đó đã làm đúng từ đầu, đây là chỗ SÓT.
+  useFrame(() => {
+    controlsRef.current?.update();
+  });
+
   return null;
 }
 
