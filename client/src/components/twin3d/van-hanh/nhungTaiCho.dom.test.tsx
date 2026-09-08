@@ -382,3 +382,55 @@ describe("★★★ trọn vòng: bấm → ngăn mở → quay lại", () => {
     expect(screen.queryByTestId("ngan-nhung")).not.toBeInTheDocument();
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 24 VIỆC 3 (L-5) — NGĂN LỆCH PHẠM VI **NÓI RA LÝ DO**               */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("Đợt 24 L-5 — ngăn bị chặn nói ra lý do", () => {
+  it("★★★ GỐC RỄ: `NganXuLy` dựng <NganNhung> ở CẢ nhánh `machineId === null`", () => {
+    // ĐO ĐƯỢC trên `dist` trước bản vá (`.qa-dot24/probe.mjs`):
+    //   `/twin?xem=machine:1`  → `ngan-nhung` **0** (nhánh sớm nuốt ngăn)
+    // Nhánh sớm trả về TRƯỚC <NganNhung> ở cuối hàm, nên một URL chỉ mang
+    // `?xem=` không mở được ngăn nào — KỂ CẢ id hợp lệ. Đây là phép đo văn bản
+    // chống việc ai đó "dọn dẹp" nhánh ấy về như cũ.
+    // ⚠ Đếm chỗ dựng THẬT, không đếm chữ trong chú thích: docblock ngay trên
+    //   nhánh ấy có nhắc `<NganNhung>` nguyên văn, và phép đếm thô đầu tiên của
+    //   tôi ra 3 — thiết bị đo sai, không phải mã sai. Chỗ dựng thật luôn có
+    //   thuộc tính `ngan={nganNhung}` ở dòng kế tiếp.
+    const soLanDung = (NGAN_XU_LY.match(/<NganNhung\s+ngan=\{nganNhung\}/g) ?? []).length;
+    expect(soLanDung).toBe(2);
+  });
+
+  it("★★★ CHIỀU (+) — `lyDo` vắng/`mo` ⇒ render THÂN, KHÔNG có câu chặn", () => {
+    render(<NganNhung ngan={{ loai: "machine", id: 42 }} onDong={vi.fn()} />);
+    expect(screen.getByTestId("than-nhung")).toBeInTheDocument();
+    expect(screen.queryByTestId("ngan-nhung-bi-chan")).not.toBeInTheDocument();
+  });
+
+  it("★★★ `ngoaiPhamVi` ⇒ hiện câu chặn, và KHÔNG dựng thân cockpit", () => {
+    render(<NganNhung ngan={{ loai: "machine", id: 42 }} lyDo="ngoaiPhamVi" onDong={vi.fn()} />);
+    const chan = screen.getByTestId("ngan-nhung-bi-chan");
+    expect(chan).toBeInTheDocument();
+    // ⚠ Mã MÁY ĐỌC ĐƯỢC, không phải chữ đã dịch — nghiệm thu không được phụ
+    //   thuộc ngôn ngữ đang bật.
+    expect(chan.getAttribute("data-ly-do")).toBe("ngoaiPhamVi");
+  });
+
+  it("★★★ `thieuQuyen` ⇒ MÃ KHÁC HẲN — hai lý do không được gộp thành một câu (G43)", () => {
+    render(<NganNhung ngan={{ loai: "machine", id: 42 }} lyDo="thieuQuyen" onDong={vi.fn()} />);
+    expect(screen.getByTestId("ngan-nhung-bi-chan").getAttribute("data-ly-do")).toBe("thieuQuyen");
+  });
+
+  it("★ ngăn bị chặn VẪN đóng được — không phải ngõ cụt", async () => {
+    const onDong = vi.fn();
+    render(<NganNhung ngan={{ loai: "machine", id: 42 }} lyDo="ngoaiPhamVi" onDong={onDong} />);
+    await userEvent.click(screen.getByTestId("nut-dong-ngan-bi-chan"));
+    expect(onDong).toHaveBeenCalledTimes(1);
+  });
+
+  it("★★★ TwinVanHanh.tsx TRUYỀN `lyDoNgan` xuống — gỡ dòng này thì tính năng chết câm", () => {
+    expect(TRANG).toContain("lyDoNgan={lyDoNgan");
+    expect(TRANG).toContain("lyDoNganNhung(");
+  });
+});

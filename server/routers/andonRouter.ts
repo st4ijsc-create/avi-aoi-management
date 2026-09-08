@@ -77,6 +77,8 @@ import { andonEvents } from "../../drizzle/schema";
 import { raiseAndon, acknowledgeAndon, resolveAndon } from "../services/andon/andonService";
 import { classifyIssue } from "../services/aiIssueClassifier";
 import { getMachineByCode, idsTrongPhamVi } from "../db/hierarchy";
+import { factoryIdGate } from "../db/reportAggregators";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { phamViCua } from "./_phamViNguoiXem";
 
 async function getDb() {
@@ -124,6 +126,73 @@ async function congPhamViAndon(id: number, ctx: unknown) {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "andonEvent" }, "Andon không tồn tại.");
   }
   return row;
+}
+
+/**
+ * ★★★ ĐỢT 24 VIỆC 1 — CỔNG PHẠM VI CHO ĐƯỜNG **ĐỌC DANH SÁCH**.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ★★★ LÔ R VÁ ĐƯỜNG GHI VÀ **DỪNG Ở ĐÓ**. ĐƯỜNG ĐỌC CÒN NGUYÊN.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * `congPhamViAndon` ở trên gác `acknowledge`/`resolve` — hai thủ tục nhận MỘT
+ * `id`. Nhưng bốn thủ tục ĐỌC (`list` :?, `active`, `get`, `metrics`) khai
+ * `async ({ input })` / `async ()` — **không bóc `ctx`**, nên không có mệnh đề
+ * tenant nào. Đo trên mã trước bản vá này:
+ *
+ *     active: protectedProcedure.use(requirePermission("andon","canView"))
+ *       .query(async () => { … isNull(resolvedAt) … limit(200) })
+ *                    ↑ KHÔNG có ctx ⇒ trả andon của MỌI nhà máy
+ *
+ * ⇒ Đây **không phải lỗi hiển thị**. `ShellAlertChip.tsx:43` gọi `andon.active`
+ *   mỗi 15 s ở **vỏ ứng dụng**, nên MỌI màn của MỌI vai đọc được andon của mọi
+ *   tenant — chỉ cần có `andon/canView`. Cùng lớp lỗi với `demVatThe` (lô K) và
+ *   `digitalTwinRouter` (lô Q), nhưng ở bề mặt được nhìn thấy nhiều nhất.
+ *
+ * ★ ĐO ĐƯỢC 2026-09-08 (`aoi_management`): 7 hàng `resolvedAt IS NULL`, **cả 7
+ *   thuộc factory 1 `SIM-FAC`**. `operator1` (id 48, **0 hàng**
+ *   `user_factory_assignments`) đọc được cả 7 — badge khai "7" cho một người
+ *   không được xem nhà máy nào.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ★ VÌ SAO MỘT MỆNH ĐỀ `SQL`, KHÔNG PHẢI LỌC SAU KHI ĐỌC
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Lọc trong JS sau `limit(200)` sẽ cắt **sau** khi CSDL đã chọn 200 hàng của mọi
+ * tenant: người bị thu hẹp có thể nhận 0 hàng dù nhà máy họ có andon, chỉ vì 200
+ * chỗ đã bị tenant khác chiếm. Cổng phải nằm TRONG `WHERE`.
+ *
+ * ⚠ HOẶC ba trục, mỗi trục chỉ tính khi cột ấy KHÔNG NULL — **cùng khuôn**
+ *   `congPhamViAndon` (G12: một luật, không hai bản cài đặt). Cả ba NULL ⇒
+ *   fail-CLOSED cho người bị thu hẹp; `null` phạm vi (vai toàn quyền) ⇒ KHÔNG
+ *   thêm mệnh đề nào (chiều DƯƠNG chống vá quá tay).
+ *
+ * Trả `undefined` khi không cần cổng, để nơi gọi ghép thẳng vào `and(...)`.
+ */
+async function menhDePhamViAndon(ctx: unknown) {
+  const pv = phamViCua(ctx as Parameters<typeof phamViCua>[0]);
+  const [idsMay, idsTram, idsChuyen] = await Promise.all([
+    idsTrongPhamVi("machine", pv),
+    idsTrongPhamVi("station", pv),
+    idsTrongPhamVi("line", pv),
+  ]);
+  // Vai toàn quyền / lối không mang danh tính ⇒ không cổng nào.
+  if (idsMay === null && idsTram === null && idsChuyen === null) return undefined;
+
+  // ⚠ `[]` (phạm vi RỖNG) phải cho 0 hàng, KHÔNG phải "không lọc". `factoryIdGate`
+  //   (`db/reportAggregators.ts:445`) đã cưỡng chế đúng luật ấy — `[] ⇒ 1 = 0`
+  //   TƯỜNG MINH — và `idsTrongPhamVi` cũng dựng câu của nó bằng chính hàm này.
+  //   G12: dùng lại, không viết bản cài đặt thứ hai của một mệnh đề `IN`.
+  //
+  // ⚠ `IS NOT NULL` là phần KHÔNG ĐƯỢC BỎ: `NULL IN (1,2)` cho `NULL` chứ không
+  //   `FALSE`. Bỏ nó thì hàng NULL cả ba vẫn bị `WHERE` loại (vì `NULL` không
+  //   phải `TRUE`) — tức ta được kết quả ĐÚNG vì một lý do SAI, và lý do sai ấy
+  //   vỡ ngay khi ai đó thêm một vế `OR TRUE`. Viết tường minh để luật
+  //   fail-closed đọc được trên mặt chữ.
+  const ve = (cot: AnyPgColumn, ids: number[] | null) =>
+    ids === null || ids.length === 0
+      ? sql`1 = 0`
+      : sql`(${cot} IS NOT NULL AND ${factoryIdGate(cot, ids)})`;
+
+  return sql`(${ve(andonEvents.machineId, idsMay)} OR ${ve(andonEvents.stationId, idsTram)} OR ${ve(andonEvents.lineId, idsChuyen)})`;
 }
 
 export const andonRouter = router({
@@ -251,12 +320,16 @@ export const andonRouter = router({
       machineId: z.number().int().positive().optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       const conds = [];
       if (input?.status) conds.push(eq(andonEvents.status, input.status));
       if (input?.lineId) conds.push(eq(andonEvents.lineId, input.lineId));
       if (input?.machineId) conds.push(eq(andonEvents.machineId, input.machineId));
+      // ★ ĐỢT 24 — cổng tenant ĐỨNG CẠNH bộ lọc tự khai, không thay nó: một
+      //   `input.lineId` của tenant khác vẫn phải cho 0 hàng.
+      const congPhamVi = await menhDePhamViAndon(ctx);
+      if (congPhamVi) conds.push(congPhamVi);
       return db
         .select()
         .from(andonEvents)
@@ -265,26 +338,36 @@ export const andonRouter = router({
         .limit(input?.limit ?? 100);
     }),
 
+  /**
+   * ★★★ ĐỢT 24 VIỆC 1 — thủ tục nuôi **BADGE VỎ ỨNG DỤNG** (`ShellAlertChip`).
+   *
+   * Bản trước khai `async () => {…}`: KHÔNG `ctx`, KHÔNG mệnh đề tenant. Vì chip
+   * sống ở header vỏ và poll 15 s, lỗ này hiện diện trên MỌI màn — xem
+   * `menhDePhamViAndon`.
+   */
   active: protectedProcedure
     .use(requirePermission("andon", "canView"))
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const db = await getDb();
+      const congPhamVi = await menhDePhamViAndon(ctx);
       return db
         .select()
         .from(andonEvents)
-        .where(isNull(andonEvents.resolvedAt))
+        .where(and(isNull(andonEvents.resolvedAt), congPhamVi))
         .orderBy(desc(andonEvents.raisedAt))
         .limit(200);
     }),
 
+  /**
+   * ★ ĐỢT 24 — `get` nhận `id` TỰ KHAI, đúng hình dạng `acknowledge`/`resolve`.
+   *   `congPhamViAndon` đã đọc hàng VÀ gác phạm vi trong một lần, nên nó thay
+   *   trọn phần thân cũ (G12 — không có phép đọc thứ hai ở đây).
+   */
   get: protectedProcedure
     .use(requirePermission("andon", "canView"))
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      const db = await getDb();
-      const [row] = await db.select().from(andonEvents).where(eq(andonEvents.id, input.id)).limit(1);
-      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "andonEvent" }, "Andon không tồn tại.");
-      return row;
+    .query(async ({ input, ctx }) => {
+      return congPhamViAndon(input.id, ctx);
     }),
 
   metrics: protectedProcedure
@@ -295,12 +378,16 @@ export const andonRouter = router({
       lineId: z.number().int().positive().optional(),
       machineId: z.number().int().positive().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       const since = new Date(Date.now() - (input?.sinceHours ?? 24) * 3600 * 1000);
       const conds = [gte(andonEvents.raisedAt, since)];
       if (input?.lineId !== undefined) conds.push(eq(andonEvents.lineId, input.lineId));
       if (input?.machineId !== undefined) conds.push(eq(andonEvents.machineId, input.machineId));
+      // ★ ĐỢT 24 — MTTA/MTTR là số GỘP: không gác thì một tài khoản 0-gán đọc
+      //   được nhịp vận hành của mọi nhà máy mà không cần thấy một hàng nào.
+      const congPhamVi = await menhDePhamViAndon(ctx);
+      if (congPhamVi) conds.push(congPhamVi);
       const [row] = await db
         .select({
           total: sql<number>`count(*)::int`,

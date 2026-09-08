@@ -70,15 +70,17 @@
  */
 import { Suspense, lazy } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
 import {
+  cauChoLyDoNgan,
   hrefGocCuaNgan,
   khoaTieuDeNhung,
   nhanDuPhongNhung,
+  type LyDoNgan,
   type NganNhungMo,
 } from "./nhungTaiCho";
 
@@ -105,6 +107,18 @@ export interface NganNhungProps {
   nhanPhu?: string;
   /** Đóng ngăn — tầng trên xoá `?xem=` khỏi URL. */
   onDong: () => void;
+  /**
+   * ★★★ ĐỢT 24 VIỆC 3 (L-5) — VÌ SAO ngăn này mở được, hoặc không.
+   *
+   * Bỏ trống ⇒ `"mo"` (hành vi cũ y nguyên), nên mọi chỗ gọi chưa nối KHÔNG
+   * đổi hành vi. Khác `"mo"` ⇒ ngăn vẫn MỞ nhưng thân đổi thành **một câu nói
+   * rõ lý do**, thay vì một cockpit rỗng tự 403 bên trong.
+   *
+   * ⚠ Vì sao vẫn mở Sheet thay vì render `null`: `?xem=` CÓ trong URL, nên
+   *   người dùng ĐANG CHỜ một ngăn. Trả `null` là quay lại đúng sự im lặng mà
+   *   L-5 mô tả — màn không mở gì và không nói gì.
+   */
+  lyDo?: LyDoNgan;
 }
 
 /**
@@ -114,10 +128,11 @@ export interface NganNhungProps {
  *   lớp phủ WebGL), nút quay lại là `<button>` thật và là phần tử ĐẦU TIÊN
  *   trong thứ tự đọc, nên Tab một lần từ lúc mở là chạm nó.
  */
-export function NganNhung({ ngan, nhanPhu, onDong }: NganNhungProps) {
+export function NganNhung({ ngan, nhanPhu, onDong, lyDo = "mo" }: NganNhungProps) {
   const { t } = useTranslation();
 
   if (ngan === null) return null;
+  const biChan = lyDo !== "mo";
 
   const tieuDe = t(khoaTieuDeNhung(ngan.loai), nhanDuPhongNhung(ngan.loai));
   const hrefGoc = hrefGocCuaNgan(ngan);
@@ -188,11 +203,41 @@ export function NganNhung({ ngan, nhanPhu, onDong }: NganNhungProps) {
 
         {/* ── Thân: chính nội dung của màn cũ, cuộn trong ngăn ──────────── */}
         <div className="min-h-0 flex-1 overflow-y-auto p-2" data-testid="than-nhung">
-          <Suspense fallback={<DangNap />}>
-            {ngan.loai === "machine" ? <ThanMay machineId={ngan.id} embedded /> : null}
-            {ngan.loai === "robot" ? <ThanRobot robotId={ngan.id} embedded /> : null}
-            {ngan.loai === "station" ? <ThanTram stationId={ngan.id} embedded /> : null}
-          </Suspense>
+          {biChan ? (
+            /*
+              ★★★ ĐỢT 24 VIỆC 3 (L-5) — MỘT CÂU NÓI RÕ LÝ DO, KHÔNG PHẢI IM LẶNG.
+
+              ⚠ `data-ly-do` mang MÃ MÁY ĐỌC ĐƯỢC, không phải câu đã dịch: nghiệm
+                thu phải phân biệt được `ngoaiPhamVi` với `thieuQuyen` mà không
+                phụ thuộc ngôn ngữ đang bật (một lưới đọc chữ tiếng Việt sẽ đỏ
+                giả khi ai đó đổi `en`).
+            */
+            <div
+              className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center"
+              data-testid="ngan-nhung-bi-chan"
+              data-ly-do={lyDo}
+              role="status"
+            >
+              <AlertTriangle className="h-8 w-8 text-muted-foreground" aria-hidden />
+              <p className="max-w-sm text-sm text-muted-foreground">
+                {t(cauChoLyDoNgan(lyDo).khoa, cauChoLyDoNgan(lyDo).duPhong)}
+              </p>
+              {/*
+                ★ Hành động ĐI KÈM câu: nói "ngoài phạm vi" rồi để người dùng tự
+                  tìm đường ra là mới nói được một nửa. Nút này đóng ngăn (xoá
+                  `?xem=`) và trả họ về cảnh 3D đang xem.
+              */}
+              <Button size="sm" variant="outline" onClick={onDong} data-testid="nut-dong-ngan-bi-chan">
+                {t("twin3d.vanHanh.nhung.quayLai", "Quay lại 3D")}
+              </Button>
+            </div>
+          ) : (
+            <Suspense fallback={<DangNap />}>
+              {ngan.loai === "machine" ? <ThanMay machineId={ngan.id} embedded /> : null}
+              {ngan.loai === "robot" ? <ThanRobot robotId={ngan.id} embedded /> : null}
+              {ngan.loai === "station" ? <ThanTram stationId={ngan.id} embedded /> : null}
+            </Suspense>
+          )}
         </div>
       </SheetContent>
     </Sheet>

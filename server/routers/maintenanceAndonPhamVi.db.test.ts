@@ -465,4 +465,82 @@ describe.skipIf(!DB_URL)("L-1 — đường GHI lọc theo phạm vi tenant, hai
       expect(r?.status).toBe("acknowledged");
     });
   });
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ ĐỢT 24 VIỆC 1 — ĐƯỜNG **ĐỌC**, LỖ Ở VỎ ỨNG DỤNG                     */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /*
+   * Lô R (ở trên) vá đường GHI và DỪNG Ở ĐÓ. Bốn thủ tục ĐỌC vẫn khai
+   * `async ({ input })` / `async ()` — không bóc `ctx`. Nguy hiểm nhất là
+   * `active`: `ShellAlertChip.tsx:43` poll nó mỗi 15 s ở **header vỏ**, nên
+   * MỌI màn của MỌI vai đọc andon của mọi tenant.
+   *
+   * ⚠ Vì sao ĐẾM THEO NHÃN chứ không đếm tổng: CSDL dev có andon THẬT của
+   *   `SIM-FAC` (7 hàng mở, đo 2026-09-08) đứng cạnh hàng của lưới. Một phép
+   *   `toHaveLength(n)` trên tổng sẽ đỏ/xanh theo dữ liệu dev chứ không theo
+   *   bản vá — đúng lớp "lưới đo thứ mình không điều khiển". Ta lọc theo `DAU`
+   *   (hậu tố duy nhất của lưới này) rồi mới đếm.
+   */
+  describe("★★★ ĐỢT 24 — andon.active / list / get / metrics: đường ĐỌC", () => {
+    /** Chỉ giữ hàng do CHÍNH lưới này dựng — xem chú thích khối. */
+    const cuaLuoi = (rows: any[]) =>
+      (rows ?? []).filter((r) => typeof r?.title === "string" && r.title.startsWith(DAU));
+
+    it("★★★ CHIỀU (−) — người gán A KHÔNG thấy andon của B trong `active`", async () => {
+      const rows: any[] = await goiAndon(fx!.userTrongId).active();
+      const ids = cuaLuoi(rows).map((r) => r.id);
+      expect(ids).toContain(fx!.andonTrongId);
+      expect(ids).not.toContain(fx!.andonNgoaiId);
+      // Hàng mồ côi (NULL cả ba) — fail-CLOSED.
+      expect(ids).not.toContain(fx!.andonMoCoiId);
+    });
+
+    it("★★★ người 0 gán thấy **ĐÚNG 0 hàng** — badge vỏ phải là 0", async () => {
+      // ⚠ Ở đây đếm TỔNG là đúng và bắt buộc: phạm vi rỗng nghĩa là 0 hàng của
+      //   BẤT KỲ ai, kể cả 7 hàng `SIM-FAC` có thật trong CSDL dev. Đây chính
+      //   là con số badge đọc.
+      const rows: any[] = await goiAndon(fx!.userKhongGanId).active();
+      expect(rows).toHaveLength(0);
+    });
+
+    it("★ đối chứng: vai TOÀN QUYỀN vẫn thấy CẢ HAI (chống vá quá tay)", async () => {
+      const rows: any[] = await goiAndon(fx!.userTrongId, "admin").active();
+      const ids = cuaLuoi(rows).map((r) => r.id);
+      expect(ids).toContain(fx!.andonTrongId);
+      expect(ids).toContain(fx!.andonNgoaiId);
+      expect(ids).toContain(fx!.andonMoCoiId);
+    });
+
+    it("★★★ `list` — không thấy andon của B, và thấy của A", async () => {
+      const rows: any[] = await goiAndon(fx!.userTrongId).list({ limit: 500 });
+      const ids = cuaLuoi(rows).map((r) => r.id);
+      expect(ids).toContain(fx!.andonTrongId);
+      expect(ids).not.toContain(fx!.andonNgoaiId);
+    });
+
+    it("★★★ `list` — bộ lọc TỰ KHAI `lineId` của B vẫn cho 0 hàng", async () => {
+      // Cổng tenant phải ĐỨNG CẠNH bộ lọc tự khai, không bị nó thay thế.
+      const rows: any[] = await goiAndon(fx!.userTrongId).list({ lineId: fx!.lineNgoaiId, limit: 500 });
+      expect(cuaLuoi(rows)).toHaveLength(0);
+    });
+
+    it("★★★ `get` theo `id` TỰ KHAI của andon B ⇒ NOT_FOUND (không phải nội dung)", async () => {
+      await chanBoiPhamVi(goiAndon(fx!.userTrongId).get({ id: fx!.andonNgoaiId }));
+    });
+
+    it("★ CHIỀU (+) — `get` andon của A vẫn ĐỌC ĐƯỢC", async () => {
+      const r: any = await goiAndon(fx!.userTrongId).get({ id: fx!.andonTrongId });
+      expect(r?.id).toBe(fx!.andonTrongId);
+    });
+
+    it("★★★ `metrics` — người 0 gán đọc ra **total 0**, không phải nhịp của nhà máy khác", async () => {
+      const m: any = await goiAndon(fx!.userKhongGanId).metrics({ sinceHours: 24 * 90 });
+      expect(m?.total).toBe(0);
+      expect(m?.active).toBe(0);
+    });
+
+    it("★ đối chứng `metrics`: vai toàn quyền vẫn đếm được > 0", async () => {
+      const m: any = await goiAndon(fx!.userTrongId, "admin").metrics({ sinceHours: 24 * 90 });
+      expect(m?.total).toBeGreaterThan(0);
+    });
+  });
 });

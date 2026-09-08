@@ -60,6 +60,7 @@ import {
   OctagonAlert,
   PencilRuler,
   RefreshCw,
+  Tags,
   X,
 } from "lucide-react";
 import type * as THREE from "three";
@@ -159,7 +160,9 @@ import {
 import { NganMoPhong } from "@/components/twin3d/van-hanh/NganMoPhong";
 // ── Đợt 10 mục 5 (lô G) — xem chi tiết TẠI CHỖ, trạng thái ngăn ở khoá `?xem=` ──
 import {
+  cauChoLyDoNgan,
   docXemTuQuery,
+  lyDoNganNhung,
   tronXemVaoQuery,
   type NganNhungMo,
 } from "@/components/twin3d/van-hanh/nhungTaiCho";
@@ -2199,6 +2202,26 @@ export default function TwinVanHanh() {
   /** Bảng KPI mở/thu — dùng CHUNG khoá `?thu=` với hai panel bên (G40). */
   const thuKpi = urlState.thu.includes("kpi");
 
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 24 VIỆC 2 — BẬC "CHỈ NHÃN BẤT THƯỜNG", NAY CÓ NÚT
+   * ════════════════════════════════════════════════════════════════════════
+   * Đợt 23 dựng `chiNhanBatThuong` trong `locNhan.ts` (+ lưới) và nối nó xuống
+   * `LopNhan`/`CanhVanHanh` — nhưng **không ai truyền `true`**. `grep` trước
+   * đợt này: 0 chỗ gọi ngoài mặc định `?? false` ⇒ **G16, chưa xong**.
+   *
+   * ★ VÌ SAO BẬC NÀY ĐÁNG CÓ, ĐO ĐƯỢC (`.qa-dot23/M1-do-nhan.json`):
+   *     tổng 45 · vẽ **8** · bị giấu **37** — tức **82 % máy mất tên**, và
+   *     trần 30 **chưa hề chạm** (`soVuotTran = 0`). Nghĩa là cắt bớt trần
+   *     không sửa được gì: thứ giấu 37 cái tên là phép khử chồng bbox, và nó
+   *     chọn theo *máy nào tình cờ thắng phép so hộp*, không theo *máy nào
+   *     đáng đọc*. Bậc này đổi **chính sách chọn**, đúng chỗ đau.
+   *
+   * ★ G40 — dùng lại khoá `thu=`, không đẻ khoá thứ tám; tên đã vào
+   *   `PANEL_THU_DUOC` (G67) nếu không nó bị nuốt im lặng.
+   */
+  const chiNhanBatThuong = urlState.thu.includes("nhanBatThuong");
+
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* Quyền xử lý (§9.2)                                                       */
   /* ═══════════════════════════════════════════════════════════════════════ */
@@ -2370,6 +2393,33 @@ export default function TwinVanHanh() {
       setDangXuatUsd(false);
     }
   }, [factoryId, factories, utils]);
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 24 VIỆC 3 (L-5) — `?xem=…` LỆCH PHẠM VI NAY **NÓI RA**
+   * ════════════════════════════════════════════════════════════════════════
+   * Trước dòng này, `nganNhung` đi thẳng vào `NganNhung`, và component ấy
+   * render **bất cứ khi nào `ngan !== null`**. Với một id ngoài phạm vi, người
+   * dùng nhận một ngăn rỗng (thân cockpit tự 403/404 bên trong) và **không câu
+   * nào nói vì sao** — Đợt 22 đo được đúng hình dạng ấy.
+   *
+   * ★ `mayVanHanh` là tập ĐÃ QUA cổng phạm vi của server; ta chỉ đọc lại hệ
+   *   quả, KHÔNG tự suy quyền ở client (xem docblock `lyDoNganNhung`).
+   *
+   * ⚠ Chỉ xét được cho `loai === "machine"`: `/twin` cầm danh sách MÁY, không
+   *   cầm danh sách robot/trạm. Với hai loại kia ta để `"mo"` như cũ — thà
+   *   giữ nguyên hành vi cũ còn hơn khai một lý do mình không đo được.
+   */
+  const lyDoNgan = useMemo(
+    () =>
+      lyDoNganNhung(nganNhung, {
+        idTrongTam:
+          nganNhung?.loai === "machine" ? mayVanHanh.map((m) => m.id) : [nganNhung?.id ?? -1],
+        phamViRong,
+        dangTai: canhQ.isLoading || factoriesQ.isLoading,
+      }),
+    [nganNhung, mayVanHanh, phamViRong, canhQ.isLoading, factoriesQ.isLoading],
+  );
 
   const mayDangChon = mayVanHanh.find((m) => m.id === machineIdChon) ?? null;
   const sanRongM = tangDau ? mmSangMet(tangDau.rongMm) : 40;
@@ -2939,6 +2989,37 @@ export default function TwinVanHanh() {
           </Button>
 
           {/*
+            ── ★★★ ĐỢT 24 VIỆC 2 — CÔNG TẮC "CHỈ NHÃN BẤT THƯỜNG" ────────────
+
+            Đây là dòng biến `chiNhanBatThuong` từ **một hàm không ai gọi**
+            (Đợt 23, G16) thành một bậc người vận hành bấm được. Cùng khuôn
+            `nut-toan-man` ngay trên: MỘT nút `aria-pressed`, không phải hai
+            nút, vì trình đọc màn hình cần TRẠNG THÁI chứ không chỉ nhãn.
+
+            ★ Vì sao đặt cạnh 2D/3D và toàn-màn: cả ba là "cách NHÌN cảnh",
+              không phải "xem cái gì". Bỏ nó vào panel trái sẽ chôn một bậc
+              mật độ nhãn dưới hai cú cuộn — đúng lỗi "có mà không tìm thấy
+              được" mà nút toàn-màn ở trên sinh ra để sửa.
+          */}
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="nut-chi-nhan-bat-thuong"
+            aria-pressed={chiNhanBatThuong}
+            title={t(
+              "twin3d.vanHanh.chiNhanBatThuongMoTa",
+              "Chỉ hiện tên máy đang bất thường (và máy đang chọn)",
+            )}
+            onClick={() => doiThu("nhanBatThuong")}
+          >
+            {chiNhanBatThuong ? (
+              <AlertTriangle className="h-3.5 w-3.5" />
+            ) : (
+              <Tags className="h-3.5 w-3.5" />
+            )}
+          </Button>
+
+          {/*
             ── ★★★ QD-16 (§13c.1) — NÚT VÀO VÙNG SỬA NHÀ XƯỞNG ──────────────
 
             ★★★ ĐÂY LÀ BỀ MẶT MÀ CẢ QUYẾT ĐỊNH QD-16 QUY VỀ, và nó là **một
@@ -3362,6 +3443,9 @@ export default function TwinVanHanh() {
               chuNhanAn={(n) =>
                 t("twin3d.vanHanh.nhanBiAn", "còn {{n}} tên bị ẩn", { n })
               }
+              /* ★ ĐỢT 24 VIỆC 2 — chỗ gọi THẬT của `chiNhanBatThuong`. Trước
+                 dòng này `grep` ra 0 người truyền `true` (G16). */
+              chiNhanBatThuong={chiNhanBatThuong}
               chuMatContext={t("twin3d.loi.matContext")}
               ariaLabel={ariaLabel}
               onCameraDoi={khiCameraDoi}
@@ -3603,6 +3687,7 @@ export default function TwinVanHanh() {
             onDieuHuong={setLocation}
             onMoTaiCho={moTaiCho}
             nganNhung={nganNhung}
+            lyDoNgan={lyDoNgan ?? undefined}
             onDongNhung={dongNhung}
           />
         </div>

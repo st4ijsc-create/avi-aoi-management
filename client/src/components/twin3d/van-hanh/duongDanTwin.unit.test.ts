@@ -571,3 +571,37 @@ describe("Đợt 23 M2 — moPhongMo", () => {
     expect(docThu("moPhong")).not.toContain("moPhongMo");
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 24 VIỆC 2 — `nhanBatThuong`: CHÍNH SÁCH NHÃN DÙNG LẠI KHOÁ `thu=`   */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("Đợt 24 việc 2 — nhanBatThuong", () => {
+  it("★★★ có trong PANEL_THU_DUOC — thiếu thì `?thu=nhanBatThuong` bị NUỐT im lặng (G67)", () => {
+    // `docThu` lọc theo đúng danh sách này: một tên vắng mặt ghi ra vẫn "đúng"
+    // nhưng đọc lại ra rỗng ⇒ F5 mất bậc, và KHÔNG lỗi nào nổ.
+    expect(PANEL_THU_DUOC).toContain("nhanBatThuong");
+    expect(docThu("nhanBatThuong")).toEqual(["nhanBatThuong"]);
+  });
+
+  it("★★★ G40 — dùng lại khoá `thu=`, KHÔNG đẻ khoá query thứ tám", () => {
+    // Ghi bậc này ra URL chỉ được chạm đúng một khoá.
+    const qs = ghiTrangThaiUrl({ thu: ["nhanBatThuong"] });
+    const sp = new URLSearchParams(qs);
+    expect([...sp.keys()]).toEqual(["thu"]);
+    expect(sp.get("thu")).toBe("nhanBatThuong");
+  });
+
+  it("★ đứng CẠNH các tên cũ, không nuốt nhau", () => {
+    expect(docThu(ghiThu(["nhanBatThuong", "trai", "kpi"]))).toEqual(
+      PANEL_THU_DUOC.filter((p) => ["trai", "kpi", "nhanBatThuong"].includes(p)),
+    );
+  });
+
+  it("★ vắng mặt = MẶC ĐỊNH (hiện nhãn cho mọi máy) — chiều của tên không đảo", () => {
+    // Ngữ nghĩa khoá `thu=` là "liệt kê thứ KHÁC mặc định". Mặc định ở đây là
+    // hiện nhãn cho mọi máy, nên tên CÓ MẶT nghĩa là "chỉ nhãn bất thường".
+    expect(docThu("")).not.toContain("nhanBatThuong");
+    expect(docThu("kpi")).not.toContain("nhanBatThuong");
+  });
+});

@@ -118,11 +118,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/alertRouters.ts (2) ─────────────────────────────────────────────────────
   "server/routers/alertRouters.ts#alertRouter.getById",
   "server/routers/alertRouters.ts#alertRouter.listAll",
-  // ── server/routers/andonRouter.ts (4) ──────────────────────────────────────────────────────
-  "server/routers/andonRouter.ts#andonRouter.active",
-  "server/routers/andonRouter.ts#andonRouter.get",
-  "server/routers/andonRouter.ts#andonRouter.list",
-  "server/routers/andonRouter.ts#andonRouter.metrics",
   // ── server/routers/annotationComparisonRouter.ts (4) ───────────────────────────────────────
   "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.compareTwo",
   "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.getById",

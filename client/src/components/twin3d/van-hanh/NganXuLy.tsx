@@ -86,7 +86,7 @@ import {
   type QuyenXuLy,
   docStatsAoi,
 } from "./nganXuLyLogic";
-import { nhungChoHref, type NganNhungMo } from "./nhungTaiCho";
+import { nhungChoHref, type LyDoNgan, type NganNhungMo } from "./nhungTaiCho";
 import { hienSo, nhanDoTuoi, nhanTuoiDocDuoc, type TrangThaiHienThi } from "./trungThucDuLieu";
 
 export interface NganXuLyProps {
@@ -127,6 +127,11 @@ export interface NganXuLyProps {
   nganNhung?: NganNhungMo | null;
   /** Đóng ngăn nhúng — tầng trên xoá `?xem=`. */
   onDongNhung?: () => void;
+  /**
+   * ★ ĐỢT 24 VIỆC 3 (L-5) — vì sao ngăn mở được. Chuyển thẳng xuống
+   * `NganNhung`; bỏ trống ⇒ `"mo"` (hành vi cũ).
+   */
+  lyDoNgan?: LyDoNgan;
   /** Loại vật thể đang chọn — quyết định bộ nút §9.3. */
   loaiDich?: LoaiDich;
 }
@@ -148,6 +153,7 @@ export function NganXuLy(props: NganXuLyProps) {
     onMoTaiCho,
     nganNhung = null,
     onDongNhung,
+    lyDoNgan,
     loaiDich = "machine",
   } = props;
 
@@ -253,6 +259,30 @@ export function NganXuLy(props: NganXuLyProps) {
   const kieuMau = mauChoTrangThai(trangThai.trangThai);
 
   /* ── Chưa chọn gì ─────────────────────────────────────────────────────── */
+  /*
+   * ★★★ ĐỢT 24 VIỆC 3 (L-5) — **GỐC RỄ THẬT CỦA SỰ IM LẶNG NẰM Ở ĐÂY.**
+   *
+   * ══════════════════════════════════════════════════════════════════════
+   * ĐO ĐƯỢC 2026-09-08 trên `dist`, vai `e2e_tai_loE` (`.qa-dot24/probe.mjs`)
+   * ══════════════════════════════════════════════════════════════════════
+   *   `/twin?xem=machine:1`               → `ngan-chua-chon` 1 · `ngan-nhung` **0**
+   *   `/twin?chon=machine:1&xem=machine:1`→ `ngan-chua-chon` 0 · `ngan-nhung` **1**
+   *
+   * ⇒ Nhánh sớm này trả về TRƯỚC `<NganNhung>` (ở cuối hàm), nên một URL chỉ
+   *   mang `?xem=` **không mở được ngăn nào — kể cả khi id HOÀN TOÀN HỢP LỆ**.
+   *   Đây mới là "không mở panel và không câu nào nói vì sao" mà Đợt 22 đo
+   *   được; nó KHÔNG phải chuyện phạm vi, và một bản vá chỉ thêm câu báo lý do
+   *   sẽ không bao giờ chạy tới.
+   *
+   * ★ `?xem=` và `?chon=` là HAI khoá ĐỘC LẬP có chủ ý (`nhungTaiCho.ts` dùng
+   *   khoá riêng để mở ngăn không làm mất phạm vi/camera). Nên "chưa chọn máy"
+   *   KHÔNG kéo theo "không có ngăn nào để mở" — ràng hai thứ ấy vào nhau là
+   *   giả định của bản cũ, và nó im lặng nuốt một trạng thái URL hợp lệ.
+   *
+   * ⇒ Giữ nguyên câu "chọn một máy…" (cột phải vẫn chưa có gì để xử lý), nhưng
+   *   `NganNhung` phải được render ở CẢ HAI nhánh. Nó tự `portal` ra
+   *   `document.body`, nên chỗ đứng trong cây JSX không đổi chỗ vẽ.
+   */
   if (machineId === null) {
     return (
       <aside
@@ -263,6 +293,13 @@ export function NganXuLy(props: NganXuLyProps) {
         <p className="text-sm text-muted-foreground" data-testid="ngan-chua-chon">
           {t("twin3d.vanHanh.chuaChon", "Chọn một máy trên cảnh hoặc trong danh sách để xử lý.")}
         </p>
+        {/* ★ L-5 — ngăn `?xem=` mở được cả khi CHƯA chọn máy nào. */}
+        <NganNhung
+          ngan={nganNhung}
+          lyDo={lyDoNgan}
+          nhanPhu={ma ? `${ma}${ten ? ` · ${ten}` : ""}` : undefined}
+          onDong={() => onDongNhung?.()}
+        />
       </aside>
     );
   }
@@ -619,6 +656,7 @@ export function NganXuLy(props: NganXuLyProps) {
       */}
       <NganNhung
         ngan={nganNhung}
+        lyDo={lyDoNgan}
         nhanPhu={ma ? `${ma}${ten ? ` · ${ten}` : ""}` : undefined}
         onDong={() => onDongNhung?.()}
       />

@@ -264,3 +264,124 @@ export function hrefGocCuaNgan(n: NganNhungMo): string {
       return `/station-analysis/${n.id}`;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* 5. ĐỢT 24 VIỆC 3 (L-5) — VÌ SAO NGĂN KHÔNG MỞ ĐƯỢC                          */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ★★★ L-5 — `?xem=machine:<id>` LỆCH PHẠM VI THÌ MÀN **IM LẶNG**.
+ *
+ * Đợt 22 đo: URL ấy *"không mở panel và không câu nào nói vì sao"*. Gốc rễ đọc
+ * được trên mã: `TwinVanHanh.tsx` chỉ có
+ *
+ *     const nganNhung = useMemo(() => docXemTuQuery(search), [search]);
+ *
+ * và `NganNhung` render **bất cứ khi nào `ngan !== null`** — không ai hỏi id ấy
+ * có nằm trong phạm vi đang xem không. Nên có ĐÚNG HAI kết cục, và cả hai đều
+ * sai ở ca lệch phạm vi:
+ *   • ngăn mở ra rỗng (thân cockpit tự hỏi server rồi tự 403/404), hoặc
+ *   • ngăn mở ra với dữ liệu của một máy người dùng **không được xem**.
+ *
+ * ⚠ VÀ CẢ HAI ĐỀU KHÔNG NÓI VÌ SAO. Đây là cùng lớp lỗi mà `phamViRong`/
+ *   `EmptyState` (M3) vừa vá cho toàn màn: *rỗng vì chưa được gán* ≠ *rỗng
+ *   thật*. Ở đây có ba câu, không phải một.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★★★ BA LÝ DO — BA CÂU, BA HÀNH ĐỘNG (G43 áp cho GIAO DIỆN)
+ * ══════════════════════════════════════════════════════════════════════════
+ *   `mo`          — id có trong tập đang xem ⇒ MỞ ngăn (đường bình thường)
+ *   `ngoaiPhamVi` — id không có trong tập đang xem, người dùng CÓ phạm vi ⇒
+ *                   *"không thuộc nhà máy/tầng đang xem"*; hành động: đổi phạm vi
+ *   `thieuQuyen`  — người dùng KHÔNG được gán nhà máy nào ⇒ *"chưa được cấp
+ *                   quyền xem"*; hành động: hỏi quản trị. Đây là câu KHÁC hẳn
+ *                   câu trên: người dùng không làm gì sai và đổi phạm vi cũng
+ *                   vô ích.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO **KHÔNG** CÓ Ô `khongTonTai` — BRIEF ĐÒI BA CÂU, ĐO ĐƯỢC CHỈ HAI
+ * ══════════════════════════════════════════════════════════════════════════
+ * Brief Đợt 24 yêu cầu ba câu: *"id không tồn tại / ngoài phạm vi / thiếu
+ * quyền"*. Hai câu sau phân biệt được; câu ĐẦU thì **không**, và thêm nó vào
+ * đây sẽ là một nhánh KHÔNG BAO GIỜ CHẠY.
+ *
+ * Lý do đọc được trên mã: `/twin` KHÔNG có truy vấn "mọi máy trong hệ" — tập
+ * máy duy nhất tầng gọi cầm là `mayVanHanh`, và nó **đã qua cổng phạm vi của
+ * server**. Nên với một id vắng mặt, client thấy ĐÚNG MỘT hình dạng cho cả hai
+ * ca *"máy không tồn tại"* và *"máy của nhà máy khác"* — và **đó chính là điều
+ * cổng phạm vi cố ý làm**: `congPhamViAndon`/lô Q1 trả `NOT_FOUND` cho cả hai
+ * ca vì một mã riêng cho "ngoài phạm vi" tự nó xác nhận vật thể ấy CÓ THẬT.
+ *
+ * ⇒ Tách hai câu ấy ở client đòi một truy vấn mới hỏi server *"id này có tồn
+ *   tại ở đâu đó không"* — tức dựng lại đúng kênh rò rỉ mà cổng phạm vi vừa
+ *   bịt. Ta KHÔNG làm thế. Câu `ngoaiPhamVi` được viết để đúng cho CẢ HAI ca
+ *   ("không thuộc phạm vi đang xem"), không hứa điều mình không biết.
+ *
+ * ⚠⚠ **THỨ TỰ XÉT LÀ MỘT PHẦN CỦA HỢP ĐỒNG, KHÔNG PHẢI TIỂU TIẾT.** `thieuQuyen`
+ *   phải xét TRƯỚC `ngoaiPhamVi`: khi phạm vi rỗng thì tập máy đang xem cũng
+ *   rỗng, nên MỌI id đều vắng mặt — trả "ngoài phạm vi đang xem" sẽ bảo người
+ *   dùng đi ĐỔI PHẠM VI, việc hoàn toàn vô ích khi họ chưa được gán nhà máy
+ *   nào. Đúng lớp lỗi mà `phamViRong` sinh ra để chặn: một câu đúng ngữ pháp
+ *   dẫn tới một hành động sai.
+ *
+ * ⚠ Hàm THUẦN và không biết gì về React/i18n — nên canh được bằng bảng chân trị
+ *   ở môi trường `node`, cùng lý do đã ghi ở `lib/scopeEmpty.ts`.
+ *
+ * ★ `idTrongTam` nhận tập id **ĐANG XEM ĐƯỢC** (`mayVanHanh` ở tầng gọi), tức
+ *   thứ đã qua mọi cổng phạm vi của server. Ta KHÔNG tự suy quyền ở client: chỉ
+ *   đọc lại hệ quả của phép suy đã có.
+ */
+export type LyDoNgan = "mo" | "ngoaiPhamVi" | "thieuQuyen";
+
+export interface CanhXetNgan {
+  /** Tập id đang xem được của ĐÚNG loại `ngan.loai`. */
+  idTrongTam: readonly number[];
+  /** `true` ⇔ người dùng chưa được gán nhà máy nào (`phamViRong` ở tầng gọi). */
+  phamViRong: boolean;
+  /**
+   * `true` khi tập id CHƯA tải xong. Trong lượt tải đầu `idTrongTam` cũng rỗng,
+   * và thiếu ô này thì mọi ngăn hợp lệ **nháy một câu lỗi** trước khi mở — biến
+   * một bản vá thành lỗi mới cho mọi người dùng (cùng bẫy `!isLoading` của
+   * `phamViRong`).
+   */
+  dangTai?: boolean;
+}
+
+/**
+ * Vì sao ngăn `ngan` mở được / không mở được. `null` ⇒ không có ngăn nào.
+ *
+ * ⚠ Khi `dangTai` ⇒ `"mo"`: ta chưa biết gì, và đoán bừa một lý do là nói dối
+ *   sớm. Tầng gọi hiện khung chờ của chính `NganNhung` như trước.
+ */
+export function lyDoNganNhung(
+  ngan: NganNhungMo | null,
+  canh: CanhXetNgan,
+): LyDoNgan | null {
+  if (ngan === null) return null;
+  if (canh.dangTai === true) return "mo";
+  if (canh.idTrongTam.includes(ngan.id)) return "mo";
+  // ⚠ THỨ TỰ — xem docblock: phạm vi rỗng làm MỌI id vắng mặt, nên phải phân
+  //   biệt "chưa được gán" trước khi nói "ngoài phạm vi đang xem".
+  if (canh.phamViRong) return "thieuQuyen";
+  return "ngoaiPhamVi";
+}
+
+/** Khoá i18n + câu dự phòng cho mỗi lý do KHÔNG mở được. */
+const CAU_LY_DO: Readonly<Record<Exclude<LyDoNgan, "mo">, { khoa: string; duPhong: string }>> = {
+  ngoaiPhamVi: {
+    khoa: "twin3d.vanHanh.nhung.ngoaiPhamVi",
+    duPhong:
+      "Đối tượng này không thuộc phạm vi đang xem (hoặc không còn tồn tại). Hãy đổi nhà máy/tầng rồi mở lại.",
+  },
+  thieuQuyen: {
+    khoa: "twin3d.vanHanh.nhung.thieuQuyen",
+    duPhong: "Bạn chưa được cấp quyền xem đối tượng này. Liên hệ quản trị để được gán nhà máy.",
+  },
+};
+
+/** Khoá + câu dự phòng cho một lý do. Tầng gọi `t()` rồi truyền xuống. */
+export function cauChoLyDoNgan(
+  lyDo: Exclude<LyDoNgan, "mo">,
+): { khoa: string; duPhong: string } {
+  return CAU_LY_DO[lyDo];
+}

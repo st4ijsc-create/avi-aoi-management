@@ -20149,7 +20149,9 @@
         "tieuDeTram": "Station analysis",
         "quayLai": "Back to 3D",
         "moDayDu": "Open full screen",
-        "dangNap": "Loading content…"
+        "dangNap": "Loading content…",
+        "ngoaiPhamVi": "This item is not in the scope you are viewing (or no longer exists). Switch factory/floor and open it again.",
+        "thieuQuyen": "You do not have permission to view this item. Contact an administrator to be assigned a factory."
       },
       "xuatUsd": "Export USD",
       "xuatUsdDang": "Exporting…",
@@ -20159,7 +20161,8 @@
       "xuatUsdChuaChonNhaMay": "No factory selected to export.",
       "xuatUsdHong": "USD export failed ({{lyDo}}).",
       "donViGiay": "{{n}}s",
-      "nhanBiAn": "{{n}} more names hidden"
+      "nhanBiAn": "{{n}} more names hidden",
+      "chiNhanBatThuongMoTa": "Show names only for abnormal machines (and the selected one)"
     },
     "studio": {
       "tieuDe": "3D Factory — Design",

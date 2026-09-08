@@ -20,7 +20,9 @@ import { describe, expect, it } from "vitest";
 import {
   KHOA_XEM,
   docNganNhung,
+  cauChoLyDoNgan,
   docXemTuQuery,
+  lyDoNganNhung,
   ghiNganNhung,
   hrefGocCuaNgan,
   khoaTieuDeNhung,
@@ -343,5 +345,56 @@ describe("tiêu đề ngăn", () => {
     const nhan = LOAI.map(nhanDuPhongNhung);
     expect(new Set(nhan).size).toBe(LOAI.length);
     for (const n of nhan) expect(n.trim().length).toBeGreaterThan(0);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 24 VIỆC 3 (L-5) — VÌ SAO NGĂN KHÔNG MỞ ĐƯỢC                         */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("Đợt 24 L-5 — lyDoNganNhung: ba kết cục, ba câu KHÁC NHAU", () => {
+  const MAY = { loai: "machine", id: 42 } as const;
+
+  it("không có ngăn ⇒ `null` (không phải một lý do)", () => {
+    expect(lyDoNganNhung(null, { idTrongTam: [], phamViRong: false })).toBeNull();
+  });
+
+  it("★ CHIỀU (+) — id NẰM TRONG tập đang xem ⇒ `mo`", () => {
+    expect(lyDoNganNhung(MAY, { idTrongTam: [1, 42, 7], phamViRong: false })).toBe("mo");
+  });
+
+  it("★★★ id VẮNG MẶT, người dùng CÓ phạm vi ⇒ `ngoaiPhamVi`", () => {
+    expect(lyDoNganNhung(MAY, { idTrongTam: [1, 7], phamViRong: false })).toBe("ngoaiPhamVi");
+  });
+
+  it("★★★ phạm vi RỖNG ⇒ `thieuQuyen`, KHÔNG phải `ngoaiPhamVi`", () => {
+    // ⚠ Đây là ô ghim THỨ TỰ XÉT. Với `phamViRong = true` tập đang xem luôn
+    //   rỗng, nên một phép xét sai thứ tự vẫn cho `ngoaiPhamVi` — câu ấy bảo
+    //   người dùng đi ĐỔI PHẠM VI, việc vô ích khi họ chưa được gán nhà máy.
+    expect(lyDoNganNhung(MAY, { idTrongTam: [], phamViRong: true })).toBe("thieuQuyen");
+  });
+
+  it("★★★ ĐỐI CHỨNG — `thieuQuyen` không nuốt ca hợp lệ: phạm vi rỗng mà id CÓ mặt vẫn `mo`", () => {
+    // Chống "vá quá tay": nếu cài đặt xét `phamViRong` TRƯỚC phép kiểm id, một
+    // ngăn hợp lệ sẽ bị chặn. Hình dạng này hiếm nhưng phải giữ đúng chiều.
+    expect(lyDoNganNhung(MAY, { idTrongTam: [42], phamViRong: true })).toBe("mo");
+  });
+
+  it("★★★ `dangTai` ⇒ `mo` — KHÔNG nháy câu lỗi trong lượt tải đầu", () => {
+    // Thiếu ô này thì MỌI ngăn hợp lệ hiện một câu lỗi một nhịp rồi mới mở —
+    // biến bản vá thành lỗi mới cho mọi người dùng.
+    expect(lyDoNganNhung(MAY, { idTrongTam: [], phamViRong: false, dangTai: true })).toBe("mo");
+    expect(lyDoNganNhung(MAY, { idTrongTam: [], phamViRong: true, dangTai: true })).toBe("mo");
+  });
+
+  it("★ mỗi lý do có khoá i18n RIÊNG và câu dự phòng KHÁC RỖNG, khác nhau", () => {
+    const ds = ["ngoaiPhamVi", "thieuQuyen"] as const;
+    const cau = ds.map(cauChoLyDoNgan);
+    expect(new Set(cau.map((c) => c.khoa)).size).toBe(ds.length);
+    expect(new Set(cau.map((c) => c.duPhong)).size).toBe(ds.length);
+    for (const c of cau) {
+      expect(c.khoa).toMatch(/^twin3d\.vanHanh\.nhung\./);
+      expect(c.duPhong.trim().length).toBeGreaterThan(0);
+    }
   });
 });

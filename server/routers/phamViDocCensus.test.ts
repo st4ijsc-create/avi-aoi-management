@@ -302,7 +302,30 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   đo trên HEAD SẠCH (tôi phục hồi ba tệp về bản HEAD rồi chạy lại đúng tập này — A:363 C:475
 //   D:1119). Đó là độ trôi của các lô chạy song song; **để nguyên cho bên đó ký**, đừng gộp vào
 //   con số này. Vì thế `tong` cũng giữ nguyên cách tính: chỉ A đổi.
-const GHIM = { A: 358, B: 8, C: 472, D: 1101, S: 290, tong: 2234 } as const;
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 24 VIỆC 1 — **A: 355 → 351.** BỐN THỦ TỤC ĐỌC CỦA `andonRouter` ĐÃ ĐƯỢC GÁC.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// Lô R (Đợt 15) vá đường GHI (`acknowledge`/`resolve`) và dừng ở đó. Bốn thủ tục ĐỌC —
+// `active` · `get` · `list` · `metrics` — vẫn khai `async ({ input })` / `async ()`, tức KHÔNG
+// bóc `ctx`. Cả bốn có tên trong sổ nợ (`phamViDocBaseline.ts`, khối `andonRouter.ts (4)`), và
+// đợt này XOÁ đúng bốn dòng ấy — trả nợ nhìn thấy được trong diff.
+//
+// ★ Vì sao đây là mục nguy hiểm nhất trong bốn: `ShellAlertChip.tsx:43` gọi `andon.active` mỗi
+//   15 s ở **vỏ ứng dụng**, nên lỗ này hiện diện trên MỌI màn của MỌI vai có `andon/canView`.
+//
+// ★ ĐO HAI CHIỀU QUA HTTP THẬT (`dist`, vai KHÔNG-admin, `.qa-dot24/badge-hai-chieu.mts`):
+//     `operator1`   (0 hàng `user_factory_assignments`) — TRƯỚC: **7 hàng** · SAU: **0**
+//     `e2e_tai_loE` (1 nhà máy SIM-FAC)                 — TRƯỚC: 7 hàng · SAU: **7** (giữ nguyên)
+//   Chiều (+) là đối chứng bắt buộc: một `throw` vô điều kiện làm chiều (−) xanh mà đã giết
+//   chức năng. Ablation: gỡ đúng mệnh đề cổng khỏi `active` rồi dựng lại `dist` ⇒ `operator1`
+//   đọc lại được cả 7 — nhân quả đo được, không suy.
+//
+// ⚠⚠ A ghim 358 nhưng HEAD SẠCH đo được **355** — độ lệch 3 ấy **KHÔNG PHẢI CỦA TÔI** (đo bằng
+//   cách phục hồi `andonRouter.ts` về bản HEAD rồi chạy lại đúng tập này: A 355, sổ nợ còn 3 mục
+//   "đã vá mà chưa gỡ"). Cùng loại độ trôi mà chú thích C/D ở trên đã ghi. Tôi chỉ hạ A đúng **4**
+//   phần của mình (355 → 351) và **để nguyên 3 mục kia cho bên đó ký** — sửa hộ sẽ xoá mất dấu
+//   vết một khoản nợ chưa ai nhận.
+const GHIM = { A: 351, B: 8, C: 472, D: 1101, S: 290, tong: 2234 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

@@ -20129,7 +20129,9 @@
         "tieuDeTram": "Phân tích trạm",
         "quayLai": "Quay lại 3D",
         "moDayDu": "Mở màn đầy đủ",
-        "dangNap": "Đang tải nội dung…"
+        "dangNap": "Đang tải nội dung…",
+        "ngoaiPhamVi": "Đối tượng này không thuộc phạm vi đang xem (hoặc không còn tồn tại). Hãy đổi nhà máy/tầng rồi mở lại.",
+        "thieuQuyen": "Bạn chưa được cấp quyền xem đối tượng này. Liên hệ quản trị để được gán nhà máy."
       },
       "xuatUsd": "Xuất USD",
       "xuatUsdDang": "Đang xuất…",
@@ -20139,7 +20141,8 @@
       "xuatUsdChuaChonNhaMay": "Chưa chọn nhà máy để xuất.",
       "xuatUsdHong": "Xuất USD thất bại ({{lyDo}}).",
       "donViGiay": "{{n}} giây",
-      "nhanBiAn": "còn {{n}} tên bị ẩn"
+      "nhanBiAn": "còn {{n}} tên bị ẩn",
+      "chiNhanBatThuongMoTa": "Chỉ hiện tên máy đang bất thường (và máy đang chọn)"
     },
     "studio": {
       "tieuDe": "Nhà máy 3D — Thiết kế",

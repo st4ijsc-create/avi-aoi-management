@@ -167,12 +167,30 @@ export interface TrangThaiTwinUrl {
  *   tên khỏi danh sách sẽ khiến `docThu` NUỐT nó im lặng, đúng bẫy G67 mà
  *   docblock trên vừa cảnh báo.
  */
+/**
+ * ★★★ ĐỢT 24 VIỆC 2 — `"nhanBatThuong"` LÀ **CHÍNH SÁCH NHÃN**, KHÔNG PHẢI PANEL.
+ *
+ * Khoá `thu=` mang tên "panel đang thu", nhưng thứ nó thật sự mã hoá là *"lựa
+ * chọn xem nào đang KHÁC MẶC ĐỊNH"* — `"kpi"` (Đợt 11) và `"moPhongMo"` (Đợt 23)
+ * đã mở rộng nó theo đúng nghĩa ấy. G40 nói thẳng vì sao không đẻ khoá thứ tám:
+ * mỗi khoá mới là một bộ đọc riêng, một bộ ghi riêng, và một chỗ nữa để hai
+ * lượt ghi đè nhau. Nên bậc "chỉ nhãn bất thường" DÙNG LẠI khoá này.
+ *
+ * ★ Chiều của tên theo đúng ngữ nghĩa khoá (**có mặt = khác mặc định**): mặc
+ *   định là hiện nhãn cho MỌI máy, nên `?thu=nhanBatThuong` = "chỉ còn nhãn của
+ *   máy bất thường". Không có tên nào phải đọc ngược.
+ *
+ * ⚠ G67 — quên dòng này thì `?thu=nhanBatThuong` **bị NUỐT trong im lặng**:
+ *   `docThu` lọc theo chính danh sách này, nên URL ghi ra đúng mà đọc lại ra
+ *   rỗng, F5 mất bậc, và KHÔNG lỗi nào nổ. Tên phải vào đây TRƯỚC khi có nút.
+ */
 export const PANEL_THU_DUOC: readonly string[] = [
   "trai",
   "phai",
   "kpi",
   "moPhong",
   "moPhongMo",
+  "nhanBatThuong",
 ];
 
 /**
