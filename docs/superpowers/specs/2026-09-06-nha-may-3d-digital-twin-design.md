@@ -3161,6 +3161,75 @@ Lenh go la `scripts/go-tai-twin.ts`.
 > tep cua nguoi khac**; (3) **do lai SAU luot chay cuoi**, dung khai "da khoi phuc" o giua chung -
 > chinh lo U da khai dung the va van sai.
 
+## 11l. DOT 17 LO V - **NGUYEN NHAN GOC CUA "DO/GIAT" NAM NGOAI TWIN** (2026-09-08)
+
+Commit `05eea0ab`. Cong: **57 tep / 1667 test** = nen - `check` 0 - `build` 0 - DB ve goc
+(go FUYU-G#35: 240 may, 504 dat cho, **516.480 telemetry**, 0 mo coi).
+
+> #### ★★★ G66 - `.env` **RO RI VAO BAN DUNG SAN XUAT** ⇒ 271/813 CHUNK MANG RUNTIME DEV
+> Lo V quy duoc nguyen nhan **long task** ma lo U do duoc nhung khong giai thich noi.
+> `.env:15` dat **`NODE_ENV=development`**, va `vite.config.ts:27` co **`envDir`** tro goc repo
+> ⇒ `npm run build` **doc phai bien do** va sinh bundle mang **React development runtime**:
+> `jsxDEV` cap **mot `Error()` moi phan tu JSX**.
+>
+> CPU profile: `jsxDEV` chiem **11/25 dong dau (~430 ms)**, `getBoundingClientRect` ~187 ms - thoi gian
+> nam o **React dung DOM**, khong o WebGL. Chu du an do doc lap tren `dist` hien tai:
+> **271/813 chunk** mang dau vet dev, bundle **46 MB**.
+>
+> **Ablation:** `NODE_ENV=production npm run build` ⇒ `react_stack_bottom_frame` = **0** moi chunk.
+> **V2-ZOOM long task: 16 (lo U) → 5 (dev) → 0 (prod).**
+>
+> => Day la **don bay lon nhat** voi trieu chung chu so huu bao, va no **nam ngoai Twin** - moi man
+> deu bi. Lo V **khong tu sua** (doi che do dung cham moi man) - dung.
+
+### 11l.1 CPU cham l**a dieu kien TAI HIEN duoc** (V4)
+
+| | ban dev | ban prod |
+|---|---|---|
+| throttle x4, tac vu dai nhat | **2.543 ms** | 84 ms |
+| throttle x20, dai nhat | **13.320 ms** | 607 ms |
+| throttle x20, tong chan | 48.641 ms | 4.290 ms |
+
+⇒ Tren may cham, ban dev **treo 13 giay** o mot tac vu. Day rat co the la **"khong thuc hien duoc"** ma
+chu so huu gap. 6/7 dieu kien khac **KHONG tai hien** (ngay sau tai - tRPC dang bay - ngan nhung -
+keo lien tiep 6 lan - tha ngoai canvas - doi tab) - liet ke du theo **G45**.
+
+### 11l.2 Transform gizmo **MUOT** - nhung mot nua khong noi vao duong ghi
+
+RB-1 **DAT** tren ban dung that: `helperLaObject3D=true`, `helperTrongScene=true`, `soConHelper=2`
+(ten lop do duoc la `"Yk"`/`"nY"` - **dung G10b**, ten lop bi bundler doi).
+RB-2 **DAT**: xoay ra **45,00°** va **60,00°** - deu la boi dung cua buoc 15°, **snap tuyet doi**.
+
+| Keo | do doi anh | tre dau | ket qua |
+|---|---|---|---|
+| MOVE | 1,046 % | 9,1 ms | "1 unsaved changes" |
+| XOAY Y | 0,001 % | 7,3 ms | 45,00° - "1 unsaved changes" |
+| **SCALE** | 0,001 % | 7,5 ms | **quaternion KHONG DOI - null** |
+
+> #### ★★★ G67 - **CONG CU SCALE LA TRANG TRI**: nut bam duoc, gizmo hien, **khong gi duoc luu**
+> `GizmoBienDoi` **co tra `tiLe`**, nhung `XuongThietKe.tsx` viet
+> `onBienDoiXong={({ viTri, gocYDo }) => ...}` - **bo `tiLe`**. Khong loi nao no, khong canh bao.
+> Nguoi dung keo scale, thay hinh doi, bam Luu - **kich thuoc khong duoc ghi**.
+> => Cung ho **G16** (ham khong ai goi) nhung o dang **kho thay hon**: tinh nang **co UI day du**, chi
+> **dut o mot tham so bi bo trong destructuring**.
+
+**Xoay quanh X/Z dung im la HANH VI DUNG** - `objectChange` ep `rotation.x/z = 0` theo y do
+"may dung tren san". Khong phai loi.
+
+### 11l.3 Brief cua chu du an SAI hai cho
+
+1. **"180/240 may chua dat cho"** - **sai nhan qua**. `--240` ghi `twin_dat_cho` cho **moi** may
+   (`tong=240 daDat=240`); 180 la **chenh mau so** (`may` toan nha may vs `datCho` **mot tang**).
+   Ly do that lo U khong do duoc gizmo la **QUYEN**: `e2e_tai_loE` co 4 hang `permissions` deu
+   **`canEdit=false`** ⇒ `mayDangChon` bi ep `null`. Lo V cap tam roi **tra lai dung baseline**.
+2. `CanhThietKe.tsx` thieu cap `thiet-ke/` trong duong dan.
+
+### 11l.4 HAI VIEC CAN CHU SO HUU QUYET
+
+1. **Bat `NODE_ENV=production` cho `npm run build`** - **don bay lon nhat** voi trieu chung do/giat.
+   Anh huong **moi man**, khong rieng Twin ⇒ can quyet dinh o cap he.
+2. **Noi `tiLe` vao `onBienDoiXong`, hoac go nut Scale** - hien tai nut **noi doi voi nguoi dung**.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
