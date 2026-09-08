@@ -4851,6 +4851,129 @@ dang sinh ra** sau moi luot `pkill`.
 **khong co cau tra loi on dinh**. Phep do dung phai kem **moc thoi gian** (*"luc 20:51 con 5 cong nghe"*),
 va **cho ai do tuyen bo XONG** roi moi don - dung don giua chung.
 
+## 13h. DOT 23 - DON THI GIAC 4 MON (2026-09-08)
+
+Commit `c0d70db2`. Cong: **66 tep / 1.873 test** (nen 66/1.855) - `check` 0 - `build` 0 -
+DB `2/43/82` - 5 anh lo C **md5 nguyen ven**. Anh: `.qa-dot23/SAU-toan-man.png` (ca 4 mon
+trong MOT khung), `.qa-dot23/L4-operator1-truoc.png`.
+
+### 13h.1 ★★★ G77 tu do chinh no: **PHEP DO THU HAI BAC BO CHAN DOAN M1**
+
+Brief Dot 23 giao: *"nhan 3D chong nhau thanh khoi khong doc duoc"*. Xay phep do thu hai
+theo dung yeu cau G77 (`e2e/twin-dot23-do-nhan.spec.ts`) - quet **CA BA lop `<Html>`**
+(`LopNhan` z20 - `LopCanhBao` z30 - `LopVung` z15) bang `getBoundingClientRect` THAT, dem
+cap chong **KHONG phan biet lop**. Ket qua o tu the camera ghim, 1280x720, `?thu=trai,phai`:
+
+| | truoc | sau |
+|---|---|---|
+| tong nhan tren man | 8 | 8 |
+| **cap chong LIEN LOP** | **0** | **0** |
+| nhan bi de | 0 | 0 |
+| **nhan DOC DUOC** | **8/8** | **8/8** |
+| nhan bi giau (khai ra) | **0 - khong ai noi** | **37 - chip noi ra** |
+
+⇒ **Nhan KHONG he chong nhau.** `locNhan.ts` da co hau dieu kien "0 cap chong" tu Dot truoc
+va no dang chay dung. Loi THAT nam o chieu nguoc lai: `__demNhan` khai
+`tong 45 - chongLap 37 - ve 8 - vuotTran 0`, tuc **45 ung vien chi con 8 nhan, 82 % may mat
+ten**, va man **KHONG NOI GI**. Tran 30 chua he cham (`vuotTran = 0`), nen noi tran la va
+nham cho.
+
+> #### ★★★ G79 - **BO LOC CHAY DUNG HOP DONG VAN LA MOT LOI GIAO DIEN**
+> `locNhan` dung tuyet doi theo hop dong cua no, va `capConChong = 0` la lời khai THAT.
+> Nhung hop dong ay tra loi cau hoi *"nhan nao duoc ve"*, con nguoi dung hoi
+> *"may nay ten gi"*. Mot bo loc im lang bo 37 cau tra loi thi **so 8 tro thanh mot lời
+> khai sai** - nguoi doc 8 ten se tin do la tat ca.
+> ⇒ Va bang **KHAI BAO SU THIEU** (`soBiGiau` + chip "37 more names hidden"), cung luat NT-3
+> ma ca man da theo: *khong co du lieu ≠ binh thuong*, o day la *khong co nhan ≠ khong co may*.
+> ⇒ Bat bien ke toan ghim bang luoi: `ve + soBiGiau === tongUngVien` - khong ung vien nao roi.
+
+### 13h.2 M2 - hai panel noi che **18,6 % canvas**, do duoc
+
+```
+  canvas 968x489        = 473.352 px²
+  Metrics  208x220      =  45.760 px²
+  Simulation 257x165    =  42.437 px²
+  ────────────────────────────────────
+  che VINH VIEN         =  88.197 px²  = 18,6 % canvas
+```
+Tra lai gan **mot phan nam** cai gia Dot 21 vua mua bang bo cuc noi-de.
+
+**Quyet dinh: thu `Simulation`, GIU `Metrics`** - khong doi xung, va co ly do do duoc:
+`BangKpiNoi` tra loi cau hoi nguoi xem LUON co (§11 #16 dung no de che do `?thu=trai,phai`
+khong con la *"3D dep ma 0 con so"*); `NganMoPhong` la cong cu what-if goi theo nhu cau, o
+trang thai mac dinh no hien dung *"— Select a line to simulate throughput"* + o chon workflow
+RONG, tuc **tieu 42.437 px² de noi rang no chua co gi de noi**. SAU: **6.720 px²** (chi con
+thanh dau, van bam mo duoc).
+
+★ **G40 giu nguyen, khong de khoa thu bay.** Ngu nghia `thu=` KHONG doi (*"liet ke panel DANG
+THU"*, vang = mo) nen `docThu`/`ghiThu` khong sua mot dong. Panel mac-dinh-thu mang **ten
+chieu NGUOC** `moPhongMo`. Ten cu `moPhong` **GIU LAI** trong `PANEL_THU_DUOC` de link cu
+khong bi `docThu` NUOT im lang - dung bay G67 ma chinh docblock do canh bao.
+
+### 13h.3 ★★★ M3 (L-4) - **CHAN DOAN CUA BRIEF DUNG TRIEU CHUNG, SAI MOT BUOC VE GOC RE**
+
+Brief: *"`:717` chi doc tu `canhQ` ⇒ neu `canhQ` khong tra co… `EmptyState` khong hien"* -
+ngu y `canhThietKe` CO CHAY roi thieu co. Do lai tren `dist`, vai `operator1`:
+
+```
+  factory.list        →  [] (n=0)          ⇒ factoryId = null
+  twinCanh.canhThietKe →  0 LAN GOI         (chan boi `enabled: factoryId !== null`)
+  canhQ.data          →  undefined         ⇒ phamViRong = false
+  man that            →  0 may · 0 nhan · moi KPI `—`   ma vo van khai "Alarms (7)"
+```
+
+⇒ **Thu tuc KHONG HE CHAY.** Server da tra dung nhan tu truoc (`twinCanhRouter.ts:1057`
+`...nhan.labels`); cho hong nam o **CHO DOC**. Va bang *"them co vao `canhThietKe`"* se
+**KHONG doi duoc mot chu nao**, vi dap ung ay khong bao gio ton tai.
+
+> #### ★★★ G80 - **"TRUY VAN KHONG TRA CO" VA "TRUY VAN KHONG CHAY" LA HAI BENH KHAC NHAU**
+> Ca hai cho ra cung mot trieu chung (`data === undefined` ⇒ co = false), nen doc tu trieu
+> chung se chan doan nham nua so lan. Phan biet duoc bang **dem SO LAN GOI tren day**
+> (`page.on("response")` loc theo ten thu tuc) - hits = 0 phan biet dut khoat hai benh.
+> ⇒ Nguon su that cho "pham vi rong" phai la truy van **LUON CHAY**, khong phu thuoc bien ma
+> chinh no dang dinh nghia. O day: `factory.list`.
+> ⚠ `!isLoading && !isError` la **BAT BUOC**: luot tai dau `factories` cung rong, thieu ve nay
+> thi MOI nguoi dung thay `EmptyState` nhap nhay mot nhip - bien ban va thanh loi moi cho
+> toan bo nguoi dung.
+
+**DOI CHUNG (G5/G32):** `e2e_tai_loE` SAU khi va **van 8 nhan + KPI nguyen ven** - ban va
+khong qua tay. `operator1` SAU: EmptyState hien, va cau *"Alarms (7)"* mau thuan **bien mat
+khoi than man**.
+
+### 13h.4 M4 - `"Updated 1572061s ago"` = 18,2 ngay: **HAI loi trong MOT dong**
+
+1. **DINH DANG** - giay song. `nhanDoTuoi` nay tra them `rut: {so, donVi}` bang cach **uy thac
+   cho `nhanTuoi`** (G12/G72 - module thuan tra DU LIEU, khong phat van xuoi). Duoi 60 s VAN
+   in giay: do la nhip lam moi cua man, giay la don vi dung o do.
+2. **HAN HIEU LUC (G30)** - `do` (do khi > 60 s) **khong phan biet 61 giay voi 18 ngay**, nen
+   mot gia tri 18 ngay hien ra *trong y nhu binh thuong, chi do hon chut*. Them `quaCu`
+   (> `NGUONG_CU_MS`). `NganXuLy.tsx:300` **da co san** badge `duLieuQuaCu` cho dung ca nay;
+   thanh cong cu thi khong - **cung mot su that, hai cau tra loi tren cung mot man**.
+
+SAU: **`"Updated 18 days ago"`** + badge *"Data too old — status not trustworthy"*. Ca hai cho
+nay gio noi **CUNG CAU** qua **CUNG mot ham** `nhanTuoiDocDuoc`. `data-giay` **giu nguyen so
+tho** (1.573.478) - khong lam mu thiet bi do cua chinh minh.
+
+### 13h.5 Dot bien (tiem - bat - khoi phuc byte-exact, doi chieu md5)
+
+| Dot bien | Ket qua |
+|---|---|
+| M1 `soBiGiau` quen cong nguon chinh-sach | 1 luoi do |
+| M2 bo `moPhongMo` khoi `PANEL_THU_DUOC` (G67) | 1 luoi do |
+| M3 bo ve `factory.list` rong | **tai hien DUNG loi L-4 tren `dist`** |
+| M4 in giay song cho moi moc | 2 luoi do |
+
+### 13h.6 Con mo - khai, khong va (ngoai pham vi)
+
+- **Badge "7" o VO ung dung** van hien khi vai khong co nha may. No thuoc **shell toan cuc**
+  (ngoai `/twin`), khong phai man nay - man da thoi tu mau thuan trong pham vi cua no.
+- `chiNhanBatThuong` **da co duong day du** (`locNhan` → `LopNhan` → `CanhVanHanh`) nhung
+  **chua noi vao UI** - chua co nut bat/tat. Duong da co va da co luoi; con thieu dung mot
+  cho bam.
+- L-5 (`?xem=machine:2` khong mo panel, khong cau nao noi vi sao) - **khong dung toi** o dot nay.
+
+---
+
 ## 14. Rủi ro`** từ trước. Chiếm lại số 14 sẽ tạo hai mục cùng số trong một tệp sắp đem
 > ra bàn — đúng kiểu nhầm lẫn mà một bản thiết kế không được phép gây ra. Nội dung được yêu cầu nằm
 > nguyên vẹn ở đây, đặt ngay trước §14 cũ. Cùng lý do và cùng cách xử lý với §12b.
