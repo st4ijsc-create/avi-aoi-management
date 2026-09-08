@@ -4385,7 +4385,68 @@ Cửa sổ đo cho e2e: `window.__thongKeVe`, `window.__demNhan`, `window.__pham
 ## 13b. §14 — THIẾT KẾ LẠI 3D TWIN HỢP NHẤT (ĐỢT 20, 2026-09-08)
 
 > **Vì sao mục này mang số 13b chứ không phải 14.** Brief giao *"mục mới §14"*, nhưng tài liệu này
-> **đã có `## 14. Rủi ro`** từ trước. Chiếm lại số 14 sẽ tạo hai mục cùng số trong một tệp sắp đem
+> **đã có `## 13c. QUYET DINH CUA CHU SO HUU VE §13b (2026-09-08)
+
+Ban thiet ke §13b hoi **ba cau**. Chu so huu tra loi **ca ba**, va cau 1 duoc lam ro them
+sau khi chu du an **do be mat anh huong**.
+
+### 13c.1 Cau 1 - **GOP**, va gop theo kieu **QUYEN THEO TUNG VUNG**
+
+§13b **de nghi khong gop** vi hai cong quyen khac nhau. Chu du an kiem lai va **xac nhan luan diem**:
+
+| Man | Cong (`navigation.tsx`) |
+|---|---|
+| `/twin` | `analytics_oee` **hoac** `machine_status` (`:446`) |
+| `/twin-studio` | `settings_factory` **hoac** `machine_control` (`:467`) |
+
+Nhung chu so huu **van chon GOP**. De quyet dinh khong mu, chu du an **do be mat that**:
+
+```
+Tong tai khoan hoat dong co quyen : 7
+Vao duoc CA HAI                   : 4
+CHI vao duoc /twin                : 1   <- operator1 (vai operator)
+```
+
+⇒ Rui ro **khong phai gia dinh**, no la **dung mot nguoi**. Va vi the co loi thoat sach:
+
+> #### ★★★ QD-16 - MOT TRANG, **QUYEN THEO TUNG VUNG**, KHONG PHAI MOT CONG DUY NHAT
+> Ai co `analytics_oee`/`machine_status` **vao duoc trang va XEM moi thu**.
+> Cong cu **SUA nha xuong** (keo tha, gizmo, luu bo cuc) **chi hien** voi ai co
+> `settings_factory`/`machine_control`.
+> ⇒ `operator1` **khong mat gi** - chi khong thay nut sua. Dung **luat an-khong-disable** ma du an
+> da theo (§12b.3, va ban va P-3 o `RobotCockpit.tsx:916-918`).
+>
+> **Vi sao KHONG chon hai kieu gop kia:**
+> - **Cong chat** (`settings_factory`): `operator1` **mat luon loi vao**, khong xem duoc 3D nua -
+>   **dung tai nan Dot 3 CHAN-1** (1/4 vai mat quyen) ma **Dot 15 da phai va nguoc lai**.
+> - **Cong rong** (ai xem duoc thi sua duoc): `operator1` **sua duoc nha xuong**. Do la **doi mo hinh
+>   an toan**, khong phai doi giao dien - va **loi lo K da tu choi** dung kieu nay
+>   (noi quyen khi khong chung minh duoc truc tenant roi).
+
+### 13c.2 Cau 2 - **BO phong cach sci-fi** cua mau
+
+Chu so huu **dong y bo**. Ly do §13b nêu, chu du an giu nguyen: tren nen neon xanh **mot may do
+KHONG NOI BAT** - mat dung thu ma canh 3D ton tai de lam.
+⇒ Theo **ISA-101**: xam trung tinh lam nen, **mau chi danh cho bat thuong**. Nguon mau **duy nhat**
+van la `mauTrangThai.ts` (≤7 ma) - **khong de bang token thu hai** (G12).
+
+### 13c.3 Cau 3 - **Dong y** chuyen `floor`/`layout` sang vung sua
+
+Chu so huu dong y. Ket hop **QD-16**: vi nay la **mot trang**, "chuyen sang `/twin-studio`" tro thanh
+**"nam trong vung chi hien voi quyen sua"** - nen **khong ai bi cat loi vao**, ke ca `operator1`.
+
+### 13c.4 Rang buoc mang sang Dot 21
+
+- Pham vi la **hoan thien + doi bo cuc**, **khong phai viet lai**: dem duoc **38 chuc nang -
+  CO 24 · MOT PHAN 4 · CHUA 10** (§13b).
+- Bon muc G chua noi: **G-1 suc khoe may** (nguon `machine_health_history` **180.674 hang, tuoi HOM NAY**),
+  G-4 vung, G-6 UNS, G-7 cay da site.
+- **G74 (§13b)**: *"da gop" la loi khai ve TEP, khong phai ve VIEC* - what-if/phat lai/tua lai **da noi
+  san** (`:1502`, `:1536`, `:748`). Dem lai truoc khi giao.
+- Bang 38 chuc nang la **anh chup 2026-09-08**, khong phai hang so - brief Dot 20 **da lech so voi ma
+  chi sau ~1 ngay** (**G55**: so do co han su dung).
+
+## 14. Rủi ro`** từ trước. Chiếm lại số 14 sẽ tạo hai mục cùng số trong một tệp sắp đem
 > ra bàn — đúng kiểu nhầm lẫn mà một bản thiết kế không được phép gây ra. Nội dung được yêu cầu nằm
 > nguyên vẹn ở đây, đặt ngay trước §14 cũ. Cùng lý do và cùng cách xử lý với §12b.
 >
