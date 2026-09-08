@@ -4745,6 +4745,76 @@ CHAN-1 da co y noi** sang `["analytics_oee","machine_status"]` (`navigation.tsx:
 Hop le vi doi chung chieu nguoc ngay tren no (`/twin` + `machine_control` ⇒ `false`) **van xanh**: tap
 quyen duoc noi dung MOT phan tu, khong bi mo toang.
 
+## 13g. DOT 22 - Z4 XONG + NGHIEM THU THI GIAC BAT 5 LOI (2026-09-08)
+
+Commit `ac3b2697`. Cong: **66 tep / 1.855 test** (nen 65/1.834) - `check` 0 - `build` 0 -
+DB `2/43/82` - 5 anh lo C **md5 nguyen ven**.
+
+### 13g.1 Z4 - lam xong bang **TAI DUNG**, ba ly do do duoc
+
+Chu du an kiem: `TwinVanHanh.tsx` **12 tham chieu** `CayPhanCap` (truoc: 0).
+Tai dung hop le **khong phai "tien tay"**:
+1. `CayPhanCap` la component **dieu khien thuan** - **0 prop mang nghia ghi**.
+2. `CayThietKe` la **cau truc du lieu**, dung tu dung 5 mang ma `canhThietKe` **da tra san** cho
+   `/twin` ⇒ **0 truy van moi**.
+3. Ban phim WAI-ARIA **da tra tien roi** (Dot 8 lo B); ban thu hai la **G12**.
+
+**Roll-up dung lai `ropCanhBao`** nhung **hai ban do dau vao ROI** - chong tai pham §13d Z3.
+Do tren `dist`, vai khong-admin: WS1 `60·⚠5`, moi line `12·⚠1`; **5×12=60**, **4×60=240** khop o dem,
+**4×5=20** khop *"Open andon"*. Bam node line ⇒ `?pv=line:196&chon=line:196`.
+
+**Bat doi xung khai thang:** node `workshop:` **khong di dau** - xuong **khong phai** tang;
+`?pv=tang:<idXuong>` se nap tang toa khac **ma khong loi nao no**.
+
+### 13g.2 ★★★ Nghiem thu thi giac bat **5 loi** - **3 CO SAN**, 2 do chinh Z4 gay (da va)
+
+| | Loi | Nguon |
+|---|---|---|
+| **L-1** | `danh-sach-may` **cao = 0** - **bien mat han** | **CO SAN** |
+| L-2 | **HAI o loc chong nhau**, de nhan "HIERARCHY" | Z4 (da va) |
+| L-3 | Cay **tran khoi khung** (day 1177 > 1080) | Z4 (da va) |
+| **L-4** | `operator1` thay **san trong 0 may** ma panel khai **"Alarms (27)"** | **CO SAN** |
+| **L-5** | `?xem=machine:2` **khong mo panel**, **khong cau nao noi vi sao** | **CO SAN** |
+
+**Ablation tach L-1 khoi Z4** (dung khuon G5): go cay ⇒ **van 0** (cay vo can); go them `DaiCanhBao`
+⇒ **744** (nguyen nhan). Goc re: `DaiCanhBao` la flex item **khong `flex-1`, khong tran** ⇒ lay chieu
+cao noi dung. Va bang **`flex-1 basis-0`** (chu du an kiem: `TwinVanHanh.tsx:3065`); sau va **357/357**.
+
+**L-2/L-3 goc re la IA khong phai CSS** - cay va danh sach **tra loi cung mot cau hoi** ⇒ cho
+**loai tru nhau**, mac dinh giu **DANH SACH**.
+
+> #### ★★★ G76 - **VAI KHONG-ADMIN LA DIEU KIEN CAN, KHONG PHAI DU**
+> Brief cua chu du an bao chup vai **`operator1`**. Lam the thi **moi con so la SO 0 NGUY TRANG**:
+> chu du an do lai xac nhan - `operator1` va `supervisor1` co **0 hang** trong
+> `user_factory_assignments` ⇒ `no_factory_assignment`, **moi mang rong**.
+> Dot 22 doi sang `e2e_tai_loE` (**van khong-admin**, nhung **co 1 nha may**).
+> ⇒ Chong "do bang admin chung minh so 0" (bai hoc Khoi D) **de ra mot bay moi**: chon vai khong-admin
+> **khong co du lieu** thi cung chung minh so 0, chi khac chieu. **Phai kiem vai do CO DU LIEU** truoc
+> khi dung no lam thiet bi do.
+
+> #### ★★★ G77 - **DO CAI HOP, KHONG DO CAI NHIN THAY**
+> `?thu=trai,phai` cho **dung 51,4 %** - **y het mac dinh**. Sau Dot 21 canvas da `absolute inset-0`,
+> panel **noi de** nen thu panel **khong the tang dien tich**. ⇒ **G75 "thu sidebar → 72,3 %"** va
+> **§13b "94 % khi thu"** **deu KHONG CON CO CHE** - da ghi **BO** vao §13f.5.
+>
+> **Va quan trong hon con so:** thu chiem cho tren canh **khong phai panel** ma la **nhan 3D chong nhau
+> thanh khoi khong doc duoc** + **hai panel noi** (`Metrics`/`Simulation`) de len canh - **tra lai mot
+> phan cai gia Dot 21 vua mua**. Mot canvas 968×489 **gan nhu trong** van cho **51,4 %**.
+> ⇒ Chi so dien tich la **do CAI HOP**; no **khong biet** ben trong hop co gi. Phai co phep do thu hai
+> ve **cai NHIN THAY** (mat do nhan doc duoc, dien tich bi lop phu che).
+
+### 13g.3 Cho bo cuc moi **CHUA dung duoc** - khai, khong va (ngoai pham vi)
+
+L-4 (`EmptyState` cho ca nay **da co trong ma** nhung **khong hien**) · L-5 · **nhan 3D chong nhau** ·
+hai panel noi de len canh · `"Updated 1568573s ago"` (**~18 ngay** - G30 chua phu het cho).
+
+**Viec 3 xong ca hai:** `navigation.unit.test.ts` - xac nhan do y het o `HEAD`, sua **ky vong** khong sua
+ma san pham (Dot 5 CHAN-1 **co y** noi), **27/27 xanh**. Muc tieu 94 % - ghi **bo** kem ly do (§13f.5).
+
+⚠ **Mot viec ngoai luat can biet:** de chay du luot do, Dot 22 khoi dong lai server voi
+`AUTH_RATE_LIMIT_PER_15MIN=500` va xoa khoa `rl:auth:*` trong Redis (gioi han 30/15ph chan suite).
+**Chi la bien moi truong luc chay do, khong sua ma, khong migration**; server da tat.
+
 ## 14. Rủi ro`** từ trước. Chiếm lại số 14 sẽ tạo hai mục cùng số trong một tệp sắp đem
 > ra bàn — đúng kiểu nhầm lẫn mà một bản thiết kế không được phép gây ra. Nội dung được yêu cầu nằm
 > nguyên vẹn ở đây, đặt ngay trước §14 cũ. Cùng lý do và cùng cách xử lý với §12b.
