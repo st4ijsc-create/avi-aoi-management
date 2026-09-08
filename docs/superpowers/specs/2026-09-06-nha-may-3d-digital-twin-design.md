@@ -3143,6 +3143,24 @@ No **doi phep do theo so**, khong giu gia thuyet.
 **Brief cua chu du an sai mot cho:** `--chi-nhip` **khong** phai lenh go; no chi lam tuoi nhip tim.
 Lenh go la `scripts/go-tai-twin.ts`.
 
+### 11k.2 G65 - CONG CU DO **TU XOA TEP DA COMMIT** cua lo khac (2026-09-08)
+
+> #### ★★★ G65 - PLAYWRIGHT DON `test-results/` MOI LUOT CHAY
+> `test-results/` chua **5 anh nghiem thu DA COMMIT** cua lo C (`C1-C4-toan-man.png`,
+> `C1-fit-all-sau.png`, `C2-anh-xuat-that.png`, `C3-minimap-sau-click.png`,
+> `C5-hop-thoai-luu-vung.png`). Playwright **don sach thu muc do moi lan chay** ⇒ chung bi xoa.
+>
+> **Lo U khai da khoi phuc.** Chu du an kiem `git status`: **van dang bi xoa** - loi khai **sai**
+> (khoi phuc that, roi luot chay **sau do** lai xoa). Da `git checkout HEAD -- test-results/`, ve du **5**.
+>
+> => Cung ho **G62** (script tu chay khi bi `import`): mot cong cu co **tac dung phu pha huy** ma
+> **khong ai ra lenh**. Khac o cho thu pham lan nay la **cau hinh mac dinh cua Playwright**, khong phai
+> ma cua du an.
+> => **Luat:** (1) khong ghi anh nghiem thu vao thu muc ma cong cu do **tu don**; (2) truoc khi commit,
+> `git status --porcelain -- test-results/` - thay dong ` D ` thi phuc hoi, **dung commit mot luot xoa
+> tep cua nguoi khac**; (3) **do lai SAU luot chay cuoi**, dung khai "da khoi phuc" o giua chung -
+> chinh lo U da khai dung the va van sai.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
