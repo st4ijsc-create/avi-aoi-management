@@ -406,6 +406,35 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "analytics",
         section: "mes",
       },
+      /*
+       * ════════════════════════════════════════════════════════════════════
+       * ★★★ ĐỢT 21 LÔ Y — Ô NÀY **GIỮ LẠI**, và đó là một quyết định ĐO ĐƯỢC
+       * ════════════════════════════════════════════════════════════════════
+       * `/digital-twin` nay chỉ còn là **redirect** vào `/twin` (`App.tsx`,
+       * theo `?tab=`). Về mặt IA thuần tuý, một ô nav trỏ vào redirect là ô
+       * THỨ HAI dẫn tới cùng một trang — đúng bệnh §13b 14.1.3 đi chữa, và
+       * bản năng đầu tiên là xoá nó.
+       *
+       * ⚠ **ĐO TRƯỚC KHI XOÁ, và phép đo BÁC BỎ việc xoá.** Hai nơi NGOÀI phạm
+       *   vi lô này đọc quyền của route đích qua chính ô nav này:
+       *     · `DataManagementHub.tsx:24`  `getRequiredPermissionForHref("/digital-twin")`
+       *     · `DataSettings.tsx:796`      cùng lời gọi
+       *   Cả hai dùng nó để quyết định có hiện quick-link "Bố trí xưởng" không —
+       *   đúng khuôn chống "một lối vào rồi TỪ CHỐI" mà Lô 5 Mục 2 dựng lên.
+       *   Xoá ô này ⇒ hàm trả `undefined` ⇒ **cả hai rơi về fallback
+       *   `"analytics_oee"` TRONG IM LẶNG**, không lỗi nào nổ, và quick-link
+       *   hiện ra cho người không sửa được bố cục. Tức là xoá một ô menu trùng
+       *   sẽ **đẻ lại chính lớp lỗi** mà đợt này đang chữa, ở hai màn khác.
+       *
+       * ⇒ Giữ ô, ghi nợ. Việc đúng là sửa hai chỗ gọi kia trỏ sang `/twin`
+       *   (đích thật của quick-link nay là `/twin?che-do=botri`, cần
+       *   `settings_factory`/`machine_control`, KHÔNG phải `analytics_oee`) —
+       *   nhưng hai tệp ấy nằm ngoài phạm vi tệp của lô này, và sửa mù một tệp
+       *   không đo được là cách nhanh nhất để thêm một lỗi câm thứ ba.
+       *
+       * ★ Người dùng KHÔNG bị hại bởi việc giữ: ô này vẫn tới `/twin` đúng, chỉ
+       *   là menu còn một dòng trùng. Đó là nợ THẨM MỸ; xoá nó là nợ ĐÚNG-SAI.
+       */
       {
         href: "/digital-twin",
         label: "nav.digitalTwin",

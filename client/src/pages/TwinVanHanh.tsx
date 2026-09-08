@@ -43,7 +43,7 @@
  * ⚠ Phép đo quyền PHẢI bằng tài khoản KHÔNG-admin — admin bypass.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getSharedSocket } from "@/lib/socketManager";
 import { useTranslation } from "react-i18next";
@@ -55,8 +55,12 @@ import {
   ChevronRight,
   Download,
   LayoutGrid,
+  Maximize2,
+  Minimize2,
   OctagonAlert,
+  PencilRuler,
   RefreshCw,
+  X,
 } from "lucide-react";
 import type * as THREE from "three";
 
@@ -157,6 +161,15 @@ import { useKhoTrangThai } from "@/components/twin3d/van-hanh/useKhoTrangThai";
 import { DongThoiGian, type TocDo } from "@/components/twin3d/van-hanh/DongThoiGian";
 // ── Đợt 6 (§11 #26/#51/#52) — an toàn nổi lên Twin + xuất xứ dữ liệu ──
 import { tomTatAnToan } from "@/components/twin3d/van-hanh/canhBaoAnToan";
+/*
+ * ★★★ ĐỢT 21 — hạ tầng của LÔ Z, nối vào ở lô Y (xem ba chỗ gọi bên dưới).
+ *   Lô Z dựng ba module này rồi dừng ở ranh giới phạm vi tệp; nếu không có ba
+ *   dòng `import` này và ba chỗ gọi của chúng thì cả ba là **G16** — hàm không
+ *   ai gọi = chưa xong.
+ */
+import { vienSucKhoe, type KhaiSucKhoe } from "@/components/twin3d/van-hanh/sucKhoeMay";
+import { khaiNguonSo } from "@/components/twin3d/van-hanh/xuatXuNhip";
+import { vungTuDanhSach, type HangVung } from "@/components/twin3d/thiet-ke/vungAnToan";
 import {
   NHIP_CO_LUONG_MS,
   coLuongTheoKetNoi,
@@ -172,6 +185,45 @@ import {
   xepHangWip,
   type TinhWip,
 } from "@/components/twin3d/van-hanh/wipTram";
+
+/*
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 21 LÔ Y — BỐ CỤC MỚI (§13b) + QD-16 GỘP MỘT TRANG (§13c.1)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Ba nhập khẩu dưới đây là toàn bộ bề mặt mới của đợt. Lý lẽ đầy đủ nằm trong
+ * docblock của chính ba tệp ấy; ở đây chỉ ghi cái mà người đọc `TwinVanHanh`
+ * cần biết ngay:
+ *
+ *  • `DaiHopNhat`  — TÁM dải ngang (ca xấu nhất 280 px) thành MỘT dải 26 px.
+ *    Không banner nào bị bỏ; chỉ đổi HÌNH DẠNG của lời khai (§13b 14.4).
+ *  • `vungQuyen`   — QD-16: một trang, **quyền theo TỪNG VÙNG**. `operator1`
+ *    (vai duy nhất chỉ vào được `/twin`) KHÔNG mất lối vào, chỉ không thấy nút
+ *    sửa. Luật ẩn-không-disable (§12b.3).
+ *  • `TwinStudio`  — vùng SỬA, nạp lười. ⚠ RB-4: nó mang `<Canvas>` riêng, nên
+ *    KHÔNG BAO GIỜ được mount cùng lúc với cảnh vận hành. Xem chú thích ở chỗ
+ *    render.
+ */
+import DaiHopNhat from "@/components/twin3d/bo-cuc/DaiHopNhat";
+import type { MucViec } from "@/components/twin3d/bo-cuc/daiHopNhatLogic";
+import {
+  coQuyenSuaNhaXuong,
+  docVungTuUrl,
+  kepVungTheoQuyen,
+} from "@/components/twin3d/bo-cuc/vungQuyen";
+
+/**
+ * ★★★ RB-4 — VÙNG SỬA NẠP LƯỜI, VÀ ĐÓ LÀ MỘT LUẬT AN TOÀN, KHÔNG PHẢI TỐI ƯU.
+ *
+ * `TwinStudio` mang `<Canvas>` của riêng nó (`XuongThietKe`). Cảnh vận hành
+ * cũng mang một `<Canvas>`. Hai WebGL context sống cùng lúc là điều `KhungCanh`
+ * tự `console.error` để bắt, và trình duyệt sẽ **giết context cũ trong im lặng**
+ * khi vượt trần (Chrome: 16). Nên hai vùng **loại trừ nhau** ở chỗ render, và
+ * `React.lazy` bảo đảm mã của vùng sửa còn chẳng được tải về khi chưa cần.
+ *
+ * ⚠ `React.lazy` KHÔNG phải hàng rào quyền — nó chỉ hoãn việc tải. Hàng rào là
+ *   `kepVungTheoQuyen` (giao diện) + `requireAnyPermission` ở router (thật).
+ */
+const VungSuaNhaXuong = lazy(() => import("./TwinStudio"));
 
 /** Phạm vi mặc định khi URL không nói gì. */
 const PHAM_VI_MAC_DINH: PhamVi = { cap: "tang", id: null };
@@ -551,6 +603,32 @@ export default function TwinVanHanh() {
   const anToanQ = trpc.twinCanh.anToanRobot.useQuery(
     { factoryId: factoryId ?? 0 },
     { enabled: factoryId !== null, retry: false, refetchInterval: nhipHoiToiDa(coLuongDay, 20_000) },
+  );
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 21 — A-4 SỨC KHOẺ MÁY LÊN CẢNH (hạ tầng của lô Z, nối ở đây)
+   * ════════════════════════════════════════════════════════════════════════
+   * Lô Z dựng `sucKhoeMay.ts` (+ `LopVienSucKhoe` trong `CanhVanHanh`) nhưng
+   * **cố ý không chạm tệp này** vì lô Y giữ độc quyền. Hệ quả đúng luật, nhưng
+   * cũng là **G16 nguyên bản**: hạ tầng có, `grep` ra **0 chỗ gọi** ⇒ tính năng
+   * chưa tồn tại với người dùng. Dòng dưới đây là chỗ gọi ấy.
+   *
+   * ★ Số đo lô Z gửi kèm (dùng lại, không đo lần hai):
+   *     `machine_health_history` **180.800 hàng**, **43/43 máy có hàng**,
+   *     42/43 tươi trong 24 h, **0/180.800 NULL** ở cả ba cột điểm (G50 đã kiểm,
+   *     không giả định). Miền [55…100]; **6/43 dưới 60** (`nguy_kich`),
+   *     21/43 dưới 80.
+   * ★ Ngân sách nhãn (§4, trần 30): **chỉ hạng `nguy_kich` giành nhãn ⇒ 6 máy**.
+   *   Nới cho hạng `canh` thì riêng nó ăn **21/30** chỗ — ĐỪNG NỚI.
+   * ★ Draw call **3 → 4** (một InstancedMesh cho mọi vòng). Trần 150, còn rộng.
+   *
+   * ⚠ `refetchInterval` cùng khuôn `nhipHoiToiDa` với `anToanQ`: sức khoẻ đổi
+   *   chậm hơn trạng thái nhiều, nên 60 s là đủ và nó không đua với luồng đẩy.
+   */
+  const sucKhoeQ = trpc.twinCanh.sucKhoeMay.useQuery(
+    { factoryId: factoryId ?? 0 },
+    { enabled: factoryId !== null, retry: false, refetchInterval: nhipHoiToiDa(coLuongDay, 60_000) },
   );
 
   /* ═══════════════════════════════════════════════════════════════════════ */
@@ -1006,6 +1084,63 @@ export default function TwinVanHanh() {
     }
     return ra;
   }, [mayVanHanh, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, phamVi, factoryId, mauNenCanh]);
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 21 — A-4: VÒNG VIỀN SỨC KHOẺ, quy từ lời khai + chỗ đặt
+   * ════════════════════════════════════════════════════════════════════════
+   * `vienSucKhoe()` (lô Z, `sucKhoeMay.ts:333`) nhận **lời khai** và **chỗ đặt**
+   * rồi trả danh sách vòng CÓ MÀU. Nó tự loại hạng `khoe`/`chua_do` ngay trong
+   * hàm, nên tầng này KHÔNG được thêm một bộ lọc thứ hai (G12: một luật, một
+   * chỗ — hai bản cài đặt sẽ lệch và không ai biết tin cái nào).
+   *
+   * ★ `cho` dựng từ **`mayVe`**, không phải từ `mayVanHanh`: `mayVe` là tập đã
+   *   qua `datChoTheoMay` + `hienThi`, tức là **đúng những máy đang được vẽ**.
+   *   Lấy từ `mayVanHanh` sẽ sinh vòng cho máy không có trên cảnh — một vòng
+   *   viền lơ lửng ở gốc toạ độ, và không lỗi nào nổ.
+   *
+   * ⚠ `viTri` của `mayVe` đã đổi trục (DB Y = mặt bằng → scene z). `ChoDatVien`
+   *   nhận `{x, z}` theo hệ **CẢNH**, nên truyền thẳng `viTri.x`/`viTri.z` là
+   *   đúng. Lấy nhầm `viTri.y` (độ cao) sẽ dán mọi vòng lên một đường thẳng —
+   *   đúng BẪY HOÁN VỊ TRỤC đã ghi ở sổ, và nó KHÔNG làm gì nổ.
+   */
+  const vienSucKhoeCanh = useMemo(
+    () =>
+      vienSucKhoe(
+        (sucKhoeQ.data?.khai ?? []) as KhaiSucKhoe[],
+        mayVe.map((m) => ({
+          machineId: m.machineId,
+          viTri: { x: m.viTri.x, z: m.viTri.z },
+          kichThuocMm: { rong: m.kichThuocMm.rongMm, sau: m.kichThuocMm.sauMm },
+        })),
+        bayGio,
+      ),
+    [sucKhoeQ.data, mayVe, bayGio],
+  );
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 21 — A-6: VÙNG AN TOÀN LÊN MẶT VẬN HÀNH (chỉ ĐỌC)
+   * ════════════════════════════════════════════════════════════════════════
+   * ★ TÁI DÙNG `vungTuDanhSach` + `LopVung` của màn **Thiết kế** (G12) — 49 lưới
+   *   đã canh chúng. Viết bản thứ hai cho mặt vận hành là mở đường cho hai bề
+   *   mặt vẽ hai đa giác khác nhau từ cùng một hàng DB.
+   *
+   * ★★★ **KHÔNG truyền `onChon`**: mặt Vận hành là **chỉ đọc hình học**
+   *   (`canhThietKe` ở đây là nguồn đọc). Cho phép chọn/kéo vùng ở đây là mời
+   *   người ta sửa nhà xưởng trong khi đang xem cảnh báo — đúng lý lẽ §12b.4 đã
+   *   dùng để tách hai mặt, và nay QD-16 giữ tách ấy bằng VÙNG chứ không bằng
+   *   trang.
+   *
+   * ⚠⚠ **NGUỒN HIỆN ĐANG RỖNG, VÀ ĐÓ LÀ ĐÚNG.** Lô Z đo: `twin_vat_the` có
+   *   **4 hàng, toàn `loai='tuong'`, 0 hàng `vung`** trên toàn hệ. Nên sau khi
+   *   nối, cảnh **sẽ không vẽ vùng nào**. Đừng "sửa" bằng dữ liệu giả — một
+   *   vùng an toàn bịa ra là lời khai sai về chỗ người được đứng.
+   */
+  const vungCanh = useMemo(
+    () => vungTuDanhSach((canhQ.data?.vung ?? []) as HangVung[]),
+    [canhQ.data],
+  );
 
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* ★★★ §11 #53 — KHU CHỜ XẾP CHỖ: máy chưa đặt = BÁN TRONG SUỐT             */
@@ -1700,6 +1835,50 @@ export default function TwinVanHanh() {
   const demTuoi = useMemo(() => demTheoTuoi(mayVanHanh, bayGio), [mayVanHanh, bayGio]);
   const tsNen = useMemo(() => thoiDiemDuLieuMoiNhat(mayVanHanh), [mayVanHanh]);
   const doTuoiNen = nhanDoTuoi(tsNen, bayGio);
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 21 — B-3: HUY HIỆU "TRỰC TIẾP" ĐANG **KHAI SAI ĐẠI LƯỢNG** (họ G7)
+   * ════════════════════════════════════════════════════════════════════════
+   * Phát hiện của lô Z, và tôi đã **kiểm lại trên mã thật** trước khi nối:
+   *
+   *   `nguonDuLieu.ts:37`  `NHIP_CO_LUONG_MS = 30_000`
+   *   `nguonDuLieu.ts:52`  `nhipHoiMs(coLuong) → coLuong ? 30_000 : 5_000`
+   *   ⇒ khi ĐÃ có luồng đẩy, `refetchInterval` **KHÔNG tắt** — nó hạ xuống 30 s
+   *     và **ở lại đó** (cố ý: docblock `nhipHoiMs` viết rõ *"tắt hẳn nghĩa là
+   *     một luồng chết âm thầm sẽ đóng băng màn hình vĩnh viễn"*).
+   *
+   * ⇒ Huy hiệu `ketNoi === "truc_tiep"` khai đúng về **ĐƯỜNG KẾT NỐI**, nhưng
+   *   người đọc hiểu nó nói về **CON SỐ**. Một phần số trên màn vẫn tới bằng
+   *   poll 30 s. Đây đúng họ G7: **đếm ĐẦU VÀO ≠ ĐẦU RA** — ta khai tình trạng
+   *   socket rồi để người dùng suy ra tuổi của dữ liệu.
+   *
+   * ★ `khaiNguonSo()` (lô Z) phân biệt **5 hạng**: `day` · `hon_hop` · `hoi` ·
+   *   `lich_su` · `chua_ro`. Hạng `hon_hop` chính là ô mà huy hiệu cũ không có
+   *   từ để nói.
+   *
+   * ⚠ `mocPollCuoi` lấy `overviewQ.dataUpdatedAt` — mốc lượt POLL cuối **thành
+   *   công**, do react-query giữ. KHÔNG dùng `Date.now()`: NT-3.4 đã ghi, lấy
+   *   đồng hồ lúc render làm mọi thứ trông như vừa cập nhật kể cả khi ta chỉ
+   *   nhận lại một snapshot cũ.
+   * ⚠ `mocGoiCuoi` chỉ tính khi `kho.nguon === "socket"`. `kho.nhanLuc` được ghi
+   *   cho CẢ lượt truy vấn (`nguon: "truy_van"`), nên truyền thẳng nó sẽ làm mọi
+   *   lượt poll trông như một gói đẩy — tức là chính lời khai sai ta đang chữa,
+   *   chỉ chuyển sang chỗ khác.
+   */
+  const khaiNguon = useMemo(
+    () =>
+      khaiNguonSo(
+        {
+          ketNoi,
+          mocGoiCuoi: kho.nguon === "socket" ? kho.nhanLuc : null,
+          mocPollCuoi: overviewQ.dataUpdatedAt > 0 ? overviewQ.dataUpdatedAt : null,
+          dangXemLai: kho.mocXemLai != null,
+        },
+        bayGio,
+      ),
+    [ketNoi, kho.nguon, kho.nhanLuc, kho.mocXemLai, overviewQ.dataUpdatedAt, bayGio],
+  );
   /**
    * ★★★ CHỈ CẮT VẾ "THIẾU", KHÔNG CẮT VẾ "THỪA".
    *
@@ -1837,6 +2016,47 @@ export default function TwinVanHanh() {
     [ghiUrl],
   );
 
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ QD-16 (§13c.1) — VÙNG SỬA: QUYỀN THEO TỪNG VÙNG, KHÔNG PHẢI MỘT CỔNG
+   * ════════════════════════════════════════════════════════════════════════
+   * Chủ sở hữu chọn GỘP `/twin` + `/twin-studio` thành một trang. §13b đề nghị
+   * KHÔNG gộp vì hai cổng quyền khác nhau; §13c.1 giữ quyết định gộp nhưng chỉ
+   * ra lối thoát: gộp **bề mặt**, KHÔNG gộp **cổng**.
+   *
+   * Ba dòng dưới đây là toàn bộ cơ chế, và thứ tự của chúng là bắt buộc:
+   *   1. đọc URL   (`docVungTuUrl`)  — không biết gì về quyền, cố tình
+   *   2. kẹp quyền (`kepVungTheoQuyen`) — `operator1` + `?che-do=botri` HẠ về xem
+   *   3. khai ra   (`vungDaKep.daHaCap`) — hạ cấp mà im lặng là nói dối lần hai
+   *
+   * ⚠ Bỏ bước 2 là **cổng RỘNG**: `operator1` sửa được nhà xưởng. Đổi bước 2
+   *   thành chặn cả trang là **cổng CHẶT**: `operator1` mất lối vào — đúng tai
+   *   nạn Đợt 3 CHẶN-1 mà Đợt 15 đã phải vá ngược. `vungQuyen.unit.test.ts` có
+   *   một lưới cho MỖI tai nạn trong hai tai nạn ấy.
+   *
+   * ★ `?che-do=` KHÔNG đi qua `duongDanTwin.ts`: khoá ấy thuộc về `/twin-studio`
+   *   (§13b 14.2.3 khai `/twin-studio?che-do=botri`), và `duongDanTwin` là hợp
+   *   đồng URL của MẶT VẬN HÀNH. Đọc thẳng bằng `URLSearchParams` ở đây giữ hai
+   *   hợp đồng tách rời, và không thêm khoá nào vào danh sách đóng của
+   *   `duongDanTwin` (G40 — không đẻ khoá URL mới cho mặt vận hành).
+   */
+  const duocSuaNhaXuong = coQuyenSuaNhaXuong(hasPermission);
+  const vungDaKep = useMemo(
+    () => kepVungTheoQuyen(docVungTuUrl(new URLSearchParams(search).get("che-do")), hasPermission),
+    [search, hasPermission],
+  );
+  const dangSua = vungDaKep.vung === "sua";
+  const doiVung = useCallback(
+    (sang: "xem" | "sua") => {
+      const sp = new URLSearchParams(window.location.search);
+      if (sang === "sua") sp.set("che-do", "botri");
+      else sp.delete("che-do");
+      const q = sp.toString();
+      setLocation(`/twin${q ? `?${q}` : ""}`);
+    },
+    [setLocation],
+  );
+
   /** Ghi camera vào URL — `replaceState`, và chỉ khi chuỗi THẬT SỰ đổi. */
   const camCuoi = useRef("");
   const khiCameraDoi = useCallback(
@@ -1938,6 +2158,197 @@ export default function TwinVanHanh() {
   const ariaLabel = t(
     che2D ? "twin3d.vanHanh.canhAria2D" : "twin3d.vanHanh.canhAria",
     { may: mayVe.length, canhBao: andonRows.length, khongRo: demTuoi.khongRo },
+  );
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 21 (§13b 14.4) — TÁM DẢI NGANG THÀNH MỘT DANH SÁCH DỮ LIỆU
+   * ════════════════════════════════════════════════════════════════════════
+   * Trước đợt này, mỗi banner là một khối JSX `shrink-0` riêng xếp chồng DỌC
+   * trên canvas; ca xấu nhất đo được **280 px = 39 % của 720** (§13b 14.1.2).
+   *
+   * ★★★ KHÔNG MỘT LỜI KHAI NÀO BỊ BỎ. Mỗi mục dưới đây là **đúng** banner cũ,
+   *   mang **đúng** `data-testid` cũ, bật bởi **đúng** biểu thức điều kiện cũ.
+   *   Cái đổi là HÌNH DẠNG: `DaiHopNhat` vẽ chúng thành một dải 26 px, và phần
+   *   chi tiết khi mở là lớp phủ `absolute` — canvas KHÔNG co lại (§13b 14.1.1
+   *   "đổi từ chia-đất sang chồng-lớp").
+   *
+   * ⚠ Thứ tự khai báo ở đây KHÔNG quyết định thứ tự hiện — `locVaSap()` sắp
+   *   theo nhóm. Nhóm mới là thứ mang ý nghĩa, và nó là dữ liệu chứ không phải
+   *   vị trí dòng, nên một lần chèn thêm mục ở giữa không làm E-STOP tụt hạng.
+   *
+   * ★ G9 — `demViec()` đếm mục ĐANG BẬT, không đếm số dòng khai báo dưới đây.
+   */
+  const mucViec = useMemo((): MucViec[] => {
+    const ds: MucViec[] = [];
+
+    // ── AN TOÀN — §11 #26. LUÔN hiện riêng, đỏ, KHÔNG ẩn được, KHÔNG gộp.
+    //    Nguồn `twinCanh.anToanRobot`. Nghiệm thu bằng CA DƯƠNG dựng tay: đặt
+    //    một robot sang `status='estop'` ⇒ mục này nổi lên; khôi phục ⇒ tắt.
+    ds.push({
+      testId: "canh-bao-estop",
+      nhom: "anToan",
+      hien: anToan.coCanhBao,
+      noiDung: t("twin3d.anToan.estopDangNhan", "E-STOP đang được nhấn: {{ds}}", {
+        ds: anToan.dangNhan.map((r) => r.ma).join(", "),
+      }),
+    });
+
+    // ── CHẶN-2 — nêu ĐÍCH DANH truy vấn bị chặn, không nói chung chung.
+    ds.push({
+      testId: "banner-thieu-quyen-truy-van",
+      nhom: "duLieu",
+      hien: tinhTrang.biTuChoi.length > 0,
+      noiDung: t(
+        "twin3d.vanHanh.thieuQuyenTruyVan",
+        "Không đủ quyền xem dữ liệu — liên hệ quản trị viên. Truy vấn bị từ chối: {{ds}}",
+        { ds: tinhTrang.biTuChoi.join(", ") },
+      ),
+      dataPhu: { "data-truy-van": tinhTrang.biTuChoi.join(",") },
+    });
+
+    // ── NT-3.3 đối soát — thuốc chống model drift.
+    //    ★ QD-16: nút này trước đây `setLocation("/twin-studio")`. Nay hai màn
+    //      là MỘT trang, nên nó chuyển VÙNG. Và nó chỉ hiện với ai sửa được —
+    //      luật ẩn-không-disable: mời `operator1` đi sửa bố cục rồi chặn họ ở
+    //      đó là đúng lớp lỗi "một lối vào rồi TỪ CHỐI".
+    ds.push({
+      testId: "banner-doi-soat",
+      nhom: "duLieu",
+      hien: !dangTai && doiSoat.lech,
+      noiDung: t(
+        "twin3d.vanHanh.doiSoatLech",
+        "{{thieu}} máy chưa xếp chỗ · {{moCoi}} đặt chỗ trỏ vào máy đã ngừng",
+        { thieu: doiSoat.thieuTrenMatBang.length, moCoi: doiSoat.datChoMoCoi.length },
+      ),
+      hanhDong: duocSuaNhaXuong
+        ? { khoa: "moXuongDung", nhan: t("twin3d.vanHanh.moXuongDung", "Mở Xưởng dựng") }
+        : undefined,
+      dataPhu: { "data-ngoai-luot-nap": tapDs.soNgoaiLuotNap },
+    });
+
+    // ── F2 — 373 máy ở tầng/toà khác. KHAI ĐÚNG CÂU, không khai "chưa xếp chỗ".
+    ds.push({
+      testId: "banner-ngoai-luot-nap",
+      nhom: "phamVi",
+      hien: !dangTai && tapDs.soNgoaiLuotNap > 0,
+      noiDung: moiToaDaHoi
+        ? t(
+            "twin3d.vanHanh.mayTangKhac",
+            "{{so}} máy nữa đã có chỗ ở tầng khác của toà này — đổi ô Tầng để xem",
+            { so: tapDs.soNgoaiLuotNap },
+          )
+        : t(
+            "twin3d.vanHanh.mayToaKhac",
+            "{{so}} máy không nằm trong lượt nạp này (toà khác chưa được hỏi) — chưa kết luận được chúng đã xếp chỗ hay chưa",
+            { so: tapDs.soNgoaiLuotNap },
+          ),
+      dataPhu: {
+        "data-so": tapDs.soNgoaiLuotNap,
+        "data-moi-toa-da-hoi": moiToaDaHoi ? "1" : "0",
+      },
+    });
+
+    // ── F3 — phạm vi bị hạ cấp, nói thẳng vì sao.
+    ds.push({
+      testId: "banner-ha-cap",
+      nhom: "phamVi",
+      hien: phamViKq.daHaCap,
+      noiDung: t(
+        "twin3d.vanHanh.haCapPhamVi",
+        "Đang hiện dữ liệu của MỘT nhà máy ({{soNhaMay}} nhà máy trong hệ). Phạm vi Tập đoàn chưa nạp được nhiều nhà máy cùng lúc — dùng ô Nhà máy để chuyển.",
+        { soNhaMay: factories.length },
+      ),
+      dataPhu: { "data-cap-yeu-cau": phamViKq.capYeuCau, "data-cap-thuc": phamVi.cap },
+    });
+
+    // ── Link cũ trỏ vào thứ không còn.
+    ds.push({
+      testId: "banner-link-bi-bo-qua",
+      nhom: "phamVi",
+      hien: !dangTai && linkBiBoQua,
+      noiDung: t(
+        "twin3d.vanHanh.linkBiBoQua",
+        "Đường link mở màn này trỏ tới nhà máy/toà/tầng không còn tồn tại — đang hiện lựa chọn gần nhất.",
+      ),
+    });
+
+    /*
+     * ── ★★★ QD-16 — VÙNG SỬA BỊ HẠ CẤP VÌ THIẾU QUYỀN.
+     *
+     * Mục MỚI của đợt này, và nó tồn tại vì một lý do: `?che-do=botri` (hoặc
+     * redirect từ `/twin-studio`) đưa `operator1` tới đây với ý định sửa. Hạ họ
+     * về vùng xem mà IM LẶNG là để họ tưởng công cụ hỏng. Nói ra là nói rằng
+     * việc ấy không thuộc vai này — khác nhau ở chỗ một bên dạy họ hệ thống
+     * hỏng, một bên dạy họ đúng ranh giới.
+     */
+    ds.push({
+      testId: "banner-vung-sua-ha-cap",
+      nhom: "phamVi",
+      hien: vungDaKep.daHaCap,
+      noiDung: t(
+        "twin3d.vanHanh.vungSuaHaCap",
+        "Bạn xem được toàn bộ cảnh 3D, nhưng công cụ sửa bố cục nhà xưởng cần quyền Cấu hình nhà máy hoặc Điều khiển máy.",
+      ),
+    });
+
+    // ── §11 #1 — kết quả xuất USD. G28: khoe SỐ PRIM, không khoe chữ "Xong".
+    ds.push({
+      testId: "bang-ket-qua-xuat-usd",
+      nhom: "duLieu",
+      hien: ketQuaXuatUsd !== null,
+      noiDung:
+        ketQuaXuatUsd === null
+          ? ""
+          : ketQuaXuatUsd.xong
+            ? t("twin3d.vanHanh.xuatUsdXong", "Đã xuất {{ten}} — {{prim}} vật thể, {{byte}} byte", {
+                ten: ketQuaXuatUsd.ten,
+                prim: ketQuaXuatUsd.soPrim,
+                byte: ketQuaXuatUsd.soByte,
+              })
+            : ketQuaXuatUsd.lyDo === "canh-trong"
+              ? t(
+                  "twin3d.vanHanh.xuatUsdCanhTrong",
+                  "Chưa xuất: nhà máy này chưa có vật thể nào trên mặt bằng (tệp sẽ rỗng).",
+                )
+              : ketQuaXuatUsd.lyDo === "khong-nha-may"
+                ? t("twin3d.vanHanh.xuatUsdChuaChonNhaMay", "Chưa chọn nhà máy để xuất.")
+                : t("twin3d.vanHanh.xuatUsdHong", "Xuất USD thất bại ({{lyDo}}).", {
+                    lyDo: ketQuaXuatUsd.lyDo ?? "?",
+                  }),
+      dataPhu:
+        ketQuaXuatUsd === null
+          ? undefined
+          : {
+              "data-xong": ketQuaXuatUsd.xong ? "1" : "0",
+              "data-so-prim": ketQuaXuatUsd.soPrim,
+              "data-so-byte": ketQuaXuatUsd.soByte,
+              "data-ly-do": ketQuaXuatUsd.lyDo ?? "",
+            },
+    });
+
+    return ds;
+  }, [
+    t,
+    anToan,
+    tinhTrang.biTuChoi,
+    dangTai,
+    doiSoat,
+    tapDs.soNgoaiLuotNap,
+    moiToaDaHoi,
+    phamViKq,
+    phamVi.cap,
+    factories.length,
+    linkBiBoQua,
+    vungDaKep.daHaCap,
+    ketQuaXuatUsd,
+    duocSuaNhaXuong,
+  ]);
+
+  /** Tra khoá hành động của `DaiHopNhat` → hàm thật. Khoá lạ ⇒ nút không hiện. */
+  const hanhDongDai = useMemo(
+    () => ({ moXuongDung: () => doiVung("sua") }),
+    [doiVung],
   );
 
   /* ═══════════════════════════════════════════════════════════════════════ */
@@ -2086,6 +2497,60 @@ export default function TwinVanHanh() {
               }[ketNoi],
             })}
           </span>
+
+          {/*
+            ════════════════════════════════════════════════════════════════
+            ★★★ ĐỢT 21 B-3 — CƠ CHẾ GIAO SỐ, ĐẶT NGAY CẠNH "Trực tiếp"
+            ════════════════════════════════════════════════════════════════
+            Huy hiệu bên trái khai **ĐƯỜNG KẾT NỐI**; huy hiệu này khai **CON SỐ
+            TỚI BẰNG ĐƯỜNG NÀO**. Hai đại lượng khác nhau, và trước Đợt 21 chỉ
+            có cái đầu — nên người đọc suy ra cái sau, sai (họ G7: đếm ĐẦU VÀO
+            rồi kết luận về ĐẦU RA). Lý lẽ và số đo ở docblock `khaiNguon`.
+
+            ★ `hon_hop` là ô mà huy hiệu cũ **không có từ để nói**: socket sống,
+              mà một phần số vẫn tới bằng poll 30 s (`nhipHoiMs` cố ý không tắt
+              poll — nó là lưới an toàn cho luồng chết âm thầm).
+
+            ★ GIỮ NGUYÊN `data-testid="trang-thai-ket-noi"` ở huy hiệu trên —
+              bánh cóc e2e sẵn có tra chuỗi đó. Huy hiệu này mang testid RIÊNG,
+              không giành chỗ của nó (đổi bố cục không được đổi hợp đồng đo).
+
+            ★ ISA-101: chỉ hạng **`hoi`** (số CHỈ tới bằng poll) được màu cảnh
+              báo. `day`/`hon_hop` dùng xám trung tính — bình thường thì im.
+          */}
+          <span
+            className={
+              "rounded px-1.5 py-0.5 text-[10px] font-medium " +
+              (khaiNguon.chiTuHoi
+                ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"
+                : "bg-muted text-muted-foreground")
+            }
+            data-testid="co-che-giao-so"
+            data-co-che={khaiNguon.coChe}
+            data-chi-tu-hoi={khaiNguon.chiTuHoi ? "1" : "0"}
+            data-nhip-ms={khaiNguon.nhipHieuLucMs ?? ""}
+            data-tuoi-ms={khaiNguon.tuoiMs ?? ""}
+            title={t(`twin3d.coCheGiao.${khaiNguon.coChe}.moTa`, {
+              defaultValue: {
+                day: "Mọi con số tới bằng luồng đẩy thời gian thực.",
+                hon_hop:
+                  "Luồng đẩy đang sống, nhưng một phần số vẫn tới bằng lượt hỏi định kỳ 30 giây.",
+                hoi: "Không có luồng đẩy — mọi con số tới bằng lượt hỏi định kỳ.",
+                lich_su: "Đang xem lịch sử — các số không tự làm mới.",
+                chua_ro: "Chưa xác định được cơ chế giao số.",
+              }[khaiNguon.coChe],
+            })}
+          >
+            {t(`twin3d.coCheGiao.${khaiNguon.coChe}.nhan`, {
+              defaultValue: {
+                day: "đẩy",
+                hon_hop: "đẩy + hỏi 30s",
+                hoi: "hỏi định kỳ",
+                lich_su: "lịch sử",
+                chua_ro: "—",
+              }[khaiNguon.coChe],
+            })}
+          </span>
           {/*
             ★★★ NT-3.2 — "cập nhật lần cuối" là max(timestamp) của DỮ LIỆU NỀN.
             Đỏ khi > 60 giây. `—` khi chưa từng có dữ liệu (KHÔNG hiện "vừa xong").
@@ -2175,243 +2640,163 @@ export default function TwinVanHanh() {
             {che2D ? <LayoutGrid className="mr-1 h-3.5 w-3.5" /> : <Boxes className="mr-1 h-3.5 w-3.5" />}
             {che2D ? "2D" : "3D"}
           </Button>
+
+          {/*
+            ── ★★★ ĐỢT 21 (§13b HÌNH E) — NÚT 3D GẦN TOÀN MÀN ────────────────
+            Đường `?thu=trai,phai` **đã có** từ F4; nó chỉ **không tìm thấy
+            được** — người dùng phải tự sửa URL, hoặc bấm lần lượt hai tay nắm
+            ở mép canvas. Một tính năng chỉ dùng được bởi người đã biết nó tồn
+            tại là một tính năng chưa giao.
+
+            ★ `aria-pressed` chứ không phải hai nút: đây là một công tắc, và
+              trình đọc màn hình cần biết trạng thái chứ không chỉ nhãn.
+          */}
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="nut-toan-man"
+            aria-pressed={thuTrai && thuPhai}
+            title={t("twin3d.vanHanh.toanManMoTa", "3D gần toàn màn (thu cả hai bảng bên)")}
+            onClick={() => ghiUrl({ thu: thuTrai && thuPhai ? [] : ["trai", "phai"] })}
+          >
+            {thuTrai && thuPhai ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
+          </Button>
+
+          {/*
+            ── ★★★ QD-16 (§13c.1) — NÚT VÀO VÙNG SỬA NHÀ XƯỞNG ──────────────
+
+            ★★★ ĐÂY LÀ BỀ MẶT MÀ CẢ QUYẾT ĐỊNH QD-16 QUY VỀ, và nó là **một
+              lệnh `? :` chứ không phải `disabled`**.
+
+            `duocSuaNhaXuong` false ⇒ nút **KHÔNG được render**. Không disable,
+            không tooltip "bạn thiếu quyền", không xám. Luật ẩn-không-disable
+            (§12b.3): hiện một nút rồi từ chối khi bấm dạy người dùng rằng hệ
+            thống hỏng; ẩn nó nói rằng việc ấy không thuộc vai này. Vi phạm duy
+            nhất từng đo được đã vá ở `RobotCockpit.tsx:916-918` (P-3), và đây
+            theo đúng khuôn đó.
+
+            ⚠ ĐÂY KHÔNG PHẢI HÀNG RÀO BẢO MẬT — nó là hàng rào GIAO DIỆN. Ẩn
+              một nút không ngăn ai gọi thẳng `twinCanh.*`; hàng rào thật là
+              `requireAnyPermission` ở `twinCanhRouter.ts:63`, và nó không đổi
+              trong đợt này.
+
+            ⚠ Với `operator1` (vai DUY NHẤT chỉ vào được `/twin` — đo trên bảng
+              `permissions` 2026-09-08), nhánh này cho `null`: họ **không mất
+              lối vào**, chỉ không thấy nút. Đó là toàn bộ khác biệt giữa QD-16
+              và tai nạn Đợt 3 CHẶN-1.
+          */}
+          {duocSuaNhaXuong ? (
+            <Button
+              size="sm"
+              variant={dangSua ? "default" : "outline"}
+              data-testid="nut-sua-bo-cuc"
+              aria-pressed={dangSua}
+              onClick={() => doiVung(dangSua ? "xem" : "sua")}
+              title={t(
+                "twin3d.vanHanh.suaBoCucMoTa",
+                "Mở vùng thiết kế: dựng nhà xưởng, kéo thả máy, lưu bố cục",
+              )}
+            >
+              {dangSua ? (
+                <X className="mr-1 h-3.5 w-3.5" />
+              ) : (
+                <PencilRuler className="mr-1 h-3.5 w-3.5" />
+              )}
+              {dangSua
+                ? t("twin3d.vanHanh.thoatSuaBoCuc", "Thoát sửa")
+                : t("twin3d.vanHanh.suaBoCuc", "Sửa bố cục")}
+            </Button>
+          ) : null}
         </div>
       </header>
 
       {/*
-        ── §11 #1 — KẾT QUẢ XUẤT USD, NÓI BẰNG CON SỐ ────────────────────
-        ★ G28: một cú xuất "thành công" phải khoe SỐ PRIM, vì đó là thứ phân
-          biệt tệp 40 KB có 142 prim với tệp 115 byte có 0 prim. Và ca
-          `canh-trong` phải nói RÕ "nhà máy chưa có gì trên mặt bằng" thay vì
-          đưa người dùng một tệp rỗng kèm chữ "Xong".
+        ════════════════════════════════════════════════════════════════════
+        ★★★ ĐỢT 21 LÔ Y (§13b 14.4) — TÁM DẢI NGANG → MỘT DẢI 26 px
+        ════════════════════════════════════════════════════════════════════
+        Ở CHỖ NÀY trước Đợt 21 có **bảy khối JSX `shrink-0`** xếp chồng dọc
+        (kết quả xuất USD · thiếu quyền truy vấn · đối soát · ngoài lượt nạp ·
+        hạ cấp phạm vi · link bị bỏ qua · E-STOP), cộng header 48 px và
+        `DongThoiGian` 37 px là **tám dải**. Ca xấu nhất đo được **280 px =
+        39 % của 720** (§13b 14.1.2) — và đó là gốc rễ THẬT của "3D bé", nặng
+        hơn chuyện bề ngang panel mà brief Đợt 20 nhắm vào.
+
+        ★★★ KHÔNG BANNER NÀO BỊ BỎ. Mỗi lời khai là thứ các đợt trước đổ công
+          vá vào (NT-3, honest-null, F2/F3, CHẶN-2); bỏ chúng là đổi một lời
+          khai ĐÚNG lấy một chỗ IM LẶNG. Nội dung, điều kiện bật và
+          `data-testid` chuyển NGUYÊN VẸN sang `mucViec` ở trên; `DaiHopNhat`
+          chỉ đổi HÌNH DẠNG.
+
+        ★ Dải AN TOÀN vẫn hiện RIÊNG, đỏ, luôn mở, không ẩn được — `tachAnToan()`
+          cưỡng chế ở tầng dữ liệu (`daiHopNhatLogic.ts` LUẬT CỨNG 1), nên một lượt
+          render không thể "quên" tách.
       */}
-      {ketQuaXuatUsd !== null ? (
-        <div
-          className={
-            "flex shrink-0 items-center gap-2 border-b px-3 py-1 text-[11px] " +
-            (ketQuaXuatUsd.xong
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-              : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400")
-          }
-          data-testid="bang-ket-qua-xuat-usd"
-          data-xong={ketQuaXuatUsd.xong ? "1" : "0"}
-          data-so-prim={ketQuaXuatUsd.soPrim}
-          data-so-byte={ketQuaXuatUsd.soByte}
-          data-ly-do={ketQuaXuatUsd.lyDo ?? ""}
-        >
-          {ketQuaXuatUsd.xong ? (
-            <span>
-              {t(
-                "twin3d.vanHanh.xuatUsdXong",
-                "Đã xuất {{ten}} — {{prim}} vật thể, {{byte}} byte",
-                {
-                  ten: ketQuaXuatUsd.ten,
-                  prim: ketQuaXuatUsd.soPrim,
-                  byte: ketQuaXuatUsd.soByte,
-                },
-              )}
-            </span>
-          ) : (
-            <>
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              <span>
-                {ketQuaXuatUsd.lyDo === "canh-trong"
-                  ? t(
-                      "twin3d.vanHanh.xuatUsdCanhTrong",
-                      "Chưa xuất: nhà máy này chưa có vật thể nào trên mặt bằng (tệp sẽ rỗng).",
-                    )
-                  : ketQuaXuatUsd.lyDo === "khong-nha-may"
-                    ? t("twin3d.vanHanh.xuatUsdChuaChonNhaMay", "Chưa chọn nhà máy để xuất.")
-                    : t(
-                        "twin3d.vanHanh.xuatUsdHong",
-                        "Xuất USD thất bại ({{lyDo}}).",
-                        { lyDo: ketQuaXuatUsd.lyDo ?? "?" },
-                      )}
-              </span>
-            </>
-          )}
-          <button
-            type="button"
-            className="ml-auto underline"
-            onClick={() => setKetQuaXuatUsd(null)}
-            data-testid="nut-dong-ket-qua-xuat-usd"
+      <DaiHopNhat muc={mucViec} hanhDong={hanhDongDai} />
+
+      {/* ── Thân: canvas TOÀN KHUNG, panel NỔI ĐÈ ────────────────────────
+        ════════════════════════════════════════════════════════════════════
+        ★★★ ĐỢT 21 LÔ Y (§13b 14.1.1) — TỪ **CHIA ĐẤT** SANG **CHỒNG LỚP**
+        ════════════════════════════════════════════════════════════════════
+        Trước Đợt 21 đây là `flex` ba cột: panel trái, canvas, panel phải —
+        và ba cột **chia nhau bề ngang**. Hệ quả đo được: mỗi thông tin thêm
+        vào panel làm cảnh 3D **teo lại**. Với `w-56`+`w-64` = 480 px trên
+        khung 968 px, canvas còn **488 px** (đo Playwright 1280×720:
+        488×453 = **24,0 %** viewport).
+
+        Nay canvas chiếm **toàn khung** (`absolute inset-0`), và hai panel
+        **nổi ĐÈ** lên nó. Thêm một thông tin vào panel không lấy đi một
+        pixel nào của cảnh — đúng khuôn mà mẫu FanRuan dùng, và đúng khuôn
+        `BangKpiNoi` đã dùng trong chính tệp này từ Đợt 11 (lớp phủ DOM,
+        **0 draw call**).
+
+        ⚠ `relative` ở đây là bắt buộc: nó là gốc toạ độ cho mọi `absolute`
+          bên trong. Bỏ nó thì panel neo vào `<body>` và trôi lên đè navbar —
+          một lỗi không nổ, chỉ nhìn thấy bằng ảnh.
+      */}
+      {/*
+        ════════════════════════════════════════════════════════════════════
+        ★★★ QD-16 (§13c.1) — VÙNG SỬA NHÀ XƯỞNG, TRONG CÙNG MỘT TRANG
+        ════════════════════════════════════════════════════════════════════
+        Chủ sở hữu chọn gộp `/twin` + `/twin-studio` thành **một trang**. Bề
+        mặt gộp nằm ở đây; **cổng quyền KHÔNG gộp** (xem `vungQuyen.ts`).
+
+        ★★★ HAI ĐIỀU KIỆN, VÀ CẢ HAI ĐỀU CẦN — đọc kỹ trước khi rút gọn:
+          1. `dangSua` — người dùng đã bấm "Sửa bố cục" (hoặc tới bằng
+             `?che-do=botri`, hoặc redirect từ `/twin-studio`).
+          2. `dangSua` **đã đi qua `kepVungTheoQuyen`** ở trên, nên nó KHÔNG
+             THỂ đúng với một vai thiếu quyền. Bỏ bước kẹp ấy là **cổng RỘNG**:
+             `operator1` sửa được nhà xưởng — thứ §13c.1 từ chối dứt khoát.
+
+        ★★★ RB-4 — HAI VÙNG **LOẠI TRỪ NHAU**, KHÔNG PHẢI ẨN/HIỆN BẰNG CSS.
+          `TwinStudio` mang `<Canvas>` riêng; cảnh vận hành mang một `<Canvas>`
+          khác. Dùng `hidden` để giấu một trong hai sẽ giữ **cả hai** WebGL
+          context sống — `KhungCanh` tự `console.error`, và trình duyệt giết
+          context cũ TRONG IM LẶNG khi vượt trần. Nên đây là `? :` thật, cây
+          React của vùng không hoạt động bị **unmount**.
+
+        ⚠ Cái giá đã biết và chấp nhận: rời vùng sửa rồi quay lại thì camera
+          của xưởng dựng về mặc định. Đổi lại là không bao giờ có hai context.
+          Đây đúng cơ chế mà `TwinHub.tsx:8-9` và `TwinStudio` (Radix Tabs
+          unmount) đã cố ý dựa vào từ trước.
+      */}
+      {dangSua ? (
+        <div className="relative min-h-0 flex-1 overflow-hidden" data-testid="vung-sua-nha-xuong">
+          <Suspense
+            fallback={
+              <p className="p-4 text-sm text-muted-foreground" data-testid="vung-sua-dang-tai">
+                {t("common.loading", "Đang tải…")}
+              </p>
+            }
           >
-            {t("common.close", "Đóng")}
-          </button>
+            <VungSuaNhaXuong />
+          </Suspense>
         </div>
-      ) : null}
-
-      {/*
-        ── ★★★ CHẶN-2 — BANNER TRUY VẤN BỊ TỪ CHỐI ──────────────────────
-        Nêu ĐÍCH DANH truy vấn nào bị chặn. Một banner chung chung ("thiếu
-        quyền") để người dùng và người trực tổng đài đoán mò xem thiếu cái gì;
-        tên tRPC nguyên văn cho họ đúng chuỗi để đọc cho quản trị viên.
-        Đặt TRƯỚC banner đối soát: đối soát tính trên dữ liệu, mà dữ liệu đang
-        thiếu ⇒ câu nói về quyền phải tới trước.
-      */}
-      {tinhTrang.biTuChoi.length > 0 ? (
-        <div
-          className="flex shrink-0 items-center gap-2 border-b border-destructive/40 bg-destructive/10 px-3 py-1 text-[11px] text-destructive"
-          data-testid="banner-thieu-quyen-truy-van"
-          data-truy-van={tinhTrang.biTuChoi.join(",")}
-        >
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span>
-            {t(
-              "twin3d.vanHanh.thieuQuyenTruyVan",
-              "Không đủ quyền xem dữ liệu — liên hệ quản trị viên. Truy vấn bị từ chối: {{ds}}",
-              { ds: tinhTrang.biTuChoi.join(", ") },
-            )}
-          </span>
-        </div>
-      ) : null}
-
-      {/* ── Banner đối soát (NT-3.3) — thuốc chống model drift ─────────── */}
-      {!dangTai && doiSoat.lech ? (
-        <div
-          className="flex shrink-0 items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[11px] text-amber-700 dark:text-amber-400"
-          data-testid="banner-doi-soat"
-        >
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span data-ngoai-luot-nap={tapDs.soNgoaiLuotNap}>
-            {t("twin3d.vanHanh.doiSoatLech", "{{thieu}} máy chưa xếp chỗ · {{moCoi}} đặt chỗ trỏ vào máy đã ngừng", {
-              thieu: doiSoat.thieuTrenMatBang.length,
-              moCoi: doiSoat.datChoMoCoi.length,
-            })}
-          </span>
-          <button
-            type="button"
-            className="underline"
-            onClick={() => setLocation("/twin-studio")}
-            data-testid="nut-mo-xuong-dung"
-          >
-            {t("twin3d.vanHanh.moXuongDung", "Mở Xưởng dựng")}
-          </button>
-        </div>
-      ) : null}
-
-      {/*
-        ── ★★★ F2 — MÁY Ở TẦNG/TOÀ KHÁC: KHAI ĐÚNG CÂU ─────────────────────
-        Đây là 373 máy mà bản cũ khai là "chưa xếp chỗ". Chúng KHÔNG biến mất
-        khỏi giao diện — làm thế là đổi một lời khai sai lấy một chỗ im lặng.
-        Chúng được khai đúng: *có chỗ, nhưng không ở tầng bạn đang xem*, và ô
-        chọn Tầng ngay trên đầu là lối đi tới chúng.
-      */}
-      {!dangTai && tapDs.soNgoaiLuotNap > 0 ? (
-        <div
-          className="flex shrink-0 items-center gap-2 border-b border-sky-500/40 bg-sky-500/10 px-3 py-1 text-[11px] text-sky-700 dark:text-sky-300"
-          data-testid="banner-ngoai-luot-nap"
-          data-so={tapDs.soNgoaiLuotNap}
-          data-moi-toa-da-hoi={moiToaDaHoi ? "1" : "0"}
-        >
-          <Boxes className="h-3.5 w-3.5 shrink-0" />
-          <span>
-            {moiToaDaHoi
-              ? t(
-                  "twin3d.vanHanh.mayTangKhac",
-                  "{{so}} máy nữa đã có chỗ ở tầng khác của toà này — đổi ô Tầng để xem",
-                  { so: tapDs.soNgoaiLuotNap },
-                )
-              : t(
-                  "twin3d.vanHanh.mayToaKhac",
-                  "{{so}} máy không nằm trong lượt nạp này (toà khác chưa được hỏi) — chưa kết luận được chúng đã xếp chỗ hay chưa",
-                  { so: tapDs.soNgoaiLuotNap },
-                )}
-          </span>
-        </div>
-      ) : null}
-
-      {/*
-        ── ★★★ F3 — PHẠM VI BỊ HẠ CẤP, NÓI THẲNG VÌ SAO ────────────────────
-        `?pv=tapdoan` trên một hệ nhiều nhà máy: đường dữ liệu chỉ với tới MỘT
-        nhà máy (`canhThietKe` nhận đúng một `factoryId`). Breadcrumb nay ghi
-        "Nhà máy" chứ không ghi "Tập đoàn" — và dòng này nói vì sao, để việc hạ
-        cấp không trở thành một lời nói dối thứ hai theo chiều ngược lại.
-      */}
-      {phamViKq.daHaCap ? (
-        <div
-          className="flex shrink-0 items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[11px] text-amber-700 dark:text-amber-400"
-          data-testid="banner-ha-cap"
-          data-cap-yeu-cau={phamViKq.capYeuCau}
-          data-cap-thuc={phamVi.cap}
-        >
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span>
-            {t(
-              "twin3d.vanHanh.haCapPhamVi",
-              "Đang hiện dữ liệu của MỘT nhà máy ({{soNhaMay}} nhà máy trong hệ). Phạm vi Tập đoàn chưa nạp được nhiều nhà máy cùng lúc — dùng ô Nhà máy để chuyển.",
-              { soNhaMay: factories.length },
-            )}
-          </span>
-        </div>
-      ) : null}
-
-      {/*
-        ── ★ LINK CŨ TRỎ VÀO THỨ KHÔNG CÒN ─────────────────────────────────
-        Im lặng hiện một tầng khác là để người dùng tin họ đang xem đúng thứ họ
-        được gửi. Một dòng ngắn là đủ, và nó chỉ hiện khi thật sự có chuyện.
-      */}
-      {!dangTai && linkBiBoQua ? (
-        <div
-          className="flex shrink-0 items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[11px] text-amber-700 dark:text-amber-400"
-          data-testid="banner-link-bi-bo-qua"
-        >
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span>
-            {t(
-              "twin3d.vanHanh.linkBiBoQua",
-              "Đường link mở màn này trỏ tới nhà máy/toà/tầng không còn tồn tại — đang hiện lựa chọn gần nhất.",
-            )}
-          </span>
-        </div>
-      ) : null}
-
-      {/*
-        ★★★ §11 #26 — E-STOP NỔI LÊN TWIN. An toàn phải thấy được từ tổng quan,
-        không phải mở từng buồng lái mới biết. Đặt TRÊN mọi banner khác: đây là
-        thông tin an toàn, nó không xếp hàng sau cảnh báo bố cục.
-
-        ★ Nguồn: `twinCanh.anToanRobot` (đã nối 2026-09-07 — đóng nợ Đợt 6).
-        Nghiệm thu bằng CA DƯƠNG dựng tay: đặt một robot sang `status='estop'`,
-        mở `/twin`, dải này NỔI LÊN; khôi phục xong nó tắt. Không dựng ca dương
-        thì "không dải nào hiện" trông y hệt nhau dù mã đúng hay hỏng (G5/G22).
-      */}
-      {anToan.coCanhBao ? (
-        <div
-          className="flex shrink-0 items-center gap-2 border-b border-destructive bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive"
-          role="alert"
-          data-testid="canh-bao-estop"
-        >
-          <OctagonAlert className="h-4 w-4 shrink-0" />
-          <span>
-            {t("twin3d.anToan.estopDangNhan", "E-STOP đang được nhấn: {{ds}}", {
-              ds: anToan.dangNhan.map((r) => r.ma).join(", "),
-            })}
-          </span>
-        </div>
-      ) : null}
-
-      {/*
-        ── Dải tua lại 24 h (§9.8) — CÙNG kho với trực tiếp ─────────────
-        ⚠ ĐẶT TRƯỚC thân trang, KHÔNG phải sau. Đo được trên trình duyệt thật:
-        khung ngoài là `h-[calc(100vh-5rem)] flex-col`, thân giữa `flex-1` chiếm
-        1054 px và KHÔNG co lại, nên một dải 37 px đặt sau thân bị đẩy xuống
-        `top: 1265` trong khi viewport chỉ cao 1249 — thanh tua **render nhưng
-        nằm ngoài màn hình**. Một bộ điều khiển người dùng không nhìn thấy là
-        một bộ điều khiển không tồn tại, và không có lỗi nào nổ để báo điều đó.
-      */}
-      <DongThoiGian
-        moc={mocTua}
-        bayGio={bayGioThat}
-        dangPhat={dangPhat}
-        tocDo={tocDo}
-        onDoiMoc={setMocTua}
-        onDoiPhat={setDangPhat}
-        onDoiTocDo={setTocDo}
-      />
-
-      {/* ── Thân: trái | canvas | phải ─────────────────────────────────── */}
-      <div className="flex min-h-0 flex-1">
+      ) : (
+      <div className="relative min-h-0 flex-1">
         {/* PANEL TRÁI — DOM thật, tab được, MỌI hành động làm được từ đây (§9.9) */}
         <div
           /*
@@ -2434,8 +2819,31 @@ export default function TwinVanHanh() {
            *   Ẩn bằng `hidden` + `w-0` giữ cây React nguyên vẹn, mở lại tức thì
            *   và không mất một cú gõ nào của người dùng.
            */
+          /*
+           * ════════════════════════════════════════════════════════════════
+           * ★★★ ĐỢT 21 — PANEL **NỔI ĐÈ**, KHÔNG CÒN CHIA ĐẤT (§13b 14.1.1)
+           * ════════════════════════════════════════════════════════════════
+           * `absolute left-0 top-0 bottom-0` thay cho một cột flex: panel
+           * không còn ĐẨY canvas nữa, nó **nằm trên** canvas. Đo được sau
+           * đổi: canvas 968×519 = **53,3 %** viewport (nền 488×453 = 24,0 %).
+           *
+           * ★ `z-20` — dưới dải hợp nhất (`z-30`) nhưng TRÊN canvas. Nhãn drei
+           *   ở z-index 20 (`LopNhan.tsx` `zIndexRange={[20,0]}`), nên panel
+           *   phải ≥20 hoặc nhãn 3D sẽ xuyên qua chữ (G41). ★ `bg-background`
+           *   ĐỤC, không `/90`: chữ đọc trên nền cảnh 3D đang xoay là thứ
+           *   không ai đọc được, và đó chính là bẫy G41 ở dạng thứ hai.
+           *
+           * ★ `pointer-events-auto` trên panel, còn khung cha KHÔNG chặn
+           *   chuột: bỏ sót điều này thì kéo xoay camera ở vùng dưới panel sẽ
+           *   chết mà không lỗi nào nổ.
+           *
+           * ⚠ KHÔNG unmount panel khi thu (giữ nguyên từ F4): §9.9 đòi mọi
+           *   hành động làm được từ DOM thật, và `DanhSachMay`/`DaiCanhBao`
+           *   giữ trạng thái lọc/chọn. `hidden` + `w-0` giữ cây React nguyên
+           *   vẹn, mở lại tức thì.
+           */
           className={
-            "flex min-h-0 shrink-0 flex-col overflow-hidden border-r transition-[width] duration-200 " +
+            "pointer-events-auto absolute bottom-0 left-0 top-0 z-20 flex min-h-0 flex-col overflow-hidden border-r bg-background transition-[width] duration-200 " +
             (thuTrai ? "w-0 border-r-0" : "w-56 2xl:w-72")
           }
           data-testid="panel-trai"
@@ -2497,8 +2905,20 @@ export default function TwinVanHanh() {
           />
         </div>
 
-        {/* CANVAS GIỮA — ★ RB-4: 2D THAY THẾ 3D, không bao giờ cả hai */}
-        <div className="relative min-h-0 min-w-0 flex-1">
+        {/*
+          ── CANVAS — ★ RB-4: 2D THAY THẾ 3D, không bao giờ cả hai ──────────
+
+          ★★★ ĐỢT 21 — `absolute inset-0` thay cho `flex-1`.
+          Đây là dòng mua toàn bộ con số của lô Y: canvas chiếm **trọn khung**
+          và hai panel nổi ĐÈ lên nó, thay vì ba cột chia nhau bề ngang. Đo
+          được trên 1280×720: **488×453 (24,0 %) → 968×519 (53,3 %)**.
+
+          ⚠ `z` KHÔNG khai ở đây (mặc định `auto`, dưới `z-20` của panel). Cho
+            nó một `z` dương sẽ đưa cảnh 3D lên TRÊN panel — panel vẫn "hiện"
+            trong DOM, vẫn qua mọi lưới `toBeVisible()`, mà người dùng không
+            đọc được chữ nào. Đúng lớp G41, và chỉ ẢNH bắt được.
+        */}
+        <div className="absolute inset-0 min-h-0 min-w-0">
           {che2D ? (
             <CanhVanHanh2D
               may={mayVeTatCa}
@@ -2522,6 +2942,11 @@ export default function TwinVanHanh() {
                   : null
               }
               wip={cotWipCanh}
+              /* ★★★ ĐỢT 21 — hai chỗ gọi biến hạ tầng của lô Z thành tính năng
+                 (trước hai dòng này, `grep` ra 0 chỗ gọi ⇒ G16). Lý lẽ đầy đủ ở
+                 docblock của `vienSucKhoeCanh` và `vungCanh` phía trên. */
+              vienSucKhoe={vienSucKhoeCanh}
+              vung={vungCanh}
               machineIdChon={machineIdChon}
               onChonMay={chonMay}
               khungNhin={khungNhin}
@@ -2533,6 +2958,48 @@ export default function TwinVanHanh() {
               onCameraDoi={khiCameraDoi}
             />
           )}
+          {/*
+            ════════════════════════════════════════════════════════════════
+            ★★★ ĐỢT 21 LÔ Y — KHUNG NEO CHO HAI LỚP PHỦ, THỤT VÀO SAU PANEL
+            ════════════════════════════════════════════════════════════════
+            ⚠ Khối này SINH RA TỪ MỘT LỖI ĐO ĐƯỢC CỦA CHÍNH ĐỢT 21, ghi lại
+              nguyên văn vì nó là hệ quả trực tiếp của việc đổi bố cục:
+
+              `BangKpiNoi` neo `absolute left-2 top-2` và `NganMoPhong` neo
+              `absolute right-2 top-2` — **vào khung canvas**. Trước Đợt 21
+              khung canvas bắt đầu SAU panel trái (x=512), nên hai lớp phủ rơi
+              gọn vào phần cảnh trống. Sau khi canvas thành `inset-0` (x=288),
+              hai lớp phủ **trượt theo** và nằm ĐÈ LÊN panel: ảnh
+              `.qa-loY/Y-macdinh.png` cho thấy bảng "Metrics" phủ kín phần trên
+              của panel trái. Không lỗi nào nổ, không lưới nào đỏ — **chỉ ẢNH
+              bắt được**, đúng lớp G41 mà lô J đã trả giá một lần.
+
+            ⇒ Chữa bằng một khung neo TRUNG GIAN thụt vào đúng bề rộng panel
+              đang mở. Hai lớp phủ giữ nguyên `left-2`/`right-2` của chúng, chỉ
+              đổi thứ mà `absolute` đo vào.
+
+            ⚠ VÌ SAO KHÔNG SỬA THẲNG `BangKpiNoi`/`NganMoPhong`: hai tệp ấy nằm
+              dưới `van-hanh/**`, do lô Z giữ trong đợt này. Sửa chéo phạm vi là
+              cách chắc chắn nhất để hai lô ghi đè nhau. Khung neo ở đây đạt
+              cùng kết quả mà không chạm một byte nào của họ.
+
+            ★ `pointer-events-none` + `inset-0`: khung này KHÔNG được nuốt chuột
+              của canvas (kéo xoay camera). Hai lớp phủ con tự bật lại
+              `pointer-events` cho phần tương tác của chúng — đó là khuôn chúng
+              đã dùng sẵn.
+
+            ★ `z-30` KHÔNG khai lại ở đây: hai con đã tự mang `z-30` (trên nhãn
+              drei z-index 20 — G41). Thêm một tầng `z` nữa chỉ tạo một ngữ cảnh
+              xếp chồng mới và làm `z-30` của con mất nghĩa so với panel `z-20`.
+          */}
+          <div
+            className={
+              "pointer-events-none absolute inset-y-0 " +
+              (thuTrai ? "left-0 " : "left-56 2xl:left-72 ") +
+              (thuPhai ? "right-0" : "right-64 2xl:right-80")
+            }
+            data-testid="khung-neo-lop-phu"
+          >
           {/*
             ── ★★★ ĐỢT 11 LÔ J — §11 #16: BẢNG KPI NỔI TRÊN CẢNH (yêu cầu #6) ──
 
@@ -2595,6 +3062,7 @@ export default function TwinVanHanh() {
             phatLai={phatLaiQ.data}
             dangChayPhatLai={workflowRef !== null && phatLaiQ.isLoading}
           />
+          </div>
 
           {/*
             ── ★★★ F4 — HAI TAY NẮM THU/MỞ, NỔI TRÊN MÉP CANVAS ──────────────
@@ -2608,7 +3076,10 @@ export default function TwinVanHanh() {
           */}
           <button
             type="button"
-            className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-r border border-l-0 bg-background/90 px-0.5 py-3 text-muted-foreground shadow-sm hover:bg-accent focus-visible:outline focus-visible:outline-2"
+            /* ★ ĐỢT 21 — `z-30` thay `z-10`: panel nay o `z-20`, nen mot tay nam
+               `z-10` se nam DUOI panel va bien mat khi panel MO. Nguoi dung mat
+               duong thu panel, va khong loi nao no. */
+            className="absolute left-0 top-1/2 z-30 -translate-y-1/2 rounded-r border border-l-0 bg-background/90 px-0.5 py-3 text-muted-foreground shadow-sm hover:bg-accent focus-visible:outline focus-visible:outline-2"
             data-testid="nut-thu-trai"
             aria-expanded={!thuTrai}
             aria-label={
@@ -2627,7 +3098,8 @@ export default function TwinVanHanh() {
           </button>
           <button
             type="button"
-            className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-l border border-r-0 bg-background/90 px-0.5 py-3 text-muted-foreground shadow-sm hover:bg-accent focus-visible:outline focus-visible:outline-2"
+            /* ★ ĐỢT 21 — `z-30`, xem chu thich tay nam trai. */
+            className="absolute right-0 top-1/2 z-30 -translate-y-1/2 rounded-l border border-r-0 bg-background/90 px-0.5 py-3 text-muted-foreground shadow-sm hover:bg-accent focus-visible:outline focus-visible:outline-2"
             data-testid="nut-thu-phai"
             aria-expanded={!thuPhai}
             aria-label={
@@ -2644,6 +3116,41 @@ export default function TwinVanHanh() {
           >
             {thuPhai ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
+          {/*
+            ── ★★★ ĐỢT 21 — THANH TUA LẠI, NAY LÀ **LỚP PHỦ ĐÁY CANVAS** ─────
+
+            Trước Đợt 21 `DongThoiGian` là một dải `shrink-0` thứ chín trong
+            dòng chảy dọc, ăn **37 px** của canvas ở MỌI lượt hiện — mà nó LUÔN
+            hiện. Nay nó neo `absolute bottom-0`, nên canvas cao thêm đúng 37 px
+            mà không mất bộ điều khiển nào.
+
+            ⚠ Bài học của chú thích cũ VẪN NGUYÊN GIÁ TRỊ và không bị bản này
+              phủ nhận: dải này từng bị đặt SAU thân trang và bị đẩy ra ngoài
+              màn hình (`top: 1265` trên viewport cao 1249) — *"một bộ điều
+              khiển người dùng không nhìn thấy là một bộ điều khiển không tồn
+              tại, và không có lỗi nào nổ để báo điều đó"*. `absolute bottom-0`
+              trong một cha `absolute inset-0` KHÔNG thể rơi vào bẫy ấy: nó neo
+              vào đáy khung, không phải vào cuối dòng chảy. Nghiệm thu vẫn phải
+              làm **bằng ảnh** (§13b 14.10.A), không bằng lý lẽ.
+
+            ★ `z-30` — ngang `DaiHopNhat`, TRÊN nhãn drei (z-index 20). Ở `z-10`
+              nó sẽ hiện ra đủ mà đọc không được (G41).
+          */}
+          <div
+            className="pointer-events-auto absolute inset-x-0 bottom-0 z-30 border-t bg-background/95 backdrop-blur-sm"
+            data-testid="lop-phu-dong-thoi-gian"
+          >
+            <DongThoiGian
+              moc={mocTua}
+              bayGio={bayGioThat}
+              dangPhat={dangPhat}
+              tocDo={tocDo}
+              onDoiMoc={setMocTua}
+              onDoiPhat={setDangPhat}
+              onDoiTocDo={setTocDo}
+            />
+          </div>
+
           {/* Trình đọc màn hình: canvas WebGL vô hình với nó (§9.9). */}
           <p className="sr-only" data-testid="tom-tat-canh">
             {ariaLabel}
@@ -2654,9 +3161,12 @@ export default function TwinVanHanh() {
         <div
           /* ★ F4 — xem chú thích panel trái. `w-64 2xl:w-80`: 256 px vẫn đủ cho
              mọi nút của `NganXuLy` (đo bằng ảnh, không phải đoán). */
+          /* ★ ĐỢT 21 — nổi đè, xem chú thích dài ở panel trái. `border-l` là
+             mới: khi panel không còn chia đất, nó cần một đường viền để mắt
+             tách được nó khỏi cảnh phía dưới. */
           className={
-            "flex min-h-0 shrink-0 flex-col overflow-hidden transition-[width] duration-200 " +
-            (thuPhai ? "w-0" : "w-64 2xl:w-80")
+            "pointer-events-auto absolute bottom-0 right-0 top-0 z-20 flex min-h-0 flex-col overflow-hidden border-l bg-background transition-[width] duration-200 " +
+            (thuPhai ? "w-0 border-l-0" : "w-64 2xl:w-80")
           }
           data-testid="panel-phai"
           data-thu={thuPhai ? "1" : "0"}
@@ -2685,6 +3195,7 @@ export default function TwinVanHanh() {
           />
         </div>
       </div>
+      )}
 
       {/*
         ── Dải dưới: dải Line 2D đồng bộ hai chiều (§10C.3 mục 3) ───────
