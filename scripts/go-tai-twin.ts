@@ -115,6 +115,57 @@ for (const t of tienTos) {
 
 const sql = postgres(urlOwner(), { max: 1, connect_timeout: 30 });
 
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 16 LÔ T — MỘT NGUỒN SỰ THẬT CHO "BẢNG NÀO ĐÃ ĐƯỢC GỠ"
+ * ════════════════════════════════════════════════════════════════════════════
+ * Trước lô T có HAI danh sách phải khớp nhau bằng tay:
+ *   (1) các lệnh `DELETE FROM <bảng>` ở bước B4;
+ *   (2) tập `laVet` mà cầu chì quét-theo-tên-cột dùng để biết bảng nào "đã xử".
+ *
+ * Lệch (1)>(2) ⇒ cầu chì kêu OAN mỗi lượt gỡ sạch. Lệch (2)>(1) ⇒ cầu chì hoá
+ * CÂM đúng chỗ nó sinh ra để canh — bảng bị bỏ quên vẫn tích rác mà không ai
+ * biết. Đây là dạng "hai bản cài đặt của một sự thật" mà G12 đã dạy: hiếm khi
+ * chúng chỉ lệch một chỗ.
+ *
+ * Nên danh sách này là NGUỒN DUY NHẤT, và `xacMinhCauChi()` đối chiếu nó với
+ * mã nguồn thật của chính tệp này — nếu ai thêm một `DELETE FROM x` theo khoá
+ * máy mà quên khai ở đây, script NỔ NGAY chứ không âm thầm sai.
+ */
+const BANG_GO_XU_LY: readonly string[] = [
+  "machine_health_history",
+  "ot_telemetry",
+  "rul_estimates",
+  "machine_status_logs",
+  "predictive_alerts",
+  "machine_heartbeats",
+  "product_inspections",
+  "station_dwell_time",
+  "measurement_point_defs", // ← lô T: bảng thứ 6, 12 hàng mồ côi, quét mới thấy
+];
+
+/**
+ * Đối chiếu `BANG_GO_XU_LY` với các lệnh `DELETE FROM <bảng> WHERE "machineId"`
+ * / `machine_id` có thật trong tệp này. Đọc chính mã nguồn của mình là cách duy
+ * nhất bắt được lệch mà không phải tin lời khai của người sửa trước.
+ */
+export function xacMinhCauChi(nguon: string): { thieuKhai: string[]; thieuXoa: string[] } {
+  const coXoa = new Set<string>();
+  // ⚠ Cửa sổ quét phải DỪNG ở `DELETE` kế tiếp. Bản đầu cho phép 200 ký tự bất
+  //   kỳ và đã khai nhầm `wip_tracking` (xoá theo `currentStationId`) là "xoá
+  //   theo khoá máy", chỉ vì lệnh NGAY SAU nó lọc bằng `"machineId" = ANY`.
+  //   Một biểu thức tham lam vắt qua ranh giới câu lệnh thì đo sai chỗ.
+  const re = /DELETE FROM\s+([a-z_][a-z0-9_]*)((?:(?!DELETE FROM)[\s\S]){0,200}?)(?:"machineId"|machine_id)\s*=\s*ANY/gi;
+  for (let m = re.exec(nguon); m !== null; m = re.exec(nguon)) coXoa.add(m[1]);
+  const khai = new Set(BANG_GO_XU_LY);
+  return {
+    // Có DELETE theo khoá máy nhưng KHÔNG khai ⇒ cầu chì sẽ kêu oan.
+    thieuKhai: [...coXoa].filter((t) => !khai.has(t)).sort(),
+    // Khai nhưng KHÔNG có DELETE nào ⇒ cầu chì hoá câm cho bảng đó.
+    thieuXoa: [...khai].filter((t) => !coXoa.has(t)).sort(),
+  };
+}
+
 function tieuDe(s: string): void {
   console.log("");
   console.log("=".repeat(74));
@@ -129,6 +180,19 @@ async function main(): Promise<void> {
   `;
   console.log(`  Vai: ${nguoiDung}   CSDL: ${csdl}`);
   console.log(`  Tien to: ${tienTos.join(", ")}`);
+
+  // ── B0. Cầu chì tự-kiểm: danh sách khai phải khớp mã nguồn thật ──────────
+  const lech = xacMinhCauChi(fs.readFileSync(fileURLToPath(import.meta.url), "utf8"));
+  if (lech.thieuKhai.length || lech.thieuXoa.length) {
+    console.error(
+      "LOI: BANG_GO_XU_LY lech voi cac lenh DELETE that trong tep nay.\n" +
+        (lech.thieuKhai.length ? `  co DELETE nhung CHUA khai: ${lech.thieuKhai.join(", ")}\n` : "") +
+        (lech.thieuXoa.length ? `  da khai nhung KHONG co DELETE: ${lech.thieuXoa.join(", ")}\n` : "") +
+        "  Sua cho khop roi chay lai — cau chi mo coi dua vao danh sach nay.",
+    );
+    process.exit(1);
+  }
+  console.log(`  Cau chi tu-kiem: ${BANG_GO_XU_LY.length} bang khai khop ma nguon.`);
 
   // ── B1. Tìm nhà máy khớp tiền tố ─────────────────────────────────────────
   const likes = tienTos.map((t) => `${t}%`);
@@ -381,6 +445,27 @@ async function main(): Promise<void> {
       xoa.station_dwell_time = (
         await tx`DELETE FROM station_dwell_time WHERE "machineId" = ANY(${mIds})`
       ).count;
+      // ══════════════════════════════════════════════════════════════════════
+      // ★★★ ĐỢT 16 LÔ T — `measurement_point_defs`, BẢNG THỨ SÁU
+      // ══════════════════════════════════════════════════════════════════════
+      // Lô T quét MỌI bảng `public` có cột `machineId`/`machine_id` (130 bảng)
+      // và đối chiếu với danh sách gỡ ở đây. Đúng MỘT bảng có mồ côi mà không
+      // có mặt trong phép gỡ: `measurement_point_defs` (12 hàng).
+      //
+      // ⚠ 12 hàng là con số dễ bỏ qua, và đó chính là lý do phải quét chứ
+      //   không liệt kê tay: bảng nhỏ không tự kêu. Năm bảng kia lọt vào danh
+      //   sách vì chúng phình lên hàng vạn hàng và có người nhìn thấy; bảng này
+      //   sẽ âm thầm tích rác mỗi lượt sinh/gỡ cho tới khi ai đó đi đo.
+      //
+      // ★ Bảng mang CẢ `machineId` LẪN `workstationId` — cùng bẫy nhiều khoá
+      //   như `station_dwell_time`. Đo trên `aoi_management` 2026-09-08:
+      //     mồ côi theo `machineId` → 12   ·   85 hàng có `machineId IS NULL`
+      //   85 hàng NULL kia là điểm đo KHÔNG gắn máy, hợp lệ, KHÔNG được chạm.
+      //   Vế `= ANY(mIds)` tự loại NULL, nên đường gỡ này an toàn theo cấu trúc
+      //   chứ không nhờ may mắn.
+      xoa.measurement_point_defs = (
+        await tx`DELETE FROM measurement_point_defs WHERE "machineId" = ANY(${mIds})`
+      ).count;
     }
     if (plIds.length) {
       xoa.andon_events = (await tx`DELETE FROM andon_events WHERE "lineId" = ANY(${plIds})`).count;
@@ -608,17 +693,37 @@ async function main(): Promise<void> {
   [QUET TEN COT] Mo coi theo machineId toan CSDL: tong=${tong}  ` +
         soTMoCoi.map((r) => `${r.tbl}=${r.n}`).join("  "),
     );
-    const laVet = new Set([
-      // Những bảng phép gỡ này CÓ xử lý — mồ côi ở đây là rác của lượt TRƯỚC.
-      "machine_health_history", "ot_telemetry", "rul_estimates",
-      "machine_status_logs", "predictive_alerts", "machine_heartbeats",
-      "product_inspections", "station_dwell_time",
-    ]);
+    // ⚠ TẬP NÀY PHẢI ĐI KÈM DANH SÁCH XOÁ Ở B4 — thêm bảng vào B4 mà quên ở
+    //   đây thì cầu chì kêu OAN; thêm ở đây mà quên B4 thì cầu chì hoá CÂM,
+    //   đúng cái nó sinh ra để chống. `xacMinhCauChi()` bên dưới đối chiếu hai
+    //   danh sách này với nhau nên không ai quên được nữa một cách im lặng.
+    const laVet = new Set(BANG_GO_XU_LY);
     const laLa = soTMoCoi.filter((r) => !laVet.has(r.tbl));
     if (laLa.length > 0) {
       console.error(
         "  ⚠ BANG NGOAI DANH SACH GO: " + laLa.map((r) => `${r.tbl}=${r.n}`).join("  ") +
           "  → phep go dang THIEU bang nay. Bao lai truoc khi mo rong pham vi xoa.",
+      );
+    }
+    // ══════════════════════════════════════════════════════════════════════
+    // ★★★ ĐỢT 16 LÔ T — MỒ CÔI Ở BẢNG **ĐÃ CÓ TRONG DANH SÁCH** = ĐUA GHI
+    // ══════════════════════════════════════════════════════════════════════
+    // Vòng đo lô T: sinh `TAI-LOT` (6 máy) → gỡ → quét. Phép gỡ báo sạch
+    // (`cầu chì lượt này = 0`) nhưng quét toàn CSDL vẫn thấy **6 hàng
+    // `machine_status_logs`** mồ côi, `createdAt` NẰM SAU lúc giao dịch gỡ đọc
+    // ảnh chụp của nó. Server đang chạy ghi thêm trong lúc ta xoá.
+    //
+    // ⇒ Đây KHÔNG phải "thiếu bảng" — bảng ấy có trong danh sách và đã bị xoá
+    //   đúng. Nó là hệ quả cấu trúc của việc gỡ khi server còn sống, và cầu chì
+    //   "lượt này" MÙ với nó vì hàng mới sinh ra SAU khi cầu chì chốt id.
+    //   Không phân biệt hai ca này thì người đọc sẽ đi sửa nhầm chỗ: thêm bảng
+    //   vào danh sách (vô ích) thay vì dừng server (đúng thuốc).
+    const laDua = soTMoCoi.filter((r) => laVet.has(r.tbl));
+    if (laDua.length > 0) {
+      console.error(
+        "  ⚠ MO COI O BANG DA XU LY (nghi DUA GHI voi server dang chay): " +
+          laDua.map((r) => `${r.tbl}=${r.n}`).join("  ") +
+          "\n    → DUNG server roi go lai, hoac don bang 'npx tsx scripts/don-mo-coi-may.ts --xoa'.",
       );
     }
   }
@@ -641,12 +746,30 @@ async function main(): Promise<void> {
   await sql.end();
 }
 
-main().catch(async (e) => {
-  console.error(e);
-  try {
-    await sql.end();
-  } catch {
-    /* đã đóng */
-  }
-  process.exit(1);
-});
+/**
+ * ★★★ CHỈ CHẠY KHI ĐƯỢC GỌI TRỰC TIẾP — ĐỢT 16 LÔ T
+ *
+ * Tệp này export `xacMinhCauChi` cho bộ test, và `import` một module ESM THỰC
+ * THI thân module. Không có cửa này thì `import { xacMinhCauChi }` sẽ chạy
+ * `main()` — và `main()` ở đây, khác `don-mo-coi-may.ts`, KHÔNG có chế độ
+ * chỉ-đo mặc định: nó xoá thật ngay, theo `tienTos` mặc định `FUYU-F/FUYU-G/
+ * TAI-`. Một lượt chạy test sẽ GỠ SẠCH nhà máy tải 240 máy của lô P mà không
+ * ai ra lệnh. Cửa này phải có TRƯỚC khi tệp được export bất cứ thứ gì.
+ */
+const laGoiTrucTiep =
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+
+if (laGoiTrucTiep) {
+  main().catch(async (e) => {
+    console.error(e);
+    try {
+      await sql.end();
+    } catch {
+      /* đã đóng */
+    }
+    process.exit(1);
+  });
+} else {
+  void sql.end();
+}
