@@ -3083,6 +3083,66 @@ keu, **chi phep quet moi thay**).
 **"3 bang goc KHONG DOI truoc/sau"** thay vi so tuyet doi - dung, neu khong script se **do oan** moi luot
 lo P nap/go. (**G55** lan hai: so trong brief co han su dung.)
 
+## 11k. DOT 16 LO U - **TAI HIEN DUOC** trieu chung chu so huu bao (2026-09-08)
+
+Commit `89c02203`. Cong: **57 tep / 1667 test** = nen - `check` 0 - `build` 0 - DB ve goc.
+
+> #### ★★★ G63 - `frameloop="demand"` + `enableDamping` = **QUAN TINH BI VUT**, khong loi nao no
+> Chu so huu bao: *"thi thoang khong thuc hien duoc, do, giat, lag hoac khong muot"*. **Tai hien duoc**,
+> va co che giai thich **dung chu "thi thoang"**.
+>
+> `taoDieuKhienQuay` bat `enableDamping` (`dieuKhienQuay.ts:55`, mac dinh **true**) voi
+> `dampingFactor = 0.08` (`:56`). Voi damping, OrbitControls **khong ap tron cu chuot ngay**: moi
+> `update()` chi ap **8%**, phan du nhan `(1 - 0,08)` roi **cho lan `update()` sau**
+> (`OrbitControls.js:617-618, 701-704`). Phan du 92% can **~40 lan `update()` nua**.
+>
+> Nhung duoi **`frameloop="demand"` KHONG co vong lap nao tu chay** - thu duy nhat lap lich nhung lan
+> `update()` do la mot `useFrame`. Do duoc **truoc ban va**:
+>
+> | Cho goi | `useFrame(update)` |
+> |---|---|
+> | `CanhNhaMay.tsx:102` | ✅ dung tu dau |
+> | `CanhThietKe.tsx:130` | ❌ **khong co dong nao** |
+> | `CanhVanHanh.tsx:143` | ⚠️ co, nhung **`return` ngay khi khong tween** |
+>
+> ⇒ Quan tinh **chi chay tron trong luc con tween doi pham vi**; moi luc khac **cut**. Do chinh la
+> **"thi thoang"**.
+> => Bat kien truc **theo yeu cau** (`demand`) thi **moi hoat anh KEO DAI QUA MOT KHUNG** phai co
+> nguoi lap lich - quan tinh, tween, spring, LOD. Thieu mot cai la **no im lang khong chay**.
+
+**Phep do trung tam** - **do doi anh canvas tu luc THA CHUOT → +1,2s** (= quan tinh co chay khong):
+
+| Man | Truoc | Sau |
+|---|---|---|
+| `/twin-studio` | **0,000 %** (dung chet) | **3,039 %** |
+| `/twin` | 41,006 % | 9,471 % |
+
+★ **Doi chung khong cham chuot = 0,000 % o CA HAI man** ⇒ con so 0,000 % kia la **quan tinh chet that**,
+khong phai nhieu do (G5/G32). **Dot bien**: bo lai `useFrame(update)` o `CanhThietKe` ⇒ coasting ve
+**dung 0,000 %**, `/twin` **van song** (ban va o tep khac) - doi chung dung.
+
+> #### G64 - **KHONG DOC DUOC NOI BO ⇒ DO CAI NGUOI DUNG NHIN THAY**
+> Build production **khong pho `__r3f`** tren canvas (lo U do: chi co `__reactFiber$…`), di bo cay fiber
+> ra rong ⇒ **khong doc duoc `camera.position` tu ngoai**. Lo U chuyen sang do **pixel canvas**.
+> => Khong phu thuoc noi bo, va **dung la thu chu so huu nhin thay**. Khi thiet bi do bi chan, hoi
+> *"nguoi dung phan nan ve cai gi"* - thuong do duoc truc tiep hon.
+
+**Lo U tu bac gia thuyet cua chinh no:** *"nhieu su kien hon ⇒ di xa hon"* - do duoc **0,85x**, khong
+phai >1x, vi moi `pointermove` **cung tu goi `update()`**. Phan thieu **chi la phan troi sau khi tha**.
+No **doi phep do theo so**, khong giu gia thuyet.
+
+### 11k.1 NO CON MO - lo U khai thang (G45)
+
+- **"Khong thuc hien duoc" theo nghia MAT HAN tuong tac: KHONG tai hien.** Moi thao tac deu lam doi anh
+  > 0; cac lop phu deu co `pointer-events-none` dung cho. Neu chu so huu con gap, can them: **may yeu hon**,
+  hoac **transform gizmo** (chua do duoc - can may **da dat cho**, ma nhanh nay 180/240 may **chua dat**).
+- **CHUA DO:** transform gizmo (keo/xoay/scale), chon may, doi pham vi, mo/dong panel.
+- **Long task 16 lan luc zoom `/twin`** - tin hieu dang theo nhung **chua quy duoc ve nguyen nhan**.
+  Lo U **khong va mo** - dung.
+
+**Brief cua chu du an sai mot cho:** `--chi-nhip` **khong** phai lenh go; no chi lam tuoi nhip tim.
+Lenh go la `scripts/go-tai-twin.ts`.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
