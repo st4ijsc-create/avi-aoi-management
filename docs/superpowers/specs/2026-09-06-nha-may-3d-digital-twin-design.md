@@ -3230,6 +3230,68 @@ RB-2 **DAT**: xoay ra **45,00°** va **60,00°** - deu la boi dung cua buoc 15°
    Anh huong **moi man**, khong rieng Twin ⇒ can quyet dinh o cap he.
 2. **Noi `tiLe` vao `onBienDoiXong`, hoac go nut Scale** - hien tai nut **noi doi voi nguoi dung**.
 
+## 11m. DOT 18 LO W - BAN DUNG SACH + GO CONG CU GIA (2026-09-08)
+
+Commit `bcb588a4`. Cong: **57 tep / 1.668 test** (nen 1.667, **+1 luoi G67**) - `check` 0 - `build` 0 -
+DB `2 / 43 / 82` - **5 anh lo C con nguyen** (G65 duoc tuan thu).
+
+### 11m.1 Viec 1 - ban dung khong con mang runtime dev
+
+**Cach sua:** `"build": "cross-env NODE_ENV=production vite build && esbuild ..."` - cross-env **chi
+dung truoc `vite build`**, khong boc ca chuoi.
+**Ly do:** doi xung voi `dev`/`start` (deu da dung cross-env; `build` la script **duy nhat** trong nhom
+bo trong); bien tuong minh **thang `.env`** nen va dung goc ma **khong dung `.env`/`vite.config.ts`**.
+**Khong xoa `NODE_ENV` khoi `.env`** vi do duoc **50/57 script** khong tu dat va dang dua vao mac dinh do.
+
+**Co che do truc tiep, khong suy tu script:** `vite.loadEnv("production", <goc>, "").NODE_ENV` ra
+**`"development"`** ⇒ `envDir` hut `.env:15` vao ban dung.
+
+| | truoc | sau (chu du an do lai) |
+|---|---|---|
+| chunk mang React dev | **271/813** | **0/813** |
+| bundle | 47.144.294 B (45,0 MiB) | **39.042.934 B (37,2 MiB)** |
+| long task zoom | **17** | **2** |
+| chan main / tre khung dau | 1.189 ms / 252,7 ms | **115 ms / 9,7 ms** |
+
+**Ablation:** go cross-env → dung lai ra **chinh xac 271/813, 47.144.255 B** ⇒ **nhan qua**, khong trung hop.
+
+> #### G68 - **20 CHO SERVER DOC `NODE_ENV`: KHONG CHO NAO DOI HANH VI**
+> Lo W do **tren chinh ban dung**: `dist/index.js` **14**, `worker.js` **7**, `edgeGatewayMain.js` **7**
+> lan `process.env.NODE_ENV` **con nguyen van**; so cho bi thay bang hang `"production"` = **0**.
+> Vi esbuild chay `--packages=external` va **khong co `--define`** ⇒ **khong noi tuyen**.
+> ⇒ Che do chay van do `npm start` quyet, ke ca `runtime-security.ts:57` va `pluginDriverBridge.ts:67`
+> (fail-closed). **Rui ro chu du an lo la co that ve nguyen tac, nhung do duoc la BANG 0 o day** - va
+> cach biet la **doc ban dung**, khong doc ma nguon.
+
+### 11m.2 Viec 2 - chon **GO** cong cu Scale, kem chung minh
+
+Cot `tiLeX/Y/Z` **co that**, nhung `group by` cho **82/82 hang = 1.000000** - **chua tung ghi**.
+
+> #### ★★★ G69 - MOT TINH NANG CHET CO THE DUT O **BON TANG**, KHONG PHAI MOT
+> Chu du an ghi: *"`XuongThietKe.tsx` destructure bo mat `tiLe`"* - ngu y **mot** cho ho.
+> Lo W do lai: `GizmoBienDoi.tsx:76` **co tra `tiLe`**, nhung no **chet TRUOC KHI toi `XuongThietKe`** -
+> kieu `onBienDoiXong` o **`CanhThietKe.tsx:119` von khong khai `tiLe`**. Bon tang:
+> `CanhThietKe.tsx:119` · `XuongThietKe.tsx:992` · `trangThaiThietKe.ts:121` · `twinCanhRouter.ts:1193`.
+> ⇒ **Sua moi cho destructure se khong lam gi ca.** Truoc khi va mot "tham so bi bo", **lan nguoc CA
+> DUONG** tu noi sinh toi noi ghi.
+
+**Ly do go (nghiep vu):** may co **kich thuoc that (mm)** + co `kichThuocDaDo` + badge "chua do";
+**keo chuot tao ra so khong ai do**. Duong dung **da co**: o nhap mm `BangThuocTinh.tsx:281-298` + nut
+dong 308 (chu du an kiem: duong nay **con nguyen**).
+
+**★ Go o CHINH KIEU → `tsc` lo ra DUONG VAO THU HAI: phim R.** Chi go nut thi loi **van song sau mot
+phim bam**. (Chu du an kiem: ca nut lan phim R **da go sach**.)
+Dot bien: tiem lai `case "r": return "scale"` ⇒ luoi **DO** dung cho; khoi phuc byte-exact.
+
+### 11m.3 Lo W noi thang cho **chua** chung minh duoc
+
+Cong #7 doi **0** long task, lo W do **2**. So 0 cua lo V den tu luot chay **CPU throttle x20**; luot
+nay **khong throttle**, may dang ban ⇒ **2-vs-0 khong so sanh duoc**. Cap so so sanh duoc la **ablation
+cung dieu kien (17→2)**. **"0 long task" chua chung minh.**
+Chi bao cong #6 ra **1** chu khong 0 - nhung do la **duong tinh gia**: chuoi ten tuy chon cua
+`hast-to-jsx-runtime` trong `if(e.development)`. Chi bao React dev **that** = **0 tep** (chu du an do lai
+doc lap: **0/813**).
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
