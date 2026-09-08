@@ -3292,6 +3292,40 @@ Chi bao cong #6 ra **1** chu khong 0 - nhung do la **duong tinh gia**: chuoi ten
 `hast-to-jsx-runtime` trong `if(e.development)`. Chi bao React dev **that** = **0 tep** (chu du an do lai
 doc lap: **0/813**).
 
+## 11n. DOT 19 - DEM LAI SO KIEM, VA MOT PHEP DEM CUA CHU DU AN LAI SAI (2026-09-08)
+
+### 11n.1 Ba trong sau muc "con thieu" o §11g.2 **da dong**
+
+Do lai trong pham vi Twin: `taiAnhNen` **10** cho - `usdExport` **7** - `twin_ban_ghi` **1**.
+Con lai: **`whatIf` 0** (#30/#35) va `ArticulatedRobot` 1 (**chu thich**, khong phai ma chay).
+
+> #### ★★★ G70 - **MOT MODULE "0 CHO GOI" CO THE CHI LA TEN TEP ≠ TEN HAM**
+> Chu du an dem `uploadAndRegister` ra **0** trong Twin va suyt ket luan **#18 chua lam**.
+> Thuc te #18 **DA XONG** - duoi ten **`taiModelMay`** (`ThuVienAsset.tsx:14`). Grep tên **thu tuc
+> server** khong tim ra ten **ham client** goi no.
+>
+> Va khi dem lai **19 module** bang mau `<Ten` / `Ten(`, sau module ra `dung: 0`:
+> `khungNhin`, `xuatAnh`, `banDoNho`, `vungAnToan`, `wipTram`, `boChonNap`.
+> **Mo hinh thu hai** (do **ham export chinh** ben trong tung tep) lat nguoc **5/6**:
+> `polygonHopLe` **4** cho - `phanGiaiNap` **3** - `dungPhepChieu` **1** - `tenTepAnh` **1** -
+> `conHieuLuc` **1**. **Mo hinh thu ba** cho `khungNhin` (liet ke **moi** export): `fitTatCa` **4**,
+> `bboxSan` **4**, `fitBBox` **2** ⇒ **duoc dung that**.
+>
+> ⇒ **Ket luan: moi module Twin deu co cho goi that.** Nhung ba phep dem cho **ba ket qua khac nhau**
+> tren cung mot cay ma. Mot module tien ich **khong duoc goi bang ten tep** - no duoc goi bang **ten
+> tung ham**. => Khi dem "cho goi" cho mot **module**, phai liet ke **moi export** roi dem tung cai;
+> dem theo **ten tep** la mo hinh sai cho lop nay. (**G44** o tang cao hon: khong chi tach `import` khoi
+> `<Ten`, ma con phai hoi **don vi dem la gi** - tep hay ham.)
+
+### 11n.2 Muc CUOI cua so kiem: #30/#35 ngan Mo phong
+
+`TwinVanHanh.tsx:836` van hardcode **`dangMoPhong: false`**. Hai nguon **deu ton tai**:
+`digitalTwin.whatIf` (`digitalTwinRouter.ts:218`, docblock `:6` ghi *"pure compute, khong ghi DB"*
+⇒ **khong mang rui ro tenant**, khac han `twinState`/`wipFlowState` ma lo Q phai va) va
+`orchestration.simulate` (`orchestrationRouter.ts:243`).
+§12b.2 xep **G-2 what-if** la *"mat mo phong duy nhat trong ca 4 trang - dung nghia digital TWIN chu
+khong phai digital shadow"*.
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
