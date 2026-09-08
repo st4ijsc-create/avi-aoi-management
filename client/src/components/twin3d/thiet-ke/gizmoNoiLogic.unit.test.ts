@@ -30,16 +30,29 @@ import {
 // Chế độ / phím
 // ---------------------------------------------------------------------------
 
-describe("cheDoTuPhim — quy ước Unity W/E/R", () => {
-  it("W → translate, E → rotate, R → scale", () => {
+describe("cheDoTuPhim — quy ước Unity W/E (R đã gỡ)", () => {
+  it("W → translate, E → rotate", () => {
     expect(cheDoTuPhim("w")).toBe("translate");
     expect(cheDoTuPhim("e")).toBe("rotate");
-    expect(cheDoTuPhim("r")).toBe("scale");
   });
 
   it("nhận cả chữ HOA (Shift đang giữ)", () => {
     expect(cheDoTuPhim("W")).toBe("translate");
-    expect(cheDoTuPhim("R")).toBe("scale");
+    expect(cheDoTuPhim("E")).toBe("rotate");
+  });
+
+  /**
+   * ★★★ G67 — PHÍM R LÀ ĐƯỜNG VÀO THỨ HAI của chế độ scale.
+   *
+   * Chỉ gỡ nút trên thanh công cụ mà quên phím tắt sẽ để nguyên lời nói dối cũ
+   * sau ĐÚNG MỘT phím bấm: người dùng kéo scale, thấy hình đổi, bấm Lưu, và
+   * kích thước KHÔNG được ghi (tiLe bị bỏ ở 4 tầng, cả 82 hàng DB vẫn 1.000000).
+   * Lưới này ghim cả hai nửa: R không còn ra "scale", VÀ nó trả null để phím
+   * rơi về trình duyệt thay vì bị nuốt câm.
+   */
+  it("★ G67 — R KHÔNG còn là scale, trả null (không nuốt phím)", () => {
+    expect(cheDoTuPhim("r")).toBeNull();
+    expect(cheDoTuPhim("R")).toBeNull();
   });
 
   it("★ G8 — phím khác trả NULL để không nuốt phím của trình duyệt", () => {

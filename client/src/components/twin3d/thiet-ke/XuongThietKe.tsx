@@ -784,7 +784,10 @@ export function XuongThietKe({
         ) : null}
         {coQuyenSua ? (
         <div className="flex items-center gap-1">
-          {(["translate", "rotate", "scale"] as CheDoGizmo[]).map((cd, i) => (
+          {/* ★ G67 — chỉ hai chế độ. Nút "Co giãn" đã gỡ: nó KHÔNG ghi gì (tiLe
+              bị bỏ ở 4 tầng) và nối vào cũng sai nghiệp vụ — kích thước máy sửa
+              bằng ô nhập mm ở Inspector, có cờ `kichThuocDaDo`. Xem `CheDoGizmo`. */}
+          {(["translate", "rotate"] as CheDoGizmo[]).map((cd, i) => (
             <Button
               key={cd}
               size="sm"
@@ -793,7 +796,7 @@ export function XuongThietKe({
               data-testid={`nut-che-do-${cd}`}
               onClick={() => setCheDo(cd)}
             >
-              {t(`twin3d.congCu.${["diChuyen", "xoay", "coGian"][i]}`)}
+              {t(`twin3d.congCu.${["diChuyen", "xoay"][i]}`)}
             </Button>
           ))}
         </div>
