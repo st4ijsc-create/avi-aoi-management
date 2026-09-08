@@ -3394,6 +3394,56 @@ brief noi *"neu mot phan mo phong khong co du lieu de chay"* - thuc te **ca hai 
 nhung **theo hai kieu khac nhau**: #35 co **5 workflow that** (chay duoc ngay), #30 co nguon nhung
 **het han/NULL** ⇒ honest-null. Khong phan nao la "ngan trong".
 
+## 11o. DOT 19 LO X - **DONG MUC CUOI CUA SO KIEM §11** (2026-09-08)
+
+Commit `84cd5a3d`. Cong: **58 tep / 1.706 test** (nen 57/1.668) - `check` 0 - `build` 0 -
+DB `2 / 43 / 82` - **5 anh lo C con nguyen**.
+
+`dangMoPhong` **thoi hardcode**: `TwinVanHanh.tsx:1577` tinh tu trang thai that
+(`daBamChay && dungWhatIf.chay && whatIfQ.data != null`). `<NganMoPhong>` render o `:2577`;
+#30 qua `digitalTwin.whatIf` (`:1502`), #35 qua `orchestration.simulate` (`:1536`).
+**Nghiem thu tren trinh duyet that**: huy hieu xuat xu lat **`bong` → `mo_phong`** sau mot lan chay
+what-if that (dau ra 3000, nut that #1). Hang `line_balance` gieo de chung minh **da xoa** (39 truoc = 39 sau).
+
+> #### ★★★ G71 - `gateMs = 0` LA MAC DINH DUNG, NHUNG **DU LIEU THUONG NGUON THOAI HOA**
+> Do **ca 5 workflow that**: `Line-a-startup` tong **34.000 ms**; **bon cai con lai tong 0** vi deu la
+> `hitl_gate` (cong cho NGUOI, khong co thoi luong may).
+> Hai he qua: (a) tap bien gioi **co lai con `[0]`** ⇒ nut buoc **chet tren 4/5 workflow that** (**G32**,
+> `f(x)=x`); (b) in `0.0s / 0.0s` cho mot workflow **5 buoc co that** doc ra thanh *"workflow rong"* -
+> **mot loi khai sai**.
+> Va bang `coThoiLuong()` tach **che do thoi gian** khoi **che do buoc**, va **ca hai nguoi tieu thu hoi
+> CUNG MOT cong** (G12 - khong de hai ban lech nhau).
+
+> #### ★★★ G72 - **MOT MODULE THUAN KHONG DUOC PHAT VAN XUOI CHO NGUOI DOC**
+> `nhanTuoi` tra chuoi **`"17 ngay"`**, bi ghep vao khuon mau EN `"{{tuoi}} ago"` ⇒ man hinh in
+> **"(17 ngay ago)"**. `tsc` **0 loi**, **36 unit test xanh**, **3 ca Playwright xanh** - **khong phep do
+> nao hoi "chuoi nay tieng gi"**. Chi doc **anh chup cua chinh minh** moi bat duoc.
+> Nay tra **`{so, donVi}`** de tang hien thi tu chon ngon ngu.
+> ⇒ Ranh gioi: module thuan tra **du lieu co cau truc**; **chi tang hien thi** moi duoc ghep chu.
+
+> #### ★★★ G73 - **DOT BIEN SONG SOT: HOI DU LIEU CO DI QUA CHO HAI BAN KHAC NHAU KHONG**
+> Mot dot bien **song sot** (thay `coThoiLuong(...)` bang `tongMs > 0`, **35/35 van xanh**) - vi fixture
+> cua lo X ghep **moi buoc = 0 voi `tongMs = 0`**, dung cho **hai quy tac DONG Y voi nhau**.
+> Them ca phan biet (`tongMs > 0` **VA** moi buoc dai 0) ⇒ dot bien **chet**. Tong **9/9 bi giet**.
+> ⇒ Dot bien song sot **truoc het** goi y *"du lieu thu cua toi co di qua **cho hai ban cai dat khac
+> nhau** khong?"* - truoc khi ket luan "luoi yeu".
+
+### 11o.1 Honest-null la **thuc te do duoc**, khong phai thieu sot
+
+Tren DB nay what-if **khong co nguon cycle-time con han**: hang moi nhat cua `line_balance_metrics`
+line 1 la **2026-08-21** (17-18 ngay) va **chinh hang do co `avgCycleTimeMs` NULL**;
+`station_dwell_time` cu **18-51 ngay**. Nen bang hien **`—` kem MOT CAU va TUOI**, khong bao gio `0`.
+`dungDauVaoWhatIf` phan biet **SAU ly do** rieng thay vi mot cau "khong co du lieu".
+**Cong han tuoi dat o phia client CO CHU Y** - `whatIf` la ham thuan, **tin bat ky `cycleTimeSec` nao ta
+gui**, nen no **khong the biet** con so da 18 ngay tuoi. Dung lai `conHieuLuc`/`HAN_KHAI_NGHEN_MS` (G12).
+
+**Lo X KHONG dung `station_dwell_time` lam cycle time**: `dwellMs` gom `starvedMs`/`blockedMs` -
+**cho, khong phai lam**. Dung no se la **cung loai sai dai luong** voi `commandLog.avgDurations` o #36.
+
+**G40:** `"moPhong"` duoc them vao danh sach **dong** `PANEL_THU_DUOC` thay vi de khoa URL thu bay.
+Bo qua buoc do thi `?thu=moPhong` **bi nuot im lang** (ghi duoc, doc ra rong, panel mo lai sau F5,
+**khong loi nao no**) - dung lop **G67/G69** "chet o tang kieu/danh sach truoc".
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
