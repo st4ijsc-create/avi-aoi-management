@@ -3023,6 +3023,66 @@ Lo R **bao lai, khong tu xoa** (dung). Chu du an do lai doc lap va **so con cao 
 **19 tep / 204 test, 0 do**; khong tai hien duoc 3 do nao - mot lan thay do la **timeout 5s flaky**.
 Va **be mat L-1**: brief ghi 283 may / 3 nha may (**do luc FUYU-G con song**); DB nay **43 may / 2 nha may**.
 
+## 11j. DOT 16 LO T - DON 1.969.546 HANG MO COI, 0 HANG SONG MAT (2026-09-08)
+
+Commit `94620e75`. Cong: **57 tep / 1667 test** = nen - `check` 0 - `build` 0.
+
+| Bang | Cot | Mo coi truoc → sau | Song truoc → sau |
+|---|---|---|---|
+| `ot_telemetry` | `machineId` | **1.954.052 → 0** | 26.411.016 → 26.414.400 (**+3.384 chay vao**) |
+| `rul_estimates` | `machine_id` | 8.197 → 0 | **khong doi** |
+| `machine_status_logs` | `machineId` | 4.022 (+6 dua ghi) → 0 | **khong doi** |
+| `station_dwell_time` | `machineId` | 3.247 → 0 | **khong doi** |
+| `measurement_point_defs` | `machineId` | 12 → 0 | **khong doi** |
+| `predictive_alerts` | `machineId` | 10 → 0 | **khong doi** |
+
+Chu du an do doc lap sau khi xong: `ot_telemetry` **mo coi 0**, **NULL 70.689 con nguyen**.
+
+> #### ★★★ G60 - **`NOT EXISTS` GOP `NULL` VAO "MO COI"** (loi cua chu du an, suyt giet 70.689 hang)
+> Chu du an do `ot_telemetry` mo coi = **2.024.741**. Lo T do lai bang vi tu quan he **loai NULL**:
+> **1.954.052 mo coi + 70.689 NULL**, chenh **dung bang so NULL**.
+> `NOT EXISTS (SELECT 1 FROM machines m WHERE m.id = t."machineId")` **DUNG voi hang `machineId IS NULL`**
+> - vi khong co `m.id` nao bang NULL. Chung **khong** mo coi: chung la hang **chua gan may**, hop le.
+> ⇒ **Xoa theo con so cua chu du an se giet 70.689 hang hop le.**
+> => Moi vi tu mo coi phai co **`<cot> IS NOT NULL`** di kem. Va phep cong kiem tra phai la
+> **mo coi + NULL + song = tong** (ba nhom), khong phai hai.
+
+> #### ★★★ G61 - **CHAN DOAN "KHONG CHAY DUOC" CO THE SAI VE NGUYEN NHAN**
+> Chu du an ghi *"DELETE tren hypertable nen khong chay duoc"* (dua tren `53400` ma lo P gap).
+> Lo T do lai: `53400` la **tran bang khoa**, **khong phai nen** - `max_locks_per_transaction=64`
+> (~6.400 o) so voi 9 chunk x 6 chi muc + 38 bang `compress_hyper_*`.
+> **Bang chung phan de:** DELETE tren chunk **dang nen** `_hyper_25_68` xoa 108 hang trong **532ms
+> khong loi** (da rollback). Timescale 2.28.2 **tu giai nen** doan bi cham.
+> => Mot ma loi noi **cai gi hong**, khong noi **vi sao**. Dung suy nguyen nhan tu trieu chung;
+> **dung ca doi chung** (thu dieu bi cho la khong the).
+
+**Ba rang buoc THAT gap tren duong** (khac han cai chu du an du doan): `ctid` **khong dung duoc** tren
+chunk nen (`transparent decompression only supports tableoid`) ⇒ cat lo bang khoa logic `machineId` ·
+chunk **0 mo coi phai BO QUA HAN** - DELETE tren chunk nen 4,59M hang **sach** van giai nen de kiem vi tu
+roi do `tuple decompression limit exceeded` (tran 100.000) · **khong `drop_chunks`**: do tung chunk,
+**khong chunk nao 100% mo coi** - chunk dam rac nhat `_hyper_25_78` van chua **5.526.376 hang song**.
+
+> #### ★★★ G62 - **SCRIPT XOA TU CHAY KHI BI `import`** (lo T tu tim ra khi lam viec 2)
+> De export cho test, lo T `import` hai script - va `go-tai-twin.ts` **tu chay `main()`**, ma `main()`
+> **khong co che do chi-do mac dinh**: **mot luot chay test se go sach nha may 240 may cua lo P ma khong
+> ai ra lenh**.
+> Da chot ca hai tep sau cua `import.meta.url === process.argv[1]` (`go-tai-twin.ts:761`,
+> `don-mo-coi-may.ts:464`), va `don-mo-coi-may.ts` **mac dinh CHI DO** - phai co `--xoa` moi xoa
+> (chu du an kiem ca hai lop).
+> => Moi script **co tac dung phu pha huy** phai co **hai** lop: **cua goi-truc-tiep** + **mac dinh
+> khong pha huy**. Mot lop la khong du.
+
+**Vong do script go:** `TAI-LOT` (6 may) sinh → go → quet ⇒ bat 6 hang `machine_status_logs` mo coi,
+`createdAt` **sau** anh chup giao dich ⇒ **dua ghi voi server dang chay**, khong phai thieu bang.
+`TAI-LOT2` (cho 45s) ⇒ con sot **0**. Quet toan bo: **0 mo coi tren ca 130 bang** co cot may.
+Them `measurement_point_defs` vao script go - **bang duy nhat trong 6 con thieu** (12 hang, qua nho de tu
+keu, **chi phep quet moi thay**).
+
+**Bat bien DB doi cach dien dat:** brief ghi `factories 2 / machines 43 / twin_dat_cho 82` - **da het han**
+(FUYU-G 240 may cua lo P con trong DB ⇒ that la **3 / 283 / 586**). Lo T doi bat bien thanh
+**"3 bang goc KHONG DOI truoc/sau"** thay vi so tuyet doi - dung, neu khong script se **do oan** moi luot
+lo P nap/go. (**G55** lan hai: so trong brief co han su dung.)
+
 ## 12. Kế hoạch triển khai — 7 đợt, phân công session & agent
 
 Mỗi đợt là **một chốt nghiệm thu độc lập**: sau mỗi đợt hệ thống vẫn chạy, không đợt nào để lại trạng thái dở dang.
