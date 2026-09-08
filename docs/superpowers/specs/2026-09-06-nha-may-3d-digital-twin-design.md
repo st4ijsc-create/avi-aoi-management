@@ -4509,6 +4509,88 @@ dung luat. Chu du an kiem: `grep -c "vienSucKhoe|khaiNguonSo|vungTuDanhSach" Twi
 
 **Z4 (G-7 cay da site) CHUA LAM.** Khong co anh nghiem thu thi giac - lo Z **khong chay Playwright**.
 
+## 13e. DOT 21 LO Y - BO CUC NOI-DE + QD-16, va **MOT MUC TIEU BAT KHA THI** (2026-09-08)
+
+Commit `54b1cabe`. Cong: **65 tep / 1.834 test** - `check` 0 - `build` 0 - DB `2/43/82` -
+**5 anh lo C md5 y het**.
+
+### 13e.1 Ket qua do duoc (1280×720, vai khong-admin, tren `dist` da dung)
+
+| | truoc | sau |
+|---|---|---|
+| Canvas | 488×453 = **24,0 %** | 968×515 = **51,4 %** |
+| Chieu **rong** canvas | 488 px | **968 px = TRON khung**, o **ca hai** trang thai panel |
+| Dai ngang | **280 px** ca xau nhat | **74 px** (tran §13b 120) |
+
+**Panel tu CHIA DAT sang NOI DE** - vi the chieu rong **khong doi** khi thu panel nua.
+
+> #### ★★★ G75 - **MUC TIEU PHAN TRAM PHAI KIEM BANG SO HOC TRUOC KHI GIAO**
+> §13b (va brief cua chu du an) dat muc tieu canvas **82 % / 94 %**. Lo Y chung minh **bat kha thi
+> trong pham vi tep cua no**, va chu du an **tinh lai xac nhan**:
+> ```
+> khung twin = 1280 − sidebar 264 − <main> padding 48 = 968 px
+>              720 − app chrome 133 − padding 24      = 563 px
+> TRAN TUYET DOI (canvas an TRON khung, 0 dai, 0 panel) = 968×563 / (1280×720) = 59,1 %
+> De dat 82 % can chieu rong 1.342 px — khung chi co 968.
+> ```
+> Phan con lai bi `DashboardLayout.tsx:658` an - **ngoai pham vi lo Y**. Thu sidebar (nut da co san
+> cua vo) nang tran len **72,3 %**.
+> ⇒ **Chu du an dua con so 82 % vao brief ma khong kiem.** Mot muc tieu phan tram luon la **ti so hai
+> so**; phai do **mau so** truoc khi hua tu so. Va **nen tuyen bo tran** (*"59,1 % neu khong doi vo"*)
+> thay vi mot con so tuyet doi.
+> **Nen cung sai:** brief ghi *"~17 %"*; do lai la **24,0 %**.
+
+### 13e.2 Hai URL redirect trong §13b **se hong am tham**
+
+Lo Y bat truoc khi giao:
+- `?tab=map` → `/twin?lop=uns` — **`"uns"` KHONG nam trong `LOP_HOP_LE`** (danh sach dong 6 ten).
+  `docLop()` **bo ten la trong im lang** ⇒ URL trong nhu chay ma khong lam gi (ho **G67/G69**:
+  chet o tang danh sach truoc).
+- `?tab=cell` → `/twin?thu=moPhong` — **NGUOC**: `thu=` liet ke panel **dang THU LAI**. URL do se
+  **dong dung ngan Mo phong** ma nguoi dung vua bam vao de xem.
+⇒ Ca hai doi dich ve `/twin`.
+
+### 13e.3 QD-16 - chung minh hai chieu bang tai khoan that
+
+Be mat do tren `permissions`: **7** tai khoan co quyen, **4** ca hai man, **dung 1** (`operator1`)
+chi-xem — **khop §13c.1**.
+
+| | vao trang | thay nut "Sua bo cuc" |
+|---|---|---|
+| `operator1` | ✅ | ❌ |
+| `engineer1` | ✅ | ✅ |
+
+`?che-do=botri` (dich redirect **den voi moi nguoi**): `operator1` → **ha xuong che do xem VA duoc bao**;
+`engineer1` → vao vung sua. **5/5 e2e xanh**, anh tu doc.
+**Dot bien**: **ca hai hinh dang tai nan** deu duoc thu — *cong rong* (**5 test do**) va *cong chat*
+(**2 do**). Dot bien bo cuc (panel ve chia-dat) ⇒ e2e bat **968→488 px, 51,4 %→27,3 %**.
+
+### 13e.4 No G16 cua lo Z **DA DONG**
+
+Chu du an kiem: `TwinVanHanh.tsx` tu **0** len **12** tham chieu.
+
+| Ham | Cho goi | Chung minh song |
+|---|---|---|
+| `vienSucKhoe` | `:1109` → prop `:2948` | **42 khai suc khoe** qua day; **vong hien trong anh**, mot cai do |
+| `vungTuDanhSach` | `:1141` → prop `:2949` | `vung = 0 hang` — **nguon rong that**, khong bia |
+| `khaiNguonSo` | `:1871` → badge `:2528` | badge doc **`day + hoi 30s`**, `coChe=hon_hop` |
+
+Ban va **G7** duoc xac nhan tai nguon: `nguonDuLieu.ts:37` `NHIP_CO_LUONG_MS = 30_000` — poll **co y
+khong bao gio tat**, nen chu *"Truc tiep"* mot minh dang mo ta **KET NOI** trong khi nguoi doc suy ra
+**CON SO**.
+
+### 13e.5 Mot quyet dinh lo Y **giu lai** thay vi xoa
+
+Lo Y **giu** muc nav `/digital-twin`. Ly do: `DataManagementHub.tsx:24` va `DataSettings.tsx:796` doc
+quyen route qua `getRequiredPermissionForHref("/digital-twin")`; xoa no lam **ca hai roi ve
+`"analytics_oee"` IM LANG** va hien quick-link bo cuc cho nguoi **khong duoc sua** — **tai tao dung loi
+"mot loi vao roi tu choi"** ma chinh dot nay di va, o **hai tep ngoai pham vi**. No **ghi no vao ma**.
+
+**Con mo:** `?thu=trai,phai` **khong con tang dien tich canvas** (dung thiet ke moi) ⇒ muc tieu "94 % khi
+thu" cua §13b **khong con co che de dat** trong vo hien tai. Va mot loi **co san** khong do lo Y gay:
+`navigation.unit.test.ts` *"getAcceptedPermissionsForHref"* — do y het o `HEAD` (kiem bang
+`git show HEAD:` roi chay lai), la **banh cong cu** tu lo truoc mong `/twin` chi nhan `analytics_oee`.
+
 ## 14. Rủi ro`** từ trước. Chiếm lại số 14 sẽ tạo hai mục cùng số trong một tệp sắp đem
 > ra bàn — đúng kiểu nhầm lẫn mà một bản thiết kế không được phép gây ra. Nội dung được yêu cầu nằm
 > nguyên vẹn ở đây, đặt ngay trước §14 cũ. Cùng lý do và cùng cách xử lý với §12b.
