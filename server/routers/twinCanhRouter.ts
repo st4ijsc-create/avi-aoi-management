@@ -87,6 +87,7 @@ import {
   traAnhLichSu,
   // ── Đóng nợ #26 (§11) — E-STOP nổi lên Twin ──
   traAnToanRobot,
+  traSucKhoeMay,
 } from "../db/twinCanh";
 
 /**
@@ -1147,6 +1148,65 @@ export const twinCanhRouter = router({
        *   không.
        */
       return { robot, bayGio: Date.now(), tong: robot.length };
+    }),
+
+  /**
+   * ★★★ ĐỢT 21 LÔ Z — A-4: SỨC KHOẺ MÁY + NGUY CƠ HỎNG (§14.5.1, F-15, mục G-1).
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ G49 — THỦ TỤC THỨ 21 CỦA ROUTER NÀY, VÀ NÓ CÓ `phamViCua(ctx)`
+   * ════════════════════════════════════════════════════════════════════════
+   * Brief của lô ghi rõ: cả 20 thủ tục hiện có của `twinCanhRouter` đã có
+   * `phamViCua`, đừng đẻ cái thứ 21 thiếu. Nó ở đây, và nó là cổng DUY NHẤT —
+   * `traSucKhoeMay` áp phạm vi bên trong qua `traCayPhanCapNhaMay`, nên một
+   * `factoryId` tự khai ngoài phạm vi trả `[]` chứ không trả sức khoẻ máy của
+   * tenant khác.
+   *
+   * ★ Cổng quyền `quyenVanHanh("canView")` — CÙNG cổng với `anToanRobot` và
+   *   `trangThaiHangLoat`, không phải cổng thứ ba. Sức khoẻ máy là **thông tin
+   *   vận hành đọc-chỉ** giống hệt trạng thái và E-STOP; dựng một cổng riêng
+   *   cho nó nghĩa là một vai có thể thấy máy E-STOP mà không thấy máy sắp
+   *   hỏng, và không ai có thể nói vì sao đó lại là ranh giới đúng.
+   *
+   * ★ `bayGio` do SERVER đặt — cùng lý lẽ G15 đã ghi ở `trangThaiHangLoat` và
+   *   `anToanRobot`. `conHanSucKhoe` quyết định một lời khai còn được vẽ hay
+   *   không; để client tự khai đồng hồ là mở đường cho một trình duyệt lệch giờ
+   *   tự tuyên bố dữ liệu 18 ngày tuổi của mình còn tươi.
+   *
+   * ★★★ `tongCoKhai` KHÁC `tong` — G9 (ĐƠN VỊ CỦA CON SỐ).
+   *   `tong` = số máy TRẢ VỀ (có ít nhất một hàng trong `machine_health_history`)
+   *   `tongMayTrongPhamVi` = số máy của nhà máy mà người gọi được thấy
+   *   Chênh lệch giữa hai số này chính là "số máy CHƯA từng được đo sức khoẻ" —
+   *   một đại lượng thật mà client cần để nói "6/43" chứ không phải "6/?" hay,
+   *   tệ hơn, "6/6". Trả cả hai ở đây thay vì để client tự trừ từ một truy vấn
+   *   khác: hai nguồn cho hai nửa một câu là lớp lỗi đã cắn dự án này.
+   */
+  sucKhoeMay: protectedProcedure
+    .use(quyenVanHanh("canView"))
+    .input(z.object({ factoryId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const scope = phamViCua(ctx);
+      const [khai, cay] = await Promise.all([
+        traSucKhoeMay(input.factoryId, scope),
+        traCayPhanCapNhaMay(input.factoryId, scope),
+      ]);
+      /*
+       * ★ Mốc MỚI NHẤT trong tập — để header khai tuổi của LỚP NÀY, tách khỏi
+       *   tuổi của lớp trạng thái. Hai lớp đọc hai bảng có nhịp ghi khác nhau;
+       *   một ô tuổi chung sẽ lấy cái tươi hơn và làm lớp cũ trông như còn sống
+       *   (đúng chế độ hỏng `max`-của-mọi-nguồn mà `chonNguonMocTuoi` đã vá).
+       */
+      const mocMoiNhat = khai.reduce<number | null>(
+        (max, k) => (k.mocMs == null ? max : max == null || k.mocMs > max ? k.mocMs : max),
+        null,
+      );
+      return {
+        khai,
+        bayGio: Date.now(),
+        mocMoiNhat,
+        tong: khai.length,
+        tongMayTrongPhamVi: cay.may.length,
+      };
     }),
 
   /**

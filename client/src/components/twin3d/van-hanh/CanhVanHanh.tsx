@@ -51,6 +51,9 @@ import type { KhungNhin } from "./phamViCanh";
 import { TWEEN_DOI_CAP_MS } from "./phamViCanh";
 import { LopCanhBao, type CanhBaoTheGioi } from "./LopCanhBao";
 import { DongChayLine, type DiemDongChay } from "./DongChayLine";
+import type { VienDeMay } from "./sucKhoeMay";
+import { LopVung } from "../thiet-ke/LopVung";
+import type { VungVe } from "../thiet-ke/vungAnToan";
 
 export interface CanhVanHanhProps {
   may: MayTrongLo[];
@@ -60,6 +63,47 @@ export interface CanhVanHanhProps {
   dongChay: DiemDongChay | null;
   /** Cột WIP theo trạm — chỉ có ở phạm vi Line (§10C.3). */
   wip: readonly { x: number; z: number; cao: number; nghen: boolean }[];
+  /**
+   * ★★★ A-4 (§14.5.1, mục G-1) — VÒNG VIỀN SỨC KHOẺ quanh ĐẾ máy.
+   *
+   * KÊNH THỊ GIÁC RIÊNG, không dùng chung với A-1 (màu thân). Một máy *đang chạy*
+   * mà *sức khoẻ 55%* phải đọc được là **thân xanh + viền hổ phách**; nếu A-4
+   * cũng tô thân thì một trong hai sự thật bị nuốt.
+   *
+   * Mặc định `[]` ⇒ lớp `return null`, không cấp phát gì. Nhưng ★ đó cũng đúng
+   * là chế độ hỏng G5 mà `wip` đã mắc một lần (`wip={[]}` viết cứng ⇒ lớp chạy
+   * qua 994 test mà chưa vẽ pixel nào) — nên `noiLoD.dom.test.tsx`-kiểu test của
+   * lớp này phải khẳng định trên tập KHÁC RỖNG.
+   */
+  vienSucKhoe?: readonly VienDeMay[];
+  /**
+   * ★★★ A-6 (§14.5.1, mục G-4) — VÙNG AN TOÀN / CHIA SẺ VỚI NGƯỜI, khối trong suốt.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ TÁI DÙNG `LopVung` CỦA MÀN THIẾT KẾ — KHÔNG VIẾT BẢN THỨ HAI (G12)
+   * ════════════════════════════════════════════════════════════════════════
+   * `thiet-ke/LopVung.tsx` + `thiet-ke/vungAnToan.ts` (49 test) đã giải trọn bài
+   * toán khó của A-6: bẫy hoán vị trục (`Shape` nằm trên X–Y, sàn nằm trên X–Z
+   * ⇒ quên xoay −90° cho ra một tấm ván DỰNG ĐỨNG giữa xưởng mà **không có gì
+   * nổ**), điểm đặt nhãn nằm trong vùng lõm, RB-7 dispose.
+   *
+   * Chép nó sang `van-hanh/` để "màn Vận hành có bản riêng" là đúng thứ G12 cấm,
+   * và cái giá đã đo được: hai bản cài đặt hiếm khi chỉ lệch MỘT chỗ. Nên lớp
+   * này `import` thẳng qua ranh giới thư mục — ranh giới đó là về **quyền ghi**
+   * (thiết kế sửa được, vận hành chỉ đọc), không phải về hình học.
+   *
+   * ★ VẬN HÀNH CHỈ ĐỌC: `onChon` KHÔNG được truyền xuống. Màn Thiết kế cho chọn
+   *   vùng để sửa; ở đây vùng là **bối cảnh**, và một cú bấm trúng vùng phải rơi
+   *   xuống máy phía dưới chứ không cướp lấy selection (NT-2 — cảnh vận hành chỉ
+   *   ĐỊNH VỊ và CHỌN MÁY).
+   *
+   * ★ NGÂN SÁCH: mỗi vùng là 1 mesh + 1 `<Html>`. Số vùng an toàn của một xưởng
+   *   đếm bằng ĐƠN VỊ, không bằng chục (đo được 2026-09-08: `twin_vat_the` có
+   *   **0 hàng `loai='vung'`** trên toàn hệ) — nên nó không đe doạ trần 30 nhãn
+   *   của §4 như nhãn máy. `tatNhan` vẫn được chuyển tiếp để bậc `tat_nhan` của
+   *   `matDoKhungHinh` tắt được cả nhãn vùng.
+   */
+  vung?: readonly VungVe[];
   machineIdChon: number | null;
   onChonMay: (machineId: number | null) => void;
   /** Khung nhìn đích; đổi giá trị ⇒ camera TWEEN tới (500 ms, §10C.2). */
@@ -276,6 +320,132 @@ function OngWip({ wip }: { wip: CanhVanHanhProps["wip"] }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
+/* A-4 — VÒNG VIỀN SỨC KHOẺ (§14.5.1, mục G-1 / F-15)                          */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Vòng viền quanh ĐẾ máy, tô theo hạng sức khoẻ.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ NGÂN SÁCH — MỘT `InstancedMesh` = **1 DRAW CALL** cho MỌI vòng
+ * ════════════════════════════════════════════════════════════════════════════
+ * §14.5.0: nhãn 3D tốn **1 draw call MỖI nhãn** và trần đọc-được là 30; màu trên
+ * thân tốn **0** vì đã nằm trong `BatchedMesh`. Vòng viền là thứ ba: nó KHÔNG
+ * miễn phí như màu thân, nhưng nó gộp được — 43 vòng (hay 240) vẫn là **1** call
+ * vì cùng hình học cùng material, chỉ khác ma trận và màu instance.
+ *
+ * Đo được trước lô này: cảnh 240 máy = **3 draw calls**, trần §4 là 150.
+ * Lớp này đưa 3 → **4**. Đó là cái giá đã biết và nói ra, khác hẳn với việc neo
+ * 43 nhãn troika (3 → 46) cho cùng một thông tin.
+ *
+ * ★ Vì sao `RingGeometry` chứ không `TorusGeometry`: ring là hình PHẲNG nằm trên
+ *   sàn (xoay -90° quanh X), nên nó không bao giờ che thân máy dù camera ở đâu.
+ *   Torus nhô lên khỏi sàn và ở góc nhìn thấp sẽ cắt ngang chân máy.
+ *
+ * ★ RB-7 — geometry và material tự cấp phát ⇒ `dispose()` trong cleanup.
+ * ★ `frameloop="demand"`: mọi thay đổi phải gọi `invalidate()`, nếu không lớp
+ *   này cập nhật buffer rồi đứng im cho tới khi ai đó chạm chuột (đúng bẫy đã
+ *   ghi ở `DieuKhien`).
+ */
+/**
+ * Hằng rỗng ỔN ĐỊNH cho `vienSucKhoe` khi người gọi không truyền.
+ *
+ * ★ `?? []` viết thẳng trong thân component sinh một mảng MỚI mỗi lần render,
+ *   làm `useEffect([vien])` của lớp chạy lại mỗi khung và gọi `invalidate()` —
+ *   tức là biến `frameloop="demand"` thành vòng lặp vô hạn im lặng. Đây là bẫy
+ *   đã trả giá ở lớp khác của kit, ghi ra để không ai "dọn" dòng này đi.
+ */
+const EMPTY_VIEN: readonly VienDeMay[] = [];
+
+/** Hằng rỗng ổn định cho `vung` — cùng lý do như {@link EMPTY_VIEN}. */
+const EMPTY_VUNG: readonly VungVe[] = [];
+
+function LopVienSucKhoe({ vien }: { vien: readonly VienDeMay[] }) {
+  const ref = useRef<THREE.InstancedMesh | null>(null);
+  const invalidate = useThree((s) => s.invalidate);
+
+  const { hinh, chatLieu } = useMemo(() => {
+    /*
+     * Vành ĐƠN VỊ: bán kính ngoài 1, trong 0,82 ⇒ bề dày 18% bán kính. Scale
+     * theo `banKinhM` lúc đặt, nên một hình học phục vụ mọi cỡ máy.
+     *
+     * ★ 48 phân đoạn: dưới ~32 vòng trông thành đa giác ở cận cảnh; trên 64 thì
+     *   thêm đỉnh mà mắt không phân biệt được. Đây là hình học DÙNG CHUNG cho
+     *   mọi instance nên chi phí trả MỘT lần, không nhân theo số máy.
+     */
+    const g = new THREE.RingGeometry(0.82, 1, 48);
+    // Nằm ngang trên sàn. `RingGeometry` sinh ra ở mặt phẳng XY.
+    g.rotateX(-Math.PI / 2);
+    const m = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+      // ★ `depthWrite: false` — vòng nằm SÁT sàn; ghi depth sẽ gây z-fighting
+      //   nhấp nháy với mặt sàn ở góc camera thấp.
+      depthWrite: false,
+    });
+    return { hinh: g, chatLieu: m };
+  }, []);
+
+  // ★ RB-7 — three KHÔNG tự thu hồi bộ nhớ GPU.
+  useEffect(
+    () => () => {
+      hinh.dispose();
+      chatLieu.dispose();
+    },
+    [hinh, chatLieu],
+  );
+
+  useEffect(() => {
+    const inst = ref.current;
+    if (!inst) return;
+    const mt = new THREE.Matrix4();
+    const mau = new THREE.Color();
+    vien.forEach((v, i) => {
+      const r = Math.max(0.05, v.banKinhM);
+      mt.compose(
+        // ★ NHÍCH LÊN KHỎI SÀN. Đặt đúng y=0 cho z-fighting với mặt sàn ngay cả
+        //   khi đã tắt `depthWrite` ở một số GPU. 12 mm — đủ để tách, đủ nhỏ để
+        //   vẫn đọc là "vòng trên sàn" chứ không phải "vòng lơ lửng".
+        new THREE.Vector3(v.x, 0.012, v.z),
+        new THREE.Quaternion(),
+        new THREE.Vector3(r, 1, r),
+      );
+      inst.setMatrixAt(i, mt);
+      /*
+       * ★★★ `motNhat` (lời khai HẾT HẠN) làm NHẠT MÀU, không đổi sang màu khác.
+       *   Hạng `het_han` đã có màu xám riêng từ `mauVienSucKhoe`; việc nhạt thêm
+       *   là lớp tín hiệu THỨ HAI cho cùng một sự thật, và nó cần thiết vì xám
+       *   nhạt trên nền xám sáng (§14.7.1) là cặp dễ lẫn nhất trong bảng màu.
+       */
+      mau.set(v.mau);
+      if (v.motNhat) mau.lerp(new THREE.Color("#ffffff"), 0.35);
+      inst.setColorAt(i, mau);
+    });
+    inst.count = vien.length;
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    invalidate();
+  }, [vien, invalidate]);
+
+  if (vien.length === 0) return null;
+  return (
+    <instancedMesh
+      ref={ref}
+      args={[hinh, chatLieu, Math.max(1, vien.length)]}
+      frustumCulled={false}
+      // ★ `renderOrder` — vẽ SAU sàn, TRƯỚC máy. Vòng trong suốt phải hoà với
+      //   sàn phía dưới nó, nhưng không được đè lên thân máy phía trên.
+      renderOrder={1}
+      // Vòng là CHỈ BÁO, không phải đích bấm: chọn máy vẫn đi qua `LoBatchMay`.
+      // Không đặt `raycast` rỗng ở đây thì một vòng lớn sẽ nuốt cú bấm vào máy
+      // bên cạnh — và người dùng bấm máy A lại chọn trúng máy B.
+      raycast={() => null}
+    />
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
 /* Nội dung cảnh                                                                */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -294,6 +464,8 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
     tatNhan,
     toi,
   } = props;
+  const vienSK = props.vienSucKhoe ?? EMPTY_VIEN;
+  const vungAT = props.vung ?? EMPTY_VUNG;
 
   const controlsRef = useRef<OrbitControls | null>(null);
   const [chon, setChon] = useState<TrangThaiChon>(TRANG_THAI_CHON_RONG);
@@ -333,6 +505,13 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
         onCameraDoi={camDoi}
       />
       <San rongM={sanRongM} sauM={sanSauM} toi={toi} />
+      {/* ★ A-6 — VÙNG AN TOÀN, sát sàn nhất, dưới cả vòng sức khoẻ. Nó là NỀN
+          bối cảnh ("chỗ này chia sẻ với người"), không phải chỉ báo về một máy.
+          ★ KHÔNG truyền `onChon`: vận hành chỉ đọc, cú bấm thuộc về máy. */}
+      <LopVung vung={vungAT} tatNhan={tatNhan} />
+      {/* ★ A-4 TRƯỚC `LoBatchMay`: vòng nằm dưới chân máy, phải vẽ trước để thân
+          máy đè lên phần vòng bị che — đúng thứ tự vật lý của cảnh. */}
+      <LopVienSucKhoe vien={vienSK} />
       <LoBatchMay may={may} chon={chon} onChon={khiChon} onHover={khiHover} />
       {dongChay ? <DongChayLine dongChay={dongChay} /> : null}
       <OngWip wip={wip} />

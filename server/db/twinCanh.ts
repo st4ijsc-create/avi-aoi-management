@@ -2039,3 +2039,154 @@ export async function xoaBanGhi(
   await d.delete(twinBanGhi).where(eq(twinBanGhi.id, id));
   return { daXoa: true, daTungXuatBan: h.daXuatBan };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ĐỢT 21 LÔ Z — A-4: SỨC KHOẺ MÁY + NGUY CƠ HỎNG (§14.5.1, mục G-1 / F-15)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ★★★ ĐO ĐƯỢC TRƯỚC KHI VIẾT (2026-09-08, DB dev `aoi_management`):
+//     machine_health_history        180.800 hàng · mới nhất 2026-09-08 09:40
+//     43/43 máy có ≥ 1 hàng · 42/43 máy có hàng trong 24h · 1 máy cũ 18 ngày
+//     healthScore          NULL 0/180.800 · miền [55…100]
+//     predictedFailureRisk NULL 0/180.800 · 48.550 hàng khác 0
+//     maintenanceUrgency   NULL 0/180.800 · LOW 158.439 · MEDIUM 10.476
+//                                         · CRITICAL 6.199 · HIGH 5.728
+//
+//     ⇒ G50 ĐƯỢC KIỂM, KHÔNG ĐƯỢC GIẢ ĐỊNH. "Có dữ liệu" ≠ "dùng được" là bài học
+//     `product_inspections` (2.880 hàng mà 2.880/2.880 `factoryCode` NULL ⇒ vai
+//     không-admin thấy 0). Ở đây phép đếm NULL trên bốn cột được chạy THẬT và ra
+//     0 trên cả bốn — đó là cơ sở để A-4 được xây, và nó là số chứ không phải
+//     niềm tin rằng bảng có hàng thì bảng dùng được.
+//
+// ★★★ VÌ SAO KHÔNG DÙNG `digitalTwin.twinState` — nó có `phamViCua` (Q1 đã vá,
+//     `digitalTwinRouter.ts:85`), nên đây KHÔNG phải chuyện G49. Hai lý do khác:
+//
+//     1. **Nó KHÔNG trả mốc thời gian.** `twinState` trả `healthScore` trần, đã
+//        vứt `timestamp` sau khi dùng để sắp xếp. Một điểm sức khoẻ không kèm mốc
+//        thì `conHanSucKhoe` không kiểm được hạn, và G30 nói thẳng: giá trị từ
+//        bảng phân tích phải kèm HẠN HIỆU LỰC. Với một bảng lịch sử mà máy cũ
+//        nhất cách 18 ngày, đây không phải lo xa — nó là ca đo được.
+//     2. **Nó kéo TOÀN BỘ hàng của mọi máy về app-layer rồi mới lọc** (`.orderBy`
+//        trên cả tập, dedupe bằng `Map` trong vòng lặp JS). Với 180.800 hàng và
+//        43 máy, đó là ~4.200 hàng/máy đi qua dây cho MỘT số. `DISTINCT ON` đẩy
+//        phép chọn xuống Postgres và trả đúng 43 hàng — cùng kỹ thuật
+//        `traAnToanRobot` đã dùng cho `robot_telemetry`.
+//
+// ⇒ Đường mới này KHÔNG đụng `twinState`; `DigitalTwinDashboard.tsx:49` vẫn chạy
+//   nguyên như cũ. §14.5.5 D-3 xếp bảng máy của màn đó vào nhóm "không lên 3D",
+//   nhưng rút nó là việc của lô khác — lô này không xoá màn.
+
+/** Một lời khai sức khoẻ của MỘT máy — khớp `KhaiSucKhoe` phía client. */
+export interface SucKhoeMayRa {
+  machineId: number;
+  ma: string;
+  /** `healthScore` 0–100. `null` = CHƯA ĐO, không phải 0 (NT-3.5). */
+  diem: number | null;
+  /** `predictedFailureRisk` 0–100. `null` = chưa đo. */
+  nguyCo: number | null;
+  /** `maintenanceUrgency` — nguyên văn enum CSDL (G24). */
+  mucKhan: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
+  /** `recommendedMaintenanceDate` ms epoch. Đo được: NULL 108.624/180.842 hàng. */
+  hanBaoTri: number | null;
+  /** ms epoch của chính bản ghi — thứ `conHanSucKhoe` cần (G30). */
+  mocMs: number | null;
+}
+
+const MUC_KHAN_HOP_LE = new Set(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
+
+/**
+ * Sức khoẻ MỚI NHẤT của mỗi máy trong một nhà máy, đã lọc phạm vi tenant.
+ *
+ * ★★★ G49 — CỔNG PHẠM VI NẰM TRONG `traCayPhanCapNhaMay`, đúng chỗ và ĐÚNG MỘT
+ *   chỗ. Nhà máy ngoài phạm vi ⇒ cây rỗng ⇒ `ids` rỗng ⇒ trả `[]`. KHÔNG đặt
+ *   cổng thứ hai ở đây: hai cổng nối tiếp che mất chỗ cổng thật sự được áp —
+ *   nguyên văn lý lẽ đã ghi ở `traAnToanRobot` và `traTrangThaiHangLoat`.
+ *
+ * ★ `DISTINCT ON ("machineId") … ORDER BY "machineId", "createdAt" DESC` — MỘT
+ *   truy vấn, trả đúng ≤ N hàng cho N máy. Số truy vấn CỐ ĐỊNH (2: cây + sức
+ *   khoẻ), không phụ thuộc số máy.
+ *
+ * ⚠ Sắp theo `"createdAt"` chứ KHÔNG `"timestamp"`: hai cột này khác nhau
+ *   (`timestamp` = mốc của KỲ ĐO, `createdAt` = lúc hàng được GHI), và `createdAt`
+ *   là cái trả lời đúng câu "lời khai này bao nhiêu tuổi". `twinState` sắp theo
+ *   `timestamp` — khác lựa chọn, và đây là chỗ nói ra sự khác đó thay vì để hai
+ *   đường âm thầm bất đồng.
+ */
+export async function traSucKhoeMay(
+  factoryId: number,
+  scope?: PhamViNguoiXem,
+): Promise<SucKhoeMayRa[]> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const cay = await traCayPhanCapNhaMay(factoryId, scope);
+  if (cay.may.length === 0) return [];
+
+  const ids = cay.may.map((m) => m.id);
+  const maTheoId = new Map(cay.may.map((m) => [m.id, m.ma]));
+
+  const hang = executeRows(
+    await d.execute(sql`
+      SELECT DISTINCT ON ("machineId")
+             "machineId"                   AS machine_id,
+             "healthScore"                 AS diem,
+             "predictedFailureRisk"        AS nguy_co,
+             "maintenanceUrgency"::text    AS muc_khan,
+             "recommendedMaintenanceDate"  AS han_bao_tri,
+             "createdAt"                   AS moc
+      FROM machine_health_history
+      WHERE "machineId" IN (${sql.join(
+        ids.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+      ORDER BY "machineId", "createdAt" DESC
+    `),
+  ) as Array<{
+    machine_id: number;
+    diem: number | string | null;
+    nguy_co: number | string | null;
+    muc_khan: string | null;
+    han_bao_tri: Date | string | null;
+    moc: Date | string | null;
+  }>;
+
+  /*
+   * ★ `Number(...)` TƯỜNG MINH cho mọi cột số. `healthScore` là `integer` nên
+   *   driver trả number, NHƯNG `executeRows` đi qua `d.execute` (SQL thô) và
+   *   kiểu ở đó không được drizzle bảo chứng. Ép ở đây một lần, kèm chặn NaN —
+   *   rẻ hơn nhiều so với một `NaN` lặng lẽ chảy tới `hangSucKhoe()` và biến
+   *   mọi so sánh ngưỡng thành `false` (⇒ mọi máy ra hạng `khoe`, cổng xanh).
+   */
+  const so = (v: unknown): number | null => {
+    if (v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const moc = (v: Date | string | null): number | null => {
+    if (v == null) return null;
+    const t = v instanceof Date ? v.getTime() : Date.parse(v);
+    return Number.isFinite(t) ? t : null;
+  };
+
+  return hang.map((h) => {
+    const id = Number(h.machine_id);
+    return {
+      machineId: id,
+      ma: maTheoId.get(id) ?? String(id),
+      diem: so(h.diem),
+      nguyCo: so(h.nguy_co),
+      /*
+       * ★ Giá trị enum LẠ ⇒ `null`, không ép bừa. Enum CSDL đo được có đúng bốn
+       *   nhãn, nhưng một migration tương lai thêm nhãn thứ năm sẽ chảy qua đây;
+       *   trả nguyên văn chuỗi lạ ra client là để `hangSucKhoe` gặp một giá trị
+       *   nó không biết và im lặng xếp sai hạng.
+       */
+      mucKhan:
+        h.muc_khan != null && MUC_KHAN_HOP_LE.has(h.muc_khan)
+          ? (h.muc_khan as SucKhoeMayRa["mucKhan"])
+          : null,
+      hanBaoTri: moc(h.han_bao_tri),
+      mocMs: moc(h.moc),
+    };
+  });
+}
