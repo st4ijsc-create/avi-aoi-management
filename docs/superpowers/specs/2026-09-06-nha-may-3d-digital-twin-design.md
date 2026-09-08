@@ -4974,6 +4974,69 @@ tho** (1.573.478) - khong lam mu thiet bi do cua chinh minh.
 
 ---
 
+## 13i. DOT 24 - BA MON CUOI, va **LO DOC XUYEN TENANT O VO UNG DUNG** (2026-09-08)
+
+Commit `65dcd2b4`. Cong: **66 tep / 1.890 test** (nen 1.873, **+17**) - `check` 0 - `build` 0 -
+DB `2/43/82` - 5 anh lo C md5 nguyen ven.
+
+### 13i.1 Viec 1 - lo **RONG HON** chan doan cua chu du an
+
+Chu du an neu **`active`**. Do lai: **ca BON thu tuc DOC** thieu `ctx` - `active` · `list` · `get` ·
+`metrics`. **Lo R (Dot 15) chi va DUONG GHI** (`acknowledge`/`resolve`) roi **dung o do**.
+
+> #### ★★★ G81 - **SO NO CO SAN BIET TRUOC, MA KHONG AI DOC**
+> Dot 24 tim thay **xac nhan doc lap ma no khong tu suy ra**: so no
+> `phamViDocBaseline.ts:121` **da liet ke dung bon thu tuc do** duoi muc `andonRouter.ts (4)`.
+> ⇒ Lo hong **da duoc ghi lai tu truoc**, chi la **khong ai doc so no truoc khi tuyen bo da va xong**.
+> Cung ho **G58** (*va moi `create` la de nguyen cua cho `delete`*): mot ban va theo **ten thu tuc brief
+> chi** thay vi theo **ca router** se luon de sot - va lan nay **cai so no da noi truoc so sot la 4**.
+
+**Chung minh hai chieu qua HTTP that, `dist`, vai khong-admin:**
+
+| Vai | Duoc gan | Truoc | Sau |
+|---|---|---|---|
+| `operator1` | **0** | **7 hang** | **0** |
+| `e2e_tai_loE` | 1 (SIM-FAC) | 7 hang | **7** |
+
+Ca hai **HTTP 200, `appCode: null`** - bi chan boi **cong pham vi**, khong phai RBAC (**G43**).
+**Ablation**: go dung menh de roi dung lai ⇒ `operator1` **doc lai duoc ca 7**.
+Cong dat **trong `WHERE`**, khong phai sau `limit(200)`. Census `A: 355 → 351`, go **4 dong so no da tra**.
+
+### 13i.2 Viec 3 - goc re **SAU HON** chan doan, va mot nhanh **chet**
+
+Chu du an chi vao `docXemTuQuery`. Do duoc (`.qa-dot24/probe.mjs`): **`NganXuLy.tsx:262` tra ve som
+khi `machineId === null`**, va `<NganNhung>` nam **SAU** do ⇒ `?xem=` **khong mo gi ca, ke ca voi id
+hoan toan hop le**.
+⇒ **Mot ban va "them cau bao ly do" se KHONG BAO GIO CHAY.** Nay `<NganNhung>` render o **ca hai nhanh**.
+
+> #### ★★★ G82 - **"BA CAU KHAC NHAU" CO THE LA MOT YEU CAU KHONG DO DUOC**
+> Chu du an doi phan biet **ba** ly do: *khong ton tai* · *ngoai pham vi* · *thieu quyen*.
+> Dot 24 do: `/twin` **khong co truy van toan-bo-may**, nen *"khong ton tai"* va *"cua nha may khac"*
+> **cung mot hinh dang o client** - **co chu y**: mot ma loi rieng cho *"khong ton tai"* **tu no xac nhan
+> vat the CO TON TAI**, tuc ro thong tin. Tach chung doi mot vong server **mo lai dung lo vua dong**.
+> ⇒ Giao **hai ly do trung thuc** thay vi **ba, trong do mot la nhanh chet**. **Yeu cau cua chu du an
+> sai**, va cai sai nam o cho no **nghe hop ly hon** cai dung.
+
+### 13i.3 Viec 2 + ba dinh chinh khac
+
+`chiNhanBatThuong` nay **co nut**: `duongDanTwin.ts:170` (them ten vao **danh sach dong** - **G67**),
+doc URL `TwinVanHanh.tsx:2200`, nut `aria-pressed` `:2975`, prop `:3362`. Dung lai khoa `thu=` (**G40**);
+test ghim **dung mot khoa query** bi cham.
+
+- **Ky vong V5 cua chinh Dot 24 sai**: `operator1` **khong bao gio toi duoc ngan** - `EmptyState` toan
+  man o `:2608` **da tra loi dung**. No **viet lai test de do hanh vi that**.
+- **Phep dem `<NganNhung` dau tien tra 3** vi **docblock cua chinh no** chua chuoi do - **thiet bi do
+  sai, khong phai ma sai** (ho **G44**).
+- **Census `C`/`D` va 3 dong so no le do san tren HEAD sach** - Dot 24 **khong hap thu vao so cua minh**,
+  de chu so huu ky. Dung.
+
+### 13i.4 Don server do - do bang **liet ke cong** (G78)
+
+Dot 24 khai giet cong 3005. Chu du an do lai luc **22:40**: con **3006** (PID 37552, khoi dong **22:37**
+- **sau** luot don 22:07 cua chu du an, tuc cua chinh Dot 24). Da giet theo PID.
+**Xac minh cuoi:** `Get-NetTCPConnection` dai **3002-3200** ⇒ **0 server do**; cong **3000 (PID 28480)
+cua phien khac** ⇒ **con nguyen**.
+
 ## 14. Rủi ro`** từ trước. Chiếm lại số 14 sẽ tạo hai mục cùng số trong một tệp sắp đem
 > ra bàn — đúng kiểu nhầm lẫn mà một bản thiết kế không được phép gây ra. Nội dung được yêu cầu nằm
 > nguyên vẹn ở đây, đặt ngay trước §14 cũ. Cùng lý do và cùng cách xử lý với §12b.
