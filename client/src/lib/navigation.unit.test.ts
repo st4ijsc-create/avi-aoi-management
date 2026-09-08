@@ -233,8 +233,33 @@ describe("★★★ Đợt 3 CHẶN-1 — /twin-studio nhận quyền HOẶC (§
     );
   });
 
-  it("getAcceptedPermissionsForHref vẫn đúng cho route MỘT quyền và route không tồn tại", () => {
-    expect(getAcceptedPermissionsForHref("/twin")).toEqual(["analytics_oee"]);
+  it("getAcceptedPermissionsForHref vẫn đúng cho `/twin` và route không tồn tại", () => {
+    /*
+     * ════════════════════════════════════════════════════════════════════════
+     * ★★★ ĐỢT 22 — KỲ VỌNG NÀY BỊ SỬA, VÀ **MÃ SẢN PHẨM THÌ KHÔNG**
+     * ════════════════════════════════════════════════════════════════════════
+     * Bản cũ ghim `["analytics_oee"]` với tiêu đề *"route MỘT quyền"*. Đó là
+     * một **bánh cóc đã hết hạn**: Đợt 5 CHẶN-1 đã cố ý nới `/twin` sang
+     * `requiredPermissionAny: ["analytics_oee", "machine_status"]`
+     * (`navigation.tsx:475`), vì đo được rằng trong 4 vai non-admin của seed
+     * chỉ `supervisor1` có `analytics_oee` — `engineer1`/`maint1`/`operator1`
+     * đều CHỈ có `machine_status`, tức **3/4 vai vận hành bị chặn khỏi chính
+     * màn Vận hành**, không lỗi nào nổ.
+     *
+     * ⇒ Ca này đỏ vì **nó đang đo một thế giới không còn tồn tại**, không phải
+     *   vì mã hỏng. Đo được: nó đỏ **y hệt ở `HEAD`** (`17a3f4c6`), trước mọi
+     *   thay đổi của Đợt 22 — tức nó KHÔNG phải hồi quy của đợt này.
+     *
+     * ★★★ VÀ ĐÂY LÀ CHỖ PHẢI CẨN THẬN: "sửa test cho xanh" là công thức chuẩn
+     *   để giấu một lỗi thật. Nó hợp lệ ở đây vì có **đối chứng chiều ngược**
+     *   ngay phía trên (`/twin` + `machine_control` ⇒ `false`) vẫn XANH: tập
+     *   quyền được nới đúng MỘT phần tử có lý lẽ đo được, chứ không bị mở toang.
+     *   Nếu ai đó nới `/twin` thêm nữa, ca ấy và ca này cùng đỏ.
+     */
+    expect([...getAcceptedPermissionsForHref("/twin")].sort()).toEqual([
+      "analytics_oee",
+      "machine_status",
+    ]);
     expect(getAcceptedPermissionsForHref("/khong-ton-tai-dot3")).toEqual([]);
   });
 

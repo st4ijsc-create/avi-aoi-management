@@ -271,7 +271,11 @@ export function DanhSachMay({
   const idOChon = hienThi[conTroAnToan] ? `may-oo-${hienThi[conTroAnToan].id}` : undefined;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="danh-sach-may">
+    // ★ ĐỢT 22 — `basis-0` thêm vào: không có nó, một anh em flex khác được cấp
+    //   chiều cao NỘI DUNG trước và khối này còn 0 px. Đo được: dải cảnh báo
+    //   (27 hàng) lấy 715/849 px và danh sách máy về **h=0**; ablation xác nhận
+    //   nguyên nhân. Xem docblock chỗ bọc dải cảnh báo ở `TwinVanHanh.tsx`.
+    <div className="flex min-h-0 flex-1 basis-0 flex-col" data-testid="danh-sach-may">
       <div className="shrink-0 p-2">
         <Input
           value={loc}

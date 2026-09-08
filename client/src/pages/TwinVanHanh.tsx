@@ -107,7 +107,22 @@ import {
   yeuCauBiBoQua,
   type MucChon,
 } from "@/components/twin3d/van-hanh/boChonNap";
+import { cn } from "@/lib/utils";
 import { BoChonNapUI } from "@/components/twin3d/van-hanh/BoChonNapUI";
+// ── ĐỢT 22 Z4 (G-7) — cây phân cấp CÓ ROLL-UP, TÁI DÙNG `CayPhanCap` ────────
+// ★ Lý lẽ đầy đủ (đo được, G70/G12) nằm ở docblock đầu `cayVanHanh.ts`. Tóm
+//   tắt: `CayPhanCap` là component ĐIỀU KHIỂN THUẦN, `CayThietKe` là CẤU TRÚC
+//   DỮ LIỆU (không phải trạng thái sửa), và `canhQ` ĐÃ trả sẵn cả năm mảng
+//   nó cần — nên đây là 0 truy vấn mới và 0 bản cài đặt thứ hai.
+import { CayPhanCap } from "@/components/twin3d/thiet-ke/CayPhanCap";
+import { dungCayThietKe, type KhoaNode } from "@/components/twin3d/thiet-ke/trangThaiThietKe";
+import { demTrucTiep } from "@/components/twin3d/thiet-ke/cayPhanCapLogic";
+import {
+  demMayTrucTiep,
+  dieuHuongTuKhoa,
+  lineCuaMay,
+  tapChonTuUrl,
+} from "@/components/twin3d/van-hanh/cayVanHanh";
 import {
   bboxCuaTap,
   dungBreadcrumb,
@@ -1405,6 +1420,17 @@ export default function TwinVanHanh() {
   const [chonMucCanhBao, setChonMucCanhBao] = useState<ChonMuc>("tat_ca");
 
   /**
+   * ★ Z4 — panel trái đang ở chế độ CÂY hay DANH SÁCH. Hai thứ LOẠI TRỪ nhau
+   *   (xem docblock chỗ render): chúng trả lời cùng một câu hỏi, và bày cả hai
+   *   trong một cột 224 px làm `DanhSachMay` bị bóp về h=0 cùng hai ô lọc chồng
+   *   lên nhau — cả hai đều đo được trên ảnh nghiệm thu đầu tiên.
+   *
+   * ★ Mặc định `false` = DANH SÁCH: đó là thứ đang dùng được từ trước Đợt 22.
+   *   Một tính năng mới không được tự đẩy tính năng cũ ra khỏi màn.
+   */
+  const [hienCay, setHienCay] = useState(false);
+
+  /**
    * #15 — phạm vi đang chọn dưới dạng bốn tập id.
    *
    * ★ `null` khi cấp `tapDoan`/`nhaMay` hoặc `id` chưa phân giải: đó là "chưa
@@ -1438,6 +1464,134 @@ export default function TwinVanHanh() {
     }
     return { workshopIds: new Set<number>(), lineIds, stationIds, machineIds };
   }, [phamVi, mayVanHanh, datChoTheoMay]);
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ ĐỢT 22 · Z4 (G-7) — CÂY PHÂN CẤP CÓ ROLL-UP, TRÊN MÀN VẬN HÀNH      */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ §12b.2 NÓI G-7 LÀ "MẶT ĐIỀU HƯỚNG ĐA SITE DUY NHẤT" — VÀ TRƯỚC ĐỢT
+   *     NÀY `/twin` **KHÔNG CÓ CÂY NÀO**
+   * ════════════════════════════════════════════════════════════════════════
+   * Đo được 2026-09-08 (G70 — đếm bằng `<CayPhanCap`, KHÔNG bằng tên chuỗi):
+   *   · `<CayPhanCap` render : **1** chỗ — `XuongThietKe.tsx:946` (màn Thiết kế)
+   *   · `import { CayPhanCap }` : **1** — `XuongThietKe.tsx:102`
+   *   · `TwinVanHanh.tsx` khớp chuỗi "CayPhanCap" **1** lần, và đó là một
+   *     CHÚ THÍCH nhắc `traCayPhanCapNhaMay` — G44: ba dạng đếm riêng.
+   * Điều hướng của `/twin` trước đợt này là **breadcrumb một nhánh** (`:2143`
+   * `dungBreadcrumb`) + ba `<select>` (`BoChonNapUI`). Cả hai đều KHÔNG cho
+   * nhìn thấy hai nhánh cùng lúc, nên câu "line nào đang đỏ" phải đi qua từng
+   * lượt chọn — đúng thứ một cây gộp trả lời trong một cái liếc.
+   *
+   * ★★★ CÂY NÀY **CHỈ ĐỌC**. `onChon` KHÔNG sửa gì; nó dịch khoá node thành
+   *   thay đổi URL. Đây đúng khuôn lô Z dùng với `LopVung`: tái dùng BỀ MẶT,
+   *   không tái dùng ngữ nghĩa GHI. Cụ thể, ba prop mang nghĩa sửa của màn
+   *   Thiết kế **không được truyền**: không `onDoiPhamVi` kiểu ghi, và
+   *   `soChoXepCho` chỉ là con số hiển thị.
+   */
+
+  /**
+   * Cây phân cấp dựng từ CHÍNH `canhQ` — **0 truy vấn mới**.
+   *
+   * ⚠ `dungCayThietKe` đòi `datCho` để tách "đứng trên sàn" khỏi "khu chờ", và
+   *   `canhQ.datCho` chỉ có khi `tangIds` đã phân giải. Trước lúc đó cây rỗng
+   *   và mọi máy rơi vào khu chờ — ĐÚNG câu ("chưa biết máy nào ở đâu"), nhưng
+   *   nó nhấp nháy một khung. Chấp nhận: sai lệch duy nhất là nhánh khu chờ
+   *   đầy trong ~1 lượt render, và nó tự đúng ngay sau đó.
+   */
+  const cayVanHanhData = useMemo(
+    () =>
+      dungCayThietKe(
+        // ★ `traCayPhanCapNhaMay` KHÔNG trả `tangId` (xưởng chưa gắn tầng ở mô
+        //   hình hiện tại). Bù `null` TƯỜNG MINH — cùng cách `XuongThietKe.tsx:254`
+        //   làm, và `null` ở đây nghĩa "chưa gắn", không phải "tầng 0".
+        (canhQ.data?.xuong ?? []).map((x) => ({ ...x, tangId: null })),
+        canhQ.data?.chuyen ?? [],
+        canhQ.data?.tram ?? [],
+        (canhQ.data?.may ?? []).map((m) => ({
+          id: m.id,
+          ma: m.ma,
+          ten: m.ten,
+          loaiMay: String(m.loaiMay),
+          isActive: m.isActive,
+          stationId: m.stationId,
+        })),
+        canhQ.data?.datCho ?? [],
+      ),
+    [canhQ.data],
+  );
+
+  /** Roll-up SỐ MÁY — component cộng dồn bằng `ropCanhBao` (một phép cộng). */
+  const soMayTrucTiepCay = useMemo(() => demMayTrucTiep(cayVanHanhData), [cayVanHanhData]);
+
+  /**
+   * Roll-up SỐ CẢNH BÁO — **đại lượng KHÁC**, bản đồ RỜI (chống §13d Z3).
+   *
+   * ★ Nguồn là `canhBaoSeed` + `canhBaoSong` — CÙNG nguồn mà `DaiCanhBao` đọc,
+   *   nên hai bề mặt không thể nói hai con số khác nhau về cùng một nhà máy.
+   *
+   * ⚠ `stationId` là **NULL ở 7/7 hàng andon đang mở** trên DB dev (đo được,
+   *   ghi ở docblock `demTrucTiep`), nên gắn qua `machine:` là đường DUY NHẤT
+   *   thật sự trúng. Gắn thêm qua `line:` sẽ **đếm hai lần** khi một cảnh báo
+   *   mang cả `machineId` lẫn `lineId` — nên ở đây CHỈ dùng `machineId`.
+   */
+  const canhBaoTrucTiepCay = useMemo(() => {
+    const khoa: KhoaNode[] = [];
+    for (const c of [...canhBaoSeed, ...canhBaoSong]) {
+      if (c.machineId != null) khoa.push(`machine:${c.machineId}`);
+    }
+    return demTrucTiep(khoa);
+  }, [canhBaoSeed, canhBaoSong]);
+
+  /** Node đang chọn — vế NGƯỢC của đồng bộ hai chiều (click 3D ⇒ cây bung). */
+  const tapChonCay = useMemo(
+    () => tapChonTuUrl(urlState.chon ?? null, phamVi),
+    [urlState.chon, phamVi],
+  );
+
+  /** `machineId → stationId`, để suy line của máy khi chạm node máy trong cây. */
+  const stationCuaMay = useMemo(() => {
+    const m = new Map<number, number | null>();
+    for (const mv of mayVanHanh) m.set(mv.id, mv.stationId);
+    return m;
+  }, [mayVanHanh]);
+
+  /**
+   * ★★★ CHẠM NODE CÂY = ĐIỀU HƯỚNG. Không một đường ghi nào ở đây.
+   *
+   * ★ Chạm MÁY đặt CẢ HAI: `chon` (mở panel) **và** `phamVi` về line chứa nó.
+   *   Chỉ đặt `chon` thì bấm một máy ở line khác mở panel cho một máy **không
+   *   có trên cảnh đang xem** — hai bề mặt nói hai câu khác nhau.
+   * ★ `lineCuaMay` trả `null` ⇒ GIỮ NGUYÊN phạm vi (không "về gốc").
+   * ★ `giuShift` bị BỎ QUA có chủ đích: chọn-nhiều là ngữ nghĩa của trình SỬA
+   *   (kéo cả cụm máy). Màn Vận hành xem một thứ tại một thời điểm.
+   */
+  const chamNodeCay = useCallback(
+    (khoa: KhoaNode | null) => {
+      if (khoa === null) {
+        ghiUrl({ chon: null });
+        return;
+      }
+      const dh = dieuHuongTuKhoa(khoa);
+      if (dh === null) return;
+      if (dh.chon?.loai === "machine") {
+        const line = lineCuaMay(dh.chon.id, stationCuaMay, lineCuaTram);
+        ghiUrl({
+          chon: dh.chon,
+          ...(line !== null && phamVi.id !== line ? { phamVi: { cap: "line", id: line } } : {}),
+        });
+        return;
+      }
+      // Xưởng: `{phamVi:null, chon:null}` ⇒ KHÔNG ghi gì. Node vẫn mở/gập được
+      // bằng mũi tên (component tự lo) — nó là node GỘP, không phải đích đến.
+      if (dh.phamVi === null && dh.chon === null) return;
+      ghiUrl({
+        ...(dh.phamVi !== null ? { phamVi: dh.phamVi } : {}),
+        ...(dh.chon !== null ? { chon: dh.chon } : {}),
+      });
+    },
+    [ghiUrl, stationCuaMay, lineCuaTram, phamVi.id],
+  );
 
   /* ── Phạm vi Line (§10C.3) ──────────────────────────────────────────── */
   const hinhLine = useMemo(() => {
@@ -2882,6 +3036,33 @@ export default function TwinVanHanh() {
               `andon:event` phát vào 3 phòng ⇒ 2-3 dòng cho một sự cố), KHÔNG
               tách nhóm >24h (#13), KHÔNG có chip lọc mức (#14), và hiện "0
               cảnh báo" khi truy vấn 403 thay vì `—` (G15). */}
+          {/*
+            ════════════════════════════════════════════════════════════════
+            ★★★ ĐỢT 22 — LỖI **CÓ SẴN**: DẢI CẢNH BÁO NUỐT CẢ PANEL TRÁI
+            ════════════════════════════════════════════════════════════════
+            Đo được 2026-09-08 trên `dist` (1920×1080, `e2e_tai_loE`), panel
+            trái cao 849 px:
+              · `khoi-tong-quan`  h=105  (`flex-grow: 0`)
+              · `dai-canh-bao`    h=715  (`flex-grow: 0`)  ← 84 % panel
+              · `danh-sach-may`   h=  0  (`flex-grow: 1`)  ← **BIẾN MẤT**
+
+            ★★★ ABLATION (chống G5 — "cái gì gây ra?" chứ không "cái gì có mặt"):
+              gỡ khối cây khỏi DOM  ⇒ `danh-sach-may` VẪN **0**  (cây vô can)
+              gỡ thêm `dai-canh-bao` ⇒ `danh-sach-may` = **744**  ← nguyên nhân
+
+            ⇒ Đây là lỗi **CÓ TRƯỚC Đợt 22**, không phải hồi quy của Z4. Gốc rễ:
+              `DaiCanhBao` gốc khai `h-full min-h-0 flex-col` nhưng ở đây nó là
+              một flex item **không có `flex-1` cũng không có trần**, nên nó lấy
+              chiều cao theo NỘI DUNG (27 cảnh báo × ~26 px), và anh em `flex-1`
+              của nó chỉ còn phần dư — bằng 0.
+
+            ⇒ Bọc bằng `min-h-0 flex-1` và cho `danh-sach-may` cùng hạng: hai
+              khối cùng co được thì phần dư chia theo nội dung thay vì một bên
+              lấy hết. `basis-0` là điều BẮT BUỘC — không có nó, flexbox chia
+              phần dư SAU khi đã cấp chiều cao nội dung, và 715 px kia vẫn được
+              cấp trước.
+          */}
+          <div className="flex min-h-0 flex-1 basis-0 flex-col overflow-hidden">
           <DaiCanhBao
             seed={canhBaoSeed}
             song={canhBaoSong}
@@ -2893,16 +3074,115 @@ export default function TwinVanHanh() {
             khongDoDuoc={andonQ.isError}
             onChonCanhBao={(c) => c.machineId != null && chonMay(c.machineId)}
           />
+          </div>
 
-          {/* ★ DANH SÁCH MÁY — DOM thật, mọi hành động làm được từ đây (§9.9) */}
-          <DanhSachMay
-            may={mayVanHanh}
-            trangThaiTheoMay={trangThaiTheoMay}
-            machineIdChon={machineIdChon}
-            onChonMay={chonMay}
-            bayGio={bayGio}
-            dangTai={dangTai}
-          />
+          {/*
+            ════════════════════════════════════════════════════════════════
+            ★★★ ĐỢT 22 · Z4 (G-7) — CÂY PHÂN CẤP CÓ ROLL-UP
+            ════════════════════════════════════════════════════════════════
+            §12b.2 xếp G-7 là "mặt điều hướng đa site duy nhất", và trước đợt
+            này `/twin` **không có cây nào** (đo được, G70 — xem docblock
+            `cayVanHanhData` ở trên).
+
+            ════════════════════════════════════════════════════════════════
+            ★★★ CÂY và DANH SÁCH MÁY **LOẠI TRỪ NHAU** — và bản đầu của Z4
+                KHÔNG thế, nghiệm thu thị giác bắt được ba hậu quả
+            ════════════════════════════════════════════════════════════════
+            Bản đầu dùng `<details open:flex-1>` đứng CẠNH `DanhSachMay`
+            (cũng `flex-1`), với lý lẽ "hai khối chia nhau phần co được". Ảnh
+            `Z4-cay-mo-1080.png` bác bỏ cả ba vế của lý lẽ ấy:
+
+              1. `DanhSachMay` KHÔNG co lại — nó bị bóp về **h = 0**
+                 (`hien: false`, đo được). Không phải "nhường chỗ", mà là
+                 **biến mất**, và không lỗi nào nổ.
+              2. **HAI ô "Filter by name or code…" chồng lên nhau** ở y≈777 và
+                 y≈808 — một của `DanhSachMay`, một của `CayPhanCap`. Hai ô
+                 tìm kiếm cho cùng một câu hỏi, đè lên cả nhãn "HIERARCHY".
+              3. Cây tràn khỏi khung: hộp y=784 h=393 ⇒ đáy **1177 > 1080**,
+                 hàng line cuối nằm sau thanh thời gian.
+
+            ★★★ GỐC RỄ KHÔNG PHẢI CSS — nó là **IA**: cây và danh sách máy trả
+              lời **CÙNG MỘT CÂU HỎI** ("chọn máy/line nào"), chỉ khác hình
+              dạng (phân cấp vs phẳng). §13b 14.1.3 đã đặt tên cho đúng bệnh
+              này: *"bảy tab là bảy câu trả lời cho cùng một câu hỏi"*. Bày cả
+              hai cùng lúc trong một cột 224 px là tái phạm ở quy mô nhỏ.
+
+            ⇒ Chúng **LOẠI TRỪ NHAU** bằng một công tắc thật (`? :`, không phải
+              ẩn bằng CSS): đúng một khối `flex-1` tồn tại tại một thời điểm,
+              nên `DanhSachMay` không thể bị bóp về 0 và không thể có hai ô lọc.
+              Mặc định là DANH SÁCH (thứ đang dùng được từ trước); cây là chế
+              độ người dùng CHỌN vào.
+
+            ★ Công tắc là hai nút `aria-pressed` chứ không phải `<details>`:
+              `<details>` diễn đạt "mở thêm ra", còn cái ta cần là "đổi cách
+              nhìn" — và một `<details>` không thể tắt khối anh em của nó.
+          */}
+          <div
+            className="flex shrink-0 items-center gap-1 border-t px-2 py-1"
+            role="group"
+            aria-label={t("twin3d.cay.tieuDe", "Cây phân cấp")}
+            data-testid="khoi-cay-phan-cap"
+          >
+            <button
+              type="button"
+              aria-pressed={!hienCay}
+              onClick={() => setHienCay(false)}
+              data-testid="chon-danh-sach-may"
+              className={cn(
+                "flex-1 rounded px-2 py-0.5 text-[11px] font-medium",
+                !hienCay ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-muted/60",
+              )}
+            >
+              {t("twin3d.vanHanh.soMay", "Máy")}
+            </button>
+            <button
+              type="button"
+              aria-pressed={hienCay}
+              onClick={() => setHienCay(true)}
+              data-testid="mo-cay-phan-cap"
+              className={cn(
+                "flex-1 rounded px-2 py-0.5 text-[11px] font-medium",
+                hienCay ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-muted/60",
+              )}
+            >
+              {t("twin3d.cay.tieuDe", "Cây phân cấp")}
+            </button>
+          </div>
+
+          {hienCay ? (
+            /* ★ `basis-0` — cùng lý lẽ với khối dải cảnh báo ở trên: không có
+                nó thì khối này được cấp chiều cao NỘI DUNG trước, rồi mới chia
+                phần dư, và anh em lại về 0. */
+            <div className="min-h-0 flex-1 basis-0 overflow-hidden">
+              {/*
+                ★★★ CHỈ ĐỌC — ba điều làm nên điều ấy, và cả ba đều nhìn thấy
+                  ở đây chứ không giấu trong một hàm:
+                  1. `onChon` gọi `chamNodeCay` = **ghi URL**, không ghi DB.
+                  2. `onDoiPhamVi` **KHÔNG truyền** — nó là đường #15 của màn
+                     Thiết kế; phạm vi ở đây đã do URL cầm.
+                  3. `soChoXepCho={0}` — màn Vận hành không có khái niệm "chờ
+                     xếp chỗ" để mà hành động; số 0 làm nhánh ấy hiện "—".
+              */}
+              <CayPhanCap
+                cay={cayVanHanhData}
+                chon={tapChonCay}
+                onChon={(khoa) => chamNodeCay(khoa)}
+                soChoXepCho={0}
+                soMayTrucTiep={soMayTrucTiepCay}
+                soCanhBaoTrucTiep={canhBaoTrucTiepCay}
+              />
+            </div>
+          ) : (
+            /* ★ DANH SÁCH MÁY — DOM thật, mọi hành động làm được từ đây (§9.9) */
+            <DanhSachMay
+              may={mayVanHanh}
+              trangThaiTheoMay={trangThaiTheoMay}
+              machineIdChon={machineIdChon}
+              onChonMay={chonMay}
+              bayGio={bayGio}
+              dangTai={dangTai}
+            />
+          )}
         </div>
 
         {/*

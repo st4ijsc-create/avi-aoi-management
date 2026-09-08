@@ -4591,6 +4591,160 @@ thu" cua §13b **khong con co che de dat** trong vo hien tai. Va mot loi **co sa
 `navigation.unit.test.ts` *"getAcceptedPermissionsForHref"* — do y het o `HEAD` (kiem bang
 `git show HEAD:` roi chay lai), la **banh cong cu** tu lo truoc mong `/twin` chi nhan `analytics_oee`.
 
+## 13f. DOT 22 — Z4 (cay phan cap co roll-up) + NGHIEM THU THI GIAC BAT 5 LOI (2026-09-08)
+
+### 13f.1 Z4 / G-7 — **TAI DUNG** `CayPhanCap`, khong viet cay thu hai
+
+**Do duoc truoc khi quyet (G70 — dem bang `<CayPhanCap`, KHONG bang ten chuoi):**
+
+| Phep dem | So | Cho |
+|---|---|---|
+| `<CayPhanCap` (render) | **1** | `XuongThietKe.tsx:946` |
+| `import { CayPhanCap }` | **1** | `XuongThietKe.tsx:102` |
+| chuoi "CayPhanCap" trong `TwinVanHanh.tsx` | 1 | `:915` — **CHU THICH**, khong phai ma chay |
+
+G44 — ba dang dem rieng. Brief noi dung o ca ba diem.
+
+**Ket luan: tai dung HOP LE, va day la ba dieu do duoc lam no hop le** (khong phai "tien tay"):
+
+1. `CayPhanCap` la **component DIEU KHIEN THUAN** — khong giu state chon, khong prop nao mang nghia ghi.
+2. `CayThietKe` la **CAU TRUC DU LIEU** (`{goc, khuCho, theoKhoa}`), khong phai trang thai trinh sua.
+   Dung duoc tu `{xuong, chuyen, tram, may, datCho}` — dung **NAM mang ma `twinCanh.canhThietKe` DA tra
+   ve cho `/twin` tu truoc** (`canhQ`). ⇒ **0 truy van moi**.
+3. Ban phim WAI-ARIA (roving tabindex + Enter/Space/mui-ten/Home/End) da tra tien roi. Viet ban thu hai
+   la chep ngan ay (G12) hoac giao cho nguoi dung ban phim mot cay khai `role="tree"` ma khong di duoc.
+
+**Dieu kien tai dung — man Van hanh CHI DOC:** `onChon` **khong sua gi**, no dich khoa node thanh thay
+doi URL (`?pv=` / `?xem=`). `onDoiPhamVi` **khong truyen**. Dung khuon lo Z dung voi `LopVung`.
+
+**Cho goi (file:line):**
+- `client/src/pages/TwinVanHanh.tsx` — `import { CayPhanCap }` va `<CayPhanCap ... />` trong panel trai
+- `client/src/components/twin3d/van-hanh/cayVanHanh.ts` — mo hinh thuan (4 ham), **21 test**
+- `client/src/components/twin3d/thiet-ke/CayPhanCap.tsx` — them prop **tuy chon** `soMayTrucTiep`
+
+**Roll-up: HAI dai luong, HAI ban do RA RIENG (chong lop loi §13d Z3).**
+`ropCanhBao` la phep cong THUAN tren cay va khong biet no cong cai gi ⇒ dung lai nguyen ven cho SO MAY.
+Cai phai tach la **dau vao**: `demMayTrucTiep` (moi node `machine:` = 1) vs `demTrucTiep` (canh bao).
+Hai badge, hai mau: so may **xam trung tinh** (ISA-101 §10.1 — mau chi danh cho bat thuong), canh bao
+**do**, dung sat mep phai. **Gop hai so lam mot la tai pham §13d Z3.**
+
+**Do duoc tren `dist`, vai `e2e_tai_loE` (khong-admin), du lieu `--240`:**
+`FUYU-G-WS1 · 60 · canhbao5` · nam line con moi cai `12 · canhbao1` · WS2/WS3/WS4 moi cai `60 · canhbao5`.
+So hoc kiem duoc bang mat: 5x12 = 60 · 4x60 = 240 = o dem "Machines 240" · 4x5 = 20 = "Open andon 20".
+Bam node line ⇒ URL doi thanh `?pv=line:196&chon=line:196`. **Dieu huong that, khong phai trang tri.**
+
+**Dot bien (2 lan, khoi phuc byte-exact bang md5):**
+- DB-1 — bo cong con trong `ropCanhBao` (`for (const c of n.con) di(c)`): **13 test do / 3 tep**.
+- DB-2 — `demMayTrucTiep` dem MOI node thay vi chi `machine:`: **5 test do**.
+
+**Bat doi xung CO THAT, va no duoc khai chu khong giau:** thang cay la
+`workshop/line/station/machine`, thang `PhamVi` la `tapDoan/nhaMay/tang/line/may`. Chi `line:` khop
+mot-mot. `machine:`/`station:` mo bang `?xem=`. **`workshop:` KHONG di dau ca** — cap tren `line` trong
+thang `/twin` la `tang`, ma xuong **khong phai** tang (`XuongThietKe.tsx:252`). Dua ve `?pv=tang:<idXuong>`
+la SAI ID va canh nap tang cua mot toa khac **ma khong loi nao no**. ⇒ node xuong la node **gop**, va
+spec ghi ro no khong hua gi them.
+
+### 13f.2 NGHIEM THU THI GIAC BAT **NAM** LOI — hai cai la CUA CHINH Z4
+
+Ban dau cua Z4 dat cay canh `DanhSachMay`, ca hai `flex-1`, voi ly le "chia nhau phan co duoc".
+**Anh bac bo ca ba ve cua ly le ay:**
+
+| # | Trieu chung do duoc | Nguon |
+|---|---|---|
+| L-1 | `danh-sach-may` **h = 0** (`hien:false`) — bien mat, khong co lai | **CO SAN** |
+| L-2 | **HAI o "Filter by name or code…" chong len nhau** (y~777 va y~808), de ca nhan "HIERARCHY" | Z4 |
+| L-3 | Cay tran khoi khung: hop y=784 h=393 ⇒ day **1177 > 1080** | Z4 |
+| L-4 | `operator1` thay **san xam trong, 0 may**, moi o "—", *nhung* "Alarms (27)" | **CO SAN** |
+| L-5 | `?xem=machine:2` **khong mo panel may**, va khong cau nao noi vi sao | **CO SAN** |
+
+**ABLATION tach L-1 khoi Z4** (chong G5 — hoi "cai gi GAY RA", khong hoi "cai gi co mat"):
+
+```
+nguyen ban            : daiCanhBao=715  khoiCay= 30  danhSachMay=  0
+go khoi cay khoi DOM  : daiCanhBao=744  khoiCay=null danhSachMay=  0   <- cay VO CAN
+go them dai canh bao  : daiCanhBao=null khoiCay=null danhSachMay=744   <- NGUYEN NHAN
+```
+
+⇒ **L-1 co TRUOC Dot 22.** Goc re: `DaiCanhBao` khai `h-full` nhung o day no la flex item **khong co
+`flex-1` cung khong co tran**, nen no lay chieu cao theo NOI DUNG (27 canh bao) va anh em `flex-1`
+chi con phan du — bang 0. **Ban va:** boc bang `min-h-0 flex-1 basis-0`, va them `basis-0` cho
+`DanhSachMay`. `basis-0` la BAT BUOC — khong co no, flexbox cap chieu cao noi dung TRUOC roi moi chia
+phan du, va 715 px kia van duoc cap truoc.
+**Sau va (1920x1080):** `dai-canh-bao` 357 · `danh-sach-may` 357 — chia deu, ca hai dung duoc.
+
+**Ban va L-2/L-3 — goc re khong phai CSS ma la IA.** Cay va danh sach may tra loi **CUNG MOT CAU HOI**
+("chon may/line nao"), chi khac hinh dang (phan cap vs phang). §13b 14.1.3 da dat ten cho dung benh nay:
+*"bay tab la bay cau tra loi cho cung mot cau hoi"*. ⇒ Chung **LOAI TRU NHAU** bang mot cong tac that
+(`? :`, khong phai an bang CSS): dung MOT khoi `flex-1` ton tai tai mot thoi diem. **Mac dinh la DANH
+SACH** — thu dang dung duoc tu truoc Dot 22; mot tinh nang moi khong duoc tu day tinh nang cu ra khoi man.
+Ghim hai chieu trong e2e: cay hien **VA** `danh-sach-may` **bien mat khoi DOM** + panel trai chi con
+**MOT** o loc. Chi ghim ve dau thi ban hong cu (h=0 nhung con trong DOM) van xanh.
+
+### 13f.3 L-4 — `operator1` VAO DUOC `/twin` NHUNG THAY MAN RONG (chua ai va)
+
+**Do duoc:** `user_factory_assignments` chi co **4 hang thuoc DUNG 2 nguoi dung** — `engineer1`(51) va
+`e2e_tai_loE`(21075). **`operator1`(48) va `supervisor1`(49) khong co hang nao.**
+⇒ `twinCanh.canhThietKe` tra `scopeEmptyReason="no_factory_assignment"` va **moi mang deu rong**
+(do thang qua tRPC: xuong 0 · chuyen 0 · tram 0 · may 0). Doi chung: `e2e_tai_loE` ⇒ xuong 1 · chuyen 3 ·
+tram 36 · may 42.
+
+**Cai nguoi dung thay:** nav cho vao, khung dung len, panel/dai/nut deu co — nhung **san xam trong,
+0 may, moi o "—", breadcrumb "Corporate > Factory > Floor" khong ten**, *dong thoi* panel trai khai
+**"Alarms (27)" voi 20 hang that**. Tuc la man hinh noi: *"nha may khong co may nao, nhung 27 canh bao
+dang keu"* — hai loi khai mau thuan trong cung mot khung nhin.
+
+⚠ `EmptyState scopeEmptyReason="no_factory_assignment"` **da ton tai trong ma** (§THUONG-2(b)) nhung
+**khong hien o day**. Do la mon con mo, khong sua trong dot nay (ngoai pham vi Z4, va sua mu mot duong
+khong do duoc la cach nhanh nhat de them mot loi cam).
+
+**Bai hoc do luong:** suite nay ban dau chup bo cuc bang `operator1` — va moi con so ve vung/cay/roll-up
+tren do la **so 0 nguy trang**. Doi sang `e2e_tai_loE` (van KHONG-admin) moi do duoc. **Vai khong-admin
+la dieu kien CAN, khong phai dieu kien DU: vai ay con phai CO DU LIEU.**
+
+### 13f.4 L-5 va cac quan sat thi giac khac (khai, khong va)
+
+- **L-5** — `?xem=machine:2` (may SIM-FAC) tren canh FUYU-G: panel phai van noi *"Select a machine…"*.
+  Lua chon khong phan giai duoc va **khong cau nao noi vi sao**. Cung ho voi A3 (`?pv=line:1`):
+  header "Waiting… / Last updated: —", Metrics toan gach, Simulation *"This line has no stations"* —
+  trong khi canh van ve FUYU-G. **Pham vi URL va pham vi canh lech nhau ma khong bao.**
+- **Nhan 3D chong nhau:** chip "FUYU-G-T1-L3-M7" / "-L5-M7" / "-L4-M12" **de len nhau** thanh khoi khong
+  doc duoc; luat uu tien nhan §14.5.2 (tran 30) hoac tat hoac bi vuot.
+- **Hai panel noi (`Metrics`, `Simulation`) de len canh** ⇒ mot phan cai gia ma Dot 21 vua mua bang
+  `absolute inset-0` bi tra lai — chi khac la bang lop phu thay vi cot flex.
+- **"Updated 1568573s ago"** (~18 ngay) o header vung sua — mot con so tho khong duoc quy doi.
+
+### 13f.5 G75 — TI SO HAI SO, va **MAU SO da bi do**
+
+| Viewport | canvas | % viewport |
+|---|---|---|
+| 1280x720 | 968x489 | **51,4 %** |
+| 1280x720 (`?thu=trai,phai`) | 968x489 | **51,4 %** — KHONG DOI |
+| 1920x1080 | 1608x849 | **65,8 %** |
+
+⚠⚠ **`?thu=trai,phai` cho DUNG cung con so** — do lai o Dot 22 va khop y het `do-bo-cuc.json` cua lo Y.
+Day KHONG phai thiet bi do hong: sau Dot 21 canvas **da** `absolute inset-0` chiem tron khung, nen thu
+panel **khong the** tang dien tich canvas nua (panel noi DE, khong chia dat). ⇒ Muc tieu **"72,3 % khi
+thu sidebar" cua G75 va "94 % khi thu panel" cua §13b deu KHONG CON CO CHE DE DAT** trong vo hien tai.
+
+**⇒ HAI MUC TIEU AY DUOC BO, va day la ly do:** chung do mot dai luong ma bo cuc moi khong con san sinh.
+Muon tang % canvas nua thi phai dong vao **thanh nav trai cua ung dung (288 px)** va **header/dai tren
+(207 px)** — ca hai **ngoai pham vi man `/twin`**. Tran that cua khung twin (968x563 tren 1280x720) da
+duoc chinh G75 khai la **59,1 %**, va 51,4 % hien tai la 87 % cua tran ay. Phan con lai nam o hai dai
+ngang trong khung (header 48 + dai hop nhat 26 = 74 px), khong nam o panel.
+
+**Va day moi la dieu quan trong hon con so:** anh cho thay cai chiem cho tren canh **khong phai panel**
+ma la **nhan 3D chong nhau + hai panel noi**. Do "dien tich canvas" khong do duoc dieu do — mot canvas
+968x489 **gan nhu trong** van cho 51,4 %. G5: **ta da do CAI HOP, khong do CAI NHIN THAY.**
+
+### 13f.6 Loi CO SAN da dong
+
+`navigation.unit.test.ts` *"getAcceptedPermissionsForHref"* — do y het o `HEAD` (`17a3f4c6`), truoc moi
+thay doi cua Dot 22. Banh cong cu tu lo truoc mong `/twin` chi nhan `analytics_oee`, trong khi **Dot 5
+CHAN-1 da co y noi** sang `["analytics_oee","machine_status"]` (`navigation.tsx:475`) vi do duoc rang
+3/4 vai van hanh khong co `analytics_oee`. ⇒ **Sua KY VONG cua test, KHONG sua ma san pham.**
+Hop le vi doi chung chieu nguoc ngay tren no (`/twin` + `machine_control` ⇒ `false`) **van xanh**: tap
+quyen duoc noi dung MOT phan tu, khong bi mo toang.
+
 ## 14. Rủi ro`** từ trước. Chiếm lại số 14 sẽ tạo hai mục cùng số trong một tệp sắp đem
 > ra bàn — đúng kiểu nhầm lẫn mà một bản thiết kế không được phép gây ra. Nội dung được yêu cầu nằm
 > nguyên vẹn ở đây, đặt ngay trước §14 cũ. Cùng lý do và cùng cách xử lý với §12b.

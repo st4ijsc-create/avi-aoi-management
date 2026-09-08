@@ -89,6 +89,20 @@ export interface CayPhanCapProps {
    * con. `null` = không chọn gì.
    */
   onDoiPhamVi?: (khoa: KhoaNode | null) => void;
+  /**
+   * ★★★ ĐỢT 22 Z4 (G-7) — SỐ MÁY gắn TRỰC TIẾP theo khoá node. Roll-up lên cha
+   * đi qua **cùng** `ropCanhBao` (nó là phép cộng thuần trên cây, không biết nó
+   * đang cộng cái gì) — G12: một phép cộng, không phải hai bản cài đặt.
+   *
+   * ★★★ ĐẠI LƯỢNG NÀY **KHÁC** `soCanhBaoTrucTiep`, và hai badge phải phân biệt
+   *   được bằng mắt. Gộp chúng thành một con số là đúng lớp lỗi §13d Z3 vừa bắt
+   *   ("huy hiệu khai SAI ĐẠI LƯỢNG"): một line 6 máy / 2 cảnh báo mà hiện "8"
+   *   thì không ai đọc ngược ra được nó gồm những gì.
+   *
+   * ★ Không truyền ⇒ cây chạy **y như trước** (0 badge máy). Hợp đồng cộng-thêm:
+   *   `XuongThietKe.tsx` không truyền, và ảnh màn Thiết kế không đổi một pixel.
+   */
+  soMayTrucTiep?: ReadonlyMap<KhoaNode, number>;
 }
 
 const THUT_PX = 12;
@@ -127,6 +141,7 @@ function Hang({
   nhanTab,
   tim,
   soCanhBao,
+  soMay,
   dat,
   onBamMo,
   onBamChon,
@@ -138,6 +153,8 @@ function Hang({
   nhanTab: boolean;
   tim: string;
   soCanhBao: number;
+  /** ★ Z4 — roll-up SỐ MÁY. `0` ⇒ không vẽ badge (xem docblock badge dưới). */
+  soMay: number;
   /** Ghi phần tử DOM vào sổ để `focus()` được sau khi phím đổi node. */
   dat: (khoa: KhoaNode, el: HTMLDivElement | null) => void;
   onBamMo: (khoa: KhoaNode) => void;
@@ -191,18 +208,40 @@ function Hang({
       <span className="truncate">
         <NhanCoTo nhan={node.nhan} tim={tim} />
       </span>
-      {/* #8 — badge roll-up. Chỉ hiện khi > 0: một số 0 trên mọi hàng là nhiễu
-          thị giác che mất hàng thật sự có cảnh báo (ISA-101 §10.1 — màu chỉ
-          dành cho bất thường). */}
-      {soCanhBao > 0 ? (
-        <span
-          className="ml-auto flex shrink-0 items-center gap-0.5 rounded bg-destructive/15 px-1 text-[10px] font-medium text-destructive"
-          data-testid={`canh-bao-${node.khoa}`}
-        >
-          <AlertTriangle className="h-2.5 w-2.5" />
-          {soCanhBao}
-        </span>
-      ) : null}
+      {/*
+        ★★★ HAI BADGE, HAI ĐẠI LƯỢNG — thứ tự và MÀU đều là quyết định, không
+        phải trang trí:
+          · SỐ MÁY   — xám trung tính. ISA-101 §10.1: màu chỉ dành cho BẤT
+            THƯỜNG, và "line này có 6 máy" là chuyện hoàn toàn bình thường.
+          · CẢNH BÁO — màu destructive, và đứng SAU (sát mép phải) để mắt liếc
+            dọc mép phải bắt được ngay hàng nào đang đỏ.
+        ⚠ Gộp hai số thành một là §13d Z3 lặp lại. Chúng KHÔNG cùng mẫu số.
+      */}
+      <span className="ml-auto flex shrink-0 items-center gap-1">
+        {/* ★ Z4 — badge SỐ MÁY. Chỉ hiện khi > 0 **và** node có con: một node
+            `machine:` tự nó luôn có roll-up = 1, và in "1" lên từng máy là 82
+            con số vô nghĩa che mất badge cảnh báo. */}
+        {soMay > 0 && coCon ? (
+          <span
+            className="rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground"
+            data-testid={`so-may-${node.khoa}`}
+            title={`${soMay}`}
+          >
+            {soMay}
+          </span>
+        ) : null}
+        {/* #8 — badge roll-up cảnh báo. Chỉ hiện khi > 0: một số 0 trên mọi hàng
+            là nhiễu thị giác che mất hàng thật sự có cảnh báo. */}
+        {soCanhBao > 0 ? (
+          <span
+            className="flex items-center gap-0.5 rounded bg-destructive/15 px-1 text-[10px] font-medium text-destructive"
+            data-testid={`canh-bao-${node.khoa}`}
+          >
+            <AlertTriangle className="h-2.5 w-2.5" />
+            {soCanhBao}
+          </span>
+        ) : null}
+      </span>
     </div>
   );
 }
@@ -214,6 +253,7 @@ export function CayPhanCap({
   soChoXepCho,
   soCanhBaoTrucTiep,
   onDoiPhamVi,
+  soMayTrucTiep,
 }: CayPhanCapProps) {
   const { t } = useTranslation();
   const [timTho, setTimTho] = useState("");
@@ -244,6 +284,17 @@ export function CayPhanCap({
     [cay, soCanhBaoTrucTiep],
   );
   const coDuLieuCanhBao = (soCanhBaoTrucTiep?.size ?? 0) > 0;
+
+  /**
+   * ★ Z4 — roll-up SỐ MÁY, đi qua **cùng** `ropCanhBao`. Hàm ấy là phép cộng
+   *   thuần trên cây và không biết nó đang cộng cảnh báo hay máy; viết một hàm
+   *   `ropSoMay` thứ hai là chép nguyên đệ quy ấy sang chỗ thứ hai để rồi hai
+   *   bản trôi khỏi nhau (G12).
+   */
+  const demSoMay: DemCanhBao = useMemo(
+    () => ropCanhBao([...cay.goc, ...cay.khuCho], soMayTrucTiep ?? new Map()),
+    [cay, soMayTrucTiep],
+  );
 
   // Lọc: text (§7.1) rồi lọc-chỉ-cảnh-báo (#10). Thứ tự không đổi kết quả vì cả
   // hai đều là phép cắt, nhưng giữ text trước cho khớp bản gốc.
@@ -363,6 +414,7 @@ export function CayPhanCap({
         nhanTab={khoaTab === h.node.khoa}
         tim={tim}
         soCanhBao={demCanhBao.get(h.node.khoa) ?? 0}
+        soMay={demSoMay.get(h.node.khoa) ?? 0}
         dat={dat}
         onBamMo={doiMo}
         onBamChon={(k, shift) => {
