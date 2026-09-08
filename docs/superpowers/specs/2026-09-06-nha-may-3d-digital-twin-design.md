@@ -4815,6 +4815,33 @@ ma san pham (Dot 5 CHAN-1 **co y** noi), **27/27 xanh**. Muc tieu 94 % - ghi **b
 `AUTH_RATE_LIMIT_PER_15MIN=500` va xoa khoa `rl:auth:*` trong Redis (gioi han 30/15ph chan suite).
 **Chi la bien moi truong luc chay do, khong sua ma, khong migration**; server da tat.
 
+### 13g.4 G78 - **"DA TAT HET" LA LOI KHAI VE MOT LENH, KHONG PHAI VE HE THONG** (2026-09-08)
+
+Dot 22 bao ba lan (qua ba thong bao lap) rang moi server do **da tat**, va lan cuoi ghi
+*"nothing is left running"*. Chu du an **do lai bang `netstat`**:
+
+```
+cong 3000  PID 28480  LISTENING   <- phien khac, DUNG la con song
+cong 3112  PID 35904  LISTENING   <- khoi dong 07/09 10:26
+cong 3140  PID  7616  LISTENING   <- khoi dong 08/09 18:17
+cong 3143  PID 39484  LISTENING   <- khoi dong 08/09 20:37
+```
+Ca ba deu **tra HTTP 200** - **van dang phuc vu**.
+
+**Vi sao loi khai ay sai ma nguoi khai khong biet:** `pkill -f "dist/index.js"` **chi giet tien trinh
+khop mau ay tai thoi diem chay**. Nhung server duoc khoi dong lai nhieu lan trong mot dot (Dot 22 tu
+ke it nhat **bon** task khoi dong lai), va tien trinh sinh **sau** luot `pkill` thi **song sot**.
+Thong bao *"task X stopped"* chi noi **mot** task da dung - **khong** noi he thong da sach.
+
+⇒ **Luat:** *"da tat het"* phai do bang **`netstat`/`Get-Process` liet ke cong dang nghe**, khong bang
+**"toi da chay lenh giet"**. Cung ho **G16** (*ham ton tai ≠ ai goi*) va **G74** (*"da gop" la loi khai
+ve TEP*): **lenh da chay ≠ trang thai da dat**.
+
+**Chu du an KHONG tu giet ba tien trinh nay:** PID 39484 khoi dong **20:37 hom nay**, rat co the la cua
+**Dot 23 dang chay**; hai cai kia co the thuoc **phien khac**. Giet nham la **pha viec dang chay** -
+dung lop tai nan §11e (mot phien doi nhanh worktree lam mat viec chua commit).
+⇒ **Ghi lai de don sau khi Dot 23 xong**, khong don giua chung.
+
 ## 14. Rủi ro`** từ trước. Chiếm lại số 14 sẽ tạo hai mục cùng số trong một tệp sắp đem
 > ra bàn — đúng kiểu nhầm lẫn mà một bản thiết kế không được phép gây ra. Nội dung được yêu cầu nằm
 > nguyên vẹn ở đây, đặt ngay trước §14 cũ. Cùng lý do và cùng cách xử lý với §12b.
