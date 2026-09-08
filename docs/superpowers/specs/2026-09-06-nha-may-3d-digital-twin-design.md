@@ -4842,6 +4842,15 @@ ve TEP*): **lenh da chay ≠ trang thai da dat**.
 dung lop tai nan §11e (mot phien doi nhanh worktree lam mat viec chua commit).
 ⇒ **Ghi lai de don sau khi Dot 23 xong**, khong don giua chung.
 
+**Do lai LAN THU NAM** (sau nam thong bao lap deu khai *"nothing left running"*): van con **5 server**
+dang nghe (3112 · 3140 · 3142 · 3145 · 3146), va **danh sach DOI GIUA CAC LAN DO** - 3143/3144 mat,
+3146 moi xuat hien. ⇒ Loi khai ay **khong chi sai luc viet**, no **khong the dung**: tien trinh **van
+dang sinh ra** sau moi luot `pkill`.
+
+⇒ **Bo sung cho G78:** khi mot he thong **con dang sinh tien trinh**, cau hoi *"da tat het chua"*
+**khong co cau tra loi on dinh**. Phep do dung phai kem **moc thoi gian** (*"luc 20:51 con 5 cong nghe"*),
+va **cho ai do tuyen bo XONG** roi moi don - dung don giua chung.
+
 ## 14. Rủi ro`** từ trước. Chiếm lại số 14 sẽ tạo hai mục cùng số trong một tệp sắp đem
 > ra bàn — đúng kiểu nhầm lẫn mà một bản thiết kế không được phép gây ra. Nội dung được yêu cầu nằm
 > nguyên vẹn ở đây, đặt ngay trước §14 cũ. Cùng lý do và cùng cách xử lý với §12b.
