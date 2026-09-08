@@ -4446,6 +4446,69 @@ Chu so huu dong y. Ket hop **QD-16**: vi nay la **mot trang**, "chuyen sang `/tw
 - Bang 38 chuc nang la **anh chup 2026-09-08**, khong phai hang so - brief Dot 20 **da lech so voi ma
   chi sau ~1 ngay** (**G55**: so do co han su dung).
 
+## 13d. DOT 21 LO Z - 3/4 muc G, va mot huy hieu KHAI SAI DAI LUONG (2026-09-08)
+
+Commit `5a80d5b2`. Cong: **65 tep / 1.834 test** (nen 58/1.706) - `check` 0 - `build` 0 - DB `2/43/82`.
+
+### 13d.1 Z1 - Suc khoe may, **nhom (A)** neo vat the
+
+Do truoc khi lam: `machine_health_history` **180.800 hang** (brief ghi 180.674 - **bang dang ghi LIVE**,
+moc chay 09:27 → 09:40 → 09:57), **43/43 may co hang**, 42/43 tuoi trong 24h.
+**G50 duoc KIEM chu khong gia dinh**: `healthScore`/`predictedFailureRisk`/`maintenanceUrgency`
+NULL = **0/180.800** ca ba cot. Mien [55…100]; **6/43 duoi 60**, 21/43 duoi 80.
+
+Cho goi: `CanhVanHanh.tsx:415` (`<LopVienSucKhoe>`), logic `sucKhoeMay.ts`, duong doc
+`twinCanhRouter.ts:1152` + `twinCanh.ts:2043`.
+**Ngan sach:** 1 InstancedMesh cho moi vong ⇒ draw call **3 → 4**. Chi hang `nguy_kich` gianh nhan
+(**6 may**); neu cho hang `canh` gianh thi rieng no **an 21/30 cho**.
+
+### 13d.2 Z2 - Vung len man Van hanh, **nhom (A)**
+
+**Nguon VAN RONG** (do lai, khong ke thua): `twin_vat_the` 4 hang, toan `tuong`, **0 hang `vung`**.
+Lo Z dung **ca duong that** (polygon 6000×4000mm), doc qua dung cau `traVungAnToan`, roi xoa;
+**khoi phuc byte-exact** (`tong=4 maxid=44 md5=db6eb576…` khop truoc/sau).
+Cho goi `CanhVanHanh.tsx:411`. **Tai dung `thiet-ke/LopVung`** (G12), **khong** truyen `onChon` -
+van hanh **chi doc**.
+
+### 13d.3 ★★★ Z3 - **HUY HIEU "TRUC TIEP" KHAI SAI DAI LUONG** (ho G7)
+
+**G74 tra gia dung nhu canh bao**: `phuUns` **da co va da duoc goi that** (`TwinVanHanh.tsx:154`),
+`trang-thai-ket-noi` (`:2342`) va `badge-xuat-xu` (`:2383`) **deu da co**. Khoang trong that nam cho khac:
+
+> `nhipHoiMs` lam poll tRPC **chay SONG SONG voi WebSocket, khong bao gio tat** (`TwinVanHanh.tsx:570`,
+> `:583` - chu du an kiem, **con nguyen**). Nen khi huy hieu noi *"Truc tiep"*, **mot phan so van den tu
+> poll 30s**. Huy hieu **khai mot dai luong no khong do** - cung ho **G7** (`commandLog.avgDurations`
+> bi dung lam cycle time) va **G56** (gan nham nguon cho thu tuc).
+> `xuatXuNhip.ts` tach **5 hang**: `day` · `hon_hop` · `hoi` · `lich_su` · `chua_ro`.
+
+### 13d.4 Chong G5 bang ablation that
+
+Go cho goi ⇒ **2 test TANG 1 do**. Di moi hang ve mot mau ⇒ test *"ba mau roi nhau"* **do** - dung phep
+do ma **12 cot WIP trang** tung truot (G29).
+**Tien de G5 bat loi cua chinh lo Z hai lan**: fixture `55+i` roi `54+i` **deu lech nguong 60**.
+
+### 13d.5 Ba dieu lo Z bac / dinh chinh
+
+1. **`digitalTwin.twinState` KHONG thieu `phamViCua`** - brief cua chu du an ngu y G49 co the ho;
+   thuc te no **co** o `digitalTwinRouter.ts:85`. Lo Z mo duong moi **vi ly do khac**: `twinState`
+   **vut `timestamp`** ⇒ **G30 khong kiem duoc han**, va no keo toan bo hang ve app-layer.
+2. **`vramPha5Gate` do (FILE_CANH 126→128) la NO CO SAN**, khong phai cua lo Z: no dem tep test tu khai
+   `"Pha N"`; ca 5 tep twin3d dinh vao **deu da commit tu lo truoc**. Bon tep test cua lo Z: **0 lan
+   khop regex** (do bang grep). ⚠ `git stash` bi hook chan ⇒ phai chung minh no-co-san bang
+   **`git archive` + grep**, khong bang stash.
+3. **Mot luot test tranh I/O voi `rm -rf` co the BAO THIEU tep ma VAN EXIT XANH** (24/892 thay vi
+   65/1834) - **mot cai bay hinh dang G5 nua**: cong xanh tren mot tap bi cat ngan.
+
+### 13d.6 ⚠ CA BA MUC DUNG O RANH GIOI TEP - **G16 con mo**
+
+Cho goi cuoi cung cua ca ba nam trong **`TwinVanHanh.tsx`** ma **lo Y dang giu**. Lo Z **khong dung** -
+dung luat. Chu du an kiem: `grep -c "vienSucKhoe|khaiNguonSo|vungTuDanhSach" TwinVanHanh.tsx` ⇒ **0**.
+⇒ Ha tang **co**, nhung **chua giao duoc gi**. Ba prop cho lo Y noi:
+`vienSucKhoe(khai, cho, bayGio)` · `vungTuDanhSach(canhThietKe.vung)` (`canhThietKe` **da tra `vung`**)
+· `khaiNguonSo({ketNoi, mocGoiCuoi, mocPollCuoi, dangXemLai}, bayGio)`.
+
+**Z4 (G-7 cay da site) CHUA LAM.** Khong co anh nghiem thu thi giac - lo Z **khong chay Playwright**.
+
 ## 14. Rủi ro`** từ trước. Chiếm lại số 14 sẽ tạo hai mục cùng số trong một tệp sắp đem
 > ra bàn — đúng kiểu nhầm lẫn mà một bản thiết kế không được phép gây ra. Nội dung được yêu cầu nằm
 > nguyên vẹn ở đây, đặt ngay trước §14 cũ. Cùng lý do và cùng cách xử lý với §12b.
