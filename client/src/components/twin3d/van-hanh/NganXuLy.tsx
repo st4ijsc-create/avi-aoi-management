@@ -87,7 +87,7 @@ import {
   docStatsAoi,
 } from "./nganXuLyLogic";
 import { nhungChoHref, type NganNhungMo } from "./nhungTaiCho";
-import { hienSo, nhanDoTuoi, type TrangThaiHienThi } from "./trungThucDuLieu";
+import { hienSo, nhanDoTuoi, nhanTuoiDocDuoc, type TrangThaiHienThi } from "./trungThucDuLieu";
 
 export interface NganXuLyProps {
   /** Máy đang chọn; `null` ⇒ ngăn hiện lời mời chọn. */
@@ -310,9 +310,15 @@ export function NganXuLy(props: NganXuLyProps) {
           data-giay={tuoi.giay ?? ""}
         >
           <Clock className="mr-1 inline h-3 w-3" />
+          {/* ★ ĐỢT 23 M4 — CÙNG hàm ghép chữ với thanh công cụ nền
+              (`nhanTuoiDocDuoc`). Trước đợt này hai chỗ tự ghép riêng và cùng
+              in GIÂY SỐNG: ngăn chi tiết in "Cập nhật 1572061 giây trước" y
+              như thanh nền. Một hàm ⇒ không thể lệch nhau (G12). */}
           {tuoi.giay === null
             ? t("twin3d.vanHanh.chuaTungBaoCao", "Chưa từng nhận dữ liệu")
-            : t("twin3d.vanHanh.capNhatTruoc", "Cập nhật {{giay}} giây trước", { giay: hienSo(tuoi.giay) })}
+            : t("twin3d.vanHanh.capNhatTruoc", "Cập nhật {{tuoi}} trước", {
+                tuoi: nhanTuoiDocDuoc(tuoi, t),
+              })}
         </p>
       </header>
 

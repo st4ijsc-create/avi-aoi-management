@@ -394,3 +394,90 @@ describe("★ khử chồng lấp theo BBOX, không theo đường tròn", () =>
     expect(demCapChongLap([ba[0]])).toBe(0);
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 23 M1 — KHAI BÁO SỰ THIẾU + CHÍNH SÁCH CHỌN NHÃN                   */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("Đợt 23 M1 — soBiGiau nói ra số tên KHÔNG đọc được", () => {
+  /**
+   * Dựng lại ĐÚNG hình dạng đo được trên `dist` (`.qa-dot23/M1-do-nhan.json`):
+   * nhiều ứng viên chen trong một dải hẹp ⇒ phần lớn bị khử vì chồng bbox.
+   */
+  const chumDay = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      khoa: `may:${String(i).padStart(3, "0")}`,
+      x: 400 + (i % 6) * 24,
+      y: 300 + Math.floor(i / 6) * 9,
+      khoangCachMet: 5 + i * 0.1,
+      rongPx: 150,
+      caoPx: 22,
+    }));
+
+  it("★★★ `ve` một mình KHÔNG trả lời được 'bao nhiêu máy mất tên' — `soBiGiau` thì có", () => {
+    const kq = locNhan(chumDay(45));
+    // Đầu vào PHẢI thật sự chen chúc, nếu không phép đo dưới là vô can giả.
+    expect(kq.ve.length).toBeLessThan(45);
+    // Bất biến kế toán: mọi ứng viên hoặc được vẽ, hoặc bị giấu. Không ô nào rơi.
+    expect(kq.ve.length + kq.soBiGiau).toBe(kq.tongUngVien);
+    expect(kq.soBiGiau).toBeGreaterThan(0);
+  });
+
+  it("★ soBiGiau CỘNG ĐỦ bốn nguồn, không thiếu ô nào", () => {
+    const ds = [
+      ...chumDay(40),
+      { khoa: "xa:1", x: -9999, y: -9999, khoangCachMet: 2, ngoaiKhung: true },
+    ];
+    const kq = locNhan(ds, { tranNhan: 5 });
+    expect(kq.soNgoaiKhung).toBe(1);
+    expect(kq.soBiGiau).toBe(kq.soNgoaiKhung + kq.soBiChongLap + kq.soVuotTran);
+    expect(kq.ve.length + kq.soBiGiau).toBe(kq.tongUngVien);
+  });
+
+  it("không ai bị giấu ⇒ soBiGiau = 0 (đối chứng chiều DƯƠNG)", () => {
+    // Ba nhãn cách nhau thừa thãi — không cớ gì phải giấu.
+    const kq = locNhan([
+      { khoa: "a", x: 0, y: 0, khoangCachMet: 1, rongPx: 100, caoPx: 22 },
+      { khoa: "b", x: 400, y: 0, khoangCachMet: 2, rongPx: 100, caoPx: 22 },
+      { khoa: "c", x: 800, y: 0, khoangCachMet: 3, rongPx: 100, caoPx: 22 },
+    ]);
+    expect(kq.ve.length).toBe(3);
+    expect(kq.soBiGiau).toBe(0);
+  });
+});
+
+describe("Đợt 23 M1 — chiNhanBatThuong: đổi CHÍNH SÁCH, không chỉ đổi số", () => {
+  const ds = [
+    { khoa: "ok:1", x: 100, y: 100, khoangCachMet: 1 },
+    { khoa: "ok:2", x: 400, y: 100, khoangCachMet: 2 },
+    { khoa: "loi:1", x: 700, y: 100, khoangCachMet: 30, batThuong: true },
+  ];
+
+  it("★★★ bật ⇒ CHỈ máy bất thường còn nhãn, dù nó XA camera nhất", () => {
+    const kq = locNhan(ds, { chiNhanBatThuong: true });
+    expect(kq.ve.map((v) => v.khoa)).toEqual(["loi:1"]);
+    // Hai cái bị lọc phải được KHAI, không biến mất khỏi sổ.
+    expect(kq.soBiGiau).toBe(2);
+    expect(kq.ve.length + kq.soBiGiau).toBe(kq.tongUngVien);
+  });
+
+  it("★ ĐỐI CHỨNG (G5/G32): tắt ⇒ đầu ra KHÁC HẲN — cờ thật sự làm gì đó", () => {
+    const tat = locNhan(ds, { chiNhanBatThuong: false });
+    const bat = locNhan(ds, { chiNhanBatThuong: true });
+    expect(tat.ve.length).toBe(3);
+    expect(bat.ve.length).toBe(1);
+    expect(tat.ve.length).not.toBe(bat.ve.length);
+  });
+
+  it("★ máy ĐANG CHỌN không bị chính sách giấu — người dùng vừa bấm vào nó", () => {
+    const kq = locNhan(
+      [...ds, { khoa: "ok:3", x: 1000, y: 100, khoangCachMet: 4, dangChon: true }],
+      { chiNhanBatThuong: true },
+    );
+    expect(kq.ve.map((v) => v.khoa).sort()).toEqual(["loi:1", "ok:3"]);
+  });
+
+  it("mặc định TẮT — bật bậc này phải là quyết định tường minh của người gọi", () => {
+    expect(locNhan(ds).ve.length).toBe(3);
+  });
+});

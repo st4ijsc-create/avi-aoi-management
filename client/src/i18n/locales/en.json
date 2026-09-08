@@ -20097,7 +20097,7 @@
       "ganKyThuat": "Assign technician",
       "chuaGan": "Unassigned",
       "moChucNang": "Open module",
-      "capNhatTruoc": "Updated {{giay}}s ago",
+      "capNhatTruoc": "Updated {{tuoi}} ago",
       "chuaTungBaoCao": "Never reported",
       "duLieuQuaCu": "Data too old — status not trustworthy",
       "doiSoatLech": "{{thieu}} machines not placed · {{moCoi}} placements point at retired machines",
@@ -20157,7 +20157,9 @@
       "xuatUsdXong": "Exported {{ten}} — {{prim}} prims, {{byte}} bytes",
       "xuatUsdCanhTrong": "Not exported: this factory has no objects placed on the floor plan (the file would be empty).",
       "xuatUsdChuaChonNhaMay": "No factory selected to export.",
-      "xuatUsdHong": "USD export failed ({{lyDo}})."
+      "xuatUsdHong": "USD export failed ({{lyDo}}).",
+      "donViGiay": "{{n}}s",
+      "nhanBiAn": "{{n}} more names hidden"
     },
     "studio": {
       "tieuDe": "3D Factory — Design",

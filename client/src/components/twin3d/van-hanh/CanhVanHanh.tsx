@@ -111,6 +111,14 @@ export interface CanhVanHanhProps {
   sanRongM: number;
   sanSauM: number;
   tatNhan: boolean;
+  /**
+   * ★ ĐỢT 23 M1 — chỉ hiện nhãn máy **bất thường**. Chuyển thẳng xuống
+   * `LopNhan`; đo được 45 ứng viên chỉ còn 8 nhãn vì khử chồng, nên cần một
+   * chính sách chọn thay vì chỉ một con số trần.
+   */
+  chiNhanBatThuong?: boolean;
+  /** Chữ ĐÃ dịch cho chip "còn N tên bị ẩn" (RB-8.3 — cảnh không gọi `t()`). */
+  chuNhanAn?: (n: number) => string;
   chuMatContext: string;
   ariaLabel: string;
   /** Báo camera vừa đổi — tầng trên ghi vào URL bằng `replaceState` (§9.4). */
@@ -464,6 +472,8 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
     tatNhan,
     toi,
   } = props;
+  const chiNhanBatThuong = props.chiNhanBatThuong ?? false;
+  const chuNhanAn = props.chuNhanAn;
   const vienSK = props.vienSucKhoe ?? EMPTY_VIEN;
   const vungAT = props.vung ?? EMPTY_VUNG;
 
@@ -515,7 +525,14 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
       <LoBatchMay may={may} chon={chon} onChon={khiChon} onHover={khiHover} />
       {dongChay ? <DongChayLine dongChay={dongChay} /> : null}
       <OngWip wip={wip} />
-      <LopNhan nhan={nhan} dangChon={chon.dangChon} dangHover={chon.dangHover} tat={tatNhan} />
+      <LopNhan
+        nhan={nhan}
+        dangChon={chon.dangChon}
+        dangHover={chon.dangHover}
+        tat={tatNhan}
+        chiNhanBatThuong={chiNhanBatThuong}
+        chuNhanAn={chuNhanAn}
+      />
       <LopCanhBao canhBao={canhBao} />
     </>
   );

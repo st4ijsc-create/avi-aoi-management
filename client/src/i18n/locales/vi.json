@@ -20077,7 +20077,7 @@
       "ganKyThuat": "Gán kỹ thuật viên",
       "chuaGan": "Chưa gán",
       "moChucNang": "Mở chức năng",
-      "capNhatTruoc": "Cập nhật {{giay}} giây trước",
+      "capNhatTruoc": "Cập nhật {{tuoi}} trước",
       "chuaTungBaoCao": "Chưa từng nhận dữ liệu",
       "duLieuQuaCu": "Dữ liệu quá cũ — trạng thái không đáng tin",
       "doiSoatLech": "{{thieu}} máy chưa xếp chỗ · {{moCoi}} đặt chỗ trỏ vào máy đã ngừng",
@@ -20137,7 +20137,9 @@
       "xuatUsdXong": "Đã xuất {{ten}} — {{prim}} vật thể, {{byte}} byte",
       "xuatUsdCanhTrong": "Chưa xuất: nhà máy này chưa có vật thể nào trên mặt bằng (tệp sẽ rỗng).",
       "xuatUsdChuaChonNhaMay": "Chưa chọn nhà máy để xuất.",
-      "xuatUsdHong": "Xuất USD thất bại ({{lyDo}})."
+      "xuatUsdHong": "Xuất USD thất bại ({{lyDo}}).",
+      "donViGiay": "{{n}} giây",
+      "nhanBiAn": "còn {{n}} tên bị ẩn"
     },
     "studio": {
       "tieuDe": "Nhà máy 3D — Thiết kế",

@@ -22,6 +22,7 @@ import {
   gopTinhTrang,
   hienSo,
   nhanDoTuoi,
+  nhanTuoiDocDuoc,
   thoiDiemDuLieuMoiNhat,
   tsTrangThaiTuIssues,
   trangThaiHienThi,
@@ -274,16 +275,82 @@ describe("hienSo — ★ NT-3.5 đếm RỖNG khác đếm 0", () => {
 
 describe("nhanDoTuoi", () => {
   it("trả số giây và cờ đỏ khi quá 60 giây", () => {
-    expect(nhanDoTuoi(BAY_GIO - 12_000, BAY_GIO)).toEqual({ giay: 12, do: false });
-    expect(nhanDoTuoi(BAY_GIO - 90_000, BAY_GIO)).toEqual({ giay: 90, do: true });
+    expect(nhanDoTuoi(BAY_GIO - 12_000, BAY_GIO)).toMatchObject({ giay: 12, do: false });
+    expect(nhanDoTuoi(BAY_GIO - 90_000, BAY_GIO)).toMatchObject({ giay: 90, do: true });
   });
 
   it("chưa từng có dữ liệu ⇒ giay null + đỏ (UI hiện '—')", () => {
-    expect(nhanDoTuoi(null, BAY_GIO)).toEqual({ giay: null, do: true });
+    expect(nhanDoTuoi(null, BAY_GIO)).toEqual({ giay: null, do: true, rut: null, quaCu: true });
   });
 
   it("★ đồng hồ client chạy TRƯỚC server ⇒ kẹp về 0, không hiện 'cập nhật -3 giây trước'", () => {
     expect(nhanDoTuoi(BAY_GIO + 3_000, BAY_GIO).giay).toBe(0);
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ ĐỢT 23 M4 — "Updated 1572061s ago" (18 NGÀY) HIỆN NHƯ BÌNH THƯỜNG   */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  it("★★★ ca THẬT đo được: 1.572.061 giây ⇒ rút về 18 NGÀY, và quaCu = true", () => {
+    // Con số nguyên văn từ ảnh tự chụp `.qa-dot23/M1-nhan-thu-ca-hai.png`.
+    const n = nhanDoTuoi(BAY_GIO - 1_572_061_000, BAY_GIO);
+    expect(n.giay).toBe(1_572_061); // số THÔ giữ nguyên cho `data-giay`
+    expect(n.rut).toEqual({ so: 18, donVi: "ngay" });
+    expect(n.quaCu).toBe(true);
+  });
+
+  it("★ G30 — `do` KHÔNG phân biệt 61 giây với 18 ngày; `quaCu` thì có", () => {
+    // Đây là toàn bộ lý do ô `quaCu` tồn tại: hai giá trị dưới cùng `do=true`,
+    // nên một màn chỉ đọc `do` sẽ vẽ 18 ngày y như 61 giây.
+    const hoiCu = nhanDoTuoi(BAY_GIO - 61_000, BAY_GIO);
+    const raCu = nhanDoTuoi(BAY_GIO - 1_572_061_000, BAY_GIO);
+    expect(hoiCu.do).toBe(true);
+    expect(raCu.do).toBe(true);
+    expect(hoiCu.quaCu).toBe(false); // 61s < NGUONG_CU_MS (300s)
+    expect(raCu.quaCu).toBe(true);
+  });
+
+  it("★ mốc quaCu đúng bằng NGUONG_CU_MS, không lệch một bậc", () => {
+    expect(nhanDoTuoi(BAY_GIO - NGUONG_CU_MS, BAY_GIO).quaCu).toBe(false);
+    expect(nhanDoTuoi(BAY_GIO - NGUONG_CU_MS - 1, BAY_GIO).quaCu).toBe(true);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 23 M4 — nhanTuoiDocDuoc: ĐƠN VỊ NGƯỜI ĐỌC ĐƯỢC, KHÔNG GIÂY SỐNG    */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("nhanTuoiDocDuoc", () => {
+  /**
+   * `t` GIẢ trả thẳng KHOÁ + tham số, nên test khẳng định được **khoá nào được
+   * chọn** thay vì khẳng định một chuỗi tiếng Việt. Đây chính là cách tránh lỗi
+   * *"(17 ngày ago)"*: bài test không được biết ngôn ngữ nào đang bật.
+   */
+  const tGia = (khoa: string, _md: string, opt?: Record<string, unknown>) =>
+    `${khoa}|${JSON.stringify(opt ?? {})}`;
+
+  it("★★★ 1.572.061 giây KHÔNG còn in ra giây — dùng khoá ĐƠN VỊ NGÀY", () => {
+    const s = nhanTuoiDocDuoc(nhanDoTuoi(BAY_GIO - 1_572_061_000, BAY_GIO), tGia);
+    expect(s).toBe('twin3d.moPhong.donVi.ngay|{"n":18}');
+    // Đối chứng NGƯỢC: chuỗi KHÔNG được chứa số giây sống.
+    expect(s).not.toContain("1572061");
+  });
+
+  it("dưới 60 giây vẫn in GIÂY — đó là đơn vị đúng ở nhịp làm mới của màn", () => {
+    expect(nhanTuoiDocDuoc(nhanDoTuoi(BAY_GIO - 12_000, BAY_GIO), tGia)).toBe(
+      'twin3d.vanHanh.donViGiay|{"n":12}',
+    );
+  });
+
+  it("★ DÙNG LẠI ba khoá `twin3d.moPhong.donVi.*`, không đẻ bộ khoá thứ hai (G12)", () => {
+    const gio = nhanTuoiDocDuoc(nhanDoTuoi(BAY_GIO - 3 * 3_600_000, BAY_GIO), tGia);
+    const phut = nhanTuoiDocDuoc(nhanDoTuoi(BAY_GIO - 5 * 60_000, BAY_GIO), tGia);
+    expect(gio).toBe('twin3d.moPhong.donVi.gio|{"n":3}');
+    expect(phut).toBe('twin3d.moPhong.donVi.phut|{"n":5}');
+  });
+
+  it("chưa từng có dữ liệu ⇒ '—', không phải '0 giây'", () => {
+    expect(nhanTuoiDocDuoc(nhanDoTuoi(null, BAY_GIO), tGia)).toBe("—");
   });
 });
 

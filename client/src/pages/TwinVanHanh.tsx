@@ -67,7 +67,7 @@ import type * as THREE from "three";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/_core/hooks/usePermissions";
-import { isScopeEmpty } from "@/lib/scopeEmpty";
+import { isScopeEmpty, scopeEmptyReasonOf } from "@/lib/scopeEmpty";
 import { trpc } from "@/lib/trpc";
 
 import { gocTuQuatTrucDung, mmSangMet } from "@/components/twin3d/heToaDo";
@@ -139,6 +139,7 @@ import {
   gopTinhTrang,
   hienSo,
   nhanDoTuoi,
+  nhanTuoiDocDuoc,
   thoiDiemDuLieuMoiNhat,
   trangThaiHienThi,
   type MayVanHanh,
@@ -714,9 +715,52 @@ export default function TwinVanHanh() {
     (canhQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
     (toaNhaQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN";
 
-  const phamViRong = isScopeEmpty(
-    (canhQ.data as { scopeEmptyReason?: string | null } | undefined)?.scopeEmptyReason,
-  );
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 23 M3 (L-4) — `EmptyState` CÓ TRONG MÃ MÀ **KHÔNG BAO GIỜ HIỆN**
+   * ════════════════════════════════════════════════════════════════════════
+   * ĐO ĐƯỢC 2026-09-08 trên `dist`, vai `operator1` (KHÔNG-admin, **0 hàng**
+   * `user_factory_assignments` — G76 đã kiểm bằng SQL độc lập):
+   *
+   *     `factory.list`              → **[] (n=0)**      ⇒ `factoryId = null`
+   *     `twinCanh.canhThietKe`      → **0 lần gọi**     (`enabled: factoryId !== null`)
+   *     `canhQ.data`                → `undefined`
+   *     `phamViRong`                → **false**         ⇒ `EmptyState` KHÔNG hiện
+   *     màn thật                    → 0 máy · 0 nhãn · mọi KPI `—`
+   *     nhưng vỏ vẫn khai           → **"Alarms (7)"**
+   *
+   * ⇒ Màn TỰ MÂU THUẪN: sàn trống trơn mà ô đếm vẫn khai có cảnh báo.
+   *
+   * ★★★ CHẨN ĐOÁN CỦA BRIEF ĐÚNG TRIỆU CHỨNG, **SAI MỘT BƯỚC VỀ GỐC RỄ**.
+   *   Brief nói *"nếu `canhQ` không trả cờ… `EmptyState` không hiện"*, ngụ ý
+   *   `canhThietKe` chạy rồi thiếu cờ. Đo ra thì **thủ tục KHÔNG HỀ CHẠY** —
+   *   nó bị `enabled: factoryId !== null` chặn từ trước. Khác biệt này quan
+   *   trọng: vá bằng cách "thêm cờ vào `canhThietKe`" sẽ **không đổi được gì**,
+   *   vì đáp ứng ấy không bao giờ tồn tại. Server đã trả đúng nhãn rồi
+   *   (`twinCanhRouter.ts:1057` `...nhan.labels`); chỗ hỏng nằm ở CHỖ ĐỌC.
+   *
+   * ⇒ Nguồn sự thật phải là truy vấn **LUÔN CHẠY** và không phụ thuộc
+   *   `factoryId`: `factory.list`. Danh sách nhà máy RỖNG **sau khi đã tải
+   *   xong** chính là định nghĩa của "chưa được gán nhà máy".
+   *
+   * ★ G12 — dùng `scopeEmptyReasonOf` (`lib/scopeEmpty.ts:58`), thứ đã tồn tại
+   *   ĐÚNG cho bài toán "gom lý do từ NHIỀU nguồn cùng màn", thay vì viết phép
+   *   hợp nhất thứ hai.
+   *
+   * ⚠ `!factoriesQ.isLoading` là ĐIỀU KIỆN BẮT BUỘC: trong lượt tải đầu
+   *   `factories` cũng rỗng, và thiếu vế này thì MỌI người dùng thấy
+   *   `EmptyState` nhấp nháy một nhịp trước khi cảnh hiện — biến một bản vá
+   *   thành một lỗi mới cho toàn bộ người dùng. `isError` cũng loại trừ: lỗi
+   *   mạng KHÔNG phải "chưa được gán" (hai câu, hai hành động khác nhau).
+   */
+  const phamViRong =
+    isScopeEmpty(
+      scopeEmptyReasonOf(
+        canhQ.data as { scopeEmptyReason?: string | null } | undefined,
+        toaNhaQ.data as { scopeEmptyReason?: string | null } | undefined,
+      ),
+    ) ||
+    (!factoriesQ.isLoading && !factoriesQ.isError && factories.length === 0);
 
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* Hợp nhất dữ liệu — MỘT nguồn cho cả 3D, 2D, bảng và ô đếm                */
@@ -1827,8 +1871,45 @@ export default function TwinVanHanh() {
     { enabled: coQuyenXemQuyTrinh && workflowRef !== null, retry: false, refetchOnWindowFocus: false },
   );
 
-  /** Ngăn Mô phỏng mở/thu — DÙNG CHUNG khoá `?thu=` (G40), như bảng KPI. */
-  const thuMoPhong = urlState.thu.includes("moPhong");
+  /**
+   * Ngăn Mô phỏng mở/thu — DÙNG CHUNG khoá `?thu=` (G40), như bảng KPI.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 23 M2 — NGĂN NÀY **MẶC ĐỊNH THU**, và đây là một phép đo
+   * ════════════════════════════════════════════════════════════════════════
+   * Đo trên `dist`, 1280×720, `?thu=trai,phai` (chế độ "3D toàn màn"):
+   *
+   *     canvas          968 × 489 = **473.352 px²**
+   *     bảng Metrics    208 × 220 =   45.760 px²
+   *     ngăn Simulation 257 × 165 =   42.437 px²
+   *     ────────────────────────────────────────────
+   *     hai lớp phủ che **88.197 px² = 18,6 % canvas**, VĨNH VIỄN
+   *
+   * ⇒ Đợt 21 mua canvas rộng bằng cách cho panel **nổi đè**; hai lớp phủ này
+   *   trả lại **gần một phần năm** cái giá đó. Đó là số, không phải cảm giác.
+   *
+   * ★★★ VÌ SAO THU **MÔ PHỎNG** MÀ KHÔNG THU **KPI** — hai ngăn không cùng
+   *   loại, nên không cùng cách chữa:
+   *     · `BangKpiNoi` trả lời *"nhà máy đang thế nào"* — câu hỏi người xem
+   *       LUÔN có, và §11 #16 dựng nó chính để màn hình treo tường ở chế độ
+   *       `?thu=trai,phai` không còn là "3D đẹp mà 0 con số". Thu nó đi là
+   *       phá lại đúng thứ Đợt 11 vừa mua.
+   *     · `NganMoPhong` là **công cụ what-if gọi theo nhu cầu**. Ở trạng thái
+   *       mặc định nó hiện đúng *"— Select a line to simulate throughput"* và
+   *       một ô chọn workflow RỖNG (đọc được trong ảnh
+   *       `.qa-dot23/M1-nhan-thu-ca-hai.png`) — tức là nó tiêu **42.437 px²**
+   *       để nói rằng nó chưa có gì để nói.
+   *
+   * ★ G40 — KHÔNG đẻ khoá thứ bảy. Ngữ nghĩa `thu=` GIỮ NGUYÊN ("liệt kê panel
+   *   ĐANG THU", vắng = mở), nên `docThu`/`ghiThu` không phải đổi một dòng và
+   *   vòng đọc-ghi URL vẫn tất định. Chỗ đổi duy nhất là **mặc định khi khoá
+   *   VẮNG**, và nó nằm ở đây — tầng đọc của màn, không ở tầng URL.
+   *
+   * ⚠ Hệ quả phải nói ra: `?thu=` rỗng nay KHÔNG còn nghĩa "mở tất cả" với
+   *   riêng `moPhong`. Người dùng mở ngăn bằng nút của chính nó, và lượt ghi
+   *   ấy đi qua `doiThu("moPhong")` như cũ — nút vẫn là nguồn sự thật.
+   */
+  const thuMoPhong = !urlState.thu.includes("moPhongMo");
 
   /** Tên trạm theo id — để bảng what-if không chỉ in `#7`. */
   const tenTramTheoId = useMemo(() => {
@@ -2741,17 +2822,54 @@ export default function TwinVanHanh() {
               }[xuatXu],
             })}
           </span>
+          {/*
+            ════════════════════════════════════════════════════════════════
+            ★★★ ĐỢT 23 M4 — "Updated 1572061s ago" LÀ **GIÂY SỐNG**, VÀ NÓ CŨ
+                             18 NGÀY MÀ HIỆN RA NHƯ BÌNH THƯỜNG
+            ════════════════════════════════════════════════════════════════
+            Ảnh tự chụp `.qa-dot23/M1-nhan-thu-ca-hai.png` in đúng chuỗi ấy.
+            HAI lỗi trong một dòng, và chúng cần hai bản vá khác nhau:
+
+              1. **ĐỊNH DẠNG** — 1.572.061 giây không ai đọc được. Dùng
+                 `doTuoiNen.rut` (`{so, donVi}` do `nhanTuoi` rút — G12/G72)
+                 từ 60 giây trở lên; **dưới 60 giây vẫn in GIÂY** vì đó là
+                 nhịp làm mới của màn và giây là đơn vị đúng ở đó.
+              2. **HẠN HIỆU LỰC (G30)** — `do` chỉ nói "hơi cũ", không phân
+                 biệt 61 giây với 18 ngày. `NganXuLy.tsx:300` đã có badge
+                 `duLieuQuaCu` cho ca này; thanh công cụ thì không, nên cùng
+                 một sự thật có hai câu trả lời trên cùng một màn. Nay thanh
+                 công cụ nói **cùng câu ấy** khi `quaCu`.
+
+            ★ `data-giay` GIỮ NGUYÊN số thô — nghiệm thu đọc số, không đọc chữ.
+              Thêm `data-qua-cu` để đo được cờ mới mà không phải suy từ chuỗi.
+          */}
           <span
             className={`text-[11px] ${doTuoiNen.do ? "text-destructive" : "text-muted-foreground"}`}
             data-testid="do-tuoi-nen"
             data-giay={doTuoiNen.giay ?? ""}
+            data-qua-cu={doTuoiNen.quaCu ? "1" : "0"}
+            title={
+              doTuoiNen.quaCu && doTuoiNen.giay !== null
+                ? t("twin3d.vanHanh.duLieuQuaCu", "Dữ liệu quá cũ — trạng thái không đáng tin")
+                : undefined
+            }
           >
             {doTuoiNen.giay === null
               ? `${t("twin3d.tuoi.capNhatLanCuoi")}: —`
-              : t("twin3d.vanHanh.capNhatTruoc", "Cập nhật {{giay}} giây trước", {
-                  giay: hienSo(doTuoiNen.giay),
+              : t("twin3d.vanHanh.capNhatTruoc", "Cập nhật {{tuoi}} trước", {
+                  tuoi: nhanTuoiDocDuoc(doTuoiNen, t),
                 })}
           </span>
+          {/* ★ Badge "quá cũ" — CÙNG chuỗi `duLieuQuaCu` mà `NganXuLy` dùng, để
+              hai chỗ không thể lệch câu. Chỉ hiện khi thật sự quá hạn. */}
+          {doTuoiNen.quaCu && doTuoiNen.giay !== null ? (
+            <span
+              className="rounded border border-amber-500/40 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400"
+              data-testid="badge-qua-cu-nen"
+            >
+              {t("twin3d.vanHanh.duLieuQuaCu", "Dữ liệu quá cũ — trạng thái không đáng tin")}
+            </span>
+          ) : null}
           <Button size="sm" variant="ghost" onClick={napLai} data-testid="nut-nap-lai">
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
@@ -3233,6 +3351,17 @@ export default function TwinVanHanh() {
               sanRongM={sanRongM}
               sanSauM={sanSauM}
               tatNhan={false}
+              /*
+                ★★★ ĐỢT 23 M1 — KHAI BÁO SỰ THIẾU thay vì giấu im lặng.
+                Đo được (`.qa-dot23/M1-do-nhan.json`): 45 ứng viên → **8 nhãn**,
+                37 bị khử vì chồng bbox, `capConChong = 0`. Bộ lọc chạy đúng
+                hợp đồng, nhưng 82 % máy không có tên và màn KHÔNG nói ra.
+                `t()` gọi Ở ĐÂY rồi truyền chuỗi xuống — cảnh nằm trong cây
+                Canvas và không được gọi `t()` (RB-8.3).
+              */
+              chuNhanAn={(n) =>
+                t("twin3d.vanHanh.nhanBiAn", "còn {{n}} tên bị ẩn", { n })
+              }
               chuMatContext={t("twin3d.loi.matContext")}
               ariaLabel={ariaLabel}
               onCameraDoi={khiCameraDoi}
@@ -3323,7 +3452,10 @@ export default function TwinVanHanh() {
           */}
           <NganMoPhong
             mo={!thuMoPhong}
-            onDoiMo={() => doiThu("moPhong")}
+            /* ★ ĐỢT 23 M2 — bật/tắt tên chiều-NGƯỢC `moPhongMo` (ngăn mặc
+                 định THU). Dùng nhầm `"moPhong"` ở đây thì nút bấm không đổi
+                 được gì: `thuMoPhong` đọc `moPhongMo`. */
+            onDoiMo={() => doiThu("moPhongMo")}
             dungDauVao={dungWhatIf}
             horizonHours={horizonHours}
             onDoiHorizon={(g) => datHorizon(kep(g, HORIZON_MIN, HORIZON_MAX, 8))}

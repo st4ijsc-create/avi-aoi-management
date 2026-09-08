@@ -537,3 +537,37 @@ describe("★★★ lô F (nap/thu) × lô G (xem) — cùng tồn tại trên M
     expect(docXemTuQuery(q)).toEqual({ loai: "machine", id: 42 });
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 23 M2 — `moPhongMo`: TÊN CHIỀU NGƯỢC CHO PANEL MẶC-ĐỊNH-THU        */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("Đợt 23 M2 — moPhongMo", () => {
+  it("★★★ có trong PANEL_THU_DUOC — thiếu thì `docThu` NUỐT im lặng (G67)", () => {
+    // Đây KHÔNG phải test tautology: `docThu` lọc theo đúng danh sách này, nên
+    // một tên vắng mặt sẽ đọc ra rỗng trong khi URL ghi ra vẫn "đúng".
+    expect(PANEL_THU_DUOC).toContain("moPhongMo");
+    expect(docThu("moPhongMo")).toEqual(["moPhongMo"]);
+  });
+
+  it("★ vòng đọc-ghi TẤT ĐỊNH và không mất tên", () => {
+    expect(docThu(ghiThu(["moPhongMo", "kpi"]))).toEqual(
+      PANEL_THU_DUOC.filter((p) => ["kpi", "moPhongMo"].includes(p)),
+    );
+  });
+
+  it("★ `?thu=moPhong` (link CŨ) vẫn đọc được, không làm hỏng cả ô", () => {
+    // Bỏ tên cũ khỏi danh sách sẽ khiến link cũ đọc ra rỗng — im lặng.
+    expect(docThu("moPhong")).toEqual(["moPhong"]);
+    // ⚠ `docThu` giữ thứ tự ĐẦU VÀO; chỉ `ghiThu` mới sắp theo PANEL_THU_DUOC.
+    // (Kỳ vọng đầu tiên của tôi ở đây SAI và lưới đã bác — giữ lại ghi chú này
+    //  vì chính sự phân vai ấy là thứ dễ nhớ nhầm.)
+    expect(docThu("moPhong,kpi")).toEqual(["moPhong", "kpi"]);
+    expect(ghiThu(["moPhong", "kpi"])).toBe("kpi,moPhong");
+  });
+
+  it("★ hai tên ĐỘC LẬP — bật cái này không kéo theo cái kia", () => {
+    expect(docThu("moPhongMo")).not.toContain("moPhong");
+    expect(docThu("moPhong")).not.toContain("moPhongMo");
+  });
+});

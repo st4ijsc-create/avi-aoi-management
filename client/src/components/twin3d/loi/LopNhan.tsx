@@ -39,6 +39,19 @@ export interface LopNhanProps {
   /** Tắt hẳn lớp nhãn (bậc `tat_nhan` của matDoKhungHinh). */
   tat?: boolean;
   tranNhan?: number;
+  /**
+   * ★ ĐỢT 23 M1 — chỉ hiện nhãn của máy **bất thường** (+ máy đang chọn).
+   * Chuyển thẳng xuống `locNhan`; xem docblock `CauHinhLocNhan.chiNhanBatThuong`.
+   */
+  chiNhanBatThuong?: boolean;
+  /**
+   * Chữ ĐÃ QUA `t()` cho chip "còn N tên bị ẩn". Nhận `{n}` đã thay sẵn.
+   *
+   * ★ RB-8.3 — component trong cây Canvas KHÔNG gọi `t()`; tầng trên dịch rồi
+   *   truyền xuống, đúng khuôn `LopCanhBao`/`NganXuLy` đã dùng.
+   * `undefined` ⇒ KHÔNG render chip (người gọi chưa nối — không có chuỗi rác).
+   */
+  chuNhanAn?: (n: number) => string;
 }
 
 interface NhanDaChieu {
@@ -64,10 +77,20 @@ function chieu(
   return { x: ((v.x + 1) / 2) * rong, y: ((1 - v.y) / 2) * cao };
 }
 
-export function LopNhan({ nhan, dangChon, dangHover, tat = false, tranNhan = TRAN_NHAN_DOM }: LopNhanProps) {
+export function LopNhan({
+  nhan,
+  dangChon,
+  dangHover,
+  tat = false,
+  tranNhan = TRAN_NHAN_DOM,
+  chiNhanBatThuong = false,
+  chuNhanAn,
+}: LopNhanProps) {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const [hienThi, setHienThi] = useState<NhanDaChieu[]>([]);
+  /** Số tên KHÔNG đọc được ở khung hiện tại — nguồn của chip "còn N bị ẩn". */
+  const [soAn, setSoAn] = useState(0);
   const tamRef = useRef(new THREE.Vector3());
   const chuKyRef = useRef("");
   /**
@@ -88,6 +111,7 @@ export function LopNhan({ nhan, dangChon, dangHover, tat = false, tranNhan = TRA
   const tinhLai = useCallback(() => {
     if (tat || nhan.length === 0) {
       if (hienThi.length !== 0) setHienThi([]);
+      if (soAn !== 0) setSoAn(0);
       return;
     }
 
@@ -121,7 +145,7 @@ export function LopNhan({ nhan, dangChon, dangHover, tat = false, tranNhan = TRA
       });
     }
 
-    const kq = locNhan(ungVien, { tranNhan });
+    const kq = locNhan(ungVien, { tranNhan, chiNhanBatThuong });
 
     // Cửa sổ đo cho e2e (§13.2). Ghi CẢ khi 0 nhãn — "không đo được" phải khác
     // "đo được 0", nếu không thì test đọc `undefined` rồi coi như đạt.
@@ -133,6 +157,10 @@ export function LopNhan({ nhan, dangChon, dangHover, tat = false, tranNhan = TRA
         chongLap: kq.soBiChongLap,
         vuotTran: kq.soVuotTran,
         tran: tranNhan,
+        // ★ ĐỢT 23 M1 — số tên NGƯỜI DÙNG KHÔNG ĐỌC ĐƯỢC. `ve` một mình không
+        //   trả lời được câu đó: `ve=8` nghe như đủ, trong khi 37 cái tên khác
+        //   đã bị giấu im lặng.
+        biGiau: kq.soBiGiau,
         // ★ Số CẶP nhãn CÒN chồng nhau trong tập được vẽ — đại lượng KHÁC với
         // `chongLap` (số nhãn BỊ LOẠI). Chính chỗ lẫn hai đại lượng này làm bộ
         // đếm cũ khai 0 trong khi màn thật có 5 cặp chồng. Đại lượng này phải
@@ -150,9 +178,15 @@ export function LopNhan({ nhan, dangChon, dangHover, tat = false, tranNhan = TRA
     // Chỉ setState khi TẬP nhãn thực sự đổi. Không có bước này, mỗi khung xoay
     // camera lại đẩy một mảng mới vào React → re-render 60 lần/giây, đúng thứ
     // `frameloop="demand"` sinh ra để tránh.
-    const chuKy = kq.ve.map((v) => `${v.khoa}:${Math.round(v.x)}:${Math.round(v.y)}`).join("|");
+    // ★ `soBiGiau` ĐI VÀO CHỮ KÝ: nếu không, xoay camera làm số nhãn bị giấu
+    //   đổi mà chip vẫn in số cũ — một con số CÓ VẺ đúng, đúng lớp lỗi đợt này
+    //   đang vá. Cùng lý do `ve` đã nằm trong chữ ký.
+    const chuKy =
+      `${kq.soBiGiau}#` +
+      kq.ve.map((v) => `${v.khoa}:${Math.round(v.x)}:${Math.round(v.y)}`).join("|");
     if (chuKy === chuKyRef.current) return;
     chuKyRef.current = chuKy;
+    setSoAn(kq.soBiGiau);
 
     setHienThi(
       kq.ve.map((v) => {
@@ -168,13 +202,25 @@ export function LopNhan({ nhan, dangChon, dangHover, tat = false, tranNhan = TRA
         };
       }),
     );
-  }, [nhan, camera, size.width, size.height, dangChon, dangHover, tat, tranNhan, hienThi.length]);
+  }, [
+    nhan,
+    camera,
+    size.width,
+    size.height,
+    dangChon,
+    dangHover,
+    tat,
+    tranNhan,
+    chiNhanBatThuong,
+    hienThi.length,
+    soAn,
+  ]);
 
   // Chiếu lại mỗi khung ĐƯỢC VẼ. Với `frameloop="demand"` đây KHÔNG phải 60fps:
   // hàm chỉ chạy khi có ai đó gọi `invalidate()` (xoay camera, đổi dữ liệu).
   useFrame(tinhLai);
 
-  if (tat || hienThi.length === 0) return null;
+  if (tat || (hienThi.length === 0 && soAn === 0)) return null;
 
   return (
     <Html fullscreen zIndexRange={[20, 0]} style={{ pointerEvents: "none", userSelect: "none" }}>
@@ -189,6 +235,38 @@ export function LopNhan({ nhan, dangChon, dangHover, tat = false, tranNhan = TRA
         data-testid="lop-nhan-twin3d"
         style={{ position: "relative", width: "100%", height: "100%" }}
       >
+        {/*
+          ★★★ ĐỢT 23 M1 — CHIP "CÒN N TÊN BỊ ẨN".
+          Đo được trước bản này: 45 ứng viên → **8 nhãn**, 37 bị loại, và màn
+          KHÔNG nói gì. Một người vận hành đọc 8 cái tên sẽ tin đó là tất cả.
+          Chip này là phép **KHAI BÁO SỰ THIẾU** — cùng luật NT-3 mà cả màn đã
+          theo: *không có dữ liệu ≠ bình thường*, ở đây là *không có nhãn ≠
+          không có máy*.
+          ★ `pointer-events:none` như mọi thứ trong lớp này: nó là chỉ báo,
+            không phải nút. Đổi mật độ nhãn là việc của thanh công cụ.
+        */}
+        {chuNhanAn && soAn > 0 ? (
+          <div
+            data-testid="chip-nhan-bi-an"
+            data-so-an={soAn}
+            style={{
+              position: "absolute",
+              left: "50%",
+              bottom: 8,
+              transform: "translateX(-50%)",
+              padding: "2px 8px",
+              borderRadius: 999,
+              fontSize: 11,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              background: "var(--muted, rgba(15,23,42,0.78))",
+              color: "var(--muted-foreground, #e2e8f0)",
+              border: "1px solid var(--border, rgba(100,116,139,0.35))",
+            }}
+          >
+            {chuNhanAn(soAn)}
+          </div>
+        ) : null}
         {hienThi.map((n) => (
           <div
             key={n.khoa}
@@ -246,6 +324,8 @@ export interface WindowCoDo extends Window {
     chongLap: number;
     vuotTran: number;
     tran: number;
+    /** ★ Đợt 23 M1 — tổng số tên bị giấu (ngoài khung + chồng + trần + lọc). */
+    biGiau: number;
     /**
      * Số CẶP nhãn CÒN chồng nhau trong tập ĐƯỢC VẼ — phải luôn 0.
      * ⚠ KHÁC `chongLap`: đây là đầu ra (còn chồng), kia là đầu vào (bị loại).

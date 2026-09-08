@@ -30,6 +30,13 @@
  */
 
 import { mucTuoi, NGUONG_CU_MS, NGUONG_TUOI_MS, type MucTuoi } from "../mauTrangThai";
+/**
+ * ★ G12 — DÙNG LẠI phép rút đơn vị của `moPhongLogic.ts`, không viết bản thứ hai.
+ *   `moPhongLogic` KHÔNG import ngược tệp này (nó chỉ import `./wipTram`), nên
+ *   cạnh nhập này không tạo chu trình. Kiểm bằng `npm run build` (esbuild sẽ
+ *   báo chu trình ESM), không bằng lời hứa.
+ */
+import { nhanTuoi, type TuoiDaRut } from "./moPhongLogic";
 
 /**
  * ★ T-3 — ngưỡng ba mức tươi (NT-3.3), ms. **RE-EXPORT**, không khai lại.
@@ -364,15 +371,99 @@ export interface NhanDoTuoi {
   /** `null` khi chưa từng có dữ liệu ⇒ UI hiện `—`. */
   giay: number | null;
   do: boolean;
+  /**
+   * Tuổi ĐÃ RÚT về `{so, donVi}` — `null` khi chưa từng có dữ liệu.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ VÌ SAO THÊM Ô NÀY — MỘT SỐ ĐO, KHÔNG PHẢI MỘT Ý THÍCH
+   * ════════════════════════════════════════════════════════════════════════
+   * Ảnh tự chụp Đợt 23 (`.qa-dot23/M1-nhan-thu-ca-hai.png`) in nguyên văn
+   * **"Updated 1572061s ago"** trên thanh công cụ. 1.572.061 giây = **18,2
+   * ngày**, và không người vận hành nào đọc được điều đó từ bảy chữ số. Đây
+   * là **GIÂY SỐNG** — đơn vị đúng cho `< 60 s` (nhịp làm mới của màn) nhưng
+   * vô nghĩa từ vài giờ trở lên.
+   *
+   * ★ G72 — module thuần trả **dữ liệu có cấu trúc**, KHÔNG phát văn xuôi.
+   *   `nhanTuoi` (`moPhongLogic.ts:387`) đã đúng khuôn ấy và đã trả giá cho
+   *   bài học *"(17 ngày ago)"*; ô này **uỷ thác thẳng cho nó** (G12) thay vì
+   *   viết phép rút đơn vị thứ hai. Hai bản rút đơn vị trong một màn là đúng
+   *   cách để chúng lệch nhau mà không ai biết.
+   *
+   * ⚠ `giay` GIỮ NGUYÊN, không bỏ: `data-giay` là thứ e2e/nghiệm thu đọc để
+   *   lấy SỐ THÔ, và đổi nó là làm mù thiết bị đo của chính mình.
+   */
+  rut: TuoiDaRut | null;
+  /**
+   * Dữ liệu CŨ tới mức không còn đáng tin (> {@link NGUONG_CU_MS}).
+   *
+   * ★★★ G30 — HẠN HIỆU LỰC CHƯA PHỦ HẾT CHỖ. `do` (đỏ khi > 60 s) chỉ nói
+   * *"hơi cũ"*; nó KHÔNG phân biệt 61 giây với 18 ngày, nên một giá trị 18
+   * ngày tuổi hiện ra **trông y như bình thường, chỉ đỏ hơn chút**. `NganXuLy`
+   * đã có badge `duLieuQuaCu` cho đúng ca này (`NganXuLy.tsx:300`) nhưng
+   * thanh công cụ nền thì KHÔNG — cùng một sự thật, hai câu trả lời khác nhau
+   * trên cùng một màn. Ô này là thứ để thanh công cụ nói cùng câu.
+   */
+  quaCu: boolean;
 }
 
 export function nhanDoTuoi(
   thoiDiemDuLieu: number | null,
   bayGio: number,
 ): NhanDoTuoi {
-  if (thoiDiemDuLieu == null) return { giay: null, do: true };
+  if (thoiDiemDuLieu == null) return { giay: null, do: true, rut: null, quaCu: true };
   // `Math.max(0, …)` vì đồng hồ client có thể chạy TRƯỚC đồng hồ server vài
   // giây; một nhãn "cập nhật -3 giây trước" làm người đọc nghi ngờ cả màn hình.
-  const giay = Math.max(0, Math.round((bayGio - thoiDiemDuLieu) / 1000));
-  return { giay, do: bayGio - thoiDiemDuLieu > NGUONG_TUOI_MS };
+  const tuoiMs = Math.max(0, bayGio - thoiDiemDuLieu);
+  const giay = Math.round(tuoiMs / 1000);
+  return {
+    giay,
+    do: bayGio - thoiDiemDuLieu > NGUONG_TUOI_MS,
+    // ★ `nhanTuoi` trả `null` cho tuổi < 1 phút ⇒ KHÔNG, nó trả `{so:0,donVi:"phut"}`.
+    //   Tầng vẽ tự chọn: dưới 60 s thì in GIÂY (còn đọc được), từ đó dùng `rut`.
+    rut: nhanTuoi(tuoiMs),
+    quaCu: tuoiMs > NGUONG_CU_MS,
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 23 M4 — ĐỘ TUỔI ĐỌC ĐƯỢC (một chỗ, hai người gọi)                  */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Đổi {@link NhanDoTuoi} thành đoạn chữ ĐỘ DÀI THỜI GIAN đã dịch — `"45s"`,
+ * `"12 phút"`, `"18 ngày"`. KHÔNG kèm chữ "trước"/"ago": khuôn câu là việc của
+ * người gọi (`capNhatTruoc`), nếu không ta lặp đúng lỗi *"(17 ngày ago)"*.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO HÀM NÀY NHẬN `t` TRONG KHI `nhanTuoi` TỪ CHỐI NHẬN `t`
+ * ════════════════════════════════════════════════════════════════════════════
+ * `nhanTuoi` là phép RÚT ĐƠN VỊ — logic thuần, phải test được ở
+ * `environment: "node"` mà không có i18next. Hàm này là phép GHÉP CHỮ — nó
+ * KHÔNG quyết định gì, chỉ chọn khoá dịch theo `donVi` đã rút sẵn. Nhận `t`
+ * làm tham số (chứ không gọi `useTranslation` bên trong) giữ nó vẫn thuần và
+ * vẫn test được: test truyền vào một `t` giả và đọc thẳng khoá được chọn.
+ *
+ * ⚠ Dưới 60 giây in GIÂY, không rút về "0 phút". `nhanTuoi(30_000)` trả
+ *   `{so: 0, donVi: "phut"}` — đúng theo hợp đồng của nó, nhưng in ra
+ *   *"0 phút trước"* thì SAI NGHĨA với một màn làm mới mỗi 30 giây: người đọc
+ *   sẽ tưởng dữ liệu đứng im. Ngưỡng này là {@link NGUONG_TUOI_MS}, cùng hằng
+ *   số quyết định `do` — hai câu trả lời của một dòng không được dùng hai mốc.
+ *
+ * ★ Người gọi: `TwinVanHanh.tsx` (thanh công cụ nền) và `NganXuLy.tsx` (ngăn
+ *   chi tiết máy). Trước Đợt 23 hai chỗ tự ghép chữ riêng và **cùng in giây
+ *   sống**; gộp về một hàm để chúng không thể lệch nhau lần nữa (G12).
+ */
+export function nhanTuoiDocDuoc(
+  n: NhanDoTuoi,
+  t: (khoa: string, macDinh: string, tuyChon?: Record<string, unknown>) => string,
+): string {
+  if (n.giay == null) return "—";
+  // Dưới ngưỡng "hơi cũ" ⇒ giây vẫn là đơn vị đúng và đọc được.
+  if (n.giay * 1000 <= NGUONG_TUOI_MS || n.rut == null) {
+    return t("twin3d.vanHanh.donViGiay", "{{n}}s", { n: n.giay });
+  }
+  // ★ DÙNG LẠI đúng ba khoá `twin3d.moPhong.donVi.*` mà `NganMoPhong` đã dùng
+  //   cho `nhanTuoi` — có sẵn ở CẢ BA locale (en/vi/zh). Đẻ bộ khoá thứ hai cho
+  //   cùng ba đơn vị là cách chắc chắn để chúng dịch lệch nhau.
+  return t(`twin3d.moPhong.donVi.${n.rut.donVi}`, "{{n}}", { n: n.rut.so });
 }

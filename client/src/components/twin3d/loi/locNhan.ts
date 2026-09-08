@@ -163,11 +163,48 @@ export interface KetQuaLocNhan {
   soBiChongLap: number;
   /** Số bị loại vì đã chạm trần `tranNhan`. */
   soVuotTran: number;
+  /**
+   * ★★★ ĐỢT 23 M1 — TỔNG số nhãn **BỊ GIẤU** (ngoài khung + chồng + vượt trần
+   * + bị lọc theo chính sách). Đây là con số màn hình phải NÓI RA.
+   *
+   * Vì sao không để người gọi tự cộng ba ô kia: cộng tay ở nơi gọi là cách
+   * chắc chắn để hai màn cộng thiếu một ô khác nhau, và ô thiếu sẽ là ô mới
+   * thêm vào lần sau. Một nguồn, một phép cộng.
+   *
+   * ⚠ KHÔNG tính `soNgoaiKhung` vào "giấu"? — CÓ tính. Một máy sau lưng camera
+   *   cũng là một cái tên người dùng không đọc được; gộp chung mới trả lời
+   *   đúng câu hỏi *"bao nhiêu máy đang không có nhãn"*.
+   */
+  soBiGiau: number;
 }
 
 export interface CauHinhLocNhan {
   /** Trần nhãn DOM. Mặc định {@link TRAN_NHAN_DOM}. */
   tranNhan?: number;
+  /**
+   * CHỈ giữ nhãn của vật thể **bất thường** (error / andon).
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 23 M1 — VÌ SAO CẦN BẬC NÀY, ĐO ĐƯỢC CHỨ KHÔNG PHỎNG ĐOÁN
+   * ════════════════════════════════════════════════════════════════════════
+   * Đo trên `dist`, vai `e2e_tai_loE`, viewport 1280×720, tư thế camera mặc
+   * định (`.qa-dot23/M1-do-nhan.json`):
+   *
+   *     tổng ứng viên 45 · ngoài khung 0 · **bị loại vì chồng 37** · vẽ **8**
+   *     cặp CÒN chồng trong tập được vẽ: **0**
+   *
+   * Nghĩa là bộ lọc đang chạy ĐÚNG hợp đồng của nó, nhưng **82 % máy không có
+   * nhãn nào** — và màn KHÔNG nói ra điều đó. Người vận hành thấy 8 tên và
+   * không có cách nào biết 37 cái tên còn lại đã bị giấu.
+   *
+   * ⇒ Bậc này cho người gọi đổi **chính sách chọn ai được nhãn** thay vì chỉ
+   *   đổi số lượng: khi bật, nhãn dành cho máy đang bất thường — đúng thứ
+   *   người vận hành cần đọc — thay vì cho máy nào tình cờ thắng phép so bbox.
+   *
+   * ⚠ KHÔNG đụng NT-2: alarm vẫn thuộc `LopCanhBao` (badge), lớp riêng, trần
+   *   riêng. Bậc này chỉ nói về lớp NHÃN TÊN.
+   */
+  chiNhanBatThuong?: boolean;
   /**
    * Bán kính va chạm pixel — TƯƠNG THÍCH NGƯỢC. Khi truyền, nó đặt bề rộng/cao
    * SUY ĐOÁN thành `2 × banKinhVaChamPx` cho nhãn chưa đo được (hộp vuông cạnh
@@ -243,8 +280,16 @@ export function locNhan(
   const trongKhung = ungVien.filter((n) => !n.ngoaiKhung);
   const soNgoaiKhung = ungVien.length - trongKhung.length;
 
+  // ★ Chính sách chọn ai được nhãn — chạy TRƯỚC phép sắp/khử chồng, vì nó đổi
+  //   TẬP ứng viên chứ không đổi thứ tự. Nhãn đang CHỌN luôn được giữ: người
+  //   dùng vừa bấm vào nó, giấu tên đúng cái họ vừa chọn là vô lý.
+  const theoChinhSach = cauHinh.chiNhanBatThuong
+    ? trongKhung.filter((n) => n.batThuong === true || n.dangChon === true)
+    : trongKhung;
+  const soBiLocChinhSach = trongKhung.length - theoChinhSach.length;
+
   // Sắp theo ưu tiên trên BẢN SAO — không làm biến dạng mảng của người gọi.
-  const daSap = [...trongKhung].sort(soSanh);
+  const daSap = [...theoChinhSach].sort(soSanh);
 
   const ve: NhanDuocVe[] = [];
   // Hộp của những nhãn ĐÃ giữ — song song với `ve`, giữ để không phải dựng lại
@@ -282,6 +327,8 @@ export function locNhan(
     soNgoaiKhung,
     soBiChongLap,
     soVuotTran,
+    // MỘT phép cộng, ở MỘT nơi — xem docblock `soBiGiau`.
+    soBiGiau: soNgoaiKhung + soBiLocChinhSach + soBiChongLap + soVuotTran,
   };
 }
 

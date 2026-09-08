@@ -20105,7 +20105,7 @@
       "ganKyThuat": "指派技术员",
       "chuaGan": "未指派",
       "moChucNang": "打开功能",
-      "capNhatTruoc": "{{giay}} 秒前更新",
+      "capNhatTruoc": "{{tuoi}}前更新",
       "chuaTungBaoCao": "从未上报数据",
       "duLieuQuaCu": "数据过旧——状态不可信",
       "doiSoatLech": "{{thieu}} 台设备未布置 · {{moCoi}} 条布置指向已停用设备",
@@ -20165,7 +20165,9 @@
       "xuatUsdXong": "已导出 {{ten}} — {{prim}} 个图元，{{byte}} 字节",
       "xuatUsdCanhTrong": "未导出：该工厂的平面图上尚无任何对象（文件将为空）。",
       "xuatUsdChuaChonNhaMay": "尚未选择要导出的工厂。",
-      "xuatUsdHong": "USD 导出失败（{{lyDo}}）。"
+      "xuatUsdHong": "USD 导出失败（{{lyDo}}）。",
+      "donViGiay": "{{n}} 秒",
+      "nhanBiAn": "另有 {{n}} 个名称被隐藏"
     },
     "studio": {
       "tieuDe": "3D 工厂 — 设计",

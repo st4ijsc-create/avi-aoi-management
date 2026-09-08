@@ -149,7 +149,31 @@ export interface TrangThaiTwinUrl {
  *   lại ra rỗng, ngăn tự mở lại sau F5 và không lỗi nào nổ. Đúng lớp G67 "tính
  *   năng chết ở tầng ĐẦU TIÊN là KIỂU/DANH SÁCH", nên tên phải vào đây TRƯỚC.
  */
-export const PANEL_THU_DUOC: readonly string[] = ["trai", "phai", "kpi", "moPhong"];
+/**
+ * ★★★ ĐỢT 23 M2 — `"moPhongMo"` LÀ TÊN **CHIỀU NGƯỢC**, và nó phải nằm ở đây.
+ *
+ * `NganMoPhong` đổi sang **mặc định THU** (đo được: nó che 42.437 px² =
+ * 9,0 % canvas để hiện đúng một câu *"chọn một line"* — xem docblock
+ * `thuMoPhong` ở `TwinVanHanh.tsx`). Nhưng ngữ nghĩa của khoá `thu=` là
+ * **"liệt kê panel ĐANG THU"**, và Đợt 21 đã bắt một redirect hiểu ngược
+ * chiều này — nên KHÔNG được đổi nghĩa khoá cũ.
+ *
+ * ⇒ Cách giữ cả hai: panel mặc-định-thu mang một tên **riêng cho trạng thái
+ *   MỞ** (`moPhongMo`). Khoá vẫn liệt kê "trạng thái khác mặc định", `docThu`/
+ *   `ghiThu` không đổi một dòng, và vòng đọc-ghi vẫn tất định.
+ *
+ * ⚠ `"moPhong"` GIỮ LẠI trong danh sách: link cũ mang `?thu=moPhong` vẫn phải
+ *   đọc được mà không làm hỏng cả ô (nó nay là no-op — ngăn vốn đã thu). Bỏ
+ *   tên khỏi danh sách sẽ khiến `docThu` NUỐT nó im lặng, đúng bẫy G67 mà
+ *   docblock trên vừa cảnh báo.
+ */
+export const PANEL_THU_DUOC: readonly string[] = [
+  "trai",
+  "phai",
+  "kpi",
+  "moPhong",
+  "moPhongMo",
+];
 
 /**
  * Một THAY ĐỔI trạng thái URL — khác `Partial<TrangThaiTwinUrl>` ở ô `nap`.
