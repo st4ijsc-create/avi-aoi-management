@@ -5929,6 +5929,92 @@ bang redirect e2e **14** hang (13 + `/rf-test-cell`).
 bbox) · chieu **ack** chua do (`e2e_tai_loE` thieu `andon canEdit`) · vai `engineer1` khong do lai ·
 82/2155 khong tai lap dung bo loc, **104/2408** la tap bao (`vitest run twin`).
 
+### 14q.10 DOT 33 - PARETO #2 + #3 + #9 (QD-23): `/twin` LA CUA VAO - K1..K9 do SONG tren dist, ablation hai phia
+
+Thư mục thô `.qa-dot33/` (harness `do.mjs` kế thừa Đợt 32; `truoc/` = dist `9ea4016c`, `sau/` = dist sau vá,
+`go-va-*/` = ablation mức dist, `ablation-unit/` = ablation mức lưới). Vai `e2e_tai_loE` (tRPC `auth.me`, G100),
+1600×900, cổng **3033** (không đụng 3000/3001/3008/5173/8080). **6 commit** pathspec `eab0dae7 → 5c2ee49e`.
+
+**Kết cục gốc** *"từ nhà máy chọn Line thì hiển thị Line 3D Twin, chọn vào máy thì hiển thị Machine 3D Twin"*:
+Đợt 32 **KHÔNG ĐẠT** → Đợt 33 **ĐẠT**, đo bằng `waitForFunction` (không cửa sổ cố định):
+
+| K | Trước (`truoc/`) | Sau (`sau/`) |
+|---|---|---|
+| K1 `/twin?pv=factory:1` → bấm node Line trong cây | ở lại `/twin?pv=line:2&chon=line:2` (15 s không tới) | **`/twin/line/2` sau 7 ms**, canvas DOM 1 = `__soCanvas` 1, app "Production (MES)" 10 mục |
+| K2 `/twin?pv=tang:28` → bấm `may-hang-14` | ở lại `/twin?…&chon=machine:14`, cockpit 0 | **`/twin/may/14`**, `cockpit-2d` 1, `ngan-nhung` 0 suốt, canvas DOM 1 suốt (K8) |
+| K3 `/twin/line/2` → bấm `o-tram-14` | URL không đổi | **`/twin/may/14`** 19 ms; ‹ Line về `/twin/line/2`; Back ×2 đúng |
+| K4 Back / link "Nhà máy" / F5 | link về `/twin` trơn | Back → `pv=factory:1` · link → `pv=factory:1` (history.state) · F5 rồi link → `factory:1` · F5 rồi Back → `factory:1` |
+| K5 deep-link context mới `/twin/line/2` · `/twin/may/14` | app **"Overview"**, 0 mục | **"Production (MES)"**, 10 mục, "3D Factory" cùng lớp `bg-sidebar-accent` với đối chứng `/twin` |
+| K6 redirect | 14/14 cũ · **0/6** mới · 4/4 giữ | **14/14 cũ · 6/6 mới (≈550 ms) · 4/4 giữ** · 2 đối chứng cố ý sai TRƯỢT (G92) |
+| K7 `/twin/line/2?cam=` | nhãn KHÔNG đổi (340 px ≈ nhiễu 674), `__tuTheCamera` null | **`__tuTheCamera` = đúng giá trị yêu cầu** (A `19.2,18,30` · B `0,10,14.8`; mặc định `19.2,7.6,21.7`), nhãn đổi, pixel canvas khác **239.705 / 354.158** (nhiễu 2 lần không-cam: 1.512) |
+| K11 lối vào Mô phòng | — | `/twin` tầng: `ngan-mo-phong` 1, `data-ly-do=chua_chon_line`; `/twin/line/2`: **0** ⇒ what-if **mất lối vào** (xem ô dưới) |
+| K9 tenant `/twin/line/11` · `/twin/may/257` | `line-rong` 1, 0 ô trạm, 0 nhãn, 0 canvas · `ngoaiPhamVi` | không đổi |
+
+> #### ★ QD-23 thực thi - bốn mảnh, mỗi mảnh một hàm, một commit
+> 1. **`dichManRieng(search)`** (`bo-cuc/dinhTuyenTwinCu.ts`) — redirect THAM SỐ: `xem=machine` > `chon=machine` >
+>    `pv=machine` > `chon=line` > `pv=line`; `tapdoan|factory|tang`, `chon=station`, `xem=robot|station` **ở lại**.
+>    Gọi ở **VỎ** `TwinVanHanh` (`useSearch` → `<Redirect replace>`), thân `ThanTwinVanHanh` không mount cho URL sắp rời
+>    — vì `<Route>` wouter chỉ render lại theo *pathname*, và thân có ~90 hook (không chen `return` giữa).
+> 2. **`chonMay`/`chonLine`/`chonPhamVi`** trong `/twin`: mọi bề mặt (cây, danh sách, 2D/3D, dải cảnh báo, `DaiLine`,
+>    breadcrumb) → `setLocation(duongDanMan*(id), { state: trangThaiVe(pathname+search) })`. `chonMay(null)` vẫn là bỏ
+>    chọn tại chỗ. `NganXuLy` trên `/twin` **không còn** `onMoTaiCho/nganNhung/lyDoNgan/onDongNhung` ⇒ `NganNhung`
+>    mất đường vào (tệp giữ, `NganXuLy.tsx` vẫn dựng khi được truyền).
+> 3. **`TwinLine`**: bỏ `datMachineIdChon`; cảnh 3D + dải trạm cùng `dieuHuongToiMay`. **Vỏ** `TwinLine`/`TwinMay`
+>    đọc `?cam=` (`docTrangThaiUrl(search).cam` — cùng bộ đọc với `/twin`) và `history.state` (`useHistoryState` của
+>    `wouter/use-browser-location`) rồi TRUYỀN xuống thân (G37). `khungNhin = camUrl ? khungNhinTuCamera(camUrl) : …`.
+>    Link "Nhà máy" `href={duongVe ?? "/twin"}`; Máy → Line mang `state` tiếp.
+> 4. **`getAppForRoute`** (`lib/apps.ts`): route con thừa app của route cha (cắt dần đuôi) — BẤT BIẾN thay vì thêm
+>    hàng vào `ROUTE_APP_OVERRIDES` (danh sách đóng, G67). `apps.unit.test.ts` đo trên **toàn bộ `navGroups`**: 0 mục
+>    nav đổi app; `/corporate-dashboard` override giữ; gốc lạ vẫn `undefined`.
+
+**Lưới đỏ khi vá — phân loại:** **(a) 3 ca** ghim hành vi cũ mà QĐ-23 thay, đã cập nhật kèm lý do trong test:
+`manMayNoiVaoTrang` ⑦ (chuỗi ``setLocation(`/twin/may/${id}`)`` → helper + state) · `nhungTaiCho.dom` "TRUYỀN cả ba
+móc" (đảo chiều: `/twin` KHÔNG truyền, `NganXuLy` VẪN nhận) · `nhungTaiCho.dom` "TRUYỀN `lyDoNgan`" (lý do L-5 nay ở
+`TwinMay`). **(b) 0 ca** bất biến bị mã vi phạm (`tang1KhongTachDuoc`, `manLineNoiVaoTrang`, `duongDanBaMan`,
+`useTrangThaiTwin` G37, RB-4 một canvas, tenant `ngoaiPhamVi` — tất cả xanh không sửa). Lưới MỚI: `cuaVaoTwin` 24 ca ·
+`apps.unit` 5 · `dichManRieng` 10 · `duongDanTwin` 8 · `khungNhinTuCamera` 4. Cổng: twin3d **83 tệp / 2200** (nền
+82/2155), `vitest run twin` **105 / 2453** (nền 104/2408), `check` 0, `build` 0 (55,7 s).
+
+**Ablation (G93 cả hai phía):** mức lưới `ablation-unit.log` — gỡ từng mảnh (A1 helpers 15 đỏ · A2 cam 4 · A3 `/twin`
+11 · A4 Line/Máy 10 · A5 shell 4) rồi khôi phục ⇒ 0 đỏ, md5 4 tệp CRLF khớp byte sau `git checkout --` (G101 chiều
+NGƯỢC: `git show >` ghi **LF** vào tệp worktree CRLF ⇒ md5 lệch dù `git diff` rỗng — tuỳ EOL của tệp mà chọn lệnh khôi
+phục, so md5 với bản ghi TRƯỚC là phép đo duy nhất đáng tin). **Mức dist theo mảnh** (`ablation-dist.sh`: sao lưu
+byte → trả tệp về `9ea4016c` → build → restart 3033 → đo → chép byte gốc lại): **A3** gỡ `TwinVanHanh.tsx` ⇒ K1 đỏ
+(ở lại `/twin?pv=line:2&chon=line:2`), K2 đỏ (`?chon=machine:14`, cockpit 0), K6 mới **0/6** đỏ — 14/14 cũ vẫn xanh
+(bảng cũ độc lập, đúng) · **A4** gỡ `TwinLine/TwinMay` ⇒ K3 đỏ (URL không đổi), K7 đỏ (`__tuTheCamera` vẫn
+`19.2,7.6,21.7` với cả A/B; pixel 1.105/856 ≈ nhiễu 889 — kit hook sống, màn bỏ qua cam) · **A5** gỡ `apps.ts` ⇒ K5
+đỏ (deep-link "Overview", 0 mục; `/twin` đối chứng vẫn "Production (MES)" 10 mục, mục không-active KHÁC chuẩn ⇒ phép so
+biết kêu). Cột "Trước" của bảng K = dist `9ea4016c` = gỡ toàn bộ. Sau khi chép byte gốc lại: build cuối + smoke
+k1/k5/k7 xanh (`sau-khoi-phuc/`), cây `*.ts/*.tsx` sạch.
+
+> #### ★ HỆ QUẢ QĐ-23 chủ dự án PHẢI biết - ngăn Mô phỏng what-if (lô X) MẤT LỐI VÀO
+> `NganMoPhong` + `useMoPhongTwin` chỉ chạy khi `lineDangXem = phamVi.cap === "line" ? … : null`
+> (`TwinVanHanh.tsx:678`). Sau QĐ-23 `/twin` không bao giờ ở cấp line ⇒ ngăn luôn khai `chua_chon_line`; màn
+> `/twin/line/:id` **không có** ngăn này (D-1 chỉ đọc, chưa nối). Đo K11 `sau/k11-mo-phong-loi-vao.json`. Tính năng
+> §11 #35 (phát lại workflow, Gantt) do đó **0 lối vào UI** cho tới khi chuyển `NganMoPhong` sang `TwinLine`
+> (đề nghị Đợt 34/35; nó chỉ có truy vấn đọc, không phạm D-1). e2e `twin-lo-x-mo-phong.spec.ts` X1–X3 (đi
+> `/twin?pv=line:1`) sẽ ĐỎ — **không "nới" lưới**, để đỏ tới khi có quyết định.
+
+**Brief Đợt 33 sai/thiếu (G83):** (1) *"`?cam=` đọc thật … `docCamera` như `TwinVanHanh`"* — **`/twin` cũng KHÔNG
+đọc** `urlState.cam` (grep: chỉ `ghiUrl({cam})` ở `:2114`); nó chỉ GHI. Đợt này KHÔNG sửa `/twin` vì `/twin` ghi
+`cam` bằng `replaceState` sau mỗi lần dừng xoay ⇒ đọc lại rồi bay tới sẽ thành vòng lặp tween; cần "đọc một lần lúc
+mount" — ghi nợ. (2) *"`/twin/line/<line nhà máy khác>` ⇒ `ngoaiPhamVi` (Đợt 30 đã có)"* — **SAI**: `TwinLine` không
+có nhánh `ngoaiPhamVi`, nó hiện `line-rong` "Chuyền này chưa có máy nào trên bố cục" (đúng Pareto #7 Đợt 32); K9 đo
+đúng thứ có thật, không hỏng. (3) *"đo camera qua `__thongKeVe`"* — không có trường camera; thêm cửa sổ đo
+`__tuTheCamera` (kit, 1 dòng ở `CanhVanHanh.camDoi`). (4) `[data-sidebar="menu-button"]` đếm **0 ngay trên `/twin`
+lành** — sidebar launcher không dùng `SidebarMenuButton`; đo vỏ bằng chữ nội dung + lớp CSS của đúng mục, so với `/twin`
+làm chuẩn. (5) Bảng e2e redirect 14 hàng: đúng; nhưng `twin-dot22` A3/A4 + `twin-dot24` V4–V6 + `twin-lo-x` X1–X3 đi
+qua `/twin?pv=line:`/`?xem=` — e2e ngoài cổng vitest, chưa ai chạy lại (ghi ở "còn mở").
+
+**Còn mở (nói thẳng, `file:line`):** · `useTrangThaiTwin.ts` vẫn trả `nganNhung`/`ghiXem` — **0 chỗ gọi** sau đợt này
+(giữ vì `nhungTaiCho.dom.test.tsx:167-185` ghim hook đọc/ghi `?xem=`; dọn cùng lúc với quyết định NganNhung) ·
+`?xem=robot:N`/`?xem=station:N` trên `/twin` nay **bị bỏ qua im lặng** (không màn riêng, `dichManRieng` trả `null`) ·
+`/twin` không đọc `?cam=` (mục 1 ở trên) · các nhánh `phamVi.cap === "line"|"may"` trong `TwinVanHanh.tsx`
+(`:678`, `:1776-1800`, `DaiLine :3502`) nay **không thể tới** — mã chết có chủ ý, dọn ở đợt tách tiếp · e2e
+`twin-dot22-nghiem-thu.spec.ts:175,192,318` · `twin-dot24-nghiem-thu.spec.ts:84-140` · `twin-lo-x-mo-phong.spec.ts:24-120`
+ghim hành vi cũ (a), chưa chạy lại · Pareto #1/#4–#8 nguyên trạng (K1 ảnh: cột WIP vượt mép, 6/12 máy trong khung;
+K2 ảnh: chip "Unknown · Never reported" cạnh cockpit "ONLINE · Connected").
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
