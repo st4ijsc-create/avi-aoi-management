@@ -47,7 +47,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getSharedSocket } from "@/lib/socketManager";
 import { useTranslation } from "react-i18next";
-import { Link, useLocation, useSearch } from "wouter";
+import { Link, Redirect, useLocation, useSearch } from "wouter";
 import {
   AlertTriangle,
   Boxes,
@@ -102,7 +102,15 @@ import {
 import { DaiLine } from "@/components/twin3d/van-hanh/DaiLine";
 import { xuatUsd, type KetQuaXuatUsd } from "@/components/twin3d/van-hanh/xuatUsd";
 import type { CanhBaoTheGioi, MucCanhBao } from "@/components/twin3d/van-hanh/LopCanhBao";
-import { ghiCamera, type PhamVi } from "@/components/twin3d/van-hanh/duongDanTwin";
+import {
+  duongDanManLine,
+  duongDanManMay,
+  ghiCamera,
+  trangThaiVe,
+  type PhamVi,
+} from "@/components/twin3d/van-hanh/duongDanTwin";
+// ── Đợt 33 (QĐ-23) — `/twin` là CỬA VÀO: `?pv=line:`/`?chon=machine:`/`?xem=machine:` đi màn riêng ──
+import { dichManRieng } from "@/components/twin3d/bo-cuc/dinhTuyenTwinCu";
 // ── T-3 (§15.5.2) — vỏ React của trạng thái URL, dùng chung cho CẢ BA MÀN ──
 import { useTrangThaiTwin } from "@/components/twin3d/van-hanh/useTrangThaiTwin";
 import { useMoPhongTwin } from "@/components/twin3d/van-hanh/useMoPhongTwin";
@@ -130,7 +138,6 @@ import { demTrucTiep } from "@/components/twin3d/thiet-ke/cayPhanCapLogic";
 import {
   demMayTrucTiep,
   dieuHuongTuKhoa,
-  lineCuaMay,
   tapChonTuUrl,
 } from "@/components/twin3d/van-hanh/cayVanHanh";
 import {
@@ -167,12 +174,9 @@ import {
   HE_SO_MAX,
 } from "@/components/twin3d/van-hanh/moPhongLogic";
 import { NganMoPhong } from "@/components/twin3d/van-hanh/NganMoPhong";
-// ── Đợt 10 mục 5 (lô G) — xem chi tiết TẠI CHỖ, trạng thái ngăn ở khoá `?xem=` ──
-import {
-  cauChoLyDoNgan,
-  lyDoNganNhung,
-  type NganNhungMo,
-} from "@/components/twin3d/van-hanh/nhungTaiCho";
+// ── Đợt 10 mục 5 (lô G) — ngăn `?xem=` từng import `nhungTaiCho` ở đây. Đợt 33
+//    (QĐ-23): `?xem=machine:N` redirect sang `/twin/may/N` (vỏ bên dưới), màn này
+//    không còn dùng gì của `nhungTaiCho`. ──
 // ── Đợt 6 (§9.8/§10.2) — kho trạng thái DÙNG CHUNG cho trực tiếp và tua lại ──
 import { dongHoHienThi, hopNhat } from "@/components/twin3d/van-hanh/khoTrangThai";
 // ── Đóng nợ trước Đợt 7 — §11 #50 (UNS), #53 (khu chờ), #54 (nhãn Line) ──
@@ -255,7 +259,30 @@ import { coQuyenSuaNhaXuong } from "@/components/twin3d/bo-cuc/vungQuyen";
 /** Phạm vi mặc định khi URL không nói gì. */
 const PHAM_VI_MAC_DINH: PhamVi = { cap: "tang", id: null };
 
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 33 — VỎ: `/twin` LÀ **CỬA VÀO**, KHÔNG PHẢI NƠI XEM LINE/MÁY (QĐ-23)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đợt 32 đo được `/twin?pv=line:2` dựng màn Line **tại chỗ** song song với
+ * `/twin/line/2`, và `/twin?chon=machine:14`/`?xem=machine:14` mở panel/ngăn
+ * nhúng thay vì màn Máy. Chủ dự án chốt: ba dạng URL ấy là **đường cũ** tới hai
+ * màn riêng ⇒ redirect ≤ 1 chặng (G40), bảng tham số ở `dichManRieng`.
+ *
+ * ★ Vì sao ở VỎ chứ không ở `App.tsx` hay giữa thân: `<Route>` của wouter chỉ
+ *   render lại khi **pathname** đổi (nó không theo dõi search), còn thân có
+ *   ~90 hook — một `return <Redirect>` chen giữa thân là "rendered fewer hooks".
+ *   Vỏ này gọi `useSearch()` (theo dõi cả search) rồi rẽ nhánh TRƯỚC khi thân
+ *   mount ⇒ không một truy vấn, không một canvas nào dựng lên cho URL sắp rời.
+ * ★ Cùng khuôn với `TwinLine`/`TwinMay`: vỏ đọc route (G37), thân nhận qua prop.
+ */
 export default function TwinVanHanh() {
+  const search = useSearch();
+  const dichRieng = useMemo(() => dichManRieng(search), [search]);
+  if (dichRieng) return <Redirect to={dichRieng} replace />;
+  return <ThanTwinVanHanh />;
+}
+
+export function ThanTwinVanHanh() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const search = useSearch();
@@ -329,12 +356,61 @@ export default function TwinVanHanh() {
    *   hữu than phiền, chỉ đổi nguyên nhân. Và vì trạng thái ở URL, **nút Back
    *   của trình duyệt đóng ngăn** — miễn phí.
    */
-  const { urlState, nganNhung, ghiUrl, ghiXem, doiPhamVi, doiThu } =
-    useTrangThaiTwin(search, setLocation);
+  const { urlState, ghiUrl, doiPhamVi, doiThu } = useTrangThaiTwin(search, setLocation);
   const phamViYeuCau = urlState.phamVi ?? PHAM_VI_MAC_DINH;
   const machineIdChon = urlState.chon?.loai === "machine" ? urlState.chon.id : null;
-  const moTaiCho = useCallback((ngan: NganNhungMo) => ghiXem(ngan), [ghiXem]);
-  const dongNhung = useCallback(() => ghiXem(null), [ghiXem]);
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 33 (QĐ-23) — BẤM LINE ⇒ `/twin/line/:id`, BẤM MÁY ⇒ `/twin/may/:id`
+   * ════════════════════════════════════════════════════════════════════════
+   * Trước đợt này `chonMay` = `ghiUrl({ chon: machine })` (ở lại `/twin`, mở
+   * panel) và chạm node Line = `ghiUrl({ phamVi: line })` (màn Line TẠI CHỖ).
+   * Đợt 32 đo: kết cục *"chọn Line → Line 3D, chọn máy → Machine 3D"* **không
+   * đạt** — `/twin` có 0 href tới hai màn mới. Nay MỌI cú bấm Line/máy trong
+   * `/twin` (cây, danh sách, cảnh 3D/2D, dải cảnh báo, dải Line, breadcrumb) đi
+   * qua ĐÚNG HAI hàm dưới — không nơi nào tự ghép `/twin/...` (G12).
+   *
+   * ★ `state: trangThaiVe(...)` — mang `?pv=` hiện tại sang màn con để link
+   *   "‹ Nhà máy" về đúng tầng/nhà máy vừa xem (QĐ-23 #5; G37: màn con không
+   *   tự đọc route cha). `window.location` đọc TẠI LÚC bấm — cùng lý do với
+   *   `ghiUrl` (xem docblock `useTrangThaiTwin`).
+   * ★ `chonMay(null)` (bấm nền cảnh để bỏ chọn) vẫn là ghi URL — nó không phải
+   *   "đi tới đâu".
+   * ★ `?xem=` (ngăn nhúng `NganNhung`) **mất đường vào** từ `/twin`: không còn
+   *   `onMoTaiCho`/`nganNhung` truyền xuống `NganXuLy`. Tệp `NganNhung.tsx`
+   *   KHÔNG xoá (QĐ-23 #4) — `NganXuLy` vẫn dựng nó khi được truyền, ở màn khác.
+   */
+  const dieuHuongToiMan = useCallback(
+    (duong: string) =>
+      setLocation(duong, {
+        state: trangThaiVe(`${window.location.pathname}${window.location.search}`),
+      }),
+    [setLocation],
+  );
+  const chonMay = useCallback(
+    (id: number | null) => {
+      if (id === null) {
+        ghiUrl({ chon: null });
+        return;
+      }
+      dieuHuongToiMan(duongDanManMay(id));
+    },
+    [ghiUrl, dieuHuongToiMan],
+  );
+  const chonLine = useCallback(
+    (id: number) => dieuHuongToiMan(duongDanManLine(id)),
+    [dieuHuongToiMan],
+  );
+  /** Breadcrumb: hai cấp dưới đi màn riêng; ba cấp trên ở lại `/twin`. */
+  const chonPhamVi = useCallback(
+    (pv: PhamVi) => {
+      if (pv.cap === "line" && pv.id !== null) return chonLine(pv.id);
+      if (pv.cap === "may" && pv.id !== null) return chonMay(pv.id);
+      doiPhamVi(pv);
+    },
+    [chonLine, chonMay, doiPhamVi],
+  );
 
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* Dữ liệu                                                                  */
@@ -1454,13 +1530,6 @@ export default function TwinVanHanh() {
     [urlState.chon, phamVi],
   );
 
-  /** `machineId → stationId`, để suy line của máy khi chạm node máy trong cây. */
-  const stationCuaMay = useMemo(() => {
-    const m = new Map<number, number | null>();
-    for (const mv of mayVanHanh) m.set(mv.id, mv.stationId);
-    return m;
-  }, [mayVanHanh]);
-
   /**
    * ★★★ CHẠM NODE CÂY = ĐIỀU HƯỚNG. Không một đường ghi nào ở đây.
    *
@@ -1479,12 +1548,15 @@ export default function TwinVanHanh() {
       }
       const dh = dieuHuongTuKhoa(khoa);
       if (dh === null) return;
+      // ★ Đợt 33 (QĐ-23): MÁY và LINE là hai MÀN RIÊNG — chạm node = rời `/twin`.
+      //   Chú thích "đặt CẢ HAI `chon` + `phamVi`" ở trên mô tả hành vi TRƯỚC
+      //   Đợt 33; nay màn Máy tự đứng trong Line của nó (`lineCuaMayTheoTram`).
       if (dh.chon?.loai === "machine") {
-        const line = lineCuaMay(dh.chon.id, stationCuaMay, lineCuaTram);
-        ghiUrl({
-          chon: dh.chon,
-          ...(line !== null && phamVi.id !== line ? { phamVi: { cap: "line", id: line } } : {}),
-        });
+        chonMay(dh.chon.id);
+        return;
+      }
+      if (dh.chon?.loai === "line") {
+        chonLine(dh.chon.id);
         return;
       }
       // Xưởng: `{phamVi:null, chon:null}` ⇒ KHÔNG ghi gì. Node vẫn mở/gập được
@@ -1495,7 +1567,7 @@ export default function TwinVanHanh() {
         ...(dh.chon !== null ? { chon: dh.chon } : {}),
       });
     },
-    [ghiUrl, stationCuaMay, lineCuaTram, phamVi.id],
+    [ghiUrl, chonMay, chonLine],
   );
 
   /* ── Phạm vi Line (§10C.3) ──────────────────────────────────────────── */
@@ -2065,12 +2137,7 @@ export default function TwinVanHanh() {
   // ★ RB-4: `che2D` quyết định THAY THẾ, không bao giờ dựng cả hai.
   const che2D = epChe2D || webglHong;
 
-  const chonMay = useCallback(
-    (id: number | null) => {
-      ghiUrl({ chon: id === null ? null : { loai: "machine", id } });
-    },
-    [ghiUrl],
-  );
+  /* `chonMay`/`chonLine` khai ở đầu thân (sau `machineIdChon`) — Đợt 33 (QĐ-23). */
 
   /* ── ★★★ F4 — THU/MỞ PANEL BÊN, trạng thái ở URL ─────────────────────── */
   /* `doiPhamVi`/`doiThu` đến từ `useTrangThaiTwin` (T-3) — KHÔNG định nghĩa
@@ -2184,31 +2251,11 @@ export default function TwinVanHanh() {
   }, [factoryId, factories, utils]);
 
   /*
-   * ════════════════════════════════════════════════════════════════════════
-   * ★★★ ĐỢT 24 VIỆC 3 (L-5) — `?xem=…` LỆCH PHẠM VI NAY **NÓI RA**
-   * ════════════════════════════════════════════════════════════════════════
-   * Trước dòng này, `nganNhung` đi thẳng vào `NganNhung`, và component ấy
-   * render **bất cứ khi nào `ngan !== null`**. Với một id ngoài phạm vi, người
-   * dùng nhận một ngăn rỗng (thân cockpit tự 403/404 bên trong) và **không câu
-   * nào nói vì sao** — Đợt 22 đo được đúng hình dạng ấy.
-   *
-   * ★ `mayVanHanh` là tập ĐÃ QUA cổng phạm vi của server; ta chỉ đọc lại hệ
-   *   quả, KHÔNG tự suy quyền ở client (xem docblock `lyDoNganNhung`).
-   *
-   * ⚠ Chỉ xét được cho `loai === "machine"`: `/twin` cầm danh sách MÁY, không
-   *   cầm danh sách robot/trạm. Với hai loại kia ta để `"mo"` như cũ — thà
-   *   giữ nguyên hành vi cũ còn hơn khai một lý do mình không đo được.
+   * ★ Đợt 24 việc 3 (L-5) từng tính `lyDoNgan` cho ngăn nhúng `?xem=` ở đây.
+   *   Đợt 33 (QĐ-23): `?xem=machine:N` redirect sang `/twin/may/N` (vỏ), và
+   *   `TwinMay` nói lý do bằng `lyDoMoManMay` — cùng câu `cauChoLyDoNgan`. Ngăn
+   *   nhúng không còn đường vào từ `/twin` nên phép tính này rời trang.
    */
-  const lyDoNgan = useMemo(
-    () =>
-      lyDoNganNhung(nganNhung, {
-        idTrongTam:
-          nganNhung?.loai === "machine" ? mayVanHanh.map((m) => m.id) : [nganNhung?.id ?? -1],
-        phamViRong,
-        dangTai: canhQ.isLoading || factoriesQ.isLoading,
-      }),
-    [nganNhung, mayVanHanh, phamViRong, canhQ.isLoading, factoriesQ.isLoading],
-  );
 
   const mayDangChon = mayVanHanh.find((m) => m.id === machineIdChon) ?? null;
   const sanRongM = tangDau ? mmSangMet(tangDau.rongMm) : 40;
@@ -2504,7 +2551,7 @@ export default function TwinVanHanh() {
                 type="button"
                 className="max-w-[9rem] truncate rounded px-1 hover:bg-accent focus-visible:outline focus-visible:outline-2"
                 data-testid={`breadcrumb-${m.cap}`}
-                onClick={() => doiPhamVi({ cap: m.cap, id: m.id })}
+                onClick={() => chonPhamVi({ cap: m.cap, id: m.id })}
               >
                 {m.nhan}
               </button>
@@ -3474,10 +3521,10 @@ export default function TwinVanHanh() {
             coQuyenXem={(m) => hasPermission(m, "canView")}
             onDaXuLy={napLai}
             onDieuHuong={setLocation}
-            onMoTaiCho={moTaiCho}
-            nganNhung={nganNhung}
-            lyDoNgan={lyDoNgan ?? undefined}
-            onDongNhung={dongNhung}
+            /* ★ Đợt 33 (QĐ-23 #4): KHÔNG `onMoTaiCho`/`nganNhung` — ngăn nhúng
+               `NganNhung` mất đường vào từ `/twin`; bấm máy đã rời sang
+               `/twin/may/:id` nên panel này chỉ còn gặp `machineId === null`
+               (chọn trạm/line) và các nút điều hướng rơi về `onDieuHuong`. */
           />
         </div>
       </div>

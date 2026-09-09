@@ -157,11 +157,15 @@ function dungProps(ghiDe: Partial<NganXuLyProps> = {}): NganXuLyProps {
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 describe("TẦNG 1 — chỗ nối văn bản (G16)", () => {
-  it("★★★ TwinVanHanh.tsx TRUYỀN cả ba móc xuống NganXuLy", () => {
-    // Gỡ bất kỳ dòng nào trong ba dòng này ⇒ tính năng chết câm, mọi cổng vẫn xanh.
-    expect(TRANG).toContain("onMoTaiCho={moTaiCho}");
-    expect(TRANG).toContain("nganNhung={nganNhung}");
-    expect(TRANG).toContain("onDongNhung={dongNhung}");
+  it("★★★ ĐỢT 33 (QĐ-23 #4) — TwinVanHanh.tsx KHÔNG còn truyền ba móc; hợp đồng NganXuLy VẪN nhận chúng", () => {
+    // Trước Đợt 33 ca này ghim CHIỀU NGƯỢC LẠI (ba dòng `onMoTaiCho={moTaiCho}`…
+    // phải có). Chủ dự án chốt QĐ-23: `/twin` là CỬA VÀO — bấm máy đi `/twin/may/:id`,
+    // ngăn nhúng `NganNhung` MẤT ĐƯỜNG VÀO từ `/twin` nhưng tệp KHÔNG xoá. Đo cả hai vế:
+    expect(TRANG).not.toContain("onMoTaiCho=");
+    expect(TRANG).not.toContain("nganNhung=");
+    expect(TRANG).not.toContain("onDongNhung=");
+    // …và `NganXuLy` vẫn khai ba prop ấy — ai truyền thì ngăn vẫn mở (không phá hợp đồng).
+    for (const p of ["onMoTaiCho?:", "nganNhung?:", "onDongNhung?:"]) expect(NGAN_XU_LY).toContain(p);
   });
 
   it("★★★ TwinVanHanh.tsx ĐỌC ngăn từ URL và GHI ngăn vào URL", () => {
@@ -448,8 +452,14 @@ describe("Đợt 24 L-5 — ngăn bị chặn nói ra lý do", () => {
     expect(onDong).toHaveBeenCalledTimes(1);
   });
 
-  it("★★★ TwinVanHanh.tsx TRUYỀN `lyDoNgan` xuống — gỡ dòng này thì tính năng chết câm", () => {
-    expect(TRANG).toContain("lyDoNgan={lyDoNgan");
-    expect(TRANG).toContain("lyDoNganNhung(");
+  it("★★★ ĐỢT 33 (QĐ-23) — lý do L-5 nay nói ở MÀN MÁY: `/twin?xem=machine:N` redirect, `TwinMay` dùng `lyDoMoManMay` + `cauChoLyDoNgan`", () => {
+    // Trước Đợt 33 ca này ghim `/twin` truyền `lyDoNgan` xuống ngăn nhúng. Nay
+    // `?xem=machine:N` không còn mở ngăn trên `/twin` (vỏ redirect sang màn Máy),
+    // nên phép tính `lyDoNganNhung` rời `/twin`; câu nói ra vẫn là MỘT (`cauChoLyDoNgan`).
+    expect(TRANG).not.toContain("lyDoNganNhung(");
+    expect(TRANG).toContain("dichManRieng(search)");
+    const MAN_MAY = readFileSync(resolve(GOC, "src/pages/TwinMay.tsx"), "utf8");
+    expect(MAN_MAY).toContain("lyDoMoManMay(machineId, { idTrongTam, phamViRong, dangTai })");
+    expect(MAN_MAY).toContain("cauChoLyDoNgan(lyDo)");
   });
 });
