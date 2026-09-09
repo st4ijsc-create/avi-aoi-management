@@ -207,9 +207,14 @@ export async function getFactoryCommandOverview(params?: {
   const codeById = new Map(machineRows.map((m) => [m.id, m.code]));
 
   // 3) Trạng thái log mới nhất / máy (DISTINCT ON — không N+1).
+  //    ★★★ Đợt 34 — `AT TIME ZONE 'UTC'`: cột `timestamp` (không múi giờ) lưu giờ UTC (DB `TimeZone=Etc/UTC`,
+  //    đo `::text` = "2026-09-06 18:51:22"), nhưng `db.execute` thô đi qua postgres.js đọc naive theo GIỜ MÁY
+  //    NODE (+07 ⇒ 11:51Z, lệch −7 h) trong khi `db.select()` typed của drizzle đọc naive là UTC (đúng).
+  //    Đo được trên đối chứng máy 18: nhịp tim chèn `now()` ⇒ cockpit (typed) "3 s · Connected" nhưng fleet
+  //    (thô) "7 h · offline". Ép về timestamptz ngay trong SQL để cả hai đường trả CÙNG một mốc.
   const statusRows = executeRows(
     await db.execute(sql`
-      SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, status, "timestamp" AS ts
+      SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, status, "timestamp" AT TIME ZONE 'UTC' AS ts
       FROM machine_status_logs
       ORDER BY "machineId", "timestamp" DESC
     `),
@@ -221,7 +226,7 @@ export async function getFactoryCommandOverview(params?: {
   //     BẰNG CHỨNG SỐNG; hàng log ở bước 3 chỉ là sự kiện chuyển trạng thái (xem `trangThaiMayTuoi.ts`).
   const hbRows = executeRows(
     await db.execute(sql`
-      SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, "timestamp" AS ts
+      SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, "timestamp" AT TIME ZONE 'UTC' AS ts
       FROM machine_heartbeats
       ORDER BY "machineId", "timestamp" DESC
     `),
@@ -248,7 +253,7 @@ export async function getFactoryCommandOverview(params?: {
   const healthRows = executeRows(
     await db.execute(sql`
       SELECT DISTINCT ON ("machineId") "machineId" AS machine_id,
-        "predictedFailureRisk" AS risk, "maintenanceUrgency" AS urgency, "timestamp" AS ts
+        "predictedFailureRisk" AS risk, "maintenanceUrgency" AS urgency, "timestamp" AT TIME ZONE 'UTC' AS ts
       FROM machine_health_history
       ORDER BY "machineId", "timestamp" DESC
     `),

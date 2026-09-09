@@ -90,8 +90,12 @@ export async function trangThaiTapMay(machineIds: readonly number[]): Promise<Tr
   const idList = sql.join(machineIds.map((id) => sql`${id}`), sql`, `);
 
   // Latest status per machine (DISTINCT ON → newest row per machineId).
+  // ★★★ Đợt 34 — `AT TIME ZONE 'UTC'`: cột naive lưu UTC, nhưng `db.execute` thô (postgres.js) đọc naive theo
+  //     giờ máy Node (+07 ⇒ lệch −7 h) trong khi `db.select()` typed đọc là UTC. Đây là nguồn mốc của kho twin
+  //     (`traTrangThaiHangLoat` → `chonNguonMocTuoi`): đối chứng máy 18 nhịp tim `now()` ⇒ twin "Updated 7 h ago"
+  //     cạnh cockpit "Last heartbeat 3 s". Ép timestamptz trong SQL — cùng vá với `factoryCommandService`.
   const latestStatusRows = executeRows(await db.execute(sql`
-    SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, status, "timestamp" AS ts
+    SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, status, "timestamp" AT TIME ZONE 'UTC' AS ts
     FROM machine_status_logs
     WHERE "machineId" IN (${idList})
     ORDER BY "machineId", "timestamp" DESC
@@ -101,7 +105,7 @@ export async function trangThaiTapMay(machineIds: readonly number[]): Promise<Tr
 
   // Latest heartbeat per machine (DISTINCT ON → newest heartbeat per machineId).
   const latestHeartbeatRows = executeRows(await db.execute(sql`
-    SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, status, "timestamp" AS ts
+    SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, status, "timestamp" AT TIME ZONE 'UTC' AS ts
     FROM machine_heartbeats
     WHERE "machineId" IN (${idList})
     ORDER BY "machineId", "timestamp" DESC
