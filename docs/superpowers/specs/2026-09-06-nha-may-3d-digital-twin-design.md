@@ -5838,6 +5838,97 @@ khong phai 43 · **nhieu do**: harness Dot 30 tiem dot bien vao `TwinLine.tsx`/`
 `NganXuLy` "Unknown/Never reported" vs cockpit "ONLINE/Connected" (**hai hop dong**, NT-3) · i18n
 `twin3d.may.*`/`twin3d.line.*` chi co default vi.
 
+### 14q.9 DOT 32 - QA DOC LAP (skill `pdca`): **DAT 14 · SAI 18 · HONG 4 · CHAN-DUNG 5** tren 41 ca
+
+Tep tho `.qa-dot32/` (38 json · 54 png · 6 log). **Khong sua ma, khong commit.** Chu du an do lai: HEAD
+`91654ee3`, cay sach, 38/54 khop; **3 loi khai Pareto khop ma** (`TwinVanHanh.tsx:2068` `chonMay→ghiUrl`,
+`TwinLine.tsx:747` `onChonMay=datMachineIdChon`, `navigation.tsx:2317` `item.href === href`); **4 anh tu
+xem khop** (a2 · a3 · a4 · a6b). **So xau la ket qua THANH CONG** - lan dau ket cuc nguoi dung goc *"chon
+Line → Line 3D, chon may → Machine 3D"* duoc do, va **khong dat**.
+
+**Buoc 0 (MSA) - thiet bi do bi bac/sua 5 cho:** `__soCanvas` mu (DOM **2** o `/twin/may/14` tab 3D VA
+ngan nhung `/twin`) ⇒ moi so canvas la DOM · `tamTrong/tronVen` **13/13 xanh khi lech (−57,−96)** ⇒
+loai, chi `lopTrungCanvas` dang tin · `/factory-command` xanh **ca khi go va** (goc canh tinh co o tam) ⇒
+khong phai ca duong · `voShell` ban 1 bat nham `<aside>` · `soLink` mu (nav khong phai `<a>`).
+**Ablation tren artifact dist** (go `calculatePosition` khoi chunk, md5 truoc/sau) ⇒ DO 3/3 ⇒ khoi phuc
+⇒ xanh - **chung minh thiet bi do ma khong sua nguon**. Nhip an toan: 35/35 → dot bien **3 do/32 xanh**.
+
+**Duong co so (vai A `e2e_tai_loE` 1600×900):** a1 `/twin` **0 href** toi `/twin/line/*`·`/twin/may/*`;
+Metrics de `SIM-L1-AVI`/`SIM-L2-CONVEYOR`; "Open andon **6**" vs "Alarms (**7**)" vs badge **7** · a2 bam may
+⇒ **o lai `/twin`** (`?chon=machine:14`), NganXuLy "Unknown · 54 days" vs cockpit nhung cung may
+"**ONLINE · Connected**", tab 3D ⇒ **DOM 2 canvas** · a3 `/twin/line/2` **6/12** may trong khung, cot WIP
+vuot mep tren, nua duoi canh trong, bam `o-tram-14` **URL khong doi**, `?cam=` **khong doi camera**, idle
+**62/46 khung/4 s** · a4 `/twin/may/14` bo cuc DAT (day 900, canvas 324, cockpit 451), dieu huong
+‹/Back/F5 **5/5**; nhung **tren cung mot man**: chip "Unknown" canh header "ONLINE", "Never reported"
+canh "Connected" · a5 `/twin-studio` day **953 > 900** · a6 **deep-link `/twin/line/2`·`/twin/may/14` ⇒
+app "Overview", sidebar RONG** · a7 redirect **14/14** · a8 `/twin?pv=line:2` **man Line tai cho van
+song song song man rieng**, 9/17 nhan bi panel che 72–100 % · a9 API may 14: **BON nguon**
+(`factoryCommand`=idle · `assetCockpit`=online/connected · DB `operationStatus=stopped` · twin
+`khong_ro`). **1280×720:** 4 SAI/HONG (May cockpit **275 < canh 320** vi pham bat bien Dot 31 ghim o
+1600; studio 773 > 720; Line dai 721 > 720). **Vai B `operator1`:** `/twin/line/2` **san trong, "—
+machines", khong mot cau giai thich** (TwinMay co `phamViRong`, Line khong). **Vai C 0 quyen:**
+CHAN-DUNG 4/4. **Andon `raised` tam:** `/twin/line/2` may su co **ngoai khung, khong dau hieu**.
+
+**Pareto (giam dan):**
+
+| # | Goc re | Dinh | `file:line` |
+|---|---|---|---|
+| 1 | **Bon hop dong trang thai** mot may; `mapMachineStatus` **khong xet tuoi** log ⇒ log "online" 54 ngay + `operationStatus` null = "running" | 4 man · 9 ca | `factoryCommandService.ts:118-133` · `ecosystem/assetCockpitService.ts:496` `connected = status==="online" ‖ hb<5′` · `TwinMay.tsx:324`/`TwinLine.tsx:372`/`TwinVanHanh.tsx:712` · `kpiNoiLogic.ts:155` dem MAY vs DaiCanhBao dem SU KIEN |
+| 2 | **Khong co duong di** toi hai man moi; Line/May **tai cho** van song | 2 man · 4 ca | `TwinVanHanh.tsx:2068,3534` · `TwinLine.tsx:642,747` |
+| 3 | **Vo shell rong khi deep-link** | 2 URL × 2 vp | `navigation.tsx:2317` khop chinh xac → `apps.ts getAppForRoute` undefined → `useActiveApp` fallback `listApps()[0]`; `ROUTE_APP_OVERRIDES` `apps.ts:251` |
+| 4 | Bo cuc theo viewport | 5 ca | `TwinStudio.tsx:139` `h-[calc(100vh-5rem)]` (top=133) · `TwinMay.tsx:660`+`KhungCanh.tsx:242` · `DaiLine.tsx` `min-w-16` |
+| 5 | Nhan: che boi lop phu DOM, ve ngoai canvas ±10 %, 6/12 ngoai khung, su co ngoai khung cam | 4 man · 6 ca | `locNhan.ts` · `LopNhan.tsx:141-143` · `phamViCanh.ts khungNhinLine HE_SO_CAO.line=0.55` |
+| 6 | Hoat anh lien tuc man Line (D-7) | 1 man | `TwinLine.tsx` prop `dongChay` → `CanhVanHanh.tsx:526` |
+| 7 | Pham vi rong cam tren Line | 1 man · 1 vai | `TwinLine.tsx:264,653,659` |
+| 8 | i18n 0 khoa `twin3d.may.*`/`line.*`; chuoi lap trinh hien UI; "4724305s"; "1 machines" | 3 man | `MachineCockpit.tsx` tab 3D · `DanhSachMay.tsx:397` |
+| 9 | `?cam=` nuot im lang tren man moi | 1 man | `TwinLine.tsx`/`TwinMay.tsx` khong `docCamera` |
+
+> #### ★ QD-23 (chu du an, he qua truc tiep QD-19 + yeu cau goc) - `/twin` LA CUA VAO, KHONG PHAI NOI XEM LINE/MAY
+> Yeu cau goc: *"tu nha may chon Line thi hien thi Line 3D Twin, chon vao may thi hien thi Machine 3D
+> Twin"*; QD-19: *"1 man canvas danh cho factory thoi, Line/Machine la 2 man hinh khac"*. Do duoc: `/twin`
+> **0 href** toi hai man moi, bam may **o lai** `/twin`, `?pv=line:` van dung man Line **tai cho**.
+> ⇒ **Bam Line trong `/twin` → `/twin/line/:id`. Bam may → `/twin/may/:id`.** `?pv=line:N` va
+> `?chon=machine:N` (va `?xem=machine:`) tren `/twin` **redirect** sang man rieng (them vao bang
+> `dinhTuyenTwinCu` - G40: do lai ca 14 sau khi them). Ngan nhung cockpit trong `/twin` (`NganNhung`) **mat
+> duong vao** (khong xoa ma) ⇒ tab 3D 2-canvas o `/twin` **bien mat theo** (dong mot nua G99). `/twin` giu
+> 3 cap `tapDoan|nhaMay|tang` + ngan phai **tom tat** khi chon Line/tang. ⚠ Chu so huu co the dao: neu
+> muon giu "xem nhanh" may ngay trong `/twin`, noi truoc Dot 33.
+
+**Ke hoach va (tuan tu, mot worktree - cam git song song):**
+- **Dot 33** — Pareto **#2 + #3 + #9**: duong di nguoi dung (QD-23) · vo shell deep-link
+  (`ROUTE_APP_OVERRIDES` hoac khop tien to) · `docCamera` o hai man moi. Ket cuc do: tu `/twin` bam Line
+  → URL `/twin/line/N` + sidebar "Production (MES)"; bam may → `/twin/may/N`; F5 giu; **`?pv=line:`
+  redirect**; 14/14 + moi.
+- **Dot 34** — Pareto **#1**: mot hop dong trang thai. Server: `mapMachineStatus` nhan `ts`, gate tuoi;
+  `assetCockpit connected` bo nhanh khong tuoi; response mang `ts`. Client: mot ham `trangThaiMay(ts,
+  status, opStatus)` dung chung ba man + `kpiNoiLogic` dem cung don vi voi DaiCanhBao. Ket cuc: cung may
+  14, **ba man + API noi MOT dieu**, "Never reported" chi khi that su chua co hang.
+- **Dot 35** — Pareto **#4 + #5 + #6 + #7**: viewport 1280 (studio `--top` do luc chay; May clamp; Line
+  dai) · nhan (vung cam DOM tu bbox lop phu; bo ±10 %; `khungNhinLine` bao 12/12; chip "N su co ngoai
+  khung") · `dongChay` tat khi idle · nhanh `phamViRong` cho Line.
+- **Dot 36** — Pareto **#8** i18n + **QA lai bang `pdca`** tren harness `.qa-dot32/do.mjs` (san 41 ca).
+
+> #### G100 - **`/api/auth/me` tra HTML SPA 200 - helper `dangNhap` cua e2e Dot 26/31 CHUA BAO GIO kiem vai**
+> Giong `/api/health` (Khoi D). `ten = undefined` ⇒ cau "phien phai dung vai" **bo qua im lang** o moi e2e
+> tu Dot 26. Dung tRPC `auth.me`. ⇒ **Mot endpoint khong ton tai tra 200** la bay cho moi helper doc no.
+
+> #### G101 - **`git checkout --` voi `core.autocrlf=true` ghi lai LF→CRLF** ⇒ md5 lech du `git diff` rong
+> Khoi phuc **dung byte** bang `git show HEAD:path > path`. Chi so "md5 khop" sau khoi phuc phai do
+> bang cach nay, khong thi bao do oan (hoac te hon: bao xanh khi tep da doi).
+
+> #### G102 - **"kit loi" ≠ "moi man dung no"** - brief toi noi `LopNhan` vao `CanhNhaMay` ⇒ studio chua do;
+> do: `CanhNhaMay` o **`/factory-command`** (`App.tsx:495`), studio **0 `LopNhan`**. Suy tu ten kit = G83
+> lan 7. Va `/factory-command` **moi may `position 0,0,0`** chong dong, nhan "Idle/Running" trong khi
+> `/twin` "Unknown 41" **cung API** - Pareto #1 lan ra ngoai twin3d.
+
+**Brief Dot 32 sai 5 cho (G83):** netstat con **5173/8080** (co san, khong phai twin) ·
+`dinhTuyenTwinCu.ts` o `bo-cuc/` · `machine_health_history` **189.711** · studio khong co `LopNhan` ·
+bang redirect e2e **14** hang (13 + `/rf-test-cell`).
+
+**Con mo (QA noi thang):** co 3D andon `raised` tren `/twin/may` co 4 nut DOM ma anh khong thay (chua do
+bbox) · chieu **ack** chua do (`e2e_tai_loE` thieu `andon canEdit`) · vai `engineer1` khong do lai ·
+82/2155 khong tai lap dung bo loc, **104/2408** la tap bao (`vitest run twin`).
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
