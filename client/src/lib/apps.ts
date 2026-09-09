@@ -283,6 +283,31 @@ export function getAppForGroup(groupId: string): AppDescriptor | undefined {
  */
 export function getAppForRoute(href: string): AppDescriptor | undefined {
   const path = (href || "").split("?")[0];
+  const truc = getAppForRouteChinhXac(path);
+  if (truc) return truc;
+  /*
+   * ★★★ Đợt 33 (twin3d Pareto #3) — ROUTE CON THỪA APP CỦA ROUTE CHA.
+   *
+   * Đo được (Đợt 32 a6): deep-link `/twin/line/2` · `/twin/may/14` ⇒ ba tra cứu
+   * trên đều KHỚP CHÍNH XÁC ⇒ `undefined` ⇒ `useActiveApp` rơi về `listApps()[0]`
+   * = "Overview" với sidebar RỖNG — vỏ ứng dụng mất menu mà không lỗi nào nổ.
+   * Hai lối vá: ghi từng đường con vào `ROUTE_APP_OVERRIDES` (danh sách đóng —
+   * đường con thứ ba lại rỗng menu, G67) hoặc cắt dần đuôi đường dẫn và hỏi lại
+   * (`/twin/line/2` → `/twin/line` → `/twin` ✓). Chọn lối hai: nó là BẤT BIẾN,
+   * không phải danh sách. `apps.unit.test.ts` đo rằng KHÔNG mục nav nào đổi app
+   * vì bước này (mọi href nav đều khớp chính xác trước khi tới đây).
+   */
+  let cha = path;
+  while (cha.lastIndexOf("/") > 0) {
+    cha = cha.slice(0, cha.lastIndexOf("/"));
+    const app = getAppForRouteChinhXac(cha);
+    if (app) return app;
+  }
+  return undefined;
+}
+
+/** Ba tra cứu KHỚP CHÍNH XÁC (override → module sở hữu → nhóm nav) — không cắt đuôi. */
+export function getAppForRouteChinhXac(path: string): AppDescriptor | undefined {
   // doc 67 W5 — explicit IA override beats module ownership (see ROUTE_APP_OVERRIDES).
   const overrideAppId = ROUTE_APP_OVERRIDES.get(path);
   if (overrideAppId) {
