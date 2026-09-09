@@ -131,6 +131,40 @@ async function doVung(page: Page) {
   });
 }
 
+/**
+ * ★ Đợt 34 (QĐ-23) — hai màn RIÊNG `/twin/line/:id` và `/twin/may/:id` không có khung
+ *   `man-twin-van-hanh`. Cùng ba điều kiện của `choCanhSan`, chỉ đổi testid khung.
+ */
+async function choCanhSanMan(page: Page, khung: string) {
+  await page.waitForSelector(`[data-testid="${khung}"]`, { timeout: 90_000 });
+  await page
+    .waitForFunction(() => document.querySelector("canvas") !== null, null, { timeout: 90_000 })
+    .catch(() => {});
+  await page.waitForTimeout(5_000);
+}
+
+/** Hộp thật của khung + canvas + vài vùng của màn riêng (Line: dải trạm; Máy: cockpit + ngăn xử lý). */
+async function doVungMan(page: Page, khung: string) {
+  return await page.evaluate((k) => {
+    const q = (s: string) => document.querySelector(s) as HTMLElement | null;
+    const hop = (el: Element | null) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), z: cs.zIndex, hien: r.width > 0 && r.height > 0 && cs.visibility !== "hidden" };
+    };
+    return {
+      khung: hop(q(`[data-testid="${k}"]`)),
+      canvas: hop(document.querySelector("canvas")),
+      daiLine: hop(q('[data-testid="khoi-dai-line"]')),
+      soOTram: document.querySelectorAll('[data-testid^="o-tram-"]').length,
+      cockpit: hop(q('[data-testid="cockpit-2d"]')),
+      nganXuLy: hop(q('[data-testid="ngan-xu-ly"]')),
+      soHangCay: document.querySelectorAll('[role="treeitem"]').length,
+    };
+  }, khung);
+}
+
 function tiLe(v: { w: number; h: number } | null, vp: { width: number; height: number }) {
   if (!v) return 0;
   return Number((((v.w * v.h) / (vp.width * vp.height)) * 100).toFixed(1));
@@ -172,16 +206,24 @@ test("A2 — /twin?pv=tang, cap tang", async ({ page }) => {
   await page.screenshot({ path: ".qa-dot22/A2-tang-720.png" });
 });
 
-test("A3 — /twin?pv=line:1, cap line", async ({ page }) => {
+/*
+ * ★ Đợt 34 — cập nhật theo QĐ-23 (lớp (a): hành vi đổi có chủ ý, KHÔNG nới phép đo).
+ *   `/twin?pv=line:1` nay REDIRECT sang màn riêng `/twin/line/1` (Đợt 33 K6, 6/6). Mục đích đo giữ
+ *   nguyên: *cấp Line PHẢI có cảnh thật, không phải khung rỗng* — chỉ đổi khung (`man-twin-line`) và
+ *   thêm phép kiểm "đã tới đúng URL", vì một redirect chết cũng cho ra "không có canvas".
+ */
+test("A3 — /twin?pv=line:1 ⇒ redirect /twin/line/1 (QĐ-23), cap line co canh", async ({ page }) => {
   test.setTimeout(240_000);
   await page.setViewportSize(VP_720);
   await dangNhap(page, CO_DU_LIEU);
   await page.goto("/twin?pv=line:1", { waitUntil: "domcontentloaded" });
-  await choCanhSan(page);
-  const v = await doVung(page);
+  await page.waitForFunction(() => location.pathname === "/twin/line/1", null, { timeout: 30_000 });
+  await choCanhSanMan(page, "man-twin-line");
+  const v = await doVungMan(page, "man-twin-line");
+  expect(v.khung, "khung man-twin-line phai co mat").not.toBeNull();
   expect(v.canvas?.hien, "cap line PHAI co canh").toBe(true);
-  ra.A3 = { ...v, tiLeCanvas: tiLe(v.canvas, VP_720) };
-  console.log(`   [A3] canvas ${v.canvas?.w}x${v.canvas?.h} = ${tiLe(v.canvas, VP_720)}% vp · hangCay=${v.soHangCay}`);
+  ra.A3 = { ...v, url: page.url(), tiLeCanvas: tiLe(v.canvas, VP_720) };
+  console.log(`   [A3] ${new URL(page.url()).pathname} canvas ${v.canvas?.w}x${v.canvas?.h} = ${tiLe(v.canvas, VP_720)}% vp · oTram=${v.soOTram}`);
   await page.screenshot({ path: ".qa-dot22/A3-line-720.png" });
 });
 
@@ -189,15 +231,25 @@ test("A3 — /twin?pv=line:1, cap line", async ({ page }) => {
 /* ẢNH 4 · PANEL MÁY MỞ                                                        */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
-test("A4 — /twin?xem=machine:2, panel may MO", async ({ page }) => {
+/*
+ * ★ Đợt 34 — cập nhật theo QĐ-23 (lớp (a)). `/twin?xem=machine:2` nay REDIRECT sang `/twin/may/2`;
+ *   "panel máy MỞ" của Đợt 22 là ngăn nhúng trong `/twin` — nay là `NganXuLy` + cockpit 2D trên màn
+ *   riêng. Mục đích đo giữ nguyên: *chọn máy ⇒ thấy được panel của máy đó*, đo bằng hộp thật của
+ *   `ngan-xu-ly` và `cockpit-2d` thay vì `panel-phai`.
+ */
+test("A4 — /twin?xem=machine:2 ⇒ redirect /twin/may/2 (QĐ-23), panel may (NganXuLy + cockpit) MO", async ({ page }) => {
   test.setTimeout(240_000);
   await page.setViewportSize(VP_720);
   await dangNhap(page, CO_DU_LIEU);
   await page.goto("/twin?xem=machine:2", { waitUntil: "domcontentloaded" });
-  await choCanhSan(page);
-  const v = await doVung(page);
-  ra.A4 = { ...v, tiLeCanvas: tiLe(v.canvas, VP_720) };
-  console.log(`   [A4] panelPhai=${JSON.stringify(v.panelPhai)} canvas=${JSON.stringify(v.canvas)}`);
+  await page.waitForFunction(() => location.pathname === "/twin/may/2", null, { timeout: 30_000 });
+  await choCanhSanMan(page, "man-twin-may");
+  await page.waitForSelector('[data-testid="ngan-xu-ly"]', { timeout: 60_000 });
+  const v = await doVungMan(page, "man-twin-may");
+  expect(v.nganXuLy?.hien, "panel may (NganXuLy) PHAI mo").toBe(true);
+  expect(v.cockpit?.hien, "cockpit 2D PHAI co mat").toBe(true);
+  ra.A4 = { ...v, url: page.url(), tiLeCanvas: tiLe(v.canvas, VP_720) };
+  console.log(`   [A4] ${new URL(page.url()).pathname} nganXuLy=${JSON.stringify(v.nganXuLy)} cockpit=${JSON.stringify(v.cockpit)} canvas=${JSON.stringify(v.canvas)}`);
   await page.screenshot({ path: ".qa-dot22/A4-panel-may-720.png" });
 });
 

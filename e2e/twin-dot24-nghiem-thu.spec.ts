@@ -81,15 +81,27 @@ test("V3 — nút chỉ-nhãn-bất-thường: có mặt, bấm được, đổi
   expect(truoc.ariaPressed).toBe("false");
 });
 
-test("V4 — L-5: ?xem=machine:<id ngoài phạm vi> NÓI RA lý do", async ({ page }) => {
+/*
+ * ★ Đợt 34 — V4/V5/V6 cập nhật theo QĐ-23 (lớp (a)): `?xem=machine:N` trên `/twin` nay REDIRECT sang
+ *   `/twin/may/N` (Đợt 33 K6). L-5 sống ở `TwinMay` với `data-testid="may-khong-mo-duoc"` +
+ *   `data-ly-do` — CÙNG ba lý do (+ `chuaGanNhaMay` của Đợt 34 D). Mục đích đo giữ nguyên: màn NÓI RA
+ *   lý do, không im lặng; đối chứng V6 vẫn mở thân. Giữ URL vào cũ để redirect cũng nằm trong phép đo.
+ */
+async function choManMay(page: Page, may: number) {
+  await page.waitForFunction((p) => location.pathname === p, `/twin/may/${may}`, { timeout: 30_000 });
+  await page.waitForSelector('[data-testid="man-twin-may"]', { timeout: 90_000 });
+}
+
+test("V4 — L-5: ?xem=machine:<id ngoài phạm vi> ⇒ /twin/may/<id> NÓI RA lý do", async ({ page }) => {
   await page.setViewportSize(VP);
   await dangNhap(page, CO_DU_LIEU);
   // id 999999 chắc chắn không thuộc phạm vi nào.
   await page.goto("/twin?xem=machine:999999");
-  await choCanh(page);
-  const chan = page.locator('[data-testid="ngan-nhung-bi-chan"]');
-  await expect(chan).toBeVisible({ timeout: 30_000 });
+  await choManMay(page, 999999);
+  const chan = page.locator('[data-testid="may-khong-mo-duoc"]');
+  await expect(chan).toBeVisible({ timeout: 60_000 });
   ra["V4-ngoai-pham-vi"] = {
+    url: page.url(),
     lyDo: await chan.getAttribute("data-ly-do"),
     chu: (await chan.innerText()).trim().slice(0, 200),
   };
@@ -114,37 +126,50 @@ test("V4 — L-5: ?xem=machine:<id ngoài phạm vi> NÓI RA lý do", async ({ p
  *
  * Ô này nay đo ĐÚNG thứ người dùng thấy.
  */
-test("V5 — operator1 (0 gán): màn nói 'chưa được gán nhà máy' Ở TOÀN MÀN, và badge KHÔNG khai số", async ({ page }) => {
+/*
+ * ★ Đợt 34 (D) — `operator1` (id 48, có `machine_status`, **0 hàng `user_factory_assignments`** — chủ
+ *   dự án đo DB) trên `/twin/may/1` từng nhận câu của `thieuQuyen` ("You do not have permission…"):
+ *   sai bản chất. Nay `data-ly-do="chuaGanNhaMay"` và câu "not assigned to any factory / chưa được gán".
+ */
+test("V5 — operator1 (0 gán): /twin?xem=machine:1 ⇒ /twin/may/1 nói 'chưa được gán nhà máy' (chuaGanNhaMay), badge KHÔNG khai số", async ({ page }) => {
   await page.setViewportSize(VP);
   await dangNhap(page, CHI_XEM);
   await page.goto("/twin?xem=machine:1");
-  await page.waitForTimeout(8_000);
-  const rong = page.locator('[data-testid="ngan-nhung-bi-chan"]');
+  await choManMay(page, 1);
+  const chan = page.locator('[data-testid="may-khong-mo-duoc"]');
+  await expect(chan).toBeVisible({ timeout: 60_000 });
+  await page.waitForTimeout(2_000);
   const chu = (await page.locator("body").innerText()).replace(/\s+/g, " ");
   ra["V5-operator1"] = {
-    biChanNganCon: await rong.count(),
+    url: page.url(),
+    lyDo: await chan.getAttribute("data-ly-do"),
+    cau: (await chan.innerText()).replace(/\s+/g, " ").trim().slice(0, 200),
     noiPhamViRong: /not assigned to any factory|chưa được gán/i.test(chu),
     // ĐO CÁI NHÌN THẤY: vỏ có khai con số cảnh báo nào không.
     badge: await doBadge(page),
   };
   await page.screenshot({ path: ".qa-dot24/V5-operator1-pham-vi-rong.png" });
-  // Màn PHẢI nói ra lý do (không im lặng) — dù bằng EmptyState toàn màn.
+  // Màn PHẢI nói ra lý do (không im lặng) — và phải là câu "chưa được gán", KHÔNG phải "thiếu quyền".
+  expect(await chan.getAttribute("data-ly-do")).toBe("chuaGanNhaMay");
   expect(/not assigned to any factory|chưa được gán/i.test(chu)).toBe(true);
+  expect(/do not have permission/i.test(await chan.innerText())).toBe(false);
 });
 
-test("V6 — ĐỐI CHỨNG: ?xem=machine:<id TRONG phạm vi> vẫn MỞ THÂN, không bị chặn", async ({ page }) => {
+test("V6 — ĐỐI CHỨNG: ?xem=machine:<id TRONG phạm vi> ⇒ /twin/may/1 vẫn MỞ THÂN (cockpit), không bị chặn", async ({ page }) => {
   await page.setViewportSize(VP);
   await dangNhap(page, CO_DU_LIEU);
   await page.goto("/twin?xem=machine:1");
-  await choCanh(page);
-  const chan = page.locator('[data-testid="ngan-nhung-bi-chan"]');
-  const than = page.locator('[data-testid="than-nhung"]');
+  await choManMay(page, 1);
+  const than = page.locator('[data-testid="cockpit-2d"]');
+  await expect(than).toBeVisible({ timeout: 90_000 });
+  const chan = page.locator('[data-testid="may-khong-mo-duoc"]');
   ra["V6-doi-chung"] = {
+    url: page.url(),
     biChan: await chan.count(),
     coThan: await than.count(),
   };
   await page.screenshot({ path: ".qa-dot24/V6-doi-chung-mo.png" });
-  // Chống vá quá tay: ngăn hợp lệ KHÔNG được hiện câu chặn.
+  // Chống vá quá tay: máy hợp lệ KHÔNG được hiện câu chặn.
   expect(await chan.count()).toBe(0);
 });
 

@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
+import postgres from "postgres";
+import bcrypt from "bcryptjs";
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -82,8 +84,47 @@ function soCanvas(page: Page) {
   }));
 }
 
-test.beforeAll(() => {
+/*
+ * ★★★ Đợt 34 — USER TẠM TỰ TẠO / TỰ XOÁ TRONG TEST (chủ dự án: "test thiết kế sai").
+ *   Đợt 33 chạy lại: B2 ĐỎ vì `e2e_dot31_khongquyen` đã bị `.qa-dot31/user-tam.mjs xoa` sau Đợt 31 —
+ *   một test phụ thuộc trạng thái do tay người để lại là test không tự chạy lại được. Nay: tạo ở
+ *   `beforeAll` (cùng khuôn `createLocalUser`: `users` + `user_secrets`, 0 hàng `permissions`, 0 hàng
+ *   `user_factory_assignments`), xoá ở `afterAll`, và ĐẾM `users` trước = sau (ghi `user-tam.json`).
+ */
+const DB_URL = (fs.readFileSync(".env", "utf8").match(/^DATABASE_URL=(.*)$/m) ?? [])[1]?.trim() ?? "";
+let soUsersTruoc = -1;
+
+test.beforeAll(async () => {
   fs.mkdirSync(ANH, { recursive: true }); // G65 — thư mục RIÊNG, không đụng test-results/
+  const sql = postgres(DB_URL, { max: 1 });
+  try {
+    // Dọn xác của lượt chạy trước (nếu có) TRƯỚC khi đếm, để "trước" là số nền thật.
+    await sql`delete from users where username = ${KHONG_QUYEN.username}`;
+    soUsersTruoc = (await sql`select count(*)::int n from users`)[0].n;
+    const hash = await bcrypt.hash(KHONG_QUYEN.password, 10);
+    await sql.begin(async (tx) => {
+      const [u] = await tx`insert into users ("openId", username, name, "loginMethod", role, "isActive", "passwordChangedAt")
+        values (${`local_${Date.now()}_dot31khongquyen`}, ${KHONG_QUYEN.username}, ${"E2E Dot31 khong quyen (tam)"}, ${"local"}, ${"user"}, true, now()) returning id`;
+      await tx`insert into user_secrets ("userId", "passwordHash") values (${u.id}, ${hash})`;
+    });
+    const sau = (await sql`select count(*)::int n from users`)[0].n;
+    console.log(`   [user tam] tao ${KHONG_QUYEN.username}: users ${soUsersTruoc} -> ${sau}`);
+  } finally {
+    await sql.end();
+  }
+});
+
+test.afterAll(async () => {
+  const sql = postgres(DB_URL, { max: 1 });
+  try {
+    const xoa = await sql`delete from users where username = ${KHONG_QUYEN.username}`;
+    const sau = (await sql`select count(*)::int n from users`)[0].n;
+    fs.writeFileSync(`${ANH}/user-tam.json`, JSON.stringify({ truoc: soUsersTruoc, daXoa: xoa.count, sau }, null, 2));
+    console.log(`   [user tam] xoa ${xoa.count} hang: users ${sau} (truoc ${soUsersTruoc})`);
+    expect(sau, "users truoc = sau (user tam da xoa, DB nguyen)").toBe(soUsersTruoc);
+  } finally {
+    await sql.end();
+  }
 });
 test.use({ viewport: VIEWPORT });
 
@@ -274,7 +315,13 @@ test("A5 — ★★★ G91 NỢ CÓ SẴN: bấm tab 3D của cockpit ⇒ 2 canv
 /* B — HAI CHIỀU QUYỀN (QĐ-18/G43/G96)                                       */
 /* ════════════════════════════════════════════════════════════════════════ */
 
-test("B1 — operator1 (có `machine_status`, 0 nhà máy): QUA cổng route, thân NÓI `thieuQuyen` (L-5)", async ({ page }) => {
+/*
+ * ★ Đợt 34 (D) — B1 đổi kỳ vọng `thieuQuyen` → `chuaGanNhaMay` (lớp (a), có chủ ý): `operator1` KHÔNG
+ *   thiếu quyền (qua cổng route bằng `machine_status`), họ CHƯA ĐƯỢC GÁN nhà máy (0 hàng
+ *   `user_factory_assignments`, chủ dự án đo DB). Câu "You do not have permission" là sai cửa; nay
+ *   `data-ly-do="chuaGanNhaMay"` + câu "not assigned to any factory / chưa được gán".
+ */
+test("B1 — operator1 (có `machine_status`, 0 nhà máy): QUA cổng route, thân NÓI `chuaGanNhaMay` (L-5, Đợt 34 D)", async ({ page }) => {
   test.setTimeout(90_000);
   await dangNhap(page, CHI_XEM);
   await page.goto(`/twin/may/${MAY}`, { waitUntil: "domcontentloaded" });
@@ -283,9 +330,10 @@ test("B1 — operator1 (có `machine_status`, 0 nhà máy): QUA cổng route, th
   await page.waitForSelector('[data-testid="may-khong-mo-duoc"]', { timeout: 60_000 });
   await page.waitForTimeout(2_000);
   const lyDo = await page.getByTestId("may-khong-mo-duoc").getAttribute("data-ly-do");
+  const cau = (await page.getByTestId("may-khong-mo-duoc").innerText()).replace(/\s+/g, " ").trim();
   const canvas = await soCanvas(page);
   const biChan = await page.locator("text=/Không có quyền truy cập|Access denied/").count();
-  fs.writeFileSync(`${ANH}/do-operator1.json`, JSON.stringify({ lyDo, biChan, ...canvas }, null, 2));
+  fs.writeFileSync(`${ANH}/do-operator1.json`, JSON.stringify({ lyDo, cau, biChan, ...canvas }, null, 2));
   await page.screenshot({ path: `${ANH}/B1-operator1.png` });
   expect(biChan, "operator1 KHONG bi RouteGuard chan (cong /twin, QD-18)").toBe(0);
   /*
@@ -293,7 +341,9 @@ test("B1 — operator1 (có `machine_status`, 0 nhà máy): QUA cổng route, th
    *   nhà máy phải nói câu `thieuQuyen` của `cauChoLyDoNgan` — L-5 §15.3.3 bắt
    *   buộc dùng lại ba lý do, không cảnh rỗng câm. Canvas đã thu dọn ⇒ 0 DOM.
    */
-  expect(lyDo).toBe("thieuQuyen");
+  expect(lyDo).toBe("chuaGanNhaMay");
+  expect(cau).toMatch(/not assigned to any factory|chưa được gán/i);
+  expect(cau).not.toMatch(/do not have permission/i);
   expect(canvas.canvasDom).toBe(0);
 });
 

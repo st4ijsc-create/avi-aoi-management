@@ -21,15 +21,38 @@ async function dangNhap(page: Page) {
   expect(res.status(), "dang nhap non-admin").toBe(200);
 }
 
+/*
+ * ★★★ Đợt 34 (QĐ-24) — X1–X3 VIẾT LẠI THEO `/twin/line/:id`, GIỮ ĐÚNG THỨ CHÚNG ĐO.
+ *   Đợt 33 K11 đo: sau QĐ-23 `/twin?pv=line:1` redirect sang `/twin/line/1`, `/twin` không còn cấp Line
+ *   ⇒ ngăn ở đó luôn `chua_chon_line`; màn Line lại 0 ngăn ⇒ ba ca này ĐỎ (lớp (a), để đỏ chờ quyết
+ *   định — không nới). QĐ-24 chuyển ngăn sang `TwinLine`; ba ca đi thẳng `/twin/line/1`.
+ *   ⚠ Mặc định ngăn là THU (Đợt 23 M2, đo 42.437 px²) ⇒ X1/X3 MỞ bằng nút `nut-thu-mo-phong` trước
+ *     khi đọc; X2 dùng `?thu=moPhongMo` (cùng khoá, cùng tên chiều-ngược — G40) làm trạng thái ban đầu.
+ *   ⚠ X2 KHÔNG còn kiểm "URL mất `moPhong` khi mở lại": màn Line đọc `?thu=` một lần lúc mount và
+ *     KHÔNG ghi ngược (panel của nó là state cục bộ như `moKpi`) — ghi trong docblock `TwinLine.tsx`.
+ */
+const LINE = 1; // chuyền 1 (SIM-L1, nhà máy 1) — chuyền DUY NHẤT có bản ghi line_balance trên DB này.
+async function moManLine(page: Page, q = "") {
+  await page.goto(`/twin/line/${LINE}${q}`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('[data-testid="man-twin-line"] canvas', { timeout: 90_000 });
+  await page.waitForTimeout(6_000);
+}
+async function moNgan(page: Page) {
+  const ngan = page.getByTestId("ngan-mo-phong");
+  await expect(ngan, "ngan Mo phong phai co mat tren man Line").toBeVisible({ timeout: 60_000 });
+  if ((await ngan.getAttribute("data-mo")) !== "1") {
+    await page.getByTestId("nut-thu-mo-phong").click();
+    await page.waitForTimeout(800);
+  }
+  await expect(ngan).toHaveAttribute("data-mo", "1");
+  return ngan;
+}
+
 test("X1 — ngan Mo phong HIEN tren canh, doc duoc, va khai LY DO honest-null", async ({ page }) => {
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1600, height: 950 });
   await dangNhap(page);
-  // `pv=line:1` — chuyen 1 la chuyen DUY NHAT co ban ghi line_balance tren DB nay.
-  await page.goto("/twin?pv=line:1", { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(12_000);
-
-  const ngan = page.getByTestId("ngan-mo-phong");
+  await moManLine(page);
 
   // ── Ca DUONG: trang da nap that (canh 3D + bang KPI cua lo J deu co mat).
   //    Thieu phan nay thi mot trang trang cung cho "ngan khong hien" -> G5.
@@ -37,9 +60,13 @@ test("X1 — ngan Mo phong HIEN tren canh, doc duoc, va khai LY DO honest-null",
     timeout: 90_000,
   });
 
-  // ── Ngan Mo phong PHAI hien, va PHAI dang mo (vang mat trong `thu=` = mo).
+  // ── Ngan Mo phong PHAI hien; mac dinh THU (Dot 23 M2) => mo bang nut roi moi doc.
+  const ngan = page.getByTestId("ngan-mo-phong");
   await expect(ngan, "ngan Mo phong phai hien").toBeVisible({ timeout: 60_000 });
-  await expect(ngan).toHaveAttribute("data-mo", "1");
+  await expect(ngan, "mac dinh THU (Dot 23 M2)").toHaveAttribute("data-mo", "0");
+  await moNgan(page);
+  // ★ QĐ-24: o man Line KHONG con duong nao ra `chua_chon_line` — lineId la cua route.
+  expect(await ngan.getAttribute("data-ly-do")).not.toBe("chua_chon_line");
 
   // ── G41: doc z-index THAT tu trinh duyet, khong suy tu class.
   const z = await ngan.evaluate((el) => getComputedStyle(el as HTMLElement).zIndex);
@@ -84,26 +111,29 @@ test("X2 — `?thu=moPhong` THU ngan lai, va khu hoi qua URL (G40)", async ({ pa
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1600, height: 950 });
   await dangNhap(page);
-  await page.goto("/twin?pv=line:1&thu=moPhong", { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(12_000);
+  // ★ Dot 34: `?thu=moPhongMo` (ten chieu-nguoc cua Dot 23 M2) => ngan MO san khi mount.
+  await moManLine(page, "?thu=moPhongMo");
 
   const ngan = page.getByTestId("ngan-mo-phong");
-  await expect(ngan, "vo ngan van hien (chi than bi thu)").toBeVisible({ timeout: 90_000 });
-
-  // ── Ca AM: than ngan phai BI THU. Neu `moPhong` khong nam trong
-  //    PANEL_THU_DUOC thi `docThu` NUOT no va ngan van mo — hong CAM (G67).
-  await expect(ngan, "?thu=moPhong phai THU ngan").toHaveAttribute("data-mo", "0");
+  await expect(ngan, "vo ngan phai hien").toBeVisible({ timeout: 90_000 });
   const than = page.locator("#than-ngan-mo-phong");
+
+  // ── Ca DUONG cua khoa URL: `moPhongMo` phai duoc DOC (khong bi `docThu` nuot — G67) => dang MO.
+  await expect(ngan, "?thu=moPhongMo phai MO ngan").toHaveAttribute("data-mo", "1");
+  await expect(than, "than phai hien").toBeVisible();
+
+  // ── Ca AM: bam nut => THU, than an.
+  await page.getByTestId("nut-thu-mo-phong").click();
+  await page.waitForTimeout(1_000);
+  await expect(ngan, "bam thu => data-mo=0").toHaveAttribute("data-mo", "0");
   await expect(than, "than phai an").toBeHidden();
 
-  // ── Ca DUONG: bam nut mo lai => than hien, VA URL mat `moPhong`.
+  // ── Khu hoi: bam lai => MO. (Man Line KHONG ghi nguoc `?thu=` — xem docblock dau tep.)
   await page.getByTestId("nut-thu-mo-phong").click();
-  await page.waitForTimeout(1_500);
-  await expect(ngan, "bam mo => data-mo=1").toHaveAttribute("data-mo", "1");
+  await page.waitForTimeout(1_000);
+  await expect(ngan, "bam mo lai => data-mo=1").toHaveAttribute("data-mo", "1");
   await expect(than, "than phai hien lai").toBeVisible();
-  const url = page.url();
-  console.log(`   [X2] URL sau khi mo lai = ${url}`);
-  expect(url, "khoa thu= phai bo 'moPhong' khi mo").not.toContain("thu=moPhong");
+  console.log(`   [X2] URL = ${page.url()} (man Line chi DOC ?thu=, khong ghi nguoc)`);
 
   await page.screenshot({ path: ".qa-loX/X2-sau-khi-mo-lai.png" });
 });
@@ -112,11 +142,8 @@ test("X3 — #35 phat lai: chon workflow THAT => Gantt co thanh, nut buoc DOI mo
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1600, height: 950 });
   await dangNhap(page);
-  await page.goto("/twin?pv=line:1", { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(12_000);
-
-  const ngan = page.getByTestId("ngan-mo-phong");
-  await expect(ngan).toBeVisible({ timeout: 90_000 });
+  await moManLine(page);
+  const ngan = await moNgan(page);
 
   const chon = page.getByTestId("chon-workflow");
   const coChon = await chon.count();
