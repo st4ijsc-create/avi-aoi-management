@@ -193,7 +193,8 @@ export function BangThuocTinh({
             </span>
           </div>
           <div className="text-muted-foreground">
-            {t("twin3d.nguon." + (datCho.nguon === "tay" ? "tay" : "sinh"))}
+            {/* ★ Đợt 36: khoá TƯỜNG MINH — dạng `"twin3d.nguon." + x` làm `i18n:check` đọc thành khoá `twin3d.nguon.` (báo THIẾU giả). */}
+            {t(datCho.nguon === "tay" ? "twin3d.nguon.tay" : "twin3d.nguon.sinh")}
           </div>
         </div>
       ) : (
@@ -335,7 +336,8 @@ export function BangThuocTinh({
           </div>
 
           <div className="mb-3 text-[11px] text-muted-foreground">
-            {t("twin3d.nguon." + (datCho.nguon === "tay" ? "tay" : "sinh"))}
+            {/* ★ Đợt 36: khoá TƯỜNG MINH — dạng `"twin3d.nguon." + x` làm `i18n:check` đọc thành khoá `twin3d.nguon.` (báo THIẾU giả). */}
+            {t(datCho.nguon === "tay" ? "twin3d.nguon.tay" : "twin3d.nguon.sinh")}
           </div>
 
           <Button

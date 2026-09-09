@@ -2700,7 +2700,8 @@
     "brightness": "Độ sáng",
     "contrast": "Độ tương phản",
     "on": "Bật",
-    "off": "Tắt"
+    "off": "Tắt",
+    "hide": "ẩn"
   },
   "corporate": {
     "performanceByCorporation": "Hiệu suất theo tập đoàn",
@@ -20045,7 +20046,36 @@
   },
   "twin3d": {
     "may": {
-      "chuaGanNhaMay": "Tài khoản của bạn chưa được gán nhà máy nào — liên hệ quản trị để được gán, rồi mở lại máy này."
+      "chuaGanNhaMay": "Tài khoản của bạn chưa được gán nhà máy nào — liên hệ quản trị để được gán, rồi mở lại máy này.",
+      "idKhongHopLe": "Không đọc được máy từ đường dẫn",
+      "idKhongHopLeMo": "Đường dẫn phải có dạng /twin/may/<số>. Hãy chọn một máy từ màn nhà máy hoặc màn chuyền.",
+      "hang": {
+        "nguyKich": "nguy kịch",
+        "canh": "cảnh báo",
+        "theoDoi": "theo dõi",
+        "khoe": "khoẻ",
+        "hetHan": "quá hạn",
+        "chuaDo": "chưa đo"
+      },
+      "maySo": "Máy #{{n}}",
+      "khongMoDuoc": "Không mở được máy #{{n}}",
+      "dangTai": "Đang tải máy…",
+      "chuaDatCho": "Máy này chưa có chỗ trên bố cục 3D",
+      "chuaDatChoMo": "Xếp chỗ trong Twin Studio để thấy máy giữa hàng xóm của nó. Buồng lái và ngăn xử lý bên dưới vẫn dùng được.",
+      "ariaCanh": "Cảnh 3D của {{ten}}",
+      "sucKhoe": "Sức khoẻ",
+      "dangTaiCockpit": "Đang tải buồng lái…"
+    },
+    "line": {
+      "idKhongHopLe": "Không đọc được chuyền từ đường dẫn",
+      "idKhongHopLeMo": "Đường dẫn phải có dạng /twin/line/<số>. Hãy chọn một chuyền từ màn nhà máy.",
+      "chuyenSo": "Chuyền {{n}}",
+      "veNhaMay": "Nhà máy",
+      "soTram": "Trạm",
+      "khongMoDuoc": "Không mở được chuyền #{{n}}",
+      "rong": "Chuyền này chưa có máy nào trên bố cục",
+      "rongMo": "Chuyền có thể chưa được xếp chỗ trong Twin Studio, hoặc thuộc một nhà máy khác.",
+      "ariaCanh": "Cảnh 3D của {{ten}}"
     },
     "chuaDung": "Màn này chưa dựng. Nội dung sẽ được lắp ở các đợt sau của dự án Twin 3D.",
     "chuaDo": "chưa đo",
@@ -20146,7 +20176,21 @@
       "donViGiay": "{{n}} giây",
       "nhanBiAn": "còn {{n}} tên bị ẩn",
       "suCoNgoaiKhung": "{{n}} sự cố ngoài khung",
-      "chiNhanBatThuongMoTa": "Chỉ hiện tên máy đang bất thường (và máy đang chọn)"
+      "chiNhanBatThuongMoTa": "Chỉ hiện tên máy đang bất thường (và máy đang chọn)",
+      "chonNhaMay": "Nhà máy",
+      "chonToaNha": "Toà",
+      "chonTang": "Tầng",
+      "haCapPhamVi": "Đang hiện dữ liệu của MỘT nhà máy ({{soNhaMay}} nhà máy trong hệ). Phạm vi Tập đoàn chưa nạp được nhiều nhà máy cùng lúc — dùng ô Nhà máy để chuyển.",
+      "linkBiBoQua": "Đường link mở màn này trỏ tới nhà máy/toà/tầng không còn tồn tại — đang hiện lựa chọn gần nhất.",
+      "mayTangKhac": "{{so}} máy nữa đã có chỗ ở tầng khác của toà này — đổi ô Tầng để xem",
+      "mayToaKhac": "{{so}} máy không nằm trong lượt nạp này (toà khác chưa được hỏi) — chưa kết luận được chúng đã xếp chỗ hay chưa",
+      "moPanelPhai": "Mở ngăn xử lý bên phải",
+      "thuPanelPhai": "Thu ngăn xử lý bên phải",
+      "moPanelTrai": "Mở bảng bên trái",
+      "thuPanelTrai": "Thu bảng bên trái",
+      "moTwinStudio": "Xưởng dựng",
+      "moTwinStudioMoTa": "Sang trang Xưởng dựng: thiết kế nhà xưởng, kéo thả máy, lưu bố cục",
+      "toanManMoTa": "3D gần toàn màn (thu cả hai bảng bên)"
     },
     "studio": {
       "tieuDe": "Nhà máy 3D — Thiết kế",
@@ -20419,7 +20463,8 @@
       "nhapBanVe": "Nhập bản vẽ",
       "roiTrang": "Còn thay đổi chưa lưu. Rời trang sẽ mất.",
       "loiLuu": "Không lưu được: {{loi}}",
-      "phimTat": "Phím tắt: W di chuyển · E xoay · R co giãn · Ctrl đảo bắt dính · Ctrl+Z hoàn tác"
+      "phimTat": "Phím tắt: W di chuyển · E xoay · R co giãn · Ctrl đảo bắt dính · Ctrl+Z hoàn tác",
+      "chuaCoNhaMay": "Chưa có nhà máy nào để thiết kế."
     },
     "ketNoi": {
       "chua_ket_noi": {
@@ -20619,6 +20664,32 @@
         "gio": "{{n}} giờ",
         "ngay": "{{n}} ngày"
       }
+    },
+    "coCheGiao": {
+      "day": {
+        "nhan": "đẩy",
+        "moTa": "Mọi con số tới bằng luồng đẩy thời gian thực."
+      },
+      "hon_hop": {
+        "nhan": "đẩy + hỏi 30s",
+        "moTa": "Luồng đẩy đang sống, nhưng một phần số vẫn tới bằng lượt hỏi định kỳ 30 giây."
+      },
+      "hoi": {
+        "nhan": "hỏi định kỳ",
+        "moTa": "Không có luồng đẩy — mọi con số tới bằng lượt hỏi định kỳ."
+      },
+      "lich_su": {
+        "nhan": "lịch sử",
+        "moTa": "Đang xem lịch sử — các số không tự làm mới."
+      },
+      "chua_ro": {
+        "nhan": "—",
+        "moTa": "Chưa xác định được cơ chế giao số."
+      }
+    },
+    "daiHopNhat": {
+      "an": "ẩn",
+      "tomTat": "{{so}} việc cần biết"
     }
   }
 }

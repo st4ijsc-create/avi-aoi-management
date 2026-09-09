@@ -2700,7 +2700,8 @@
     "brightness": "亮度",
     "contrast": "对比度",
     "on": "开",
-    "off": "关"
+    "off": "关",
+    "hide": "隐藏"
   },
   "corporate": {
     "yieldRatePercent": "良率百分比",
@@ -20073,7 +20074,36 @@
   },
   "twin3d": {
     "may": {
-      "chuaGanNhaMay": "您的账户尚未分配任何工厂。请联系管理员分配后再打开此机台。"
+      "chuaGanNhaMay": "您的账户尚未分配任何工厂。请联系管理员分配后再打开此机台。",
+      "idKhongHopLe": "无法从地址读取机台",
+      "idKhongHopLeMo": "地址格式应为 /twin/may/<编号>。请从工厂或产线画面选择一台机台。",
+      "hang": {
+        "nguyKich": "危急",
+        "canh": "告警",
+        "theoDoi": "关注",
+        "khoe": "健康",
+        "hetHan": "已过期",
+        "chuaDo": "未测量"
+      },
+      "maySo": "机台 #{{n}}",
+      "khongMoDuoc": "无法打开机台 #{{n}}",
+      "dangTai": "正在加载机台…",
+      "chuaDatCho": "该机台在 3D 布局上还没有位置",
+      "chuaDatChoMo": "请在 Twin Studio 中为其布置位置，即可看到机台及其相邻设备。下方的驾驶舱与处理面板仍可使用。",
+      "ariaCanh": "{{ten}} 的 3D 场景",
+      "sucKhoe": "健康度",
+      "dangTaiCockpit": "正在加载驾驶舱…"
+    },
+    "line": {
+      "idKhongHopLe": "无法从地址读取产线",
+      "idKhongHopLeMo": "地址格式应为 /twin/line/<编号>。请从工厂画面选择一条产线。",
+      "chuyenSo": "产线 {{n}}",
+      "veNhaMay": "工厂",
+      "soTram": "工位",
+      "khongMoDuoc": "无法打开产线 #{{n}}",
+      "rong": "该产线的布局上还没有机台",
+      "rongMo": "该产线可能尚未在 Twin Studio 中布置，或属于另一家工厂。",
+      "ariaCanh": "{{ten}} 的 3D 场景"
     },
     "chuaDung": "此页面尚未构建。内容将在 3D 数字孪生项目的后续阶段中添加。",
     "chuaDo": "未实测",
@@ -20174,7 +20204,21 @@
       "donViGiay": "{{n}} 秒",
       "nhanBiAn": "另有 {{n}} 个名称被隐藏",
       "suCoNgoaiKhung": "{{n}} 个告警在视野外",
-      "chiNhanBatThuongMoTa": "仅显示异常设备（及所选设备）的名称"
+      "chiNhanBatThuongMoTa": "仅显示异常设备（及所选设备）的名称",
+      "chonNhaMay": "工厂",
+      "chonToaNha": "楼栋",
+      "chonTang": "楼层",
+      "haCapPhamVi": "当前仅显示一家工厂的数据（系统中共 {{soNhaMay}} 家工厂）。集团范围暂不能同时加载多家工厂——请用“工厂”框切换。",
+      "linkBiBoQua": "打开此画面的链接指向的工厂/楼栋/楼层已不存在——正在显示最接近的选择。",
+      "mayTangKhac": "另有 {{so}} 台机台位于本楼栋的其他楼层——切换“楼层”框查看",
+      "mayToaKhac": "{{so}} 台机台不在本次加载范围内（尚未查询其他楼栋）——暂无法判断它们是否已布置",
+      "moPanelPhai": "打开右侧处理面板",
+      "thuPanelPhai": "收起右侧处理面板",
+      "moPanelTrai": "打开左侧面板",
+      "thuPanelTrai": "收起左侧面板",
+      "moTwinStudio": "Twin Studio",
+      "moTwinStudioMoTa": "前往 Twin Studio：设计厂房、拖放机台、保存布局",
+      "toanManMoTa": "近乎全屏的 3D（收起两侧面板）"
     },
     "studio": {
       "tieuDe": "3D 工厂 — 设计",
@@ -20447,7 +20491,8 @@
       "nhapBanVe": "导入图纸",
       "roiTrang": "仍有未保存的更改，离开将会丢失。",
       "loiLuu": "保存失败：{{loi}}",
-      "phimTat": "快捷键：W 移动 · E 旋转 · R 缩放 · Ctrl 反转吸附 · Ctrl+Z 撤销"
+      "phimTat": "快捷键：W 移动 · E 旋转 · R 缩放 · Ctrl 反转吸附 · Ctrl+Z 撤销",
+      "chuaCoNhaMay": "尚无可设计的工厂。"
     },
     "ketNoi": {
       "chua_ket_noi": {
@@ -20647,6 +20692,32 @@
         "gio": "{{n}} 小时",
         "ngay": "{{n}} 天"
       }
+    },
+    "coCheGiao": {
+      "day": {
+        "nhan": "推送",
+        "moTa": "所有数据均通过实时推送流到达。"
+      },
+      "hon_hop": {
+        "nhan": "推送 + 30 秒轮询",
+        "moTa": "推送流正常，但部分数据仍通过每 30 秒一次的轮询到达。"
+      },
+      "hoi": {
+        "nhan": "定时轮询",
+        "moTa": "没有推送流——所有数据均通过定时轮询到达。"
+      },
+      "lich_su": {
+        "nhan": "历史",
+        "moTa": "正在查看历史——数据不会自动刷新。"
+      },
+      "chua_ro": {
+        "nhan": "—",
+        "moTa": "尚未确定数据交付机制。"
+      }
+    },
+    "daiHopNhat": {
+      "an": "隐藏",
+      "tomTat": "{{so}} 项需知"
     }
   }
 }

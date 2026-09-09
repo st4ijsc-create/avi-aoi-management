@@ -2708,7 +2708,8 @@
     "brightness": "Brightness",
     "contrast": "Contrast",
     "on": "On",
-    "off": "Off"
+    "off": "Off",
+    "hide": "hide"
   },
   "corporate": {
     "yieldRatePercent": "Yield rate percent",
@@ -20065,7 +20066,36 @@
   },
   "twin3d": {
     "may": {
-      "chuaGanNhaMay": "Your account is not assigned to any factory yet. Ask an administrator to assign one, then open this machine again."
+      "chuaGanNhaMay": "Your account is not assigned to any factory yet. Ask an administrator to assign one, then open this machine again.",
+      "idKhongHopLe": "Could not read the machine from the URL",
+      "idKhongHopLeMo": "The URL must look like /twin/may/<number>. Pick a machine from the factory or line screen.",
+      "hang": {
+        "nguyKich": "critical",
+        "canh": "warning",
+        "theoDoi": "watch",
+        "khoe": "healthy",
+        "hetHan": "stale",
+        "chuaDo": "not measured"
+      },
+      "maySo": "Machine #{{n}}",
+      "khongMoDuoc": "Cannot open machine #{{n}}",
+      "dangTai": "Loading machine…",
+      "chuaDatCho": "This machine has no place on the 3D layout yet",
+      "chuaDatChoMo": "Place it in Twin Studio to see the machine among its neighbours. The cockpit and the action panel below still work.",
+      "ariaCanh": "3D scene of {{ten}}",
+      "sucKhoe": "Health",
+      "dangTaiCockpit": "Loading cockpit…"
+    },
+    "line": {
+      "idKhongHopLe": "Could not read the line from the URL",
+      "idKhongHopLeMo": "The URL must look like /twin/line/<number>. Pick a line from the factory screen.",
+      "chuyenSo": "Line {{n}}",
+      "veNhaMay": "Factory",
+      "soTram": "Stations",
+      "khongMoDuoc": "Cannot open line #{{n}}",
+      "rong": "This line has no machines on the layout yet",
+      "rongMo": "The line may not have been placed in Twin Studio yet, or it belongs to another factory.",
+      "ariaCanh": "3D scene of {{ten}}"
     },
     "chuaDung": "This screen is not built yet. Content will be added in later phases of the 3D Twin project.",
     "chuaDo": "not measured",
@@ -20166,7 +20196,23 @@
       "donViGiay": "{{n}}s",
       "nhanBiAn": "{{n}} more names hidden",
       "suCoNgoaiKhung": "{{n}} alarms out of view",
-      "chiNhanBatThuongMoTa": "Show names only for abnormal machines (and the selected one)"
+      "chiNhanBatThuongMoTa": "Show names only for abnormal machines (and the selected one)",
+      "chonNhaMay": "Factory",
+      "chonToaNha": "Building",
+      "chonTang": "Floor",
+      "haCapPhamVi": "Showing data for ONE factory ({{soNhaMay}} factories in the system). The Corporate scope cannot load several factories at once yet — use the Factory box to switch.",
+      "linkBiBoQua": "The link that opened this screen points to a factory/building/floor that no longer exists — showing the closest selection.",
+      "mayTangKhac": "{{so}} more machines are placed on another floor of this building — change the Floor box to see them",
+      "mayToaKhac": "{{so}} machines are outside this load (other buildings were not queried) — whether they are placed is not known yet",
+      "moPanelPhai": "Open the action panel on the right",
+      "thuPanelPhai": "Collapse the action panel on the right",
+      "moPanelTrai": "Open the left panel",
+      "thuPanelTrai": "Collapse the left panel",
+      "moTwinStudio": "Twin Studio",
+      "moTwinStudioMoTa": "Go to Twin Studio: design the plant, drag and drop machines, save the layout",
+      "toanManMoTa": "Near full-screen 3D (collapse both side panels)",
+      "soMayNgan_one": "{{n}} machine",
+      "soMayNgan_other": "{{n}} machines"
     },
     "studio": {
       "tieuDe": "3D Factory — Design",
@@ -20439,7 +20485,8 @@
       "nhapBanVe": "Import drawing",
       "roiTrang": "There are unsaved changes. Leaving will lose them.",
       "loiLuu": "Save failed: {{loi}}",
-      "phimTat": "Shortcuts: W move · E rotate · R scale · Ctrl inverts snap · Ctrl+Z undo"
+      "phimTat": "Shortcuts: W move · E rotate · R scale · Ctrl inverts snap · Ctrl+Z undo",
+      "chuaCoNhaMay": "There is no factory to design yet."
     },
     "ketNoi": {
       "chua_ket_noi": {
@@ -20558,7 +20605,9 @@
         "oeeTrungBinh": "Average OEE",
         "andonMo": "Machines w/ andon",
         "ruiRoPdm": "PdM risk"
-      }
+      },
+      "mauSo_one": "{{n}} machine",
+      "mauSo_other": "{{n}} machines"
     },
     "model": {
       "tamGiac": "triangles",
@@ -20639,6 +20688,34 @@
         "gio": "{{n}} h",
         "ngay": "{{n}} days"
       }
+    },
+    "coCheGiao": {
+      "day": {
+        "nhan": "push",
+        "moTa": "Every number arrives through the real-time push stream."
+      },
+      "hon_hop": {
+        "nhan": "push + 30 s poll",
+        "moTa": "The push stream is live, but some numbers still arrive through a 30-second poll."
+      },
+      "hoi": {
+        "nhan": "polling",
+        "moTa": "No push stream — every number arrives through periodic polling."
+      },
+      "lich_su": {
+        "nhan": "history",
+        "moTa": "Viewing history — numbers do not refresh on their own."
+      },
+      "chua_ro": {
+        "nhan": "—",
+        "moTa": "The delivery mechanism has not been determined yet."
+      }
+    },
+    "daiHopNhat": {
+      "an": "hide",
+      "tomTat": "{{so}} things to know",
+      "tomTat_one": "{{so}} thing to know",
+      "tomTat_other": "{{so}} things to know"
     }
   }
 }
