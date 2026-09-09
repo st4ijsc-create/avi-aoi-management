@@ -115,7 +115,11 @@ export function BangKpiNoi({ kpi, dangTai = false, mo, onDoiMo, nhanPhamVi }: Ba
               nửa sự thật — 72 % trên 1 máy và trên 42 máy là hai câu khác nhau.
           */}
           <span className="text-[11px] text-muted-foreground" data-testid="kpi-mau-so">
-            {t("twin3d.kpiNoi.mauSo", "{{n}} máy", { n: hienSo(kpi.mauSo || null, dangTai) })}
+            {/* ★ Đợt 36: `count` ⇒ `mauSo_one`/`mauSo_other` (en) — "1 machines" là lỗi cùng lớp với `DaiLine`. */}
+            {t("twin3d.kpiNoi.mauSo", "{{n}} máy", {
+              n: hienSo(kpi.mauSo || null, dangTai),
+              ...(kpi.mauSo && !dangTai ? { count: kpi.mauSo } : {}),
+            })}
           </span>
           <button
             type="button"

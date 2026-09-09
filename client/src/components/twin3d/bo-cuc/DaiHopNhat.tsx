@@ -151,7 +151,8 @@ export default function DaiHopNhat({ muc, hanhDong }: DaiHopNhatProps) {
               aria-hidden
             />
             <span className="min-w-0 truncate">
-              {t("twin3d.daiHopNhat.tomTat", "{{so}} việc cần biết", { so })}
+              {/* ★ Đợt 36: `count` ⇒ `tomTat_one`/`tomTat_other` (en) — "1 things to know". */}
+              {t("twin3d.daiHopNhat.tomTat", "{{so}} việc cần biết", { so, count: so })}
             </span>
             <button
               type="button"

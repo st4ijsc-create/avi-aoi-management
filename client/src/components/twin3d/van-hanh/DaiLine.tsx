@@ -165,7 +165,12 @@ export function DaiLine({
                     style={{ background: mau, opacity: kieu.doMo }}
                   />
                   <span className="text-[10px] text-muted-foreground">
-                    {t("twin3d.vanHanh.soMayNgan", "{{n}} máy", { n: hienSo(s.soMay) })}
+                    {/*
+                      ★ ĐỢT 36 (Pareto #8) — SỐ NHIỀU: QA Đợt 32/36 đo **"1 machines"** ×12 ở en. `count` để
+                        i18next tra `soMayNgan_one`/`soMayNgan_other` (en.json); vi/zh không có dạng số nhiều
+                        ⇒ rơi về khoá gốc. `n` giữ nguyên là chuỗi đã qua `hienSo` (NT-3.5), `count` là số đếm.
+                    */}
+                    {t("twin3d.vanHanh.soMayNgan", "{{n}} máy", { n: hienSo(s.soMay), count: s.soMay })}
                   </span>
                 </span>
                 {/*
