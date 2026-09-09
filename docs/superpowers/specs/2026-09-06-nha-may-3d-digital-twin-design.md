@@ -5734,6 +5734,32 @@ module goi `mmSangScene()` thay vi **ba** `mmSangMet` viet tay nhu ban cu.
 Chu du an do lai xac nhan: `mayVe` **tho 24 / sach 18** · `bangWip` 4→**2** · `cotWipCanh` 3→**2**.
 `:670` va `:984` **dung chinh xac**. ⇒ **Chinh cai bay G92 ma Dot 28 vua ghi da can toi o Dot 29.**
 
+### 14q.6 DOT 30 - MAN LINE dung xong, bi CAT giua nghiem thu cuoi (2026-09-09/10)
+
+Ba commit: `ba568cd5` (`manLine.ts` lat thuan) · `983e2d1d` (`TwinLine.tsx` + route `App.tsx:395`) ·
+`80ddefde` (va chieu cao - **chu du an commit ho** sau khi agent bi cat). **Da push.**
+Cong do voi cay hien tai: **80 tep / 2.070 test** (nen 78/2.010) - `check` 0 - cay sach - 5 anh md5
+nguyen - **13/13 redirect** - route thua cong `/twin` (`navHref="/twin"`, dung **QD-18**).
+
+> #### ★★★ G95 - **SESSION LIMIT CAT AGENT GIUA CHUNG - va G88 (commit tung phan) LA THU CUU VIEC**
+> Agent Dot 30 bi API ket thuc som (429 session limit) dung luc *"re-run the full live acceptance and
+> read the screenshot"*. Khac Dot 27-lan-dau (**G88**: dung, mat trang), lan nay **hai commit da nam
+> tren nhanh** va phan do chi la **2 tep, 117 dong** trong cay lam viec.
+> Chu du an **khong resume mu**: (1) doc diff - la ban va chieu cao **dung huong** (do
+> `getBoundingClientRect().top`, khong hang so doan - **G23**); (2) doc test moi - ghim **dieu do duoc**,
+> khong phai vo rong; (3) chay **80/2.070 + check 0** tren cay dang do; (4) **roi moi commit**, pathspec
+> dich danh 2 tep. Sau do resume agent voi **trang thai that** de no khong lam lai.
+> => Khi mot lo bi cat: **do cay ma TRUOC, resume SAU**, va noi ro cho no cai gi da commit ho. Va
+> **giet server no de lai** (3030, PID khoi dong 21:46) - khong de no tu xu vi no khong biet minh da chet.
+
+**Loi man Line tu bat bang anh (G41 lan nua):** ban dau `h-full` ⇒ `man-twin-line` y=80 h=889 ⇒ day o
+**969, tran 69 px**; **12 o tram** y=904 **nam duoi mep 900** - **co trong DOM, co kich thuoc that, moi
+`toBeVisible()` XANH**. Chi anh + bbox bat duoc. Nay chieu cao = `100vh - var(--twin-line-top)` voi
+bien **do luc chay**, bien CSS **rieng** (khong dung chung `--twin-top` cua `/twin`).
+
+**Con lai cua Dot 30 (agent dang resume):** nghiem thu thi giac tren `dist` moi (bbox 12 o ≤ 900) ·
+`__soCanvas = 1` · hai chieu quyen · ablation ca hai phia (G93) · liet ke cong (G78).
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
