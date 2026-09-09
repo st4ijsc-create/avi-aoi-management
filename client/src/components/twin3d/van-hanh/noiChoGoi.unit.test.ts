@@ -35,6 +35,19 @@ const GOC = resolve(__dirname, "../../../..");
 const doc = (p: string) => readFileSync(resolve(GOC, p), "utf8");
 
 const TRANG = doc("src/pages/TwinVanHanh.tsx");
+/**
+ * ★★★ ĐỢT 28 T-1 — HAI TRUY VẤN WIP ĐÃ DỜI SANG `usePhanTichLine.ts` (tầng 3).
+ *
+ * Ca "có truy vấn cấp dữ liệu WIP thật" bên dưới ĐỎ ngay lần chạy đầu sau khi
+ * tách, và **đó là hành vi đúng của một thiết bị đo tốt**: nó đi tìm chỗ gọi ở
+ * `TwinVanHanh.tsx` và không thấy. Nếu nó im lặng xanh thì mới đáng sợ — nghĩa
+ * là nó không còn đo gì.
+ *
+ * ⚠ Cách vá SAI mà không được chọn: xoá ca đó đi. Ca này chặn đúng L-2 (lớp
+ *   phủ WIP dựng xong mà nuôi bằng `wip={[]}` — hằng rỗng viết cứng). Nên nó
+ *   **đi theo mã**, sang tệp mới, chứ không biến mất.
+ */
+const PHAN_TICH = doc("src/components/twin3d/van-hanh/usePhanTichLine.ts");
 const CANH = doc("src/components/twin3d/van-hanh/CanhVanHanh.tsx");
 const DAI = doc("src/components/twin3d/van-hanh/DaiLine.tsx");
 
@@ -117,8 +130,12 @@ describe("★★★ L-2 (#61/#32/#36) — `wip` và `nhipMs` phải mang dữ li
   });
 
   it("★★★ có truy vấn cấp dữ liệu WIP thật (không phải hằng trong mã)", () => {
-    expect(TRANG).toContain("trpc.digitalTwin.wipFlowState.useQuery");
-    expect(TRANG).toContain("trpc.wip.lineBalance.useQuery");
+    // ĐỢT 28: hai truy vấn này nay ở `usePhanTichLine.ts` (T-1 tầng 3).
+    expect(PHAN_TICH).toContain("trpc.digitalTwin.wipFlowState.useQuery");
+    expect(PHAN_TICH).toContain("trpc.wip.lineBalance.useQuery");
+    // …và trang PHẢI thật sự gọi hook đó, nếu không thì hai truy vấn tồn tại mà
+    // không ai chạy — đúng hình dạng G16 mà tệp này sinh ra để chặn.
+    expect(TRANG).toContain("usePhanTichLine({");
   });
 
   it("★ lớp phủ 3D vẫn `return null` khi rỗng — nên tập rỗng THẬT SỰ vẽ số 0", () => {

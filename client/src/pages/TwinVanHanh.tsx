@@ -96,6 +96,7 @@ import { ghiCamera, type PhamVi } from "@/components/twin3d/van-hanh/duongDanTwi
 // ── T-3 (§15.5.2) — vỏ React của trạng thái URL, dùng chung cho CẢ BA MÀN ──
 import { useTrangThaiTwin } from "@/components/twin3d/van-hanh/useTrangThaiTwin";
 import { useMoPhongTwin } from "@/components/twin3d/van-hanh/useMoPhongTwin";
+import { usePhanTichLine } from "@/components/twin3d/van-hanh/usePhanTichLine";
 // ── Đợt 10 lô F (§11e.6 F1/F2/F3) — bộ chọn Nhà máy/Toà/Tầng ──────────────
 import {
   phamViThuc,
@@ -632,47 +633,22 @@ export default function TwinVanHanh() {
   const lineDangXem = phamVi.cap === "line" ? phamVi.id : null;
 
   /**
-   * #61 — số WIP theo trạm. Nhịp thích nghi (#51) áp luôn ở đây: WIP đổi theo
-   * từng chiếc rời trạm, nên nó cùng hạng "số liệu vận hành" với `overviewQ`.
+   * ★★★ T-1 TẦNG 3 (§15.5.2 / Đợt 28) — HAI TRUY VẤN PHÂN TÍCH LINE ĐÃ TÁCH.
+   *
+   * `usePhanTichLine` giữ `digitalTwin.wipFlowState` (#61) + `wip.lineBalance`
+   * (#32 + #36). Chúng chia CHUNG đúng một cửa `lineDangXem !== null`, nên tách
+   * cùng nhau giữ khớp nối ấy ở MỘT chỗ thay vì hai chỗ phải nhớ trùng nhau.
+   *
+   * ★ HAI NHỊP KHÁC NHAU và sự khác nhau ấy CÓ CHỦ Ý: `wipFlowState` dùng nhịp
+   *   THÍCH NGHI (WIP đổi theo từng chiếc rời trạm), `lineBalance` dùng
+   *   `NHIP_CO_LUONG_MS` CỐ ĐỊNH (số liệu tổng hợp theo KỲ — hỏi 5 giây một lần
+   *   khi socket chết chỉ đọc lại đúng một hàng). Gộp hai nhịp là ĐỔI HÀNH VI.
+   *
+   * ★ Tầng 3 KHÔNG mang bất biến an toàn: cả hai đều không gọi `nhipHoiToiDa`,
+   *   nên không thể vi phạm trần 20 s/60 s của tầng 2. WIP chậm một nhịp là một
+   *   con số cũ; CẢNH BÁO chậm một nhịp là người đứng cạnh máy chưa biết dừng.
    */
-  const wipQ = trpc.digitalTwin.wipFlowState.useQuery(
-    { lineId: lineDangXem ?? 0 },
-    { enabled: lineDangXem !== null, retry: false, refetchInterval: nhipTongQuanMs },
-  );
-
-  /**
-   * ★★★ #32 + #36 — MỘT truy vấn cho CẢ nút thắt LẪN nhịp chuyền.
-   *
-   * ⚠ Bản đầu gọi THÊM `digitalTwin.stationLoadHeatmap` chỉ để lấy
-   *   `bottleneckStationId`. Đã BỎ, và lý do là một luật chứ không phải tiết
-   *   kiệm: thủ tục đó KHÔNG trả `periodStart`, nên lời khai của nó không tự
-   *   chứng minh được mình còn hạn — mà nghiệm thu Đợt 8 đo được rằng một lời
-   *   khai 16 ngày tuổi tô đỏ sai trạm. Ghép `bottleneckStationId` của truy vấn
-   *   này với `periodStart` của truy vấn kia là mời G12 vào cửa: hai con số từ
-   *   hai bản ghi khác nhau, trình bày như thể thuộc về một.
-   *   `wip.lineBalance` trả NGUYÊN HÀNG — `periodStart`, `avgCycleTimeMs`,
-   *   `bottleneckStationId` chắc chắn cùng một bản ghi.
-   *
-   * #36 — NHỊP CHUYỀN THẬT cho mũi tên dòng chảy.
-   *
-   * ★★★ SPEC §11 #36 GHI SAI NGUỒN. Nó chỉ `commandLog.avgDurations`, nhưng thủ
-   *   tục đó tính `avg(ackedAt − sentAt) GROUP BY commandType` — **độ trễ ACK
-   *   của lệnh điều khiển**, gộp theo LOẠI LỆNH, không theo chuyền. Một chuyền
-   *   12 s/chiếc mà lệnh `START` ack trong 80 ms sẽ cho mũi tên chạy nhanh gấp
-   *   150 lần sự thật (họ G7 — đo nhầm đại lượng).
-   *   Nguồn ĐÚNG dùng ở đây: `line_balance_metrics.avgCycleTimeMs` qua
-   *   `wip.lineBalance` — ms/chiếc, theo TỪNG LINE.
-   *
-   * ★ `limit: 1` — chỉ cần bản ghi gần nhất; thủ tục đã `orderBy periodStart desc`.
-   * ★ Nhịp CỐ ĐỊNH ở `NHIP_CO_LUONG_MS` (30 s) và KHÔNG thích nghi: cân bằng
-   *   chuyền là số liệu tổng hợp theo KỲ, không phải trạng thái tức thời. Hỏi
-   *   nó 5 giây một lần khi socket chết chỉ đọc lại đúng một hàng — nhịp thích
-   *   nghi ở đây sẽ tốn băng thông mà không đổi được một chữ số nào.
-   */
-  const canBangQ = trpc.wip.lineBalance.useQuery(
-    { lineId: lineDangXem ?? 0, limit: 1 },
-    { enabled: lineDangXem !== null, retry: false, refetchInterval: NHIP_CO_LUONG_MS },
-  );
+  const { wipQ, canBangQ } = usePhanTichLine({ lineDangXem, nhipTongQuanMs });
 
   /**
    * ★★★ "MỘT LỐI VÀO RỒI TỪ CHỐI" — bắt FORBIDDEN của truy vấn hình học.
