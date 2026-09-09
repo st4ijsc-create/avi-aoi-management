@@ -35,6 +35,16 @@ import * as THREE from "three";
  * canvas 2D ra RGB thật (xem `mauThree.ts`).
  */
 import { mauThree } from "./mauThree";
+/*
+ * ★★★ ĐỢT 35 (Pareto #6 / D-7) — HOẠT ẢNH CHỈ SAU MỘT "KÍCH", TRONG CỬA SỔ NGẮN.
+ *   Đo QA Đợt 32 + Đợt 35: màn Line đứng yên vẽ **88–158 khung / 4 s** vì `useFrame`
+ *   dưới đây gọi `invalidate()` mỗi khung khi có nhịp — `frameloop="demand"` thành
+ *   vòng lặp vĩnh viễn. Luật mới ở module thuần `hoatAnhDongChay.ts` (có test):
+ *   chạy `CUA_SO_HOAT_ANH_MS` sau khi camera đổi / dữ liệu đổi, rồi ĐỨNG (vẫn chỉ hướng).
+ */
+import { CUA_SO_HOAT_ANH_MS, NHIP_TOI_DA_MS, cameraDaDoi, nenHoatAnh } from "./hoatAnhDongChay";
+
+export { CUA_SO_HOAT_ANH_MS, NHIP_TOI_DA_MS };
 
 export interface DiemDongChay {
   /** Đường tâm Line — nối tâm các trạm theo `orderIndex` (từ `hinhHocLine`). */
@@ -55,13 +65,15 @@ export interface DongChayLineProps {
 /** Mặc định — đủ để đọc hướng, chưa đủ để thành hoa văn. */
 export const SO_MUI_TEN_MAC_DINH = 8;
 
-/** Nhịp chậm nhất còn cho mũi tên nhúc nhích (ms). Chậm hơn nữa coi như đứng. */
-export const NHIP_TOI_DA_MS = 120_000;
-
 export function DongChayLine({ dongChay, soMuiTen = SO_MUI_TEN_MAC_DINH }: DongChayLineProps) {
   const invalidate = useThree((s) => s.invalidate);
+  const camera = useThree((s) => s.camera);
   const nhomRef = useRef<THREE.InstancedMesh | null>(null);
   const tienDo = useRef(0);
+  /** ★ Đợt 35 — mốc "kích" gần nhất (ms, `performance.now()`); `null` = chưa kích. */
+  const mocKich = useRef<number | null>(null);
+  /** ★ Đợt 35 — tư thế camera ở khung trước (vị trí + quaternion) để nhận ra tương tác. */
+  const tuTheCu = useRef<number[] | null>(null);
 
   const { diem, nhipMs } = dongChay;
 
@@ -146,21 +158,33 @@ export function DongChayLine({ dongChay, soMuiTen = SO_MUI_TEN_MAC_DINH }: DongC
     [duong, soMuiTen],
   );
 
-  // Đặt một lần khi dữ liệu đổi — kể cả lúc Line dừng.
+  // Đặt một lần khi dữ liệu đổi — kể cả lúc Line dừng. ★ Đợt 35: dữ liệu đổi = một KÍCH.
   useEffect(() => {
     datMuiTen(tienDo.current);
+    mocKich.current = performance.now();
     invalidate();
-  }, [datMuiTen, invalidate]);
+  }, [datMuiTen, invalidate, nhipMs]);
 
   useFrame((_, delta) => {
-    // ★★★ Line dừng / chưa đo được nhịp ⇒ ĐỨNG YÊN. Không có nhánh nào cho một
-    //   tốc độ "mặc định" — một tốc độ bịa là lời khai sai về nhịp sản xuất.
-    if (nhipMs == null || !Number.isFinite(nhipMs) || nhipMs <= 0 || nhipMs > NHIP_TOI_DA_MS) return;
+    // ★ Đợt 35 — tương tác = camera đổi (kéo xoay, tween đổi cấp) ⇒ KÍCH. So 7 số
+    //   của chính camera (OrbitControls đổi ngay trong khung), không đợi matrixWorld.
+    const p = camera.position;
+    const q = camera.quaternion;
+    const tuThe = [p.x, p.y, p.z, q.x, q.y, q.z, q.w];
+    const bayGio = performance.now();
+    if (cameraDaDoi(tuTheCu.current, tuThe)) {
+      tuTheCu.current = tuThe;
+      mocKich.current = bayGio;
+    }
+    // ★★★ Line dừng / chưa đo được nhịp ⇒ ĐỨNG YÊN (không tốc độ "mặc định" — một
+    //   tốc độ bịa là lời khai sai về nhịp). Hết cửa sổ sau kích ⇒ ĐỨNG, giữ hướng.
+    //   Đây là toàn bộ chỗ D-7 được cưỡng chế: không kích ⇒ không `invalidate()`.
+    if (!nenHoatAnh(bayGio, mocKich.current, nhipMs)) return;
     // Một chu kỳ mũi tên đi hết đường trong `nhipMs * số trạm`.
-    const chuKyGiay = (nhipMs * Math.max(1, diem.length)) / 1000;
+    const chuKyGiay = ((nhipMs as number) * Math.max(1, diem.length)) / 1000;
     tienDo.current = (tienDo.current + delta / chuKyGiay) % 1;
     datMuiTen(tienDo.current);
-    // ★ RB-3 — animation của TA, `demand` không tự biết.
+    // ★ RB-3 — animation của TA, `demand` không tự biết. Chỉ trong cửa sổ.
     invalidate();
   });
 
