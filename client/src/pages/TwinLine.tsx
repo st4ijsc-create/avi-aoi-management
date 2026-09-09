@@ -146,6 +146,7 @@ import {
   hienSo,
   trangThaiHienThi,
   type MayVanHanh,
+  tsTrangThaiTheoMay,
 } from "@/components/twin3d/van-hanh/trungThucDuLieu";
 import {
   hangDaiLine,
@@ -399,22 +400,15 @@ export function ThanManLine({ lineId, camUrl = null, duongVe = null }: ThanManLi
    *   :404 `kind:"offline"`   → `machine_status_logs."timestamp"`   ★ DUY NHẤT
    * Chỉ dòng cuối là THỜI ĐIỂM ĐO TRẠNG THÁI.
    *
-   * ⚠ Hệ quả TRUNG THỰC: máy KHÔNG offline thì hợp đồng fleet hiện tại **không
-   *   mang** dấu thời gian nào ⇒ `null` ⇒ `khong_ro` (xám gạch chéo). Đó là câu
-   *   trả lời ĐÚNG: ta thật sự không biết dữ liệu của nó cũ bao nhiêu. Đoán một
-   *   con số ở đây là bịa (NT-3).
+   * ★★★ ĐỢT 34 (Pareto #1) — hợp đồng fleet NAY MANG mốc: `machines[].tsTrangThai` = nhịp tim
+   *   `max(machines.lastHeartbeat, machine_heartbeats)` qua ĐÚNG `chonNguonMocTuoi` của kho realtime.
+   *   Đo 2026-09-10: 0 issue `offline` trên 43 máy ⇒ vòng lặp cũ cho bản đồ RỖNG ⇒ 42 máy đã từng báo
+   *   cáo hiện "Never reported". Ba trang gọi CÙNG `tsTrangThaiTheoMay` (G12), không chép vòng lặp nữa.
    */
-  const tsTheoMay = useMemo(() => {
-    const m = new Map<number, number | null>();
-    for (const iss of overviewQ.data?.issues ?? []) {
-      if (iss.kind !== "offline") continue;
-      if (iss.machineId == null || typeof iss.ageMinutes !== "number") continue;
-      const ts = bayGioThat - iss.ageMinutes * 60_000;
-      const cu = m.get(iss.machineId);
-      if (cu == null || ts > cu) m.set(iss.machineId, ts);
-    }
-    return m;
-  }, [overviewQ.data, bayGioThat]);
+  const tsTheoMay = useMemo(
+    () => tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], bayGioThat),
+    [overviewQ.data, bayGioThat],
+  );
 
   const mayNen = useMemo<MayVanHanh[]>(() => {
     const tt = new Map<number, string>();

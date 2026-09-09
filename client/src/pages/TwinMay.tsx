@@ -141,6 +141,7 @@ import {
   hienSo,
   trangThaiHienThi,
   type MayVanHanh,
+  tsTrangThaiTheoMay,
 } from "@/components/twin3d/van-hanh/trungThucDuLieu";
 import {
   vienSucKhoe,
@@ -340,18 +341,12 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
     return m;
   }, [tram]);
 
-  /* ★★★ CHỈ `kind === "offline"` mang thời điểm ĐO trạng thái — xem `TwinLine.tsx`. */
-  const tsTheoMay = useMemo(() => {
-    const m = new Map<number, number | null>();
-    for (const iss of overviewQ.data?.issues ?? []) {
-      if (iss.kind !== "offline") continue;
-      if (iss.machineId == null || typeof iss.ageMinutes !== "number") continue;
-      const ts = bayGioThat - iss.ageMinutes * 60_000;
-      const cu = m.get(iss.machineId);
-      if (cu == null || ts > cu) m.set(iss.machineId, ts);
-    }
-    return m;
-  }, [overviewQ.data, bayGioThat]);
+  /* ★★★ Đợt 34 (Pareto #1) — MỘT hàm cho ba màn: `tsTrangThai` (nhịp tim, cùng mốc với kho) thắng;
+     issue `offline` chỉ là đường lùi cho server cũ. Xem docblock `tsTrangThaiTheoMay` và `TwinLine.tsx`. */
+  const tsTheoMay = useMemo(
+    () => tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], bayGioThat),
+    [overviewQ.data, bayGioThat],
+  );
 
   const mayNen = useMemo<MayVanHanh[]>(() => {
     const tt = new Map<number, string>();

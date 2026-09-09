@@ -20552,7 +20552,7 @@
         "matKetNoi": "Offline",
         "tyLeChay": "Running rate",
         "oeeTrungBinh": "Average OEE",
-        "andonMo": "Open andon",
+        "andonMo": "Machines w/ andon",
         "ruiRoPdm": "PdM risk"
       }
     },

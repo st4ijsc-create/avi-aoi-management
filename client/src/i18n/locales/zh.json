@@ -20560,7 +20560,7 @@
         "matKetNoi": "失去连接",
         "tyLeChay": "运行率",
         "oeeTrungBinh": "平均 OEE",
-        "andonMo": "未处理安灯",
+        "andonMo": "有安灯的机台",
         "ruiRoPdm": "预测性维护风险"
       }
     },

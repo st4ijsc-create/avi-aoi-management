@@ -64,8 +64,12 @@ export interface MayVanHanh {
   /** `machines.operationStatus` — giá trị ĐƯỢC BÁO CÁO, chưa xét tuổi. */
   trangThaiBaoCao: string | null;
   /**
-   * `machines.lastHeartbeat` (ms epoch) — thời điểm DỮ LIỆU, không phải thời
-   * điểm render. `null` = CHƯA TỪNG báo cáo (2/42 máy của DB này).
+   * Mốc NHỊP TIM mới nhất (ms epoch) = `max(machines.lastHeartbeat, machine_heartbeats)` — thời
+   * điểm DỮ LIỆU, không phải thời điểm render. `null` = CHƯA TỪNG báo cáo (2/42 máy của DB này).
+   *
+   * ★ Đợt 34: nền lấy từ `factoryCommand.overview.machines[].tsTrangThai` (CÙNG mốc, cùng hai hàm
+   *   `chonNguonMocTuoi`/`quyTuoiMay` phía server với kho `twin:trangThai.capNhatLuc`) qua
+   *   {@link tsTrangThaiTheoMay}; kho realtime phủ lên bằng chính mốc ấy ⇒ không lật 3 ngày ↔ 54 ngày.
    */
   thoiDiemDuLieu: number | null;
   isActive: boolean;
@@ -146,6 +150,65 @@ export function tsTrangThaiTuIssues(
     const ts = bayGio - iss.ageMinutes * 60_000;
     const cu = m.get(iss.machineId);
     if (cu === undefined || ts > cu) m.set(iss.machineId, ts);
+  }
+  return m;
+}
+
+/** Một nút của `factoryCommand.overview.machines[]` — CHỈ hai trường hàm dưới đọc. */
+export interface NutFleetCoMoc {
+  id: number;
+  /**
+   * ISO của mốc nhịp tim đã chọn phía server (Đợt 34). `null` = CHƯA TỪNG báo cáo.
+   * `undefined` (trường VẮNG) = server cũ chưa có hợp đồng này ⇒ rơi về issue `offline`.
+   */
+  tsTrangThai?: string | null;
+}
+
+/**
+ * ★★★ ĐỢT 34 (Pareto #1) — MỘT hàm cho BA màn: `machineId` → mốc dữ liệu trạng thái (ms) hoặc `null`.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO `tsTrangThaiTuIssues` KHÔNG ĐỦ — đo trên DB này 2026-09-10
+ * ════════════════════════════════════════════════════════════════════════════
+ * `tsTrangThaiTuIssues` chỉ có mốc cho máy **đang `offline`** (issue `offline` là loại duy nhất mang
+ * thời điểm đo). Đo được: 43/43 máy có log mới nhất `online` ⇒ **0 issue `offline`** ⇒ bản đồ RỖNG ⇒
+ * mọi máy `thoiDiemDuLieu = null` ⇒ "Never reported" cho **cả 42 máy đã từng báo cáo** — bịa theo chiều
+ * ngược với lỗi giả-tươi (§9.5 NT-3), và ba trang (`TwinVanHanh`/`TwinLine`/`TwinMay`) chép cùng một
+ * vòng lặp ấy ba lần (G12).
+ *
+ * Nay server trả `tsTrangThai` cho MỌI máy — mốc nhịp tim `max(machines.lastHeartbeat,
+ * machine_heartbeats)` qua `chonNguonMocTuoi` (`server/db/twinCanh.ts`), **cùng hai hàm** mà kho realtime
+ * `twin:trangThai.capNhatLuc` dùng ⇒ nền và kho không thể lệch mốc.
+ *
+ * LUẬT ƯU TIÊN (thứ tự là hợp đồng):
+ *   1. nút CÓ trường `tsTrangThai` (kể cả `null`) ⇒ **tin server**: `null` là "chưa từng báo cáo" THẬT,
+ *      KHÔNG rơi về issue — issue `offline` của máy chưa từng báo cáo mang `ageMinutes = 0`, và
+ *      `bayGio − 0` sẽ biến "chưa từng" thành "vừa xong" (đúng lời nói dối NT-3.5 cấm);
+ *   2. trường VẮNG (server cũ) ⇒ mốc từ issue `offline` như trước (`tsTrangThaiTuIssues`);
+ *   3. chuỗi ISO không đọc được ⇒ `null` (không đoán).
+ *
+ * ★ "Never reported" ở UI (`NganXuLy` `chuaTungBaoCao`, `nhanDoTuoi(null)`) từ đây CHỈ xuất hiện khi
+ *   `tsTrangThai` là `null` thật — hoặc khi server cũ và máy không có issue `offline`.
+ */
+export function tsTrangThaiTheoMay(
+  machines: readonly NutFleetCoMoc[],
+  issues: readonly { kind?: string; machineId?: number | null; ageMinutes?: number }[],
+  bayGio: number,
+): Map<number, number | null> {
+  const m = new Map<number, number | null>();
+  let duPhong: Map<number, number> | null = null;
+  for (const n of machines) {
+    if (n.tsTrangThai !== undefined) {
+      if (n.tsTrangThai === null) {
+        m.set(n.id, null);
+        continue;
+      }
+      const ms = Date.parse(n.tsTrangThai);
+      m.set(n.id, Number.isFinite(ms) ? ms : null);
+      continue;
+    }
+    duPhong ??= tsTrangThaiTuIssues(issues, bayGio);
+    m.set(n.id, duPhong.get(n.id) ?? null);
   }
   return m;
 }

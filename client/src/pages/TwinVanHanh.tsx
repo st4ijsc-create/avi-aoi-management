@@ -160,6 +160,7 @@ import {
   thoiDiemDuLieuMoiNhat,
   trangThaiHienThi,
   type MayVanHanh,
+  tsTrangThaiTheoMay,
 } from "@/components/twin3d/van-hanh/trungThucDuLieu";
 import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
 // ── Đợt 11 lô J — §11 #16: KPI ĐỌC ĐƯỢC TRÊN CẢNH 3D (yêu cầu #6) ──────────
@@ -776,23 +777,18 @@ export function ThanTwinVanHanh() {
    * SỰ KIỆN KHÁC, và trộn chúng vào đây biến "máy vừa được báo lỗi" thành "máy
    * vừa gửi tín hiệu" — đúng lớp lỗi giả-tươi mà NT-3.2 sinh ra để chặn.
    *
-   * ⚠ Hệ quả trung thực: máy KHÔNG offline thì hợp đồng fleet hiện tại **không
-   *   mang** dấu thời gian nào, nên ta để `null` ⇒ `khong_ro` (xám gạch chéo).
-   *   Đó là câu trả lời ĐÚNG: ta thật sự không biết dữ liệu của nó cũ bao nhiêu.
-   *   Đoán một con số ở đây là bịa. Nợ đã ghi: thêm `statusTs` vào
-   *   `CommandMachineNode` (giá trị đã có sẵn tại `factoryCommandService.ts:211`).
+   * ★★★ ĐỢT 34 (Pareto #1) — NỢ TRÊN ĐÃ TRẢ, và nó lộ ra một lỗi theo chiều NGƯỢC.
+   *   Đo 2026-09-10: 43/43 máy có log mới nhất `online` ⇒ **0 issue `offline`** ⇒ bản đồ này RỖNG ⇒
+   *   mọi máy `null` ⇒ "Never reported" cho 42 máy đã từng báo cáo. Nay server trả
+   *   `machines[].tsTrangThai` — mốc NHỊP TIM `max(machines.lastHeartbeat, machine_heartbeats)` qua
+   *   ĐÚNG `chonNguonMocTuoi` mà kho `twin:trangThai` dùng (nền và kho một mốc, không lật 3 ↔ 54
+   *   ngày). Ba trang (`/twin`, `/twin/line`, `/twin/may`) gọi CÙNG `tsTrangThaiTheoMay` (G12);
+   *   `null` thật ⇒ "Never reported" thật, không rơi về issue.
    */
-  const tsTheoMay = useMemo(() => {
-    const m = new Map<number, number | null>();
-    for (const iss of overviewQ.data?.issues ?? []) {
-      if (iss.kind !== "offline") continue;
-      if (iss.machineId == null || typeof iss.ageMinutes !== "number") continue;
-      const ts = Date.now() - iss.ageMinutes * 60_000;
-      const cu = m.get(iss.machineId);
-      if (cu == null || ts > cu) m.set(iss.machineId, ts);
-    }
-    return m;
-  }, [overviewQ.data]);
+  const tsTheoMay = useMemo(
+    () => tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], bayGioThat),
+    [overviewQ.data, bayGioThat],
+  );
 
   const may = canhQ.data?.may ?? [];
   const tram = canhQ.data?.tram ?? [];

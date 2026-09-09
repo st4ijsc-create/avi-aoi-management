@@ -25,6 +25,7 @@ import {
   nhanTuoiDocDuoc,
   thoiDiemDuLieuMoiNhat,
   tsTrangThaiTuIssues,
+  tsTrangThaiTheoMay,
   trangThaiHienThi,
   type MayVanHanh,
 } from "./trungThucDuLieu";
@@ -500,5 +501,71 @@ describe("T-3 — ngưỡng tươi dùng chung với `mauTrangThai`", () => {
     );
     expect(tren.tuoi).toBe("cu");
     expect(duoi.tuoi).toBe("khong_ro");
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 34 (Pareto #1) — `tsTrangThaiTheoMay`: MỘT hàm cho ba màn, server thắng   */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+describe("★★★ Đợt 34 — tsTrangThaiTheoMay: ưu tiên `tsTrangThai` của server, issue chỉ là đường lùi", () => {
+  const ISO = "2026-09-06T11:00:00.000Z";
+  const MS = Date.parse(ISO);
+
+  it("nút CÓ `tsTrangThai` ⇒ mốc = Date.parse(ISO); issue `offline` CÙNG máy bị bỏ qua (server thắng)", () => {
+    const m = tsTrangThaiTheoMay(
+      [{ id: 14, tsTrangThai: ISO }],
+      [{ kind: "offline", machineId: 14, ageMinutes: 3 }],
+      BAY_GIO,
+    );
+    expect(m.get(14)).toBe(MS);
+    expect(m.get(14)).not.toBe(BAY_GIO - 3 * 60_000);
+  });
+
+  it("★★★ `tsTrangThai: null` = CHƯA TỪNG báo cáo THẬT ⇒ null, KHÔNG rơi về issue `offline` ageMinutes=0", () => {
+    // Server cho máy chưa từng có gì một issue `offline` với `ageMinutes: 0` (hợp đồng cũ). Rơi về nó
+    // sẽ cho `bayGio − 0` = "vừa xong" — đúng lời nói dối NT-3.5 cấm: "chưa từng" thành "tươi".
+    const m = tsTrangThaiTheoMay(
+      [{ id: 9, tsTrangThai: null }],
+      [{ kind: "offline", machineId: 9, ageMinutes: 0 }],
+      BAY_GIO,
+    );
+    expect(m.has(9)).toBe(true);
+    expect(m.get(9)).toBeNull();
+    expect(nhanDoTuoi(m.get(9) ?? null, BAY_GIO).giay).toBeNull(); // ⇒ UI "Never reported" — và CHỈ ca này
+  });
+
+  it("trường VẮNG (server cũ) ⇒ rơi về `tsTrangThaiTuIssues` — hành vi trước Đợt 34 giữ nguyên", () => {
+    const m = tsTrangThaiTheoMay(
+      [{ id: 7 }, { id: 8 }],
+      [{ kind: "offline", machineId: 7, ageMinutes: 3 }],
+      BAY_GIO,
+    );
+    expect(m.get(7)).toBe(BAY_GIO - 3 * 60_000);
+    expect(m.get(8)).toBeNull();
+  });
+
+  it("ISO rác ⇒ null (không đoán), không ném", () => {
+    const m = tsTrangThaiTheoMay([{ id: 1, tsTrangThai: "khong-phai-iso" }], [], BAY_GIO);
+    expect(m.get(1)).toBeNull();
+  });
+
+  it("★ CA THẬT 2026-09-10: 43 máy log `online`, 0 issue `offline` — trước: 0 mốc; sau: mọi máy có mốc", () => {
+    const may = Array.from({ length: 43 }, (_, i) => ({
+      id: i + 1,
+      // 2/42 máy của DB này chưa từng có nhịp tim ⇒ null THẬT.
+      tsTrangThai: i < 2 ? null : "2026-07-16T17:13:29.993Z",
+    }));
+    const truoc = tsTrangThaiTuIssues([], BAY_GIO); // vòng lặp cũ của ba trang
+    const sau = tsTrangThaiTheoMay(may, [], BAY_GIO);
+    expect(truoc.size).toBe(0);
+    expect([...sau.values()].filter((v) => v != null).length).toBe(41);
+    expect([...sau.values()].filter((v) => v == null).length).toBe(2);
+    // Mốc 54 ngày ⇒ vẫn `khong_ro`, nhưng nhãn là "54 ngày" chứ không phải "Never reported".
+    expect(nhanDoTuoi(sau.get(3) ?? null, BAY_GIO).giay).not.toBeNull();
+  });
+
+  it("thứ tự nút không đổi kết quả; máy không có trong `machines[]` thì không có mốc (Map không chứa)", () => {
+    const m = tsTrangThaiTheoMay([{ id: 2, tsTrangThai: ISO }], [{ kind: "offline", machineId: 5, ageMinutes: 1 }], BAY_GIO);
+    expect(m.has(5)).toBe(false);
   });
 });

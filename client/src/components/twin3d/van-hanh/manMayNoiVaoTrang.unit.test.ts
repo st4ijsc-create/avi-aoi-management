@@ -273,8 +273,16 @@ describe("★★★ ⑥ Lý do mở màn qua `lyDoMoManMay` với `dangTai`; câ
     for (const q of ["factoriesQ", "toaNhaQ", "chiTietQ", "canhQ", "overviewQ"]) expect(d).toContain(`${q}.isLoading`);
   });
 
-  it("★★★ NT-3 — tuổi dữ liệu CHỈ từ `kind === \"offline\"`", () => {
-    expect(than("tsTheoMay")).toContain('if (iss.kind !== "offline") continue;');
+  it("★★★ Đợt 34 (Pareto #1) — tuổi dữ liệu qua MỘT hàm `tsTrangThaiTheoMay`: server `tsTrangThai` thắng, issue `offline` chỉ là đường lùi", () => {
+    // Trước Đợt 34 ca này ghim vòng lặp `if (iss.kind !== "offline") continue;` — chép ở CẢ BA trang.
+    // Đo 2026-09-10: 43/43 máy có log mới nhất `online` ⇒ 0 issue `offline` ⇒ vòng lặp ấy cho bản đồ
+    // RỖNG ⇒ 42 máy đã từng báo cáo hiện "Never reported" (bịa theo chiều ngược NT-3). Nay ba trang gọi
+    // CÙNG một hàm (G12); luật "chỉ `offline` mang mốc" sống trong `tsTrangThaiTuIssues` (đường lùi cho
+    // server cũ) và có test riêng ở `trungThucDuLieu.unit.test.ts`.
+    expect(than("tsTheoMay")).toContain(
+      "tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], bayGioThat)",
+    );
+    expect(than("tsTheoMay")).not.toContain('iss.kind !== "offline"');
   });
 });
 

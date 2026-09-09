@@ -152,6 +152,11 @@ export function tinhKpiNoi(may: readonly MayTongQuanKpi[], chuaDo = false): KetQ
     //   Nó vẫn nằm trong `mauSo`, nên các ô cộng lại có thể NHỎ HƠN `mauSo` —
     //   một bảng KPI ép tổng bằng mẫu số sẽ phải bịa ra chỗ để nhét `idle`.
 
+    // ★ Đợt 34 (Pareto #1 QA Đợt 32): ô này đếm **MÁY** có andon (`andonActive` là cờ theo máy), còn
+    //   `DaiCanhBao` "Alarms (N)" và badge vỏ đếm **SỰ KIỆN** `andon.active`. Đo 2026-09-10 trên `/twin`:
+    //   6 máy · 7 sự kiện (máy 2 có 2 andon) ⇒ hai số đúng, hai đơn vị. Hợp đồng fleet không mang số
+    //   sự kiện/máy, nên KHÔNG đổi phép đếm; nhãn i18n `twin3d.kpiNoi.o.andonMo` đổi thành "Machines w/
+    //   andon" / "Máy có andon" để đơn vị nói ra trên màn, cạnh "Alarms (7)".
     if (m.andonActive) andon += 1;
     if (m.pdmRiskHigh) pdm += 1;
 
