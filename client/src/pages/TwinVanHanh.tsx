@@ -95,6 +95,7 @@ import type { CanhBaoTheGioi, MucCanhBao } from "@/components/twin3d/van-hanh/Lo
 import { ghiCamera, type PhamVi } from "@/components/twin3d/van-hanh/duongDanTwin";
 // ── T-3 (§15.5.2) — vỏ React của trạng thái URL, dùng chung cho CẢ BA MÀN ──
 import { useTrangThaiTwin } from "@/components/twin3d/van-hanh/useTrangThaiTwin";
+import { useMoPhongTwin } from "@/components/twin3d/van-hanh/useMoPhongTwin";
 // ── Đợt 10 lô F (§11e.6 F1/F2/F3) — bộ chọn Nhà máy/Toà/Tầng ──────────────
 import {
   phamViThuc,
@@ -1773,50 +1774,25 @@ export default function TwinVanHanh() {
   );
 
   /**
-   * ★ `enabled` GẤP ĐÔI cửa: chỉ bắn khi (a) đầu vào dựng được và (b) người
-   *   dùng đã bấm Chạy. Thiếu (a) thì zod `.positive()`/`.min(1)` ném 400 cho
-   *   một thứ ta đã BIẾT là không chạy được — một lỗi đỏ ở console cho một
-   *   trạng thái hoàn toàn bình thường.
-   */
-  const [daBamChay, datDaBamChay] = useState(false);
-  const whatIfQ = trpc.digitalTwin.whatIf.useQuery(
-    dungWhatIf.chay
-      ? dungWhatIf.dauVao
-      : { stations: [{ stationId: 0, cycleTimeSec: 1 }], horizonHours: 1 },
-    { enabled: dungWhatIf.chay && daBamChay, retry: false, refetchOnWindowFocus: false },
-  );
-
-  /*
-   * ★ Đổi chuyền / đổi tham số ⇒ hạ cờ, buộc bấm Chạy lại. Nếu không, kết quả
-   *   của chuyền TRƯỚC nằm lại trên màn hình dưới nhãn của chuyền MỚI — một lời
-   *   khai sai mà không lỗi nào nổ (react-query giữ `data` cũ khi key đổi trong
-   *   `keepPreviousData`, và ngay cả khi không thì khoảng trắng giữa hai lần
-   *   fetch cũng đủ để đọc nhầm).
-   */
-  useEffect(() => {
-    datDaBamChay(false);
-  }, [lineDangXem, horizonHours, heSoCycle]);
-
-  /**
-   * #35 — phát lại workflow qua `orchestration.simulate`.
+   * ★★★ T-1 TẦNG 4 (§15.5.2 / Đợt 28) — BA TRUY VẤN MÔ PHỎNG ĐÃ TÁCH RA.
    *
-   * ★★★ CỔNG QUYỀN: `orchestration.listWorkflows`/`simulate` đều đòi
-   *   `machine_monitoring/canView` (`orchestrationRouter.ts:83`, `:244`). Luật
-   *   dự án (`nganXuLyLogic.ts:102-111`): **thiếu quyền ⇒ ẨN**, không phải
-   *   hiện-rồi-disable. Nên khi thiếu quyền ta KHÔNG bắn truy vấn (`enabled`)
-   *   và truyền `null` xuống ngăn để nó ẩn cả mục — `null` khác `[]` (có quyền
-   *   mà chưa có workflow nào, câu đó phải nói ra).
+   * `useMoPhongTwin` giữ `digitalTwin.whatIf` + `orchestration.listWorkflows` +
+   * `orchestration.simulate`, cùng hai mẩu state chỉ chúng dùng (`daBamChay`,
+   * `workflowRef`) và `useEffect` hạ cờ khi đổi tham số.
+   *
+   * ★ Tầng 4 đi TRƯỚC vì nó **rời nhất theo phép đo**, không phải theo cảm
+   *   giác: 0 truy vấn nào khác đọc kết quả của nó (chúng là **lá** của chuỗi
+   *   phụ thuộc), và **không cái nào mang `refetchInterval`** ⇒ tầng này không
+   *   chạm được vào bất biến nhịp an toàn (đó là tầng 2).
+   *
+   * ★ G37: hook KHÔNG tự đọc route và KHÔNG tự gọi `hasPermission` — trang này
+   *   đọc quyền rồi TRUYỀN XUỐNG. Một mảnh tự đọc quyền có thể bắn truy vấn mà
+   *   người dùng không được phép gọi, và 403 chỉ hiện ra dưới dạng một ngăn
+   *   trống trông hệt như "chưa có quy trình nào".
    */
   const coQuyenXemQuyTrinh = hasPermission("machine_monitoring", "canView");
-  const [workflowRef, datWorkflowRef] = useState<string | null>(null);
-  const dsWorkflowQ = trpc.orchestration.listWorkflows.useQuery(
-    { limit: 50 },
-    { enabled: coQuyenXemQuyTrinh, retry: false, refetchOnWindowFocus: false },
-  );
-  const phatLaiQ = trpc.orchestration.simulate.useQuery(
-    { workflowRef: workflowRef ?? "", params: {} },
-    { enabled: coQuyenXemQuyTrinh && workflowRef !== null, retry: false, refetchOnWindowFocus: false },
-  );
+  const { whatIfQ, dsWorkflowQ, phatLaiQ, daBamChay, datDaBamChay, workflowRef, datWorkflowRef } =
+    useMoPhongTwin({ dungWhatIf, coQuyenXemQuyTrinh, lineDangXem, horizonHours, heSoCycle });
 
   /**
    * Ngăn Mô phỏng mở/thu — DÙNG CHUNG khoá `?thu=` (G40), như bảng KPI.
