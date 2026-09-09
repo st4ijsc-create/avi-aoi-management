@@ -60,6 +60,14 @@
  *   luật ≤1 chặng ở tầng dữ liệu: không có giá trị nào trong bảng lại là một
  *   khoá của chính bảng (test kiểm điều đó).
  */
+import {
+  docPhamVi,
+  docVatTheChon,
+  duongDanManLine,
+  duongDanManMay,
+} from "../van-hanh/duongDanTwin";
+import { docNganNhung } from "../van-hanh/nhungTaiCho";
+
 export const DICH_TWIN_CU: Readonly<Record<string, string>> = {
   // ── Vỏ `/digital-twin` và 7 tab của nó ───────────────────────────────────
   "/digital-twin": "/twin",
@@ -117,4 +125,37 @@ export function timChuoiNhieuChang(): string[] {
   return Object.entries(DICH_TWIN_CU)
     .filter(([, dich]) => khoa.has(dich))
     .map(([k]) => k);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 33 — QĐ-23: `/twin?pv=line:N` · `?chon=machine:N` · `?xem=machine:N` */
+/*     là ĐƯỜNG CŨ tới hai màn riêng — redirect THAM SỐ, không nằm được trong    */
+/*     bảng khoá-tĩnh ở trên                                                    */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*
+ * Trước QĐ-23, `/twin?pv=line:2` dựng màn Line **tại chỗ** và `/twin?chon=
+ * machine:14` mở panel máy — hai bản của thứ nay đã là `/twin/line/2` và
+ * `/twin/may/14`. Link cũ trong chat/bookmark vẫn còn, nên G40 đòi chúng tới
+ * đúng đích, ≤ 1 chặng. Bảng `DICH_TWIN_CU` khớp CHUỖI ĐẦY ĐỦ nên không chứa
+ * được dạng `line:N`; hàm này đọc query bằng ĐÚNG bộ phân tích của
+ * `duongDanTwin.ts`/`nhungTaiCho.ts` (một bộ đọc, không viết bộ thứ hai — G12).
+ *
+ * Thứ tự ưu tiên = độ cụ thể: `xem=machine` (cockpit nhúng) > `chon=machine` >
+ * `pv=machine` > `chon=line` > `pv=line`. `?pv=tapdoan|factory:N|tang:N`,
+ * `?chon=station:N` và `?xem=robot|station:N` **ở lại `/twin`** (QĐ-23 giữ ba
+ * cấp; robot/trạm chưa có màn riêng — nói ra ở §14q.10, không đoán đích).
+ *
+ * ⚠ `TwinVanHanh` (vỏ) là chỗ DUY NHẤT gọi hàm này; `App.tsx` không đổi.
+ */
+export function dichManRieng(search: string): string | null {
+  const sp = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const xem = docNganNhung(sp.get("xem"));
+  if (xem?.loai === "machine") return duongDanManMay(xem.id);
+  const chon = docVatTheChon(sp.get("chon"));
+  if (chon?.loai === "machine") return duongDanManMay(chon.id);
+  const pv = docPhamVi(sp.get("pv"));
+  if (pv?.cap === "may" && pv.id !== null) return duongDanManMay(pv.id);
+  if (chon?.loai === "line") return duongDanManLine(chon.id);
+  if (pv?.cap === "line" && pv.id !== null) return duongDanManLine(pv.id);
+  return null;
 }

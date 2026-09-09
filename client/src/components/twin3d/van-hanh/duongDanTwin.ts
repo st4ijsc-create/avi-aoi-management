@@ -567,3 +567,61 @@ export function phamViChoVatThe(v: VatTheChon): PhamVi {
       return { cap: "tang", id: null };
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 33 — QĐ-23: `/twin` LÀ CỬA VÀO; Line và Máy là HAI MÀN RIÊNG       */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*
+ * Đợt 32 đo được: `/twin` có **0 href** tới `/twin/line/*`·`/twin/may/*`, bấm
+ * máy **ở lại `/twin`** (`?chon=machine:14`), `?pv=line:2` dựng màn Line **tại
+ * chỗ** song song với màn riêng. Chủ dự án chốt QĐ-23: bấm Line → `/twin/line/:id`,
+ * bấm máy → `/twin/may/:id`. Hai hàm dưới là **nguồn duy nhất** của hai hình
+ * dạng URL ấy — `TwinVanHanh`/`TwinLine`/`TwinMay` KHÔNG tự ghép chuỗi (G12).
+ */
+export function duongDanManLine(lineId: number): string {
+  return `/twin/line/${lineId}`;
+}
+
+export function duongDanManMay(machineId: number): string {
+  return `/twin/may/${machineId}`;
+}
+
+/**
+ * ★★★ QĐ-23 #5 — BACK VỀ `/twin` PHẢI VỀ **ĐÚNG `?pv=` TRƯỚC ĐÓ**.
+ *
+ * Nút Back của trình duyệt tự làm được (mọi lượt rời `/twin` đều `pushState`).
+ * Nhưng link "‹ Nhà máy" trên màn Line/Máy thì KHÔNG: nó là `href="/twin"` trơn,
+ * tức về **phạm vi mặc định** chứ không về tầng/nhà máy người dùng vừa xem.
+ *
+ * ★ G37 — màn con KHÔNG được tự đọc route cha (nó không biết cha là ai). Nên đường
+ *   về đi qua **`history.state`** do CHÍNH `/twin` đặt lúc rời đi
+ *   (`navigate(to, { state })` của wouter). `history.state` sống qua F5 và qua
+ *   Back/Forward — đó là lý do chọn nó thay vì `useState` (mất khi F5) hay một
+ *   khoá query mới (G40: không đẻ khoá URL thứ tám).
+ *
+ * ★ `docDuongVeTwin` là ĐẦU VÀO KHÔNG TIN ĐƯỢC: state có thể do trang khác đặt.
+ *   Chỉ nhận chuỗi bắt đầu đúng `/twin` + (hết hoặc `?`) — không bao giờ điều
+ *   hướng tới một chuỗi lạ lấy từ state.
+ */
+export const KHOA_DUONG_VE_TWIN = "twinVe";
+
+export interface TrangThaiDuongVe {
+  [KHOA_DUONG_VE_TWIN]: string;
+}
+
+/** Đường về `/twin` có hợp lệ không — chỉ `/twin` hoặc `/twin?…`. */
+export function laDuongVeTwinHopLe(duong: unknown): duong is string {
+  return typeof duong === "string" && (duong === "/twin" || duong.startsWith("/twin?"));
+}
+
+/** Dựng state mang đường về. `null` khi đường hiện tại không phải `/twin…`. */
+export function trangThaiVe(duongVeTwin: string | null | undefined): TrangThaiDuongVe | null {
+  return laDuongVeTwinHopLe(duongVeTwin) ? { [KHOA_DUONG_VE_TWIN]: duongVeTwin } : null;
+}
+
+/** Đọc đường về từ `history.state` — rác/thiếu ⇒ `null`, người gọi rơi về `/twin`. */
+export function docDuongVeTwin(state: unknown): string | null {
+  if (state === null || typeof state !== "object") return null;
+  const duong = (state as Record<string, unknown>)[KHOA_DUONG_VE_TWIN];
+  return laDuongVeTwinHopLe(duong) ? duong : null;
+}

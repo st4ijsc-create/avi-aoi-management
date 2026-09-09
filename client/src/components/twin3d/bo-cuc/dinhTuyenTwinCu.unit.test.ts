@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { DICH_TWIN_CU, timChuoiNhieuChang, traDichCu } from "./dinhTuyenTwinCu";
+import { DICH_TWIN_CU, dichManRieng, timChuoiNhieuChang, traDichCu } from "./dinhTuyenTwinCu";
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -154,5 +154,55 @@ describe("★★★ ĐỐI CHIẾU MÔ HÌNH THỨ HAI — đọc `App.tsx` th�
     );
     expect(traDichCu("/digital-twin?tab=floor")).toBe("/twin-studio");
     expect(traDichCu("/digital-twin?tab=layout")).toBe("/twin-studio");
+  });
+});
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 33 — QĐ-23: `/twin?pv=line:N` · `?chon=machine:N` · `?xem=machine:N`
+ *     là ĐƯỜNG CŨ tới màn riêng (redirect THAM SỐ). Đo bằng GIÁ TRỊ, có đối chứng.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+describe("★★★ ĐỢT 33 — `dichManRieng`: ba dạng URL cũ trên /twin đi màn riêng, ≤ 1 chặng", () => {
+  it("★★★ `?pv=line:2` → /twin/line/2 (Đợt 32 a8: trước đây dựng màn Line TẠI CHỖ)", () => {
+    expect(dichManRieng("?pv=line:2")).toBe("/twin/line/2");
+    expect(dichManRieng("pv=line:2")).toBe("/twin/line/2"); // không dấu `?` cũng đọc được
+  });
+  it("★★★ `?chon=machine:14` → /twin/may/14 (Đợt 32 a2: trước đây ở lại /twin, mở panel)", () => {
+    expect(dichManRieng("?chon=machine:14")).toBe("/twin/may/14");
+  });
+  it("★★★ `?xem=machine:14` (ngăn nhúng cũ) → /twin/may/14", () => {
+    expect(dichManRieng("?xem=machine:14")).toBe("/twin/may/14");
+  });
+  it("★ `?pv=machine:14` (cấp `may` của /twin) và `?chon=line:2` cũng đi màn riêng", () => {
+    expect(dichManRieng("?pv=machine:14")).toBe("/twin/may/14");
+    expect(dichManRieng("?chon=line:2")).toBe("/twin/line/2");
+  });
+  it("★★★ ƯU TIÊN = ĐỘ CỤ THỂ: máy thắng line, `xem` thắng `chon`", () => {
+    expect(dichManRieng("?pv=line:2&chon=machine:14")).toBe("/twin/may/14");
+    expect(dichManRieng("?chon=machine:14&xem=machine:15")).toBe("/twin/may/15");
+    expect(dichManRieng("?pv=line:2&chon=line:3")).toBe("/twin/line/3");
+  });
+  it("★★★ BA CẤP TRÊN + chọn trạm Ở LẠI /twin — `null`, KHÔNG đoán (QĐ-23 giữ tapDoan|nhaMay|tang)", () => {
+    for (const q of ["", "?pv=tapdoan", "?pv=factory:1", "?pv=tang:28", "?chon=station:14", "?xem=robot:5", "?xem=station:9", "?cam=1,2,3,4,5&lop=nhan"]) {
+      expect(dichManRieng(q), q).toBeNull();
+    }
+  });
+  it("★ RÁC ⇒ `null` — id 0/âm/chữ, thừa đoạn, loại lạ (URL là đầu vào không tin được)", () => {
+    for (const q of ["?pv=line:abc", "?pv=line:0", "?chon=machine:-1", "?chon=machine:1:2", "?xem=machine:", "?pv=line", "?chon=<script>:1"]) {
+      expect(dichManRieng(q), q).toBeNull();
+    }
+  });
+  it("★★★ ≤ 1 CHẶNG: đích của `dichManRieng` KHÔNG BAO GIỜ là một khoá của bảng cũ hay chính /twin", () => {
+    const khoaCu = new Set(Object.keys(DICH_TWIN_CU));
+    for (const q of ["?pv=line:2", "?chon=machine:14", "?xem=machine:14", "?pv=machine:14", "?chon=line:2"]) {
+      const d = dichManRieng(q)!;
+      expect(khoaCu.has(d), `${q} → ${d} lại là một đường cũ`).toBe(false);
+      expect(d.startsWith("/twin/line/") || d.startsWith("/twin/may/")).toBe(true);
+    }
+  });
+  it("★ ĐỐI CHỨNG — thiết bị đo BIẾT KÊU: khai sai đích thì so sánh phải lệch", () => {
+    expect(dichManRieng("?pv=line:2")).not.toBe("/twin/may/2");
+    expect(dichManRieng("?chon=machine:14")).not.toBe("/twin/line/14");
   });
 });

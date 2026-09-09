@@ -28,6 +28,15 @@ import {
   phamViChoVatThe,
   tronTrangThaiUrl,
 } from "./duongDanTwin";
+// ── Đợt 33 (QĐ-23) ──
+import {
+  KHOA_DUONG_VE_TWIN,
+  docDuongVeTwin,
+  duongDanManLine,
+  duongDanManMay,
+  laDuongVeTwinHopLe,
+  trangThaiVe,
+} from "./duongDanTwin";
 
 describe("docPhamVi", () => {
   it("đọc đúng cả năm cấp", () => {
@@ -603,5 +612,48 @@ describe("Đợt 24 việc 2 — nhanBatThuong", () => {
     // hiện nhãn cho mọi máy, nên tên CÓ MẶT nghĩa là "chỉ nhãn bất thường".
     expect(docThu("")).not.toContain("nhanBatThuong");
     expect(docThu("kpi")).not.toContain("nhanBatThuong");
+  });
+});
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 33 — QĐ-23: hai hình dạng URL màn riêng + đường về `/twin?pv=…`
+ *     qua `history.state` (G37: màn con không tự đọc route cha)
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+describe("Đợt 33 — duongDanManLine / duongDanManMay: MỘT nguồn cho hai hình dạng URL (G12)", () => {
+  it("khớp đúng mẫu route `/twin/line/:id` · `/twin/may/:id` ở App.tsx", () => {
+    expect(duongDanManLine(2)).toBe("/twin/line/2");
+    expect(duongDanManMay(14)).toBe("/twin/may/14");
+    expect(duongDanManMay(114)).toBe("/twin/may/114");
+  });
+  it("★ ĐỐI CHỨNG — hai hàm KHÔNG tráo nhau", () => {
+    expect(duongDanManLine(5)).not.toBe(duongDanManMay(5));
+  });
+});
+
+describe("★★★ Đợt 33 — trangThaiVe / docDuongVeTwin: đường về là ĐẦU VÀO KHÔNG TIN ĐƯỢC", () => {
+  it("vòng ghi→đọc giữ nguyên `/twin?pv=…` (kể cả `cam=` do /twin ghi thêm)", () => {
+    const d = "/twin?pv=tang:28&cam=46.29,16.28,40.01,19.13,12.85";
+    expect(docDuongVeTwin(trangThaiVe(d))).toBe(d);
+    expect(docDuongVeTwin(trangThaiVe("/twin"))).toBe("/twin");
+  });
+  it("★★★ CHỈ nhận `/twin` hoặc `/twin?…` — `/twin-studio`, `/twin/line/2`, URL ngoài, `//evil` đều bị từ chối", () => {
+    for (const x of ["/twin-studio", "/twin/line/2", "/twin/may/14", "https://evil.example/twin", "//evil.example", "/settings", "twin", ""]) {
+      expect(trangThaiVe(x), `ghi: ${x}`).toBeNull();
+      expect(docDuongVeTwin({ [KHOA_DUONG_VE_TWIN]: x }), `đọc: ${x}`).toBeNull();
+    }
+  });
+  it("★ state rác ⇒ `null` (người gọi rơi về `/twin`): null · undefined · số · mảng · thiếu khoá · khoá sai kiểu", () => {
+    for (const s of [null, undefined, 7, "chuoi", [], {}, { khac: "/twin" }, { [KHOA_DUONG_VE_TWIN]: 42 }]) {
+      expect(docDuongVeTwin(s)).toBeNull();
+    }
+    expect(trangThaiVe(null)).toBeNull();
+    expect(trangThaiVe(undefined)).toBeNull();
+  });
+  it("★ khoá state là hằng đặt tên — hai đầu (ghi ở /twin, đọc ở màn con) không thể lệch chính tả", () => {
+    expect(Object.keys(trangThaiVe("/twin?pv=factory:1")!)).toEqual([KHOA_DUONG_VE_TWIN]);
+    expect(laDuongVeTwinHopLe("/twin?pv=factory:1")).toBe(true);
+    expect(laDuongVeTwinHopLe("/twinx")).toBe(false);
   });
 });
