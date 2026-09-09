@@ -459,7 +459,11 @@ describe("Đợt 24 L-5 — ngăn bị chặn nói ra lý do", () => {
     expect(TRANG).not.toContain("lyDoNganNhung(");
     expect(TRANG).toContain("dichManRieng(search)");
     const MAN_MAY = readFileSync(resolve(GOC, "src/pages/TwinMay.tsx"), "utf8");
-    expect(MAN_MAY).toContain("lyDoMoManMay(machineId, { idTrongTam, phamViRong, dangTai })");
-    expect(MAN_MAY).toContain("cauChoLyDoNgan(lyDo)");
+    // ★ Đợt 34 (D): màn Máy thêm `thieuQuyen` THẬT (server FORBIDDEN) vào phép tính và tách
+    //   `chuaGanNhaMay` khỏi `thieuQuyen` — câu nói ra qua `cauChoLyDoManMay` (uỷ thác `cauChoLyDoNgan`
+    //   cho ba câu cũ, G12). `operator1` 0 gán nhà máy từng nhận "You do not have permission": sai cửa.
+    expect(MAN_MAY).toContain("lyDoMoManMay(machineId, { idTrongTam, phamViRong, dangTai, thieuQuyen })");
+    expect(MAN_MAY).toContain("cauChoLyDoManMay(lyDo)");
+    expect(MAN_MAY).not.toContain("cauChoLyDoNgan(lyDo)");
   });
 });

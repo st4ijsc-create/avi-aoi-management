@@ -16,6 +16,7 @@ import {
   khungNhinMay,
   lineCuaMayTheoTram,
   lyDoMoManMay,
+  cauChoLyDoManMay,
   mayHangXom,
   mucTieuTrongCanh,
   phamViCuaManMay,
@@ -24,7 +25,7 @@ import {
 import { idLineTuDuongDan } from "./manLine";
 import { trongPhamVi, HE_SO_CAO, HE_SO_LUI, KHOANG_CACH_TOI_DA_CAP_MAY } from "./phamViCanh";
 import { HAN_KHAI_SUC_KHOE_MS, type KhaiSucKhoe } from "./sucKhoeMay";
-import { lyDoNganNhung } from "./nhungTaiCho";
+import { cauChoLyDoNgan, lyDoNganNhung } from "./nhungTaiCho";
 import { HO_NHAN_MAY, neoTrenNoc } from "./hopNhatCanh";
 
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -354,24 +355,51 @@ describe("★★★ ⑦ tomTatMay — `null` KHÁC `0`, hạn 24h thắng điể
 /* ⑧ `lyDoMoManMay` — BA lý do L-5, uỷ thác, không nhánh im lặng thứ tư          */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
-describe("★★★ ⑧ lyDoMoManMay — uỷ thác `lyDoNganNhung`, cùng thứ tự kiểm", () => {
+describe("★★★ ⑧ lyDoMoManMay — uỷ thác `lyDoNganNhung`, cùng thứ tự kiểm; Đợt 34 (D) tách `chuaGanNhaMay`", () => {
+  /*
+   * ★ Đợt 34 (D): ca "vắng + phạm vi RỖNG" ĐỔI kỳ vọng `thieuQuyen` → `chuaGanNhaMay`. Đo DB thật:
+   *   `operator1` có quyền `machine_status` nhưng 0 hàng `user_factory_assignments` — câu "You do not
+   *   have permission" là sai bản chất (họ không thiếu quyền, họ chưa được gán). Cập nhật có lý do,
+   *   không "nới": tên cũ vẫn tồn tại cho ca THIẾU QUYỀN THẬT (server `FORBIDDEN`).
+   */
   const ca = [
     { ten: "đang tải ⇒ mo", canh: { idTrongTam: [], phamViRong: false, dangTai: true }, mong: "mo" },
     { ten: "có trong tập ⇒ mo", canh: { idTrongTam: [7, 8], phamViRong: false }, mong: "mo" },
-    { ten: "vắng + phạm vi RỖNG ⇒ thieuQuyen", canh: { idTrongTam: [], phamViRong: true }, mong: "thieuQuyen" },
+    { ten: "vắng + phạm vi RỖNG ⇒ chuaGanNhaMay (Đợt 34 D — trước: thieuQuyen)", canh: { idTrongTam: [], phamViRong: true }, mong: "chuaGanNhaMay" },
     { ten: "vắng + có phạm vi ⇒ ngoaiPhamVi", canh: { idTrongTam: [8], phamViRong: false }, mong: "ngoaiPhamVi" },
   ] as const;
+
+  /** Ánh xạ tên của `lyDoNganNhung` (đường NganNhung) → tên ở màn Máy — MỘT chỗ khai, test ghim. */
+  const anhXa = (ly: string | null) => (ly === "thieuQuyen" ? "chuaGanNhaMay" : (ly ?? "mo"));
 
   for (const c of ca) {
     it(c.ten, () => {
       expect(lyDoMoManMay(7, c.canh)).toBe(c.mong);
-      // ★ Đối chiếu với nguồn luật — nếu ai viết lại thứ tự kiểm ở đây, hai bên lệch.
-      expect(lyDoMoManMay(7, c.canh)).toBe(lyDoNganNhung({ loai: "machine", id: 7 }, c.canh));
+      // ★ Đối chiếu với nguồn luật — cùng THỨ TỰ KIỂM; chỉ khác TÊN ở ca phạm-vi-rỗng (ánh xạ trên).
+      expect(lyDoMoManMay(7, c.canh)).toBe(anhXa(lyDoNganNhung({ loai: "machine", id: 7 }, c.canh)));
     });
   }
 
-  it("★★★ phạm vi rỗng THẮNG ngoài-phạm-vi khi cả hai đúng — hai câu, hai hành động", () => {
-    expect(lyDoMoManMay(7, { idTrongTam: [], phamViRong: true })).toBe("thieuQuyen");
+  it("★★★ chưa-gán-nhà-máy THẮNG ngoài-phạm-vi khi cả hai đúng — hai câu, hai hành động", () => {
+    expect(lyDoMoManMay(7, { idTrongTam: [], phamViRong: true })).toBe("chuaGanNhaMay");
+  });
+
+  it("★★★ Đợt 34 (D) — `thieuQuyen` THẬT (server FORBIDDEN) THẮNG cả `chuaGanNhaMay` lẫn `ngoaiPhamVi`", () => {
+    expect(lyDoMoManMay(7, { idTrongTam: [], phamViRong: true, thieuQuyen: true })).toBe("thieuQuyen");
+    expect(lyDoMoManMay(7, { idTrongTam: [8], phamViRong: false, thieuQuyen: true })).toBe("thieuQuyen");
+    // Nhưng KHÔNG thắng `mo`: máy có trong tập / đang tải thì vẫn mở (không đoán sớm).
+    expect(lyDoMoManMay(7, { idTrongTam: [7], phamViRong: false, thieuQuyen: true })).toBe("mo");
+    expect(lyDoMoManMay(7, { idTrongTam: [], phamViRong: false, dangTai: true, thieuQuyen: true })).toBe("mo");
+  });
+
+  it("★★★ Đợt 34 (D) — `cauChoLyDoManMay`: câu mới cho `chuaGanNhaMay`, ba câu cũ UỶ THÁC `cauChoLyDoNgan` (G12)", () => {
+    const moi = cauChoLyDoManMay("chuaGanNhaMay");
+    expect(moi.khoa).toBe("twin3d.may.chuaGanNhaMay");
+    expect(moi.duPhong).toMatch(/chưa được gán nhà máy/);
+    expect(moi.duPhong).not.toMatch(/quyền/); // câu này KHÔNG được nhắc chữ "quyền" — đó là cả điểm của (D)
+    for (const ly of ["ngoaiPhamVi", "thieuQuyen"] as const) {
+      expect(cauChoLyDoManMay(ly)).toEqual(cauChoLyDoNgan(ly));
+    }
   });
 });
 
@@ -379,8 +407,8 @@ describe("★★★ ⑧ lyDoMoManMay — uỷ thác `lyDoNganNhung`, cùng thứ
 /* ⑨ ★★★ G91 — BỀ MẶT CÔNG KHAI ĐÓNG: KHÔNG WIP, KHÔNG đường tâm, KHÔNG đếm      */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
-describe("★★★ ⑨ G91 — `manMay` chỉ xuất đúng 8 hàm + 1 hằng; thêm WIP/đếm ở đây là lặp G12", () => {
-  it("danh sách export ĐÓNG", () => {
+describe("★★★ ⑨ G91 — `manMay` chỉ xuất đúng 9 hàm + 1 hằng; thêm WIP/đếm ở đây là lặp G12", () => {
+  it("danh sách export ĐÓNG (Đợt 34 D: +`cauChoLyDoManMay`)", () => {
     expect(Object.keys(manMay).sort()).toEqual(
       [
         "HE_SO_NOI_KHUNG_MAY",
@@ -392,6 +420,7 @@ describe("★★★ ⑨ G91 — `manMay` chỉ xuất đúng 8 hàm + 1 hằng; 
         "khungNhinMay",
         "tomTatMay",
         "lyDoMoManMay",
+        "cauChoLyDoManMay",
       ].sort(),
     );
   });

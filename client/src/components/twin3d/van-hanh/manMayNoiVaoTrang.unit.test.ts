@@ -239,10 +239,14 @@ describe("★★★ ⑤ Khung trừ vỏ ứng dụng bằng số ĐO, biến `-
 /* ⑥ HẠNG B — L-5 + NT-3/NT-3.5: cờ "ta chưa biết" không được bỏ               */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
-describe("★★★ ⑥ Lý do mở màn qua `lyDoMoManMay` với `dangTai`; câu từ `cauChoLyDoNgan`", () => {
-  it("`lyDo = lyDoMoManMay(machineId, { idTrongTam, phamViRong, dangTai })`", () => {
+describe("★★★ ⑥ Lý do mở màn qua `lyDoMoManMay` với `dangTai`; câu từ `cauChoLyDoManMay`", () => {
+  it("`lyDo = lyDoMoManMay(machineId, { idTrongTam, phamViRong, dangTai, thieuQuyen })` — Đợt 34 (D) thêm `thieuQuyen` THẬT", () => {
     const d = dong("lyDo");
-    expect(d).toContain("lyDoMoManMay(machineId, { idTrongTam, phamViRong, dangTai })");
+    expect(d).toContain("lyDoMoManMay(machineId, { idTrongTam, phamViRong, dangTai, thieuQuyen })");
+    // `thieuQuyen` THẬT = server FORBIDDEN (cùng cách bắt với `thieuQuyenBoCuc` của `/twin`), không phải phạm vi rỗng.
+    const i = MA.indexOf("const thieuQuyen =");
+    expect(i).toBeGreaterThan(-1);
+    expect(MA.slice(i, MA.indexOf(";", i))).toContain('code === "FORBIDDEN"');
     /*
      * ★★★ ĐỘT BIẾN bỏ `dangTai`: lượt tải đầu `mayTatCa` rỗng ⇒ MỌI máy hợp lệ
      *   nháy "ngoài phạm vi" một nhịp rồi tự biến mất — không bao giờ bị báo lỗi.
@@ -250,8 +254,9 @@ describe("★★★ ⑥ Lý do mở màn qua `lyDoMoManMay` với `dangTai`; câ
     expect(d).not.toMatch(/\{\s*idTrongTam,\s*phamViRong\s*\}/);
   });
 
-  it("★★★ câu nói ra lấy từ `cauChoLyDoNgan(lyDo)` — không tự viết câu thứ tư", () => {
-    expect(MA).toContain("cauChoLyDoNgan(lyDo)");
+  it("★★★ câu nói ra lấy từ `cauChoLyDoManMay(lyDo)` (Đợt 34 D) — không tự viết câu ở trang", () => {
+    expect(MA).toContain("cauChoLyDoManMay(lyDo)");
+    expect(MA).not.toContain("cauChoLyDoNgan(lyDo)");
     expect(MA).toContain('data-testid="may-khong-mo-duoc"');
   });
 

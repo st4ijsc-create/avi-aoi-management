@@ -20072,6 +20072,9 @@
     "guiYeuCauDuyetLoiMotPhan": "已提交 {{thanhCong}}/{{tong}} 个审批申请——{{soLoi}} 个失败，请稍后重试"
   },
   "twin3d": {
+    "may": {
+      "chuaGanNhaMay": "您的账户尚未分配任何工厂。请联系管理员分配后再打开此机台。"
+    },
     "chuaDung": "此页面尚未构建。内容将在 3D 数字孪生项目的后续阶段中添加。",
     "chuaDo": "未实测",
     "chuaDoGiaiThich": "该数值由系统生成，尚未有人在现场实测。",

@@ -20044,6 +20044,9 @@
     "guiYeuCauDuyetLoiMotPhan": "Gửi được {{thanhCong}}/{{tong}} yêu cầu duyệt — {{soLoi}} yêu cầu lỗi, thử lại sau"
   },
   "twin3d": {
+    "may": {
+      "chuaGanNhaMay": "Tài khoản của bạn chưa được gán nhà máy nào — liên hệ quản trị để được gán, rồi mở lại máy này."
+    },
     "chuaDung": "Màn này chưa dựng. Nội dung sẽ được lắp ở các đợt sau của dự án Twin 3D.",
     "chuaDo": "chưa đo",
     "chuaDoGiaiThich": "Giá trị do hệ sinh ra, chưa có ai đo lại trên thực địa.",

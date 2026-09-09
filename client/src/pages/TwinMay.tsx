@@ -149,12 +149,13 @@ import {
   type KhaiSucKhoe,
 } from "@/components/twin3d/van-hanh/sucKhoeMay";
 import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
-import { cauChoLyDoNgan } from "@/components/twin3d/van-hanh/nhungTaiCho";
+
 import {
   idMayTuDuongDan,
   khungNhinMay,
   lineCuaMayTheoTram,
   lyDoMoManMay,
+  cauChoLyDoManMay,
   mayHangXom,
   mucTieuTrongCanh,
   phamViCuaManMay,
@@ -571,7 +572,17 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
    *   mở (NT-3.5 — đếm rỗng khác đếm bằng 0).
    */
   const idTrongTam = useMemo(() => mayTatCa.map((m) => m.id), [mayTatCa]);
-  const lyDo = lyDoMoManMay(machineId, { idTrongTam, phamViRong, dangTai });
+  /*
+   * ★ Đợt 34 (D) — THIẾU QUYỀN THẬT = server TỪ CHỐI (`FORBIDDEN`) một truy vấn nền của màn; KHÁC
+   *   "chưa được gán nhà máy" (HTTP 200 + mảng rỗng ⇒ `phamViRong`). Cùng cách bắt với
+   *   `thieuQuyenBoCuc` của `/twin`. Đo: `operator1` (0 gán, có `machine_status`) từng nhận câu
+   *   "You do not have permission" — sai cửa; nay nhận `chuaGanNhaMay`.
+   */
+  const thieuQuyen =
+    (canhQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
+    (toaNhaQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
+    (overviewQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN";
+  const lyDo = lyDoMoManMay(machineId, { idTrongTam, phamViRong, dangTai, thieuQuyen });
 
   /*
    * Máy CÓ trong nhà máy nhưng CHƯA có chỗ trên bố cục ⇒ chỉ khối 3D trống.
@@ -636,12 +647,13 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
       {lyDo !== "mo" ? (
         /*
          * ★★★ L-5 — máy KHÔNG mở được thì màn NÓI RA, bằng đúng câu của
-         *   `cauChoLyDoNgan` (`ngoaiPhamVi` / `thieuQuyen`), không một màn trống.
+         *   `cauChoLyDoManMay` (`ngoaiPhamVi` / `thieuQuyen` / `chuaGanNhaMay` — Đợt 34 (D) tách
+         *   "chưa được gán nhà máy" khỏi "thiếu quyền"), không một màn trống.
          */
         <div className="flex min-h-0 flex-1 items-center justify-center p-6" data-testid="may-khong-mo-duoc" data-ly-do={lyDo}>
           <EmptyState
             title={t("twin3d.may.khongMoDuoc", "Không mở được máy #{{n}}", { n: machineId })}
-            description={t(cauChoLyDoNgan(lyDo).khoa, cauChoLyDoNgan(lyDo).duPhong)}
+            description={t(cauChoLyDoManMay(lyDo).khoa, cauChoLyDoManMay(lyDo).duPhong)}
             actionLabel={t("twin3d.line.veNhaMay", "Nhà máy")}
             onAction={() => setLocation(duongVe ?? "/twin")}
           />

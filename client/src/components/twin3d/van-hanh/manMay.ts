@@ -69,7 +69,7 @@ import {
   type KhungNhin,
 } from "./phamViCanh";
 import { hangSucKhoe, type HangSucKhoe, type KhaiSucKhoe, type MucKhanBaoTri } from "./sucKhoeMay";
-import { lyDoNganNhung, type CanhXetNgan, type LyDoNgan } from "./nhungTaiCho";
+import { cauChoLyDoNgan, lyDoNganNhung, type CanhXetNgan, type LyDoNgan } from "./nhungTaiCho";
 import { mmSangMet } from "../heToaDo";
 
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -348,6 +348,50 @@ export function tomTatMay(
  *   `ngoaiPhamVi`), cùng câu (`cauChoLyDoNgan`). Một `machineId` không có trong
  *   nhà máy đang xem KHÔNG được thành một màn trống câm.
  */
-export function lyDoMoManMay(machineId: number, canh: CanhXetNgan): LyDoNgan {
-  return lyDoNganNhung({ loai: "machine", id: machineId }, canh) ?? "mo";
+/**
+ * ★★★ ĐỢT 34 (D) — `chuaGanNhaMay` ≠ `thieuQuyen`: HAI CÂU, HAI HÀNH ĐỘNG, TÁCH Ở MÀN MÁY.
+ *
+ * ĐO ĐƯỢC (chủ dự án, DB thật, 2026-09-10): `operator1` id 48 có quyền `machine_status` (qua cổng
+ * route) nhưng **0 hàng `user_factory_assignments`**; `/twin/may/1` với vai ấy hiện câu của
+ * `thieuQuyen`: *"You do not have permission to view this item"*. Câu ấy SAI BẢN CHẤT: người dùng
+ * KHÔNG thiếu quyền — họ chưa được gán nhà máy. Hai tình trạng dẫn tới hai việc khác nhau
+ * (xin quyền ↔ xin gán nhà máy), và một câu đúng ngữ pháp dẫn tới hành động sai chính là lớp lỗi
+ * mà L-5 sinh ra để chặn.
+ *
+ * `lyDoNganNhung` (`nhungTaiCho.ts`) dùng tên `thieuQuyen` cho ca "phạm vi rỗng" — đường `NganNhung`
+ * (đã mất lối vào sau QĐ-23, giữ nguyên, ngoài phạm vi (D)). Màn Máy **ánh xạ lại** đúng ca ấy:
+ *   · `phamViRong` (0 nhà máy, HTTP 200 + mảng rỗng)                       → `chuaGanNhaMay`
+ *   · `thieuQuyen` THẬT = server TỪ CHỐI một truy vấn nền (`FORBIDDEN`)       → `thieuQuyen`
+ *   · còn lại giữ nguyên (`mo` / `ngoaiPhamVi`), CÙNG thứ tự kiểm của `lyDoNganNhung`.
+ * Thứ tự: `thieuQuyen` THẬT xét TRƯỚC `chuaGanNhaMay` — bị từ chối thì tập máy cũng rỗng, và bảo
+ * người bị từ chối đi "xin gán nhà máy" là gửi họ sai cửa. Người 0 quyền hoàn toàn (Đợt 31 B2) không
+ * tới được đây: `RouteGuard` chặn ở cổng, tRPC 403 `PERMISSION_DENIED`.
+ *
+ * ★ Đây KHÔNG phải "nhánh im lặng thứ tư" (§15.3.3 L-5 cấm): nó là một CÂU NÓI RA, tách từ một câu
+ *   đang nói sai; `data-ly-do` mang tên mới để e2e đo được.
+ */
+export type LyDoManMay = LyDoNgan | "chuaGanNhaMay";
+
+export interface CanhXetManMay extends CanhXetNgan {
+  /** `true` khi một truy vấn nền của màn bị server TỪ CHỐI (`FORBIDDEN`) — thiếu quyền THẬT. */
+  thieuQuyen?: boolean;
+}
+
+export function lyDoMoManMay(machineId: number, canh: CanhXetManMay): LyDoManMay {
+  const ly = lyDoNganNhung({ loai: "machine", id: machineId }, canh) ?? "mo";
+  if (ly === "mo") return "mo";
+  if (canh.thieuQuyen) return "thieuQuyen";
+  if (ly === "thieuQuyen") return "chuaGanNhaMay";
+  return ly;
+}
+
+/** Khoá i18n + câu dự phòng cho lý do KHÔNG mở được ở màn Máy — `chuaGanNhaMay` thêm, ba câu cũ uỷ thác. */
+export function cauChoLyDoManMay(lyDo: Exclude<LyDoManMay, "mo">): { khoa: string; duPhong: string } {
+  if (lyDo === "chuaGanNhaMay") {
+    return {
+      khoa: "twin3d.may.chuaGanNhaMay",
+      duPhong: "Tài khoản của bạn chưa được gán nhà máy nào — liên hệ quản trị để được gán, rồi mở lại máy này.",
+    };
+  }
+  return cauChoLyDoNgan(lyDo);
 }
