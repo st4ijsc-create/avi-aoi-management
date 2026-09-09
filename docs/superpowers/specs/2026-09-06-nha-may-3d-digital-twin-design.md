@@ -5400,6 +5400,39 @@ xu ly that** (§11e.3) ⇒ **truc pham vi khong phai xay moi**, chi can **duong 
 Chu du an **khong tu chon** - de dot xay do va de xuat, vi no cham **14 redirect** da nghiem thu (G40:
 mot khoa/duong dan sai se **bi nuot im lang**, khong loi nao no).
 
+### 14p.4 QD-21 - URL HAI MAN MOI: **DUONG DAN PHAN CAP** (chu so huu chon, 2026-09-09)
+
+§14p.3 de mo hai hinh dang. Chu so huu chon **phan cap**:
+
+```
+  /twin              -> man NHA MAY   (da co, App.tsx:360)
+  /twin/line/:id     -> man LINE      (moi)
+  /twin/may/:id      -> man MACHINE   (moi)
+  /twin-studio       -> man THIET KE  (da co, App.tsx:399)
+```
+
+**Chu du an do ba dieu truoc khi ghi - khong doan:**
+
+1. **Khong va voi `/twin`.** Wouter khop **chinh xac**, khong phai tien to. Tien le trong chinh
+   `App.tsx`: `/station-analysis/:id` (`:409`), `/inspection/:id` (`:401`), `/line-view/:lineId?`
+   (`:444`) - **ca ba deu khong co route cha rieng**, va khong cai nao nuot cai nao.
+2. **Dang `:id?` (tuy chon) da co tien le** (`/line-view/:lineId?`, `/sop/:sopId?`) ⇒ neu dot xay muon
+   `/twin/line` khong id thi **co khuon san**.
+3. ⚠ **`/line-view/:lineId` DA TON TAI** - `LineView.tsx` **418 dong**, **0 tham chieu 3D**
+   (`Canvas`/`three`/`KhungCanh`). Do la **man 2D**, **khong trung viec** voi man Line 3D moi.
+   Nhung **ten gan nhau** ⇒ dot xay phai **noi ro trong ma** hai thu khac nhau, khong thi nguoi sau se
+   tuong mot trong hai la ban trung lap va xoa nham (**dung lop loi §11b**: xoa man vi tuong khong ai
+   dung).
+
+**Rang buoc mang sang dot xay:**
+- **G40** - **14 redirect da nghiem thu** (`dinhTuyenTwinCu.ts`) tro ve `/twin?pv=...`. Them hai route
+  moi **khong duoc lam chet duong nao trong 14 duong do**. Neu doi dich cua redirect nao, **do lai ca
+  14**, dung sua mot roi cho la xong.
+- **G67** - neu them ten vao **danh sach dong** (`LOP_HOP_LE`, `PANEL_THU_DUOC`, bang redirect), **them
+  vao danh sach**; quen thi URL **bi nuot im lang** - ghi duoc, doc ra rong, **khong loi nao no**.
+- **QD-18** - hai man moi thua **cong quyen cua `/twin`** (`analytics_oee|machine_status`), **khong**
+  cong cua studio. Chung la man **XEM**.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
