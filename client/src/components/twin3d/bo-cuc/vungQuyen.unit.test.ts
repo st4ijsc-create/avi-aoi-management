@@ -1,18 +1,18 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   QUYEN_SUA,
   QUYEN_XEM,
   coQuyenSuaNhaXuong,
   coQuyenXemTwin,
-  docVungTuUrl,
-  kepVungTheoQuyen,
   type DoQuyen,
 } from "./vungQuyen";
 import { navGroups } from "@/lib/navigation";
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
- * Lưới cho QD-16 — MỘT TRANG, QUYỀN THEO TỪNG VÙNG
+ * Lưới cho QĐ-18 — **HAI TRANG**, HAI CỔNG (thay QĐ-16: một trang, quyền vùng)
  * ════════════════════════════════════════════════════════════════════════════
  *
  * ★★★ Mọi lưới ở đây chạy **HAI CHIỀU trên cùng một hàm**. Lý do đã ghi ở sổ:
@@ -20,7 +20,13 @@ import { navGroups } from "@/lib/navigation";
  *   MỌI người (kể cả admin) — tức là ta vừa chứng minh **số 0**. Nên mỗi ca ÂM
  *   đi kèm một ca DƯƠNG trên cùng phép đo.
  *
- * ★ Bốn vai dựng theo **bảng `permissions` thật** (đo 2026-09-08):
+ * ★★★ ĐỢT 26: `kepVungTheoQuyen`/`docVungTuUrl` ĐÃ BỊ XOÁ cùng khoá `?che-do=`
+ *   (0 chỗ gọi ngoài test sau khi tách trang). Các lưới cho hai hàm ấy được gỡ
+ *   theo — giữ lưới cho một API đã chết là giữ 8 ô xanh canh gác số 0.
+ *   Việc chúng từng làm nay do `RouteGuard navHref="/twin-studio"` đảm nhiệm,
+ *   và `dinhTuyenTwinCu.unit.test.ts` cưỡng chế điều đó trên `App.tsx` thật.
+ *
+ * ★ Bốn vai dựng theo **bảng `permissions` thật** (đo lại 2026-09-09, KHỚP):
  *     operator1   : machine_status
  *     supervisor1 : analytics_oee, machine_control, machine_status
  *     engineer1   : machine_control, machine_status, settings_factory
@@ -110,45 +116,69 @@ describe("★★★ CHỨNG MINH HAI CHIỀU — operator1 vào được, KHÔNG
   });
 });
 
-describe("★★★ kepVungTheoQuyen — URL KHÔNG được là đường vòng vào vùng sửa", () => {
-  it("operator1 + `?che-do=botri` ⇒ HẠ về `xem`, và KHAI đã hạ cấp", () => {
-    const r = kepVungTheoQuyen("sua", OPERATOR1);
-    expect(r.vung).toBe("xem");
-    expect(r.daHaCap, "phai NOI RA, khong im lang").toBe(true);
+/*
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 26 (QĐ-18) — LƯỚI ĐO **KẾT CỤC CỦA VIỆC TÁCH**, KHÔNG ĐO CƠ CHẾ
+ * ════════════════════════════════════════════════════════════════════════════
+ * Ba câu dưới đây là ba câu chủ sở hữu thật sự hỏi, và chúng đọc trên NGUỒN
+ * THẬT (`navigation.tsx`, `TwinVanHanh.tsx`) chứ không trên một bản sao:
+ *
+ *   1. Người chỉ xem có bị mất `/twin` không?          → PHẢI: không
+ *   2. Người chỉ xem có thấy lối vào studio không?     → PHẢI: không
+ *   3. `/twin` có còn sửa được không?                  → PHẢI: không
+ */
+describe("★★★ QĐ-18 — TÁCH TRANG: đo KẾT CỤC trên nguồn thật", () => {
+  const nguonVanHanh = fs.readFileSync(
+    path.resolve(__dirname, "../../../pages/TwinVanHanh.tsx"),
+    "utf8",
+  );
+
+  it("★★★ CÂU 1 — `operator1` KHÔNG mất `/twin` (nỗi lo lớn nhất của QĐ-16)", () => {
+    // Đây là con số đã lật ngược lập luận "cổng CHẶT" của QĐ-16.
+    expect(coQuyenXemTwin(OPERATOR1)).toBe(true);
+    // ĐỐI CHỨNG: phép đo biết KÊU — vai trắng tay thì không vào được.
+    expect(coQuyenXemTwin(KHONG_GI)).toBe(false);
   });
 
-  it("★ ĐỐI CHỨNG DƯƠNG: engineer1 + cùng URL ⇒ vào `sua`, KHÔNG hạ cấp", () => {
-    const r = kepVungTheoQuyen("sua", ENGINEER1);
-    expect(r.vung).toBe("sua");
-    expect(r.daHaCap).toBe(false);
-    // ★ G5/G32 — cùng đầu vào `"sua"`, hai vai cho hai đầu ra KHÁC nhau. Một
-    //   hàm trả hằng số không thể qua được cặp lưới này.
-    expect(r.vung).not.toBe(kepVungTheoQuyen("sua", OPERATOR1).vung);
+  it("★★★ CÂU 2 — ô nav `/twin-studio` gate ĐÚNG `QUYEN_SUA` ⇒ operator1 không THẤY", () => {
+    /*
+     * Luật ẩn-không-disable ở tầng nav: `hasAccessToItem` lọc ô theo
+     * `requiredPermissionAny`, nên gate của ô CHÍNH LÀ thứ quyết định
+     * `operator1` có thấy dòng menu hay không. Đo trên ô thật.
+     */
+    const o = navGroups
+      .flatMap((g) => g.items ?? [])
+      .find((x) => x.href === "/twin-studio");
+    expect(o, "ô nav /twin-studio phải TỒN TẠI — tách trang mà không có lối vào là màn mồ côi").toBeDefined();
+    expect([...(o!.requiredPermissionAny ?? [])].sort()).toEqual([...QUYEN_SUA].sort());
+    // operator1 không thoả gate ⇒ không thấy ô. Ba vai kia thoả ⇒ thấy.
+    const thay = (q: DoQuyen) => (o!.requiredPermissionAny ?? []).some((p) => q(p, "canView"));
+    expect(thay(OPERATOR1), "operator1 KHONG duoc thay o nav").toBe(false);
+    expect(thay(ENGINEER1), "engineer1 PHAI thay").toBe(true);
+    expect(thay(MAINT1), "maint1 PHAI thay").toBe(true);
+    expect(thay(SUPERVISOR1), "supervisor1 PHAI thay").toBe(true);
   });
 
-  it("yêu cầu `xem` ⇒ `xem` với MỌI vai, và không ai bị khai hạ cấp oan", () => {
-    for (const q of [OPERATOR1, SUPERVISOR1, ENGINEER1, MAINT1, KHONG_GI]) {
-      expect(kepVungTheoQuyen("xem", q)).toEqual({ vung: "xem", daHaCap: false });
-    }
-  });
-});
-
-describe("docVungTuUrl — URL là đầu vào KHÔNG tin được", () => {
-  it("`botri` và `sua` ⇒ `sua` (hai lối vào cũ của /twin-studio)", () => {
-    expect(docVungTuUrl("botri")).toBe("sua");
-    expect(docVungTuUrl("sua")).toBe("sua");
+  it("★★★ CÂU 3 — `/twin` CHỈ ĐỌC: không còn nạp `TwinStudio`, không còn `?che-do=`", () => {
+    /*
+     * G74 — *"đã có"* là lời khai về TỆP, không phải về VIỆC. Nên không hỏi
+     * "TwinStudio.tsx còn không" (còn, và §11b cấm xoá); hỏi **`/twin` có nạp
+     * nó không**. Ba dấu vết dưới đây là ba cách vùng sửa từng sống ở trang này.
+     */
+    expect(nguonVanHanh).not.toContain('import("./TwinStudio")');
+    expect(nguonVanHanh).not.toContain("<VungSuaNhaXuong");
+    expect(nguonVanHanh).not.toContain('get("che-do")');
   });
 
-  it("giá trị lạ / rỗng / null ⇒ `xem`, KHÔNG ném lỗi", () => {
-    for (const x of ["xoa-het", "", null, undefined, "SUA", "bo-tri"]) {
-      expect(docVungTuUrl(x)).toBe("xem");
-    }
-  });
-
-  it("★★★ docVungTuUrl MỘT MÌNH KHÔNG kẹp quyền — bỏ bước kẹp là tai nạn", () => {
-    // Lưới này ghi lại HỢP ĐỒNG: `docVungTuUrl` cố tình KHÔNG biết gì về quyền.
-    // Ai gọi nó mà quên `kepVungTheoQuyen` sẽ cho operator1 vào vùng sửa.
-    expect(docVungTuUrl("botri")).toBe("sua");
-    expect(kepVungTheoQuyen(docVungTuUrl("botri"), OPERATOR1).vung).toBe("xem");
+  it("★ ĐỐI CHỨNG cho CÂU 3 — phép đo biết KÊU: liên kết sang studio VẪN CÒN", () => {
+    /*
+     * Thiếu ca này, một `TwinVanHanh.tsx` đọc hỏng (rỗng) làm CÂU 3 xanh trơn.
+     * Và nó đo luôn điều chủ sở hữu đòi: *"2 trang LIÊN KẾT với nhau"* — tách
+     * mà không nối là làm hỏng đúng thứ ông yêu cầu.
+     */
+    expect(nguonVanHanh).toContain('href="/twin-studio"');
+    expect(nguonVanHanh).toContain('data-testid="lien-ket-twin-studio"');
+    // …và liên kết ấy nằm SAU hàng rào quyền, không phải hiện cho mọi người.
+    expect(nguonVanHanh).toContain("{duocSuaNhaXuong ? (");
   });
 });

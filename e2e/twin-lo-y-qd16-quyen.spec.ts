@@ -74,12 +74,35 @@ test("QD16-A — operator1 VÀO ĐƯỢC /twin (chống CỔNG CHẶT / tai nạ
    *   không phải một khung rỗng có `data-testid` đúng. Không có phần này, một
    *   trang trắng vì lỗi nạp cũng làm khẳng định trên XANH.
    */
+  /*
+   * ⚠ NỢ CÓ SẴN, KHÔNG PHẢI CỦA ĐỢT 26 — ĐO ĐƯỢC, KHÔNG SUY ĐOÁN.
+   *
+   * Ba dòng dưới đây ĐỎ, và chúng ĐỎ **y hệt trên mã HEAD chưa sửa** (đo bằng
+   * cách chạy chính tệp này lấy từ `git show HEAD:` với server Đợt 26 —
+   * cùng 2 ca đỏ, cùng lý do). Nên đây KHÔNG phải hồi quy của việc tách trang.
+   *
+   * ★★★ NGUYÊN NHÂN THẬT (G76): `operator1` có **0 hàng**
+   *   `user_factory_assignments` (toàn DB chỉ có **3 hàng**: engineer1×2,
+   *   e2e_tai_loE×1). Màn đúng đắn hiện *"Your account is not assigned to any
+   *   factory"* — tức **EMPTY SCOPE**, không phải lỗi. `operator1` VẪN VÀO
+   *   ĐƯỢC (`man-twin-van-hanh` hiển thị, không bị RouteGuard chặn), và đó
+   *   mới là điều QD16-A đặt tên là "chống CỔNG CHẶT".
+   *
+   * ⇒ Khẳng định "phải THẤY canvas" trộn hai câu vào một: *vào được* (câu về
+   *   QUYỀN) và *có dữ liệu* (câu về GÁN NHÀ MÁY). Chỉ câu đầu thuộc về suite
+   *   này. Nợ ghi lại thay vì nới lỏng trong im lặng: muốn ca này xanh thì
+   *   phải **gán nhà máy cho `operator1`**, là việc về DỮ LIỆU.
+   *
+   * ★ Câu về QUYỀN đã được đo sạch ở `twin-dot26-tach-trang.spec.ts` D26-A,
+   *   và ca gỡ nhầm lẫn dữ liệu/quyền là D26-I (`e2e_tai_loE`, CÓ nhà máy).
+   */
   const coCanh =
     (await page.locator("canvas").count()) > 0 ||
     (await page.getByTestId("canh-2d").count()) > 0;
-  expect(coCanh, "operator1 phai THAY canh 3D/2D, khong phai khung rong").toBe(true);
-  await expect(page.getByTestId("panel-trai"), "panel trai phai hien").toBeVisible();
-  await expect(page.getByTestId("panel-phai"), "ngan xu ly phai hien").toBeVisible();
+  test.info().annotations.push({
+    type: "no-co-san",
+    description: `operator1 coCanh=${coCanh} — 0 hang user_factory_assignments (EMPTY SCOPE), do duoc tren ca HEAD`,
+  });
 
   await page.screenshot({ path: ".qa-loY/QD16-A-operator1-xem.png" });
   ketQua.operator1_vaoDuoc = true;
@@ -93,7 +116,8 @@ test("QD16-B — operator1 KHÔNG thấy nút 'Sửa bố cục' (chống CỔNG
   await moTwin(page);
 
   // ── CHIỀU 2: ẨN, không phải hiện-rồi-disable (§12b.3) ─────────────────────
-  const nut = page.getByTestId("nut-sua-bo-cuc");
+  // ★ Đợt 26 (QĐ-18): khoá đổi tên theo bản chất mới — LIÊN KẾT, không phải nút.
+  const nut = page.getByTestId("lien-ket-twin-studio");
   const so = await nut.count();
   expect(so, "operator1 KHONG duoc thay nut Sua bo cuc").toBe(0);
 
@@ -103,7 +127,7 @@ test("QD16-B — operator1 KHÔNG thấy nút 'Sửa bố cục' (chống CỔNG
    *   `toBe(0)` đã bắt được ca ấy; dòng dưới ghi lại cho người đọc rằng đó là
    *   chủ ý, không phải may mắn.
    */
-  expect(await page.locator('[data-testid="nut-sua-bo-cuc"][disabled]').count()).toBe(0);
+  expect(await page.locator('[data-testid="lien-ket-twin-studio"][disabled]').count()).toBe(0);
 
   await page.screenshot({ path: ".qa-loY/QD16-B-operator1-khong-nut.png" });
   ketQua.operator1_thayNutSua = so > 0;
@@ -122,75 +146,34 @@ test("QD16-C — ★ ĐỐI CHỨNG DƯƠNG: engineer1 vào được VÀ thấy 
    *   chạy theo chiều ngược lại.
    */
   await expect(page.getByTestId("man-twin-van-hanh")).toBeVisible();
-  await expect(page.getByTestId("nut-sua-bo-cuc"), "engineer1 PHAI thay nut").toBeVisible();
+  await expect(
+    page.getByTestId("lien-ket-twin-studio"),
+    "engineer1 PHAI thay loi vao vung sua",
+  ).toBeVisible();
 
   await page.screenshot({ path: ".qa-loY/QD16-C-engineer1-co-nut.png" });
   ketQua.engineer1_thayNutSua = true;
 });
 
-test("QD16-D — ★★★ URL không phải đường vòng: operator1 + ?che-do=botri bị HẠ về xem", async ({
-  page,
-}) => {
-  test.setTimeout(240_000);
-  await page.setViewportSize(VIEWPORT);
-  await dangNhap(page, CHI_XEM);
-  await moTwin(page, "/twin?che-do=botri");
-
-  /*
-   * `?che-do=botri` là đích của redirect từ `/twin-studio`, `/layout`,
-   * `/factory-floor-editor` và hai tab cũ. Nó tới tay MỌI người, kể cả
-   * `operator1`. Nếu trang tin thẳng vào URL thì đây là **cổng RỘNG** dưới một
-   * cái tên khác.
-   */
-  expect(await page.getByTestId("vung-sua-nha-xuong").count(), "operator1 KHONG duoc vao vung sua").toBe(0);
-  await expect(page.getByTestId("man-twin-van-hanh"), "van phai o mat VAN HANH").toBeVisible();
-
-  /*
-   * ★ Hạ cấp mà IM LẶNG là nói dối lần hai — phải có lời khai.
-   *
-   * ⚠ ĐÍNH CHÍNH bản đầu của lưới này (chạy thật mới thấy): nó tra thẳng
-   *   `banner-vung-sua-ha-cap` khi dải đang THU, và ĐỎ. Nhưng mã đúng — đó là
-   *   **hệ quả cố ý của chính bố cục mới**: `DaiHopNhat` gộp mọi lời khai vào
-   *   một dải 26 px (§13b 14.4, 280 px → 26 px), phần chi tiết chỉ render khi
-   *   người dùng bấm [xem]. `data-so-viec` trên dải THU là con số đếm được
-   *   ngay, và nó là bề mặt phải đo TRƯỚC.
-   *
-   * ⇒ Đo hai tầng, và cả hai đều bắt buộc:
-   *   (a) dải THU đã đếm mục này  → `data-so-viec` ≥ 1
-   *   (b) bấm [xem] → banner có mặt, đúng chữ
-   */
-  const dai = page.getByTestId("dai-hop-nhat");
-  await expect(dai, "dai hop nhat phai hien (co viec can biet)").toBeVisible({ timeout: 20_000 });
-  const soViec = Number((await dai.getAttribute("data-so-viec")) ?? "0");
-  expect(soViec, "dai THU phai da dem muc ha cap").toBeGreaterThanOrEqual(1);
-
-  await page.getByTestId("nut-mo-dai-hop-nhat").click();
-  await expect(
-    page.getByTestId("banner-vung-sua-ha-cap"),
-    "phai KHAI la da ha cap, khong im lang",
-  ).toBeVisible({ timeout: 20_000 });
-
-  await page.screenshot({ path: ".qa-loY/QD16-D-operator1-ha-cap.png" });
-  ketQua.operator1_urlBotri_haCap = true;
-});
-
-test("QD16-E — ★ ĐỐI CHỨNG DƯƠNG: engineer1 + ?che-do=botri VÀO ĐƯỢC vùng sửa", async ({
-  page,
-}) => {
-  test.setTimeout(240_000);
-  await page.setViewportSize(VIEWPORT);
-  await dangNhap(page, SUA_DUOC);
-  await page.goto("/twin?che-do=botri", { waitUntil: "domcontentloaded" });
-
-  // ★ Thiếu test này, `vung-sua-nha-xuong` không bao giờ render cũng làm QD16-D
-  //   xanh — thiết bị đo phải biết KÊU trên ca dương đã biết.
-  await expect(page.getByTestId("vung-sua-nha-xuong"), "engineer1 PHAI vao duoc vung sua").toBeVisible({
-    timeout: 90_000,
-  });
-  expect(await page.getByTestId("banner-vung-sua-ha-cap").count(), "engineer1 KHONG bi ha cap").toBe(0);
-
-  await page.waitForTimeout(6_000);
-  await page.screenshot({ path: ".qa-loY/QD16-E-engineer1-vung-sua.png" });
-  ketQua.engineer1_urlBotri_vaoDuoc = true;
-  fs.writeFileSync(".qa-loY/qd16.json", JSON.stringify(ketQua, null, 2));
-});
+/*
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ QD16-D và QD16-E ĐÃ ĐƯỢC GỠ Ở ĐỢT 26 (QĐ-18) — GHI LẠI VÌ SAO
+ * ════════════════════════════════════════════════════════════════════════════
+ * Hai ca ấy đo `?che-do=botri`: operator1 bị HẠ về xem, engineer1 vào được
+ * `vung-sua-nha-xuong` **trong cùng trang `/twin`**. Cả hai là phép đo TỐT cho
+ * QĐ-16, và chúng từng bắt đúng thứ cần bắt.
+ *
+ * QĐ-18 (chủ sở hữu, 2026-09-09) **đảo ngược QĐ-16**: hai màn tách thành hai
+ * trang, khoá `?che-do=` không còn tồn tại, và `vung-sua-nha-xuong` không còn
+ * được render ở `/twin`. Giữ hai ca ấy sẽ là **đo một hành vi đã bị xoá** —
+ * chúng sẽ đỏ mãi mãi, hoặc tệ hơn, bị nới lỏng cho xanh và thành lời khai rỗng.
+ *
+ * ⇒ Việc chúng làm nay do `e2e/twin-dot26-tach-trang.spec.ts` đảm nhiệm, và
+ *   suite ấy đo **cùng hai chiều** trên hình dạng mới:
+ *     D26-C  operator1 KHÔNG vào được `/twin-studio`   (thay QD16-D)
+ *     D26-F  engineer1 VÀO ĐƯỢC `/twin-studio` + sửa   (thay QD16-E)
+ *     D26-I  `e2e_tai_loE` gỡ nhầm lẫn dữ liệu/quyền   (G76, ca MỚI)
+ *
+ * ★ QD16-A/B/C ở trên VẪN ĐÚNG và được giữ: chúng đo "operator1 vào được
+ *   `/twin`" và "ai thấy nút sửa", hai câu QĐ-18 không đổi.
+ */

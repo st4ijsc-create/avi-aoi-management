@@ -46,11 +46,13 @@ const BANG: ReadonlyArray<{ cu: string; urlChua: string; tid: string; ghiChu?: s
   { cu: "/digital-twin?tab=map", urlChua: "/twin", tid: "man-twin-van-hanh" },
   {
     cu: "/digital-twin?tab=floor",
-    urlChua: "/twin?che-do=botri",
-    tid: "vung-sua-nha-xuong",
-    ghiChu: "★ §13b ghi đích là /twin-studio; QD-16 (§13c.1, đi SAU) gộp vào /twin",
+    urlChua: "/twin-studio",
+    tid: "man-twin-studio",
+    ghiChu:
+      "★★★ QĐ-18 (§13c.2) trả đích về /twin-studio — ĐÚNG như §13b đề nghị ban đầu. " +
+      "QĐ-16 từng đưa nó vào /twin?che-do=botri; chủ sở hữu đã đảo quyết định ấy.",
   },
-  { cu: "/digital-twin?tab=layout", urlChua: "/twin?che-do=botri", tid: "vung-sua-nha-xuong" },
+  { cu: "/digital-twin?tab=layout", urlChua: "/twin-studio", tid: "man-twin-studio" },
   {
     cu: "/digital-twin?tab=cell",
     urlChua: "/twin",
@@ -59,11 +61,11 @@ const BANG: ReadonlyArray<{ cu: string; urlChua: string; tid: string; ghiChu?: s
   },
   { cu: "/digital-twin?tab=rf", urlChua: "/rf-test-cell", tid: "" },
   { cu: "/factory-live-map", urlChua: "/twin", tid: "man-twin-van-hanh" },
-  { cu: "/factory-floor-editor", urlChua: "/twin?che-do=botri", tid: "vung-sua-nha-xuong" },
+  { cu: "/factory-floor-editor", urlChua: "/twin-studio", tid: "man-twin-studio" },
   { cu: "/rf-test-cell", urlChua: "/rf-test-cell", tid: "", ghiChu: "★ tuyến THẬT trở lại, 0 chặng" },
   { cu: "/cell-twin", urlChua: "/twin", tid: "man-twin-van-hanh" },
   { cu: "/digital-twin-center", urlChua: "/twin", tid: "man-twin-van-hanh" },
-  { cu: "/layout", urlChua: "/twin?che-do=botri", tid: "vung-sua-nha-xuong" },
+  { cu: "/layout", urlChua: "/twin-studio", tid: "man-twin-studio" },
 ];
 
 async function dangNhap(page: Page) {

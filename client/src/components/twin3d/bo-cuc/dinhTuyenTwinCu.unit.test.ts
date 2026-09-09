@@ -102,14 +102,57 @@ describe("★★★ ĐỐI CHIẾU MÔ HÌNH THỨ HAI — đọc `App.tsx` th�
     expect(nguon).toContain("<RfTestCellSim />");
   });
 
-  it("★★★ `/twin-studio` KHÔNG còn `RouteGuard navHref` (chống CHẶN-1)", () => {
-    // Giữ guard cũ ở tuyến ấy sẽ chặn `operator1` ngay tại cửa — đúng tai nạn
-    // Đợt 3 CHẶN-1 mà Đợt 15 đã phải vá ngược. Quyền SỬA nay kẹp TRONG trang.
-    expect(nguon).not.toContain('<Route path="/twin-studio"><RouteGuard navHref="/twin-studio"');
-    expect(nguon).toContain('<Route path="/twin-studio"><Redirect to="/twin?che-do=botri" />');
+  /*
+   * ★★★ ĐỢT 26 (QĐ-18) ĐẢO NGƯỢC LƯỚI NÀY, VÀ ĐÓ LÀ VIỆC ĐÚNG.
+   *
+   * Lưới cũ khai: *"`/twin-studio` KHÔNG còn `RouteGuard navHref` (chống
+   * CHẶN-1)"* và cưỡng chế `Redirect to="/twin?che-do=botri"`. Nó đúng **với
+   * QĐ-16**, và nó là một lưới tốt: nó cưỡng chế một quyết định của chủ sở hữu
+   * ở tầng mã.
+   *
+   * QĐ-18 (2026-09-09) đảo chính quyết định ấy. Nên lưới phải đảo theo — giữ
+   * nó xanh bằng cách nới lỏng sẽ là bỏ mất phép đo; đảo nó là chuyển phép đo
+   * sang cưỡng chế quyết định MỚI.
+   *
+   * ★ Nỗi lo CHẶN-1 của lưới cũ đã được ĐO chứ không phải bỏ qua: trên bảng
+   *   `permissions` (2026-09-09) `operator1` có `machine_status` nhưng KHÔNG có
+   *   `settings_factory` lẫn `machine_control`. Họ chưa từng sửa được, nên trả
+   *   guard về `/twin-studio` **không lấy đi của họ thứ gì**. CHẶN-1 thật (Đợt
+   *   3) là 2/4 vai mất một màn họ ĐANG dùng được — khác hẳn.
+   */
+  it("★★★ QĐ-18 — `/twin-studio` là ROUTE THẬT có `RouteGuard`, không phải Redirect", () => {
+    expect(nguon).toContain(
+      '<Route path="/twin-studio"><RouteGuard navHref="/twin-studio"><TwinStudio /></RouteGuard></Route>',
+    );
+    expect(nguon).not.toContain('<Route path="/twin-studio"><Redirect');
   });
 
-  it("★ `/twin` vẫn giữ NGUYÊN cổng cũ — gộp bề mặt, KHÔNG gộp cổng", () => {
+  it("★ `/twin` vẫn giữ NGUYÊN cổng cũ — tách trang KHÔNG đụng cổng của /twin", () => {
     expect(nguon).toContain('<Route path="/twin"><RouteGuard navHref="/twin">');
+  });
+
+  /*
+   * ★★★ G67 — KHOÁ `?che-do=` PHẢI CHẾT HẲN, KHÔNG ĐƯỢC SỐNG NỬA VỜI.
+   *
+   * Lớp lỗi G67: bỏ một tên khỏi danh sách mà quên chỗ khác ⇒ chỗ còn lại ghi
+   * ra một khoá không ai đọc, và **không lỗi nào nổ**. Ở đây cụ thể là: nếu
+   * `App.tsx` còn một `Redirect to="/twin?che-do=botri"`, người dùng bấm
+   * `/layout` sẽ tới `/twin` với một khoá mà `TwinVanHanh` (nay chỉ đọc) không
+   * còn đọc nữa ⇒ họ ra màn XEM, im lặng, thay vì màn SỬA họ muốn.
+   */
+  it("★★★ G67 — `?che-do=` KHÔNG còn tồn tại ở `App.tsx` NÀO", () => {
+    expect(nguon).not.toContain("che-do");
+  });
+
+  it("★★★ G40 — 4 đường vào có Ý ĐỊNH SỬA đều tới `/twin-studio`, không tới `/twin`", () => {
+    // `/layout` + `/factory-floor-editor` ở `App.tsx`; `?tab=floor` + `?tab=layout`
+    // ở bảng trên. Cả 4 là đường của người muốn SỬA — cho họ ra màn chỉ-đọc là
+    // một lỗi câm (G40: URL cũ không được thành lỗi câm).
+    expect(nguon).toContain('<Route path="/layout"><Redirect to="/twin-studio" /></Route>');
+    expect(nguon).toContain(
+      '<Route path="/factory-floor-editor"><Redirect to="/twin-studio" /></Route>',
+    );
+    expect(traDichCu("/digital-twin?tab=floor")).toBe("/twin-studio");
+    expect(traDichCu("/digital-twin?tab=layout")).toBe("/twin-studio");
   });
 });

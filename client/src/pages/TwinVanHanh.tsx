@@ -43,11 +43,11 @@
  * ⚠ Phép đo quyền PHẢI bằng tài khoản KHÔNG-admin — admin bypass.
  */
 
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getSharedSocket } from "@/lib/socketManager";
 import { useTranslation } from "react-i18next";
-import { useLocation, useSearch } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import {
   AlertTriangle,
   Boxes,
@@ -61,7 +61,6 @@ import {
   PencilRuler,
   RefreshCw,
   Tags,
-  X,
 } from "lucide-react";
 import type * as THREE from "three";
 
@@ -215,34 +214,35 @@ import {
  *
  *  • `DaiHopNhat`  — TÁM dải ngang (ca xấu nhất 280 px) thành MỘT dải 26 px.
  *    Không banner nào bị bỏ; chỉ đổi HÌNH DẠNG của lời khai (§13b 14.4).
- *  • `vungQuyen`   — QD-16: một trang, **quyền theo TỪNG VÙNG**. `operator1`
- *    (vai duy nhất chỉ vào được `/twin`) KHÔNG mất lối vào, chỉ không thấy nút
- *    sửa. Luật ẩn-không-disable (§12b.3).
- *  • `TwinStudio`  — vùng SỬA, nạp lười. ⚠ RB-4: nó mang `<Canvas>` riêng, nên
- *    KHÔNG BAO GIỜ được mount cùng lúc với cảnh vận hành. Xem chú thích ở chỗ
- *    render.
+ *  • `vungQuyen`   — ★★★ QĐ-18 (§13c.2, thay QĐ-16): `/twin` nay **CHỈ ĐỌC**.
+ *    Màn này KHÔNG còn mang vùng sửa; `coQuyenSuaNhaXuong` ở đây chỉ còn quyết
+ *    định **có hiện LIÊN KẾT sang `/twin-studio` hay không** — luật
+ *    ẩn-không-disable (§12b.3). `operator1` không thấy liên kết, và cũng không
+ *    mất gì: họ vốn chưa từng có quyền sửa (đo trên `permissions` 2026-09-09).
+ *
+ * ⚠ `TwinStudio` **KHÔNG còn được nạp từ tệp này** (QĐ-18). Nó là trang riêng
+ *   `/twin-studio` với `RouteGuard` của chính nó. Hệ quả tốt cho RB-4: hai
+ *   `<Canvas>` nay nằm ở hai TRANG, nên chúng không thể cùng sống — mạnh hơn
+ *   cách cũ (`? :` trong một cây React) vì không còn phụ thuộc vào việc ai đó
+ *   sau này đổi `? :` thành `hidden`.
  */
 import DaiHopNhat from "@/components/twin3d/bo-cuc/DaiHopNhat";
 import type { MucViec } from "@/components/twin3d/bo-cuc/daiHopNhatLogic";
-import {
-  coQuyenSuaNhaXuong,
-  docVungTuUrl,
-  kepVungTheoQuyen,
-} from "@/components/twin3d/bo-cuc/vungQuyen";
+import { coQuyenSuaNhaXuong } from "@/components/twin3d/bo-cuc/vungQuyen";
 
-/**
- * ★★★ RB-4 — VÙNG SỬA NẠP LƯỜI, VÀ ĐÓ LÀ MỘT LUẬT AN TOÀN, KHÔNG PHẢI TỐI ƯU.
+/*
+ * ★★★ RB-4 SAU QĐ-18 — VÌ SAO TÁCH TRANG LÀM HÀNG RÀO NÀY **CHẶT HƠN**, KHÔNG LỎNG ĐI
  *
- * `TwinStudio` mang `<Canvas>` của riêng nó (`XuongThietKe`). Cảnh vận hành
- * cũng mang một `<Canvas>`. Hai WebGL context sống cùng lúc là điều `KhungCanh`
- * tự `console.error` để bắt, và trình duyệt sẽ **giết context cũ trong im lặng**
- * khi vượt trần (Chrome: 16). Nên hai vùng **loại trừ nhau** ở chỗ render, và
- * `React.lazy` bảo đảm mã của vùng sửa còn chẳng được tải về khi chưa cần.
+ * Trước đợt này ở đây có một `React.lazy` trỏ vào trang TwinStudio,
+ * và RB-4 (một `<Canvas>` WebGL sống tại một thời điểm) được giữ bằng một `? :`
+ * trong cây React: vùng sửa và cảnh vận hành **loại trừ nhau** ở chỗ render.
+ * Điều đó đúng nhưng **mong manh** — ngày ai đó đổi `? :` thành `hidden` để giữ
+ * camera, cả hai context cùng sống và trình duyệt giết context cũ TRONG IM LẶNG.
  *
- * ⚠ `React.lazy` KHÔNG phải hàng rào quyền — nó chỉ hoãn việc tải. Hàng rào là
- *   `kepVungTheoQuyen` (giao diện) + `requireAnyPermission` ở router (thật).
+ * QĐ-18 tách hai màn thành hai TRANG. Hai `<Canvas>` nay nằm ở hai tuyến khác
+ * nhau, nên wouter unmount trang cũ trước khi mount trang mới — RB-4 được giữ
+ * bởi **kiến trúc định tuyến**, không bởi một toán tử ai cũng sửa được.
  */
-const VungSuaNhaXuong = lazy(() => import("./TwinStudio"));
 
 /** Phạm vi mặc định khi URL không nói gì. */
 const PHAM_VI_MAC_DINH: PhamVi = { cap: "tang", id: null };
@@ -2274,46 +2274,31 @@ export default function TwinVanHanh() {
     [ghiUrl],
   );
 
-  /*
+
+  /**
    * ════════════════════════════════════════════════════════════════════════
-   * ★★★ QD-16 (§13c.1) — VÙNG SỬA: QUYỀN THEO TỪNG VÙNG, KHÔNG PHẢI MỘT CỔNG
+   * ★★★ QĐ-18 (§13c.2) — `/twin` LÀ MÀN **CHỈ ĐỌC**. MỘT DÒNG, KHÔNG BA.
    * ════════════════════════════════════════════════════════════════════════
-   * Chủ sở hữu chọn GỘP `/twin` + `/twin-studio` thành một trang. §13b đề nghị
-   * KHÔNG gộp vì hai cổng quyền khác nhau; §13c.1 giữ quyết định gộp nhưng chỉ
-   * ra lối thoát: gộp **bề mặt**, KHÔNG gộp **cổng**.
+   * Đợt 21 (QĐ-16) gộp hai màn nên ở đây từng có ba dòng: đọc `?che-do=` từ
+   * URL → kẹp theo quyền → khai hạ cấp. Cả ba đã bị gỡ, và điều đó **đúng**:
    *
-   * Ba dòng dưới đây là toàn bộ cơ chế, và thứ tự của chúng là bắt buộc:
-   *   1. đọc URL   (`docVungTuUrl`)  — không biết gì về quyền, cố tình
-   *   2. kẹp quyền (`kepVungTheoQuyen`) — `operator1` + `?che-do=botri` HẠ về xem
-   *   3. khai ra   (`vungDaKep.daHaCap`) — hạ cấp mà im lặng là nói dối lần hai
+   *   • Không còn `?che-do=` ⇒ không còn URL nào đòi vùng sửa ⇒ không còn
+   *     `kepVungTheoQuyen` để hạ cấp, cũng không còn ai bị hạ cấp để mà khai.
+   *   • Vùng sửa nay là **một trang khác**, có `RouteGuard` của chính nó.
+   *     Hàng rào chuyển từ "kẹp trong trang" sang "cổng ở cửa" — và cổng ở
+   *     cửa là thứ `RouteGuard navHref` đã cưỡng chế sẵn từ nav.
    *
-   * ⚠ Bỏ bước 2 là **cổng RỘNG**: `operator1` sửa được nhà xưởng. Đổi bước 2
-   *   thành chặn cả trang là **cổng CHẶT**: `operator1` mất lối vào — đúng tai
-   *   nạn Đợt 3 CHẶN-1 mà Đợt 15 đã phải vá ngược. `vungQuyen.unit.test.ts` có
-   *   một lưới cho MỖI tai nạn trong hai tai nạn ấy.
+   * ⇒ Còn lại **đúng một** thứ ở màn này: có hiện LIÊN KẾT sang `/twin-studio`
+   *   hay không. Chủ sở hữu nói *"2 trang **liên kết** với nhau"*, nên liên
+   *   kết phải có; luật ẩn-không-disable nói ai không sửa được thì **không
+   *   thấy** nó, chứ không phải thấy rồi bị chặn.
    *
-   * ★ `?che-do=` KHÔNG đi qua `duongDanTwin.ts`: khoá ấy thuộc về `/twin-studio`
-   *   (§13b 14.2.3 khai `/twin-studio?che-do=botri`), và `duongDanTwin` là hợp
-   *   đồng URL của MẶT VẬN HÀNH. Đọc thẳng bằng `URLSearchParams` ở đây giữ hai
-   *   hợp đồng tách rời, và không thêm khoá nào vào danh sách đóng của
-   *   `duongDanTwin` (G40 — không đẻ khoá URL mới cho mặt vận hành).
+   * ⚠ Đây vẫn KHÔNG phải hàng rào bảo mật, y như trước: ẩn một liên kết không
+   *   ngăn ai gõ thẳng `/twin-studio`. Hàng rào thật là `RouteGuard` ở
+   *   `App.tsx` (đường VÀO) + `requireAnyPermission` ở `twinCanhRouter.ts:63`
+   *   (đường GHI). Đợt này không đụng vào cả hai.
    */
   const duocSuaNhaXuong = coQuyenSuaNhaXuong(hasPermission);
-  const vungDaKep = useMemo(
-    () => kepVungTheoQuyen(docVungTuUrl(new URLSearchParams(search).get("che-do")), hasPermission),
-    [search, hasPermission],
-  );
-  const dangSua = vungDaKep.vung === "sua";
-  const doiVung = useCallback(
-    (sang: "xem" | "sua") => {
-      const sp = new URLSearchParams(window.location.search);
-      if (sang === "sua") sp.set("che-do", "botri");
-      else sp.delete("che-do");
-      const q = sp.toString();
-      setLocation(`/twin${q ? `?${q}` : ""}`);
-    },
-    [setLocation],
-  );
 
   /** Ghi camera vào URL — `replaceState`, và chỉ khi chuỗi THẬT SỰ đổi. */
   const camCuoi = useRef("");
@@ -2559,23 +2544,19 @@ export default function TwinVanHanh() {
     });
 
     /*
-     * ── ★★★ QD-16 — VÙNG SỬA BỊ HẠ CẤP VÌ THIẾU QUYỀN.
+     * ── ★★★ QĐ-18 GỠ BANNER "VÙNG SỬA BỊ HẠ CẤP" — và vì sao gỡ là ĐÚNG.
      *
-     * Mục MỚI của đợt này, và nó tồn tại vì một lý do: `?che-do=botri` (hoặc
-     * redirect từ `/twin-studio`) đưa `operator1` tới đây với ý định sửa. Hạ họ
-     * về vùng xem mà IM LẶNG là để họ tưởng công cụ hỏng. Nói ra là nói rằng
-     * việc ấy không thuộc vai này — khác nhau ở chỗ một bên dạy họ hệ thống
-     * hỏng, một bên dạy họ đúng ranh giới.
+     * Đợt 21 có một mục `banner-vung-sua-ha-cap` ở đây, vì `?che-do=botri` đưa
+     * `operator1` tới trang này VỚI Ý ĐỊNH SỬA rồi bị hạ về xem — im lặng hạ
+     * cấp là để họ tưởng công cụ hỏng, nên phải nói ra.
+     *
+     * QĐ-18 làm cái cớ ấy **biến mất**: không còn `?che-do=`, không còn ai tới
+     * `/twin` với ý định sửa, nên không còn ai bị hạ cấp. Giữ lại một banner
+     * `hien: false` vĩnh viễn là để lại một lời khai không bao giờ đúng.
+     *
+     * ⚠ Người thiếu quyền gõ thẳng `/twin-studio` KHÔNG rơi vào im lặng: họ gặp
+     *   `RouteGuard` — màn từ chối có chữ, ở đúng nơi họ đòi vào.
      */
-    ds.push({
-      testId: "banner-vung-sua-ha-cap",
-      nhom: "phamVi",
-      hien: vungDaKep.daHaCap,
-      noiDung: t(
-        "twin3d.vanHanh.vungSuaHaCap",
-        "Bạn xem được toàn bộ cảnh 3D, nhưng công cụ sửa bố cục nhà xưởng cần quyền Cấu hình nhà máy hoặc Điều khiển máy.",
-      ),
-    });
 
     // ── §11 #1 — kết quả xuất USD. G28: khoe SỐ PRIM, không khoe chữ "Xong".
     ds.push({
@@ -2625,15 +2606,22 @@ export default function TwinVanHanh() {
     phamVi.cap,
     factories.length,
     linkBiBoQua,
-    vungDaKep.daHaCap,
     ketQuaXuatUsd,
     duocSuaNhaXuong,
   ]);
 
-  /** Tra khoá hành động của `DaiHopNhat` → hàm thật. Khoá lạ ⇒ nút không hiện. */
+  /**
+   * Tra khoá hành động của `DaiHopNhat` → hàm thật. Khoá lạ ⇒ nút không hiện.
+   *
+   * ★ QĐ-18: `moXuongDung` trước đây đổi VÙNG trong cùng trang (`doiVung("sua")`).
+   *   Nay nó **đi sang trang khác**. Khoá và nhãn giữ nguyên — người dùng vẫn
+   *   thấy đúng chữ "Mở Xưởng dựng"; chỉ đích đổi. Và nó vẫn chỉ hiện khi
+   *   `duocSuaNhaXuong` (chỗ dựng `banner-doi-soat`), nên không ai bị mời đi
+   *   tới một cửa sẽ đóng sập vào mặt họ.
+   */
   const hanhDongDai = useMemo(
-    () => ({ moXuongDung: () => doiVung("sua") }),
-    [doiVung],
+    () => ({ moXuongDung: () => setLocation("/twin-studio") }),
+    [setLocation],
   );
 
   /* ═══════════════════════════════════════════════════════════════════════ */
@@ -3020,48 +3008,61 @@ export default function TwinVanHanh() {
           </Button>
 
           {/*
-            ── ★★★ QD-16 (§13c.1) — NÚT VÀO VÙNG SỬA NHÀ XƯỞNG ──────────────
+            ── ★★★ QĐ-18 (§13c.2) — **LIÊN KẾT** SANG `/twin-studio` ─────────
 
-            ★★★ ĐÂY LÀ BỀ MẶT MÀ CẢ QUYẾT ĐỊNH QD-16 QUY VỀ, và nó là **một
-              lệnh `? :` chứ không phải `disabled`**.
+            Chủ sở hữu: *"2 trang **liên kết** với nhau nhưng mục đích hoàn
+            toàn khác nhau."* Đây là cái liên kết ấy, và nó là một **điều
+            hướng**, không còn là một công tắc bật/tắt vùng.
 
-            `duocSuaNhaXuong` false ⇒ nút **KHÔNG được render**. Không disable,
-            không tooltip "bạn thiếu quyền", không xám. Luật ẩn-không-disable
-            (§12b.3): hiện một nút rồi từ chối khi bấm dạy người dùng rằng hệ
-            thống hỏng; ẩn nó nói rằng việc ấy không thuộc vai này. Vi phạm duy
-            nhất từng đo được đã vá ở `RobotCockpit.tsx:916-918` (P-3), và đây
-            theo đúng khuôn đó.
+            ★★★ VÌ SAO KHÔNG CÒN `aria-pressed` / "Thoát sửa":
+            Trước QĐ-18 nút này là toggle hai trạng thái, vì vùng sửa nằm
+            TRONG trang. Nay nó rời đi nơi khác, nên "đang bật" không còn
+            nghĩa gì trên màn này — giữ `aria-pressed` sẽ khai với trình đọc
+            màn hình một trạng thái không tồn tại. Đường về là nút Back của
+            trình duyệt và mục nav, đúng như mọi cặp trang khác trong app.
 
-            ⚠ ĐÂY KHÔNG PHẢI HÀNG RÀO BẢO MẬT — nó là hàng rào GIAO DIỆN. Ẩn
-              một nút không ngăn ai gọi thẳng `twinCanh.*`; hàng rào thật là
-              `requireAnyPermission` ở `twinCanhRouter.ts:63`, và nó không đổi
-              trong đợt này.
+            ★★★ ẨN, KHÔNG DISABLE (§12b.3) — `duocSuaNhaXuong` false ⇒ **không
+            render**. Không xám, không tooltip "bạn thiếu quyền". Mời
+            `operator1` bấm vào một liên kết mà `RouteGuard` sẽ chặn ở đầu kia
+            đúng là lớp lỗi "một lối vào rồi TỪ CHỐI" của Khối D.
 
-            ⚠ Với `operator1` (vai DUY NHẤT chỉ vào được `/twin` — đo trên bảng
-              `permissions` 2026-09-08), nhánh này cho `null`: họ **không mất
-              lối vào**, chỉ không thấy nút. Đó là toàn bộ khác biệt giữa QD-16
-              và tai nạn Đợt 3 CHẶN-1.
+            ⚠ Hàng rào GIAO DIỆN, không phải bảo mật. Ẩn liên kết không ngăn ai
+              gõ thẳng `/twin-studio`; hàng rào thật là `RouteGuard navHref`
+              (App.tsx, đường VÀO) + `requireAnyPermission` ở
+              `twinCanhRouter.ts:63` (đường GHI). Đợt này không đụng cả hai.
+
+            ⚠ Với `operator1` nhánh này cho `null`. Đo trên `permissions`
+              (2026-09-09): họ có `machine_status` nhưng KHÔNG có
+              `settings_factory` lẫn `machine_control` ⇒ họ **không mất gì**
+              khi tách, vì vùng sửa với họ vốn đã không tồn tại.
           */}
           {duocSuaNhaXuong ? (
-            <Button
-              size="sm"
-              variant={dangSua ? "default" : "outline"}
-              data-testid="nut-sua-bo-cuc"
-              aria-pressed={dangSua}
-              onClick={() => doiVung(dangSua ? "xem" : "sua")}
-              title={t(
-                "twin3d.vanHanh.suaBoCucMoTa",
-                "Mở vùng thiết kế: dựng nhà xưởng, kéo thả máy, lưu bố cục",
-              )}
-            >
-              {dangSua ? (
-                <X className="mr-1 h-3.5 w-3.5" />
-              ) : (
+            <Button asChild size="sm" variant="outline">
+              {/*
+                ⚠ `asChild` HỢP NHẤT props vào PHẦN TỬ CON — nên mọi
+                  `data-testid` phải nằm trên `<Link>`, KHÔNG trên `<Button>`.
+                  Đo được: đặt `nut-sua-bo-cuc` trên `<Button>` cho **0 phần
+                  tử** trong DOM, trong khi `lien-ket-twin-studio` (trên
+                  `<Link>`) cho 1 — một lỗi CÂM, không lưới unit nào bắt vì
+                  cả hai tệp vẫn biên dịch và trang vẫn trông đúng.
+
+                ★ ĐỔI TÊN khoá `nut-sua-bo-cuc` → `lien-ket-twin-studio`, và
+                  các suite cũ được sửa theo (Đợt 21/22). Giữ tên cũ sẽ là nói
+                  dối về hình dạng: đây không còn là một NÚT bật/tắt vùng, nó
+                  là một LIÊN KẾT sang trang khác. Một khoá đo nói sai bản chất
+                  là thứ đợt sau sẽ đọc nhầm.
+              */}
+              <Link
+                href="/twin-studio"
+                data-testid="lien-ket-twin-studio"
+                title={t(
+                  "twin3d.vanHanh.moTwinStudioMoTa",
+                  "Sang trang Xưởng dựng: thiết kế nhà xưởng, kéo thả máy, lưu bố cục",
+                )}
+              >
                 <PencilRuler className="mr-1 h-3.5 w-3.5" />
-              )}
-              {dangSua
-                ? t("twin3d.vanHanh.thoatSuaBoCuc", "Thoát sửa")
-                : t("twin3d.vanHanh.suaBoCuc", "Sửa bố cục")}
+                {t("twin3d.vanHanh.moTwinStudio", "Xưởng dựng")}
+              </Link>
             </Button>
           ) : null}
         </div>
@@ -3112,43 +3113,27 @@ export default function TwinVanHanh() {
       */}
       {/*
         ════════════════════════════════════════════════════════════════════
-        ★★★ QD-16 (§13c.1) — VÙNG SỬA NHÀ XƯỞNG, TRONG CÙNG MỘT TRANG
+        ★★★ QĐ-18 (§13c.2) — VÙNG SỬA ĐÃ RỜI KHỎI TRANG NÀY
         ════════════════════════════════════════════════════════════════════
-        Chủ sở hữu chọn gộp `/twin` + `/twin-studio` thành **một trang**. Bề
-        mặt gộp nằm ở đây; **cổng quyền KHÔNG gộp** (xem `vungQuyen.ts`).
+        Ở ĐÚNG CHỖ NÀY, Đợt 21 (QĐ-16) có một nhánh ba ngôi chọn giữa vùng sửa
+        nhà xưởng (nạp lười) và cảnh vận hành — hai bên loại trừ nhau.
 
-        ★★★ HAI ĐIỀU KIỆN, VÀ CẢ HAI ĐỀU CẦN — đọc kỹ trước khi rút gọn:
-          1. `dangSua` — người dùng đã bấm "Sửa bố cục" (hoặc tới bằng
-             `?che-do=botri`, hoặc redirect từ `/twin-studio`).
-          2. `dangSua` **đã đi qua `kepVungTheoQuyen`** ở trên, nên nó KHÔNG
-             THỂ đúng với một vai thiếu quyền. Bỏ bước kẹp ấy là **cổng RỘNG**:
-             `operator1` sửa được nhà xưởng — thứ §13c.1 từ chối dứt khoát.
+        QĐ-18 gỡ nó: `/twin` là màn **TRÌNH DIỄN / XEM / REALTIME, không chỉnh
+        sửa được**. Vùng sửa nay là trang riêng `/twin-studio`, tới bằng liên
+        kết ở header (chỉ hiện với ai có quyền).
 
-        ★★★ RB-4 — HAI VÙNG **LOẠI TRỪ NHAU**, KHÔNG PHẢI ẨN/HIỆN BẰNG CSS.
-          `TwinStudio` mang `<Canvas>` riêng; cảnh vận hành mang một `<Canvas>`
-          khác. Dùng `hidden` để giấu một trong hai sẽ giữ **cả hai** WebGL
-          context sống — `KhungCanh` tự `console.error`, và trình duyệt giết
-          context cũ TRONG IM LẶNG khi vượt trần. Nên đây là `? :` thật, cây
-          React của vùng không hoạt động bị **unmount**.
+        ★★★ RB-4 **KHÔNG BỊ MẤT, MÀ CHẶT HƠN** — đọc trước khi lo:
+        Cái `? :` bị gỡ ở đây từng là thứ giữ luật "một `<Canvas>` WebGL sống
+        tại một thời điểm". Nay hai `<Canvas>` nằm ở **hai tuyến**, nên wouter
+        unmount trang cũ trước khi mount trang mới. Hàng rào chuyển từ một
+        toán tử (ai cũng đổi thành `hidden` được, và Đợt 21 đã phải ghi hẳn
+        một cảnh báo về đúng nguy cơ ấy) sang **kiến trúc định tuyến**.
 
-        ⚠ Cái giá đã biết và chấp nhận: rời vùng sửa rồi quay lại thì camera
-          của xưởng dựng về mặc định. Đổi lại là không bao giờ có hai context.
-          Đây đúng cơ chế mà `TwinHub.tsx:8-9` và `TwinStudio` (Radix Tabs
-          unmount) đã cố ý dựa vào từ trước.
+        ★ Cái giá của Đợt 21 cũng biến mất theo: khi ấy rời vùng sửa rồi quay
+          lại thì camera xưởng dựng về mặc định, vì cây React bị unmount. Nay
+          đó là hai trang, nên việc mất camera là hành vi **đúng và mong đợi**
+          của một lần điều hướng, không còn là cái giá phải giải thích.
       */}
-      {dangSua ? (
-        <div className="relative min-h-0 flex-1 overflow-hidden" data-testid="vung-sua-nha-xuong">
-          <Suspense
-            fallback={
-              <p className="p-4 text-sm text-muted-foreground" data-testid="vung-sua-dang-tai">
-                {t("common.loading", "Đang tải…")}
-              </p>
-            }
-          >
-            <VungSuaNhaXuong />
-          </Suspense>
-        </div>
-      ) : (
       <div className="relative min-h-0 flex-1">
         {/* PANEL TRÁI — DOM thật, tab được, MỌI hành động làm được từ đây (§9.9) */}
         <div
@@ -3692,7 +3677,6 @@ export default function TwinVanHanh() {
           />
         </div>
       </div>
-      )}
 
       {/*
         ── Dải dưới: dải Line 2D đồng bộ hai chiều (§10C.3 mục 3) ───────

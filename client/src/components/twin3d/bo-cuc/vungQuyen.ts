@@ -1,51 +1,65 @@
 /**
  * ════════════════════════════════════════════════════════════════════════════
- * `vungQuyen.ts` — QD-16: MỘT TRANG, **QUYỀN THEO TỪNG VÙNG** (spec §13c.1)
+ * `vungQuyen.ts` — QĐ-18: **HAI TRANG**, HAI CỔNG. Tệp này giữ HAI DANH SÁCH.
  * ════════════════════════════════════════════════════════════════════════════
  *
- * ★★★ QUYẾT ĐỊNH CỦA CHỦ SỞ HỮU, VÀ VÌ SAO NÓ KHÁC ĐỀ NGHỊ CỦA §13b
+ * ★★★ LỊCH SỬ, GIỮ NGUYÊN VĂN VÌ NÓ GIẢI THÍCH HÌNH DẠNG HÔM NAY
  *
- * §13b (14.2.2) **đề nghị KHÔNG gộp** `/twin` với `/twin-studio`, vì hai màn có
- * hai cổng quyền khác nhau. Chủ sở hữu đã đọc lý lẽ đó và **vẫn chọn GỘP**
- * (§13c.1). Điều đó hợp lệ, và §13c chỉ ra lối thoát sạch: gộp **bề mặt**,
- * KHÔNG gộp **cổng**.
+ * • §13b (14.2.2) **đề nghị KHÔNG gộp** `/twin` với `/twin-studio`: hai màn có
+ *   hai cổng quyền khác nhau.
+ * • **QĐ-16** (2026-09-08) chủ sở hữu **chọn GỘP**. Đợt 21 thực thi: một trang,
+ *   quyền theo TỪNG VÙNG (`kepVungTheoQuyen` kẹp `?che-do=botri` theo quyền).
+ * • **QĐ-18** (2026-09-09) chủ sở hữu **ĐẢO NGƯỢC QĐ-16**, và lý do mạnh hơn:
  *
- * ────────────────────────────────────────────────────────────────────────────
- * ★★★ BỀ MẶT THẬT, ĐO ĐƯỢC (bảng `permissions`, 2026-09-08)
- * ────────────────────────────────────────────────────────────────────────────
- *     Tổng tài khoản hoạt động có quyền vào Twin : 7  (4 thường + 3 admin)
- *     Vào được CẢ HAI màn                        : 4  engineer1, maint1,
- *                                                     supervisor1, e2e_tai_loE
- *     CHỈ vào được /twin                         : 1  ← operator1 (vai operator)
+ *     *"Twin-studio là nơi THIẾT KẾ và layout cũng như xây dựng 3D Twin…
+ *      CHỈ NHỮNG NGƯỜI CÓ QUYỀN mới làm được. Còn Twin là nơi TRÌNH DIỄN, XEM,
+ *      QUẢN LÝ REALTIME nhà máy, KHÔNG CHỈNH SỬA ĐƯỢC… 2 trang liên kết với
+ *      nhau nhưng MỤC ĐÍCH HOÀN TOÀN KHÁC NHAU."*
  *
- * ⇒ Rủi ro **không phải giả định**, nó là **đúng một người**. Và vì thế mọi
- *   thiết kế ở đây phải trả lời được **hai câu, không phải một**:
- *
- *     (a) `operator1` CÓ vào được trang không?      → PHẢI: có
- *     (b) `operator1` CÓ thấy nút SỬA không?        → PHẢI: không
+ *   QĐ-16 coi đây là hai VÙNG của một việc ⇒ gộp đúng. QĐ-18 nói đây là hai
+ *   MỤC ĐÍCH ⇒ tách đúng. Người chỉ xem **không bao giờ cần** công cụ sửa.
  *
  * ────────────────────────────────────────────────────────────────────────────
- * ★★★ HAI CÁCH GỘP BỊ TỪ CHỐI — ghi lại để đợt sau không "sửa" ngược
+ * ★★★ BỀ MẶT THẬT, ĐO LẠI 2026-09-09 (bảng `permissions`, 8 tài khoản active)
  * ────────────────────────────────────────────────────────────────────────────
- * • **Cổng CHẶT** (`settings_factory` cho cả trang): `operator1` **mất luôn lối
- *   vào**, không xem được 3D nữa. Đó đúng là **tai nạn Đợt 3 CHẶN-1** (1/4 vai
- *   mất quyền) mà **Đợt 15 đã phải vá ngược** — xem `navigation.tsx:445-461`.
- * • **Cổng RỘNG** (ai xem được thì sửa được): `operator1` **sửa được nhà xưởng**.
- *   Đó là **đổi mô hình an toàn**, không phải đổi giao diện.
+ *     operator1     xem ✅ (machine_status)  · sửa ❌
+ *     engineer1     ✅ / ✅      maint1       ✅ / ✅
+ *     supervisor1   ✅ / ✅      e2e_tai_loE  ✅ / ✅
  *
- * ⇒ Còn lại đúng một cách: **quyền theo TỪNG VÙNG**.
+ * ⇒ ★★★ `operator1` **KHÔNG MẤT GÌ KHI TÁCH**. Đây là số đo trả lời trực tiếp
+ *   nỗi lo lớn nhất của QĐ-16 ("cổng CHẶT ⇒ operator1 mất lối vào"): họ vốn
+ *   không có `settings_factory` lẫn `machine_control`, nên vùng sửa với họ đã
+ *   luôn không tồn tại — QĐ-16 cũng tự hạ họ về `xem`. Tách chỉ **đổi chỗ** một
+ *   thứ họ chưa từng thấy. Khác hẳn tai nạn Đợt 3 CHẶN-1, nơi 2/4 vai mất một
+ *   màn họ ĐANG dùng được.
  *
  * ────────────────────────────────────────────────────────────────────────────
- * ★★★ LUẬT ẨN-KHÔNG-DISABLE (§12b.3)
+ * ★★★ CÒN LẠI GÌ TRONG TỆP NÀY — VÀ CÁI GÌ ĐÃ BỊ XOÁ, VÌ SAO
  * ────────────────────────────────────────────────────────────────────────────
- * Thiếu quyền thì **ẨN**, không hiện-rồi-chặn. Hiện một nút rồi từ chối khi bấm
- * là dạy người dùng rằng hệ thống hỏng; ẩn nó là nói rằng việc ấy không thuộc
- * vai này. Khuôn đã có ở `nganXuLyLogic.ts:102-111`; vi phạm duy nhất từng đo
- * được đã vá ở `RobotCockpit.tsx:916-918` (P-3).
+ * CÒN: hai danh sách quyền + hai vị từ. Chúng là **hợp đồng BA CHỖ**
+ * (`navigation.tsx` ↔ tệp này ↔ `twinCanhRouter.ts:63`), và lưới cưỡng chế
+ * điều đó vẫn còn nguyên giá trị sau khi tách.
  *
- * ⚠ Đây KHÔNG phải hàng rào bảo mật. Nó là hàng rào **giao diện**. Đường ghi
- *   thật vẫn do server cưỡng chế (`twinCanhRouter.ts:63` `requireAnyPermission`),
- *   và phải như vậy: ẩn một nút không ngăn được ai gọi thẳng tRPC.
+ * XOÁ (Đợt 26): `kepVungTheoQuyen`, `docVungTuUrl`, `TenVung`, `VungDaKep`.
+ * Chúng tồn tại **chỉ để kẹp `?che-do=`** — một khoá URL nay không còn tồn tại
+ * ở bất kỳ đâu. Sau QĐ-18 chúng có **0 chỗ gọi ngoài test** (đếm bằng cách
+ * liệt kê MỌI export, tách `import` / gọi hàm — G70). Giữ lại là để một API
+ * chết cùng 8 lưới xanh canh gác đúng con số không — chính lớp lỗi "CÓ MÃ +
+ * CÓ TEST + KHÔNG GIAO HÀNG" mà đợt Twin trước đã đo được 4 lỗ.
+ *
+ * ★ Việc kẹp mà chúng từng làm KHÔNG biến mất, nó **đổi tầng**: từ "kẹp trong
+ *   trang" sang "cổng ở cửa" (`RouteGuard navHref="/twin-studio"` ở `App.tsx`,
+ *   tra quyền từ chính ô nav). Hàng rào GHI không đổi: `requireAnyPermission`
+ *   ở `twinCanhRouter.ts:63`.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ * ★★★ LUẬT ẨN-KHÔNG-DISABLE (§12b.3) — VẪN ÁP DỤNG, CHỈ ĐỔI ĐỐI TƯỢNG
+ * ────────────────────────────────────────────────────────────────────────────
+ * Trước: ẩn NÚT "Sửa bố cục". Nay: ẩn **LIÊN KẾT sang `/twin-studio`** trên
+ * `/twin`, và ẩn **mục nav** `/twin-studio` (nav tự lọc theo quyền). Thiếu
+ * quyền thì không thấy, chứ không phải thấy rồi bị chặn.
+ *
+ * ⚠ Đây KHÔNG phải hàng rào bảo mật. Nó là hàng rào **giao diện**.
  *
  * ★ Module THUẦN — không react, không DOM. Cưỡng chế được ở `environment:"node"`.
  */
@@ -85,46 +99,4 @@ export function coQuyenXemTwin(coQuyen: DoQuyen): boolean {
  */
 export function coQuyenSuaNhaXuong(coQuyen: DoQuyen): boolean {
   return QUYEN_SUA.some((q) => coQuyen(q, "canView"));
-}
-
-/** Hai vùng của trang gộp. `xem` là vùng ai vào được cũng thấy. */
-export type TenVung = "xem" | "sua";
-
-/**
- * Vùng đang mở, đã **kẹp theo quyền**.
- *
- * ★★★ ĐÂY LÀ CHỖ DỄ GÂY TAI NẠN NHẤT CỦA ĐỢT, và nó là một hàm chứ không phải
- *   một `if` rải rác: `?che-do=botri` (hoặc một redirect từ `/twin-studio`) đưa
- *   `yeuCau="sua"` vào cho MỌI người, kể cả `operator1`. Nếu tầng gọi tin thẳng
- *   vào URL thì `operator1` sẽ thấy vùng sửa — **cổng rộng**, đúng thứ §13c.1 từ
- *   chối.
- *
- * ⇒ Hàm này **luôn hạ về `"xem"`** khi thiếu quyền, và **không bao giờ ném lỗi**
- *   (URL là đầu vào không tin được). Trả về cả `daHaCap` để tầng gọi khai thật
- *   với người dùng thay vì im lặng hiện một thứ khác.
- */
-export interface VungDaKep {
-  vung: TenVung;
-  /** `true` khi URL đòi `sua` mà quyền không cho — cần NÓI RA, không im lặng. */
-  daHaCap: boolean;
-}
-
-export function kepVungTheoQuyen(yeuCau: TenVung, coQuyen: DoQuyen): VungDaKep {
-  if (yeuCau !== "sua") return { vung: "xem", daHaCap: false };
-  const duocSua = coQuyenSuaNhaXuong(coQuyen);
-  return duocSua ? { vung: "sua", daHaCap: false } : { vung: "xem", daHaCap: true };
-}
-
-/**
- * Đọc vùng từ query string, KHÔNG kẹp quyền.
- *
- * ★ Tách đôi có chủ ý: đọc URL và áp quyền là hai việc, và trộn chúng làm phép
- *   đọc không test được riêng. Tầng gọi PHẢI chạy `kepVungTheoQuyen` sau — và
- *   test cưỡng chế rằng bỏ qua bước đó thì `operator1` thấy vùng sửa.
- *
- * ⚠ Giá trị lạ (`?che-do=xoa-het`) rơi về `"xem"`, không ném lỗi: URL là đầu vào
- *   không tin được (nguyên tắc của `duongDanTwin.ts`).
- */
-export function docVungTuUrl(raw: string | null | undefined): TenVung {
-  return raw === "botri" || raw === "sua" ? "sua" : "xem";
 }

@@ -113,7 +113,9 @@ async function doVung(page: Page) {
       cayKhoi: hop(q('[data-testid="khoi-cay-phan-cap"]')),
       cay: hop(q('[data-testid="cay-phan-cap-twin"]')),
       danhSachMay: hop(q('[data-testid="danh-sach-may"]')),
-      nutSuaBoCuc: hop(q('[data-testid="nut-sua-bo-cuc"]')),
+      // ★ Đợt 26: khoá đổi `nut-sua-bo-cuc` → `lien-ket-twin-studio` (nay là
+      //   LIÊN KẾT sang trang, không còn là nút bật/tắt vùng — QĐ-18).
+      nutSuaBoCuc: hop(q('[data-testid="lien-ket-twin-studio"]')),
       vungSua: hop(q('[data-testid="vung-sua-nha-xuong"]')),
       // ★ Số hàng cây thật sự vẽ ra — 0 nghĩa là cây rỗng, và một ảnh có cây
       //   RỖNG trông y hệt một ảnh có cây hỏng.
@@ -200,39 +202,20 @@ test("A4 — /twin?xem=machine:2, panel may MO", async ({ page }) => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
-/* ẢNH 5-6 · `?che-do=botri` HAI VAI — đối chứng hai chiều (QD-16)             */
+/* ẢNH 5-6 · ĐÃ GỠ Ở ĐỢT 26 (QĐ-18) — `?che-do=botri` KHÔNG CÒN TỒN TẠI       */
 /* ═══════════════════════════════════════════════════════════════════════════ */
-
-test("A5 — ?che-do=botri voi operator1 (CHI XEM) — phai bi HA cap", async ({ page }) => {
-  test.setTimeout(240_000);
-  await page.setViewportSize(VP_720);
-  await dangNhap(page, CHI_XEM);
-  await page.goto("/twin?che-do=botri", { waitUntil: "domcontentloaded" });
-  await choCanhSan(page);
-  const v = await doVung(page);
-  // ★★★ CHỐNG CỔNG RỘNG: operator1 KHÔNG được vào vùng sửa dù gõ thẳng URL.
-  expect(v.vungSua, "operator1 KHONG duoc vao vung sua").toBeNull();
-  expect(v.nutSuaBoCuc, "operator1 KHONG duoc thay nut Sua bo cuc").toBeNull();
-  ra.A5 = { ...v, tiLeCanvas: tiLe(v.canvas, VP_720) };
-  console.log(`   [A5] vungSua=${v.vungSua} nutSua=${v.nutSuaBoCuc} canvas=${JSON.stringify(v.canvas)}`);
-  await page.screenshot({ path: ".qa-dot22/A5-botri-operator1-720.png" });
-});
-
-test("A6 — ★ DOI CHUNG DUONG: ?che-do=botri voi engineer1 (SUA DUOC)", async ({ page }) => {
-  test.setTimeout(240_000);
-  await page.setViewportSize(VP_720);
-  await dangNhap(page, SUA_DUOC);
-  await page.goto("/twin?che-do=botri", { waitUntil: "domcontentloaded" });
-  await page.waitForSelector('[data-testid="man-twin-van-hanh"]', { timeout: 90_000 });
-  await page.waitForTimeout(8_000);
-  const v = await doVung(page);
-  // ★★★ G5 — nếu ca này CŨNG cho `vungSua === null` thì phép đo A5 chứng minh
-  //   SỐ 0 (nó chỉ đo rằng vùng sửa không bao giờ hiện, với ai cũng vậy).
-  expect(v.vungSua, "engineer1 PHAI vao duoc vung sua — doi chung duong").not.toBeNull();
-  ra.A6 = v;
-  console.log(`   [A6] vungSua=${JSON.stringify(v.vungSua)}`);
-  await page.screenshot({ path: ".qa-dot22/A6-botri-engineer1-720.png" });
-});
+/*
+ * A5/A6 đo `?che-do=botri` với hai vai: operator1 bị hạ cấp, engineer1 vào
+ * được `vung-sua-nha-xuong` NGAY TRONG `/twin`. Chúng là đối chứng hai chiều
+ * tốt cho QĐ-16.
+ *
+ * QĐ-18 (2026-09-09) tách `/twin-studio` thành trang riêng và **xoá hẳn khoá
+ * `?che-do=`**. Một URL không còn được đọc thì mọi khẳng định về nó đều là
+ * lời khai về một phiên bản đã chết — nên hai ca ấy được gỡ, không được nới.
+ *
+ * ⇒ Cùng hai chiều ấy nay đo ở `e2e/twin-dot26-tach-trang.spec.ts`
+ *   (D26-C chống cổng RỘNG · D26-F đối chứng dương · D26-I gỡ nhầm G76).
+ */
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* ẢNH 7 · NGĂN MÔ PHỎNG                                                       */

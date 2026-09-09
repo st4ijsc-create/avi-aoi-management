@@ -1,9 +1,11 @@
 /**
  * ════════════════════════════════════════════════════════════════════════════
- * `dinhTuyenTwinCu.ts` — 14 URL CŨ, **KHÔNG URL NÀO ĐƯỢC CHẾT** (§13b 14.2.3)
+ * `dinhTuyenTwinCu.ts` — 13 URL CŨ, **KHÔNG URL NÀO ĐƯỢC CHẾT** (§13b 14.2.3)
  * ════════════════════════════════════════════════════════════════════════════
  *
- * Đợt 21 gộp `/digital-twin` (vỏ Tabs 7 tab) và `/twin-studio` vào `/twin`.
+ * Đợt 21 gộp `/digital-twin` (vỏ Tabs 7 tab) vào `/twin`.
+ * ★★★ ĐỢT 26 (QĐ-18): `/twin-studio` **RỜI bảng này** — nó trở lại là tuyến
+ *   THẬT, nên nó nay là **đích** của 4 dòng, không còn là khoá. Bảng còn 13.
  * Mười bốn đường vào cũ vì thế trỏ vào chỗ không còn. Chúng nằm trong link đã
  * gửi qua chat, trong bookmark, trong tài liệu — nên **mọi đường phải còn tới
  * được đích đúng**, và §13b đặt thêm một điều kiện: **mỗi đường ≤ 1 chặng**.
@@ -22,11 +24,12 @@
  * ────────────────────────────────────────────────────────────────────────────
  * ★★★ HAI ĐIỀU §13b NÓI MÀ ĐỢT NÀY LÀM KHÁC — ghi rõ, không lặng lẽ đổi
  * ────────────────────────────────────────────────────────────────────────────
- * 1. §13b 14.2.3 ghi `?tab=floor` → **`/twin-studio`** và `?tab=layout` →
- *    **`/twin-studio?che-do=botri`**. Nhưng §13c.1 (QD-16, quyết định của chủ
- *    sở hữu, ĐI SAU §13b) gộp `/twin-studio` **vào chính `/twin`**. Nên đích
- *    thật là **`/twin?che-do=botri`**. `/twin-studio` vẫn sống như một redirect
- *    để không đường nào chết.
+ * 1. §13b 14.2.3 ghi `?tab=floor`/`?tab=layout` → **`/twin-studio`**. Đợt 21
+ *    (QD-16) đổi đích thành `/twin?che-do=botri` vì hai màn khi ấy là MỘT.
+ *    ★★★ QĐ-18 (2026-09-09) tách lại hai trang ⇒ đích quay về **đúng như §13b
+ *    đề nghị ban đầu**: `/twin-studio`. Khoá `?che-do=` **không còn tồn tại ở
+ *    bất kỳ đâu** — nó chết cùng QĐ-16, và đó là chủ ý: để lại một khoá URL mà
+ *    không ai đọc chính là G67 (tính năng chết ở tầng DANH SÁCH, im lặng).
  * 2. §13b ghi `?tab=cell` → `/twin?thu=moPhong`. ⚠ Đó là **lỗi trong spec**, và
  *    nó đảo ngược ý nghĩa: `thu=` là danh sách panel **ĐANG THU** (vắng mặt =
  *    đang mở — xem `duongDanTwin.ts` `PANEL_THU_DUOC`). `?thu=moPhong` sẽ
@@ -63,9 +66,10 @@ export const DICH_TWIN_CU: Readonly<Record<string, string>> = {
   "/digital-twin?tab=overview": "/twin",
   "/digital-twin?tab=center": "/twin",
   "/digital-twin?tab=map": "/twin",
-  // ★ QD-16: hai tab soạn thảo về VÙNG SỬA của `/twin`, không về `/twin-studio`.
-  "/digital-twin?tab=floor": "/twin?che-do=botri",
-  "/digital-twin?tab=layout": "/twin?che-do=botri",
+  // ★★★ QĐ-18 (§13c.2, thay QĐ-16): hai tab SOẠN THẢO về `/twin-studio` — đúng
+  //   nguyên văn §13b 14.2.3 đề nghị ban đầu. Xem mục 1 của "HAI ĐIỀU…" dưới.
+  "/digital-twin?tab=floor": "/twin-studio",
+  "/digital-twin?tab=layout": "/twin-studio",
   // ★ Xem "HAI ĐIỀU §13b NÓI MÀ ĐỢT NÀY LÀM KHÁC" mục 2: KHÔNG `?thu=moPhong`.
   "/digital-twin?tab=cell": "/twin",
   // ★ §13b: RF là mô phỏng thuần (đo được **0 lời gọi tRPC** trong 792 dòng) —
@@ -74,13 +78,17 @@ export const DICH_TWIN_CU: Readonly<Record<string, string>> = {
 
   // ── Sáu tuyến cũ trước đây đi VÒNG qua `/digital-twin` (hai chặng) ───────
   "/factory-live-map": "/twin",
-  "/factory-floor-editor": "/twin?che-do=botri",
+  "/factory-floor-editor": "/twin-studio",
   "/cell-twin": "/twin",
   "/digital-twin-center": "/twin",
-  "/layout": "/twin?che-do=botri",
+  "/layout": "/twin-studio",
 
-  // ── `/twin-studio` — nay là một vùng của `/twin` (QD-16) ─────────────────
-  "/twin-studio": "/twin?che-do=botri",
+  // ── ★★★ `/twin-studio` KHÔNG còn trong bảng này (QĐ-18) ──────────────────
+  //   Đợt 21 (QĐ-16) gộp nó vào `/twin` nên nó là một ĐƯỜNG CŨ cần ánh xạ.
+  //   QĐ-18 trả nó về **tuyến thật** (`App.tsx` `RouteGuard navHref`), nên nó
+  //   không còn là "đường vào Twin cũ" nữa — để nó ở đây sẽ đẻ ra một chặng
+  //   redirect trỏ vào chính nó. Test `khongCoChuoiRedirect()` cưỡng chế điều
+  //   đó ở tầng dữ liệu: nay `/twin-studio` là **giá trị**, không phải khoá.
 };
 
 /**

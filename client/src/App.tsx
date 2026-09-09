@@ -167,16 +167,22 @@ const ViewerHome = React.lazy(() => import("./pages/ViewerHome")); // Doc 10 U3:
 const AdminHome = React.lazy(() => import("./pages/AdminHome")); // Doc 10 U5: admin governance briefing landing
 const RequestRole = React.lazy(() => import("./pages/RequestRole")); // Doc 10 U12: request a higher role
 // ════════════════════════════════════════════════════════════════════════════
-// ★★★ ĐỢT 21 LÔ Y — TWIN GỘP VỀ **MỘT** TRANG `/twin` (§13b 14.2 + QD-16)
+// ★★★ ĐỢT 26 — TWIN LÀ **HAI TRANG LIÊN KẾT** (§13c.2 QĐ-18, thay QĐ-16)
 // ════════════════════════════════════════════════════════════════════════════
-// `TwinHub` (vỏ Tabs 7 tab) và `TwinStudio` KHÔNG còn được nạp từ tệp này:
-//   • `/digital-twin`  → redirect theo `?tab=` (bảng `dinhTuyenTwinCu.ts`)
-//   • `/twin-studio`   → redirect vào `/twin?che-do=botri`; `TwinStudio` nay
-//     được CHÍNH `TwinVanHanh` nạp lười làm **vùng SỬA** của trang gộp.
+// Đợt 21 gộp `/twin-studio` vào `/twin`. QĐ-18 (chủ sở hữu, 2026-09-09) ĐẢO
+// NGƯỢC đúng phần gộp ấy — hai màn có hai MỤC ĐÍCH, không phải hai vùng:
+//   • `/twin`         → TRÌNH DIỄN / XEM / REALTIME, **chỉ đọc**
+//   • `/twin-studio`  → THIẾT KẾ / LAYOUT / XÂY DỰNG, **chỉ người có quyền**
+// Hai trang **liên kết** với nhau: `/twin` mang một nút sang `/twin-studio`,
+// và nút ấy chỉ hiện với ai sửa được (luật ẩn-không-disable §12b.3).
+//
+// ⚠ `/digital-twin` VẪN là redirect theo `?tab=` (bảng `dinhTuyenTwinCu.ts`) —
+//   Đợt 21 mua được 14 redirect ≤1 chặng, và đợt này KHÔNG đụng vào phần đó.
 // ⚠ Bảy màn con của hub VẪN CÒN TRÊN ĐĨA (§11b cấm xoá màn) — `RfTestCellSim`
 //   dưới đây là một trong số đó, và nó lấy lại **tuyến thật** `/rf-test-cell`
 //   vì §13b 3g xếp nó NGOÀI Twin (đo được: 0 lời gọi tRPC trong 792 dòng).
 const TwinVanHanh = React.lazy(() => import("./pages/TwinVanHanh"));
+const TwinStudio = React.lazy(() => import("./pages/TwinStudio"));
 const RfTestCellSim = React.lazy(() => import("./pages/RfTestCellSim"));
 const CommandCenter = React.lazy(() => import("./pages/CommandCenter")); // U2 (doc 21 §6 G-3): Ecosystem Command Center — single pane (hierarchy tree + factory twin + KPI strip + unified live alarm rail)
 const ControlTower = React.lazy(() => import("./pages/ControlTower")); // doc 46 FE-W3.1 (D4): persona-configurable Executive Control Tower — consolidates 6 command screens (compose + cross-link)
@@ -353,19 +359,44 @@ function Router() {
           nhau. Đó là cách repo chặn lớp lỗi "một lối vào rồi TỪ CHỐI" của Khối D. */}
       <Route path="/twin"><RouteGuard navHref="/twin"><TwinVanHanh /></RouteGuard></Route>
       {/*
-        ★★★ QD-16 (§13c.1) — `/twin-studio` nay là **một VÙNG của `/twin`**,
-        không còn là một trang. Chủ sở hữu chọn gộp; §13b (14.2.2) đề nghị
-        ngược lại và lý lẽ của nó vẫn đúng về mặt kỹ thuật — nên lối thoát là
-        gộp **bề mặt** mà **KHÔNG gộp cổng quyền** (xem `vungQuyen.ts`).
+        ════════════════════════════════════════════════════════════════════
+        ★★★ QĐ-18 (§13c.2) — TÁCH LẠI HAI TRANG. **ĐẢO NGƯỢC QĐ-16.**
+        ════════════════════════════════════════════════════════════════════
+        Chủ sở hữu chốt 2026-09-09, và lý do MẠNH HƠN lý do gộp của QĐ-16:
 
-        ⚠ Tuyến này KHÔNG chết: nó redirect vào `/twin?che-do=botri`. Và nó
-          **cố ý KHÔNG còn `RouteGuard navHref="/twin-studio"`** — cổng vào nay
-          là cổng của `/twin` (rộng hơn), còn quyền SỬA được kẹp Ở TRONG trang
-          bằng `kepVungTheoQuyen`. Giữ guard cũ ở đây sẽ chặn `operator1` ngay
-          tại cửa — đúng tai nạn Đợt 3 CHẶN-1 mà Đợt 15 đã phải vá ngược.
-          `TwinStudio.tsx` vẫn còn nguyên trên đĩa và nay được `/twin` nạp lười.
+          *"Twin-studio là nơi THIẾT KẾ và layout cũng như xây dựng 3D Twin
+           cho nhà máy/ProductionLine, CHỈ NHỮNG NGƯỜI CÓ QUYỀN mới làm được.
+           Còn Twin là nơi TRÌNH DIỄN, XEM, QUẢN LÝ REALTIME nhà máy, KHÔNG
+           CHỈNH SỬA ĐƯỢC… 2 trang liên kết với nhau nhưng MỤC ĐÍCH HOÀN TOÀN
+           KHÁC NHAU."*
+
+        QĐ-16 gộp vì cho rằng đây là hai VÙNG của một việc. QĐ-18 nói đây là
+        hai MỤC ĐÍCH khác nhau — người chỉ xem KHÔNG BAO GIỜ cần công cụ sửa.
+        Hai vùng của một việc thì gộp đúng; hai mục đích thì tách đúng.
+
+        ────────────────────────────────────────────────────────────────────
+        ★★★ VÌ SAO TÁCH KHÔNG TÁI DIỄN TAI NẠN "CHẶN-1" — SỐ ĐO, KHÔNG PHỎNG ĐOÁN
+        ────────────────────────────────────────────────────────────────────
+        Nỗi lo của QĐ-16 là `operator1` **mất lối vào**. Đo lại trên bảng
+        `permissions` (2026-09-09, 8 tài khoản `isActive`):
+
+            operator1     xem /twin ✅ (machine_status) · sửa studio ❌
+            engineer1     ✅ / ✅        maint1        ✅ / ✅
+            supervisor1   ✅ / ✅        e2e_tai_loE   ✅ / ✅
+
+        ⇒ `operator1` **KHÔNG mất gì khi tách**: họ vốn đã không có
+          `settings_factory` lẫn `machine_control`, nên vùng sửa với họ vốn
+          đã không tồn tại (QĐ-16 tự hạ cấp họ về `xem`). Tách chỉ chuyển chỗ
+          của MỘT thứ họ chưa từng thấy. Đây là khác biệt then chốt so với
+          CHẶN-1 của Đợt 3 — ở đó 2/4 vai **thật sự** mất màn đang dùng được.
+
+        ⚠ `RouteGuard navHref="/twin-studio"` TRA quyền từ chính ô nav
+          `navigation.tsx` (`["settings_factory","machine_control"]`), nên nav
+          và cổng route KHÔNG THỂ lệch — lớp lỗi "một lối vào rồi TỪ CHỐI".
+          Và vì nav ẩn ô với ai thiếu quyền (luật ẩn-không-disable §12b.3),
+          `operator1` **không thấy** mục này, chứ không phải thấy rồi bị chặn.
       */}
-      <Route path="/twin-studio"><Redirect to="/twin?che-do=botri" /></Route>
+      <Route path="/twin-studio"><RouteGuard navHref="/twin-studio"><TwinStudio /></RouteGuard></Route>
       <Route path="/history"><RouteGuard navHref="/history"><History /></RouteGuard></Route>
       <Route path="/inspection/:id"><RouteGuard requirePermission="history_view"><InspectionDetail /></RouteGuard></Route>
       <Route path="/aoi-packages"><RouteGuard navHref="/aoi-packages"><AOIPackages /></RouteGuard></Route>
@@ -477,7 +508,7 @@ function Router() {
       <Route path="/ir-editor"><RouteGuard requirePermission="machine_control"><AIPageWrapper><IrEditor /></AIPageWrapper></RouteGuard></Route>
       <Route path="/pou-studio"><RouteGuard requirePermission="machine_control"><AIPageWrapper><PouStudio /></AIPageWrapper></RouteGuard></Route>
       <Route path="/programming-copilot"><RouteGuard requirePermission="machine_status"><AIPageWrapper><ProgrammingCopilot /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/factory-floor-editor"><Redirect to="/twin?che-do=botri" /></Route>
+      <Route path="/factory-floor-editor"><Redirect to="/twin-studio" /></Route>
       {/* ★ §13b 3g — RF là mô phỏng THUẦN (đo được 0 lời gọi tRPC trong 792 dòng):
           nó không trả lời "nhà máy đang thế nào". Trả lại TUYẾN THẬT, ngoài Twin. */}
       <Route path="/rf-test-cell"><RouteGuard requirePermission="machine_status"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
@@ -638,7 +669,7 @@ function Router() {
       {/* Task 1 Khối D — /layout (không :id) gộp vào TwinHub làm tab "layout" (mode edit).
           /layout/:id GIỮ RIÊNG: mang route param mà tab không có, và gate
           requirePermission="settings_factory" khác navHref của route trên. */}
-      <Route path="/layout"><Redirect to="/twin?che-do=botri" /></Route>
+      <Route path="/layout"><Redirect to="/twin-studio" /></Route>
       <Route path="/layout/:id"><RouteGuard requirePermission="settings_factory"><Layout /></RouteGuard></Route>
       <Route path="/workstation-management"><RouteGuard navHref="/workstation-management"><WorkstationManagement /></RouteGuard></Route>
       <Route path="/process-management"><RouteGuard navHref="/process-management"><ProcessManagement /></RouteGuard></Route>

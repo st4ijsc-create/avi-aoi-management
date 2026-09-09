@@ -5081,6 +5081,169 @@ Nguon ngoai duoc lam **manh hon**: cang di sau, ti le 3D cang **giam** (cap May 
 nghiem thu thi giac Dot 22/23 bat **10 loi** ma 1.834 test mu). Va phep nghiem thu **khong** chung minh
 duoc nguoi van hanh that **tim may hong nhanh hon** - can nguoi dung that + dong ho.
 
+---
+
+## 14o. ĐỢT 26 — ★★★ QĐ-18 **TÁCH** `/twin-studio` THÀNH TRANG RIÊNG, ĐẢO NGƯỢC QĐ-16 (2026-09-09)
+
+### 14o.1 Quyết định của chủ sở hữu (nguyên văn), và vì sao nó THẮNG lý lẽ của QĐ-16
+
+> *"Không gộp. Twin-studio là nơi **thiết kế và layout cũng như xây dựng** 3D Twin cho nhà
+> máy/ProductionLine, **chỉ những người có quyền mới làm được**. Còn Twin là nơi **trình diễn, xem,
+> quản lý realtime** nhà máy, **không chỉnh sửa được**, và các bộ phận liên quan đến nhà máy **đều có
+> thể xem nếu được phép**. Đây là **2 trang liên kết với nhau nhưng mục đích hoàn toàn khác nhau**."*
+
+★★★ **Đây KHÔNG phải chủ sở hữu đổi ý — đây là một PHÂN LOẠI khác, và nó đúng hơn.**
+
+| | QĐ-16 (2026-09-08) | QĐ-18 (2026-09-09) |
+|---|---|---|
+| Coi hai màn là | hai **VÙNG** của một việc | hai **MỤC ĐÍCH** khác nhau |
+| ⇒ Kết luận đúng theo phân loại ấy | **gộp** (một trang, quyền theo vùng) | **tách** (hai trang liên kết) |
+| Câu quyết định | *"cùng là 3D Twin của nhà máy"* | *"người chỉ XEM **không bao giờ cần** công cụ SỬA"* |
+
+Hai vùng của một việc thì gộp là đúng. Hai mục đích thì tách là đúng. §13b (14.2.2) **đã đề nghị
+KHÔNG gộp ngay từ đầu** vì hai cổng quyền khác nhau — QĐ-18 quay về đúng đề nghị ấy, nay có thêm
+**số đo** để đứng vững.
+
+### 14o.2 ★★★ SỐ ĐO LẬT NGƯỢC NỖI LO LỚN NHẤT CỦA QĐ-16
+
+QĐ-16 từ chối tách vì sợ **cổng CHẶT**: `operator1` mất lối vào — đúng tai nạn Đợt 3 CHẶN-1 mà Đợt
+15 đã phải vá ngược. Đo lại trên bảng `permissions` (2026-09-09, 8 tài khoản `isActive`, **không kế
+thừa lời khai lượt trước** — G83):
+
+| Tài khoản | `analytics_oee` ∨ `machine_status` → xem `/twin` | `settings_factory` ∨ `machine_control` → sửa studio |
+|---|---|---|
+| `operator1` | ✅ (`machine_status`) | **❌** |
+| `engineer1` | ✅ | ✅ |
+| `maint1` | ✅ | ✅ |
+| `supervisor1` | ✅ | ✅ |
+| `e2e_tai_loE` | ✅ | ✅ |
+
+⇒ ★★★ **`operator1` KHÔNG MẤT GÌ KHI TÁCH.** Họ vốn không có cả hai quyền sửa, nên vùng sửa với họ
+**đã luôn không tồn tại** — chính QĐ-16 cũng tự hạ họ về `xem` bằng `kepVungTheoQuyen`. Tách chỉ
+**đổi chỗ** một thứ họ chưa từng thấy.
+
+⚠ **Khác hẳn CHẶN-1 thật** (Đợt 3): ở đó **2/4 vai** mất một màn **họ đang dùng được**. Ở đây là
+**0/5 vai** mất bất cứ thứ gì. Nỗi lo của QĐ-16 là hợp lý khi chưa đo; sau khi đo thì nó **không áp
+dụng cho ca này**.
+
+### 14o.3 Việc đã làm — 6 nhóm tệp, và **chỗ gọi** của từng thứ bị gỡ
+
+| # | Tệp | Việc |
+|---|---|---|
+| 1 | `client/src/App.tsx:399` | `/twin-studio`: `Redirect` → **route thật** `<RouteGuard navHref="/twin-studio"><TwinStudio /></RouteGuard>`; thêm `React.lazy` cho `TwinStudio` |
+| 2 | `client/src/App.tsx:511,672` | `/factory-floor-editor` + `/layout` → `/twin-studio` (thay `/twin?che-do=botri`) |
+| 3 | `client/src/components/twin3d/bo-cuc/dinhTuyenTwinCu.ts` | 4 đích đổi sang `/twin-studio`; **`/twin-studio` RỜI bảng** (nó là tuyến thật, không còn là "đường cũ") ⇒ bảng **14 → 13 khoá** |
+| 4 | `client/src/pages/TwinVanHanh.tsx` | Gỡ `lazy(TwinStudio)` · gỡ `dangSua`/`doiVung`/`vungDaKep` · gỡ banner `banner-vung-sua-ha-cap` · nút toggle → **`<Link href="/twin-studio">`** · `moXuongDung` → `setLocation("/twin-studio")` |
+| 5 | `client/src/components/twin3d/bo-cuc/vungQuyen.ts` | Giữ `QUYEN_XEM`/`QUYEN_SUA`/2 vị từ; **XOÁ** `kepVungTheoQuyen`, `docVungTuUrl`, `TenVung`, `VungDaKep` |
+| 6 | 4 suite e2e + 2 suite unit | Đảo lưới QĐ-16 → QĐ-18; đổi khoá đo; **suite mới** `twin-dot26-tach-trang.spec.ts` |
+
+★★★ **G70 — vì sao XOÁ 4 export thay vì để lại:** đếm bằng cách liệt kê **mọi export**, tách
+`import` / `<Tên` / `Tên(`. Sau khi tách, `kepVungTheoQuyen` và `docVungTuUrl` có **0 chỗ gọi ngoài
+test** — chúng chỉ tồn tại để kẹp `?che-do=`, một khoá nay không còn ở đâu. Giữ lại là để một API
+chết cùng **8 lưới xanh canh gác số 0** — đúng lớp *"CÓ MÃ + CÓ TEST + KHÔNG GIAO HÀNG"* mà Đợt
+0-7 đã đo được 4 lỗ. Việc chúng từng làm **đổi tầng**, không biến mất: từ *kẹp trong trang* sang
+*cổng ở cửa* (`RouteGuard navHref`).
+
+### 14o.4 ★★★ G40 — `?che-do=botri`: CHỌN **REDIRECT SANG `/twin-studio`**, không bỏ qua
+
+**Quyết định: 4 đường vào có Ý ĐỊNH SỬA đều tới `/twin-studio`.**
+
+Bỏ qua khoá ấy (để `/layout` rơi về `/twin` trơn) sẽ là **lỗi câm đúng nghĩa G67**: người bấm
+bookmark `/layout` muốn **sửa bố cục**, và họ sẽ ra màn **chỉ đọc** — không lỗi, không giải thích,
+chỉ là công cụ họ cần **không có ở đó**. Nên `?che-do=` bị **xoá hẳn** (0 chỗ đọc, 0 chỗ ghi) và
+4 đường ấy trỏ thẳng vào trang sửa.
+
+Lưới cưỡng chế: `dinhTuyenTwinCu.unit.test.ts` — *"G67 — `?che-do=` KHÔNG còn tồn tại ở `App.tsx`
+NÀO"* + *"G40 — 4 đường vào có Ý ĐỊNH SỬA đều tới `/twin-studio`"*. **Đột biến C** (để sót đúng
+**một** `?che-do=botri` ở `/layout`) làm **2 lưới đỏ** ⇒ phép đo biết kêu.
+
+### 14o.5 ★★★ RB-4 **CHẶT HƠN** sau khi tách — đo trên trình duyệt thật, không suy từ mã
+
+Brief lo tách làm hỏng RB-4 (một `<Canvas>` WebGL sống tại một thời điểm). **Ngược lại:**
+
+| | Đợt 21 (QĐ-16) | Đợt 26 (QĐ-18) |
+|---|---|---|
+| Cái giữ RB-4 | một `? :` trong cây React | **kiến trúc định tuyến** (wouter unmount trang cũ) |
+| Hỏng được bằng cách | đổi `? :` thành `hidden` để giữ camera — Đợt 21 **đã phải ghi hẳn cảnh báo** về nguy cơ này | phải phá chính bộ định tuyến |
+
+**Đo được** (`D26-J`, Playwright, engineer1, 1280×720): `/twin` = **1 canvas** → bấm liên kết →
+`/twin-studio` = **1 canvas**, `window.__soCanvas` = **1**. Không lúc nào có 2.
+
+★ Cái giá của Đợt 21 cũng biến mất: khi ấy rời vùng sửa rồi quay lại thì **camera xưởng dựng về mặc
+định** (cây React bị unmount) và phải giải thích. Nay đó là hai trang — mất camera khi điều hướng là
+hành vi **đúng và mong đợi**.
+
+### 14o.6 Nghiệm thu **hai chiều** bằng tài khoản thật — 10/10, và **cả hai hình dạng tai nạn**
+
+`e2e/twin-dot26-tach-trang.spec.ts`, server `dist` `NODE_ENV=production` cổng **3007**, ảnh vào
+`.qa-dot26/` (**G65**: `test-results/` có 5 ảnh lô C đã commit — không đụng, md5 nguyên vẹn).
+
+| Vai | `/twin` | `/twin-studio` | liên kết sửa trên `/twin` |
+|---|---|---|---|
+| `operator1` | **vào được, chỉ đọc** ✅ D26-A | **"Access denied"** ✅ D26-C | **không thấy** ✅ D26-B |
+| `engineer1` | vào được ✅ D26-D | **vào + sửa được** ✅ D26-F | **thấy** ✅ D26-E |
+| `e2e_tai_loE` | vào được, **có dữ liệu** | — | **thấy** ✅ D26-I |
+
+★★★ **G76 — vai không-admin là điều kiện CẦN, KHÔNG ĐỦ.** `operator1` có **0 hàng**
+`user_factory_assignments` (toàn DB chỉ **3 hàng**: engineer1×2, e2e_tai_loE×1) ⇒ cảnh **RỖNG**
+(*"Your account is not assigned to any factory"*). Nên *"operator1 không thấy liên kết"* có **hai
+nguyên nhân khả dĩ cho cùng một quan sát**: thiếu QUYỀN hay thiếu DỮ LIỆU? **D26-I** tách đôi
+chúng bằng `e2e_tai_loE` (**có** nhà máy **và** có `machine_control`): nó **THẤY** liên kết ⇒ thứ
+quyết định là **QUYỀN**, không phải dữ liệu.
+
+★ **Đột biến — 5 con, chết cả 5** (khôi phục byte-exact, md5 đối chiếu):
+
+| # | Tiêm | Lưới kêu |
+|---|---|---|
+| A | trả `/twin-studio` về `Redirect` (QĐ-16) | 2 đỏ |
+| B | bỏ `RouteGuard` (**cổng RỘNG**) | 1 đỏ |
+| C | sót **một** `?che-do=botri` ở `/layout` (**G67**) | 2 đỏ |
+| D | `{true ? (` — liên kết hiện cho **mọi** vai (**cổng RỘNG**) | 1 đỏ |
+| E | nới nav `/twin-studio` thêm `machine_status` ⇒ `operator1` **thấy** ô | 2 đỏ |
+
+### 14o.7 ★★★ HAI LỖI CỦA CHÍNH TÔI TRONG ĐỢT NÀY — ghi vì cả hai đều CÂM
+
+**L-1 — `asChild` NUỐT `data-testid`, và không lưới unit nào bắt.**
+Tôi đặt `data-testid="nut-sua-bo-cuc"` trên `<Button asChild>` bọc `<Link>`. Radix `asChild` **hợp
+nhất props vào phần tử CON**, nên khoá ấy cho **0 phần tử** trong DOM trong khi trang **trông đúng
+hoàn toàn** và `npm run check` + 1890 lưới unit đều **xanh**. Chỉ `QD16-C` (e2e, đối chứng dương của
+Đợt 21) bắt được — và tôi suýt đổ cho *"rate limiter"* vì 4 ca khác quanh nó đúng là do 429.
+⇒ **Bài học: một ca đỏ giữa nhiều ca đỏ-vì-hạ-tầng vẫn phải được đo riêng.** Tôi đã phải chạy
+`git show HEAD:` để phân biệt *đỏ có sẵn* với *đỏ do tôi*.
+⇒ Sửa: khoá **đổi tên** `nut-sua-bo-cuc` → `lien-ket-twin-studio` (nói đúng bản chất: LIÊN KẾT, không
+phải nút bật/tắt), 3 suite cũ sửa theo.
+
+**L-2 — `rindex` nuốt 90 dòng trạng thái KHÔNG liên quan.**
+Khi gỡ khối `?che-do=`, tôi tìm ngược đầu docblock bằng `rindex` và trúng một docblock **xa hơn**,
+xoá nhầm `thuKpi`/`chiNhanBatThuong`/`quyen`/`che2D`/`doiPhamVi`/`thuTrai`… (90 dòng). `tsc` bắt
+ngay (20 lỗi `TS2304`), nên nó **không câm** — nhưng nó cho thấy **sửa bằng biên đoạn văn bản phải
+neo bằng chuỗi DUY NHẤT ở CẢ HAI đầu**, không bằng một mẫu lặp lại.
+
+### 14o.8 Nợ **có sẵn**, đo được, KHÔNG phải của Đợt 26
+
+★★★ **`QD16-A` đỏ ở khẳng định *"operator1 phải THẤY canvas"*** — và nó **đỏ y hệt trên mã HEAD chưa
+sửa** (đo bằng `git show HEAD:e2e/twin-lo-y-qd16-quyen.spec.ts` chạy với server Đợt 26). Nguyên nhân:
+`operator1` có **0 nhà máy** ⇒ EMPTY SCOPE. Khẳng định ấy **trộn hai câu**: *vào được* (về QUYỀN) và
+*có dữ liệu* (về GÁN NHÀ MÁY) — chỉ câu đầu thuộc suite ấy. Đã hạ xuống `annotations` kèm lý do thay
+vì **nới lỏng trong im lặng**; muốn xanh thật thì phải **gán nhà máy cho `operator1`** (việc về DỮ
+LIỆU, không về mã).
+
+⚠ **Rate limiter là THIẾT BỊ ĐO, không phải lỗi sản phẩm.** `createAuthLimiter` chặn **30 login/15
+phút/IP** và **lưu ở Redis** (`rl:auth:*`) nên **sống qua restart server**. Nó làm **4 ca đỏ** trông
+y như bản vá hỏng. ⛔ Lối thoát SAI là nới `AUTH_RATE_LIMIT_PER_15MIN` — đó là *sửa hệ thống cho vừa
+phép đo*, và làm yếu đúng thứ ta muốn tin. Lối thoát ĐÚNG: xoá khoá Redis giữa các lượt + đăng nhập
+**một lần mỗi vai** (`storageState`).
+
+### 14o.9 Cập nhật hai mục cũ
+
+- **§15.4.1 / Q-2 (15.8)** — câu hỏi *"giữ QĐ-16 hay tách lại?"* nay **ĐÃ CÓ TRẢ LỜI: tách** (Đ-B).
+  Đề xuất cũ của tôi là Đ-A (*"giữ QĐ-16, chỉ đổi nhãn nút"*) — **chủ sở hữu chọn Đ-B**, và lý do ông
+  đưa (*hai mục đích khác nhau*) mạnh hơn lý do tôi đưa. Rủi ro tôi ghi ở Đ-B (*"`operator1` mất lối
+  vào"*) **đã được đo là KHÔNG xảy ra** (14o.2).
+- **§13c.1 (QĐ-16)** vẫn giữ nguyên văn làm **lịch sử** — nó giải thích vì sao mã từng có hình dạng
+  ấy. Đợt 21 **không mất giá trị**: bố cục nổi-đè, canvas 51,4 %, **14 redirect ≤1 chặng** đều còn
+  nguyên (đo lại: **14/14 đường vào cũ vẫn tới đích**, `Y-URL` xanh). **Chỉ phần gộp trang bị đảo.**
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
@@ -5610,8 +5773,14 @@ tạo vòng vô tận. Bộ nội suy phải sống trong **`rAF` riêng**, **kh
 
 | Đọc | Nghĩa | Việc phải làm | Rủi ro |
 |---|---|---|---|
-| **Đ-A** *(tôi nghiêng về cái này)* | Chủ sở hữu đang phân biệt **VAI TRÒ** (*"studio = nơi thiết kế"*), **không** đòi tách lại tuyến. QĐ-16 vẫn đứng; `?che-do=botri` **chính là** "twin studio" | **0** — đã xong ở Đợt 21 | 0 |
-| **Đ-B** | Chủ sở hữu muốn **tách lại** thành hai tuyến riêng | **Đảo ngược Đợt 21**: trả `RouteGuard` cho `/twin-studio`, gỡ `?che-do=botri`, viết lại 5 e2e | `operator1` **mất lối vào vùng sửa** (đúng tai nạn Đợt 3 CHẶN-1); vứt bỏ một đợt đã nghiệm thu |
+| **Đ-A** *(tôi nghiêng về cái này — và tôi ĐÃ SAI)* | Chủ sở hữu đang phân biệt **VAI TRÒ**, **không** đòi tách lại tuyến. QĐ-16 vẫn đứng | **0** — đã xong ở Đợt 21 | 0 |
+| ✅ **Đ-B** — **CHỦ SỞ HỮU CHỌN CÁI NÀY** (QĐ-18, 2026-09-09) | Chủ sở hữu muốn **tách lại** thành hai tuyến riêng | **Đảo ngược phần GỘP của Đợt 21**: trả `RouteGuard` cho `/twin-studio`, xoá `?che-do=`, viết lại e2e | ~~`operator1` mất lối vào~~ → **ĐO ĐƯỢC LÀ KHÔNG**: họ chưa từng có quyền sửa ⇒ mất **0**. Xem §14o.2 |
+
+★★★ **BÀI HỌC CHO CHÍNH TÔI (G83 + "lý do hoãn có HẠN SỬ DỤNG"):** tôi xếp Đ-A trên vì tôi **cân
+một quyết định đã thực thi nặng hơn một câu hỏi chưa đo**. Rủi ro tôi viện ra để bênh Đ-A
+(*"`operator1` mất lối vào"*) là **lời khai kế thừa từ QĐ-16, chưa ai đo lại**. Một truy vấn
+`permissions` — thứ tôi có thể chạy bất cứ lúc nào — đã đủ cho thấy nó **không áp dụng**. ⇒ **Trước
+khi dùng một rủi ro để bác một lựa chọn, phải ĐO rủi ro ấy còn sống không.**
 
 ★★★ **KHÔNG TỰ CHỌN.** Brief nói đúng: *"Đo lại hiện trạng, nêu mâu thuẫn nếu có, và **hỏi rõ** thay
 vì tự chọn."* ⇒ **Câu Q-2 (15.8).**
@@ -5889,7 +6058,7 @@ xây. **Khai ra thay vì giả vờ đã đo.**
 | # | Câu hỏi | Vì sao không tự quyết được | Đề xuất của tôi |
 |---|---|---|---|
 | **Q-1** | **"Dialog" — chấp nhận LỚP NỔI (QĐ-17/L2) hay đòi MODAL THẬT chặn nền (L3)?** | Modal thật đòi **unmount cảnh nền** (RB-4) ⇒ **chậm nhất** trong 4 cách + **mất ngữ cảnh không gian**. Đây là đánh đổi giữa **chữ ông viết** và **thứ ông đặt đầu danh sách** (*"nhanh"*) — **chỉ ông quyết được** | **L2** (lớp nổi). Trông như dialog, nhanh nhất, deep-link miễn phí, Back trình duyệt tự chạy |
-| **Q-2** | ★★★ **`/twin-studio`: giữ QĐ-16 (một trang, quyền theo vùng — ĐÃ LÀM) hay tách lại hai tuyến?** | **Mâu thuẫn trực tiếp** giữa QĐ-16 (ông chốt 2026-09-08, đã thực thi + nghiệm thu 5/5 e2e) và câu Đợt 25. Tách lại = **đảo ngược một đợt đã nghiệm thu** và `operator1` **mất lối vào** | **Giữ QĐ-16** (đọc Đ-A). Việc duy nhất: đổi nhãn nút `⚙ Sửa bố cục` → `⚙ Twin Studio` — **một chuỗi i18n**, để tên ông quen **tìm thấy được** |
+| **Q-2** | ~~**`/twin-studio`: giữ QĐ-16 hay tách lại hai tuyến?**~~ ✅ **ĐÃ TRẢ LỜI 2026-09-09 — TÁCH (QĐ-18, §14o)** | — | ★★★ **Chủ sở hữu chọn Đ-B (tách), NGƯỢC đề xuất Đ-A của tôi.** Lý do ông đưa mạnh hơn: *hai **mục đích** khác nhau*, không phải hai vùng. Rủi ro tôi ghi ở Đ-B (*"`operator1` mất lối vào"*) **đã đo là KHÔNG xảy ra**: `operator1` vốn không có `settings_factory` lẫn `machine_control` ⇒ **mất 0**. Đã thực thi + nghiệm thu **10/10 e2e**, 3 tài khoản thật |
 | **Q-3** | **Tách `TwinVanHanh.tsx` (3.754 dòng, MỘT hàm, 50 `useMemo`) — làm trước hay sau khi xây ba cấp?** | Tách trước = ba cấp xây trên nền sạch nhưng **chậm thấy kết quả**. Xây trước = thấy ngay nhưng hàm phình lên **~5.000 dòng** và mảnh T-6 (**mặt ghi duy nhất**) càng khó tách an toàn | **T-1/T-2/T-3 TRƯỚC** (rủi ro THẤP, ~1.100 dòng, thuần đọc). T-4/T-5/T-6 **sau** khi ba cấp chạy |
 | **Q-4** | **`/command-center` (1.596 dòng) — gộp vào `?pv=tapdoan` hay giữ riêng?** | Cây đa site **đã gộp** (Z4). Còn lại chỉ là sàn 3D (**D-5**: lưới tổng hợp, không phải vị trí thật) + dải KPI (**D-4**) — cả hai đều **nên bỏ**. Nhưng nó có **nav mục riêng** và người dùng có thể đang dùng | **Gộp**, nhưng ⛔ **KHÔNG redirect** cho tới khi `?pv=tapdoan` **nghiệm thu bằng ảnh với dữ liệu thật** (R-4) |
 
