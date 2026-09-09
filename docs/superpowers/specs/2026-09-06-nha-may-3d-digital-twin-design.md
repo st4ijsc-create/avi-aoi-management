@@ -6015,6 +6015,52 @@ qua `/twin?pv=line:`/`?xem=` — e2e ngoài cổng vitest, chưa ai chạy lại
 ghim hành vi cũ (a), chưa chạy lại · Pareto #1/#4–#8 nguyên trạng (K1 ảnh: cột WIP vượt mép, 6/12 máy trong khung;
 K2 ảnh: chip "Unknown · Never reported" cạnh cockpit "ONLINE · Connected").
 
+### 14q.11 CHU DU AN NGHIEM THU DOT 33 + QD-24 + DOT 34
+
+Do lai doc lap tren `5c80f639`: **7 commit** pathspec · twin3d **83 tep / 2.200** (+1 tep, +45 ca) · `vitest run
+twin` 105/2.453 · `check` 0 · `build` 0 · cay sach · 5 anh nguyen · 3033 tat · route `/twin/line/:id` +
+`/twin/may/:id` con. **Ket cuc goc DAT lan dau**: K1 bam Line → `/twin/line/2` **7 ms**, K2 bam may →
+`/twin/may/14`, K5 deep-link → "Production (MES)" 10 muc, K6 **14/14 cu + 6/6 moi**, K7 `?cam=` doi camera
+that. Ablation **ca hai muc**: unit (A1 15 · A2 4 · A3 11 · A4 10 · A5 4 do → khoi phuc 0) va **dist** (A3/A4/A5
+moi phia deu do, 14/14 cu van xanh khi go va moi - bang cu doc lap, dung G40).
+
+> #### ★ QD-24 (chu du an) - CHUYEN `NganMoPhong` (what-if, lo X) SANG `TwinLine`
+> Do: `useMoPhongTwin`/`NganMoPhong` **chi o `TwinVanHanh`** (`:678`, `phamVi.cap==="line"`), can `lineId`
+> (`moPhongLogic.ts:138` `chua_chon_line` khi null). Sau QD-23 `/twin` **khong con cap Line** ⇒ mo phong o
+> `/twin` **luon** "chua chon line"; `TwinLine` 0 ngan ⇒ tinh nang **mat han** (K11). Hook da nhan
+> `lineDangXem` qua tham so (G37) ⇒ chuyen duoc, **chi truy van doc** (khong pham D-1). Nhanh `cap==="line"`
+> trong `TwinVanHanh` thanh **ma chet co chu y** — Dot 34 go `NganMoPhong` khoi `/twin` sau khi Line co.
+> e2e `twin-lo-x` X1–X3 viet lai theo man Line; `twin-dot22:175,192`, `twin-dot24:84,135` cap nhat theo QD-23.
+
+> #### G103 - **BRIEF SAI LAN 8** (5 cho) - va mot cho toi tu suy tu Dot 30
+> (1) *"`docCamera` nhu `TwinVanHanh`"* — `/twin` **cung khong doc** `cam` (chi ghi, `:2114`); doc lai = vong
+> lap tween. (2) *"`/twin/line/<nha may khac>` ⇒ `ngoaiPhamVi` (Dot 30 da co)"* — **khong co**, Line chi co
+> `line-rong` (= Pareto #7). Toi **ke thua loi khai Dot 30** ma khong grep. (3) `__thongKeVe` khong co camera.
+> (4) `[data-sidebar="menu-button"]` dem **0 tren `/twin` lanh** — selector mu. (5) Brief khong neu Mo phong
+> song nho `phamVi.cap==="line"` ⇒ QD-23 giet no. ⇒ **He qua cua mot quyet dinh dinh tuyen phai grep MOI
+> nhanh `cap===` truoc khi thuc thi**, khong chi nhanh minh dang sua.
+
+**e2e cu tren dist (`.qa-dot33/e2e-legacy.log`): 15 pass / 10 fail** — 7 lop (a) do QD-23 (Dot 34 cap nhat).
+Agent khai 3 ca "moi truong", trong do *"operator1 khong con 0 gan"* — **chu du an do DB: operator1 id 48,
+`user_factory_assignments` = 0 hang, users = 10** ⇒ loi khai sai. Doc anh + ma that:
+- `twin-dot24:117` V5 `/twin?xem=machine:1` → **redirect `/twin/may/1`** (QD-23) → TwinMay **noi ly do** "Khong mo
+  duoc may #1 … to be assigned a factory" — regex cu `/not assigned to any factory|chua duoc gan/` khong khop cau
+  moi ⇒ **lop (a)**. ⚠ TwinMay dung `thieuQuyen` cho vai **0 gan nha may** — cau sai ban chat ("You do not have
+  permission" trong khi thuc ra "chua duoc gan") ⇒ Dot 34 tach `chuaGanNhaMay` khoi `thieuQuyen` (L-5 noi dung ly do).
+- `twin-dot24:34` V1: anh hien dung EmptyState "not assigned", testid `man-twin-van-hanh` **con o ca 3 nhanh**
+  (`:2485/2499/2530`), Dot 32 b1 do mot minh **DAT** ⇒ do la **nhieu tai** 25 ca song song (G97) ⇒ Dot 34 do lai
+  **mot minh** truoc khi ket luan.
+- `twin-dot31:300` phu thuoc user tam da xoa — **test thiet ke sai**, phai tu tao/xoa trong test.
+⇒ **Ten test khong phai bang chung** ("operator1 (0 gan)" trong ten ≠ DB doi). Doc anh that + DB that.
+
+**Con mo:** `?xem=robot:N|station:N` tren `/twin` bi **nuot im lang** (`dichManRieng` tra `null` — G67 lop cu)
+· `useTrangThaiTwin` van tra `nganNhung`/`ghiXem` 0 cho goi (ghim boi `nhungTaiCho.dom`) · nhanh
+`cap==="line"|"may"` trong `TwinVanHanh` (`:678`, `:1776-1800`, `:3502`) khong the toi.
+
+**Dot 34 (giao tiep):** Pareto **#1** (server `CommandMachineNode.tsTrangThai` + `mapMachineStatus` gate tuoi;
+`assetCockpit connected` gate tuoi; client `tsTrangThaiTuIssues` uu tien `ts` that; `kpiNoiLogic` dem cung don
+vi DaiCanhBao) + **QD-24** (NganMoPhong → TwinLine) + **e2e cu 7 ca (a)** + `twin-dot31:300` tu tao user.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
