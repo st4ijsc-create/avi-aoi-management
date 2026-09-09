@@ -141,12 +141,16 @@ describe("★★★ ④ TwinLine — QĐ-23 #2 + #5 + Pareto #9", () => {
       "<ThanManLine lineId={lineId} camUrl={camUrl} duongVe={duongVe} moPhongMoBanDau={moPhongMoBanDau} />",
     );
   });
-  it("★★★ `khungNhin` = `camUrl ? khungNhinTuCamera(camUrl) : khungNhinLine(…)` — `?cam=` THẮNG khung theo cấp", () => {
-    const i = LINE.indexOf("const khungNhin = useMemo");
+  it("★★★ `khungNhinTho` = `camUrl ? khungNhinTuCamera(camUrl) : khungNhinLine(…)` — `?cam=` THẮNG khung theo cấp (Đợt 35: + bộ ổn định theo giá trị)", () => {
+    // Đợt 35 (#5/#6): biểu thức sống ở `khungNhinTho`; `khungNhin` chỉ là bản ổn định theo GIÁ TRỊ
+    // (`DieuKhien` tween theo tham chiếu). `?cam=` vẫn phải THẮNG khung theo cấp.
+    const i = LINE.indexOf("const khungNhinTho = useMemo");
+    expect(i).toBeGreaterThan(-1);
     const than = LINE.slice(i, LINE.indexOf("\n  );", i));
     expect(than).toContain("khungNhinTuCamera(camUrl)");
     expect(than).toContain("khungNhinLine(");
     expect(than.indexOf("khungNhinTuCamera")).toBeLessThan(than.indexOf("khungNhinLine("));
+    expect(LINE).toContain("const khungNhin = useMemo(() => khungNhinTho, [khoaKhungNhin])");
   });
   it("★ G37 giữ: thân KHÔNG `useRoute`/`useSearch`/`useHistoryState`", () => {
     const than = LINE.slice(LINE.indexOf("export function ThanManLine"));
