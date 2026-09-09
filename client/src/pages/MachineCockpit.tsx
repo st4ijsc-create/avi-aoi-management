@@ -948,7 +948,9 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
 
             {/* ── HEALTH / PdM ── */}
             <TabsContent value="health">
-              <SectionCard icon={<HeartPulse className="h-4 w-4" />} title={t("cockpit.tabHealth", "Health / PdM")} description={d.health.source}>
+              {/* ★ Đợt 36: `d.health.source` ("predictiveMaintenanceService.computeFailureRisk + …") cùng lớp
+                  chuỗi-kỹ-thuật với tab 3D — không render. */}
+              <SectionCard icon={<HeartPulse className="h-4 w-4" />} title={t("cockpit.tabHealth", "Health / PdM")}>
                 {!d.health.available || !d.health.value ? (
                   <EmptyState title={t("cockpit.noHealth", "No health data")} description={t("cockpit.noHealthHint", "No PdM risk / reliability data for this machine yet.")} />
                 ) : (
@@ -994,7 +996,8 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
 
             {/* ── OEE ── */}
             <TabsContent value="oee">
-              <SectionCard icon={<Gauge className="h-4 w-4" />} title={t("cockpit.tabOee", "OEE")} description={d.oee.source}>
+              {/* ★ Đợt 36: `d.oee.source` ("oeeService.getMachineOEELive") — không render, xem tab 3D. */}
+              <SectionCard icon={<Gauge className="h-4 w-4" />} title={t("cockpit.tabOee", "OEE")}>
                 {!d.oee.available || !d.oee.value ? (
                   <EmptyState title={t("cockpit.noOee", "No OEE data")} description={t("cockpit.noOeeHint", "No uptime / production data for this machine yet.")} />
                 ) : (
@@ -1150,7 +1153,11 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
 
             {/* ── 3D ── */}
             <TabsContent value="model3d">
-              <SectionCard icon={<Boxes className="h-4 w-4" />} title={t("cockpit.tab3d", "3D model")} description={d.model3d.source}>
+              {/* ★ Đợt 36 (twin3d Pareto #8): `d.*.source` là DẤU VẾT NGUỒN cho lập trình viên
+                  ("twin/modelRegistry.resolveModel({machineId})", docblock assetCockpitService.ts:20)
+                  — QA Đợt 32 a2 thấy nó in nguyên văn dưới tiêu đề thẻ ở `/twin/may/14` tab 3D.
+                  Không render cho người dùng; hợp đồng API giữ nguyên (consumer khác vẫn đọc được). */}
+              <SectionCard icon={<Boxes className="h-4 w-4" />} title={t("cockpit.tab3d", "3D model")}>
                 <Model3DPane
                   model3d={d.model3d}
                   name={d.identity.name}

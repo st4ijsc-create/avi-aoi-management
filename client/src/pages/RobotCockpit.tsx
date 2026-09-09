@@ -810,7 +810,9 @@ export function RobotCockpitBody({
 
             {/* ── 3D ── */}
             <TabsContent value="model3d">
-              <SectionCard icon={<Boxes className="h-4 w-4" />} title={t("cockpit.tab3d", "3D model")} description={d.model3d.source}>
+              {/* ★ Đợt 36 (twin3d Pareto #8): `d.model3d.source` = 'twin/modelRegistry.resolveModel({equipmentId:"robot:{id}"})'
+                  là dấu vết nguồn cho lập trình viên — không render (cùng bản vá với MachineCockpit). */}
+              <SectionCard icon={<Boxes className="h-4 w-4" />} title={t("cockpit.tab3d", "3D model")}>
                 <Model3DPane model3d={d.model3d} t={t} />
               </SectionCard>
             </TabsContent>
