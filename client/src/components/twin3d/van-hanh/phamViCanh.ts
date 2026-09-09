@@ -23,7 +23,7 @@ import {
   type BBox,
   type DiemScene,
 } from "../heToaDo";
-import type { CapPhamVi, PhamVi } from "./duongDanTwin";
+import type { CapPhamVi, PhamVi, TuTheCamera } from "./duongDanTwin";
 import { byteMau } from "./byteMau";
 
 /** Thời lượng tween khi chuyển cấp (§10C.2). */
@@ -248,6 +248,30 @@ export function khungNhinLine(
         : [tam.x + luiPhu, tam.y + cao, tam.z],
     muc: [tam.x, tam.y, tam.z],
     banKinh,
+  };
+}
+
+/**
+ * ★★★ ĐỢT 33 (Pareto #9) — `?cam=` TRÊN MÀN LINE/MÁY KHÔNG ĐƯỢC NUỐT IM LẶNG.
+ *
+ * Đợt 32 a3b đo `/twin/line/2?cam=10,5,10,0,0` ⇒ `camDoiCamera: false`: tham số
+ * đọc được (`docCamera`), ghi được, nhưng **không màn mới nào dùng nó** — đúng lớp
+ * G67 "tính năng chết ở tầng đầu tiên". Hàm này biến tư thế camera trong URL
+ * thành một `KhungNhin` để `CanhVanHanh` bay tới, y như khung nhìn theo cấp.
+ *
+ * ★ `muc.y = 0`: `TuTheCamera` chỉ mang `mucX`/`mucZ` (mục ngắm trên sàn) — đó là
+ *   hợp đồng URL từ §9.4, không mở rộng ở đây (G40).
+ * ★ `banKinh` = khoảng cách camera↔mục (sàn 1 m): người gọi hiện không dùng nó để
+ *   đặt `far` (CanhVanHanh lấy theo cỡ sàn), giữ để hợp đồng `KhungNhin` không
+ *   có trường "vô nghĩa".
+ */
+export function khungNhinTuCamera(cam: TuTheCamera): KhungNhin {
+  const dx = cam.x - cam.mucX;
+  const dz = cam.z - cam.mucZ;
+  return {
+    viTri: [cam.x, cam.y, cam.z],
+    muc: [cam.mucX, 0, cam.mucZ],
+    banKinh: Math.max(1, Math.hypot(dx, cam.y, dz)),
   };
 }
 

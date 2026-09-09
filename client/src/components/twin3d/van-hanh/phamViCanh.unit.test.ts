@@ -21,10 +21,12 @@ import {
   dungBreadcrumb,
   khungNhinCho,
   khungNhinLine,
+  khungNhinTuCamera,
   phaVeNen,
   trongPhamVi,
   type VatTheCoPhamVi,
 } from "./phamViCanh";
+import { docCamera } from "./duongDanTwin";
 import type { CapPhamVi } from "./duongDanTwin";
 
 function vt(sua: Partial<VatTheCoPhamVi> = {}): VatTheCoPhamVi {
@@ -338,5 +340,42 @@ describe("phaVeNen — ★ 'mờ đi' phải là PHA VỀ NỀN, không phải L
 describe("hằng số", () => {
   it("tween đổi cấp là 500 ms (§10C.2)", () => {
     expect(TWEEN_DOI_CAP_MS).toBe(500);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 33 (Pareto #9) — `?cam=` thành KhungNhin, không bị nuốt              */
+/* ══════════════════════════════════════════════════════════════════════════ */
+describe("★★★ Đợt 33 — khungNhinTuCamera: `?cam=` của deep-link trở thành khung nhìn thật", () => {
+  it("vị trí = (x,y,z) của URL; mục = (mucX, 0, mucZ) — mục ngắm nằm trên sàn theo hợp đồng §9.4", () => {
+    const k = khungNhinTuCamera({ x: 19.2, y: 18, z: 30, mucX: 19.2, mucZ: 14.8 });
+    expect(k.viTri).toEqual([19.2, 18, 30]);
+    expect(k.muc).toEqual([19.2, 0, 14.8]);
+  });
+  it("★ đi thẳng từ chuỗi URL qua `docCamera` (cùng bộ đọc với /twin) — không bộ đọc thứ hai", () => {
+    const cam = docCamera("0,10,14.8,19.2,14.8")!;
+    expect(cam).not.toBeNull();
+    const k = khungNhinTuCamera(cam);
+    expect(k.viTri).toEqual([0, 10, 14.8]);
+    expect(k.muc).toEqual([19.2, 0, 14.8]);
+  });
+  it("banKinh = khoảng cách camera↔mục, sàn 1 m — không bao giờ 0/NaN (G11)", () => {
+    expect(khungNhinTuCamera({ x: 3, y: 4, z: 0, mucX: 0, mucZ: 0 }).banKinh).toBe(5);
+    expect(khungNhinTuCamera({ x: 0, y: 0, z: 0, mucX: 0, mucZ: 0 }).banKinh).toBe(1);
+  });
+  it("★★★ ĐỐI CHỨNG — hai tư thế KHÁC nhau cho hai khung nhìn KHÁC nhau (phép đo K7 dựa trên điều này)", () => {
+    const a = khungNhinTuCamera(docCamera("19.2,18,30,19.2,14.8")!);
+    const b = khungNhinTuCamera(docCamera("0,10,14.8,19.2,14.8")!);
+    expect(a.viTri).not.toEqual(b.viTri);
+    // và KHÁC khung nhìn theo cấp của một bbox quanh chuyền — nếu không, `?cam=` "có tác dụng" mà không thấy gì
+    const theoCap = khungNhinCho(
+      bboxTuDiem([
+        { x: 5.45, y: 0, z: 14.8 },
+        { x: 32.95, y: 2, z: 15.8 },
+      ]),
+      "line",
+    );
+    expect(theoCap).not.toBeNull();
+    expect(a.viTri).not.toEqual(theoCap!.viTri);
   });
 });

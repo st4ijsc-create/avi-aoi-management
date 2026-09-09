@@ -40,6 +40,12 @@ export interface CuaSoDoTwin3d {
     /** Số lần context được khôi phục. */
     khoiPhuc: number;
   };
+  /**
+   * ★ Đợt 33 — tư thế camera SAU MỖI lần điều khiển dừng / tween kết thúc
+   *   (`CanhVanHanh.camDoi`). Cửa sổ đo cho `?cam=` (Pareto #9): không có nó, cách
+   *   duy nhất biết camera đã bay là so vị trí nhãn — gián tiếp và mù khi 0 nhãn.
+   */
+  __tuTheCamera?: { x: number; y: number; z: number; mucX: number; mucZ: number };
 }
 
 type WindowDo = Window & CuaSoDoTwin3d;

@@ -41,6 +41,7 @@ import {
   LopNhan,
   TRANG_THAI_CHON_RONG,
   taoDieuKhienQuay,
+  type CuaSoDoTwin3d,
   type MayTrongLo,
   type NhanTheGioi,
   type TrangThaiChon,
@@ -502,7 +503,18 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
 
   const onCameraDoiNgoai = props.onCameraDoi;
   const camDoi = useCallback(
-    (viTri: THREE.Vector3, muc: THREE.Vector3) => onCameraDoiNgoai?.(viTri, muc),
+    (viTri: THREE.Vector3, muc: THREE.Vector3) => {
+      // ★ Đợt 33 — cửa sổ đo `__tuTheCamera` (xem `CuaSoDoTwin3d` ở KhungCanh.tsx):
+      //   ghi cho MỌI màn, kể cả màn không truyền `onCameraDoi` (Line/Máy).
+      (window as Window & CuaSoDoTwin3d).__tuTheCamera = {
+        x: viTri.x,
+        y: viTri.y,
+        z: viTri.z,
+        mucX: muc.x,
+        mucZ: muc.z,
+      };
+      onCameraDoiNgoai?.(viTri, muc);
+    },
     [onCameraDoiNgoai],
   );
 
