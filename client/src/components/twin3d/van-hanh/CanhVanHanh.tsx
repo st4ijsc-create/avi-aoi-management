@@ -124,6 +124,11 @@ export interface CanhVanHanhProps {
   ariaLabel: string;
   /** Báo camera vừa đổi — tầng trên ghi vào URL bằng `replaceState` (§9.4). */
   onCameraDoi?: (viTri: THREE.Vector3, muc: THREE.Vector3) => void;
+  /**
+   * ★ Đợt 35 (Pareto #4) — sàn chiều cao khung, chuyển thẳng xuống `KhungCanh.sanCaoPx`.
+   * Chỉ màn Máy truyền (`SAN_KHOI_CANH_MAY_PX`); bỏ trống ⇒ mặc định 320 của kit.
+   */
+  sanCaoPx?: number;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -574,6 +579,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
       cuongDoHuong={toi ? 1.0 : 1.3}
       viTriDenHuong={[banKinh, banKinh * 1.4, banKinh * 0.6]}
       chuMatContext={props.chuMatContext}
+      sanCaoPx={props.sanCaoPx}
       data-testid="khoi-canh-3d"
     >
       <NoiDung {...props} toi={toi} />

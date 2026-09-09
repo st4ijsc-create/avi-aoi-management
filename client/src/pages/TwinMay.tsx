@@ -96,7 +96,7 @@
  * `validId` bên trong; ở đây ta không dựa vào may mắn ấy.
  */
 
-import { Suspense, useCallback, useEffect, useMemo, useRef } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useRoute, useSearch } from "wouter";
 import { useHistoryState } from "wouter/use-browser-location";
@@ -150,7 +150,10 @@ import {
 } from "@/components/twin3d/van-hanh/sucKhoeMay";
 import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
 
+import { chieuCaoTruDinh, useTruDinhKhung } from "@/components/twin3d/van-hanh/useTruDinhKhung";
 import {
+  SAN_KHOI_CANH_MAY_PX,
+  chieuCaoKhoiCanhMay,
   idMayTuDuongDan,
   khungNhinMay,
   lineCuaMayTheoTram,
@@ -251,22 +254,8 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
    *   trị của màn TRƯỚC cho màn SAU đọc — một khớp nối ẩn.
    */
   const khungRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const el = khungRef.current;
-    if (!el) return;
-    const doLai = () => {
-      const tren = el.getBoundingClientRect().top;
-      el.style.setProperty("--twin-may-top", `${Math.max(0, Math.round(tren))}px`);
-    };
-    doLai();
-    const ro = new ResizeObserver(doLai);
-    ro.observe(document.body);
-    window.addEventListener("resize", doLai);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", doLai);
-    };
-  }, []);
+  // ★ Đợt 35 — MỘT hook cho ba màn (G12), tên biến vẫn RIÊNG. Xem docblock `useTruDinhKhung`.
+  useTruDinhKhung(khungRef, "--twin-may-top");
 
   /* ── Nhà máy ─────────────────────────────────────────────────────────── */
   const factoriesQ = trpc.factory.list.useQuery();
@@ -593,6 +582,34 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
   const chuaDatCho =
     !dangTai && canhQ.isSuccess && !canhQ.isFetching && mayNay !== null && mucTieu === null;
 
+  /*
+   * ★★★ ĐỢT 35 (Pareto #4) — CHIỀU CAO KHỐI CẢNH THEO PHẦN CÒN LẠI, KHÔNG `clamp(320px, 36vh, 360px)`.
+   *   QA Đợt 32 ở 1280×720: cột trái còn 595 px, sàn 320 ⇒ cảnh 320 > cockpit 275 — vi phạm bất biến
+   *   `cockpit.h > khoiCanh.h` (e2e Đợt 31 ghim ở 1600×900). ĐO chiều cao cột trái bằng `ResizeObserver`
+   *   rồi để `chieuCaoKhoiCanhMay` (thuần, có test) kẹp: ở 900 vẫn **324/451** như Đợt 31, ở 720 ra 259/336.
+   *   Effect phụ thuộc `[lyDo, dangTai]` vì cột trái chỉ mount ở nhánh `mo` — mount xong mới đo được.
+   */
+  const cotTraiRef = useRef<HTMLDivElement | null>(null);
+  const [doCotTrai, datDoCotTrai] = useState<{ caoConLai: number; caoVp: number } | null>(null);
+  useEffect(() => {
+    const el = cotTraiRef.current;
+    if (!el) return;
+    const doLai = () =>
+      datDoCotTrai({ caoConLai: el.getBoundingClientRect().height, caoVp: window.innerHeight });
+    doLai();
+    const ro = new ResizeObserver(doLai);
+    ro.observe(el);
+    window.addEventListener("resize", doLai);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", doLai);
+    };
+  }, [lyDo, dangTai]);
+  const caoKhoiCanhPx = chieuCaoKhoiCanhMay(
+    doCotTrai?.caoConLai ?? null,
+    doCotTrai?.caoVp ?? (typeof window !== "undefined" ? window.innerHeight : 900),
+  );
+
   const tenMay =
     mayNay?.ten || mayNay?.ma || t("twin3d.may.maySo", "Máy #{{n}}", { n: machineId });
   const tenLine =
@@ -605,7 +622,7 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
     <div
       ref={khungRef}
       className="relative flex min-h-0 flex-col overflow-hidden"
-      style={{ height: "calc(100vh - var(--twin-may-top, 5rem))" }}
+      style={{ height: chieuCaoTruDinh("--twin-may-top") }}
       data-testid="man-twin-may"
     >
       {/* ── Thanh trên: breadcrumb ‹ Nhà máy › Line N › Máy ─────────────── */}
@@ -677,21 +694,24 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
       ) : (
         <div className="flex min-h-0 flex-1">
           {/* ── Cột trái: cảnh 3D NHỎ (trên) + cockpit 2D (dưới, chiếm phần lớn) ── */}
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div ref={cotTraiRef} className="flex min-h-0 flex-1 flex-col">
             {/*
               ★★★ TRẦN CHIỀU CAO cho cảnh 3D — §15.7.1: cấp Máy ≈ 20 % viewport.
-                `shrink-0` + `clamp(…vh…)`; KHÔNG `flex-1`. Cho nó `flex-1` là
-                đảo ngược kết luận §14.8 và đẩy cockpit 2D xuống dưới mép (G41).
-              ⚠ SÀN 320 px là của `KhungCanh` (`KhungCanh.tsx:242` ép
-                `minHeight: 320`). Bản đầu đặt `clamp(220px, 34vh, 340px)` = 306
-                ở 900 px ⇒ canvas 320 TRÀN 14 px xuống dưới header cockpit —
-                bbox DOM của khung vẫn "đúng", chỉ ảnh + bbox của CANVAS bắt
-                được. Nên sàn ≥ 320 và `overflow-hidden` để khung là trần thật.
+                `shrink-0` + chiều cao TÍNH (`chieuCaoKhoiCanhMay`); KHÔNG `flex-1`.
+                Cho nó `flex-1` là đảo ngược kết luận §14.8 và đẩy cockpit 2D
+                xuống dưới mép (G41).
+              ⚠ SÀN của canvas phải ≤ SÀN của khung, nếu không canvas CHUI: Đợt 31
+                đặt khung 306 < sàn kit 320 ⇒ canvas TRÀN 14 px xuống dưới header
+                cockpit — bbox DOM của khung vẫn "đúng", chỉ ảnh + bbox của CANVAS
+                bắt được. Đợt 35: khung ≥ `SAN_KHOI_CANH_MAY_PX` (240) và canvas
+                nhận CÙNG sàn ấy qua `sanCaoPx` (một hằng, hai chỗ đọc — G12);
+                `overflow-hidden` để khung là trần thật.
             */}
             <div
               className="relative shrink-0 overflow-hidden"
-              style={{ height: "clamp(320px, 36vh, 360px)" }}
+              style={{ height: caoKhoiCanhPx }}
               data-testid="khoi-canh-may"
+              data-cao-px={caoKhoiCanhPx}
             >
               {chuaDatCho ? (
                 <div className="flex h-full items-center justify-center p-4" data-testid="may-chua-dat-cho">
@@ -719,6 +739,8 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
                          lý do). `vung` không truyền (D-12, 0 hàng). */
                     dongChay={null}
                     wip={[]}
+                    /* ★ Đợt 35 (#4): sàn canvas = sàn khung (240) — xem chú thích khối `khoi-canh-may`. */
+                    sanCaoPx={SAN_KHOI_CANH_MAY_PX}
                     vienSucKhoe={vienSucKhoeCanh}
                     machineIdChon={machineId}
                     /* ★ Bấm hàng xóm ⇒ ĐỔI MÁY tại chỗ (§15.3.3 đường ra ⑥: "chọn máy

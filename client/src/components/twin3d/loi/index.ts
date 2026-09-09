@@ -6,7 +6,7 @@
  * sau đổi cấu trúc bên trong mà không phải sửa mọi màn.
  */
 
-export { KhungCanh, DPR_TRAN, type KhungCanhProps, type CuaSoDoTwin3d } from "./KhungCanh";
+export { KhungCanh, DPR_TRAN, SAN_CAO_KHUNG_CANH_PX, type KhungCanhProps, type CuaSoDoTwin3d } from "./KhungCanh";
 export { CanhNhaMay, type CanhNhaMayProps } from "./CanhNhaMay";
 export { LoBatchMay, type MayTrongLo, type LoBatchMayProps } from "./LoBatchMay";
 export { LopNhan, type NhanTheGioi, type LopNhanProps, type WindowCoDo } from "./LopNhan";

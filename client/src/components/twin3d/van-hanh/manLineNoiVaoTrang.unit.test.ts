@@ -371,11 +371,19 @@ describe("★★★ ⑧c Khung phải TRỪ vỏ ứng dụng bằng số ĐO, k
     expect(khoi).not.toMatch(/className="[^"]*\bh-full\b/);
   });
 
-  it("★★★ chiều cao = `100vh` trừ vị trí ĐO ĐƯỢC của chính khung", () => {
-    expect(MA).toContain("calc(100vh - var(--twin-line-top");
-    // ★ Có một `useEffect` THẬT ghi biến ấy — nếu không, `5rem` mồi thành số CUỐI.
-    expect(MA).toContain("getBoundingClientRect().top");
-    expect(MA).toContain('setProperty("--twin-line-top"');
+  it("★★★ chiều cao = `100vh` trừ vị trí ĐO ĐƯỢC của chính khung (Đợt 35: qua hook `useTruDinhKhung`, G12)", () => {
+    expect(MA).toContain('chieuCaoTruDinh("--twin-line-top")');
+    expect(MA).toContain('useTruDinhKhung(khungRef, "--twin-line-top")');
+    // ★ Hook có một `useEffect` THẬT đo `top` rồi ghi biến — nếu không, `5rem` mồi thành số CUỐI.
+    //   Đọc từ CHÍNH tệp hook (đã tước chú thích), không tin tên hàm.
+    const hook = readFileSync(resolve(GOC, "src/components/twin3d/van-hanh/useTruDinhKhung.ts"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(hook).toContain("getBoundingClientRect().top");
+    expect(hook).toMatch(/setProperty\(tenBien,/);
+    expect(hook).toMatch(/return `calc\(100vh - var\(\$\{tenBien\}, 5rem\)\)`/);
+    // Trang KHÔNG còn bản chép tay của phép đo (một hook, ba màn).
+    expect(MA).not.toContain('setProperty("--twin-line-top"');
   });
 
   it("★ biến CSS RIÊNG, không dùng chung `--twin-top` của `/twin`", () => {

@@ -114,7 +114,20 @@ export function DaiLine({
         ) : null}
       </div>
 
-      <ol className="flex items-stretch gap-1 overflow-x-auto pb-1" aria-label={t("twin3d.vanHanh.daiLine", "Dải chuyền")}>
+      {/*
+        ★★★ ĐỢT 35 (Pareto #4) — Ô TRẠM MỘT DÒNG Ở MỌI BỀ RỘNG; THIẾU CHỖ THÌ CUỘN NGANG, KHÔNG GÃY CHỮ.
+          Đo 1280×720 (`.qa-dot35/truoc/e3-line-2-1280x720.json`): 12 ô cần 948 px, `ol` có 944 ⇒ các `li`
+          bị ép co, và vì chữ "1 machines" ĐƯỢC PHÉP xuống dòng, 11/12 ô gãy thành 2 dòng (cao 70 thay vì
+          55) — chỉ ô CONVEYOR có mã dài đủ rộng. `min-w-16` KHÔNG phải nguyên nhân (QA Đợt 32 đoán sai):
+          `min-width` chỉ chặn co dưới 64 px, còn ô đang rộng hơn thế mà vẫn gãy.
+          ⇒ `whitespace-nowrap` trên ô: min-content của ô = hàng rộng nhất, `li` không co được nữa và `ol`
+          cuộn ngang đúng như nó khai (`overflow-x-auto`). Thanh cuộn `scrollbar-width: thin` để dải
+          không cao thêm 17 px. Cuộn ngang là câu thật ("chuyền dài hơn màn"); gãy chữ là câu sai.
+      */}
+      <ol
+        className="flex items-stretch gap-1 overflow-x-auto pb-1 [scrollbar-width:thin]"
+        aria-label={t("twin3d.vanHanh.daiLine", "Dải chuyền")}
+      >
         {daSap.map((s, i) => {
           const kieu = mauChoTrangThai(s.trangThai);
           const mau = giaiMauCanh(kieu.token) ?? "#94a3b8";
@@ -134,7 +147,7 @@ export function DaiLine({
                 title={`${s.ma} — ${s.ten} — ${t(kieu.khoaNhan)}${
                   coWip ? ` — WIP ${s.soWip == null ? "—" : s.soWip}${s.nghen ? " ★" : ""}` : ""
                 }`}
-                className={`min-w-16 rounded border px-1.5 py-1 text-left focus-visible:outline focus-visible:outline-2 ${
+                className={`shrink-0 whitespace-nowrap rounded border px-1 py-1 text-left focus-visible:outline focus-visible:outline-2 ${
                   daChon ? "ring-2 ring-primary" : "hover:bg-accent/60"
                 }`}
                 style={{ borderColor: mau }}

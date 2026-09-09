@@ -395,3 +395,47 @@ export function cauChoLyDoManMay(lyDo: Exclude<LyDoManMay, "mo">): { khoa: strin
   }
   return cauChoLyDoNgan(lyDo);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ⑩ ĐỢT 35 (Pareto #4) — CHIỀU CAO KHỐI CẢNH 3D THEO PHẦN CÒN LẠI               */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * SÀN chiều cao khối cảnh 3D ở màn Máy (px). **240**, thấp hơn sàn 320 của kit.
+ *
+ * ★★★ VÌ SAO 240 CHỨ KHÔNG 320 — ĐO ĐƯỢC (QA Đợt 32, 1280×720):
+ *   phần còn lại cho cột trái = 720 − 125 = **595 px**; sàn 320 của `KhungCanh`
+ *   ⇒ cảnh 320, cockpit **275 < 320** — vi phạm bất biến `cockpit.h > khoiCanh.h`
+ *   mà e2e Đợt 31 ghim ở 1600×900 (canvas 324 / cockpit 451). §15.3.3: cấp Máy
+ *   chỉ ~20–36 % viewport; cockpit 2D là phần chính. Với sàn 240 bất biến giữ
+ *   được tới viewport cao **≥ 606 px** (240·2 + 125); dưới nữa sàn thắng — cảnh
+ *   3D không đọc được dưới 240 px, và đó là một giới hạn nói ra chứ không giấu.
+ * ⚠ KHÔNG hạ sàn của kit (`SAN_CAO_KHUNG_CANH_PX = 320`): `/twin` và studio
+ *   dựa vào nó. Sàn này truyền qua `CanhVanHanh.sanCaoPx` chỉ ở màn Máy.
+ */
+export const SAN_KHOI_CANH_MAY_PX = 240;
+/** TRẦN chiều cao khối cảnh 3D ở màn Máy (px) — giữ nguyên số của Đợt 31. */
+export const TRAN_KHOI_CANH_MAY_PX = 360;
+/** Tỉ lệ viewport dành cho cảnh 3D (36 vh — §15.7.1, giữ nguyên số của Đợt 31). */
+export const TI_LE_KHOI_CANH_MAY = 0.36;
+
+/**
+ * Chiều cao khối cảnh 3D (px) cho màn Máy — CLAMP THEO PHẦN CÒN LẠI, không theo `vh` mù.
+ *
+ *   canvas = clamp(SÀN, min(TỈ LỆ·vh, ⌊(cònLại − 1)/2⌋), TRẦN)
+ *
+ * Vế `⌊(cònLại − 1)/2⌋` là bất biến `cockpit.h > khoiCanh.h` viết thành số:
+ * cockpit = cònLại − canvas > canvas ⇔ canvas < cònLại/2. Khi chưa đo được
+ * `caoConLai` (khung hình đầu, trước `ResizeObserver`) rơi về `TỈ LỆ·vh` kẹp
+ * [SÀN, TRẦN] — cùng hình dạng `clamp(…, 36vh, 360px)` cũ, chỉ khác sàn.
+ *
+ * Ghim bằng số Đợt 31 (1600×900: cònLại 775 ⇒ **324**, cockpit 451) và số QA
+ * Đợt 32 (1280×720: cònLại 595 ⇒ **259**, cockpit 336 > 259).
+ */
+export function chieuCaoKhoiCanhMay(caoConLaiPx: number | null, caoViewportPx: number): number {
+  const theoVh = TI_LE_KHOI_CANH_MAY * Math.max(0, caoViewportPx);
+  const tranConLai =
+    caoConLaiPx == null || !Number.isFinite(caoConLaiPx) ? Infinity : Math.floor((caoConLaiPx - 1) / 2);
+  const muon = Math.min(TRAN_KHOI_CANH_MAY_PX, theoVh, tranConLai);
+  return Math.round(Math.max(SAN_KHOI_CANH_MAY_PX, muon));
+}

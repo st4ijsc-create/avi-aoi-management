@@ -407,8 +407,8 @@ describe("★★★ ⑧ lyDoMoManMay — uỷ thác `lyDoNganNhung`, cùng thứ
 /* ⑨ ★★★ G91 — BỀ MẶT CÔNG KHAI ĐÓNG: KHÔNG WIP, KHÔNG đường tâm, KHÔNG đếm      */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
-describe("★★★ ⑨ G91 — `manMay` chỉ xuất đúng 9 hàm + 1 hằng; thêm WIP/đếm ở đây là lặp G12", () => {
-  it("danh sách export ĐÓNG (Đợt 34 D: +`cauChoLyDoManMay`)", () => {
+describe("★★★ ⑨ G91 — `manMay` chỉ xuất đúng 10 hàm + 4 hằng; thêm WIP/đếm ở đây là lặp G12", () => {
+  it("danh sách export ĐÓNG (Đợt 34 D: +`cauChoLyDoManMay` · Đợt 35 #4: +bố cục khối cảnh ⑩)", () => {
     expect(Object.keys(manMay).sort()).toEqual(
       [
         "HE_SO_NOI_KHUNG_MAY",
@@ -421,6 +421,11 @@ describe("★★★ ⑨ G91 — `manMay` chỉ xuất đúng 9 hàm + 1 hằng; 
         "tomTatMay",
         "lyDoMoManMay",
         "cauChoLyDoManMay",
+        // ⑩ Đợt 35 — chiều cao khối cảnh theo phần còn lại (bất biến cockpit > cảnh ở 720).
+        "SAN_KHOI_CANH_MAY_PX",
+        "TRAN_KHOI_CANH_MAY_PX",
+        "TI_LE_KHOI_CANH_MAY",
+        "chieuCaoKhoiCanhMay",
       ].sort(),
     );
   });

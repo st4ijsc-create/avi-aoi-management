@@ -144,6 +144,7 @@ import { tinhKpiNoi, type MayTongQuanKpi } from "@/components/twin3d/van-hanh/kp
 //    `listWorkflows`/`simulate`), không thêm mutation (§15.6 D-1).
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useMoPhongTwin } from "@/components/twin3d/van-hanh/useMoPhongTwin";
+import { chieuCaoTruDinh, useTruDinhKhung } from "@/components/twin3d/van-hanh/useTruDinhKhung";
 import { NganMoPhong } from "@/components/twin3d/van-hanh/NganMoPhong";
 import {
   dungDauVaoWhatIf,
@@ -297,23 +298,8 @@ export function ThanManLine({
    *   sau đọc — một khớp nối ẩn giữa hai thứ đáng lẽ độc lập.
    */
   const khungRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const el = khungRef.current;
-    if (!el) return;
-    const doLai = () => {
-      const tren = el.getBoundingClientRect().top;
-      el.style.setProperty("--twin-line-top", `${Math.max(0, Math.round(tren))}px`);
-    };
-    doLai();
-    // ★ Vỏ ứng dụng đổi chiều cao khi thu/mở sidebar hay đổi cỡ cửa sổ.
-    const ro = new ResizeObserver(doLai);
-    ro.observe(document.body);
-    window.addEventListener("resize", doLai);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", doLai);
-    };
-  }, []);
+  // ★ Đợt 35 — MỘT hook cho ba màn (G12), tên biến vẫn RIÊNG. Xem docblock `useTruDinhKhung`.
+  useTruDinhKhung(khungRef, "--twin-line-top");
 
   /* ── Nhà máy ─────────────────────────────────────────────────────────── */
   const factoriesQ = trpc.factory.list.useQuery();
@@ -789,7 +775,7 @@ export function ThanManLine({
     <div
       ref={khungRef}
       className="relative flex min-h-0 flex-col overflow-hidden"
-      style={{ height: "calc(100vh - var(--twin-line-top, 5rem))" }}
+      style={{ height: chieuCaoTruDinh("--twin-line-top") }}
       data-testid="man-twin-line"
     >
       {/* ── Thanh trên: breadcrumb + tiêu đề ─────────────────────────── */}

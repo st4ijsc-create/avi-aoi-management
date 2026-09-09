@@ -23,7 +23,7 @@
  *   một thời điểm; chỗ đó thuộc về khung cảnh chính của Đợt 4). Xem trước của Đợt 3
  *   là SVG đúng tỉ lệ — đủ để thấy tầng chồng nhau và đối chiếu hình người 1,7 m.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Building2, FileUp, LayoutGrid } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -41,9 +41,18 @@ import { isScopeEmpty } from "@/lib/scopeEmpty";
 import DungNhaXuong from "@/components/twin3d/thiet-ke/DungNhaXuong";
 import NhapBanVe from "@/components/twin3d/thiet-ke/NhapBanVe";
 import XuongThietKe from "@/components/twin3d/thiet-ke/XuongThietKe";
+import { chieuCaoTruDinh, useTruDinhKhung } from "@/components/twin3d/van-hanh/useTruDinhKhung";
 
 export default function TwinStudio() {
   const { t } = useTranslation();
+  /*
+   * ★★★ ĐỢT 35 (Pareto #4) — CHIỀU CAO ĐO TỪ VỊ TRÍ THẬT, KHÔNG `h-[calc(100vh-5rem)]`.
+   *   QA Đợt 32 đo: đỉnh khung này là **133 px** (không phải 80) ⇒ đáy 953 > 900 và 773 > 720,
+   *   thư viện asset/bảng thuộc tính bị cắt dưới mép. Cùng bài học Đợt 30 (Line) — xem docblock
+   *   `useTruDinhKhung`. Biến RIÊNG `--twin-studio-top`.
+   */
+  const khungRef = useRef<HTMLDivElement | null>(null);
+  useTruDinhKhung(khungRef, "--twin-studio-top");
   const factoriesQ = trpc.factory.list.useQuery();
   const factories = useMemo(
     () => (factoriesQ.data ?? []) as Array<{ id: number; name?: string; code?: string }>,
@@ -136,7 +145,12 @@ export default function TwinStudio() {
   }, [toaNhaDau, chiTietQ.data]);
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] flex-col gap-3 p-4" data-testid="man-twin-studio">
+    <div
+      ref={khungRef}
+      className="flex flex-col gap-3 p-4"
+      style={{ height: chieuCaoTruDinh("--twin-studio-top") }}
+      data-testid="man-twin-studio"
+    >
       <header className="flex shrink-0 flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground">{t("twin3d.studio.tieuDe")}</h1>

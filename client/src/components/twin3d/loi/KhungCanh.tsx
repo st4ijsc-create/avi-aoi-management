@@ -75,7 +75,21 @@ export interface KhungCanhProps {
   onMatContext?: () => void;
   onKhoiPhucContext?: () => void;
   "data-testid"?: string;
+  /**
+   * ★ ĐỢT 35 (Pareto #4) — SÀN chiều cao khung (px). Mặc định {@link SAN_CAO_KHUNG_CANH_PX}.
+   *
+   * Vì sao thành prop: màn Máy ở 1280×720 chỉ còn 595 px cho cả cảnh 3D lẫn cockpit
+   * 2D; sàn 320 cứng làm cảnh 320 > cockpit 275 — **vi phạm bất biến `cockpit.h >
+   * khoiCanh.h`** mà e2e Đợt 31 ghim ở 1600×900 (§15.3.3: cấp Máy chỉ ~20–36 %).
+   * Màn ấy truyền sàn riêng (`SAN_KHOI_CANH_MAY_PX`, `manMay.ts`); mọi màn khác giữ 320.
+   * ⚠ KHÔNG hạ mặc định: `/twin` và studio dựa vào 320 (Đợt 31 đo canvas tràn 14 px
+   *   khi khung 306 < 320 — sàn của khung phải ≥ sàn của canvas, hoặc canvas chui).
+   */
+  sanCaoPx?: number;
 }
+
+/** Sàn chiều cao mặc định của khung (px) — G91: một hằng có tên, test đọc từ đây. */
+export const SAN_CAO_KHUNG_CANH_PX = 320;
 
 /**
  * ĐẾM canvas sống toàn cục (RB-4). Biến ở module scope chứ không ở state React:
@@ -221,6 +235,7 @@ export function KhungCanh({
   onMatContext,
   onKhoiPhucContext,
   "data-testid": testId = "khoi-canh-3d",
+  sanCaoPx = SAN_CAO_KHUNG_CANH_PX,
 }: KhungCanhProps) {
   const [matContext, setMatContext] = useState(false);
 
@@ -245,7 +260,7 @@ export function KhungCanh({
     <div
       className={className}
       data-testid={testId}
-      style={{ position: "relative", width: "100%", height: "100%", minHeight: 320, background: mauNen }}
+      style={{ position: "relative", width: "100%", height: "100%", minHeight: sanCaoPx, background: mauNen }}
     >
       <Canvas
         frameloop="demand"

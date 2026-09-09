@@ -21,7 +21,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { phamViCuaManMay } from "./manMay";
+import { SAN_KHOI_CANH_MAY_PX, chieuCaoKhoiCanhMay, phamViCuaManMay } from "./manMay";
 import { trongPhamVi } from "./phamViCanh";
 
 const GOC = resolve(__dirname, "../../../..");
@@ -165,25 +165,33 @@ describe("★★★ ④ G87 + §15.7.1 — một canvas, và canvas KHÔNG đư�
     expect(MA).not.toContain("CanhVanHanh2D");
   });
 
-  it("★★★ khối canvas `shrink-0` + trần `vh`; KHÔNG `flex-1` — đừng phóng to 3D cho đẹp", () => {
+  it("★★★ khối canvas `shrink-0` + chiều cao TÍNH theo phần còn lại (Đợt 35 #4); KHÔNG `flex-1` — đừng phóng to 3D cho đẹp", () => {
     const khoi = theMo("khoi-canh-may");
     expect(khoi).toContain("shrink-0");
-    expect(khoi).toMatch(/clamp\([^)]*vh[^)]*\)/);
+    // Đợt 35: `clamp(320px, 36vh, 360px)` ⇒ `chieuCaoKhoiCanhMay(cònLại, vh)` — ở 720 cảnh 320 > cockpit 275 là lỗi QA Đợt 32.
+    expect(khoi).toMatch(/height:\s*caoKhoiCanhPx/);
+    expect(MA).toMatch(/const caoKhoiCanhPx = chieuCaoKhoiCanhMay\(/);
+    expect(khoi).not.toMatch(/clamp\(/);
     expect(khoi).not.toContain("flex-1");
   });
 
-  it("★★★ sàn khung ≥ 320 px (= `minHeight` của KhungCanh) và `overflow-hidden` — canvas không được tràn", () => {
+  it("★★★ sàn khung = sàn canvas — MỘT hằng `SAN_KHOI_CANH_MAY_PX` hai chỗ đọc, và `overflow-hidden` — canvas không được tràn", () => {
     /*
-     * Nghiệm thu ảnh lần đầu: `clamp(220px, …)` = 306 ở 900 px, canvas 320 tràn
-     * 14 px xuống header cockpit. bbox DOM của khung "đúng", chỉ bbox CANVAS +
-     * ảnh bắt được. Đọc `minHeight: 320` từ chính `KhungCanh.tsx`, không kế thừa.
+     * Nghiệm thu ảnh Đợt 31: khung 306 < sàn canvas 320 ⇒ canvas tràn 14 px xuống
+     * header cockpit. bbox DOM của khung "đúng", chỉ bbox CANVAS + ảnh bắt được.
+     * Đợt 35: sàn khung là `SAN_KHOI_CANH_MAY_PX` (240, thấp hơn sàn kit 320 để giữ
+     * cockpit > cảnh ở 720) và canvas nhận CÙNG sàn ấy qua `sanCaoPx` — kit đọc
+     * `minHeight: sanCaoPx`, không còn số 320 cứng. Kiểm bằng GIÁ TRỊ: hàm không
+     * bao giờ trả dưới sàn.
      */
     const khoi = theMo("khoi-canh-may");
-    const san = Number((khoi.match(/clamp\((\d+)px/) ?? [])[1]);
+    expect(MA).toMatch(/sanCaoPx=\{SAN_KHOI_CANH_MAY_PX\}/);
     const kit = docSach("src/components/twin3d/loi/KhungCanh.tsx");
-    const sanKit = Number((kit.match(/minHeight:\s*(\d+)/) ?? [])[1]);
-    expect(sanKit).toBeGreaterThan(0);
-    expect(san).toBeGreaterThanOrEqual(sanKit);
+    expect(kit).toMatch(/minHeight:\s*sanCaoPx/);
+    expect(kit).not.toMatch(/minHeight:\s*\d+/);
+    for (const [conLai, vh] of [[595, 720], [775, 900], [100, 300], [null, 480]] as const) {
+      expect(chieuCaoKhoiCanhMay(conLai, vh)).toBeGreaterThanOrEqual(SAN_KHOI_CANH_MAY_PX);
+    }
     expect(khoi).toContain("overflow-hidden");
   });
 
@@ -223,10 +231,13 @@ describe("★★★ ⑤ Khung trừ vỏ ứng dụng bằng số ĐO, biến `-
     expect(khoi).not.toMatch(/className="[^"]*\bh-full\b/);
   });
 
-  it("chiều cao = `100vh` trừ vị trí ĐO ĐƯỢC; có `useEffect` THẬT ghi biến", () => {
-    expect(MA).toContain("calc(100vh - var(--twin-may-top");
-    expect(MA).toContain("getBoundingClientRect().top");
-    expect(MA).toContain('setProperty("--twin-may-top"');
+  it("chiều cao = `100vh` trừ vị trí ĐO ĐƯỢC; hook `useTruDinhKhung` có `useEffect` THẬT ghi biến (Đợt 35, G12)", () => {
+    expect(MA).toContain('chieuCaoTruDinh("--twin-may-top")');
+    expect(MA).toContain('useTruDinhKhung(khungRef, "--twin-may-top")');
+    const hook = docSach("src/components/twin3d/van-hanh/useTruDinhKhung.ts");
+    expect(hook).toContain("getBoundingClientRect().top");
+    expect(hook).toMatch(/setProperty\(tenBien,/);
+    expect(MA).not.toContain('setProperty("--twin-may-top"');
   });
 
   it("★ KHÔNG dùng chung `--twin-line-top`/`--twin-top` (khớp nối ẩn giữa hai màn)", () => {
