@@ -1327,10 +1327,14 @@ export async function traAnhLichSu(
   const ids = cay.may.map((m) => m.id);
   const moc = new Date(mocMs);
 
+  // ★★★ Đợt 35 (G104) — `AT TIME ZONE 'UTC'`: cột `timestamp` naive lưu UTC, nhưng `db.execute` thô
+  //     (postgres.js) đọc naive theo giờ máy Node (+07 ⇒ lệch −7 h) trong khi drizzle typed đọc UTC.
+  //     `ts` rời SQL thành `capNhatLuc` ⇒ ảnh lịch sử (tua) khai tuổi 7 h cho hàng vừa ghi. Cùng vá
+  //     với `trangThaiTapMay` (Đợt 34). Lưới: `naiveTimestampQuaExecute.db.test.ts`.
   const hang = executeRows(
     await d.execute(sql`
       SELECT DISTINCT ON ("machineId")
-             "machineId" AS machine_id, status, "timestamp" AS ts
+             "machineId" AS machine_id, status, "timestamp" AT TIME ZONE 'UTC' AS ts
       FROM machine_status_logs
       WHERE "machineId" IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
         AND "timestamp" <= ${moc.toISOString()}
@@ -1465,7 +1469,7 @@ export async function traAnToanRobot(
   const hangTele = executeRows(
     await d.execute(sql`
       SELECT DISTINCT ON ("robotId")
-             "robotId" AS robot_id, estop, "timestamp" AS ts
+             "robotId" AS robot_id, estop, "timestamp" AT TIME ZONE 'UTC' AS ts
       FROM robot_telemetry
       WHERE "robotId" IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
       ORDER BY "robotId", "timestamp" DESC

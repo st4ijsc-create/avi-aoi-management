@@ -145,8 +145,10 @@ export async function getPeakDemandRows(range: EnergyRange): Promise<PeakRow> {
   const db = await getDb();
   if (!db) return { instantaneousPeakKw: null, peakAt: null };
   const machineFilter = range.machineId != null ? sql`AND "machineId" = ${range.machineId}` : sql``;
+  // ★ Đợt 35 (G104): `timestamp` naive qua `db.execute` thô đọc theo giờ máy Node (+07 ⇒ −7 h) ⇒ ép
+  //   `AT TIME ZONE 'UTC'`; `peakAt` rời SQL ra UI "Thời điểm đỉnh" (`EnergyAnalyticsPage`).
   const rows = await db.execute(sql`
-    SELECT "powerKw"::float8 AS "instantaneousPeakKw", "timestamp" AS "peakAt"
+    SELECT "powerKw"::float8 AS "instantaneousPeakKw", "timestamp" AT TIME ZONE 'UTC' AS "peakAt"
     FROM energy_readings
     WHERE "powerKw" IS NOT NULL
       AND "timestamp" >= ${range.from} AND "timestamp" < ${range.to} ${machineFilter}
