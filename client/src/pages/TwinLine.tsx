@@ -99,7 +99,7 @@
  *   ★★★ Nhóm (D) quan trọng NGANG (A): một màn nhồi mọi thứ **không đọc được**.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useRoute } from "wouter";
 import { ArrowLeft } from "lucide-react";
@@ -196,6 +196,53 @@ export function ThanManLine({ lineId }: ThanManLineProps) {
   const [moKpi, datMoKpi] = useState(true);
 
   const bayGioThat = Date.now();
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ CHIỀU CAO ĐO TỪ VỊ TRÍ THẬT, KHÔNG TRỪ MỘT HẰNG SỐ ĐOÁN
+   * ════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ **BẢN ĐẦU CỦA TỆP NÀY DÙNG `h-full`, VÀ ẢNH TỰ CHỤP BẮT ĐƯỢC HẬU QUẢ.**
+   *   Đo trên `dist`, 1600×900, `e2e_tai_loE` (`.qa-dot30/do-dai-line.json`):
+   *
+   *       man-twin-line   y= 80  h=889  ⇒ đáy ở **969**, tràn **69 px**
+   *       khoi-dai-line   y=876  h= 93
+   *       12 ô trạm       y=904  h= 55  ← **NẰM DƯỚI MÉP 900 px, không ai thấy**
+   *
+   *   Cả 12 ô **CÓ trong DOM**, **CÓ kích thước thật** (82×55), và **mọi lưới
+   *   `toBeVisible()` đều XANH** — chúng chỉ nằm ngoài màn hình. Đúng lớp G41:
+   *   **chỉ ẢNH bắt được**. Và nó cũng là lý do phải tự chụp tự đọc thay vì tin
+   *   `soNutTrongDai = 12`: con số ấy ĐÚNG mà màn vẫn hỏng.
+   *
+   * ★★★ GỐC RỄ: `h-full` kế thừa chiều cao của khung cha **không trừ vỏ ứng
+   *   dụng** (thanh trên cùng cao 80 px ở bố cục này). `TwinVanHanh.tsx:2481`
+   *   đã trả giá đúng bài học này một lần và ghi lại: *"Đừng thay `5rem` bằng
+   *   một hằng số đoán khác — lần sau chrome đổi là sai lại, và không có lỗi
+   *   nào nổ."* Nên ở đây cũng **ĐO** `getBoundingClientRect().top` của chính
+   *   khung này rồi trừ khỏi `100vh` — tự đúng với mọi chiều cao vỏ.
+   *
+   * ★ `--twin-line-top` là biến RIÊNG, không dùng chung `--twin-top` của
+   *   `/twin`: hai màn là hai route, không bao giờ sống cùng lúc (QĐ-19), nhưng
+   *   dùng chung một biến CSS toàn cục sẽ để lại giá trị của màn trước cho màn
+   *   sau đọc — một khớp nối ẩn giữa hai thứ đáng lẽ độc lập.
+   */
+  const khungRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = khungRef.current;
+    if (!el) return;
+    const doLai = () => {
+      const tren = el.getBoundingClientRect().top;
+      el.style.setProperty("--twin-line-top", `${Math.max(0, Math.round(tren))}px`);
+    };
+    doLai();
+    // ★ Vỏ ứng dụng đổi chiều cao khi thu/mở sidebar hay đổi cỡ cửa sổ.
+    const ro = new ResizeObserver(doLai);
+    ro.observe(document.body);
+    window.addEventListener("resize", doLai);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", doLai);
+    };
+  }, []);
 
   /* ── Nhà máy ─────────────────────────────────────────────────────────── */
   const factoriesQ = trpc.factory.list.useQuery();
@@ -612,7 +659,12 @@ export function ThanManLine({ lineId }: ThanManLineProps) {
   const rongThat = !dangTai && canhQ.isSuccess && mayLine.length === 0;
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col" data-testid="man-twin-line">
+    <div
+      ref={khungRef}
+      className="relative flex min-h-0 flex-col overflow-hidden"
+      style={{ height: "calc(100vh - var(--twin-line-top, 5rem))" }}
+      data-testid="man-twin-line"
+    >
       {/* ── Thanh trên: breadcrumb + tiêu đề ─────────────────────────── */}
       <div
         className="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-sm"
@@ -723,9 +775,16 @@ export function ThanManLine({ lineId }: ThanManLineProps) {
           thứ hai (G12).
         ★ Dải hiện cả khi `rongThat`: một chuyền có trạm mà chưa có máy vẫn phải
           đọc được danh sách trạm của nó.
+
+        ★ `shrink-0` + `overflow-x-auto`: dải giữ nguyên chiều cao nội dung
+          (≈93 px cho 12 ô) và **cuộn NGANG** khi chuyền dài, thay vì bóp ô trạm
+          hay đẩy canvas. ⚠ KHÔNG cho nó `flex-1`: Đợt 22 đo được `DaiCanhBao`
+          không có trần đã lấy 84 % panel trái và bóp `danh-sach-may` về
+          **h = 0** — một flex item không có trần lấy chiều cao theo NỘI DUNG,
+          và anh em `flex-1` của nó chỉ còn phần dư.
       */}
       {hangDai.length > 0 ? (
-        <div className="shrink-0" data-testid="khoi-dai-line">
+        <div className="shrink-0 overflow-x-auto" data-testid="khoi-dai-line">
           <DaiLine
             tram={hangDai}
             nhipChuyenMs={nhipChuyenMs}

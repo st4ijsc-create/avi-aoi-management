@@ -342,6 +342,61 @@ describe("★★★ ⑧b Hai đột biến SỐNG SÓT lượt đầu — cờ '
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */
+/* ⑧c CHIỀU CAO KHUNG — LỖI **CHỈ ẢNH BẮT ĐƯỢC** (G41), NAY THÀNH LƯỚI (G91)   */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ★★★ BẢN ĐẦU CỦA TRANG DÙNG `h-full`, VÀ NÓ ĐẨY CẢ DẢI TRẠM RA NGOÀI MÀN HÌNH.
+ *
+ * Đo trên `dist`, 1600×900, `e2e_tai_loE` (`.qa-dot30/do-dai-line.json`):
+ *
+ *     man-twin-line   y= 80  h=889   ⇒ đáy ở **969**, tràn **69 px**
+ *     khoi-dai-line   y=876  h= 93
+ *     12 ô trạm       y=904  h= 55   ← **NẰM DƯỚI MÉP 900, không ai thấy**
+ *
+ * ⚠⚠⚠ Cả 12 ô **CÓ trong DOM**, **CÓ kích thước thật** (82×55), `soNutTrongDai`
+ *   đếm ra đúng **12**, và mọi lưới `toBeVisible()` đều XANH. **Con số ĐÚNG mà
+ *   màn vẫn hỏng** — đó là lý do cổng ra đòi ẢNH TỰ CHỤP TỰ ĐỌC, không đòi một
+ *   phép đếm DOM.
+ *
+ * ★ Gốc rễ và bản vá đều đã có tiền lệ: `TwinVanHanh.tsx:2481` ghi *"Đừng thay
+ *   `5rem` bằng một hằng số đoán khác — lần sau chrome đổi là sai lại, và không
+ *   có lỗi nào nổ."* ⇒ ĐO `getBoundingClientRect().top` rồi trừ khỏi `100vh`.
+ */
+describe("★★★ ⑧c Khung phải TRỪ vỏ ứng dụng bằng số ĐO, không bằng hằng đoán", () => {
+  it("★★★ khung gốc KHÔNG dùng `h-full` — nó tràn 69 px và nuốt dải trạm", () => {
+    const i = MA.indexOf('data-testid="man-twin-line"');
+    expect(i).toBeGreaterThan(-1);
+    const khoi = MA.slice(Math.max(0, i - 400), i);
+    expect(khoi).not.toMatch(/className="[^"]*\bh-full\b/);
+  });
+
+  it("★★★ chiều cao = `100vh` trừ vị trí ĐO ĐƯỢC của chính khung", () => {
+    expect(MA).toContain("calc(100vh - var(--twin-line-top");
+    // ★ Có một `useEffect` THẬT ghi biến ấy — nếu không, `5rem` mồi thành số CUỐI.
+    expect(MA).toContain("getBoundingClientRect().top");
+    expect(MA).toContain('setProperty("--twin-line-top"');
+  });
+
+  it("★ biến CSS RIÊNG, không dùng chung `--twin-top` của `/twin`", () => {
+    /*
+     * ★ Hai màn không bao giờ sống cùng lúc (QĐ-19), nhưng một biến CSS toàn
+     *   cục dùng chung sẽ để lại giá trị của màn TRƯỚC cho màn SAU đọc — một
+     *   khớp nối ẩn giữa hai thứ đáng lẽ độc lập.
+     */
+    expect(MA).not.toContain("var(--twin-top");
+  });
+
+  it("★★★ dải trạm `shrink-0`, KHÔNG `flex-1` — Đợt 22: item không trần nuốt anh em", () => {
+    const i = MA.indexOf('data-testid="khoi-dai-line"');
+    expect(i).toBeGreaterThan(-1);
+    const khoi = MA.slice(Math.max(0, i - 200), i);
+    expect(khoi).toContain("shrink-0");
+    expect(khoi).not.toContain("flex-1");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
 /* ⑨ HẠNG B — G37: trang là VỎ, thân nhận qua THAM SỐ                          */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
