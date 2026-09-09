@@ -5642,6 +5642,54 @@ lieu, cai nay **GHI** vao kho dung chung (`datAnhLichSu`) ⇒ **co tac dung phu*
 (2) duong dan that la `client/src/pages/TwinVanHanh.tsx`, khong phai duoi `pages/twin3d/`.
 ★ Brief **dung** cho **6 cho `refetchInterval`** (§14p.7 ghi **3** la sai) va dung ca 14 dong truy van.
 
+## 14q. KE HOACH CHAY DEN XONG - BA MAN (2026-09-09, chu so huu giao)
+
+Chu so huu: *"Tiep tuc giao cho den khi xong, ban van lam chu du an va quyet dinh cac phan ky thuat,
+theo doi va quan ly cac session, cac Agent... su dung QA Skill de verify lai."*
+
+### 14q.1 Duong den dich - **thu tu do duoc, khong phai uoc luong**
+
+| Dot | Viec | Chan cai gi | Trang thai |
+|---|---|---|---|
+| 27 | T-3 trang thai URL · T-2 lat Line | - | **XONG** (3.738→3.674) |
+| 28 | T-1 bon tang truy van | - | **XONG** (3.674→3.573), 10/14 truy van |
+| **29** | **T-4 hop nhat du lieu** (`mayVe` **24 lan**, `bangWip`, `cotWipCanh`, `nhipChuyenMs`, `canhBao3D`, `nhanTatCa`) | ⛔ **CHAN man Line VA man May** | dang chay |
+| 30 | **Man Line** `/twin/line/:id` | - | cho 29 |
+| 31 | **Man Machine** `/twin/may/:id` | - | cho 30 |
+| 32 | **QA verify** toan bo ba man | - | cho 31 |
+
+★ **Vi sao 29 phai truoc 30:** Dot 27 do duoc (**G89**) - dung `DaiLine`/`DongChayLine` voi du lieu
+**rong** cho ra **man co VO ma khong co SO**, dung lop loi §11c.2 ma spec nay **da dem 4 lan**.
+
+### 14q.2 Ba man dung tu manh DA NGHIEM THU, khong viet moi
+
+**Man Line** (§14p.3): `DongChayLine` 10 cho · `DaiLine` 7 · `phamViLine` 6 · `khungNhinLine` 3.
+**Man Machine**: `NganNhung` 40 (dialog that, `aria-modal`) · `NganXuLy` 28 (mat GHI) ·
+`MachineCockpitBody` 14 (**da tach san** de nhung - G37) · `vienSucKhoe` 11.
+⇒ Rui ro chinh **khong phai "viet moi"** ma la **noi day** va **giu hanh vi**.
+
+### 14q.3 Luat mang sang MOI dot con lai
+
+- **QD-19/QD-21**: ba man rieng, **moi man MOT canvas**, URL **phan cap**. `__soCanvas` **= 1** o **moi**
+  man (**G87** - kien truc dinh tuyen manh hon co che dieu kien).
+- **QD-18**: hai man moi thua cong **`analytics_oee|machine_status`** - **man XEM**, khong phai cong studio.
+- **G40/G67**: **13 redirect** da nghiem thu, **0/13 co `?pv=`**. Them route **khong duoc lam chet**
+  duong nao; them ten vao **danh sach dong** thi phai them **du cho**, quen thi **nuot im lang**.
+- ⚠ **`/line-view/:lineId` DA TON TAI** (`LineView.tsx` 418 dong, **0 tham chieu 3D**) - man **2D**,
+  **khong trung viec**; **ghi ro trong ma** keo bi xoa nham (§11b).
+- **G88**: **commit tung phan**. **G91**: *"khong lam duoc"* phai **thanh test**, khong chi trong bao cao.
+- **G92**: ablation doc **CA baseline**, khong chi delta.
+- **G83**: **grep lai tung cau khang dinh trong brief** - brief cua chu du an da sai o Dot 25 (**5 cho**),
+  27 (**6 cho**), 28 (**2 cho**).
+
+### 14q.4 Cong nghiem thu cuoi (Dot 32 - QA)
+
+Khong phai *"test van xanh"* ma la **hanh vi do duoc**:
+`__soCanvas = 1` moi man · **13/13 redirect** con song · **hai chieu quyen** QD-18 (`operator1` chi doc,
+`engineer1` sua duoc) · **bat bien nhip an toan** (tran **20 s**, dot bien `20_000→30_000` **phai do**) ·
+**5 anh lo C md5 nguyen** · DB `2 · 43 · 82` · va **nghiem thu THI GIAC** - tien le: nghiem thu mat o
+Dot 22/23 **bat 10 loi** ma **1.834 test mu**.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
