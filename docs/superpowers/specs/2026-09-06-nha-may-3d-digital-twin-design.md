@@ -5244,6 +5244,74 @@ phép đo*, và làm yếu đúng thứ ta muốn tin. Lối thoát ĐÚNG: xoá
   ấy. Đợt 21 **không mất giá trị**: bố cục nổi-đè, canvas 51,4 %, **14 redirect ≤1 chặng** đều còn
   nguyên (đo lại: **14/14 đường vào cũ vẫn tới đích**, `Y-URL` xanh). **Chỉ phần gộp trang bị đảo.**
 
+## 14o. DOT 26 - **QD-18 TACH `/twin-studio`**, dao nguoc QD-16 (2026-09-09)
+
+Commit `fc08118c`. Cong: **66 tep / 1.890 test** = nen - `check` 0 - `build` 0 - DB `2/43/82` -
+5 anh lo C md5 nguyen ven.
+
+### 14o.1 QD-18 thay QD-16 - **ly do MANH HON, khong phai doi y**
+
+Chu so huu: *"Twin-studio la noi thiet ke va layout cung nhu xay dung 3D Twin, chi nguoi co quyen.
+Twin la noi trinh dien, xem, quan ly realtime, khong chinh sua duoc. Hai trang lien ket nhung
+MUC DICH HOAN TOAN KHAC NHAU."*
+
+QD-16 gop vi so `operator1` **mat loi vao**. Chu du an **do lai be mat** (7 tai khoan hoat dong):
+
+| Vai | xem `/twin` | sua studio |
+|---|---|---|
+| `operator1` | co | **KHONG** |
+| `engineer1` · `maint1` · `supervisor1` · `e2e_tai_loE` | co | co |
+
+=> **`operator1` KHONG mat gi khi tach** - ho **von khong co quyen sua**. Noi lo cua QD-16 **bi so do bac**.
+Hai cong **tach bach**, chu du an kiem tan noi: `/twin` -> `analytics_oee|machine_status`
+(`navigation.tsx:475`) · `/twin-studio` -> `settings_factory|machine_control` (`:500`).
+Route that `App.tsx:399`. Lien ket gac sau `duocSuaNhaXuong` (`TwinVanHanh.tsx:2301`) - **an-khong-disable**.
+
+> #### G84 - **TACH LAI CO THE LAM HANG RAO CHAT HON, KHONG PHAI LONG HON**
+> Lo ngai: tach thi thanh **hai `<Canvas>`**, vi pham **RB-4**. Do that (D26-J): `/twin` **1 canvas**,
+> `/twin-studio` **1 canvas**, `__soCanvas=1` **ca hai**.
+> Hang rao chuyen tu **mot bieu thuc `? :`** (Dot 21 da phai ghi canh bao ve nguy co doi thanh `hidden`)
+> sang **kien truc DINH TUYEN** - hai trang khong bao gio song cung luc **vi router**, khong vi mot
+> dieu kien ai do co the sua nham.
+> => **Dao nguoc mot quyet dinh khong nhat thiet la mat cai da mua.** Bo cuc noi-de + canvas 51,4 %
+> + 14 redirect cua Dot 21 **con nguyen**.
+
+### 14o.2 Bon cho brief cua chu du an SAI (G83 lan hai)
+
+| Brief noi | Do duoc |
+|---|---|
+| *"khoi phuc nav neu Dot 21 da go"* | **KHONG can** - `navigation.tsx:496` **con nguyen** voi gate dung. Dot 21 go **route**, giu **nav** => muc nav **dang tro vao mot redirect** |
+| *"bo `?che-do=botri`"* (ngu y 1 cho) | **6 cho**: `App.tsx` x3, `dinhTuyenTwinCu.ts` x4, + 4 e2e + 2 unit |
+| *"`TwinVanHanh.tsx:245`"* (1 cho nap luoi) | Dung, **nhung con 5 cho goi khac** (`dangSua` x3, `doiVung` x2, `moXuongDung`) - **G70** |
+| *"Dot 21 nghiem thu 5/5 e2e"* | **`QD16-A` DA DO SAN** tren ma HEAD chua sua |
+
+### 14o.3 Hai loi cua chinh Dot 26 - mot cai **cam hoan toan**
+
+> #### G85 - `asChild` **NUOT `data-testid`**: 1.890 luoi + `tsc` deu XANH, trang **trong dung hoan toan**,
+> ma **0 phan tu** trong DOM
+> Chi **QD16-C** (e2e cua Dot 21) bat duoc. Va Dot 26 **suyt do cho rate limiter** vi **4 ca quanh no
+> dung la 429** - phai chay **`git show HEAD:`** moi tach duoc *do co san* / *do do minh*.
+> => Khi mot ca do **giua cum ca do khac**, **dung gop nguyen nhan**. Va **`asChild` (Radix) THAY THE
+> phan tu con** - moi thuoc tinh dat tren cha **bien mat khong bao loi**.
+> (Loi thu hai, `rindex` nuot 90 dong state, **`tsc` bat ngay 20 loi** => **khong cam** - doi lap sang.)
+
+> #### G86 - **RATE LIMITER LA THIET BI DO**, va no **song qua restart**
+> 30 login/15 phut/IP, **luu Redis**. Bon ca do trong nhu ban va hong. Dot 26 **khong noi**
+> `AUTH_RATE_LIMIT_PER_15MIN` - *"do la sua he thong cho vua phep do"*. **Dung.**
+
+**Nghiem thu hai chieu 10/10** (tai khoan that, `dist` production): `operator1` vao `/twin` chi doc,
+`/twin-studio` **"Access denied"**, **khong thay** lien ket. `engineer1` vao ca hai, **sua duoc**.
+`e2e_tai_loE` **co du lieu VA thay lien ket** => **G76 go nham lan: quyet dinh la QUYEN, khong phai DU LIEU.**
+**Dot bien 5 con, chet ca 5** - gom **cong rong** va **sot MOT `?che-do=`** (G67).
+
+**G40:** chon **redirect** `?che-do=botri` -> `/twin-studio`, **khong bo qua** - bo qua la **loi cam**:
+nguoi bam bookmark muon **sua** se ra man **chi doc**, khong loi nao no. **14/14 duong vao cu van toi dich.**
+
+**No CO SAN, khong phai cua Dot 26:** `QD16-A` do o *"operator1 phai THAY canvas"* - **do y het tren HEAD
+chua sua**. `operator1` co **0 hang** `user_factory_assignments` (toan DB **3 hang**) => empty scope.
+Khang dinh **tron** *vao duoc* (QUYEN) voi *co du lieu* (GAN NHA MAY). Ha xuong `annotations` kem ly do,
+**khong noi long im lang**.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
