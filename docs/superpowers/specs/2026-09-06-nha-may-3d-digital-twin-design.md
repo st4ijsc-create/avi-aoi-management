@@ -5459,6 +5459,90 @@ nay **chua tung co viec**.
 > **Bien phap mang sang dot giao lai:** brief ghi ro *"**commit som, commit tung phan** - lo truoc dung
 > ma mat trang vi de don"*. Mot lo commit tung manh thi khi no dung, **phan da lam van con**.
 
+
+### 14p.6 DOT 27 - **DO LAI §15.5 TREN MA THAT**: T-3/T-2 TACH DUOC, T-1 **KHONG** (2026-09-09)
+
+> Dot 27 lam VIEC 1 (tach) va do tien de cho VIEC 2. Muc nay ghi **cai do duoc**, de lo sau
+> khong ke thua lai loi khai cua §15.5 — chinh §15.5 duoc viet khi CHUA tach thu.
+
+#### ★★★ SAU DIEU §15.5 / BRIEF DOT 27 NOI SAI - do lai 2026-09-09
+
+| # | Loi khai | Do duoc | Nguon |
+|---|---|---|---|
+| 1 | brief: *"doc §15.7 lay ranh gioi T-1/T-2/T-3"* | §15.7 la **NGUON NGOAI · RUI RO · NGHIEM THU**. Ranh gioi T-1/T-2/T-3 o **§15.5.2** | muc luc tep nay |
+| 2 | §15.5: `TwinVanHanh.tsx` **3.754 dong** | **3.738** dong luc bat dau Dot 27 | `wc -l` |
+| 3 | §15.5.1: **18 `useState`** | **8** `useState` (49 `useMemo`, khong phai 50) | `grep -c` |
+| 4 | brief: **14 redirect** trong `dinhTuyenTwinCu` | **13** muc trong `DICH_TWIN_CU` | dem tay + `dinhTuyenTwinCu.unit.test.ts` 13/13 |
+| 5 | brief: 14 redirect *"tro ve `/twin?pv=…`"* | **0/13** muc co `?pv=`. Dich la `/twin`, `/twin-studio`, `/rf-test-cell` | doc bang |
+| 6 | brief: co so DB `2 · 43 · 82` (ngu y stations=82) | `stations` = **37**. So 82 la **`twin_dat_cho`** | SQL tren 5434 |
+
+★ Khong cai nao lam hong viec, nhung ca 6 deu la **mo ta tu tri nho** (G83). Muc nay thay chung
+bang so do duoc.
+
+#### ★★★ T-1 **KHONG TACH DUOC NHU §15.5.2 VIET** - va day la ket qua, khong phai that bai
+
+§15.5.2 giao T-1 = *"gom **14 `useQuery`** thanh 1 hook, tra 1 object"*, xep rui ro **THAP**,
+ly do: *"thuan doc, khong JSX, khong nhanh quyen"*.
+
+Do lai tren ma that: **14 truy vay khong phai mot KHOI, ma la mot CHUOI XEP TANG** — dau vao cua
+truy van sau la **dau ra da dan xuat** cua truy van truoc, va cac memo dan xuat nam **XEN GIUA**:
+
+```
+  factoriesQ (:328) ──> mucNhaMay ──> factoryId (:355)
+                                        │
+                       toaNhaQ (:425) <─┘──> dsToaNha ──> mucToaNha ──> toaNhaId (:446)
+                                                                            │
+                                          chiTietQ (:459) <─────────────────┘──> dsTang
+                                                                                    │
+                                          canhQ (:549) <── tangIdsHoi (:546) <───────┘
+```
+
+Va 5 dau vao con lai deu la dan xuat rieng: `nhipTongQuanMs`/`coLuongDay` (tu `useKhoTrangThai`,
+hook nay **co chu y** dung TREN moi `useQuery` — xem chu thich `:400`), `lineDangXem` (tu `phamVi`),
+`mocTua` (tu `urlState.tg`), `dungWhatIf`+`daBamChay` va `coQuyenXemQuyTrinh`+`workflowRef` (tu
+`useState` + `hasPermission` cua trang).
+
+⇒ Mot hook `useDuLieuTwin` "tra 1 object" se phai **nhan 9 tham so**, trong do **3 cai
+(`toaNhaId`, `tangIdsHoi`, `lineDangXem`) lai duoc tinh TU KET QUA cua chinh cac truy van trong
+hook do**. Do la vong tron: hoac tach doi hook thanh nhieu tang (khong con la "1 hook"), hoac keo
+theo ca chuoi memo dan xuat sang (khong con la "thuan doc").
+
+★★★ **Rui ro that cua T-1 la CAO, khong phai THAP.** Ba `refetchInterval` mang bat bien an toan
+do duoc (`andonQ`/`anToanQ` co **tran 20 s**, `nhipHoiToiDa` chi duoc **rut NGAN** nhip, khong bao
+gio de no troi len 30 s). Chuyen nham mot cai thanh **hoi quy an toan doi lot refactor** — va
+`npm run check` + 1.890 test **deu xanh** voi ca hai ban.
+
+⇒ **De nghi cho lo sau:** T-1 **khong lam theo cach §15.5.2 viet**. Neu lam, phai tach theo
+**TANG cua chuoi** (nhamay → toa → tang → canh), moi tang mot hook nhan dau ra tang truoc, va
+moi tang mot ablation rieng. Do la **4 lo nho**, khong phai 1.
+
+#### CAI DOT 27 DA LAM - T-3 va T-2 (lat Line)
+
+| Manh | Tep | Vi sao tach duoc |
+|---|---|---|
+| **T-3** | `van-hanh/useTrangThaiTwin.ts` | `duongDanTwin.ts` da la module THUAN da test; day chi la vo React. **0 phu thuoc vao chuoi truy van** |
+| **T-2 (lat Line)** | `van-hanh/canhLine.ts` — `dungHinhLine()` | Chi can **du lieu thuan**; khong React, khong route, khong trpc |
+
+★★★ Ca hai deu **nhan qua tham so**, khong tu doc route (**G37**). Luoi cua T-3 la **BAT BIEN TREN
+MA NGUON** (tep khong duoc chua `useSearch`/`useRoute`/`useLocation`, khong import tu `wouter`) chu
+khong phai mot ca kiem thu — vi neu hook tu doc route, no van **CHAY DUNG tren `/twin`** va chi sai
+tren `/twin/line/:id`. Mot ca test viet tren `/twin` se XANH trong khi hang that da hong.
+
+#### VIEC 2 (man Line) - **DA DO TIEN DE, CHUA XAY**
+
+★ Tien de QD-21 **da do duoc** (`bo-cuc/duongDanBaMan.unit.test.ts`, 9 ca): `/twin` **khong nuot**
+`/twin/line/2` — do bang chinh bo khop cua wouter 3.7.1 (`regexparam` 3.0.0), khong bang regex tu
+viet. §14p.4 doan dung, nay co so.
+
+★★★ **Vi sao chua xay:** man Line can `mayVe` · `bangWip` · `cotWipCanh` · `nhipChuyenMs` ·
+`canhBao3D` · `nhanTatCa` — **tat ca van nam trong than ham `TwinVanHanh()` (con ~3.430 dong)**,
+tuc la san pham cua **T-1/T-4/T-5**. Dung `DaiLine`/`DongChayLine` voi du lieu **rong** thi ra mot
+man **co vo ma khong co so** — dung lop loi §11c.2 (*co ma + co test + KHONG giao hang*) ma tep nay
+da dem duoc **4 lan**.
+
+⇒ Thu tu dung la **QD-20 (tach truoc, xay sau)** cho tron: xong T-1 (theo 4 lo nho o tren) va T-5
+thi man Line moi co dau vao that. Xay vo truoc se tao mot man phai **thao ra lam lai** ngay sau do.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
