@@ -69,6 +69,7 @@
  */
 
 import { conHieuLuc, type KhaiNghen, type TinhWip } from "./wipTram";
+import type { PhamVi } from "./duongDanTwin";
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* ① ĐỌC `:id` — chỗ DUY NHẤT chuỗi thành số                                  */
@@ -145,6 +146,41 @@ export function mayCuaLine<T extends MayThuocLine>(
     }
     return m.lineId === lineId;
   });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ②b KHỚP NỐI SANG `dungMayVe` — **G93**, ĐO ĐƯỢC BẰNG GIÁ TRỊ                */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Phạm vi mà màn Line truyền cho `trongPhamVi` khi dựng cảnh.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO MỘT HÀM MỘT-DÒNG XỨNG ĐÁNG TỒN TẠI — G93, KHÔNG PHẢI THÓI QUEN
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đợt 29 đo được: **ba đột biến ở CHỖ GỌI sống sót cả 1.998 test**, vì lưới
+ * module chỉ chứng minh *hàm đúng khi được gọi đúng* — nó không biết trang gọi
+ * bằng đối số nào. Kết luận rút ra: *mọi refactor "tách ra cho sạch" đều MUA
+ * thêm một bề mặt lỗi ở KHỚP NỐI.*
+ *
+ * Đợt 29 trả giá ấy bằng một lưới **đọc VĂN BẢN** của trang (hạng thấp hơn
+ * đo-bằng-giá-trị, nhưng là hạng cao nhất có được cho một khớp nối nằm trong
+ * thân `useMemo` của một trang 3.5 nghìn dòng). Đợt 30 làm **tốt hơn một bậc**:
+ * kéo chính khớp nối ấy ra thành hàm thuần, nên lưới đo được **GIÁ TRỊ THẬT**
+ * thay vì chính tả của một dòng mã.
+ *
+ * ★★★ HAI ĐỘT BIẾN MÀ HÀM NÀY BẮT, VÀ MỘT LƯỚI VĂN BẢN THÌ KHÔNG:
+ *   ① `{ cap: "line", id: lineId }` → `{ cap: "tang", id: tangId }`
+ *      `trongPhamVi` ở cấp `tang` so `v.tangId === pv.id` (`phamViCanh.ts:64`),
+ *      còn ở cấp `line` so `v.lineId === pv.id` (`:66`). Trên CSDL này **mọi
+ *      máy nằm CÙNG một tầng** (đo 2026-09-09: 82/82 hàng `twin_dat_cho` ở
+ *      `tangId=28`) ⇒ đột biến ấy làm **MỌI máy "trong phạm vi"**, tức lớp pha
+ *      12 % mất hiệu lực **im lặng** và không ảnh nào phân biệt được.
+ *   ② `id: lineId` → `id: null`. `trongPhamVi` **trả `true` vô điều kiện** khi
+ *      `pv.id === null` (`:59`) — cùng hậu quả, và còn câm hơn.
+ */
+export function phamViCuaManLine(lineId: number): PhamVi {
+  return { cap: "line", id: lineId };
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ */

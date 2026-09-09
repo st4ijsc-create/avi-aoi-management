@@ -183,6 +183,9 @@ const RequestRole = React.lazy(() => import("./pages/RequestRole")); // Doc 10 U
 //   vì §13b 3g xếp nó NGOÀI Twin (đo được: 0 lời gọi tRPC trong 792 dòng).
 const TwinVanHanh = React.lazy(() => import("./pages/TwinVanHanh"));
 const TwinStudio = React.lazy(() => import("./pages/TwinStudio"));
+// ★★★ Đợt 30 (QĐ-19/QĐ-21) — màn LINE 3D RIÊNG, canvas RIÊNG. Xem khối chú
+//   thích ở `<Route path="/twin/line/:id">` bên dưới.
+const TwinLine = React.lazy(() => import("./pages/TwinLine"));
 const RfTestCellSim = React.lazy(() => import("./pages/RfTestCellSim"));
 const CommandCenter = React.lazy(() => import("./pages/CommandCenter")); // U2 (doc 21 §6 G-3): Ecosystem Command Center — single pane (hierarchy tree + factory twin + KPI strip + unified live alarm rail)
 const ControlTower = React.lazy(() => import("./pages/ControlTower")); // doc 46 FE-W3.1 (D4): persona-configurable Executive Control Tower — consolidates 6 command screens (compose + cross-link)
@@ -360,6 +363,38 @@ function Router() {
       <Route path="/twin"><RouteGuard navHref="/twin"><TwinVanHanh /></RouteGuard></Route>
       {/*
         ════════════════════════════════════════════════════════════════════
+        ★★★ ĐỢT 30 — QĐ-19 + QĐ-21: MÀN **LINE 3D RIÊNG**, CANVAS RIÊNG
+        ════════════════════════════════════════════════════════════════════
+        Chủ sở hữu chốt 2026-09-09: *"1 màn canvas là dành cho factory thôi,
+        còn Line/Machine là 2 màn hình khác"*. URL **phân cấp** (QĐ-21).
+
+        ★★★ `/twin` KHÔNG NUỐT `/twin/line/2` — ĐO ĐƯỢC, KHÔNG SUY.
+          `bo-cuc/duongDanBaMan.unit.test.ts` (9 ca) đo bằng `regexparam` —
+          CHÍNH bộ khớp mà wouter 3.7.1 `import` bên trong
+          (`node_modules/wouter/esm/index.js:1`, và `regexparam` là dependency
+          khai trong `wouter/package.json`). Nếu điều đó SAI thì triệu chứng là
+          **màn nhà máy hiện ra**, không phải một lỗi (lớp G67: URL bị nuốt im
+          lặng, ghi được, đọc ra thứ khác, không lỗi nào nổ).
+
+        ⚠⚠⚠ **G67 — `navHref="/twin"`, KHÔNG PHẢI `"/twin/line/:id"`.**
+          `hasAccessToItem` (`navigation.tsx:2546`) duyệt `navGroups` tìm ô có
+          `href` **khớp CHÍNH XÁC**, và **`return false`** khi không thấy. Khai
+          `navHref="/twin/line/:id"` — một href KHÔNG có trong `navGroups` — sẽ
+          **từ chối MỌI người dùng, kể cả người đủ quyền**, và triệu chứng là
+          thẻ "Không có quyền truy cập" chứ không phải một lỗi. Đây đúng là
+          "thêm tên vào danh sách ĐÓNG mà quên thêm đủ chỗ".
+          ⇒ Màn Line **thừa cổng của `/twin`**: `analytics_oee` HOẶC
+            `machine_status` (QĐ-18 — nó là màn **XEM**, 0 mutation, không phải
+            cổng studio `settings_factory`/`machine_control`).
+
+        ⛔ **KHÔNG TRÙNG với `/line-view/:lineId`** (`:444` bên dưới):
+          `LineView.tsx` **418 dòng, 0 tham chiếu 3D** là màn **2D điều khiển
+          tuyến** (có lệnh, server đòi 2FA). Màn này là **3D chỉ XEM**. Tên gần
+          nhau ⇒ ghi rõ ở cả hai đầu kẻo người sau xoá nhầm (§11b).
+      */}
+      <Route path="/twin/line/:id"><RouteGuard navHref="/twin"><TwinLine /></RouteGuard></Route>
+      {/*
+        ════════════════════════════════════════════════════════════════════
         ★★★ QĐ-18 (§13c.2) — TÁCH LẠI HAI TRANG. **ĐẢO NGƯỢC QĐ-16.**
         ════════════════════════════════════════════════════════════════════
         Chủ sở hữu chốt 2026-09-09, và lý do MẠNH HƠN lý do gộp của QĐ-16:
@@ -441,6 +476,10 @@ function Router() {
       {/* doc 40 Wave 4d §13.1 — Factory Command View: chỉ huy toàn nhà máy 2D/3D (xem = giám sát). */}
       <Route path="/factory-command"><RouteGuard requirePermission="machine_status"><AIPageWrapper><FactoryCommandView /></AIPageWrapper></RouteGuard></Route>
       {/* doc 44 W3-B4 §G5.10 — Line View (LDS-L5 Ch.4.2): xem = machine_status; lệnh tuyến tự gate machine_control/edit + server actuationProcedure (2FA). */}
+      {/* ⛔ ĐỢT 30 (§11b) — **KHÔNG TRÙNG** với `/twin/line/:id` ở trên. Đây là màn
+          **2D CÓ LỆNH** (`LineView.tsx`, 418 dòng, 0 tham chiếu `Canvas`/`three`/
+          `KhungCanh`); kia là màn **3D CHỈ XEM** (0 mutation). Tên gần nhau là lý do
+          để ghi dòng này, KHÔNG phải lý do để xoá một trong hai vì tưởng trùng lặp. */}
       <Route path="/line-view/:lineId?"><RouteGuard requirePermission="machine_status"><AIPageWrapper><LineView /></AIPageWrapper></RouteGuard></Route>
       {/* doc 44 W6-1 §G5.14 — e-SOP (LDS-L5 §6.2): viewer vận hành (machine_status read-open) + quản trị (settings_products); server gate role/2FA. */}
       <Route path="/sop/:sopId?"><RouteGuard requirePermission="machine_status"><SopViewer /></RouteGuard></Route>
