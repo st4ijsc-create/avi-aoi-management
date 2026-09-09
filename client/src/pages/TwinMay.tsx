@@ -762,7 +762,12 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
                         xoay camera xuyên qua (khuôn `BangKpiNoi`). Mã · loại · trạng
                         thái · sức khoẻ — MỘT chỗ, không lặp ở header (D-5). */}
                   <div
-                    className="pointer-events-none absolute left-2 top-2 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-background/85 px-2 py-1 text-xs shadow-sm backdrop-blur"
+                    /* ★ Đợt 35 (Pareto #5): chip ở GÓC DƯỚI-TRÁI, không phải trên-trái. Nhãn nóc máy neo sát mép
+                         trên (camera cấp Máy ép sát, Đợt 31) và chip là vùng cấm nhãn (`data-che-nhan`): ở 1280×720
+                         canvas chỉ 680 px rộng ⇒ chip [8..343] đè đúng lên nhãn [267..413] ⇒ tên máy trên nóc biến mất
+                         (đo `.qa-dot35/sau-BCE/e2-may-14-1280x720.json`: `biChe: 1`, nhãn 0). Đáy canvas không có gì
+                         neo (chip nhãn ẩn ở giữa), chip xuống đó thành chú thích ngay trên cockpit. */
+                    className="pointer-events-none absolute bottom-2 left-2 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-background/85 px-2 py-1 text-xs shadow-sm backdrop-blur"
                     data-testid="chip-may"
                     /* ★ Đợt 35 (Pareto #5): lớp phủ ĐÈ canvas tự khai — `LopNhan` không vẽ nhãn dưới nó. */
                     data-che-nhan="1"
