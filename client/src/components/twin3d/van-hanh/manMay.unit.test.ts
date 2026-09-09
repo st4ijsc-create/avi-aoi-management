@@ -22,7 +22,7 @@ import {
   tomTatMay,
 } from "./manMay";
 import { idLineTuDuongDan } from "./manLine";
-import { trongPhamVi, KHOANG_CACH_TOI_DA_CAP_MAY } from "./phamViCanh";
+import { trongPhamVi, HE_SO_CAO, HE_SO_LUI, KHOANG_CACH_TOI_DA_CAP_MAY } from "./phamViCanh";
 import { HAN_KHAI_SUC_KHOE_MS, type KhaiSucKhoe } from "./sucKhoeMay";
 import { lyDoNganNhung } from "./nhungTaiCho";
 import { HO_NHAN_MAY, neoTrenNoc } from "./hopNhatCanh";
@@ -260,6 +260,17 @@ describe("★★★ ⑥ khungNhinMay — orbit ≤ 8 m quanh MỘT máy, `y` là
      */
     const k1 = khungNhinMay(khoi, 1)!;
     expect(goc(k1, nhanNoc)).toBeGreaterThan(FOV_DOC / 2);
+  });
+
+  it("★ cấp `may` THẬT (`HE_SO_LUI.may`/`HE_SO_CAO.may`), không phải `line` — đo bằng giá trị", () => {
+    /*
+     * Sau khi thêm bước lùi + kẹp 8 m, đột biến `khungNhinCho(bbox, "line")` không
+     * còn bị ca "máy khổng lồ" bắt (kẹp che mất). Ca này đo TỈ LỆ lùi/cao ở hệ số 1.
+     */
+    const k1 = khungNhinMay(khoi, 1)!;
+    expect(k1.viTri[1] - k1.muc[1]).toBeCloseTo(k1.banKinh * HE_SO_CAO.may, 9);
+    expect(k1.viTri[0] - k1.muc[0]).toBeCloseTo(k1.banKinh * HE_SO_LUI.may, 9);
+    expect(HE_SO_CAO.may).not.toBe(HE_SO_CAO.line);
   });
 
   it("★ lùi thêm KHÔNG đổi mục nhìn và KHÔNG đổi hướng — chỉ đổi khoảng cách", () => {

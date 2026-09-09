@@ -119,6 +119,14 @@ test("A1 — /twin/may/14: bbox trong viewport, 1 canvas, cockpit 2D + NganXuLy 
     // ★ Nhãn tên máy THẤY ĐƯỢC (lần đầu: camera quá gần ⇒ LopNhan ẩn nhãn, chip "1 more names hidden").
     soNhan: await page.locator('[data-testid="khoi-canh-may"] [data-testid="nhan-may-twin3d"]').count(),
     soNhanAn: await page.locator('[data-testid="khoi-canh-may"] [data-testid="chip-nhan-bi-an"]').count(),
+    // ★★★ bbox của NHÃN: lần đầu nhãn ở y=34 (trên khung y=125) dù soNhan=1 — lỗi kit LopNhan (drei fullscreen).
+    nhanRect: await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="khoi-canh-may"] [data-testid="nhan-may-twin3d"]');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { text: el.textContent?.trim() ?? "", x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), day: Math.round(r.bottom) };
+    }),
+    lopNhan: await bbox(page, "lop-nhan-twin3d"),
     tenMay: await page.getByTestId("ten-may").innerText(),
     maMay: await page.getByTestId("ma-may").innerText(),
     loaiMay: await page.getByTestId("loai-may").innerText(),
@@ -150,6 +158,15 @@ test("A1 — /twin/may/14: bbox trong viewport, 1 canvas, cockpit 2D + NganXuLy 
   // ★★★ §15.6.1 (A): tên máy là 1/3 thứ neo — phải THẤY, không bị declutter ẩn.
   expect(do_.soNhan).toBeGreaterThanOrEqual(1);
   expect(do_.soNhanAn, "khong con chip 'N ten bi an'").toBe(0);
+  // ★★★ Nhãn phải nằm TRONG khung canvas và lớp nhãn phải TRÙNG canvas (LopNhan `calculatePosition`).
+  expect(do_.nhanRect, "nhan ten may phai co trong DOM").not.toBeNull();
+  expect(do_.nhanRect!.y).toBeGreaterThanOrEqual(do_.khoiCanh!.y);
+  expect(do_.nhanRect!.day).toBeLessThanOrEqual(do_.khoiCanh!.day);
+  expect(do_.nhanRect!.x).toBeGreaterThanOrEqual(do_.khoiCanh!.x);
+  expect(do_.nhanRect!.x + do_.nhanRect!.w).toBeLessThanOrEqual(do_.khoiCanh!.x + do_.khoiCanh!.w);
+  expect(do_.lopNhan!.x).toBe(do_.canvas!.x);
+  expect(do_.lopNhan!.y).toBe(do_.canvas!.y);
+  expect(do_.nhanRect!.text).toContain("SIM-L2-AOI");
   // ★★★ Cockpit 2D THẬT SỰ render (G85: đo DOM, không tin testid trên cha).
   expect(do_.soTab).toBeGreaterThanOrEqual(10);
   expect(do_.nganXuLy).not.toBeNull();
@@ -195,11 +212,35 @@ test("A4 — breadcrumb `‹ Line` ĐI THẬT: từ máy 14 tới /twin/line/2 (
   await page.waitForSelector('[data-testid="man-twin-line"]', { timeout: 90_000 });
   await page.waitForTimeout(4_000);
   const canvas = await soCanvas(page);
+  // ★★★ Nhãn trên màn LINE cũng phải nằm trong canvas (lần đầu đo: 3/3 nhãn có y ÂM — lỗi kit LopNhan).
+  const nhanLine = await page.evaluate(() => {
+    const r = (b: DOMRect) => ({ x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) });
+    const cvEl = document.querySelector('[data-testid="man-twin-line"] canvas');
+    const cv = cvEl?.getBoundingClientRect();
+    const lop = document.querySelector('[data-testid="lop-nhan-twin3d"]')?.getBoundingClientRect();
+    const ds = [...document.querySelectorAll('[data-testid="nhan-may-twin3d"]')].map((el) => {
+      const b = el.getBoundingClientRect();
+      const tx = b.x + b.width / 2;
+      const ty = b.y + b.height / 2;
+      return { text: el.textContent?.trim().slice(0, 24) ?? "", ...r(b), tamTrong: !!cv && tx >= cv.x && tx <= cv.right && ty >= cv.y && ty <= cv.bottom };
+    });
+    return { canvas: cv ? r(cv) : null, lop: lop ? r(lop) : null, so: ds.length, tamTrong: ds.filter((d) => d.tamTrong).length, ds };
+  });
+  fs.writeFileSync(`${ANH}/do-nhan-line.json`, JSON.stringify({ ...canvas, nhanLine }, null, 2));
   await page.screenshot({ path: `${ANH}/A4-ve-man-line-2.png` });
   expect(page.url()).toContain("/twin/line/2");
   // ★ Đổi màn = canvas cũ thu dọn, canvas mới dựng — vẫn ĐÚNG MỘT (G87 vì ROUTER).
   expect(canvas.__soCanvas).toBe(1);
   expect(canvas.canvasDom).toBe(1);
+  /*
+   * ★★★ Lớp nhãn phải TRÙNG canvas (trước vá LopNhan: lớp ở (−496,−322), 3/3 nhãn
+   *   đo được có y ÂM). Định nghĩa "thấy được" là TÂM nhãn nằm trong canvas: nhãn
+   *   của máy ở mép chuyền có thể tràn hộp ra mép vài px — đó là cắt khung camera
+   *   (`khungNhinLine` đóng ~7/12 máy, Đợt 30 đã ghi), không phải lệch lớp.
+   */
+  expect(nhanLine.lop).toEqual(nhanLine.canvas);
+  expect(nhanLine.so).toBeGreaterThanOrEqual(1);
+  expect(nhanLine.tamTrong, "tam moi nhan tren man Line phai nam trong canvas").toBe(nhanLine.so);
 });
 
 test("A5 — ★★★ G91 NỢ CÓ SẴN: bấm tab 3D của cockpit ⇒ 2 canvas DOM mà `__soCanvas` vẫn 1 (mù)", async ({ page }) => {
