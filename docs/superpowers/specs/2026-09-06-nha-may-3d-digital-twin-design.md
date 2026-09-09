@@ -5588,6 +5588,60 @@ Cong: **69 tep / 1.915 test** (nen 66/1.890) - `check` 0 - `build` 0 - DB `2/43/
 do roi *"giu nguyen `?pv=`"*, no se **them tham so vao 13 URL chua tung co** - va **G67** noi ro loai
 loi ay **bi nuot im lang**.
 
+### 14p.9 DOT 28 - TACH 10/14 TRUY VAN, va **BIEN LOI TU CHOI THANH PHEP DO**
+
+**Nam commit tung tang** (`c62899eb` T4 · `ea06e24d` T3 · `c94a1355` T2 · `38e36d29` lich su ·
+`d644180d` tang 1). Cong: **75 tep / 1.967 test** (nen 69/1.915) - `check` 0 - `build` 0 -
+DB `2/43/82`, `stations` 37 - 5 anh md5 nguyen. `TwinVanHanh.tsx` **3.674 → 3.573**.
+
+| Tang | Tach? | Tep | Chu du an kiem |
+|---|---|---|---|
+| 4 mo phong | co | `useMoPhongTwin.ts` | **3 cho goi** |
+| 3 phan tich | co | `usePhanTichLine.ts` | **3 cho goi** |
+| 2 trang thai song | co | `useTrangThaiSong.ts` | **3 cho goi** |
+| lich su | co | `useAnhLichSu.ts` | **3 cho goi** |
+| **1 pham vi** | ⛔ **de nguyen** | van o `TwinVanHanh.tsx` | - |
+
+> #### ★★★ G91 - **BIEN LOI TU CHOI THANH MOT PHEP DO CHAY DUOC**
+> Dot 27 tu choi tach T-1 (**G90**), va loi tu choi do **nam trong bao cao**. Dot 28 do lai, **cung ket
+> luan**, nhung lam khac: viet **`tang1KhongTachDuoc.unit.test.ts` (7 ca)**.
+> Ly do no neu: *"loi tu choi trong bao cao se bay hoi va dot sau lai doc 'rui ro thap' trong spec roi
+> lam lai lan ba"*.
+> **Rang buoc quyet dinh** (do duoc): `useKhoTrangThai` (`:413`) **nam GIUA chuoi** - an `factoryId`
+> (`:360`) roi sinh `coLuongDay` (`:426`), thu **tang 2/3 can cho `refetchInterval`**. Goi tang 1 vao
+> mot hook ⇒ **hoac** hook phai tra `ketNoi` (khong lien quan "pham vi"), **hoac** phai goi hook hai
+> lan. **Vong tron that.**
+> => **Mot quyet dinh "khong lam" cung can co cho song trong ma**, khong chi trong van ban. Cung ho
+> **G88** (*"agent da chay" != "viec da lam"*) o chieu nguoc: **"da tu choi" phai co ai do canh**.
+
+> #### ★★★ G92 - **THIET BI DO VAN BAN TU BAN VAO CHAN MINH BA LAN**
+> Ca ba deu **do oan** - nhung **chieu nguy hiem la chieu nguoc lai (xanh gia)**:
+> 1. Phep do doc **ca docblock**: chu `useSearch`/`refetchInterval` nam trong loi giai thich **vi sao
+>    chung vang mat** ⇒ **tuoc chu thich truoc khi do**. ⚠ Va bang cach **xoa chu khoi chu thich** se
+>    cho tap test **xanh ma mu**.
+> 2. `slice(i, i+400)` **tran sang truy van ke ben** ⇒ cat theo **dau ket loi goi**.
+> 3. Dau ket `
+  );` **khong khop** `useQuery(undefined, {…})` dong bang `
+  });`.
+>
+> **Va mot hoi quy THAT bi bat nho baseline:** mot dot bien T4a **lot vao ban luu du phong**, lam mat
+> vinh vien cua `daBamChay`. Baseline ra **"1 failed"** - va **do la thu cuu no**. Neu doc **delta
+> ablation** ma **khong kiem baseline**, no da commit ma hong.
+> => **Ablation phai doc CA baseline, khong chi doc delta.**
+
+**Bat bien nhip an toan - chu du an kiem tan noi:** `TRAN_NHIP_AN_TOAN_MS = 20_000` nay la **hang co
+ten** (`useTrangThaiSong.ts:53`), dung o `:102`. Dot bien `20_000 → 30_000` ⇒ **DO, 3 ca doc lap**
+(*"tran dung bang 20 s"* · *"tran phai ngat hon nhip tong quan"* · *"socket khoe: o lai 20 s, khong troi
+len 30 s"*). Tong **6/6 dot bien tang 2 bi giet**, gom **T2b** (andon **muon tran 60 s** - *dem tong van
+dung*) va **T2d** (`Math.min`→`Math.max`).
+★ Test do **gia tri THAT** `nhipHoiToiDa` tra ve, **khong dem chinh ta** - phep do cu **chet khi ma doi
+nha** va **mu voi cach viet khac**.
+
+**Hai cho brief cua chu du an SAI:** (1) **`anhLichSu` KHONG thuoc tang 4** - ba truy van kia **tra** du
+lieu, cai nay **GHI** vao kho dung chung (`datAnhLichSu`) ⇒ **co tac dung phu**, tach rieng.
+(2) duong dan that la `client/src/pages/TwinVanHanh.tsx`, khong phai duoi `pages/twin3d/`.
+★ Brief **dung** cho **6 cho `refetchInterval`** (§14p.7 ghi **3** la sai) va dung ca 14 dong truy van.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
