@@ -508,6 +508,9 @@ describe("★★★ ⑨ Đợt 35 — operator1 (0 gán) thấy `chuaGanNhaMay`,
     // Đứng TRƯỚC `lyDoLine` và SAU `useTrangThaiSong` (overviewQ phải tồn tại rồi).
     expect(MA.indexOf("useTrangThaiSong({")).toBeLessThan(i);
   });
+  it("★★★ Đợt 36 — dải trạm `khoi-dai-line` KHÔNG hiện khi `lyDoLine !== \"mo\"` (ảnh i6: 'Cannot open line' mà dải 12 trạm + WIP vẫn bày dưới)", () => {
+    expect(MA).toMatch(/\{hangDai\.length > 0 && lyDoLine === "mo" \? \(\s*<div className="shrink-0 overflow-x-auto" data-testid="khoi-dai-line">/);
+  });
   it("nhánh `line-khong-mo-duoc` mang `data-ly-do={lyDoLine}`, đứng TRƯỚC `rongThat` và TRƯỚC `<CanhVanHanh` (0 canvas)", () => {
     const i = MA.indexOf('data-testid="line-khong-mo-duoc"');
     const j = MA.indexOf('data-testid="line-rong"');

@@ -1030,6 +1030,11 @@ export function ThanManLine({
           thứ hai (G12).
         ★ Dải hiện cả khi `rongThat`: một chuyền có trạm mà chưa có máy vẫn phải
           đọc được danh sách trạm của nó.
+        ★★★ Đợt 36 — nhưng KHÔNG hiện khi `lyDoLine !== "mo"`: ảnh tự chụp `i6-forbidden-line` (user chỉ
+          `analytics_oee`) cho thấy "Cannot open line #2" mà dải 12 trạm + WIP vẫn nằm dưới — hình học
+          qua `quyenDocHinhHoc` (được), `overview` bị 403. Một màn vừa nói "không mở được" vừa bày dữ
+          liệu là hai câu trả lời trên một màn (D-5). Với `chuaGanNhaMay` dải vốn rỗng (canhQ tắt) —
+          nay hai lý do cùng một hình.
 
         ★ `shrink-0` + `overflow-x-auto`: dải giữ nguyên chiều cao nội dung
           (≈93 px cho 12 ô) và **cuộn NGANG** khi chuyền dài, thay vì bóp ô trạm
@@ -1038,7 +1043,7 @@ export function ThanManLine({
           **h = 0** — một flex item không có trần lấy chiều cao theo NỘI DUNG,
           và anh em `flex-1` của nó chỉ còn phần dư.
       */}
-      {hangDai.length > 0 ? (
+      {hangDai.length > 0 && lyDoLine === "mo" ? (
         <div className="shrink-0 overflow-x-auto" data-testid="khoi-dai-line">
           <DaiLine
             tram={hangDai}
