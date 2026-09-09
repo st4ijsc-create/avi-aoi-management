@@ -81,3 +81,14 @@ describe("★★★ Hạng B — `DongChayLine.tsx` nối luật vào `useFrame`
     expect(MA).toMatch(/export \{ CUA_SO_HOAT_ANH_MS, NHIP_TOI_DA_MS \};/);
   });
 });
+
+describe("★★★ Hạng B — KÍCH 'dữ liệu đổi' chỉ khi TOẠ ĐỘ đổi (không phải khi mảng đổi tham chiếu)", () => {
+  const MA = readFileSync(resolve(__dirname, "DongChayLine.tsx"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  it("`duong` memo khoá bằng `khoaDiem` (chuỗi toạ độ), không bằng `[diem]` — đo sau-BCE: idle2 = 62 khung/4 s vì kick giả", () => {
+    expect(MA).toMatch(/const khoaDiem = diem\.map\(\(d\) => `\$\{d\.x\.toFixed\(3\)\},\$\{d\.y\.toFixed\(3\)\},\$\{d\.z\.toFixed\(3\)\}`\)\.join\("\|"\)/);
+    expect(MA).toMatch(/\}, \[khoaDiem\]\);/);
+    expect(MA).not.toMatch(/\}, \[diem\]\);/);
+  });
+});

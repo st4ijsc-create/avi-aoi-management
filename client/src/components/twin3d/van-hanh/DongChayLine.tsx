@@ -77,6 +77,13 @@ export function DongChayLine({ dongChay, soMuiTen = SO_MUI_TEN_MAC_DINH }: DongC
 
   const { diem, nhipMs } = dongChay;
 
+  /**
+   * ★★★ Đợt 35 (#6) — KHOÁ THEO GIÁ TRỊ: `diem` là mảng mới mỗi lần trang dựng lại `hinhLine`
+   *   (mỗi nhịp làm mới trạng thái), dù 12 toạ độ KHÔNG đổi. Khoá theo tham chiếu ⇒ `duong` mới
+   *   ⇒ `datMuiTen` mới ⇒ effect "dữ liệu đổi" KÍCH ⇒ 1,5 s hoạt ảnh (~60 khung) mỗi nhịp khi
+   *   không ai chạm — đo `.qa-dot35/sau-BCE/e7-*`: idle1 = 2 rồi idle2 = **62**. Dữ liệu đổi = TOẠ ĐỘ đổi.
+   */
+  const khoaDiem = diem.map((d) => `${d.x.toFixed(3)},${d.y.toFixed(3)},${d.z.toFixed(3)}`).join("|");
   /** Đường cong đi qua tâm các trạm; `null` khi chưa đủ 2 điểm để có hướng. */
   const duong = useMemo(() => {
     if (diem.length < 2) return null;
@@ -86,7 +93,8 @@ export function DongChayLine({ dongChay, soMuiTen = SO_MUI_TEN_MAC_DINH }: DongC
       "catmullrom",
       0.1,
     );
-  }, [diem]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cố ý: chỉ dựng lại khi TOẠ ĐỘ đổi
+  }, [khoaDiem]);
 
   /**
    * Đường kẻ nền — cho thấy TUYẾN, kể cả khi mũi tên đứng yên.
