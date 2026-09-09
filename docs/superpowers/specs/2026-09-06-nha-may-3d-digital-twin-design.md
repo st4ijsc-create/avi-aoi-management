@@ -5690,6 +5690,50 @@ Khong phai *"test van xanh"* ma la **hanh vi do duoc**:
 **5 anh lo C md5 nguyen** · DB `2 · 43 · 82` · va **nghiem thu THI GIAC** - tien le: nghiem thu mat o
 Dot 22/23 **bat 10 loi** ma **1.834 test mu**.
 
+### 14q.5 DOT 29 - T-4 XONG, va **VIEC TACH TU SINH RA MOT LOP LOI MOI**
+
+Hai commit (`0af7c459` tach · `e8679ada` noi + luoi khop noi). Cong: **78 tep / 2.010 test**
+(nen 75/1.967) - `check` 0 - `build` 0 - DB `2/43/82` (`stations` 37) - 5 anh md5 khop **tung byte**.
+`TwinVanHanh.tsx` **3.573 → 3.542**. Module moi `hopNhatCanh.ts` **422 dong**, **5 cho goi**
+(chu du an kiem), 7 ham: `dungMayVe:175` · `idMayChuaDat:233` · `mepMatBang:251` · `neoTrenNoc:296` ·
+`dungNhanMay:318` · `gopNhan:356` · `dungCanhBao3D:396`.
+
+> #### ★★★ G93 - **TACH MOT KHOI TAO RA MOT CHO MOI DE NOI NHAM**
+> Sau khi noi, Dot 29 ablation **o TRANG** (khong chi o module). **Ba dot bien SONG SOT ca 1.998 test**:
+> - `tangId: tangIdCuaDatCho` → `tangId` (pham vi theo **tang dang xem** thay vi **tang cua hang dat cho**)
+> - `idDuocNap: tapDs.idMay` → **moi may** (dung loi F2: **373 may tang khac** dung thanh khoi trong khu cho)
+> - `gopNhan(nhan, nhanLine)` → `gopNhan(nhan, [])` (**nhan chuyen #54 bien mat**)
+>
+> Luoi cua **module** khong cuu duoc: no chung minh **ham dung khi duoc goi dung**, **khong biet trang
+> goi bang doi so nao**.
+> ⇒ **Truoc khi tach**, `tangId`/`tapDs.idMay` nam **trong than bieu thuc**; **sau khi tach** chung thanh
+> **doi so truyen tay** - tuc **them dung mot cho de noi nham**. Da viet
+> `hopNhatCanhNoiVaoTrang.unit.test.ts` (**12 ca**); chay lai 3/3 nay **DO**.
+> => **Moi refactor "tach ra cho sach" deu MUA them mot be mat loi o KHOP NOI.** Phai ablation **o ca
+> hai phia**: module (ham dung khong) **va** trang (goi dung khong).
+
+> #### ★★★ G94 - **MA MAU ANSI LAM PHEP DO IM LANG TRA RONG**
+> Harness ablation dau loc `grep "Tests +[0-9]"` - vitest **chen ma mau ANSI** giua `Tests` va chu so
+> ⇒ mau **khong bao gio khop**, moi luot in ra **RONG**. **Doc rong thanh "khong do" cho ra dung ket
+> luan NGUOC.**
+> Chinh **baseline rong** to cao thiet bi (**G92** - doc ca baseline, khong chi delta). Sua bang
+> `sed 's/\[[0-9;]*m//g'` roi **chay lai TOAN BO** ablation, gom ca cac dot bien module **da "do"
+> truoc do** - vi khong the tin ket qua doc bang thiet bi hong.
+
+**Ablation: 11/11 dot bien DO, baseline XANH.** Gom hoan vi truc y↔z · `neoTrenNoc` cong cao vao z ·
+khu cho dung `!has()` (**khe giua hai dieu kien**) · ngoai pham vi lam **toi** thay vi **pha nen** ·
+`mepMatBang` tra `Infinity` · muc andon la **bi bo im lang**.
+
+**Khong tach them - da viet thanh test (G91):** `hopNhatCanhKhongTachThem.unit.test.ts` (6 ca).
+`cotWipCanh`/`bangWip`/`nhipChuyenMs` **DA tach san** - chung la **loi goi mot dong** toi `wipTram.ts`;
+keo qua module moi chi **them lop boc rong**, tuc them cho cho **luat thu hai moc len** (**G12**).
+`mayVeTatCa` la **DIEM NOI**, khong phai phep bien doi. **Hoan vi truc chi duoc viet MOT cho** -
+module goi `mmSangScene()` thay vi **ba** `mmSangMet` viet tay nhu ban cu.
+
+**Cho brief cua chu du an SAI (G83 lan tu):** phep dem cua toi la **grep THO co chu thich**.
+Chu du an do lai xac nhan: `mayVe` **tho 24 / sach 18** · `bangWip` 4→**2** · `cotWipCanh` 3→**2**.
+`:670` va `:984` **dung chinh xac**. ⇒ **Chinh cai bay G92 ma Dot 28 vua ghi da can toi o Dot 29.**
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
