@@ -6169,6 +6169,53 @@ o 1600 · G104 ngoai twin 6 cho.
 `khopKhungNhin`. **Dot 37 — QA lai bang `pdca`** (agent doc lap, khong sua ma) tren harness 41 ca Dot 32 + E1–E9 +
 K1–K9, ca hai viewport, ba vai.
 
+### 14q.14 DOT 36 - PARETO #8 i18n + CON MO - DAT; PARETO DOT 32 DONG 9/9
+
+`a2c3e53d`, **7 commit** pathspec. Chu du an do lai: twin3d **87 tep / 2.312** · `vitest run twin` 109/2.565 ·
+`check` 0 · `build` 0 · **`i18n:check` exit 0** (0 NEW missing; 339+20 no co truoc dong bang) · 5 anh nguyen · DB
+truoc = sau · 3036 tat · cay + index sach. Anh en man May tu xem: "Health 61 % · warning" · "OFFLINE" ·
+"Disconnected" · "Updated 54 days ago" — nhat quan.
+
+| I | truoc | sau | go va |
+|---|---|---|---|
+| I1 dong UI co dau o en/zh (twin/line/may) | **8/2/2** | **0/0/0** (vi doi chung 150/42/53 — bo do van keu) | 6/2/2 |
+| I2 `tuoi-14` | `4738076s` ×39/42 | "54 days / 54 ngày / 54 天", `data-giay` giu so tho | ×39 |
+| I3 chuoi ky thuat | may **3** (`model3d.source`, `health.source`, `oee.source`) | **0/0/0** | 3 |
+| I4 so nhieu en | "1 machines" ×12 | "1 machine" ×12 | ×12 |
+| I5 idle `/twin` | **137 khung/40 s** theo dot 8–36 (tween theo tham chieu) | **12/40 s**; keo 28 | 137 |
+| I6 FORBIDDEN tren Line (user tam chi `analytics_oee` + gan SIM-FAC, overview **403**) | `lyDo=null`, canvas 1, "Machines 12" | `thieuQuyen` 1,3 s, **0 canvas, 0 dai tram** | canvas 1 |
+
+Hoi quy E1–E9 + K1/K5/K7: **0** (`hoi-quy-cuoi/`).
+
+> #### ★★ G108 - **LUOI CO SAN DANG DO TAI HEAD MA KHONG AI CHAY = KHONG CO LUOI**
+> `npm run i18n:check` **exit 1 tai `89787b25`** (44 NEW missing-in-all) — script roi, khong nam trong `check`/`build`/
+> vitest ⇒ 35 dot qua **khong dot nao chay**. Toi brief "luoi i18n co san = `viStringCoverage`" — sai: cai do **mu khoa
+> vang ca ba locale**. ⇒ Cong dong phien tu Dot 37: **`i18n:check` exit 0** la mot hang bat buoc, ngang `check`/`build`.
+> Va: **manh moi sinh khoa moi** — toi dem 8+19 = 27 tu hai tep; that **44** (14 khoa `vanHanh` cua 4 manh Dot 33–35 +
+> 2 `daiHopNhat` + 1 `studioUi` + …) + 10 khoa mau `coCheGiao` cong cu mu. Dem khoa thieu bang **cong cu**, khong bang
+> hai tep minh nho.
+
+**Brief sai them (lan 11):** chuoi ky thuat khong chi `model3d` — `health.source`/`oee.source` cung lop
+(`MachineCockpit.tsx:951/997`) · FORBIDDEN **tao duoc** (nav `/twin` = `analytics_oee` HOAC `machine_status`; `overview`
+doi `machine_status`) — va co **nua thu hai chi anh bat**: dai tram + WIP van bay duoi "Cannot open line" ⇒ `a2c3e53d` ·
+regex I3 `twin\/` khop `href="/twin/line/2"` (1 duong gia trong HTML; so text moi dung) · idle `/twin` theo **dot**, khong
+lien tuc nhu Line.
+
+**Con mo:** `nhungTaiCho.ts:372` cau `thieuQuyen` "…to be assigned a factory" **sai cua** cho ca thieu quyen module (da
+gan nha may) — dung chung TwinMay, chua tach · idle `/twin` du 1–4 khung/nhip lam moi (tang kit `LoBatchMay`/`LopNhan`
+invalidate theo tham chieu `mayVe`) · zh **53/53 dich**, 7 khoa chua chac nghia (`may.hang.theoDoi`=关注,
+`may.hang.hetHan`=已过期, `vanHanh.moTwinStudio`, 4 cau dai) + thuat ngu lech co san "设备/台设备" vs "机台" ·
+`TwinVanHanh.tsx:2545–2565` object `defaultValue` `coCheGiao` thua (hinh-dang-3 34→10 neu go) · o *Live state* cockpit in
+`Status: online` (log status tho) canh "Disconnected" — **hai tu vung** tren mot the (NT-3, `khoTrangThai hopNhat`) · thong
+bao loi server chi vi trong console · vo shell vai chi `analytics_oee`: "Production (MES)" **0 muc nav** (ngoai twin) ·
+`khopKhungNhin` le bat doi xung (khong lam).
+
+**Pareto Dot 32: 9/9 DONG** (#1 Dot 34 · #2 #3 #9 Dot 33 · #4 #5 #6 #7 Dot 35 · #8 Dot 36). **Dot 37 — QA LAI TOAN BO
+bang `pdca`** (agent doc lap, khong sua ma): 41 ca Dot 32 doi chieu ket cuc cu → moi, K1–K9, E1–E9, I1–I6, hai viewport,
+ba vai + user tam 0 quyen + vai chi `analytics_oee`, en/vi/zh, dot bien nhip an toan, DOM canvas, bbox nhan, 14+6
+redirect, tenant, QD-18 hai chieu, mui gio (msl tam), may song (hb tam), andon tam, D-3 duong di that, **nghiem thu thi
+giac** ca 4 man × 2 vp — xep hang van de con lai cho chu so huu quyet.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
