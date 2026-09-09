@@ -5037,6 +5037,50 @@ Dot 24 khai giet cong 3005. Chu du an do lai luc **22:40**: con **3006** (PID 37
 **Xac minh cuoi:** `Get-NetTCPConnection` dai **3002-3200** ⇒ **0 server do**; cong **3000 (PID 28480)
 cua phien khac** ⇒ **con nguyen**.
 
+## 14m. DOT 25 - BRIEF CUA CHU DU AN SAI **NAM CHO**, tat ca vi **doc ma CU trong dau** (2026-09-09)
+
+Commit `2966f420`. Cay nguon **sach** (khong sua ma), 5 anh lo C md5 nguyen ven, §15 **2.003 dong**.
+
+> #### ★★★ G83 - **MO TA HIEN TRANG TU TRI NHO LA LOI KHAI VE MOT PHIEN BAN DA CHET**
+> Chu du an viet brief Dot 25 dua tren hieu biet **truoc Dot 21**. Nam cho sai, **tat ca cung mot goc**:
+>
+> | | Brief noi | Do lai (chu du an kiem) |
+> |---|---|---|
+> | **S-1** | *"4 page Twin, `/twin-studio` la man rieng"* | **Chi con 2 tuyen song** - `App.tsx:174,356` ghi ro `/twin-studio` **DA LA redirect** vao `/twin?che-do=botri` tu Dot 21; `/digital-twin` cung da redirect |
+> | **S-2** | *"chon may ⇒ ngan nhung, KHONG phai dialog"* | **`NganNhung.tsx` DA LA dialog that** - Radix Sheet, **`aria-modal`**, khoa cuon nen, focus trap, `Esc`. Cai thieu la **canh 3D trong dialog**, khong phai dialog |
+> | **S-3** | *"bay camera o `phamViCanh.ts:65`"* | `:65` la **`trongPhamVi()`** - mot **vi tu loc**. Camera Line o `TwinVanHanh.tsx:1965` |
+> | **S-4** | *"3 man qua phuc tap"* | Phuc tap **khong nam o so man**: **97,7 %** trong **MOT ham**, **50 `useMemo`** (chu du an dem lai: dung 50), 18 `useState`, 14 `useQuery` |
+> | **S-5** | *"mo 3 canh 3D cung luc thi CONG chi phi"* | ★★★ **Khong phai bai toan cong - BI CAM.** **RB-4 "MOT `<Canvas>` DUY NHAT"** co **4 cho** trong ma (`TwinVanHanh.tsx:8`, `:221`, `:234`, …) va la **luat an toan**, khong phai toi uu |
+>
+> ⇒ **Luat:** truoc khi viet brief mo ta hien trang, **grep lai tung cau khang dinh**. Mot he thay doi
+> nhanh thi tri nho cua **chinh nguoi dieu phoi** la nguon sai lech lon nhat - va no sai **mot cach tu
+> tin**, vi tung dung. Cung ho **G55** (*so do co han su dung*) nhung o tang **kien truc**, khong phai so.
+
+**QD-17 - "dialog" la trai nghiem, khong phai co che.** Dot 25 chon **lop noi trong CUNG mot `<Canvas>`**:
+trong nhu dialog (nen pha mo 72 % - `TI_LE_PHA_NGOAI_PHAM_VI` **da co**, vien, tieu de, `✕`, `Esc`)
+nhung **khong dung Canvas thu hai** (RB-4). Truc URL `?pv=` da co ⇒ **Back trinh duyet thanh "phim back"
+mien phi**. Ngan sach ba cap: **~12 draw calls / tran 150** (bien 92 %) - cai dat **khong phai GPU ma la
+NHAN** (tran 30 la tran *doc duoc*).
+★ Dot 25 tim lai loi **chinh chu so huu** viet o Dot 10 (chep tai `NganNhung.tsx:8`):
+*"dialog **hoac** modal **hien thi tren panel do luon**"* - **chinh ong da coi hai cach la tuong duong**.
+
+**★ MAU THUAN VOI QD-16 - dua ra HOI, khong tu chon.** Yeu cau Dot 25 doc nhu `/twin-studio` la trang
+rieng; nhung **QD-16** (chu so huu chot 2026-09-08) da gop mot trang + quyen theo vung, va **Dot 21 da
+thuc thi + nghiem thu 5/5 e2e voi 2 tai khoan that**. Tach lai = **dao nguoc mot dot da nghiem thu**, va
+`operator1` **mat loi vao**. De xuat: **giu QD-16**, chi doi nhan nut `⚙ Sua bo cuc` → `⚙ Twin Studio`
+(**mot chuoi i18n**).
+
+**Con dung MOT mon gop that:** `/command-center` (1.596 dong) → `?pv=tapdoan`, nhung ⛔ **khong redirect**
+truoc khi cap tap doan nghiem thu bang anh (R-4).
+
+**Bo hoat anh bang tai (D-7)** du **ca hai anh mau** ban no lam diem nhan: Hollifield neu **dich danh**
+*"moving conveyors"* la dau hieu do hoa kem, va duoi `frameloop="demand"` no **giu GPU chay 8 tieng**.
+Nguon ngoai duoc lam **manh hon**: cang di sau, ti le 3D cang **giam** (cap May chi **20 %** viewport).
+
+**G82 khai thang:** *"dep"* **KHONG DO DUOC** - thay bang **nghiem thu mat cua chu so huu** (tien le:
+nghiem thu thi giac Dot 22/23 bat **10 loi** ma 1.834 test mu). Va phep nghiem thu **khong** chung minh
+duoc nguoi van hanh that **tim may hong nhanh hon** - can nguoi dung that + dong ho.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
