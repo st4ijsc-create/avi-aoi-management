@@ -1733,7 +1733,7 @@ export function ThanTwinVanHanh() {
   );
 
   /* ── Khung nhìn theo phạm vi ────────────────────────────────────────── */
-  const khungNhin = useMemo<KhungNhin | null>(() => {
+  const khungNhinTho = useMemo<KhungNhin | null>(() => {
     if (phamVi.cap === "line" && hinhLine) {
       return khungNhinLine(hinhLine.hh.bbox, hinhLine.hh.truc, hinhLine.hh.trucDangTin);
     }
@@ -1769,6 +1769,18 @@ export function ThanTwinVanHanh() {
       phamVi.cap,
     );
   }, [phamVi, hinhLine, mayVe]);
+  /*
+   * ★★★ ĐỢT 36 — ỔN ĐỊNH THEO GIÁ TRỊ (cùng cơ chế Đợt 35 ở `TwinLine.tsx` `khoaKhungNhin`). Đo trên dist
+   *   trước vá (`.qa-dot36/truoc/i5b-chan-doan-idle-twin-*.json`): `/twin` đứng yên 40 s vẽ **137 khung**
+   *   theo từng đợt 8–36 khung, camera KHÔNG đổi — `mayVe` dựng lại mỗi nhịp làm mới trạng thái ⇒ memo trên
+   *   trả đối tượng MỚI cùng giá trị ⇒ `DieuKhien` (CanhVanHanh) tween lại về đúng chỗ đang đứng (~30
+   *   khung/lần, D-7). Khoá = toạ độ làm tròn mm; cùng khoá ⇒ cùng đối tượng ⇒ không tween.
+   */
+  const khoaKhungNhin = khungNhinTho
+    ? `${khungNhinTho.viTri.map((v) => v.toFixed(3)).join(",")}|${khungNhinTho.muc.map((v) => v.toFixed(3)).join(",")}`
+    : "";
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- cố ý: chỉ đổi đối tượng khi GIÁ TRỊ đổi
+  const khungNhin = useMemo(() => khungNhinTho, [khoaKhungNhin]);
 
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* NT-3 — đếm, đối soát, độ tươi                                            */

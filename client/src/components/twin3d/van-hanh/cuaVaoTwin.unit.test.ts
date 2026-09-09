@@ -159,6 +159,25 @@ describe("★★★ ④ TwinLine — QĐ-23 #2 + #5 + Pareto #9", () => {
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 36 — `/twin` cũng ổn định `khungNhin` THEO GIÁ TRỊ (idle 137 khung/40 s trước vá)          */
+/* ══════════════════════════════════════════════════════════════════════════ */
+describe("★★★ Đợt 36 — TwinVanHanh: `khungNhin` là bản ổn định theo GIÁ TRỊ của `khungNhinTho` (cùng cơ chế Line Đợt 35)", () => {
+  it("biểu thức theo cấp sống ở `khungNhinTho` (deps phamVi/hinhLine/mayVe); `khungNhin` chỉ đổi khi `khoaKhungNhin` đổi", () => {
+    const i = NHA_MAY.indexOf("const khungNhinTho = useMemo<KhungNhin | null>(() => {");
+    expect(i).toBeGreaterThan(-1);
+    const than = NHA_MAY.slice(i, NHA_MAY.indexOf("}, [phamVi, hinhLine, mayVe]);", i));
+    expect(than).toContain("khungNhinLine(");
+    expect(than).toContain("khungNhinCho(");
+    expect(NHA_MAY).toContain("const khungNhin = useMemo(() => khungNhinTho, [khoaKhungNhin])");
+    // Khoá làm tròn mm ở CẢ viTri lẫn muc — thiếu một nửa là tween lại khi nửa kia đổi.
+    expect(NHA_MAY).toMatch(/const khoaKhungNhin = khungNhinTho\s*\?\s*`\$\{khungNhinTho\.viTri\.map\(\(v\) => v\.toFixed\(3\)\)\.join\(","\)\}\|\$\{khungNhinTho\.muc\.map\(\(v\) => v\.toFixed\(3\)\)\.join\(","\)\}`/);
+    // `<CanhVanHanh khungNhin={khungNhin}>` nhận bản ỔN ĐỊNH, không nhận bản thô.
+    expect(NHA_MAY).toContain("khungNhin={khungNhin}");
+    expect(NHA_MAY).not.toContain("khungNhin={khungNhinTho}");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
 /* ⑤ MÀN MÁY: link về đúng `?pv=`; `?cam=` đọc thật; đường sang Line mang state */
 /* ══════════════════════════════════════════════════════════════════════════ */
 describe("★★★ ⑤ TwinMay — QĐ-23 #5 + Pareto #9", () => {
