@@ -5363,6 +5363,43 @@ canvas 51,4 %, `__soCanvas=1`, draw calls, so nhan, badge nguon so, va **ca hai 
 **Q-2 da tra loi** (QD-18, §14o). **Q-4 (`/command-center`) chua tra loi** - giu nguyen, **khong redirect**
 cho toi khi `?pv=tapdoan` nghiem thu bang anh voi du lieu that (R-4).
 
+### 14p.3 VAT LIEU SAN CO CHO HAI MAN MOI - do truoc khi giao dot xay
+
+Chu du an do **truoc** khi viet brief dot xay, de khong lap **G83** (*mo ta hien trang tu tri nho*).
+
+**Man LINE - da co, dem bang cho goi:**
+
+| Manh | Cho goi | Vai tro |
+|---|---|---|
+| `DongChayLine` | **10** | mui ten dong chay giua tram |
+| `DaiLine` | **7** | dai xep hang tram + WIP |
+| `phamViLine` | **6** | loc vat the theo line |
+| `khungNhinLine` | **3** | camera bay theo line |
+
+**Man MACHINE - da co:**
+
+| Manh | Cho goi | Vai tro |
+|---|---|---|
+| `NganNhung` | **40** | dialog that (Radix `Sheet`, `aria-modal`, `Esc`) |
+| `NganXuLy` | **28** | mat GHI cap may (2 mutation W1/W2 + 3 qua ngan nhung) |
+| `MachineCockpitBody` | **14** | than cockpit **da tach san** de nhung (G37) |
+| `vienSucKhoe` | **11** | vien suc khoe neo vat the (42 khai di qua) |
+
+⇒ **Ca hai man moi dung tu manh DA NGHIEM THU**, khong phai viet tu dau. Rui ro chinh **khong phai**
+"viet moi" ma la **noi day** va **giu hanh vi**.
+
+**Hien trang dinh tuyen:** chi **2 route** (`App.tsx:360` `/twin`, `:399` `/twin-studio`).
+`CapPhamVi` (`duongDanTwin.ts:38`) **da khai du 5 cap** `tapDoan|nhaMay|tang|line|may` va **ca 5 deu co
+xu ly that** (§11e.3) ⇒ **truc pham vi khong phai xay moi**, chi can **duong vao rieng** cho hai cap
+`line` va `may`.
+
+⚠ **Cau con mo cho dot xay:** URL cua hai man moi. Hai hinh dang:
+- `/twin/line/:id` + `/twin/may/:id` — **duong dan phan cap**, doc duoc, bookmark tu nhien
+- `/twin-line?id=` + `/twin-may?id=` — **phang**, giong `/twin-studio`
+
+Chu du an **khong tu chon** - de dot xay do va de xuat, vi no cham **14 redirect** da nghiem thu (G40:
+mot khoa/duong dan sai se **bi nuot im lang**, khong loi nao no).
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
