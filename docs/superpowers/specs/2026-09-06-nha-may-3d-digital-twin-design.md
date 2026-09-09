@@ -5312,6 +5312,57 @@ chua sua**. `operator1` co **0 hang** `user_factory_assignments` (toan DB **3 ha
 Khang dinh **tron** *vao duoc* (QUYEN) voi *co du lieu* (GAN NHA MAY). Ha xuong `annotations` kem ly do,
 **khong noi long im lang**.
 
+## 14p. QD-19 + QD-20 - CHU SO HUU TRA LOI Q-1 VA Q-3 (2026-09-09)
+
+### 14p.1 QD-19 - **BA MAN RIENG BIET**, moi man MOT canvas
+
+§15.8 hoi **Q-1**: lop noi (L2, khuyen nghi) hay **modal that** (L3)? Chu so huu chon **modal that**,
+roi **lam ro them ngay sau do**:
+
+> *"y toi 1 man canvas la danh cho factory thoi, con Line/Machine la 2 man hinh khac"*
+
+⇒ **Khong phai mot trang doi noi dung canh. Ba MAN RIENG:**
+
+| Man | Canvas | Noi dung |
+|---|---|---|
+| **Factory** | rieng | canh nha may |
+| **Line** | rieng | canh mot chuyen |
+| **Machine** | rieng | canh mot may |
+
+★ **Chu du an tung hieu sai** *"modal that"* = mot trang thu don roi dung lai canh. Chu so huu **lam ro
+truoc khi dot xay bat dau** ⇒ **khong ton gi**. (Neu khong hoi Q-1 ma cu the xay, dot 27 da di sai duong.)
+
+> #### ★★★ G87 - **BA MAN RIENG LAM RB-4 SACH HON MOT TRANG DOI NOI DUNG**
+> Lo ngai ban dau: ba cap ⇒ nhieu canvas ⇒ vi pham **RB-4** (`KhungCanh.tsx:221-232` dem canvas **dang
+> mount cung luc**, canh bao khi `> 1`; ly do ghi trong ma: *"can WebGL context… bieu hien la canvas DEN,
+> khong phai mot loi doc duoc"*).
+> **Ba man rieng thi ba canvas KHONG BAO GIO song cung luc - VI ROUTER**, khong vi mot bieu thuc dieu
+> kien ai do co the sua nham. `__soCanvas` van **= 1** o moi man.
+> ⇒ **Dung bai hoc G84** (Dot 26, `/twin-studio`): **tach lai lam hang rao CHAT hon, khong long hon**.
+> Hai lan lien tiep, cung mot ket luan: **kien truc dinh tuyen manh hon co che dieu kien**.
+
+**Cai that su danh doi** (chu du an neu day du **truoc khi** chu so huu quyet): mat **ngu canh khong
+gian** (o man Line khong con thay Line nam dau trong nha may) va **toc do chuyen man** (thu don canh cu,
+dung canh moi). ⇒ Neu mot dot sau thay *"giat khi mo Line"*, **day la nguyen nhan da biet truoc**,
+khong phai loi moi.
+
+### 14p.2 QD-20 - **TACH TRUOC, XAY SAU** (dung khuyen nghi Q-3)
+
+Tach **T-1/T-2/T-3** (~1.100 dong, **thuan doc**, rui ro thap) **truoc**; giu **mat ghi** (T-4/T-5/T-6)
+cho dot sau. Ly do §15.8: xay trom len `TwinVanHanh.tsx` **3.754 dong / MOT ham / 50 `useMemo`** se lam
+no phinh **~5.000 dong**, va manh **kho tach nhat** (mat ghi) cang kho tach an toan ve sau.
+
+★ **QD-19 lam viec tach CANG DANG GIA**: ba manh thuan doc se **dung chung cho ca ba man**, thay vi bi
+chon trong mot ham. Rang buoc them cho dot tach: **khong de manh tach ra doc thang `useSearch()`/
+`useRoute()`** cua trang cha - **nhan qua prop**. Day chinh la **G37**: *man tu doc route hong CAM khi
+dat ngoai route cua no* (`RobotCockpit`/`StationAnalysis` tung dinh, `id = NaN`, **khong exception**).
+
+**Tieu chi nghiem thu cua dot tach la HANH VI KHONG DOI**, khong phai "test van xanh" (**G5/G32**):
+canvas 51,4 %, `__soCanvas=1`, draw calls, so nhan, badge nguon so, va **ca hai chieu quyen** cua QD-18.
+
+**Q-2 da tra loi** (QD-18, §14o). **Q-4 (`/command-center`) chua tra loi** - giu nguyen, **khong redirect**
+cho toi khi `?pv=tapdoan` nghiem thu bang anh voi du lieu that (R-4).
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
