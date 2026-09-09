@@ -62,7 +62,12 @@
 import { idLineTuDuongDan, mayCuaLine, type MayThuocLine, type TramCuaLine } from "./manLine";
 import { lineCuaMay } from "./cayVanHanh";
 import type { PhamVi } from "./duongDanTwin";
-import { bboxCuaTap, khungNhinCho, type KhungNhin } from "./phamViCanh";
+import {
+  bboxCuaTap,
+  khungNhinCho,
+  KHOANG_CACH_TOI_DA_CAP_MAY,
+  type KhungNhin,
+} from "./phamViCanh";
 import { hangSucKhoe, type HangSucKhoe, type KhaiSucKhoe, type MucKhanBaoTri } from "./sucKhoeMay";
 import { lyDoNganNhung, type CanhXetNgan, type LyDoNgan } from "./nhungTaiCho";
 import { mmSangMet } from "../heToaDo";
@@ -203,11 +208,32 @@ export function mucTieuTrongCanh<T extends { machineId: number }>(
 /* ══════════════════════════════════════════════════════════════════════════ */
 
 /**
+ * ★★★ HỆ SỐ LÙI THÊM cho camera màn Máy — ĐO ĐƯỢC, không phải thẩm mỹ.
+ *
+ * Nghiệm thu ảnh lần đầu (2026-09-09, `dist`, 1600×900, máy 14): với
+ * `khungNhinCho(bbox, "may")` nguyên bản (`HE_SO_LUI.may = 1.1`) camera cách
+ * tâm máy ~2 m; khối 1,8 m **bị cắt nóc** và nhãn tên trên nóc (`neoTrenNoc`
+ * + `HO_NHAN_MAY`) nằm NGOÀI khung ⇒ `LopNhan` declutter ẩn nó, chip
+ * *"1 more names hidden"* hiện ra — màn Máy **mất 1/3 thứ neo** của §15.6.1
+ * (tên · badge · viền). Hình học: FOV dọc của `KhungCanh` là **45°**
+ * (`KhungCanh.tsx:207`), nửa góc 22,5°; ở 2 m nhãn lệch trục nhìn ~40°.
+ *
+ * ⇒ Lùi camera thêm theo hệ số này (giữ NGUYÊN mục nhìn và hướng nhìn, chỉ
+ *   nhân véc-tơ lùi), rồi vẫn kẹp từng trục ≤ `KHOANG_CACH_TOI_DA_CAP_MAY`.
+ *   Không sửa `HE_SO_LUI.may`: hằng ấy dùng chung với `/twin?pv=may` (canvas
+ *   lớn, tỉ lệ khác) — đổi là đổi cả hai màn. Lưới ⑥ tính GÓC của 8 đỉnh khối
+ *   + điểm nhãn nóc so với trục nhìn và đòi < 22,5° — tức là cả máy lẫn nhãn
+ *   nằm trong nón FOV với MỌI tỉ lệ canvas ≥ 1:1.
+ */
+export const HE_SO_NOI_KHUNG_MAY = 2.2;
+
+/**
  * Khung nhìn cho MỘT máy.
  *
  * ★ Uỷ thác cho `khungNhinCho(bbox, "may")` — nơi `HE_SO_LUI.may`/`HE_SO_CAO.may`
  *   và trần `KHOANG_CACH_TOI_DA_CAP_MAY = 8` sống (G12). Bbox dựng bằng
- *   `bboxCuaTap` từ tâm đáy + kích thước **quy về mét**.
+ *   `bboxCuaTap` từ tâm đáy + kích thước **quy về mét**; sau đó lùi thêm theo
+ *   {@link HE_SO_NOI_KHUNG_MAY} và kẹp lại trần 8 m.
  *
  * ⚠⚠ BẪY HOÁN VỊ TRỤC: `viTri` của khối đã ở hệ cảnh (**`y` = độ cao**), nên
  *   truyền thẳng làm `tam`. Ai "sửa" thành `{x, y: viTri.z, z: viTri.y}` sẽ
@@ -217,7 +243,10 @@ export function mucTieuTrongCanh<T extends { machineId: number }>(
  * @returns `null` khi chưa có khối (máy chưa đặt chỗ) — trang GIỮ camera, không
  *   bay tới `Infinity` (G8).
  */
-export function khungNhinMay(mucTieu: KhoiMayDaDung | null): KhungNhin | null {
+export function khungNhinMay(
+  mucTieu: KhoiMayDaDung | null,
+  heSoNoi: number = HE_SO_NOI_KHUNG_MAY,
+): KhungNhin | null {
   if (!mucTieu) return null;
   const bbox = bboxCuaTap([
     {
@@ -229,7 +258,19 @@ export function khungNhinMay(mucTieu: KhoiMayDaDung | null): KhungNhin | null {
       },
     },
   ]);
-  return khungNhinCho(bbox, "may");
+  const k = khungNhinCho(bbox, "may");
+  if (!k) return null;
+  const kep = (d: number) =>
+    Math.sign(d) * Math.min(Math.abs(d) * heSoNoi, KHOANG_CACH_TOI_DA_CAP_MAY);
+  return {
+    muc: k.muc,
+    viTri: [
+      k.muc[0] + kep(k.viTri[0] - k.muc[0]),
+      k.muc[1] + kep(k.viTri[1] - k.muc[1]),
+      k.muc[2] + kep(k.viTri[2] - k.muc[2]),
+    ],
+    banKinh: k.banKinh * heSoNoi,
+  };
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ */

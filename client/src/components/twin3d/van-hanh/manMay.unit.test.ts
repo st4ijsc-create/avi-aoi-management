@@ -6,9 +6,12 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import * as manMay from "./manMay";
 import {
+  HE_SO_NOI_KHUNG_MAY,
   idMayTuDuongDan,
   khungNhinMay,
   lineCuaMayTheoTram,
@@ -22,6 +25,7 @@ import { idLineTuDuongDan } from "./manLine";
 import { trongPhamVi, KHOANG_CACH_TOI_DA_CAP_MAY } from "./phamViCanh";
 import { HAN_KHAI_SUC_KHOE_MS, type KhaiSucKhoe } from "./sucKhoeMay";
 import { lyDoNganNhung } from "./nhungTaiCho";
+import { HO_NHAN_MAY, neoTrenNoc } from "./hopNhatCanh";
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* Mẫu dùng chung                                                              */
@@ -216,6 +220,62 @@ describe("★★★ ⑥ khungNhinMay — orbit ≤ 8 m quanh MỘT máy, `y` là
       expect(Math.abs(k.viTri[i] - k.muc[i])).toBeLessThanOrEqual(KHOANG_CACH_TOI_DA_CAP_MAY + 1e-9);
     }
   });
+
+  /* ── Nón FOV: cả máy LẪN nhãn nóc phải lọt khung — lỗi ẢNH bắt được ──── */
+
+  /** FOV DỌC của `KhungCanh` (độ). Ghim bằng văn bản ở ca cuối, không đoán. */
+  const FOV_DOC = 45;
+  const goc = (k: { viTri: number[]; muc: number[] }, p: number[]) => {
+    const v = [k.muc[0] - k.viTri[0], k.muc[1] - k.viTri[1], k.muc[2] - k.viTri[2]];
+    const w = [p[0] - k.viTri[0], p[1] - k.viTri[1], p[2] - k.viTri[2]];
+    const dot = v[0] * w[0] + v[1] * w[1] + v[2] * w[2];
+    const nv = Math.hypot(...v);
+    const nw = Math.hypot(...w);
+    return (Math.acos(dot / (nv * nw)) * 180) / Math.PI;
+  };
+  const dinhKhoi = (() => {
+    const { x, y, z } = khoi.viTri;
+    const r = khoi.kichThuocMm.rongMm / 2000;
+    const c = khoi.kichThuocMm.caoMm / 1000;
+    const s = khoi.kichThuocMm.sauMm / 2000;
+    const ds: number[][] = [];
+    for (const dx of [-r, r]) for (const dy of [0, c]) for (const dz of [-s, s]) ds.push([x + dx, y + dy, z + dz]);
+    return ds;
+  })();
+  const nhanNoc = (() => {
+    const n = neoTrenNoc({ machineId: 7, viTri: khoi.viTri, kichThuocMm: { caoMm: khoi.kichThuocMm.caoMm } }, HO_NHAN_MAY);
+    return [n.x, n.y, n.z];
+  })();
+
+  it("★★★ 8 đỉnh khối + điểm nhãn nóc đều lệch trục nhìn < 22,5° — cả máy lẫn tên lọt nón FOV 45°", () => {
+    const k = khungNhinMay(khoi)!;
+    for (const d of dinhKhoi) expect(goc(k, d), `đỉnh ${d.join(",")}`).toBeLessThan(FOV_DOC / 2);
+    expect(goc(k, nhanNoc), "nhãn trên nóc").toBeLessThan(FOV_DOC / 2);
+  });
+
+  it("★★★ ĐỐI CHỨNG — hệ số 1 (bản đầu) đẩy nhãn nóc RA NGOÀI nón: chính lỗi ảnh nghiệm thu bắt được", () => {
+    /*
+     * 2026-09-09, `dist`, 1600×900, máy 14: khối bị cắt nóc, `LopNhan` ẩn nhãn tên,
+     * chip "1 more names hidden" hiện — màn mất 1/3 thứ neo của §15.6.1.
+     */
+    const k1 = khungNhinMay(khoi, 1)!;
+    expect(goc(k1, nhanNoc)).toBeGreaterThan(FOV_DOC / 2);
+  });
+
+  it("★ lùi thêm KHÔNG đổi mục nhìn và KHÔNG đổi hướng — chỉ đổi khoảng cách", () => {
+    const k1 = khungNhinMay(khoi, 1)!;
+    const k = khungNhinMay(khoi)!;
+    expect(k.muc).toEqual(k1.muc);
+    for (let i = 0; i < 3; i += 1) {
+      expect(k.viTri[i] - k.muc[i]).toBeCloseTo((k1.viTri[i] - k1.muc[i]) * HE_SO_NOI_KHUNG_MAY, 9);
+    }
+    expect(HE_SO_NOI_KHUNG_MAY).toBeGreaterThan(1);
+  });
+
+  it("★ FOV 45 là số THẬT của `KhungCanh` — đọc văn bản, không kế thừa", () => {
+    const nguon = readFileSync(resolve(__dirname, "../loi/KhungCanh.tsx"), "utf8");
+    expect(nguon).toMatch(/fov = 45\b/);
+  });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -308,10 +368,11 @@ describe("★★★ ⑧ lyDoMoManMay — uỷ thác `lyDoNganNhung`, cùng thứ
 /* ⑨ ★★★ G91 — BỀ MẶT CÔNG KHAI ĐÓNG: KHÔNG WIP, KHÔNG đường tâm, KHÔNG đếm      */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
-describe("★★★ ⑨ G91 — `manMay` chỉ xuất đúng 8 hàm; thêm WIP/đếm ở đây là lặp G12", () => {
+describe("★★★ ⑨ G91 — `manMay` chỉ xuất đúng 8 hàm + 1 hằng; thêm WIP/đếm ở đây là lặp G12", () => {
   it("danh sách export ĐÓNG", () => {
     expect(Object.keys(manMay).sort()).toEqual(
       [
+        "HE_SO_NOI_KHUNG_MAY",
         "idMayTuDuongDan",
         "phamViCuaManMay",
         "lineCuaMayTheoTram",

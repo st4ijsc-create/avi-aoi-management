@@ -172,6 +172,34 @@ describe("★★★ ④ G87 + §15.7.1 — một canvas, và canvas KHÔNG đư�
     expect(khoi).not.toContain("flex-1");
   });
 
+  it("★★★ sàn khung ≥ 320 px (= `minHeight` của KhungCanh) và `overflow-hidden` — canvas không được tràn", () => {
+    /*
+     * Nghiệm thu ảnh lần đầu: `clamp(220px, …)` = 306 ở 900 px, canvas 320 tràn
+     * 14 px xuống header cockpit. bbox DOM của khung "đúng", chỉ bbox CANVAS +
+     * ảnh bắt được. Đọc `minHeight: 320` từ chính `KhungCanh.tsx`, không kế thừa.
+     */
+    const khoi = theMo("khoi-canh-may");
+    const san = Number((khoi.match(/clamp\((\d+)px/) ?? [])[1]);
+    const kit = docSach("src/components/twin3d/loi/KhungCanh.tsx");
+    const sanKit = Number((kit.match(/minHeight:\s*(\d+)/) ?? [])[1]);
+    expect(sanKit).toBeGreaterThan(0);
+    expect(san).toBeGreaterThanOrEqual(sanKit);
+    expect(khoi).toContain("overflow-hidden");
+  });
+
+  it("★★★ CHƯA biết máy mở được thì CHƯA mount cảnh/cockpit/ngăn — nhánh `dangTai` đứng TRƯỚC bố cục", () => {
+    /*
+     * Ảnh lần đầu: cockpit + NganXuLy mount trong lúc `dangTai` ⇒ hỏi server về
+     * máy người dùng không được xem ⇒ toast "Could not find machine." cạnh câu L-5.
+     */
+    const i = MA.indexOf(") : dangTai ? (");
+    const j = MA.indexOf('data-testid="may-dang-tai"');
+    const k = MA.indexOf("<CanhVanHanh");
+    expect(i).toBeGreaterThan(-1);
+    expect(j).toBeGreaterThan(i);
+    expect(k, "canvas phải nằm SAU nhánh dangTai").toBeGreaterThan(j);
+  });
+
   it("★★★ cockpit 2D là phần `flex-1` + `overflow-y-auto` — nó chiếm phần lớn màn", () => {
     const khoi = theMo("cockpit-2d");
     expect(khoi).toContain("flex-1");
@@ -227,11 +255,22 @@ describe("★★★ ⑥ Lý do mở màn qua `lyDoMoManMay` với `dangTai`; câ
     expect(MA).toContain('data-testid="may-khong-mo-duoc"');
   });
 
-  it("★★★ `chuaDatCho` đợi `!dangTai && canhQ.isSuccess` — không khai 'chưa đặt chỗ' khi chưa hỏi xong", () => {
-    const d = dong("chuaDatCho");
+  it("★★★ `chuaDatCho` đợi `!dangTai && canhQ.isSuccess && !canhQ.isFetching` — không khai 'chưa đặt chỗ' khi chưa hỏi xong", () => {
+    const i = MA.indexOf("const chuaDatCho =");
+    expect(i).toBeGreaterThan(-1);
+    const d = MA.slice(i, MA.indexOf(";", i));
     expect(d).toContain("!dangTai");
     expect(d).toContain("canhQ.isSuccess");
+    // ★ `canhThietKe` hỏi hai lượt (tangIds [] rồi thật); giữa hai lượt datCho rỗng.
+    expect(d).toContain("!canhQ.isFetching");
     expect(d).toContain("mucTieu === null");
+  });
+
+  it("★ `dangTai` gồm đủ chuỗi xếp tầng: factories → toaNha → chiTiet → canh, + overview", () => {
+    const i = MA.indexOf("const dangTai =");
+    expect(i).toBeGreaterThan(-1);
+    const d = MA.slice(i, MA.indexOf(";", i));
+    for (const q of ["factoriesQ", "toaNhaQ", "chiTietQ", "canhQ", "overviewQ"]) expect(d).toContain(`${q}.isLoading`);
   });
 
   it("★★★ NT-3 — tuổi dữ liệu CHỈ từ `kind === \"offline\"`", () => {

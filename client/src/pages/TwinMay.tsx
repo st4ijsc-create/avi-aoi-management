@@ -18,7 +18,8 @@
  * §15 đo và nói rõ: *"ở cấp Máy, canvas 3D chỉ chiếm 620×300 = 20 % viewport —
  * phần còn lại là `NganXuLy` + thẻ chỉ số. Càng đi sâu, tỉ lệ 3D càng GIẢM"*
  * (§15.7.1), và §14.8: *"3D được biện minh cho ĐỊNH VỊ, không cho ĐIỀU KHIỂN"*.
- * ⇒ Cảnh 3D ở đây **NHỎ và có trần chiều cao** (`clamp(220px, 34vh, 340px)`);
+ * ⇒ Cảnh 3D ở đây **NHỎ và có trần chiều cao** (`clamp(320px, 36vh, 360px)` —
+ *   sàn 320 là `minHeight` của `KhungCanh`, xem chú thích tại khối canvas);
  *   phần lớn màn là **cockpit 2D**. ⛔ Đừng cho khối canvas `flex-1` "cho đẹp" —
  *   đó là đảo ngược một kết luận có nguồn, và lưới khớp nối ghim điều này.
  *
@@ -535,7 +536,16 @@ export function ThanManMay({ machineId }: ThanManMayProps) {
     ) ||
     (!factoriesQ.isLoading && !factoriesQ.isError && factories.length === 0);
 
-  const dangTai = factoriesQ.isLoading || canhQ.isLoading || overviewQ.isLoading;
+  /*
+   * ★ Gồm cả `toaNhaQ`/`chiTietQ`: chuỗi truy vấn xếp tầng (nhà máy → toà →
+   *   tầng → cảnh), thiếu một mắt là "đã tải xong" sớm một nhịp.
+   */
+  const dangTai =
+    factoriesQ.isLoading ||
+    toaNhaQ.isLoading ||
+    chiTietQ.isLoading ||
+    canhQ.isLoading ||
+    overviewQ.isLoading;
 
   /*
    * ★★★ `dangTai` là điều kiện BẮT BUỘC: lượt tải đầu `mayTatCa` cũng rỗng, và
@@ -545,8 +555,14 @@ export function ThanManMay({ machineId }: ThanManMayProps) {
   const idTrongTam = useMemo(() => mayTatCa.map((m) => m.id), [mayTatCa]);
   const lyDo = lyDoMoManMay(machineId, { idTrongTam, phamViRong, dangTai });
 
-  /* Máy CÓ trong nhà máy nhưng CHƯA có chỗ trên bố cục ⇒ chỉ khối 3D trống. */
-  const chuaDatCho = !dangTai && canhQ.isSuccess && mayNay !== null && mucTieu === null;
+  /*
+   * Máy CÓ trong nhà máy nhưng CHƯA có chỗ trên bố cục ⇒ chỉ khối 3D trống.
+   * ★ `!canhQ.isFetching`: `canhThietKe` được hỏi HAI lượt (tangIds `[]` rồi
+   *   tangIds thật); giữa hai lượt `datCho` còn rỗng ⇒ thiếu vế này màn khai
+   *   *"máy chưa có chỗ"* một nhịp về một máy CÓ chỗ (NT-3.5, đúng lớp T10).
+   */
+  const chuaDatCho =
+    !dangTai && canhQ.isSuccess && !canhQ.isFetching && mayNay !== null && mucTieu === null;
 
   const tenMay =
     mayNay?.ten || mayNay?.ma || t("twin3d.may.maySo", "Máy #{{n}}", { n: machineId });
@@ -609,6 +625,22 @@ export function ThanManMay({ machineId }: ThanManMayProps) {
             onAction={() => setLocation("/twin")}
           />
         </div>
+      ) : dangTai ? (
+        /*
+         * ★★★ CHƯA BIẾT máy có mở được không thì CHƯA mount cảnh/cockpit/ngăn.
+         *   Nghiệm thu ảnh lần đầu: với máy ngoài phạm vi (257) và với
+         *   `operator1`, cockpit + `NganXuLy` được mount trong lúc `dangTai`
+         *   (`lyDo` còn là `"mo"`), tự hỏi server về một máy người dùng KHÔNG
+         *   được xem ⇒ toast *"Could not find machine."* nổi lên cạnh câu L-5 —
+         *   hai câu cho một sự việc, và câu toast là câu SAI (máy có tồn tại).
+         *   Kèm theo là một canvas dựng rồi huỷ trong ~1 s (WebGL context vô ích).
+         */
+        <div
+          className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground"
+          data-testid="may-dang-tai"
+        >
+          {t("twin3d.may.dangTai", "Đang tải máy…")}
+        </div>
       ) : (
         <div className="flex min-h-0 flex-1">
           {/* ── Cột trái: cảnh 3D NHỎ (trên) + cockpit 2D (dưới, chiếm phần lớn) ── */}
@@ -617,10 +649,15 @@ export function ThanManMay({ machineId }: ThanManMayProps) {
               ★★★ TRẦN CHIỀU CAO cho cảnh 3D — §15.7.1: cấp Máy ≈ 20 % viewport.
                 `shrink-0` + `clamp(…vh…)`; KHÔNG `flex-1`. Cho nó `flex-1` là
                 đảo ngược kết luận §14.8 và đẩy cockpit 2D xuống dưới mép (G41).
+              ⚠ SÀN 320 px là của `KhungCanh` (`KhungCanh.tsx:242` ép
+                `minHeight: 320`). Bản đầu đặt `clamp(220px, 34vh, 340px)` = 306
+                ở 900 px ⇒ canvas 320 TRÀN 14 px xuống dưới header cockpit —
+                bbox DOM của khung vẫn "đúng", chỉ ảnh + bbox của CANVAS bắt
+                được. Nên sàn ≥ 320 và `overflow-hidden` để khung là trần thật.
             */}
             <div
-              className="relative shrink-0"
-              style={{ height: "clamp(220px, 34vh, 340px)" }}
+              className="relative shrink-0 overflow-hidden"
+              style={{ height: "clamp(320px, 36vh, 360px)" }}
               data-testid="khoi-canh-may"
             >
               {chuaDatCho ? (
