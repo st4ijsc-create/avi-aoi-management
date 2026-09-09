@@ -63,7 +63,7 @@ import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
 import { computeVirtualWindow } from "@/components/DataTable";
 import { giaiMauCanh, mauChoTrangThai } from "../mauTrangThai";
-import { hienSo, nhanDoTuoi, type MayVanHanh } from "./trungThucDuLieu";
+import { nhanDoTuoi, nhanTuoiDocDuoc, type MayVanHanh } from "./trungThucDuLieu";
 
 /**
  * Chiều cao MỘT hàng, px. Phải khớp với chiều cao thật mà CSS cho ra, nếu
@@ -391,12 +391,17 @@ export function DanhSachMay({
                     {/*
                       ★ NT-3.5 — máy chưa từng báo cáo hiện `—`, KHÔNG hiện `0s`.
                       "0 giây trước" nghĩa là vừa cập nhật — đúng ngược sự thật.
+                      ★★★ ĐỢT 36 (Pareto #8) — TUỔI ĐỌC ĐƯỢC, KHÔNG GIÂY SỐNG. QA Đợt 32/34 đo ô này in
+                        **"4733902s"** (= 54 ngày) trên 39/42 máy, cạnh `NganXuLy` in "54 days" cho CÙNG
+                        máy. Uỷ thác cho `nhanTuoiDocDuoc` (một chỗ, nay BA người gọi — G12: không viết
+                        bộ định dạng thứ hai); số THÔ giữ ở `data-giay` cho thiết bị đo (NhanDoTuoi doc).
                     */}
                     <span
-                      className={`w-10 shrink-0 text-right text-[10px] ${tuoi.do ? "text-destructive" : "text-muted-foreground"}`}
+                      className={`min-w-10 shrink-0 whitespace-nowrap text-right text-[10px] ${tuoi.do ? "text-destructive" : "text-muted-foreground"}`}
                       data-testid={`tuoi-${m.id}`}
+                      data-giay={tuoi.giay ?? undefined}
                     >
-                      {tuoi.giay === null ? "—" : `${hienSo(tuoi.giay)}s`}
+                      {nhanTuoiDocDuoc(tuoi, t)}
                     </span>
                   </button>
                 </li>
