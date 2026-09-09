@@ -5037,6 +5037,855 @@ Dot 24 khai giet cong 3005. Chu du an do lai luc **22:40**: con **3006** (PID 37
 **Xac minh cuoi:** `Get-NetTCPConnection` dai **3002-3200** ⇒ **0 server do**; cong **3000 (PID 28480)
 cua phien khac** ⇒ **con nguyen**.
 
+## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
+
+> **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
+> thể`** (dòng 6076) và `## 15b. Nợ i18n` (dòng 6110) từ trước. Chiếm lại số 15 sẽ tạo hai mục cùng
+> số trong một tệp sắp đem ra bàn. Đây **đúng cùng lý do và cùng cách xử lý** đã dùng cho §12b (Đợt
+> 14) và §14 (đặt dưới `## 13b`, Đợt 20). ★ Đánh số bên trong giữ dạng **15.x** như brief yêu cầu.
+>
+> **Trạng thái: BẢN THIẾT KẾ ĐỂ CHỦ SỞ HỮU DUYỆT. KHÔNG CÓ MÃ NÀO ĐƯỢC SỬA trong đợt này.**
+> Cổng ra: `git status --porcelain -- '*.ts' '*.tsx'` **rỗng** · 5 ảnh lô C md5 y hệt.
+>
+> Mục này trả lời yêu cầu nguyên văn của chủ sở hữu:
+> *"Tôi thấy không ổn: Chúng ta có tận 2 page cho Twin 3D: 1. `/twin-studio`, 2. `/twin?cam=…`,
+> 3. `/digital-twin`, 4. `/command-center`… twin studio là nơi thiết kế… còn lại 3 màn hình còn lại
+> đang quá phức tạp… thiết kế 3D Twin sao cho **từ nhà máy chọn Line thì hiển thị dialog show
+> production Line 3D Twin, chọn vào máy (Cell) thì sẽ hiển thị Machine 3D Twin**. Thiết kế lại toàn bộ
+> dựa trên những gì đã có để biến 3D Twin thực sự tối ưu, nhanh, đẹp và trực quan nhất, làm báo cáo
+> thiết kế chi tiết trước (các màn hình, layout mỗi màn hình, các thông tin hiển thị...)"*
+
+---
+
+### 15.0 ★★★ NĂM ĐIỀU BRIEF ĐỢT 25 NÓI SAI — ĐO LẠI 2026-09-09
+
+Ghi ra trước. Một bản thiết kế dựng trên hiện trạng sai sẽ đề xuất **làm lại thứ đã làm xong** — và
+đó là cách tiêu tiền nhanh nhất mà không mua được gì. Cả năm đo trên worktree `D:\SOURCES\_twin_wt`,
+HEAD `0213c547`.
+
+| # | Brief / chủ sở hữu nói | ĐO ĐƯỢC 2026-09-09 | Hệ quả cho thiết kế |
+|---|---|---|---|
+| **S-1** | *"Có tận 4 page cho Twin 3D"*; bảng brief liệt kê `/twin-studio` là **màn riêng cần GIỮ** | **Chỉ còn 2 tuyến sống.** `App.tsx:368` `<Route path="/twin-studio"><Redirect to="/twin?che-do=botri" /></Route>` — `/twin-studio` **đã là redirect** từ Đợt 21. `App.tsx:345-348` `/digital-twin` cũng **đã là redirect** qua bảng `dinhTuyenTwinCu.ts`. Hai tuyến thật còn lại: **`/twin`** (`:354`) và **`/command-center`** (`:487`) | ⇒ Việc "gộp 4 → N" **đã làm 2/3 rồi**. Còn **đúng một** món gộp thật: `/command-center`. Xem 15.4 |
+| **S-2** | *"Chọn máy ⇒ mở **ngăn nhúng** qua `?xem=machine:<id>` — **không** phải dialog"* | ⚠ **Nửa đúng, nửa sai.** `NganNhung.tsx:35-45` ghi rõ nó **là `Sheet` = Radix Dialog: modal thật, có overlay, focus trap, `aria-modal`, khoá cuộn nền, `Esc`**. Nó **đã là dialog**. Cái nó **không** có là **cảnh 3D của máy** — nó nhúng `MachineCockpitBody`/`RobotCockpitBody` (`:92`,`:95`), tức **thân màn 2D cũ** | ⇒ Khoảng trống thật **không phải** "dialog vs ngăn". Là **"trong dialog có 3D hay không"** |
+| **S-3** | *"Chọn Line ⇒ đổi phạm vi + bay camera (`phamViCanh.ts:65`)"* | `phamViCanh.ts:65` là **`trongPhamVi()`** — vị từ lọc *"vật thể có nằm trong phạm vi không"*, **không** phải bay camera. Camera cấp Line ở **`TwinVanHanh.tsx:1965-1966`** (`khungNhinLine(hinhLine.hh.bbox, …)`) | ⇒ Chẩn đoán **đúng triệu chứng, sai `file:line`**. Đợt xây phải sửa ở `:1965`, không ở `phamViCanh.ts` |
+| **S-4** | Chủ sở hữu: *"3 màn hình còn lại đang quá phức tạp"* — ngụ ý phức tạp trải đều 3 màn | Đo dòng: `TwinVanHanh` **3.754** · `TwinHub` **140** (0 lối vào URL) · `CommandCenter` **1.596**. Và `TwinVanHanh` là **MỘT hàm duy nhất** — `export default function TwinVanHanh()` ở `:250`, **không có component con nào ở tầng tệp** — chứa **50 `useMemo` · 18 `useState` · 14 `useQuery` · 13 `useCallback` · 6 `useEffect`** | ⇒ **"Gộp màn" KHÔNG chữa được cảm giác phức tạp.** Gốc là **mật độ trong một hàm**, không phải **số màn**. Xem 15.5 |
+| **S-5** | Brief: *"nếu mở **3 cảnh 3D cùng lúc** (nhà máy + line + máy), **cộng chi phí** và nói ra"* | ⚠ **Không phải bài toán cộng — là bài toán CẤM.** **RB-4** có **4 chỗ trong mã sản phẩm** ghi nhận: `XuongThietKe.tsx:7` · `TwinVanHanh.tsx:8` · `CanhThietKe.tsx:5` · `DungNhaXuong.tsx:571`. `TwinHub.tsx:8-9` ghi nó *"cố ý dựa vào Tabs-unmount để giữ 1 WebGL context"* | ⇒ Ba cảnh 3D đồng thời **không phải lựa chọn đắt — nó là lựa chọn BỊ CẤM** bởi kiến trúc. Ràng buộc này quyết định toàn bộ 15.2 |
+
+★ **S-5 là điều quan trọng nhất của cả mục này.** Yêu cầu *"chọn Line → **dialog** show Line 3D Twin"*
+đọc theo **nghĩa đen** là **hai `<Canvas>` chồng nhau** (cảnh nhà máy phía sau + cảnh Line trong
+dialog). Điều đó vi phạm RB-4. Toàn bộ 15.2 tồn tại để trả lời: **làm sao giữ trải nghiệm "dialog"
+mà không vi phạm RB-4.**
+
+---
+
+### 15.1 ★★★ ĐỌC LẠI YÊU CẦU — CÁI CHỦ SỞ HỮU MUỐN vs CÁI CHỮ "DIALOG" NÓI
+
+Brief nói đúng: *"«Dialog» là quyết định thiết kế bạn phải cân nhắc, không phải mệnh lệnh kỹ thuật."*
+Tôi cân nhắc, và **nói rõ chỗ tôi làm khác chữ**.
+
+**Cái chủ sở hữu thật sự đòi** — rút từ *ba* câu của chính ông ở ba thời điểm:
+
+| Lần | Nguyên văn | Đòi hỏi rút ra |
+|---|---|---|
+| Đợt 10 | *"không sử dụng redirect chuyển trang để xem rất bất tiện, cần sử dụng **dialog hoặc modal** hiển thị thông tin/**hiển thị trên panel đó luôn** và có **phím back** cũng được để ng dùng **không cần rời màn hình 3D**"* (chép nguyên ở `NganNhung.tsx:8-12`) | **① Không rời màn · ② quay lại được** |
+| Đợt 25 | *"từ nhà máy chọn Line thì hiển thị **dialog show** production Line 3D Twin, chọn vào máy (Cell) thì sẽ hiển thị **Machine 3D Twin**"* | **③ Mỗi cấp có CẢNH 3D RIÊNG** |
+| Đợt 25 | *"tối ưu, **nhanh**, đẹp và **trực quan** nhất"* | **④ Nhanh · ⑤ đọc được ngay** |
+
+★ Chú ý: ở lần Đợt 10 chính ông viết *"dialog **hoặc** modal **hiển thị trên panel đó luôn**"* — tức
+ông **đã coi** *dialog* và *panel tại chỗ* là **hai cách chấp nhận được cho cùng một mục đích**. Chữ
+"dialog" ở Đợt 25 vì thế **mô tả trải nghiệm** (*"bật lên ngay, không rời màn"*), **không** ràng buộc
+cơ chế (*"phải là `role=dialog` chặn nền"*).
+
+⇒ **Điều MỚI thật sự của Đợt 25 là ③: mỗi cấp phải có CẢNH 3D CỦA RIÊNG NÓ.** Hiện tại:
+
+| Cấp | Cảnh 3D riêng? | Đo được |
+|---|---|---|
+| Nhà máy | ✅ có | `CanhVanHanh.tsx`, 240 máy = **3 draw calls** |
+| **Line** | ❌ **KHÔNG** | Vẫn cảnh nhà máy, chỉ siết camera (`TwinVanHanh.tsx:1965`) + dải 2D `DaiLine` (`:3713`) |
+| **Máy** | ❌ **KHÔNG** | Dialog `NganNhung` chứa **thân màn 2D** `MachineCockpitBody` (`:92`) |
+
+Đó là khoảng trống. **Không phải "thiếu dialog".**
+
+---
+
+### 15.2 ★★★ QUYẾT ĐỊNH VỀ "DIALOG" — BỐN LỰA CHỌN, ĐÁNH ĐỔI, VÀ CÁI TÔI CHỌN
+
+Bài toán: hiện **cảnh 3D của Line** (hoặc của Máy) mà **không rời** cảnh nhà máy, dưới **RB-4: một
+`<Canvas>`**.
+
+| | **L1 — Dialog thật, 2 Canvas** | **L2 — Cảnh THAY THẾ tại chỗ** | **L3 — Dialog thật, 1 Canvas teleport** | **L4 — Panel nổi, ảnh tĩnh** |
+|---|---|---|---|---|
+| **Cơ chế** | `<Sheet>` chứa `<Canvas>` thứ hai; cảnh nhà máy vẫn sống phía sau | Cùng một `<Canvas>` đổi nội dung + camera; khung/panel giữ nguyên; breadcrumb + `Esc` để ra | `<Sheet>` chứa cảnh; **unmount** cảnh nhà máy khi mở, remount khi đóng | Dialog chứa **ảnh chụp** (`toDataURL`) + số liệu 2D |
+| **RB-4** | ❌ **VI PHẠM** — 2 context WebGL | ✅ đạt | ✅ đạt (đúng khuôn `TwinHub.tsx:8-9`) | ✅ đạt |
+| **Chi phí GPU** | **2× draw calls, 2× VRAM, 2 vòng `demand`**; iGPU thường trần **8–16 context** nhưng mở/đóng lặp là ca `webglcontextlost` kinh điển | **0 thêm** — cùng cảnh, đổi tập con của `BatchedMesh` | Bằng L2 khi mở, **cộng chi phí dựng lại cảnh nhà máy lúc đóng** | 0 |
+| **Thời gian mở** | tức thì (cảnh đã dựng) | **tức thì** — chỉ lọc + bay camera | **chậm nhất**: unmount + dựng cảnh mới + dựng lại cảnh cũ khi đóng | tức thì |
+| **① không rời màn** | ✅ | ✅ (URL vẫn `/twin`) | ✅ | ⚠ mất tương tác 3D |
+| **② quay lại** | Esc/X | **breadcrumb + `Esc` + nút ← + Back trình duyệt** (vì trạng thái ở URL) | Esc/X | Esc/X |
+| **③ cảnh 3D riêng mỗi cấp** | ✅ | ✅ | ✅ | ❌ |
+| **④ nhanh** | ⚠ nền vẫn vẽ | ✅ **nhanh nhất** | ❌ **chậm nhất** | ✅ |
+| **⑤ trực quan** | ⚠ **hai cảnh 3D chồng nhau = hai câu trả lời cho "nhà máy đang thế nào"** — đúng lỗi **D-5** (§14.5.5) mà dự án vừa dọn | ✅ một cảnh, một sự thật | ⚠ nền biến mất ⇒ **mất ngữ cảnh không gian**, đúng thứ 3D tồn tại để cho | ⚠ ảnh chết |
+| **Deep-link** | cần khoá URL mới | ✅ **`?pv=line` / `?pv=may&chon=` ĐÃ CÓ** (`duongDanTwin.ts:38`,`:269`,`:553`) | cần khoá mới | cần khoá mới |
+| **Rủi ro `webglcontextlost`** | **cao** | thấp | trung bình | 0 |
+
+#### ★★★ QĐ-17 — CHỌN **L2**, TRÌNH BÀY NHƯ MỘT LỚP NỔI
+
+> **Cấp Line và cấp Máy dùng CÙNG một `<Canvas>`**, đổi nội dung cảnh + camera + mật độ thông tin.
+> Về **thị giác** nó *trông như* một lớp bật lên: khung viền dày, phần cảnh ngoài phạm vi **pha về
+> nền 72 %** (`TI_LE_PHA_NGOAI_PHAM_VI = 0.72`, `phamViCanh.ts` — **đã có**), tiêu đề
+> `LINE 2 — 12 máy`, nút `✕` và `←` góc trên, `Esc` đóng. Về **kỹ thuật** nó **không** là
+> `role="dialog"` chặn nền, và **không** dựng Canvas thứ hai.
+>
+> **Ba lý do đo được, không phải sở thích:**
+> 1. **RB-4 là ràng buộc cứng có 4 chỗ trong mã ghi nhận.** L1 đòi **bỏ RB-4** — đó là **đổi kiến
+>    trúc**, không phải đổi giao diện, và nó mua lại đúng cái `TwinHub.tsx:8-9` đã cố ý tránh.
+> 2. **Trục URL đã tồn tại và đã nghiệm thu.** L2 **không đẻ khoá URL mới (G40)**; ba lựa chọn kia
+>    đều phải đẻ. Và vì trạng thái ở URL, **nút Back của trình duyệt tự nhiên thành "phím back" ②**
+>    mà chủ sở hữu đòi — **miễn phí**, không viết dòng nào.
+> 3. **Một cảnh = một sự thật.** D-5 (§14.5.5) đã bỏ *"ba bộ dựng sàn 3D rời"* vì *"hai cảnh nói hai
+>    câu về cùng nhà máy"*. Mở dialog-3D **chồng lên** cảnh nhà máy tái tạo **đúng lỗi đó**, chỉ khác
+>    là lần này hai cảnh cách nhau 8 px chứ không cách nhau hai màn hình.
+
+⚠ **Chỗ tôi làm KHÁC chữ của chủ sở hữu — nói thẳng:** ông viết *"hiển thị **dialog**"*. Tôi giao
+**trải nghiệm dialog** (bật lên, không rời màn, `Esc` thoát, có nút back) nhưng **không** giao **cơ
+chế dialog** (modal chặn nền + Canvas thứ hai). Nếu chủ sở hữu vẫn muốn modal thật chặn nền, **cách
+an toàn duy nhất là L3** — và **tôi khuyên không**, vì nó là cách **chậm nhất** trong bốn cách, đúng
+thứ ông đặt đầu danh sách (*"tối ưu, **nhanh**"*). ⇒ **Câu Q-1 cần ông trả lời (15.8).**
+
+★ Ở **cấp Máy**, L2 có một biến thể quan trọng: `NganNhung` (`Sheet` thật) **giữ nguyên** cho *"Mở
+chức năng"* (cockpit 2D, lịch sử bảo trì, chương trình). Cái **mới** là **cảnh 3D của máy** hiện
+**trong cùng `<Canvas>`**, còn `Sheet` 2D nằm **bên cạnh** — không chồng lên. Xem **Hình C**.
+
+★★★ **Ngân sách khi ba cấp cùng "mở" (trả lời trực tiếp câu brief hỏi):**
+
+```
+  KHÔNG BAO GIỜ có 3 cảnh sống cùng lúc — RB-4 cấm. Phép cộng đúng là:
+
+  Cấp Nhà máy   240 máy  → 3 draw calls (ĐO ĐƯỢC, §14.5.0) + ~4 nhãn bất thường   =  ~7
+  Cấp Line       12 máy  → 1 BatchedMesh + 12 trạm InstancedMesh + 1 đường tâm     =  ~3
+                           (cảnh nhà máy KHÔNG bị unmount, chỉ bị PHA VỀ NỀN 72 %
+                            — nó vẫn nằm trong CÙNG BatchedMesh ⇒ +0 draw call)
+  Cấp Máy         1 máy  → 1 glTF (hoặc khối mặc định §10B) + viền sức khoẻ         =  ~2
+  ──────────────────────────────────────────────────────────────────────────────
+  TỐI ĐA đồng thời (nhà máy pha nền + line pha nền + máy nét)              ≈ 12 draw calls
+  Trần §4 = 150.  Biên còn lại: 138 (92 %).
+```
+
+⇒ **Chi phí GPU của thiết kế ba cấp gần như bằng không**, vì cả ba cấp **chia nhau một BatchedMesh**
+— đây chính là điều `BatchedMesh` mua được mà `InstancedMesh` không (§4 mục 2: *"render nhiều object
+cùng material nhưng khác hình học trong 1 draw call, giữ ID từng object"*).
+⚠ **Cái ĐẮT không phải GPU — là NHÃN.** Trần nhãn **30** là trần **đọc được**, không phải trần GPU.
+Luật cắt nhãn theo cấp ở **15.6.2**.
+
+---
+
+### 15.3 ★★★ HÌNH VẼ LAYOUT — NĂM HÌNH, KÍCH THƯỚC KIỂM BẰNG SỐ HỌC
+
+> Chủ sở hữu nhấn mạnh *"layout mỗi màn hình"*. Mọi kích thước dưới đây tính trên viewport chuẩn
+> **1280×720** — cùng viewport §13e đã đo, để **so sánh được** với hiện trạng.
+
+#### 15.3.0 ★★★ TRẦN DIỆN TÍCH — KIỂM TRƯỚC KHI HỨA (G75)
+
+Trước khi vẽ, chốt lại **mẫu số**, vì §13e.1 đã trả giá một lần cho việc hứa 82 % mà không kiểm:
+
+```
+  khung twin khả dụng = 1280 − sidebar 264 − <main> padding 48  =  968 px  (rộng)
+                        720 − app chrome 133 − padding 24       =  563 px  (cao)
+
+  TRẦN TUYỆT ĐỐI (canvas ăn TRỌN khung, 0 dải, 0 panel):
+        968 × 563 / (1280 × 720)  =  545.  /  921.600  =  59,1 %
+  Thu sidebar (nút CÓ SẴN của vỏ):                          72,3 %
+```
+
+★ **Mọi con số % trong năm hình dưới đây là % của VIEWPORT 1280×720, và không hình nào vượt 59,1 %
+khi sidebar mở.** Bản thiết kế này **tuyên bố trần**, không tuyên bố một con số tuyệt đối.
+**Hiện trạng đo được sau Đợt 21: 968×515 = 51,4 %.** Thiết kế này nhắm **968×539 = 53,8 %** — tăng
+**+2,4 điểm** bằng cách gộp dải Line vào lớp phủ (15.3.2), **không** bằng cách bỏ thông tin.
+
+---
+
+#### 15.3.1 ★ HÌNH A — CẤP NHÀ MÁY (`/twin?pv=nhamay`, mặc định)
+
+Cảnh mở đầu. Trả lời **một** câu: *"nhà máy đang thế nào, và chỗ nào cần tôi?"*
+
+```
+╔═ 1280 ══════════════════════════════════════════════════════════════════════════════════╗
+║ ▣ AVI/AOI │ SIM-FAC ▾ │ Nhà máy                    [◉ TRỰC TIẾP · đẩy+hỏi 30s] [⬒2D] [⚙] ║ 44px
+╠═════════════════════════════════════════════════════════════════════════════════════════╣
+║ ⚠ 2 việc cần biết ▾  ·  9 máy mất tín hiệu                              [xem] [ẩn]      ║ 24px  ← DẢI HỢP NHẤT (§14.4)
+╠═════════════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                         ║
+║ ┌──────────────────┐                                             ┌───────────────────┐  ║
+║ │ ⬛ TỔNG QUAN     │                                             │ ⚠ CẦN XỬ LÝ  (2)  │  ║
+║ │  240 máy         │        ░░░░░░░░░░░░░░░░░░░░░░░░░░░          │                   │  ║
+║ │   208 chạy    ▉▉ │      ░░░                       ░░░         │ ● M-114  E-STOP   │  ║
+║ │    19 dừng    ▉  │     ░░    KHUÔN VIÊN 3D          ░░        │   Toà A·T2·Line 2 │  ║
+║ │     9 mất tín ▉  │    ░░   4 tầng · 20 line          ░░       │   2 phút trước    │  ║
+║ │     4 chưa rõ ▉  │    ░░   ▭ toà A     ▭ toà B       ░░       │                   │  ║
+║ │                  │    ░░      🔴                     ░░       │ ● M-087  sức khoẻ │  ║
+║ │  OEE     — ⁽¹⁾   │     ░░   cờ đỏ NEO vào toà       ░░        │   31 % · giảm 12h │  ║
+║ │  NG 24h  — ⁽²⁾   │      ░░░   CÓ sự cố             ░░░        │                   │  ║
+║ │                  │        ░░░░░░░░░░░░░░░░░░░░░░░░░░          │ [Mở chức năng ▸]  │  ║
+║ └──────────────────┘                                             └───────────────────┘  ║
+║  224px · NỔI ĐÈ            CANVAS 3D  968 × 539 = 53,8 %              256px · NỔI ĐÈ    ║ 539px
+║  2xl:288                   (chạy SUỐT bên dưới hai tấm nổi)                             ║
+║   ◀ thu (?thu=trai)                                                  (?thu=phai) thu ▶  ║
+║                                                                                         ║
+║                    ┌───────────────────────────────────────┐                            ║
+║                    │ ● Nhà máy   ○ Tầng   ○ Line   ○ Máy  │ ← đổi cấp, NỔI đáy giữa    ║ 32px
+║                    └───────────────────────────────────────┘                            ║
+╠═════════════════════════════════════════════════════════════════════════════════════════╣
+║ ◀◀ ──────────●────────────────────────────── ▶ │ 14:32 hôm nay │ 1× │ [◉ BÂY GIỜ]      ║ 40px
+╚═════════════════════════════════════════════════════════════════════════════════════════╝
+  ⁽¹⁾ OEE `—` KHÔNG phải `0%`: oee_metrics 897 hàng, **0 hàng trong 24h** ⇒ chú thích
+      "đo trên 0/240 máy trong 24h" (§14.5.6 · NT-4)
+  ⁽²⁾ NG `—`: product_inspections 2.880/2.880 `factoryCode` NULL ⇒ rỗng với mọi vai không-admin (P-1)
+```
+
+**Cái gì nằm đâu — cấp Nhà máy**
+
+| Vùng | px | Nội dung | Nhóm |
+|---|---|---|---|
+| Header | 1280×44 | breadcrumb · badge nguồn nhịp · 2D · nút Sửa (chỉ hiện khi có quyền, QĐ-16) | B |
+| Dải hợp nhất | 1280×24 | *"N việc cần biết"* — gộp 8 dải cũ | B |
+| Panel trái NỔI | 224×~300 | đếm máy theo trạng thái · OEE · NG | B |
+| Panel phải NỔI | 256×~300 | **tối đa 2 mục** cần xử lý + nút `Mở chức năng` | C |
+| Canvas | **968×539** | toà nhà · đường · cờ đỏ neo vào **toà CÓ sự cố** | A |
+| Bộ chuyển cấp | ~380×32 | Nhà máy / Tầng / Line / Máy | — |
+| Timeline | 1280×40 | tua lại · `BÂY GIỜ` | B |
+
+★ **Ở cấp này, KHÔNG neo nhãn vào từng máy.** 240 nhãn > trần 30 và **không ai đọc nổi**. Chỉ **cờ
+đỏ neo vào TOÀ NHÀ** có sự cố (≤ 4 nhãn cho 4 toà). Đây là **semantic zoom**: đổi cấp = **đổi biểu
+diễn**, không phải dolly camera (Microsoft *Semantic Zoom*, §17).
+
+---
+
+#### 15.3.2 ★★★ HÌNH B — "DIALOG" LINE 3D TWIN (`/twin?pv=line&id=2`)
+
+★ Đây là **hình trả lời trực tiếp yêu cầu mới của chủ sở hữu**. Theo **QĐ-17**: trông như lớp bật
+lên, kỹ thuật là cảnh thay thế **trong cùng `<Canvas>`**.
+
+```
+╔═════════════════════════════════════════════════════════════════════════════════════════╗
+║ ▣ │ Nhà máy › Toà A › T2 › ► LINE 2          [◉ TRỰC TIẾP · 3s] [⬒2D] [⚙]              ║ 44px
+╠═════════════════════════════════════════════════════════════════════════════════════════╣
+║ ⚠ 1 việc cần biết ▾                                                     [xem] [ẩn]      ║ 24px
+╠═════════════════════════════════════════════════════════════════════════════════════════╣
+║░░░░░░░░ nền = cảnh NHÀ MÁY vẫn còn đó, PHA VỀ NỀN 72 % (không unmount) ░░░░░░░░░░░░░░░░░║
+║░░┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓░░║
+║░░┃ ◀ Toà A·T2      ► LINE 2 · 12 máy · nhịp 42 s                            ✕ (Esc) ┃░░║ 36px  ← "thanh tiêu đề dialog"
+║░░┠───────────────────────────────────────────────────────────────────────────────────┨░░║
+║░░┃                                                                                   ┃░░║
+║░░┃  ┌────────────┐                                              ┌────────────────┐  ┃░░║
+║░░┃  │ LINE 2     │   ▪▪──▪▪──▪🔴──▪▪──▪▪──▪▪──▪▪──▪▪──▪▪──▪▪   │ ⚠ CẦN XỬ LÝ    │  ┃░░║
+║░░┃  │ 12 máy     │    T1  T2  T3  T4  T5  T6  T7  T8  T9  T10   │                │  ┃░░║
+║░░┃  │  10 chạy   │            ▲                                  │ ● M-114        │  ┃░░║
+║░░┃  │   1 dừng   │      camera DỌC THEO LINE, nhìn xuôi dòng     │   E-STOP 14:30 │  ┃░░║
+║░░┃  │   1 chưa rõ│      (khungNhinLine — TwinVanHanh.tsx:1965)   │   [Xác nhận]   │  ┃░░║
+║░░┃  │            │                                               │                │  ┃░░║
+║░░┃  │ nút thắt:  │   CẢNH 3D LINE  ≈ 690 × 300                   │ [+ Tạo phiếu]  │  ┃░░║
+║░░┃  │  TRẠM 3 ⁽³⁾│   ── 12 máy · 12 trạm · 1 đường tâm ──        │                │  ┃░░║
+║░░┃  │ WIP  128   │                                               │ [Mở chức năng▸]│  ┃░░║
+║░░┃  └────────────┘                                               └────────────────┘  ┃░░║
+║░░┃    200px NỔI                                                        216px NỔI     ┃░░║
+║░░┠───────────────────────────────────────────────────────────────────────────────────┨░░║
+║░░┃ DÒNG CHẢY TRẠM ─ `DaiLine` ĐÃ CÓ (200 dòng), nay NẰM TRONG lớp, cao 84px          ┃░░║ 84px
+║░░┃  T1    T2    T3🔴   T4    T5    T6    T7    T8    T9   T10   T11   T12            ┃░░║
+║░░┃  ▇▇▇   ▇▇▇   ▇▇▇▇▇  ▇▇    ▇▇▇   ▇▇▇   ▇▇    ▇▇▇   ▇▇   ▇▇▇   ▇▇    ▇▇             ┃░░║
+║░░┃  38s   41s   67s    39s   40s   42s   38s   41s   37s  40s   39s   38s            ┃░░║
+║░░┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛░░║
+║░░░░░░░░ 908 × 455 = lớp Line, canh giữa, chừa 30px viền để thấy nền ░░░░░░░░░░░░░░░░░░░░║
+╠═════════════════════════════════════════════════════════════════════════════════════════╣
+║ ◀◀ ──────────●────────────────────────────── ▶ │ 14:32 hôm nay │ 1× │ [◉ BÂY GIỜ]      ║ 40px
+╚═════════════════════════════════════════════════════════════════════════════════════════╝
+  ⁽³⁾ nguồn `wip.lineBalance` — trả NGUYÊN HÀNG nên nút thắt và mốc thời gian CHẮC CHẮN
+      cùng một bản ghi. ⛔ KHÔNG dùng `stationLoadHeatmap` (D-2: không trả `periodStart`,
+      Đợt 8 đo được một lời khai 16 ngày tuổi tô đỏ SAI trạm)
+```
+
+**★ Bốn thứ làm nó "cảm giác như dialog" mà KHÔNG cần Canvas thứ hai:**
+
+| Tín hiệu dialog | Cài bằng | Có sẵn? |
+|---|---|---|
+| Nền tối/mờ đi | cảnh ngoài phạm vi **pha về nền 72 %** — `TI_LE_PHA_NGOAI_PHAM_VI` | **CÓ** (`phamViCanh.ts`) |
+| Khung viền + thanh tiêu đề | `<div>` bo góc, đổ bóng, tiêu đề `LINE 2 · 12 máy` | mới, thuần CSS |
+| `✕` + `Esc` đóng | về `?pv=tang` | **CÓ** (`ghiPhamVi`) |
+| `←` quay lại + Back trình duyệt | **URL đã mang trạng thái** ⇒ Back tự chạy | **CÓ** (`kieuGhiLichSu` `:539`) |
+
+**Đường vào / đường ra — cấp Line**
+
+| | Cách |
+|---|---|
+| **VÀO** | ① click **thân line** trên cảnh nhà máy/tầng · ② click line trong panel trái · ③ bộ chuyển cấp · ④ **URL trực tiếp `?pv=line&id=2`** (chia sẻ được) · ⑤ click trạm trên `DaiLine` |
+| **RA** | ① `✕` · ② `Esc` · ③ `←` breadcrumb · ④ **Back trình duyệt** · ⑤ click ra **vùng nền pha mờ** · ⑥ chọn cấp khác ở bộ chuyển cấp |
+
+⚠ **`Esc` đụng độ:** khi `NganNhung` (Sheet thật) đang mở, Radix **nuốt `Esc`** trước. Luật: `Esc`
+đóng **lớp trong cùng trước** — Sheet trước, rồi mới tới lớp Line. Phải có **test bàn phím**, vì đây
+là kiểu lỗi chỉ trình duyệt bắt được (§13g.2 đã có tiền lệ).
+
+★ **Cái GIỮ NGUYÊN, không viết lại:** `DaiLine.tsx` (200 dòng) và `DongChayLine.tsx` (190 dòng) **đã
+có và đã chạy** ở `TwinVanHanh.tsx:3713`. Hình này **chỉ đặt lại chỗ** — từ "dải thứ 9 dưới đáy màn"
+thành "phần dưới của lớp Line". **Không có phép tính thứ hai (G12).**
+
+---
+
+#### 15.3.3 ★★★ HÌNH C — MACHINE 3D TWIN (`/twin?pv=may&chon=M-114`)
+
+Học từ mẫu `Machine 3D Twin.png` / `.webp` / `Machine 3D Twin (2).webp`: **máy 3D làm trung tâm, chỉ
+số neo quanh**. ★ **Cố ý làm KHÁC mẫu ở MỘT chỗ**, xem cảnh báo bên dưới.
+
+```
+╔═════════════════════════════════════════════════════════════════════════════════════════╗
+║ ▣ │ … › Line 2 › ► M-114                     [◉ TRỰC TIẾP · 3s] [⬒2D] [✕ đóng]         ║ 44px
+╠═════════════════════════════════════════════════════════════════════════════════════════╣
+║ ⚠ Máy đang E-STOP — dừng lúc 14:30, 2 phút trước                            [xem]       ║ 24px
+╠═════════════════════════════════════════════════════════════════════════════════════════╣
+║░░░ nền = cảnh LINE pha về nền 72 % — hàng xóm của máy VẪN THẤY (định vị) ░░░░░░░░░░░░░░░║
+║░┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓░║
+║░┃ ◀ Line 2      ► M-114 · AOI-3D · Trạm 3                                 ✕ (Esc)  ┃░║ 36px
+║░┠─────────────────────────────────────────────────────┬─────────────────────────────┨░║
+║░┃                                                     │  NGĂN XỬ LÝ  (`NganXuLy`)   ┃░║
+║░┃  ┌───────────┐         ░░░░░░░░░░░░░░░░             │  ── ĐÃ CÓ, 726 dòng ──      ┃░║
+║░┃  │ ● E-STOP  │       ░░░              ░░░           │                             ┃░║
+║░┃  │           │      ░░   MÔ HÌNH 3D    ░░           │  Cảnh báo (3)               ┃░║
+║░┃  │ Sức khoẻ  │      ░░   CỦA MÁY NÀY   ░░           │  ┌───────────────────────┐  ┃░║
+║░┃  │   31 % ▼  │      ░░  glTF · hoặc 1  ░░           │  │ E-STOP        14:30   │  ┃░║
+║░┃  │  ┌──────┐ │      ░░  trong 7 khối   ░░           │  │ [Xác nhận]            │  ┃░║
+║░┃  │  │▁▂▃▂▁▁│ │       ░░░ mặc định §10B░░░           │  └───────────────────────┘  ┃░║
+║░┃  │  └──────┘ │         ░░░░░░░░░░░░░░░░             │                             ┃░║
+║░┃  │ 24h · 180k│                                       │  [+ Tạo phiếu bảo trì]     ┃░║
+║░┃  │ hàng, mới │   ┌────────┐ ┌────────┐ ┌────────┐   │                             ┃░║
+║░┃  │ nhất HÔM  │   │ Nhiệt  │ │ Rung   │ │ Chu kỳ │   │  ── Mở chức năng ────────   ┃░║
+║░┃  │ NAY       │   │ 74 °C  │ │ 2,1 mm │ │ 41,2 s │   │  ▸ Buồng lái máy   (Sheet)  ┃░║
+║░┃  │           │   │ ▲ cao  │ │ bình   │ │ bình   │   │  ▸ Lịch sử bảo trì (Sheet)  ┃░║
+║░┃  │ NG 24h  — │   └────────┘ └────────┘ └────────┘   │  ▸ Chương trình    (Sheet)  ┃░║
+║░┃  └───────────┘   THẺ CHỈ SỐ — lớp phủ DOM,          │                             ┃░║
+║░┃    192px          **0 draw call**, neo DƯỚI máy      │  ⛔ KHÔNG có nút Start/Stop ┃░║
+║░┃                   (khuôn `BangKpiNoi`, 197 dòng)     │     — xem D-1 / 15.7        ┃░║
+║░┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛░║
+║░░░ 928 × 467, canvas 3D máy ≈ 620 × 300 · ngăn phải 288px ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║
+╠═════════════════════════════════════════════════════════════════════════════════════════╣
+║ ◀◀ ──────────●────────────────────────────── ▶ │ 14:32 hôm nay │ 1× │ [◉ BÂY GIỜ]      ║ 40px
+╚═════════════════════════════════════════════════════════════════════════════════════════╝
+```
+
+★★★ **CHỖ CỐ Ý LÀM KHÁC MẪU — và vì sao nói ra:**
+Cả ba ảnh mẫu `Machine 3D Twin*` đều đặt **`Free Run` / `Pause` / `Stop` / `Apply` / `Reset` ngay
+cạnh mô hình 3D**. **Ta KHÔNG đặt lệnh OT ở đây.** Ba lý do đo được (D-1, §14.5.5 · §12b.4):
+1. Cảnh 3D là mặt **khám phá** — người ta xoay, kéo, bấm thử. Nút `Stop` trên mặt khám phá là **mời
+   tai nạn**.
+2. Đường ghi hiện có **chưa lọc tenant** (L-1) — chưa chứng minh được ai được lệnh cho máy nào.
+3. Cảnh **không tự chứng minh đủ tươi để RA LỆNH**: badge hiện khai `đẩy + hỏi 30s` (`nguonDuLieu.ts:37`
+   `NHIP_CO_LUONG_MS = 30_000`). **Đủ tươi để NHÌN ≠ đủ tươi để STOP.**
+⇒ Thay vào đó: `[Mở chức năng ▸] → /command-console`, **rời mặt khám phá MỘT CÁCH CÓ Ý THỨC**.
+Nguồn ngoài độc lập ủng hộ: Hollifield/PAS — Level 1 *"Control interactions are not made from this
+screen"* (§14.8.1).
+
+**Đường vào / đường ra — cấp Máy**
+
+| | Cách |
+|---|---|
+| **VÀO** | ① click **máy** trên cảnh (bất kỳ cấp nào) · ② click dòng trong `DanhSachMay` panel trái · ③ click mục trong `DaiCanhBao` · ④ **URL `?pv=may&chon=machine:114`** · ⑤ click trạm trên `DaiLine` → `chonMay(mayDau.id)` (`:3745`, ĐÃ CÓ) |
+| **RA** | ① `✕` · ② `Esc` · ③ `←` về Line · ④ **Back trình duyệt** · ⑤ click nền pha mờ · ⑥ chọn máy khác (thay tại chỗ, **không** chồng lớp) |
+
+⚠ **L-5 đã vá và phải giữ:** `?xem=…` **lệch phạm vi** thì màn **NÓI RA**, không im lặng
+(`nhungTaiCho.ts:273`, `lyDoNganNhung` `:356` trả `mo | ngoaiPhamVi | thieuQuyen`). Cấp Máy mới
+**phải dùng lại đúng ba lý do đó**, không đẻ nhánh im lặng thứ tư.
+
+---
+
+#### 15.3.4 HÌNH D — `/twin?che-do=botri` (VÙNG THIẾT KẾ — "twin-studio")
+
+⚠ **Đây KHÔNG còn là một trang riêng.** `App.tsx:368` — `/twin-studio` **đã là redirect** vào
+`/twin?che-do=botri` từ Đợt 21 (QĐ-16). `TwinStudio.tsx` (239 dòng) nay được `/twin` **nạp lười**
+(`TwinVanHanh.tsx:245` `const VungSuaNhaXuong = lazy(() => import("./TwinStudio"))`).
+
+```
+╔═════════════════════════════════════════════════════════════════════════════════════════╗
+║ ▣ │ SIM-FAC ▾ │ ⚙ ĐANG SỬA BỐ CỤC          [⟲ hoàn tác] [⟳ làm lại] [Lưu] [✕ Thoát sửa] ║ 44px
+╠═════════════════════════════════════════════════════════════════════════════════════════╣
+║ ⚠ Bạn đang ở chế độ SỬA — thay đổi hình học sẽ ghi vào bố cục nhà máy     [tìm hiểu]     ║ 24px  ← hổ phách
+╠═════════════════════════════════════════════════════════════════════════════════════════╣
+║┌────────────┐                                                         ┌────────────────┐║
+║│ CÔNG CỤ    │                                                         │ THUỘC TÍNH     │║
+║│            │        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░              │ (vật thể chọn) │║
+║│ ▣ Chọn     │      ░░░                              ░░░              │                │║
+║│ ✥ Di chuyển│     ░░     CANH THIẾT KẾ — CÙNG MỘT     ░░             │ M-114          │║
+║│ ↻ Xoay     │     ░░     `<Canvas>` (RB-4), đổi       ░░             │ x  12.400 mm   │║
+║│ ⊞ Lưới     │     ░░     nội dung + BẬT gizmo         ░░             │ y   3.200 mm   │║
+║│ ▢ Vẽ vùng  │     ░░                                   ░░            │ góc     90 °   │║
+║│ ⇥ Căn      │     ░░   ┌───────────┐  ← TransformControls           │ tầng      T2   │║
+║│ ⌗ Snap 50mm│     ░░   │  ▣ M-114  │     (RB-1: KHÔNG                │ line   Line 2  │║
+║│            │      ░░░ └───────────┘      còn là Object3D)  ░░░      │                │║
+║│ ── Cây ──  │        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░              │ [Áp dụng]      │║
+║│ ▾ Toà A    │                                                         │ [Hoàn nguyên]  │║
+║│  ▾ T2      │     CANVAS 3D  ≈ 720 × 539                              │                │║
+║│   ▸ Line 2 │     (hẹp hơn Hình A vì HAI panel CHIA ĐẤT —             │  ⚠ Snap xoay   │║
+║│            │      chế độ sửa cần thấy toạ độ CHÍNH XÁC,              │   phải TUYỆT   │║
+║│ ── Lớp ──  │      không được để panel che vật thể đang kéo)          │   ĐỐI (RB-2)   │║
+║│ ☑ Máy      │                                                         │                │║
+║│ ☑ Vùng     │                                                         │                │║
+║│ ☐ Tường    │                                                         │                │║
+║└────────────┘                                                         └────────────────┘║
+║  224px CHIA ĐẤT                                                        224px CHIA ĐẤT   ║
+╚═════════════════════════════════════════════════════════════════════════════════════════╝
+   ⛔ KHÔNG có timeline ở chế độ sửa: tua lại + sửa hình học = "sửa quá khứ", vô nghĩa và nguy hiểm
+```
+
+★ **Ba khác biệt CÓ CHỦ Ý so với Hình A/B/C** — mỗi cái có lý do, không phải cho khác:
+
+| | Vận hành (A/B/C) | Thiết kế (D) | Vì sao |
+|---|---|---|---|
+| Panel | **NỔI ĐÈ** | **CHIA ĐẤT** | Kéo máy mà panel che chỗ thả = **kéo mù**. Chế độ sửa **đổi diện tích lấy độ chính xác** |
+| Dải cảnh báo | *"N việc cần biết"* | *"Bạn đang ở chế độ SỬA"* | Đang sửa hình học thì cảnh báo vận hành là **nhiễu** — và tệ hơn: nó **mời bấm** giữa lúc tay đang kéo |
+| Timeline | có | **KHÔNG** | *"Sửa bố cục lúc 03:00"* không có nghĩa |
+| Ai thấy | `analytics_oee` ∨ `machine_status` | **`settings_factory` ∨ `machine_control`** | QĐ-16: cùng trang, **quyền theo từng vùng**, luật **ẩn-không-disable** |
+
+★ **`operator1` bấm `?che-do=botri`** ⇒ **hạ về chế độ xem VÀ ĐƯỢC BÁO** (`kepVungTheoQuyen`,
+`TwinVanHanh.tsx:2303`) — **không** trắng màn, **không** 403. Đã nghiệm thu 5/5 e2e ở §13e.3.
+
+---
+
+#### 15.3.5 HÌNH E — BA TRẠNG THÁI ĐẶC BIỆT
+
+**E-1 · ĐANG TUA LẠI (`?tg=…`)** — trạng thái nguy hiểm nhất: cảnh **trông y hệt** lúc LIVE.
+
+```
+╔═════════════════════════════════════════════════════════════════════════════════════════╗
+║ ▣ │ Nhà máy › Toà A › T2  [⏱ ĐANG TUA — 03:00 hôm nay]  [⬒2D] [⚙]                      ║ 44px
+╠═════════════════════════════════════════════════════════════════════════════════════════╣ ← viền HỔ PHÁCH 2px
+║▓                                                                                       ▓║   BAO QUANH toàn canvas
+║▓  ┌───────────────┐        ░░░░░░░░░░░░░░░░░░░░          ┌───────────────┐             ▓║
+║▓  │ TỔNG QUAN     │      ░░  CẢNH LÚC 03:00  ░░          │ CẦN XỬ LÝ     │             ▓║
+║▓  │ ★ lúc 03:00   │      ░░ (KHÔNG phải bây  ░░          │ ★ lúc 03:00   │             ▓║
+║▓  │  208 chạy     │      ░░      giờ)        ░░          │ ● M-114       │             ▓║
+║▓  └───────────────┘        ░░░░░░░░░░░░░░░░░░░░          └───────────────┘             ▓║
+║▓        ▲ MỌI tấm nổi ĐỔI NHÃN thành "lúc 03:00"                                       ▓║
+╠═════════════════════════════════════════════════════════════════════════════════════════╣
+║ ◀◀ ────●──────────────────────────────────── ▶ │ 03:00 hôm nay │ 4× │ [◉ VỀ BÂY GIỜ]   ║ 40px
+╚═════════════════════════════════════════════════════════════════════════════════════════╝
+  BA chỉ báo ĐỒNG THỜI (một cái có thể bị bỏ sót):
+   ① viền hổ phách bao canvas · ② chữ "ĐANG TUA + mốc" THAY CHỖ badge LIVE · ③ nút VỀ BÂY GIỜ sáng
+  ⛔ Ở cấp Line/Máy khi đang tua: nút [Xác nhận] và [+ Tạo phiếu] **BỊ VÔ HIỆU + nói lý do**
+     — xác nhận một cảnh báo của 03:00 lúc 14:32 là ghi SAI vào sổ.
+```
+
+**E-2 · ĐANG MÔ PHỎNG (`?thu=moPhong` mở, what-if đang chạy)**
+
+```
+╔═════════════════════════════════════════════════════════════════════════════════════════╗
+║ ▣ │ Nhà máy › Toà A › T2   [🧪 MÔ PHỎNG — số KHÔNG phải thực đo]  [⬒2D] [⚙]            ║ 44px
+╠═════════════════════════════════════════════════════════════════════════════════════════╣ ← viền TÍM 2px + sọc chéo
+║▨  ┌──────────────┐       ░░░░░░░░░░░░░░░░░░░░       ┌──────────────────────────────┐  ▨║
+║▨  │ TỔNG QUAN    │     ░░  cảnh GIẢ ĐỊNH   ░░       │ NGĂN MÔ PHỎNG (`NganMoPhong`)│  ▨║
+║▨  │ 🧪 giả định  │     ░░  (kịch bản #3)   ░░       │ Kịch bản: +1 ca đêm Line 2   │  ▨║
+║▨  │  OEE 71 % 🧪 │       ░░░░░░░░░░░░░░░░░░░        │ [Chạy] [So sánh] [Bỏ]        │  ▨║
+║▨  └──────────────┘                                   └──────────────────────────────┘  ▨║
+╚═════════════════════════════════════════════════════════════════════════════════════════╝
+  ★ NT-4 — SỐ GIẢ ĐỊNH PHẢI TỰ KHAI LÀ GIẢ ĐỊNH. Mọi số sinh từ mô phỏng mang tiền tố 🧪
+    và KHÔNG BAO GIỜ dùng chung ô với số thực đo. Đây là lỗi `whatIfQ` đã vá ở `:1515-1518`
+    (kết quả chuyền TRƯỚC nằm lại dưới nhãn chuyền MỚI) — áp cho trục kịch bản.
+```
+
+**E-3 · THIẾU QUYỀN / NGUỒN RỖNG** — ★ hai thứ **khác nhau**, phải nói **khác nhau**.
+
+```
+┌─ cấp Máy, vai `operator1` ────────────────┐   ┌─ cấp Nhà máy, andon_events = 0 hàng ────┐
+│  ► M-114 · AOI-3D                    ✕    │   │  ⚠ CẦN XỬ LÝ                            │
+│                                            │   │                                          │
+│    ░░░ MÔ HÌNH 3D ░░░  ← VẪN HIỆN         │   │   ✔ Không có cảnh báo đang mở            │
+│                                            │   │                                          │
+│  Cảnh báo (3)                              │   │   Nguồn: andon.active                    │
+│  ┌──────────────────────────────────────┐ │   │   Cập nhật: 14:32:07 (12 giây trước)     │
+│  │ E-STOP  14:30                        │ │   │                                          │
+│  │ (nút Xác nhận KHÔNG hiện — ẩn, không │ │   │  ★ KHÔNG in "0" trần trụi. Phải phân      │
+│  │  disable, theo luật ẩn-không-disable)│ │   │    biệt "ĐÃ HỎI, không có" với "CHƯA     │
+│  └──────────────────────────────────────┘ │   │    HỎI ĐƯỢC" (NT-3)                      │
+│                                            │   │                                          │
+│  ℹ️ Bạn xem được máy này. Xác nhận cảnh    │   │  ⚠ andon_events đo 2026-09-08: 7 hàng,   │
+│     báo cần quyền `machine_status`.        │   │    **0 hàng `raised`** ⇒ nhánh "có cảnh  │
+│     [Yêu cầu quyền]                        │   │    báo" CHƯA AI ĐI QUA BAO GIỜ (G26)     │
+└────────────────────────────────────────────┘   └──────────────────────────────────────────┘
+```
+
+★★★ **NT-3 là điều kiện sống còn ở cả ba cấp:** *"không có dữ liệu ≠ bình thường"*. Một cảnh 3D
+toàn màu xám vì **mất kết nối** trông **y hệt** một cảnh 3D toàn màu xám vì **mọi máy đều khoẻ**.
+⇒ Mỗi lớp phủ mang **nguồn + tuổi**. Và nghiệm thu **bắt buộc dựng ca dương bằng tay** (chèn 1 hàng
+`raised`, mở `/twin`, badge phải **nổi lên**, rồi khôi phục) — không dựng thì "không badge nào hiện"
+trông y hệt nhau dù mã đúng hay hỏng (**G5/G22**).
+
+---
+
+#### 15.3.6 ★ CHUYỂN CẢNH — AI LẬP LỊCH HOẠT ẢNH (G63)
+
+Dưới `frameloop="demand"` (`KhungCanh.tsx:245`), **khung chỉ vẽ khi có ai gọi `invalidate()`**. Một
+hoạt ảnh bay camera kéo dài **~600 ms** ⇒ **~36 khung** ⇒ **phải có người lập lịch 36 lần**.
+
+```
+  Người dùng click Line 2
+        │
+        ├─► ghi URL  ?pv=line&id=2         (duongDanTwin.ts — ĐÃ CÓ)
+        │
+        ├─► `useEffect` trong CanhNhaMay.tsx:122-136  ── ĐÃ CÓ KHUÔN ──
+        │     const invalidate = useThree((s) => s.invalidate);   // :122
+        │     … đặt camera đích … ; invalidate();                 // :135
+        │
+        └─► ★ MỚI: bộ nội suy camera 600 ms
+              requestAnimationFrame loop
+                 ├ mỗi khung: cập nhật camera + GỌI invalidate()   ← NGƯỜI LẬP LỊCH
+                 └ khung cuối: dừng rAF, KHÔNG gọi invalidate nữa  ← vòng lặp TỰ TẮT
+```
+
+★ **Ba luật bắt buộc cho bộ nội suy** (mỗi luật là một cách nó hỏng nếu thiếu):
+1. **Tự huỷ khi unmount** — nếu không, rAF chạy tiếp sau khi rời `/twin` ⇒ GPU **không bao giờ về 0**,
+   phá đúng thứ `demand` mua được cho ca 8 tiếng.
+2. **Huỷ khi người dùng chạm `OrbitControls`** — người dùng thắng hoạt ảnh, luôn luôn. Nếu không, họ
+   kéo mà camera **giật ngược** về đích.
+3. **`prefers-reduced-motion` ⇒ nhảy thẳng, 0 khung nội suy** — và điều này phải **test**, vì đây là
+   nhánh **không ai nhìn thấy khi phát triển**.
+
+⚠ **`three.js` *Rendering on Demand* cảnh báo vòng phản hồi**: `invalidate()` gọi từ trong `useFrame`
+tạo vòng vô tận. Bộ nội suy phải sống trong **`rAF` riêng**, **không** trong `useFrame`.
+
+★ Đo được rằng khuôn này **đã tồn tại**: `CanhNhaMay.tsx` có **4 chỗ** nối `invalidate` (`:65`, `:122`,
+`:166`, `:227`) và `dieuKhienQuay.ts:5-6` ghi rõ *"`OrbitControls` của drei tự gọi `invalidate`;
+`OrbitControls` thuần thì KHÔNG"*. ⇒ Đây là **mở rộng khuôn có sẵn**, không phải phát minh.
+
+---
+
+### 15.4 ★★★ GỘP MÀN — ĐO LẠI, VÀ **MÂU THUẪN VỚI QĐ-16 PHẢI ĐƯA RA HỎI**
+
+#### 15.4.1 ⚠ MÂU THUẪN CẦN CHỦ SỞ HỮU GIẢI — `/twin-studio`
+
+| | Nội dung |
+|---|---|
+| **QĐ-16 (§13c.1, chủ sở hữu chốt 2026-09-08)** | *"MỘT TRANG, **QUYỀN THEO TỪNG VÙNG**, KHÔNG PHẢI MỘT CỔNG DUY NHẤT"* — `/twin` + `/twin-studio` gộp làm một trang |
+| **Đợt 21 đã THỰC THI** | `App.tsx:368` `/twin-studio` → `Redirect to="/twin?che-do=botri"`; `TwinStudio.tsx` nạp lười từ `/twin` (`TwinVanHanh.tsx:245`); nghiệm thu **5/5 e2e**, hai tài khoản thật (`operator1` ✅ vào / ❌ nút sửa; `engineer1` ✅/✅) |
+| **Yêu cầu Đợt 25 (chủ sở hữu, 2026-09-09)** | *"**twin studio là nơi thiết kế**, thiết lập thông số, cài đặt cho 3D Twin của nhà máy, **còn lại 3 màn hình còn lại** đang quá phức tạp"* — câu này đọc như `/twin-studio` **là một trang riêng** |
+
+⇒ **Hai đọc hiểu, hệ quả rất khác nhau:**
+
+| Đọc | Nghĩa | Việc phải làm | Rủi ro |
+|---|---|---|---|
+| **Đ-A** *(tôi nghiêng về cái này)* | Chủ sở hữu đang phân biệt **VAI TRÒ** (*"studio = nơi thiết kế"*), **không** đòi tách lại tuyến. QĐ-16 vẫn đứng; `?che-do=botri` **chính là** "twin studio" | **0** — đã xong ở Đợt 21 | 0 |
+| **Đ-B** | Chủ sở hữu muốn **tách lại** thành hai tuyến riêng | **Đảo ngược Đợt 21**: trả `RouteGuard` cho `/twin-studio`, gỡ `?che-do=botri`, viết lại 5 e2e | `operator1` **mất lối vào vùng sửa** (đúng tai nạn Đợt 3 CHẶN-1); vứt bỏ một đợt đã nghiệm thu |
+
+★★★ **KHÔNG TỰ CHỌN.** Brief nói đúng: *"Đo lại hiện trạng, nêu mâu thuẫn nếu có, và **hỏi rõ** thay
+vì tự chọn."* ⇒ **Câu Q-2 (15.8).**
+★ Nếu là Đ-A — và tôi tin là Đ-A, vì câu của chủ sở hữu **mô tả vai trò chứ không mô tả URL** — thì
+việc duy nhất còn lại là **đổi CHỮ trên giao diện**: nút hiện ghi `⚙ Sửa bố cục`; đổi thành
+`⚙ Twin Studio` để tên ông quen **tìm thấy được**. Đó là **một chuỗi i18n**, không phải một đợt.
+
+#### 15.4.2 Từng thứ trong 7 tab `TwinHub` + `/command-center` — GIỮ / GỘP / BỎ
+
+★ **Đo lại 2026-09-09, không kế thừa lời khai (G74).** `TwinHub` (140 dòng) hiện có **0 lối vào URL**
+— `App.tsx:345-348` đã chuyển `/digital-twin` thành redirect qua `dinhTuyenTwinCu.ts`.
+
+| # | Thứ | `file:line` | Trạng thái ĐO ĐƯỢC | Quyết Đợt 25 | URL cũ → đi đâu |
+|---|---|---|---|---|---|
+| 1 | vỏ `TwinHub` | `TwinHub.tsx`, 140 dòng | **0 lối vào** — `/digital-twin` đã redirect | **ĐÃ BỎ** ✔ ⛔ **KHÔNG xoá tệp** | `/digital-twin` → `/twin` (`App.tsx:348`) |
+| 2 | tab `overview` | `DigitalTwinDashboard.tsx`, 606 dòng | Sức khoẻ **ĐÃ GỘP** — `vienSucKhoe` sống ở `TwinVanHanh.tsx:1109`→prop`:2948`, **42 khai sức khoẻ** đi qua | **ĐÃ GỘP** ✔ | → `/twin` |
+| 3 | tab `center` | `DigitalTwinCenter.tsx`, 936 dòng | Vùng an toàn **ĐÃ GỘP** (`vungTuDanhSach` `:1141`→`:2949`); replay đã gộp (`DongThoiGian`) | **ĐÃ GỘP** ✔ ⛔ **KHÔNG xoá tệp** (§11b: giữ chỗ gọi `usdExport` thứ hai) | → `/twin` |
+| 4 | tab `map` | `FactoryLiveMap3D.tsx`, 240 dòng | Badge nguồn nhịp **ĐÃ GỘP** (`khaiNguonSo` `:1871`→badge`:2528`, đọc `đẩy + hỏi 30s`) | **ĐÃ GỘP** ✔ | `/factory-live-map` → `/twin` (`:426`, **1 chặng** ✔) |
+| 5 | tab `floor` | `FactoryFloorEditor.tsx`, 604 dòng | Công cụ soạn, 9 mutation | **ĐÃ CHUYỂN** vào vùng sửa ✔ | `/factory-floor-editor` → `/twin?che-do=botri` (`:480`) |
+| 6 | tab `layout` | `Layout.tsx`, 1.026 dòng | 3 mutation CRUD bố trí | **ĐÃ CHUYỂN** ✔ | `/layout` → `/twin?che-do=botri` (`:641`) |
+| 7 | tab `cell` | `CellTwinPlayer.tsx`, 770 dòng | Phát lại **ĐÃ GỘP** (`orchestration.simulate` `:1536`) | **ĐÃ GỘP** ✔ | `/cell-twin` → `/twin` (`:485`) |
+| 8 | tab `rf` | `RfTestCellSim.tsx`, 792 dòng | **0 lời gọi tRPC** — mô phỏng thuần | **ĐÃ TÁCH** khỏi Twin ✔ | `/rf-test-cell` = **tuyến thật** (`:483`) |
+| **9** | **`/command-center`** | `App.tsx:487`, **1.596 dòng** | ★ **TUYẾN THẬT, CÒN SỐNG** — nav `:301`. Cây đa site `commandCenter.hierarchy` `:931` **ĐÃ GỘP** (Z4/`CayPhanCap`, §13f.1) | ⚠ **MÓN GỘP DUY NHẤT CÒN LẠI** — xem 15.4.3 | ⚠ **CHƯA redirect** |
+| 10 | `/layout/:id` | `App.tsx:642` | Route **sống, 0 lối vào UI** (nợ từ Khối D) | ⚠ **CẦN QUYẾT** | — |
+
+⇒ **Đếm lại: `/twin` + `/command-center` + `/rf-test-cell` = 3 tuyến Twin-liên-quan còn sống**, không
+phải 4. Sau Đợt 25 nếu gộp `/command-center`: **còn 2**.
+
+#### 15.4.3 `/command-center` — đề xuất **GỘP, NHƯNG KHÔNG REDIRECT NGAY**
+
+| Thứ trong `CommandCenter.tsx` | Quyết | Lý do đo được |
+|---|---|---|
+| Cây đa site `:931` `commandCenter.hierarchy` | **ĐÃ GỘP** (`CayPhanCap`, Z4) | §13f.1 — tái dùng, không viết cây thứ hai |
+| Sàn 3D `:735` | **BỎ** | **D-5**: dùng **lưới tổng hợp** `:466-491`, **không phải vị trí thật** ⇒ hai cảnh nói hai câu về cùng nhà máy |
+| Dải KPI `:938` | **BỎ** | **D-4**: gộp = **năm** bản đếm cùng một thứ = **bốn cơ hội lệch nhau** |
+| Đài cảnh báo `:1049` | **ĐÃ GỘP** (`DaiCanhBao`) | phần phân biệt rỗng-vì-RBAC |
+| Khuôn `ErrorBoundary` `:839-849` | **GIỮ TẠI CHỖ** | §4 mượn khuôn này cho `<Canvas>` |
+
+★ **Đề xuất: cấp `?pv=tapdoan` trên `/twin` (`CapPhamVi` đã có `"tapDoan"`, `duongDanTwin.ts:38`),
+rồi redirect `/command-center` → `/twin?pv=tapdoan`.**
+⚠ **NHƯNG KHÔNG redirect trước khi đo `?pv=tapdoan` chạy thật với dữ liệu thật.** Đây là **R-4** đã
+ghi ở §14.9. `/command-center` là tuyến có nav mục riêng (`:301`); redirect vào một cấp **chưa nghiệm
+thu** biến một màn đang chạy thành một màn hỏng, và **không ai phát hiện** vì URL vẫn 200.
+
+#### 15.4.4 ⛔ BỐN THỨ KHÔNG ĐƯỢC ĐỘNG VÀO
+
+| Thứ | Vì sao | Bằng chứng |
+|---|---|---|
+| `MachineCockpit.tsx` | `MachineWorkspace` nhúng nó **ngoài Twin**; và `NganNhung.tsx:92` nhúng `MachineCockpitBody` | §11b |
+| `RobotCockpit.tsx` | **ĐÍCH DI TRÚ** — `nganXuLyLogic.ts:232` trỏ `/robot/:id`; `NganNhung.tsx:95` nhúng `RobotCockpitBody` | §11b |
+| `DigitalTwinCenter.tsx` | Giữ **chỗ gọi `usdExport` thứ hai** | §11c.7 |
+| **mục nav `/digital-twin`** | `DataManagementHub.tsx:24` + `DataSettings.tsx:796` đọc quyền route qua `getRequiredPermissionForHref("/digital-twin")`. Xoá ⇒ **cả hai rơi về `"analytics_oee"` IM LẶNG** và hiện quick-link bố cục cho người **không được sửa** — **tái tạo đúng lỗi "một lối vào rồi TỪ CHỐI"** | §13e.5 |
+
+---
+
+### 15.5 ★★★ `TwinVanHanh.tsx` 3.754 DÒNG — KẾ HOẠCH TÁCH (THIẾT KẾ, KHÔNG LÀM ĐỢT NÀY)
+
+#### 15.5.1 Chẩn đoán — đo, không suy
+
+```
+  export default function TwinVanHanh()      ← TwinVanHanh.tsx:250
+  └── và KHÔNG CÓ GÌ KHÁC ở tầng tệp.
+      grep "^function |^const [A-Z].*=>|^export function" ⇒ ĐÚNG 1 kết quả
+
+  Trong MỘT hàm đó:   50 useMemo · 18 useState · 14 useQuery · 13 useCallback · 6 useEffect
+```
+
+★ **Đây là con số quan trọng nhất của cả §15.** Chủ sở hữu nói *"quá phức tạp"* về **3 màn**; đo được
+thì **97,7 %** khối lượng nằm trong **một hàm**. ⇒ **Gộp thêm màn nữa KHÔNG làm nó bớt phức tạp** —
+nó làm hàm đó **dài thêm**. Đây là lý do 15.5 tồn tại và vì sao nó **quan trọng ngang** 15.2.
+
+#### 15.5.2 Tách theo TRÁCH NHIỆM — 6 mảnh, thứ tự theo rủi ro tăng dần
+
+| # | Mảnh | Rút ra | Ước dòng | Rủi ro | Vì sao an toàn / nguy |
+|---|---|---|---|---|---|
+| **T-1** | **Đọc dữ liệu** | `useDuLieuTwin.ts` — gom **14 `useQuery`** thành 1 hook, trả 1 object | ~350 | **THẤP** | Thuần đọc, không JSX, không nhánh quyền. Test bằng mock tRPC |
+| **T-2** | **Dẫn xuất cảnh** | `useCanhVe.ts` — `mayVe`, `hinhLine` (`:1644`), `bangWip`, `cotWipCanh` | ~500 | **THẤP** | Hàm thuần trên dữ liệu T-1. ⚠ **`bangWip` và `cotWipCanh` PHẢI ở cùng một hook** — tách đôi là mở đường cho phép tính thứ hai (G12), đúng thứ chú thích `:3713` cảnh báo |
+| **T-3** | **Trạng thái URL** | `useTrangThaiTwin.ts` — bọc `duongDanTwin.ts` + `?che-do=` + `?xem=` | ~250 | **THẤP** | `duongDanTwin.ts` **đã là module thuần đã test**; đây chỉ là vỏ React |
+| **T-4** | **Cấp Nhà máy/Tầng** | `<CapNhaMay>` | ~450 | TRUNG BÌNH | JSX + lớp phủ |
+| **T-5** | **Cấp Line** | `<LopLine>` — bọc `DaiLine` + `DongChayLine` **đã có** | ~350 | TRUNG BÌNH | ⚠ **Ranh giới G16**: đụng cùng vùng với T-4 |
+| **T-6** | **Cấp Máy** | `<LopMay>` — bọc `NganXuLy` (726 dòng, **đã có**) + `NganNhung` | ~400 | **CAO** | ⚠ Đây là **mặt GHI duy nhất** (2 mutation W1/W2 + 3 qua ngăn nhúng). Tách sai = **mất đường ghi mà cổng vẫn xanh** |
+
+⇒ Còn lại trong `TwinVanHanh.tsx`: **~1.400 dòng** vỏ + điều phối. Không phải mục tiêu "300 dòng" —
+mục tiêu là **mỗi mảnh vừa một đầu người**.
+
+#### 15.5.3 ★ RỦI RO CỦA VIỆC TÁCH — bốn cái, và cách chống từng cái
+
+| Rủi ro | Vì sao có thật ở dự án này | Chống bằng |
+|---|---|---|
+| **R-T1 · Đứt đường ghi mà cổng vẫn xanh** | §11c.2 đã đo **4 lớp lỗi "có mã + có test + KHÔNG giao hàng"**; §13d.6 đo `grep -c` ⇒ **0 chỗ gọi** cho 3 hạ tầng vừa xây | **Ablation bắt buộc**: gỡ chỗ gọi ⇒ test **PHẢI ĐỎ**. §13d.4 đã dùng và nó **bắt lỗi của chính lô Z hai lần** |
+| **R-T2 · Prop drilling 5 tầng** | 18 `useState` phân tán cho 6 mảnh ⇒ mảnh nào cũng cần nửa số | Gom vào **1 object trạng thái** từ T-3, truyền 1 prop, **không** truyền 18 |
+| **R-T3 · Hai hook cùng tính một số** | G12; và `bangWip`/`cotWipCanh` là ca đã có chú thích cảnh báo | **T-2 là hook DUY NHẤT** được tính dẫn xuất cảnh. Test: cùng đầu vào ⇒ 3D và 2D cùng nói `nghen: true` |
+| **R-T4 · Xung đột G16 giữa các lô** | §13d.6: cả 3 mục lô Z **dừng ở ranh giới tệp** vì lô Y đang giữ `TwinVanHanh.tsx` | **T-1/T-2/T-3 trước, tuần tự, MỘT phiên**. T-4/T-5/T-6 sau, và **không lô nào chạm 2 mảnh** |
+
+★ **Không tách trong đợt này.** Đây là thiết kế. ⇒ **Câu Q-3 (15.8).**
+
+---
+
+### 15.6 ★★★ THÔNG TIN NÀO LÊN 3D — BỐN NHÓM, THEO TỪNG CẤP
+
+> §14.5 đã phân A/B/C/D cho **toàn trang**. Mục này làm điều §14.5 **chưa làm**: phân theo **TỪNG
+> CẤP**. Vì cùng một thông tin có thể **đúng ở cấp này và sai ở cấp kia** — và đó chính là điều
+> làm 3 màn cũ "quá phức tạp": chúng hiện **mọi thứ ở mọi cấp**.
+
+#### 15.6.1 Bảng ba cấp × bốn nhóm
+
+**★ (A) NEO VÀO VẬT THỂ 3D — đắt (1 draw call/nhãn), phải giành chỗ**
+
+| Cấp | Neo cái gì | Neo vào đâu | Nguồn | Trần nhãn | Đã có? |
+|---|---|---|---|---|---|
+| **Nhà máy** | ① cờ đỏ *"toà có sự cố"* ② màu thân toà (chạy/dừng/mất tín) | **TOÀ NHÀ**, không phải máy | `factoryCommand.overview` `:525` · `andon.active` `:538` | **≤ 4** (4 toà) | màu **CÓ**; cờ theo toà **CHƯA** |
+| **Line** | ① nhãn **nút thắt** ② badge E-STOP ③ tên trạm | **TRẠM** | `wip.lineBalance` `:609` · `twinCanh.anToanRobot` `:551` | **≤ 12+1** | nút thắt **CÓ** (2D, chưa neo 3D) |
+| **Máy** | ① tên máy ② badge cảnh báo ③ **vòng viền sức khoẻ** ở đế | **MÁY** | `machine_health_history` (**180.800 hàng, tươi HÔM NAY**) | **≤ 3** | `vienSucKhoe` **CÓ** (`:1109`→`:2948`) |
+
+★ **Vì sao cấp Nhà máy KHÔNG neo vào máy:** 240 nhãn > trần 30, và **không ai đọc nổi 240 nhãn**.
+Ở cấp nhà máy người dùng hỏi *"toà nào?"*, không hỏi *"máy nào?"*. Đây là **semantic zoom** — đổi cấp
+= **đổi biểu diễn**, không phải phóng to cùng một biểu diễn.
+
+**★ (B) LỚP PHỦ 2D — 0 draw call, khuôn `BangKpiNoi` (197 dòng, ĐÃ CÓ)**
+
+| Cấp | Chip trái | Chip phải | Header |
+|---|---|---|---|
+| **Nhà máy** | 240 máy · 208/19/9/4 · OEE `—`⁽¹⁾ · NG `—`⁽²⁾ | ⚠ **tối đa 2** mục cần xử lý | badge nguồn nhịp · tuổi dữ liệu |
+| **Line** | Line N · 12 máy · **nhịp** · **nút thắt trạm** · WIP | ⚠ mục của line này | ⟵ như trên + breadcrumb Line |
+| **Máy** | mã · loại · **sức khoẻ %** + xu hướng 24h · NG 24h | cảnh báo của máy này | ⟵ như trên + breadcrumb Máy |
+
+⁽¹⁾ `oee_metrics` **897 hàng, 0 hàng trong 24h** ⇒ **`—` kèm "đo trên 0/240 máy trong 24h"**, ★ **không**
+`0%`. `?? 0` là **lời khai SAI**.
+⁽²⁾ `product_inspections` **2.880/2.880 `factoryCode` NULL** ⇒ rỗng với mọi vai không-admin (P-1).
+⚠ Chữa SAI là nới cổng thành *"NULL thì cho qua"* — mở lại đúng lỗ Q1 vừa vá. Phải sửa **đường ghi** trước.
+
+**★ (C) PANEL — đọc kỹ, so sánh, thao tác**
+
+| Cấp | Panel trái | Panel phải |
+|---|---|---|
+| **Nhà máy** | `CayPhanCap` (Z4) · `DanhSachMay` ảo hoá | `DaiCanhBao` gộp |
+| **Line** | 12 máy của line · `DaiLine` dòng chảy trạm (**ĐÃ CÓ**) | cảnh báo line + `NganXuLy` |
+| **Máy** | sức khoẻ + **biểu đồ 24h** (C-9, **CHƯA có**) | **`NganXuLy` 726 dòng ĐÃ CÓ** — mặt ghi duy nhất |
+
+**★★★ (D) KHÔNG LÊN 3D — quan trọng NGANG (A)**
+
+> Brief nói đúng: *"một trung tâm nhồi mọi thứ sẽ không đọc được."* Đây là danh sách **cố ý bỏ**,
+> theo cấp. Cột cuối là **chỗ thay thế** — bỏ khỏi 3D ≠ bỏ khỏi hệ.
+
+| # | Ở cấp | KHÔNG lên 3D | Vì sao (đo được) | Ở đâu thay thế |
+|---|---|---|---|---|
+| **D-1** | **cả 3** | **Nút lệnh OT** (Start/Stop/Reset/đổi chế độ) | ① 3D là mặt **khám phá** — người ta xoay/kéo/bấm thử ② đường ghi **chưa lọc tenant** (L-1) ③ badge khai `đẩy + hỏi 30s` ⇒ **đủ tươi để NHÌN ≠ đủ tươi để STOP**. ★ Mẫu `Machine 3D Twin*` **có** Free Run/Pause/Stop — **ta cố ý bỏ** | `[Mở chức năng]` → `/command-console` |
+| **D-2** | cả 3 | `stationLoadHeatmap` làm chỉ báo nút thắt | **Không trả `periodStart`** ⇒ không tự chứng minh còn hạn. Đợt 8 đo được **lời khai 16 ngày tuổi tô đỏ SAI trạm** | `wip.lineBalance` — trả **nguyên hàng** |
+| **D-3** | Nhà máy | **Nhãn tên cho MỌI máy** | 240 > trần 30; 48 máy/tầng cũng > 30 | màu thân + hover + `DanhSachMay` |
+| **D-4** | Nhà máy | **Bảng máy dạng bảng** | Trình bày lại C-1. **Bảng thứ hai không thêm sự thật, chỉ thêm chỗ để lệch** | `DanhSachMay` |
+| **D-5** | Nhà máy | **4 dải KPI rời** | Gộp = **5 bản đếm cùng một thứ** = **4 cơ hội lệch nhau** | chip nổi B-1 |
+| **D-6** | Line | **Từng bo mạch / ảnh AOI trên băng tải** | Một line = hàng nghìn bo/giờ. Neo được cũng **không đọc được**, và **kéo draw call theo sản lượng** — ngân sách phụ thuộc **ca sản xuất**, không phụ thuộc thiết kế | `[Mở chức năng]` → màn kiểm tra |
+| **D-7** | Line | **Hoạt ảnh băng tải chạy** | ★ Hollifield nêu **đích danh**: *"moving conveyors, animated flames"* là dấu hiệu đồ hoạ **kém**. Và dưới `frameloop="demand"` nó **giữ GPU chạy 8 tiếng liền** — phá đúng thứ `demand` mua được | nhịp hiển thị bằng **SỐ** (`nhịp 42 s`) |
+| **D-8** | Máy | **Song ánh khớp nối robot thời gian thực** | §11g.7 (lô N mục #3) đo: **KHÔNG LÀM ĐƯỢC** — không có nguồn góc khớp. Vẽ nó ra là **bịa** | trạng thái + chỉ số thật |
+| **D-9** | Máy | **Ảnh sản phẩm / kết quả AOI từng bo** | Một máy = hàng nghìn ảnh; không neo được vào 240 vật thể mà vẫn đọc được | `[Mở chức năng]` |
+| **D-10** | cả 3 | **Biểu đồ xu hướng dài hạn** (OEE tháng, Pareto lỗi) | Cảnh 3D trả lời *"bây giờ, ở đâu"*; **không** trả lời *"ba tháng qua, vì sao"* | `/quality-cockpit`, `/analytics` |
+| **D-11** | cả 3 | **Công cụ sửa bố cục** | Trộn mặt **ghi hình học** với mặt **đọc vận hành** = **kéo nhầm máy khi đang xem cảnh báo** | vùng `?che-do=botri` |
+| **D-12** | Line/Máy | **`twin_vat_the` kiểu `vung`** ở cấp Line/Máy | Đo 2026-09-08: **0 hàng `vung`** (4 hàng, toàn `tuong`). Dành chỗ cho nguồn rỗng = **hứa mà không giao** | chỉ hiện ở cấp Nhà máy/Tầng, và **im khi rỗng** |
+
+#### 15.6.2 ★ LUẬT CẮT NHÃN THEO CẤP — trần 30 phân bổ thế nào
+
+```
+  Ngân sách nhãn = 30 (trần ĐỌC ĐƯỢC, không phải trần GPU)
+
+  Cấp Nhà máy :  ≤ 4   (cờ theo TOÀ)        → thừa 26 → KHÔNG tiêu
+  Cấp Line    :  ≤ 13  (12 trạm + 1 nút thắt) → thừa 17 → KHÔNG tiêu
+  Cấp Máy     :  ≤ 3   (tên + cảnh báo + sức khoẻ) → thừa 27 → KHÔNG tiêu
+
+  ★★★ "Thừa ngân sách" KHÔNG phải lý do để tiêu.
+      Trần 30 là trần MẮT NGƯỜI. 26 nhãn thừa mà đổ lên màn thì màn hỏng
+      dù GPU không hề hấn. Đây là chỗ dễ sai nhất khi ai đó đọc bảng ngân sách
+      §4 và thấy "150 draw calls, ta mới dùng 12".
+
+  Xếp hạng khi VƯỢT (chỉ xảy ra ở cấp Tầng, 48 máy):
+    1. E-STOP đang bật              ─┐
+    2. Cảnh báo andon mức cao        │ BẤT THƯỜNG — LUÔN thắng
+    3. Sức khoẻ dưới ngưỡng         ─┘
+    4. Nút thắt chuyền
+    5. Vật thể ĐANG CHỌN (`chon=`)   ─── ý định người dùng
+    6. Tên máy trong bán kính camera ─── lấp chỗ còn lại
+    ────────────────────────── cắt ở 30 ──
+    7. còn lại: KHÔNG nhãn — đọc bằng màu + hover + panel trái
+       ★ và hiện chip **"+N máy nữa"** — im lặng cắt là NÓI DỐI về số lượng (G9)
+```
+
+---
+
+### 15.7 NGUỒN NGOÀI · RỦI RO · NGHIỆM THU
+
+#### 15.7.1 ★★★ NHẤT QUÁN VỚI KẾT LUẬN §14.8 — HAY BÁC NÓ?
+
+§14.8.1 rút kết luận: **"3D được biện minh cho ĐỊNH VỊ, không được biện minh cho ĐIỀU KHIỂN."**
+Thiết kế §15 **giữ nguyên kết luận đó**, không bác. Nhưng nó **thêm ba cấp**, và ba cấp là một
+**lời buộc tội mới** mà §14.8 chưa trả lời. Trả lời ở đây:
+
+| Cáo buộc của Hollifield/PAS | §15 hoá giải thế nào | Ở đâu |
+|---|---|---|
+| *"90% màn cho 3D, 10% cho thông tin"* | ★ **Ba cấp làm cho cáo buộc này YẾU ĐI, không mạnh lên.** Ở cấp Nhà máy 3D **đúng là** bản đồ định vị 240 máy (thứ bảng danh sách không cho). Nhưng ở cấp **Máy**, canvas 3D chỉ chiếm **620×300 = 20 % viewport** — phần còn lại là `NganXuLy` + thẻ chỉ số. **Càng đi sâu, tỉ lệ 3D càng GIẢM** — vì càng sâu thì câu hỏi càng chuyển từ *"ở đâu"* sang *"bao nhiêu"* | 15.3.1 vs 15.3.3 |
+| *"không biết nhà máy chạy tốt hay tệ"* | Chip B-1 + dải *"N việc cần biết"* trả lời **trước khi** người dùng nhìn 3D. Và ở mỗi cấp, panel *"CẦN XỬ LÝ"* giới hạn **tối đa 2 mục** — nếu mọi thứ đều khẩn thì không gì khẩn | 15.3.1, 15.6.1 |
+| *"3D + màu rực = giấu mất cảnh báo"* | Bỏ bảng màu neon của mẫu (QĐ, §13c.2). Nền xám trung tính; **màu chỉ dành cho bất thường**. Nguồn màu **duy nhất** vẫn là `mauTrangThai.ts` (≤ 7 mã) | §14.7.1 |
+| *"Spinning pumps, **moving conveyors**, animated flames"* | ★ **D-7 bỏ hoạt ảnh băng tải** — và đây là chỗ §15 **đắt giá nhất** so với mẫu: cả `Production Line 3D Twin.png` lẫn `Machine 3D Twin.webp` đều bán hoạt ảnh chuyển động làm điểm nhấn | 15.6.1 D-7 |
+| Level 1: *"Control interactions are not made from this screen"* | **D-1** — không đặt lệnh OT trên bất kỳ cấp nào, kể cả cấp Máy nơi mẫu **có** Free Run/Pause/Stop | 15.3.3 |
+
+★ **Một chỗ ta mạnh hơn ca chung của Hollifield, và §15 làm nó mạnh thêm:** ông cho phép mô tả sơ đồ
+*"when functionally essential"*. Với **240 máy trên 4 tầng, 20 line**, bố trí không gian **LÀ**
+functionally essential. Và **ba cấp là biểu hiện trực tiếp của Clause 6.3 *Display Hierarchy*
+(ISA-101.01)** — nó đòi tổ chức phải có **một phân cấp màn hình có tài liệu**. §15 chính là tài liệu đó.
+
+⚠ **Chỗ tôi KHÔNG tìm được nguồn đủ mạnh — khai thẳng (§14.8 đã khai 4 chỗ, §15 thêm 2):**
+- **(e)** Không có nguồn có thẩm quyền cho *"lớp nổi giả-dialog tốt hơn modal thật trong viewer 3D"*.
+  QĐ-17 dựa trên **ràng buộc RB-4 của chính dự án** + đo được, **không** dựa trên chuẩn ngành.
+- **(f)** Không có nguồn cho **con số** *"tối đa 2 mục ở panel CẦN XỬ LÝ"*. Đó là **phán đoán thiết
+  kế**, chọn theo tinh thần *"nếu mọi thứ đều khẩn thì không gì khẩn"*, **không** phải chuẩn.
+
+**Nguồn ngoài áp thêm cho §15** (ngoài danh sách §17 đã có):
+- **Microsoft, *Semantic Zoom*** — đổi cấp = **đổi biểu diễn**, không phải dolly camera. ⇒ cơ sở cho
+  việc cấp Nhà máy neo vào **toà**, cấp Line neo vào **trạm**, cấp Máy neo vào **máy** (15.6.1).
+- **NN/g, *Breadcrumbs: 11 Design Guidelines*** — breadcrumb theo **vị trí trong phân cấp**, KHÔNG
+  theo lịch sử phiên. ⇒ `Nhà máy › Toà A › T2 › Line 2 › M-114` là **vị trí**, và **Back trình duyệt**
+  là lịch sử — hai thứ **khác nhau**, và §15 cấp **cả hai**.
+- **three.js *Rendering on Demand*** — khuôn cờ `renderRequested` chống vòng phản hồi ⇒ 15.3.6.
+- **NVIDIA Omniverse web-viewer-sample** — phân chia sở hữu: **cảnh 3D sở hữu dựng hình + chọn; web
+  client sở hữu panel/cây/điều khiển**. ⇒ cơ sở độc lập cho việc `NganXuLy` (mặt ghi) nằm **ngoài**
+  canvas, không neo vào vật thể.
+
+#### 15.7.2 RỦI RO — CÁI GÌ CÓ THỂ VỠ
+
+| # | Rủi ro | Xác suất | Hậu quả | Chống |
+|---|---|---|---|---|
+| **R-1** | ★★★ **Ai đó cài "dialog" theo nghĩa đen ⇒ Canvas thứ hai** | **CAO** — chữ "dialog" trong yêu cầu **mời** làm thế | Vi phạm RB-4; `webglcontextlost`; canvas **đen vĩnh viễn** | QĐ-17 ghi rõ. **Test bánh cóc**: đếm `<canvas>` trong DOM ở cả 3 cấp ⇒ **luôn = 1**. Đây là bất biến **đo được**, không phải lời dặn |
+| **R-2** | **`Esc` đụng độ ba lớp** (Sheet → lớp Máy → lớp Line) | CAO | Người dùng **kẹt**, hoặc đóng nhầm 2 lớp một lúc | Test bàn phím e2e: mở đủ 3 lớp, `Esc` **ba lần**, kiểm URL sau **mỗi** lần |
+| **R-3** | **Hoạt ảnh camera không tự tắt** | TRUNG BÌNH | GPU **không về 0** ⇒ phá `demand`, laptop nóng cả ca | Test: sau chuyển cảnh 2 s, `renderer.info.render.frame` **không tăng nữa** |
+| **R-4** | **Redirect `/command-center` trước khi `?pv=tapdoan` chạy thật** | TRUNG BÌNH | Màn đang chạy → màn hỏng, **URL vẫn 200** nên không ai báo | **KHÔNG redirect** cho tới khi cấp tập đoàn nghiệm thu bằng ảnh (15.4.3) |
+| **R-5** | **Tách `TwinVanHanh` làm đứt đường ghi** | TRUNG BÌNH | Mất mặt ghi duy nhất mà **cổng vẫn xanh** — đúng 4 lớp lỗi §11c.2 | **Ablation bắt buộc** cho T-6 (15.5.3 R-T1) |
+| **R-6** | ★ **Cấp Line/Máy đẹp trên dữ liệu giả, rỗng trên dữ liệu thật** | **CAO** | Nghiệm thu ĐẠT rồi production trống | `andon_events` **0 hàng `raised`**, `oee_metrics` **0 hàng/24h**, `twin_vat_the` **0 hàng `vung`** ⇒ **dựng ca dương bằng tay** rồi khôi phục byte-exact (khuôn §13d.2, đối chiếu md5) |
+| **R-7** | **Thu hẹp phạm vi làm mất lối vào của `operator1`** | THẤP | Tái diễn tai nạn Đợt 3 CHẶN-1 | Mọi cấp mới **giữ cổng của `/twin`**; quyền SỬA kẹp **trong** trang (QĐ-16); đo bằng **2 tài khoản thật** |
+| **R-8** | **Cấp Máy dựng glTF thật ⇒ vỡ ngân sách** | THẤP | draw call/tam giác tăng theo số mesh của file | LOD 4 bậc (§10B.3) + `ModelErrorBoundary` **đã có** + rơi về **7 khối mặc định** (§10B.1) |
+
+#### 15.7.3 ★ NGHIỆM THU — ĐO GÌ ĐỂ BIẾT ĐẠT
+
+★ **G82: nói thẳng khi một yêu cầu không đo được.** Ba trong bốn tính từ chủ sở hữu dùng
+(*"tối ưu, nhanh, đẹp, trực quan"*) **không đo trực tiếp được**. Dưới đây là **thay thế đo được** —
+và **chỗ tôi thừa nhận phép thay thế không hoàn hảo**.
+
+| Chủ sở hữu nói | Đo được bằng | Ngưỡng | ⚠ Phép thay thế **không** bắt được gì |
+|---|---|---|---|
+| **"nhanh"** | ① thời gian từ click Line → khung đầu của cảnh Line ② FPS khi xoay ③ GPU khi đứng yên | ① **≤ 300 ms** ② **≥ 30** ③ **≈ 0 %** | Không bắt được *"cảm giác nhanh"* khi hoạt ảnh **giật** dù tổng thời gian đạt |
+| **"tối ưu"** | ① draw calls mỗi cấp ② `<canvas>` trong DOM ③ tam giác | ① **≤ 150** (dự kiến ~12) ② **= 1** ③ **≤ 500.000** | Không bắt được **bundle phình** — đo riêng bằng `dist/public/assets` |
+| **"trực quan"** | ① nhãn đồng thời ② số click từ `/twin` tới bất kỳ máy nào ③ **nghiệm thu THỊ GIÁC** — tự chụp + **tự Read ảnh** | ① **≤ 30** ② **≤ 3** ③ người đọc | ★ ② là **proxy yếu**: 3 click tới đúng máy **không** chứng minh người dùng **tìm được** máy đó |
+| **"đẹp"** | ⛔ **KHÔNG ĐO ĐƯỢC** | — | ★ **Khai thẳng.** Thay bằng **nghiệm thu mắt của chủ sở hữu** trên ảnh thật. ⚠ Tiền lệ: §13g.2 nghiệm thu thị giác bắt **5 lỗi** mà **1.834 test mù**, §13f.2 bắt **5 lỗi** nữa. Đây **không** phải hình thức |
+
+**Bảy phép đo bắt buộc trước khi tuyên bố ĐẠT:**
+
+```
+ N-1  `<canvas>` trong DOM ở CẢ BA cấp                      ⇒ luôn = 1        (RB-4)
+ N-2  draw calls mỗi cấp qua `renderer.info.render.calls`    ⇒ ≤ 150
+      ⚠ KHÔNG dùng `getParameter`/`readPixels` — chặn đồng bộ tới 1 ms (MDN)
+ N-3  nhãn đồng thời mỗi cấp                                 ⇒ ≤ 30
+ N-4  ★ ABLATION: gỡ chỗ gọi cấp Line ⇒ test PHẢI ĐỎ         ⇒ chống G5
+ N-5  ★ CA DƯƠNG DỰNG TAY: chèn 1 andon `raised` ⇒ badge nổi ⇒ rồi KHÔI PHỤC
+      byte-exact, đối chiếu md5                              (khuôn §13d.2)
+ N-6  HAI tài khoản thật (`operator1` · `engineer1`) × ba cấp × vào/nút sửa
+ N-7  ★ NGHIỆM THU THỊ GIÁC: tự chụp + TỰ READ ảnh mỗi cấp   ⇒ 3+ ảnh
+      ⚠ G65: dùng `outputDir` RIÊNG; kiểm `git status -- test-results/` sau lượt cuối
+```
+
+⚠ **Cái nghiệm thu này KHÔNG chứng minh:** rằng người vận hành thật, trong ca thật, **tìm được máy
+hỏng nhanh hơn** so với màn cũ. Đo điều đó cần **người dùng thật + đồng hồ**, không có trong tầm đợt
+xây. **Khai ra thay vì giả vờ đã đo.**
+
+---
+
+### 15.8 ★★★ BỐN CÂU CẦN CHỦ SỞ HỮU TRẢ LỜI TRƯỚC KHI XÂY
+
+| # | Câu hỏi | Vì sao không tự quyết được | Đề xuất của tôi |
+|---|---|---|---|
+| **Q-1** | **"Dialog" — chấp nhận LỚP NỔI (QĐ-17/L2) hay đòi MODAL THẬT chặn nền (L3)?** | Modal thật đòi **unmount cảnh nền** (RB-4) ⇒ **chậm nhất** trong 4 cách + **mất ngữ cảnh không gian**. Đây là đánh đổi giữa **chữ ông viết** và **thứ ông đặt đầu danh sách** (*"nhanh"*) — **chỉ ông quyết được** | **L2** (lớp nổi). Trông như dialog, nhanh nhất, deep-link miễn phí, Back trình duyệt tự chạy |
+| **Q-2** | ★★★ **`/twin-studio`: giữ QĐ-16 (một trang, quyền theo vùng — ĐÃ LÀM) hay tách lại hai tuyến?** | **Mâu thuẫn trực tiếp** giữa QĐ-16 (ông chốt 2026-09-08, đã thực thi + nghiệm thu 5/5 e2e) và câu Đợt 25. Tách lại = **đảo ngược một đợt đã nghiệm thu** và `operator1` **mất lối vào** | **Giữ QĐ-16** (đọc Đ-A). Việc duy nhất: đổi nhãn nút `⚙ Sửa bố cục` → `⚙ Twin Studio` — **một chuỗi i18n**, để tên ông quen **tìm thấy được** |
+| **Q-3** | **Tách `TwinVanHanh.tsx` (3.754 dòng, MỘT hàm, 50 `useMemo`) — làm trước hay sau khi xây ba cấp?** | Tách trước = ba cấp xây trên nền sạch nhưng **chậm thấy kết quả**. Xây trước = thấy ngay nhưng hàm phình lên **~5.000 dòng** và mảnh T-6 (**mặt ghi duy nhất**) càng khó tách an toàn | **T-1/T-2/T-3 TRƯỚC** (rủi ro THẤP, ~1.100 dòng, thuần đọc). T-4/T-5/T-6 **sau** khi ba cấp chạy |
+| **Q-4** | **`/command-center` (1.596 dòng) — gộp vào `?pv=tapdoan` hay giữ riêng?** | Cây đa site **đã gộp** (Z4). Còn lại chỉ là sàn 3D (**D-5**: lưới tổng hợp, không phải vị trí thật) + dải KPI (**D-4**) — cả hai đều **nên bỏ**. Nhưng nó có **nav mục riêng** và người dùng có thể đang dùng | **Gộp**, nhưng ⛔ **KHÔNG redirect** cho tới khi `?pv=tapdoan` **nghiệm thu bằng ảnh với dữ liệu thật** (R-4) |
+
+⚠ **`/layout/:id` (`App.tsx:642`) vẫn sống mà 0 lối vào UI** — nợ từ Khối D, **chưa ai quyết**. Đợt
+xây phải **nối vào vùng sửa hoặc bỏ hẳn**, không để lửng thêm một đợt nữa.
+
+---
+
+### 15.9 TÓM TẮT — CÁI GÌ ĐÃ CÓ, CÁI GÌ PHẢI XÂY
+
+★ **G74: "đã có" là lời khai về TỆP, không phải về VIỆC.** Cột "Đã có?" dưới đây đếm bằng **chỗ gọi**
+(`file:line`), không bằng tên tệp.
+
+| Việc | Đã có? | Bằng chứng / khoảng trống |
+|---|---|---|
+| Trục URL 3 cấp (`?pv=`, `?chon=`) | ✅ **CÓ** | `duongDanTwin.ts:38,269,290,553` — **không đẻ khoá mới** (G40) |
+| Pha mờ ngoài phạm vi (hiệu ứng "nền dialog") | ✅ **CÓ** | `phamViCanh.ts` — `TI_LE_PHA_NGOAI_PHAM_VI = 0.72` |
+| Camera bay theo Line | ✅ **CÓ** | `TwinVanHanh.tsx:1965` `khungNhinLine(...)` |
+| Dải dòng chảy trạm | ✅ **CÓ** | `DaiLine.tsx` 200 dòng + `DongChayLine.tsx` 190 dòng, gọi ở `:3713` |
+| Dialog thật cho cấp Máy | ✅ **CÓ** | `NganNhung.tsx` — Radix `Sheet`, focus trap, `Esc`, `aria-modal` |
+| Mặt ghi cấp Máy | ✅ **CÓ** | `NganXuLy.tsx` 726 dòng — 2 mutation W1/W2 + 3 qua ngăn nhúng |
+| Viền sức khoẻ neo vật thể | ✅ **CÓ** | `vienSucKhoe` `:1109`→prop`:2948`, **42 khai** đi qua |
+| Khuôn lớp phủ 0 draw call | ✅ **CÓ** | `BangKpiNoi.tsx` 197 dòng |
+| Cây phân cấp có roll-up | ✅ **CÓ** | `CayPhanCap` (Z4, §13f.1) |
+| Gộp `/digital-twin` + 7 tab | ✅ **XONG** | `App.tsx:345-348`, 7 redirect 1 chặng |
+| Gộp `/twin-studio` (QĐ-16) | ✅ **XONG** | `App.tsx:368`; nghiệm thu 5/5 e2e, 2 tài khoản thật |
+| **CẢNH 3D RIÊNG cho cấp Line** | ❌ **CHƯA** | Vẫn cảnh nhà máy + siết camera. **Đây là khoảng trống #1** |
+| **CẢNH 3D RIÊNG cho cấp Máy** | ❌ **CHƯA** | Dialog chứa **thân màn 2D** (`MachineCockpitBody` `:92`). **Khoảng trống #2** |
+| **Khung "lớp nổi"** (viền, tiêu đề, `✕`) | ❌ **CHƯA** | Thuần CSS + 1 component. **Khoảng trống #3** |
+| **Bộ nội suy camera + lập lịch `invalidate`** | ❌ **CHƯA** | Khuôn có ở `CanhNhaMay.tsx:122-136`; thiếu vòng rAF. **Khoảng trống #4** |
+| **Cờ đỏ neo theo TOÀ** (cấp Nhà máy) | ❌ **CHƯA** | Hiện neo theo máy. **Khoảng trống #5** |
+| **Biểu đồ sức khoẻ 24h** (C-9, cấp Máy) | ❌ **CHƯA** | Nguồn **giàu và sống**: 180.800 hàng, tươi hôm nay |
+| Cấp `?pv=tapdoan` | ❌ **CHƯA** | `CapPhamVi` **đã khai** `"tapDoan"`; cảnh chưa dựng |
+| Tách `TwinVanHanh` 6 mảnh | ❌ **CHƯA** | 15.5 — **Q-3** |
+
+⇒ **Sáu khoảng trống thật.** Phần lớn công việc của yêu cầu Đợt 25 là **hoàn thiện + đổi bố cục**,
+**không phải viết lại** — đúng ràng buộc §13c.4 đã mang sang từ Đợt 21.
+
+---
+
 ## 14. Rủi ro`** từ trước. Chiếm lại số 14 sẽ tạo hai mục cùng số trong một tệp sắp đem
 > ra bàn — đúng kiểu nhầm lẫn mà một bản thiết kế không được phép gây ra. Nội dung được yêu cầu nằm
 > nguyên vẹn ở đây, đặt ngay trước §14 cũ. Cùng lý do và cùng cách xử lý với §12b.
