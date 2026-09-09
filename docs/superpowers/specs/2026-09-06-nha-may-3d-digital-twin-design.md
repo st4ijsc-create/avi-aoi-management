@@ -5760,6 +5760,35 @@ bien **do luc chay**, bien CSS **rieng** (khong dung chung `--twin-top` cua `/tw
 **Con lai cua Dot 30 (agent dang resume):** nghiem thu thi giac tren `dist` moi (bbox 12 o ≤ 900) ·
 `__soCanvas = 1` · hai chieu quyen · ablation ca hai phia (G93) · liet ke cong (G78).
 
+### 14q.7 DOT 30 HOAN TAT (resume) - 7/7 cong, 26/26 dot bien DO
+
+bbox sau va (1600×900, `e2e_tai_loE`): `man-twin-line` y=80 h=820 ⇒ day **900** (truoc 969) ·
+**12 o tram y=835 h=55 ⇒ day 890 < 900**. Anh doc: dai `LINE STRIP 12 stations · Takt 2.4s · WIP 1304`,
+12 o theo dong chay `SPI 121 #1 → AOI 116 #2 → … #12`, **mot canvas**, `OEE measured on 0/12` (honest-null).
+`__soCanvas` **= 1** (`e2e_tai_loE` va `operator1`), **`null`** o man id-xau (khong canvas). **13/13 redirect.**
+
+**Ablation ca hai phia (G93):** 9 module + 10 khop noi trang + 3 App + 4 va chieu cao = **26/26 DO**,
+baseline 2.070 xanh (doc sau khi loc ANSI - G94).
+
+> #### ★★★ G96 - **CHIEU "BI CHAN" KHONG DO DUOC BANG TAI KHOAN SAN CO - PHAI DUNG VAI RONG**
+> Brief chu du an: *"mot vai KHONG co `analytics_oee`/`machine_status` bi chan"*. Dot 30 do DB:
+> **5/5 non-admin dang hoat dong DEU co `machine_status`** ⇒ vai ay **khong ton tai**. Chieu chan
+> chi do duoc bang user tam `e2e_dot30_khongquyen` (**0 hang `permissions`**) → *"Access denied"*,
+> 0 canvas, tRPC **403 / `PERMISSION_DENIED`**. Da xoa, DB ve **8 user**.
+> => **G76 co chieu nguoc**: vai khong-admin **co du lieu** chung minh chieu VAO; nhung chieu CHAN can
+> vai **khong co gi** - va vai do thuong **khong co san** vi seed nao cung cap toi thieu. Phai dung tam.
+
+> #### G97 - **HAI TRINH DUYET SONG SONG LAM PHEP DO THOI GIAN DO OAN**
+> Luot dau: **11/13 redirect** - trong nhu hoi quy. Nguyen nhan: cua so co dinh **1.200 ms** khi hai
+> trinh duyet chay song song. Do lai **mot minh** voi `waitForFunction` ⇒ **13/13**, tre max **303 ms**.
+> => Mot phep do co **cua so thoi gian co dinh** la thiet bi do **phu thuoc tai may**. Khi do song song
+> (nhieu lo), doc do trong phep do thoi gian **truoc het la nghi thiet bi**, sau moi nghi ma.
+
+**Quan sat ngoai pham vi (ghi cho Dot 31/32, khong sua):** `khungNhinLine` `HE_SO_CAO.line=0.55` khung
+~7/12 may o 1600×900 - **dung chung** voi `/twin?pv=line`, doi la doi ca hai · 11/12 may chuyen 2 hien
+`khong_ro` - hop dong overview **khong mang thoi diem do** cho may khong-offline (NT-3) · man Line lay
+`factories[0]` vi `canhThietKe` nhan mot `factoryId`.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
