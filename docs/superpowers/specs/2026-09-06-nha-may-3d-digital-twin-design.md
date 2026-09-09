@@ -6061,6 +6061,60 @@ Agent khai 3 ca "moi truong", trong do *"operator1 khong con 0 gan"* — **chu d
 `assetCockpit connected` gate tuoi; client `tsTrangThaiTuIssues` uu tien `ts` that; `kpiNoiLogic` dem cung don
 vi DaiCanhBao) + **QD-24** (NganMoPhong → TwinLine) + **e2e cu 7 ca (a)** + `twin-dot31:300` tu tao user.
 
+### 14q.12 DOT 34 - MOT HOP DONG TRANG THAI (Pareto #1) + QD-24 - DAT; BRIEF SAI LAN 9 O CHO COT LOI
+
+`a86327ed`, **6 commit** pathspec. Chu du an do lai: twin3d **83 tep / 2.210** (+10) · `vitest run twin` 105/2.463 ·
+server `trangThaiMayTuoi` 17/17 · `check` 0 · `build` 0 · 5 anh nguyen · DB `2·82·37·42·10·7 · hb 108 · msl 7.814`
+truoc = sau · 3034 tat · e2e cu **25/25** `--workers=1` (V1 mot minh **pass** 1,6′ ⇒ Dot 33 do la nhieu tai).
+
+**Bang 4 nguon may 14** (`.qa-dot34/bang-4-nguon-may-14.md`): truoc = `idle` (41 = 38 idle + **3 running gia**) ·
+cockpit `connected:true` "ONLINE · Connected" · `machineDetail running` · chip `khong_ro` "Never reported"/"54 days".
+Sau = **`offline` + `tsTrangThai` 2026-07-17T01:26Z** o overview · cockpit **`connected:false` "OFFLINE ·
+Disconnected · hb 54d"** · `machineDetail offline` · chip `khong_ro` "54 days" · `/twin` KPI chay 0 / mat KN **41** ·
+`/twin/line/2` 0 / 12 · **ngan Mo phong `1`** tren Line (QD-24), **0** tren `/twin`. **Doi chung may song** (chen 1
+hang `machine_heartbeats` cho 18 `now()`, 108→109→108): `running` + "Updated 2s ago" + cockpit "ONLINE · Connected ·
+2s" ⇒ gate **khong giet may song**. Ablation: go gate server ⇒ 3 running gia + "ONLINE" quay lai; go uu tien
+`tsTrangThai` client ⇒ "Never reported" quay lai o cua so truoc goi socket (~10 s). Khoi phuc md5 3/3.
+
+> #### ★★★ G105 - **BRIEF SAI LAN 9 - O CHO COT LOI**: "gate theo tuoi hang log `online`" la SAI
+> `machine_status_logs` la **SU KIEN CHUYEN** (`recordPresence` *"chi ghi khi doi"*; `socket.ts:320/440/605/786`
+> ghi luc connect/disconnect). Gate theo tuoi log se to `offline` **may song on dinh** sau 5′ — mot hoi quy an
+> toan doi lot "trung thuc du lieu". Dot 6 **da ghim dung dieu nay** (`db/twinCanh.ts:1095 chonNguonMocTuoi`,
+> THUONG-4) ma toi khong doc lai. Agent dung **NHIP TIM** (`machine_heartbeats`, DISTINCT ON) lam bang chung song;
+> log `offline` chi thang khi ghi **sau** nhip tim cuoi. `NGUONG_TRANG_THAI_TUOI_MS = 5′` **mot so**, test ghim
+> `= NGUONG_CU_MS` client. Va: log 14 la **3 ngay** (khoi dong lai 09-06), **54 ngay la heartbeat** — toi tron hai
+> thu. 43/43 may co log moi nhat `online` (mot lan khoi dong lai) ⇒ gate theo log = **43/43 sai**.
+> ⇒ **Bang chung "song" phai la TIN HIEU DINH KY, khong phai SU KIEN CHUYEN.** Khi thiet ke gate tuoi, hoi
+> truoc: *bang nay ghi theo nhip hay theo doi?*
+
+> #### ★★★ G104 - **`db.execute` THO DOC `timestamp` NAIVE LECH −7 h** (postgres.js doc theo gio may; drizzle typed
+> doc UTC) - **lo ra chi nho doi chung may song** (chen hb `now()` ma tuoi hien 7 h). Va 5 cau (fleet ×3, kho
+> `trangThaiTapMay` ×2) bang `AT TIME ZONE 'UTC'` (`a86327ed`). **Con 7 cau** `"timestamp" AS ts` chua va (grep
+> `server --include=*.ts`, tru test) ⇒ Dot 35 lo rieng + **luoi**: mot test chay SQL tho vs typed tren cung hang,
+> lech phai = 0. ⇒ Cung lop "bon hop dong": hai duong doc **cung cot** ra **hai gio**.
+
+**Brief sai them (G83):** "`tsTrangThai` tu `statusByMachine`" — phai la **nhip tim**, khong thi nen (3 ngay) va kho
+(54 ngay) **lat nhau moi goi socket** · "Never reported bia" chi trong **cua so truoc goi socket dau** (~10 s) — sau
+do kho phu; ablation B chung minh dung cua so ay · e2e X1 ghim `data-mo="1"` loi thoi tu **Dot 23 M2** (mac dinh
+THU), khong chi do QD-23.
+
+**QD-24 thuc thi:** `NganMoPhong` + `useMoPhongTwin({lineDangXem: lineId})` + `dungDauVaoWhatIf` sang `TwinLine`; vo
+doc `?thu=moPhongMo` **mot lan** (G37/G40), mac dinh THU; go **188 dong** khoi `TwinVanHanh` co docblock. **(D)**
+`lyDoMoManMay` tach `chuaGanNhaMay` (phamViRong) khoi `thieuQuyen` (FORBIDDEN), i18n ×3; V5 that:
+`data-ly-do=chuaGanNhaMay` "Your account is not assigned to any factory yet…".
+
+**Con mo:** 7 cau `timestamp` naive · `factoryCommandService` issue `offline` may chua tung co gi ⇒ `ageMinutes: 0`
+(loi khai "0 phut") · `khoTrangThai.ts:185-199 hopNhat` phu `operationStatus` (`stopped`) len nen overview (`idle`)
+— hai tu vung, chua do voi may song `stopped` · `DanhSachMay.tsx:397` "4733902s" (#8) · `/factory-command` nay 41
+issue `offline` trong feed — chua nghiem thu thi giac · `check:tests` 32 loi co san.
+
+**Dot 35 (giao tiep):** Pareto **#4 + #5 + #6 + #7** theo TEN (so dong da troi): `TwinStudio` `h-[calc(100vh-5rem)]`
+→ do `top` luc chay nhu `--twin-line-top`; `TwinMay` `clamp(320px,36vh,360px)` giu bat bien `cockpit.h > khoiCanh.h`
+o 720; `DaiLine` `min-w-16`; `loi/locNhan.ts` vung cam DOM; `loi/LopNhan.tsx` `ngoaiKhung` ±10 % bo; `phamViCanh.ts`
+`HE_SO_CAO.line 0.55` bao 12/12; chip "N su co ngoai khung"; `CanhVanHanh` `{dongChay ? <DongChayLine/>}` tat khi
+idle (D-7); `TwinLine` `rongThat` can `canhQ.isSuccess` ma query **tat** khi `factoryId=null` ⇒ nhanh
+`chuaGanNhaMay` (dung `cauChoLyDoManMay` Dot 34). + **lo mui gio 7 cau + luoi**.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
