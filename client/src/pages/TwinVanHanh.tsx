@@ -98,6 +98,7 @@ import { useTrangThaiTwin } from "@/components/twin3d/van-hanh/useTrangThaiTwin"
 import { useMoPhongTwin } from "@/components/twin3d/van-hanh/useMoPhongTwin";
 import { usePhanTichLine } from "@/components/twin3d/van-hanh/usePhanTichLine";
 import { useTrangThaiSong } from "@/components/twin3d/van-hanh/useTrangThaiSong";
+import { useAnhLichSu } from "@/components/twin3d/van-hanh/useAnhLichSu";
 // ── Đợt 10 lô F (§11e.6 F1/F2/F3) — bộ chọn Nhà máy/Toà/Tầng ──────────────
 import {
   phamViThuc,
@@ -779,26 +780,14 @@ export default function TwinVanHanh() {
   const [tocDo, setTocDo] = useState<TocDo>(1);
 
   /**
-   * ★★★ ẢNH LỊCH SỬ ĐỔ VÀO **CÙNG** KHO — đây là chỗ §9.8 được thực thi.
+   * ★★★ ẢNH LỊCH SỬ (§9.8) ĐÃ TÁCH RA `useAnhLichSu` — Đợt 28.
    *
-   * Không có `khoReplay` riêng. Gói lịch sử đi qua đúng `apDung()` mà gói socket
-   * đi qua, chỉ khác `nguon` và có `mocXemLai`. Nhờ vậy mọi luật phía sau (tuổi
-   * → `khong_ro`, đếm rỗng ≠ đếm 0) áp y hệt nhau cho hai chế độ.
+   * ★ Truy vấn này KHÔNG đi cùng "tầng 4" dù brief xếp chung: ba truy vấn mô
+   *   phỏng chỉ TRẢ dữ liệu cho một ngăn đọc, còn cái này GHI vào kho trạng
+   *   thái dùng chung (`datAnhLichSu`). Nó có TÁC DỤNG PHỤ, chúng thì không —
+   *   và `useEffect` ghi kho nay nằm ngay cạnh truy vấn nuôi nó.
    */
-  const lichSuQ = trpc.twinCanh.anhLichSu.useQuery(
-    { factoryId: factoryId ?? 0, moc: mocTua ?? 0 },
-    { enabled: factoryId !== null && mocTua !== null, retry: false },
-  );
-
-  useEffect(() => {
-    if (mocTua === null) {
-      datAnhLichSu(null, null);
-      return;
-    }
-    // Chưa có dữ liệu ⇒ chỉ đánh dấu đang tua (UI hiện "Xem lại"), CHƯA thay
-    // cảnh. Thay cảnh bằng dữ liệu trực tiếp mà gắn nhãn lịch sử là nói dối.
-    datAnhLichSu(mocTua, lichSuQ.data?.may ?? null);
-  }, [mocTua, lichSuQ.data, datAnhLichSu]);
+  const { lichSuQ } = useAnhLichSu({ factoryId, mocTua, datAnhLichSu });
 
   /**
    * ★★★ MỘT đồng hồ cho MỌI phép xét tuổi. Khi đang tua, đây là MỐC ĐANG XEM
