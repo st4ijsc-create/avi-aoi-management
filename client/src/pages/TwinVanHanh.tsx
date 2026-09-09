@@ -70,7 +70,17 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import { isScopeEmpty, scopeEmptyReasonOf } from "@/lib/scopeEmpty";
 import { trpc } from "@/lib/trpc";
 
-import { gocTuQuatTrucDung, mmSangMet } from "@/components/twin3d/heToaDo";
+import { mmSangMet } from "@/components/twin3d/heToaDo";
+// ── T-4 (§15.5.2) — KHỐI HỢP NHẤT DỮ LIỆU, hàm THUẦN dùng chung cho cả ba màn ──
+import {
+  dungMayVe,
+  idMayChuaDat,
+  mepMatBang,
+  dungNhanMay,
+  gopNhan,
+  dungCanhBao3D,
+  CO_DU_PHONG,
+} from "@/components/twin3d/van-hanh/hopNhatCanh";
 import { hinhKhoiCho } from "@/components/twin3d/hinhKhoiMay";
 import { mauChoTrangThai } from "@/components/twin3d/mauTrangThai";
 import { mauCss } from "@/components/twin3d/van-hanh/mauThree";
@@ -981,60 +991,42 @@ export default function TwinVanHanh() {
    */
   const mauNenCanh = mauCss("--background", "#f8fafc");
 
-  const mayVe = useMemo<MayTrongLo[]>(() => {
-    const ra: MayTrongLo[] = [];
-    for (const mv of mayVanHanh) {
-      const d = datChoTheoMay.get(mv.id);
-      if (!d || !d.hienThi) continue;
-      const co = kichThuocTheoLoai.get(mv.loaiMay) ?? { rongMm: 1000, caoMm: 1800, sauMm: 1000 };
-      const kieu = mauChoTrangThai(trangThaiTheoMay.get(mv.id));
-      const trong = trongPhamVi(
-        {
-          machineId: mv.id,
-          stationId: mv.stationId,
-          lineId: mv.lineId,
-          workshopId: null,
-          factoryId,
-          tangId: d.tangId,
-        },
-        phamVi,
-      );
-      ra.push({
-        machineId: mv.id,
-        khoi: hinhKhoiCho(mv.loaiMay),
-        kichThuocMm: {
-          rongMm: d.rongMm ?? co.rongMm,
-          caoMm: d.caoMm ?? co.caoMm,
-          sauMm: d.sauMm ?? co.sauMm,
-        },
-        // DB: X = Đông, Y = mặt bằng, Z = độ cao → scene: x, y = độ cao, z = mặt bằng.
-        viTri: { x: mmSangMet(d.viTriXMm), y: mmSangMet(d.viTriZMm), z: mmSangMet(d.viTriYMm) },
-        gocXoayRad: gocTuQuatTrucDung({ x: d.quatX, y: d.quatY, z: d.quatZ, w: d.quatW }),
-        /**
-         * ★★★ "MỜ ĐI" PHẢI LÀ PHA VỀ NỀN, KHÔNG PHẢI LÀM TỐI (lỗi thị giác đo được)
-         *
-         * `doMo` của `LoBatchMay` (Đợt 1, không được sửa) là kênh LÀM TỐI:
-         * `LoBatchMay.tsx:196` nhân màu với `0.35 + 0.65*doMo`, vì vật liệu của
-         * `BatchedMesh` là ĐỤC (bật `transparent` cho cả lô sẽ phá thứ tự vẽ).
-         *
-         * ⚠ Nghiệm thu bằng ẢNH bắt được: trên theme SÁNG, làm tối một màu vốn
-         *   nhạt (`--muted` = oklch 0.94) cho ra khối gần như ĐEN trên nền sàn
-         *   sáng — đọc như MÁY HỎNG, không như "lùi khỏi tiền cảnh". Đó là lời
-         *   khai sai theo đúng kiểu §10.1 cấm: độ tương phản CAO dành cho bất
-         *   thường, mà ở đây nó lại rơi vào những máy bình thường ngoài phạm vi.
-         *
-         * ⇒ Ta pha màu về phía NỀN ngay ở tầng này (`pha()` bên dưới) rồi truyền
-         *   `doMo: 1`, tức là dùng đúng kênh mà kit cho phép mà không phải sửa
-         *   kit. Kết quả: máy ngoài phạm vi nhạt đi đúng nghĩa, ở CẢ hai theme.
-         */
-        mau: trong
-          ? mauCss(kieu.token, "#94a3b8")
-          : phaVeNen(mauCss(kieu.token, "#94a3b8"), mauNenCanh, TI_LE_PHA_NGOAI_PHAM_VI),
-        doMo: trong ? kieu.doMo : 1,
-      });
-    }
-    return ra;
-  }, [mayVanHanh, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, phamVi, factoryId, mauNenCanh]);
+  const mayVe = useMemo<MayTrongLo[]>(
+    () =>
+      /*
+       * ★ T-4 — thân vòng lặp đã dời sang `hopNhatCanh.dungMayVe` (hàm THUẦN),
+       *   để màn Line và màn Machine dùng lại CÙNG một bản. Đặc biệt phép HOÁN
+       *   VỊ TRỤC (DB Y = mặt bằng → scene z) nay đi qua `mmSangScene()` của
+       *   `heToaDo.ts` — MỘT chỗ quy đổi thay vì một bản sao viết tay ở đây.
+       *   Lưới `hopNhatCanh.unit.test.ts` ghim từng trục vào đúng nguồn.
+       *
+       * ★ `mauCss`/`phaVeNen`/`mauChoTrangThai`/`hinhKhoiCho` TIÊM xuống chứ
+       *   không để module tự import: `mauCss` đọc `getComputedStyle`, và một
+       *   module thuần không được kéo theo DOM.
+       */
+      dungMayVe({
+        may: mayVanHanh,
+        datChoTheoMay,
+        kichThuocTheoLoai,
+        trangThaiTheoMay,
+        trongPhamVi: (mv, tangIdCuaDatCho) =>
+          trongPhamVi(
+            {
+              machineId: mv.id,
+              stationId: mv.stationId,
+              lineId: mv.lineId,
+              workshopId: null,
+              factoryId,
+              tangId: tangIdCuaDatCho,
+            },
+            phamVi,
+          ),
+        mauNenCanh,
+        tiLePhaNgoaiPhamVi: TI_LE_PHA_NGOAI_PHAM_VI,
+        congCu: { mauCss, phaVeNen, mauChoTrangThai, hinhKhoiCho },
+      }),
+    [mayVanHanh, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, phamVi, factoryId, mauNenCanh],
+  );
 
   /*
    * ════════════════════════════════════════════════════════════════════════
@@ -1134,31 +1126,24 @@ export default function TwinVanHanh() {
      * cùng một lời nói dối như banner, chỉ đổi từ chữ sang hình khối, và lần này
      * người dùng THẤY chúng nên còn tin hơn.
      */
-    const duoc = new Set(tapDs.idMay);
-    const chuaDat = mayVanHanh
-      .filter((mv) => {
-        if (!mv.isActive) return false;
-        if (!duoc.has(mv.id)) return false;
-        const d = datChoTheoMay.get(mv.id);
-        return !d || !d.hienThi;
-      })
-      .map((mv) => mv.id);
+    /*
+     * ★ T-4 — cả hai phép trên đã dời sang `hopNhatCanh`:
+     *   `idMayChuaDat` giữ PHỦ ĐỊNH CHÍNH XÁC của điều kiện vẽ ở CÙNG một tệp
+     *   với `dungMayVe`, nên hai điều kiện không thể trôi khỏi nhau nữa —
+     *   `hopNhatCanh.unit.test.ts` đo thẳng bất biến "hợp = mọi máy, giao = ∅".
+     *   `mepMatBang` giữ luật "rỗng ⇒ neo gốc, KHÔNG Infinity".
+     */
+    const chuaDat = idMayChuaDat({
+      may: mayVanHanh,
+      datChoTheoMay,
+      idDuocNap: new Set(tapDs.idMay),
+    });
     if (chuaDat.length === 0) return [];
 
-    let minX = Number.POSITIVE_INFINITY;
-    let minZ = Number.POSITIVE_INFINITY;
-    for (const m of mayVe) {
-      if (m.viTri.x < minX) minX = m.viTri.x;
-      if (m.viTri.z < minZ) minZ = m.viTri.z;
-    }
-    // Chưa có máy nào trên mặt bằng ⇒ neo về gốc, khu chờ vẫn hiện được.
-    if (!Number.isFinite(minX)) minX = 0;
-    if (!Number.isFinite(minZ)) minZ = 0;
-
     const loaiTheoMay = new Map(mayVanHanh.map((mv) => [mv.id, mv.loaiMay]));
-    return xepKhuCho(chuaDat, { mepX: minX, mepZ: minZ }).map((k) => {
+    return xepKhuCho(chuaDat, mepMatBang(mayVe)).map((k) => {
       const loai = loaiTheoMay.get(k.machineId) ?? "";
-      const co = kichThuocTheoLoai.get(loai) ?? { rongMm: 1000, caoMm: 1800, sauMm: 1000 };
+      const co = kichThuocTheoLoai.get(loai) ?? CO_DU_PHONG;
       return {
         machineId: k.machineId,
         khoi: hinhKhoiCho(loai),
@@ -1214,17 +1199,19 @@ export default function TwinVanHanh() {
 
   /* ── Nhãn thế giới ──────────────────────────────────────────────────── */
   const nhan = useMemo<NhanTheGioi[]>(
+    /*
+     * ★ T-4 — `dungNhanMay` neo nhãn qua `neoTrenNoc`, hàm CHỈ cộng chiều cao
+     *   vào trục `y`. Bản cũ ở đây viết phép cộng ấy inline; cộng nhầm vào `z`
+     *   sẽ đẩy nhãn ra SAU máy trên mặt bằng, và trên một cảnh nhìn từ trên
+     *   xuống nó TRÔNG VẪN HỢP LÝ — không nghiệm thu ảnh nào bắt được.
+     */
     () =>
-      mayVe.map((m) => {
-        const tt = trangThaiTheoMay.get(m.machineId) ?? "khong_ro";
-        return {
-          khoa: `may-${m.machineId}`,
-          machineId: m.machineId,
-          viTri: { x: m.viTri.x, y: m.viTri.y + mmSangMet(m.kichThuocMm.caoMm) + 0.4, z: m.viTri.z },
-          ma: maTheoMay.get(m.machineId) ?? `#${m.machineId}`,
-          phu: t(mauChoTrangThai(tt).khoaNhan),
-          batThuong: mauChoTrangThai(tt).laBatThuong,
-        };
+      dungNhanMay({
+        mayVe,
+        trangThaiTheoMay,
+        maTheoMay,
+        mauChoTrangThai,
+        t,
       }),
     [mayVe, trangThaiTheoMay, maTheoMay, t],
   );
@@ -1241,20 +1228,7 @@ export default function TwinVanHanh() {
    *   KHÔNG va nhau: `LopNhan` dùng `machineId` để so với `dangChon`/`dangHover`,
    *   và một nhãn Line mang id trùng một máy sẽ sáng lên khi máy đó được chọn.
    */
-  const nhanTatCa = useMemo<NhanTheGioi[]>(
-    () => [
-      ...nhan,
-      ...nhanLine.map((l) => ({
-        khoa: `line-${l.lineId}`,
-        machineId: -l.lineId,
-        viTri: l.viTri,
-        ma: l.ma,
-        phu: l.ten,
-        batThuong: false,
-      })),
-    ],
-    [nhan, nhanLine],
-  );
+  const nhanTatCa = useMemo<NhanTheGioi[]>(() => gopNhan(nhan, nhanLine), [nhan, nhanLine]);
 
   /* ── Cảnh báo ───────────────────────────────────────────────────────── */
   const andonRows = useMemo(
@@ -1270,24 +1244,19 @@ export default function TwinVanHanh() {
     [andonQ.data],
   );
 
-  const canhBao3D = useMemo<CanhBaoTheGioi[]>(() => {
-    const viTriMay = new Map(mayVe.map((m) => [m.machineId, m]));
-    const ra: CanhBaoTheGioi[] = [];
-    for (const a of andonRows) {
-      if (a.machineId == null) continue;
-      const m = viTriMay.get(a.machineId);
-      if (!m) continue;
-      ra.push({
-        id: a.id,
-        machineId: a.machineId,
-        viTri: { x: m.viTri.x, y: m.viTri.y + mmSangMet(m.kichThuocMm.caoMm) + 0.9, z: m.viTri.z },
-        muc: (["red", "yellow", "call"].includes(a.state) ? a.state : "call") as MucCanhBao,
-        nhan: maTheoMay.get(a.machineId) ?? `#${a.machineId}`,
-        daAck: a.status === "acknowledged",
-      });
-    }
-    return ra;
-  }, [andonRows, mayVe, maTheoMay]);
+  const canhBao3D = useMemo<CanhBaoTheGioi[]>(
+    /*
+     * ★ T-4 — cùng `neoTrenNoc` với nhãn máy, chỉ khác khoảng hở (cảnh báo cao
+     *   hơn nhãn để hai thứ không chồng lên nhau; lưới ghim đúng bất đẳng thức
+     *   ấy). Mức andon LẠ quy về `call` chứ không im lặng bỏ cảnh báo.
+     */
+    () =>
+      dungCanhBao3D(andonRows, mayVe, maTheoMay).map((c) => ({
+        ...c,
+        muc: c.muc as MucCanhBao,
+      })),
+    [andonRows, mayVe, maTheoMay],
+  );
 
   const canhBaoCuaMay = useMemo<CanhBaoDangMo[]>(
     () =>

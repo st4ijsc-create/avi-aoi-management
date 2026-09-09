@@ -59,6 +59,14 @@
  * báo cáo sẽ bay hơi.
  */
 import { gocTuQuatTrucDung, mmSangScene, mmSangMet, type DiemScene } from "../heToaDo";
+/*
+ * ★ `KhoiKey` nhập từ `hinhKhoiMay.ts` — module ấy tự khai THUẦN DỮ LIỆU
+ *   (không three, không react), nên nhập nó KHÔNG phá tính thuần của tệp này.
+ *   Nhập đúng kiểu thay vì `string` giữ được liên kết kiểu tới `MayTrongLo`
+ *   của `loi/LoBatchMay`: nếu ai đó thêm một khối mới mà quên ánh xạ, `check`
+ *   đỏ ở đây chứ không im lặng dựng một khối không tồn tại.
+ */
+import type { KhoiKey } from "../hinhKhoiMay";
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* Kiểu vào                                                                    */
@@ -99,7 +107,7 @@ export interface CoMacDinh {
 /** Kết quả dựng một máy để vẽ — khớp `MayTrongLo` của `loi/LoBatchMay`. */
 export interface MayDaDung {
   machineId: number;
-  khoi: string;
+  khoi: KhoiKey;
   kichThuocMm: CoMacDinh;
   /** Hệ **CẢNH** (mét), đã hoán vị trục. `y` là ĐỘ CAO. */
   viTri: DiemScene;
@@ -129,7 +137,7 @@ export interface CongCuMau {
     laBatThuong: boolean;
   };
   /** Loại máy → khoá hình khối. */
-  hinhKhoiCho: (loaiMay: string) => string;
+  hinhKhoiCho: (loaiMay: string) => KhoiKey;
 }
 
 /** Tham số dựng tập máy vẽ trên mặt bằng. */
@@ -235,7 +243,7 @@ export function idMayChuaDat(ts: ThamSoChuaDat): number[] {
  * Không có máy nào trên mặt bằng ⇒ neo về gốc, khu chờ vẫn hiện được
  * (trả `Infinity` sẽ đẩy mọi khối ra vô cực, và không gì nổ).
  */
-export function mepMatBang(mayVe: readonly MayDaDung[]): { mepX: number; mepZ: number } {
+export function mepMatBang(mayVe: readonly Pick<MayDeNeo, "viTri">[]): { mepX: number; mepZ: number } {
   let mepX = Number.POSITIVE_INFINITY;
   let mepZ = Number.POSITIVE_INFINITY;
   for (const m of mayVe) {
@@ -251,14 +259,32 @@ export function mepMatBang(mayVe: readonly MayDaDung[]): { mepX: number; mepZ: n
 /* Nhãn máy và cảnh báo 3D — đều neo theo ĐỘ CAO của máy                       */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * Máy đã dựng, ở vị trí **ĐẦU VÀO** — chỉ đòi những trường thật sự được đọc.
+ *
+ * ★ Vì sao tách khỏi {@link MayDaDung}: `MayTrongLo` của `loi/LoBatchMay` khai
+ *   `doMo?` và `hien?` là TUỲ CHỌN, còn `MayDaDung` (kết quả của `dungMayVe`)
+ *   luôn điền `doMo`. Nếu tham số vào cũng đòi `MayDaDung` thì trang không
+ *   truyền `MayTrongLo[]` xuống được, và cách "sửa" dễ nhất sẽ là một `as` —
+ *   tức là vứt đúng phép kiểm mà kiểu sinh ra để làm.
+ *
+ * ⇒ Đầu vào đòi ÍT, đầu ra hứa NHIỀU. Ba hàm dưới chỉ đọc `machineId`,
+ *   `viTri` và `kichThuocMm.caoMm`, nên chúng chỉ được đòi đúng ngần ấy.
+ */
+export interface MayDeNeo {
+  machineId: number;
+  viTri: DiemScene;
+  kichThuocMm: { caoMm: number };
+}
+
 /** Nhãn tên máy trong không gian cảnh — khớp `NhanTheGioi` của `loi/LopNhan`. */
 export interface NhanMay {
   khoa: string;
   machineId: number;
   viTri: DiemScene;
   ma: string;
-  phu: string;
-  batThuong: boolean;
+  phu?: string;
+  batThuong?: boolean;
 }
 
 /** Khoảng nhô của nhãn trên NÓC máy (mét). */
@@ -274,7 +300,7 @@ export const HO_CANH_BAO = 0.9;
  * thay vì lên nóc — và trên một cảnh nhìn từ trên xuống nó **trông vẫn hợp lý**,
  * nên không phép đo hình ảnh nào bắt được. Lưới ghim cả ba trục.
  */
-export function neoTrenNoc(m: MayDaDung, ho: number): DiemScene {
+export function neoTrenNoc(m: MayDeNeo, ho: number): DiemScene {
   return {
     x: m.viTri.x,
     y: m.viTri.y + mmSangMet(m.kichThuocMm.caoMm) + ho,
@@ -284,7 +310,7 @@ export function neoTrenNoc(m: MayDaDung, ho: number): DiemScene {
 
 /** Tham số dựng nhãn máy. */
 export interface ThamSoNhanMay {
-  mayVe: readonly MayDaDung[];
+  mayVe: readonly MayDeNeo[];
   trangThaiTheoMay: ReadonlyMap<number, string>;
   maTheoMay: ReadonlyMap<number, string>;
   mauChoTrangThai: CongCuMau["mauChoTrangThai"];
@@ -327,7 +353,10 @@ export interface NhanLineVao {
  *   với `dangChon`/`dangHover`; một nhãn Line mang id TRÙNG một máy sẽ sáng lên
  *   khi máy đó được chọn. Hai không gian khoá phải KHÔNG va nhau.
  */
-export function gopNhan(nhanMay: readonly NhanMay[], nhanLine: readonly NhanLineVao[]): NhanMay[] {
+export function gopNhan(
+  nhanMay: readonly NhanMay[],
+  nhanLine: readonly NhanLineVao[],
+): NhanMay[] {
   return [
     ...nhanMay,
     ...nhanLine.map((l) => ({
@@ -371,7 +400,7 @@ export const MUC_CANH_BAO_HOP_LE = ["red", "yellow", "call"] as const;
  */
 export function dungCanhBao3D(
   andon: readonly AndonVao[],
-  mayVe: readonly MayDaDung[],
+  mayVe: readonly MayDeNeo[],
   maTheoMay: ReadonlyMap<number, string>,
 ): CanhBaoDaNeo[] {
   const theoId = new Map(mayVe.map((m) => [m.machineId, m]));
