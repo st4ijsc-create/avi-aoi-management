@@ -98,7 +98,8 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useLocation, useRoute } from "wouter";
+import { Link, useLocation, useRoute, useSearch } from "wouter";
+import { useHistoryState } from "wouter/use-browser-location";
 import { ArrowLeft } from "lucide-react";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -118,10 +119,20 @@ import {
   dungNhanMay,
 } from "@/components/twin3d/van-hanh/hopNhatCanh";
 import {
+  khungNhinTuCamera,
   phaVeNen,
   TI_LE_PHA_NGOAI_PHAM_VI,
   trongPhamVi,
 } from "@/components/twin3d/van-hanh/phamViCanh";
+// ── Đợt 33 (QĐ-23): đường sang màn Line/Máy, đường về `/twin?pv=…`, và `?cam=` ──
+import {
+  docDuongVeTwin,
+  docTrangThaiUrl,
+  duongDanManLine,
+  duongDanManMay,
+  trangThaiVe,
+  type TuTheCamera,
+} from "@/components/twin3d/van-hanh/duongDanTwin";
 import { dongHoHienThi, hopNhat } from "@/components/twin3d/van-hanh/khoTrangThai";
 import { useKhoTrangThai } from "@/components/twin3d/van-hanh/useKhoTrangThai";
 import { useTrangThaiSong } from "@/components/twin3d/van-hanh/useTrangThaiSong";
@@ -165,6 +176,14 @@ export default function TwinMay() {
    *   chưa từng hỏi — một câu sai thay vì câu đúng "id không hợp lệ".
    */
   const machineId = idMayTuDuongDan(khop ? tsRoute?.id : null);
+  /*
+   * ★ Đợt 33 — vỏ đọc thêm `?cam=` (Pareto #9) và `history.state.twinVe`
+   *   (QĐ-23 #5) rồi TRUYỀN xuống thân — cùng khuôn `TwinLine` (G37). Gọi
+   *   TRƯỚC nhánh `return` sớm để thứ tự hook không đổi.
+   */
+  const search = useSearch();
+  const camUrl = useMemo(() => docTrangThaiUrl(search).cam, [search]);
+  const duongVe = docDuongVeTwin(useHistoryState());
 
   if (machineId === null) {
     return (
@@ -180,7 +199,7 @@ export default function TwinMay() {
     );
   }
 
-  return <ThanManMay machineId={machineId} />;
+  return <ThanManMay machineId={machineId} camUrl={camUrl} duongVe={duongVe} />;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -190,6 +209,10 @@ export default function TwinMay() {
 export interface ThanManMayProps {
   /** Đã phân giải và ĐÃ kiểm — thân không bao giờ thấy `NaN`. */
   machineId: number;
+  /** `?cam=` đã phân tích (vỏ đọc) — `null`/vắng ⇒ orbit gần máy như cũ. */
+  camUrl?: TuTheCamera | null;
+  /** Đường về `/twin?pv=…` (từ `history.state`, vỏ đọc) — vắng ⇒ `/twin`. */
+  duongVe?: string | null;
 }
 
 /** Nhãn hạng sức khoẻ — chữ ĐÃ dịch cho chip (B). */
@@ -210,7 +233,7 @@ function nhanHang(hang: HangSucKhoe, t: (k: string, d: string) => string): strin
   }
 }
 
-export function ThanManMay({ machineId }: ThanManMayProps) {
+export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanManMayProps) {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   const [, setLocation] = useLocation();
@@ -500,8 +523,8 @@ export function ThanManMay({ machineId }: ThanManMayProps) {
     [khai, neoMucTieu, bayGio],
   );
 
-  /* ── Camera orbit GẦN quanh máy đích (≤ 8 m) ─────────────────────────── */
-  const khungNhin = useMemo(() => khungNhinMay(mucTieu), [mucTieu]);
+  /* ── Camera orbit GẦN quanh máy đích (≤ 8 m) — trừ khi deep-link nói rõ `?cam=` (Đợt 33) ── */
+  const khungNhin = useMemo(() => (camUrl ? khungNhinTuCamera(camUrl) : khungNhinMay(mucTieu)), [camUrl, mucTieu]);
 
   /* ── (B) chip trái ───────────────────────────────────────────────────── */
   const tomTat = useMemo(() => tomTatMay(mayNay, khai, bayGio), [mayNay, khai, bayGio]);
@@ -587,7 +610,8 @@ export function ThanManMay({ machineId }: ThanManMayProps) {
         {/* ★ ĐƯỜNG RA — `<Link>` của wouter (giữ SPA + một mục lịch sử). G85:
             `data-testid` đặt TRÊN `<Link>`, không trên `<Button asChild>`. */}
         <Link
-          href="/twin"
+          /* ★ Đợt 33 (QĐ-23 #5): về ĐÚNG `?pv=` vừa xem (từ `history.state`), không về mặc định. */
+          href={duongVe ?? "/twin"}
           className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           data-testid="ve-man-nha-may"
         >
@@ -598,7 +622,9 @@ export function ThanManMay({ machineId }: ThanManMayProps) {
           <>
             <span className="text-muted-foreground">›</span>
             <Link
-              href={`/twin/line/${lineId}`}
+              href={duongDanManLine(lineId)}
+              /* ★ mang tiếp đường về để màn Line cũng về đúng `?pv=` (QĐ-23 #5). */
+              state={trangThaiVe(duongVe)}
               className="rounded px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground"
               data-testid="ve-man-line"
             >
@@ -622,7 +648,7 @@ export function ThanManMay({ machineId }: ThanManMayProps) {
             title={t("twin3d.may.khongMoDuoc", "Không mở được máy #{{n}}", { n: machineId })}
             description={t(cauChoLyDoNgan(lyDo).khoa, cauChoLyDoNgan(lyDo).duPhong)}
             actionLabel={t("twin3d.line.veNhaMay", "Nhà máy")}
-            onAction={() => setLocation("/twin")}
+            onAction={() => setLocation(duongVe ?? "/twin")}
           />
         </div>
       ) : dangTai ? (
@@ -691,7 +717,8 @@ export function ThanManMay({ machineId }: ThanManMayProps) {
                     /* ★ Bấm hàng xóm ⇒ ĐỔI MÁY tại chỗ (§15.3.3 đường ra ⑥: "chọn máy
                          khác — thay tại chỗ, không chồng lớp"). */
                     onChonMay={(id) => {
-                      if (id != null && id !== machineId) setLocation(`/twin/may/${id}`);
+                      if (id != null && id !== machineId)
+                        setLocation(duongDanManMay(id), { state: trangThaiVe(duongVe) });
                     }}
                     khungNhin={khungNhin}
                     sanRongM={sanRongM}

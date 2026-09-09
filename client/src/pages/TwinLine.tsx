@@ -101,7 +101,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useRoute } from "wouter";
+import { Link, useLocation, useRoute, useSearch } from "wouter";
+import { useHistoryState } from "wouter/use-browser-location";
 import { ArrowLeft } from "lucide-react";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -121,10 +122,19 @@ import {
 } from "@/components/twin3d/van-hanh/hopNhatCanh";
 import {
   khungNhinLine,
+  khungNhinTuCamera,
   phaVeNen,
   TI_LE_PHA_NGOAI_PHAM_VI,
   trongPhamVi,
 } from "@/components/twin3d/van-hanh/phamViCanh";
+// ── Đợt 33 (QĐ-23): đường sang màn Máy, đường về `/twin?pv=…`, và `?cam=` ──
+import {
+  docDuongVeTwin,
+  docTrangThaiUrl,
+  duongDanManMay,
+  trangThaiVe,
+  type TuTheCamera,
+} from "@/components/twin3d/van-hanh/duongDanTwin";
 import { cotWip, nhipTuCanBang, xepHangWip } from "@/components/twin3d/van-hanh/wipTram";
 import { tinhKpiNoi, type MayTongQuanKpi } from "@/components/twin3d/van-hanh/kpiNoiLogic";
 import { dongHoHienThi, hopNhat } from "@/components/twin3d/van-hanh/khoTrangThai";
@@ -163,6 +173,17 @@ export default function TwinLine() {
    *   Không exception nào nổ. Đây là lớp G37 ở dạng dữ liệu.
    */
   const lineId = idLineTuDuongDan(khop ? tsRoute?.id : null);
+  /*
+   * ★ Đợt 33 — hai thứ nữa vỏ đọc từ "bên ngoài" rồi TRUYỀN xuống (G37):
+   *   · `?cam=` (Pareto #9): tư thế camera của deep-link, đọc bằng ĐÚNG bộ đọc
+   *     của `/twin` (`docTrangThaiUrl`). Đợt 32 a3b đo màn này NUỐT nó im lặng.
+   *   · `history.state.twinVe` (QĐ-23 #5): đường về `/twin?pv=…` do `/twin` đặt
+   *     lúc rời đi; thiếu/rác ⇒ `null` ⇒ link "Nhà máy" rơi về `/twin`.
+   *   Cả hai gọi TRƯỚC nhánh `return` sớm — thứ tự hook không đổi giữa các lượt.
+   */
+  const search = useSearch();
+  const camUrl = useMemo(() => docTrangThaiUrl(search).cam, [search]);
+  const duongVe = docDuongVeTwin(useHistoryState());
 
   if (lineId === null) {
     return (
@@ -178,7 +199,7 @@ export default function TwinLine() {
     );
   }
 
-  return <ThanManLine lineId={lineId} />;
+  return <ThanManLine lineId={lineId} camUrl={camUrl} duongVe={duongVe} />;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -188,12 +209,29 @@ export default function TwinLine() {
 export interface ThanManLineProps {
   /** Đã phân giải và ĐÃ kiểm — thân không bao giờ thấy `NaN`. */
   lineId: number;
+  /** `?cam=` đã phân tích (vỏ đọc) — `null`/vắng ⇒ camera bay dọc chuyền như cũ. */
+  camUrl?: TuTheCamera | null;
+  /** Đường về `/twin?pv=…` (từ `history.state`, vỏ đọc) — vắng ⇒ `/twin`. */
+  duongVe?: string | null;
 }
 
-export function ThanManLine({ lineId }: ThanManLineProps) {
+export function ThanManLine({ lineId, camUrl = null, duongVe = null }: ThanManLineProps) {
   const { t } = useTranslation();
-  const [machineIdChon, datMachineIdChon] = useState<number | null>(null);
+  const [, setLocation] = useLocation();
   const [moKpi, datMoKpi] = useState(true);
+
+  /*
+   * ★★★ ĐỢT 33 (QĐ-23 #2) — BẤM MÁY = ĐI `/twin/may/:id`, KHÔNG CÒN CHỌN TẠI CHỖ.
+   *   Đợt 32 a3 đo: bấm `o-tram-14` ⇒ URL **không đổi** (state cục bộ
+   *   `datMachineIdChon`, đã bỏ). Nay cảnh 3D và dải trạm cùng gọi MỘT hàm;
+   *   `state` mang tiếp đường về `/twin` để màn Máy cũng về đúng `?pv=`.
+   */
+  const dieuHuongToiMay = useCallback(
+    (id: number | null) => {
+      if (id != null) setLocation(duongDanManMay(id), { state: trangThaiVe(duongVe) });
+    },
+    [setLocation, duongVe],
+  );
 
   const bayGioThat = Date.now();
 
@@ -580,13 +618,15 @@ export function ThanManLine({ lineId }: ThanManLineProps) {
     [andonRows, mayVe, maTheoMay],
   );
 
-  /* ── Camera bay DỌC theo chuyền ──────────────────────────────────────── */
+  /* ── Camera bay DỌC theo chuyền — trừ khi deep-link nói rõ `?cam=` (Đợt 33) ── */
   const khungNhin = useMemo(
     () =>
-      hinhLine && hinhLine.hh.coHinhHoc
-        ? khungNhinLine(hinhLine.hh.bbox, hinhLine.hh.truc, hinhLine.hh.trucDangTin)
-        : null,
-    [hinhLine],
+      camUrl
+        ? khungNhinTuCamera(camUrl)
+        : hinhLine && hinhLine.hh.coHinhHoc
+          ? khungNhinLine(hinhLine.hh.bbox, hinhLine.hh.truc, hinhLine.hh.trucDangTin)
+          : null,
+    [camUrl, hinhLine],
   );
 
   /* ── (B) LỚP PHỦ 2D — chip trái ──────────────────────────────────────── */
@@ -631,17 +671,13 @@ export function ThanManLine({ lineId }: ThanManLineProps) {
     [lineId, tram, mayTatCa, trangThaiTheoMay, bangWip],
   );
 
-  const mayDangChon = useMemo(
-    () => mayLine.find((m) => m.id === machineIdChon) ?? null,
-    [mayLine, machineIdChon],
-  );
-
+  /** Ô trạm trên dải 2D ⇒ máy đầu của trạm ⇒ màn Máy (QĐ-23 #2). */
   const chonTram = useCallback(
     (stationId: number) => {
       const mayDau = mayLine.find((m) => m.stationId === stationId);
-      if (mayDau) datMachineIdChon(mayDau.id);
+      if (mayDau) dieuHuongToiMay(mayDau.id);
     },
-    [mayLine],
+    [mayLine, dieuHuongToiMay],
   );
 
   const tenLine =
@@ -679,7 +715,8 @@ export function ThanManLine({ lineId }: ThanManLineProps) {
             cha **biến mất không báo lỗi**.
         */}
         <Link
-          href="/twin"
+          /* ★ Đợt 33 (QĐ-23 #5): về ĐÚNG `?pv=` vừa xem (từ `history.state`), không về mặc định. */
+          href={duongVe ?? "/twin"}
           className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           data-testid="ve-man-nha-may"
         >
@@ -743,8 +780,9 @@ export function ThanManLine({ lineId }: ThanManLineProps) {
                    trong nhóm (D). Dành chỗ cho một nguồn rỗng là hứa mà không
                    giao. `vienSucKhoe` cũng KHÔNG truyền: §15.6.1 xếp nó vào cấp
                    **Máy** (≤ 3 nhãn), không phải cấp Line. */
-              machineIdChon={machineIdChon}
-              onChonMay={datMachineIdChon}
+              /* ★ Đợt 33 (QĐ-23 #2): không còn "máy đang chọn" ở màn này — bấm là ĐI. */
+              machineIdChon={null}
+              onChonMay={dieuHuongToiMay}
               khungNhin={khungNhin}
               sanRongM={sanRongM}
               sanSauM={sanSauM}
@@ -788,7 +826,7 @@ export function ThanManLine({ lineId }: ThanManLineProps) {
           <DaiLine
             tram={hangDai}
             nhipChuyenMs={nhipChuyenMs}
-            stationIdChon={mayDangChon?.stationId ?? null}
+            stationIdChon={null}
             onChonTram={chonTram}
           />
         </div>

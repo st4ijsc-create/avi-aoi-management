@@ -311,8 +311,12 @@ describe("★★★ ⑦ Mặt ghi — `NganXuLy` một lần, `MachineCockpitBod
     expect(MA).not.toMatch(/onMoTaiCho=/);
   });
 
-  it("★ bấm hàng xóm ⇒ ĐỔI MÁY tại chỗ (`/twin/may/${id}`), không chồng lớp", () => {
-    expect(MA).toContain("setLocation(`/twin/may/${id}`)");
+  it("★ bấm hàng xóm ⇒ ĐỔI MÁY tại chỗ (`duongDanManMay(id)`), không chồng lớp", () => {
+    // ★ Đợt 33 (QĐ-23): hình dạng URL lấy từ `duongDanManMay` (một nguồn, G12) và
+    //   mang `state` đường về `/twin?pv=…` (QĐ-23 #5). Trước Đợt 33 ca này ghim
+    //   chuỗi `setLocation(\`/twin/may/${id}\`)` — cùng hành vi, khác nguồn chuỗi.
+    expect(MA).toContain("setLocation(duongDanManMay(id), { state: trangThaiVe(duongVe) })");
+    expect(MA).not.toContain("setLocation(`/twin/may/${id}`)");
   });
 });
 
