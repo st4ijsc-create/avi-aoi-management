@@ -5789,6 +5789,55 @@ baseline 2.070 xanh (doc sau khi loc ANSI - G94).
 `khong_ro` - hop dong overview **khong mang thoi diem do** cho may khong-offline (NT-3) · man Line lay
 `factories[0]` vi `canhThietKe` nhan mot `factoryId`.
 
+### 14q.8 DOT 31 - MAN MAY xong, 8 commit, 40/40 dot bien DO - va MOT LOI KIT CA BA MAN
+
+`1a221d23` manMay.ts · `5ee85b69` TwinMay.tsx · `9d05b692` route `App.tsx:188` (`navHref="/twin"`, QD-18)
+· `723f7f11` luoi khop noi 38 ca · `cd0b379b` 3 loi chi anh bat · `72c490ad` e2e 7 ca · `02d0ea65` **va
+kit** · `c31e13e0` giet M8. Cong (chu du an do): **82 tep / 2.155 test** (nen 80/2.070) - `check` 0 -
+cay sach - 5 anh nguyen - **13/13 + 14/14** dinh tuyen - netstat chi 3000/3001/3008.
+
+**bbox tren `dist` 1600×900:** `man-twin-may` day **900** · canvas 125→449 (**324 = khung**) · cockpit 2D
+449→900 (**451 px, LON HON canh** - dung §15.3.3: cap May 3D chi ~20-36 %) · nhan noc **trong khung** ·
+draw calls **5**. `__soCanvas`: may 14 = **1** · id xau = `null` · may nha may khac = `null` + `ngoaiPhamVi` ·
+`operator1` = `null` + **L-5 `thieuQuyen`** (khac ky vong "=1" cua chu du an - man May **noi ly do** thay vi
+ve canh rong; **dung chu y §15.3.3 L-5**). Hai chieu quyen: user tam 0 quyen → 403 `PERMISSION_DENIED`,
+`users` truoc/sau **10 hang / 8 active**.
+
+> #### ★★★ G98 - **LOI KIT CO SAN LAM NHAN LECH O CA BA MAN - `toBeVisible()` XANH CA BA** (QD-22: GIU VA)
+> `LopNhan.tsx:226` — drei `<Html fullscreen>` neo lop nhan quanh **hinh chieu GOC CANH**, khong quanh
+> **canvas**. Do bbox that: `/twin` lop (231,111) vs canvas (288,207) ⇒ **13/13 nhan lech (−57,−96) px**
+> khoi may · `/twin/line/2` lop (−496,−322) ⇒ **3/3 nhan y AM - man Line Dot 30 chua tung hien nhan** ·
+> `/twin/may/14` nhan y=34 **ngoai khung**. `soNhan`/`toBeVisible` **xanh o ca ba**.
+> Va **mot dong**: `calculatePosition={(_el,_camera,size) => [size.width/2, size.height/2]}`. Do lai:
+> `/twin` lop = canvas (13/13), Line 6/6 tam nhan trong canvas, May nhan tren noc.
+> **QD-22 (chu du an):** **GIU** `02d0ea65` - loi co san, do bang bbox, va la co che dung. ⚠ `LopNhan`
+> cung vao **`CanhNhaMay.tsx` (kit loi)** ⇒ **`/twin-studio` CHUA duoc do sau va** - giao Dot 32.
+> => Mot lop phu "hien" (toBeVisible) o **toa do sai** van xanh. Chi **bbox lop vs bbox canvas** bat duoc.
+> Va **ba man cung mot lop loi** ⇒ khi mot man moi lo loi kit, **do lai cac man cu** truoc khi tin chung.
+
+> #### G99 - **`__soCanvas` MU voi canvas drei NGOAI `KhungCanh`**
+> Brief noi `MachineCockpitBody` = cockpit **2D** — **sai**: tab "3D" (`MachineCockpit.tsx:281`) co
+> `<Canvas>` drei **khong qua `KhungCanh`** ⇒ bam tab ⇒ **2 canvas trong DOM, `__soCanvas` van 1**.
+> **No co san** o `/twin` qua `NganNhung.tsx:92`. RB-4 chi dem cai **no biet**. Ghim bang test + e2e.
+> => Chi bao dem theo **dang ky** (KhungCanh tang bo dem) **mu voi moi canvas khong dang ky**. Dot 32
+> phai dem **`document.querySelectorAll("canvas")`** song song voi `__soCanvas`.
+
+**Ba loi chi anh bat (G41) → luoi (G91):** canvas tran 14 px (`KhungCanh.tsx:242` ep `minHeight 320`, dat
+306 ⇒ `clamp(320px,36vh,360px)` + luoi doc `minHeight` **tu chinh kit**) · camera qua gan cat noc
+(`HE_SO_NOI_KHUNG_MAY=2.2`, luoi tinh **goc 8 dinh < 22,5°**, FOV 45 doc tu `KhungCanh.tsx:207`) ·
+cockpit mount **truoc khi biet** may mo duoc ⇒ toast "Could not find machine" canh cau L-5.
+
+**Brief/§15 sai (G83):** Hinh C "⚠ May dang E-STOP" **khong co nguon theo may** (`anToanRobot` tra robot,
+`robot.id ≠ machines.id`) - khong ve, test **cam** `anToanQ` · §15.6.1 (B) "NG 24h" khong nguon ⇒ D-5 ·
+"hang xom qua nen canh Line pha 72 %" - man rieng **khong co canh thu hai** ⇒ `mayHangXom` + pha 72 % cap
+`may` · docblock `doMoTheoPhamVi` **noi nguoc** hanh vi do duoc cua `/twin` · `machines isActive` **42**,
+khong phai 43 · **nhieu do**: harness Dot 30 tiem dot bien vao `TwinLine.tsx`/`App.tsx` **trong luc** Dot
+31 do nen ⇒ 1 do oan ⇒ them **bao ve mtime** vao harness.
+
+**Con mo cho Dot 32:** `/twin-studio` sau va kit · `__soCanvas` mu tab 3D cockpit · cung may 14:
+`NganXuLy` "Unknown/Never reported" vs cockpit "ONLINE/Connected" (**hai hop dong**, NT-3) · i18n
+`twin3d.may.*`/`twin3d.line.*` chi co default vi.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
