@@ -145,6 +145,8 @@ import { tinhKpiNoi, type MayTongQuanKpi } from "@/components/twin3d/van-hanh/kp
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useMoPhongTwin } from "@/components/twin3d/van-hanh/useMoPhongTwin";
 import { chieuCaoTruDinh, useTruDinhKhung } from "@/components/twin3d/van-hanh/useTruDinhKhung";
+// ★ Đợt 35 (Pareto #7): DÙNG LẠI câu `chuaGanNhaMay` của màn Máy (Đợt 34 D) — không khai câu thứ hai (G12).
+import { cauChoLyDoManMay } from "@/components/twin3d/van-hanh/manMay";
 import { NganMoPhong } from "@/components/twin3d/van-hanh/NganMoPhong";
 import {
   dungDauVaoWhatIf,
@@ -168,6 +170,7 @@ import {
 import {
   bboxKemCotWip,
   hangDaiLine,
+  lyDoMoManLine,
   idLineTuDuongDan,
   mayCuaLine,
   phamViCuaManLine,
@@ -833,6 +836,18 @@ export function ThanManLine({
    *   *"chuyền rỗng"* về một chuyền ta chưa hỏi xong.
    */
   const rongThat = !dangTai && canhQ.isSuccess && mayLine.length === 0;
+  /*
+   * ★★★ ĐỢT 35 (Pareto #7) — 0 NHÀ MÁY (operator1, 0 gán) PHẢI NÓI RA. `rongThat` không bao giờ tới được ca
+   *   này vì `canhQ` TẮT khi `factoryId = null` ⇒ trước đợt này màn hiện sàn trống + "— machines" câm. Lý do
+   *   qua lát thuần `lyDoMoManLine`; câu qua `cauChoLyDoManMay("chuaGanNhaMay")` (i18n ×3 có sẵn).
+   * ★ `chuaBiet`: ba ô đếm ở thanh trên in `—` (NT-3.5: chưa được gán ≠ chuyền có 0 máy).
+   */
+  const lyDoLine = lyDoMoManLine({
+    factoriesDangTai: factoriesQ.isLoading,
+    factoriesLoi: factoriesQ.isError,
+    soNhaMay: factories.length,
+  });
+  const chuaBiet = dangTai || lyDoLine !== "mo";
 
   return (
     <div
@@ -869,22 +884,39 @@ export function ThanManLine({
         </span>
         <span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
           <span data-testid="dem-may-line">
-            {t("twin3d.vanHanh.soMay", "Máy")} {hienSo(tomTat.soMay, dangTai)}
+            {t("twin3d.vanHanh.soMay", "Máy")} {hienSo(tomTat.soMay, chuaBiet)}
           </span>
           <span data-testid="dem-tram-line">
-            {t("twin3d.line.soTram", "Trạm")} {hienSo(tomTat.soTram, dangTai)}
+            {t("twin3d.line.soTram", "Trạm")} {hienSo(tomTat.soTram, chuaBiet)}
           </span>
           {/* ★ `hienSo` in `—` cho `null` — tổng WIP chỉ đo được một phần thì
               KHÔNG in một con số nhỏ hơn sự thật. */}
           <span data-testid="tong-wip-line">
-            WIP {hienSo(tomTat.tongWip, dangTai)}
+            WIP {hienSo(tomTat.tongWip, chuaBiet)}
           </span>
         </span>
       </div>
 
       {/* ── Khung cảnh: canvas chiếm trọn, lớp phủ ĐÈ lên ───────────────── */}
       <div ref={khungCanhRef} className="relative min-h-0 flex-1">
-        {rongThat ? (
+        {lyDoLine !== "mo" ? (
+          /*
+           * ★★★ Đợt 35 (Pareto #7) — L-5 cho cấp Line: KHÔNG canvas, KHÔNG "— machines" câm. Nhánh này đứng
+           *   TRƯỚC `rongThat` (loại-trừ `? :`, không song song — G87 vẫn đúng MỘT `<CanhVanHanh>`).
+           */
+          <div
+            className="flex h-full items-center justify-center p-6"
+            data-testid="line-khong-mo-duoc"
+            data-ly-do={lyDoLine}
+          >
+            <EmptyState
+              title={t("twin3d.line.khongMoDuoc", "Không mở được chuyền #{{n}}", { n: lineId })}
+              description={t(cauChoLyDoManMay(lyDoLine).khoa, cauChoLyDoManMay(lyDoLine).duPhong)}
+              actionLabel={t("twin3d.line.veNhaMay", "Nhà máy")}
+              onAction={() => setLocation(duongVe ?? "/twin")}
+            />
+          </div>
+        ) : rongThat ? (
           <div className="flex h-full items-center justify-center p-6" data-testid="line-rong">
             <EmptyState
               title={t("twin3d.line.rong", "Chuyền này chưa có máy nào trên bố cục")}

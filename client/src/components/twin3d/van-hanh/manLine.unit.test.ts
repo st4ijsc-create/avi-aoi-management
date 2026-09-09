@@ -354,3 +354,22 @@ describe("★ Đợt 35 — bboxKemCotWip", () => {
     expect(b).toEqual({ minX: 2, maxX: 2, minY: 0, maxY: 1, minZ: 3, maxZ: 3 });
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 35 (Pareto #7) — `lyDoMoManLine`: 0 nhà máy PHẢI nói ra, không sàn trống câm */
+/* ══════════════════════════════════════════════════════════════════════════ */
+describe("★★★ Đợt 35 — lyDoMoManLine", () => {
+  it("operator1 (0 gán): tải xong, không lỗi, 0 nhà máy ⇒ `chuaGanNhaMay`", async () => {
+    const { lyDoMoManLine } = await import("./manLine");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: false, soNhaMay: 0 })).toBe("chuaGanNhaMay");
+  });
+  it("đang tải ⇒ `mo` (không nháy câu 'chưa gán' một nhịp — NT-3.5); lỗi ⇒ `mo` (lỗi ≠ chưa gán, L-5)", async () => {
+    const { lyDoMoManLine } = await import("./manLine");
+    expect(lyDoMoManLine({ factoriesDangTai: true, factoriesLoi: false, soNhaMay: 0 })).toBe("mo");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: true, soNhaMay: 0 })).toBe("mo");
+  });
+  it("có nhà máy ⇒ `mo`", async () => {
+    const { lyDoMoManLine } = await import("./manLine");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: false, soNhaMay: 2 })).toBe("mo");
+  });
+});

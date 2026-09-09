@@ -382,3 +382,33 @@ export function bboxKemCotWip(
     ...cot.map((c) => ({ minX: c.x, maxX: c.x, minY: 0, maxY: Math.max(0, c.cao), minZ: c.z, maxZ: c.z })),
   ]);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 35 (Pareto #7) — VÌ SAO MÀN LINE MỞ ĐƯỢC / KHÔNG (L-5 cho cấp Line)       */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * QA Đợt 32 vai `operator1` (0 gán nhà máy — DB: `user_factory_assignments` 0 hàng):
+ * `/twin/line/2` hiện **sàn lưới trống, "— machines", không một câu giải thích**.
+ * Gốc: `rongThat = !dangTai && canhQ.isSuccess && mayLine.length === 0` — nhưng
+ * `canhQ` **TẮT** khi `factoryId = null` ⇒ `isSuccess` không bao giờ true ⇒ không
+ * nhánh nào nói ra; `TwinMay` đã có `chuaGanNhaMay` (Đợt 34 D), Line thì không.
+ *
+ * ★ Chỉ khai `chuaGanNhaMay` khi truy vấn nhà máy ĐÃ XONG và KHÔNG LỖI mà trả
+ *   rỗng. Đang tải ⇒ `mo` (không nháy câu "chưa gán" một nhịp — NT-3.5); lỗi ⇒
+ *   `mo` (lỗi mạng không phải "bạn chưa được gán" — câu sai bản chất, L-5).
+ * ★ Câu hiển thị DÙNG LẠI `cauChoLyDoManMay("chuaGanNhaMay")` (i18n có sẵn ×3),
+ *   không khai câu thứ hai cho cùng một sự việc (G12).
+ */
+export type LyDoManLine = "mo" | "chuaGanNhaMay";
+
+export interface CanhXetManLine {
+  factoriesDangTai: boolean;
+  factoriesLoi: boolean;
+  soNhaMay: number;
+}
+
+export function lyDoMoManLine(c: CanhXetManLine): LyDoManLine {
+  if (c.factoriesDangTai || c.factoriesLoi) return "mo";
+  return c.soNhaMay === 0 ? "chuaGanNhaMay" : "mo";
+}
