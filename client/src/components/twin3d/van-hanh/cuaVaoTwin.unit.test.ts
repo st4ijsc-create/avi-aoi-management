@@ -135,7 +135,11 @@ describe("★★★ ④ TwinLine — QĐ-23 #2 + #5 + Pareto #9", () => {
     const vo = LINE.slice(i, LINE.indexOf("export interface ThanManLineProps", i));
     expect(vo).toContain("docTrangThaiUrl(search).cam");
     expect(vo).toContain("docDuongVeTwin(useHistoryState())");
-    expect(vo).toContain("<ThanManLine lineId={lineId} camUrl={camUrl} duongVe={duongVe} />");
+    // ★ Đợt 34 (QĐ-24): vỏ đọc thêm `?thu=moPhongMo` và TRUYỀN xuống (`moPhongMoBanDau`) — cùng luật G37.
+    expect(vo).toContain('docTrangThaiUrl(search).thu.includes("moPhongMo")');
+    expect(vo).toContain(
+      "<ThanManLine lineId={lineId} camUrl={camUrl} duongVe={duongVe} moPhongMoBanDau={moPhongMoBanDau} />",
+    );
   });
   it("★★★ `khungNhin` = `camUrl ? khungNhinTuCamera(camUrl) : khungNhinLine(…)` — `?cam=` THẮNG khung theo cấp", () => {
     const i = LINE.indexOf("const khungNhin = useMemo");

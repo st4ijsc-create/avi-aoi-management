@@ -25,7 +25,15 @@ const GOC = resolve(__dirname, "../../../..");
 const doc = (p: string) => readFileSync(resolve(GOC, p), "utf8");
 
 const HOOK = doc("src/components/twin3d/van-hanh/useMoPhongTwin.ts");
-const TRANG = doc("src/pages/TwinVanHanh.tsx");
+/**
+ * ★★★ Đợt 34 (QĐ-24) — TRANG GỌI HOOK NAY LÀ `TwinLine.tsx`, KHÔNG còn `TwinVanHanh.tsx`.
+ *   Đo Đợt 33 K11: sau QĐ-23 `/twin` không bao giờ ở cấp Line ⇒ `lineDangXem` luôn `null` ⇒ ngăn chỉ
+ *   nói `chua_chon_line`; `/twin/line/:id` lại 0 ngăn ⇒ tính năng #30/#35 mất lối vào. Hook nhận
+ *   `lineDangXem` qua tham số (G37) nên dời được nguyên vẹn — mọi luật `enabled`/reset dưới đây đo trên
+ *   HOOK, không đổi; chỉ chỗ gọi đổi. `TRANG_CU` giữ lại để ghim chiều NGƯỢC (không còn hai bản chạy).
+ */
+const TRANG = doc("src/pages/TwinLine.tsx");
+const TRANG_CU = doc("src/pages/TwinVanHanh.tsx");
 
 /**
  * ★★★ BỎ CHÚ THÍCH TRƯỚC KHI ĐO — thiết bị đo tự bắn vào chân mình.
@@ -54,6 +62,7 @@ describe("★★★ TẦNG 4 — ba truy vấn mô phỏng ĐÃ RỜI TRANG và 
       expect(HOOK, `${thu}: không có trong hook`).toContain(thu);
       // G16 chiều ngược: còn sót ở trang = tách nửa vời, hai bản cùng chạy.
       expect(TRANG, `${thu}: CÒN SÓT ở trang`).not.toContain(thu);
+      expect(TRANG_CU, `${thu}: CÒN SÓT ở /twin`).not.toContain(thu);
     }
   });
 
@@ -62,6 +71,21 @@ describe("★★★ TẦNG 4 — ba truy vấn mô phỏng ĐÃ RỜI TRANG và 
     // grep theo TÊN HÀM ra 0. Đo tên hàm tại chỗ gọi.
     expect(TRANG).toContain("useMoPhongTwin({");
     expect(TRANG).toContain('from "@/components/twin3d/van-hanh/useMoPhongTwin"');
+    // ★ Đợt 34 (QĐ-24): màn Line truyền ĐÚNG `lineId` của route làm `lineDangXem` — không còn nhánh
+    //   `phamVi.cap === "line" ? … : null`, tức không còn đường nào ra `chua_chon_line` ở màn này.
+    expect(TRANG).toContain("lineDangXem: lineId");
+    expect(TRANG).toContain("<NganMoPhong");
+    // Chiều ngược (G5): `/twin` KHÔNG còn gọi — mã, không phải chú thích.
+    const MA_CU = TRANG_CU.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(MA_CU).not.toContain("useMoPhongTwin({");
+    expect(MA_CU).not.toContain("<NganMoPhong");
+  });
+
+  it("★★★ Đợt 34 (QĐ-24) — `?thu=moPhongMo` đọc ở VỎ (G37) rồi TRUYỀN xuống thân làm trạng thái ban đầu", () => {
+    // Cùng khoá `thu=` và cùng tên chiều-ngược `moPhongMo` của Đợt 23 M2 (G40: không đẻ khoá thứ bảy).
+    expect(TRANG).toContain('docTrangThaiUrl(search).thu.includes("moPhongMo")');
+    expect(TRANG).toContain("moPhongMoBanDau={moPhongMoBanDau}");
+    expect(TRANG).toContain("useState(moPhongMoBanDau)");
   });
 
   it("★★★ mọi giá trị hook trả về đều CÓ NGƯỜI TIÊU THỤ ở trang", () => {

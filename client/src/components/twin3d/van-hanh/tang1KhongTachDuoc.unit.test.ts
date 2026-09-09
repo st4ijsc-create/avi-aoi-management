@@ -171,15 +171,23 @@ describe("★★★ TẦNG 1 — BỐN TRUY VẤN PHẠM VI VẪN Ở TRANG (có
 });
 
 describe("★★★ ĐỢT 28 — BỐN TẦNG KIA ĐÃ TÁCH, VÀ TRANG THẬT SỰ GỌI CHÚNG", () => {
-  it("★★★ bốn hook mới đều có CHỖ GỌI theo TÊN HÀM (G16)", () => {
-    for (const goi of [
-      "useMoPhongTwin({",
-      "usePhanTichLine({",
-      "useTrangThaiSong({",
-      "useAnhLichSu({",
-    ]) {
+  it("★★★ ba hook còn ở trang đều có CHỖ GỌI theo TÊN HÀM (G16)", () => {
+    // ★ Đợt 34 (QĐ-24): `useMoPhongTwin({` KHÔNG còn trong danh sách này — nó chuyển sang
+    //   `TwinLine.tsx` (ghim ở `useMoPhongTwin.unit.test.ts`). Sau QĐ-23 `/twin` không bao giờ ở cấp
+    //   Line ⇒ ngăn Mô phỏng ở đây chỉ nói được `chua_chon_line` (Đợt 33 K11).
+    for (const goi of ["usePhanTichLine({", "useTrangThaiSong({", "useAnhLichSu({"]) {
       expect(TRANG, `${goi}: hook tồn tại mà trang không gọi`).toContain(goi);
     }
+  });
+
+  it("★★★ Đợt 34 (QĐ-24) — trang KHÔNG còn gọi `useMoPhongTwin` và KHÔNG còn dựng `<NganMoPhong` (gỡ có chủ ý)", () => {
+    const MA = TRANG.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(MA).not.toContain("useMoPhongTwin({");
+    expect(MA).not.toContain("<NganMoPhong");
+    expect(MA).not.toContain("dungDauVaoWhatIf(");
+    // Lý do gỡ phải ĐỌC ĐƯỢC trong mã (không gỡ câm): docblock nêu QĐ-24 và `chua_chon_line`.
+    expect(TRANG).toContain("QĐ-24");
+    expect(TRANG).toContain("chua_chon_line");
   });
 
   it("★★★ mười truy vấn đã tách KHÔNG còn sót bản thứ hai ở trang", () => {

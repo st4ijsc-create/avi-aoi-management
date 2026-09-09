@@ -70,7 +70,13 @@ describe("★★★ TẦNG 3 — hai truy vấn ĐÃ RỜI TRANG và VẪN ĐƯ�
     // + đầu vào what-if. Mất chỗ dùng = tính năng giao số 0 mà cổng vẫn xanh.
     expect(TRANG).toContain("wipQ.isSuccess");
     expect(TRANG).toContain("canBangQ.data?.[0]");
-    expect(TRANG).toContain("canBangQ.isSuccess");
+    // ★ Đợt 34 (QĐ-24): người tiêu thụ `canBangQ.isSuccess` (đầu vào what-if `dungDauVaoWhatIf`) nay
+    //   ở `TwinLine.tsx` — cùng hook `usePhanTichLine`, chuyền của route. Ở `/twin` sau QĐ-23 nó không
+    //   thể tới (`lineDangXem` luôn null). Đo ở màn Line để "không tách rồi bỏ rơi" vẫn đúng.
+    const LINE = doc("src/pages/TwinLine.tsx");
+    expect(LINE).toContain("usePhanTichLine({ lineDangXem: lineId, nhipTongQuanMs })");
+    expect(LINE).toContain("canBangQ.isSuccess");
+    expect(LINE).toContain("dungDauVaoWhatIf({");
   });
 });
 

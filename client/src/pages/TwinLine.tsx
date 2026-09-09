@@ -137,6 +137,22 @@ import {
 } from "@/components/twin3d/van-hanh/duongDanTwin";
 import { cotWip, nhipTuCanBang, xepHangWip } from "@/components/twin3d/van-hanh/wipTram";
 import { tinhKpiNoi, type MayTongQuanKpi } from "@/components/twin3d/van-hanh/kpiNoiLogic";
+// ── ★★★ Đợt 34 (QĐ-24) — NGĂN "MÔ PHỎNG" (§11 #30 what-if + #35 phát lại) CHUYỂN TỪ `/twin` SANG ĐÂY ──
+//    Lý do đo được (Đợt 33 K11): sau QĐ-23 `/twin` không bao giờ ở cấp Line ⇒ `lineDangXem` luôn `null`
+//    ⇒ ngăn luôn khai `chua_chon_line`; màn Line lại KHÔNG có ngăn ⇒ tính năng mất lối vào. Hook đã nhận
+//    `lineDangXem` qua tham số (G37) nên chuyển được nguyên vẹn; chỉ truy vấn ĐỌC (`whatIf` thuần,
+//    `listWorkflows`/`simulate`), không thêm mutation (§15.6 D-1).
+import { usePermissions } from "@/_core/hooks/usePermissions";
+import { useMoPhongTwin } from "@/components/twin3d/van-hanh/useMoPhongTwin";
+import { NganMoPhong } from "@/components/twin3d/van-hanh/NganMoPhong";
+import {
+  dungDauVaoWhatIf,
+  kep,
+  HORIZON_MIN,
+  HORIZON_MAX,
+  HE_SO_MIN,
+  HE_SO_MAX,
+} from "@/components/twin3d/van-hanh/moPhongLogic";
 import { dongHoHienThi, hopNhat } from "@/components/twin3d/van-hanh/khoTrangThai";
 import { useKhoTrangThai } from "@/components/twin3d/van-hanh/useKhoTrangThai";
 import { useTrangThaiSong } from "@/components/twin3d/van-hanh/useTrangThaiSong";
@@ -184,6 +200,13 @@ export default function TwinLine() {
    */
   const search = useSearch();
   const camUrl = useMemo(() => docTrangThaiUrl(search).cam, [search]);
+  /*
+   * ★ Đợt 34 (QĐ-24): `?thu=moPhongMo` — CÙNG khoá và CÙNG tên chiều-ngược mà `/twin` đã dùng (Đợt 23
+   *   M2, `PANEL_THU_DUOC`; G40 không đẻ khoá thứ bảy) — đọc MỘT LẦN lúc mount làm trạng thái ban đầu
+   *   của ngăn. Màn này KHÔNG ghi ngược `?thu=` (panel của nó là state cục bộ như `moKpi`, và `?cam=`
+   *   ở đây cũng chỉ đọc); mặc định vắng khoá = THU, đúng phép đo 42.437 px² của Đợt 23.
+   */
+  const moPhongMoBanDau = useMemo(() => docTrangThaiUrl(search).thu.includes("moPhongMo"), [search]);
   const duongVe = docDuongVeTwin(useHistoryState());
 
   if (lineId === null) {
@@ -200,7 +223,7 @@ export default function TwinLine() {
     );
   }
 
-  return <ThanManLine lineId={lineId} camUrl={camUrl} duongVe={duongVe} />;
+  return <ThanManLine lineId={lineId} camUrl={camUrl} duongVe={duongVe} moPhongMoBanDau={moPhongMoBanDau} />;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -214,12 +237,21 @@ export interface ThanManLineProps {
   camUrl?: TuTheCamera | null;
   /** Đường về `/twin?pv=…` (từ `history.state`, vỏ đọc) — vắng ⇒ `/twin`. */
   duongVe?: string | null;
+  /** Đợt 34 (QĐ-24): ngăn Mô phỏng MỞ sẵn khi mount (`?thu=moPhongMo`, vỏ đọc). Vắng ⇒ THU. */
+  moPhongMoBanDau?: boolean;
 }
 
-export function ThanManLine({ lineId, camUrl = null, duongVe = null }: ThanManLineProps) {
+export function ThanManLine({
+  lineId,
+  camUrl = null,
+  duongVe = null,
+  moPhongMoBanDau = false,
+}: ThanManLineProps) {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
+  const { hasPermission } = usePermissions();
   const [moKpi, datMoKpi] = useState(true);
+  const [moMoPhong, datMoMoPhong] = useState(moPhongMoBanDau);
 
   /*
    * ★★★ ĐỢT 33 (QĐ-23 #2) — BẤM MÁY = ĐI `/twin/may/:id`, KHÔNG CÒN CHỌN TẠI CHỖ.
@@ -575,6 +607,71 @@ export function ThanManLine({ lineId, camUrl = null, duongVe = null }: ThanManLi
     [canBangQ.data],
   );
 
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ ĐỢT 34 (QĐ-24) ← ĐỢT 19 LÔ X — §11 #30 what-if + #35 phát lại      */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * ★★★ ĐÂY LÀ MẶT **SẼ THẾ NÀO NẾU** DUY NHẤT của cả ba màn twin — §12b.2 G-2 gọi nó là *"mặt mô
+   *   phỏng duy nhất, đúng nghĩa digital **twin** chứ không phải digital shadow"*. Nó ở màn LINE vì
+   *   what-if là đại lượng CỦA MỘT CHUYỀN (mọi tham số đều theo `lineId`), và ở đây `lineId` là chắc
+   *   chắn — không có nhánh "nếu đang ở cấp Line" (QĐ-19 mua được đúng sự đơn giản này).
+   *
+   * ★ `digitalTwin.whatIf` là **hàm thuần, không chạm CSDL** (`digitalTwinRouter.ts:207-232`) ⇒ Q1 cố
+   *   ý MIỄN TRỪ nó khỏi hàng rào tenant: mọi con số nó trả về suy từ chính `input` ta gửi lên. Hệ quả
+   *   PHẢI nhớ: **rủi ro nằm ở đầu vào TA dựng** — server không biết `cycleTimeSec` đã 18 ngày tuổi.
+   */
+  const [horizonHours, datHorizon] = useState(8);
+  const [heSoCycle, datHeSoCycle] = useState(1);
+
+  /**
+   * ★★★ CỬA KIỂM HẠN ĐỨNG Ở ĐÂY, TRƯỚC KHI GỌI — G30, bài học Đợt 8. `dungDauVaoWhatIf` dùng lại
+   *   `conHieuLuc` (8 giờ) của `wipTram.ts` — CÙNG hằng, CÙNG hàm với lời khai nút thắt (G12).
+   *
+   * ⚠ ĐO ĐƯỢC trên CSDL này (2026-09-08, đo lại 2026-09-10): hàng `line_balance` mới nhất của chuyền 1
+   *   là 2026-08-21 và có `avgCycleTimeMs` **NULL** ⇒ ngăn ra `ban_ghi_khong_co_nhip` — hiện `—` kèm
+   *   lý do, KHÔNG hiện `0`. Đó là kết quả ĐÚNG (G45/G50), không phải phần chưa làm xong.
+   */
+  const dungWhatIf = useMemo(
+    () =>
+      dungDauVaoWhatIf({
+        lineId,
+        tram: tram
+          .filter((s) => s.lineId === lineId)
+          .map((s) => ({ stationId: s.id, ten: s.ten ?? null })),
+        // `undefined` = chưa đo (đang tải / bị từ chối); `null` = đã chạy xong nhưng 0 hàng — hai câu
+        // KHÁC NHAU, và ngăn nói ra khác nhau.
+        nhip: canBangQ.isSuccess
+          ? canBangQ.data?.[0]
+            ? {
+                avgCycleTimeMs: canBangQ.data[0].avgCycleTimeMs ?? null,
+                mocKhai: khaiNghen.mocKhai,
+              }
+            : null
+          : undefined,
+        horizonHours,
+        cycleTimeMultiplier: heSoCycle,
+        bayGio: bayGioThat,
+      }),
+    [lineId, tram, canBangQ.isSuccess, canBangQ.data, khaiNghen.mocKhai, horizonHours, heSoCycle, bayGioThat],
+  );
+
+  /*
+   * ★ G37: hook KHÔNG tự đọc route và KHÔNG tự gọi `hasPermission` — trang đọc quyền rồi TRUYỀN XUỐNG
+   *   (`orchestration.listWorkflows`/`simulate` đòi `machine_monitoring/canView`; thiếu ⇒ ngăn ẨN mục
+   *   #35, không bắn truy vấn, `nganXuLyLogic.ts:102-111`).
+   */
+  const coQuyenXemQuyTrinh = hasPermission("machine_monitoring", "canView");
+  const { whatIfQ, dsWorkflowQ, phatLaiQ, daBamChay, datDaBamChay, workflowRef, datWorkflowRef } =
+    useMoPhongTwin({ dungWhatIf, coQuyenXemQuyTrinh, lineDangXem: lineId, horizonHours, heSoCycle });
+
+  /** Tên trạm theo id — để bảng what-if không chỉ in `#7`. */
+  const tenTramTheoId = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const s of tram) if (s.ten) m.set(s.id, s.ten);
+    return m;
+  }, [tram]);
+
   /* ── Nhãn + cảnh báo neo vật thể — NHÓM (A), trần ≤ 13 ở cấp Line ────── */
   const nhan = useMemo<NhanTheGioi[]>(
     () => dungNhanMay({ mayVe, trangThaiTheoMay, maTheoMay, mauChoTrangThai, t }),
@@ -794,6 +891,33 @@ export function ThanManLine({ lineId, camUrl = null, duongVe = null }: ThanManLi
               mo={moKpi}
               onDoiMo={datMoKpi}
               nhanPhamVi={tenLine}
+            />
+
+            {/*
+              ── ★★★ Đợt 34 (QĐ-24) — NGĂN "MÔ PHỎNG" (§11 #30 + #35), góc PHẢI trên ──
+              Lớp phủ DOM anh em của `<Canvas>` (0 draw call, §4), `z-30` trên nhãn drei z-20 (G41),
+              khung ngoài `pointer-events-none` để kéo xoay camera vẫn xuyên qua (ngăn tự bật lại cho
+              phần tương tác). Cùng props với bản `/twin` trước QĐ-24 — hook và ngăn không đổi một luật.
+            */}
+            <NganMoPhong
+              mo={moMoPhong}
+              onDoiMo={datMoMoPhong}
+              dungDauVao={dungWhatIf}
+              horizonHours={horizonHours}
+              onDoiHorizon={(g) => datHorizon(kep(g, HORIZON_MIN, HORIZON_MAX, 8))}
+              heSo={heSoCycle}
+              onDoiHeSo={(h) => datHeSoCycle(kep(h, HE_SO_MIN, HE_SO_MAX, 1))}
+              ketQua={whatIfQ.data}
+              dangChayWhatIf={daBamChay && whatIfQ.isLoading}
+              onChayWhatIf={() => datDaBamChay(true)}
+              tenTram={tenTramTheoId}
+              /* ★ `null` = thiếu quyền ⇒ ngăn ẨN cả mục #35 (luật ẩn-không-disable); `[]` = có quyền,
+                   chưa có quy trình nào — câu đó ngăn nói ra chứ không im lặng biến mất. */
+              workflow={coQuyenXemQuyTrinh ? (dsWorkflowQ.data ?? []) : null}
+              workflowRef={workflowRef}
+              onDoiWorkflow={datWorkflowRef}
+              phatLai={phatLaiQ.data}
+              dangChayPhatLai={workflowRef !== null && phatLaiQ.isLoading}
             />
           </>
         )}

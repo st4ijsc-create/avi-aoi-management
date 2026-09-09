@@ -113,7 +113,7 @@ import {
 import { dichManRieng } from "@/components/twin3d/bo-cuc/dinhTuyenTwinCu";
 // ── T-3 (§15.5.2) — vỏ React của trạng thái URL, dùng chung cho CẢ BA MÀN ──
 import { useTrangThaiTwin } from "@/components/twin3d/van-hanh/useTrangThaiTwin";
-import { useMoPhongTwin } from "@/components/twin3d/van-hanh/useMoPhongTwin";
+
 import { usePhanTichLine } from "@/components/twin3d/van-hanh/usePhanTichLine";
 import { useTrangThaiSong } from "@/components/twin3d/van-hanh/useTrangThaiSong";
 import { useAnhLichSu } from "@/components/twin3d/van-hanh/useAnhLichSu";
@@ -166,15 +166,10 @@ import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/ngan
 // ── Đợt 11 lô J — §11 #16: KPI ĐỌC ĐƯỢC TRÊN CẢNH 3D (yêu cầu #6) ──────────
 import { tinhKpiNoi, type MayTongQuanKpi } from "@/components/twin3d/van-hanh/kpiNoiLogic";
 import { BangKpiNoi } from "@/components/twin3d/van-hanh/BangKpiNoi";
-import {
-  dungDauVaoWhatIf,
-  kep,
-  HORIZON_MIN,
-  HORIZON_MAX,
-  HE_SO_MIN,
-  HE_SO_MAX,
-} from "@/components/twin3d/van-hanh/moPhongLogic";
-import { NganMoPhong } from "@/components/twin3d/van-hanh/NganMoPhong";
+// ── ★★★ Đợt 34 (QĐ-24) — `NganMoPhong` + `useMoPhongTwin` + `dungDauVaoWhatIf` ĐÃ RỜI trang này sang
+//    `TwinLine.tsx`. Sau QĐ-23 `/twin` không bao giờ ở cấp Line (`?pv=line:` redirect sang
+//    `/twin/line/:id`), nên `lineDangXem` ở đây luôn `null` ⇒ ngăn luôn khai `chua_chon_line` (đo K11
+//    Đợt 33) — một ngăn 42.437 px² chỉ để nói nó không làm được gì. Gỡ CÓ CHỦ Ý, không phải quên.
 // ── Đợt 10 mục 5 (lô G) — ngăn `?xem=` từng import `nhungTaiCho` ở đây. Đợt 33
 //    (QĐ-23): `?xem=machine:N` redirect sang `/twin/may/N` (vỏ bên dưới), màn này
 //    không còn dùng gì của `nhungTaiCho`. ──
@@ -1675,131 +1670,12 @@ export function ThanTwinVanHanh() {
   );
 
   /* ═══════════════════════════════════════════════════════════════════════ */
-  /* ★★★ ĐỢT 19 LÔ X — §11 #30 what-if + #35 phát lại: NGĂN "MÔ PHỎNG"       */
+  /* ★★★ ĐỢT 34 (QĐ-24) — NGĂN "MÔ PHỎNG" (Đợt 19 lô X) ĐÃ RỜI TRANG NÀY.     */
+  /*     `horizonHours`/`heSoCycle`, `dungDauVaoWhatIf`, `useMoPhongTwin`,      */
+  /*     `tenTramTheoId`, `thuMoPhong` và `<NganMoPhong>` nay ở `TwinLine.tsx`. */
+  /*     Sau QĐ-23 `lineDangXem` ở đây LUÔN `null` ⇒ ngăn chỉ nói được          */
+  /*     `chua_chon_line` (Đợt 33 K11) — gỡ có chủ ý, không phải quên.          */
   /* ═══════════════════════════════════════════════════════════════════════ */
-
-  /**
-   * ★★★ ĐÂY LÀ MẶT **SẼ THẾ NÀO NẾU** DUY NHẤT CỦA `/twin` — §12b.2 G-2 gọi nó
-   *   là *"mặt mô phỏng duy nhất trong cả 4 trang, đúng nghĩa digital **twin**
-   *   chứ không phải digital shadow"*. Mọi truy vấn khác trên màn này trả lời
-   *   *"nhà máy ĐANG thế nào"*.
-   *
-   * ★ `digitalTwin.whatIf` là **hàm thuần, không chạm CSDL**
-   *   (`digitalTwinRouter.ts:207-232`) ⇒ Q1 cố ý MIỄN TRỪ nó khỏi hàng rào
-   *   tenant, và miễn trừ ấy có lý do đo được: mọi con số nó trả về suy từ
-   *   chính `input` ta gửi lên. Hệ quả PHẢI nhớ khi sửa chỗ này: **rủi ro nằm ở
-   *   đầu vào TA dựng**, không ở server. Server không có cách nào biết
-   *   `cycleTimeSec` ta gửi lên đã 18 ngày tuổi.
-   */
-  const [horizonHours, datHorizon] = useState(8);
-  const [heSoCycle, datHeSoCycle] = useState(1);
-
-  /**
-   * ★★★ CỬA KIỂM HẠN ĐỨNG Ở ĐÂY, TRƯỚC KHI GỌI — G30, và là bài học Đợt 8.
-   *
-   * `dungDauVaoWhatIf` dùng lại `conHieuLuc` (8 giờ) của `wipTram.ts` — CÙNG
-   * hằng số, CÙNG hàm với lời khai nút thắt (G12: đừng viết bản thứ hai). Nếu
-   * bỏ cửa này, ngăn sẽ in ra một bảng năng suất trông rất thuyết phục dựng
-   * trên nhịp chuyền của tháng trước — đúng lớp lỗi mà `khaiNghen` ở trên đã
-   * trả giá để học (một lời khai 16 ngày tô đỏ SAI trạm).
-   *
-   * ⚠ ĐO ĐƯỢC trên CSDL này 2026-09-08: hàng `line_balance` mới nhất của chuyền
-   *   1 là **2026-08-21 (18 ngày)** và chính hàng ấy có `avgCycleTimeMs`
-   *   **NULL**. Nên trên dữ liệu hiện tại ngăn này ra `ban_ghi_khong_co_nhip` —
-   *   hiện `—` kèm lý do, KHÔNG hiện `0`. Đó là kết quả ĐÚNG (G45/G50), không
-   *   phải phần chưa làm xong.
-   */
-  const dungWhatIf = useMemo(
-    () =>
-      dungDauVaoWhatIf({
-        lineId: lineDangXem,
-        tram: tram
-          .filter((s) => s.lineId === lineDangXem)
-          .map((s) => ({ stationId: s.id, ten: s.ten ?? null })),
-        // `undefined` = chưa đo (đang tải / bị từ chối / chưa bật); `null` = đã
-        // chạy xong nhưng 0 hàng. Hai câu KHÁC NHAU, và ngăn nói ra khác nhau.
-        nhip: canBangQ.isSuccess
-          ? canBangQ.data?.[0]
-            ? {
-                avgCycleTimeMs: canBangQ.data[0].avgCycleTimeMs ?? null,
-                mocKhai: khaiNghen.mocKhai,
-              }
-            : null
-          : undefined,
-        horizonHours,
-        cycleTimeMultiplier: heSoCycle,
-        bayGio: bayGioThat,
-      }),
-    [lineDangXem, tram, canBangQ.isSuccess, canBangQ.data, khaiNghen.mocKhai, horizonHours, heSoCycle, bayGioThat],
-  );
-
-  /**
-   * ★★★ T-1 TẦNG 4 (§15.5.2 / Đợt 28) — BA TRUY VẤN MÔ PHỎNG ĐÃ TÁCH RA.
-   *
-   * `useMoPhongTwin` giữ `digitalTwin.whatIf` + `orchestration.listWorkflows` +
-   * `orchestration.simulate`, cùng hai mẩu state chỉ chúng dùng (`daBamChay`,
-   * `workflowRef`) và `useEffect` hạ cờ khi đổi tham số.
-   *
-   * ★ Tầng 4 đi TRƯỚC vì nó **rời nhất theo phép đo**, không phải theo cảm
-   *   giác: 0 truy vấn nào khác đọc kết quả của nó (chúng là **lá** của chuỗi
-   *   phụ thuộc), và **không cái nào mang `refetchInterval`** ⇒ tầng này không
-   *   chạm được vào bất biến nhịp an toàn (đó là tầng 2).
-   *
-   * ★ G37: hook KHÔNG tự đọc route và KHÔNG tự gọi `hasPermission` — trang này
-   *   đọc quyền rồi TRUYỀN XUỐNG. Một mảnh tự đọc quyền có thể bắn truy vấn mà
-   *   người dùng không được phép gọi, và 403 chỉ hiện ra dưới dạng một ngăn
-   *   trống trông hệt như "chưa có quy trình nào".
-   */
-  const coQuyenXemQuyTrinh = hasPermission("machine_monitoring", "canView");
-  const { whatIfQ, dsWorkflowQ, phatLaiQ, daBamChay, datDaBamChay, workflowRef, datWorkflowRef } =
-    useMoPhongTwin({ dungWhatIf, coQuyenXemQuyTrinh, lineDangXem, horizonHours, heSoCycle });
-
-  /**
-   * Ngăn Mô phỏng mở/thu — DÙNG CHUNG khoá `?thu=` (G40), như bảng KPI.
-   *
-   * ════════════════════════════════════════════════════════════════════════
-   * ★★★ ĐỢT 23 M2 — NGĂN NÀY **MẶC ĐỊNH THU**, và đây là một phép đo
-   * ════════════════════════════════════════════════════════════════════════
-   * Đo trên `dist`, 1280×720, `?thu=trai,phai` (chế độ "3D toàn màn"):
-   *
-   *     canvas          968 × 489 = **473.352 px²**
-   *     bảng Metrics    208 × 220 =   45.760 px²
-   *     ngăn Simulation 257 × 165 =   42.437 px²
-   *     ────────────────────────────────────────────
-   *     hai lớp phủ che **88.197 px² = 18,6 % canvas**, VĨNH VIỄN
-   *
-   * ⇒ Đợt 21 mua canvas rộng bằng cách cho panel **nổi đè**; hai lớp phủ này
-   *   trả lại **gần một phần năm** cái giá đó. Đó là số, không phải cảm giác.
-   *
-   * ★★★ VÌ SAO THU **MÔ PHỎNG** MÀ KHÔNG THU **KPI** — hai ngăn không cùng
-   *   loại, nên không cùng cách chữa:
-   *     · `BangKpiNoi` trả lời *"nhà máy đang thế nào"* — câu hỏi người xem
-   *       LUÔN có, và §11 #16 dựng nó chính để màn hình treo tường ở chế độ
-   *       `?thu=trai,phai` không còn là "3D đẹp mà 0 con số". Thu nó đi là
-   *       phá lại đúng thứ Đợt 11 vừa mua.
-   *     · `NganMoPhong` là **công cụ what-if gọi theo nhu cầu**. Ở trạng thái
-   *       mặc định nó hiện đúng *"— Select a line to simulate throughput"* và
-   *       một ô chọn workflow RỖNG (đọc được trong ảnh
-   *       `.qa-dot23/M1-nhan-thu-ca-hai.png`) — tức là nó tiêu **42.437 px²**
-   *       để nói rằng nó chưa có gì để nói.
-   *
-   * ★ G40 — KHÔNG đẻ khoá thứ bảy. Ngữ nghĩa `thu=` GIỮ NGUYÊN ("liệt kê panel
-   *   ĐANG THU", vắng = mở), nên `docThu`/`ghiThu` không phải đổi một dòng và
-   *   vòng đọc-ghi URL vẫn tất định. Chỗ đổi duy nhất là **mặc định khi khoá
-   *   VẮNG**, và nó nằm ở đây — tầng đọc của màn, không ở tầng URL.
-   *
-   * ⚠ Hệ quả phải nói ra: `?thu=` rỗng nay KHÔNG còn nghĩa "mở tất cả" với
-   *   riêng `moPhong`. Người dùng mở ngăn bằng nút của chính nó, và lượt ghi
-   *   ấy đi qua `doiThu("moPhong")` như cũ — nút vẫn là nguồn sự thật.
-   */
-  const thuMoPhong = !urlState.thu.includes("moPhongMo");
-
-  /** Tên trạm theo id — để bảng what-if không chỉ in `#7`. */
-  const tenTramTheoId = useMemo(() => {
-    const m = new Map<number, string>();
-    for (const s of tram) if (s.ten) m.set(s.id, s.ten);
-    return m;
-  }, [tram]);
 
   /* ── §11 #52 — XUẤT XỨ: SHADOW / mô phỏng / chỉ sơ đồ ──────────────── */
 
@@ -1827,7 +1703,9 @@ export function ThanTwinVanHanh() {
    * ⚠ `xuatXuHienTai` cho `dangMoPhong` THẮNG mọi thứ (`nguonDuLieu.ts:80-89`),
    *   nên vế này phải chặt: nó có quyền phủ nhận cả một cảnh đầy dữ liệu thật.
    */
-  const dangMoPhong = daBamChay && dungWhatIf.chay && whatIfQ.data != null;
+  // ★ Đợt 34 (QĐ-24): kết quả what-if không còn hiện trên `/twin` (ngăn Mô phỏng nay ở `/twin/line/:id`),
+  //   nên badge xuất xứ ở đây KHÔNG BAO GIỜ là "MÔ PHỎNG" — `false` là câu đúng, không phải chỗ chưa nối.
+  const dangMoPhong = false;
   const xuatXu = useMemo(
     () =>
       xuatXuHienTai(
@@ -3352,44 +3230,10 @@ export function ThanTwinVanHanh() {
           />
 
           {/*
-            ── ★★★ ĐỢT 19 LÔ X — §11 #30 + #35: NGĂN "MÔ PHỎNG" ──────────────
-
-            ĐẶT Ở ĐÂY, cạnh `BangKpiNoi`, vì cùng một lý do: đây là lớp phủ DOM
-            **anh em** của `<Canvas>`, không nằm trong cây three (0 draw call,
-            §4). Nó ở góc PHẢI trên để không đè bảng KPI ở góc TRÁI trên.
-
-            ★ `z-30` — nhãn drei ở z-index 20 (`LopNhan.tsx:180`
-              `zIndexRange={[20,0]}`). Ngăn ở `z-10` sẽ HIỆN RA ĐỦ MÀ ĐỌC KHÔNG
-              ĐƯỢC (G41). Lô J đã trả giá cho đúng lỗi này, và chỉ ẢNH bắt được.
-
-            ★ G63 KHÔNG áp dụng: ngăn này ngoài `<Canvas>`, thanh phát lại chạy
-              bằng `setInterval` của DOM chứ không phải `useFrame`, nên
-              `frameloop="demand"` không làm nó đứng im.
+            ── ★★★ Đợt 34 (QĐ-24) — `NganMoPhong` KHÔNG còn ở đây. Nó sống ở `TwinLine.tsx` (cạnh
+               `BangKpiNoi` của màn Line), vì what-if là đại lượng CỦA MỘT CHUYỀN và sau QĐ-23 `/twin`
+               không bao giờ ở cấp Line. Khung neo này giữ lại cho `BangKpiNoi` (góc trái).
           */}
-          <NganMoPhong
-            mo={!thuMoPhong}
-            /* ★ ĐỢT 23 M2 — bật/tắt tên chiều-NGƯỢC `moPhongMo` (ngăn mặc
-                 định THU). Dùng nhầm `"moPhong"` ở đây thì nút bấm không đổi
-                 được gì: `thuMoPhong` đọc `moPhongMo`. */
-            onDoiMo={() => doiThu("moPhongMo")}
-            dungDauVao={dungWhatIf}
-            horizonHours={horizonHours}
-            onDoiHorizon={(g) => datHorizon(kep(g, HORIZON_MIN, HORIZON_MAX, 8))}
-            heSo={heSoCycle}
-            onDoiHeSo={(h) => datHeSoCycle(kep(h, HE_SO_MIN, HE_SO_MAX, 1))}
-            ketQua={whatIfQ.data}
-            dangChayWhatIf={daBamChay && whatIfQ.isLoading}
-            onChayWhatIf={() => datDaBamChay(true)}
-            tenTram={tenTramTheoId}
-            /* ★ `null` = thiếu quyền ⇒ ngăn ẨN cả mục #35 (luật ẩn-không-disable,
-                 `nganXuLyLogic.ts:102-111`). `[]` = có quyền, chưa có quy trình
-                 nào — câu đó ngăn nói ra chứ không im lặng biến mất. */
-            workflow={coQuyenXemQuyTrinh ? (dsWorkflowQ.data ?? []) : null}
-            workflowRef={workflowRef}
-            onDoiWorkflow={datWorkflowRef}
-            phatLai={phatLaiQ.data}
-            dangChayPhatLai={workflowRef !== null && phatLaiQ.isLoading}
-          />
           </div>
 
           {/*
