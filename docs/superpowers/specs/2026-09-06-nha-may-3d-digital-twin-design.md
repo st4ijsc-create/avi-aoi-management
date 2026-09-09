@@ -5433,6 +5433,32 @@ mot khoa/duong dan sai se **bi nuot im lang**, khong loi nao no).
 - **QD-18** - hai man moi thua **cong quyen cua `/twin`** (`analytics_oee|machine_status`), **khong**
   cong cua studio. Chung la man **XEM**.
 
+### 14p.5 G88 - **MOT LO CO THE DUNG MA KHONG COMMIT VA KHONG BAO** (2026-09-09)
+
+Lo duoc giao tach `TwinVanHanh` (QD-20) **bien mat**: khong con trong `ListAgents`, **khong commit**,
+**khong bao cao**. Chu du an do lai truoc khi ket luan - **khong doan**:
+
+```
+git status --porcelain -- *.ts *.tsx   ->  0 dong  (khong ai dang sua)
+wc -l client/src/pages/TwinVanHanh.tsx ->  3.738   (nen 3.754; chenh 16 la cua cac dot TRUOC)
+git log --oneline -8 | grep dot27      ->  khong co
+git status --porcelain | grep '^??'    ->  chi cac thu muc .qa-* cu
+```
+
+⇒ **Khong de lai gi.** Khong phai mat viec (khac **G39**, noi viec **bi cuon vao commit khac**) - lan
+nay **chua tung co viec**.
+
+> #### ★★★ G88 - **"AGENT DA CHAY" KHONG PHAI "VIEC DA LAM"**
+> Mot lo co the dung giua chung **khong dau vet**: khong commit, khong bao, khong tep untracked.
+> Neu chu du an tin **thong bao hoan thanh** thay vi **do cay ma**, dot sau se xay tren mot nen **tuong
+> la da tach**.
+> => Truoc khi giao dot ke tiep, **do trang thai THAT** (`git log`, `git status`, `wc -l` tren chinh tep
+> muc tieu), khong doc lai bao cao. Cung ho **G16** (*ham ton tai != ai goi*) va **G74** (*"da gop" la
+> loi khai ve TEP*): **lo da chay != viec da xong**.
+>
+> **Bien phap mang sang dot giao lai:** brief ghi ro *"**commit som, commit tung phan** - lo truoc dung
+> ma mat trang vi de don"*. Mot lo commit tung manh thi khi no dung, **phan da lam van con**.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
