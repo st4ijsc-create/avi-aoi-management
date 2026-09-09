@@ -186,6 +186,9 @@ const TwinStudio = React.lazy(() => import("./pages/TwinStudio"));
 // ★★★ Đợt 30 (QĐ-19/QĐ-21) — màn LINE 3D RIÊNG, canvas RIÊNG. Xem khối chú
 //   thích ở `<Route path="/twin/line/:id">` bên dưới.
 const TwinLine = React.lazy(() => import("./pages/TwinLine"));
+// ★★★ Đợt 31 (QĐ-19/QĐ-21) — màn MÁY 3D RIÊNG, canvas RIÊNG. Xem khối chú
+//   thích ở `<Route path="/twin/may/:id">` bên dưới.
+const TwinMay = React.lazy(() => import("./pages/TwinMay"));
 const RfTestCellSim = React.lazy(() => import("./pages/RfTestCellSim"));
 const CommandCenter = React.lazy(() => import("./pages/CommandCenter")); // U2 (doc 21 §6 G-3): Ecosystem Command Center — single pane (hierarchy tree + factory twin + KPI strip + unified live alarm rail)
 const ControlTower = React.lazy(() => import("./pages/ControlTower")); // doc 46 FE-W3.1 (D4): persona-configurable Executive Control Tower — consolidates 6 command screens (compose + cross-link)
@@ -393,6 +396,21 @@ function Router() {
           nhau ⇒ ghi rõ ở cả hai đầu kẻo người sau xoá nhầm (§11b).
       */}
       <Route path="/twin/line/:id"><RouteGuard navHref="/twin"><TwinLine /></RouteGuard></Route>
+      {/*
+        ★★★ ĐỢT 31 — QĐ-19 + QĐ-21: MÀN **MÁY 3D RIÊNG**, CANVAS RIÊNG.
+        Cùng tiền đề và cùng cổng với `/twin/line/:id` ngay trên:
+          · `/twin` KHÔNG nuốt `/twin/may/5` — `bo-cuc/duongDanBaMan.unit.test.ts`
+            đo bằng `regexparam` (bộ khớp thật của wouter 3.7.1).
+          · ⚠⚠⚠ G67: `navHref="/twin"`, KHÔNG `"/twin/may/:id"` — href vắng khỏi
+            `navGroups` ⇒ `hasAccessToItem` từ chối MỌI người, im lặng.
+          · QĐ-18: màn XEM ở cổng route (`analytics_oee` HOẶC `machine_status`);
+            mặt GHI là `NganXuLy` tự gate từng nút bên trong.
+        ⛔ KHÔNG TRÙNG với `/machine/:id` (bên dưới): đó là cockpit 2D TOÀN TRANG
+          (redirect sang `/device-monitor?machine=` khi workspace shell bật).
+          Màn này là 3D định vị + cockpit NHÚNG (`MachineCockpitBody embedded`)
+          + `NganXuLy` — nó DÙNG cockpit, không thay thế. Ghi ở cả hai đầu (§11b).
+      */}
+      <Route path="/twin/may/:id"><RouteGuard navHref="/twin"><TwinMay /></RouteGuard></Route>
       {/*
         ════════════════════════════════════════════════════════════════════
         ★★★ QĐ-18 (§13c.2) — TÁCH LẠI HAI TRANG. **ĐẢO NGƯỢC QĐ-16.**

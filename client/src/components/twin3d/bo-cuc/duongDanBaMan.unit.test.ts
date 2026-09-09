@@ -2,8 +2,8 @@
  * Lưới cho QĐ-21 — **đường dẫn phân cấp** của ba màn Twin (§14p.4).
  *
  *     /twin              → màn NHÀ MÁY   (đã có, App.tsx)
- *     /twin/line/:id     → màn LINE      (Đợt 27)
- *     /twin/may/:id      → màn MÁY       (chưa xây)
+ *     /twin/line/:id     → màn LINE      (Đợt 30, `TwinLine.tsx`)
+ *     /twin/may/:id      → màn MÁY       (Đợt 31, `TwinMay.tsx`)
  *     /twin-studio       → màn THIẾT KẾ  (đã có)
  *
  * ════════════════════════════════════════════════════════════════════════════
@@ -75,5 +75,38 @@ describe("★ hai mẫu mới khớp đúng đường của mình, và KHÔNG kh
   it("★ ĐỐI CHỨNG — bộ đo này BIẾT KÊU: mẫu sai thì false", () => {
     expect(khop("/twin/line/:id", "/hoan-toan-khac")).toBe(false);
     expect(khop("/khong-ton-tai", "/khong-ton-tai")).toBe(true);
+  });
+});
+
+/*
+ * ★★★ ĐỢT 31 — màn MÁY `/twin/may/:id` (`TwinMay.tsx`). Cùng bộ khớp, thêm
+ *   đúng những ca mà màn Máy có thể SAI KHÁC màn Line: id nhiều chữ số, thiếu
+ *   id, đuôi thừa, và hai màn máy tên gần nhau (`/machine/:id`, §11b).
+ */
+describe("★★★ ĐỢT 31 — `/twin/may/:id` khớp đúng đường của mình, không hơn", () => {
+  it("khớp id nhiều chữ số (`/twin/may/114`) — id máy thật trong CSDL không phải một chữ số", () => {
+    expect(khop("/twin/may/:id", "/twin/may/114")).toBe(true);
+  });
+
+  it("★ KHÔNG khớp khi THIẾU id — `/twin/may` trần không rơi vào màn Máy", () => {
+    expect(khop("/twin/may/:id", "/twin/may")).toBe(false);
+    expect(khop("/twin/may/:id", "/twin/may/")).toBe(false);
+  });
+
+  it("★★★ KHÔNG khớp khi có ĐUÔI THỪA — wouter khớp chính xác, `/twin/may/5/x` không phải màn Máy", () => {
+    expect(khop("/twin/may/:id", "/twin/may/5/x")).toBe(false);
+  });
+
+  it("★★★ §11b — `/machine/:id` (cockpit 2D toàn trang) và `/twin/may/:id` KHÔNG tráo nhau", () => {
+    expect(khop("/machine/:id", "/twin/may/5")).toBe(false);
+    expect(khop("/twin/may/:id", "/machine/5")).toBe(false);
+    // ★ Và cả hai vẫn khớp đúng đường của mình — không phải "đo trên tập rỗng".
+    expect(khop("/machine/:id", "/machine/5")).toBe(true);
+    expect(khop("/twin/may/:id", "/twin/may/5")).toBe(true);
+  });
+
+  it("★ `/twin-studio` không nuốt `/twin/may/5` (và ngược lại)", () => {
+    expect(khop("/twin-studio", "/twin/may/5")).toBe(false);
+    expect(khop("/twin/may/:id", "/twin-studio")).toBe(false);
   });
 });
