@@ -74,6 +74,10 @@ import {
 } from "../equipment/capabilityModel";
 import { resolveForMachineType } from "../standards/deviceTypeRegistry";
 import { getMachineOEELive } from "../oeeService";
+// ★ Đợt 34 (Pareto #1) — MỘT hợp đồng kết nối dùng chung với `factoryCommandService` (đọc docblock
+//   `trangThaiMayTuoi.ts`): nhịp tim quyết định; mốc nhịp tim chọn bằng ĐÚNG hai hàm của kho twin.
+import { dangKetNoi } from "../trangThaiMayTuoi";
+import { chonNguonMocTuoi, quyTuoiMay } from "../../db/twinCanh";
 import { computeFailureRisk, computeReliabilityStats } from "../predictiveMaintenanceService";
 import { resolveModel } from "../twin/modelRegistry";
 import {
@@ -492,10 +496,40 @@ export async function machineDetail(machineId: number): Promise<MachineDetail | 
         getLatestMachineStatus(machineId),
         getLatestMachineHeartbeat(machineId),
       ]);
-      const hbTs = hb?.timestamp ? new Date(hb.timestamp).getTime() : null;
-      const connected =
-        (status?.status ?? "offline") === "online" ||
-        (hbTs != null && Date.now() - hbTs < 5 * 60 * 1000);
+      /*
+       * ★★★ Đợt 34 (Pareto #1) — `connected` KHÔNG còn nhận log `online` làm bằng chứng.
+       *   Đo 2026-09-10: 43/43 máy có log `online` (một lần khởi động lại 2026-09-06), heartbeat 54 ngày;
+       *   nhánh cũ `status==="online" ||` cho `connected=true` bất kể tuổi ⇒ header cockpit "ONLINE ·
+       *   Connected" đứng cạnh chip twin "Unknown · 54 days" trên CÙNG màn `/twin/may/14` (QA Đợt 32 a4).
+       *   Nay: `dangKetNoi` = nhịp tim tươi (mốc = `max(machines.lastHeartbeat, machine_heartbeats)` —
+       *   CÙNG `chonNguonMocTuoi` của kho twin) và log `offline` không ghi sau nhịp tim ấy. Cửa `< 5′`
+       *   viết cứng trước đây nay là hằng `NGUONG_TRANG_THAI_TUOI_MS` — một số, một chỗ.
+       * ★ `lastHeartbeat` trả ra cũng là mốc ĐÃ CHỌN ấy (không chỉ bảng `machine_heartbeats`), để ô
+       *   "Last heartbeat" của cockpit và "Updated … ago" của twin đọc cùng một số.
+       */
+      let hbMay: Date | string | null = null;
+      try {
+        const db = await getDb();
+        if (db) {
+          const r = await db
+            .select({ lastHeartbeat: machinesTable.lastHeartbeat })
+            .from(machinesTable)
+            .where(eq(machinesTable.id, machineId))
+            .limit(1);
+          hbMay = (r[0]?.lastHeartbeat as Date | string | null | undefined) ?? null;
+        }
+      } catch {
+        hbMay = null;
+      }
+      const now = Date.now();
+      const { capNhatLuc: hbTs } = quyTuoiMay(
+        chonNguonMocTuoi({ hbBang: hb?.timestamp, hbMay, statusLogTs: status?.timestamp }),
+        now,
+      );
+      const connected = dangKetNoi(
+        { logStatus: status?.status, logTs: status?.timestamp, nhipTimTs: hbTs },
+        now,
+      );
       return {
         status: status?.status ?? null,
         lastStatusChange: status?.timestamp ? new Date(status.timestamp).getTime() : null,

@@ -42,13 +42,23 @@ import { prioritizeIssues, type IssueImpactContext } from "./factoryCommandPrior
 // oee.yaml → oeeService, the canonical implementation this service already
 // delegates to). FAIL-SAFE: returns null if the registry cannot load.
 import { getMetricDefinitionVersion } from "./semantics/metricRegistry";
+// ★ Đợt 34 (Pareto #1 QA Đợt 32) — MỘT hợp đồng trạng thái: kiểu + phép ánh xạ + ngưỡng tươi sống ở
+//   `trangThaiMayTuoi.ts` (THUẦN, dùng chung với `ecosystem/assetCockpitService`). Đọc docblock ở đó
+//   trước khi sửa: 43/43 máy của DB này có log `online` 3…20 ngày tuổi, và bản cũ vẽ chúng "running"/"idle".
+import { isoCua, mapMachineStatus, type CommandMachineStatus } from "./trangThaiMayTuoi";
+// ★ Mốc "còn nói chuyện với ta" = NHỊP TIM, chọn bằng ĐÚNG hai hàm mà kho realtime của twin
+//   (`twin:trangThai` → `traTrangThaiHangLoat`) dùng — cùng hàm ⇒ fleet API và kho không thể lệch mốc (G12).
+import { chonNguonMocTuoi, quyTuoiMay } from "../db/twinCanh";
 
 // ════════════════════════════════════════════════════════════════════════════
 // CONTRACT TYPES (shape consumed by factory-scene component + command page).
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Trạng thái máy đã chuẩn hóa cho lăng kính chỉ huy. */
-export type CommandMachineStatus = "running" | "idle" | "down" | "offline" | "maintenance";
+/**
+ * Trạng thái máy đã chuẩn hóa cho lăng kính chỉ huy — khai ở `trangThaiMayTuoi.ts`, re-export để
+ * `factoryCommandPriority.ts` và mọi consumer cũ giữ nguyên đường import.
+ */
+export type { CommandMachineStatus };
 
 /** Một máy trên sàn nhà máy — CÙNG shape với MachineNode của <FactoryScene2D/3D>. */
 export interface CommandMachineNode {
@@ -59,6 +69,19 @@ export interface CommandMachineNode {
   lineId: number;
   lineName: string;
   status: CommandMachineStatus;
+  /**
+   * ★ Đợt 34 — MỐC DỮ LIỆU TRẠNG THÁI (ISO) = nhịp tim mới nhất, `max(machines.lastHeartbeat,
+   *   machine_heartbeats)` qua `chonNguonMocTuoi` — **CÙNG mốc** mà kho realtime của twin
+   *   (`twin:trangThai.capNhatLuc`) và cockpit `liveState.lastHeartbeat` dùng. `null` = máy CHƯA TỪNG
+   *   gửi nhịp tim (2/42 máy của DB này) — và CHỈ khi ấy twin mới được in "Never reported".
+   *
+   *   ⚠ KHÔNG phải mốc `machine_status_logs."timestamp"`: hàng log là SỰ KIỆN chuyển trạng thái
+   *     (connect/disconnect, `recordPresence` chỉ ghi khi đổi), nên tuổi của nó không đo "máy còn nói
+   *     chuyện không" — xem docblock `trangThaiMayTuoi.ts` và `db/twinCanh.ts` `chonNguonMocTuoi`.
+   *   Trước đợt này client chỉ suy được mốc từ issue `offline`, nên máy có log `online` **không có mốc**
+   *   ⇒ twin in "Never reported" cho máy đã từng báo cáo (bịa theo chiều ngược).
+   */
+  tsTrangThai: string | null;
   /** OEE % (0-100) — honest null khi thiếu dữ liệu availability/performance/quality. */
   oeePercent: number | null;
   positionX: number;
@@ -109,28 +132,9 @@ export interface FactoryCommandOverview {
 // MAPPING HELPERS
 // ════════════════════════════════════════════════════════════════════════════
 
-/**
- * Map (latest machine_status_logs.status ⊕ machines.operationStatus) → lăng kính
- * chỉ huy 5-trạng-thái. Nếu log mới nhất = 'offline' (hoặc chưa có log) → offline;
- * ngược lại (online) dựa vào operationStatus: maintenance→maintenance, error→down,
- * stopped→idle, còn lại (running/warming_up/changeover/starved/blocked)→running.
- */
-function mapMachineStatus(
-  latestLogStatus: string | undefined,
-  operationStatus: string | null | undefined,
-): CommandMachineStatus {
-  if (latestLogStatus !== "online") return "offline";
-  switch (operationStatus) {
-    case "maintenance":
-      return "maintenance";
-    case "error":
-      return "down";
-    case "stopped":
-      return "idle";
-    default:
-      return "running";
-  }
-}
+// `mapMachineStatus(latestLogStatus, operationStatus, tsLog, now)` — xem `trangThaiMayTuoi.ts`. Đợt 34 thêm
+// TUỔI của log vào phép ánh xạ: log `online` cũ hơn `NGUONG_TRANG_THAI_TUOI_MS` ⇒ `offline`, không phải
+// `running`/`idle`. Hàm cũ ở đây không xét tuổi — đó là gốc rễ Pareto #1 (4 màn · 9 ca) của QA Đợt 32.
 
 /** Andon state → severity band (đồng bộ với assetCockpitService). */
 function andonStateToSeverity(state: string | null | undefined): CommandIssue["severity"] {
@@ -183,6 +187,8 @@ export async function getFactoryCommandOverview(params?: {
       name: machines.name,
       machineType: machines.machineType,
       operationStatus: machines.operationStatus,
+      // ★ Đợt 34 — một trong hai nguồn nhịp tim (`chonNguonMocTuoi.hbMay`).
+      lastHeartbeat: machines.lastHeartbeat,
       lineId: productionLines.id,
       lineName: productionLines.name,
     })
@@ -210,6 +216,20 @@ export async function getFactoryCommandOverview(params?: {
   ) as Array<{ machine_id: number; status: string; ts: string }>;
   const statusByMachine = new Map<number, { status: string; ts: string }>();
   for (const r of statusRows) statusByMachine.set(Number(r.machine_id), { status: r.status, ts: r.ts });
+
+  // 3b) ★ Đợt 34 — nhịp tim mới nhất / máy (DISTINCT ON, một truy vấn cho cả đội — không N+1). Đây là
+  //     BẰNG CHỨNG SỐNG; hàng log ở bước 3 chỉ là sự kiện chuyển trạng thái (xem `trangThaiMayTuoi.ts`).
+  const hbRows = executeRows(
+    await db.execute(sql`
+      SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, "timestamp" AS ts
+      FROM machine_heartbeats
+      ORDER BY "machineId", "timestamp" DESC
+    `),
+  ) as Array<{ machine_id: number; ts: string }>;
+  const hbByMachine = new Map<number, string>();
+  for (const r of hbRows) hbByMachine.set(Number(r.machine_id), r.ts);
+  /** machineId → mốc nhịp tim (ms) đã chọn — dùng cho `status`, `tsTrangThai` và tuổi issue `offline`. */
+  const mocNhipTimByMachine = new Map<number, number | null>();
 
   // 4) Vị trí layout mới nhất / máy (DISTINCT ON updatedAt — 1 máy có thể ở nhiều layout).
   const posRows = executeRows(
@@ -299,7 +319,18 @@ export async function getFactoryCommandOverview(params?: {
   // ── Lắp ráp machines[] ──────────────────────────────────────────────────
   const nodes: CommandMachineNode[] = machineRows.map((m) => {
     const st = statusByMachine.get(m.id);
-    const status = mapMachineStatus(st?.status, m.operationStatus);
+    // ★ Đợt 34 — mốc nhịp tim qua ĐÚNG hai hàm của kho twin; `statusLogTs` được truyền vào rồi bị
+    //   `chonNguonMocTuoi` VỨT ĐI có chủ đích (THƯỜNG-4) — muốn trộn log vào phải sửa hàm có test soi.
+    const { capNhatLuc: mocNhipTim } = quyTuoiMay(
+      chonNguonMocTuoi({ hbBang: hbByMachine.get(m.id), hbMay: m.lastHeartbeat, statusLogTs: st?.ts }),
+      now,
+    );
+    mocNhipTimByMachine.set(m.id, mocNhipTim);
+    const status = mapMachineStatus(
+      { logStatus: st?.status, logTs: st?.ts, nhipTimTs: mocNhipTim },
+      m.operationStatus,
+      now,
+    );
     const pos = posByMachine.get(m.id);
     const health = healthByMachine.get(m.id);
     const pdmRiskHigh =
@@ -314,6 +345,7 @@ export async function getFactoryCommandOverview(params?: {
       lineId: m.lineId ?? 0,
       lineName: m.lineName ?? "Chưa gán line",
       status,
+      tsTrangThai: isoCua(mocNhipTim),
       oeePercent: oeeByMachine.get(m.id) ?? null,
       positionX: pos ? Number(pos.x) : 0,
       positionY: pos ? Number(pos.y) : 0,
@@ -394,6 +426,9 @@ export async function getFactoryCommandOverview(params?: {
   for (const node of nodes) {
     if (node.status !== "offline") continue;
     const st = statusByMachine.get(node.id);
+    // ★ Đợt 34 — tuổi của "offline" = từ NHỊP TIM cuối (cùng mốc `tsTrangThai`); chỉ khi chưa từng có
+    //   nhịp tim mới rơi về mốc hàng log; chưa có gì ⇒ 0 (hợp đồng cũ, `ageMinutes` bắt buộc là số).
+    const mocOffline = mocNhipTimByMachine.get(node.id) ?? st?.ts ?? null;
     issues.push({
       id: `offline-${node.id}`,
       kind: "offline",
@@ -401,7 +436,7 @@ export async function getFactoryCommandOverview(params?: {
       machineCode: node.code,
       severity: "warning",
       label: `Máy offline: ${node.code}`,
-      ageMinutes: st ? ageMinutesFrom(st.ts, now) : 0,
+      ageMinutes: mocOffline != null ? ageMinutesFrom(mocOffline, now) : 0,
     });
   }
 
@@ -486,9 +521,16 @@ export async function getCommandMachineDetail(machineId: number): Promise<Comman
 
   const now = Date.now();
   const liveStatusRaw = detail.liveState.value?.status ?? null;
+  // ★ Đợt 34 — CÙNG bằng chứng kết nối với fleet và với `liveState.connected` của cockpit:
+  //   log (`status` + `lastStatusChange`) ⊕ nhịp tim (`lastHeartbeat` = mốc đã chọn qua `chonNguonMocTuoi`).
   const status = mapMachineStatus(
-    liveStatusRaw ?? undefined,
+    {
+      logStatus: liveStatusRaw ?? undefined,
+      logTs: detail.liveState.value?.lastStatusChange ?? null,
+      nhipTimTs: detail.liveState.value?.lastHeartbeat ?? null,
+    },
     detail.liveState.value?.operationStatus ?? undefined,
+    now,
   );
 
   // Work-order đang mở cho máy này (truy vấn nhỏ, chỉ 1 máy).
