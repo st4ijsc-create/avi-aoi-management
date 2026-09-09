@@ -497,8 +497,16 @@ describe("★★★ ⑩ Cổng quyền — QĐ-18 + G67", () => {
 /* ⑨ ĐỢT 35 (Pareto #7) — HẠNG B: 0 nhà máy ⇒ `line-khong-mo-duoc`, 0 canvas, câu DÙNG LẠI */
 /* ══════════════════════════════════════════════════════════════════════════ */
 describe("★★★ ⑨ Đợt 35 — operator1 (0 gán) thấy `chuaGanNhaMay`, không sàn trống câm", () => {
-  it("`lyDoLine` dựng bằng `lyDoMoManLine` từ trạng thái truy vấn nhà máy (loading / error / độ dài)", () => {
-    expect(MA).toMatch(/const lyDoLine = lyDoMoManLine\(\{\s*factoriesDangTai: factoriesQ\.isLoading,\s*factoriesLoi: factoriesQ\.isError,\s*soNhaMay: factories\.length,\s*\}\)/);
+  it("`lyDoLine` dựng bằng `lyDoMoManLine` từ trạng thái truy vấn nhà máy (loading / error / độ dài) + `thieuQuyen` (Đợt 36)", () => {
+    expect(MA).toMatch(/const lyDoLine = lyDoMoManLine\(\{\s*factoriesDangTai: factoriesQ\.isLoading,\s*factoriesLoi: factoriesQ\.isError,\s*soNhaMay: factories\.length,\s*thieuQuyen,\s*\}\)/);
+  });
+  it("★★★ Đợt 36 — `thieuQuyen` đọc `FORBIDDEN` từ CẢ BỐN truy vấn nền: canhQ · toaNhaQ · chiTietQ · overviewQ (hai cổng quyền khác nhau)", () => {
+    const i = MA.indexOf("const thieuQuyen =");
+    expect(i).toBeGreaterThan(-1);
+    const than = MA.slice(i, MA.indexOf("const lyDoLine", i));
+    for (const q of ["canhQ", "toaNhaQ", "chiTietQ", "overviewQ"]) expect(than, q).toMatch(new RegExp(`\\(${q}\\.error\\?\\.data as \\{ code\\?: string \\} \\| undefined\\)\\?\\.code === "FORBIDDEN"`));
+    // Đứng TRƯỚC `lyDoLine` và SAU `useTrangThaiSong` (overviewQ phải tồn tại rồi).
+    expect(MA.indexOf("useTrangThaiSong({")).toBeLessThan(i);
   });
   it("nhánh `line-khong-mo-duoc` mang `data-ly-do={lyDoLine}`, đứng TRƯỚC `rongThat` và TRƯỚC `<CanhVanHanh` (0 canvas)", () => {
     const i = MA.indexOf('data-testid="line-khong-mo-duoc"');

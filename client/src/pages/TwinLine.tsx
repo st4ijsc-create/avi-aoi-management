@@ -842,10 +842,23 @@ export function ThanManLine({
    *   qua lát thuần `lyDoMoManLine`; câu qua `cauChoLyDoManMay("chuaGanNhaMay")` (i18n ×3 có sẵn).
    * ★ `chuaBiet`: ba ô đếm ở thanh trên in `—` (NT-3.5: chưa được gán ≠ chuyền có 0 máy).
    */
+  /*
+   * ★★★ ĐỢT 36 — THIẾU QUYỀN THẬT = server TỪ CHỐI (`FORBIDDEN`) một truy vấn nền của màn (cùng cách bắt
+   *   với `TwinMay.tsx` Đợt 34 D). Đo trước vá: user chỉ `analytics_oee` + gán nhà máy ⇒ `overview` 403 mà
+   *   màn vẫn mở canvas, "Machines 12", 12 máy "Unknown", không một câu — nay `line-khong-mo-duoc`
+   *   `data-ly-do="thieuQuyen"`, 0 canvas, ba ô đếm `—` (`chuaBiet`). Bốn truy vấn: ba hình học
+   *   (`quyenDocHinhHoc`) + `overview` (`machine_status`) — hai cổng KHÁC nhau, thiếu một là thiếu.
+   */
+  const thieuQuyen =
+    (canhQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
+    (toaNhaQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
+    (chiTietQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
+    (overviewQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN";
   const lyDoLine = lyDoMoManLine({
     factoriesDangTai: factoriesQ.isLoading,
     factoriesLoi: factoriesQ.isError,
     soNhaMay: factories.length,
+    thieuQuyen,
   });
   const chuaBiet = dangTai || lyDoLine !== "mo";
 

@@ -399,16 +399,28 @@ export function bboxKemCotWip(
  *   `mo` (lỗi mạng không phải "bạn chưa được gán" — câu sai bản chất, L-5).
  * ★ Câu hiển thị DÙNG LẠI `cauChoLyDoManMay("chuaGanNhaMay")` (i18n có sẵn ×3),
  *   không khai câu thứ hai cho cùng một sự việc (G12).
+ *
+ * ★★★ ĐỢT 36 — `thieuQuyen` THẬT (server TỪ CHỐI `FORBIDDEN`) xét TRƯỚC mọi thứ, cùng hợp
+ *   đồng với `lyDoMoManMay` (Đợt 34 D). ĐO ĐƯỢC trên dist trước vá (`.qa-dot36/truoc/i6-…`):
+ *   user chỉ có `analytics_oee` + gán SIM-FAC ⇒ qua RouteGuard `/twin` (analytics_oee HOẶC
+ *   machine_status) và qua `quyenDocHinhHoc`, nhưng `factoryCommand.overview` đòi
+ *   `machine_status` ⇒ **403** — mà màn vẫn mở canvas, "Machines 12", 12 máy "Unknown",
+ *   `data-ly-do` KHÔNG có. Đúng lớp "một lối vào rồi TỪ CHỐI im lặng" (Khối D). Không vai seed
+ *   nào tạo được ca này (5/5 non-admin đều có `machine_status`) ⇒ đo bằng user TẠM (G96).
+ * ⚠ Từ chối thắng cả "đang tải": server đã nói KHÔNG thì không có gì để chờ.
  */
-export type LyDoManLine = "mo" | "chuaGanNhaMay";
+export type LyDoManLine = "mo" | "chuaGanNhaMay" | "thieuQuyen";
 
 export interface CanhXetManLine {
   factoriesDangTai: boolean;
   factoriesLoi: boolean;
   soNhaMay: number;
+  /** `true` khi một truy vấn nền của màn bị server TỪ CHỐI (`FORBIDDEN`) — thiếu quyền THẬT (Đợt 36). */
+  thieuQuyen?: boolean;
 }
 
 export function lyDoMoManLine(c: CanhXetManLine): LyDoManLine {
+  if (c.thieuQuyen) return "thieuQuyen";
   if (c.factoriesDangTai || c.factoriesLoi) return "mo";
   return c.soNhaMay === 0 ? "chuaGanNhaMay" : "mo";
 }

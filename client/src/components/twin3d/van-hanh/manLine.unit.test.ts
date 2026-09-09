@@ -373,3 +373,27 @@ describe("★★★ Đợt 35 — lyDoMoManLine", () => {
     expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: false, soNhaMay: 2 })).toBe("mo");
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 36 — `lyDoMoManLine`: FORBIDDEN THẬT ⇒ `thieuQuyen`, thắng mọi nhánh khác     */
+/* ══════════════════════════════════════════════════════════════════════════ */
+describe("★★★ Đợt 36 — lyDoMoManLine với `thieuQuyen` (server FORBIDDEN)", () => {
+  it("ca đo được: có nhà máy (gán SIM-FAC) nhưng overview 403 ⇒ `thieuQuyen`, KHÔNG `mo` (trước vá: canvas + 12 'Unknown' câm)", async () => {
+    const { lyDoMoManLine } = await import("./manLine");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: false, soNhaMay: 1, thieuQuyen: true })).toBe("thieuQuyen");
+  });
+  it("từ chối THẮNG 'đang tải' và THẮNG 'chưa gán' — server đã nói KHÔNG thì không còn gì để chờ, và bảo đi xin gán là sai cửa", async () => {
+    const { lyDoMoManLine } = await import("./manLine");
+    expect(lyDoMoManLine({ factoriesDangTai: true, factoriesLoi: false, soNhaMay: 0, thieuQuyen: true })).toBe("thieuQuyen");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: false, soNhaMay: 0, thieuQuyen: true })).toBe("thieuQuyen");
+  });
+  it("`thieuQuyen` vắng/false ⇒ hợp đồng Đợt 35 giữ nguyên (đối chứng)", async () => {
+    const { lyDoMoManLine } = await import("./manLine");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: false, soNhaMay: 1, thieuQuyen: false })).toBe("mo");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: false, soNhaMay: 0, thieuQuyen: false })).toBe("chuaGanNhaMay");
+  });
+  it("câu cho `thieuQuyen` đi qua `cauChoLyDoManMay` (một câu, hai màn — G12)", async () => {
+    const { cauChoLyDoManMay } = await import("./manMay");
+    expect(cauChoLyDoManMay("thieuQuyen").khoa).toBe("twin3d.vanHanh.nhung.thieuQuyen");
+  });
+});
