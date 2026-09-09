@@ -74,7 +74,8 @@ import { gocTuQuatTrucDung, mmSangMet } from "@/components/twin3d/heToaDo";
 import { hinhKhoiCho } from "@/components/twin3d/hinhKhoiMay";
 import { mauChoTrangThai } from "@/components/twin3d/mauTrangThai";
 import { mauCss } from "@/components/twin3d/van-hanh/mauThree";
-import { hinhHocLine, type ViTriDaDat } from "@/components/twin3d/phamViLine";
+// ── T-2 (§15.5.2) — lắp hình học Line, HÀM THUẦN dùng chung cho cả ba màn ──
+import { dungHinhLine } from "@/components/twin3d/van-hanh/canhLine";
 import type { MayTrongLo, NhanTheGioi } from "@/components/twin3d/loi";
 
 import { CanhVanHanh } from "@/components/twin3d/van-hanh/CanhVanHanh";
@@ -1605,43 +1606,22 @@ export default function TwinVanHanh() {
   );
 
   /* ── Phạm vi Line (§10C.3) ──────────────────────────────────────────── */
-  const hinhLine = useMemo(() => {
-    if (phamVi.cap !== "line" || phamVi.id === null) return null;
-    const datChoTram = new Map<number, { x: number; y: number; z: number }>();
-    for (const d of canhQ.data?.datCho ?? []) {
-      if (d.loaiThucThe === "station") {
-        datChoTram.set(d.thucTheId, {
-          x: mmSangMet(d.viTriXMm),
-          y: mmSangMet(d.viTriZMm),
-          z: mmSangMet(d.viTriYMm),
-        });
-      }
-    }
-    const tramCuaLine: ViTriDaDat[] = tram
-      .filter((s) => s.lineId === phamVi.id)
-      .map((s) => {
-        const v = datChoTram.get(s.id);
-        // ★ Trạm chưa có đặt chỗ ⇒ suy tâm từ MÁY của nó, thay vì bỏ trạm khỏi
-        //   Line (bỏ đi làm đường tâm đứt quãng mà không nói vì sao).
-        const mayCuaTram = mayVe.filter(
-          (m) => mayVanHanh.find((x) => x.id === m.machineId)?.stationId === s.id,
-        );
-        const tamMay =
-          mayCuaTram.length > 0
-            ? {
-                x: mayCuaTram.reduce((a, m) => a + m.viTri.x, 0) / mayCuaTram.length,
-                y: 0,
-                z: mayCuaTram.reduce((a, m) => a + m.viTri.z, 0) / mayCuaTram.length,
-              }
-            : null;
-        return { khoa: `station:${s.id}`, tam: v ?? tamMay ?? { x: 0, y: 0, z: 0 }, thuTu: s.thuTu };
-      });
-    const mayCuaLine: ViTriDaDat[] = mayVe
-      .filter((m) => mayVanHanh.find((x) => x.id === m.machineId)?.lineId === phamVi.id)
-      .map((m) => ({ khoa: `machine:${m.machineId}`, tam: m.viTri }));
-    if (tramCuaLine.length === 0 && mayCuaLine.length === 0) return null;
-    return { hh: hinhHocLine(tramCuaLine, mayCuaLine), tram: tramCuaLine };
-  }, [phamVi, tram, mayVe, mayVanHanh, canhQ.data]);
+  /*
+   * ★ T-2 (§15.5.2) — phép LẮP hình học Line đã tách sang `canhLine.ts` dạng
+   *   HÀM THUẦN, để màn LINE mới (`/twin/line/:id`, QĐ-19) dùng CHUNG đúng một
+   *   phép tính thay vì chép bản thứ hai (G12).
+   */
+  const hinhLine = useMemo(
+    () =>
+      dungHinhLine(
+        phamVi.cap === "line" ? phamVi.id : null,
+        tram,
+        mayVe,
+        mayVanHanh,
+        canhQ.data?.datCho ?? [],
+      ),
+    [phamVi, tram, mayVe, mayVanHanh, canhQ.data],
+  );
 
   /* ══════════════════════════════════════════════════════════════════════ */
   /* ★★★ §11 #61 + #32 — GHÉP SỐ WIP VỚI VỊ TRÍ TRẠM                        */
