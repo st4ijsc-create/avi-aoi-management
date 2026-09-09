@@ -166,6 +166,7 @@ import {
   tsTrangThaiTheoMay,
 } from "@/components/twin3d/van-hanh/trungThucDuLieu";
 import {
+  bboxKemCotWip,
   hangDaiLine,
   idLineTuDuongDan,
   mayCuaLine,
@@ -300,6 +301,32 @@ export function ThanManLine({
   const khungRef = useRef<HTMLDivElement | null>(null);
   // ★ Đợt 35 — MỘT hook cho ba màn (G12), tên biến vẫn RIÊNG. Xem docblock `useTruDinhKhung`.
   useTruDinhKhung(khungRef, "--twin-line-top");
+
+  /*
+   * ★★★ ĐỢT 35 (Pareto #5) — KÍCH THƯỚC KHUNG CẢNH (px) ĐO LÚC CHẠY, để `khungNhinLine` KHỚP
+   *   frustum theo tỉ lệ canvas THẬT. QA Đợt 32: 6/12 máy trong khung, cột WIP xuyên mép — vì khung
+   *   nhìn cấp Line không biết canvas rộng/cao bao nhiêu. `ResizeObserver` trên khung chứa canvas;
+   *   chỉ setState khi số đo đổi ≥ 1 px (không re-render vì rung nửa pixel).
+   */
+  const khungCanhRef = useRef<HTMLDivElement | null>(null);
+  const [kichThuocKhung, datKichThuocKhung] = useState<{ rongPx: number; caoPx: number } | null>(null);
+  useEffect(() => {
+    const el = khungCanhRef.current;
+    if (!el) return;
+    const doLai = () => {
+      const r = el.getBoundingClientRect();
+      if (!(r.width > 0) || !(r.height > 0)) return;
+      datKichThuocKhung((cu) =>
+        cu && Math.abs(cu.rongPx - r.width) < 1 && Math.abs(cu.caoPx - r.height) < 1
+          ? cu
+          : { rongPx: r.width, caoPx: r.height },
+      );
+    };
+    doLai();
+    const ro = new ResizeObserver(doLai);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   /* ── Nhà máy ─────────────────────────────────────────────────────────── */
   const factoriesQ = trpc.factory.list.useQuery();
@@ -659,9 +686,23 @@ export function ThanManLine({
   }, [tram]);
 
   /* ── Nhãn + cảnh báo neo vật thể — NHÓM (A), trần ≤ 13 ở cấp Line ────── */
+  /*
+   * ★★★ Đợt 35 (Pareto #5) — máy có andon MỞ ⇒ nhãn `batThuong` (NT-2 cho luật ưu tiên nhãn + chip
+   *   "N sự cố ngoài khung"). Đọc thẳng `andonQ.data` (cùng bộ lọc `resolved` với `andonRows` khai ở dưới —
+   *   thứ tự hook không cho dùng `andonRows` ở đây).
+   */
+  const andonTheoMay = useMemo(
+    () =>
+      new Set(
+        ((andonQ.data ?? []) as Array<{ machineId: number | null; status: string }>)
+          .filter((a) => a.status !== "resolved" && a.machineId != null)
+          .map((a) => a.machineId as number),
+      ),
+    [andonQ.data],
+  );
   const nhan = useMemo<NhanTheGioi[]>(
-    () => dungNhanMay({ mayVe, trangThaiTheoMay, maTheoMay, mauChoTrangThai, t }),
-    [mayVe, trangThaiTheoMay, maTheoMay, t],
+    () => dungNhanMay({ mayVe, trangThaiTheoMay, maTheoMay, mauChoTrangThai, t, andonTheoMay }),
+    [mayVe, trangThaiTheoMay, maTheoMay, t, andonTheoMay],
   );
 
   /*
@@ -696,15 +737,37 @@ export function ThanManLine({
   );
 
   /* ── Camera bay DỌC theo chuyền — trừ khi deep-link nói rõ `?cam=` (Đợt 33) ── */
-  const khungNhin = useMemo(
+  /*
+   * ★★★ ĐỢT 35 (Pareto #5) — bbox KÈM đỉnh cột WIP (`bboxKemCotWip`, cột tới 6 m) + KHUNG canvas
+   *   thật (`kichThuocKhung`) ⇒ `khungNhinLine` khớp khoảng cách để 12/12 máy VÀ cột WIP lọt khung,
+   *   chừa lề nhãn. Chưa đo được khung (khung hình đầu) ⇒ hành vi cũ, rồi khớp lại khi có số đo.
+   */
+  const khungNhinTho = useMemo(
     () =>
       camUrl
         ? khungNhinTuCamera(camUrl)
         : hinhLine && hinhLine.hh.coHinhHoc
-          ? khungNhinLine(hinhLine.hh.bbox, hinhLine.hh.truc, hinhLine.hh.trucDangTin)
+          ? khungNhinLine(
+              bboxKemCotWip(hinhLine.hh.bbox, cotWipCanh),
+              hinhLine.hh.truc,
+              hinhLine.hh.trucDangTin,
+              kichThuocKhung ?? undefined,
+            )
           : null,
-    [camUrl, hinhLine],
+    [camUrl, hinhLine, cotWipCanh, kichThuocKhung],
   );
+  /*
+   * ★★★ ỔN ĐỊNH THEO GIÁ TRỊ — `DieuKhien` (CanhVanHanh) khởi động TWEEN mỗi khi `khungNhin` đổi THAM
+   *   CHIẾU, không so giá trị. `hinhLine` dựng lại mỗi khi `mayVe` đổi (trạng thái/tuổi làm mới theo
+   *   nhịp), `cotWipCanh` đổi theo WIP ⇒ không có bước này camera bay lại về CÙNG chỗ mỗi nhịp: giật
+   *   camera người dùng vừa xoay, và vẽ ~30 khung/lần khi đứng yên (một phần của Pareto #6 mà brief
+   *   không nêu). Khoá = toạ độ làm tròn mm; cùng khoá ⇒ cùng đối tượng.
+   */
+  const khoaKhungNhin = khungNhinTho
+    ? `${khungNhinTho.viTri.map((v) => v.toFixed(3)).join(",")}|${khungNhinTho.muc.map((v) => v.toFixed(3)).join(",")}`
+    : "";
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- cố ý: chỉ đổi đối tượng khi GIÁ TRỊ đổi
+  const khungNhin = useMemo(() => khungNhinTho, [khoaKhungNhin]);
 
   /* ── (B) LỚP PHỦ 2D — chip trái ──────────────────────────────────────── */
   /*
@@ -820,7 +883,7 @@ export function ThanManLine({
       </div>
 
       {/* ── Khung cảnh: canvas chiếm trọn, lớp phủ ĐÈ lên ───────────────── */}
-      <div className="relative min-h-0 flex-1">
+      <div ref={khungCanhRef} className="relative min-h-0 flex-1">
         {rongThat ? (
           <div className="flex h-full items-center justify-center p-6" data-testid="line-rong">
             <EmptyState
@@ -865,6 +928,11 @@ export function ThanManLine({
               sanSauM={sanSauM}
               tatNhan={false}
               chuNhanAn={(n) => t("twin3d.vanHanh.nhanBiAn", "còn {{n}} tên bị ẩn", { n })}
+              /* ★ Đợt 35 (Pareto #5): chip "N sự cố ngoài khung" — andon trên máy ngoài frustum
+                   không được câm (QA Đợt 32 `raised/`). `t()` ở đây, cảnh không gọi (RB-8.3). */
+              chuSuCoNgoaiKhung={(n) =>
+                t("twin3d.vanHanh.suCoNgoaiKhung", "{{n}} sự cố ngoài khung", { n })
+              }
               chuMatContext={t("twin3d.loi.matContext")}
               ariaLabel={t("twin3d.line.ariaCanh", "Cảnh 3D của {{ten}}", { ten: tenLine })}
             />

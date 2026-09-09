@@ -360,3 +360,28 @@ describe("dungCanhBao3D", () => {
     ).toEqual([]);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 35 (Pareto #5) — máy có ANDON mở ⇒ nhãn `batThuong`, dù trạng thái nói gì */
+/* ══════════════════════════════════════════════════════════════════════════ */
+describe("★★★ Đợt 35 — dungNhanMay.andonTheoMay", () => {
+  const mayVe = dungMayVe(tsCoBan([may(1), may(2)], [[1, datCho()], [2, datCho()]]));
+  const goi = (andon?: ReadonlySet<number>) =>
+    dungNhanMay({
+      mayVe,
+      trangThaiTheoMay: new Map([[1, "khong_ro"], [2, "khong_ro"]]),
+      maTheoMay: new Map(),
+      mauChoTrangThai: congCu.mauChoTrangThai,
+      t: (k) => k,
+      andonTheoMay: andon,
+    });
+  it("★ máy 14-kiểu: trạng thái `khong_ro` (không bất thường) + andon mở ⇒ `batThuong: true`; máy không andon ⇒ false", () => {
+    const ra = goi(new Set([1]));
+    expect(ra.find((n) => n.machineId === 1)!.batThuong).toBe(true);
+    expect(ra.find((n) => n.machineId === 2)!.batThuong).toBe(false);
+  });
+  it("không truyền / tập rỗng ⇒ như cũ (chỉ theo trạng thái)", () => {
+    expect(goi().every((n) => n.batThuong === false)).toBe(true);
+    expect(goi(new Set()).every((n) => n.batThuong === false)).toBe(true);
+  });
+});

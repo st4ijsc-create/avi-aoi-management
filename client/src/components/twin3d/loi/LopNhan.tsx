@@ -17,7 +17,41 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useRef, useState } from "react";
 import * as THREE from "three";
 
-import { demCapChongLap, locNhan, TRAN_NHAN_DOM, type NhanUngVien } from "./locNhan";
+import {
+  demCapChongLap,
+  locNhan,
+  TRAN_NHAN_DOM,
+  type HinhChuNhat,
+  type NhanUngVien,
+} from "./locNhan";
+
+/**
+ * ★★★ ĐỢT 35 (Pareto #5) — VÙNG CẤM LẤY TỪ DOM THẬT, MỖI KHUNG ĐƯỢC VẼ.
+ *
+ * Mọi lớp phủ DOM đè lên canvas (Metrics `BangKpiNoi`, ngăn Mô phỏng, panel
+ * trái/phải của `/twin`, chip máy…) tự khai bằng thuộc tính `data-che-nhan`.
+ * Hàm này đọc bbox THẬT của chúng, quy về gốc canvas, bỏ cái không đè canvas
+ * (hidden ⇒ 0×0; panel thu ⇒ `w-0`). Không hằng, không danh sách testid.
+ *
+ * QA Đợt 32: nhãn máy nằm DƯỚI Metrics/panel che 72–100 % — "vẽ rồi" mà không ai
+ * đọc được, và `__demNhan.ve` vẫn đếm nó là một nhãn hiện.
+ */
+export const THUOC_TINH_CHE_NHAN = "data-che-nhan";
+
+export function layVungCam(canvas: HTMLCanvasElement | null | undefined): HinhChuNhat[] {
+  if (!canvas || typeof document === "undefined") return [];
+  const cv = canvas.getBoundingClientRect();
+  if (cv.width <= 0 || cv.height <= 0) return [];
+  const ra: HinhChuNhat[] = [];
+  for (const el of document.querySelectorAll<HTMLElement>(`[${THUOC_TINH_CHE_NHAN}]`)) {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    const hop = { trai: r.left - cv.left, phai: r.right - cv.left, tren: r.top - cv.top, duoi: r.bottom - cv.top };
+    if (hop.phai <= 0 || hop.duoi <= 0 || hop.trai >= cv.width || hop.tren >= cv.height) continue;
+    ra.push(hop);
+  }
+  return ra;
+}
 
 /** Một nhãn trước khi chiếu — vị trí ở KHÔNG GIAN THẾ GIỚI (mét). */
 export interface NhanTheGioi {
@@ -52,6 +86,12 @@ export interface LopNhanProps {
    * `undefined` ⇒ KHÔNG render chip (người gọi chưa nối — không có chuỗi rác).
    */
   chuNhanAn?: (n: number) => string;
+  /**
+   * ★★★ Đợt 35 (Pareto #5) — chữ ĐÃ QUA `t()` cho chip "N sự cố ngoài khung":
+   * máy bất thường (andon/error) nằm ngoài frustum. QA Đợt 32 `raised/`: andon
+   * `raised` trên máy ngoài khung ⇒ KHÔNG một dấu hiệu nào. `undefined` ⇒ không chip.
+   */
+  chuSuCoNgoaiKhung?: (n: number) => string;
 }
 
 interface NhanDaChieu {
@@ -85,12 +125,16 @@ export function LopNhan({
   tranNhan = TRAN_NHAN_DOM,
   chiNhanBatThuong = false,
   chuNhanAn,
+  chuSuCoNgoaiKhung,
 }: LopNhanProps) {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
+  const gl = useThree((s) => s.gl);
   const [hienThi, setHienThi] = useState<NhanDaChieu[]>([]);
   /** Số tên KHÔNG đọc được ở khung hiện tại — nguồn của chip "còn N bị ẩn". */
   const [soAn, setSoAn] = useState(0);
+  /** ★ Đợt 35 — số máy BẤT THƯỜNG ngoài khung nhìn — nguồn của chip "N sự cố ngoài khung". */
+  const [soSuCoNgoai, setSoSuCoNgoai] = useState(0);
   const tamRef = useRef(new THREE.Vector3());
   const chuKyRef = useRef("");
   /**
@@ -112,6 +156,7 @@ export function LopNhan({
     if (tat || nhan.length === 0) {
       if (hienThi.length !== 0) setHienThi([]);
       if (soAn !== 0) setSoAn(0);
+      if (soSuCoNgoai !== 0) setSoSuCoNgoai(0);
       return;
     }
 
@@ -135,17 +180,24 @@ export function LopNhan({
         dangChon: n.machineId === dangChon,
         batThuong: n.batThuong === true,
         hover: n.machineId === dangHover,
-        // Ngoài khung: sau lưng camera, hoặc lệch quá 10 % ra ngoài mép canvas.
+        // Ngoài khung: sau lưng camera, hoặc NEO ngoài mép canvas.
+        // ★ Đợt 35 — bỏ biên ±10 %: nhãn neo ngoài canvas là nhãn vẽ ngoài canvas,
+        //   không ai đọc được; đếm vào "bị giấu" chứ không vẽ nửa chừng.
         ngoaiKhung:
-          mh === null ||
-          mh.x < -0.1 * size.width ||
-          mh.x > 1.1 * size.width ||
-          mh.y < -0.1 * size.height ||
-          mh.y > 1.1 * size.height,
+          mh === null || mh.x < 0 || mh.x > size.width || mh.y < 0 || mh.y > size.height,
       });
     }
 
-    const kq = locNhan(ungVien, { tranNhan, chiNhanBatThuong });
+    // ★ Đợt 35 — vùng cấm = bbox THẬT của lớp phủ DOM, quy về gốc canvas (xem `layVungCam`).
+    const vungCam = layVungCam(gl.domElement);
+    const kq = locNhan(ungVien, {
+      tranNhan,
+      chiNhanBatThuong,
+      khungCanvas: { rong: size.width, cao: size.height },
+      vungCam,
+      // ★ Đợt 35 — xếp tầng nhãn chồng (12 nóc máy cùng hàng sau khi khớp khung ⇒ 7/12 bị bỏ nếu không).
+      xepTang: true,
+    });
 
     // Cửa sổ đo cho e2e (§13.2). Ghi CẢ khi 0 nhãn — "không đo được" phải khác
     // "đo được 0", nếu không thì test đọc `undefined` rồi coi như đạt.
@@ -161,6 +213,11 @@ export function LopNhan({
         //   trả lời được câu đó: `ve=8` nghe như đủ, trong khi 37 cái tên khác
         //   đã bị giấu im lặng.
         biGiau: kq.soBiGiau,
+        // ★ Đợt 35 — ba đại lượng mới: hộp thò mép, bị lớp phủ che, và SỰ CỐ ngoài frustum.
+        vuotMep: kq.soVuotMep,
+        biChe: kq.soBiChe,
+        soVungCam: vungCam.length,
+        suCoNgoaiKhung: kq.soBatThuongNgoaiKhung,
         // ★ Số CẶP nhãn CÒN chồng nhau trong tập được vẽ — đại lượng KHÁC với
         // `chongLap` (số nhãn BỊ LOẠI). Chính chỗ lẫn hai đại lượng này làm bộ
         // đếm cũ khai 0 trong khi màn thật có 5 cặp chồng. Đại lượng này phải
@@ -181,12 +238,15 @@ export function LopNhan({
     // ★ `soBiGiau` ĐI VÀO CHỮ KÝ: nếu không, xoay camera làm số nhãn bị giấu
     //   đổi mà chip vẫn in số cũ — một con số CÓ VẺ đúng, đúng lớp lỗi đợt này
     //   đang vá. Cùng lý do `ve` đã nằm trong chữ ký.
+    // ★ Đợt 35 — `soBatThuongNgoaiKhung` cũng ĐI VÀO CHỮ KÝ: xoay camera đưa máy
+    //   sự cố ra/vào khung phải đổi chip ngay, không chờ tập nhãn đổi.
     const chuKy =
-      `${kq.soBiGiau}#` +
+      `${kq.soBiGiau}#${kq.soBatThuongNgoaiKhung}#` +
       kq.ve.map((v) => `${v.khoa}:${Math.round(v.x)}:${Math.round(v.y)}`).join("|");
     if (chuKy === chuKyRef.current) return;
     chuKyRef.current = chuKy;
     setSoAn(kq.soBiGiau);
+    setSoSuCoNgoai(kq.soBatThuongNgoaiKhung);
 
     setHienThi(
       kq.ve.map((v) => {
@@ -205,6 +265,7 @@ export function LopNhan({
   }, [
     nhan,
     camera,
+    gl,
     size.width,
     size.height,
     dangChon,
@@ -214,13 +275,14 @@ export function LopNhan({
     chiNhanBatThuong,
     hienThi.length,
     soAn,
+    soSuCoNgoai,
   ]);
 
   // Chiếu lại mỗi khung ĐƯỢC VẼ. Với `frameloop="demand"` đây KHÔNG phải 60fps:
   // hàm chỉ chạy khi có ai đó gọi `invalidate()` (xoay camera, đổi dữ liệu).
   useFrame(tinhLai);
 
-  if (tat || (hienThi.length === 0 && soAn === 0)) return null;
+  if (tat || (hienThi.length === 0 && soAn === 0 && soSuCoNgoai === 0)) return null;
 
   /*
    * ════════════════════════════════════════════════════════════════════════
@@ -270,26 +332,62 @@ export function LopNhan({
           ★ `pointer-events:none` như mọi thứ trong lớp này: nó là chỉ báo,
             không phải nút. Đổi mật độ nhãn là việc của thanh công cụ.
         */}
-        {chuNhanAn && soAn > 0 ? (
+        {(chuNhanAn && soAn > 0) || (chuSuCoNgoaiKhung && soSuCoNgoai > 0) ? (
           <div
-            data-testid="chip-nhan-bi-an"
-            data-so-an={soAn}
             style={{
               position: "absolute",
               left: "50%",
               bottom: 8,
               transform: "translateX(-50%)",
-              padding: "2px 8px",
-              borderRadius: 999,
-              fontSize: 11,
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-              background: "var(--muted, rgba(15,23,42,0.78))",
-              color: "var(--muted-foreground, #e2e8f0)",
-              border: "1px solid var(--border, rgba(100,116,139,0.35))",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 4,
             }}
           >
-            {chuNhanAn(soAn)}
+            {/*
+              ★★★ ĐỢT 35 (Pareto #5) — CHIP "N SỰ CỐ NGOÀI KHUNG" — NT-2 cho FRUSTUM.
+              QA Đợt 32 `raised/`: andon `raised` trên máy 14, camera nhìn 6/12 máy ⇒
+              máy sự cố ở ngoài khung và màn KHÔNG nói gì. Chip này khai báo sự thiếu
+              đúng như chip nhãn ẩn — nhưng nó là ALARM, nên đứng TRÊN và viền đỏ.
+              `pointer-events:none` như cả lớp: chỉ báo, không phải nút.
+            */}
+            {chuSuCoNgoaiKhung && soSuCoNgoai > 0 ? (
+              <div
+                data-testid="chip-su-co-ngoai-khung"
+                data-so={soSuCoNgoai}
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                  background: "var(--destructive, #ef4444)",
+                  color: "var(--destructive-foreground, #fff)",
+                  border: "1px solid var(--destructive, #ef4444)",
+                }}
+              >
+                {chuSuCoNgoaiKhung(soSuCoNgoai)}
+              </div>
+            ) : null}
+            {chuNhanAn && soAn > 0 ? (
+              <div
+                data-testid="chip-nhan-bi-an"
+                data-so-an={soAn}
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  background: "var(--muted, rgba(15,23,42,0.78))",
+                  color: "var(--muted-foreground, #e2e8f0)",
+                  border: "1px solid var(--border, rgba(100,116,139,0.35))",
+                }}
+              >
+                {chuNhanAn(soAn)}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {hienThi.map((n) => (
@@ -349,8 +447,16 @@ export interface WindowCoDo extends Window {
     chongLap: number;
     vuotTran: number;
     tran: number;
-    /** ★ Đợt 23 M1 — tổng số tên bị giấu (ngoài khung + chồng + trần + lọc). */
+    /** ★ Đợt 23 M1 — tổng số tên bị giấu (ngoài khung + chồng + trần + lọc + vượt mép + bị che). */
     biGiau: number;
+    /** ★ Đợt 35 — hộp nhãn thò ra mép canvas (neo trong, hộp ngoài) ⇒ không vẽ. */
+    vuotMep: number;
+    /** ★ Đợt 35 — hộp nhãn đè lên lớp phủ DOM `[data-che-nhan]` ⇒ không vẽ. */
+    biChe: number;
+    /** ★ Đợt 35 — số vùng cấm đọc được từ DOM ở khung này (0 ⇒ màn chưa đánh dấu lớp phủ nào). */
+    soVungCam: number;
+    /** ★ Đợt 35 — số máy BẤT THƯỜNG ngoài frustum — nguồn của chip "N sự cố ngoài khung". */
+    suCoNgoaiKhung: number;
     /**
      * Số CẶP nhãn CÒN chồng nhau trong tập ĐƯỢC VẼ — phải luôn 0.
      * ⚠ KHÁC `chongLap`: đây là đầu ra (còn chồng), kia là đầu vào (bị loại).

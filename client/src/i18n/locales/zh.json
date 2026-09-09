@@ -20173,6 +20173,7 @@
       "xuatUsdHong": "USD 导出失败（{{lyDo}}）。",
       "donViGiay": "{{n}} 秒",
       "nhanBiAn": "另有 {{n}} 个名称被隐藏",
+      "suCoNgoaiKhung": "{{n}} 个告警在视野外",
       "chiNhanBatThuongMoTa": "仅显示异常设备（及所选设备）的名称"
     },
     "studio": {

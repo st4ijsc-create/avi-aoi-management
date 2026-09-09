@@ -764,6 +764,8 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
                   <div
                     className="pointer-events-none absolute left-2 top-2 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-background/85 px-2 py-1 text-xs shadow-sm backdrop-blur"
                     data-testid="chip-may"
+                    /* ★ Đợt 35 (Pareto #5): lớp phủ ĐÈ canvas tự khai — `LopNhan` không vẽ nhãn dưới nó. */
+                    data-che-nhan="1"
                   >
                     <span className="font-mono font-medium" data-testid="ma-may">
                       {tomTat?.ma ?? "—"}

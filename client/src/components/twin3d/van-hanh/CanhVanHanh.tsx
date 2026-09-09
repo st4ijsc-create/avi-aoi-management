@@ -120,6 +120,8 @@ export interface CanhVanHanhProps {
   chiNhanBatThuong?: boolean;
   /** Chữ ĐÃ dịch cho chip "còn N tên bị ẩn" (RB-8.3 — cảnh không gọi `t()`). */
   chuNhanAn?: (n: number) => string;
+  /** ★ Đợt 35 (Pareto #5) — chữ ĐÃ dịch cho chip "N sự cố ngoài khung" (máy bất thường ngoài frustum). */
+  chuSuCoNgoaiKhung?: (n: number) => string;
   chuMatContext: string;
   ariaLabel: string;
   /** Báo camera vừa đổi — tầng trên ghi vào URL bằng `replaceState` (§9.4). */
@@ -549,6 +551,7 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
         tat={tatNhan}
         chiNhanBatThuong={chiNhanBatThuong}
         chuNhanAn={chuNhanAn}
+        chuSuCoNgoaiKhung={props.chuSuCoNgoaiKhung}
       />
       <LopCanhBao canhBao={canhBao} />
     </>

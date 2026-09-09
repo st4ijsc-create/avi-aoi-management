@@ -13,7 +13,10 @@
  *   1. Nhãn ngoài khung / sau lưng camera bị loại NGAY (không tốn suất).
  *   2. Ưu tiên: đang chọn > đang bất thường > hover > gần camera.
  *   3. Nhãn chồng HÌNH CHỮ NHẬT với một nhãn đã giữ → bỏ cái ưu tiên thấp hơn.
+ *      3b (Đợt 35, opt-in `xepTang`) → trước khi bỏ, thử ĐẨY LÊN ≤ 2 tầng.
  *   4. Sau cùng cắt về `TRAN_NHAN_DOM` (30).
+ *   (Đợt 35) Trước luật 3: hộp phải TRỌN trong canvas (`khungCanvas`) và không
+ *   đè lớp phủ DOM (`vungCam`) — hai cửa này không tốn suất, không giữ chỗ.
  *
  * ⚠ Luật 3 chạy TRƯỚC luật 4 có chủ đích: nếu cắt 30 trước rồi mới khử chồng,
  * ta có thể còn 8 nhãn hiển thị trong khi 22 suất bị các nhãn chồng nhau ăn mất.
@@ -133,11 +136,48 @@ export function haiHopChongNhau(a: HinhChuNhat, b: HinhChuNhat): boolean {
   return a.trai < b.phai && b.trai < a.phai && a.tren < b.duoi && b.tren < a.duoi;
 }
 
+/** Kích thước canvas, pixel — để hộp nhãn phải nằm TRỌN trong canvas. */
+export interface KhungCanvasPx {
+  rong: number;
+  cao: number;
+}
+
+/**
+ * Hộp nhãn có nằm TRỌN trong canvas không (chạm mép được tính là trong).
+ *
+ * ★★★ ĐỢT 35 (Pareto #5) — VÌ SAO "TRỌN", KHÔNG PHẢI "TÂM TRONG":
+ *   `LopNhan` cũ cho vẽ nhãn có neo lệch tới **±10 %** ra ngoài mép canvas
+ *   (`mh.x < -0.1 * size.width` mới coi là ngoài). Một nhãn neo ở x = −5 % là
+ *   một cái tên bị cắt nửa — người đọc thấy "…L2-CON" và không biết đó là máy
+ *   nào. Nhãn không vẽ trọn được là nhãn KHÔNG ĐỌC ĐƯỢC ⇒ không vẽ, và đếm vào
+ *   "bị giấu" để chip nói ra.
+ */
+export function hopTrongKhung(hop: HinhChuNhat, khung: KhungCanvasPx): boolean {
+  return hop.trai >= 0 && hop.tren >= 0 && hop.phai <= khung.rong && hop.duoi <= khung.cao;
+}
+
+/**
+ * ★★★ ĐỢT 35 (Pareto #5) — XẾP TẦNG: số tầng tối đa một nhãn được đẩy LÊN để tránh chồng.
+ *
+ * Đo sau khi khớp khung 12/12 máy (`.qa-dot35/sau-B/e4-*`): camera lùi để cả chuyền
+ * lọt khung ⇒ 12 nóc máy xếp gần như cùng một hàng ngang ⇒ nhãn (150–190 px) của
+ * máy kề nhau CHỒNG ngang ⇒ declutter bỏ 7–8/12 — "N more names hidden" TĂNG
+ * (6 → 7/8) thay vì giảm. Bỏ nhãn là cách cuối; đẩy nó lên một tầng (cao + khe)
+ * vẫn giữ x = tâm máy (nhãn vẫn "ở trên máy của nó", Đợt 31 đo bbox trong khung)
+ * và đọc được. 2 tầng ⇒ tối đa 3 hàng nhãn — quá nữa là thành cột chữ.
+ */
+export const TANG_NHAN_TOI_DA = 2;
+/** Khe hở giữa hai tầng nhãn (px). */
+export const KHE_TANG_PX = 2;
+
 /** Nhãn đã được chọn để vẽ. */
 export interface NhanDuocVe {
   khoa: string;
   x: number;
+  /** Toạ độ vẽ — đã cộng tầng (`y = neo − tang·(cao + khe)`). */
   y: number;
+  /** ★ Đợt 35 — 0 = ngay trên neo; 1..`TANG_NHAN_TOI_DA` = đẩy lên để tránh chồng. */
+  tang: number;
   /** Điểm ưu tiên đã tính — hiện ra để gỡ lỗi và để test khẳng định thứ tự. */
   diemUuTien: number;
   /**
@@ -164,8 +204,28 @@ export interface KetQuaLocNhan {
   /** Số bị loại vì đã chạm trần `tranNhan`. */
   soVuotTran: number;
   /**
+   * ★ Đợt 35 — số bị loại vì hộp nhãn KHÔNG nằm trọn trong canvas (neo trong,
+   * hộp thò ra mép). Chỉ đếm khi người gọi truyền `khungCanvas`.
+   */
+  soVuotMep: number;
+  /**
+   * ★ Đợt 35 — số bị loại vì hộp nhãn đè lên một VÙNG CẤM (lớp phủ DOM: Metrics,
+   * panel trái/phải, ngăn Mô phỏng…). Chỉ đếm khi người gọi truyền `vungCam`.
+   */
+  soBiChe: number;
+  /**
+   * ★★★ Đợt 35 — số vật thể **BẤT THƯỜNG** đang ở NGOÀI khung nhìn (sau lưng camera
+   * hoặc neo ngoài canvas). QA Đợt 32 (`raised/`): andon `raised` trên máy ngoài
+   * khung ⇒ **không một dấu hiệu nào** trên màn Line. Đây là con số cho chip
+   * "N sự cố ngoài khung" — NT-2: alarm không được giấu bởi góc camera, kể cả
+   * khi nó ở ngoài góc camera.
+   * ⚠ KHÔNG tính nhãn bất thường bị lớp phủ che hay vượt mép: máy ấy VẪN trong
+   *   khung, `LopCanhBao` (badge 3D) vẫn hiện nó. Chip này nói về FRUSTUM.
+   */
+  soBatThuongNgoaiKhung: number;
+  /**
    * ★★★ ĐỢT 23 M1 — TỔNG số nhãn **BỊ GIẤU** (ngoài khung + chồng + vượt trần
-   * + bị lọc theo chính sách). Đây là con số màn hình phải NÓI RA.
+   * + bị lọc theo chính sách + vượt mép + bị che). Đây là con số màn hình phải NÓI RA.
    *
    * Vì sao không để người gọi tự cộng ba ô kia: cộng tay ở nơi gọi là cách
    * chắc chắn để hai màn cộng thiếu một ô khác nhau, và ô thiếu sẽ là ô mới
@@ -216,6 +276,28 @@ export interface CauHinhLocNhan {
   rongSuyDoanPx?: number;
   /** Bề cao suy đoán cho nhãn thiếu `caoPx`. Mặc định {@link CAO_SUY_DOAN_PX}. */
   caoSuyDoanPx?: number;
+  /**
+   * ★ Đợt 35 — kích thước canvas (px). Khi truyền, hộp nhãn phải nằm TRỌN trong
+   * canvas ({@link hopTrongKhung}); không thì bỏ và đếm `soVuotMep`. Bỏ trống ⇒
+   * hành vi cũ (người gọi tự cờ `ngoaiKhung`).
+   */
+  khungCanvas?: KhungCanvasPx;
+  /**
+   * ★★★ Đợt 35 (Pareto #5) — VÙNG CẤM: bbox các LỚP PHỦ DOM đè lên canvas, quy
+   * về gốc canvas (px). Hộp nhãn giao một vùng cấm ⇒ KHÔNG vẽ, đếm `soBiChe`.
+   *
+   * Vì sao là dữ liệu vào chứ không phải hằng: Metrics rộng 208×220 ở góc trái,
+   * ngăn Mô phỏng ở góc phải, panel `/twin` 224–320 px — chúng đổi theo màn, theo
+   * `2xl:`, theo thu/mở. Một hằng "chừa 220 px góc trái" sẽ đúng một màn và sai
+   * ba màn kia im lặng. `LopNhan` lấy bbox THẬT từ `[data-che-nhan]` mỗi khung.
+   */
+  vungCam?: readonly HinhChuNhat[];
+  /**
+   * ★★★ Đợt 35 (Pareto #5) — XẾP TẦNG: nhãn chồng một nhãn đã giữ được ĐẨY LÊN tối
+   * đa {@link TANG_NHAN_TOI_DA} tầng trước khi bị bỏ (luật 3b). Mặc định TẮT để
+   * luật 3 ("chồng ⇒ bỏ") của mọi người gọi cũ giữ nguyên; `LopNhan` bật.
+   */
+  xepTang?: boolean;
 }
 
 /**
@@ -279,6 +361,12 @@ export function locNhan(
 
   const trongKhung = ungVien.filter((n) => !n.ngoaiKhung);
   const soNgoaiKhung = ungVien.length - trongKhung.length;
+  // ★ Đợt 35 — sự cố NGOÀI khung nhìn: đếm trên TẬP BỊ CULL, trước mọi chính sách.
+  const soBatThuongNgoaiKhung = ungVien.length - trongKhung.length === 0
+    ? 0
+    : ungVien.filter((n) => n.ngoaiKhung && n.batThuong === true).length;
+  const khungCanvas = cauHinh.khungCanvas;
+  const vungCam = cauHinh.vungCam ?? [];
 
   // ★ Chính sách chọn ai được nhãn — chạy TRƯỚC phép sắp/khử chồng, vì nó đổi
   //   TẬP ứng viên chứ không đổi thứ tự. Nhãn đang CHỌN luôn được giữ: người
@@ -297,19 +385,50 @@ export function locNhan(
   const hopDaGiu: HinhChuNhat[] = [];
   let soBiChongLap = 0;
   let soVuotTran = 0;
+  let soVuotMep = 0;
+  let soBiChe = 0;
 
   for (const n of daSap) {
     const hop = hopNhan(n, rongMacDinh, caoMacDinh);
 
-    // Khử chồng lấp: nếu bbox đè lên một nhãn ĐÃ giữ (ưu tiên cao hơn) thì bỏ.
-    let chongLap = false;
-    for (const g of hopDaGiu) {
-      if (haiHopChongNhau(g, hop)) {
-        chongLap = true;
+    // ★ Đợt 35 — hai cửa CHẠY TRƯỚC khử chồng/trần: nhãn không vẽ được thì không
+    //   được chiếm suất, cũng không được "giữ chỗ" để giết một nhãn khác.
+    if (khungCanvas && !hopTrongKhung(hop, khungCanvas)) {
+      soVuotMep += 1;
+      continue;
+    }
+    if (vungCam.length > 0 && vungCam.some((v) => haiHopChongNhau(v, hop))) {
+      soBiChe += 1;
+      continue;
+    }
+
+    // Khử chồng lấp: nếu bbox đè lên một nhãn ĐÃ giữ (ưu tiên cao hơn) thì thử
+    // ĐẨY LÊN tối đa `TANG_NHAN_TOI_DA` tầng (★ Đợt 35); hết tầng mới bỏ.
+    // Tầng đẩy lên cũng phải nằm trọn trong canvas và ngoài vùng cấm — không thì
+    // ta vừa "cứu" một nhãn bằng cách chui dưới Metrics.
+    const cao = hop.duoi - hop.tren;
+    const tangToiDa = cauHinh.xepTang ? TANG_NHAN_TOI_DA : 0;
+    let hopVe: HinhChuNhat | null = null;
+    let tang = 0;
+    for (let k = 0; k <= tangToiDa; k += 1) {
+      const lech = k * (cao + KHE_TANG_PX);
+      const thu: HinhChuNhat = k === 0 ? hop : { ...hop, tren: hop.tren - lech, duoi: hop.duoi - lech };
+      if (k > 0 && khungCanvas && !hopTrongKhung(thu, khungCanvas)) break;
+      if (k > 0 && vungCam.length > 0 && vungCam.some((v) => haiHopChongNhau(v, thu))) break;
+      let chongLap = false;
+      for (const g of hopDaGiu) {
+        if (haiHopChongNhau(g, thu)) {
+          chongLap = true;
+          break;
+        }
+      }
+      if (!chongLap) {
+        hopVe = thu;
+        tang = k;
         break;
       }
     }
-    if (chongLap) {
+    if (hopVe === null) {
       soBiChongLap += 1;
       continue;
     }
@@ -317,8 +436,15 @@ export function locNhan(
       soVuotTran += 1;
       continue;
     }
-    ve.push({ khoa: n.khoa, x: n.x, y: n.y, diemUuTien: diemUuTienNhan(n), hop });
-    hopDaGiu.push(hop);
+    ve.push({
+      khoa: n.khoa,
+      x: n.x,
+      y: n.y - tang * (cao + KHE_TANG_PX),
+      tang,
+      diemUuTien: diemUuTienNhan(n),
+      hop: hopVe,
+    });
+    hopDaGiu.push(hopVe);
   }
 
   return {
@@ -327,8 +453,11 @@ export function locNhan(
     soNgoaiKhung,
     soBiChongLap,
     soVuotTran,
+    soVuotMep,
+    soBiChe,
+    soBatThuongNgoaiKhung,
     // MỘT phép cộng, ở MỘT nơi — xem docblock `soBiGiau`.
-    soBiGiau: soNgoaiKhung + soBiLocChinhSach + soBiChongLap + soVuotTran,
+    soBiGiau: soNgoaiKhung + soBiLocChinhSach + soBiChongLap + soVuotTran + soVuotMep + soBiChe,
   };
 }
 

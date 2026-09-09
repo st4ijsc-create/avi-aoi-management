@@ -326,3 +326,31 @@ describe("★★★ G91 — `manLine` KHÔNG đếm chạy/dừng: `tinhKpiNoi` 
     expect(kpi.o.find((o) => o.khoa === "dungLoi")?.giaTri).toBe(1);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★ ĐỢT 35 (Pareto #5) — `bboxKemCotWip`: khớp khung phải thấy cả cột WIP        */
+/* ══════════════════════════════════════════════════════════════════════════ */
+describe("★ Đợt 35 — bboxKemCotWip", () => {
+  it("cột WIP cao 6 m nâng maxY lên 6; x/z ngoài bbox cũng mở rộng", async () => {
+    const { bboxKemCotWip } = await import("./manLine");
+    const { bboxTuDiem } = await import("../heToaDo");
+    const goc = bboxTuDiem([{ x: 0, y: 0, z: 0 }, { x: 30, y: 1.6, z: 2 }]);
+    const b = bboxKemCotWip(goc, [{ x: 10, z: 1, cao: 6 }, { x: 35, z: 1, cao: 0.5 }]);
+    expect(b.maxY).toBe(6);
+    expect(b.maxX).toBe(35);
+    expect(b.minY).toBe(0);
+  });
+  it("cột rỗng ⇒ trả CHÍNH bbox gốc (không cấp phát); cột âm ⇒ coi như 0", async () => {
+    const { bboxKemCotWip } = await import("./manLine");
+    const { bboxTuDiem } = await import("../heToaDo");
+    const goc = bboxTuDiem([{ x: 0, y: 0, z: 0 }, { x: 30, y: 1.6, z: 2 }]);
+    expect(bboxKemCotWip(goc, [])).toBe(goc);
+    expect(bboxKemCotWip(goc, [{ x: 1, z: 1, cao: -3 }]).maxY).toBe(1.6);
+  });
+  it("bbox rỗng + cột ⇒ bbox của cột (không Infinity)", async () => {
+    const { bboxKemCotWip } = await import("./manLine");
+    const { bboxRong } = await import("../heToaDo");
+    const b = bboxKemCotWip(bboxRong(), [{ x: 2, z: 3, cao: 1 }]);
+    expect(b).toEqual({ minX: 2, maxX: 2, minY: 0, maxY: 1, minZ: 3, maxZ: 3 });
+  });
+});

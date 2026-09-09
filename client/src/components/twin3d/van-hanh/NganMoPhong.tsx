@@ -206,6 +206,8 @@ export function NganMoPhong(p: NganMoPhongProps) {
     <div
       className="pointer-events-none absolute right-2 top-2 z-30 w-max min-w-[15rem] max-w-[min(24rem,calc(100%-1rem))]"
       data-testid="ngan-mo-phong"
+      /* ★ Đợt 35 (Pareto #5): lớp phủ ĐÈ canvas tự khai — `LopNhan` không vẽ nhãn dưới nó. */
+      data-che-nhan="1"
       data-mo={p.mo ? "1" : "0"}
       data-chay-duoc={dv.chay ? "1" : "0"}
       data-ly-do={dv.chay ? "" : dv.lyDo}

@@ -68,6 +68,7 @@
  * màn vì tưởng không ai dùng).
  */
 
+import { gopNhieuBBox, type BBox } from "../heToaDo";
 import { conHieuLuc, type KhaiNghen, type TinhWip } from "./wipTram";
 import type { PhamVi } from "./duongDanTwin";
 
@@ -359,4 +360,25 @@ export function tomTatLine(
     tramNghen: conHieuLuc(khai.mocKhai, khai.bayGio) ? (khai.nghenTheoServer ?? null) : null,
     tongWip,
   };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★ ĐỢT 35 (Pareto #5) — bbox KÈM đỉnh cột WIP, để khớp khung không cắt cột       */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Gộp bbox hình học chuyền với các CỘT WIP (`OngWip`: trụ từ y=0 tới `cao`,
+ * tới 6 m — `CAO_TOI_DA_M` của `wipTram.ts`). `hinhHocLine` chỉ bao trạm + máy
+ * (cao ~1,6 m); khớp khung theo bbox ấy để cột WIP xuyên mép trên — đúng ảnh QA
+ * Đợt 32 a3. Cột rỗng ⇒ trả bbox gốc nguyên vẹn (không cấp phát vô ích).
+ */
+export function bboxKemCotWip(
+  bbox: BBox,
+  cot: readonly { x: number; z: number; cao: number }[],
+): BBox {
+  if (cot.length === 0) return bbox;
+  return gopNhieuBBox([
+    bbox,
+    ...cot.map((c) => ({ minX: c.x, maxX: c.x, minY: 0, maxY: Math.max(0, c.cao), minZ: c.z, maxZ: c.z })),
+  ]);
 }

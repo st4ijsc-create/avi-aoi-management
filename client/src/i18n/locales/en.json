@@ -20165,6 +20165,7 @@
       "xuatUsdHong": "USD export failed ({{lyDo}}).",
       "donViGiay": "{{n}}s",
       "nhanBiAn": "{{n}} more names hidden",
+      "suCoNgoaiKhung": "{{n}} alarms out of view",
       "chiNhanBatThuongMoTa": "Show names only for abnormal machines (and the selected one)"
     },
     "studio": {

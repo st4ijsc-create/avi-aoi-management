@@ -316,6 +316,14 @@ export interface ThamSoNhanMay {
   mauChoTrangThai: CongCuMau["mauChoTrangThai"];
   /** i18n — tiêm vào để module giữ thuần. */
   t: (khoa: string) => string;
+  /**
+   * ★★★ Đợt 35 (Pareto #5) — máy đang có ANDON mở. Nhãn của chúng là `batThuong`
+   * DÙ trạng thái máy nói gì (máy 14: andon `raised` mà trạng thái `khong_ro`
+   * ⇒ trước đợt này nhãn KHÔNG bất thường ⇒ declutter được phép giấu nó, và chip
+   * "N sự cố ngoài khung" đếm 0 khi nó ở ngoài frustum). NT-2: alarm không bao
+   * giờ bị góc camera che — kể cả trong luật ưu tiên nhãn. Bỏ trống ⇒ như cũ.
+   */
+  andonTheoMay?: ReadonlySet<number>;
 }
 
 /** Nhãn tên máy, một nhãn cho mỗi máy ĐANG ĐƯỢC VẼ. */
@@ -329,7 +337,7 @@ export function dungNhanMay(ts: ThamSoNhanMay): NhanMay[] {
       viTri: neoTrenNoc(m, HO_NHAN_MAY),
       ma: ts.maTheoMay.get(m.machineId) ?? `#${m.machineId}`,
       phu: ts.t(kieu.khoaNhan),
-      batThuong: kieu.laBatThuong,
+      batThuong: kieu.laBatThuong || (ts.andonTheoMay?.has(m.machineId) ?? false),
     };
   });
 }

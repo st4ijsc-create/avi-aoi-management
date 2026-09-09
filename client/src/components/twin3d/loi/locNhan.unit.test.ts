@@ -11,6 +11,9 @@
 
 import { describe, it, expect } from "vitest";
 import {
+  KHE_TANG_PX,
+  TANG_NHAN_TOI_DA,
+  hopTrongKhung,
   locNhan,
   demCapChongLap,
   diemUuTienNhan,
@@ -479,5 +482,181 @@ describe("Đợt 23 M1 — chiNhanBatThuong: đổi CHÍNH SÁCH, không chỉ �
 
   it("mặc định TẮT — bật bậc này phải là quyết định tường minh của người gọi", () => {
     expect(locNhan(ds).ve.length).toBe(3);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 35 (Pareto #5) — VÙNG CẤM DOM · HỘP TRỌN TRONG CANVAS · SỰ CỐ NGOÀI KHUNG */
+/* ══════════════════════════════════════════════════════════════════════════ */
+/*
+ * QA Đợt 32: nhãn máy nằm DƯỚI Metrics/panel (che 72–100 %) mà `__demNhan.ve`
+ * vẫn đếm là "hiện"; nhãn neo lệch tới ±10 % ngoài mép vẫn vẽ (cắt nửa tên);
+ * andon `raised` trên máy ngoài khung ⇒ không dấu hiệu nào. Ba luật mới của
+ * `locNhan` — thuần, đo bằng GIÁ TRỊ.
+ */
+const nhan35 = (khoa: string, x: number, y: number, tuy: Partial<NhanUngVien> = {}): NhanUngVien => ({
+  khoa, x, y, khoangCachMet: 5, rongPx: 150, caoPx: 22, ...tuy,
+});
+
+describe("★★★ Đợt 35 — VÙNG CẤM (lớp phủ DOM): nhãn dưới Metrics/panel KHÔNG vẽ", () => {
+  /** ≈ `bang-kpi-noi` 208×220 ở góc trái trên, quy về gốc canvas. */
+  const CAM = [{ trai: 8, phai: 216, tren: 8, duoi: 228 }];
+
+  it("hộp nhãn giao vùng cấm ⇒ bỏ, đếm `soBiChe` VÀ `soBiGiau`; nhãn ngoài vùng vẫn vẽ", () => {
+    const kq = locNhan([nhan35("a", 100, 100), nhan35("b", 600, 300)], { vungCam: CAM });
+    expect(kq.ve.map((v) => v.khoa)).toEqual(["b"]);
+    expect(kq.soBiChe).toBe(1);
+    expect(kq.soBiGiau).toBe(1);
+    expect(kq.soBiChongLap).toBe(0);
+  });
+
+  it("★ nhãn bị che KHÔNG chiếm suất và KHÔNG giữ chỗ giết nhãn khác — cửa che chạy TRƯỚC khử chồng/trần", () => {
+    // a (ưu tiên cao, gần) đè lên vùng cấm; c ngoài vùng cấm nhưng CHỒNG hộp với a.
+    const a = nhan35("a", 200, 100, { khoangCachMet: 1 }); // hộp [125..275]×[78..100] — giao CAM (phai 216 > 125)
+    const c = nhan35("c", 330, 100, { khoangCachMet: 9 }); // hộp [255..405] — chồng a (255 < 275), ngoài CAM
+    const kq = locNhan([a, c], { vungCam: CAM, tranNhan: 1 });
+    expect(kq.ve.map((v) => v.khoa)).toEqual(["c"]);
+    expect(kq.soBiChe).toBe(1);
+    expect(kq.soBiChongLap).toBe(0);
+    expect(kq.soVuotTran).toBe(0);
+  });
+
+  it("chạm MÉP vùng cấm không tính là che — cùng luật `<` của khử chồng", () => {
+    // hộp [216..366]: `trai` = 216 = CAM.phai ⇒ không giao.
+    const kq = locNhan([nhan35("a", 291, 100)], { vungCam: CAM });
+    expect(kq.ve.map((v) => v.khoa)).toEqual(["a"]);
+    expect(kq.soBiChe).toBe(0);
+  });
+
+  it("không truyền `vungCam` ⇒ `soBiChe = 0`, `soVuotMep = 0`, kết quả Y HỆT bản cũ (tương thích ngược)", () => {
+    const ds = nhanRoiNhau(40);
+    const cu = locNhan(ds);
+    const moi = locNhan(ds, { vungCam: [], khungCanvas: undefined });
+    expect(moi.ve).toEqual(cu.ve);
+    expect(cu.soBiChe).toBe(0);
+    expect(cu.soVuotMep).toBe(0);
+    expect(cu.soBatThuongNgoaiKhung).toBe(0);
+  });
+
+  it("★ HẬU ĐIỀU KIỆN: không hộp nào trong `ve` giao BẤT KỲ vùng cấm nào (quét 60 nhãn lưới, 2 vùng cấm)", () => {
+    const cam = [CAM[0], { trai: 700, phai: 1000, tren: 0, duoi: 600 }];
+    const ds = Array.from({ length: 60 }, (_, i) => nhan35(`m:${i}`, (i % 10) * 110 + 40, Math.floor(i / 10) * 60 + 30));
+    const kq = locNhan(ds, { vungCam: cam });
+    for (const v of kq.ve) for (const c of cam) expect(haiHopChongNhau(v.hop, c), v.khoa).toBe(false);
+    expect(kq.soBiChe).toBeGreaterThan(0);
+    expect(kq.soBiGiau).toBe(kq.soBiChe + kq.soBiChongLap + kq.soVuotTran + kq.soNgoaiKhung + kq.soVuotMep);
+  });
+});
+
+describe("★★★ Đợt 35 — hộp nhãn phải TRỌN trong canvas (bỏ biên ±10 %)", () => {
+  const KHUNG = { rong: 1000, cao: 600 };
+
+  it("neo TRONG nhưng hộp thò mép trái / mép trên ⇒ `soVuotMep`, không vẽ; neo giữa ⇒ vẽ", () => {
+    const kq = locNhan(
+      [nhan35("trai", 30, 100), nhan35("tren", 500, 10), nhan35("giua", 500, 300)],
+      { khungCanvas: KHUNG },
+    );
+    expect(kq.ve.map((v) => v.khoa)).toEqual(["giua"]);
+    expect(kq.soVuotMep).toBe(2);
+    expect(kq.soBiGiau).toBe(2);
+    expect(kq.soNgoaiKhung).toBe(0);
+  });
+
+  it("`hopTrongKhung`: chạm mép được tính là TRONG (trai = 0, phai = rộng)", () => {
+    expect(hopTrongKhung({ trai: 0, phai: 1000, tren: 0, duoi: 600 }, KHUNG)).toBe(true);
+    expect(hopTrongKhung({ trai: -0.5, phai: 100, tren: 0, duoi: 22 }, KHUNG)).toBe(false);
+    expect(hopTrongKhung({ trai: 900, phai: 1000.5, tren: 0, duoi: 22 }, KHUNG)).toBe(false);
+    expect(hopTrongKhung({ trai: 0, phai: 100, tren: 590, duoi: 601 }, KHUNG)).toBe(false);
+  });
+
+  it("neo NGOÀI canvas là cờ `ngoaiKhung` của người gọi ⇒ `soNgoaiKhung`, KHÔNG phải `soVuotMep`", () => {
+    const kq = locNhan([nhan35("ngoai", -50, 100, { ngoaiKhung: true }), nhan35("giua", 500, 300)], { khungCanvas: KHUNG });
+    expect(kq.soNgoaiKhung).toBe(1);
+    expect(kq.soVuotMep).toBe(0);
+    expect(kq.ve.map((v) => v.khoa)).toEqual(["giua"]);
+  });
+
+  it("không truyền `khungCanvas` ⇒ không cull theo hộp (hành vi cũ)", () => {
+    const kq = locNhan([nhan35("trai", 30, 100)]);
+    expect(kq.ve.map((v) => v.khoa)).toEqual(["trai"]);
+    expect(kq.soVuotMep).toBe(0);
+  });
+});
+
+describe("★★★ Đợt 35 — SỰ CỐ NGOÀI KHUNG NHÌN: đếm máy bất thường bị cull, KHÔNG đếm máy bị che", () => {
+  it("2 bất thường ngoài khung + 1 bất thường trong + 1 thường ngoài ⇒ 2", () => {
+    const kq = locNhan([
+      nhan35("a", 0, 0, { ngoaiKhung: true, batThuong: true }),
+      nhan35("b", 0, 0, { ngoaiKhung: true, batThuong: true }),
+      nhan35("c", 500, 300, { batThuong: true }),
+      nhan35("d", 0, 0, { ngoaiKhung: true }),
+    ]);
+    expect(kq.soBatThuongNgoaiKhung).toBe(2);
+    expect(kq.soNgoaiKhung).toBe(3);
+    expect(kq.ve.map((v) => v.khoa)).toEqual(["c"]);
+  });
+
+  it("bất thường DƯỚI vùng cấm ⇒ KHÔNG đếm là ngoài khung (máy vẫn trong khung, badge 3D vẫn hiện)", () => {
+    const kq = locNhan([nhan35("a", 100, 100, { batThuong: true })], { vungCam: [{ trai: 8, phai: 216, tren: 8, duoi: 228 }] });
+    expect(kq.soBiChe).toBe(1);
+    expect(kq.soBatThuongNgoaiKhung).toBe(0);
+  });
+
+  it("0 ngoài khung ⇒ 0; và số này KHÔNG bị `chiNhanBatThuong` hay trần làm đổi", () => {
+    const ds = [nhan35("a", 0, 0, { ngoaiKhung: true, batThuong: true }), ...nhanRoiNhau(50)];
+    expect(locNhan(nhanRoiNhau(5)).soBatThuongNgoaiKhung).toBe(0);
+    expect(locNhan(ds, { chiNhanBatThuong: true, tranNhan: 3 }).soBatThuongNgoaiKhung).toBe(1);
+  });
+});
+
+describe("★★★ Đợt 35 — XẾP TẦNG nhãn chồng (đẩy lên ≤ TANG_NHAN_TOI_DA tầng trước khi bỏ)", () => {
+  const CAO = 22;
+  /** Bật `xepTang` như `LopNhan` — mặc định của kit vẫn là luật 3 "chồng ⇒ bỏ" (9 ca phía trên ghim). */
+  const locXT = (ds: NhanUngVien[], cfg: Parameters<typeof locNhan>[1] = {}) => locNhan(ds, { xepTang: true, ...cfg });
+  it("hai nhãn cùng chỗ ⇒ cái ưu tiên cao ở tầng 0, cái kia ĐẨY LÊN tầng 1 (y − (cao + khe)), KHÔNG bị bỏ", () => {
+    const kq = locXT([nhan35("a", 300, 200, { khoangCachMet: 1, caoPx: CAO }), nhan35("b", 300, 200, { khoangCachMet: 9, caoPx: CAO })]);
+    expect(kq.ve.map((v) => [v.khoa, v.tang, v.y])).toEqual([["a", 0, 200], ["b", 1, 200 - (CAO + KHE_TANG_PX)]]);
+    expect(kq.soBiChongLap).toBe(0);
+    expect(demCapChongLap(kq.ve.map((v) => ({ x: v.x, y: v.y, rongPx: 150, caoPx: CAO })))).toBe(0);
+  });
+  it("bốn nhãn cùng chỗ ⇒ tầng 0,1,2 vẽ; cái thứ tư HẾT tầng ⇒ `soBiChongLap`", () => {
+    const ds = ["a", "b", "c", "d"].map((k, i) => nhan35(k, 300, 200, { khoangCachMet: 1 + i, caoPx: CAO }));
+    const kq = locXT(ds);
+    expect(kq.ve.map((v) => v.tang)).toEqual([0, 1, 2]);
+    expect(kq.soBiChongLap).toBe(1);
+    expect(TANG_NHAN_TOI_DA).toBe(2);
+  });
+  it("tầng đẩy lên KHÔNG được thò mép trên canvas, KHÔNG được chui dưới vùng cấm ⇒ khi ấy bỏ", () => {
+    const KHUNG = { rong: 1000, cao: 600 };
+    // neo y=30: hộp [8..30]; tầng 1 ⇒ [−16..6] thò mép ⇒ bỏ.
+    const sat = locXT([nhan35("a", 300, 30, { khoangCachMet: 1 }), nhan35("b", 300, 30, { khoangCachMet: 9 })], { khungCanvas: KHUNG });
+    expect(sat.ve.map((v) => v.khoa)).toEqual(["a"]);
+    expect(sat.soBiChongLap).toBe(1);
+    // vùng cấm ngay trên neo: tầng 1 chui vào vùng cấm ⇒ bỏ.
+    const cam = [{ trai: 0, phai: 1000, tren: 100, duoi: 250 }];
+    const duoiCam = locXT([nhan35("a", 300, 290, { khoangCachMet: 1 }), nhan35("b", 300, 290, { khoangCachMet: 9 })], { vungCam: cam });
+    expect(duoiCam.ve.map((v) => v.khoa)).toEqual(["a"]);
+  });
+  it("★ CA HỒI QUY E4: 12 nóc máy gần cùng hàng ngang, cách 95 px, nhãn 150 px ⇒ ≥ 10/12 vẽ (trước: 5/12)", () => {
+    const ds = Array.from({ length: 12 }, (_, i) => nhan35(`m${i}`, 150 + i * 95, 400, { khoangCachMet: 20 + i }));
+    const kq = locXT(ds, { khungCanvas: { rong: 1288, cao: 683 } });
+    expect(kq.ve.length).toBeGreaterThanOrEqual(10);
+    expect(kq.ve.filter((v) => v.tang > 0).length).toBeGreaterThan(0);
+    expect(demCapChongLap(kq.ve.map((v) => ({ x: v.x, y: v.y, rongPx: 150, caoPx: 22 })))).toBe(0);
+    for (const v of kq.ve) expect(hopTrongKhung(v.hop, { rong: 1288, cao: 683 })).toBe(true);
+  });
+  it("tất định: đảo thứ tự đầu vào ⇒ cùng tầng cho cùng khoá", () => {
+    const ds = ["a", "b", "c"].map((k, i) => nhan35(k, 300, 200, { khoangCachMet: 1 + i }));
+    const x = locXT(ds).ve.map((v) => `${v.khoa}:${v.tang}`);
+    const y = locXT([...ds].reverse()).ve.map((v) => `${v.khoa}:${v.tang}`);
+    expect(x).toEqual(y);
+  });
+});
+
+describe("★ Đợt 35 — `xepTang` mặc định TẮT: luật 3 cũ nguyên vẹn cho người gọi không bật", () => {
+  it("hai nhãn cùng chỗ, không bật ⇒ cái ưu tiên thấp bị BỎ (soBiChongLap 1), tang luôn 0", () => {
+    const kq = locNhan([nhan35("a", 300, 200, { khoangCachMet: 1 }), nhan35("b", 300, 200, { khoangCachMet: 9 })]);
+    expect(kq.ve.map((v) => [v.khoa, v.tang])).toEqual([["a", 0]]);
+    expect(kq.soBiChongLap).toBe(1);
   });
 });

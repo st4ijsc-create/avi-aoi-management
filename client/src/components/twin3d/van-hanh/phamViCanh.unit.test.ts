@@ -7,8 +7,16 @@
  *   không lưu được).
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { bboxRong, bboxTuDiem } from "../heToaDo";
 import {
+  FOV_DOC_MAC_DINH,
+  LE_KHOP_KHUNG_PX,
+  chieuNdc,
+  dinhBBox,
+  khopKhungNhin,
+  lotKhung,
   DO_MO_NGOAI_PHAM_VI,
   HE_SO_CAO,
   HE_SO_LUI,
@@ -377,5 +385,103 @@ describe("★★★ Đợt 33 — khungNhinTuCamera: `?cam=` của deep-link tr�
     );
     expect(theoCap).not.toBeNull();
     expect(a.viTri).not.toEqual(theoCap!.viTri);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 35 (Pareto #5) — KHỚP KHUNG: 12/12 MÁY + CỘT WIP LỌT FRUSTUM, CHỪA LỀ NHÃN */
+/* ══════════════════════════════════════════════════════════════════════════ */
+describe("★★★ Đợt 35 — khớp khung theo canvas THẬT (khungNhinLine + khung)", () => {
+  /**
+   * Chuyền 2 THẬT (`twin_dat_cho` đo 2026-09-10): 12 máy x = 5,45 → 32,95 m, z = 14,8 m,
+   * khối ~1,2×1,6×1,2 m; cột WIP (`OngWip`) từ sàn tới `CAO_TOI_DA_M` = 6 m.
+   */
+  const BBOX_L2 = { minX: 4.85, maxX: 33.55, minY: 0, maxY: 1.6, minZ: 14.2, maxZ: 15.4 };
+  const BBOX_L2_WIP = { ...BBOX_L2, maxY: 6 };
+  /** Canvas `/twin/line/2` đo DOM: 1288×683 @1600×900 · 968×488 @1280×720. */
+  const K1600 = { rongPx: 1288, caoPx: 683 };
+  const K1280 = { rongPx: 968, caoPx: 488 };
+  const dist = (k: { viTri: number[]; muc: number[] }) => Math.hypot(k.viTri[0] - k.muc[0], k.viTri[1] - k.muc[1], k.viTri[2] - k.muc[2]);
+
+  it("chieuNdc: mục ⇒ (0,0) · sau lưng ⇒ null · lệch +X khi nhìn về −Z ⇒ x>0 · cao hơn ⇒ y>0", () => {
+    const vt = [0, 5, 10] as const;
+    const muc = [0, 0, 0] as const;
+    const o = chieuNdc({ x: 0, y: 0, z: 0 }, vt, muc, 45, 1.5)!;
+    expect(o.x).toBeCloseTo(0, 9);
+    expect(o.y).toBeCloseTo(0, 9);
+    expect(o.sau).toBeCloseTo(Math.hypot(5, 10), 9);
+    expect(chieuNdc({ x: 0, y: 5, z: 20 }, vt, muc, 45, 1.5)).toBeNull();
+    expect(chieuNdc({ x: 3, y: 0, z: 0 }, vt, muc, 45, 1.5)!.x).toBeGreaterThan(0);
+    expect(chieuNdc({ x: 0, y: 3, z: 0 }, vt, muc, 45, 1.5)!.y).toBeGreaterThan(0);
+    // Tỉ lệ rộng hơn ⇒ cùng điểm cho |x| NHỎ hơn (khung ngang rộng hơn).
+    expect(Math.abs(chieuNdc({ x: 3, y: 0, z: 0 }, vt, muc, 45, 2.5)!.x)).toBeLessThan(Math.abs(chieuNdc({ x: 3, y: 0, z: 0 }, vt, muc, 45, 1.5)!.x));
+  });
+
+  it("★★★ ĐỐI CHỨNG — công thức CŨ (không khung) để đỉnh chuyền 2 RA NGOÀI ở CẢ hai tỉ lệ (lưới biết kêu)", () => {
+    const cu = khungNhinLine(BBOX_L2_WIP, "X", true)!;
+    expect(lotKhung(dinhBBox(BBOX_L2_WIP), cu.viTri, cu.muc, K1600)).toBe(false);
+    expect(lotKhung(dinhBBox(BBOX_L2_WIP), cu.viTri, cu.muc, K1280)).toBe(false);
+    // ngay cả không WIP, 27 m chuyền vẫn không lọt với camera ~10 m.
+    expect(lotKhung(dinhBBox(BBOX_L2), cu.viTri, cu.muc, K1600)).toBe(false);
+  });
+
+  it("★★★ có khung ⇒ 8 đỉnh (kèm WIP 6 m) lọt với lề 100 px ở 1600 VÀ 1280", () => {
+    for (const K of [K1600, K1280]) {
+      const moi = khungNhinLine(BBOX_L2_WIP, "X", true, K)!;
+      expect(lotKhung(dinhBBox(BBOX_L2_WIP), moi.viTri, moi.muc, K), `khung ${K.rongPx}x${K.caoPx}`).toBe(true);
+      for (const v of [...moi.viTri, ...moi.muc]) expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it("hướng nhìn GIỮ NGUYÊN: vẫn lệch theo trục phụ Z (không theo X), tỉ số cao/lùi như cũ; chỉ khoảng cách đổi", () => {
+    const cu = khungNhinLine(BBOX_L2_WIP, "X", true)!;
+    const moi = khungNhinLine(BBOX_L2_WIP, "X", true, K1600)!;
+    expect(moi.viTri[0]).toBeCloseTo(moi.muc[0], 6);
+    expect(moi.viTri[2]).toBeGreaterThan(moi.muc[2]);
+    expect(moi.muc).toEqual(cu.muc);
+    expect(moi.banKinh).toBe(cu.banKinh);
+    const tiSo = (k: { viTri: number[]; muc: number[] }) => (k.viTri[1] - k.muc[1]) / (k.viTri[2] - k.muc[2]);
+    expect(tiSo(moi)).toBeCloseTo(tiSo(cu), 6);
+    expect(dist(moi)).toBeGreaterThan(dist(cu));
+  });
+
+  it("khớp là khoảng cách NHỎ NHẤT còn lọt: tiến 3 % ⇒ không lọt, lùi 3 % ⇒ vẫn lọt", () => {
+    const moi = khungNhinLine(BBOX_L2_WIP, "X", true, K1600)!;
+    const d = dist(moi);
+    const u = [0, 1, 2].map((i) => (moi.viTri[i] - moi.muc[i]) / d);
+    const tai = (s: number) => [moi.muc[0] + u[0] * s, moi.muc[1] + u[1] * s, moi.muc[2] + u[2] * s] as [number, number, number];
+    expect(lotKhung(dinhBBox(BBOX_L2_WIP), tai(d * 0.97), moi.muc, K1600)).toBe(false);
+    expect(lotKhung(dinhBBox(BBOX_L2_WIP), tai(d * 1.03), moi.muc, K1600)).toBe(true);
+  });
+
+  it("cột WIP 6 m làm camera XA hơn bbox không WIP — cột không xuyên mép trên", () => {
+    const khongWip = khungNhinLine(BBOX_L2, "X", true, K1600)!;
+    const coWip = khungNhinLine(BBOX_L2_WIP, "X", true, K1600)!;
+    expect(dist(coWip)).toBeGreaterThan(dist(khongWip));
+    expect(lotKhung(dinhBBox(BBOX_L2_WIP), khongWip.viTri, khongWip.muc, K1600)).toBe(false);
+  });
+
+  it("lề lớn hơn ⇒ xa hơn; cùng đầu vào ⇒ cùng đầu ra (tất định); trục KHÔNG đáng tin cũng được khớp", () => {
+    const le100 = khungNhinLine(BBOX_L2_WIP, "X", true, K1600)!;
+    const le0 = khungNhinLine(BBOX_L2_WIP, "X", true, { ...K1600, lePx: 0 })!;
+    expect(dist(le100)).toBeGreaterThan(dist(le0));
+    expect(khungNhinLine(BBOX_L2_WIP, "X", true, K1600)).toEqual(le100);
+    const chung = khungNhinLine(BBOX_L2_WIP, "X", false, K1600)!;
+    expect(lotKhung(dinhBBox(BBOX_L2_WIP), chung.viTri, chung.muc, K1600)).toBe(true);
+    expect(chung.viTri[0]).toBeGreaterThan(chung.muc[0]); // vẫn là khung nhìn CHUNG (chéo), chỉ xa hơn
+  });
+
+  it("bbox rỗng ⇒ null; khung không hợp lệ ⇒ trả gốc nguyên vẹn, không NaN", () => {
+    expect(khungNhinLine(bboxRong(), "X", true, K1600)).toBeNull();
+    const goc = khungNhinLine(BBOX_L2_WIP, "X", true)!;
+    expect(khopKhungNhin(BBOX_L2_WIP, goc, { rongPx: 0, caoPx: 0 })).toEqual(goc);
+    expect(khopKhungNhin(bboxRong(), goc, K1600)).toEqual(goc);
+  });
+
+  it("★ FOV 45 là số THẬT của `KhungCanh` (đọc văn bản, G91); lề ≥ nửa nhãn rộng nhất đo được (198/2)", () => {
+    const nguon = readFileSync(resolve(__dirname, "../loi/KhungCanh.tsx"), "utf8");
+    expect(nguon).toMatch(/fov = 45\b/);
+    expect(FOV_DOC_MAC_DINH).toBe(45);
+    expect(LE_KHOP_KHUNG_PX).toBeGreaterThanOrEqual(99);
   });
 });

@@ -206,11 +206,15 @@ describe("★★★ ⑤ Cột WIP 3D và dải trạm 2D KHÔNG THỂ lệch nha
 /* ══════════════════════════════════════════════════════════════════════════ */
 
 describe("★★★ ⑥ Camera bay DỌC chuyền, dùng `khungNhinLine` (không `khungNhinCho`)", () => {
-  it("`khungNhin` gọi `khungNhinLine(hinhLine.hh.bbox, ...truc, ...trucDangTin)`", () => {
-    const t = than("khungNhin");
+  it("`khungNhinTho` gọi `khungNhinLine(bboxKemCotWip(hinhLine.hh.bbox, cotWipCanh), ...truc, ...trucDangTin, khung)` (Đợt 35 #5)", () => {
+    const t = than("khungNhinTho");
     expect(t).toContain("khungNhinLine(");
     expect(t).toContain("hinhLine.hh.truc");
     expect(t).toContain("hinhLine.hh.trucDangTin");
+    // ★ Đợt 35: bbox KÈM cột WIP (cột 6 m xuyên mép trên nếu chỉ bbox máy) + KHUNG canvas thật.
+    expect(t).toContain("bboxKemCotWip(hinhLine.hh.bbox, cotWipCanh)");
+    expect(t).toContain("kichThuocKhung ?? undefined");
+    expect(t).not.toContain("khungNhinLine(hinhLine.hh.bbox");
     /*
      * ★★★ ĐỘT BIẾN: bỏ `trucDangTin` (truyền `true` cứng). `khungNhinLine` rơi
      *   về `khungNhinCho(bbox,"line")` khi trục KHÔNG đáng tin
@@ -218,7 +222,20 @@ describe("★★★ ⑥ Camera bay DỌC chuyền, dùng `khungNhinLine` (không
      *   sai** trên chuyền có trạm rải lộn xộn: người xem nhìn ngang qua chuyền
      *   thay vì xuôi dòng, và **không gì nổ**.
      */
-    expect(t).not.toMatch(/khungNhinLine\([^)]*,\s*true\s*\)/);
+    expect(t).not.toMatch(/khungNhinLine\([^)]*,\s*true\s*[,)]/);
+  });
+
+  it("★★★ Đợt 35 — `khungNhin` ỔN ĐỊNH THEO GIÁ TRỊ: `DieuKhien` tween theo THAM CHIẾU, không so giá trị", () => {
+    /*
+     * `hinhLine`/`cotWipCanh` dựng lại mỗi nhịp làm mới ⇒ đối tượng khung nhìn mới ⇒ camera bay lại
+     * về CÙNG chỗ mỗi nhịp (giật camera vừa xoay, ~30 khung/lần khi đứng yên — một phần Pareto #6).
+     * Trang phải khoá theo toạ độ và chỉ đổi đối tượng khi GIÁ TRỊ đổi.
+     */
+    expect(MA).toMatch(/const khungNhin = useMemo\(\(\) => khungNhinTho, \[khoaKhungNhin\]\)/);
+    expect(MA).toMatch(/khungNhinTho\.viTri\.map\(\(v\) => v\.toFixed\(3\)\)/);
+    // Khung canvas đo bằng ResizeObserver trên khung chứa canvas, không đoán.
+    expect(MA).toMatch(/ref=\{khungCanhRef\}/);
+    expect(MA).toMatch(/datKichThuocKhung\(/);
   });
 
   it("★★★ `hinhLine` dựng bằng `dungHinhLine`, `thuocVe` là `mayTatCa` (không `mayLine`)", () => {

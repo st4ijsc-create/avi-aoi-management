@@ -1265,6 +1265,19 @@ export function ThanTwinVanHanh() {
   }, [mayVanHanh, mayVe, canhQ.data]);
 
   /* ── Nhãn thế giới ──────────────────────────────────────────────────── */
+  /*
+   * ★★★ Đợt 35 (Pareto #5) — máy có andon MỞ ⇒ nhãn `batThuong` (NT-2 cho luật ưu tiên nhãn + chip
+   *   "N sự cố ngoài khung"). Đọc thẳng `andonQ.data` vì `andonRows` khai ở dưới (thứ tự hook).
+   */
+  const andonTheoMay = useMemo(
+    () =>
+      new Set(
+        ((andonQ.data ?? []) as Array<{ machineId: number | null; status: string }>)
+          .filter((a) => a.status !== "resolved" && a.machineId != null)
+          .map((a) => a.machineId as number),
+      ),
+    [andonQ.data],
+  );
   const nhan = useMemo<NhanTheGioi[]>(
     /*
      * ★ T-4 — `dungNhanMay` neo nhãn qua `neoTrenNoc`, hàm CHỈ cộng chiều cao
@@ -1279,8 +1292,9 @@ export function ThanTwinVanHanh() {
         maTheoMay,
         mauChoTrangThai,
         t,
+        andonTheoMay,
       }),
-    [mayVe, trangThaiTheoMay, maTheoMay, t],
+    [mayVe, trangThaiTheoMay, maTheoMay, t, andonTheoMay],
   );
 
   /**
@@ -2910,6 +2924,8 @@ export function ThanTwinVanHanh() {
             (thuTrai ? "w-0 border-r-0" : "w-56 2xl:w-72")
           }
           data-testid="panel-trai"
+          /* ★ Đợt 35 (Pareto #5): panel NỔI ĐÈ canvas tự khai — `LopNhan` không vẽ nhãn dưới nó. */
+          data-che-nhan="1"
           data-thu={thuTrai ? "1" : "0"}
           aria-hidden={thuTrai}
           hidden={thuTrai}
@@ -3153,6 +3169,10 @@ export function ThanTwinVanHanh() {
               chuNhanAn={(n) =>
                 t("twin3d.vanHanh.nhanBiAn", "còn {{n}} tên bị ẩn", { n })
               }
+              /* ★ Đợt 35 (Pareto #5): chip "N sự cố ngoài khung" — máy bất thường ngoài frustum (NT-2). */
+              chuSuCoNgoaiKhung={(n) =>
+                t("twin3d.vanHanh.suCoNgoaiKhung", "{{n}} sự cố ngoài khung", { n })
+              }
               /* ★ ĐỢT 24 VIỆC 2 — chỗ gọi THẬT của `chiNhanBatThuong`. Trước
                  dòng này `grep` ra 0 người truyền `true` (G16). */
               chiNhanBatThuong={chiNhanBatThuong}
@@ -3311,6 +3331,7 @@ export function ThanTwinVanHanh() {
           <div
             className="pointer-events-auto absolute inset-x-0 bottom-0 z-30 border-t bg-background/95 backdrop-blur-sm"
             data-testid="lop-phu-dong-thoi-gian"
+            data-che-nhan="1"
           >
             <DongThoiGian
               moc={mocTua}
@@ -3341,6 +3362,7 @@ export function ThanTwinVanHanh() {
             (thuPhai ? "w-0 border-l-0" : "w-64 2xl:w-80")
           }
           data-testid="panel-phai"
+          data-che-nhan="1"
           data-thu={thuPhai ? "1" : "0"}
           aria-hidden={thuPhai}
           hidden={thuPhai}

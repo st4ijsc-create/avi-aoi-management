@@ -100,6 +100,8 @@ export function BangKpiNoi({ kpi, dangTai = false, mo, onDoiMo, nhanPhamVi }: Ba
     <div
       className="pointer-events-none absolute left-2 top-2 z-30 w-max min-w-[13rem] max-w-[min(20rem,calc(100%-1rem))]"
       data-testid="bang-kpi-noi"
+      /* ★ Đợt 35 (Pareto #5): lớp phủ ĐÈ canvas tự khai — `LopNhan` không vẽ nhãn dưới nó. */
+      data-che-nhan="1"
       data-mo={mo ? "1" : "0"}
       data-mau-so={kpi.mauSo}
       data-mau-so-oee={kpi.mauSoOee}
