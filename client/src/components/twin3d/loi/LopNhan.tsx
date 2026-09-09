@@ -222,8 +222,33 @@ export function LopNhan({
 
   if (tat || (hienThi.length === 0 && soAn === 0)) return null;
 
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 31 — LỚP `fullscreen` PHẢI NEO VÀO TÂM CANVAS, KHÔNG VÀO HÌNH
+   *     CHIẾU CỦA CHÍNH `<Html>` (gốc toạ độ cảnh)
+   * ════════════════════════════════════════════════════════════════════════
+   * drei `Html` (10.7.7, `web/Html.js:178`) với `fullscreen` đặt lớp ở
+   * `top: -h/2, left: -w/2` QUANH điểm `calculatePosition(el, camera, size)`,
+   * mặc định = hình chiếu của `<Html>` này — tức gốc (0,0,0) của cảnh. Lớp chỉ
+   * trùng canvas khi gốc ấy tình cờ chiếu đúng TÂM canvas. Mọi `left/top` của
+   * từng nhãn ở dưới được tính từ phép chiếu riêng theo `size` ⇒ chúng là toạ
+   * độ TRONG CANVAS, và chỉ đúng khi lớp = canvas.
+   *
+   * Đo được 2026-09-09 (`dist`, 1600×900, `e2e_tai_loE`, bbox DOM thật):
+   *   /twin           lớp (231,111) vs canvas (288,207) ⇒ 13/13 nhãn LỆCH (−57,−96) px
+   *                   khỏi máy của nó — "trong khung" nhưng không ở trên máy
+   *   /twin/line/2    lớp (−496,−322) ⇒ 3/3 nhãn đo được có y ÂM — ngoài màn
+   *   /twin/may/14    lớp (386,5) vs canvas (288,125) ⇒ nhãn nóc y=34, ngoài khung
+   * Ở cả ba màn `soNhan`/`toBeVisible()`/`__demNhan` đều XANH — chỉ bbox + ảnh
+   * bắt được (G41). ⇒ Trả về TÂM canvas để lớp = canvas, ở mọi tư thế camera.
+   */
   return (
-    <Html fullscreen zIndexRange={[20, 0]} style={{ pointerEvents: "none", userSelect: "none" }}>
+    <Html
+      fullscreen
+      calculatePosition={(_el, _camera, size) => [size.width / 2, size.height / 2]}
+      zIndexRange={[20, 0]}
+      style={{ pointerEvents: "none", userSelect: "none" }}
+    >
       {/* ★ `data-testid` phải nằm trên phần tử DOM BÊN TRONG `<Html>`, KHÔNG trên
           chính `<Html>`. R3F coi mọi prop lạ trên phần tử trong cây Canvas là
           ĐƯỜNG DẪN thuộc tính three.js và tách theo dấu `-`, nên `data-testid`
