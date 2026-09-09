@@ -113,6 +113,19 @@ const NGAN_XU_LY = readFileSync(
   resolve(GOC, "src/components/twin3d/van-hanh/NganXuLy.tsx"),
   "utf8",
 );
+/*
+ * ★★★ ĐỢT 27 T-3 — phép ĐỌC/GHI ngăn đã TÁCH sang `useTrangThaiTwin.ts`.
+ *
+ * Trang vẫn TRUYỀN ba móc xuống `NganXuLy` (ca ngay dưới vẫn đo trên `TRANG`);
+ * cái chuyển chỗ là **thân** của `nganNhung`/`ghiXem`. Hai ca dưới đo trên tệp
+ * MỚI chứ không nới lỏng: vẫn đúng hai câu hỏi cũ — *trạng thái ngăn có ở URL
+ * không* và *có `push` không*. Đo sai tệp thì lưới XANH trong khi tính năng đã
+ * chết, đúng lớp lỗi mà tầng 1 này sinh ra để bắt.
+ */
+const TRANG_THAI_TWIN = readFileSync(
+  resolve(GOC, "src/components/twin3d/van-hanh/useTrangThaiTwin.ts"),
+  "utf8",
+);
 
 /** Quyền ĐỦ để mọi nút hiện — ca rỗng quyền chứng minh số 0, không dùng ở đây. */
 const QUYEN_DU: QuyenXuLy = {
@@ -153,14 +166,20 @@ describe("TẦNG 1 — chỗ nối văn bản (G16)", () => {
 
   it("★★★ TwinVanHanh.tsx ĐỌC ngăn từ URL và GHI ngăn vào URL", () => {
     // Trạng thái ngăn phải ở URL, không ở useState — nếu không, F5 mất ngăn.
-    expect(TRANG).toContain("docXemTuQuery(search)");
-    expect(TRANG).toContain("tronXemVaoQuery(window.location.search, ngan)");
+    expect(TRANG_THAI_TWIN).toContain("docXemTuQuery(search)");
+    expect(TRANG_THAI_TWIN).toContain("tronXemVaoQuery(window.location.search, ngan)");
+    // ★ và trang PHẢI còn gọi hook đó — nếu không, hai câu trên đo một tệp mồ côi.
+    expect(TRANG).toContain("useTrangThaiTwin(search, setLocation)");
   });
 
   it("★ ghi ngăn dùng setLocation (push) ⇒ nút Back của trình duyệt ĐÓNG ngăn", () => {
     // "có phím back cũng được" của chủ sở hữu — miễn phí nhờ trạng thái ở URL.
-    const khoi = TRANG.slice(TRANG.indexOf("const ghiXem"), TRANG.indexOf("const moTaiCho"));
-    expect(khoi).toContain("setLocation(");
+    const khoi = TRANG_THAI_TWIN.slice(
+      TRANG_THAI_TWIN.indexOf("const ghiXem"),
+      TRANG_THAI_TWIN.indexOf("const doiPhamVi"),
+    );
+    // `dieuHuong` LÀ `setLocation` của trang — trang truyền nó vào (ca trên ghim).
+    expect(khoi).toContain("dieuHuong(");
     expect(khoi).not.toContain("replaceState");
   });
 

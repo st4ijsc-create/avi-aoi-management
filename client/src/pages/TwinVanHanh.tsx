@@ -91,14 +91,9 @@ import {
 import { DaiLine } from "@/components/twin3d/van-hanh/DaiLine";
 import { xuatUsd, type KetQuaXuatUsd } from "@/components/twin3d/van-hanh/xuatUsd";
 import type { CanhBaoTheGioi, MucCanhBao } from "@/components/twin3d/van-hanh/LopCanhBao";
-import {
-  docTrangThaiUrl,
-  ghiCamera,
-  kieuGhiLichSu,
-  tronTrangThaiUrl,
-  type PhamVi,
-  type ThayDoiTwinUrl,
-} from "@/components/twin3d/van-hanh/duongDanTwin";
+import { ghiCamera, type PhamVi } from "@/components/twin3d/van-hanh/duongDanTwin";
+// ── T-3 (§15.5.2) — vỏ React của trạng thái URL, dùng chung cho CẢ BA MÀN ──
+import { useTrangThaiTwin } from "@/components/twin3d/van-hanh/useTrangThaiTwin";
 // ── Đợt 10 lô F (§11e.6 F1/F2/F3) — bộ chọn Nhà máy/Toà/Tầng ──────────────
 import {
   phamViThuc,
@@ -160,9 +155,7 @@ import { NganMoPhong } from "@/components/twin3d/van-hanh/NganMoPhong";
 // ── Đợt 10 mục 5 (lô G) — xem chi tiết TẠI CHỖ, trạng thái ngăn ở khoá `?xem=` ──
 import {
   cauChoLyDoNgan,
-  docXemTuQuery,
   lyDoNganNhung,
-  tronXemVaoQuery,
   type NganNhungMo,
 } from "@/components/twin3d/van-hanh/nhungTaiCho";
 // ── Đợt 6 (§9.8/§10.2) — kho trạng thái DÙNG CHUNG cho trực tiếp và tua lại ──
@@ -303,57 +296,28 @@ export default function TwinVanHanh() {
   /* Trạng thái từ URL (§9.4)                                                */
   /* ═══════════════════════════════════════════════════════════════════════ */
 
-  const urlState = useMemo(() => docTrangThaiUrl(search), [search]);
+  /*
+   * ★★★ T-3 (§15.5.2) — TRẠNG THÁI URL ĐÃ TÁCH RA `useTrangThaiTwin`.
+   *
+   * Hook đó là **vỏ React thuần** quanh `duongDanTwin.ts` + `nhungTaiCho.ts`.
+   * Nó **KHÔNG tự gọi `useSearch()`** — trang này (thứ DUY NHẤT biết mình đứng
+   * ở route nào) gọi `useSearch()` ở `:253` rồi TRUYỀN XUỐNG. Đó là **G37**:
+   * `RobotCockpit`/`StationAnalysis` từng tự đọc route, và khi bị nhúng ngoài
+   * route của chúng thì `id = NaN` **không exception nào nổ**.
+   *
+   * ⇒ Nhờ vậy hook dùng được cho **cả ba màn** của QĐ-19 (`/twin`,
+   *   `/twin/line/:id`, `/twin/may/:id`) mà không màn nào đọc nhầm query của
+   *   màn khác. Lý lẽ đầy đủ ở docblock đầu `useTrangThaiTwin.ts`.
+   *
+   * ★ Ngăn chi tiết (`?xem=machine:42`) sống trong URL chứ không trong
+   *   `useState`: F5 giữa lúc đang xem mà mất ngăn là đúng nỗi bất tiện chủ sở
+   *   hữu than phiền, chỉ đổi nguyên nhân. Và vì trạng thái ở URL, **nút Back
+   *   của trình duyệt đóng ngăn** — miễn phí.
+   */
+  const { urlState, nganNhung, ghiUrl, ghiXem, doiPhamVi, doiThu } =
+    useTrangThaiTwin(search, setLocation);
   const phamViYeuCau = urlState.phamVi ?? PHAM_VI_MAC_DINH;
   const machineIdChon = urlState.chon?.loai === "machine" ? urlState.chon.id : null;
-
-  /**
-   * Ghi trạng thái vào URL. `push` khi đổi phạm vi/chọn (nút Back quay lại cấp
-   * trước), `replace` khi chỉ xoay camera — xoay sinh hàng trăm sự kiện mỗi
-   * giây và đẩy hết vào history làm nút Back vô dụng (§9.4).
-   */
-  const ghiUrl = useCallback(
-    (thayDoi: ThayDoiTwinUrl) => {
-      const qs = tronTrangThaiUrl(window.location.search, thayDoi);
-      const url = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
-      if (kieuGhiLichSu(thayDoi) === "push") setLocation(url);
-      else window.history.replaceState(null, "", url);
-    },
-    [setLocation],
-  );
-
-  /* ═══════════════════════════════════════════════════════════════════════ */
-  /* ★★★ ĐỢT 10 MỤC 5 (lô G) — XEM CHI TIẾT **TẠI CHỖ**, KHÔNG REDIRECT      */
-  /* ═══════════════════════════════════════════════════════════════════════ */
-  /*
-   * Yêu cầu chủ sở hữu: *"xem chi tiết của máy/Line không sử dụng redirect
-   * chuyển trang để xem rất bất tiện … cần dialog hoặc modal … và có phím back
-   * … để ng dùng không cần rời màn hình 3D digital Twin"*.
-   *
-   * Trước đợt này `onDieuHuong={setLocation}` (dưới) làm mọi nút "Mở chức năng"
-   * **rời hẳn `/twin`**. Ba móc dưới đây là toàn bộ chỗ nối.
-   *
-   * ★ Ngăn mở sống trong URL (`?xem=machine:42`) chứ không trong `useState`:
-   *   F5 giữa lúc đang xem chi tiết mà mất ngăn là đúng nỗi bất tiện chủ sở hữu
-   *   than phiền, chỉ đổi nguyên nhân. `docXemTuQuery`/`tronXemVaoQuery`
-   *   (`nhungTaiCho.ts`) dùng khoá RIÊNG `xem=` và giữ nguyên mọi tham số khác,
-   *   nên chúng KHÔNG đụng `pv/chon/cam/lop/tg` của `tronTrangThaiUrl` — mở ngăn
-   *   không làm mất phạm vi hay góc camera.
-   *
-   * ★ `push`, không `replace`: mở ngăn chi tiết LÀ "đi tới một chỗ khác", nên
-   *   **nút Back của trình duyệt đóng ngăn** — đúng "có phím back cũng được"
-   *   của yêu cầu, và nó có sẵn miễn phí nhờ đặt trạng thái vào URL.
-   */
-  const nganNhung = useMemo(() => docXemTuQuery(search), [search]);
-
-  const ghiXem = useCallback(
-    (ngan: NganNhungMo | null) => {
-      const qs = tronXemVaoQuery(window.location.search, ngan);
-      setLocation(`${window.location.pathname}${qs ? `?${qs}` : ""}`);
-    },
-    [setLocation],
-  );
-
   const moTaiCho = useCallback((ngan: NganNhungMo) => ghiXem(ngan), [ghiXem]);
   const dongNhung = useCallback(() => ghiXem(null), [ghiXem]);
 
@@ -2260,19 +2224,11 @@ export default function TwinVanHanh() {
     [ghiUrl],
   );
 
-  const doiPhamVi = useCallback((pv: PhamVi) => ghiUrl({ phamVi: pv }), [ghiUrl]);
-
   /* ── ★★★ F4 — THU/MỞ PANEL BÊN, trạng thái ở URL ─────────────────────── */
+  /* `doiPhamVi`/`doiThu` đến từ `useTrangThaiTwin` (T-3) — KHÔNG định nghĩa
+     lại ở đây, đó sẽ là bản cài đặt thứ hai của cùng một phép ghi (G12). */
   const thuTrai = urlState.thu.includes("trai");
   const thuPhai = urlState.thu.includes("phai");
-  const doiThu = useCallback(
-    (ten: string) => {
-      const hienTai = docTrangThaiUrl(window.location.search).thu;
-      const moi = hienTai.includes(ten) ? hienTai.filter((x) => x !== ten) : [...hienTai, ten];
-      ghiUrl({ thu: moi });
-    },
-    [ghiUrl],
-  );
 
 
   /**
