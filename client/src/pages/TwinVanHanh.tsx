@@ -97,6 +97,7 @@ import { ghiCamera, type PhamVi } from "@/components/twin3d/van-hanh/duongDanTwi
 import { useTrangThaiTwin } from "@/components/twin3d/van-hanh/useTrangThaiTwin";
 import { useMoPhongTwin } from "@/components/twin3d/van-hanh/useMoPhongTwin";
 import { usePhanTichLine } from "@/components/twin3d/van-hanh/usePhanTichLine";
+import { useTrangThaiSong } from "@/components/twin3d/van-hanh/useTrangThaiSong";
 // ── Đợt 10 lô F (§11e.6 F1/F2/F3) — bộ chọn Nhà máy/Toà/Tầng ──────────────
 import {
   phamViThuc,
@@ -555,67 +556,24 @@ export default function TwinVanHanh() {
   );
 
   /**
-   * Trạng thái sống + OEE + andon (hợp đồng `factoryCommand.overview`).
+   * ★★★ T-1 TẦNG 2 (§15.5.2 / Đợt 28) — BỐN TRUY VẤN TRẠNG THÁI LIVE ĐÃ TÁCH.
    *
-   * ★★★ #51 — nhịp ĐẦY ĐỦ 5 s ↔ 30 s. Đây là truy vấn tổng quan, cùng hạng với
-   *   `machineStatus.listWithStatus` mà `FactoryLiveMap3D.tsx:68` áp luật này.
-   */
-  const overviewQ = trpc.factoryCommand.overview.useQuery(
-    { factoryId: factoryId ?? undefined },
-    { enabled: factoryId !== null, retry: false, refetchInterval: nhipTongQuanMs },
-  );
-
-  /**
-   * Cảnh báo đang mở — nguồn cho badge 3D và cho `NganXuLy`.
+   * ⚠⚠⚠ **TẦNG NÀY MANG BẤT BIẾN AN TOÀN.** `andon.active` và
+   *   `twinCanh.anToanRobot` có **TRẦN 20 s**, `sucKhoeMay` có trần 60 s. Luật
+   *   (Đợt 8): nhịp thích nghi **chỉ được RÚT NGẮN, không được KÉO DÀI** —
+   *   *"an toàn không được chậm đi vì một tối ưu"*.
    *
-   * ★★★ #51 CÓ TRẦN 20 s — và trần này KHÔNG phải sự thận trọng thừa.
-   *   `nhipHoiMs(true)` = 30 s. Áp thẳng nó vào đây sẽ làm truy vấn cảnh báo
-   *   **CHẬM ĐI** (20 → 30 s) mỗi khi socket khoẻ — một hồi quy an toàn đội lốt
-   *   "nối tính năng #51". Luật đúng: nhịp thích nghi chỉ được rút NGẮN.
+   * ★ Trần nay là HẰNG CÓ TÊN (`TRAN_NHIP_AN_TOAN_MS` / `TRAN_NHIP_SUC_KHOE_MS`)
+   *   trong `useTrangThaiSong.ts`, không còn là số rải rác ở chỗ gọi. Nhờ vậy
+   *   `nhipAnToan.unit.test.ts` đo được **GIÁ TRỊ THẬT** mà react-query nhận,
+   *   thay vì đếm chính tả một dòng mã — phép đo cũ chết khi mã dời nhà và mù
+   *   với cách viết khác.
    */
-  const andonQ = trpc.andon.active.useQuery(undefined, {
-    retry: false,
-    refetchInterval: nhipHoiToiDa(coLuongDay, 20_000),
+  const { overviewQ, andonQ, anToanQ, sucKhoeQ } = useTrangThaiSong({
+    factoryId,
+    coLuongDay,
+    nhipTongQuanMs,
   });
-
-  /**
-   * ★★★ §11 #26 — NGUỒN DỮ LIỆU AN TOÀN (E-STOP). Đây là ô đã đóng nợ Đợt 6.
-   *
-   * ★ Nhịp làm mới 20 s, BẰNG `andonQ` chứ không bằng `overviewQ` (30 s): E-STOP
-   *   cùng hạng với cảnh báo đang mở, không cùng hạng với số liệu tổng quan.
-   *   ★★★ #51 giữ nguyên bất biến đó qua `nhipHoiToiDa(_, 20_000)`: socket chết
-   *   thì rút về 5 s, socket khoẻ thì ở lại 20 s — KHÔNG bao giờ trôi lên 30 s.
-   */
-  const anToanQ = trpc.twinCanh.anToanRobot.useQuery(
-    { factoryId: factoryId ?? 0 },
-    { enabled: factoryId !== null, retry: false, refetchInterval: nhipHoiToiDa(coLuongDay, 20_000) },
-  );
-
-  /*
-   * ════════════════════════════════════════════════════════════════════════
-   * ★★★ ĐỢT 21 — A-4 SỨC KHOẺ MÁY LÊN CẢNH (hạ tầng của lô Z, nối ở đây)
-   * ════════════════════════════════════════════════════════════════════════
-   * Lô Z dựng `sucKhoeMay.ts` (+ `LopVienSucKhoe` trong `CanhVanHanh`) nhưng
-   * **cố ý không chạm tệp này** vì lô Y giữ độc quyền. Hệ quả đúng luật, nhưng
-   * cũng là **G16 nguyên bản**: hạ tầng có, `grep` ra **0 chỗ gọi** ⇒ tính năng
-   * chưa tồn tại với người dùng. Dòng dưới đây là chỗ gọi ấy.
-   *
-   * ★ Số đo lô Z gửi kèm (dùng lại, không đo lần hai):
-   *     `machine_health_history` **180.800 hàng**, **43/43 máy có hàng**,
-   *     42/43 tươi trong 24 h, **0/180.800 NULL** ở cả ba cột điểm (G50 đã kiểm,
-   *     không giả định). Miền [55…100]; **6/43 dưới 60** (`nguy_kich`),
-   *     21/43 dưới 80.
-   * ★ Ngân sách nhãn (§4, trần 30): **chỉ hạng `nguy_kich` giành nhãn ⇒ 6 máy**.
-   *   Nới cho hạng `canh` thì riêng nó ăn **21/30** chỗ — ĐỪNG NỚI.
-   * ★ Draw call **3 → 4** (một InstancedMesh cho mọi vòng). Trần 150, còn rộng.
-   *
-   * ⚠ `refetchInterval` cùng khuôn `nhipHoiToiDa` với `anToanQ`: sức khoẻ đổi
-   *   chậm hơn trạng thái nhiều, nên 60 s là đủ và nó không đua với luồng đẩy.
-   */
-  const sucKhoeQ = trpc.twinCanh.sucKhoeMay.useQuery(
-    { factoryId: factoryId ?? 0 },
-    { enabled: factoryId !== null, retry: false, refetchInterval: nhipHoiToiDa(coLuongDay, 60_000) },
-  );
 
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* ★★★ ĐỢT 8 — §11 #61 + #32 + #36: WIP, NÚT THẮT, NHỊP CHUYỀN             */

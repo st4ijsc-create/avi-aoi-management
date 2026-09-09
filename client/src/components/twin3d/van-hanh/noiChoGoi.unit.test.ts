@@ -48,6 +48,20 @@ const TRANG = doc("src/pages/TwinVanHanh.tsx");
  *   **đi theo mã**, sang tệp mới, chứ không biến mất.
  */
 const PHAN_TICH = doc("src/components/twin3d/van-hanh/usePhanTichLine.ts");
+/**
+ * ★★★ ĐỢT 28 T-1 TẦNG 2 — BỐN TRUY VẤN TRẠNG THÁI LIVE SANG `useTrangThaiSong.ts`.
+ *
+ * Ba ca L-1 bên dưới ĐỎ ngay sau khi tách, và một lần nữa **đó là hành vi đúng**:
+ * chúng canh trần an toàn bằng cách đếm chuỗi trong `TwinVanHanh.tsx`, nên khi
+ * mã dời nhà chúng đi tìm và không thấy. Một bất biến an toàn mà **im lặng
+ * xanh** sau khi mất dấu đối tượng nó canh thì nguy hiểm hơn là không có.
+ *
+ * ⇒ Ba ca ấy nay đọc `SONG` thay vì `TRANG`. Và chúng KHÔNG còn là phép đo duy
+ *   nhất: `nhipAnToan.unit.test.ts` đo **GIÁ TRỊ THẬT** của trần (miễn nhiễm
+ *   với cả dời nhà lẫn cách viết), còn `useTrangThaiSong.unit.test.ts` neo
+ *   từng trần vào từng thủ tục. Ba phép đo, ba điểm mù khác nhau.
+ */
+const SONG = doc("src/components/twin3d/van-hanh/useTrangThaiSong.ts");
 const CANH = doc("src/components/twin3d/van-hanh/CanhVanHanh.tsx");
 const DAI = doc("src/components/twin3d/van-hanh/DaiLine.tsx");
 
@@ -61,12 +75,13 @@ describe("★★★ L-1 (#51) — `nhipHoiMs` phải có CHỖ GỌI trong mã s
 
   it("★★★ KHÔNG còn `refetchInterval` hằng số 30_000/20_000 viết cứng", () => {
     // Ba nhịp ở Đợt 7 là `30_000`, `20_000`, `20_000` viết thẳng vào options.
-    expect(TRANG).not.toMatch(/refetchInterval:\s*30_000\s*[,}]/);
-    expect(TRANG).not.toMatch(/refetchInterval:\s*20_000\s*[,}]/);
+    expect(SONG).not.toMatch(/refetchInterval:\s*30_000\s*[,}]/);
+    expect(SONG).not.toMatch(/refetchInterval:\s*20_000\s*[,}]/);
   });
 
   it("★★★ cả BA nhịp đều đi qua nhịp thích nghi", () => {
-    const qua = TRANG.match(/refetchInterval:\s*(nhipTongQuanMs|nhipHoiToiDa\()/g) ?? [];
+    // ĐỢT 28: bốn truy vấn live nay ở `useTrangThaiSong.ts` (T-1 tầng 2).
+    const qua = SONG.match(/refetchInterval:\s*(nhipTongQuanMs|nhipHoiToiDa\()/g) ?? [];
     expect(qua.length).toBeGreaterThanOrEqual(3);
   });
 
@@ -79,11 +94,15 @@ describe("★★★ L-1 (#51) — `nhipHoiMs` phải có CHỖ GỌI trong mã s
     //   `toContain` đầu tiên của test này VẪN XANH: một chuỗi còn sót ở call
     //   site KIA đủ để thoả nó. Đúng lớp lỗi G9 — phép đếm chỉ đúng trong phạm
     //   vi mẫu của nó, và "có ít nhất một" không phải là "cả hai".
-    const soTran = (TRANG.match(/nhipHoiToiDa\(coLuongDay, 20_000\)/g) ?? []).length;
+    //
+    // ★★★ ĐỢT 28 — TRẦN NAY LÀ HẰNG CÓ TÊN (`TRAN_NHIP_AN_TOAN_MS`), nên phép
+    //   đếm này neo vào TÊN. Giá trị 20_000 của hằng ấy được canh riêng bằng
+    //   `nhipAnToan.unit.test.ts`, đo GIÁ TRỊ THẬT chứ không đo chính tả.
+    const soTran = (SONG.match(/nhipHoiToiDa\(coLuongDay, TRAN_NHIP_AN_TOAN_MS\)/g) ?? []).length;
     expect(soTran).toBe(2);
 
     // Và không call site nào rơi thẳng vào `nhipHoiMs` trong options truy vấn.
-    expect(TRANG).not.toMatch(/refetchInterval:\s*nhipHoiMs\(/);
+    expect(SONG).not.toMatch(/refetchInterval:\s*nhipHoiMs\(/);
   });
 
   it("★★★ ĐÍCH DANH: `andon.active` VÀ `anToanRobot` mỗi cái mang trần của mình", () => {
@@ -93,10 +112,12 @@ describe("★★★ L-1 (#51) — `nhipHoiMs` phải có CHỖ GỌI trong mã s
       ["andon.active", "trpc.andon.active.useQuery"],
       ["anToanRobot", "trpc.twinCanh.anToanRobot.useQuery"],
     ] as const) {
-      const i = TRANG.indexOf(moc);
+      const i = SONG.indexOf(moc);
       expect(i, `${ten}: không tìm thấy chỗ gọi`).toBeGreaterThan(0);
-      const khoi = TRANG.slice(i, i + 400);
-      expect(khoi, `${ten}: mất trần 20 s`).toContain("nhipHoiToiDa(coLuongDay, 20_000)");
+      const khoi = SONG.slice(i, i + 400);
+      expect(khoi, `${ten}: mất trần 20 s`).toContain(
+        "nhipHoiToiDa(coLuongDay, TRAN_NHIP_AN_TOAN_MS)",
+      );
     }
   });
 
