@@ -6115,6 +6115,60 @@ o 720; `DaiLine` `min-w-16`; `loi/locNhan.ts` vung cam DOM; `loi/LopNhan.tsx` `n
 idle (D-7); `TwinLine` `rongThat` can `canhQ.isSuccess` ma query **tat** khi `factoryId=null` ⇒ nhanh
 `chuaGanNhaMay` (dung `cauChoLyDoManMay` Dot 34). + **lo mui gio 7 cau + luoi**.
 
+### 14q.13 DOT 35 - PARETO #4 #5 #6 #7 + G104 - DAT; BRIEF SAI LAN 10 (8 CHO)
+
+`a0e314a5`, **8 commit** pathspec. Chu du an do lai: twin3d **86 tep / 2.298** (+3 tep, +88 ca) · `vitest run twin`
+108/2.551 · server 5 tep/71 · `check` 0 · `build` 0 · 5 anh nguyen · DB `2·82·37·42·10·7·hb 108·msl 7.814` truoc = sau
+· 3035 tat · cay + index sach · `__soCanvas` = DOM canvas = 1 moi man · e2e `twin-dot31` 7/7. **Anh tu xem**: Line 1600
+**12/12 may mot hang**, cot WIP tron, Metrics khong de nhan, robot co andon noi; studio 1280 day vua 720.
+
+| E | truoc | sau (`sau-D/`) |
+|---|---|---|
+| E1 studio 1600/1280 | day **953/773** | **900/720** (`useTruDinhKhung`, bien rieng `--twin-studio-top`) |
+| E2 May 1280 | canvas 320 > cockpit **275** | canvas **259 < cockpit 336**; 1600 giu 324/451 |
+| E3 Line 1280 | o tram 70 px, 11/12 gay 2 dong, day 721 | **55 px ca hai vp**, day 720/900 |
+| E4 Line 1600 | **6/12** trong khung, pixel la mep tren 709 | **12/12**, pixel la **0**, nhan 11/12 |
+| E5 nhan duoi lop phu / ngoai canvas (6 phep) | 1/2 · 0/1 | **0/0 ca 6** (`vungCam` tu `[data-che-nhan]`, bo ±10 %) |
+| E6 andon ngoai khung (tam 7→8→7) | khong dau hieu | chip **"2 alarms out of view"** (14 tam + 18 `acknowledged`) |
+| E7 idle 4 s | **88/106**, 158/156 khung | **1/1**, 0/2; keo ⇒ 15/40; go C ⇒ 119/115 |
+| E8 operator1 Line | `lyDo=null`, 1 canvas, "— machines" | `chuaGanNhaMay`, **0 canvas** (dung lai `cauChoLyDoManMay`) |
+| E9 msl tam `now()` (7814→7815→7814) | tuoi **25.203 s (420′)** | **2 s**; go E ⇒ 420′ |
+
+> #### ★★ G106 - **GREP DEM CAU, KHONG DEM KET CUC** - "con 7 cau mui gio" hoa ra **5/7 la SQL-only**
+> `machine.ts:122`, `oeeService` ×3, `warRoomService:381`: `ts` chi vao `EXTRACT(EPOCH …)` **cung phien** (session
+> `TimeZone=Etc/UTC`) — khong roi SQL ⇒ **khong co ket cuc de va**. Nguoc lai, **2 cau roi SQL toi bo sot** vi khong
+> khop pattern `"timestamp" AS ts`: `energy.ts:149 peakAt`, `aiRcaCopilot.ts:252 createdAt`. Cung lop G83/G102: dem
+> theo **hinh dang chuoi** thay vi **duong di cua gia tri**. ⇒ Voi loi "hai duong doc mot cot": liet ke theo **noi gia
+> tri roi SQL** (tra ve client/API), khong theo ten cot. Luoi `naiveTimestampQuaExecute.db.test.ts` 6/6 do that tren
+> DB test. Con lop G104 **ngoai twin**, chua do: `externalInspectionApi.ts:292-293` (MIN/MAX ra API),
+> `repoWorkspaceRouter.ts:437`, `aiRouters.ts:43`, `enhancedAuditRouter.ts:549`, `aiImageEmbedding.ts:942,970`.
+
+> #### ★ G107 - **`git apply -R --3way` THAT BAI DE O NHIEM INDEX** (`UU/MM`) du worktree da khoi phuc
+> Ablation A/B o HEAD khong go rieng duoc (hunk chong voi D/B2) ⇒ agent do **tuan tu** `truoc/→sau-A/→sau-B/` + doi
+> chung muc luoi. Xu ly: `git restore --staged` (chi index) + `git cat-file --filters` (dang smudge chuan). ⚠ Agent
+> khai "blob tu chua CRLF ⇒ `\r\r\n`"; chu du an do `git ls-files --eol`: **`i/lf w/crlf`** — blob **LF**, worktree
+> CRLF do `autocrlf`. ⇒ Truoc khi ket luan CRLF, chay `git ls-files --eol`; sau ablation, kiem **`git diff --cached`
+> rong** ngoai `git diff` rong.
+
+**Brief sai 8 cho (G83 lan 10):** "9/17 nhan bi che" la cua `/twin?pv=line:2` da redirect (nen that 1–2) ·
+`min-w-16` **khong** phai nguyen nhan (chu "1 machines" xuong dong khi `li` bi ep) · G104 5/7 SQL-only + 2 bo sot ·
+chip "N su co" **khong dem duoc voi kit cu** (`batThuong` theo trang thai, khong theo andon ⇒ them `andonTheoMay`)
+· chip ra **2** khong phai 1 (may 18 `acknowledged` cung bo loc `LopCanhBao`) · idle that **88–158** (khong 62/46)
+va **hai nguon khong neu**: `DieuKhien` tween lai khi `khungNhin` doi tham chieu moi nhip; `duong` dung lai theo
+tham chieu `diem` · va #5 keo theo loi moi: `chip-may` (vung cam) de nhan noc o 1280 ⇒ B2 · CRLF (xem G107).
+
+**Con mo:** `phamViCanh.ts khopKhungNhin` khop bbox kem WIP 6 m ⇒ may nam dai giua, **nua duoi canvas con trong**
+(le bat doi xung) · `TwinLine lyDoMoManLine` chua xet `FORBIDDEN` · idle `/twin` chua do (co the cung tween theo
+tham chieu) · Line 1280 cuon ngang 25 px · E7 duoi 4 khung sau keo (damping 0,08 ≈ 2,7 s) · "1 more names hidden"
+o 1600 · G104 ngoai twin 6 cho.
+
+**Dot 36 (giao tiep) — Pareto #8 i18n + con mo nho:** 8 khoa `twin3d.line.*` + 19 `twin3d.may.*` chi co
+`defaultValue` vi ⇒ them **en/vi/zh** (`client/src/i18n/locales/`); `DanhSachMay.tsx` `${giay}s` ⇒ tuoi doc duoc
+(dung `trangThaiHienThi`/ham tuoi co san); chuoi ky thuat `twin/modelRegistry.resolveModel(…)` (nhan "nguon" cockpit,
+`assetCockpitService.ts:30`) khong ra UI; "1 machines" so nhieu; `lyDoMoManLine` FORBIDDEN; idle `/twin` do; le
+`khopKhungNhin`. **Dot 37 — QA lai bang `pdca`** (agent doc lap, khong sua ma) tren harness 41 ca Dot 32 + E1–E9 +
+K1–K9, ca hai viewport, ba vai.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
