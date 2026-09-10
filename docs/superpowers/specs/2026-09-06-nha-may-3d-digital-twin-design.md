@@ -6340,6 +6340,73 @@ so huu — **chua co tra loi**.
 bat bien, 6 be mat may 14 + may song + may stopped song, duong di that, hieu nang cua so 40 s (doc tu co che: dem
 `invalidate` theo nguon), thi giac 4 man × 2 vp. Sau do: **bao cao tong ket cho chu so huu** + cho quyet D-7.
 
+### 14q.17 DOT 39 - QA DOC LAP LAN 3: 48 ca **41 DAT · 0 SAI** - NGHIEM THU CHUC NANG DUOC; MOT LO TENANT NGOAI TWIN
+
+Tep tho `.qa-dot39/` (184 json · 199 png · 4 webm). **Khong sua ma.** Chu du an do lai: HEAD `2eb00e4c`, cay + index sach,
+5 anh nguyen, DB truoc = sau (+10 `audit_logs` WORM khai ro), 3039 tat. **D-1 ba cot:** Dot 32 **16 DAT/26 SAI** → Dot 37
+37/3 → **HEAD 41 DAT · 0 SAI · 5 CHAN-DUNG · 2 N/A**. 4 ca SAI cua Dot 37 nay DAT (Live state · tab 3D 1/1 · idle May ·
+"Live" 7 s). K 12/12 · E/I/P DAT hai vp · **dot bien 4/4 DO** (TRAN_NHIP 3 · NGUONG server 1 · NGUONG_CU 6 ·
+`intervalMs` 1) · QD-18 ma tran **4 URL × 4 vai** (canvas = kit = 1 o 12 tab cockpit + ngan mo phong + 3 tab studio) ·
+**6 be mat may 14 mot tu dien** (nen, hb tam, msl tam; cua so 0–10 s **0 lat gia tri**) · duong di co video (bam Line
+8/3 ms, may 4/7 ms) · ACK `engineer1` MTTA 40 s · 40 s dung yen: `/twin` 12–15 · Line 14–18 · May 13–16 · studio 0.
+
+**MSA — 6 lan thiet bi tu bac trong phien:** bo do nhan `/SIM-L2-AOI/` **mu sau P7** (nhan nay `AOI · Unknown`) ⇒ suyt bao
+hoi quy #46 · `bon-nguon` doc `hangTrangThai` bang selector **con** ⇒ luon null · chu ky rAF chi khop `index-*.js` ⇒ phan
+tich lai ngoai tuyen · P6 @1280 2.702 ms khi chay node song song (G97) ⇒ do lai mot minh, **cold-load dau tien 2,5–6,3 s
+la bundle** ⇒ tieu chi P6 doc tu co che (`chua_ket_noi→truc_tiep` ≤ 241 ms) · `tasklist` khong thay PID MSYS ⇒ cho theo
+tep cuoi (G109) · **"supervisor 401" = loi harness Dot 37**: `permissions.category="machines"` khong co trong enum (dung
+la `analytics`) ⇒ transaction rollback ⇒ user chua tung ton tai.
+
+**Dinh danh nguon khung (doc tu co che, hook rAF + React devtools hook, `nguon-khung/`):** 100 % khung co commit R3F ≤
+400 ms truoc; ba duong: (1) **R3F `rootStore.subscribe ⇒ invalidate`** 9–15×/man vi `<Canvas dpr gl={{…}} camera={{…}}
+onCreated>` **literal moi render** (`loi/KhungCanh.tsx:275-297`); (2) reconciler `applyProps` 3–6×: `CanhVanHanh.tsx:253-259`
+mesh/grid literal, `KhungCanh.tsx:142` `directionalLight position={viTriDenHuong}` (default `[40,60,25]` `:256` moi moi
+render), drei `<Html calculatePosition>` `LopNhan.tsx:312-314`, `instancedMesh args` (Line 38×); (3) `/twin`
+`VienSucKhoe` `CanhVanHanh.tsx:449` effect `[vien]` ⇒ `invalidate()` vi `vienSucKhoeCanh` deps `bayGio`
+(`TwinVanHanh.tsx:1123-1135`). **`LoBatchMay:171/202` khong trong stack; `LopNhan.tsx:287` khong co `invalidate(`** —
+brief sai. DOM: May **99 commit/40 s** (`cockpit-2d` `div{style}` 1.174 lan — Radix Tabs), `/twin` 75, Line 93. Tieu
+chi tu co che: moi nguon refresh 1 khung ⇒ May ≈ 13, `/twin`/Line ≈ 9.
+
+**Pareto moi:**
+| # | Goc re | Bang chung | Thuoc |
+|---|---|---|---|
+| 1 | Vai chi `analytics_oee` (thieu `machine_status`): **3 man noi 3 kieu** — `/twin` "—" cam, Line forbidden that, **May ve canvas + cockpit "Machine not found"** (that la 403) | `qd18/D-*.json` | ky thuat |
+| 2 | **API khong rao tenant/gan**: `factoryCommand.overview(18)` 200/1 va `overview(1)` 200/41 cho **operator1 0 gan**; `assetCockpit.machineDetail(257)` 200 identity may nha may khac. Chu du an do: `factoryCommandRouter.ts` **0** / `assetCockpitRouter.ts` **0** tham chieu `phamViCua`/`trongPhamVi` (twinCanh 36) | `qd18/B-*.json api.overview1 soMay 41` | **an toan du lieu** — va `/twin` tu Dot 34 lay KPI/trang thai **qua chinh** `factoryCommand.overview` |
+| 3 | `anhLichSu` `running` cho may stopped-song (`LICH_SU_LA_XAP_XI` `twinCanh.ts:1324` chua hien UI); `liveState.status` tho | `bon-nguon/hb-M14.json` | ky thuat |
+| 4 | Hieu nang du: literal props moi render + `bayGio` trong deps; DOM 75–99 commit/40 s | `nguon-khung/*.json` | ky thuat |
+| 5 | Nhay DOM: hang may `/twin` / o tram Line **remount ~250 ms** 1 lan luc 1,3–3,7 s (6/12 lan) | `cua-so-som/*.json` | ky thuat (nho) |
+| 6 | Cold-load deep-link 2,7–6,3 s — bundle, khong phai broadcaster | `duong-di/*/duong-di.json` | ngoai twin |
+| 7 | Quan tinh OrbitControls sau keo @1600: 28 khung/4–8 s (`duoiTat:false`) | `E/e7-*.json` | quan sat |
+
+> #### ★★★ G113 - **"MOT HOP DONG" DI QUA ROUTER CHUA RAO** - nguon su that moi cua twin la API khong co tenant scoping
+> Dot 14/15/24 dong tenant leak o `digitalTwinRouter`/`maintenanceRouter`/`andonRouter`; Dot 34 doi nguon trang thai ba
+> man sang `factoryCommand.overview` — **chua ai kiem router ay co rao khong** (0 tham chieu). UI twin che duoc (EmptyState,
+> K9), nhung **du lieu van lo qua API**. ⇒ Khi doi nguon su that, **kiem scope cua router moi** nhu kiem hop dong; cong
+> QA co hang "API × vai 0 gan ⇒ []/403" cho **moi** router twin doc. Khong nghiem thu bao mat du lieu toi khi vá va do
+> lai o router.
+
+**D-7 thi giac:** (1)(3)(7) **het**; con (2)(4)(5)(6)(8)(9)(10) cho chu so huu; **moi**: (11) May thanh tab cockpit cat
+("Tru…"/"Canh b…") khong chi bao cuon · (12) May 1280 the "Mat ket noi" gay 3 dong · (13) studio 1600 canvas chi 726×373
+(41 % cao) vi khoi tieu de ~260 px.
+
+**D-8 ket luan QA:** *"chon Line → Line 3D, chon may → Machine 3D"* **DAT co so** (3–8 ms, Back/F5/deep-link, 24/24
+redirect, ba man ba URL mot canvas, QD-18/23/24); **nhanh** (canvas ~1,3 s, 0–18 khung/40 s, draw 3–6); **truc quan** (mot
+tu dien, 12/12 nhan, 0 cuon, i18n 3 ngon ngu). Chua dat ky thuat: #1 #3 #4 #5. Ngoai twin: #2 tenant API, cold-load,
+`Environment` CDN. Cho quyet thiet ke: 8 muc. **Nghiem thu chuc nang duoc; "dep" cho quyet; bao mat du lieu CHUA.**
+
+**Brief sai 7 cho (lan 13):** `LoBatchMay` o `loi/`, invalidate `:171,202` · `LopNhan.tsx:287` khong co `invalidate(` ·
+supervisor 401 = enum harness · script Dot 38 ghi cung `.qa-dot38/` (G65 qua `--tag`) · `hieu-nang.mjs` ghi de 2 vp ·
+`tuong-quan-*.json` o `sau/` · "14+6 redirect" thuc do **26** (+4 giu +2 doi chung).
+
+**Dot 40 (giao tiep, ky thuat — tu quyet):** **(A) #2 tenant API — uu tien 1**: `factoryCommandRouter` + `assetCockpitRouter`
+moi read procedure scope theo khuon `twinCanhRouter` (`phamViCua`/`trongPhamVi`, `user_factory_assignments` join
+`factoryCode`, admin bypass nhu cac router khac); test API 2 vai × 2 nha may ⇒ []/403; hoi quy K/E/I/P + `/factory-command`
++ cockpit. **(B) #1** May gate nhu Line (FORBIDDEN ⇒ `thieuQuyen`, 0 canvas), `/twin` "—" ⇒ cau ly do. **(C) #3**
+`liveState.status` anh xa; `anhLichSu` gate nhip tim hoac nhan "su kien log" khi `LICH_SU_LA_XAP_XI`. **(D) #4** memo
+`gl/camera/onCreated`, hang module `[40,60,25]`, hoist literal mesh/grid/Html, bo `bayGio` khoi deps ⇒ cong **so commit
+R3F/40 s** (May ≤ 13, `/twin` ≤ 9) do bang `nguon-khung.mjs`. **(E) #5** remount 250 ms neu dinh danh duoc. **(F)** test
+hanh vi broadcaster (fake timers) thay `SRC.toContain`. Sau do **Dot 41 QA lan 4** + bao cao tong ket.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
