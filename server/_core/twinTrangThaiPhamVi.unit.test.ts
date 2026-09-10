@@ -154,9 +154,11 @@ describe("Đợt 38 — `twin:trangThai` phát NGAY khi join `twin:{id}`, và ch
     expect(than.indexOf("twinStreamEnabled()")).toBeLessThan(emit);
   });
 
-  it("vòng 10 s và phát-ngay cùng gọi `dungGoiTwinTrangThai` + `phatTwinTrangThaiChoSocket` — không đường thứ hai; nhịp giữ 10000", () => {
+  it("vòng 10 s và phát-ngay cùng gọi `dungGoiTwinTrangThai` + `phatTwinTrangThaiChoSocket` — không đường thứ hai", () => {
     expect((SRC.match(/phatTwinTrangThaiChoSocket\(/g) ?? []).length).toBe(3); // định nghĩa + 2 chỗ gọi
     expect((SRC.match(/dungGoiTwinTrangThai\(/g) ?? []).length).toBe(3);
-    expect(SRC).toContain("export function startTwinTrangThaiBroadcaster(intervalMs = 10000)");
+    // ★ Đợt 40 (F): nhịp 10 s và "phát ngay khi join" KHÔNG còn ghim bằng chuỗi nguồn (`intervalMs = 10000`) —
+    //   một ghim chuỗi xanh y hệt khi `setInterval` dùng số khác. Nay đo bằng HÀNH VI với đồng hồ giả:
+    //   `twinTrangThaiBroadcaster.hanhVi.unit.test.ts` (phát ở t=0 khi join · t=10 000 · KHÔNG ở 9 999).
   });
 });
