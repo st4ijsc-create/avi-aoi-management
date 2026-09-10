@@ -28,8 +28,9 @@
  * của §10.3 ("góc camera không bao giờ được che một alarm đang hoạt động").
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
+import { useOnDinhTheoGiaTri } from "./onDinhTheoGiaTri";
 import * as THREE from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
@@ -246,11 +247,14 @@ function DieuKhien({
  * bằng độ sáng, không bằng sắc"). Cả ba màu đổi theo theme cùng nhau — giữ một
  * màu sáng ở theme tối biến mặt sàn thành tấm trắng chói hơn cả lỗi ban đầu.
  */
+/** Xoay mặt sàn nằm ngang — hằng module (★ Đợt 40: không literal mỗi render). */
+const XOAY_SAN: [number, number, number] = [-Math.PI / 2, 0, 0];
+
 function San({ rongM, sauM, toi }: { rongM: number; sauM: number; toi: boolean }) {
   const canh = Math.max(rongM, sauM, 10);
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[rongM / 2, -0.01, sauM / 2]}>
+      <mesh rotation={XOAY_SAN} position={[rongM / 2, -0.01, sauM / 2]}>
         <planeGeometry args={[rongM, sauM]} />
         <meshStandardMaterial color={toi ? "#1e293b" : "#e2e8f0"} />
       </mesh>
@@ -558,7 +562,103 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
   );
 }
 
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 40 (QA Đợt 39 Pareto #4) — "ĐỔI THAM CHIẾU ⇔ ĐỔI GIÁ TRỊ" CHO TOÀN BỘ CẢNH, MỘT CHỖ
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đọc từ cơ chế (`.qa-dot39/nguon-khung/*.json`, `phan-tich-nguon-khung-*.txt`): 9–15 trong 13–19 commit R3F/40 s
+ * của mỗi màn là `Canvas` re-render (`p4{onCreated}`) vì TRANG re-render (phản hồi poll `andon.active` 20 s,
+ * `anToanRobot` 20 s, `overview+sucKhoeMay` 30 s, `machineDetail` 10 s, `aiInbox.count`…) — dữ liệu cảnh Y NGUYÊN.
+ * Mỗi lần `<Canvas>` render, R3F `configure()` gọi `setSize` của store ⇒ `set` ⇒ `subscribe ⇒ invalidate`
+ * (bundle `vendor-three-*.js:4019:79808`) ⇒ **một khung vẽ cho một re-render không mang byte nào**.
+ *
+ * `frameloop="demand"` chỉ có nghĩa khi "đổi tham chiếu" ⇔ "đổi giá trị" (`onDinhTheoGiaTri.ts`, Đợt 38 — áp
+ * cho `mayVe`/`cotWip`/`khungNhin` ở TRANG). Nhưng làm ở trang là làm theo DANH SÁCH: `nhan`, `canhBao`,
+ * `vienSucKhoe` (deps `bayGio`), `vung`, `dongChay` (literal `{ diem, nhipMs }` ở hai chỗ gọi), bốn callback
+ * inline (`chuNhanAn`, `chuSuCoNgoaiKhung`, `onChonMay` ở màn Máy, `onCameraDoi`) đều lọt. Đây là BẤT BIẾN đặt
+ * ở CỬA VÀO cảnh: mọi prop dữ liệu ghim theo GIÁ TRỊ (`JSON.stringify` — dữ liệu cảnh là số/chuỗi thuần, ≤ 43 máy,
+ * rẻ hơn một khung vẽ), mọi prop hàm đi qua trampoline ổn định đọc `ref` mới nhất — rồi `React.memo` phần thân.
+ * Thêm một prop dữ liệu mới vào `CanhVanHanhProps` mà quên ghim ⇒ `CanhVanHanhOnDinh` KHÔNG nhận được nó ⇒ tsc đỏ
+ * (kiểu `Props` được liệt kê tường minh dưới đây), không phải lặng lẽ vẽ thừa.
+ *
+ * ⚠ Vì sao KHÔNG bỏ `bayGio` khỏi deps `vienSucKhoeCanh` ở trang (brief Đợt 40 đề nghị): `vienSucKhoe()` dùng
+ *   `bayGio` để hạ hạng lời khai HẾT HẠN (`het_han`/`motNhat`); bỏ dep là đóng băng phép hết hạn — một hồi quy
+ *   trung thực dữ liệu đội lốt tối ưu. Tính lại thì rẻ; chỉ cần KHÔNG lan tham chiếu mới khi giá trị y nguyên.
+ */
+type PropsDuLieu = Pick<
+  CanhVanHanhProps,
+  "may" | "nhan" | "canhBao" | "dongChay" | "wip" | "vienSucKhoe" | "vung" | "khungNhin"
+>;
+type PropsHam = Pick<CanhVanHanhProps, "onChonMay" | "onCameraDoi" | "chuNhanAn" | "chuSuCoNgoaiKhung">;
+
+/** Khoá giá trị của một prop dữ liệu — `undefined` và `null` phân biệt (bỏ trống ≠ tắt). */
+function khoaGiaTri(v: unknown): string {
+  return v === undefined ? " u" : JSON.stringify(v);
+}
+
 export function CanhVanHanh(props: CanhVanHanhProps) {
+  // ── Prop dữ liệu: cùng khoá ⇒ cùng tham chiếu (bản THÔ tính ở trang mỗi render — rẻ). ──
+  const may = useOnDinhTheoGiaTri(props.may, khoaGiaTri(props.may));
+  const nhan = useOnDinhTheoGiaTri(props.nhan, khoaGiaTri(props.nhan));
+  const canhBao = useOnDinhTheoGiaTri(props.canhBao, khoaGiaTri(props.canhBao));
+  const dongChay = useOnDinhTheoGiaTri(props.dongChay, khoaGiaTri(props.dongChay));
+  const wip = useOnDinhTheoGiaTri(props.wip, khoaGiaTri(props.wip));
+  const vienSucKhoe = useOnDinhTheoGiaTri(props.vienSucKhoe, khoaGiaTri(props.vienSucKhoe));
+  const vung = useOnDinhTheoGiaTri(props.vung, khoaGiaTri(props.vung));
+  const khungNhin = useOnDinhTheoGiaTri(props.khungNhin, khoaGiaTri(props.khungNhin));
+
+  // ── Prop hàm: trampoline ổn định đọc bản MỚI NHẤT — tầng ngoài luôn render nên `ref` luôn tươi. ──
+  const hamRef = useRef<PropsHam>({
+    onChonMay: props.onChonMay,
+    onCameraDoi: props.onCameraDoi,
+    chuNhanAn: props.chuNhanAn,
+    chuSuCoNgoaiKhung: props.chuSuCoNgoaiKhung,
+  });
+  hamRef.current = {
+    onChonMay: props.onChonMay,
+    onCameraDoi: props.onCameraDoi,
+    chuNhanAn: props.chuNhanAn,
+    chuSuCoNgoaiKhung: props.chuSuCoNgoaiKhung,
+  };
+  const onChonMay = useCallback((id: number | null) => hamRef.current.onChonMay(id), []);
+  const onCameraDoi = useCallback(
+    (viTri: THREE.Vector3, muc: THREE.Vector3) => hamRef.current.onCameraDoi?.(viTri, muc),
+    [],
+  );
+  // `undefined` phải GIỮ là `undefined` (chip "còn N tên bị ẩn" chỉ hiện khi có chữ) — không bọc thành hàm rỗng.
+  const coChuNhanAn = props.chuNhanAn !== undefined;
+  const coChuSuCo = props.chuSuCoNgoaiKhung !== undefined;
+  const chuNhanAnOnDinh = useCallback((n: number) => hamRef.current.chuNhanAn?.(n) ?? "", []);
+  const chuSuCoOnDinh = useCallback((n: number) => hamRef.current.chuSuCoNgoaiKhung?.(n) ?? "", []);
+
+  return (
+    <CanhVanHanhOnDinh
+      may={may}
+      nhan={nhan}
+      canhBao={canhBao}
+      dongChay={dongChay}
+      wip={wip}
+      vienSucKhoe={vienSucKhoe}
+      vung={vung}
+      khungNhin={khungNhin}
+      machineIdChon={props.machineIdChon}
+      onChonMay={onChonMay}
+      onCameraDoi={onCameraDoi}
+      chuNhanAn={coChuNhanAn ? chuNhanAnOnDinh : undefined}
+      chuSuCoNgoaiKhung={coChuSuCo ? chuSuCoOnDinh : undefined}
+      sanRongM={props.sanRongM}
+      sanSauM={props.sanSauM}
+      tatNhan={props.tatNhan}
+      chiNhanBatThuong={props.chiNhanBatThuong}
+      chuMatContext={props.chuMatContext}
+      ariaLabel={props.ariaLabel}
+      sanCaoPx={props.sanCaoPx}
+    />
+  );
+}
+
+/** Thân cảnh — chỉ render lại khi một prop ĐỔI THAM CHIẾU, mà tầng ngoài đã bảo đảm "đổi tham chiếu ⇔ đổi giá trị". */
+const CanhVanHanhOnDinh = memo(function CanhVanHanhOnDinh(props: CanhVanHanhProps) {
   const theme = useOptionalTheme();
   const toi = theme === "dark";
   const banKinh = Math.max(props.sanRongM, props.sanSauM, 10);
@@ -572,15 +672,24 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
   //   `KhungCanh` đưa thẳng chuỗi vào `<color/>`. Trước bản vá, nền cảnh ra
   //   **TRẮNG** ở theme tối — thấy được bằng mắt ở nghiệm thu Đợt 8.
   const mauNen = mauHex("--background", toi ? "#0f172a" : "#f8fafc");
+  // ★ Đợt 40 — hai mảng theo `banKinh`: memo để `KhungCanh` không nhận mảng mới mỗi render.
+  const viTriCamera = useMemo<[number, number, number]>(
+    () => [banKinh * 1.4, banKinh * 0.9, banKinh * 1.4],
+    [banKinh],
+  );
+  const viTriDenHuong = useMemo<[number, number, number]>(
+    () => [banKinh, banKinh * 1.4, banKinh * 0.6],
+    [banKinh],
+  );
 
   return (
     <KhungCanh
-      viTriCamera={[banKinh * 1.4, banKinh * 0.9, banKinh * 1.4]}
+      viTriCamera={viTriCamera}
       mauNen={mauNen}
       far={Math.max(2000, banKinh * 24)}
       cuongDoBanCau={toi ? 0.9 : 1.1}
       cuongDoHuong={toi ? 1.0 : 1.3}
-      viTriDenHuong={[banKinh, banKinh * 1.4, banKinh * 0.6]}
+      viTriDenHuong={viTriDenHuong}
       chuMatContext={props.chuMatContext}
       sanCaoPx={props.sanCaoPx}
       data-testid="khoi-canh-3d"
@@ -588,7 +697,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
       <NoiDung {...props} toi={toi} />
     </KhungCanh>
   );
-}
+});
 
 export default CanhVanHanh;
 

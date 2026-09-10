@@ -39,6 +39,17 @@ import {
  */
 export const THUOC_TINH_CHE_NHAN = "data-che-nhan";
 
+/** ★ Đợt 31 — lớp `fullscreen` neo vào TÂM canvas (xem docblock tại chỗ dùng). ★ Đợt 40 — hằng module. */
+const TAM_CANVAS = (
+  _el: unknown,
+  _camera: unknown,
+  size: { width: number; height: number },
+): [number, number] => [size.width / 2, size.height / 2];
+/** z-index của lớp nhãn drei (G41: bảng KPI/ngăn dùng z-30 để nổi trên 20). */
+const Z_INDEX_NHAN: [number, number] = [20, 0];
+/** Lớp nhãn là chỉ báo, không nhận chuột — `pointer-events: none` để kéo xoay camera xuyên qua. */
+const KIEU_LOP_NHAN = { pointerEvents: "none", userSelect: "none" } as const;
+
 export function layVungCam(canvas: HTMLCanvasElement | null | undefined): HinhChuNhat[] {
   if (!canvas || typeof document === "undefined") return [];
   const cv = canvas.getBoundingClientRect();
@@ -311,9 +322,12 @@ export function LopNhan({
   return (
     <Html
       fullscreen
-      calculatePosition={(_el, _camera, size) => [size.width / 2, size.height / 2]}
-      zIndexRange={[20, 0]}
-      style={{ pointerEvents: "none", userSelect: "none" }}
+      // ★ Đợt 40 — ba prop là HẰNG MODULE (không literal mỗi render): `Html` là ForwardRef trong cây R3F, prop hàm/
+      //   đối tượng mới mỗi render là một "đổi props" ở mọi commit (`ForwardRef{calculatePosition,zIndexRange,style}`
+      //   13–19×/40 s trong `.qa-dot39/nguon-khung/*.json`).
+      calculatePosition={TAM_CANVAS}
+      zIndexRange={Z_INDEX_NHAN}
+      style={KIEU_LOP_NHAN}
     >
       {/* ★ `data-testid` phải nằm trên phần tử DOM BÊN TRONG `<Html>`, KHÔNG trên
           chính `<Html>`. R3F coi mọi prop lạ trên phần tử trong cây Canvas là

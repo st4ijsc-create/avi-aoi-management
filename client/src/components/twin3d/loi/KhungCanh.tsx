@@ -20,12 +20,48 @@
  *   WebGL ~4× với nhiều mesh không-instanced trên iGPU — đúng hồ sơ máy của ta.
  */
 
-import { Canvas, useThree, useFrame } from "@react-three/fiber";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Canvas, useThree, useFrame, type RootState } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 
 /** Trần DPR — §4 bảng ngân sách. Không nới, kể cả trên màn Retina. */
 export const DPR_TRAN: [number, number] = [1, 1.5];
+
+/*
+ * ★★★ ĐỢT 40 (QA Đợt 39 Pareto #4) — MỌI PROP CỦA `<Canvas>` LÀ HẰNG MODULE / MEMO, KHÔNG LITERAL MỖI RENDER.
+ *
+ * Đọc từ cơ chế (`.qa-dot39/nguon-khung/*.json`, hook rAF + devtools): 9–15 khung/40 s của mỗi màn có chữ ký
+ * `rootStore.subscribe ⇒ invalidate` ngay sau một commit mà `Canvas` đổi props (`p4{onCreated}`). Đọc bundle R3F
+ * (`vendor-three-*.js:4019:79808`): điểm gọi `set` là `setSize` của store — `configure()` chạy ở MỖI render của
+ * `<Canvas>` và so `size` mới (8 khoá từ `useMeasure`) với `state.size` (4 khoá) bằng `is.equ` "shallow-loose"
+ * (`for (i in a) if (!(i in b)) return false`) ⇒ KHÔNG BAO GIỜ bằng ⇒ `setSize` ⇒ `set` ⇒ mọi listener ⇒
+ * `invalidate`. Tức là **một lần `<Canvas>` render = một khung vẽ**, bất kể props có đổi hay không.
+ *
+ * ⇒ Hai việc, ở hai tầng:
+ *   (1) Ở đây: props của `<Canvas>` ổn định (hằng module + `useMemo`) để `Canvas` không re-render vì props;
+ *   (2) Ở `CanhVanHanh`: `React.memo` + ổn định theo GIÁ TRỊ mọi prop dữ liệu (`onDinhTheoGiaTri`), để cây
+ *       `<Canvas>` chỉ render lại khi CÓ byte dữ liệu cảnh đổi — đó mới là nguồn của "mỗi nguồn refresh 1 khung".
+ * ⚠ Mảng literal `position={[…]}` trên phần tử three KHÔNG gây `applyProps` (R3F `is.equ` so nông mảng), nhưng
+ *   prop HÀM inline (`raycast={() => null}`, `onClick`) thì CÓ (hàm so theo tham chiếu ⇒ `applyProps` ⇒
+ *   `invalidateInstance`) — chữ ký thứ hai đo được (`4019:73057`). Hoist theo đúng cơ chế, không theo cảm giác.
+ */
+/** Vị trí camera mặc định — hằng module, không phải literal trong destructuring (mỗi render một mảng mới). */
+export const VI_TRI_CAMERA_MAC_DINH: readonly [number, number, number] = [30, 24, 30];
+/** Vị trí đèn hướng mặc định — cùng lý do. */
+export const VI_TRI_DEN_HUONG_MAC_DINH: readonly [number, number, number] = [40, 60, 25];
+/** Tuỳ chọn WebGLRenderer — một đối tượng cho cả đời module. ★ RB-6: WebGLRenderer mặc định, KHÔNG WebGPU. */
+const GL_MAC_DINH = {
+  antialias: true,
+  powerPreference: "high-performance" as const,
+  // Cho phép trình duyệt hạ thay vì mất context khi tài nguyên eo hẹp.
+  failIfMajorPerformanceCaveat: false,
+};
+/** `onCreated` — hàm module, không phải arrow mới mỗi render. */
+function khiTaoCanvas({ gl }: RootState): void {
+  gl.toneMapping = THREE.NoToneMapping;
+  // Bóng đổ tắt hẳn: bật shadow map làm `demand` mất tác dụng (xem DenCoBan).
+  gl.shadowMap.enabled = false;
+}
 
 /** Hình dạng các cửa sổ đo mà e2e đọc. Khai một chỗ để test và mã không lệch nhau. */
 export interface CuaSoDoTwin3d {
@@ -53,7 +89,7 @@ type WindowDo = Window & CuaSoDoTwin3d;
 export interface KhungCanhProps {
   children: ReactNode;
   /** Vị trí camera ban đầu. Đặt MỘT LẦN — đổi prop sau không dời camera. */
-  viTriCamera?: [number, number, number];
+  viTriCamera?: readonly [number, number, number];
   fov?: number;
   far?: number;
   /** Màu nền cảnh. Truyền token đã phân giải, KHÔNG truyền `var(--…)`. */
@@ -62,7 +98,7 @@ export interface KhungCanhProps {
   cuongDoBanCau?: number;
   cuongDoHuong?: number;
   /** Vị trí đèn hướng; mặc định suy từ bán kính cảnh. */
-  viTriDenHuong?: [number, number, number];
+  viTriDenHuong?: readonly [number, number, number];
   className?: string;
   /**
    * Chữ hiện khi mất WebGL context, ĐÃ qua `t()` ở tầng gọi.
@@ -134,12 +170,16 @@ function DenCoBan({
 }: {
   cuongDoBanCau: number;
   cuongDoHuong: number;
-  viTriDenHuong: [number, number, number];
+  viTriDenHuong: readonly [number, number, number];
 }) {
   return (
     <>
       <hemisphereLight color="#ffffff" groundColor="#94a3b8" intensity={cuongDoBanCau} />
-      <directionalLight position={viTriDenHuong} intensity={cuongDoHuong} castShadow={false} />
+      <directionalLight
+        position={viTriDenHuong as [number, number, number]}
+        intensity={cuongDoHuong}
+        castShadow={false}
+      />
       <ambientLight intensity={0.3} />
     </>
   );
@@ -231,7 +271,7 @@ function BatMatContext({
 }
 
 /** Đặt camera ban đầu ĐÚNG MỘT LẦN — đổi prop sau không giật camera của người dùng. */
-function CameraBanDau({ viTri }: { viTri: [number, number, number] }) {
+function CameraBanDau({ viTri }: { viTri: readonly [number, number, number] }) {
   const camera = useThree((s) => s.camera);
   const invalidate = useThree((s) => s.invalidate);
   const xong = useRef(false);
@@ -247,13 +287,13 @@ function CameraBanDau({ viTri }: { viTri: [number, number, number] }) {
 
 export function KhungCanh({
   children,
-  viTriCamera = [30, 24, 30],
+  viTriCamera = VI_TRI_CAMERA_MAC_DINH,
   fov = 45,
   far = 2000,
   mauNen = "#eef2f6",
   cuongDoBanCau = 1.1,
   cuongDoHuong = 1.3,
-  viTriDenHuong = [40, 60, 25],
+  viTriDenHuong = VI_TRI_DEN_HUONG_MAC_DINH,
   className,
   chuMatContext,
   onMatContext,
@@ -266,6 +306,31 @@ export function KhungCanh({
   // RB-4 — đếm canvas sống qua MỘT cài đặt (`useDemCanvasSong`, Đợt 38: cockpit dùng chung bộ đếm).
   useDemCanvasSong();
 
+  // ★ Đợt 40 — tuỳ chọn camera chỉ đổi khi GIÁ TRỊ đổi (camera chỉ đặt một lần, nhưng prop ổn định thì
+  //   `Canvas` không có lý do re-render vì ta). `viTriCamera` là mảng: người gọi giữ tham chiếu ổn định
+  //   (`CanhVanHanh` memo theo `banKinh`), còn ở đây ghim theo ba số để không phụ thuộc kỷ luật ấy.
+  const camera = useMemo(
+    () => ({ fov, near: 0.1, far, position: viTriCamera as [number, number, number] }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ghim theo GIÁ TRỊ ba toạ độ, không theo tham chiếu mảng
+    [fov, far, viTriCamera[0], viTriCamera[1], viTriCamera[2]],
+  );
+  const mauNenArgs = useMemo(() => [mauNen] as [string], [mauNen]);
+  // Hai callback context: ổn định theo callback của tầng trên (thường `undefined` ⇒ hằng).
+  const khiMat = useMemo(
+    () => () => {
+      setMatContext(true);
+      onMatContext?.();
+    },
+    [onMatContext],
+  );
+  const khiKhoiPhuc = useMemo(
+    () => () => {
+      setMatContext(false);
+      onKhoiPhucContext?.();
+    },
+    [onKhoiPhucContext],
+  );
+
   return (
     <div
       className={className}
@@ -276,37 +341,19 @@ export function KhungCanh({
         frameloop="demand"
         dpr={DPR_TRAN}
         shadows={false}
-        // ★ RB-6: WebGLRenderer mặc định. KHÔNG truyền `gl` WebGPU.
-        gl={{
-          antialias: true,
-          powerPreference: "high-performance",
-          // Cho phép trình duyệt hạ thay vì mất context khi tài nguyên eo hẹp.
-          failIfMajorPerformanceCaveat: false,
-        }}
-        camera={{ fov, near: 0.1, far, position: viTriCamera }}
-        onCreated={({ gl }) => {
-          gl.toneMapping = THREE.NoToneMapping;
-          // Bóng đổ tắt hẳn: bật shadow map làm `demand` mất tác dụng (xem DenCoBan).
-          gl.shadowMap.enabled = false;
-        }}
+        // ★ RB-6: WebGLRenderer mặc định. KHÔNG truyền `gl` WebGPU. ★ Đợt 40: hằng module, không literal.
+        gl={GL_MAC_DINH}
+        camera={camera}
+        onCreated={khiTaoCanvas}
       >
-        <color attach="background" args={[mauNen]} />
+        <color attach="background" args={mauNenArgs} />
         <DenCoBan
           cuongDoBanCau={cuongDoBanCau}
           cuongDoHuong={cuongDoHuong}
           viTriDenHuong={viTriDenHuong}
         />
         <CameraBanDau viTri={viTriCamera} />
-        <BatMatContext
-          onMat={() => {
-            setMatContext(true);
-            onMatContext?.();
-          }}
-          onKhoiPhuc={() => {
-            setMatContext(false);
-            onKhoiPhucContext?.();
-          }}
-        />
+        <BatMatContext onMat={khiMat} onKhoiPhuc={khiKhoiPhuc} />
         <BomThongKe />
         {children}
       </Canvas>
