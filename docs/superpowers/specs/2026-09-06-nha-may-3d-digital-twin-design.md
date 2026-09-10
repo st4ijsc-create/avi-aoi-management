@@ -6407,6 +6407,52 @@ moi read procedure scope theo khuon `twinCanhRouter` (`phamViCua`/`trongPhamVi`,
 R3F/40 s** (May ≤ 13, `/twin` ≤ 9) do bang `nguon-khung.mjs`. **(E) #5** remount 250 ms neu dinh danh duoc. **(F)** test
 hanh vi broadcaster (fake timers) thay `SRC.toContain`. Sau do **Dot 41 QA lan 4** + bao cao tong ket.
 
+### 14q.18 DOT 40 - TENANT API DONG + PARETO QA DOT 39 #1 #3 #4 #5 - DAT; COMMIT R3F/40 s = 0
+
+`060dee97`, **5 commit** pathspec. Chu du an do lai: twin3d **91 tep / 2.354** · `vitest run twin` 114/2.621 · server 13
+tep/244 · **luoi tenant `factoryCommandAssetCockpitPhamVi.db.test.ts` 22/22** (chay doc lap) · `check` 0 · `build` 0 ·
+`i18n:check` 0 · 5 anh nguyen · DB truoc = sau · 3040 tat · cay + index sach · `git ls-files --eol` moi tep `i/lf`, **0 tep
+nhi phan** · `factoryCommandRouter` **7** / `assetCockpitRouter` **6** tham chieu scope (truoc 0/0) · tep tho `qd18/B`:
+operator1 `overview(1|18)` **soMay 0/0**.
+
+| T | truoc | sau | go va |
+|---|---|---|---|
+| **T1 tenant** (5 thu tuc: `factoryCommand.{overview,machineDetail}` + `assetCockpit.{machineDetail,robotDetail,machineAlarms}`) | operator1 41/1 may, `machineDetail` 200 | **0/0**, `machineDetail` **404 NOT_FOUND** (khuon Dot 14/15/24, G82 — **khong** 403 nhu brief); `e2e_tai_loE` `overview(1)` 41 giu, `overview(18)` 1→**0**, `machineDetail(257)` 404; C 403; admin bypass; robot mo coi fail-closed; `operator1` `/twin` EmptyState, 0 loi 500 | service ve HEAD ⇒ **12/12 ca (−) do, 10/10 (+) xanh** |
+| T2 vai chi `analytics_oee` | `/twin` "—" cam · May canvas 1 `lyDo null` | `/twin` `ly-do-so-trong=thieuQuyen` · Line `thieuQuyen` · May `thieuQuyen` **0 canvas 0 cockpit** (2 vp) | luoi ⑧ do 1 |
+| T3 | `liveState.status` tho | `statusMapped` (them, `status` giu) `offline→running→offline` khop `connected` (hb tam); `anhLichSu.laXapXi` + nhan "Replay" khi tua, an khi Live | luoi do 1 |
+| **T4 commit R3F/40 s** | May 15 · `/twin` 13 · Line 19 (khung 17/14/18) | **0 / 0 / 0** (×2 lan + dist cuoi); DOM commit 99/75/93 → 86/50/55; keo ⇒ 60/23/34 khung; K7 ✓ | — |
+| T5 remount | 6/12 | **0/12** (goc: **doi khoa truy van** `tangIds [] → that` ⇒ `data undefined` mot nhip; `placeholderData=giuKhiCungNhaMay`) | — |
+| T6 broadcaster | `SRC.toContain` | test hanh vi (dong ho gia, socket.io gia, `initializeSocket` that) | go phat-khi-join ⇒ 2 do; 10 s→5 s/15 s ⇒ 1 do |
+
+Hoi quy K 12/12 · E 12/12 · I 14/14 · P1–P7 hai vp · `/factory-command` mo voi A (0 5xx) · cockpit A `statusMapped`, B
+`khongThay`.
+
+> #### ★★ G114 - **"DINH DANH TU CO CHE" VAN SAI MOT NUA** - literal props KHONG phai nguyen nhan
+> QA Dot 39 hook rAF + devtools ket luan "literal `gl/camera` ⇒ `root.configure` ⇒ invalidate". Agent Dot 40 doc bundle
+> (`vendor-three:4019:79808`): diem `set` la **`store.setSize`, chay o MOI lan `<Canvas>` render** bat ke prop; mang literal
+> tren phan tu three **khong** gay `applyProps` (R3F `is.equ` nong), chi **prop ham inline** moi gay. Hoist literal mot minh
+> khong du — can **`memo(CanhVanHanhOnDinh)`** voi 8 prop du lieu ghim theo JSON + 4 trampoline ham ⇒ 0 commit. ⇒ Tuong
+> quan stack ≠ co che; **doc bundle** truoc khi va. Va "bo `bayGio` khoi deps" (brief) se **dong bang** phep `het_han` —
+> on dinh theo gia tri thay the.
+
+> #### ★ G115 - **1 byte NUL lot vao sentinel ⇒ git coi `CanhVanHanh.tsx` la NHI PHAN** (`060dee97`)
+> Sentinel `undefined` cua `khoaGiaTri` viet bang ky tu khong nhin thay ⇒ diff mat, review mu. Sentinel phai la **chuoi nhin
+> thay duoc** (`"@undefined"`); cong dong phien them **`git diff --numstat` khong co dong `-\t-`**.
+
+**Brief sai 7 cho (lan 14):** literal props (G114) · `bayGio` deps · `machineDetail` ⇒ 403 (khuon la `NOT_FOUND`) · "cockpit
+noi not-found cho 403": o `/machine/14` RouteGuard day vai D di truoc moi truy van, trieu chung chi o `/twin/may/14` (nay
+gate truoc mount) · E "nhanh `dangTai`" — goc la doi khoa truy van · harness Dot 39 ghim cung `.qa-dot39/` · khong noi
+`phamViDocCensus.test.ts` §3/§5 **da do san** o HEAD (C 472→474, D 1101→1119…; 3 muc `maintenanceRouter` da va chua go).
+
+**Con mo:** `MachineCockpit.tsx:853` nhanh FORBIDDEN chua co ca UI (guard chan truoc) · `twinCanh.ts:1324` `anhLichSu`
+van `running` cho may stopped-song (khong co lich su `operationStatus` — chon nhan UI) · `phamViDocCensus` §3/§5 do co san
+— cho ben do ky · `server/api/v1/moduleReads`, `aiRcaCopilot.vision` goi `machineDetail()` **khong `scope`** (loi di khong
+danh tinh) — chua do · DOM commit 50–86/40 s (Radix Tabs) · `LoBatchMay` handler inline.
+
+**Dot 41 — QA lan 4 bang `pdca`** (doc lap, khong sua ma): 48 ca + K/E/I/P/T, **API × vai cho MOI router twin doc** (G113),
+hai vp, bat bien, 6 be mat + hb/msl tam, duong di, commit R3F/40 s doc tu co che, thi giac 4 man × 2 vp, **D-8 nghiem thu
+ca bao mat du lieu**. Sau do **bao cao tong ket** cho chu so huu + cho quyet 8 muc thiet ke.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
