@@ -6296,6 +6296,50 @@ padding day, e2e `scrollHeight === innerHeight` · #6 phat `twin:trangThai` khi 
 thuat): D-7 (2) le Line · (4)(5) bo cuc `/twin` 1280 + panel phai trong · (6) nut chat vo app · (10) minimap studio.
 **Dot 39** — QA lai `pdca`.
 
+### 14q.16 DOT 38 - PARETO QA DOT 37 #1→#7 - DAT (P1 May 179→14, chua toi 12); BRIEF SAI LAN 12
+
+`a6a0459b`, **5 commit** pathspec. Chu du an do lai: twin3d **89 tep / 2.344** (+2, +32) · `vitest run twin` 111/2.600 ·
+server 4 tep/65 · `check` 0 · `build` 0 (tat dinh) · `i18n:check` 0 · 5 anh nguyen · DB truoc = sau · 3038 tat · cay +
+index sach. **Hoi quy 39 ✓ / 0 ✗** (K 12/12, E hai vp — **E4 12/12 nhan ca hai vp**, I 6/6).
+
+| P | truoc | sau 1600 / 1280 | go va (dist) |
+|---|---|---|---|
+| P1 40 s dung yen May | **179** (QA 143–230) | **14 / 15**; /twin 12/14; Line 15/16; studio 0; camera khong doi; keo ⇒ 42–60 khung | TwinMay ve nen ⇒ **238**, camDoi=true |
+| P2 mot tu dien | `anhLichSu` 14 `running 3,2 d`; hb tam ⇒ twin "Stopped" vs fleet `idle` | `anhLichSu = offline/55 d`; hb tam ⇒ overview `idle` == /twin "Idle 6s" == chip == ngan; msl tam ⇒ van `offline` | ⇒ `running/3,3 d` quay lai |
+| P3 Status | `online` success duoi "Mat ket noi" | `offline` error (2 vp); hb tam ⇒ `online` | ⇒ `online`/success |
+| P4 canvas tab 3D | DOM 2 / kit 1 | **1/1** moi trang thai, tab nhung hien ghi chu | ⇒ 2/1 |
+| P5 cuon doc | 924/900 · 744/720 ×3 man | 900/900 · 720/720 (`--twin-*-top` +24: `pb-24` cua `<main>` bi `md:p-6` de) | ⇒ 924/900 ×3 |
+| P6 "Live" | 8.944 / 9.781 ms | **1.506 / 1.091** @1600 · 999 / 972 @1280; `intervalMs = 10000` ghim | ⇒ 10.226 / 9.791 |
+| P7 Line 1280 | ol 969/944, chip "5 ten an" | ol **944/944**, 0 ma cat, chip null, **12/12 nhan** | ⇒ 969/944 + 5 an |
+
+Ablation unit 8/8 (go ⇒ do 7·10·5·1·1·3·2·4, khoi phuc ⇒ xanh, md5 khop) + dist 6/6 + build cuoi tu nguon khoi phuc **cung
+hash** va xanh lai; `git diff`/`--cached` rong sau moi buoc. e2e moi `twin-dot38-nghiem-thu.spec.ts` 6/6.
+
+> #### ★★ G112 - **SO DO TU VA-THU KHONG PHAI TIEU CHI** - P1 May "≤ 12" tu va-thu 10 cua QA la **uoc luong**
+> Sau khi khoa `khungNhin` (tween tat that: go ⇒ 238), phan du **14–15** khong phai tween: bang tuong quan
+> (`tuong-quan-may-1600x900.json`) 14/15 khung xuat hien ≤ 30 ms sau mot phan hoi tRPC (`andon.active` 20 s ·
+> `anToanRobot` 20 s · `overview+sucKhoeMay` 30 s · `machineDetail` 10 s) hoac goi `twin:trangThai` 10 s; chan tRPC ⇒ 10.
+> Agent go them 3 nguon re-render (`bayGioThat` trong deps, `wip={[]}` literal, `cotWip` moi moi goi 2 s —
+> `onDinhTheoGiaTri.ts`, ap ca 3 man) 16–18 → 14–15; nguon `invalidate` con lai **chua dinh danh** (ung vien
+> `LoBatchMay.tsx:181,202`, `LopNhan.tsx:287`). ⇒ Tieu chi hieu nang phai **doc tu co che** (moi nguon re-render mot
+> con so), khong tu mot lan va-thu; phan du cua mot lan va la **cau hoi**, khong phai that bai.
+
+**Brief sai 5 cho (lan 12):** `server/socket.ts` khong ton tai → `server/_core/socket.ts` · #7 "ten tram cat": **0 ma
+cat** — that la `li` bi ep co nen o **de len mui ten**; "5 ten an" goc re **khong phai be rong**: hang nhan @1280 nam
+**ngay duoi panel Metrics** (vung cam) ⇒ 3 nhan trai khong co tang phia tren; nhan chua tung ve nhan
+`RONG_SUY_DOAN_PX = 150` ⇒ tu khoa · #2 `hopNhat` **khong phai cho sua**: goc `traTrangThaiHangLoat.trangThai =
+operationStatus` tho + `BANG_MAU` thieu `idle/offline` ⇒ **nen overview da roi `khong_ro` cam** roi "lat" khi goi toi
+(chua ai do) · #5 dung nguyen nhan, do them `pb-24` bi `md:p-6` de.
+
+**Con mo:** P1 du 14–15 (nguon `invalidate`) · `TwinVanHanh.tsx:~1128 vienSucKhoeCanh` deps `bayGio` chua on dinh ·
+`MachineCockpit.tsx Model3DCanvas` `<Environment preset="warehouse">` (RB-5 CDN, ngoai twin) · Line badge canh bao 3D in
+ma day du canh nhan ngan (anh vi 1280) — cho chu so huu · `LICH_SU_LA_XAP_XI` chua hien UI · D-7 (2)(4)(5)(6)(10) cho chu
+so huu — **chua co tra loi**.
+
+**Dot 39 — QA lai lan 3 bang `pdca`** (doc lap, khong sua ma): 48 ca + K/E/I/P, hai vp, ba vai + 2 user tam, en/vi/zh,
+bat bien, 6 be mat may 14 + may song + may stopped song, duong di that, hieu nang cua so 40 s (doc tu co che: dem
+`invalidate` theo nguon), thi giac 4 man × 2 vp. Sau do: **bao cao tong ket cho chu so huu** + cho quyet D-7.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
