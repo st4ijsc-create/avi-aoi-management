@@ -24,10 +24,14 @@ describe("trangThaiTuUns — PackML → khoá mauTrangThai", () => {
     }
   });
 
-  it("nhóm chờ → `idle`; nhóm dừng → `stopped`", () => {
+  it("nhóm chờ → `idle`; nhóm dừng → `idle` (Đợt 38: CÙNG từ điển chỉ huy `stopped→idle` với server, không còn `stopped` riêng)", () => {
     for (const s of ["IDLE", "STANDBY", "READY"]) expect(trangThaiTuUns({ state: s })).toBe("idle");
     for (const s of ["STOPPED", "HELD", "ABORTED", "COMPLETE"]) {
-      expect(trangThaiTuUns({ state: s })).toBe("stopped");
+      expect(trangThaiTuUns({ state: s })).toBe("idle");
+    }
+    // ĐỐI CHỨNG: không nơi nào trong hàm còn sinh ra `stopped` — hai chữ cho một trạng thái là lớp lỗi QA Đợt 37 đo.
+    for (const s of ["IDLE", "STOPPED", "HELD", "ABORTED", "COMPLETE", "OFFLINE", "EXECUTE", "RUNNING"]) {
+      expect(trangThaiTuUns({ state: s })).not.toBe("stopped");
     }
   });
 

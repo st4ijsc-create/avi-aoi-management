@@ -80,6 +80,16 @@ export type TrangThaiCanh =
   | "changeover"
   | "starved"
   | "blocked"
+  // ─ ★★★ Đợt 38 (Pareto #2 QA Đợt 37) — ba ô của TỪ VỰNG CHỈ HUY `CommandMachineStatus` ─
+  //   (`server/services/trangThaiMayTuoi.ts`). Server nay trả CÙNG một từ điển cho kho twin
+  //   (`traTrangThaiHangLoat`/`anhLichSu` qua `mapMachineStatus`) và fleet (`factoryCommand.overview`):
+  //   `stopped→idle`, `error→down`, mất nhịp tim→`offline`. Đo QA Đợt 37 D-4: máy 14 sống-dừng ⇒ `/twin`
+  //   "Stopped 11 s" cạnh overview `idle`; và `mayNen.trangThaiBaoCao` (từ overview) mang `idle`/`offline` mà
+  //   bảng này KHÔNG có ⇒ rơi `khong_ro` CÂM rồi "lật" sang `stopped` khi gói socket tới. Tám ô enum ở trên
+  //   GIỮ (studio/UNS/lịch sử còn nói bằng chúng); ba ô này là từ điển server nói với client.
+  | "idle"
+  | "down"
+  | "offline"
   // ─ hai trạng thái CHỈ TỒN TẠI trong cảnh 3D, không có trong DB ─
   /** Mất tín hiệu / dữ liệu quá 5 phút. NT-3: hạng nhất, không suy biến. */
   | "khong_ro"
@@ -170,6 +180,31 @@ const BANG_MAU: Readonly<Record<TrangThaiCanh, MauTrangThai>> = {
     hoaTiet: "khong",
     laBatThuong: true,
     khoaNhan: "twin3d.trangThai.error",
+  },
+  // ★★★ Đợt 38 — TỪ VỰNG CHỈ HUY: dùng LẠI token của ô tương đương (KHÔNG thêm màu — trần 7 mã ASM 6.1).
+  //   `idle` ≡ dừng chủ động (xám đậm) · `down` ≡ lỗi (màu bão hoà DUY NHẤT, cùng token với `error`) ·
+  //   `offline` ≡ mất kết nối: xám gạch chéo như `khong_ro` nhưng NHÃN riêng ("Mất kết nối" — server đã kết luận,
+  //   không phải "ta không biết"). Nhãn i18n ĐỒNG VĂN với `factoryCommand.status*` — `mauTrangThai.unit.test.ts` ghim.
+  idle: {
+    token: "--muted-foreground",
+    doMo: 1,
+    hoaTiet: "khong",
+    laBatThuong: false,
+    khoaNhan: "twin3d.trangThai.idle",
+  },
+  down: {
+    token: "--destructive",
+    doMo: 1,
+    hoaTiet: "khong",
+    laBatThuong: true,
+    khoaNhan: "twin3d.trangThai.down",
+  },
+  offline: {
+    token: "--muted",
+    doMo: 1,
+    hoaTiet: "gach_cheo",
+    laBatThuong: false,
+    khoaNhan: "twin3d.trangThai.offline",
   },
   // ★★★ NT-3 — xám GẠCH CHÉO. Không bao giờ suy biến về khoẻ hay lỗi.
   khong_ro: {

@@ -72,7 +72,9 @@ export function trangThaiTuUns(anh: AnhChupUns): string | null {
   if (s === "") return null;
   if (["EXECUTE", "STARTING", "RUNNING", "PRODUCING", "PROCESSING"].includes(s)) return "running";
   if (["IDLE", "STANDBY", "READY"].includes(s)) return "idle";
-  if (["STOPPED", "HELD", "HOLD", "ABORTED", "SUSPENDED", "COMPLETE", "OFFLINE"].includes(s)) return "stopped";
+  // ★ Đợt 38 (Pareto #2): nhóm dừng ⇒ `idle` — CÙNG từ điển chỉ huy (`mapMachineStatus`: `stopped→idle`) mà server
+  //   nay dùng cho kho twin và fleet; giữ `stopped` ở đây là mở lại đường thứ hai cho cùng một trạng thái.
+  if (["STOPPED", "HELD", "HOLD", "ABORTED", "SUSPENDED", "COMPLETE", "OFFLINE"].includes(s)) return "idle";
   return null;
 }
 

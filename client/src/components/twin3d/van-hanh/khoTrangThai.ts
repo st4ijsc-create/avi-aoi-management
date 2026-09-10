@@ -181,6 +181,13 @@ export function ketNoiTheoMoc(
  *   truy vấn nền. Kho là lớp PHỦ realtime, không phải nguồn duy nhất — lúc mới
  *   mở trang kho còn rỗng, và một cảnh trống trơn ở giây đầu tiên là chính cái
  *   "0 giả" mà NT-3 cấm.
+ *
+ * ★★★ ĐỢT 38 (Pareto #2 QA Đợt 37) — NỀN và KHO nay nói CÙNG MỘT TỪ ĐIỂN (`CommandMachineStatus`). Trước: nền
+ *   `trangThaiBaoCao` = `overview.status` (`idle`/`offline`…) còn kho phủ `operationStatus` THÔ (`stopped`) từ
+ *   `twin:trangThai` ⇒ máy 14 sống-dừng hiện `khong_ro` (bảng màu không có `idle`) rồi "lật" sang "Stopped 11 s"
+ *   khi gói tới, trong khi `/factory-command` nói `idle`. Server (`traTrangThaiHangLoat`) nay đi qua ĐÚNG
+ *   `mapMachineStatus` như fleet; bảng màu có `idle`/`down`/`offline`. Hàm này KHÔNG đổi — một từ điển là việc
+ *   của nguồn, không phải của phép phủ (G12).
  */
 export function hopNhat(
   nen: readonly MayVanHanh[],
