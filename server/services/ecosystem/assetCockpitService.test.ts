@@ -323,6 +323,9 @@ describe("★★★ Đợt 34 — liveState.connected: nhịp tim quyết địn
     expect(d!.liveState.available).toBe(true);
     expect(d!.liveState.value!.status).toBe("online");
     expect(d!.liveState.value!.connected).toBe(false);
+    // ★ Đợt 40 (QA Đợt 39 #3) — trường ĐÃ ÁNH XẠ cùng từ điển fleet: máy im lặng 54 ngày ⇒ `offline`,
+    //   trong khi `status` thô vẫn `online` (giữ nguyên hợp đồng cũ, thêm trường mới).
+    expect(d!.liveState.value!.statusMapped).toBe("offline");
   });
   it("★ CHỖ BRIEF SAI: log online 10 GIÂY + heartbeat 54 ngày ⇒ vẫn FALSE (tuổi log không phải liveness)", async () => {
     getLatestMachineStatus.mockResolvedValue({ status: "online", timestamp: new Date(Date.now() - 10_000) });
@@ -335,6 +338,8 @@ describe("★★★ Đợt 34 — liveState.connected: nhịp tim quyết địn
     getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 10_000) });
     const d = await machineDetail(7);
     expect(d!.liveState.value!.connected).toBe(true);
+    // ★ Đợt 40 — máy sống, không `operationStatus` ở lớp này ⇒ `running` (cùng `mapMachineStatus` với fleet).
+    expect(d!.liveState.value!.statusMapped).toBe("running");
   });
   it("★ ĐỐI CHỨNG: chỉ machines.lastHeartbeat tươi (bảng heartbeat cũ) ⇒ TRUE, và lastHeartbeat = mốc đã chọn (max)", async () => {
     const moc = Date.now() - 20_000;

@@ -85,6 +85,7 @@ import {
   // ── Đợt 6 (§6.3) — trạng thái hàng loạt cho vòng render `/twin` ──
   traTrangThaiHangLoat,
   traAnhLichSu,
+  LICH_SU_LA_XAP_XI,
   // ── Đóng nợ #26 (§11) — E-STOP nổi lên Twin ──
   traAnToanRobot,
   traSucKhoeMay,
@@ -1244,7 +1245,9 @@ export const twinCanhRouter = router({
       );
       // `bayGio` trả về là MỐC ĐÃ KẸP — client phải xét tuổi theo mốc thật sự
       // được đọc, không theo mốc nó đã xin.
-      return { may, bayGio: moc, capNhatMoiNhat, tong: may.length };
+      // ★ Đợt 40 (QA Đợt 39 #3) — KHAI giới hạn của ảnh lịch sử ngay trong gói: `LICH_SU_LA_XAP_XI` tồn tại từ
+      //   Đợt 6 mà 0 UI đọc (i18n/hằng cho tính năng chưa có UI = chỉ báo QA sớm). Client dựng nhãn từ cờ này.
+      return { may, bayGio: moc, capNhatMoiNhat, tong: may.length, laXapXi: LICH_SU_LA_XAP_XI };
     }),
 
   luuHangLoat: protectedProcedure

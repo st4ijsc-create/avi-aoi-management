@@ -387,9 +387,22 @@ describe("★★★ ⑧ lyDoMoManMay — uỷ thác `lyDoNganNhung`, cùng thứ
   it("★★★ Đợt 34 (D) — `thieuQuyen` THẬT (server FORBIDDEN) THẮNG cả `chuaGanNhaMay` lẫn `ngoaiPhamVi`", () => {
     expect(lyDoMoManMay(7, { idTrongTam: [], phamViRong: true, thieuQuyen: true })).toBe("thieuQuyen");
     expect(lyDoMoManMay(7, { idTrongTam: [8], phamViRong: false, thieuQuyen: true })).toBe("thieuQuyen");
-    // Nhưng KHÔNG thắng `mo`: máy có trong tập / đang tải thì vẫn mở (không đoán sớm).
-    expect(lyDoMoManMay(7, { idTrongTam: [7], phamViRong: false, thieuQuyen: true })).toBe("mo");
-    expect(lyDoMoManMay(7, { idTrongTam: [], phamViRong: false, dangTai: true, thieuQuyen: true })).toBe("mo");
+  });
+
+  /*
+   * ★★★ ĐỢT 40 (QA Đợt 39 Pareto #1) — ĐỔI HỢP ĐỒNG CÓ LÝ DO ĐO ĐƯỢC, không "nới": Đợt 34 ghim "thieuQuyen KHÔNG
+   *   thắng `mo`" (máy có trong tập / đang tải ⇒ vẫn mở). QA Đợt 39 đo vai CHỈ `analytics_oee` + gán SIM-FAC
+   *   (`.qa-dot39/qd18/D-1600x900.json`): `canhThietKe` 200 (cổng hình học `quyenDocHinhHoc`) nên máy 14 CÓ
+   *   trong `idTrongTam`, `overview` 403 ⇒ `thieuQuyen: true` — và màn Máy VẼ canvas + cockpit "Machine not
+   *   found" cho một lỗi 403, trong khi Line cùng vai nói `thieuQuyen` đúng (`lyDoMoManLine` xét thiếu quyền
+   *   TRƯỚC). Một `FORBIDDEN` là kết cục cuối (`retry: false`), không phải "chưa biết".
+   */
+  it("★★★ Đợt 40 — `thieuQuyen` THẬT thắng CẢ `mo` (có trong tập / đang tải) — cùng thứ tự với `lyDoMoManLine`", () => {
+    expect(lyDoMoManMay(7, { idTrongTam: [7], phamViRong: false, thieuQuyen: true })).toBe("thieuQuyen");
+    expect(lyDoMoManMay(7, { idTrongTam: [], phamViRong: false, dangTai: true, thieuQuyen: true })).toBe("thieuQuyen");
+    // Đối chứng: KHÔNG `thieuQuyen` thì hai ca ấy vẫn mở như trước — bản vá không chặn ai thừa.
+    expect(lyDoMoManMay(7, { idTrongTam: [7], phamViRong: false, thieuQuyen: false })).toBe("mo");
+    expect(lyDoMoManMay(7, { idTrongTam: [], phamViRong: false, dangTai: true })).toBe("mo");
   });
 
   it("★★★ Đợt 34 (D) — `cauChoLyDoManMay`: câu mới cho `chuaGanNhaMay`, ba câu cũ UỶ THÁC `cauChoLyDoNgan` (G12)", () => {

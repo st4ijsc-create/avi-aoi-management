@@ -179,6 +179,7 @@ import { dongHoHienThi, hopNhat } from "@/components/twin3d/van-hanh/khoTrangTha
 import { useUnsStream, isa95Slug } from "@/lib/unsStreamClient";
 import { mocTuAnhChupUns } from "@/components/twin3d/van-hanh/phuUns";
 import { khoaBanDo, khoaMayVanHanh, useOnDinhTheoGiaTri } from "@/components/twin3d/van-hanh/onDinhTheoGiaTri";
+import { giuKhiCungNhaMay } from "@/components/twin3d/van-hanh/giuDuLieuTruoc";
 import {
   xepKhuCho,
   nhanLineTaiCentroid,
@@ -634,9 +635,12 @@ export function ThanTwinVanHanh() {
   const tangIdsHoi = useMemo(() => dsTang.map((s) => s.id).slice(0, 50), [dsTang]);
 
   // Hình học + cây phân cấp.
+  // ★ Đợt 40 (QA Đợt 39 #5) — `placeholderData`: hai pha `tangIds` ([] → thật) đổi KHOÁ truy vấn ⇒ `data`
+  //   `undefined` một nhịp ⇒ hàng máy `may-hang-*` remount ~250 ms (`.qa-dot39/cua-so-som/`). Giữ dữ liệu
+  //   pha trước CHỈ khi cùng nhà máy (`giuDuLieuTruoc.ts`).
   const canhQ = trpc.twinCanh.canhThietKe.useQuery(
     { factoryId: factoryId ?? 0, tangIds: tangIdsHoi },
-    { enabled: factoryId !== null, retry: false },
+    { enabled: factoryId !== null, retry: false, placeholderData: giuKhiCungNhaMay(factoryId) },
   );
 
   /**
@@ -2974,6 +2978,26 @@ export function ThanTwinVanHanh() {
                 {hienSo(demTuoi.ngungKhaiThac, dangTai)}
               </span>
             </div>
+            {/*
+              ★★★ ĐỢT 40 (QA Đợt 39 Pareto #1) — "—" PHẢI CÓ CÂU LÝ DO NGAY TẠI CHỖ. Đo trước vá
+                (`.qa-dot39/qd18/D-1600x900.png`, vai CHỈ `analytics_oee` + gán): mọi ô đếm `—`, KPI `—`, danh
+                sách máy `—`; lý do duy nhất nằm trong dải "1 thing to know" GẬP LẠI (`banner-thieu-quyen-truy-van`)
+                — Line cùng vai nói `thieuQuyen` ngay giữa màn, Máy vẽ canvas. Ba màn ba kiểu.
+              ★ Chỉ khi `overview` bị TỪ CHỐI (`FORBIDDEN`) — không nhân bản cho lỗi mạng (câu khác, việc khác).
+              ★ Dải banner vẫn giữ (nó nêu ĐÍCH DANH truy vấn); câu này là bản tại-chỗ, cùng khoá i18n gốc `thieuQuyen`.
+            */}
+            {(overviewQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ? (
+              <p
+                className="mt-1.5 rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-[11px] leading-snug text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                data-testid="ly-do-so-trong"
+                data-ly-do="thieuQuyen"
+              >
+                {t(
+                  "twin3d.vanHanh.soTrongThieuQuyen",
+                  "Số liệu trạng thái cần quyền Trạng thái máy — liên hệ quản trị để được cấp.",
+                )}
+              </p>
+            ) : null}
           </div>
 
           {/* ★★★ §11 #12/#13/#14/#15 — DẢI CẢNH BÁO (lô B dựng, nối ở đây)
@@ -3361,6 +3385,8 @@ export function ThanTwinVanHanh() {
               onDoiMoc={setMocTua}
               onDoiPhat={setDangPhat}
               onDoiTocDo={setTocDo}
+              /* ★ Đợt 40 (QA Đợt 39 #3) — cờ `LICH_SU_LA_XAP_XI` từ gói `anhLichSu` lên nhãn; server khai, UI nói. */
+              laXapXi={lichSuQ.data?.laXapXi === true}
             />
           </div>
 

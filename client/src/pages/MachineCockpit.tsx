@@ -851,10 +851,29 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
         />
 
         {detailQ.isError ? (
-          <EmptyState
-            title={t("cockpit.notFound", "Machine not found")}
-            description={t("cockpit.notFoundHint", "No machine exists for this id, or it is not visible to you.")}
-          />
+          /*
+           * ★★★ ĐỢT 40 (QA Đợt 39 Pareto #1) — ĐỌC MÃ LỖI, đừng dịch mọi lỗi thành "not found". Đo trước vá
+           *   (`.qa-dot39/qd18/D-*.json`, vai CHỈ `analytics_oee`): `machineDetail` trả 403 `FORBIDDEN`
+           *   (`requirePermission("machine_status")`), cockpit in "Machine not found — not visible to you" —
+           *   máy CÓ thật và người dùng CÓ được gán; thứ họ thiếu là một quyền có tên. Câu sai gửi người
+           *   dùng đi tìm nhầm việc (kiểm id) thay vì đúng việc (xin quyền `machine_status`).
+           *   `NOT_FOUND` (không tồn tại HOẶC ngoài phạm vi tenant — cùng mã, G82) giữ câu cũ.
+           */
+          (detailQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ? (
+            <div data-testid="cockpit-loi" data-ly-do="thieuQuyen">
+              <EmptyState
+                title={t("cockpit.forbidden", "No permission to view this machine")}
+                description={t("cockpit.forbiddenHint", "Viewing a machine cockpit requires the Machine status permission. Ask an administrator to grant it.")}
+              />
+            </div>
+          ) : (
+            <div data-testid="cockpit-loi" data-ly-do="khongThay">
+              <EmptyState
+                title={t("cockpit.notFound", "Machine not found")}
+                description={t("cockpit.notFoundHint", "No machine exists for this id, or it is not visible to you.")}
+              />
+            </div>
+          )
         ) : detailQ.isLoading || !d ? (
           <div className="py-16 text-center text-sm text-muted-foreground">{t("cockpit.loading", "Loading cockpit…")}</div>
         ) : (
@@ -963,7 +982,7 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                             là hai câu trên một thẻ cho một máy im lặng 54 ngày (G105/G111). Suy từ `connected` (đã gate
                             nhịp tim — cùng `dangKetNoi` với fleet); sự kiện thô đi cùng "Last change", nơi nó có nghĩa.
                             Hợp đồng API giữ nguyên (`status` vẫn trả). */}
-                        <KV k={t("cockpit.status", "Status")} v={<span data-testid="cockpit-live-status" data-connected={String(d.liveState.value.connected)}><StatusBadge status={d.liveState.value.connected ? "online" : "offline"} className="px-1.5 py-0 text-[11px]" /></span>} />
+                        <KV k={t("cockpit.status", "Status")} v={<span data-testid="cockpit-live-status" data-connected={String(d.liveState.value.connected)} data-status-mapped={d.liveState.value.statusMapped ?? ""}><StatusBadge status={d.liveState.value.connected ? "online" : "offline"} className="px-1.5 py-0 text-[11px]" /></span>} />
                         {/* doc 63 (AUD-09) — flag-gated: colour-coded PackML badge vs raw text (byte-identical when off) */}
                         <KV k={t("cockpit.packml", "PackML / op")} v={isIsa101V2() && d.liveState.value.operationStatus ? <PackmlStateBadge state={d.liveState.value.operationStatus} className="px-1.5 py-0 text-[11px]" /> : (d.liveState.value.operationStatus ?? "—")} />
                         <KV k={t("cockpit.lastChange", "Last change")} v={d.liveState.value.status ? `${d.liveState.value.status} · ${tsToLocale(d.liveState.value.lastStatusChange)}` : tsToLocale(d.liveState.value.lastStatusChange)} />

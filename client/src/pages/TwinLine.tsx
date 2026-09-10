@@ -146,6 +146,7 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useMoPhongTwin } from "@/components/twin3d/van-hanh/useMoPhongTwin";
 import { chieuCaoTruDinh, useTruDinhKhung } from "@/components/twin3d/van-hanh/useTruDinhKhung";
 import { khoaBanDo, khoaMayVanHanh, useOnDinhTheoGiaTri } from "@/components/twin3d/van-hanh/onDinhTheoGiaTri";
+import { giuKhiCungNhaMay } from "@/components/twin3d/van-hanh/giuDuLieuTruoc";
 import { rutTienTo, tienToChung } from "@/components/twin3d/van-hanh/maNgan";
 // ★ Đợt 35 (Pareto #7): DÙNG LẠI câu `chuaGanNhaMay` của màn Máy (Đợt 34 D) — không khai câu thứ hai (G12).
 import { cauChoLyDoManMay } from "@/components/twin3d/van-hanh/manMay";
@@ -392,9 +393,11 @@ export function ThanManLine({
    *   sẽ **giấu im lặng** những trạm của chính chuyền đang xem, và đường tâm
    *   Line **đứt quãng mà không nói vì sao**.
    */
+  // ★ Đợt 40 (QA Đợt 39 #5) — `placeholderData` giữ dữ liệu pha `tangIds: []` trong lúc hỏi pha tầng thật (cùng
+  //   nhà máy) ⇒ ô trạm `o-tram-*` không biến mất ~250 ms giữa hai pha (`.qa-dot39/cua-so-som/`, 6/12 lần).
   const canhQ = trpc.twinCanh.canhThietKe.useQuery(
     { factoryId: factoryId ?? 0, tangIds: tangIdsHoi },
-    { enabled: factoryId !== null, retry: false },
+    { enabled: factoryId !== null, retry: false, placeholderData: giuKhiCungNhaMay(factoryId) },
   );
 
   const tram = useMemo(() => canhQ.data?.tram ?? [], [canhQ.data]);

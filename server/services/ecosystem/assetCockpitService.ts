@@ -81,7 +81,7 @@ import { resolveForMachineType } from "../standards/deviceTypeRegistry";
 import { getMachineOEELive } from "../oeeService";
 // ★ Đợt 34 (Pareto #1) — MỘT hợp đồng kết nối dùng chung với `factoryCommandService` (đọc docblock
 //   `trangThaiMayTuoi.ts`): nhịp tim quyết định; mốc nhịp tim chọn bằng ĐÚNG hai hàm của kho twin.
-import { dangKetNoi } from "../trangThaiMayTuoi";
+import { dangKetNoi, mapMachineStatus, type CommandMachineStatus } from "../trangThaiMayTuoi";
 import { chonNguonMocTuoi, quyTuoiMay } from "../../db/twinCanh";
 import { computeFailureRisk, computeReliabilityStats } from "../predictiveMaintenanceService";
 import { resolveModel } from "../twin/modelRegistry";
@@ -377,12 +377,20 @@ export interface MachineIdentity {
 }
 
 export interface MachineLiveState {
+  /** Giá trị THÔ của log `machine_status_logs` mới nhất (`online`/`offline`) — trung thực về log, KHÔNG phải kết luận. */
   status: string | null;
   lastStatusChange: number | null;
   heartbeatStatus: string | null;
   lastHeartbeat: number | null;
   operationStatus: string | null;
   connected: boolean;
+  /**
+   * ★★★ Đợt 40 (QA Đợt 39 Pareto #3) — TRẠNG THÁI ĐÃ ÁNH XẠ, CÙNG TỪ ĐIỂN với `factoryCommand.overview`
+   * (`mapMachineStatus`: nhịp tim quyết định; không nhịp tim tươi ⇒ `offline`). Đo trước vá
+   * (`.qa-dot39/bon-nguon/hb-M14.json`): `status: "online"` thô đứng cạnh `connected: false` — UI phải tự suy.
+   * Trường THÊM, `status` cũ giữ nguyên (không bỏ trường API).
+   */
+  statusMapped: CommandMachineStatus;
 }
 
 export interface ResolvedCapabilitySection {
@@ -556,10 +564,8 @@ export async function machineDetail(machineId: number, scope?: PhamViNguoiXem): 
         chonNguonMocTuoi({ hbBang: hb?.timestamp, hbMay, statusLogTs: status?.timestamp }),
         now,
       );
-      const connected = dangKetNoi(
-        { logStatus: status?.status, logTs: status?.timestamp, nhipTimTs: hbTs },
-        now,
-      );
+      const bangChung = { logStatus: status?.status, logTs: status?.timestamp, nhipTimTs: hbTs };
+      const connected = dangKetNoi(bangChung, now);
       return {
         status: status?.status ?? null,
         lastStatusChange: status?.timestamp ? new Date(status.timestamp).getTime() : null,
@@ -567,6 +573,9 @@ export async function machineDetail(machineId: number, scope?: PhamViNguoiXem): 
         lastHeartbeat: hbTs,
         operationStatus: null,
         connected,
+        // ★ Đợt 40 — CÙNG bằng chứng, CÙNG hàm với fleet (`getCommandMachineDetail`/`overview`); `operationStatus`
+        //   không có ở lớp này (null) ⇒ máy sống ra `running` như fleet khi không có gì khác — một từ điển.
+        statusMapped: mapMachineStatus(bangChung, null, now),
       };
     },
   );

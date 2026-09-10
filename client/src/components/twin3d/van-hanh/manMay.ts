@@ -378,9 +378,18 @@ export interface CanhXetManMay extends CanhXetNgan {
 }
 
 export function lyDoMoManMay(machineId: number, canh: CanhXetManMay): LyDoManMay {
+  /*
+   * ★★★ ĐỢT 40 (QA Đợt 39 Pareto #1) — `thieuQuyen` THẬT xét TRƯỚC `mo`, cùng thứ tự với `lyDoMoManLine`
+   *   (`manLine.ts`: `if (c.thieuQuyen) return "thieuQuyen"` đứng đầu). Đo trước vá (`.qa-dot39/qd18/D-*.json`,
+   *   vai CHỈ `analytics_oee` + gán SIM-FAC): `overview` 403 nhưng `canhThietKe` (cổng hình học) 200 ⇒ máy 14 CÓ
+   *   trong `idTrongTam` ⇒ nhánh `ly === "mo"` trả `mo` trước khi nhìn tới `thieuQuyen` ⇒ màn VẼ canvas, cockpit
+   *   hỏi `machineDetail` rồi in "Machine not found" cho một lỗi 403. Ba màn nói ba kiểu cho cùng một vai.
+   *   Một phản hồi `FORBIDDEN` là kết cục CUỐI (`retry: false`), không phải "chưa biết" — nó phải thắng cả
+   *   `dangTai` lẫn "có trong tập": hình học mở được không có nghĩa là trạng thái xem được.
+   */
+  if (canh.thieuQuyen) return "thieuQuyen";
   const ly = lyDoNganNhung({ loai: "machine", id: machineId }, canh) ?? "mo";
   if (ly === "mo") return "mo";
-  if (canh.thieuQuyen) return "thieuQuyen";
   if (ly === "thieuQuyen") return "chuaGanNhaMay";
   return ly;
 }

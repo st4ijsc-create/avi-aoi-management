@@ -39,6 +39,12 @@ export interface DongThoiGianProps {
   onDoiMoc: (moc: number | null) => void;
   onDoiPhat: (dangPhat: boolean) => void;
   onDoiTocDo: (tocDo: TocDo) => void;
+  /**
+   * ★ Đợt 40 (QA Đợt 39 #3) — cờ `laXapXi` của gói `twinCanh.anhLichSu` (`LICH_SU_LA_XAP_XI`): tua lại chỉ
+   * dựng được KẾT NỐI (nhịp tim), không dựng được chế độ vận hành ⇒ máy sống-nhưng-`stopped` hiện `running`.
+   * Cờ tồn tại từ Đợt 6 mà 0 UI đọc; nay nhãn `nhan-lich-su-xap-xi` hiện khi ĐANG TUA và cờ bật.
+   */
+  laXapXi?: boolean;
 }
 
 /**
@@ -165,6 +171,7 @@ export function DongThoiGian({
   onDoiMoc,
   onDoiPhat,
   onDoiTocDo,
+  laXapXi = false,
 }: DongThoiGianProps) {
   const { t } = useTranslation();
   const dangTua = moc != null;
@@ -315,6 +322,17 @@ export function DongThoiGian({
           ? t("twin3d.tua.xemLai", "Xem lại {{gio}}", { gio: nhanMoc(moc) })
           : t("twin3d.tua.trucTiep", "Trực tiếp")}
       </span>
+
+      {/* ★ Đợt 40 — KHAI giới hạn của ảnh lịch sử: chữ, không chỉ màu (§10.3), chỉ khi đang tua và server khai xấp xỉ. */}
+      {dangTua && laXapXi ? (
+        <span
+          className="shrink-0 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300"
+          data-testid="nhan-lich-su-xap-xi"
+          title={t("twin3d.tua.xapXi", "Tua lại chỉ dựng được kết nối, không dựng được chế độ vận hành — trạng thái là xấp xỉ")}
+        >
+          {t("twin3d.tua.xapXi", "Tua lại chỉ dựng được kết nối, không dựng được chế độ vận hành — trạng thái là xấp xỉ")}
+        </span>
+      ) : null}
 
       {/* Tốc độ */}
       <div className="flex shrink-0 gap-0.5">

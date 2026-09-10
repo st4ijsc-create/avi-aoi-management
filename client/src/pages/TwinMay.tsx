@@ -152,6 +152,7 @@ import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/ngan
 
 import { chieuCaoTruDinh, useTruDinhKhung } from "@/components/twin3d/van-hanh/useTruDinhKhung";
 import { khoaBanDo, khoaMayVanHanh, useOnDinhTheoGiaTri } from "@/components/twin3d/van-hanh/onDinhTheoGiaTri";
+import { giuKhiCungNhaMay } from "@/components/twin3d/van-hanh/giuDuLieuTruoc";
 import {
   SAN_KHOI_CANH_MAY_PX,
   chieuCaoKhoiCanhMay,
@@ -307,9 +308,11 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
     [chiTietQ.data],
   );
   /* ★ Hỏi MỌI tầng của toà (F2) — máy là đơn vị, tầng chỉ là chỗ nó đứng. */
+  // ★ Đợt 40 (QA Đợt 39 #5) — `placeholderData` cùng luật ba màn (`giuDuLieuTruoc.ts`); `chuaDatCho` đã hỏi
+  //   `!canhQ.isFetching` từ Đợt 34 nên pha-2-đang-chạy không bị đọc nhầm là "đã có bố cục".
   const canhQ = trpc.twinCanh.canhThietKe.useQuery(
     { factoryId: factoryId ?? 0, tangIds: tangIdsHoi },
-    { enabled: factoryId !== null, retry: false },
+    { enabled: factoryId !== null, retry: false, placeholderData: giuKhiCungNhaMay(factoryId) },
   );
 
   const tram = useMemo(() => canhQ.data?.tram ?? [], [canhQ.data]);
