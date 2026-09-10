@@ -593,7 +593,8 @@ type PropsHam = Pick<CanhVanHanhProps, "onChonMay" | "onCameraDoi" | "chuNhanAn"
 
 /** Khoá giá trị của một prop dữ liệu — `undefined` và `null` phân biệt (bỏ trống ≠ tắt). */
 function khoaGiaTri(v: unknown): string {
-  return v === undefined ? " u" : JSON.stringify(v);
+  // Chuoi canh cho `undefined` khong the trung voi JSON.stringify (JSON string luon co dau ngoac kep).
+  return v === undefined ? "@undefined" : JSON.stringify(v);
 }
 
 export function CanhVanHanh(props: CanhVanHanhProps) {
