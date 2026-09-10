@@ -23,6 +23,7 @@ import {
   TRAN_NHAN_DOM,
   type HinhChuNhat,
   type NhanUngVien,
+  uocLuongRongNhanPx,
 } from "./locNhan";
 
 /**
@@ -174,8 +175,9 @@ export function LopNhan({
         x: mh?.x ?? 0,
         y: mh?.y ?? 0,
         khoangCachMet: kc,
-        // Số đo THẬT khi đã có; thiếu thì `locNhan` dùng trị suy đoán của nó.
-        rongPx: co?.rongPx,
+        // Số đo THẬT khi đã có; thiếu thì ƯỚC LƯỢNG THEO CHỮ (Đợt 38) — không dùng 150 px của nhãn cũ,
+        // vì nhãn chưa từng vẽ sẽ "rộng 150" mãi ⇒ chồng ⇒ không vẽ ⇒ không bao giờ được đo (tự khoá).
+        rongPx: co?.rongPx ?? uocLuongRongNhanPx(n.phu ? `${n.ma} · ${n.phu}` : n.ma),
         caoPx: co?.caoPx,
         dangChon: n.machineId === dangChon,
         batThuong: n.batThuong === true,
@@ -197,6 +199,8 @@ export function LopNhan({
       vungCam,
       // ★ Đợt 35 — xếp tầng nhãn chồng (12 nóc máy cùng hàng sau khi khớp khung ⇒ 7/12 bị bỏ nếu không).
       xepTang: true,
+      // ★ Đợt 38 — lên hết đường (panel Metrics đè ngay trên hàng máy @1280) thì đẩy XUỐNG trước khi bỏ.
+      xepTangXuong: true,
     });
 
     // Cửa sổ đo cho e2e (§13.2). Ghi CẢ khi 0 nhãn — "không đo được" phải khác

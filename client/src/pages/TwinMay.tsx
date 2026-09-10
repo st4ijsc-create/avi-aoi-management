@@ -151,6 +151,7 @@ import {
 import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
 
 import { chieuCaoTruDinh, useTruDinhKhung } from "@/components/twin3d/van-hanh/useTruDinhKhung";
+import { khoaBanDo, khoaMayVanHanh, useOnDinhTheoGiaTri } from "@/components/twin3d/van-hanh/onDinhTheoGiaTri";
 import {
   SAN_KHOI_CANH_MAY_PX,
   chieuCaoKhoiCanhMay,
@@ -237,6 +238,14 @@ function nhanHang(hang: HangSucKhoe, t: (k: string, d: string) => string): strin
       return t("twin3d.may.hang.chuaDo", "chưa đo");
   }
 }
+
+/**
+ * ★★★ ĐỢT 38 (phần dư Pareto #1) — HẰNG MODULE, không phải `wip={[]}` tại chỗ gọi: `CanhVanHanh` có
+ *   `useEffect([wip]) → invalidate()` (`CanhVanHanh.tsx:312`), nên một mảng rỗng MỚI mỗi render là **một khung vẽ
+ *   cho mỗi re-render** của trang (mỗi phản hồi poll, mỗi gói socket) dù cảnh không đổi gì. Đo: 16–18 → 13 khung/40 s
+ *   sau khi ổn định `mayTatCa`, phần còn lại là đây.
+ */
+const KHONG_WIP: never[] = [];
 
 export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanManMayProps) {
   const { t } = useTranslation();
@@ -334,8 +343,11 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
   /* ★★★ Đợt 34 (Pareto #1) — MỘT hàm cho ba màn: `tsTrangThai` (nhịp tim, cùng mốc với kho) thắng;
      issue `offline` chỉ là đường lùi cho server cũ. Xem docblock `tsTrangThaiTheoMay` và `TwinLine.tsx`. */
   const tsTheoMay = useMemo(
-    () => tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], bayGioThat),
-    [overviewQ.data, bayGioThat],
+    // ★ Đợt 38 — mốc = lúc NHẬN dữ liệu (`Date.now()` trong memo), không phải `bayGioThat` mỗi render: `ageMinutes`
+    //   do server tính lúc trả lời, và một dep đổi mỗi render kéo cả chuỗi `mayNen → mayTatCa → mayVe` dựng lại
+    //   ⇒ một khung vẽ cho mỗi re-render dù dữ liệu y nguyên (xem `onDinhTheoGiaTri.ts`).
+    () => tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], Date.now()),
+    [overviewQ.data],
   );
 
   const mayNen = useMemo<MayVanHanh[]>(() => {
@@ -354,7 +366,13 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
     }));
   }, [canhQ.data, overviewQ.data, tsTheoMay, lineCuaTram]);
 
-  const mayTatCa = useMemo(() => hopNhat(mayNen, kho), [mayNen, kho]);
+  /*
+   * ★★★ ĐỢT 38 (phần dư Pareto #1) — ỔN ĐỊNH THEO GIÁ TRỊ: `kho` là đối tượng mới mỗi gói socket 10 s dù 42 máy y nguyên
+   *   (nhịp tim 54 ngày), `mayNen` mới mỗi phản hồi poll ⇒ `mayTatCa` mới ⇒ `mayVe` mới ⇒ `LoBatchMay` tô lại ⇒
+   *   khung vẽ (đo 16–18 khung/40 s sau khi hết tween; chặn tRPC ⇒ 10). Giữ tham chiếu khi khoá giá trị không đổi.
+   */
+  const mayTatCaTho = useMemo(() => hopNhat(mayNen, kho), [mayNen, kho]);
+  const mayTatCa = useOnDinhTheoGiaTri(mayTatCaTho, khoaMayVanHanh(mayTatCaTho));
 
   const mayNay = useMemo(() => mayTatCa.find((m) => m.id === machineId) ?? null, [mayTatCa, machineId]);
 
@@ -369,11 +387,13 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
    */
   const hangXom = useMemo(() => mayHangXom(machineId, mayTatCa, tram), [machineId, mayTatCa, tram]);
 
-  const trangThaiTheoMay = useMemo(() => {
+  const trangThaiTheoMayTho = useMemo(() => {
     const m = new Map<number, string>();
     for (const mv of mayTatCa) m.set(mv.id, trangThaiHienThi(mv, bayGio).trangThai);
     return m;
   }, [mayTatCa, bayGio]);
+  // ★ Đợt 38 — `bayGio` đổi mỗi render nên bản thô dựng lại mỗi render; chỉ đổi tham chiếu khi một trạng thái ĐỔI.
+  const trangThaiTheoMay = useOnDinhTheoGiaTri(trangThaiTheoMayTho, khoaBanDo(trangThaiTheoMayTho));
 
   const maTheoMay = useMemo(() => {
     const m = new Map<number, string>();
@@ -494,7 +514,7 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
    *   `viTri.y` (độ cao) là dán vòng lên một đường thẳng, không gì nổ.
    */
   const khai = useMemo(() => (sucKhoeQ.data?.khai ?? []) as KhaiSucKhoe[], [sucKhoeQ.data]);
-  const vienSucKhoeCanh = useMemo(
+  const vienSucKhoeTho = useMemo(
     () =>
       vienSucKhoe(
         khai,
@@ -507,9 +527,25 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
       ),
     [khai, neoMucTieu, bayGio],
   );
+  // ★ Đợt 38 — cùng lý do với `mayTatCa`: `bayGio` đổi mỗi render; vòng viền chỉ đổi khi hạng/vị trí đổi.
+  const vienSucKhoeCanh = useOnDinhTheoGiaTri(vienSucKhoeTho, JSON.stringify(vienSucKhoeTho));
 
   /* ── Camera orbit GẦN quanh máy đích (≤ 8 m) — trừ khi deep-link nói rõ `?cam=` (Đợt 33) ── */
-  const khungNhin = useMemo(() => (camUrl ? khungNhinTuCamera(camUrl) : khungNhinMay(mucTieu)), [camUrl, mucTieu]);
+  const khungNhinTho = useMemo(() => (camUrl ? khungNhinTuCamera(camUrl) : khungNhinMay(mucTieu)), [camUrl, mucTieu]);
+  /*
+   * ★★★ ĐỢT 38 (Pareto #1 QA Đợt 37) — ỔN ĐỊNH THEO GIÁ TRỊ, cùng khuôn `TwinLine` (Đợt 35) và `/twin` (Đợt 36).
+   *   `mucTieu` dựng lại từ `mayVe` mỗi gói `twin:trangThai` (10 s) ⇒ `khungNhinTho` là ĐỐI TƯỢNG MỚI cùng giá trị
+   *   ⇒ `DieuKhien` (effect `[khungNhin]`) khởi động tween về CÙNG chỗ ⇒ đo được **143–230 khung/40 s** khi đứng
+   *   yên, camera không đổi (`.qa-dot37/ablation-may/`, `.qa-dot38/truoc/p1-may-*`: 179). Chặn socket ⇒ 230, chặn
+   *   tRPC ⇒ 107: trigger NỘI TẠI, không phải mạng. Vá cùng lớp ở HAI màn kia mà không quét màn thứ ba là G110 —
+   *   nay `cuaVaoTwin` ghim bằng BẤT BIẾN trên MỌI trang dựng `<CanhVanHanh>`, không bằng danh sách tên.
+   *   Khoá = toạ độ làm tròn mm ở CẢ `viTri` lẫn `muc`; cùng khoá ⇒ cùng đối tượng ⇒ không tween.
+   */
+  const khoaKhungNhin = khungNhinTho
+    ? `${khungNhinTho.viTri.map((v) => v.toFixed(3)).join(",")}|${khungNhinTho.muc.map((v) => v.toFixed(3)).join(",")}`
+    : "";
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- cố ý: chỉ đổi đối tượng khi GIÁ TRỊ đổi
+  const khungNhin = useMemo(() => khungNhinTho, [khoaKhungNhin]);
 
   /* ── (B) chip trái ───────────────────────────────────────────────────── */
   const tomTat = useMemo(() => tomTatMay(mayNay, khai, bayGio), [mayNay, khai, bayGio]);
@@ -738,7 +774,7 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
                          thế nào", không phải "chuyền chảy ra sao" (D-6/D-7 cùng
                          lý do). `vung` không truyền (D-12, 0 hàng). */
                     dongChay={null}
-                    wip={[]}
+                    wip={KHONG_WIP}
                     /* ★ Đợt 35 (#4): sàn canvas = sàn khung (240) — xem chú thích khối `khoi-canh-may`. */
                     sanCaoPx={SAN_KHOI_CANH_MAY_PX}
                     vienSucKhoe={vienSucKhoeCanh}

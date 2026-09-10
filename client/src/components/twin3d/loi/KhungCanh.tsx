@@ -98,6 +98,30 @@ export const SAN_CAO_KHUNG_CANH_PX = 320;
 let soCanvasDangSong = 0;
 
 /**
+ * ★★★ ĐỢT 38 (RB-4/G99) — BỘ ĐẾM CANVAS SỐNG là MỘT HOOK CÓ EXPORT, để một `<Canvas>` KHÔNG đi qua `<KhungCanh>`
+ *   (tab "3D model" của `MachineCockpit`, drei) cũng ĐĂNG KÝ vào cùng bộ đếm. QA Đợt 32/37 đo `/twin/may/14` bấm
+ *   tab 3D ⇒ DOM **2** canvas mà `window.__soCanvas` = **1**: phép đo RB-4 MÙ đúng canvas nó phải bắt (G99).
+ *   Cảnh báo TO khi > 1: nhiều canvas cùng lúc làm cạn WebGL context và biểu hiện là canvas ĐEN, không phải một
+ *   lỗi đọc được. Gọi đúng MỘT lần trong component bao `<Canvas>` (một mount = một canvas sống).
+ */
+export function useDemCanvasSong(): void {
+  useEffect(() => {
+    soCanvasDangSong += 1;
+    if (typeof window !== "undefined") (window as WindowDo).__soCanvas = soCanvasDangSong;
+    if (soCanvasDangSong > 1) {
+      console.error(
+        `[twin3d] RB-4 vi phạm: ${soCanvasDangSong} canvas WebGL đang sống cùng lúc. ` +
+          "Chỉ MỘT canvas WebGL được phép mount tại một thời điểm.",
+      );
+    }
+    return () => {
+      soCanvasDangSong -= 1;
+      if (typeof window !== "undefined") (window as WindowDo).__soCanvas = soCanvasDangSong;
+    };
+  }, []);
+}
+
+/**
  * Ba đèn TỐI ĐA (§4: "Đèn ≤ 3, không point-light shadow"). Hemisphere cho ánh
  * sáng nền dịu, Directional cho hình khối đọc được, Ambient nâng vùng tối.
  * KHÔNG shadow map realtime — bật lên là mất `frameloop="demand"` vì bóng phải
@@ -239,22 +263,8 @@ export function KhungCanh({
 }: KhungCanhProps) {
   const [matContext, setMatContext] = useState(false);
 
-  // RB-4 — đếm canvas sống. Cảnh báo TO khi > 1: nhiều canvas cùng lúc làm cạn
-  // WebGL context và biểu hiện là canvas ĐEN, không phải một lỗi đọc được.
-  useEffect(() => {
-    soCanvasDangSong += 1;
-    if (typeof window !== "undefined") (window as WindowDo).__soCanvas = soCanvasDangSong;
-    if (soCanvasDangSong > 1) {
-      console.error(
-        `[twin3d] RB-4 vi phạm: ${soCanvasDangSong} <KhungCanh> đang sống cùng lúc. ` +
-          "Chỉ MỘT canvas WebGL được phép mount tại một thời điểm.",
-      );
-    }
-    return () => {
-      soCanvasDangSong -= 1;
-      if (typeof window !== "undefined") (window as WindowDo).__soCanvas = soCanvasDangSong;
-    };
-  }, []);
+  // RB-4 — đếm canvas sống qua MỘT cài đặt (`useDemCanvasSong`, Đợt 38: cockpit dùng chung bộ đếm).
+  useDemCanvasSong();
 
   return (
     <div

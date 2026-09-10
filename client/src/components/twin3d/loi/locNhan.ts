@@ -63,6 +63,25 @@ export const RONG_SUY_DOAN_PX = 150;
 export const CAO_SUY_DOAN_PX = 22;
 
 /**
+ * ★★★ ĐỢT 38 (Pareto #7 QA Đợt 37) — BỀ RỘNG ƯỚC LƯỢNG THEO CHỮ cho nhãn CHƯA ĐO ĐƯỢC.
+ *
+ * Gốc rễ đo được ở `/twin/line/2` 1280×720 (`.qa-dot38/sau/p7-line-2-1280x720.json`): sau khi rút tiền tố chung
+ * nhãn chỉ còn 97–144 px, mà 4/12 vẫn bị giấu. `LopNhan` chỉ có số đo THẬT (`getBoundingClientRect`) của nhãn ĐÃ
+ * TỪNG được vẽ; nhãn chưa từng vẽ nhận {@link RONG_SUY_DOAN_PX} = 150 — bề rộng của nhãn CŨ (chưa rút tiền tố) —
+ * nên ở mọi khung nó "rộng 150" ⇒ chồng ⇒ không được vẽ ⇒ không bao giờ được đo ⇒ **tự khoá mình**. Đúng cái bẫy mà
+ * docblock `RONG_SUY_DOAN_PX` đã cảnh báo, chỉ là 150 nay quá rộng so với chữ thật.
+ *
+ * Ước lượng từ CHỮ (font 12 px / 600, đệm 2×8): đo 11 nhãn thật ⇒ 6,4–7,1 px/ký tự. Lấy **7,2 px/ký tự + 16 px** —
+ * CẬN TRÊN nhẹ (+0…13 %): thà rộng hơn thật một chút (bỏ oan hiếm) còn hơn hẹp hơn thật (hai nhãn ĐÈ nhau, vi phạm
+ * hậu điều kiện "0 cặp chồng"). Khung sau đã có số đo thật, trị này hết vai trò — như `RONG_SUY_DOAN_PX`.
+ */
+export const PX_MOI_KY_TU_NHAN = 7.2;
+export const DEM_NGANG_NHAN_PX = 16;
+export function uocLuongRongNhanPx(chu: string): number {
+  return Math.round(DEM_NGANG_NHAN_PX + chu.length * PX_MOI_KY_TU_NHAN);
+}
+
+/**
  * Một nhãn ứng viên, đã được người gọi chiếu sang toạ độ MÀN HÌNH (pixel).
  * Gốc toạ độ là góc trên-trái của canvas.
  */
@@ -176,7 +195,7 @@ export interface NhanDuocVe {
   x: number;
   /** Toạ độ vẽ — đã cộng tầng (`y = neo − tang·(cao + khe)`). */
   y: number;
-  /** ★ Đợt 35 — 0 = ngay trên neo; 1..`TANG_NHAN_TOI_DA` = đẩy lên để tránh chồng. */
+  /** ★ Đợt 35 — 0 = ngay trên neo; 1..`TANG_NHAN_TOI_DA` = đẩy LÊN; ★ Đợt 38 — ÂM = đẩy XUỐNG (`xepTangXuong`). */
   tang: number;
   /** Điểm ưu tiên đã tính — hiện ra để gỡ lỗi và để test khẳng định thứ tự. */
   diemUuTien: number;
@@ -298,6 +317,16 @@ export interface CauHinhLocNhan {
    * luật 3 ("chồng ⇒ bỏ") của mọi người gọi cũ giữ nguyên; `LopNhan` bật.
    */
   xepTang?: boolean;
+  /**
+   * ★★★ Đợt 38 (Pareto #7 QA Đợt 37) — XẾP TẦNG XUỐNG khi phía trên hết đường: thử tầng −1..−`TANG_NHAN_TOI_DA`
+   * (đẩy XUỐNG dưới neo, đè lên phần nóc/thân máy) trước khi bỏ. Đo `/twin/line/2` 1280×720
+   * (`.qa-dot38/sau/vung-cam-1280.json`): hàng nhãn t0 ở y≈233..257 nằm NGAY DƯỚI panel Metrics (vùng cấm
+   * [8..254]×[8..228]) ⇒ ba nhãn bên trái KHÔNG có tầng nào phía trên ⇒ giấu 3/12 dù chỉ cần MỘT tầng; và tầng của
+   * máy kề lệch nhau vài px (nóc máy khác cao) nên t1 của máy này chạm t2 của máy bên. Khung camera là việc của chủ
+   * sở hữu (D-7 (2)); bộ lọc chỉ được phép dùng chỗ CÒN TRỐNG — và chỗ trống đang ở phía dưới.
+   * Chỉ có nghĩa khi `xepTang`; mặc định TẮT để hợp đồng "lên hết ⇒ bỏ" của người gọi cũ nguyên; `LopNhan` bật.
+   */
+  xepTangXuong?: boolean;
 }
 
 /**
@@ -410,11 +439,16 @@ export function locNhan(
     const tangToiDa = cauHinh.xepTang ? TANG_NHAN_TOI_DA : 0;
     let hopVe: HinhChuNhat | null = null;
     let tang = 0;
-    for (let k = 0; k <= tangToiDa; k += 1) {
+    // ★ Đợt 38 — thứ tự thử: 0, +1..+tangToiDa (LÊN), rồi −1..−tangToiDa (XUỐNG) khi `xepTangXuong`.
+    const dsTang: number[] = [];
+    for (let k = 0; k <= tangToiDa; k += 1) dsTang.push(k);
+    if (cauHinh.xepTangXuong) for (let k = 1; k <= tangToiDa; k += 1) dsTang.push(-k);
+    for (const k of dsTang) {
       const lech = k * (cao + KHE_TANG_PX);
       const thu: HinhChuNhat = k === 0 ? hop : { ...hop, tren: hop.tren - lech, duoi: hop.duoi - lech };
-      if (k > 0 && khungCanvas && !hopTrongKhung(thu, khungCanvas)) break;
-      if (k > 0 && vungCam.length > 0 && vungCam.some((v) => haiHopChongNhau(v, thu))) break;
+      // Tầng đẩy phải nằm TRỌN trong canvas và ngoài vùng cấm. `continue` chứ không `break`: hướng kia còn có thể được.
+      if (k !== 0 && khungCanvas && !hopTrongKhung(thu, khungCanvas)) continue;
+      if (k !== 0 && vungCam.length > 0 && vungCam.some((v) => haiHopChongNhau(v, thu))) continue;
       let chongLap = false;
       for (const g of hopDaGiu) {
         if (haiHopChongNhau(g, thu)) {

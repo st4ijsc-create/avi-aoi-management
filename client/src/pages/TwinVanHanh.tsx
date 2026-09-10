@@ -178,6 +178,7 @@ import { dongHoHienThi, hopNhat } from "@/components/twin3d/van-hanh/khoTrangTha
 // ── Đóng nợ trước Đợt 7 — §11 #50 (UNS), #53 (khu chờ), #54 (nhãn Line) ──
 import { useUnsStream, isa95Slug } from "@/lib/unsStreamClient";
 import { mocTuAnhChupUns } from "@/components/twin3d/van-hanh/phuUns";
+import { khoaBanDo, khoaMayVanHanh, useOnDinhTheoGiaTri } from "@/components/twin3d/van-hanh/onDinhTheoGiaTri";
 import {
   xepKhuCho,
   nhanLineTaiCentroid,
@@ -781,8 +782,9 @@ export function ThanTwinVanHanh() {
    *   `null` thật ⇒ "Never reported" thật, không rơi về issue.
    */
   const tsTheoMay = useMemo(
-    () => tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], bayGioThat),
-    [overviewQ.data, bayGioThat],
+    // ★ Đợt 38 — mốc = lúc NHẬN dữ liệu, không phải `bayGioThat` mỗi render (xem `onDinhTheoGiaTri.ts`).
+    () => tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], Date.now()),
+    [overviewQ.data],
   );
 
   const may = canhQ.data?.may ?? [];
@@ -884,7 +886,9 @@ export function ThanTwinVanHanh() {
    * tên mới cho bản hợp nhất rồi đi sửa 15 chỗ) là cách chắc chắn bỏ sót một
    * chỗ, và chỗ bỏ sót đó sẽ hiện dữ liệu cũ mà KHÔNG kêu.
    */
-  const mayVanHanh = useMemo(() => hopNhat(mayNen, kho), [mayNen, kho]);
+  // ★★★ Đợt 38 (phần dư Pareto #1) — ổn định theo GIÁ TRỊ, cùng khuôn Line/Máy (xem `onDinhTheoGiaTri.ts`).
+  const mayVanHanhTho = useMemo(() => hopNhat(mayNen, kho), [mayNen, kho]);
+  const mayVanHanh = useOnDinhTheoGiaTri(mayVanHanhTho, khoaMayVanHanh(mayVanHanhTho));
 
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* ★★★ §11 #50 — UNS STREAM ISA-95, NGUỒN REALTIME THỨ HAI                  */
@@ -953,11 +957,13 @@ export function ThanTwinVanHanh() {
   const anToan = useMemo(() => tomTatAnToan(anToanQ.data?.robot ?? []), [anToanQ.data]);
 
   /** Trạng thái HIỂN THỊ (đã xét tuổi) — nguồn duy nhất cho mọi bề mặt. */
-  const trangThaiTheoMay = useMemo(() => {
+  const trangThaiTheoMayTho = useMemo(() => {
     const m = new Map<number, string>();
     for (const mv of mayVanHanh) m.set(mv.id, trangThaiHienThi(mv, bayGio).trangThai);
     return m;
   }, [mayVanHanh, bayGio]);
+  // ★ Đợt 38 — `bayGio` đổi mỗi render; chỉ đổi tham chiếu khi một trạng thái ĐỔI.
+  const trangThaiTheoMay = useOnDinhTheoGiaTri(trangThaiTheoMayTho, khoaBanDo(trangThaiTheoMayTho));
 
   const maTheoMay = useMemo(() => {
     const m = new Map<number, string>();
@@ -1669,7 +1675,9 @@ export function ThanTwinVanHanh() {
   }, [canBangQ.data, bayGioThat]);
 
   /** #61 — cột 3D. Đây là thứ thay hằng rỗng viết cứng ở chỗ gọi `CanhVanHanh`. */
-  const cotWipCanh = useMemo(() => cotWip(tinhWip, khaiNghen), [tinhWip, khaiNghen]);
+  const cotWipTho = useMemo(() => cotWip(tinhWip, khaiNghen), [tinhWip, khaiNghen]);
+  // ★ Đợt 38 — `CanhVanHanh` có `useEffect([wip]) → invalidate()`; gói WIP 2 s dựng mảng mới dù số y nguyên ⇒ ổn định theo giá trị.
+  const cotWipCanh = useOnDinhTheoGiaTri(cotWipTho, JSON.stringify(cotWipTho));
 
   /** §11.5 — bảng 2D SONG SONG, cùng đầu vào, cùng `laNghen`. */
   const bangWip = useMemo(() => xepHangWip(tinhWip, khaiNghen), [tinhWip, khaiNghen]);

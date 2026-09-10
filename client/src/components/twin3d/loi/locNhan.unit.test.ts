@@ -24,6 +24,7 @@ import {
   CAO_SUY_DOAN_PX,
   RONG_SUY_DOAN_PX,
   type NhanUngVien,
+  uocLuongRongNhanPx,
 } from "./locNhan";
 
 /**
@@ -660,3 +661,63 @@ describe("★ Đợt 35 — `xepTang` mặc định TẮT: luật 3 cũ nguyên 
     expect(kq.soBiChongLap).toBe(1);
   });
 });
+
+/* ★★★ Đợt 38 (Pareto #7 QA Đợt 37) — nhãn chưa đo: ước lượng theo CHỮ, không phải 150 px của nhãn cũ */
+describe("uocLuongRongNhanPx — cận trên nhẹ của bề rộng thật (đo 11 nhãn @1280, .qa-dot38/sau/p7-*)", () => {
+  const DO_THAT: Array<[string, number]> = [
+    ["SIM-L2-CONVEYOR · Unknown", 191], ["SIM-L2-ROBOT · Unknown", 166], ["SIM-L2-FCT · Unknown", 147],
+    ["CONVEYOR · Unknown", 144], ["SCREW · Unknown", 122], ["ROBOT · Unknown", 119], ["PACK · Unknown", 110],
+    ["PWR · Unknown", 105], ["FCT · Unknown", 101], ["AOI · Unknown", 99], ["ICT · Unknown", 97],
+  ];
+  it("★★★ không bao giờ HẸP hơn thật (hẹp ⇒ hai nhãn đè nhau), và không rộng hơn thật quá 15 %", () => {
+    for (const [chu, that] of DO_THAT) {
+      const uoc = uocLuongRongNhanPx(chu);
+      expect(uoc, chu).toBeGreaterThanOrEqual(that);
+      expect(uoc, chu).toBeLessThanOrEqual(Math.round(that * 1.15));
+    }
+  });
+  it("★★★ CA GỐC RỄ @1280 (.qa-dot38/sau/vung-cam-1280.json): hàng nhãn ngay DƯỚI panel Metrics ⇒ chỉ đẩy LÊN thì giấu; `xepTangXuong` ⇒ 12/12", () => {
+    // 12 nóc máy cách ~61 px, neo (đáy nhãn) y=257 ⇒ hộp t0 [233..257]; vùng cấm THẬT: Metrics [8..254]×[8..228], Mô phỏng [720..960]×[8..36].
+    const CHU = ["SPI", "AOI", "AVI", "ICT", "FCT", "CONVEYOR", "PWR", "ASSY", "SCREW", "PACK", "ROBOT", "AGV"].map((m) => `${m} · Unknown`);
+    const KHUNG = { rong: 968, cao: 479 };
+    const VUNG_CAM = [{ trai: 8, phai: 254, tren: 8, duoi: 228 }, { trai: 720, phai: 960, tren: 8, duoi: 36 }];
+    const ds = () => CHU.map((c, i) => nhan35(`m${i}`, 150 + i * 61, 257, { khoangCachMet: 20 + i, rongPx: uocLuongRongNhanPx(c), caoPx: 24 }));
+    // Chỉ LÊN (hợp đồng Đợt 35): nhãn bên trái không có tầng nào phía trên ⇒ bị giấu — đúng "3 more names hidden" QA/Đợt 38 đo.
+    const len = locNhan(ds(), { xepTang: true, khungCanvas: KHUNG, vungCam: VUNG_CAM });
+    expect(len.soBiChongLap).toBeGreaterThan(0);
+    expect(len.ve.every((v) => v.tang >= 0)).toBe(true);
+    // LÊN rồi XUỐNG: 12/12, có nhãn tầng âm, 0 cặp chồng, mọi hộp trong canvas và ngoài vùng cấm.
+    const xuong = locNhan(ds(), { xepTang: true, xepTangXuong: true, khungCanvas: KHUNG, vungCam: VUNG_CAM });
+    expect(xuong.ve.length).toBe(12);
+    expect(xuong.soBiChongLap).toBe(0);
+    expect(xuong.ve.some((v) => v.tang < 0)).toBe(true);
+    expect(demCapChongLap(xuong.ve.map((v) => ({ x: v.x, y: v.y, rongPx: uocLuongRongNhanPx(CHU[Number(v.khoa.slice(1))]), caoPx: 24 })))).toBe(0);
+    for (const v of xuong.ve) {
+      expect(hopTrongKhung(v.hop, KHUNG)).toBe(true);
+      for (const c of VUNG_CAM) expect(haiHopChongNhau(c, v.hop)).toBe(false);
+      // hộp trả về khớp với y đã cộng tầng (tầng âm ⇒ y lớn hơn neo)
+      expect(v.hop.duoi).toBe(v.y);
+    }
+  });
+  it("★ `xepTangXuong` KHÔNG có nghĩa khi `xepTang` tắt; và tầng xuống cũng phải nằm TRỌN trong canvas", () => {
+    const hai = [nhan35("a", 300, 200, { khoangCachMet: 1 }), nhan35("b", 300, 200, { khoangCachMet: 9 })];
+    const tat = locNhan(hai, { xepTangXuong: true });
+    expect(tat.ve.map((v) => [v.khoa, v.tang])).toEqual([["a", 0]]);
+    // neo y = 595 trên canvas cao 600: tầng −1 ⇒ đáy 619 thò mép dưới ⇒ bỏ (trên: t1/t2 vẫn được nếu trống)
+    const satDay = locNhan([nhan35("a", 300, 595, { khoangCachMet: 1 }), nhan35("b", 300, 595, { khoangCachMet: 9 }), nhan35("c", 300, 595, { khoangCachMet: 10 }), nhan35("d", 300, 595, { khoangCachMet: 11 })], { xepTang: true, xepTangXuong: true, khungCanvas: { rong: 1000, cao: 600 } });
+    expect(satDay.ve.map((v) => v.tang)).toEqual([0, 1, 2]);
+    expect(satDay.soBiChongLap).toBe(1);
+  });
+  it("★ `LopNhan` bật `xepTang` + `xepTangXuong` — kit dùng ĐÚNG hai cờ (G16)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const lop = readFileSync(resolve(__dirname, "LopNhan.tsx"), "utf8");
+    expect(lop).toContain("xepTang: true,");
+    expect(lop).toContain("xepTangXuong: true,");
+  });
+  it("kích thước kit không đổi: TANG_NHAN_TOI_DA = 2 (3 hàng) và RONG_SUY_DOAN_PX = 150 vẫn là mặc định khi không ước lượng", () => {
+    expect(TANG_NHAN_TOI_DA).toBe(2);
+    expect(RONG_SUY_DOAN_PX).toBe(150);
+  });
+});
+

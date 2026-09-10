@@ -39,6 +39,8 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useRoute } from "wouter";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, PerspectiveCamera, Environment, Grid, Stage, Gltf } from "@react-three/drei";
+// ★ Đợt 38 (twin3d RB-4/G99): `<Canvas>` của tab 3D đăng ký vào CÙNG bộ đếm `window.__soCanvas` với kit twin.
+import { useDemCanvasSong } from "@/components/twin3d/loi/KhungCanh";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -223,8 +225,49 @@ function CapabilitiesValidationBadge({ machineId }: { machineId: number }) {
 // 3D — glTF via drei <Gltf>, else a primitive block (same fallback as the twin).
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * ★ Đợt 38 (twin3d Pareto #4, QA Đợt 37): khối `<Canvas>` tách riêng và ĐĂNG KÝ vào bộ đếm RB-4 (`useDemCanvasSong`),
+ *   để `window.__soCanvas` đếm được canvas này (trước: DOM 2 canvas mà `__soCanvas` = 1 — phép đo mù, G99).
+ *   `Model3DPane` chỉ dựng nó khi KHÔNG nhúng: ở `/twin/may/:id` cảnh twin phía trên đã là 3D của chính máy này,
+ *   một `<Canvas>` thứ hai là hai WebGL context trên một trang (RB-4).
+ */
+function Model3DCanvas({ uri }: { uri: string | null }) {
+  useDemCanvasSong();
+  return (
+    <div className="h-[440px] w-full overflow-hidden rounded-lg border bg-[#0a0a0f]">
+      <Canvas shadows dpr={[1, 2]}>
+        <PerspectiveCamera makeDefault position={[3.2, 2.4, 3.2]} fov={50} />
+        <OrbitControls enablePan enableZoom enableRotate minDistance={1.5} maxDistance={20} />
+        <ambientLight intensity={0.5} />
+        <directionalLight position={[6, 8, 4]} intensity={1.1} castShadow />
+        <Environment preset="warehouse" />
+        <Grid args={[24, 24]} cellSize={0.5} cellThickness={0.5} cellColor="#1e293b" sectionSize={2} sectionColor="#334155" fadeDistance={26} infiniteGrid position={[0, -0.01, 0]} />
+        <Suspense
+          fallback={
+            <mesh>
+              <boxGeometry args={[1.5, 1, 1.5]} />
+              <meshStandardMaterial color="#06b6d4" wireframe />
+            </mesh>
+          }
+        >
+          {uri ? (
+            <Stage intensity={0.4} environment={null} adjustCamera={false}>
+              <Gltf src={uri} />
+            </Stage>
+          ) : (
+            <mesh castShadow position={[0, 0.5, 0]}>
+              <boxGeometry args={[1.5, 1, 1.5]} />
+              <meshStandardMaterial color="#3b82f6" metalness={0.4} roughness={0.5} />
+            </mesh>
+          )}
+        </Suspense>
+      </Canvas>
+    </div>
+  );
+}
+
 function Model3DPane({
-  model3d, name, t, canRegister, uploading, onUploadFile,
+  model3d, name, t, canRegister, uploading, onUploadFile, embedded = false,
 }: {
   model3d: MachineDetail["model3d"];
   name: string;
@@ -232,6 +275,8 @@ function Model3DPane({
   canRegister?: boolean;
   uploading?: boolean;
   onUploadFile?: (file: File) => void;
+  /** Đang nhúng dưới một cảnh 3D khác (`/twin/may/:id`) ⇒ KHÔNG dựng `<Canvas>` thứ hai (RB-4). */
+  embedded?: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [webglOk, setWebglOk] = useState(true);
@@ -277,35 +322,16 @@ function Model3DPane({
           </span>
         </div>
       )}
-      <div className="h-[440px] w-full overflow-hidden rounded-lg border bg-[#0a0a0f]">
-        <Canvas shadows dpr={[1, 2]}>
-          <PerspectiveCamera makeDefault position={[3.2, 2.4, 3.2]} fov={50} />
-          <OrbitControls enablePan enableZoom enableRotate minDistance={1.5} maxDistance={20} />
-          <ambientLight intensity={0.5} />
-          <directionalLight position={[6, 8, 4]} intensity={1.1} castShadow />
-          <Environment preset="warehouse" />
-          <Grid args={[24, 24]} cellSize={0.5} cellThickness={0.5} cellColor="#1e293b" sectionSize={2} sectionColor="#334155" fadeDistance={26} infiniteGrid position={[0, -0.01, 0]} />
-          <Suspense
-            fallback={
-              <mesh>
-                <boxGeometry args={[1.5, 1, 1.5]} />
-                <meshStandardMaterial color="#06b6d4" wireframe />
-              </mesh>
-            }
-          >
-            {uri ? (
-              <Stage intensity={0.4} environment={null} adjustCamera={false}>
-                <Gltf src={uri} />
-              </Stage>
-            ) : (
-              <mesh castShadow position={[0, 0.5, 0]}>
-                <boxGeometry args={[1.5, 1, 1.5]} />
-                <meshStandardMaterial color="#3b82f6" metalness={0.4} roughness={0.5} />
-              </mesh>
-            )}
-          </Suspense>
-        </Canvas>
-      </div>
+      {embedded ? (
+        <div
+          className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground"
+          data-testid="model3d-da-nhung"
+        >
+          {t("cockpit.model3dEmbedded", "The 3D twin scene above already shows this machine — a second 3D view is not rendered here (one WebGL context per page).")}
+        </div>
+      ) : (
+        <Model3DCanvas uri={uri} />
+      )}
       {model3d.available && model3d.value && (
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Badge variant="secondary">{model3d.value.modelKind}</Badge>
@@ -932,10 +958,15 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                   <SectionValue available={d.liveState.available}>
                     {d.liveState.value && (
                       <div className="space-y-1">
-                        <KV k={t("cockpit.status", "Status")} v={<StatusBadge status={d.liveState.value.status ?? "unknown"} className="px-1.5 py-0 text-[11px]" />} />
+                        {/* ★ Đợt 38 (twin3d Pareto #3, QA Đợt 37): `status` là SỰ KIỆN của `machine_status_logs` (`online`
+                            3 ngày tuổi) — in thô ra "Status: online" (tone success) ngay dưới "Connection: offline" (đỏ)
+                            là hai câu trên một thẻ cho một máy im lặng 54 ngày (G105/G111). Suy từ `connected` (đã gate
+                            nhịp tim — cùng `dangKetNoi` với fleet); sự kiện thô đi cùng "Last change", nơi nó có nghĩa.
+                            Hợp đồng API giữ nguyên (`status` vẫn trả). */}
+                        <KV k={t("cockpit.status", "Status")} v={<span data-testid="cockpit-live-status" data-connected={String(d.liveState.value.connected)}><StatusBadge status={d.liveState.value.connected ? "online" : "offline"} className="px-1.5 py-0 text-[11px]" /></span>} />
                         {/* doc 63 (AUD-09) — flag-gated: colour-coded PackML badge vs raw text (byte-identical when off) */}
                         <KV k={t("cockpit.packml", "PackML / op")} v={isIsa101V2() && d.liveState.value.operationStatus ? <PackmlStateBadge state={d.liveState.value.operationStatus} className="px-1.5 py-0 text-[11px]" /> : (d.liveState.value.operationStatus ?? "—")} />
-                        <KV k={t("cockpit.lastChange", "Last change")} v={tsToLocale(d.liveState.value.lastStatusChange)} />
+                        <KV k={t("cockpit.lastChange", "Last change")} v={d.liveState.value.status ? `${d.liveState.value.status} · ${tsToLocale(d.liveState.value.lastStatusChange)}` : tsToLocale(d.liveState.value.lastStatusChange)} />
                         <KV k={t("cockpit.heartbeat", "Heartbeat")} v={d.liveState.value.heartbeatStatus ?? "—"} />
                         <KV k={t("cockpit.lastHeartbeat", "Last heartbeat")} v={relTime(d.liveState.value.lastHeartbeat, now)} />
                         <KV k={t("cockpit.connection", "Connection")} v={<StatusBadge status={d.liveState.value.connected ? "connected" : "offline"} className="px-1.5 py-0 text-[11px]" />} />
@@ -1165,6 +1196,7 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                   canRegister={canRegisterModel}
                   uploading={uploadModelMut.isPending}
                   onUploadFile={handleModelFile}
+                  embedded={embedded}
                 />
               </SectionCard>
             </TabsContent>

@@ -137,6 +137,16 @@ describe("★★★ ③ useTruDinhKhung — Studio/Line/Máy đo `top` lúc ch�
     expect(MAY).toMatch(/chieuCaoTruDinh\("--twin-may-top"\)/);
     for (const m of [LINE, MAY]) expect(m).not.toMatch(/setProperty\("--twin-(line|may)-top"/);
   });
+  it("★★★ Đợt 38 (Pareto #5): hook CỘNG đệm dưới của CHA (`parentElement` + `paddingBottom`) và `scrollY` — cùng luật `demDuoi` của TwinVanHanh", async () => {
+    // Đo Đợt 37/38: `<main>` vỏ `md:p-6` ⇒ paddingBottom 24 px ⇒ Line/Máy/Studio cuộn dọc ĐÚNG 24 px ở cả 2 viewport.
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const HOOK = readFileSync(resolve(__dirname, "useTruDinhKhung.ts"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(HOOK).toContain("el.parentElement");
+    expect(HOOK).toMatch(/getComputedStyle\(cha\)\.paddingBottom/);
+    expect(HOOK).toMatch(/getBoundingClientRect\(\)\.top \+ window\.scrollY/);
+    expect(HOOK).toMatch(/Math\.round\(tren \+ demDuoi\)/);
+  });
   it("★ ba tên biến ĐÔI MỘT khác nhau — dùng chung là khớp nối ẩn giữa hai màn", () => {
     const ten = ["--twin-studio-top", "--twin-line-top", "--twin-may-top"];
     expect(new Set(ten).size).toBe(3);

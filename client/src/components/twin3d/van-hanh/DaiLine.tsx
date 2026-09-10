@@ -21,6 +21,7 @@
 import { useTranslation } from "react-i18next";
 
 import { giaiMauCanh, mauChoTrangThai } from "../mauTrangThai";
+import { rutTienTo, tienToChung } from "./maNgan";
 import { hienSo } from "./trungThucDuLieu";
 
 export interface TramTrenDai {
@@ -88,6 +89,13 @@ export function DaiLine({
   const daDoWip = daSap.map((s) => s.soWip).filter((n): n is number => n != null);
   const tongWip = daDoWip.length === 0 ? null : daDoWip.reduce((a, b) => a + b, 0);
 
+  /*
+   * ★★★ ĐỢT 38 (Pareto #7 QA Đợt 37) — MÃ NGẮN: rút tiền tố chung (`SIM-L2-`) của cả dải, in tiền tố MỘT lần ở
+   *   đầu dải (`dai-line-tien-to`), giữ mã đầy đủ ở `title` + `data-ma`. Đo 1280×720: 12 ô cần 969 px / `ol` 944
+   *   ⇒ cuộn ngang + ô đè mũi tên kề. Số đo và luật ở `maNgan.ts`; cùng hàm với nhãn 3D của `TwinLine` (G12).
+   */
+  const tienTo = tienToChung(daSap.map((s) => s.ma));
+
   if (daSap.length === 0) return null;
 
   return (
@@ -99,6 +107,19 @@ export function DaiLine({
         <span className="text-[10px] text-muted-foreground">
           {t("twin3d.vanHanh.soTram", "{{n}} trạm", { n: hienSo(daSap.length) })}
         </span>
+        {/* ★ Đợt 38 — tiền tố đã rút khỏi từng ô, in MỘT lần ở đây (luật 4 `maNgan.ts`): rút để đọc, không để giấu. */}
+        {tienTo ? (
+          <span
+            className="text-[10px] text-muted-foreground"
+            data-testid="dai-line-tien-to"
+            title={t(
+              "twin3d.vanHanh.tienToChungMoTa",
+              "Tiền tố chung của mọi mã trạm trên dải — đã rút khỏi từng ô để tên không bị cắt",
+            )}
+          >
+            {t("twin3d.vanHanh.tienToChung", "Tiền tố")}: <b className="font-mono">{tienTo}</b>
+          </span>
+        ) : null}
         {/*
           ★★★ §11 #36 — NHỊP CHUYỀN BẰNG SỐ, cạnh mũi tên động của 3D.
           Mũi tên nói "nhanh hơn"; con số này nói "nhanh hơn bao nhiêu".
@@ -134,9 +155,10 @@ export function DaiLine({
           const daChon = s.id === stationIdChon;
           return (
             <li key={s.id} className="flex items-center">
-              {/* Mũi tên nối — hướng dòng chảy, đọc được kể cả khi 3D tắt. */}
+              {/* Mũi tên nối — hướng dòng chảy, đọc được kể cả khi 3D tắt.
+                  ★ Đợt 38: `px-0` — 11 mũi tên × 4 px đệm là 44 px của 25 px cuộn ngang ở 1280 (đo `.qa-dot38/`). */}
               {i > 0 ? (
-                <span aria-hidden="true" className="px-0.5 text-[10px] text-muted-foreground">
+                <span aria-hidden="true" className="px-0 text-[10px] text-muted-foreground">
                   →
                 </span>
               ) : null}
@@ -147,13 +169,16 @@ export function DaiLine({
                 title={`${s.ma} — ${s.ten} — ${t(kieu.khoaNhan)}${
                   coWip ? ` — WIP ${s.soWip == null ? "—" : s.soWip}${s.nghen ? " ★" : ""}` : ""
                 }`}
-                className={`shrink-0 whitespace-nowrap rounded border px-1 py-1 text-left focus-visible:outline focus-visible:outline-2 ${
+                className={`shrink-0 whitespace-nowrap rounded border px-0.5 py-1 text-left focus-visible:outline focus-visible:outline-2 ${
                   daChon ? "ring-2 ring-primary" : "hover:bg-accent/60"
                 }`}
                 style={{ borderColor: mau }}
                 onClick={() => onChonTram(s.id)}
               >
-                <span className="block truncate text-[10px] font-medium">{s.ma}</span>
+                {/* ★ Đợt 38: mã NGẮN (đã rút tiền tố chung); mã đầy đủ ở `title` và `data-ma` — không cắt chữ. */}
+                <span className="block truncate text-[10px] font-medium" data-ma={s.ma}>
+                  {rutTienTo(s.ma, tienTo)}
+                </span>
                 {/*
                   ★ SỐ cạnh MÀU — chính là điểm của §11.5. Một thanh màu đơn
                   thuần không trả lời được "hơn bao nhiêu".

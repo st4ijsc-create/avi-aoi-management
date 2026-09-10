@@ -45,8 +45,19 @@ export function useTruDinhKhung(ref: RefObject<HTMLElement | null>, tenBien: Ten
     const el = ref.current;
     if (!el) return;
     const doLai = () => {
-      const tren = el.getBoundingClientRect().top;
-      el.style.setProperty(tenBien, `${Math.max(0, Math.round(tren))}px`);
+      // `+ scrollY`: đo theo TÀI LIỆU, để phép đo không tự lệch nếu trang đã trót cuộn (chính lỗi đang chữa).
+      const tren = el.getBoundingClientRect().top + window.scrollY;
+      /*
+       * ★★★ ĐỢT 38 (Pareto #5 QA Đợt 37) — CỘNG CẢ ĐỆM DƯỚI CỦA CHA, cùng luật `TwinVanHanh.tsx` (THƯỜNG-3, `demDuoi`).
+       *   Đo `.qa-dot38/truoc/p5-cuon-doc-{1600x900,1280x720}.json`: `<main>` của vỏ mang `md:p-6` ⇒
+       *   `paddingBottom = 24px`; khung này cao vừa khít tới đáy viewport (đáy 900/720) rồi 24 px đệm của CHA đẩy
+       *   tài liệu dài thêm ĐÚNG 24 px ⇒ Line/Máy/Studio cuộn dọc 24 px ở CẢ HAI viewport, trong khi `/twin` (tự
+       *   trừ `demDuoi`) thì không. Đọc từ `getComputedStyle` của cha, không phải hằng số đoán — vỏ đổi đệm là
+       *   khung tự đúng lại.
+       */
+      const cha = el.parentElement;
+      const demDuoi = cha ? parseFloat(getComputedStyle(cha).paddingBottom) || 0 : 0;
+      el.style.setProperty(tenBien, `${Math.max(0, Math.round(tren + demDuoi))}px`);
     };
     doLai();
     const ro = new ResizeObserver(doLai);

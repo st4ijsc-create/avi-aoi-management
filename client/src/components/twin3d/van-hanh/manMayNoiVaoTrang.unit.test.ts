@@ -137,15 +137,21 @@ describe("★★★ ③ §15.6.2 cấp Máy ≤ 3 thứ neo — tất cả từ 
     expect(t).toContain("dungCanhBao3D(andonRows, neoMucTieu, maTheoMay)");
   });
 
-  it("★★★ viền đế: `vienSucKhoe(khai, neoMucTieu.map(…), bayGio)` và `viTri.x/.z` (KHÔNG `.y`)", () => {
-    const t = than("vienSucKhoeCanh");
+  it("★★★ viền đế: `vienSucKhoe(khai, neoMucTieu.map(…), bayGio)` và `viTri.x/.z` (KHÔNG `.y`) — Đợt 38: bản thô `vienSucKhoeTho`, bản ổn định theo giá trị truyền xuống cảnh", () => {
+    const t = than("vienSucKhoeTho");
     expect(t).toContain("neoMucTieu.map(");
     expect(t).toContain("viTri: { x: m.viTri.x, z: m.viTri.z }");
     expect(t).not.toContain("m.viTri.y");
+    // `bayGio` đổi mỗi render ⇒ bản thô dựng lại mỗi render; `CanhVanHanh` có `useEffect([vien]) → invalidate()`.
+    expect(MA).toContain("const vienSucKhoeCanh = useOnDinhTheoGiaTri(vienSucKhoeTho, JSON.stringify(vienSucKhoeTho));");
+    expect(MA).toContain("vienSucKhoe={vienSucKhoeCanh}");
   });
 
-  it("★★★ camera: `khungNhinMay(mucTieu)` — KHÔNG `khungNhinLine`/`khungNhinCho` tự gọi", () => {
-    expect(dong("khungNhin")).toContain("khungNhinMay(mucTieu)");
+  it("★★★ camera: `khungNhinMay(mucTieu)` — KHÔNG `khungNhinLine`/`khungNhinCho` tự gọi (Đợt 38: biểu thức ở `khungNhinTho`, `khungNhin` là bản ổn định theo giá trị)", () => {
+    expect(dong("khungNhinTho")).toContain("khungNhinMay(mucTieu)");
+    // Pareto #1 QA Đợt 37: `mucTieu` đổi tham chiếu mỗi gói socket ⇒ tween về cùng chỗ (143–230 khung/40 s) —
+    // `khungNhin` truyền xuống cảnh phải là bản khoá theo GIÁ TRỊ, cùng khuôn Line/`/twin`.
+    expect(dong("khungNhin")).toBe("const khungNhin = useMemo(() => khungNhinTho, [khoaKhungNhin]);");
     expect(MA).not.toContain("khungNhinLine(");
     expect(MA).not.toContain("khungNhinCho(");
   });
@@ -295,9 +301,12 @@ describe("★★★ ⑥ Lý do mở màn qua `lyDoMoManMay` với `dangTai`; câ
     // RỖNG ⇒ 42 máy đã từng báo cáo hiện "Never reported" (bịa theo chiều ngược NT-3). Nay ba trang gọi
     // CÙNG một hàm (G12); luật "chỉ `offline` mang mốc" sống trong `tsTrangThaiTuIssues` (đường lùi cho
     // server cũ) và có test riêng ở `trungThucDuLieu.unit.test.ts`.
+    // Đợt 38: mốc = `Date.now()` lúc NHẬN dữ liệu (deps `[overviewQ.data]`), không phải `bayGioThat` mỗi render —
+    // một dep đổi mỗi render kéo `mayNen → mayTatCa → mayVe` dựng lại ⇒ một khung vẽ mỗi re-render (xem `onDinhTheoGiaTri.ts`).
     expect(than("tsTheoMay")).toContain(
-      "tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], bayGioThat)",
+      "tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], Date.now())",
     );
+    expect(than("tsTheoMay")).not.toContain("bayGioThat");
     expect(than("tsTheoMay")).not.toContain('iss.kind !== "offline"');
   });
 });
@@ -360,22 +369,31 @@ describe("★★★ ⑧ G91 — nợ có chỗ sống trong mã, không chỉ tr
     expect(MA).not.toMatch(/estop|E-STOP/i);
   });
 
-  it("★★★ `__soCanvas` MÙ với tab 3D của cockpit — nợ CÓ SẴN ở `/twin` qua `NganNhung`", () => {
+  it("★★★ Đợt 38 — `__soCanvas` KHÔNG còn mù (RB-4/G99): cockpit `embedded` KHÔNG dựng `<Canvas`; bản độc lập đăng ký qua `useDemCanvasSong`", () => {
     /*
-     * `MachineCockpitBody` có tab "3D" dựng `<Canvas>` của drei, KHÔNG qua
-     * `KhungCanh` ⇒ `window.__soCanvas` không đếm. Bấm tab ⇒ 2 WebGL context
-     * mà phép đo `__soCanvas = 1` vẫn XANH. Không vá ở đợt này (tệp ngoài phạm
-     * vi, có consumer ngoài Twin — §11b). Ca này ghim SỰ THẬT đo được: nếu
-     * một ngày cockpit đi qua `KhungCanh` (hoặc bỏ `<Canvas`), ca này ĐỎ để
-     * người sửa biết nợ đã trả và cập nhật docblock `TwinMay.tsx`.
+     * Đợt 31 ghim nợ: `MachineCockpitBody` tab "3D" dựng `<Canvas>` drei KHÔNG qua `KhungCanh` ⇒ `/twin/may/14`
+     * bấm tab ⇒ DOM 2 canvas mà `window.__soCanvas` = 1 (QA Đợt 32 a4, Đợt 37 RB-4). Đợt 38 trả nợ hai chiều:
+     *   · `Model3DPane` nhận `embedded` (TwinMay + NganNhung truyền) ⇒ ghi chú thay vì `<Canvas>` (một context/trang);
+     *   · bản độc lập (`/machines/:id`) bọc `<Canvas>` trong `Model3DCanvas` gọi `useDemCanvasSong()` — bộ đếm
+     *     RB-4 của kit — nên DOM canvas = `__soCanvas` ở MỌI trạng thái tab (đo sống `.qa-dot38/sau/p4-*`).
      */
     const cockpit = docSach("src/pages/MachineCockpit.tsx");
-    expect(cockpit).toContain("<Canvas");
-    expect(cockpit).not.toContain("KhungCanh");
-    expect(cockpit).not.toContain("__soCanvas");
-    // Và `/twin` mở CÙNG cockpit ấy trong ngăn nhúng — nợ không phải của riêng màn này.
+    expect(cockpit).toContain('import { useDemCanvasSong } from "@/components/twin3d/loi/KhungCanh"');
+    // Đúng MỘT `<Canvas` trong tệp, và nó nằm trong `Model3DCanvas` — nơi đã đăng ký bộ đếm.
+    expect((cockpit.match(/<Canvas\b/g) ?? []).length).toBe(1);
+    const i = cockpit.indexOf("function Model3DCanvas(");
+    expect(i).toBeGreaterThan(-1);
+    const thanCanvas = cockpit.slice(i, cockpit.indexOf("\nfunction Model3DPane(", i));
+    expect(thanCanvas).toContain("useDemCanvasSong()");
+    expect(thanCanvas).toContain("<Canvas");
+    // `Model3DPane` chỉ dựng nó khi KHÔNG nhúng; nhúng ⇒ ghi chú `model3d-da-nhung`.
+    expect(cockpit).toMatch(/embedded \? \([\s\S]*?model3d-da-nhung[\s\S]*?\) : \(\s*<Model3DCanvas uri=\{uri\} \/>/);
+    expect(cockpit).toContain("embedded={embedded}");
+    // Hai chỗ nhúng cockpit đều truyền `embedded` — màn Máy và ngăn nhúng ở `/twin`.
+    expect(MA).toContain("<MachineCockpitBody machineId={machineId} embedded />");
     const ngan = docSach("src/components/twin3d/van-hanh/NganNhung.tsx");
     expect(ngan).toContain("MachineCockpitBody");
+    expect(ngan).toContain("<ThanMay machineId={ngan.id} embedded />");
   });
 });
 
@@ -406,7 +424,11 @@ describe("★★★ ⑨ G37 — một chỗ đọc route; nhóm (D) cố ý KHÔ
 
   it("★ `dongChay={null}` và `wip={[]}` — CÓ CHỦ Ý ở cấp Máy (không phải G5 quên nối)", () => {
     expect(MA).toContain("dongChay={null}");
-    expect(MA).toContain("wip={[]}");
+    // Đợt 38: hằng MODULE `KHONG_WIP` thay cho `[]` tại chỗ gọi — `CanhVanHanh` có `useEffect([wip]) → invalidate()`,
+    // một mảng rỗng MỚI mỗi render là một khung vẽ cho mỗi re-render (đo 13 khung/40 s đứng yên còn lại ở màn Máy).
+    expect(MA).toContain("wip={KHONG_WIP}");
+    expect(MA).toContain("const KHONG_WIP: never[] = [];");
+    expect(MA).not.toContain("wip={[]}");
   });
 });
 

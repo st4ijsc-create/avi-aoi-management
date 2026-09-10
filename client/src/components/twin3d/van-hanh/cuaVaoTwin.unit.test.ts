@@ -12,7 +12,7 @@
  *   bằng `.qa-dot33/do.mjs` (K1–K9) — hai thiết bị đo độc lập, không thay nhau.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const GOC = resolve(__dirname, "../../../..");
@@ -188,8 +188,11 @@ describe("★★★ ⑤ TwinMay — QĐ-23 #5 + Pareto #9", () => {
     expect(vo).toContain("docDuongVeTwin(useHistoryState())");
     expect(vo).toContain("<ThanManMay machineId={machineId} camUrl={camUrl} duongVe={duongVe} />");
   });
-  it("★★★ `khungNhin` = `camUrl ? khungNhinTuCamera(camUrl) : khungNhinMay(mucTieu)`", () => {
-    expect(MAY).toContain("useMemo(() => (camUrl ? khungNhinTuCamera(camUrl) : khungNhinMay(mucTieu)), [camUrl, mucTieu])");
+  it("★★★ `khungNhinTho` = `camUrl ? khungNhinTuCamera(camUrl) : khungNhinMay(mucTieu)` (Đợt 38: + bộ ổn định theo giá trị)", () => {
+    // Đợt 38 (Pareto #1 QA Đợt 37): biểu thức sống ở `khungNhinTho`; `khungNhin` là bản ổn định theo GIÁ TRỊ
+    // (`mucTieu` đổi tham chiếu mỗi gói socket ⇒ tween về cùng chỗ ⇒ 143–230 khung/40 s đứng yên).
+    expect(MAY).toContain("const khungNhinTho = useMemo(() => (camUrl ? khungNhinTuCamera(camUrl) : khungNhinMay(mucTieu)), [camUrl, mucTieu])");
+    expect(MAY).toContain("const khungNhin = useMemo(() => khungNhinTho, [khoaKhungNhin])");
   });
   it("★ link \"Nhà máy\" + nút thoát L-5 về `duongVe ?? \"/twin\"`; link Line mang `state={trangThaiVe(duongVe)}`", () => {
     expect((MAY.match(/duongVe \?\? "\/twin"/g) ?? []).length).toBe(2);
@@ -223,4 +226,54 @@ describe("★ ⑥ ĐỐI CHỨNG — `docSach` không nuốt mã, và các phép
     expect(LINE.length).toBeGreaterThan(5_000);
     expect(MAY.length).toBeGreaterThan(5_000);
   });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 38 — G110: BẤT BIẾN trên MỌI trang dựng `<CanhVanHanh>`, không phải danh sách hai tên                */
+/* ══════════════════════════════════════════════════════════════════════════ */
+/*
+ * Đợt 35 vá tween-theo-tham-chiếu ở Line, Đợt 36 ở `/twin`; hai ca trên ghim LINE + NHA_MAY bằng TÊN, và màn Máy
+ * (cùng kit, cùng lớp lỗi) rơi qua kẽ: QA Đợt 37 đo 143–230 khung/40 s đứng yên (nền 193). Lưới này QUÉT thư mục
+ * trang: mọi tệp có `<CanhVanHanh` đều phải nhận `khungNhin` ĐÃ ổn định theo giá trị. Thêm một màn thứ tư dùng kit
+ * mà quên bộ ổn định ⇒ ca này ĐỎ ngay, không cần ai nhớ để thêm tên.
+ */
+describe("★★★ Đợt 38 (G110) — BẤT BIẾN: MỌI trang dựng `<CanhVanHanh` ổn định `khungNhin` theo GIÁ TRỊ", () => {
+  const TRANG = readdirSync(resolve(GOC, "src/pages")).filter((f) => f.endsWith(".tsx"));
+  const dungCanh = TRANG.filter((f) => docSach(`src/pages/${f}`).includes("<CanhVanHanh"));
+
+  it("cầu chì: tập quét KHÔNG rỗng và chứa đủ ba màn đã biết (nếu thiếu thì phép quét đang mù)", () => {
+    expect(dungCanh).toEqual(expect.arrayContaining(["TwinVanHanh.tsx", "TwinLine.tsx", "TwinMay.tsx"]));
+  });
+
+  for (const f of dungCanh) {
+    it(`${f}: \`khungNhin={khungNhin}\` là bản ổn định \`useMemo(() => khungNhinTho, [khoaKhungNhin])\`, khoá làm tròn mm ở CẢ viTri lẫn muc`, () => {
+      const src = docSach(`src/pages/${f}`);
+      expect(src).toContain("khungNhin={khungNhin}");
+      expect(src).not.toContain("khungNhin={khungNhinTho}");
+      expect(src).toContain("const khungNhin = useMemo(() => khungNhinTho, [khoaKhungNhin])");
+      expect(src).toMatch(
+        /const khoaKhungNhin = khungNhinTho\s*\?\s*`\$\{khungNhinTho\.viTri\.map\(\(v\) => v\.toFixed\(3\)\)\.join\(","\)\}\|\$\{khungNhinTho\.muc\.map\(\(v\) => v\.toFixed\(3\)\)\.join\(","\)\}`/,
+      );
+    });
+  }
+});
+
+/* ★★★ ĐỢT 38 — phần dư Pareto #1: mọi trang dùng `CanhVanHanh` ổn định `mayTatCa`/`trangThaiTheoMay` theo GIÁ TRỊ */
+describe("★★★ Đợt 38 (G110) — BẤT BIẾN: mọi trang dựng `<CanhVanHanh` không để `bayGioThat` mỗi render kéo cảnh vẽ lại", () => {
+  const TRANG = readdirSync(resolve(GOC, "src/pages")).filter((f) => f.endsWith(".tsx"));
+  const dungCanh = TRANG.filter((f) => docSach(`src/pages/${f}`).includes("<CanhVanHanh"));
+  for (const f of dungCanh) {
+    it(`${f}: \`tsTrangThaiTheoMay(…, Date.now())\` deps [overviewQ.data]; \`hopNhat\` + \`trangThaiTheoMay\` qua \`useOnDinhTheoGiaTri\``, () => {
+      const src = docSach(`src/pages/${f}`);
+      expect(src).toContain('from "@/components/twin3d/van-hanh/onDinhTheoGiaTri"');
+      expect(src).toContain("tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], Date.now())");
+      expect(src).not.toContain("[overviewQ.data, bayGioThat]");
+      // hopNhat ⇒ bản THÔ, rồi ổn định theo khoá toàn trường
+      expect(src).toMatch(/const (mayTatCa|mayVanHanh)Tho = useMemo\(\(\) => hopNhat\(mayNen, kho\), \[mayNen, kho\]\);/);
+      expect(src).toMatch(/const (mayTatCa|mayVanHanh) = useOnDinhTheoGiaTri\(\1Tho, khoaMayVanHanh\(\1Tho\)\);/);
+      expect(src).toContain("const trangThaiTheoMay = useOnDinhTheoGiaTri(trangThaiTheoMayTho, khoaBanDo(trangThaiTheoMayTho));");
+      // không còn hopNhat trực tiếp gán vào tên đã ổn định
+      expect(src).not.toMatch(/const (mayTatCa|mayVanHanh) = useMemo\(\(\) => hopNhat/);
+    });
+  }
 });

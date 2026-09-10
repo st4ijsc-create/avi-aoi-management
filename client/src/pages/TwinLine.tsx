@@ -145,6 +145,8 @@ import { tinhKpiNoi, type MayTongQuanKpi } from "@/components/twin3d/van-hanh/kp
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useMoPhongTwin } from "@/components/twin3d/van-hanh/useMoPhongTwin";
 import { chieuCaoTruDinh, useTruDinhKhung } from "@/components/twin3d/van-hanh/useTruDinhKhung";
+import { khoaBanDo, khoaMayVanHanh, useOnDinhTheoGiaTri } from "@/components/twin3d/van-hanh/onDinhTheoGiaTri";
+import { rutTienTo, tienToChung } from "@/components/twin3d/van-hanh/maNgan";
 // ★ Đợt 35 (Pareto #7): DÙNG LẠI câu `chuaGanNhaMay` của màn Máy (Đợt 34 D) — không khai câu thứ hai (G12).
 import { cauChoLyDoManMay } from "@/components/twin3d/van-hanh/manMay";
 import { NganMoPhong } from "@/components/twin3d/van-hanh/NganMoPhong";
@@ -454,8 +456,9 @@ export function ThanManLine({
    *   cáo hiện "Never reported". Ba trang gọi CÙNG `tsTrangThaiTheoMay` (G12), không chép vòng lặp nữa.
    */
   const tsTheoMay = useMemo(
-    () => tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], bayGioThat),
-    [overviewQ.data, bayGioThat],
+    // ★ Đợt 38 — mốc = lúc NHẬN dữ liệu, không phải `bayGioThat` mỗi render (xem `onDinhTheoGiaTri.ts`).
+    () => tsTrangThaiTheoMay(overviewQ.data?.machines ?? [], overviewQ.data?.issues ?? [], Date.now()),
+    [overviewQ.data],
   );
 
   const mayNen = useMemo<MayVanHanh[]>(() => {
@@ -474,7 +477,9 @@ export function ThanManLine({
     }));
   }, [canhQ.data, overviewQ.data, tsTheoMay, lineCuaTram]);
 
-  const mayTatCa = useMemo(() => hopNhat(mayNen, kho), [mayNen, kho]);
+  // ★★★ Đợt 38 (phần dư Pareto #1) — ổn định theo GIÁ TRỊ, cùng khuôn `TwinMay`/`/twin` (xem `onDinhTheoGiaTri.ts`).
+  const mayTatCaTho = useMemo(() => hopNhat(mayNen, kho), [mayNen, kho]);
+  const mayTatCa = useOnDinhTheoGiaTri(mayTatCaTho, khoaMayVanHanh(mayTatCaTho));
 
   /**
    * ★★★ TẬP MÁY CỦA CHUYỀN — qua `mayCuaLine`, nơi **TRẠM THẮNG `lineId` khai**.
@@ -484,17 +489,34 @@ export function ThanManLine({
    */
   const mayLine = useMemo(() => mayCuaLine(lineId, mayTatCa, tram), [lineId, mayTatCa, tram]);
 
-  const trangThaiTheoMay = useMemo(() => {
+  const trangThaiTheoMayTho = useMemo(() => {
     const m = new Map<number, string>();
     for (const mv of mayTatCa) m.set(mv.id, trangThaiHienThi(mv, bayGio).trangThai);
     return m;
   }, [mayTatCa, bayGio]);
+  // ★ Đợt 38 — `bayGio` đổi mỗi render; chỉ đổi tham chiếu khi một trạng thái ĐỔI.
+  const trangThaiTheoMay = useOnDinhTheoGiaTri(trangThaiTheoMayTho, khoaBanDo(trangThaiTheoMayTho));
 
   const maTheoMay = useMemo(() => {
     const m = new Map<number, string>();
     for (const mv of mayTatCa) m.set(mv.id, mv.ma);
     return m;
   }, [mayTatCa]);
+  /*
+   * ★★★ ĐỢT 38 (Pareto #7 QA Đợt 37) — NHÃN 3D cấp Line dùng MÃ NGẮN (rút tiền tố chung `SIM-L2-`). Đo 1280×720:
+   *   12 nóc máy cách nhau ~60 px, nhãn 144–191 px ⇒ declutter giấu 5/12 ("5 more names hidden"); 1600: 1/12.
+   *   Tiền tố chung của CẢ chuyền không mang thông tin ở màn chỉ-có-chuyền-này (breadcrumb + tiêu đề đã nói);
+   *   mã đầy đủ vẫn ở danh sách máy, chip, cảnh báo (`dungCanhBao3D` nhận `maTheoMay` nguyên). Cùng hàm với
+   *   `DaiLine` (G12) — tiền tố rút ở dải cũng in ra ở đầu dải.
+   * ⚠ Tính trên `mayLine` (12 máy CỦA CHUYỀN), KHÔNG trên `mayTatCa` (cả nhà máy): đo lần đầu trên `mayTatCa`
+   *   ⇒ tiền tố chung của 42 máy nhiều chuyền là rỗng ⇒ nhãn vẫn `SIM-L2-…`, 5/12 vẫn bị giấu (`.qa-dot38/sau/`).
+   */
+  const tienToMa = useMemo(() => tienToChung(mayLine.map((m) => m.ma)), [mayLine]);
+  const maNganTheoMay = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const [id, ma] of maTheoMay) m.set(id, rutTienTo(ma, tienToMa));
+    return m;
+  }, [maTheoMay, tienToMa]);
 
   const kichThuocTheoLoai = useMemo(() => {
     const m = new Map<string, { rongMm: number; caoMm: number; sauMm: number }>();
@@ -616,7 +638,9 @@ export function ThanManLine({
     };
   }, [canBangQ.data, bayGioThat]);
 
-  const cotWipCanh = useMemo(() => cotWip(tinhWip, khaiNghen), [tinhWip, khaiNghen]);
+  const cotWipTho = useMemo(() => cotWip(tinhWip, khaiNghen), [tinhWip, khaiNghen]);
+  // ★ Đợt 38 — `CanhVanHanh` có `useEffect([wip]) → invalidate()`; gói WIP 2 s dựng mảng mới dù số y nguyên ⇒ ổn định theo giá trị.
+  const cotWipCanh = useOnDinhTheoGiaTri(cotWipTho, JSON.stringify(cotWipTho));
   const bangWip = useMemo(() => xepHangWip(tinhWip, khaiNghen), [tinhWip, khaiNghen]);
   const nhipChuyenMs = useMemo(
     () => nhipTuCanBang(canBangQ.data?.[0]?.avgCycleTimeMs),
@@ -704,8 +728,8 @@ export function ThanManLine({
     [andonQ.data],
   );
   const nhan = useMemo<NhanTheGioi[]>(
-    () => dungNhanMay({ mayVe, trangThaiTheoMay, maTheoMay, mauChoTrangThai, t, andonTheoMay }),
-    [mayVe, trangThaiTheoMay, maTheoMay, t, andonTheoMay],
+    () => dungNhanMay({ mayVe, trangThaiTheoMay, maTheoMay: maNganTheoMay, mauChoTrangThai, t, andonTheoMay }),
+    [mayVe, trangThaiTheoMay, maNganTheoMay, t, andonTheoMay],
   );
 
   /*

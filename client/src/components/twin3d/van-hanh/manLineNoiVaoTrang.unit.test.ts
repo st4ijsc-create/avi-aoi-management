@@ -531,3 +531,19 @@ describe("★★★ ⑨ Đợt 35 — operator1 (0 gán) thấy `chuaGanNhaMay`,
     expect(MA).not.toMatch(/hienSo\(tomTat\.(soMay|soTram|tongWip), dangTai\)/);
   });
 });
+
+/* ★★★ Đợt 38 (Pareto #7 QA Đợt 37) — nhãn 3D cấp Line: mã NGẮN theo tiền tố chung của CHUYỀN, nối đúng chỗ (G16) */
+describe("Đợt 38 — TwinLine: nhãn 3D dùng mã NGẮN (tiền tố chung của `mayLine`)", () => {
+  it("★★★ `tienToChung(mayLine.map((m) => m.ma))` — tính trên máy CỦA CHUYỀN, không trên cả nhà máy (lần đo đầu trên `mayTatCa`: rỗng ⇒ 5/12 vẫn giấu)", () => {
+    expect(MA).toContain("const tienToMa = useMemo(() => tienToChung(mayLine.map((m) => m.ma)), [mayLine]);");
+    expect(MA).toContain("dungNhanMay({ mayVe, trangThaiTheoMay, maTheoMay: maNganTheoMay, mauChoTrangThai, t, andonTheoMay })");
+    expect(MA).toContain('import { rutTienTo, tienToChung } from "@/components/twin3d/van-hanh/maNgan";');
+    // cảnh báo 3D vẫn nhận mã ĐẦY ĐỦ
+    expect(MA).toContain("dungCanhBao3D(andonRows, mayVe, maTheoMay)");
+  });
+  it("★★★ kit: `LopNhan` ước lượng bề rộng theo CHỮ cho nhãn chưa đo (`uocLuongRongNhanPx`), không dùng 150 px mặc định", () => {
+    const lop = readFileSync(resolve(GOC, "src/components/twin3d/loi/LopNhan.tsx"), "utf8");
+    expect(lop).toContain("rongPx: co?.rongPx ?? uocLuongRongNhanPx(n.phu ? `${n.ma} · ${n.phu}` : n.ma)");
+  });
+});
+
