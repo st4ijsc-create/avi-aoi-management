@@ -43,8 +43,11 @@ describe("★ TỪ CHỐI 1 — `cotWipCanh`/`bangWip`/`nhipChuyenMs` ĐÃ tách
   });
 
   it("★ trang GỌI chúng chứ không CÀI LẠI chúng — thân useMemo là một lời gọi", () => {
+    // Đợt 38: `cotWipCanh` là bản ỔN ĐỊNH THEO GIÁ TRỊ của `cotWipTho` (`CanhVanHanh` có `useEffect([wip]) → invalidate()`,
+    // gói WIP 2 s dựng mảng mới dù số y nguyên); lời gọi thuần vẫn là MỘT DÒNG ở `cotWipTho`.
+    expect(TRANG).toContain("const cotWipCanh = useOnDinhTheoGiaTri(cotWipTho, JSON.stringify(cotWipTho));");
     for (const [bien, ham] of [
-      ["cotWipCanh", "cotWip"],
+      ["cotWipTho", "cotWip"],
       ["bangWip", "xepHangWip"],
     ] as const) {
       const i = TRANG.indexOf(`const ${bien} = useMemo(`);
