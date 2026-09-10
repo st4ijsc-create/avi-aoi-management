@@ -17,6 +17,7 @@ import {
   mapMachineStatus,
   mocConTuoi,
   msCua,
+  trangThaiLichSuTaiMoc,
 } from "./trangThaiMayTuoi";
 // ★ Client giữ cùng ngưỡng ở `mauTrangThai.ts` (module thuần, 0 import) — ghim đẳng thức thay vì hai bản sao lệch câm.
 import { NGUONG_CU_MS } from "../../client/src/components/twin3d/mauTrangThai";
@@ -115,5 +116,41 @@ describe("mapMachineStatus — máy im lặng không còn là running/idle", () 
     const bc = { logStatus: "online", logTs: LOG_3_NGAY, nhipTimTs: HB_54_NGAY };
     expect(mapMachineStatus(bc, "running", HB_54_NGAY + 60_000)).toBe("running");
     expect(mapMachineStatus(bc, "running", NOW)).toBe("offline");
+  });
+});
+
+/* ★★★ Đợt 38 (Pareto #2 QA Đợt 37) — replay CÙNG từ điển với live, bằng chứng cắt tại mốc */
+describe("trangThaiLichSuTaiMoc — ảnh lịch sử qua ĐÚNG mapMachineStatus", () => {
+  it("★★★ máy 14 thật tại mốc = bây giờ: log online 3 ngày + nhịp tim 54 ngày ⇒ OFFLINE (trước: `running 3,2 ngày`)", () => {
+    expect(trangThaiLichSuTaiMoc({ logStatus: "online", logTs: LOG_3_NGAY, nhipTimTs: HB_54_NGAY }, NOW)).toBe("offline");
+  });
+  it("★★★ D-4 msl now(): log online 1 GIÂY + nhịp tim 54 ngày ⇒ vẫn OFFLINE (trước: `running 1 s`)", () => {
+    expect(trangThaiLichSuTaiMoc({ logStatus: "online", logTs: NOW - 1000, nhipTimTs: HB_54_NGAY }, NOW)).toBe("offline");
+  });
+  it("★ ĐỐI CHỨNG (G5): nhịp tim tươi TẠI MỐC ⇒ `running` (xấp xỉ có khai) — gate không giết máy sống trong quá khứ", () => {
+    expect(trangThaiLichSuTaiMoc({ logStatus: "online", logTs: LOG_3_NGAY, nhipTimTs: HB_TUOI }, NOW)).toBe("running");
+    expect(trangThaiLichSuTaiMoc({ logStatus: null, logTs: null, nhipTimTs: HB_TUOI }, NOW)).toBe("running");
+  });
+  it("log `offline` ghi SAU nhịp tim tươi ⇒ offline (đã ngắt trước mốc)", () => {
+    expect(trangThaiLichSuTaiMoc({ logStatus: "offline", logTs: NOW - 5000, nhipTimTs: HB_TUOI }, NOW)).toBe("offline");
+  });
+  it("★★★ KHÔNG bằng chứng nào ≤ mốc ⇒ `null` (không bịa quá khứ), KHÔNG phải offline", () => {
+    expect(trangThaiLichSuTaiMoc({ logStatus: null, logTs: null, nhipTimTs: null }, NOW)).toBeNull();
+    expect(trangThaiLichSuTaiMoc({ logStatus: undefined, logTs: undefined, nhipTimTs: undefined }, NOW)).toBeNull();
+  });
+  it("mốc là THAM SỐ: cùng bằng chứng, mốc lùi về lúc nhịp tim còn tươi ⇒ running; mốc bây giờ ⇒ offline", () => {
+    const bc = { logStatus: "online", logTs: LOG_3_NGAY, nhipTimTs: HB_54_NGAY };
+    expect(trangThaiLichSuTaiMoc(bc, HB_54_NGAY + 10_000)).toBe("running");
+    expect(trangThaiLichSuTaiMoc(bc, NOW)).toBe("offline");
+  });
+  it("từ điển = CommandMachineStatus ∪ {null}: không bao giờ ra `stopped`/`online`/từ lạ", () => {
+    const TU_DIEN: Array<string | null> = ["running", "idle", "down", "offline", "maintenance", null];
+    const cas = [
+      { logStatus: "online", logTs: LOG_3_NGAY, nhipTimTs: HB_TUOI },
+      { logStatus: "offline", logTs: NOW, nhipTimTs: HB_TUOI },
+      { logStatus: "degraded", logTs: NOW, nhipTimTs: HB_54_NGAY },
+      { logStatus: null, logTs: null, nhipTimTs: null },
+    ];
+    for (const bc of cas) expect(TU_DIEN).toContain(trangThaiLichSuTaiMoc(bc, NOW));
   });
 });

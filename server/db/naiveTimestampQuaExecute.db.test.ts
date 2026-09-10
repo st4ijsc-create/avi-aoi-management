@@ -29,7 +29,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq, sql } from "drizzle-orm";
 
 import { getDb } from "./connection";
-import { machineStatusLogs, robotTelemetry } from "../../drizzle/schema";
+import { machineHeartbeats, machineStatusLogs, robotTelemetry } from "../../drizzle/schema";
 import { traAnhLichSu, traAnToanRobot } from "./twinCanh";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -41,6 +41,8 @@ let factoryId = 0;
 let machineId = 0;
 let robotId: number | null = null;
 let mslId = 0;
+let hbId = 0;
+let hbTruoc = 0;
 let teleId: number | null = null;
 /** Mốc ghi — làm tròn tới giây để so sánh không dính mili-giây của `now()` phía DB. */
 const T0 = new Date(Math.floor(Date.now() / 1000) * 1000);
@@ -77,6 +79,15 @@ beforeAll(async () => {
     .values({ machineId, status: "online", timestamp: T0 })
     .returning({ id: machineStatusLogs.id });
   mslId = msl.id;
+  // ★ Đợt 38 (Pareto #2): `traAnhLichSu` lấy MỐC từ NHỊP TIM ≤ mốc (cùng `chonNguonMocTuoi` như live), không từ hàng
+  //   log ⇒ chèn thêm một nhịp tim tại T0. Câu SQL thô mới (`machine_heartbeats … AT TIME ZONE 'UTC'`) là đúng đường
+  //   mà ca (4) đo; hàng log ở trên vẫn cần cho (1)(2)(3) và cho `trangThaiLichSuTaiMoc` (log online + hb tươi ⇒ running).
+  hbTruoc = Number(hang(await db.execute(sql`SELECT count(*)::int AS n FROM machine_heartbeats`))[0].n);
+  const [hb] = await db
+    .insert(machineHeartbeats)
+    .values({ machineId, status: "running", timestamp: T0 })
+    .returning({ id: machineHeartbeats.id });
+  hbId = hb.id;
   if (robotId !== null) {
     teleTruoc = Number(hang(await db.execute(sql`SELECT count(*)::int AS n FROM robot_telemetry`))[0].n);
     const [tele] = await db
@@ -90,9 +101,12 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!db) return;
   if (mslId) await db.delete(machineStatusLogs).where(eq(machineStatusLogs.id, mslId));
+  if (hbId) await db.delete(machineHeartbeats).where(eq(machineHeartbeats.id, hbId));
   if (teleId !== null) await db.delete(robotTelemetry).where(eq(robotTelemetry.id, teleId));
   const mslSau = Number(hang(await db.execute(sql`SELECT count(*)::int AS n FROM machine_status_logs`))[0].n);
   expect(mslSau, "đếm machine_status_logs trước = sau").toBe(mslTruoc);
+  const hbSau = Number(hang(await db.execute(sql`SELECT count(*)::int AS n FROM machine_heartbeats`))[0].n);
+  expect(hbSau, "đếm machine_heartbeats trước = sau").toBe(hbTruoc);
   if (teleId !== null) {
     const teleSau = Number(hang(await db.execute(sql`SELECT count(*)::int AS n FROM robot_telemetry`))[0].n);
     expect(teleSau, "đếm robot_telemetry trước = sau").toBe(teleTruoc);
@@ -122,12 +136,24 @@ describe("★★★ G104 — cùng một hàng, ba cách đọc `timestamp` naiv
 });
 
 describe("★★★ G104 — hai câu rời SQL của twinCanh.ts đi qua bản vá", () => {
-  it("(4) `traAnhLichSu(factoryId, T0 + 1 s)` ⇒ `capNhatLuc` của máy = T0 (tuổi GIÂY, không 7 h)", async () => {
+  it("(4) `traAnhLichSu(factoryId, T0 + 1 s)` ⇒ `capNhatLuc` của máy = T0 = NHỊP TIM (Đợt 38) — tuổi GIÂY, không 7 h; và `trangThai` = `running` (nhịp tim tươi tại mốc)", async () => {
     const may = await traAnhLichSu(factoryId, T0.getTime() + 1000);
     const m = may.find((x) => x.machineId === machineId);
     expect(m, `máy ${machineId} phải có trong ảnh lịch sử của nhà máy ${factoryId}`).toBeTruthy();
     expect(m!.capNhatLuc).toBe(T0.getTime());
+    expect(m!.doTuoiGiay).toBe(1);
     expect(Math.abs(Date.now() - (m!.capNhatLuc ?? 0))).toBeLessThan(60_000);
+    // Đợt 38 — MỘT từ điển: nhịp tim tươi tại mốc ⇒ `running` (xấp xỉ có khai), thuộc CommandMachineStatus.
+    expect(m!.trangThai).toBe("running");
+  });
+
+  it("★★★ (4b) Đợt 38 — tua về TRƯỚC nhịp tim 10 phút (log `online` cũng chưa có) ⇒ không bịa: `trangThai` null hoặc `offline`, KHÔNG `running`", async () => {
+    const may = await traAnhLichSu(factoryId, T0.getTime() - 10 * 60_000);
+    const m = may.find((x) => x.machineId === machineId);
+    expect(m).toBeTruthy();
+    expect(m!.trangThai).not.toBe("running");
+    // Không có nhịp tim ≤ mốc từ hàng tạm; mốc tuổi (nếu có) chỉ có thể đến từ nhịp tim CŨ có sẵn trong DB test.
+    if (m!.capNhatLuc != null) expect(m!.capNhatLuc).toBeLessThanOrEqual(T0.getTime() - 10 * 60_000);
   });
 
   it("(5) `traAnToanRobot(factoryId)` ⇒ `capNhatLuc` của robot vừa nhận telemetry = T0", async () => {

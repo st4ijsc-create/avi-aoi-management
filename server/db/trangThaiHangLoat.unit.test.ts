@@ -184,46 +184,55 @@ describe("quyUptime — cửa sổ rỗng là `null`, không phải 0%", () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
-/* ★★★ §9.8 — HAI TỪ VỰNG TRẠNG THÁI, VÀ VÌ SAO TRỘN CHÚNG LÀ LỖI CÂM         */
+/* ★★★ ĐỢT 38 (Pareto #2 QA Đợt 37) — ẢNH LỊCH SỬ VÀ KHO LIVE NÓI CÙNG MỘT TỪ ĐIỂN                              */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
-import { nhatKyRaTrangThaiCanh } from "./twinCanh";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-describe("nhatKyRaTrangThaiCanh — nhật ký KẾT NỐI ≠ lịch sử VẬN HÀNH", () => {
-  /*
-   * ĐO ĐƯỢC 2026-09-07:
-   *   machine_status_logs.status  → CHỈ 2 giá trị: online (4.171) · offline (3.490)
-   *   machines.operationStatus    → 8 giá trị của operationStatusEnum
-   *
-   * Bản viết đầu trả thẳng `status` thô ra client. Hậu quả CÂM: `mauChoTrangThai`
-   * rơi về `khong_ro` cho mọi giá trị lạ ⇒ tua lại vẽ TOÀN BỘ nhà máy thành xám
-   * gạch chéo, không lỗi, không cảnh báo. Tua lại nói dối về quá khứ.
-   */
-  it("★★★ `offline` → `stopped` (mất kết nối: chắc chắn không chạy)", () => {
-    expect(nhatKyRaTrangThaiCanh("offline")).toBe("stopped");
+/*
+ * Đợt 6 ánh xạ `online → running` / `offline → stopped` từ hàng log (`nhatKyRaTrangThaiCanh`). QA Đợt 37 D-4 đo:
+ * máy 14 im lặng 54 ngày ⇒ live `offline` mà tua-tại-bây-giờ khai `running 3,2 ngày`; chèn log `online` `now()`
+ * ⇒ `running 1 s`. Hàng log là SỰ KIỆN CHUYỂN, không phải tín hiệu sống (G105). Phép thuần nay ở
+ * `services/trangThaiMayTuoi.ts` (`trangThaiLichSuTaiMoc`, lưới riêng); lưới NÀY ghim CHỖ GỌI trong `twinCanh.ts`
+ * (G16: có hàm chưa đủ, phải nối vào đúng chỗ) — đọc nguồn, bỏ chú thích.
+ */
+describe("Đợt 38 — twinCanh.ts nối vào MỘT từ điển (`mapMachineStatus` / `trangThaiLichSuTaiMoc`)", () => {
+  const SRC = readFileSync(resolve(__dirname, "twinCanh.ts"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  const than = (ten: string) => {
+    const i = SRC.indexOf(`export async function ${ten}(`);
+    expect(i, ten).toBeGreaterThan(-1);
+    return SRC.slice(i, SRC.indexOf("\nexport ", i + 10));
+  };
+
+  it("★★★ `traTrangThaiHangLoat` (kho twin/socket) ra `trangThai` qua `mapMachineStatus(` với log + nhịp tim, KHÔNG còn `operationStatus` thô", () => {
+    const t = than("traTrangThaiHangLoat");
+    expect(t).toMatch(/trangThai: mapMachineStatus\(/);
+    expect(t).toContain("nhipTimTs: capNhatLuc");
+    expect(t).not.toMatch(/trangThai: bosung\?\.operationStatus/);
   });
 
-  it("★★★ `online` → `running` — XẤP XỈ CÓ KHAI, không phải sự thật", () => {
-    // Máy có kết nối vẫn có thể đang maintenance/starved/error. Nhật ký KHÔNG
-    // mang thông tin đó; ta khai xấp xỉ thay vì bịa chi tiết (NT-4).
-    expect(nhatKyRaTrangThaiCanh("online")).toBe("running");
+  it("★★★ `traAnhLichSu` (tua lại) đọc NHỊP TIM ≤ mốc từ `machine_heartbeats` + `machines.lastHeartbeat`, qua `chonNguonMocTuoi` và `trangThaiLichSuTaiMoc(`", () => {
+    const t = than("traAnhLichSu");
+    expect(t).toContain("FROM machine_heartbeats");
+    // câu nhịp tim phải CẮT TẠI MỐC (không nhìn trộm tương lai): sau `FROM machine_heartbeats` có `"timestamp" <= ${moc.toISOString()}`
+    const iHb = t.indexOf("FROM machine_heartbeats");
+    expect(t.slice(iHb, iHb + 300)).toContain('"timestamp" <= ${moc.toISOString()}');
+    expect(t).toContain("lastHeartbeat: machines.lastHeartbeat");
+    expect(t).toContain("chonNguonMocTuoi({");
+    expect(t).toMatch(/trangThai: trangThaiLichSuTaiMoc\(/);
+    expect(t).toContain("quyTuoiMay(nguonMoc, mocMs)");
   });
 
-  it("★★★ giá trị LẠ → `null` (⇒ `khong_ro`), KHÔNG bị nuốt vào `running`", () => {
-    // Nếu một ngày nhật ký thêm giá trị thứ ba, nó phải hiện "không rõ" chứ
-    // không âm thầm được xếp vào một trạng thái nào đó.
-    expect(nhatKyRaTrangThaiCanh("degraded")).toBeNull();
-    expect(nhatKyRaTrangThaiCanh("")).toBeNull();
-    expect(nhatKyRaTrangThaiCanh(null)).toBeNull();
+  it("★ ĐỐI CHỨNG — `nhatKyRaTrangThaiCanh` (ánh xạ từ log) KHÔNG còn tồn tại; hai câu thô đều mang `AT TIME ZONE 'UTC'` (G104)", () => {
+    expect(SRC).not.toContain("nhatKyRaTrangThaiCanh");
+    const t = than("traAnhLichSu");
+    expect((t.match(/AT TIME ZONE 'UTC'/g) ?? []).length).toBe(2);
   });
 
-  it("★ ĐỐI CHỨNG — giá trị thô KHÔNG phải giá trị cảnh", () => {
-    // Ô này ghim đúng cái bẫy: `online`/`offline` không nằm trong từ vựng cảnh.
-    // Nếu ai đó bỏ ánh xạ và trả thô, hai dòng dưới đỏ.
-    const TU_VUNG_CANH = ["running", "stopped", "error", "maintenance", "warming_up", "changeover", "starved", "blocked"];
-    expect(TU_VUNG_CANH).not.toContain("online");
-    expect(TU_VUNG_CANH).not.toContain("offline");
-    expect(TU_VUNG_CANH).toContain(nhatKyRaTrangThaiCanh("online"));
-    expect(TU_VUNG_CANH).toContain(nhatKyRaTrangThaiCanh("offline"));
+  it("`LICH_SU_LA_XAP_XI` vẫn được khai (NT-4: replay chỉ dựng được KẾT NỐI)", () => {
+    expect(SRC).toContain("export const LICH_SU_LA_XAP_XI = true;");
   });
 });

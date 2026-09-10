@@ -209,6 +209,13 @@ export function initializeSocket(server: HttpServer): Server {
               }
               socket.join(`twin:${twinFactoryId}`);
               console.log(`[Socket.io] ${socket.id} joined twin:${twinFactoryId}`);
+              /*
+               * ★★★ ĐỢT 38 (Pareto #6 QA Đợt 37) — PHÁT NGAY GÓI ĐẦU cho CHÍNH socket vừa join.
+               *   Broadcaster chỉ phát theo interval 10 s ⇒ chỉ báo `/twin` đứng ở "Đang chờ…" 8.944 / 9.781 ms
+               *   (`.qa-dot38/truoc/p6-*`). Cùng MỘT lối phát `phatTwinTrangThaiChoSocket` (cổng
+               *   `nguoiXemDuocNhan`, G20) — không phải đường thứ hai. Nhịp 10 s KHÔNG đổi.
+               */
+              void phatTwinTrangThaiNgay(socket, twinFactoryId);
             } catch (err) {
               // ⚠ Lỗi phân giải phạm vi ⇒ KHÔNG join. "Không biết" phải rơi về
               // phía CHẶN; một catch cho qua là cửa hậu mở bằng cách làm DB lỗi.
@@ -1632,6 +1639,75 @@ let twinTrangThaiBroadcaster: ReturnType<typeof setInterval> | null = null;
  * ★ Phát cho MỌI nhà máy đang có người xem (phòng `twin:{id}` không rỗng), chứ
  *   không phát mù toàn hệ: không ai xem thì không tốn truy vấn nào.
  */
+/**
+ * ★★★ ĐỢT 38 (Pareto #6 QA Đợt 37) — TÁCH "dựng gói" và "phát cho MỘT socket" ra khỏi vòng 10 s, để handler
+ * `subscribe` PHÁT NGAY gói đầu cho socket vừa join. Hai lối phát vẫn là MỘT hàm `phatTwinTrangThaiChoSocket`
+ * (cổng `nguoiXemDuocNhan` — G20: một điểm gọi, test có quyền ghim); hình dạng gói và nhịp 10 s KHÔNG đổi.
+ */
+async function dungGoiTwinTrangThai(factoryId: number): Promise<TwinTrangThaiEvent> {
+  const { traTrangThaiHangLoat } = await import("../db/twinCanh");
+  const bayGio = Date.now();
+  const may = await traTrangThaiHangLoat(factoryId, bayGio, undefined);
+  const capNhatMoiNhat = may.reduce<number | null>(
+    (max, m) => (m.capNhatLuc == null ? max : max == null || m.capNhatLuc > max ? m.capNhatLuc : max),
+    null,
+  );
+  return {
+    factoryId,
+    may: may.map((m) => ({
+      machineId: m.machineId,
+      trangThai: m.trangThai,
+      capNhatLuc: m.capNhatLuc,
+      doTuoiGiay: m.doTuoiGiay,
+      isActive: m.isActive,
+    })),
+    bayGio,
+    capNhatMoiNhat,
+    tong: may.length,
+  };
+}
+
+/**
+ * ★★★ LỐI PHÁT DUY NHẤT của `twin:trangThai` cho MỘT socket — lọc theo PHẠM VI CỦA CHÍNH NGƯỜI CẦM SOCKET.
+ *
+ * ⚠ ĐO ĐƯỢC (2026-09-07): handler `subscribe` cho socket join `twin:{twinFactoryId}` từng KHÔNG kiểm quyền — id
+ * nhà máy là lời TỰ KHAI của client. Bản trước của docblock này viết "với `twin:device` điều đó còn chịu được
+ * (gateway đã lọc trước khi phát)" — SAI: `twinStream.flush()` nhóm delta theo nhà máy CỦA MÁY — ĐỊNH TUYẾN,
+ * không phải PHÂN QUYỀN. Broadcaster tự đọc DB theo id lấy từ tên phòng — phát thẳng cho cả phòng thì một tài
+ * khoản KHÔNG được gán nhà máy nào (đo được: `operator1`) chỉ cần gửi `{twinFactoryId: 1}` là nhận trạng thái
+ * toàn SIM-FAC mỗi 10 giây. ⇒ Phát TỪNG SOCKET, mỗi socket lọc theo phạm vi của chính người đang cầm nó, qua
+ * `resolveTenantFactoryScope` — ĐÚNG bộ phân giải mà tầng dữ liệu đi qua (G12).
+ *
+ * ★★★ G20 — PHÉP QUYẾT ĐỊNH GỌI TỪ `twinPhamViQuyen.ts`, KHÔNG viết tại chỗ: bản trước viết thẳng biểu thức
+ * `pv.factoryIds === null || pv.factoryIds.includes(factoryId)`, và tệp test CHÉP TAY đúng biểu thức ấy ⇒ QA xoá
+ * sạch bộ lọc mà 5/5 test VẪN XANH. Một điểm gọi chung là điều kiện để test có quyền nói nó ghim cái gì.
+ *
+ * ★★★ G15 — PHÁT CẢ KHI `may` RỖNG: im lặng không phân biệt được "đo xong, không có máy nào" với "broadcaster
+ * đã chết". Một sự kiện mang `tong: 0` nói câu thứ nhất.
+ */
+async function phatTwinTrangThaiChoSocket(sk: Socket, factoryId: number, goi: TwinTrangThaiEvent): Promise<boolean> {
+  const nguoi = (sk.data as any)?.user;
+  // Không danh tính (client `machine`) ⇒ KHÔNG nhận trạng thái nhà máy.
+  if (!coDanhTinhNguoiDung(nguoi)) return false;
+  const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+  const pv = await resolveTenantFactoryScope({ userId: nguoi.id, userRole: nguoi.role });
+  if (!nguoiXemDuocNhan(nguoi, pv.factoryIds, factoryId)) return false;
+  if (!twinStreamEnabled()) return false;
+  sk.emit("twin:trangThai", goi);
+  return true;
+}
+
+/** Đợt 38 — phát NGAY một gói cho socket vừa join `twin:{factoryId}`: cùng cổng, cùng hình dạng gói. */
+async function phatTwinTrangThaiNgay(sk: Socket, factoryId: number): Promise<void> {
+  if (!io || !twinStreamEnabled()) return;
+  try {
+    const goi = await dungGoiTwinTrangThai(factoryId);
+    await phatTwinTrangThaiChoSocket(sk, factoryId, goi);
+  } catch (err) {
+    console.error("[Twin] trangThai phat-ngay-khi-join failed:", (err as Error)?.message ?? err);
+  }
+}
+
 export function startTwinTrangThaiBroadcaster(intervalMs = 10000): void {
   if (twinTrangThaiBroadcaster || !io || !twinStreamEnabled()) return;
   twinTrangThaiBroadcaster = setInterval(() => {
@@ -1649,81 +1725,23 @@ export function startTwinTrangThaiBroadcaster(intervalMs = 10000): void {
     }
     if (factoryIds.length === 0) return; // không ai xem → không tốn query
 
-    import("../db/twinCanh")
-      .then(async ({ traTrangThaiHangLoat }) => {
+    void (async () => {
+      try {
         for (const factoryId of factoryIds) {
-          const bayGio = Date.now();
-          /*
-           * ★★★ PHẠM VI ĐO TỪNG NGƯỜI XEM — KHÔNG phát mù cho cả phòng.
-           *
-           * ⚠ ĐO ĐƯỢC (2026-09-07): handler `subscribe` (dòng ~166) cho socket
-           * join `twin:{twinFactoryId}` **KHÔNG kiểm quyền gì cả** — id nhà máy
-           * là lời TỰ KHAI của client, đúng khuôn `{ userId: input.userId }` mà
-           * `_phamViNguoiXem.ts` cảnh báo.
-           *
-           * ★★★ SỬA LỜI KHAI SAI CỦA CHÍNH DOCBLOCK NÀY (QA đo lại 2026-09-07):
-           * bản trước viết "với `twin:device` điều đó còn chịu được (gateway đã
-           * lọc trước khi phát)". SAI. `twinStream.flush()` nhóm delta theo nhà
-           * máy CỦA MÁY — ĐỊNH TUYẾN, không phải PHÂN QUYềN. Cả ba kênh đều rò,
-           * và cả ba nay đều qua `nguoiXemDuocNhan`. Broadcaster NÀY tự đọc
-           * DB theo id lấy từ tên phòng — nên nếu phát thẳng cho cả phòng thì
-           * một tài khoản KHÔNG được gán nhà máy nào (đo được: `operator1`) chỉ
-           * cần gửi `{twinFactoryId: 1}` là nhận trạng thái toàn SIM-FAC mỗi 10
-           * giây. Đó là rò rỉ xuyên tenant do CHÍNH bản vá này mở ra.
-           *
-           * ⇒ Phát TỪNG SOCKET, mỗi socket lọc theo phạm vi của chính người
-           *   đang cầm nó. Dùng `resolveTenantFactoryScope` — ĐÚNG bộ phân giải
-           *   mà tầng dữ liệu đi qua, không tự suy lại (G12).
-           */
           const phong = io?.sockets.adapter.rooms.get(`twin:${factoryId}`);
           if (!phong || phong.size === 0) continue;
-
-          const may = await traTrangThaiHangLoat(factoryId, bayGio, undefined);
-          const capNhatMoiNhat = may.reduce<number | null>(
-            (max, m) => (m.capNhatLuc == null ? max : max == null || m.capNhatLuc > max ? m.capNhatLuc : max),
-            null,
-          );
-          const goi: TwinTrangThaiEvent = {
-            factoryId,
-            may: may.map((m) => ({
-              machineId: m.machineId,
-              trangThai: m.trangThai,
-              capNhatLuc: m.capNhatLuc,
-              doTuoiGiay: m.doTuoiGiay,
-              isActive: m.isActive,
-            })),
-            bayGio,
-            capNhatMoiNhat,
-            tong: may.length,
-          };
-
-          const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+          // ★ MỘT gói cho cả phòng, PHÁT TỪNG SOCKET qua cổng (Đợt 38: cùng hai hàm với phát-ngay-khi-join).
+          const goi = await dungGoiTwinTrangThai(factoryId);
           for (const sid of phong) {
             const sk = io?.sockets.sockets.get(sid);
             if (!sk) continue;
-            const nguoi = (sk.data as any)?.user;
-            // Không danh tính (client `machine`) ⇒ KHÔNG nhận trạng thái nhà máy.
-            if (!coDanhTinhNguoiDung(nguoi)) continue;
-            const pv = await resolveTenantFactoryScope({ userId: nguoi.id, userRole: nguoi.role });
-            /*
-             * ★★★ G20 — PHÉP QUYẾT ĐỊNH GỌI TỪ `twinPhamViQuyen.ts`, KHÔNG viết
-             * tại chỗ. Bản trước viết thẳng biểu thức
-             * `pv.factoryIds === null || pv.factoryIds.includes(factoryId)` ở đây,
-             * và tệp test lại CHÉP TAY đúng biểu thức ấy sang tests. Kết quả: QA xoá
-             * sạch bộ lọc khỏi broadcaster thật mà 5/5 test VẪN XANH. Một điểm gọi
-             * chung là điều kiện để test có quyền nói nó ghim cái gì.
-             */
-            if (!nguoiXemDuocNhan(nguoi, pv.factoryIds, factoryId)) continue;
-            /*
-             * ★★★ G15 — PHÁT CẢ KHI `may` RỖNG, cùng lý do đã ghi ở broadcaster
-             * WIP: im lặng không phân biệt được "đo xong, không có máy nào" với
-             * "broadcaster đã chết". Một sự kiện mang `tong: 0` nói câu thứ nhất.
-             */
-            if (twinStreamEnabled()) sk.emit("twin:trangThai", goi);
+            await phatTwinTrangThaiChoSocket(sk, factoryId, goi);
           }
         }
-      })
-      .catch((err) => console.error("[Twin] trangThai broadcaster read failed:", err));
+      } catch (err) {
+        console.error("[Twin] trangThai broadcaster read failed:", err);
+      }
+    })();
   }, Math.max(1000, intervalMs));
   if (typeof (twinTrangThaiBroadcaster as any)?.unref === "function") (twinTrangThaiBroadcaster as any).unref();
   console.log("[Twin] trangThai broadcaster started (read-only, gated, 10s)");

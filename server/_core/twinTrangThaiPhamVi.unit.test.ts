@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 /**
  * ★★★ ĐỢT 6 VÁ CHẶN-2 — TEST IMPORT MÃ SẢN PHẨM, KHÔNG CHÉP LẠI NÓ.
  *
@@ -122,5 +124,39 @@ describe("nguoiXemDuocNhan — CỔNG ĐẦY ĐỦ dùng ở CẢ BA kênh + han
 
   it("admin có danh tính + phạm vi null ⇒ nhận (bypass ĐÃ BIẾT)", () => {
     expect(nguoiXemDuocNhan(NGUOI.admin, PHAM_VI_DO_DUOC.admin, 1)).toBe(true);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 38 (Pareto #6 QA Đợt 37) — phát NGAY khi join, qua CÙNG MỘT lối phát có cổng (G20)                    */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+describe("Đợt 38 — `twin:trangThai` phát NGAY khi join `twin:{id}`, và chỉ có MỘT nơi `emit`", () => {
+  const SRC = readFileSync(resolve(__dirname, "socket.ts"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  it("★★★ handler `subscribe`: ngay sau `socket.join(twin:{twinFactoryId})` gọi `phatTwinTrangThaiNgay(socket, twinFactoryId)`", () => {
+    const i = SRC.indexOf("socket.join(`twin:${twinFactoryId}`)");
+    expect(i).toBeGreaterThan(-1);
+    expect(SRC.slice(i, i + 400)).toContain("phatTwinTrangThaiNgay(socket, twinFactoryId)");
+  });
+
+  it("★★★ `emit(\"twin:trangThai\"` xuất hiện ĐÚNG MỘT lần — trong `phatTwinTrangThaiChoSocket`, SAU `coDanhTinhNguoiDung` + `nguoiXemDuocNhan(` + `twinStreamEnabled()`", () => {
+    expect((SRC.match(/emit\("twin:trangThai"/g) ?? []).length).toBe(1);
+    const i = SRC.indexOf("async function phatTwinTrangThaiChoSocket(");
+    expect(i).toBeGreaterThan(-1);
+    const than = SRC.slice(i, SRC.indexOf("async function phatTwinTrangThaiNgay(", i));
+    expect(than).toContain("coDanhTinhNguoiDung(nguoi)");
+    const emit = than.indexOf('emit("twin:trangThai"');
+    expect(emit).toBeGreaterThan(-1);
+    expect(than.indexOf("nguoiXemDuocNhan(")).toBeGreaterThan(-1);
+    expect(than.indexOf("nguoiXemDuocNhan(")).toBeLessThan(emit);
+    expect(than.indexOf("twinStreamEnabled()")).toBeLessThan(emit);
+  });
+
+  it("vòng 10 s và phát-ngay cùng gọi `dungGoiTwinTrangThai` + `phatTwinTrangThaiChoSocket` — không đường thứ hai; nhịp giữ 10000", () => {
+    expect((SRC.match(/phatTwinTrangThaiChoSocket\(/g) ?? []).length).toBe(3); // định nghĩa + 2 chỗ gọi
+    expect((SRC.match(/dungGoiTwinTrangThai\(/g) ?? []).length).toBe(3);
+    expect(SRC).toContain("export function startTwinTrangThaiBroadcaster(intervalMs = 10000)");
   });
 });

@@ -52,6 +52,9 @@ import {
 import { trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 // Đợt 6 — cùng bộ bóc hàng thô mà `db/machine.ts` dùng (một quy ước, không hai).
 import { executeRows } from "../utils/kpi";
+// ★ Đợt 38 (Pareto #2 QA Đợt 37) — MỘT từ điển trạng thái (`CommandMachineStatus`) cho kho twin, replay VÀ fleet:
+//   cùng `mapMachineStatus` mà `factoryCommandService`/`assetCockpitService` dùng (module THUẦN, 0 import ⇒ không vòng).
+import { mapMachineStatus, trangThaiLichSuTaiMoc } from "../services/trangThaiMayTuoi";
 
 /** Nguồn của một giá trị — khớp `twinnguonenum`. */
 export type NguonGiaTri = "sinh" | "tay";
@@ -1027,7 +1030,11 @@ export interface TrangThaiMayHangLoat {
   loaiMay: string | null;
   isActive: boolean;
   stationId: number | null;
-  /** Giá trị máy TỰ KHAI (`machines.operationStatus`) — CHƯA xét tuổi. */
+  /**
+   * ★ Đợt 38 — TỪ VỰNG CHỈ HUY `CommandMachineStatus` qua `mapMachineStatus` (nhịp tim ⊕ `operationStatus`):
+   *   CÙNG chữ với `factoryCommand.overview` và cockpit. Trước: `operationStatus` THÔ (`stopped`) ⇒ hai từ vựng
+   *   cho một máy sống-dừng (`/twin` "Stopped" · fleet `idle`). `null` CHỈ ở ảnh lịch sử khi chưa có bằng chứng ≤ mốc.
+   */
   trangThai: string | null;
   /** Điểm sức khoẻ 0-100 nếu có; `null` = chưa đo (NT-3.5: `—`, không phải `0`). */
   diemSucKhoe: number | null;
@@ -1215,7 +1222,18 @@ export async function traTrangThaiHangLoat(
       loaiMay: m.loaiMay ?? null,
       isActive: m.isActive ?? false,
       stationId: m.stationId ?? null,
-      trangThai: bosung?.operationStatus ?? null,
+      /*
+       * ★★★ ĐỢT 38 (Pareto #2 QA Đợt 37) — MỘT TỪ ĐIỂN. Trước: `operationStatus` THÔ (`stopped`) ⇒ `/twin` in
+       *   "Stopped 11 s" cho máy 14 sống-dừng trong khi `factoryCommand.overview` (cùng máy, cùng giây) nói `idle`;
+       *   và nền của trang (`mayNen` từ overview) mang `idle`/`offline` mà `BANG_MAU` client không có ⇒ `khong_ro`
+       *   câm rồi "lật" khi gói socket tới. Nay qua ĐÚNG `mapMachineStatus` với CÙNG bằng chứng (log + nhịp tim
+       *   `capNhatLuc` = `chonNguonMocTuoi`) như fleet/cockpit ⇒ ba bề mặt không thể lệch chữ (G12).
+       */
+      trangThai: mapMachineStatus(
+        { logStatus: tt?.status, logTs: tt?.ts, nhipTimTs: capNhatLuc },
+        bosung?.operationStatus,
+        bayGio,
+      ),
       /*
        * ★ `diemSucKhoe` = `null` — "CHƯA ĐO", và đó là câu ĐÚNG, không phải chỗ chưa làm.
        *
@@ -1274,17 +1292,23 @@ export async function traTrangThaiHangLoat(
  *   rõ" — tức là tua lại nói dối về quá khứ, đúng lớp lỗi §9.8 cảnh báo khi hai
  *   đường lệch nhau.
  *
- * ⇒ Ánh xạ TƯỜNG MINH sang từ vựng cảnh, và chỉ nói ĐÚNG cái đo được:
- *     `offline` → `stopped`   (máy mất kết nối: chắc chắn không chạy)
- *     `online`  → `running`   ★ XẤP XỈ CÓ KHAI, xem cảnh báo dưới
+ * ⇒ (Đợt 6) Ánh xạ tường minh `offline → stopped`, `online → running` — và (Đợt 38) BỊ THAY: QA Đợt 37 D-4 đo
+ *   máy 14 im lặng 54 ngày ⇒ live `offline` mà tua-tại-bây-giờ khai **`running 3,2 ngày`**; chèn một log `online`
+ *   `now()` ⇒ **`running 1 s`**. Hàng log là SỰ KIỆN CHUYỂN, không phải tín hiệu sống (G105) — Đợt 34 đã đưa fleet +
+ *   cockpit về luật nhịp tim, replay là đường thứ ba còn sót, và §9.8 đổ nó vào CÙNG kho với gói socket.
  *
- * ⚠⚠ `online → running` là một XẤP XỈ, không phải sự thật: một máy có kết nối
- *   vẫn có thể đang `maintenance`/`starved`/`error`. Nhật ký này KHÔNG mang
- *   thông tin đó và không nguồn nào khác trong DB mang nó theo thời gian. Ta
- *   KHAI xấp xỉ ấy ở đây và ở `nguonXapXi` của giá trị trả về, để UI nói được
- *   *"tua lại chỉ dựng được KẾT NỐI, không dựng được chế độ vận hành"* thay vì
- *   trình bày một quá khứ chi tiết hơn dữ liệu thật (NT-4: số giả định phải tự
- *   khai là giả định).
+ * ⇒ ★★★ ĐỢT 38 — MỘT TỪ ĐIỂN: bằng chứng CẮT TẠI MỐC (log ≤ mốc, NHỊP TIM ≤ mốc — cùng `chonNguonMocTuoi` như live)
+ *   đi qua `trangThaiLichSuTaiMoc` (= `mapMachineStatus` với `now = mốc`, `services/trangThaiMayTuoi.ts`):
+ *     không nhịp tim tươi tại mốc  → `offline`   (kể cả khi vừa có log `online`)
+ *     nhịp tim tươi tại mốc        → `running`   ★ XẤP XỈ CÓ KHAI — xem `LICH_SU_LA_XAP_XI`
+ *     không bằng chứng nào ≤ mốc   → `null`      (⇒ `khong_ro`: không bịa quá khứ)
+ *   `capNhatLuc`/`doTuoiGiay` cũng là NHỊP TIM tại mốc — tuổi tính TỪ MỐC, cùng đại lượng với live.
+ *
+ * ⚠⚠ `running` khi có nhịp tim là một XẤP XỈ, không phải sự thật: một máy có kết nối
+ *   vẫn có thể đang `maintenance`/`starved`/`error`. DB KHÔNG lưu `operationStatus` theo
+ *   thời gian, nên ta KHAI xấp xỉ ấy ở đây và ở `LICH_SU_LA_XAP_XI`, để UI nói được
+ *   *"tua lại chỉ dựng được KẾT NỐI, không dựng được chế độ vận hành"* thay vì trình
+ *   bày một quá khứ chi tiết hơn dữ liệu thật (NT-4).
  *
  * ★ `DISTINCT ON` lấy hàng MỚI NHẤT **không muộn hơn** `mocMs` cho mỗi máy —
  *   đúng nghĩa "trạng thái tại thời điểm T", không phải "hàng gần T nhất" (hàng
@@ -1292,20 +1316,6 @@ export async function traTrangThaiHangLoat(
  *
  * ⚠ SỐ QUERY CỐ ĐỊNH = 4 cây phân cấp + 1 ảnh. Không N+1.
  */
-/**
- * Ánh xạ từ vựng NHẬT KÝ KẾT NỐI (`online`/`offline`) sang từ vựng cảnh
- * (`operationStatusEnum`). Xem docblock `traAnhLichSu` cho phép đo và cảnh báo.
- *
- * ★ Giá trị LẠ trả `null` (⇒ `khong_ro`) chứ không đoán: nếu một ngày nhật ký
- *   thêm giá trị thứ ba, ta muốn nó hiện "không rõ" chứ không bị nuốt vào
- *   `running` một cách im lặng.
- */
-export function nhatKyRaTrangThaiCanh(status: string | null): string | null {
-  if (status === "offline") return "stopped";
-  if (status === "online") return "running"; // ★ XẤP XỈ — xem `laXapXi` dưới
-  return null;
-}
-
 /**
  * Tua lại dựng được KẾT NỐI, KHÔNG dựng được chế độ vận hành. Cờ này đi kèm mọi
  * ảnh lịch sử để UI khai đúng giới hạn đó (NT-4) thay vì trình bày một quá khứ
@@ -1326,28 +1336,66 @@ export async function traAnhLichSu(
 
   const ids = cay.may.map((m) => m.id);
   const moc = new Date(mocMs);
+  const idList = sql.join(ids.map((id) => sql`${id}`), sql`, `);
 
   // ★★★ Đợt 35 (G104) — `AT TIME ZONE 'UTC'`: cột `timestamp` naive lưu UTC, nhưng `db.execute` thô
   //     (postgres.js) đọc naive theo giờ máy Node (+07 ⇒ lệch −7 h) trong khi drizzle typed đọc UTC.
   //     `ts` rời SQL thành `capNhatLuc` ⇒ ảnh lịch sử (tua) khai tuổi 7 h cho hàng vừa ghi. Cùng vá
   //     với `trangThaiTapMay` (Đợt 34). Lưới: `naiveTimestampQuaExecute.db.test.ts`.
-  const hang = executeRows(
+  const hangLog = executeRows(
     await d.execute(sql`
       SELECT DISTINCT ON ("machineId")
              "machineId" AS machine_id, status, "timestamp" AT TIME ZONE 'UTC' AS ts
       FROM machine_status_logs
-      WHERE "machineId" IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
+      WHERE "machineId" IN (${idList})
         AND "timestamp" <= ${moc.toISOString()}
       ORDER BY "machineId", "timestamp" DESC
     `),
   ) as Array<{ machine_id: number; status: string | null; ts: Date | null }>;
 
-  const theoId = new Map<number, { status: string | null; ts: Date | null }>();
-  for (const r of hang) theoId.set(Number(r.machine_id), { status: r.status, ts: r.ts });
+  /*
+   * ★★★ ĐỢT 38 (Pareto #2 QA Đợt 37) — NHỊP TIM TẠI MỐC, cùng hai nguồn `chonNguonMocTuoi` như live
+   *   (`machine_heartbeats` ≤ mốc + `machines.lastHeartbeat` nếu ≤ mốc). Hàng log KHÔNG còn là mốc tuổi
+   *   (trước: `capNhatLuc = ts` của log ⇒ máy chết 54 ngày khai "3,2 ngày" khi tua). Hai câu thô cùng đi qua
+   *   `AT TIME ZONE 'UTC'` (G104). Số query CỐ ĐỊNH = 4 cây + 1 log + 1 nhịp tim + 1 `machines` — không N+1.
+   *   `machine_heartbeats` nhỏ (108 hàng, đo 2026-09-10) — không cần chỉ mục mới.
+   */
+  const hangHb = executeRows(
+    await d.execute(sql`
+      SELECT DISTINCT ON ("machineId")
+             "machineId" AS machine_id, "timestamp" AT TIME ZONE 'UTC' AS ts
+      FROM machine_heartbeats
+      WHERE "machineId" IN (${idList})
+        AND "timestamp" <= ${moc.toISOString()}
+      ORDER BY "machineId", "timestamp" DESC
+    `),
+  ) as Array<{ machine_id: number; ts: Date | null }>;
+  const hangMay = await d
+    .select({ id: machines.id, lastHeartbeat: machines.lastHeartbeat })
+    .from(machines)
+    .where(inArray(machines.id, ids));
+
+  const logTheoId = new Map<number, { status: string | null; ts: Date | null }>();
+  for (const r of hangLog) logTheoId.set(Number(r.machine_id), { status: r.status, ts: r.ts });
+  const hbTheoId = new Map<number, Date | null>();
+  for (const r of hangHb) hbTheoId.set(Number(r.machine_id), r.ts);
+  const lastHbTheoId = new Map<number, Date | null>();
+  for (const r of hangMay) {
+    const t = r.lastHeartbeat == null ? null : new Date(r.lastHeartbeat).getTime();
+    // Cột `machines.lastHeartbeat` chỉ là bằng chứng TẠI MỐC khi nó không muộn hơn mốc — không nhìn trộm tương lai.
+    lastHbTheoId.set(r.id, t != null && Number.isFinite(t) && t <= mocMs ? (r.lastHeartbeat as Date) : null);
+  }
 
   return cay.may.map((m) => {
-    const h = theoId.get(m.id);
-    const capNhatLuc = h?.ts ? new Date(h.ts).getTime() : null;
+    const h = logTheoId.get(m.id);
+    // ★ Cùng phép chọn nguồn có test ghim như live (THƯỜNG-4): log được truyền vào rồi bị VỨT ĐI có chủ đích.
+    const nguonMoc = chonNguonMocTuoi({
+      hbBang: hbTheoId.get(m.id),
+      hbMay: lastHbTheoId.get(m.id),
+      statusLogTs: h?.ts,
+    });
+    // Tuổi tính TỪ MỐC ĐANG XEM, không từ bây giờ (§9.8).
+    const { capNhatLuc, doTuoiGiay } = quyTuoiMay(nguonMoc, mocMs);
     return {
       machineId: m.id,
       ma: m.ma,
@@ -1356,15 +1404,14 @@ export async function traAnhLichSu(
       isActive: m.isActive ?? false,
       stationId: m.stationId ?? null,
       /*
-       * ★ `null` khi TẠI MỐC ĐÓ máy chưa từng có bản ghi nào — và đó là câu
-       *   đúng: ta không biết nó ở trạng thái gì lúc 08:00 nếu bản ghi đầu tiên
-       *   của nó là 09:00. Điền `stopped` vào đây sẽ là bịa ra một quá khứ.
+       * ★ `null` khi TẠI MỐC ĐÓ máy chưa từng có bản ghi nào (không log, không nhịp tim) — và đó là câu
+       *   đúng: ta không biết nó ở trạng thái gì lúc 08:00 nếu bản ghi đầu tiên của nó là 09:00. Điền
+       *   `offline`/`stopped` vào đây sẽ là bịa ra một quá khứ. Còn lại: CÙNG từ điển với live (Đợt 38).
        */
-      trangThai: nhatKyRaTrangThaiCanh(h?.status ?? null),
+      trangThai: trangThaiLichSuTaiMoc({ logStatus: h?.status ?? null, logTs: h?.ts, nhipTimTs: capNhatLuc }, mocMs),
       diemSucKhoe: null,
       capNhatLuc,
-      // Tuổi tính TỪ MỐC ĐANG XEM, không từ bây giờ (§9.8).
-      doTuoiGiay: capNhatLuc == null ? null : Math.max(0, Math.round((mocMs - capNhatLuc) / 1000)),
+      doTuoiGiay,
       uptimePhanTram: null,
     };
   });

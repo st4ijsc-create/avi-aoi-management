@@ -145,3 +145,25 @@ export function mapMachineStatus(
       return "running";
   }
 }
+
+/**
+ * ★★★ ĐỢT 38 (Pareto #2 QA Đợt 37) — TRẠNG THÁI TẠI MỘT MỐC cho ẢNH LỊCH SỬ (tua lại) — CÙNG TỪ ĐIỂN VỚI LIVE.
+ *
+ * Đo D-4 Đợt 37 (`.qa-dot37/bon-nguon/`): máy 14 im lặng 54 ngày ⇒ live `offline`, mà `twinCanh.anhLichSu` (tua tại
+ * "bây giờ") khai **`running 3,2 ngày`** vì bản cũ `nhatKyRaTrangThaiCanh` đọc TRẠNG THÁI + TUỔI từ hàng
+ * `machine_status_logs` mới nhất ≤ mốc (`online` ⇒ `running`); chèn một hàng log `online` `now()` ⇒ replay nói
+ * **`running 1 s`** cho cùng cái máy chết. G105: hàng log là SỰ KIỆN CHUYỂN (connect/disconnect), không phải tín hiệu
+ * sống — Đợt 34 đã đưa fleet + cockpit về luật nhịp tim; replay là đường thứ ba còn sót, và `khoTrangThai.ts` (§9.8)
+ * đổ nó vào CÙNG kho với gói socket nên hai đường nói hai chữ cho một máy ở cùng một mốc.
+ *
+ * ⇒ Replay đi qua ĐÚNG `mapMachineStatus` với bằng chứng ĐÃ CẮT TẠI MỐC (log ≤ mốc, nhịp tim ≤ mốc) và `now = mốc`:
+ *   · không nhịp tim tươi tại mốc ⇒ `offline` (kể cả khi có log `online` vừa ghi);
+ *   · nhịp tim tươi tại mốc ⇒ `running` — XẤP XỈ CÓ KHAI (`twinCanh.LICH_SU_LA_XAP_XI`): DB không lưu
+ *     `operationStatus` theo thời gian nên chỉ nói được "đã kết nối", không nói được "đang làm gì" (NT-4);
+ *   · KHÔNG CÓ bằng chứng nào ≤ mốc (chưa từng log, chưa từng nhịp tim) ⇒ `null` — "ta không biết nó thế nào lúc
+ *     08:00 nếu bản ghi đầu tiên là 09:00"; điền gì vào đây cũng là bịa quá khứ.
+ */
+export function trangThaiLichSuTaiMoc(bc: BangChungKetNoi, mocMs: number): CommandMachineStatus | null {
+  if (bc.logStatus == null && msCua(bc.nhipTimTs) == null) return null;
+  return mapMachineStatus(bc, null, mocMs);
+}
