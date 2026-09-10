@@ -49,6 +49,10 @@ import { isoCua, mapMachineStatus, type CommandMachineStatus } from "./trangThai
 // ★ Mốc "còn nói chuyện với ta" = NHỊP TIM, chọn bằng ĐÚNG hai hàm mà kho realtime của twin
 //   (`twin:trangThai` → `traTrangThaiHangLoat`) dùng — cùng hàm ⇒ fleet API và kho không thể lệch mốc (G12).
 import { chonNguonMocTuoi, quyTuoiMay } from "../db/twinCanh";
+// ★★★ Đợt 40 (QA Đợt 39 #2, G113) — PHẠM VI NGƯỜI XEM đi xuống tận WHERE. Đo trước vá (`.qa-dot39/qd18/B-*.json`):
+//   `operator1` (0 hàng `user_factory_assignments`) gọi `overview(1)` ⇒ 200 / **41 máy**, `overview(18)` ⇒ 200 / 1.
+//   Cùng khuôn `twinCanhRouter` (`phamViCua(ctx)` → `PhamViNguoiXem` → `idsTrongPhamVi`), KHÔNG dựng bộ luật thứ hai.
+import { idsTrongPhamVi, type PhamViNguoiXem } from "../db/hierarchy";
 
 // ════════════════════════════════════════════════════════════════════════════
 // CONTRACT TYPES (shape consumed by factory-scene component + command page).
@@ -164,22 +168,53 @@ const WO_OPEN_STATUSES = ["OPEN", "SCHEDULED", "IN_PROGRESS", "ON_HOLD"] as cons
 
 export async function getFactoryCommandOverview(params?: {
   factoryId?: number;
+  /**
+   * ★★★ Đợt 40 — phạm vi NGƯỜI XEM (`phamViCua(ctx)` ở router). Bỏ trống = KHÔNG lọc — hình dạng có thật của
+   * lối đi không mang danh tính (tác vụ nền, REST máy-với-máy), và là chiều DƯƠNG chống "vá quá tay thành chặn
+   * tất cả": mọi nơi gọi cũ giữ nguyên từng byte. Router tRPC PHẢI truyền (lưới `phamViTwinCanh.unit.test.ts`).
+   */
+  scope?: PhamViNguoiXem;
 }): Promise<FactoryCommandOverview> {
   const db = await getDb();
-  if (!db) return { factories: [], machines: [], issues: [], oeeDefinitionVersion: getMetricDefinitionVersion("OEE") };
+  const RONG: FactoryCommandOverview = {
+    factories: [],
+    machines: [],
+    issues: [],
+    oeeDefinitionVersion: getMetricDefinitionVersion("OEE"),
+  };
+  if (!db) return RONG;
   const now = Date.now();
   const factoryId = params?.factoryId;
 
-  // 1) Danh sách factory (cho bộ lọc trên FE).
+  /*
+   * ★★★ Đợt 40 — CỔNG PHẠM VI, đặt TRƯỚC mọi truy vấn.
+   *   `null` = toàn quyền / không danh tính ⇒ không thêm mệnh đề nào (chiều dương).
+   *   `[]`   = tài khoản chưa được gán nhà máy ⇒ TRẢ RỖNG, không phải "quên lọc" (`operator1` trước vá: 41 máy).
+   *   `factoryId` tự khai ngoài tập ⇒ RỖNG — cùng hình dạng với `twinCanh.trangThaiHangLoat` (trả `[]`), không
+   *   phải `FORBIDDEN`: một mã riêng xác nhận nhà máy ấy CÓ TỒN TẠI (G82).
+   *   Máy có phả hệ đứt (không trạm/chuyền/xưởng ⇒ `factories.id` NULL) bị LOẠI cho người bị thu hẹp —
+   *   `NULL IN (…)` không bao giờ TRUE: fail-closed, cùng luật `idsTrongPhamVi`.
+   */
+  const nhaMayDuocXem = await idsTrongPhamVi("factory", params?.scope);
+  if (nhaMayDuocXem !== null) {
+    if (nhaMayDuocXem.length === 0) return RONG;
+    if (factoryId != null && !nhaMayDuocXem.includes(factoryId)) return RONG;
+  }
+  const congPhamVi = nhaMayDuocXem === null ? undefined : inArray(factories.id, nhaMayDuocXem);
+
+  // 1) Danh sách factory (cho bộ lọc trên FE) — chỉ những nhà máy người xem được thấy.
   const factoryRows = await db
     .select({ id: factories.id, name: factories.name, code: factories.code })
     .from(factories)
+    .where(congPhamVi)
     .orderBy(factories.name);
 
-  // 2) Máy + phả hệ (1 join, leftJoin để máy chưa gán line vẫn hiện).
-  const baseWhere = factoryId != null
-    ? and(eq(machines.isActive, true), eq(factories.id, factoryId))
-    : eq(machines.isActive, true);
+  // 2) Máy + phả hệ (1 join, leftJoin để máy chưa gán line vẫn hiện — trừ khi người xem bị thu hẹp).
+  const baseWhere = and(
+    eq(machines.isActive, true),
+    factoryId != null ? eq(factories.id, factoryId) : undefined,
+    congPhamVi,
+  );
   const machineRows = await db
     .select({
       id: machines.id,
@@ -518,10 +553,14 @@ export interface CommandMachineDetail {
   telemetryTags: unknown[];
 }
 
-export async function getCommandMachineDetail(machineId: number): Promise<CommandMachineDetail | null> {
-  // Tái dùng aggregation cockpit sẵn có (identity/liveState/oee/alarms/recipes/capability).
+export async function getCommandMachineDetail(
+  machineId: number,
+  /** ★ Đợt 40 — phạm vi người xem; máy ngoài phạm vi ⇒ `null`, CÙNG hình dạng với máy không tồn tại (G82). */
+  scope?: PhamViNguoiXem,
+): Promise<CommandMachineDetail | null> {
+  // Tái dùng aggregation cockpit sẵn có (identity/liveState/oee/alarms/recipes/capability) — cổng phạm vi ở đó.
   const { machineDetail } = await import("./ecosystem/assetCockpitService");
-  const detail = await machineDetail(machineId);
+  const detail = await machineDetail(machineId, scope);
   if (!detail) return null;
 
   const now = Date.now();

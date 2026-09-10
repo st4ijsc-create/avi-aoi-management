@@ -44,6 +44,11 @@
  */
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../db/connection";
+// ★★★ Đợt 40 (QA Đợt 39 #2, G113) — PHẠM VI NGƯỜI XEM. Đo trước vá: `operator1` (0 gán) gọi
+//   `assetCockpit.machineDetail(257)` ⇒ 200 + identity máy của nhà máy 18. Docblock cũ ở router khai "tenant
+//   scope is honored by the identity join — the FE scopes on it": FE lọc KHÔNG phải hàng rào; dữ liệu đã rời server.
+//   Cùng khuôn `db/hierarchy` (`idsTrongPhamVi`/`trongPhamVi`), không dựng bộ luật thứ hai (G12).
+import { idsTrongPhamVi, trongPhamVi, type PhamViNguoiXem } from "../../db/hierarchy";
 import {
   machines as machinesTable,
   stations,
@@ -225,9 +230,16 @@ function andonReasonToStandardCode(reason: string | null | undefined): string {
  * through the alarm taxonomy → { standardCode, severity, description, recommendedAction,
  * ts, source }. Read-only, fail-safe (empty on no-DB / missing tables).
  */
-export async function machineAlarms(machineId: number, limit = 50): Promise<NormalizedAssetAlarm[]> {
+export async function machineAlarms(
+  machineId: number,
+  limit = 50,
+  /** ★ Đợt 40 — phạm vi người xem; máy ngoài phạm vi ⇒ `[]`, cùng hình dạng với máy không có cảnh báo/không tồn tại. */
+  scope?: PhamViNguoiXem,
+): Promise<NormalizedAssetAlarm[]> {
   const db = await getDb();
   if (!db) return [];
+  // ★ Đợt 40 — `trongPhamVi` trả `true` khi phạm vi là `null` (toàn quyền) ⇒ lối đi cũ không thêm cổng nào.
+  if (!(await trongPhamVi("machine", machineId, scope))) return [];
   const cap = Math.max(1, Math.min(limit, 200));
   const out: NormalizedAssetAlarm[] = [];
 
@@ -443,13 +455,31 @@ async function loadMachineIdentity(machineId: number): Promise<MachineIdentity |
 }
 
 /**
+ * ★★★ Đợt 40 — "nhà máy của thực thể này có nằm trong phạm vi người xem không".
+ *
+ * `null` (toàn quyền / không danh tính) ⇒ `true` — KHÔNG thêm cổng (chiều dương chống vá quá tay).
+ * Thực thể có phả hệ đứt (`factoryId` NULL) ⇒ `false` cho người bị thu hẹp: không có đường nào ra nhà
+ * máy thì không có căn cứ để cho xem — fail-closed, cùng luật `idsTrongPhamVi`.
+ */
+async function nhaMayTrongPhamVi(factoryId: number | null, scope?: PhamViNguoiXem): Promise<boolean> {
+  const ids = await idsTrongPhamVi("factory", scope);
+  if (ids === null) return true;
+  return factoryId != null && ids.includes(factoryId);
+}
+
+/**
  * Assemble the full machine cockpit payload. Returns null when the machine does not
  * exist (the router turns that into NOT_FOUND). Every OTHER section degrades to an
  * honest null on absence/error — the page never breaks on one missing source.
+ *
+ * ★ Đợt 40 — `scope`: máy NGOÀI phạm vi người xem ⇒ `null`, CÙNG hình dạng với máy không tồn tại. Một mã
+ *   riêng ("bạn không được xem máy 257") xác nhận máy 257 có thật (G82). Bỏ trống `scope` = không lọc (lối
+ *   đi không mang danh tính: REST v1, AI RCA) — router tRPC PHẢI truyền `phamViCua(ctx)`.
  */
-export async function machineDetail(machineId: number): Promise<MachineDetail | null> {
+export async function machineDetail(machineId: number, scope?: PhamViNguoiXem): Promise<MachineDetail | null> {
   const identity = await loadMachineIdentity(machineId);
   if (!identity) return null;
+  if (!(await nhaMayTrongPhamVi(identity.factoryId, scope))) return null;
 
   // resolvedCapability — capabilityModel ⊕ registry (pure, always available).
   let resolvedCapability: MachineDetail["resolvedCapability"];
@@ -730,12 +760,30 @@ function robotKindToKinematicFamily(kind: string): "universal-robots" | "ros2" |
  * Assemble the full robot cockpit payload. Returns null when the robot does not exist.
  * Every section degrades to an honest null on absence/error.
  */
-export async function robotDetail(robotId: number): Promise<RobotDetail | null> {
+export async function robotDetail(
+  robotId: number,
+  /** ★ Đợt 40 — phạm vi người xem; robot ngoài phạm vi ⇒ `null`, cùng hình dạng với robot không tồn tại (G82). */
+  scope?: PhamViNguoiXem,
+): Promise<RobotDetail | null> {
   const db = await getDb();
   if (!db) return null;
   const rows = await db.select().from(robots).where(eq(robots.id, robotId)).limit(1);
   const robot = rows[0];
   if (!robot) return null;
+  /*
+   * ★ Đợt 40 — `robots` KHÔNG có cột tenant (`commandCenterScope.robotFactoryGate`): nối bằng `lineId` HOẶC
+   *   `stationId` lên chuỗi phân cấp. Cả hai NULL ⇒ không có đường ra nhà máy ⇒ LOẠI cho người bị thu hẹp
+   *   (fail-closed, cùng luật `scopedRobotIds`). `null` = toàn quyền ⇒ không hỏi thêm câu nào.
+   */
+  const lineIdsPv = await idsTrongPhamVi("line", scope);
+  if (lineIdsPv !== null) {
+    // Cùng `scope` ⇒ cùng nhánh thu hẹp; `?? []` chỉ để thoả kiểu — `null` ở đây là bất khả (cùng phép phân giải).
+    const stationIdsPv = (await idsTrongPhamVi("station", scope)) ?? [];
+    const trong =
+      (robot.lineId != null && lineIdsPv.includes(robot.lineId)) ||
+      (robot.stationId != null && stationIdsPv.includes(robot.stationId));
+    if (!trong) return null;
+  }
 
   const identity: RobotIdentity = {
     id: robot.id,

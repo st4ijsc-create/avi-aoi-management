@@ -35,6 +35,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const NGUON = fs.readFileSync(path.join(__dirname, "twinCanhRouter.ts"), "utf8");
 /** ★ ĐỢT 14 LÔ Q1 — router thứ hai, cùng luật, cùng bộ quét (G12: đừng viết bản thứ hai). */
 const NGUON_DT = fs.readFileSync(path.join(__dirname, "digitalTwinRouter.ts"), "utf8");
+/**
+ * ★★★ ĐỢT 40 (QA Đợt 39 Pareto #2, G113) — router THỨ BA và THỨ TƯ, cùng luật, cùng bộ quét.
+ * Đợt 34 đổi nguồn sự thật của ba màn twin sang `factoryCommand.overview`; QA Đợt 39 đo router ấy có
+ * **0** tham chiếu `phamViCua` (`operator1` 0 gán ⇒ 41 máy). `assetCockpitRouter.machineDetail(257)`
+ * cũng trả identity máy nhà máy khác. "Một hợp đồng" đi qua router chưa rào là một hợp đồng rò.
+ */
+const NGUON_FC = fs.readFileSync(path.join(__dirname, "factoryCommandRouter.ts"), "utf8");
+const NGUON_AC = fs.readFileSync(path.join(__dirname, "assetCockpitRouter.ts"), "utf8");
 
 /**
  * MIỄN TRỪ — thủ tục KHÔNG cần `phamViCua(ctx)`, mỗi cái kèm lý do ĐO ĐƯỢC.
@@ -66,6 +74,8 @@ function quetThuTuc(nguon: string = NGUON): Array<{ ten: string; than: string }>
 
 const THU_TUC = quetThuTuc();
 const THU_TUC_DT = quetThuTuc(NGUON_DT);
+const THU_TUC_FC = quetThuTuc(NGUON_FC);
+const THU_TUC_AC = quetThuTuc(NGUON_AC);
 
 /**
  * ★ Q1 — MIỄN TRỪ của `digitalTwinRouter`, mỗi cái kèm lý do ĐO ĐƯỢC.
@@ -209,5 +219,68 @@ describe("Q1 — `digitalTwinRouter` cũng đưa danh tính xuống tầng dữ 
     // `whatIf` là miễn trừ DUY NHẤT, và nó có lý do đo được ghi ngay trên hằng số.
     // Thêm tên vào đây phải là một quyết định nhìn thấy được trong diff.
     expect(MIEN_TRU_DT).toEqual(["whatIf"]);
+  });
+});
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 40 — CÙNG LUẬT, ÁP CHO `factoryCommandRouter` + `assetCockpitRouter` (G113)
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Đo trước vá (`.qa-dot39/qd18/B-1600x900.json`, dist, HTTP thật, `operator1` id 48 — 0 hàng
+ * `user_factory_assignments`): `factoryCommand.overview(1)` ⇒ 200 / **41 máy**, `overview(18)` ⇒ 200 / 1,
+ * `assetCockpit.machineDetail(257)` ⇒ 200 + identity máy của nhà máy 18. Hai router có **0** tham chiếu
+ * `phamViCua`/`trongPhamVi` (twinCanh: 36). Sổ nợ `phamViDocBaseline.ts` **đã ghi tên cả 5 thủ tục** từ
+ * 2026-08-18 (G81: sổ nợ biết trước mà không ai đọc) — Đợt 40 trả nợ = XOÁ 5 dòng ấy.
+ *
+ * ⚠ KHÔNG có miễn trừ: cả 5 thủ tục đều đọc `machines`/`robots`/`andon_events` theo phả hệ nhà máy.
+ */
+const MIEN_TRU_FC: readonly string[] = [];
+const MIEN_TRU_AC: readonly string[] = [];
+
+describe("Đợt 40 — `factoryCommandRouter` + `assetCockpitRouter` đưa danh tính xuống tầng dữ liệu", () => {
+  it("bộ quét tìm được ĐÚNG các thủ tục đã đo rò, không phải 0 (G5)", () => {
+    expect(THU_TUC_FC.map((x) => x.ten).sort()).toEqual(["machineDetail", "overview"]);
+    expect(THU_TUC_AC.map((x) => x.ten).sort()).toEqual(["machineAlarms", "machineDetail", "robotDetail"]);
+  });
+
+  it("★★★ bộ quét CẮT THÂN ĐÚNG — thân `overview` không nuốt `machineDetail`", () => {
+    const ov = THU_TUC_FC.find((x) => x.ten === "overview")!;
+    expect(ov.than).toContain("getFactoryCommandOverview(");
+    expect(ov.than).not.toContain("machineDetail: protectedProcedure");
+    const md = THU_TUC_AC.find((x) => x.ten === "machineDetail")!;
+    expect(md.than).toContain("machineDetail(input.machineId");
+    expect(md.than).not.toContain("robotDetail: protectedProcedure");
+  });
+
+  it("★★★ PHÂN ĐÔI TOÀN TẬP: thủ tục nào cũng mang `phamViCua(ctx)`", () => {
+    const thieu = [...THU_TUC_FC.filter((x) => !MIEN_TRU_FC.includes(x.ten)), ...THU_TUC_AC.filter((x) => !MIEN_TRU_AC.includes(x.ten))]
+      .filter((x) => !x.than.includes("phamViCua(ctx)"))
+      .map((x) => x.ten);
+    expect(thieu).toEqual([]);
+  });
+
+  it("★★★ và thủ tục nào cũng BÓC `ctx` ra ở chữ ký — mẫu thứ hai RỜI HẲN (G9)", () => {
+    const khongBoc = [...THU_TUC_FC, ...THU_TUC_AC]
+      .filter((x) => {
+        const k = x.than.match(/\.(query|mutation)\(async \(\{([^}]*)\}/);
+        return !k || !/\bctx\b/.test(k[2]);
+      })
+      .map((x) => x.ten);
+    expect(khongBoc).toEqual([]);
+  });
+
+  it("★★★ phạm vi phải ĐI VÀO lời gọi service — không phải chỉ được tính rồi bỏ đó", () => {
+    // Đột biến `const scope = phamViCua(ctx); return getFactoryCommandOverview({ factoryId })` qua được hai ô trên.
+    const tim = (ds: typeof THU_TUC_FC, ten: string) => ds.find((x) => x.ten === ten)!.than;
+    expect(tim(THU_TUC_FC, "overview")).toContain("scope: phamViCua(ctx)");
+    expect(tim(THU_TUC_FC, "machineDetail")).toContain("getCommandMachineDetail(input.machineId, phamViCua(ctx))");
+    expect(tim(THU_TUC_AC, "machineDetail")).toContain("machineDetail(input.machineId, phamViCua(ctx))");
+    expect(tim(THU_TUC_AC, "robotDetail")).toContain("robotDetail(input.robotId, phamViCua(ctx))");
+    expect(tim(THU_TUC_AC, "machineAlarms")).toContain("input.limit ?? 50, phamViCua(ctx))");
+  });
+
+  it("danh sách MIỄN TRỪ không âm thầm phình ra", () => {
+    expect(MIEN_TRU_FC).toEqual([]);
+    expect(MIEN_TRU_AC).toEqual([]);
   });
 });

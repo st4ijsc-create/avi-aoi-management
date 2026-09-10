@@ -147,10 +147,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/aoiPackageRouter.ts#aoiPackageRouter.listPackages",
   // ── server/routers/apiKeyRouter.ts (1) ─────────────────────────────────────────────────────
   "server/routers/apiKeyRouter.ts#apiKeyRouter.list",
-  // ── server/routers/assetCockpitRouter.ts (3) ───────────────────────────────────────────────
-  "server/routers/assetCockpitRouter.ts#assetCockpitRouter.machineAlarms",
-  "server/routers/assetCockpitRouter.ts#assetCockpitRouter.machineDetail",
-  "server/routers/assetCockpitRouter.ts#assetCockpitRouter.robotDetail",
   // ── server/routers/bomRouter.ts (5) ────────────────────────────────────────────────────────
   "server/routers/bomRouter.ts#bomRouter.feederReorderStatus",
   "server/routers/bomRouter.ts#bomRouter.getDefinition",
@@ -228,9 +224,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/erpAdminRouter.ts#erpAdminRouter.listOauthClients",
   "server/routers/erpAdminRouter.ts#erpAdminRouter.outboxDeadLetters",
   "server/routers/erpAdminRouter.ts#erpAdminRouter.outboxStatus",
-  // ── server/routers/factoryCommandRouter.ts (2) ─────────────────────────────────────────────
-  "server/routers/factoryCommandRouter.ts#factoryCommandRouter.machineDetail",
-  "server/routers/factoryCommandRouter.ts#factoryCommandRouter.overview",
   // ── server/routers/federationRouter.ts (7) ─────────────────────────────────────────────────
   "server/routers/federationRouter.ts#federationRouter.aggregateSummary",
   "server/routers/federationRouter.ts#federationRouter.alertRollup",

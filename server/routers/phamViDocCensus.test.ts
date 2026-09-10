@@ -325,7 +325,19 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   "đã vá mà chưa gỡ"). Cùng loại độ trôi mà chú thích C/D ở trên đã ghi. Tôi chỉ hạ A đúng **4**
 //   phần của mình (355 → 351) và **để nguyên 3 mục kia cho bên đó ký** — sửa hộ sẽ xoá mất dấu
 //   vết một khoản nợ chưa ai nhận.
-const GHIM = { A: 351, B: 8, C: 472, D: 1101, S: 290, tong: 2234 } as const;
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 40 (QA Đợt 39 Pareto #2, G113) — **A: 351 → 346.** NĂM THỦ TỤC CỦA HAI ROUTER TWIN DÙNG LÀM
+// NGUỒN SỰ THẬT ĐÃ ĐƯỢC GÁC: `factoryCommandRouter.overview` · `.machineDetail` ·
+// `assetCockpitRouter.machineDetail` · `.robotDetail` · `.machineAlarms`. Cả năm có tên trong sổ nợ từ
+// 2026-08-18 (G81: sổ nợ biết trước mà không ai đọc) — đợt này XOÁ đúng năm dòng ấy.
+// ★ Đo trước vá qua HTTP thật (`.qa-dot39/qd18/B-1600x900.json`): `operator1` (0 gán) `overview(1)` ⇒ 41
+//   máy, `machineDetail(257)` ⇒ identity máy nhà máy khác. Lưới hai chiều:
+//   `factoryCommandAssetCockpitPhamVi.db.test.ts` (2 vai × 2 nhà máy × 5 thủ tục + robot mồ côi + admin).
+// ⚠⚠ Đo trên HEAD SẠCH (`34c4be3d`, phục hồi sổ nợ về bản HEAD rồi chạy lại đúng tập này): A 346 · C 474 ·
+//   D 1119 · S 320 · tong 2267 và §5 còn 3 mục `maintenanceRouter` "đã vá mà chưa gỡ" — tức §3/§5 ĐÃ ĐỎ
+//   TRƯỚC đợt này vì độ trôi C/D/S của các lô khác. Tôi chỉ hạ A đúng **5** phần của mình (351 → 346) và
+//   **để nguyên** C/D/S/tong + 3 mục kia cho bên đó ký — sửa hộ sẽ xoá dấu vết nợ chưa ai nhận.
+const GHIM = { A: 346, B: 8, C: 472, D: 1101, S: 290, tong: 2234 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
