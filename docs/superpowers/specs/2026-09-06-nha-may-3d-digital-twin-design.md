@@ -6216,6 +6216,86 @@ ba vai + user tam 0 quyen + vai chi `analytics_oee`, en/vi/zh, dot bien nhip an 
 redirect, tenant, QD-18 hai chieu, mui gio (msl tam), may song (hb tam), andon tam, D-3 duong di that, **nghiem thu thi
 giac** ca 4 man × 2 vp — xep hang van de con lai cho chu so huu quyet.
 
+### 14q.15 DOT 37 - QA DOC LAP LAN 2 (skill `pdca`): 9/9 DONG THAT - VA MOT LOI HIEU NANG LON CHUA AI DO
+
+Tep tho `.qa-dot37/` (145 json · 175 png · 4 webm). **Khong sua ma.** Chu du an do lai: HEAD `e47c713d`, cay + index
+sach, 5 anh nguyen, DB `2·82·37·42·10·7·hb 108·msl 7.814` truoc = sau (+10 `audit_logs` WORM: dang nhap harness + 1
+ack that — khong xoa duoc, khai ro), 3037 tat. **Anh tu xem**: `/twin` 1280 vi — thanh cong cu tran phai ("Xuo"),
+the Chi so de canh, nhan chong nhau, panel phai trong, nut chat de timeline; canh 3D con ~490 px.
+
+**MSA (Buoc 0) — thiet bi do bi bac/sua trong phien:** dist cu hon commit ⇒ build lai ⇒ **cung hash** `index-HGBxLCtW.js`
+(Vite tat dinh) ⇒ nghi van bac bang do · 3001/3008 phuc vu **dung hash `_twin_wt/dist`** ⇒ phien khac chay tu worktree
+nay · CORS ×2.545 "Blocked" **chi log roi cho qua** (`index.ts:245-247`) · **harness raised Dot 32 khong co `finally`**
+⇒ khi chu du an nham "D-1 chet" (vong cho theo cmdline thoat oan — G109), QA chay raised lan hai **chong len** lan mot ⇒
+a3/a4 do khong co hang; xu ly: cho theo **PID cha**, doi ten thu muc hong `…-CHONG-NHAU-VO-HIEU/`, do lai voi `trap
+EXIT/INT/TERM` · user tam role `supervisor` **login 401** (role `user` duoc 200) — chua ro ⇒ ack do bang `engineer1` that ·
+QA tu sai mot lan: grep bi `head -20` cat ⇒ suyt ket luan "server khong co hang" (co o `trangThaiMayTuoi.ts:63`).
+**Chi so × ca duong da keu:** canvas DOM vs `__soCanvas` keu o tab "3D model" (2/1) · `lopTrungCanvas` nen Dot 32 keu 6/12
+· `demKhungIdle` keu 20/32 o May · `waitForFunction` doi chung truot 2/2 · bo do chu Viet vi 150/42/53 · dot bien
+`TRAN_NHIP` 3 do · server `NGUONG 5→6′` **1 do** (chi test ghim dang thuc) · client `NGUONG_CU_MS` 6 do.
+
+**D-1 · 48 ca Dot 32 cu → moi** (`tomtat-D1.mjs`; bang goc "41" khong co tep phan quyet ⇒ tai dung 48):
+| | DAT | SAI | CHAN-DUNG | N/A |
+|---|---|---|---|---|
+| Dot 32 | 16 | 26 | 5 | 1 |
+| **HEAD** | **38** | **4** | 5 | 1 |
+SAI con lai 4: Live state `Status: online` canh `Disconnected` (cu **DAT gia** vi hai chu tinh co khop) · tab "3D model" 2
+canvas DOM (G99 con) · idle **man May** 4/0/11/0/9 khung/2 s (cu 1/5/16/0/0 — **co san, chua ai gan co**) · chi bao ket
+noi `/twin` "Waiting…" 9–10 s.
+**D-2** K1–K11 **8/8 @1600 + 4/4 @1280**, E1–E9 DAT hai vp (tru E7 duoi 3 khung, E3 1280 cuon ngang), I1–I4/I6 DAT,
+**I5 SAI** (`/twin` idle 0/3). **D-4** may 14 **6 be mat** (khong phai 4): gate nhip tim **dung** (hb `now()` ⇒ may
+`stopped` song: overview `idle`, cockpit `connected:true`, chip "Stopped 11 s"); con lech: **`anhLichSu` replay theo log**
+(`running 3,2 d` khi live `offline` 54 d; msl `now()` ⇒ `running 1 s`) · **hai tu vung** `stopped` (twin) vs `idle`
+(fleet) · Live state `Status` = log tho. **D-5** duong di that co video: bam Line **14/25 ms**, bam may **3/17 ms**, F5,
+Back ×2, deep-link — **DAT 2/2 vp**; raised tam ⇒ Line 9 nut canh bao, chip "2 alarms out of view"; **ACK that**
+(`engineer1`): "Da xac nhan", DB `acknowledged`, MTTA 12 s ⇒ **DAT**. **D-6** (trung vi 2 lan): toi canvas `/twin`
+1.302 ms · Line 1.163 · May 1.686 · studio 1.346; long task max 80–163 ms; draw 5/6/5/3; **40 s dung yen: `/twin` 16 ·
+Line 16 · May 193 · studio 0**.
+
+**Pareto loi MOI:**
+| # | Goc re | Do | `file:line` |
+|---|---|---|---|
+| 1 | **Man May tween camera ve CUNG cho moi ~10 s** — `mucTieu` phu thuoc `mayVe` (tham chieu moi moi nhip) ⇒ `khungNhin` doi tuong moi ⇒ `DieuKhien` effect khoi dong tween | **143–230 khung/40 s**, camera khong doi; **va thu** khuon `khoaKhungNhin` cua Line ⇒ **10**, hoan nguyen ⇒ 143. Chan socket ⇒ 230, chan tRPC ⇒ 107, chan ca hai ⇒ 114 ⇒ trigger **noi tai** | `TwinMay.tsx:445` `mucTieu` · `:512` `khungNhin = useMemo(…,[camUrl, mucTieu])` · `cuaVaoTwin.unit.test.ts:153/171` **chi ghim LINE + NHA_MAY, khong ghim MAY** |
+| 2 | Hop dong thu hai: replay theo log ≠ live theo nhip tim + hai tu vung `stopped`/`idle` | D-4 | `server/db/twinCanh.ts:1335-1367` · `khoTrangThai.ts:185-199 hopNhat` · `trangThaiMayTuoi.ts:145` |
+| 3 | Live state `Status` in log tho (`online` tone success) canh Connection `offline` (error) | 4/4 luot, anh vi 2 vp | `MachineCockpit.tsx:935` ← `assetCockpitService.ts:534` · `StatusBadge.tsx:37/45` |
+| 4 | RB-4/G99: tab "3D model" dung `<Canvas>` ngoai `KhungCanh` | a4 2 vp | `MachineCockpit.tsx:281` `Model3DPane` |
+| 5 | Trang cuon doc **24 px** Line/May/studio (2 vp; `/twin` khong) — `<main>` vua, document 924/900 | 3 man × 2 vp | `chieuCaoTruDinh`/`--twin-*-top` thieu tru padding day vo (chua ghim dong) |
+| 6 | "Waiting…" toi 10 s: broadcaster chi phat theo interval, khong phat khi subscribe | 2/2 lan | `socket.ts:1576-1730` |
+| 7 | Line 1280 dai tram cuon ngang 25 px, ten tram cat, chip "con 5 ten bi an" | E3 | `DaiLine.tsx` / `TwinLine.tsx:1047` |
+| 8 | Ngan Mo phong Line co nhung `nhip_het_han` (cua 8 h G30, `line_balance_metrics` cu) | K11 | du lieu, khong phai ma |
+| 9 | Ngoai twin: `/factory-command` nhan chong dong, `khoi-canh-3d` day 904 > 900 | a10 | — |
+
+> #### ★★★ G110 - **VA MOT LOP LOI O HAI MAN MA KHONG QUET MAN THU BA** = G98 lap lai o chieu nguoc
+> Dot 35 va tween-theo-tham-chieu o **Line**, Dot 36 o **`/twin`**; **man May** cung lop, cung kit, **khong ai do** — du
+> a4b Dot 32 **da ghi 16 khung/2 s** va ket cuc "idle ≤ 2 khung/4 s" nam trong brief Dot 35/36. Lưới `cuaVaoTwin` ghim
+> LINE + NHA_MAY bang **danh sach**, khong bang **bat bien "moi man dung `CanhVanHanh`"** (dung lop L-1 Khoi D: danh sach
+> thay vi bat bien). ⇒ Khi va mot lop loi: **liet ke moi noi cung kit** (grep chỗ goi `DieuKhien`/`CanhVanHanh`) va do
+> tung noi; ghim bang bat bien tren tap ay, khong bang hai ten.
+
+> #### ★★ G111 - **HARNESS TAO HANG TAM PHAI CO `trap EXIT/INT/TERM`**; "DAT gia" khi hai chu tinh co khop
+> Harness raised Dot 32 khong co finally ⇒ chet giua chung de hang. Va Live state `Status: online`/`Connected` o Dot 32
+> duoc cham DAT vi **hai chu tinh co cung sai** — mot ca "DAT" chua bao gio la bang chung neu khong co doi chung.
+
+**D-7 · NGHIEM THU THI GIAC (vi, 4 man × 2 vp) — xep hang cho chu so huu:** (1) May: "Trang thai: online (xanh)" ngay
+duoi "Mat ket noi" (do) = Pareto #3 · (2) Line: **nua duoi canvas trong** (`khopKhungNhin` le) · (3) Line 1280 dai tram
+cuon ngang, ten cat · (4) `/twin` 1280 **thanh cong cu tran phai** ("Xuo"), breadcrumb cut · (5) `/twin` 15 nhan "Khong
+ro" chong o tam, chip "con 30/39 ten bi an", KPI de canh, **panel phai 320 px trong** khi chua chon · (6) **nut chat noi
+(vo app) de noi dung** ca 4 man · (7) cuon doc 24 px · (8) May 1280 canvas 259 px thap, "TAO VIEC" rong · (9) `/twin`
+panel trai "Ton dong >24h" bi tab cat · (10) studio 1280 minimap ~40 % canvas. **Dat ve mat:** Line 1600 12/12 mot
+hang; May 1600 324/451; 0 chu Viet o en/zh; "Khong ro · 54 ngay" nhat quan.
+
+**Con mo QA noi thang:** `/twin`/Line 1–5 khung moi goi 10 s ⇒ tieu chi "≤ 2/4 s" truot ngau nhien theo pha — **doi
+tieu chi sang cua so 40 s** (May sau va ky vong ≤ 12) · user tam `supervisor` 401 chua tra · "Failed to fetch" ×12 D-1
+chi suy luan (D-6 context moi 0 loi) · G104 ngoai twin chua do · `robot_telemetry` +2 hang/s do mo phong trong server.
+
+**Ke hoach:** **Dot 38** — va Pareto moi **#1 → #7** (ky thuat, tu quyet): #1 `khoaKhungNhin` cho May + bat bien MAY
+trong `cuaVaoTwin` · #2 mot tu dien (`hopNhat`/`mapMachineStatus` cung nhan; `anhLichSu` gate nhip tim hoac nhan "su
+kien log") · #3 Status suy tu `connected` · #4 Canvas tab 3D qua `KhungCanh` hoac unmount canh twin khi tab mo · #5 tru
+padding day, e2e `scrollHeight === innerHeight` · #6 phat `twin:trangThai` khi subscribe · #7 Line 1280 `ol.scrollWidth
+≤ clientWidth`. Tieu chi idle: **cua so 40 s** ≤ 12 khung moi man. **Cho chu so huu quyet** (thiet ke, khong phai ky
+thuat): D-7 (2) le Line · (4)(5) bo cuc `/twin` 1280 + panel phai trong · (6) nut chat vo app · (10) minimap studio.
+**Dot 39** — QA lai `pdca`.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
