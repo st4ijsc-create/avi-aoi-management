@@ -425,6 +425,11 @@ export function cauChoLyDoManMay(lyDo: Exclude<LyDoManMay, "mo">): { khoa: strin
 export const SAN_KHOI_CANH_MAY_PX = 240;
 /** TRẦN chiều cao khối cảnh 3D ở màn Máy (px) — giữ nguyên số của Đợt 31. */
 export const TRAN_KHOI_CANH_MAY_PX = 360;
+/**
+ * ★ Đợt 45 (mục 6) — SÀN MỀM (px): cảnh không thấp hơn 280 khi bố cục cho phép (cockpit vẫn > cảnh).
+ * Khác SÀN cứng 240 (luôn thắng) — sàn mềm chỉ áp khi ĐÃ ĐO phần còn lại; xem `chieuCaoKhoiCanhMay`.
+ */
+export const SAN_MEM_KHOI_CANH_MAY_PX = 280;
 /** Tỉ lệ viewport dành cho cảnh 3D (36 vh — §15.7.1, giữ nguyên số của Đợt 31). */
 export const TI_LE_KHOI_CANH_MAY = 0.36;
 
@@ -443,8 +448,14 @@ export const TI_LE_KHOI_CANH_MAY = 0.36;
  */
 export function chieuCaoKhoiCanhMay(caoConLaiPx: number | null, caoViewportPx: number): number {
   const theoVh = TI_LE_KHOI_CANH_MAY * Math.max(0, caoViewportPx);
-  const tranConLai =
-    caoConLaiPx == null || !Number.isFinite(caoConLaiPx) ? Infinity : Math.floor((caoConLaiPx - 1) / 2);
+  const daDo = caoConLaiPx != null && Number.isFinite(caoConLaiPx);
+  const tranConLai = daDo ? Math.floor((caoConLaiPx - 1) / 2) : Infinity;
   const muon = Math.min(TRAN_KHOI_CANH_MAY_PX, theoVh, tranConLai);
-  return Math.round(Math.max(SAN_KHOI_CANH_MAY_PX, muon));
+  /*
+   * ★ Đợt 45 (mục 6) — SÀN MỀM 280: QA Đợt 44 đo cảnh 259 @1280 (36 vh thắng) "thấp"; nâng lên
+   *   280 CHỈ KHI đã đo được phần còn lại và bất biến `cockpit > cảnh` vẫn giữ (280 ≤ ⌊(cònLại−1)/2⌋).
+   *   Chưa đo (khung đầu) ⇒ như cũ (không hứa thứ chưa kiểm). 1600×900 vẫn 324 (36 vh > 280).
+   */
+  const sanMem = daDo ? Math.min(SAN_MEM_KHOI_CANH_MAY_PX, tranConLai) : 0;
+  return Math.round(Math.max(SAN_KHOI_CANH_MAY_PX, sanMem, muon));
 }

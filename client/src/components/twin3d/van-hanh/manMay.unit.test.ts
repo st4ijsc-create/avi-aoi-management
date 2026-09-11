@@ -439,6 +439,8 @@ describe("★★★ ⑨ G91 — `manMay` chỉ xuất đúng 10 hàm + 4 hằng;
         "TRAN_KHOI_CANH_MAY_PX",
         "TI_LE_KHOI_CANH_MAY",
         "chieuCaoKhoiCanhMay",
+        // ⑪ Đợt 45 (mục 6) — sàn mềm 280 khi bố cục cho phép (QA Đợt 44: 259 @1280 "thấp").
+        "SAN_MEM_KHOI_CANH_MAY_PX",
       ].sort(),
     );
   });

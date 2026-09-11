@@ -19,6 +19,7 @@ import { resolve } from "node:path";
 
 import {
   SAN_KHOI_CANH_MAY_PX,
+  SAN_MEM_KHOI_CANH_MAY_PX,
   TRAN_KHOI_CANH_MAY_PX,
   TI_LE_KHOI_CANH_MAY,
   chieuCaoKhoiCanhMay,
@@ -52,11 +53,27 @@ describe("★★★ ① chieuCaoKhoiCanhMay — clamp theo PHẦN CÒN LẠI, b�
     expect(775 - canh).toBe(451);
   });
 
-  it("★★★ 1280×720 (QA Đợt 32): còn lại 595 ⇒ cảnh < cockpit (trước: 320 > 275)", () => {
+  it("★★★ 1280×720 (QA Đợt 32): còn lại 595 ⇒ cảnh < cockpit (trước: 320 > 275); Đợt 45 sàn mềm ⇒ 280 (trước 259)", () => {
     const canh = chieuCaoKhoiCanhMay(720 - VO - THANH_TREN, 720);
-    expect(canh).toBe(259);
+    // ★ Đợt 45 (mục 6) — QA Đợt 44 đo 259 "thấp": sàn mềm 280 áp vì 280 ≤ ⌊594/2⌋ = 297; cockpit 315 > 280.
+    expect(canh).toBe(SAN_MEM_KHOI_CANH_MAY_PX);
+    expect(canh).toBe(280);
     expect(595 - canh).toBeGreaterThan(canh);
     expect(canh).toBeGreaterThanOrEqual(SAN_KHOI_CANH_MAY_PX);
+  });
+
+  it("★ Đợt 45 — sàn mềm CO theo còn-lại (không phá bất biến) và KHÔNG áp khi chưa đo", () => {
+    expect(SAN_MEM_KHOI_CANH_MAY_PX).toBe(280);
+    expect(SAN_MEM_KHOI_CANH_MAY_PX).toBeGreaterThan(SAN_KHOI_CANH_MAY_PX);
+    expect(SAN_MEM_KHOI_CANH_MAY_PX).toBeLessThan(TRAN_KHOI_CANH_MAY_PX);
+    // còn lại 560 ⇒ ⌊559/2⌋ = 279 < 280 ⇒ sàn mềm co về 279; cockpit 281 > 279.
+    expect(chieuCaoKhoiCanhMay(560, 720)).toBe(279);
+    // còn lại 500 ⇒ 249; cockpit 251 > 249.
+    expect(chieuCaoKhoiCanhMay(500, 720)).toBe(249);
+    // chưa đo (null) ⇒ theo vh như cũ: 720 ⇒ 259, KHÔNG 280.
+    expect(chieuCaoKhoiCanhMay(null, 720)).toBe(Math.round(0.36 * 720));
+    // 1600×900 KHÔNG đổi (36 vh = 324 > 280).
+    expect(chieuCaoKhoiCanhMay(900 - VO - THANH_TREN, 900)).toBe(324);
   });
 
   it("★ bất biến cockpit > cảnh giữ trên MỌI viewport cao ≥ 2·SÀN + vỏ (quét 606…1400)", () => {
