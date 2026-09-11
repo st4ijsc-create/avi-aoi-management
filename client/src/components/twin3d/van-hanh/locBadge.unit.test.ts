@@ -21,6 +21,7 @@ import {
   locBadge,
   type BadgeUngVien,
 } from "./locBadge";
+import { haiHopChongNhau } from "../loi/locNhan";
 
 function bd(sua: Partial<BadgeUngVien> & { id: number }): BadgeUngVien {
   return { x: 0, y: 0, diemUuTien: 1000, ...sua };
@@ -196,7 +197,135 @@ describe("locBadge — ưu tiên, trần, tất định", () => {
   });
 
   it("mảng rỗng ⇒ kết quả rỗng, không throw", () => {
-    expect(locBadge([])).toEqual({ ve: [], soAn: 0, soBiChongLap: 0, soVuotTran: 0 });
+    // ★ Đợt 47 — thêm hai ô đếm `soBiChe`/`soDoiCho` (N1); hình dạng đầy đủ vẫn ghim ở đây.
+    expect(locBadge([])).toEqual({ ve: [], soAn: 0, soBiChongLap: 0, soVuotTran: 0, soBiChe: 0, soDoiCho: 0 });
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 47 (QA Đợt 46 N1) — VÙNG CẤM, DỜI CHỖ, ĐỎ ƯU TIÊN TUYỆT ĐỐI              */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("locBadge — Đợt 47 N1: badge không nằm dưới lớp phủ; đỏ không bao giờ bị giấu khi còn chỗ", () => {
+  const KHUNG = { rong: 1000, cao: 600 };
+  // Thẻ "Chỉ số" góc trên-trái (QA Đợt 46: `bang-kpi-noi` 208×220 che badge SPI đỏ 100 %).
+  const KPI = { trai: 8, phai: 216, tren: 8, duoi: 228 };
+  const bd = (p: Partial<BadgeUngVien> & { id: number; x: number; y: number }): BadgeUngVien => ({
+    diemUuTien: 1,
+    ...p,
+  });
+
+  it("hợp đồng cũ giữ nguyên khi KHÔNG truyền khungCanvas/vungCam/doiCho: chồng ⇒ bỏ, không dời", () => {
+    const kq = locBadge([bd({ id: 1, x: 100, y: 100, diemUuTien: 5 }), bd({ id: 2, x: 110, y: 100 })]);
+    expect(kq.ve.map((b) => b.id)).toEqual([1]);
+    expect(kq.soBiChongLap).toBe(1);
+    expect(kq.soDoiCho).toBe(0);
+    expect(kq.ve[0].doiCho).toBe(false);
+    expect(kq.ve[0].hop).not.toBeNull();
+  });
+
+  it("badge thường dưới lớp phủ, không dời ⇒ BỊ CHE (đếm soBiChe, không đếm chồng)", () => {
+    const kq = locBadge([bd({ id: 1, x: 100, y: 100 })], { vungCam: [KPI], khungCanvas: KHUNG });
+    expect(kq.ve).toEqual([]);
+    expect(kq.soBiChe).toBe(1);
+    expect(kq.soBiChongLap).toBe(0);
+    expect(kq.soAn).toBe(1);
+  });
+
+  it("doiCho: badge thường dưới lớp phủ được DỜI ra ngoài vùng cấm, trọn trong canvas, giữ neo gốc + cờ doiCho", () => {
+    const kq = locBadge([bd({ id: 1, x: 100, y: 100 })], { vungCam: [KPI], khungCanvas: KHUNG, doiCho: true });
+    expect(kq.ve).toHaveLength(1);
+    const v = kq.ve[0];
+    expect(v.doiCho).toBe(true);
+    expect(v.xGoc).toBe(100);
+    expect(v.yGoc).toBe(100);
+    expect(v.hop).not.toBeNull();
+    expect(haiHopChongNhau(v.hop!, KPI)).toBe(false);
+    expect(v.hop!.trai).toBeGreaterThanOrEqual(0);
+    expect(v.hop!.duoi).toBeLessThanOrEqual(KHUNG.cao);
+    expect(kq.soDoiCho).toBe(1);
+    expect(kq.soBiChe).toBe(0);
+    // toạ độ vẽ là TÂM hộp mới (translate(-50%,-50%) của LopCanhBao)
+    expect(v.x).toBeCloseTo((v.hop!.trai + v.hop!.phai) / 2, 6);
+    expect(v.y).toBeCloseTo((v.hop!.tren + v.hop!.duoi) / 2, 6);
+  });
+
+  it("dời chỗ ưu tiên XUỐNG trước (phía dưới neo là thân máy — mũi tên ngắn nhất)", () => {
+    // Lớp phủ chỉ che đúng neo; ô ngay dưới trống.
+    const vung = { trai: 90, phai: 300, tren: 80, duoi: 112 };
+    const kq = locBadge([bd({ id: 1, x: 200, y: 100 })], { vungCam: [vung], khungCanvas: KHUNG, doiCho: true });
+    expect(kq.ve[0].doiCho).toBe(true);
+    expect(kq.ve[0].y).toBeGreaterThan(100);
+    expect(kq.ve[0].x).toBe(200);
+  });
+
+  it("hộp dời cũng phải nằm TRỌN canvas: neo sát mép dưới bị che ⇒ không dời xuống ngoài mép", () => {
+    const vung = { trai: 0, phai: 1000, tren: 560, duoi: 600 };
+    const kq = locBadge([bd({ id: 1, x: 500, y: 590 })], { vungCam: [vung], khungCanvas: KHUNG, doiCho: true });
+    expect(kq.ve).toHaveLength(1);
+    expect(kq.ve[0].hop!.duoi).toBeLessThanOrEqual(600);
+    expect(haiHopChongNhau(kq.ve[0].hop!, vung)).toBe(false);
+  });
+
+  it("hai badge cùng neo, doiCho: cái sau DỜI thay vì bị bỏ; hai hộp không chồng", () => {
+    const kq = locBadge(
+      [bd({ id: 1, x: 300, y: 300, diemUuTien: 9 }), bd({ id: 2, x: 300, y: 300, diemUuTien: 1 })],
+      { khungCanvas: KHUNG, doiCho: true },
+    );
+    expect(kq.ve.map((b) => b.id)).toEqual([1, 2]);
+    expect(kq.ve[0].doiCho).toBe(false);
+    expect(kq.ve[1].doiCho).toBe(true);
+    expect(haiHopChongNhau(kq.ve[0].hop!, kq.ve[1].hop!)).toBe(false);
+    expect(demCapChongLapBadge(kq.ve)).toBe(0);
+  });
+
+  it("★★★ ĐỎ (uuTienTuyetDoi) hết chỗ quanh neo vẫn được vẽ ở ô trống GẦN NHẤT; badge thường cùng cảnh bị giấu", () => {
+    // Bức tường lớp phủ 3 bước quanh neo theo cả bốn hướng: ứng viên dời ±3 bước đều bị che.
+    const tuong = { trai: 0, phai: 1000, tren: 0, duoi: 300 };
+    const ung = [
+      bd({ id: 7, x: 500, y: 150, diemUuTien: 10_000, uuTienTuyetDoi: true }),
+      bd({ id: 8, x: 520, y: 150, diemUuTien: 1 }),
+    ];
+    const kq = locBadge(ung, { vungCam: [tuong], khungCanvas: KHUNG, doiCho: true });
+    expect(kq.ve.map((b) => b.id)).toEqual([7]);
+    expect(kq.ve[0].doiCho).toBe(true);
+    expect(haiHopChongNhau(kq.ve[0].hop!, tuong)).toBe(false);
+    // ô trống gần nhất: ngay dưới bức tường (y ≥ 300), gần cột x=500
+    expect(kq.ve[0].hop!.tren).toBeGreaterThanOrEqual(300);
+    expect(Math.abs(kq.ve[0].x - 500)).toBeLessThan(100);
+    expect(kq.soBiChe).toBe(1); // badge thường #8 không có ô trong 3 bước ⇒ giấu, có đếm
+    expect(kq.soDoiCho).toBe(1);
+  });
+
+  it("đỏ CHỈ bị giấu khi THẬT SỰ hết chỗ trên cả canvas", () => {
+    const phuHet = { trai: 0, phai: 1000, tren: 0, duoi: 600 };
+    const kq = locBadge([bd({ id: 1, x: 500, y: 300, uuTienTuyetDoi: true, diemUuTien: 10_000 })], {
+      vungCam: [phuHet],
+      khungCanvas: KHUNG,
+      doiCho: true,
+    });
+    expect(kq.ve).toEqual([]);
+    expect(kq.soBiChe).toBe(1);
+  });
+
+  it("badge ngoài khung (kẹp rìa) vẫn MIỄN mọi phép: không dời, không đếm che, hop=null", () => {
+    const kq = locBadge([bd({ id: 1, x: 20, y: 20, ngoaiKhung: true })], {
+      vungCam: [KPI],
+      khungCanvas: KHUNG,
+      doiCho: true,
+    });
+    expect(kq.ve).toHaveLength(1);
+    expect(kq.ve[0].doiCho).toBe(false);
+    expect(kq.ve[0].hop).toBeNull();
+    expect(kq.soBiChe).toBe(0);
+  });
+
+  it("tất định: cùng đầu vào ở thứ tự khác ⇒ cùng vị trí dời", () => {
+    const a = [bd({ id: 1, x: 100, y: 100, diemUuTien: 5 }), bd({ id: 2, x: 100, y: 100, diemUuTien: 1 })];
+    const b = [a[1], a[0]];
+    const ka = locBadge(a, { khungCanvas: KHUNG, doiCho: true });
+    const kb = locBadge(b, { khungCanvas: KHUNG, doiCho: true });
+    expect(ka.ve.map((v) => [v.id, v.x, v.y])).toEqual(kb.ve.map((v) => [v.id, v.x, v.y]));
   });
 
   it("★ dùng số đo THẬT khi có — badge hẹp hơn suy đoán thì KHÔNG bị giết oan", () => {

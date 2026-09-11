@@ -32,12 +32,15 @@
  *   không có gì phải `dispose()`.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
 
 import { giaiMauCanh } from "../mauTrangThai";
+import { layVungCam } from "../loi/LopNhan";
+import { LOP_BADGE, ghiHopDaVe, xoaHopDaVe } from "../loi/hopDaVe";
+import type { HinhChuNhat } from "../loi/locNhan";
 import {
   demCapChongLapBadge,
   locBadge,
@@ -95,8 +98,13 @@ interface BadgeDaChieu {
   daAck: boolean;
   /** true ⇒ alarm nằm ngoài khung, badge đã bị kẹp về rìa (luật 3). */
   ngoaiKhung: boolean;
-  /** Góc mũi tên chỉ về vị trí thật, radian. Chỉ có nghĩa khi `ngoaiKhung`. */
+  /** Góc mũi tên chỉ về vị trí thật, radian. Có nghĩa khi `ngoaiKhung` hoặc `doiCho`. */
   gocMuiTen: number;
+  /**
+   * ★ Đợt 47 (N1) — badge đã DỜI khỏi neo (tránh lớp phủ DOM / badge khác); vẽ mũi tên về
+   * neo thật như badge ngoài khung — cùng một ngôn ngữ: "alarm ở đằng kia".
+   */
+  doiCho?: boolean;
 }
 
 /** Lề tối thiểu khi kẹp badge vào rìa, px. */
@@ -105,7 +113,11 @@ const LE_RIA_PX = 28;
 export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
+  const gl = useThree((s) => s.gl);
   const [hienThi, setHienThi] = useState<BadgeDaChieu[]>([]);
+
+  // ★ Đợt 47 (N5) — rời cảnh thì rút hộp khỏi sổ chung, nhãn không phải né bóng ma.
+  useEffect(() => () => xoaHopDaVe(gl.domElement, LOP_BADGE), [gl]);
   const [soAn, setSoAn] = useState(0);
   const tamRef = useRef(new THREE.Vector3());
   const chuKyRef = useRef("");
@@ -120,6 +132,7 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
 
   const tinhLai = useCallback(() => {
     if (canhBao.length === 0) {
+      ghiHopDaVe(gl.domElement, LOP_BADGE, []);
       if (hienThi.length !== 0) {
         setHienThi([]);
         setSoAn(0);
@@ -198,24 +211,48 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
       // Chưa-ack (daAck=false) phải xếp TRƯỚC đã-ack ⇒ +1000 khi chưa ack, để nó
       // trội hơn mọi chênh lệch mức độ (uuTien ∈ {1,2,3}). Giống nhánh `daAck`
       // trong sort cũ (đã-ack đẩy xuống cuối).
-      const diemUuTien = KIEU_MUC[b.muc].uuTien + (b.daAck ? 0 : 1000);
+      // ★ Đợt 47 (N1) — ĐỎ = SỰ CỐ, ưu tiên TUYỆT ĐỐI: +10.000 ⇒ mọi badge đỏ (kể cả đã ack)
+      //   đứng trước mọi badge vàng/xanh; trong đỏ, chưa-ack vẫn trước. §10.3 luật 3 viết cho nó.
+      const doTuyetDoi = b.muc === "red";
+      const diemUuTien = KIEU_MUC[b.muc].uuTien + (b.daAck ? 0 : 1000) + (doTuyetDoi ? 10_000 : 0);
       return {
         id: b.id,
         x: b.x,
         y: b.y,
         diemUuTien,
         ngoaiKhung: b.ngoaiKhung,
+        uuTienTuyetDoi: doTuyetDoi,
         // Số đo THẬT khi đã có; thiếu thì `locBadge` dùng trị suy đoán của nó.
         rongPx: co?.rongPx,
         caoPx: co?.caoPx,
       };
     });
 
-    const kq = locBadge(ungVien, { tran });
+    // ★ Đợt 47 (N1) — vùng cấm = bbox THẬT của lớp phủ DOM (`[data-che-nhan]`, CÙNG nguồn với `LopNhan`
+    //   từ Đợt 35 — lớp badge là lớp duy nhất chưa đọc nó; QA Đợt 46: badge đỏ SPI bị thẻ "Chỉ số" che
+    //   toàn bộ). Badge bị che/chồng thì DỜI, không giấu; badge đỏ không bao giờ giấu khi còn chỗ.
+    const vungCam = layVungCam(gl.domElement);
+    const kq = locBadge(ungVien, {
+      tran,
+      khungCanvas: { rong: size.width, cao: size.height },
+      vungCam,
+      doiCho: true,
+    });
+    // ★ Đợt 47 (N5) — ghi hộp đã vẽ vào sổ chung: `LopNhan` (chạy SAU trong cùng khung) nhường chỗ này.
+    ghiHopDaVe(
+      gl.domElement,
+      LOP_BADGE,
+      kq.ve.map((u) => u.hop).filter((h): h is HinhChuNhat => h !== null),
+    );
 
-    // Dựng lại danh sách BadgeDaChieu theo thứ tự `locBadge` đã chọn.
+    // Dựng lại danh sách BadgeDaChieu theo thứ tự `locBadge` đã chọn; badge bị DỜI mang toạ độ mới
+    // + mũi tên về neo thật.
     const theoId = new Map(ra.map((b) => [b.id, b]));
-    const ve = kq.ve.map((u) => theoId.get(u.id)!);
+    const ve: BadgeDaChieu[] = kq.ve.map((u) => {
+      const b = theoId.get(u.id)!;
+      if (!u.doiCho) return b;
+      return { ...b, x: u.x, y: u.y, doiCho: true, gocMuiTen: Math.atan2(u.yGoc - u.y, u.xGoc - u.x) };
+    });
     // ★★★ G7 — `data-so-an` phải là con số người đọc TƯỞNG nó là: số alarm đang
     //   bị GIẤU khỏi màn (vì chồng lấn HOẶC vì chạm trần). Đó là `kq.soAn`, đại
     //   lượng ĐẦU VÀO-bị-loại. NHƯNG chỉ số này KHÔNG đủ để nghiệm thu (nó do
@@ -234,6 +271,9 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
         soAn: an,
         soBiChongLap: kq.soBiChongLap,
         soVuotTran: kq.soVuotTran,
+        biChe: kq.soBiChe,
+        doiCho: kq.soDoiCho,
+        soVungCam: vungCam.length,
         tran,
         capConChong: demCapChongLapBadge(
           ve.map((b) => ({
@@ -246,12 +286,12 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
       };
     }
 
-    const chuKy = `${an}|${ve.map((v) => `${v.id}:${Math.round(v.x)}:${Math.round(v.y)}:${v.ngoaiKhung ? 1 : 0}`).join("|")}`;
+    const chuKy = `${an}|${ve.map((v) => `${v.id}:${Math.round(v.x)}:${Math.round(v.y)}:${v.ngoaiKhung ? 1 : 0}${v.doiCho ? "d" : ""}`).join("|")}`;
     if (chuKy === chuKyRef.current) return;
     chuKyRef.current = chuKy;
     setHienThi(ve);
     setSoAn(an);
-  }, [canhBao, camera, size.width, size.height, tran, hienThi.length]);
+  }, [canhBao, camera, gl, size.width, size.height, tran, hienThi.length]);
 
   // Chiếu lại mỗi khung ĐƯỢC VẼ. Với `frameloop="demand"` đây không phải 60 fps.
   useFrame(tinhLai);
@@ -269,6 +309,7 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
               key={b.id}
               data-testid={`badge-canh-bao-${b.id}`}
               data-ngoai-khung={b.ngoaiKhung ? "1" : "0"}
+              data-doi-cho={b.doiCho ? "1" : "0"}
               data-muc={b.muc}
               /* ★ Đo kích thước THẬT ngay khi div gắn vào DOM và nhớ theo `id`.
                  Khung sau, `locBadge` khử chồng lấn bằng bbox thật thay vì trị
@@ -305,8 +346,8 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
               {/* Luật 2 — hình dạng, rồi chữ. Màu là chiều thứ ba, không phải duy nhất. */}
               <span aria-hidden="true">{kieu.hinh}</span>
               <span>{b.nhan}</span>
-              {b.ngoaiKhung ? (
-                /* Luật 3 — mũi tên chỉ về vị trí THẬT của alarm ngoài khung. */
+              {b.ngoaiKhung || b.doiCho ? (
+                /* Luật 3 — mũi tên chỉ về vị trí THẬT của alarm ngoài khung (Đợt 47: cả badge bị dời chỗ). */
                 <span
                   aria-hidden="true"
                   data-testid={`mui-ten-${b.id}`}
@@ -338,6 +379,12 @@ export interface WindowCoDoBadge extends Window {
     soAn: number;
     soBiChongLap: number;
     soVuotTran: number;
+    /** ★ Đợt 47 (N1) — bị loại vì lớp phủ DOM che / thò mép mà không dời được (badge thường). Đỏ ⇒ luôn 0 khi còn chỗ. */
+    biChe: number;
+    /** ★ Đợt 47 (N1) — số badge đã DỜI khỏi neo (có mũi tên về neo thật). */
+    doiCho: number;
+    /** ★ Đợt 47 (N1) — số vùng cấm đọc được từ DOM ở khung này (cùng `layVungCam` với nhãn). */
+    soVungCam: number;
     tran: number;
     /** Số CẶP badge CÒN chồng nhau trong tập ĐƯỢC VẼ — phải luôn 0. */
     capConChong: number;

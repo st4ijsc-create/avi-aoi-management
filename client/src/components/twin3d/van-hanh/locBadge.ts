@@ -48,7 +48,7 @@
  * ★ Thuần .ts: không three, không react ⇒ test được ở `environment: "node"`.
  */
 
-import { haiHopChongNhau, type HinhChuNhat } from "../loi/locNhan";
+import { haiHopChongNhau, hopTrongKhung, type HinhChuNhat, type KhungCanvasPx } from "../loi/locNhan";
 
 /**
  * Kích thước SUY ĐOÁN của một badge chưa đo được, pixel.
@@ -92,6 +92,23 @@ export interface BadgeUngVien {
   rongPx?: number;
   /** Bề cao thật, px. */
   caoPx?: number;
+  /**
+   * ★★★ Đợt 47 (N1) — ƯU TIÊN TUYỆT ĐỐI (badge ĐỎ = sự cố): KHÔNG BAO GIỜ bị giấu khi
+   * còn chỗ. Bị lớp phủ che / chồng hộp ⇒ dời tới ô trống GẦN NHẤT trên toàn canvas
+   * (`oTrongGanNhat`), không dừng ở vài bước dời như badge thường. Người gọi cũng phải
+   * cho nó `diemUuTien` cao hơn mọi badge thường — cờ này chỉ nói về "khi hết chỗ".
+   */
+  uuTienTuyetDoi?: boolean;
+}
+
+/** Một badge ĐÃ được chọn vẽ — toạ độ có thể đã DỜI khỏi neo (Đợt 47). */
+export interface BadgeDuocVe extends BadgeUngVien {
+  /** true ⇒ `x`/`y` KHÁC neo thật (`xGoc`/`yGoc`) — vẽ mũi tên chỉ về neo. */
+  doiCho: boolean;
+  xGoc: number;
+  yGoc: number;
+  /** Hộp ĐÃ DÙNG để khử chồng — cho sổ `hopDaVe` (lớp nhãn nhường) và e2e đối chiếu. `null` khi ngoài khung (miễn). */
+  hop: HinhChuNhat | null;
 }
 
 /**
@@ -117,7 +134,7 @@ export function hopBadge(
 
 export interface KetQuaLocBadge {
   /** Badge được vẽ, đã sắp ưu tiên GIẢM DẦN. Tối đa `tran`. */
-  ve: BadgeUngVien[];
+  ve: BadgeDuocVe[];
   /**
    * Số badge KHÔNG được vẽ — vì chồng lấn HOẶC vì chạm trần.
    *
@@ -130,12 +147,103 @@ export interface KetQuaLocBadge {
   soBiChongLap: number;
   /** Tách riêng để gỡ lỗi: bao nhiêu bị loại vì chạm trần. */
   soVuotTran: number;
+  /**
+   * ★ Đợt 47 (N1) — bị loại vì hộp đè LỚP PHỦ DOM (`vungCam`) hoặc thò khỏi canvas
+   * (`khungCanvas`) mà không dời được (badge thường) — QA Đợt 46: 3/4 badge `/twin`
+   * @1600 nằm dưới thẻ "Chỉ số", `▲SIM-L1-SPI` (đỏ) che TOÀN BỘ 1.425/1.428 px².
+   */
+  soBiChe: number;
+  /** ★ Đợt 47 (N1) — số badge đã DỜI khỏi neo để tránh lớp phủ / hộp khác. */
+  soDoiCho: number;
 }
 
 export interface CauHinhLocBadge {
   tran?: number;
   rongSuyDoanPx?: number;
   caoSuyDoanPx?: number;
+  /** ★ Đợt 47 (N1) — kích thước canvas (px): hộp badge phải nằm TRỌN trong canvas (như nhãn). */
+  khungCanvas?: KhungCanvasPx;
+  /**
+   * ★ Đợt 47 (N1) — VÙNG CẤM: bbox lớp phủ DOM đè lên canvas (`layVungCam` — `[data-che-nhan]`,
+   * cùng nguồn với `LopNhan`). Badge giao vùng cấm = người dùng KHÔNG thấy nó ⇒ không vẽ tại chỗ.
+   */
+  vungCam?: readonly HinhChuNhat[];
+  /**
+   * ★ Đợt 47 (N1) — cho phép DỜI badge (xuống/lên/phải/trái ≤ {@link SO_BUOC_DOI_CHO} bước) thay vì
+   * giấu khi chồng/bị che; badge `uuTienTuyetDoi` còn được tìm ô trống gần nhất trên cả canvas.
+   * Mặc định TẮT để hợp đồng "chồng ⇒ bỏ" của người gọi cũ giữ nguyên; `LopCanhBao` bật.
+   */
+  doiCho?: boolean;
+}
+
+/** Khe hở giữa badge và hộp kề khi dời chỗ, px. */
+export const KHE_BADGE_PX = 2;
+/** Số bước dời tối đa mỗi hướng cho badge THƯỜNG. Badge đỏ không bị giới hạn này. */
+export const SO_BUOC_DOI_CHO = 3;
+
+function dichHop(h: HinhChuNhat, dx: number, dy: number): HinhChuNhat {
+  return { trai: h.trai + dx, phai: h.phai + dx, tren: h.tren + dy, duoi: h.duoi + dy };
+}
+
+/** Hộp có ĐẶT ĐƯỢC không: trọn trong canvas (nếu biết), không đè vùng cấm, không đè hộp đã giữ. */
+function datDuoc(
+  h: HinhChuNhat,
+  khung: KhungCanvasPx | undefined,
+  vungCam: readonly HinhChuNhat[],
+  hopDaGiu: readonly HinhChuNhat[],
+): boolean {
+  if (khung && !hopTrongKhung(h, khung)) return false;
+  for (const v of vungCam) if (haiHopChongNhau(v, h)) return false;
+  for (const g of hopDaGiu) if (haiHopChongNhau(g, h)) return false;
+  return true;
+}
+
+/**
+ * Ứng viên dời chỗ theo khoảng cách TĂNG DẦN: mỗi bước thử xuống, lên, phải, trái.
+ * Xuống trước: badge neo TRÊN nóc máy, phía dưới là thân máy — chỗ trống tự nhiên nhất
+ * và mũi tên ngắn nhất; lớp phủ hay che là dải trên (KPI) nên "lên" thường vô ích.
+ */
+function* ungVienDoiCho(hop: HinhChuNhat): Generator<HinhChuNhat> {
+  const buocDoc = hop.duoi - hop.tren + KHE_BADGE_PX;
+  const buocNgang = hop.phai - hop.trai + KHE_BADGE_PX;
+  for (let k = 1; k <= SO_BUOC_DOI_CHO; k += 1) {
+    yield dichHop(hop, 0, k * buocDoc);
+    yield dichHop(hop, 0, -k * buocDoc);
+    yield dichHop(hop, k * buocNgang, 0);
+    yield dichHop(hop, -k * buocNgang, 0);
+  }
+}
+
+/**
+ * Ô trống GẦN NHẤT trên toàn canvas cho badge ưu tiên tuyệt đối — quét lưới ô cỡ
+ * badge, chọn ô đặt được có tâm gần neo nhất. O(số ô × số hộp): ~500 ô × ≤ 20 hộp
+ * mỗi khung ĐƯỢC VẼ (`frameloop="demand"`), chỉ khi badge đỏ thật sự hết chỗ quanh neo.
+ */
+function oTrongGanNhat(
+  hop: HinhChuNhat,
+  khung: KhungCanvasPx,
+  vungCam: readonly HinhChuNhat[],
+  hopDaGiu: readonly HinhChuNhat[],
+): HinhChuNhat | null {
+  const rong = hop.phai - hop.trai;
+  const cao = hop.duoi - hop.tren;
+  if (!(rong > 0) || !(cao > 0)) return null;
+  const cx = (hop.trai + hop.phai) / 2;
+  const cy = (hop.tren + hop.duoi) / 2;
+  let tot: HinhChuNhat | null = null;
+  let dTot = Number.POSITIVE_INFINITY;
+  for (let y = 0; y + cao <= khung.cao; y += cao + KHE_BADGE_PX) {
+    for (let x = 0; x + rong <= khung.rong; x += rong + KHE_BADGE_PX) {
+      const d = Math.hypot(x + rong / 2 - cx, y + cao / 2 - cy);
+      if (d >= dTot) continue;
+      const h = { trai: x, phai: x + rong, tren: y, duoi: y + cao };
+      if (datDuoc(h, khung, vungCam, hopDaGiu)) {
+        tot = h;
+        dTot = d;
+      }
+    }
+  }
+  return tot;
 }
 
 /**
@@ -157,6 +265,9 @@ export function locBadge(
   const tran = cauHinh.tran ?? Infinity;
   const rongMacDinh = cauHinh.rongSuyDoanPx ?? RONG_BADGE_SUY_DOAN_PX;
   const caoMacDinh = cauHinh.caoSuyDoanPx ?? CAO_BADGE_SUY_DOAN_PX;
+  const khung = cauHinh.khungCanvas;
+  const vungCam = cauHinh.vungCam ?? [];
+  const choDoiCho = cauHinh.doiCho === true;
 
   // Sắp trên BẢN SAO — không làm biến dạng mảng của người gọi. Hoà điểm thì so
   // `id` tăng dần: thiếu nhánh này, hai alarm cùng mức cùng lúc sẽ đổi chỗ ngẫu
@@ -165,10 +276,12 @@ export function locBadge(
     a.diemUuTien !== b.diemUuTien ? b.diemUuTien - a.diemUuTien : a.id - b.id,
   );
 
-  const ve: BadgeUngVien[] = [];
+  const ve: BadgeDuocVe[] = [];
   const hopDaGiu: HinhChuNhat[] = [];
   let soBiChongLap = 0;
   let soVuotTran = 0;
+  let soBiChe = 0;
+  let soDoiCho = 0;
 
   for (const b of daSap) {
     if (ve.length >= tran) {
@@ -180,27 +293,57 @@ export function locBadge(
     //   cũng KHÔNG góp hộp vào `hopDaGiu` — nếu góp, một chùm badge bị kẹp ở rìa
     //   sẽ dựng một bức tường vô hình giết các badge TRONG khung đi ngang qua đó.
     if (b.ngoaiKhung) {
-      ve.push(b);
+      ve.push({ ...b, doiCho: false, xGoc: b.x, yGoc: b.y, hop: null });
       continue;
     }
 
     const hop = hopBadge(b, rongMacDinh, caoMacDinh);
-    let chongLap = false;
-    for (const g of hopDaGiu) {
-      if (haiHopChongNhau(g, hop)) {
-        chongLap = true;
-        break;
+    let hopVe: HinhChuNhat | null = datDuoc(hop, khung, vungCam, hopDaGiu) ? hop : null;
+
+    // ★ Đợt 47 (N1) — không đặt được tại neo ⇒ DỜI: vài bước quanh neo; badge đỏ (ưu tiên
+    //   tuyệt đối) còn được tìm ô trống gần nhất trên cả canvas — nó không bao giờ bị giấu
+    //   khi còn chỗ. Hộp dời cũng phải đặt được (trọn canvas, ngoài vùng cấm, không chồng).
+    if (hopVe === null && choDoiCho) {
+      for (const thu of ungVienDoiCho(hop)) {
+        if (datDuoc(thu, khung, vungCam, hopDaGiu)) {
+          hopVe = thu;
+          break;
+        }
       }
+      if (hopVe === null && b.uuTienTuyetDoi && khung) hopVe = oTrongGanNhat(hop, khung, vungCam, hopDaGiu);
     }
-    if (chongLap) {
-      soBiChongLap += 1;
+
+    if (hopVe === null) {
+      // Phân loại lý do cho cửa sổ đo: bị che/thò mép (lớp phủ, canvas) ≠ chồng badge khác.
+      const biChe =
+        (khung !== undefined && !hopTrongKhung(hop, khung)) || vungCam.some((v) => haiHopChongNhau(v, hop));
+      if (biChe) soBiChe += 1;
+      else soBiChongLap += 1;
       continue;
     }
-    ve.push(b);
-    hopDaGiu.push(hop);
+
+    const doiCho = hopVe !== hop;
+    ve.push({
+      ...b,
+      x: doiCho ? (hopVe.trai + hopVe.phai) / 2 : b.x,
+      y: doiCho ? (hopVe.tren + hopVe.duoi) / 2 : b.y,
+      doiCho,
+      xGoc: b.x,
+      yGoc: b.y,
+      hop: hopVe,
+    });
+    hopDaGiu.push(hopVe);
+    if (doiCho) soDoiCho += 1;
   }
 
-  return { ve, soAn: soBiChongLap + soVuotTran, soBiChongLap, soVuotTran };
+  return {
+    ve,
+    soAn: soBiChongLap + soVuotTran + soBiChe,
+    soBiChongLap,
+    soVuotTran,
+    soBiChe,
+    soDoiCho,
+  };
 }
 
 /**
