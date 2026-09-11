@@ -6679,6 +6679,57 @@ che nut · (6) May @1280 canh 259 px, the gay 3 dong, tab cat (= ky thuat nho 11
 (K/E/I/P/F/T, D-1 48 ca), luoi bbox 2 vp, anh truoc/sau tu xem, ablation, i18n 3 locale, cong vo 30/30. Sau do **Dot 46 QA thi
 giac**.
 
+### 14q.24 DOT 45 - 9 MUC THIET KE + 2 KY THUAT NHO (QD-26) - DAT 34/34 LUOI BBOX, 0 DOI PHAN QUYET
+
+`eca90c44`, **12 commit** pathspec (skill `frontend-design` goi truoc khi sua; ke hoach thiet ke: *"canh la nhan vat chinh · moi cum
+mot nha cung nha o moi man · khong giau gi ma khong co dau hieu · so that khong doi"*, token cu, 0 font/CDN moi). Chu du an do
+lai: twin3d **96 / 2.387** (+5 tep, +33 ca) · twin 120/2.769 · 4 luoi 180/180 · `check` 0 · `i18n` 0 · cay + index sach · 0 nhi
+phan · 5 anh nguyen · DB nguyen · 3045 tat · **anh tu xem** 5 man (twin 1280/1600, line 1600, may 1280, studio 1600): ca 9 muc
+thay duoc bang mat.
+
+| Muc | truoc 1600 / 1280 | sau | go va |
+|---|---|---|---|
+| 1 chat de | giao 992–2.304 px² ×4 man ×2 vp | **0** (an ho `/twin*` bang mot vi tu `bongBongTheoTuyen`, 15 ca; route khac giu) | 8/8 M1 do |
+| 2a thanh cong cu | @1280 tran, nut studio ngoai header | khong tran, 6 nut trong header (icon-only khi header < 1.100 px — **do that, khong theo viewport**) | M2a do |
+| 2b ngan phai | 320 / 256 px trong `lyDo=null` | **0 px** khi rong, canh **1.000 / 744 px** | M2b ×2 do |
+| 3 Line | tam dai may 0,48 / 0,49 | **0,63 / 0,62**, 12/12, ngoaiKhung 0 (`dichKhungDoc`, `TAM_DOC_NDC_LINE=-0,28`) | M3 ×2 do |
+| 4 nhan | 16 / 8 nhan chong, chip "con 29/37 ten bi an" **chua bao gio nhin thay** | mac dinh chi bat thuong (URL › localStorage › mac dinh, `chinhSachNhan.ts`), 4 / 1 nhan, hover giu, chip that o day-giua canh | M4 ×2 do |
+| 5 minimap | @1280 giao nut 1.410 px², 82 % cao | giao 0, **43 %** (clamp 88–148) | M5 do |
+| 6 canh May | @1280 259 < cockpit 312 | **280** (san mem chi khi cockpit > canh); @1600 324 giu | M6 do |
+| 7 studio | canh 50,2 % / canvas chui khoi vung | **61,5 %** / 49,2 %, day canvas = day vung | M7 ×2 do |
+| 8 ton dong | cuon khong bong, tab cat | `.cuon-doc-bong` + tieu de nhom sticky | M8 ×2 do |
+| 9 breadcrumb | 3/3 mat xich cat ca 2 vp | "Tap doan › Nha may ao (SIM) › Tang" du; @1280 "… › …" (`gopBreadcrumb`) | M9 ×2 do |
+| 11 tab cockpit | khong chi bao | `CuonNgangCoMep` mep mo + nut "›" | M11 ×2 do |
+| 12 the ket noi | @1280 3 dong | 1 dong ca 2 vp (KPI `@container`) | M12 do |
+
+Luoi cuoi **34/34** (nen 8/34). Hoi quy: D-1 **41/0, doi phan quyet 44→45: 0** · K 12/12 ×2 · E 13/13 ×2 (E4 12/12) · I 14/14 ·
+P p6 **1,025 s** mot minh · F1 4/4 ×2 vp (0 request ngoai). Tren `/device-monitor` (ngoai twin) nut chat **van co** — doi chung
+duong cua muc 1.
+
+> #### ★★ G122 - **CHIP "CON N TEN BI AN" CHUA BAO GIO NHIN THAY SUOT 22 DOT (tu Dot 23)** - DOM co, mat khong
+> Chip nam o `y = mep tren canvas − 8`, **duoi dai hop nhat z-30**; QA doc chu tu DOM (§14q.15 "chip con 29/37 ten bi an") va
+> chu du an tin. Chi khi Dot 45 siet luoi M4 (chip phai **trong canvas** va **khong bi lop phu che**) moi lo. Goc re (4d):
+> `demDuoiChoChip()` cong ca lop phu **khong ngang qua tam canvas** (panel trai top-0 bottom-0 ⇒ `demDuoi=669`) ⇒ chip bay len
+> tren mep. Va 4c chan doan "hop drei sai" — **SAI**, probe DOM bac. ⇒ Cung ho G98: **moi chu doc tu DOM phai kem bbox trong
+> canvas + khong bi che**; mot chi bao "co mat" (G5) chua la "nhin thay".
+
+**Brief sai 9 cho (lan 19):** "ngan phai mo khi chon Line/tang" — sau QD-23 `NganXuLy` tren `/twin` **luon rong** (`?chon=machine:`
+redirect) ⇒ 0 px la dung · "ten day du khi re chuot" — chinh sach cu **khong** giu hover · "menu ⋯ duoi 1400 px" — **loai** (giau hanh
+dong, pha test bam) ⇒ icon-only theo be rong header · `TAM_DOC` khong o `khopKhungNhin` · muc 12 da DAT @1600, 5/6 chi do @1280 ·
+HEAD brief `dac34691` (G121) · `.qa-dot38/scripts` khong ton tai · G5 lap: `chuNhanAnTheoChinhSach` "co mat" ma khong toi `LopNhan`
+(lop on-dinh-ham cua `CanhVanHanh` liet ke prop co dinh — **danh sach thay vi bat bien**, L-1) ⇒ 4b.
+
+**MSA:** P@1600 chet `newPage > 30 s` khi **8 chrome + 32 node** cua cac phien khac song ⇒ chay lai mot minh 6/6 · F1@1280 ✗ chi vi
+`msToiMan > 2,5 s` trang dau sau context lanh (6–8 s bat ke man — outlier server §14q.22) ⇒ do lai 4/4 · khoi phuc ablation bang
+`git show HEAD:` de lai bong ma "M" EOL (diff noi dung rong) — tra CRLF cho 6 tep `w/crlf` (G101 lap).
+
+**Con mo:** icon `AlertTriangle` cua nut "chi nhan bat thuong" doc nhu canh bao · `dungBreadcrumb` cap tang chi "Tang" khong ten ·
+`goi-y-chon-may` en bi `truncate` 24 rem · `DaiHopNhat.tsx:80` `null` khi 0 viec · e2e ngoai cong `qa-dot6-viewport:65` (rect 0 ⇒
+"trong khung" — mu), `twin-lo-v-tuong-tac:1302` (`nut-thu-phai` khong render khi ngan rong, co `.catch`) · ngoai twin nhu §14q.22.
+
+**Dot 46 — QA THI GIAC lan 6** (doc lap, khong sua ma): 11 muc × 2 vp × vi/en, bbox + anh tu xem, doi chieu 15 muc D-7 (10 Dot 37 +
+3 Dot 39 + 1 Dot 41 + 1 Dot 44), hoi quy D-1/K/E/I/P/F, va **D-8 "dep" cuoi cung** ⇒ cap nhat trang nghiem thu.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
