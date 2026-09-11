@@ -74,6 +74,14 @@ export const KHOANG_CACH_TOI_THIEU_M = 3;
 /** Bán kính tối thiểu (mét) khi bbox suy biến thành một điểm. */
 export const BAN_KINH_TOI_THIEU_M = 1.5;
 
+/**
+ * ★ Đợt 45 (mục 5/7) — SÀN chiều cao canvas của màn THIẾT KẾ (px), thấp hơn sàn 320 của kit.
+ * QA Đợt 44 @1280: vùng cảnh còn 193 px mà canvas sàn 320 ⇒ canvas "chui" 127 px xuống dưới
+ * thư viện asset (bbox khung vẫn "đúng", chỉ ảnh bắt). Cùng khuôn `SAN_KHOI_CANH_MAY_PX = 240`
+ * của màn Máy (Đợt 35): sàn riêng truyền qua `sanCaoPx`, KHÔNG hạ mặc định của kit.
+ */
+export const SAN_CAO_CANH_THIET_KE_PX = 240;
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* Kiểu                                                                        */
 /* ═══════════════════════════════════════════════════════════════════════════ */

@@ -22,7 +22,7 @@
  *   nối chúng với DOM và với `CauNoiCanh`.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Camera, Maximize, Minimize, Scan } from "lucide-react";
 import { toast } from "sonner";
@@ -35,6 +35,7 @@ import {
   BAN_KINH_CHAM_PX,
   CANH_BAN_DO_PX,
   camDiToi,
+  canhBanDoTheoKhung,
   diemNgamTuClick,
   dungCham,
   dungPhepChieu,
@@ -94,6 +95,24 @@ export function ThanhCongCuCanh({
   const { t } = useTranslation();
   const refSvg = useRef<SVGSVGElement | null>(null);
   const [dangToanManHinh, setDangToanManHinh] = useState(false);
+  /*
+   * ★ Đợt 45 (mục 5) — cạnh mini-map theo VÙNG CẢNH THẬT (`refBoc`, `ResizeObserver`), không hằng.
+   *   Chỉ setState khi số đo đổi (không re-render vì rung nửa pixel). Chưa đo ⇒ 148.
+   */
+  const [canhPx, datCanhPx] = useState<number>(CANH_BAN_DO_PX);
+  useEffect(() => {
+    const el = refBoc.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const doLai = () => {
+      const r = el.getBoundingClientRect();
+      const c = canhBanDoTheoKhung(r.width, r.height);
+      datCanhPx((cu) => (cu === c ? cu : c));
+    };
+    doLai();
+    const ro = new ResizeObserver(doLai);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [refBoc]);
 
   /**
    * ★★★ BBOX THẬT — đây là dòng làm nên #58. Đổi vị trí một máy là đổi giá trị
@@ -270,11 +289,13 @@ export function ThanhCongCuCanh({
       <div
         className="absolute bottom-2 right-2 z-10 rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur"
         data-testid="mini-map"
+        data-canh-px={canhPx}
       >
         <svg
           ref={refSvg}
-          width={CANH_BAN_DO_PX}
-          height={CANH_BAN_DO_PX}
+          /* ★ Đợt 45 (mục 5) — kích thước CSS theo vùng cảnh; `viewBox` giữ 148 ⇒ toạ độ chấm không đổi. */
+          width={canhPx}
+          height={canhPx}
           viewBox={`0 0 ${CANH_BAN_DO_PX} ${CANH_BAN_DO_PX}`}
           role="button"
           tabIndex={0}

@@ -72,6 +72,7 @@ import {
   type HangModel,
 } from "../napModel";
 import { mmSangMet } from "../heToaDo";
+import { SAN_CAO_CANH_THIET_KE_PX } from "./khungNhin";
 import { TRANG_THAI_CHON_RONG, type TrangThaiChon } from "../loi/chonVatThe";
 import { GizmoBienDoi } from "./GizmoBienDoi";
 import type { CheDoGizmo, TrucKhoa } from "./gizmoNoiLogic";
@@ -696,6 +697,8 @@ export function CanhThietKe(props: CanhThietKeProps) {
       far={Math.max(2000, Math.max(sanRongM, sanSauM) * 8)}
       mauNen={mauNen}
       chuMatContext={chuMatContext}
+      /* ★ Đợt 45 (mục 5/7) — sàn riêng 240 cho studio (xem `SAN_CAO_CANH_THIET_KE_PX`); kit giữ 320. */
+      sanCaoPx={SAN_CAO_CANH_THIET_KE_PX}
       data-testid="khoi-canh-3d"
     >
       <NoiDung {...props} toi={theme === "dark"} />

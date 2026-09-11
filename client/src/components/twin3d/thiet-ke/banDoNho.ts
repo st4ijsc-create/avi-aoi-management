@@ -41,6 +41,24 @@ export const DEM_BAN_DO_PX = 8;
 /** Bán kính chấm máy (px). */
 export const BAN_KINH_CHAM_PX = 2.5;
 
+/** ★ Đợt 45 (mục 5) — cạnh mini-map NHỎ NHẤT còn đọc được (px). */
+export const CANH_BAN_DO_TOI_THIEU_PX = 88;
+/** ★ Đợt 45 (mục 5) — mini-map chiếm tối đa tỉ lệ này của CẠNH NGẮN vùng cảnh. */
+export const TI_LE_BAN_DO_TREN_KHUNG = 0.4;
+
+/**
+ * ★★★ ĐỢT 45 (mục 5) — CẠNH MINI-MAP THEO VÙNG CẢNH THẬT.
+ * QA Đợt 44 @1280 (D-7 mục 10/14): vùng cảnh 541×193 mà mini-map 148 (+viền) = 82 % chiều cao,
+ * đè lên ba nút công cụ góc trên-phải. Cạnh = clamp(88, 40 % cạnh ngắn vùng, 148); chưa đo được
+ * (0/NaN — jsdom, khung hình đầu) ⇒ 148 như cũ. SVG giữ `viewBox` 148 nên toạ độ chấm/phép chiếu
+ * KHÔNG đổi; chỉ kích thước CSS đổi, và `pxTuChuot` đã chuẩn hoá theo `getBoundingClientRect`.
+ */
+export function canhBanDoTheoKhung(rongPx: number, caoPx: number, canhMax: number = CANH_BAN_DO_PX): number {
+  if (!(rongPx > 0) || !(caoPx > 0) || !Number.isFinite(rongPx) || !Number.isFinite(caoPx)) return canhMax;
+  const theoKhung = Math.floor(Math.min(rongPx, caoPx) * TI_LE_BAN_DO_TREN_KHUNG);
+  return Math.max(CANH_BAN_DO_TOI_THIEU_PX, Math.min(canhMax, theoKhung));
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* Kiểu                                                                        */
 /* ═══════════════════════════════════════════════════════════════════════════ */
