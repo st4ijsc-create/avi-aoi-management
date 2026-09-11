@@ -6453,6 +6453,62 @@ danh tinh) — chua do · DOM commit 50–86/40 s (Radix Tabs) · `LoBatchMay` h
 hai vp, bat bien, 6 be mat + hb/msl tam, duong di, commit R3F/40 s doc tu co che, thi giac 4 man × 2 vp, **D-8 nghiem thu
 ca bao mat du lieu**. Sau do **bao cao tong ket** cho chu so huu + cho quyet 8 muc thiet ke.
 
+### 14q.19 DOT 41 - QA DOC LAP LAN 4 (NGHIEM THU): CHUC NANG + HIEU NANG DAT CO SO; BAO MAT DU LIEU CHUA - 4 LO NGOAI twin3d
+
+Tep tho `.qa-dot41/` (~230 json · 209 png · 4 webm · 17 log; 17 thu muc). **Khong sua ma.** Agent chet 429 luc tong hop
+(`chuoi-XONG.txt` da co) ⇒ chu du an do cay (G95: HEAD `d01ef0f7`, cay sach, DB nguyen, 3041 con — agent tat sau), resume
+viet bao cao tu tep tho. Chu du an doi chieu doc lap `api-vai/{B,D}.json`, `http-v1.json` truoc khi bao cao ve.
+
+**D-1 bon cot:** Dot 32 **16/26** → 37 37/3 → 39 41/0 → **HEAD 41 DAT · 0 SAI · 5 CHAN-DUNG · 1 N/A · 1 "xem K"**; doi phan
+quyet 39→41: **0**. **D-2** K 12/12 (bam Line 10/2 ms, may 14/7 ms; K6 **26 = 14 cu + 6 moi + 4 giu + 2 doi chung TRUOT**) ·
+E/I/P/T hai vp DAT. **D-3** dot bien **5/5 DO** (TRAN_NHIP 3 · NGUONG server 1 · NGUONG_CU 6 · bo phat-khi-join 3 · 10 s→5 s 1),
+khoi phuc md5 4/4, numstat 0 nhi phan, 164/164 xanh lai; canvas = kit = 1 o **13 tab cockpit + ngan mo phong + 3 tab studio
+× 2 vp**. **D-5** 6 be mat may 14 mot tu dien (nen `offline/4.774.631 s` = cockpit = anhLichSu = /twin = Line = chip; hb tam
+⇒ `idle/1 s` = `connected:true` = "Idle 11 s"; msl tam ⇒ van `offline`); cua so 0–10 s **11 tep × 4 be mat: 0 lat**; duong di
+video 8–29 ms, ACK `engineer1` MTTA 43 s. **D-6** toi canvas 1,24–1,69 s · **40 s dung yen 0 khung 8/8 · commit R3F 0 o
+16/16** — doi chung duong: chen hb giua cua so ⇒ **2 commit R3F + 3 khung** ngay sau goi ⇒ bo dem khong mu · keo 38–60
+khung/1,5 s · DOM commit 43–87 (Radix/danh sach).
+
+**D-4 · BAO MAT DU LIEU — 48 thu tuc × 6 vai (A gan NM1 · B 0 gan · C 0 quyen · D chi oee+gan · M monitoring+gan · ADM 0
+gan) × NM1/NM18 + socket + HTTP v1 (API key tam khoa `factoryCode=SIM-FAC`):** **rao dung** 5 thu tuc Dot 40 + 20 thu tuc
+khac (`twinCanh.*` hinh dang rong `khai: []`/`null`, `dashboard.getMachineStats` `scopeApplied`, `digitalTwin.wipFlowState`,
+`maintenance.*`, `machine.checkCapabilities`, `mqttClient.getDowntimeHistory`, `andon.active`) + socket `twin:trangThai` rao
+tung socket + phat-ngay-khi-join. **HO 4 loi** (chu du an xac nhan bang ma):
+
+| # | Thu tuc (man goi) | Bang chung | `file:line` |
+|---|---|---|---|
+| 1 | **`twin.usdExport(1/18)`** (nut "Xuat USD" o `/twin`) | **operator1 0 gan: 200 41.850 B (ma SIM) · 200 1.970 B (ma `T12-SHOT-…`)** — xuat USDA **ca hai nha may** | `twinRouter.ts:316` chi `requirePermission(machine_monitoring)` (alias → `machine_status`), `buildFactoryUsda(factoryId)` → `sceneGraph.ts:210` khong scope |
+| 2 | **HTTP v1 `/api/v1/machines/:id/detail`, `/robots/:id/detail`** | API key **khoa SIM-FAC** goi `/machines/257` (NM18) ⇒ **200 identity `T12-SHOT-MC-…`**; khong khoa 401; 999999 404 | `moduleReads.ts:421/433` goi `machineDetail(machineId)`/`robotDetail` **bo `req.apiPrincipal.tenantScope`** du chu ky co `scope?: PhamViNguoiXem` (`assetCockpitService.ts:487`) |
+| 3 | **`wip.lineBalance(line 2)`** (`/twin/line` qua `usePhanTichLine`) | **moi vai ke ca C 0 quyen: 16 hang** takt/cycle/bottleneck NM1 | `wipRouter.ts:129` `.query(async ({ input }))` **khong doc ctx**, 0 scope, 0 cong quyen (ban `mesControlTowerRouter.lineBalance` co scope — hai router cung ten) |
+| 4 | **`sensor.listTypes/readSeries(m1)`** (cockpit nhung `/twin/may`) | moi vai: 3 loai · 24 diem; UI mac dinh 7 ngay thay `[]` (du lieu 07-15), API `windowHours` mo | `sensorRouter.ts` `.query(({input}))` khong nhan ctx |
+
+> #### ★★★ G116 - **NHUNG COCKPIT/NUT CU VAO MAN MOI KEO THEO ROUTER CU CHUA RAO** - QA 4 dot truoc chi quet router "twin"
+> Dot 14/15/24 rao 3 router; Dot 40 rao 5 thu tuc cua **nguon su that moi**; QA Dot 41 la lan dau **liet ke MOI thu tuc bon
+> man goi** (grep `trpc.` trong `pages/Twin*.tsx`, `twin3d/**`, cockpit nhung) ⇒ 48 thu tuc, **4 ho** o router cu ma man moi
+> **nhung** (`usdExport` nut cu giu lai theo ⛔ khong xoa `DigitalTwinCenter`; `sensor` qua `MachineCockpitBody`; `lineBalance`
+> qua hook Dot 27). ⇒ **Bat bien QA**: tap thu tuc man goi × vai 0 gan ⇒ rong/404/403 — la **luoi tu dong** (harness
+> `api-vai.mjs` thanh test), khong phai bang tay moi dot. Nhung mot manh cu = nhan ca no cua manh ay.
+
+**MSA:** 6 lan thiet bi tu bac (socket path `/api/socket.io` khong phai mac dinh; `tuong-quan` ENOENT — **khong do lai** theo
+G114; heredoc vo 2 lan ⇒ Write; `cong.sh` sed mangle; tomtat thieu cot). Ke thua: a2 harness Dot 32 cho 232 s `ngan-nhung` da
+mat loi vao ⇒ N/A. **Brief sai/thieu lan 15 (6):** `aiRcaCopilot.vision` **khong** goi `machineDetail()` (grep toan server) ·
+"P6 ≤ 241 ms" do phan giai 250 ms khong chung duoc · `nguon-khung.mjs` chi 3 man · `machine_status` co o ca `analytics` lan
+`machine_monitoring` (alias) ⇒ operator1 qua cong `usdExport` · socket path · K6 = 26 gom ca doi chung.
+
+**D-7:** het (1)(3)(7); con cho chu so huu (2)(4)(5)(6)(8)(9)(10)(13); ky thuat nho (11)(12); **moi (14)** studio 1280 minimap
+che 3 nut cong cu canvas. bbox canvas 8/8 khop Dot 39.
+
+**D-8 KET LUAN QA:** "chon Line → Line 3D, chon may → Machine 3D" **DAT co so** · "toi uu, nhanh" **DAT** (cold-load bundle
+ngoai twin) · "dep, truc quan": mot tu dien DAT, bo cuc **CHO QUYET** · QD-18/19/21/23/24 **DAT** · **Bao mat du lieu: CHUA —
+khong nen nghiem thu** cho toi khi 4 lo dong va do lai bang `api-vai.mjs`/`http-v1.mjs`/`socket-vai.mjs`.
+
+**Dot 42 (giao tiep — an toan du lieu, tu quyet):** (1) `usdExport` scope tenant (khuon `phamViCua`, `NOT_FOUND`/rong) + cong
+quyen dung; (2) `moduleReads.ts:421/433` truyen `tenantScope` cua API key vao `machineDetail/robotDetail`; (3) `wipRouter.lineBalance`
+scope + `requirePermission` (hoac tro sang `mesControlTower.lineBalance` da rao — chon mot, xoa trung); (4) `sensorRouter` ctx +
+scope theo may; (5) **luoi tu dong API × vai** tu `api-vai.mjs` (thu tuc man goi × B/C/D ⇒ rong/404/403; A ⇒ NM1 co, NM18
+khong; ADM bypass); (6) ky thuat nho (11)(12) neu gon. Sau do **Dot 43 QA lan 5 chi bao mat** (`api-vai`, `http-v1`, `socket`)
++ bao cao tong ket.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
