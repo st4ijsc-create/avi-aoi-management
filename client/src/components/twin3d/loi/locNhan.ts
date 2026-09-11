@@ -375,6 +375,25 @@ function soSanh(a: NhanUngVien, b: NhanUngVien): number {
  * bbox. Đây chính là điều `__demNhan.chongLap = 0` ngầm khai mà không giữ được —
  * nay giữ được, và `locNhan.unit.test.ts` ghim nó bằng phép quét toàn bộ cặp.
  */
+/**
+ * ★★★ ĐỢT 45 (mục 4d) — ĐỆM DƯỚI cho cụm chip đáy-giữa: chỉ lớp phủ NẰM NGANG QUA TÂM canvas VÀ chạm mép dưới
+ * mới đẩy chip lên (thanh tua `/twin`: 38 px). Bản 4b/4c lấy MỌI lớp phủ chạm mép dưới ⇒ panel trái (top-0 bottom-0,
+ * `tren = 0`) cho đệm = CẢ chiều cao canvas ⇒ chip bay lên trên mép canvas (đo `probe-chip.json`: `demDuoi=669`,
+ * chip y = mép trên − 8, bị dải hợp nhất che) — và chẩn đoán "hộp drei" của 4c là SAI (G83 tự thân). Thuần, có lưới.
+ */
+export function demDuoiChoChip(vungCam: readonly HinhChuNhat[], rongPx: number, caoPx: number): number {
+  if (!(rongPx > 0) || !(caoPx > 0)) return 0;
+  const tamX = rongPx / 2;
+  let dem = 0;
+  for (const v of vungCam) {
+    const chamDay = v.duoi >= caoPx - 1;
+    const quaTam = v.trai <= tamX && v.phai >= tamX;
+    const khongPhuCaCanvas = v.tren > 0;
+    if (chamDay && quaTam && khongPhuCaCanvas) dem = Math.max(dem, caoPx - v.tren);
+  }
+  return dem;
+}
+
 export function locNhan(
   ungVien: NhanUngVien[],
   cauHinh: CauHinhLocNhan = {},

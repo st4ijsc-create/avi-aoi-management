@@ -21,6 +21,7 @@ import {
   demCapChongLap,
   locNhan,
   TRAN_NHAN_DOM,
+  demDuoiChoChip,
   type HinhChuNhat,
   type NhanUngVien,
   uocLuongRongNhanPx,
@@ -217,10 +218,8 @@ export function LopNhan({
     const vungCam = layVungCam(gl.domElement);
     // ★ Đợt 45 (mục 4) — chip đáy-giữa phải NHÔ LÊN TRÊN lớp phủ chạm mép dưới canvas (thanh tua `/twin`
     //   z-30 che chip ⇒ "còn N tên bị ẩn" chưa bao giờ nhìn thấy được trên `/twin` — chỉ DOM đọc được).
-    const demDuoi = vungCam.reduce(
-      (m, v) => (v.duoi >= size.height - 1 && v.tren < size.height ? Math.max(m, size.height - v.tren) : m),
-      0,
-    );
+    //   4d: chỉ lớp phủ NGANG QUA TÂM canvas mới đẩy (panel trái/phải top-0 bottom-0 KHÔNG — `demDuoiChoChip`).
+    const demDuoi = demDuoiChoChip(vungCam, size.width, size.height);
     setDemDuoiPx((cu) => (cu === demDuoi ? cu : demDuoi));
     const kq = locNhan(ungVien, {
       tranNhan,
