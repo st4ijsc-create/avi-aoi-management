@@ -28,6 +28,9 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
 import { validateUpload } from "../_core/uploadValidation";
+// ★ Đợt 42 — hàng rào tenant cho `usdExport` (QA Đợt 41 D-4 lỗ #1): cùng khuôn Đợt 40, không dựng bộ luật thứ hai (G12).
+import { phamViCua } from "./_phamViNguoiXem";
+import { trongPhamVi } from "../db/hierarchy";
 import {
   twinLiveEnabled,
   registerModel,
@@ -326,7 +329,19 @@ export const twinRouter = router({
         includePhysics: z.boolean().optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      /*
+       * ★★★ ĐỢT 42 (QA Đợt 41 D-4 lỗ #1, G116) — `factoryId` là lời TỰ KHAI của client.
+       *   Đo trước vá (`.qa-dot41/api-vai/B.json`): `operator1` (id 48, **0 gán**) `usdExport(1)` ⇒ 200 /
+       *   41.850 B mã SIM, `usdExport(18)` ⇒ 200 / 1.970 B mã `T12-SHOT-…` — USDA của CẢ HAI nhà máy rời
+       *   server, vì cổng duy nhất là RBAC `machine_monitoring` (alias → `machine_status`, 5/5 vai
+       *   non-admin đều có). `buildFactoryUsda(factoryId)` → `sceneGraph.ts` không nhận phạm vi.
+       *   Nhà máy ngoài phạm vi ⇒ `NOT_FOUND`, CÙNG hình dạng với nhà máy không tồn tại (G82 — một mã
+       *   riêng xác nhận nhà máy ấy có thật). Admin / phạm vi `null` ⇒ không thêm mệnh đề nào.
+       */
+      if (!(await trongPhamVi("factory", input.factoryId, phamViCua(ctx)))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, `Factory ${input.factoryId} not found`);
+      }
       const usda = await buildFactoryUsda(input.factoryId, {
         upAxis: input.upAxis,
         metersPerUnit: input.metersPerUnit,
