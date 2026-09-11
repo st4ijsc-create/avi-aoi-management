@@ -1,11 +1,11 @@
 {
-  "luc": "2026-09-11T20:25:31.818Z",
+  "luc": "2026-09-11T20:40:00.354Z",
   "duong": "/twin",
   "vp": {
     "width": 1280,
     "height": 720
   },
-  "msToiCanh": 3675,
+  "msToiCanh": 3677,
   "coChe": {
     "soObject": 1,
     "coHandler": 1,
@@ -13,6 +13,27 @@
     "ten": [
       "twin3d-lo-may-su-kien"
     ]
+  },
+  "lopPhu": {
+    "canvas": [
+      288,
+      207,
+      968,
+      489
+    ],
+    "lopBadge": [
+      288,
+      207,
+      968,
+      489
+    ],
+    "lopNhan": [
+      288,
+      207,
+      968,
+      489
+    ],
+    "soBadge": 5
   },
   "may": {
     "id": 246,
@@ -35,6 +56,6 @@
     "Y": 246.12
   },
   "urlSau": "http://localhost:3047/twin/may/246",
-  "msPlaywright": 41,
-  "treTrongTrang": 0.699999988079071
+  "msPlaywright": 15,
+  "treTrongTrang": 0.19999998807907104
 }
