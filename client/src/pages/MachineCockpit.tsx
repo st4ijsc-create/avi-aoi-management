@@ -55,6 +55,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { CuonNgangCoMep } from "@/components/patterns/CuonNgangCoMep";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { PackmlStateBadge } from "@/components/patterns/isaStateBadges";
@@ -878,8 +879,16 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
           <div className="py-16 text-center text-sm text-muted-foreground">{t("cockpit.loading", "Loading cockpit…")}</div>
         ) : (
           <Tabs defaultValue="overview" className="w-full">
-            <ScrollArea className="w-full">
-              <TabsList className="mb-2 inline-flex w-max">
+            {/* ★ Đợt 45 (mục 6/11) — 12 tab rộng ~1100 px: ở 680–1000 px khung, tab cuối bị cắt ("Cảnh b…")
+                mà `ScrollArea` không lộ thanh cuộn ⇒ mép mờ + ‹ › nổi, trạng thái ở `data-*` (đo được). */}
+            <CuonNgangCoMep
+              className="mb-2"
+              testid="thanh-tab-cockpit"
+              nutTestid="nut-cuon-tab"
+              nhanTrai={t("cockpit.cuonTabTrai", "Cuộn thanh tab sang trái")}
+              nhanPhai={t("cockpit.cuonTabPhai", "Cuộn thanh tab sang phải")}
+            >
+              <TabsList className="inline-flex w-max">
                 <TabsTrigger value="overview"><Activity className="mr-1 h-4 w-4" />{t("cockpit.tabOverview", "Overview")}</TabsTrigger>
                 <TabsTrigger value="health"><HeartPulse className="mr-1 h-4 w-4" />{t("cockpit.tabHealth", "Health / PdM")}</TabsTrigger>
                 <TabsTrigger value="telemetry"><Waves className="mr-1 h-4 w-4" />{t("cockpit.tabTelemetry", "Telemetry")}</TabsTrigger>
@@ -893,12 +902,15 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                 <TabsTrigger value="maintenance"><History className="mr-1 h-4 w-4" />{t("cockpit.tabMaintenance", "Maintenance")}</TabsTrigger>
                 <TabsTrigger value="actions"><Wrench className="mr-1 h-4 w-4" />{t("cockpit.tabActions", "Actions")}</TabsTrigger>
               </TabsList>
-            </ScrollArea>
+            </CuonNgangCoMep>
 
             {/* ── OVERVIEW ── */}
-            <TabsContent value="overview" className="space-y-4">
+            {/* ★ Đợt 45 (mục 6/12) — `@container`: dải KPI theo BỀ RỘNG KHUNG cockpit, không theo viewport.
+                Nhúng ở /twin/may @1280 khung chỉ 680 px: 4 cột ⇒ ô chữ 81 px, "Mất kết nối" gãy 3 dòng;
+                2 cột dưới 48 rem (768 px) ⇒ 1 dòng. Toàn trang (/machine/:id ≥ 1000 px) vẫn 4 cột như cũ. */}
+            <TabsContent value="overview" className="@container space-y-4">
               {/* KPI strip */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-4">
                 <MetricCard
                   icon={<Gauge className="h-4 w-4" />}
                   label={t("cockpit.kpiOee", "OEE")}
