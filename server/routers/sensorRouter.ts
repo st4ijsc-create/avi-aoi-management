@@ -18,9 +18,30 @@
 import { z } from "zod";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
 import { getDb } from "../db/connection";
 import { machineSensorReadings } from "../../drizzle/schema";
 import { sensorFeature, type SensorFeature } from "../services/predictiveMaintenanceService";
+// ★ Đợt 42 — hàng rào tenant theo MÁY (QA Đợt 41 D-4 lỗ #4): cùng khuôn Đợt 40, không dựng bộ luật thứ hai (G12).
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { trongPhamVi } from "../db/hierarchy";
+
+/**
+ * ★★★ ĐỢT 42 (QA Đợt 41 D-4 lỗ #4, G116) — `machineId` là lời TỰ KHAI của client.
+ *
+ * Hai thủ tục đọc ở đây là tab "Telemetry" của cockpit — mà màn `/twin/may/:id` NHÚNG (`MachineCockpitBody`).
+ * Trước đợt này cả hai khai `async ({ input })`, không bóc `ctx` một lần nào: mọi vai (kể cả 0 quyền, 0 gán)
+ * đọc được 3 loại cảm biến · 24 điểm của máy 1 khi tự nới `windowHours` (`.qa-dot41/api-vai/{B,C}.json`);
+ * UI mặc định 7 ngày thấy `[]` chỉ vì dữ liệu cũ (2026-07-15) — không phải vì có hàng rào.
+ *
+ * Máy ngoài phạm vi ⇒ `NOT_FOUND` / `ENTITY_NOT_FOUND`, CÙNG hình dạng với máy không tồn tại (G82) — khuôn
+ * "theo id ⇒ NOT_FOUND" của Đợt 40. `null` (admin / toàn quyền) ⇒ `trongPhamVi` trả `true`, không thêm cổng.
+ */
+async function doiMayTrongPhamVi(machineId: number, ctx: CoDanhTinh): Promise<void> {
+  if (!(await trongPhamVi("machine", machineId, phamViCua(ctx)))) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine ${machineId} not found`);
+  }
+}
 
 // ── Downsample: bucket rows into <= maxPoints buckets, avg/min/max per bucket. ──
 interface SeriesPoint {
@@ -75,7 +96,8 @@ export const sensorRouter = router({
       machineId: z.number().int().positive(),
       windowHours: z.number().int().min(1).max(24 * 90).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await doiMayTrongPhamVi(input.machineId, ctx); // ★ Đợt 42 — máy ngoài phạm vi ⇒ NOT_FOUND
       const db = await getDb();
       if (!db) return { available: false as const, types: [] };
 
@@ -122,7 +144,8 @@ export const sensorRouter = router({
       windowHours: z.number().int().min(1).max(24 * 90).optional(),
       maxPoints: z.number().int().min(50).max(5000).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await doiMayTrongPhamVi(input.machineId, ctx); // ★ Đợt 42 — máy ngoài phạm vi ⇒ NOT_FOUND
       const db = await getDb();
       const windowHours = input.windowHours ?? 24;
       const maxPoints = input.maxPoints ?? 500;
