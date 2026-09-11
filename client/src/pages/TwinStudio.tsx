@@ -147,22 +147,37 @@ export default function TwinStudio() {
   return (
     <div
       ref={khungRef}
-      className="flex flex-col gap-3 p-4"
+      /*
+       * ★★★ ĐỢT 45 (mục 7) — KHỐI TIÊU ĐỀ 2 HÀNG, CẢNH ≥ 55 % VÙNG LÀM VIỆC.
+       *   QA Đợt 44 (D-7 mục 13) đo @1600: tiêu đề + mô tả 2 dòng + "Toà nhà: 1" + thanh tab h-12 +
+       *   đệm = ~187 px trước khi tới tab; canvas 726×373 = 50 % vùng làm việc. @1280 vùng cảnh còn
+       *   193 px, canvas sàn 320 chui ra ngoài, mini-map che nút. Cùng nội dung xếp lại thành HAI hàng:
+       *     hàng 1: [tiêu đề · mô tả MỘT dòng (cắt, title đủ)]                [Nhà máy ▾]
+       *     hàng 2: [Thêm toà nhà | Chọn tệp bản vẽ | Thiết kế] · Toà nhà: 1
+       *   Không bỏ chữ nào (mô tả vẫn đọc đủ qua title; đếm toà nhà giữ testid) — chỉ đổi chỗ đứng.
+       */
+      className="flex flex-col gap-2 px-4 pb-3 pt-3"
       style={{ height: chieuCaoTruDinh("--twin-studio-top") }}
       data-testid="man-twin-studio"
     >
-      <header className="flex shrink-0 flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">{t("twin3d.studio.tieuDe")}</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{t("twin3d.studio.moTa")}</p>
+      <header className="flex shrink-0 items-center justify-between gap-4">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="shrink-0 text-lg font-semibold text-foreground">{t("twin3d.studio.tieuDe")}</h1>
+          <p
+            className="hidden min-w-0 truncate text-sm text-muted-foreground lg:block"
+            title={t("twin3d.studio.moTa")}
+            data-testid="mo-ta-studio"
+          >
+            {t("twin3d.studio.moTa")}
+          </p>
         </div>
-        <div className="grid min-w-52 gap-1.5">
-          <Label className="text-xs">{t("common.factory")}</Label>
+        <div className="flex shrink-0 items-center gap-2">
+          <Label className="text-xs text-muted-foreground">{t("common.factory")}</Label>
           <Select
             value={factoryId === null ? "" : String(factoryId)}
             onValueChange={(v) => setFactoryId(Number(v))}
           >
-            <SelectTrigger data-testid="chon-nha-may">
+            <SelectTrigger className="h-8 min-w-48" data-testid="chon-nha-may">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -176,32 +191,33 @@ export default function TwinStudio() {
         </div>
       </header>
 
-      {/* Đếm RỖNG khác đếm bằng 0 (NT-3.5): chưa tải xong hiện "—", không hiện 0. */}
-      <p className="text-xs text-muted-foreground" data-testid="dem-toa-nha">
-        {t("twin3d.toaNha.tieuDe")}:{" "}
-        {toaNhaQ.isLoading || factoryId === null ? "—" : (toaNhaQ.data?.length ?? 0)}
-      </p>
-
       <Tabs defaultValue="thiet-ke" className="flex min-h-0 flex-1 flex-col">
-        <TabsList>
-          <TabsTrigger value="dien-kich-thuoc" data-testid="tab-con-duong-b">
-            <Building2 className="mr-1.5 h-4 w-4" />
-            {t("twin3d.toaNha.themMoi")}
-          </TabsTrigger>
-          <TabsTrigger value="nhap-ban-ve" data-testid="tab-con-duong-a">
-            <FileUp className="mr-1.5 h-4 w-4" />
-            {t("twin3d.banVe.chonTep")}
-          </TabsTrigger>
-          {/* ★★★ ĐỢT 4 (§7) — xưởng dựng bố cục. ĐÂY là tab mang `<Canvas>`.
-              RB-4: Radix Tabs UNMOUNT nội dung tab không hoạt động, nên chỉ một
-              WebGL context sống tại một thời điểm — cùng cơ chế mà
-              `TwinHub.tsx:8-9` cố ý dựa vào. `window.__soCanvas` đo được điều
-              đó, và `KhungCanh` tự console.error nếu > 1. */}
-          <TabsTrigger value="thiet-ke" data-testid="tab-thiet-ke">
-            <LayoutGrid className="mr-1.5 h-4 w-4" />
-            {t("twin3d.studioUi.thietKe")}
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex shrink-0 flex-wrap items-center gap-3">
+          <TabsList className="h-9">
+            <TabsTrigger value="dien-kich-thuoc" data-testid="tab-con-duong-b">
+              <Building2 className="mr-1.5 h-4 w-4" />
+              {t("twin3d.toaNha.themMoi")}
+            </TabsTrigger>
+            <TabsTrigger value="nhap-ban-ve" data-testid="tab-con-duong-a">
+              <FileUp className="mr-1.5 h-4 w-4" />
+              {t("twin3d.banVe.chonTep")}
+            </TabsTrigger>
+            {/* ★★★ ĐỢT 4 (§7) — xưởng dựng bố cục. ĐÂY là tab mang `<Canvas>`.
+                RB-4: Radix Tabs UNMOUNT nội dung tab không hoạt động, nên chỉ một
+                WebGL context sống tại một thời điểm — cùng cơ chế mà
+                `TwinHub.tsx:8-9` cố ý dựa vào. `window.__soCanvas` đo được điều
+                đó, và `KhungCanh` tự console.error nếu > 1. */}
+            <TabsTrigger value="thiet-ke" data-testid="tab-thiet-ke">
+              <LayoutGrid className="mr-1.5 h-4 w-4" />
+              {t("twin3d.studioUi.thietKe")}
+            </TabsTrigger>
+          </TabsList>
+          {/* Đếm RỖNG khác đếm bằng 0 (NT-3.5): chưa tải xong hiện "—", không hiện 0. */}
+          <p className="text-xs text-muted-foreground" data-testid="dem-toa-nha">
+            {t("twin3d.toaNha.tieuDe")}:{" "}
+            {toaNhaQ.isLoading || factoryId === null ? "—" : (toaNhaQ.data?.length ?? 0)}
+          </p>
+        </div>
 
         <TabsContent value="dien-kich-thuoc" className="mt-4">
           {factoryId !== null && (
