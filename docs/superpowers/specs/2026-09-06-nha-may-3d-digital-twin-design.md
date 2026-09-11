@@ -6730,6 +6730,59 @@ HEAD brief `dac34691` (G121) · `.qa-dot38/scripts` khong ton tai · G5 lap: `ch
 **Dot 46 — QA THI GIAC lan 6** (doc lap, khong sua ma): 11 muc × 2 vp × vi/en, bbox + anh tu xem, doi chieu 15 muc D-7 (10 Dot 37 +
 3 Dot 39 + 1 Dot 41 + 1 Dot 44), hoi quy D-1/K/E/I/P/F, va **D-8 "dep" cuoi cung** ⇒ cap nhat trang nghiem thu.
 
+### 14q.25 DOT 46 - QA THI GIAC LAN 6: 11/11 muc Dot 45 DAT, 14/15 lich su het, 0 hoi quy - NHUNG "DEP, TRUC QUAN" CHUA: N2 + N1
+
+Tep tho `.qa-dot46/` (1.424 tep · 239 png · 177 json). **Khong sua ma.** Chu du an do lai: **96/2.387** · 4 luoi 180/180 · check 0
+· i18n 0 · D-1 sau cot doi phan quyet **0** · DB 11 bang khop · md5 5/5 · cay sach (agent tra CRLF bong ma). **Dieu kien do**:
+may chu dang chay **3 server `dist/index.js` cua phien khac** (CPU tich luy 113.226 / 104.535 / 62.842 s), 9 chrome + 25 node ⇒
+moi so thoi gian mang dieu kien nay (F1 thuong 3/4 chi vi `msToiMan` 2,5–4 s, font 3/11 loaded, 0 request ngoai).
+
+**D-1 11 muc:** bbox46 **vi 34/34 · en 34/34**; mat: 9 dep, muc 8 @1280 chat (ton dong 1,5 hang), muc 4 dung chip nhung canh van
+xau vi N1/N5. **D-2 15 muc lich su:** 14 het; **(8) con nua** — "TAO VIEC" tieu de trong 0 nut cho vai canView (`NganXuLy.tsx:474`
+h3 vo dieu kien) — Dot 45 dem muc 6 la "canh 280" va **bo roi nua sau**. **Hoi quy 0**: D-1 41/0, K 12/12, E 13/13, I 14/14, P
+DAT, 4 luoi 180/180, twin3d 2.387, census 4 do co san. Ablation: lat mac dinh nhan ⇒ M4 ×2 do; go 2+9 ⇒ M2a/M2b/M9 (+M4 noi day)
+do; nen xanh lai md5 895/895.
+
+**D-3 CAI MOI (`thigiac46.mjs` 22 trang thai × vi/en; `probe-*.mjs`):**
+
+| # | Phat hien | So do | Thuoc |
+|---|---|---|---|
+| **N2 ★★★** | **Re/bam MAY TREN CANH `/twin` va `/twin/line/2` khong phan ung** | 0/≈260 diem: `probe-may` 126 diem/vp re (cursor luon `auto`), `probe-hover2` bam neo nhan (URL khong doi ca Line), `probe-hover4` bam 60 diem vung may `/twin` ⇒ URL khong doi. **Doi chung cung phien**: `/twin-studio` bam canh ⇒ chon "SN-SIMVERIFY-01…"; `/factory-command` (cung `LoBatchMay`/BatchedMesh) re ⇒ `cursor=pointer` ⇒ Playwright/R3F/raycast **song**, chet chi o `CanhVanHanh`. `e2e/twin-*.spec.ts` **0 `mouse.click`** tren canh — 48 ca deu qua `may-hang-14`/`o-tram-14`/cay | ky thuat — goc re **chua dinh danh** |
+| **N1 ★★★** | Badge canh bao bi the "Chi so" che (G122 lop thu 3) | `/twin` @1600 **3/4** badge `biChe` boi `bang-kpi-noi` (z30 > z29): `▲SIM-L1-SPI` (**do, su co**) 1.425/1.428 px² = toan bo, `◆SIM-L2-CONVEYOR` 442, `●SIM-L1-AVI` 188; @1280 2/3; Line @1280 1/2 (CONVEYOR toan bo). Tuong phan clip SPI **1,02**. `LopCanhBao`/`locBadge` **khong doc `[data-che-nhan]`** (LopNhan co, `soVungCam=5`); luoi M4 chi do chip + nhan ⇒ **mu badge**. 7 andon ⇒ 4 ve ⇒ **1 badge that su nhin thay** @1600 | ky thuat (kit) |
+| N3 | Tay nam thu panel trai de icon hang canh bao | `nut-thu-trai` 21×42 z30 `left-0` tren panel: de "▲" 166/160 px² @1280 | thiet ke — cho quyet |
+| N4 | Chu nho duoi AA | `goi-y-chon-may` 3,74 (12/12 < 4,5) · `kpi-mau-so` 4,08–4,38 · **badge da ack (opacity .6)** median 3,27, 51/60 < 4,5, 25/60 < 3 | thiet ke — cho quyet |
+| N5 | Nhan × badge chong cheo LOP (hai bo khu chong doc lap) | `SIM-L1-AVI` × `◆SIM-L2-CONVEYOR` 344 px²; `nhanTatCa` @1280 `SIM-L2-PACK` × `◆SIM-L2-ROBOT` **1.819 px²** (chu tron) | ky thuat (kit) |
+| N6 | Cat chu khong `title` | `DanhSachMay.tsx:386` `truncate` (5 hang @1280); `<select chon-toa-nha>`; cay studio @1280 | ky thuat nho |
+| N7 | May: cung ten/trang thai lap 4 lan; "vien tin cay" nam trong ngan phai, khong o goc tren-phai canh nhu 3 man kia | anh `may-mac-dinh-1600x900.png` | thiet ke — quan sat |
+
+Khong thay moi: tran 0/44 trang thai · Geist 3 face 44/44 · nhan trong canvas, 0 bi che, 0 nhan–nhan chong · ngan mo phong khong
+che · cockpit cuon khong dung canh · en 0 chu Viet. **D-6 duong di @1280 co anh**: `/twin` 1.475 ms → re may **khong doi gi** →
+tab Cay → bam line 2 → `/twin/line/2` 149 ms → o tram 14 → `/twin/may/14` 94 ms → Back 24 ms → Back 43 ms.
+
+> #### ★★★ G123 - **KET CUC GOC DUOC "DO" QUA DUONG VONG SUOT 46 DOT** - "chon vao may" tren canh chua tung co e2e
+> 48 ca D-1, K1–K11, duong di co video (Dot 37/39/41/44/45) deu bam **danh sach / o tram / cay** — khong ca nao `mouse.click`
+> vao khoi may tren canvas. Ba man "DAT" 5 lan QA ma hanh dong dau tien cua nguoi van hanh (*bam cai minh thay*) **khong chay**.
+> Doi chung cung kit (`/factory-command`, studio) song ⇒ loi **khu tru** o `CanhVanHanh` (nghi: memo `CanhVanHanhOnDinh` Dot 40 /
+> lop on-dinh-ham 4b Dot 45 / `raycast={() => null}` `:465` / `internal.interaction`). ⇒ Luoi cho mot ket cuc phai di **dung
+> duong nguoi dung**, khong phai duong de do. Va **doi chung duong cung kit** la cach dinh vi loi nhanh nhat.
+
+**D-8 QA lan 6 — "dep, truc quan": CHUA.** Chan: N2 + N1 (ky thuat, trong twin). Cho quyet (thiet ke): N3, N4, N7, @1280 ton
+dong 1,5 hang. Ky thuat nho: N5, N6, (8)-nua-sau, breadcrumb "Tang" khong ten.
+
+**Brief sai/lech lan 20 (9):** "trang thai da chon may tren `/twin`" khong ton tai sau QD-23 · "hover nhan" khong co tac dung
+de do · §14q.24 "hover giu" la loi khai · `tomtat-D1` Dot 45 doc `.qa-dot44/` hai lan (mat cot 41) — QA sua · tai may 9 + 25–26
+· "9 muc thay duoc bang mat" — anh sau3 da lo badge bi che, khong ai gan co (ke ca chu du an) · (8) nua sau roi · `vitest run
+twin` co the do 1 ca timeout duoi tai.
+
+**Dot 47 (giao tiep — ky thuat, tu quyet):** (A) **N2**: dinh danh goc re bang **ablation theo commit** (dist tai `d01ef0f7~1`
+truoc Dot 40 vs sau; `1c6674dd~1`/`abe7a71c` Dot 45) + cua so do `__demTuongTac` (object co handler, hit dau tai NDC) ⇒ va ⇒
+**e2e bam may TREN CANH ⇒ `/twin/may/:id`** o `/twin` va `/twin/line/2` (2 vp), cursor `pointer` khi re, bam **nhan** cung dieu
+huong (click ≠ drag: pointer-up cach pointer-down < 4 px). (B) **N1**: `LopCanhBao`/`locBadge` nhan `vungCam` tu `[data-che-nhan]`
+nhu `locNhan`; luoi M4 quet `badge-canh-bao-*` (trong canvas, giao lop phu = 0); **badge su co do khong bao gio bi che**. (C) N5: mot
+ngan sach hinh chu nhat chung nhan + badge. (D) N6 `title`. (E) (8) an `<section nhom-tao-viec>` khi khong quyen. (F) sua
+`tomtat-D1` cot. Sau do **Dot 48 QA lan 7** (thi giac + duong di bam tren canh). Thiet ke N3/N4/N7/@1280 ton dong: trinh chu so
+huu.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
