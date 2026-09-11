@@ -157,6 +157,8 @@ export function LopNhan({
   const [soAn, setSoAn] = useState(0);
   /** ★ Đợt 35 — số máy BẤT THƯỜNG ngoài khung nhìn — nguồn của chip "N sự cố ngoài khung". */
   const [soSuCoNgoai, setSoSuCoNgoai] = useState(0);
+  /** ★ Đợt 45 — đệm dưới (px) để cụm chip đáy-giữa nhô lên trên lớp phủ chạm mép dưới canvas. */
+  const [demDuoiPx, setDemDuoiPx] = useState(0);
   const tamRef = useRef(new THREE.Vector3());
   const chuKyRef = useRef("");
   /**
@@ -213,6 +215,13 @@ export function LopNhan({
 
     // ★ Đợt 35 — vùng cấm = bbox THẬT của lớp phủ DOM, quy về gốc canvas (xem `layVungCam`).
     const vungCam = layVungCam(gl.domElement);
+    // ★ Đợt 45 (mục 4) — chip đáy-giữa phải NHÔ LÊN TRÊN lớp phủ chạm mép dưới canvas (thanh tua `/twin`
+    //   z-30 che chip ⇒ "còn N tên bị ẩn" chưa bao giờ nhìn thấy được trên `/twin` — chỉ DOM đọc được).
+    const demDuoi = vungCam.reduce(
+      (m, v) => (v.duoi >= size.height - 1 && v.tren < size.height ? Math.max(m, size.height - v.tren) : m),
+      0,
+    );
+    setDemDuoiPx((cu) => (cu === demDuoi ? cu : demDuoi));
     const kq = locNhan(ungVien, {
       tranNhan,
       chiNhanBatThuong,
@@ -362,10 +371,12 @@ export function LopNhan({
         */}
         {(chuNhanAn && soAn > 0) || (chuSuCoNgoaiKhung && soSuCoNgoai > 0) ? (
           <div
+            data-testid="cum-chip-nhan"
+            data-dem-duoi-px={demDuoiPx}
             style={{
               position: "absolute",
               left: "50%",
-              bottom: 8,
+              bottom: 8 + demDuoiPx,
               transform: "translateX(-50%)",
               display: "flex",
               flexDirection: "column",

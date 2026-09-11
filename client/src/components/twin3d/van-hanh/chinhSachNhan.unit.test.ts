@@ -53,6 +53,19 @@ describe("Đợt 45 mục 4 — chính sách nhãn: URL > đã nhớ > mặc đ�
     expect(PANEL_THU_DUOC).toContain("nhanTatCa");
     expect(docThu("nhanTatCa")).toEqual(["nhanTatCa"]);
   });
+  it("★★★ G5 — `CanhVanHanh` CHUYỂN `chuNhanAnTheoChinhSach` QUA lớp ổn-định-hàm (Đợt 40 liệt kê prop cố định — prop mới KHÔNG tự lọt)", () => {
+    const src = readFileSync(new URL("./CanhVanHanh.tsx", import.meta.url), "utf8");
+    // Đo lần đầu (bbox-sau Đợt 45): chip vẫn in "còn 41 tên bị ẩn" dù TwinVanHanh đã truyền câu theo chính sách —
+    // lớp `PropsHam`/`hamRef` chỉ chuyển 4 hàm đã liệt kê. Ba chỗ phải cùng có tên prop:
+    expect(src).toMatch(/type PropsHam = Pick<[\s\S]*?"chuNhanAnTheoChinhSach"/);
+    expect(src).toMatch(/chuNhanAnTheoChinhSach: props\.chuNhanAnTheoChinhSach/);
+    expect(src).toMatch(/chuNhanAnTheoChinhSach=\{coChuNhanAnTheoChinhSach \? chuNhanAnTheoChinhSachOnDinh : undefined\}/);
+    // và LopNhan chọn câu theo chính sách khi bật.
+    const lop = readFileSync(new URL("../loi/LopNhan.tsx", import.meta.url), "utf8");
+    expect(lop).toMatch(/chiNhanBatThuong && chuNhanAnTheoChinhSach \? chuNhanAnTheoChinhSach : chuNhanAn/);
+    expect(lop).toMatch(/bottom: 8 \+ demDuoiPx/);
+  });
+
   it("★ G16 — `TwinVanHanh` GỌI `chiNhanBatThuongTu` (không còn `thu.includes(\"nhanBatThuong\")` trần)", () => {
     const src = readFileSync(new URL("../../../pages/TwinVanHanh.tsx", import.meta.url), "utf8");
     expect(src).toMatch(/chiNhanBatThuongTu\(/);

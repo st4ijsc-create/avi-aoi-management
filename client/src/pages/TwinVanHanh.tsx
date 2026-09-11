@@ -3446,10 +3446,11 @@ export function ThanTwinVanHanh() {
             ) : null}
           </div>
 
-          {/* ★ Đợt 45 (mục 2) — gợi ý thay cho ngăn phải rỗng: một dòng, đáy-phải cảnh, trên thanh tua; vùng cấm nhãn. */}
+          {/* ★ Đợt 45 (mục 2) — gợi ý thay cho ngăn phải rỗng: một dòng, góc trên-phải NGAY DƯỚI viên tin cậy
+              (đáy-giữa là chỗ của chip nhãn `LopNhan`, đáy-phải đụng nó ở 1280); vùng cấm nhãn. */}
           {nganPhaiTrong ? (
             <p
-              className="pointer-events-none absolute bottom-12 right-2 z-20 max-w-[min(24rem,calc(100%-1rem))] truncate rounded-md border bg-background/80 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur"
+              className="pointer-events-none absolute right-2 top-12 z-20 max-w-[min(24rem,calc(100%-1rem))] truncate rounded-md border bg-background/80 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur"
               data-testid="goi-y-chon-may"
               data-che-nhan="1"
               title={t("twin3d.vanHanh.chuaChon", "Chọn một máy trên cảnh hoặc trong danh sách để mở màn Máy 3D.")}

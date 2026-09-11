@@ -592,7 +592,10 @@ type PropsDuLieu = Pick<
   CanhVanHanhProps,
   "may" | "nhan" | "canhBao" | "dongChay" | "wip" | "vienSucKhoe" | "vung" | "khungNhin"
 >;
-type PropsHam = Pick<CanhVanHanhProps, "onChonMay" | "onCameraDoi" | "chuNhanAn" | "chuSuCoNgoaiKhung">;
+type PropsHam = Pick<
+  CanhVanHanhProps,
+  "onChonMay" | "onCameraDoi" | "chuNhanAn" | "chuNhanAnTheoChinhSach" | "chuSuCoNgoaiKhung"
+>;
 
 /** Khoá giá trị của một prop dữ liệu — `undefined` và `null` phân biệt (bỏ trống ≠ tắt). */
 function khoaGiaTri(v: unknown): string {
@@ -612,16 +615,20 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
   const khungNhin = useOnDinhTheoGiaTri(props.khungNhin, khoaGiaTri(props.khungNhin));
 
   // ── Prop hàm: trampoline ổn định đọc bản MỚI NHẤT — tầng ngoài luôn render nên `ref` luôn tươi. ──
+  // ★ Đợt 45 (mục 4) — G5 đo được: thêm prop hàm ở `CanhVanHanhProps` mà KHÔNG thêm vào ba chỗ dưới ⇒ prop
+  //   "có mặt" nhưng không bao giờ tới `LopNhan` (chip vẫn in câu cũ). Lưới `chinhSachNhan.unit.test.ts` ghim.
   const hamRef = useRef<PropsHam>({
     onChonMay: props.onChonMay,
     onCameraDoi: props.onCameraDoi,
     chuNhanAn: props.chuNhanAn,
+    chuNhanAnTheoChinhSach: props.chuNhanAnTheoChinhSach,
     chuSuCoNgoaiKhung: props.chuSuCoNgoaiKhung,
   });
   hamRef.current = {
     onChonMay: props.onChonMay,
     onCameraDoi: props.onCameraDoi,
     chuNhanAn: props.chuNhanAn,
+    chuNhanAnTheoChinhSach: props.chuNhanAnTheoChinhSach,
     chuSuCoNgoaiKhung: props.chuSuCoNgoaiKhung,
   };
   const onChonMay = useCallback((id: number | null) => hamRef.current.onChonMay(id), []);
@@ -631,8 +638,13 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
   );
   // `undefined` phải GIỮ là `undefined` (chip "còn N tên bị ẩn" chỉ hiện khi có chữ) — không bọc thành hàm rỗng.
   const coChuNhanAn = props.chuNhanAn !== undefined;
+  const coChuNhanAnTheoChinhSach = props.chuNhanAnTheoChinhSach !== undefined;
   const coChuSuCo = props.chuSuCoNgoaiKhung !== undefined;
   const chuNhanAnOnDinh = useCallback((n: number) => hamRef.current.chuNhanAn?.(n) ?? "", []);
+  const chuNhanAnTheoChinhSachOnDinh = useCallback(
+    (n: number) => hamRef.current.chuNhanAnTheoChinhSach?.(n) ?? "",
+    [],
+  );
   const chuSuCoOnDinh = useCallback((n: number) => hamRef.current.chuSuCoNgoaiKhung?.(n) ?? "", []);
 
   return (
@@ -649,6 +661,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
       onChonMay={onChonMay}
       onCameraDoi={onCameraDoi}
       chuNhanAn={coChuNhanAn ? chuNhanAnOnDinh : undefined}
+      chuNhanAnTheoChinhSach={coChuNhanAnTheoChinhSach ? chuNhanAnTheoChinhSachOnDinh : undefined}
       chuSuCoNgoaiKhung={coChuSuCo ? chuSuCoOnDinh : undefined}
       sanRongM={props.sanRongM}
       sanSauM={props.sanSauM}
