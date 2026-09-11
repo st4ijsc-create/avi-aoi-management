@@ -25,6 +25,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 
 import { laCheDoDo } from "./cheDoDo";
+import { THUOC_TINH_CHE_NHAN } from "./LopNhan";
 
 /** Trần DPR — §4 bảng ngân sách. Không nới, kể cả trên màn Retina. */
 export const DPR_TRAN: [number, number] = [1, 1.5];
@@ -340,6 +341,49 @@ function CuaSoDoTuongTac() {
   return null;
 }
 
+/**
+ * ★★★ Đợt 47 (N1) — LỚP PHỦ DOM ĐỔI KÍCH THƯỚC / XUẤT HIỆN ⇒ YÊU CẦU MỘT KHUNG.
+ *
+ * `LopNhan`/`LopCanhBao` đọc vùng cấm (`[data-che-nhan]`) trong `useFrame` — tức chỉ ở khung ĐƯỢC VẼ.
+ * Với `frameloop="demand"`, thẻ "Chỉ số" (`bang-kpi-noi`) lớn lên khi truy vấn KPI về mà KHÔNG có khung
+ * nào ⇒ badge/nhãn giữ vị trí tính trên vùng cấm CŨ. Đo được sau vá N1 (`.qa-dot47/probe/nhan47-sau.json`):
+ * `__demBadge.soVungCam = 5`, `biChe = 0` mà badge SPI đỏ vẫn nằm trọn dưới thẻ KPI 1.428 px² — thuật toán
+ * đúng trên dữ liệu cũ. ResizeObserver trên MỌI lớp phủ + quét lớp phủ mới khi DOM đổi ⇒ `invalidate()`
+ * đúng lúc hình dạng vùng cấm đổi; không đổi ⇒ không khung (giữ idle 0 khung/40 s của Đợt 40 T4).
+ */
+function TheoDoiLopPhu() {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof ResizeObserver === "undefined" ||
+      typeof MutationObserver === "undefined"
+    )
+      return;
+    const daTheoDoi = new WeakSet<Element>();
+    const ro = new ResizeObserver(() => invalidate());
+    const quet = () => {
+      let moi = false;
+      for (const el of document.querySelectorAll(`[${THUOC_TINH_CHE_NHAN}]`)) {
+        if (daTheoDoi.has(el)) continue;
+        daTheoDoi.add(el);
+        ro.observe(el);
+        moi = true;
+      }
+      if (moi) invalidate();
+    };
+    quet();
+    // Chỉ `childList`: lớp phủ MỚI gắn vào cây. Không `attributes` — mỗi khung nhãn/badge đổi style hàng chục lần.
+    const mo = new MutationObserver(quet);
+    mo.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      mo.disconnect();
+      ro.disconnect();
+    };
+  }, [invalidate]);
+  return null;
+}
+
 /** Đặt camera ban đầu ĐÚNG MỘT LẦN — đổi prop sau không giật camera của người dùng. */
 function CameraBanDau({ viTri }: { viTri: readonly [number, number, number] }) {
   const camera = useThree((s) => s.camera);
@@ -426,6 +470,7 @@ export function KhungCanh({
         <BatMatContext onMat={khiMat} onKhoiPhuc={khiKhoiPhuc} />
         <BomThongKe />
         <CuaSoDoTuongTac />
+        <TheoDoiLopPhu />
         {children}
       </Canvas>
 

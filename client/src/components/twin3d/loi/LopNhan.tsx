@@ -42,8 +42,13 @@ import { laBam, lechPx } from "./phanBietBamKeo";
  */
 export const THUOC_TINH_CHE_NHAN = "data-che-nhan";
 
-/** ★ Đợt 31 — lớp `fullscreen` neo vào TÂM canvas (xem docblock tại chỗ dùng). ★ Đợt 40 — hằng module. */
-const TAM_CANVAS = (
+/**
+ * ★ Đợt 31 — lớp `fullscreen` neo vào TÂM canvas (xem docblock tại chỗ dùng). ★ Đợt 40 — hằng module.
+ * ★ Đợt 47 — EXPORT: `LopCanhBao` dùng CÙNG hàm. Đo được (`.qa-dot47/run-probe-lop47.log`): lớp badge lệch canvas
+ *   (−57,−96) ở `/twin` 1600 — đúng con số Đợt 31 của nhãn — và (−443,−142) ở Line 1600, vì Đợt 31 chỉ vá lớp nhãn
+ *   (G110: cùng kit, màn thứ ba không quét). MỌI `<Html fullscreen>` của kit phải đi qua hằng này.
+ */
+export const TAM_CANVAS = (
   _el: unknown,
   _camera: unknown,
   size: { width: number; height: number },
@@ -170,6 +175,7 @@ export function LopNhan({
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const gl = useThree((s) => s.gl);
+  const invalidate = useThree((s) => s.invalidate);
   /** ★ Đợt 47 — hộp THẬT (đã xếp tầng, kích thước đo được) của các nhãn đang vẽ, cho phép bấm-lên-nhãn. */
   const hopDaVeRef = useRef<{ machineId: number; hop: HinhChuNhat }[]>([]);
   const onChonNhanRef = useRef(onChonNhan);
@@ -269,16 +275,19 @@ export function LopNhan({
     }
 
     // ★ Đợt 35 — vùng cấm = bbox THẬT của lớp phủ DOM, quy về gốc canvas (xem `layVungCam`).
-    const vungCamDom = layVungCam(gl.domElement);
-    // ★ Đợt 47 (N5) — hộp BADGE đã vẽ ở khung này (`LopCanhBao` chạy TRƯỚC trong cùng khung, ghi sổ `hopDaVe`)
-    //   là vùng cấm THÊM: MỘT ngân sách hình chữ nhật cho nhãn + badge, không phải hai bộ khử chồng độc lập
-    //   (QA Đợt 46: nhãn đè badge 344–1.819 px²). Badge là alarm nên badge giữ chỗ, nhãn nhường.
-    const hopBadge = docHopDaVe(gl.domElement, LOP_BADGE);
-    const vungCam = hopBadge.length > 0 ? [...vungCamDom, ...hopBadge] : vungCamDom;
+    const vungCam = layVungCam(gl.domElement);
     // ★ Đợt 45 (mục 4) — chip đáy-giữa phải NHÔ LÊN TRÊN lớp phủ chạm mép dưới canvas (thanh tua `/twin`
     //   z-30 che chip ⇒ "còn N tên bị ẩn" chưa bao giờ nhìn thấy được trên `/twin` — chỉ DOM đọc được).
     //   4d: chỉ lớp phủ NGANG QUA TÂM canvas mới đẩy (panel trái/phải top-0 bottom-0 KHÔNG — `demDuoiChoChip`).
-    const demDuoi = demDuoiChoChip(vungCamDom, size.width, size.height);
+    //   Tính TRƯỚC khi cộng hộp badge: chip chỉ né lớp phủ DOM.
+    const demDuoi = demDuoiChoChip(vungCam, size.width, size.height);
+    const soLopPhuDom = vungCam.length;
+    // ★ Đợt 47 (N5) — hộp BADGE đã vẽ ở khung này (`LopCanhBao` chạy TRƯỚC trong cùng khung, ghi sổ `hopDaVe`)
+    //   CỘNG VÀO vùng cấm: MỘT ngân sách hình chữ nhật cho nhãn + badge, không phải hai bộ khử chồng độc lập
+    //   (QA Đợt 46: nhãn đè badge 344–1.819 px²). Badge là alarm nên badge giữ chỗ, nhãn nhường — và nhường
+    //   bằng cách ĐẨY TẦNG (`locNhan` Đợt 47), không phải biến mất.
+    const hopBadge = docHopDaVe(gl.domElement, LOP_BADGE);
+    for (const h of hopBadge) vungCam.push(h);
     setDemDuoiPx((cu) => (cu === demDuoi ? cu : demDuoi));
     const kq = locNhan(ungVien, {
       tranNhan,
@@ -308,7 +317,8 @@ export function LopNhan({
         // ★ Đợt 35 — ba đại lượng mới: hộp thò mép, bị lớp phủ che, và SỰ CỐ ngoài frustum.
         vuotMep: kq.soVuotMep,
         biChe: kq.soBiChe,
-        soVungCam: vungCamDom.length,
+        soVungCam: vungCam.length,
+        soLopPhuDom,
         soHopBadge: hopBadge.length,
         suCoNgoaiKhung: kq.soBatThuongNgoaiKhung,
         // ★ Số CẶP nhãn CÒN chồng nhau trong tập được vẽ — đại lượng KHÁC với
@@ -510,7 +520,12 @@ export function LopNhan({
               if (!el) return;
               const r = el.getBoundingClientRect();
               if (r.width > 0 && r.height > 0) {
+                const cu = coNhanRef.current.get(n.khoa);
                 coNhanRef.current.set(n.khoa, { rongPx: r.width, caoPx: r.height });
+                // ★ Đợt 47 — số đo THẬT khác trị đã dùng (khung đầu là ước lượng) ⇒ xin MỘT khung để khử chồng
+                //   tính lại trên số thật. Với `frameloop="demand"` không ai xin hộ; hội tụ sau một khung (số
+                //   đo không đổi ⇒ không xin nữa).
+                if (!cu || Math.abs(cu.rongPx - r.width) > 0.5 || Math.abs(cu.caoPx - r.height) > 0.5) invalidate();
               }
             }}
             style={{
@@ -562,8 +577,13 @@ export interface WindowCoDo extends Window {
     vuotMep: number;
     /** ★ Đợt 35 — hộp nhãn đè lên lớp phủ DOM `[data-che-nhan]` ⇒ không vẽ. */
     biChe: number;
-    /** ★ Đợt 35 — số vùng cấm đọc được từ DOM ở khung này (0 ⇒ màn chưa đánh dấu lớp phủ nào). */
+    /**
+     * ★ Đợt 35 — số vùng cấm ở khung này. ★ Đợt 47 — = lớp phủ DOM + hộp badge đã vẽ (`soLopPhuDom` +
+     * `soHopBadge`); 0 ⇒ màn chưa đánh dấu lớp phủ nào VÀ không có badge.
+     */
     soVungCam: number;
+    /** ★ Đợt 47 (N5) — riêng số lớp phủ DOM (`[data-che-nhan]`) — con số Đợt 35 của `soVungCam`. */
+    soLopPhuDom: number;
     /** ★ Đợt 47 (N5) — số hộp BADGE đã vẽ mà lớp nhãn nhận làm vùng cấm thêm (sổ `hopDaVe`). */
     soHopBadge: number;
     /** ★ Đợt 35 — số máy BẤT THƯỜNG ngoài frustum — nguồn của chip "N sự cố ngoài khung". */

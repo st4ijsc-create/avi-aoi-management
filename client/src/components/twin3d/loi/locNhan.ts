@@ -441,16 +441,19 @@ export function locNhan(
   for (const n of daSap) {
     const hop = hopNhan(n, rongMacDinh, caoMacDinh);
 
-    // ★ Đợt 35 — hai cửa CHẠY TRƯỚC khử chồng/trần: nhãn không vẽ được thì không
+    // ★ Đợt 35 — cửa mép CHẠY TRƯỚC khử chồng/trần: nhãn không vẽ được thì không
     //   được chiếm suất, cũng không được "giữ chỗ" để giết một nhãn khác.
     if (khungCanvas && !hopTrongKhung(hop, khungCanvas)) {
       soVuotMep += 1;
       continue;
     }
-    if (vungCam.length > 0 && vungCam.some((v) => haiHopChongNhau(v, hop))) {
-      soBiChe += 1;
-      continue;
-    }
+    // ★ Đợt 47 (N5) — VÙNG CẤM KHÔNG CÒN LÀ CỬA GÁC CỨNG Ở TẦNG 0. Trước: hộp tầng 0 chạm vùng cấm ⇒ bỏ
+    //   ngay, không thử tầng nào (Đợt 35 viết khi vùng cấm chỉ là panel/KPI to). Nay hộp BADGE đã vẽ cũng là
+    //   vùng cấm (sổ `hopDaVe`), và badge neo ngay TRÊN nhãn cùng máy ⇒ với cửa gác cứng, MỌI nhãn máy có
+    //   badge bị bỏ (đo `/twin` 1600: 6/6 `biChe`, Line 12 → 6). Vùng cấm nay tham gia vòng xếp tầng như
+    //   va chạm nhãn: tầng 0 chạm ⇒ thử tầng khác; hết tầng mới bỏ và đếm `soBiChe` (gốc là bị che).
+    //   `xepTang` tắt (người gọi cũ) ⇒ chỉ có tầng 0 ⇒ kết quả Y HỆT bản cũ.
+    const chamVungCamTang0 = vungCam.length > 0 && vungCam.some((v) => haiHopChongNhau(v, hop));
 
     // Khử chồng lấp: nếu bbox đè lên một nhãn ĐÃ giữ (ưu tiên cao hơn) thì thử
     // ĐẨY LÊN tối đa `TANG_NHAN_TOI_DA` tầng (★ Đợt 35); hết tầng mới bỏ.
@@ -468,6 +471,7 @@ export function locNhan(
       const lech = k * (cao + KHE_TANG_PX);
       const thu: HinhChuNhat = k === 0 ? hop : { ...hop, tren: hop.tren - lech, duoi: hop.duoi - lech };
       // Tầng đẩy phải nằm TRỌN trong canvas và ngoài vùng cấm. `continue` chứ không `break`: hướng kia còn có thể được.
+      if (k === 0 && chamVungCamTang0) continue;
       if (k !== 0 && khungCanvas && !hopTrongKhung(thu, khungCanvas)) continue;
       if (k !== 0 && vungCam.length > 0 && vungCam.some((v) => haiHopChongNhau(v, thu))) continue;
       let chongLap = false;
@@ -484,7 +488,9 @@ export function locNhan(
       }
     }
     if (hopVe === null) {
-      soBiChongLap += 1;
+      // Gốc rễ của việc không vẽ được: tầng 0 bị vùng cấm che ⇒ `soBiChe`; còn lại là chồng nhãn.
+      if (chamVungCamTang0) soBiChe += 1;
+      else soBiChongLap += 1;
       continue;
     }
     if (ve.length >= tranNhan) {

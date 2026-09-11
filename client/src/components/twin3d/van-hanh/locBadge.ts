@@ -199,18 +199,22 @@ function datDuoc(
 }
 
 /**
- * Ứng viên dời chỗ theo khoảng cách TĂNG DẦN: mỗi bước thử xuống, lên, phải, trái.
- * Xuống trước: badge neo TRÊN nóc máy, phía dưới là thân máy — chỗ trống tự nhiên nhất
- * và mũi tên ngắn nhất; lớp phủ hay che là dải trên (KPI) nên "lên" thường vô ích.
+ * Ứng viên dời chỗ theo khoảng cách TĂNG DẦN: mỗi bước thử LÊN, phải, trái, rồi mới XUỐNG.
+ *
+ * ★ Xuống SAU CÙNG — đo được (`.qa-dot47/run-probe-nhan47-sau4.log`): bản đầu thử xuống trước
+ *   ⇒ badge dời rơi đúng vào chỗ nhãn máy xếp tầng (nhãn neo ngay DƯỚI badge cùng máy) ⇒ `/twin`
+ *   1600 chỉ còn 3/6 nhãn máy bất thường, 1280 còn 1/6. Lên giữ trật tự "badge trên nhãn"; ngang
+ *   giữ badge cùng hàng với badge kề (đọc thành một dải alarm); xuống là lựa chọn cuối vì nó
+ *   đè lên thân máy và tranh chỗ với nhãn.
  */
 function* ungVienDoiCho(hop: HinhChuNhat): Generator<HinhChuNhat> {
   const buocDoc = hop.duoi - hop.tren + KHE_BADGE_PX;
   const buocNgang = hop.phai - hop.trai + KHE_BADGE_PX;
   for (let k = 1; k <= SO_BUOC_DOI_CHO; k += 1) {
-    yield dichHop(hop, 0, k * buocDoc);
     yield dichHop(hop, 0, -k * buocDoc);
     yield dichHop(hop, k * buocNgang, 0);
     yield dichHop(hop, -k * buocNgang, 0);
+    yield dichHop(hop, 0, k * buocDoc);
   }
 }
 

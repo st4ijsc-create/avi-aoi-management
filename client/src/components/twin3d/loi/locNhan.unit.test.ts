@@ -732,3 +732,45 @@ describe("uocLuongRongNhanPx — cận trên nhẹ của bề rộng thật (đo
   });
 });
 
+/* ★★★ Đợt 47 (N5) — VÙNG CẤM THAM GIA XẾP TẦNG: hộp badge đã vẽ là vùng cấm ⇒ nhãn cùng máy ĐẨY tầng, không bỏ */
+describe("★★★ Đợt 47 — vùng cấm không còn là cửa gác cứng ở tầng 0 khi `xepTang`", () => {
+  const KHUNG = { rong: 1000, cao: 600 };
+  const locXT = (ds: NhanUngVien[], cfg: Parameters<typeof locNhan>[1] = {}) =>
+    locNhan(ds, { xepTang: true, xepTangXuong: true, khungCanvas: KHUNG, ...cfg });
+  /** Badge 84×18 neo ngay TRÊN nhãn cùng máy (badge cao hơn nhãn — T-4); nhãn neo y=300 ⇒ hộp t0 [278..300]. */
+  const BADGE = { trai: 258, phai: 342, tren: 270, duoi: 288 };
+
+  it("★ CA GỐC RỄ (đo /twin 1600 sau vá N1: 6/6 nhãn `biChe`, Line 12 → 6): nhãn dưới badge được ĐẨY tầng, vẫn vẽ", () => {
+    const kq = locXT([nhan35("spi", 300, 300, { batThuong: true, rongPx: 120, caoPx: 22 })], { vungCam: [BADGE] });
+    expect(kq.ve.map((v) => v.khoa)).toEqual(["spi"]);
+    expect(kq.soBiChe).toBe(0);
+    expect(kq.ve[0].tang).not.toBe(0);
+    expect(haiHopChongNhau(kq.ve[0].hop, BADGE)).toBe(false);
+    expect(hopTrongKhung(kq.ve[0].hop, KHUNG)).toBe(true);
+  });
+
+  it("hết tầng (vùng cấm phủ cả cột trên lẫn dưới) ⇒ bỏ và đếm `soBiChe` (gốc là bị che), không đếm chồng", () => {
+    const tuong = { trai: 0, phai: 1000, tren: 200, duoi: 400 };
+    const kq = locXT([nhan35("a", 300, 300, { rongPx: 120, caoPx: 22 })], { vungCam: [tuong] });
+    expect(kq.ve).toEqual([]);
+    expect(kq.soBiChe).toBe(1);
+    expect(kq.soBiChongLap).toBe(0);
+    expect(kq.soBiGiau).toBe(1);
+  });
+
+  it("`xepTang` TẮT (người gọi cũ) ⇒ kết quả Y HỆT Đợt 35: tầng 0 chạm vùng cấm là bỏ ngay", () => {
+    const kq = locNhan([nhan35("a", 300, 300, { rongPx: 120, caoPx: 22 })], { vungCam: [BADGE] });
+    expect(kq.ve).toEqual([]);
+    expect(kq.soBiChe).toBe(1);
+  });
+
+  it("★ HẬU ĐIỀU KIỆN giữ nguyên: 12 nhãn hàng ngang + 12 badge ngay trên ⇒ 0 hộp giao badge, 0 cặp chồng, ≥ 10/12 vẽ", () => {
+    const ds = Array.from({ length: 12 }, (_, i) => nhan35(`m${i}`, 150 + i * 70, 300, { khoangCachMet: 20 + i, rongPx: 60, caoPx: 22 }));
+    const badge = Array.from({ length: 12 }, (_, i) => ({ trai: 150 + i * 70 - 30, phai: 150 + i * 70 + 30, tren: 268, duoi: 286 }));
+    const kq = locXT(ds, { vungCam: badge });
+    expect(kq.ve.length).toBeGreaterThanOrEqual(10);
+    for (const v of kq.ve) for (const b of badge) expect(haiHopChongNhau(v.hop, b), v.khoa).toBe(false);
+    expect(demCapChongLap(kq.ve.map((v) => ({ x: v.x, y: v.y, rongPx: 60, caoPx: 22 })))).toBe(0);
+  });
+});
+

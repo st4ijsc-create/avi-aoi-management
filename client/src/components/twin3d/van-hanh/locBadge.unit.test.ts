@@ -250,13 +250,19 @@ describe("locBadge — Đợt 47 N1: badge không nằm dưới lớp phủ; đ�
     expect(v.y).toBeCloseTo((v.hop!.tren + v.hop!.duoi) / 2, 6);
   });
 
-  it("dời chỗ ưu tiên XUỐNG trước (phía dưới neo là thân máy — mũi tên ngắn nhất)", () => {
-    // Lớp phủ chỉ che đúng neo; ô ngay dưới trống.
-    const vung = { trai: 90, phai: 300, tren: 80, duoi: 112 };
+  it("dời chỗ ưu tiên LÊN trước, XUỐNG sau cùng (xuống là chỗ nhãn máy xếp tầng — đo `/twin` 1600: 6 → 3 nhãn khi xuống trước)", () => {
+    // Lớp phủ chỉ che đúng neo; ô trên và ô dưới đều trống ⇒ chọn TRÊN.
+    const vung = { trai: 90, phai: 300, tren: 88, duoi: 112 };
     const kq = locBadge([bd({ id: 1, x: 200, y: 100 })], { vungCam: [vung], khungCanvas: KHUNG, doiCho: true });
     expect(kq.ve[0].doiCho).toBe(true);
-    expect(kq.ve[0].y).toBeGreaterThan(100);
+    expect(kq.ve[0].y).toBeLessThan(100);
     expect(kq.ve[0].x).toBe(200);
+    // Trên bị chặn tới mép canvas ⇒ sang NGANG (phải) trước khi xuống.
+    const chanTren = { trai: 0, phai: 1000, tren: 0, duoi: 112 };
+    const kq2 = locBadge([bd({ id: 1, x: 200, y: 100 })], { vungCam: [chanTren], khungCanvas: KHUNG, doiCho: true });
+    expect(kq2.ve[0].doiCho).toBe(true);
+    expect(haiHopChongNhau(kq2.ve[0].hop!, chanTren)).toBe(false);
+    expect(kq2.ve[0].y).toBeGreaterThan(100);
   });
 
   it("hộp dời cũng phải nằm TRỌN canvas: neo sát mép dưới bị che ⇒ không dời xuống ngoài mép", () => {

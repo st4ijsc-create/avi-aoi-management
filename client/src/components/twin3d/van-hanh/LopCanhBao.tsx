@@ -38,7 +38,7 @@ import { Html } from "@react-three/drei";
 import * as THREE from "three";
 
 import { giaiMauCanh } from "../mauTrangThai";
-import { layVungCam } from "../loi/LopNhan";
+import { TAM_CANVAS, layVungCam } from "../loi/LopNhan";
 import { LOP_BADGE, ghiHopDaVe, xoaHopDaVe } from "../loi/hopDaVe";
 import type { HinhChuNhat } from "../loi/locNhan";
 import {
@@ -110,10 +110,16 @@ interface BadgeDaChieu {
 /** Lề tối thiểu khi kẹp badge vào rìa, px. */
 const LE_RIA_PX = 28;
 
+/** z-index lớp badge drei — TRÊN nhãn (20) và ngang dải hợp nhất (30). ★ Đợt 47 — hằng module (G114: prop mới mỗi render = đổi props mọi commit). */
+const Z_INDEX_BADGE: [number, number] = [30, 10];
+/** Lớp badge là chỉ báo, không nhận chuột — kéo xoay camera xuyên qua. */
+const KIEU_LOP_BADGE = { pointerEvents: "none", userSelect: "none" } as const;
+
 export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const gl = useThree((s) => s.gl);
+  const invalidate = useThree((s) => s.invalidate);
   const [hienThi, setHienThi] = useState<BadgeDaChieu[]>([]);
 
   // ★ Đợt 47 (N5) — rời cảnh thì rút hộp khỏi sổ chung, nhãn không phải né bóng ma.
@@ -299,8 +305,22 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
   if (hienThi.length === 0) return null;
 
   return (
-    <Html fullscreen zIndexRange={[30, 10]} style={{ pointerEvents: "none", userSelect: "none" }}>
-      <div data-testid="lop-canh-bao" data-so-badge={hienThi.length} data-so-an={soAn}>
+    /*
+     * ★★★ Đợt 47 (N1 gốc rễ) — LỚP `fullscreen` NEO VÀO TÂM CANVAS, như `LopNhan` từ Đợt 31.
+     * drei `Html fullscreen` đặt lớp QUANH `calculatePosition(el, camera, size)` — mặc định là hình
+     * chiếu của chính `<Html>` = gốc (0,0,0) của cảnh, đổi theo camera. Đo được (`.qa-dot47/
+     * run-probe-lop47.log`): lớp badge lệch canvas (−57,−96) ở `/twin` 1600 và (−443,−142) ở
+     * Line 1600 ⇒ mọi badge vẽ lệch khỏi máy của nó, và "badge bị thẻ Chỉ số che" (QA Đợt 46
+     * N1) là HỆ QUẢ của lệch lớp, không phải của thuật toán. `LopNhan` đã vá Đợt 31; lớp này bị
+     * bỏ quên (G110).
+     */
+    <Html fullscreen calculatePosition={TAM_CANVAS} zIndexRange={Z_INDEX_BADGE} style={KIEU_LOP_BADGE}>
+      <div
+        data-testid="lop-canh-bao"
+        data-so-badge={hienThi.length}
+        data-so-an={soAn}
+        style={{ position: "relative", width: "100%", height: "100%" }}
+      >
         {hienThi.map((b) => {
           const kieu = KIEU_MUC[b.muc];
           const mau = giaiMauCanh(kieu.token) ?? "#ef4444";
@@ -318,7 +338,12 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
                 if (!el) return;
                 const r = el.getBoundingClientRect();
                 if (r.width > 0 && r.height > 0) {
+                  const cu = coBadgeRef.current.get(b.id);
                   coBadgeRef.current.set(b.id, { rongPx: r.width, caoPx: r.height });
+                  // ★ Đợt 47 — số đo THẬT khác trị đã dùng (khung đầu ước lượng; badge DỜI thêm mũi tên "➤" nên
+                  //   rộng ra) ⇒ xin MỘT khung để hộp trong sổ `hopDaVe` và khử chồng dùng số thật. Hội tụ sau một
+                  //   khung; `frameloop="demand"` không tự xin.
+                  if (!cu || Math.abs(cu.rongPx - r.width) > 0.5 || Math.abs(cu.caoPx - r.height) > 0.5) invalidate();
                 }
               }}
               style={{
