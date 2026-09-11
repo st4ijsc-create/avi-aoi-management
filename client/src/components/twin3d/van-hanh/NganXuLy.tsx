@@ -469,13 +469,19 @@ export function NganXuLy(props: NganXuLyProps) {
       </section>
 
       {/* ── NHÓM 2: TẠO VIỆC ───────────────────────────────────────────── */}
+      {/*
+        ★ Đợt 47 (D-7 (8) nửa sau) — vai KHÔNG có `taoPhieu` ⇒ ẩn CẢ nhóm. QA Đợt 46: tiêu đề
+          "TẠO VIỆC" đứng trơ với 0 nút cho vai chỉ-xem (h3 vô điều kiện, thân có điều kiện).
+          Một nhóm hành động rỗng là lời hứa không giao. Không vi phạm NT-3 "khai báo sự thiếu":
+          người không có quyền không THIẾU gì để báo — họ không có việc để tạo ở đây.
+      */}
+      {tra("taoPhieu").duocPhep ? (
       <section className="border-t pt-2" data-testid="nhom-tao-viec">
         <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t("twin3d.vanHanh.taoViec", "Tạo việc")}
         </h3>
 
-        {tra("taoPhieu").duocPhep ? (
-          moTaoPhieu ? (
+        {moTaoPhieu ? (
             <div className="space-y-2" data-testid="form-tao-phieu">
               <div className="grid gap-1">
                 <Label className="text-xs" htmlFor="twin-tieu-de-phieu">
@@ -572,9 +578,9 @@ export function NganXuLy(props: NganXuLyProps) {
               <ClipboardPlus className="mr-1.5 h-3.5 w-3.5" />
               {t("twin3d.vanHanh.taoPhieu", "Tạo phiếu công việc")}
             </Button>
-          )
-        ) : null}
+          )}
       </section>
+      ) : null}
 
       {/* ── NHÓM 3: MỞ CHỨC NĂNG (§9.3) ────────────────────────────────── */}
       <section className="border-t pt-2" data-testid="nhom-mo-chuc-nang">
