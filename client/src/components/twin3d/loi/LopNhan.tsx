@@ -373,11 +373,15 @@ export function LopNhan({
           <div
             data-testid="cum-chip-nhan"
             data-dem-duoi-px={demDuoiPx}
+            /* ★ Đợt 45 (4b/4c) — neo bằng `top` TÍNH TỪ `size.height` (như mọi nhãn), KHÔNG `bottom`: đo được
+               (`bbox-go-4.json`) cụm chip nằm ở y = mép trên canvas − 8 (bị dải hợp nhất z-30 che) — `bottom`
+               tính theo hộp chứa của drei `<Html fullscreen>` (top −h/2 + translate) chứ không theo canvas thật;
+               `top` từ `size` là hệ toạ độ nhãn đã nghiệm thu (E5/D-1 "lớp trùng canvas"). */
             style={{
               position: "absolute",
               left: "50%",
-              bottom: 8 + demDuoiPx,
-              transform: "translateX(-50%)",
+              top: size.height - 8 - demDuoiPx,
+              transform: "translate(-50%, -100%)",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",

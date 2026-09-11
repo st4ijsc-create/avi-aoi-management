@@ -63,7 +63,10 @@ describe("Đợt 45 mục 4 — chính sách nhãn: URL > đã nhớ > mặc đ�
     // và LopNhan chọn câu theo chính sách khi bật.
     const lop = readFileSync(new URL("../loi/LopNhan.tsx", import.meta.url), "utf8");
     expect(lop).toMatch(/chiNhanBatThuong && chuNhanAnTheoChinhSach \? chuNhanAnTheoChinhSach : chuNhanAn/);
-    expect(lop).toMatch(/bottom: 8 \+ demDuoiPx/);
+    // 4c: neo `top` từ `size.height` (bottom theo hộp drei sai — đo `bbox-go-4.json`: cụm chip ở y = mép trên − 8).
+    expect(lop).toMatch(/top: size\.height - 8 - demDuoiPx/);
+    expect(lop).toMatch(/transform: "translate\(-50%, -100%\)"/);
+    expect(lop).not.toMatch(/bottom: 8 \+ demDuoiPx/);
   });
 
   it("★ G16 — `TwinVanHanh` GỌI `chiNhanBatThuongTu` (không còn `thu.includes(\"nhanBatThuong\")` trần)", () => {
