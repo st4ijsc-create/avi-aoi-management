@@ -15,6 +15,10 @@ import { moduleProcedure, router } from "../_core/trpc";
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { getDb } from "../db/connection";
+// ★ Đợt 42 — cổng quyền + hàng rào tenant cho `lineBalance` (QA Đợt 41 D-4 lỗ #3).
+import { requireAnyPermission } from "../_core/accessControl";
+import { phamViCua } from "./_phamViNguoiXem";
+import { trongPhamVi } from "../db/hierarchy";
 import { and, desc, eq, gte, notInArray, sql } from "drizzle-orm";
 import {
   wipTracking,
@@ -126,14 +130,34 @@ export const wipRouter = router({
     }),
 
   // Chỉ số cân bằng chuyền gần nhất theo line.
+  /*
+   * ★★★ ĐỢT 42 (QA Đợt 41 D-4 lỗ #3, G116) — thủ tục này là nguồn takt/cycle/bottleneck của màn
+   *   `/twin/line/:id` (`usePhanTichLine`), và trước đợt này nó khai `async ({ input })`: KHÔNG đọc
+   *   `ctx`, 0 phạm vi, 0 cổng quyền ⇒ MỌI vai — kể cả tài khoản 0 quyền, 0 gán — đọc 16 hàng
+   *   `line_balance_metrics` của chuyền 2 (NM1) (`.qa-dot41/api-vai/C.json`). Bản `mesControlTower.lineBalance`
+   *   đã rào từ 2026-08-18 — hai router cùng tên, một rào một không, và màn mới nhúng đúng cái không.
+   *
+   *   • Cổng quyền = ĐÚNG tập mà ô nav `/twin` khai (`analytics_oee` HOẶC `machine_status`, cùng
+   *     `quyenVanHanh` của `twinCanhRouter`) — luật Khối D "một lối vào rồi TỪ CHỐI": nav và router
+   *     phải nói cùng một câu. Vai 0 quyền ⇒ `FORBIDDEN`.
+   *   • `lineId` là lời TỰ KHAI ⇒ chuyền ngoài phạm vi ⇒ danh sách RỖNG (khuôn Đợt 40: danh sách ⇒ `[]`,
+   *     KHÔNG `undefined` — G60). Admin / phạm vi `null` ⇒ không thêm mệnh đề nào.
+   */
   lineBalance: protectedProcedure
+    .use(requireAnyPermission([
+      { module: "analytics_oee", action: "canView" },
+      { module: "machine_status", action: "canView" },
+    ]))
     .input(z.object({
       lineId: z.number().int().positive(),
       limit: z.number().int().min(1).max(200).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [] as (typeof lineBalanceMetrics.$inferSelect)[];
+      if (!(await trongPhamVi("line", input.lineId, phamViCua(ctx)))) {
+        return [] as (typeof lineBalanceMetrics.$inferSelect)[];
+      }
 
       const rows = await database
         .select()
