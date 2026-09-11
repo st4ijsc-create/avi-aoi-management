@@ -383,7 +383,10 @@ export function DanhSachMay({
                             : undefined,
                       }}
                     />
-                    <span className="min-w-0 flex-1 truncate">{m.ma}</span>
+                    {/* ★ Đợt 47 (N6) — `truncate` cắt 5 mã @1280: `title` giữ tên đầy đủ khi rê. */}
+                    <span className="min-w-0 flex-1 truncate" title={m.ma}>
+                      {m.ma}
+                    </span>
                     {/* Chữ trạng thái — chiều thứ ba của mã hoá dư thừa. */}
                     <span className="shrink-0 text-[10px] text-muted-foreground">
                       {t(kieu.khoaNhan)}

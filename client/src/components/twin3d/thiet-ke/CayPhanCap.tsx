@@ -205,7 +205,8 @@ function Hang({
       ) : (
         <span className="w-3.5 shrink-0" />
       )}
-      <span className="truncate">
+      {/* ★ Đợt 47 (N6) — nhãn cây bị `truncate` @1280: `title` giữ tên đầy đủ khi rê. */}
+      <span className="truncate" title={node.nhan}>
         <NhanCoTo nhan={node.nhan} tim={tim} />
       </span>
       {/*

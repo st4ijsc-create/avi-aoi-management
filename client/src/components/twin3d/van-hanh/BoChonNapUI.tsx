@@ -100,6 +100,8 @@ function OChon({
         data-testid={testid}
         data-so-muc={muc.length}
         aria-label={nhan}
+        /* ★ Đợt 47 (N6) — ô hẹp (6,5–8 rem) cắt tên toà/nhà máy dài: `title` = tên đầy đủ của mục đang chọn. */
+        title={muc.find((m) => m.id === giaTri)?.nhan ?? nhan}
         disabled={dangTai || rong}
         value={giaTri ?? ""}
         onChange={(e) => {
