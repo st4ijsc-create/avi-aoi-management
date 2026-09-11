@@ -22,7 +22,9 @@ import fs from "node:fs";
  *   T1f  cơ chế: `__demTuongTac.demObject()` ⇒ mọi object trong interaction còn handler + còn trong scene;
  *        `hitTai(tâm máy)` trúng lô `twin3d-lo-may` với `batchId` là số
  *
- * ★ Gỡ vá (handler trở lại `<primitive>`): T1a/T1b/T1c/T1f đỏ, T1d/T1e vẫn xanh — đúng hình dạng lỗi Đợt 46.
+ * ★ Gỡ vá ĐO ĐƯỢC (`.qa-dot47/ablation-go-va.log`, handler trở lại `<primitive>`): 8/12 đỏ — T1a+b+e+f ×4 (bấm/rê chết,
+ *   `demObject` 1/0/0) và T1d ×4 (tiền đề `hitTai` không còn object có handler ⇒ không tìm được máy để kéo); T1c ×4 VẪN
+ *   XANH — đường bấm-nhãn đi qua hit-test DOM của `LopNhan`, độc lập với handler R3F. (Dự đoán đầu "T1c đỏ" là sai.)
  */
 
 const ANH = ".qa-dot47/e2e";
