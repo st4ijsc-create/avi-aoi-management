@@ -19,6 +19,14 @@
  * `NganXuLy` — bề mặt 2D tuân ISA-101. Đừng thêm nút nổi trên máy 3D: đó chính
  * là chế độ hỏng mà quy tắc "No 3D graphical objects" của ASM sinh ra để phòng.
  *
+ * ★★★ ĐỢT 47 (QA Đợt 46 N2) — "CHỌN" TRÊN CẢNH CHƯA TỪNG CHẠY SUỐT 46 ĐỢT: bấm/rê máy
+ *   trên `/twin` và `/twin/line/2` không phản ứng. Gốc rễ ở kit (`LoBatchMay.tsx`
+ *   docblock: R3F 9.5 `swapInstances` bỏ rơi handler khi `<primitive object>` đổi lô),
+ *   không ở lớp ổn định-hàm/memo của tệp này — ablation 6 mốc commit (Đợt 33 → 45) cho
+ *   cùng chữ ký chết (`.qa-dot47/ablation-commit.log`). Tệp này thêm: con trỏ `pointer`
+ *   khi rê máy, bấm NHÃN cũng chọn (`LopNhan.onChonNhan`), và `LopCanhBao` chạy trước
+ *   `LopNhan` (N5 — một ngân sách hình chữ nhật). Lưới: `e2e/twin-dot47-bam-canh.spec.ts`.
+ *
  * ════════════════════════════════════════════════════════════════════════════
  * ★★★ §10.3 — BADGE ALARM VẼ Ở KHÔNG GIAN MÀN HÌNH
  * ════════════════════════════════════════════════════════════════════════════
@@ -514,6 +522,20 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
     setChon((cu) => ({ ...cu, dangHover: id }));
   }, []);
 
+  /**
+   * ★ Đợt 47 (N2) — CON TRỎ `pointer` khi rê lên máy. Trước đợt này KHÔNG dòng nào của
+   *   màn Vận hành đặt cursor (chỉ `CanhNhaMay.tsx:317` của `/factory-command` có), nên
+   *   "cursor luôn `auto`" của QA Đợt 46 đo đúng — máy bấm được mà không có dấu hiệu nào
+   *   nói thế. Rời máy ⇒ trả về mặc định (không đổi cách cảnh trông khi không rê).
+   */
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    gl.domElement.style.cursor = chon.dangHover != null ? "pointer" : "";
+    return () => {
+      gl.domElement.style.cursor = "";
+    };
+  }, [chon.dangHover, gl]);
+
   const onCameraDoiNgoai = props.onCameraDoi;
   const camDoi = useCallback(
     (viTri: THREE.Vector3, muc: THREE.Vector3) => {
@@ -550,6 +572,15 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
       <LoBatchMay may={may} chon={chon} onChon={khiChon} onHover={khiHover} />
       {dongChay ? <DongChayLine dongChay={dongChay} /> : null}
       <OngWip wip={wip} />
+      {/*
+        ★★★ Đợt 47 (N5) — `LopCanhBao` ĐỨNG TRƯỚC `LopNhan`: hai lớp cùng `useFrame` ưu tiên 0
+          ⇒ chạy theo thứ tự trong cây. Badge (alarm) chọn chỗ trước và ghi hộp vào sổ
+          `hopDaVe`; nhãn đọc sổ đó làm vùng cấm thêm ⇒ MỘT ngân sách hình chữ nhật, không
+          hai bộ khử chồng độc lập (QA Đợt 46: nhãn đè badge tới 1.819 px²). Đảo hai dòng
+          này là nhãn đọc hộp badge của KHUNG TRƯỚC. z-index DOM không phụ thuộc thứ tự này
+          (badge z 30, nhãn z 20 — khai tường minh).
+      */}
+      <LopCanhBao canhBao={canhBao} />
       <LopNhan
         nhan={nhan}
         dangChon={chon.dangChon}
@@ -559,8 +590,9 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
         chuNhanAn={chuNhanAn}
         chuNhanAnTheoChinhSach={props.chuNhanAnTheoChinhSach}
         chuSuCoNgoaiKhung={props.chuSuCoNgoaiKhung}
+        /* ★ Đợt 47 (N2) — bấm lên NHÃN cũng chọn máy (nhãn pointer-events:none, LopNhan tự hit-test hộp thật). */
+        onChonNhan={khiChon}
       />
-      <LopCanhBao canhBao={canhBao} />
     </>
   );
 }

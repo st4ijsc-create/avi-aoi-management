@@ -14,7 +14,7 @@
 
 import { Html } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
 import {
@@ -26,6 +26,8 @@ import {
   type NhanUngVien,
   uocLuongRongNhanPx,
 } from "./locNhan";
+import { LOP_BADGE, docHopDaVe } from "./hopDaVe";
+import { laBam, lechPx } from "./phanBietBamKeo";
 
 /**
  * ★★★ ĐỢT 35 (Pareto #5) — VÙNG CẤM LẤY TỪ DOM THẬT, MỖI KHUNG ĐƯỢC VẼ.
@@ -112,10 +114,24 @@ export interface LopNhanProps {
    * `raised` trên máy ngoài khung ⇒ KHÔNG một dấu hiệu nào. `undefined` ⇒ không chip.
    */
   chuSuCoNgoaiKhung?: (n: number) => string;
+  /**
+   * ★★★ Đợt 47 (N2) — BẤM LÊN NHÃN cũng chọn máy.
+   *
+   * Nhãn là chỉ báo `pointer-events: none` THEO THIẾT KẾ (kéo xoay camera phải xuyên
+   * qua nó — `KIEU_LOP_NHAN`). Nên "bấm nhãn" về mặt DOM là bấm CANVAS tại điểm nhãn
+   * đang che; mà nhãn neo trên nóc + khoảng hở nên raycast ở đó có thể trượt khỏi
+   * hình học máy. Lớp này giữ hộp THẬT của từng nhãn đã vẽ và nghe `click` trên chính
+   * canvas: một cú BẤM (không phải kéo — `phanBietBamKeo`) rơi vào hộp nhãn ⇒ gọi
+   * hàm này với `machineId` của nhãn và chặn `click` nổi lên khung R3F (nhãn nằm TRÊN
+   * máy phía sau về thị giác ⇒ nhãn thắng, không điều hướng hai lần). Không truyền ⇒
+   * không gắn listener nào (`/factory-command` giữ nguyên hành vi).
+   */
+  onChonNhan?: (machineId: number) => void;
 }
 
 interface NhanDaChieu {
   khoa: string;
+  machineId: number;
   x: number;
   y: number;
   ma: string;
@@ -147,12 +163,50 @@ export function LopNhan({
   chuNhanAn,
   chuNhanAnTheoChinhSach,
   chuSuCoNgoaiKhung,
+  onChonNhan,
 }: LopNhanProps) {
   // ★ Đợt 45 — một chỗ chọn câu cho chip: theo chính sách khi bật (và có câu), không thì câu chật chỗ.
   const chuChipAn = chiNhanBatThuong && chuNhanAnTheoChinhSach ? chuNhanAnTheoChinhSach : chuNhanAn;
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const gl = useThree((s) => s.gl);
+  /** ★ Đợt 47 — hộp THẬT (đã xếp tầng, kích thước đo được) của các nhãn đang vẽ, cho phép bấm-lên-nhãn. */
+  const hopDaVeRef = useRef<{ machineId: number; hop: HinhChuNhat }[]>([]);
+  const onChonNhanRef = useRef(onChonNhan);
+  onChonNhanRef.current = onChonNhan;
+  const coOnChonNhan = onChonNhan !== undefined;
+
+  useEffect(() => {
+    if (!coOnChonNhan) return;
+    const canvas = gl.domElement;
+    let xuong: { x: number; y: number; t: number } | null = null;
+    const bayGio = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+    const khiXuong = (ev: PointerEvent) => {
+      if (ev.button !== 0) return;
+      xuong = { x: ev.clientX, y: ev.clientY, t: bayGio() };
+    };
+    const khiBam = (ev: MouseEvent) => {
+      const d = xuong;
+      xuong = null;
+      if (!d || !laBam({ lechPx: lechPx(d, { x: ev.clientX, y: ev.clientY }), ms: bayGio() - d.t })) return;
+      const r = canvas.getBoundingClientRect();
+      const x = ev.clientX - r.left;
+      const y = ev.clientY - r.top;
+      const trung = hopDaVeRef.current.find(
+        (v) => x >= v.hop.trai && x <= v.hop.phai && y >= v.hop.tren && y <= v.hop.duoi,
+      );
+      if (!trung) return;
+      // Nhãn thắng máy phía sau: chặn `click` nổi lên div bọc canvas nơi R3F đang nghe (`events.connected`).
+      ev.stopPropagation();
+      onChonNhanRef.current?.(trung.machineId);
+    };
+    canvas.addEventListener("pointerdown", khiXuong);
+    canvas.addEventListener("click", khiBam);
+    return () => {
+      canvas.removeEventListener("pointerdown", khiXuong);
+      canvas.removeEventListener("click", khiBam);
+    };
+  }, [gl, coOnChonNhan]);
   const [hienThi, setHienThi] = useState<NhanDaChieu[]>([]);
   /** Số tên KHÔNG đọc được ở khung hiện tại — nguồn của chip "còn N bị ẩn". */
   const [soAn, setSoAn] = useState(0);
@@ -215,11 +269,16 @@ export function LopNhan({
     }
 
     // ★ Đợt 35 — vùng cấm = bbox THẬT của lớp phủ DOM, quy về gốc canvas (xem `layVungCam`).
-    const vungCam = layVungCam(gl.domElement);
+    const vungCamDom = layVungCam(gl.domElement);
+    // ★ Đợt 47 (N5) — hộp BADGE đã vẽ ở khung này (`LopCanhBao` chạy TRƯỚC trong cùng khung, ghi sổ `hopDaVe`)
+    //   là vùng cấm THÊM: MỘT ngân sách hình chữ nhật cho nhãn + badge, không phải hai bộ khử chồng độc lập
+    //   (QA Đợt 46: nhãn đè badge 344–1.819 px²). Badge là alarm nên badge giữ chỗ, nhãn nhường.
+    const hopBadge = docHopDaVe(gl.domElement, LOP_BADGE);
+    const vungCam = hopBadge.length > 0 ? [...vungCamDom, ...hopBadge] : vungCamDom;
     // ★ Đợt 45 (mục 4) — chip đáy-giữa phải NHÔ LÊN TRÊN lớp phủ chạm mép dưới canvas (thanh tua `/twin`
     //   z-30 che chip ⇒ "còn N tên bị ẩn" chưa bao giờ nhìn thấy được trên `/twin` — chỉ DOM đọc được).
     //   4d: chỉ lớp phủ NGANG QUA TÂM canvas mới đẩy (panel trái/phải top-0 bottom-0 KHÔNG — `demDuoiChoChip`).
-    const demDuoi = demDuoiChoChip(vungCam, size.width, size.height);
+    const demDuoi = demDuoiChoChip(vungCamDom, size.width, size.height);
     setDemDuoiPx((cu) => (cu === demDuoi ? cu : demDuoi));
     const kq = locNhan(ungVien, {
       tranNhan,
@@ -249,7 +308,8 @@ export function LopNhan({
         // ★ Đợt 35 — ba đại lượng mới: hộp thò mép, bị lớp phủ che, và SỰ CỐ ngoài frustum.
         vuotMep: kq.soVuotMep,
         biChe: kq.soBiChe,
-        soVungCam: vungCam.length,
+        soVungCam: vungCamDom.length,
+        soHopBadge: hopBadge.length,
         suCoNgoaiKhung: kq.soBatThuongNgoaiKhung,
         // ★ Số CẶP nhãn CÒN chồng nhau trong tập được vẽ — đại lượng KHÁC với
         // `chongLap` (số nhãn BỊ LOẠI). Chính chỗ lẫn hai đại lượng này làm bộ
@@ -273,6 +333,10 @@ export function LopNhan({
     //   đang vá. Cùng lý do `ve` đã nằm trong chữ ký.
     // ★ Đợt 35 — `soBatThuongNgoaiKhung` cũng ĐI VÀO CHỮ KÝ: xoay camera đưa máy
     //   sự cố ra/vào khung phải đổi chip ngay, không chờ tập nhãn đổi.
+    // ★ Đợt 47 — hộp thật của tập được vẽ, cho bấm-lên-nhãn. Ghi TRƯỚC cửa chữ ký: hộp đổi theo tầng/kích thước
+    //   đo được dù tập nhãn và toạ độ làm tròn không đổi.
+    hopDaVeRef.current = kq.ve.map((v) => ({ machineId: theoKhoa.get(v.khoa)!.machineId, hop: v.hop }));
+
     const chuKy =
       `${kq.soBiGiau}#${kq.soBatThuongNgoaiKhung}#` +
       kq.ve.map((v) => `${v.khoa}:${Math.round(v.x)}:${Math.round(v.y)}`).join("|");
@@ -286,6 +350,7 @@ export function LopNhan({
         const g = theoKhoa.get(v.khoa)!;
         return {
           khoa: v.khoa,
+          machineId: g.machineId,
           x: v.x,
           y: v.y,
           ma: g.ma,
@@ -437,6 +502,7 @@ export function LopNhan({
           <div
             key={n.khoa}
             data-testid="nhan-may-twin3d"
+            data-machine-id={n.machineId}
             /* ★ Đo kích thước THẬT ngay khi div gắn vào DOM và nhớ theo `khoa`.
                Khung sau, `locNhan` khử chồng lấp bằng bbox thật thay vì trị suy
                đoán. Ghi vào ref (không setState) nên KHÔNG gây re-render vòng. */
@@ -498,6 +564,8 @@ export interface WindowCoDo extends Window {
     biChe: number;
     /** ★ Đợt 35 — số vùng cấm đọc được từ DOM ở khung này (0 ⇒ màn chưa đánh dấu lớp phủ nào). */
     soVungCam: number;
+    /** ★ Đợt 47 (N5) — số hộp BADGE đã vẽ mà lớp nhãn nhận làm vùng cấm thêm (sổ `hopDaVe`). */
+    soHopBadge: number;
     /** ★ Đợt 35 — số máy BẤT THƯỜNG ngoài frustum — nguồn của chip "N sự cố ngoài khung". */
     suCoNgoaiKhung: number;
     /**
