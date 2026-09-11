@@ -512,3 +512,124 @@ export function khopKhungNhin(bbox: BBox, goc: KhungNhin, khung: KhungKhop): Khu
   }
   return { viTri: tai(hi), muc: goc.muc, banKinh: goc.banKinh };
 }
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 45 (mục 3) — DỊCH KHUNG DỌC: DẢI MÁY Ở NỬA GIỮA-DƯỚI, KHÔNG Ở TÂM     */
+/* ══════════════════════════════════════════════════════════════════════════ */
+/*
+ * QA Đợt 44 (D-7 mục 2): sau khớp khung Đợt 35, chuyền 2 lọt 12/12 nhưng dải máy nằm
+ * ở ~48 % chiều cao canvas (đo `.qa-dot45/bbox-truoc.json`: tâm nhãn 0,43–0,58, TB
+ * 0,48–0,49 ở cả hai vp) — vì `khopKhungNhin` chỉ đổi KHOẢNG CÁCH và giữ `muc` ở TÂM
+ * bbox (kèm cột WIP 6 m), nên bbox được CĂN GIỮA khung: nửa trên là cột WIP + trời, nửa
+ * dưới là sàn trống. Bố cục đúng của một chuyền nhìn thấp dọc trục (§10C.2): cột WIP ở
+ * phần trên, máy ở phần giữa-dưới, sàn còn một dải mỏng làm nền.
+ *
+ * ⇒ Dịch CẢ camera lẫn mục theo cùng một vector dọc trục "lên" của camera (up′) — hướng
+ *   nhìn, khoảng cách, tỉ lệ và phép chiếu X GIỮ NGUYÊN; chỉ toạ độ Y trên màn của mọi
+ *   điểm trượt xuống. Sau khi dịch, KIỂM `lotKhung` (lề nhãn) — vượt thì co bước dịch
+ *   (bisection về 0) tới bước lớn nhất còn lọt; không lọt ở mọi bước ⇒ trả nguyên `goc`.
+ *   Thuần, tất định; E4 (12/12 + WIP trọn) vẫn là bất biến vì lọt-khung được kiểm lại.
+ */
+
+/**
+ * Tâm dọc (NDC y ∈ [−1, 1], âm = thấp hơn tâm màn) mà TÂM DẢI NỘI DUNG (bbox kèm WIP) được
+ * đặt vào ở cấp Line. −0,28 ⇒ tâm dải ở 64 % chiều cao canvas tính từ trên; với dải cao
+ * ~0,48 NDC (chuyền 2), máy rơi vào ~70–75 %, cột WIP lên tới ~50 %.
+ */
+export const TAM_DOC_NDC_LINE = -0.28;
+
+/** Trục "lên" của camera (up′ = right × forward, cùng quy ước `chieuNdc`). */
+function trucLenCamera(
+  viTri: readonly [number, number, number],
+  muc: readonly [number, number, number],
+): [number, number, number] | null {
+  const fx0 = muc[0] - viTri[0];
+  const fy0 = muc[1] - viTri[1];
+  const fz0 = muc[2] - viTri[2];
+  const fl = Math.hypot(fx0, fy0, fz0);
+  if (!(fl > 0) || !Number.isFinite(fl)) return null;
+  const fx = fx0 / fl;
+  const fy = fy0 / fl;
+  const fz = fz0 / fl;
+  let rx = -fz;
+  let rz = fx;
+  const rl = Math.hypot(rx, rz);
+  if (rl < 1e-9) {
+    rx = 1;
+    rz = 0;
+  } else {
+    rx /= rl;
+    rz /= rl;
+  }
+  return [-rz * fy, rz * fx - rx * fz, rx * fy];
+}
+
+/** Khoảng NDC y [min, max] của một tập điểm từ tư thế camera; `null` nếu có điểm không chiếu được. */
+export function khoangDocNdc(
+  diem: readonly DiemScene[],
+  viTri: readonly [number, number, number],
+  muc: readonly [number, number, number],
+  khung: KhungKhop,
+): { min: number; max: number; sauTB: number } | null {
+  if (!(khung.rongPx > 0) || !(khung.caoPx > 0) || diem.length === 0) return null;
+  const tiLe = khung.rongPx / khung.caoPx;
+  const fov = khung.fovDoc ?? FOV_DOC_MAC_DINH;
+  let min = Infinity;
+  let max = -Infinity;
+  let sau = 0;
+  for (const d of diem) {
+    const p = chieuNdc(d, viTri, muc, fov, tiLe);
+    if (!p) return null;
+    if (p.y < min) min = p.y;
+    if (p.y > max) max = p.y;
+    sau += p.sau;
+  }
+  return { min, max, sauTB: sau / diem.length };
+}
+
+/**
+ * Dịch `goc` (camera + mục cùng một vector dọc up′) để tâm dải `bbox` rơi vào `tamNdc`.
+ * Giữ hướng nhìn/khoảng cách/`banKinh`. Không lọt khung sau khi dịch ⇒ co bước; bước 0
+ * (= `goc`) mà cũng không lọt ⇒ trả `goc` nguyên vẹn (không bịa tư thế).
+ */
+export function dichKhungDoc(
+  bbox: BBox,
+  goc: KhungNhin,
+  khung: KhungKhop,
+  tamNdc: number = TAM_DOC_NDC_LINE,
+): KhungNhin {
+  if (!bboxCoThuc(bbox)) return goc;
+  const len = trucLenCamera(goc.viTri, goc.muc);
+  if (!len) return goc;
+  const dinh = dinhBBox(bbox);
+  const t = Math.tan(((khung.fovDoc ?? FOV_DOC_MAC_DINH) * Math.PI) / 360);
+  const tai = (s: number): KhungNhin => ({
+    viTri: [goc.viTri[0] + len[0] * s, goc.viTri[1] + len[1] * s, goc.viTri[2] + len[2] * s],
+    muc: [goc.muc[0] + len[0] * s, goc.muc[1] + len[1] * s, goc.muc[2] + len[2] * s],
+    banKinh: goc.banKinh,
+  });
+  // Lặp Newton đơn giản: y′ ≈ y − Δ/(sau·t) ⇒ Δ = (tâm − tamNdc)·sauTB·t; độ sâu từng đỉnh khác nhau
+  // nên lặp vài lượt cho hội tụ (tất định, không phụ thuộc thời gian).
+  let s = 0;
+  for (let i = 0; i < 8; i += 1) {
+    const k = tai(s);
+    const kd = khoangDocNdc(dinh, k.viTri, k.muc, khung);
+    if (!kd) return goc;
+    const tam = (kd.min + kd.max) / 2;
+    const buoc = (tam - tamNdc) * kd.sauTB * t;
+    if (Math.abs(buoc) < 1e-4) break;
+    s += buoc;
+  }
+  if (!(Math.abs(s) > 1e-6)) return goc;
+  if (lotKhung(dinh, tai(s).viTri, tai(s).muc, khung)) return tai(s);
+  // Vượt lề ⇒ bisection giữa 0 (gốc, giả định lọt) và s: bước LỚN NHẤT còn lọt.
+  if (!lotKhung(dinh, goc.viTri, goc.muc, khung)) return goc;
+  let lo = 0;
+  let hi = s;
+  for (let i = 0; i < 12; i += 1) {
+    const m = (lo + hi) / 2;
+    if (lotKhung(dinh, tai(m).viTri, tai(m).muc, khung)) lo = m;
+    else hi = m;
+  }
+  return tai(lo);
+}

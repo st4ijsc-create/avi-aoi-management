@@ -121,6 +121,7 @@ import {
   dungNhanMay,
 } from "@/components/twin3d/van-hanh/hopNhatCanh";
 import {
+  dichKhungDoc,
   khungNhinLine,
   khungNhinTuCamera,
   phaVeNen,
@@ -772,20 +773,18 @@ export function ThanManLine({
    *   thật (`kichThuocKhung`) ⇒ `khungNhinLine` khớp khoảng cách để 12/12 máy VÀ cột WIP lọt khung,
    *   chừa lề nhãn. Chưa đo được khung (khung hình đầu) ⇒ hành vi cũ, rồi khớp lại khi có số đo.
    */
-  const khungNhinTho = useMemo(
-    () =>
-      camUrl
-        ? khungNhinTuCamera(camUrl)
-        : hinhLine && hinhLine.hh.coHinhHoc
-          ? khungNhinLine(
-              bboxKemCotWip(hinhLine.hh.bbox, cotWipCanh),
-              hinhLine.hh.truc,
-              hinhLine.hh.trucDangTin,
-              kichThuocKhung ?? undefined,
-            )
-          : null,
-    [camUrl, hinhLine, cotWipCanh, kichThuocKhung],
-  );
+  /*
+   * ★ Đợt 45 (mục 3) — SAU khớp khoảng cách, DỊCH KHUNG DỌC (`dichKhungDoc`): dải máy về nửa
+   *   giữa-dưới canvas (QA Đợt 44: tâm nhãn ~48 %, nửa dưới trống). Ghép ở ĐÂY — cách trình
+   *   bày của màn Line — không đổi hợp đồng `khungNhinLine`. `?cam=` deep-link vẫn đi thẳng.
+   */
+  const khungNhinTho = useMemo(() => {
+    if (camUrl) return khungNhinTuCamera(camUrl);
+    if (!hinhLine || !hinhLine.hh.coHinhHoc) return null;
+    const bbox = bboxKemCotWip(hinhLine.hh.bbox, cotWipCanh);
+    const k = khungNhinLine(bbox, hinhLine.hh.truc, hinhLine.hh.trucDangTin, kichThuocKhung ?? undefined);
+    return k && kichThuocKhung ? dichKhungDoc(bbox, k, kichThuocKhung) : k;
+  }, [camUrl, hinhLine, cotWipCanh, kichThuocKhung]);
   /*
    * ★★★ ỔN ĐỊNH THEO GIÁ TRỊ — `DieuKhien` (CanhVanHanh) khởi động TWEEN mỗi khi `khungNhin` đổi THAM
    *   CHIẾU, không so giá trị. `hinhLine` dựng lại mỗi khi `mayVe` đổi (trạng thái/tuổi làm mới theo
