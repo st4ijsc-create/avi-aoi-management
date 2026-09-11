@@ -6509,6 +6509,60 @@ scope theo may; (5) **luoi tu dong API × vai** tu `api-vai.mjs` (thu tuc man go
 khong; ADM bypass); (6) ky thuat nho (11)(12) neu gon. Sau do **Dot 43 QA lan 5 chi bao mat** (`api-vai`, `http-v1`, `socket`)
 + bao cao tong ket.
 
+### 14q.20 DOT 42 - 4 LO BAO MAT DONG + LUOI TU DONG 115 CA; SU CO TREO = GOOGLE FONTS RENDER-BLOCKING
+
+`d7a6a6c7`, **5 commit** pathspec (agent chet 429/server_error **2 lan**, chuoi nen treo 29′ o p6 — chu du an do cay (G95),
+giet dung PID treo, resume tu tep tho; moi buoc de lai `*-XONG.txt`). Chu du an do lai: twin3d **91 / 2.354** · `vitest run
+twin` **115 / 2.736** (+1 tep/+115 ca) · **3 luoi tenant 150/150** (`twinBonManApiVaiPhamVi` 115 + `moduleReadsCockpitPhamVi`
+13 + `factoryCommandAssetCockpitPhamVi` 22, chay doc lap) · `check` 0 · `i18n:check` 0 · 5 anh nguyen · DB 11 bang + `api_keys`
+55 truoc = sau · 3042 tat · cay + index sach · 0 nhi phan · scope: `twinRouter` 3 / `wipRouter` 3 / `sensorRouter` 7 /
+`moduleReads` 14 tham chieu (truoc 0/0/0/0).
+
+| Lo | truoc | sau | go va (luoi) |
+|---|---|---|---|
+| 1 `twin.usdExport` | B 0 gan: 200 41.850 B SIM · 200 1.970 B T12 | B **404/404**; A (1) 200 SIM · (18) **404**; ADM ca hai | 2 do |
+| 2 HTTP v1 `machines/:id/detail`, `robots/:id/detail` | khoa SIM-FAC /257 **200 T12** | /257 **404**; /14 200 S; /robots/1 200 S; khong khoa 401; **khoa CHUA KHAI pham vi ⇒ 404** (fail-closed, cung chieu `/ecosystem/kpi`) | 3 do |
+| 3 `wip.lineBalance` | moi vai ke ca C 0 quyen: 16 hang | B **0**, C **403** (`requireAnyPermission(analytics_oee\|machine_status)` = nav `/twin`); A/D/M 16 giu | 2 do |
+| 4 `sensor.listTypes/readSeries` | moi vai 3 loai · 24 diem | B/C **404**; A m1 co, m257 404 | 4 do |
+
+**Bang D-4 sau va — 48 luot × 6 vai** (`tomtat-D4.txt`): **dung 16 o doi, tat ca thuoc 4 lo; 41 hang con lai 0 doi**; socket
+6/6 y het; dau vet T12 o A/B/M **1→0**. Co che moi: `db/hierarchy.ts` **`PhamViMaTenant {tenantScope}` + `PhamViDoc`** (truc ②
+cua `resolveTenantFactoryScope`, G12) — `PhamViNguoiXem` **khong bieu dien duoc khoa API** (brief sai). Luoi §0 ghim **42
+duong dan `trpc.*`** grep that tu 4 man + cockpit nhung (them `trpc.abc.xyz` gia vao `TwinHub.tsx` ⇒ 3 do).
+
+> #### ★ QD-25 (chu du an) - khoa API **chua khai** pham vi tenant ⇒ **404 fail-closed** (nhu `/ecosystem/kpi`), khong mo.
+
+> #### ★★★ G117 - **UNG DUNG NHA MAY PHU THUOC CDN NGOAI: GOOGLE FONTS RENDER-BLOCKING** — treo p6 29′, a6b HONG 2 vp
+> `client/index.html:28-29` `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist…">` — stylesheet
+> **render-blocking** tu CDN ngoai, khong co Geist local. Do: `curl fonts.googleapis` 2,06 s / **000 @30 s** / 18,95 s; tien
+> kiem 2/6 luot cham tran 8 s; Playwright `goto /twin` **38.073 ms**, `screenshot` timeout voi `document.fonts.status="loading"`
+> cho **Geist ×3**; `curl /twin` 3–10 ms; renderer SwiftShader ⇒ GPU vo can; server 0 mau > 30 s. He qua that: **deep-link
+> (context moi, khong cache) trang trang toi khi CSS ve** — a6b #25/#26 **HONG ca hai vp** (`tomtat-D1` HEAD 39 DAT · 2 HONG), p6
+> lan 2 treo. Khong phai server, khong phai harness, khong phai va Dot 42 (`client/` 0 doi). ⇒ **Nha may thuong khong co
+> internet on dinh**: moi `https://` trong `index.html` la mot diem treo. Cung ho RB-5 (`Environment preset` drei tai HDR tu
+> CDN — con o `Factory3DScene.tsx:233`, `FactoryFloor3D.tsx:179`, ngoai twin).
+
+> #### ★ G118 - **"THU TUC" ≠ "LUOT GOI"** - brief noi "48 thu tuc"; that: 48 luot goi, grep **42 duong dan** (QA phu ~30,
+> goi 5 thu tuc man khong goi, sot `twinCanh.chiTietBanGhi` + 14 mutation). Luoi tu dong phai ghim **tap grep**, khong phai
+> tap QA nho.
+
+**Brief sai 10 cho (lan 16):** 48 vs 42 · "ham chuyen tenantScope ⇒ PhamViNguoiXem" khong ton tai · robot 1 co `lineId` NM1
+· harness D-2 khong co e4 · khong noi `phamViTuyenCensus` (REST) do san va se bat ban va HTTP · harness ghi cung OUT/3041 ·
+S1 la 404 khong "403" · `getMachineStats` than toan 0 cho **moi** vai ke ca ADM ⇒ khong phan biet rao/rong · hook BG-124 chan
+`git add` tran · T4/T5 khong co gi do lai.
+
+**Con mo:** `userRouters.ts:87-90` `assignableTechnicians` tra moi user (chi ADM thay; ngoai le trong luoi) ·
+`twinRouter.ts:75/89/289/299/361/379`, `wipRouter.ts:46/72/95/173` so no (man twin khong goi) · `moduleReads.ts` 14 tuyen
+khac nhom A · `dashboardStatsRouters.ts:75` khong phan biet rao/rong · census 4 assertion drift **co san** (cho ben do ky) ·
+`client/index.html:28-29` (G117) · D-7 (11)(12).
+
+**Dot 43 (giao tiep — ky thuat, tu quyet): SELF-HOST FONTS.** `@fontsource-variable/geist` + `@fontsource-variable/geist-mono`
+(hoac woff2 vao `client/public/fonts` + `@font-face`), bo `<link>` + `preconnect` googleapis/gstatic/jsdelivr; **cung font, khong
+doi giao dien**. Ket cuc: Playwright `route.abort` `fonts.googleapis.com|fonts.gstatic.com` ⇒ 4 man render < 2 s, `document.fonts.check('12px
+Geist')` true, `document.fonts.status = loaded`; **a6b #25/#26 DAT ca hai vp voi mang bi chan**; `dist/public/index.html` **0
+`https://`**; `tomtat-D1` 48 ca ve 41 DAT · 0 HONG. Harness: `newPage`/`goto` co tran rieng; `route.abort` CDN mac dinh. Sau
+do **Dot 44 QA lan 5** (bao mat sau va + fonts + D-1 48 ca) + **bao cao tong ket** cho chu so huu.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
