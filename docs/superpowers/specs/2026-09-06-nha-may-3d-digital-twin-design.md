@@ -6612,6 +6612,63 @@ tong hop.
 + HTTP v1 + socket bang `api-vai.mjs`/`http-v1.mjs`/`socket-vai.mjs`), fonts (2×2), bat bien, 6 be mat, duong di video, hieu
 nang tu co che, thi giac, **D-8 tung muc DAT/CHUA/CHO QUYET** ⇒ **bao cao tong ket** cho chu so huu.
 
+### 14q.22 DOT 44 - QA DOC LAP LAN 5 = NGHIEM THU CUOI: DAT trong twin; con lai NGOAI TWIN hoac THIET KE CHO QUYET
+
+Tep tho `.qa-dot44/` (**360 json · 341 png · 4 webm · 41 log**; `chuoi-44.sh → sau-chuoi.sh → cong.sh`, moi buoc `*-XONG.txt`).
+**Khong sua ma.** Chu du an do lai: cay + index sach, 0 nhi phan, 5 anh nguyen, DB nguyen, 3044 tat, twin3d **91/2.354**, **4 luoi
+(3 tenant + vo) 180/180**, `check` 0, `i18n` 0, `tomtat-D1` doi phan quyet 41→44 **0**, `tomtat-D4` dau vet truoc = sau.
+
+**MSA:** HEAD doi `636fb183 → 5094367e` giua hai lenh dau (chu du an commit docs 18:55 — dung nhanh "+1 docs"); **build lai vao
+outDir rieng ⇒ 895/895 asset md5 khop**, `dist/public/index.html` lech **1 dong chu thich** (dist dung truoc commit doi ten tep
+cong) ⇒ dong bo; `--outDir` tuong doi bi vite giai theo `root=client/` ⇒ ghi vao `client/.qa-dot44/` (da don). 6 lan thiet bi tu
+bac: `vitest run twin` 1 do timeout vi chay chong luc server nap GGUF 12,5 s + reranker 14,5 s (chay rieng 15/15) · wrapper nen
+bao "killed" nhung PID + mtime con song ⇒ cho theo PID (G109) · `do33` @1280 thoat im lang sau k1 (grep loc stderr) ⇒ chay lai
+3/3 · `fonts.check()` mu (Geist 0/0 ma true) · `route.abort` khong tai hien treo (chi `cham`) · census 4 do co san.
+
+**D-1 nam cot:** 32 **16/26** → 37 37/3 → 39 41/0 → 41 41/0 → **44: 41 DAT · 0 SAI · 0 HONG · 5 CHAN-DUNG · 1 N/A · 1 "xem K"**.
+**D-2** K 12/12 ×2 mang (K6 = 26) · E 13/13 ×2 · I 14/14 ×2 · P (p6 "Live" 1.000–1.153 ms) · **F1 4/4 o thuong/chan/cham/treo
+@1600 + chan @1280**, `faceGeistLoaded` 3 + Mono 1, **0 request ngoai**. **D-3** dot bien **5/5 do**, md5/eol/diff/cached/numstat
+sach, nen xanh lai; go 4 va ⇒ **2/3/2/4 do**; `trpc.abc.xyz` gia ⇒ 3 do; chen `<link https>` ⇒ CLI exit 1 + 2 test do + F1 `cham`
+**0/4 (goto 30 s ×4)**; tuoc 11 `@font-face` ⇒ Geist 0/0, 0/4. **D-4 BAO MAT:** 48 luot × 6 vai — **0/288 o doi** so voi sau va;
+dau vet **A T12=0/SIM=15 · B 0/0 · C 0/0 · D 0/7 · M 0/13 · ADM T12=10/SIM=16**; doc `tho` moi hang B/C `n>0` = hinh dang rong;
+A hoi NM18 17 hang: rong/`NOT_FOUND`; socket **B/C 0 goi · A/D/M chi `twin:1` · ADM ca hai**; HTTP v1 khong khoa 401 · khoa SIM-FAC
+/14 200 S · /257 **404** · khoa **chua khai** (`dataScopeMode NULL`, nhu 52/55 khoa that): /14 404 · /257 404 · /robots/1 404 ·
+`/ecosystem/kpi` **200 rong** (`value:null, available:false`); luoi §0 **grep 42 = ghim 42** (115 tep). **D-5** 6 be mat may 14/18
+mot tu dien (hb tam ⇒ `idle`/`running` 1 s; msl tam ⇒ **van offline**); cua so 0–10 s **0 lat** 11 tep × 4 be mat; duong di video 4
+webm: bam Line **36/36 ms**, may **20/32 ms**, Back 27–83 ms, deep-link 1,1–1,3 s; ACK `engineer1` MTTA 53 s; T2 vai D 3 man
+`thieuQuyen`. **D-6** toi canvas trung vi @1600 twin 1.177 · line 1.267 · may 1.593 · studio 1.508 ms; @1280 1.465/1.272/1.764/1.367;
+long task max 72–255 ms; **40 s dung yen 0 khung 27/27**; nguon khung **19/19 luot 0 khung · 0 rAF · 0 commit R3F** (doi chung hb ⇒
+2 khung/3 commit); keo 25–55 khung/1,5 s; **khoi dong lanh**: luot 1 sau restart /twin **4.512** · line 2.101 · may 1.301 · studio
+3.078 ms — server nap GGUF embedding 12,5 s + reranker 14,5 s len GPU **ngay sau `listen`** (`server-lanh.out.log:173,187`); luot 2
+may **10.660 ms** outlier; luot 3 4/4 ≤ 1,35 s; CPU 4–10 %, VRAM 29,7/32,6 GB, 0 request ngoai ⇒ **nguon outlier chua dinh danh**.
+
+**D-7:** het (1)(3)(7); cho quyet (2)(4)(5)(6)(8)(9)(10)(13); ky thuat nho (11)(12)(14); **moi (15)** breadcrumb pham vi tren thanh
+cong cu `/twin` cat con "T… › Nha… › T" **ca 1600 lan 1280**; font Geist that 4/4 man; en 0 chu Viet o UI.
+
+> #### ★ QD-25 (sua chu) - khoa API chua khai pham vi ⇒ may/robot **404**; `/ecosystem/kpi` ⇒ **200 rong** (`available:false`) —
+> cung huong dong, **khac ma**. Spec §14q.20 viet "nhu `/ecosystem/kpi`" la lech; ma dung, chu sua.
+
+> #### ★ G120 - **"THU DANG CHAY = THU VUA SUA" chung minh bang BUILD LAI VAO OUTDIR RIENG + SO MD5 TUNG ASSET** (895/895), khong
+> bang mtime. Va **`vite build --outDir` tuong doi giai theo `root`** (`client/`), khong theo cwd — ghi vao sai cho im lang.
+
+**D-8 KET LUAN QA LAN 5:**
+| Muc | Phan quyet |
+|---|---|
+| Chon Line → Line 3D, chon may → Machine 3D | **DAT** (36/36 · 20/32 ms; Back/F5/deep-link 5/5; 26 redirect ×4; D-1 41/0/5) |
+| Toi uu, nhanh | **DAT (twin)** · **CHUA (ngoai twin)**: luot 1 sau restart 4,5 s (AI stack), outlier 10,7 s chua dinh danh |
+| Dep, truc quan | mot tu dien **DAT** · bo cuc **CHO QUYET** 8 muc + (14)(15) · (11)(12) **CHUA (ky thuat nho)** |
+| QD-18/19/21/23/24 | **DAT** · QD-25 **DAT** (sua chu spec) |
+| Bao mat du lieu | **DAT (twin)** — 0/288 o doi, 0 dau vet cheo, ablation 2 chieu · **CHUA (ngoai twin)** 3 thu tuc toan cuc/khong phan biet (`user.assignableTechnicians` ADM 12 user; `orchestration.listWorkflows` 5 ten toan cuc; `dashboard.getMachineStats` toan 0 moi vai) |
+| Khong phu thuoc mang ngoai | **DAT (vo + twin)** — 55/55 phien 0 request ngoai · **CHUA (ngoai twin)** troika/HDR CDN o 4 man cu, CSP con googleapis |
+**Khong nghiem thu mu**: hieu nang "luot dau sau restart" + outlier thuoc server/AI stack — ghi dieu kien khi ban giao.
+
+**Brief sai/lech lan 18 (5):** `nguon-khung.mjs` da co studio · outlier ca **sau** restart, khong chi ngay sau · QD-25 "nhu kpi" ·
+dist dau phien khac HEAD 1 chu thich · "mot minh" — chu du an commit docs vao worktree 18:55 (truoc khi do, khong anh huong).
+
+**Con mo (chu du an tong hop, giao sau khi chu so huu quyet):** (a) **thiet ke** 9 muc (8 + (15)) cho chu so huu; (b) **ky thuat
+nho twin** (11)(12)(14); (c) **ngoai twin**: khoi dong lanh/outlier (do tach AI tat/bat), 3 thu tuc toan cuc, CSP siet, `express.static`
+`maxAge`, troika/HDR CDN o 4 man cu, census 4 assertion drift, `pnpm-lock` lech; (d) sua chu QD-25 (da sua o day).
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
