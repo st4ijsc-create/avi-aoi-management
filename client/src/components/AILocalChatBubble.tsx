@@ -41,6 +41,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
+import { anBongBongTrenTuyen } from "@/lib/bongBongTheoTuyen";
 import Markdown from "react-markdown";
 import { AIToolResultCard, type ToolResultPayload } from "./AIToolResultCard";
 import {
@@ -1106,10 +1107,12 @@ export function AILocalChatBubble() {
   if (moduleAiBiChan) return null;
   // UX group A — the global FAB is redundant on the full-page chat (/ai-chat),
   // so hide it there to avoid two AI entry points stacking on the same screen.
-  if (location.startsWith("/ai-chat")) return null;
   // doc65 V3/V5 — /andon là wallboard TV nhìn xa: widget chat cá nhân không thuộc
   // ngữ cảnh đó và FAB đè lên ticker cảnh báo ở mép dưới → ẩn hẳn.
-  if (location.startsWith("/andon")) return null;
+  // ★ Đợt 45 (mục 1) — họ `/twin*` cùng lớp với /andon: bề mặt toàn-viewport, FAB đè
+  //   thanh tua / dải trạm / ngăn xử lý / thư viện asset ở cả 4 màn × 2 viewport (QA Đợt 44).
+  //   Danh sách + vị từ ở MỘT chỗ (`bongBongTheoTuyen.ts`, có lưới), không rải `startsWith`.
+  if (anBongBongTrenTuyen(location)) return null;
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
