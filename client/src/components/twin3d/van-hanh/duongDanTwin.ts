@@ -184,6 +184,18 @@ export interface TrangThaiTwinUrl {
  *   `docThu` lọc theo chính danh sách này, nên URL ghi ra đúng mà đọc lại ra
  *   rỗng, F5 mất bậc, và KHÔNG lỗi nào nổ. Tên phải vào đây TRƯỚC khi có nút.
  */
+/**
+ * ★★★ ĐỢT 45 (mục 4) — MẶC ĐỊNH ĐỔI: `/twin` chỉ vẽ nhãn máy BẤT THƯỜNG.
+ *
+ * QA Đợt 44 (D-7 mục 5) đo `/twin` mặc định: 15–16 nhãn "· Không rõ" chồng ở tâm cảnh,
+ * chip "còn 29/37 tên bị ẩn" — 41/42 máy cùng một trạng thái, nên "tên mọi máy" là 16
+ * cái nhãn nói cùng một câu. Chính sách "chỉ nhãn bất thường" (Đợt 24) đã có nút mà mặc
+ * định tắt ⇒ đảo mặc định. Hệ quả cho khoá `thu=`: `"nhanBatThuong"` GIỮ (link cũ vẫn
+ * đọc được, nay trùng mặc định — như `"moPhong"`), thêm `"nhanTatCa"` = bậc KHÁC mặc định
+ * mới ("hiện tên mọi máy"). Cả hai là lựa chọn TƯỜNG MINH của người dùng; vắng cả hai ⇒
+ * theo lựa chọn đã nhớ (`chinhSachNhan.ts`, localStorage) rồi mới tới mặc định.
+ * ⚠ G67 — tên phải vào đây TRƯỚC khi có nút, nếu không `docThu` nuốt im lặng.
+ */
 export const PANEL_THU_DUOC: readonly string[] = [
   "trai",
   "phai",
@@ -191,6 +203,7 @@ export const PANEL_THU_DUOC: readonly string[] = [
   "moPhong",
   "moPhongMo",
   "nhanBatThuong",
+  "nhanTatCa",
 ];
 
 /**

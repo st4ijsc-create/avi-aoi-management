@@ -75,10 +75,14 @@ test("V3 — nút chỉ-nhãn-bất-thường: có mặt, bấm được, đổi
   ra["V3-nhan-bat-thuong"] = { truoc, sau };
 
   // ĐẦU RA PHẢI KHÁC ĐẦU VÀO (G5).
+  // ★ Đợt 45 (mục 4) — MẶC ĐỊNH ĐẢO: `/twin` mở ra đã ở bậc "chỉ nhãn bất thường" (aria-pressed=true,
+  //   URL trơn); bấm nút ⇒ chuyển sang "hiện tên mọi máy" = URL mang `nhanTatCa`, aria-pressed=false,
+  //   và SỐ NHÃN TĂNG. Chiều ngược (nhanBatThuong) đo ở lưới đơn vị `chinhSachNhan.unit.test.ts`.
+  expect(truoc.ariaPressed).toBe("true");
   expect(sau.url).toContain("thu=");
-  expect(sau.url).toContain("nhanBatThuong");
-  expect(sau.ariaPressed).toBe("true");
-  expect(truoc.ariaPressed).toBe("false");
+  expect(sau.url).toContain("nhanTatCa");
+  expect(sau.ariaPressed).toBe("false");
+  expect(sau.soNhan).toBeGreaterThan(truoc.soNhan);
 });
 
 /*

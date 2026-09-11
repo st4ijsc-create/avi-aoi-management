@@ -99,6 +99,13 @@ export interface LopNhanProps {
    */
   chuNhanAn?: (n: number) => string;
   /**
+   * ★ Đợt 45 (mục 4) — chữ ĐÃ QUA `t()` cho chip khi `chiNhanBatThuong` BẬT: tên bị ẩn
+   *   là do CHÍNH SÁCH người dùng chọn (nay là mặc định), không phải do chật chỗ — chip
+   *   phải nói đúng lý do ("chỉ tên máy bất thường · N tên khác ẩn"), không dùng câu
+   *   "còn N tên bị ẩn" như thể màn thiếu chỗ. `undefined` ⇒ rơi về `chuNhanAn`.
+   */
+  chuNhanAnTheoChinhSach?: (n: number) => string;
+  /**
    * ★★★ Đợt 35 (Pareto #5) — chữ ĐÃ QUA `t()` cho chip "N sự cố ngoài khung":
    * máy bất thường (andon/error) nằm ngoài frustum. QA Đợt 32 `raised/`: andon
    * `raised` trên máy ngoài khung ⇒ KHÔNG một dấu hiệu nào. `undefined` ⇒ không chip.
@@ -137,8 +144,11 @@ export function LopNhan({
   tranNhan = TRAN_NHAN_DOM,
   chiNhanBatThuong = false,
   chuNhanAn,
+  chuNhanAnTheoChinhSach,
   chuSuCoNgoaiKhung,
 }: LopNhanProps) {
+  // ★ Đợt 45 — một chỗ chọn câu cho chip: theo chính sách khi bật (và có câu), không thì câu chật chỗ.
+  const chuChipAn = chiNhanBatThuong && chuNhanAnTheoChinhSach ? chuNhanAnTheoChinhSach : chuNhanAn;
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const gl = useThree((s) => s.gl);
@@ -388,10 +398,11 @@ export function LopNhan({
                 {chuSuCoNgoaiKhung(soSuCoNgoai)}
               </div>
             ) : null}
-            {chuNhanAn && soAn > 0 ? (
+            {chuChipAn && soAn > 0 ? (
               <div
                 data-testid="chip-nhan-bi-an"
                 data-so-an={soAn}
+                data-theo-chinh-sach={chiNhanBatThuong ? "1" : "0"}
                 style={{
                   padding: "2px 8px",
                   borderRadius: 999,
@@ -403,7 +414,7 @@ export function LopNhan({
                   border: "1px solid var(--border, rgba(100,116,139,0.35))",
                 }}
               >
-                {chuNhanAn(soAn)}
+                {chuChipAn(soAn)}
               </div>
             ) : null}
           </div>

@@ -473,6 +473,17 @@ describe("Đợt 23 M1 — chiNhanBatThuong: đổi CHÍNH SÁCH, không chỉ �
     expect(tat.ve.length).not.toBe(bat.ve.length);
   });
 
+  it("★ Đợt 45 — máy đang RÊ CHUỘT không bị chính sách giấu (chính sách nay là mặc định; rê = cách đọc tên)", () => {
+    const kq = locNhan(
+      [...ds, { khoa: "ok:3", x: 1000, y: 100, khoangCachMet: 4, hover: true }],
+      { chiNhanBatThuong: true },
+    );
+    expect(kq.ve.map((v) => v.khoa).sort()).toEqual(["loi:1", "ok:3"]);
+    // ĐỐI CHỨNG: cùng máy, không hover ⇒ bị chính sách giấu.
+    const khong = locNhan([...ds, { khoa: "ok:3", x: 1000, y: 100, khoangCachMet: 4 }], { chiNhanBatThuong: true });
+    expect(khong.ve.map((v) => v.khoa)).toEqual(["loi:1"]);
+  });
+
   it("★ máy ĐANG CHỌN không bị chính sách giấu — người dùng vừa bấm vào nó", () => {
     const kq = locNhan(
       [...ds, { khoa: "ok:3", x: 1000, y: 100, khoangCachMet: 4, dangChon: true }],

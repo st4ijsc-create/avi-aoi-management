@@ -400,8 +400,10 @@ export function locNhan(
   // ★ Chính sách chọn ai được nhãn — chạy TRƯỚC phép sắp/khử chồng, vì nó đổi
   //   TẬP ứng viên chứ không đổi thứ tự. Nhãn đang CHỌN luôn được giữ: người
   //   dùng vừa bấm vào nó, giấu tên đúng cái họ vừa chọn là vô lý.
+  // ★ Đợt 45 (mục 4) — chính sách nay là MẶC ĐỊNH của `/twin`, nên máy đang RÊ CHUỘT cũng
+  //   được giữ: rê vào một máy "thường" là cách duy nhất đọc tên nó mà không đổi chế độ.
   const theoChinhSach = cauHinh.chiNhanBatThuong
-    ? trongKhung.filter((n) => n.batThuong === true || n.dangChon === true)
+    ? trongKhung.filter((n) => n.batThuong === true || n.dangChon === true || n.hover === true)
     : trongKhung;
   const soBiLocChinhSach = trongKhung.length - theoChinhSach.length;
 

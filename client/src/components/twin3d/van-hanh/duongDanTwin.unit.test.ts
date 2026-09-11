@@ -607,11 +607,20 @@ describe("Đợt 24 việc 2 — nhanBatThuong", () => {
     );
   });
 
-  it("★ vắng mặt = MẶC ĐỊNH (hiện nhãn cho mọi máy) — chiều của tên không đảo", () => {
-    // Ngữ nghĩa khoá `thu=` là "liệt kê thứ KHÁC mặc định". Mặc định ở đây là
-    // hiện nhãn cho mọi máy, nên tên CÓ MẶT nghĩa là "chỉ nhãn bất thường".
+  it("★ vắng mặt ⇒ không tên nào bị bịa ra (Đợt 45: mặc định do `chinhSachNhan.ts` quyết, không do khoá này)", () => {
+    // Ngữ nghĩa khoá `thu=` là "liệt kê thứ người dùng CHỌN TƯỜNG MINH". Đợt 45 đảo
+    // mặc định sang "chỉ nhãn bất thường" và thêm `nhanTatCa`; khoá này chỉ chở tên.
     expect(docThu("")).not.toContain("nhanBatThuong");
+    expect(docThu("")).not.toContain("nhanTatCa");
     expect(docThu("kpi")).not.toContain("nhanBatThuong");
+  });
+
+  it("★★★ Đợt 45 mục 4 — `nhanTatCa` có trong PANEL_THU_DUOC, khứ hồi, đứng cạnh `nhanBatThuong`", () => {
+    expect(PANEL_THU_DUOC).toContain("nhanTatCa");
+    expect(docThu("nhanTatCa")).toEqual(["nhanTatCa"]);
+    expect(docThu(ghiThu(["nhanTatCa", "trai"]))).toEqual(PANEL_THU_DUOC.filter((p) => ["trai", "nhanTatCa"].includes(p)));
+    const sp = new URLSearchParams(ghiTrangThaiUrl({ thu: ["nhanTatCa"] }));
+    expect([...sp.keys()]).toEqual(["thu"]);
   });
 });
 
