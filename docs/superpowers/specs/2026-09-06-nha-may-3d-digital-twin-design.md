@@ -6669,6 +6669,16 @@ dist dau phien khac HEAD 1 chu thich · "mot minh" — chu du an commit docs vao
 nho twin** (11)(12)(14); (c) **ngoai twin**: khoi dong lanh/outlier (do tach AI tat/bat), 3 thu tuc toan cuc, CSP siet, `express.static`
 `maxAge`, troika/HDR CDN o 4 man cu, census 4 assertion drift, `pnpm-lock` lech; (d) sua chu QD-25 (da sua o day).
 
+### 14q.23 QD-26 - CHU SO HUU DONG Y CA 9 MUC THIET KE (2026-09-11) - DOT 45
+
+Chu so huu: *"dong y 9 muc tieu thiet ke, tiep tuc"*. Dot 45 (skill `frontend-design`, theo yeu cau dung plugin Design): (1) nut
+chat noi vo app de noi dung 4 man · (2) `/twin` @1280 thanh cong cu tran + ngan phai 320 px trong khi chua chon · (3) Line nua
+duoi canh trong (`khopKhungNhin`, giu E4 12/12) · (4) `/twin` nhan chong ⇒ mac dinh chi nhan bat thuong · (5) studio @1280 minimap
+che nut · (6) May @1280 canh 259 px, the gay 3 dong, tab cat (= ky thuat nho 11, 12) · (7) studio @1600 khoi tieu de 260 px ·
+(8) `/twin` "Ton dong >24h" bi tab cat · (9) `/twin` breadcrumb cat "T… › Nha… › T" ca hai vp. Rang buoc: giu moi ket cuc DAT
+(K/E/I/P/F/T, D-1 48 ca), luoi bbox 2 vp, anh truoc/sau tu xem, ablation, i18n 3 locale, cong vo 30/30. Sau do **Dot 46 QA thi
+giac**.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
