@@ -1,0 +1,128 @@
+{
+  "luc": "2026-09-11T22:24:58.337Z",
+  "base": "http://localhost:3048",
+  "duong": "/twin",
+  "man": "man-twin-van-hanh",
+  "vp": "1280x720",
+  "me": {
+    "cache": true,
+    "ten": "e2e_tai_loE",
+    "status": 200,
+    "ct": "application/json"
+  },
+  "mo": {
+    "msCanvas": 1054,
+    "msSanSang": 3650,
+    "coMayTrongKhung": true
+  },
+  "coChe": {
+    "soObject": 1,
+    "coHandler": 1,
+    "trongScene": 1,
+    "ten": [
+      "twin3d-lo-may-su-kien"
+    ]
+  },
+  "lop": {
+    "canvas": [
+      288,
+      207,
+      968,
+      489
+    ],
+    "lopNhan": [
+      288,
+      207,
+      968,
+      489
+    ],
+    "lopBadge": [
+      288,
+      207,
+      968,
+      489
+    ],
+    "soBadge": 5,
+    "soNhan": 1
+  },
+  "may": {
+    "id": 246,
+    "X": 657.3302511787361,
+    "Y": 413.256224127367,
+    "cv": [
+      288,
+      207,
+      968,
+      489
+    ],
+    "soTrongKhung": 42,
+    "loai": [],
+    "hit": {
+      "ten": "twin3d-lo-may",
+      "batchId": 0,
+      "khoangCach": 50.855930789917316
+    }
+  },
+  "cursorTrenMay": "pointer",
+  "san": {
+    "X": 772,
+    "Y": 246.12
+  },
+  "cursorTrenSan": "auto",
+  "urlTruocSan": "http://localhost:3048/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+  "urlSauSan": "http://localhost:3048/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+  "camTruoc": {
+    "x": 46.28983020377636,
+    "y": 16.2802169896242,
+    "z": 40.014830203776356,
+    "mucX": 19.125,
+    "mucZ": 12.849999999999998
+  },
+  "camSau": {
+    "x": 30.600903391282003,
+    "y": 16.280216989624236,
+    "z": 49.5127827824617,
+    "mucX": 19.125,
+    "mucZ": 12.849999999999998
+  },
+  "urlSauKeo": "http://localhost:3048/twin?do=1&cam=30.6%2C16.28%2C49.51%2C19.13%2C12.85",
+  "may2": {
+    "id": 246,
+    "X": 577.486149590796,
+    "Y": 455.09929036499955,
+    "cv": [
+      288,
+      207,
+      968,
+      489
+    ],
+    "soTrongKhung": 42,
+    "loai": [],
+    "hit": {
+      "ten": "twin3d-lo-may",
+      "batchId": 0,
+      "khoangCach": 43.38146736411347
+    }
+  },
+  "msPlaywright": 24,
+  "urlSauBam": "http://localhost:3048/twin/may/246",
+  "treTrongTrang": 0.4,
+  "veXong": {
+    "coCanvas": true,
+    "onDinh": true,
+    "msVeXong": 3111
+  },
+  "manMay": {
+    "coMan": true,
+    "canvasDom": 1,
+    "canvasTrongMan": 1,
+    "__soCanvas": 1,
+    "dangTai": 0,
+    "spin": 0,
+    "calls": 3,
+    "thanhTren": "Nhà máy›Dây chuyền ảo 1›SIM Verify Screwdriver",
+    "h1": "SIM Verify Screwdriver",
+    "cockpit": 1,
+    "lyDo": null
+  }
+}

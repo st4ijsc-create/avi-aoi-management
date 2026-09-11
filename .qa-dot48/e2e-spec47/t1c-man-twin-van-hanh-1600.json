@@ -1,0 +1,16 @@
+{
+  "luc": "2026-09-11T22:30:25.934Z",
+  "duong": "/twin",
+  "vp": {
+    "width": 1600,
+    "height": 900
+  },
+  "nhanBamDuoc": {
+    "id": 23,
+    "X": 1098.359375,
+    "Y": 562.546875,
+    "chu": "SIM-L2-ROBOT · Unknown",
+    "soNhan": 2
+  },
+  "urlSau": "http://localhost:3048/twin/may/23"
+}

@@ -1,0 +1,19 @@
+dist-kiem/
+dist-kiem2/
+pw-output*/
+*.err.log
+*.out.log
+server.pid
+state-*.json
+bak-dot47-e2e/
+# ảnh hàng loạt hồi quy (tái sinh được bằng harness) — không commit; ảnh then chốt đã đọc giữ ở k7/, lop/, d3-vi/, nguon-khung/
+nen-*/
+raised-*/
+chan/
+f1/
+f1-thuong/
+f1-cham/
+f1-treo/
+bbox-qa7/
+p1/*.png
+f1-lai-*/

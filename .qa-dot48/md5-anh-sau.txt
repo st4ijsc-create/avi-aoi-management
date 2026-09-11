@@ -1,0 +1,5 @@
+6d2bc01152679401a91b327a17d8c3d7 *test-results/C1-C4-toan-man.png
+e589cb7b8cbb4be0f9f0c52a03ca267b *test-results/C1-fit-all-sau.png
+279b8d099b5c6fd9a37b3de524c3755e *test-results/C2-anh-xuat-that.png
+698c5faeb8d09835638f69a6c8be55fd *test-results/C3-minimap-sau-click.png
+7207a5f99e333a05651d7f8bb21050da *test-results/C5-hop-thoai-luu-vung.png

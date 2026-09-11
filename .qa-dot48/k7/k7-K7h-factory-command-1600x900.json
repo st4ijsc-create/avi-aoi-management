@@ -1,0 +1,40 @@
+{
+  "luc": "2026-09-11T22:24:47.323Z",
+  "base": "http://localhost:3048",
+  "vp": "1600x900",
+  "coNut3d": true,
+  "coCanvas": true,
+  "coMay": true,
+  "coChe": {
+    "soObject": 1,
+    "coHandler": 1,
+    "trongScene": 1,
+    "ten": [
+      "twin3d-lo-may-su-kien"
+    ]
+  },
+  "may": {
+    "id": 246,
+    "X": 707.8718029249467,
+    "Y": 398.31304242328997,
+    "cv": [
+      289,
+      194.5,
+      954,
+      709.5
+    ],
+    "soTrongKhung": 41,
+    "loai": [],
+    "hit": {
+      "ten": "twin3d-lo-may",
+      "batchId": 19,
+      "khoangCach": 211.35774442361782
+    }
+  },
+  "cursor": "pointer",
+  "urlTruoc": "http://localhost:3048/factory-command?do=1",
+  "dialogTruoc": 0,
+  "urlSau": "http://localhost:3048/factory-command?do=1",
+  "dialogSau": 1,
+  "dialogChu": "SIM-L3 PWRSIM-L3-PWRChi tiết máy: hiện trạng, telemetry, vấn đề và hành động.Hiện trạngTelemetryVấn "
+}

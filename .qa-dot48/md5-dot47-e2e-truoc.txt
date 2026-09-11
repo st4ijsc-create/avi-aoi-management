@@ -1,0 +1,16 @@
+4fc37173c0e21585ae2ed74312ba667c *.qa-dot47/e2e/t1a-man-twin-line-1280-sau-bam.png
+bfa6caee8b4f695f72795f957f809501 *.qa-dot47/e2e/t1a-man-twin-line-1280.json
+b2029ac884834981192d9d6e72c5979a *.qa-dot47/e2e/t1a-man-twin-line-1600-sau-bam.png
+569353d6626eef7ef711bf37b20303cf *.qa-dot47/e2e/t1a-man-twin-line-1600.json
+e6a31d847648814393331b70cd50b73d *.qa-dot47/e2e/t1a-man-twin-van-hanh-1280-sau-bam.png
+22ce9688fe55e7777bd05d2702c289e7 *.qa-dot47/e2e/t1a-man-twin-van-hanh-1280.json
+7899a49fb02be89e2b98c4355f789e7b *.qa-dot47/e2e/t1a-man-twin-van-hanh-1600-sau-bam.png
+15aa85b4f10bb665d8511c7a5e40965c *.qa-dot47/e2e/t1a-man-twin-van-hanh-1600.json
+5956e0cd231a3cc2408b588013082452 *.qa-dot47/e2e/t1c-man-twin-line-1280.json
+33639862d13329a495863762045da2c9 *.qa-dot47/e2e/t1c-man-twin-line-1600.json
+6ab08b7b3d369d0770dd03d5970b873e *.qa-dot47/e2e/t1c-man-twin-van-hanh-1280.json
+e3b73af3f465f2056eba772d40655fba *.qa-dot47/e2e/t1c-man-twin-van-hanh-1600.json
+6b4e54b4e5fe6eba90550e14cbbe122f *.qa-dot47/e2e/t1d-man-twin-line-1280.json
+ac07999f565f6262949748aff8fdceba *.qa-dot47/e2e/t1d-man-twin-line-1600.json
+f1a10c19e17511b1668459ff6fb4a035 *.qa-dot47/e2e/t1d-man-twin-van-hanh-1280.json
+0237db94c9dd734527dc72709579c459 *.qa-dot47/e2e/t1d-man-twin-van-hanh-1600.json

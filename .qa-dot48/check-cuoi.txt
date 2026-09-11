@@ -1,0 +1,5 @@
+
+> synapse-platform@1.0.0 check
+> cross-env NODE_OPTIONS=--max-old-space-size=8192 tsc --noEmit
+
+exit=0

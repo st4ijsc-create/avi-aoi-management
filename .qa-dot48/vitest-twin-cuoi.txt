@@ -1,0 +1,307 @@
+
+ RUN  v2.1.9 D:/SOURCES/_twin_wt
+
+ ✓ client/src/components/twin3d/van-hanh/nhungTaiCho.unit.test.ts (40 tests) 22ms
+ ✓ client/src/components/twin3d/van-hanh/daiCanhBaoLogic.unit.test.ts (35 tests) 23ms
+ ✓ client/src/components/twin3d/loi/locNhan.unit.test.ts (68 tests) 47ms
+ ✓ client/src/components/twin3d/boCucTang.unit.test.ts (50 tests) 26ms
+ ✓ client/src/components/twin3d/sinhBoCuc.unit.test.ts (38 tests) 69ms
+ ✓ client/src/components/twin3d/van-hanh/moPhongLogic.unit.test.ts (37 tests) 18ms
+ ✓ client/src/components/twin3d/van-hanh/sucKhoeMay.unit.test.ts (35 tests) 21ms
+ ✓ client/src/components/twin3d/van-hanh/trungThucDuLieu.unit.test.ts (56 tests) 24ms
+ ✓ client/src/components/twin3d/van-hanh/duongDanTwin.unit.test.ts (75 tests) 72ms
+ ✓ client/src/components/twin3d/thiet-ke/trangThaiThietKe.unit.test.ts (69 tests) 56ms
+ ✓ client/src/components/twin3d/van-hanh/cuaVaoTwin.unit.test.ts (34 tests) 31ms
+ ✓ client/src/components/twin3d/thiet-ke/cayPhanCapLogic.unit.test.ts (51 tests) 28ms
+ ✓ client/src/components/twin3d/hinhHocCanChinh.unit.test.ts (69 tests) 25ms
+ ✓ client/src/components/twin3d/loi/hinhHocTuMoTa.unit.test.ts (30 tests) 48ms
+ ✓ client/src/components/twin3d/van-hanh/manLineNoiVaoTrang.unit.test.ts (43 tests) 21ms
+ ✓ scripts/_lib/taiVanHanhTwin.unit.test.ts (38 tests) 527ms
+   ✓ ★★★ HAI SCRIPT PHẢI **PHÂN TÍCH CÚ PHÁP ĐƯỢC** — `npm run check` KHÔNG bắt được > esbuild phân tích được cả hai script (bắt backtick lạc trong template literal) 426ms
+ ✓ client/src/components/twin3d/van-hanh/phamViCanh.unit.test.ts (53 tests) 35ms
+ ✓ client/src/components/twin3d/docBanVe.unit.test.ts (46 tests) 27ms
+ ✓ client/src/components/twin3d/van-hanh/manMayNoiVaoTrang.unit.test.ts (41 tests) 26ms
+ ✓ client/src/components/twin3d/van-hanh/manLine.unit.test.ts (36 tests) 702ms
+   ✓ ★★★ G91 — `manLine` KHÔNG đếm chạy/dừng: `tinhKpiNoi` làm việc đó (G12) > ★★★ `TomTatLine` KHÔNG có ô `chay`/`dung`/`chuaRo` 411ms
+ ✓ client/src/components/twin3d/van-hanh/manMay.unit.test.ts (42 tests) 23ms
+ ✓ server/routers/phamViTwinCanh.unit.test.ts (18 tests) 17ms
+ ✓ client/src/components/twin3d/van-hanh/locBadge.unit.test.ts (28 tests) 22ms
+ ✓ client/src/components/twin3d/hieuChinhNhapModel.unit.test.ts (45 tests) 26ms
+ ✓ client/src/components/twin3d/thiet-ke/vungAnToan.unit.test.ts (49 tests) 33ms
+ ✓ client/src/components/twin3d/van-hanh/wipTram.unit.test.ts (40 tests) 27ms
+ ✓ client/src/components/twin3d/van-hanh/hopNhatCanh.unit.test.ts (27 tests) 24ms
+ ✓ client/src/components/twin3d/van-hanh/cayVanHanh.unit.test.ts (21 tests) 14ms
+ ✓ client/src/components/twin3d/phamViLine.unit.test.ts (49 tests) 23ms
+ ✓ client/src/components/twin3d/van-hanh/noiChoGoi.unit.test.ts (18 tests) 13ms
+ ✓ client/src/components/twin3d/van-hanh/nganXuLyLogic.unit.test.ts (29 tests) 22ms
+ ✓ client/src/components/twin3d/mauTrangThai.unit.test.ts (29 tests) 182ms
+ ✓ client/src/components/twin3d/van-hanh/tang1KhongTachDuoc.unit.test.ts (8 tests) 33ms
+ ✓ client/src/components/twin3d/heToaDo.unit.test.ts (38 tests) 22ms
+ ✓ client/src/components/twin3d/thiet-ke/khungNhin.unit.test.ts (34 tests) 19ms
+ ✓ client/src/components/twin3d/lichSuThaoTac.unit.test.ts (30 tests) 20ms
+ ✓ client/src/components/twin3d/bo-cuc/dinhTuyenTwinCu.unit.test.ts (22 tests) 19ms
+ ✓ client/src/components/twin3d/van-hanh/kpiNoiLogic.unit.test.ts (16 tests) 16ms
+ ✓ client/src/components/twin3d/hinhKhoiMay.unit.test.ts (55 tests) 39ms
+ ✓ client/src/components/twin3d/van-hanh/boChonNap.unit.test.ts (22 tests) 23ms
+ ✓ client/src/components/twin3d/thiet-ke/quyenThietKe.unit.test.ts (14 tests) 17ms
+ ✓ client/src/components/twin3d/mucChiTiet.unit.test.ts (38 tests) 36ms
+ ✓ client/src/components/twin3d/van-hanh/xuatXuNhip.unit.test.ts (21 tests) 19ms
+ ✓ client/src/components/twin3d/thiet-ke/xemTruocSinh.unit.test.ts (24 tests) 34ms
+ ✓ client/src/components/twin3d/tachTangTuHinhHoc.unit.test.ts (29 tests) 33ms
+ ✓ server/services/twin/pipeline/stepConversion.t4.test.ts (8 tests) 961ms
+   ✓ T4 · stepToGltf (occt-import-js) > tessellates a 10 mm cube → glTF with non-empty vertices/indices + bbox (mm→m) 573ms
+ ✓ client/src/components/twin3d/thiet-ke/banDoNho.unit.test.ts (28 tests) 17ms
+ ✓ client/src/components/twin3d/napModel.unit.test.ts (19 tests) 21ms
+ ✓ client/src/components/twin3d/loi/matDoKhungHinh.unit.test.ts (34 tests) 22ms
+ ✓ client/src/components/twin3d/thiet-ke/gizmoNoiLogic.unit.test.ts (32 tests) 18ms
+ ✓ client/src/components/twin3d/van-hanh/useMoPhongTwin.unit.test.ts (12 tests) 11ms
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > thiết bị đo tự canh: `initializeSocket` thật đã đăng ký `connection` + handler `subscribe` trên socket
+[Twin] WIP broadcaster started (read-only, gated)
+[Twin] trangThai broadcaster started (read-only, gated, 10s)
+[Socket.io] OEE broadcaster started (every 60s)
+[Socket.io] WebSocket server initialized
+[Twin] WIP broadcaster stopped
+[Socket.io] Client connected: s1 type=browser user=51
+[Twin] trangThai broadcaster stopped
+
+ ✓ server/_core/twinTrangThaiPhamVi.unit.test.ts (15 tests) 11ms
+ ✓ client/src/components/twin3d/thiet-ke/xuatAnh.unit.test.ts (25 tests) 16ms
+ ✓ server/services/twin/pipeline/pipeline.t2a.test.ts (18 tests) 1250ms
+   ✓ T2a · conversion service + registry > flag OFF → no-op (writes nothing) 1130ms
+ ✓ client/src/components/twin3d/van-hanh/xuatUsd.unit.test.ts (17 tests) 15ms
+ ✓ client/src/components/twin3d/van-hanh/boCucViewport.unit.test.ts (18 tests) 29ms
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > ★★★ (1) join `twin:1` ⇒ MỘT gói NGAY, trước khi đồng hồ chạy — và gói mang dữ liệu của `traTrangThaiHangLoat`
+[Twin] WIP broadcaster started (read-only, gated)
+[Twin] trangThai broadcaster started (read-only, gated, 10s)
+[Socket.io] OEE broadcaster started (every 60s)
+[Socket.io] WebSocket server initialized
+[Twin] WIP broadcaster stopped
+[Socket.io] Client connected: s1 type=browser user=51
+[Socket.io] s1 joined twin:1
+[Twin] trangThai broadcaster stopped
+
+ ✓ client/src/components/twin3d/bo-cuc/vungQuyen.unit.test.ts (12 tests) 15ms
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > ★★★ (2)+(3) nhịp ĐÚNG 10 000 ms: 9 999 ⇒ vẫn 1 · 10 000 ⇒ 2 · 20 000 ⇒ 3 · 29 999 ⇒ vẫn 3
+[Twin] WIP broadcaster started (read-only, gated)
+[Twin] trangThai broadcaster started (read-only, gated, 10s)
+[Socket.io] OEE broadcaster started (every 60s)
+[Socket.io] WebSocket server initialized
+[Twin] WIP broadcaster stopped
+[Socket.io] Client connected: s1 type=browser user=51
+[Socket.io] s1 joined twin:1
+
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > ★★★ (2)+(3) nhịp ĐÚNG 10 000 ms: 9 999 ⇒ vẫn 1 · 10 000 ⇒ 2 · 20 000 ⇒ 3 · 29 999 ⇒ vẫn 3
+[Twin] trangThai broadcaster stopped
+
+ ✓ client/src/components/twin3d/van-hanh/khoTrangThai.unit.test.ts (15 tests) 15ms
+ ✓ client/src/components/twin3d/van-hanh/useTrangThaiSong.unit.test.ts (10 tests) 10ms
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > (−) đối chứng phạm vi: người NGOÀI phạm vi join ⇒ KHÔNG vào phòng, 0 gói — kể cả sau 10 s
+[Twin] WIP broadcaster started (read-only, gated)
+[Twin] trangThai broadcaster started (read-only, gated, 10s)
+[Socket.io] OEE broadcaster started (every 60s)
+[Socket.io] WebSocket server initialized
+[Twin] WIP broadcaster stopped
+[Socket.io] Client connected: s2 type=browser user=48
+
+stderr | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > (−) đối chứng phạm vi: người NGOÀI phạm vi join ⇒ KHÔNG vào phòng, 0 gói — kể cả sau 10 s
+[Socket.io] s2 TU CHOI join twin:1 - user=48 ngoai pham vi
+
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > (−) đối chứng phạm vi: người NGOÀI phạm vi join ⇒ KHÔNG vào phòng, 0 gói — kể cả sau 10 s
+[Twin] trangThai broadcaster stopped
+
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > (−) không ai trong phòng ⇒ vòng 10 s KHÔNG đọc DB (không tốn truy vấn khi không ai xem)
+[Twin] WIP broadcaster started (read-only, gated)
+[Twin] trangThai broadcaster started (read-only, gated, 10s)
+[Socket.io] OEE broadcaster started (every 60s)
+[Socket.io] WebSocket server initialized
+[Twin] WIP broadcaster stopped
+
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > (−) không ai trong phòng ⇒ vòng 10 s KHÔNG đọc DB (không tốn truy vấn khi không ai xem)
+[Twin] trangThai broadcaster stopped
+
+ ✓ server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts (5 tests) 1353ms
+   ✓ ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > thiết bị đo tự canh: `initializeSocket` thật đã đăng ký `connection` + handler `subscribe` trên socket 814ms
+ ✓ client/src/components/twin3d/van-hanh/usePhanTichLine.unit.test.ts (10 tests) 15ms
+ ✓ client/src/components/twin3d/van-hanh/hopNhatCanhKhongTachThem.unit.test.ts (6 tests) 13ms
+ ✓ client/src/components/twin3d/bo-cuc/daiHopNhatLogic.unit.test.ts (16 tests) 17ms
+ ✓ client/src/components/twin3d/van-hanh/i18nBaMan.unit.test.ts (7 tests) 28ms
+ ✓ client/src/components/twin3d/kiemTraAsset.unit.test.ts (18 tests) 16ms
+ ✓ client/src/components/twin3d/van-hanh/hopNhatCanhNoiVaoTrang.unit.test.ts (12 tests) 12ms
+ ✓ client/src/components/twin3d/van-hanh/nguonDuLieu.unit.test.ts (17 tests) 13ms
+ ✓ client/src/components/twin3d/van-hanh/dongThoiGian.unit.test.ts (25 tests) 19ms
+ ✓ client/src/components/twin3d/van-hanh/khuChoVaNhanLine.unit.test.ts (12 tests) 12ms
+ ✓ server/services/twin/twinAssets.p5.test.ts (7 tests) 84ms
+ ✓ scripts/seed-twin-mau.unit.test.ts (9 tests) 13ms
+ ✓ client/src/components/twin3d/thiet-ke/tiLeAnhNen.unit.test.ts (18 tests) 12ms
+ ✓ client/src/components/twin3d/van-hanh/nhipAnToan.unit.test.ts (7 tests) 9ms
+ ✓ client/src/components/twin3d/bo-cuc/duongDanBaMan.unit.test.ts (14 tests) 10ms
+ ✓ client/src/components/twin3d/van-hanh/canhLine.unit.test.ts (9 tests) 11ms
+ ✓ client/src/components/twin3d/van-hanh/phuUns.unit.test.ts (11 tests) 11ms
+ ✓ client/src/components/twin3d/van-hanh/hoatAnhDongChay.unit.test.ts (12 tests) 11ms
+ ✓ client/src/components/twin3d/loi/chonVatThe.unit.test.ts (17 tests) 11ms
+ ✓ client/src/components/twin3d/van-hanh/dichKhungDoc.unit.test.ts (6 tests) 18ms
+ ✓ client/src/components/twin3d/van-hanh/canhBaoAnToan.unit.test.ts (11 tests) 10ms
+ ✓ client/src/components/twin3d/van-hanh/cheNhan.unit.test.ts (20 tests) 119ms
+ ✓ client/src/components/twin3d/van-hanh/chinhSachNhan.unit.test.ts (8 tests) 16ms
+ ✓ client/src/components/twin3d/van-hanh/useAnhLichSu.unit.test.ts (7 tests) 7ms
+ ✓ server/services/digitalTwinService.twin-g27.test.ts (9 tests) 11ms
+ ✓ client/src/components/twin3d/van-hanh/congQuyenTwin.unit.test.ts (7 tests) 12ms
+ ✓ server/services/twin/twinFidelityService.test.ts (9 tests) 13ms
+ ✓ server/services/twin/h6DriftRl.test.ts (9 tests) 13ms
+ ✓ client/src/components/twin3d/van-hanh/useTrangThaiTwin.unit.test.ts (7 tests) 9ms
+ ✓ client/src/components/twin3d/van-hanh/lopCanhBaoNoiVaoCanvas.unit.test.ts (4 tests) 7ms
+ ✓ client/src/components/twin3d/van-hanh/giuDuLieuTruoc.unit.test.ts (6 tests) 6ms
+ ✓ client/src/components/twin3d/van-hanh/maNgan.unit.test.ts (9 tests) 11ms
+ ✓ client/src/components/twin3d/van-hanh/boCucThanhCongCu.unit.test.ts (5 tests) 20ms
+ ✓ client/src/components/twin3d/van-hanh/onDinhTheoGiaTri.unit.test.ts (5 tests) 9ms
+ ✓ client/src/components/twin3d/loi/demDuoiChoChip.unit.test.ts (5 tests) 7ms
+ ✓ client/src/components/twin3d/loi/hopDaVe.unit.test.ts (6 tests) 17ms
+ ✓ client/src/components/twin3d/loi/cheDoDo.unit.test.ts (2 tests) 5ms
+ ✓ client/src/components/twin3d/loi/phanBietBamKeo.unit.test.ts (8 tests) 6ms
+ ✓ client/src/components/twin3d/thiet-ke/banDoNhoCanh.unit.test.ts (6 tests) 12ms
+ ✓ server/services/twin/usdExport.t3b.test.ts (10 tests) 26ms
+ ✓ server/services/twin/twinSchema.t3.test.ts (16 tests) 35ms
+stdout | server/db/twinAnToanRobot.db.test.ts > §11 #26 — E-STOP: đường dữ liệu robot ra tới tóm tắt an toàn > cầu chì: phải CÓ robot đang bật trong nhà máy đo, nếu không mọi ca dưới xanh giả
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+stdout | server/services/twin/twin.t1.test.ts > flag-off behavior > startTwinStreamGateway is a no-op when TWIN_LIVE_ENABLED is off
+[TwinStream] gateway NOT started (TWIN_LIVE_ENABLED off) — FE falls back to 5s poll
+
+ ✓ server/services/twin/twin.t1.test.ts (22 tests) 65ms
+stdout | server/db/twinCanhTrungMa.db.test.ts > Đợt 3 CHẶN-2 (mig 0355) — trùng mã: xoá mềm không được chiếm chỗ vĩnh viễn > ★★★ TOÀ NHÀ — xoá mềm rồi TẠO LẠI cùng mã phải THÀNH CÔNG (ngõ cụt đã mở)
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+ ✓ server/routers/digitalTwinRouter.twin-g27.test.ts (5 tests) 187ms
+stdout | server/db/twinBanGhi.db.test.ts > #55 — `twin_ban_ghi` CRUD + hàng rào tenant > ★★★ B1 CHIỀU (+) — lưu được vào tầng TRONG phạm vi, và đọc lại thấy
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+stdout | server/db/twinDemVatThePhamVi.db.test.ts > K2 — `demVatThe` lọc theo phạm vi tenant, hai chiều > ★★★ CHIỀU (−) — người gán nhà máy A đếm được **0** vật thể của tầng thuộc B
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+stdout | server/db/twinDemVatThePhamVi.db.test.ts > K2 — `demVatThe` lọc theo phạm vi tenant, hai chiều > ★★★ CHIỀU (−) — người gán nhà máy A đếm được **0** vật thể của tầng thuộc B
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/db/twinBanGhi.db.test.ts > #55 — `twin_ban_ghi` CRUD + hàng rào tenant > ★★★ B1 CHIỀU (+) — lưu được vào tầng TRONG phạm vi, và đọc lại thấy
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/routers/digitalTwinPhamVi.db.test.ts > Q1 — `digitalTwinRouter` lọc theo phạm vi tenant, hai chiều > twinState > ★★★ CHIỀU (+) — người gán A đọc được máy của A
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stderr | server/db/twinDemVatThePhamVi.db.test.ts > K2 — `demVatThe` lọc theo phạm vi tenant, hai chiều > ★★★ CHIỀU (−) — người gán nhà máy A đếm được **0** vật thể của tầng thuộc B
+[SLOW QUERY] 217.2ms: select "id", "userId", "factoryCode", "assignedBy", "createdAt" from "user_factory_assignments" where "user_factory_assignments"."userId" = $?
+
+ ✓ server/db/twinCanhTrungMa.db.test.ts (7 tests) 1705ms
+   ✓ Đợt 3 CHẶN-2 (mig 0355) — trùng mã: xoá mềm không được chiếm chỗ vĩnh viễn > ★★★ TOÀ NHÀ — xoá mềm rồi TẠO LẠI cùng mã phải THÀNH CÔNG (ngõ cụt đã mở) 450ms
+   ✓ Đợt 3 CHẶN-2 (mig 0355) — trùng mã: xoá mềm không được chiếm chỗ vĩnh viễn > ★★★ TẦNG — cùng kịch bản: xoá mềm rồi tạo lại cùng capSo phải THÀNH CÔNG 478ms
+stdout | server/services/twin/dstarLite.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/_core/socket.twin.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+ ✓ server/db/twinDemVatThePhamVi.db.test.ts (6 tests) 2142ms
+   ✓ K2 — `demVatThe` lọc theo phạm vi tenant, hai chiều > ★★★ CHIỀU (−) — người gán nhà máy A đếm được **0** vật thể của tầng thuộc B 1022ms
+ ✓ server/db/twinAnToanRobot.db.test.ts (7 tests) 2363ms
+   ✓ §11 #26 — E-STOP: đường dữ liệu robot ra tới tóm tắt an toàn > cầu chì: phải CÓ robot đang bật trong nhà máy đo, nếu không mọi ca dưới xanh giả 715ms
+   ✓ §11 #26 — E-STOP: đường dữ liệu robot ra tới tóm tắt an toàn > ★★★ CA DƯƠNG DỰNG TAY — một robot `estop` PHẢI nổi lên `coCanhBao=true` 823ms
+   ✓ §11 #26 — E-STOP: đường dữ liệu robot ra tới tóm tắt an toàn > ★★★ robot ĐÃ VÔ HIỆU HOÁ (`isEnabled=false`) KHÔNG được vào dải an toàn 410ms
+stderr | client/src/components/twin3d/loi/loBatchMay.dom.test.tsx
+THREE.WARNING: Multiple instances of Three.js being imported.
+
+ ✓ client/src/components/twin3d/van-hanh/vienSucKhoe.dom.test.tsx (16 tests) 41ms
+stderr | client/src/components/twin3d/van-hanh/mauThree.dom.test.tsx
+THREE.WARNING: Multiple instances of Three.js being imported.
+
+stdout | client/src/pages/twinHubTabBoTriXuong.unit.test.ts
+🌐 i18next is made possible by our own product, Locize — consider powering your project with managed localization (AI, CDN, integrations): https://locize.com 💙
+
+stderr | client/src/components/twin3d/van-hanh/phaVeNen.dom.test.tsx > ★★★ D2 — tái hiện: `phaVeNen` với oklch THÔ trả NGUYÊN màu gốc > ★★★ đầu vào oklch ⇒ đầu ra === đầu vào (chênh = 0 bit thông tin)
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ ✓ client/src/components/twin3d/van-hanh/phaVeNen.dom.test.tsx (18 tests) 293ms
+ ✓ server/db/twinBanGhi.db.test.ts (14 tests) 3366ms
+   ✓ #55 — `twin_ban_ghi` CRUD + hàng rào tenant > ★★★ B1 CHIỀU (+) — lưu được vào tầng TRONG phạm vi, và đọc lại thấy 1331ms
+   ✓ #55 — `twin_ban_ghi` CRUD + hàng rào tenant > ★★★ B1 CHIỀU (−) — KHÔNG đọc được bản ghi của tầng NGOÀI phạm vi 309ms
+   ✓ #55 — `twin_ban_ghi` CRUD + hàng rào tenant > ★★★ B2 — ẢNH CHỤP TỰ CHỨA: sửa bảng SỐNG không đổi bản đã ghi 371ms
+   ✓ #55 — `twin_ban_ghi` CRUD + hàng rào tenant > ★★★ B3 — XUẤT BẢN bản thứ hai HẠ CỜ bản thứ nhất (mỗi tầng ≤ 1) 317ms
+ ✓ client/src/components/twin3d/van-hanh/vungVanHanh.dom.test.tsx (15 tests) 14ms
+ ✓ client/src/components/twin3d/loi/loBatchMay.dom.test.tsx (3 tests) 114ms
+ ✓ client/src/components/twin3d/van-hanh/noiLoD.dom.test.tsx (17 tests) 183ms
+ ✓ client/src/components/twin3d/van-hanh/DaiCanhBao.dom.test.tsx (29 tests) 665ms
+ ✓ client/src/components/twin3d/van-hanh/dongThoiGian.dom.test.tsx (3 tests) 159ms
+stdout | server/routers/digitalTwinPhamVi.db.test.ts > Q1 — `digitalTwinRouter` lọc theo phạm vi tenant, hai chiều > twinState > ★★★ CHIỀU (+) — người gán A đọc được máy của A
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+stderr | client/src/components/twin3d/thiet-ke/thanhCongCuCanh.dom.test.tsx
+Not implemented: navigation to another Document
+
+ ✓ client/src/components/twin3d/thiet-ke/thanhCongCuCanh.dom.test.tsx (25 tests) 571ms
+stderr | server/_core/socket.twin.test.ts
+[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable.
+
+stderr | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable.
+
+stdout | server/_core/socket.twin.test.ts
+[OAuth] Initialized with baseURL: 
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[OAuth] Initialized with baseURL: 
+
+ ✓ client/src/components/twin3d/van-hanh/daiLineWip.dom.test.tsx (13 tests) 619ms
+   ✓ ★★★ §11.5 — DẢI 2D vẽ SỐ WIP THẬT trong DOM > ★★★ năm trạm ⇒ năm ô WIP có mặt, KHÔNG phải zero ô 316ms
+ ✓ client/src/components/twin3d/loi/modelErrorBoundary.dom.test.tsx (13 tests) 192ms
+ ✓ client/src/components/twin3d/thiet-ke/CayPhanCap.dom.test.tsx (27 tests) 1497ms
+ ✓ client/src/components/twin3d/van-hanh/mauThree.dom.test.tsx (15 tests) 322ms
+ ✓ server/routers/digitalTwinPhamVi.db.test.ts (15 tests) 5866ms
+   ✓ Q1 — `digitalTwinRouter` lọc theo phạm vi tenant, hai chiều > twinState > ★★★ CHIỀU (+) — người gán A đọc được máy của A 3658ms
+stderr | client/src/components/twin3d/van-hanh/danhSachMayAoHoa.dom.test.tsx > H1 — ảo hoá đo được > 549 máy ⇒ SỐ `<li>` trong DOM ÍT HƠN MỘT BẬC (549 → dưới 40)
+react-i18next:: useTranslation: You will need to pass in an i18next instance by using initReactI18next { code: 'NO_I18NEXT_INSTANCE' }
+
+ ✓ client/src/components/twin3d/van-hanh/danhSachMayAoHoa.dom.test.tsx (11 tests) 1695ms
+   ✓ H1 — ảo hoá đo được > 549 máy ⇒ SỐ `<li>` trong DOM ÍT HƠN MỘT BẬC (549 → dưới 40) 472ms
+   ✓ H1 — thiết bị đo tự canh mình > KHÔNG bơm chiều cao (jsdom clientHeight=0) ⇒ KHÔNG ảo hoá, đủ 549 `<li>` 474ms
+Sourcemap for "D:/SOURCES/_twin_wt/node_modules/node-cron/dist/esm/node-cron.js" points to missing source files
+ ✓ client/src/components/twin3d/van-hanh/nhungTaiCho.dom.test.tsx (30 tests) 2539ms
+   ✓ TẦNG 2 — bấm nút 'Mở chức năng' > ★ tiền đề G5: tập nút KHÁC RỖNG, và có CẢ HAI loại đích 323ms
+   ✓ NganNhung — ngăn chi tiết tại chỗ > ★★★ mở ngăn MÁY ⇒ render THÂN MÁY, đúng id — không phải thân khác 385ms
+   ✓ NganNhung — ngăn chi tiết tại chỗ > ★★★ mở ngăn ROBOT ⇒ render THÂN ROBOT, đúng id 366ms
+   ✓ NganNhung — ngăn chi tiết tại chỗ > ★★★ mở ngăn TRẠM ⇒ render THÂN TRẠM, đúng id 334ms
+ ✓ server/services/twin/dstarLite.test.ts (15 tests) 16ms
+stdout | server/_core/socket.twin.test.ts
+[Presence] REDIS_URL not set — machine presence store is in-memory (single instance).
+
+ ✓ server/_core/socket.twin.test.ts (3 tests) 5ms
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[Presence] REDIS_URL not set — machine presence store is in-memory (single instance).
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[Email Service] SMTP not configured, email notifications disabled
+[Email Service] Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD (or SMTP_PASS) to enable
+
+ ✓ client/src/pages/twinHubTabBoTriXuong.unit.test.ts (2 tests) 19ms
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[SmartAlert] ALERT_RENOTIFY_COOLDOWN_MINUTES: thô=(chưa đặt) → hiệu lực=240 phút
+[SmartAlert] ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES: thô=(chưa đặt) → hiệu lực=0 phút
+[SmartAlert] ROUTE_ALERT_MAX_PER_WINDOW: thô=(chưa đặt) → hiệu lực=200 lượt/cửa sổ
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts > Đợt 42 — thủ tục bốn màn twin gọi × vai × nhà máy (lưới tự động, G116) > §1 'andon.active' > (0) người 0 gán — hỏi A lẫn B ⇒ chặn/rỗng, thân KHÔNG có mã của bất kỳ nhà máy nào
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+ ✓ server/routers/twinBonManApiVaiPhamVi.db.test.ts (115 tests) 1523ms
+
+ Test Files  125 passed (125)
+      Tests  2806 passed (2806)
+   Start at  05:21:34
+   Duration  30.54s (transform 64.99s, setup 8.66s, collect 230.95s, tests 33.23s, environment 37.66s, prepare 38.33s)
+

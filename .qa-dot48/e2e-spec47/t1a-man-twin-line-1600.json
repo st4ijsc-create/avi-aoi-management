@@ -1,0 +1,61 @@
+{
+  "luc": "2026-09-11T22:30:48.395Z",
+  "duong": "/twin/line/2",
+  "vp": {
+    "width": 1600,
+    "height": 900
+  },
+  "msToiCanh": 10411,
+  "coChe": {
+    "soObject": 1,
+    "coHandler": 1,
+    "trongScene": 1,
+    "ten": [
+      "twin3d-lo-may-su-kien"
+    ]
+  },
+  "lopPhu": {
+    "canvas": [
+      288,
+      125,
+      1288,
+      659
+    ],
+    "lopBadge": [
+      288,
+      125,
+      1288,
+      659
+    ],
+    "lopNhan": [
+      288,
+      125,
+      1288,
+      659
+    ],
+    "soBadge": 2
+  },
+  "may": {
+    "id": 13,
+    "X": 476.2068400092677,
+    "Y": 595.8811932245372,
+    "cv": {
+      "x": 288,
+      "y": 125
+    }
+  },
+  "hit": {
+    "ten": "twin3d-lo-may",
+    "batchId": 0,
+    "khoangCach": 27.290689753845992
+  },
+  "cursorTrenMay": "pointer",
+  "cursorTrenSan": "auto",
+  "san": {
+    "X": 932,
+    "Y": 177.68
+  },
+  "urlSau": "http://localhost:3048/twin/may/13",
+  "msPlaywright": 33,
+  "treTrongTrang": 0.30000001192092896
+}

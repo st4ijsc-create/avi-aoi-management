@@ -1,0 +1,552 @@
+{
+  "url": "http://localhost:3048/twin/line/2",
+  "lang": "vi",
+  "canvas": {
+    "x": 288,
+    "y": 125,
+    "w": 968,
+    "h": 479,
+    "day": 604,
+    "phai": 1256
+  },
+  "soCanvas": 1,
+  "lopPhu": [
+    {
+      "t": "bang-kpi-noi",
+      "cheNhan": 1,
+      "rect": {
+        "x": 296,
+        "y": 133,
+        "w": 208,
+        "h": 220,
+        "day": 353,
+        "phai": 504
+      },
+      "z": 30
+    },
+    {
+      "t": "ngan-mo-phong",
+      "cheNhan": 1,
+      "rect": {
+        "x": 1008,
+        "y": 133,
+        "w": 240,
+        "h": 28,
+        "day": 161,
+        "phai": 1248
+      },
+      "z": 30
+    },
+    {
+      "t": "khoi-dai-line",
+      "cheNhan": 0,
+      "rect": {
+        "x": 288,
+        "y": 604,
+        "w": 968,
+        "h": 93,
+        "day": 696,
+        "phai": 1256
+      },
+      "z": 0
+    },
+    {
+      "t": "thanh-tren-line",
+      "cheNhan": 0,
+      "rect": {
+        "x": 288,
+        "y": 80,
+        "w": 968,
+        "h": 45,
+        "day": 125,
+        "phai": 1256
+      },
+      "z": 0
+    }
+  ],
+  "nhan": [
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "CONVEYOR · Không rõ",
+      "rect": {
+        "x": 670,
+        "y": 397,
+        "w": 142,
+        "h": 24,
+        "day": 421,
+        "phai": 812
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    },
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "ROBOT · Không rõ",
+      "rect": {
+        "x": 990,
+        "y": 397,
+        "w": 117,
+        "h": 24,
+        "day": 421,
+        "phai": 1107
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    },
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "FCT · Không rõ",
+      "rect": {
+        "x": 631,
+        "y": 371,
+        "w": 98,
+        "h": 24,
+        "day": 395,
+        "phai": 729
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    },
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "PWR · Không rõ",
+      "rect": {
+        "x": 751,
+        "y": 457,
+        "w": 103,
+        "h": 24,
+        "day": 481,
+        "phai": 854
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    },
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "ASSY · Không rõ",
+      "rect": {
+        "x": 809,
+        "y": 431,
+        "w": 106,
+        "h": 24,
+        "day": 455,
+        "phai": 916
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    },
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "ICT · Không rõ",
+      "rect": {
+        "x": 571,
+        "y": 423,
+        "w": 94,
+        "h": 24,
+        "day": 447,
+        "phai": 665
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    },
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "SCREW · Không rõ",
+      "rect": {
+        "x": 864,
+        "y": 402,
+        "w": 120,
+        "h": 24,
+        "day": 426,
+        "phai": 984
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    },
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "PACK · Không rõ",
+      "rect": {
+        "x": 934,
+        "y": 371,
+        "w": 107,
+        "h": 24,
+        "day": 395,
+        "phai": 1041
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    },
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "AVI · Không rõ",
+      "rect": {
+        "x": 512,
+        "y": 375,
+        "w": 94,
+        "h": 24,
+        "day": 399,
+        "phai": 606
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    },
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "AOI · Không rõ",
+      "rect": {
+        "x": 450,
+        "y": 427,
+        "w": 96,
+        "h": 24,
+        "day": 451,
+        "phai": 546
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    },
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "AGV · Không rõ",
+      "rect": {
+        "x": 1060,
+        "y": 371,
+        "w": 100,
+        "h": 24,
+        "day": 395,
+        "phai": 1160
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    },
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "SPI · Không rõ",
+      "rect": {
+        "x": 390,
+        "y": 401,
+        "w": 95,
+        "h": 24,
+        "day": 425,
+        "phai": 485
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    }
+  ],
+  "badge": [
+    {
+      "t": "badge-canh-bao-11",
+      "chu": "◆SIM-L2-CONVEYOR",
+      "rect": {
+        "x": 676,
+        "y": 431,
+        "w": 129,
+        "h": 17,
+        "day": 448,
+        "phai": 805
+      },
+      "z": 29,
+      "opacity": 0.6,
+      "fontPx": 11,
+      "color": "rgb(255, 255, 255)",
+      "bg": "oklch(0.78 0.15 75)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": [],
+      "ngoaiKhung": "0",
+      "muc": "yellow"
+    },
+    {
+      "t": "badge-canh-bao-12",
+      "chu": "◆SIM-L2-ROBOT",
+      "rect": {
+        "x": 1000,
+        "y": 431,
+        "w": 106,
+        "h": 17,
+        "day": 448,
+        "phai": 1106
+      },
+      "z": 29,
+      "opacity": 0.6,
+      "fontPx": 11,
+      "color": "rgb(255, 255, 255)",
+      "bg": "oklch(0.78 0.15 75)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": [],
+      "ngoaiKhung": "0",
+      "muc": "yellow"
+    }
+  ],
+  "chip": [],
+  "capChongNhan": 0,
+  "capChongBadge": 0,
+  "capChongNhanBadge": 0,
+  "badgeDoiCho": 0,
+  "cat": [],
+  "sel": [],
+  "tran": {
+    "docW": 1280,
+    "docH": 720,
+    "innerW": 1280,
+    "innerH": 720,
+    "manDay": 696,
+    "manRect": {
+      "x": 288,
+      "y": 80,
+      "w": 968,
+      "h": 616,
+      "day": 696,
+      "phai": 1256
+    }
+  },
+  "vien": {
+    "bang-kpi-noi": {
+      "rect": {
+        "x": 296,
+        "y": 133,
+        "w": 208,
+        "h": 220,
+        "day": 353,
+        "phai": 504
+      },
+      "chu": "Chỉ số12 máyDây chuyền ảo 2Đang chạy0Dừng lỗi0Bảo trì0Mất kế",
+      "z": 30
+    },
+    "ngan-mo-phong": {
+      "rect": {
+        "x": 1008,
+        "y": 133,
+        "w": 240,
+        "h": 28,
+        "day": 161,
+        "phai": 1248
+      },
+      "chu": "Mô phỏngNăng suất what-if—Nhịp chuyền gần nhất đã quá hạn 8 ",
+      "z": 30
+    },
+    "dem-may-line": {
+      "rect": {
+        "x": 1087,
+        "y": 94,
+        "w": 38,
+        "h": 16,
+        "day": 110,
+        "phai": 1125
+      },
+      "chu": "Máy 12",
+      "z": 0
+    },
+    "tong-wip-line": {
+      "rect": {
+        "x": 1192,
+        "y": 94,
+        "w": 52,
+        "h": 16,
+        "day": 110,
+        "phai": 1244
+      },
+      "chu": "WIP 1304",
+      "z": 0
+    },
+    "kpi-mau-so": {
+      "rect": {
+        "x": 349,
+        "y": 139,
+        "w": 35,
+        "h": 17,
+        "day": 155,
+        "phai": 384
+      },
+      "chu": "12 máy",
+      "z": 30
+    },
+    "khoi-dai-line": {
+      "rect": {
+        "x": 288,
+        "y": 604,
+        "w": 968,
+        "h": 93,
+        "day": 696,
+        "phai": 1256
+      },
+      "chu": "Dải chuyền12 trạmTiền tố: SIM-L2-Nhịp: 2.4sWIP: 1304SPI-ST1 ",
+      "z": 0
+    },
+    "khoi-canh-3d": {
+      "rect": {
+        "x": 288,
+        "y": 125,
+        "w": 968,
+        "h": 479,
+        "day": 604,
+        "phai": 1256
+      },
+      "chu": "◆SIM-L2-CONVEYOR◆SIM-L2-ROBOTCONVEYOR · Không rõROBOT · Khôn",
+      "z": 0
+    }
+  },
+  "font": {
+    "status": "loaded",
+    "soFace": 11,
+    "faceGeistLoaded": 3,
+    "faceMonoLoaded": 1,
+    "body": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Em",
+    "nhanFont": "Geist, ui-sans-serif, system-ui, sans-serif, \"Appl"
+  },
+  "nutThu": {},
+  "demNhan": {
+    "ve": 12,
+    "tong": 12,
+    "ngoaiKhung": 0,
+    "chongLap": 0,
+    "vuotTran": 0,
+    "tran": 30,
+    "biGiau": 0,
+    "vuotMep": 0,
+    "biChe": 0,
+    "soVungCam": 4,
+    "soLopPhuDom": 2,
+    "soHopBadge": 2,
+    "suCoNgoaiKhung": 0,
+    "capConChong": 0
+  },
+  "demBadge": {
+    "ve": 2,
+    "tong": 2,
+    "soAn": 0,
+    "soBiChongLap": 0,
+    "soVuotTran": 0,
+    "biChe": 0,
+    "doiCho": 0,
+    "soVungCam": 2,
+    "tran": 12,
+    "capConChong": 0
+  },
+  "tuongPhan": {
+    "nhan:CONVEYOR · Khô": {
+      "p5": 0.005,
+      "p95": 0.649,
+      "tiSo": 12.6,
+      "pixel": 3408
+    },
+    "nhan:ROBOT · Không ": {
+      "p5": 0.005,
+      "p95": 0.607,
+      "tiSo": 11.84,
+      "pixel": 2808
+    },
+    "badge:◆SIM-L2-CONVEY(op0.6)": {
+      "p5": 0.065,
+      "p95": 0.38,
+      "tiSo": 3.74,
+      "pixel": 2193
+    },
+    "badge:◆SIM-L2-ROBOT(op0.6)": {
+      "p5": 0.036,
+      "p95": 0.38,
+      "tiSo": 4.98,
+      "pixel": 1802
+    },
+    "kpi-mau-so": {
+      "p5": 0.003,
+      "p95": 0.173,
+      "tiSo": 4.22,
+      "pixel": 595
+    },
+    "dem-may-line": {
+      "p5": 0.003,
+      "p95": 0.213,
+      "tiSo": 4.97,
+      "pixel": 608
+    }
+  }
+}

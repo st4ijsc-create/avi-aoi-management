@@ -1,0 +1,596 @@
+{
+  "duong": "/twin/line/2",
+  "man": "man-twin-line",
+  "vp": "1280x720",
+  "macDinh": {
+    "url": "http://localhost:3048/twin/line/2?do=1",
+    "cv": {
+      "x": 288,
+      "y": 125,
+      "w": 968,
+      "h": 478.5
+    },
+    "soTrongKhung": 12,
+    "soBamDuoc": 12,
+    "soNhan": 12,
+    "soBadge": 2,
+    "peNhan": [
+      "none"
+    ],
+    "peBadge": [
+      "none"
+    ],
+    "nhan": [
+      {
+        "id": 18,
+        "chu": "CONVEYOR · Không rõ",
+        "rect": {
+          "x": 670,
+          "y": 397,
+          "w": 142,
+          "h": 24
+        }
+      },
+      {
+        "id": 23,
+        "chu": "ROBOT · Không rõ",
+        "rect": {
+          "x": 990,
+          "y": 397,
+          "w": 117,
+          "h": 24
+        }
+      },
+      {
+        "id": 17,
+        "chu": "FCT · Không rõ",
+        "rect": {
+          "x": 631,
+          "y": 371,
+          "w": 98,
+          "h": 24
+        }
+      },
+      {
+        "id": 19,
+        "chu": "PWR · Không rõ",
+        "rect": {
+          "x": 751,
+          "y": 457,
+          "w": 103,
+          "h": 24
+        }
+      },
+      {
+        "id": 20,
+        "chu": "ASSY · Không rõ",
+        "rect": {
+          "x": 809,
+          "y": 431,
+          "w": 106,
+          "h": 24
+        }
+      },
+      {
+        "id": 16,
+        "chu": "ICT · Không rõ",
+        "rect": {
+          "x": 571,
+          "y": 423,
+          "w": 94,
+          "h": 24
+        }
+      },
+      {
+        "id": 21,
+        "chu": "SCREW · Không rõ",
+        "rect": {
+          "x": 864,
+          "y": 402,
+          "w": 120,
+          "h": 24
+        }
+      },
+      {
+        "id": 22,
+        "chu": "PACK · Không rõ",
+        "rect": {
+          "x": 934,
+          "y": 371,
+          "w": 107,
+          "h": 24
+        }
+      },
+      {
+        "id": 15,
+        "chu": "AVI · Không rõ",
+        "rect": {
+          "x": 512,
+          "y": 375,
+          "w": 94,
+          "h": 24
+        }
+      },
+      {
+        "id": 14,
+        "chu": "AOI · Không rõ",
+        "rect": {
+          "x": 450,
+          "y": 427,
+          "w": 96,
+          "h": 24
+        }
+      },
+      {
+        "id": 24,
+        "chu": "AGV · Không rõ",
+        "rect": {
+          "x": 1060,
+          "y": 371,
+          "w": 100,
+          "h": 24
+        }
+      },
+      {
+        "id": 13,
+        "chu": "SPI · Không rõ",
+        "rect": {
+          "x": 390,
+          "y": 401,
+          "w": 95,
+          "h": 24
+        }
+      }
+    ],
+    "may": [
+      {
+        "id": 13,
+        "X": 449,
+        "Y": 466,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#0",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 23,
+        "X": 1037,
+        "Y": 462,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#1",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 18,
+        "X": 743,
+        "Y": 465,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#2",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 16,
+        "X": 624,
+        "Y": 464,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#3",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 14,
+        "X": 508,
+        "Y": 466,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#4",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 15,
+        "X": 566,
+        "Y": 466,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#5",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 20,
+        "X": 860,
+        "Y": 469,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#6",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 22,
+        "X": 978,
+        "Y": 465,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#7",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 21,
+        "X": 919,
+        "Y": 467,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#8",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 17,
+        "X": 683,
+        "Y": 464,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#9",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 24,
+        "X": 1096,
+        "Y": 465,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#10",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 19,
+        "X": 801,
+        "Y": 468,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#11",
+        "nhanPhu": [
+          19
+        ],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      }
+    ],
+    "biNhanKhacPhu": [],
+    "biBadgeKhacPhu": [],
+    "biNhanMinhPhu": 1
+  },
+  "sauKeo": {
+    "url": "http://localhost:3048/twin/line/2?do=1",
+    "cv": {
+      "x": 288,
+      "y": 125,
+      "w": 968,
+      "h": 478.5
+    },
+    "soTrongKhung": 10,
+    "soBamDuoc": 10,
+    "soNhan": 9,
+    "soBadge": 2,
+    "peNhan": [
+      "none"
+    ],
+    "peBadge": [
+      "none"
+    ],
+    "nhan": [
+      {
+        "id": 18,
+        "chu": "CONVEYOR · Không rõ",
+        "rect": {
+          "x": 716,
+          "y": 403,
+          "w": 142,
+          "h": 24
+        }
+      },
+      {
+        "id": 23,
+        "chu": "ROBOT · Không rõ",
+        "rect": {
+          "x": 900,
+          "y": 255,
+          "w": 117,
+          "h": 24
+        }
+      },
+      {
+        "id": 15,
+        "chu": "AVI · Không rõ",
+        "rect": {
+          "x": 589,
+          "y": 563,
+          "w": 94,
+          "h": 24
+        }
+      },
+      {
+        "id": 16,
+        "chu": "ICT · Không rõ",
+        "rect": {
+          "x": 644,
+          "y": 511,
+          "w": 94,
+          "h": 24
+        }
+      },
+      {
+        "id": 17,
+        "chu": "FCT · Không rõ",
+        "rect": {
+          "x": 692,
+          "y": 468,
+          "w": 98,
+          "h": 24
+        }
+      },
+      {
+        "id": 19,
+        "chu": "PWR · Không rõ",
+        "rect": {
+          "x": 775,
+          "y": 376,
+          "w": 103,
+          "h": 24
+        }
+      },
+      {
+        "id": 20,
+        "chu": "ASSY · Không rõ",
+        "rect": {
+          "x": 810,
+          "y": 344,
+          "w": 106,
+          "h": 24
+        }
+      },
+      {
+        "id": 21,
+        "chu": "SCREW · Không rõ",
+        "rect": {
+          "x": 837,
+          "y": 312,
+          "w": 120,
+          "h": 24
+        }
+      },
+      {
+        "id": 24,
+        "chu": "AGV · Không rõ",
+        "rect": {
+          "x": 934,
+          "y": 207,
+          "w": 100,
+          "h": 24
+        }
+      }
+    ],
+    "may": [
+      {
+        "id": 23,
+        "X": 950,
+        "Y": 323,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#1",
+        "nhanPhu": [
+          21
+        ],
+        "nhanPhuKhac": [
+          "21:SCREW · Không rõ"
+        ],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 18,
+        "X": 786,
+        "Y": 471,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#2",
+        "nhanPhu": [
+          17
+        ],
+        "nhanPhuKhac": [
+          "17:FCT · Không rõ"
+        ],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 16,
+        "X": 695,
+        "Y": 550,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#3",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 15,
+        "X": 642,
+        "Y": 599,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#5",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 20,
+        "X": 861,
+        "Y": 408,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#6",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 22,
+        "X": 924,
+        "Y": 349,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#7",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 21,
+        "X": 894,
+        "Y": 377,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#8",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 17,
+        "X": 743,
+        "Y": 508,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#9",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 24,
+        "X": 977,
+        "Y": 303,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#10",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [
+          "badge-canh-bao-12"
+        ],
+        "badgePhuKhac": [
+          "badge-canh-bao-12"
+        ]
+      },
+      {
+        "id": 19,
+        "X": 825,
+        "Y": 439,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#11",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [
+          "badge-canh-bao-11"
+        ],
+        "badgePhuKhac": [
+          "badge-canh-bao-11"
+        ]
+      }
+    ],
+    "biNhanKhacPhu": [
+      {
+        "id": 23,
+        "X": 950,
+        "Y": 323,
+        "nhan": [
+          "21:SCREW · Không rõ"
+        ]
+      },
+      {
+        "id": 18,
+        "X": 786,
+        "Y": 471,
+        "nhan": [
+          "17:FCT · Không rõ"
+        ]
+      }
+    ],
+    "biBadgeKhacPhu": [
+      {
+        "id": 24,
+        "X": 977,
+        "Y": 303,
+        "badge": [
+          "badge-canh-bao-12"
+        ]
+      },
+      {
+        "id": 19,
+        "X": 825,
+        "Y": 439,
+        "badge": [
+          "badge-canh-bao-11"
+        ]
+      }
+    ],
+    "biNhanMinhPhu": 0
+  },
+  "bamBiPhu": {
+    "may": 23,
+    "maMay": "SIM-L2-ROBOT",
+    "X": 950,
+    "Y": 323,
+    "nhanPhu": [
+      "21:SCREW · Không rõ"
+    ],
+    "dich": 21,
+    "dichLaNhan": true,
+    "dichLaKhoi": false,
+    "url": "http://localhost:3048/twin/may/21"
+  }
+}
