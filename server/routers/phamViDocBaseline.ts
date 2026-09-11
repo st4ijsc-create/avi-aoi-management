@@ -445,9 +445,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/semanticsRouter.ts#semanticsRouter.compute",
   "server/routers/semanticsRouter.ts#semanticsRouter.get",
   "server/routers/semanticsRouter.ts#semanticsRouter.list",
-  // ── server/routers/sensorRouter.ts (2) ─────────────────────────────────────────────────────
-  "server/routers/sensorRouter.ts#sensorRouter.listTypes",
-  "server/routers/sensorRouter.ts#sensorRouter.readSeries",
   // ── server/routers/shiftConfigRouter.ts (2) ────────────────────────────────────────────────
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.defaults",
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.list",
@@ -484,24 +481,22 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/traceabilityRouter.ts (2) ───────────────────────────────────────────────
   "server/routers/traceabilityRouter.ts#traceabilityRouter.byLot",
   "server/routers/traceabilityRouter.ts#traceabilityRouter.bySerial",
-  // ── server/routers/twinRouter.ts (7) ───────────────────────────────────────────────────────
+  // ── server/routers/twinRouter.ts (6) ───────────────────────────────────────────────────────
   "server/routers/twinRouter.ts#twinRouter.models.list",
   "server/routers/twinRouter.ts#twinRouter.models.resolve",
   "server/routers/twinRouter.ts#twinRouter.occupancyGrid",
   "server/routers/twinRouter.ts#twinRouter.replay",
   "server/routers/twinRouter.ts#twinRouter.sceneGraph",
   "server/routers/twinRouter.ts#twinRouter.twinModels",
-  "server/routers/twinRouter.ts#twinRouter.usdExport",
   // ── server/routers/userRouters.ts (1) ──────────────────────────────────────────────────────
   "server/routers/userRouters.ts#userAssignmentRouter.getAllUserAssignments",
   // ── server/routers/vda5050Router.ts (2) ────────────────────────────────────────────────────
   "server/routers/vda5050Router.ts#vda5050Router.listAgvs",
   // ↓ cùng lời khai "thước vừa sắc hơn" như khối `aiCalibrationRouter.ts` ở trên.
   "server/routers/vda5050Router.ts#vda5050Router.status",
-  // ── server/routers/wipRouter.ts (5) ────────────────────────────────────────────────────────
+  // ── server/routers/wipRouter.ts (4) ────────────────────────────────────────────────────────
   "server/routers/wipRouter.ts#wipRouter.dispatch",
   "server/routers/wipRouter.ts#wipRouter.dwellByStation",
-  "server/routers/wipRouter.ts#wipRouter.lineBalance",
   "server/routers/wipRouter.ts#wipRouter.list",
   "server/routers/wipRouter.ts#wipRouter.summary",
 ];

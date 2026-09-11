@@ -337,7 +337,21 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   D 1119 · S 320 · tong 2267 và §5 còn 3 mục `maintenanceRouter` "đã vá mà chưa gỡ" — tức §3/§5 ĐÃ ĐỎ
 //   TRƯỚC đợt này vì độ trôi C/D/S của các lô khác. Tôi chỉ hạ A đúng **5** phần của mình (351 → 346) và
 //   **để nguyên** C/D/S/tong + 3 mục kia cho bên đó ký — sửa hộ sẽ xoá dấu vết nợ chưa ai nhận.
-const GHIM = { A: 346, B: 8, C: 472, D: 1101, S: 290, tong: 2234 } as const;
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 42 (QA Đợt 41 D-4, G116 "nhúng cockpit/nút cũ vào màn mới kéo theo router cũ chưa rào") —
+// **A: 346 → 342.** BỐN thủ tục của ba router CŨ mà BỐN MÀN TWIN MỚI gọi đã được gác:
+// `twinRouter.usdExport` (nút "Xuất USD" ở `/twin`) · `wipRouter.lineBalance` (`/twin/line` qua
+// `usePhanTichLine`) · `sensorRouter.listTypes` · `.readSeries` (tab Telemetry của cockpit nhúng
+// `/twin/may`). Cả bốn có tên trong sổ nợ từ 2026-08-18 (G81 lần hai) — đợt này XOÁ đúng bốn dòng ấy.
+// ★ Đo trước vá qua HTTP thật (`.qa-dot41/api-vai/{B,C}.json`): `operator1` (0 gán) `usdExport(1|18)` ⇒ 200 /
+//   41.850 B + 1.970 B (USDA CẢ HAI nhà máy); vai C (0 quyền, 0 gán) `lineBalance(2)` ⇒ 16 hàng;
+//   mọi vai `sensor.readSeries(m1)` ⇒ 24 điểm. Lưới: `twinBonManApiVaiPhamVi.db.test.ts` (tập thủ tục
+//   bốn màn gọi × 3 vai × 2 nhà máy, bất biến "grep N = phủ N") + `moduleReadsCockpitPhamVi.db.test.ts`.
+// ⚠⚠ Đo trên HEAD SẠCH (`6eec818f`, `.qa-dot42/census-truoc.log`): A 346 · C 474 · D 1119 · S 320 · tong 2267
+//   và §5 vẫn 3 mục `maintenanceRouter` — §3/§5 ĐÃ ĐỎ TRƯỚC đợt này (không đổi từ Đợt 40). Sau vá
+//   (`.qa-dot42/census-sau-va.log`): A 342 · S 324, phần còn lại y nguyên. Tôi chỉ hạ A đúng **4** phần
+//   của mình và **để nguyên** C/D/S/tong + 3 mục kia cho bên đó ký — cùng luật Đợt 40.
+const GHIM = { A: 342, B: 8, C: 472, D: 1101, S: 290, tong: 2234 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
