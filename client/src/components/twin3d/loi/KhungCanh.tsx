@@ -24,6 +24,8 @@ import { Canvas, useThree, useFrame, type RootState } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 
+import { laCheDoDo } from "./cheDoDo";
+
 /** Trần DPR — §4 bảng ngân sách. Không nới, kể cả trên màn Retina. */
 export const DPR_TRAN: [number, number] = [1, 1.5];
 
@@ -82,6 +84,23 @@ export interface CuaSoDoTwin3d {
    *   duy nhất biết camera đã bay là so vị trí nhãn — gián tiếp và mù khi 0 nhãn.
    */
   __tuTheCamera?: { x: number; y: number; z: number; mucX: number; mucZ: number };
+  /**
+   * ★ Đợt 47 (A.2) — CỬA SỔ ĐO TƯƠNG TÁC, chỉ gắn khi `laCheDoDo()` (build DEV hoặc URL `?do=1`).
+   *
+   * QA Đợt 46 đo "bấm/rê máy trên cảnh" bằng lưới điểm + đọc cursor — mù cả hai chiều: cursor
+   * không ai đặt ở `CanhVanHanh`, còn lưới điểm có thể trượt khỏi hình học. Cửa sổ này đọc thẳng
+   * CƠ CHẾ: `demObject` = số object đang nằm trong `internal.interaction` của R3F và bao nhiêu
+   * trong đó THẬT SỰ còn handler (`__r3f.eventCount > 0`) + còn trong scene (Đợt 47 đo được
+   * `1 / 0 / 0` ở HEAD trước vá — lô rỗng lúc chưa có dữ liệu nằm lại danh sách); `hitTai` =
+   * raycast tại NDC qua ĐÚNG danh sách R3F sẽ quét khi có click; `tamMay`/`dsMay` (gắn bởi
+   * `LoBatchMay`) = tâm khối máy chiếu ra px canvas để e2e bấm ĐÚNG KHỐI, không bấm nhãn.
+   */
+  __demTuongTac?: {
+    demObject?: () => { soObject: number; coHandler: number; trongScene: number; ten: string[] };
+    hitTai?: (ndcX: number, ndcY: number) => { ten: string; batchId: number | null; khoangCach: number } | null;
+    tamMay?: (machineId: number) => { x: number; y: number; ndcX: number; ndcY: number; trongKhung: boolean } | null;
+    dsMay?: () => Array<{ machineId: number; x: number; y: number; trongKhung: boolean }>;
+  };
 }
 
 type WindowDo = Window & CuaSoDoTwin3d;
@@ -270,6 +289,57 @@ function BatMatContext({
   return null;
 }
 
+/**
+ * ★ Đợt 47 (A.2) — cửa sổ đo tương tác `window.__demTuongTac` (xem `CuaSoDoTwin3d`).
+ *
+ * Chỉ gắn khi `laCheDoDo()` — sản phẩm không có gì thay đổi. Mọi hàm đọc `get()` LÚC GỌI
+ * (không giữ bản chụp state): `internal.interaction` và camera đổi theo thời gian, và chính
+ * sự đổi đó là thứ cần đo (lô máy đổi ⇒ handler còn không?).
+ */
+function CuaSoDoTuongTac() {
+  const get = useThree((s) => s.get);
+  useEffect(() => {
+    if (typeof window === "undefined" || !laCheDoDo()) return;
+    const w = window as WindowDo;
+    const cua = w.__demTuongTac ?? (w.__demTuongTac = {});
+    const coHandler = (o: THREE.Object3D) =>
+      ((o as unknown as { __r3f?: { eventCount?: number } }).__r3f?.eventCount ?? 0) > 0;
+    cua.demObject = () => {
+      const st = get();
+      const inter = st.internal.interaction;
+      const trongScene = (o: THREE.Object3D) => {
+        let p: THREE.Object3D = o;
+        while (p.parent) p = p.parent;
+        return p === st.scene;
+      };
+      return {
+        soObject: inter.length,
+        coHandler: inter.filter(coHandler).length,
+        trongScene: inter.filter(trongScene).length,
+        ten: inter.map((o) => o.name || o.type),
+      };
+    };
+    cua.hitTai = (ndcX, ndcY) => {
+      const st = get();
+      st.raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), st.camera);
+      const hits = st.raycaster.intersectObjects(st.internal.interaction.filter(coHandler), true);
+      const h = hits[0] as (THREE.Intersection & { batchId?: number }) | undefined;
+      return h
+        ? {
+            ten: h.object.name || h.object.type,
+            batchId: typeof h.batchId === "number" ? h.batchId : null,
+            khoangCach: h.distance,
+          }
+        : null;
+    };
+    return () => {
+      delete cua.demObject;
+      delete cua.hitTai;
+    };
+  }, [get]);
+  return null;
+}
+
 /** Đặt camera ban đầu ĐÚNG MỘT LẦN — đổi prop sau không giật camera của người dùng. */
 function CameraBanDau({ viTri }: { viTri: readonly [number, number, number] }) {
   const camera = useThree((s) => s.camera);
@@ -355,6 +425,7 @@ export function KhungCanh({
         <CameraBanDau viTri={viTriCamera} />
         <BatMatContext onMat={khiMat} onKhoiPhuc={khiKhoiPhuc} />
         <BomThongKe />
+        <CuaSoDoTuongTac />
         {children}
       </Canvas>
 

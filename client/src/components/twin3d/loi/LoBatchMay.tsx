@@ -18,6 +18,35 @@
  * Bất biến §6.2: **hình học tĩnh tách hẳn khỏi trạng thái động.** Cập nhật
  * realtime CHỈ được chạm `setColorAt`/`setVisibleAt`; không bao giờ dựng lại
  * BatchedMesh vì một cập nhật trạng thái.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 47 (N2) — HANDLER Ở `<group>` BỌC NGOÀI, KHÔNG Ở `<primitive>`
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đọc từ bundle R3F 9.5.0 (`dist/events-5a94e5eb.esm.js`, `swapInstances`
+ * :15200-15260 và `applyProps` :446-453): khi `<primitive object>` ĐỔI object
+ * (lô mới vì `may` đổi — ít nhất một lần ở mọi màn: lô RỖNG lúc chưa có dữ
+ * liệu → lô có máy), R3F
+ *   (1) `remove` object cũ khỏi scene và `delete object.__r3f` — nhưng KHÔNG gọi
+ *       `removeInteractivity` ⇒ object cũ NẰM LẠI trong `internal.interaction`
+ *       với `__r3f` rỗng (mọi raycast trúng nó đều bị bỏ vì `eventCount` = 0);
+ *   (2) TÁI DÙNG instance descriptor (đã có `eventCount = 3`) cho object mới rồi
+ *       `applyProps` ⇒ `prevHandlers === instance.eventCount` ⇒ object mới KHÔNG
+ *       BAO GIỜ được đẩy vào `interaction`.
+ * Đo được ở HEAD trước vá (`.qa-dot47/probe/bam47-HEAD.json`, đọc store R3F
+ * thật): `interaction = [1 lô, handlers = [], 0 instance, không trong scene]`;
+ * lô 43 máy đang vẽ KHÔNG có trong danh sách ⇒ bấm/rê máy trên `/twin` và
+ * `/twin/line/2` chết im lặng suốt 46 đợt. `/factory-command` sống chỉ vì lô
+ * đầu tiên của nó đã đủ máy (không swap) — cùng kit, khác vận may.
+ *
+ * ⇒ Handler đặt trên MỘT `<group>` KHÔNG BAO GIỜ ĐỔI; `<primitive>` bên trong
+ *   đổi object thoải mái. R3F raycast `intersectObject(group, true)` xuống
+ *   BatchedMesh con và nổi bọt sự kiện lên group (`intersect` :590-600) —
+ *   `batchId` giữ nguyên trên event. Lưới `loBatchMay.dom.test.tsx` dựng
+ *   reconciler R3F THẬT trong jsdom (gl giả, không WebGL) để ghim đúng cơ chế
+ *   này: đổi lô ⇒ handler vẫn tới, và đối chứng "handler trên primitive" chết.
+ *
+ * ★ BẤM ≠ KÉO: `onClick` chỉ chọn khi `laBam({ lechPx: e.delta, ms })` — xem
+ *   `phanBietBamKeo.ts`. Trước đó, xoay camera rồi nhả chuột trên máy = chọn máy.
  */
 
 import { useThree, type ThreeEvent } from "@react-three/fiber";
@@ -27,6 +56,9 @@ import * as THREE from "three";
 import { hinhHocKhoi, type KhoiKey, type KichThuocMm } from "../hinhKhoiMay";
 import { hinhHocDonViTuMoTa, maTranDatMay, demDinhVaChiSo } from "./hinhHocTuMoTa";
 import { dungBangTra, mucNhanSang, type BangTraLo, type TrangThaiChon } from "./chonVatThe";
+import { laBam } from "./phanBietBamKeo";
+import { laCheDoDo } from "./cheDoDo";
+import type { CuaSoDoTwin3d } from "./KhungCanh";
 
 /** Một máy sẵn sàng để vẽ. Toạ độ đã ở hệ SCENE (mét) — quy đổi ở `heToaDo.ts`. */
 export interface MayTrongLo {
@@ -59,6 +91,11 @@ export interface LoBatchMayProps {
 
 const TRANG = new THREE.Color("#ffffff");
 
+/** Tên lô — `window.__demTuongTac`/e2e tìm BatchedMesh theo tên này. */
+export const TEN_LO_MAY = "twin3d-lo-may";
+/** Tên nhóm bọc mang handler (Đợt 47) — object DUY NHẤT của lớp này nằm trong `internal.interaction`. */
+export const TEN_NHOM_SU_KIEN_LO_MAY = "twin3d-lo-may-su-kien";
+
 /**
  * Ngân sách cấp phát. `BatchedMesh` cấp buffer CỐ ĐỊNH lúc dựng và ném khi tràn,
  * nên ta cộng thật số đỉnh/chỉ số của 7 geometry rồi mới dựng — không đoán.
@@ -75,6 +112,8 @@ export function LoBatchMay({
   onBangTra,
 }: LoBatchMayProps) {
   const invalidate = useThree((s) => s.invalidate);
+  const camera = useThree((s) => s.camera);
+  const size = useThree((s) => s.size);
   const meshRef = useRef<THREE.BatchedMesh | null>(null);
 
   // ── Bảng tra instanceId ↔ machineId. Dựng từ CÙNG mảng, CÙNG useMemo với lô. ──
@@ -137,7 +176,7 @@ export function LoBatchMay({
         roughness: 0.68,
       }),
     );
-    mesh.name = "twin3d-lo-may";
+    mesh.name = TEN_LO_MAY;
     mesh.perObjectFrustumCulled = true;
     mesh.sortObjects = false; // vật liệu đục — không cần sắp theo chiều sâu
 
@@ -202,23 +241,78 @@ export function LoBatchMay({
     invalidate();
   }, [loMoi, may, chon, invalidate]);
 
+  /**
+   * ★ Đợt 47 (A.2) — cửa sổ đo `__demTuongTac.tamMay/dsMay`: tâm KHỐI máy (bbox hình
+   *   học × ma trận instance) chiếu ra px canvas. e2e bấm vào đúng điểm này — không
+   *   bấm nhãn (nhãn neo trên nóc + 0,45 m, có thể trượt khỏi hình học). Chỉ gắn ở chế
+   *   độ đo; tính lúc GỌI theo camera hiện tại.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined" || !laCheDoDo()) return;
+    const w = window as Window & CuaSoDoTwin3d;
+    const cua = w.__demTuongTac ?? (w.__demTuongTac = {});
+    const hop = new THREE.Box3();
+    const mt = new THREE.Matrix4();
+    const tam = new THREE.Vector3();
+    const chieu = (machineId: number) => {
+      const i = bangTra.instanceTheoMay.get(machineId);
+      if (i === undefined) return null;
+      if (!loMoi.getBoundingBoxAt(loMoi.getGeometryIdAt(i), hop)) return null;
+      hop.getCenter(tam);
+      loMoi.getMatrixAt(i, mt);
+      tam.applyMatrix4(mt).applyMatrix4(loMoi.matrixWorld).project(camera);
+      const x = ((tam.x + 1) / 2) * size.width;
+      const y = ((1 - tam.y) / 2) * size.height;
+      const trongKhung = tam.z < 1 && x >= 0 && y >= 0 && x <= size.width && y <= size.height;
+      return { x, y, ndcX: tam.x, ndcY: tam.y, trongKhung };
+    };
+    cua.tamMay = (machineId) => chieu(machineId);
+    cua.dsMay = () =>
+      may.flatMap((m) => {
+        const c = chieu(m.machineId);
+        return c ? [{ machineId: m.machineId, x: c.x, y: c.y, trongKhung: c.trongKhung }] : [];
+      });
+    return () => {
+      delete cua.tamMay;
+      delete cua.dsMay;
+    };
+  }, [loMoi, bangTra, may, camera, size]);
+
   const doiHover = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     const id = docBatchId(e);
     onHover(id === null ? null : (bangTra.mayTheoInstance[id] ?? null));
   };
 
+  /** Mốc pointerdown gần nhất — cùng với `e.delta` của R3F cho phép phân biệt bấm/kéo. */
+  const tPointerDown = useRef(0);
+  const khiPointerDown = () => {
+    tPointerDown.current = typeof performance !== "undefined" ? performance.now() : Date.now();
+  };
+  const khiClick = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation();
+    // ★ Đợt 47 — KÉO xoay camera rồi nhả trên máy KHÔNG phải bấm. `e.delta` = px từ pointerdown (R3F đo).
+    const bayGio = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (!laBam({ lechPx: e.delta, ms: bayGio - tPointerDown.current })) return;
+    const id = docBatchId(e);
+    onChon(id === null ? null : (bangTra.mayTheoInstance[id] ?? null));
+  };
+  const khiPointerOut = () => onHover(null);
+
   return (
-    <primitive
-      object={loMoi}
-      onClick={(e: ThreeEvent<MouseEvent>) => {
-        e.stopPropagation();
-        const id = docBatchId(e);
-        onChon(id === null ? null : (bangTra.mayTheoInstance[id] ?? null));
-      }}
+    /*
+     * ★★★ Đợt 47 — handler ở NHÓM BỌC ổn định (xem docblock đầu tệp). Đặt lại
+     *   `onClick`… lên `<primitive>` là quay về lỗi câm: lô đổi ⇒ handler mất.
+     */
+    <group
+      name={TEN_NHOM_SU_KIEN_LO_MAY}
+      onClick={khiClick}
+      onPointerDown={khiPointerDown}
       onPointerMove={doiHover}
-      onPointerOut={() => onHover(null)}
-    />
+      onPointerOut={khiPointerOut}
+    >
+      <primitive object={loMoi} />
+    </group>
   );
 }
 
