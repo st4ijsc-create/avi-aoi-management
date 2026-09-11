@@ -48,7 +48,7 @@ import { getDb } from "../../db/connection";
 //   `assetCockpit.machineDetail(257)` ⇒ 200 + identity máy của nhà máy 18. Docblock cũ ở router khai "tenant
 //   scope is honored by the identity join — the FE scopes on it": FE lọc KHÔNG phải hàng rào; dữ liệu đã rời server.
 //   Cùng khuôn `db/hierarchy` (`idsTrongPhamVi`/`trongPhamVi`), không dựng bộ luật thứ hai (G12).
-import { idsTrongPhamVi, trongPhamVi, type PhamViNguoiXem } from "../../db/hierarchy";
+import { idsTrongPhamVi, trongPhamVi, type PhamViDoc, type PhamViNguoiXem } from "../../db/hierarchy";
 import {
   machines as machinesTable,
   stations,
@@ -469,7 +469,7 @@ async function loadMachineIdentity(machineId: number): Promise<MachineIdentity |
  * Thực thể có phả hệ đứt (`factoryId` NULL) ⇒ `false` cho người bị thu hẹp: không có đường nào ra nhà
  * máy thì không có căn cứ để cho xem — fail-closed, cùng luật `idsTrongPhamVi`.
  */
-async function nhaMayTrongPhamVi(factoryId: number | null, scope?: PhamViNguoiXem): Promise<boolean> {
+async function nhaMayTrongPhamVi(factoryId: number | null, scope?: PhamViDoc): Promise<boolean> {
   const ids = await idsTrongPhamVi("factory", scope);
   if (ids === null) return true;
   return factoryId != null && ids.includes(factoryId);
@@ -483,8 +483,10 @@ async function nhaMayTrongPhamVi(factoryId: number | null, scope?: PhamViNguoiXe
  * ★ Đợt 40 — `scope`: máy NGOÀI phạm vi người xem ⇒ `null`, CÙNG hình dạng với máy không tồn tại. Một mã
  *   riêng ("bạn không được xem máy 257") xác nhận máy 257 có thật (G82). Bỏ trống `scope` = không lọc (lối
  *   đi không mang danh tính: REST v1, AI RCA) — router tRPC PHẢI truyền `phamViCua(ctx)`.
+ * ★ Đợt 42 — REST v1 KHÔNG còn là "lối đi không mang danh tính": khoá API mang phạm vi riêng
+ *   (`PhamViMaTenant`, trục ② của cùng bộ phân giải) và `moduleReads.ts` PHẢI truyền nó vào đây.
  */
-export async function machineDetail(machineId: number, scope?: PhamViNguoiXem): Promise<MachineDetail | null> {
+export async function machineDetail(machineId: number, scope?: PhamViDoc): Promise<MachineDetail | null> {
   const identity = await loadMachineIdentity(machineId);
   if (!identity) return null;
   if (!(await nhaMayTrongPhamVi(identity.factoryId, scope))) return null;
@@ -771,8 +773,8 @@ function robotKindToKinematicFamily(kind: string): "universal-robots" | "ros2" |
  */
 export async function robotDetail(
   robotId: number,
-  /** ★ Đợt 40 — phạm vi người xem; robot ngoài phạm vi ⇒ `null`, cùng hình dạng với robot không tồn tại (G82). */
-  scope?: PhamViNguoiXem,
+  /** ★ Đợt 40 — phạm vi người xem; robot ngoài phạm vi ⇒ `null`, cùng hình dạng với robot không tồn tại (G82). Đợt 42: nhận cả phạm vi khoá API (trục ②). */
+  scope?: PhamViDoc,
 ): Promise<RobotDetail | null> {
   const db = await getDb();
   if (!db) return null;

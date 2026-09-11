@@ -104,16 +104,17 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   "server/api/v1/lines.ts#GET /lines/:id/state",
   // ── server/api/v1/metricsApi.ts (1) ────────────────────────────────────────────────────────────
   "server/api/v1/metricsApi.ts#GET /metrics/:metric",
-  // ── server/api/v1/moduleReads.ts (16) ──────────────────────────────────────────────────────────
+  // ── server/api/v1/moduleReads.ts (14) ──────────────────────────────────────────────────────────
+  // ★ Đợt 42 — `GET /machines/:id/detail` + `GET /robots/:id/detail` RỜI sổ: phạm vi của khoá
+  //   (`req.apiPrincipal.tenantScope`, trục ②) nay đi vào `machineDetail`/`robotDetail` (đo trước vá:
+  //   khoá SIM-FAC đọc identity máy 257 của NM18 — `.qa-dot41/api-vai/http-v1.json`).
   "server/api/v1/moduleReads.ts#GET /anomaly/events",
   "server/api/v1/moduleReads.ts#GET /ecosystem/hierarchy",
   "server/api/v1/moduleReads.ts#GET /fleet/tasks",
   "server/api/v1/moduleReads.ts#GET /fleet/zones",
-  "server/api/v1/moduleReads.ts#GET /machines/:id/detail",
   "server/api/v1/moduleReads.ts#GET /pdm/risk",
   "server/api/v1/moduleReads.ts#GET /programs",
   "server/api/v1/moduleReads.ts#GET /programs/:id/deployments",
-  "server/api/v1/moduleReads.ts#GET /robots/:id/detail",
   "server/api/v1/moduleReads.ts#GET /safety/events",
   "server/api/v1/moduleReads.ts#GET /safety/zones",
   "server/api/v1/moduleReads.ts#GET /standards/alarm-taxonomy",

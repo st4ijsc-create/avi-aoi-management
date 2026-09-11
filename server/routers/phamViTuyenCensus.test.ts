@@ -63,8 +63,19 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
  *
  * ⚠ Đổi một số ở đây là một **lời khai**, không phải một lượt bảo trì. Năm con số bị ràng buộc bởi
  * `A + C + D + S + U === tổng`, nên không sửa lén được một ô.
+ *
+ * ★★★ ĐỢT 42 (QA Đợt 41 D-4 lỗ #2) — **A: 83 → 81 · S: 15 → 17.** Hai tuyến cockpit của `moduleReads.ts`
+ * (`GET /machines/:id/detail`, `GET /robots/:id/detail`) nay truyền phạm vi KHOÁ (`req.apiPrincipal.tenantScope`,
+ * trục ② của `resolveTenantFactoryScope`) vào `machineDetail`/`robotDetail`. Đo trước vá qua HTTP thật
+ * (`.qa-dot41/api-vai/http-v1.json`): khoá `factoryCode=SIM-FAC` đọc `/machines/257/detail` (NM18) ⇒ 200.
+ * Lưới: `server/api/v1/moduleReadsCockpitPhamVi.db.test.ts` (3 hình dạng khoá × máy/robot A·B·mồ côi).
+ * ⚠ Bản vá ĐẦU nhận `req` trần vào helper ⇒ bộ suy vẫn xếp A (mù) — sửa lại nhận `req.apiPrincipal?.tenantScope`
+ *   (cùng hình `/ecosystem/kpi`) thì hai tuyến mới rời nhóm A. Một lưới mù không phải lưới (G108).
+ * ⚠⚠ Đo trên HEAD SẠCH (`6eec818f`, `.qa-dot42/census-truoc.log`): §1 (`index.ts:650` ≠ `:653` ghim) và §3
+ *   (D 72 · tong 224) ĐÃ ĐỎ TRƯỚC đợt này — độ trôi của lô khác. Tôi chỉ đổi A/S đúng **2** phần của mình,
+ *   **để nguyên** D/tong/§1 cho bên đó ký (cùng luật Đợt 40 ở `phamViDocCensus.test.ts`).
  */
-const GHIM = { A: 83, C: 38, D: 71, S: 15, U: 16, tong: 223 } as const;
+const GHIM = { A: 81, C: 38, D: 71, S: 17, U: 16, tong: 223 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -260,6 +271,9 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/api/export/exportRouter.ts#GET /^\\/inspections\\.(csv|json|xlsx|pdf)$/",
       "server/api/export/exportRouter.ts#GET /^\\/measurements\\.(csv|json|xlsx|pdf)$/",
       "server/api/v1/moduleReads.ts#GET /ecosystem/kpi",
+      // ★ Đợt 42 — hai tuyến cockpit: `machineDetail(id, phamViCuaKhoa(req.apiPrincipal?.tenantScope))`.
+      "server/api/v1/moduleReads.ts#GET /machines/:id/detail",
+      "server/api/v1/moduleReads.ts#GET /robots/:id/detail",
       // ⚠ `reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download` **KHÔNG** ở đây, và nó
       //   CÓ lọc theo người xem. Nó nằm trong SỔ NỢ vì `chamTenant` của nó bật do bao đóng của hàm
       //   XÁC THỰC (`api_keys` mang `factoryCode`), còn `report_artifacts` thì không thuộc tenant
