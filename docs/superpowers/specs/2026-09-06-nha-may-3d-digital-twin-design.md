@@ -6563,6 +6563,55 @@ Geist')` true, `document.fonts.status = loaded`; **a6b #25/#26 DAT ca hai vp voi
 `https://`**; `tomtat-D1` 48 ca ve 41 DAT · 0 HONG. Harness: `newPage`/`goto` co tran rieng; `route.abort` CDN mac dinh. Sau
 do **Dot 44 QA lan 5** (bao mat sau va + fonts + D-1 48 ca) + **bao cao tong ket** cho chu so huu.
 
+### 14q.21 DOT 43 - SELF-HOST GEIST, VO APP 0 TAI NGUYEN NGOAI - G117 DONG; D-1 48 ca 41 DAT · 0 HONG
+
+`636fb183`, **3 commit** pathspec (agent chet 1 lan server_error truoc khi sua ma — resume tu `.qa-dot43/*-XONG.txt`, `npm i`
+lan 2 `--legacy-peer-deps` da xong). Chu du an do lai: twin3d **91 / 2.354** · twin 115/2.736 · **3 luoi tenant 150/150** ·
+**cong vo app 30/30 + CLI DAT** (`client/index.html` 0 https; `dist/public/index.html` 0 tai nguyen `href/src` https, 31 chuoi
+`http(s)://` trong script noi tuyen la chuoi) · `check` 0 · `i18n:check` 0 · 5 anh nguyen · DB + api_keys nguyen · 3043 tat ·
+cay + index sach · 0 nhi phan · **30 woff2** self-host (Geist 76.420 B + Mono 70.448 B; trinh duyet vi tai lan dau 4 tep 77 KB)
+· `package.json` `build` noi `node scripts/kiem-vo-app-https.mjs` (cong buoc cuoi).
+
+**Bang 2×2 F1** (`tomtat-F1.txt`, 4 man, context moi moi man, DAT = man ≤ 2,5 s ∧ Geist ≥ 1 ∧ loaded):
+
+| dist | thuong | chan (abort) | cham (giu 30 s) | treo (giu 60 s) |
+|---|---|---|---|---|
+| **cu** `76b4bff6` | 0/4 — `/twin` goto **7,7 s** ×4 luot, 20 request googleapis+gstatic | 0/4 — man 1,0–1,2 s nhung **Geist 0/0 = fallback Segoe/Consolas** | 0/4 — `goto` **timeout 30 s ×4**, man 30,9–31,0 s | 0/4 — canvas **60,9–61,5 s** |
+| **moi** `636fb183` | **4/4** 1,05–2,27 s | **4/4** 1,05–1,17 s, `faceGeistLoaded 3` (latin, latin-ext, vietnamese) + Mono 1 | **4/4** | **4/4** — **0 request ngoai** o 11/11 phien |
+
+- **F2** D-1 48 ca (mang chan): `✓35 ✗0`; `tomtat-D1` HEAD **41 DAT · 0 HONG · 0 SAI** — **#25/#26 HONG→DAT** (a6b deep-link
+  `/twin/line/2`, `/twin-studio` ca hai vp vo "Production (MES)"). **F3** p6 @1600 ×2 mang chan **961 / 768 ms** (Dot 42 treo 29′).
+- **F4** 5 neo × 4 man: lech **0–1 px**, `fontFamily` trung; **pixel vung chu truoc (Google) / sau (tu phuc vu) 0,00–0,03 %**,
+  doi chung duong Google vs fallback **5,9–26,8 %** ⇒ phep do thay duoc doi font; mat khong phan biet duoc. Giao dien **khong doi**.
+- **F5** bundle +149.881 B; CSS +3.225 B.
+- Hoi quy D-2 K/E/I + P **ca `chan` lan `thuong`**: `✓39 ✗0 · DAT 60 · TRUOT 4` (4 = `[DOI CHUNG]` co y, trung tung dong Dot 42).
+- Ablation: chen lai `<link https>` ⇒ 2 test do + CLI TRUOT; bo `import "./fonts.css"` ⇒ 1 do; tuoc 11 `@font-face` khoi CSS
+  phuc vu ⇒ **Geist 0/0, `fonts.check` van true**, TRUOT 0/4 ⇒ khoi phuc md5 khop.
+- Co che: `client/src/fonts.css` 11 `@font-face` sinh tu `index.css` cua goi, **giu `unicode-range` tung subset** (trung nguyen van
+  CSS Google), doi ho `'Geist Variable'` → `"Geist"`/`"Geist Mono"` (goi variable dat ten khac — import thang **khong** khop
+  `--font-sans`), trong luong `300 700` / `400 600`, chi `normal` (Google cung khong phuc vu italic).
+
+> #### ★ G119 - **ba bay thiet bi do trong mot dot**: (1) `route.abort` **khong tai hien** G117 — dist cu van toi man 1,2 s bang
+> fallback; dieu kien that la **GIU** request (`cham`/`treo`); (2) `document.fonts.check('12px Geist')` tra `true` khi **0
+> `@font-face`** ⇒ mu — chi so chinh la `faceGeistLoaded`; (3) **shebang trong `.mjs` duoc test import ⇒ vite-node boc module
+> trong ham ⇒ `SyntaxError` chi vao dong chu thich sai** — bo shebang, CLI qua `node scripts/x.mjs`.
+
+**Brief sai 8 cho (lan 17):** "khong thay tai nguyen tu jsdelivr" — **co**: `vendor-three-*.js` chua
+`cdn.jsdelivr.net/gh/lojjic/unicode-font-resolver@v1.0.1` (troika cua drei `<Text>`), dung o 4 man **ngoai twin**
+(`Factory3DScene`, `FactoryFloor3D`, `CommandCenter`, `DigitalTwinCenter`), twin3d 0 ⇒ agent bo preconnect (chi goi y) — **chu du
+an giu quyet dinh nay** · dist con **4** `<link https>` khong 3 · `--legacy-peer-deps` bat buoc · mang hom nay curl 0,44 s nhung
+trinh duyet lan dau van 7,7 s ×4 tren dist cu · knowledge/* 26 tep ban do job KB sync 03:00 (co san).
+
+**Con mo:** RB-5 ngoai twin: troika→jsdelivr luc chay (4 man tren) + HDR `Environment preset` (`Factory3DScene.tsx:233`,
+`FactoryFloor3D.tsx:179`) · `server/_core/securityHeaders.ts:70-71` CSP van cho phep googleapis/gstatic (siet duoc) ·
+`server/_core/vite.ts:58` `express.static` khong `maxAge` ⇒ woff2 bam `max-age=0` · khoi dong lanh server 3,7–6,3 s mot man (0
+request ngoai) — do rieng · `packageManager: pnpm@10.4.1` nhung cay cai bang npm, `pnpm-lock.yaml` khong co 2 goi moi · italic
+tong hop.
+
+**Dot 44 — QA lan 5 (nghiem thu cuoi, `pdca`, khong sua ma):** 48 ca bon cot + K/E/I/P/T/F, **bao mat sau va** (48 luot × 6 vai
++ HTTP v1 + socket bang `api-vai.mjs`/`http-v1.mjs`/`socket-vai.mjs`), fonts (2×2), bat bien, 6 be mat, duong di video, hieu
+nang tu co che, thi giac, **D-8 tung muc DAT/CHUA/CHO QUYET** ⇒ **bao cao tong ket** cho chu so huu.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
