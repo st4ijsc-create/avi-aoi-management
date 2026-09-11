@@ -414,6 +414,20 @@
     @apply bg-info/20 text-info border border-info/30;
   }
 
+  /*
+   * Đợt 45 (mục 8) — BÓNG MÉP cho ô cuộn DỌC: nói "còn nữa ở dưới/trên" bằng một dải mờ ở mép,
+   * không cần thanh cuộn (overlay/headless ẩn thanh cuộn ⇒ QA đọc thành "bị cắt nửa hàng").
+   * Kỹ thuật `background-attachment: local` (Lea Verou): hai gradient NỀN cuộn cùng nội dung và
+   * che bóng khi đã tới mép; hai gradient BÓNG đứng yên. Màu từ token — đúng ở cả sáng lẫn tối.
+   */
+  .cuon-doc-bong {
+    background:
+      linear-gradient(var(--background) 30%, transparent) top / 100% 28px no-repeat local,
+      linear-gradient(transparent, var(--background) 70%) bottom / 100% 28px no-repeat local,
+      radial-gradient(farthest-side at 50% 0, color-mix(in oklab, var(--foreground) 22%, transparent), transparent) top / 100% 12px no-repeat scroll,
+      radial-gradient(farthest-side at 50% 100%, color-mix(in oklab, var(--foreground) 22%, transparent), transparent) bottom / 100% 12px no-repeat scroll;
+  }
+
   /* ===================================================================== */
   /* DS F1b — TYPOGRAPHY SCALE (16px base, ~1.25 modular).                  */
   /* Additive utility classes — opt-in, do NOT change any existing text.    */

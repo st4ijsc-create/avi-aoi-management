@@ -230,7 +230,9 @@ export function DaiCanhBao({
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* ★ Đợt 45 (mục 8) — ô cuộn RIÊNG của dải, có bóng mép (`cuon-doc-bong`, index.css) để hàng
+          cuối mờ dần thay vì bị dải tab "Máy | Cây" cắt cụt; tiêu đề nhóm dính đầu ô khi cuộn. */}
+      <div className="cuon-doc-bong min-h-0 flex-1 overflow-y-auto" data-testid="dai-canh-bao-cuon">
         {chuaDo ? (
           // Ba trạng thái, và đây là ô thứ ba (G15): KHÔNG in "0 cảnh báo".
           <p className="px-2 py-2 text-xs text-muted-foreground" data-testid="dai-chua-do">
@@ -251,7 +253,7 @@ export function DaiCanhBao({
             {nhom.homNay.length > 0 ? (
               <>
                 <p
-                  className="px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                  className="sticky top-0 z-10 bg-background px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
                   data-testid="nhom-hom-nay"
                 >
                   {t("twin3d.daiCanhBao.homNay")} ({nhom.homNay.length})
@@ -278,7 +280,7 @@ export function DaiCanhBao({
             {nhom.tonDong.length > 0 ? (
               <>
                 <p
-                  className="border-t px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-warning"
+                  className="sticky top-0 z-10 border-t bg-background px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-warning"
                   data-testid="nhom-ton-dong"
                 >
                   {t("twin3d.daiCanhBao.tonDong")} ({nhom.tonDong.length})
