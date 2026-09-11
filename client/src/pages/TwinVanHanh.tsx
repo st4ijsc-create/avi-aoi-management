@@ -103,12 +103,27 @@ import { DaiLine } from "@/components/twin3d/van-hanh/DaiLine";
 import { xuatUsd, type KetQuaXuatUsd } from "@/components/twin3d/van-hanh/xuatUsd";
 import type { CanhBaoTheGioi, MucCanhBao } from "@/components/twin3d/van-hanh/LopCanhBao";
 import {
+  docTrangThaiUrl,
   duongDanManLine,
   duongDanManMay,
   ghiCamera,
   trangThaiVe,
   type PhamVi,
 } from "@/components/twin3d/van-hanh/duongDanTwin";
+import {
+  chiNhanBatThuongTu,
+  docUuTienNhan,
+  ghiUuTienNhan,
+  thuSauKhiDoiChinhSach,
+  type ChinhSachNhan,
+} from "@/components/twin3d/van-hanh/chinhSachNhan";
+import { gopBreadcrumb, laGon } from "@/components/twin3d/van-hanh/boCucThanhCongCu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 // ── Đợt 33 (QĐ-23) — `/twin` là CỬA VÀO: `?pv=line:`/`?chon=machine:`/`?xem=machine:` đi màn riêng ──
 import { dichManRieng } from "@/components/twin3d/bo-cuc/dinhTuyenTwinCu";
 // ── T-3 (§15.5.2) — vỏ React của trạng thái URL, dùng chung cho CẢ BA MÀN ──
@@ -2015,8 +2030,48 @@ export function ThanTwinVanHanh() {
    *
    * ★ G40 — dùng lại khoá `thu=`, không đẻ khoá thứ tám; tên đã vào
    *   `PANEL_THU_DUOC` (G67) nếu không nó bị nuốt im lặng.
+   *
+   * ★★★ ĐỢT 45 (mục 4) — MẶC ĐỊNH ĐẢO: chỉ nhãn bất thường. QA Đợt 44 đo 16 nhãn
+   *   "· Không rõ" chồng tâm cảnh + chip "còn 29/37 tên bị ẩn" — 41/42 máy cùng một
+   *   trạng thái, tên mọi máy là 16 nhãn nói cùng một câu. Ba nguồn theo thứ tự
+   *   URL (`nhanTatCa`/`nhanBatThuong`) › lựa chọn đã nhớ (localStorage) › mặc định —
+   *   một hàm thuần quyết (`chinhSachNhan.ts`, có lưới). Rê chuột/chọn vẫn hiện tên
+   *   (`locNhan` giữ `hover`/`dangChon` qua chính sách).
    */
-  const chiNhanBatThuong = urlState.thu.includes("nhanBatThuong");
+  const [uuTienNhan, setUuTienNhan] = useState<ChinhSachNhan | null>(() =>
+    docUuTienNhan(typeof localStorage === "undefined" ? null : localStorage),
+  );
+  const chiNhanBatThuong = chiNhanBatThuongTu(urlState.thu, uuTienNhan);
+  const doiChinhSachNhan = useCallback(() => {
+    const moi: ChinhSachNhan = chiNhanBatThuong ? "tatCa" : "batThuong";
+    ghiUuTienNhan(typeof localStorage === "undefined" ? null : localStorage, moi);
+    setUuTienNhan(moi);
+    // Đọc `thu` tại lúc gọi (cùng lý do `doiThu` của `useTrangThaiTwin`), ghi MỘT tên tường minh.
+    ghiUrl({ thu: thuSauKhiDoiChinhSach(docTrangThaiUrl(window.location.search).thu, moi) });
+  }, [chiNhanBatThuong, ghiUrl]);
+
+  /*
+   * ★★★ ĐỢT 45 (mục 2 · mục 9) — BỀ RỘNG HEADER ĐO THẬT (ResizeObserver, không viewport):
+   *   `gon` = header < `NGUONG_GON_PX` (1100) ⇒ hai nút có chữ thành icon-only, ô chọn hẹp hơn,
+   *   breadcrumb gập cấp trên vào "…". Ref CALLBACK (không `useRef` + effect `[]`): header chỉ
+   *   render ở nhánh chính, sau các nhánh sớm — ref callback bắt được đúng lúc nó xuất hiện.
+   */
+  const [rongHeader, setRongHeader] = useState<number | null>(null);
+  const roHeaderRef = useRef<ResizeObserver | null>(null);
+  const headerRef = useCallback((el: HTMLElement | null) => {
+    roHeaderRef.current?.disconnect();
+    roHeaderRef.current = null;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const doLai = () => {
+      const w = Math.round(el.getBoundingClientRect().width);
+      setRongHeader((cu) => (cu === w ? cu : w));
+    };
+    doLai();
+    const ro = new ResizeObserver(doLai);
+    ro.observe(el);
+    roHeaderRef.current = ro;
+  }, []);
+  const gon = laGon(rongHeader);
 
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* Quyền xử lý (§9.2)                                                       */
@@ -2056,6 +2111,15 @@ export function ThanTwinVanHanh() {
      lại ở đây, đó sẽ là bản cài đặt thứ hai của cùng một phép ghi (G12). */
   const thuTrai = urlState.thu.includes("trai");
   const thuPhai = urlState.thu.includes("phai");
+  /*
+   * ★★★ ĐỢT 45 (mục 2) — NGĂN PHẢI RỖNG THÌ THU VỀ 0, KHÔNG GHI URL.
+   *   Sau QĐ-23 mọi lượt chọn máy rời sang `/twin/may/:id` và `?chon=machine:` redirect (K6) ⇒ trên
+   *   `/twin` `machineIdChon` LUÔN null: ngăn 256–320 px chỉ còn câu "Chọn một máy…" (QA Đợt 44 mục 5).
+   *   Trạng thái SUY RA từ dữ liệu (không phải lựa chọn) nên không vào `?thu=` — khi có máy được chọn
+   *   (đường cũ còn sống) ngăn tự mở lại. Câu gợi ý chuyển thành viên nhỏ đáy-phải cảnh (`goi-y-chon-may`).
+   */
+  const nganPhaiTrong = machineIdChon === null;
+  const thuPhaiHieuLuc = thuPhai || nganPhaiTrong;
 
 
   /**
@@ -2181,6 +2245,8 @@ export function ThanTwinVanHanh() {
     if (cap === "nhaMay") return factories.find((f) => f.id === factoryId)?.name ?? t("common.factory");
     return t(`twin3d.vanHanh.cap.${cap}`, cap);
   });
+  // ★ Đợt 45 (mục 9) — gập cấp trên vào "…" khi header gọn hoặc > 3 mắt xích (hàm thuần, có lưới).
+  const bcGop = gopBreadcrumb(breadcrumb, gon);
 
   /**
    * ⚠ Nhãn phải nói ĐÚNG chế độ đang hiện. Bản đầu cứng chuỗi "Cảnh 3D" và
@@ -2450,19 +2516,60 @@ export function ThanTwinVanHanh() {
         duy nhất ở đây có độ dài không đoán trước được (tên nhà máy do người
         dùng đặt), nên nó phải là thứ nhường chỗ.
       */}
-      <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-3">
+      <header
+        ref={headerRef}
+        className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-3"
+        data-testid="thanh-cong-cu-twin"
+        data-gon={gon ? "1" : "0"}
+        data-rong-px={rongHeader ?? ""}
+      >
         <nav
           className="flex min-w-0 items-center gap-1 overflow-hidden text-xs"
           aria-label="breadcrumb"
           data-testid="breadcrumb-twin"
         >
-          {breadcrumb.map((m, i) => (
-            <span key={`${m.cap}-${i}`} className="flex items-center gap-1">
-              {i > 0 ? <span className="text-muted-foreground">›</span> : null}
+          {/*
+            ★★★ ĐỢT 45 (mục 9) — KHÔNG CẮT CHỮ GIỮA TỪ. QA Đợt 44: "T… › Nhà… › T" ở cả 1600 lẫn
+            1280 vì ba mắt xích `max-w-[9rem] truncate` + nav `min-w-0` nhường hết cho hai cụm
+            `shrink-0`. Nay (a) cụm tin cậy rời header (viên trên cảnh, mục 2) nên nav CÓ chỗ;
+            (b) `gopBreadcrumb`: ≤ 3 mắt xích và rộng ⇒ hiện hết; gọn / ≥ 4 ⇒ các cấp trên gập
+            vào "…" (menu bấm được, `title` liệt kê), cấp cha + cấp hiện tại luôn ĐỦ chữ
+            (`max-w-[14rem]`, `title` = tên đầy đủ). `breadcrumb-<cap>` giữ cho mọi mắt xích.
+          */}
+          {bcGop.anCap.length > 0 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="shrink-0 rounded px-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline focus-visible:outline-2"
+                  data-testid="breadcrumb-an-cap"
+                  aria-label={t("twin3d.vanHanh.breadcrumbAnCap", "Các cấp trên")}
+                  title={bcGop.anCap.map((m) => m.nhan).join(" › ")}
+                >
+                  …
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-40">
+                {bcGop.anCap.map((m, i) => (
+                  <DropdownMenuItem
+                    key={`${m.cap}-${i}`}
+                    data-testid={`breadcrumb-${m.cap}`}
+                    onSelect={() => chonPhamVi({ cap: m.cap, id: m.id })}
+                  >
+                    {m.nhan}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+          {bcGop.hien.map((m, i) => (
+            <span key={`${m.cap}-${i}`} className="flex min-w-0 items-center gap-1">
+              {i > 0 || bcGop.anCap.length > 0 ? <span className="text-muted-foreground">›</span> : null}
               <button
                 type="button"
-                className="max-w-[9rem] truncate rounded px-1 hover:bg-accent focus-visible:outline focus-visible:outline-2"
+                className="max-w-[14rem] truncate rounded px-1 hover:bg-accent focus-visible:outline focus-visible:outline-2"
                 data-testid={`breadcrumb-${m.cap}`}
+                title={m.nhan}
                 onClick={() => chonPhamVi({ cap: m.cap, id: m.id })}
               >
                 {m.nhan}
@@ -2486,192 +2593,21 @@ export function ThanTwinVanHanh() {
           toaNhaId={toaNhaId}
           tangId={tangId}
           dangTai={factoriesQ.isLoading || toaNhaQ.isLoading || chiTietQ.isLoading}
+          gon={gon}
           onDoiNhaMay={(id) => ghiUrl({ nap: { nm: id } })}
           onDoiToaNha={(id) => ghiUrl({ nap: { toa: id } })}
           onDoiTang={(id) => ghiUrl({ nap: { tang: id } })}
         />
 
-        <div className="flex shrink-0 items-center gap-2">
-          {/*
-            ★★★ G15 — TRẠNG THÁI ĐƯỜNG SỐ LIỆU, NĂM ô chứ không phải một boolean.
-
-            `chua_ket_noi` (chưa từng nhận gì) PHẢI phân biệt được với "đã kết nối
-            và giá trị bằng 0". Bản cũ (`useTwinStream.isStreaming`) không diễn đạt
-            nổi điều đó: cờ một chiều false→true, nên "chưa kết nối", "đã nối chưa
-            có gói" và "stream vừa chết" đều cho cùng một `false`.
-          */}
-          <span
-            className={
-              "rounded px-1.5 py-0.5 text-[10px] font-medium " +
-              (ketNoi === "truc_tiep"
-                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                : ketNoi === "xem_lai"
-                  ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
-                  : ketNoi === "im_lang"
-                    ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"
-                    : "bg-muted text-muted-foreground")
-            }
-            data-testid="trang-thai-ket-noi"
-            data-ket-noi={ketNoi}
-            title={t(`twin3d.ketNoi.${ketNoi}.moTa`, {
-              defaultValue: {
-                chua_ket_noi: "Chưa kết nối luồng trực tiếp — các số dưới đây là ảnh chụp lúc tải trang.",
-                dang_cho: "Đã kết nối, đang chờ gói dữ liệu đầu tiên.",
-                truc_tiep: "Đang nhận dữ liệu trực tiếp.",
-                im_lang: "Đã kết nối nhưng không nhận được gói nào gần đây — dữ liệu đang cũ dần.",
-                xem_lai: "Đang xem lại lịch sử, không phải dữ liệu trực tiếp.",
-              }[ketNoi],
-            })}
+        <div className="flex shrink-0 items-center gap-2" data-testid="cum-hanh-dong">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={napLai}
+            data-testid="nut-nap-lai"
+            title={t("twin3d.vanHanh.napLai", "Nạp lại dữ liệu")}
+            aria-label={t("twin3d.vanHanh.napLai", "Nạp lại dữ liệu")}
           >
-            {t(`twin3d.ketNoi.${ketNoi}.nhan`, {
-              defaultValue: {
-                chua_ket_noi: "Chưa kết nối",
-                dang_cho: "Đang chờ…",
-                truc_tiep: "Trực tiếp",
-                im_lang: "Im lặng",
-                xem_lai: "Xem lại",
-              }[ketNoi],
-            })}
-          </span>
-
-          {/*
-            ════════════════════════════════════════════════════════════════
-            ★★★ ĐỢT 21 B-3 — CƠ CHẾ GIAO SỐ, ĐẶT NGAY CẠNH "Trực tiếp"
-            ════════════════════════════════════════════════════════════════
-            Huy hiệu bên trái khai **ĐƯỜNG KẾT NỐI**; huy hiệu này khai **CON SỐ
-            TỚI BẰNG ĐƯỜNG NÀO**. Hai đại lượng khác nhau, và trước Đợt 21 chỉ
-            có cái đầu — nên người đọc suy ra cái sau, sai (họ G7: đếm ĐẦU VÀO
-            rồi kết luận về ĐẦU RA). Lý lẽ và số đo ở docblock `khaiNguon`.
-
-            ★ `hon_hop` là ô mà huy hiệu cũ **không có từ để nói**: socket sống,
-              mà một phần số vẫn tới bằng poll 30 s (`nhipHoiMs` cố ý không tắt
-              poll — nó là lưới an toàn cho luồng chết âm thầm).
-
-            ★ GIỮ NGUYÊN `data-testid="trang-thai-ket-noi"` ở huy hiệu trên —
-              bánh cóc e2e sẵn có tra chuỗi đó. Huy hiệu này mang testid RIÊNG,
-              không giành chỗ của nó (đổi bố cục không được đổi hợp đồng đo).
-
-            ★ ISA-101: chỉ hạng **`hoi`** (số CHỈ tới bằng poll) được màu cảnh
-              báo. `day`/`hon_hop` dùng xám trung tính — bình thường thì im.
-          */}
-          <span
-            className={
-              "rounded px-1.5 py-0.5 text-[10px] font-medium " +
-              (khaiNguon.chiTuHoi
-                ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"
-                : "bg-muted text-muted-foreground")
-            }
-            data-testid="co-che-giao-so"
-            data-co-che={khaiNguon.coChe}
-            data-chi-tu-hoi={khaiNguon.chiTuHoi ? "1" : "0"}
-            data-nhip-ms={khaiNguon.nhipHieuLucMs ?? ""}
-            data-tuoi-ms={khaiNguon.tuoiMs ?? ""}
-            title={t(`twin3d.coCheGiao.${khaiNguon.coChe}.moTa`, {
-              defaultValue: {
-                day: "Mọi con số tới bằng luồng đẩy thời gian thực.",
-                hon_hop:
-                  "Luồng đẩy đang sống, nhưng một phần số vẫn tới bằng lượt hỏi định kỳ 30 giây.",
-                hoi: "Không có luồng đẩy — mọi con số tới bằng lượt hỏi định kỳ.",
-                lich_su: "Đang xem lịch sử — các số không tự làm mới.",
-                chua_ro: "Chưa xác định được cơ chế giao số.",
-              }[khaiNguon.coChe],
-            })}
-          >
-            {t(`twin3d.coCheGiao.${khaiNguon.coChe}.nhan`, {
-              defaultValue: {
-                day: "đẩy",
-                hon_hop: "đẩy + hỏi 30s",
-                hoi: "hỏi định kỳ",
-                lich_su: "lịch sử",
-                chua_ro: "—",
-              }[khaiNguon.coChe],
-            })}
-          </span>
-          {/*
-            ★★★ NT-3.2 — "cập nhật lần cuối" là max(timestamp) của DỮ LIỆU NỀN.
-            Đỏ khi > 60 giây. `—` khi chưa từng có dữ liệu (KHÔNG hiện "vừa xong").
-          */}
-          {/*
-            ★★★ §11 #52/#62 — BADGE XUẤT XỨ. SHADOW và TWIN trông giống hệt nhau
-            trên màn hình nhưng trả lời hai câu khác hẳn ("đang thế nào" vs "sẽ
-            thế nào nếu"). Không khai xuất xứ = để người vận hành đọc một con số
-            mô phỏng như số đo thật (NT-4).
-          */}
-          <span
-            className={
-              "rounded px-1.5 py-0.5 text-[10px] font-medium " +
-              (laGiaDinh(xuatXu)
-                ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-300"
-                : xuatXu === "bong"
-                  ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                  : "bg-muted text-muted-foreground")
-            }
-            data-testid="badge-xuat-xu"
-            data-xuat-xu={xuatXu}
-            title={t(`twin3d.xuatXu.${xuatXu}.moTa`, {
-              defaultValue: {
-                bong: "SHADOW — màu phản ánh telemetry/heartbeat THỰC của thiết bị.",
-                mo_phong: "MÔ PHỎNG — các số này là giả định what-if, KHÔNG phải số đo.",
-                so_do: "SƠ ĐỒ — chỉ có bố cục, chưa có số liệu vận hành nào.",
-                khong_ro: "Chưa xác định được xuất xứ của dữ liệu đang hiện.",
-              }[xuatXu],
-            })}
-          >
-            {t(`twin3d.xuatXu.${xuatXu}.nhan`, {
-              defaultValue: {
-                bong: "SHADOW", mo_phong: "MÔ PHỎNG", so_do: "SƠ ĐỒ", khong_ro: "—",
-              }[xuatXu],
-            })}
-          </span>
-          {/*
-            ════════════════════════════════════════════════════════════════
-            ★★★ ĐỢT 23 M4 — "Updated 1572061s ago" LÀ **GIÂY SỐNG**, VÀ NÓ CŨ
-                             18 NGÀY MÀ HIỆN RA NHƯ BÌNH THƯỜNG
-            ════════════════════════════════════════════════════════════════
-            Ảnh tự chụp `.qa-dot23/M1-nhan-thu-ca-hai.png` in đúng chuỗi ấy.
-            HAI lỗi trong một dòng, và chúng cần hai bản vá khác nhau:
-
-              1. **ĐỊNH DẠNG** — 1.572.061 giây không ai đọc được. Dùng
-                 `doTuoiNen.rut` (`{so, donVi}` do `nhanTuoi` rút — G12/G72)
-                 từ 60 giây trở lên; **dưới 60 giây vẫn in GIÂY** vì đó là
-                 nhịp làm mới của màn và giây là đơn vị đúng ở đó.
-              2. **HẠN HIỆU LỰC (G30)** — `do` chỉ nói "hơi cũ", không phân
-                 biệt 61 giây với 18 ngày. `NganXuLy.tsx:300` đã có badge
-                 `duLieuQuaCu` cho ca này; thanh công cụ thì không, nên cùng
-                 một sự thật có hai câu trả lời trên cùng một màn. Nay thanh
-                 công cụ nói **cùng câu ấy** khi `quaCu`.
-
-            ★ `data-giay` GIỮ NGUYÊN số thô — nghiệm thu đọc số, không đọc chữ.
-              Thêm `data-qua-cu` để đo được cờ mới mà không phải suy từ chuỗi.
-          */}
-          <span
-            className={`text-[11px] ${doTuoiNen.do ? "text-destructive" : "text-muted-foreground"}`}
-            data-testid="do-tuoi-nen"
-            data-giay={doTuoiNen.giay ?? ""}
-            data-qua-cu={doTuoiNen.quaCu ? "1" : "0"}
-            title={
-              doTuoiNen.quaCu && doTuoiNen.giay !== null
-                ? t("twin3d.vanHanh.duLieuQuaCu", "Dữ liệu quá cũ — trạng thái không đáng tin")
-                : undefined
-            }
-          >
-            {doTuoiNen.giay === null
-              ? `${t("twin3d.tuoi.capNhatLanCuoi")}: —`
-              : t("twin3d.vanHanh.capNhatTruoc", "Cập nhật {{tuoi}} trước", {
-                  tuoi: nhanTuoiDocDuoc(doTuoiNen, t),
-                })}
-          </span>
-          {/* ★ Badge "quá cũ" — CÙNG chuỗi `duLieuQuaCu` mà `NganXuLy` dùng, để
-              hai chỗ không thể lệch câu. Chỉ hiện khi thật sự quá hạn. */}
-          {doTuoiNen.quaCu && doTuoiNen.giay !== null ? (
-            <span
-              className="rounded border border-amber-500/40 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400"
-              data-testid="badge-qua-cu-nen"
-            >
-              {t("twin3d.vanHanh.duLieuQuaCu", "Dữ liệu quá cũ — trạng thái không đáng tin")}
-            </span>
-          ) : null}
-          <Button size="sm" variant="ghost" onClick={napLai} data-testid="nut-nap-lai">
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
           {/*
@@ -2696,10 +2632,13 @@ export function ThanTwinVanHanh() {
                 "Xuất toàn bộ cảnh nhà máy ra tệp USD (.usda) để mở trong Omniverse / Isaac Sim",
               )}
             >
-              <Download className="mr-1 h-3.5 w-3.5" />
-              {dangXuatUsd
-                ? t("twin3d.vanHanh.xuatUsdDang", "Đang xuất…")
-                : t("twin3d.vanHanh.xuatUsd", "Xuất USD")}
+              {/* ★ Đợt 45 (mục 2) — header gọn ⇒ icon-only: chữ vào `sr-only` (+ `title` sẵn), vẫn là NÚT. */}
+              <Download className={gon ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5"} />
+              <span className={gon ? "sr-only" : undefined}>
+                {dangXuatUsd
+                  ? t("twin3d.vanHanh.xuatUsdDang", "Đang xuất…")
+                  : t("twin3d.vanHanh.xuatUsd", "Xuất USD")}
+              </span>
             </Button>
           ) : null}
           <Button
@@ -2757,11 +2696,19 @@ export function ThanTwinVanHanh() {
             variant="outline"
             data-testid="nut-chi-nhan-bat-thuong"
             aria-pressed={chiNhanBatThuong}
-            title={t(
-              "twin3d.vanHanh.chiNhanBatThuongMoTa",
-              "Chỉ hiện tên máy đang bất thường (và máy đang chọn)",
-            )}
-            onClick={() => doiThu("nhanBatThuong")}
+            /* ★ Đợt 45 — câu tooltip nói TRẠNG THÁI HIỆN TẠI + việc bấm sẽ làm (công tắc phải tự khai). */
+            title={
+              chiNhanBatThuong
+                ? t(
+                    "twin3d.vanHanh.hienMoiNhanMoTa",
+                    "Đang chỉ hiện tên máy bất thường — bấm để hiện tên mọi máy",
+                  )
+                : t(
+                    "twin3d.vanHanh.chiNhanBatThuongMoTa",
+                    "Chỉ hiện tên máy đang bất thường (và máy đang chọn)",
+                  )
+            }
+            onClick={doiChinhSachNhan}
           >
             {chiNhanBatThuong ? (
               <AlertTriangle className="h-3.5 w-3.5" />
@@ -2823,8 +2770,9 @@ export function ThanTwinVanHanh() {
                   "Sang trang Xưởng dựng: thiết kế nhà xưởng, kéo thả máy, lưu bố cục",
                 )}
               >
-                <PencilRuler className="mr-1 h-3.5 w-3.5" />
-                {t("twin3d.vanHanh.moTwinStudio", "Xưởng dựng")}
+                <PencilRuler className={gon ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5"} />
+                {/* ★ Đợt 45 (mục 2) — gọn ⇒ icon-only; chữ vẫn trong DOM (`sr-only`) + `title` ở trên. */}
+                <span className={gon ? "sr-only" : undefined}>{t("twin3d.vanHanh.moTwinStudio", "Xưởng dựng")}</span>
               </Link>
             </Button>
           ) : null}
@@ -3213,6 +3161,10 @@ export function ThanTwinVanHanh() {
               chuNhanAn={(n) =>
                 t("twin3d.vanHanh.nhanBiAn", "còn {{n}} tên bị ẩn", { n })
               }
+              /* ★ Đợt 45 (mục 4) — khi chính sách bật, chip nói ĐÚNG LÝ DO ẩn (không phải chật chỗ). */
+              chuNhanAnTheoChinhSach={(n) =>
+                t("twin3d.vanHanh.nhanBiAnTheoChinhSach", "chỉ tên máy bất thường · {{n}} tên khác ẩn", { n })
+              }
               /* ★ Đợt 35 (Pareto #5): chip "N sự cố ngoài khung" — máy bất thường ngoài frustum (NT-2). */
               chuSuCoNgoaiKhung={(n) =>
                 t("twin3d.vanHanh.suCoNgoaiKhung", "{{n}} sự cố ngoài khung", { n })
@@ -3263,7 +3215,7 @@ export function ThanTwinVanHanh() {
             className={
               "pointer-events-none absolute inset-y-0 " +
               (thuTrai ? "left-0 " : "left-56 2xl:left-72 ") +
-              (thuPhai ? "right-0" : "right-64 2xl:right-80")
+              (thuPhaiHieuLuc ? "right-0" : "right-64 2xl:right-80")
             }
             data-testid="khung-neo-lop-phu"
           >
@@ -3293,6 +3245,218 @@ export function ThanTwinVanHanh() {
             nhanPhamVi={breadcrumb.map((m) => m.nhan).join(" · ")}
           />
 
+          {/*
+            ★★★ ĐỢT 45 (mục 2) — VIÊN TRẠNG THÁI DỮ LIỆU: RỜI HEADER, NỔI GÓC TRÊN-PHẢI CẢNH.
+            Năm huy hiệu (kết nối · cơ chế giao số · xuất xứ · tuổi · quá cũ) trước đây nằm trong header cùng
+            breadcrumb + 3 ô chọn + 6 nút ⇒ @1280 header 968 px TRÀN ("Xưở"), breadcrumb bị bóp còn "T… › Nhà… › T".
+            Chúng nói về CẢNH (số trên cảnh tin được không) nên đứng TRÊN cảnh — cùng chỗ "Mô phỏng" ở Line và
+            thanh công cụ ở studio: mỗi cụm một nhà, cùng nhà ở mọi màn. DOM/testid/data-* của cả năm GIỮ NGUYÊN
+            (hợp đồng đo Đợt 21/38/44); chỉ câu dài "quá cũ" vào tooltip + sr-only, tín hiệu (⚠ + chữ đỏ) vẫn hiện.
+            `data-che-nhan` — vùng cấm nhãn (Đợt 35); `pointer-events-auto` chỉ trên viên (khung neo none).
+          */}
+          <div
+            className="pointer-events-auto absolute right-2 top-2 z-30 flex max-w-[min(34rem,calc(100%-1rem))] flex-wrap items-center justify-end gap-1 rounded-md border bg-background/90 px-1.5 py-1 shadow-sm backdrop-blur"
+            data-testid="cum-trang-thai-du-lieu"
+            data-che-nhan="1"
+          >
+            {/*
+              ★★★ G15 — TRẠNG THÁI ĐƯỜNG SỐ LIỆU, NĂM ô chứ không phải một boolean.
+
+              `chua_ket_noi` (chưa từng nhận gì) PHẢI phân biệt được với "đã kết nối
+              và giá trị bằng 0". Bản cũ (`useTwinStream.isStreaming`) không diễn đạt
+              nổi điều đó: cờ một chiều false→true, nên "chưa kết nối", "đã nối chưa
+              có gói" và "stream vừa chết" đều cho cùng một `false`.
+            */}
+            <span
+              className={
+                "rounded px-1.5 py-0.5 text-[10px] font-medium " +
+                (ketNoi === "truc_tiep"
+                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                  : ketNoi === "xem_lai"
+                    ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
+                    : ketNoi === "im_lang"
+                      ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"
+                      : "bg-muted text-muted-foreground")
+              }
+              data-testid="trang-thai-ket-noi"
+              data-ket-noi={ketNoi}
+              title={t(`twin3d.ketNoi.${ketNoi}.moTa`, {
+                defaultValue: {
+                  chua_ket_noi: "Chưa kết nối luồng trực tiếp — các số dưới đây là ảnh chụp lúc tải trang.",
+                  dang_cho: "Đã kết nối, đang chờ gói dữ liệu đầu tiên.",
+                  truc_tiep: "Đang nhận dữ liệu trực tiếp.",
+                  im_lang: "Đã kết nối nhưng không nhận được gói nào gần đây — dữ liệu đang cũ dần.",
+                  xem_lai: "Đang xem lại lịch sử, không phải dữ liệu trực tiếp.",
+                }[ketNoi],
+              })}
+            >
+              {t(`twin3d.ketNoi.${ketNoi}.nhan`, {
+                defaultValue: {
+                  chua_ket_noi: "Chưa kết nối",
+                  dang_cho: "Đang chờ…",
+                  truc_tiep: "Trực tiếp",
+                  im_lang: "Im lặng",
+                  xem_lai: "Xem lại",
+                }[ketNoi],
+              })}
+            </span>
+
+            {/*
+              ════════════════════════════════════════════════════════════════
+              ★★★ ĐỢT 21 B-3 — CƠ CHẾ GIAO SỐ, ĐẶT NGAY CẠNH "Trực tiếp"
+              ════════════════════════════════════════════════════════════════
+              Huy hiệu bên trái khai **ĐƯỜNG KẾT NỐI**; huy hiệu này khai **CON SỐ
+              TỚI BẰNG ĐƯỜNG NÀO**. Hai đại lượng khác nhau, và trước Đợt 21 chỉ
+              có cái đầu — nên người đọc suy ra cái sau, sai (họ G7: đếm ĐẦU VÀO
+              rồi kết luận về ĐẦU RA). Lý lẽ và số đo ở docblock `khaiNguon`.
+
+              ★ `hon_hop` là ô mà huy hiệu cũ **không có từ để nói**: socket sống,
+                mà một phần số vẫn tới bằng poll 30 s (`nhipHoiMs` cố ý không tắt
+                poll — nó là lưới an toàn cho luồng chết âm thầm).
+
+              ★ GIỮ NGUYÊN `data-testid="trang-thai-ket-noi"` ở huy hiệu trên —
+                bánh cóc e2e sẵn có tra chuỗi đó. Huy hiệu này mang testid RIÊNG,
+                không giành chỗ của nó (đổi bố cục không được đổi hợp đồng đo).
+
+              ★ ISA-101: chỉ hạng **`hoi`** (số CHỈ tới bằng poll) được màu cảnh
+                báo. `day`/`hon_hop` dùng xám trung tính — bình thường thì im.
+            */}
+            <span
+              className={
+                "rounded px-1.5 py-0.5 text-[10px] font-medium " +
+                (khaiNguon.chiTuHoi
+                  ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"
+                  : "bg-muted text-muted-foreground")
+              }
+              data-testid="co-che-giao-so"
+              data-co-che={khaiNguon.coChe}
+              data-chi-tu-hoi={khaiNguon.chiTuHoi ? "1" : "0"}
+              data-nhip-ms={khaiNguon.nhipHieuLucMs ?? ""}
+              data-tuoi-ms={khaiNguon.tuoiMs ?? ""}
+              title={t(`twin3d.coCheGiao.${khaiNguon.coChe}.moTa`, {
+                defaultValue: {
+                  day: "Mọi con số tới bằng luồng đẩy thời gian thực.",
+                  hon_hop:
+                    "Luồng đẩy đang sống, nhưng một phần số vẫn tới bằng lượt hỏi định kỳ 30 giây.",
+                  hoi: "Không có luồng đẩy — mọi con số tới bằng lượt hỏi định kỳ.",
+                  lich_su: "Đang xem lịch sử — các số không tự làm mới.",
+                  chua_ro: "Chưa xác định được cơ chế giao số.",
+                }[khaiNguon.coChe],
+              })}
+            >
+              {t(`twin3d.coCheGiao.${khaiNguon.coChe}.nhan`, {
+                defaultValue: {
+                  day: "đẩy",
+                  hon_hop: "đẩy + hỏi 30s",
+                  hoi: "hỏi định kỳ",
+                  lich_su: "lịch sử",
+                  chua_ro: "—",
+                }[khaiNguon.coChe],
+              })}
+            </span>
+            {/*
+              ★★★ NT-3.2 — "cập nhật lần cuối" là max(timestamp) của DỮ LIỆU NỀN.
+              Đỏ khi > 60 giây. `—` khi chưa từng có dữ liệu (KHÔNG hiện "vừa xong").
+            */}
+            {/*
+              ★★★ §11 #52/#62 — BADGE XUẤT XỨ. SHADOW và TWIN trông giống hệt nhau
+              trên màn hình nhưng trả lời hai câu khác hẳn ("đang thế nào" vs "sẽ
+              thế nào nếu"). Không khai xuất xứ = để người vận hành đọc một con số
+              mô phỏng như số đo thật (NT-4).
+            */}
+            <span
+              className={
+                "rounded px-1.5 py-0.5 text-[10px] font-medium " +
+                (laGiaDinh(xuatXu)
+                  ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-300"
+                  : xuatXu === "bong"
+                    ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                    : "bg-muted text-muted-foreground")
+              }
+              data-testid="badge-xuat-xu"
+              data-xuat-xu={xuatXu}
+              title={t(`twin3d.xuatXu.${xuatXu}.moTa`, {
+                defaultValue: {
+                  bong: "SHADOW — màu phản ánh telemetry/heartbeat THỰC của thiết bị.",
+                  mo_phong: "MÔ PHỎNG — các số này là giả định what-if, KHÔNG phải số đo.",
+                  so_do: "SƠ ĐỒ — chỉ có bố cục, chưa có số liệu vận hành nào.",
+                  khong_ro: "Chưa xác định được xuất xứ của dữ liệu đang hiện.",
+                }[xuatXu],
+              })}
+            >
+              {t(`twin3d.xuatXu.${xuatXu}.nhan`, {
+                defaultValue: {
+                  bong: "SHADOW", mo_phong: "MÔ PHỎNG", so_do: "SƠ ĐỒ", khong_ro: "—",
+                }[xuatXu],
+              })}
+            </span>
+            {/*
+              ════════════════════════════════════════════════════════════════
+              ★★★ ĐỢT 23 M4 — "Updated 1572061s ago" LÀ **GIÂY SỐNG**, VÀ NÓ CŨ
+                               18 NGÀY MÀ HIỆN RA NHƯ BÌNH THƯỜNG
+              ════════════════════════════════════════════════════════════════
+              Ảnh tự chụp `.qa-dot23/M1-nhan-thu-ca-hai.png` in đúng chuỗi ấy.
+              HAI lỗi trong một dòng, và chúng cần hai bản vá khác nhau:
+
+                1. **ĐỊNH DẠNG** — 1.572.061 giây không ai đọc được. Dùng
+                   `doTuoiNen.rut` (`{so, donVi}` do `nhanTuoi` rút — G12/G72)
+                   từ 60 giây trở lên; **dưới 60 giây vẫn in GIÂY** vì đó là
+                   nhịp làm mới của màn và giây là đơn vị đúng ở đó.
+                2. **HẠN HIỆU LỰC (G30)** — `do` chỉ nói "hơi cũ", không phân
+                   biệt 61 giây với 18 ngày. `NganXuLy.tsx:300` đã có badge
+                   `duLieuQuaCu` cho ca này; thanh công cụ thì không, nên cùng
+                   một sự thật có hai câu trả lời trên cùng một màn. Nay thanh
+                   công cụ nói **cùng câu ấy** khi `quaCu`.
+
+              ★ `data-giay` GIỮ NGUYÊN số thô — nghiệm thu đọc số, không đọc chữ.
+                Thêm `data-qua-cu` để đo được cờ mới mà không phải suy từ chuỗi.
+            */}
+            <span
+              className={`text-[11px] ${doTuoiNen.do ? "text-destructive" : "text-muted-foreground"}`}
+              data-testid="do-tuoi-nen"
+              data-giay={doTuoiNen.giay ?? ""}
+              data-qua-cu={doTuoiNen.quaCu ? "1" : "0"}
+              title={
+                doTuoiNen.quaCu && doTuoiNen.giay !== null
+                  ? t("twin3d.vanHanh.duLieuQuaCu", "Dữ liệu quá cũ — trạng thái không đáng tin")
+                  : undefined
+              }
+            >
+              {doTuoiNen.giay === null
+                ? `${t("twin3d.tuoi.capNhatLanCuoi")}: —`
+                : t("twin3d.vanHanh.capNhatTruoc", "Cập nhật {{tuoi}} trước", {
+                    tuoi: nhanTuoiDocDuoc(doTuoiNen, t),
+                  })}
+            </span>
+            {/* ★ Badge "quá cũ" — CÙNG chuỗi `duLieuQuaCu` mà `NganXuLy` dùng, để
+                hai chỗ không thể lệch câu. Chỉ hiện khi thật sự quá hạn. */}
+            {doTuoiNen.quaCu && doTuoiNen.giay !== null ? (
+              /* ★ Đợt 45 (mục 2) — câu dài vào `title` + `sr-only`; tín hiệu ⚠ (viền hổ phách) vẫn hiện,
+                 `textContent` vẫn là ĐÚNG câu của `NganXuLy` (hai chỗ không thể lệch câu). */
+              <span
+                className="inline-flex items-center rounded border border-amber-500/40 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400"
+                data-testid="badge-qua-cu-nen"
+                title={t("twin3d.vanHanh.duLieuQuaCu", "Dữ liệu quá cũ — trạng thái không đáng tin")}
+              >
+                <AlertTriangle className="h-3 w-3" aria-hidden />
+                <span className="sr-only">
+                  {t("twin3d.vanHanh.duLieuQuaCu", "Dữ liệu quá cũ — trạng thái không đáng tin")}
+                </span>
+              </span>
+            ) : null}
+          </div>
+
+          {/* ★ Đợt 45 (mục 2) — gợi ý thay cho ngăn phải rỗng: một dòng, đáy-phải cảnh, trên thanh tua; vùng cấm nhãn. */}
+          {nganPhaiTrong ? (
+            <p
+              className="pointer-events-none absolute bottom-12 right-2 z-20 max-w-[min(24rem,calc(100%-1rem))] truncate rounded-md border bg-background/80 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur"
+              data-testid="goi-y-chon-may"
+              data-che-nhan="1"
+              title={t("twin3d.vanHanh.chuaChon", "Chọn một máy trên cảnh hoặc trong danh sách để mở màn Máy 3D.")}
+            >
+              {t("twin3d.vanHanh.chuaChon", "Chọn một máy trên cảnh hoặc trong danh sách để mở màn Máy 3D.")}
+            </p>
+          ) : null}
           {/*
             ── ★★★ Đợt 34 (QĐ-24) — `NganMoPhong` KHÔNG còn ở đây. Nó sống ở `TwinLine.tsx` (cạnh
                `BangKpiNoi` của màn Line), vì what-if là đại lượng CỦA MỘT CHUYỀN và sau QĐ-23 `/twin`
@@ -3332,6 +3496,9 @@ export function ThanTwinVanHanh() {
           >
             {thuTrai ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </button>
+          {/* ★ Đợt 45 (mục 2) — tay nắm phải chỉ hiện khi ngăn CÓ gì để mở (đã chọn máy); ngăn rỗng tự thu
+              về 0 và một tay nắm mở-ra-ngăn-trống là nút chết. Ngăn vẫn ở DOM (`hidden`) — `NganNhung` portal. */}
+          {nganPhaiTrong ? null : (
           <button
             type="button"
             /* ★ ĐỢT 21 — `z-30`, xem chu thich tay nam trai. */
@@ -3352,6 +3519,7 @@ export function ThanTwinVanHanh() {
           >
             {thuPhai ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
+          )}
           {/*
             ── ★★★ ĐỢT 21 — THANH TUA LẠI, NAY LÀ **LỚP PHỦ ĐÁY CANVAS** ─────
 
@@ -3405,13 +3573,15 @@ export function ThanTwinVanHanh() {
              tách được nó khỏi cảnh phía dưới. */
           className={
             "pointer-events-auto absolute bottom-0 right-0 top-0 z-20 flex min-h-0 flex-col overflow-hidden border-l bg-background transition-[width] duration-200 " +
-            (thuPhai ? "w-0 border-l-0" : "w-64 2xl:w-80")
+            (thuPhaiHieuLuc ? "w-0 border-l-0" : "w-64 2xl:w-80")
           }
           data-testid="panel-phai"
           data-che-nhan="1"
-          data-thu={thuPhai ? "1" : "0"}
-          aria-hidden={thuPhai}
-          hidden={thuPhai}
+          /* ★ Đợt 45 (mục 2) — `data-thu` = trạng thái HIỆU LỰC; `data-ly-do-thu` nói VÌ SAO (rỗng vs người dùng). */
+          data-thu={thuPhaiHieuLuc ? "1" : "0"}
+          data-ly-do-thu={nganPhaiTrong ? "trong" : thuPhai ? "nguoiDung" : ""}
+          aria-hidden={thuPhaiHieuLuc}
+          hidden={thuPhaiHieuLuc}
         >
           <NganXuLy
             machineId={machineIdChon}

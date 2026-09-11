@@ -39,6 +39,8 @@ export interface BoChonNapUIProps {
   onDoiTang: (id: number) => void;
   /** Đang tải danh sách ⇒ khoá ô lại, KHÔNG hiện một danh sách rỗng gây hiểu nhầm. */
   dangTai?: boolean;
+  /** ★ Đợt 45 (mục 2) — header gọn (< 1100 px): ô chọn hẹp hơn (6,5 rem thay 8 rem). */
+  gon?: boolean;
 }
 
 /** Một ô chọn. Tách ra để ba ô không thể lệch nhau về hành vi/ a11y. */
@@ -49,6 +51,7 @@ function OChon({
   giaTri,
   onDoi,
   dangTai,
+  gon,
 }: {
   nhan: string;
   testid: string;
@@ -56,6 +59,7 @@ function OChon({
   giaTri: number | null;
   onDoi: (id: number) => void;
   dangTai: boolean;
+  gon: boolean;
 }) {
   /*
    * ★★★ MỘT Ô CHỌN CÓ ≤ 1 MỤC VẪN PHẢI HIỆN, KHÔNG ĐƯỢC ẨN.
@@ -88,7 +92,11 @@ function OChon({
     <label className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
       <span className="sr-only">{nhan}</span>
       <select
-        className="h-6 max-w-[8rem] min-w-0 truncate rounded border bg-background px-1 py-0 text-[11px] text-foreground disabled:opacity-60"
+        /* ★ Đợt 45 (mục 2) — chế độ GỌN (header < 1100 px): ô hẹp hơn để breadcrumb còn chỗ; vẫn 3 ô. */
+        className={
+          "h-6 min-w-0 truncate rounded border bg-background px-1 py-0 text-[11px] text-foreground disabled:opacity-60 " +
+          (gon ? "max-w-[6.5rem]" : "max-w-[8rem]")
+        }
         data-testid={testid}
         data-so-muc={muc.length}
         aria-label={nhan}
@@ -118,6 +126,7 @@ function OChon({
 export function BoChonNapUI(props: BoChonNapUIProps) {
   const { t } = useTranslation();
   const dangTai = props.dangTai ?? false;
+  const gon = props.gon ?? false;
   return (
     <div className="flex flex-wrap items-center gap-2" data-testid="bo-chon-nap">
       <OChon
@@ -127,6 +136,7 @@ export function BoChonNapUI(props: BoChonNapUIProps) {
         giaTri={props.nhaMayId}
         onDoi={props.onDoiNhaMay}
         dangTai={dangTai}
+        gon={gon}
       />
       <OChon
         nhan={t("twin3d.vanHanh.chonToaNha", "Toà")}
@@ -135,6 +145,7 @@ export function BoChonNapUI(props: BoChonNapUIProps) {
         giaTri={props.toaNhaId}
         onDoi={props.onDoiToaNha}
         dangTai={dangTai}
+        gon={gon}
       />
       <OChon
         nhan={t("twin3d.vanHanh.chonTang", "Tầng")}
@@ -143,6 +154,7 @@ export function BoChonNapUI(props: BoChonNapUIProps) {
         giaTri={props.tangId}
         onDoi={props.onDoiTang}
         dangTai={dangTai}
+        gon={gon}
       />
     </div>
   );
