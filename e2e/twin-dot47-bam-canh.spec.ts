@@ -260,15 +260,30 @@ for (const vp of VP) {
             const man = document.querySelector('[data-testid="man-twin-may"]');
             if (!man) return false;
             if (document.querySelector('[data-testid="may-dang-tai"]')) return false;
-            if (!man.querySelector("canvas")) return false;
+            const cv = man.querySelector("canvas");
+            if (!cv) return false;
             const tk = (window as unknown as { __thongKeVe?: { calls?: number } }).__thongKeVe;
-            return (tk?.calls ?? 0) > 0;
+            if ((tk?.calls ?? 0) <= 0) return false;
+            /*
+             * ★ Ba tín hiệu trên VẪN chưa đủ — đo được ở lượt đầu của chính Đợt 49: ảnh hết
+             * spinner nhưng vùng canvas ĐEN TRƠN và cockpit nhúng còn in "Loading cockpit…".
+             * `calls > 0` chỉ nói renderer đã vẽ MỘT khung (và `__thongKeVe` trễ một khung —
+             * xem `KhungCanh.BomThongKe`), không nói cảnh đã có gì. Thêm hai điều kiện:
+             *   (a) cockpit nhúng KHÔNG còn ở trạng thái đang tải (chữ, mọi ngôn ngữ đã dịch);
+             *   (b) canvas đã có kích thước thật.
+             */
+            if (cv.clientWidth < 50 || cv.clientHeight < 50) return false;
+            const chu = man.textContent ?? "";
+            if (/Loading cockpit|Đang tải buồng lái|Loading machine|Đang tải máy/i.test(chu)) return false;
+            return true;
           },
-          { timeout: 15_000 },
+          { timeout: 20_000 },
         )
         .then(() => true)
         .catch(() => false);
-      expect(veXong, "màn Máy phải VẼ XONG trước khi chụp — ảnh spinner không chứng minh gì").toBe(true);
+      expect(veXong, "màn Máy phải VẼ XONG trước khi chụp — ảnh spinner/canvas trắng không chứng minh gì").toBe(true);
+      // Một nhịp nữa cho cảnh 3D ổn định khung (camera khớp khung + vòng trạng thái) trước khi chụp.
+      await page.waitForTimeout(2_500);
       await page.screenshot({ path: `${ANH}/t1a-${man}-${vp.width}-sau-bam.png` });
     });
 
@@ -369,7 +384,7 @@ for (const vp of VP) {
       await page.mouse.up({ button: "left" });
       await page.waitForTimeout(1_200);
 
-      const dinh = await page.evaluate((manTid) => {
+      const dinh: { soNhan: number; soKhoi: number; soCap: number; dienTich: number; biPhu: Array<{ machineId: number; boiNhanCua: number; X: number; Y: number }> } = await page.evaluate((manTid) => {
         const w = window as unknown as CuaSo;
         const canvas = document.querySelector<HTMLCanvasElement>(`[data-testid="${manTid}"] canvas`)!;
         const cv = canvas.getBoundingClientRect();
@@ -415,8 +430,44 @@ for (const vp of VP) {
       // Bấm TỪNG tâm bị phủ (tối đa 3 — mỗi lần phải quay lại màn gốc).
       const ketCuc: Array<{ machineId: number; boiNhanCua: number; duongSau: string; dung: boolean }> = [];
       for (const m of dinh.biPhu.slice(0, 3)) {
+        /*
+         * ★★★ ĐO LẠI TOẠ ĐỘ TRƯỚC MỖI CÚ BẤM. Giữa hai cú có `goBack` ⇒ camera về tư thế khác; và
+         * chỉ riêng việc RÊ chuột lên máy đã làm lớp nhãn tính lại (máy đang hover được giữ nhãn
+         * — `chiNhanBatThuong`), nên bố cục nhãn ở khung sắp bấm KHÔNG phải bố cục lúc census.
+         * Bấm bằng toạ độ cũ là đo một cảnh bằng ảnh chụp của cảnh khác — âm tính giả của THIẾT
+         * BỊ ĐO. Máy không còn bị phủ ở khung hiện tại thì bỏ qua, không tính là đạt hay trượt.
+         */
+        const tuoi = await page.evaluate(
+          ({ manTid, id }) => {
+            const w = window as unknown as CuaSo;
+            const canvas = document.querySelector<HTMLCanvasElement>(`[data-testid="${manTid}"] canvas`)!;
+            const cv = canvas.getBoundingClientRect();
+            const t = w.__demTuongTac?.tamMay?.(id);
+            if (!t || !t.trongKhung) return null;
+            const X = cv.left + t.x;
+            const Y = cv.top + t.y;
+            if (document.elementFromPoint(X, Y) !== canvas) return null;
+            const n = (w.__demTuongTac?.hopNhanDaVe?.() ?? []).find(
+              (v) =>
+                v.machineId !== id &&
+                t.x >= v.hop.trai &&
+                t.x <= v.hop.phai &&
+                t.y >= v.hop.tren &&
+                t.y <= v.hop.duoi,
+            );
+            return n ? { X, Y, boiNhanCua: n.machineId } : null;
+          },
+          { manTid: man, id: m.machineId },
+        );
+        if (!tuoi) continue;
+        m.X = tuoi.X;
+        m.Y = tuoi.Y;
+        m.boiNhanCua = tuoi.boiNhanCua;
         await page.mouse.move(m.X, m.Y, { steps: 4 });
-        await page.waitForTimeout(120);
+        await page.waitForTimeout(300);
+        // Rê chuột đã có thể dời nhãn (máy hover được giữ nhãn). Nếu đã hết bị phủ thì ca này
+        // không còn là ca cần đo — nhưng VẪN bấm, vì kết cục "bấm tâm khối ⇒ đúng máy" phải đúng
+        // ở mọi chỗ; chỉ ghi lại rằng lúc bấm nó còn bị phủ hay không.
         await page.mouse.click(m.X, m.Y);
         await page.waitForTimeout(1_200);
         const duongSau = new URL(page.url()).pathname;
