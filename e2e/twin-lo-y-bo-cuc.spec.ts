@@ -1,5 +1,19 @@
 import { expect, test, type Page } from "@playwright/test";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
 import fs from "node:fs";
+
+/**
+ * ★★★ ĐỢT 55 (C) — ĐƯỜNG RA BẰNG CHỨNG ĐI QUA HÀNG RÀO (G130).
+ *
+ * Trước Đợt 55 spec này ghi thẳng vào `.qa-loY` bằng đường ghim cứng. Đó đúng lớp lỗi đã
+ * làm mất bằng chứng ở Đợt 50: chạy lại để xem thử ⇒ ghi đè im lặng lên ảnh của lượt trước.
+ * `duongRaBangChung` áp bất biến *"thư mục đích ĐÃ CÓ TỆP ⇒ đổi đường ra + kêu to"*.
+ *
+ * CÁCH CHẠY (đổi chỗ ghi mà không phải sửa mã):
+ *     TWIN_E2E_ANH_LOY=<thư mục>   npx playwright test e2e/twin-lo-y-bo-cuc.spec.ts
+ *     QA_GHI_DE_BANG_CHUNG=1              ⇒ ép ghi đè `.qa-loY` (lối thoát CÓ CHỦ Ý)
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_LOY", ".qa-loY");
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -104,7 +118,7 @@ test("Y-ĐO — ti le canvas 3D tren 1280x720, hai trang thai", async ({ page })
   ketQua.macDinh = { canvas: c1, tiLePhanTram: Number(tl1.toFixed(1)), daiNgang: d1 };
   console.log(`   [Y-ĐO] MẶC ĐỊNH  canvas ${c1!.w}×${c1!.h} = ${tl1.toFixed(1)} % viewport`);
   console.log(`   [Y-ĐO] dải ngang: ${JSON.stringify(d1)}`);
-  await page.screenshot({ path: ".qa-loY/Y-macdinh.png" });
+  await page.screenshot({ path: `${taoThuMuc(ANH)}/Y-macdinh.png` });
 
   // ── Trạng thái 2: `?thu=trai,phai` (3D gần toàn màn) ──────────────────────
   await page.goto("/twin?thu=trai,phai", { waitUntil: "domcontentloaded" });
@@ -115,9 +129,9 @@ test("Y-ĐO — ti le canvas 3D tren 1280x720, hai trang thai", async ({ page })
   const tl2 = ((c2!.w * c2!.h) / DIEN_TICH_VIEWPORT) * 100;
   ketQua.thuCaHai = { canvas: c2, tiLePhanTram: Number(tl2.toFixed(1)), daiNgang: d2 };
   console.log(`   [Y-ĐO] THU CẢ HAI canvas ${c2!.w}×${c2!.h} = ${tl2.toFixed(1)} % viewport`);
-  await page.screenshot({ path: ".qa-loY/Y-thu.png" });
+  await page.screenshot({ path: `${taoThuMuc(ANH)}/Y-thu.png` });
 
-  fs.writeFileSync(".qa-loY/do-bo-cuc.json", JSON.stringify(ketQua, null, 2));
+  fs.writeFileSync(`${taoThuMuc(ANH)}/do-bo-cuc.json`, JSON.stringify(ketQua, null, 2));
 
   /*
    * ════════════════════════════════════════════════════════════════════════

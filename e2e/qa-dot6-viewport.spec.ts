@@ -13,6 +13,20 @@
  * Sau ban va: TRAN 0px o ca hai, moi dieu khien TRONG khung nhin.
  */
 import { test, expect } from "@playwright/test";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
+
+/**
+ * ★★★ ĐỢT 55 (C) — ĐƯỜNG RA BẰNG CHỨNG ĐI QUA HÀNG RÀO (G130).
+ *
+ * Trước Đợt 55 spec này ghi thẳng vào `.qa-tmp/shot` bằng đường ghim cứng. Đó đúng lớp lỗi đã
+ * làm mất bằng chứng ở Đợt 50: chạy lại để xem thử ⇒ ghi đè im lặng lên ảnh của lượt trước.
+ * `duongRaBangChung` áp bất biến *"thư mục đích ĐÃ CÓ TỆP ⇒ đổi đường ra + kêu to"*.
+ *
+ * CÁCH CHẠY (đổi chỗ ghi mà không phải sửa mã):
+ *     QA_E2E_ANH_DOT6=<thư mục>   npx playwright test e2e/qa-dot6-viewport.spec.ts
+ *     QA_GHI_DE_BANG_CHUNG=1              ⇒ ép ghi đè `.qa-tmp/shot` (lối thoát CÓ CHỦ Ý)
+ */
+const ANH = duongRaBangChung("QA_E2E_ANH_DOT6", ".qa-tmp/shot");
 
 const KICH_THUOC = [
   { ten: "1280x1249", width: 1280, height: 1249 },
@@ -58,7 +72,7 @@ for (const kt of KICH_THUOC) {
       const o: any = v;
       console.log(`  ${k}: top=${o.top} bottom=${o.bottom} h=${o.height} overflowY=${o.overflowY} canScroll=${o.canScroll} TRONG_KHUNG=${o.trongKhungNhin}`);
     }
-    await page.screenshot({ path: `.qa-tmp/shot/dot6-viewport-${kt.ten}.png` });
+    await page.screenshot({ path: `${taoThuMuc(ANH)}/dot6-viewport-${kt.ten}.png` });
 
     // TIEU CHI: khong tran doc, va moi dieu khien chinh trong khung nhin.
     expect(do_.tranDoc).toBeLessThanOrEqual(1);

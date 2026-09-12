@@ -7,6 +7,20 @@ import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
  * Trước: 10 chỗ ghi thẳng `.qa-dot22/…` ⇒ chạy lại spec là GHI ĐÈ bằng chứng
  * của Đợt 22 (đúng lớp lỗi G130 đã làm mất 103 tệp ở Đợt 50). Xem `duongRaBangChung`.
  */
+/**
+ * ★★★ ĐỢT 55 (C) — CÁCH CHẠY (docblock này thiếu suốt các đợt trước; G130 nói rằng "một biến
+ * môi trường mà người chạy phải NHỚ đặt không phải hàng rào" — nhưng nó vẫn phải được VIẾT RA).
+ *
+ *     TWIN_E2E_ANH_DOT22=<thư mục của ĐỢT ĐANG CHẠY>  *     PLAYWRIGHT_BASE_URL=http://localhost:<cổng dist của đợt đang chạy>  *     npx playwright test e2e/twin-dot22-nghiem-thu.spec.ts --workers=1 --output <thư mục của đợt>/pw-output
+ *
+  `--config playwright.dot22.config.ts` (outputDir riêng `.qa-dot22/pw-output`, baseURL 127.0.0.1:3141).
+ *
+ * ⚠ `--output` PHẢI trỏ ra ngoài `test-results/`: Playwright **DỌN SẠCH `outputDir` mỗi lượt**
+ *   (đo được Đợt 55: sentinel đặt vào thư mục ấy BIẾN MẤT sau một lượt chạy), mà `test-results/`
+ *   đang giữ 5 ảnh lô C ĐÃ COMMIT. Config gốc nay đặt `outputDir: ".qa-pw-output"`.
+ * ⚠ Bỏ trống `TWIN_E2E_ANH_DOT22` thì `duongRaBangChung` tự đổi đường ra sang `.qa-dot22-lai-<mốc>`
+ *   và IN CẢNH BÁO — không ghi đè im lặng lên bằng chứng của đợt trước.
+ */
 const ANH = duongRaBangChung("TWIN_E2E_ANH_DOT22", ".qa-dot22");
 
 

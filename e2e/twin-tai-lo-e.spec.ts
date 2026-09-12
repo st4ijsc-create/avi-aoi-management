@@ -1,4 +1,18 @@
 import { test, expect, type Page } from "@playwright/test";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
+
+/**
+ * ★★★ ĐỢT 55 (C) — ĐƯỜNG RA BẰNG CHỨNG ĐI QUA HÀNG RÀO (G130).
+ *
+ * Trước Đợt 55 spec này ghi thẳng vào `.qa-loE` bằng đường ghim cứng. Đó đúng lớp lỗi đã
+ * làm mất bằng chứng ở Đợt 50: chạy lại để xem thử ⇒ ghi đè im lặng lên ảnh của lượt trước.
+ * `duongRaBangChung` áp bất biến *"thư mục đích ĐÃ CÓ TỆP ⇒ đổi đường ra + kêu to"*.
+ *
+ * CÁCH CHẠY (đổi chỗ ghi mà không phải sửa mã):
+ *     TWIN_E2E_ANH_LOE=<thư mục>   npx playwright test e2e/twin-tai-lo-e.spec.ts
+ *     QA_GHI_DE_BANG_CHUNG=1              ⇒ ép ghi đè `.qa-loE` (lối thoát CÓ CHỦ Ý)
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_LOE", ".qa-loE");
 
 /**
  * ============================================================================
@@ -196,7 +210,7 @@ test.describe("Lo E — do tai /twin", () => {
     expect(kq.calls, "khung chua duoc ve — moi so do vo nghia").toBeGreaterThan(0);
     expect(kq.soCanvas, "RB-4: dung MOT canvas").toBe(1);
 
-    await page.screenshot({ path: "test-results/loE-1nhamay.png", fullPage: false });
+    await page.screenshot({ path: `${taoThuMuc(ANH)}/loE-1nhamay.png`, fullPage: false });
   });
 
   /**
@@ -214,7 +228,7 @@ test.describe("Lo E — do tai /twin", () => {
     test.setTimeout(240_000);
     const kq = await doTatCa(page, "pham vi tap doan (pv=tapdoan, 4 nha may)", "/twin?pv=tapdoan");
     expect(kq.calls).toBeGreaterThan(0);
-    await page.screenshot({ path: "test-results/loE-tapdoan.png", fullPage: false });
+    await page.screenshot({ path: `${taoThuMuc(ANH)}/loE-tapdoan.png`, fullPage: false });
   });
 
   test.afterAll(() => {

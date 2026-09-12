@@ -1,4 +1,18 @@
 import { test, expect, type Page } from "@playwright/test";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
+
+/**
+ * ★★★ ĐỢT 55 (C) — ĐƯỜNG RA BẰNG CHỨNG ĐI QUA HÀNG RÀO (G130).
+ *
+ * Trước Đợt 55 spec này ghi thẳng vào `.qa-studio` bằng đường ghim cứng. Đó đúng lớp lỗi đã
+ * làm mất bằng chứng ở Đợt 50: chạy lại để xem thử ⇒ ghi đè im lặng lên ảnh của lượt trước.
+ * `duongRaBangChung` áp bất biến *"thư mục đích ĐÃ CÓ TỆP ⇒ đổi đường ra + kêu to"*.
+ *
+ * CÁCH CHẠY (đổi chỗ ghi mà không phải sửa mã):
+ *     TWIN_E2E_ANH_STUDIO=<thư mục>   npx playwright test e2e/twin-studio-thiet-ke.spec.ts
+ *     QA_GHI_DE_BANG_CHUNG=1              ⇒ ép ghi đè `.qa-studio` (lối thoát CÓ CHỦ Ý)
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_STUDIO", ".qa-studio");
 
 /**
  * e2e Đợt 4 — màn Thiết kế `/twin-studio` (§7).
@@ -147,7 +161,7 @@ test.describe("Twin Studio — màn Thiết kế Đợt 4", () => {
     expect(tk!.calls).toBeGreaterThan(2);
 
     await page.getByTestId("khoi-canh-3d").screenshot({
-      path: "test-results/twin-studio-gizmo.png",
+      path: `${taoThuMuc(ANH)}/twin-studio-gizmo.png`,
     });
   });
 

@@ -1,5 +1,19 @@
 import { expect, test, type Page } from "@playwright/test";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
 import fs from "node:fs";
+
+/**
+ * ★★★ ĐỢT 55 (C) — ĐƯỜNG RA BẰNG CHỨNG ĐI QUA HÀNG RÀO (G130).
+ *
+ * Trước Đợt 55 spec này ghi thẳng vào `.qa-loY` bằng đường ghim cứng. Đó đúng lớp lỗi đã
+ * làm mất bằng chứng ở Đợt 50: chạy lại để xem thử ⇒ ghi đè im lặng lên ảnh của lượt trước.
+ * `duongRaBangChung` áp bất biến *"thư mục đích ĐÃ CÓ TỆP ⇒ đổi đường ra + kêu to"*.
+ *
+ * CÁCH CHẠY (đổi chỗ ghi mà không phải sửa mã):
+ *     TWIN_E2E_ANH_LOY=<thư mục>   npx playwright test e2e/twin-lo-y-redirect.spec.ts
+ *     QA_GHI_DE_BANG_CHUNG=1              ⇒ ép ghi đè `.qa-loY` (lối thoát CÓ CHỦ Ý)
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_LOY", ".qa-loY");
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -109,7 +123,7 @@ test("Y-URL — 14 đường vào cũ đều tới đích, không đường nào
     if (conQuaTrungGian) hong.push(`${d.cu} DUNG LAI o URL trung gian ${urlCuoi}`);
   }
 
-  fs.writeFileSync(".qa-loY/redirect.json", JSON.stringify(bienBan, null, 2));
+  fs.writeFileSync(`${taoThuMuc(ANH)}/redirect.json`, JSON.stringify(bienBan, null, 2));
 
   // ★ Ca DƯƠNG cho chính thiết bị đo: nếu vòng lặp không chạy, `hong` cũng rỗng.
   expect(bienBan.length, "phai do du 14 duong").toBe(14);

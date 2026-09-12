@@ -1,5 +1,19 @@
 import { expect, test, type Page } from "@playwright/test";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
 import fs from "node:fs";
+
+/**
+ * ★★★ ĐỢT 55 (C) — ĐƯỜNG RA BẰNG CHỨNG ĐI QUA HÀNG RÀO (G130).
+ *
+ * Trước Đợt 55 spec này ghi thẳng vào `.qa-loY` bằng đường ghim cứng. Đó đúng lớp lỗi đã
+ * làm mất bằng chứng ở Đợt 50: chạy lại để xem thử ⇒ ghi đè im lặng lên ảnh của lượt trước.
+ * `duongRaBangChung` áp bất biến *"thư mục đích ĐÃ CÓ TỆP ⇒ đổi đường ra + kêu to"*.
+ *
+ * CÁCH CHẠY (đổi chỗ ghi mà không phải sửa mã):
+ *     TWIN_E2E_ANH_LOY=<thư mục>   npx playwright test e2e/twin-lo-y-qd16-quyen.spec.ts
+ *     QA_GHI_DE_BANG_CHUNG=1              ⇒ ép ghi đè `.qa-loY` (lối thoát CÓ CHỦ Ý)
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_LOY", ".qa-loY");
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -104,7 +118,7 @@ test("QD16-A — operator1 VÀO ĐƯỢC /twin (chống CỔNG CHẶT / tai nạ
     description: `operator1 coCanh=${coCanh} — 0 hang user_factory_assignments (EMPTY SCOPE), do duoc tren ca HEAD`,
   });
 
-  await page.screenshot({ path: ".qa-loY/QD16-A-operator1-xem.png" });
+  await page.screenshot({ path: `${taoThuMuc(ANH)}/QD16-A-operator1-xem.png` });
   ketQua.operator1_vaoDuoc = true;
   ketQua.operator1_thayCanh = coCanh;
 });
@@ -129,7 +143,7 @@ test("QD16-B — operator1 KHÔNG thấy nút 'Sửa bố cục' (chống CỔNG
    */
   expect(await page.locator('[data-testid="lien-ket-twin-studio"][disabled]').count()).toBe(0);
 
-  await page.screenshot({ path: ".qa-loY/QD16-B-operator1-khong-nut.png" });
+  await page.screenshot({ path: `${taoThuMuc(ANH)}/QD16-B-operator1-khong-nut.png` });
   ketQua.operator1_thayNutSua = so > 0;
 });
 
@@ -151,7 +165,7 @@ test("QD16-C — ★ ĐỐI CHỨNG DƯƠNG: engineer1 vào được VÀ thấy 
     "engineer1 PHAI thay loi vao vung sua",
   ).toBeVisible();
 
-  await page.screenshot({ path: ".qa-loY/QD16-C-engineer1-co-nut.png" });
+  await page.screenshot({ path: `${taoThuMuc(ANH)}/QD16-C-engineer1-co-nut.png` });
   ketQua.engineer1_thayNutSua = true;
 });
 

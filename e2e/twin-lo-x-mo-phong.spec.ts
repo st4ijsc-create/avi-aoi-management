@@ -1,4 +1,18 @@
 import { expect, test, type Page } from "@playwright/test";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
+
+/**
+ * ★★★ ĐỢT 55 (C) — ĐƯỜNG RA BẰNG CHỨNG ĐI QUA HÀNG RÀO (G130).
+ *
+ * Trước Đợt 55 spec này ghi thẳng vào `.qa-loX` bằng đường ghim cứng. Đó đúng lớp lỗi đã
+ * làm mất bằng chứng ở Đợt 50: chạy lại để xem thử ⇒ ghi đè im lặng lên ảnh của lượt trước.
+ * `duongRaBangChung` áp bất biến *"thư mục đích ĐÃ CÓ TỆP ⇒ đổi đường ra + kêu to"*.
+ *
+ * CÁCH CHẠY (đổi chỗ ghi mà không phải sửa mã):
+ *     TWIN_E2E_ANH_LOX=<thư mục>   npx playwright test e2e/twin-lo-x-mo-phong.spec.ts
+ *     QA_GHI_DE_BANG_CHUNG=1              ⇒ ép ghi đè `.qa-loX` (lối thoát CÓ CHỦ Ý)
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_LOX", ".qa-loX");
 
 /**
  * Lô X — nghiệm thu THỊ GIÁC ngăn "Mô phỏng" (§11 #30 what-if + #35 phát lại).
@@ -103,8 +117,8 @@ test("X1 — ngan Mo phong HIEN tren canh, doc duoc, va khai LY DO honest-null",
     expect(chu, "khong duoc tron chu tieng Viet vao ban EN").not.toMatch(/ngày|giờ|phút/);
   }
 
-  await ngan.screenshot({ path: ".qa-loX/X1-ngan-mo-phong.png" });
-  await page.screenshot({ path: ".qa-loX/X1-toan-man.png" });
+  await ngan.screenshot({ path: `${taoThuMuc(ANH)}/X1-ngan-mo-phong.png` });
+  await page.screenshot({ path: `${taoThuMuc(ANH)}/X1-toan-man.png` });
 });
 
 test("X2 — `?thu=moPhong` THU ngan lai, va khu hoi qua URL (G40)", async ({ page }) => {
@@ -135,7 +149,7 @@ test("X2 — `?thu=moPhong` THU ngan lai, va khu hoi qua URL (G40)", async ({ pa
   await expect(than, "than phai hien lai").toBeVisible();
   console.log(`   [X2] URL = ${page.url()} (man Line chi DOC ?thu=, khong ghi nguoc)`);
 
-  await page.screenshot({ path: ".qa-loX/X2-sau-khi-mo-lai.png" });
+  await page.screenshot({ path: `${taoThuMuc(ANH)}/X2-sau-khi-mo-lai.png` });
 });
 
 test("X3 — #35 phat lai: chon workflow THAT => Gantt co thanh, nut buoc DOI moc", async ({ page }) => {
@@ -154,7 +168,7 @@ test("X3 — #35 phat lai: chon workflow THAT => Gantt co thanh, nut buoc DOI mo
     // luat an-khong-disable; ghi ra de nguoi doc bao cao biet vi sao.
     const rong = await page.getByTestId("phat-lai-rong").count();
     console.log(`   [X3] muc #35 AN (thieu quyen) hoac rong=${rong} — ghi nhan, khong phai loi`);
-    await page.screenshot({ path: ".qa-loX/X3-phat-lai-an.png" });
+    await page.screenshot({ path: `${taoThuMuc(ANH)}/X3-phat-lai-an.png` });
     return;
   }
 
@@ -216,6 +230,6 @@ test("X3 — #35 phat lai: chon workflow THAT => Gantt co thanh, nut buoc DOI mo
   console.log(`   [X3] so thanh dang-chay sau khi bam = ${soDangChay} (ky vong 1)`);
   expect(soDangChay, "dung MOT thanh sang len theo moc").toBe(1);
 
-  await ngan.screenshot({ path: ".qa-loX/X3-gantt-phat-lai.png" });
-  await page.screenshot({ path: ".qa-loX/X3-toan-man.png" });
+  await ngan.screenshot({ path: `${taoThuMuc(ANH)}/X3-gantt-phat-lai.png` });
+  await page.screenshot({ path: `${taoThuMuc(ANH)}/X3-toan-man.png` });
 });

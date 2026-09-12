@@ -11,6 +11,20 @@
  *   yêu cầu chúng bị kẹp về rìa, nên chúng chồng nhau là hành vi ĐÚNG.
  */
 import { test, expect } from "@playwright/test";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
+
+/**
+ * ★★★ ĐỢT 55 (C) — ĐƯỜNG RA BẰNG CHỨNG ĐI QUA HÀNG RÀO (G130).
+ *
+ * Trước Đợt 55 spec này ghi thẳng vào `.qa-tmp/shot` bằng đường ghim cứng. Đó đúng lớp lỗi đã
+ * làm mất bằng chứng ở Đợt 50: chạy lại để xem thử ⇒ ghi đè im lặng lên ảnh của lượt trước.
+ * `duongRaBangChung` áp bất biến *"thư mục đích ĐÃ CÓ TỆP ⇒ đổi đường ra + kêu to"*.
+ *
+ * CÁCH CHẠY (đổi chỗ ghi mà không phải sửa mã):
+ *     QA_E2E_ANH_T1=<thư mục>   npx playwright test e2e/qa-t1-badge-chonglap.spec.ts
+ *     QA_GHI_DE_BANG_CHUNG=1              ⇒ ép ghi đè `.qa-tmp/shot` (lối thoát CÓ CHỦ Ý)
+ */
+const ANH = duongRaBangChung("QA_E2E_ANH_T1", ".qa-tmp/shot");
 
 test("T1 — badge canh bao KHONG con cap chong lap (bbox DOM that)", async ({ page }) => {
   const res = await page.request.post("/api/auth/login", {
@@ -61,7 +75,7 @@ test("T1 — badge canh bao KHONG con cap chong lap (bbox DOM that)", async ({ p
   });
 
   console.log("DO-BBOX-DOM " + JSON.stringify(doDuoc, null, 2));
-  await page.screenshot({ path: ".qa-tmp/shot/t1-badge.png", fullPage: false });
+  await page.screenshot({ path: `${taoThuMuc(ANH)}/t1-badge.png`, fullPage: false });
 
   // Phép đo phải chứng minh được cái gì đó: nếu 0 badge thì nó chứng minh SỐ 0.
   expect(doDuoc.soBadge, "phai co badge de do — neu 0 thi phep do chung minh SO 0").toBeGreaterThan(0);

@@ -40,6 +40,20 @@ const VIEWPORT = { width: 1600, height: 900 };
  * ĐỢT 51 (mục B) — đường ra bằng chứng lấy từ ENV, và KHÔNG ghi đè thư mục đã có tệp.
  * (G130 — sự cố Đợt 50: chạy lại spec ghi đè bằng chứng của đợt cũ.)
  */
+/**
+ * ★★★ ĐỢT 55 (C) — CÁCH CHẠY (docblock này thiếu suốt các đợt trước; G130 nói rằng "một biến
+ * môi trường mà người chạy phải NHỚ đặt không phải hàng rào" — nhưng nó vẫn phải được VIẾT RA).
+ *
+ *     TWIN_E2E_ANH_DOT31=<thư mục của ĐỢT ĐANG CHẠY>  *     PLAYWRIGHT_BASE_URL=http://localhost:<cổng dist của đợt đang chạy>  *     npx playwright test e2e/twin-dot31-may.spec.ts --workers=1 --output <thư mục của đợt>/pw-output
+ *
+  Đo trên `dist` (docblock trên ghi server 3030) ⇒ `PLAYWRIGHT_BASE_URL=http://localhost:3030`.
+ *
+ * ⚠ `--output` PHẢI trỏ ra ngoài `test-results/`: Playwright **DỌN SẠCH `outputDir` mỗi lượt**
+ *   (đo được Đợt 55: sentinel đặt vào thư mục ấy BIẾN MẤT sau một lượt chạy), mà `test-results/`
+ *   đang giữ 5 ảnh lô C ĐÃ COMMIT. Config gốc nay đặt `outputDir: ".qa-pw-output"`.
+ * ⚠ Bỏ trống `TWIN_E2E_ANH_DOT31` thì `duongRaBangChung` tự đổi đường ra sang `.qa-dot31-lai-<mốc>`
+ *   và IN CẢNH BÁO — không ghi đè im lặng lên bằng chứng của đợt trước.
+ */
 const ANH = duongRaBangChung("TWIN_E2E_ANH_DOT31", ".qa-dot31");
 const MAY = 14;
 const MAY_NGOAI = 257;

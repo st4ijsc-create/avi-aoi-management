@@ -1,5 +1,19 @@
 import { expect, test, type Page } from "@playwright/test";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
 import fs from "node:fs";
+
+/**
+ * ★★★ ĐỢT 55 (C) — ĐƯỜNG RA BẰNG CHỨNG ĐI QUA HÀNG RÀO (G130).
+ *
+ * Trước Đợt 55 spec này ghi thẳng vào `.qa-loY` bằng đường ghim cứng. Đó đúng lớp lỗi đã
+ * làm mất bằng chứng ở Đợt 50: chạy lại để xem thử ⇒ ghi đè im lặng lên ảnh của lượt trước.
+ * `duongRaBangChung` áp bất biến *"thư mục đích ĐÃ CÓ TỆP ⇒ đổi đường ra + kêu to"*.
+ *
+ * CÁCH CHẠY (đổi chỗ ghi mà không phải sửa mã):
+ *     TWIN_E2E_ANH_LOY=<thư mục>   npx playwright test e2e/twin-lo-y-noi-lo-z.spec.ts
+ *     QA_GHI_DE_BANG_CHUNG=1       ⇒ ép ghi đè `.qa-loY` (lối thoát CÓ CHỦ Ý)
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_LOY", ".qa-loY");
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -95,7 +109,7 @@ test("NỐI-1 — B-3: huy hiệu CƠ CHẾ GIAO SỐ sống, và khai một tro
   await expect(page.getByTestId("trang-thai-ket-noi"), "huy hieu cu PHAI con").toBeVisible();
 
   console.log(`   [NỐI-1] coChe=${coChe} nhipMs=${nhip} tuoiMs=${await badge.getAttribute("data-tuoi-ms")}`);
-  await page.screenshot({ path: ".qa-loY/NOI-1-co-che-giao-so.png" });
+  await page.screenshot({ path: `${taoThuMuc(ANH)}/NOI-1-co-che-giao-so.png` });
 });
 
 test("NỐI-2 — A-4: truy vấn sucKhoeMay CHẠY và trả lời khai (đo qua mạng)", async ({ page }) => {
@@ -133,7 +147,7 @@ test("NỐI-2 — A-4: truy vấn sucKhoeMay CHẠY và trả lời khai (đo qu
   expect(soKhai, "phai co loi khai suc khoe (lo Z do: 43/43 may co hang)").toBeGreaterThan(0);
 
   fs.writeFileSync(
-    ".qa-loY/noi-lo-z.json",
+    `${taoThuMuc(ANH)}/noi-lo-z.json`,
     JSON.stringify({ soKhai, tong: kq!.tong, tongMayTrongPhamVi: kq!.tongMayTrongPhamVi }, null, 2),
   );
 });

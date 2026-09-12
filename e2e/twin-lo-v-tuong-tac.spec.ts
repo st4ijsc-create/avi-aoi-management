@@ -1,5 +1,19 @@
 import { test, expect, type Page } from "@playwright/test";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
 import { PNG } from "pngjs";
+
+/**
+ * ★★★ ĐỢT 55 (C) — ĐƯỜNG RA BẰNG CHỨNG ĐI QUA HÀNG RÀO (G130).
+ *
+ * Trước Đợt 55 spec này ghi thẳng vào `.qa-loV` bằng đường ghim cứng. Đó đúng lớp lỗi đã
+ * làm mất bằng chứng ở Đợt 50: chạy lại để xem thử ⇒ ghi đè im lặng lên ảnh của lượt trước.
+ * `duongRaBangChung` áp bất biến *"thư mục đích ĐÃ CÓ TỆP ⇒ đổi đường ra + kêu to"*.
+ *
+ * CÁCH CHẠY (đổi chỗ ghi mà không phải sửa mã):
+ *     TWIN_E2E_ANH_LOV=<thư mục>   npx playwright test e2e/twin-lo-v-tuong-tac.spec.ts
+ *     QA_GHI_DE_BANG_CHUNG=1              ⇒ ép ghi đè `.qa-loV` (lối thoát CÓ CHỦ Ý)
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_LOV", ".qa-loV");
 
 /**
  * ============================================================================
@@ -497,7 +511,7 @@ test.describe("V1 — transform gizmo (/twin-studio)", () => {
         `\n[V1-BAM-${cd}] pixel can gizmo (do/luc/lam) = ${demKenh.join("/")}  tong=${diem.length}`,
       );
       // Ảnh để MẮT kiểm — không nộp số nào mà không nhìn được cảnh sinh ra nó.
-      await page.screenshot({ path: `.qa-loV/loV-gizmo-${cd}.png`, clip: v.clip });
+      await page.screenshot({ path: `${taoThuMuc(ANH)}/loV-gizmo-${cd}.png`, clip: v.clip });
       if (diem.length < 30) test.skip(true, "khong tim thay pixel can gizmo tren anh");
 
       // Cần ĐỎ = trục X trong three (nếu vắng, lấy lục = trục Y).
@@ -837,7 +851,7 @@ test.describe("V1 — transform gizmo (/twin-studio)", () => {
         return el ? el.textContent : null;
       });
       // ẢNH để MẮT kiểm — 0,001 % là một con số cần NHÌN mới hiểu.
-      await page.screenshot({ path: `.qa-loV/loV-xoay-${kenh}.png`, clip: v.clip });
+      await page.screenshot({ path: `${taoThuMuc(ANH)}/loV-xoay-${kenh}.png`, clip: v.clip });
       inSo(
         `V1-BA-TRUC-${tenTruc[kenh]}`,
         "/twin-studio",
@@ -953,7 +967,7 @@ test.describe("V1 — transform gizmo (/twin-studio)", () => {
       }
       await page.mouse.up({ button: "left" });
     });
-    await page.screenshot({ path: ".qa-loV/loV-xoay-gan.png", clip: v.clip });
+    await page.screenshot({ path: `${taoThuMuc(ANH)}/loV-xoay-gan.png`, clip: v.clip });
 
     const cuoi = await page.evaluate(() => {
       const w = window as unknown as {

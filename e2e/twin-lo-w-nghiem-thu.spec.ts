@@ -1,4 +1,18 @@
 import { expect, test, type Page } from "@playwright/test";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
+
+/**
+ * ★★★ ĐỢT 55 (C) — ĐƯỜNG RA BẰNG CHỨNG ĐI QUA HÀNG RÀO (G130).
+ *
+ * Trước Đợt 55 spec này ghi thẳng vào `.qa-loW` bằng đường ghim cứng. Đó đúng lớp lỗi đã
+ * làm mất bằng chứng ở Đợt 50: chạy lại để xem thử ⇒ ghi đè im lặng lên ảnh của lượt trước.
+ * `duongRaBangChung` áp bất biến *"thư mục đích ĐÃ CÓ TỆP ⇒ đổi đường ra + kêu to"*.
+ *
+ * CÁCH CHẠY (đổi chỗ ghi mà không phải sửa mã):
+ *     TWIN_E2E_ANH_LOW=<thư mục>   npx playwright test e2e/twin-lo-w-nghiem-thu.spec.ts
+ *     QA_GHI_DE_BANG_CHUNG=1              ⇒ ép ghi đè `.qa-loW` (lối thoát CÓ CHỦ Ý)
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_LOW", ".qa-loW");
 
 /**
  * Lô W — nghiệm thu THỊ GIÁC cho G67 (gỡ công cụ Scale).
@@ -43,8 +57,8 @@ test("W1 — thanh cong cu Thiet ke: CON diChuyen+xoay, KHONG con Co gian", asyn
   await expect(nutScale, "nut Co gian phai KHONG con").toHaveCount(0);
 
   const thanh = page.getByTestId("nut-che-do-translate").locator("xpath=ancestor::div[2]");
-  await thanh.screenshot({ path: ".qa-loW/W1-thanh-cong-cu.png" });
-  await page.screenshot({ path: ".qa-loW/W1-toan-man.png" });
+  await thanh.screenshot({ path: `${taoThuMuc(ANH)}/W1-thanh-cong-cu.png` });
+  await page.screenshot({ path: `${taoThuMuc(ANH)}/W1-toan-man.png` });
 
   const soNut = await page.locator('[data-testid^="nut-che-do-"]').count();
   console.log(`   [W1] so nut che do gizmo = ${soNut} (ky vong 2)`);
